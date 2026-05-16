@@ -1,0 +1,12 @@
+[package]
+name = "win32k-kernel-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+win32k-rust = { path = "../win32k-rust" }
+ntprintf = { path = "../ntprintf" }
+ntprintf_w = { path = "../ntprintf_w" }

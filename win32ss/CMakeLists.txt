@@ -89,7 +89,7 @@ list(APPEND SOURCE
     gdi/eng/perfcnt.c
     gdi/eng/rlecomp.c
     gdi/eng/semaphor.c
-    gdi/eng/sort.c
+    # gdi/eng/sort.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/sort.rs) — cohabitation
     gdi/eng/string.c
     gdi/eng/stretchblt.c
     gdi/eng/surface.c
@@ -163,7 +163,7 @@ list(APPEND SOURCE
     user/ntuser/window.c
     user/ntuser/winpos.c
     user/ntuser/winsta.c
-    user/ntuser/object.c
+    # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
     user/rtl/image.c
     user/rtl/text.c
     gdi/ntgdi/arc.c
@@ -186,7 +186,7 @@ list(APPEND SOURCE
     gdi/ntgdi/freetype.c
     gdi/ntgdi/gdibatch.c
     gdi/ntgdi/gdidbg.c
-    gdi/ntgdi/gdiobj.c
+    # gdi/ntgdi/gdiobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/gdiobj.rs, +split2) — cohabitation [Phase 1a]
     gdi/ntgdi/gdipool.c
     gdi/ntgdi/icm.c
     gdi/ntgdi/init.c
@@ -240,6 +240,47 @@ endif()
 
 add_asm_files(win32k_asm ${ASM_SOURCE})
 
+# ── Rust win32k code — single umbrella staticlib (cohabitation) ──────
+# Analog of ntoskrnl's libkernel_rust.a. Each translated win32ss/*.c is
+# commented out in the SOURCE list above and its #[no_mangle] symbol is
+# provided here instead; --allow-multiple-definition + lld first-match
+# covers the swap-in window. Own rust-target dir (not shared with the
+# ntoskrnl build) so the two cargo invocations don't fight.
+set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(RUST_WIN32K_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-win32k-target")
+if(ARCH STREQUAL "i386")
+    set(RUST_WIN32K_RUST_TARGET "i686-pc-windows-gnu")
+    set(RUST_WIN32K_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(RUST_WIN32K_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(RUST_WIN32K_EXTRA_ENV "")
+elseif(ARCH STREQUAL "arm64")
+    set(RUST_WIN32K_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(RUST_WIN32K_EXTRA_ENV "")
+endif()
+set(RUST_WIN32K_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwin32k_kernel_rust.a")
+add_custom_command(
+    OUTPUT ${RUST_WIN32K_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${RUST_WIN32K_TARGET_DIR} ${RUST_WIN32K_EXTRA_ENV}
+        cargo build --release --target ${RUST_WIN32K_RUST_TARGET}
+            -p win32k-kernel-rust
+            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${RUST_WIN32K_TARGET_DIR}/${RUST_WIN32K_RUST_TARGET}/release/libwin32k_kernel_rust.a
+        ${RUST_WIN32K_LIB}
+    DEPENDS ${RUST_WORKSPACE_DIR}/win32k-kernel-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/win32k-kernel-rust/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/sort.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdiobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/object.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
+)
+add_custom_target(rust_win32k DEPENDS ${RUST_WIN32K_LIB})
+
 add_library(win32k MODULE
     ${SOURCE}
     gdi/ntgdi/brush.cpp
@@ -249,7 +290,11 @@ add_library(win32k MODULE
 
 set_module_type(win32k kernelmodedriver)
 set_target_properties(win32k PROPERTIES C_STANDARD 23)
-target_link_libraries(win32k ${PSEH_LIB} dxguid libcntpr)
+# Rust compiler_builtins / libclang_rt both provide __chkstk, and the
+# cohabitation swap-in window has C+Rust defining the same export.
+add_dependencies(win32k rust_win32k)
+target_link_options(win32k PRIVATE "LINKER:--allow-multiple-definition")
+target_link_libraries(win32k ${PSEH_LIB} dxguid libcntpr ${RUST_WIN32K_LIB})
 
 if(USE_DIBLIB)
     target_link_libraries(win32k diblib)

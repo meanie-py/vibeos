@@ -215,9 +215,122 @@ def _parse_function(node, source: bytes, source_text: str) -> Optional[CFunction
     )
 
 
+_SPLIT_INCLUDE_RE = re.compile(
+    r'^[ \t]*#[ \t]*include[ \t]+"([^"]+\.split\d+\.c)"[ \t]*$',
+    re.MULTILINE,
+)
+
+
+def _expand_split_includes(path: Path, text: str, _depth: int = 0) -> str:
+    """Inline pretranslation `#include "X.splitN.c"` fragments.
+
+    The giant-file pretranslation split carves trailing function groups
+    into `X.splitN.c` siblings that the original `X.c` `#include`s back,
+    so the C preprocessor reassembles ONE translation unit verbatim (no
+    CMake/linkage change). rustconv parses C with tree-sitter, NOT cpp,
+    so without this it would silently miss every split-off function (and
+    their shared external-linkage TU globals would become two clashing
+    Rust modules). Mirror cpp: textually inline the fragment in place.
+
+    The include sits at the END of the parent, so inlining APPENDS after
+    the parent's last line — every original line number is preserved and
+    existing Pass-0/2/3 sidecars (keyed by parent line ranges) stay
+    valid. Iterative/recursive: `X.c` may include `X.split2.c` and
+    `X.split3.c`; a fragment may include the next.
+    """
+    if _depth > 16:
+        return text
+
+    def _sub(m: 're.Match') -> str:
+        frag = path.parent / m.group(1)
+        if not frag.exists():
+            return m.group(0)  # not a local split fragment — leave it
+        frag_text = frag.read_text(errors='replace')
+        return _expand_split_includes(frag, frag_text, _depth + 1)
+
+    return _SPLIT_INCLUDE_RE.sub(_sub, text)
+
+
+# win32k debug switches HARD-defined to 0 in win32ss/win32kp.h (never
+# build-overridden — the build has -DDBG=1 but these finer feature
+# switches stay 0). rustconv parses with tree-sitter not cpp, so without
+# this it translates these build-excluded blocks and emits references to
+# fields/macros that legitimately don't exist (e.g. BASEOBJECT.slhLog,
+# .apvBackTrace, DBG_DUMP_EVENT_LIST). Conservative: only these proven-0
+# symbols, only the simple `#if SYM ... #endif` shape — bail to verbatim
+# on ANY #else/#elif/nested #if (see feedback_preprocessor_elif_chain).
+_KNOWN_OFF_IFDEF_SYMS = (
+    "DBG_ENABLE_EVENT_LOGGING",
+    "DBG_ENABLE_GDIOBJ_BACKTRACES",
+)
+_IF_LINE = re.compile(r'^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)\b')
+
+
+def _strip_known_off_ifdefs(text: str) -> str:
+    lines = text.split('\n')
+    syms = "|".join(re.escape(s) for s in _KNOWN_OFF_IFDEF_SYMS)
+    open_re = re.compile(rf'^[ \t]*#[ \t]*if[ \t]+(?:!\s*)?(?:{syms})\b')
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        if open_re.match(lines[i]):
+            # Scan to the matching #endif at the same nesting depth.
+            depth, j, simple = 1, i + 1, True
+            while j < n and depth > 0:
+                m = _IF_LINE.match(lines[j])
+                if m:
+                    kw = m.group(1)
+                    if kw in ("if", "ifdef", "ifndef"):
+                        depth += 1
+                        simple = False  # nested conditional inside
+                    elif kw == "endif":
+                        depth -= 1
+                    elif depth == 1 and kw in ("else", "elif"):
+                        simple = False  # has an alternative branch
+                j += 1
+            if depth == 0 and simple:
+                i = j          # drop [i, j): the whole #if…#endif block
+                continue
+            # Not a simple known-0 block → leave verbatim.
+        out.append(lines[i])
+        i += 1
+    return '\n'.join(out)
+
+
+def extract_preamble(scan: "ScanResult") -> str:
+    """File-scope C that `translate` (function-by-function) otherwise drops.
+
+    cmd_translate only ever sends *functions* to the LLM, so every
+    `#define`, global variable DEFINITION (`PENTRY gpentHmgr;`), static
+    const table (`apfnCleanup[]`), and file-scope typedef is silently
+    lost — the #1 root of "cannot find value" + extern-declared-but-
+    undefined-global errors on any multi-function file. Carve raw_source
+    minus the function line spans; drop #include lines (resolved
+    separately) so the preamble translates as a clean declarations-only
+    unit.
+    """
+    lines = scan.raw_source.splitlines()
+    covered: set[int] = set()
+    for f in scan.functions:
+        for ln in range(f.line_start, f.line_end + 1):
+            covered.add(ln)
+    out: list[str] = []
+    for idx, line in enumerate(lines, 1):
+        if idx in covered:
+            continue
+        s = line.lstrip()
+        if s.startswith("#include"):
+            continue
+        out.append(line)
+    # Collapse the runs of blank lines the carve leaves behind.
+    text = "\n".join(out)
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
+
+
 def scan_file(path: Path) -> ScanResult:
     """Parse a C source file and extract structural information."""
-    source_text = path.read_text(errors='replace')
+    source_text = _strip_known_off_ifdefs(
+        _expand_split_includes(path, path.read_text(errors='replace'))
+    )
     source = source_text.encode('utf-8')
 
     parser = Parser(C_LANG)

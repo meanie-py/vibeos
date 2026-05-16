@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{conv, dos8dot3, misc, nls, sid, ustr};
+use crate::core_rs::{acl, conv, dos8dot3, misc, nls, sid, ustr};
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
 
@@ -47,6 +47,7 @@ const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 const STATUS_NOT_FOUND: i32 = 0xC000_0225u32 as i32;
 const STATUS_NOT_IMPLEMENTED: i32 = 0xC000_0002u32 as i32;
 const STATUS_INVALID_SID: i32 = 0xC000_0078u32 as i32;
+const STATUS_INVALID_INFO_CLASS: i32 = 0xC000_0003u32 as i32;
 const STATUS_INVALID_COMPUTER_NAME: i32 = 0xC000_0122u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
 const MAX_COMPUTERNAME_LENGTH: u32 = 15;
@@ -2295,4 +2296,186 @@ pub unsafe extern "system" fn RtlCreateServiceSid(
     _service_sid_length: *mut u32,
 ) -> i32 {
     STATUS_NOT_IMPLEMENTED
+}
+
+// ── Wave ACL-1: sdk/lib/rtl/acl.c structural/query/validate ───────
+// ACL/ACE are raw binary records over a caller buffer (pointer-free
+// layout — identical on every arch). Pure constants/validator live
+// in core_rs::acl; these shims do the pointer walks. No alloc.
+
+#[inline]
+unsafe fn acl_rev(p: *const u8) -> u8 {
+    *p
+}
+#[inline]
+unsafe fn acl_size(p: *const u8) -> u16 {
+    (p.add(2) as *const u16).read_unaligned()
+}
+#[inline]
+unsafe fn acl_ace_count(p: *const u8) -> u16 {
+    (p.add(4) as *const u16).read_unaligned()
+}
+#[inline]
+unsafe fn ace_size(p: *const u8) -> u16 {
+    (p.add(2) as *const u16).read_unaligned()
+}
+
+/// `NTSTATUS NTAPI RtlCreateAcl(PACL, ULONG AclSize, ULONG Revision)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateAcl(
+    acl_: *mut u8,
+    acl_sz: u32,
+    acl_revision: u32,
+) -> i32 {
+    if (acl_sz as usize) < acl::ACL_HDR {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    if acl_revision < acl::MIN_ACL_REVISION as u32
+        || acl_revision > acl::MAX_ACL_REVISION as u32
+        || acl_sz > MAXUSHORT
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *acl_ = acl_revision as u8; // AclRevision
+    *acl_.add(1) = 0; // Sbz1
+    (acl_.add(2) as *mut u16).write_unaligned(acl::round_up(acl_sz, 4) as u16);
+    (acl_.add(4) as *mut u16).write_unaligned(0); // AceCount
+    (acl_.add(6) as *mut u16).write_unaligned(0); // Sbz2
+    STATUS_SUCCESS
+}
+
+/// `BOOLEAN NTAPI RtlValidAcl(PACL)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlValidAcl(acl_: *const u8) -> u8 {
+    // Need the header to know AclSize; valid_acl re-checks size>=8.
+    let sz = acl_size(acl_) as usize;
+    let view = core::slice::from_raw_parts(acl_, sz.max(acl::ACL_HDR));
+    acl::valid_acl(&view[..sz.min(view.len())]) as u8
+}
+
+/// `BOOLEAN NTAPI RtlFirstFreeAce(PACL, PACE *FirstFreeAce)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlFirstFreeAce(
+    acl_: *mut u8,
+    first_free_ace: *mut *mut u8,
+) -> u8 {
+    *first_free_ace = core::ptr::null_mut();
+    let acl_end = acl_.add(acl_size(acl_) as usize);
+    let mut current = acl_.add(acl::ACL_HDR);
+    let count = acl_ace_count(acl_);
+    for _ in 0..count {
+        if current as usize >= acl_end as usize {
+            return 0;
+        }
+        current = current.add(ace_size(current) as usize);
+    }
+    if current as usize <= acl_end as usize {
+        *first_free_ace = current;
+    }
+    1
+}
+
+/// `NTSTATUS NTAPI RtlGetAce(PACL, ULONG AceIndex, PVOID *Ace)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetAce(
+    acl_: *mut u8,
+    ace_index: u32,
+    ace_out: *mut *mut u8,
+) -> i32 {
+    let rev = acl_rev(acl_);
+    if rev < acl::MIN_ACL_REVISION
+        || rev > acl::MAX_ACL_REVISION
+        || ace_index >= acl_ace_count(acl_) as u32
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let end = acl_.add(acl_size(acl_) as usize) as usize;
+    let mut ace = acl_.add(acl::ACL_HDR);
+    for _ in 0..ace_index {
+        if ace as usize >= end {
+            return STATUS_INVALID_PARAMETER;
+        }
+        ace = ace.add(ace_size(ace) as usize);
+    }
+    if ace as usize >= end {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *ace_out = ace;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlQueryInformationAcl(PACL, PVOID Info,
+/// ULONG Len, ACL_INFORMATION_CLASS Class)`. Class 1 =
+/// ACL_REVISION_INFORMATION {u32}, 2 = ACL_SIZE_INFORMATION
+/// {AceCount, AclBytesInUse, AclBytesFree}.
+#[no_mangle]
+pub unsafe extern "system" fn RtlQueryInformationAcl(
+    acl_: *mut u8,
+    information: *mut u8,
+    information_length: u32,
+    information_class: u32,
+) -> i32 {
+    let rev = acl_rev(acl_);
+    if rev < acl::MIN_ACL_REVISION || rev > acl::MAX_ACL_REVISION {
+        return STATUS_INVALID_PARAMETER;
+    }
+    match information_class {
+        x if x == acl::ACL_REVISION_INFORMATION => {
+            if (information_length as usize) < 4 {
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+            (information as *mut u32).write_unaligned(rev as u32);
+        }
+        x if x == acl::ACL_SIZE_INFORMATION => {
+            if (information_length as usize) < 12 {
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+            let mut free: *mut u8 = core::ptr::null_mut();
+            if RtlFirstFreeAce(acl_, &mut free) == 0 {
+                return STATUS_INVALID_PARAMETER;
+            }
+            let i = information as *mut u32;
+            i.write_unaligned(acl_ace_count(acl_) as u32); // AceCount
+            if !free.is_null() {
+                let in_use = free as usize - acl_ as usize;
+                i.add(1).write_unaligned(in_use as u32);
+                i.add(2)
+                    .write_unaligned(acl_size(acl_) as u32 - in_use as u32);
+            } else {
+                i.add(1).write_unaligned(acl_size(acl_) as u32);
+                i.add(2).write_unaligned(0);
+            }
+        }
+        _ => return STATUS_INVALID_INFO_CLASS,
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlSetInformationAcl(PACL, PVOID, ULONG,
+/// ACL_INFORMATION_CLASS)`. Only AclRevisionInformation; new
+/// revision must be strictly greater than the current.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetInformationAcl(
+    acl_: *mut u8,
+    information: *mut u8,
+    information_length: u32,
+    information_class: u32,
+) -> i32 {
+    let rev = acl_rev(acl_);
+    if rev < acl::MIN_ACL_REVISION || rev > acl::MAX_ACL_REVISION {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if information_class == acl::ACL_REVISION_INFORMATION {
+        if (information_length as usize) < 4 {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        let new_rev = (information as *const u32).read_unaligned();
+        if rev as u32 >= new_rev {
+            return STATUS_INVALID_PARAMETER;
+        }
+        *acl_ = new_rev as u8;
+        STATUS_SUCCESS
+    } else {
+        STATUS_INVALID_INFO_CLASS
+    }
 }

@@ -610,6 +610,56 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
     return code
 
 
+def fix_win32k_crate_path(code: str) -> str:
+    """Rewrite `ntkrnl_sys::win32k` → `win32k_sys::win32k`.
+
+    The win32k-internal FFI surface lives in the `win32k_sys` crate;
+    `ntkrnl_sys` has no `win32k` module (its bindgen covers ntoskrnl.h
+    only). The prompt now renders the correct crate path, but the LLM
+    may still echo `ntkrnl_sys::win32k` from habit. This rewrite is a
+    context-free, always-correct safety net: `ntkrnl_sys::win32k` does
+    not exist anywhere, so substituting it can never be wrong.
+    """
+    return re.sub(r'\bntkrnl_sys::win32k\b', 'win32k_sys::win32k', code)
+
+
+# ntkrnl_sys submodules whose glob `use` clashes with `win32k_sys::win32k`.
+# win32k-sys' bindgen comes from pch.h → ntifs.h/ndk, so it is a SUPERSET:
+# it already defines ULONG/PVOID/EPROCESS/NTSTATUS/… plus every
+# win32k-internal type. Globbing both makes every primitive `ambiguous`
+# (E0659) and silently resolves shared structs (e.g. _BASEOBJECT) to the
+# kernel variant that lacks win32k fields. Drop the clashing ntkrnl_sys
+# globs; keep `win32k_sys::win32k::*` as the single primary namespace and
+# any *named* `use ntkrnl_sys::<m>::{A, B}` (kernel APIs not in win32k
+# headers) untouched.
+_NTKRNL_CLASH_MODS = (
+    "base", "globals", "constants", "ddk", "ke", "mm", "ex", "ob", "ps",
+    "se", "io", "rtl", "interlocked", "kd", "po", "cc", "fsrtl",
+)
+_RE_NTKRNL_GLOB = re.compile(
+    r'^[ \t]*use[ \t]+ntkrnl_sys::(?:'
+    + "|".join(_NTKRNL_CLASH_MODS)
+    + r')::\*[ \t]*;[ \t]*\n',
+    re.MULTILINE,
+)
+
+
+def normalize_win32k_imports(code: str) -> str:
+    """Drop ntkrnl_sys glob imports that clash with win32k_sys::win32k.
+
+    Deterministic and win32k-only: for a win32k TU, `win32k_sys::win32k`
+    is the authoritative superset namespace. Removing the duplicate
+    ntkrnl_sys globs eliminates the whole E0659-ambiguity error class and
+    fixes wrong-crate struct resolution — the project's worst per-file
+    win32k tax. Named ntkrnl_sys imports (`use ntkrnl_sys::ddk::{...}`)
+    are preserved (the `::*` anchor in the regex won't match them).
+    """
+    code = _RE_NTKRNL_GLOB.sub("", code)
+    if "use win32k_sys::win32k::*;" not in code:
+        code = "use win32k_sys::win32k::*;\n" + code
+    return code
+
+
 def enforce_win32k_abi(code: str) -> str:
     """Overwrite the LLM's `extern "..."` on win32k exports with ground truth.
 
@@ -623,13 +673,23 @@ def enforce_win32k_abi(code: str) -> str:
     Generalization of `fix_fastcall_exports`: not name-list-from-spec but
     map-driven (stdcall *and* fastcall), keyed off the authoritative
     win32k ABI map. cdecl names are left as-is (the LLM default is
-    already cdecl-compatible). Idempotent (skips already-dual-cfg'd).
+    already cdecl-compatible).
+
+    Authoritative, not advisory: the LLM frequently emits its own
+    (mangled) `#[cfg(target_arch = "x86")]` scaffolding — e.g. a dangling
+    cfg with no item, or a single body under the wrong cfg. This pass
+    therefore (a) finds *every* definition of the target fn (balanced
+    paren/brace parsing, so fn-pointer params don't break it), (b)
+    absorbs any preceding `#[cfg(...)]` / `#[no_mangle]` / blank
+    scaffolding lines, (c) collapses them all to one canonical dual-cfg
+    block. Idempotent only on its *own exact* prior output (both the x86
+    `extern "<conv>"` and non-x86 `extern "C"` blocks already present).
     """
     from .abi_map import build_win32k_abi_map
 
     abi = build_win32k_abi_map()
 
-    # Candidate exported fn names defined in this file.
+    # Candidate exported fn names defined in this file (any extern).
     name_re = re.compile(
         r'#\[no_mangle\]\s*\n\s*pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+(\w+)\s*\(',
     )
@@ -644,55 +704,95 @@ def enforce_win32k_abi(code: str) -> str:
         if conv in ("stdcall", "fastcall"):
             names.append((n, conv))
 
-    for name, conv in names:
-        pattern = re.compile(
-            rf'^([ \t]*#\[no_mangle\]\n)?'
-            rf'([ \t]*)(pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+{re.escape(name)}\s*\([^)]*\))',
-            re.MULTILINE,
-        )
-        m = pattern.search(code)
-        if not m:
-            continue
-        fn_start = m.start()
-
-        # Idempotency: if a #[cfg(target_arch ...)] sits just above the
-        # match, this fn is already enforced — skip.
-        preceding = code[max(0, fn_start - 80):fn_start]
-        if "#[cfg(target_arch" in preceding:
-            continue
-
-        brace_pos = code.index('{', m.end())
-        depth = 1
-        pos = brace_pos + 1
-        while depth > 0 and pos < len(code):
-            if code[pos] == '{':
+    def _match(s: str, open_idx: int, opc: str, clc: str) -> int:
+        """Index just past the balancer matching s[open_idx]==opc."""
+        depth = 0
+        i = open_idx
+        while i < len(s):
+            c = s[i]
+            if c == opc:
                 depth += 1
-            elif code[pos] == '}':
+            elif c == clc:
                 depth -= 1
-            pos += 1
-        fn_end = pos
+                if depth == 0:
+                    return i + 1
+            i += 1
+        return -1
 
-        indent = m.group(2)
-        sig_match = re.search(
-            rf'fn\s+{re.escape(name)}\s*(\([^)]*\)(?:\s*->\s*\S+)?)',
-            code[m.start():brace_pos],
+    attr_line = re.compile(r'^[ \t]*(#\[[^\n]*\])?[ \t]*$')
+
+    for name, conv in names:
+        # Idempotency: already in *our* canonical dual-cfg form? skip.
+        canon_x86 = re.search(
+            rf'#\[cfg\(target_arch = "x86"\)\]\s*\n\s*#\[no_mangle\]\s*\n\s*'
+            rf'pub unsafe extern "{re.escape(conv)}" fn {re.escape(name)}\b',
+            code,
         )
-        if not sig_match:
+        canon_other = re.search(
+            rf'#\[cfg\(not\(target_arch = "x86"\)\)\]\s*\n\s*#\[no_mangle\]\s*\n\s*'
+            rf'pub unsafe extern "C" fn {re.escape(name)}\b',
+            code,
+        )
+        if canon_x86 and canon_other:
             continue
-        params_and_ret = sig_match.group(1)
-        body = code[brace_pos:fn_end]
 
-        x86_block = (
+        head_re = re.compile(
+            rf'pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+{re.escape(name)}\s*\(',
+        )
+        spans = []           # (span_start, body_end)
+        canonical = None     # (params, ret_suffix, body, indent)
+        for hm in head_re.finditer(code):
+            paren_open = code.index('(', hm.end() - 1)
+            paren_end = _match(code, paren_open, '(', ')')
+            if paren_end < 0:
+                continue
+            try:
+                brace_open = code.index('{', paren_end)
+            except ValueError:
+                continue
+            body_end = _match(code, brace_open, '{', '}')
+            if body_end < 0:
+                continue
+            params = code[paren_open:paren_end]
+            ret = code[paren_end:brace_open].strip()
+            ret_suffix = f' {ret}' if ret else ''
+            body = code[brace_open:body_end]
+
+            line_start = code.rfind('\n', 0, hm.start()) + 1
+            indent = code[line_start:hm.start()]
+            # Absorb contiguous preceding attribute / blank lines (the
+            # LLM's mangled cfg scaffolding).
+            span_start = line_start
+            while span_start > 0:
+                prev_nl = span_start - 1                       # the '\n'
+                prev_start = code.rfind('\n', 0, prev_nl) + 1
+                prev_line = code[prev_start:prev_nl]
+                if attr_line.match(prev_line):
+                    span_start = prev_start
+                else:
+                    break
+
+            spans.append((span_start, body_end))
+            if canonical is None:
+                canonical = (params, ret_suffix, body, indent)
+
+        if not spans or canonical is None:
+            continue
+
+        params, ret_suffix, body, indent = canonical
+        block = (
             f'{indent}#[cfg(target_arch = "x86")]\n'
             f'{indent}#[no_mangle]\n'
-            f'{indent}pub unsafe extern "{conv}" fn {name}{params_and_ret} {body}'
-        )
-        other_block = (
-            f'\n\n{indent}#[cfg(not(target_arch = "x86"))]\n'
+            f'{indent}pub unsafe extern "{conv}" fn {name}{params}{ret_suffix} {body}\n\n'
+            f'{indent}#[cfg(not(target_arch = "x86"))]\n'
             f'{indent}#[no_mangle]\n'
-            f'{indent}pub unsafe extern "C" fn {name}{params_and_ret} {body}'
+            f'{indent}pub unsafe extern "C" fn {name}{params}{ret_suffix} {body}'
         )
-        code = code[:fn_start] + x86_block + other_block + code[fn_end:]
+        spans.sort()
+        first_start = spans[0][0]
+        for s, e in sorted(spans, reverse=True):
+            code = code[:s] + code[e:]
+        code = code[:first_start] + block + code[first_start:]
 
     return code
 
@@ -806,6 +906,54 @@ def _split_extern_decls(inner_lines: list[str]) -> list[tuple[str, str]]:
     if current:
         out.append(('decl', current))
     return out
+
+
+def fix_extern_vs_local_static_dups(code: str) -> str:
+    """Remove extern `static` decls for globals also DEFINED locally.
+
+    Since cmd_translate added the preamble step, file-scope globals get a
+    real local definition (`pub static mut gpentHmgr: PENTRY = ...;`),
+    but the per-function chunks still extern-declare the same globals
+    (`extern "C" { static mut gpentHmgr: PENTRY; }`) → E0428 on every
+    multi-function file with shared TU globals. Drop the extern decl in
+    favour of the definition (the static analog of
+    fix_extern_vs_local_dups).
+    """
+    # Locally-defined static names (have an `=` initializer, top-level).
+    local_static_names = set()
+    for m in re.finditer(
+        r'^(?:[ \t]*#\[no_mangle\][ \t]*\n)?[ \t]*pub\s+static\s+(?:mut\s+)?'
+        r'(\w+)\s*:[^;=]+=',
+        code, re.MULTILINE,
+    ):
+        local_static_names.add(m.group(1))
+
+    if not local_static_names:
+        return code
+
+    def clean_block(match: re.Match) -> str:
+        block = match.group(0)
+        header_m = re.match(r'(extern\s+"[^"]+"\s*\{)', block)
+        inner = re.search(r'\{(.*)\}', block, re.DOTALL)
+        if not header_m or not inner:
+            return block
+        entries = _split_extern_decls(inner.group(1).splitlines())
+        filtered: list[tuple[str, str]] = []
+        for kind, text in entries:
+            if kind == 'decl':
+                sm = re.match(r'static\s+(?:mut\s+)?(\w+)\s*:', text)
+                if sm and sm.group(1) in local_static_names:
+                    continue  # defined locally — drop the extern decl
+            filtered.append((kind, text))
+        if not any(k == 'decl' for k, _ in filtered):
+            return ""
+        if len(filtered) == len(entries):
+            return block
+        return header_m.group(1) + "\n" + "".join(
+            f"    {t}\n" for _, t in filtered) + "}"
+
+    return re.sub(r'extern\s+"[^"]+"\s*\{[^}]*\}', clean_block, code,
+                  flags=re.DOTALL)
 
 
 def fix_extern_vs_local_dups(code: str) -> str:
@@ -924,25 +1072,45 @@ def fix_duplicate_fn_defs(code: str) -> str:
         re.MULTILINE,
     )
 
-    # First pass: find all function names and their start positions
-    fn_positions: dict[str, list[int]] = {}
-    for m in fn_pattern.finditer(code):
-        name = m.group(1)
-        if name not in fn_positions:
-            fn_positions[name] = []
-        fn_positions[name].append(m.start())
+    # First pass: find all function names and their start positions.
+    # Key by (name, cfg-guard): two definitions under *complementary*
+    # cfg guards — `#[cfg(target_arch = "x86")]` vs
+    # `#[cfg(not(target_arch = "x86"))]` — are NOT duplicates; they are
+    # the mutually-exclusive per-arch builds that `enforce_win32k_abi`
+    # and `fix_fastcall_exports` deliberately emit. Deduping them
+    # collapses the dual-cfg ABI block and silently reintroduces the
+    # #1 i386 crash cause. Only same-(name, guard) pairs are real dups.
+    def _cfg_guard_above(pos: int) -> str:
+        prev_end = code.rfind('\n', 0, pos)
+        if prev_end <= 0:
+            return ''
+        prev_start = code.rfind('\n', 0, prev_end) + 1
+        prev_line = code[prev_start:prev_end].strip()
+        return prev_line if prev_line.startswith('#[cfg(') else ''
 
-    # Find functions defined more than once
-    dups = {name: positions for name, positions in fn_positions.items()
+    fn_positions: dict[tuple[str, str], list[int]] = {}
+    for m in fn_pattern.finditer(code):
+        key = (m.group(1), _cfg_guard_above(m.start()))
+        fn_positions.setdefault(key, []).append(m.start())
+
+    # Find functions defined more than once under the *same* guard.
+    dups = {key: positions for key, positions in fn_positions.items()
             if len(positions) > 1}
     if not dups:
         return code
 
-    # Second pass: remove all but the last occurrence of each dup
+    # Second pass: remove all but the last occurrence of each dup.
     to_remove = []
-    for name, positions in dups.items():
+    for key, positions in dups.items():
         for pos in positions[:-1]:
             fn_start = pos
+            # Absorb an immediately-preceding `#[cfg(...)]` line so a
+            # real-dup removal doesn't leave a dangling cfg attribute.
+            prev_end = code.rfind('\n', 0, pos)
+            if prev_end > 0:
+                prev_start = code.rfind('\n', 0, prev_end) + 1
+                if code[prev_start:prev_end].strip().startswith('#[cfg('):
+                    fn_start = prev_start
 
             # Find the opening brace after the fn signature
             try:
@@ -1246,11 +1414,14 @@ def postprocess(
     # the LLM's extern "..." with the win32k-sys/spec map (the project's
     # #1 i386 crash cause, taken out of the LLM's hands entirely).
     if target_name == "win32k":
+        code = fix_win32k_crate_path(code)
+        code = normalize_win32k_imports(code)
         code = enforce_win32k_abi(code)
     if globals:
         code = fix_global_exports(code, globals)
     code = fix_self_imports(code)
     code = fix_extern_vs_local_dups(code)
+    code = fix_extern_vs_local_static_dups(code)
     code = fix_duplicate_fn_defs(code)
     code = fix_extern_const(code)
     code = fix_variadic_extern_system(code)

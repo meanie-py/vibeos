@@ -1,0 +1,16 @@
+[package]
+name = "win32k-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+win32k-sys = { path = "../win32k-sys" }
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+ntprintf = { path = "../ntprintf" }
+ntprintf_w = { path = "../ntprintf_w" }
+
+[features]
+default = []
