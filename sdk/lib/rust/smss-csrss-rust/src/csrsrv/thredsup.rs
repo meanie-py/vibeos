@@ -8,7 +8,7 @@ fn CONTAINING_RECORD<T>(address: *const u8, offset: usize) -> *mut T {
 }
 
 fn CsrHashThread(t: HANDLE) -> usize {
-    (t as usize) % NUMBER_THREAD_HASH_BUCKETS
+    (t as usize) % (NUMBER_THREAD_HASH_BUCKETS as usize) as usize
 }
 
 #[no_mangle]
@@ -107,7 +107,7 @@ pub unsafe extern "system" fn CsrLocateThreadByClientId(
     let mut NextEntry = (*ListHead).Flink;
 
     while NextEntry != ListHead {
-        let FoundThread = CONTAINING_RECORD(
+        let FoundThread = CONTAINING_RECORD::<_CSR_THREAD>(
             NextEntry as *const u8,
             core::mem::offset_of!(CSR_THREAD, HashLinks),
         );
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn CsrLocateThreadInProcess(
     let mut NextEntry = (*ListHead).Flink;
 
     while NextEntry != ListHead {
-        let FoundThread = CONTAINING_RECORD(
+        let FoundThread = CONTAINING_RECORD::<_CSR_THREAD>(
             NextEntry as *const u8,
             core::mem::offset_of!(CSR_THREAD, Link),
         );
@@ -358,7 +358,7 @@ pub unsafe extern "system" fn CsrCreateThread(
         CsrAcquireProcessLock();
 
         let mut CurrentProcess: PCSR_PROCESS = core::ptr::null_mut();
-        CurrentThread = CsrLocateThreadByClientId(&mut CurrentProcess, &CurrentCid);
+        CurrentThread = CsrLocateThreadByClientId(&mut CurrentProcess, &mut CurrentCid);
 
         if CurrentThread.is_null() {
             CsrReleaseProcessLock();
@@ -419,12 +419,12 @@ pub unsafe extern "system" fn CsrDereferenceThread(CsrThread: PCSR_THREAD) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrDestroyThread(Cid: PCLIENT_ID) -> NTSTATUS {
-    let ClientId = *Cid;
+    let mut ClientId = *Cid;
 
     CsrAcquireProcessLock();
 
     let mut CsrProcess: PCSR_PROCESS = core::ptr::null_mut();
-    let CsrThread = CsrLocateThreadByClientId(&mut CsrProcess, &ClientId);
+    let CsrThread = CsrLocateThreadByClientId(&mut CsrProcess, &mut ClientId);
 
     if CsrThread.is_null() || ((*CsrThread).Flags & CsrThreadTerminated) != 0 {
         CsrReleaseProcessLock();
@@ -476,7 +476,7 @@ pub unsafe extern "system" fn CsrExecServerThread(
         0,
         0,
         0,
-        ThreadHandler,
+        core::mem::transmute(ThreadHandler as usize),
         core::ptr::null_mut(),
         &mut hThread,
         &mut ClientId,
@@ -520,7 +520,7 @@ pub unsafe extern "system" fn CsrLockThreadByClientId(
     let mut CurrentThread: PCSR_THREAD = core::ptr::null_mut();
 
     while NextEntry != ListHead {
-        CurrentThread = CONTAINING_RECORD(
+        CurrentThread = CONTAINING_RECORD::<_CSR_THREAD>(
             NextEntry as *const u8,
             core::mem::offset_of!(CSR_THREAD, HashLinks),
         );
@@ -589,7 +589,7 @@ pub unsafe extern "system" fn CsrUnlockThread(CsrThread: PCSR_THREAD) -> NTSTATU
 // #define NDEBUG
 // #include <debug.h>
 //
-// #define CsrHashThread(t) (HandleToUlong(t) % NUMBER_THREAD_HASH_BUCKETS)
+// #define CsrHashThread(t) (HandleToUlong(t) % (NUMBER_THREAD_HASH_BUCKETS as usize))
 //
 // /* GLOBALS ********************************************************************/
 //
@@ -775,7 +775,7 @@ pub unsafe extern "system" fn CsrUnlockThread(CsrThread: PCSR_THREAD) -> NTSTATU
 //     while (NextEntry != ListHead)
 //     {
 //         /* Get the thread */
-//         FoundThread = CONTAINING_RECORD(NextEntry, CSR_THREAD, HashLinks);
+//         FoundThread = CONTAINING_RECORD::<_CSR_THREAD>(NextEntry, CSR_THREAD, HashLinks);
 //
 //         /* Move to the next entry */
 //         NextEntry = NextEntry->Flink;
@@ -837,7 +837,7 @@ pub unsafe extern "system" fn CsrUnlockThread(CsrThread: PCSR_THREAD) -> NTSTATU
 //     while (NextEntry != ListHead)
 //     {
 //         /* Get Thread Entry */
-//         FoundThread = CONTAINING_RECORD(NextEntry, CSR_THREAD, Link);
+//         FoundThread = CONTAINING_RECORD::<_CSR_THREAD>(NextEntry, CSR_THREAD, Link);
 //
 //         /* Check for TID Match */
 //         if (FoundThread->ClientId.UniqueThread == Cid->UniqueThread) break;
@@ -1486,7 +1486,7 @@ pub unsafe extern "system" fn CsrUnlockThread(CsrThread: PCSR_THREAD) -> NTSTATU
 //                                  0,
 //                                  0,
 //                                  0,
-//                                  ThreadHandler,
+//                                  core::mem::transmute(ThreadHandler as usize),
 //                                  NULL,
 //                                  &hThread,
 //                                  &ClientId);
@@ -1562,7 +1562,7 @@ pub unsafe extern "system" fn CsrUnlockThread(CsrThread: PCSR_THREAD) -> NTSTATU
 //     while (NextEntry != &CsrThreadHashTable[i])
 //     {
 //         /* Get the Thread */
-//         CurrentThread = CONTAINING_RECORD(NextEntry, CSR_THREAD, HashLinks);
+//         CurrentThread = CONTAINING_RECORD::<_CSR_THREAD>(NextEntry, CSR_THREAD, HashLinks);
 //
 //         /* Check for TID Match */
 //         if ((CurrentThread->ClientId.UniqueThread == Tid) &&

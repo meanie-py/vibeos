@@ -32,9 +32,10 @@ unsafe fn CsrInitializeWait(
     (*WaitBlock).WaitList.Flink = core::ptr::null_mut();
     (*WaitBlock).WaitList.Blink = core::ptr::null_mut();
 
-    RtlCopyMemory(
-        core::ptr::addr_of_mut!((*WaitBlock).WaitApiMessage) as PVOID,
-        WaitApiMessage as PVOID,
+    // RtlCopyMemory is a memmove macro, not an export.
+    core::ptr::copy(
+        WaitApiMessage as *const u8,
+        core::ptr::addr_of_mut!((*WaitBlock).WaitApiMessage) as *mut u8,
         (*WaitApiMessage).Header.u1.s1.TotalLength as usize,
     );
 

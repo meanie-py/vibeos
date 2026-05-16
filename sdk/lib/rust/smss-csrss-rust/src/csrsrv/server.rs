@@ -10,35 +10,26 @@ pub static mut CsrSrvSharedStaticServerData: *mut PVOID = core::ptr::null_mut();
 static mut CsrSrvSharedSectionSize: ULONG = 0;
 static mut CsrSrvSharedSection: HANDLE = core::ptr::null_mut();
 
-#[cfg(target_env = "msvc")]
-#[cfg(not(all(target_os = "windows", target_pointer_width = "64")))]
-static CsrServerApiDispatchTable: [PCSR_API_ROUTINE; 5] = [
-    Some(CsrSrvClientConnect),
-    Some(CsrSrvUnusedFunction),
-    Some(CsrSrvUnusedFunction),
-    #[cfg(not(feature = "ws03"))]
-    Some(CsrSrvIdentifyAlertableThread),
-    #[cfg(feature = "ws03")]
-    Some(CsrSrvUnusedFunction),
-    #[cfg(not(feature = "ws03"))]
-    Some(CsrSrvSetPriorityClass),
-    #[cfg(feature = "ws03")]
-    Some(CsrSrvUnusedFunction),
-];
+// (LLM emitted bogus `#[cfg(target_env="msvc")]` here — it gated the
+// static OUT on the gnu targets → "cannot find value" at use sites.
+// Also `#[cfg]` is not valid on array-literal elements. `ws03`
+// feature is undefined, so this is the not-ws03 variant.)
+// PCSR_API_ROUTINE is Option<extern "stdcall" fn>; these fns are
+// extern "system" (== stdcall on i386, identical ABI) — Rust's type
+// system distinguishes the ABI string, so const-transmute each.
+// `fn as usize` is forbidden in const-eval; transmute the fn pointer
+// directly (system-ABI fn-ptr -> stdcall-ABI Option<fn-ptr>; same
+// size + ABI on i386, const-safe — no ptr->int cast).
+type SrvFn = unsafe extern "system" fn(PCSR_API_MESSAGE, *mut CSR_REPLY_CODE) -> NTSTATUS;
+static CsrServerApiDispatchTable: [PCSR_API_ROUTINE; 5] = unsafe { [
+    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvClientConnect),
+    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvUnusedFunction),
+    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvUnusedFunction),
+    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvIdentifyAlertableThread),
+    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvSetPriorityClass),
+] };
 
-static CsrServerApiServerValidTable: [BOOLEAN; 5] = [
-    1,
-    0,
-    0,
-    #[cfg(not(feature = "ws03"))]
-    1,
-    #[cfg(feature = "ws03")]
-    0,
-    #[cfg(not(feature = "ws03"))]
-    1,
-    #[cfg(feature = "ws03")]
-    0,
-];
+static CsrServerApiServerValidTable: [BOOLEAN; 5] = [1, 0, 0, 1, 1];
 
 #[cfg(feature = "csr_dbg")]
 static CSR_SERVER_API_NAME_TABLE: [*const i8; 5] = [
@@ -83,7 +74,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     let Size: ULONG;
     let ServerDll: PCSR_SERVER_DLL;
     let mut EntryPointString: ANSI_STRING = core::mem::zeroed();
-    let ServerDllInitProcedure: PCSR_SERVER_DLL_INIT_CALLBACK;
+    let mut ServerDllInitProcedure: PCSR_SERVER_DLL_INIT_CALLBACK = None;
     let mut Response: ULONG = 0;
 
     if ServerId >= CSR_SERVER_DLL_MAX {
@@ -95,7 +86,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     }
 
     RtlInitAnsiString(&mut DllName, DllString);
-    Status = RtlAnsiStringToUnicodeString(&mut TempString, &DllName, 1);
+    Status = RtlAnsiStringToUnicodeString(&mut TempString, &mut DllName, 1);
     if Status < 0 {
         return Status;
     }
@@ -120,7 +111,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
                 Status,
                 2,
                 3,
-                Parameters.as_ptr(),
+                Parameters.as_mut_ptr(),
                 OptionOk,
                 &mut Response,
             );
@@ -169,7 +160,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
 
         Status = LdrGetProcedureAddress(
             hServerDll,
-            &EntryPointString,
+            &mut EntryPointString,
             0,
             &mut ServerDllInitProcedure as *mut _ as *mut PVOID,
         );
@@ -179,7 +170,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
             &mut EntryPointString,
             b"CsrServerDllInitialization\0".as_ptr() as *mut i8,
         );
-        ServerDllInitProcedure = Some(CsrServerDllInitialization);
+        ServerDllInitProcedure = core::mem::transmute(CsrServerDllInitialization as usize);
         Status = STATUS_SUCCESS;
     }
 
@@ -235,7 +226,7 @@ pub unsafe extern "system" fn CsrSrvClientConnect(
 
     if CsrValidateMessageBuffer(
         ApiMessage,
-        core::ptr::addr_of_mut!(ClientConnect.ConnectionInfo) as *mut *mut PVOID,
+        core::ptr::addr_of_mut!(ClientConnect.ConnectionInfo) as *mut PVOID,
         ClientConnect.ConnectionInfoSize,
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
@@ -266,7 +257,7 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(
     let mut Size: ULONG = 0;
     let mut Status: NTSTATUS;
     let mut SectionSize: LARGE_INTEGER = core::mem::zeroed();
-    let mut ViewSize: usize = 0;
+    let mut ViewSize: SIZE_T = 0;
     let Peb = NtCurrentPeb();
 
     if ParameterValue.is_null() {
@@ -333,7 +324,7 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(
         HEAP_ZERO_MEMORY | HEAP_CLASS_7,
         CsrSrvSharedSectionHeap,
         (CsrSrvSharedSectionSize as usize).try_into().unwrap(),
-        PAGE_SIZE,
+        PAGE_SIZE as SIZE_T,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     )
@@ -366,7 +357,7 @@ pub unsafe extern "system" fn CsrSrvAttachSharedSection(
     ConnectInfo: PCSR_API_CONNECTINFO,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut ViewSize: usize = 0;
+    let mut ViewSize: SIZE_T = 0;
 
     if !CsrProcess.is_null() {
         Status = NtMapViewOfSection(
@@ -388,7 +379,7 @@ pub unsafe extern "system" fn CsrSrvAttachSharedSection(
 
     (*ConnectInfo).SharedSectionBase = CsrSrvSharedSectionBase;
     (*ConnectInfo).SharedSectionHeap = CsrSrvSharedSectionHeap;
-    (*ConnectInfo).SharedStaticServerData = CsrSrvSharedStaticServerData;
+    (*ConnectInfo).SharedStaticServerData = CsrSrvSharedStaticServerData as PVOID;
 
     STATUS_SUCCESS
 }
@@ -450,7 +441,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
         && (Status >= 0)
         && (DebuggerInfo.KernelDebuggerEnabled != 0)
     {
-        Result = RtlUnhandledExceptionFilter(ExceptionInfo);
+        Result = RtlUnhandledExceptionFilter(ExceptionInfo) as u32;
         if Result != EXCEPTION_CONTINUE_EXECUTION.try_into().unwrap() {
             Status = RtlAdjustPrivilege(SE_SHUTDOWN_PRIVILEGE, 1, 1, &mut OldValue);
 
@@ -484,7 +475,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
                 STATUS_SYSTEM_PROCESS_TERMINATED,
                 4,
                 1,
-                ErrorParameters.as_ptr(),
+                ErrorParameters.as_mut_ptr(),
                 OptionShutdownSystem,
                 &mut Response,
             );
@@ -709,12 +700,12 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
 //     if (hServerDll)
 //     {
 //         /* Initialize a string for the entrypoint, or use the default */
-//         RtlInitAnsiString(&EntryPointString,
+//         RtlInitAnsiString(&mut EntryPointString,
 //                           EntryPoint ? EntryPoint : "ServerDllInitialization");
 //
 //         /* Get a pointer to it */
 //         Status = LdrGetProcedureAddress(hServerDll,
-//                                         &EntryPointString,
+//                                         &mut EntryPointString,
 //                                         0,
 //                                         (PVOID)&ServerDllInitProcedure);
 //     }
@@ -722,7 +713,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
 //     {
 //         /* No handle, so we are loading ourselves */
 // #ifdef CSR_DBG
-//         RtlInitAnsiString(&EntryPointString, "CsrServerDllInitialization");
+//         RtlInitAnsiString(&mut EntryPointString, "CsrServerDllInitialization");
 // #endif
 //         ServerDllInitProcedure = CsrServerDllInitialization;
 //         Status = STATUS_SUCCESS;
@@ -741,7 +732,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
 //             Status = _SEH2_GetExceptionCode();
 // #ifdef CSR_DBG
 //             DPRINT1("CSRSS: Exception 0x%lx while calling Server DLL entrypoint %Z!%Z()\n",
-//                     Status, &DllName, &EntryPointString);
+//                     Status, &DllName, &mut EntryPointString);
 // #endif
 //         }
 //         _SEH2_END;
@@ -1169,7 +1160,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
 //         (DebuggerInfo.KernelDebuggerEnabled))
 //     {
 //         /* Call the Unhandled Exception Filter */
-//         Result = RtlUnhandledExceptionFilter(ExceptionInfo);
+//         Result = RtlUnhandledExceptionFilter(ExceptionInfo) as u32;
 //         if (Result != EXCEPTION_CONTINUE_EXECUTION)
 //         {
 //             /* We're going to raise an error. Get Shutdown Privilege first */

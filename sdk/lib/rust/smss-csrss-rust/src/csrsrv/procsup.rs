@@ -564,9 +564,10 @@ pub unsafe extern "system" fn CsrShutdownProcesses(CallerLuid: *mut LUID, Flags:
         }
         CsrLockedReferenceProcess(CsrProcess);
         let mut FirstTry = true;
-        let mut Result: u32;
+        let mut Result: u32 = 0;
+        let mut i: ULONG = 0;
         loop {
-            let mut i = 0;
+            i = 0;
             while i < CSR_SERVER_DLL_MAX {
                 let ServerDll = *(CsrLoadedServerDll.as_mut_ptr().add(i as usize));
                 if !ServerDll.is_null() {

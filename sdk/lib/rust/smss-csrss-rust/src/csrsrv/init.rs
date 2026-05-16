@@ -69,7 +69,7 @@ unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {
         return Status;
     }
 
-    Dacl = (ProcSd as usize + SECURITY_DESCRIPTOR_MIN_LENGTH) as PACL;
+    Dacl = (ProcSd as usize + SECURITY_DESCRIPTOR_MIN_LENGTH as usize) as PACL;
 
     Status = RtlCreateSecurityDescriptor(ProcSd, SECURITY_DESCRIPTOR_REVISION);
     if Status < 0 {
@@ -125,12 +125,12 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
     let mut AdminSid: PSID = core::ptr::null_mut();
     let mut SystemSid: PSID = core::ptr::null_mut();
     let mut KeyValueBuffer: [u8; 0x40] = [0; 0x40];
-    let KeyValuePartialInfo: PKEY_VALUE_PARTIAL_INFORMATION;
+    let KeyValuePartialInfoLocal: PKEY_VALUE_PARTIAL_INFORMATION;
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
-    let mut ProtectionMode: ULONG = 0;
+    let mut ProtectionModeLocal: ULONG = 0;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Dacl: PACL;
-    let mut Ace: PACCESS_ALLOWED_ACE;
+    let mut Ace: PACCESS_ALLOWED_ACE = core::ptr::null_mut();
     let mut hKey: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
     let mut ResultLength: ULONG = 0;
@@ -206,16 +206,16 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
             &mut ResultLength,
         );
 
-        KeyValuePartialInfo = KeyValueBuffer.as_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
-        if Status >= 0 && (*KeyValuePartialInfo).Type == REG_DWORD &&
-            *((*KeyValuePartialInfo).Data.as_ptr() as *const ULONG) != 0 {
-            ProtectionMode = *((*KeyValuePartialInfo).Data.as_ptr() as *const ULONG);
+        KeyValuePartialInfoLocal = KeyValueBuffer.as_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
+        if Status >= 0 && (*KeyValuePartialInfoLocal).Type == REG_DWORD &&
+            *((*KeyValuePartialInfoLocal).Data.as_ptr() as *const ULONG) != 0 {
+            ProtectionModeLocal = *((*KeyValuePartialInfoLocal).Data.as_ptr() as *const ULONG);
         }
 
         NtClose(hKey);
     }
 
-    if (ProtectionMode & 3) != 0 {
+    if (ProtectionModeLocal & 3) != 0 {
         SidLength = RtlLengthSid(CreatorSid) + RtlLengthSid(SystemSid) + RtlLengthSid(AdminSid);
         AclLength = core::mem::size_of::<ACL>() as u32 + 3 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32 + SidLength;
 
@@ -365,7 +365,7 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
         return Status;
     }
 
-    Status = GetDosDevicesProtection(&mut DosDevicesSd);
+    Status = GetDosDevicesProtection(&mut DosDevicesSd as *mut _ as PVOID);
     if Status < 0 {
         return Status;
     }
@@ -393,7 +393,7 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
 
     Status = NtCreateDirectoryObject(&mut SessionObjectDirectory, DIRECTORY_ALL_ACCESS, &mut ObjectAttributes);
     if Status < 0 {
-        FreeDosDevicesProtection(&mut DosDevicesSd);
+        FreeDosDevicesProtection(&mut DosDevicesSd as *mut _ as PVOID);
         return Status;
     }
 
@@ -407,7 +407,7 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     Status = NtCreateDirectoryObject(&mut DosDevicesDirectory, DIRECTORY_ALL_ACCESS, &mut ObjectAttributes);
-    FreeDosDevicesProtection(&mut DosDevicesSd);
+    FreeDosDevicesProtection(&mut DosDevicesSd as *mut _ as PVOID);
     Status
 }
 
@@ -646,7 +646,7 @@ pub unsafe extern "system" fn CsrCreateLocalSystemSD(LocalSystemSd: *mut PSECURI
 
     SystemSd = RtlAllocateHeap(CsrHeap, 0, ((SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize).try_into().unwrap()) as PSECURITY_DESCRIPTOR;
 
-    Dacl = (SystemSd as usize + SECURITY_DESCRIPTOR_MIN_LENGTH) as PACL;
+    Dacl = (SystemSd as usize + SECURITY_DESCRIPTOR_MIN_LENGTH as usize) as PACL;
 
     Status = RtlCreateSecurityDescriptor(SystemSd, SECURITY_DESCRIPTOR_REVISION);
     if Status < 0 {
@@ -750,7 +750,7 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
             0,
             0,
             0,
-            CsrSbApiRequestThread as PVOID,
+            core::mem::transmute(CsrSbApiRequestThread as usize),
             core::ptr::null_mut(),
             &mut hRequestThread,
             &mut ClientId,
@@ -1007,7 +1007,7 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //     }
 //
 //     /* Set the pointer to the DACL */
-//     Dacl = (PACL)((ULONG_PTR)ProcSd + SECURITY_DESCRIPTOR_MIN_LENGTH);
+//     Dacl = (PACL)((ULONG_PTR)ProcSd + SECURITY_DESCRIPTOR_MIN_LENGTH as usize);
 //
 //     /* Now create the SD itself */
 //     Status = RtlCreateSecurityDescriptor(ProcSd, SECURITY_DESCRIPTOR_REVISION);
@@ -1108,9 +1108,9 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //     SID_IDENTIFIER_AUTHORITY NtSidAuthority = {SECURITY_NT_AUTHORITY};
 //     PSID WorldSid, CreatorSid, AdminSid, SystemSid;
 //     UCHAR KeyValueBuffer[0x40];
-//     PKEY_VALUE_PARTIAL_INFORMATION KeyValuePartialInfo;
+//     PKEY_VALUE_PARTIAL_INFORMATION KeyValuePartialInfoLocal;
 //     UNICODE_STRING KeyName;
-//     ULONG ProtectionMode = 0;
+//     ULONG ProtectionModeLocal = 0;
 //     OBJECT_ATTRIBUTES ObjectAttributes;
 //     PACL Dacl;
 //     PACCESS_ALLOWED_ACE Ace;
@@ -1162,7 +1162,7 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //     if (NT_SUCCESS(Status))
 //     {
 //         /* Read the key value */
-//         RtlInitUnicodeString(&KeyName, L"ProtectionMode");
+//         RtlInitUnicodeString(&KeyName, L"ProtectionModeLocal");
 //         Status = NtQueryValueKey(hKey,
 //                                  &KeyName,
 //                                  KeyValuePartialInformation,
@@ -1171,12 +1171,12 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //                                  &ResultLength);
 //
 //         /* Make sure it's what we expect it to be */
-//         KeyValuePartialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)KeyValueBuffer;
-//         if ((NT_SUCCESS(Status)) && (KeyValuePartialInfo->Type == REG_DWORD) &&
-//             (*(PULONG)KeyValuePartialInfo->Data))
+//         KeyValuePartialInfoLocal = (PKEY_VALUE_PARTIAL_INFORMATION)KeyValueBuffer;
+//         if ((NT_SUCCESS(Status)) && (KeyValuePartialInfoLocal->Type == REG_DWORD) &&
+//             (*(PULONG)KeyValuePartialInfoLocal->Data))
 //         {
 //             /* Save the Protection Mode */
-//             ProtectionMode = *(PULONG)KeyValuePartialInfo->Data;
+//             ProtectionModeLocal = *(PULONG)KeyValuePartialInfoLocal->Data;
 //         }
 //
 //         /* Close the handle */
@@ -1184,7 +1184,7 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //     }
 //
 //     /* Check the Protection Mode */
-//     if (ProtectionMode & 3)
+//     if (ProtectionModeLocal & 3)
 //     {
 //         /* Calculate SID Lengths */
 //         SidLength = RtlLengthSid(CreatorSid) + RtlLengthSid(SystemSid) +
@@ -1761,7 +1761,7 @@ pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD
 //     SystemSd = RtlAllocateHeap(CsrHeap, 0, SECURITY_DESCRIPTOR_MIN_LENGTH + Length);
 //
 //     /* Set the pointer to the DACL */
-//     Dacl = (PACL)((ULONG_PTR)SystemSd + SECURITY_DESCRIPTOR_MIN_LENGTH);
+//     Dacl = (PACL)((ULONG_PTR)SystemSd + SECURITY_DESCRIPTOR_MIN_LENGTH as usize);
 //
 //     /* Now create the SD itself */
 //     Status = RtlCreateSecurityDescriptor(SystemSd, SECURITY_DESCRIPTOR_REVISION);

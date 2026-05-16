@@ -11,9 +11,9 @@ pub unsafe extern "system" fn CsrCallServerFromServer(
     ReceiveMsg: PCSR_API_MESSAGE,
     ReplyMsg: PCSR_API_MESSAGE,
 ) -> NTSTATUS {
-    let ServerId: ULONG;
+    let mut ServerId: ULONG = 0;
     let mut ServerDll: PCSR_SERVER_DLL = core::ptr::null_mut();
-    let ApiId: ULONG;
+    let mut ApiId: ULONG = 0;
     let mut ReplyCode: CSR_REPLY_CODE = CsrReplyImmediately;
 
     ServerId = (((*ReceiveMsg).__bindgen_anon_1.__bindgen_anon_1.ApiNumber) >> 16) & 0xFFFF;
@@ -130,7 +130,7 @@ unsafe fn CsrpCheckRequestThreads() -> NTSTATUS {
                 0,
                 0,
                 0,
-                Some(CsrApiRequestThread),
+                core::mem::transmute(CsrApiRequestThread as usize),
                 core::ptr::null_mut(),
                 &raw mut hThread,
                 &raw mut ClientId,
@@ -163,18 +163,18 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
     let CurrentThread: PCSR_THREAD;
     let mut CsrThread: PCSR_THREAD;
     let mut Status: NTSTATUS;
-    let mut ReplyCode: CSR_REPLY_CODE;
+    let mut ReplyCode: CSR_REPLY_CODE = CsrReplyImmediately;
     let mut ReplyMsg: PCSR_API_MESSAGE;
     let mut ReceiveMsg: CSR_API_MESSAGE = core::mem::zeroed();
-    let mut CsrProcess: PCSR_PROCESS;
+    let mut CsrProcess: PCSR_PROCESS = core::ptr::null_mut();
     let mut HardErrorMsg: PHARDERROR_MSG;
-    let mut PortContext: PVOID;
+    let mut PortContext: PVOID = core::ptr::null_mut();
     let mut ServerDll: PCSR_SERVER_DLL;
     let mut ClientDiedMsg: PCLIENT_DIED_MSG;
     let mut DebugMessage: PDBGKM_MSG;
-    let ServerId: ULONG;
-    let ApiId: ULONG;
-    let MessageType: ULONG;
+    let mut ServerId: ULONG = 0;
+    let mut ApiId: ULONG = 0;
+    let mut MessageType: ULONG = 0;
     let mut i: ULONG;
     let mut ReplyPort: HANDLE;
 
@@ -195,7 +195,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         }
     }
 
-    CurrentThread = (*Teb).CsrClientThread;
+    CurrentThread = (*Teb).CsrClientThread as PCSR_THREAD;
 
     if !Parameter.is_null() {
         Status = NtSetEvent(Parameter as HANDLE, core::ptr::null_mut());
@@ -342,7 +342,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
 
                     if (*CsrProcess).ThreadCount == 1 {
                         CsrDestroyProcess(
-                            &raw mut (*CsrThread).__bindgen_anon_1.ClientId,
+                            &raw mut (*CsrThread).ClientId,
                             0,
                         );
                     }
@@ -447,7 +447,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         }
 
         CsrpCheckRequestThreads();
-        (*Teb).CsrClientThread = CsrThread;
+        (*Teb).CsrClientThread = CsrThread as PVOID;
         ReplyCode = CsrReplyImmediately;
 
         let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
@@ -457,7 +457,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         }
 
         InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
-        (*Teb).CsrClientThread = CurrentThread;
+        (*Teb).CsrClientThread = CurrentThread as PVOID;
 
         if ReplyCode == CsrReplyAlreadySent {
             if !ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData.is_null() {
@@ -493,7 +493,7 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
     let mut ClientId: _CLIENT_ID = core::mem::zeroed();
     let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
-    let ServerThread: PCSR_THREAD;
+    let mut ServerThread: PCSR_THREAD;
 
     Size = CsrDirectoryName.Length as ULONG + core::mem::size_of::<[u16; 10]>() as ULONG;
 
@@ -552,7 +552,7 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
                 0,
                 0,
                 0,
-                Some(CsrApiRequestThread),
+                core::mem::transmute(CsrApiRequestThread as usize),
                 hRequestEvent as PVOID,
                 &raw mut hThread,
                 &raw mut ClientId,
@@ -646,7 +646,7 @@ pub unsafe extern "system" fn CsrConnectToUser() -> PCSR_THREAD {
     );
     CsrReleaseProcessLock();
     if !CsrThread.is_null() {
-        (*Teb).CsrClientThread = CsrThread;
+        (*Teb).CsrClientThread = CsrThread as PVOID;
     }
 
     CsrThread
@@ -677,7 +677,7 @@ pub unsafe extern "system" fn CsrCaptureArguments(
 
     if ((ClientCaptureBuffer as ULONG_PTR) < (*CsrProcess).ClientViewBase)
         || (((ClientCaptureBuffer as ULONG_PTR)
-            + core::mem::offset_of!(_CSR_CAPTURE_BUFFER, PointerOffsetsArray))
+            + core::mem::offset_of!(_CSR_CAPTURE_BUFFER, PointerOffsetsArray) as ULONG_PTR)
             >= (*CsrProcess).ClientViewBounds)
     {
         (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
@@ -730,9 +730,9 @@ pub unsafe extern "system" fn CsrCaptureArguments(
         let CurrentOffset = *OffsetPointer;
 
         if CurrentOffset != 0 {
-            if ((CurrentOffset & (core::mem::size_of::<PVOID>() - 1)) != 0)
+            if ((CurrentOffset & (core::mem::size_of::<PVOID>() as ULONG_PTR - 1)) != 0)
                 || (CurrentOffset
-                    < core::mem::offset_of!(_CSR_API_MESSAGE, __bindgen_anon_1.__bindgen_anon_1.Data.ApiMessageData))
+                    < core::mem::offset_of!(_CSR_API_MESSAGE, __bindgen_anon_1.__bindgen_anon_1.Data.ApiMessageData) as ULONG_PTR)
                 || (CurrentOffset >= core::mem::size_of::<_CSR_API_MESSAGE>().try_into().unwrap())
             {
                 (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status =
@@ -744,7 +744,7 @@ pub unsafe extern "system" fn CsrCaptureArguments(
             let pointed_value = *(ptr_location as *const ULONG_PTR);
 
             if (pointed_value >= ((ClientCaptureBuffer as ULONG_PTR)
-                + SizeOfBufferThroughOffsetsArray))
+                + SizeOfBufferThroughOffsetsArray as ULONG_PTR))
                 && (pointed_value
                     <= (EndOfClientBuffer.wrapping_sub(core::mem::size_of::<PVOID>().try_into().unwrap())))
             {

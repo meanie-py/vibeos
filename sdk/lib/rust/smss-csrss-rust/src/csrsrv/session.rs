@@ -44,7 +44,7 @@ pub unsafe extern "system" fn CsrInitializeNtSessionList() -> NTSTATUS {
     RtlInitializeCriticalSection(core::ptr::addr_of_mut!(CsrNtSessionLock))
 }
 
-unsafe fn CsrAllocateNtSession(SessionId: ULONG) -> PCSR_NT_SESSION {
+unsafe fn CsrAllocateNtSession(session_id: ULONG) -> PCSR_NT_SESSION {
     let NtSession = RtlAllocateHeap(
         CsrHeap,
         HEAP_ZERO_MEMORY,
@@ -52,7 +52,7 @@ unsafe fn CsrAllocateNtSession(SessionId: ULONG) -> PCSR_NT_SESSION {
     ) as PCSR_NT_SESSION;
 
     if !NtSession.is_null() {
-        (*NtSession).SessionId = SessionId;
+        (*NtSession).SessionId = session_id;
         (*NtSession).ReferenceCount = 1;
 
         CsrAcquireNtSessionLock();
@@ -100,7 +100,7 @@ pub unsafe extern "system" fn CsrDereferenceNtSession(
 #[no_mangle]
 pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOOLEAN {
     let CreateSession = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.CreateSession
+        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.u.CreateSession
     ) as PSB_CREATE_SESSION_MSG;
     let hProcess = (*CreateSession).ProcessInfo.ProcessHandle;
     let hThread = (*CreateSession).ProcessInfo.ThreadHandle;
@@ -109,7 +109,7 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
 
     let CsrProcess = CsrAllocateProcess();
     if CsrProcess.is_null() {
-        (*ApiMessage).ReturnValue = STATUS_NO_MEMORY;
+        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = STATUS_NO_MEMORY;
         CsrReleaseProcessLock();
         return 1u8;
     }
@@ -146,7 +146,7 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
     if CsrThread.is_null() {
         CsrDeallocateProcess(CsrProcess);
         CsrReleaseProcessLock();
-        (*ApiMessage).ReturnValue = STATUS_NO_MEMORY;
+        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = STATUS_NO_MEMORY;
         return 1u8;
     }
 
@@ -170,7 +170,7 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
 
     CsrSetBackgroundPriority(CsrProcess);
 
-    let mut ProcessData = core::ptr::addr_of_mut!((*CsrProcess).ServerData[CSR_SERVER_DLL_MAX as usize]) as PVOID;
+    let mut ProcessData = (*CsrProcess).ServerData.as_mut_ptr().add(CSR_SERVER_DLL_MAX as usize) as PVOID;
 
     for i in 0..CSR_SERVER_DLL_MAX {
         let ServerDll = *CsrLoadedServerDll.as_mut_ptr().add(i as usize);
@@ -185,7 +185,7 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
 
     CsrInsertProcess(core::ptr::null_mut(), CsrProcess);
 
-    (*ApiMessage).ReturnValue = NtResumeThread(hThread, core::ptr::null_mut());
+    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = NtResumeThread(hThread, core::ptr::null_mut());
 
     CsrReleaseProcessLock();
     1u8
@@ -193,19 +193,19 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrSbForeignSessionComplete(ApiMessage: PSB_API_MSG) -> BOOLEAN {
-    (*ApiMessage).ReturnValue = STATUS_NOT_IMPLEMENTED;
+    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = STATUS_NOT_IMPLEMENTED;
     1u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrSbTerminateSession(ApiMessage: PSB_API_MSG) -> BOOLEAN {
-    (*ApiMessage).ReturnValue = STATUS_NOT_IMPLEMENTED;
+    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = STATUS_NOT_IMPLEMENTED;
     1u8
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrSbCreateProcess(ApiMessage: PSB_API_MSG) -> BOOLEAN {
-    (*ApiMessage).ReturnValue = STATUS_NOT_IMPLEMENTED;
+    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = STATUS_NOT_IMPLEMENTED;
     1u8
 }
 
@@ -262,40 +262,40 @@ pub unsafe extern "system" fn CsrSbApiRequestThread(Parameter: PVOID) {
             continue;
         }
 
-        let MessageType = (*core::ptr::addr_of!(ReceiveMsg.h)).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.Type;
+        let MessageType = (*core::ptr::addr_of!(ReceiveMsg.h)).u2.s2.Type;
 
-        if MessageType == LPC_CONNECTION_REQUEST as u16 {
+        if MessageType == LPC_CONNECTION_REQUEST as i16 {
             CsrSbApiHandleConnectionRequest(core::ptr::addr_of_mut!(ReceiveMsg));
             ReplyMsg = core::ptr::null_mut();
             continue;
         }
 
-        if MessageType == LPC_PORT_CLOSED as u16 {
+        if MessageType == LPC_PORT_CLOSED as i16 {
             if !PortContext.is_null() {
                 NtClose(PortContext as HANDLE);
             }
             ReplyMsg = core::ptr::null_mut();
             continue;
-        } else if MessageType == LPC_CLIENT_DIED as u16 {
+        } else if MessageType == LPC_CLIENT_DIED as i16 {
             ReplyMsg = core::ptr::null_mut();
             continue;
         }
 
-        if ReceiveMsg.ApiNumber > SbpMaxApiNumber {
-            ReceiveMsg.ApiNumber = SbpMaxApiNumber;
+        if ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber > SbpMaxApiNumber {
+            ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber = SbpMaxApiNumber;
         }
 
         ReplyMsg = core::ptr::addr_of_mut!(ReceiveMsg);
 
-        if ReceiveMsg.ApiNumber < SbpMaxApiNumber {
-            let dispatch_fn = CsrServerSbApiDispatch[ReceiveMsg.ApiNumber as usize];
+        if ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber < SbpMaxApiNumber {
+            let dispatch_fn = CsrServerSbApiDispatch[ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber as usize];
             if let Some(func) = dispatch_fn {
                 if func(core::ptr::addr_of_mut!(ReceiveMsg)) == 0u8 {
                     ReplyMsg = core::ptr::null_mut();
                 }
             }
         } else {
-            (*ReplyMsg).ReturnValue = STATUS_NOT_IMPLEMENTED;
+            (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = STATUS_NOT_IMPLEMENTED;
         }
     }
 }
@@ -852,23 +852,23 @@ pub unsafe extern "system" fn CsrSbApiRequestThread(Parameter: PVOID) {
 //          * It's an API Message, check if it's within limits. If it's not,
 //          * the NT Behaviour is to set this to the Maximum API.
 //          */
-//         if (ReceiveMsg.ApiNumber > SbpMaxApiNumber)
+//         if (ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber > SbpMaxApiNumber)
 //         {
-//             ReceiveMsg.ApiNumber = SbpMaxApiNumber;
-//             DPRINT1("CSRSS: %lx is invalid Sb ApiNumber\n", ReceiveMsg.ApiNumber);
+//             ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber = SbpMaxApiNumber;
+//             DPRINT1("CSRSS: %lx is invalid Sb ApiNumber\n", ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber);
 //         }
 //
 //         /* Reuse the message */
 //         ReplyMsg = &ReceiveMsg;
 //
 //         /* Make sure that the message is supported */
-//         if (ReceiveMsg.ApiNumber < SbpMaxApiNumber)
+//         if (ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber < SbpMaxApiNumber)
 //         {
 //             /* Call the API */
-//             if (!CsrServerSbApiDispatch[ReceiveMsg.ApiNumber](&ReceiveMsg))
+//             if (!CsrServerSbApiDispatch[ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber](&ReceiveMsg))
 //             {
 //                 DPRINT1("CSRSS: %s Session Api called and failed\n",
-//                         CsrServerSbApiName[ReceiveMsg.ApiNumber]);
+//                         CsrServerSbApiName[ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber]);
 //
 //                 /* It failed, so return nothing */
 //                 ReplyMsg = NULL;
