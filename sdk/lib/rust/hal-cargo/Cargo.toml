@@ -1,0 +1,33 @@
+# Cargo-driven `hal.dll` link PoC (i386).
+#
+# HAL sibling of `ntoskrnl-cargo`. Reuses the cmake-produced sibling
+# static libs (libcntpr, setjmp, arbiter, fast486, pseh, the ntoskrnl
+# import lib) as pre-built inputs, and drives the final `hal.dll` link
+# from cargo. Unlike ntoskrnl-cargo there are NO C shims — HAL is pure
+# Rust (libhal_rust.a) + 4 pre-expanded asm blobs + a checked-in .res.
+#
+# Workflow:
+#   1. cmake builds everything into build-i386/ as usual (sibling libs +
+#      ntoskrnl import lib).
+#   2. cargo build -p hal-cargo --target i686-kernel.json picks up those
+#      artifacts via build.rs and produces .../release/hal.dll.
+#   3. Post-link tooling (pefixup, fix_lld_forwarding.py) runs separately.
+#
+# Success criterion: cargo's hal.dll boots in QEMU exactly like cmake's.
+
+[package]
+name = "hal-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "hal"
+path = "src/main.rs"
+
+[dependencies]
+# hal-rust is `crate-type = ["staticlib"]` — cargo can't link a staticlib
+# as a Rust dep, so build.rs invokes `cargo build -p hal-rust` manually
+# and emits the absolute path of the resulting libhal_rust.a as a link arg.
+
+[build-dependencies]
+cc = "1"

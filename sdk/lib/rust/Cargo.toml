@@ -17,6 +17,7 @@ members = [
     "largeint",
     "luid",
     "mem",
+    "hal-cargo",
     "ntkrnl-sys",
     "ntoskrnl-cargo",
     "ntoskrnl-rust",
