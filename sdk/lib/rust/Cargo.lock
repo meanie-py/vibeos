@@ -77,6 +77,13 @@ name = "cnt-rust"
 version = "0.1.0"
 
 [[package]]
+name = "cnt-rust-lib"
+version = "0.1.0"
+dependencies = [
+ "cnt-rust",
+]
+
+[[package]]
 name = "compress"
 version = "0.1.0"
 

@@ -6,6 +6,7 @@ members = [
     "byteswap",
     "cnt-difftest",
     "cnt-rust",
+    "cnt-rust-lib",
     "compress",
     "crc32",
     "encode",

@@ -66,13 +66,21 @@ pub unsafe extern "C" fn _set_invalid_parameter_handler(handler: usize) -> usize
 // engine. Phase 1: cnt_vsscanf/cnt_vswscanf (Phase 3 adds the _sn).
 // ===================================================================
 
+// The scanf cabi half rides the `float` feature: core_rs::scanf is
+// float-gated (it carries the f64 store_float path) so this whole
+// block is absent in a no-float (i386 kernel) build. The libcntpr
+// swap keeps C scanf.c anyway (PARTIAL — variadic), so nothing here
+// is needed by the kernel link.
+#[cfg(feature = "float")]
 use crate::core_rs::scanf::{scanf_engine, IntWidth, Sink, TargetKind};
 
+#[cfg(feature = "float")]
 extern "C" {
     /// `void *cnt_va_next_ptr(va_list *ap)` — one `va_arg(*ap, void*)`.
     fn cnt_va_next_ptr(ap: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
 }
 
+#[cfg(feature = "float")]
 struct VaSink {
     ap: *mut core::ffi::c_void,
     tgt: *mut u8,
@@ -80,6 +88,7 @@ struct VaSink {
     wide: bool,
 }
 
+#[cfg(feature = "float")]
 impl Sink for VaSink {
     fn store_int(&mut self, w: IntWidth, value: u64) {
         let p = unsafe { cnt_va_next_ptr(self.ap) };
@@ -158,6 +167,7 @@ impl Sink for VaSink {
 
 /// `int sscanf(const char*, const char*, ...)` engine half — called by
 /// the C trampoline with the live `va_list*`. NUL-bounded input.
+#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vsscanf(
     file: *const u8,
@@ -171,6 +181,7 @@ pub unsafe extern "C" fn cnt_vsscanf(
 }
 
 /// `int swscanf(const wchar_t*, const wchar_t*, ...)` engine half.
+#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vswscanf(
     file: *const u16,
@@ -187,6 +198,7 @@ pub unsafe extern "C" fn cnt_vswscanf(
 /// Input is exactly `length` bytes (NOT NUL-bounded — `_snscanf` can
 /// read embedded NULs up to `length`); the engine's `has_len_limit`
 /// yields the genuine `consumed==length ? '\0'` (no advance) quirk.
+#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vsnscanf(
     file: *const u8,
@@ -205,6 +217,7 @@ pub unsafe extern "C" fn cnt_vsnscanf(
 }
 
 /// `int _snwscanf(const wchar_t*, size_t, const wchar_t*, ...)` half.
+#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vsnwscanf(
     file: *const u16,
@@ -581,6 +594,15 @@ pub unsafe extern "C" fn __p___winitenv() -> *mut *mut *mut u16 {
 // precedent). The decimal arithmetic is core_rs::floatcvt.
 // ===================================================================
 
+// Float-cvt cabi (_fcvt/_ecvt/_gcvt/_gcvt_s) rides the `float`
+// feature: core_rs::floatcvt is float-gated and these signatures take
+// by-value `f64` (uncompilable on the no-SSE i386 kernel). Wrapped in
+// a feature-gated module — the inner `#[no_mangle]` symbols still
+// export normally; `pub use` re-exports for cabi/mod.rs `pub use
+// manual::*`. The libcntpr swap keeps C ecvt/fcvt/gcvt anyway (CRT-
+// only, no libcntpr .c), so the kernel link needs none of these.
+#[cfg(feature = "float")]
+mod floatcvt_cabi {
 use crate::core_rs::floatcvt as fcvt;
 
 struct FcvtCell(core::cell::UnsafeCell<[u8; fcvt::FCVT_BUF]>);
@@ -753,3 +775,7 @@ pub unsafe extern "C" fn _gcvt_s(
     gcvt_render(buff, number, digits);
     0
 }
+} // mod floatcvt_cabi
+
+#[cfg(feature = "float")]
+pub use floatcvt_cabi::*;
