@@ -35,6 +35,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_llm_lower.py` | Pass 1b LLM lowering of the 64-site ledger; `python -m rustconv seh-llm-lower` | done, build+smoke-validated |
+| `tools/rustconv/rustconv/file_splitter.py` | Giant-file split *analyzer* (static-coupling graph → safe-seam classification); `python -m rustconv split-plan` | analyzer done; emitter pending |
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
@@ -138,6 +139,37 @@ Engineering guards that made this safe:
   Pass-1 never touched failed to compile (`SafeProbeFor*` undeclared).
   Fixed in the pipeline + repaired idempotently. The build+smoke gate
   did its job — this stage is build-affecting (unlike Pass 2/3).
+
+### Giant-file pre-split analyzer (next-phase prep, analyze-only)
+
+rustconv's giant-file failure is a *batch* problem (silent stubbing);
+`translate` mode already chunks function-by-function — so physically
+splitting a giant `.c` is not needed for translation *fidelity*. It is
+worth it where *clean* because the **output** would otherwise be one
+multi-thousand-LOC `.rs` module (review/diff/cgu-firewall/maintenance
+cost forever). The only hazard is file-scope `static` coupling (cutting
+between a `static` and a referencing function → link error, or worse,
+duplicated mutable state = silent correctness bug).
+
+`split-plan` is the Pass-0 analog for file-splitting: it builds the
+file-scope-`static` reference graph (reusing the brace-depth function
+extractors) and classifies each ≥1000-LOC translation-scope file as
+`CLEAN_SPLIT` (a ≥2-group partition exists with every group ≤~1.5×
+target LOC and **zero** statics crossing any cut), `NEEDS_PROMOTION`
+(blocking statics are de-`static`-able fn/const → `<file>_priv.h`), or
+`LEAVE_WHOLE` (a mutable static spans the file → translate-chunk
+instead). Honest by construction — a "split" that leaves a still-giant
+chunk is downgraded, not reported as a win.
+
+Measured (44 files ≥1000 LOC, freetype.c excluded — link-against FFI,
+never translated): **20 `CLEAN_SPLIT` ≈ 48.8K LOC of giants → balanced
+~900–1100 LOC modules, free** (incl. `window.c` 4725→5, `region.c`
+4135→4, `winpos.c` 4072→4, `message.c` 3234→3, `path.c` 3111→3); **24
+`LEAVE_WHOLE`** (e.g. `menu.c` 6691, `desktop.c` 3515, `class.c` 2987 —
+a static forces a still-giant chunk → translate-chunked); **0
+`NEEDS_PROMOTION`** (no risky de-static surgery required). The emitter
+(mechanical by-offset slice + cmake-SOURCE wiring + nm/concat oracle +
+smoke gate) is the pending follow-on, done in smoke-gated batches.
 
 ### Pass 2 — measured GDI lock-bracket surface (extract-only, no rewrite)
 

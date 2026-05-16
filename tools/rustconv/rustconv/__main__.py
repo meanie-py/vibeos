@@ -450,6 +450,29 @@ def cmd_seh_llm_lower(args):
     sys.exit(print_report(outcomes, args.apply))
 
 
+def cmd_split_plan(args):
+    from .file_splitter import analyze_file, analyze_scope, print_report
+    from .config import REACTOS_ROOT
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    if target.is_file():
+        plans = [analyze_file(target, args.target_loc)]
+    else:
+        plans = analyze_scope(target, args.min_loc, args.target_loc)
+
+    if args.json:
+        print(json.dumps([{
+            "file": str(p.path), "loc": p.loc, "nfuncs": p.nfuncs,
+            "classification": p.classification, "groups": p.groups,
+            "blocking": p.blocking, "note": p.note} for p in plans],
+            indent=2, default=str))
+    else:
+        print_report(plans)
+
+
 def cmd_gdi_locks(args):
     from .gdi_lock_inventory import (
         extract_file, extract_keepset, write_sidecar,
@@ -1027,6 +1050,18 @@ def main():
     p.add_argument("--oracle", action="store_true",
                    help="Structural self-test (no API spend) and exit")
 
+    # split-plan (win32k giant-file split analyzer — analyze-only)
+    p = sub.add_parser("split-plan",
+                       help="Win32k: analyze giant .c for safe split seams "
+                            "(static-coupling graph; no mutation)")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (default win32ss/ translation scope)")
+    p.add_argument("--min-loc", type=int, default=1000,
+                   help="Only consider files with ≥ this LOC (default 1000)")
+    p.add_argument("--target-loc", type=int, default=900,
+                   help="Target per-group LOC for the split (default 900)")
+    p.add_argument("--json", action="store_true", help="Output JSON")
+
     # gdi-locks (win32k Pass 2 GDI manual-lock-bracket detection — no rewrite)
     p = sub.add_parser("gdi-locks",
                        help="Win32k Pass 2: detect GDI manual lock brackets "
@@ -1104,6 +1139,7 @@ def main():
         "callout-annotate": cmd_callout_annotate,
         "gdi-locks": cmd_gdi_locks,
         "seh-llm-lower": cmd_seh_llm_lower,
+        "split-plan": cmd_split_plan,
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,
