@@ -85,6 +85,23 @@ def fix(path: Path) -> None:
         at = m.end() if m else 0
         s = s[:at] + "\n".join(inject) + "\n" + s[at:]
 
+    # ensure a variadic decl exists for every debug fn the file *calls*
+    # (frldr provides the non-pub #[no_mangle] symbol; the decl is only for
+    # call-site typecheck). DbgPrint returns i32, the rest are VOID.
+    missing = []
+    for nm in ("TRACE", "ERR", "WARN", "FIXME", "DPRINTM", "DbgPrint"):
+        if re.search(r'\b' + nm + r'\s*\(', s) and not re.search(
+                r'\bfn\s+' + nm + r'\s*\(', s):
+            ret = " -> i32" if nm == "DbgPrint" else ""
+            missing.append(f"    fn {nm}(fmt: *const i8, ...){ret};")
+    if missing:
+        blk = "extern \"C\" {\n" + "\n".join(missing) + "\n}\n"
+        m = re.search(r'(^use [^\n]*\n)(?!use )', s, re.M)
+        # insert after the contiguous run of `use` lines
+        mu = list(re.finditer(r'^use [^\n]*\n', s, re.M))
+        at = mu[-1].end() if mu else 0
+        s = s[:at] + blk + s[at:]
+
     path.write_text(s)
     print(f"{path.name}: preamble normalized"
           f"{' (+'+','.join(x.split('::')[1] for x in inject)+')' if inject else ''}")

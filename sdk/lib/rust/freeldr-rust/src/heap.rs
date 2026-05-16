@@ -1,7 +1,65 @@
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
-use ntkrnl_sys::ddk::{Next};
+use crate::meminit::*;
+use crate::mm::*;
 use core::ffi::c_void;
+extern "C" {
+    fn TRACE(fmt: *const i8, ...);
+    fn ERR(fmt: *const i8, ...);
+    fn WARN(fmt: *const i8, ...);
+}
+
+// heap.c file-local types (rustconv dropped these typedefs — restored
+// byte-exact from lib/mm/heap.c). Not in any public header.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct BLOCK_DATA {
+    // C: ULONG_PTR Flink:32; ULONG_PTR Blink:32; — 8 bytes both arches.
+    pub Flink: u32,
+    pub Blink: u32,
+}
+pub type PBLOCK_DATA = *mut BLOCK_DATA;
+
+#[repr(C)]
+pub struct HEAP_BLOCK {
+    pub Size: USHORT,
+    pub PreviousSize: USHORT,
+    pub Tag: ULONG,
+    pub Data: [BLOCK_DATA; 0], // flexible array — use ptr arithmetic
+}
+pub type PHEAP_BLOCK = *mut HEAP_BLOCK;
+
+#[repr(C)]
+pub struct HEAP {
+    pub MaximumSize: SIZE_T,
+    pub CurrentAllocBytes: SIZE_T,
+    pub MaxAllocBytes: SIZE_T,
+    pub NumAllocs: ULONG,
+    pub NumFrees: ULONG,
+    pub LargestAllocation: SIZE_T,
+    pub AllocationTime: ULONGLONG,
+    pub FreeTime: ULONGLONG,
+    pub TerminatingBlock: ULONG_PTR,
+    pub Blocks: HEAP_BLOCK,
+}
+pub type PHEAP = *mut HEAP;
+
+// heap.c REDZONE_* macros + file-static heap handles.
+#[allow(non_snake_case)]
+#[inline(always)]
+pub unsafe fn REDZONE_SIZE(b: PHEAP_BLOCK) -> *mut u64 {
+    (*b).Data.as_ptr() as *mut u64
+}
+#[allow(non_snake_case)] #[inline(always)]
+pub unsafe fn REDZONE_LOW(b: PHEAP_BLOCK) -> *mut u64 { (REDZONE_SIZE(b)).add(1) }
+#[allow(non_snake_case)] #[inline(always)]
+pub unsafe fn REDZONE_HI(b: PHEAP_BLOCK) -> *mut u64 {
+    ((*b).Data.as_ptr() as *mut u8).add(16 + *REDZONE_SIZE(b) as usize) as *mut u64
+}
+#[no_mangle]
+pub static mut FrLdrDefaultHeap: PVOID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut FrLdrTempHeap: PVOID = core::ptr::null_mut();
 
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrHeapCreate(
@@ -43,8 +101,8 @@ pub unsafe extern "C" fn FrLdrHeapCreate(
         (*Block).Size = min(65535, Remaining - 1) as u16;
         (*Block).PreviousSize = PreviousSize;
         (*Block).Tag = 0;
-        (*Block).Data[0].Flink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize + (*Block).Size as isize + 1) as usize;
-        (*Block).Data[0].Blink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize - 1 - PreviousSize as isize) as usize;
+        (*(*Block).Data.as_mut_ptr()).Flink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize + (*Block).Size as isize + 1) as u32;
+        (*(*Block).Data.as_mut_ptr()).Blink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize - 1 - PreviousSize as isize) as u32;
 
         Remaining -= ((*Block).Size as usize + 1);
 
@@ -58,9 +116,9 @@ pub unsafe extern "C" fn FrLdrHeapCreate(
     (*Block).Size = 0;
     (*Block).PreviousSize = PreviousSize;
     (*Block).Tag = 0x23646E45;
-    (*Block).Data[0].Flink = 0;
-    (*Block).Data[0].Blink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize - 1 - PreviousSize as isize) as usize;
-    (*Heap).Blocks.Data[0].Blink = (*Heap).TerminatingBlock;
+    (*(*Block).Data.as_mut_ptr()).Flink = 0;
+    (*(*Block).Data.as_mut_ptr()).Blink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize - 1 - PreviousSize as isize) as u32;
+    (*(*Heap).Blocks.Data.as_mut_ptr()).Blink = (*Heap).TerminatingBlock as u32;
 
     Heap as PVOID
 }
@@ -72,7 +130,7 @@ pub unsafe extern "C" fn FrLdrHeapDestroy(HeapHandle: PVOID) {
     MmMarkPagesInLookupTable(
         PageLookupTableAddress,
         Heap as ULONG_PTR / MM_PAGE_SIZE,
-        ((*Heap).MaximumSize / MM_PAGE_SIZE) as PFN_COUNT,
+        ((*Heap).MaximumSize / MM_PAGE_SIZE) as PFN_NUMBER,
         LoaderFirmwareTemporary,
     );
 
@@ -100,7 +158,7 @@ pub unsafe extern "C" fn FrLdrHeapVerify(
         }
 
         if (*Block).Tag != 0 {
-            debug_assert!(*REDZONE_SIZE(Block) <= (*Block).Size * core::mem::size_of::<HEAP_BLOCK>() as u32);
+            debug_assert!(*REDZONE_SIZE(Block) <= (*Block).Size as u64 * core::mem::size_of::<HEAP_BLOCK>() as u64);
             debug_assert!(*REDZONE_LOW(Block) == REDZONE_MARK);
             debug_assert!(*REDZONE_HI(Block) == REDZONE_MARK);
         }
@@ -132,16 +190,16 @@ pub unsafe extern "C" fn FrLdrHeapRelease(HeapHandle: PVOID) {
             continue;
         }
 
-        StartAddress = ALIGN_UP_POINTER_BY((*Block).Data.as_mut_ptr(), PAGE_SIZE);
+        StartAddress = ALIGN_UP_POINTER_BY((*Block).Data.as_mut_ptr() as *mut u8, PAGE_SIZE);
 
         while (*Block).Tag == 0 {
             Block = (Block as usize + ((*Block).Size as usize + 1) * core::mem::size_of::<HEAP_BLOCK>()) as PHEAP_BLOCK;
         }
 
         if (*Block).Size == 0 {
-            EndAddress = ALIGN_UP_POINTER_BY((*Block).Data.as_mut_ptr(), PAGE_SIZE);
+            EndAddress = ALIGN_UP_POINTER_BY((*Block).Data.as_mut_ptr() as *mut u8, PAGE_SIZE);
         } else {
-            EndAddress = ALIGN_DOWN_POINTER_BY((*Block).Data.as_mut_ptr(), PAGE_SIZE);
+            EndAddress = ALIGN_DOWN_POINTER_BY((*Block).Data.as_mut_ptr() as *mut u8, PAGE_SIZE);
         }
 
         if EndAddress > StartAddress {
@@ -151,7 +209,7 @@ pub unsafe extern "C" fn FrLdrHeapRelease(HeapHandle: PVOID) {
             MmMarkPagesInLookupTable(
                 PageLookupTableAddress,
                 (StartAddress as ULONG_PTR) / MM_PAGE_SIZE as ULONG_PTR,
-                FreePages,
+                FreePages as PFN_NUMBER,
                 LoaderFree,
             );
         }
@@ -216,11 +274,11 @@ unsafe fn FrLdrHeapRemoveFreeList(
     let mut Previous: PHEAP_BLOCK;
     let mut Next: PHEAP_BLOCK;
 
-    Next = (*Heap).Blocks.as_mut_ptr().offset((*Block).Data[0].Flink as isize);
-    Previous = (*Heap).Blocks.as_mut_ptr().offset((*Block).Data[0].Blink as isize);
+    Next = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Flink as isize);
+    Previous = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Blink as isize);
     
-    (*Next).Data[0].Blink = Previous.offset_from((*Heap).Blocks.as_mut_ptr()) as u32;
-    (*Previous).Data[0].Flink = Next.offset_from((*Heap).Blocks.as_mut_ptr()) as u32;
+    (*(*Next).Data.as_mut_ptr()).Blink = Previous.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as u32;
+    (*(*Previous).Data.as_mut_ptr()).Flink = Next.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as u32;
 }
 
 unsafe fn FrLdrHeapInsertFreeList(
@@ -230,18 +288,18 @@ unsafe fn FrLdrHeapInsertFreeList(
     let mut ListHead: *mut HEAP_BLOCK;
     let mut NextBlock: *mut HEAP_BLOCK;
     
-    ListHead = (*Heap).Blocks.as_mut_ptr().offset((*Heap).TerminatingBlock as isize);
+    ListHead = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*Heap).TerminatingBlock as isize);
 
-    NextBlock = (*Heap).Blocks.as_mut_ptr().offset((*ListHead).Data[0].Flink as isize);
+    NextBlock = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*ListHead).Data.as_mut_ptr()).Flink as isize);
     while NextBlock < FreeBlock {
-        NextBlock = (*Heap).Blocks.as_mut_ptr().offset((*NextBlock).Data[0].Flink as isize);
+        NextBlock = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*NextBlock).Data.as_mut_ptr()).Flink as isize);
     }
 
-    (*FreeBlock).Data[0].Flink = NextBlock.offset_from((*Heap).Blocks.as_mut_ptr()) as u32;
-    (*FreeBlock).Data[0].Blink = (*NextBlock).Data[0].Blink;
-    (*NextBlock).Data[0].Blink = FreeBlock.offset_from((*Heap).Blocks.as_mut_ptr()) as u32;
-    NextBlock = (*Heap).Blocks.as_mut_ptr().offset((*FreeBlock).Data[0].Blink as isize);
-    (*NextBlock).Data[0].Flink = FreeBlock.offset_from((*Heap).Blocks.as_mut_ptr()) as u32;
+    (*(*FreeBlock).Data.as_mut_ptr()).Flink = NextBlock.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as u32;
+    (*(*FreeBlock).Data.as_mut_ptr()).Blink = (*(*NextBlock).Data.as_mut_ptr()).Blink;
+    (*(*NextBlock).Data.as_mut_ptr()).Blink = FreeBlock.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as u32;
+    NextBlock = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*FreeBlock).Data.as_mut_ptr()).Blink as isize);
+    (*(*NextBlock).Data.as_mut_ptr()).Flink = FreeBlock.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as u32;
 }
 
 #[no_mangle]
@@ -278,13 +336,13 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
 
     BlockSize = ((ByteSize + core::mem::size_of::<HEAP_BLOCK>() - 1) / core::mem::size_of::<HEAP_BLOCK>()) as USHORT;
 
-    Block = (*Heap).Blocks.as_mut_ptr().offset((*Heap).TerminatingBlock as isize);
-    Block = (*Heap).Blocks.as_mut_ptr().offset((*Block).Data[0].Flink as isize);
+    Block = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*Heap).TerminatingBlock as isize);
+    Block = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Flink as isize);
     while (*Block).Size != 0 {
         debug_assert!((*Block).Tag == 0);
 
         if (*Block).Size < BlockSize {
-            Block = (*Heap).Blocks.as_mut_ptr().offset((*Block).Data[0].Flink as isize);
+            Block = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Flink as isize);
             continue;
         }
 
@@ -379,7 +437,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     {
         Block = (Block as PUCHAR).offset(-(REDZONE_LOW_OFFSET as isize)) as PHEAP_BLOCK;
 
-        debug_assert!(*REDZONE_SIZE(Block) <= (*Block).Size * core::mem::size_of::<HEAP_BLOCK>() as u32);
+        debug_assert!(*REDZONE_SIZE(Block) <= (*Block).Size as u64 * core::mem::size_of::<HEAP_BLOCK>() as u64);
         debug_assert!(*REDZONE_LOW(Block) == REDZONE_MARK);
         debug_assert!(*REDZONE_HI(Block) == REDZONE_MARK);
     }
@@ -387,7 +445,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     if (Tag != 0 && (*Block).Tag != Tag) || ((*Block).Tag == 0)
     {
         ERR(b"HEAP: Bad tag! Pointer=%p: block tag '%.4s', requested '%.4s', size=0x%lx\n\0".as_ptr() as PCHAR,
-            Pointer, core::ptr::addr_of!((*Block).Tag), core::ptr::addr_of!(Tag), (*Block).Size);
+            Pointer, core::ptr::addr_of!((*Block).Tag), core::ptr::addr_of!(Tag), (*Block).Size as u32);
         debug_assert!(0u8 == 1u8);
     }
 
@@ -399,7 +457,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     }
 
     (*Heap).NumFrees = (*Heap).NumFrees.wrapping_add(1);
-    (*Heap).CurrentAllocBytes = (*Heap).CurrentAllocBytes.wrapping_sub((*Block).Size * core::mem::size_of::<HEAP_BLOCK>() as u32);
+    (*Heap).CurrentAllocBytes = (*Heap).CurrentAllocBytes.wrapping_sub((*Block).Size as usize * core::mem::size_of::<HEAP_BLOCK>());
 
     PrevBlock = Block.offset(-((*Block).PreviousSize as isize) - 1);
     NextBlock = Block.offset((*Block).Size as isize + 1);

@@ -11,7 +11,7 @@
 
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
-use ntkrnl_sys::base::{LIST_ENTRY, ULONG, UCHAR, BOOLEAN, SIZE_T, PVOID, PFN_NUMBER};
+use ntkrnl_sys::base::{LIST_ENTRY, ULONG, UCHAR, USHORT, BOOLEAN, SIZE_T, PVOID, PFN_NUMBER};
 
 // ---------------------------------------------------------------------------
 // cache.h — cache-manager types (mirror C layout exactly, #[repr(C)])
@@ -102,6 +102,8 @@ extern "C" {
     pub fn MachDiskGetCacheableBlockCount(DriveNumber: UCHAR) -> ULONG;
 
     pub static mut DiskReadBuffer: PVOID;
+    pub fn UiMessageBoxCritical(msg: *const i8);
+    pub static __ImageBase: u8;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,11 +138,47 @@ extern "C" fn BugCheck(_message: *const i8) -> ! {
     }
 }
 
-/// C `min()` macro — generic, used by CacheInitializeDrive.
+/// C `min()` / `max()` macros — generic.
 #[inline(always)]
-pub fn min<T: PartialOrd>(a: T, b: T) -> T {
-    if a < b { a } else { b }
+pub fn min<T: PartialOrd>(a: T, b: T) -> T { if a < b { a } else { b } }
+#[inline(always)]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T { if a > b { a } else { b } }
+
+// xdk/mmfuncs.h ALIGN_* macros (ULONG_PTR arithmetic).
+#[inline(always)]
+pub fn ALIGN_DOWN_BY(size: usize, align: usize) -> usize { size & !(align - 1) }
+#[inline(always)]
+pub fn ALIGN_UP_BY(size: usize, align: usize) -> usize { ALIGN_DOWN_BY(size + align - 1, align) }
+#[inline(always)]
+pub unsafe fn ALIGN_DOWN_POINTER_BY<T>(p: *mut T, align: usize) -> *mut T {
+    ALIGN_DOWN_BY(p as usize, align) as *mut T
 }
+#[inline(always)]
+pub unsafe fn ALIGN_UP_POINTER_BY<T>(p: *mut T, align: usize) -> *mut T {
+    ALIGN_UP_BY(p as usize, align) as *mut T
+}
+
+// reactos ROUND_DOWN/ROUND_UP (same shape as ALIGN_*).
+#[inline(always)]
+pub fn ROUND_DOWN(n: usize, align: usize) -> usize { n & !(align - 1) }
+#[inline(always)]
+pub fn ROUND_UP(n: usize, align: usize) -> usize { ROUND_DOWN(n + align - 1, align) }
+
+/// `RtlZeroMemory` — C macro (memset(d,0,n)).
+#[inline(always)]
+pub unsafe fn RtlZeroMemory(dst: PVOID, len: usize) {
+    core::ptr::write_bytes(dst as *mut u8, 0, len)
+}
+
+/// `ASSERT(cond)` — no-op in the freeldr release build (NDEBUG).
+#[inline(always)]
+pub fn ASSERT<T>(_cond: T) {}
+
+
+// DbgPrint — no real freeldr symbol; non-pub #[no_mangle] no-op stub
+// (variadic call sites typecheck against their own extern decl).
+#[no_mangle]
+extern "C" fn DbgPrint(_fmt: *const i8) -> i32 { 0 }
 
 // ===========================================================================
 // inifile.h — .ini parser unit (ini_init / inifile / parse)
@@ -227,3 +265,100 @@ pub static mut FreePagesInLookupTable: PFN_NUMBER = 0;
 pub static mut LastFreePageHint: PFN_NUMBER = 0;
 #[no_mangle]
 pub static mut FrLdrImageSize: SIZE_T = 0;
+
+// ===========================================================================
+// arc.h enum _TYPE_OF_MEMORY (sequential 0..) + bindgen-prefixed aliases
+// ===========================================================================
+pub const LoaderExceptionBlock: TYPE_OF_MEMORY = 0;
+pub const _TYPE_OF_MEMORY_LoaderExceptionBlock: TYPE_OF_MEMORY = 0;
+pub const LoaderSystemBlock: TYPE_OF_MEMORY = 1;
+pub const _TYPE_OF_MEMORY_LoaderSystemBlock: TYPE_OF_MEMORY = 1;
+pub const LoaderFree: TYPE_OF_MEMORY = 2;
+pub const _TYPE_OF_MEMORY_LoaderFree: TYPE_OF_MEMORY = 2;
+pub const LoaderBad: TYPE_OF_MEMORY = 3;
+pub const _TYPE_OF_MEMORY_LoaderBad: TYPE_OF_MEMORY = 3;
+pub const LoaderLoadedProgram: TYPE_OF_MEMORY = 4;
+pub const _TYPE_OF_MEMORY_LoaderLoadedProgram: TYPE_OF_MEMORY = 4;
+pub const LoaderFirmwareTemporary: TYPE_OF_MEMORY = 5;
+pub const _TYPE_OF_MEMORY_LoaderFirmwareTemporary: TYPE_OF_MEMORY = 5;
+pub const LoaderFirmwarePermanent: TYPE_OF_MEMORY = 6;
+pub const _TYPE_OF_MEMORY_LoaderFirmwarePermanent: TYPE_OF_MEMORY = 6;
+pub const LoaderOsloaderHeap: TYPE_OF_MEMORY = 7;
+pub const _TYPE_OF_MEMORY_LoaderOsloaderHeap: TYPE_OF_MEMORY = 7;
+pub const LoaderOsloaderStack: TYPE_OF_MEMORY = 8;
+pub const _TYPE_OF_MEMORY_LoaderOsloaderStack: TYPE_OF_MEMORY = 8;
+pub const LoaderSystemCode: TYPE_OF_MEMORY = 9;
+pub const _TYPE_OF_MEMORY_LoaderSystemCode: TYPE_OF_MEMORY = 9;
+pub const LoaderHalCode: TYPE_OF_MEMORY = 10;
+pub const _TYPE_OF_MEMORY_LoaderHalCode: TYPE_OF_MEMORY = 10;
+pub const LoaderBootDriver: TYPE_OF_MEMORY = 11;
+pub const _TYPE_OF_MEMORY_LoaderBootDriver: TYPE_OF_MEMORY = 11;
+pub const LoaderConsoleInDriver: TYPE_OF_MEMORY = 12;
+pub const _TYPE_OF_MEMORY_LoaderConsoleInDriver: TYPE_OF_MEMORY = 12;
+pub const LoaderConsoleOutDriver: TYPE_OF_MEMORY = 13;
+pub const _TYPE_OF_MEMORY_LoaderConsoleOutDriver: TYPE_OF_MEMORY = 13;
+pub const LoaderStartupDpcStack: TYPE_OF_MEMORY = 14;
+pub const _TYPE_OF_MEMORY_LoaderStartupDpcStack: TYPE_OF_MEMORY = 14;
+pub const LoaderStartupKernelStack: TYPE_OF_MEMORY = 15;
+pub const _TYPE_OF_MEMORY_LoaderStartupKernelStack: TYPE_OF_MEMORY = 15;
+pub const LoaderStartupPanicStack: TYPE_OF_MEMORY = 16;
+pub const _TYPE_OF_MEMORY_LoaderStartupPanicStack: TYPE_OF_MEMORY = 16;
+pub const LoaderStartupPcrPage: TYPE_OF_MEMORY = 17;
+pub const _TYPE_OF_MEMORY_LoaderStartupPcrPage: TYPE_OF_MEMORY = 17;
+pub const LoaderStartupPdrPage: TYPE_OF_MEMORY = 18;
+pub const _TYPE_OF_MEMORY_LoaderStartupPdrPage: TYPE_OF_MEMORY = 18;
+pub const LoaderRegistryData: TYPE_OF_MEMORY = 19;
+pub const _TYPE_OF_MEMORY_LoaderRegistryData: TYPE_OF_MEMORY = 19;
+pub const LoaderMemoryData: TYPE_OF_MEMORY = 20;
+pub const _TYPE_OF_MEMORY_LoaderMemoryData: TYPE_OF_MEMORY = 20;
+pub const LoaderNlsData: TYPE_OF_MEMORY = 21;
+pub const _TYPE_OF_MEMORY_LoaderNlsData: TYPE_OF_MEMORY = 21;
+pub const LoaderSpecialMemory: TYPE_OF_MEMORY = 22;
+pub const _TYPE_OF_MEMORY_LoaderSpecialMemory: TYPE_OF_MEMORY = 22;
+pub const LoaderBBTMemory: TYPE_OF_MEMORY = 23;
+pub const _TYPE_OF_MEMORY_LoaderBBTMemory: TYPE_OF_MEMORY = 23;
+pub const LoaderReserve: TYPE_OF_MEMORY = 24;
+pub const _TYPE_OF_MEMORY_LoaderReserve: TYPE_OF_MEMORY = 24;
+pub const LoaderXIPRom: TYPE_OF_MEMORY = 25;
+pub const _TYPE_OF_MEMORY_LoaderXIPRom: TYPE_OF_MEMORY = 25;
+pub const LoaderHALCachedMemory: TYPE_OF_MEMORY = 26;
+pub const _TYPE_OF_MEMORY_LoaderHALCachedMemory: TYPE_OF_MEMORY = 26;
+pub const LoaderLargePageFiller: TYPE_OF_MEMORY = 27;
+pub const _TYPE_OF_MEMORY_LoaderLargePageFiller: TYPE_OF_MEMORY = 27;
+pub const LoaderErrorLogMemory: TYPE_OF_MEMORY = 28;
+pub const _TYPE_OF_MEMORY_LoaderErrorLogMemory: TYPE_OF_MEMORY = 28;
+pub const LoaderMaximum: TYPE_OF_MEMORY = 29;
+pub const _TYPE_OF_MEMORY_LoaderMaximum: TYPE_OF_MEMORY = 29;
+
+// freeldr layout / PE / heap constants (i386 smoke target values).
+pub type POOL_TYPE = u32;
+pub const FREELDR_BASE: usize = 0xF800;
+pub const FREELDR_PE_BASE: usize = 0x10000;
+pub const FREELDR_SECTION_COUNT: usize = 4;
+pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0xFFFFF;
+pub const MAX_FREELDR_PE_SIZE: usize = 0x70000 - FREELDR_PE_BASE - MM_PAGE_SIZE;
+pub const REDZONE_MARK: u64 = 0xCCCCCCCCCCCCCCCC;
+pub const REDZONE_ALLOCATION: usize = 24;
+pub const HEAP_ZERO_MEMORY: ULONG = 0x00000008;
+pub const MAXUSHORT: USHORT = 0xffff;
+pub const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x10b;
+pub const IMAGE_FILE_MACHINE_NATIVE: u16 = 0x014c;
+pub const IMAGE_SUBSYSTEM_NATIVE: u16 = 1;
+pub const FREELDR_IMAGE_CORRUPTION: ULONG = 1;
+pub const MEMORY_INIT_FAILURE: ULONG = 2;
+
+// meminit.c globals the rustconv pass dropped (faithful #[no_mangle]).
+#[no_mangle] pub static mut MmLowestPhysicalPage: PFN_NUMBER = 0xFFFFFFFF;
+#[no_mangle] pub static mut MmHighestPhysicalPage: PFN_NUMBER = 0;
+#[no_mangle] pub static mut BiosMemoryMapEntryCount: ULONG = 0;
+#[no_mangle] pub static mut BiosMemoryMap: PFREELDR_MEMORY_DESCRIPTOR = core::ptr::null_mut();
+#[no_mangle] pub static mut LoaderPagesSpanned: PFN_NUMBER = 0;
+// MachVtbl is real C (machpc.c / machine.h) — declared, not owned.
+#[repr(C)]
+pub struct MACHVTBL {
+    _before: [*const core::ffi::c_void; 22], // Cons*/Video*/Beep/Prepare/GetMemoryDescriptor
+    pub GetMemoryMap: Option<unsafe extern "C" fn(*mut ULONG) -> PFREELDR_MEMORY_DESCRIPTOR>,
+    _after: [*const core::ffi::c_void; 14],
+}
+extern "C" { pub static MachVtbl: MACHVTBL; }
+

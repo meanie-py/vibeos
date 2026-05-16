@@ -1,7 +1,12 @@
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
-use ntkrnl_sys::ddk::{IMAGE_OPTIONAL_HEADER, PCSTR, PIMAGE_FILE_HEADER, PIMAGE_NT_HEADERS, PIMAGE_OPTIONAL_HEADER, RtlImageNtHeader, Type};
+use crate::mm::*;
+use crate::heap::*;
+use ntkrnl_sys::ddk::{IMAGE_OPTIONAL_HEADER, PCSTR, PIMAGE_FILE_HEADER, PIMAGE_NT_HEADERS, PIMAGE_OPTIONAL_HEADER, RtlImageNtHeader};
 use core::ffi::c_void;
+extern "C" {
+    fn DbgPrint(fmt: *const i8, ...) -> i32;
+}
 
 extern "C" {
     fn TRACE(fmt: *const i8, ...);
@@ -48,7 +53,7 @@ unsafe fn DbgDumpMemoryMap(
 
 #[no_mangle]
 pub unsafe extern "C" fn MmGetSystemMemoryMapTypeString(
-    Type: Type,
+    Type: TYPE_OF_MEMORY,
 ) -> PCSTR {
     b"-\0".as_ptr() as PCSTR
 }
@@ -90,7 +95,7 @@ unsafe fn AddMemoryDescriptor(
         && (*List.offset(Index as isize)).BasePage < EndPage
     {
         TRACE(
-            b"AddMemoryDescriptor conflict @%lu: new=[%lx:%lx], existing=[%lx,%lx]\n\0".as_ptr()
+            b"AddMemoryDescriptor conflict @%lu: new=[%lx:%lx], existing=[%lx,%lx]\n\0".as_ptr() as *const i8
                 as PCSTR,
             Index,
             BasePage,
@@ -185,7 +190,7 @@ unsafe fn MmCheckFreeldrImageFile() {
     #[cfg(not(uefiboot))]
     {
 
-        let NtHeaders: PIMAGE_NT_HEADERS = RtlImageNtHeader(core::ptr::addr_of_mut!(__ImageBase) as *mut _);
+        let NtHeaders: PIMAGE_NT_HEADERS = RtlImageNtHeader(core::ptr::addr_of!(__ImageBase) as *mut _);
         if NtHeaders.is_null() {
             ERR(b"Could not get NtHeaders!\n\0".as_ptr() as PCHAR);
             FrLdrBugCheckWithMessage(
@@ -198,7 +203,7 @@ unsafe fn MmCheckFreeldrImageFile() {
 
         let FileHeader: PIMAGE_FILE_HEADER = core::ptr::addr_of_mut!((*NtHeaders).FileHeader);
         if ((*FileHeader).Machine != IMAGE_FILE_MACHINE_NATIVE) ||
-           ((*FileHeader).NumberOfSections != FREELDR_SECTION_COUNT) ||
+           ((*FileHeader).NumberOfSections as usize != FREELDR_SECTION_COUNT) ||
            ((*FileHeader).PointerToSymbolTable != 0) ||
            ((*FileHeader).NumberOfSymbols != 0) ||
            ((*FileHeader).SizeOfOptionalHeader != core::mem::size_of::<IMAGE_OPTIONAL_HEADER>() as u16)
@@ -209,19 +214,19 @@ unsafe fn MmCheckFreeldrImageFile() {
                 b"meminit.c\0".as_ptr() as PCHAR,
                 line!() as ULONG,
                 b"FreeLdr FileHeader is invalid.\nMachine == 0x%lx, expected 0x%lx\nNumberOfSections == 0x%lx, expected 0x%lx\nPointerToSymbolTable == 0x%lx, expected 0\nNumberOfSymbols == 0x%lx, expected 0\nSizeOfOptionalHeader == 0x%lx, expected 0x%lx\n\0".as_ptr() as PCHAR,
-                (*FileHeader).Machine, IMAGE_FILE_MACHINE_NATIVE,
-                (*FileHeader).NumberOfSections, FREELDR_SECTION_COUNT,
+                (*FileHeader).Machine as u32, IMAGE_FILE_MACHINE_NATIVE as u32,
+                (*FileHeader).NumberOfSections as u32, FREELDR_SECTION_COUNT as u32,
                 (*FileHeader).PointerToSymbolTable,
                 (*FileHeader).NumberOfSymbols,
-                (*FileHeader).SizeOfOptionalHeader, core::mem::size_of::<IMAGE_OPTIONAL_HEADER>(),
+                (*FileHeader).SizeOfOptionalHeader as u32, core::mem::size_of::<IMAGE_OPTIONAL_HEADER>(),
             );
         }
 
         let OptionalHeader: PIMAGE_OPTIONAL_HEADER = core::ptr::addr_of_mut!((*NtHeaders).OptionalHeader);
         if ((*OptionalHeader).Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC) ||
            ((*OptionalHeader).Subsystem != IMAGE_SUBSYSTEM_NATIVE) ||
-           ((*OptionalHeader).ImageBase != FREELDR_PE_BASE) ||
-           ((*OptionalHeader).SizeOfImage > MAX_FREELDR_PE_SIZE) ||
+           ((*OptionalHeader).ImageBase as usize != FREELDR_PE_BASE) ||
+           ((*OptionalHeader).SizeOfImage as usize > MAX_FREELDR_PE_SIZE) ||
            ((*OptionalHeader).SectionAlignment != (*OptionalHeader).FileAlignment)
         {
             ERR(b"FreeLdr OptionalHeader is invalid.\n\0".as_ptr() as PCHAR);
@@ -230,15 +235,15 @@ unsafe fn MmCheckFreeldrImageFile() {
                 b"meminit.c\0".as_ptr() as PCHAR,
                 line!() as ULONG,
                 b"FreeLdr OptionalHeader is invalid.\nMagic == 0x%lx, expected 0x%lx\nSubsystem == 0x%lx, expected 1 (native)\nImageBase == 0x%lx, expected 0x%lx\nSizeOfImage == 0x%lx, maximum 0x%lx\nSectionAlignment 0x%lx doesn't match FileAlignment 0x%lx\n\0".as_ptr() as PCHAR,
-                (*OptionalHeader).Magic, IMAGE_NT_OPTIONAL_HDR_MAGIC,
-                (*OptionalHeader).Subsystem,
+                (*OptionalHeader).Magic as u32, IMAGE_NT_OPTIONAL_HDR_MAGIC as u32,
+                (*OptionalHeader).Subsystem as u32,
                 (*OptionalHeader).ImageBase, FREELDR_PE_BASE,
                 (*OptionalHeader).SizeOfImage, MAX_FREELDR_PE_SIZE,
                 (*OptionalHeader).SectionAlignment, (*OptionalHeader).FileAlignment,
             );
         }
 
-        FrLdrImageSize = (core::ptr::addr_of_mut!(__ImageBase) as ULONG_PTR) + (*OptionalHeader).SizeOfImage as ULONG_PTR - FREELDR_BASE;
+        FrLdrImageSize = (core::ptr::addr_of!(__ImageBase) as ULONG_PTR) + (*OptionalHeader).SizeOfImage as ULONG_PTR - FREELDR_BASE;
     }
 }
 
@@ -252,7 +257,7 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
 
     MmCheckFreeldrImageFile();
 
-    BiosMemoryMap = ((*MachVtbl).GetMemoryMap.unwrap())(core::ptr::addr_of_mut!(BiosMemoryMapEntryCount));
+    BiosMemoryMap = (MachVtbl.GetMemoryMap.unwrap())(core::ptr::addr_of_mut!(BiosMemoryMapEntryCount));
 
     #[cfg(debug_assertions)]
     {
@@ -275,7 +280,7 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
     PageLookupTableAddress = MmFindLocationForPageLookupTable(TotalPagesInLookupTable);
     LastFreePageHint = MmHighestPhysicalPage;
 
-    if PageLookupTableAddress == 0 {
+    if PageLookupTableAddress.is_null() {
         printf(b"Error initializing memory manager!\n\0".as_ptr() as *const i8);
         return 0u8;
     }

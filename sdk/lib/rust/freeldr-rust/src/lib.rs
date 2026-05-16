@@ -29,11 +29,10 @@ pub mod ini_init;
 pub mod inifile;
 pub mod parse;
 
-// 🟢 sweep — mm unit (lib/mm/{meminit,mm,heap}.c) — WIP, mid-convergence,
-// staged unwired until green (translations on disk; not a regression-hide).
-// pub mod meminit;
-// pub mod mm;
-// pub mod heap;
+// 🟢 sweep — mm unit (lib/mm/{meminit,mm,heap}.c).
+pub mod meminit;
+pub mod mm;
+pub mod heap;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

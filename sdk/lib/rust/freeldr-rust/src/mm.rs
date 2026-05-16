@@ -1,6 +1,13 @@
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
+use crate::meminit::*;
+use crate::heap::*;
 use core::ffi::c_void;
+extern "C" {
+    fn TRACE(fmt: *const i8, ...);
+    fn ERR(fmt: *const i8, ...);
+    fn WARN(fmt: *const i8, ...);
+}
 
 extern "C" {
     fn DbgPrint(fmt: *const i8, ...) -> i32;
@@ -171,72 +178,72 @@ unsafe fn DumpMemoryAllocMap() {
 
     let RealPageLookupTable = PageLookupTableAddress as *mut PAGE_LOOKUP_TABLE_ITEM;
 
-    DbgPrint(b"----------- Memory Allocation Bitmap -----------\n\0".as_ptr());
+    DbgPrint(b"----------- Memory Allocation Bitmap -----------\n\0".as_ptr() as *const i8);
 
     let mut Idx: PFN_NUMBER = 0;
     while Idx < TotalPagesInLookupTable {
         if (Idx % 32) == 0 {
-            DbgPrint(b"\n\0".as_ptr());
-            DbgPrint(b"%08x:\t\0".as_ptr(), Idx * MM_PAGE_SIZE);
+            DbgPrint(b"\n\0".as_ptr() as *const i8);
+            DbgPrint(b"%08x:\t\0".as_ptr() as *const i8, Idx * MM_PAGE_SIZE);
         } else if (Idx % 4) == 0 {
-            DbgPrint(b" \0".as_ptr());
+            DbgPrint(b" \0".as_ptr() as *const i8);
         }
 
         match (*RealPageLookupTable.add(Idx as usize)).PageAllocated {
             LoaderFree => {
-                DbgPrint(b"*\0".as_ptr());
+                DbgPrint(b"*\0".as_ptr() as *const i8);
             }
             LoaderBad => {
-                DbgPrint(b"-\0".as_ptr());
+                DbgPrint(b"-\0".as_ptr() as *const i8);
             }
             LoaderLoadedProgram => {
-                DbgPrint(b"O\0".as_ptr());
+                DbgPrint(b"O\0".as_ptr() as *const i8);
             }
             LoaderFirmwareTemporary => {
-                DbgPrint(b"T\0".as_ptr());
+                DbgPrint(b"T\0".as_ptr() as *const i8);
             }
             LoaderFirmwarePermanent => {
-                DbgPrint(b"P\0".as_ptr());
+                DbgPrint(b"P\0".as_ptr() as *const i8);
             }
             LoaderOsloaderHeap => {
-                DbgPrint(b"H\0".as_ptr());
+                DbgPrint(b"H\0".as_ptr() as *const i8);
             }
             LoaderOsloaderStack => {
-                DbgPrint(b"S\0".as_ptr());
+                DbgPrint(b"S\0".as_ptr() as *const i8);
             }
             LoaderSystemCode => {
-                DbgPrint(b"K\0".as_ptr());
+                DbgPrint(b"K\0".as_ptr() as *const i8);
             }
             LoaderHalCode => {
-                DbgPrint(b"L\0".as_ptr());
+                DbgPrint(b"L\0".as_ptr() as *const i8);
             }
             LoaderBootDriver => {
-                DbgPrint(b"B\0".as_ptr());
+                DbgPrint(b"B\0".as_ptr() as *const i8);
             }
             LoaderStartupPcrPage => {
-                DbgPrint(b"G\0".as_ptr());
+                DbgPrint(b"G\0".as_ptr() as *const i8);
             }
             LoaderRegistryData => {
-                DbgPrint(b"R\0".as_ptr());
+                DbgPrint(b"R\0".as_ptr() as *const i8);
             }
             LoaderMemoryData => {
-                DbgPrint(b"M\0".as_ptr());
+                DbgPrint(b"M\0".as_ptr() as *const i8);
             }
             LoaderNlsData => {
-                DbgPrint(b"N\0".as_ptr());
+                DbgPrint(b"N\0".as_ptr() as *const i8);
             }
             LoaderSpecialMemory => {
-                DbgPrint(b"C\0".as_ptr());
+                DbgPrint(b"C\0".as_ptr() as *const i8);
             }
             _ => {
-                DbgPrint(b"?\0".as_ptr());
+                DbgPrint(b"?\0".as_ptr() as *const i8);
             }
         }
 
         Idx += 1;
     }
 
-    DbgPrint(b"\n\0".as_ptr());
+    DbgPrint(b"\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
