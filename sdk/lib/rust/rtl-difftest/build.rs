@@ -545,4 +545,107 @@ fn main() {
     for obj in sbuild.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+
+    // Wave ACL: genuine sdk/lib/rtl/acl.c — own ref TU. acl.c does
+    // `#include <../../ntoskrnl/include/internal/se.h>`; resolve that
+    // to an EMPTY stub via a crafted -I dir (`<-I>/../../ntoskrnl/
+    // include/internal/se.h`). All ACL/ACE/SID types + SE constants +
+    // _SEH2 (DUMMY_PSEH) stubs live in the preamble; RtlValidSid/
+    // RtlLengthSid/RtlCopySid resolve to the diff-proven rtl-strings
+    // cabi (NOT renamed). scrape_protos: acl.c has call-before-def
+    // (RtlValidAcl used by RtlpAddKnownAce, defined far below).
+    let acl_c = repo.join("sdk/lib/rtl/acl.c");
+    // `<-I aclinc/a/b>/../../ntoskrnl/include/internal/se.h`
+    // resolves to `aclinc/ntoskrnl/include/internal/se.h`.
+    let se_root = out.join("aclinc/a/b");
+    fs::create_dir_all(&se_root).unwrap();
+    let se_stub = out.join("aclinc/ntoskrnl/include/internal");
+    fs::create_dir_all(&se_stub).unwrap();
+    fs::write(se_stub.join("se.h"), "/* stub: types in ref preamble */\n").unwrap();
+    let acl_body = format!(
+        "#include <rtl.h>\n#include <string.h>\n\
+         typedef ULONG ACCESS_MASK;\n\
+         #define SID_REVISION 1\n\
+         #define SID_MAX_SUB_AUTHORITIES 15\n\
+         #define STATUS_INVALID_SID ((NTSTATUS)0xC0000078L)\n\
+         #define STATUS_REVISION_MISMATCH ((NTSTATUS)0xC0000059L)\n\
+         #define STATUS_INVALID_ACL ((NTSTATUS)0xC0000077L)\n\
+         #define STATUS_ALLOTTED_SPACE_EXCEEDED ((NTSTATUS)0xC0000099L)\n\
+         #define STATUS_INVALID_INFO_CLASS ((NTSTATUS)0xC0000003L)\n\
+         #define ANYSIZE_ARRAY 1\n\
+         #define MAXUSHORT 0xffff\n\
+         #define min(a,b) (((a)<(b))?(a):(b))\n\
+         #define ROUND_DOWN(n,a) (((ULONG_PTR)(n)) & ~((ULONG_PTR)(a)-1))\n\
+         #define ROUND_UP(n,a) ROUND_DOWN(((ULONG_PTR)(n))+(a)-1,(a))\n\
+         #define ACL_REVISION2 2\n#define ACL_REVISION3 3\n#define ACL_REVISION4 4\n\
+         #define MIN_ACL_REVISION 2\n#define MAX_ACL_REVISION 4\n\
+         #define ACCESS_ALLOWED_ACE_TYPE 0x0\n#define ACCESS_DENIED_ACE_TYPE 0x1\n\
+         #define SYSTEM_AUDIT_ACE_TYPE 0x2\n#define ACCESS_MAX_MS_V2_ACE_TYPE 0x3\n\
+         #define ACCESS_ALLOWED_COMPOUND_ACE_TYPE 0x4\n#define ACCESS_MAX_MS_V3_ACE_TYPE 0x4\n\
+         #define ACCESS_MIN_MS_OBJECT_ACE_TYPE 0x5\n#define ACCESS_ALLOWED_OBJECT_ACE_TYPE 0x5\n\
+         #define ACCESS_DENIED_OBJECT_ACE_TYPE 0x6\n#define SYSTEM_AUDIT_OBJECT_ACE_TYPE 0x7\n\
+         #define ACCESS_MAX_MS_OBJECT_ACE_TYPE 0x8\n#define ACCESS_MAX_MS_ACE_TYPE 0x8\n\
+         #define SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE 0xF\n\
+         #define VALID_INHERIT_FLAGS 0x1F\n#define SUCCESSFUL_ACCESS_ACE_FLAG 0x40\n\
+         #define FAILED_ACCESS_ACE_FLAG 0x80\n\
+         #define ACE_OBJECT_TYPE_PRESENT 0x1\n#define ACE_INHERITED_OBJECT_TYPE_PRESENT 0x2\n\
+         #define RtlZeroMemory(d,n) memset((d),0,(n))\n\
+         #define _SEH2_TRY\n#define _SEH2_EXCEPT(x) if(0)\n#define _SEH2_FINALLY\n\
+         #define _SEH2_END\n#define _SEH2_YIELD(s) s\n#define EXCEPTION_EXECUTE_HANDLER 1\n\
+         typedef struct _SID_IDENTIFIER_AUTHORITY {{ UCHAR Value[6]; }} SID_IDENTIFIER_AUTHORITY,*PSID_IDENTIFIER_AUTHORITY;\n\
+         typedef struct _SID {{ UCHAR Revision; UCHAR SubAuthorityCount;\n\
+            SID_IDENTIFIER_AUTHORITY IdentifierAuthority; ULONG SubAuthority[ANYSIZE_ARRAY]; }} SID,*PISID;\n\
+         typedef PVOID PSID;\n\
+         typedef struct _ACL {{ UCHAR AclRevision; UCHAR Sbz1; USHORT AclSize;\n\
+            USHORT AceCount; USHORT Sbz2; }} ACL,*PACL;\n\
+         typedef struct _ACE_HEADER {{ UCHAR AceType; UCHAR AceFlags; USHORT AceSize; }} ACE_HEADER,*PACE_HEADER;\n\
+         typedef struct _ACE {{ ACE_HEADER Header; ACCESS_MASK AccessMask; }} ACE,*PACE;\n\
+         typedef struct _KNOWN_ACE {{ ACE_HEADER Header; ACCESS_MASK Mask; ULONG SidStart; }} KNOWN_ACE,*PKNOWN_ACE;\n\
+         typedef struct _KNOWN_OBJECT_ACE {{ ACE_HEADER Header; ACCESS_MASK Mask; ULONG Flags; ULONG SidStart; }} KNOWN_OBJECT_ACE,*PKNOWN_OBJECT_ACE;\n\
+         typedef enum _ACL_INFORMATION_CLASS {{ AclRevisionInformation=1, AclSizeInformation }} ACL_INFORMATION_CLASS;\n\
+         typedef struct _ACL_REVISION_INFORMATION {{ ULONG AclRevision; }} ACL_REVISION_INFORMATION,*PACL_REVISION_INFORMATION;\n\
+         typedef struct _ACL_SIZE_INFORMATION {{ ULONG AceCount; ULONG AclBytesInUse; ULONG AclBytesFree; }} ACL_SIZE_INFORMATION,*PACL_SIZE_INFORMATION;\n\
+         /* RtlValidSid/RtlLengthSid/RtlCopySid are NOT renamed →\n\
+            resolve to the diff-proven rtl-strings cabi exports. */\n\
+         #define RtlFirstFreeAce ref_RtlFirstFreeAce\n\
+         #define RtlpAddData ref_RtlpAddData\n\
+         #define RtlpDeleteData ref_RtlpDeleteData\n\
+         #define RtlpAddKnownAce ref_RtlpAddKnownAce\n\
+         #define RtlpAddKnownObjectAce ref_RtlpAddKnownObjectAce\n\
+         #define RtlAddAccessAllowedAce ref_RtlAddAccessAllowedAce\n\
+         #define RtlAddAccessAllowedAceEx ref_RtlAddAccessAllowedAceEx\n\
+         #define RtlAddAccessAllowedObjectAce ref_RtlAddAccessAllowedObjectAce\n\
+         #define RtlAddAccessDeniedAce ref_RtlAddAccessDeniedAce\n\
+         #define RtlAddAccessDeniedAceEx ref_RtlAddAccessDeniedAceEx\n\
+         #define RtlAddAccessDeniedObjectAce ref_RtlAddAccessDeniedObjectAce\n\
+         #define RtlAddAuditAccessAce ref_RtlAddAuditAccessAce\n\
+         #define RtlAddAuditAccessAceEx ref_RtlAddAuditAccessAceEx\n\
+         #define RtlAddAuditAccessObjectAce ref_RtlAddAuditAccessObjectAce\n\
+         #define RtlGetAce ref_RtlGetAce\n\
+         #define RtlAddAce ref_RtlAddAce\n\
+         #define RtlDeleteAce ref_RtlDeleteAce\n\
+         #define RtlCreateAcl ref_RtlCreateAcl\n\
+         #define RtlQueryInformationAcl ref_RtlQueryInformationAcl\n\
+         #define RtlSetInformationAcl ref_RtlSetInformationAcl\n\
+         #define RtlValidAcl ref_RtlValidAcl\n\
+         {}\
+         #include \"{}\"\n",
+        scrape_protos(&fs::read_to_string(&acl_c).unwrap()),
+        acl_c.display()
+    );
+    let acl_src = out.join("ref_acl.c");
+    fs::write(&acl_src, acl_body).unwrap();
+    let mut abuild = cc::Build::new();
+    abuild
+        .include(&refstub)
+        .include(&se_root)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&acl_src);
+    println!("cargo:rerun-if-changed={}", acl_c.display());
+    for obj in abuild.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
 }
