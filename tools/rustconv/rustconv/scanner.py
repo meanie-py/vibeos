@@ -170,9 +170,45 @@ def _parse_function(node, source: bytes, source_text: str) -> Optional[CFunction
     )
 
 
+_SPLIT_INCLUDE_RE = re.compile(
+    r'^[ \t]*#[ \t]*include[ \t]+"([^"]+\.split\d+\.c)"[ \t]*$',
+    re.MULTILINE,
+)
+
+
+def _expand_split_includes(path: Path, text: str, _depth: int = 0) -> str:
+    """Inline pretranslation `#include "X.splitN.c"` fragments.
+
+    The giant-file pretranslation split carves trailing function groups
+    into `X.splitN.c` siblings that the original `X.c` `#include`s back,
+    so the C preprocessor reassembles ONE translation unit verbatim (no
+    CMake/linkage change). rustconv parses C with tree-sitter, NOT cpp,
+    so without this it would silently miss every split-off function (and
+    their shared external-linkage TU globals would become two clashing
+    Rust modules). Mirror cpp: textually inline the fragment in place.
+
+    The include sits at the END of the parent, so inlining APPENDS after
+    the parent's last line — every original line number is preserved and
+    existing Pass-0/2/3 sidecars (keyed by parent line ranges) stay
+    valid. Iterative/recursive: `X.c` may include `X.split2.c` and
+    `X.split3.c`; a fragment may include the next.
+    """
+    if _depth > 16:
+        return text
+
+    def _sub(m: 're.Match') -> str:
+        frag = path.parent / m.group(1)
+        if not frag.exists():
+            return m.group(0)  # not a local split fragment — leave it
+        frag_text = frag.read_text(errors='replace')
+        return _expand_split_includes(frag, frag_text, _depth + 1)
+
+    return _SPLIT_INCLUDE_RE.sub(_sub, text)
+
+
 def scan_file(path: Path) -> ScanResult:
     """Parse a C source file and extract structural information."""
-    source_text = path.read_text(errors='replace')
+    source_text = _expand_split_includes(path, path.read_text(errors='replace'))
     source = source_text.encode('utf-8')
 
     parser = Parser(C_LANG)

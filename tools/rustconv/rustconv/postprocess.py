@@ -623,6 +623,43 @@ def fix_win32k_crate_path(code: str) -> str:
     return re.sub(r'\bntkrnl_sys::win32k\b', 'win32k_sys::win32k', code)
 
 
+# ntkrnl_sys submodules whose glob `use` clashes with `win32k_sys::win32k`.
+# win32k-sys' bindgen comes from pch.h → ntifs.h/ndk, so it is a SUPERSET:
+# it already defines ULONG/PVOID/EPROCESS/NTSTATUS/… plus every
+# win32k-internal type. Globbing both makes every primitive `ambiguous`
+# (E0659) and silently resolves shared structs (e.g. _BASEOBJECT) to the
+# kernel variant that lacks win32k fields. Drop the clashing ntkrnl_sys
+# globs; keep `win32k_sys::win32k::*` as the single primary namespace and
+# any *named* `use ntkrnl_sys::<m>::{A, B}` (kernel APIs not in win32k
+# headers) untouched.
+_NTKRNL_CLASH_MODS = (
+    "base", "globals", "constants", "ddk", "ke", "mm", "ex", "ob", "ps",
+    "se", "io", "rtl", "interlocked", "kd", "po", "cc", "fsrtl",
+)
+_RE_NTKRNL_GLOB = re.compile(
+    r'^[ \t]*use[ \t]+ntkrnl_sys::(?:'
+    + "|".join(_NTKRNL_CLASH_MODS)
+    + r')::\*[ \t]*;[ \t]*\n',
+    re.MULTILINE,
+)
+
+
+def normalize_win32k_imports(code: str) -> str:
+    """Drop ntkrnl_sys glob imports that clash with win32k_sys::win32k.
+
+    Deterministic and win32k-only: for a win32k TU, `win32k_sys::win32k`
+    is the authoritative superset namespace. Removing the duplicate
+    ntkrnl_sys globs eliminates the whole E0659-ambiguity error class and
+    fixes wrong-crate struct resolution — the project's worst per-file
+    win32k tax. Named ntkrnl_sys imports (`use ntkrnl_sys::ddk::{...}`)
+    are preserved (the `::*` anchor in the regex won't match them).
+    """
+    code = _RE_NTKRNL_GLOB.sub("", code)
+    if "use win32k_sys::win32k::*;" not in code:
+        code = "use win32k_sys::win32k::*;\n" + code
+    return code
+
+
 def enforce_win32k_abi(code: str) -> str:
     """Overwrite the LLM's `extern "..."` on win32k exports with ground truth.
 
@@ -1248,6 +1285,7 @@ def postprocess(
     # #1 i386 crash cause, taken out of the LLM's hands entirely).
     if target_name == "win32k":
         code = fix_win32k_crate_path(code)
+        code = normalize_win32k_imports(code)
         code = enforce_win32k_abi(code)
     if globals:
         code = fix_global_exports(code, globals)
