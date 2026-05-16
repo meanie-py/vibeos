@@ -29,9 +29,11 @@ list(APPEND FREELDR_ARC_SOURCE
     arcname.c
     arch/arcemul.c
     arch/archwsup.c
-    disk/disk.c
-    disk/partition.c
-    disk/ramdisk.c)
+    disk/disk.c)
+    # disk unit → Rust (freeldr-rust: partition.rs/ramdisk.rs). Cohabitation:
+    # .c kept on disk, Rust #[no_mangle] takes over.
+    # disk/partition.c  # replaced by Rust (freeldr-rust/src/partition.rs)
+    # disk/ramdisk.c    # replaced by Rust (freeldr-rust/src/ramdisk.rs)
     # disk/scsiport.c
     # lib/fs/pxe.c
 
@@ -80,7 +82,7 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
 
 list(APPEND FREELDR_NTLDR_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
-    ntldr/conversion.c
+    # ntldr/conversion.c  # replaced by Rust (freeldr-rust/src/conversion.rs)
     ntldr/registry.c
     ntldr/winldr.c
     ntldr/wlmemory.c

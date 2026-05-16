@@ -45,6 +45,11 @@ pub mod fs;
 pub mod iso;
 pub mod fat;
 
+// 🟢 sweep — disk unit (disk/{partition,ramdisk}.c, ntldr/conversion.c).
+pub mod partition;
+pub mod ramdisk;
+pub mod conversion;
+
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
 pub mod ui_keystone;

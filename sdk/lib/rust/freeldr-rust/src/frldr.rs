@@ -526,3 +526,68 @@ pub const INVALID_FILE_ID: ULONG = ULONG::MAX; // ((ULONG)-1)
 pub unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
     core::ptr::copy(src as *const u8, dst as *mut u8, len);
 }
+
+// ===========================================================================
+// disk unit — shared partition/MBR types (include/disk.h). rustconv drops
+// non-fn header content at scale; restored verbatim. Layout is packed
+// (disk.h wraps these in pshpack1/poppack — MBR field offsets prove it).
+// ===========================================================================
+pub use ntkrnl_sys::ddk::_PARTITION_STYLE as PARTITION_STYLE;
+pub const PARTITION_STYLE_MBR: PARTITION_STYLE = 0;
+pub const PARTITION_STYLE_GPT: PARTITION_STYLE = 1;
+pub const PARTITION_STYLE_BRFR: PARTITION_STYLE = 128;
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub struct PARTITION_TABLE_ENTRY {
+    pub BootIndicator: UCHAR,
+    pub StartHead: UCHAR,
+    pub StartSector: UCHAR,
+    pub StartCylinder: UCHAR,
+    pub SystemIndicator: UCHAR,
+    pub EndHead: UCHAR,
+    pub EndSector: UCHAR,
+    pub EndCylinder: UCHAR,
+    pub SectorCountBeforePartition: ULONG,
+    pub PartitionSectorCount: ULONG,
+}
+pub type PPARTITION_TABLE_ENTRY = *mut PARTITION_TABLE_ENTRY;
+
+#[repr(C, packed)]
+#[derive(Clone, Copy)]
+pub struct MASTER_BOOT_RECORD {
+    pub MasterBootRecordCodeAndData: [UCHAR; 0x1b8],
+    pub Signature: ULONG,
+    pub Reserved: USHORT,
+    pub PartitionTable: [PARTITION_TABLE_ENTRY; 4],
+    pub MasterBootRecordMagic: USHORT,
+}
+pub type PMASTER_BOOT_RECORD = *mut MASTER_BOOT_RECORD;
+
+pub const PARTITION_ENTRY_UNUSED: UCHAR = 0x00;
+pub const PARTITION_FAT_12: UCHAR = 0x01;
+pub const PARTITION_XENIX_1: UCHAR = 0x02;
+pub const PARTITION_XENIX_2: UCHAR = 0x03;
+pub const PARTITION_FAT_16: UCHAR = 0x04;
+pub const PARTITION_EXTENDED: UCHAR = 0x05;
+pub const PARTITION_HUGE: UCHAR = 0x06;
+pub const PARTITION_IFS: UCHAR = 0x07;
+pub const PARTITION_OS2BOOTMGR: UCHAR = 0x0A;
+pub const PARTITION_FAT32: UCHAR = 0x0B;
+pub const PARTITION_FAT32_XINT13: UCHAR = 0x0C;
+pub const PARTITION_XINT13: UCHAR = 0x0E;
+pub const PARTITION_XINT13_EXTENDED: UCHAR = 0x0F;
+pub const PARTITION_NTFS: UCHAR = 0x17;
+pub const PARTITION_PREP: UCHAR = 0x41;
+pub const PARTITION_LDM: UCHAR = 0x42;
+pub const PARTITION_UNIX: UCHAR = 0x63;
+pub const VALID_NTFT: UCHAR = 0xC0;
+pub const PARTITION_NTFT: UCHAR = 0x80;
+pub const PARTITION_GPT: UCHAR = 0xEE;
+pub const PARTITION_STYLE_RAW: PARTITION_STYLE = 2;
+
+// CONFIGURATION_TYPE values used by FILEINFORMATION.Type (ddk enum, but
+// rustconv imports the bare names — keystone provides them, unique).
+pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE as CONFIGURATION_TYPE;
+pub const DiskPeripheral: CONFIGURATION_TYPE = 25;
+pub const FloppyDiskPeripheral: CONFIGURATION_TYPE = 26;
