@@ -41,6 +41,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/user_lock_inventory.py` | Pass 2b USER critsec-bracket detector (no rewrite); `python -m rustconv user-locks` | done, oracle-validated; 254 brackets/55 files, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `sdk/lib/rust/win32k-sys/` (crate + `generate_bindings.sh`) | win32k internal FFI surface (bindgen, 3 arches) — the ntkrnl-sys analog | done; ~2.8K structs/2.7K fns/20K consts per arch, cargo-clean ×3, resolve 233→41 (82%) |
+| `tools/rustconv/rustconv/abi_map.py` + `postprocess.enforce_win32k_abi` | deterministic calling-convention map (win32k-sys bindgen + win32k.spec) + postprocess rewrite — ABI out of LLM hands | done; 1698 fns (1193 stdcall/398 fastcall/107 cdecl), idempotent, verify_abi gate |
 | `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
 
