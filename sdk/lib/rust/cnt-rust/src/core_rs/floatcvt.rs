@@ -194,3 +194,254 @@ pub fn fcvtbuf(mut arg: f64, mut ndigits: i32) -> Result<FcvtResult, (bool, i32,
     r.buf_len = p + 1;
     Ok(r)
 }
+
+// ---------------------------------------------------------------------
+// _ecvt — `sprintf("%-+.*E", ndigits, value)` then text surgery
+// (ecvt.c). The sprintf float path is the genuine ReactOS
+// `printf/streamout.c::format_float`:
+//
+//   #define get_exp(f) (int)floor(f==0?0:(f>=0?log10(f):log10(-f)))
+//   #define round(x)   floor((x)+0.5)
+//   fpval2 = round(sign*fpval*pow(10., precision - exponent));
+//   if (fpval2 >= (u64)pow(10., precision+1)) { exponent++;
+//       fpval2 = round(sign*fpval*pow(10., precision-exponent)); }
+//   ...peel `precision` frac digits then the integer digit(s) by
+//   `digit = (u64)fpval2 % 10; fpval2 /= 10.;` (f64 divide chain).
+//
+// `format_float` casts to `long double`; on the Windows target (MSVC
+// ABI) that is 64-bit == f64 (the diff ref forces `-mlong-double-64`
+// so ref == target == this f64 core — the scanf-P2 precedent). The
+// host libm `floor`/`log10`/`pow` are NOT bit-portable to a no_std
+// reimplementation, so the diff models the SAME three primitives on
+// BOTH sides (the Wave E2 CP1252 discipline): the harness `#define`s
+// the genuine `floor`/`log10`/`pow` to C functions bit-identical to
+// `fl` below, so the diff pins the genuine ecvt/format_float
+// *surgery* deterministically with libm-exactness factored out.
+// ---------------------------------------------------------------------
+
+/// `ecvtbuf[DBL_MAX_10_EXP + 10]` (DBL_MAX_10_EXP == 308).
+pub const ECVT_BUF: usize = 318;
+/// `NUMBER_EFMT` (ecvt's scratch padding).
+pub const NUMBER_EFMT: usize = 18;
+
+/// libm primitives the genuine `get_exp`/`round`/`pow` use. The diff
+/// harness provides C functions *bit-identical to these* to the
+/// reference build (Wave E2 shared-model discipline), so the residual
+/// libm-exactness question is modeled the same on both sides instead
+/// of being a flaky cross-impl divergence.
+pub mod fl {
+    /// `floor` for finite f64 (genuine host `floor`; the harness uses
+    /// the identical `(double)(long long)x` form). Inputs reaching
+    /// here are bounded (|.|<10^18 < 2^63) so the i64 cast is exact.
+    #[inline]
+    pub fn floor(x: f64) -> f64 {
+        if !x.is_finite() {
+            return x;
+        }
+        let i = x as i64 as f64;
+        if i > x {
+            i - 1.0
+        } else {
+            i
+        }
+    }
+
+    /// `round(x) = floor(x + 0.5)` — the genuine macro verbatim.
+    #[inline]
+    pub fn round(x: f64) -> f64 {
+        floor(x + 0.5)
+    }
+
+    /// `pow(10., n)` for integer n (the only use). Binary-exponent
+    /// square-and-multiply; the harness reference uses the identical
+    /// scheme so `pow` is modeled the same on both sides.
+    #[inline]
+    pub fn pow10(n: i32) -> f64 {
+        let mut r = 1.0_f64;
+        let mut k = n.unsigned_abs();
+        let mut b = 10.0_f64;
+        while k > 0 {
+            if k & 1 == 1 {
+                r *= b;
+            }
+            b *= b;
+            k >>= 1;
+        }
+        if n < 0 {
+            1.0 / r
+        } else {
+            r
+        }
+    }
+
+    /// `(int)floor(log10(f))` — `get_exp`. Returns the integer
+    /// directly (the harness `#define`s `log10(f)` to a C function
+    /// returning exactly this as a double, so `(int)floor(...)` of it
+    /// is identity → ref == this by construction).
+    #[inline]
+    pub fn exp10_floor(mut f: f64) -> i32 {
+        if f == 0.0 {
+            return 0;
+        }
+        if f < 0.0 {
+            f = -f;
+        }
+        let bits = f.to_bits();
+        let biased = ((bits >> 52) & 0x7ff) as i32;
+        let mut e = (((biased - 1023) as f64) * 0.301_029_995_663_981_2) as i32;
+        while pow10(e) > f {
+            e -= 1;
+        }
+        while pow10(e + 1) <= f {
+            e += 1;
+        }
+        e
+    }
+}
+
+/// The genuine `%-+.*E` mantissa as ecvt re-parses it: the decimal
+/// digits of `(u64)fpval2` MSD-first, the post-compensation
+/// `exponent`, the sign, and a special tag.
+pub struct FloatText {
+    pub negative: bool, // genuine: fpval < 0 (NOT signbit; -0.0 ⇒ false)
+    pub special: u8,    // 0 finite, 1 NaN, 2 Inf
+    pub digits: [u8; ECVT_BUF + NUMBER_EFMT + 8],
+    pub ndigits: usize,
+    pub exp: i32,
+}
+
+/// Reproduce `format_float(chr='E', precision, value)`'s digit run +
+/// exponent, bit-faithfully (incl. the `(u64)fpval2 % 10; fpval2/=10.`
+/// f64-divide peel — NOT a floor-based peel; the chained rounding is
+/// part of the genuine output).
+pub fn format_e(value: f64, mut precision: i32) -> FloatText {
+    let mut out = FloatText {
+        negative: value < 0.0,
+        special: 0,
+        digits: [0; ECVT_BUF + NUMBER_EFMT + 8],
+        ndigits: 0,
+        exp: 0,
+    };
+    if is_nan(value) {
+        out.special = 1;
+        return out;
+    }
+    if !is_finite(value) {
+        out.special = 2;
+        return out;
+    }
+    // format_float precision normalize (ecvt passes >=0; the >17
+    // padding is emitted as text by format_float and re-padded by
+    // ecvt's own zero loop — same result).
+    if precision < 0 {
+        precision = 6;
+    } else if precision > 17 {
+        precision = 17;
+    }
+    let mut exponent = if value == 0.0 {
+        0
+    } else {
+        fl::floor(fl::exp10_floor(value.abs()) as f64) as i32
+    };
+    let sign = if value < 0.0 { -1.0 } else { 1.0 };
+    let mut fpval2 = fl::round(sign * value * fl::pow10(precision - exponent));
+    if fpval2 >= fl::pow10(precision + 1) {
+        exponent += 1;
+        fpval2 = fl::round(sign * value * fl::pow10(precision - exponent));
+    }
+    out.exp = exponent;
+    // Peel exactly like format_float: precision frac digits, then the
+    // integer digit(s) (do-while), each step `(u64)x % 10; x /= 10.`.
+    let mut lsb = [0u8; ECVT_BUF + NUMBER_EFMT + 8];
+    let mut n = 0usize;
+    let mut x = fpval2;
+    let mut k = precision;
+    while k > 0 {
+        lsb[n] = b'0' + ((x as u64) % 10) as u8;
+        n += 1;
+        x /= 10.0;
+        k -= 1;
+    }
+    loop {
+        lsb[n] = b'0' + ((x as u64) % 10) as u8;
+        n += 1;
+        x /= 10.0;
+        if (x as u64) == 0 {
+            break;
+        }
+    }
+    for i in 0..n {
+        out.digits[i] = lsb[n - 1 - i]; // LSB-first → MSD-first
+    }
+    out.ndigits = n;
+    out
+}
+
+/// `_ecvt(value, ndigits, *decpt, *sign)` content (ecvt.c lines
+/// 15–118). Returns the bytes to copy into the shim's non-reentrant
+/// static `ecvtbuf` plus decpt/sign. `special` ⇒ the NaN/Inf
+/// `strncmp`/memcpy path — a documented UNFUZZED edge (the genuine
+/// `%-+.*E` of NaN under format_float is "+1.#QNAN…", so ecvt's
+/// `strncmp(s,"NaN",3)` is dead and the value flows through the
+/// finite path on the special glyphs; pinning that exact garbage is
+/// owed, not modeled here — scanf-extreme-exponent precedent).
+pub struct EcvtResult {
+    pub buf: [u8; ECVT_BUF],
+    pub buf_len: usize,
+    pub decpt: i32,
+    pub sign: i32,
+}
+
+pub fn ecvt(value: f64, ndigits: i32) -> Option<EcvtResult> {
+    let ndigits = if ndigits < 0 { 0 } else { ndigits };
+    let ft = format_e(value, ndigits);
+    if ft.special != 0 {
+        return None; // unfuzzed special path (see doc)
+    }
+    let mut r = EcvtResult {
+        buf: [0; ECVT_BUF],
+        buf_len: 0,
+        decpt: 0,
+        sign: 0,
+    };
+    r.sign = ft.negative as i32;
+    let nd = ndigits as usize;
+    let mut d = 0usize;
+    // first (integer) digit
+    if ft.ndigits > 0 && d < nd {
+        r.buf[d] = ft.digits[0];
+        d += 1;
+    }
+    // fractional digits
+    let mut si = 1usize;
+    while si < ft.ndigits {
+        if d < nd {
+            r.buf[d] = ft.digits[si];
+            d += 1;
+        }
+        si += 1;
+    }
+    // `*decpt = atoi(exponent-text) + 1` == exponent + 1
+    r.decpt = ft.exp + 1;
+    // `if (cvtbuf[1] == '0') *decpt = 0;` — cvtbuf[1] is the first
+    // digit char (cvtbuf[0] is the '+'/'-' prefix) == ft.digits[0].
+    if ft.ndigits > 0 && ft.digits[0] == b'0' {
+        r.decpt = 0;
+    }
+    // ndigits<1 enhanced-precision nudge: reprint at ndigits+2; if
+    // tbuf[1] (first digit) >= '5' → (*decpt)++.
+    if ndigits < 1 {
+        let t = format_e(value, ndigits + 2);
+        if t.special == 0 && t.ndigits > 0 && t.digits[0] >= b'5' {
+            r.decpt += 1;
+        }
+    }
+    // pad zeroes: `while (d - ecvtbuf < ndigits) *d++ = '0';`
+    while d < nd {
+        r.buf[d] = b'0';
+        d += 1;
+    }
+    r.buf[d] = 0; // `*d = '\0';`
+    r.buf_len = d + 1;
+    Some(r)
+}

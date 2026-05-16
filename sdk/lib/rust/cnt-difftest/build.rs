@@ -498,6 +498,12 @@ fn main() {
              #define fcvtbuf ref_fcvtbuf\n#define _fcvt ref__fcvt\n{}{}",
             inc(s("stdlib/fcvtbuf.c")),
             inc(s("stdlib/fcvt.c")))),
+        // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
+        // (`ecvt_build`, like scanf) because format_float casts to
+        // `long double`: the SysV host default is 80-bit x87 which
+        // diverges from the Windows MSVC ABI (long double == double ==
+        // 64-bit == the f64 core). Built with `-mlong-double-64`.
+        // See `ecvt_body` / `ecvt_build` below.
         // Wave SCANF (Phase 1) — the genuine engine is winesup.c
         // (_internal_handle_float + _LIBCNT_locinfo) + scanf.c (the
         // _LIBCNT_ STRING/STRING_LEN instantiations + char2digit + the
@@ -642,6 +648,85 @@ fn main() {
         println!("cargo:rustc-link-arg={}", obj.display());
     };
     for obj in build.compile_intermediates() {
+        redef(&obj);
+    }
+    // float-cvt Phase 2 — _ecvt. `sprintf("%-+.*E")` → the genuine
+    // `printf/streamout.c::format_float`. We compile the GENUINE
+    // streamout.c (for `format_float`, the float→digits algorithm cnt
+    // reimplements and we want to pin) but NOT sprintf.c/_sxprintf.c:
+    // ReactOS streamout forwards `va_list` THROUGH a by-value
+    // parameter into `format_float(..., va_list*)`, which is written
+    // for the mingw/MSVC `char*` va_list and is broken under the
+    // x86-64 SysV array `va_list` (it reads a constant garbage double
+    // regardless of input). So `ref_ecvt_sprintf` drives the genuine
+    // `format_float` directly via a proper single-level variadic
+    // wrapper (`cnt_fmtf` — va_start in the immediate caller, the
+    // standard SysV-safe idiom; the scanf `cnt_ref_ihf`-override
+    // precedent) and assembles the result EXACTLY as streamout's
+    // float tail does for "%-+.*E" (flags '-'|'+', precision=*,
+    // fieldwidth 0 ⇒ output is just `prefix` then the format_float
+    // buffer). The float→digits algorithm under test is 100% the
+    // genuine streamout code; only the printf-format plumbing (a
+    // different symbol) is the harness adapter. floor/log10/pow are
+    // `#define`d BIT-IDENTICAL to core_rs::floatcvt::fl (Wave E2
+    // shared-model discipline). Built with `-mlong-double-64`
+    // (Windows MSVC ABI: long double == double == f64 == the core).
+    let ecvt_body = format!(
+        "#include <stddef.h>\n#include <stdarg.h>\n#include <math.h>\n\
+         #include <float.h>\n#include <stdlib.h>\n#include <string.h>\n\
+         #define _LIBCNT_\n#define __declspec(x)\n#define __int64 long long\n\
+         #define _TCHAR char\n#define _T(x) x\n\
+         #define _tcscpy strcpy\n#define _tcslen strlen\n#define _tcschr strchr\n\
+         #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+         static double cnt_floor(double x){{ if(!isfinite(x))return x;\
+           long long i=(long long)x; double di=(double)i;\
+           return di>x?di-1.0:di; }}\n\
+         static double cnt_pow10i(int n){{ double r=1.0,b=10.0;\
+           unsigned k=(n<0)?(unsigned)(-(long)n):(unsigned)n;\
+           while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
+         static double cnt_powm(double a,double e){{ (void)a;\
+           return cnt_pow10i((int)e); }}\n\
+         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+           if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
+           v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
+           int e=(int)(((double)(biased-1023))*0.3010299956639812);\
+           while(cnt_pow10i(e)>f)e--; while(cnt_pow10i(e+1)<=f)e++;\
+           return (double)e; }}\n\
+         #define floor(x) cnt_floor(x)\n#define log10(x) cnt_log10(x)\n\
+         #define pow(a,b) cnt_powm((a),(b))\n\
+         static int ecvt_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
+         static int ecvt_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
+         #define mbtowc ecvt_mbtowc\n#define wctomb ecvt_wctomb\n\
+         {}\
+         /* genuine format_float (above) driven directly — SysV-safe */\n\
+         void format_float(char,unsigned,int,char**,const char**,va_list*);\n\
+         static void cnt_fmtf(char chr,unsigned fl,int prec,char**str,\
+           const char**pfx,...){{ va_list ap; va_start(ap,pfx);\
+           format_float(chr,fl,prec,str,pfx,&ap); va_end(ap); }}\n\
+         int ref_ecvt_sprintf(char* buf,const char* fmt,...){{ (void)fmt;\
+           va_list a; va_start(a,fmt); int prec=va_arg(a,int);\
+           double v=va_arg(a,double); va_end(a);\
+           char tmp[96]; tmp[95]=0; char* string=&tmp[95];\
+           const char* prefix=0;\
+           /* \"%-+.*E\": FLAG_ALIGN_LEFT|FLAG_FORCE_SIGN, conv 'E' */\
+           cnt_fmtf('E', 0x01u|0x02u, prec, &string, &prefix, v);\
+           char* p=buf; if(prefix){{while(*prefix)*p++=*prefix++;}}\
+           while(*string)*p++=*string++; *p=0; return (int)(p-buf); }}\n\
+         #define sprintf ref_ecvt_sprintf\n#define _ecvt ref__ecvt\n{}",
+        inc(s("printf/streamout.c")),
+        inc(s("stdlib/ecvt.c")));
+    let ecvt_c = out.join("ref_ecvt.c");
+    fs::write(&ecvt_c, &ecvt_body).unwrap();
+    let mut ecvt_build = cc::Build::new();
+    ecvt_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&ecvt_c);
+    for obj in ecvt_build.compile_intermediates() {
         redef(&obj);
     }
     // Dedicated scanf build with `-mlong-double-64` (Windows MSVC ABI:

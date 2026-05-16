@@ -133,6 +133,9 @@ extern "C" {
     fn ref___p__winitenv() -> *mut *mut *mut u16;
     // float-cvt — genuine fcvtbuf.c `cvt()` + fcvt.c.
     fn ref__fcvt(v: f64, ndigits: i32, decpt: *mut i32, sign: *mut i32) -> *mut u8;
+    // _ecvt — genuine ecvt.c + streamout.c sprintf("%-+.*E"),
+    // -mlong-double-64, floor/log10/pow modeled == core_rs::fl.
+    fn ref__ecvt(v: f64, ndigits: i32, decpt: *mut i32, sign: *mut i32) -> *mut u8;
 }
 
 use cnt_rust::cabi;
@@ -2422,6 +2425,81 @@ fn diff_fcvt() {
             assert_eq!(cb, rb, "_fcvt({v:e}, {nd}) digits");
             assert_eq!(cd, rd, "_fcvt({v:e}, {nd}) decpt");
             assert_eq!(cs, rs, "_fcvt({v:e}, {nd}) sign");
+        }
+    }
+}
+
+/// float-cvt Phase 2 — _ecvt vs the genuine compiled ecvt.c +
+/// printf/streamout.c `sprintf("%-+.*E")` (one TU, -mlong-double-64
+/// so the genuine `long double` == f64 == this core; the scanf-P2
+/// precedent). `floor`/`log10`/`pow` are modeled BIT-IDENTICALLY on
+/// both sides (the Wave E2 CP1252 shared-model discipline), so the
+/// diff pins the genuine ecvt + format_float SURGERY deterministically
+/// with libm-exactness factored out: the case_e
+/// `round(sign*v*pow(10,p-exp))` + the `>= pow(10,p+1)` exponent
+/// compensation + the `(u64)fpval2 % 10; fpval2/=10.` f64-divide peel
+/// + ecvt's `cvtbuf[1]=='0' → decpt=0` and `ndigits<1` enhanced-
+/// precision `tbuf[1]>='5'` nudge. NaN/Inf and extreme magnitudes
+/// (|v| ≲ 1e-292: `pow(10, p-exp)` overflows f64 → inf → the
+/// `(u64)inf` cast is C-UB / not bit-portable, exactly scanf-P2) are
+/// the documented UNFUZZED owed domain limit (strpbrk≤2 precedent).
+#[test]
+fn diff_ecvt() {
+    let mut rng = Rng(0xec_47_a1_d0_u64);
+    let mut cd = 0i32;
+    let mut cs = 0i32;
+    let mut rd = 0i32;
+    let mut rs = 0i32;
+    let read = |p: *const u8| -> Vec<u8> {
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    };
+    let fixed: &[f64] = &[
+        0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 2.5, 9.999_999, 0.1, 0.2,
+        0.3, 123.456, -123.456, 1e-7, 9.999_999_999e9, 1.0 / 3.0,
+        2.0 / 3.0, 1234567890.123_456, 99999.5, 0.000_999_5, 1e20,
+        -1e-20, 5.0, 0.000_05, 9.5, 0.95, 100.0, 0.001,
+    ];
+    let nds: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 10, 15, 17, 18, 20, 25];
+    for it in 0..60_000 {
+        let v: f64 = if it < fixed.len() {
+            fixed[it]
+        } else if it % 2 == 0 {
+            // mantissa [1,10) × 10^k, |k| bounded so pow(10,p-exp)
+            // stays finite (the extreme-magnitude inf-cast corner is
+            // the documented owed edge — scanf-P2 precedent).
+            let m = 1.0 + (rng.next() as f64 / u64::MAX as f64) * 9.0;
+            let k = (rng.upto(560) as i32) - 280; // 10^-280 .. 10^279
+            let s = if rng.upto(2) == 0 { 1.0 } else { -1.0 };
+            s * m * 10f64.powi(k)
+        } else {
+            let b = f64::from_bits(rng.next());
+            if !b.is_finite() || b == 0.0 {
+                1.0
+            } else if b.abs() < 1e-280 || b.abs() > 1e280 {
+                // clamp into the fuzzed magnitude band
+                b.signum() * 1e10
+            } else {
+                b
+            }
+        };
+        if !v.is_finite() {
+            continue;
+        }
+        let nd = nds[rng.upto(nds.len())];
+        unsafe {
+            let c = cabi::_ecvt(v, nd, &mut cd, &mut cs);
+            let r = ref__ecvt(v, nd, &mut rd, &mut rs);
+            assert_eq!(read(c), read(r), "_ecvt({v:e}, {nd}) digits");
+            assert_eq!(cd, rd, "_ecvt({v:e}, {nd}) decpt");
+            assert_eq!(cs, rs, "_ecvt({v:e}, {nd}) sign");
         }
     }
 }

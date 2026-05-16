@@ -625,3 +625,43 @@ pub unsafe extern "C" fn _fcvt(
     }
     buf.as_mut_ptr()
 }
+
+struct EcvtCell(core::cell::UnsafeCell<[u8; fcvt::ECVT_BUF]>);
+unsafe impl Sync for EcvtCell {}
+static ECVT_BUF: EcvtCell = EcvtCell(core::cell::UnsafeCell::new([0; fcvt::ECVT_BUF]));
+
+/// `char *_ecvt(double value, int ndigits, int *decpt, int *sign)`.
+/// `sprintf("%-+.*E")` + text surgery; non-reentrant static buffer.
+#[no_mangle]
+pub unsafe extern "C" fn _ecvt(
+    value: f64,
+    ndigits: i32,
+    decpt: *mut i32,
+    sign: *mut i32,
+) -> *mut u8 {
+    let buf = &mut *ECVT_BUF.0.get();
+    core::ptr::write_volatile(decpt, 0);
+    core::ptr::write_volatile(sign, 0);
+    match fcvt::ecvt(value, ndigits) {
+        Some(r) => {
+            buf[..r.buf_len].copy_from_slice(&r.buf[..r.buf_len]);
+            core::ptr::write_volatile(decpt, r.decpt);
+            core::ptr::write_volatile(sign, r.sign);
+        }
+        None => {
+            // NaN/Inf: documented UNFUZZED edge (the genuine `%-+.*E`
+            // of NaN under format_float is "+1.#QNAN…" and ecvt's
+            // `strncmp(s,"NaN",3)` is dead → finite-path garbage;
+            // pinning those exact bytes is owed, not faked here).
+            // *decpt/*sign already 0 (genuine inits them so).
+            let s: &[u8] = if fcvt::is_nan(value) {
+                b"1#QNAN"
+            } else {
+                b"1#INF"
+            };
+            buf[..s.len()].copy_from_slice(s);
+            buf[s.len()] = 0;
+        }
+    }
+    buf.as_mut_ptr()
+}
