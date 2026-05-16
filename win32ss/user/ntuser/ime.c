@@ -439,22 +439,20 @@ NtUserGetImeHotKey(
     _Out_opt_ LPHKL lphKL)
 {
     PIMEHOTKEY pNode = NULL;
+    NTSTATUS Status;
 
     UserEnterExclusive();
 
-    _SEH2_TRY
-    {
-        ProbeForWrite(lpuModifiers, sizeof(UINT), 1);
-        ProbeForWrite(lpuVirtualKey, sizeof(UINT), 1);
-        if (lphKL)
-            ProbeForWrite(lphKL, sizeof(HKL), 1);
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForWrite(lpuModifiers, sizeof(UINT), 1);
+    if (NT_SUCCESS(Status))
+        Status = SafeProbeForWrite(lpuVirtualKey, sizeof(UINT), 1);
+    if (NT_SUCCESS(Status) && lphKL)
+        Status = SafeProbeForWrite(lphKL, sizeof(HKL), 1);
+    if (!NT_SUCCESS(Status))
     {
         ERR("Exception in NtUserGetImeHotKey: %p, %p, %p\n", lpuModifiers, lpuVirtualKey, lphKL);
-        _SEH2_YIELD(goto Quit);
+        goto Quit;
     }
-    _SEH2_END;
 
     pNode = IntGetImeHotKeyById(gpImeHotKeyList, dwHotKeyId);
     if (!pNode)
@@ -478,6 +476,7 @@ Quit:
     UserLeave();
     return !!pNode;
 }
+
 
 BOOL
 NTAPI
@@ -1079,6 +1078,7 @@ NtUserGetImeInfoEx(
     IMEINFOEX ImeInfoEx;
     BOOL ret = FALSE;
     PWINSTATION_OBJECT pWinSta;
+    NTSTATUS Status;
 
     UserEnterShared();
 
@@ -1104,22 +1104,22 @@ NtUserGetImeInfoEx(
     if (!ret)
         goto Quit;
 
-    _SEH2_TRY
-    {
-        ProbeForWrite(pImeInfoEx, sizeof(*pImeInfoEx), 1);
-        *pImeInfoEx = ImeInfoEx;
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForWrite(pImeInfoEx, sizeof(*pImeInfoEx), 1);
+    if (!NT_SUCCESS(Status))
     {
         ERR("Exception in NtUserGetImeInfoEx: %p\n", pImeInfoEx);
         ret = FALSE;
     }
-    _SEH2_END;
+    else
+    {
+        *pImeInfoEx = ImeInfoEx;
+    }
 
 Quit:
     UserLeave();
     return ret;
 }
+
 
 BOOL
 NTAPI
@@ -2061,6 +2061,7 @@ co_IntCreateDefaultImeWindow(
     USER_REFERENCE_ENTRY Ref;
     PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
     HANDLE pid = PsGetThreadProcessId(pti->pEThread);
+    NTSTATUS Status;
 
     if (!(pti->spDefaultImc) && pid == gpidLogon)
         UserCreateInputContext(0);
@@ -2095,23 +2096,23 @@ co_IntCreateDefaultImeWindow(
     {
         pimeui = IntGetImeUIFromWnd(pImeWnd);
         ASSERT(pimeui);
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pimeui, sizeof(*pimeui), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(pimeui, sizeof(*pimeui), 1);
+            ERR("Exception in co_IntCreateDefaultImeWindow: %p\n", pimeui);
+        }
+        else
+        {
             pimeui->fDefault = TRUE;
             if (IS_WND_CHILD(pwndTarget) && pwndTarget->spwndParent->head.pti != pti)
                 pimeui->fChildThreadDef = TRUE;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            ERR("Exception in co_IntCreateDefaultImeWindow: %p\n", pimeui);
-        }
-        _SEH2_END;
     }
 
     UserDerefObjectCo(pwndTarget);
     return pImeWnd;
 }
+
 
 // Determines whether the system can destroy the default IME window for the target child window.
 BOOL FASTCALL
@@ -2122,24 +2123,24 @@ IntImeCanDestroyDefIMEforChild(
     PWND pwndNode;
     PIMEUI pimeui;
     IMEUI SafeImeUI;
+    NTSTATUS Status;
 
     pimeui = IntGetImeUIFromWnd(pImeWnd);
     if (!pimeui)
         return FALSE;
 
     // Check IMEUI.fChildThreadDef
-    _SEH2_TRY
+    Status = SafeProbeForRead(pimeui, sizeof(IMEUI), 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(pimeui, sizeof(IMEUI), 1);
+        ERR("Exception in IntImeCanDestroyDefIMEforChild: %p\n", pimeui);
+    }
+    else
+    {
         SafeImeUI = *pimeui;
         if (!SafeImeUI.fChildThreadDef)
             return FALSE;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ERR("Exception in IntImeCanDestroyDefIMEforChild: %p\n", pimeui);
-    }
-    _SEH2_END;
 
     // The parent of pwndTarget is NULL or of the same thread of pwndTarget?
     if (pwndTarget->spwndParent == NULL ||
@@ -2160,6 +2161,7 @@ IntImeCanDestroyDefIMEforChild(
     return TRUE;
 }
 
+
 // Determines whether the system can destroy the default IME window for the non-child target window.
 BOOL FASTCALL
 IntImeCanDestroyDefIME(
@@ -2169,24 +2171,24 @@ IntImeCanDestroyDefIME(
     PWND pwndNode;
     PIMEUI pimeui;
     IMEUI SafeImeUI;
+    NTSTATUS Status;
 
     pimeui = IntGetImeUIFromWnd(pImeWnd);
     if (!pimeui)
         return FALSE;
 
     // Check IMEUI.fDestroy
-    _SEH2_TRY
+    Status = SafeProbeForRead(pimeui, sizeof(IMEUI), 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(pimeui, sizeof(IMEUI), 1);
+        ERR("Exception in IntImeCanDestroyDefIME: %p\n", pimeui);
+    }
+    else
+    {
         SafeImeUI = *pimeui;
         if (SafeImeUI.fDestroy)
             return FALSE;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ERR("Exception in IntImeCanDestroyDefIME: %p\n", pimeui);
-    }
-    _SEH2_END;
 
     // Any ancestor of pImeWnd is pwndTarget?
     if (pImeWnd->spwndOwner)
@@ -2225,6 +2227,7 @@ IntImeCanDestroyDefIME(
     WndSetOwner(pImeWnd, NULL);
     return TRUE;
 }
+
 
 // Update IMEUI.fShowStatus flags and Send the WM_IME_NOTIFY messages.
 BOOL FASTCALL

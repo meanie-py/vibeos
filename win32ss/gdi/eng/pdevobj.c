@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #define NDEBUG
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(EngPDev);
@@ -1290,6 +1291,7 @@ NtGdiGetDeviceCapsAll(
     PDC pdc;
     DEVCAPS devcaps;
     BOOL bResult = TRUE;
+    NTSTATUS Status;
 
     /* Lock the given DC */
     pdc = DC_LockDc(hDC);
@@ -1306,20 +1308,20 @@ NtGdiGetDeviceCapsAll(
     DC_UnlockDc(pdc);
 
     /* Copy data to caller */
-    _SEH2_TRY
+    Status = SafeProbeForWrite(pDevCaps, sizeof(DEVCAPS), 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForWrite(pDevCaps, sizeof(DEVCAPS), 1);
-        RtlCopyMemory(pDevCaps, &devcaps, sizeof(DEVCAPS));
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
+        SetLastNtError(Status);
         bResult = FALSE;
     }
-    _SEH2_END;
+    else
+    {
+        RtlCopyMemory(pDevCaps, &devcaps, sizeof(DEVCAPS));
+    }
 
     return bResult;
 }
+
 
 DHPDEV
 APIENTRY

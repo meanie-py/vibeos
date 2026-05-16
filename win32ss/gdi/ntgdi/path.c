@@ -10,6 +10,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <suppress.h>
 
 DBG_DEFAULT_CHANNEL(GdiPath);
@@ -2734,6 +2735,7 @@ NtGdiGetMiterLimit(
 {
     DC *pDc;
     BOOL bResult = TRUE;
+    NTSTATUS Status;
 
     if (!(pDc = DC_LockDc(hdc)))
     {
@@ -2741,22 +2743,22 @@ NtGdiGetMiterLimit(
         return FALSE;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(pdwOut, sizeof(DWORD), 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForWrite(pdwOut, sizeof(DWORD), 1);
-        *pdwOut = pDc->dclevel.laPath.eMiterLimit;
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
+        SetLastNtError(Status);
         bResult = FALSE;
     }
-    _SEH2_END;
+    else
+    {
+        *pdwOut = pDc->dclevel.laPath.eMiterLimit;
+    }
 
     DC_UnlockDc(pDc);
     return bResult;
 
 }
+
 
 INT
 APIENTRY
@@ -2769,18 +2771,15 @@ NtGdiGetPath(
     INT ret = -1;
     PPATH pPath;
     DC *dc;
+    NTSTATUS Status;
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(Points, nSize * sizeof(*Points), sizeof(ULONG));
+    if (NT_SUCCESS(Status)) Status = SafeProbeForWrite(Types, nSize, 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForWrite(Points, nSize * sizeof(*Points), sizeof(ULONG));
-        ProbeForWrite(Types, nSize, 1);
+        SetLastNtError(Status);
+        return -1;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return -1);
-    }
-    _SEH2_END
 
     dc = DC_LockDc(hDC);
     TRACE("NtGdiGetPath start\n");
@@ -2842,6 +2841,7 @@ done:
     DC_UnlockDc(dc);
     return ret;
 }
+
 
 HRGN
 APIENTRY
@@ -2937,6 +2937,7 @@ NtGdiSetMiterLimit(
     DC *pDc;
     gxf_long worker, worker1;
     BOOL bResult = TRUE;
+    NTSTATUS Status;
 
     if (!(pDc = DC_LockDc(hdc)))
     {
@@ -2950,22 +2951,22 @@ NtGdiSetMiterLimit(
 
     if (pdwOut)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pdwOut, sizeof(DWORD), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(pdwOut, sizeof(DWORD), 1);
-            *pdwOut = worker1.l;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            SetLastNtError(_SEH2_GetExceptionCode());
+            SetLastNtError(Status);
             bResult = FALSE;
         }
-        _SEH2_END;
+        else
+        {
+            *pdwOut = worker1.l;
+        }
     }
 
     DC_UnlockDc(pDc);
     return bResult;
 }
+
 
 BOOL
 APIENTRY

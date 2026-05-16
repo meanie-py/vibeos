@@ -5768,6 +5768,7 @@ NtUserGetTitleBarInfo(
     PWND WindowObject;
     TITLEBARINFO bartitleinfo;
     BOOLEAN retValue = FALSE;
+    NTSTATUS Status;
 
     TRACE("Enter NtUserGetTitleBarInfo\n");
     UserEnterExclusive();
@@ -5799,23 +5800,23 @@ NtUserGetTitleBarInfo(
     }
 
     /* Copy local buffer back to user mode buffer */
-    _SEH2_TRY
-    {
-        ProbeForWrite(bti, sizeof(TITLEBARINFO), 1);
-        RtlCopyMemory(bti, &bartitleinfo, sizeof(TITLEBARINFO));
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForWrite(bti, sizeof(TITLEBARINFO), 1);
+    if (!NT_SUCCESS(Status))
     {
         EngSetLastError(ERROR_INVALID_PARAMETER);
         retValue = FALSE;
     }
-    _SEH2_END;
+    else
+    {
+        RtlCopyMemory(bti, &bartitleinfo, sizeof(TITLEBARINFO));
+    }
 
 Exit:
     UserLeave();
     TRACE("Leave NtUserGetTitleBarInfo, ret=%u\n", retValue);
     return retValue;
 }
+
 
 /*
  * @implemented

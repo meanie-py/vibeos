@@ -672,6 +672,7 @@ NtGdiSetBitmapDimension(
 {
     PSURFACE psurf;
     BOOL Ret = TRUE;
+    NTSTATUS Status;
 
     if (hBitmap == NULL)
         return FALSE;
@@ -685,16 +686,15 @@ NtGdiSetBitmapDimension(
 
     if (Size)
     {
-        _SEH2_TRY
-        {
-            ProbeForWrite(Size, sizeof(SIZE), 1);
-            *Size = psurf->sizlDim;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        Status = SafeProbeForWrite(Size, sizeof(SIZE), 1);
+        if (!NT_SUCCESS(Status))
         {
             Ret = FALSE;
         }
-        _SEH2_END
+        else
+        {
+            *Size = psurf->sizlDim;
+        }
     }
 
     /* The dimension is changed even if writing the old value failed */
@@ -705,6 +705,7 @@ NtGdiSetBitmapDimension(
 
     return Ret;
 }
+
 
 /*  Internal Functions  */
 

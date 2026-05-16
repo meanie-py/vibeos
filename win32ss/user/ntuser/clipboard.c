@@ -1189,6 +1189,7 @@ NtUserConvertMemHandle(
 {
     HANDLE hMem = NULL;
     PCLIPBOARDDATA pMemObj;
+    NTSTATUS Status;
 
     UserEnterExclusive();
 
@@ -1200,16 +1201,15 @@ NtUserConvertMemHandle(
     pMemObj->cbData = cbData;
 
     /* Copy data */
-    _SEH2_TRY
-    {
-        ProbeForRead(pData, cbData, 1);
-        memcpy(pMemObj->Data, pData, cbData);
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForRead(pData, cbData, 1);
+    if (!NT_SUCCESS(Status))
     {
         pMemObj = NULL;
     }
-    _SEH2_END;
+    else
+    {
+        memcpy(pMemObj->Data, pData, cbData);
+    }
 
     /* Release the extra reference (UserCreateObject added 2 references) */
     UserDereferenceObject(pMemObj);
@@ -1226,6 +1226,7 @@ cleanup:
 
     return hMem;
 }
+
 
 NTSTATUS APIENTRY
 NtUserCreateLocalMemHandle(

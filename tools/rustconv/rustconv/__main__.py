@@ -430,6 +430,26 @@ def cmd_callout_annotate(args):
         sys.exit(1)
 
 
+def cmd_seh_llm_lower(args):
+    from .seh_llm_lower import run, print_report, run_oracle, load_units
+
+    if args.oracle:
+        sys.exit(run_oracle())
+
+    units = load_units(args.only)
+    print(f"{len(units)} dedup'd functions "
+          f"({sum(len(u.reasons) for u in units)} ledger sites) "
+          f"{'[--only ' + args.only + ']' if args.only else ''}",
+          file=sys.stderr)
+    outcomes = run(apply=args.apply, model=args.model,
+                   only=args.only, units=units)
+    if args.diff:
+        for o in outcomes:
+            if o.applied and o.diff:
+                sys.stdout.write(o.diff)
+    sys.exit(print_report(outcomes, args.apply))
+
+
 def cmd_gdi_locks(args):
     from .gdi_lock_inventory import (
         extract_file, extract_keepset, write_sidecar,
@@ -992,6 +1012,21 @@ def main():
     p.add_argument("--oracle", action="store_true",
                    help="Run the callback.c ground-truth self-test and exit")
 
+    # seh-llm-lower (win32k Pass 1b: LLM lowering of the 64-site ledger)
+    p = sub.add_parser("seh-llm-lower",
+                       help="Win32k Pass 1b: LLM-lower the Pass-1 "
+                            "manual-followup ledger (cached, validated)")
+    p.add_argument("--apply", action="store_true",
+                   help="Splice validated rewrites in place (default: dry-run)")
+    p.add_argument("--diff", action="store_true",
+                   help="Print unified diffs for the ready rewrites")
+    p.add_argument("--model", default="",
+                   help="Model id/shortcut (default: Sonnet)")
+    p.add_argument("--only", default=None,
+                   help="Restrict to ledger files whose path contains this")
+    p.add_argument("--oracle", action="store_true",
+                   help="Structural self-test (no API spend) and exit")
+
     # gdi-locks (win32k Pass 2 GDI manual-lock-bracket detection — no rewrite)
     p = sub.add_parser("gdi-locks",
                        help="Win32k Pass 2: detect GDI manual lock brackets "
@@ -1068,6 +1103,7 @@ def main():
         "seh-rewrite": cmd_seh_rewrite,
         "callout-annotate": cmd_callout_annotate,
         "gdi-locks": cmd_gdi_locks,
+        "seh-llm-lower": cmd_seh_llm_lower,
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,

@@ -2348,6 +2348,7 @@ NtUserGetMessage(PMSG pMsg,
 {
     MSG Msg;
     BOOL Ret;
+    NTSTATUS Status;
 
     if ( (MsgFilterMin|MsgFilterMax) & ~WM_MAXIMUM )
     {
@@ -2365,17 +2366,16 @@ NtUserGetMessage(PMSG pMsg,
 
     if (Ret)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pMsg, sizeof(MSG), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(pMsg, sizeof(MSG), 1);
-            RtlCopyMemory(pMsg, &Msg, sizeof(MSG));
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            SetLastNtError(_SEH2_GetExceptionCode());
+            SetLastNtError(Status);
             Ret = FALSE;
         }
-        _SEH2_END;
+        else
+        {
+            RtlCopyMemory(pMsg, &Msg, sizeof(MSG));
+        }
     }
 
     if ((INT)Ret != -1)
@@ -2383,6 +2383,7 @@ NtUserGetMessage(PMSG pMsg,
 
     return Ret;
 }
+
 
 BOOL APIENTRY
 NtUserPeekMessage( PMSG pMsg,
@@ -2393,6 +2394,7 @@ NtUserPeekMessage( PMSG pMsg,
 {
     MSG Msg;
     BOOL Ret;
+    NTSTATUS Status;
 
     if ( RemoveMsg & PM_BADMSGFLAGS )
     {
@@ -2410,27 +2412,28 @@ NtUserPeekMessage( PMSG pMsg,
 
     if (Ret)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pMsg, sizeof(MSG), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(pMsg, sizeof(MSG), 1);
-            RtlCopyMemory(pMsg, &Msg, sizeof(MSG));
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            SetLastNtError(_SEH2_GetExceptionCode());
+            SetLastNtError(Status);
             Ret = FALSE;
         }
-        _SEH2_END;
+        else
+        {
+            RtlCopyMemory(pMsg, &Msg, sizeof(MSG));
+        }
     }
 
     return Ret;
 }
+
 
 BOOL APIENTRY
 NtUserCallMsgFilter( LPMSG lpmsg, INT code)
 {
     BOOL Ret = FALSE;
     MSG Msg;
+    NTSTATUS Status;
 
     {
         NTSTATUS __SehStatus = SafeProbeForRead(lpmsg, sizeof(MSG), 1);
@@ -2445,19 +2448,19 @@ NtUserCallMsgFilter( LPMSG lpmsg, INT code)
     Ret = IntCallMsgFilter(&Msg, code);
     UserLeave();
 
-    _SEH2_TRY
-    {
-        ProbeForWrite(lpmsg, sizeof(MSG), 1);
-        RtlCopyMemory(lpmsg, &Msg, sizeof(MSG));
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForWrite(lpmsg, sizeof(MSG), 1);
+    if (!NT_SUCCESS(Status))
     {
         Ret = FALSE;
     }
-    _SEH2_END;
+    else
+    {
+        RtlCopyMemory(lpmsg, &Msg, sizeof(MSG));
+    }
 
     return Ret;
 }
+
 
 LRESULT APIENTRY
 NtUserDispatchMessage(PMSG UnsafeMsgInfo)
@@ -2531,6 +2534,7 @@ NtUserMessageCall( HWND hWnd,
     BOOL Ret = FALSE;
     PWND Window = NULL;
     USER_REFERENCE_ENTRY Ref;
+    NTSTATUS Status;
 
     UserEnterExclusive();
 
@@ -2597,16 +2601,15 @@ NtUserMessageCall( HWND hWnd,
 
             if (ResultInfo)
             {
-                _SEH2_TRY
+                Status = SafeProbeForWrite((PVOID)ResultInfo, sizeof(BROADCASTPARM), 1);
+                if (!NT_SUCCESS(Status))
                 {
-                    ProbeForWrite((PVOID)ResultInfo, sizeof(BROADCASTPARM), 1);
+                    break;
+                }
+                else
+                {
                     RtlCopyMemory(&parm, (PVOID)ResultInfo, sizeof(BROADCASTPARM));
                 }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    _SEH2_YIELD(break);
-                }
-                _SEH2_END;
             }
             else
                 break;
@@ -2689,17 +2692,17 @@ NtUserMessageCall( HWND hWnd,
                            }
                         }
                         ExFreePoolWithTag(List, USERTAG_WINDOWLIST);
-                        _SEH2_TRY
+                        Status = SafeProbeForWrite((PVOID)ResultInfo, sizeof(BROADCASTPARM), 1);
+                        if (!NT_SUCCESS(Status))
                         {
-                           retparam = (PBROADCASTPARM) ResultInfo;
-                           retparam->hDesk = hDesk;
-                           retparam->hWnd = hwndDenied;
+                            break;
                         }
-                        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                        else
                         {
-                           _SEH2_YIELD(break);
+                            retparam = (PBROADCASTPARM) ResultInfo;
+                            retparam->hDesk = hDesk;
+                            retparam->hWnd = hwndDenied;
                         }
-                        _SEH2_END;
                         if (!Ret) break; // Have a hit! Let everyone know!
                      }
                   }
@@ -2833,17 +2836,17 @@ NtUserMessageCall( HWND hWnd,
                         }
                      }
                      ExFreePoolWithTag(List, USERTAG_WINDOWLIST);
-                     _SEH2_TRY
+                     Status = SafeProbeForWrite((PVOID)ResultInfo, sizeof(BROADCASTPARM), 1);
+                     if (!NT_SUCCESS(Status))
                      {
-                        retparam = (PBROADCASTPARM) ResultInfo;
-                        retparam->hDesk = hDesk;
-                        retparam->hWnd = hwndDenied;
+                         break;
                      }
-                     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                     else
                      {
-                        _SEH2_YIELD(break);
+                         retparam = (PBROADCASTPARM) ResultInfo;
+                         retparam->hDesk = hDesk;
+                         retparam->hWnd = hwndDenied;
                      }
-                     _SEH2_END;
                   }
                }
                else if (parm.flags & BSF_POSTMESSAGE)
@@ -2906,16 +2909,15 @@ NtUserMessageCall( HWND hWnd,
             CALL_BACK_INFO CallBackInfo;
             ULONG_PTR uResult;
 
-            _SEH2_TRY
+            Status = SafeProbeForRead((PVOID)ResultInfo, sizeof(CALL_BACK_INFO), 1);
+            if (!NT_SUCCESS(Status))
             {
-                ProbeForRead((PVOID)ResultInfo, sizeof(CALL_BACK_INFO), 1);
+                break;
+            }
+            else
+            {
                 RtlCopyMemory(&CallBackInfo, (PVOID)ResultInfo, sizeof(CALL_BACK_INFO));
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                _SEH2_YIELD(break);
-            }
-            _SEH2_END;
 
             if (is_pointer_message(Msg, wParam))
             {
@@ -2937,17 +2939,16 @@ NtUserMessageCall( HWND hWnd,
 
             if (ResultInfo)
             {
-                _SEH2_TRY
-                {
-                    ProbeForWrite((PVOID)ResultInfo, sizeof(ULONG_PTR), 1);
-                    RtlCopyMemory((PVOID)ResultInfo, &lResult, sizeof(ULONG_PTR));
-                }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                Status = SafeProbeForWrite((PVOID)ResultInfo, sizeof(ULONG_PTR), 1);
+                if (!NT_SUCCESS(Status))
                 {
                     Ret = FALSE;
-                    _SEH2_YIELD(break);
+                    break;
                 }
-                _SEH2_END;
+                else
+                {
+                    RtlCopyMemory((PVOID)ResultInfo, &lResult, sizeof(ULONG_PTR));
+                }
             }
             break;
         }
@@ -2957,33 +2958,31 @@ NtUserMessageCall( HWND hWnd,
             DOSENDMESSAGE dsm, *pdsm = (PDOSENDMESSAGE)ResultInfo;
             if (ResultInfo)
             {
-                _SEH2_TRY
+                Status = SafeProbeForRead(pdsm, sizeof(DOSENDMESSAGE), 1);
+                if (!NT_SUCCESS(Status))
                 {
-                    ProbeForRead(pdsm, sizeof(DOSENDMESSAGE), 1);
+                    break;
+                }
+                else
+                {
                     RtlCopyMemory(&dsm, pdsm, sizeof(DOSENDMESSAGE));
                 }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    _SEH2_YIELD(break);
-                }
-                _SEH2_END;
             }
 
             Ret = co_IntDoSendMessage( hWnd, Msg, wParam, lParam, pdsm ? &dsm : NULL );
 
             if (pdsm)
             {
-                _SEH2_TRY
-                {
-                    ProbeForWrite(pdsm, sizeof(DOSENDMESSAGE), 1);
-                    RtlCopyMemory(pdsm, &dsm, sizeof(DOSENDMESSAGE));
-                }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                Status = SafeProbeForWrite(pdsm, sizeof(DOSENDMESSAGE), 1);
+                if (!NT_SUCCESS(Status))
                 {
                     Ret = FALSE;
-                    _SEH2_YIELD(break);
+                    break;
                 }
-                _SEH2_END;
+                else
+                {
+                    RtlCopyMemory(pdsm, &dsm, sizeof(DOSENDMESSAGE));
+                }
             }
             break;
         }
@@ -3003,15 +3002,15 @@ NtUserMessageCall( HWND hWnd,
 
             NextObj = Hook->phkNext;
             ClientInfo = pti->pClientInfo;
-            _SEH2_TRY
-            {
-                ClientInfo->phkCurrent = NextObj;
-            }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            Status = SafeProbeForWrite(ClientInfo, sizeof(*ClientInfo), __alignof(CLIENTINFO));
+            if (!NT_SUCCESS(Status))
             {
                 ClientInfo = NULL;
             }
-            _SEH2_END;
+            else
+            {
+                ClientInfo->phkCurrent = NextObj;
+            }
 
             if (!ClientInfo || !NextObj) break;
 
@@ -3069,16 +3068,15 @@ NtUserMessageCall( HWND hWnd,
     case FNID_MENU:
         if (ResultInfo)
         {
-            _SEH2_TRY
-            {
-                ProbeForWrite((PVOID)ResultInfo, sizeof(LRESULT), 1);
-                RtlCopyMemory((PVOID)ResultInfo, &lResult, sizeof(LRESULT));
-            }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            Status = SafeProbeForWrite((PVOID)ResultInfo, sizeof(LRESULT), 1);
+            if (!NT_SUCCESS(Status))
             {
                 Ret = FALSE;
             }
-            _SEH2_END;
+            else
+            {
+                RtlCopyMemory((PVOID)ResultInfo, &lResult, sizeof(LRESULT));
+            }
         }
         break;
     default:
@@ -3089,6 +3087,7 @@ NtUserMessageCall( HWND hWnd,
 
     return Ret;
 }
+
 
 #define INFINITE 0xFFFFFFFF
 #define WAIT_FAILED ((DWORD)0xFFFFFFFF)

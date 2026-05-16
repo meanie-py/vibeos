@@ -12,6 +12,7 @@
 // - Save appropriate text metrics.
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserSysparams);
 
 SPIVALUES gspv;
@@ -1846,6 +1847,7 @@ SpiGetSetProbeBuffer(UINT uiAction, UINT uiParam, PVOID pvParam)
 {
     BOOL bToUser = TRUE;
     ULONG cbSize = 0;
+    NTSTATUS Status;
 
     switch (uiAction)
     {
@@ -2090,26 +2092,23 @@ SpiGetSetProbeBuffer(UINT uiAction, UINT uiParam, PVOID pvParam)
 
     if (cbSize)
     {
-        _SEH2_TRY
+        if (bToUser)
         {
-            if (bToUser)
-            {
-                ProbeForWrite(pvParam, cbSize, sizeof(UCHAR));
-            }
-            else
-            {
-                ProbeForRead(pvParam, cbSize, sizeof(UCHAR));
-            }
+            Status = SafeProbeForWrite(pvParam, cbSize, sizeof(UCHAR));
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        else
         {
-            _SEH2_YIELD(return FALSE);
+            Status = SafeProbeForRead(pvParam, cbSize, sizeof(UCHAR));
         }
-        _SEH2_END;
+        if (!NT_SUCCESS(Status))
+        {
+            return FALSE;
+        }
     }
 
     return TRUE;
 }
+
 
 BOOL
 FASTCALL

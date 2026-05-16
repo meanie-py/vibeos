@@ -1088,6 +1088,7 @@ NtGdiDoPalette(
 	LONG ret;
 	LPVOID pEntries = NULL;
 	SIZE_T cjSize;
+	NTSTATUS Status;
 
 	if (pUnsafeEntries)
 	{
@@ -1155,22 +1156,22 @@ NtGdiDoPalette(
 		if (!bInbound && (ret > 0))
 		{
 			cjSize = min(cEntries, ret) * sizeof(PALETTEENTRY);
-			_SEH2_TRY
-			{
-				ProbeForWrite(pUnsafeEntries, cjSize, 1);
-				memcpy(pUnsafeEntries, pEntries, cjSize);
-			}
-			_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+			Status = SafeProbeForWrite(pUnsafeEntries, cjSize, 1);
+			if (!NT_SUCCESS(Status))
 			{
 				ret = 0;
 			}
-			_SEH2_END
+			else
+			{
+				memcpy(pUnsafeEntries, pEntries, cjSize);
+			}
 		}
 		ExFreePoolWithTag(pEntries, TAG_PALETTE);
 	}
 
 	return ret;
 }
+
 
 UINT APIENTRY
 NtGdiSetSystemPaletteUse(HDC hDC, UINT Usage)

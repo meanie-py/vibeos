@@ -499,25 +499,25 @@ NtGdiSetDIBitsToDeviceInternal(
     PPALETTE ppalDIB = NULL;
     LPBITMAPINFO pbmiSafe;
     BOOL bResult;
+    NTSTATUS Status;
 
     if (!Bits) return 0;
 
     pbmiSafe = ExAllocatePoolWithTag(PagedPool, cjMaxInfo, 'pmTG');
     if (!pbmiSafe) return 0;
 
-    _SEH2_TRY
-    {
-        ProbeForRead(bmi, cjMaxInfo, 1);
-        ProbeForRead(Bits, cjMaxBits, 1);
-        RtlCopyMemory(pbmiSafe, bmi, cjMaxInfo);
-        bmi = pbmiSafe;
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForRead(bmi, cjMaxInfo, 1);
+    if (NT_SUCCESS(Status)) Status = SafeProbeForRead(Bits, cjMaxBits, 1);
+    if (!NT_SUCCESS(Status))
     {
         ret = 0;
         goto Exit;
     }
-    _SEH2_END;
+    else
+    {
+        RtlCopyMemory(pbmiSafe, bmi, cjMaxInfo);
+        bmi = pbmiSafe;
+    }
 
     DPRINT("StartScan %d ScanLines %d Bits %p bmi %p ColorUse %d\n"
            "    Height %d Width %d biSizeImage %d\n"
@@ -701,6 +701,7 @@ Exit:
 
     return ret;
 }
+
 
 /* Converts a device-dependent bitmap to a DIB */
 INT
@@ -1662,26 +1663,26 @@ NtGdiCreateDIBitmapInternal(
         }
     }
 
-    _SEH2_TRY
+    if (pbmi)
     {
-        if(pbmi) ProbeForRead(pbmi, cjMaxInitInfo, 1);
-        if(pjInit && (fInit & CBM_INIT))
-        {
-            ProbeForRead(pjInit, cjMaxBits, 1);
-            RtlCopyMemory(safeBits, pjInit, cjMaxBits);
-        }
+        Status = SafeProbeForRead(pbmi, cjMaxInitInfo, 1);
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    if (NT_SUCCESS(Status) && pjInit && (fInit & CBM_INIT))
     {
-        Status = _SEH2_GetExceptionCode();
+        Status = SafeProbeForRead(pjInit, cjMaxBits, 1);
     }
-    _SEH2_END;
-
-    if(!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status))
     {
         DPRINT1("Got an exception! pjInit = %p\n", pjInit);
         SetLastNtError(Status);
         goto cleanup;
+    }
+    else
+    {
+        if(pjInit && (fInit & CBM_INIT))
+        {
+            RtlCopyMemory(safeBits, pjInit, cjMaxBits);
+        }
     }
 
     hbmResult =  GreCreateDIBitmapInternal(hDc,
@@ -1699,6 +1700,7 @@ cleanup:
     if (safeBits) ExFreePoolWithTag(safeBits, TAG_DIB);
     return hbmResult;
 }
+
 
 HBITMAP
 NTAPI

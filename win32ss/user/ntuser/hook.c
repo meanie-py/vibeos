@@ -10,6 +10,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserHook);
 
 typedef struct _HOOKPACK
@@ -391,6 +392,7 @@ co_IntCallDebugHook(PHOOK Hook,
                   LPARAM lParam,
                   BOOL Ansi)
 {
+    NTSTATUS Status;
     LRESULT lResult = 0;
     ULONG Size;
     DEBUGHOOKINFO Debug;
@@ -399,21 +401,19 @@ co_IntCallDebugHook(PHOOK Hook,
 
     if (lParam)
     {
-        _SEH2_TRY
+        Status = SafeProbeForRead((PVOID)lParam,
+                     sizeof(DEBUGHOOKINFO),
+                     1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForRead((PVOID)lParam,
-                         sizeof(DEBUGHOOKINFO),
-                         1);
-
+            BadChk = TRUE;
+        }
+        else
+        {
             RtlCopyMemory(&Debug,
                           (PVOID)lParam,
                           sizeof(DEBUGHOOKINFO));
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            BadChk = TRUE;
-        }
-        _SEH2_END;
 
         if (BadChk)
         {
@@ -484,21 +484,19 @@ co_IntCallDebugHook(PHOOK Hook,
 
     if (HooklParam)
     {
-        _SEH2_TRY
+        Status = SafeProbeForRead((PVOID)Debug.lParam,
+                     Size,
+                     1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForRead((PVOID)Debug.lParam,
-                         Size,
-                         1);
-
+            BadChk = TRUE;
+        }
+        else
+        {
             RtlCopyMemory(HooklParam,
                           (PVOID)Debug.lParam,
                           Size);
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            BadChk = TRUE;
-        }
-        _SEH2_END;
 
         if (BadChk)
         {
@@ -515,6 +513,7 @@ co_IntCallDebugHook(PHOOK Hook,
     return lResult;
 }
 
+
 static
 LRESULT
 APIENTRY
@@ -526,6 +525,7 @@ co_UserCallNextHookEx(PHOOK Hook,
 {
     LRESULT lResult = 0;
     BOOL BadChk = FALSE;
+    NTSTATUS Status;
 
     /* Handle this one first. */
     if ((Hook->HookId == WH_MOUSE) ||
@@ -534,21 +534,19 @@ co_UserCallNextHookEx(PHOOK Hook,
         MOUSEHOOKSTRUCTEX Mouse;
         if (lParam)
         {
-            _SEH2_TRY
+            Status = SafeProbeForRead((PVOID)lParam,
+                                      sizeof(MOUSEHOOKSTRUCTEX),
+                                      1);
+            if (!NT_SUCCESS(Status))
             {
-                ProbeForRead((PVOID)lParam,
-                             sizeof(MOUSEHOOKSTRUCTEX),
-                             1);
-
+                BadChk = TRUE;
+            }
+            else
+            {
                 RtlCopyMemory(&Mouse,
                               (PVOID)lParam,
                               sizeof(MOUSEHOOKSTRUCTEX));
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                BadChk = TRUE;
-            }
-            _SEH2_END;
 
             if (BadChk)
             {
@@ -572,21 +570,19 @@ co_UserCallNextHookEx(PHOOK Hook,
 
             if (lParam)
             {
-                _SEH2_TRY
+                Status = SafeProbeForRead((PVOID)lParam,
+                                          sizeof(MSLLHOOKSTRUCT),
+                                          1);
+                if (!NT_SUCCESS(Status))
                 {
-                    ProbeForRead((PVOID)lParam,
-                                 sizeof(MSLLHOOKSTRUCT),
-                                 1);
-
+                    BadChk = TRUE;
+                }
+                else
+                {
                     RtlCopyMemory(&Mouse,
                                   (PVOID)lParam,
                                   sizeof(MSLLHOOKSTRUCT));
                 }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    BadChk = TRUE;
-                }
-                _SEH2_END;
 
                 if (BadChk)
                 {
@@ -607,21 +603,19 @@ co_UserCallNextHookEx(PHOOK Hook,
 
             if (lParam)
             {
-                _SEH2_TRY
+                Status = SafeProbeForRead((PVOID)lParam,
+                                          sizeof(KBDLLHOOKSTRUCT),
+                                          1);
+                if (!NT_SUCCESS(Status))
                 {
-                    ProbeForRead((PVOID)lParam,
-                                 sizeof(KBDLLHOOKSTRUCT),
-                                 1);
-
+                    BadChk = TRUE;
+                }
+                else
+                {
                     RtlCopyMemory(&Keyboard,
                                   (PVOID)lParam,
                                   sizeof(KBDLLHOOKSTRUCT));
                 }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    BadChk = TRUE;
-                }
-                _SEH2_END;
 
                 if (BadChk)
                 {
@@ -644,21 +638,19 @@ co_UserCallNextHookEx(PHOOK Hook,
 
             if (lParam)
             {
-                _SEH2_TRY
+                Status = SafeProbeForRead((PVOID)lParam,
+                                          sizeof(MSG),
+                                          1);
+                if (!NT_SUCCESS(Status))
                 {
-                    ProbeForRead((PVOID)lParam,
-                                 sizeof(MSG),
-                                 1);
-
+                    BadChk = TRUE;
+                }
+                else
+                {
                     RtlCopyMemory(&Msg,
                                   (PVOID)lParam,
                                   sizeof(MSG));
                 }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    BadChk = TRUE;
-                }
-                _SEH2_END;
 
                 if (BadChk)
                 {
@@ -672,21 +664,19 @@ co_UserCallNextHookEx(PHOOK Hook,
 
                 if (lParam && (Hook->HookId == WH_GETMESSAGE))
                 {
-                    _SEH2_TRY
+                    Status = SafeProbeForWrite((PVOID)lParam,
+                                               sizeof(MSG),
+                                               1);
+                    if (!NT_SUCCESS(Status))
                     {
-                        ProbeForWrite((PVOID)lParam,
-                                      sizeof(MSG),
-                                      1);
-
+                        BadChk = TRUE;
+                    }
+                    else
+                    {
                         RtlCopyMemory((PVOID)lParam,
                                       &Msg,
                                       sizeof(MSG));
                     }
-                    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                    {
-                        BadChk = TRUE;
-                    }
-                    _SEH2_END;
 
                     if (BadChk)
                     {
@@ -706,54 +696,51 @@ co_UserCallNextHookEx(PHOOK Hook,
                     LPCBT_CREATEWNDW pcbtcww = (LPCBT_CREATEWNDW)lParam;
 
                     TRACE("HOOK HCBT_CREATEWND\n");
-                    _SEH2_TRY
+                    if (Ansi)
                     {
-                        if (Ansi)
-                        {
-                            ProbeForRead( pcbtcww,
-                                          sizeof(CBT_CREATEWNDA),
-                                          1);
-                            ProbeForWrite(pcbtcww->lpcs,
-                                          sizeof(CREATESTRUCTA),
-                                          1);
-                            ProbeForRead( pcbtcww->lpcs->lpszName,
-                                          sizeof(CHAR),
-                                          1);
+                        Status = SafeProbeForRead(pcbtcww,
+                                                  sizeof(CBT_CREATEWNDA),
+                                                  1);
+                        if (NT_SUCCESS(Status)) Status = SafeProbeForWrite(pcbtcww->lpcs,
+                                                                           sizeof(CREATESTRUCTA),
+                                                                           1);
+                        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(pcbtcww->lpcs->lpszName,
+                                                                          sizeof(CHAR),
+                                                                          1);
 
-                            if (!IS_ATOM(pcbtcww->lpcs->lpszClass))
-                            {
-                                _Analysis_assume_(pcbtcww->lpcs->lpszClass != NULL);
-                                ProbeForRead(pcbtcww->lpcs->lpszClass,
-                                             sizeof(CHAR),
-                                             1);
-                            }
-                        }
-                        else
+                        if (NT_SUCCESS(Status) && !IS_ATOM(pcbtcww->lpcs->lpszClass))
                         {
-                            ProbeForRead( pcbtcww,
-                                          sizeof(CBT_CREATEWNDW),
-                                          1);
-                            ProbeForWrite(pcbtcww->lpcs,
-                                          sizeof(CREATESTRUCTW),
-                                          1);
-                            ProbeForRead( pcbtcww->lpcs->lpszName,
-                                          sizeof(WCHAR),
-                                          1);
-
-                            if (!IS_ATOM(pcbtcww->lpcs->lpszClass))
-                            {
-                                _Analysis_assume_(pcbtcww->lpcs->lpszClass != NULL);
-                                ProbeForRead(pcbtcww->lpcs->lpszClass,
-                                             sizeof(WCHAR),
-                                             1);
-                            }
+                            _Analysis_assume_(pcbtcww->lpcs->lpszClass != NULL);
+                            Status = SafeProbeForRead(pcbtcww->lpcs->lpszClass,
+                                                      sizeof(CHAR),
+                                                      1);
                         }
                     }
-                    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                    else
+                    {
+                        Status = SafeProbeForRead(pcbtcww,
+                                                  sizeof(CBT_CREATEWNDW),
+                                                  1);
+                        if (NT_SUCCESS(Status)) Status = SafeProbeForWrite(pcbtcww->lpcs,
+                                                                           sizeof(CREATESTRUCTW),
+                                                                           1);
+                        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(pcbtcww->lpcs->lpszName,
+                                                                          sizeof(WCHAR),
+                                                                          1);
+
+                        if (NT_SUCCESS(Status) && !IS_ATOM(pcbtcww->lpcs->lpszClass))
+                        {
+                            _Analysis_assume_(pcbtcww->lpcs->lpszClass != NULL);
+                            Status = SafeProbeForRead(pcbtcww->lpcs->lpszClass,
+                                                      sizeof(WCHAR),
+                                                      1);
+                        }
+                    }
+
+                    if (!NT_SUCCESS(Status))
                     {
                         BadChk = TRUE;
                     }
-                    _SEH2_END;
 
                     if (BadChk)
                     {
@@ -775,21 +762,19 @@ co_UserCallNextHookEx(PHOOK Hook,
 
                     if (lParam)
                     {
-                        _SEH2_TRY
+                        Status = SafeProbeForRead((PVOID)lParam,
+                                                  sizeof(RECT),
+                                                  1);
+                        if (!NT_SUCCESS(Status))
                         {
-                            ProbeForRead((PVOID)lParam,
-                                         sizeof(RECT),
-                                         1);
-
+                            BadChk = TRUE;
+                        }
+                        else
+                        {
                             RtlCopyMemory(&rt,
                                           (PVOID)lParam,
                                           sizeof(RECT));
                         }
-                        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            BadChk = TRUE;
-                        }
-                        _SEH2_END;
 
                         if (BadChk)
                         {
@@ -811,21 +796,19 @@ co_UserCallNextHookEx(PHOOK Hook,
                     TRACE("HOOK HCBT_ACTIVATE\n");
                     if (lParam)
                     {
-                        _SEH2_TRY
+                        Status = SafeProbeForRead((PVOID)lParam,
+                                                  sizeof(CBTACTIVATESTRUCT),
+                                                  1);
+                        if (!NT_SUCCESS(Status))
                         {
-                            ProbeForRead((PVOID)lParam,
-                                         sizeof(CBTACTIVATESTRUCT),
-                                         1);
-
+                            BadChk = TRUE;
+                        }
+                        else
+                        {
                             RtlCopyMemory(&CbAs,
                                           (PVOID)lParam,
                                           sizeof(CBTACTIVATESTRUCT));
                         }
-                        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            BadChk = TRUE;
-                        }
-                        _SEH2_END;
 
                         if (BadChk)
                         {
@@ -859,21 +842,19 @@ co_UserCallNextHookEx(PHOOK Hook,
 
             if (lParam)
             {
-                _SEH2_TRY
+                Status = SafeProbeForRead((PVOID)lParam,
+                                          sizeof(EVENTMSG),
+                                          1);
+                if (!NT_SUCCESS(Status))
                 {
-                    ProbeForRead((PVOID)lParam,
-                                 sizeof(EVENTMSG),
-                                 1);
-
+                    BadChk = TRUE;
+                }
+                else
+                {
                     RtlCopyMemory(&EventMsg,
                                   (PVOID)lParam,
                                   sizeof(EVENTMSG));
                 }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    BadChk = TRUE;
-                }
-                _SEH2_END;
 
                 if (BadChk)
                 {
@@ -887,21 +868,19 @@ co_UserCallNextHookEx(PHOOK Hook,
 
                 if (lParam)
                 {
-                    _SEH2_TRY
+                    Status = SafeProbeForWrite((PVOID)lParam,
+                                               sizeof(EVENTMSG),
+                                               1);
+                    if (!NT_SUCCESS(Status))
                     {
-                        ProbeForWrite((PVOID)lParam,
-                                      sizeof(EVENTMSG),
-                                      1);
-
+                        BadChk = TRUE;
+                    }
+                    else
+                    {
                         RtlCopyMemory((PVOID)lParam,
                                       &EventMsg,
                                       sizeof(EVENTMSG));
                     }
-                    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                    {
-                        BadChk = TRUE;
-                    }
-                    _SEH2_END;
 
                     if (BadChk)
                     {
@@ -931,6 +910,7 @@ co_UserCallNextHookEx(PHOOK Hook,
     }
     return lResult;
 }
+
 
 PHOOK
 FASTCALL

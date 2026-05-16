@@ -1,5 +1,6 @@
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include "../diblib/DibLib_interface.h"
 DBG_DEFAULT_CHANNEL(GdiBlt);
 
@@ -567,47 +568,47 @@ NtGdiEngBitBlt(
     XLATEOBJ *pxlo;
     BRUSHOBJ *pbo;
     BOOL bResult;
+    NTSTATUS Status;
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(prclTrg, sizeof(RECTL), 1);
+    if (NT_SUCCESS(Status)) Status = SafeProbeForRead(psoTrgUMPD, sizeof(SURFOBJ), 1);
+    if (NT_SUCCESS(Status) && ROP4_USES_SOURCE(rop4)) Status = SafeProbeForRead(pptlSrc, sizeof(POINTL), 1);
+    if (NT_SUCCESS(Status) && ROP4_USES_SOURCE(rop4)) Status = SafeProbeForRead(psoSrcUMPD, sizeof(SURFOBJ), 1);
+    if (NT_SUCCESS(Status) && ROP4_USES_MASK(rop4)) Status = SafeProbeForRead(pptlMask, sizeof(POINTL), 1);
+    if (NT_SUCCESS(Status) && ROP4_USES_MASK(rop4)) Status = SafeProbeForRead(psoMaskUMPD, sizeof(SURFOBJ), 1);
+    if (NT_SUCCESS(Status) && ROP4_USES_PATTERN(rop4)) Status = SafeProbeForRead(pptlBrush, sizeof(POINTL), 1);
+    if (NT_SUCCESS(Status) && ROP4_USES_PATTERN(rop4)) Status = SafeProbeForRead(psoSrcUMPD, sizeof(SURFOBJ), 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(prclTrg, sizeof(RECTL), 1);
+        return FALSE;
+    }
+    else
+    {
         rclTrg = *prclTrg;
 
-        ProbeForRead(psoTrgUMPD, sizeof(SURFOBJ), 1);
         hsurfTrg = psoTrgUMPD->hsurf;
 
         if (ROP4_USES_SOURCE(rop4))
         {
-            ProbeForRead(pptlSrc, sizeof(POINTL), 1);
             ptlSrc = *pptlSrc;
 
-            ProbeForRead(psoSrcUMPD, sizeof(SURFOBJ), 1);
             hsurfSrc = psoSrcUMPD->hsurf;
         }
 
         if (ROP4_USES_MASK(rop4))
         {
-            ProbeForRead(pptlMask, sizeof(POINTL), 1);
             ptlMask = *pptlMask;
 
-            ProbeForRead(psoMaskUMPD, sizeof(SURFOBJ), 1);
             hsurfMask = psoMaskUMPD->hsurf;
         }
 
         if (ROP4_USES_PATTERN(rop4))
         {
-            ProbeForRead(pptlBrush, sizeof(POINTL), 1);
             ptlBrush = *pptlBrush;
 
-            ProbeForRead(psoSrcUMPD, sizeof(SURFOBJ), 1);
             hBrushObj = pboUMPD->pvRbrush; // FIXME
         }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END;
 
     // FIXME: these need to be converted/locked!
     psoTrg = NULL;
@@ -631,6 +632,7 @@ NtGdiEngBitBlt(
 
     return bResult;
 }
+
 
 BOOL
 APIENTRY

@@ -485,6 +485,7 @@ NtUserTrackMouseEvent(
 {
     TRACKMOUSEEVENT SafeTME;
     BOOL bRet = FALSE;
+    NTSTATUS Status;
 
     TRACE("Enter NtUserTrackMouseEvent\n");
 
@@ -515,17 +516,16 @@ NtUserTrackMouseEvent(
     if (SafeTME.dwFlags & TME_QUERY)
     {
         bRet = IntQueryTrackMouseEvent(&SafeTME);
-        _SEH2_TRY
+        Status = SafeProbeForWrite(lpEventTrack, sizeof(TRACKMOUSEEVENT), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(lpEventTrack, sizeof(TRACKMOUSEEVENT), 1);
-            RtlCopyMemory(lpEventTrack, &SafeTME, sizeof(TRACKMOUSEEVENT));
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            SetLastNtError(_SEH2_GetExceptionCode());
+            SetLastNtError(Status);
             bRet = FALSE;
         }
-        _SEH2_END;
+        else
+        {
+            RtlCopyMemory(lpEventTrack, &SafeTME, sizeof(TRACKMOUSEEVENT));
+        }
     }
     else
     {
@@ -536,6 +536,7 @@ NtUserTrackMouseEvent(
     UserLeave();
     return bRet;
 }
+
 
 DWORD
 APIENTRY

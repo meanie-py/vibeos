@@ -1597,6 +1597,7 @@ NtUserGetKeyNameText(LONG lParam, LPWSTR lpString, int cchSize)
     VSC_LPWSTR *pKeyNames = NULL;
     CONST WCHAR *pKeyName = NULL;
     WCHAR KeyNameBuf[2];
+    NTSTATUS Status;
 
     TRACE("Enter NtUserGetKeyNameText\n");
 
@@ -1656,18 +1657,17 @@ NtUserGetKeyNameText(LONG lParam, LPWSTR lpString, int cchSize)
         if (cchKeyName > (cchSize - 1UL))
             cchKeyName = cchSize - 1UL; // Don't count '\0'
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(lpString, (cchKeyName + 1) * sizeof(WCHAR), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(lpString, (cchKeyName + 1) * sizeof(WCHAR), 1);
+            SetLastNtError(Status);
+        }
+        else
+        {
             RtlCopyMemory(lpString, pKeyName, cchKeyName * sizeof(WCHAR));
             lpString[cchKeyName] = UNICODE_NULL;
             dwRet = cchKeyName;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            SetLastNtError(_SEH2_GetExceptionCode());
-        }
-        _SEH2_END;
     }
     else
     {
@@ -1679,6 +1679,7 @@ cleanup:
     TRACE("Leave NtUserGetKeyNameText, ret=%lu\n", dwRet);
     return dwRet;
 }
+
 
 /*
  * UserGetKeyboardType

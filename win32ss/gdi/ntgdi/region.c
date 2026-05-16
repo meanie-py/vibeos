@@ -4082,6 +4082,7 @@ NtGdiGetRegionData(
 {
     ULONG cjRects, cjSize;
     PREGION prgn;
+    NTSTATUS Status;
 
     /* Lock the region */
     prgn = REGION_LockRgn(hrgn);
@@ -4102,20 +4103,19 @@ NtGdiGetRegionData(
         if (cjBuffer >= cjSize)
         {
             /* Probe the buffer and copy the data */
-            _SEH2_TRY
+            Status = SafeProbeForWrite(lpRgnData, cjSize, sizeof(ULONG));
+            if (!NT_SUCCESS(Status))
             {
-                ProbeForWrite(lpRgnData, cjSize, sizeof(ULONG));
+                EngSetLastError(ERROR_INVALID_PARAMETER);
+                cjSize = 0;
+            }
+            else
+            {
                 RtlCopyMemory(lpRgnData, &prgn->rdh, sizeof(RGNDATAHEADER));
                 RtlCopyMemory(lpRgnData->Buffer, prgn->Buffer, cjRects);
                 lpRgnData->rdh.iType = RDH_RECTANGLES;
                 lpRgnData->rdh.nRgnSize = cjRects;
             }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                cjSize = 0;
-            }
-            _SEH2_END;
         }
         else
         {
@@ -4129,5 +4129,6 @@ NtGdiGetRegionData(
     REGION_UnlockRgn(prgn);
     return cjSize;
 }
+
 
 /* EOF */

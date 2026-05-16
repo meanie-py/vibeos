@@ -4,7 +4,8 @@ Last updated 2026-05-16. **Status: Pass 0 + Pass 1 landed (worktree
 `worktree-win32k-translation`, uncommitted).** The inventory/classifier
 (Pass 0) and the mechanical probe-lowering rewriter (Pass 1) are built,
 spike-validated, and applied across the win32k.sys keep-set: **97 SEH
-sites mechanically lowered, i386 7/7 + amd64 7/7 smoke green** on the
+sites mechanically lowered + the 64-site ledger closed by an LLM pass
+(Pass 1b, 49 functions), i386 7/7 + amd64 7/7 smoke green** on the
 result. **Pass 2 (re-scoped to GDI manual-lock-bracket detection) and
 Pass 3 (USER callout extraction) also landed**, both extract-only:
 Pass 2 = 224 GDI lock sites shape-classified → sidecar JSON; Pass 3 =
@@ -33,6 +34,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 |---|---|---|
 | `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
+| `tools/rustconv/rustconv/seh_llm_lower.py` | Pass 1b LLM lowering of the 64-site ledger; `python -m rustconv seh-llm-lower` | done, build+smoke-validated |
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
@@ -96,7 +98,45 @@ correctly *not* mechanically rewritten (audit risk #1 respected):
 
 So **97 of 168 `(a)` sites (~58%) are now mechanically lowered**,
 deterministically and regression-free; the other 64 are the honest
-non-mechanical remainder for later stages.
+non-mechanical remainder — **now closed by Pass 1b (below)**.
+
+### Pass 1b — LLM lowering of the 64-site ledger
+
+The 64 ledger sites are the `(a)`-class probes the deterministic Pass-1
+*correctly refused*: lowering them needs a context-dependent decision
+(inject an `NTSTATUS Status;` / reuse an existing one / re-brace a
+brace-less conditional) the mechanical tool won't gamble on.
+`seh-llm-lower` hands each **enclosing function** (the 64 sites dedupe
+to **49 functions across 31 files**) to the LLM with the *exact
+canonical shapes `seh_rewrite._build_replacement` emits* as the
+contract — so output is consistent with the deterministic Pass-1
+already in the tree. Still a C→C transform, not a translation.
+
+Result: **49/49 functions lowered, all 3 arches link clean, i386 7/7 +
+amd64 7/7 smoke green** (arm64 win32k builds clean; boot-smoke blocked
+by the same orthogonal cold-ramdisk infra). The ledger is now empty.
+
+Engineering guards that made this safe:
+
+- **Single cached API pass.** Every response is cached on receipt
+  (`tools/rustconv/out/seh_llm_lower_cache.json`); `--apply` and any
+  re-run are $0 and deterministic (memory
+  `feedback_translation_philosophy` — no re-spend without approval).
+- **`--apply` is opt-in**; default is dry-run with a ready/held-back
+  report. Each rewrite must pass `validate()`: brace/paren balance,
+  `SafeProbeFor*` present, no stub/elision markers, **token-superset**
+  (every identifier in the original minus SEH macros must survive →
+  catches dropped calls / silently stubbed bodies — the known LLM C→C
+  failure modes), no introduced `_SEH2_TRY`. Anything failing stays in
+  the ledger and is never applied. 0 held back; the riskiest classes
+  (a 10-span function, the multi-probe + brace-less audit-risk-#1
+  cases) were diff-reviewed by hand and are byte-faithful to the
+  deterministic shapes.
+- **One real bug the build caught:** Pass-1b initially didn't replicate
+  Pass-1's `#include <safe_user_io.h>` injection, so the 16 files
+  Pass-1 never touched failed to compile (`SafeProbeFor*` undeclared).
+  Fixed in the pipeline + repaired idempotently. The build+smoke gate
+  did its job — this stage is build-affecting (unlike Pass 2/3).
 
 ### Pass 2 — measured GDI lock-bracket surface (extract-only, no rewrite)
 
@@ -761,9 +801,10 @@ Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
 
 - `[x]` All `_SEH2_TRY` sites classified (a)–(e) by inventory JSON
   (282 sites, per-file sidecars).
-- `[~]` All (a) sites mechanically rewritten to `SafeProbeFor*` —
-  **97 of 168 done**; 64 in the manual-followup ledger; remaining ~6
-  not-yet-eligible. (Helper is `SafeProbeFor{Read,Write}`, not the
+- `[x]` All (a) sites lowered to `SafeProbeFor*` — **97 mechanically
+  (Pass 1) + 49 functions/64 sites via LLM (Pass 1b)**; the
+  manual-followup ledger is now empty. i386 7/7 + amd64 7/7 smoke
+  green on the result. (Helper is `SafeProbeFor{Read,Write}`, not the
   audit's hypothetical `SafeCapture*`.)
 - `[x]` (b) sites → RAII: **N/A — zero `_SEH2_FINALLY` in keep-set.**
   Re-scoped to manual GDI-lock-bracket detection over the `(e)` subset

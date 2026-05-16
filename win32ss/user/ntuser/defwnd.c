@@ -6,6 +6,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <windowsx.h>
 
 DBG_DEFAULT_CHANNEL(UserDefwnd);
@@ -645,6 +646,7 @@ IntDefWindowProc(
    PTHREADINFO pti = PsGetCurrentThreadWin32Thread();
    LRESULT lResult = 0;
    USER_REFERENCE_ENTRY Ref;
+   NTSTATUS Status;
 
    if (Msg > WM_USER) return 0;
 
@@ -1337,21 +1339,17 @@ IntDefWindowProc(
 
                if (lParam)
                {
-                  _SEH2_TRY
+                  Status = SafeProbeForRead((PVOID)lParam, sizeof(RECT), 1);
+                  if (!NT_SUCCESS(Status))
                   {
-                      ProbeForRead((PVOID)lParam,
-                                   sizeof(RECT),
-                                   1);
-
+                      lResult = 1;
+                  }
+                  else
+                  {
                       RtlCopyMemory(&rt,
                                     (PVOID)lParam,
                                     sizeof(RECT));
                   }
-                  _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                  {
-                      lResult = 1;
-                  }
-                  _SEH2_END;
                }
                if (!lResult)
                   lResult = co_HOOK_CallHooks(WH_CBT, HCBT_MOVESIZE, (WPARAM)UserHMGetHandle(Wnd), lParam ? (LPARAM)&rt : 0);
@@ -1364,5 +1362,6 @@ IntDefWindowProc(
    }
    return lResult;
 }
+
 
 /* EOF */
