@@ -1,0 +1,25 @@
+# Cargo-driven `kdcom.dll` link (i386). KD-COM sibling of `hal-cargo`.
+#
+# Reuses cmake-produced sibling static libs + import libs (run `ninja`
+# in build-i386/ first) and drives the final `kdcom.dll` link from cargo
+# via the shared `reactos-link` engine. The Rust body is the
+# `kdcom-rust` staticlib (cargo can't link a staticlib as a Rust dep, so
+# build.rs / reactos-link builds it and feeds its libkdcom_rust.a as a
+# link arg).
+#
+# Success criterion: cargo's kdcom.dll boots in QEMU exactly like
+# cmake's (smoke i386, amd64/arm64 stay on the C kdcom.dll).
+
+[package]
+name = "kdcom-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kdcom"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

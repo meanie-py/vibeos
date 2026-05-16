@@ -387,7 +387,71 @@ fn main() {
              #define strchrW _cnt_wcschr\n#define _set_errno(x) ((void)0)\n\
              #define wcstok ref_wcstok\n#define wcstok_s ref_wcstok_s\n{}",
             inc(s("wstring/wcstok.c")))),
+        // Wave SCANF (Phase 1) — the genuine engine is winesup.c
+        // (_internal_handle_float + _LIBCNT_locinfo) + scanf.c (the
+        // _LIBCNT_ STRING/STRING_LEN instantiations + char2digit + the
+        // 4 thin variadic wrappers). Compile BOTH in one TU (winesup.c
+        // first so its defs are in scope — the streamout.c precedent).
+        // wchar_t→unsigned short (host is 32-bit; stddef FIRST so the
+        // typedef ran once before the macro). __ms_va_* → host stdarg.
+        // _EM_* are inert (the _control87 stub is a no-op). %[ pulls
+        // RTL_BITMAP/heap from refstub/wine/winternl.h (faithful to
+        // rtl/bitmap.c). Rename the 4 public wrappers to ref_*.
     ];
+
+    // Wave SCANF — its own TU + cc::Build because winesup.c's
+    // _internal_handle_float uses `long double`: on the Windows TARGET
+    // (MSVC ABI) that is 64-bit == double == cnt-rust's f64, but the
+    // SysV host defaults to 80-bit x87 → it would diverge from BOTH
+    // the target and the f64 engine. `-mlong-double-64` pins the
+    // reference to the Windows ABI (the LP32 `#undef ULONG_MAX`
+    // precedent, applied to a type width) so ref == target == engine.
+    // genuine engine = winesup.c (_internal_handle_float +
+    // _LIBCNT_locinfo) + scanf.c (the _LIBCNT_ STRING/STRING_LEN
+    // instantiations + char2digit + the 4 variadic wrappers), one TU
+    // (winesup.c first so its defs are in scope). wchar_t→u16 (host is
+    // 32-bit; stddef FIRST so the typedef ran once before the macro).
+    // %[ pulls RTL_BITMAP/heap from refstub/wine/winternl.h.
+    let scanf_body = format!(
+        "#define __GLIBC_USE_DEPRECATED_SCANF 1\n\
+         #include <stddef.h>\n#define wchar_t unsigned short\n\
+         #include <stdarg.h>\n#include <wctype.h>\n\
+         #define __ms_va_list va_list\n\
+         #define __ms_va_start(ap,last) va_start(ap,last)\n\
+         #define __ms_va_end(ap) va_end(ap)\n\
+         #define WINAPIV\n#define __declspec(x)\n#define __REACTOS__ 1\n\
+         #define _EM_DENORMAL 0\n#define _EM_INVALID 0\n\
+         #define _EM_ZERODIVIDE 0\n#define _EM_OVERFLOW 0\n\
+         #define _EM_UNDERFLOW 0\n#define _EM_INEXACT 0\n\
+         {}\
+         /* winesup.c's _internal_handle_float passes va_list* and does\n\
+            va_arg(*ap,..) — that MS-pointer-va_list indirection can't\n\
+            be formed on the SysV/win64 host harness (segfaults). Pin\n\
+            the genuine PARSE (scanf.h, fully exercised) + the genuine\n\
+            SYNTHESIS MATH by overriding ONLY the store call site with\n\
+            a shim running winesup.c's exact math (copied verbatim,\n\
+            -mlong-double-64 == Windows ABI) into a captured pointer.\n\
+            The va store mechanism itself is identical-by-inspection to\n\
+            the integer path (already diff-pinned). */\n\
+         static void* g_cnt_fout; static int g_cnt_fdbl;\n\
+         void cnt_set_fout(void* p,int dbl){{g_cnt_fout=p;g_cnt_fdbl=dbl;}}\n\
+         static void cnt_ref_ihf(int negative,int exp,int suppress,\n\
+             unsigned long long d,int l_or_L,va_list* ap){{\n\
+             long double cur=1,expcnt=10; int negexp=(exp<0);\n\
+             if(negexp)exp=-exp;\n\
+             while(exp){{if(exp&1)cur*=expcnt;exp/=2;expcnt=expcnt*expcnt;}}\n\
+             cur=(negexp?d/cur:d*cur);\n\
+             {{long double v=negative?-cur:cur;\n\
+               if(!suppress&&g_cnt_fout){{ if(l_or_L)*(double*)g_cnt_fout=v;\n\
+                 else *(float*)g_cnt_fout=(float)v; }} }}\n\
+             (void)ap;}}\n\
+         #define _internal_handle_float cnt_ref_ihf\n\
+         #define sscanf ref_sscanf\n#define swscanf ref_swscanf\n\
+         #define _snscanf ref__snscanf\n#define _snwscanf ref__snwscanf\n\
+         {}",
+        inc(s("string/winesup.c")),
+        inc(s("string/scanf.c")),
+    );
 
     // tcs* tchar family auto-derive: the genuine logic header
     // instantiated narrow(char)/wide(unsigned short, host wchar_t is
@@ -436,13 +500,54 @@ fn main() {
         fs::write(&w, body).unwrap();
         build.file(&w);
     }
+    // cnt-rust's OWN scanf trampoline (the irreducible C half — Rust
+    // can't define variadics on stable). It provides the public
+    // sscanf/swscanf + cnt_va_next_ptr and calls cnt_v*scanf from the
+    // cnt-rust rlib (resolved at the final test link).
+    let trampoline =
+        repo.join("sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c");
+    build.file(&trampoline);
+    println!("cargo:rerun-if-changed={}", trampoline.display());
     println!("cargo:rerun-if-changed={}", crt.display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     // Link the reference .o files *directly* (not as a static archive).
     // build-script rustc-link-lib doesn't reliably reach integration
     // tests; trailing link-args do, and direct objects sidestep
     // archive member-pull ordering entirely.
-    for obj in build.compile_intermediates() {
+    //
+    // glibc <stdio.h> (pulled by winesup.h) `__REDIRECT`s `sscanf` to
+    // `__isoc99_sscanf` via an `__asm__` label that overrides our
+    // `#define sscanf ref_sscanf` (the asm label wins over the macro,
+    // and it's literal so it can't be macro-intercepted). `<wchar.h>`
+    // is NOT pulled, so `swscanf` is unaffected. Deterministically
+    // rename the genuine narrow symbol back with objcopy (no-op on
+    // objects that lack it — e.g. the trampoline / other ref units).
+    let redef = |obj: &std::path::Path| {
+        let _ = std::process::Command::new("objcopy")
+            .arg("--redefine-sym")
+            .arg("__isoc99_sscanf=ref_sscanf")
+            .arg(obj)
+            .status();
         println!("cargo:rustc-link-arg={}", obj.display());
+    };
+    for obj in build.compile_intermediates() {
+        redef(&obj);
+    }
+    // Dedicated scanf build with `-mlong-double-64` (Windows MSVC ABI:
+    // long double == double == 64-bit; SysV host default is 80-bit
+    // x87, which would diverge from the f64 engine AND the target).
+    let scanf_c = out.join("ref_scanf.c");
+    fs::write(&scanf_c, &scanf_body).unwrap();
+    let mut scanf_build = cc::Build::new();
+    scanf_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&scanf_c);
+    for obj in scanf_build.compile_intermediates() {
+        redef(&obj);
     }
 }

@@ -1,0 +1,22 @@
+# bootvid-rust — Rust translation of the ReactOS `bootvid.dll` body
+# (boot-time VGA video / console text). On the non-MSVC i386/amd64
+# build, cmake's `add_bootvid(bootvid i386/pc/vgabvid.cmake)` builds
+# bootvid.dll from i386/pc/{bootvid,bootdata,vga}.c + the shared
+# common/console/fontdata.c (NOT framebuf/ — that is the separate
+# lfbbvid.dll; the translation-audit's keep/prune was inverted for our
+# BIOS-boot smoke). crate-type=staticlib → libbootvid_rust.a, linked
+# into bootvid.dll by `bootvid-cargo` (reactos-link engine), mirroring
+# the hal-rust+hal-cargo / kdcom-rust+kdcom-cargo split. i386-first
+# (reactos-link is i386-only today); amd64/arm64 stay C until it goes
+# multi-arch.
+
+[package]
+name = "bootvid-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

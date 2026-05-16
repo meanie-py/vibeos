@@ -151,6 +151,10 @@ set(PCH_SOURCE
 add_pch(freeldr_common include/freeldr.h PCH_SOURCE)
 add_dependencies(freeldr_common bugcodes asm xdk)
 
+# Rust peloader (replaces lib/peloader.c — see boot/freeldr/freeldr/CMakeLists.txt)
+target_link_libraries(freeldr_common ${FREELDR_RUST_LIB})
+add_dependencies(freeldr_common rust_freeldr)
+
 ## GCC builds need this extra thing for some reason...
 if(ARCH STREQUAL "i386" AND NOT MSVC)
     target_link_libraries(freeldr_common mini_hal ${HAL_RUST_MINI_LIB})

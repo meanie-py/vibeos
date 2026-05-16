@@ -7,8 +7,15 @@
 #include <string.h>   /* host strlen/strncmp — used by strstr.c */
 #include <ctype.h>    /* host isspace/isdigit/tolower — strtoi64.c   */
 #include <limits.h>   /* ULONG_MAX — strtoul.c                       */
+/* Guarded so a unit prelude can pre-set the calling convention (the
+ * scanf ref unit needs CDECL = __attribute__((ms_abi)) to faithfully
+ * compile the genuine __ms_va_list varargs on a SysV host). */
+#ifndef CDECL
 #define CDECL
+#endif
+#ifndef __cdecl
 #define __cdecl
+#endif
 #define __int64 long long   /* macro (not typedef) so `unsigned __int64` parses — itoa.c */
 typedef int BOOL;
 #define TRUE 1
@@ -23,7 +30,12 @@ typedef int BOOL;
 #define _I64_MIN  (-_I64_MAX - 1)
 #define EINVAL 22   /* MSVCRT errno.h */
 #define ERANGE 34
-typedef void *_locale_t;
+/* Opaque to most ref units (passed/ignored, never derefed). scanf.h's
+ * dead `else locinfo = locale->locinfo;` (locale is always NULL via
+ * the vsscanf_l(...,NULL,...) wrappers) needs a `.locinfo` member —
+ * refstub/internal/locale.h completes `struct _cnt_locale_s`. */
+struct _cnt_locale_s;
+typedef struct _cnt_locale_s *_locale_t;
 typedef unsigned long long ULONGLONG;
 /* Windows wchar_t is 16-bit; itow.c uses WCHAR/PWCHAR internally and
  * `wchar_t` in its public sigs. The itow reference TU additionally

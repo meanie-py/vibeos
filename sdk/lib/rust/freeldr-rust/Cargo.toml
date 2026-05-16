@@ -1,0 +1,16 @@
+# freeldr-rust — Rust translation of FreeLDR static components
+# (boot/freeldr/freeldr). crate-type=staticlib → libfreeldr_rust.a,
+# linked into the cmake-built freeldr lib (freeldr.sys / uefildr.efi /
+# rosload.exe) with the corresponding .c commented out — hal-rust-style
+# cohabitation, NOT a DLL cargo-link. 3-arch (i386/amd64/arm64).
+
+[package]
+name = "freeldr-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
