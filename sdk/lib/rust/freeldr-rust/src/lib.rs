@@ -16,6 +16,7 @@
 #![allow(unused_imports, unused_unsafe, dead_code)]
 
 // Modules added as rustconv writes each translated file.
+pub mod ffi;
 pub mod peloader;
 
 #[panic_handler]

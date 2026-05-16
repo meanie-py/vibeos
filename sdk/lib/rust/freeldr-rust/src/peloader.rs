@@ -3,32 +3,12 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ARC_STATUS, IMAGE_LOAD_CONFIG_DIRECTORY, IMAGE_THUNK_DATA, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LIST_ENTRY, LdrRelocateImageWithBias, PCCH, PCH, PCSTR, PCUNICODE_STRING, PIMAGE_EXPORT_DIRECTORY, PIMAGE_IMPORT_BY_NAME, PIMAGE_IMPORT_DESCRIPTOR, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER, PIMAGE_THUNK_DATA, PLDR_DATA_TABLE_ENTRY, PSTR, RtlImageDirectoryEntryToData, RtlImageNtHeader, UINT32};
+use ntkrnl_sys::ddk::{_UNICODE_STRING, IMAGE_LOAD_CONFIG_DIRECTORY, IMAGE_THUNK_DATA, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LIST_ENTRY, PCCH, PCH, PCSTR, PCUNICODE_STRING, PIMAGE_EXPORT_DIRECTORY, PIMAGE_IMPORT_BY_NAME, PIMAGE_IMPORT_DESCRIPTOR, PIMAGE_LOAD_CONFIG_DIRECTORY, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER, PIMAGE_THUNK_DATA, PLDR_DATA_TABLE_ENTRY, PSTR, UINT32};
 use core::ffi::c_void;
+use core::cmp::min;
+use crate::ffi::*;
+#[allow(unused_imports)] use crate::{TRACE, WARN, ERR, FIXME};
 
-extern "C" {
-    fn FrLdrHeapFree(ptr: *mut core::ffi::c_void, tag: u32);
-    fn VaToPa(va: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn TRACE(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
-    fn IMAGE_SNAP_BY_ORDINAL(ordinal: usize) -> u8;
-    fn IMAGE_ORDINAL(ordinal: usize) -> usize;
-    fn RVA(base: *const core::ffi::c_void, offset: u32) -> *mut core::ffi::c_void;
-    fn strcmp(s1: *const i8, s2: *const i8) -> i32;
-    fn ERR(fmt: *const i8, ...);
-    fn strrchr(s: *const i8, c: i32) -> *mut i8;
-    fn strlen(s: *const i8) -> usize;
-    fn RtlStringCbCatA(dest: *mut i8, size: usize, src: *const i8) -> i32;
-    fn strchr(s: *const i8, c: i32) -> *mut i8;
-    fn MmFreeMemory(ptr: PVOID);
-    fn PaToVa(pa: PVOID) -> PVOID;
-    fn PeLdrImportDllLoadCallback(name: PCCH);
-    fn RtlStringCbCopyA(psz_dest: *mut u8, cb_dest: usize, psz_src: PCCH) -> NTSTATUS;
-    static mut FrLdrModuleList: LIST_ENTRY;
-}
-extern "system" {
-    fn ArcGetRelativeTime() -> ULONG_PTR;
-}
 
 unsafe fn PeLdrpFetchAddressOfSecurityCookie(BaseAddress: PVOID, SizeOfImage: ULONG) -> PVOID {
     let mut ConfigDir: PIMAGE_LOAD_CONFIG_DIRECTORY;
@@ -40,7 +20,7 @@ unsafe fn PeLdrpFetchAddressOfSecurityCookie(BaseAddress: PVOID, SizeOfImage: UL
         1u8,
         IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG,
         &mut DirSize
-    );
+    ) as PIMAGE_LOAD_CONFIG_DIRECTORY;
 
     if ConfigDir.is_null() ||
         (DirSize as usize) < core::mem::offset_of!(IMAGE_LOAD_CONFIG_DIRECTORY, SecurityCookie) + core::mem::size_of::<ULONGLONG>()
@@ -60,7 +40,7 @@ unsafe fn PeLdrpFetchAddressOfSecurityCookie(BaseAddress: PVOID, SizeOfImage: UL
 }
 
 unsafe fn PeLdrpCompareDllName(
-    DllName: PCSTR,
+    mut DllName: PCSTR,
     UnicodeName: PCUNICODE_STRING,
 ) -> u8 {
     let mut Buffer: PWSTR;
@@ -75,7 +55,7 @@ unsafe fn PeLdrpCompareDllName(
         UnicodeNamePA.Length = (*UnicodeName).Length;
         UnicodeNamePA.MaximumLength = (*UnicodeName).MaximumLength;
         UnicodeNamePA.Buffer = VaToPa((*UnicodeName).Buffer);
-        TRACE(
+        TRACE!(
             b"PeLdrpCompareDllName: %s and %wZ, Length = %d, UN->Length %d\n\0".as_ptr() as PCSTR,
             DllName,
             &UnicodeNamePA as *const _UNICODE_STRING,
@@ -126,7 +106,7 @@ unsafe fn PeLdrpBindImportName(
     let mut OrdinalTable: *mut u16;
     let mut High: i32;
     let mut Low: i32;
-    let mut Middle: i32;
+    let mut Middle: i32 = 0;
     let mut Result: i32;
     let Hint: u32;
     let ImportData: PIMAGE_IMPORT_BY_NAME;
@@ -135,22 +115,22 @@ unsafe fn PeLdrpBindImportName(
     let mut Success: u8;
 
     if DllBase.is_null() {
-        WARN(b"DllBase == NULL\n\0".as_ptr() as *const i8);
+        WARN!(b"DllBase == NULL\n\0".as_ptr() as *const i8);
         return 0u8;
     }
 
     let ThunkName = VaToPa(ThunkName as *const core::ffi::c_void) as PIMAGE_THUNK_DATA;
     let ThunkData = VaToPa(ThunkData as *const core::ffi::c_void) as PIMAGE_THUNK_DATA;
 
-    if IMAGE_SNAP_BY_ORDINAL((*ThunkName).u1.Ordinal) != 0 && ProcessForwards == 0 {
-        Ordinal = (IMAGE_ORDINAL((*ThunkName).u1.Ordinal) - (*ExportDirectory).Base as usize) as u32;
+    if IMAGE_SNAP_BY_ORDINAL((*ThunkName).u1.Ordinal as usize) != 0 && ProcessForwards == 0 {
+        Ordinal = (IMAGE_ORDINAL((*ThunkName).u1.Ordinal as usize) - (*ExportDirectory).Base as usize) as u32;
     } else {
         let ImportDataVa: usize;
 
         if ProcessForwards == 0 {
             ImportDataVa = RVA(ImageBase, (*ThunkName).u1.AddressOfData as u32) as usize;
         } else {
-            ImportDataVa = (*ThunkName).u1.AddressOfData;
+            ImportDataVa = (*ThunkName).u1.AddressOfData as usize;
         }
 
         ImportData = VaToPa(ImportDataVa as *const core::ffi::c_void) as PIMAGE_IMPORT_BY_NAME;
@@ -187,7 +167,7 @@ unsafe fn PeLdrpBindImportName(
             }
 
             if High < Low {
-                ERR(b"Did not find export '%s'!\n\0".as_ptr() as *const i8, (*ImportData).Name.as_ptr());
+                ERR!(b"Did not find export '%s'!\n\0".as_ptr() as *const i8, (*ImportData).Name.as_ptr());
                 return 0u8;
             }
 
@@ -196,13 +176,13 @@ unsafe fn PeLdrpBindImportName(
     }
 
     if Ordinal >= (*ExportDirectory).NumberOfFunctions {
-        ERR(b"Ordinal number is invalid!\n\0".as_ptr() as *const i8);
+        ERR!(b"Ordinal number is invalid!\n\0".as_ptr() as *const i8);
         return 0u8;
     }
 
     FunctionTable = VaToPa(RVA(DllBase, (*ExportDirectory).AddressOfFunctions)) as *mut u32;
 
-    (*ThunkData).u1.Function = RVA(DllBase, *FunctionTable.offset(Ordinal as isize)) as usize;
+    (*ThunkData).u1.Function = RVA(DllBase, *FunctionTable.offset(Ordinal as isize)) as u32;
 
     let ForwarderName = VaToPa((*ThunkData).u1.Function as *const core::ffi::c_void) as *mut i8;
     if ((ForwarderName as usize) > (ExportDirectory as usize)) &&
@@ -213,11 +193,11 @@ unsafe fn PeLdrpBindImportName(
         let mut RefExportSize: u32 = 0;
         let mut ForwardDllName: [i8; 256] = [0; 256];
 
-        TRACE(b"PeLdrpBindImportName(): ForwarderName %s\n\0".as_ptr() as *const i8, ForwarderName);
+        TRACE!(b"PeLdrpBindImportName(): ForwarderName %s\n\0".as_ptr() as *const i8, ForwarderName);
 
-        core::ptr::copy_nonoverlapping(ForwarderName, ForwardDllName.as_mut_ptr(), 256);
+        core::ptr::copy_nonoverlapping(ForwarderName, ForwardDllName.as_mut_ptr() as *mut CHAR, 256);
 
-        *strrchr(ForwardDllName.as_mut_ptr(), '.' as i32) = 0;
+        *strrchr(ForwardDllName.as_mut_ptr() as *mut CHAR, '.' as i32) = 0;
 
         if ForwardDllName[0] == '_' as i8 {
             let mut i: u32 = 0;
@@ -229,18 +209,18 @@ unsafe fn PeLdrpBindImportName(
 
         if PeLdrCheckForLoadedDll(ModuleListHead, ForwardDllName.as_ptr() as PCSTR, core::ptr::addr_of_mut!(DataTableEntry)) == 0 {
             if strchr(ForwardDllName.as_ptr(), '.' as i32).is_null() {
-                RtlStringCbCatA(ForwardDllName.as_mut_ptr(), 256, b".dll\0".as_ptr() as *const i8);
+                RtlStringCbCatA(ForwardDllName.as_mut_ptr() as *mut CHAR, 256, b".dll\0".as_ptr() as *const i8);
             }
 
             Success = PeLdrpLoadAndScanReferencedDll(
                 ModuleListHead,
                 DirectoryPath,
-                ForwardDllName.as_mut_ptr(),
+                ForwardDllName.as_mut_ptr() as *mut CHAR,
                 Parent,
                 core::ptr::addr_of_mut!(DataTableEntry),
             );
             if Success == 0 {
-                ERR(b"PeLdrpLoadAndScanReferencedDll() failed to load forwarder dll.\n\0".as_ptr() as *const i8);
+                ERR!(b"PeLdrpLoadAndScanReferencedDll() failed to load forwarder dll.\n\0".as_ptr() as *const i8);
                 return Success;
             }
         }
@@ -270,7 +250,7 @@ unsafe fn PeLdrpBindImportName(
 
             (*ImportByName).Hint = 0;
 
-            RefThunkData.u1.AddressOfData = ImportByName as usize;
+            RefThunkData.u1.AddressOfData = ImportByName as u32;
 
             Success = PeLdrpBindImportName(
                 ModuleListHead,
@@ -301,24 +281,24 @@ unsafe fn PeLdrpLoadAndScanReferencedDll(
     DirectoryPath: PCCH,
     ImportName: PCH,
     Parent: PLIST_ENTRY,
-    DataTableEntry: PLDR_DATA_TABLE_ENTRY,
+    DataTableEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
     let mut FullDllName: [u8; 256] = [0; 256];
     let mut Success: BOOLEAN;
     let mut BasePA: PVOID = core::ptr::null_mut();
 
-    RtlStringCbCopyA(FullDllName.as_mut_ptr(), core::mem::size_of_val(&FullDllName), DirectoryPath);
-    RtlStringCbCatA(FullDllName.as_mut_ptr(), core::mem::size_of_val(&FullDllName), ImportName);
+    RtlStringCbCopyA(FullDllName.as_mut_ptr() as *mut CHAR, core::mem::size_of_val(&FullDllName), DirectoryPath);
+    RtlStringCbCatA(FullDllName.as_mut_ptr() as *mut CHAR, core::mem::size_of_val(&FullDllName), ImportName);
 
-    TRACE(b"Loading referenced DLL: %s\n\0".as_ptr() as PCCH, FullDllName.as_ptr());
+    TRACE!(b"Loading referenced DLL: %s\n\0".as_ptr() as PCCH, FullDllName.as_ptr());
 
-    if !PeLdrImportDllLoadCallback.is_null() {
-        PeLdrImportDllLoadCallback(FullDllName.as_ptr() as PCCH);
+    if let Some(cb) = PeLdrImportDllLoadCallback {
+        cb(FullDllName.as_ptr() as *const CHAR);
     }
 
     Success = PeLdrLoadImage(FullDllName.as_ptr() as PCSTR, LoaderBootDriver, core::ptr::addr_of_mut!(BasePA));
     if Success == 0 {
-        ERR(b"PeLdrLoadImage('%s') failed\n\0".as_ptr() as PCCH, FullDllName.as_ptr());
+        ERR!(b"PeLdrLoadImage('%s') failed\n\0".as_ptr() as PCCH, FullDllName.as_ptr());
         return Success;
     }
 
@@ -330,7 +310,7 @@ unsafe fn PeLdrpLoadAndScanReferencedDll(
         DataTableEntry,
     );
     if Success == 0 {
-        ERR(b"PeLdrAllocateDataTableEntry('%s') failed\n\0".as_ptr() as PCCH, FullDllName.as_ptr());
+        ERR!(b"PeLdrAllocateDataTableEntry('%s') failed\n\0".as_ptr() as PCCH, FullDllName.as_ptr());
         MmFreeMemory(BasePA);
         return Success;
     }
@@ -339,14 +319,14 @@ unsafe fn PeLdrpLoadAndScanReferencedDll(
 
     (**DataTableEntry).Flags |= LDRP_DRIVER_DEPENDENT_DLL;
 
-    TRACE(
+    TRACE!(
         b"PeLdrScanImportDescriptorTable() calling ourselves for '%.*S'\n\0".as_ptr() as PCCH,
         (**DataTableEntry).BaseDllName.Length as i32 / core::mem::size_of::<WCHAR>() as i32,
         VaToPa((**DataTableEntry).BaseDllName.Buffer as PVOID),
     );
     Success = PeLdrScanImportDescriptorTable(ModuleListHead, DirectoryPath, *DataTableEntry);
     if Success == 0 {
-        ERR(b"PeLdrScanImportDescriptorTable() failed\n\0".as_ptr() as PCCH);
+        ERR!(b"PeLdrScanImportDescriptorTable() failed\n\0".as_ptr() as PCCH);
         PeLdrFreeDataTableEntry(*DataTableEntry);
         MmFreeMemory(BasePA);
         return Success;
@@ -355,10 +335,6 @@ unsafe fn PeLdrpLoadAndScanReferencedDll(
     1u8
 }
 
-type PVOID = *mut core::ffi::c_void;
-type PCSTR = *const u8;
-type NTSTATUS = i32;
-type WCHAR = u16;
 const LoaderBootDriver: TYPE_OF_MEMORY = 2;
 const LDRP_DRIVER_DEPENDENT_DLL: u32 = 0x00000040;
 type TYPE_OF_MEMORY = u32;
@@ -380,7 +356,7 @@ unsafe fn PeLdrpScanImportAddressTable(
     let mut ThunkNamePtr = ThunkName;
     let mut ThunkDataPtr = ThunkData;
 
-    TRACE(
+    TRACE!(
         b"PeLdrpScanImportAddressTable(): DllBase 0x%p, ImageBase 0x%p, ThunkName 0x%p, ThunkData 0x%p\n\0".as_ptr(),
         DllBase,
         ImageBase,
@@ -389,7 +365,7 @@ unsafe fn PeLdrpScanImportAddressTable(
     );
 
     if DllBase.is_null() {
-        ERR(b"DllBase == NULL\n\0".as_ptr());
+        ERR!(b"DllBase == NULL\n\0".as_ptr());
         return 0u8;
     } else {
         ExportDirectory = RtlImageDirectoryEntryToData(
@@ -400,13 +376,13 @@ unsafe fn PeLdrpScanImportAddressTable(
         ) as PIMAGE_EXPORT_DIRECTORY;
     }
 
-    TRACE(
+    TRACE!(
         b"PeLdrpScanImportAddressTable(): ExportDirectory 0x%p\n\0".as_ptr(),
         ExportDirectory,
     );
 
     if ExportDirectory.is_null() {
-        ERR(
+        ERR!(
             b"No ExportDir, DllBase = %p (%p)\n\0".as_ptr(),
             DllBase,
             VaToPa(DllBase),
@@ -415,7 +391,7 @@ unsafe fn PeLdrpScanImportAddressTable(
     }
 
     while (*(VaToPa(ThunkNamePtr as *mut core::ffi::c_void) as PIMAGE_THUNK_DATA))
-        .__bindgen_anon_1
+        .u1
         .AddressOfData
         != 0
     {
@@ -453,11 +429,11 @@ pub unsafe extern "system" fn PeLdrInitializeModuleList() -> BOOLEAN {
         core::ptr::addr_of_mut!(FrLdrModuleList),
         b"freeldr.sys\0".as_ptr() as PCCH,
         b"freeldr.sys\0".as_ptr() as PCCH,
-        core::ptr::addr_of_mut!(__ImageBase) as PVOID,
+        core::ptr::addr_of!(__ImageBase) as PVOID,
         core::ptr::addr_of_mut!(FreeldrDTE),
     ) == 0u8
     {
-        ERR(b"Failed to allocate DTE for freeldr\n\0".as_ptr() as *const i8);
+        ERR!(b"Failed to allocate DTE for freeldr\n\0".as_ptr() as *const i8);
         return 0u8;
     }
 
@@ -478,7 +454,7 @@ unsafe fn PeLdrInitSecurityCookie(LdrEntry: PLDR_DATA_TABLE_ENTRY) -> PVOID {
     }
 
     if (*Cookie == DEFAULT_SECURITY_COOKIE) || (*Cookie == 0) {
-        NewCookie = Cookie as ULONG_PTR ^ ArcGetRelativeTime();
+        NewCookie = Cookie as ULONG_PTR ^ ArcGetRelativeTime() as ULONG_PTR;
         #[cfg(target_pointer_width = "64")]
         {
             if NewCookie > COOKIE_MAX {
@@ -501,9 +477,9 @@ unsafe fn PeLdrCheckForLoadedDll(
     LoadedEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> u8 {
     let mut ModuleEntry: PLIST_ENTRY;
-    let DataTableEntry: PLDR_DATA_TABLE_ENTRY;
+    let mut DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
 
-    TRACE(b"PeLdrCheckForLoadedDll: DllName %s\n\0".as_ptr() as *const i8, DllName);
+    TRACE!(b"PeLdrCheckForLoadedDll: DllName %s\n\0".as_ptr() as *const i8, DllName);
 
     ModuleEntry = (*ModuleListHead).Flink;
     while ModuleEntry != ModuleListHead {
@@ -511,7 +487,7 @@ unsafe fn PeLdrCheckForLoadedDll(
             -(core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks) as isize)
         ) as PLDR_DATA_TABLE_ENTRY;
 
-        TRACE(
+        TRACE!(
             b"PeLdrCheckForLoadedDll: DTE %p, EP %p, Base %p, Name '%.*S'\n\0".as_ptr() as *const i8,
             DataTableEntry,
             (*DataTableEntry).EntryPoint,
@@ -523,7 +499,7 @@ unsafe fn PeLdrCheckForLoadedDll(
         if PeLdrpCompareDllName(DllName, core::ptr::addr_of!((*DataTableEntry).BaseDllName)) != 0 {
             *LoadedEntry = DataTableEntry;
             (*DataTableEntry).LoadCount += 1;
-            TRACE(b"PeLdrCheckForLoadedDll: LoadedEntry 0x%p\n\0".as_ptr() as *const i8, DataTableEntry);
+            TRACE!(b"PeLdrCheckForLoadedDll: LoadedEntry 0x%p\n\0".as_ptr() as *const i8, DataTableEntry);
             return 1u8;
         }
 
@@ -539,11 +515,11 @@ unsafe fn PeLdrScanImportDescriptorTable(
     ScanDTE: PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
 
-    let DataTableEntry: PLDR_DATA_TABLE_ENTRY;
+    let mut DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut ImportTable: PIMAGE_IMPORT_DESCRIPTOR;
     let mut ImportTableSize: u32 = 0;
-    let ImportName: PCH;
-    let Success: BOOLEAN;
+    let mut ImportName: PCH;
+    let mut Success: BOOLEAN;
 
     ImportTable = RtlImageDirectoryEntryToData(
         VaToPa((*ScanDTE).DllBase),
@@ -558,7 +534,7 @@ unsafe fn PeLdrScanImportDescriptorTable(
         BaseName.Buffer = VaToPa((*ScanDTE).BaseDllName.Buffer as *mut core::ffi::c_void) as *mut u16;
         BaseName.MaximumLength = (*ScanDTE).BaseDllName.MaximumLength;
         BaseName.Length = (*ScanDTE).BaseDllName.Length;
-        TRACE(
+        TRACE!(
             b"PeLdrScanImportDescriptorTable(): %wZ ImportTable = 0x%p\n\0".as_ptr(),
             &BaseName as *const _UNICODE_STRING,
             ImportTable,
@@ -570,15 +546,15 @@ unsafe fn PeLdrScanImportDescriptorTable(
     }
 
     loop {
-        if (*ImportTable).Name == 0 || (*ImportTable).OriginalFirstThunk == 0 {
+        if (*ImportTable).Name == 0 || (*ImportTable).__bindgen_anon_1.OriginalFirstThunk == 0 {
             break;
         }
 
-        let ThunkName: PIMAGE_THUNK_DATA = RVA((*ScanDTE).DllBase, (*ImportTable).OriginalFirstThunk) as PIMAGE_THUNK_DATA;
+        let ThunkName: PIMAGE_THUNK_DATA = RVA((*ScanDTE).DllBase, (*ImportTable).__bindgen_anon_1.OriginalFirstThunk) as PIMAGE_THUNK_DATA;
         let ThunkData: PIMAGE_THUNK_DATA = RVA((*ScanDTE).DllBase, (*ImportTable).FirstThunk) as PIMAGE_THUNK_DATA;
 
         ImportName = VaToPa(RVA((*ScanDTE).DllBase, (*ImportTable).Name)) as PCH;
-        TRACE(b"PeLdrScanImportDescriptorTable(): Looking at %s\n\0".as_ptr(), ImportName);
+        TRACE!(b"PeLdrScanImportDescriptorTable(): Looking at %s\n\0".as_ptr(), ImportName);
 
         if PeLdrpCompareDllName(ImportName, &(*ScanDTE).BaseDllName as *const _UNICODE_STRING) != 0 {
             ImportTable = ImportTable.offset(1);
@@ -594,7 +570,7 @@ unsafe fn PeLdrScanImportDescriptorTable(
                 &DataTableEntry as *const PLDR_DATA_TABLE_ENTRY as *mut PLDR_DATA_TABLE_ENTRY,
             );
             if Success == 0 {
-                ERR(b"PeLdrpLoadAndScanReferencedDll() failed\n\0".as_ptr());
+                ERR!(b"PeLdrpLoadAndScanReferencedDll() failed\n\0".as_ptr());
                 return Success;
             }
         }
@@ -610,7 +586,7 @@ unsafe fn PeLdrScanImportDescriptorTable(
         );
 
         if Success == 0 {
-            ERR(
+            ERR!(
                 b"PeLdrpScanImportAddressTable() failed: ImportName = '%s', DirectoryPath = '%s'\n\0".as_ptr(),
                 ImportName,
                 DirectoryPath,
@@ -630,16 +606,16 @@ pub unsafe extern "system" fn PeLdrAllocateDataTableEntry(
     BaseDllName: PCCH,
     FullDllName: PCCH,
     BaseVA: PVOID,
-    NewEntry: PLDR_DATA_TABLE_ENTRY,
+    NewEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
     let BasePA = VaToPa(BaseVA);
     let mut BaseDllNameBuffer: PWSTR;
     let mut Buffer: PWSTR;
-    let DataTableEntry: PLDR_DATA_TABLE_ENTRY;
+    let mut DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let NtHeaders: PIMAGE_NT_HEADERS;
     let mut Length: USHORT;
 
-    TRACE(
+    TRACE!(
         b"PeLdrAllocateDataTableEntry('%s', '%s', %p)\n\0".as_ptr() as PCCH,
         BaseDllName,
         FullDllName,
@@ -663,8 +639,8 @@ pub unsafe extern "system" fn PeLdrAllocateDataTableEntry(
     (*DataTableEntry).DllBase = BaseVA;
     (*DataTableEntry).SizeOfImage = (*NtHeaders).OptionalHeader.SizeOfImage;
     (*DataTableEntry).EntryPoint = RVA(BaseVA, (*NtHeaders).OptionalHeader.AddressOfEntryPoint);
-    (*DataTableEntry).SectionPointer = core::ptr::null_mut();
-    (*DataTableEntry).CheckSum = (*NtHeaders).OptionalHeader.CheckSum;
+    (*DataTableEntry).__bindgen_anon_1.__bindgen_anon_1.SectionPointer = core::ptr::null_mut();
+    (*DataTableEntry).__bindgen_anon_1.__bindgen_anon_1.CheckSum = (*NtHeaders).OptionalHeader.CheckSum;
 
     Length = (strlen(BaseDllName) * core::mem::size_of::<WCHAR>()) as USHORT;
     Buffer = FrLdrHeapAlloc(Length as usize, TAG_WLDR_NAME) as PWSTR;
@@ -721,7 +697,7 @@ pub unsafe extern "system" fn PeLdrAllocateDataTableEntry(
     }
 
     InsertTailList(ModuleListHead, core::ptr::addr_of_mut!((*DataTableEntry).InLoadOrderLinks));
-    TRACE(
+    TRACE!(
         b"Inserting DTE %p, name='%.*S' DllBase=%p\n\0".as_ptr() as PCCH,
         DataTableEntry,
         (*DataTableEntry).BaseDllName.Length / core::mem::size_of::<WCHAR>() as USHORT,
@@ -754,7 +730,7 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
     let mut FileId: ULONG = 0;
     let mut PhysicalBase: PVOID;
     let mut VirtualBase: PVOID = core::ptr::null_mut();
-    let mut HeadersBuffer: [u8; SECTOR_SIZE * 2] = [0; SECTOR_SIZE * 2];
+    let mut HeadersBuffer: [u8; SECTOR_SIZE as usize * 2] = [0; SECTOR_SIZE as usize * 2];
     let mut NtHeaders: PIMAGE_NT_HEADERS;
     let mut SectionHeader: PIMAGE_SECTION_HEADER;
     let mut VirtualSize: ULONG;
@@ -765,30 +741,30 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
     let mut i: ULONG;
     let mut BytesRead: ULONG = 0;
 
-    TRACE(b"PeLdrLoadImage('%s', %ld)\n\0".as_ptr() as PSTR, FilePath, MemoryType);
+    TRACE!(b"PeLdrLoadImage('%s', %ld)\n\0".as_ptr() as PSTR, FilePath, MemoryType);
 
     Status = ArcOpen(FilePath as PSTR, OpenReadOnly, &mut FileId);
     if Status != ESUCCESS {
-        WARN(b"ArcOpen('%s') failed. Status: %u\n\0".as_ptr() as PSTR, FilePath, Status);
+        WARN!(b"ArcOpen('%s') failed. Status: %u\n\0".as_ptr() as PSTR, FilePath, Status);
         return 0u8;
     }
 
     Status = ArcRead(FileId, HeadersBuffer.as_mut_ptr() as *mut core::ffi::c_void, (SECTOR_SIZE * 2) as ULONG, &mut BytesRead);
     if Status != ESUCCESS {
-        ERR(b"ArcRead('%s') failed. Status: %u\n\0".as_ptr() as PSTR, FilePath, Status);
+        ERR!(b"ArcRead('%s') failed. Status: %u\n\0".as_ptr() as PSTR, FilePath, Status);
         ArcClose(FileId);
         return 0u8;
     }
 
     NtHeaders = RtlImageNtHeader(HeadersBuffer.as_mut_ptr() as *mut core::ffi::c_void);
     if NtHeaders.is_null() {
-        ERR(b"No NT header found in \"%s\"\n\0".as_ptr() as PSTR, FilePath);
+        ERR!(b"No NT header found in \"%s\"\n\0".as_ptr() as PSTR, FilePath);
         ArcClose(FileId);
         return 0u8;
     }
 
     if ((*NtHeaders).FileHeader.Characteristics & IMAGE_FILE_EXECUTABLE_IMAGE) == 0 {
-        ERR(b"Not an executable image \"%s\"\n\0".as_ptr() as PSTR, FilePath);
+        ERR!(b"Not an executable image \"%s\"\n\0".as_ptr() as PSTR, FilePath);
         ArcClose(FileId);
         return 0u8;
     }
@@ -797,16 +773,16 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
     SectionHeader = IMAGE_FIRST_SECTION(NtHeaders);
 
     PhysicalBase = MmAllocateMemoryAtAddress(
-        (*NtHeaders).OptionalHeader.SizeOfImage,
-        ((*NtHeaders).OptionalHeader.ImageBase as ULONG & (KSEG0_BASE - 1)) as PVOID,
+        (*NtHeaders).OptionalHeader.SizeOfImage as usize,
+        ((*NtHeaders).OptionalHeader.ImageBase as ULONG & (crate::ffi::KSEG0_BASE as ULONG - 1)) as PVOID,
         MemoryType,
     );
 
     if PhysicalBase.is_null() {
-        PhysicalBase = MmAllocateMemoryWithType((*NtHeaders).OptionalHeader.SizeOfImage, MemoryType);
+        PhysicalBase = MmAllocateMemoryWithType((*NtHeaders).OptionalHeader.SizeOfImage as usize, MemoryType);
 
         if PhysicalBase.is_null() {
-            ERR(b"Failed to alloc %lu bytes for image %s\n\0".as_ptr() as PSTR, (*NtHeaders).OptionalHeader.SizeOfImage, FilePath);
+            ERR!(b"Failed to alloc %lu bytes for image %s\n\0".as_ptr() as PSTR, (*NtHeaders).OptionalHeader.SizeOfImage, FilePath);
             ArcClose(FileId);
             return 0u8;
         }
@@ -818,12 +794,12 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
         PhysicalBase
     };
 
-    TRACE(b"Base PA: 0x%p, VA: 0x%p\n\0".as_ptr() as PSTR, PhysicalBase, VirtualBase);
+    TRACE!(b"Base PA: 0x%p, VA: 0x%p\n\0".as_ptr() as PSTR, PhysicalBase, VirtualBase);
 
     RtlCopyMemory(
         PhysicalBase,
         HeadersBuffer.as_ptr() as *const core::ffi::c_void,
-        min((*NtHeaders).OptionalHeader.SizeOfHeaders, core::mem::size_of_val(&HeadersBuffer) as ULONG),
+        min((*NtHeaders).OptionalHeader.SizeOfHeaders, core::mem::size_of_val(&HeadersBuffer) as ULONG) as usize,
     );
 
     if (*NtHeaders).OptionalHeader.SizeOfHeaders > core::mem::size_of_val(&HeadersBuffer) as ULONG {
@@ -834,7 +810,7 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
             &mut BytesRead,
         );
         if Status != ESUCCESS {
-            ERR(b"ArcRead('%s') failed. Status: %u\n\0".as_ptr() as PSTR, FilePath, Status);
+            ERR!(b"ArcRead('%s') failed. Status: %u\n\0".as_ptr() as PSTR, FilePath, Status);
             ArcClose(FileId);
             MmFreeMemory(PhysicalBase);
             return 0u8;
@@ -863,9 +839,9 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
 
         if SizeOfRawData != 0 {
             Position.QuadPart = (*SectionHeader).PointerToRawData as i64;
-            Status = ArcSeek(FileId, &mut Position, SeekAbsolute);
+            Status = ArcSeek(FileId, &mut Position as *mut _ as *mut i64, SeekAbsolute);
 
-            TRACE(b"SH->VA: 0x%X\n\0".as_ptr() as PSTR, (*SectionHeader).VirtualAddress);
+            TRACE!(b"SH->VA: 0x%X\n\0".as_ptr() as PSTR, (*SectionHeader).VirtualAddress);
 
             Status = ArcRead(
                 FileId,
@@ -874,16 +850,16 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
                 &mut BytesRead,
             );
             if Status != ESUCCESS {
-                ERR(b"PeLdrLoadImage(): Error reading section from file!\n\0".as_ptr() as PSTR);
+                ERR!(b"PeLdrLoadImage(): Error reading section from file!\n\0".as_ptr() as PSTR);
                 break;
             }
         }
 
         if SizeOfRawData < VirtualSize {
-            TRACE(b"PeLdrLoadImage(): SORD %d < VS %d\n\0".as_ptr() as PSTR, SizeOfRawData, VirtualSize);
+            TRACE!(b"PeLdrLoadImage(): SORD %d < VS %d\n\0".as_ptr() as PSTR, SizeOfRawData, VirtualSize);
             RtlZeroMemory(
                 ((*SectionHeader).VirtualAddress as ULONG_PTR + PhysicalBase as ULONG_PTR + SizeOfRawData as ULONG_PTR) as PVOID,
-                VirtualSize - SizeOfRawData,
+                (VirtualSize - SizeOfRawData) as usize,
             );
         }
 
@@ -898,11 +874,11 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
         return 0u8;
     }
 
-    if (*NtHeaders).OptionalHeader.ImageBase != VirtualBase as ULONG_PTR {
-        WARN(b"Relocating %p -> %p\n\0".as_ptr() as PSTR, (*NtHeaders).OptionalHeader.ImageBase as PVOID, VirtualBase);
+    if (*NtHeaders).OptionalHeader.ImageBase as ULONG_PTR != VirtualBase as ULONG_PTR {
+        WARN!(b"Relocating %p -> %p\n\0".as_ptr() as PSTR, (*NtHeaders).OptionalHeader.ImageBase as PVOID, VirtualBase);
         Status = LdrRelocateImageWithBias(
             PhysicalBase,
-            VirtualBase as ULONG_PTR - PhysicalBase as ULONG_PTR,
+            (VirtualBase as ULONG_PTR).wrapping_sub(PhysicalBase as ULONG_PTR) as i64,
             b"FreeLdr\0".as_ptr() as PSTR,
             ESUCCESS,
             ESUCCESS,
@@ -916,7 +892,7 @@ pub unsafe extern "system" fn PeLdrLoadImageEx(
 
     *ImageBasePA = PhysicalBase;
 
-    TRACE(b"PeLdrLoadImage() done, PA = %p\n\0".as_ptr() as PSTR, *ImageBasePA);
+    TRACE!(b"PeLdrLoadImage() done, PA = %p\n\0".as_ptr() as PSTR, *ImageBasePA);
     1u8
 }
 
@@ -934,7 +910,7 @@ pub unsafe extern "system" fn PeLdrLoadBootImage(
     FilePath: PCSTR,
     BaseDllName: PCSTR,
     ImageBase: *mut PVOID,
-    DataTableEntry: PLDR_DATA_TABLE_ENTRY,
+    DataTableEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
 
     let mut Success: BOOLEAN;
@@ -946,7 +922,7 @@ pub unsafe extern "system" fn PeLdrLoadBootImage(
         0u8,
     );
     if Success == 0 {
-        WARN(b"Failed to load boot image '%s'\n\0".as_ptr(), FilePath);
+        WARN!(b"Failed to load boot image '%s'\n\0".as_ptr(), FilePath);
         return 0u8;
     }
 
@@ -958,7 +934,7 @@ pub unsafe extern "system" fn PeLdrLoadBootImage(
         DataTableEntry,
     );
     if Success == 0 {
-        ERR(b"Failed to allocate DTE for '%s'\n\0".as_ptr(), FilePath);
+        ERR!(b"Failed to allocate DTE for '%s'\n\0".as_ptr(), FilePath);
         MmFreeMemory(*ImageBase);
         return 0u8;
     }
@@ -969,7 +945,7 @@ pub unsafe extern "system" fn PeLdrLoadBootImage(
         *DataTableEntry,
     );
     if Success == 0 {
-        ERR(b"Failed to resolve imports for '%s'\n\0".as_ptr(), FilePath);
+        ERR!(b"Failed to resolve imports for '%s'\n\0".as_ptr(), FilePath);
         PeLdrFreeDataTableEntry(*DataTableEntry);
         MmFreeMemory(*ImageBase);
         return 0u8;
