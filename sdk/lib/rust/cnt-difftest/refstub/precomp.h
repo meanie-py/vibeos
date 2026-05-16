@@ -23,7 +23,12 @@ typedef int BOOL;
 #define _I64_MIN  (-_I64_MAX - 1)
 #define EINVAL 22   /* MSVCRT errno.h */
 #define ERANGE 34
-typedef void *_locale_t;
+/* Opaque to most ref units (passed/ignored, never derefed). scanf.h's
+ * dead `else locinfo = locale->locinfo;` (locale is always NULL via
+ * the vsscanf_l(...,NULL,...) wrappers) needs a `.locinfo` member —
+ * refstub/internal/locale.h completes `struct _cnt_locale_s`. */
+struct _cnt_locale_s;
+typedef struct _cnt_locale_s *_locale_t;
 typedef unsigned long long ULONGLONG;
 /* Windows wchar_t is 16-bit; itow.c uses WCHAR/PWCHAR internally and
  * `wchar_t` in its public sigs. The itow reference TU additionally

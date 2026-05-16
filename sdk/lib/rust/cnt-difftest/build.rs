@@ -387,6 +387,31 @@ fn main() {
              #define strchrW _cnt_wcschr\n#define _set_errno(x) ((void)0)\n\
              #define wcstok ref_wcstok\n#define wcstok_s ref_wcstok_s\n{}",
             inc(s("wstring/wcstok.c")))),
+        // Wave SCANF (Phase 1) — the genuine engine is winesup.c
+        // (_internal_handle_float + _LIBCNT_locinfo) + scanf.c (the
+        // _LIBCNT_ STRING/STRING_LEN instantiations + char2digit + the
+        // 4 thin variadic wrappers). Compile BOTH in one TU (winesup.c
+        // first so its defs are in scope — the streamout.c precedent).
+        // wchar_t→unsigned short (host is 32-bit; stddef FIRST so the
+        // typedef ran once before the macro). __ms_va_* → host stdarg.
+        // _EM_* are inert (the _control87 stub is a no-op). %[ pulls
+        // RTL_BITMAP/heap from refstub/wine/winternl.h (faithful to
+        // rtl/bitmap.c). Rename the 4 public wrappers to ref_*.
+        ("scanf", format!(
+            "#define __GLIBC_USE_DEPRECATED_SCANF 1\n\
+             #include <stddef.h>\n#define wchar_t unsigned short\n\
+             #include <stdarg.h>\n#include <wctype.h>\n\
+             #define __ms_va_list va_list\n\
+             #define __ms_va_start(ap,last) va_start(ap,last)\n\
+             #define __ms_va_end(ap) va_end(ap)\n\
+             #define WINAPIV\n#define __declspec(x)\n#define __REACTOS__ 1\n\
+             #define _EM_DENORMAL 0\n#define _EM_INVALID 0\n\
+             #define _EM_ZERODIVIDE 0\n#define _EM_OVERFLOW 0\n\
+             #define _EM_UNDERFLOW 0\n#define _EM_INEXACT 0\n\
+             #define sscanf ref_sscanf\n#define swscanf ref_swscanf\n\
+             #define _snscanf ref__snscanf\n#define _snwscanf ref__snwscanf\n\
+             {}{}",
+            inc(s("string/winesup.c")), inc(s("string/scanf.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header
@@ -436,13 +461,34 @@ fn main() {
         fs::write(&w, body).unwrap();
         build.file(&w);
     }
+    // cnt-rust's OWN scanf trampoline (the irreducible C half — Rust
+    // can't define variadics on stable). It provides the public
+    // sscanf/swscanf + cnt_va_next_ptr and calls cnt_v*scanf from the
+    // cnt-rust rlib (resolved at the final test link).
+    let trampoline =
+        repo.join("sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c");
+    build.file(&trampoline);
+    println!("cargo:rerun-if-changed={}", trampoline.display());
     println!("cargo:rerun-if-changed={}", crt.display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     // Link the reference .o files *directly* (not as a static archive).
     // build-script rustc-link-lib doesn't reliably reach integration
     // tests; trailing link-args do, and direct objects sidestep
     // archive member-pull ordering entirely.
+    //
+    // glibc <stdio.h> (pulled by winesup.h) `__REDIRECT`s `sscanf` to
+    // `__isoc99_sscanf` via an `__asm__` label that overrides our
+    // `#define sscanf ref_sscanf` (the asm label wins over the macro,
+    // and it's literal so it can't be macro-intercepted). `<wchar.h>`
+    // is NOT pulled, so `swscanf` is unaffected. Deterministically
+    // rename the genuine narrow symbol back with objcopy (no-op on
+    // objects that lack it — e.g. the trampoline / other ref units).
     for obj in build.compile_intermediates() {
+        let _ = std::process::Command::new("objcopy")
+            .arg("--redefine-sym")
+            .arg("__isoc99_sscanf=ref_sscanf")
+            .arg(&obj)
+            .status();
         println!("cargo:rustc-link-arg={}", obj.display());
     }
 }
