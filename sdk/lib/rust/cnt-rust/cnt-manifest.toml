@@ -981,3 +981,82 @@ inout_effects = "as _wcstoui64; locale ignored"
 preserved_misfeature = "identical to _wcstoui64 (real impl; _wcstoui64 delegates with NULL locale); locale unused"
 reference    = "sdk/lib/crt/string/wtoi64.c"
 fuzz_domain  = ["delegated by _wcstoui64 — same domain"]
+
+# --- Wave H: case-map ----------------------------------------------
+# Four in-place ASCII case folders + scalar tolower/towupper. The C is
+# deliberately ASCII-only (literal 'A'..'Z' / 'a'..'z' ±32) — the wide
+# _wcslwr/_wcsupr do NOT fold Latin-1. Two variants NULL-guard
+# (_strupr/_wcslwr → _invalid_parameter then return NULL); the other
+# two (<string.h>, no guard) crash on NULL in C and are never fuzzed
+# with NULL. tolower's fold decision uses the SIGNED-char low byte but
+# returns the full int +32. towupper is NLS (RtlUpcaseUnicodeChar) →
+# reuses the CP1252/Rtl model shared with Wave E2 (mbcp::upcase); the
+# ref links the identical refstub/ndk/_cp1252.h, exactly E2's pattern.
+
+[symbols._strlwr]
+c_signature  = "char *_strlwr(char *_String)"
+family       = "string"
+slice_pattern = "case_inplace"
+core_fn      = "casemap::lower_ascii"
+return_collapse = "casemap"
+inout_effects = "in-place: each A..Z += 32; returns _String"
+preserved_misfeature = "ASCII-only (literal 'A'..'Z'); NO NULL guard (<string.h>, not precomp) → NULL crashes in C, never fuzzed; signed-char compare is moot for ASCII range"
+reference    = "sdk/lib/crt/string/_strlwr_nt.c"
+fuzz_domain  = ["empty", "all-lower (noop)", "all-upper", "mixed", "digits/punct", "0x80-0xFF (untouched)"]
+
+[symbols._strupr]
+c_signature  = "char *_strupr(char *_String)"
+family       = "string"
+slice_pattern = "case_inplace"
+core_fn      = "casemap::upper_ascii"
+return_collapse = "casemap"
+null_guard   = true
+inout_effects = "in-place: each a..z -= 32; returns _String, or NULL if _String==NULL"
+preserved_misfeature = "ASCII-only; NULL-guarded: _invalid_parameter(NULL,L\"_strupr\",..) then return NULL (handler is a relaxed no-op slot under _LIBCNT_, observable result = NULL)"
+reference    = "sdk/lib/crt/string/_strupr_nt.c"
+fuzz_domain  = ["NULL (→NULL)", "empty", "all-upper (noop)", "all-lower", "mixed", "0x80-0xFF (untouched)"]
+
+[symbols._wcslwr]
+c_signature  = "wchar_t *_wcslwr(wchar_t *_String)"
+family       = "string"
+slice_pattern = "case_inplace"
+core_fn      = "casemap::lower_ascii"
+return_collapse = "casemap"
+null_guard   = true
+inout_effects = "in-place: each ASCII A..Z += 32 (Latin-1 untouched); returns _String, or NULL if NULL"
+preserved_misfeature = "wide but ASCII-ONLY fold (C tests 'A'..'Z' only — À etc. NOT folded); NULL-guarded → NULL"
+reference    = "sdk/lib/crt/wstring/_wcslwr_nt.c"
+fuzz_domain  = ["NULL (→NULL)", "empty", "ASCII mixed", "Latin-1/CJK units (untouched)", "all-upper ASCII"]
+
+[symbols._wcsupr]
+c_signature  = "wchar_t *_wcsupr(wchar_t *_String)"
+family       = "string"
+slice_pattern = "case_inplace"
+core_fn      = "casemap::upper_ascii"
+return_collapse = "casemap"
+inout_effects = "in-place: each ASCII a..z -= 32 (Latin-1 untouched); returns _String"
+preserved_misfeature = "wide but ASCII-ONLY fold; NO NULL guard (<string.h>) → NULL crashes in C, never fuzzed"
+reference    = "sdk/lib/crt/wstring/_wcsupr_nt.c"
+fuzz_domain  = ["empty", "ASCII mixed", "Latin-1/CJK units (untouched)", "all-lower ASCII"]
+
+[symbols.tolower]
+c_signature  = "int tolower(int _C)"
+family       = "string"
+slice_pattern = "case_tolower"
+core_fn      = "casemap::tolower_ascii"
+return_collapse = "casemap"
+inout_effects = "none (pure scalar)"
+preserved_misfeature = "fold DECISION uses signed-char low byte ((char)_C) but returns FULL int +32: tolower(0x141)==0x161; low-byte>=0x80 (neg as signed char) returned unchanged regardless of high bits"
+reference    = "sdk/lib/crt/string/tolower_nt.c"
+fuzz_domain  = ["'A'..'Z'", "'a'..'z' (noop)", "non-alpha", "0", "negative _C", ">0xFF _C (0x141→0x161)", "low byte 0x80-0xFF (unchanged)"]
+
+[symbols.towupper]
+c_signature  = "wint_t towupper(wint_t _C)"
+family       = "string"
+slice_pattern = "case_towupper"
+core_fn      = "mbcp::upcase"
+return_collapse = "casemap"
+inout_effects = "none (pure scalar)"
+preserved_misfeature = "NLS upcase = RtlUpcaseUnicodeChar((WCHAR)_C); default-install model = CP1252/Rtl (shared with Wave E2 toupper_nt_mb): a..z & Latin-1 À-range -= 0x20, ÿ→Ÿ, µ→Μ, Š/Œ/Ž ligatures; (WCHAR) truncates _C to 16-bit"
+reference    = "sdk/lib/crt/string/towupper_nt.c"
+fuzz_domain  = ["a-z/A-Z", "0x80-0xFF Latin-1 upcase", "ÿ(0xFF→0x178)", "µ(0xB5→0x39C)", "š/œ/ž", "non-alpha", "0", ">0xFFFF _C (WCHAR-trunc)"]

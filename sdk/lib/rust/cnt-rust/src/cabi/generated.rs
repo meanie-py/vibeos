@@ -319,6 +319,17 @@ pub unsafe extern "C" fn _stricmp(_String1: *const u8, _String2: *const u8) -> i
 }
 
 
+/// `char *_strlwr(char *_String)`
+/// preserved misfeature: ASCII-only (literal 'A'..'Z'); NO NULL guard (<string.h>, not precomp) → NULL crashes in C, never fuzzed; signed-char compare is moot for ASCII range
+#[no_mangle]
+pub unsafe extern "C" fn _strlwr(_String: *mut u8) -> *mut u8 {
+    let n = cstr_slice(_String as *const u8).len();
+    let s = raw_mut_slice(_String, n);
+    crate::core_rs::casemap::lower_ascii(s);
+    _String
+}
+
+
 /// `int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)`
 /// preserved misfeature: as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n
 #[no_mangle]
@@ -370,6 +381,18 @@ pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i3
         1i64
     } else { r.value };
     v as u32 as u32
+}
+
+
+/// `char *_strupr(char *_String)`
+/// preserved misfeature: ASCII-only; NULL-guarded: _invalid_parameter(NULL,L"_strupr",..) then return NULL (handler is a relaxed no-op slot under _LIBCNT_, observable result = NULL)
+#[no_mangle]
+pub unsafe extern "C" fn _strupr(_String: *mut u8) -> *mut u8 {
+    if _String.is_null() { return core::ptr::null_mut(); }
+    let n = cstr_slice(_String as *const u8).len();
+    let s = raw_mut_slice(_String, n);
+    crate::core_rs::casemap::upper_ascii(s);
+    _String
 }
 
 
@@ -489,6 +512,18 @@ pub unsafe extern "C" fn _wcsicmp(_String1: *const u16, _String2: *const u16) ->
 }
 
 
+/// `wchar_t *_wcslwr(wchar_t *_String)`
+/// preserved misfeature: wide but ASCII-ONLY fold (C tests 'A'..'Z' only — À etc. NOT folded); NULL-guarded → NULL
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr(_String: *mut u16) -> *mut u16 {
+    if _String.is_null() { return core::ptr::null_mut(); }
+    let n = wcstr_slice(_String as *const u16).len();
+    let s = wraw_mut_slice(_String, n);
+    crate::core_rs::casemap::lower_ascii(s);
+    _String
+}
+
+
 /// `int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)`
 /// preserved misfeature: as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n
 #[no_mangle]
@@ -552,6 +587,17 @@ pub unsafe extern "C" fn _wcstoui64_l(nptr: *const u16, endptr: *mut *mut u16, b
         *endptr = nptr.add(r.end) as *mut _;
     }
     r.value as u64
+}
+
+
+/// `wchar_t *_wcsupr(wchar_t *_String)`
+/// preserved misfeature: wide but ASCII-ONLY fold; NO NULL guard (<string.h>) → NULL crashes in C, never fuzzed
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr(_String: *mut u16) -> *mut u16 {
+    let n = wcstr_slice(_String as *const u16).len();
+    let s = wraw_mut_slice(_String, n);
+    crate::core_rs::casemap::upper_ascii(s);
+    _String
 }
 
 
@@ -892,11 +938,27 @@ pub unsafe extern "C" fn strtoull(nptr: *const u8, endptr: *mut *mut u8, base: i
 }
 
 
+/// `int tolower(int _C)`
+/// preserved misfeature: fold DECISION uses signed-char low byte ((char)_C) but returns FULL int +32: tolower(0x141)==0x161; low-byte>=0x80 (neg as signed char) returned unchanged regardless of high bits
+#[no_mangle]
+pub unsafe extern "C" fn tolower(_C: i32) -> i32 {
+    crate::core_rs::casemap::tolower_ascii(_C)
+}
+
+
 /// `int __cdecl toupper_nt_mb(int _C)`
 /// preserved misfeature: packs the multibyte result: mbSize==2 → chr[1]|chr[0]<<8, ==1 → chr[0], else (WCHAR)_C; single-byte CP ⇒ always the ==1 branch (upcased byte, '?' if upcase escapes CP1252 e.g. µ→Μ); the ==2 DBCS branch is structurally present but unexercised
 #[no_mangle]
 pub unsafe extern "C" fn toupper_nt_mb(_C: i32) -> i32 {
     crate::core_rs::mbcp::toupper_nt_mb(_C)
+}
+
+
+/// `wint_t towupper(wint_t _C)`
+/// preserved misfeature: NLS upcase = RtlUpcaseUnicodeChar((WCHAR)_C); default-install model = CP1252/Rtl (shared with Wave E2 toupper_nt_mb): a..z & Latin-1 À-range -= 0x20, ÿ→Ÿ, µ→Μ, Š/Œ/Ž ligatures; (WCHAR) truncates _C to 16-bit
+#[no_mangle]
+pub unsafe extern "C" fn towupper(_C: u16) -> u16 {
+    crate::core_rs::mbcp::upcase(_C) as u16
 }
 
 

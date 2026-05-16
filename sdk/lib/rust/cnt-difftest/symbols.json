@@ -179,6 +179,21 @@
       "embedded equal-NUL"
     ]
   },
+  "_strlwr": {
+    "c_signature": "char *_strlwr(char *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/_strlwr_nt.c",
+    "fuzz_domain": [
+      "empty",
+      "all-lower (noop)",
+      "all-upper",
+      "mixed",
+      "digits/punct",
+      "0x80-0xFF (untouched)"
+    ]
+  },
   "_strnicmp": {
     "c_signature": "int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)",
     "family": "string",
@@ -237,6 +252,21 @@
       "ws+sign",
       "invalid base",
       "no digits"
+    ]
+  },
+  "_strupr": {
+    "c_signature": "char *_strupr(char *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/_strupr_nt.c",
+    "fuzz_domain": [
+      "NULL (\u2192NULL)",
+      "empty",
+      "all-upper (noop)",
+      "all-lower",
+      "mixed",
+      "0x80-0xFF (untouched)"
     ]
   },
   "_ui64toa": {
@@ -326,6 +356,20 @@
       "embedded equal-NUL"
     ]
   },
+  "_wcslwr": {
+    "c_signature": "wchar_t *_wcslwr(wchar_t *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/wstring/_wcslwr_nt.c",
+    "fuzz_domain": [
+      "NULL (\u2192NULL)",
+      "empty",
+      "ASCII mixed",
+      "Latin-1/CJK units (untouched)",
+      "all-upper ASCII"
+    ]
+  },
   "_wcsnicmp": {
     "c_signature": "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)",
     "family": "wstring",
@@ -401,6 +445,19 @@
     "reference": "sdk/lib/crt/string/wtoi64.c",
     "fuzz_domain": [
       "delegated by _wcstoui64 \u2014 same domain"
+    ]
+  },
+  "_wcsupr": {
+    "c_signature": "wchar_t *_wcsupr(wchar_t *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/wstring/_wcsupr_nt.c",
+    "fuzz_domain": [
+      "empty",
+      "ASCII mixed",
+      "Latin-1/CJK units (untouched)",
+      "all-lower ASCII"
     ]
   },
   "_wtoi": {
@@ -851,6 +908,22 @@
       "junk after"
     ]
   },
+  "tolower": {
+    "c_signature": "int tolower(int _C)",
+    "family": "string",
+    "slice_pattern": "case_tolower",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/tolower_nt.c",
+    "fuzz_domain": [
+      "'A'..'Z'",
+      "'a'..'z' (noop)",
+      "non-alpha",
+      "0",
+      "negative _C",
+      ">0xFF _C (0x141\u21920x161)",
+      "low byte 0x80-0xFF (unchanged)"
+    ]
+  },
   "toupper_nt_mb": {
     "c_signature": "int __cdecl toupper_nt_mb(int _C)",
     "family": "string",
@@ -864,6 +937,23 @@
       "0x00",
       "negative _C (low byte)",
       ">0xFF _C (low byte only)"
+    ]
+  },
+  "towupper": {
+    "c_signature": "wint_t towupper(wint_t _C)",
+    "family": "string",
+    "slice_pattern": "case_towupper",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/towupper_nt.c",
+    "fuzz_domain": [
+      "a-z/A-Z",
+      "0x80-0xFF Latin-1 upcase",
+      "\u00ff(0xFF\u21920x178)",
+      "\u00b5(0xB5\u21920x39C)",
+      "\u0161/\u0153/\u017e",
+      "non-alpha",
+      "0",
+      ">0xFFFF _C (WCHAR-trunc)"
     ]
   },
   "wcscat": {

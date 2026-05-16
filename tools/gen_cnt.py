@@ -68,6 +68,7 @@ def rs_ty(ctype: str) -> str:
         "wchar_t": "u16",
         "size_t": "usize",
         "int": "i32",
+        "wint_t": "u16",  # Windows wint_t == unsigned short
         "__int64": "i64",
         "unsigned__int64": "u64",
         "long": "i32",  # Win i386 LP32
@@ -91,6 +92,7 @@ def ret_ty(sig: str) -> str:
         "unsignedlong": "u32",
         "unsignedlonglong": "u64",
         "unsigned__int64": "u64",
+        "wint_t": "u16",
         "__int64": "i64",
         "char*": "*mut u8",
         "wchar_t*": "*mut u16",
@@ -259,6 +261,55 @@ def _mbcp_shim(name: str, m: dict, params, rt: str) -> str:
     )
 
 
+# Wave H — ASCII case fold. In-place folders mutate the NUL-terminated
+# string and return the pointer; two (_strupr/_wcslwr) NULL-guard
+# (manifest `null_guard = true`) → return NULL. Scalars are pure value
+# transforms (tolower = ASCII core; towupper = the Rtl/CP1252 upcase
+# shared with Wave E2's mbcp::upcase).
+CASEMAP = {"case_inplace", "case_tolower", "case_towupper"}
+
+
+def _casemap_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    pn = [n for _, n in params]
+    b: list[str] = []
+    if sp == "case_inplace":
+        (p,) = pn
+        wide = rs_ty(params[0][0]) == "*mut u16"
+        el = "u16" if wide else "u8"
+        cstr = "wcstr_slice" if wide else "cstr_slice"
+        rawm = "wraw_mut_slice" if wide else "raw_mut_slice"
+        cf = m["core_fn"]  # casemap::lower_ascii | casemap::upper_ascii
+        if m.get("null_guard", False):
+            b.append(
+                f"    if {p}.is_null() {{ return core::ptr::null_mut(); }}"
+            )
+        b += [
+            f"    let n = {cstr}({p} as *const {el}).len();",
+            f"    let s = {rawm}({p}, n);",
+            f"    crate::core_rs::{cf}(s);",
+            f"    {p}",
+        ]
+    elif sp == "case_tolower":
+        (c,) = pn
+        b.append(f"    crate::core_rs::casemap::tolower_ascii({c})")
+    elif sp == "case_towupper":
+        (c,) = pn
+        b.append(f"    crate::core_rs::mbcp::upcase({c}) as {rt}")
+    else:
+        raise SystemExit(f"{name}: unhandled casemap pattern {sp}")
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
 def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
     sp = m["slice_pattern"]
     decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
@@ -381,6 +432,8 @@ def shim(name: str, m: dict) -> str:
         return _mbcp_shim(name, m, params, rt)
     if sp in STRFAM:
         return _strfam_shim(name, m, params, rt)
+    if sp in CASEMAP:
+        return _casemap_shim(name, m, params, rt)
     # `_locale_t` is ignored by every collapse (the `_l` variants
     # delegate with locale unused) — emit it underscore-prefixed so it
     # doesn't trip unused_variables.

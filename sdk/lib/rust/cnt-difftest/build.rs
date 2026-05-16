@@ -264,6 +264,45 @@ fn main() {
              #define _wtol ru_wtol_real\n{}\
              int ref_wtol(const unsigned short*n){{return (int)ru_wtol_real(n);}}\n",
             inc(s("string/wtol.c")))),
+        // Wave H — ASCII case fold. _strlwr/_wcsupr: <string.h>, no
+        // guard. _strupr/_wcslwr: precomp + NULL guard calling
+        // _invalid_parameter/_CRT_WIDE — stubbed to a no-op so the
+        // NULL path is just `return NULL` (the handler dispatch is not
+        // part of the value contract; manual.rs covers it separately).
+        // wide units: stddef THEN `#define wchar_t unsigned short`
+        // (host wchar_t is 32-bit). tolower: scalar, SAL stubs.
+        // towupper: NLS — windef.h + ndk/rtlfuncs.h pull the identical
+        // refstub CP1252 Rtl model (Wave E2's pattern); wint_t/_CRTIMP
+        // supplied here.
+        ("strlwr_nt", format!(
+            "#define __cdecl\n#define _Inout_z_\n\
+             #define _strlwr ref_strlwr\n{}",
+            inc(s("string/_strlwr_nt.c")))),
+        ("strupr_nt", format!(
+            "#include <precomp.h>\n\
+             #define _invalid_parameter(a,b,c,d,e) ((void)0)\n\
+             #define _CRT_WIDE(x) L\"\"\n#define _Inout_z_\n\
+             #define _strupr ref_strupr\n{}",
+            inc(s("string/_strupr_nt.c")))),
+        ("wcslwr_nt", format!(
+            "#include <precomp.h>\n#define wchar_t unsigned short\n\
+             #define _invalid_parameter(a,b,c,d,e) ((void)0)\n\
+             #define _CRT_WIDE(x) L\"\"\n#define _Inout_z_\n\
+             #define _wcslwr ref_wcslwr\n{}",
+            inc(s("wstring/_wcslwr_nt.c")))),
+        ("wcsupr_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define __cdecl\n#define _Inout_z_\n\
+             #define _wcsupr ref_wcsupr\n{}",
+            inc(s("wstring/_wcsupr_nt.c")))),
+        ("tolower_nt", format!(
+            "#define _Check_return_\n#define _CRTIMP\n#define __cdecl\n\
+             #define _In_\n#define tolower ref_tolower\n{}",
+            inc(s("string/tolower_nt.c")))),
+        ("towupper_nt", format!(
+            "#define _CRTIMP\n#define wint_t unsigned short\n\
+             #define towupper ref_towupper\n{}",
+            inc(s("string/towupper_nt.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header

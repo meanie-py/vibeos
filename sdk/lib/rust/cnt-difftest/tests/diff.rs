@@ -83,6 +83,12 @@ extern "C" {
     fn ref_wcstoi64_l(n: *const u16, e: *mut *mut u16, b: i32, loc: *mut c_void) -> i64;
     fn ref_wcstoui64(n: *const u16, e: *mut *mut u16, b: i32) -> u64;
     fn ref_wcstoui64_l(n: *const u16, e: *mut *mut u16, b: i32, loc: *mut c_void) -> u64;
+    fn ref_strlwr(s: *mut u8) -> *mut u8;
+    fn ref_strupr(s: *mut u8) -> *mut u8;
+    fn ref_wcslwr(s: *mut u16) -> *mut u16;
+    fn ref_wcsupr(s: *mut u16) -> *mut u16;
+    fn ref_tolower(c: i32) -> i32;
+    fn ref_towupper(c: u16) -> u16;
 }
 
 use cnt_rust::cabi;
@@ -1255,5 +1261,97 @@ fn diff_wide_atoi() {
             "_wcstoui64 NULL-nptr v base={base}"
         );
         assert_eq!(uc, ur, "_wcstoui64 NULL-nptr ep untouched base={base}");
+    }
+}
+
+/// Wave H — ASCII case fold. In-place folders: byte-exact buffer
+/// parity + returned pointer == input (or NULL for the NULL-guarded
+/// _strupr/_wcslwr). Wide folders fed Latin-1/CJK units to pin the
+/// ASCII-ONLY contract (À etc. must stay untouched). Scalars
+/// (tolower signed-char-decision+full-int; towupper = Rtl/CP1252
+/// upcase) swept across the full domain incl. negatives / >0xFFFF.
+#[test]
+fn diff_casemap() {
+    let mut rng = Rng(0x4ca5_e009_u64);
+    for _ in 0..6000 {
+        // narrow string: letters + digits + punct + 0x80-0xFF
+        let pool = b"AZaz mM5.\x80\xC0\xDF\xE0\xFF";
+        let mut nv: Vec<u8> =
+            (0..rng.upto(28)).map(|_| pool[rng.upto(pool.len())]).collect();
+        nv.push(0);
+        let (mut c1, mut r1) = (nv.clone(), nv.clone());
+        let cp = unsafe { cabi::_strlwr(c1.as_mut_ptr()) };
+        let rp = unsafe { ref_strlwr(r1.as_mut_ptr()) };
+        assert_eq!(c1, r1, "_strlwr buf nv={nv:?}");
+        assert_eq!(cp == c1.as_mut_ptr(), rp == r1.as_mut_ptr(), "_strlwr ret");
+        let (mut c2, mut r2) = (nv.clone(), nv.clone());
+        let cp = unsafe { cabi::_strupr(c2.as_mut_ptr()) };
+        let rp = unsafe { ref_strupr(r2.as_mut_ptr()) };
+        assert_eq!(c2, r2, "_strupr buf nv={nv:?}");
+        assert_eq!(cp == c2.as_mut_ptr(), rp == r2.as_mut_ptr(), "_strupr ret");
+
+        // wide string: ASCII + Latin-1 + CJK (must stay untouched)
+        let wpool: [u16; 14] = [
+            65, 90, 97, 122, 32, 0x4D, 0x35, 0xC0, 0xDF, 0xE9, 0xFF, 0x0152,
+            0x4E2D, 0x017E,
+        ];
+        let mut wv: Vec<u16> = (0..rng.upto(24))
+            .map(|_| wpool[rng.upto(wpool.len())])
+            .collect();
+        wv.push(0);
+        let (mut wc1, mut wr1) = (wv.clone(), wv.clone());
+        let cp = unsafe { cabi::_wcslwr(wc1.as_mut_ptr()) };
+        let rp = unsafe { ref_wcslwr(wr1.as_mut_ptr()) };
+        assert_eq!(wc1, wr1, "_wcslwr buf wv={wv:?}");
+        assert_eq!(cp == wc1.as_mut_ptr(), rp == wr1.as_mut_ptr(), "_wcslwr ret");
+        let (mut wc2, mut wr2) = (wv.clone(), wv.clone());
+        let cp = unsafe { cabi::_wcsupr(wc2.as_mut_ptr()) };
+        let rp = unsafe { ref_wcsupr(wr2.as_mut_ptr()) };
+        assert_eq!(wc2, wr2, "_wcsupr buf wv={wv:?}");
+        assert_eq!(cp == wc2.as_mut_ptr(), rp == wr2.as_mut_ptr(), "_wcsupr ret");
+    }
+
+    // NULL-guarded variants: NULL → NULL (no crash)
+    assert_eq!(
+        unsafe { cabi::_strupr(core::ptr::null_mut()) },
+        unsafe { ref_strupr(core::ptr::null_mut()) },
+        "_strupr NULL"
+    );
+    assert_eq!(
+        unsafe { cabi::_wcslwr(core::ptr::null_mut()) },
+        unsafe { ref_wcslwr(core::ptr::null_mut()) },
+        "_wcslwr NULL"
+    );
+
+    // scalar tolower: full int domain incl. negative / >0xFF / >0xFFFF
+    let probes: &[i32] = &[
+        -1, -65, 0, 0x41, 0x5A, 0x60, 0x61, 0x7A, 0x7F, 0x80, 0xC1, 0xFF,
+        0x141, 0x161, 0x100_0041, -0x100_0041, i32::MIN, i32::MAX,
+    ];
+    for &c in probes {
+        assert_eq!(
+            unsafe { cabi::tolower(c) },
+            unsafe { ref_tolower(c) },
+            "tolower c={c:#x}"
+        );
+    }
+    let mut rng2 = Rng(0x70_10_e7_a1);
+    for _ in 0..4000 {
+        let c = rng2.next() as i32;
+        assert_eq!(
+            unsafe { cabi::tolower(c) },
+            unsafe { ref_tolower(c) },
+            "tolower c={c:#x}"
+        );
+    }
+
+    // scalar towupper: every u16 (Rtl/CP1252 upcase)
+    for c in 0u32..=0xFFFF {
+        let c = c as u16;
+        assert_eq!(
+            unsafe { cabi::towupper(c) },
+            unsafe { ref_towupper(c) },
+            "towupper c={c:#x}"
+        );
     }
 }
