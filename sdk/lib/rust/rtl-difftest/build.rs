@@ -180,6 +180,45 @@ fn main() {
          WCHAR ref_RtlUpcaseUnicodeChar(WCHAR s){{return RtlpUpcaseUnicodeChar(s);}}\n\
          CHAR ref_RtlUpperChar(CHAR s){{unsigned char c=(unsigned char)s; if(c>=0x61&&c<=0x7A)return (CHAR)(c-0x20); return s;}}\n\
          #define RtlUpperChar ref_RtlUpperChar\n\
+         /* Wave RTL-3 SHARED MODEL — the single-byte CP1252 converter\n\
+            core, byte-identical to cnt_rust::core_rs::mbcp dec/enc\n\
+            (rtl-strings reuses them). The DBCS branch is unreachable\n\
+            (NlsMbCodePageTag=0). Same discipline as RTL-2: diff pins\n\
+            the converter STRUCTURE + the unicode.c wrappers, not the\n\
+            runtime NLS table values. */\n\
+         static const unsigned short CP_HIGH[32]={{\n\
+            0x20AC,0x0081,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,\n\
+            0x02C6,0x2030,0x0160,0x2039,0x0152,0x008D,0x017D,0x008F,\n\
+            0x0090,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,\n\
+            0x02DC,0x2122,0x0161,0x203A,0x0153,0x009D,0x017E,0x0178}};\n\
+         static unsigned short cp_dec(unsigned char b){{\n\
+            if(b>=0x80&&b<0xA0)return CP_HIGH[b-0x80]; return b;}}\n\
+         static unsigned char cp_enc(unsigned short w){{\n\
+            int i; if(w<0x80||(w>=0xA0&&w<=0xFF))return (unsigned char)w;\n\
+            for(i=0;i<32;i++) if(CP_HIGH[i]==w) return (unsigned char)(0x80+i);\n\
+            return (unsigned char)'?';}}\n\
+         NTSTATUS ref_RtlMultiByteToUnicodeN(WCHAR* u,ULONG us,ULONG* rs,const char* mb,ULONG mbs){{\n\
+            ULONG cap=us/2,n=(mbs<cap)?mbs:cap,i; for(i=0;i<n;i++)u[i]=cp_dec((unsigned char)mb[i]); if(rs)*rs=n*2; return 0;}}\n\
+         NTSTATUS ref_RtlOemToUnicodeN(WCHAR* u,ULONG us,ULONG* rs,const char* mb,ULONG mbs){{\n\
+            ULONG cap=us/2,n=(mbs<cap)?mbs:cap,i; for(i=0;i<n;i++)u[i]=cp_dec((unsigned char)mb[i]); if(rs)*rs=n*2; return 0;}}\n\
+         NTSTATUS ref_RtlUnicodeToMultiByteN(char* mb,ULONG mbs,ULONG* rs,const WCHAR* u,ULONG us){{\n\
+            ULONG uu=us/2,n=(mbs<uu)?mbs:uu,i; for(i=0;i<n;i++)mb[i]=(char)cp_enc(u[i]); if(rs)*rs=n; return 0;}}\n\
+         NTSTATUS ref_RtlUnicodeToOemN(char* o,ULONG os,ULONG* rs,const WCHAR* u,ULONG us){{\n\
+            ULONG uu=us/2,n=(os<uu)?os:uu,i; for(i=0;i<n;i++)o[i]=(char)cp_enc(u[i]); if(rs)*rs=n; return (uu>n)?0x80000005:0;}}\n\
+         NTSTATUS ref_RtlUpcaseUnicodeToMultiByteN(char* mb,ULONG mbs,ULONG* rs,const WCHAR* u,ULONG us){{\n\
+            ULONG uu=us/2,n=(mbs<uu)?mbs:uu,i; for(i=0;i<n;i++)mb[i]=(char)cp_enc(model_upcase(u[i])); if(rs)*rs=n; return 0;}}\n\
+         NTSTATUS ref_RtlUpcaseUnicodeToOemN(char* o,ULONG os,ULONG* rs,const WCHAR* u,ULONG us){{\n\
+            ULONG uu=us/2,n=(os<uu)?os:uu,i; for(i=0;i<n;i++)o[i]=(char)cp_enc(model_upcase(u[i])); if(rs)*rs=n; return 0;}}\n\
+         NTSTATUS ref_RtlMultiByteToUnicodeSize(ULONG* us,const char* mb,ULONG mbs){{(void)mb; *us=mbs*2; return 0;}}\n\
+         NTSTATUS ref_RtlUnicodeToMultiByteSize(ULONG* mbs,const WCHAR* u,ULONG us){{(void)u; *mbs=us/2; return 0;}}\n\
+         #define RtlMultiByteToUnicodeN ref_RtlMultiByteToUnicodeN\n\
+         #define RtlOemToUnicodeN ref_RtlOemToUnicodeN\n\
+         #define RtlUnicodeToMultiByteN ref_RtlUnicodeToMultiByteN\n\
+         #define RtlUnicodeToOemN ref_RtlUnicodeToOemN\n\
+         #define RtlUpcaseUnicodeToMultiByteN ref_RtlUpcaseUnicodeToMultiByteN\n\
+         #define RtlUpcaseUnicodeToOemN ref_RtlUpcaseUnicodeToOemN\n\
+         #define RtlMultiByteToUnicodeSize ref_RtlMultiByteToUnicodeSize\n\
+         #define RtlUnicodeToMultiByteSize ref_RtlUnicodeToMultiByteSize\n\
          /* Unprototyped stubs (`f()` accepts any call shape) for the\n\
             NLS/heap leaves the other ~50 fns reference (RTL-2 unused). */\n\
          int RtlpDowncaseUnicodeChar(){{return 0;}}\n\

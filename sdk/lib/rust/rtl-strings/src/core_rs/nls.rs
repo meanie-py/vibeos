@@ -99,6 +99,82 @@ pub fn prefix_uni(s1: &[u16], s2: &[u16], ci: bool) -> bool {
     s1.iter().zip(s2.iter()).all(|(&x, &y)| f(x) == f(y))
 }
 
+// ── Wave RTL-3: the single-byte (CP1252-model) converter core ──────
+//
+// nls.c's converters branch on NlsMbCodePageTag / DBCSCodePage; the
+// default-install ANSI/OEM code page is the single-byte CP1252 (the
+// SAME model cnt-rust uses for the CRT mb/wc path — ONE truth). The
+// DBCS branch is unreachable here (documented TODO, mirrors
+// cnt-rust/mbcp). The diff pins the structural faithfulness of these
+// (`Size = min(...)` formulas, `ResultSize` byte-vs-char semantics,
+// and the `RtlUnicodeToOemN` BUFFER_OVERFLOW-vs-SUCCESS asymmetry),
+// with the table contents factored out by the shared model.
+
+/// `NlsUnicodeToAnsiTable[w]` / `NlsUnicodeToOemTable[w]` — the
+/// reverse map; unrepresentable ⇒ the default char `'?'` (the shared
+/// value used on both diff sides, matching cnt-rust `wctomb`).
+#[inline]
+pub fn enc_byte(w: u16) -> u8 {
+    cnt_rust::core_rs::mbcp::enc(w).unwrap_or(b'?')
+}
+
+/// `dec` re-export so the cabi layer needn't name the cnt-rust path.
+#[inline]
+pub fn dec_byte(b: u8) -> u16 {
+    cnt_rust::core_rs::mbcp::dec(b)
+}
+
+/// `RtlMultiByteToUnicodeN` / `RtlOemToUnicodeN` body (single-byte).
+/// `Size = min(MbSize, UnicodeSize/sizeof(WCHAR))`; `*ResultSize`
+/// (caller) `= Size * sizeof(WCHAR)`. Returns units written.
+#[inline]
+pub fn mb_to_uni(dst: &mut [u16], src: &[u8]) -> usize {
+    let n = src.len().min(dst.len());
+    for i in 0..n {
+        dst[i] = dec_byte(src[i]);
+    }
+    n
+}
+
+/// `RtlUnicodeToMultiByteN` body (single-byte). `Size =
+/// (UnicodeSize > MbSize*sizeof(WCHAR)) ? MbSize : UnicodeSize/2`
+/// ≡ `min(MbSize, UnicodeUnits)`; `*ResultSize = Size` (bytes==chars).
+#[inline]
+pub fn uni_to_mb(dst: &mut [u8], src: &[u16]) -> usize {
+    let n = dst.len().min(src.len());
+    for i in 0..n {
+        dst[i] = enc_byte(src[i]);
+    }
+    n
+}
+
+/// `RtlUpcaseUnicodeToMultiByteN` / `RtlUpcaseUnicodeToOemN` body —
+/// the `min`-precompute shape (NOT the `while`), ALWAYS
+/// `STATUS_SUCCESS`. Upcases via the shared model first.
+#[inline]
+pub fn upcase_uni_to_mb(dst: &mut [u8], src: &[u16]) -> usize {
+    let n = dst.len().min(src.len());
+    for i in 0..n {
+        dst[i] = enc_byte(upcase_uc(src[i]));
+    }
+    n
+}
+
+/// `RtlUnicodeToOemN` body (single-byte) — the `while` shape: writes
+/// `min(OemSize, UnicodeUnits)`, and returns `true` (⇒
+/// `STATUS_BUFFER_OVERFLOW`) iff UNICODE input was left over (i.e.
+/// `UnicodeUnits > OemSize`). This SUCCESS-vs-OVERFLOW split (absent
+/// from the otherwise-identical `RtlUnicodeToMultiByteN`) is the
+/// pinned asymmetry.
+#[inline]
+pub fn uni_to_oem(dst: &mut [u8], src: &[u16]) -> (usize, bool) {
+    let n = dst.len().min(src.len());
+    for i in 0..n {
+        dst[i] = enc_byte(src[i]);
+    }
+    (n, src.len() > n)
+}
+
 /// `RtlHashUnicodeString` X65599. The case-insensitive fold here is
 /// **ASCII-only** in the genuine source (`'a'..'z'` ⇒ `-'a'+'A'`),
 /// NOT the NLS upcase — a deliberate split this pins. Wrapping u32.

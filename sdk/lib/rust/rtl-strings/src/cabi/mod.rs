@@ -26,6 +26,33 @@ pub struct UNICODE_STRING {
 const STATUS_SUCCESS: i32 = 0x0000_0000;
 const STATUS_NAME_TOO_LONG: i32 = 0xC000_0106u32 as i32;
 const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
+const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
+
+/// Reconstruct an immutable slice from an NT `(ptr, count)` pair,
+/// tolerating the genuine `count == 0` / NULL case (no deref happens
+/// in that path).
+#[inline]
+unsafe fn rslice<'a, T>(p: *const T, n: usize) -> &'a [T] {
+    if p.is_null() || n == 0 {
+        &[]
+    } else {
+        core::slice::from_raw_parts(p, n)
+    }
+}
+#[inline]
+unsafe fn wslice<'a, T>(p: *mut T, n: usize) -> &'a mut [T] {
+    if p.is_null() || n == 0 {
+        &mut []
+    } else {
+        core::slice::from_raw_parts_mut(p, n)
+    }
+}
+#[inline]
+unsafe fn put_u32(p: *mut u32, v: u32) {
+    if !p.is_null() {
+        core::ptr::write_volatile(p, v);
+    }
+}
 
 #[inline]
 unsafe fn strlen(p: *const u8) -> usize {
@@ -335,5 +362,138 @@ pub unsafe extern "system" fn RtlHashUnicodeString(
     }
     let h = nls::hash_uni(uunits(string), case_insensitive != 0);
     core::ptr::write_volatile(hash_value, h);
+    STATUS_SUCCESS
+}
+
+// ── Wave RTL-3: single-byte (CP1252-model) converter core ──────────
+
+/// `NTSTATUS NTAPI RtlMultiByteToUnicodeN(PWCHAR, ULONG UnicodeSize,
+/// PULONG ResultSize, PCSTR, ULONG MbSize)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlMultiByteToUnicodeN(
+    unicode: *mut u16,
+    unicode_size: u32,
+    result_size: *mut u32,
+    mb: *const u8,
+    mb_size: u32,
+) -> i32 {
+    let dst = wslice(unicode, unicode_size as usize / 2);
+    let src = rslice(mb, mb_size as usize);
+    let n = nls::mb_to_uni(dst, src);
+    put_u32(result_size, (n * 2) as u32);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlOemToUnicodeN(...)` — same single-byte body as
+/// MultiByte (shared model: OEM CP == ANSI CP == CP1252).
+#[no_mangle]
+pub unsafe extern "system" fn RtlOemToUnicodeN(
+    unicode: *mut u16,
+    unicode_size: u32,
+    result_size: *mut u32,
+    oem: *const u8,
+    oem_size: u32,
+) -> i32 {
+    let dst = wslice(unicode, unicode_size as usize / 2);
+    let src = rslice(oem, oem_size as usize);
+    let n = nls::mb_to_uni(dst, src);
+    put_u32(result_size, (n * 2) as u32);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlUnicodeToMultiByteN(PCHAR, ULONG MbSize,
+/// PULONG ResultSize, PCWCH, ULONG UnicodeSize)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToMultiByteN(
+    mb: *mut u8,
+    mb_size: u32,
+    result_size: *mut u32,
+    unicode: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    let dst = wslice(mb, mb_size as usize);
+    let src = rslice(unicode, unicode_size as usize / 2);
+    let n = nls::uni_to_mb(dst, src);
+    put_u32(result_size, n as u32);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlUnicodeToOemN(...)` — the `while` shape:
+/// `STATUS_BUFFER_OVERFLOW` iff Unicode input left over.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToOemN(
+    oem: *mut u8,
+    oem_size: u32,
+    result_size: *mut u32,
+    unicode: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    let dst = wslice(oem, oem_size as usize);
+    let src = rslice(unicode, unicode_size as usize / 2);
+    let (n, overflow) = nls::uni_to_oem(dst, src);
+    put_u32(result_size, n as u32);
+    if overflow {
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        STATUS_SUCCESS
+    }
+}
+
+/// `NTSTATUS NTAPI RtlUpcaseUnicodeToMultiByteN(...)` — min-precompute
+/// shape, always SUCCESS, upcase via the shared model.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeToMultiByteN(
+    mb: *mut u8,
+    mb_size: u32,
+    result_size: *mut u32,
+    unicode: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    let dst = wslice(mb, mb_size as usize);
+    let src = rslice(unicode, unicode_size as usize / 2);
+    let n = nls::upcase_uni_to_mb(dst, src);
+    put_u32(result_size, n as u32);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlUpcaseUnicodeToOemN(...)` — same min-precompute
+/// shape as the MultiByte upcase variant (NOT the `while`/overflow
+/// shape of `RtlUnicodeToOemN`).
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeToOemN(
+    oem: *mut u8,
+    oem_size: u32,
+    result_size: *mut u32,
+    unicode: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    let dst = wslice(oem, oem_size as usize);
+    let src = rslice(unicode, unicode_size as usize / 2);
+    let n = nls::upcase_uni_to_mb(dst, src);
+    put_u32(result_size, n as u32);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlMultiByteToUnicodeSize(PULONG, PCSTR, ULONG)` —
+/// single-byte: `*UnicodeSize = MbSize * sizeof(WCHAR)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlMultiByteToUnicodeSize(
+    unicode_size: *mut u32,
+    _mb: *const u8,
+    mb_size: u32,
+) -> i32 {
+    put_u32(unicode_size, mb_size.wrapping_mul(2));
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlUnicodeToMultiByteSize(PULONG, PCWCH, ULONG)` —
+/// single-byte: `*MbSize = UnicodeSize / sizeof(WCHAR)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToMultiByteSize(
+    mb_size: *mut u32,
+    _unicode: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    put_u32(mb_size, unicode_size / 2);
     STATUS_SUCCESS
 }

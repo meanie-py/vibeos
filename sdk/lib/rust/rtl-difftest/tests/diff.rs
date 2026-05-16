@@ -46,6 +46,15 @@ extern "C" {
         alg: u32,
         h: *mut u32,
     ) -> i32;
+    // Wave RTL-3 converter core
+    fn ref_RtlMultiByteToUnicodeN(u: *mut u16, us: u32, rs: *mut u32, mb: *const u8, mbs: u32) -> i32;
+    fn ref_RtlOemToUnicodeN(u: *mut u16, us: u32, rs: *mut u32, mb: *const u8, mbs: u32) -> i32;
+    fn ref_RtlUnicodeToMultiByteN(mb: *mut u8, mbs: u32, rs: *mut u32, u: *const u16, us: u32) -> i32;
+    fn ref_RtlUnicodeToOemN(o: *mut u8, os: u32, rs: *mut u32, u: *const u16, us: u32) -> i32;
+    fn ref_RtlUpcaseUnicodeToMultiByteN(mb: *mut u8, mbs: u32, rs: *mut u32, u: *const u16, us: u32) -> i32;
+    fn ref_RtlUpcaseUnicodeToOemN(o: *mut u8, os: u32, rs: *mut u32, u: *const u16, us: u32) -> i32;
+    fn ref_RtlMultiByteToUnicodeSize(us: *mut u32, mb: *const u8, mbs: u32) -> i32;
+    fn ref_RtlUnicodeToMultiByteSize(mbs: *mut u32, u: *const u16, us: u32) -> i32;
 }
 
 struct Rng(u64);
@@ -540,5 +549,126 @@ fn diff_rtl_hash() {
             ref_RtlHashUnicodeString(&dummy, 0, 0, core::ptr::null_mut()),
             "RtlHashUnicodeString NULL hashvalue"
         );
+    }
+}
+
+// ── Wave RTL-3: single-byte CP1252 converter core ──────────────────
+
+const SPECIAL_W: &[u16] = &[
+    0x0000, 0x0041, 0x0061, 0x007A, 0x00B5, 0x00C0, 0x00E0, 0x00FE,
+    0x00FF, 0x0152, 0x0153, 0x017D, 0x017E, 0x0130, 0x20AC, 0x0081,
+    0x008D, 0xABCD, 0xFFFF,
+];
+
+/// `*ToUnicodeN` (src bytes → dst WCHAR). Fuzz dst capacity vs input,
+/// odd `UnicodeSize`, NULL `ResultSize`. Compares ret + ResultSize +
+/// the whole dst buffer (untouched tail must match too).
+#[test]
+fn diff_rtl_mb_to_uni() {
+    let mut rng = Rng(0x3b_1252_01);
+    type F = unsafe extern "system" fn(*mut u16, u32, *mut u32, *const u8, u32) -> i32;
+    let pairs: [(&str, F, unsafe extern "C" fn(*mut u16, u32, *mut u32, *const u8, u32) -> i32); 2] = [
+        ("RtlMultiByteToUnicodeN", cabi::RtlMultiByteToUnicodeN, ref_RtlMultiByteToUnicodeN),
+        ("RtlOemToUnicodeN", cabi::RtlOemToUnicodeN, ref_RtlOemToUnicodeN),
+    ];
+    for _ in 0..15_000 {
+        let m = rng.upto(24);
+        let src: Vec<u8> = (0..m).map(|_| rng.byte()).collect();
+        let mb_size = (match rng.upto(4) { 0 => 0, 1 => m / 2, 2 => m.saturating_sub(1), _ => m }) as u32;
+        let dcap = rng.upto(20);
+        let usize_bytes = (dcap * 2 + rng.upto(2)) as u32; // sometimes odd
+        for (name, cf, rf) in pairs {
+            let sp = if src.is_empty() { core::ptr::null() } else { src.as_ptr() };
+            let mut dc = vec![0xBEEFu16; dcap.max(1)];
+            let mut dr = vec![0xBEEFu16; dcap.max(1)];
+            let null_rs = rng.upto(3) == 0;
+            let (mut rc, mut rr) = (0u32, 0u32);
+            let (pc, pr) = if null_rs {
+                (core::ptr::null_mut(), core::ptr::null_mut())
+            } else {
+                (&mut rc as *mut u32, &mut rr as *mut u32)
+            };
+            let (sc, sr);
+            unsafe {
+                sc = cf(dc.as_mut_ptr(), usize_bytes, pc, sp, mb_size);
+                sr = rf(dr.as_mut_ptr(), usize_bytes, pr, sp, mb_size);
+            }
+            assert_eq!(sc, sr, "{name} ret");
+            assert_eq!(rc, rr, "{name} ResultSize");
+            assert_eq!(dc, dr, "{name} dst m={m} mbs={mb_size} cap={dcap} us={usize_bytes}");
+        }
+    }
+}
+
+/// `Unicode*To{MultiByte,Oem}N` (+ Upcase variants): src WCHAR → dst
+/// bytes. Pins the `RtlUnicodeToOemN` BUFFER_OVERFLOW asymmetry and
+/// the upcase fold.
+#[test]
+fn diff_rtl_uni_to_mb() {
+    let mut rng = Rng(0x3b_1252_02);
+    type F = unsafe extern "system" fn(*mut u8, u32, *mut u32, *const u16, u32) -> i32;
+    type R = unsafe extern "C" fn(*mut u8, u32, *mut u32, *const u16, u32) -> i32;
+    let pairs: [(&str, F, R); 4] = [
+        ("RtlUnicodeToMultiByteN", cabi::RtlUnicodeToMultiByteN, ref_RtlUnicodeToMultiByteN),
+        ("RtlUnicodeToOemN", cabi::RtlUnicodeToOemN, ref_RtlUnicodeToOemN),
+        ("RtlUpcaseUnicodeToMultiByteN", cabi::RtlUpcaseUnicodeToMultiByteN, ref_RtlUpcaseUnicodeToMultiByteN),
+        ("RtlUpcaseUnicodeToOemN", cabi::RtlUpcaseUnicodeToOemN, ref_RtlUpcaseUnicodeToOemN),
+    ];
+    for _ in 0..15_000 {
+        let u = rng.upto(20);
+        let src: Vec<u16> = (0..u + 1).map(|_| SPECIAL_W[rng.upto(SPECIAL_W.len())]).collect();
+        let us_bytes = (match rng.upto(4) {
+            0 => 0,
+            1 => u, // truncated, maybe odd
+            2 => (u * 2).saturating_sub(rng.upto(2)),
+            _ => u * 2,
+        }) as u32;
+        let dcap = rng.upto(22);
+        for (name, cf, rf) in pairs {
+            let sp = src.as_ptr();
+            let mut dc = vec![0xCCu8; dcap.max(1)];
+            let mut dr = vec![0xCCu8; dcap.max(1)];
+            let null_rs = rng.upto(3) == 0;
+            let (mut rc, mut rr) = (0u32, 0u32);
+            let (pc, pr) = if null_rs {
+                (core::ptr::null_mut(), core::ptr::null_mut())
+            } else {
+                (&mut rc as *mut u32, &mut rr as *mut u32)
+            };
+            let (sc, sr);
+            unsafe {
+                sc = cf(dc.as_mut_ptr(), dcap as u32, pc, sp, us_bytes);
+                sr = rf(dr.as_mut_ptr(), dcap as u32, pr, sp, us_bytes);
+            }
+            assert_eq!(sc, sr, "{name} ret u={u} us={us_bytes} cap={dcap}");
+            assert_eq!(rc, rr, "{name} ResultSize u={u} us={us_bytes} cap={dcap}");
+            assert_eq!(dc, dr, "{name} dst {src:?} us={us_bytes} cap={dcap}");
+        }
+    }
+}
+
+/// The two `*Size` queries (single-byte: pure arithmetic, but pin the
+/// `*2` / `/2` direction and that they ignore the string).
+#[test]
+fn diff_rtl_conv_size() {
+    let mut rng = Rng(0x3b_1252_03);
+    for _ in 0..5_000 {
+        let n = rng.upto(0x10000) as u32;
+        let (mut a, mut b) = (0u32, 0u32);
+        unsafe {
+            assert_eq!(
+                cabi::RtlMultiByteToUnicodeSize(&mut a, core::ptr::null(), n),
+                ref_RtlMultiByteToUnicodeSize(&mut b, core::ptr::null(), n),
+                "RtlMultiByteToUnicodeSize ret"
+            );
+            assert_eq!(a, b, "RtlMultiByteToUnicodeSize n={n}");
+            let (mut c, mut d) = (0u32, 0u32);
+            assert_eq!(
+                cabi::RtlUnicodeToMultiByteSize(&mut c, core::ptr::null(), n),
+                ref_RtlUnicodeToMultiByteSize(&mut d, core::ptr::null(), n),
+                "RtlUnicodeToMultiByteSize ret"
+            );
+            assert_eq!(c, d, "RtlUnicodeToMultiByteSize n={n}");
+        }
     }
 }
