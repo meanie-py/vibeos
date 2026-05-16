@@ -5,9 +5,11 @@ Last updated 2026-05-16. **Status: Pass 0 + Pass 1 landed (worktree
 (Pass 0) and the mechanical probe-lowering rewriter (Pass 1) are built,
 spike-validated, and applied across the win32k.sys keep-set: **97 SEH
 sites mechanically lowered, i386 7/7 + amd64 7/7 smoke green** on the
-result. See "Session results" below. Pass 2/3 deferred (Pass 2 has zero
-targets — see findings). This audit defines the C-side work done *before*
-any C→Rust translation begins on win32k.
+result. **Pass 3 (USER callout extraction) also landed** as
+extract-only (20 callout sites → sidecar JSON, oracle-validated). See
+"Session results" below. Pass 2 has zero targets — see findings. This
+audit defines the C-side work done *before* any C→Rust translation
+begins on win32k.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
@@ -29,6 +31,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 |---|---|---|
 | `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
 | `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
+| `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
 
 Both tools are decision layers over the existing `seh_classifier.py`
@@ -91,6 +94,47 @@ correctly *not* mechanically rewritten (audit risk #1 respected):
 So **97 of 168 `(a)` sites (~58%) are now mechanically lowered**,
 deterministically and regression-free; the other 64 are the honest
 non-mechanical remainder for later stages.
+
+### Pass 3 — measured callout surface (extract-only, no rewrite)
+
+`callout-annotate` extracts every real `KeUserModeCallback` site into a
+per-file `<file>.win32k_callouts.json` sidecar (schema
+`win32k_pass3_v1`) for the rustconv prompt builder. Per the audit's
+Pass-3 rule, **no source is rewritten** — the sidecar JSON *is* the
+deliverable; the LLM gets a structured "this is a callout" hint instead
+of re-deriving it per translation unit. Oracle-validated against
+`callback.c` ground truth.
+
+**20 real callout sites, 3 files** (each site records: enclosing fn +
+line span, `USER32_CALLBACK_*` index, marshal-in buffer/len args,
+marshal-back ptr/len args, the bracketing `UserLeaveCo`/`UserEnterCo`
+lines, and the first post-reacquire probe line):
+
+| File | Sites | Note |
+|---|--:|---|
+| `user/ntuser/callback.c` | 17 | the `co_Int*` wrapper bank; all 17 `USER32_CALLBACK_*` literals |
+| `user/ntuser/dde.c` | 2 | `IntDDEPostCallback` / `IntDDEGetCallback` (DDEPOST/DDEGET) |
+| `user/rtl/text.c` | 1 | `UserExtTextOutW` LPK callout — **outside the Pass-0 KEEPSET dirs**; captured via explicit path so the keep-set scan stays unperturbed |
+
+This matches the audit's "~17 `co_*` that actually issue user-mode
+callbacks" estimate (17 in callback.c) plus DDE + LPK. Findings the
+extractor surfaces as per-site `signals` for the LLM:
+
+- **`co_UserCBClientPrinterThunk` (UMPD)** has *no* `UserLeaveCo`/
+  `UserEnterCo` pair — it uses a different lock discipline (signal
+  `missing_leaveco_enterco_pair`). Correct detection, not a tool gap;
+  the Rust translation must not assume the standard straddle here.
+- **DDE + several callback.c sites** have no mechanical marshal-back
+  probe (`no_marshal_back_probe`) — they copy out via bespoke logic, so
+  the translation can't pattern-match a `SafeProbeFor*` return point.
+- 18/20 sites have a clean Leave/Enter straddle; the 2 exceptions are
+  flagged, not silently dropped.
+
+Resolver note: enclosing-function detection is a brace-depth scan over
+a length-preserving literal mask (file-scope `typedef struct {…} N;`
+and `= { … }` initializers before the first function defeat the simpler
+"previous `}` on its own line" heuristic — caught and fixed during this
+pass; all 17 callback.c spans verified `def < callsite < end`).
 
 ### Methodology-spike findings (drove the tool design)
 
@@ -694,7 +738,12 @@ Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
   needs the cross-site "relies on prior probe" review).
 - `[~]` Sidecar JSON for the rustconv prompt — written for the
   classified sites; not yet consumed by the prompt builder.
-- `[ ]` ~17 `co_*` callout annotations (Pass 3 — not started).
+- `[x]` ~17 `co_*` callout annotations (Pass 3) — **done as
+  extract-only** per the audit's no-rewrite rule: 20 sites (callback.c
+  ×17, dde.c ×2, rtl/text.c LPK ×1) extracted to
+  `<file>.win32k_callouts.json` sidecars, oracle-validated. (Optional
+  `__attribute__((annotate(...)))` source injection is deferred — the
+  sidecar JSON is what the prompt builder consumes.)
 - `[ ]` Pruning (`diblib/`, dxg, ntddraw, sarch miniports, dead
   display drivers) — not started.
 - `[~]` Smoke: **i386 7/7 + amd64 7/7 PASSED**; arm64 boot-smoke

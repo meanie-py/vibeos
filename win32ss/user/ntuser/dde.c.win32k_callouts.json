@@ -1,0 +1,41 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/dde.c",
+  "schema": "win32k_pass3_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "IntDDEPostCallback",
+      "func_line": 48,
+      "func_end_line": 104,
+      "callback_index": "USER32_CALLBACK_DDEPOST",
+      "kumc_line": 80,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 78,
+      "enter_co_line": 86,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe"
+      ]
+    },
+    {
+      "function": "IntDDEGetCallback",
+      "func_line": 111,
+      "func_end_line": 165,
+      "callback_index": "USER32_CALLBACK_DDEGET",
+      "kumc_line": 143,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 141,
+      "enter_co_line": 149,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe"
+      ]
+    }
+  ]
+}
