@@ -1,11 +1,13 @@
 
 use ntdll_sys::nt::*;
 use super::srv_inlines::*;
+#[no_mangle]
 pub static mut CsrWaitListsLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 
 // CONTAINING_RECORD is a C macro, not an export — inlined below.
 
-unsafe fn CsrInitializeWait(
+#[no_mangle]
+pub unsafe extern "system" fn CsrInitializeWait(
     WaitFunction: CSR_WAIT_FUNCTION,
     CsrWaitThread: PCSR_THREAD,
     WaitApiMessage: PCSR_API_MESSAGE,
@@ -43,7 +45,8 @@ unsafe fn CsrInitializeWait(
     1u8
 }
 
-unsafe fn CsrNotifyWaitBlock(
+#[no_mangle]
+pub unsafe extern "system" fn CsrNotifyWaitBlock(
     WaitBlock: PCSR_WAIT_BLOCK,
     WaitList: PLIST_ENTRY,
     WaitArgument1: PVOID,

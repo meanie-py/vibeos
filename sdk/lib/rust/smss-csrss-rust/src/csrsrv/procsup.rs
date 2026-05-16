@@ -3,9 +3,11 @@ use ntdll_sys::nt::*;
 use super::srv_inlines::*;
 
 
+#[no_mangle]
 pub static mut CsrProcessLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 #[no_mangle]
 #[used]
+#[no_mangle]
 pub static mut CsrRootProcess: PCSR_PROCESS = core::ptr::null_mut();
 static mut CsrSecurityQos: SECURITY_QUALITY_OF_SERVICE = SECURITY_QUALITY_OF_SERVICE {
     Length: core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as u32,
@@ -17,7 +19,8 @@ static mut CsrProcessSequenceCount: u32 = 5;
 
 const PROCESS_PRIORITY_NORMAL_FOREGROUND: i8 = 9;
 
-unsafe fn CsrSetToNormalPriority() {
+#[no_mangle]
+pub unsafe extern "system" fn CsrSetToNormalPriority() {
     let BasePriority: i8 = PROCESS_PRIORITY_NORMAL_FOREGROUND + 4;
     NtSetInformationProcess(
         NtCurrentProcess(),
@@ -27,7 +30,8 @@ unsafe fn CsrSetToNormalPriority() {
     );
 }
 
-unsafe fn CsrSetToShutdownPriority() {
+#[no_mangle]
+pub unsafe extern "system" fn CsrSetToShutdownPriority() {
     let BasePriority: i8 = PROCESS_PRIORITY_NORMAL_FOREGROUND + 6;
     let mut Old: u8 = 0;
     if RtlAdjustPrivilege(
@@ -46,7 +50,8 @@ unsafe fn CsrSetToShutdownPriority() {
     }
 }
 
-unsafe fn CsrProcessRefcountZero(CsrProcess: PCSR_PROCESS) {
+#[no_mangle]
+pub unsafe extern "system" fn CsrProcessRefcountZero(CsrProcess: PCSR_PROCESS) {
     CsrRemoveProcess(CsrProcess);
     if !(*CsrProcess).NtSession.is_null() {
         CsrDereferenceNtSession((*CsrProcess).NtSession, STATUS_SUCCESS);
@@ -500,7 +505,8 @@ pub unsafe extern "system" fn CsrSetForegroundPriority(CsrProcess: PCSR_PROCESS)
     );
 }
 
-unsafe fn FindProcessForShutdown(CallerLuid: *mut LUID) -> PCSR_PROCESS {
+#[no_mangle]
+pub unsafe extern "system" fn FindProcessForShutdown(CallerLuid: *mut LUID) -> PCSR_PROCESS {
     let mut ReturnCsrProcess: PCSR_PROCESS = core::ptr::null_mut();
     let mut Level: u32 = 0;
     let SystemLuid = LUID { LowPart: 0x3e7, HighPart: 0 };

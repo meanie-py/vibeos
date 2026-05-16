@@ -44,7 +44,8 @@ pub unsafe extern "system" fn CsrInitializeNtSessionList() -> NTSTATUS {
     RtlInitializeCriticalSection(core::ptr::addr_of_mut!(CsrNtSessionLock))
 }
 
-unsafe fn CsrAllocateNtSession(session_id: ULONG) -> PCSR_NT_SESSION {
+#[no_mangle]
+pub unsafe extern "system" fn CsrAllocateNtSession(session_id: ULONG) -> PCSR_NT_SESSION {
     let NtSession = RtlAllocateHeap(
         CsrHeap,
         HEAP_ZERO_MEMORY,

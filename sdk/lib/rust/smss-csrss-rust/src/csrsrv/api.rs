@@ -2,6 +2,7 @@
 use ntdll_sys::nt::*;
 use super::srv_inlines::*;
 pub static mut CsrClientThreadSetup: Option<unsafe extern "system" fn() -> BOOLEAN> = None;
+#[no_mangle]
 pub static mut CsrApiPortName: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 pub static mut CsrpStaticThreadCount: ULONG = 0;
 pub static mut CsrpDynamicThreadTotal: ULONG = 0;
@@ -116,7 +117,8 @@ pub unsafe extern "system" fn CsrApiHandleConnectionRequest(
     Status
 }
 
-unsafe fn CsrpCheckRequestThreads() -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "system" fn CsrpCheckRequestThreads() -> NTSTATUS {
     let mut hThread: HANDLE = core::ptr::null_mut();
     let mut ClientId: _CLIENT_ID = core::mem::zeroed();
     let Status: NTSTATUS;

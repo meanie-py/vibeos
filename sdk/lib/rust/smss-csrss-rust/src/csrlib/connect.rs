@@ -2,10 +2,16 @@
 use ntdll_sys::nt::*;
 // NtCurrentPeb comes from ntdll_sys::nt (FORCEINLINE, NOT an ntdll
 // export — a local extern would fail to link). RtlMoveMemory /
-// RtlGetProcessHeap are real ntdll exports.
+// RtlMoveMemory is a real ntdll export.
 extern "system" {
     fn RtlMoveMemory(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, len: usize);
-    fn RtlGetProcessHeap() -> HANDLE;
+}
+// RtlGetProcessHeap is a C macro (ndk/rtlfuncs.h:1127:
+// `#define RtlGetProcessHeap() (NtCurrentPeb()->ProcessHeap)`), NOT an
+// ntdll export — declaring it `extern` produces undefined `_RtlGetProcessHeap@0`.
+#[inline]
+unsafe fn RtlGetProcessHeap() -> HANDLE {
+    (*NtCurrentPeb()).ProcessHeap as HANDLE
 }
 // C: #define CSR_PORT_NAME L"ApiPort" — bindgen mangled the wide
 // literal to a narrow `&[u8;8]`; the real type is PCWSTR.
@@ -14,8 +20,15 @@ static CSR_PORT_NAME_W: [u16; 8] = [
     b'o' as u16, b'r' as u16, b't' as u16, 0,
 ];
 
-#[no_mangle]
-pub static mut CsrApiPort: HANDLE = core::ptr::null_mut();
+// `CsrApiPort` is a per-binary CSR API port handle: C declares it once in
+// csrlib/connect.c (ntdll side) AND once in csrsrv/init.c (csrsrv.dll side)
+// — distinct globals in distinct binaries. In this single Rust staticlib the
+// canonical `#[no_mangle]` definition lives in csrsrv/init.rs (one symbol can
+// be defined once per crate). Each DLL links libsmss_csrss_rust.a
+// independently, so it still gets its own copy of `_CsrApiPort`. Here we
+// consume it via the ntdll-sys bindgen `extern { static mut CsrApiPort }`
+// (in scope through `use ntdll_sys::nt::*`).
+// #[no_mangle] pub static mut CsrApiPort: HANDLE = core::ptr::null_mut();
 
 #[no_mangle]
 pub static mut CsrProcessId: HANDLE = core::ptr::null_mut();

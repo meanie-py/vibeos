@@ -1,27 +1,41 @@
 
 use ntdll_sys::nt::*;
-// Real ntdll export, not in the bindgen surface.
-extern "system" { fn RtlGetProcessHeap() -> HANDLE; }
-static mut CsrDebug: ULONG = 0;
+// RtlGetProcessHeap is a C macro (ndk/rtlfuncs.h:1127:
+// `#define RtlGetProcessHeap() (NtCurrentPeb()->ProcessHeap)`), NOT an
+// ntdll export — declaring it `extern` produces undefined `_RtlGetProcessHeap@0`.
+#[inline]
+unsafe fn RtlGetProcessHeap() -> HANDLE { (*NtCurrentPeb()).ProcessHeap as HANDLE }
+#[no_mangle]
+pub static mut CsrDebug: ULONG = 0;
+#[no_mangle]
 pub static mut CsrHeap: HANDLE = core::ptr::null_mut();
+#[no_mangle]
 pub static mut CsrObjectDirectory: HANDLE = core::ptr::null_mut();
+#[no_mangle]
 pub static mut CsrDirectoryName: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+#[no_mangle]
 pub static mut CsrSbApiPortName: _UNICODE_STRING = unsafe { core::mem::zeroed() };
+#[no_mangle]
 pub static mut CsrSbApiPort: HANDLE = core::ptr::null_mut();
 static mut CsrSbApiRequestThreadPtr: PCSR_THREAD = core::ptr::null_mut();
+#[no_mangle]
 pub static mut CsrSmApiPort: HANDLE = core::ptr::null_mut();
 static mut hSbApiPort: HANDLE = core::ptr::null_mut();
+#[no_mangle]
 pub static mut CsrApiPort: HANDLE = core::ptr::null_mut();
 #[cfg(target_os = "windows")]
 static mut CsrWindowsControl: BOOLEAN = 0;
 #[cfg(target_os = "windows")]
 pub static mut CsrSubSystemType: ULONG = 0;
+#[no_mangle]
 pub static mut CsrMaxApiRequestThreads: ULONG = 0;
+#[no_mangle]
 pub static mut CsrTotalPerProcessDataLength: ULONG = 0;
 static mut SessionId: ULONG = 0;
 static mut BNOLinksDirectory: HANDLE = core::ptr::null_mut();
 static mut SessionObjectDirectory: HANDLE = core::ptr::null_mut();
 static mut DosDevicesDirectory: HANDLE = core::ptr::null_mut();
+#[no_mangle]
 pub static mut CsrNtSysInfo: SYSTEM_BASIC_INFORMATION = unsafe { core::mem::zeroed() };
 
 unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {

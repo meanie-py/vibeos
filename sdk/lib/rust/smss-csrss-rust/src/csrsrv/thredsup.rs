@@ -13,10 +13,12 @@ fn CsrHashThread(t: HANDLE) -> usize {
 
 #[no_mangle]
 #[used]
+#[no_mangle]
 pub static mut CsrThreadHashTable: [LIST_ENTRY; NUMBER_THREAD_HASH_BUCKETS as usize] =
     [LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() }; NUMBER_THREAD_HASH_BUCKETS as usize];
 
-unsafe fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "system" fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
     let mut HandleInfo: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = core::mem::zeroed();
 
     let Status = NtQueryObject(
@@ -42,7 +44,8 @@ unsafe fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
     0u8
 }
 
-unsafe fn UnProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "system" fn UnProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
     let mut HandleInfo: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = core::mem::zeroed();
 
     let Status = NtQueryObject(
@@ -199,7 +202,8 @@ pub unsafe extern "system" fn CsrDeallocateThread(CsrThread: PCSR_THREAD) {
     RtlFreeHeap(CsrHeap, 0, CsrThread as PVOID);
 }
 
-unsafe fn CsrRemoveThread(CsrThread: PCSR_THREAD) {
+#[no_mangle]
+pub unsafe extern "system" fn CsrRemoveThread(CsrThread: PCSR_THREAD) {
     RemoveEntryList(core::ptr::addr_of_mut!((*CsrThread).Link));
 
     (*(*CsrThread).Process).ThreadCount -= 1;
@@ -219,7 +223,8 @@ unsafe fn CsrRemoveThread(CsrThread: PCSR_THREAD) {
     (*CsrThread).Flags |= CsrThreadInTermination;
 }
 
-unsafe fn CsrThreadRefcountZero(CsrThread: PCSR_THREAD) {
+#[no_mangle]
+pub unsafe extern "system" fn CsrThreadRefcountZero(CsrThread: PCSR_THREAD) {
     let CsrProcess = (*CsrThread).Process;
 
     CsrRemoveThread(CsrThread);
