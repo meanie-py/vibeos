@@ -617,7 +617,11 @@ pub unsafe extern "system" fn HaliRegisterBusHandler(
 // pcibus.c) and resolve via libhal at link time.
 // ---------------------------------------------------------------------------
 
-#[cfg(not(feature = "minihal"))]
+// C legacy/bushndlr.c common region (after `#endif`): compiled in the
+// -D_MINIHAL_ build (FreeLDR links it). The Hali* dispatcher wiring is
+// itself `#ifndef _MINIHAL_` in C, so it is cfg'd-out under minihal —
+// FreeLDR's loader HAL has no bus-handler dispatch. See memory
+// feedback_freeldr_clean_build_regression.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpInitBusHandler() {
     unsafe {
@@ -629,24 +633,28 @@ pub unsafe extern "system" fn HalpInitBusHandler() {
 
         initialize_list_head(&raw mut HalpAllBusHandlers);
 
-        // HAL_PRIVATE_DISPATCH wiring — register/handler/config dispatchers.
-        HalPrivateDispatchTable.HalRegisterBusHandler =
-            Some(core::mem::transmute(HaliRegisterBusHandler as usize));
-        HalPrivateDispatchTable.HalHandlerForBus =
-            Some(core::mem::transmute(HaliHandlerForBus as usize));
-        HalPrivateDispatchTable.HalHandlerForConfigSpace =
-            Some(core::mem::transmute(HaliHandlerForConfigSpace as usize));
+        // C: `#ifndef _MINIHAL_` — full-HAL dispatcher wiring only.
+        #[cfg(not(feature = "minihal"))]
+        {
+            // HAL_PRIVATE_DISPATCH wiring — register/handler/config dispatchers.
+            HalPrivateDispatchTable.HalRegisterBusHandler =
+                Some(core::mem::transmute(HaliRegisterBusHandler as usize));
+            HalPrivateDispatchTable.HalHandlerForBus =
+                Some(core::mem::transmute(HaliHandlerForBus as usize));
+            HalPrivateDispatchTable.HalHandlerForConfigSpace =
+                Some(core::mem::transmute(HaliHandlerForConfigSpace as usize));
 
-        // HAL_DISPATCH wiring — public reference/dereference paths (these
-        // are FASTCALL on i386 since `pHalReferenceBusHandler` is FASTCALL).
-        HalDispatchTable.HalReferenceHandlerForBus =
-            Some(core::mem::transmute(HaliReferenceHandlerForBus as usize));
-        HalDispatchTable.HalReferenceBusHandler =
-            Some(core::mem::transmute(HaliReferenceBusHandler as usize));
-        HalDispatchTable.HalDereferenceBusHandler =
-            Some(core::mem::transmute(HaliDereferenceBusHandler as usize));
+            // HAL_DISPATCH wiring — public reference/dereference paths (these
+            // are FASTCALL on i386 since `pHalReferenceBusHandler` is FASTCALL).
+            HalDispatchTable.HalReferenceHandlerForBus =
+                Some(core::mem::transmute(HaliReferenceHandlerForBus as usize));
+            HalDispatchTable.HalReferenceBusHandler =
+                Some(core::mem::transmute(HaliReferenceBusHandler as usize));
+            HalDispatchTable.HalDereferenceBusHandler =
+                Some(core::mem::transmute(HaliDereferenceBusHandler as usize));
+        }
 
-        // Three more dispatchers — these live in C still (bussupp.c / pcibus.c).
+        // Three more dispatchers — common region in C (always compiled).
         HalPrivateDispatchTable.HalPciAssignSlotResources =
             Some(core::mem::transmute(HalpAssignSlotResources as usize));
         HalPrivateDispatchTable.HalPciTranslateBusAddress =

@@ -1734,7 +1734,9 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
     pci_registry_info
 }
 
-#[cfg(not(feature = "minihal"))]
+// C legacy/bus/pcibus.c common region (after `#endif`): compiled in the
+// -D_MINIHAL_ build; FreeLDR links it. See memory
+// feedback_freeldr_clean_build_regression.
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializePciStubs() {
     let mut PciRegistryInfo: PPCI_REGISTRY_INFO_INTERNAL;

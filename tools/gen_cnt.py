@@ -459,6 +459,7 @@ def main() -> int:
 
     shims = [
         AUTOGEN,
+        "#![allow(non_snake_case)]  // shims mirror C param names verbatim\n"
         "#[allow(unused_imports)]\n"
         "use super::{cstr_slice, cstr_slice_bounded, raw_move, "
         "raw_mut_slice, raw_slice, wcstr_slice};\n\n",
