@@ -30,6 +30,24 @@ pub unsafe extern "C" fn _i64toa(value: i64, string: *mut u8, radix: i32) -> *mu
 }
 
 
+/// `wchar_t* _i64tow(__int64 value, wchar_t *string, int radix)`
+/// preserved misfeature: NULL dst accepted (computes nothing, returns NULL); no radix/bounds validation; sign only radix==10 else i64 bit pattern as u64
+#[no_mangle]
+pub unsafe extern "C" fn _i64tow(value: i64, string: *mut u16, radix: i32) -> *mut u16 {
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i64).unsigned_abs() } else { value as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    if !string.is_null() {
+        let mut o = 0usize;
+        if f.negative { *string = b'-' as u16; o = 1; }
+        let mut i = 0;
+        while i < f.ndigits { *string.add(o + i) = f.digits[i] as u16; i += 1; }
+        *string.add(o + f.ndigits) = 0;
+    }
+    string
+}
+
+
 /// `char* _itoa(int value, char *string, int radix)`
 /// preserved misfeature: _itoa→_ltoa: 32-bit width, neg+radix!=10 → u32 reinterpret; no validation/NULL guard
 #[no_mangle]
@@ -46,6 +64,24 @@ pub unsafe extern "C" fn _itoa(value: i32, string: *mut u8, radix: i32) -> *mut 
 }
 
 
+/// `wchar_t* _itow(int value, wchar_t *string, int radix)`
+/// preserved misfeature: _itow→_ltow: 32-bit width, neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned
+#[no_mangle]
+pub unsafe extern "C" fn _itow(value: i32, string: *mut u16, radix: i32) -> *mut u16 {
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i32).unsigned_abs() as u64 } else { value as u32 as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    if !string.is_null() {
+        let mut o = 0usize;
+        if f.negative { *string = b'-' as u16; o = 1; }
+        let mut i = 0;
+        while i < f.ndigits { *string.add(o + i) = f.digits[i] as u16; i += 1; }
+        *string.add(o + f.ndigits) = 0;
+    }
+    string
+}
+
+
 /// `char* _ltoa(long value, char *string, int radix)`
 /// preserved misfeature: 32-bit width (LP32 long): neg+radix!=10 → (unsigned long)value = u32 bit pattern (NOT u64 like _i64toa); no validation/NULL guard
 #[no_mangle]
@@ -58,6 +94,24 @@ pub unsafe extern "C" fn _ltoa(value: i32, string: *mut u8, radix: i32) -> *mut 
     let mut i = 0;
     while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
     *string.add(o + f.ndigits) = 0;
+    string
+}
+
+
+/// `wchar_t* _ltow(long value, wchar_t *string, int radix)`
+/// preserved misfeature: 32-bit width (LP32): neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned; no validation
+#[no_mangle]
+pub unsafe extern "C" fn _ltow(value: i32, string: *mut u16, radix: i32) -> *mut u16 {
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i32).unsigned_abs() as u64 } else { value as u32 as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    if !string.is_null() {
+        let mut o = 0usize;
+        if f.negative { *string = b'-' as u16; o = 1; }
+        let mut i = 0;
+        while i < f.ndigits { *string.add(o + i) = f.digits[i] as u16; i += 1; }
+        *string.add(o + f.ndigits) = 0;
+    }
     string
 }
 
@@ -122,6 +176,24 @@ pub unsafe extern "C" fn _ui64toa(value: u64, string: *mut u8, radix: i32) -> *m
 }
 
 
+/// `wchar_t* _ui64tow(unsigned __int64 value, wchar_t *string, int radix)`
+/// preserved misfeature: NULL dst accepted/returned; no validation; pure unsigned
+#[no_mangle]
+pub unsafe extern "C" fn _ui64tow(value: u64, string: *mut u16, radix: i32) -> *mut u16 {
+    let neg = false;
+    let mag = value;
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    if !string.is_null() {
+        let mut o = 0usize;
+        if f.negative { *string = b'-' as u16; o = 1; }
+        let mut i = 0;
+        while i < f.ndigits { *string.add(o + i) = f.digits[i] as u16; i += 1; }
+        *string.add(o + f.ndigits) = 0;
+    }
+    string
+}
+
+
 /// `char* _ultoa(unsigned long value, char *string, int radix)`
 /// preserved misfeature: u32, no radix validation, no buffer-size check, no NULL guard
 #[no_mangle]
@@ -134,6 +206,24 @@ pub unsafe extern "C" fn _ultoa(value: u32, string: *mut u8, radix: i32) -> *mut
     let mut i = 0;
     while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
     *string.add(o + f.ndigits) = 0;
+    string
+}
+
+
+/// `wchar_t* _ultow(unsigned long value, wchar_t *string, int radix)`
+/// preserved misfeature: u32; NULL dst accepted/returned; no validation
+#[no_mangle]
+pub unsafe extern "C" fn _ultow(value: u32, string: *mut u16, radix: i32) -> *mut u16 {
+    let neg = false;
+    let mag = value as u64;
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    if !string.is_null() {
+        let mut o = 0usize;
+        if f.negative { *string = b'-' as u16; o = 1; }
+        let mut i = 0;
+        while i < f.ndigits { *string.add(o + i) = f.digits[i] as u16; i += 1; }
+        *string.add(o + f.ndigits) = 0;
+    }
     string
 }
 

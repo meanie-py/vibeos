@@ -29,16 +29,6 @@ inout_effects = "str[0..min(len,size)] written with NUL-terminated decimal/radix
 preserved_misfeature = "On buffer overflow (len > size), copies size-1 chars BACKWARD from end of temp buffer (buffer[31] downward, skipping sign), then sets str[0]=NUL (lines 73-84). This leaves a RIGHT-aligned partial suffix without NUL terminator in str[1..size-1], then overwrites str[0] with NUL. Textbook would left-truncate or fail cleanly."
 fuzz_domain = ["value={-9223372036854775808,0,42,9223372036854775807}", "radix={2,10,16,36}", "size={1,exact_len,exact_len-1,exact_len+1,65}", "null_str"]
 
-[symbols._i64tow]
-c_signature = "wchar_t * _i64tow(__int64 value, wchar_t *string, int radix)"
-family = "radix"
-slice_pattern = "ret_dst"
-core_fn = "NEW:radix::format_i64_wide"
-return_collapse = "ret_dst"
-inout_effects = "writes NUL-terminated wide string to `string` if non-NULL; always returns `string` unchanged (even if NULL)"
-preserved_misfeature = "Returns `string` even when NULL (line 47), allowing the caller to pass NULL and get NULL back without crash—textbook behavior would be undefined. No validation of radix bounds (accepts invalid radix silently, behavior implementation-defined). Negative values only signed for radix==10 (line 21); other radices treat value as unsigned bit pattern (line 25 casts to ULONGLONG)."
-fuzz_domain = ["value={-1, 0, 1, INT64_MIN, INT64_MAX}", "radix={2, 10, 16, 36, 1, 37}", "string={NULL, valid_ptr}", "negative_radix_10={true, false}", "single_digit={true, false}", "max_digits_base2"]
-
 [symbols._i64tow_s]
 c_signature = "int _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)"
 family = "radix"
@@ -58,16 +48,6 @@ return_collapse = "i32_passthrough"
 inout_effects = "str[0..len] written with NUL-terminated decimal/radix string on success; str[0] = '\\0' on EINVAL; str[0..size] partially filled backwards (no sign) + str[0] = '\\0' on ERANGE"
 preserved_misfeature = "Delegates to _ltoa_s (line 144-147), which truncates buffer on ERANGE by copying backwards WITHOUT the sign, then setting str[0]='\\0' (lines 234-247). This produces a malformed non-NUL-terminated partial string before the terminal NUL at str[0]. Parameter validation uses MSVCRT_CHECK_PMT; under _LIBCNT_ errno is NOT set (lines 219, 225)."
 fuzz_domain = ["radix=10 negative", "radix=10 positive", "radix=2", "radix=16", "radix=36", "size exactly sufficient", "size insufficient (ERANGE)", "size=0 (EINVAL)", "str=NULL (EINVAL)", "radix=1 (EINVAL)", "radix=37 (EINVAL)", "INT_MIN (most negative)", "zero"]
-
-[symbols._itow]
-c_signature = "wchar_t* _itow(int value, wchar_t *string, int radix)"
-family = "radix"
-slice_pattern = "itow_passthrough"
-core_fn = "NEW:wstring_format_i32"
-return_collapse = "ret_dst"
-inout_effects = "if string!=NULL: writes NUL-terminated radix representation (lowercase hex a-z for digits>9), negated if value<0 && radix==10 else reinterpreted as unsigned; ALWAYS returns the dst pointer unchanged (even if NULL)"
-preserved_misfeature = "Lines 133-135: _itow is a trivial passthrough to _ltow, which exhibits three deviations: (1) NULL dst is accepted without crash—function computes the string but doesn't write it, still returns NULL (lines 170-172); (2) negative values are negated ONLY for radix==10, else reinterpreted as unsigned long (lines 162-166); (3) no radix validation—invalid radix causes undefined modulo/division behavior"
-fuzz_domain = ["value={INT_MIN, -42, 0, 42, INT_MAX}", "radix={2, 10, 16, 36, 1_invalid, 37_invalid}", "string={NULL, valid_buf[33]}", "cross: negative_value × radix!=10 (unsigned reinterpret)", "cross: NULL × any_value (returns NULL without crash)"]
 
 [symbols._itow_s]
 c_signature = "int _itow_s(int value, wchar_t *str, size_t size, int radix)"
@@ -89,16 +69,6 @@ inout_effects = "str[0..len] written with NUL-terminated radix string; on ERANGE
 preserved_misfeature = "On overflow (len>size), writes backwards from buffer end up to size-1 chars (excluding sign if negative), then sets str[0]=NUL and returns ERANGE. This creates a *right-aligned truncated* string with leading NUL, unlike typical left-truncation. Lines 217-227: skip sign position, copy backwards from buffer[31] for size chars, then str[0]=NUL."
 fuzz_domain = ["negative radix-10 (value<0, radix==10)", "positive/zero radix-10", "non-decimal radix (2-9,11-36)", "exact fit (len==size)", "overflow by 1 (len==size+1)", "overflow by many", "radix boundaries (1,2,36,37)", "size==1 (only room for NUL)", "value edge cases (LONG_MIN, LONG_MAX, 0)"]
 
-[symbols._ltow]
-c_signature = "wchar_t* _ltow(long value, wchar_t *string, int radix)"
-family = "radix"
-slice_pattern = "dst_unchecked"
-core_fn = "NEW:radix::format_i32_wide"
-return_collapse = "ret_dst"
-inout_effects = "string written with NUL-terminated base-`radix` representation of value (negative sign for radix==10 negatives, lowercase hex a-z for digits>9); ENTIRE buffer written even if string==NULL (misfeature: the function still performs formatting into temp buffer, just doesn't copy)"
-preserved_misfeature = "Returns the input `string` pointer UNCONDITIONALLY (lines 243-244), even if string==NULL. Textbook would return NULL or assert. Also: negative values with radix!=10 are cast to unsigned (line 231 `val = value`), producing large positive output. Also: no radix validation—invalid radix (e.g., 1, 37) silently divides-by-zero or produces garbage."
-fuzz_domain = ["value={-1,0,1,INT32_MIN,INT32_MAX}", "radix={2,10,16,36,1,37}", "string={valid_ptr,NULL}"]
-
 [symbols._ltow_s]
 c_signature = "int _ltow_s(long value, wchar_t *str, size_t size, int radix)"
 family = "radix"
@@ -119,16 +89,6 @@ inout_effects = "str[0..min(result_len,size-1)] written with ASCII digits (radix
 preserved_misfeature = "On buffer-too-small (len > size), fills str backwards from pos=buffer+31 for i<size iterations, then sets str[0]=NUL, returning EINVAL (not ERANGE as _i64toa_s does). Line 'if((unsigned)(buffer-pos+65) > size)' uses wrong constant 65 instead of 64, making the size check off-by-one compared to _i64toa_s which correctly uses 'buffer+65-pos'. Returns EINVAL (not ERANGE) on overflow per line 'MSVCRT_INVALID_PMT(\"str[size] is too small\", EINVAL)'."
 fuzz_domain = ["radix={2,10,16,36}", "value={0,1,max_u64}", "size={0,1,exact_needed,exact_needed-1,exact_needed+1}", "radix={1,37}=EINVAL", "str=NULL=EINVAL"]
 
-[symbols._ui64tow]
-c_signature = "wchar_t * _ui64tow(unsigned __int64 value, wchar_t *string, int radix)"
-family = "radix"
-slice_pattern = "raw_dst_radix"
-core_fn = "NEW:radix::format_u64"
-return_collapse = "ret_dst"
-inout_effects = "If string != NULL: writes NUL-terminated wchar_t representation of value in base radix (2-36), digits 0-9 then a-z for 10-35. No validation of radix. If string == NULL: no write."
-preserved_misfeature = "Returns `string` unconditionally even when NULL (lines 134-135: `if (string != NULL) { memcpy(...) } return string;`). No radix validation (caller can pass invalid radix causing undefined modulo/div). Lowercase 'a-z' for digits 10-35 (lines 126-130)."
-fuzz_domain = ["value=0", "value=ULLONG_MAX", "radix=2", "radix=10", "radix=16", "radix=36", "radix=1 (invalid)", "radix=37 (invalid)", "string=NULL", "string=valid buffer", "value requiring all 64 chars (2^64-1 in base 2)"]
-
 [symbols._ui64tow_s]
 c_signature = "int _ui64tow_s(unsigned __int64 value, wchar_t *str, size_t size, int radix)"
 family = "radix"
@@ -138,16 +98,6 @@ return_collapse = "i32_passthrough"
 inout_effects = "str[0..min(size,actual_len)] written with radix-converted digits + NUL; on error str[0]='\\0' if str && size"
 preserved_misfeature = "Line 163: buffer size check `(size_t)(buffer-pos+65) > size` has POINTER SUBTRACTION BUG — should be `(buffer+65-pos)` or `65-(pos-buffer)`. As written, `buffer-pos` is NEGATIVE (buffer is at higher address), wraps to huge positive via size_t cast, almost always triggers false EINVAL. Also line 164: returns EINVAL instead of ERANGE for overflow (unlike _i64tow_s which returns ERANGE)."
 fuzz_domain = ["value=0, radix=10", "value=UINT64_MAX, radix=2 (longest output, 64 chars)", "value=12345, radix=16", "size=1 (minimal, only NUL fits)", "size=2..10 (triggers pointer-math bug)", "size=65 (exact fit for max binary)", "radix=2 (min)", "radix=36 (max)", "str=NULL (caught by CHECK_PMT)", "size=0 (caught by CHECK_PMT)", "radix=1 or 37 (out of range)"]
-
-[symbols._ultow]
-c_signature = "wchar_t * _ultow(unsigned long value, wchar_t *string, int radix)"
-family = "radix"
-slice_pattern = "NEW:format_to_opt_buf"
-core_fn = "NEW:format_u32_radix"
-return_collapse = "ptr_or_null_passthrough"
-inout_effects = "if string!=NULL: writes NUL-terminated radix representation (lowercase a-z for digits>9); if string==NULL: no write"
-preserved_misfeature = "if string==NULL, returns NULL without crash (lines 264-266: guard `if (string != NULL)` before memcpy, unconditional `return string`); no radix validation (accepts any int radix, will divide-by-zero if radix<2)"
-fuzz_domain = ["value=0", "value=MAX_U32", "radix=2,10,16,36", "string=NULL", "string=valid", "value requires multi-digit in radix (e.g., value=255,radix=16 → 'ff')"]
 
 [symbols._stricmp]
 c_signature  = "int __cdecl _stricmp(char const* _String1, char const* _String2)"

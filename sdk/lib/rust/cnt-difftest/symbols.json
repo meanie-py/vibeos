@@ -27,6 +27,19 @@
       "neg+radix!=10 (unsigned reinterpret)"
     ]
   },
+  "_i64tow": {
+    "c_signature": "wchar_t* _i64tow(__int64 value, wchar_t *string, int radix)",
+    "family": "wstring",
+    "slice_pattern": "int_to_wstr",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "value 0/\u00b11/I64_MIN/I64_MAX",
+      "radix 2/8/10/16/36",
+      "neg+radix!=10",
+      "string=NULL"
+    ]
+  },
   "_itoa": {
     "c_signature": "char* _itoa(int value, char *string, int radix)",
     "family": "radix",
@@ -39,6 +52,18 @@
       "neg+radix!=10"
     ]
   },
+  "_itow": {
+    "c_signature": "wchar_t* _itow(int value, wchar_t *string, int radix)",
+    "family": "wstring",
+    "slice_pattern": "int_to_wstr",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "value 0/\u00b11/INT_MIN/INT_MAX",
+      "radix 2/8/10/16/36",
+      "string=NULL"
+    ]
+  },
   "_ltoa": {
     "c_signature": "char* _ltoa(long value, char *string, int radix)",
     "family": "radix",
@@ -49,6 +74,18 @@
       "value 0/\u00b11/I32_MIN/I32_MAX",
       "radix 2/8/10/16/36",
       "neg+radix=16 (u32 reinterpret 0xFFFFFFFB)"
+    ]
+  },
+  "_ltow": {
+    "c_signature": "wchar_t* _ltow(long value, wchar_t *string, int radix)",
+    "family": "wstring",
+    "slice_pattern": "int_to_wstr",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "value 0/\u00b11/I32_MIN/I32_MAX",
+      "radix 2/8/10/16/36",
+      "string=NULL"
     ]
   },
   "_strtoi64": {
@@ -108,6 +145,18 @@
       "small value high radix"
     ]
   },
+  "_ui64tow": {
+    "c_signature": "wchar_t* _ui64tow(unsigned __int64 value, wchar_t *string, int radix)",
+    "family": "wstring",
+    "slice_pattern": "int_to_wstr",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "value 0/1/U64_MAX",
+      "radix 2/8/10/16/36",
+      "string=NULL"
+    ]
+  },
   "_ultoa": {
     "c_signature": "char* _ultoa(unsigned long value, char *string, int radix)",
     "family": "radix",
@@ -117,6 +166,18 @@
     "fuzz_domain": [
       "value 0/1/U32_MAX",
       "radix 2/8/10/16/36"
+    ]
+  },
+  "_ultow": {
+    "c_signature": "wchar_t* _ultow(unsigned long value, wchar_t *string, int radix)",
+    "family": "wstring",
+    "slice_pattern": "int_to_wstr",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "value 0/1/U32_MAX",
+      "radix 2/8/10/16/36",
+      "string=NULL"
     ]
   },
   "atoi": {

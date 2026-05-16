@@ -323,3 +323,63 @@ inout_effects = "delegates to _ltoa (int→long, identical on LP32): string ← 
 preserved_misfeature = "_itoa→_ltoa: 32-bit width, neg+radix!=10 → u32 reinterpret; no validation/NULL guard"
 reference    = "sdk/lib/crt/string/itoa.c"
 fuzz_domain  = ["value 0/±1/INT_MIN/INT_MAX", "radix 2/8/10/16/36", "neg+radix!=10"]
+
+# --- Wave C2 (int→str, unchecked wide) ------------------------------
+# Same core; wchar_t dst written as u16. Difference from narrow: the
+# write is NULL-guarded (`if(string!=NULL)`) and the fn returns the
+# input ptr unconditionally (even when NULL — the wide misfeature).
+
+[symbols._i64tow]
+c_signature  = "wchar_t* _i64tow(__int64 value, wchar_t *string, int radix)"
+family       = "wstring"
+slice_pattern = "int_to_wstr"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "if string!=NULL: '-'(iff radix==10&&value<0)+digits+NUL as u16; returns string (even NULL)"
+preserved_misfeature = "NULL dst accepted (computes nothing, returns NULL); no radix/bounds validation; sign only radix==10 else i64 bit pattern as u64"
+reference    = "sdk/lib/crt/string/itow.c"
+fuzz_domain  = ["value 0/±1/I64_MIN/I64_MAX", "radix 2/8/10/16/36", "neg+radix!=10", "string=NULL"]
+
+[symbols._ui64tow]
+c_signature  = "wchar_t* _ui64tow(unsigned __int64 value, wchar_t *string, int radix)"
+family       = "wstring"
+slice_pattern = "int_to_wstr"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "if string!=NULL: digits+NUL as u16; returns string (even NULL)"
+preserved_misfeature = "NULL dst accepted/returned; no validation; pure unsigned"
+reference    = "sdk/lib/crt/string/itow.c"
+fuzz_domain  = ["value 0/1/U64_MAX", "radix 2/8/10/16/36", "string=NULL"]
+
+[symbols._ltow]
+c_signature  = "wchar_t* _ltow(long value, wchar_t *string, int radix)"
+family       = "wstring"
+slice_pattern = "int_to_wstr"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "if string!=NULL: '-'(iff radix==10&&value<0)+digits+NUL as u16; returns string (even NULL)"
+preserved_misfeature = "32-bit width (LP32): neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned; no validation"
+reference    = "sdk/lib/crt/string/itow.c"
+fuzz_domain  = ["value 0/±1/I32_MIN/I32_MAX", "radix 2/8/10/16/36", "string=NULL"]
+
+[symbols._ultow]
+c_signature  = "wchar_t* _ultow(unsigned long value, wchar_t *string, int radix)"
+family       = "wstring"
+slice_pattern = "int_to_wstr"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "if string!=NULL: digits+NUL as u16; returns string (even NULL)"
+preserved_misfeature = "u32; NULL dst accepted/returned; no validation"
+reference    = "sdk/lib/crt/string/itow.c"
+fuzz_domain  = ["value 0/1/U32_MAX", "radix 2/8/10/16/36", "string=NULL"]
+
+[symbols._itow]
+c_signature  = "wchar_t* _itow(int value, wchar_t *string, int radix)"
+family       = "wstring"
+slice_pattern = "int_to_wstr"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "delegates to _ltow (int→long, identical on LP32): if string!=NULL '-'(iff radix==10&&value<0)+digits+NUL; returns string (even NULL)"
+preserved_misfeature = "_itow→_ltow: 32-bit width, neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned"
+reference    = "sdk/lib/crt/string/itow.c"
+fuzz_domain  = ["value 0/±1/INT_MIN/INT_MAX", "radix 2/8/10/16/36", "string=NULL"]

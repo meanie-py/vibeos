@@ -30,6 +30,11 @@ extern "C" {
     fn ref_itoa(v: i32, s: *mut u8, r: i32) -> *mut u8;
     fn ref_ltoa32(v: i32, s: *mut u8, r: i32) -> *mut u8;
     fn ref_ultoa32(v: u32, s: *mut u8, r: i32) -> *mut u8;
+    fn ref_i64tow(v: i64, s: *mut u16, r: i32) -> *mut u16;
+    fn ref_ui64tow(v: u64, s: *mut u16, r: i32) -> *mut u16;
+    fn ref_itow(v: i32, s: *mut u16, r: i32) -> *mut u16;
+    fn ref_ltow32(v: i32, s: *mut u16, r: i32) -> *mut u16;
+    fn ref_ultow32(v: u32, s: *mut u16, r: i32) -> *mut u16;
 }
 
 use cnt_rust::cabi;
@@ -465,5 +470,66 @@ fn diff_itoa_unchecked() {
             ref_i64toa(v64, b.as_mut_ptr(), r);
         }
         assert_eq!(a, b, "_i64toa edge v={v64} r={r}");
+    }
+}
+
+/// Wave C2 — unchecked wide int→str. Same domain split as C1; plus the
+/// wide misfeature: NULL dst is accepted and the input ptr is returned
+/// unchanged (no write, no crash).
+#[test]
+fn diff_itow_unchecked() {
+    let mut rng = Rng(0x2c02_77a0_u64);
+    let radices = [2i32, 8, 10, 16, 36];
+    for _ in 0..6000 {
+        let r = radices[rng.upto(radices.len())];
+        let v64 = rng.next() as i64;
+        let (mut a, mut b) = ([0xAAAAu16; 80], [0xAAAAu16; 80]);
+        let pa = unsafe { cabi::_i64tow(v64, a.as_mut_ptr(), r) };
+        let pb = unsafe { ref_i64tow(v64, b.as_mut_ptr(), r) };
+        assert_eq!(pa, a.as_mut_ptr());
+        assert_eq!(pb, b.as_mut_ptr());
+        assert_eq!(a, b, "_i64tow v={v64} r={r}");
+
+        let u64v = rng.next();
+        let (mut a, mut b) = ([0xAAAAu16; 80], [0xAAAAu16; 80]);
+        unsafe {
+            cabi::_ui64tow(u64v, a.as_mut_ptr(), r);
+            ref_ui64tow(u64v, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_ui64tow v={u64v} r={r}");
+
+        let mut v32 = rng.next() as i32;
+        if v32 < 0 && r != 10 {
+            v32 = v32.wrapping_neg();
+        }
+        let (mut a, mut b) = ([0xAAAAu16; 80], [0xAAAAu16; 80]);
+        unsafe {
+            cabi::_ltow(v32, a.as_mut_ptr(), r);
+            ref_ltow32(v32, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_ltow v={v32} r={r}");
+        let (mut a, mut b) = ([0xAAAAu16; 80], [0xAAAAu16; 80]);
+        unsafe {
+            cabi::_itow(v32, a.as_mut_ptr(), r);
+            ref_itow(v32, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_itow v={v32} r={r}");
+
+        let uv = rng.next() as u32;
+        let (mut a, mut b) = ([0xAAAAu16; 80], [0xAAAAu16; 80]);
+        unsafe {
+            cabi::_ultow(uv, a.as_mut_ptr(), r);
+            ref_ultow32(uv, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_ultow v={uv} r={r}");
+    }
+    // NULL dst → returns NULL, no write (the wide misfeature).
+    unsafe {
+        assert!(cabi::_i64tow(42, core::ptr::null_mut(), 10).is_null());
+        assert!(ref_i64tow(42, core::ptr::null_mut(), 10).is_null());
+        assert!(cabi::_ui64tow(7, core::ptr::null_mut(), 16).is_null());
+        assert!(cabi::_ltow(-9, core::ptr::null_mut(), 10).is_null());
+        assert!(cabi::_itow(-9, core::ptr::null_mut(), 10).is_null());
+        assert!(cabi::_ultow(123, core::ptr::null_mut(), 8).is_null());
     }
 }

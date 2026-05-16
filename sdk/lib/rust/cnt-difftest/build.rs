@@ -82,6 +82,24 @@ fn main() {
              char* ref_ltoa32(int v,char*s,int r){{return ref_ltoa(v,s,r);}}\n\
              char* ref_ultoa32(unsigned int v,char*s,int r){{return ref_ultoa(v,s,r);}}\n",
             inc(s("string/itoa.c")))),
+        // itow.c — wide twin. Host wchar_t is 32-bit; force it to
+        // unsigned short (Windows/cnt-rust `*mut u16`) for the whole
+        // TU so sizeof(wchar_t)==2 and the buffers diff byte-for-byte.
+        // <stddef.h> first (size_t + glibc's guarded wchar_t typedef),
+        // THEN the macro shadows every later `wchar_t` use. Same LP32
+        // long-family adapter trick as itoa.
+        ("itow", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define _i64tow ref_i64tow\n#define _i64tow_s ref_i64tow_s\n\
+             #define _ui64tow ref_ui64tow\n#define _ui64tow_s ref_ui64tow_s\n\
+             #define _itow ref_itow\n#define _itow_s ref_itow_s\n\
+             #define _ltow ref_ltow\n#define _ltow_s ref_ltow_s\n\
+             #define _ultow ref_ultow\n\
+             wchar_t* ref_ltow(long,wchar_t*,int);\n\
+             int ref_ltow_s(long,wchar_t*,size_t,int);\n{}\
+             wchar_t* ref_ltow32(int v,wchar_t*s,int r){{return ref_ltow(v,s,r);}}\n\
+             wchar_t* ref_ultow32(unsigned int v,wchar_t*s,int r){{return ref_ultow(v,s,r);}}\n",
+            inc(s("string/itow.c")))),
     ];
 
     let mut build = cc::Build::new();

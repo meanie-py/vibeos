@@ -1000,74 +1000,72 @@ NtUserOpenWindowStation(
     TRACE("NtUserOpenWindowStation called\n");
 
     /* Capture the object attributes and the window station name */
-    _SEH2_TRY
+    Status = SafeProbeForRead(ObjectAttributes, sizeof(OBJECT_ATTRIBUTES), sizeof(ULONG));
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(ObjectAttributes, sizeof(OBJECT_ATTRIBUTES), sizeof(ULONG));
-        LocalObjectAttributes = *ObjectAttributes;
-        if (LocalObjectAttributes.Length != sizeof(OBJECT_ATTRIBUTES))
-        {
-            ERR("Invalid ObjectAttributes length!\n");
-            Status = STATUS_INVALID_PARAMETER;
-            _SEH2_LEAVE;
-        }
-
-        /*
-         * Check whether the caller did not provide a window station name,
-         * or provided the special "Service-0x00000000-00000000$" name.
-         *
-         * NOTE: On Windows, the special "Service-0x00000000-00000000$" string
-         * is used instead of an empty name (observed when API-monitoring
-         * OpenWindowStation() called with an empty window station name).
-         */
-        if ((LocalObjectAttributes.ObjectName == NULL ||
-             LocalObjectAttributes.ObjectName->Buffer == NULL ||
-             LocalObjectAttributes.ObjectName->Length == 0 ||
-             LocalObjectAttributes.ObjectName->Buffer[0] == UNICODE_NULL)
-            /* &&
-            LocalObjectAttributes.RootDirectory == NULL */)
-        {
-            /* No, remember that for later */
-            LocalObjectAttributes.ObjectName = NULL;
-        }
-        if (LocalObjectAttributes.ObjectName &&
-            LocalObjectAttributes.ObjectName->Length ==
-                sizeof(L"Service-0x00000000-00000000$") - sizeof(UNICODE_NULL) &&
-            _wcsnicmp(LocalObjectAttributes.ObjectName->Buffer,
-                      L"Service-0x00000000-00000000$",
-                      LocalObjectAttributes.ObjectName->Length / sizeof(WCHAR)) == 0)
-        {
-            /* No, remember that for later */
-            LocalObjectAttributes.ObjectName = NULL;
-        }
-
-        /*
-         * If the caller did not provide a window station name, build a new one
-         * based on the logon session identifier for the calling process.
-         * The new name is allocated in user-mode, as the rest of ObjectAttributes
-         * already is, so that the validation performed by the Object Manager
-         * can be done adequately.
-         */
-        if (!LocalObjectAttributes.ObjectName)
-        {
-            /* No, build the new window station name */
-            Status = BuildUserModeWindowStationName(ObjectAttributes,
-                                                    &LocalObjectAttributes,
-                                                    &WindowStationName,
-                                                    &TebStaticUnicodeString);
-            if (!NT_SUCCESS(Status))
-            {
-                ERR("BuildUserModeWindowStationName() failed, Status 0x%08lx\n", Status);
-                _SEH2_LEAVE;
-            }
-            OwnerMode = KernelMode;
-        }
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status =_SEH2_GetExceptionCode();
         ERR("ObjectAttributes capture failed, Status 0x%08lx\n", Status);
+        goto CaptureDone;
     }
-    _SEH2_END;
+    LocalObjectAttributes = *ObjectAttributes;
+    if (LocalObjectAttributes.Length != sizeof(OBJECT_ATTRIBUTES))
+    {
+        ERR("Invalid ObjectAttributes length!\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto CaptureDone;
+    }
+
+    /*
+     * Check whether the caller did not provide a window station name,
+     * or provided the special "Service-0x00000000-00000000$" name.
+     *
+     * NOTE: On Windows, the special "Service-0x00000000-00000000$" string
+     * is used instead of an empty name (observed when API-monitoring
+     * OpenWindowStation() called with an empty window station name).
+     */
+    if ((LocalObjectAttributes.ObjectName == NULL ||
+         LocalObjectAttributes.ObjectName->Buffer == NULL ||
+         LocalObjectAttributes.ObjectName->Length == 0 ||
+         LocalObjectAttributes.ObjectName->Buffer[0] == UNICODE_NULL)
+        /* &&
+        LocalObjectAttributes.RootDirectory == NULL */)
+    {
+        /* No, remember that for later */
+        LocalObjectAttributes.ObjectName = NULL;
+    }
+    if (LocalObjectAttributes.ObjectName &&
+        LocalObjectAttributes.ObjectName->Length ==
+            sizeof(L"Service-0x00000000-00000000$") - sizeof(UNICODE_NULL) &&
+        _wcsnicmp(LocalObjectAttributes.ObjectName->Buffer,
+                  L"Service-0x00000000-00000000$",
+                  LocalObjectAttributes.ObjectName->Length / sizeof(WCHAR)) == 0)
+    {
+        /* No, remember that for later */
+        LocalObjectAttributes.ObjectName = NULL;
+    }
+
+    /*
+     * If the caller did not provide a window station name, build a new one
+     * based on the logon session identifier for the calling process.
+     * The new name is allocated in user-mode, as the rest of ObjectAttributes
+     * already is, so that the validation performed by the Object Manager
+     * can be done adequately.
+     */
+    if (!LocalObjectAttributes.ObjectName)
+    {
+        /* No, build the new window station name */
+        Status = BuildUserModeWindowStationName(ObjectAttributes,
+                                                &LocalObjectAttributes,
+                                                &WindowStationName,
+                                                &TebStaticUnicodeString);
+        if (!NT_SUCCESS(Status))
+        {
+            ERR("BuildUserModeWindowStationName() failed, Status 0x%08lx\n", Status);
+            goto CaptureDone;
+        }
+        OwnerMode = KernelMode;
+    }
+
+CaptureDone:;
 
     if (!NT_SUCCESS(Status))
     {
@@ -1231,18 +1229,21 @@ NtUserGetObjectInformation(
     PVOID pvData = NULL;
     SIZE_T nDataSize = 0;
 
-    _SEH2_TRY
+    if (nLengthNeeded)
     {
-        if (nLengthNeeded)
-            ProbeForWrite(nLengthNeeded, sizeof(*nLengthNeeded), 1);
-        ProbeForWrite(pvInformation, nLength, 1);
+        Status = SafeProbeForWrite(nLengthNeeded, sizeof(*nLengthNeeded), 1);
+        if (!NT_SUCCESS(Status))
+        {
+            SetLastNtError(Status);
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForWrite(pvInformation, nLength, 1);
+    if (!NT_SUCCESS(Status))
     {
-        SetLastNtError(_SEH2_GetExceptionCode());
+        SetLastNtError(Status);
         return FALSE;
     }
-    _SEH2_END;
 
     /* Try window station */
     TRACE("Trying to open window station 0x%p\n", hObject);
@@ -1373,38 +1374,36 @@ Exit:
     if ((Status == STATUS_SUCCESS) && (nLength < nDataSize))
         Status = STATUS_BUFFER_TOO_SMALL;
 
-    _SEH2_TRY
-    {
-        if (nLengthNeeded)
-            *nLengthNeeded = nDataSize;
+    /*
+     * Write results back to the caller. pvInformation/nLengthNeeded were
+     * already validated by SafeProbeForWrite at function entry, so this
+     * block needs no SEH of its own (it was belt-and-suspenders SEH on an
+     * already-probed buffer; class (d) in the pretranslation audit).
+     */
+    if (nLengthNeeded)
+        *nLengthNeeded = nDataSize;
 
-        /* Try to copy data to caller */
-        if (Status == STATUS_SUCCESS && (nDataSize > 0))
+    /* Try to copy data to caller */
+    if (Status == STATUS_SUCCESS && (nDataSize > 0))
+    {
+        TRACE("Trying to copy data to caller (len = %lu, len needed = %lu)\n", nLength, nDataSize);
+        if (pvData)
         {
-            TRACE("Trying to copy data to caller (len = %lu, len needed = %lu)\n", nLength, nDataSize);
-            if (pvData)
-            {
-                /* Copy the data */
-                RtlCopyMemory(pvInformation, pvData, nDataSize);
-            }
-            else if (pStrNameU)
-            {
-                /* Copy and NULL-terminate the string */
-                RtlCopyMemory(pvInformation, pStrNameU->Buffer, pStrNameU->Length);
-                ((PWCHAR)pvInformation)[pStrNameU->Length / sizeof(WCHAR)] = UNICODE_NULL;
-            }
-            else
-            {
-                /* Zero the memory */
-                RtlZeroMemory(pvInformation, nDataSize);
-            }
+            /* Copy the data */
+            RtlCopyMemory(pvInformation, pvData, nDataSize);
+        }
+        else if (pStrNameU)
+        {
+            /* Copy and NULL-terminate the string */
+            RtlCopyMemory(pvInformation, pStrNameU->Buffer, pStrNameU->Length);
+            ((PWCHAR)pvInformation)[pStrNameU->Length / sizeof(WCHAR)] = UNICODE_NULL;
+        }
+        else
+        {
+            /* Zero the memory */
+            RtlZeroMemory(pvInformation, nDataSize);
         }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     /* Release objects */
     if (DesktopObject != NULL)
@@ -2146,17 +2145,10 @@ NtUserSetWindowStationUser(
     }
 
     /* Capture the user LUID */
-    _SEH2_TRY
-    {
-        ProbeForRead(pluid, sizeof(LUID), 1);
-        luidUser = *pluid;
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-        _SEH2_YIELD(goto Leave);
-    }
-    _SEH2_END;
+    Status = SafeProbeForRead(pluid, sizeof(LUID), 1);
+    if (!NT_SUCCESS(Status))
+        goto Leave;
+    luidUser = *pluid;
 
     /* Reset the window station user LUID */
     RtlZeroMemory(&WindowStation->luidUser, sizeof(LUID));
@@ -2179,16 +2171,9 @@ NtUserSetWindowStationUser(
         }
 
         Status = STATUS_SUCCESS;
-        _SEH2_TRY
-        {
-            ProbeForRead(psid, size, 1);
+        Status = SafeProbeForRead(psid, size, 1);
+        if (NT_SUCCESS(Status))
             RtlCopyMemory(WindowStation->psidUser, psid, size);
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
