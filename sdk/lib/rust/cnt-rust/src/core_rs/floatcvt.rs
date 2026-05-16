@@ -445,3 +445,130 @@ pub fn ecvt(value: f64, ndigits: i32) -> Option<EcvtResult> {
     r.buf_len = d + 1;
     Some(r)
 }
+
+// ---------------------------------------------------------------------
+// _gcvt / _gcvt_s — pure `sprintf("%.*g", ndigit, number)` (gcvt.c).
+// The genuine `%.*g` is `format_float(chr='g', flags=0,
+// precision=ndigit)` + streamout's generic int/frac emission. For
+// `"%.*g"` streamout has no flags and fieldwidth 0, so the output is
+// just `prefix` ("-" iff number<0; %g has NO '+') followed by the
+// format_float buffer — reproduced verbatim here (no surgery, unlike
+// ecvt). Same `fl` shared-model + bounded domain as Phase 2.
+//
+//   case 'g'/'G': if(precision>0)precision--;
+//     if(exponent<-4 || exponent>=precision) goto case_e;   // %e form
+//     else { fpval2 = round(sign*fpval*pow(10,precision));
+//            while(precision && (u64)fpval2%10==0){precision--;
+//                                                  fpval2/=10;} }  // %f
+//   ...then padding + `precision` frac digits + optional '.' +
+//   integer do-while (digits_l for 'g').
+// ---------------------------------------------------------------------
+
+/// The `%.*g` body (no sign) as the genuine sprintf renders it.
+pub struct GcvtText {
+    pub negative: bool, // number < 0 (prefix "-"); %g has no '+'
+    pub special: u8,    // 0 finite, 1 NaN, 2 Inf (unfuzzed)
+    pub body: [u8; ECVT_BUF + NUMBER_EFMT + 8],
+    pub len: usize,
+}
+
+pub fn format_g(value: f64, precision: i32) -> GcvtText {
+    let mut out = GcvtText {
+        negative: value < 0.0,
+        special: 0,
+        body: [0; ECVT_BUF + NUMBER_EFMT + 8],
+        len: 0,
+    };
+    if is_nan(value) {
+        out.special = 1;
+        return out;
+    }
+    if !is_finite(value) {
+        out.special = 2;
+        return out;
+    }
+    // precision normalize (format_float lines 99-105)
+    let (mut precision, mut padding) = if precision < 0 {
+        (6, 0)
+    } else if precision > 17 {
+        (17, precision - 17)
+    } else {
+        (precision, 0)
+    };
+    let exponent0 = if value == 0.0 {
+        0
+    } else {
+        fl::floor(fl::exp10_floor(value.abs()) as f64) as i32
+    };
+    let sign = if value < 0.0 { -1.0 } else { 1.0 };
+    let mut exponent = exponent0;
+
+    // backward scratch (mirrors streamout's `buffer`); we fill from the
+    // end and reverse at the close.
+    let mut sc = [0u8; ECVT_BUF + NUMBER_EFMT + 8];
+    let mut hi = sc.len(); // write position decrements (`*--string`)
+    let push = |sc: &mut [u8], hi: &mut usize, c: u8| {
+        *hi -= 1;
+        sc[*hi] = c;
+    };
+    let digit = b"0123456789abcdef";
+
+    // case 'g': precision--; decide e-form vs f-form.
+    if precision > 0 {
+        precision -= 1;
+    }
+    let mut fpval2;
+    let use_e = exponent < -4 || exponent >= precision;
+    if use_e {
+        // case_e
+        fpval2 = fl::round(sign * value * fl::pow10(precision - exponent));
+        if fpval2 >= fl::pow10(precision + 1) {
+            exponent += 1;
+            fpval2 = fl::round(sign * value * fl::pow10(precision - exponent));
+        }
+        let mut val32 = if exponent >= 0 { exponent } else { -exponent };
+        let mut k = 3;
+        while k > 0 {
+            push(&mut sc, &mut hi, digit[(val32 % 10) as usize]);
+            val32 /= 10;
+            k -= 1;
+        }
+        push(&mut sc, &mut hi, if exponent >= 0 { b'+' } else { b'-' });
+        push(&mut sc, &mut hi, digit[0xe]); // 'e' (digits_l)
+    } else {
+        fpval2 = fl::round(sign * value * fl::pow10(precision));
+        // strip trailing zeros: `while(precision && (u64)fpval2%10==0)`
+        while precision != 0 && (fpval2 as u64) % 10 == 0 {
+            precision -= 1;
+            fpval2 /= 10.0;
+        }
+    }
+
+    // common emission (fpval<0 / FORCE_SIGN handled by caller via
+    // `negative`; %g sets no '+'). Not nan/inf (special handled above).
+    while padding > 0 {
+        push(&mut sc, &mut hi, b'0');
+        padding -= 1;
+    }
+    let mut num_digits = precision;
+    while num_digits > 0 {
+        push(&mut sc, &mut hi, digit[((fpval2 as u64) % 10) as usize]);
+        fpval2 /= 10.0; // base == 10
+        num_digits -= 1;
+    }
+    if precision > 0 {
+        push(&mut sc, &mut hi, b'.');
+    }
+    // integer do-while
+    loop {
+        push(&mut sc, &mut hi, digit[((fpval2 as u64) % 10) as usize]);
+        fpval2 /= 10.0;
+        if (fpval2 as u64) == 0 {
+            break;
+        }
+    }
+    let n = sc.len() - hi;
+    out.body[..n].copy_from_slice(&sc[hi..]);
+    out.len = n;
+    out
+}

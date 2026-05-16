@@ -136,6 +136,9 @@ extern "C" {
     // _ecvt — genuine ecvt.c + streamout.c sprintf("%-+.*E"),
     // -mlong-double-64, floor/log10/pow modeled == core_rs::fl.
     fn ref__ecvt(v: f64, ndigits: i32, decpt: *mut i32, sign: *mut i32) -> *mut u8;
+    // _gcvt/_gcvt_s — genuine gcvt.c + streamout.c sprintf("%.*g").
+    fn ref__gcvt(number: f64, ndigit: i32, buff: *mut u8) -> *mut u8;
+    fn ref__gcvt_s(buff: *mut u8, size: usize, number: f64, digits: i32) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -2501,5 +2504,137 @@ fn diff_ecvt() {
             assert_eq!(cd, rd, "_ecvt({v:e}, {nd}) decpt");
             assert_eq!(cs, rs, "_ecvt({v:e}, {nd}) sign");
         }
+    }
+}
+
+/// float-cvt Phase 3 — _gcvt/_gcvt_s vs the genuine gcvt.c + the same
+/// streamout.c format_float (chr='g'), `-mlong-double-64`,
+/// floor/log10/pow modeled BIT-IDENTICAL to core_rs::floatcvt::fl
+/// (Wave E2 shared-model). Pins the `%g` algorithm: `precision--`,
+/// the `exponent<-4 || exponent>=precision` e-form-vs-f-form decision,
+/// the `while(precision && (u64)fpval2%10==0)` trailing-zero strip,
+/// the generic int/frac emission (lowercase 'e' separator), the
+/// `_gcvt` NULL/ndigit<0 → NULL guards and `_gcvt_s` EINVAL /
+/// `digits>=size` & `len>size` ERANGE boundary (incl. the genuine
+/// `len==size` off-by-one). NaN/Inf + extreme magnitude are the same
+/// documented UNFUZZED owed edge as Phase 2 (scanf-P2 precedent).
+#[test]
+fn diff_gcvt() {
+    let mut rng = Rng(0x9c_07_5a_e2_u64);
+    let read = |p: *const u8| -> Vec<u8> {
+        if p.is_null() {
+            return Vec::new();
+        }
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    };
+    let fixed: &[f64] = &[
+        0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 2.5, 9.999_999, 0.1, 0.2,
+        0.3, 123.456, -123.456, 1e-7, 9.999_999_999e9, 1.0 / 3.0,
+        2.0 / 3.0, 1234567890.123_456, 99999.5, 0.000_999_5, 1e20,
+        -1e-20, 100.0, 0.001, 1e-5, 12345.0, 0.000_012_345, 1e6,
+    ];
+    let nds: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 17, 18, 20, 25];
+    // generous backing storage (the genuine _gcvt_s can write len+1
+    // even when len==size — the preserved off-by-one — so the alloc
+    // must have slack beyond the `size` we pass).
+    let mut cbuf = [0u8; 512];
+    let mut rbuf = [0u8; 512];
+    for it in 0..60_000 {
+        let v: f64 = if it < fixed.len() {
+            fixed[it]
+        } else if it % 2 == 0 {
+            let m = 1.0 + (rng.next() as f64 / u64::MAX as f64) * 9.0;
+            let k = (rng.upto(560) as i32) - 280;
+            let s = if rng.upto(2) == 0 { 1.0 } else { -1.0 };
+            s * m * 10f64.powi(k)
+        } else {
+            let b = f64::from_bits(rng.next());
+            if !b.is_finite() || b == 0.0 {
+                1.0
+            } else if b.abs() < 1e-280 || b.abs() > 1e280 {
+                b.signum() * 1e10
+            } else {
+                b
+            }
+        };
+        if !v.is_finite() {
+            continue;
+        }
+        let nd = nds[rng.upto(nds.len())];
+        // %g f-form computes fpval2 = round(|v| * 10^precision); when
+        // that exceeds 2^63 the genuine `(unsigned __int64)` cast is
+        // C-UB while Rust `as u64` saturates — not bit-portable (the
+        // scanf-P2 / Phase-2 owed edge). Bound the fuzz to the
+        // bit-exact regime; the extreme region is the documented owed
+        // domain limit (e-form's fpval2 ≈ 10^min(nd,17) is always
+        // safe; this only gates the large-|v|·10^nd corner).
+        let mag = if v == 0.0 { 0.0 } else { v.abs().log10() };
+        if mag + (nd as f64) > 17.0 {
+            continue;
+        }
+        unsafe {
+            // ---- _gcvt ----
+            cbuf.fill(0xAA);
+            rbuf.fill(0xAA);
+            let c = cabi::_gcvt(v, nd, cbuf.as_mut_ptr());
+            let r = ref__gcvt(v, nd, rbuf.as_mut_ptr());
+            assert_eq!(c.is_null(), r.is_null(), "_gcvt({v:e},{nd}) null");
+            if !c.is_null() {
+                assert_eq!(read(c), read(r), "_gcvt({v:e},{nd}) text");
+            }
+            // ndigit<0 → NULL (both)
+            let cn = cabi::_gcvt(v, -1, cbuf.as_mut_ptr());
+            let rn = ref__gcvt(v, -1, rbuf.as_mut_ptr());
+            assert!(cn.is_null() && rn.is_null(), "_gcvt neg ndigit");
+
+            // ---- _gcvt_s ---- vary size to hit ok / ERANGE / off-by-one
+            let size = match rng.upto(4) {
+                0 => nd as usize,            // digits>=size ⇒ ERANGE
+                1 => (nd as usize) + 1,      // tight
+                2 => (nd as usize) + 8,      // around the len==size edge
+                _ => 64,                     // roomy
+            };
+            cbuf.fill(0xAA);
+            rbuf.fill(0xAA);
+            let cr = cabi::_gcvt_s(cbuf.as_mut_ptr(), size, v, nd);
+            let rr = ref__gcvt_s(rbuf.as_mut_ptr(), size, v, nd);
+            assert_eq!(cr, rr, "_gcvt_s({v:e},{nd},size={size}) ret");
+            // Buffer is only DEFINED when something was written:
+            // success (cr==0 ⇒ the %g string) or ERANGE with size>0
+            // (genuine `buff[0]='\0'`). With size==0 & ERANGE the
+            // genuine writes nothing — undefined, nothing to compare.
+            if cr == 0 || size > 0 {
+                let rd = |p: *const u8| -> Vec<u8> {
+                    let mut v = Vec::new();
+                    for i in 0..512usize {
+                        let b = unsafe { *p.add(i) };
+                        if b == 0 {
+                            break;
+                        }
+                        v.push(b);
+                    }
+                    v
+                };
+                assert_eq!(rd(cbuf.as_ptr()), rd(rbuf.as_ptr()),
+                    "_gcvt_s({v:e},{nd},size={size}) buf");
+            }
+        }
+    }
+    // NULL-buff guards.
+    unsafe {
+        assert!(cabi::_gcvt(1.0, 4, core::ptr::null_mut()).is_null());
+        assert!(ref__gcvt(1.0, 4, core::ptr::null_mut()).is_null());
+        assert_eq!(
+            cabi::_gcvt_s(core::ptr::null_mut(), 16, 1.0, 4),
+            ref__gcvt_s(core::ptr::null_mut(), 16, 1.0, 4)
+        );
     }
 }

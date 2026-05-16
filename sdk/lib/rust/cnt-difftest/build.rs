@@ -697,9 +697,11 @@ fn main() {
          static int ecvt_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
          static int ecvt_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
          #define mbtowc ecvt_mbtowc\n#define wctomb ecvt_wctomb\n\
+         #define format_float ecvt_format_float\n#define streamout ecvt_streamout\n\
          {}\
          /* genuine format_float (above) driven directly — SysV-safe */\n\
-         void format_float(char,unsigned,int,char**,const char**,va_list*);\n\
+         void ecvt_format_float(char,unsigned,int,char**,const char**,va_list*);\n\
+         #define format_float ecvt_format_float\n\
          static void cnt_fmtf(char chr,unsigned fl,int prec,char**str,\
            const char**pfx,...){{ va_list ap; va_start(ap,pfx);\
            format_float(chr,fl,prec,str,pfx,&ap); va_end(ap); }}\n\
@@ -727,6 +729,80 @@ fn main() {
         .cargo_metadata(false)
         .file(&ecvt_c);
     for obj in ecvt_build.compile_intermediates() {
+        redef(&obj);
+    }
+    // float-cvt Phase 3 — _gcvt/_gcvt_s. Pure `sprintf("%.*g")` →
+    // the same genuine format_float (chr='g'). Same direct-drive
+    // harness as ecvt (streamout.c for format_float; SysV-safe
+    // single-level variadic wrapper; floor/log10/pow modeled
+    // BIT-IDENTICAL to core_rs::floatcvt::fl; -mlong-double-64).
+    // "%.*g" has NO flags and fieldwidth 0, so the output is `prefix`
+    // ("-" iff <0; %g has no '+') + the format_float buffer. gcvt.c
+    // also uses `_scprintf("%.*g")` (= the rendered length) and
+    // `*_errno()` (not part of the diffed value contract — stubbed).
+    let gcvt_body = format!(
+        "#include <stddef.h>\n#include <stdarg.h>\n#include <math.h>\n\
+         #include <float.h>\n#include <stdlib.h>\n#include <string.h>\n\
+         #define _LIBCNT_\n#define __declspec(x)\n#define __int64 long long\n\
+         #define _TCHAR char\n#define _T(x) x\n\
+         #define _tcscpy strcpy\n#define _tcslen strlen\n#define _tcschr strchr\n\
+         #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+         static double cnt_floor(double x){{ if(!isfinite(x))return x;\
+           long long i=(long long)x; double di=(double)i;\
+           return di>x?di-1.0:di; }}\n\
+         static double cnt_pow10i(int n){{ double r=1.0,b=10.0;\
+           unsigned k=(n<0)?(unsigned)(-(long)n):(unsigned)n;\
+           while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
+         static double cnt_powm(double a,double e){{ (void)a;\
+           return cnt_pow10i((int)e); }}\n\
+         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+           if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
+           v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
+           int e=(int)(((double)(biased-1023))*0.3010299956639812);\
+           while(cnt_pow10i(e)>f)e--; while(cnt_pow10i(e+1)<=f)e++;\
+           return (double)e; }}\n\
+         #define floor(x) cnt_floor(x)\n#define log10(x) cnt_log10(x)\n\
+         #define pow(a,b) cnt_powm((a),(b))\n\
+         static int gcvt_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
+         static int gcvt_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
+         #define mbtowc gcvt_mbtowc\n#define wctomb gcvt_wctomb\n\
+         #define format_float gcvt_format_float\n#define streamout gcvt_streamout\n\
+         {}\
+         void gcvt_format_float(char,unsigned,int,char**,const char**,va_list*);\n\
+         static void cnt_gfmtf(char chr,unsigned fl,int prec,char**str,\
+           const char**pfx,...){{ va_list ap; va_start(ap,pfx);\
+           format_float(chr,fl,prec,str,pfx,&ap); va_end(ap); }}\n\
+         static int gcvt_render(char* buf,int prec,double v){{\
+           char tmp[96]; tmp[95]=0; char* string=&tmp[95];\
+           const char* prefix=0;\
+           cnt_gfmtf('g', 0u, prec, &string, &prefix, v);\
+           char* p=buf; if(prefix){{while(*prefix)*p++=*prefix++;}}\
+           while(*string)*p++=*string++; *p=0; return (int)(p-buf); }}\n\
+         int ref_gcvt_sprintf(char* buf,const char* fmt,...){{ (void)fmt;\
+           va_list a; va_start(a,fmt); int prec=va_arg(a,int);\
+           double v=va_arg(a,double); va_end(a);\
+           return gcvt_render(buf,prec,v); }}\n\
+         int _scprintf(const char* fmt,...){{ (void)fmt;\
+           va_list a; va_start(a,fmt); int prec=va_arg(a,int);\
+           double v=va_arg(a,double); va_end(a);\
+           char tmp2[128]; return gcvt_render(tmp2,prec,v); }}\n\
+         static int gcvt_errno_v; static int* _errno(void){{return &gcvt_errno_v;}}\n\
+         #define sprintf ref_gcvt_sprintf\n\
+         #define _gcvt ref__gcvt\n#define _gcvt_s ref__gcvt_s\n{}",
+        inc(s("printf/streamout.c")),
+        inc(s("stdlib/gcvt.c")));
+    let gcvt_c = out.join("ref_gcvt.c");
+    fs::write(&gcvt_c, &gcvt_body).unwrap();
+    let mut gcvt_build = cc::Build::new();
+    gcvt_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&gcvt_c);
+    for obj in gcvt_build.compile_intermediates() {
         redef(&obj);
     }
     // Dedicated scanf build with `-mlong-double-64` (Windows MSVC ABI:

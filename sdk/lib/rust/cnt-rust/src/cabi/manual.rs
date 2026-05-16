@@ -665,3 +665,91 @@ pub unsafe extern "C" fn _ecvt(
     }
     buf.as_mut_ptr()
 }
+
+/// `%.*g` rendered text (sign prefix + body) into `out`, NUL added.
+/// Returns the char count written (NUL excluded) — the value
+/// `_scprintf("%.*g",...)` yields. NaN/Inf is the documented unfuzzed
+/// edge (mirrors _ecvt: a best-effort glyph, not pinned).
+unsafe fn gcvt_render(out: *mut u8, number: f64, ndigit: i32) -> usize {
+    let g = fcvt::format_g(number, ndigit);
+    let mut n = 0usize;
+    if g.special != 0 {
+        let s: &[u8] = if g.special == 1 { b"1#QNAN" } else { b"1#INF" };
+        if g.negative {
+            *out = b'-';
+            n = 1;
+        }
+        for &b in s {
+            *out.add(n) = b;
+            n += 1;
+        }
+        *out.add(n) = 0;
+        return n;
+    }
+    if g.negative {
+        *out = b'-';
+        n = 1;
+    }
+    for i in 0..g.len {
+        *out.add(n) = g.body[i];
+        n += 1;
+    }
+    *out.add(n) = 0;
+    n
+}
+
+/// `char *_gcvt(double number, int ndigit, char *buff)` — gcvt.c.
+/// NULL buff → NULL; ndigit<0 → NULL; else `sprintf(buff,"%.*g")`.
+/// (The genuine `*_errno()=EINVAL/ERANGE` is not part of the value
+/// contract the diff pins — kernel `_LIBCNT_` ignores it.)
+#[no_mangle]
+pub unsafe extern "C" fn _gcvt(number: f64, ndigit: i32, buff: *mut u8) -> *mut u8 {
+    if buff.is_null() {
+        return core::ptr::null_mut();
+    }
+    if ndigit < 0 {
+        return core::ptr::null_mut();
+    }
+    gcvt_render(buff, number, ndigit);
+    buff
+}
+
+/// `int _gcvt_s(char *buff, size_t size, double number, int digits)`
+/// — gcvt.c. Faithful incl. the genuine `digits>=size` /`len>size`
+/// boundary (sprintf then writes `len+1` bytes, so `len==size` is the
+/// preserved off-by-one). Returns 0 / EINVAL(22) / ERANGE(34).
+#[no_mangle]
+pub unsafe extern "C" fn _gcvt_s(
+    buff: *mut u8,
+    size: usize,
+    number: f64,
+    digits: i32,
+) -> i32 {
+    const EINVAL: i32 = 22;
+    const ERANGE: i32 = 34;
+    if buff.is_null() {
+        return EINVAL;
+    }
+    if digits < 0 || digits as usize >= size {
+        if size != 0 {
+            *buff = 0;
+        }
+        return ERANGE;
+    }
+    // `len = _scprintf("%.*g", digits, number);`
+    let g = fcvt::format_g(number, digits);
+    let len = (g.negative as usize)
+        + if g.special == 1 {
+            6
+        } else if g.special == 2 {
+            5
+        } else {
+            g.len
+        };
+    if len > size {
+        *buff = 0;
+        return ERANGE;
+    }
+    gcvt_render(buff, number, digits);
+    0
+}
