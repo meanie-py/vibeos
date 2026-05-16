@@ -1,0 +1,9 @@
+[symbols.memset]
+c_signature  = "void* __cdecl memset(void* src, int val, size_t count)"
+family       = "mem"
+slice_pattern = "set_raw"
+core_fn      = "mem::set"
+return_collapse = "ret_dst"
+inout_effects = "writes `count` bytes at `src`, each byte = `val as u8` (truncated); returns `src` unchanged"
+preserved_misfeature = "none — textbook memset: writes val (as u8) to each of count bytes, returns dst"
+fuzz_domain  = ["count=0 (no-op)", "count=1", "count>1 typical", "val in 0..=255", "val>255 (truncation)", "val<0 (negative int, cast to u8)"]

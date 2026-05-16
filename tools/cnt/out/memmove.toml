@@ -1,0 +1,9 @@
+[symbols.memmove]
+c_signature = "void * __cdecl memmove(void *dest, const void *src, size_t count)"
+family = "mem"
+slice_pattern = "mem_raw"
+core_fn = "raw_move"
+return_collapse = "ret_dst"
+inout_effects = "dest[0..count] ← src[0..count], byte-by-byte with overlap safety; no termination, no padding"
+preserved_misfeature = "none — textbook overlap-safe copy via direction selection"
+fuzz_domain = ["non_overlap_forward", "non_overlap_backward", "overlap_forward_shift", "overlap_backward_shift", "zero_count", "same_ptr"]

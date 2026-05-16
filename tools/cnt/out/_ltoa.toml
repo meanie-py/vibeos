@@ -1,0 +1,9 @@
+[symbols._ltoa]
+c_signature = "char* _ltoa(long value, char *string, int radix)"
+family = "radix"
+slice_pattern = "none"
+core_fn = "NEW:radix::format_long"
+return_collapse = "ret_dst"
+inout_effects = "Writes the ASCII representation of `value` in base `radix` (2-36) to `string`, NUL-terminated. Always writes at least 2 bytes (digit + NUL). Negative values only get '-' prefix when radix==10; otherwise treated as unsigned. Digits >=10 use lowercase 'a'-'z'. Writes unbounded: worst-case 33 bytes for radix=2 (sign + 31 bits + NUL, but really 32 bits unsigned). Returns `string` pointer unchanged."
+preserved_misfeature = "No bounds checking: buffer overflow if `string` lacks space (up to 33 bytes needed). Negative values only signed-extend when radix==10 (lines 146-148); for any other radix, `val = value` casts negative `long` to `unsigned long`, producing large positive value (line 151). No validation that radix ∈ [2,36] — invalid radix causes divide-by-zero or garbage output."
+fuzz_domain = ["radix=10 value=-2147483648 (min negative, edge of negation)", "radix=10 value=0 (single digit '0')", "radix=10 value=2147483647 (max positive)", "radix=2 value=-1 (becomes 0xFFFFFFFF, all '1' digits, longest output)", "radix=36 value=46655 (exactly 'zzz', tests digit>10 boundary)", "radix=16 value=-256 (tests unsigned cast for non-decimal)", "radix=1 (invalid, will infinite-loop or crash)", "radix=37 (invalid, 'a'+27 exceeds lowercase)"]

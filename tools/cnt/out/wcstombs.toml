@@ -1,0 +1,9 @@
+[symbols.wcstombs]
+c_signature = "size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)"
+family = "wstring"
+slice_pattern = "nul_in + dst_optional"
+core_fn = "NEW:wstring::to_multibyte"
+return_collapse = "size_or_neg1_on_err"
+inout_effects = "If mbstr non-NULL: writes up to count bytes (multibyte encoding of wcstr), NO NUL termination guaranteed. If mbstr NULL: no mutation, returns required size."
+preserved_misfeature = "Lines 39-44: NULL dst is query mode (returns required size without terminating NUL). Lines 46-53: writes up to count bytes with NO automatic NUL termination—caller must ensure buffer sized for content+NUL or manually terminate. Conversion calls RtlUnicodeToMultiByteN which may fail (Status check line 51), returning -1 cast to size_t (SIZE_MAX on most platforms)."
+fuzz_domain = ["mbstr=NULL (query mode)", "mbstr valid, count exact for content (no NUL room)", "count=0 with valid mbstr", "wcstr empty L\"\"", "wcstr with multibyte-expanding chars", "conversion failure (invalid wchar sequence)", "count larger than needed"]

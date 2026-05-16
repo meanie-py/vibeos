@@ -1,0 +1,9 @@
+[symbols.atol]
+c_signature = "long atol(const char *str)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "radix::parse_i64_wrapping"
+return_collapse = "i64_trunc_i32"
+inout_effects = "none (read-only)"
+preserved_misfeature = "Wrapping overflow without error: accumulates digit-by-digit in i64 with wrapping arithmetic (acc = 10 * acc + digit), then truncates to long (int32). Source: _atoi64 lines 'acc = 10 * acc + ((int)*s - '0');' with no overflow check, then atol casts '(long)_atoi64(str)'. Textbook atol would detect/clamp overflow."
+fuzz_domain = ["NULL", "empty_string", "whitespace_only", "+123", "-456", "overflow_pos_i64", "overflow_neg_i64", "overflow_then_trunc_to_i32", "non_digit_after_valid", "leading_zeros", "max_i32", "min_i32"]

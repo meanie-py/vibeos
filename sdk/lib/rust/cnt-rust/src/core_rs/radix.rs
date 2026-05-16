@@ -129,3 +129,48 @@ pub fn parse_i64_clamped(s: &[u8], mut base: i32) -> ClampedI64 {
         base_ok: true,
     }
 }
+
+/// Widest int→str digit count: a `u64` in radix 2 is 64 digits. The C
+/// (`itoa.c`/`itow.c`) uses `buffer[65]` (64 digits + NUL); the cabi
+/// shim appends sign + NUL itself, so the core only needs the digits.
+pub const RADIX_DIGITS_MAX: usize = 64;
+
+/// A formatted magnitude — `digits[..ndigits]` MSB-first ASCII
+/// (lowercase `a..z` for values 10..=35), NO sign, NO NUL. `negative`
+/// records whether a `'-'` precedes them in the full C string. The
+/// caller decides `negative` (the `value < 0 && radix == 10` rule lives
+/// in the typed shim, not here — for any other radix the C reinterprets
+/// the value's bit pattern as unsigned of its own width).
+pub struct Formatted {
+    pub digits: [u8; RADIX_DIGITS_MAX],
+    pub ndigits: usize,
+    pub negative: bool,
+}
+
+/// Faithful to `itoa.c`/`itow.c`: a `do {} while (val != 0)` — at
+/// least one digit, so `mag == 0` → `"0"` — building least-significant
+/// first, lowercase `a..z` for 10..=35. `radix` must be 2..=36
+/// (libcntpr callers always pass a valid radix; out-of-range is
+/// documented C UB — div-by-zero / OOB digit map — and is never
+/// fuzzed). Returns the digits MSB-first plus the caller's sign flag.
+pub fn format_radix(mut mag: u64, radix: u32, negative: bool) -> Formatted {
+    let r = radix as u64;
+    let mut lsb = [0u8; RADIX_DIGITS_MAX];
+    let mut k = 0;
+    loop {
+        let d = (mag % r) as u8;
+        mag /= r;
+        lsb[k] = if d < 10 { b'0' + d } else { b'a' + d - 10 };
+        k += 1;
+        if mag == 0 {
+            break;
+        }
+    }
+    let mut digits = [0u8; RADIX_DIGITS_MAX];
+    let mut j = 0;
+    while j < k {
+        digits[j] = lsb[k - 1 - j];
+        j += 1;
+    }
+    Formatted { digits, ndigits: k, negative }
+}

@@ -15,6 +15,42 @@
       "no digits"
     ]
   },
+  "_i64toa": {
+    "c_signature": "char* _i64toa(__int64 value, char *string, int radix)",
+    "family": "radix",
+    "slice_pattern": "int_to_str",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itoa.c",
+    "fuzz_domain": [
+      "value 0/\u00b11/I64_MIN/I64_MAX",
+      "radix 2/8/10/16/36",
+      "neg+radix!=10 (unsigned reinterpret)"
+    ]
+  },
+  "_itoa": {
+    "c_signature": "char* _itoa(int value, char *string, int radix)",
+    "family": "radix",
+    "slice_pattern": "int_to_str",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itoa.c",
+    "fuzz_domain": [
+      "value 0/\u00b11/INT_MIN/INT_MAX",
+      "radix 2/8/10/16/36",
+      "neg+radix!=10"
+    ]
+  },
+  "_ltoa": {
+    "c_signature": "char* _ltoa(long value, char *string, int radix)",
+    "family": "radix",
+    "slice_pattern": "int_to_str",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itoa.c",
+    "fuzz_domain": [
+      "value 0/\u00b11/I32_MIN/I32_MAX",
+      "radix 2/8/10/16/36",
+      "neg+radix=16 (u32 reinterpret 0xFFFFFFFB)"
+    ]
+  },
   "_strtoi64": {
     "c_signature": "__int64 _strtoi64(const char *nptr, char **endptr, int base)",
     "family": "radix",
@@ -58,6 +94,29 @@
       "ws+sign",
       "invalid base",
       "no digits"
+    ]
+  },
+  "_ui64toa": {
+    "c_signature": "char* _ui64toa(unsigned __int64 value, char *string, int radix)",
+    "family": "radix",
+    "slice_pattern": "int_to_str",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itoa.c",
+    "fuzz_domain": [
+      "value 0/1/U64_MAX",
+      "radix 2/8/10/16/36",
+      "small value high radix"
+    ]
+  },
+  "_ultoa": {
+    "c_signature": "char* _ultoa(unsigned long value, char *string, int radix)",
+    "family": "radix",
+    "slice_pattern": "int_to_str",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itoa.c",
+    "fuzz_domain": [
+      "value 0/1/U32_MAX",
+      "radix 2/8/10/16/36"
     ]
   },
   "atoi": {

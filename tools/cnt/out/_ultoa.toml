@@ -1,0 +1,9 @@
+[symbols._ultoa]
+c_signature = "char * _ultoa(unsigned long value, char *string, int radix)"
+family = "radix"
+slice_pattern = "radix_to_string"
+core_fn = "NEW:radix::format_u64"
+return_collapse = "ret_dst"
+inout_effects = "writes NUL-terminated base-[radix] representation of value to string (lowercase a-z for digits 10-35); returns string unchanged"
+preserved_misfeature = "NO radix validation (radix<2 or radix>36 causes modulo-by-invalid UB or incorrect output); NO NULL-check on string (immediate crash); unconditional write assumes string has sufficient capacity (max 33 bytes for binary u32, no overflow detection)"
+fuzz_domain = ["value=0", "value=ULONG_MAX", "radix=2 (max digits)", "radix=10 (common)", "radix=16 (hex)", "radix=36 (max valid)", "radix=1 (invalid)", "radix=37 (invalid)", "value with digits requiring a-z (value>=10 in radix<=36)"]

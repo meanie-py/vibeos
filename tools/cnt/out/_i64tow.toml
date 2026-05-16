@@ -1,0 +1,9 @@
+[symbols._i64tow]
+c_signature = "wchar_t * _i64tow(__int64 value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "ret_dst"
+core_fn = "NEW:radix::format_i64_wide"
+return_collapse = "ret_dst"
+inout_effects = "writes NUL-terminated wide string to `string` if non-NULL; always returns `string` unchanged (even if NULL)"
+preserved_misfeature = "Returns `string` even when NULL (line 47), allowing the caller to pass NULL and get NULL back without crash—textbook behavior would be undefined. No validation of radix bounds (accepts invalid radix silently, behavior implementation-defined). Negative values only signed for radix==10 (line 21); other radices treat value as unsigned bit pattern (line 25 casts to ULONGLONG)."
+fuzz_domain = ["value={-1, 0, 1, INT64_MIN, INT64_MAX}", "radix={2, 10, 16, 36, 1, 37}", "string={NULL, valid_ptr}", "negative_radix_10={true, false}", "single_digit={true, false}", "max_digits_base2"]

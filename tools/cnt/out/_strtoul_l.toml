@@ -1,0 +1,9 @@
+[symbols._strtoul_l]
+c_signature = "unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:radix::parse_u64_l"
+return_collapse = "i64_clamp_ulong"
+inout_effects = "writes *end to point after last parsed char (via _strtoi64_l delegation); if nptr invalid/empty, *end may equal nptr"
+preserved_misfeature = "Negative i64 results below -ULONG_MAX clamp to 1 (NOT 0), lines 16-20. Positive i64 above ULONG_MAX clamps to ULONG_MAX (lines 12-15). Silently saturates without setting errno in libcntpr (_LIBCNT_ defined). Delegates to _strtoi64_l which parses as signed i64, then post-clamps the signed result into unsigned long range with asymmetric negative handling."
+fuzz_domain = ["valid_decimal_in_range", "hex_0x_prefix", "octal_0_prefix", "whitespace_prefix", "plus_sign", "minus_sign_small_negative", "minus_sign_large_negative_below_minus_ULONG_MAX", "overflow_above_ULONG_MAX", "overflow_far_above", "empty_string", "invalid_chars", "base_0_auto", "base_2_to_36", "invalid_base", "null_end_ptr", "endptr_tracking"]

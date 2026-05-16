@@ -1,0 +1,9 @@
+[symbols.mbstowcs]
+c_signature = "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:mbstowcs_nt"
+return_collapse = "usize"
+inout_effects = "wcstr written with converted wide chars (NOT NUL-terminated by this function); length determined by mbstr NUL. count is max wchar_t elements (destination capacity), NOT bytes."
+preserved_misfeature = "When wcstr==NULL, returns the required wchar_t count (Size/sizeof(wchar_t)) WITHOUT converting — a query mode (lines 48-53). RtlMultiByteToUnicodeN does NOT NUL-terminate wcstr (the Rtl function writes only converted chars). count is interpreted as wchar_t capacity, but passed as bytes to Rtl (count*sizeof(WCHAR), line 56). On NT API failure, returns (size_t)-1 (lines 60-61), not a well-defined error like textbook (size_t)-1 with errno."
+fuzz_domain = ["wcstr==NULL (query mode)", "wcstr!=NULL with count==0", "empty mbstr (strlen==0)", "mbstr with count < required wchars", "mbstr with count >= required wchars", "non-ASCII mbstr requiring multi-byte conversion", "NT API failure simulation (Status!=SUCCESS)"]

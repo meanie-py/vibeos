@@ -1,0 +1,9 @@
+[symbols._strtoi64]
+c_signature = "__int64 _strtoi64(const char *nptr, char **endptr, int base)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:radix::parse_i64_clamped"
+return_collapse = "i64_passthrough"
+inout_effects = "endptr written with (first-unparsed | original-nptr): *endptr = got_digit ? advanced_ptr : original_nptr"
+preserved_misfeature = "Overflow clamps to _I64_MAX/_I64_MIN (no wrapping). LIBCNT build silently clamps without errno. endptr written even on empty/invalid input (points to original nptr if no digits parsed). Base validation via MSVCRT_CHECK_PMT but ReactOS __REACTOS__ disables the nptr!=NULL check (lines 20-22), allowing NULL to pass validation then crash on dereference."
+fuzz_domain = ["valid_parse:base10", "valid_parse:base16_0x_prefix", "valid_parse:base8_leading0", "valid_parse:base_2_to_36", "overflow_positive_clamp_I64_MAX", "overflow_negative_clamp_I64_MIN", "leading_whitespace_skipped", "sign_plus_minus", "no_digits_endptr_eq_nptr", "partial_parse_endptr_at_first_invalid", "base0_autodetect_oct_dec_hex", "empty_after_sign_endptr_eq_nptr", "invalid_digit_for_base_stops_parse"]

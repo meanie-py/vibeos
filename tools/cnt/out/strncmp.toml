@@ -1,0 +1,9 @@
+[symbols.strncmp]
+c_signature  = "int strncmp(const char * s1, const char * s2, size_t n)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::ncmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only)"
+preserved_misfeature = "Returns signed-char difference (*s1 - *s2) as int, NOT the standard -1/0/+1 normalization. _TCHAR is signed char. Early-return on n==0 before any dereference."
+fuzz_domain  = ["n==0 (no deref)", "equal prefixes shorter than n", "equal strings exactly n long", "differ at position < n", "differ at position 0", "one string ends (NUL) before n", "both strings same through NUL within n", "negative vs positive char values (signed difference)"]

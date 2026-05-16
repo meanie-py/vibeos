@@ -60,6 +60,28 @@ fn main() {
         // Rename the helper so it doesn't collide with cnt-rust's own
         // #[no_mangle] `_atoi64` shim linked into this test binary.
         ("atol", format!("#define _atoi64 ref_atol_atoi64\n{}long ref_atol(const char*s){{return (long)ref_atol_atoi64(s);}}\n", inc(s("string/atoi64.c")))),
+        // itoa.c — _i64toa/_ui64toa/_ltoa/_ultoa/_itoa (+ _s). Host
+        // `long` is 64-bit (LP64) vs Win-i386 LP32 (the cnt-rust model
+        // = i32/u32). `__int64`/`int` widths DO match the host, so the
+        // i64/u64 (and int-input) symbols diff over the full domain;
+        // the genuine `long`/`unsigned long` symbols are reached via
+        // fixed-width adapters and fuzzed only over the width-agnostic
+        // domain (positive + decimal-negative; the neg+radix!=10
+        // unsigned-reinterpret misfeature is pinned by _i64toa where
+        // host width == model width). Same spirit as the strtoul
+        // ULONG_MAX LP32 note.
+        ("itoa", format!(
+            "#define _i64toa ref_i64toa\n#define _i64toa_s ref_i64toa_s\n\
+             #define _ui64toa ref_ui64toa\n#define _ui64toa_s ref_ui64toa_s\n\
+             #define _itoa ref_itoa\n#define _itoa_s ref_itoa_s\n\
+             #define _ltoa ref_ltoa\n#define _ltoa_s ref_ltoa_s\n\
+             #define _ultoa ref_ultoa\n\
+             #include <stddef.h>\n\
+             char* ref_ltoa(long,char*,int);\n\
+             int ref_ltoa_s(long,char*,size_t,int);\n{}\
+             char* ref_ltoa32(int v,char*s,int r){{return ref_ltoa(v,s,r);}}\n\
+             char* ref_ultoa32(unsigned int v,char*s,int r){{return ref_ultoa(v,s,r);}}\n",
+            inc(s("string/itoa.c")))),
     ];
 
     let mut build = cc::Build::new();

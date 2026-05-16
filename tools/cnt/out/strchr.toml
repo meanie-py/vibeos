@@ -1,0 +1,9 @@
+[symbols.strchr]
+c_signature = "char *strchr(const char *s, int c)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:find_char_or_nul"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none (read-only scan)"
+preserved_misfeature = "Returns pointer to the terminating NUL when c==0 (line 'if(cc == 0) return (_TCHAR *)s;'), not NULL. This is actually standard C behavior but worth pinning since it's a special case distinct from not-found."
+fuzz_domain = ["char found mid-string", "char found at start", "char not found (return NULL)", "c==0 (must return ptr to NUL)", "c with high bits set (truncated to char, e.g. 0x161 → 0x61)", "empty string (s points to NUL immediately)", "multibyte char values to verify _TCHAR(int) truncation"]

@@ -1,0 +1,9 @@
+[symbols._i64toa]
+c_signature = "char* _i64toa(__int64 value, char *string, int radix)"
+family = "radix"
+slice_pattern = "dst_unchecked"
+core_fn = "NEW:i64_to_radix"
+return_collapse = "ret_dst"
+inout_effects = "string written with NUL-terminated ASCII digits of `value` in base `radix` (2-36), lowercase a-f for 10-15; negative sign only if radix==10 && value<0; caller must ensure string has ≥65 bytes (no bounds check)"
+preserved_misfeature = "NO validation of radix (caller responsible for 2-36), NO bounds check on output buffer (caller must ensure ≥65 bytes available), NO error return (always returns input pointer). Unlike _i64toa_s, this is an unchecked API that silently corrupts memory if buffer too small or radix invalid."
+fuzz_domain = ["value={0, 1, -1, INT64_MIN, INT64_MAX}", "radix={2, 10, 16, 36, 1, 37}", "buffer_adequate={true, false}"]

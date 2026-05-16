@@ -1,0 +1,9 @@
+[symbols.wctomb]
+c_signature = "int wctomb(char *mbchar, wchar_t wchar)"
+family = "wstring"
+slice_pattern = "single_wchar"
+core_fn = "NEW:wstring::wchar_to_mb_single"
+return_collapse = "i32_passthrough"
+inout_effects = "mbchar[0] written with single-byte conversion of wchar; if mbchar==NULL, no write occurs"
+preserved_misfeature = "mbchar==NULL returns 0 (state-independent encoding marker), not error. RtlUnicodeToMultiByteN converts exactly 1 wchar_t to up to 1 byte; return value is Size (0 or 1), or -1 on conversion failure."
+fuzz_domain = ["mbchar==NULL (expect 0)", "ASCII wchar (expect 1)", "non-ASCII wchar requiring multi-byte (expect Size or -1)", "invalid/surrogate wchar (expect -1)"]

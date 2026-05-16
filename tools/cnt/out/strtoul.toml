@@ -1,0 +1,9 @@
+[symbols.strtoul]
+c_signature = "unsigned long strtoul(const char* nptr, char** end, int base)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:radix::parse_u64_clamped"
+return_collapse = "u64_trunc_ulong"
+inout_effects = "*end written to first invalid char (or nptr if no parse); no other mutation"
+preserved_misfeature = "Negative i64 parse results <-ULONG_MAX clamp to 1 (not 0); delegates to _strtoi64_l so inherits signed parse then range-checks the i64, asymmetric clamp [1, ULONG_MAX]"
+fuzz_domain = ["valid in-range", "overflow >ULONG_MAX", "negative valid magnitude ≤ULONG_MAX", "negative magnitude >ULONG_MAX (→1)", "leading whitespace", "invalid base", "no digits", "endptr tracking"]

@@ -52,6 +52,7 @@ add_custom_command(
     DEPENDS native-gendib)
 
 list(APPEND SOURCE
+    safe_user_io.c
     gdi/dib/alphablend.c
     gdi/dib/dib1bpp.c
     gdi/dib/dib4bpp.c

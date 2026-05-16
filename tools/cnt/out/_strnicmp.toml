@@ -1,0 +1,9 @@
+[symbols._strnicmp]
+c_signature = "int _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:strnicmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only comparison)"
+preserved_misfeature = "ASCII-only case-folding: only [A-Z] → [a-z], no locale/Unicode (lines 24-27). Compares as *signed char* difference (line 30: `chr1 - chr2` where chr1/chr2 are `char`). Stops at first NUL in *either* string even if n remains (line 32-35: `chr1 == 0` breaks, implicitly chr2==0 also stops via chr1==chr2 path). Returns 0 if n chars compared without difference OR NUL reached (line 38)."
+fuzz_domain = ["equal_within_n", "diff_case_insensitive_within_n", "diff_case_sensitive_within_n", "s1_shorter_than_n", "s2_shorter_than_n", "both_shorter_equal", "n_zero", "ascii_upper_lower_boundary", "non_ascii_no_fold", "signed_char_negative_diff"]

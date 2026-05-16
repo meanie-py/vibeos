@@ -60,8 +60,13 @@ def rs_ty(ctype: str) -> str:
         "constvoid*": "*const core::ffi::c_void",
         "void*": "*mut core::ffi::c_void",
         "char**": "*mut *mut u8",
+        "wchar_t*": "*mut u16",
         "size_t": "usize",
         "int": "i32",
+        "__int64": "i64",
+        "unsigned__int64": "u64",
+        "long": "i32",  # Win i386 LP32
+        "unsignedlong": "u32",
         "_locale_t": "*mut core::ffi::c_void",  # ignored
     }[c]
 
@@ -81,8 +86,159 @@ def ret_ty(sig: str) -> str:
         "unsignedlong": "u32",
         "__int64": "i64",
         "char*": "*mut u8",
+        "wchar_t*": "*mut u16",
         "void*": "*mut core::ffi::c_void",
     }[rtype]
+
+
+# int→str family (itoa.c / itow.c). Each shim is fully self-contained
+# (its own param-validation / ERANGE-backfill / byte-count contract),
+# so it bypasses the generic slice-reconstruct + return-collapse path.
+INT2STR = {
+    "int_to_str",   # unchecked narrow: memcpy digits+NUL, no NULL guard
+    "int_to_wstr",  # unchecked wide:   NULL-guarded, returns dst (even NULL)
+    "s_erange_n",   # _s narrow: bad-param→str[0]=0,EINVAL; too-small→
+                    #            reverse-backfill+str[0]=0,ERANGE
+    "s_einval_n",   # _ui64toa_s: bad-param→EINVAL (no zero); too-small→
+                    #             EINVAL (no fill)
+    "s_erange_w",   # _s wide: as s_erange_n, u16 elements
+    "s_einval_w",   # _ui64tow_s: as s_einval_n + the *byte-count* bug
+                    #             (memcpy ndigits+1 BYTES, not *2)
+}
+
+
+def _mag_prologue(vt: str, v: str, rad: str) -> str:
+    """Faithful magnitude+sign derivation per the value's C width:
+    sign only when `radix == 10 && value < 0`; otherwise the C
+    reinterprets the value's own-width bit pattern as unsigned."""
+    if vt == "i64":
+        return (
+            f"    let neg = {rad} == 10 && {v} < 0;\n"
+            f"    let mag = if neg {{ ({v} as i64).unsigned_abs() }} "
+            f"else {{ {v} as u64 }};"
+        )
+    if vt == "i32":
+        return (
+            f"    let neg = {rad} == 10 && {v} < 0;\n"
+            f"    let mag = if neg {{ ({v} as i32).unsigned_abs() as u64 }} "
+            f"else {{ {v} as u32 as u64 }};"
+        )
+    if vt == "u64":
+        return f"    let neg = false;\n    let mag = {v};"
+    if vt == "u32":
+        return f"    let neg = false;\n    let mag = {v} as u64;"
+    raise SystemExit(f"int2str: unsupported value type {vt}")
+
+
+def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
+    sp = m["slice_pattern"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    v = params[0][1]
+    dst = next(n for t, n in params if rs_ty(t).startswith("*mut"))
+    rad = params[-1][1]  # radix is always the trailing int
+    size = next((n for t, n in params if rs_ty(t) == "usize"), None)
+    fr = "crate::core_rs::radix::format_radix"
+    mag = _mag_prologue(rs_ty(params[0][0]), v, rad)
+    b: list[str] = []
+
+    if sp == "int_to_str":
+        b += [
+            mag,
+            f"    let f = {fr}(mag, {rad} as u32, neg);",
+            "    let mut o = 0usize;",
+            f"    if f.negative {{ *{dst} = b'-'; o = 1; }}",
+            "    let mut i = 0;",
+            f"    while i < f.ndigits {{ *{dst}.add(o + i) = f.digits[i]; i += 1; }}",
+            f"    *{dst}.add(o + f.ndigits) = 0;",
+            f"    {dst}",
+        ]
+    elif sp == "int_to_wstr":
+        b += [
+            mag,
+            f"    let f = {fr}(mag, {rad} as u32, neg);",
+            f"    if !{dst}.is_null() {{",
+            "        let mut o = 0usize;",
+            f"        if f.negative {{ *{dst} = b'-' as u16; o = 1; }}",
+            "        let mut i = 0;",
+            f"        while i < f.ndigits {{ *{dst}.add(o + i) = f.digits[i] as u16; i += 1; }}",
+            f"        *{dst}.add(o + f.ndigits) = 0;",
+            "    }",
+            f"    {dst}",
+        ]
+    elif sp in ("s_erange_n", "s_erange_w"):
+        wide = sp == "s_erange_w"
+        cast = " as u16" if wide else ""
+        minus = "b'-' as u16" if wide else "b'-'"
+        b += [
+            f"    if {dst}.is_null() || {size} == 0 || {rad} < 2 || {rad} > 36 {{",
+            f"        if !{dst}.is_null() && {size} != 0 {{ *{dst} = 0; }}",
+            "        return 22;",
+            "    }",
+            mag,
+            f"    let f = {fr}(mag, {rad} as u32, neg);",
+            "    let need = f.ndigits + f.negative as usize + 1;",
+            f"    if need > {size} {{",
+            "        let o = f.negative as usize;",
+            f"        let cnt = {size} - o;",
+            "        let mut i = 0;",
+            "        while i < cnt && i < f.ndigits {",
+            f"            *{dst}.add(o + i) = f.digits[f.ndigits - 1 - i]{cast};",
+            "            i += 1;",
+            "        }",
+            f"        *{dst} = 0;",
+            "        return 34;",
+            "    }",
+            "    let mut o = 0usize;",
+            f"    if f.negative {{ *{dst} = {minus}; o = 1; }}",
+            "    let mut i = 0;",
+            f"    while i < f.ndigits {{ *{dst}.add(o + i) = f.digits[i]{cast}; i += 1; }}",
+            f"    *{dst}.add(o + f.ndigits) = 0;",
+            "    0",
+        ]
+    elif sp == "s_einval_n":
+        b += [
+            f"    if {dst}.is_null() || {size} == 0 || {rad} < 2 || {rad} > 36 {{",
+            "        return 22;",
+            "    }",
+            f"    let f = {fr}({v}, {rad} as u32, false);",
+            "    let need = f.ndigits + 1;",
+            f"    if need > {size} {{ return 22; }}",
+            "    let mut i = 0;",
+            f"    while i < f.ndigits {{ *{dst}.add(i) = f.digits[i]; i += 1; }}",
+            f"    *{dst}.add(f.ndigits) = 0;",
+            "    0",
+        ]
+    elif sp == "s_einval_w":
+        # _ui64tow_s byte-count bug: memcpy `ndigits+1` BYTES (NOT
+        # * sizeof(wchar_t)) from a u16-LE temp into the wide dst.
+        b += [
+            f"    if {dst}.is_null() || {size} == 0 || {rad} < 2 || {rad} > 36 {{",
+            "        return 22;",
+            "    }",
+            f"    let f = {fr}({v}, {rad} as u32, false);",
+            "    let need = f.ndigits + 1;",
+            f"    if need > {size} {{ return 22; }}",
+            "    let mut tmp = [0u8; 2 * crate::core_rs::radix::RADIX_DIGITS_MAX + 2];",
+            "    let mut t = 0;",
+            "    let mut i = 0;",
+            "    while i < f.ndigits { tmp[t] = f.digits[i]; t += 2; i += 1; }",
+            f"    let db = {dst} as *mut u8;",
+            "    let mut i = 0;",
+            "    while i < need { *db.add(i) = tmp[i]; i += 1; }",
+            "    0",
+        ]
+    else:
+        raise SystemExit(f"{name}: unhandled int2str pattern {sp}")
+
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
 
 
 def shim(name: str, m: dict) -> str:
@@ -90,6 +246,8 @@ def shim(name: str, m: dict) -> str:
     sp = m["slice_pattern"]
     rc = m["return_collapse"]
     rt = ret_ty(m["c_signature"])
+    if sp in INT2STR:
+        return _int2str_shim(name, m, params, rt)
     decl_params = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
     pnames = [n for _, n in params]
     ptrs = [n for t, n in params if rs_ty(t).startswith("*")]

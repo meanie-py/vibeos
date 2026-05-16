@@ -1,0 +1,9 @@
+[symbols._itoa_s]
+c_signature = "int _itoa_s(int value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_i32"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..len] written with NUL-terminated decimal/radix string on success; str[0] = '\\0' on EINVAL; str[0..size] partially filled backwards (no sign) + str[0] = '\\0' on ERANGE"
+preserved_misfeature = "Delegates to _ltoa_s (line 144-147), which truncates buffer on ERANGE by copying backwards WITHOUT the sign, then setting str[0]='\\0' (lines 234-247). This produces a malformed non-NUL-terminated partial string before the terminal NUL at str[0]. Parameter validation uses MSVCRT_CHECK_PMT; under _LIBCNT_ errno is NOT set (lines 219, 225)."
+fuzz_domain = ["radix=10 negative", "radix=10 positive", "radix=2", "radix=16", "radix=36", "size exactly sufficient", "size insufficient (ERANGE)", "size=0 (EINVAL)", "str=NULL (EINVAL)", "radix=1 (EINVAL)", "radix=37 (EINVAL)", "INT_MIN (most negative)", "zero"]

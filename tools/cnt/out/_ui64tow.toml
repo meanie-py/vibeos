@@ -1,0 +1,9 @@
+[symbols._ui64tow]
+c_signature = "wchar_t * _ui64tow(unsigned __int64 value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "raw_dst_radix"
+core_fn = "NEW:radix::format_u64"
+return_collapse = "ret_dst"
+inout_effects = "If string != NULL: writes NUL-terminated wchar_t representation of value in base radix (2-36), digits 0-9 then a-z for 10-35. No validation of radix. If string == NULL: no write."
+preserved_misfeature = "Returns `string` unconditionally even when NULL (lines 134-135: `if (string != NULL) { memcpy(...) } return string;`). No radix validation (caller can pass invalid radix causing undefined modulo/div). Lowercase 'a-z' for digits 10-35 (lines 126-130)."
+fuzz_domain = ["value=0", "value=ULLONG_MAX", "radix=2", "radix=10", "radix=16", "radix=36", "radix=1 (invalid)", "radix=37 (invalid)", "string=NULL", "string=valid buffer", "value requiring all 64 chars (2^64-1 in base 2)"]

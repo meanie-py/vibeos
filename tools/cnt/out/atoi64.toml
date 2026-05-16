@@ -1,0 +1,21 @@
+[symbols._atoi64]
+c_signature = "__int64 _atoi64(const char *nptr)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "radix::parse_i64_wrapping"
+return_collapse = "i64_passthrough"
+inout_effects = "none (read-only)"
+preserved_misfeature = "NULL returns 0 (line 21-22). Wrapping overflow with NO error signal: `acc = 10 * acc + ...` (line 35) continues on i64 overflow, wraps silently, then applies negation (line 39-40). Non-digit suffix silently stops parsing (line 34 loop exit)."
+fuzz_domain = [
+  "NULL",
+  "empty string \"\"",
+  "whitespace-only \"  \\t\\n\"",
+  "valid small \"-123\"",
+  "valid large near i64::MAX \"9223372036854775807\"",
+  "overflow wrapping \"9223372036854775808\" (i64::MAX+1, wraps to i64::MIN)",
+  "double overflow \"92233720368547758070\" (wraps multiple times)",
+  "leading zeros \"000123\"",
+  "plus sign \"+456\"",
+  "trailing non-digits \"789abc\"",
+  "non-digit prefix \"abc\" (returns 0)"
+]

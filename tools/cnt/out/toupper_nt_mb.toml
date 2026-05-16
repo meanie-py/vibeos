@@ -1,0 +1,9 @@
+[symbols.toupper_nt_mb]
+c_signature = "int __cdecl toupper_nt_mb(_In_ int _C)"
+family = "ctype"
+slice_pattern = "int_passthrough"
+core_fn = "NEW:ctype::ansi_to_upper_mb"
+return_collapse = "i32_passthrough"
+inout_effects = "none (pure function)"
+preserved_misfeature = "Returns entire multibyte sequence packed into int: 2-byte result as (chr[1] | (chr[0] << 8)), 1-byte as chr[0], fallback to input unchanged if conversion fails (mbSize == 0). This is NOT standard toupper which operates on single chars; it's a Windows NT multibyte extension that round-trips through Unicode (ANSI→Unicode→upcase→ANSI) and packs the result bytes into a single int return value."
+fuzz_domain = ["ascii_lowercase ('a'-'z')", "ascii_uppercase ('A'-'Z')", "ascii_non_alpha (digits, punct)", "high_bit_set_single_byte (0x80-0xFF)", "multibyte_lead_bytes (DBCS sequences where applicable)", "zero (0x00)", "negative_input (-1, other negatives)"]

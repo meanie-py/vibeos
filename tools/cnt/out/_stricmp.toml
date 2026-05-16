@@ -1,0 +1,9 @@
+[symbols._stricmp]
+c_signature  = "int __cdecl _stricmp(char const* _String1, char const* _String2)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "NEW:string::cmp_case_insensitive"
+return_collapse = "i32_passthrough"
+inout_effects = "none (both params read-only)"
+preserved_misfeature = "ASCII-only case folding: only [A-Z]→[a-z] (lines 24-27). NOT Unicode-aware, NOT locale-sensitive. Signed-char difference after fold (line 29): returns (chr1 - chr2) as signed char arithmetic, matching strcmp family convention but potentially surprising on platforms where char is unsigned by default."
+fuzz_domain  = ["both_empty", "equal_same_case", "equal_diff_case_ascii", "diff_before_fold", "diff_after_fold", "prefix_relation", "non_ascii_high_bit", "embedded_nul"]

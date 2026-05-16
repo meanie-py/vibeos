@@ -1,0 +1,9 @@
+[symbols.mbtowc]
+c_signature = "int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)"
+family = "string"
+slice_pattern = "ptr_len"
+core_fn = "NEW:mb_to_wc"
+return_collapse = "i32_passthrough"
+inout_effects = "*wchar written with decoded wchar_t on success (ret>0); unchanged on error (ret==-1)"
+preserved_misfeature = "NULL checks short-circuit to 0 for BOTH wchar and mbchar (lines 18-19, 21-22), not the textbook reset-state behavior for wchar==NULL. Space-mapping guard (line 28-29): returns -1 if RtlAnsiCharToUnicodeChar produces L' ' but input mbarr[0]!=' ', treating this as invalid conversion. Return is signed difference of PUCHAR pointers (line 32), typically 1 for single-byte, 2 for lead-byte sequences up to MB_CUR_MAX==2."
+fuzz_domain = ["mbchar==NULL", "wchar==NULL", "count==0", "valid ASCII char count>=1", "valid lead-byte sequence count==2", "invalid sequence triggering space-guard", "count<needed (truncation)"]

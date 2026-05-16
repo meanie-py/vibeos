@@ -1,0 +1,9 @@
+[symbols.strrchr]
+c_signature = "char *strrchr(const char *s, int c)"
+family = "string"
+slice_pattern = "nul_in"
+core_fn = "NEW:find_last_char"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none (read-only search)"
+preserved_misfeature = "c is truncated to char via `_TCHAR cc = c` (line tcsrchr.h:5), matching only the low byte. The NUL terminator IS a valid search target: if c==0, returns pointer to the NUL (lines 12-13), NOT NULL. Scans entire string even after finding matches, keeping last occurrence."
+fuzz_domain = ["c in range, found once", "c in range, found multiple times (verify LAST returned)", "c in range, not found (ret NULL)", "c==0 (ret ptr to NUL)", "c with high bits set (verify truncation to char)", "empty string with c==0 (ret ptr to empty NUL)", "empty string with c!=0 (ret NULL)"]

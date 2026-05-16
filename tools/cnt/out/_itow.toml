@@ -1,0 +1,9 @@
+[symbols._itow]
+c_signature = "wchar_t* _itow(int value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "itow_passthrough"
+core_fn = "NEW:wstring_format_i32"
+return_collapse = "ret_dst"
+inout_effects = "if string!=NULL: writes NUL-terminated radix representation (lowercase hex a-z for digits>9), negated if value<0 && radix==10 else reinterpreted as unsigned; ALWAYS returns the dst pointer unchanged (even if NULL)"
+preserved_misfeature = "Lines 133-135: _itow is a trivial passthrough to _ltow, which exhibits three deviations: (1) NULL dst is accepted without crash—function computes the string but doesn't write it, still returns NULL (lines 170-172); (2) negative values are negated ONLY for radix==10, else reinterpreted as unsigned long (lines 162-166); (3) no radix validation—invalid radix causes undefined modulo/division behavior"
+fuzz_domain = ["value={INT_MIN, -42, 0, 42, INT_MAX}", "radix={2, 10, 16, 36, 1_invalid, 37_invalid}", "string={NULL, valid_buf[33]}", "cross: negative_value × radix!=10 (unsigned reinterpret)", "cross: NULL × any_value (returns NULL without crash)"]

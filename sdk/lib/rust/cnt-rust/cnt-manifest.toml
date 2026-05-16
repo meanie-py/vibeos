@@ -262,3 +262,64 @@ inout_effects = "*end via _strtoi64_l"
 preserved_misfeature = "delegates to _strtoul_l — same asymmetric clamp incl. neg>ULONG_MAX→1"
 reference    = "sdk/lib/crt/string/strtoul.c"
 fuzz_domain  = ["in range", "overflow→MAX", "neg→1 path", "ws+sign", "invalid base", "no digits", "endptr tracking"]
+
+# --- Wave C1 (int→str, unchecked narrow) ----------------------------
+# One core: radix::format_radix (do-while ≥1 digit, lowercase a-z).
+# Sign only when radix==10 && value<0; else the value's own-width bit
+# pattern is reinterpreted unsigned (i64/u64/i32-LP32/u32). Narrow
+# unchecked = unconditional memcpy(digits+NUL), NO NULL guard, ret dst.
+
+[symbols._i64toa]
+c_signature  = "char* _i64toa(__int64 value, char *string, int radix)"
+family       = "radix"
+slice_pattern = "int_to_str"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "string ← '-'(iff radix==10&&value<0) + digits + NUL; no bounds check (caller ≥65 bytes); returns string"
+preserved_misfeature = "no radix validation, no buffer-size check, no NULL guard (narrow memcpy is unconditional); sign only for radix==10, else i64 bit pattern as u64"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["value 0/±1/I64_MIN/I64_MAX", "radix 2/8/10/16/36", "neg+radix!=10 (unsigned reinterpret)"]
+
+[symbols._ui64toa]
+c_signature  = "char* _ui64toa(unsigned __int64 value, char *string, int radix)"
+family       = "radix"
+slice_pattern = "int_to_str"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "string ← digits + NUL (no sign ever); no bounds check; returns string"
+preserved_misfeature = "no radix validation, no buffer-size check, no NULL guard; pure unsigned (never negative)"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["value 0/1/U64_MAX", "radix 2/8/10/16/36", "small value high radix"]
+
+[symbols._ltoa]
+c_signature  = "char* _ltoa(long value, char *string, int radix)"
+family       = "radix"
+slice_pattern = "int_to_str"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "string ← '-'(iff radix==10&&value<0) + digits + NUL; returns string"
+preserved_misfeature = "32-bit width (LP32 long): neg+radix!=10 → (unsigned long)value = u32 bit pattern (NOT u64 like _i64toa); no validation/NULL guard"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["value 0/±1/I32_MIN/I32_MAX", "radix 2/8/10/16/36", "neg+radix=16 (u32 reinterpret 0xFFFFFFFB)"]
+
+[symbols._ultoa]
+c_signature  = "char* _ultoa(unsigned long value, char *string, int radix)"
+family       = "radix"
+slice_pattern = "int_to_str"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "string ← digits + NUL (no sign); returns string"
+preserved_misfeature = "u32, no radix validation, no buffer-size check, no NULL guard"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["value 0/1/U32_MAX", "radix 2/8/10/16/36"]
+
+[symbols._itoa]
+c_signature  = "char* _itoa(int value, char *string, int radix)"
+family       = "radix"
+slice_pattern = "int_to_str"
+core_fn      = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "delegates to _ltoa (int→long, identical on LP32): string ← '-'(iff radix==10&&value<0)+digits+NUL; returns string"
+preserved_misfeature = "_itoa→_ltoa: 32-bit width, neg+radix!=10 → u32 reinterpret; no validation/NULL guard"
+reference    = "sdk/lib/crt/string/itoa.c"
+fuzz_domain  = ["value 0/±1/INT_MIN/INT_MAX", "radix 2/8/10/16/36", "neg+radix!=10"]

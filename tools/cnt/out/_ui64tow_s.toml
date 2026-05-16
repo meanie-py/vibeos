@@ -1,0 +1,9 @@
+[symbols._ui64tow_s]
+c_signature = "int _ui64tow_s(unsigned __int64 value, wchar_t *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_u64_w"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..min(size,actual_len)] written with radix-converted digits + NUL; on error str[0]='\\0' if str && size"
+preserved_misfeature = "Line 163: buffer size check `(size_t)(buffer-pos+65) > size` has POINTER SUBTRACTION BUG — should be `(buffer+65-pos)` or `65-(pos-buffer)`. As written, `buffer-pos` is NEGATIVE (buffer is at higher address), wraps to huge positive via size_t cast, almost always triggers false EINVAL. Also line 164: returns EINVAL instead of ERANGE for overflow (unlike _i64tow_s which returns ERANGE)."
+fuzz_domain = ["value=0, radix=10", "value=UINT64_MAX, radix=2 (longest output, 64 chars)", "value=12345, radix=16", "size=1 (minimal, only NUL fits)", "size=2..10 (triggers pointer-math bug)", "size=65 (exact fit for max binary)", "radix=2 (min)", "radix=36 (max)", "str=NULL (caught by CHECK_PMT)", "size=0 (caught by CHECK_PMT)", "radix=1 or 37 (out of range)"]

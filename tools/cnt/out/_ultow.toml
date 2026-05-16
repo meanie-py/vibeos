@@ -1,0 +1,9 @@
+[symbols._ultow]
+c_signature = "wchar_t * _ultow(unsigned long value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "NEW:format_to_opt_buf"
+core_fn = "NEW:format_u32_radix"
+return_collapse = "ptr_or_null_passthrough"
+inout_effects = "if string!=NULL: writes NUL-terminated radix representation (lowercase a-z for digits>9); if string==NULL: no write"
+preserved_misfeature = "if string==NULL, returns NULL without crash (lines 264-266: guard `if (string != NULL)` before memcpy, unconditional `return string`); no radix validation (accepts any int radix, will divide-by-zero if radix<2)"
+fuzz_domain = ["value=0", "value=MAX_U32", "radix=2,10,16,36", "string=NULL", "string=valid", "value requires multi-digit in radix (e.g., value=255,radix=16 → 'ff')"]

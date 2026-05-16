@@ -1,0 +1,9 @@
+[symbols._ltoa_s]
+c_signature = "int _ltoa_s(long value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::i64_to_str"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..len] written with NUL-terminated radix string; on ERANGE, str partially filled backwards from end (skipping sign if present), then str[0]=NUL"
+preserved_misfeature = "On overflow (len>size), writes backwards from buffer end up to size-1 chars (excluding sign if negative), then sets str[0]=NUL and returns ERANGE. This creates a *right-aligned truncated* string with leading NUL, unlike typical left-truncation. Lines 217-227: skip sign position, copy backwards from buffer[31] for size chars, then str[0]=NUL."
+fuzz_domain = ["negative radix-10 (value<0, radix==10)", "positive/zero radix-10", "non-decimal radix (2-9,11-36)", "exact fit (len==size)", "overflow by 1 (len==size+1)", "overflow by many", "radix boundaries (1,2,36,37)", "size==1 (only room for NUL)", "value edge cases (LONG_MIN, LONG_MAX, 0)"]

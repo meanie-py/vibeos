@@ -25,6 +25,11 @@ extern "C" {
     fn ref_strrchr(s: *const u8, c: i32) -> *mut u8;
     fn ref_strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64;
     fn ref_strtoul(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> u32;
+    fn ref_i64toa(v: i64, s: *mut u8, r: i32) -> *mut u8;
+    fn ref_ui64toa(v: u64, s: *mut u8, r: i32) -> *mut u8;
+    fn ref_itoa(v: i32, s: *mut u8, r: i32) -> *mut u8;
+    fn ref_ltoa32(v: i32, s: *mut u8, r: i32) -> *mut u8;
+    fn ref_ultoa32(v: u32, s: *mut u8, r: i32) -> *mut u8;
 }
 
 use cnt_rust::cabi;
@@ -388,5 +393,77 @@ fn diff_strtoi64_strtoul() {
         let urv = unsafe { ref_strtoul(s.as_ptr(), &mut ur, base) };
         assert_eq!(ucv, urv, "strtoul v s={s:?} base={base}");
         assert_eq!(off(uc), off(ur), "strtoul endptr s={s:?} base={base}");
+    }
+}
+
+/// Wave C1 — unchecked narrow int→str. Valid radices only (C unchecked
+/// is UB for radix 1/37 — div-by-zero / OOB digit map — never fuzzed).
+/// Generous 80-byte dst (unchecked path has no bounds check). `_i64toa`
+/// /`_ui64toa` get the full domain incl. negative+radix!=10 (host
+/// `__int64`==model u64); the `long`/int-input symbols skip the
+/// width-divergent neg+radix!=10 case (host LP64 vs Win LP32).
+#[test]
+fn diff_itoa_unchecked() {
+    let mut rng = Rng(0x171a_0c01_u64);
+    let radices = [2i32, 8, 10, 16, 36];
+    for _ in 0..6000 {
+        let r = radices[rng.upto(radices.len())];
+        let mut a = [0xAAu8; 80];
+        let mut b = [0xAAu8; 80];
+        // _i64toa / _ui64toa: __int64 width == model, full domain.
+        let v64 = rng.next() as i64;
+        let pa = unsafe { cabi::_i64toa(v64, a.as_mut_ptr(), r) };
+        let pb = unsafe { ref_i64toa(v64, b.as_mut_ptr(), r) };
+        assert_eq!(pa, a.as_mut_ptr());
+        assert_eq!(pb, b.as_mut_ptr());
+        assert_eq!(a, b, "_i64toa v={v64} r={r}");
+
+        let u64v = rng.next();
+        let (mut a, mut b) = ([0xAAu8; 80], [0xAAu8; 80]);
+        unsafe {
+            cabi::_ui64toa(u64v, a.as_mut_ptr(), r);
+            ref_ui64toa(u64v, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_ui64toa v={u64v} r={r}");
+
+        // _ltoa / _itoa: i32; neg+radix!=10 is width-divergent on a
+        // LP64 host → constrain to value>=0 or radix==10.
+        let mut v32 = rng.next() as i32;
+        if v32 < 0 && r != 10 {
+            v32 = v32.wrapping_neg();
+        }
+        let (mut a, mut b) = ([0xAAu8; 80], [0xAAu8; 80]);
+        unsafe {
+            cabi::_ltoa(v32, a.as_mut_ptr(), r);
+            ref_ltoa32(v32, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_ltoa v={v32} r={r}");
+        let (mut a, mut b) = ([0xAAu8; 80], [0xAAu8; 80]);
+        unsafe {
+            cabi::_itoa(v32, a.as_mut_ptr(), r);
+            ref_itoa(v32, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_itoa v={v32} r={r}");
+
+        // _ultoa: u32, host adapter zero-extends → full u32 domain.
+        let uv = rng.next() as u32;
+        let (mut a, mut b) = ([0xAAu8; 80], [0xAAu8; 80]);
+        unsafe {
+            cabi::_ultoa(uv, a.as_mut_ptr(), r);
+            ref_ultoa32(uv, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_ultoa v={uv} r={r}");
+    }
+    // Edge values.
+    for &(v64, r) in &[
+        (0i64, 10i32), (1, 10), (-1, 10), (i64::MIN, 10), (i64::MAX, 10),
+        (-1, 16), (i64::MIN, 16), (i64::MAX, 2), (-1, 2), (255, 16), (46655, 36),
+    ] {
+        let (mut a, mut b) = ([0xAAu8; 80], [0xAAu8; 80]);
+        unsafe {
+            cabi::_i64toa(v64, a.as_mut_ptr(), r);
+            ref_i64toa(v64, b.as_mut_ptr(), r);
+        }
+        assert_eq!(a, b, "_i64toa edge v={v64} r={r}");
     }
 }

@@ -1,0 +1,9 @@
+[symbols._wcsnicmp]
+c_signature = "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)"
+family = "wstring"
+slice_pattern = "ptr_len"
+core_fn = "NEW:wstring::nicmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only comparison)"
+preserved_misfeature = "case-folding applies ONLY to ASCII 'A'-'Z' → 'a'-'z' (lines 28-31), NOT full Unicode case-folding; returns raw wchar_t difference (line 33) as int (potential truncation on platforms where wchar_t > 16-bit, though Windows wchar_t is 16-bit); compares at most _MaxCount characters OR until first NUL in either string (lines 22-38)"
+fuzz_domain = ["both_empty", "n_zero", "equal_within_n", "equal_at_n_boundary", "diff_ascii_case_only", "diff_non_ascii", "diff_beyond_n", "nul_before_n_s1", "nul_before_n_s2", "nul_at_n", "non_ascii_uppercase", "wchar_diff_overflow"]

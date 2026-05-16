@@ -1,0 +1,9 @@
+[symbols._i64toa_s]
+c_signature = "int _i64toa_s(__int64 value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:radix::format_i64_bounded"
+return_collapse = "i32_passthrough"
+inout_effects = "str[0..min(len,size)] written with NUL-terminated decimal/radix representation; on ERANGE, str partially filled backward from end (excluding sign if negative), then str[0]=NUL"
+preserved_misfeature = "On buffer overflow (len > size), copies size-1 chars BACKWARD from end of temp buffer (buffer[31] downward, skipping sign), then sets str[0]=NUL (lines 73-84). This leaves a RIGHT-aligned partial suffix without NUL terminator in str[1..size-1], then overwrites str[0] with NUL. Textbook would left-truncate or fail cleanly."
+fuzz_domain = ["value={-9223372036854775808,0,42,9223372036854775807}", "radix={2,10,16,36}", "size={1,exact_len,exact_len-1,exact_len+1,65}", "null_str"]

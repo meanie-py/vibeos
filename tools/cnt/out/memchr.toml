@@ -1,0 +1,9 @@
+[symbols.memchr]
+c_signature  = "void* __cdecl memchr(const void *s, int c, size_t n)"
+family       = "mem"
+slice_pattern = "ptr_len"
+core_fn      = "mem::chr"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none (read-only scan)"
+preserved_misfeature = "none (textbook behavior: scan n bytes for first match of c cast to unsigned char, return pointer or NULL)"
+fuzz_domain  = ["n=0 (immediate return NULL)", "c present at offset 0", "c present at offset n-1", "c not present", "c=0 (NUL search)", "c with high bit set (cast to unsigned char matters)"]

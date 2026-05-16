@@ -1,0 +1,9 @@
+[symbols._ltow]
+c_signature = "wchar_t* _ltow(long value, wchar_t *string, int radix)"
+family = "radix"
+slice_pattern = "dst_unchecked"
+core_fn = "NEW:radix::format_i32_wide"
+return_collapse = "ret_dst"
+inout_effects = "string written with NUL-terminated base-`radix` representation of value (negative sign for radix==10 negatives, lowercase hex a-z for digits>9); ENTIRE buffer written even if string==NULL (misfeature: the function still performs formatting into temp buffer, just doesn't copy)"
+preserved_misfeature = "Returns the input `string` pointer UNCONDITIONALLY (lines 243-244), even if string==NULL. Textbook would return NULL or assert. Also: negative values with radix!=10 are cast to unsigned (line 231 `val = value`), producing large positive output. Also: no radix validation—invalid radix (e.g., 1, 37) silently divides-by-zero or produces garbage."
+fuzz_domain = ["value={-1,0,1,INT32_MIN,INT32_MAX}", "radix={2,10,16,36,1,37}", "string={valid_ptr,NULL}"]

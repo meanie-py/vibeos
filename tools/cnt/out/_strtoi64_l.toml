@@ -1,0 +1,9 @@
+[symbols._strtoi64_l]
+c_signature = "__int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "NEW:parse_i64_clamping"
+return_collapse = "i64_passthrough"
+inout_effects = "endptr written with pointer to first unparsed char if got_digit, else original nptr; written regardless of overflow"
+preserved_misfeature = "clamps to I64_MAX/I64_MIN on overflow WITHOUT setting errno (lines 73-74, 77-78: `#ifndef _LIBCNT_` guards errno); locale param ignored (line 15 comment); NULL nptr crashes under _LIBCNT_ (line 24 `#ifndef __REACTOS__`)"
+fuzz_domain = ["valid_digits_no_overflow", "overflow_positive", "overflow_negative", "leading_whitespace", "plus_minus_signs", "hex_prefix_0x", "octal_prefix_0", "base_0_inference", "invalid_digit_midstring", "no_valid_digits", "base_out_of_range_2_to_36", "empty_after_sign", "endptr_null", "endptr_nonnull"]

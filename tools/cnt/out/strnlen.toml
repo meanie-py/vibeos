@@ -1,0 +1,9 @@
+[symbols.strnlen]
+c_signature  = "size_t strnlen(const char *str, size_t count)"
+family       = "string"
+slice_pattern = "nul_in_maxlen"
+core_fn      = "string::len_of_bounded"
+return_collapse = "usize"
+inout_effects = "none (read-only)"
+preserved_misfeature = "NULL returns 0 instead of undefined behavior: `if(str == 0) return 0;` (line 7). Textbook strnlen has UB on NULL."
+fuzz_domain  = ["NULL", "empty string", "string shorter than count", "string exactly count length", "string longer than count (no NUL within count)", "count==0"]

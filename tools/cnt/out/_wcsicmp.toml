@@ -1,0 +1,9 @@
+[symbols._wcsicmp]
+c_signature = "int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)"
+family = "wstring"
+slice_pattern = "nul_in"
+core_fn = "NEW:wstring::cmp_case_insensitive"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only comparison)"
+preserved_misfeature = "ASCII-only case folding: only [A-Z]→[a-z], no Unicode/locale awareness (lines 26-29). Returns raw wchar_t difference (line 32), NOT normalized to {-1,0,+1}"
+fuzz_domain = ["equal_same_case", "equal_diff_case_ascii", "diff_before_nul", "diff_at_nul", "ascii_upper_lower_boundary", "non_ascii_no_fold", "empty_strings"]

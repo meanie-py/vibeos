@@ -10,6 +10,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserWinsta);
 
 /* GLOBALS *******************************************************************/
@@ -706,16 +707,13 @@ FreeUserModeWindowStationName(
     /* Try to restore the user's UserModeObjectAttributes */
     if (UserModeObjectAttributes && LocalObjectAttributes)
     {
-        _SEH2_TRY
+        /* Best-effort restore; ignore a bad user pointer (was: _SEH2 swallow) */
+        if (NT_SUCCESS(SafeProbeForWrite(UserModeObjectAttributes,
+                                         sizeof(OBJECT_ATTRIBUTES),
+                                         sizeof(ULONG))))
         {
-            ProbeForWrite(UserModeObjectAttributes, sizeof(OBJECT_ATTRIBUTES), sizeof(ULONG));
             *UserModeObjectAttributes = *LocalObjectAttributes;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            NOTHING;
-        }
-        _SEH2_END;
     }
 
     /* Free the user-mode memory */
@@ -822,9 +820,11 @@ BuildUserModeWindowStationName(
     (*WindowStationName)->Length = (USHORT)(wcslen((*WindowStationName)->Buffer) * sizeof(WCHAR));
 
     /* Try to update the user's UserModeObjectAttributes */
-    _SEH2_TRY
+    Status = SafeProbeForWrite(UserModeObjectAttributes,
+                               sizeof(OBJECT_ATTRIBUTES),
+                               sizeof(ULONG));
+    if (NT_SUCCESS(Status))
     {
-        ProbeForWrite(UserModeObjectAttributes, sizeof(OBJECT_ATTRIBUTES), sizeof(ULONG));
         *LocalObjectAttributes = *UserModeObjectAttributes;
 
         UserModeObjectAttributes->ObjectName = *WindowStationName;
@@ -832,11 +832,6 @@ BuildUserModeWindowStationName(
 
         Status = STATUS_SUCCESS;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
 Quit:
     if (!NT_SUCCESS(Status))
@@ -870,54 +865,51 @@ NtUserCreateWindowStation(
 
     TRACE("NtUserCreateWindowStation called\n");
     /* Capture the object attributes and the window station name */
-    _SEH2_TRY
+    Status = SafeProbeForRead(ObjectAttributes, sizeof(OBJECT_ATTRIBUTES), sizeof(ULONG));
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(ObjectAttributes, sizeof(OBJECT_ATTRIBUTES), sizeof(ULONG));
-        LocalObjectAttributes = *ObjectAttributes;
-        if (LocalObjectAttributes.Length != sizeof(OBJECT_ATTRIBUTES))
-        {
-            ERR("Invalid ObjectAttributes length!\n");
-            Status = STATUS_INVALID_PARAMETER;
-            _SEH2_LEAVE;
-        }
-
-        /*
-         * Check whether the caller provided a window station name together
-         * with a RootDirectory handle.
-         *
-         * If the caller did not provide a window station name, build a new one
-         * based on the logon session identifier for the calling process.
-         * The new name is allocated in user-mode, as the rest of ObjectAttributes
-         * already is, so that the validation performed by the Object Manager
-         * can be done adequately.
-         */
-        if ((LocalObjectAttributes.ObjectName == NULL ||
-             LocalObjectAttributes.ObjectName->Buffer == NULL ||
-             LocalObjectAttributes.ObjectName->Length == 0 ||
-             LocalObjectAttributes.ObjectName->Buffer[0] == UNICODE_NULL)
-            /* &&
-            LocalObjectAttributes.RootDirectory == NULL */)
-        {
-            /* No, build the new window station name */
-            Status = BuildUserModeWindowStationName(ObjectAttributes,
-                                                    &LocalObjectAttributes,
-                                                    &WindowStationName,
-                                                    &TebStaticUnicodeString);
-            if (!NT_SUCCESS(Status))
-            {
-                ERR("BuildUserModeWindowStationName() failed, Status 0x%08lx\n", Status);
-                _SEH2_LEAVE;
-            }
-            OwnerMode = KernelMode;
-        }
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status =_SEH2_GetExceptionCode();
         ERR("ObjectAttributes capture failed, Status 0x%08lx\n", Status);
+        goto CaptureDone;
     }
-    _SEH2_END;
+    LocalObjectAttributes = *ObjectAttributes;
+    if (LocalObjectAttributes.Length != sizeof(OBJECT_ATTRIBUTES))
+    {
+        ERR("Invalid ObjectAttributes length!\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto CaptureDone;
+    }
 
+    /*
+     * Check whether the caller provided a window station name together
+     * with a RootDirectory handle.
+     *
+     * If the caller did not provide a window station name, build a new one
+     * based on the logon session identifier for the calling process.
+     * The new name is allocated in user-mode, as the rest of ObjectAttributes
+     * already is, so that the validation performed by the Object Manager
+     * can be done adequately.
+     */
+    if ((LocalObjectAttributes.ObjectName == NULL ||
+         LocalObjectAttributes.ObjectName->Buffer == NULL ||
+         LocalObjectAttributes.ObjectName->Length == 0 ||
+         LocalObjectAttributes.ObjectName->Buffer[0] == UNICODE_NULL)
+        /* &&
+        LocalObjectAttributes.RootDirectory == NULL */)
+    {
+        /* No, build the new window station name */
+        Status = BuildUserModeWindowStationName(ObjectAttributes,
+                                                &LocalObjectAttributes,
+                                                &WindowStationName,
+                                                &TebStaticUnicodeString);
+        if (!NT_SUCCESS(Status))
+        {
+            ERR("BuildUserModeWindowStationName() failed, Status 0x%08lx\n", Status);
+            goto CaptureDone;
+        }
+        OwnerMode = KernelMode;
+    }
+
+CaptureDone:
     if (!NT_SUCCESS(Status))
     {
         SetLastNtError(Status);

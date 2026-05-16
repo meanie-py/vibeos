@@ -1,0 +1,9 @@
+[symbols.memcmp]
+c_signature  = "int __cdecl memcmp(const void *s1, const void *s2, size_t n)"
+family       = "mem"
+slice_pattern = "ptr_len"
+core_fn      = "mem::cmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only comparison)"
+preserved_misfeature = "unsigned char comparison: `return (*--p1 - *--p2)` casts bytes to unsigned char, then subtracts as signed int. This yields values outside [-1,0,1] range (e.g., 0xFF vs 0x00 → 255, not -1). Standard libc typically clamps to {-1,0,1}, but ReactOS returns raw unsigned-byte difference."
+fuzz_domain  = ["n==0 (return 0)", "equal sequences", "differ at first byte", "differ at last byte", "high-byte difference (0xFF vs 0x00) → verify return == 255", "n < actual buffer lengths", "n == buffer lengths"]

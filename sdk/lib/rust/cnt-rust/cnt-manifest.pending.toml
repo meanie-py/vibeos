@@ -19,16 +19,6 @@ inout_effects = "if endptr!=NULL: writes *endptr = first-invalid-wchar ptr (or n
 preserved_misfeature = "Lines 45-47,55-56: Overflow saturates to ULONG_MAX but still advances *endptr past ALL valid digits (any=-1 sticky). Line 57: Negation applied AFTER saturation: neg overflow yields 0-(ULONG_MAX)=1, not ULONG_MAX. Lines 26-27: Leading '-' parses, sets neg=1, then negates the accumulated unsigned result at the end."
 fuzz_domain = ["empty", "whitespace-only", "no-digits (base-prefix only)", "valid digits", "overflow-saturate", "negative (wrapping-subtract)", "base 0/8/10/16", "0x-prefix", "mixed case digits", "endptr==NULL"]
 
-[symbols._i64toa]
-c_signature = "char* _i64toa(__int64 value, char *string, int radix)"
-family = "radix"
-slice_pattern = "dst_unchecked"
-core_fn = "NEW:i64_to_radix"
-return_collapse = "ret_dst"
-inout_effects = "string written with NUL-terminated ASCII digits of `value` in base `radix` (2-36), lowercase a-f for 10-15; negative sign only if radix==10 && value<0; caller must ensure string has ≥65 bytes (no bounds check)"
-preserved_misfeature = "NO validation of radix (caller responsible for 2-36), NO bounds check on output buffer (caller must ensure ≥65 bytes available), NO error return (always returns input pointer). Unlike _i64toa_s, this is an unchecked API that silently corrupts memory if buffer too small or radix invalid."
-fuzz_domain = ["value={0, 1, -1, INT64_MIN, INT64_MAX}", "radix={2, 10, 16, 36, 1, 37}", "buffer_adequate={true, false}"]
-
 [symbols._i64toa_s]
 c_signature = "int _i64toa_s(__int64 value, char *str, size_t size, int radix)"
 family = "radix"
@@ -58,16 +48,6 @@ return_collapse = "errno_code"
 inout_effects = "str[0..len] written with NUL-terminated radix string on success (0..65 wchars); str[0..size] receives partial backward fill then str[0]=NUL on ERANGE; str[0]=NUL on EINVAL"
 preserved_misfeature = "ERANGE buffer-overflow: copies digits BACKWARDS from end of output, skipping negative sign if present (lines 84-93), fills up to size wchars before setting str[0]=NUL and returning ERANGE. This is non-standard partial-fill behavior distinct from truncating the full output."
 fuzz_domain = ["null_str", "size_0", "radix_out_of_range_2_36", "negative_radix10", "negative_non_radix10", "positive_min_max", "size_equals_needed", "size_one_less_than_needed", "radix_2_10_16_36"]
-
-[symbols._itoa]
-c_signature = "char* _itoa(int value, char* string, int radix)"
-family = "radix"
-slice_pattern = "NEW:itoa_delegate"
-core_fn = "NEW:format_i32_radix"
-return_collapse = "ret_dst"
-inout_effects = "string written with NUL-terminated decimal/radix representation (incl. optional '-' prefix); always returns input string pointer"
-preserved_misfeature = "NO validation: radix outside [2,36] causes undefined behavior (modulo/array OOB in digit mapping); negative values with radix!=10 are cast to unsigned (lines 112-117 in _ltoa: 'if (value < 0 && radix == 10)' means radix 2-9,11-36 treat negative as large positive); NO bounds check on output string (caller must ensure >=33 bytes for worst-case); lowercase 'a'-'z' for digits 10-35 (line 128)"
-fuzz_domain = ["value={INT_MIN, -1, 0, 1, INT_MAX}", "radix={2, 10, 16, 36, invalid=1,37}", "combinations: negative+radix!=10 (unsigned cast), value=0 (single '0'), INT_MIN+radix=10 (most digits)"]
 
 [symbols._itoa_s]
 c_signature = "int _itoa_s(int value, char *str, size_t size, int radix)"
@@ -99,16 +79,6 @@ inout_effects = "str[0..min(result_len,size)] written; on error: str[0]='\\0' if
 preserved_misfeature = "Delegates to _ltow_s which casts int→long. On ERANGE (len>size), performs bizarre partial backwards copy: skips negative sign, copies from buffer[31] backwards for min(size-1, available) characters, then zeroes str[0]. Lines 288-302 in _ltow_s show this non-standard truncation+backfill behavior instead of simple ERANGE-without-copy."
 fuzz_domain = ["value={INT_MIN,INT_MIN+1,-1,0,1,INT_MAX}", "radix={1,2,10,16,36,37}", "size={0,1,2,33,34}", "str={NULL,valid}", "negative radix=10 (triggers sign)", "positive radix=10", "radix=16 (no sign)", "len==size (exact fit)", "len==size+1 (ERANGE boundary)", "size==1 (only room for NUL)"]
 
-[symbols._ltoa]
-c_signature = "char* _ltoa(long value, char *string, int radix)"
-family = "radix"
-slice_pattern = "none"
-core_fn = "NEW:radix::format_long"
-return_collapse = "ret_dst"
-inout_effects = "Writes the ASCII representation of `value` in base `radix` (2-36) to `string`, NUL-terminated. Always writes at least 2 bytes (digit + NUL). Negative values only get '-' prefix when radix==10; otherwise treated as unsigned. Digits >=10 use lowercase 'a'-'z'. Writes unbounded: worst-case 33 bytes for radix=2 (sign + 31 bits + NUL, but really 32 bits unsigned). Returns `string` pointer unchanged."
-preserved_misfeature = "No bounds checking: buffer overflow if `string` lacks space (up to 33 bytes needed). Negative values only signed-extend when radix==10 (lines 146-148); for any other radix, `val = value` casts negative `long` to `unsigned long`, producing large positive value (line 151). No validation that radix ∈ [2,36] — invalid radix causes divide-by-zero or garbage output."
-fuzz_domain = ["radix=10 value=-2147483648 (min negative, edge of negation)", "radix=10 value=0 (single digit '0')", "radix=10 value=2147483647 (max positive)", "radix=2 value=-1 (becomes 0xFFFFFFFF, all '1' digits, longest output)", "radix=36 value=46655 (exactly 'zzz', tests digit>10 boundary)", "radix=16 value=-256 (tests unsigned cast for non-decimal)", "radix=1 (invalid, will infinite-loop or crash)", "radix=37 (invalid, 'a'+27 exceeds lowercase)"]
-
 [symbols._ltoa_s]
 c_signature = "int _ltoa_s(long value, char *str, size_t size, int radix)"
 family = "radix"
@@ -139,16 +109,6 @@ inout_effects = "str[] written with NUL-terminated conversion; on EINVAL/ERANGE:
 preserved_misfeature = "ERANGE truncation writes partial result BACKWARDS from buffer end (lines 273-280): 'for (pos = buffer + 31, i = 0; i < size; i++) *p++ = *pos--;' — fills from right-to-left of the generated string, NOT left-to-right. Then overwrites str[0] with NUL. Negative sign skipped in partial copy but destination adjusted (p++, size--)."
 fuzz_domain = ["value={-2147483648,0,42,2147483647}", "radix={1,2,10,16,36,37}", "size={0,1,2,exact_len,exact_len-1,exact_len+1}", "str={NULL,valid}", "negative radix-10 requiring sign with size exactly at boundary"]
 
-[symbols._ui64toa]
-c_signature = "char *_ui64toa(unsigned __int64 value, char *string, int radix)"
-family = "radix"
-slice_pattern = "none"
-core_fn = "NEW:format_u64"
-return_collapse = "ret_dst"
-inout_effects = "Writes NUL-terminated radix-formatted string to `string` (2..36, lowercase a-z for 10+). No length checks — caller must ensure sufficient space (≤65 bytes for radix=2). Returns the same `string` pointer passed in."
-preserved_misfeature = "No validation of radix or dst size. Unconditionally writes to `string` without bounds checking. Radix < 2 or > 36 causes undefined behavior (divide-by-zero or wrong chars). Caller responsible for 65-byte buffer minimum (radix=2 worst case: 64 digits + NUL)."
-fuzz_domain = ["value=0", "value=max_u64", "radix=2 (longest output)", "radix=10", "radix=16", "radix=36 (uses 'z')", "small value with high radix"]
-
 [symbols._ui64toa_s]
 c_signature = "int _ui64toa_s(unsigned __int64 value, char *str, size_t size, int radix)"
 family = "radix"
@@ -178,16 +138,6 @@ return_collapse = "i32_passthrough"
 inout_effects = "str[0..min(size,actual_len)] written with radix-converted digits + NUL; on error str[0]='\\0' if str && size"
 preserved_misfeature = "Line 163: buffer size check `(size_t)(buffer-pos+65) > size` has POINTER SUBTRACTION BUG — should be `(buffer+65-pos)` or `65-(pos-buffer)`. As written, `buffer-pos` is NEGATIVE (buffer is at higher address), wraps to huge positive via size_t cast, almost always triggers false EINVAL. Also line 164: returns EINVAL instead of ERANGE for overflow (unlike _i64tow_s which returns ERANGE)."
 fuzz_domain = ["value=0, radix=10", "value=UINT64_MAX, radix=2 (longest output, 64 chars)", "value=12345, radix=16", "size=1 (minimal, only NUL fits)", "size=2..10 (triggers pointer-math bug)", "size=65 (exact fit for max binary)", "radix=2 (min)", "radix=36 (max)", "str=NULL (caught by CHECK_PMT)", "size=0 (caught by CHECK_PMT)", "radix=1 or 37 (out of range)"]
-
-[symbols._ultoa]
-c_signature = "char * _ultoa(unsigned long value, char *string, int radix)"
-family = "radix"
-slice_pattern = "radix_to_string"
-core_fn = "NEW:radix::format_u64"
-return_collapse = "ret_dst"
-inout_effects = "writes NUL-terminated base-[radix] representation of value to string (lowercase a-z for digits 10-35); returns string unchanged"
-preserved_misfeature = "NO radix validation (radix<2 or radix>36 causes modulo-by-invalid UB or incorrect output); NO NULL-check on string (immediate crash); unconditional write assumes string has sufficient capacity (max 33 bytes for binary u32, no overflow detection)"
-fuzz_domain = ["value=0", "value=ULONG_MAX", "radix=2 (max digits)", "radix=10 (common)", "radix=16 (hex)", "radix=36 (max valid)", "radix=1 (invalid)", "radix=37 (invalid)", "value with digits requiring a-z (value>=10 in radix<=36)"]
 
 [symbols._ultow]
 c_signature = "wchar_t * _ultow(unsigned long value, wchar_t *string, int radix)"

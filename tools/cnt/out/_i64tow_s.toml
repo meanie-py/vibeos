@@ -1,0 +1,9 @@
+[symbols._i64tow_s]
+c_signature = "int _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "dst_fixed_n"
+core_fn = "NEW:format_i64_radix"
+return_collapse = "errno_code"
+inout_effects = "str[0..len] written with NUL-terminated radix string on success (0..65 wchars); str[0..size] receives partial backward fill then str[0]=NUL on ERANGE; str[0]=NUL on EINVAL"
+preserved_misfeature = "ERANGE buffer-overflow: copies digits BACKWARDS from end of output, skipping negative sign if present (lines 84-93), fills up to size wchars before setting str[0]=NUL and returning ERANGE. This is non-standard partial-fill behavior distinct from truncating the full output."
+fuzz_domain = ["null_str", "size_0", "radix_out_of_range_2_36", "negative_radix10", "negative_non_radix10", "positive_min_max", "size_equals_needed", "size_one_less_than_needed", "radix_2_10_16_36"]

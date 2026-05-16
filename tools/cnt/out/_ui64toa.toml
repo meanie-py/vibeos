@@ -1,0 +1,9 @@
+[symbols._ui64toa]
+c_signature = "char *_ui64toa(unsigned __int64 value, char *string, int radix)"
+family = "radix"
+slice_pattern = "none"
+core_fn = "NEW:format_u64"
+return_collapse = "ret_dst"
+inout_effects = "Writes NUL-terminated radix-formatted string to `string` (2..36, lowercase a-z for 10+). No length checks — caller must ensure sufficient space (≤65 bytes for radix=2). Returns the same `string` pointer passed in."
+preserved_misfeature = "No validation of radix or dst size. Unconditionally writes to `string` without bounds checking. Radix < 2 or > 36 causes undefined behavior (divide-by-zero or wrong chars). Caller responsible for 65-byte buffer minimum (radix=2 worst case: 64 digits + NUL)."
+fuzz_domain = ["value=0", "value=max_u64", "radix=2 (longest output)", "radix=10", "radix=16", "radix=36 (uses 'z')", "small value with high radix"]

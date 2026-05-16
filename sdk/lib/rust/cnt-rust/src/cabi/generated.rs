@@ -14,6 +14,54 @@ pub unsafe extern "C" fn _atoi64(nptr: *const u8) -> i64 {
 }
 
 
+/// `char* _i64toa(__int64 value, char *string, int radix)`
+/// preserved misfeature: no radix validation, no buffer-size check, no NULL guard (narrow memcpy is unconditional); sign only for radix==10, else i64 bit pattern as u64
+#[no_mangle]
+pub unsafe extern "C" fn _i64toa(value: i64, string: *mut u8, radix: i32) -> *mut u8 {
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i64).unsigned_abs() } else { value as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let mut o = 0usize;
+    if f.negative { *string = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
+    *string.add(o + f.ndigits) = 0;
+    string
+}
+
+
+/// `char* _itoa(int value, char *string, int radix)`
+/// preserved misfeature: _itoa→_ltoa: 32-bit width, neg+radix!=10 → u32 reinterpret; no validation/NULL guard
+#[no_mangle]
+pub unsafe extern "C" fn _itoa(value: i32, string: *mut u8, radix: i32) -> *mut u8 {
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i32).unsigned_abs() as u64 } else { value as u32 as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let mut o = 0usize;
+    if f.negative { *string = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
+    *string.add(o + f.ndigits) = 0;
+    string
+}
+
+
+/// `char* _ltoa(long value, char *string, int radix)`
+/// preserved misfeature: 32-bit width (LP32 long): neg+radix!=10 → (unsigned long)value = u32 bit pattern (NOT u64 like _i64toa); no validation/NULL guard
+#[no_mangle]
+pub unsafe extern "C" fn _ltoa(value: i32, string: *mut u8, radix: i32) -> *mut u8 {
+    let neg = radix == 10 && value < 0;
+    let mag = if neg { (value as i32).unsigned_abs() as u64 } else { value as u32 as u64 };
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let mut o = 0usize;
+    if f.negative { *string = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
+    *string.add(o + f.ndigits) = 0;
+    string
+}
+
+
 /// `__int64 _strtoi64(const char *nptr, char **endptr, int base)`
 /// preserved misfeature: overflow CLAMPS to _I64_MAX/_I64_MIN (NOT wrap, unlike _atoi64); _LIBCNT_ sets no errno; endptr=original-nptr when no digit (leading ws/sign not reflected)
 #[no_mangle]
@@ -55,6 +103,38 @@ pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i3
         1i64
     } else { r.value };
     v as u32 as u32
+}
+
+
+/// `char* _ui64toa(unsigned __int64 value, char *string, int radix)`
+/// preserved misfeature: no radix validation, no buffer-size check, no NULL guard; pure unsigned (never negative)
+#[no_mangle]
+pub unsafe extern "C" fn _ui64toa(value: u64, string: *mut u8, radix: i32) -> *mut u8 {
+    let neg = false;
+    let mag = value;
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let mut o = 0usize;
+    if f.negative { *string = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
+    *string.add(o + f.ndigits) = 0;
+    string
+}
+
+
+/// `char* _ultoa(unsigned long value, char *string, int radix)`
+/// preserved misfeature: u32, no radix validation, no buffer-size check, no NULL guard
+#[no_mangle]
+pub unsafe extern "C" fn _ultoa(value: u32, string: *mut u8, radix: i32) -> *mut u8 {
+    let neg = false;
+    let mag = value as u64;
+    let f = crate::core_rs::radix::format_radix(mag, radix as u32, neg);
+    let mut o = 0usize;
+    if f.negative { *string = b'-'; o = 1; }
+    let mut i = 0;
+    while i < f.ndigits { *string.add(o + i) = f.digits[i]; i += 1; }
+    *string.add(o + f.ndigits) = 0;
+    string
 }
 
 

@@ -1,0 +1,9 @@
+[symbols._itoa]
+c_signature = "char* _itoa(int value, char* string, int radix)"
+family = "radix"
+slice_pattern = "NEW:itoa_delegate"
+core_fn = "NEW:format_i32_radix"
+return_collapse = "ret_dst"
+inout_effects = "string written with NUL-terminated decimal/radix representation (incl. optional '-' prefix); always returns input string pointer"
+preserved_misfeature = "NO validation: radix outside [2,36] causes undefined behavior (modulo/array OOB in digit mapping); negative values with radix!=10 are cast to unsigned (lines 112-117 in _ltoa: 'if (value < 0 && radix == 10)' means radix 2-9,11-36 treat negative as large positive); NO bounds check on output string (caller must ensure >=33 bytes for worst-case); lowercase 'a'-'z' for digits 10-35 (line 128)"
+fuzz_domain = ["value={INT_MIN, -1, 0, 1, INT_MAX}", "radix={2, 10, 16, 36, invalid=1,37}", "combinations: negative+radix!=10 (unsigned cast), value=0 (single '0'), INT_MIN+radix=10 (most digits)"]
