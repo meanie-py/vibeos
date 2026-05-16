@@ -2223,6 +2223,55 @@ extern "C" {
     fn ref_RtlGetAce(a: *mut u8, idx: u32, ace: *mut *mut u8) -> i32;
     fn ref_RtlQueryInformationAcl(a: *mut u8, i: *mut u8, l: u32, c: u32) -> i32;
     fn ref_RtlSetInformationAcl(a: *mut u8, i: *mut u8, l: u32, c: u32) -> i32;
+    // Wave ACL-2
+    fn ref_RtlpAddData(al: *const u8, all: u32, ace: *mut u8, off: u32);
+    fn ref_RtlpDeleteData(ace: *mut u8, asz: u32, off: u32);
+    fn ref_RtlpAddKnownAce(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        s: *const u8,
+        ty: u8,
+    ) -> i32;
+    fn ref_RtlpAddKnownObjectAce(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        otg: *const u8,
+        iotg: *const u8,
+        s: *const u8,
+        ty: u8,
+    ) -> i32;
+    fn ref_RtlAddAce(a: *mut u8, rev: u32, idx: u32, l: *mut u8, ll: u32) -> i32;
+    fn ref_RtlDeleteAce(a: *mut u8, idx: u32) -> i32;
+    fn ref_RtlAddAccessAllowedAce(a: *mut u8, rev: u32, m: u32, s: *const u8) -> i32;
+    fn ref_RtlAddAccessAllowedAceEx(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        s: *const u8,
+    ) -> i32;
+    fn ref_RtlAddAccessAllowedObjectAce(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        otg: *const u8,
+        iotg: *const u8,
+        s: *const u8,
+    ) -> i32;
+    fn ref_RtlAddAccessDeniedAce(a: *mut u8, rev: u32, m: u32, s: *const u8) -> i32;
+    fn ref_RtlAddAuditAccessAce(
+        a: *mut u8,
+        rev: u32,
+        m: u32,
+        s: *const u8,
+        su: u8,
+        fa: u8,
+    ) -> i32;
 }
 
 /// Build a well-formed ACL: `[rev,0,AclSize(le16),AceCount(le16),0,0]`
@@ -2715,4 +2764,174 @@ fn diff_rtl_create_service_sid() {
         ref_RtlCreateServiceSid(&us, core::ptr::null_mut(), &mut len)
     };
     assert_eq!(sc, sr);
+}
+
+// ── Wave ACL-2: ACE add/delete + workers + typed wrappers ─────────
+
+/// An empty ACL `[rev,0,cap(le16),0,0,0]` of `cap` bytes (+16 slack).
+fn mk_empty_acl(rev: u8, cap: u16) -> Vec<u8> {
+    let cap = (cap | 1) ^ 1; // USHORT-align (even)
+    let mut v = vec![0u8; cap as usize + 16];
+    v[0] = rev;
+    v[2..4].copy_from_slice(&cap.to_le_bytes());
+    v
+}
+
+#[test]
+fn diff_rtl_add_known_ace_via_wrappers() {
+    let mut rng = Rng(0xAC20_0001);
+    for _ in 0..15_000 {
+        let acl_rev = 2 + (rng.byte() % 4) as u32; // incl 5 (bad)
+        let cap = 8 + ((rng.byte() as u16) & 0xFE) + 8;
+        let mut bc = mk_empty_acl(acl_rev as u8, cap);
+        let mut br = bc.clone();
+        // Up to a few Add* operations on the same evolving ACL.
+        for _ in 0..(1 + rng.byte() % 4) {
+            let sub = rng.byte() % 4;
+            let sid = mk_sid(&mut rng, 1, sub);
+            let rev = (rng.byte() % 6) as u32;
+            let flags = rng.next() as u32 & 0xFF;
+            let mask = rng.next() as u32;
+            let kind = rng.byte() % 5;
+            let (sc, sr) = unsafe {
+                match kind {
+                    0 => (
+                        cabi::RtlAddAccessAllowedAce(bc.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                        ref_RtlAddAccessAllowedAce(br.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                    ),
+                    1 => (
+                        cabi::RtlAddAccessAllowedAceEx(bc.as_mut_ptr(), rev, flags, mask, sid.as_ptr()),
+                        ref_RtlAddAccessAllowedAceEx(br.as_mut_ptr(), rev, flags, mask, sid.as_ptr()),
+                    ),
+                    2 => (
+                        cabi::RtlAddAccessDeniedAce(bc.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                        ref_RtlAddAccessDeniedAce(br.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                    ),
+                    3 => {
+                        let su = rng.byte() & 1;
+                        let fa = rng.byte() & 1;
+                        (
+                            cabi::RtlAddAuditAccessAce(bc.as_mut_ptr(), rev, mask, sid.as_ptr(), su, fa),
+                            ref_RtlAddAuditAccessAce(br.as_mut_ptr(), rev, mask, sid.as_ptr(), su, fa),
+                        )
+                    }
+                    _ => (
+                        cabi::RtlpAddKnownAce(bc.as_mut_ptr(), rev, flags, mask, sid.as_ptr(), 2),
+                        ref_RtlpAddKnownAce(br.as_mut_ptr(), rev, flags, mask, sid.as_ptr(), 2),
+                    ),
+                }
+            };
+            assert_eq!(sc, sr, "AddKnownAce status kind={kind} rev={rev}");
+            assert_eq!(bc, br, "AddKnownAce buffer kind={kind} rev={rev}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_add_known_object_ace() {
+    let mut rng = Rng(0xAC20_0002);
+    for _ in 0..10_000 {
+        let acl_rev = 2 + (rng.byte() % 3) as u8;
+        let cap = 8 + ((rng.byte() as u16) & 0xFE) + 64;
+        let mut bc = mk_empty_acl(acl_rev, cap);
+        let mut br = bc.clone();
+        let sub = rng.byte() % 3;
+        let sid = mk_sid(&mut rng, 1, sub);
+        let rev = if rng.byte() & 1 == 0 { 4 } else { (rng.byte() % 6) as u32 };
+        let flags = rng.next() as u32 & 0xFF;
+        let mask = rng.next() as u32;
+        let g0: [u8; 16] = core::array::from_fn(|_| rng.byte());
+        let g1: [u8; 16] = core::array::from_fn(|_| rng.byte());
+        let otg = if rng.byte() & 1 == 0 { g0.as_ptr() } else { core::ptr::null() };
+        let iotg = if rng.byte() & 1 == 0 { g1.as_ptr() } else { core::ptr::null() };
+        let sc = unsafe {
+            cabi::RtlAddAccessAllowedObjectAce(bc.as_mut_ptr(), rev, flags, mask, otg, iotg, sid.as_ptr())
+        };
+        let sr = unsafe {
+            ref_RtlAddAccessAllowedObjectAce(br.as_mut_ptr(), rev, flags, mask, otg, iotg, sid.as_ptr())
+        };
+        assert_eq!(sc, sr, "AddObjectAce status rev={rev}");
+        assert_eq!(bc, br, "AddObjectAce buffer rev={rev}");
+    }
+}
+
+#[test]
+fn diff_rtl_p_add_delete_data() {
+    let mut rng = Rng(0xAC20_0003);
+    for _ in 0..20_000 {
+        let n = 32 + rng.upto(64);
+        let base: Vec<u8> = (0..n).map(|_| rng.byte()).collect();
+        let ace_off = rng.upto(n / 2);
+        let max_tail = n - ace_off;
+        // RtlpAddData — non-overlapping domain (all==0 or all>=off).
+        {
+            let off = rng.upto(max_tail.max(1));
+            let all = if rng.byte() & 1 == 0 { 0 } else { off + rng.upto(8) };
+            if ace_off + all + off + 8 <= n {
+                let payload: Vec<u8> = (0..all).map(|_| rng.byte()).collect();
+                let mut bc = base.clone();
+                let mut br = base.clone();
+                unsafe {
+                    cabi::RtlpAddData(payload.as_ptr(), all as u32, bc.as_mut_ptr().add(ace_off), off as u32);
+                    ref_RtlpAddData(payload.as_ptr(), all as u32, br.as_mut_ptr().add(ace_off), off as u32);
+                }
+                assert_eq!(bc, br, "RtlpAddData all={all} off={off}");
+            }
+        }
+        // RtlpDeleteData.
+        {
+            let off = rng.upto(max_tail.max(1));
+            let asz = rng.upto(off + 1);
+            let mut bc = base.clone();
+            let mut br = base.clone();
+            unsafe {
+                cabi::RtlpDeleteData(bc.as_mut_ptr().add(ace_off), asz as u32, off as u32);
+                ref_RtlpDeleteData(br.as_mut_ptr().add(ace_off), asz as u32, off as u32);
+            }
+            assert_eq!(bc, br, "RtlpDeleteData asz={asz} off={off}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_add_and_delete_ace() {
+    let mut rng = Rng(0xAC20_0004);
+    for _ in 0..8_000 {
+        // Build a populated ACL with free space.
+        let n = rng.byte() % 4;
+        let rev = 2 + rng.byte() % 3;
+        let slack = 64u16;
+        let mut bc = mk_acl(&mut rng, rev, n, slack);
+        let mut br = bc.clone();
+
+        // RtlAddAce: a small ACE list (one ACCESS_ALLOWED ACE).
+        let sub = rng.byte() % 3;
+        let sid = mk_sid(&mut rng, 1, sub);
+        let sidlen = 8 + 4 * sub as usize;
+        let asz = 8 + sidlen;
+        let mut list = vec![0u8; asz];
+        list[0] = 0;
+        list[1] = (rng.byte() & 0x1F) as u8;
+        list[2..4].copy_from_slice(&(asz as u16).to_le_bytes());
+        let m = rng.next() as u32;
+        list[4..8].copy_from_slice(&m.to_le_bytes());
+        list[8..8 + sidlen].copy_from_slice(&sid[..sidlen]);
+        let start_idx = (rng.byte() % (n + 2)) as u32;
+        let arev = 2 + (rng.byte() % 4) as u32;
+        let ac = unsafe {
+            cabi::RtlAddAce(bc.as_mut_ptr(), arev, start_idx, list.as_mut_ptr(), asz as u32)
+        };
+        let ar = unsafe {
+            ref_RtlAddAce(br.as_mut_ptr(), arev, start_idx, list.as_mut_ptr(), asz as u32)
+        };
+        assert_eq!(ac, ar, "RtlAddAce status n={n} idx={start_idx}");
+        assert_eq!(bc, br, "RtlAddAce buffer n={n} idx={start_idx}");
+
+        // RtlDeleteAce an index.
+        let di = (rng.byte() % (n + 2)) as u32;
+        let dc = unsafe { cabi::RtlDeleteAce(bc.as_mut_ptr(), di) };
+        let dr = unsafe { ref_RtlDeleteAce(br.as_mut_ptr(), di) };
+        assert_eq!(dc, dr, "RtlDeleteAce status di={di}");
+        assert_eq!(bc, br, "RtlDeleteAce buffer di={di}");
+    }
 }

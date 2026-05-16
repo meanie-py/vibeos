@@ -48,6 +48,9 @@ const STATUS_NOT_FOUND: i32 = 0xC000_0225u32 as i32;
 const STATUS_NOT_IMPLEMENTED: i32 = 0xC000_0002u32 as i32;
 const STATUS_INVALID_SID: i32 = 0xC000_0078u32 as i32;
 const STATUS_INVALID_INFO_CLASS: i32 = 0xC000_0003u32 as i32;
+const STATUS_REVISION_MISMATCH: i32 = 0xC000_0059u32 as i32;
+const STATUS_INVALID_ACL: i32 = 0xC000_0077u32 as i32;
+const STATUS_ALLOTTED_SPACE_EXCEEDED: i32 = 0xC000_0099u32 as i32;
 const STATUS_INVALID_COMPUTER_NAME: i32 = 0xC000_0122u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
 const MAX_COMPUTERNAME_LENGTH: u32 = 15;
@@ -2478,4 +2481,493 @@ pub unsafe extern "system" fn RtlSetInformationAcl(
     } else {
         STATUS_INVALID_INFO_CLASS
     }
+}
+
+// ── Wave ACL-2: ACE add/delete + workers + typed wrappers ─────────
+// RtlValidSid/RtlLengthSid/RtlCopySid/RtlValidAcl/RtlFirstFreeAce
+// are this crate's own diff-proven shims (called as Rust fns). No
+// alloc. Faithful quirk: RtlpAddData's down-shift is a genuine
+// RtlCopyMemory (memcpy) — overlapping when AceListLength < Offset
+// is genuine C-UB; the diff fuzzes only the non-overlapping domain
+// (Offset==0 or AceListLength>=Offset), documented edge (the SID
+// over-read / strpbrk≤2 precedent).
+
+/// `VOID NTAPI RtlpAddData(PVOID AceList, ULONG AceListLength,
+/// PVOID Ace, ULONG Offset)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpAddData(
+    ace_list: *const u8,
+    ace_list_length: u32,
+    ace: *mut u8,
+    offset: u32,
+) {
+    if offset > 0 {
+        core::ptr::copy(ace, ace.add(ace_list_length as usize), offset as usize);
+    }
+    if ace_list_length != 0 {
+        core::ptr::copy_nonoverlapping(ace_list, ace, ace_list_length as usize);
+    }
+}
+
+/// `VOID NTAPI RtlpDeleteData(PVOID Ace, ULONG AceSize, ULONG Offset)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpDeleteData(
+    ace: *mut u8,
+    ace_size: u32,
+    offset: u32,
+) {
+    if ace_size < offset {
+        core::ptr::copy(
+            ace.add(ace_size as usize),
+            ace,
+            (offset - ace_size) as usize,
+        );
+    }
+    if offset.wrapping_sub(ace_size) < offset {
+        core::ptr::write_bytes(
+            ace.add((offset - ace_size) as usize),
+            0,
+            ace_size as usize,
+        );
+    }
+}
+
+/// `NTSTATUS NTAPI RtlpAddKnownAce(PACL, Revision, Flags, Mask,
+/// PSID, Type)`. KNOWN_ACE: Header@0, Mask@4, SidStart@8.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpAddKnownAce(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    sid_: *const u8,
+    type_: u8,
+) -> i32 {
+    if RtlValidSid(sid_) == 0 {
+        return STATUS_INVALID_SID;
+    }
+    let acl_revb = acl_rev(acl_) as u32;
+    if acl_revb > acl::ACL_REVISION4 || revision > acl::ACL_REVISION4 {
+        return STATUS_REVISION_MISMATCH;
+    }
+    let revision = if revision < acl_revb { acl_revb } else { revision };
+    let invalid = if type_ == acl::SYSTEM_AUDIT_ACE_TYPE {
+        flags
+            & !(acl::VALID_INHERIT_FLAGS
+                | acl::SUCCESSFUL_ACCESS_ACE_FLAG
+                | acl::FAILED_ACCESS_ACE_FLAG)
+    } else {
+        flags & !acl::VALID_INHERIT_FLAGS
+    };
+    if invalid != 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if RtlValidAcl(acl_) == 0 {
+        return STATUS_INVALID_ACL;
+    }
+    let mut ace: *mut u8 = core::ptr::null_mut();
+    if RtlFirstFreeAce(acl_, &mut ace) == 0 {
+        return STATUS_INVALID_ACL;
+    }
+    let sidlen = RtlLengthSid(sid_);
+    let ace_sz = sidlen + acl::SIZEOF_ACE as u32;
+    if ace.is_null()
+        || ace as usize + ace_sz as usize > acl_ as usize + acl_size(acl_) as usize
+    {
+        return STATUS_ALLOTTED_SPACE_EXCEEDED;
+    }
+    *ace.add(1) = flags as u8; // AceFlags
+    *ace = type_; // AceType
+    (ace.add(2) as *mut u16).write_unaligned(ace_sz as u16);
+    (ace.add(4) as *mut u32).write_unaligned(access_mask);
+    RtlCopySid(sidlen, ace.add(8), sid_);
+    (acl_.add(4) as *mut u16).write_unaligned(acl_ace_count(acl_) + 1);
+    *acl_ = revision as u8;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlpAddKnownObjectAce(...)`. KNOWN_OBJECT_ACE:
+/// Header@0, Mask@4, Flags@8, SidStart@12. Revision must be exactly
+/// ACL_REVISION4.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpAddKnownObjectAce(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    object_type_guid: *const u8,
+    inherited_object_type_guid: *const u8,
+    sid_: *const u8,
+    type_: u8,
+) -> i32 {
+    if RtlValidSid(sid_) == 0 {
+        return STATUS_INVALID_SID;
+    }
+    let acl_revb = acl_rev(acl_) as u32;
+    if acl_revb > acl::ACL_REVISION4 || revision != acl::ACL_REVISION4 {
+        return STATUS_REVISION_MISMATCH;
+    }
+    let revision = if revision < acl_revb { acl_revb } else { revision };
+    let invalid = if type_ == acl::SYSTEM_AUDIT_OBJECT_ACE_TYPE
+        || type_ == acl::SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE
+    {
+        flags
+            & !(acl::VALID_INHERIT_FLAGS
+                | acl::SUCCESSFUL_ACCESS_ACE_FLAG
+                | acl::FAILED_ACCESS_ACE_FLAG)
+    } else {
+        flags & !acl::VALID_INHERIT_FLAGS
+    };
+    if invalid != 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if RtlValidAcl(acl_) == 0 {
+        return STATUS_INVALID_ACL;
+    }
+    let mut ace: *mut u8 = core::ptr::null_mut();
+    if RtlFirstFreeAce(acl_, &mut ace) == 0 {
+        return STATUS_INVALID_ACL;
+    }
+    let sidlen = RtlLengthSid(sid_);
+    let mut ace_sz = sidlen + acl::SIZEOF_ACE as u32 + 4; // + sizeof(ULONG)
+    let mut object_flags = 0u32;
+    if !object_type_guid.is_null() {
+        object_flags |= acl::ACE_OBJECT_TYPE_PRESENT;
+        ace_sz += acl::GUID_SZ as u32;
+    }
+    if !inherited_object_type_guid.is_null() {
+        object_flags |= acl::ACE_INHERITED_OBJECT_TYPE_PRESENT;
+        ace_sz += acl::GUID_SZ as u32;
+    }
+    if ace.is_null()
+        || ace as usize + ace_sz as usize > acl_ as usize + acl_size(acl_) as usize
+    {
+        return STATUS_ALLOTTED_SPACE_EXCEEDED;
+    }
+    *ace.add(1) = flags as u8;
+    *ace = type_;
+    (ace.add(2) as *mut u16).write_unaligned(ace_sz as u16);
+    (ace.add(4) as *mut u32).write_unaligned(access_mask);
+    (ace.add(8) as *mut u32).write_unaligned(object_flags);
+    let mut sid_start = ace.add(12);
+    if !object_type_guid.is_null() {
+        core::ptr::copy_nonoverlapping(object_type_guid, sid_start, acl::GUID_SZ);
+        sid_start = sid_start.add(acl::GUID_SZ);
+    }
+    if !inherited_object_type_guid.is_null() {
+        core::ptr::copy_nonoverlapping(
+            inherited_object_type_guid,
+            sid_start,
+            acl::GUID_SZ,
+        );
+        sid_start = sid_start.add(acl::GUID_SZ);
+    }
+    RtlCopySid(sidlen, sid_start, sid_);
+    (acl_.add(4) as *mut u16).write_unaligned(acl_ace_count(acl_) + 1);
+    *acl_ = revision as u8;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlAddAce(PACL, AclRevision, StartingIndex,
+/// PVOID AceList, ULONG AceListLength)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAce(
+    acl_: *mut u8,
+    acl_revision: u32,
+    starting_index: u32,
+    ace_list: *mut u8,
+    ace_list_length: u32,
+) -> i32 {
+    if RtlValidAcl(acl_) == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut free_ace: *mut u8 = core::ptr::null_mut();
+    if RtlFirstFreeAce(acl_, &mut free_ace) == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let list_end = ace_list as usize + ace_list_length as usize;
+    let mut ace = ace_list;
+    let mut new_ace_count: u16 = 0;
+    while (ace as usize) < list_end {
+        let at = *ace; // AceType
+        if at <= acl::ACCESS_MAX_MS_ACE_TYPE {
+            if at > acl::ACCESS_MAX_MS_V3_ACE_TYPE {
+                if acl_revision < acl::ACL_REVISION4 {
+                    return STATUS_INVALID_PARAMETER;
+                }
+            } else if at > acl::ACCESS_MAX_MS_V2_ACE_TYPE
+                && acl_revision < acl::ACL_REVISION3
+            {
+                return STATUS_INVALID_PARAMETER;
+            }
+        }
+        ace = ace.add(ace_size(ace) as usize);
+        new_ace_count += 1;
+    }
+    if ace as usize > list_end {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if free_ace.is_null()
+        || free_ace as usize + ace_list_length as usize
+            > acl_ as usize + acl_size(acl_) as usize
+    {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    let mut at_ace = acl_.add(acl::ACL_HDR);
+    let count = acl_ace_count(acl_) as u32;
+    let mut index = 0u32;
+    while index < starting_index && index < count {
+        at_ace = at_ace.add(ace_size(at_ace) as usize);
+        index += 1;
+    }
+    RtlpAddData(
+        ace_list,
+        ace_list_length,
+        at_ace,
+        (free_ace as usize - at_ace as usize) as u32,
+    );
+    (acl_.add(4) as *mut u16)
+        .write_unaligned(acl_ace_count(acl_) + new_ace_count);
+    let cur = acl_rev(acl_) as u32;
+    *acl_ = cur.min(acl_revision) as u8;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlDeleteAce(PACL, ULONG AceIndex)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDeleteAce(acl_: *mut u8, ace_index: u32) -> i32 {
+    if RtlValidAcl(acl_) == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut free_ace: *mut u8 = core::ptr::null_mut();
+    if acl_ace_count(acl_) as u32 <= ace_index
+        || RtlFirstFreeAce(acl_, &mut free_ace) == 0
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut ace = acl_.add(acl::ACL_HDR);
+    let mut i = ace_index;
+    while i != 0 {
+        ace = ace.add(ace_size(ace) as usize);
+        i -= 1;
+    }
+    let asz = ace_size(ace) as u32;
+    RtlpDeleteData(ace, asz, (free_ace as usize - ace as usize) as u32);
+    (acl_.add(4) as *mut u16).write_unaligned(acl_ace_count(acl_) - 1);
+    STATUS_SUCCESS
+}
+
+// Typed Add* wrappers (thin pass-throughs).
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAccessAllowedAce(
+    acl_: *mut u8,
+    revision: u32,
+    access_mask: u32,
+    sid_: *const u8,
+) -> i32 {
+    RtlpAddKnownAce(acl_, revision, 0, access_mask, sid_, acl::ACCESS_ALLOWED_ACE_TYPE)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAccessAllowedAceEx(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    sid_: *const u8,
+) -> i32 {
+    RtlpAddKnownAce(
+        acl_,
+        revision,
+        flags,
+        access_mask,
+        sid_,
+        acl::ACCESS_ALLOWED_ACE_TYPE,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAccessAllowedObjectAce(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    object_type_guid: *const u8,
+    inherited_object_type_guid: *const u8,
+    sid_: *const u8,
+) -> i32 {
+    if object_type_guid.is_null() && inherited_object_type_guid.is_null() {
+        return RtlpAddKnownAce(
+            acl_,
+            revision,
+            flags,
+            access_mask,
+            sid_,
+            acl::ACCESS_ALLOWED_ACE_TYPE,
+        );
+    }
+    RtlpAddKnownObjectAce(
+        acl_,
+        revision,
+        flags,
+        access_mask,
+        object_type_guid,
+        inherited_object_type_guid,
+        sid_,
+        acl::ACCESS_ALLOWED_OBJECT_ACE_TYPE,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAccessDeniedAce(
+    acl_: *mut u8,
+    revision: u32,
+    access_mask: u32,
+    sid_: *const u8,
+) -> i32 {
+    RtlpAddKnownAce(acl_, revision, 0, access_mask, sid_, acl::ACCESS_DENIED_ACE_TYPE)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAccessDeniedAceEx(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    sid_: *const u8,
+) -> i32 {
+    RtlpAddKnownAce(
+        acl_,
+        revision,
+        flags,
+        access_mask,
+        sid_,
+        acl::ACCESS_DENIED_ACE_TYPE,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAccessDeniedObjectAce(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    object_type_guid: *const u8,
+    inherited_object_type_guid: *const u8,
+    sid_: *const u8,
+) -> i32 {
+    if object_type_guid.is_null() && inherited_object_type_guid.is_null() {
+        return RtlpAddKnownAce(
+            acl_,
+            revision,
+            flags,
+            access_mask,
+            sid_,
+            acl::ACCESS_DENIED_ACE_TYPE,
+        );
+    }
+    RtlpAddKnownObjectAce(
+        acl_,
+        revision,
+        flags,
+        access_mask,
+        object_type_guid,
+        inherited_object_type_guid,
+        sid_,
+        acl::ACCESS_DENIED_OBJECT_ACE_TYPE,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAuditAccessAce(
+    acl_: *mut u8,
+    revision: u32,
+    access_mask: u32,
+    sid_: *const u8,
+    success: u8,
+    failure: u8,
+) -> i32 {
+    let mut flags = 0u32;
+    if success != 0 {
+        flags |= acl::SUCCESSFUL_ACCESS_ACE_FLAG;
+    }
+    if failure != 0 {
+        flags |= acl::FAILED_ACCESS_ACE_FLAG;
+    }
+    RtlpAddKnownAce(
+        acl_,
+        revision,
+        flags,
+        access_mask,
+        sid_,
+        acl::SYSTEM_AUDIT_ACE_TYPE,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAuditAccessAceEx(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    sid_: *const u8,
+    success: u8,
+    failure: u8,
+) -> i32 {
+    let mut flags = flags;
+    if success != 0 {
+        flags |= acl::SUCCESSFUL_ACCESS_ACE_FLAG;
+    }
+    if failure != 0 {
+        flags |= acl::FAILED_ACCESS_ACE_FLAG;
+    }
+    RtlpAddKnownAce(
+        acl_,
+        revision,
+        flags,
+        access_mask,
+        sid_,
+        acl::SYSTEM_AUDIT_ACE_TYPE,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAuditAccessObjectAce(
+    acl_: *mut u8,
+    revision: u32,
+    flags: u32,
+    access_mask: u32,
+    object_type_guid: *const u8,
+    inherited_object_type_guid: *const u8,
+    sid_: *const u8,
+    success: u8,
+    failure: u8,
+) -> i32 {
+    let mut flags = flags;
+    if success != 0 {
+        flags |= acl::SUCCESSFUL_ACCESS_ACE_FLAG;
+    }
+    if failure != 0 {
+        flags |= acl::FAILED_ACCESS_ACE_FLAG;
+    }
+    if object_type_guid.is_null() && inherited_object_type_guid.is_null() {
+        return RtlpAddKnownAce(
+            acl_,
+            revision,
+            flags,
+            access_mask,
+            sid_,
+            acl::SYSTEM_AUDIT_ACE_TYPE,
+        );
+    }
+    RtlpAddKnownObjectAce(
+        acl_,
+        revision,
+        flags,
+        access_mask,
+        object_type_guid,
+        inherited_object_type_guid,
+        sid_,
+        acl::SYSTEM_AUDIT_OBJECT_ACE_TYPE,
+    )
 }
