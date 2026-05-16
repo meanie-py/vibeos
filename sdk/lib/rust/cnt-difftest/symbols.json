@@ -530,6 +530,20 @@
       "embedded high bytes"
     ]
   },
+  "strcspn": {
+    "c_signature": "size_t strcspn(const char *s, const char *reject)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/string/strcspn.c",
+    "fuzz_domain": [
+      "empty s",
+      "empty reject (\u2192strlen)",
+      "first char in set",
+      "none in set",
+      "high bytes"
+    ]
+  },
   "strlen": {
     "c_signature": "size_t strlen(const char *s)",
     "family": "string",
@@ -603,6 +617,22 @@
       "cap==0"
     ]
   },
+  "strpbrk": {
+    "c_signature": "char* strpbrk(const char *s1, const char *s2)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/string/strpbrk.c",
+    "fuzz_domain": [
+      "empty s2 (\u2192NULL)",
+      "1-char s2",
+      "2-char s2",
+      "3+ (bitmap)",
+      "no match",
+      "match at 0",
+      "high bytes"
+    ]
+  },
   "strrchr": {
     "c_signature": "char *strrchr(const char *s, int c)",
     "family": "string",
@@ -616,6 +646,21 @@
       "c==0 (\u2192ptr to NUL)",
       "c high-bit",
       "empty"
+    ]
+  },
+  "strspn": {
+    "c_signature": "size_t strspn(const char *s, const char *accept)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/string/strspn.c",
+    "fuzz_domain": [
+      "empty s",
+      "empty accept (\u21920)",
+      "all in set",
+      "none in set",
+      "prefix in set",
+      "high bytes >=0x80"
     ]
   },
   "strstr": {
@@ -719,6 +764,20 @@
       ">0xFF wchars"
     ]
   },
+  "wcscspn": {
+    "c_signature": "size_t wcscspn(const wchar_t *str, const wchar_t *reject)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/wstring/wcscspn.c",
+    "fuzz_domain": [
+      "empty str",
+      "empty reject (\u2192wcslen)",
+      "first in set",
+      "none",
+      ">0xFF"
+    ]
+  },
   "wcslen": {
     "c_signature": "size_t wcslen(const wchar_t *str)",
     "family": "wstring",
@@ -803,6 +862,36 @@
       "c==0 (\u2192NUL)",
       ">0xFF",
       "empty"
+    ]
+  },
+  "wcsspn": {
+    "c_signature": "size_t wcsspn(const wchar_t *str, const wchar_t *accept)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/wstring/wcsspn.c",
+    "fuzz_domain": [
+      "empty str",
+      "empty accept (\u21920)",
+      "all in set",
+      "none",
+      "prefix",
+      ">0xFF wchars"
+    ]
+  },
+  "wcsstr": {
+    "c_signature": "wchar_t* wcsstr(const wchar_t *s, const wchar_t *b)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/wstring/wcsstr.c",
+    "fuzz_domain": [
+      "empty b (\u2192NULL)",
+      "b absent",
+      "b == s",
+      "b at end",
+      "overlapping partials",
+      "b longer than s"
     ]
   },
   "wcstombs": {

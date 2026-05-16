@@ -769,3 +769,75 @@ inout_effects = "as strncat, u16 elements"
 preserved_misfeature = "n==0 → nothing + return dst (tcsncat.h, wide)"
 reference    = "sdk/lib/crt/string/wcsncat.c"
 fuzz_domain  = ["n==0", "n < srclen", "n >= srclen", "empty dst", "empty src"]
+
+# --- Wave F: charset span/search ------------------------------------
+# Generic core_rs::string over Elem (element-agnostic — no signed-char
+# subtlety here). strspn/wcsspn = span_in, strcspn/wcscspn = span_out,
+# strpbrk = find_any, wcsstr = find_sub_strict (empty needle → None,
+# DISTINCT from narrow strstr's find_sub empty→Some(0)).
+
+[symbols.strspn]
+c_signature  = "size_t strspn(const char *s, const char *accept)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::span_in"
+return_collapse = "usize2"
+inout_effects = "none (pure read)"
+preserved_misfeature = "bitmap over unsigned-char (0..255); empty accept → 0; NUL terminates both (never in set)"
+reference    = "sdk/lib/crt/string/strspn.c"
+fuzz_domain  = ["empty s", "empty accept (→0)", "all in set", "none in set", "prefix in set", "high bytes >=0x80"]
+
+[symbols.strcspn]
+c_signature  = "size_t strcspn(const char *s, const char *reject)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::span_out"
+return_collapse = "usize2"
+inout_effects = "none"
+preserved_misfeature = "complement of strspn (_x inverted); empty reject → strlen(s)"
+reference    = "sdk/lib/crt/string/strcspn.c"
+fuzz_domain  = ["empty s", "empty reject (→strlen)", "first char in set", "none in set", "high bytes"]
+
+[symbols.strpbrk]
+c_signature  = "char* strpbrk(const char *s1, const char *s2)"
+family       = "string"
+slice_pattern = "nul_in"
+core_fn      = "string::find_any"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none"
+preserved_misfeature = "first s1 char in s2 else NULL; empty s2→NULL. strpbrk.c's 3+-char path bitmap is sized by BIT_SIZE=sizeof(unsigned long)*8 (LP32=32 on target). Core models the correct first-in-set; diff fuzzes set≤2 only (the strchr fast paths — host-correct; 3+ UBs `1<<>=32` on LP64 host, unfuzzable, same caveat class as itoa long-family / strtoul ULONG_MAX). set size doesn't change find_any's code path so ≤2 fully pins it."
+reference    = "sdk/lib/crt/string/strpbrk.c"
+fuzz_domain  = ["empty s2 (→NULL)", "1-char s2", "2-char s2", "no match", "match at 0", "high bytes (LP64 host: set≤2 only)"]
+
+[symbols.wcsspn]
+c_signature  = "size_t wcsspn(const wchar_t *str, const wchar_t *accept)"
+family       = "wstring"
+slice_pattern = "wnul_in"
+core_fn      = "string::span_in"
+return_collapse = "usize2"
+inout_effects = "none"
+preserved_misfeature = "wide twin of strspn (linear-scan membership, same result); empty accept → 0"
+reference    = "sdk/lib/crt/wstring/wcsspn.c"
+fuzz_domain  = ["empty str", "empty accept (→0)", "all in set", "none", "prefix", ">0xFF wchars"]
+
+[symbols.wcscspn]
+c_signature  = "size_t wcscspn(const wchar_t *str, const wchar_t *reject)"
+family       = "wstring"
+slice_pattern = "wnul_in"
+core_fn      = "string::span_out"
+return_collapse = "usize2"
+inout_effects = "none"
+preserved_misfeature = "wide twin of strcspn; empty reject → wcslen"
+reference    = "sdk/lib/crt/wstring/wcscspn.c"
+fuzz_domain  = ["empty str", "empty reject (→wcslen)", "first in set", "none", ">0xFF"]
+
+[symbols.wcsstr]
+c_signature  = "wchar_t* wcsstr(const wchar_t *s, const wchar_t *b)"
+family       = "wstring"
+slice_pattern = "wnul_in"
+core_fn      = "string::find_sub_strict"
+return_collapse = "ptr_or_null_from_opt"
+inout_effects = "none"
+preserved_misfeature = "empty needle → NULL (the while(*x) body never runs for 0-len b) — DISTINCT from narrow strstr empty→hay"
+reference    = "sdk/lib/crt/wstring/wcsstr.c"
+fuzz_domain  = ["empty b (→NULL)", "b absent", "b == s", "b at end", "overlapping partials", "b longer than s"]

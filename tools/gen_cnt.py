@@ -445,6 +445,8 @@ def shim(name: str, m: dict) -> str:
     # ---- core call + return collapse -------------------------------
     if rc == "usize":
         body.append(f"    {core_call(s0)} as {rt}")
+    elif rc == "usize2":  # span-shape: core(s, set) -> size_t
+        body.append(f"    {core_call(f'{s0}, {s1}')} as {rt}")
     elif rc == "i32_passthrough":
         body.append(f"    {core_call(f'{s0}, {s1}')}")
     elif rc == "i32_cmp_n":  # strncmp-shape: core(a, b, n)

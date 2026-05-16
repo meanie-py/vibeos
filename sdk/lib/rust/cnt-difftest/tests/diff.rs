@@ -66,6 +66,12 @@ extern "C" {
     fn ref_wcscat(d: *mut u16, s: *const u16) -> *mut u16;
     fn ref_strncat(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
     fn ref_wcsncat(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn ref_strspn(s: *const u8, a: *const u8) -> usize;
+    fn ref_strcspn(s: *const u8, a: *const u8) -> usize;
+    fn ref_strpbrk(s: *const u8, a: *const u8) -> *mut u8;
+    fn ref_wcsspn(s: *const u16, a: *const u16) -> usize;
+    fn ref_wcscspn(s: *const u16, a: *const u16) -> usize;
+    fn ref_wcsstr(s: *const u16, b: *const u16) -> *mut u16;
 }
 
 use cnt_rust::cabi;
@@ -991,5 +997,100 @@ fn diff_tcs_family() {
             cabi::wcsnlen(core::ptr::null(), 5),
             ref_wcsnlen(core::ptr::null(), 5)
         );
+    }
+}
+
+/// Wave F — charset span/search. Small alphabets so set membership
+/// actually hits; empty set / empty needle exercised explicitly.
+#[test]
+fn diff_span() {
+    let mut rng = Rng(0x5fa0_b17e_u64);
+    for _ in 0..9000 {
+        // narrow: full-range bytes incl >=0x80 (unsigned-char bitmap)
+        let s = cstr(&mut rng, 28, true);
+        let set = if rng.next() & 7 == 0 {
+            vec![0] // empty set
+        } else {
+            cstr(&mut rng, 5, true)
+        };
+        unsafe {
+            assert_eq!(
+                cabi::strspn(s.as_ptr(), set.as_ptr()),
+                ref_strspn(s.as_ptr(), set.as_ptr()),
+                "strspn s={s:?} set={set:?}"
+            );
+            assert_eq!(
+                cabi::strcspn(s.as_ptr(), set.as_ptr()),
+                ref_strcspn(s.as_ptr(), set.as_ptr()),
+                "strcspn s={s:?} set={set:?}"
+            );
+        }
+        // strpbrk: strpbrk.c's 3+-char path uses a bitmap sized by
+        // BIT_SIZE = sizeof(unsigned long)*8 — LP32 on the target but
+        // 64 on this host, where `1 << (>=32)` is UB → the genuine
+        // source computes garbage. The 0/1/2-char strchr fast paths
+        // are host-correct AND fully exercise our find_any (set size
+        // doesn't change `position(|c| set.contains(c))`). So fuzz
+        // set ≤2 here; 3+ is the same first-in-set contract, just
+        // unfuzzable on LP64 (documented, like the itoa long-family).
+        {
+            let s = cstr(&mut rng, 28, true);
+            let mut set: Vec<u8> = (0..rng.upto(3))
+                .map(|_| b"AaBb \x80\xff"[rng.upto(7)])
+                .collect();
+            set.push(0);
+            let base = s.as_ptr() as usize;
+            let off = |p: *mut u8| if p.is_null() { None } else { Some(p as usize - base) };
+            unsafe {
+                assert_eq!(
+                    off(cabi::strpbrk(s.as_ptr(), set.as_ptr())),
+                    off(ref_strpbrk(s.as_ptr(), set.as_ptr())),
+                    "strpbrk s={s:?} set={set:?}"
+                );
+            }
+        }
+        // wide span + wcsstr (incl empty needle → NULL on both)
+        let ws = wcstr(&mut rng, 24);
+        let wset = if rng.next() & 7 == 0 {
+            vec![0]
+        } else {
+            wcstr(&mut rng, 5)
+        };
+        let needle = if rng.next() & 3 == 0 {
+            vec![0] // empty needle → NULL (distinct from strstr)
+        } else if rng.next() & 3 == 0 && ws.len() > 2 {
+            let a = rng.upto(ws.len() - 1);
+            let b = a + 1 + rng.upto(ws.len() - a - 1);
+            let mut n = ws[a..b].to_vec();
+            n.push(0);
+            n
+        } else {
+            wcstr(&mut rng, 4)
+        };
+        unsafe {
+            assert_eq!(
+                cabi::wcsspn(ws.as_ptr(), wset.as_ptr()),
+                ref_wcsspn(ws.as_ptr(), wset.as_ptr()),
+                "wcsspn ws={ws:?} set={wset:?}"
+            );
+            assert_eq!(
+                cabi::wcscspn(ws.as_ptr(), wset.as_ptr()),
+                ref_wcscspn(ws.as_ptr(), wset.as_ptr()),
+                "wcscspn ws={ws:?} set={wset:?}"
+            );
+            let base = ws.as_ptr() as usize;
+            let off = |p: *mut u16| {
+                if p.is_null() {
+                    None
+                } else {
+                    Some((p as usize - base) / 2)
+                }
+            };
+            assert_eq!(
+                off(cabi::wcsstr(ws.as_ptr(), needle.as_ptr())),
+                off(ref_wcsstr(ws.as_ptr(), needle.as_ptr())),
+                "wcsstr ws={ws:?} needle={needle:?}"
+            );
+        }
     }
 }

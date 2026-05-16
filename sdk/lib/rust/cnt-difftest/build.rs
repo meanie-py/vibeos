@@ -173,6 +173,21 @@ fn main() {
             "#include <stddef.h>\n#define wchar_t unsigned short\n\
              #define toupper_nt_mb ref_toupper_nt_mb\n{}",
             inc(s("string/toupper_nt_mb.c")))),
+        // Wave F — charset span/search. Narrow strspn/strcspn pull
+        // strxspn.h (relative #include resolves to the .c's dir);
+        // strpbrk.c uses host strchr. Wide trio is precomp-based.
+        ("strspn", format!("#define __cdecl\n#define strspn ref_strspn\n{}", inc(s("string/strspn.c")))),
+        ("strcspn", format!("#define __cdecl\n#define strcspn ref_strcspn\n{}", inc(s("string/strcspn.c")))),
+        ("strpbrk", format!("#define __cdecl\n#define strpbrk ref_strpbrk\n{}", inc(s("string/strpbrk.c")))),
+        ("wcsspn", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wcsspn ref_wcsspn\n{}", inc(s("wstring/wcsspn.c")))),
+        ("wcscspn", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wcscspn ref_wcscspn\n{}", inc(s("wstring/wcscspn.c")))),
+        ("wcsstr", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wcsstr ref_wcsstr\n{}", inc(s("wstring/wcsstr.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header

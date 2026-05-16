@@ -642,6 +642,16 @@ pub unsafe extern "C" fn strcpy(to: *mut u8, from: *const u8) -> *mut u8 {
 }
 
 
+/// `size_t strcspn(const char *s, const char *reject)`
+/// preserved misfeature: complement of strspn (_x inverted); empty reject → strlen(s)
+#[no_mangle]
+pub unsafe extern "C" fn strcspn(s: *const u8, reject: *const u8) -> usize {
+    let s_s = cstr_slice(s);
+    let reject_s = cstr_slice(reject);
+    crate::core_rs::string::span_out(s_s, reject_s) as usize
+}
+
+
 /// `size_t strlen(const char *s)`
 /// preserved misfeature: strlen(NULL) == 0 (textbook libc: UB) — tcslen.h explicit NULL guard
 #[no_mangle]
@@ -695,6 +705,19 @@ pub unsafe extern "C" fn strnlen(str: *const u8, maxlen: usize) -> usize {
 }
 
 
+/// `char* strpbrk(const char *s1, const char *s2)`
+/// preserved misfeature: first s1 char that is in s2, else NULL; empty s2 → NULL; the 1/2-char strchr fast paths reduce to exactly first-in-set
+#[no_mangle]
+pub unsafe extern "C" fn strpbrk(s1: *const u8, s2: *const u8) -> *mut u8 {
+    let s1_s = cstr_slice(s1);
+    let s2_s = cstr_slice(s2);
+    match crate::core_rs::string::find_any(s1_s, s2_s) {
+        Some(i) => s1.add(i) as *mut u8,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
 /// `char *strrchr(const char *s, int c)`
 /// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (Some(len)); c truncated to char
 #[no_mangle]
@@ -704,6 +727,16 @@ pub unsafe extern "C" fn strrchr(s: *const u8, c: i32) -> *mut u8 {
         Some(i) => s.add(i) as *mut u8,
         None => core::ptr::null_mut(),
     }
+}
+
+
+/// `size_t strspn(const char *s, const char *accept)`
+/// preserved misfeature: bitmap over unsigned-char (0..255); empty accept → 0; NUL terminates both (never in set)
+#[no_mangle]
+pub unsafe extern "C" fn strspn(s: *const u8, accept: *const u8) -> usize {
+    let s_s = cstr_slice(s);
+    let accept_s = cstr_slice(accept);
+    crate::core_rs::string::span_in(s_s, accept_s) as usize
 }
 
 
@@ -793,6 +826,16 @@ pub unsafe extern "C" fn wcscpy(to: *mut u16, from: *const u16) -> *mut u16 {
 }
 
 
+/// `size_t wcscspn(const wchar_t *str, const wchar_t *reject)`
+/// preserved misfeature: wide twin of strcspn; empty reject → wcslen
+#[no_mangle]
+pub unsafe extern "C" fn wcscspn(str: *const u16, reject: *const u16) -> usize {
+    let str_s = wcstr_slice(str);
+    let reject_s = wcstr_slice(reject);
+    crate::core_rs::string::span_out(str_s, reject_s) as usize
+}
+
+
 /// `size_t wcslen(const wchar_t *str)`
 /// preserved misfeature: wcslen(NULL) == 0 (tcslen.h NULL guard) — same as strlen
 #[no_mangle]
@@ -852,6 +895,29 @@ pub unsafe extern "C" fn wcsnlen(str: *const u16, count: usize) -> usize {
 pub unsafe extern "C" fn wcsrchr(s: *const u16, c: u16) -> *mut u16 {
     let s_s = wcstr_slice(s);
     match crate::core_rs::string::find_last_char(s_s, c as i32) {
+        Some(i) => s.add(i) as *mut u16,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
+/// `size_t wcsspn(const wchar_t *str, const wchar_t *accept)`
+/// preserved misfeature: wide twin of strspn (linear-scan membership, same result); empty accept → 0
+#[no_mangle]
+pub unsafe extern "C" fn wcsspn(str: *const u16, accept: *const u16) -> usize {
+    let str_s = wcstr_slice(str);
+    let accept_s = wcstr_slice(accept);
+    crate::core_rs::string::span_in(str_s, accept_s) as usize
+}
+
+
+/// `wchar_t* wcsstr(const wchar_t *s, const wchar_t *b)`
+/// preserved misfeature: empty needle → NULL (the while(*x) body never runs for 0-len b) — DISTINCT from narrow strstr empty→hay
+#[no_mangle]
+pub unsafe extern "C" fn wcsstr(s: *const u16, b: *const u16) -> *mut u16 {
+    let s_s = wcstr_slice(s);
+    let b_s = wcstr_slice(b);
+    match crate::core_rs::string::find_sub_strict(s_s, b_s) {
         Some(i) => s.add(i) as *mut u16,
         None => core::ptr::null_mut(),
     }
