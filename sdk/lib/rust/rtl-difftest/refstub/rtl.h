@@ -251,4 +251,15 @@ static __inline SIZE_T rtlref_wcslen(const WCHAR *s) {
 }
 #define wcslen rtlref_wcslen
 
+/* Size macros (ndk/rtlfuncs.h) — single-byte CP form (NLS_MB_*=0 so
+ * the genuine ternaries never reach the Rtlx* path). Wave RTL-3. */
+#define NLS_MB_CODE_PAGE_TAG 0
+#define NLS_MB_OEM_CODE_PAGE_TAG 0
+#define RtlUnicodeStringToAnsiSize(S) (((S)->Length + sizeof(WCHAR)) / sizeof(WCHAR))
+#define RtlAnsiStringToUnicodeSize(S) (((S)->Length + sizeof(CHAR)) * sizeof(WCHAR))
+#define RtlUnicodeStringToOemSize(S) (((S)->Length + sizeof(WCHAR)) / sizeof(WCHAR))
+#define RtlOemStringToUnicodeSize(S) (((S)->Length + sizeof(CHAR)) * sizeof(WCHAR))
+#define RtlUnicodeStringToCountedOemSize(S) ((ULONG)(RtlUnicodeStringToOemSize(S) - sizeof(CHAR)))
+#define RtlOemStringToCountedUnicodeSize(S) ((ULONG)(RtlOemStringToUnicodeSize(S) - sizeof(WCHAR)))
+
 #endif

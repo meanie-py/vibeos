@@ -27,6 +27,15 @@ const STATUS_SUCCESS: i32 = 0x0000_0000;
 const STATUS_NAME_TOO_LONG: i32 = 0xC000_0106u32 as i32;
 const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
 const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
+const STATUS_NO_MEMORY: i32 = 0xC000_0017u32 as i32;
+const STATUS_INVALID_PARAMETER_2: i32 = 0xC000_00F0u32 as i32;
+const STATUS_UNMAPPABLE_CHARACTER: i32 = 0x8000_0016u32 as i32;
+const MAXUSHORT: u32 = 0xFFFF;
+
+#[inline]
+fn nt_success(s: i32) -> bool {
+    s >= 0
+}
 
 /// Reconstruct an immutable slice from an NT `(ptr, count)` pair,
 /// tolerating the genuine `count == 0` / NULL case (no deref happens
@@ -496,4 +505,405 @@ pub unsafe extern "system" fn RtlUnicodeToMultiByteSize(
 ) -> i32 {
     put_u32(mb_size, unicode_size / 2);
     STATUS_SUCCESS
+}
+
+// ── Wave RTL-3 slice 2: unicode.c ANSI/OEM/Upcase wrappers ─────────
+//
+// AllocateDestinationString is modelled as the harness config: the
+// allocator stub yields NULL, so the genuine path returns
+// STATUS_NO_MEMORY — we return the same (the conversion logic on the
+// caller-buffer path is what the diff actually exercises; the
+// allocate path's NULL/NO_MEMORY contract is the pinned edge).
+
+
+/// `WCHAR NTAPI RtlAnsiCharToUnicodeChar(IN OUT PUCHAR *AnsiChar)` —
+/// NlsLeadByteInfo is NULL in the model ⇒ Size=1; converts one byte,
+/// advances `*AnsiChar` by 1.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAnsiCharToUnicodeChar(
+    ansi_char: *mut *mut u8,
+) -> u16 {
+    let p = *ansi_char;
+    let uc = nls::dec_byte(*p);
+    *ansi_char = p.add(1);
+    uc
+}
+
+/// `RtlAnsiStringToUnicodeString` (single-byte): `Length =
+/// (Ansi.Length+1)*2`; always writes the terminating NUL; NO partial
+/// copy on overflow.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAnsiStringToUnicodeString(
+    dest: *mut UNICODE_STRING,
+    src: *const STRING,
+    alloc: u8,
+) -> i32 {
+    let length = ((*src).Length as u32 + 1) * 2;
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16 - 2;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length >= (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let buf = wslice((*dest).Buffer, dlen as usize / 2);
+    let s = rslice((*src).Buffer, (*src).Length as usize);
+    let n = nls::mb_to_uni(&mut buf[..dlen as usize / 2], s);
+    core::ptr::write_volatile((*dest).Buffer.add(n), 0u16);
+    STATUS_SUCCESS
+}
+
+/// `ULONG NTAPI RtlxAnsiStringToUnicodeSize` = `Ansi.Length*2 + 2`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlxAnsiStringToUnicodeSize(
+    s: *const STRING,
+) -> u32 {
+    (*s).Length as u32 * 2 + 2
+}
+
+/// `RtlUnicodeStringToAnsiString` (single-byte): `Length =
+/// (Uni.Length+2)/2`; performs a PARTIAL copy if dest too small
+/// (unless MaximumLength==0).
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeStringToAnsiString(
+    dest: *mut STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    let length = ((*src).Length as u32 + 2) / 2;
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16 - 1;
+    let mut status = STATUS_SUCCESS;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length >= (*dest).MaximumLength {
+        if (*dest).MaximumLength == 0 {
+            return STATUS_BUFFER_OVERFLOW;
+        }
+        status = STATUS_BUFFER_OVERFLOW;
+        (*dest).Length = (*dest).MaximumLength - 1;
+    }
+    let dlen = (*dest).Length;
+    let buf = wslice((*dest).Buffer, dlen as usize);
+    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
+    let n = nls::uni_to_mb(&mut buf[..dlen as usize], s);
+    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
+    status
+}
+
+/// `ULONG NTAPI RtlxUnicodeStringToAnsiSize` = `Uni.Length/2 + 1`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlxUnicodeStringToAnsiSize(
+    s: *const UNICODE_STRING,
+) -> u32 {
+    (*s).Length as u32 / 2 + 1
+}
+
+/// `ULONG NTAPI RtlxUnicodeStringToOemSize` = `Uni.Length/2 + 1`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlxUnicodeStringToOemSize(
+    s: *const UNICODE_STRING,
+) -> u32 {
+    (*s).Length as u32 / 2 + 1
+}
+
+/// `ULONG NTAPI RtlxOemStringToUnicodeSize` = `Oem.Length*2 + 2`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlxOemStringToUnicodeSize(
+    s: *const STRING,
+) -> u32 {
+    (*s).Length as u32 * 2 + 2
+}
+
+/// `RtlOemStringToUnicodeString` — `Length = (Oem.Length+1)*2`; NUL
+/// terminates; NO partial copy.
+#[no_mangle]
+pub unsafe extern "system" fn RtlOemStringToUnicodeString(
+    dest: *mut UNICODE_STRING,
+    src: *const STRING,
+    alloc: u8,
+) -> i32 {
+    let length = ((*src).Length as u32 + 1) * 2;
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16 - 2;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length >= (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let buf = wslice((*dest).Buffer, dlen as usize / 2);
+    let s = rslice((*src).Buffer, (*src).Length as usize);
+    let n = nls::mb_to_uni(&mut buf[..dlen as usize / 2], s);
+    core::ptr::write_volatile((*dest).Buffer.add(n), 0u16);
+    STATUS_SUCCESS
+}
+
+/// `RtlUnicodeStringToOemString` — `Length = (Uni.Length+2)/2`; NUL
+/// terminates; converter status propagates (no DidWork check here).
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeStringToOemString(
+    dest: *mut STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    let length = ((*src).Length as u32 + 2) / 2;
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16 - 1;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length >= (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let buf = wslice((*dest).Buffer, dlen as usize);
+    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
+    let (n, overflow) = nls::uni_to_oem(&mut buf[..dlen as usize], s);
+    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
+    if overflow {
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        STATUS_SUCCESS
+    }
+}
+
+/// `RtlOemStringToCountedUnicodeString` — `Length = Oem.Length*2`;
+/// `Length==0` ⇒ zero the dest UNICODE_STRING & SUCCESS; STRICT `>`
+/// overflow; NO NUL; returns SUCCESS even past a converter call.
+#[no_mangle]
+pub unsafe extern "system" fn RtlOemStringToCountedUnicodeString(
+    dest: *mut UNICODE_STRING,
+    src: *const STRING,
+    alloc: u8,
+) -> i32 {
+    let length = (*src).Length as u32 * 2;
+    if length == 0 {
+        (*dest).Length = 0;
+        (*dest).MaximumLength = 0;
+        (*dest).Buffer = core::ptr::null_mut();
+        return STATUS_SUCCESS;
+    }
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length > (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let buf = wslice((*dest).Buffer, dlen as usize / 2);
+    let s = rslice((*src).Buffer, (*src).Length as usize);
+    nls::mb_to_uni(&mut buf[..dlen as usize / 2], s);
+    STATUS_SUCCESS
+}
+
+/// `RtlUnicodeStringToCountedOemString` — `Length =
+/// (Uni.Length+2)/2 - 1`; `Length==0` ⇒ zero OEM_STRING & SUCCESS;
+/// STRICT `>` overflow; DidWork ⇒ STATUS_UNMAPPABLE_CHARACTER; NO NUL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeStringToCountedOemString(
+    dest: *mut STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    let length = ((*src).Length as u32 + 2) / 2 - 1;
+    if length == 0 {
+        (*dest).Length = 0;
+        (*dest).MaximumLength = 0;
+        (*dest).Buffer = core::ptr::null_mut();
+        return STATUS_SUCCESS;
+    }
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length > (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
+    let buf = wslice((*dest).Buffer, dlen as usize);
+    let (n, overflow) = nls::uni_to_oem(&mut buf[..dlen as usize], s);
+    let mut status = if overflow {
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        STATUS_SUCCESS
+    };
+    if nt_success(status)
+        && !nls::did_oem_work(s, core::slice::from_raw_parts((*dest).Buffer, n))
+    {
+        status = STATUS_UNMAPPABLE_CHARACTER;
+    }
+    status
+}
+
+/// `RtlUpcaseUnicodeString` — in-place-capable upcase; `MaximumLength`
+/// (alloc) = `Source.Length`; STRICT `>` overflow; NO NUL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeString(
+    dest: *mut UNICODE_STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    if alloc != 0 {
+        (*dest).MaximumLength = (*src).Length;
+        return STATUS_NO_MEMORY;
+    }
+    if (*src).Length > (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let j = (*src).Length as usize / 2;
+    let s = rslice((*src).Buffer, j);
+    let d = wslice((*dest).Buffer, j);
+    for i in 0..j {
+        d[i] = nls::upcase_uc(s[i]);
+    }
+    (*dest).Length = (*src).Length;
+    STATUS_SUCCESS
+}
+
+/// `RtlUpcaseUnicodeStringToAnsiString` — `Length = Uni.Length/2 + 1`;
+/// the overflow branch only early-returns when `MaximumLength==0`
+/// (otherwise it falls through — a faithful quirk); NUL terminates.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeStringToAnsiString(
+    dest: *mut STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    let length = (*src).Length as u32 / 2 + 1;
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16 - 1;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length >= (*dest).MaximumLength && (*dest).MaximumLength == 0 {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let buf = wslice((*dest).Buffer, dlen as usize);
+    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
+    let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
+    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
+    STATUS_SUCCESS
+}
+
+/// `RtlUpcaseUnicodeStringToCountedOemString` — `Length =
+/// (Uni.Length+2)/2 - 1`; `Length==0` zeroes but does NOT return
+/// (falls through, faithful); STRICT `>` overflow; DidWork ⇒
+/// UNMAPPABLE; NO NUL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeStringToCountedOemString(
+    dest: *mut STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    let length = ((*src).Length as u32 + 2) / 2 - 1;
+    if length == 0 {
+        (*dest).Length = 0;
+        (*dest).MaximumLength = 0;
+        (*dest).Buffer = core::ptr::null_mut();
+    }
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length > (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
+    let buf = wslice((*dest).Buffer, dlen as usize);
+    let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
+    let mut status = STATUS_SUCCESS;
+    if nt_success(status)
+        && !nls::did_oem_work(s, core::slice::from_raw_parts((*dest).Buffer, n))
+    {
+        status = STATUS_UNMAPPABLE_CHARACTER;
+    }
+    status
+}
+
+/// `RtlUpcaseUnicodeStringToOemString` — `Length = (Uni.Length+2)/2`;
+/// `>=` overflow; DidWork ⇒ UNMAPPABLE; NUL terminates.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeStringToOemString(
+    dest: *mut STRING,
+    src: *const UNICODE_STRING,
+    alloc: u8,
+) -> i32 {
+    let length = ((*src).Length as u32 + 2) / 2;
+    if length > MAXUSHORT {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    (*dest).Length = length as u16 - 1;
+    if alloc != 0 {
+        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
+        // check, so it persists even when allocation fails.
+        (*dest).MaximumLength = length as u16;
+        return STATUS_NO_MEMORY;
+    }
+    if (*dest).Length >= (*dest).MaximumLength {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let dlen = (*dest).Length;
+    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
+    let buf = wslice((*dest).Buffer, dlen as usize);
+    let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
+    let mut status = STATUS_SUCCESS;
+    if nt_success(status)
+        && !nls::did_oem_work(s, core::slice::from_raw_parts((*dest).Buffer, n))
+    {
+        status = STATUS_UNMAPPABLE_CHARACTER;
+    }
+    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
+    status
 }

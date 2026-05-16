@@ -175,6 +175,27 @@ pub fn uni_to_oem(dst: &mut [u8], src: &[u16]) -> (usize, bool) {
     (n, src.len() > n)
 }
 
+/// Shared-model default chars (the `NlsOemDefaultChar` /
+/// `NlsUnicodeDefaultChar` globals): unmappable ⇒ `'?'` on the byte
+/// side, `0` on the wide side — same values the C reference uses.
+pub const OEM_DEFAULT: u8 = b'?';
+pub const UNI_DEFAULT: u16 = 0;
+
+/// `RtlpDidUnicodeToOemWork` (single-byte). FALSE iff some output byte
+/// is the default char while the matching source wchar was NOT the
+/// unicode default — i.e. a real unmappable substitution happened.
+/// (Note the genuine misfeature: a legitimate input `'?'` also trips
+/// this, since it can't tell substitution from a real `'?'`.)
+#[inline]
+pub fn did_oem_work(uni_src: &[u16], oem: &[u8]) -> bool {
+    for i in 0..oem.len() {
+        if oem[i] == OEM_DEFAULT && uni_src.get(i).copied() != Some(UNI_DEFAULT) {
+            return false;
+        }
+    }
+    true
+}
+
 /// `RtlHashUnicodeString` X65599. The case-insensitive fold here is
 /// **ASCII-only** in the genuine source (`'a'..'z'` ⇒ `-'a'+'A'`),
 /// NOT the NLS upcase — a deliberate split this pins. Wrapping u32.

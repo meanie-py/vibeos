@@ -157,7 +157,7 @@ fn main() {
             storage so the whole TU links; the RTL-1 proof fns never\n\
             touch these. */\n\
          BOOLEAN NlsMbCodePageTag=0; BOOLEAN NlsMbOemCodePageTag=0;\n\
-         USHORT NlsOemDefaultChar=0; USHORT NlsUnicodeDefaultChar=0;\n\
+         USHORT NlsOemDefaultChar='?'; USHORT NlsUnicodeDefaultChar=0;\n\
          PUSHORT NlsLeadByteInfo=0; PUSHORT NlsOemLeadByteInfo=0;\n\
          PUSHORT NlsUnicodeToMbOemTable=0;\n\
          PWCHAR NlsOemToUnicodeTable=0; PCHAR NlsUnicodeToOemTable=0;\n\
@@ -219,6 +219,24 @@ fn main() {
          #define RtlUpcaseUnicodeToOemN ref_RtlUpcaseUnicodeToOemN\n\
          #define RtlMultiByteToUnicodeSize ref_RtlMultiByteToUnicodeSize\n\
          #define RtlUnicodeToMultiByteSize ref_RtlUnicodeToMultiByteSize\n\
+         /* Wave RTL-3 slice 2: genuine unicode.c ANSI/OEM/Upcase\n\
+            wrappers (real code, pinning the wrapper logic around the\n\
+            modelled converters). */\n\
+         #define RtlAnsiCharToUnicodeChar ref_RtlAnsiCharToUnicodeChar\n\
+         #define RtlAnsiStringToUnicodeString ref_RtlAnsiStringToUnicodeString\n\
+         #define RtlxAnsiStringToUnicodeSize ref_RtlxAnsiStringToUnicodeSize\n\
+         #define RtlUnicodeStringToAnsiString ref_RtlUnicodeStringToAnsiString\n\
+         #define RtlxUnicodeStringToAnsiSize ref_RtlxUnicodeStringToAnsiSize\n\
+         #define RtlxUnicodeStringToOemSize ref_RtlxUnicodeStringToOemSize\n\
+         #define RtlxOemStringToUnicodeSize ref_RtlxOemStringToUnicodeSize\n\
+         #define RtlOemStringToUnicodeString ref_RtlOemStringToUnicodeString\n\
+         #define RtlUnicodeStringToOemString ref_RtlUnicodeStringToOemString\n\
+         #define RtlOemStringToCountedUnicodeString ref_RtlOemStringToCountedUnicodeString\n\
+         #define RtlUnicodeStringToCountedOemString ref_RtlUnicodeStringToCountedOemString\n\
+         #define RtlUpcaseUnicodeString ref_RtlUpcaseUnicodeString\n\
+         #define RtlUpcaseUnicodeStringToAnsiString ref_RtlUpcaseUnicodeStringToAnsiString\n\
+         #define RtlUpcaseUnicodeStringToCountedOemString ref_RtlUpcaseUnicodeStringToCountedOemString\n\
+         #define RtlUpcaseUnicodeStringToOemString ref_RtlUpcaseUnicodeStringToOemString\n\
          /* Unprototyped stubs (`f()` accepts any call shape) for the\n\
             NLS/heap leaves the other ~50 fns reference (RTL-2 unused). */\n\
          int RtlpDowncaseUnicodeChar(){{return 0;}}\n\

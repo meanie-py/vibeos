@@ -55,6 +55,22 @@ extern "C" {
     fn ref_RtlUpcaseUnicodeToOemN(o: *mut u8, os: u32, rs: *mut u32, u: *const u16, us: u32) -> i32;
     fn ref_RtlMultiByteToUnicodeSize(us: *mut u32, mb: *const u8, mbs: u32) -> i32;
     fn ref_RtlUnicodeToMultiByteSize(mbs: *mut u32, u: *const u16, us: u32) -> i32;
+    // Wave RTL-3 slice 2 wrappers
+    fn ref_RtlAnsiCharToUnicodeChar(p: *mut *mut u8) -> u16;
+    fn ref_RtlxAnsiStringToUnicodeSize(s: *const STRING) -> u32;
+    fn ref_RtlxUnicodeStringToAnsiSize(s: *const UNICODE_STRING) -> u32;
+    fn ref_RtlxUnicodeStringToOemSize(s: *const UNICODE_STRING) -> u32;
+    fn ref_RtlxOemStringToUnicodeSize(s: *const STRING) -> u32;
+    fn ref_RtlAnsiStringToUnicodeString(d: *mut UNICODE_STRING, s: *const STRING, a: u8) -> i32;
+    fn ref_RtlOemStringToUnicodeString(d: *mut UNICODE_STRING, s: *const STRING, a: u8) -> i32;
+    fn ref_RtlOemStringToCountedUnicodeString(d: *mut UNICODE_STRING, s: *const STRING, a: u8) -> i32;
+    fn ref_RtlUnicodeStringToAnsiString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    fn ref_RtlUnicodeStringToOemString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    fn ref_RtlUnicodeStringToCountedOemString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    fn ref_RtlUpcaseUnicodeString(d: *mut UNICODE_STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    fn ref_RtlUpcaseUnicodeStringToAnsiString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    fn ref_RtlUpcaseUnicodeStringToCountedOemString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
+    fn ref_RtlUpcaseUnicodeStringToOemString(d: *mut STRING, s: *const UNICODE_STRING, a: u8) -> i32;
 }
 
 struct Rng(u64);
@@ -669,6 +685,151 @@ fn diff_rtl_conv_size() {
                 "RtlUnicodeToMultiByteSize ret"
             );
             assert_eq!(c, d, "RtlUnicodeToMultiByteSize n={n}");
+        }
+    }
+}
+
+// ── Wave RTL-3 slice 2: unicode.c ANSI/OEM/Upcase wrappers ─────────
+
+#[test]
+fn diff_rtl_ansichar_to_unicode() {
+    let mut rng = Rng(0x3b_5202_aa);
+    for _ in 0..3000 {
+        let n = 1 + rng.upto(8);
+        let buf: Vec<u8> = (0..n).map(|_| rng.byte()).collect();
+        let mut pc = buf.as_ptr() as *mut u8;
+        let mut pr = buf.as_ptr() as *mut u8;
+        unsafe {
+            let rc = cabi::RtlAnsiCharToUnicodeChar(&mut pc);
+            let rr = ref_RtlAnsiCharToUnicodeChar(&mut pr);
+            assert_eq!(rc, rr, "RtlAnsiCharToUnicodeChar val b={:#x}", buf[0]);
+            assert_eq!(pc.offset_from(buf.as_ptr() as *mut u8),
+                       pr.offset_from(buf.as_ptr() as *mut u8), "advance");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_size_helpers() {
+    let mut rng = Rng(0x3b_5202_bb);
+    for _ in 0..4000 {
+        let l = (rng.upto(0x10000)) as u16;
+        let s = STRING { Length: l, MaximumLength: l, Buffer: 1 as *mut u8 };
+        let u = UNICODE_STRING { Length: l, MaximumLength: l, Buffer: 1 as *mut u16 };
+        unsafe {
+            assert_eq!(cabi::RtlxAnsiStringToUnicodeSize(&s), ref_RtlxAnsiStringToUnicodeSize(&s), "xAnsi l={l}");
+            assert_eq!(cabi::RtlxOemStringToUnicodeSize(&s), ref_RtlxOemStringToUnicodeSize(&s), "xOem l={l}");
+            assert_eq!(cabi::RtlxUnicodeStringToAnsiSize(&u), ref_RtlxUnicodeStringToAnsiSize(&u), "xUniAnsi l={l}");
+            assert_eq!(cabi::RtlxUnicodeStringToOemSize(&u), ref_RtlxUnicodeStringToOemSize(&u), "xUniOem l={l}");
+        }
+    }
+}
+
+type FbU = unsafe extern "system" fn(*mut UNICODE_STRING, *const STRING, u8) -> i32;
+type RbU = unsafe extern "C" fn(*mut UNICODE_STRING, *const STRING, u8) -> i32;
+type FuB = unsafe extern "system" fn(*mut STRING, *const UNICODE_STRING, u8) -> i32;
+type RuB = unsafe extern "C" fn(*mut STRING, *const UNICODE_STRING, u8) -> i32;
+
+/// bytes(STRING) → UNICODE_STRING wrappers.
+#[test]
+fn diff_rtl_str_to_uni() {
+    let mut rng = Rng(0x3b_5202_01);
+    let fns: [(&str, FbU, RbU); 3] = [
+        ("RtlAnsiStringToUnicodeString", cabi::RtlAnsiStringToUnicodeString, ref_RtlAnsiStringToUnicodeString),
+        ("RtlOemStringToUnicodeString", cabi::RtlOemStringToUnicodeString, ref_RtlOemStringToUnicodeString),
+        ("RtlOemStringToCountedUnicodeString", cabi::RtlOemStringToCountedUnicodeString, ref_RtlOemStringToCountedUnicodeString),
+    ];
+    for _ in 0..12_000 {
+        let sl = rng.upto(16);
+        let sb: Vec<u8> = (0..sl.max(1)).map(|_| 1 + rng.byte() % 200).collect();
+        // Backing is fixed-large; MaximumLength varies independently
+        // (incl. too-small) to exercise overflow + the genuine
+        // ignores-MaximumLength fall-through quirk without OOB.
+        let ml = (match rng.upto(4) { 0 => 0, 1 => sl, 2 => sl * 2 + 2, _ => 60 }) as u16;
+        for (name, cf, rf) in fns {
+            for a in [0u8, 1] {
+                let ss = STRING { Length: sl as u16, MaximumLength: sl as u16, Buffer: sb.as_ptr() as *mut u8 };
+                let mut bc = vec![0xCCCCu16; 64];
+                let mut br = vec![0xCCCCu16; 64];
+                let mut dc = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: bc.as_mut_ptr() };
+                let mut dr = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: br.as_mut_ptr() };
+                let (sc, sr);
+                unsafe {
+                    sc = cf(&mut dc, &ss, a);
+                    sr = rf(&mut dr, &ss, a);
+                }
+                assert_eq!(sc, sr, "{name} ret sl={sl} ml={ml} a={a}");
+                assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+                    "{name} fields sl={sl} ml={ml} a={a}");
+                assert_eq!(bc, br, "{name} buf sl={sl} ml={ml} a={a}");
+            }
+        }
+    }
+}
+
+/// UNICODE_STRING → bytes(STRING) wrappers (incl. the Upcase + Counted
+/// + DidWork/UNMAPPABLE + partial-copy variants).
+#[test]
+fn diff_rtl_uni_to_str() {
+    let mut rng = Rng(0x3b_5202_02);
+    let fns: [(&str, FuB, RuB); 6] = [
+        ("RtlUnicodeStringToAnsiString", cabi::RtlUnicodeStringToAnsiString, ref_RtlUnicodeStringToAnsiString),
+        ("RtlUnicodeStringToOemString", cabi::RtlUnicodeStringToOemString, ref_RtlUnicodeStringToOemString),
+        ("RtlUnicodeStringToCountedOemString", cabi::RtlUnicodeStringToCountedOemString, ref_RtlUnicodeStringToCountedOemString),
+        ("RtlUpcaseUnicodeStringToAnsiString", cabi::RtlUpcaseUnicodeStringToAnsiString, ref_RtlUpcaseUnicodeStringToAnsiString),
+        ("RtlUpcaseUnicodeStringToCountedOemString", cabi::RtlUpcaseUnicodeStringToCountedOemString, ref_RtlUpcaseUnicodeStringToCountedOemString),
+        ("RtlUpcaseUnicodeStringToOemString", cabi::RtlUpcaseUnicodeStringToOemString, ref_RtlUpcaseUnicodeStringToOemString),
+    ];
+    for _ in 0..12_000 {
+        let su = rng.upto(14);
+        let sv: Vec<u16> = (0..su.max(1)).map(|_| SPECIAL_W[rng.upto(SPECIAL_W.len())]).collect();
+        let slen = (su * 2) as u16;
+        let ml = (match rng.upto(4) { 0 => 0, 1 => su, 2 => su + 1, _ => 60 }) as u16;
+        for (name, cf, rf) in fns {
+            for a in [0u8, 1] {
+                let ss = UNICODE_STRING { Length: slen, MaximumLength: slen, Buffer: sv.as_ptr() as *mut u16 };
+                let mut bc = vec![0xCCu8; 128];
+                let mut br = vec![0xCCu8; 128];
+                let mut dc = STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: bc.as_mut_ptr() };
+                let mut dr = STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: br.as_mut_ptr() };
+                let (sc, sr);
+                unsafe {
+                    sc = cf(&mut dc, &ss, a);
+                    sr = rf(&mut dr, &ss, a);
+                }
+                assert_eq!(sc, sr, "{name} ret su={su} ml={ml} a={a} {sv:?}");
+                assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+                    "{name} fields su={su} ml={ml} a={a}");
+                assert_eq!(bc, br, "{name} buf su={su} ml={ml} a={a} {sv:?}");
+            }
+        }
+    }
+}
+
+/// `RtlUpcaseUnicodeString` (UNICODE_STRING → UNICODE_STRING).
+#[test]
+fn diff_rtl_upcase_unicode_string() {
+    let mut rng = Rng(0x3b_5202_03);
+    for _ in 0..12_000 {
+        let su = rng.upto(16);
+        let sv: Vec<u16> = (0..su.max(1)).map(|_| SPECIAL_W[rng.upto(SPECIAL_W.len())]).collect();
+        let slen = (su * 2) as u16;
+        let ml = (match rng.upto(4) { 0 => 0, 1 => slen as usize, 2 => su, _ => 60 }) as u16;
+        for a in [0u8, 1] {
+            let ss = UNICODE_STRING { Length: slen, MaximumLength: slen, Buffer: sv.as_ptr() as *mut u16 };
+            let mut bc = vec![0xCCCCu16; 64];
+            let mut br = vec![0xCCCCu16; 64];
+            let mut dc = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: bc.as_mut_ptr() };
+            let mut dr = UNICODE_STRING { Length: 0xAAAA, MaximumLength: ml, Buffer: br.as_mut_ptr() };
+            let (sc, sr);
+            unsafe {
+                sc = cabi::RtlUpcaseUnicodeString(&mut dc, &ss, a);
+                sr = ref_RtlUpcaseUnicodeString(&mut dr, &ss, a);
+            }
+            assert_eq!(sc, sr, "RtlUpcaseUnicodeString ret su={su} ml={ml} a={a}");
+            assert_eq!((dc.Length, dc.MaximumLength), (dr.Length, dr.MaximumLength),
+                "RtlUpcaseUnicodeString fields su={su} ml={ml} a={a}");
+            assert_eq!(bc, br, "RtlUpcaseUnicodeString buf su={su} ml={ml} a={a}");
         }
     }
 }
