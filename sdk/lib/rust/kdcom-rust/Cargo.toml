@@ -1,0 +1,16 @@
+# kdcom-rust — Rust translation of ReactOS drivers/base/kdcom (KD COM
+# transport). crate-type=staticlib → libkdcom_rust.a, linked into
+# kdcom.dll by the cargo-driven `kdcom-cargo` (reactos-link engine),
+# mirroring the hal-rust + hal-cargo split. i386-first (reactos-link is
+# i386-only today); amd64/arm64 stay C until it goes multi-arch.
+
+[package]
+name = "kdcom-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

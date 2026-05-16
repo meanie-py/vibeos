@@ -124,6 +124,20 @@ name = "interlck"
 version = "0.1.0"
 
 [[package]]
+name = "kdcom-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "kdcom-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "ke-inlines"
 version = "0.1.0"
 dependencies = [

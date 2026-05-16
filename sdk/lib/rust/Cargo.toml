@@ -11,6 +11,8 @@ members = [
     "encode",
     "generictable",
     "hal-rust",
+    "kdcom-rust",
+    "kdcom-cargo",
     "handle",
     "interlck",
     "kernel-rust",
