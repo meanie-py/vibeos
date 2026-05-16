@@ -333,6 +333,7 @@ def stitch_file(
     scan: ScanResult,
     file_resolve: ResolveResult,
     target: Target | None = None,
+    preamble: str | None = None,
 ) -> str:
     """Assemble individually-translated functions into a complete .rs file.
 
@@ -341,6 +342,11 @@ def stitch_file(
         deps: list of FunctionDep in topological order
         scan: ScanResult for the original C file
         file_resolve: File-level ResolveResult for overall imports
+        preamble: Rust translation of the file-scope preamble (structs,
+            typedefs, #define→const, static tables) from a synthetic
+            preamble unit — emitted before the function bodies so the
+            stitched file actually compiles. Any stray `use`/`extern`
+            it contains is lifted into the normal dedup machinery.
 
     Returns:
         Complete .rs file contents as a string.
@@ -349,6 +355,14 @@ def stitch_file(
     all_externs: list[str] = []
     function_bodies: list[tuple[int, str, str]] = []  # (line_start, name, code)
     standalone_items: list[str] = []  # const, static, type alias outside functions
+    preamble_body = ""
+
+    if preamble and preamble.strip():
+        p_uses, p_no_uses = _extract_use_statements(preamble)
+        all_uses.extend(p_uses)
+        p_externs, p_no_externs = _extract_extern_blocks(p_no_uses)
+        all_externs.extend(p_externs)
+        preamble_body = p_no_externs.strip()
 
     for dep in deps:
         if dep.name not in functions:
@@ -377,9 +391,9 @@ def stitch_file(
                 break
 
         if fn_start_idx is not None and fn_start_idx > 0:
-            preamble = "\n".join(fn_lines[:fn_start_idx]).strip()
-            if preamble:
-                standalone_items.append(preamble)
+            fn_preamble = "\n".join(fn_lines[:fn_start_idx]).strip()
+            if fn_preamble:
+                standalone_items.append(fn_preamble)
             code_no_externs = "\n".join(fn_lines[fn_start_idx:])
 
         function_bodies.append((dep.line_start, dep.name, code_no_externs.strip()))
@@ -417,7 +431,16 @@ def stitch_file(
             parts.append(line)
         parts.append("")
 
-    # 3. Standalone items (static mut, const, etc.) — deduped
+    # 3. File-scope preamble (translated structs / typedefs / #define→const
+    #    / static tables). Emitted before standalone items + functions so
+    #    the stitched file actually compiles. (Marker-independent: derived
+    #    from scan.preamble_text; see scanner.scan_file / build_preamble_prompt.)
+    if preamble_body:
+        parts.append("// ---- file-scope preamble (translated) ----")
+        parts.append(preamble_body)
+        parts.append("")
+
+    # 4. Standalone items (static mut, const, etc.) — deduped
     seen_items = set()
     for item in standalone_items:
         normalized = item.strip()
@@ -426,7 +449,7 @@ def stitch_file(
             parts.append(normalized)
             parts.append("")
 
-    # 4. Functions in source order
+    # 5. Functions in source order
     for line_start, name, code in function_bodies:
         parts.append(code)
         parts.append("")

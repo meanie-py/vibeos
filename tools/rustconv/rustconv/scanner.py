@@ -61,6 +61,13 @@ class ScanResult:
     defines: list[str] = field(default_factory=list)
     raw_source: str = ""
     globals_text: str = ""  # text between GLOBALS and FUNCTIONS markers
+    # File-scope preamble (typedefs, structs/enums/unions, #define, static
+    # tables, file-scope globals) derived from the AST as the complement of
+    # function bodies + #includes. Marker-INDEPENDENT (unlike globals_text,
+    # which only populates when the C has /* GLOBALS */ // /* FUNCTIONS */
+    # comments). This is what the `translate` pipeline feeds through the LLM
+    # as a synthetic preamble unit so the stitched .rs actually compiles.
+    preamble_text: str = ""
 
 
 def _extract_text(node, source: bytes) -> str:
@@ -233,6 +240,24 @@ def scan_file(path: Path) -> ScanResult:
             walk(child)
 
     walk(cursor.node)
+
+    # Derive the file-scope preamble: every top-level construct that is NOT
+    # a function body and NOT an #include (imports are the resolver's job).
+    # This captures typedefs, struct/union/enum specifiers, #define /
+    # #define-function macros, file-scope declarations (static lookup
+    # tables, globals) and arch #ifdef type blocks — in source order, with
+    # original spacing. Marker-independent: works on raw drivers like
+    # arm64input.c that have no /* GLOBALS */ markers, where globals_text
+    # is empty. `translate` feeds this through the LLM as one preamble unit.
+    _SKIP_TOPLEVEL = {"function_definition", "preproc_include", "comment"}
+    preamble_parts: list[str] = []
+    for child in cursor.node.children:
+        if child.type in _SKIP_TOPLEVEL:
+            continue
+        if child.type == ";":  # stray empty top-level statement
+            continue
+        preamble_parts.append(_extract_text(child, source))
+    result.preamble_text = "\n".join(preamble_parts).strip()
 
     # Parse globals from the globals section text using simple regex
     if result.globals_text:
