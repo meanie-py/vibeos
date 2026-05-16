@@ -163,7 +163,7 @@ list(APPEND SOURCE
     user/ntuser/window.c
     user/ntuser/winpos.c
     user/ntuser/winsta.c
-    user/ntuser/object.c
+    # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
     user/rtl/image.c
     user/rtl/text.c
     gdi/ntgdi/arc.c
@@ -274,6 +274,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/sort.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdiobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/object.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
