@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import json
 import os
 import shutil
 import signal
@@ -18,6 +19,67 @@ from .serial_client import SerialClient
 # Project root: os-playground/
 PROJECT_DIR = Path(__file__).resolve().parent.parent.parent  # vibeos/ repo root
 QEMU_DIR = PROJECT_DIR / "qemu"
+
+# --------------------------------------------------------------------------- #
+# QEMU lock files — SAFE, SCOPED orphan reaping.
+#
+# Multiple agents/worktrees run smoke VMs in parallel. A blanket
+# `pkill -f qemu-system` would murder another agent's live VM. Instead every
+# QEMU we launch drops a lock file recording OUR launcher pid + the qemu pid.
+# Reaping only kills a QEMU whose *launcher process is dead* (a crashed/timed-
+# out run = a true orphan). A QEMU whose launcher is still alive belongs to a
+# running session (possibly another agent) and is NEVER touched.
+# --------------------------------------------------------------------------- #
+LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, just not ours to signal
+    return True
+
+
+def _proc_is_qemu(pid: int) -> bool:
+    try:
+        return "qemu" in Path(f"/proc/{pid}/comm").read_text()
+    except OSError:
+        return False
+
+
+def reap_orphan_qemus() -> list[str]:
+    """Kill ONLY QEMUs whose launcher process is gone. Returns action log.
+
+    Safe to call from any session: a lock whose launcher pid is still alive
+    is left strictly untouched (it may be another agent's live VM).
+    """
+    actions: list[str] = []
+    if not LOCK_DIR.is_dir():
+        return actions
+    for lf in LOCK_DIR.glob("*.json"):
+        try:
+            info = json.loads(lf.read_text())
+        except (OSError, ValueError):
+            lf.unlink(missing_ok=True)
+            continue
+        lpid, qpid = info.get("launcher_pid"), info.get("qemu_pid")
+        if lpid and _pid_alive(lpid):
+            continue  # live session (maybe another agent) — DO NOT TOUCH
+        # Launcher is dead → this run crashed. Reap its (and only its) qemu.
+        if qpid and _pid_alive(qpid) and _proc_is_qemu(qpid):
+            try:
+                os.killpg(os.getpgid(qpid), signal.SIGTERM)
+                time.sleep(2)
+                if _pid_alive(qpid):
+                    os.killpg(os.getpgid(qpid), signal.SIGKILL)
+                actions.append(f"reaped orphan qemu pid={qpid} (launcher {lpid} dead)")
+            except (ProcessLookupError, OSError) as e:
+                actions.append(f"qemu pid={qpid} reap failed: {e}")
+        lf.unlink(missing_ok=True)
+    return actions
 
 
 @dataclass
@@ -305,6 +367,25 @@ class QemuVM:
             preexec_fn=os.setpgrp,
         )
 
+        # Drop a scoped lock so a *future* run (once this code is merged and
+        # other agents write locks too) can safely reap THIS qemu iff our
+        # launcher dies. Writing the lock is harmless today; reaping is NOT
+        # auto-wired anywhere yet on purpose.
+        try:
+            LOCK_DIR.mkdir(parents=True, exist_ok=True)
+            self._lock_path = LOCK_DIR / f"{os.getpid()}-{self._proc.pid}.json"
+            self._lock_path.write_text(json.dumps({
+                "launcher_pid": os.getpid(),
+                "qemu_pid": self._proc.pid,
+                "arch": self.config.arch,
+                "work_dir": str(self.work_dir),
+                "started": time.time(),
+                "cmd": cmd,
+            }))
+            atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
+        except OSError:
+            self._lock_path = None
+
         self.serial.accept(timeout=15.0)
 
         self._wait_for_socket(self.qmp_path, timeout=10.0)
@@ -415,6 +496,10 @@ class QemuVM:
                 except (ProcessLookupError, subprocess.TimeoutExpired):
                     pass
             self._proc = None
+
+        lock = getattr(self, "_lock_path", None)
+        if lock is not None:
+            lock.unlink(missing_ok=True)
 
         shutil.rmtree(self._sock_dir, ignore_errors=True)
 
