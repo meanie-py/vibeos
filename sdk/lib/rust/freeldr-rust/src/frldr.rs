@@ -460,8 +460,81 @@ pub const TRACE_LEVEL: ULONG = 0x8;
 pub const MAX_LEVEL: ULONG = 0xF;
 pub type ULONG64 = u64;
 
-/// Debug-path intrinsics (no-op for boot-to-shell; DBG off in release).
-#[no_mangle] extern "C" fn WRITE_PORT_UCHAR(_port: *mut u8, _val: u8) {}
+/// x86 port-I/O intrinsics. xdk defines READ_PORT_UCHAR/WRITE_PORT_UCHAR as
+/// compiler intrinsics (no C symbol); rustconv emitted `extern { fn ... }` +
+/// call sites. Real cdecl wrappers — UNIQUE (no C/asm defines them), so
+/// keystone-safe. Used by PIT 8254 timer (pchw), CMOS A20/mem probe (pcmem),
+/// serial detect (machpc), floppy reset (pcdisk) — must be real `in`/`out`,
+/// NOT a no-op (silently dropping these breaks hardware init).
+#[no_mangle]
+pub unsafe extern "C" fn WRITE_PORT_UCHAR(port: *mut u8, val: u8) {
+    core::arch::asm!("out dx, al", in("dx") port as u16, in("al") val, options(nomem, nostack, preserves_flags));
+}
+#[no_mangle]
+pub unsafe extern "C" fn READ_PORT_UCHAR(port: *mut u8) -> u8 {
+    let v: u8;
+    core::arch::asm!("in al, dx", out("al") v, in("dx") port as u16, options(nomem, nostack, preserves_flags));
+    v
+}
+/// xdk WRITE_PORT_USHORT intrinsic (16-bit `out`). rustconv emitted it
+/// as `extern { fn ... }` (pcvideo VGA palette path). UNIQUE — keystone.
+#[no_mangle]
+pub unsafe extern "C" fn WRITE_PORT_USHORT(port: *mut u16, val: u16) {
+    core::arch::asm!("out dx, ax", in("dx") port as u16, in("ax") val, options(nomem, nostack, preserves_flags));
+}
+/// MSVC `__cpuid(int info[4], int leaf)` intrinsic. rustconv emitted it
+/// as `extern { fn __cpuid(info: *mut i32, function: i32) }` (winldr
+/// CPU detect). LLVM reserves ebx on i386 → save/restore via the stack.
+/// UNIQUE — keystone.
+#[no_mangle]
+pub unsafe extern "C" fn __cpuid(info: *mut i32, function: i32) {
+    let (mut a, mut b, mut c, mut d): (i32, i32, i32, i32);
+    core::arch::asm!(
+        "xchg {ebx_save:e}, ebx",
+        "cpuid",
+        "xchg {ebx_save:e}, ebx",
+        ebx_save = inout(reg) 0i32 => b,
+        inout("eax") function => a,
+        out("ecx") c,
+        out("edx") d,
+        options(nostack, preserves_flags),
+    );
+    *info.offset(0) = a;
+    *info.offset(1) = b;
+    *info.offset(2) = c;
+    *info.offset(3) = d;
+}
+/// xdk/rtlfuncs.h `#define RtlEqualMemory(d,s,l) (!memcmp(d,s,l))`.
+/// rustconv emitted it as `extern { fn RtlEqualMemory }` + call sites
+/// (iso.rs/fat.rs). Real cdecl wrapper (byte compare; returns TRUE iff
+/// equal). UNIQUE — keystone (C macro, no symbol).
+#[no_mangle]
+pub unsafe extern "C" fn RtlEqualMemory(
+    s1: *const core::ffi::c_void,
+    s2: *const core::ffi::c_void,
+    len: usize,
+) -> BOOLEAN {
+    let (a, b) = (s1 as *const u8, s2 as *const u8);
+    let mut i = 0usize;
+    while i < len {
+        if *a.add(i) != *b.add(i) {
+            return 0;
+        }
+        i += 1;
+    }
+    1
+}
+/// xdk intype.h `UlongToPtr(ul) = ((void*)(ULONG_PTR)ul)` (and the
+/// `ULongToPtr` casing variant). rustconv emitted both as
+/// `extern { fn ... }`. Real cdecl wrappers. UNIQUE — keystone.
+#[no_mangle]
+pub unsafe extern "C" fn UlongToPtr(ul: ULONG) -> *mut core::ffi::c_void {
+    ul as usize as *mut core::ffi::c_void
+}
+#[no_mangle]
+pub unsafe extern "C" fn ULongToPtr(ul: ULONG) -> *mut core::ffi::c_void {
+    ul as usize as *mut core::ffi::c_void
+}
 #[no_mangle] extern "C" fn DbgBreakPoint() {}
 
 // fs.h DEVVTBL — vtable; ARC_* are ddk Option<extern "C" fn> (bindgen-exact).
@@ -711,7 +784,8 @@ pub type PBIOS_MEMORY_MAP = *mut BIOS_MEMORY_MAP;
 
 // C macro: INT386_SUCCESS(regs) == ((regs.x.eflags & EFLAGS_CF) == 0)
 #[inline(always)]
-pub unsafe fn INT386_SUCCESS(regs: REGS) -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn INT386_SUCCESS(regs: REGS) -> BOOLEAN {
     ((regs.x.eflags & EFLAGS_CF) == 0) as BOOLEAN
 }
 

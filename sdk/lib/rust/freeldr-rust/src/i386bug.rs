@@ -7,6 +7,8 @@ use core::ffi::c_void;
 extern "C" {
     fn MachVideoGetDisplaySize(Width: *mut ULONG, Height: *mut ULONG, Depth: *mut ULONG);
     fn MachVideoPutChar(Ch: u32, Attr: u32, X: ULONG, Y: ULONG);
+    fn MachVideoHideShowTextCursor(Show: BOOLEAN);
+    fn MachVideoClearScreen(Attr: UCHAR);
     fn _vsnprintf(buffer: *mut CHAR, count: usize, format: *const CHAR, args: va_list) -> i32;
     fn _snprintf(buffer: *mut CHAR, count: usize, format: *const CHAR, ...) -> i32;
     fn va_start(ap: *mut va_list, ...);
@@ -106,6 +108,145 @@ unsafe fn i386PrintFrames(TrapFrame: PKTRAP_FRAME) {
         PrintText!(b"%p  \0".as_ptr() as *const CHAR, (*Frame).Address);
         Frame = (*Frame).Next;
     }
+}
+
+// i386bug.c FrLdrBugCheckWithMessage (DECLSPEC_NORETURN, C-variadic).
+// rustconv dropped the body; Rust stable cannot DEFINE an extern "C"
+// variadic (no c_variadic). Faithful non-variadic def: same screen
+// path as the C; the `...`-formatted Format is printed literally
+// (un-formattable on stable; this is a fatal-halt path — same
+// degradation as the keystone BugCheck/TRACE stubs). Callers' cdecl
+// vararg call sites are ABI-safe against a non-variadic callee
+// (caller cleans the stack on i386 cdecl).
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrBugCheckWithMessage(
+    BugCode: ULONG,
+    File: PCHAR,
+    Line: ULONG,
+    Format: PSTR,
+) -> ! {
+    MachVideoHideShowTextCursor(0); // FALSE
+    MachVideoClearScreen(SCREEN_ATTR as UCHAR);
+    i386_ScreenPosX = 0;
+    i386_ScreenPosY = 0;
+
+    PrintText!(b"A problem has been detected and FreeLoader boot has been aborted.\n\n\0".as_ptr() as *const CHAR);
+    PrintText!(b"BugCheck %ld\n\n\0".as_ptr() as *const CHAR, BugCode);
+
+    if !File.is_null() {
+        PrintText!(b"Location: %s:%ld\n\n\0".as_ptr() as *const CHAR, File, Line);
+    }
+    if !Format.is_null() {
+        // varargs un-formattable on stable Rust → emit Format literally.
+        i386PrintText(Format as PCHAR);
+    }
+
+    loop {
+        core::arch::asm!("cli", "hlt", options(nomem, nostack, preserves_flags));
+    }
+}
+
+// i386bug.c:13 `static const CHAR *i386ExceptionDescriptionText[]`
+// (rustconv dropped the non-fn table).
+#[cfg(target_arch = "x86")]
+static i386ExceptionDescriptionText: [&[u8]; 19] = [
+    b"DIVIDE BY ZERO\0",
+    b"DEBUG EXCEPTION\0",
+    b"NON-MASKABLE INTERRUPT EXCEPTION\0",
+    b"BREAKPOINT (INT 3)\0",
+    b"OVERFLOW\0",
+    b"BOUND EXCEPTION\0",
+    b"INVALID OPCODE\0",
+    b"FPU NOT AVAILABLE\0",
+    b"DOUBLE FAULT\0",
+    b"COPROCESSOR SEGMENT OVERRUN\0",
+    b"INVALID TSS\0",
+    b"SEGMENT NOT PRESENT\0",
+    b"STACK EXCEPTION\0",
+    b"GENERAL PROTECTION FAULT\0",
+    b"PAGE FAULT\0",
+    b"Reserved\0",
+    b"COPROCESSOR ERROR\0",
+    b"ALIGNMENT CHECK\0",
+    b"MACHINE CHECK\0",
+];
+
+// i386bug.c:107 `VOID NTAPI i386PrintExceptionText(ULONG, PKTRAP_FRAME,
+// PKSPECIAL_REGISTERS)` — called from arch/i386/i386trap.S as the
+// stdcall `_i386PrintExceptionText@12` CPU-exception death screen.
+// rustconv dropped the body. Faithful translation (i386 `#ifdef
+// _M_IX86` branch). NTAPI on i386 = stdcall → `extern "system"` emits
+// `_i386PrintExceptionText@12`. UNIQUE (translated unit owns it).
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "system" fn i386PrintExceptionText(
+    TrapIndex: ULONG,
+    TrapFrame: PKTRAP_FRAME,
+    Special: PKSPECIAL_REGISTERS,
+) {
+    let tf = &*TrapFrame;
+    let sp = &*Special;
+
+    MachVideoHideShowTextCursor(0); // FALSE
+    MachVideoClearScreen(SCREEN_ATTR as UCHAR);
+    i386_ScreenPosX = 0;
+    i386_ScreenPosY = 0;
+
+    PrintText!(
+        concat!(
+            "FreeLdr exception\n",
+            "Report this error on the ReactOS Bug Tracker: https://jira.reactos.org\n\n",
+            "0x%02lx: Exception %02X: %s\n\n\0"
+        ).as_ptr() as *const CHAR,
+        TrapIndex,
+        TrapIndex,
+        i386ExceptionDescriptionText
+            [core::cmp::min(TrapIndex as usize, i386ExceptionDescriptionText.len() - 1)]
+            .as_ptr() as *const CHAR
+    );
+
+    PrintText!(b"EAX: %.8lx        ESP: %.8lx        CR0: %.8lx        DR0: %.8lx\n\0".as_ptr() as *const CHAR,
+        tf.Eax, tf.HardwareEsp, sp.Cr0, tf.Dr0);
+    PrintText!(b"EBX: %.8lx        EBP: %.8lx        CR1: ????????        DR1: %.8lx\n\0".as_ptr() as *const CHAR,
+        tf.Ebx, tf.Ebp, tf.Dr1);
+    PrintText!(b"ECX: %.8lx        ESI: %.8lx        CR2: %.8lx        DR2: %.8lx\n\0".as_ptr() as *const CHAR,
+        tf.Ecx, tf.Esi, sp.Cr2, tf.Dr2);
+    PrintText!(b"EDX: %.8lx        EDI: %.8lx        CR3: %.8lx        DR3: %.8lx\n\0".as_ptr() as *const CHAR,
+        tf.Edx, tf.Edi, sp.Cr3, tf.Dr3);
+    PrintText!(b"%*s CR4: %.8lx        DR6: %.8lx\n\0".as_ptr() as *const CHAR,
+        41, b"\0".as_ptr() as *const CHAR, sp.Cr4, tf.Dr6);
+    PrintText!(b"%*s DR7: %.8lx\n\0".as_ptr() as *const CHAR,
+        62, b"\0".as_ptr() as *const CHAR, tf.Dr7);
+    PrintText!(b" CS: %.4lx            EIP: %.8lx\n\0".as_ptr() as *const CHAR,
+        tf.SegCs & 0xffff, tf.Eip);
+    PrintText!(b" DS: %.4lx     ERROR CODE: %.8lx\n\0".as_ptr() as *const CHAR,
+        tf.SegDs & 0xffff, tf.ErrCode);
+    PrintText!(b" ES: %.4lx         EFLAGS: %.8lx\n\0".as_ptr() as *const CHAR,
+        tf.SegEs & 0xffff, tf.EFlags);
+    PrintText!(b" FS: %.4lx      GDTR Base: %.8lx Limit: %.4x\n\0".as_ptr() as *const CHAR,
+        tf.SegFs & 0xffff, sp.Gdtr.Base, sp.Gdtr.Limit as ULONG);
+    PrintText!(b" GS: %.4lx      IDTR Base: %.8lx Limit: %.4x\n\0".as_ptr() as *const CHAR,
+        tf.SegGs & 0xffff, sp.Idtr.Base, sp.Idtr.Limit as ULONG);
+    PrintText!(b" SS: %.4lx           LDTR: %.4lx TR: %.4lx\n\n\0".as_ptr() as *const CHAR,
+        tf.HardwareSegSs & 0xffff, sp.Ldtr as ULONG, sp.Tr as ULONG);
+
+    i386PrintFrames(TrapFrame);
+
+    let mut InstructionPointer = tf.Eip as *const u8;
+    // Adjust IP for #BP (INT 03) or #OF to point to the offending instruction
+    if TrapIndex == 3 || TrapIndex == 4 {
+        InstructionPointer = InstructionPointer.offset(-1);
+    }
+
+    PrintText!(b"\nInstruction stream: %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x\n\0".as_ptr() as *const CHAR,
+        *InstructionPointer.offset(0) as ULONG,
+        *InstructionPointer.offset(1) as ULONG,
+        *InstructionPointer.offset(2) as ULONG,
+        *InstructionPointer.offset(3) as ULONG,
+        *InstructionPointer.offset(4) as ULONG,
+        *InstructionPointer.offset(5) as ULONG,
+        *InstructionPointer.offset(6) as ULONG,
+        *InstructionPointer.offset(7) as ULONG);
 }
 
 

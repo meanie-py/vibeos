@@ -19,6 +19,16 @@ static mut delay_count: ::core::ffi::c_uint = 1;
 const MILLISEC: ULONG = 10;
 const PRECISION: ULONG = 8;
 
+// pchw.c:41 `GET_HARDDISK_CONFIG_DATA GetHarddiskConfigurationData = NULL;`
+// — C global function pointer, owned by pchw (canonical). Assigned by
+// machpc.rs DetectHardware (`= PcGetHarddiskConfigurationData as *mut c_void`).
+// Layout-compatible: Option<fn> is pointer-sized with NULL niche, matching
+// machpc.rs's `extern static mut *mut c_void` view.
+pub type GET_HARDDISK_CONFIG_DATA =
+    Option<unsafe extern "C" fn(DriveNumber: UCHAR, pSize: *mut ULONG) -> PCM_PARTIAL_RESOURCE_LIST>;
+#[no_mangle]
+pub static mut GetHarddiskConfigurationData: GET_HARDDISK_CONFIG_DATA = None;
+
 // arc.h IDENTIFIER_FLAG bit (sibling of ddk Input/ConsoleIn/ConsoleOut).
 const Output: i32 = 0x40;
 
@@ -45,7 +55,6 @@ extern "C" {
     fn MachGetFloppyCount() -> ULONG;
     fn TRACE(fmt: *const i8, ...);
     fn FldrSetConfigurationData( ComponentKey: PCONFIGURATION_COMPONENT_DATA, ResourceList: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, );
-    fn GetHarddiskConfigurationData( DriveNumber: UCHAR, Size: *mut ULONG, ) -> PCM_PARTIAL_RESOURCE_LIST;
     fn GetHarddiskIdentifier(DriveNumber: UCHAR) -> PCSTR;
     fn MachDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: *mut GEOMETRY) -> BOOLEAN;
 }
@@ -402,7 +411,7 @@ pub unsafe extern "C" fn DetectBiosDisks(
 
         DriveNumber = 0x80 + i as UCHAR;
 
-        PartialResourceList = GetHarddiskConfigurationData(DriveNumber, core::ptr::addr_of_mut!(Size));
+        PartialResourceList = (GetHarddiskConfigurationData.unwrap())(DriveNumber, core::ptr::addr_of_mut!(Size));
         Identifier = GetHarddiskIdentifier(DriveNumber);
 
         FldrCreateComponentKey(
@@ -421,7 +430,8 @@ pub unsafe extern "C" fn DetectBiosDisks(
     }
 }
 
-unsafe fn FrLdrCheckCpuCompatibility() {
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrCheckCpuCompatibility() {
     let mut CpuInformation: [INT; 4] = [-1; 4];
     let mut NumberOfIds: ULONG;
 

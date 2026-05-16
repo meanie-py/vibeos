@@ -70,6 +70,9 @@ pub mod uefimem;
 pub mod uefivid;
 pub mod ueficon;
 pub mod uefihw;
+// PC-link fallback for vidfb.c's UEFI-only FbConsScrollUp (isolated
+// single-symbol object; archive-member precedence avoids UEFI dup).
+pub mod vidfb_pc_fallback;
 
 // 🟢 sweep — winldr kernel-handoff unit (ntldr/{winldr,registry,wlregistry,
 // wlmemory,ntldropts}.c + ntldr/arch/<a>/winldr.c + arch/i386/ntoskrnl.c).

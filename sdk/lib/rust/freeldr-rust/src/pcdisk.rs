@@ -557,7 +557,8 @@ pub unsafe extern "C" fn PcDiskReadLogicalSectors(
     }
 }
 
-unsafe fn DiskStopFloppyMotor() {
+#[no_mangle]
+pub unsafe extern "C" fn DiskStopFloppyMotor() {
     WRITE_PORT_UCHAR(0x3F2 as *mut u8, 0);
 }
 

@@ -58,7 +58,8 @@ pub unsafe extern "C" fn MmGetSystemMemoryMapTypeString(
     b"-\0".as_ptr() as PCSTR
 }
 
-unsafe fn AddMemoryDescriptor(
+#[no_mangle]
+pub unsafe extern "C" fn AddMemoryDescriptor(
     List: PFREELDR_MEMORY_DESCRIPTOR,
     MaxCount: ULONG,
     BasePage: PFN_NUMBER,

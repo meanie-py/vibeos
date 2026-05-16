@@ -245,7 +245,8 @@ unsafe extern "C" fn DiskSeek(FileId: u32, Position: *mut LARGE_INTEGER, SeekMod
     ESUCCESS
 }
 
-unsafe fn GetHarddiskIdentifier(DriveNumber: UCHAR) -> PCHAR {
+#[no_mangle]
+pub unsafe extern "C" fn GetHarddiskIdentifier(DriveNumber: UCHAR) -> PCHAR {
     PcDiskIdentifier[(DriveNumber - FIRST_BIOS_DISK) as usize].as_mut_ptr() as PCHAR
 }
 

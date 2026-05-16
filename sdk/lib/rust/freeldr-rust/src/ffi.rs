@@ -202,7 +202,8 @@ const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x8000_0005u32 as NTSTATUS;
 const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000_000Du32 as NTSTATUS;
 
 #[inline]
-pub unsafe fn RtlStringCbCopyA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCopyA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
     if dest.is_null() || src.is_null() || cb_dest == 0 {
         return STATUS_INVALID_PARAMETER;
     }
@@ -220,7 +221,8 @@ pub unsafe fn RtlStringCbCopyA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR
 }
 
 #[inline]
-pub unsafe fn RtlStringCbCatA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCatA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
     if dest.is_null() || src.is_null() || cb_dest == 0 {
         return STATUS_INVALID_PARAMETER;
     }
@@ -243,4 +245,54 @@ pub unsafe fn RtlStringCbCatA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR)
     }
     *dest.add(d) = 0;
     if *src.add(s) == 0 { STATUS_SUCCESS } else { STATUS_BUFFER_OVERFLOW }
+}
+
+// ntstrsafe RtlStringCbPrintfA — variadic inline from ntstrsafe.h (no C
+// symbol in non-MSVC freeldr; rustconv emitted `extern { fn ...(...) }` +
+// call sites across winldr/tui/wlregistry/machpc/hwdisk/pchw/uefidisk).
+// Rust stable has no c_variadic, so this is a NON-variadic (dst,cb,fmt)
+// def: bounded copy of the format literal (same degradation as the
+// keystone TRACE/ERR). cdecl ABI → caller cleans the stack, so the
+// dropped varargs are ABI-safe. UNIQUE: no C/asm defines this symbol.
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfA(
+    dest: *mut CHAR,
+    cb_dest: usize,
+    fmt: *const CHAR,
+) -> NTSTATUS {
+    RtlStringCbCopyA(dest, cb_dest, fmt)
+}
+
+// ntstrsafe.h:381 RtlStringCbCopyNA — bounded copy of at most
+// `cb_to_copy` bytes from src into a `cb_dest`-byte dest, stopping at
+// src NUL, always NUL-terminating. Inline in ntstrsafe.h (no symbol in
+// non-MSVC freeldr); rustconv emitted `extern { fn ... }`. cdecl,
+// UNIQUE.
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCopyNA(
+    dest: *mut CHAR,
+    cb_dest: usize,
+    src: *const CHAR,
+    cb_to_copy: usize,
+) -> NTSTATUS {
+    if dest.is_null() || src.is_null() || cb_dest == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut i = 0usize;
+    while i + 1 < cb_dest && i < cb_to_copy {
+        let ch = *src.add(i);
+        if ch == 0 {
+            break;
+        }
+        *dest.add(i) = ch;
+        i += 1;
+    }
+    *dest.add(i) = 0;
+    // Overflow iff the source still had bytes to copy within the
+    // requested count but the dest buffer ran out.
+    if i < cb_to_copy && *src.add(i) != 0 {
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        STATUS_SUCCESS
+    }
 }

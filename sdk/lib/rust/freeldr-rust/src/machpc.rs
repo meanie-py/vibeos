@@ -159,20 +159,129 @@ pub struct MACHVTBL {
 }
 unsafe impl Sync for MACHVTBL {}
 
+// MachVtbl global is DEFINED by C arch/arcemul.c (`MACHVTBL MachVtbl;`,
+// still-compiled, smoke-path). machpc.c only FILLS it in MachInit.
+// Extern-consume the C-owned global (do NOT #[no_mangle]-define it —
+// that dup'd arcemul.c at cold link). Layout matches: machpc's MACHVTBL
+// is the faithful machine.h 37-slot struct == arcemul.c's typedef.
+extern "C" {
+    static mut MachVtbl: MACHVTBL;
+}
+
+// machine.h `#define Mach<X>(...) MachVtbl.<X>(...)` macros. rustconv emitted
+// these as `extern { fn Mach<X> }` + call sites; no C symbol ever existed.
+// Real #[no_mangle] cdecl wrappers dispatching through MachVtbl. Signatures
+// exactly match machine.h tagMACHVTBL slot fn-ptr decls.
 #[no_mangle]
-pub static mut MachVtbl: MACHVTBL = MACHVTBL {
-    ConsPutChar: None, ConsKbHit: None, ConsGetCh: None,
-    VideoClearScreen: None, VideoSetDisplayMode: None, VideoGetDisplaySize: None,
-    VideoGetBufferSize: None, VideoGetFontsFromFirmware: None,
-    VideoSetTextCursorPosition: None, VideoHideShowTextCursor: None,
-    VideoPutChar: None, VideoCopyOffScreenBufferToVRAM: None,
-    VideoIsPaletteFixed: None, VideoSetPaletteColor: None,
-    VideoGetPaletteColor: None, VideoSync: None, Beep: None,
-    PrepareForReactOS: None, GetMemoryDescriptor: None, GetMemoryMap: None,
-    GetExtendedBIOSData: None, GetFloppyCount: None, DiskReadLogicalSectors: None,
-    DiskGetDriveGeometry: None, DiskGetCacheableBlockCount: None, GetTime: None,
-    GetRelativeTime: None, InitializeBootDevices: None, HwDetect: None, HwIdle: None,
-};
+pub unsafe extern "C" fn MachConsPutChar(Ch: i32) {
+    (MachVtbl.ConsPutChar.unwrap())(Ch)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachConsKbHit() -> BOOLEAN {
+    (MachVtbl.ConsKbHit.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachConsGetCh() -> i32 {
+    (MachVtbl.ConsGetCh.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoClearScreen(Attr: UCHAR) {
+    (MachVtbl.VideoClearScreen.unwrap())(Attr)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoSetDisplayMode(
+    DisplayMode: PCSTR,
+    Init: BOOLEAN,
+) -> VIDEODISPLAYMODE {
+    (MachVtbl.VideoSetDisplayMode.unwrap())(DisplayMode, Init)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoGetBufferSize() -> ULONG {
+    (MachVtbl.VideoGetBufferSize.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoSetTextCursorPosition(X: UCHAR, Y: UCHAR) {
+    (MachVtbl.VideoSetTextCursorPosition.unwrap())(X, Y)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoHideShowTextCursor(Show: BOOLEAN) {
+    (MachVtbl.VideoHideShowTextCursor.unwrap())(Show)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoCopyOffScreenBufferToVRAM(Buffer: PVOID) {
+    (MachVtbl.VideoCopyOffScreenBufferToVRAM.unwrap())(Buffer)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoIsPaletteFixed() -> BOOLEAN {
+    (MachVtbl.VideoIsPaletteFixed.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoSetPaletteColor(
+    Color: UCHAR,
+    Red: UCHAR,
+    Green: UCHAR,
+    Blue: UCHAR,
+) {
+    (MachVtbl.VideoSetPaletteColor.unwrap())(Color, Red, Green, Blue)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoGetPaletteColor(
+    Color: UCHAR,
+    Red: *mut UCHAR,
+    Green: *mut UCHAR,
+    Blue: *mut UCHAR,
+) {
+    (MachVtbl.VideoGetPaletteColor.unwrap())(Color, Red, Green, Blue)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoSync() {
+    (MachVtbl.VideoSync.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachBeep() {
+    (MachVtbl.Beep.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachHwIdle() {
+    (MachVtbl.HwIdle.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoGetDisplaySize(
+    Width: PULONG,
+    Height: PULONG,
+    Depth: PULONG,
+) {
+    (MachVtbl.VideoGetDisplaySize.unwrap())(Width, Height, Depth)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachGetFloppyCount() -> UCHAR {
+    (MachVtbl.GetFloppyCount.unwrap())()
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachDiskReadLogicalSectors(
+    DriveNumber: UCHAR,
+    SectorNumber: ULONGLONG,
+    SectorCount: ULONG,
+    Buffer: PVOID,
+) -> BOOLEAN {
+    (MachVtbl.DiskReadLogicalSectors.unwrap())(DriveNumber, SectorNumber, SectorCount, Buffer)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachDiskGetDriveGeometry(
+    DriveNumber: UCHAR,
+    DriveGeometry: PGEOMETRY,
+) -> BOOLEAN {
+    (MachVtbl.DiskGetDriveGeometry.unwrap())(DriveNumber, DriveGeometry)
+}
+#[no_mangle]
+pub unsafe extern "C" fn MachVideoPutChar(
+    Ch: i32,
+    Attr: UCHAR,
+    X: ::core::ffi::c_uint,
+    Y: ::core::ffi::c_uint,
+) {
+    (MachVtbl.VideoPutChar.unwrap())(Ch, Attr, X, Y)
+}
 
 extern "C" {
     fn WARN(fmt: *const i8, ...);
@@ -1709,6 +1818,7 @@ pub unsafe extern "C" fn PcHwIdle() {
     }
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn ChainLoadBiosBootSectorCode(
     BootDrive: UCHAR,
     BootPartition: ULONG,

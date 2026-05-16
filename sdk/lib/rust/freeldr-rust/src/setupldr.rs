@@ -13,7 +13,8 @@ pub const SERVICE_ERROR_CRITICAL: ULONG = 0x00000003;
 pub const TAG_BOOT_OPTIONS: ULONG = u32::from_be_bytes(*b"pOtB");
 
 #[allow(non_snake_case)]
-unsafe fn UNREFERENCED_PARAMETER<T>(_: T) {}
+#[no_mangle]
+pub unsafe extern "system" fn UNREFERENCED_PARAMETER(_: PVOID) {}
 
 // setupldr.c file-local: list of options and their higher-priority counterparts.
 #[repr(C)]
@@ -229,7 +230,7 @@ unsafe fn SetupLdrScanBootDrivers(
     let mut ImagePathW: [WCHAR; 260] = [0; 260];
     let mut DriverNameW: [WCHAR; 256] = [0; 256];
 
-    UNREFERENCED_PARAMETER(SearchPath);
+    UNREFERENCED_PARAMETER(SearchPath as PVOID);
 
     Pass = 0;
     while Pass <= 1 {

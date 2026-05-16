@@ -37,13 +37,18 @@ list(APPEND FREELDR_ARC_SOURCE
     # disk/scsiport.c
     # lib/fs/pxe.c
 
-list(APPEND FREELDR_BOOTLIB_SOURCE
-    lib/arcsupp.c
-    lib/debug.c
-    # lib/peloader.c  # replaced by Rust (sdk/lib/rust/freeldr-rust)
-    lib/cache/blocklist.c
-    lib/cache/cache.c
-    lib/comm/rs232.c
+list(APPEND FREELDR_BOOTLIB_SOURCE)
+    # lib-pure/cache/inifile units → Rust (freeldr-rust). Prior commits
+    # (4a90a07f cache+inifile, 49677d6f lib-pure) wired `pub mod` but left
+    # these .c active → cold-link dup. Completing the cohabitation flips
+    # (AGENTS option 1; symbols the .c also provided are #[no_mangle]-
+    # finished in the matching .rs as the undefined oracle surfaces them).
+    # lib/arcsupp.c       # replaced by Rust (freeldr-rust/src/arcsupp.rs)
+    # lib/debug.c         # replaced by Rust (freeldr-rust/src/debug.rs)
+    # lib/peloader.c      # replaced by Rust (sdk/lib/rust/freeldr-rust)
+    # lib/cache/blocklist.c  # replaced by Rust (freeldr-rust/src/blocklist.rs)
+    # lib/cache/cache.c   # replaced by Rust (freeldr-rust/src/cache.rs)
+    # lib/comm/rs232.c    # replaced by Rust (freeldr-rust/src/rs232.rs)
     ## add KD support
     # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). ntfs/ext/btrfs
     # PRUNED entirely (no Rust, no C): livecd boots ISO, ramdisk is FAT,
@@ -55,12 +60,17 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
     # lib/fs/fs.c      # replaced by Rust (freeldr-rust/src/fs.rs)
     # lib/fs/iso.c     # replaced by Rust (freeldr-rust/src/iso.rs)
     # lib/fs/ntfs.c    # pruned
-    lib/inifile/ini_init.c
-    lib/inifile/inifile.c
-    lib/inifile/parse.c
-    lib/mm/meminit.c
-    lib/mm/mm.c
-    lib/mm/heap.c)
+    # lib/inifile/ini_init.c  # replaced by Rust (freeldr-rust/src/ini_init.rs)
+    # lib/inifile/inifile.c   # replaced by Rust (freeldr-rust/src/inifile.rs)
+    # lib/inifile/parse.c     # replaced by Rust (freeldr-rust/src/parse.rs)
+    # mm unit → Rust (freeldr-rust: meminit/mm/heap.rs). Prior mm commit
+    # (f7322948) wired `pub mod` but left the .c active → cold-link dup.
+    # Completing the cohabitation flip (AGENTS option 1). The Ex*/
+    # AddMemoryDescriptor symbols heap.c/meminit.c also provided are now
+    # #[no_mangle]-finished in heap.rs/meminit.rs.
+    # lib/mm/meminit.c  # replaced by Rust (freeldr-rust/src/meminit.rs)
+    # lib/mm/mm.c       # replaced by Rust (freeldr-rust/src/mm.rs)
+    # lib/mm/heap.c     # replaced by Rust (freeldr-rust/src/heap.rs)
 
 list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
@@ -125,8 +135,10 @@ else()
 endif()
 
 list(APPEND FREELDR_BASE_SOURCE
-    freeldr.c
-    lib/rtl/libsupp.c)
+    freeldr.c)
+    # lib/rtl/libsupp.c → Rust (freeldr-rust/src/libsupp.rs). Completing
+    # the cohabitation flip (49677d6f wired pub mod, left .c active).
+    # lib/rtl/libsupp.c   # replaced by Rust (freeldr-rust/src/libsupp.rs)
     # ntldr/ntldropts.c → Rust (freeldr-rust/src/ntldropts.rs). Cohabitation.
 
 if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")

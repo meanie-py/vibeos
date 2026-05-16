@@ -534,7 +534,7 @@ pub unsafe extern "C" fn MmInitializeHeap(PageLookupTable: PVOID) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExAllocatePoolWithTag(
+pub unsafe extern "system" fn ExAllocatePoolWithTag(
     PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T,
     Tag: ULONG) -> PVOID
@@ -543,7 +543,7 @@ pub unsafe extern "C" fn ExAllocatePoolWithTag(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExAllocatePool(
+pub unsafe extern "system" fn ExAllocatePool(
     PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T) -> PVOID
 {
@@ -551,14 +551,14 @@ pub unsafe extern "C" fn ExAllocatePool(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExFreePool(
+pub unsafe extern "system" fn ExFreePool(
     P: PVOID)
 {
     FrLdrHeapFreeEx(FrLdrDefaultHeap, P, 0);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExFreePoolWithTag(
+pub unsafe extern "system" fn ExFreePoolWithTag(
     P: PVOID,
     Tag: ULONG)
 {
@@ -566,7 +566,7 @@ pub unsafe extern "C" fn ExFreePoolWithTag(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RtlAllocateHeap(
+pub unsafe extern "system" fn RtlAllocateHeap(
     HeapHandle: PVOID,
     Flags: ULONG,
     Size: SIZE_T) -> PVOID
@@ -581,7 +581,7 @@ pub unsafe extern "C" fn RtlAllocateHeap(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RtlFreeHeap(
+pub unsafe extern "system" fn RtlFreeHeap(
     HeapHandle: PVOID,
     Flags: ULONG,
     HeapBase: PVOID) -> BOOLEAN

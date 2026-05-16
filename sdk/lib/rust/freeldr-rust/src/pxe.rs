@@ -436,7 +436,8 @@ static PxeVtbl: DEVVTBL = DEVVTBL {
     ServiceName: core::ptr::null(),
 };
 
-unsafe extern "C" fn PxeMount(DeviceId: ULONG) -> *const DEVVTBL {
+#[no_mangle]
+pub unsafe extern "C" fn PxeMount(DeviceId: ULONG) -> *const DEVVTBL {
     if GetPxeStructure() == core::ptr::null_mut() {
         return core::ptr::null();
     }

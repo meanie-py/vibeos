@@ -24,6 +24,8 @@ extern "C" {
     fn READ_PORT_UCHAR(Port: *mut UCHAR) -> UCHAR;
     fn TRACE(fmt: *const i8, ...);
     // freeldr debug printf family (external C: debug.c / ui). cdecl variadic.
+    // TRACE_printf/printf are #[no_mangle]-defined in tui.rs (non-variadic
+    // cdecl defs; caller-cleans → variadic call sites here are ABI-safe).
     fn TRACE_printf(fmt: PCSTR, ...);
     fn printf(fmt: PCSTR, ...) -> i32;
     // pccons.c console input (external C, not in pc-hw unit).

@@ -142,7 +142,8 @@ pub unsafe extern "C" fn UefiVideoPutChar(Ch: i32, Attr: u8, X: u32, Y: u32) {
     FbConsPutChar(Ch, Attr, X, Y);
 }
 
-unsafe fn UefiVideoGetDisplaySize(Width: PULONG, Height: PULONG, Depth: PULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn UefiVideoGetDisplaySize(Width: PULONG, Height: PULONG, Depth: PULONG) {
     FbConsGetDisplaySize(Width, Height, Depth);
 }
 

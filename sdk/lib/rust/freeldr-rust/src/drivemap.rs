@@ -66,7 +66,8 @@ unsafe fn DriveMapIsValidDriveString(DriveString: PCSTR) -> u8 {
     return 1u8;
 }
 
-unsafe fn DriveMapGetBiosDriveNumber(DeviceName: PCSTR) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn DriveMapGetBiosDriveNumber(DeviceName: PCSTR) -> u8 {
     let mut BiosDriveNumber: u8 = 0;
 
     TRACE(b"DriveMapGetBiosDriveNumber(%s)\n\0".as_ptr() as PCSTR, (DeviceName) as usize);
@@ -85,7 +86,8 @@ unsafe fn DriveMapGetBiosDriveNumber(DeviceName: PCSTR) -> u8 {
     BiosDriveNumber
 }
 
-pub unsafe fn DriveMapMapDrivesInSection(SectionId: ULONG_PTR) {
+#[no_mangle]
+pub unsafe extern "C" fn DriveMapMapDrivesInSection(SectionId: ULONG_PTR) {
     let mut SettingName: [i8; 80] = [0; 80];
     let mut SettingValue: [i8; 80] = [0; 80];
     let mut Drive1: [i8; 80] = [0; 80];

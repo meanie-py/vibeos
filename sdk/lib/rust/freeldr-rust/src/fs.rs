@@ -21,11 +21,21 @@ static FileSystems: [PFS_MOUNT; 3] = [IsoMount, FatMount, PxeMount];
 
 extern "C" {
     fn DbgPrint(fmt: *const i8, ...) -> NTSTATUS;
-    fn IS_VALID_FILEID(FileId: ULONG) -> BOOLEAN;
     fn ERR(fmt: *const i8, ...);
     fn UiMessageBox(msg: PCSTR);
     fn strlen(s: *const i8) -> usize;
     fn TRACE(fmt: *const i8, ...);
+}
+
+// fs.c:54 `#define IS_VALID_FILEID(FileId) \
+//   ((ULONG)(FileId) < _countof(FileData) && FileData[(ULONG)(FileId)].FuncTable)`
+// — file-scoped macro over fs.c's static FileData[]; rustconv emitted it
+// as `extern { fn IS_VALID_FILEID }` + call sites. Real cdecl wrapper
+// here (fs.rs owns the FileData translation). UNIQUE (C macro).
+#[no_mangle]
+pub unsafe extern "C" fn IS_VALID_FILEID(FileId: ULONG) -> BOOLEAN {
+    ((FileId < MAX_FDS as ULONG)
+        && !FileData[FileId as usize].FuncTable.is_null()) as BOOLEAN
 }
 
 // fs.c: 'NDsF'/'vDsF' multichar literals (big-endian). AI emitted the wrong

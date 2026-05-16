@@ -3,6 +3,20 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::{PIMAGE_NT_HEADERS};
 use core::ffi::c_void;
 
+// libsupp.c:23 `PVOID MmHighestUserAddress = (PVOID)MI_HIGHEST_USER_ADDRESS;`
+// — C global data (libsupp.c is the canonical definer); rustconv dropped
+// the non-fn definition. ndk/<arch>/mmtypes.h MI_HIGHEST_USER_ADDRESS:
+//   i386 0x7FFEFFFF ; amd64 0x000007FFFFFEFFFF ; arm64 0x00007FFFFFFFF000
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub static mut MmHighestUserAddress: PVOID = 0x7FFE_FFFF as PVOID;
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub static mut MmHighestUserAddress: PVOID = 0x0000_07FF_FFFE_FFFF as PVOID;
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub static mut MmHighestUserAddress: PVOID = 0x0000_7FFF_FFFF_F000 as PVOID;
+
 extern "C" {
     fn FrLdrHeapAlloc(Bytes: ULONG, Tag: ULONG) -> PVOID;
 }
@@ -36,7 +50,7 @@ pub unsafe extern "C" fn RtlpFreeMemory(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RtlImageNtHeaderEx(
+pub unsafe extern "system" fn RtlImageNtHeaderEx(
     Flags: ULONG,
     Base: PVOID,
     Size: ULONG64,

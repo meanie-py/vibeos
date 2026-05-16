@@ -10,15 +10,12 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderOsloaderStack as LoaderOsloaderSt
 pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderSpecialMemory as LoaderSpecialMemory;
 
 extern "C" {
-    fn ASSERTMSG(msg: PCHAR, condition: BOOLEAN);
     fn AddMemoryDescriptor( MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxCount: ULONG, BasePage: PFN_NUMBER, PageCount: PFN_NUMBER, MemoryType: TYPE_OF_MEMORY, ) -> ULONG;
     fn ERR(fmt: *const i8, ...);
     fn FIXME(fmt: *const i8, ...);
     fn INT386_SUCCESS(regs: REGS) -> BOOLEAN;
     fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS);
     fn TRACE(fmt: *const i8, ...);
-    fn ULONGLONG_ALIGN_DOWN_BY(value: ULONGLONG, alignment: ULONGLONG) -> ULONGLONG;
-    fn ULONGLONG_ALIGN_UP_BY(value: ULONGLONG, alignment: ULONGLONG) -> ULONGLONG;
     fn WARN(fmt: *const i8, ...);
     fn MmGetSystemMemoryMapTypeString(MemoryType: TYPE_OF_MEMORY) -> PCHAR;
     fn READ_PORT_UCHAR(Port: PUCHAR) -> UCHAR;
@@ -28,6 +25,33 @@ extern "C" {
     // disk.h external freeldr global (defined in disk C).
     static mut DiskReadBufferSize: SIZE_T;
 }
+
+// pcmem.c:31/34 — pure-arithmetic alignment #defines; rustconv emitted
+// `extern { fn ... }` + call sites. Real cdecl wrappers (pcmem owns the
+// C macro). UNIQUE (C macros, no symbol).
+//   #define ULONGLONG_ALIGN_DOWN_BY(size,align) ((u64)size & ~((u64)align-1))
+//   #define ULONGLONG_ALIGN_UP_BY(size,align)
+//       ULONGLONG_ALIGN_DOWN_BY((u64)size + align - 1, align)
+#[no_mangle]
+pub unsafe extern "C" fn ULONGLONG_ALIGN_DOWN_BY(
+    size: ULONGLONG,
+    align: ULONGLONG,
+) -> ULONGLONG {
+    size & !(align - 1)
+}
+#[no_mangle]
+pub unsafe extern "C" fn ULONGLONG_ALIGN_UP_BY(
+    size: ULONGLONG,
+    align: ULONGLONG,
+) -> ULONGLONG {
+    ULONGLONG_ALIGN_DOWN_BY(size + align - 1, align)
+}
+
+// ndk/rtlfuncs.h:256 `#define ASSERTMSG(msg,exp) ((void)0)` in the
+// NDEBUG freeldr build — rustconv made it `extern { fn ASSERTMSG }`.
+// Real cdecl no-op. UNIQUE (C macro).
+#[no_mangle]
+pub unsafe extern "C" fn ASSERTMSG(_msg: PCHAR, _condition: BOOLEAN) {}
 
 // x86common.h realmode BSS-layout #defines (dropped by rustconv).
 const STACKLOW: ULONG_PTR = 0x8000;

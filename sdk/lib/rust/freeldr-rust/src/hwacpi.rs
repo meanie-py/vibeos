@@ -53,7 +53,8 @@ extern "C" {
     fn FrLdrHeapAlloc(size: usize, tag: ULONG) -> *mut u8;
 }
 
-unsafe fn IsAcpiPresent() -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn IsAcpiPresent() -> BOOLEAN {
     AcpiPresent
 }
 

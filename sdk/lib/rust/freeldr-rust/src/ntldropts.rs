@@ -12,7 +12,8 @@ extern "C" {
     fn _strnicmp(s1: PCSTR, s2: PCSTR, n: usize) -> i32;
 }
 
-unsafe fn NtLdrGetNextOption(
+#[no_mangle]
+pub unsafe extern "C" fn NtLdrGetNextOption(
     Options: *mut PCSTR,
     OptionLength: *mut u32,
 ) -> PCSTR {
@@ -56,7 +57,8 @@ unsafe fn NtLdrGetNextOption(
     Option
 }
 
-unsafe fn NtLdrGetOptionExN(
+#[no_mangle]
+pub unsafe extern "C" fn NtLdrGetOptionExN(
     Options: PCSTR,
     OptionName: PCCH,
     OptNameLength: u32,
@@ -101,7 +103,8 @@ unsafe fn NtLdrGetOptionExN(
     Option
 }
 
-unsafe fn NtLdrGetOptionEx(
+#[no_mangle]
+pub unsafe extern "C" fn NtLdrGetOptionEx(
     Options: PCSTR,
     OptionName: PCSTR,
     OptionLength: *mut u32,
@@ -115,14 +118,16 @@ unsafe fn NtLdrGetOptionEx(
     )
 }
 
-unsafe fn NtLdrGetOption(
+#[no_mangle]
+pub unsafe extern "C" fn NtLdrGetOption(
     Options: PCSTR,
     OptionName: PCSTR,
 ) -> PCSTR {
     NtLdrGetOptionEx(Options, OptionName, core::ptr::null_mut())
 }
 
-unsafe fn NtLdrAddOptions(
+#[no_mangle]
+pub unsafe extern "C" fn NtLdrAddOptions(
     LoadOptions: PSTR,
     BufferSize: u32,
     Append: u8,

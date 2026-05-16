@@ -112,10 +112,15 @@ pub type PINTERNAL_UEFI_DISK = *mut INTERNAL_UEFI_DISK;
 pub static mut DiskReadBuffer: PVOID = core::ptr::null_mut();
 #[no_mangle]
 pub static mut DiskReadBufferSize: SIZE_T = 0;
-#[no_mangle]
-pub static mut FrldrBootDrive: UCHAR = 0;
-#[no_mangle]
-pub static mut FrldrBootPartition: ULONG = 0;
+// FrldrBootDrive/Partition are DEFINED by arch/{i386,amd64}/entry.S (asm,
+// in the BIOS freeldr_common only) — extern-consume, do NOT #[no_mangle]
+// (that dup'd entry.S at cold link; prev-green hwdisk.rs already externs
+// FrldrBootPartition — same precedent). uefildr-side provider resolved
+// in the uefildr cold-link pass.
+extern "C" {
+    static mut FrldrBootDrive: UCHAR;
+    static mut FrldrBootPartition: ULONG;
+}
 // uefidisk.c `PVOID Buffer;` is vestigial (no cross-TU refs); rustconv
 // translated the function-local `Buffer` vars as plain `Buffer` — a file
 // static would shadow those. Locals are the real intent; no static here.
