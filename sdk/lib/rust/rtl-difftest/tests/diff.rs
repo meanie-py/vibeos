@@ -122,6 +122,14 @@ extern "C" {
         n: u32,
         a: *const UNICODE_STRING,
     ) -> i32;
+    // Wave RTL-4b slice 4
+    fn ref_RtlEqualComputerName(a: *mut UNICODE_STRING, b: *mut UNICODE_STRING) -> u8;
+    fn ref_RtlEqualDomainName(a: *mut UNICODE_STRING, b: *mut UNICODE_STRING) -> u8;
+    fn ref_RtlDnsHostNameToComputerName(
+        cn: *mut UNICODE_STRING,
+        dns: *mut UNICODE_STRING,
+        alloc: u8,
+    ) -> i32;
 }
 
 struct Rng(u64);
@@ -1691,6 +1699,69 @@ fn diff_rtl_ensure_buffer_size() {
         assert_eq!(rc, rr,
             "RtlpEnsureBufferSize ret f={flags} same={same} sz={size} ss={staticsize} req={req}");
         assert_eq!(bc.Size, br.Size, "RtlpEnsureBufferSize Size");
+    }
+}
+
+#[test]
+fn diff_rtl_equal_computer_name() {
+    let mut rng = Rng(0x4b_0004_01);
+    let backing = vec![0x41u16; 8];
+    for _ in 0..10_000 {
+        let l1 = (rng.upto(9) * 2) as u16;
+        let l2 = (rng.upto(9) * 2) as u16;
+        let mut a = mk_ustr(backing.as_ptr() as *mut u16, l1, l1);
+        let mut b = mk_ustr(backing.as_ptr() as *mut u16, l2, l2);
+        unsafe {
+            assert_eq!(
+                cabi::RtlEqualComputerName(&mut a, &mut b),
+                ref_RtlEqualComputerName(&mut a, &mut b),
+                "RtlEqualComputerName"
+            );
+            assert_eq!(
+                cabi::RtlEqualDomainName(&mut a, &mut b),
+                ref_RtlEqualDomainName(&mut a, &mut b),
+                "RtlEqualDomainName"
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_dns_host_name_to_computer_name() {
+    let mut rng = Rng(0x4b_0004_02);
+    // ascii letters/digits/'.' plus unmappable units (→ '?' via enc,
+    // exercising the RtlpDidUnicodeToOemWork FALSE branch) and
+    // shared-model specials.
+    let alpha: &[u16] = &[
+        0x0041, 0x0061, 0x007A, 0x0030, 0x0039, 0x002E, 0x002D, 0x00C0,
+        0x00E0, 0x0152, 0x0153, 0x0178, 0x20AC, 0x0000,
+    ];
+    for _ in 0..20_000 {
+        let units = rng.upto(24);
+        let dv: Vec<u16> =
+            (0..units.max(1)).map(|_| alpha[rng.upto(alpha.len())]).collect();
+        let dlen = (units * 2) as u16;
+        let dp = dv.as_ptr() as *mut u16;
+        let cmax = (match rng.upto(4) { 0 => 0, 1 => 8, 2 => 32, _ => 60 }) as u16;
+        for alloc in [0u8, 1] {
+            let mut dns = mk_ustr(dp, dlen, dlen);
+            let mut bc = vec![0xCCCCu16; 64];
+            let mut br = vec![0xCCCCu16; 64];
+            let mut cc = UNICODE_STRING { Length: 0xAAAA, MaximumLength: cmax, Buffer: bc.as_mut_ptr() };
+            let mut cr = UNICODE_STRING { Length: 0xAAAA, MaximumLength: cmax, Buffer: br.as_mut_ptr() };
+            let (sc, sr);
+            unsafe {
+                sc = cabi::RtlDnsHostNameToComputerName(&mut cc, &mut dns, alloc);
+                sr = ref_RtlDnsHostNameToComputerName(&mut cr, &mut dns, alloc);
+            }
+            assert_eq!(sc, sr, "RtlDnsHostNameToComputerName ret u={units} cm={cmax} a={alloc} {dv:?}");
+            assert_eq!(
+                (cc.Length, cc.MaximumLength),
+                (cr.Length, cr.MaximumLength),
+                "RtlDnsHostNameToComputerName fields u={units} cm={cmax} a={alloc}"
+            );
+            assert_eq!(bc, br, "RtlDnsHostNameToComputerName buf u={units} cm={cmax} a={alloc} {dv:?}");
+        }
     }
 }
 

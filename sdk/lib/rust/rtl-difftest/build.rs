@@ -292,6 +292,12 @@ fn main() {
          #define RtlStringFromGUID ref_RtlStringFromGUID\n\
          #define RtlpEnsureBufferSize ref_RtlpEnsureBufferSize\n\
          #define RtlMultiAppendUnicodeStringBuffer ref_RtlMultiAppendUnicodeStringBuffer\n\
+         /* Wave RTL-4b slice 4: computer-name (genuine unicode.c;\n\
+            RtlpDidUnicodeToOemWork stays genuine, NlsOemDefaultChar='?'\n\
+            matches the shared enc default). */\n\
+         #define RtlEqualComputerName ref_RtlEqualComputerName\n\
+         #define RtlEqualDomainName ref_RtlEqualDomainName\n\
+         #define RtlDnsHostNameToComputerName ref_RtlDnsHostNameToComputerName\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
          int RtlpSafeCopyMemory(){{return 0;}}\n\

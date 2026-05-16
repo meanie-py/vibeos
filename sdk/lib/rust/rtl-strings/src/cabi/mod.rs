@@ -34,7 +34,9 @@ const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
 const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 const STATUS_NOT_FOUND: i32 = 0xC000_0225u32 as i32;
 const STATUS_NOT_IMPLEMENTED: i32 = 0xC000_0002u32 as i32;
+const STATUS_INVALID_COMPUTER_NAME: i32 = 0xC000_0122u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
+const MAX_COMPUTERNAME_LENGTH: u32 = 15;
 
 const RTL_SKIP_BUFFER_COPY: u32 = 0x0000_0001;
 const RTL_DUP_NULL_TERMINATE: u32 = 1;
@@ -1228,6 +1230,85 @@ pub unsafe extern "system" fn RtlCompareUnicodeStrings(
         rslice(string2, string2_length),
         case_insensitive != 0,
     )
+}
+
+// ── Wave RTL-4b slice 4: computer-name ────────────────────────────
+
+/// `BOOLEAN NTAPI RtlEqualComputerName(PUNICODE_STRING,
+/// PUNICODE_STRING)`. Chains through `RtlUpcaseUnicodeStringToOemString
+/// (…, TRUE)` which (alloc → NULL) yields STATUS_NO_MEMORY ⇒
+/// `NT_SUCCESS` FALSE ⇒ the outer guard never sets Result ⇒ FALSE.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEqualComputerName(
+    _computer_name1: *mut UNICODE_STRING,
+    _computer_name2: *mut UNICODE_STRING,
+) -> u8 {
+    0
+}
+
+/// `BOOLEAN NTAPI RtlEqualDomainName(...)` — delegates to
+/// `RtlEqualComputerName`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEqualDomainName(
+    domain_name1: *mut UNICODE_STRING,
+    domain_name2: *mut UNICODE_STRING,
+) -> u8 {
+    RtlEqualComputerName(domain_name1, domain_name2)
+}
+
+/// `NTSTATUS NTAPI RtlDnsHostNameToComputerName(PUNICODE_STRING
+/// ComputerName, PUNICODE_STRING DnsHostName, BOOLEAN Allocate)`.
+/// Dot-scan → `RtlUpcaseUnicodeToOemN` (≤15) → `RtlpDidUnicodeToOemWork`
+/// → `RtlOemStringToUnicodeString`. Default Status is
+/// STATUS_INVALID_COMPUTER_NAME.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDnsHostNameToComputerName(
+    computer_name: *mut UNICODE_STRING,
+    dns_host_name: *mut UNICODE_STRING,
+    allocate: u8,
+) -> i32 {
+    let mut status = STATUS_INVALID_COMPUTER_NAME;
+    let mut cn_len: u32 = (*dns_host_name).Length as u32;
+
+    let dns_units = uunits(dns_host_name);
+    for (l, &w) in dns_units.iter().enumerate() {
+        if w == b'.' as u16 {
+            cn_len = (l as u32) * 2;
+            break;
+        }
+    }
+
+    if cn_len > 0 {
+        let mut oemn = [0u8; (MAX_COMPUTERNAME_LENGTH + 1) as usize];
+        let mut oemn_len: u32 = 0;
+        status = RtlUpcaseUnicodeToOemN(
+            oemn.as_mut_ptr(),
+            MAX_COMPUTERNAME_LENGTH,
+            &mut oemn_len,
+            (*dns_host_name).Buffer,
+            cn_len,
+        );
+        if status == STATUS_SUCCESS || status == STATUS_BUFFER_OVERFLOW {
+            oemn[MAX_COMPUTERNAME_LENGTH as usize] = 0;
+            status = STATUS_INVALID_COMPUTER_NAME;
+            let cn_oem = STRING {
+                Length: oemn_len as u16,
+                MaximumLength: (MAX_COMPUTERNAME_LENGTH + 1) as u16,
+                Buffer: oemn.as_mut_ptr(),
+            };
+            // RtlpDidUnicodeToOemWork(DnsHostName, &cn_oem): reads
+            // DnsHostName->Buffer[i] / oemn[i] for i < oemn_len.
+            let uni_src = rslice((*dns_host_name).Buffer, oemn_len as usize);
+            if nls::did_oem_work(uni_src, &oemn[..oemn_len as usize]) {
+                status = RtlOemStringToUnicodeString(
+                    computer_name,
+                    &cn_oem,
+                    allocate,
+                );
+            }
+        }
+    }
+    status
 }
 
 // ── Wave RTL-4b slice 3: alloc-edge (harness alloc → NULL) ────────
