@@ -282,6 +282,215 @@ def cmd_seh_classify(args):
         print_classification(infos, verbose=args.verbose)
 
 
+def cmd_seh_inventory(args):
+    from .seh_inventory import (
+        inventory_file, inventory_keepset, write_sidecar,
+        print_summary, run_oracle,
+    )
+    from .config import REACTOS_ROOT
+
+    if args.oracle:
+        winsta = REACTOS_ROOT / "win32ss/user/ntuser/winsta.c"
+        sys.exit(run_oracle(winsta))
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    if target.is_file():
+        sites = inventory_file(target)
+        if args.write_sidecars:
+            print(f"wrote {write_sidecar(target, sites)}")
+        if args.json:
+            print(json.dumps(
+                {"source": str(target),
+                 "sites": [s.__dict__ | {"category": s.category.value}
+                           for s in sites]},
+                indent=2, default=str))
+        else:
+            for s in sites:
+                sig = (" " + ",".join(s.signals)) if s.signals else ""
+                print(f"  ({s.category.value}) {s.function} "
+                      f"L{s.line_start}-{s.line_end}{sig}"
+                      f"{('  — ' + s.note) if s.note else ''}")
+    elif target.is_dir():
+        inv = inventory_keepset(target)
+        if args.write_sidecars:
+            for p, ss in inv.items():
+                write_sidecar(p, ss)
+            print(f"wrote {len(inv)} sidecars")
+        print_summary(inv)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_seh_rewrite(args):
+    import difflib
+    from .seh_rewrite import rewrite_file, run_oracle
+    from .config import REACTOS_ROOT
+    from .seh_inventory import inventory_keepset, Category
+
+    if args.oracle:
+        sys.exit(run_oracle(REACTOS_ROOT / "win32ss/user/ntuser/winsta.c"))
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    def do_one(p: Path):
+        orig = p.read_text(errors="replace")
+        res = rewrite_file(p)
+        if args.apply and res.rewritten:
+            p.write_text(res.text)
+        if not args.apply:
+            diff = difflib.unified_diff(
+                orig.splitlines(True), res.text.splitlines(True),
+                f"a/{p.name}", f"b/{p.name}")
+            sys.stdout.writelines(diff)
+        return res
+
+    if target.is_file():
+        res = do_one(target)
+        print(f"\n{target.name}: rewritten={res.rewritten} "
+              f"skipped={len(res.skipped)}", file=sys.stderr)
+        for ln, why in res.skipped:
+            print(f"  skip L{ln}: {why}", file=sys.stderr)
+    elif target.is_dir():
+        import json as _json
+        import collections
+        inv = inventory_keepset(target)
+        tot_rw = tot_sk = 0
+        hist: dict[str, int] = collections.Counter()
+        manifest = []
+        for p in inv:
+            r = do_one(p)
+            tot_rw += r.rewritten
+            tot_sk += len(r.skipped)
+            for ln, why in r.skipped:
+                hist[why] += 1
+                manifest.append({"file": str(p.relative_to(target)),
+                                 "line": ln, "reason": why})
+        if args.apply:
+            mpath = target / "win32k_pass1_manual_followup.json"
+            mpath.write_text(_json.dumps(
+                {"rewritten": tot_rw, "skipped": tot_sk,
+                 "sites": manifest}, indent=2))
+            print(f"manual-followup ledger: {mpath}", file=sys.stderr)
+        print(f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
+              f"{tot_rw} sites rewritten, {tot_sk} skipped across "
+              f"{len(inv)} files", file=sys.stderr)
+        print("skip reasons:", file=sys.stderr)
+        for why, n in sorted(hist.items(), key=lambda x: -x[1]):
+            print(f"  {n:>4}  {why}", file=sys.stderr)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_callout_annotate(args):
+    from .callout_annotate import (
+        extract_file, extract_keepset, write_sidecar,
+        print_summary, run_oracle,
+    )
+    from .config import REACTOS_ROOT
+
+    if args.oracle:
+        sys.exit(run_oracle(REACTOS_ROOT / "win32ss/user/ntuser/callback.c"))
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    if target.is_file():
+        sites = extract_file(target)
+        if args.write_sidecars:
+            print(f"wrote {write_sidecar(target, sites)}")
+        if args.json:
+            print(json.dumps(
+                {"source": str(target),
+                 "sites": [s.__dict__ for s in sites]},
+                indent=2, default=str))
+        else:
+            for s in sites:
+                sig = (" " + ",".join(s.signals)) if s.signals else ""
+                print(f"  {s.function} L{s.func_line} "
+                      f"{s.callback_index} @KUMC L{s.kumc_line} "
+                      f"[Leave L{s.leave_co_line} / Enter L{s.enter_co_line} "
+                      f"/ probe L{s.result_probe_line}]{sig}")
+    elif target.is_dir():
+        inv = extract_keepset(target)
+        if args.write_sidecars:
+            for p, ss in inv.items():
+                write_sidecar(p, ss)
+            print(f"wrote {len(inv)} sidecars")
+        print_summary(inv)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_seh_llm_lower(args):
+    from .seh_llm_lower import run, print_report, run_oracle, load_units
+
+    if args.oracle:
+        sys.exit(run_oracle())
+
+    units = load_units(args.only)
+    print(f"{len(units)} dedup'd functions "
+          f"({sum(len(u.reasons) for u in units)} ledger sites) "
+          f"{'[--only ' + args.only + ']' if args.only else ''}",
+          file=sys.stderr)
+    outcomes = run(apply=args.apply, model=args.model,
+                   only=args.only, units=units)
+    if args.diff:
+        for o in outcomes:
+            if o.applied and o.diff:
+                sys.stdout.write(o.diff)
+    sys.exit(print_report(outcomes, args.apply))
+
+
+def cmd_gdi_locks(args):
+    from .gdi_lock_inventory import (
+        extract_file, extract_keepset, write_sidecar,
+        print_summary, run_oracle,
+    )
+    from .config import REACTOS_ROOT
+
+    if args.oracle:
+        sys.exit(run_oracle(REACTOS_ROOT / "win32ss/gdi/ntgdi/dcutil.c"))
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    if target.is_file():
+        sites = extract_file(target)
+        if args.write_sidecars:
+            print(f"wrote {write_sidecar(target, sites)}")
+        if args.json:
+            print(json.dumps(
+                {"source": str(target),
+                 "sites": [s.__dict__ for s in sites]},
+                indent=2, default=str))
+        else:
+            for s in sites:
+                sig = (" " + ",".join(s.signals)) if s.signals else ""
+                print(f"  {s.function} L{s.func_line} "
+                      f"{s.lock_fn}→{s.unlock_fn} {s.var}@L{s.lock_line} "
+                      f"[{s.shape}] unlock@{s.unlock_lines}{sig}")
+    elif target.is_dir():
+        inv = extract_keepset(target)
+        if args.write_sidecars:
+            for p, ss in inv.items():
+                write_sidecar(p, ss)
+            print(f"wrote {len(inv)} sidecars")
+        print_summary(inv)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_probe_migrate(args):
     from .probe_migrate import (
         scan_rust_file, find_rust_files, run_probe_migration,
@@ -767,6 +976,70 @@ def main():
     p.add_argument("-v", "--verbose", action="store_true", help="Show per-function details")
     p.add_argument("--json", action="store_true", help="Output JSON")
 
+    # seh-inventory (win32k Pass 0 triage)
+    p = sub.add_parser("seh-inventory",
+                       help="Win32k Pass 0: triage SEH sites a/b/c/d/e + sidecars")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (relative to repo root or absolute); "
+                        "default win32ss/ keep-set")
+    p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
+    p.add_argument("--write-sidecars", action="store_true",
+                   help="Write <file>.win32k_meta.json next to each source")
+    p.add_argument("--oracle", action="store_true",
+                   help="Run the winsta.c spike self-test and exit")
+
+    # seh-rewrite (win32k Pass 1 mechanical probe lowering)
+    p = sub.add_parser("seh-rewrite",
+                       help="Win32k Pass 1: mechanically lower category-(a) "
+                            "probe SEH sites to SafeProbeFor*")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (relative to repo root or absolute)")
+    p.add_argument("--apply", action="store_true",
+                   help="Write changes in place (default: print unified diff)")
+    p.add_argument("--oracle", action="store_true",
+                   help="Run the winsta.c spike self-test and exit")
+
+    # callout-annotate (win32k Pass 3 USER callout extraction — no rewrite)
+    p = sub.add_parser("callout-annotate",
+                       help="Win32k Pass 3: extract KeUserModeCallback "
+                            "callout sites + sidecars (no source rewrite)")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (relative to repo root or absolute); "
+                        "default win32ss/ keep-set")
+    p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
+    p.add_argument("--write-sidecars", action="store_true",
+                   help="Write <file>.win32k_callouts.json next to each source")
+    p.add_argument("--oracle", action="store_true",
+                   help="Run the callback.c ground-truth self-test and exit")
+
+    # seh-llm-lower (win32k Pass 1b: LLM lowering of the 64-site ledger)
+    p = sub.add_parser("seh-llm-lower",
+                       help="Win32k Pass 1b: LLM-lower the Pass-1 "
+                            "manual-followup ledger (cached, validated)")
+    p.add_argument("--apply", action="store_true",
+                   help="Splice validated rewrites in place (default: dry-run)")
+    p.add_argument("--diff", action="store_true",
+                   help="Print unified diffs for the ready rewrites")
+    p.add_argument("--model", default="",
+                   help="Model id/shortcut (default: Sonnet)")
+    p.add_argument("--only", default=None,
+                   help="Restrict to ledger files whose path contains this")
+    p.add_argument("--oracle", action="store_true",
+                   help="Structural self-test (no API spend) and exit")
+
+    # gdi-locks (win32k Pass 2 GDI manual-lock-bracket detection — no rewrite)
+    p = sub.add_parser("gdi-locks",
+                       help="Win32k Pass 2: detect GDI manual lock brackets "
+                            "+ sidecars (no source rewrite)")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (relative to repo root or absolute); "
+                        "default win32ss/ keep-set")
+    p.add_argument("--json", action="store_true", help="Output JSON (file mode)")
+    p.add_argument("--write-sidecars", action="store_true",
+                   help="Write <file>.win32k_gdilocks.json next to each source")
+    p.add_argument("--oracle", action="store_true",
+                   help="Run the dcutil.c ground-truth self-test and exit")
+
     # translate (function-by-function)
     p = sub.add_parser("translate", help="Function-by-function translation (improved pipeline)")
     p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
@@ -826,6 +1099,11 @@ def main():
         "estimate": cmd_estimate,
         "translate": cmd_translate,
         "seh-classify": cmd_seh_classify,
+        "seh-inventory": cmd_seh_inventory,
+        "seh-rewrite": cmd_seh_rewrite,
+        "callout-annotate": cmd_callout_annotate,
+        "gdi-locks": cmd_gdi_locks,
+        "seh-llm-lower": cmd_seh_llm_lower,
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,

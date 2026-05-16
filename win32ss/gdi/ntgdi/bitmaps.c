@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -487,16 +488,14 @@ NtGdiGetBitmapDimension(
         return FALSE;
 
     /* Use SEH to copy the data to the caller */
-    _SEH2_TRY
     {
-        ProbeForWrite(psizDim, sizeof(*psizDim), 1);
-        *psizDim = dim;
+        NTSTATUS __SehStatus = SafeProbeForWrite(psizDim, sizeof(*psizDim), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END
+    *psizDim = dim;
 
     return TRUE;
 }
@@ -673,6 +672,7 @@ NtGdiSetBitmapDimension(
 {
     PSURFACE psurf;
     BOOL Ret = TRUE;
+    NTSTATUS Status;
 
     if (hBitmap == NULL)
         return FALSE;
@@ -686,16 +686,15 @@ NtGdiSetBitmapDimension(
 
     if (Size)
     {
-        _SEH2_TRY
-        {
-            ProbeForWrite(Size, sizeof(SIZE), 1);
-            *Size = psurf->sizlDim;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        Status = SafeProbeForWrite(Size, sizeof(SIZE), 1);
+        if (!NT_SUCCESS(Status))
         {
             Ret = FALSE;
         }
-        _SEH2_END
+        else
+        {
+            *Size = psurf->sizlDim;
+        }
     }
 
     /* The dimension is changed even if writing the old value failed */
@@ -706,6 +705,7 @@ NtGdiSetBitmapDimension(
 
     return Ret;
 }
+
 
 /*  Internal Functions  */
 

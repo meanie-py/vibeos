@@ -1,0 +1,91 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/clipboard.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 3,
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "NtUserGetClipboardFormatName",
+      "line_start": 754,
+      "line_end": 766,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "IntGetAtomName"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: IntGetAtomName"
+    },
+    {
+      "function": "NtUserGetPriorityClipboardFormat",
+      "line_start": 839,
+      "line_end": 857,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "IntIsFormatAvailable"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: IntIsFormatAvailable"
+    },
+    {
+      "function": "NtUserGetClipboardData",
+      "line_start": 978,
+      "line_end": 1007,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "IntGetFormatElement"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: IntGetFormatElement"
+    },
+    {
+      "function": "NtUserConvertMemHandle",
+      "line_start": 1199,
+      "line_end": 1207,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    }
+  ]
+}

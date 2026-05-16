@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserInput);
 
 MOUSEMOVEPOINT gMouseHistoryOfMoves[64];
@@ -484,20 +485,19 @@ NtUserTrackMouseEvent(
 {
     TRACKMOUSEEVENT SafeTME;
     BOOL bRet = FALSE;
+    NTSTATUS Status;
 
     TRACE("Enter NtUserTrackMouseEvent\n");
 
-    _SEH2_TRY
     {
-        ProbeForRead(lpEventTrack, sizeof(TRACKMOUSEEVENT), 1);
-        RtlCopyMemory(&SafeTME, lpEventTrack, sizeof(TRACKMOUSEEVENT));
+        NTSTATUS __SehStatus = SafeProbeForRead(lpEventTrack, sizeof(TRACKMOUSEEVENT), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            return FALSE;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END;
+    RtlCopyMemory(&SafeTME, lpEventTrack, sizeof(TRACKMOUSEEVENT));
 
     if (SafeTME.cbSize != sizeof(TRACKMOUSEEVENT))
     {
@@ -516,17 +516,16 @@ NtUserTrackMouseEvent(
     if (SafeTME.dwFlags & TME_QUERY)
     {
         bRet = IntQueryTrackMouseEvent(&SafeTME);
-        _SEH2_TRY
+        Status = SafeProbeForWrite(lpEventTrack, sizeof(TRACKMOUSEEVENT), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(lpEventTrack, sizeof(TRACKMOUSEEVENT), 1);
-            RtlCopyMemory(lpEventTrack, &SafeTME, sizeof(TRACKMOUSEEVENT));
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            SetLastNtError(_SEH2_GetExceptionCode());
+            SetLastNtError(Status);
             bRet = FALSE;
         }
-        _SEH2_END;
+        else
+        {
+            RtlCopyMemory(lpEventTrack, &SafeTME, sizeof(TRACKMOUSEEVENT));
+        }
     }
     else
     {
@@ -537,6 +536,7 @@ NtUserTrackMouseEvent(
     UserLeave();
     return bRet;
 }
+
 
 DWORD
 APIENTRY
@@ -565,17 +565,15 @@ NtUserGetMouseMovePointsEx(
         return (DWORD)-1;
     }
 
-    _SEH2_TRY
     {
-        ProbeForRead(lpptIn, cbSize, 1);
-        RtlCopyMemory(&Safeppt, lpptIn, cbSize);
+        NTSTATUS __SehStatus = SafeProbeForRead(lpptIn, cbSize, 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            return (DWORD)-1;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return (DWORD)-1);
-    }
-    _SEH2_END;
+    RtlCopyMemory(&Safeppt, lpptIn, cbSize);
 
     UserEnterShared();
 
@@ -615,17 +613,15 @@ NtUserGetMouseMovePointsEx(
         case GMMP_USE_DISPLAY_POINTS:
             if (nBufPoints)
             {
-                _SEH2_TRY
                 {
-                    ProbeForWrite(lpptOut, cbSize, 1);
+                    NTSTATUS __SehStatus = SafeProbeForWrite(lpptOut, cbSize, 1);
+                    if (!NT_SUCCESS(__SehStatus))
+                    {
+                        SetLastNtError(__SehStatus);
+                        iRet = -1;
+                        goto cleanup;
+                    }
                 }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    SetLastNtError(_SEH2_GetExceptionCode());
-                    iRet = -1;
-                    _SEH2_YIELD(goto cleanup);
-                }
-                _SEH2_END;
             }
             iRet = nBufPoints;
             break;

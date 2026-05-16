@@ -9,6 +9,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserDesktop);
 
 #include <reactos/buildno.h>
@@ -2889,18 +2890,16 @@ NtUserResolveDesktop(
 
     UserEnterExclusive();
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(phWinSta, sizeof(HWINSTA), sizeof(HWINSTA));
+    if (!NT_SUCCESS(Status))
+    {
+        goto Quit;
+    }
+    else
     {
         /* Probe the handle pointer */
         // ProbeForWriteHandle
-        ProbeForWrite(phWinSta, sizeof(HWINSTA), sizeof(HWINSTA));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-        _SEH2_YIELD(goto Quit);
-    }
-    _SEH2_END;
 
     /* Capture the user desktop path string */
     Status = ProbeAndCaptureUnicodeString(&CapturedDesktopPath,

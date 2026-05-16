@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -1081,6 +1082,7 @@ NtGdiGradientFill(
     PTRIVERTEX SafeVertex;
     PVOID SafeMesh;
     ULONG cbVertex, cbMesh;
+    NTSTATUS Status;
 
     /* Validate parameters */
     if (!pVertex || !nVertex || !pMesh || !nMesh)
@@ -1121,20 +1123,19 @@ NtGdiGradientFill(
     SafeMesh = (PVOID)((ULONG_PTR)SafeVertex + cbVertex);
 
     /* Copy the parameters to kernel mode */
-    _SEH2_TRY
+    Status = SafeProbeForRead(pVertex, cbVertex, 1);
+    if (NT_SUCCESS(Status)) Status = SafeProbeForRead(pMesh, cbMesh, 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(pVertex, cbVertex, 1);
-        ProbeForRead(pMesh, cbMesh, 1);
+        ExFreePoolWithTag(SafeVertex, TAG_SHAPE);
+        SetLastNtError(Status);
+        return FALSE;
+    }
+    else
+    {
         RtlCopyMemory(SafeVertex, pVertex, cbVertex);
         RtlCopyMemory(SafeMesh, pMesh, cbMesh);
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        ExFreePoolWithTag(SafeVertex, TAG_SHAPE);
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return FALSE;)
-    }
-    _SEH2_END;
 
     /* Call the internal function */
     bRet = GreGradientFill(hdc, SafeVertex, nVertex, SafeMesh, nMesh, ulMode);
@@ -1143,6 +1144,7 @@ NtGdiGradientFill(
     ExFreePoolWithTag(SafeVertex, TAG_SHAPE);
     return bRet;
 }
+
 
 BOOL APIENTRY
 NtGdiExtFloodFill(

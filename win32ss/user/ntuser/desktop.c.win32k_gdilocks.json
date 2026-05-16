@@ -1,0 +1,24 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/desktop.c",
+  "schema": "win32k_pass2_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "IntPaintDesktop",
+      "func_line": 1852,
+      "func_end_line": 2274,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 2133,
+      "var": "pdc",
+      "null_guarded": false,
+      "unlock_lines": [
+        2137
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    }
+  ]
+}

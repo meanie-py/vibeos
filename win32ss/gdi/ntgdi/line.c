@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -767,6 +768,7 @@ NtGdiMoveTo(
     PDC pdc;
     BOOL Ret;
     POINT Point;
+    NTSTATUS Status;
 
     pdc = DC_LockDc(hdc);
     if (!pdc) return FALSE;
@@ -775,22 +777,22 @@ NtGdiMoveTo(
 
     if (Ret && pptOut)
     {
-       _SEH2_TRY
-       {
-           ProbeForWrite(pptOut, sizeof(POINT), 1);
-           RtlCopyMemory(pptOut, &Point, sizeof(POINT));
-       }
-       _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-       {
-           SetLastNtError(_SEH2_GetExceptionCode());
-           Ret = FALSE; // CHECKME: is this correct?
-       }
-       _SEH2_END;
+        Status = SafeProbeForWrite(pptOut, sizeof(POINT), 1);
+        if (!NT_SUCCESS(Status))
+        {
+            SetLastNtError(Status);
+            Ret = FALSE; // CHECKME: is this correct?
+        }
+        else
+        {
+            RtlCopyMemory(pptOut, &Point, sizeof(POINT));
+        }
     }
 
     DC_UnlockDc(pdc);
 
     return Ret;
 }
+
 
 /* EOF */

@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -413,27 +414,28 @@ NtGdiGetAppClipBox(
 {
     RECT rect;
     INT iComplexity;
+    NTSTATUS Status;
 
     /* Call the internal function */
     iComplexity = GdiGetClipBox(hdc, &rect);
 
     if (iComplexity != ERROR)
     {
-        _SEH2_TRY
-        {
-            ProbeForWrite(prc, sizeof(RECT), 1);
-            *prc = rect;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        Status = SafeProbeForWrite(prc, sizeof(RECT), 1);
+        if (!NT_SUCCESS(Status))
         {
             iComplexity = ERROR;
         }
-        _SEH2_END
+        else
+        {
+            *prc = rect;
+        }
     }
 
     /* Return the complexity */
     return iComplexity;
 }
+
 
 INT
 APIENTRY
@@ -638,18 +640,11 @@ NtGdiRectVisible(
         return FALSE;
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(UnsafeRect, sizeof(RECT), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead(UnsafeRect,
-                   sizeof(RECT),
-                   1);
         Rect = *UnsafeRect;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     if(!NT_SUCCESS(Status))
     {

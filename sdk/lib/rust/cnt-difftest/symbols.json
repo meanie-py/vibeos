@@ -162,6 +162,51 @@
       "value 0/\u00b1/I32_MIN/I32_MAX"
     ]
   },
+  "_makepath": {
+    "c_signature": "void _makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)",
+    "family": "string",
+    "slice_pattern": "makepath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/stdlib/makepath.c",
+    "fuzz_domain": [
+      "all empty",
+      "drive only",
+      "dir w/o trailing sep",
+      "dir w/ trailing \\\\",
+      "dir w/ trailing /",
+      "fname only",
+      "ext leading dot",
+      "ext no dot",
+      "NULL each component",
+      "empty-string component",
+      "drive >1 char (only [0])",
+      "full path",
+      "NULL path no-op"
+    ]
+  },
+  "_splitpath": {
+    "c_signature": "void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)",
+    "family": "string",
+    "slice_pattern": "splitpath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/string/_splitpath.c",
+    "fuzz_domain": [
+      "empty",
+      "drive only X:",
+      "no drive",
+      "X:dir\\file.ext",
+      "no ext",
+      "bare fname",
+      "trailing sep",
+      "leading-dot .bashrc",
+      "dot in dir a.b/c",
+      "multi-dot",
+      "forward slash",
+      "mixed / and \\\\",
+      "NULL drive/dir/fname/ext each skipped",
+      "1:x / ::x edge"
+    ]
+  },
   "_stricmp": {
     "c_signature": "int __cdecl _stricmp(char const* _String1, char const* _String2)",
     "family": "string",
@@ -179,6 +224,21 @@
       "embedded equal-NUL"
     ]
   },
+  "_strlwr": {
+    "c_signature": "char *_strlwr(char *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/_strlwr_nt.c",
+    "fuzz_domain": [
+      "empty",
+      "all-lower (noop)",
+      "all-upper",
+      "mixed",
+      "digits/punct",
+      "0x80-0xFF (untouched)"
+    ]
+  },
   "_strnicmp": {
     "c_signature": "int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)",
     "family": "string",
@@ -192,6 +252,54 @@
       "n past NUL",
       "high-bit",
       "diff only after fold"
+    ]
+  },
+  "_strnset": {
+    "c_signature": "char *_strnset(char *szToFill, int szFill, size_t sizeMaxFill)",
+    "family": "string",
+    "slice_pattern": "mut_nset",
+    "return_collapse": "strmut",
+    "reference": "sdk/lib/crt/string/strset.c",
+    "fuzz_domain": [
+      "max 0 (\u2192nothing)",
+      "max < strlen",
+      "max == strlen",
+      "max > strlen (\u2192strlen)",
+      "empty str",
+      "max > INT_MAX (\u2192negative\u2192nothing)",
+      "szFill>0xFF trunc"
+    ]
+  },
+  "_strrev": {
+    "c_signature": "char *_strrev(char *s)",
+    "family": "string",
+    "slice_pattern": "mut_reverse",
+    "return_collapse": "strmut",
+    "reference": "sdk/lib/crt/string/strrev.c",
+    "fuzz_domain": [
+      "empty",
+      "len 1",
+      "len 2",
+      "even len",
+      "odd len",
+      "embedded high bytes",
+      "all same char"
+    ]
+  },
+  "_strset": {
+    "c_signature": "char *_strset(char *szToFill, int szFill)",
+    "family": "string",
+    "slice_pattern": "mut_set",
+    "return_collapse": "strmut",
+    "reference": "sdk/lib/crt/string/strset.c",
+    "fuzz_domain": [
+      "empty",
+      "len 1",
+      "typical",
+      "szFill 0x41",
+      "szFill>0xFF (low-byte trunc)",
+      "szFill negative",
+      "szFill 0 (early-stop semantics: still fills since check is on src not fill)"
     ]
   },
   "_strtoi64": {
@@ -237,6 +345,21 @@
       "ws+sign",
       "invalid base",
       "no digits"
+    ]
+  },
+  "_strupr": {
+    "c_signature": "char *_strupr(char *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/_strupr_nt.c",
+    "fuzz_domain": [
+      "NULL (\u2192NULL)",
+      "empty",
+      "all-upper (noop)",
+      "all-lower",
+      "mixed",
+      "0x80-0xFF (untouched)"
     ]
   },
   "_ui64toa": {
@@ -326,6 +449,20 @@
       "embedded equal-NUL"
     ]
   },
+  "_wcslwr": {
+    "c_signature": "wchar_t *_wcslwr(wchar_t *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/wstring/_wcslwr_nt.c",
+    "fuzz_domain": [
+      "NULL (\u2192NULL)",
+      "empty",
+      "ASCII mixed",
+      "Latin-1/CJK units (untouched)",
+      "all-upper ASCII"
+    ]
+  },
   "_wcsnicmp": {
     "c_signature": "int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)",
     "family": "wstring",
@@ -339,6 +476,180 @@
       "n past NUL",
       ">0xFF wchars",
       "diff only after fold"
+    ]
+  },
+  "_wcstoi64": {
+    "c_signature": "__int64 _wcstoi64(const wchar_t *nptr, wchar_t **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "base10",
+      "base16 0x",
+      "base0 octal",
+      "base 2..36",
+      "+I64 overflow\u2192MAX",
+      "-overflow\u2192MIN",
+      "ws+sign",
+      "no digits (endptr=after ws/sign/0x)",
+      "0x then junk",
+      "invalid base\u21920",
+      "junk after digits",
+      "NULL nptr"
+    ]
+  },
+  "_wcstoi64_l": {
+    "c_signature": "__int64 _wcstoi64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "delegated by _wcstoi64 \u2014 same domain"
+    ]
+  },
+  "_wcstoui64": {
+    "c_signature": "unsigned __int64 _wcstoui64(const wchar_t *nptr, wchar_t **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoui64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "base10",
+      "base16 0x",
+      "base0 octal",
+      "base 2..36",
+      "overflow\u2192UI64_MAX",
+      "negative (wrap)",
+      "ws+sign",
+      "no digits",
+      "0x then junk",
+      "invalid base\u21920",
+      "junk after",
+      "NULL nptr"
+    ]
+  },
+  "_wcstoui64_l": {
+    "c_signature": "unsigned __int64 _wcstoui64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wcstoui64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "delegated by _wcstoui64 \u2014 same domain"
+    ]
+  },
+  "_wcsupr": {
+    "c_signature": "wchar_t *_wcsupr(wchar_t *_String)",
+    "family": "string",
+    "slice_pattern": "case_inplace",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/wstring/_wcsupr_nt.c",
+    "fuzz_domain": [
+      "empty",
+      "ASCII mixed",
+      "Latin-1/CJK units (untouched)",
+      "all-lower ASCII"
+    ]
+  },
+  "_wmakepath": {
+    "c_signature": "void _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *dir, const wchar_t *fname, const wchar_t *ext)",
+    "family": "wstring",
+    "slice_pattern": "makepath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/stdlib/wmakpath.c",
+    "fuzz_domain": [
+      "all empty",
+      "drive only",
+      "dir w/o sep",
+      "dir w/ trailing \\\\",
+      "dir w/ trailing /",
+      "fname only",
+      "ext leading dot",
+      "ext no dot",
+      "NULL components",
+      "drive>1 char",
+      "full path",
+      "NULL path"
+    ]
+  },
+  "_wsplitpath": {
+    "c_signature": "void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir, wchar_t *fname, wchar_t *ext)",
+    "family": "wstring",
+    "slice_pattern": "splitpath",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/string/_wsplitpath.c",
+    "fuzz_domain": [
+      "empty",
+      "drive only",
+      "no drive",
+      "X:dir\\\\file.ext",
+      "no ext",
+      "bare fname",
+      "trailing sep",
+      "leading-dot",
+      "dot in dir",
+      "forward slash",
+      "NULL components",
+      "path[1]==':' edge"
+    ]
+  },
+  "_wtoi": {
+    "c_signature": "int _wtoi(const wchar_t *str)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtoi64_w",
+    "reference": "sdk/lib/crt/string/atoi.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "i32-overflow",
+      "i64-overflow wrap then trunc",
+      "trailing junk",
+      "lone sign",
+      "no digits"
+    ]
+  },
+  "_wtoi64": {
+    "c_signature": "__int64 _wtoi64(const wchar_t *str)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "near i64::MAX",
+      "i64 overflow wrap",
+      "trailing junk",
+      "no digits"
+    ]
+  },
+  "_wtoi64_l": {
+    "c_signature": "__int64 _wtoi64_l(const wchar_t *str, _locale_t locale)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtoi64_w",
+    "reference": "sdk/lib/crt/string/wtoi64.c",
+    "fuzz_domain": [
+      "delegated by _wtoi64 \u2014 same domain"
+    ]
+  },
+  "_wtol": {
+    "c_signature": "long _wtol(const wchar_t *str)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "wtol_w",
+    "reference": "sdk/lib/crt/string/wtol.c",
+    "fuzz_domain": [
+      "NULL",
+      "empty",
+      "ws+sign",
+      "u32 overflow wrap",
+      "-N (wrapping negate)",
+      "trailing junk",
+      "no digits"
     ]
   },
   "atoi": {
@@ -372,6 +683,35 @@
       "i32 overflow",
       "i64 overflow then trunc",
       "trailing junk"
+    ]
+  },
+  "mbstowcs": {
+    "c_signature": "size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)",
+    "family": "string",
+    "slice_pattern": "mbstowcs",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/mbstowcs_nt.c",
+    "fuzz_domain": [
+      "wcstr=NULL (query)",
+      "count < strlen",
+      "count >= strlen",
+      "empty mbstr",
+      "bytes spanning 0x80-0x9F"
+    ]
+  },
+  "mbtowc": {
+    "c_signature": "int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)",
+    "family": "string",
+    "slice_pattern": "mbtowc",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/mbstowcs_nt.c",
+    "fuzz_domain": [
+      "mbchar=NULL",
+      "wchar=NULL",
+      "count=0",
+      "count=1",
+      "count=2",
+      "byte 0x00-0xFF incl 0x80-0x9F table + undefined slots"
     ]
   },
   "memchr": {
@@ -446,6 +786,19 @@
       "val<0"
     ]
   },
+  "strcat": {
+    "c_signature": "char* strcat(char *s, const char *append)",
+    "family": "string",
+    "slice_pattern": "strcat_like",
+    "return_collapse": "strfam",
+    "reference": "sdk/lib/crt/string/strcat.c",
+    "fuzz_domain": [
+      "empty dst",
+      "empty append",
+      "both nonempty",
+      "high bytes"
+    ]
+  },
   "strchr": {
     "c_signature": "char *strchr(const char *s, int c)",
     "family": "string",
@@ -476,6 +829,32 @@
       "empty vs nonempty"
     ]
   },
+  "strcpy": {
+    "c_signature": "char* strcpy(char *to, const char *from)",
+    "family": "string",
+    "slice_pattern": "strcpy_like",
+    "return_collapse": "strfam",
+    "reference": "sdk/lib/crt/string/strcpy.c",
+    "fuzz_domain": [
+      "empty",
+      "len 1..64",
+      "embedded high bytes"
+    ]
+  },
+  "strcspn": {
+    "c_signature": "size_t strcspn(const char *s, const char *reject)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/string/strcspn.c",
+    "fuzz_domain": [
+      "empty s",
+      "empty reject (\u2192strlen)",
+      "first char in set",
+      "none in set",
+      "high bytes"
+    ]
+  },
   "strlen": {
     "c_signature": "size_t strlen(const char *s)",
     "family": "string",
@@ -488,6 +867,20 @@
       "embedded-nul",
       "len 0..256",
       "NULL ptr"
+    ]
+  },
+  "strncat": {
+    "c_signature": "char* strncat(char *dst, const char *src, size_t n)",
+    "family": "string",
+    "slice_pattern": "strncat_like",
+    "return_collapse": "strfam",
+    "reference": "sdk/lib/crt/string/strncat.c",
+    "fuzz_domain": [
+      "n==0",
+      "n < srclen (trunc + NUL)",
+      "n >= srclen (full + NUL)",
+      "empty dst",
+      "empty src"
     ]
   },
   "strncmp": {
@@ -535,6 +928,21 @@
       "cap==0"
     ]
   },
+  "strpbrk": {
+    "c_signature": "char* strpbrk(const char *s1, const char *s2)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/string/strpbrk.c",
+    "fuzz_domain": [
+      "empty s2 (\u2192NULL)",
+      "1-char s2",
+      "2-char s2",
+      "no match",
+      "match at 0",
+      "high bytes (LP64 host: set\u22642 only)"
+    ]
+  },
   "strrchr": {
     "c_signature": "char *strrchr(const char *s, int c)",
     "family": "string",
@@ -548,6 +956,21 @@
       "c==0 (\u2192ptr to NUL)",
       "c high-bit",
       "empty"
+    ]
+  },
+  "strspn": {
+    "c_signature": "size_t strspn(const char *s, const char *accept)",
+    "family": "string",
+    "slice_pattern": "nul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/string/strspn.c",
+    "fuzz_domain": [
+      "empty s",
+      "empty accept (\u21920)",
+      "all in set",
+      "none in set",
+      "prefix in set",
+      "high bytes >=0x80"
     ]
   },
   "strstr": {
@@ -565,6 +988,59 @@
       "needle longer than hay"
     ]
   },
+  "strtok": {
+    "c_signature": "char *strtok(char *str, const char *delim)",
+    "family": "string",
+    "slice_pattern": "tok_static",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/string/strtok.c",
+    "fuzz_domain": [
+      "leading delims",
+      "trailing delims",
+      "consecutive delims (empty tokens skipped)",
+      "no delim in str (one token)",
+      "empty str",
+      "delim not present",
+      "full re-tokenize via NULL calls",
+      "single char",
+      "str all delims"
+    ]
+  },
+  "strtok_s": {
+    "c_signature": "char *strtok_s(char *str, const char *delim, char **ctx)",
+    "family": "string",
+    "slice_pattern": "tok_ctx",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/string/strtok_s.c",
+    "fuzz_domain": [
+      "as strtok + explicit ctx threading",
+      "delim NULL \u2192 NULL",
+      "ctx NULL \u2192 NULL",
+      "str NULL && *ctx NULL \u2192 NULL",
+      "str NULL && *ctx valid (resume)",
+      "no-token sets *ctx at NUL"
+    ]
+  },
+  "strtol": {
+    "c_signature": "long strtol(const char *nptr, char **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "long_bsd",
+    "reference": "sdk/lib/crt/string/strtol.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "no digits (\u2192nptr)",
+      "in range",
+      "+overflow\u2192LONG_MAX",
+      "-overflow\u2192LONG_MIN",
+      "base 0/2/8/10/16/36",
+      "0x prefix",
+      "mixed case",
+      "endptr=NULL",
+      "junk after"
+    ]
+  },
   "strtoul": {
     "c_signature": "unsigned long strtoul(const char* nptr, char** end, int base)",
     "family": "radix",
@@ -579,6 +1055,310 @@
       "invalid base",
       "no digits",
       "endptr tracking"
+    ]
+  },
+  "strtoull": {
+    "c_signature": "unsigned long long strtoull(const char *nptr, char **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "u64_bsd",
+    "reference": "sdk/lib/crt/string/strtoull.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "no digits",
+      "in range",
+      "overflow\u2192ULLONG_MAX",
+      "negative (wrap)",
+      "base 0/2/8/10/16/36",
+      "0x prefix",
+      "endptr=NULL",
+      "junk after"
+    ]
+  },
+  "tolower": {
+    "c_signature": "int tolower(int _C)",
+    "family": "string",
+    "slice_pattern": "case_tolower",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/tolower_nt.c",
+    "fuzz_domain": [
+      "'A'..'Z'",
+      "'a'..'z' (noop)",
+      "non-alpha",
+      "0",
+      "negative _C",
+      ">0xFF _C (0x141\u21920x161)",
+      "low byte 0x80-0xFF (unchanged)"
+    ]
+  },
+  "toupper_nt_mb": {
+    "c_signature": "int __cdecl toupper_nt_mb(int _C)",
+    "family": "string",
+    "slice_pattern": "toupper_mb",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/toupper_nt_mb.c",
+    "fuzz_domain": [
+      "a-z/A-Z",
+      "non-alpha",
+      "0x80-0xFF (Latin-1 upcase, \u00ff\u2192\u0178\u2192'?', \u00b5\u2192\u039c\u2192'?')",
+      "0x00",
+      "negative _C (low byte)",
+      ">0xFF _C (low byte only)"
+    ]
+  },
+  "towupper": {
+    "c_signature": "wint_t towupper(wint_t _C)",
+    "family": "string",
+    "slice_pattern": "case_towupper",
+    "return_collapse": "casemap",
+    "reference": "sdk/lib/crt/string/towupper_nt.c",
+    "fuzz_domain": [
+      "a-z/A-Z",
+      "0x80-0xFF Latin-1 upcase",
+      "\u00ff(0xFF\u21920x178)",
+      "\u00b5(0xB5\u21920x39C)",
+      "\u0161/\u0153/\u017e",
+      "non-alpha",
+      "0",
+      ">0xFFFF _C (WCHAR-trunc)"
+    ]
+  },
+  "wcscat": {
+    "c_signature": "wchar_t* wcscat(wchar_t *s, const wchar_t *append)",
+    "family": "wstring",
+    "slice_pattern": "strcat_like",
+    "return_collapse": "strfam",
+    "reference": "sdk/lib/crt/string/wcscat.c",
+    "fuzz_domain": [
+      "empty dst",
+      "empty append",
+      "both nonempty",
+      ">0xFF"
+    ]
+  },
+  "wcschr": {
+    "c_signature": "wchar_t* wcschr(const wchar_t *s, wchar_t c)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/string/wcschr.c",
+    "fuzz_domain": [
+      "found mid",
+      "found at 0",
+      "not found",
+      "c==0 (\u2192ptr to NUL)",
+      ">0xFF c",
+      "empty"
+    ]
+  },
+  "wcscmp": {
+    "c_signature": "int wcscmp(const wchar_t *s1, const wchar_t *s2)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "i32_passthrough",
+    "reference": "sdk/lib/crt/string/wcscmp.c",
+    "fuzz_domain": [
+      "equal",
+      "differ-at-0",
+      "differ-mid",
+      "prefix",
+      ">0x7F and >0xFF wchars",
+      "empty vs nonempty"
+    ]
+  },
+  "wcscpy": {
+    "c_signature": "wchar_t* wcscpy(wchar_t *to, const wchar_t *from)",
+    "family": "wstring",
+    "slice_pattern": "strcpy_like",
+    "return_collapse": "strfam",
+    "reference": "sdk/lib/crt/string/wcscpy.c",
+    "fuzz_domain": [
+      "empty",
+      "len 1..64",
+      ">0xFF wchars"
+    ]
+  },
+  "wcscspn": {
+    "c_signature": "size_t wcscspn(const wchar_t *str, const wchar_t *reject)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/wstring/wcscspn.c",
+    "fuzz_domain": [
+      "empty str",
+      "empty reject (\u2192wcslen)",
+      "first in set",
+      "none",
+      ">0xFF"
+    ]
+  },
+  "wcslen": {
+    "c_signature": "size_t wcslen(const wchar_t *str)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "usize",
+    "reference": "sdk/lib/crt/string/wcslen.c",
+    "fuzz_domain": [
+      "empty",
+      "embedded values",
+      "len 0..256",
+      "NULL"
+    ]
+  },
+  "wcsncat": {
+    "c_signature": "wchar_t* wcsncat(wchar_t *dst, const wchar_t *src, size_t n)",
+    "family": "wstring",
+    "slice_pattern": "strncat_like",
+    "return_collapse": "strfam",
+    "reference": "sdk/lib/crt/string/wcsncat.c",
+    "fuzz_domain": [
+      "n==0",
+      "n < srclen",
+      "n >= srclen",
+      "empty dst",
+      "empty src"
+    ]
+  },
+  "wcsncmp": {
+    "c_signature": "int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "i32_cmp_n",
+    "reference": "sdk/lib/crt/string/wcsncmp.c",
+    "fuzz_domain": [
+      "n==0",
+      "equal < n",
+      "equal == n",
+      "differ < n",
+      "NUL before n",
+      ">0xFF"
+    ]
+  },
+  "wcsncpy": {
+    "c_signature": "wchar_t* wcsncpy(wchar_t *dst, const wchar_t *src, size_t n)",
+    "family": "wstring",
+    "slice_pattern": "wdst_fixed_n",
+    "return_collapse": "ret_dst",
+    "reference": "sdk/lib/crt/string/wcsncpy.c",
+    "fuzz_domain": [
+      "src < n (pad)",
+      "src == n (no-term)",
+      "src > n (trunc no-term)",
+      "n==0",
+      "src empty"
+    ]
+  },
+  "wcsnlen": {
+    "c_signature": "size_t wcsnlen(const wchar_t *str, size_t count)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in_maxlen",
+    "return_collapse": "usize",
+    "reference": "sdk/lib/crt/string/wcsnlen.c",
+    "fuzz_domain": [
+      "NULL",
+      "empty",
+      "shorter than cap",
+      "exactly cap",
+      "no NUL within cap",
+      "cap==0"
+    ]
+  },
+  "wcsrchr": {
+    "c_signature": "wchar_t* wcsrchr(const wchar_t *s, wchar_t c)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/string/wcsrchr.c",
+    "fuzz_domain": [
+      "one match",
+      "multiple (last)",
+      "not found",
+      "c==0 (\u2192NUL)",
+      ">0xFF",
+      "empty"
+    ]
+  },
+  "wcsspn": {
+    "c_signature": "size_t wcsspn(const wchar_t *str, const wchar_t *accept)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "usize2",
+    "reference": "sdk/lib/crt/wstring/wcsspn.c",
+    "fuzz_domain": [
+      "empty str",
+      "empty accept (\u21920)",
+      "all in set",
+      "none",
+      "prefix",
+      ">0xFF wchars"
+    ]
+  },
+  "wcsstr": {
+    "c_signature": "wchar_t* wcsstr(const wchar_t *s, const wchar_t *b)",
+    "family": "wstring",
+    "slice_pattern": "wnul_in",
+    "return_collapse": "ptr_or_null_from_opt",
+    "reference": "sdk/lib/crt/wstring/wcsstr.c",
+    "fuzz_domain": [
+      "empty b (\u2192NULL)",
+      "b absent",
+      "b == s",
+      "b at end",
+      "overlapping partials",
+      "b longer than s"
+    ]
+  },
+  "wcstok": {
+    "c_signature": "wchar_t *wcstok(wchar_t *str, const wchar_t *delim)",
+    "family": "wstring",
+    "slice_pattern": "wtok_static",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/wstring/wcstok.c",
+    "fuzz_domain": [
+      "as strtok over wide",
+      "leading/trailing/consecutive delims",
+      "no delim",
+      "empty",
+      "full re-tokenize via NULL calls"
+    ]
+  },
+  "wcstok_s": {
+    "c_signature": "wchar_t *wcstok_s(wchar_t *str, const wchar_t *delim, wchar_t **next_token)",
+    "family": "wstring",
+    "slice_pattern": "wtok_ctx",
+    "return_collapse": "strtok",
+    "reference": "sdk/lib/crt/wstring/wcstok.c",
+    "fuzz_domain": [
+      "as strtok_s over wide",
+      "delim NULL \u2192 NULL",
+      "next_token NULL \u2192 NULL",
+      "str NULL && *next_token NULL \u2192 NULL",
+      "no-token leaves *next_token unchanged"
+    ]
+  },
+  "wcstol": {
+    "c_signature": "long wcstol(const wchar_t *nptr, wchar_t **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "long_bsd",
+    "reference": "sdk/lib/crt/string/wcstol.c",
+    "fuzz_domain": [
+      "as strtol over wide; >0xFF wchars never classified"
+    ]
+  },
+  "wcstombs": {
+    "c_signature": "size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)",
+    "family": "wstring",
+    "slice_pattern": "wcstombs",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/wcstombs_nt.c",
+    "fuzz_domain": [
+      "mbstr=NULL (query)",
+      "count < wcslen",
+      "count >= wcslen",
+      "empty wcstr",
+      "unmappable wchars"
     ]
   },
   "wcstoul": {
@@ -600,6 +1380,20 @@
       "mixed case",
       "endptr=NULL",
       "junk after"
+    ]
+  },
+  "wctomb": {
+    "c_signature": "int wctomb(char *mbchar, wchar_t wchar)",
+    "family": "wstring",
+    "slice_pattern": "wctomb",
+    "return_collapse": "mbcp",
+    "reference": "sdk/lib/crt/string/wcstombs_nt.c",
+    "fuzz_domain": [
+      "mbchar=NULL",
+      "ASCII wchar",
+      "0xA0-0xFF (identity)",
+      "CP1252 0x80-0x9F target codepoints",
+      "unmappable \u2192 '?'"
     ]
   }
 }

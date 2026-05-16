@@ -195,6 +195,101 @@ def test_screenshot(vm: QemuVM, arch: str) -> None:
     print(f"\n[screenshot] Saved to {png_path}")
 
 
+# Fatal markers that mean win32k (or anything it called) died handling the
+# input we injected. `shell ready` fires at desktop *render*; the raw-input
+# thread → message queue → focus-window → DefWndProc → hook paths only run
+# once real input arrives — exactly the ntuser surface the win32k
+# translation touches, and exactly what a boot-only marker cannot catch.
+_FATAL_MARKERS = (
+    "*** Fatal System Error",
+    "KeBugCheckEx",
+    "BugCheck 0x",
+    "Unhandled exception",
+    "KMODE_EXCEPTION_NOT_HANDLED",
+    "UNEXPECTED_KERNEL_MODE_TRAP",
+    "Assertion '",
+    "Assertion failed",
+    "Triple fault",
+)
+
+
+def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
+    """Post-`shell ready` regression gate: inject real keyboard+mouse input
+    and assert win32k survives dispatching it.
+
+    The session reached `shell ready` (desktop rendered) and the autouse
+    fixture restored that snapshot. We now drive input via QMP
+    `input-send-event` (host-side, no in-guest agent) and assert the OS
+    keeps running with no fatal marker — catching translation regressions
+    that only fire on the first input event after the desktop is up, which
+    boot markers structurally miss (audit open question #6).
+    """
+    if arch == "arm64":
+        pytest.skip("arm64 uses idle-detect boot + serial-hack input; "
+                    "post-input gate is i386/amd64 (QMP input-send-event)")
+
+    # Clear serial backlog so the post-injection scan only sees input fallout.
+    vm.serial_output(timeout=1.0)
+    before_ppm = vm.work_dir / "pre_input.ppm"
+    vm.screendump(before_ppm)
+
+    # PS/2 keyboard (qcode) + PS/2 relative mouse — the default `-M pc`
+    # devices; no usb-tablet, so use rel moves + button, not abs axes.
+    def _send(events: list) -> None:
+        r = vm.qmp.execute("input-send-event", events=events)
+        if "error" in r:
+            pytest.fail(f"QMP input-send-event failed: {r['error']}")
+
+    key = lambda k, d: {"type": "key",
+                        "data": {"down": d, "key": {"type": "qcode", "data": k}}}
+    for k in ("esc", "a", "spc", "ret", "esc"):
+        _send([key(k, True)])
+        _send([key(k, False)])
+    for _ in range(6):
+        _send([{"type": "rel", "data": {"axis": "x", "value": 40}},
+               {"type": "rel", "data": {"axis": "y", "value": 30}}])
+    _send([{"type": "btn", "data": {"button": "left", "down": True}}])
+    _send([{"type": "btn", "data": {"button": "left", "down": False}}])
+
+    # Let win32k dispatch it; accumulate any fault output.
+    settle = ""
+    for _ in range(5):
+        settle += vm.serial_output(timeout=1.0)
+
+    # HARD: no fatal marker provoked by the input.
+    hit = [m for m in _FATAL_MARKERS if m in settle]
+    if hit:
+        sym = _symbolicate_bugcheck(settle, arch)
+        pytest.fail(f"win32k died handling injected input — markers {hit}\n"
+                    f"{sym}\nserial tail: {settle[-800:]!r}")
+
+    # HARD: VM still running (not paused/shutdown/guest-panicked).
+    status = vm.qmp.execute("query-status")
+    assert status["return"]["running"] is True, \
+        f"VM not running after input: {status.get('return')}"
+
+    # Diagnostic: after-shot for visual inspection + pixel-delta signal
+    # (soft — PS/2 relative mouse + theme variance make a hard threshold
+    # flaky; the crash/liveness asserts above are the real gate).
+    after_png = PROJECT_DIR / "qemu" / f"{arch}_post_input.png"
+    after_ppm = vm.work_dir / "post_input.ppm"
+    vm.screendump(after_ppm)
+    delta = "n/a"
+    try:
+        from PIL import Image, ImageChops
+        a = Image.open(before_ppm).convert("RGB")
+        b = Image.open(after_ppm).convert("RGB")
+        bbox = ImageChops.difference(a, b).getbbox()
+        delta = "changed" if bbox else "identical"
+        b.save(after_png, "PNG")
+    except ImportError:
+        after_png = PROJECT_DIR / "qemu" / f"{arch}_post_input.ppm"
+        import shutil
+        shutil.copy2(after_ppm, after_png)
+    print(f"\n[post-input] survived input dispatch; screen={delta}; "
+          f"saved {after_png}")
+
+
 def test_no_unexpected_ud2(arch: str) -> None:
     """Scan ntoskrnl.exe for ud2 instructions in named functions.
 

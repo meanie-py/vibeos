@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -454,18 +455,13 @@ NtGdiExtCreatePen(
             SetLastNtError(ERROR_NOT_ENOUGH_MEMORY);
             return 0;
         }
-        _SEH2_TRY
+        Status = SafeProbeForRead(pUnsafeStyle, dwStyleCount * sizeof(DWORD), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForRead(pUnsafeStyle, dwStyleCount * sizeof(DWORD), 1);
             RtlCopyMemory(pSafeStyle,
                           pUnsafeStyle,
                           dwStyleCount * sizeof(DWORD));
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
         if(!NT_SUCCESS(Status))
         {
             SetLastNtError(Status);
@@ -476,15 +472,7 @@ NtGdiExtCreatePen(
 
     if (ulBrushStyle == BS_PATTERN)
     {
-        _SEH2_TRY
-        {
-            ProbeForRead((PVOID)ulHatch, cjDIB, 1);
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
+        Status = SafeProbeForRead((PVOID)ulHatch, cjDIB, 1);
         if(!NT_SUCCESS(Status))
         {
             SetLastNtError(Status);

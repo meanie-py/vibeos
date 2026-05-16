@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <immdev.h>
 DBG_DEFAULT_CHANNEL(UserWinpos);
 
@@ -3382,6 +3383,7 @@ NtUserGetInternalWindowPos( HWND hWnd,
    DWORD Ret = 0;
    BOOL Hit = FALSE;
    WINDOWPLACEMENT wndpl;
+   NTSTATUS Status;
 
    UserEnterShared();
 
@@ -3391,28 +3393,24 @@ NtUserGetInternalWindowPos( HWND hWnd,
       goto Exit;
    }
 
-   _SEH2_TRY
+   Status = STATUS_SUCCESS;
+   if (rectWnd)
    {
-       if(rectWnd)
-       {
-          ProbeForWrite(rectWnd,
-                        sizeof(RECT),
-                        1);
-       }
-       if(ptIcon)
-       {
-          ProbeForWrite(ptIcon,
-                        sizeof(POINT),
-                        1);
-       }
-
+       Status = SafeProbeForWrite(rectWnd,
+                                  sizeof(RECT),
+                                  1);
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+   if (NT_SUCCESS(Status) && ptIcon)
    {
-       SetLastNtError(_SEH2_GetExceptionCode());
+       Status = SafeProbeForWrite(ptIcon,
+                                  sizeof(POINT),
+                                  1);
+   }
+   if (!NT_SUCCESS(Status))
+   {
+       SetLastNtError(Status);
        Hit = TRUE;
    }
-   _SEH2_END;
 
    wndpl.length = sizeof(WINDOWPLACEMENT);
 
@@ -3443,6 +3441,7 @@ Exit:
    UserLeave();
    return Ret;
 }
+
 
 /*
  * @implemented
@@ -3697,6 +3696,7 @@ NtUserSetInternalWindowPos(
    POINT pt = {0};
    BOOL Ret = FALSE;
    USER_REFERENCE_ENTRY Ref;
+   NTSTATUS Status;
 
    TRACE("Enter NtUserSetWindowPlacement\n");
    UserEnterExclusive();
@@ -3707,25 +3707,34 @@ NtUserSetInternalWindowPos(
       goto Exit; // Return FALSE
    }
 
-   _SEH2_TRY
+   if (lppt)
+   {
+      Status = SafeProbeForRead(lppt, sizeof(POINT), 1);
+   }
+   else
+   {
+      Status = STATUS_SUCCESS;
+   }
+   if (NT_SUCCESS(Status) && lprect)
+   {
+      Status = SafeProbeForRead(lprect, sizeof(RECT), 1);
+   }
+   if (!NT_SUCCESS(Status))
+   {
+      SetLastNtError(Status);
+      goto Exit;
+   }
+   else
    {
       if (lppt)
       {
-         ProbeForRead(lppt, sizeof(POINT), 1);
          RtlCopyMemory(&pt, lppt, sizeof(POINT));
       }
       if (lprect)
       {
-         ProbeForRead(lprect, sizeof(RECT), 1);
          RtlCopyMemory(&rect, lprect, sizeof(RECT));
       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      SetLastNtError(_SEH2_GetExceptionCode());
-      _SEH2_YIELD(goto Exit); // Return FALSE
-   }
-   _SEH2_END
 
    wndpl.length  = sizeof(wndpl);
    wndpl.showCmd = showCmd;
@@ -3754,6 +3763,7 @@ Exit:
    return Ret;
 }
 
+
 /*
  * @implemented
  */
@@ -3770,17 +3780,15 @@ NtUserSetWindowPlacement(HWND hWnd,
    TRACE("Enter NtUserSetWindowPlacement\n");
    UserEnterExclusive();
 
-    _SEH2_TRY
     {
-        ProbeForRead(lpwndpl, sizeof(*lpwndpl), 1);
-        Safepl = *lpwndpl;
+        NTSTATUS __SehStatus = SafeProbeForRead(lpwndpl, sizeof(*lpwndpl), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            goto Exit; // Return FALSE
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(goto Exit); // Return FALSE
-    }
-    _SEH2_END
+    Safepl = *lpwndpl;
 
     /* Backwards-compatibility: Win 3.x doesn't check the length */
     if (LOWORD(gptiCurrent->dwExpWinVer) < WINVER_WINNT4)

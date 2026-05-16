@@ -1,0 +1,27 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/cliprgn.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiGetAppClipBox",
+      "line_start": 418,
+      "line_end": 426,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    }
+  ]
+}

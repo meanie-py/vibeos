@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -499,21 +500,18 @@ NtGdiCreatePaletteInternal(
 
     cjSize = FIELD_OFFSET(LOGPALETTE, palPalEntry[cEntries]);
 
-    _SEH2_TRY
     {
-        ProbeForRead(plogpalUser, cjSize, 1);
-
-        for (i = 0; i < cEntries; i++)
+        NTSTATUS __SehStatus = SafeProbeForRead(plogpalUser, cjSize, 1);
+        if (!NT_SUCCESS(__SehStatus))
         {
-            ppal->IndexedColors[i] = plogpalUser->palPalEntry[i];
+            GDIOBJ_vDeleteObject(&ppal->BaseObject);
+            return NULL;
         }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    for (i = 0; i < cEntries; i++)
     {
-        GDIOBJ_vDeleteObject(&ppal->BaseObject);
-        _SEH2_YIELD(return NULL);
+        ppal->IndexedColors[i] = plogpalUser->palPalEntry[i];
     }
-    _SEH2_END;
 
     PALETTE_ValidateFlags(ppal->IndexedColors, cEntries);
     hpal = ppal->BaseObject.hHmgr;
@@ -1090,6 +1088,7 @@ NtGdiDoPalette(
 	LONG ret;
 	LPVOID pEntries = NULL;
 	SIZE_T cjSize;
+	NTSTATUS Status;
 
 	if (pUnsafeEntries)
 	{
@@ -1103,17 +1102,15 @@ NtGdiDoPalette(
 
 		if (bInbound)
 		{
-			_SEH2_TRY
 			{
-				ProbeForRead(pUnsafeEntries, cjSize, 1);
-				memcpy(pEntries, pUnsafeEntries, cjSize);
+			    NTSTATUS __SehStatus = SafeProbeForRead(pUnsafeEntries, cjSize, 1);
+			    if (!NT_SUCCESS(__SehStatus))
+			    {
+			        ExFreePoolWithTag(pEntries, TAG_PALETTE);
+			        return 0;
+			    }
 			}
-			_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-			{
-				ExFreePoolWithTag(pEntries, TAG_PALETTE);
-				_SEH2_YIELD(return 0);
-			}
-			_SEH2_END
+			memcpy(pEntries, pUnsafeEntries, cjSize);
 		}
 		else
 		{
@@ -1159,22 +1156,22 @@ NtGdiDoPalette(
 		if (!bInbound && (ret > 0))
 		{
 			cjSize = min(cEntries, ret) * sizeof(PALETTEENTRY);
-			_SEH2_TRY
-			{
-				ProbeForWrite(pUnsafeEntries, cjSize, 1);
-				memcpy(pUnsafeEntries, pEntries, cjSize);
-			}
-			_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+			Status = SafeProbeForWrite(pUnsafeEntries, cjSize, 1);
+			if (!NT_SUCCESS(Status))
 			{
 				ret = 0;
 			}
-			_SEH2_END
+			else
+			{
+				memcpy(pUnsafeEntries, pEntries, cjSize);
+			}
 		}
 		ExFreePoolWithTag(pEntries, TAG_PALETTE);
 	}
 
 	return ret;
 }
+
 
 UINT APIENTRY
 NtGdiSetSystemPaletteUse(HDC hDC, UINT Usage)
@@ -1295,18 +1292,16 @@ NtGdiEngCreatePalette(
         pulcSafe = ExAllocatePoolWithTag(PagedPool, cColors * sizeof(ULONG), GDITAG_UMPD );
     }
 
-        _SEH2_TRY
-    {
-        ProbeForRead( pulColors, cColors * sizeof(ULONG), 1);
+        {
+            NTSTATUS __SehStatus = SafeProbeForRead(pulColors, cColors * sizeof(ULONG), 1);
+            if (!NT_SUCCESS(__SehStatus))
+            {
+                SetLastNtError(__SehStatus);
+                if ( cColors > WINDDI_MAXSETPALETTECOLORS ) ExFreePoolWithTag( pulcSafe, GDITAG_UMPD );
+                return hPal;
+            }
+        }
         RtlCopyMemory( pulcSafe, pulColors, cColors * sizeof(ULONG) );
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        if ( cColors > WINDDI_MAXSETPALETTECOLORS ) ExFreePoolWithTag( pulcSafe, GDITAG_UMPD );
-        _SEH2_YIELD(return hPal);
-    }
-    _SEH2_END;
 
     hPal = EngCreatePalette( iMode/*|PAL_SETPOWNER*/, cColors, pulcSafe, flRed, flGreen, flBlue );
 

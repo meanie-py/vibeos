@@ -1,0 +1,43 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/ldevobj.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 2
+  },
+  "sites": [
+    {
+      "function": "LDEVOBJ_bProbeAndCaptureDevmode",
+      "line_start": 759,
+      "line_end": 798,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "no probe/copy/write/call \u2014 unclassifiable, inspect"
+    },
+    {
+      "function": "LDEVOBJ_bProbeAndCaptureDevmode",
+      "line_start": 817,
+      "line_end": 831,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "no probe/copy/write/call \u2014 unclassifiable, inspect"
+    }
+  ]
+}

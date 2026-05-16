@@ -25,7 +25,7 @@ fn main() {
     // to ref_<name> and includes the genuine ReactOS logic.
     let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
     let s = |p: &str| crt.join(p);
-    let units: Vec<(&str, String)> = vec![
+    let mut units: Vec<(&str, String)> = vec![
         ("strlen", format!("typedef char _TCHAR;\n#define _tcslen ref_strlen\n#include <stddef.h>\n{}", inc(s("string/tcslen.h")))),
         ("strncpy", format!("typedef char _TCHAR;\n#define _tcsncpy ref_strncpy\n#include <stddef.h>\n{}", inc(s("string/tcsncpy.h")))),
         ("strcmp", format!("typedef char _TCHAR;\n#define _tcscmp ref_strcmp\n{}", inc(s("string/tcscmp.h")))),
@@ -155,7 +155,274 @@ fn main() {
              unsigned int ref_wcstoul(const wchar_t*n,wchar_t**e,int b)\
              {{return (unsigned int)ru_wcstoul_real(n,e,b);}}\n",
             inc(s("string/wcstoul.c")))),
+        // Wave E2 — multibyte ⇄ wide. The genuine .c are thin Rtl*
+        // NLS wrappers; refstub/ndk/_cp1252.h supplies a deterministic
+        // single-byte CP1252 Rtl* model identical to core_rs/mbcp.rs,
+        // so the diff pins the wrapper logic over 0x00-0xFF. wchar_t→
+        // unsigned short (host is 32-bit). Rename the 5 symbols so
+        // they don't collide with cnt-rust's own #[no_mangle].
+        ("mbstowcs_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define mbtowc ref_mbtowc\n#define mbstowcs ref_mbstowcs\n{}",
+            inc(s("string/mbstowcs_nt.c")))),
+        ("wcstombs_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wctomb ref_wctomb\n#define wcstombs ref_wcstombs\n{}",
+            inc(s("string/wcstombs_nt.c")))),
+        ("toupper_nt_mb", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define toupper_nt_mb ref_toupper_nt_mb\n{}",
+            inc(s("string/toupper_nt_mb.c")))),
+        // Wave F — charset span/search. Narrow strspn/strcspn pull
+        // strxspn.h (relative #include resolves to the .c's dir);
+        // strpbrk.c uses host strchr. Wide trio is precomp-based.
+        ("strspn", format!("#define __cdecl\n#define strspn ref_strspn\n{}", inc(s("string/strspn.c")))),
+        ("strcspn", format!("#define __cdecl\n#define strcspn ref_strcspn\n{}", inc(s("string/strcspn.c")))),
+        ("strpbrk", format!("#define __cdecl\n#define strpbrk ref_strpbrk\n{}", inc(s("string/strpbrk.c")))),
+        ("wcsspn", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wcsspn ref_wcsspn\n{}", inc(s("wstring/wcsspn.c")))),
+        ("wcscspn", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wcscspn ref_wcscspn\n{}", inc(s("wstring/wcscspn.c")))),
+        ("wcsstr", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define wcsstr ref_wcsstr\n{}", inc(s("wstring/wcsstr.c")))),
+        // Wave G — BSD parse + endptr. strtol/wcstol: precomp FIRST
+        // (limits.h runs, guard set) THEN clamp LONG_MAX/MIN to 32-bit
+        // (Win long; the LP64 host needs this + an (int) return
+        // truncation, exactly the strtoul precedent). strtoull:
+        // unsigned long long is 64-bit on host AND target → faithful
+        // directly, no trick. wcstol adds the ASCII iswctype shim.
+        ("strtol", format!(
+            "#include <precomp.h>\n#undef LONG_MAX\n#define LONG_MAX 0x7FFFFFFFL\n\
+             #undef LONG_MIN\n#define LONG_MIN (-0x7FFFFFFF - 1)\n\
+             #define strtol ru_strtol_real\n{}\
+             int ref_strtol(const char*n,char**e,int b)\
+             {{return (int)ru_strtol_real(n,e,b);}}\n",
+            inc(s("string/strtol.c")))),
+        ("strtoull", format!(
+            "#include <precomp.h>\n#define strtoull ref_strtoull\n{}",
+            inc(s("string/strtoull.c")))),
+        ("wcstol", format!(
+            "#include <precomp.h>\n#undef LONG_MAX\n#define LONG_MAX 0x7FFFFFFFL\n\
+             #undef LONG_MIN\n#define LONG_MIN (-0x7FFFFFFF - 1)\n\
+             #define wchar_t unsigned short\n\
+             #define _SPACE 1\n#define _DIGIT 2\n#define _ALPHA 4\n#define _UPPER 8\n\
+             static int cnt_iswctype(int c,int t){{\
+             if(c<0||c>127)return 0;\
+             if(t==_SPACE)return c==' '||c=='\\t'||c=='\\n'||c=='\\v'||c=='\\f'||c=='\\r';\
+             if(t==_DIGIT)return c>='0'&&c<='9';\
+             if(t==_UPPER)return c>='A'&&c<='Z';\
+             if(t==_ALPHA)return (c>='A'&&c<='Z')||(c>='a'&&c<='z');\
+             return 0;}}\n\
+             #define iswctype(c,t) cnt_iswctype((c),(t))\n\
+             #define wcstol ru_wcstol_real\n{}\
+             int ref_wcstol(const wchar_t*n,wchar_t**e,int b)\
+             {{return (int)ru_wcstol_real(n,e,b);}}\n",
+            inc(s("string/wcstol.c")))),
+        // Wave G2 — wide-atoi parse. wtoi64.c: host LONGLONG /
+        // unsigned __int64 == target i64/u64 so NO LONG_MAX trick
+        // (unlike strtol). precomp FIRST (pulls stddef so the later
+        // `#define wchar_t unsigned short` is safe — the wcstoul
+        // precedent). LONGLONG/_UI64_MAX/towlower(ASCII)/iswctype(ASCII)
+        // supplied here (precomp lacks them); <internal/wine/msvcrt.h>
+        // resolves to the refstub stub (its TRACE/_errno are all under
+        // `#ifndef _LIBCNT_`, never compiled). One TU defines all six
+        // public symbols + the (int)_wtoi64 wrapper that IS atoi.c's
+        // body under _UNICODE.
+        ("wtoi64", format!(
+            "#include <precomp.h>\n#define wchar_t unsigned short\n\
+             #define LONGLONG long long\n#define _UI64_MAX 0xffffffffffffffffULL\n\
+             #define towlower(c) (((c)>='A'&&(c)<='Z')?((c)+32):(c))\n\
+             #define _SPACE 1\n#define _DIGIT 2\n#define _ALPHA 4\n#define _UPPER 8\n\
+             static int cnt_iswctype(int c,int t){{\
+             if(c<0||c>127)return 0;\
+             if(t==_SPACE)return c==' '||c=='\\t'||c=='\\n'||c=='\\v'||c=='\\f'||c=='\\r';\
+             if(t==_DIGIT)return c>='0'&&c<='9';\
+             if(t==_UPPER)return c>='A'&&c<='Z';\
+             if(t==_ALPHA)return (c>='A'&&c<='Z')||(c>='a'&&c<='z');\
+             return 0;}}\n\
+             #define iswctype(c,t) cnt_iswctype((c),(t))\n\
+             #define _wtoi64 ref_wtoi64\n#define _wtoi64_l ref_wtoi64_l\n\
+             #define _wcstoi64 ref_wcstoi64\n#define _wcstoi64_l ref_wcstoi64_l\n\
+             #define _wcstoui64 ref_wcstoui64\n#define _wcstoui64_l ref_wcstoui64_l\n{}\
+             int ref_wtoi(const unsigned short*n){{return (int)ref_wtoi64(n);}}\n",
+            inc(s("string/wtoi64.c")))),
+        // _wtol — wine wtol.c. No precomp (it pulls host string.h/
+        // ctype.h + <basetsd.h>→refstub stub). ASCII iswctype shim.
+        // host `unsigned long` is 64-bit → wrap result in `(int)` to
+        // pin the 32-bit Windows `long` semantics (strtol precedent).
+        ("wtol", format!(
+            "#define wchar_t unsigned short\n\
+             #define _SPACE 1\n\
+             static int cnt_iswctype(int c,int t){{\
+             if(c<0||c>127)return 0;\
+             if(t==_SPACE)return c==' '||c=='\\t'||c=='\\n'||c=='\\v'||c=='\\f'||c=='\\r';\
+             return 0;}}\n\
+             #define iswctype(c,t) cnt_iswctype((c),(t))\n\
+             #define _wtol ru_wtol_real\n{}\
+             int ref_wtol(const unsigned short*n){{return (int)ru_wtol_real(n);}}\n",
+            inc(s("string/wtol.c")))),
+        // Wave H — ASCII case fold. _strlwr/_wcsupr: <string.h>, no
+        // guard. _strupr/_wcslwr: precomp + NULL guard calling
+        // _invalid_parameter/_CRT_WIDE — stubbed to a no-op so the
+        // NULL path is just `return NULL` (the handler dispatch is not
+        // part of the value contract; manual.rs covers it separately).
+        // wide units: stddef THEN `#define wchar_t unsigned short`
+        // (host wchar_t is 32-bit). tolower: scalar, SAL stubs.
+        // towupper: NLS — windef.h + ndk/rtlfuncs.h pull the identical
+        // refstub CP1252 Rtl model (Wave E2's pattern); wint_t/_CRTIMP
+        // supplied here.
+        ("strlwr_nt", format!(
+            "#define __cdecl\n#define _Inout_z_\n\
+             #define _strlwr ref_strlwr\n{}",
+            inc(s("string/_strlwr_nt.c")))),
+        ("strupr_nt", format!(
+            "#include <precomp.h>\n\
+             #define _invalid_parameter(a,b,c,d,e) ((void)0)\n\
+             #define _CRT_WIDE(x) L\"\"\n#define _Inout_z_\n\
+             #define _strupr ref_strupr\n{}",
+            inc(s("string/_strupr_nt.c")))),
+        ("wcslwr_nt", format!(
+            "#include <precomp.h>\n#define wchar_t unsigned short\n\
+             #define _invalid_parameter(a,b,c,d,e) ((void)0)\n\
+             #define _CRT_WIDE(x) L\"\"\n#define _Inout_z_\n\
+             #define _wcslwr ref_wcslwr\n{}",
+            inc(s("wstring/_wcslwr_nt.c")))),
+        ("wcsupr_nt", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             #define __cdecl\n#define _Inout_z_\n\
+             #define _wcsupr ref_wcsupr\n{}",
+            inc(s("wstring/_wcsupr_nt.c")))),
+        ("tolower_nt", format!(
+            "#define _Check_return_\n#define _CRTIMP\n#define __cdecl\n\
+             #define _In_\n#define tolower ref_tolower\n{}",
+            inc(s("string/tolower_nt.c")))),
+        ("towupper_nt", format!(
+            "#define _CRTIMP\n#define wint_t unsigned short\n\
+             #define towupper ref_towupper\n{}",
+            inc(s("string/towupper_nt.c")))),
+        // Wave I — in-place mutate. strrev.c pulls precomp (CDECL).
+        // strset.c self-typedefs size_t: force _WIN64 so it picks the
+        // 64-bit `unsigned __int64 size_t` (== host usize ABI; needs
+        // __int64 since clang skips strset.c's GNU __int64 #define),
+        // pinning the genuine `(int)sizeMaxFill` signed-cast.
+        ("strrev", format!(
+            "#define _strrev ref_strrev\n{}",
+            inc(s("string/strrev.c")))),
+        ("strset", format!(
+            "#define _WIN64\n#define __int64 long long\n\
+             #define _strset ref_strset\n#define _strnset ref_strnset\n{}",
+            inc(s("string/strset.c")))),
+        // Wave PATH — _splitpath/_wsplitpath share _tsplitpath_x.h
+        // (non-secure: IS_SECAPI undefined → void, nullable out bufs,
+        // INT_MAX caps). _LIBCNT_ (precomp.h) compiles out the
+        // _ismbblead MBCS block + WINVER>=0x600 errno path. Include
+        // the logic header directly with our own _tsplitpath_x rename
+        // (the .c's `#define _tsplitpath_x _splitpath` would win if we
+        // pulled the .c) — exactly the tcs* logic-header idiom.
+        // Neutralize the SAL annotations the non-secure prototype
+        // spells out. <mbctype.h> resolves to the refstub stub.
+        ("splitpath", format!(
+            "typedef char _TCHAR;\n\
+             #define _ismbblead(c) 0\n#define _CRTIMP\n\
+             #define _CRT_INSECURE_DEPRECATE(x)\n#define _In_z_\n\
+             #define _Out_writes_opt_z_(x)\n#define _In_\n\
+             #define _Pre_maybenull_\n#define _Post_z_\n\
+             #define _Analysis_assume_(x)\n#define _Check_return_wat_\n\
+             #define _CRTIMP_ALTERNATIVE\n\
+             #define _tsplitpath_x ref_splitpath\n{}",
+            inc(s("string/_tsplitpath_x.h")))),
+        ("wsplitpath", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             typedef unsigned short _TCHAR;\n#define _UNICODE\n\
+             #define _ismbblead(c) 0\n#define _CRTIMP\n\
+             #define _CRT_INSECURE_DEPRECATE(x)\n#define _In_z_\n\
+             #define _Out_writes_opt_z_(x)\n#define _In_\n\
+             #define _Pre_maybenull_\n#define _Post_z_\n\
+             #define _Analysis_assume_(x)\n#define _Check_return_wat_\n\
+             #define _CRTIMP_ALTERNATIVE\n\
+             #define _tsplitpath_x ref_wsplitpath\n{}",
+            inc(s("string/_tsplitpath_x.h")))),
+        // makepath.c: host <stdlib.h>/<string.h> (memmove/strlen/
+        // strcpy). wmakpath.c: force wchar_t→unsigned short (u16
+        // parity) + supply strlenW/strcpyW as u16 helpers (wine's are
+        // wcslen/wcscpy which take host 32-bit wchar_t).
+        ("makepath", format!(
+            "#define _makepath ref_makepath\n{}",
+            inc(s("stdlib/makepath.c")))),
+        ("wmakepath", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             static unsigned long _wlenW(const wchar_t*s){{unsigned long n=0;while(s[n])n++;return n;}}\n\
+             static wchar_t* _wcpyW(wchar_t*d,const wchar_t*s){{unsigned long i=0;do{{d[i]=s[i];}}while(s[i++]);return d;}}\n\
+             #define strlenW _wlenW\n#define strcpyW _wcpyW\n\
+             #define _wmakepath ref_wmakepath\n{}",
+            inc(s("stdlib/wmakpath.c")))),
+        // Wave STRTOK — strtok/strtok_s (string.cmake) + wcstok/
+        // wcstok_s (wstring.cmake). strtok/wcstok use the genuine
+        // per-thread `msvcrt_get_thread_data()->{strtok,wcstok}_next`;
+        // host-side that is a per-TU process-global thread_data_t
+        // (single-threaded-equivalent — the diff drives identical
+        // call sequences so the independent saved ptrs stay in sync).
+        // strtok.c/strtok_s.c pull <internal/wine/msvcrt.h> (refstub
+        // guard stub) — the typedef/accessor are supplied here. wcstok
+        // needs wchar_t→u16, a u16 strchrW (=wcschr, matches the
+        // terminator), and _set_errno (no-op; _LIBCNT_).
+        ("strtok", format!(
+            "typedef struct cnt_td {{ char* strtok_next; unsigned short* wcstok_next; }} thread_data_t;\n\
+             static thread_data_t _cnt_td;\n\
+             static thread_data_t* msvcrt_get_thread_data(void){{ return &_cnt_td; }}\n\
+             #define strtok ref_strtok\n{}",
+            inc(s("string/strtok.c")))),
+        ("strtok_s", format!(
+            "#define strtok_s ref_strtok_s\n{}",
+            inc(s("string/strtok_s.c")))),
+        ("wcstok", format!(
+            "#include <stddef.h>\n#define wchar_t unsigned short\n\
+             typedef struct cnt_td {{ char* strtok_next; unsigned short* wcstok_next; }} thread_data_t;\n\
+             static thread_data_t _cnt_td;\n\
+             static thread_data_t* msvcrt_get_thread_data(void){{ return &_cnt_td; }}\n\
+             static unsigned short* _cnt_wcschr(const unsigned short* s, unsigned short c){{ do {{ if(*s==c) return (unsigned short*)s; }} while(*s++); return 0; }}\n\
+             #define strchrW _cnt_wcschr\n#define _set_errno(x) ((void)0)\n\
+             #define wcstok ref_wcstok\n#define wcstok_s ref_wcstok_s\n{}",
+            inc(s("wstring/wcstok.c")))),
     ];
+
+    // tcs* tchar family auto-derive: the genuine logic header
+    // instantiated narrow(char)/wide(unsigned short, host wchar_t is
+    // 32-bit) — exactly how the libcntpr str*/wcs* .c do it. Regular
+    // ⇒ table-driven. (sym, tcs header stem, _tcsX name, wide, xint)
+    let fam: &[(&str, &str, &str, bool, &str)] = &[
+        ("strcpy", "tcscpy", "_tcscpy", false, ""),
+        ("wcscpy", "tcscpy", "_tcscpy", true, ""),
+        ("strcat", "tcscat", "_tcscat", false, ""),
+        ("wcscat", "tcscat", "_tcscat", true, ""),
+        ("strncat", "tcsncat", "_tcsncat", false, ""),
+        ("wcsncat", "tcsncat", "_tcsncat", true, ""),
+        ("wcslen", "tcslen", "_tcslen", true, ""),
+        ("wcscmp", "tcscmp", "_tcscmp", true, ""),
+        ("wcsncmp", "tcsncmp", "_tcsncmp", true, ""),
+        ("wcsnlen", "tcsnlen", "_tcsnlen", true, ""),
+        ("wcsncpy", "tcsncpy", "_tcsncpy", true, ""),
+        ("wcschr", "tcschr", "_tcschr", true, "#define _XINT wchar_t\n"),
+        ("wcsrchr", "tcsrchr", "_tcsrchr", true, "#define _XINT wchar_t\n"),
+    ];
+    for &(sym, hdr, tcsfn, wide, xint) in fam {
+        let prelude = if wide {
+            format!(
+                "#include <stddef.h>\n#define wchar_t unsigned short\n\
+                 typedef unsigned short _TCHAR;\n#define _UNICODE\n{xint}\
+                 #define {tcsfn} ref_{sym}\n"
+            )
+        } else {
+            format!(
+                "typedef char _TCHAR;\n#include <stddef.h>\n{xint}\
+                 #define {tcsfn} ref_{sym}\n"
+            )
+        };
+        units.push((sym, format!("{prelude}{}", inc(s(&format!("string/{hdr}.h"))))));
+    }
 
     let mut build = cc::Build::new();
     build

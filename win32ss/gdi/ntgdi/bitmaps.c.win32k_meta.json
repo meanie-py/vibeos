@@ -1,0 +1,91 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/bitmaps.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 3,
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiCreateBitmap",
+      "line_start": 237,
+      "line_end": 246,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "UnsafeSetBitmapBits"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: UnsafeSetBitmapBits"
+    },
+    {
+      "function": "NtGdiGetBitmapBits",
+      "line_start": 589,
+      "line_end": 597,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "UnsafeGetBitmapBits"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: UnsafeGetBitmapBits"
+    },
+    {
+      "function": "NtGdiSetBitmapBits",
+      "line_start": 644,
+      "line_end": 653,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "UnsafeSetBitmapBits"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: UnsafeSetBitmapBits"
+    },
+    {
+      "function": "NtGdiSetBitmapDimension",
+      "line_start": 682,
+      "line_end": 690,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    }
+  ]
+}

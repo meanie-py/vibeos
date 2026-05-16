@@ -1,0 +1,72 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/dclife.c",
+  "schema": "win32k_pass2_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "GreSetDCOwner",
+      "func_line": 470,
+      "func_end_line": 486,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 474,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        484
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreCreateCompatibleDC",
+      "func_line": 832,
+      "func_end_line": 895,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 845,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        857
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "IntGdiDeleteDC",
+      "func_line": 907,
+      "func_end_line": 961,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 909,
+      "var": "DCToDelete",
+      "null_guarded": true,
+      "unlock_lines": [
+        925,
+        944
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiMakeInfoDC",
+      "func_line": 1038,
+      "func_end_line": 1051,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1043,
+      "var": "pdc",
+      "null_guarded": false,
+      "unlock_lines": [
+        1047
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    }
+  ]
+}

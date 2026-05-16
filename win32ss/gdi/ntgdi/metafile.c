@@ -9,6 +9,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -59,6 +60,7 @@ NtGdiCreateServerMetaFile(
 {
     BOOL Pass = TRUE;
     PMETATYPEOBJ pmto;
+    NTSTATUS Status;
 
     if ( ( iType == GDITAG_TYPE_EMF || iType == GDITAG_TYPE_MFP ) &&
         cjData &&
@@ -73,16 +75,15 @@ NtGdiCreateServerMetaFile(
             pmto->yExt   = yExt;
             pmto->cjData = cjData;
 
-            _SEH2_TRY
-            {
-                ProbeForRead( pjData, cjData, 1 );
-                RtlCopyMemory( pmto->pjData, pjData, cjData) ;
-            }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            Status = SafeProbeForRead(pjData, cjData, 1);
+            if (!NT_SUCCESS(Status))
             {
                 Pass = FALSE;
             }
-            _SEH2_END;
+            else
+            {
+                RtlCopyMemory( pmto->pjData, pjData, cjData) ;
+            }
 
             if (Pass)
             {
@@ -98,6 +99,7 @@ NtGdiCreateServerMetaFile(
     }
     return NULL;
 }
+
 
 /*
  * @implemented
@@ -116,6 +118,7 @@ NtGdiGetServerMetaFileBits(
 {
     ULONG cjRet = 0;
     PMETATYPEOBJ pmto;
+    NTSTATUS Status;
 
     pmto = (PMETATYPEOBJ) GDIOBJ_LockObject( hmo, GDIObjType_META_TYPE);
 
@@ -130,28 +133,23 @@ NtGdiGetServerMetaFileBits(
         {
             if (cjData == pmto->cjData)
             {
-                _SEH2_TRY
-                {
-                    ProbeForWrite( piType, sizeof(DWORD), 1);
-                    *piType = pmto->iType;
-
-                    ProbeForWrite( pmm, sizeof(DWORD), 1);
-                    *pmm = pmto->mm;
-
-                    ProbeForWrite( pxExt, sizeof(DWORD), 1);
-                    *pxExt = pmto->xExt;
-
-                    ProbeForWrite( pyExt, sizeof(DWORD), 1);
-                    *pyExt = pmto->yExt;
-
-                    ProbeForWrite( pjData, cjData, 1 );
-                    RtlCopyMemory( pjData, pmto->pjData, cjData) ;
-                }
-                _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                Status = SafeProbeForWrite(piType, sizeof(DWORD), 1);
+                if (NT_SUCCESS(Status)) Status = SafeProbeForWrite(pmm, sizeof(DWORD), 1);
+                if (NT_SUCCESS(Status)) Status = SafeProbeForWrite(pxExt, sizeof(DWORD), 1);
+                if (NT_SUCCESS(Status)) Status = SafeProbeForWrite(pyExt, sizeof(DWORD), 1);
+                if (NT_SUCCESS(Status)) Status = SafeProbeForWrite(pjData, cjData, 1);
+                if (!NT_SUCCESS(Status))
                 {
                     cjRet = 0;
                 }
-                _SEH2_END;
+                else
+                {
+                    *piType = pmto->iType;
+                    *pmm = pmto->mm;
+                    *pxExt = pmto->xExt;
+                    *pyExt = pmto->yExt;
+                    RtlCopyMemory( pjData, pmto->pjData, cjData) ;
+                }
             }
             else
             {
@@ -163,6 +161,7 @@ NtGdiGetServerMetaFileBits(
     GDIOBJ_vUnlockObject(&pmto->BaseObject);
     return cjRet;
 }
+
 
 /*
  * @unimplemented

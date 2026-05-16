@@ -2,7 +2,7 @@
 
 #![allow(non_snake_case)]  // shims mirror C param names verbatim
 #[allow(unused_imports)]
-use super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice};
+use super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
 
 /// `__int64 _atoi64(const char *nptr)`
@@ -309,6 +309,50 @@ pub unsafe extern "C" fn _ltow_s(value: i32, str: *mut u16, size: usize, radix: 
 }
 
 
+/// `void _makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)`
+/// preserved misfeature: NULL path = clean no-op; component skipped if NULL OR empty (X && X[0]); drive uses ONLY drive[0]+':'; dir always gets trailing '\\' unless already ended /\\ (forward slash preserved); fname bare-concat (no sep/dot); ext '.' prepended only if ext[0]!='.'; zero bounds checking
+#[no_mangle]
+pub unsafe extern "C" fn _makepath(path: *mut u8, drive: *const u8, dir: *const u8, fname: *const u8, ext: *const u8) -> () {
+    if path.is_null() { return; }
+    let dr = cstr_slice(drive as *const u8);
+    let di = cstr_slice(dir as *const u8);
+    let fl = cstr_slice(fname as *const u8);
+    let ex = cstr_slice(ext as *const u8);
+    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;
+    let out = raw_mut_slice(path, cap);
+    crate::core_rs::path::make(out, dr, di, fl, ex);
+}
+
+
+/// `void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)`
+/// preserved misfeature: drive = single char path[1]==':' only (no UNC/\\?\); drive synthesized not sliced; dir INCLUDES trailing sep; ext INCLUDES leading '.'; leading-dot filename IS ext (fname empty); dot in dir component discarded (ext_start<file_start); no sep => whole tail is fname; trailing sep => empty fname+ext; NO MBCS (_LIBCNT_ strips _ismbblead); empty path => all ""; INT_MAX copy caps unreachable (not modeled)
+#[no_mangle]
+pub unsafe extern "C" fn _splitpath(path: *const u8, drive: *mut u8, dir: *mut u8, fname: *mut u8, ext: *mut u8) -> () {
+    let p = cstr_slice(path);
+    if !drive.is_null() { *drive = 0u8; }
+    if !dir.is_null() { *dir = 0u8; }
+    if !fname.is_null() { *fname = 0u8; }
+    if !ext.is_null() { *ext = 0u8; }
+    if p.is_empty() { return; }
+    let r = crate::core_rs::path::split(p);
+    if r.has_drive && !drive.is_null() {
+        *drive = p[0];
+        *drive.add(1) = b':';
+        *drive.add(2) = 0u8;
+    }
+    for (out, (a, e)) in [
+        (dir, r.dir), (fname, r.fname), (ext, r.ext),
+    ] {
+        if !out.is_null() {
+            let d = raw_mut_slice(out, e - a + 1);
+            let mut k = 0usize;
+            while k < e - a { d[k] = p[a + k]; k += 1; }
+            d[e - a] = 0u8;
+        }
+    }
+}
+
+
 /// `int __cdecl _stricmp(char const* _String1, char const* _String2)`
 /// preserved misfeature: ASCII-only A..Z fold (locale-independent, NT variant — NOT the toupper() stricmp.c); signed-char raw difference, not clamped
 #[no_mangle]
@@ -319,6 +363,17 @@ pub unsafe extern "C" fn _stricmp(_String1: *const u8, _String2: *const u8) -> i
 }
 
 
+/// `char *_strlwr(char *_String)`
+/// preserved misfeature: ASCII-only (literal 'A'..'Z'); NO NULL guard (<string.h>, not precomp) → NULL crashes in C, never fuzzed; signed-char compare is moot for ASCII range
+#[no_mangle]
+pub unsafe extern "C" fn _strlwr(_String: *mut u8) -> *mut u8 {
+    let n = cstr_slice(_String as *const u8).len();
+    let s = raw_mut_slice(_String, n);
+    crate::core_rs::casemap::lower_ascii(s);
+    _String
+}
+
+
 /// `int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)`
 /// preserved misfeature: as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n
 #[no_mangle]
@@ -326,6 +381,41 @@ pub unsafe extern "C" fn _strnicmp(_String1: *const u8, _String2: *const u8, _Ma
     let _String1_s = cstr_slice(_String1);
     let _String2_s = cstr_slice(_String2);
     crate::core_rs::string::ncmp_ci(_String1_s, _String2_s, _MaxCount)
+}
+
+
+/// `char *_strnset(char *szToFill, int szFill, size_t sizeMaxFill)`
+/// preserved misfeature: sizeMaxFill cast to signed int: (int)sizeMaxFill <= 0 (incl. size_t > INT_MAX wrapping negative) → fills NOTHING; stops at NUL even if count not reached; szFill low-byte trunc
+#[no_mangle]
+pub unsafe extern "C" fn _strnset(szToFill: *mut u8, szFill: i32, sizeMaxFill: usize) -> *mut u8 {
+    let __n = cstr_slice(szToFill as *const u8).len();
+    let __lim = sizeMaxFill as i32;
+    let __take = if __lim <= 0 { 0 } else { core::cmp::min(__n, __lim as usize) };
+    let __buf = raw_mut_slice(szToFill, __take);
+    crate::core_rs::strmut::fill(__buf, szFill as u8);
+    szToFill
+}
+
+
+/// `char *_strrev(char *s)`
+/// preserved misfeature: len 0/1 natural no-op (C walks to NUL then swaps inward, b<e guards); NO NULL guard (precomp but while(*e) derefs) → NULL crashes in C, never fuzzed
+#[no_mangle]
+pub unsafe extern "C" fn _strrev(s: *mut u8) -> *mut u8 {
+    let __n = cstr_slice(s as *const u8).len();
+    let __buf = raw_mut_slice(s, __n);
+    crate::core_rs::strmut::reverse(__buf);
+    s
+}
+
+
+/// `char *_strset(char *szToFill, int szFill)`
+/// preserved misfeature: szFill int truncated to char (low byte); empty → no writes; NO NULL guard → NULL crashes in C, never fuzzed
+#[no_mangle]
+pub unsafe extern "C" fn _strset(szToFill: *mut u8, szFill: i32) -> *mut u8 {
+    let __n = cstr_slice(szToFill as *const u8).len();
+    let __buf = raw_mut_slice(szToFill, __n);
+    crate::core_rs::strmut::fill(__buf, szFill as u8);
+    szToFill
 }
 
 
@@ -345,7 +435,7 @@ pub unsafe extern "C" fn _strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: 
 /// `__int64 _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)`
 /// preserved misfeature: identical to _strtoi64 (it delegates); locale unused
 #[no_mangle]
-pub unsafe extern "C" fn _strtoi64_l(nptr: *const u8, endptr: *mut *mut u8, base: i32, locale: *mut core::ffi::c_void) -> i64 {
+pub unsafe extern "C" fn _strtoi64_l(nptr: *const u8, endptr: *mut *mut u8, base: i32, _locale: *mut core::ffi::c_void) -> i64 {
     let nptr_s = cstr_slice(nptr);
     let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
     if r.base_ok && !endptr.is_null() {
@@ -358,7 +448,7 @@ pub unsafe extern "C" fn _strtoi64_l(nptr: *const u8, endptr: *mut *mut u8, base
 /// `unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)`
 /// preserved misfeature: signed parse via _strtoi64_l then asymmetric clamp: >ULONG_MAX→ULONG_MAX, < -(i64)ULONG_MAX→1 (NOT 0); _LIBCNT_ no errno; truncate to 32-bit unsigned long
 #[no_mangle]
-pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i32, locale: *mut core::ffi::c_void) -> u32 {
+pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i32, _locale: *mut core::ffi::c_void) -> u32 {
     let nptr_s = cstr_slice(nptr);
     let r = crate::core_rs::radix::parse_i64_clamped(nptr_s, base);
     if r.base_ok && !end.is_null() {
@@ -370,6 +460,18 @@ pub unsafe extern "C" fn _strtoul_l(nptr: *const u8, end: *mut *mut u8, base: i3
         1i64
     } else { r.value };
     v as u32 as u32
+}
+
+
+/// `char *_strupr(char *_String)`
+/// preserved misfeature: ASCII-only; NULL-guarded: _invalid_parameter(NULL,L"_strupr",..) then return NULL (handler is a relaxed no-op slot under _LIBCNT_, observable result = NULL)
+#[no_mangle]
+pub unsafe extern "C" fn _strupr(_String: *mut u8) -> *mut u8 {
+    if _String.is_null() { return core::ptr::null_mut(); }
+    let n = cstr_slice(_String as *const u8).len();
+    let s = raw_mut_slice(_String, n);
+    crate::core_rs::casemap::upper_ascii(s);
+    _String
 }
 
 
@@ -489,6 +591,18 @@ pub unsafe extern "C" fn _wcsicmp(_String1: *const u16, _String2: *const u16) ->
 }
 
 
+/// `wchar_t *_wcslwr(wchar_t *_String)`
+/// preserved misfeature: wide but ASCII-ONLY fold (C tests 'A'..'Z' only — À etc. NOT folded); NULL-guarded → NULL
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr(_String: *mut u16) -> *mut u16 {
+    if _String.is_null() { return core::ptr::null_mut(); }
+    let n = wcstr_slice(_String as *const u16).len();
+    let s = wraw_mut_slice(_String, n);
+    crate::core_rs::casemap::lower_ascii(s);
+    _String
+}
+
+
 /// `int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)`
 /// preserved misfeature: as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n
 #[no_mangle]
@@ -496,6 +610,156 @@ pub unsafe extern "C" fn _wcsnicmp(_String1: *const u16, _String2: *const u16, _
     let _String1_s = wcstr_slice(_String1);
     let _String2_s = wcstr_slice(_String2);
     crate::core_rs::wstring::ncmp_ci(_String1_s, _String2_s, _MaxCount)
+}
+
+
+/// `__int64 _wcstoi64(const wchar_t *nptr, wchar_t **endptr, int base)`
+/// preserved misfeature: per-digit clamp to _I64_MAX/_I64_MIN (NOT wrap), keeps consuming after clamp; endptr ALWAYS = final nptr (unlike narrow _strtoi64 got_digit?nptr:p); NULL→0 no endptr; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoi64(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> i64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as i64; }
+    let r = crate::core_rs::radix::parse_i64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i64
+}
+
+
+/// `__int64 _wcstoi64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)`
+/// preserved misfeature: identical to _wcstoi64 (real impl; _wcstoi64 delegates with NULL locale); locale unused
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoi64_l(nptr: *const u16, endptr: *mut *mut u16, base: i32, _locale: *mut core::ffi::c_void) -> i64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as i64; }
+    let r = crate::core_rs::radix::parse_i64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i64
+}
+
+
+/// `unsigned __int64 _wcstoui64(const wchar_t *nptr, wchar_t **endptr, int base)`
+/// preserved misfeature: per-digit clamp to _UI64_MAX, keeps consuming; final negative ? -(__int64)ret : ret (== 0u64.wrapping_sub(ret)); endptr ALWAYS = final nptr; NULL→0 no endptr; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoui64(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> u64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as u64; }
+    let r = crate::core_rs::radix::parse_u64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as u64
+}
+
+
+/// `unsigned __int64 _wcstoui64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)`
+/// preserved misfeature: identical to _wcstoui64 (real impl; _wcstoui64 delegates with NULL locale); locale unused
+#[no_mangle]
+pub unsafe extern "C" fn _wcstoui64_l(nptr: *const u16, endptr: *mut *mut u16, base: i32, _locale: *mut core::ffi::c_void) -> u64 {
+    let nptr_s = wcstr_slice(nptr);
+    if nptr.is_null() { return 0 as u64; }
+    let r = crate::core_rs::radix::parse_u64_clamped_w(nptr_s, base);
+    if r.base_ok && !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as u64
+}
+
+
+/// `wchar_t *_wcsupr(wchar_t *_String)`
+/// preserved misfeature: wide but ASCII-ONLY fold; NO NULL guard (<string.h>) → NULL crashes in C, never fuzzed
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr(_String: *mut u16) -> *mut u16 {
+    let n = wcstr_slice(_String as *const u16).len();
+    let s = wraw_mut_slice(_String, n);
+    crate::core_rs::casemap::upper_ascii(s);
+    _String
+}
+
+
+/// `void _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *dir, const wchar_t *fname, const wchar_t *ext)`
+/// preserved misfeature: byte-identical to _makepath over wchar_t
+#[no_mangle]
+pub unsafe extern "C" fn _wmakepath(path: *mut u16, drive: *const u16, dir: *const u16, fname: *const u16, ext: *const u16) -> () {
+    if path.is_null() { return; }
+    let dr = wcstr_slice(drive as *const u16);
+    let di = wcstr_slice(dir as *const u16);
+    let fl = wcstr_slice(fname as *const u16);
+    let ex = wcstr_slice(ext as *const u16);
+    let cap = dr.len() + di.len() + fl.len() + ex.len() + 5;
+    let out = wraw_mut_slice(path, cap);
+    crate::core_rs::path::make(out, dr, di, fl, ex);
+}
+
+
+/// `void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir, wchar_t *fname, wchar_t *ext)`
+/// preserved misfeature: byte-identical to _splitpath over wchar_t (the _ismbblead block was already off via _LIBCNT_; _UNICODE only swaps _TCHAR)
+#[no_mangle]
+pub unsafe extern "C" fn _wsplitpath(path: *const u16, drive: *mut u16, dir: *mut u16, fname: *mut u16, ext: *mut u16) -> () {
+    let p = wcstr_slice(path);
+    if !drive.is_null() { *drive = 0u16; }
+    if !dir.is_null() { *dir = 0u16; }
+    if !fname.is_null() { *fname = 0u16; }
+    if !ext.is_null() { *ext = 0u16; }
+    if p.is_empty() { return; }
+    let r = crate::core_rs::path::split(p);
+    if r.has_drive && !drive.is_null() {
+        *drive = p[0];
+        *drive.add(1) = b':' as u16;
+        *drive.add(2) = 0u16;
+    }
+    for (out, (a, e)) in [
+        (dir, r.dir), (fname, r.fname), (ext, r.ext),
+    ] {
+        if !out.is_null() {
+            let d = wraw_mut_slice(out, e - a + 1);
+            let mut k = 0usize;
+            while k < e - a { d[k] = p[a + k]; k += 1; }
+            d[e - a] = 0u16;
+        }
+    }
+}
+
+
+/// `int _wtoi(const wchar_t *str)`
+/// preserved misfeature: _wtoi = (int)_wtoi64 (atoi.c _UNICODE): i64 wrapping accumulate then (int) truncation; iswctype _SPACE skip; stops at first non-digit; NO NULL guard in C (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn _wtoi(str: *const u16) -> i32 {
+    let str_s = wcstr_slice(str);
+    let (v, _of) = crate::core_rs::radix::parse_i64_wrapping_cu(str_s);
+    v as i32
+}
+
+
+/// `__int64 _wtoi64(const wchar_t *str)`
+/// preserved misfeature: wtoi64.c: i64 wrapping accumulate, NO overflow error, no (int) trunc; iswctype _SPACE skip; NO NULL guard in C (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn _wtoi64(str: *const u16) -> i64 {
+    let str_s = wcstr_slice(str);
+    let (v, _of) = crate::core_rs::radix::parse_i64_wrapping_cu(str_s);
+    v as i64
+}
+
+
+/// `__int64 _wtoi64_l(const wchar_t *str, _locale_t locale)`
+/// preserved misfeature: identical to _wtoi64 (it is the real impl; _wtoi64 delegates with NULL locale); locale unused
+#[no_mangle]
+pub unsafe extern "C" fn _wtoi64_l(str: *const u16, _locale: *mut core::ffi::c_void) -> i64 {
+    let str_s = wcstr_slice(str);
+    let (v, _of) = crate::core_rs::radix::parse_i64_wrapping_cu(str_s);
+    v as i64
+}
+
+
+/// `long _wtol(const wchar_t *str)`
+/// preserved misfeature: wine wtol.c: decimal-only u32 wrapping (Win unsigned long=32-bit), bMinus?0-RunningTotal:RunningTotal; NULL→0; no base/0x/overflow detection; host unsigned long is 64-bit so the ref (int)-truncates
+#[no_mangle]
+pub unsafe extern "C" fn _wtol(str: *const u16) -> i32 {
+    let str_s = wcstr_slice(str);
+    crate::core_rs::radix::parse_u32_dec_w(str_s) as i32
 }
 
 
@@ -519,12 +783,38 @@ pub unsafe extern "C" fn atol(str: *const u8) -> i32 {
 }
 
 
+/// `size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)`
+/// preserved misfeature: NO NUL termination on convert (RtlMultiByteToUnicodeN writes only converted chars); query mode returns Size/sizeof(wchar_t); single-byte CP ⇒ wchars == mb length
+#[no_mangle]
+pub unsafe extern "C" fn mbstowcs(wcstr: *mut u16, mbstr: *const u8, count: usize) -> usize {
+    let s = cstr_slice(mbstr);
+    if wcstr.is_null() { return s.len() as usize; }
+    let n = if s.len() < count { s.len() } else { count };
+    let d = core::slice::from_raw_parts_mut(wcstr, n);
+    crate::core_rs::mbcp::mbstowcs(d, s, count) as usize
+}
+
+
+/// `int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)`
+/// preserved misfeature: space-guard: returns -1 (no *wchar write) if decoded==L' ' but mbarr[0]!=' ' (CP1252 never triggers it — only 0x20→U+0020 — but structurally pinned); count==0 → reads {0} → *wchar=0, ret 1
+#[no_mangle]
+pub unsafe extern "C" fn mbtowc(wchar: *mut u16, mbchar: *const u8, count: usize) -> i32 {
+    if mbchar.is_null() || wchar.is_null() { return 0; }
+    let take = if count < 2 { count } else { 2 };
+    let s = core::slice::from_raw_parts(mbchar, take);
+    let r = crate::core_rs::mbcp::mbtowc(s);
+    if r.ret == -1 { return -1; }
+    *wchar = r.wc;
+    r.ret
+}
+
+
 /// `void* __cdecl memchr(const void *s, int c, size_t n)`
 /// preserved misfeature: n==0 → return NULL without deref; signed-char vs int compare (high-bit c)
 #[no_mangle]
 pub unsafe extern "C" fn memchr(s: *const core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
     let s_s = raw_slice(s as *const u8, n);
-    match crate::core_rs::mem::chr(s_s, c) {
+    match crate::core_rs::mem::chr(s_s, c as i32) {
         Some(i) => s.add(i) as *mut core::ffi::c_void,
         None => core::ptr::null_mut(),
     }
@@ -569,12 +859,25 @@ pub unsafe extern "C" fn memset(src: *mut core::ffi::c_void, val: i32, count: us
 }
 
 
+/// `char* strcat(char *s, const char *append)`
+/// preserved misfeature: no bounds check (tcscat.h); appends through+incl. NUL at the existing terminator
+#[no_mangle]
+pub unsafe extern "C" fn strcat(s: *mut u8, append: *const u8) -> *mut u8 {
+    let dl = cstr_slice(s as *const u8).len();
+    let a = cstr_slice(append);
+    let m = a.len();
+    let tail = raw_mut_slice(s.add(dl), m + 1);
+    crate::core_rs::string::cat(tail, a);
+    s
+}
+
+
 /// `char *strchr(const char *s, int c)`
 /// preserved misfeature: the terminating NUL is a valid target: c==0 returns ptr to the NUL (Some(len)), not NULL; c truncated to char
 #[no_mangle]
 pub unsafe extern "C" fn strchr(s: *const u8, c: i32) -> *mut u8 {
     let s_s = cstr_slice(s);
-    match crate::core_rs::string::find_char(s_s, c) {
+    match crate::core_rs::string::find_char(s_s, c as i32) {
         Some(i) => s.add(i) as *mut u8,
         None => core::ptr::null_mut(),
     }
@@ -591,12 +894,48 @@ pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
 }
 
 
+/// `char* strcpy(char *to, const char *from)`
+/// preserved misfeature: no bounds check (tcscpy.h trusts the dst buffer); copies through and incl. the terminating NUL
+#[no_mangle]
+pub unsafe extern "C" fn strcpy(to: *mut u8, from: *const u8) -> *mut u8 {
+    let s = cstr_slice(from);
+    let m = s.len();
+    let d = raw_mut_slice(to, m + 1);
+    crate::core_rs::string::cpy(d, s);
+    to
+}
+
+
+/// `size_t strcspn(const char *s, const char *reject)`
+/// preserved misfeature: complement of strspn (_x inverted); empty reject → strlen(s)
+#[no_mangle]
+pub unsafe extern "C" fn strcspn(s: *const u8, reject: *const u8) -> usize {
+    let s_s = cstr_slice(s);
+    let reject_s = cstr_slice(reject);
+    crate::core_rs::string::span_out(s_s, reject_s) as usize
+}
+
+
 /// `size_t strlen(const char *s)`
 /// preserved misfeature: strlen(NULL) == 0 (textbook libc: UB) — tcslen.h explicit NULL guard
 #[no_mangle]
 pub unsafe extern "C" fn strlen(s: *const u8) -> usize {
     let s_s = cstr_slice(s);
     crate::core_rs::string::len_of(s_s) as usize
+}
+
+
+/// `char* strncat(char *dst, const char *src, size_t n)`
+/// preserved misfeature: n==0 writes nothing at all (no terminator) and returns dst unchanged (tcsncat.h); otherwise always terminates after ≤n appended
+#[no_mangle]
+pub unsafe extern "C" fn strncat(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    if n == 0 { return dst; }
+    let dl = cstr_slice(dst as *const u8).len();
+    let sc = cstr_slice(src);
+    let m = if sc.len() < n { sc.len() } else { n };
+    let tail = raw_mut_slice(dst.add(dl), m + 1);
+    crate::core_rs::string::ncat(tail, sc, n);
+    dst
 }
 
 
@@ -630,15 +969,38 @@ pub unsafe extern "C" fn strnlen(str: *const u8, maxlen: usize) -> usize {
 }
 
 
+/// `char* strpbrk(const char *s1, const char *s2)`
+/// preserved misfeature: first s1 char in s2 else NULL; empty s2→NULL. strpbrk.c's 3+-char path bitmap is sized by BIT_SIZE=sizeof(unsigned long)*8 (LP32=32 on target). Core models the correct first-in-set; diff fuzzes set≤2 only (the strchr fast paths — host-correct; 3+ UBs `1<<>=32` on LP64 host, unfuzzable, same caveat class as itoa long-family / strtoul ULONG_MAX). set size doesn't change find_any's code path so ≤2 fully pins it.
+#[no_mangle]
+pub unsafe extern "C" fn strpbrk(s1: *const u8, s2: *const u8) -> *mut u8 {
+    let s1_s = cstr_slice(s1);
+    let s2_s = cstr_slice(s2);
+    match crate::core_rs::string::find_any(s1_s, s2_s) {
+        Some(i) => s1.add(i) as *mut u8,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
 /// `char *strrchr(const char *s, int c)`
 /// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (Some(len)); c truncated to char
 #[no_mangle]
 pub unsafe extern "C" fn strrchr(s: *const u8, c: i32) -> *mut u8 {
     let s_s = cstr_slice(s);
-    match crate::core_rs::string::find_last_char(s_s, c) {
+    match crate::core_rs::string::find_last_char(s_s, c as i32) {
         Some(i) => s.add(i) as *mut u8,
         None => core::ptr::null_mut(),
     }
+}
+
+
+/// `size_t strspn(const char *s, const char *accept)`
+/// preserved misfeature: bitmap over unsigned-char (0..255); empty accept → 0; NUL terminates both (never in set)
+#[no_mangle]
+pub unsafe extern "C" fn strspn(s: *const u8, accept: *const u8) -> usize {
+    let s_s = cstr_slice(s);
+    let accept_s = cstr_slice(accept);
+    crate::core_rs::string::span_in(s_s, accept_s) as usize
 }
 
 
@@ -652,6 +1014,65 @@ pub unsafe extern "C" fn strstr(hay: *const u8, needle: *const u8) -> *mut u8 {
         Some(i) => hay.add(i) as *mut u8,
         None => core::ptr::null_mut(),
     }
+}
+
+
+/// `char *strtok(char *str, const char *delim)`
+/// preserved misfeature: non-reentrant hidden state (genuine thread_data_t::strtok_next → here a process-global AtomicPtr, single-threaded-equivalent); str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (stale pointer persists); token-to-end leaves saved on the terminating NUL; NULL delim is C UB (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn strtok(str: *mut u8, delim: *const u8) -> *mut u8 {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    static SAVED: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
+    if delim.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        let p = SAVED.load(Ordering::Relaxed);
+        if p.is_null() { return core::ptr::null_mut(); }
+        p
+    } else { str };
+    let n = cstr_slice(base as *const u8).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, cstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { .. } => core::ptr::null_mut(),
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            SAVED.store(base.add(next), Ordering::Relaxed);
+            base.add(start)
+        }
+    }
+}
+
+
+/// `char *strtok_s(char *str, const char *delim, char **ctx)`
+/// preserved misfeature: param validation (delim!=NULL, ctx!=NULL, str!=NULL||*ctx!=NULL) → NULL (MSVCRT_CHECK_PMT, _LIBCNT_ = bare predicate, no handler); UNLIKE strtok/wcstok the no-token path DOES set *ctx = str (pointer to the NUL); resumes from *ctx when str==NULL
+#[no_mangle]
+pub unsafe extern "C" fn strtok_s(str: *mut u8, delim: *const u8, ctx: *mut *mut u8) -> *mut u8 {
+    if delim.is_null() { return core::ptr::null_mut(); }
+    if ctx.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        if (*ctx).is_null() { return core::ptr::null_mut(); }
+        *ctx
+    } else { str };
+    let n = cstr_slice(base as *const u8).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, cstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { stop } => { *ctx = base.add(stop); core::ptr::null_mut() },
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            *ctx = base.add(next);
+            base.add(start)
+        }
+    }
+}
+
+
+/// `long strtol(const char *nptr, char **endptr, int base)`
+/// preserved misfeature: BSD signed-long clamp: overflow → LONG_MIN/LONG_MAX (32-bit Win long); neg non-overflow = 0u32.wrapping_sub(acc); cutoff = neg?(ULONG)LONG_MAX+1:LONG_MAX; base 0 ⇒ 0x→16/0→8/else 10; no base validation; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn strtol(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i32 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_long_bsd(nptr_s, base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i32
 }
 
 
@@ -673,6 +1094,259 @@ pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) 
 }
 
 
+/// `unsigned long long strtoull(const char *nptr, char **endptr, int base)`
+/// preserved misfeature: BSD u64 clamp: overflow → ULLONG_MAX; neg → 0u64.wrapping_sub(acc); cutoff=ULLONG_MAX/base; host unsigned long long == target u64 (no LP32 trick); base 0 prefix logic; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn strtoull(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> u64 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_u64_bsd(nptr_s, base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as u64
+}
+
+
+/// `int tolower(int _C)`
+/// preserved misfeature: fold DECISION uses signed-char low byte ((char)_C) but returns FULL int +32: tolower(0x141)==0x161; low-byte>=0x80 (neg as signed char) returned unchanged regardless of high bits
+#[no_mangle]
+pub unsafe extern "C" fn tolower(_C: i32) -> i32 {
+    crate::core_rs::casemap::tolower_ascii(_C)
+}
+
+
+/// `int __cdecl toupper_nt_mb(int _C)`
+/// preserved misfeature: packs the multibyte result: mbSize==2 → chr[1]|chr[0]<<8, ==1 → chr[0], else (WCHAR)_C; single-byte CP ⇒ always the ==1 branch (upcased byte, '?' if upcase escapes CP1252 e.g. µ→Μ); the ==2 DBCS branch is structurally present but unexercised
+#[no_mangle]
+pub unsafe extern "C" fn toupper_nt_mb(_C: i32) -> i32 {
+    crate::core_rs::mbcp::toupper_nt_mb(_C)
+}
+
+
+/// `wint_t towupper(wint_t _C)`
+/// preserved misfeature: NLS upcase = RtlUpcaseUnicodeChar((WCHAR)_C); default-install model = CP1252/Rtl (shared with Wave E2 toupper_nt_mb): a..z & Latin-1 À-range -= 0x20, ÿ→Ÿ, µ→Μ, Š/Œ/Ž ligatures; (WCHAR) truncates _C to 16-bit
+#[no_mangle]
+pub unsafe extern "C" fn towupper(_C: u16) -> u16 {
+    crate::core_rs::mbcp::upcase(_C) as u16
+}
+
+
+/// `wchar_t* wcscat(wchar_t *s, const wchar_t *append)`
+/// preserved misfeature: no bounds check (tcscat.h, wide)
+#[no_mangle]
+pub unsafe extern "C" fn wcscat(s: *mut u16, append: *const u16) -> *mut u16 {
+    let dl = wcstr_slice(s as *const u16).len();
+    let a = wcstr_slice(append);
+    let m = a.len();
+    let tail = wraw_mut_slice(s.add(dl), m + 1);
+    crate::core_rs::string::cat(tail, a);
+    s
+}
+
+
+/// `wchar_t* wcschr(const wchar_t *s, wchar_t c)`
+/// preserved misfeature: terminating NUL is a valid target: c==0 → ptr to the NUL (tcschr.h); _XINT=wchar_t (no truncation, unlike strchr's char cast)
+#[no_mangle]
+pub unsafe extern "C" fn wcschr(s: *const u16, c: u16) -> *mut u16 {
+    let s_s = wcstr_slice(s);
+    match crate::core_rs::string::find_char(s_s, c as i32) {
+        Some(i) => s.add(i) as *mut u16,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
+/// `int wcscmp(const wchar_t *s1, const wchar_t *s2)`
+/// preserved misfeature: raw element difference *s1-*s2 with wchar_t unsigned 16-bit (value-preserving to int) — NOT signed-char like strcmp, NOT clamped
+#[no_mangle]
+pub unsafe extern "C" fn wcscmp(s1: *const u16, s2: *const u16) -> i32 {
+    let s1_s = wcstr_slice(s1);
+    let s2_s = wcstr_slice(s2);
+    crate::core_rs::string::cmp(s1_s, s2_s)
+}
+
+
+/// `wchar_t* wcscpy(wchar_t *to, const wchar_t *from)`
+/// preserved misfeature: no bounds check (tcscpy.h, wide)
+#[no_mangle]
+pub unsafe extern "C" fn wcscpy(to: *mut u16, from: *const u16) -> *mut u16 {
+    let s = wcstr_slice(from);
+    let m = s.len();
+    let d = wraw_mut_slice(to, m + 1);
+    crate::core_rs::string::cpy(d, s);
+    to
+}
+
+
+/// `size_t wcscspn(const wchar_t *str, const wchar_t *reject)`
+/// preserved misfeature: wide twin of strcspn; empty reject → wcslen
+#[no_mangle]
+pub unsafe extern "C" fn wcscspn(str: *const u16, reject: *const u16) -> usize {
+    let str_s = wcstr_slice(str);
+    let reject_s = wcstr_slice(reject);
+    crate::core_rs::string::span_out(str_s, reject_s) as usize
+}
+
+
+/// `size_t wcslen(const wchar_t *str)`
+/// preserved misfeature: wcslen(NULL) == 0 (tcslen.h NULL guard) — same as strlen
+#[no_mangle]
+pub unsafe extern "C" fn wcslen(str: *const u16) -> usize {
+    let str_s = wcstr_slice(str);
+    crate::core_rs::string::len_of(str_s) as usize
+}
+
+
+/// `wchar_t* wcsncat(wchar_t *dst, const wchar_t *src, size_t n)`
+/// preserved misfeature: n==0 → nothing + return dst (tcsncat.h, wide)
+#[no_mangle]
+pub unsafe extern "C" fn wcsncat(dst: *mut u16, src: *const u16, n: usize) -> *mut u16 {
+    if n == 0 { return dst; }
+    let dl = wcstr_slice(dst as *const u16).len();
+    let sc = wcstr_slice(src);
+    let m = if sc.len() < n { sc.len() } else { n };
+    let tail = wraw_mut_slice(dst.add(dl), m + 1);
+    crate::core_rs::string::ncat(tail, sc, n);
+    dst
+}
+
+
+/// `int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)`
+/// preserved misfeature: unsigned-u16 diff; n==0→0; stops at first NUL (tcsncmp.h)
+#[no_mangle]
+pub unsafe extern "C" fn wcsncmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
+    let s1_s = wcstr_slice(s1);
+    let s2_s = wcstr_slice(s2);
+    crate::core_rs::string::ncmp(s1_s, s2_s, n)
+}
+
+
+/// `wchar_t* wcsncpy(wchar_t *dst, const wchar_t *src, size_t n)`
+/// preserved misfeature: no NUL-termination when src len >= n (the strncpy footgun) — tcsncpy.h, wide
+#[no_mangle]
+pub unsafe extern "C" fn wcsncpy(dst: *mut u16, src: *const u16, n: usize) -> *mut u16 {
+    let dst_s = wraw_mut_slice(dst, n);
+    let src_s = wcstr_slice(src);
+    let _ = crate::core_rs::string::ncpy(dst_s, src_s);
+    dst
+}
+
+
+/// `size_t wcsnlen(const wchar_t *str, size_t count)`
+/// preserved misfeature: NULL→0 (tcsnlen.h); never reads past count; min(wcslen,count)
+#[no_mangle]
+pub unsafe extern "C" fn wcsnlen(str: *const u16, count: usize) -> usize {
+    let str_s = wcstr_slice_bounded(str, count);
+    crate::core_rs::string::len_of(str_s) as usize
+}
+
+
+/// `wchar_t* wcsrchr(const wchar_t *s, wchar_t c)`
+/// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (tcsrchr.h); _XINT=wchar_t
+#[no_mangle]
+pub unsafe extern "C" fn wcsrchr(s: *const u16, c: u16) -> *mut u16 {
+    let s_s = wcstr_slice(s);
+    match crate::core_rs::string::find_last_char(s_s, c as i32) {
+        Some(i) => s.add(i) as *mut u16,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
+/// `size_t wcsspn(const wchar_t *str, const wchar_t *accept)`
+/// preserved misfeature: wide twin of strspn (linear-scan membership, same result); empty accept → 0
+#[no_mangle]
+pub unsafe extern "C" fn wcsspn(str: *const u16, accept: *const u16) -> usize {
+    let str_s = wcstr_slice(str);
+    let accept_s = wcstr_slice(accept);
+    crate::core_rs::string::span_in(str_s, accept_s) as usize
+}
+
+
+/// `wchar_t* wcsstr(const wchar_t *s, const wchar_t *b)`
+/// preserved misfeature: empty needle → NULL (the while(*x) body never runs for 0-len b) — DISTINCT from narrow strstr empty→hay
+#[no_mangle]
+pub unsafe extern "C" fn wcsstr(s: *const u16, b: *const u16) -> *mut u16 {
+    let s_s = wcstr_slice(s);
+    let b_s = wcstr_slice(b);
+    match crate::core_rs::string::find_sub_strict(s_s, b_s) {
+        Some(i) => s.add(i) as *mut u16,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
+/// `wchar_t *wcstok(wchar_t *str, const wchar_t *delim)`
+/// preserved misfeature: non-reentrant hidden state; str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (wcstok_s asymmetry inherited); NULL delim C UB (never fuzzed)
+#[no_mangle]
+pub unsafe extern "C" fn wcstok(str: *mut u16, delim: *const u16) -> *mut u16 {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    static SAVED: AtomicPtr<u16> = AtomicPtr::new(core::ptr::null_mut());
+    if delim.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        let p = SAVED.load(Ordering::Relaxed);
+        if p.is_null() { return core::ptr::null_mut(); }
+        p
+    } else { str };
+    let n = wcstr_slice(base as *const u16).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, wcstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { .. } => core::ptr::null_mut(),
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            SAVED.store(base.add(next), Ordering::Relaxed);
+            base.add(start)
+        }
+    }
+}
+
+
+/// `wchar_t *wcstok_s(wchar_t *str, const wchar_t *delim, wchar_t **next_token)`
+/// preserved misfeature: param validation → NULL (+ _set_errno EINVAL, _LIBCNT_ no-op); no-token path does NOT update *next_token (differs from strtok_s which sets *ctx); strchrW = wcschr (matches the terminator for c==0, never reached under the *str&& guard)
+#[no_mangle]
+pub unsafe extern "C" fn wcstok_s(str: *mut u16, delim: *const u16, next_token: *mut *mut u16) -> *mut u16 {
+    if delim.is_null() { return core::ptr::null_mut(); }
+    if next_token.is_null() { return core::ptr::null_mut(); }
+    let base = if str.is_null() {
+        if (*next_token).is_null() { return core::ptr::null_mut(); }
+        *next_token
+    } else { str };
+    let n = wcstr_slice(base as *const u16).len();
+    let s = core::slice::from_raw_parts_mut(base, n);
+    match crate::core_rs::strtok::next_token(s, wcstr_slice(delim)) {
+        crate::core_rs::strtok::Tok::Empty { .. } => core::ptr::null_mut(),
+        crate::core_rs::strtok::Tok::Found { start, next } => {
+            *next_token = base.add(next);
+            base.add(start)
+        }
+    }
+}
+
+
+/// `long wcstol(const wchar_t *nptr, wchar_t **endptr, int base)`
+/// preserved misfeature: wide twin of strtol (iswctype ASCII-equivalent); same signed-long clamp + endptr
+#[no_mangle]
+pub unsafe extern "C" fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> i32 {
+    let nptr_s = wcstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_long_bsd(nptr_s, base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i32
+}
+
+
+/// `size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)`
+/// preserved misfeature: NO NUL termination; unmappable wchar → '?'; query returns Size; single-byte CP ⇒ bytes == wchar length
+#[no_mangle]
+pub unsafe extern "C" fn wcstombs(mbstr: *mut u8, wcstr: *const u16, count: usize) -> usize {
+    let s = wcstr_slice(wcstr);
+    if mbstr.is_null() { return s.len() as usize; }
+    let n = if s.len() < count { s.len() } else { count };
+    let d = core::slice::from_raw_parts_mut(mbstr, n);
+    crate::core_rs::mbcp::wcstombs(d, s, count) as usize
+}
+
+
 /// `unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)`
 /// preserved misfeature: overflow saturates to ULONG_MAX but STILL advances endptr past every digit (sticky any=-1); leading '-' parses then result negated unsigned at end → -1→0xFFFFFFFF, negated-overflow→1 (NOT ULONG_MAX); base 0 ⇒ 0x→16 / 0→8 / else 10; no base validation
 #[no_mangle]
@@ -683,5 +1357,15 @@ pub unsafe extern "C" fn wcstoul(nptr: *const u16, endptr: *mut *mut u16, base: 
         *endptr = nptr.add(r.end) as *mut u16;
     }
     r.value as u32
+}
+
+
+/// `int wctomb(char *mbchar, wchar_t wchar)`
+/// preserved misfeature: single-byte CP ⇒ always Size==1 (RtlUnicodeToMultiByteN writes the default char '?' for unmappable and still counts it); NULL → 0 (state-independent marker)
+#[no_mangle]
+pub unsafe extern "C" fn wctomb(mbchar: *mut u8, wchar: u16) -> i32 {
+    if mbchar.is_null() { return 0; }
+    *mbchar = crate::core_rs::mbcp::wctomb(wchar);
+    1
 }
 

@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 DBG_DEFAULT_CHANNEL(UserMisc);
 
@@ -155,6 +156,7 @@ NtUserCallOneParam(
     DWORD Routine)
 {
     DWORD_PTR Result;
+    NTSTATUS Status;
 
     TRACE("Enter NtUserCallOneParam\n");
 
@@ -333,17 +335,16 @@ NtUserCallOneParam(
                 Result = FALSE;
                 break;
             }
-            _SEH2_TRY
-            {
-                ProbeForWrite((POINT*)Param,sizeof(POINT),1);
-               pptl = (PPOINTL)Param;
-               *pptl = gpsi->ptCursor;
-            }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            Status = SafeProbeForWrite((POINT*)Param, sizeof(POINT), 1);
+            if (!NT_SUCCESS(Status))
             {
                 Result = FALSE;
             }
-            _SEH2_END;
+            else
+            {
+                pptl = (PPOINTL)Param;
+                *pptl = gpsi->ptCursor;
+            }
             break;
         }
 
@@ -376,17 +377,17 @@ NtUserCallOneParam(
             }
 
             ppi = PsGetCurrentProcessWin32Process();
-            _SEH2_TRY
+            Status = SafeProbeForWrite((PDWORD)Param, sizeof(DWORD), __alignof(DWORD));
+            if (!NT_SUCCESS(Status))
             {
-               pdwLayout = (PDWORD)Param;
-               *pdwLayout = ppi->dwLayout;
-            }
-            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            {
-                SetLastNtError(_SEH2_GetExceptionCode());
+                SetLastNtError(Status);
                 Result = FALSE;
             }
-            _SEH2_END;
+            else
+            {
+                pdwLayout = (PDWORD)Param;
+                *pdwLayout = ppi->dwLayout;
+            }
             break;
         }
 
@@ -424,6 +425,7 @@ NtUserCallOneParam(
 
    return Result;
 }
+
 
 
 /*

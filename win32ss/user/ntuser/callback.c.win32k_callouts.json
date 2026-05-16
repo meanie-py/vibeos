@@ -1,0 +1,312 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/callback.c",
+  "schema": "win32k_pass3_v1",
+  "count": 17,
+  "sites": [
+    {
+      "function": "co_IntClientLoadLibrary",
+      "func_line": 137,
+      "func_end_line": 236,
+      "callback_index": "USER32_CALLBACK_CLIENTLOADLIBRARY",
+      "kumc_line": 207,
+      "input_arg": "pArguments",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 205,
+      "enter_co_line": 213,
+      "result_probe_line": 223,
+      "signals": [
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntCallSentMessageCallback",
+      "func_line": 239,
+      "func_end_line": 280,
+      "callback_index": "USER32_CALLBACK_SENDASYNCPROC",
+      "kumc_line": 264,
+      "input_arg": "&Arguments",
+      "input_len_arg": "sizeof(SENDASYNCPROC_CALLBACK_ARGUMENTS)",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 262,
+      "enter_co_line": 270,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntCallWindowProc",
+      "func_line": 283,
+      "func_end_line": 426,
+      "callback_index": "USER32_CALLBACK_WINDOWPROC",
+      "kumc_line": 337,
+      "input_arg": "Arguments",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 335,
+      "enter_co_line": 345,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntLoadSysMenuTemplate",
+      "func_line": 429,
+      "func_end_line": 466,
+      "callback_index": "USER32_CALLBACK_LOADSYSMENUTEMPLATE",
+      "kumc_line": 444,
+      "input_arg": "&ResultPointer",
+      "input_len_arg": "0",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 442,
+      "enter_co_line": 463,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntLoadDefaultCursors",
+      "func_line": 471,
+      "func_end_line": 503,
+      "callback_index": "USER32_CALLBACK_LOADDEFAULTCURSORS",
+      "kumc_line": 486,
+      "input_arg": "&DefaultCursor",
+      "input_len_arg": "sizeof(BOOL)",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 484,
+      "enter_co_line": 492,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntCallHookProc",
+      "func_line": 508,
+      "func_end_line": 831,
+      "callback_index": "USER32_CALLBACK_HOOKPROC",
+      "kumc_line": 748,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 746,
+      "enter_co_line": 754,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntCallEventProc",
+      "func_line": 838,
+      "func_end_line": 896,
+      "callback_index": "USER32_CALLBACK_EVENTPROC",
+      "kumc_line": 880,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 878,
+      "enter_co_line": 886,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntCallLoadMenu",
+      "func_line": 903,
+      "func_end_line": 955,
+      "callback_index": "USER32_CALLBACK_LOADMENU",
+      "kumc_line": 935,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 933,
+      "enter_co_line": 941,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntClientThreadSetup",
+      "func_line": 959,
+      "func_end_line": 982,
+      "callback_index": "USER32_CALLBACK_CLIENTTHREADSTARTUP",
+      "kumc_line": 973,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 971,
+      "enter_co_line": 979,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntCopyImage",
+      "func_line": 985,
+      "func_end_line": 1036,
+      "callback_index": "USER32_CALLBACK_COPYIMAGE",
+      "kumc_line": 1014,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 1012,
+      "enter_co_line": 1021,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntGetCharsetInfo",
+      "func_line": 1040,
+      "func_end_line": 1098,
+      "callback_index": "USER32_CALLBACK_GETCHARSETINFO",
+      "kumc_line": 1064,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 1062,
+      "enter_co_line": 1085,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntSetWndIcons",
+      "func_line": 1101,
+      "func_end_line": 1154,
+      "callback_index": "USER32_CALLBACK_SETWNDICONS",
+      "kumc_line": 1121,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 1119,
+      "enter_co_line": 1128,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntDeliverUserAPC",
+      "func_line": 1157,
+      "func_end_line": 1177,
+      "callback_index": "USER32_CALLBACK_DELIVERUSERAPC",
+      "kumc_line": 1164,
+      "input_arg": "0",
+      "input_len_arg": "0",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 1162,
+      "enter_co_line": 1171,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntSetupOBM",
+      "func_line": 1180,
+      "func_end_line": 1220,
+      "callback_index": "USER32_CALLBACK_SETOBM",
+      "kumc_line": 1200,
+      "input_arg": "Argument",
+      "input_len_arg": "ArgumentLength",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 1198,
+      "enter_co_line": 1207,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_UserCBClientPrinterThunk",
+      "func_line": 1227,
+      "func_end_line": 1248,
+      "callback_index": "USER32_CALLBACK_UMPD",
+      "kumc_line": 1232,
+      "input_arg": "pkt",
+      "input_len_arg": "InSize",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "(PULONG)&OutSize",
+      "leave_co_line": null,
+      "enter_co_line": null,
+      "result_probe_line": null,
+      "signals": [
+        "missing_leaveco_enterco_pair",
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_IntImmProcessKey",
+      "func_line": 1253,
+      "func_end_line": 1273,
+      "callback_index": "USER32_CALLBACK_IMMPROCESSKEY",
+      "kumc_line": 1262,
+      "input_arg": "&Common",
+      "input_len_arg": "sizeof(Common)",
+      "result_ptr_arg": "&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 1261,
+      "enter_co_line": 1267,
+      "result_probe_line": null,
+      "signals": [
+        "no_marshal_back_probe",
+        "co_prefixed"
+      ]
+    },
+    {
+      "function": "co_ClientImmLoadLayout",
+      "func_line": 1278,
+      "func_end_line": 1318,
+      "callback_index": "USER32_CALLBACK_IMMLOADLAYOUT",
+      "kumc_line": 1291,
+      "input_arg": "&Common",
+      "input_len_arg": "sizeof(Common)",
+      "result_ptr_arg": "(PVOID*)&ResultPointer",
+      "result_len_arg": "&ResultLength",
+      "leave_co_line": 1290,
+      "enter_co_line": 1296,
+      "result_probe_line": 1305,
+      "signals": [
+        "co_prefixed"
+      ]
+    }
+  ]
+}

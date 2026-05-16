@@ -11,6 +11,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserAccel);
 
 #define FVIRT_TBL_END 0x80
@@ -175,6 +176,7 @@ NtUserCopyAcceleratorTable(
 {
     PACCELERATOR_TABLE Accel;
     ULONG Ret = 0;
+    NTSTATUS Status;
 
     TRACE("Enter NtUserCopyAcceleratorTable\n");
     UserEnterShared();
@@ -196,10 +198,14 @@ NtUserCopyAcceleratorTable(
     if (Accel->Count < EntriesCount)
         EntriesCount = Accel->Count;
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(Entries, EntriesCount*sizeof(Entries[0]), 4);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForWrite(Entries, EntriesCount*sizeof(Entries[0]), 4);
-
+        SetLastNtError(Status);
+        Ret = 0;
+    }
+    else
+    {
         for (Ret = 0; Ret < EntriesCount; Ret++)
         {
             Entries[Ret].fVirt = Accel->Table[Ret].fVirt;
@@ -207,18 +213,13 @@ NtUserCopyAcceleratorTable(
             Entries[Ret].cmd = Accel->Table[Ret].cmd;
         }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        Ret = 0;
-    }
-    _SEH2_END;
 
 Exit:
     TRACE("Leave NtUserCopyAcceleratorTable, ret=%lu\n", Ret);
     UserLeave();
     return Ret;
 }
+
 
 HACCEL
 APIENTRY
@@ -385,17 +386,15 @@ NtUserTranslateAccelerator(
         goto Cleanup; // Return 0
     }
 
-    _SEH2_TRY
     {
-        ProbeForRead(pUnsafeMessage, sizeof(MSG), 4);
-        RtlCopyMemory(&Message, pUnsafeMessage, sizeof(MSG));
+        NTSTATUS __SehStatus = SafeProbeForRead(pUnsafeMessage, sizeof(MSG), 4);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            goto Cleanup; // Return 0
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(goto Cleanup); // Return 0
-    }
-    _SEH2_END;
+    RtlCopyMemory(&Message, pUnsafeMessage, sizeof(MSG));
 
     if ((Message.message != WM_KEYDOWN) &&
         (Message.message != WM_SYSKEYDOWN) &&

@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <immdev.h>
 #include <unaligned.h>
 
@@ -2634,18 +2635,17 @@ ProbeAndCaptureLargeString(
     LARGE_STRING lstrTemp;
     PVOID pvBuffer = NULL;
 
-    _SEH2_TRY
     {
-        /* Probe and copy the string */
-        ProbeForRead(plstrUnsafe, sizeof(LARGE_STRING), sizeof(ULONG));
-        lstrTemp = *plstrUnsafe;
+        NTSTATUS __SehStatus = SafeProbeForRead(plstrUnsafe, sizeof(LARGE_STRING), sizeof(ULONG));
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            /* Fail */
+            return __SehStatus;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        /* Fail */
-        _SEH2_YIELD(return _SEH2_GetExceptionCode();)
-    }
-    _SEH2_END
+    /* Probe and copy the string */
+
+    lstrTemp = *plstrUnsafe;
 
     if (lstrTemp.Length != 0)
     {
@@ -2656,19 +2656,18 @@ ProbeAndCaptureLargeString(
             return STATUS_NO_MEMORY;
         }
 
-        _SEH2_TRY
         {
-            /* Probe and copy the buffer */
-            ProbeForRead(lstrTemp.Buffer, lstrTemp.Length, sizeof(WCHAR));
-            RtlCopyMemory(pvBuffer, lstrTemp.Buffer, lstrTemp.Length);
+            NTSTATUS __SehStatus = SafeProbeForRead(lstrTemp.Buffer, lstrTemp.Length, sizeof(WCHAR));
+            if (!NT_SUCCESS(__SehStatus))
+            {
+                /* Cleanup and fail */
+                ExFreePoolWithTag(pvBuffer, TAG_STRING);
+                return __SehStatus;
+            }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            /* Cleanup and fail */
-            ExFreePoolWithTag(pvBuffer, TAG_STRING);
-            _SEH2_YIELD(return _SEH2_GetExceptionCode();)
-        }
-        _SEH2_END
+        /* Probe and copy the buffer */
+
+        RtlCopyMemory(pvBuffer, lstrTemp.Buffer, lstrTemp.Length);
     }
 
     /* Set the output string */
@@ -3502,17 +3501,15 @@ NtUserGetComboBoxInfo(
       Ret = FALSE;
       goto Exit;
    }
-   _SEH2_TRY
    {
-        ProbeForWrite(pcbi, sizeof(COMBOBOXINFO), 1);
+       NTSTATUS __SehStatus = SafeProbeForWrite(pcbi, sizeof(COMBOBOXINFO), 1);
+       if (!NT_SUCCESS(__SehStatus))
+       {
+           SetLastNtError(__SehStatus);
+           Ret = FALSE;
+           goto Exit;
+       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-       SetLastNtError(_SEH2_GetExceptionCode());
-       Ret = FALSE;
-       _SEH2_YIELD(goto Exit);
-   }
-   _SEH2_END;
 
    if (pcbi->cbSize < sizeof(COMBOBOXINFO))
    {

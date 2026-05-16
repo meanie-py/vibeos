@@ -1,0 +1,68 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/winpos.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 2,
+    "d": 1
+  },
+  "sites": [
+    {
+      "function": "NtUserGetInternalWindowPos",
+      "line_start": 3391,
+      "line_end": 3411,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserGetInternalWindowPos",
+      "line_start": 3418,
+      "line_end": 3434,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [
+        "relies_on_prior_probe"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write; relies on earlier sibling probe"
+    },
+    {
+      "function": "NtUserSetInternalWindowPos",
+      "line_start": 3705,
+      "line_end": 3722,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "YIELD_GOTO"
+      ],
+      "note": ""
+    }
+  ]
+}

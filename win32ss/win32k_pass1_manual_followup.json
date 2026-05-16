@@ -1,0 +1,326 @@
+{
+  "rewritten": 97,
+  "skipped": 64,
+  "sites": [
+    {
+      "file": "gdi/eng/alphablend.c",
+      "line": 262,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/eng/bitblt.c",
+      "line": 300,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/eng/bitblt_new.c",
+      "line": 571,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/eng/pdevobj.c",
+      "line": 1309,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/eng/stretchblt.c",
+      "line": 876,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/ntgdi/bitmaps.c",
+      "line": 689,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/cliprgn.c",
+      "line": 422,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/coord.c",
+      "line": 403,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/ntgdi/coord.c",
+      "line": 536,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/coord.c",
+      "line": 725,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/coord.c",
+      "line": 1441,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/dcutil.c",
+      "line": 757,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/dibobj.c",
+      "line": 507,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/ntgdi/dibobj.c",
+      "line": 1668,
+      "reason": "brace-less conditional probe \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/ntgdi/fillshap.c",
+      "line": 1124,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/ntgdi/line.c",
+      "line": 778,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/metafile.c",
+      "line": 76,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/metafile.c",
+      "line": 133,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/ntgdi/palette.c",
+      "line": 1162,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/path.c",
+      "line": 2744,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/path.c",
+      "line": 2773,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "gdi/ntgdi/path.c",
+      "line": 2953,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "gdi/ntgdi/region.c",
+      "line": 4116,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/accelerator.c",
+      "line": 199,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/clipboard.c",
+      "line": 1204,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/defwnd.c",
+      "line": 1340,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/ghost.c",
+      "line": 121,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 402,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 487,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 537,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 575,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 610,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 647,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 675,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 709,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 778,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 814,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 862,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/hook.c",
+      "line": 890,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/ime.c",
+      "line": 444,
+      "reason": "brace-less conditional probe \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "user/ntuser/ime.c",
+      "line": 1108,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/ime.c",
+      "line": 2101,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/ime.c",
+      "line": 2134,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/ime.c",
+      "line": 2181,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/keyboard.c",
+      "line": 1658,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/layered.c",
+      "line": 274,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "user/ntuser/layered.c",
+      "line": 369,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "user/ntuser/menu.c",
+      "line": 5803,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2367,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2412,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2449,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2605,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2914,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2945,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2965,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 2981,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/message.c",
+      "line": 3077,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/mouse.c",
+      "line": 519,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/msgqueue.c",
+      "line": 2589,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/msgqueue.c",
+      "line": 2628,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/simplecall.c",
+      "line": 336,
+      "reason": "non-swallow, no Status, no control transfer \u2014 manual"
+    },
+    {
+      "file": "user/ntuser/sysparams.c",
+      "line": 2093,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "user/ntuser/winpos.c",
+      "line": 3394,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    },
+    {
+      "file": "user/ntuser/winpos.c",
+      "line": 3710,
+      "reason": "multi-probe, no Status lvalue \u2014 manual (audit risk #1)"
+    }
+  ]
+}

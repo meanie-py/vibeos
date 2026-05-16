@@ -69,6 +69,7 @@
 /* INCLUDES ******************************************************************/
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -374,6 +375,7 @@ NtGdiTransformPoints(
     LPPOINT Points;
     ULONG Size;
     BOOL ret = TRUE;
+    NTSTATUS Status;
 
     if (Count <= 0)
         return TRUE;
@@ -400,18 +402,17 @@ NtGdiTransformPoints(
         return FALSE;
     }
 
-    _SEH2_TRY
-    {
-        ProbeForWrite(UnsafePtOut, Size, 1);
-        ProbeForRead(UnsafePtsIn, Size, 1);
-        RtlCopyMemory(Points, UnsafePtsIn, Size);
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForWrite(UnsafePtOut, Size, 1);
+    if (NT_SUCCESS(Status)) Status = SafeProbeForRead(UnsafePtsIn, Size, 1);
+    if (!NT_SUCCESS(Status))
     {
         /* Do not set last error */
-        _SEH2_YIELD(goto leave;)
+        goto leave;
     }
-    _SEH2_END;
+    else
+    {
+        RtlCopyMemory(Points, UnsafePtsIn, Size);
+    }
 
     switch (iMode)
     {
@@ -455,6 +456,7 @@ leave:
     ExFreePoolWithTag(Points, GDITAG_TEMP);
     return ret;
 }
+
 
 BOOL
 NTAPI
@@ -514,6 +516,7 @@ NtGdiModifyWorldTransform(
     PDC pdc;
     XFORML xformSafe;
     BOOL Ret = TRUE;
+    NTSTATUS Status;
 
     pdc = DC_LockDc(hdc);
     if (!pdc)
@@ -533,16 +536,15 @@ NtGdiModifyWorldTransform(
 
     if (pxformUnsafe != NULL)
     {
-        _SEH2_TRY
-        {
-            ProbeForRead(pxformUnsafe, sizeof(XFORML), 1);
-            RtlCopyMemory(&xformSafe, pxformUnsafe, sizeof(XFORML));
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        Status = SafeProbeForRead(pxformUnsafe, sizeof(XFORML), 1);
+        if (!NT_SUCCESS(Status))
         {
             Ret = FALSE;
         }
-        _SEH2_END;
+        else
+        {
+            RtlCopyMemory(&xformSafe, pxformUnsafe, sizeof(XFORML));
+        }
     }
 
     /* Safe to handle kernel mode data. */
@@ -550,6 +552,7 @@ NtGdiModifyWorldTransform(
     DC_UnlockDc(pdc);
     return Ret;
 }
+
 
 BOOL
 APIENTRY
@@ -573,9 +576,9 @@ NtGdiOffsetViewportOrgEx(
 
     if (UnsafePoint)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(UnsafePoint, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(UnsafePoint, sizeof(POINT), 1);
             UnsafePoint->x = pdcattr->ptlViewportOrg.x;
             UnsafePoint->y = pdcattr->ptlViewportOrg.y;
             if (pdcattr->dwLayout & LAYOUT_RTL)
@@ -583,11 +586,6 @@ NtGdiOffsetViewportOrgEx(
                 UnsafePoint->x = -UnsafePoint->x;
             }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -633,17 +631,12 @@ NtGdiOffsetWindowOrgEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(Point, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(Point, sizeof(POINT), 1);
             Point->x = pdcattr->ptlWindowOrg.x;
             Point->y = pdcattr->ptlWindowOrg.y;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -676,6 +669,7 @@ NtGdiScaleViewportExtEx(
     PDC_ATTR pdcattr;
     BOOL Ret = FALSE;
     LONG X, Y;
+    NTSTATUS Status;
 
     pDC = DC_LockDc(hDC);
     if (!pDC)
@@ -722,24 +716,23 @@ NtGdiScaleViewportExtEx(
 
     if (pSize)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pSize, sizeof(SIZE), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForWrite(pSize, sizeof(SIZE), 1);
-
+            SetLastNtError(Status);
+            Ret = FALSE;
+        }
+        else
+        {
             pSize->cx = pdcattr->szlViewportExt.cx;
             pSize->cy = pdcattr->szlViewportExt.cy;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            SetLastNtError(_SEH2_GetExceptionCode());
-            Ret = FALSE;
-        }
-        _SEH2_END;
     }
 
     DC_UnlockDc(pDC);
     return Ret;
 }
+
 
 BOOL
 APIENTRY
@@ -768,20 +761,14 @@ NtGdiScaleWindowExtEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pSize, sizeof(SIZE), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(pSize, sizeof(SIZE), 1);
-
             X = pdcattr->szlWindowExt.cx;
             if (pdcattr->dwLayout & LAYOUT_RTL) X = -X;
             pSize->cx = X;
             pSize->cy = pdcattr->szlWindowExt.cy;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -966,17 +953,12 @@ NtGdiSetViewportOrgEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(Point, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(Point, sizeof(POINT), 1);
             Point->x = pdcattr->ptlViewportOrg.x;
             Point->y = pdcattr->ptlViewportOrg.y;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -1018,17 +1000,12 @@ NtGdiSetWindowOrgEx(
     {
         NTSTATUS Status = STATUS_SUCCESS;
 
-        _SEH2_TRY
+        Status = SafeProbeForWrite(Point, sizeof(POINT), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(Point, sizeof(POINT), 1);
             Point->x = pdcattr->ptlWindowOrg.x;
             Point->y = pdcattr->ptlWindowOrg.y;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -1428,6 +1405,7 @@ NtGdiGetDCPoint(
 {
     BOOL Ret;
     POINTL SafePoint;
+    NTSTATUS Status;
 
     if (!Point)
     {
@@ -1438,19 +1416,19 @@ NtGdiGetDCPoint(
     Ret = GreGetDCPoint(hDC, iPoint, &SafePoint);
     if (Ret)
     {
-        _SEH2_TRY
-        {
-            ProbeForWrite(Point, sizeof(POINT), 1);
-            *Point = SafePoint;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        Status = SafeProbeForWrite(Point, sizeof(POINT), 1);
+        if (!NT_SUCCESS(Status))
         {
             Ret = FALSE;
         }
-        _SEH2_END;
+        else
+        {
+            *Point = SafePoint;
+        }
     }
 
     return Ret;
 }
+
 
 /* EOF */

@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -193,16 +194,9 @@ UserLoadImage(PCWSTR pwszName)
     /* Get a pointer to the BITMAPINFO */
     pbmi = (LPBITMAPINFO)(pbmfh + 1);
 
-	_SEH2_TRY
-	{
-		ProbeForRead(&pbmfh->bfSize, sizeof(DWORD), 1);
-		ProbeForRead(pbmfh, pbmfh->bfSize, 1);
-	}
-	_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-	{
-		Status = _SEH2_GetExceptionCode();
-	}
-	_SEH2_END
+	Status = SafeProbeForRead(&pbmfh->bfSize, sizeof(DWORD), 1);
+	if (NT_SUCCESS(Status))
+	    Status = SafeProbeForRead(pbmfh, pbmfh->bfSize, 1);
 
 	if(!NT_SUCCESS(Status))
 	{

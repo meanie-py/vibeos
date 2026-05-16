@@ -10,6 +10,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include <immdev.h>
 
 // Was included only because of CP_ACP and required  the
@@ -1053,16 +1054,14 @@ NtUserGetKeyboardLayoutList(
         goto Quit;
     }
 
-    _SEH2_TRY
     {
-        ProbeForWrite(pHklBuff, nBuff * sizeof(HKL), 1);
+        NTSTATUS __SehStatus = SafeProbeForWrite(pHklBuff, nBuff * sizeof(HKL), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            goto Quit;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        goto Quit;
-    }
-    _SEH2_END;
 
     pWinSta = IntGetProcessWindowStation(NULL);
 

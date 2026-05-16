@@ -1,0 +1,88 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/path.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 3,
+    "e": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiGetMiterLimit",
+      "line_start": 2739,
+      "line_end": 2748,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiGetPath",
+      "line_start": 2766,
+      "line_end": 2775,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtGdiGetPath",
+      "line_start": 2811,
+      "line_end": 2828,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "needs_goto_lowering",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "GdiPathDPtoLP",
+        "EngSetLastError"
+      ],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: GdiPathDPtoLP, EngSetLastError"
+    },
+    {
+      "function": "NtGdiSetMiterLimit",
+      "line_start": 2947,
+      "line_end": 2956,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "WRITE_BACK"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    }
+  ]
+}

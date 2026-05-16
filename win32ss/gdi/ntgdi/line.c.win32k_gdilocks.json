@@ -1,0 +1,70 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/line.c",
+  "schema": "win32k_pass2_v1",
+  "count": 4,
+  "sites": [
+    {
+      "function": "GreMoveTo",
+      "func_line": 110,
+      "func_end_line": 125,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 117,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        123
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiLineTo",
+      "func_line": 497,
+      "func_end_line": 533,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 505,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        531
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GdiPolyDraw",
+      "func_line": 538,
+      "func_end_line": 681,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 552,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        564,
+        678
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiMoveTo",
+      "func_line": 761,
+      "func_end_line": 794,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 771,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        791
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

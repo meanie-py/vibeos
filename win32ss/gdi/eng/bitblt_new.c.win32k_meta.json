@@ -1,0 +1,28 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/bitblt_new.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiEngBitBlt",
+      "line_start": 557,
+      "line_end": 595,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [
+        "multi_probe"
+      ],
+      "probe_count": 8,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": ""
+    }
+  ]
+}

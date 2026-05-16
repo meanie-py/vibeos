@@ -1,0 +1,37 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/eng/pdevobj.c",
+  "schema": "win32k_pass2_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "NtGdiGetDeviceCaps",
+      "func_line": 1137,
+      "func_end_line": 1281,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1145,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1156
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetDeviceCapsAll",
+      "func_line": 1286,
+      "func_end_line": 1322,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1295,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1306
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

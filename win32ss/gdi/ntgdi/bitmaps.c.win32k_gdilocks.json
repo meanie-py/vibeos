@@ -1,0 +1,22 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/bitmaps.c",
+  "schema": "win32k_pass2_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtGdiCreateCompatibleBitmap",
+      "func_line": 417,
+      "func_end_line": 450,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 435,
+      "var": "Dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        448
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

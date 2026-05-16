@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserMisc);
 
 
@@ -247,6 +248,7 @@ NtUserGetLayeredWindowAttributes(
    PLRD_PROP pLrdProp;
    PWND pWnd;
    BOOL Ret = FALSE;
+   NTSTATUS Status;
 
    TRACE("Enter NtUserGetLayeredWindowAttributes\n");
    UserEnterExclusive();
@@ -271,30 +273,46 @@ NtUserGetLayeredWindowAttributes(
       goto Exit;
    }
 
-   _SEH2_TRY
+   if (pcrKey)
+   {
+       Status = SafeProbeForWrite(pcrKey, sizeof(*pcrKey), 1);
+       if (NT_SUCCESS(Status))
+       {
+           Status = STATUS_SUCCESS;
+       }
+   }
+   else
+   {
+       Status = STATUS_SUCCESS;
+   }
+   if (pbAlpha && NT_SUCCESS(Status))
+   {
+       Status = SafeProbeForWrite(pbAlpha, sizeof(*pbAlpha), 1);
+   }
+   if (pdwFlags && NT_SUCCESS(Status))
+   {
+       Status = SafeProbeForWrite(pdwFlags, sizeof(*pdwFlags), 1);
+   }
+   if (!NT_SUCCESS(Status))
+   {
+      SetLastNtError(Status);
+      goto Exit;
+   }
+   else
    {
       if (pcrKey)
       {
-          ProbeForWrite(pcrKey, sizeof(*pcrKey), 1);
           *pcrKey = pLrdProp->Key;
       }
       if (pbAlpha)
       {
-          ProbeForWrite(pbAlpha, sizeof(*pbAlpha), 1);
           *pbAlpha = pLrdProp->Alpha;
       }
       if (pdwFlags)
       {
-          ProbeForWrite(pdwFlags, sizeof(*pdwFlags), 1);
           *pdwFlags = pLrdProp->Flags;
       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      SetLastNtError(_SEH2_GetExceptionCode());
-      _SEH2_YIELD(goto Exit);
-   }
-   _SEH2_END;
 
    Ret = TRUE;
 
@@ -303,6 +321,7 @@ Exit:
    UserLeave();
    return Ret;
 }
+
 
 /*
  * @implemented
@@ -357,6 +376,7 @@ NtUserUpdateLayeredWindow(
    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, 0 };
    PWND pWnd;
    BOOL Ret = FALSE;
+   NTSTATUS Status;
 
    TRACE("Enter NtUserUpdateLayeredWindow\n");
    UserEnterExclusive();
@@ -366,37 +386,52 @@ NtUserUpdateLayeredWindow(
       goto Exit;
    }
 
-   _SEH2_TRY
+   Status = STATUS_SUCCESS;
+   if (pptDst && NT_SUCCESS(Status))
+   {
+      Status = SafeProbeForRead(pptDst, sizeof(POINT), 1);
+   }
+   if (pptSrc && NT_SUCCESS(Status))
+   {
+      Status = SafeProbeForRead(pptSrc, sizeof(POINT), 1);
+   }
+   if (NT_SUCCESS(Status))
+   {
+      Status = SafeProbeForRead(psize, sizeof(SIZE), 1);
+   }
+   if (pblend && NT_SUCCESS(Status))
+   {
+      Status = SafeProbeForRead(pblend, sizeof(BLENDFUNCTION), 1);
+   }
+   if (prcDirty && NT_SUCCESS(Status))
+   {
+      Status = SafeProbeForRead(prcDirty, sizeof(RECT), 1);
+   }
+   if (!NT_SUCCESS(Status))
+   {
+      EngSetLastError( ERROR_INVALID_PARAMETER );
+      goto Exit;
+   }
+   else
    {
       if (pptDst)
       {
-         ProbeForRead(pptDst, sizeof(POINT), 1);
          Dst = *pptDst;
       }
       if (pptSrc)
       {
-         ProbeForRead(pptSrc, sizeof(POINT), 1);
          Src = *pptSrc;
       }
-      ProbeForRead(psize, sizeof(SIZE), 1);
       Size = *psize;
       if (pblend)
       {
-         ProbeForRead(pblend, sizeof(BLENDFUNCTION), 1);
          blend = *pblend;
       }
       if (prcDirty)
       {
-         ProbeForRead(prcDirty, sizeof(RECT), 1);
          Dirty = *prcDirty;
       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      EngSetLastError( ERROR_INVALID_PARAMETER );
-      _SEH2_YIELD(goto Exit);
-   }
-   _SEH2_END;
 
    if ( GetLayeredStatus(pWnd) ||
         dwFlags & ~(ULW_COLORKEY | ULW_ALPHA | ULW_OPAQUE | ULW_EX_NORESIZE) ||
@@ -423,5 +458,6 @@ Exit:
    UserLeave();
    return Ret;
 }
+
 
 /* EOF */

@@ -9,6 +9,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserClipbrd);
 
 #define DATA_DELAYED     (HANDLE)0
@@ -1088,17 +1089,15 @@ NtUserSetClipboardData(UINT fmt, HANDLE hData, PSETCLIPBDATA pUnsafeScd)
 
     TRACE("NtUserSetClipboardData(%x %p %p)\n", fmt, hData, pUnsafeScd);
 
-    _SEH2_TRY
     {
-        ProbeForRead(pUnsafeScd, sizeof(*pUnsafeScd), 1);
-        RtlCopyMemory(&scd, pUnsafeScd, sizeof(scd));
+        NTSTATUS __SehStatus = SafeProbeForRead(pUnsafeScd, sizeof(*pUnsafeScd), 1);
+        if (!NT_SUCCESS(__SehStatus))
+        {
+            SetLastNtError(__SehStatus);
+            return NULL;
+        }
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        SetLastNtError(_SEH2_GetExceptionCode());
-        _SEH2_YIELD(return NULL;)
-    }
-    _SEH2_END
+    RtlCopyMemory(&scd, pUnsafeScd, sizeof(scd));
 
     UserEnterExclusive();
 
@@ -1190,6 +1189,7 @@ NtUserConvertMemHandle(
 {
     HANDLE hMem = NULL;
     PCLIPBOARDDATA pMemObj;
+    NTSTATUS Status;
 
     UserEnterExclusive();
 
@@ -1201,16 +1201,15 @@ NtUserConvertMemHandle(
     pMemObj->cbData = cbData;
 
     /* Copy data */
-    _SEH2_TRY
-    {
-        ProbeForRead(pData, cbData, 1);
-        memcpy(pMemObj->Data, pData, cbData);
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForRead(pData, cbData, 1);
+    if (!NT_SUCCESS(Status))
     {
         pMemObj = NULL;
     }
-    _SEH2_END;
+    else
+    {
+        memcpy(pMemObj->Data, pData, cbData);
+    }
 
     /* Release the extra reference (UserCreateObject added 2 references) */
     UserDereferenceObject(pMemObj);
@@ -1227,6 +1226,7 @@ cleanup:
 
     return hMem;
 }
+
 
 NTSTATUS APIENTRY
 NtUserCreateLocalMemHandle(
@@ -1253,22 +1253,20 @@ NtUserCreateLocalMemHandle(
         cbData = pMemObj->cbData;
 
     /* Copy data to usermode */
-    _SEH2_TRY
+    Status = SafeProbeForWrite(pcbData, sizeof(*pcbData), 1);
+    if (NT_SUCCESS(Status))
+        Status = SafeProbeForWrite(pData, cbData, 1);
+    if (NT_SUCCESS(Status))
     {
         if (pcbData)
         {
-            ProbeForWrite(pcbData, sizeof(*pcbData), 1);
+
             *pcbData = pMemObj->cbData;
         }
 
-        ProbeForWrite(pData, cbData, 1);
+
         memcpy(pData, pMemObj->Data, cbData);
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
 cleanup:
     UserLeave();

@@ -1,0 +1,191 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/ntstubs.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 9
+  },
+  "sites": [
+    {
+      "function": "NtUserSetSysColors",
+      "line_start": 299,
+      "line_end": 310,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "multi_probe",
+        "has_nonprobe_call"
+      ],
+      "probe_count": 2,
+      "nonprobe_calls": [
+        "IntSetSysColors"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "non-probe call(s) in TRY: IntSetSysColors"
+    },
+    {
+      "function": "IntGetDesktopObjectHandle",
+      "line_start": 705,
+      "line_end": 714,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "__alignof"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: __alignof"
+    },
+    {
+      "function": "IntGetDesktopObjectHandle",
+      "line_start": 720,
+      "line_end": 727,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "no probe/copy/write/call \u2014 unclassifiable, inspect"
+    },
+    {
+      "function": "IntGetDesktopObjectHandle",
+      "line_start": 747,
+      "line_end": 756,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "__alignof"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: __alignof"
+    },
+    {
+      "function": "IntGetDesktopObjectHandle",
+      "line_start": 777,
+      "line_end": 786,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "__alignof"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: __alignof"
+    },
+    {
+      "function": "NtUserSetInformationThread",
+      "line_start": 708,
+      "line_end": 717,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "__alignof"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: __alignof"
+    },
+    {
+      "function": "NtUserSetInformationThread",
+      "line_start": 723,
+      "line_end": 730,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "no probe/copy/write/call \u2014 unclassifiable, inspect"
+    },
+    {
+      "function": "NtUserSetInformationThread",
+      "line_start": 750,
+      "line_end": 759,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "__alignof"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: __alignof"
+    },
+    {
+      "function": "NtUserSetInformationThread",
+      "line_start": 780,
+      "line_end": 789,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "__alignof"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: __alignof"
+    }
+  ]
+}

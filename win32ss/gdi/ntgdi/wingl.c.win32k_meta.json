@@ -1,0 +1,31 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/wingl.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1
+  },
+  "sites": [
+    {
+      "function": "NtGdiDescribePixelFormat",
+      "line_start": 97,
+      "line_end": 106,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "min"
+      ],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: min"
+    }
+  ]
+}

@@ -6,6 +6,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 #include "ghostwnd.h"
 
 #define NDEBUG
@@ -108,6 +109,7 @@ HWND FASTCALL IntHungWindowFromGhostWindow(PWND pGhostWnd)
 {
     const GHOST_DATA *UserData;
     HWND hwndTarget;
+    NTSTATUS Status;
 
     if (!IntIsGhostWindow(pGhostWnd))
     {
@@ -118,17 +120,16 @@ HWND FASTCALL IntHungWindowFromGhostWindow(PWND pGhostWnd)
     UserData = (const GHOST_DATA *)pGhostWnd->dwUserData;
     if (UserData)
     {
-        _SEH2_TRY
-        {
-            ProbeForRead(UserData, sizeof(GHOST_DATA), 1);
-            hwndTarget = UserData->hwndTarget;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        Status = SafeProbeForRead(UserData, sizeof(GHOST_DATA), 1);
+        if (!NT_SUCCESS(Status))
         {
             DPRINT1("Exception!\n");
             hwndTarget = NULL;
         }
-        _SEH2_END;
+        else
+        {
+            hwndTarget = UserData->hwndTarget;
+        }
     }
     else
     {
@@ -146,6 +147,7 @@ HWND FASTCALL IntHungWindowFromGhostWindow(PWND pGhostWnd)
 
     return NULL;
 }
+
 
 HWND FASTCALL UserHungWindowFromGhostWindow(HWND hwndGhost)
 {

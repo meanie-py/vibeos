@@ -1,0 +1,147 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/font.c",
+  "schema": "win32k_pass2_v1",
+  "count": 9,
+  "sites": [
+    {
+      "function": "GreGetKerningPairs",
+      "func_line": 54,
+      "func_end_line": 108,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 66,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        75
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "IntGetCharDimensions",
+      "func_line": 336,
+      "func_end_line": 376,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 355,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        364,
+        369
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "RealizeFontInit",
+      "func_line": 432,
+      "func_end_line": 449,
+      "lock_fn": "TEXTOBJ_LockText",
+      "unlock_fn": "TEXTOBJ_UnlockText",
+      "lock_line": 437,
+      "var": "pTextObj",
+      "null_guarded": false,
+      "unlock_lines": [
+        444
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "NtGdiGetFontData",
+      "func_line": 671,
+      "func_end_line": 718,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 693,
+      "var": "Dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        703
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetFontUnicodeRanges",
+      "func_line": 723,
+      "func_end_line": 785,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 736,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        783
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetGlyphOutline",
+      "func_line": 789,
+      "func_end_line": 860,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 805,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        858
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetKerningPairs",
+      "func_line": 864,
+      "func_end_line": 926,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 877,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        886
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetOutlineTextMetricsInternalW",
+      "func_line": 934,
+      "func_end_line": 1002,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 949,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        958
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetRealizationInfo",
+      "func_line": 1119,
+      "func_end_line": 1178,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1132,
+      "var": "pDc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1143
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

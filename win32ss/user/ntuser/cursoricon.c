@@ -20,6 +20,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserIcon);
 
 SYSTEM_CURSORINFO gSysCursorInfo;
@@ -467,22 +468,19 @@ NtUserGetIconInfo(
         colorBpp = FrameCurIcon->bpp;
 
         /* Copy fields */
-        _SEH2_TRY
+        Status = SafeProbeForWrite(IconInfo, sizeof(ICONINFO), 1);
+        if (NT_SUCCESS(Status))
+            Status = SafeProbeForWrite(pbpp, sizeof(DWORD), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(IconInfo, sizeof(ICONINFO), 1);
             RtlCopyMemory(IconInfo, &ii, sizeof(ICONINFO));
 
             if (pbpp)
             {
-                ProbeForWrite(pbpp, sizeof(DWORD), 1);
+
                 *pbpp = colorBpp;
             }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
 
         if (!NT_SUCCESS(Status))
         {
@@ -536,9 +534,11 @@ NtUserGetIconInfo(
             goto leave;
 
         /* Copy it */
-        _SEH2_TRY
+        Status = SafeProbeForWrite(lpResName, sizeof(UNICODE_STRING), 1);
+        if (NT_SUCCESS(Status))
+            Status = SafeProbeForWrite(lpResName->Buffer, lpResName->MaximumLength, 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(lpResName, sizeof(UNICODE_STRING), 1);
             if (IS_INTRESOURCE(CurIcon->strName.Buffer))
             {
                 lpResName->Buffer = CurIcon->strName.Buffer;
@@ -552,16 +552,11 @@ NtUserGetIconInfo(
             }
             else
             {
-                ProbeForWrite(lpResName->Buffer, lpResName->MaximumLength, 1);
+
                 RtlCopyMemory(lpResName->Buffer, CurIcon->strName.Buffer, CurIcon->strName.Length);
                 lpResName->Length = CurIcon->strName.Length;
             }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END
     }
 
     if (!NT_SUCCESS(Status))
@@ -614,18 +609,15 @@ NtUserGetIconSize(
         UserReferenceObject(CurIcon);
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(plcx, sizeof(LONG), 1);
+    if (NT_SUCCESS(Status))
+        Status = SafeProbeForWrite(plcy, sizeof(LONG), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForWrite(plcx, sizeof(LONG), 1);
         *plcx = CurIcon->cx;
-        ProbeForWrite(plcy, sizeof(LONG), 1);
+
         *plcy = CurIcon->cy;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END
 
     if (NT_SUCCESS(Status))
         bRet = TRUE;
@@ -760,18 +752,17 @@ NtUserClipCursor(
 
     if (prcl)
     {
-        _SEH2_TRY
         {
-            /* Probe and copy rect */
-            ProbeForRead(prcl, sizeof(RECTL), 1);
-            rclLocal = *prcl;
+            NTSTATUS __SehStatus = SafeProbeForRead(prcl, sizeof(RECTL), 1);
+            if (!NT_SUCCESS(__SehStatus))
+            {
+                EngSetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            _SEH2_YIELD(return FALSE;)
-        }
-        _SEH2_END
+        /* Probe and copy rect */
+
+        rclLocal = *prcl;
 
         prcl = &rclLocal;
     }
@@ -875,16 +866,11 @@ NtUserFindExistingCursorIcon(
 
     TRACE("Enter NtUserFindExistingCursorIcon\n");
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(param, sizeof(*param), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead(param, sizeof(*param), 1);
         RtlCopyMemory(&paramSafe, param, sizeof(paramSafe));
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END
 
     /* Capture resource name (it can be an INTRESOURCE == ATOM) */
     Status = ProbeAndCaptureUnicodeStringOrAtom(&ustrRsrcSafe, pustrRsrc);
@@ -2167,18 +2153,14 @@ NtUserGetCursorFrameInfo(
         ret = UserHMGetHandle(AniCurIcon->aspcur[AniCurIcon->aicur[istep]]);
     }
 
-    _SEH2_TRY
+    Status = SafeProbeForWrite(rate_jiffies, sizeof(INT), 1);
+    if (NT_SUCCESS(Status))
+        Status = SafeProbeForWrite(num_steps, sizeof(DWORD), 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForWrite(rate_jiffies, sizeof(INT), 1);
-        ProbeForWrite(num_steps, sizeof(DWORD), 1);
         *rate_jiffies = jiffies;
         *num_steps = steps;
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END
 
     if (!NT_SUCCESS(Status))
     {

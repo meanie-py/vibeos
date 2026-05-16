@@ -1,0 +1,101 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/palette.c",
+  "schema": "win32k_pass2_v1",
+  "count": 6,
+  "sites": [
+    {
+      "function": "NtGdiCreateHalftonePalette",
+      "func_line": 525,
+      "func_end_line": 598,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 533,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        588
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "NtGdiGetNearestColor",
+      "func_line": 669,
+      "func_end_line": 711,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 678,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        708
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "IntGdiRealizePalette",
+      "func_line": 738,
+      "func_end_line": 785,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 744,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        783
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "IntAnimatePalette",
+      "func_line": 788,
+      "func_end_line": 854,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 839,
+      "var": "dc",
+      "null_guarded": false,
+      "unlock_lines": [
+        844,
+        848
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release",
+        "no_null_guard"
+      ]
+    },
+    {
+      "function": "IntGetSystemPaletteEntries",
+      "func_line": 896,
+      "func_end_line": 958,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 923,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        955
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    },
+    {
+      "function": "GreGetSetColorTable",
+      "func_line": 997,
+      "func_end_line": 1074,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 1010,
+      "var": "pdc",
+      "null_guarded": true,
+      "unlock_lines": [
+        1071
+      ],
+      "shape": "CLEAN_BRACKET",
+      "signals": []
+    }
+  ]
+}

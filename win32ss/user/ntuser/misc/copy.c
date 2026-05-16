@@ -1,4 +1,5 @@
 #include "win32k.h"
+#include <safe_user_io.h>
 
 _IRQL_requires_max_(APC_LEVEL)
 NTSTATUS
@@ -13,16 +14,11 @@ _MmCopyFromCaller(
     ASSERT(ExGetPreviousMode() == UserMode);
 
     Status = STATUS_SUCCESS;
-    _SEH2_TRY
+    Status = SafeProbeForRead(Source, Bytes, 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForRead(Source, Bytes, 1);
         RtlCopyMemory(Target, Source, Bytes);
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     return Status;
 }
@@ -40,16 +36,11 @@ _MmCopyToCaller(
     ASSERT(ExGetPreviousMode() == UserMode);
 
     Status = STATUS_SUCCESS;
-    _SEH2_TRY
+    Status = SafeProbeForWrite(Target, Bytes, 1);
+    if (NT_SUCCESS(Status))
     {
-        ProbeForWrite(Target, Bytes, 1);
         RtlCopyMemory(Target, Source, Bytes);
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        Status = _SEH2_GetExceptionCode();
-    }
-    _SEH2_END;
 
     return Status;
 }

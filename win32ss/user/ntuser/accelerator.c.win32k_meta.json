@@ -1,0 +1,48 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/accelerator.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "a": 1,
+    "e": 1
+  },
+  "sites": [
+    {
+      "function": "NtUserCopyAcceleratorTable",
+      "line_start": 194,
+      "line_end": 209,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserCreateAcceleratorTable",
+      "line_start": 267,
+      "line_end": 293,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 1,
+      "nonprobe_calls": [
+        "RtlMultiByteToUnicodeN"
+      ],
+      "try_patterns": [
+        "PROBE"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "non-probe call(s) in TRY: RtlMultiByteToUnicodeN"
+    }
+  ]
+}

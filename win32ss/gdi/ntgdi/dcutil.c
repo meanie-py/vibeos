@@ -1,4 +1,5 @@
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -531,16 +532,11 @@ NtGdiGetDCDword(
 
     if (Ret)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(Result, sizeof(DWORD), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(Result, sizeof(DWORD), 1);
             *Result = SafeResult;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -667,16 +663,11 @@ NtGdiGetAndSetDCDword(
 
     if (Ret)
     {
-        _SEH2_TRY
+        Status = SafeProbeForWrite(pdwResult, sizeof(DWORD), 1);
+        if (NT_SUCCESS(Status))
         {
-            ProbeForWrite(pdwResult, sizeof(DWORD), 1);
             *pdwResult = SafeResult;
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Status = _SEH2_GetExceptionCode();
-        }
-        _SEH2_END;
 
         if (!NT_SUCCESS(Status))
         {
@@ -713,6 +704,7 @@ NtGdiGetBoundsRect(
     DWORD ret;
     PDC pdc;
     RECT rc;
+    NTSTATUS Status;
 
     /* Lock the DC */
     if (!(pdc = DC_LockDc(hdc))) return 0;
@@ -754,16 +746,15 @@ NtGdiGetBoundsRect(
     }
 
     /* Copy the rect to the caller */
-    _SEH2_TRY
-    {
-        ProbeForWrite(prc, sizeof(RECT), 1);
-        *prc = rc;
-    }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    Status = SafeProbeForWrite(prc, sizeof(RECT), 1);
+    if (!NT_SUCCESS(Status))
     {
         ret = 0;
     }
-    _SEH2_END;
+    else
+    {
+        *prc = rc;
+    }
 
     if (flags & DCB_RESET)
     {
@@ -782,6 +773,7 @@ NtGdiGetBoundsRect(
     DC_UnlockDc(pdc);
     return ret;
 }
+
 
 DWORD
 APIENTRY
@@ -823,17 +815,15 @@ NtGdiSetBoundsRect(
     if (flags & DCB_ACCUMULATE && prc != NULL)
     {
         /* Capture the rect */
-        _SEH2_TRY
         {
-            ProbeForRead(prc, sizeof(RECT), 1);
-            rcl = *prc;
+            NTSTATUS __SehStatus = SafeProbeForRead(prc, sizeof(RECT), 1);
+            if (!NT_SUCCESS(__SehStatus))
+            {
+                DC_UnlockDc(pdc);
+                return 0;
+            }
         }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            DC_UnlockDc(pdc);
-            _SEH2_YIELD(return 0;)
-        }
-        _SEH2_END;
+        rcl = *prc;
 
         RECTL_vMakeWellOrdered(&rcl);
 

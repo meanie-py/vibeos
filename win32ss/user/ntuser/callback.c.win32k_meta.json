@@ -1,0 +1,77 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/callback.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "d": 4
+  },
+  "sites": [
+    {
+      "function": "co_IntCallWindowProc",
+      "line_start": 341,
+      "line_end": 350,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "co_IntCallWindowProc",
+      "line_start": 400,
+      "line_end": 409,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "co_IntCallHookProc",
+      "line_start": 758,
+      "line_end": 768,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_FLAG"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    },
+    {
+      "function": "co_IntGetCharsetInfo",
+      "line_start": 1069,
+      "line_end": 1078,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    }
+  ]
+}

@@ -8,6 +8,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -872,36 +873,50 @@ NtGdiEngStretchBlt(
     RECTL rclDest;
     RECTL rclSrc;
     POINTL lMaskOrigin;
+    NTSTATUS Status;
 
-    _SEH2_TRY
+    if (pca)
     {
-        if (pca)
+        Status = SafeProbeForRead(pca, sizeof(COLORADJUSTMENT), 1);
+        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(BrushOrigin, sizeof(POINTL), 1);
+        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(prclDest, sizeof(RECTL), 1);
+        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(prclSrc, sizeof(RECTL), 1);
+        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(MaskOrigin, sizeof(POINTL), 1);
+        if (!NT_SUCCESS(Status))
         {
-            ProbeForRead(pca, sizeof(COLORADJUSTMENT), 1);
+            return FALSE;
+        }
+        else
+        {
             RtlCopyMemory(&ca,pca, sizeof(COLORADJUSTMENT));
             pca = &ca;
+            RtlCopyMemory(&lBrushOrigin, BrushOrigin, sizeof(POINTL));
+            RtlCopyMemory(&rclDest, prclDest, sizeof(RECTL));
+            RtlCopyMemory(&rclSrc, prclSrc, sizeof(RECTL));
+            RtlCopyMemory(&lMaskOrigin, MaskOrigin, sizeof(POINTL));
         }
-
-        ProbeForRead(BrushOrigin, sizeof(POINTL), 1);
-        RtlCopyMemory(&lBrushOrigin, BrushOrigin, sizeof(POINTL));
-
-        ProbeForRead(prclDest, sizeof(RECTL), 1);
-        RtlCopyMemory(&rclDest, prclDest, sizeof(RECTL));
-
-        ProbeForRead(prclSrc, sizeof(RECTL), 1);
-        RtlCopyMemory(&rclSrc, prclSrc, sizeof(RECTL));
-
-        ProbeForRead(MaskOrigin, sizeof(POINTL), 1);
-        RtlCopyMemory(&lMaskOrigin, MaskOrigin, sizeof(POINTL));
-
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    else
     {
-        _SEH2_YIELD(return FALSE);
+        Status = SafeProbeForRead(BrushOrigin, sizeof(POINTL), 1);
+        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(prclDest, sizeof(RECTL), 1);
+        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(prclSrc, sizeof(RECTL), 1);
+        if (NT_SUCCESS(Status)) Status = SafeProbeForRead(MaskOrigin, sizeof(POINTL), 1);
+        if (!NT_SUCCESS(Status))
+        {
+            return FALSE;
+        }
+        else
+        {
+            RtlCopyMemory(&lBrushOrigin, BrushOrigin, sizeof(POINTL));
+            RtlCopyMemory(&rclDest, prclDest, sizeof(RECTL));
+            RtlCopyMemory(&rclSrc, prclSrc, sizeof(RECTL));
+            RtlCopyMemory(&lMaskOrigin, MaskOrigin, sizeof(POINTL));
+        }
     }
-    _SEH2_END;
 
     return EngStretchBlt(psoDest, psoSource, Mask, ClipRegion, ColorTranslation, pca, &lBrushOrigin, &rclDest, &rclSrc, &lMaskOrigin, Mode);
 }
+
 
 /* EOF */

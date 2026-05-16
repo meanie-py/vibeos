@@ -13,6 +13,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -296,30 +297,27 @@ NtGdiEngBitBlt(
     POINTL ptlSrc;
     POINTL ptlMask;
     POINTL ptlBrush;
+    NTSTATUS Status;
 
-    _SEH2_TRY
+    Status = SafeProbeForRead(prclTrg, sizeof(RECTL), 1);
+    if (NT_SUCCESS(Status)) Status = SafeProbeForRead(pptlSrc, sizeof(POINTL), 1);
+    if (NT_SUCCESS(Status)) Status = SafeProbeForRead(pptlMask, sizeof(POINTL), 1);
+    if (NT_SUCCESS(Status)) Status = SafeProbeForRead(pptlBrush, sizeof(POINTL), 1);
+    if (!NT_SUCCESS(Status))
     {
-        ProbeForRead(prclTrg, sizeof(RECTL), 1);
+        return FALSE;
+    }
+    else
+    {
         RtlCopyMemory(&rclTrg,prclTrg, sizeof(RECTL));
-
-        ProbeForRead(pptlSrc, sizeof(POINTL), 1);
         RtlCopyMemory(&ptlSrc, pptlSrc, sizeof(POINTL));
-
-        ProbeForRead(pptlMask, sizeof(POINTL), 1);
         RtlCopyMemory(&ptlMask, pptlMask, sizeof(POINTL));
-
-        ProbeForRead(pptlBrush, sizeof(POINTL), 1);
         RtlCopyMemory(&ptlBrush, pptlBrush, sizeof(POINTL));
-
     }
-    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        _SEH2_YIELD(return FALSE);
-    }
-    _SEH2_END;
 
     return  EngBitBlt(psoTrg, psoSrc, psoMask, pco, pxlo, &rclTrg, &ptlSrc, &ptlMask, pbo, &ptlBrush, Rop4);
 }
+
 
 /*
  * @implemented

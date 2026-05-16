@@ -1,8 +1,18 @@
 # Win32k Pre-Translation (C-Side Rewrite) Audit
 
-Last updated 2026-05-09. **Status: pre-pretranslation.** No C-side
-rewrites have landed yet; this audit defines what we'll do in C
-*before* any C→Rust translation begins on win32k.
+Last updated 2026-05-16. **Status: Pass 0 + Pass 1 landed (worktree
+`worktree-win32k-translation`, uncommitted).** The inventory/classifier
+(Pass 0) and the mechanical probe-lowering rewriter (Pass 1) are built,
+spike-validated, and applied across the win32k.sys keep-set: **97 SEH
+sites mechanically lowered + the 64-site ledger closed by an LLM pass
+(Pass 1b, 49 functions), i386 7/7 + amd64 7/7 smoke green** on the
+result. **Pass 2 (re-scoped to GDI manual-lock-bracket detection) and
+Pass 3 (USER callout extraction) also landed**, both extract-only:
+Pass 2 = 224 GDI lock sites shape-classified → sidecar JSON; Pass 3 =
+20 callout sites → sidecar JSON. All oracle-validated. See "Session
+results" below. (Pass 2's original `_SEH2_FINALLY` form had zero
+targets — re-scoped per findings.) This audit defines the C-side work
+done *before* any C→Rust translation begins on win32k.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
@@ -11,6 +21,262 @@ Companion to:
 - [pseh-elimination.md](pseh-elimination.md) — overall PSEH strategy (already reverse-shim model)
 - [win32k-translation-audit.md](win32k-translation-audit.md) — sibling audit covering the actual rustconv-driven translation phase
 - `qemu/~temp-chat-consolidated.md` — design notes from web-Claude pre-thinking
+
+## Session results (2026-05-16)
+
+What actually landed, with measured numbers replacing the estimates
+below. All work is on the `worktree-win32k-translation` worktree,
+uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
+
+### Tooling built
+
+| Tool | Role | Status |
+|---|---|---|
+| `tools/rustconv/rustconv/seh_inventory.py` | Pass 0 classifier (a/b/c/d/e + signals); `python -m rustconv seh-inventory` | done, oracle-validated |
+| `tools/rustconv/rustconv/seh_rewrite.py` | Pass 1 mechanical lowering; `python -m rustconv seh-rewrite` | done, oracle-validated |
+| `tools/rustconv/rustconv/seh_llm_lower.py` | Pass 1b LLM lowering of the 64-site ledger; `python -m rustconv seh-llm-lower` | done, build+smoke-validated |
+| `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
+| `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
+| `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
+| `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
+
+Both tools are decision layers over the existing `seh_classifier.py`
+(regex + brace-matching — tree-sitter cannot parse the SEH macros, so
+neither tool uses it). Each has a built-in `--oracle` self-test that
+reproduces the hand-done `winsta.c` spike taxonomy exactly.
+
+### Pass 0 — measured classification (win32k.sys keep-set)
+
+**282 `_SEH2_TRY` sites across 62 keep-set files:**
+
+| Cat | Meaning | Count | % | vs. estimate |
+|---|---|--:|--:|---|
+| (a) PROBE_LOWER | Pass-1 mechanical | 167 | 59% | est. 60–80% ✓ |
+| (b) LOCK_CLEANUP | Pass-2 RAII | **0** | 0% | **confirms: zero `_SEH2_FINALLY` in the kernel keep-set** |
+| (c) FAULT_RECOVER | residual, no rewrite | **1** | 0.4% | est. 0–3; the one site is `gdi/eng/mem.c:HackSecureVirtualMemory` (`MmProbeAndLockPages`) — exactly the file the audit predicted |
+| (d) BELT_SUSPENDERS | delete after cross-check | 36 | 13% | — |
+| (e) NEEDS_REVIEW | manual | 77 | 27% | **est. <10% — reality is ~3× higher** |
+
+**Key finding — Pass 2 has no targets.** The audit's "2 `_SEH2_FINALLY`"
+are in `winsrv/consrv/` (user-mode CSRSS, out of scope). The kernel-mode
+keep-set has **zero** `_SEH2_FINALLY`. So Pass 2 as specified
+("SEH-wrapped lock cleanup → RAII") has nothing to rewrite. GDI locks in
+this tree are *manual* `Lock → if(!p) → … → Unlock` brackets, not
+FINALLY-wrapped. Pass 2 is therefore re-scoped to a *manual-bracket
+detection* problem, which Pass 0's `(e)` bucket now quantifies (the
+`(e)` sites with a GDI `*_Lock*` call are the real Pass-2 candidates).
+
+**Key finding — `(e)` is ~3× the estimate.** ~27% of win32k SEH sites
+have a non-probe call inside the `TRY` or are otherwise structurally
+ambiguous (not pure-probe). Concentrated in `hook.c`, `message.c`,
+`window.c`, `class.c`, `ime.c`, `ntstubs.c`. This sharpens Pass-1's true
+mechanical scope and is the main correction to the original plan.
+
+Per-file `<file>.win32k_meta.json` sidecars are written for the rustconv
+prompt builder (54 files after Pass 1 collapses many sites).
+
+### Pass 1 — measured mechanical lowering
+
+`_SEH2_TRY` count **331 → 234 (97 sites lowered)** across 37 modified
+`.c` files, **0 structural regressions**, validated by build + smoke:
+
+| Arch | win32k.sys | Smoke |
+|---|---|---|
+| i386 | builds clean | **7/7 PASSED** |
+| amd64 | builds clean | **7/7 PASSED** |
+| arm64 | builds clean | boot-smoke blocked by *cold-build ramdisk-media infra* (nls/hive tree) — unrelated to win32k |
+
+The remaining 64 `(a)`-class sites are deferred to a documented
+**manual-followup ledger** (`win32ss/win32k_pass1_manual_followup.json`),
+correctly *not* mechanically rewritten (audit risk #1 respected):
+
+- 47 — non-swallow handler, no `NTSTATUS Status` lvalue in the function,
+  handler doesn't transfer control (needs a `Status` declaration
+  injected — risky; deferred to a v2/LLM pass)
+- 15 — multi-probe with no `Status` lvalue (same)
+- 2 — brace-less conditional probe (`winsta.c` L1242 shape — needs
+  re-bracing)
+
+So **97 of 168 `(a)` sites (~58%) are now mechanically lowered**,
+deterministically and regression-free; the other 64 are the honest
+non-mechanical remainder — **now closed by Pass 1b (below)**.
+
+### Pass 1b — LLM lowering of the 64-site ledger
+
+The 64 ledger sites are the `(a)`-class probes the deterministic Pass-1
+*correctly refused*: lowering them needs a context-dependent decision
+(inject an `NTSTATUS Status;` / reuse an existing one / re-brace a
+brace-less conditional) the mechanical tool won't gamble on.
+`seh-llm-lower` hands each **enclosing function** (the 64 sites dedupe
+to **49 functions across 31 files**) to the LLM with the *exact
+canonical shapes `seh_rewrite._build_replacement` emits* as the
+contract — so output is consistent with the deterministic Pass-1
+already in the tree. Still a C→C transform, not a translation.
+
+Result: **49/49 functions lowered, all 3 arches link clean, i386 7/7 +
+amd64 7/7 smoke green** (arm64 win32k builds clean; boot-smoke blocked
+by the same orthogonal cold-ramdisk infra). The ledger is now empty.
+
+Engineering guards that made this safe:
+
+- **Single cached API pass.** Every response is cached on receipt
+  (`tools/rustconv/out/seh_llm_lower_cache.json`); `--apply` and any
+  re-run are $0 and deterministic (memory
+  `feedback_translation_philosophy` — no re-spend without approval).
+- **`--apply` is opt-in**; default is dry-run with a ready/held-back
+  report. Each rewrite must pass `validate()`: brace/paren balance,
+  `SafeProbeFor*` present, no stub/elision markers, **token-superset**
+  (every identifier in the original minus SEH macros must survive →
+  catches dropped calls / silently stubbed bodies — the known LLM C→C
+  failure modes), no introduced `_SEH2_TRY`. Anything failing stays in
+  the ledger and is never applied. 0 held back; the riskiest classes
+  (a 10-span function, the multi-probe + brace-less audit-risk-#1
+  cases) were diff-reviewed by hand and are byte-faithful to the
+  deterministic shapes.
+- **One real bug the build caught:** Pass-1b initially didn't replicate
+  Pass-1's `#include <safe_user_io.h>` injection, so the 16 files
+  Pass-1 never touched failed to compile (`SafeProbeFor*` undeclared).
+  Fixed in the pipeline + repaired idempotently. The build+smoke gate
+  did its job — this stage is build-affecting (unlike Pass 2/3).
+
+### Pass 2 — measured GDI lock-bracket surface (extract-only, no rewrite)
+
+Pass 2 was re-scoped (zero `_SEH2_FINALLY` in the keep-set — the
+original "SEH-wrapped lock cleanup → RAII" had nothing to match). The
+real work is detecting the *manual* `Lock → if(!p) → … → Unlock`
+brackets the SEH classifier left in `(e)`. `gdi-locks` extracts each
+`<Prefix>_Lock<Suffix>(` site into a per-file
+`<file>.win32k_gdilocks.json` sidecar (schema `win32k_pass2_v1`),
+**no source rewrite** — same model as Pass 3. Oracle-validated against
+`gdi/ntgdi/dcutil.c`.
+
+**224 GDI lock sites, 37 keep-set files**, each recording enclosing fn
++ span, the lock symbol, the inferred release symbol (first `_Lock`→
+`_Unlock`, suffix preserved), the bound variable, NULL-guard presence,
+every release site for that var in the fn, and a shape class:
+
+| Shape | Count | % | Meaning for the Rust translation |
+|---|--:|--:|---|
+| CLEAN_BRACKET | 126 | 56% | 1 acquire, NULL-guarded, 1 release → direct RAII `Drop` |
+| MULTI_UNLOCK | 71 | 32% | multi-exit release → still RAII `Drop`, multiple drop points |
+| BORROWED | 3 | 1% | no release in fn — handle transferred/acquired elsewhere → no `Drop` at this scope (the `GDI_BORROWS` case the design notes flag) |
+| REVIEW | 24 | 11% | no clean `var = Lock(...)` target or unguarded — manual |
+
+**88% (CLEAN_BRACKET + MULTI_UNLOCK) are mechanically RAII-mappable.**
+Lock-symbol distribution: `DC_LockDc`→`DC_UnlockDc` 151, `REGION_LockRgn`
+38, `PATH_LockPath` 28, `GDIOBJ_LockObject` 4, `TEXTOBJ_LockText` 2,
+`COLORSPACEOBJ_LockCS` 1. The `DC_UnlockDc` (218 calls) vs `DC_LockDc`
+(143) asymmetry noted in the inventory is explained per-site: BORROWED +
+the multi-exit MULTI_UNLOCK release fan-out. Hotspots: `path.c` (40),
+`dcutil.c` (21), `coord.c` (18), `region.c` (12). Resolver reuses the
+brace-depth `_enclosing_func_span` from Pass 3 (no lock-fn-definition
+false positives — oracle-checked).
+
+### Pass 3 — measured callout surface (extract-only, no rewrite)
+
+`callout-annotate` extracts every real `KeUserModeCallback` site into a
+per-file `<file>.win32k_callouts.json` sidecar (schema
+`win32k_pass3_v1`) for the rustconv prompt builder. Per the audit's
+Pass-3 rule, **no source is rewritten** — the sidecar JSON *is* the
+deliverable; the LLM gets a structured "this is a callout" hint instead
+of re-deriving it per translation unit. Oracle-validated against
+`callback.c` ground truth.
+
+**20 real callout sites, 3 files** (each site records: enclosing fn +
+line span, `USER32_CALLBACK_*` index, marshal-in buffer/len args,
+marshal-back ptr/len args, the bracketing `UserLeaveCo`/`UserEnterCo`
+lines, and the first post-reacquire probe line):
+
+| File | Sites | Note |
+|---|--:|---|
+| `user/ntuser/callback.c` | 17 | the `co_Int*` wrapper bank; all 17 `USER32_CALLBACK_*` literals |
+| `user/ntuser/dde.c` | 2 | `IntDDEPostCallback` / `IntDDEGetCallback` (DDEPOST/DDEGET) |
+| `user/rtl/text.c` | 1 | `UserExtTextOutW` LPK callout — **outside the Pass-0 KEEPSET dirs**; captured via explicit path so the keep-set scan stays unperturbed |
+
+This matches the audit's "~17 `co_*` that actually issue user-mode
+callbacks" estimate (17 in callback.c) plus DDE + LPK. Findings the
+extractor surfaces as per-site `signals` for the LLM:
+
+- **`co_UserCBClientPrinterThunk` (UMPD)** has *no* `UserLeaveCo`/
+  `UserEnterCo` pair — it uses a different lock discipline (signal
+  `missing_leaveco_enterco_pair`). Correct detection, not a tool gap;
+  the Rust translation must not assume the standard straddle here.
+- **DDE + several callback.c sites** have no mechanical marshal-back
+  probe (`no_marshal_back_probe`) — they copy out via bespoke logic, so
+  the translation can't pattern-match a `SafeProbeFor*` return point.
+- 18/20 sites have a clean Leave/Enter straddle; the 2 exceptions are
+  flagged, not silently dropped.
+
+Resolver note: enclosing-function detection is a brace-depth scan over
+a length-preserving literal mask (file-scope `typedef struct {…} N;`
+and `= { … }` initializers before the first function defeat the simpler
+"previous `}` on its own line" heuristic — caught and fixed during this
+pass; all 17 callback.c spans verified `def < callsite < end`).
+
+### Methodology-spike findings (drove the tool design)
+
+The `ntuser/winsta.c` spike (8 sites, hand-done, builds+links+smokes)
+established the ground truth the classifier/rewriter are oracle-tested
+against:
+
+- **The audit's Pass-1 option (A) is wrong.** `ntkrnl-sys/src/probe.rs`
+  exports are `pub unsafe fn` Rust generics returning `Result<T,_>` —
+  **not** `#[no_mangle] extern "system"`, so they are *not* C-callable.
+  Pass 1 must use option **(B)** — a self-contained C `safe_user_io`
+  shim (no cross-DLL export problem; behaviour-parallel to
+  `probe_user_buffer`, so the later Rust translation maps 1:1). The
+  shim deliberately validates-only (no touch-test): under DUMMY_PSEH a
+  touch-fault is uncatchable, so validate-only is both safe and what
+  the Rust target does.
+- **Five distinct EXCEPT-handler shapes** (not one uniform pattern):
+  swallow/`NOTHING`, `Status=_SEH2_GetExceptionCode()`,
+  `SetLastNtError(code);return X;`, `Status=code;_SEH2_YIELD(goto L)`,
+  multi-probe. All reduce to one rule: "turn the EXCEPT body into the
+  probe-failure branch; body runs only on probe success."
+- **Cross-site reasoning is required.** `winsta.c` L1384 is only safe
+  because L1242 probed the same buffers earlier — the classifier must
+  reason across sibling blocks, not per-block (the `(d)`
+  `relies_on_prior_probe` signal).
+- **Body must be success-guarded.** A naive "empty failure branch then
+  body" still dereferences a bad pointer. Multi-probe must
+  *short-circuit* (`if (NT_SUCCESS(Status)) Status = nextProbe;`) so a
+  later probe can't overwrite an earlier failure.
+
+### Bugs the "test later" build pass caught
+
+`winsta.c` was too clean to expose these; real keep-set build did:
+
+1. **`_SEH2_END` without trailing `;`** — span-end regex required the
+   semicolon; without it the macro token was left dangling (cascade of
+   "expected identifier / extraneous } / undeclared label"). This alone
+   broke 13 of 15 files. Fixed: optional `;`, spaces/tabs only after
+   (don't eat the newline → avoids gluing `}` to a `#` directive).
+2. **`RE_YIELD` non-greedy** broke on nested parens
+   (`_SEH2_YIELD(return _SEH2_GetExceptionCode();)` → garbled
+   `return …(;)`). Fixed: balanced-paren extraction.
+3. **`#include "win32k.h"`** (quotes) not matched by the include-probe
+   regex → shim include not injected → `SafeProbeFor*` undeclared.
+   Fixed: match both `<…>` and `"…"`.
+
+All three are now regression-tested by the oracle + the full keep-set
+build.
+
+### Deltas to the plan below
+
+- Pass 0 inventory format: **per-file JSON sidecar** (`<file>.win32k_meta.json`)
+  — implemented as recommended in Open Question 1.
+- Pass 1 helper: option **(B)** C shim (Open Question 3 — currently
+  `win32ss/safe_user_io.{c,h}`, not `sdk/lib/`; revisit if drivers
+  need it).
+- Pass 2 ("GDI lock RAII"): **re-scoped** — zero `_SEH2_FINALLY`
+  targets; the work is manual-bracket detection over the `(e)` GDI-lock
+  subset, not an SEH rewrite.
+- Methodology spike: done on `winsta.c` (Open Question 4) — confirmed
+  the right choice (its 50ms-HACK function is untouched; the 8 sites
+  exercised every handler shape + the cross-site hazard).
+- Tree-sitter is **not** the workhorse (the TL;DR claim): the SEH
+  macros defeat tree-sitter; the pipeline uses `seh_classifier`'s
+  regex + brace-matching, which is what actually works.
 
 ## Why a separate "pretranslation" phase
 
@@ -452,22 +718,30 @@ Same shape as HAL/FreeLDR — pruning naturally surfaces during the
 audit. **Pruning is in-scope for this phase** because it shrinks the
 keep-set the rewrites have to operate on.
 
-| Candidate | LOC | Why drop |
-|---|---:|---|
-| `win32ss/drivers/miniport/xboxvmp/` | ~1,000 | Xbox display miniport |
-| `win32ss/drivers/miniport/pc98vid/` | ~1,000 | NEC PC-98 video |
-| `win32ss/drivers/displays/vga/` (4,007) or `vga_new/` (1,824) | varies | Two parallel VGA implementations; UEFI-only smoke means we likely use neither — `framebuf/` is the one we want |
-| `gdi/diblib/` (3,456) | 3,456 | Alternate DIB lib, `USE_DIBLIB FALSE` — whole tree dead |
-| `reactx/dxg/` (1,884), `reactx/ntddraw/` (3,193) | 5,077 | DirectDraw kernel side; we don't smoke DirectDraw apps |
-| `gdi/ntgdi/freetype.c` glue + `sdk/lib/3rdparty/freetype/` | 7,943 + 208,631 | **Cannot prune** — load-bearing for desktop font render. Stays as 3rd-party FFI (same shape as ACPICA in HAL — header-only borrow / link-against, not translate). |
-| `gdi/ntgdi/gdikdbgext.c` (KDBG-conditional) | small | KDBG=OFF in our build; already excluded |
+**CORRECTED 2026-05-16 — this table was substantially wrong vs the
+real build.** Verified each candidate against CMakeLists/source before
+deleting (per the "look at the target; surface contradictions" rule).
+Build truth, not the original estimates:
 
-**Pre-pretranslation prune candidates: ~14K LOC** in `diblib/` +
-`reactx/{dxg,ntddraw}` + the SARCH miniports. Reversible cheap
-delete; smoke gates the prune the same way it has for HAL/FreeLDR.
+| Candidate | Original claim | Build reality | Action |
+|---|---|---|---|
+| `miniport/xboxvmp`, `miniport/pc98vid` | prune ~2K | **already gone** (2026-05 dead-platform purge) | n/a |
+| `reactx/dxg` (2,974) | prune | **IN BUILD** — `reactx/CMakeLists.txt:3 add_subdirectory(dxg)` | **keep** |
+| `reactx/ntddraw` (3,310) | prune 5,077 | **compiled into win32k.sys** — `win32ss/CMakeLists.txt:104-112` source list | **keep** |
+| `drivers/displays/vga` (4,007) | "separate audit" | **IN BUILD** — `displays/CMakeLists.txt:3` | **keep** |
+| `gdi/diblib` (3,456) | "whole tree dead" | `USE_DIBLIB FALSE` un-builds the *lib*, **but `bitblt_new.c`/`dib_new.c` `#include "../diblib/DibLib_interface.h"` unconditionally** → header is a live compile dep | **keep** |
+| `drivers/displays/vga_new` (1,846) | — | orphan: no parent `add_subdirectory`, no `#include` | **PRUNED** ✅ |
+| `drivers/miniport/vga_new` (4,438) | — | orphan: `#add_subdirectory(vga_new)` commented, zero refs | **PRUNED** ✅ |
+| `gdi/ntgdi/freetype.c` + 3rdparty freetype | cannot prune | unchanged — load-bearing 3rd-party FFI | keep |
 
-The display-driver pruning (vga vs vga_new vs framebuf) needs a
-separate audit — see [win32k-translation-audit.md](win32k-translation-audit.md).
+**Actual prune: the two orphaned `vga_new` trees — 18 files, 6,284
+LOC** (`a…` commit). Both had a commented/absent `add_subdirectory`
+and zero external refs; build+smoke gated **i386 7/7 + amd64 7/7**.
+The audit's ~14K figure assumed dxg/ntddraw/displays-vga/diblib were
+dead; they are all load-bearing for *compilation* even where unexercised
+at runtime — deleting them breaks the build, so they stay. Lesson: the
+build graph is ground truth; a prune table written from a directory
+listing is not.
 
 ## Risk audit
 
@@ -532,19 +806,55 @@ takes over for the rustconv-driven translation.
 
 ## Definition of done (for this phase)
 
-- All `_SEH2_TRY` sites classified (a)–(d) by inventory JSON.
-- All (a) sites mechanically rewritten to `SafeCapture*` calls.
-- All (b) sites mechanically rewritten to `WITH_GDI_LOCKED(...)`.
-- All (c) sites flagged in a residual-SEH document for the future
-  unwinder project.
-- All (d) sites deleted.
-- All (a)+(b) rewrites have sidecar JSON for the rustconv prompt.
-- All ~17 `co_*` functions annotated with callout metadata.
-- Pruning landed: `diblib/`, dxg, ntddraw, sarch miniports, dead
-  display drivers.
-- All 3 arches still pass 7/7 smoke.
-- `verify_abi.py` clean.
-- Smoke-test additions for win32k-specific assertions landed.
+Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
+
+- `[x]` All `_SEH2_TRY` sites classified (a)–(e) by inventory JSON
+  (282 sites, per-file sidecars).
+- `[x]` All (a) sites lowered to `SafeProbeFor*` — **97 mechanically
+  (Pass 1) + 49 functions/64 sites via LLM (Pass 1b)**; the
+  manual-followup ledger is now empty. i386 7/7 + amd64 7/7 smoke
+  green on the result. (Helper is `SafeProbeFor{Read,Write}`, not the
+  audit's hypothetical `SafeCapture*`.)
+- `[x]` (b) sites → RAII: **N/A — zero `_SEH2_FINALLY` in keep-set.**
+  Re-scoped to manual GDI-lock-bracket detection over the `(e)` subset
+  — **done as extract-only** (`gdi-locks`): 224 sites / 37 files →
+  `<file>.win32k_gdilocks.json` sidecars, shape-classified
+  (126 CLEAN_BRACKET / 71 MULTI_UNLOCK / 3 BORROWED / 24 REVIEW),
+  oracle-validated. No source rewrite (sidecar is the deliverable).
+- `[~]` (c) sites flagged: the 1 site (`gdi/eng/mem.c`) is identified
+  and left verbatim; a standalone residual-SEH doc is not yet written.
+- `[ ]` All (d) sites deleted (36 identified; not yet actioned —
+  needs the cross-site "relies on prior probe" review).
+- `[x]` Sidecar JSON for the rustconv prompt — **written AND now
+  consumed**: `prompt_builder.build_file_prompt` loads the
+  Pass-0/2/3 sidecars next to each keep-set `.c` and injects
+  `templates/win32k_translation_prompt.md` (the win32k Rust-mapping
+  rules) + a per-function Pretranslation Map (GDI RAII handles +
+  shapes, USER callout straddles, residual-SEH categories) ahead of
+  the C source. Scoped by sidecar-existence — ntoskrnl/hal prompts
+  are byte-unchanged (verified). This is the multiplier that delivers
+  all the banked Pass-0/2/3 work to the translator.
+- `[x]` ~17 `co_*` callout annotations (Pass 3) — **done as
+  extract-only** per the audit's no-rewrite rule: 20 sites (callback.c
+  ×17, dde.c ×2, rtl/text.c LPK ×1) extracted to
+  `<file>.win32k_callouts.json` sidecars, oracle-validated. (Optional
+  `__attribute__((annotate(...)))` source injection is deferred — the
+  sidecar JSON is what the prompt builder consumes.)
+- `[x]` Pruning — done, but **scope corrected**: the original table
+  was wrong (dxg/ntddraw/displays-vga/diblib are all load-bearing for
+  compilation — see corrected table above). Only the two genuinely-
+  orphaned `vga_new` trees were build-safe: **18 files / 6,284 LOC
+  pruned, i386 7/7 + amd64 7/7 gated**.
+- `[~]` Smoke: **i386 7/7 + amd64 7/7 PASSED**; arm64 boot-smoke
+  blocked by cold-build ramdisk-media infra (win32k itself builds
+  clean on arm64).
+- `[ ]` `verify_abi.py` clean — not yet run against the rewrites.
+- `[x]` Win32k-specific post-`shell ready` smoke assertions —
+  `test_post_shell_ready_input` injects keyboard+mouse via QMP
+  `input-send-event` after the desktop is up and hard-asserts no fatal
+  marker + VM still running (the ntuser raw-input→msgqueue→DefWndProc
+  path that boot markers structurally miss — audit open question #6).
+  i386 8/8 green; arm64 skips (idle-detect/serial-hack input model).
 
 ## Open questions
 

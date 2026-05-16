@@ -9,6 +9,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 DBG_DEFAULT_CHANNEL(UserMsgQ);
 
 /* GLOBALS *******************************************************************/
@@ -2580,16 +2581,22 @@ NtUserGetKeyboardState(LPBYTE lpKeyState)
    DWORD i, ret = TRUE;
    PTHREADINFO pti;
    PUSER_MESSAGE_QUEUE MessageQueue;
+   NTSTATUS Status;
 
    UserEnterShared();
 
    pti = PsGetCurrentThreadWin32Thread();
    MessageQueue = pti->MessageQueue;
 
-   _SEH2_TRY
+   Status = SafeProbeForWrite(lpKeyState, 256 * sizeof(BYTE), 1);
+   if (!NT_SUCCESS(Status))
+   {
+       SetLastNtError(Status);
+       ret = FALSE;
+   }
+   else
    {
        /* Probe and copy key state to an array */
-       ProbeForWrite(lpKeyState, 256 * sizeof(BYTE), 1);
        for (i = 0; i < 256; ++i)
        {
            lpKeyState[i] = 0;
@@ -2599,17 +2606,12 @@ NtUserGetKeyboardState(LPBYTE lpKeyState)
                lpKeyState[i] |= KS_LOCK_BIT;
        }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-       SetLastNtError(_SEH2_GetExceptionCode());
-       ret = FALSE;
-   }
-   _SEH2_END;
 
    UserLeave();
 
    return ret;
 }
+
 
 BOOL
 APIENTRY
@@ -2619,31 +2621,32 @@ NtUserSetKeyboardState(LPBYTE pKeyState)
    BOOL bRet = TRUE;
    PTHREADINFO pti;
    PUSER_MESSAGE_QUEUE MessageQueue;
+   NTSTATUS Status;
 
    UserEnterExclusive();
 
    pti = PsGetCurrentThreadWin32Thread();
    MessageQueue = pti->MessageQueue;
 
-   _SEH2_TRY
+   Status = SafeProbeForRead(pKeyState, 256 * sizeof(BYTE), 1);
+   if (!NT_SUCCESS(Status))
    {
-       ProbeForRead(pKeyState, 256 * sizeof(BYTE), 1);
+       SetLastNtError(Status);
+       bRet = FALSE;
+   }
+   else
+   {
        for (i = 0; i < 256; ++i)
        {
             SET_KEY_DOWN(MessageQueue->afKeyState, i, pKeyState[i] & KS_DOWN_BIT);
             SET_KEY_LOCKED(MessageQueue->afKeyState, i, pKeyState[i] & KS_LOCK_BIT);
        }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-       SetLastNtError(_SEH2_GetExceptionCode());
-       bRet = FALSE;
-   }
-   _SEH2_END;
 
    UserLeave();
 
    return bRet;
 }
+
 
 /* EOF */

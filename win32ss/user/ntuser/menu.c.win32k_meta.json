@@ -1,0 +1,67 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/menu.c",
+  "schema": "win32k_pass0_v1",
+  "summary": {
+    "e": 1,
+    "a": 1,
+    "d": 1
+  },
+  "sites": [
+    {
+      "function": "VerifyMenu",
+      "line_start": 211,
+      "line_end": 226,
+      "category": "e",
+      "category_name": "NEEDS_REVIEW",
+      "signals": [
+        "has_nonprobe_call"
+      ],
+      "probe_count": 0,
+      "nonprobe_calls": [
+        "UserHMGetHandle"
+      ],
+      "try_patterns": [
+        "OTHER"
+      ],
+      "handler_patterns": [
+        "YIELD_RETURN"
+      ],
+      "note": "non-probe call(s) in TRY: UserHMGetHandle"
+    },
+    {
+      "function": "NtUserGetTitleBarInfo",
+      "line_start": 5798,
+      "line_end": 5807,
+      "category": "a",
+      "category_name": "PROBE_LOWER",
+      "signals": [],
+      "probe_count": 1,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "PROBE",
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": ""
+    },
+    {
+      "function": "NtUserGetMenuItemRect",
+      "line_start": 6174,
+      "line_end": 6181,
+      "category": "d",
+      "category_name": "BELT_SUSPENDERS",
+      "signals": [],
+      "probe_count": 0,
+      "nonprobe_calls": [],
+      "try_patterns": [
+        "BULK_COPY"
+      ],
+      "handler_patterns": [
+        "SET_STATUS"
+      ],
+      "note": "user write under SEH, no probe in block (paranoid?)"
+    }
+  ]
+}

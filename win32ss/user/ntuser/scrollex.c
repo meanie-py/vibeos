@@ -7,6 +7,7 @@
  */
 
 #include <win32k.h>
+#include <safe_user_io.h>
 
 DBG_DEFAULT_CHANNEL(UserPainting);
 
@@ -489,28 +490,28 @@ NtUserScrollDC(
    TRACE("Enter NtUserScrollDC\n");
    UserEnterExclusive();
 
-   _SEH2_TRY
+   Status = SafeProbeForRead(prcUnsafeScroll, sizeof(*prcUnsafeScroll), 1);
+   if (NT_SUCCESS(Status))
+       Status = SafeProbeForRead(prcUnsafeClip, sizeof(*prcUnsafeClip), 1);
+   if (NT_SUCCESS(Status))
+       Status = SafeProbeForWrite(prcUnsafeUpdate, sizeof(*prcUnsafeUpdate), 1);
+   if (NT_SUCCESS(Status))
    {
-      if (prcUnsafeScroll)
-      {
-         ProbeForRead(prcUnsafeScroll, sizeof(*prcUnsafeScroll), 1);
-         rcScroll = *prcUnsafeScroll;
-      }
-      if (prcUnsafeClip)
-      {
-         ProbeForRead(prcUnsafeClip, sizeof(*prcUnsafeClip), 1);
-         rcClip = *prcUnsafeClip;
-      }
-      if (prcUnsafeUpdate)
-      {
-         ProbeForWrite(prcUnsafeUpdate, sizeof(*prcUnsafeUpdate), 1);
-      }
+       if (prcUnsafeScroll)
+       {
+
+          rcScroll = *prcUnsafeScroll;
+       }
+       if (prcUnsafeClip)
+       {
+
+          rcClip = *prcUnsafeClip;
+       }
+       if (prcUnsafeUpdate)
+       {
+
+       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      Status = _SEH2_GetExceptionCode();
-   }
-   _SEH2_END;
 
    if (!NT_SUCCESS(Status))
    {
@@ -595,25 +596,23 @@ NtUserScrollWindowEx(
    }
    UserRefObjectCo(Window, &Ref);
 
-   _SEH2_TRY
+   Status = SafeProbeForRead(prcUnsafeScroll, sizeof(*prcUnsafeScroll), 1);
+   if (NT_SUCCESS(Status))
+       Status = SafeProbeForRead(prcUnsafeClip, sizeof(*prcUnsafeClip), 1);
+   if (NT_SUCCESS(Status))
    {
-      if (prcUnsafeScroll)
-      {
-         ProbeForRead(prcUnsafeScroll, sizeof(*prcUnsafeScroll), 1);
-         rcScroll = *prcUnsafeScroll;
-      }
+       if (prcUnsafeScroll)
+       {
 
-      if (prcUnsafeClip)
-      {
-         ProbeForRead(prcUnsafeClip, sizeof(*prcUnsafeClip), 1);
-         rcClip = *prcUnsafeClip;
-      }
+          rcScroll = *prcUnsafeScroll;
+       }
+
+       if (prcUnsafeClip)
+       {
+
+          rcClip = *prcUnsafeClip;
+       }
    }
-   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-   {
-      Status = _SEH2_GetExceptionCode();
-   }
-   _SEH2_END;
 
    if (!NT_SUCCESS(Status))
    {
@@ -631,17 +630,13 @@ NtUserScrollWindowEx(
 
    if (prcUnsafeUpdate)
    {
-      _SEH2_TRY
+      Status = SafeProbeForWrite(prcUnsafeUpdate, sizeof(*prcUnsafeUpdate), 1);
+      if (NT_SUCCESS(Status))
       {
-         /* Probe here, to not fail on invalid pointer before scrolling */
-         ProbeForWrite(prcUnsafeUpdate, sizeof(*prcUnsafeUpdate), 1);
-         *prcUnsafeUpdate = rcUpdate;
+          /* Probe here, to not fail on invalid pointer before scrolling */
+
+          *prcUnsafeUpdate = rcUpdate;
       }
-      _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-      {
-         Status = _SEH2_GetExceptionCode();
-      }
-      _SEH2_END;
 
       if (!NT_SUCCESS(Status))
       {

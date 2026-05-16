@@ -1,0 +1,24 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/user/ntuser/simplecall.c",
+  "schema": "win32k_pass2_v1",
+  "count": 1,
+  "sites": [
+    {
+      "function": "NtUserCallHwndParamLock",
+      "func_line": 895,
+      "func_end_line": 938,
+      "lock_fn": "REGION_LockRgn",
+      "unlock_fn": "REGION_UnlockRgn",
+      "lock_line": 923,
+      "var": "Rgn",
+      "null_guarded": false,
+      "unlock_lines": [
+        925
+      ],
+      "shape": "REVIEW",
+      "signals": [
+        "no_null_guard"
+      ]
+    }
+  ]
+}

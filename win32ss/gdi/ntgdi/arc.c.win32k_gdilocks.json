@@ -1,0 +1,44 @@
+{
+  "source": "/home/curi/Projects/os-playground/vibeos/.claude/worktrees/win32k-translation/win32ss/gdi/ntgdi/arc.c",
+  "schema": "win32k_pass2_v1",
+  "count": 2,
+  "sites": [
+    {
+      "function": "NtGdiAngleArc",
+      "func_line": 301,
+      "func_end_line": 343,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 315,
+      "var": "pDC",
+      "null_guarded": true,
+      "unlock_lines": [
+        325,
+        338
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    },
+    {
+      "function": "NtGdiArcInternal",
+      "func_line": 347,
+      "func_end_line": 408,
+      "lock_fn": "DC_LockDc",
+      "unlock_fn": "DC_UnlockDc",
+      "lock_line": 364,
+      "var": "dc",
+      "null_guarded": true,
+      "unlock_lines": [
+        372,
+        388,
+        406
+      ],
+      "shape": "MULTI_UNLOCK",
+      "signals": [
+        "multi_exit_release"
+      ]
+    }
+  ]
+}
