@@ -43,6 +43,9 @@ class Catalog:
 RE_PUB_STRUCT = re.compile(r'^pub struct (\w+)')
 RE_PUB_TYPE = re.compile(r'^pub type (\w+)')
 RE_PUB_CONST = re.compile(r'^pub const (\w+)')
+# bindgen renders tagged-enum members as `pub const <EnumType>_<C_NAME>:
+# <EnumType> = N;` — the C source uses the bare <C_NAME>. Capture both.
+RE_PUB_CONST_TYPED = re.compile(r'^pub const (\w+)\s*:\s*(\w+)')
 RE_PUB_STATIC = re.compile(r'^pub static (?:mut )?(\w+)')
 RE_PUB_FN_DECL = re.compile(r'^\s+pub fn (\w+)\(')  # inside extern block
 RE_PUB_FN_IMPL = re.compile(r'^pub (?:unsafe )?fn (\w+)')
@@ -148,7 +151,18 @@ def _scan_bindgen(path: Path, module_name: str) -> tuple[list[Symbol], list[Symb
         # Constants
         m = RE_PUB_CONST.match(stripped)
         if m:
-            constants.append(Symbol(m.group(1), "const", module_name))
+            cname = m.group(1)
+            constants.append(Symbol(cname, "const", module_name))
+            # bindgen prefixes tagged-enum constants as `<EnumType>_<C_NAME>`;
+            # the C uses the bare <C_NAME>. Register that alias too (general
+            # — also helps ntkrnl-sys/hal enum constants).
+            mt = RE_PUB_CONST_TYPED.match(stripped)
+            if mt:
+                etype = mt.group(2)
+                pfx = etype + "_"
+                if cname.startswith(pfx) and len(cname) > len(pfx):
+                    constants.append(
+                        Symbol(cname[len(pfx):], "const", module_name))
             continue
 
         # Function declarations (inside extern blocks)
@@ -224,6 +238,24 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
             for s in functions:
                 if s.name not in catalog.functions:
                     catalog.functions[s.name] = s
+
+    # For the win32k target, also scan win32k-sys bindgen → module "win32k".
+    # win32k calls both the ntoskrnl API (ddk, scanned above) and its own
+    # internal surface. win32k-internal types/constants are authoritative
+    # for win32k code (the C uses _WND/_DESKTOP/NOPARAM_ROUTINE_* layouts
+    # from win32k headers); functions add-if-absent so the shared kernel
+    # API (ddk) stays the linkable surface and win32k adds Int*/Gre*/co_*.
+    win32k_files = getattr(target, "win32k_bindgen_files", {}) or {}
+    win32k_bindgen_path = win32k_files.get(arch)
+    if win32k_bindgen_path and win32k_bindgen_path.exists():
+        types, functions, constants = _scan_bindgen(win32k_bindgen_path, "win32k")
+        for s in types:
+            catalog.types[s.name] = s
+        for s in constants:
+            catalog.constants[s.name] = s
+        for s in functions:
+            if s.name not in catalog.functions:
+                catalog.functions[s.name] = s
 
     # Also scan bindgen_common.rs
     common_path = NTKRNL_SYS_DIR / "bindgen_common.rs"

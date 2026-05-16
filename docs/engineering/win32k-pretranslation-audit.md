@@ -40,6 +40,7 @@ uncommitted, on top of `continue-rust-port`@`4b07e4bc`.
 | `tools/rustconv/rustconv/gdi_lock_inventory.py` | Pass 2 GDI lock-bracket detector (no rewrite); `python -m rustconv gdi-locks` | done, oracle-validated |
 | `tools/rustconv/rustconv/user_lock_inventory.py` | Pass 2b USER critsec-bracket detector (no rewrite); `python -m rustconv user-locks` | done, oracle-validated; 254 brackets/55 files, i386+amd64 8/8 |
 | `tools/rustconv/rustconv/callout_annotate.py` | Pass 3 callout extractor (no rewrite); `python -m rustconv callout-annotate` | done, oracle-validated |
+| `sdk/lib/rust/win32k-sys/` (crate + `generate_bindings.sh`) | win32k internal FFI surface (bindgen, 3 arches) — the ntkrnl-sys analog | done; ~2.8K structs/2.7K fns/20K consts per arch, cargo-clean ×3, resolve 233→41 (82%) |
 | `templates/win32k_translation_prompt.md` + `prompt_builder` wiring | Pass-0/2/3 sidecar **consumer** — injects win32k rules + per-fn map into the translation prompt | done, scoped (ntoskrnl/hal prompts unchanged) |
 | `win32ss/safe_user_io.{c,h}` | SEH-free, status-returning user-range validator | done, builds+links all 3 arches |
 
@@ -397,6 +398,50 @@ build.
 - Tree-sitter is **not** the workhorse (the TL;DR claim): the SEH
   macros defeat tree-sitter; the pipeline uses `seh_classifier`'s
   regex + brace-matching, which is what actually works.
+
+### win32k-sys — the FFI surface (the biggest lever, 2026-05-16)
+
+Measurement found the dominant translation hazard is **not** locks or
+constants but the *absence of a win32k FFI declaration crate*.
+`rustconv resolve` on win32k files showed 138–709 **unresolved
+win32k-internal symbols per file**; ntkrnl-sys bindgen has **0** win32k
+coverage (ntoskrnl.h only); no `win32k-sys` crate existed. Without it
+the LLM invents signatures + every struct `#[repr(C)]` layout per-file,
+inconsistently → cross-file ABI disagreement + wrong offsets (silent
+memory corruption at scale). This is exactly what ntkrnl-sys solved for
+ntoskrnl.
+
+A verify-first bindgen spike proved feasibility (3 mechanical fixes, no
+header rewrites): **`-fms-extensions`** (win32k object headers —
+`THRDESKHEAD { THROBJHEAD; }` — use the MS anonymous-typedef-member
+extension) but **never `-fms-compatibility`** (defines `_MSC_VER` →
+mingw `_mingw.h` MSVC branch → breaks `<math.h>`'s `__CRT_INLINE`);
+`_INTRIN_H_` libclang stubs (ntkrnl-sys pattern); faithful
+ninja-derived per-arch flags.
+
+Productionized as `sdk/lib/rust/win32k-sys/` (ntkrnl-sys recipe clone:
+`generate_bindings.sh` self-derives flags from `build-<arch>/build.ninja`;
+`postprocess_bindgen.py`; `wrapper.h` → `<win32k.h>`). Per arch:
+~2,800 structs (the USER object model `_WND`/`_THREADINFO`/`_DESKTOP`/
+`_THRDESKHEAD`, GDI DC/REGION/PATH/SURFACE), ~2,700 fns
+(`Nt*User/Gdi*`/`Int*`/`co_*`/`Gre*`/`Eng*`/`GDIOBJ_*`/`*_Lock*`),
+~20,000 constants, ~7,000 type aliases. cargo-clean on i386+amd64+arm64.
+
+Two bindgen-allowlist gaps caught by validation (verify-first): (1)
+setting any allowlist drops unreferenced `#define`/enum constants → add
+`--allowlist-var '.+'` (4K→20K consts); (2) bindgen type-prefixes
+tagged-enum members (`SimpleCallRoutines_HWNDLOCK_ROUTINE_DRAWMENUBAR`)
+but C uses the bare name → `catalog._scan_bindgen` now also registers
+the de-prefixed alias (general; helps ntkrnl-sys/hal too).
+
+rustconv wiring: `config.py` `win32k` Target + `WIN32K_BINDGEN_FILES` +
+`detect_target` win32ss branch; `catalog.py` scans win32k-sys when the
+target carries `win32k_bindgen_files` (mirrors the hal_bindgen merge:
+win32k types/consts authoritative, fns add-if-absent so ntkrnl ddk
+stays the kernel-API surface); `cmd_resolve`/`prompt`/`submit` pass the
+detected target + its `.spec`. Result: **simplecall.c 233→41,
+dcutil.c 138→26 (~82% resolved)**; residual is the macro / local-var /
+static-helper noise floor every ntoskrnl file also has.
 
 ## Why a separate "pretranslation" phase
 

@@ -33,6 +33,17 @@ HAL_BINDGEN_FILES = {
     "i386": NTKRNL_SYS_DIR / "hal_bindgen_i386.rs",
 }
 
+# win32k subsystem + its dedicated FFI crate (analog of ntkrnl-sys/HAL).
+# win32k calls BOTH ntoskrnl APIs (covered by BINDGEN_FILES) AND its own
+# internal surface (_WND/_DESKTOP/Int*/Gre*/co_* — covered here).
+WIN32SS_DIR = REACTOS_ROOT / "win32ss"
+WIN32K_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "win32k-sys" / "src"
+WIN32K_BINDGEN_FILES = {
+    "arm64": WIN32K_SYS_DIR / "bindgen_arm64.rs",
+    "amd64": WIN32K_SYS_DIR / "bindgen_amd64.rs",
+    "i386": WIN32K_SYS_DIR / "bindgen_i386.rs",
+}
+
 HAND_WRITTEN_MODULES = [
     "base.rs", "ke.rs", "mm.rs", "ex.rs", "ps.rs", "ob.rs",
     "rtl.rs", "interlocked.rs",
@@ -69,6 +80,7 @@ class Target:
     cmake_deps_file: Path | None           # hal/halx86/CMakeLists.txt (DEPENDS list to append)
     cmake_source_files: list = field(default_factory=list)  # generic.cmake etc. to edit
     arches: tuple = ("i386", "amd64", "arm64")  # supported arches
+    win32k_bindgen_files: dict = field(default_factory=dict)  # arch → win32k-sys .rs (win32k only)
 
 
 TARGETS = {
@@ -154,6 +166,25 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # win32k.sys subsystem. Resolves against BOTH ntkrnl-sys (the
+    # ntoskrnl APIs win32k calls) AND win32k-sys (its own internal
+    # surface: _WND/_DESKTOP/Int*/Gre*/co_*). win32k-specific translation
+    # rules + the Pass-0/2/2b/3 sidecars are injected by prompt_builder
+    # when present; the base system prompt stays system_prompt.md.
+    "win32k": Target(
+        name="win32k",
+        source_dir=WIN32SS_DIR,
+        output_crate=RUST_DIR / "win32k-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=WIN32SS_DIR / "win32k.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        win32k_bindgen_files=WIN32K_BINDGEN_FILES,
+    ),
 }
 
 
@@ -167,6 +198,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["bootvid"]
     if "/boot/freeldr/" in posix:
         return TARGETS["freeldr"]
+    if "/win32ss/" in posix:
+        return TARGETS["win32k"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:
         return TARGETS["hal"]
     return TARGETS["ntoskrnl"]

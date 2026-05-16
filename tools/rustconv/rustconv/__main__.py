@@ -63,13 +63,16 @@ def cmd_resolve(args):
     from .resolver import resolve, print_resolve_result
 
     path = resolve_c_path(args.file)
+    target = detect_target(path)
 
-    print("Building catalog...", file=sys.stderr)
-    catalog = build_catalog(arch=args.arch)
+    print(f"Building catalog... (target={target.name})", file=sys.stderr)
+    catalog = build_catalog(arch=args.arch, target=target)
     print_catalog_stats(catalog)
     print()
 
-    spec = parse_spec()
+    spec = (parse_spec(target.spec_file)
+            if target.spec_file and target.spec_file.exists()
+            else parse_spec())
     scan = scan_file(path)
     result = resolve(scan, catalog, spec)
     print_resolve_result(result)
@@ -83,8 +86,11 @@ def cmd_prompt(args):
     from .prompt_builder import build_full_prompt, build_file_prompt, load_system_prompt, estimate_tokens
 
     path = resolve_c_path(args.file)
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    target = detect_target(path)
+    catalog = build_catalog(arch=args.arch, target=target)
+    spec = (parse_spec(target.spec_file)
+            if target.spec_file and target.spec_file.exists()
+            else parse_spec())
     scan = scan_file(path)
     res = resolve(scan, catalog, spec)
 
@@ -108,8 +114,11 @@ def cmd_submit(args):
     from .postprocess import postprocess
 
     path = resolve_c_path(args.file)
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    target = detect_target(path)
+    catalog = build_catalog(arch=args.arch, target=target)
+    spec = (parse_spec(target.spec_file)
+            if target.spec_file and target.spec_file.exists()
+            else parse_spec())
     scan = scan_file(path)
     res = resolve(scan, catalog, spec)
 

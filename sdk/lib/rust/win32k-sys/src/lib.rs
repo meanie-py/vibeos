@@ -1,0 +1,63 @@
+//! win32k-sys — FFI declarations for the internal win32k.sys surface.
+//!
+//! Auto-generated from the win32k master internal header `<win32k.h>`
+//! (which pulls `pch.h`: ntifs, winddi, winuser, `ntgdi.h`, `ntuser.h`,
+//! `win32kp.h`, freetype, …) via `bindgen` for all 3 architectures.
+//!
+//! This is the win32k analog of `ntkrnl-sys`. It exists because the
+//! ntkrnl-sys bindgen covers `ntoskrnl.h` only (zero win32k symbols),
+//! so without this crate every `tagWND`/`_WND`, `_THREADINFO`,
+//! `_DESKTOP`, `Int*`/`Gre*`/`co_*`/`User*` call and — critically —
+//! every win32k struct *layout* would be invented per-file by the
+//! translator, inconsistently. Use `win32k_sys::win32k::*` for the
+//! win32k-internal API; kernel APIs win32k also calls
+//! (`Ex/Ke/Mm/Ob/Ps/Rtl/Zw/Nt*`) stay in `ntkrnl_sys::ddk::*`.
+//!
+//! Types here use bindgen naming (`_WND`, `_DESKTOP`, …) with the
+//! Windows-style aliases bindgen also emits (`PWND = *mut _WND`).
+//!
+//! NOT a standalone static library — an `rlib` declaration dependency.
+
+#![no_std]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#![allow(clippy::upper_case_acronyms)]
+#![allow(dead_code)]
+// win32k bindgen also re-declares some NT types/functions (via ntifs.h /
+// ndk pulled by pch.h). Within this crate those are self-consistent; the
+// type-identity split vs `ntkrnl_sys::ddk` is handled by casts at the
+// kernel↔win32k boundary, exactly like `hal_ddk` vs `ddk` in ntkrnl-sys.
+#![allow(clashing_extern_declarations)]
+
+mod bindgen_common;
+
+#[cfg(target_arch = "aarch64")]
+mod bindgen_arm64;
+
+#[cfg(target_arch = "x86_64")]
+mod bindgen_amd64;
+
+#[cfg(target_arch = "x86")]
+mod bindgen_i386;
+
+/// Full internal win32k.sys API — auto-generated bindings with correct
+/// per-arch calling conventions (i386 stdcall/fastcall decoration too).
+///
+/// ~2,800 structs (the USER object model: `_WND`, `_THREADINFO`,
+/// `_DESKTOP`, `_PROCESSINFO`, `_THRDESKHEAD`, `tagIMC`, …; the GDI
+/// objects: DC/REGION/PATH/SURFACE/PALETTE), ~4,200 extern functions
+/// (`Nt*User*`/`Nt*Gdi*`, `Int*`, `co_*`, `Gre*`, `Eng*`, `User*`,
+/// `GDIOBJ_*`, the `*_Lock*/_Unlock*` brackets), ~4,000 constants
+/// (`NOPARAM_ROUTINE_*`, `HWNDLOCK_ROUTINE_*`, `FNID_*`, message/style
+/// constants), ~7,000 type aliases.
+pub mod win32k {
+    pub use super::bindgen_common::*;
+
+    #[cfg(target_arch = "aarch64")]
+    pub use super::bindgen_arm64::*;
+
+    #[cfg(target_arch = "x86_64")]
+    pub use super::bindgen_amd64::*;
+
+    #[cfg(target_arch = "x86")]
+    pub use super::bindgen_i386::*;
+}
