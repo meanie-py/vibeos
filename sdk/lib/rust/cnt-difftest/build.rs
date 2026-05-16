@@ -99,7 +99,8 @@ fn main() {
              wchar_t* ref_ltow(long,wchar_t*,int);\n\
              int ref_ltow_s(long,wchar_t*,size_t,int);\n{}\
              wchar_t* ref_ltow32(int v,wchar_t*s,int r){{return ref_ltow(v,s,r);}}\n\
-             wchar_t* ref_ultow32(unsigned int v,wchar_t*s,int r){{return ref_ultow(v,s,r);}}\n",
+             wchar_t* ref_ultow32(unsigned int v,wchar_t*s,int r){{return ref_ultow(v,s,r);}}\n\
+             int ref_ltow_s32(int v,wchar_t*s,size_t z,int r){{return ref_ltow_s(v,s,z,r);}}\n",
             inc(s("string/itow.c")))),
     ];
 

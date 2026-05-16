@@ -39,6 +39,10 @@ extern "C" {
     fn ref_ui64toa_s(v: u64, s: *mut u8, sz: usize, r: i32) -> i32;
     fn ref_itoa_s(v: i32, s: *mut u8, sz: usize, r: i32) -> i32;
     fn ref_ltoa_s32(v: i32, s: *mut u8, sz: usize, r: i32) -> i32;
+    fn ref_i64tow_s(v: i64, s: *mut u16, sz: usize, r: i32) -> i32;
+    fn ref_ui64tow_s(v: u64, s: *mut u16, sz: usize, r: i32) -> i32;
+    fn ref_itow_s(v: i32, s: *mut u16, sz: usize, r: i32) -> i32;
+    fn ref_ltow_s32(v: i32, s: *mut u16, sz: usize, r: i32) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -589,5 +593,57 @@ fn diff_itoa_s() {
         assert_eq!(ref_ui64toa_s(1, core::ptr::null_mut(), 8, 10), 22);
         assert_eq!(cabi::_itoa_s(1, core::ptr::null_mut(), 8, 10), 22);
         assert_eq!(cabi::_ltoa_s(1, core::ptr::null_mut(), 8, 10), 22);
+    }
+}
+
+/// Wave C4 — secure `_s` wide. s_erange_w mirrors C3 with u16; the
+/// star is `_ui64tow_s`'s genuine byte-count bug (memcpy ndigits+1
+/// BYTES, not * sizeof(wchar_t)) — the diff pins that exact half-wide
+/// destination state against the real compiled itow.c.
+#[test]
+fn diff_itow_s() {
+    let mut rng = Rng(0x77c0_4b22_u64);
+    let radices = [2i32, 8, 10, 16, 36, 1, 37, 0, -1];
+    let valid = |r: i32| matches!(r, 2 | 8 | 16 | 36);
+    for _ in 0..7000 {
+        let r = radices[rng.upto(radices.len())];
+        let sz = rng.upto(40);
+
+        let v64 = rng.next() as i64;
+        let (mut a, mut b) = ([0xAAAAu16; 90], [0xAAAAu16; 90]);
+        let rca = unsafe { cabi::_i64tow_s(v64, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_i64tow_s(v64, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_i64tow_s rc v={v64} sz={sz} r={r}");
+        assert_eq!(a, b, "_i64tow_s buf v={v64} sz={sz} r={r}");
+
+        let uv = rng.next();
+        let (mut a, mut b) = ([0xAAAAu16; 90], [0xAAAAu16; 90]);
+        let rca = unsafe { cabi::_ui64tow_s(uv, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_ui64tow_s(uv, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_ui64tow_s rc v={uv} sz={sz} r={r}");
+        assert_eq!(a, b, "_ui64tow_s buf (byte-count bug) v={uv} sz={sz} r={r}");
+
+        let mut v32 = rng.next() as i32;
+        if v32 < 0 && valid(r) {
+            v32 = v32.wrapping_neg();
+        }
+        let (mut a, mut b) = ([0xAAAAu16; 90], [0xAAAAu16; 90]);
+        let rca = unsafe { cabi::_ltow_s(v32, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_ltow_s32(v32, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_ltow_s rc v={v32} sz={sz} r={r}");
+        assert_eq!(a, b, "_ltow_s buf v={v32} sz={sz} r={r}");
+        let (mut a, mut b) = ([0xAAAAu16; 90], [0xAAAAu16; 90]);
+        let rca = unsafe { cabi::_itow_s(v32, a.as_mut_ptr(), sz, r) };
+        let rcb = unsafe { ref_itow_s(v32, b.as_mut_ptr(), sz, r) };
+        assert_eq!(rca, rcb, "_itow_s rc v={v32} sz={sz} r={r}");
+        assert_eq!(a, b, "_itow_s buf v={v32} sz={sz} r={r}");
+    }
+    unsafe {
+        assert_eq!(cabi::_i64tow_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(ref_i64tow_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(cabi::_ui64tow_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(ref_ui64tow_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(cabi::_itow_s(1, core::ptr::null_mut(), 8, 10), 22);
+        assert_eq!(cabi::_ltow_s(1, core::ptr::null_mut(), 8, 10), 22);
     }
 }

@@ -53,6 +53,19 @@
       "string=NULL"
     ]
   },
+  "_i64tow_s": {
+    "c_signature": "int _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)",
+    "family": "wstring",
+    "slice_pattern": "s_erange_w",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "size {exact,exact-1,1,big,0}",
+      "radix {2,10,16,36,1,37}",
+      "value 0/\u00b1/I64_MIN/I64_MAX",
+      "str=NULL"
+    ]
+  },
   "_itoa": {
     "c_signature": "char* _itoa(int value, char *string, int radix)",
     "family": "radix",
@@ -89,6 +102,18 @@
       "string=NULL"
     ]
   },
+  "_itow_s": {
+    "c_signature": "int _itow_s(int value, wchar_t *str, size_t size, int radix)",
+    "family": "wstring",
+    "slice_pattern": "s_erange_w",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "size {exact,exact-1,1,big,0}",
+      "radix {2,10,16,36,1,37}",
+      "value 0/\u00b1/INT_MIN/INT_MAX"
+    ]
+  },
   "_ltoa": {
     "c_signature": "char* _ltoa(long value, char *string, int radix)",
     "family": "radix",
@@ -123,6 +148,18 @@
       "value 0/\u00b11/I32_MIN/I32_MAX",
       "radix 2/8/10/16/36",
       "string=NULL"
+    ]
+  },
+  "_ltow_s": {
+    "c_signature": "int _ltow_s(long value, wchar_t *str, size_t size, int radix)",
+    "family": "wstring",
+    "slice_pattern": "s_erange_w",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "size {exact,exact-1,1,big,0}",
+      "radix {2,10,16,36,1,37}",
+      "value 0/\u00b1/I32_MIN/I32_MAX"
     ]
   },
   "_strtoi64": {
@@ -205,6 +242,19 @@
       "value 0/1/U64_MAX",
       "radix 2/8/10/16/36",
       "string=NULL"
+    ]
+  },
+  "_ui64tow_s": {
+    "c_signature": "int _ui64tow_s(unsigned __int64 value, wchar_t *str, size_t size, int radix)",
+    "family": "wstring",
+    "slice_pattern": "s_einval_w",
+    "return_collapse": "int2str",
+    "reference": "sdk/lib/crt/string/itow.c",
+    "fuzz_domain": [
+      "size {exact,exact-1,1,big,0}",
+      "radix {2,10,16,36,1,37}",
+      "value 0/1/U64_MAX",
+      "str=NULL"
     ]
   },
   "_ultoa": {
