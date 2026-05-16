@@ -89,6 +89,7 @@ def ret_ty(sig: str) -> str:
         "int": "i32",
         "long": "i32",  # Win i386 LP32: long == 32-bit
         "unsignedlong": "u32",
+        "unsignedlonglong": "u64",
         "__int64": "i64",
         "char*": "*mut u8",
         "wchar_t*": "*mut u16",
@@ -507,6 +508,26 @@ def shim(name: str, m: dict) -> str:
         )
         body.append(f"    if !{ep}.is_null() {{")
         body.append(f"        *{ep} = {np}.add(r.end) as *mut u16;")
+        body.append("    }")
+        body.append(f"    r.value as {rt}")
+    elif rc in ("long_bsd", "u64_bsd"):
+        # strtol/wcstol/strtoull — BSD parse + endptr. Narrow (*const
+        # u8 / char**) or wide (*const u16 / wchar_t**); the core is
+        # generic over Cu so the slice type drives it. `as *mut _`
+        # lets the endptr cast infer the right inner pointer width.
+        core = "parse_long_bsd" if rc == "long_bsd" else "parse_u64_bsd"
+        np = next(
+            n for t, n in params if rs_ty(t) in ("*const u8", "*const u16")
+        )
+        ep = next(
+            n
+            for t, n in params
+            if rs_ty(t) in ("*mut *mut u8", "*mut *mut u16")
+        )
+        bs = next(n for t, n in params if rs_ty(t) == "i32")
+        body.append(f"    let r = crate::core_rs::radix::{core}({np}_s, {bs});")
+        body.append(f"    if !{ep}.is_null() {{")
+        body.append(f"        *{ep} = {np}.add(r.end) as *mut _;")
         body.append("    }")
         body.append(f"    r.value as {rt}")
     else:

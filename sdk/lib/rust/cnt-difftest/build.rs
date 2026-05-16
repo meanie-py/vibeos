@@ -188,6 +188,39 @@ fn main() {
         ("wcsstr", format!(
             "#include <stddef.h>\n#define wchar_t unsigned short\n\
              #define wcsstr ref_wcsstr\n{}", inc(s("wstring/wcsstr.c")))),
+        // Wave G — BSD parse + endptr. strtol/wcstol: precomp FIRST
+        // (limits.h runs, guard set) THEN clamp LONG_MAX/MIN to 32-bit
+        // (Win long; the LP64 host needs this + an (int) return
+        // truncation, exactly the strtoul precedent). strtoull:
+        // unsigned long long is 64-bit on host AND target → faithful
+        // directly, no trick. wcstol adds the ASCII iswctype shim.
+        ("strtol", format!(
+            "#include <precomp.h>\n#undef LONG_MAX\n#define LONG_MAX 0x7FFFFFFFL\n\
+             #undef LONG_MIN\n#define LONG_MIN (-0x7FFFFFFF - 1)\n\
+             #define strtol ru_strtol_real\n{}\
+             int ref_strtol(const char*n,char**e,int b)\
+             {{return (int)ru_strtol_real(n,e,b);}}\n",
+            inc(s("string/strtol.c")))),
+        ("strtoull", format!(
+            "#include <precomp.h>\n#define strtoull ref_strtoull\n{}",
+            inc(s("string/strtoull.c")))),
+        ("wcstol", format!(
+            "#include <precomp.h>\n#undef LONG_MAX\n#define LONG_MAX 0x7FFFFFFFL\n\
+             #undef LONG_MIN\n#define LONG_MIN (-0x7FFFFFFF - 1)\n\
+             #define wchar_t unsigned short\n\
+             #define _SPACE 1\n#define _DIGIT 2\n#define _ALPHA 4\n#define _UPPER 8\n\
+             static int cnt_iswctype(int c,int t){{\
+             if(c<0||c>127)return 0;\
+             if(t==_SPACE)return c==' '||c=='\\t'||c=='\\n'||c=='\\v'||c=='\\f'||c=='\\r';\
+             if(t==_DIGIT)return c>='0'&&c<='9';\
+             if(t==_UPPER)return c>='A'&&c<='Z';\
+             if(t==_ALPHA)return (c>='A'&&c<='Z')||(c>='a'&&c<='z');\
+             return 0;}}\n\
+             #define iswctype(c,t) cnt_iswctype((c),(t))\n\
+             #define wcstol ru_wcstol_real\n{}\
+             int ref_wcstol(const wchar_t*n,wchar_t**e,int b)\
+             {{return (int)ru_wcstol_real(n,e,b);}}\n",
+            inc(s("string/wcstol.c")))),
     ];
 
     // tcs* tchar family auto-derive: the genuine logic header

@@ -677,6 +677,26 @@
       "needle longer than hay"
     ]
   },
+  "strtol": {
+    "c_signature": "long strtol(const char *nptr, char **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "long_bsd",
+    "reference": "sdk/lib/crt/string/strtol.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "no digits (\u2192nptr)",
+      "in range",
+      "+overflow\u2192LONG_MAX",
+      "-overflow\u2192LONG_MIN",
+      "base 0/2/8/10/16/36",
+      "0x prefix",
+      "mixed case",
+      "endptr=NULL",
+      "junk after"
+    ]
+  },
   "strtoul": {
     "c_signature": "unsigned long strtoul(const char* nptr, char** end, int base)",
     "family": "radix",
@@ -691,6 +711,25 @@
       "invalid base",
       "no digits",
       "endptr tracking"
+    ]
+  },
+  "strtoull": {
+    "c_signature": "unsigned long long strtoull(const char *nptr, char **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "nul_endptr_base",
+    "return_collapse": "u64_bsd",
+    "reference": "sdk/lib/crt/string/strtoull.c",
+    "fuzz_domain": [
+      "empty",
+      "ws+sign",
+      "no digits",
+      "in range",
+      "overflow\u2192ULLONG_MAX",
+      "negative (wrap)",
+      "base 0/2/8/10/16/36",
+      "0x prefix",
+      "endptr=NULL",
+      "junk after"
     ]
   },
   "toupper_nt_mb": {
@@ -891,6 +930,16 @@
       "b at end",
       "overlapping partials",
       "b longer than s"
+    ]
+  },
+  "wcstol": {
+    "c_signature": "long wcstol(const wchar_t *nptr, wchar_t **endptr, int base)",
+    "family": "radix",
+    "slice_pattern": "wnul_endptr_base",
+    "return_collapse": "long_bsd",
+    "reference": "sdk/lib/crt/string/wcstol.c",
+    "fuzz_domain": [
+      "as strtol over wide; >0xFF wchars never classified"
     ]
   },
   "wcstombs": {

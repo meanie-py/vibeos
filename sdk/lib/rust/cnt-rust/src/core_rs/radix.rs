@@ -288,3 +288,204 @@ pub fn parse_ulong_wide(s: &[u16], base: i32) -> WcstoulRes {
         end: if any != 0 { i - 1 } else { 0 },
     }
 }
+
+/// Code unit for the generic BSD parsers: `u8` (narrow) / `u16`
+/// (wide). Classification is ASCII (`isspace`/`isdigit`/`isalpha`/
+/// `isupper` resp. `iswctype` for the ASCII range are standard);
+/// non-ASCII is never fuzzed (documented domain limit).
+pub trait Cu: Copy {
+    fn u(self) -> u32;
+}
+impl Cu for u8 {
+    #[inline]
+    fn u(self) -> u32 {
+        self as u32
+    }
+}
+impl Cu for u16 {
+    #[inline]
+    fn u(self) -> u32 {
+        self as u32
+    }
+}
+
+#[inline]
+fn sp(c: u32) -> bool {
+    matches!(c, 0x20 | 0x09 | 0x0a | 0x0b | 0x0c | 0x0d)
+}
+
+/// Shared BSD `strtol`/`strtoull` prologue: skip space (do-while ≥1),
+/// sign, `0x` prefix (base 0/16), base-0 → 8/10. Returns
+/// `(base, negative, index, first_char)`.
+#[inline]
+fn bsd_prologue<C: Cu>(s: &[C], mut base: i32) -> (i32, bool, usize, u32) {
+    let at = |i: usize| -> u32 {
+        if i < s.len() {
+            s[i].u()
+        } else {
+            0
+        }
+    };
+    let mut i = 0usize;
+    let mut c;
+    loop {
+        c = at(i);
+        i += 1;
+        if !sp(c) {
+            break;
+        }
+    }
+    let mut neg = false;
+    if c == b'-' as u32 {
+        neg = true;
+        c = at(i);
+        i += 1;
+    } else if c == b'+' as u32 {
+        c = at(i);
+        i += 1;
+    }
+    if (base == 0 || base == 16) && c == b'0' as u32 && (at(i) == b'x' as u32 || at(i) == b'X' as u32)
+    {
+        c = at(i + 1);
+        i += 2;
+        base = 16;
+    }
+    if base == 0 {
+        base = if c == b'0' as u32 { 8 } else { 10 };
+    }
+    (base, neg, i, c)
+}
+
+/// One BSD digit step: classify `c` (ASCII digit / a-z / A-Z) → value,
+/// or `None` to stop. Faithful to `strtol.c`'s `c -= '0'` /
+/// `c -= isupper ? 'A'-10 : 'a'-10` then the `c >= base` break.
+#[inline]
+fn bsd_digit(c: u32, base: i32) -> Option<i64> {
+    let v: i64 = if (b'0' as u32..=b'9' as u32).contains(&c) {
+        (c - b'0' as u32) as i64
+    } else if (b'A' as u32..=b'Z' as u32).contains(&c) {
+        (c - b'A' as u32) as i64 + 10
+    } else if (b'a' as u32..=b'z' as u32).contains(&c) {
+        (c - b'a' as u32) as i64 + 10
+    } else {
+        return None;
+    };
+    if v >= base as i64 {
+        None
+    } else {
+        Some(v)
+    }
+}
+
+/// `strtol`/`wcstol` result. `value` is the 32-bit Windows `long`
+/// (LLP64 — `long` is 32-bit on every Windows arch). `end` is the
+/// `*endptr` offset: `any ? (s-1) : nptr`.
+pub struct LongRes {
+    pub value: i32,
+    pub end: usize,
+}
+
+/// `strtol`/`wcstol` core, faithful to ReactOS `strtol.c`/`wcstol.c`
+/// (BSD cutoff/cutlim with the **signed** LONG clamp). `unsigned long`
+/// is 32-bit on the target, so the cnt-rust model is exact i32; only
+/// the LP64 host *reference* needs the `LONG_MAX`→0x7FFFFFFF + `(int)`
+/// trick. ASCII-domain only. Overflow → `LONG_MIN`/`LONG_MAX`;
+/// negative non-overflow → `0u32.wrapping_sub(acc)` as i32.
+#[inline]
+pub fn parse_long_bsd<C: Cu>(s: &[C], base: i32) -> LongRes {
+    let at = |i: usize| -> u32 {
+        if i < s.len() {
+            s[i].u()
+        } else {
+            0
+        }
+    };
+    let (base, neg, mut i, mut c) = bsd_prologue(s, base);
+    let bm = base as i64;
+    // cutoff = neg ? (unsigned long)LONG_MAX+1 : LONG_MAX  (LP32)
+    let cut0: i64 = if neg { 0x8000_0000 } else { 0x7FFF_FFFF };
+    let cutlim = cut0 % bm;
+    let cutoff = cut0 / bm;
+    let mut acc: i64 = 0;
+    let mut any: i32 = 0;
+    loop {
+        let d = match bsd_digit(c, base) {
+            Some(d) => d,
+            None => break,
+        };
+        if any < 0 || acc > cutoff || (acc == cutoff && d > cutlim) {
+            any = -1;
+        } else {
+            any = 1;
+            acc = acc * bm + d;
+        }
+        c = at(i);
+        i += 1;
+    }
+    let value: i32 = if any < 0 {
+        if neg {
+            i32::MIN
+        } else {
+            i32::MAX
+        }
+    } else if neg {
+        0u32.wrapping_sub(acc as u32) as i32
+    } else {
+        acc as i32
+    };
+    LongRes {
+        value,
+        end: if any != 0 { i - 1 } else { 0 },
+    }
+}
+
+/// `strtoull` result (`unsigned long long` — 64-bit on host AND
+/// target, so no LP32 caveat, host reference is faithful directly).
+pub struct U64Res {
+    pub value: u64,
+    pub end: usize,
+}
+
+/// `strtoull` core, faithful to ReactOS `strtoull.c` (BSD cutoff with
+/// `ULLONG_MAX` clamp; negative → `0 - acc` wrapping u64). ASCII only.
+#[inline]
+pub fn parse_u64_bsd<C: Cu>(s: &[C], base: i32) -> U64Res {
+    let at = |i: usize| -> u32 {
+        if i < s.len() {
+            s[i].u()
+        } else {
+            0
+        }
+    };
+    let (base, neg, mut i, mut c) = bsd_prologue(s, base);
+    let bm = base as u64;
+    let cutoff = u64::MAX / bm;
+    let cutlim = (u64::MAX % bm) as i64;
+    let mut acc: u64 = 0;
+    let mut any: i32 = 0;
+    loop {
+        let d = match bsd_digit(c, base) {
+            Some(d) => d,
+            None => break,
+        };
+        if any < 0 || acc > cutoff || (acc == cutoff && d > cutlim) {
+            any = -1;
+        } else {
+            any = 1;
+            acc = acc * bm + d as u64;
+        }
+        c = at(i);
+        i += 1;
+    }
+    let value = if any < 0 {
+        u64::MAX
+    } else if neg {
+        0u64.wrapping_sub(acc)
+    } else {
+        acc
+    };
+    U64Res {
+        value,
+        end: if any != 0 { i - 1 } else { 0 },
+    }
+}

@@ -841,3 +841,43 @@ inout_effects = "none"
 preserved_misfeature = "empty needle → NULL (the while(*x) body never runs for 0-len b) — DISTINCT from narrow strstr empty→hay"
 reference    = "sdk/lib/crt/wstring/wcsstr.c"
 fuzz_domain  = ["empty b (→NULL)", "b absent", "b == s", "b at end", "overlapping partials", "b longer than s"]
+
+# --- Wave G: parse family (BSD cutoff/clamp + endptr) ---------------
+# strtol/wcstol = signed-long BSD clamp (Win long=32 → i32 model;
+# LP64 host ref needs LONG_MAX→0x7FFFFFFF + (int) trunc). strtoull =
+# u64 (host==target, no trick). Distinct cores from Wave B
+# _strtoi64 (per-digit _I64_MAX clamp) and Wave E1 wcstoul (ULONG).
+# Generic over Cu (u8 narrow / u16 wide); ASCII domain; bases sane.
+
+[symbols.strtol]
+c_signature  = "long strtol(const char *nptr, char **endptr, int base)"
+family       = "radix"
+slice_pattern = "nul_endptr_base"
+core_fn      = "radix::parse_long_bsd"
+return_collapse = "long_bsd"
+inout_effects = "*endptr (if !=NULL) = nptr + (any ? first-non-consumed : 0)"
+preserved_misfeature = "BSD signed-long clamp: overflow → LONG_MIN/LONG_MAX (32-bit Win long); neg non-overflow = 0u32.wrapping_sub(acc); cutoff = neg?(ULONG)LONG_MAX+1:LONG_MAX; base 0 ⇒ 0x→16/0→8/else 10; no base validation; _LIBCNT_ no errno"
+reference    = "sdk/lib/crt/string/strtol.c"
+fuzz_domain  = ["empty", "ws+sign", "no digits (→nptr)", "in range", "+overflow→LONG_MAX", "-overflow→LONG_MIN", "base 0/2/8/10/16/36", "0x prefix", "mixed case", "endptr=NULL", "junk after"]
+
+[symbols.wcstol]
+c_signature  = "long wcstol(const wchar_t *nptr, wchar_t **endptr, int base)"
+family       = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn      = "radix::parse_long_bsd"
+return_collapse = "long_bsd"
+inout_effects = "as strtol, wide nptr/endptr"
+preserved_misfeature = "wide twin of strtol (iswctype ASCII-equivalent); same signed-long clamp + endptr"
+reference    = "sdk/lib/crt/string/wcstol.c"
+fuzz_domain  = ["as strtol over wide; >0xFF wchars never classified"]
+
+[symbols.strtoull]
+c_signature  = "unsigned long long strtoull(const char *nptr, char **endptr, int base)"
+family       = "radix"
+slice_pattern = "nul_endptr_base"
+core_fn      = "radix::parse_u64_bsd"
+return_collapse = "u64_bsd"
+inout_effects = "*endptr (if !=NULL) = nptr + (any ? first-non-consumed : 0)"
+preserved_misfeature = "BSD u64 clamp: overflow → ULLONG_MAX; neg → 0u64.wrapping_sub(acc); cutoff=ULLONG_MAX/base; host unsigned long long == target u64 (no LP32 trick); base 0 prefix logic; _LIBCNT_ no errno"
+reference    = "sdk/lib/crt/string/strtoull.c"
+fuzz_domain  = ["empty", "ws+sign", "no digits", "in range", "overflow→ULLONG_MAX", "negative (wrap)", "base 0/2/8/10/16/36", "0x prefix", "endptr=NULL", "junk after"]

@@ -72,6 +72,9 @@ extern "C" {
     fn ref_wcsspn(s: *const u16, a: *const u16) -> usize;
     fn ref_wcscspn(s: *const u16, a: *const u16) -> usize;
     fn ref_wcsstr(s: *const u16, b: *const u16) -> *mut u16;
+    fn ref_strtol(n: *const u8, e: *mut *mut u8, b: i32) -> i32;
+    fn ref_strtoull(n: *const u8, e: *mut *mut u8, b: i32) -> u64;
+    fn ref_wcstol(n: *const u16, e: *mut *mut u16, b: i32) -> i32;
 }
 
 use cnt_rust::cabi;
@@ -997,6 +1000,60 @@ fn diff_tcs_family() {
             cabi::wcsnlen(core::ptr::null(), 5),
             ref_wcsnlen(core::ptr::null(), 5)
         );
+    }
+}
+
+/// Wave G — BSD parse + endptr (strtol/wcstol signed-long clamp,
+/// strtoull u64). ASCII domain, sane bases. Pins value + endptr
+/// (incl. the any?s-1:nptr rule and the overflow→LONG_MIN/MAX /
+/// ULLONG_MAX clamps) vs genuine strtol.c/wcstol.c/strtoull.c.
+#[test]
+fn diff_strtol_family() {
+    let mut rng = Rng(0x6a17_0c2d_u64);
+    let bases = [0i32, 2, 8, 10, 16, 36];
+    let alpha = b" \t+-0xXabcdefABCDEF0123456789Zz";
+    for _ in 0..9000 {
+        let mut s: Vec<u8> = (0..rng.upto(24))
+            .map(|_| alpha[rng.upto(alpha.len())])
+            .collect();
+        s.push(0);
+        let base = bases[rng.upto(bases.len())];
+        let off = |p: *mut u8| {
+            if p == 1 as *mut u8 {
+                None
+            } else {
+                Some(p as usize - s.as_ptr() as usize)
+            }
+        };
+        // strtol / strtoull (narrow)
+        let (mut ec, mut er): (*mut u8, *mut u8) = (1 as *mut u8, 1 as *mut u8);
+        let cv = unsafe { cabi::strtol(s.as_ptr(), &mut ec, base) };
+        let rv = unsafe { ref_strtol(s.as_ptr(), &mut er, base) };
+        assert_eq!(cv, rv, "strtol v s={s:?} base={base}");
+        assert_eq!(off(ec), off(er), "strtol endptr s={s:?} base={base}");
+        let (mut uc, mut ur): (*mut u8, *mut u8) = (1 as *mut u8, 1 as *mut u8);
+        let ucv = unsafe { cabi::strtoull(s.as_ptr(), &mut uc, base) };
+        let urv = unsafe { ref_strtoull(s.as_ptr(), &mut ur, base) };
+        assert_eq!(ucv, urv, "strtoull v s={s:?} base={base}");
+        assert_eq!(off(uc), off(ur), "strtoull endptr s={s:?} base={base}");
+        // wcstol (wide)
+        let ws: Vec<u16> = s.iter().map(|&b| b as u16).collect();
+        let woff = |p: *mut u16| {
+            if p == 1 as *mut u16 {
+                None
+            } else {
+                Some((p as usize - ws.as_ptr() as usize) / 2)
+            }
+        };
+        let (mut wc, mut wr): (*mut u16, *mut u16) = (1 as *mut u16, 1 as *mut u16);
+        let wcv = unsafe { cabi::wcstol(ws.as_ptr(), &mut wc, base) };
+        let wrv = unsafe { ref_wcstol(ws.as_ptr(), &mut wr, base) };
+        assert_eq!(wcv, wrv, "wcstol v s={s:?} base={base}");
+        assert_eq!(woff(wc), woff(wr), "wcstol endptr s={s:?} base={base}");
+        // endptr == NULL path (value still correct, no write)
+        let cv2 = unsafe { cabi::strtol(s.as_ptr(), core::ptr::null_mut(), base) };
+        let rv2 = unsafe { ref_strtol(s.as_ptr(), core::ptr::null_mut(), base) };
+        assert_eq!(cv2, rv2, "strtol NULL-endptr s={s:?} base={base}");
     }
 }
 

@@ -753,6 +753,19 @@ pub unsafe extern "C" fn strstr(hay: *const u8, needle: *const u8) -> *mut u8 {
 }
 
 
+/// `long strtol(const char *nptr, char **endptr, int base)`
+/// preserved misfeature: BSD signed-long clamp: overflow → LONG_MIN/LONG_MAX (32-bit Win long); neg non-overflow = 0u32.wrapping_sub(acc); cutoff = neg?(ULONG)LONG_MAX+1:LONG_MAX; base 0 ⇒ 0x→16/0→8/else 10; no base validation; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn strtol(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i32 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_long_bsd(nptr_s, base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i32
+}
+
+
 /// `unsigned long strtoul(const char* nptr, char** end, int base)`
 /// preserved misfeature: delegates to _strtoul_l — same asymmetric clamp incl. neg>ULONG_MAX→1
 #[no_mangle]
@@ -768,6 +781,19 @@ pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) 
         1i64
     } else { r.value };
     v as u32 as u32
+}
+
+
+/// `unsigned long long strtoull(const char *nptr, char **endptr, int base)`
+/// preserved misfeature: BSD u64 clamp: overflow → ULLONG_MAX; neg → 0u64.wrapping_sub(acc); cutoff=ULLONG_MAX/base; host unsigned long long == target u64 (no LP32 trick); base 0 prefix logic; _LIBCNT_ no errno
+#[no_mangle]
+pub unsafe extern "C" fn strtoull(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> u64 {
+    let nptr_s = cstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_u64_bsd(nptr_s, base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as u64
 }
 
 
@@ -921,6 +947,19 @@ pub unsafe extern "C" fn wcsstr(s: *const u16, b: *const u16) -> *mut u16 {
         Some(i) => s.add(i) as *mut u16,
         None => core::ptr::null_mut(),
     }
+}
+
+
+/// `long wcstol(const wchar_t *nptr, wchar_t **endptr, int base)`
+/// preserved misfeature: wide twin of strtol (iswctype ASCII-equivalent); same signed-long clamp + endptr
+#[no_mangle]
+pub unsafe extern "C" fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> i32 {
+    let nptr_s = wcstr_slice(nptr);
+    let r = crate::core_rs::radix::parse_long_bsd(nptr_s, base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut _;
+    }
+    r.value as i32
 }
 
 
