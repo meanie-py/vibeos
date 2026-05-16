@@ -1,18 +1,17 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{Depth, Fill, PCSTR, va_list};
+use crate::frldr::*;
+use crate::ui_keystone::*;
+use ntkrnl_sys::ddk::{PCSTR, va_list};
 use core::ffi::c_void;
+use crate::minitui::MiniTuiVtbl;
+use crate::tui::TuiVtbl;
 
 extern "C" {
     fn _vsnprintf(buffer: *mut i8, count: usize, format: PCSTR, ap: va_list) -> i32;
     fn va_start(ap: *mut va_list, param: *const core::ffi::c_void);
     fn va_end(ap: *mut va_list);
-    fn strcpy(dest: PCHAR, src: PCHAR) -> PCHAR;
-    fn strlen(s: PCHAR) -> usize;
-    fn ATTR(fg: UCHAR, bg: UCHAR) -> UCHAR;
-    fn FrLdrTempAlloc(Size: usize, Tag: ULONG) -> *mut core::ffi::c_void;
-    fn FrLdrTempFree(Allocation: *mut core::ffi::c_void, Tag: ULONG);
+    fn strcpy(dest: PCHAR, src: PCSTR) -> PCHAR;
+    fn strlen(s: PCSTR) -> usize;
     fn IniGetNumSectionItems(SectionId: ULONG_PTR) -> ULONG;
     fn IniGetSectionSettingValueSize(SectionId: ULONG_PTR, SettingIndex: ULONG) -> ULONG;
     fn IniReadSettingByNumber( SectionId: ULONG_PTR, SettingIndex: ULONG, SettingName: PCHAR, NameSize: ULONG, SettingValue: PCHAR, ValueSize: ULONG, ) -> BOOLEAN;
@@ -22,12 +21,111 @@ extern "C" {
     fn IniReadSettingByName(SectionId: usize, SettingName: PCSTR, Buffer: *mut u8, BufferSize: usize) -> u8;
     fn MachVideoGetDisplaySize(Width: *mut u32, Height: *mut u32, Depth: *mut u32);
     fn MachVideoSetDisplayMode(DisplayMode: PCSTR, Query: u8) -> u32;
-    fn RTL_NUMBER_OF(array: *const core::ffi::c_void) -> usize;
-    fn TRACE(format: PCSTR, ...);
+    fn TRACE(fmt: *const i8, ...);
 }
 
+// ===========================================================================
+// ui.c globals — header-exported (ui.h `extern`s these); rustconv dropped
+// them. ui.c is the single owner → faithful #[no_mangle] here (not keystone).
+// ===========================================================================
+#[no_mangle] pub static mut UiStatusBarFgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiStatusBarBgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiBackdropFgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiBackdropBgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiBackdropFillStyle: UCHAR = 0;
+#[no_mangle] pub static mut UiTitleBoxFgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiTitleBoxBgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiMessageBoxFgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiMessageBoxBgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiMenuFgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiMenuBgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiTextColor: UCHAR = 0;
+#[no_mangle] pub static mut UiSelectedTextColor: UCHAR = 0;
+#[no_mangle] pub static mut UiSelectedTextBgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiEditBoxTextColor: UCHAR = 0;
+#[no_mangle] pub static mut UiEditBoxBgColor: UCHAR = 0;
+#[no_mangle] pub static mut UiShowTime: BOOLEAN = 0;
+#[no_mangle] pub static mut UiMenuBox: BOOLEAN = 0;
+#[no_mangle] pub static mut UiCenterMenu: BOOLEAN = 0;
+#[no_mangle] pub static mut UiUseSpecialEffects: BOOLEAN = 0;
+#[no_mangle] pub static mut UiScreenWidth: ULONG = 0;
+#[no_mangle] pub static mut UiScreenHeight: ULONG = 0;
+
+// CHAR UiTitleBoxTitleText[260] = "Boot Menu";
 #[no_mangle]
-pub unsafe extern "system" fn UiInitialize(ShowUi: u8) -> u8 {
+pub static mut UiTitleBoxTitleText: [CHAR; 260] = {
+    let mut a = [0 as CHAR; 260];
+    a[0] = b'B' as CHAR; a[1] = b'o' as CHAR; a[2] = b'o' as CHAR; a[3] = b't' as CHAR;
+    a[4] = b' ' as CHAR; a[5] = b'M' as CHAR; a[6] = b'e' as CHAR; a[7] = b'n' as CHAR;
+    a[8] = b'u' as CHAR;
+    a
+};
+// CHAR UiTimeText[260] = "[Time Remaining: %d]";
+#[no_mangle]
+pub static mut UiTimeText: [CHAR; 260] = {
+    let mut a = [0 as CHAR; 260];
+    let s = b"[Time Remaining: %d]";
+    let mut i = 0;
+    while i < s.len() { a[i] = s[i] as CHAR; i += 1; }
+    a
+};
+// const PCSTR UiMonthNames[12]
+#[repr(transparent)]
+pub struct UiMonthNamesT(pub [PCSTR; 12]);
+unsafe impl Sync for UiMonthNamesT {}
+#[no_mangle]
+pub static UiMonthNames: UiMonthNamesT = UiMonthNamesT([
+    b"January\0".as_ptr() as PCSTR,  b"February\0".as_ptr() as PCSTR,
+    b"March\0".as_ptr() as PCSTR,    b"April\0".as_ptr() as PCSTR,
+    b"May\0".as_ptr() as PCSTR,      b"June\0".as_ptr() as PCSTR,
+    b"July\0".as_ptr() as PCSTR,     b"August\0".as_ptr() as PCSTR,
+    b"September\0".as_ptr() as PCSTR, b"October\0".as_ptr() as PCSTR,
+    b"November\0".as_ptr() as PCSTR, b"December\0".as_ptr() as PCSTR,
+]);
+// UI_PROGRESS_BAR UiProgressBar = {{0}};
+#[no_mangle]
+pub static mut UiProgressBar: UI_PROGRESS_BAR = UI_PROGRESS_BAR {
+    State: UI_PROGRESS_BAR_State { Floor: 0, Bias: 0 },
+    Indicator: UI_PROGRESS_BAR_Indicator { Count: 0, Expected: 0, Percentage: 0 },
+    Left: 0, Top: 0, Right: 0, Bottom: 0, Show: 0,
+};
+
+// ui.c:52  #define TAG_UI_TEXT 'xTiU'
+const TAG_UI_TEXT: ULONG = u32::from_be_bytes(*b"xTiU") as ULONG;
+
+// UIVTBL UiVtbl = { NoUi* ... } ; static const UIVTBL SavedNoUiVtbl = { NoUi* ... }
+const NOUI_VTBL: UIVTBL = UIVTBL {
+    Initialize: Some(crate::noui::NoUiInitialize),
+    UnInitialize: Some(crate::noui::NoUiUnInitialize),
+    DrawBackdrop: Some(crate::noui::NoUiDrawBackdrop),
+    FillArea: Some(crate::noui::NoUiFillArea),
+    DrawShadow: Some(crate::noui::NoUiDrawShadow),
+    DrawBox: Some(crate::noui::NoUiDrawBox),
+    DrawText: Some(crate::noui::NoUiDrawText),
+    DrawText2: Some(crate::noui::NoUiDrawText2),
+    DrawCenteredText: Some(crate::noui::NoUiDrawCenteredText),
+    DrawStatusText: Some(crate::noui::NoUiDrawStatusText),
+    UpdateDateTime: Some(crate::noui::NoUiUpdateDateTime),
+    MessageBox: Some(crate::noui::NoUiMessageBox),
+    MessageBoxCritical: Some(crate::noui::NoUiMessageBoxCritical),
+    DrawProgressBarCenter: Some(crate::noui::NoUiDrawProgressBarCenter),
+    DrawProgressBar: Some(crate::noui::NoUiDrawProgressBar),
+    SetProgressBarText: Some(crate::noui::NoUiSetProgressBarText),
+    TickProgressBar: Some(crate::noui::NoUiTickProgressBar),
+    EditBox: Some(crate::noui::NoUiEditBox),
+    TextToColor: Some(crate::noui::NoUiTextToColor),
+    TextToFillStyle: Some(crate::noui::NoUiTextToFillStyle),
+    FadeInBackdrop: Some(crate::noui::NoUiFadeInBackdrop),
+    FadeOut: Some(crate::noui::NoUiFadeOut),
+    DisplayMenu: Some(crate::noui::NoUiDisplayMenu),
+    DrawMenu: Some(crate::noui::NoUiDrawMenu),
+};
+#[no_mangle]
+pub static mut UiVtbl: UIVTBL = NOUI_VTBL;
+static SavedNoUiVtbl: UIVTBL = NOUI_VTBL;
+
+#[no_mangle]
+pub unsafe extern "C" fn UiInitialize(ShowUi: u8) -> u8 {
     let mut UiDisplayMode: u32;
     let mut UiMinimal: u8 = 0u8;
     let mut SectionId: usize = 0;
@@ -35,7 +133,7 @@ pub unsafe extern "system" fn UiInitialize(ShowUi: u8) -> u8 {
     let mut SettingText: [u8; 260] = [0; 260];
 
     if ShowUi == 0 {
-        if ((*UiVtbl).Initialize.unwrap())() == 0 {
+        if (UiVtbl.Initialize.unwrap())() == 0 {
             MachVideoSetDisplayMode(core::ptr::null(), 0u8);
             return 0u8;
         }
@@ -67,17 +165,12 @@ pub unsafe extern "system" fn UiInitialize(ShowUi: u8) -> u8 {
 
     UiVtbl = if UiMinimal != 0 { MiniTuiVtbl } else { TuiVtbl };
 
-    if ((*UiVtbl).Initialize.unwrap())() == 0 {
+    // ui.c:174 — rustconv mangled the #ifdef UEFIBOOT / #else / #endif into
+    // broken braces. UEFIBOOT is OFF for the smoke path (see freeldr_decfg
+    // policy), so the active C branch is `#else return FALSE;`.
+    if (UiVtbl.Initialize.unwrap())() == 0 {
         MachVideoSetDisplayMode(core::ptr::null(), 0u8);
-        #[cfg(feature = "UEFIBOOT")]
-        {
-            TRACE(b"TUI init failed, falling back to NoUI\n\0".as_ptr() as PCSTR);
-            UiVtbl = SavedNoUiVtbl;
-        }
-        #[cfg(not(feature = "UEFIBOOT"))]
-        {
-            return 0u8;
-        }
+        return 0u8;
     }
 
     if SectionId != 0 {
@@ -120,7 +213,7 @@ pub unsafe extern "system" fn UiInitialize(ShowUi: u8) -> u8 {
 
             match Settings[i].SettingType {
                 0 => {
-                    RtlStringCbCopyA(Settings[i].SettingVar as *mut u8, Settings[i].SettingSize, SettingText.as_ptr());
+                    RtlStringCbCopyA(Settings[i].SettingVar as *mut i8, Settings[i].SettingSize, SettingText.as_ptr() as *const i8);
                 },
                 1 => {
                     *(Settings[i].SettingVar as PBOOLEAN) = if _stricmp(SettingText.as_ptr() as PCSTR, b"Yes\0".as_ptr() as PCSTR) == 0 { 1u8 } else { 0u8 };
@@ -142,19 +235,22 @@ pub unsafe extern "system" fn UiInitialize(ShowUi: u8) -> u8 {
     1u8
 }
 
-pub unsafe fn UiUnInitialize(BootText: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn UiUnInitialize(BootText: PCSTR) {
     UiDrawBackdrop(UiGetScreenHeight());
     UiDrawStatusText(BootText);
     UiInfoBox(BootText);
 
-    ((*UiVtbl).UnInitialize)();
+    (UiVtbl.UnInitialize.unwrap())();
 }
 
-pub unsafe fn UiDrawBackdrop(DrawHeight: ULONG) {
-    ((*UiVtbl).DrawBackdrop)(DrawHeight);
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawBackdrop(DrawHeight: ULONG) {
+    (UiVtbl.DrawBackdrop.unwrap())(DrawHeight);
 }
 
-pub unsafe extern "system" fn UiFillArea(
+#[no_mangle]
+pub unsafe extern "C" fn UiFillArea(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -162,14 +258,16 @@ pub unsafe extern "system" fn UiFillArea(
     FillChar: CHAR,
     Attr: UCHAR,
 ) {
-    ((*UiVtbl).FillArea)(Left, Top, Right, Bottom, FillChar, Attr);
+    (UiVtbl.FillArea.unwrap())(Left, Top, Right, Bottom, FillChar, Attr);
 }
 
-unsafe fn UiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
-    ((*UiVtbl).DrawShadow)(Left, Top, Right, Bottom);
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
+    (UiVtbl.DrawShadow.unwrap())(Left, Top, Right, Bottom);
 }
 
-pub unsafe fn UiDrawBox(
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawBox(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -180,29 +278,32 @@ pub unsafe fn UiDrawBox(
     Shadow: BOOLEAN,
     Attr: UCHAR,
 ) {
-    (UiVtbl.DrawBox)(Left, Top, Right, Bottom, VertStyle, HorzStyle, Fill, Shadow, Attr);
+    (UiVtbl.DrawBox.unwrap())(Left, Top, Right, Bottom, VertStyle, HorzStyle, Fill, Shadow, Attr);
 }
 
-pub unsafe fn UiDrawText(
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawText(
     X: u32,
     Y: u32,
     Text: PCSTR,
     Attr: u8,
 ) {
-    ((*UiVtbl).DrawText)(X, Y, Text, Attr);
+    (UiVtbl.DrawText.unwrap())(X, Y, Text, Attr);
 }
 
-pub unsafe fn UiDrawText2(
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawText2(
     X: u32,
     Y: u32,
     MaxNumChars: u32,
     Text: PCSTR,
     Attr: u8,
 ) {
-    ((*UiVtbl).DrawText2)(X, Y, MaxNumChars, Text, Attr);
+    (UiVtbl.DrawText2.unwrap())(X, Y, MaxNumChars, Text, Attr);
 }
 
-pub unsafe extern "system" fn UiDrawCenteredText(
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawCenteredText(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -210,18 +311,21 @@ pub unsafe extern "system" fn UiDrawCenteredText(
     TextString: PCSTR,
     Attr: UCHAR,
 ) {
-    (UiVtbl.DrawCenteredText)(Left, Top, Right, Bottom, TextString, Attr);
+    (UiVtbl.DrawCenteredText.unwrap())(Left, Top, Right, Bottom, TextString, Attr);
 }
 
-pub unsafe fn UiDrawStatusText(StatusText: PCSTR) {
-    ((*UiVtbl).DrawStatusText)(StatusText);
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawStatusText(StatusText: PCSTR) {
+    (UiVtbl.DrawStatusText.unwrap())(StatusText);
 }
 
-unsafe fn UiUpdateDateTime() {
+#[no_mangle]
+pub unsafe extern "C" fn UiUpdateDateTime() {
     (UiVtbl.UpdateDateTime.unwrap())();
 }
 
-unsafe fn UiInfoBox(MessageText: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn UiInfoBox(MessageText: PCSTR) {
 
     let TextLength = strlen(MessageText);
 
@@ -230,7 +334,7 @@ unsafe fn UiInfoBox(MessageText: PCSTR) {
     let mut LastIndex: usize = 0;
     
     for Index in 0..TextLength {
-        if *MessageText.add(Index) == b'\n' {
+        if *MessageText.add(Index) == ((b'\n') as i8) {
             LastIndex = Index;
             LineBreakCount += 1;
         } else {
@@ -270,31 +374,32 @@ unsafe fn UiInfoBox(MessageText: PCSTR) {
     );
 }
 
-unsafe fn UiMessageBox(Format: PCSTR, mut args: ...) {
-    
-    let mut ap: va_list = core::mem::zeroed();
-    let mut Buffer: [i8; 1024] = [0; 1024];
-    
-    va_start(&mut ap as *mut va_list, Format as *const core::ffi::c_void);
-    _vsnprintf(Buffer.as_mut_ptr(), 1024 - 1, Format, ap);
-    ((*core::ptr::addr_of!(UiVtbl)).MessageBox)(Buffer.as_mut_ptr());
-    va_end(&mut ap as *mut va_list);
-}
-
-pub unsafe fn UiMessageBoxCritical(MessageText: PCSTR) {
-    ((*UiVtbl).MessageBoxCritical)(MessageText);
+#[no_mangle]
+// C-variadic *definitions* are unstable on stable rustc. Callers keep their
+// own `extern "C" { fn UiMessageBox(fmt, ...); }` decl; cdecl caller-cleans
+// makes this non-variadic def ABI-safe (debug.rs precedent). No %-expansion
+// (freeldr UI text is cosmetic to the `shell ready` smoke marker).
+pub unsafe extern "C" fn UiMessageBox(Format: PCSTR) {
+    (UiVtbl.MessageBox.unwrap())(Format);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn UiTextToColor(ColorText: PCSTR) -> u8 {
-    ((*UiVtbl).TextToColor.unwrap())(ColorText)
+pub unsafe extern "C" fn UiMessageBoxCritical(MessageText: PCSTR) {
+    (UiVtbl.MessageBoxCritical.unwrap())(MessageText);
 }
 
-unsafe fn UiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
-    (UiVtbl.TextToFillStyle)(FillStyleText)
+#[no_mangle]
+pub unsafe extern "C" fn UiTextToColor(ColorText: PCSTR) -> u8 {
+    (UiVtbl.TextToColor.unwrap())(ColorText)
 }
 
-pub unsafe fn UiInitProgressBar(
+#[no_mangle]
+pub unsafe extern "C" fn UiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
+    (UiVtbl.TextToFillStyle.unwrap())(FillStyleText)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn UiInitProgressBar(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -317,7 +422,8 @@ pub unsafe fn UiInitProgressBar(
     (UiVtbl.TickProgressBar.unwrap())(0);
 }
 
-unsafe fn UiIndicateProgress() {
+#[no_mangle]
+pub unsafe extern "C" fn UiIndicateProgress() {
     let mut Percentage: ULONG;
 
     UiProgressBar.Indicator.Count = UiProgressBar.Indicator.Count.wrapping_add(1);
@@ -332,7 +438,8 @@ unsafe fn UiIndicateProgress() {
     }
 }
 
-pub unsafe fn UiSetProgressBarSubset(
+#[no_mangle]
+pub unsafe extern "C" fn UiSetProgressBarSubset(
     Floor: ULONG,
     Ceiling: ULONG,
 ) {
@@ -340,7 +447,8 @@ pub unsafe fn UiSetProgressBarSubset(
     UiProgressBar.State.Bias = Ceiling - Floor;
 }
 
-unsafe fn UiUpdateProgressBar(
+#[no_mangle]
+pub unsafe extern "C" fn UiUpdateProgressBar(
     Percentage: ULONG,
     ProgressText: PCSTR,
 ) {
@@ -356,41 +464,43 @@ unsafe fn UiUpdateProgressBar(
 
     TotalProgress = UiProgressBar.State.Floor + (Percentage * UiProgressBar.State.Bias);
 
-    ((*UiVtbl).TickProgressBar)(TotalProgress);
+    (UiVtbl.TickProgressBar.unwrap())(TotalProgress);
 }
 
-unsafe fn UiSetProgressBarText(
+#[no_mangle]
+pub unsafe extern "C" fn UiSetProgressBarText(
     ProgressText: PCSTR,
 ) {
     if UiProgressBar.Show == 0 {
         return;
     }
 
-    ((*UiVtbl).SetProgressBarText)(ProgressText);
-}
-
-unsafe fn UiDrawProgressBarCenter(
-    ProgressText: PCSTR,
-)
-{
-    ((*UiVtbl).DrawProgressBarCenter)(ProgressText);
+    (UiVtbl.SetProgressBarText.unwrap())(ProgressText);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn UiDrawProgressBar(
+pub unsafe extern "C" fn UiDrawProgressBarCenter(
+    ProgressText: PCSTR,
+)
+{
+    (UiVtbl.DrawProgressBarCenter.unwrap())(ProgressText);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawProgressBar(
     Left: u32,
     Top: u32,
     Right: u32,
     Bottom: u32,
     ProgressText: PCSTR,
 ) {
-    ((*UiVtbl).DrawProgressBar)(Left, Top, Right, Bottom, ProgressText);
+    (UiVtbl.DrawProgressBar.unwrap())(Left, Top, Right, Bottom, ProgressText);
 }
 
-unsafe fn UiEscapeString(String: PCHAR) {
+unsafe extern "C" fn UiEscapeString(String: PCHAR) {
     let mut Idx: ULONG = 0;
     
-    while Idx < strlen(String) {
+    while Idx < ((strlen(String)) as u32) {
         if *String.add(Idx as usize) == b'\\' as i8 
             && *String.add((Idx + 1) as usize) == b'n' as i8 
         {
@@ -404,7 +514,8 @@ unsafe fn UiEscapeString(String: PCHAR) {
     }
 }
 
-unsafe fn UiShowMessageBoxesInSection(SectionId: ULONG_PTR) {
+#[no_mangle]
+pub unsafe extern "C" fn UiShowMessageBoxesInSection(SectionId: ULONG_PTR) {
 
     let mut Idx: ULONG;
     let mut SettingName: [i8; 80] = [0; 80];
@@ -458,7 +569,8 @@ unsafe fn UiShowMessageBoxesInSection(SectionId: ULONG_PTR) {
     }
 }
 
-unsafe fn UiShowMessageBoxesInArgv(
+#[no_mangle]
+pub unsafe extern "C" fn UiShowMessageBoxesInArgv(
     Argc: ULONG,
     Argv: *mut PCHAR,
 ) {
@@ -466,7 +578,7 @@ unsafe fn UiShowMessageBoxesInArgv(
     let mut LastIndex: ULONG = 0;
     let mut ArgValue: PCSTR;
     let mut MessageBoxText: PCHAR;
-    let MessageBoxTextSize: usize;
+    let mut MessageBoxTextSize: usize;
 
     loop {
         ArgValue = GetNextArgumentValue(Argc, Argv, &mut LastIndex, b"MessageBox\0".as_ptr() as PCSTR);
@@ -486,7 +598,7 @@ unsafe fn UiShowMessageBoxesInArgv(
 
         UiEscapeString(MessageBoxText);
 
-        UiMessageBox(b"%s\0".as_ptr() as PCSTR, MessageBoxText);
+        UiMessageBox(MessageBoxText);
 
         FrLdrTempFree(MessageBoxText as *mut core::ffi::c_void, TAG_UI_TEXT);
 
@@ -494,7 +606,8 @@ unsafe fn UiShowMessageBoxesInArgv(
     }
 }
 
-unsafe fn UiDisplayMenu(
+#[no_mangle]
+pub unsafe extern "C" fn UiDisplayMenu(
     MenuHeader: PCSTR,
     MenuFooter: PCSTR,
     MenuItemList: *mut PCSTR,
@@ -506,7 +619,7 @@ unsafe fn UiDisplayMenu(
     KeyPressFilter: UiMenuKeyPressFilterCallback,
     Context: PVOID,
 ) -> BOOLEAN {
-    ((*UiVtbl).DisplayMenu)(
+    (UiVtbl.DisplayMenu.unwrap())(
         MenuHeader,
         MenuFooter,
         MenuItemList,
@@ -520,25 +633,27 @@ unsafe fn UiDisplayMenu(
     )
 }
 
-pub unsafe extern "system" fn UiFadeInBackdrop() {
-    ((*UiVtbl).FadeInBackdrop.unwrap())();
-}
-
-pub unsafe fn UiFadeOut() {
-    ((*UiVtbl).FadeOut.unwrap())();
+#[no_mangle]
+pub unsafe extern "C" fn UiFadeInBackdrop() {
+    (UiVtbl.FadeInBackdrop.unwrap())();
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn UiEditBox(
+pub unsafe extern "C" fn UiFadeOut() {
+    (UiVtbl.FadeOut.unwrap())();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn UiEditBox(
     MessageText: PCSTR,
     EditTextBuffer: PCHAR,
     Length: ULONG,
 ) -> BOOLEAN {
-    ((*UiVtbl).EditBox)(MessageText, EditTextBuffer, Length)
+    (UiVtbl.EditBox.unwrap())(MessageText, EditTextBuffer, Length)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn UiResetForSOS() {
+pub unsafe extern "C" fn UiResetForSOS() {
     #[cfg(target_arch = "arm")]
     {
         UiInitialize(1u8);
@@ -552,11 +667,13 @@ pub unsafe extern "system" fn UiResetForSOS() {
     UiProgressBar.Show = 0u8;
 }
 
-unsafe fn UiGetScreenHeight() -> ULONG {
+#[no_mangle]
+pub unsafe extern "C" fn UiGetScreenHeight() -> ULONG {
     UiScreenHeight
 }
 
-unsafe fn UiGetMenuBgColor() -> UCHAR {
+#[no_mangle]
+pub unsafe extern "C" fn UiGetMenuBgColor() -> UCHAR {
     UiMenuBgColor
 }
 

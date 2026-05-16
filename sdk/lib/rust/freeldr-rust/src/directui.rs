@@ -1,6 +1,5 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use crate::frldr::*;
 use ntkrnl_sys::ddk::{Depth, PCSTR};
 use core::ffi::c_void;
 
@@ -17,7 +16,8 @@ extern "C" {
     fn UiGetScreenHeight() -> ULONG;
 }
 
-unsafe fn UiInitialize(ShowUi: BOOLEAN) -> BOOLEAN {
+#[no_mangle]
+pub unsafe extern "C" fn UiInitialize(ShowUi: BOOLEAN) -> BOOLEAN {
     
     let mut Depth: ULONG = 0;
 
@@ -36,11 +36,13 @@ unsafe fn UiInitialize(ShowUi: BOOLEAN) -> BOOLEAN {
     return 1u8;
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn UiUnInitialize(BootText: PCSTR) {
     return;
 }
 
-unsafe fn UiDrawBackdrop(DrawHeight: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawBackdrop(DrawHeight: ULONG) {
     
     const COLOR_WHITE: u32 = 7;
     const COLOR_BLACK: u32 = 0;
@@ -48,7 +50,8 @@ unsafe fn UiDrawBackdrop(DrawHeight: ULONG) {
     MachVideoClearScreen(ATTR(COLOR_WHITE, COLOR_BLACK));
 }
 
-unsafe fn UiDrawText(
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawText(
     X: u32,
     Y: u32,
     Text: PCSTR,
@@ -58,7 +61,7 @@ unsafe fn UiDrawText(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn UiDrawText2(
+pub unsafe extern "C" fn UiDrawText2(
     X: u32,
     Y: u32,
     MaxNumChars: u32,
@@ -68,6 +71,7 @@ pub unsafe extern "system" fn UiDrawText2(
     TuiDrawText2(X, Y, MaxNumChars, Text, Attr);
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn UiDrawCenteredText(
     Left: ULONG,
     Top: ULONG,
@@ -79,32 +83,37 @@ pub unsafe extern "C" fn UiDrawCenteredText(
     TuiDrawCenteredText(Left, Top, Right, Bottom, TextString, Attr);
 }
 
-unsafe fn UiDrawStatusText(StatusText: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn UiDrawStatusText(StatusText: PCSTR) {
     return;
 }
 
-unsafe fn UiInfoBox(MessageText: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn UiInfoBox(MessageText: PCSTR) {
     TuiPrintf(MessageText);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn UiMessageBox(
+pub unsafe extern "C" fn UiMessageBox(
     MessageText: PCSTR,
 ) {
     
     TuiPrintf(MessageText);
 }
 
-unsafe fn UiMessageBoxCritical(MessageText: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn UiMessageBoxCritical(MessageText: PCSTR) {
     TuiPrintf(MessageText);
 }
 
-unsafe fn UiShowMessageBoxesInSection(
+#[no_mangle]
+pub unsafe extern "C" fn UiShowMessageBoxesInSection(
     SectionId: ULONG_PTR)
 {
     return;
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn UiShowMessageBoxesInArgv(
     Argc: u32,
     Argv: *mut PCHAR,
@@ -119,7 +128,8 @@ unsafe fn UiDrawMenu(
     MiniTuiDrawMenu(MenuInfo);
 }
 
-unsafe fn UiDisplayMenu(
+#[no_mangle]
+pub unsafe extern "C" fn UiDisplayMenu(
     MenuHeader: PCSTR,
     MenuFooter: PCSTR,
     MenuItemList: *const PCSTR,

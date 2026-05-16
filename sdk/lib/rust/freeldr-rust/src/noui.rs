@@ -1,27 +1,31 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{Fill, PCSTR};
+use crate::frldr::*;
+use crate::ui_keystone::*;
+use crate::ui::{UiStatusBarFgColor, UiStatusBarBgColor, UiBackdropFgColor, UiBackdropBgColor, UiBackdropFillStyle, UiTitleBoxFgColor, UiTitleBoxBgColor, UiMessageBoxFgColor, UiMessageBoxBgColor, UiMenuFgColor, UiMenuBgColor, UiTextColor, UiSelectedTextColor, UiSelectedTextBgColor, UiEditBoxTextColor, UiEditBoxBgColor, UiShowTime, UiMenuBox, UiCenterMenu, UiUseSpecialEffects, UiScreenWidth, UiScreenHeight, UiTitleBoxTitleText, UiTimeText, UiMonthNames, UiProgressBar, UiVtbl};
+use ntkrnl_sys::ddk::{PCSTR};
 use core::ffi::c_void;
 
 extern "C" {
-    fn printf(format: *const i8, ...) -> i32;
+    fn printf(fmt: *const i8, ...) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn TRACE(fmt: *const u8, ...);
+    fn TRACE(fmt: *const i8, ...);
     fn MachConsGetCh();
 }
 
-unsafe fn NoUiInitialize() -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiInitialize() -> u8 {
     1u8
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NoUiUnInitialize() {
+pub unsafe extern "C" fn NoUiUnInitialize() {
 }
 
-unsafe fn NoUiDrawBackdrop(DrawHeight: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawBackdrop(DrawHeight: ULONG) {
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn NoUiFillArea(
     Left: ULONG,
     Top: ULONG,
@@ -32,10 +36,12 @@ pub unsafe extern "C" fn NoUiFillArea(
 ) {
 }
 
-unsafe fn NoUiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
 }
 
-unsafe fn NoUiDrawBox(
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawBox(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -48,7 +54,8 @@ unsafe fn NoUiDrawBox(
 ) {
 }
 
-unsafe fn NoUiDrawText(
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawText(
     X: ULONG,
     Y: ULONG,
     Text: PCSTR,
@@ -57,7 +64,8 @@ unsafe fn NoUiDrawText(
     printf(b"%s\n\0".as_ptr() as *const i8, Text);
 }
 
-unsafe fn NoUiDrawText2(
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawText2(
     X: u32,
     Y: u32,
     MaxNumChars: u32,
@@ -71,7 +79,8 @@ unsafe fn NoUiDrawText2(
     printf(b"%*s\n\0".as_ptr() as *const i8, MaxNumChars, Text);
 }
 
-unsafe fn NoUiDrawCenteredText(
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawCenteredText(
     Left: u32,
     Top: u32,
     Right: u32,
@@ -83,45 +92,46 @@ unsafe fn NoUiDrawCenteredText(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NoUiDrawStatusText(StatusText: PCSTR) {
+pub unsafe extern "C" fn NoUiDrawStatusText(StatusText: PCSTR) {
     printf(b"%s\n\0".as_ptr() as *const i8, StatusText);
 }
 
-unsafe fn NoUiUpdateDateTime() {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiUpdateDateTime() {
 }
 
-unsafe fn NoUiMessageBox(MessageText: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiMessageBox(MessageText: PCSTR) {
     NoUiMessageBoxCritical(MessageText);
 }
 
-unsafe fn NoUiMessageBoxCritical(MessageText: PCSTR) {
-    #[cfg(feature = "UEFIBOOT")]
-    {
-        TRACE(b"NoUiMessageBox: %s\n\0".as_ptr(), MessageText);
-        return;
-    }
-    #[cfg(not(feature = "UEFIBOOT"))]
-    {
-        printf(b"%s\n\0".as_ptr(), MessageText);
-        printf(b"Press any key\n\0".as_ptr());
-        MachConsGetCh();
-    }
+#[no_mangle]
+pub unsafe extern "C" fn NoUiMessageBoxCritical(MessageText: PCSTR) {
+    // noui.c:100 — `#ifdef UEFIBOOT TRACE;return; #endif` then unconditional
+    // printf. UEFIBOOT off (smoke path) → printf variant only.
+    printf(((b"%s\n\0".as_ptr()) as *const i8), MessageText);
+    printf(((b"Press any key\n\0".as_ptr()) as *const i8));
+    MachConsGetCh();
 }
 
-unsafe fn NoUiSetProgressBarText(ProgressText: PCSTR) {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiSetProgressBarText(ProgressText: PCSTR) {
 }
 
-unsafe fn NoUiTickProgressBar(
+#[no_mangle]
+pub unsafe extern "C" fn NoUiTickProgressBar(
     SubPercentTimes100: ULONG)
 {
 }
 
-unsafe fn NoUiDrawProgressBarCenter(
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawProgressBarCenter(
     ProgressText: PCSTR)
 {
 }
 
-unsafe fn NoUiDrawProgressBar(
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawProgressBar(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -131,7 +141,7 @@ unsafe fn NoUiDrawProgressBar(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NoUiEditBox(
+pub unsafe extern "C" fn NoUiEditBox(
     MessageText: PCSTR,
     EditTextBuffer: PCHAR,
     Length: ULONG,
@@ -139,25 +149,29 @@ pub unsafe extern "system" fn NoUiEditBox(
     return 0u8;
 }
 
-unsafe fn NoUiTextToColor(ColorText: PCSTR) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiTextToColor(ColorText: PCSTR) -> u8 {
     0
 }
 
-unsafe fn NoUiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
     return 0;
 }
 
-unsafe fn NoUiFadeInBackdrop() {
-}
-
-unsafe fn NoUiFadeOut() {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiFadeInBackdrop() {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn NoUiDisplayMenu(
+pub unsafe extern "C" fn NoUiFadeOut() {
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDisplayMenu(
     MenuHeader: PCSTR,
     MenuFooter: PCSTR,
-    MenuItemList: *const PCSTR,
+    MenuItemList: *mut PCSTR,
     MenuItemCount: ULONG,
     DefaultMenuItem: ULONG,
     MenuTimeOut: LONG,
@@ -170,7 +184,8 @@ pub unsafe extern "system" fn NoUiDisplayMenu(
     1u8
 }
 
-unsafe fn NoUiDrawMenu(MenuInfo: PUI_MENU_INFO) {
+#[no_mangle]
+pub unsafe extern "C" fn NoUiDrawMenu(MenuInfo: PUI_MENU_INFO) {
 }
 
 
@@ -279,7 +294,7 @@ unsafe fn NoUiDrawMenu(MenuInfo: PUI_MENU_INFO) {
 //      */
 // #ifdef UEFIBOOT
 //     /* Use debug serial output, not framebuffer printf */
-//     TRACE("NoUiMessageBox: %s\n", MessageText);
+//     TRACE("NoUiMessageBox: %s\n", (MessageText) as usize);
 //     return;
 // #else
 //     printf("%s\n", MessageText);

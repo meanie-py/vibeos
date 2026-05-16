@@ -63,14 +63,20 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
 list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
     settings.c
+    # ui unit → Rust (freeldr-rust: ui/tui/tuimenu/minitui/noui/video.rs).
+    # ui/directui.c is `#if 0` dead code in C (compiles to nothing) and the
+    # Rust directui.rs is deliberately NOT wired — symmetric, kept on disk.
+    # ui/gui.c untranslated (already commented). Cohabitation: .c kept on
+    # disk, Rust #[no_mangle] takes over.
     ui/directui.c
     # ui/gui.c
-    ui/minitui.c
-    ui/noui.c
-    ui/tui.c
-    ui/tuimenu.c
-    ui/ui.c
-    ui/video.c)
+    # ui/minitui.c  # replaced by Rust (freeldr-rust/src/minitui.rs)
+    # ui/noui.c     # replaced by Rust (freeldr-rust/src/noui.rs)
+    # ui/tui.c      # replaced by Rust (freeldr-rust/src/tui.rs)
+    # ui/tuimenu.c  # replaced by Rust (freeldr-rust/src/tuimenu.rs)
+    # ui/ui.c       # replaced by Rust (freeldr-rust/src/ui.rs)
+    # ui/video.c    # replaced by Rust (freeldr-rust/src/video.rs)
+    )
 
 list(APPEND FREELDR_NTLDR_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c

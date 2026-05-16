@@ -1,8 +1,13 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{Red};
+use crate::frldr::*;
+use crate::ui_keystone::*;
 use core::ffi::c_void;
+
+// video.c file-local data/#defines rustconv dropped.
+const RGB_MAX: ULONG = 64;
+const RGB_MAX_PER_ITERATION: ULONG = 64;
+const TAG_PALETTE_COLORS: ULONG = u32::from_be_bytes(*b"claP") as ULONG;
+static mut VideoOffScreenBuffer: PVOID = core::ptr::null_mut();
 
 extern "C" {
     fn MmFreeMemory(ptr: *mut core::ffi::c_void);
@@ -14,7 +19,8 @@ extern "C" {
     fn MmAllocateMemoryWithType(size: u32, type_: u32) -> *mut core::ffi::c_void;
 }
 
-unsafe fn VideoAllocateOffScreenBuffer() -> *mut core::ffi::c_void {
+#[no_mangle]
+pub unsafe extern "C" fn VideoAllocateOffScreenBuffer() -> *mut core::ffi::c_void {
 
     let BufferSize: u32;
 
@@ -27,7 +33,8 @@ unsafe fn VideoAllocateOffScreenBuffer() -> *mut core::ffi::c_void {
     return VideoOffScreenBuffer;
 }
 
-unsafe fn VideoFreeOffScreenBuffer() {
+#[no_mangle]
+pub unsafe extern "C" fn VideoFreeOffScreenBuffer() {
     if VideoOffScreenBuffer.is_null() {
         return;
     }
@@ -36,11 +43,13 @@ unsafe fn VideoFreeOffScreenBuffer() {
     VideoOffScreenBuffer = core::ptr::null_mut();
 }
 
-unsafe fn VideoCopyOffScreenBufferToVRAM() {
+#[no_mangle]
+pub unsafe extern "C" fn VideoCopyOffScreenBufferToVRAM() {
     MachVideoCopyOffScreenBufferToVRAM(VideoOffScreenBuffer);
 }
 
-unsafe fn VideoSavePaletteState(Palette: *mut PALETTE_ENTRY, ColorCount: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn VideoSavePaletteState(Palette: *mut PALETTE_ENTRY, ColorCount: ULONG) {
 
     let mut Color: ULONG = 0;
     while Color < ColorCount {
@@ -54,7 +63,8 @@ unsafe fn VideoSavePaletteState(Palette: *mut PALETTE_ENTRY, ColorCount: ULONG) 
     }
 }
 
-unsafe fn VideoRestorePaletteState(Palette: PPALETTE_ENTRY, ColorCount: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn VideoRestorePaletteState(Palette: PPALETTE_ENTRY, ColorCount: ULONG) {
 
     let mut Color: ULONG;
 
@@ -73,7 +83,7 @@ unsafe fn VideoRestorePaletteState(Palette: PPALETTE_ENTRY, ColorCount: ULONG) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn VideoSetAllColorsToBlack(ColorCount: ULONG) {
+pub unsafe extern "C" fn VideoSetAllColorsToBlack(ColorCount: ULONG) {
 
     MachVideoSync();
 
@@ -84,7 +94,8 @@ pub unsafe extern "system" fn VideoSetAllColorsToBlack(ColorCount: ULONG) {
     }
 }
 
-unsafe fn VideoFadeIn(Palette: PPALETTE_ENTRY, ColorCount: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn VideoFadeIn(Palette: PPALETTE_ENTRY, ColorCount: ULONG) {
     let mut Index: ULONG;
     let mut Color: UCHAR;
     let PaletteColors: PPALETTE_ENTRY;
@@ -153,12 +164,13 @@ unsafe fn VideoFadeIn(Palette: PPALETTE_ENTRY, ColorCount: ULONG) {
     FrLdrTempFree(PaletteColors as PVOID, TAG_PALETTE_COLORS);
 }
 
-unsafe fn VideoFadeOut(ColorCount: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn VideoFadeOut(ColorCount: ULONG) {
     let mut Index: ULONG;
     let mut Color: UCHAR;
-    let mut Red: UCHAR;
-    let mut Green: UCHAR;
-    let mut Blue: UCHAR;
+    let mut Red: UCHAR = 0;
+    let mut Green: UCHAR = 0;
+    let mut Blue: UCHAR = 0;
 
     Index = 0;
     while Index < RGB_MAX {

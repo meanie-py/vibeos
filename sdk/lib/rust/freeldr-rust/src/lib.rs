@@ -47,13 +47,13 @@ pub mod fat;
 
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
-// pub mod ui_keystone;
-// pub mod ui;
-// pub mod tui;
-// pub mod tuimenu;
-// pub mod minitui;
-// pub mod noui;
-// pub mod video;
+pub mod ui_keystone;
+pub mod ui;
+pub mod tui;
+pub mod tuimenu;
+pub mod minitui;
+pub mod noui;
+pub mod video;
 
 
 #[panic_handler]

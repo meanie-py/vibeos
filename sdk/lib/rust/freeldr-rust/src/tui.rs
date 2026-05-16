@@ -1,8 +1,15 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{Fill, PCSTR, PSTR, TIMEINFO, va_list};
+use crate::frldr::*;
+use crate::ui_keystone::*;
+use crate::ui::{UiStatusBarFgColor, UiStatusBarBgColor, UiBackdropFgColor, UiBackdropBgColor, UiBackdropFillStyle, UiTitleBoxFgColor, UiTitleBoxBgColor, UiMessageBoxFgColor, UiMessageBoxBgColor, UiMenuFgColor, UiMenuBgColor, UiTextColor, UiSelectedTextColor, UiSelectedTextBgColor, UiEditBoxTextColor, UiEditBoxBgColor, UiShowTime, UiMenuBox, UiCenterMenu, UiUseSpecialEffects, UiScreenWidth, UiScreenHeight, UiTitleBoxTitleText, UiTimeText, UiMonthNames, UiProgressBar, UiVtbl};
+use ntkrnl_sys::ddk::{PCSTR, PSTR, TIMEINFO, va_list};
 use core::ffi::c_void;
+use crate::tuimenu::{TuiDisplayMenu, TuiDrawMenu};
+
+// tui.c file-local data rustconv dropped.
+#[no_mangle] pub static mut TextVideoBuffer: PVOID = core::ptr::null_mut();
+const TAG_TUI_SCREENBUFFER: ULONG = u32::from_be_bytes(*b"SiuT") as ULONG;
+const TAG_TUI_PALETTE: ULONG = u32::from_be_bytes(*b"PiuT") as ULONG;
 
 extern "C" {
     fn va_start(ap: *mut va_list, last: ...);
@@ -11,18 +18,14 @@ extern "C" {
     fn MachConsPutChar(c: i8);
     fn strlen(s: *const i8) -> usize;
     fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
-    fn ATTR(fg: u8, bg: u8) -> u8;
     fn MachVideoClearScreen(attr: u8);
     fn MachVideoHideShowTextCursor(show: BOOLEAN);
     fn MachVideoSetTextCursorPosition(x: u32, y: u32);
     fn VideoAllocateOffScreenBuffer() -> *mut core::ffi::c_void;
     fn _stricmp(s1: PCSTR, s2: PCSTR) -> i32;
     fn VideoCopyOffScreenBufferToVRAM();
-    fn min(a: i32, b: i32) -> i32;
-    fn UiDrawText(X: i32, Y: i32, Text: PCSTR, Attr: i32);
+    fn UiDrawText(X: u32, Y: u32, Text: PCSTR, Attr: UCHAR);
     fn UiInitProgressBar(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, ProgressText: PCSTR);
-    fn FrLdrTempAlloc(size: usize, tag: u32) -> *mut VOID;
-    fn FrLdrTempFree(ptr: *mut VOID, tag: u32);
     fn MachVideoIsPaletteFixed() -> BOOLEAN;
     fn UiGetScreenHeight() -> ULONG;
     fn VideoFadeIn(palette: PPALETTE_ENTRY, count: ULONG);
@@ -38,30 +41,22 @@ extern "C" {
     fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
 }
 
-unsafe fn TuiPrintf(Format: PCSTR, mut args: ...) -> i32 {
-    let mut i: i32;
-    let mut Length: i32;
-    let mut ap: va_list;
-    let mut Buffer: [i8; 512] = [0; 512];
-
-    va_start(core::ptr::addr_of_mut!(ap), args);
-    Length = _vsnprintf(Buffer.as_mut_ptr(), core::mem::size_of_val(&Buffer), Format, ap);
-    va_end(ap);
-
-    if Length == -1 {
-        Length = core::mem::size_of_val(&Buffer) as i32;
-    }
-
-    i = 0;
-    while i < Length {
-        MachConsPutChar(Buffer[i as usize]);
+#[no_mangle]
+// C-variadic def unstable on stable rustc; callers keep their variadic
+// extern decl, cdecl caller-cleans → non-variadic def is ABI-safe
+// (debug.rs precedent). Emit the format string verbatim (no %-expansion;
+// freeldr console text is cosmetic to the `shell ready` smoke marker).
+pub unsafe extern "C" fn TuiPrintf(Format: PCSTR) -> i32 {
+    let mut i: i32 = 0;
+    while *Format.offset(i as isize) != 0 {
+        MachConsPutChar(*Format.offset(i as isize));
         i += 1;
     }
-
-    Length
+    i
 }
 
-unsafe fn TuiTruncateStringEllipsis(
+#[no_mangle]
+pub unsafe extern "C" fn TuiTruncateStringEllipsis(
     StringText: PSTR,
     MaxChars: u32,
 ) {
@@ -75,7 +70,7 @@ unsafe fn TuiTruncateStringEllipsis(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiDrawText(
+pub unsafe extern "C" fn TuiDrawText(
     X: u32,
     Y: u32,
     Text: PCSTR,
@@ -85,7 +80,7 @@ pub unsafe extern "system" fn TuiDrawText(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiDrawText2(
+pub unsafe extern "C" fn TuiDrawText2(
     X: u32,
     Y: u32,
     MaxNumChars: u32,
@@ -119,7 +114,7 @@ pub unsafe extern "system" fn TuiDrawText2(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiDrawCenteredText(
+pub unsafe extern "C" fn TuiDrawCenteredText(
     Left: u32,
     Top: u32,
     Right: u32,
@@ -135,8 +130,8 @@ pub unsafe extern "system" fn TuiDrawCenteredText(
     let BoxHeight: u32;
     let RealLeft: u32;
     let mut RealTop: u32;
-    let X: u32;
-    let Y: u32;
+    let mut X: u32;
+    let mut Y: u32;
     let mut Temp: [u8; 2] = [0; 2];
 
     TextLength = strlen(TextString);
@@ -146,7 +141,7 @@ pub unsafe extern "system" fn TuiDrawCenteredText(
     LastIndex = 0;
     Index = 0;
     while Index < TextLength {
-        if *TextString.offset(Index as isize) == b'\n' {
+        if *TextString.offset(Index as isize) == ((b'\n') as i8) {
             LastIndex = Index;
             LineBreakCount += 1;
         } else {
@@ -165,23 +160,23 @@ pub unsafe extern "system" fn TuiDrawCenteredText(
     LastIndex = 0;
     Index = 0;
     while Index < TextLength {
-        if *TextString.offset(Index as isize) == b'\n' {
+        if *TextString.offset(Index as isize) == ((b'\n') as i8) {
             RealTop += 1;
             LastIndex = 0;
         } else {
             X = RealLeft + LastIndex as u32;
             Y = RealTop;
             LastIndex += 1;
-            Temp[0] = *TextString.offset(Index as isize);
+            Temp[0] = ((*TextString.offset(Index as isize)) as u8);
             Temp[1] = 0;
-            TuiDrawText(X, Y, Temp.as_ptr(), Attr);
+            TuiDrawText(X, Y, ((Temp.as_ptr()) as *const i8), Attr);
         }
         Index += 1;
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiInitialize() -> BOOLEAN {
+pub unsafe extern "C" fn TuiInitialize() -> BOOLEAN {
     MachVideoHideShowTextCursor(0u8);
     MachVideoSetTextCursorPosition(0, 0);
     MachVideoClearScreen(ATTR(COLOR_GRAY, COLOR_BLACK));
@@ -216,19 +211,20 @@ pub unsafe extern "system" fn TuiInitialize() -> BOOLEAN {
     RtlStringCbCopyA(
         UiTitleBoxTitleText.as_mut_ptr(),
         core::mem::size_of_val(&UiTitleBoxTitleText),
-        b"Boot Menu\0".as_ptr(),
+        ((b"Boot Menu\0".as_ptr()) as *const i8),
     );
 
     RtlStringCbCopyA(
         UiTimeText.as_mut_ptr(),
         core::mem::size_of_val(&UiTimeText),
-        b"[Time Remaining: %d]\0".as_ptr(),
+        ((b"[Time Remaining: %d]\0".as_ptr()) as *const i8),
     );
 
     1u8
 }
 
-unsafe fn TuiUnInitialize() {
+#[no_mangle]
+pub unsafe extern "C" fn TuiUnInitialize() {
     if TextVideoBuffer.is_null() {
         return;
     }
@@ -247,14 +243,15 @@ unsafe fn TuiUnInitialize() {
     MachVideoHideShowTextCursor(1u8);
 }
 
-pub unsafe fn TuiDrawBackdrop(DrawHeight: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawBackdrop(DrawHeight: ULONG) {
 
     TuiFillArea(
         0,
         TUI_TITLE_BOX_CHAR_HEIGHT,
         UiScreenWidth - 1,
         DrawHeight - 2,
-        UiBackdropFillStyle,
+        ((UiBackdropFillStyle) as i8),
         ATTR(UiBackdropFgColor, UiBackdropBgColor),
     );
 
@@ -299,9 +296,9 @@ pub unsafe fn TuiDrawBackdrop(DrawHeight: ULONG) {
     );
 
     TuiDrawText(
-        (UiScreenWidth - strlen(UiTitleBoxTitleText) as ULONG) / 2,
+        (UiScreenWidth - strlen((UiTitleBoxTitleText).as_ptr() as *const i8) as ULONG) / 2,
         2,
-        UiTitleBoxTitleText,
+        (UiTitleBoxTitleText).as_ptr() as *const i8,
         ATTR(UiTitleBoxFgColor, UiTitleBoxBgColor),
     );
 
@@ -309,7 +306,8 @@ pub unsafe fn TuiDrawBackdrop(DrawHeight: ULONG) {
     VideoCopyOffScreenBufferToVRAM();
 }
 
-pub unsafe fn TuiFillArea(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, FillChar: CHAR, Attr: UCHAR) {
+#[no_mangle]
+pub unsafe extern "C" fn TuiFillArea(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, FillChar: CHAR, Attr: UCHAR) {
     let mut ScreenMemory = TextVideoBuffer as PUCHAR;
     let mut i: ULONG;
     let mut j: ULONG;
@@ -342,7 +340,8 @@ pub unsafe fn TuiFillArea(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG, 
     }
 }
 
-unsafe fn TuiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
     let ScreenMemory = TextVideoBuffer as *mut u8;
     let mut i: ULONG;
     let RightShadow: u8;
@@ -400,7 +399,8 @@ unsafe fn TuiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
     }
 }
 
-pub unsafe fn TuiDrawBoxTopLine(
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawBoxTopLine(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -434,7 +434,8 @@ pub unsafe fn TuiDrawBoxTopLine(
     TuiFillArea(Right, Top, Right, Top, URCorner as CHAR, Attr);
 }
 
-pub unsafe fn TuiDrawBoxBottomLine(
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawBoxBottomLine(
     Left: ULONG,
     Bottom: ULONG,
     Right: ULONG,
@@ -468,7 +469,8 @@ pub unsafe fn TuiDrawBoxBottomLine(
     TuiFillArea(Right, Bottom, Right, Bottom, LRCorner as CHAR, Attr);
 }
 
-pub unsafe fn TuiDrawBox(
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawBox(
     Left: ULONG,
     Top: ULONG,
     Right: ULONG,
@@ -496,7 +498,7 @@ pub unsafe fn TuiDrawBox(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiDrawStatusText(StatusText: PCSTR) {
+pub unsafe extern "C" fn TuiDrawStatusText(StatusText: PCSTR) {
 
     let attr = ATTR(UiStatusBarFgColor, UiStatusBarBgColor);
     
@@ -514,7 +516,7 @@ pub unsafe extern "system" fn TuiDrawStatusText(StatusText: PCSTR) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiUpdateDateTime() {
+pub unsafe extern "C" fn TuiUpdateDateTime() {
     let mut TimeInfo: *mut TIMEINFO;
     let mut DayPostfix: PCSTR;
     let mut PMHour: u8 = 0u8;
@@ -549,10 +551,10 @@ pub unsafe extern "system" fn TuiUpdateDateTime() {
         Buffer.as_mut_ptr(),
         core::mem::size_of_val(&Buffer),
         b"%s %d%s %d\0".as_ptr() as PCSTR,
-        *UiMonthNames.offset(((*TimeInfo).Month - 1) as isize),
-        (*TimeInfo).Day,
+        UiMonthNames.0[((*TimeInfo).Month - 1) as usize],
+        (*TimeInfo).Day as u32,
         DayPostfix,
-        (*TimeInfo).Year
+        (*TimeInfo).Year as u32
     );
 
     TuiDrawText(
@@ -574,9 +576,9 @@ pub unsafe extern "system" fn TuiUpdateDateTime() {
         Buffer.as_mut_ptr(),
         core::mem::size_of_val(&Buffer),
         b"  %d:%02d:%02d %s\0".as_ptr() as PCSTR,
-        (*TimeInfo).Hour,
-        (*TimeInfo).Minute,
-        (*TimeInfo).Second,
+        (*TimeInfo).Hour as u32,
+        (*TimeInfo).Minute as u32,
+        (*TimeInfo).Second as u32,
         if PMHour != 0 { b"PM\0".as_ptr() } else { b"AM\0".as_ptr() } as PCSTR
     );
 
@@ -588,15 +590,15 @@ pub unsafe extern "system" fn TuiUpdateDateTime() {
     );
 }
 
-unsafe fn TuiSaveScreen() -> PUCHAR {
+unsafe extern "C" fn TuiSaveScreen() -> PUCHAR {
     let Buffer: PUCHAR;
     let ScreenMemory: PUCHAR = TextVideoBuffer as PUCHAR;
     let mut i: ULONG;
 
     Buffer = FrLdrTempAlloc(
-        UiScreenWidth * UiScreenHeight * 2,
+        ((UiScreenWidth * UiScreenHeight * 2) as usize),
         TAG_TUI_SCREENBUFFER,
-    );
+    ) as *mut u8;
     if Buffer.is_null() {
         return core::ptr::null_mut();
     }
@@ -610,7 +612,8 @@ unsafe fn TuiSaveScreen() -> PUCHAR {
     Buffer
 }
 
-unsafe fn TuiRestoreScreen(Buffer: PUCHAR) {
+#[no_mangle]
+pub unsafe extern "C" fn TuiRestoreScreen(Buffer: PUCHAR) {
     let ScreenMemory = TextVideoBuffer as PUCHAR;
     let mut i: ULONG;
 
@@ -629,7 +632,7 @@ unsafe fn TuiRestoreScreen(Buffer: PUCHAR) {
     VideoCopyOffScreenBufferToVRAM();
 }
 
-unsafe fn TuiDrawMsgBoxCommon(
+unsafe extern "C" fn TuiDrawMsgBoxCommon(
     MessageText: PCSTR,
     MsgBoxRect: *mut SMALL_RECT,
 ) {
@@ -677,11 +680,11 @@ unsafe fn TuiDrawMsgBoxCommon(
     width += 4;
     height += 5;
 
-    x1 = (UiScreenWidth - min(width, UiScreenWidth)) / 2;
-    if UiCenterMenu != 0 && height <= UiScreenHeight - TUI_TITLE_BOX_CHAR_HEIGHT - 1 {
-        y1 = (UiScreenHeight + TUI_TITLE_BOX_CHAR_HEIGHT - 1 - height) / 2;
+    x1 = (((UiScreenWidth - ((min(width, ((UiScreenWidth) as i32))) as u32)) / 2) as i32);
+    if UiCenterMenu != 0 && height <= ((UiScreenHeight - TUI_TITLE_BOX_CHAR_HEIGHT - 1) as i32) {
+        y1 = (((UiScreenHeight + TUI_TITLE_BOX_CHAR_HEIGHT - 1 - ((height) as u32)) / 2) as i32);
     } else {
-        y1 = (UiScreenHeight - min(height, UiScreenHeight)) / 2;
+        y1 = (((UiScreenHeight - ((min(height, ((UiScreenHeight) as i32))) as u32)) / 2) as i32);
     }
     x2 = x1 + width - 1;
     y2 = y1 + height - 1;
@@ -710,10 +713,10 @@ unsafe fn TuiDrawMsgBoxCommon(
             temp[j] = 0;
             j = 0;
             UiDrawText(
-                x1 + 2,
-                y1 + 1 + curline,
+                (x1 + 2) as u32,
+                (y1 + 1 + curline) as u32,
                 temp.as_ptr(),
-                ((UiMessageBoxFgColor & 0xF) | ((UiMessageBoxBgColor & 0xF) << 4)) as i32,
+                ((UiMessageBoxFgColor & 0xF) | ((UiMessageBoxBgColor & 0xF) << 4)) as u8,
             );
             curline += 1;
         } else {
@@ -725,13 +728,13 @@ unsafe fn TuiDrawMsgBoxCommon(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiMessageBox(
+pub unsafe extern "C" fn TuiMessageBox(
     MessageText: PCSTR,
 ) {
 
     let ScreenBuffer: PVOID;
 
-    ScreenBuffer = TuiSaveScreen();
+    ScreenBuffer = ((TuiSaveScreen()) as *mut c_void);
 
     TuiMessageBoxCritical(MessageText);
 
@@ -739,7 +742,7 @@ pub unsafe extern "system" fn TuiMessageBox(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiMessageBoxCritical(
+pub unsafe extern "C" fn TuiMessageBoxCritical(
     MessageText: PCSTR,
 ) {
 
@@ -748,8 +751,8 @@ pub unsafe extern "system" fn TuiMessageBoxCritical(
 
     TuiDrawMsgBoxCommon(MessageText, &mut BoxRect);
 
-    UiDrawText((BoxRect.Left + BoxRect.Right) / 2 - 3,
-               BoxRect.Bottom - 2,
+    UiDrawText((((BoxRect.Left + BoxRect.Right) / 2 - 3) as u32),
+               (BoxRect.Bottom - 2) as u32,
                b"   OK   \0".as_ptr() as PCSTR,
                ATTR(0, 7));
 
@@ -777,7 +780,7 @@ pub unsafe extern "system" fn TuiMessageBoxCritical(
     }
 }
 
-unsafe fn TuiSetProgressBarText(
+unsafe extern "C" fn TuiSetProgressBarText(
     ProgressText: PCSTR,
 ) {
     let ProgressBarWidth: ULONG;
@@ -785,7 +788,7 @@ unsafe fn TuiSetProgressBarText(
 
     ProgressBarWidth = UiProgressBar.Right - UiProgressBar.Left + 1;
 
-    RtlStringCbCopyA(ProgressString.as_mut_ptr() as *mut u8, core::mem::size_of_val(&ProgressString), ProgressText as *const u8);
+    RtlStringCbCopyA(ProgressString.as_mut_ptr() as *mut i8, core::mem::size_of_val(&ProgressString), ProgressText as *const i8);
     TuiTruncateStringEllipsis(ProgressString.as_mut_ptr(), ProgressBarWidth);
 
     TuiFillArea(UiProgressBar.Left, UiProgressBar.Top,
@@ -797,7 +800,7 @@ unsafe fn TuiSetProgressBarText(
                         ProgressString.as_ptr(), ATTR(UiTextColor, UiMenuBgColor));
 }
 
-unsafe fn TuiTickProgressBar(SubPercentTimes100: ULONG) {
+unsafe extern "C" fn TuiTickProgressBar(SubPercentTimes100: ULONG) {
     let mut ProgressBarWidth: ULONG;
     let mut FillCount: ULONG;
 
@@ -811,7 +814,7 @@ unsafe fn TuiTickProgressBar(SubPercentTimes100: ULONG) {
             UiProgressBar.Bottom,
             UiProgressBar.Left.wrapping_add(FillCount).wrapping_sub(1),
             UiProgressBar.Bottom,
-            0xDB as CHAR,
+            0xDBu8 as CHAR,
             ATTR(UiTextColor, UiMenuBgColor)
         );
     }
@@ -820,7 +823,7 @@ unsafe fn TuiTickProgressBar(SubPercentTimes100: ULONG) {
         UiProgressBar.Bottom,
         UiProgressBar.Right,
         UiProgressBar.Bottom,
-        0xB2 as CHAR,
+        0xB2u8 as CHAR,
         ATTR(UiTextColor, UiMenuBgColor)
     );
 
@@ -828,7 +831,7 @@ unsafe fn TuiTickProgressBar(SubPercentTimes100: ULONG) {
     VideoCopyOffScreenBufferToVRAM();
 }
 
-unsafe fn TuiDrawProgressBarCenter(ProgressText: PCSTR) {
+unsafe extern "C" fn TuiDrawProgressBarCenter(ProgressText: PCSTR) {
     let mut Left: ULONG;
     let mut Top: ULONG;
     let mut Right: ULONG;
@@ -851,7 +854,7 @@ unsafe fn TuiDrawProgressBarCenter(ProgressText: PCSTR) {
     TuiDrawProgressBar(Left, Top, Right, Bottom, ProgressText);
 }
 
-unsafe fn TuiDrawProgressBar(
+unsafe extern "C" fn TuiDrawProgressBar(
     mut Left: ULONG,
     mut Top: ULONG,
     mut Right: ULONG,
@@ -879,11 +882,13 @@ unsafe fn TuiDrawProgressBar(
     UiInitProgressBar(Left, Top, Right, Bottom, ProgressText);
 }
 
-unsafe fn TuiTextToColor(ColorText: PCSTR) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn TuiTextToColor(ColorText: PCSTR) -> u8 {
     struct ColorEntry {
         ColorName: PCSTR,
         ColorValue: u8,
     }
+    unsafe impl Sync for ColorEntry {}
     
     static COLORS: [ColorEntry; 16] = [
         ColorEntry { ColorName: b"Black\0".as_ptr() as PCSTR, ColorValue: COLOR_BLACK },
@@ -920,12 +925,14 @@ unsafe fn TuiTextToColor(ColorText: PCSTR) -> u8 {
     COLOR_BLACK
 }
 
-unsafe fn TuiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn TuiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
     #[repr(C)]
     struct FillStyleEntry {
         FillStyleName: PCSTR,
         FillStyleValue: u8,
     }
+    unsafe impl Sync for FillStyleEntry {}
 
     static FillStyles: [FillStyleEntry; 4] = [
         FillStyleEntry { FillStyleName: b"None\0".as_ptr() as PCSTR, FillStyleValue: b' ' },
@@ -943,7 +950,8 @@ unsafe fn TuiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
     LIGHT_FILL
 }
 
-pub unsafe fn TuiFadeInBackdrop() {
+#[no_mangle]
+pub unsafe extern "C" fn TuiFadeInBackdrop() {
 
     let mut TuiFadePalette: PPALETTE_ENTRY = core::ptr::null_mut();
 
@@ -967,7 +975,8 @@ pub unsafe fn TuiFadeInBackdrop() {
     }
 }
 
-unsafe fn TuiFadeOut() {
+#[no_mangle]
+pub unsafe extern "C" fn TuiFadeOut() {
     let mut TuiFadePalette: PPALETTE_ENTRY = core::ptr::null_mut();
 
     if UiUseSpecialEffects != 0 && MachVideoIsPaletteFixed() == 0 {
@@ -994,7 +1003,7 @@ unsafe fn TuiFadeOut() {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, Length: ULONG) -> BOOLEAN {
+pub unsafe extern "C" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, Length: ULONG) -> BOOLEAN {
 
     let mut key: i8;
     let mut Extended: BOOLEAN;
@@ -1009,7 +1018,7 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
     let mut BoxRect: SMALL_RECT = core::mem::zeroed();
     let ScreenBuffer: PVOID;
 
-    ScreenBuffer = TuiSaveScreen();
+    ScreenBuffer = ((TuiSaveScreen()) as *mut c_void);
 
     TuiDrawMsgBoxCommon(MessageText, &mut BoxRect);
 
@@ -1020,11 +1029,11 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
     EditBoxStartX = BoxRect.Left as ULONG + 3;
     EditBoxEndX = BoxRect.Right as ULONG - 3;
 
-    UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, ATTR(UiEditBoxTextColor, UiEditBoxBgColor));
-    UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer, ATTR(UiEditBoxTextColor, UiEditBoxBgColor));
+    UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
+    UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer, ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
 
     EditBoxCursorX = EditBoxStartX as i32;
-    MachVideoSetTextCursorPosition(EditBoxCursorX, EditBoxLine);
+    MachVideoSetTextCursorPosition(EditBoxCursorX as u32, EditBoxLine as u32);
     MachVideoHideShowTextCursor(1u8);
 
     UiDrawStatusText(b"Press ENTER to continue, or ESC to cancel\0".as_ptr() as PCSTR);
@@ -1035,18 +1044,18 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
         if MachConsKbHit() != 0 {
             Extended = 0u8;
             key = MachConsGetCh();
-            if key == KEY_EXTENDED {
+            if key == ((KEY_EXTENDED) as i8) {
                 Extended = 1u8;
                 key = MachConsGetCh();
             }
 
-            if key == KEY_ENTER {
+            if key == ((KEY_ENTER) as i8) {
                 ReturnCode = 1u8;
                 break;
-            } else if key == KEY_ESC {
+            } else if key == ((KEY_ESC) as i8) {
                 ReturnCode = 0u8;
                 break;
-            } else if key == KEY_BACKSPACE {
+            } else if key == ((KEY_BACKSPACE) as i8) {
                 if (EditBoxTextLength > 0) && (EditBoxTextPosition > 0) &&
                    (EditBoxTextPosition <= EditBoxTextLength) {
                     EditBoxTextPosition -= 1;
@@ -1060,7 +1069,7 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
                 } else {
                     MachBeep();
                 }
-            } else if Extended != 0 && key == KEY_DELETE {
+            } else if Extended != 0 && key == ((KEY_DELETE) as i8) {
                 if (EditBoxTextLength > 0) &&
                    (EditBoxTextPosition < EditBoxTextLength) {
                     memmove(
@@ -1073,17 +1082,17 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
                 } else {
                     MachBeep();
                 }
-            } else if Extended != 0 && key == KEY_HOME {
+            } else if Extended != 0 && key == ((KEY_HOME) as i8) {
                 EditBoxTextPosition = 0;
-            } else if Extended != 0 && key == KEY_END {
+            } else if Extended != 0 && key == ((KEY_END) as i8) {
                 EditBoxTextPosition = EditBoxTextLength;
-            } else if Extended != 0 && key == KEY_RIGHT {
+            } else if Extended != 0 && key == ((KEY_RIGHT) as i8) {
                 if EditBoxTextPosition < EditBoxTextLength {
                     EditBoxTextPosition += 1;
                 } else {
                     MachBeep();
                 }
-            } else if Extended != 0 && key == KEY_LEFT {
+            } else if Extended != 0 && key == ((KEY_LEFT) as i8) {
                 if EditBoxTextPosition > 0 {
                     EditBoxTextPosition -= 1;
                 } else {
@@ -1109,7 +1118,7 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
             }
         }
 
-        UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, ATTR(UiEditBoxTextColor, UiEditBoxBgColor));
+        UiFillArea(EditBoxStartX as i32, EditBoxLine, EditBoxEndX as i32, EditBoxLine, b' ' as i8, ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
 
         if EditBoxTextPosition > (EditBoxEndX - EditBoxStartX) {
             EditBoxTextDisplayIndex = (EditBoxTextPosition - (EditBoxEndX - EditBoxStartX)) as i32;
@@ -1118,9 +1127,9 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
             EditBoxTextDisplayIndex = 0;
             EditBoxCursorX = EditBoxStartX as i32 + EditBoxTextPosition as i32;
         }
-        UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer.offset(EditBoxTextDisplayIndex as isize), ATTR(UiEditBoxTextColor, UiEditBoxBgColor));
+        UiDrawText2(EditBoxStartX as i32, EditBoxLine, (EditBoxEndX - EditBoxStartX + 1) as i32, EditTextBuffer.offset(EditBoxTextDisplayIndex as isize), ((ATTR(UiEditBoxTextColor, UiEditBoxBgColor)) as i32));
 
-        MachVideoSetTextCursorPosition(EditBoxCursorX, EditBoxLine);
+        MachVideoSetTextCursorPosition(EditBoxCursorX as u32, EditBoxLine as u32);
 
         TuiUpdateDateTime();
 
@@ -1131,10 +1140,39 @@ pub unsafe extern "system" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCH
 
     MachVideoHideShowTextCursor(0u8);
 
-    TuiRestoreScreen(ScreenBuffer);
+    TuiRestoreScreen(((ScreenBuffer) as *mut u8));
 
     ReturnCode
 }
+
+// tui.c:1233  const UIVTBL TuiVtbl = { Tui* ... }  (header-exported, tui.h)
+#[no_mangle]
+pub static TuiVtbl: UIVTBL = UIVTBL {
+    Initialize: Some(TuiInitialize),
+    UnInitialize: Some(TuiUnInitialize),
+    DrawBackdrop: Some(TuiDrawBackdrop),
+    FillArea: Some(TuiFillArea),
+    DrawShadow: Some(TuiDrawShadow),
+    DrawBox: Some(TuiDrawBox),
+    DrawText: Some(TuiDrawText),
+    DrawText2: Some(TuiDrawText2),
+    DrawCenteredText: Some(TuiDrawCenteredText),
+    DrawStatusText: Some(TuiDrawStatusText),
+    UpdateDateTime: Some(TuiUpdateDateTime),
+    MessageBox: Some(TuiMessageBox),
+    MessageBoxCritical: Some(TuiMessageBoxCritical),
+    DrawProgressBarCenter: Some(TuiDrawProgressBarCenter),
+    DrawProgressBar: Some(TuiDrawProgressBar),
+    SetProgressBarText: Some(TuiSetProgressBarText),
+    TickProgressBar: Some(TuiTickProgressBar),
+    EditBox: Some(TuiEditBox),
+    TextToColor: Some(TuiTextToColor),
+    TextToFillStyle: Some(TuiTextToFillStyle),
+    FadeInBackdrop: Some(TuiFadeInBackdrop),
+    FadeOut: Some(TuiFadeOut),
+    DisplayMenu: Some(TuiDisplayMenu),
+    DrawMenu: Some(TuiDrawMenu),
+};
 
 
 // ============================================================================

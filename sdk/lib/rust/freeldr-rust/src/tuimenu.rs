@@ -1,15 +1,12 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::rtl::*;
+use crate::frldr::*;
+use crate::ui_keystone::*;
+use crate::ui::{UiStatusBarFgColor, UiStatusBarBgColor, UiBackdropFgColor, UiBackdropBgColor, UiBackdropFillStyle, UiTitleBoxFgColor, UiTitleBoxBgColor, UiMessageBoxFgColor, UiMessageBoxBgColor, UiMenuFgColor, UiMenuBgColor, UiTextColor, UiSelectedTextColor, UiSelectedTextBgColor, UiEditBoxTextColor, UiEditBoxBgColor, UiShowTime, UiMenuBox, UiCenterMenu, UiUseSpecialEffects, UiScreenWidth, UiScreenHeight, UiTitleBoxTitleText, UiTimeText, UiMonthNames, UiProgressBar, UiVtbl};
 use ntkrnl_sys::ddk::{PCSTR};
 use core::ffi::c_void;
 
 extern "C" {
     fn strlen(s: *const i8) -> usize;
-    fn max(a: u32, b: u32) -> u32;
-    fn min(a: u32, b: u32) -> u32;
-    fn ATTR(fg: UCHAR, bg: UCHAR) -> UCHAR;
     fn RtlStringCbPrintfA(pszDest: PCHAR, cbDest: usize, pszFormat: PCHAR, ...) -> NTSTATUS;
     fn UiDrawText(X: ULONG, Y: ULONG, Text: PCHAR, Attr: UCHAR);
     fn MachConsKbHit() -> BOOLEAN;
@@ -26,7 +23,7 @@ extern "C" {
 pub unsafe extern "C" fn TuiDisplayMenu(
     MenuHeader: PCSTR,
     MenuFooter: PCSTR,
-    MenuItemList: *const PCSTR,
+    MenuItemList: *mut PCSTR,
     MenuItemCount: ULONG,
     DefaultMenuItem: ULONG,
     MenuTimeOut: LONG,
@@ -69,9 +66,9 @@ pub unsafe extern "C" fn TuiDisplayMenu(
 
     TuiCalcMenuBoxSize(core::ptr::addr_of_mut!(MenuInformation));
 
-    ((*core::ptr::addr_of!(UiVtbl)).DrawMenu.unwrap())(core::ptr::addr_of_mut!(MenuInformation));
+    (UiVtbl.DrawMenu.unwrap())(core::ptr::addr_of_mut!(MenuInformation));
 
-    LastClockSecond = (*ArcGetTime()).Second;
+    LastClockSecond = (((*ArcGetTime()).Second) as u32);
 
     loop {
         KeyPress = TuiProcessMenuKeyboardEvent(core::ptr::addr_of_mut!(MenuInformation), KeyPressFilter);
@@ -83,7 +80,7 @@ pub unsafe extern "C" fn TuiDisplayMenu(
             return 0u8;
         }
 
-        CurrentClockSecond = (*ArcGetTime()).Second;
+        CurrentClockSecond = (((*ArcGetTime()).Second) as u32);
         if CurrentClockSecond != LastClockSecond {
             LastClockSecond = CurrentClockSecond;
 
@@ -108,7 +105,7 @@ pub unsafe extern "C" fn TuiDisplayMenu(
     return 1u8;
 }
 
-unsafe fn TuiCalcMenuBoxSize(MenuInfo: *mut UI_MENU_INFO) {
+unsafe extern "C" fn TuiCalcMenuBoxSize(MenuInfo: *mut UI_MENU_INFO) {
     let mut i: u32;
     let mut Width: u32 = 0;
     let mut Height: u32;
@@ -118,8 +115,8 @@ unsafe fn TuiCalcMenuBoxSize(MenuInfo: *mut UI_MENU_INFO) {
 
     i = 0;
     while i < (*MenuInfo).MenuItemCount {
-        if !(*MenuInfo).MenuItemList[i as usize].is_null() {
-            Length = strlen((*MenuInfo).MenuItemList[i as usize]) as u32;
+        if !(*(*MenuInfo).MenuItemList.add(i as usize)).is_null() {
+            Length = strlen((*(*MenuInfo).MenuItemList.add(i as usize))) as u32;
             Width = max(Width, Length);
         }
         i += 1;
@@ -143,7 +140,8 @@ unsafe fn TuiCalcMenuBoxSize(MenuInfo: *mut UI_MENU_INFO) {
     (*MenuInfo).Bottom = (*MenuInfo).Top + Height - 1;
 }
 
-unsafe fn TuiDrawMenu(MenuInfo: PUI_MENU_INFO) {
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawMenu(MenuInfo: PUI_MENU_INFO) {
 
     let mut i: ULONG;
 
@@ -157,17 +155,17 @@ unsafe fn TuiDrawMenu(MenuInfo: PUI_MENU_INFO) {
         i = i.wrapping_add(1);
     }
 
-    ((*UiVtbl).DrawStatusText.unwrap())(b"Use \x18 and \x19 to select, then press ENTER.\0".as_ptr() as PCHAR);
+    (UiVtbl.DrawStatusText.unwrap())(b"Use \x18 and \x19 to select, then press ENTER.\0".as_ptr() as PCHAR);
 
     VideoCopyOffScreenBufferToVRAM();
 }
 
-unsafe fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
+unsafe extern "C" fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
     let mut Length: ULONG;
     let mut MenuLineText: [CHAR; 80] = [0; 80];
 
     if (*MenuInfo).MenuTimeRemaining >= 0 {
-        let mut ptr: PCHAR = UiTimeText;
+        let mut ptr: PCHAR = (UiTimeText).as_mut_ptr() as *mut i8;
         while {
             ptr = strchr(ptr, '%' as i32);
             !ptr.is_null() && *ptr.offset(1) != 'd' as i8
@@ -183,7 +181,7 @@ unsafe fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
                 MenuLineText.as_mut_ptr(),
                 core::mem::size_of_val(&MenuLineText),
                 b"%.*s%d%s\0".as_ptr() as PCHAR,
-                ptr.offset_from(UiTimeText) as i32,
+                ptr.offset_from((UiTimeText).as_ptr() as *const i8) as i32,
                 UiTimeText,
                 (*MenuInfo).MenuTimeRemaining,
                 ptr.offset(2),
@@ -213,7 +211,7 @@ unsafe fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
                 (*MenuInfo).Right
             },
             (*MenuInfo).Bottom,
-            UiBackdropFillStyle,
+            ((UiBackdropFillStyle) as i8),
             ATTR(UiBackdropFgColor, UiBackdropBgColor),
         );
 
@@ -232,7 +230,7 @@ unsafe fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
             UiDrawText(
                 (*MenuInfo).Right - Length - 1,
                 (*MenuInfo).Bottom,
-                MenuLineText.as_ptr(),
+                MenuLineText.as_ptr() as *mut i8,
                 ATTR(UiMenuFgColor, UiMenuBgColor),
             );
         }
@@ -241,7 +239,7 @@ unsafe fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
             UiDrawText(
                 0,
                 (*MenuInfo).Bottom + 4,
-                MenuLineText.as_ptr(),
+                MenuLineText.as_ptr() as *mut i8,
                 ATTR(UiMenuFgColor, UiMenuBgColor),
             );
         }
@@ -251,13 +249,14 @@ unsafe fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
             (*MenuInfo).Bottom + 4,
             if Length != 0 { Length + 1 } else { UiScreenWidth - 1 },
             (*MenuInfo).Bottom + 4,
-            UiBackdropFillStyle,
+            ((UiBackdropFillStyle) as i8),
             ATTR(UiBackdropFgColor, UiBackdropBgColor),
         );
     }
 }
 
-unsafe fn TuiDrawMenuBox(MenuInfo: PUI_MENU_INFO) {
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawMenuBox(MenuInfo: PUI_MENU_INFO) {
     if UiMenuBox != 0 {
         UiDrawBox(
             (*MenuInfo).Left,
@@ -276,7 +275,8 @@ unsafe fn TuiDrawMenuBox(MenuInfo: PUI_MENU_INFO) {
     TuiDrawMenuTimeout(MenuInfo);
 }
 
-unsafe fn TuiDrawMenuItem(
+#[no_mangle]
+pub unsafe extern "C" fn TuiDrawMenuItem(
     MenuInfo: PUI_MENU_INFO,
     MenuItemNumber: ULONG,
 ) {
@@ -285,7 +285,7 @@ unsafe fn TuiDrawMenuItem(
     let mut Attribute: UCHAR;
     let mut MenuLineText: [CHAR; 80] = [0; 80];
 
-    if (*MenuInfo).MenuItemList[MenuItemNumber as usize] == core::ptr::null_mut() {
+    if (*(*MenuInfo).MenuItemList.add(MenuItemNumber as usize)).is_null() {
         if UiMenuBox != 0 {
             UiDrawText(
                 (*MenuInfo).Left,
@@ -298,7 +298,7 @@ unsafe fn TuiDrawMenuItem(
         RtlZeroMemory(MenuLineText.as_mut_ptr() as PVOID, core::mem::size_of_val(&MenuLineText));
         core::ptr::write_bytes(
             MenuLineText.as_mut_ptr() as *mut u8,
-            0xC4,
+            0xC4u8,
             min(core::mem::size_of_val(&MenuLineText) as ULONG, (*MenuInfo).Right - (*MenuInfo).Left - 1) as usize,
         );
 
@@ -324,7 +324,7 @@ unsafe fn TuiDrawMenuItem(
     if UiCenterMenu != 0 {
         let SpaceTotal: ULONG =
             ((*MenuInfo).Right - (*MenuInfo).Left - 2) -
-            strlen((*MenuInfo).MenuItemList[MenuItemNumber as usize]) as ULONG;
+            strlen((*(*MenuInfo).MenuItemList.add(MenuItemNumber as usize))) as ULONG;
         SpaceLeft = (SpaceTotal / 2) + 1;
         SpaceRight = (SpaceTotal - SpaceLeft) + 1;
     } else {
@@ -338,7 +338,7 @@ unsafe fn TuiDrawMenuItem(
         b"%*s%s%*s\0".as_ptr() as PCHAR,
         SpaceLeft,
         b"\0".as_ptr() as PCHAR,
-        (*MenuInfo).MenuItemList[MenuItemNumber as usize],
+        (*(*MenuInfo).MenuItemList.add(MenuItemNumber as usize)),
         SpaceRight,
         b"\0".as_ptr() as PCHAR,
     );
@@ -357,7 +357,7 @@ unsafe fn TuiDrawMenuItem(
     );
 }
 
-unsafe fn TuiProcessMenuKeyboardEvent(
+unsafe extern "C" fn TuiProcessMenuKeyboardEvent(
     MenuInfo: PUI_MENU_INFO,
     KeyPressFilter: UiMenuKeyPressFilterCallback,
 ) -> ULONG {
@@ -383,7 +383,7 @@ unsafe fn TuiProcessMenuKeyboardEvent(
     if !KeyPressFilter.is_none() &&
         KeyPressFilter.unwrap()(KeyEvent, (*MenuInfo).SelectedMenuItem, (*MenuInfo).Context) != 0
     {
-        ((*UiVtbl).DrawMenu.unwrap())(MenuInfo);
+        (UiVtbl.DrawMenu.unwrap())(MenuInfo);
         return 0;
     }
 
