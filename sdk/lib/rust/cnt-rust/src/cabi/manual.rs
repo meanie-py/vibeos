@@ -221,3 +221,352 @@ pub unsafe extern "C" fn cnt_vsnwscanf(
     let mut sink = VaSink { ap, tgt: core::ptr::null_mut(), idx: 0, wide: false };
     scanf_engine::<u16, _>(input, true, format, &mut sink)
 }
+
+// ===================================================================
+// env family — getenv/_wgetenv/_putenv/_wputenv + the 4 environment
+// pointer accessors (__p__environ/__p__wenviron/__p___initenv/
+// __p___winitenv).
+//
+// Faithful to ReactOS `stdlib/getenv.c` + `misc/environ.c::SetEnv`.
+// Like scanf/strtok this is irreducibly STATEFUL (a process-global
+// environment block, plus getenv returns an interior pointer into it)
+// so it's hand-written here, NOT generated (no manifest rows /
+// symbols.json — the _invalid_parameter precedent). core_rs::env owns
+// the pure decisions; this layer owns the owned block + the
+// realloc / duplicate-on-first-write / dual narrow+wide sync.
+//
+// State model (single-threaded-equivalent, mirroring environ.c's
+// non-atomic globals — the strtok AtomicPtr precedent):
+//  * Wide is the source of truth (SetEnv operates on wide); the narrow
+//    block is the CP1252 image of it (the Wave E2 mbcp model — what
+//    WideCharToMultiByte(CP_ACP) yields for the default ANSI CP).
+//  * A FROZEN seed copy backs __initenv/__winitenv; the working copy
+//    backs _environ/_wenviron. Before the first SetEnv they are the
+//    SAME pointer array (`_environ == __initenv`); the first SetEnv
+//    flips _environ/_wenviron to the independent working arrays
+//    (genuine DuplicateEnvironment) — __initenv stays frozen.
+//  * Fixed-capacity arena (MAXE entries × E* units). The genuine
+//    malloc/realloc-failure → -1 paths are a documented unfuzzed
+//    domain limit (the null_ret / strpbrk≤2 precedent); within the
+//    arena the full add/replace/remove/asymmetry contract is exact.
+// ===================================================================
+
+use crate::core_rs::env as cenv;
+use crate::core_rs::mbcp;
+
+const MAXE: usize = 48; // max env entries (arena bound; realloc-fail unfuzzed)
+const EW: usize = 384; // u16 units per entry incl '=' and NUL
+const EN: usize = 384; // bytes per entry incl '=' and NUL
+
+struct EnvState {
+    // working (mutable) — backs _environ/_wenviron after dup.
+    wbuf: [[u16; EW]; MAXE],
+    nbuf: [[u8; EN]; MAXE],
+    wlen: [usize; MAXE], // units, NUL excluded
+    nlen: [usize; MAXE], // bytes, NUL excluded
+    count: usize,
+    // frozen seed — backs __initenv/__winitenv forever.
+    iwbuf: [[u16; EW]; MAXE],
+    inbuf: [[u8; EN]; MAXE],
+    iwlen: [usize; MAXE],
+    inlen: [usize; MAXE],
+    icount: usize,
+    duped: bool, // false ⇒ _environ == __initenv (pre first SetEnv)
+    // NULL-terminated pointer arrays handed back via __p__*.
+    wptr_env: [*mut u16; MAXE + 1],
+    nptr_env: [*mut u8; MAXE + 1],
+    wptr_init: [*mut u16; MAXE + 1],
+    nptr_init: [*mut u8; MAXE + 1],
+    // the `_environ`/`_wenviron`/`__initenv`/`__winitenv` cells; the
+    // __p__* accessors return &of these (genuine `char ***`).
+    environ: *mut *mut u8,
+    wenviron: *mut *mut u16,
+    initenv: *mut *mut u8,
+    winitenv: *mut *mut u16,
+}
+
+impl EnvState {
+    const fn new() -> Self {
+        EnvState {
+            wbuf: [[0; EW]; MAXE],
+            nbuf: [[0; EN]; MAXE],
+            wlen: [0; MAXE],
+            nlen: [0; MAXE],
+            count: 0,
+            iwbuf: [[0; EW]; MAXE],
+            inbuf: [[0; EN]; MAXE],
+            iwlen: [0; MAXE],
+            inlen: [0; MAXE],
+            icount: 0,
+            duped: false,
+            wptr_env: [core::ptr::null_mut(); MAXE + 1],
+            nptr_env: [core::ptr::null_mut(); MAXE + 1],
+            wptr_init: [core::ptr::null_mut(); MAXE + 1],
+            nptr_init: [core::ptr::null_mut(); MAXE + 1],
+            environ: core::ptr::null_mut(),
+            wenviron: core::ptr::null_mut(),
+            initenv: core::ptr::null_mut(),
+            winitenv: core::ptr::null_mut(),
+        }
+    }
+}
+
+struct EnvCell(core::cell::UnsafeCell<EnvState>);
+// Single-threaded-equivalent: the genuine globals are non-atomic and
+// the diff drives one deterministic call sequence (strtok precedent).
+unsafe impl Sync for EnvCell {}
+static ENV: EnvCell = EnvCell(core::cell::UnsafeCell::new(EnvState::new()));
+
+#[inline]
+unsafe fn env<'a>() -> &'a mut EnvState {
+    &mut *ENV.0.get()
+}
+
+/// Rebuild the working pointer arrays from the working entries and the
+/// frozen init arrays from the seed; (re)link _environ/_wenviron to
+/// init (pre-dup) or working (post-dup). __initenv/__winitenv always
+/// point at the frozen seed arrays.
+unsafe fn env_relink(e: &mut EnvState) {
+    for i in 0..e.count {
+        e.nptr_env[i] = e.nbuf[i].as_mut_ptr();
+        e.wptr_env[i] = e.wbuf[i].as_mut_ptr();
+    }
+    e.nptr_env[e.count] = core::ptr::null_mut();
+    e.wptr_env[e.count] = core::ptr::null_mut();
+    for i in 0..e.icount {
+        e.nptr_init[i] = e.inbuf[i].as_mut_ptr();
+        e.wptr_init[i] = e.iwbuf[i].as_mut_ptr();
+    }
+    e.nptr_init[e.icount] = core::ptr::null_mut();
+    e.wptr_init[e.icount] = core::ptr::null_mut();
+    e.initenv = e.nptr_init.as_mut_ptr();
+    e.winitenv = e.wptr_init.as_mut_ptr();
+    if e.duped {
+        e.environ = e.nptr_env.as_mut_ptr();
+        e.wenviron = e.wptr_env.as_mut_ptr();
+    } else {
+        // genuine: _environ == __initenv until the first SetEnv.
+        e.environ = e.nptr_init.as_mut_ptr();
+        e.wenviron = e.wptr_init.as_mut_ptr();
+    }
+}
+
+/// Test/init seed. `block` is a Win32 `GetEnvironmentStringsW`-format
+/// double-NUL-terminated wide block (`KEY=VAL\0KEY=VAL\0\0`). Mirrors
+/// `BlockEnvToEnvironW`+`BlockEnvToEnvironA`: entries whose first unit
+/// is `=` (drive-letter settings) are skipped; the narrow image is the
+/// CP1252 encoding (== what GetEnvironmentStringsA would return for a
+/// CP1252-clean block). Resets to the un-duped state.
+#[no_mangle]
+pub unsafe extern "C" fn cnt_env_seed_w(block: *const u16) {
+    let e = env();
+    *e = EnvState::new();
+    let mut p = block;
+    let mut n = 0usize;
+    if !p.is_null() {
+        while *p != 0 && n < MAXE {
+            // one entry up to its NUL
+            let mut len = 0usize;
+            while *p.add(len) != 0 {
+                len += 1;
+            }
+            let entry = core::slice::from_raw_parts(p, len);
+            if entry.first().copied() != Some(b'=' as u16) {
+                let cap = len.min(EW - 1);
+                e.iwbuf[n][..cap].copy_from_slice(&entry[..cap]);
+                e.iwbuf[n][cap] = 0;
+                e.iwlen[n] = cap;
+                e.wbuf[n][..cap].copy_from_slice(&entry[..cap]);
+                e.wbuf[n][cap] = 0;
+                e.wlen[n] = cap;
+                let mut bn = 0usize;
+                for &w in &entry[..cap] {
+                    if bn >= EN - 1 {
+                        break;
+                    }
+                    e.inbuf[n][bn] = mbcp::enc(w).unwrap_or(b'?');
+                    e.nbuf[n][bn] = e.inbuf[n][bn];
+                    bn += 1;
+                }
+                e.inbuf[n][bn] = 0;
+                e.inlen[n] = bn;
+                e.nbuf[n][bn] = 0;
+                e.nlen[n] = bn;
+                n += 1;
+            }
+            p = p.add(len + 1);
+        }
+    }
+    e.count = n;
+    e.icount = n;
+    e.duped = false;
+    env_relink(e);
+}
+
+/// Internal `SetEnv(const wchar_t *option)` (environ.c). `opt` is the
+/// option, NUL excluded. Returns the genuine int (0 / -1).
+unsafe fn set_env(opt: &[u16]) -> i32 {
+    let e = env();
+    let so = match cenv::classify_set(opt, b'=' as u16) {
+        None => return -1, // NULL / no '=' ⇒ genuine -1
+        Some(s) => s,
+    };
+    let name_len = so.eq_index;
+
+    // Duplicate-on-first-write (both narrow+wide flip together since
+    // the seed sets _environ==__initenv AND _wenviron==__winitenv).
+    if !e.duped {
+        e.duped = true;
+    }
+
+    // Find an existing entry by the SetEnv prefix rule (asymmetry vs
+    // getenv: prefix compare of name_len units over the WHOLE entry).
+    let mut found: Option<usize> = None;
+    for i in 0..e.count {
+        if cenv::set_entry_matches(&e.wbuf[i][..e.wlen[i]], opt, name_len) {
+            found = Some(i);
+            break;
+        }
+    }
+
+    if so.remove {
+        if let Some(idx) = found {
+            for j in idx..e.count - 1 {
+                e.wbuf[j] = e.wbuf[j + 1];
+                e.nbuf[j] = e.nbuf[j + 1];
+                e.wlen[j] = e.wlen[j + 1];
+                e.nlen[j] = e.nlen[j + 1];
+            }
+            e.count -= 1;
+        }
+        // remove of a missing entry ⇒ genuine returns 0;
+        // SetEnvironmentVariableW(name,NULL) stub ⇒ success.
+        env_relink(e);
+        return 0;
+    }
+
+    // set/replace: store the FULL option ("NAME=value") wide, plus its
+    // CP1252 narrow image.
+    let wcap = opt.len().min(EW - 1);
+    let mut wtmp = [0u16; EW];
+    wtmp[..wcap].copy_from_slice(&opt[..wcap]);
+    let mut ntmp = [0u8; EN];
+    let mut nl = 0usize;
+    for &w in &opt[..wcap] {
+        if nl >= EN - 1 {
+            break;
+        }
+        ntmp[nl] = mbcp::enc(w).unwrap_or(b'?');
+        nl += 1;
+    }
+
+    let idx = match found {
+        Some(i) => i,
+        None => {
+            if e.count >= MAXE {
+                return -1; // arena bound (genuine realloc-fail; unfuzzed)
+            }
+            let i = e.count;
+            e.count += 1;
+            i
+        }
+    };
+    e.wbuf[idx] = wtmp;
+    e.wlen[idx] = wcap;
+    e.nbuf[idx] = ntmp;
+    e.nlen[idx] = nl;
+    env_relink(e);
+    0 // SetEnvironmentVariableW(name, epos+1) stub ⇒ success
+}
+
+/// `char *getenv(const char *name)` — walk `*__p__environ()`, split at
+/// the first `=`, exact-name-length + NT-ASCII-fold match, return the
+/// interior pointer just past `=` (or NULL).
+#[no_mangle]
+pub unsafe extern "C" fn getenv(name: *const u8) -> *mut u8 {
+    let e = env();
+    let nm = super::cstr_slice(name);
+    let mut arr = e.environ;
+    if arr.is_null() {
+        return core::ptr::null_mut();
+    }
+    loop {
+        let s = *arr;
+        if s.is_null() {
+            break;
+        }
+        let entry = super::cstr_slice(s);
+        if let Some(v) = cenv::getenv_value_start(entry, nm, b'=') {
+            return s.add(v);
+        }
+        arr = arr.add(1);
+    }
+    core::ptr::null_mut()
+}
+
+/// `wchar_t *_wgetenv(const wchar_t *name)` — wide twin.
+#[no_mangle]
+pub unsafe extern "C" fn _wgetenv(name: *const u16) -> *mut u16 {
+    let e = env();
+    let nm = super::wcstr_slice(name);
+    let mut arr = e.wenviron;
+    if arr.is_null() {
+        return core::ptr::null_mut();
+    }
+    loop {
+        let s = *arr;
+        if s.is_null() {
+            break;
+        }
+        let entry = super::wcstr_slice(s);
+        if let Some(v) = cenv::getenv_value_start(entry, nm, b'=' as u16) {
+            return s.add(v);
+        }
+        arr = arr.add(1);
+    }
+    core::ptr::null_mut()
+}
+
+/// `int _putenv(const char *val)` — widen via CP1252
+/// (MultiByteToWideChar(CP_ACP) model) then SetEnv.
+#[no_mangle]
+pub unsafe extern "C" fn _putenv(val: *const u8) -> i32 {
+    let v = super::cstr_slice(val);
+    let mut w = [0u16; EW];
+    let n = v.len().min(EW - 1);
+    for (i, &b) in v[..n].iter().enumerate() {
+        w[i] = mbcp::dec(b);
+    }
+    set_env(&w[..n])
+}
+
+/// `int _wputenv(const wchar_t *val)` — SetEnv directly.
+#[no_mangle]
+pub unsafe extern "C" fn _wputenv(val: *const u16) -> i32 {
+    let v = super::wcstr_slice(val);
+    set_env(v)
+}
+
+/// `char ***__p__environ(void)` — &_environ.
+#[no_mangle]
+pub unsafe extern "C" fn __p__environ() -> *mut *mut *mut u8 {
+    core::ptr::addr_of_mut!(env().environ)
+}
+
+/// `wchar_t ***__p__wenviron(void)` — &_wenviron.
+#[no_mangle]
+pub unsafe extern "C" fn __p__wenviron() -> *mut *mut *mut u16 {
+    core::ptr::addr_of_mut!(env().wenviron)
+}
+
+/// `char ***__p___initenv(void)` — &__initenv.
+#[no_mangle]
+pub unsafe extern "C" fn __p___initenv() -> *mut *mut *mut u8 {
+    core::ptr::addr_of_mut!(env().initenv)
+}
+
+/// `wchar_t ***__p___winitenv(void)` — &__winitenv.
+#[no_mangle]
+pub unsafe extern "C" fn __p___winitenv() -> *mut *mut *mut u16 {
+    core::ptr::addr_of_mut!(env().winitenv)
+}

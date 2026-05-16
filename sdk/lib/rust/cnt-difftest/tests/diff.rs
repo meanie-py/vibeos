@@ -119,6 +119,18 @@ extern "C" {
     // PARSE in scanf.h is still fully exercised). Set before a
     // genuine-side float scan; the genuine return value is unaffected.
     fn cnt_set_fout(p: *mut core::ffi::c_void, is_double: i32);
+    // env — genuine getenv.c/putenv.c/wputenv.c + environ.c SetEnv,
+    // seeded via ref_env_set_block (BlockEnvToEnvironW+A over a
+    // CP1252-modeled Win32 environment surface).
+    fn ref_env_set_block(w: *const u16, n: i32);
+    fn ref_getenv(name: *const u8) -> *mut u8;
+    fn ref__wgetenv(name: *const u16) -> *mut u16;
+    fn ref__putenv(val: *const u8) -> i32;
+    fn ref__wputenv(val: *const u16) -> i32;
+    fn ref___p__environ() -> *mut *mut *mut u8;
+    fn ref___p__wenviron() -> *mut *mut *mut u16;
+    fn ref___p___initenv() -> *mut *mut *mut u8;
+    fn ref___p__winitenv() -> *mut *mut *mut u16;
 }
 
 use cnt_rust::cabi;
@@ -2069,6 +2081,277 @@ fn diff_scanf_float() {
             };
             let rr = unsafe { ref_swscanf(win.as_ptr(), wf.as_ptr(), &mut dummy) };
             assert_eq!((rc, cv.to_bits()), (rr, rv.to_bits()), "w%lf inp={s:?}");
+        }
+    }
+}
+
+/// env — getenv/_wgetenv/_putenv/_wputenv + the 4 __p__* accessors,
+/// stateful (process-global block; getenv returns an interior pointer)
+/// vs the genuine compiled getenv.c/putenv.c/wputenv.c + environ.c
+/// SetEnv. Pins the load-bearing contracts: getenv's exact-name-length
+/// NT-ASCII-fold match; SetEnv's PREFIX-match asymmetry; `"NAME="`
+/// (empty value) deletes; the duplicate-on-first-write
+/// `_environ==__initenv` identity flip (incl. on a no-op delete, since
+/// the genuine dup precedes the found-search); a no-`=` option → -1
+/// (NO dup flip); CP1252 narrow/wide sync. Both sides seed from the
+/// same wide block via the same CP1252 Win32 model — deterministic, no
+/// global NLS state.
+#[test]
+fn diff_env() {
+    // double-NUL "GetEnvironmentStringsW"-format block from "K=V" list.
+    fn wblock(entries: &[&str]) -> Vec<u16> {
+        let mut v = Vec::new();
+        for e in entries {
+            v.extend(e.encode_utf16());
+            v.push(0);
+        }
+        v.push(0); // terminating empty entry
+        v
+    }
+    fn read_n(p: *const u8) -> Vec<u8> {
+        if p.is_null() {
+            return Vec::new();
+        }
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    }
+    fn read_w(p: *const u16) -> Vec<u16> {
+        if p.is_null() {
+            return Vec::new();
+        }
+        let mut v = Vec::new();
+        let mut i = 0;
+        unsafe {
+            while *p.add(i) != 0 {
+                v.push(*p.add(i));
+                i += 1;
+            }
+        }
+        v
+    }
+    unsafe fn walk_n(t: *mut *mut *mut u8) -> Vec<Vec<u8>> {
+        let arr = *t;
+        if arr.is_null() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut i = 0;
+        while !(*arr.add(i)).is_null() {
+            out.push(read_n(*arr.add(i)));
+            i += 1;
+        }
+        out
+    }
+    unsafe fn walk_w(t: *mut *mut *mut u16) -> Vec<Vec<u16>> {
+        let arr = *t;
+        if arr.is_null() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut i = 0;
+        while !(*arr.add(i)).is_null() {
+            out.push(read_w(*arr.add(i)));
+            i += 1;
+        }
+        out
+    }
+    // identity bool: is `_environ` the SAME pointer array as
+    // `__initenv` (genuine: true iff no successful SetEnv yet).
+    unsafe fn id_n(e: *mut *mut *mut u8, i: *mut *mut *mut u8) -> bool {
+        (*e as usize) == (*i as usize)
+    }
+    unsafe fn id_w(e: *mut *mut *mut u16, i: *mut *mut *mut u16) -> bool {
+        (*e as usize) == (*i as usize)
+    }
+
+    // Full cross-impl state assertion (block content + frozen init +
+    // the narrow==wide images + the identity flip).
+    let chk = |msg: &str| unsafe {
+        assert_eq!(
+            walk_n(cabi::__p__environ()),
+            walk_n(ref___p__environ()),
+            "{msg}: _environ"
+        );
+        assert_eq!(
+            walk_w(cabi::__p__wenviron()),
+            walk_w(ref___p__wenviron()),
+            "{msg}: _wenviron"
+        );
+        assert_eq!(
+            walk_n(cabi::__p___initenv()),
+            walk_n(ref___p___initenv()),
+            "{msg}: __initenv (frozen)"
+        );
+        assert_eq!(
+            walk_w(cabi::__p___winitenv()),
+            walk_w(ref___p__winitenv()),
+            "{msg}: __winitenv (frozen)"
+        );
+        assert_eq!(
+            id_n(cabi::__p__environ(), cabi::__p___initenv()),
+            id_n(ref___p__environ(), ref___p___initenv()),
+            "{msg}: _environ==__initenv identity"
+        );
+        assert_eq!(
+            id_w(cabi::__p__wenviron(), cabi::__p___winitenv()),
+            id_w(ref___p__wenviron(), ref___p__winitenv()),
+            "{msg}: _wenviron==__winitenv identity"
+        );
+    };
+
+    let seed = |entries: &[&str]| {
+        let b = wblock(entries);
+        unsafe {
+            cabi::cnt_env_seed_w(b.as_ptr());
+            ref_env_set_block(b.as_ptr(), b.len() as i32);
+        }
+    };
+    let getn = |name: &str| unsafe {
+        let nm: Vec<u8> = name.bytes().chain([0]).collect();
+        let c = cabi::getenv(nm.as_ptr());
+        let r = ref_getenv(nm.as_ptr());
+        assert_eq!(c.is_null(), r.is_null(), "getenv({name}) nullness");
+        if !c.is_null() {
+            assert_eq!(read_n(c), read_n(r), "getenv({name}) value");
+        }
+    };
+    let wgetn = |name: &str| unsafe {
+        let nm: Vec<u16> = name.encode_utf16().chain([0]).collect();
+        let c = cabi::_wgetenv(nm.as_ptr());
+        let r = ref__wgetenv(nm.as_ptr());
+        assert_eq!(c.is_null(), r.is_null(), "_wgetenv({name}) nullness");
+        if !c.is_null() {
+            assert_eq!(read_w(c), read_w(r), "_wgetenv({name}) value");
+        }
+    };
+    let putn = |opt: &[u8], msg: &str| unsafe {
+        let mut v = opt.to_vec();
+        v.push(0);
+        let c = cabi::_putenv(v.as_ptr());
+        let r = ref__putenv(v.as_ptr());
+        assert_eq!(c, r, "_putenv({msg}) ret");
+        chk(msg);
+    };
+    let wputn = |opt: &str, msg: &str| unsafe {
+        let v: Vec<u16> = opt.encode_utf16().chain([0]).collect();
+        let c = cabi::_wputenv(v.as_ptr());
+        let r = ref__wputenv(v.as_ptr());
+        assert_eq!(c, r, "_wputenv({msg}) ret");
+        chk(msg);
+    };
+
+    // ---- explicit pins ----
+    // duplicate-on-first-write + the no-`=` exception (no dup flip).
+    seed(&["PATH=/bin", "Home=/root", "=Z:=Z:\\drive", "Lang=C"]);
+    chk("seed");
+    unsafe {
+        // pre-mutation: _environ IS __initenv (both impls).
+        assert!(id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(id_n(ref___p__environ(), ref___p___initenv()));
+    }
+    getn("PATH");
+    getn("path"); // NT ASCII fold (case-insensitive)
+    getn("HOME");
+    getn("Z:"); // the `=`-leading drive entry was skipped → NULL
+    getn("missing");
+    wgetn("Lang");
+    putn(b"NOEQ", "no '=' → -1, NO dup flip");
+    unsafe {
+        // a failed (no-`=`) putenv must NOT have duplicated.
+        assert!(id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(id_n(ref___p__environ(), ref___p___initenv()));
+    }
+    putn(b"NEW=1", "append (first real SetEnv → dup flip)");
+    unsafe {
+        assert!(!id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(!id_n(ref___p__environ(), ref___p___initenv()));
+    }
+    getn("NEW");
+    putn(b"path=/usr/bin", "replace, fold-matched, full option stored");
+    getn("PATH");
+    putn(b"Home=", "empty value DELETES");
+    getn("Home");
+    putn(b"Home=", "delete-of-missing → 0, but still dup (already duped)");
+
+    // SetEnv PREFIX-match asymmetry vs getenv's exact-length match.
+    seed(&["ABC=one"]);
+    putn(b"AB=two", "prefix-asymmetry: option 'AB' matches entry 'ABC'");
+    getn("ABC"); // entry was replaced by the WHOLE option → "AB=two"
+    getn("AB");
+    chk("after prefix-asymmetry");
+
+    // delete-of-missing still flips identity (genuine dup precedes the
+    // found-search) — seed fresh, first op is a no-op delete.
+    seed(&["A=1", "B=2"]);
+    unsafe {
+        assert!(id_n(cabi::__p__environ(), cabi::__p___initenv()));
+    }
+    putn(b"NOPE=", "no-op delete → 0, but dup flips");
+    unsafe {
+        assert!(!id_n(cabi::__p__environ(), cabi::__p___initenv()));
+        assert!(!id_n(ref___p__environ(), ref___p___initenv()));
+    }
+
+    // CP1252 narrow/wide sync (high bytes round-trip enc∘dec).
+    seed(&["X=hi"]);
+    putn(b"CAF\xE9=r\xE9sum\xE9", "Latin-1 value, CP1252 narrow/wide sync");
+    putn(b"EUR\x80=cost\xA9", "CP1252 0x80/0xA9 round-trip");
+    wputn("Uni=\u{00e9}\u{00ff}", "wide _wputenv → CP1252 narrow image");
+    chk("after CP1252");
+
+    // ---- randomized op fuzz ----
+    let names = ["A", "AB", "ABC", "B", "Bb", "XY", "ab", "aBc"];
+    let vals = ["", "1", "xy", "long-ish", "a=b", "\u{00e9}z"];
+    let mut rng = Rng(0x91e0_5a17_u64);
+    for outer in 0..400 {
+        // fresh random seed each round (exercises re-seed + repeated
+        // dup-flip; keeps the arena well under MAXE).
+        let ns = 1 + rng.upto(5);
+        let entries: Vec<String> = (0..ns)
+            .map(|_| {
+                format!(
+                    "{}={}",
+                    names[rng.upto(names.len())],
+                    vals[rng.upto(vals.len())]
+                )
+            })
+            .collect();
+        let refs: Vec<&str> = entries.iter().map(|s| s.as_str()).collect();
+        seed(&refs);
+        chk(&format!("round {outer} seed"));
+        for _ in 0..24 {
+            match rng.upto(6) {
+                0 => getn(names[rng.upto(names.len())]),
+                1 => wgetn(names[rng.upto(names.len())]),
+                2 => {
+                    let o = format!(
+                        "{}={}",
+                        names[rng.upto(names.len())],
+                        vals[rng.upto(vals.len())]
+                    );
+                    putn(o.as_bytes(), "rand set");
+                }
+                3 => {
+                    let o = format!("{}=", names[rng.upto(names.len())]);
+                    putn(o.as_bytes(), "rand delete");
+                }
+                4 => putn(names[rng.upto(names.len())].as_bytes(), "rand no-eq"),
+                _ => {
+                    let o = format!(
+                        "{}={}",
+                        names[rng.upto(names.len())],
+                        vals[rng.upto(vals.len())]
+                    );
+                    wputn(&o, "rand wset");
+                }
+            }
         }
     }
 }

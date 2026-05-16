@@ -6,6 +6,7 @@
 //! a status flag where the C contract hides a fallible outcome).
 
 pub mod casemap;
+pub mod env;
 pub mod mbcp;
 pub mod mem;
 pub mod path;
