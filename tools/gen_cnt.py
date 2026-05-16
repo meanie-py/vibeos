@@ -551,7 +551,13 @@ def main() -> int:
         shims.append("")
     generated_rs = "\n".join(shims)
 
-    mod_rs = AUTOGEN + HELPERS + "\nmod generated;\npub use generated::*;\n"
+    mod_rs = (
+        AUTOGEN
+        + HELPERS
+        + "\nmod generated;\npub use generated::*;\n"
+        # hand-written, no differential target (see manual.rs)
+        + "mod manual;\npub use manual::*;\n"
+    )
 
     spec = {
         nm: {

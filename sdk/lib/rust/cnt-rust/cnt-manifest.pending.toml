@@ -9,13 +9,3 @@
 # Batch 2 (33): parse-endptr / int->str(+_s) / case-insensitive
 #               / multibyte / oddballs.
 schema_version = 1
-[symbols._invalid_parameter]
-c_signature = "void __cdecl _invalid_parameter(wchar_t const* expression, wchar_t const* function_name, wchar_t const* file_name, unsigned int line_number, uintptr_t reserved)"
-family = "printf"
-slice_pattern = "nul_in"
-core_fn = "NEW:debug_print_invalid_parameter"
-return_collapse = "void"
-inout_effects = "none (read-only: formats diagnostic from all params, writes to debug output only)"
-preserved_misfeature = "none - textbook CRT invalid parameter handler that prints diagnostic via DbgPrint and returns (does NOT terminate process, unlike standard _invalid_parameter which typically calls _invoke_watson)"
-fuzz_domain = ["all_valid_wstrs", "mixed_nulls (any/all of expression/function_name/file_name NULL)", "line_zero", "reserved_nonzero"]
-

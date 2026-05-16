@@ -85,3 +85,5 @@ pub(crate) unsafe fn raw_move(dst: *mut u8, src: *const u8, n: usize) {
 
 mod generated;
 pub use generated::*;
+mod manual;
+pub use manual::*;
