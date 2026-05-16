@@ -199,6 +199,16 @@ typedef struct _RTL_UNICODE_STRING_BUFFER {
 #define RTL_FIND_CHAR_IN_UNICODE_STRING_CASE_INSENSITIVE 4
 #define MAX_COMPUTERNAME_LENGTH 15
 
+typedef struct _GENERATE_NAME_CONTEXT {
+    USHORT Checksum;
+    BOOLEAN CheckSumInserted;
+    UCHAR NameLength;
+    WCHAR NameBuffer[8];
+    ULONG ExtensionLength;
+    WCHAR ExtensionBuffer[4];
+    ULONG LastIndexValue;
+} GENERATE_NAME_CONTEXT, *PGENERATE_NAME_CONTEXT;
+
 typedef struct _GUID {
     ULONG Data1;
     USHORT Data2;
@@ -241,6 +251,9 @@ typedef const GUID *LPCGUID, *REFGUID;
 #define STATUS_NOT_FOUND ((NTSTATUS)0xC0000225L)
 #define STATUS_NAME_TOO_LONG ((NTSTATUS)0xC0000106L)
 #define STATUS_INVALID_COMPUTER_NAME ((NTSTATUS)0xC0000122L)
+#define STATUS_SOME_NOT_MAPPED ((NTSTATUS)0x00000107L)
+#define STATUS_INVALID_PARAMETER_4 ((NTSTATUS)0xC00000F2L)
+#define STATUS_INVALID_PARAMETER_5 ((NTSTATUS)0xC00000F3L)
 
 /* unicode.c uses these three as the byte-move primitives. */
 #define RtlCopyMemory(d, s, n) memcpy((d), (s), (n))

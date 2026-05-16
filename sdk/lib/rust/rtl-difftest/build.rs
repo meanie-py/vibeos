@@ -152,7 +152,7 @@ fn main() {
     // unprototyped stubs for the unused-by-RTL-1 link surface →
     // rename the 8 proof symbols → the genuine unicode.c verbatim.
     let body = format!(
-        "#include <rtl.h>\n#include <stdlib.h>\n\
+        "#include <rtl.h>\n#include <stdlib.h>\n#include <string.h>\n\
          /* Nls* externs unicode.c re-declares (lines 22-30) — provide\n\
             storage so the whole TU links; the RTL-1 proof fns never\n\
             touch these. */\n\
@@ -236,6 +236,11 @@ fn main() {
          #define RtlUpcaseUnicodeString ref_RtlUpcaseUnicodeString\n\
          #define RtlUpcaseUnicodeStringToAnsiString ref_RtlUpcaseUnicodeStringToAnsiString\n\
          #define RtlUpcaseUnicodeStringToCountedOemString ref_RtlUpcaseUnicodeStringToCountedOemString\n\
+         /* RTL-6: unicode.c's genuine RtlIsValidOemCharacter walks NULL\n\
+            Nls* tables in the harness — rename it away (no in-file\n\
+            callers) so the dos8dot3 ref TU can provide a CP1252 model\n\
+            under the real name (Wave-E2 shared-model discipline). */\n\
+         #define RtlIsValidOemCharacter ref_unused_RtlIsValidOemCharacter\n\
          #define RtlUpcaseUnicodeStringToOemString ref_RtlUpcaseUnicodeStringToOemString\n\
          /* Unprototyped stubs (`f()` accepts any call shape) for the\n\
             NLS/heap leaves the other ~50 fns reference (RTL-2 unused). */\n\
@@ -292,9 +297,26 @@ fn main() {
          #define RtlStringFromGUID ref_RtlStringFromGUID\n\
          #define RtlpEnsureBufferSize ref_RtlpEnsureBufferSize\n\
          #define RtlMultiAppendUnicodeStringBuffer ref_RtlMultiAppendUnicodeStringBuffer\n\
+         /* Wave RTL-4b slice 4: computer-name (genuine unicode.c;\n\
+            RtlpDidUnicodeToOemWork stays genuine, NlsOemDefaultChar='?'\n\
+            matches the shared enc default). */\n\
+         #define RtlEqualComputerName ref_RtlEqualComputerName\n\
+         #define RtlEqualDomainName ref_RtlEqualDomainName\n\
+         #define RtlDnsHostNameToComputerName ref_RtlDnsHostNameToComputerName\n\
          void* RtlpAllocateStringMemory(){{return 0;}}\n\
          void RtlpFreeStringMemory(){{}}\n\
-         int RtlpSafeCopyMemory(){{return 0;}}\n\
+         /* RtlpSafeCopyMemory is genuinely just an SEH-guarded memcpy;\n\
+            model it as a real memcpy returning STATUS_SUCCESS (a no-op\n\
+            stub would leave RtlLargeIntegerToChar's output\n\
+            uninitialized — only it calls this). */\n\
+         int RtlpSafeCopyMemory(void* d,const void* s,unsigned long n){{memcpy(d,s,n);return 0;}}\n\
+         /* Wave RTL-4c: integer→char + *ToUnicodeString (genuine\n\
+            unicode.c; RtlIntegerToChar IS in unicode.c, not cross-file\n\
+            as earlier assumed). */\n\
+         #define RtlIntegerToChar ref_RtlIntegerToChar\n\
+         #define RtlLargeIntegerToChar ref_RtlLargeIntegerToChar\n\
+         #define RtlIntegerToUnicodeString ref_RtlIntegerToUnicodeString\n\
+         #define RtlInt64ToUnicodeString ref_RtlInt64ToUnicodeString\n\
          #define RtlInitString ref_RtlInitString\n\
          #define RtlInitAnsiString ref_RtlInitAnsiString\n\
          #define RtlInitAnsiStringEx ref_RtlInitAnsiStringEx\n\
@@ -332,6 +354,85 @@ fn main() {
     // doesn't reach integration tests; trailing link-args do — the
     // cnt-difftest precedent).
     for obj in build.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+
+    // Wave RTL-5: genuine sdk/lib/rtl/utf8.c — a clean, standalone TU
+    // (no NLS/heap/scrape needed; the 2 fns don't call each other or
+    // anything but memcpy). Renamed ref_* like unicode.c.
+    let utf8_c = repo.join("sdk/lib/rtl/utf8.c");
+    let utf8_body = format!(
+        "#include <rtl_vista.h>\n#include <string.h>\n\
+         #define RtlUnicodeToUTF8N ref_RtlUnicodeToUTF8N\n\
+         #define RtlUTF8ToUnicodeN ref_RtlUTF8ToUnicodeN\n\
+         #include \"{}\"\n",
+        utf8_c.display()
+    );
+    let utf8_src = out.join("ref_utf8.c");
+    fs::write(&utf8_src, utf8_body).unwrap();
+    let mut ubuild = cc::Build::new();
+    ubuild
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&utf8_src);
+    println!("cargo:rerun-if-changed={}", utf8_c.display());
+    for obj in ubuild.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+
+    // Wave RTL-6: genuine sdk/lib/rtl/dos8dot3.c — own ref TU.
+    // RtlpUpcaseUnicodeChar / Nls* globals / RtlUpcaseUnicodeStringTo
+    // CountedOemString resolve at link (the unicode ref TU's model
+    // symbols + the diff-proven rtl-strings cabi export). Only
+    // RtlIsValidOemCharacter is modelled here (CP1252, byte-identical
+    // to cnt_rust::core_rs::mbcp — same discipline as RtlpUpcase*).
+    let dos_c = repo.join("sdk/lib/rtl/dos8dot3.c");
+    let dos_body = format!(
+        "#include <rtl.h>\n#include <string.h>\n\
+         /* storage lives in the unicode ref TU; declare only. */\n\
+         extern BOOLEAN NlsMbOemCodePageTag;\n\
+         static const unsigned short CP_HIGH[32]={{\n\
+            0x20AC,0x0081,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,\n\
+            0x02C6,0x2030,0x0160,0x2039,0x0152,0x008D,0x017D,0x008F,\n\
+            0x0090,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,\n\
+            0x02DC,0x2122,0x0161,0x203A,0x0153,0x009D,0x017E,0x0178}};\n\
+         static unsigned short cp_dec(unsigned char b){{\n\
+            if(b>=0x80&&b<0xA0)return CP_HIGH[b-0x80]; return b;}}\n\
+         static unsigned char cp_enc(unsigned short w){{\n\
+            int i; if(w<0x80||(w>=0xA0&&w<=0xFF))return (unsigned char)w;\n\
+            for(i=0;i<32;i++) if(CP_HIGH[i]==w) return (unsigned char)(0x80+i);\n\
+            return (unsigned char)'?';}}\n\
+         static unsigned short m_up(unsigned short w){{\n\
+            if(w>=0x61&&w<=0x7A)return w-0x20;\n\
+            if((w>=0xE0&&w<=0xF6)||(w>=0xF8&&w<=0xFE))return w-0x20;\n\
+            if(w==0xFF)return 0x0178; if(w==0xB5)return 0x039C;\n\
+            if(w==0x0161)return 0x0160; if(w==0x0153)return 0x0152;\n\
+            if(w==0x017E)return 0x017D; return w;}}\n\
+         BOOLEAN NTAPI ref_RtlIsValidOemCharacter(PWCHAR c){{\n\
+            unsigned short u=m_up(cp_dec(cp_enc(*c)));\n\
+            if(cp_enc(u)==(unsigned char)'?')return FALSE;\n\
+            *c=u; return TRUE;}}\n\
+         #define RtlIsValidOemCharacter ref_RtlIsValidOemCharacter\n\
+         #define RtlGenerate8dot3Name ref_RtlGenerate8dot3Name\n\
+         #define RtlIsNameLegalDOS8Dot3 ref_RtlIsNameLegalDOS8Dot3\n\
+         #include \"{}\"\n",
+        dos_c.display()
+    );
+    let dos_src = out.join("ref_dos8dot3.c");
+    fs::write(&dos_src, dos_body).unwrap();
+    let mut dbuild = cc::Build::new();
+    dbuild
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&dos_src);
+    println!("cargo:rerun-if-changed={}", dos_c.display());
+    for obj in dbuild.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
 }

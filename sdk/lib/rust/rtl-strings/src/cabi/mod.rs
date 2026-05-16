@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{conv, misc, nls, ustr};
+use crate::core_rs::{conv, dos8dot3, misc, nls, ustr, utf8};
 
 /// `STRING` / `ANSI_STRING` / `OEM_STRING` (umtypes.h).
 #[repr(C)]
@@ -29,12 +29,16 @@ const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
 const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
 const STATUS_NO_MEMORY: i32 = 0xC000_0017u32 as i32;
 const STATUS_INVALID_PARAMETER_2: i32 = 0xC000_00F0u32 as i32;
+const STATUS_INVALID_PARAMETER_4: i32 = 0xC000_00F2u32 as i32;
+const STATUS_INVALID_PARAMETER_5: i32 = 0xC000_00F3u32 as i32;
 const STATUS_UNMAPPABLE_CHARACTER: i32 = 0x8000_0016u32 as i32;
 const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
 const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 const STATUS_NOT_FOUND: i32 = 0xC000_0225u32 as i32;
 const STATUS_NOT_IMPLEMENTED: i32 = 0xC000_0002u32 as i32;
+const STATUS_INVALID_COMPUTER_NAME: i32 = 0xC000_0122u32 as i32;
 const MAXUSHORT: u32 = 0xFFFF;
+const MAX_COMPUTERNAME_LENGTH: u32 = 15;
 
 const RTL_SKIP_BUFFER_COPY: u32 = 0x0000_0001;
 const RTL_DUP_NULL_TERMINATE: u32 = 1;
@@ -1230,6 +1234,85 @@ pub unsafe extern "system" fn RtlCompareUnicodeStrings(
     )
 }
 
+// ── Wave RTL-4b slice 4: computer-name ────────────────────────────
+
+/// `BOOLEAN NTAPI RtlEqualComputerName(PUNICODE_STRING,
+/// PUNICODE_STRING)`. Chains through `RtlUpcaseUnicodeStringToOemString
+/// (…, TRUE)` which (alloc → NULL) yields STATUS_NO_MEMORY ⇒
+/// `NT_SUCCESS` FALSE ⇒ the outer guard never sets Result ⇒ FALSE.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEqualComputerName(
+    _computer_name1: *mut UNICODE_STRING,
+    _computer_name2: *mut UNICODE_STRING,
+) -> u8 {
+    0
+}
+
+/// `BOOLEAN NTAPI RtlEqualDomainName(...)` — delegates to
+/// `RtlEqualComputerName`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEqualDomainName(
+    domain_name1: *mut UNICODE_STRING,
+    domain_name2: *mut UNICODE_STRING,
+) -> u8 {
+    RtlEqualComputerName(domain_name1, domain_name2)
+}
+
+/// `NTSTATUS NTAPI RtlDnsHostNameToComputerName(PUNICODE_STRING
+/// ComputerName, PUNICODE_STRING DnsHostName, BOOLEAN Allocate)`.
+/// Dot-scan → `RtlUpcaseUnicodeToOemN` (≤15) → `RtlpDidUnicodeToOemWork`
+/// → `RtlOemStringToUnicodeString`. Default Status is
+/// STATUS_INVALID_COMPUTER_NAME.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDnsHostNameToComputerName(
+    computer_name: *mut UNICODE_STRING,
+    dns_host_name: *mut UNICODE_STRING,
+    allocate: u8,
+) -> i32 {
+    let mut status = STATUS_INVALID_COMPUTER_NAME;
+    let mut cn_len: u32 = (*dns_host_name).Length as u32;
+
+    let dns_units = uunits(dns_host_name);
+    for (l, &w) in dns_units.iter().enumerate() {
+        if w == b'.' as u16 {
+            cn_len = (l as u32) * 2;
+            break;
+        }
+    }
+
+    if cn_len > 0 {
+        let mut oemn = [0u8; (MAX_COMPUTERNAME_LENGTH + 1) as usize];
+        let mut oemn_len: u32 = 0;
+        status = RtlUpcaseUnicodeToOemN(
+            oemn.as_mut_ptr(),
+            MAX_COMPUTERNAME_LENGTH,
+            &mut oemn_len,
+            (*dns_host_name).Buffer,
+            cn_len,
+        );
+        if status == STATUS_SUCCESS || status == STATUS_BUFFER_OVERFLOW {
+            oemn[MAX_COMPUTERNAME_LENGTH as usize] = 0;
+            status = STATUS_INVALID_COMPUTER_NAME;
+            let cn_oem = STRING {
+                Length: oemn_len as u16,
+                MaximumLength: (MAX_COMPUTERNAME_LENGTH + 1) as u16,
+                Buffer: oemn.as_mut_ptr(),
+            };
+            // RtlpDidUnicodeToOemWork(DnsHostName, &cn_oem): reads
+            // DnsHostName->Buffer[i] / oemn[i] for i < oemn_len.
+            let uni_src = rslice((*dns_host_name).Buffer, oemn_len as usize);
+            if nls::did_oem_work(uni_src, &oemn[..oemn_len as usize]) {
+                status = RtlOemStringToUnicodeString(
+                    computer_name,
+                    &cn_oem,
+                    allocate,
+                );
+            }
+        }
+    }
+    status
+}
+
 // ── Wave RTL-4b slice 3: alloc-edge (harness alloc → NULL) ────────
 //
 // RtlpAllocateStringMemory is the harness NULL stub, so every
@@ -1512,4 +1595,437 @@ pub unsafe extern "system" fn RtlGUIDFromString(
     } else {
         STATUS_INVALID_PARAMETER
     }
+}
+
+// ── Wave RTL-4c: integer→char + the *ToUnicodeString wrappers ──────
+
+/// `NTSTATUS NTAPI RtlIntegerToChar(ULONG, ULONG, ULONG, PCHAR)`.
+/// Uppercase digits; `len > length` ⇒ OVERFLOW out-ranks `str==NULL`
+/// ⇒ ACCESS_VIOLATION; writes the digits, plus a NUL iff `len <
+/// length` (exact-fit omits it).
+#[no_mangle]
+pub unsafe extern "system" fn RtlIntegerToChar(
+    value: u32,
+    base: u32,
+    length: u32,
+    str: *mut u8,
+) -> i32 {
+    let (d, n) = match conv::integer_to_char(value, base) {
+        None => return STATUS_INVALID_PARAMETER,
+        Some(x) => x,
+    };
+    if n as u32 > length {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    if str.is_null() {
+        return STATUS_ACCESS_VIOLATION;
+    }
+    for i in 0..n {
+        core::ptr::write_volatile(str.add(i), d[i]);
+    }
+    if (n as u32) < length {
+        core::ptr::write_volatile(str.add(n), 0u8);
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlLargeIntegerToChar(PLARGE_INTEGER, ULONG, ULONG,
+/// PCHAR)`. Like `RtlIntegerToChar` but 64-bit and with NO `str==NULL`
+/// guard (genuine memcpys unconditionally — NULL str is genuine UB,
+/// excluded). The copy is `RtlpSafeCopyMemory` (a faithful memcpy).
+#[no_mangle]
+pub unsafe extern "system" fn RtlLargeIntegerToChar(
+    value: *const i64,
+    base: u32,
+    length: u32,
+    str: *mut u8,
+) -> i32 {
+    let (d, n) = match conv::large_integer_to_char(*value as u64, base) {
+        None => return STATUS_INVALID_PARAMETER,
+        Some(x) => x,
+    };
+    if n as u32 > length {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    for i in 0..n {
+        core::ptr::write_volatile(str.add(i), d[i]);
+    }
+    if (n as u32) < length {
+        core::ptr::write_volatile(str.add(n), 0u8);
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlIntegerToUnicodeString(ULONG, ULONG,
+/// PUNICODE_STRING)` — `RtlIntegerToChar` into a `[u8;33]` then
+/// `RtlAnsiStringToUnicodeString(…, FALSE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIntegerToUnicodeString(
+    value: u32,
+    base: u32,
+    string: *mut UNICODE_STRING,
+) -> i32 {
+    let mut buf = [0u8; 33];
+    let status = RtlIntegerToChar(value, base, 33, buf.as_mut_ptr());
+    if !nt_success(status) {
+        return status;
+    }
+    let ansi = STRING {
+        Length: strlen(buf.as_ptr()) as u16,
+        MaximumLength: 33,
+        Buffer: buf.as_mut_ptr(),
+    };
+    RtlAnsiStringToUnicodeString(string, &ansi, 0)
+}
+
+/// `NTSTATUS NTAPI RtlInt64ToUnicodeString(ULONGLONG, ULONG,
+/// PUNICODE_STRING)` — `RtlLargeIntegerToChar` into a `[u8;65]` then
+/// `RtlAnsiStringToUnicodeString(…, FALSE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlInt64ToUnicodeString(
+    value: u64,
+    base: u32,
+    string: *mut UNICODE_STRING,
+) -> i32 {
+    let mut buf = [0u8; 65];
+    let q = value as i64;
+    let status = RtlLargeIntegerToChar(&q, base, 65, buf.as_mut_ptr());
+    if !nt_success(status) {
+        return status;
+    }
+    let ansi = STRING {
+        Length: strlen(buf.as_ptr()) as u16,
+        MaximumLength: 65,
+        Buffer: buf.as_mut_ptr(),
+    };
+    RtlAnsiStringToUnicodeString(string, &ansi, 0)
+}
+
+// ── Wave RTL-5: utf8.c ────────────────────────────────────────────
+
+/// `NTSTATUS NTAPI RtlUnicodeToUTF8N(CHAR*, ULONG, ULONG*, const
+/// WCHAR*, ULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToUTF8N(
+    utf8_dest: *mut u8,
+    utf8_bytes_max: u32,
+    utf8_bytes_written: *mut u32,
+    uni_src: *const u16,
+    uni_bytes: u32,
+) -> i32 {
+    if uni_src.is_null() {
+        return STATUS_INVALID_PARAMETER_4;
+    }
+    if utf8_bytes_written.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if !utf8_dest.is_null() && uni_bytes % 2 != 0 {
+        return STATUS_INVALID_PARAMETER_5;
+    }
+    let src = rslice(uni_src, (uni_bytes / 2) as usize);
+    let (written, status) = if utf8_dest.is_null() {
+        utf8::unicode_to_utf8(src, None, utf8_bytes_max)
+    } else {
+        let d = wslice(utf8_dest, utf8_bytes_max as usize);
+        utf8::unicode_to_utf8(src, Some(d), utf8_bytes_max)
+    };
+    core::ptr::write_volatile(utf8_bytes_written, written);
+    status
+}
+
+/// `NTSTATUS NTAPI RtlUTF8ToUnicodeN(WCHAR*, ULONG, ULONG*, const
+/// CHAR*, ULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUTF8ToUnicodeN(
+    uni_dest: *mut u16,
+    uni_bytes_max: u32,
+    uni_bytes_written: *mut u32,
+    utf8_src: *const u8,
+    utf8_bytes: u32,
+) -> i32 {
+    if utf8_src.is_null() {
+        return STATUS_INVALID_PARAMETER_4;
+    }
+    if uni_bytes_written.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let src = rslice(utf8_src, utf8_bytes as usize);
+    let (units, status) = if uni_dest.is_null() {
+        utf8::utf8_to_unicode(src, None, uni_bytes_max)
+    } else {
+        let d = wslice(uni_dest, (uni_bytes_max / 2) as usize);
+        utf8::utf8_to_unicode(src, Some(d), uni_bytes_max)
+    };
+    core::ptr::write_volatile(uni_bytes_written, units * 2);
+    status
+}
+
+// ── Wave RTL-6: dos8dot3.c ────────────────────────────────────────
+
+/// `GENERATE_NAME_CONTEXT` (ndk/rtltypes.h) — 36 bytes, align 4.
+#[repr(C)]
+pub struct GenerateNameContext {
+    pub checksum: u16,
+    pub checksum_inserted: u8,
+    pub name_length: u8,
+    pub name_buffer: [u16; 8],
+    pub extension_length: u32,
+    pub extension_buffer: [u16; 4],
+    pub last_index_value: u32,
+}
+
+/// Shared-CP1252 model of `RtlIsValidOemCharacter` (unicode.c):
+/// `u = upcase(dec(enc(*c)))`; `valid = enc(u) != '?'`; on valid the
+/// genuine **mutates** `*c = u`.
+#[inline]
+fn iv_oem(ch: &mut u16) -> bool {
+    let u = nls::upcase_uc(nls::dec_byte(nls::enc_byte(*ch)));
+    if nls::enc_byte(u) == b'?' {
+        return false;
+    }
+    *ch = u;
+    true
+}
+
+/// `BOOLEAN NTAPI RtlIsValidOemCharacter(PWCHAR Char)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIsValidOemCharacter(ch: *mut u16) -> u8 {
+    let mut c = *ch;
+    if iv_oem(&mut c) {
+        core::ptr::write_volatile(ch, c);
+        1
+    } else {
+        0
+    }
+}
+
+/// `VOID NTAPI RtlGenerate8dot3Name(PUNICODE_STRING Name, BOOLEAN
+/// AllowExtendedCharacters, PGENERATE_NAME_CONTEXT, PUNICODE_STRING
+/// Name8dot3)`. Single-byte model (`NlsMbOemCodePageTag == 0` ⇒ the
+/// MB-OEM extra-decrement branch is dead).
+#[no_mangle]
+pub unsafe extern "system" fn RtlGenerate8dot3Name(
+    name: *const UNICODE_STRING,
+    allow_ext: u8,
+    ctx: *mut GenerateNameContext,
+    out: *mut UNICODE_STRING,
+) {
+    let nbuf = (*name).Buffer;
+    let length = (*name).Length as usize / 2;
+    let c = &mut *ctx;
+
+    if c.name_length == 0 {
+        let mut dot_pos = length;
+        for index in 0..length {
+            if *nbuf.add(index) == b'.' as u16 {
+                dot_pos = index;
+            }
+        }
+
+        let mut oem_left: u8 = 6;
+        let mut index = 0;
+        while index < dot_pos && oem_left != 0 {
+            let mut ch = *nbuf.add(index);
+            if ch > b' ' as u16
+                && ch != b'.' as u16
+                && (ch < 127 || (allow_ext != 0 && iv_oem(&mut ch)))
+            {
+                if dos8dot3::is_short_illegal(ch) {
+                    ch = b'_' as u16;
+                } else if (b'a' as u16..=b'z' as u16).contains(&ch) {
+                    ch = nls::upcase_uc(ch);
+                }
+                c.name_buffer[c.name_length as usize] = ch;
+                c.name_length += 1;
+                oem_left -= 1;
+            }
+            index += 1;
+        }
+
+        c.extension_length = 0;
+        if dot_pos < length {
+            c.extension_buffer[0] = b'.' as u16;
+            c.extension_length = 1;
+            let mut dp = dot_pos;
+            let mut ch = b'.' as u16;
+            while dp < length && c.extension_length < 4 {
+                ch = *nbuf.add(dp);
+                if ch > b' ' as u16
+                    && ch != b'.' as u16
+                    && (ch < 127 || (allow_ext != 0 && iv_oem(&mut ch)))
+                {
+                    if dos8dot3::is_short_illegal(ch) {
+                        ch = b'_' as u16;
+                    } else if (b'a' as u16..=b'z' as u16).contains(&ch) {
+                        ch = nls::upcase_uc(ch);
+                    }
+                    c.extension_buffer[c.extension_length as usize] = ch;
+                    c.extension_length += 1;
+                }
+                ch = 0;
+                dp += 1;
+            }
+            if ch != 0 {
+                c.extension_buffer[c.extension_length as usize - 1] = b'~' as u16;
+            }
+        }
+
+        if c.name_length <= 2 {
+            let mut checksum =
+                dos8dot3::get_checksum(rslice(nbuf, length), (*name).Length);
+            c.checksum = checksum;
+            for index in 0..4 {
+                let nib = checksum & 0xF;
+                c.name_buffer[c.name_length as usize + index] = if nib > 9 {
+                    nib + b'A' as u16 - 10
+                } else {
+                    nib + b'0' as u16
+                };
+                checksum >>= 4;
+            }
+            c.checksum_inserted = 1;
+            c.name_length += 4;
+        }
+    }
+
+    c.last_index_value += 1;
+
+    if c.last_index_value > 4 && c.checksum_inserted == 0 {
+        let mut checksum =
+            dos8dot3::get_checksum(rslice(nbuf, length), (*name).Length);
+        c.checksum = checksum;
+        for index in 2..6 {
+            let nib = checksum & 0xF;
+            c.name_buffer[index] = if nib > 9 {
+                nib + b'A' as u16 - 10
+            } else {
+                nib + b'0' as u16
+            };
+            checksum >>= 4;
+        }
+        c.checksum_inserted = 1;
+        c.name_length = 6;
+        c.last_index_value = 1;
+    }
+
+    // index buffer (decimal, reversed) + leading '~'
+    let mut idx_buf = [0u16; 8];
+    let mut idx = c.last_index_value;
+    let mut index_length: usize = 1;
+    while index_length <= 7 && idx > 0 {
+        idx_buf[8 - index_length] = b'0' as u16 + (idx % 10) as u16;
+        idx /= 10;
+        index_length += 1;
+    }
+    idx_buf[8 - index_length] = b'~' as u16;
+
+    let obuf = (*out).Buffer;
+    let mut olen: usize = 0;
+    (*out).Length = 0;
+
+    if c.name_length != 0 {
+        for i in 0..c.name_length as usize {
+            core::ptr::write_volatile(obuf.add(i), c.name_buffer[i]);
+        }
+        olen = c.name_length as usize;
+        (*out).Length = (olen * 2) as u16;
+    }
+
+    for i in 0..index_length {
+        core::ptr::write_volatile(obuf.add(olen + i), idx_buf[8 - index_length + i]);
+    }
+    olen += index_length;
+    (*out).Length = (olen * 2) as u16;
+
+    if c.extension_length != 0 {
+        for i in 0..c.extension_length as usize {
+            core::ptr::write_volatile(obuf.add(olen + i), c.extension_buffer[i]);
+        }
+        olen += c.extension_length as usize;
+        (*out).Length = (olen * 2) as u16;
+    }
+}
+
+/// `BOOLEAN NTAPI RtlIsNameLegalDOS8Dot3(PCUNICODE_STRING,
+/// POEM_STRING OemName, PBOOLEAN NameContainsSpaces)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIsNameLegalDOS8Dot3(
+    name: *const UNICODE_STRING,
+    oem_name: *mut STRING,
+    name_contains_spaces: *mut u8,
+) -> u8 {
+    const ILLEGAL: &[u8] = b"*?<>|\"+=,;[]:/\\\xE5";
+    let mut local = [0u8; 12];
+    let mut local_os;
+    let oem: *mut STRING = if oem_name.is_null() {
+        local_os = STRING {
+            Length: 12,
+            MaximumLength: 12,
+            Buffer: local.as_mut_ptr(),
+        };
+        &mut local_os
+    } else {
+        oem_name
+    };
+
+    let status = RtlUpcaseUnicodeStringToCountedOemString(oem, name, 0);
+    if !nt_success(status) {
+        return 0;
+    }
+    let olen = (*oem).Length as usize;
+    if (*oem).Length > 12 || (*oem).Buffer.is_null() {
+        return 0;
+    }
+    let ob = (*oem).Buffer;
+
+    if *ob == b'.' {
+        if (*oem).Length != 1 && ((*oem).Length != 2 || *ob.add(1) != b'.') {
+            return 0;
+        }
+        if !name_contains_spaces.is_null() {
+            core::ptr::write_volatile(name_contains_spaces, 0);
+        }
+        return 1;
+    }
+
+    let mut dot: i32 = -1;
+    let mut got_space = false;
+    for i in 0..olen {
+        let b = *ob.add(i);
+        match b {
+            b' ' => {
+                if i == 0 || i == olen - 1 || *ob.add(i + 1) == b'.' {
+                    return 0;
+                }
+                got_space = true;
+            }
+            b'.' => {
+                if dot != -1 {
+                    return 0;
+                }
+                dot = i as i32;
+            }
+            _ => {
+                if b == 0 || ILLEGAL.contains(&b) {
+                    return 0;
+                }
+            }
+        }
+    }
+
+    if dot == -1 {
+        if olen > 8 {
+            return 0;
+        }
+    } else if dot > 8
+        || (olen as i32 - dot > 4)
+        || dot == olen as i32 - 1
+    {
+        return 0;
+    }
+
+    if !name_contains_spaces.is_null() {
+        core::ptr::write_volatile(name_contains_spaces, got_space as u8);
+    }
+    1
 }

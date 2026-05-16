@@ -40,6 +40,7 @@ members = [
     "slist",
     "slist-loom",
     "splaytree",
+    "uniprefix",
     "time",
     "utf8",
     "win32k-sys",

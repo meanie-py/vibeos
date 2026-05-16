@@ -24,6 +24,7 @@ extern crate prefix;
 extern crate random;
 extern crate slist;
 extern crate splaytree;
+extern crate uniprefix;
 extern crate time;
 
 // Single shared #[panic_handler] for the umbrella. Each sub-crate previously

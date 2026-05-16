@@ -208,3 +208,59 @@ pub fn integer_to_unicode(value: u32, base: u32, length: u32) -> IntToUni {
     }
     IntToUni::Digits(out, c)
 }
+
+/// `RtlIntegerToChar` digit production (the do-while reverse fill into
+/// `buffer[33]`). **Uppercase** hex (`'A'+d-10`) — unlike
+/// [`integer_to_unicode`]'s lowercase. Returns the digits in output
+/// order + count; `None` ⇒ invalid base. The caller applies the
+/// `len`/`length` overflow / NUL / `str==NULL` contract.
+pub fn integer_to_char(value: u32, base: u32) -> Option<([u8; 32], usize)> {
+    let base = if base == 0 { 10 } else { base };
+    if base != 2 && base != 8 && base != 10 && base != 16 {
+        return None;
+    }
+    let mut tmp = [0u8; 32];
+    let mut v = value;
+    let mut c = 0usize;
+    loop {
+        let d = (v % base) as u8;
+        v /= base;
+        tmp[c] = if d < 10 { b'0' + d } else { b'A' + d - 10 };
+        c += 1;
+        if v == 0 {
+            break;
+        }
+    }
+    let mut out = [0u8; 32];
+    for i in 0..c {
+        out[i] = tmp[c - 1 - i];
+    }
+    Some((out, c))
+}
+
+/// `RtlLargeIntegerToChar` — the 64-bit twin of [`integer_to_char`]
+/// (`buffer[65]`, up to 64 digits, uppercase).
+pub fn large_integer_to_char(value: u64, base: u32) -> Option<([u8; 64], usize)> {
+    let base = if base == 0 { 10 } else { base };
+    if base != 2 && base != 8 && base != 10 && base != 16 {
+        return None;
+    }
+    let base64 = base as u64;
+    let mut tmp = [0u8; 64];
+    let mut v = value;
+    let mut c = 0usize;
+    loop {
+        let d = (v % base64) as u8;
+        v /= base64;
+        tmp[c] = if d < 10 { b'0' + d } else { b'A' + d - 10 };
+        c += 1;
+        if v == 0 {
+            break;
+        }
+    }
+    let mut out = [0u8; 64];
+    for i in 0..c {
+        out[i] = tmp[c - 1 - i];
+    }
+    Some((out, c))
+}

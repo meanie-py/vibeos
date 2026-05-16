@@ -366,6 +366,7 @@ dependencies = [
  "slist",
  "splaytree",
  "time",
+ "uniprefix",
 ]
 
 [[package]]
@@ -483,6 +484,13 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "uniprefix"
+version = "0.1.0"
+dependencies = [
+ "splaytree",
 ]
 
 [[package]]
