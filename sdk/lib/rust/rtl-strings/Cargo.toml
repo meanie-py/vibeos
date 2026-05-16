@@ -1,0 +1,27 @@
+# rtl-strings — Rust translation of ReactOS `sdk/lib/rtl/unicode.c`
+# (the NT Rtl* UNICODE_STRING / ANSI_STRING / OEM string surface).
+#
+# Two layers, same discipline as cnt-rust:
+#   core_rs/ — idiomatic, slice-based, no_std, no_unsafe. THE impl
+#              (the {Length,MaximumLength,Buffer} semantics + the
+#              faithful ReactOS misfeatures).
+#   cabi/    — #[no_mangle] extern "system" NTAPI shims: unsafe
+#              struct-reconstruct + the exact legacy Rtl* contract.
+#
+# Shared NLS truth: the code-page-dependent waves (RtlMultiByteToUnicodeN
+# etc.) reuse cnt-rust's core_rs CP1252 model (one truth). Wave RTL-1
+# (pure string ops) has no NLS dependency so no cnt-rust dep yet.
+[package]
+name = "rtl-strings"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The #[no_mangle] extern "system" shim layer (off for pure-core /
+# Kani consumers; on for the kernel link + rtl-difftest).
+cabi = []
+
+[dependencies]
