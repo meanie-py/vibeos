@@ -149,7 +149,8 @@ def cmd_submit(args):
     if args.output:
         # Post-process before writing
         code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
-                           target_name=target.name)
+                           target_name=target.name,
+                           sys_crate=target.sys_crate, sys_umbrella=target.sys_umbrella)
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
     elif args.assemble:
@@ -159,7 +160,8 @@ def cmd_submit(args):
     else:
         # Post-process before printing
         code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
-                           target_name=target.name)
+                           target_name=target.name,
+                           sys_crate=target.sys_crate, sys_umbrella=target.sys_umbrella)
         print(code)
 
 
@@ -865,7 +867,9 @@ def cmd_translate(args):
 
         # Post-process
         code = postprocess(stitched, exports=file_res.exports, globals=scan.globals,
-                           target_name=rustconv_target.name)
+                           target_name=rustconv_target.name,
+                           sys_crate=rustconv_target.sys_crate,
+                           sys_umbrella=rustconv_target.sys_umbrella)
 
         if args.output and total_files == 1:
             Path(args.output).write_text(code)

@@ -114,6 +114,38 @@ def add_module_header(content: str, arch: str, for_hal: bool) -> str:
     return header + content
 
 
+def add_enum_deprefix_aliases(content: str) -> tuple[str, int]:
+    """Emit bare-name aliases for type-prefixed constified-enum consts.
+
+    bindgen renders enum members as `pub const <ENUM>_<VARIANT>:
+    <ENUM> = N;` but C (and the LLM translation) uses the bare
+    `<VARIANT>` (ProcessBasePriority, OptionOk, …). The catalog already
+    de-prefixes for *resolution*; this makes the bare name a real Rust
+    const so the translated code actually compiles. Skip when the bare
+    name would collide with an existing pub item (first def wins).
+    """
+    pat = re.compile(r'^pub const (\w+):\s*(\w+)\s*=\s*[^;]+;', re.M)
+    existing = set(re.findall(r'^pub (?:const|type|struct|fn) (\w+)', content, re.M))
+    aliases, seen = [], set()
+    for m in pat.finditer(content):
+        cname, etype = m.group(1), m.group(2)
+        pfx = etype + "_"
+        if not cname.startswith(pfx) or len(cname) <= len(pfx):
+            continue
+        bare = cname[len(pfx):]
+        if not bare[:1].isalpha() and bare[:1] != "_":
+            continue
+        if bare in existing or bare in seen:
+            continue
+        seen.add(bare)
+        aliases.append(f"pub const {bare}: {etype} = {cname};")
+    if not aliases:
+        return content, 0
+    block = ("\n// --- enum de-prefix aliases (bare C/LLM names) ---\n"
+             + "\n".join(aliases) + "\n")
+    return content + block, len(aliases)
+
+
 def fix_bitfield_ctor_const_collisions(content: str) -> tuple[str, int]:
     """Rename `new_bitfield_1` ctor params that collide with a `pub const`.
 
@@ -179,6 +211,15 @@ def main():
     flex_arrays, content = extract_bindgen_flex_array(content)
 
     # i386: rename new_bitfield_1 ctor params that collide with pub consts
+    # Bare-name aliases for type-prefixed constified-enum members so
+    # translated code can use `ProcessBasePriority`, `OptionOk`, etc.
+    # MUST precede the bitfield-collision fix so that pass sees the
+    # complete final `pub const` set (a new bare alias like `Transition`
+    # can itself collide with a new_bitfield_1 ctor param).
+    content, n_alias = add_enum_deprefix_aliases(content)
+    if n_alias:
+        print(f"  {arch}: added {n_alias} enum de-prefix aliases")
+
     content, n_bf_fixed = fix_bitfield_ctor_const_collisions(content)
     if n_bf_fixed:
         print(f"  {arch}: renamed {n_bf_fixed} bitfield-ctor param(s) colliding with pub const")

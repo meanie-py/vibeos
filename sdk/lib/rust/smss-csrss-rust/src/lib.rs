@@ -13,13 +13,9 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code)]
 
-// csrss.exe spike. ⚠ The raw spike output does NOT compile yet — it
-// flushed 3 systematic Phase-1 pipeline gaps (wrong FFI crate
-// `ntkrnl_sys` vs `ntdll_sys::nt`; FORCEINLINE NtCurrent* needing a
-// hand-written ntdll-sys inline module; i386 `_main` decoration). See
-// csrss.rs header. Module is left declared (failure visible, per
-// CLAUDE.md) but this crate is intentionally NOT a workspace member
-// yet — it's a pre-integration scaffold; adding it before the pipeline
-// fixes would break the whole-workspace `cargo build` for unrelated
-// work. Wire it up when the pipeline fixes land + cohabitation begins.
+// csrss.exe `_main` — clean rustconv translation after the P1a
+// pipeline fixes (user-mode FFI routing + prompt addendum + ntdll-sys
+// NtCurrent* inlines). Compiles ×3; cohabitation cmake flip (comment
+// csrss.c, link this rlib, build csrss.exe, smoke-gate) is the next
+// step and needs the main checkout's build tree.
 pub mod csrss;

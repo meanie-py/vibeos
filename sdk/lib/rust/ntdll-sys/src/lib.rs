@@ -30,6 +30,7 @@
 #![allow(clashing_extern_declarations)]
 
 mod bindgen_common;
+mod inlines;
 
 #[cfg(target_arch = "aarch64")]
 mod bindgen_arm64;
@@ -65,4 +66,9 @@ pub mod nt {
 
     #[cfg(target_arch = "x86")]
     pub use super::bindgen_i386::*;
+
+    // Hand-written FORCEINLINE user-mode accessors (NtCurrentPeb/Teb/
+    // Process/Thread) — not in bindgen (they're macros). Listed after
+    // the bindgen glob so these win for the NtCurrent* names.
+    pub use super::inlines::*;
 }

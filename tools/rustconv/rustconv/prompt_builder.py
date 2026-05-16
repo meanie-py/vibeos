@@ -109,7 +109,11 @@ def load_system_prompt(target: Target | None = None) -> str:
     """Load the system prompt template for the given target."""
     if target is None:
         target = TARGETS["ntoskrnl"]
-    return target.system_prompt.read_text()
+    prompt = target.system_prompt.read_text()
+    addendum = getattr(target, "system_prompt_addendum", None)
+    if addendum and addendum.exists():
+        prompt += "\n\n" + addendum.read_text()
+    return prompt
 
 
 def load_shim_signatures(subsystem: str) -> dict[str, str]:

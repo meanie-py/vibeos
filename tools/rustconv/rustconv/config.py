@@ -99,6 +99,20 @@ class Target:
     cmake_source_files: list = field(default_factory=list)  # generic.cmake etc. to edit
     arches: tuple = ("i386", "amd64", "arm64")  # supported arches
     win32k_bindgen_files: dict = field(default_factory=dict)  # arch → win32k-sys .rs (win32k only)
+    # FFI substrate crate the translated Rust imports from. Default is
+    # the kernel crate with per-module paths (ntkrnl_sys::ddk/base/…).
+    # A user-mode target (smss-csrss) sets sys_crate="ntdll_sys" +
+    # sys_umbrella="nt": every `ntkrnl_sys::<mod>::` is deterministically
+    # collapsed to a single `ntdll_sys::nt::*` glob in postprocess
+    # (LLM-independent, mirrors win32k enforce_win32k_abi philosophy).
+    sys_crate: str = "ntkrnl_sys"
+    sys_umbrella: str | None = None
+    # Optional target-specific rules appended to the (shared) system
+    # prompt — mirrors system_prompt_hal.md but additive, so the big
+    # kernel ruleset isn't duplicated. smss-csrss uses it for the
+    # user-mode specifics (ntdll_sys::nt umbrella, FORCEINLINE
+    # NtCurrent*/_PEB/_TEB, user-mode not kernel-mode).
+    system_prompt_addendum: Path | None = None
 
 
 TARGETS = {
@@ -220,6 +234,9 @@ TARGETS = {
         cmake_deps_file=None,
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
 }
 

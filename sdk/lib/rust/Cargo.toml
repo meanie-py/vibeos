@@ -27,6 +27,7 @@ members = [
     "hal-cargo",
     "ntkrnl-sys",
     "ntdll-sys",
+    "smss-csrss-rust",
     "ntoskrnl-cargo",
     "ntoskrnl-rust",
     "ntprintf",
