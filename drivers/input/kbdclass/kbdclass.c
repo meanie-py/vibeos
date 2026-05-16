@@ -484,6 +484,18 @@ ClassCallback(
 	KeAcquireSpinLock(&ClassDeviceExtension->SpinLock, &OldIrql);
 	if (InputCount > 0)
 	{
+		/* Smoke delivery oracle: prove a real keystroke reached the
+		 * keyboard class driver (i8042prt/usbkbd -> kbdclass), not just
+		 * "win32k didn't crash". One-shot (InterlockedCompareExchange) so
+		 * the post-`shell ready` input/mouse storm can't spam serial. The
+		 * smoke test asserts this marker on i386/amd64 — boot markers
+		 * structurally cannot, since the raw-input path only runs once a
+		 * key actually arrives after the desktop is up. */
+		static volatile LONG g_FirstKbdDeliveredLogged = 0;
+		if (InterlockedCompareExchange(&g_FirstKbdDeliveredLogged, 1, 0) == 0)
+			DbgPrint("[KBDCLASS] first key delivered sc=0x%x flags=0x%x cnt=%lu\n",
+			         DataStart->MakeCode, DataStart->Flags, (ULONG)InputCount);
+
 		if (ClassDeviceExtension->InputCount + InputCount > ClassDeviceExtension->DriverExtension->DataQueueSize)
 		{
 			/*
