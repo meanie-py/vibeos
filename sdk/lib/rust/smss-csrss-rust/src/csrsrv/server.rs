@@ -100,7 +100,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     }
 
     if ServerId != CSRSRV_SERVERDLL_INDEX {
-        Status = LdrLoadDll(core::ptr::null_mut(), 0, &mut TempString, &mut hServerDll);
+        Status = LdrLoadDll(core::ptr::null_mut(), core::ptr::null_mut(), &mut TempString, &mut hServerDll);
         if Status < 0 {
             static ERROR_PATH: [u16; 18] = [
                 b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16,
@@ -132,7 +132,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     }
 
     Size = core::mem::size_of::<CSR_SERVER_DLL>() as ULONG + DllName.MaximumLength as ULONG;
-    ServerDll = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, Size as usize) as PCSR_SERVER_DLL;
+    ServerDll = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Size as usize).try_into().unwrap()) as PCSR_SERVER_DLL;
     if ServerDll.is_null() {
         if !hServerDll.is_null() {
             LdrUnloadDll(hServerDll);
@@ -331,7 +331,7 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(
     if RtlCreateHeap(
         HEAP_ZERO_MEMORY | HEAP_CLASS_7,
         CsrSrvSharedSectionHeap,
-        CsrSrvSharedSectionSize as usize,
+        (CsrSrvSharedSectionSize as usize).try_into().unwrap(),
         PAGE_SIZE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -346,7 +346,7 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(
     CsrSrvSharedStaticServerData = RtlAllocateHeap(
         CsrSrvSharedSectionHeap,
         HEAP_ZERO_MEMORY,
-        CSR_SERVER_DLL_MAX as usize * core::mem::size_of::<PVOID>(),
+        (CSR_SERVER_DLL_MAX as usize * core::mem::size_of::<PVOID>()).try_into().unwrap(),
     ) as *mut PVOID;
     if CsrSrvSharedStaticServerData.is_null() {
         return STATUS_NO_MEMORY;
@@ -450,7 +450,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
         && (DebuggerInfo.KernelDebuggerEnabled != 0)
     {
         Result = RtlUnhandledExceptionFilter(ExceptionInfo);
-        if Result != EXCEPTION_CONTINUE_EXECUTION {
+        if Result != EXCEPTION_CONTINUE_EXECUTION.try_into().unwrap() {
             Status = RtlAdjustPrivilege(SE_SHUTDOWN_PRIVILEGE, 1, 1, &mut OldValue);
 
             if Status == STATUS_NO_TOKEN {
@@ -459,7 +459,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
             if Status < 0 {
                 NtTerminateProcess(
                     NtCurrentProcess(),
-                    (*(*ExceptionInfo).ExceptionRecord).ExceptionCode,
+                    (*(*ExceptionInfo).ExceptionRecord).ExceptionCode.try_into().unwrap(),
                 );
                 return Result;
             }
@@ -491,7 +491,7 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
 
         NtTerminateProcess(
             NtCurrentProcess(),
-            (*(*ExceptionInfo).ExceptionRecord).ExceptionCode,
+            (*(*ExceptionInfo).ExceptionRecord).ExceptionCode.try_into().unwrap(),
         );
     }
 

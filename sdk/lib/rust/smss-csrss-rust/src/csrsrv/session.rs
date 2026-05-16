@@ -48,7 +48,7 @@ unsafe fn CsrAllocateNtSession(SessionId: ULONG) -> PCSR_NT_SESSION {
     let NtSession = RtlAllocateHeap(
         CsrHeap,
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<_CSR_NT_SESSION>(),
+        core::mem::size_of::<_CSR_NT_SESSION>().try_into().unwrap(),
     ) as PCSR_NT_SESSION;
 
     if !NtSession.is_null() {

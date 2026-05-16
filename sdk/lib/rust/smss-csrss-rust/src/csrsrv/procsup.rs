@@ -62,7 +62,7 @@ unsafe fn CsrProcessRefcountZero(CsrProcess: PCSR_PROCESS) {
 pub unsafe extern "system" fn CsrLockedDereferenceProcess(CsrProcess: PCSR_PROCESS) {
     let LockCount: i32 = {
         (*CsrProcess).ReferenceCount -= 1;
-        (*CsrProcess).ReferenceCount
+        (*CsrProcess).ReferenceCount.try_into().unwrap()
     };
     if LockCount == 0 {
         CsrProcessRefcountZero(CsrProcess);
@@ -75,7 +75,7 @@ pub unsafe extern "system" fn CsrAllocateProcess() -> PCSR_PROCESS {
     let TotalSize: usize = core::mem::size_of::<CSR_PROCESS>()
         + (CSR_SERVER_DLL_MAX as usize * core::mem::size_of::<*mut core::ffi::c_void>())
         + CsrTotalPerProcessDataLength as usize;
-    let CsrProcess = RtlAllocateHeap(CsrHeap, 8, TotalSize) as PCSR_PROCESS;
+    let CsrProcess = RtlAllocateHeap(CsrHeap, 8, TotalSize.try_into().unwrap()) as PCSR_PROCESS;
     if CsrProcess.is_null() {
         return core::ptr::null_mut();
     }
@@ -96,7 +96,7 @@ pub unsafe extern "system" fn CsrLockedReferenceProcess(CsrProcess: PCSR_PROCESS
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrInitializeProcessStructure() -> i32 {
-    let mut Status = RtlInitializeCriticalSection(core::ptr::addr_of_mut!(CsrProcessLock));
+    let Status = RtlInitializeCriticalSection(core::ptr::addr_of_mut!(CsrProcessLock));
     if Status < 0 {
         return Status;
     }
@@ -297,7 +297,7 @@ pub unsafe extern "system" fn CsrDereferenceProcess(CsrProcess: PCSR_PROCESS) {
     CsrAcquireProcessLock();
     let LockCount: i32 = {
         (*CsrProcess).ReferenceCount -= 1;
-        (*CsrProcess).ReferenceCount
+        (*CsrProcess).ReferenceCount.try_into().unwrap()
     };
     if LockCount == 0 {
         CsrProcessRefcountZero(CsrProcess);
@@ -382,7 +382,7 @@ pub unsafe extern "system" fn CsrGetProcessLuid(
         NtClose(hToken);
         return Status;
     }
-    let TokenStats = RtlAllocateHeap(CsrHeap, 0, Length as usize) as *mut TOKEN_STATISTICS;
+    let TokenStats = RtlAllocateHeap(CsrHeap, 0, (Length as usize).try_into().unwrap()) as *mut TOKEN_STATISTICS;
     if TokenStats.is_null() {
         NtClose(hToken);
         return STATUS_NO_MEMORY;

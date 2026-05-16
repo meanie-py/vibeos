@@ -38,7 +38,7 @@ pub unsafe extern "system" fn CsrCallServerFromServer(
     }
 
     let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
-    if let Some(func) = (*dispatch_fn) {
+    if let Some(func) = *dispatch_fn {
         (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status =
             func(ReceiveMsg, &raw mut ReplyCode);
     } else {
@@ -140,7 +140,7 @@ unsafe fn CsrpCheckRequestThreads() -> NTSTATUS {
                 InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
                 InterlockedIncrementUL(&raw mut CsrpDynamicThreadTotal);
 
-                if CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread) != 0
+                if CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread) != core::ptr::null_mut()
                 {
                     NtResumeThread(hThread, core::ptr::null_mut());
                 } else {
@@ -319,7 +319,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
                 ReplyPort = CsrApiPort;
 
                 let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
-                if let Some(func) = (*dispatch_fn) {
+                if let Some(func) = *dispatch_fn {
                     func(&raw mut ReceiveMsg, &raw mut ReplyCode);
                 }
 
@@ -451,7 +451,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         ReplyCode = CsrReplyImmediately;
 
         let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
-        if let Some(func) = (*dispatch_fn) {
+        if let Some(func) = *dispatch_fn {
             (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status =
                 func(&raw mut ReceiveMsg, &raw mut ReplyCode);
         }
@@ -497,7 +497,7 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
 
     Size = CsrDirectoryName.Length as ULONG + core::mem::size_of::<[u16; 10]>() as ULONG;
 
-    CsrApiPortName.Buffer = RtlAllocateHeap(CsrHeap, 0, Size as usize) as PWSTR;
+    CsrApiPortName.Buffer = RtlAllocateHeap(CsrHeap, 0, (Size as usize).try_into().unwrap()) as PWSTR;
     if CsrApiPortName.Buffer.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -704,7 +704,7 @@ pub unsafe extern "system" fn CsrCaptureArguments(
         return 0u8;
     }
 
-    ServerCaptureBuffer = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, Length as usize)
+    ServerCaptureBuffer = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Length as usize).try_into().unwrap())
         as PCSR_CAPTURE_BUFFER;
 
     if ServerCaptureBuffer.is_null() {
@@ -733,7 +733,7 @@ pub unsafe extern "system" fn CsrCaptureArguments(
             if ((CurrentOffset & (core::mem::size_of::<PVOID>() - 1)) != 0)
                 || (CurrentOffset
                     < core::mem::offset_of!(_CSR_API_MESSAGE, Data.ApiMessageData))
-                || (CurrentOffset >= core::mem::size_of::<_CSR_API_MESSAGE>())
+                || (CurrentOffset >= core::mem::size_of::<_CSR_API_MESSAGE>().try_into().unwrap())
             {
                 (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status =
                     STATUS_INVALID_PARAMETER;
@@ -746,9 +746,9 @@ pub unsafe extern "system" fn CsrCaptureArguments(
             if (pointed_value >= ((ClientCaptureBuffer as ULONG_PTR)
                 + SizeOfBufferThroughOffsetsArray))
                 && (pointed_value
-                    <= (EndOfClientBuffer.wrapping_sub(core::mem::size_of::<PVOID>())))
+                    <= (EndOfClientBuffer.wrapping_sub(core::mem::size_of::<PVOID>().try_into().unwrap())))
             {
-                *(ptr_location as *mut ULONG_PTR) = pointed_value.wrapping_add(BufferDistance);
+                *(ptr_location as *mut ULONG_PTR) = pointed_value.wrapping_add(BufferDistance.try_into().unwrap());
             } else {
                 (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status =
                     STATUS_INVALID_PARAMETER;
@@ -803,7 +803,7 @@ pub unsafe extern "system" fn CsrReleaseCapturedArguments(ApiMessage: PCSR_API_M
         if CurrentOffset != 0 {
             let ptr_location = (CurrentOffset as usize) + (ApiMessage as usize);
             *(ptr_location as *mut ULONG_PTR) =
-                (*(ptr_location as *const ULONG_PTR)).wrapping_sub(BufferDistance);
+                (*(ptr_location as *const ULONG_PTR)).wrapping_sub(BufferDistance.try_into().unwrap());
         }
 
         OffsetPointer = OffsetPointer.add(1);
@@ -856,7 +856,7 @@ pub unsafe extern "system" fn CsrValidateMessageBuffer(
             OffsetPointer = (*CaptureBuffer).PointerOffsetsArray.as_mut_ptr();
             let mut count = PointerCount;
             while count > 0 {
-                if *OffsetPointer == BufferDistance {
+                if *OffsetPointer == BufferDistance.try_into().unwrap() {
                     return 1u8;
                 }
                 OffsetPointer = OffsetPointer.add(1);

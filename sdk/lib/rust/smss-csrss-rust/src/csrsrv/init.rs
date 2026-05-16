@@ -1,6 +1,5 @@
 
 use ntdll_sys::nt::*;
-use super::srv_inlines::*;
 static mut CsrDebug: ULONG = 0;
 pub static mut CsrHeap: HANDLE = core::ptr::null_mut();
 pub static mut CsrObjectDirectory: HANDLE = core::ptr::null_mut();
@@ -44,7 +43,7 @@ unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {
         return Status;
     }
 
-    TokenInfo = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, Length as usize) as PTOKEN_USER;
+    TokenInfo = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Length as usize).try_into().unwrap()) as PTOKEN_USER;
     if TokenInfo.is_null() {
         NtClose(hToken);
         Status = STATUS_NO_MEMORY;
@@ -61,7 +60,7 @@ unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {
     UserSid = (*TokenInfo).User.Sid;
     Length = RtlLengthSid(UserSid) + core::mem::size_of::<ACL>() as u32 + core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32;
 
-    ProcSd = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize) as PSECURITY_DESCRIPTOR;
+    ProcSd = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, ((SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize).try_into().unwrap()) as PSECURITY_DESCRIPTOR;
     if ProcSd.is_null() {
         Status = STATUS_NO_MEMORY;
         RtlFreeHeap(CsrHeap, 0, TokenInfo as PVOID);
@@ -218,7 +217,7 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         SidLength = RtlLengthSid(CreatorSid) + RtlLengthSid(SystemSid) + RtlLengthSid(AdminSid);
         AclLength = core::mem::size_of::<ACL>() as u32 + 3 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32 + SidLength;
 
-        Dacl = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, AclLength as usize) as PACL;
+        Dacl = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (AclLength as usize).try_into().unwrap()) as PACL;
 
         Status = RtlCreateAcl(Dacl, AclLength, ACL_REVISION2);
         Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_ALL, SystemSid);
@@ -237,7 +236,7 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         SidLength = RtlLengthSid(WorldSid) + RtlLengthSid(SystemSid);
         AclLength = core::mem::size_of::<ACL>() as u32 + 3 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32 + SidLength;
 
-        Dacl = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, AclLength as usize) as PACL;
+        Dacl = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (AclLength as usize).try_into().unwrap()) as PACL;
 
         Status = RtlCreateAcl(Dacl, AclLength, ACL_REVISION2);
         Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE, WorldSid);
@@ -599,7 +598,7 @@ unsafe extern "system" fn CsrInitCsrRootProcess() -> NTSTATUS {
     let mut ProcessData: PVOID;
     let mut ServerDll: PCSR_SERVER_DLL;
 
-    ProcessData = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, CsrTotalPerProcessDataLength as usize);
+    ProcessData = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (CsrTotalPerProcessDataLength as usize).try_into().unwrap());
     if ProcessData.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -643,7 +642,7 @@ pub unsafe extern "system" fn CsrCreateLocalSystemSD(LocalSystemSd: *mut PSECURI
 
     Length = RtlLengthSid(SystemSid) + core::mem::size_of::<ACL>() as u32 + core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32;
 
-    SystemSd = RtlAllocateHeap(CsrHeap, 0, (SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize) as PSECURITY_DESCRIPTOR;
+    SystemSd = RtlAllocateHeap(CsrHeap, 0, ((SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize).try_into().unwrap()) as PSECURITY_DESCRIPTOR;
 
     Dacl = (SystemSd as usize + SECURITY_DESCRIPTOR_MIN_LENGTH) as PACL;
 
@@ -694,7 +693,7 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
 
     Size = CsrDirectoryName.Length as u32 + core::mem::size_of_val(&SB_PORT_NAME) as u32 + core::mem::size_of::<u16>() as u32;
 
-    CsrSbApiPortName.Buffer = RtlAllocateHeap(CsrHeap, 0, Size as usize) as *mut u16;
+    CsrSbApiPortName.Buffer = RtlAllocateHeap(CsrHeap, 0, (Size as usize).try_into().unwrap()) as *mut u16;
     if CsrSbApiPortName.Buffer.is_null() {
         return STATUS_NO_MEMORY;
     }

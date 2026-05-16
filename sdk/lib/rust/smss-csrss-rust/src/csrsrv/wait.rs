@@ -19,7 +19,7 @@ unsafe fn CsrInitializeWait(
         - core::mem::size_of::<_CSR_API_MESSAGE>() as ULONG
         + (*WaitApiMessage).Header.u1.s1.TotalLength as ULONG;
 
-    WaitBlock = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, Size as usize) as PCSR_WAIT_BLOCK;
+    WaitBlock = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Size as usize).try_into().unwrap()) as PCSR_WAIT_BLOCK;
     if WaitBlock.is_null() {
         (*WaitApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
         return 0u8;

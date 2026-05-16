@@ -263,7 +263,7 @@ pub unsafe extern "system" fn CsrClientConnectToServer(
         let mut ApiMessage: CSR_API_MESSAGE = core::mem::zeroed();
         let ClientConnect: PCSR_CLIENT_CONNECT =
             &mut ApiMessage.__bindgen_anon_1.__bindgen_anon_1.Data.CsrClientConnect as *mut _;
-        let mut CaptureBuffer: PCSR_CAPTURE_BUFFER;
+        let CaptureBuffer: PCSR_CAPTURE_BUFFER;
 
         InsideCsrProcess = 0u8;
 
@@ -323,7 +323,7 @@ pub unsafe extern "system" fn CsrClientCallServer(
     ApiNumber: CSR_API_NUMBER,
     DataLength: ULONG,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     if DataLength > (MAXSHORT as ULONG - core::mem::size_of::<CSR_API_MESSAGE>() as ULONG) {
         return STATUS_INVALID_PARAMETER;

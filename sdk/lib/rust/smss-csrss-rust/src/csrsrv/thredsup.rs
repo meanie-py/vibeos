@@ -73,7 +73,7 @@ pub unsafe extern "system" fn CsrAllocateThread(CsrProcess: PCSR_PROCESS) -> PCS
     let CsrThread = RtlAllocateHeap(
         CsrHeap,
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CSR_THREAD>(),
+        core::mem::size_of::<CSR_THREAD>().try_into().unwrap(),
     ) as PCSR_THREAD;
     if CsrThread.is_null() {
         return core::ptr::null_mut();
@@ -228,7 +228,7 @@ unsafe fn CsrThreadRefcountZero(CsrThread: PCSR_THREAD) {
 
     if !(*CsrThread).ThreadHandle.is_null() {
         UnProtectHandle((*CsrThread).ThreadHandle);
-        let Status = NtClose((*CsrThread).ThreadHandle);
+        let _Status = NtClose((*CsrThread).ThreadHandle);
     }
 
     CsrDeallocateThread(CsrThread);

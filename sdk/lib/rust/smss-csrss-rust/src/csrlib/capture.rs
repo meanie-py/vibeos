@@ -60,7 +60,7 @@ pub unsafe extern "system" fn CsrAllocateCaptureBuffer(
     ArgumentCount: ULONG,
     BufferSize: ULONG,
 ) -> PCSR_CAPTURE_BUFFER {
-    let mut CaptureBuffer: PCSR_CAPTURE_BUFFER;
+    let CaptureBuffer: PCSR_CAPTURE_BUFFER;
     let OffsetsArraySize: ULONG;
     let mut MaximumSize: ULONG;
     let mut total_size: ULONG;
@@ -120,7 +120,7 @@ pub unsafe extern "system" fn CsrAllocateMessagePointer(
     MessageLength: ULONG,
     CapturedData: *mut PVOID,
 ) -> ULONG {
-    let mut aligned_length: ULONG;
+    let aligned_length: ULONG;
 
     if MessageLength == 0 {
         *CapturedData = core::ptr::null_mut();
@@ -180,7 +180,7 @@ pub unsafe extern "system" fn CsrCaptureMessageString(
     MaximumLength: ULONG,
     CapturedString: PSTRING,
 ) {
-    let mut actual_length: ULONG;
+    let actual_length: ULONG;
 
     if String.is_null() {
         (*CapturedString).Length = 0;
