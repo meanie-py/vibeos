@@ -287,7 +287,7 @@ unsafe fn FrLdrHeapInsertFreeList(
 {
     let mut ListHead: *mut HEAP_BLOCK;
     let mut NextBlock: *mut HEAP_BLOCK;
-    
+
     ListHead = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*Heap).TerminatingBlock as isize);
 
     NextBlock = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*ListHead).Data.as_mut_ptr()).Flink as isize);
@@ -489,15 +489,25 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     }
 }
 
+// read_volatile on the static-mut load. Without it, LLVM (cgu=256 + lto=false)
+// sees the file-local initializer `static mut FrLdrDefaultHeap: PVOID = null()`
+// and caches NULL as the value. MmInitializeHeap's runtime assignment lives in
+// (potentially) another CGU and isn't visible. The cached NULL feeds into
+// FrLdrHeapAllocateEx → InsertFreeList where `(*Heap).Blocks` becomes `NULL + 0x2c`
+// and the freelist walk reads garbage from low memory (BIOS IVT) and loops
+// forever. Same class as the GetHarddiskConfigurationData fix in pchw.rs.
+// See feedback_dup_abi_name_collision.md (cross-CGU static-mut variant).
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrHeapAlloc(MemorySize: SIZE_T, Tag: ULONG) -> PVOID {
-    FrLdrHeapAllocateEx(FrLdrDefaultHeap, MemorySize, Tag)
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrDefaultHeap));
+    FrLdrHeapAllocateEx(heap, MemorySize, Tag)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrHeapFree(MemoryPointer: PVOID, Tag: ULONG)
 {
-    FrLdrHeapFreeEx(FrLdrDefaultHeap, MemoryPointer, Tag);
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrDefaultHeap));
+    FrLdrHeapFreeEx(heap, MemoryPointer, Tag);
 }
 
 #[no_mangle]
@@ -505,7 +515,8 @@ pub unsafe extern "C" fn FrLdrTempAlloc(
     Size: SIZE_T,
     Tag: ULONG) -> PVOID
 {
-    FrLdrHeapAllocateEx(FrLdrTempHeap, Size, Tag)
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrTempHeap));
+    FrLdrHeapAllocateEx(heap, Size, Tag)
 }
 
 #[no_mangle]
@@ -513,7 +524,8 @@ pub unsafe extern "C" fn FrLdrTempFree(
     Allocation: PVOID,
     Tag: ULONG)
 {
-    FrLdrHeapFreeEx(FrLdrTempHeap, Allocation, Tag);
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrTempHeap));
+    FrLdrHeapFreeEx(heap, Allocation, Tag);
 }
 
 #[no_mangle]

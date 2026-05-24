@@ -692,10 +692,19 @@ pub unsafe extern "C" fn FsGetDeviceId(FileId: ULONG) -> ULONG {
 
 #[no_mangle]
 pub unsafe extern "C" fn FsInit() {
+    crate::frldr::dbgcon(b'F'); crate::frldr::dbgcon(b's');
     let mut i: u32;
 
+    // rustconv translated C `memset(FileData, 0, sizeof(FileData))` as
+    // `write_bytes(FileData.as_mut_ptr(), 0, sizeof_val)`. That's a UB-class
+    // bug: write_bytes::<T>(ptr, val, count) writes count * sizeof::<T>()
+    // bytes, so this was clobbering `count * sizeof(FILEDATA)` = 60 * 16 *
+    // 16 = ~15KB of BSS PAST FileData, including FrLdrDefaultHeap,
+    // FrLdrTempHeap, and any other static-mut in adjacent BSS — causing
+    // FrLdrHeapAlloc to read back NULL and hang the freelist walker.
+    // See feedback_write_bytes_element_count.md.
     core::ptr::write_bytes(
-        FileData.as_mut_ptr(),
+        FileData.as_mut_ptr() as *mut u8,
         0,
         core::mem::size_of_val(&FileData),
     );

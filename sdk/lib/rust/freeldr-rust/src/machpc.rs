@@ -1867,9 +1867,21 @@ pub unsafe extern "C" fn ChainLoadBiosBootSectorCode(
 // BIOS-only: uefildr's MachInit is uefisetup.c (UEFI-active C). Gated
 // out of the `uefi` archive to avoid the per-binary-owner dup.
 #[cfg(not(feature = "uefi"))]
+#[inline(always)]
+unsafe fn _vga_dbg(slot: u32, c: u8) {
+    let vga = 0xB8000 as *mut u16;
+    // top-row debug strip: each slot is 1 char, attribute 0x0F (white-on-black).
+    core::ptr::write_volatile(vga.offset(slot as isize), (c as u16) | 0x0F00);
+    // Also emit to QEMU debugcon (port 0xe9) for off-screen capture.
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c, options(nostack, preserves_flags));
+}
+
+#[cfg(not(feature = "uefi"))]
 #[no_mangle]
 pub unsafe extern "C" fn MachInit(CmdLine: *const i8) {
+    _vga_dbg(0, b'A');
     RtlZeroMemory(&mut MachVtbl as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&MachVtbl));
+    _vga_dbg(1, b'B');
     MachVtbl.ConsPutChar = Some(PcConsPutChar);
     MachVtbl.ConsKbHit = Some(PcConsKbHit);
     MachVtbl.ConsGetCh = Some(PcConsGetCh);
@@ -1898,9 +1910,12 @@ pub unsafe extern "C" fn MachInit(CmdLine: *const i8) {
     MachVtbl.InitializeBootDevices = Some(PcInitializeBootDevices);
     MachVtbl.HwDetect = Some(PcHwDetect);
     MachVtbl.HwIdle = Some(PcHwIdle);
+    _vga_dbg(2, b'C');
 
     HalpCalibrateStallExecution();
+    _vga_dbg(3, b'D');
     PcVideoInit();
+    _vga_dbg(4, b'E');
 }
 
 #[no_mangle]

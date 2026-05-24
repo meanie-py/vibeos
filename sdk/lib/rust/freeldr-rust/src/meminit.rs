@@ -256,6 +256,7 @@ unsafe fn MmCheckFreeldrImageFile() {
 
 #[no_mangle]
 pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
+    dbgcon(b'M'); dbgcon(b'm');
 
     #[cfg(debug_assertions)]
     let mut MemoryDescriptor: *const FREELDR_MEMORY_DESCRIPTOR = core::ptr::null();
@@ -263,6 +264,7 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
     TRACE(b"Initializing Memory Manager.\n\0".as_ptr() as *const i8);
 
     MmCheckFreeldrImageFile();
+    dbgcon(b'C');
 
     BiosMemoryMap = (MachVtbl.GetMemoryMap.unwrap())(core::ptr::addr_of_mut!(BiosMemoryMapEntryCount));
 

@@ -93,7 +93,7 @@ unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
             return;
         }
 
-        core::ptr::write_bytes(PartialResourceList, 0, Size as usize);
+        core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
         (*PartialResourceList).Version = 0;
         (*PartialResourceList).Revision = 0;
         (*PartialResourceList).Count = 1;
@@ -161,7 +161,7 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         return;
     }
 
-    core::ptr::write_bytes(PartialResourceList, 0, Size as usize);
+    core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
     (*PartialResourceList).Version = 1;
     (*PartialResourceList).Revision = 2;
     (*PartialResourceList).Count = 2;

@@ -443,6 +443,7 @@ pub unsafe extern "C" fn DetectBiosDisks(
 
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrCheckCpuCompatibility() {
+    dbgcon(b'F'); dbgcon(b'C'); dbgcon(b'C');
     let mut CpuInformation: [INT; 4] = [-1; 4];
     let mut NumberOfIds: ULONG;
 

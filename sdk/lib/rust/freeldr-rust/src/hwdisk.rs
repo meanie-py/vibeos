@@ -443,19 +443,24 @@ unsafe fn DiskGetBootPath(IsPxe: BOOLEAN) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
+    crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D');
 
     let mut DiskCount: UCHAR;
     let mut BootDriveReported: BOOLEAN = 0u8;
     let DriveType: CONFIGURATION_TYPE;
 
     DiskCount = EnumerateHarddisks(&mut BootDriveReported);
+    crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'2');
 
     DiskGetBootPath(PxeInit());
+    crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'3');
 
     DriveType = DiskGetConfigType(FrldrBootDrive);
+    crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'4');
     if (FrldrBootDrive >= FIRST_BIOS_DISK && BootDriveReported == 0u8) ||
        (DriveType == FloppyDiskPeripheral || DriveType == CdromController)
     {
+        crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'5');
         let Mbr: PMASTER_BOOT_RECORD;
         let Buffer: PULONG;
         let mut Checksum: ULONG = 0;
@@ -466,6 +471,7 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
             ERR(b"Reading MBR failed\n\0".as_ptr() as *const i8);
             return 0u8;
         }
+        crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'6');
 
         Buffer = DiskReadBuffer as PULONG;
         Mbr = DiskReadBuffer as PMASTER_BOOT_RECORD;

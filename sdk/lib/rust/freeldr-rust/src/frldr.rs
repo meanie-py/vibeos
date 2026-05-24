@@ -279,6 +279,18 @@ pub use ntkrnl_sys::rtl::RtlZeroMemory;
 #[inline(always)]
 pub fn ASSERT<T>(_cond: T) {}
 
+/// Debug-only: write a single character to QEMU's debugcon (port 0xe9). Lets
+/// us trace boot progress past the screen-clear in PcVideoInit without
+/// needing serial init. Cheap; safe to leave in.
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+pub unsafe fn dbgcon(c: u8) {
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c, options(nostack, preserves_flags));
+}
+#[cfg(not(target_arch = "x86"))]
+#[inline(always)]
+pub unsafe fn dbgcon(_c: u8) {}
+
 
 
 // ===========================================================================

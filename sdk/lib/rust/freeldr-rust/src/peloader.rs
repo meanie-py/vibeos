@@ -421,9 +421,11 @@ unsafe fn PeLdrpScanImportAddressTable(
 
 #[no_mangle]
 pub unsafe extern "C" fn PeLdrInitializeModuleList() -> BOOLEAN {
+    crate::frldr::dbgcon(b'P'); crate::frldr::dbgcon(b'I');
     let mut FreeldrDTE: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
 
     InitializeListHead(core::ptr::addr_of_mut!(FrLdrModuleList));
+    crate::frldr::dbgcon(b'L');
 
     if PeLdrAllocateDataTableEntry(
         core::ptr::addr_of_mut!(FrLdrModuleList),
@@ -436,6 +438,7 @@ pub unsafe extern "C" fn PeLdrInitializeModuleList() -> BOOLEAN {
         ERR!(b"Failed to allocate DTE for freeldr\n\0".as_ptr() as *const i8);
         return 0u8;
     }
+    crate::frldr::dbgcon(b'l');
 
     1u8
 }
@@ -611,6 +614,7 @@ pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
     BaseVA: PVOID,
     NewEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'1');
     let BasePA = VaToPa(BaseVA);
     let mut BaseDllNameBuffer: PWSTR;
     let mut Buffer: PWSTR;
@@ -625,28 +629,37 @@ pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
         BasePA,
     );
 
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'2');
     DataTableEntry = FrLdrHeapAlloc(
         core::mem::size_of::<LDR_DATA_TABLE_ENTRY>(),
         TAG_WLDR_DTE,
     ) as PLDR_DATA_TABLE_ENTRY;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'3');
     if DataTableEntry.is_null() {
+        crate::frldr::dbgcon(b'N');
         return 0u8;
     }
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'4');
 
     NtHeaders = RtlImageNtHeader(BasePA);
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'5');
 
     RtlZeroMemory(
         DataTableEntry as PVOID,
         core::mem::size_of::<LDR_DATA_TABLE_ENTRY>(),
     );
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'6');
     (*DataTableEntry).DllBase = BaseVA;
     (*DataTableEntry).SizeOfImage = (*NtHeaders).OptionalHeader.SizeOfImage;
     (*DataTableEntry).EntryPoint = RVA(BaseVA, (*NtHeaders).OptionalHeader.AddressOfEntryPoint);
     (*DataTableEntry).__bindgen_anon_1.__bindgen_anon_1.SectionPointer = core::ptr::null_mut();
     (*DataTableEntry).__bindgen_anon_1.__bindgen_anon_1.CheckSum = (*NtHeaders).OptionalHeader.CheckSum;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'7');
 
     Length = (strlen(BaseDllName) * core::mem::size_of::<WCHAR>()) as USHORT;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'8');
     Buffer = FrLdrHeapAlloc(Length as usize, TAG_WLDR_NAME) as PWSTR;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'9');
     if Buffer.is_null() {
         FrLdrHeapFree(DataTableEntry as PVOID, TAG_WLDR_DTE);
         return 0u8;
