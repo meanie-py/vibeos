@@ -234,27 +234,27 @@ unsafe extern "C" fn DiskSeek(FileId: u32, Position: *mut LARGE_INTEGER, SeekMod
     let Context = FsGetDeviceSpecific(FileId);
     let mut NewPosition = *Position;
 
-    match SeekMode {
-        SeekAbsolute => {}
-        SeekRelative => {
-            NewPosition.QuadPart += ((*Context).SectorNumber * (((*Context).SectorSize) as u64)) as i64;
-        }
-        _ => {
-            return EINVAL;
-        }
+    if SeekMode == SeekAbsolute {
+    } else if SeekMode == SeekRelative {
+        NewPosition.QuadPart += ((*Context).SectorNumber * (((*Context).SectorSize) as u64)) as i64;
+    } else {
+        return EINVAL;
     }
 
     if (NewPosition.QuadPart as u64 & ((((*Context).SectorSize - 1)) as u64)) != 0 {
         return EINVAL;
     }
 
-    NewPosition.QuadPart /= (*Context).SectorSize as i64;
+    // C uses ULONGLONG arithmetic here. Casting to i64 silently turns BIOS
+    // "no LBA limit" sentinel (0xFFFF_FFFF_FFFF_FFFF) into -1, making every
+    // valid sector look out-of-bounds. Keep the comparison unsigned.
+    let new_sector = (NewPosition.QuadPart as u64) / (*Context).SectorSize as u64;
 
-    if (*Context).SectorCount != 0 && NewPosition.QuadPart >= (*Context).SectorCount as i64 {
+    if (*Context).SectorCount != 0 && new_sector >= (*Context).SectorCount {
         return EINVAL;
     }
 
-    (*Context).SectorNumber = NewPosition.QuadPart as u64;
+    (*Context).SectorNumber = new_sector;
     ESUCCESS
 }
 

@@ -1239,7 +1239,7 @@ unsafe fn DetectKeyboardPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DATA)
             return;
         }
 
-        core::ptr::write_bytes(PartialResourceList, 0, Size as usize);
+        core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
         (*PartialResourceList).Version = 1;
         (*PartialResourceList).Revision = 1;
         (*PartialResourceList).Count = 1;

@@ -818,13 +818,17 @@ unsafe extern "C" fn UefiDiskSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, S
         return EINVAL;
     }
 
-    NewPosition.QuadPart /= (*Context).SectorSize as i64;
+    // Use unsigned arithmetic for the OOB check — C promotes mixed
+    // signed/unsigned to unsigned. SectorCount sentinel u64::MAX (BIOS
+    // "no LBA limit") would become -1 if cast to i64 and spuriously
+    // fail every seek. See hwdisk.rs DiskSeek for the analogous fix.
+    let new_sector = (NewPosition.QuadPart as u64) / (*Context).SectorSize as u64;
 
-    if (*Context).SectorCount != 0 && NewPosition.QuadPart >= (*Context).SectorCount as i64 {
+    if (*Context).SectorCount != 0 && new_sector >= (*Context).SectorCount {
         return EINVAL;
     }
 
-    (*Context).SectorNumber = NewPosition.QuadPart as ULONGLONG;
+    (*Context).SectorNumber = new_sector;
     ESUCCESS
 }
 

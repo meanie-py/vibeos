@@ -368,10 +368,14 @@ unsafe fn PeLdrpScanImportAddressTable(
         ERR!(b"DllBase == NULL\n\0".as_ptr());
         return 0u8;
     } else {
+        // 0 = IMAGE_DIRECTORY_ENTRY_EXPORT (NOT 1 = IMPORT).
+        // rustconv translated the C `IMAGE_DIRECTORY_ENTRY_EXPORT` macro
+        // as `1u16`, the wrong constant, which made every import lookup
+        // hit a NULL export table and silently fail.
         ExportDirectory = RtlImageDirectoryEntryToData(
             VaToPa(DllBase),
             1u8,
-            1u16,
+            0u16,
             &mut ExportSize,
         ) as PIMAGE_EXPORT_DIRECTORY;
     }

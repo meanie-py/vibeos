@@ -291,6 +291,28 @@ pub unsafe fn dbgcon(c: u8) {
 #[inline(always)]
 pub unsafe fn dbgcon(_c: u8) {}
 
+#[inline(always)]
+pub unsafe fn dbgcon_str(s: &[u8]) {
+    for &c in s { dbgcon(c); }
+}
+
+/// Print one byte as 2 hex chars to debugcon.
+#[inline(always)]
+pub unsafe fn dbgcon_hex8(v: u32) {
+    let nib = |n: u32| if n < 10 { b'0' + n as u8 } else { b'A' + (n - 10) as u8 };
+    dbgcon(nib((v >> 4) & 0xF));
+    dbgcon(nib(v & 0xF));
+}
+
+/// Print four bytes (u32) as 8 hex chars to debugcon.
+#[inline(always)]
+pub unsafe fn dbgcon_hex32(v: u32) {
+    dbgcon_hex8(v >> 24);
+    dbgcon_hex8(v >> 16);
+    dbgcon_hex8(v >> 8);
+    dbgcon_hex8(v);
+}
+
 
 
 // ===========================================================================
