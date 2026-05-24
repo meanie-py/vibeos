@@ -512,8 +512,9 @@ pub struct MACHVTBL {
     pub GetMemoryMap: Option<unsafe extern "C" fn(*mut ULONG) -> PFREELDR_MEMORY_DESCRIPTOR>,
     _after: [*const core::ffi::c_void; 10],  // GetExtendedBIOSData..HwIdle
 }
-const _: () = assert!(core::mem::size_of::<MACHVTBL>() == 120,
-    "MACHVTBL must be 120 bytes to match C arcemul.c definition");
+const _: () = assert!(
+    core::mem::size_of::<MACHVTBL>() == 30 * core::mem::size_of::<*const ()>(),
+    "MACHVTBL must hold exactly 30 pointers to match C arcemul.c");
 extern "C" { pub static MachVtbl: MACHVTBL; }
 
 // debug.h — DPRINT channels + levels (shared).

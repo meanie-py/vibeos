@@ -61,3 +61,19 @@ RtlStringCbPrintfA(
         return STATUS_BUFFER_OVERFLOW;
     return STATUS_SUCCESS;
 }
+
+/*
+ * RtlZeroMemory: on i386, sdk/lib/rtl/i386/rtlmem.s in libblrtl.a provides
+ * the stdcall `_RtlZeroMemory@8`. amd64/arm64 have no blrtl-side
+ * RtlZeroMemory implementation, yet freeldr-rust references it (NTAPI).
+ * Provide a portable C definition for those arches. The Rust extern decl
+ * is `extern "system"` which is cdecl on non-i386, so this matches.
+ */
+#if !defined(__i386__) && !defined(_M_IX86)
+void RtlZeroMemory(void *dst, unsigned long len)
+{
+    unsigned char *p = (unsigned char *)dst;
+    while (len--)
+        *p++ = 0;
+}
+#endif
