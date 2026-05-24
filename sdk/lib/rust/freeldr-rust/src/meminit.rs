@@ -204,8 +204,13 @@ unsafe fn MmCheckFreeldrImageFile() {
         }
 
         let FileHeader: PIMAGE_FILE_HEADER = core::ptr::addr_of_mut!((*NtHeaders).FileHeader);
+        // NumberOfSections check intentionally relaxed from C's exact `== FREELDR_SECTION_COUNT`:
+        // the Rust integration introduces additional PE sections (.eh_frame, .reloc, .buildid,
+        // .gcc_exc) that the C-only assumption (i386=3, amd64/arm64=4) did not anticipate.
+        // We still reject obviously corrupt headers (< minimum or absurdly many).
         if ((*FileHeader).Machine != IMAGE_FILE_MACHINE_NATIVE) ||
-           ((*FileHeader).NumberOfSections as usize != FREELDR_SECTION_COUNT) ||
+           ((*FileHeader).NumberOfSections as usize) < FREELDR_SECTION_COUNT ||
+           ((*FileHeader).NumberOfSections as usize) > 32 ||
            ((*FileHeader).PointerToSymbolTable != 0) ||
            ((*FileHeader).NumberOfSymbols != 0) ||
            ((*FileHeader).SizeOfOptionalHeader != core::mem::size_of::<IMAGE_OPTIONAL_HEADER>() as u16)

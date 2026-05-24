@@ -418,7 +418,13 @@ pub const FREELDR_BASE: usize = 0xF800;
 pub const FREELDR_PE_BASE: usize = 0x10000;
 pub const FREELDR_SECTION_COUNT: usize = 4;
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0xFFFFF;
-pub const MAX_FREELDR_PE_SIZE: usize = 0x70000 - FREELDR_PE_BASE - MM_PAGE_SIZE;
+// x86common.h: MEMORY_MARGIN = HEX(88000), MAX_FREELDR_PE_SIZE = MEMORY_MARGIN
+// - FREELDR_PE_BASE - PAGE_SIZE = 0x77000. Earlier rustconv emitted the literal
+// 0x70000 instead of the MEMORY_MARGIN macro, capping the PE at 0x5f000 = 380KB.
+// The Rust-integrated freeldr_pe.exe is 426KB (.eh_frame/.reloc/.buildid from
+// the Rust toolchain), bugchecking on OptionalHeader.SizeOfImage check.
+pub const MEMORY_MARGIN: usize = 0x88000;
+pub const MAX_FREELDR_PE_SIZE: usize = MEMORY_MARGIN - FREELDR_PE_BASE - MM_PAGE_SIZE;
 pub const REDZONE_MARK: u64 = 0xCCCCCCCCCCCCCCCC;
 pub const REDZONE_ALLOCATION: usize = 24;
 pub const HEAP_ZERO_MEMORY: ULONG = 0x00000008;
@@ -426,8 +432,15 @@ pub const MAXUSHORT: USHORT = 0xffff;
 pub const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x10b;
 pub const IMAGE_FILE_MACHINE_NATIVE: u16 = 0x014c;
 pub const IMAGE_SUBSYSTEM_NATIVE: u16 = 1;
-pub const FREELDR_IMAGE_CORRUPTION: ULONG = 1;
-pub const MEMORY_INIT_FAILURE: ULONG = 2;
+// _FRLDR_BUGCHECK_CODES enum (debug.h:143). Off-by-one in earlier rustconv
+// output dropped TEST_BUGCHECK/MISSING_HARDWARE_REQUIREMENTS — shifted all
+// subsequent values down by 2. C: TEST=0, MISSING_HARDWARE=1,
+// IMAGE_CORRUPTION=2, MEMORY_INIT_FAILURE=3, EXIT_BOOTSERVICES_FAILURE=4.
+pub const TEST_BUGCHECK: ULONG = 0;
+pub const MISSING_HARDWARE_REQUIREMENTS: ULONG = 1;
+pub const FREELDR_IMAGE_CORRUPTION: ULONG = 2;
+pub const MEMORY_INIT_FAILURE: ULONG = 3;
+pub const EXIT_BOOTSERVICES_FAILURE: ULONG = 4;
 
 // meminit.c globals the rustconv pass dropped (faithful #[no_mangle]).
 #[no_mangle] pub static mut MmLowestPhysicalPage: PFN_NUMBER = 0xFFFFFFFF;
@@ -435,13 +448,19 @@ pub const MEMORY_INIT_FAILURE: ULONG = 2;
 #[no_mangle] pub static mut BiosMemoryMapEntryCount: ULONG = 0;
 #[no_mangle] pub static mut BiosMemoryMap: PFREELDR_MEMORY_DESCRIPTOR = core::ptr::null_mut();
 #[no_mangle] pub static mut LoaderPagesSpanned: PFN_NUMBER = 0;
-// MachVtbl is real C (machpc.c / machine.h) — declared, not owned.
+// MachVtbl is real C (machpc.c / machine.h) — declared, not owned. C MACHVTBL
+// has 30 slots; GetMemoryMap is at index 19. The old _before=22/_after=14
+// (=37 slots) was wrong for the current 30-slot machine.h, causing meminit
+// to read DiskReadLogicalSectors (slot 22) instead of GetMemoryMap.
+// arcemul.c.obj .bss MachVtbl = 0x78 = 120 bytes = 30 * 4.
 #[repr(C)]
 pub struct MACHVTBL {
-    _before: [*const core::ffi::c_void; 22], // Cons*/Video*/Beep/Prepare/GetMemoryDescriptor
+    _before: [*const core::ffi::c_void; 19], // 3×Cons + 13×Video + Beep + Prepare + GetMemoryDescriptor
     pub GetMemoryMap: Option<unsafe extern "C" fn(*mut ULONG) -> PFREELDR_MEMORY_DESCRIPTOR>,
-    _after: [*const core::ffi::c_void; 14],
+    _after: [*const core::ffi::c_void; 10],  // GetExtendedBIOSData..HwIdle
 }
+const _: () = assert!(core::mem::size_of::<MACHVTBL>() == 120,
+    "MACHVTBL must be 120 bytes to match C arcemul.c definition");
 extern "C" { pub static MachVtbl: MACHVTBL; }
 
 // debug.h — DPRINT channels + levels (shared).
