@@ -7,6 +7,7 @@ pub mod conv;
 pub mod dos8dot3;
 pub mod misc;
 pub mod nls;
+pub mod sd;
 pub mod sid;
 pub mod ustr;
 pub mod utf8;

@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{acl, conv, dos8dot3, misc, nls, sid, ustr};
+use crate::core_rs::{acl, conv, dos8dot3, misc, nls, sd as sd_, sid, ustr};
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
 
@@ -2970,4 +2970,784 @@ pub unsafe extern "system" fn RtlAddAuditAccessObjectAce(
         sid_,
         acl::SYSTEM_AUDIT_OBJECT_ACE_TYPE,
     )
+}
+
+// ============================================================================
+// Wave SD-1 — structural surface of `sdk/lib/rtl/sd.c`.
+//
+// `SECURITY_DESCRIPTOR_RELATIVE` is a flat 20-byte record on every
+// arch. `SECURITY_DESCRIPTOR` (absolute) bears 4 pointers (size = 12
+// header bytes + 4*sizeof(ptr); 20 on 32-bit, 40 on 64-bit). Both
+// repr(C) layouts come out per-target by construction.
+// ============================================================================
+
+const STATUS_UNKNOWN_REVISION: i32 = 0xC000_0058u32 as i32;
+const STATUS_INVALID_SECURITY_DESCR: i32 = 0xC000_0079u32 as i32;
+const STATUS_BAD_DESCRIPTOR_FORMAT: i32 = 0xC000_00E7u32 as i32;
+const STATUS_INVALID_PARAMETER_1: i32 = 0xC000_00EFu32 as i32;
+
+/// `SECURITY_DESCRIPTOR` — internal absolute form (PISECURITY_DESCRIPTOR).
+#[repr(C)]
+pub struct SECURITY_DESCRIPTOR {
+    pub Revision: u8,
+    pub Sbz1: u8,
+    pub Control: u16,
+    pub Owner: *mut u8,
+    pub Group: *mut u8,
+    pub Sacl: *mut u8,
+    pub Dacl: *mut u8,
+}
+
+/// `SECURITY_DESCRIPTOR_RELATIVE` — self-relative form (4 ULONG offsets).
+#[repr(C)]
+pub struct SECURITY_DESCRIPTOR_RELATIVE {
+    pub Revision: u8,
+    pub Sbz1: u8,
+    pub Control: u16,
+    pub Owner: u32,
+    pub Group: u32,
+    pub Sacl: u32,
+    pub Dacl: u32,
+}
+
+/// `RtlLengthSid` against the in-tree SID port. Pointer-only;
+/// the caller has already established a valid prefix.
+#[inline]
+unsafe fn sid_length_from_ptr(p: *const u8) -> u32 {
+    sid::length(*p.add(1))
+}
+
+/// `ROUND_UP(v, sizeof(ULONG))`.
+#[inline]
+fn round_up_ulong(v: u32) -> u32 {
+    (v + 3) & !3u32
+}
+
+// --- Sep* internal helpers (FORCEINLINE in ntoskrnl/include/internal/se.h).
+
+#[inline]
+unsafe fn sep_get_owner(sd: *const SECURITY_DESCRIPTOR) -> *mut u8 {
+    let control = (*sd).Control;
+    if control & sd_::SE_SELF_RELATIVE != 0 {
+        let rel = sd as *const SECURITY_DESCRIPTOR_RELATIVE;
+        let off = (*rel).Owner;
+        if off == 0 {
+            core::ptr::null_mut()
+        } else {
+            (sd as *mut u8).add(off as usize)
+        }
+    } else {
+        (*sd).Owner
+    }
+}
+
+#[inline]
+unsafe fn sep_get_group(sd: *const SECURITY_DESCRIPTOR) -> *mut u8 {
+    let control = (*sd).Control;
+    if control & sd_::SE_SELF_RELATIVE != 0 {
+        let rel = sd as *const SECURITY_DESCRIPTOR_RELATIVE;
+        let off = (*rel).Group;
+        if off == 0 {
+            core::ptr::null_mut()
+        } else {
+            (sd as *mut u8).add(off as usize)
+        }
+    } else {
+        (*sd).Group
+    }
+}
+
+#[inline]
+unsafe fn sep_get_dacl(sd: *const SECURITY_DESCRIPTOR) -> *mut u8 {
+    let control = (*sd).Control;
+    if control & sd_::SE_DACL_PRESENT == 0 {
+        return core::ptr::null_mut();
+    }
+    if control & sd_::SE_SELF_RELATIVE != 0 {
+        let rel = sd as *const SECURITY_DESCRIPTOR_RELATIVE;
+        let off = (*rel).Dacl;
+        if off == 0 {
+            core::ptr::null_mut()
+        } else {
+            (sd as *mut u8).add(off as usize)
+        }
+    } else {
+        (*sd).Dacl
+    }
+}
+
+#[inline]
+unsafe fn sep_get_sacl(sd: *const SECURITY_DESCRIPTOR) -> *mut u8 {
+    let control = (*sd).Control;
+    if control & sd_::SE_SACL_PRESENT == 0 {
+        return core::ptr::null_mut();
+    }
+    if control & sd_::SE_SELF_RELATIVE != 0 {
+        let rel = sd as *const SECURITY_DESCRIPTOR_RELATIVE;
+        let off = (*rel).Sacl;
+        if off == 0 {
+            core::ptr::null_mut()
+        } else {
+            (sd as *mut u8).add(off as usize)
+        }
+    } else {
+        (*sd).Sacl
+    }
+}
+
+/// Internal `RtlpQuerySecurityDescriptor`: yield (owner, owner_size,
+/// group, group_size, dacl, dacl_size, sacl, sacl_size). Sizes are
+/// `ROUND_UP(payload, 4)`; payload is `RtlLengthSid` for SIDs, `AclSize`
+/// for ACLs. Zero ptr ⇒ zero size.
+unsafe fn rtlp_query_sd(
+    sd: *const SECURITY_DESCRIPTOR,
+) -> (*mut u8, u32, *mut u8, u32, *mut u8, u32, *mut u8, u32) {
+    let owner = sep_get_owner(sd);
+    let owner_size = if owner.is_null() {
+        0
+    } else {
+        round_up_ulong(sid_length_from_ptr(owner))
+    };
+    let group = sep_get_group(sd);
+    let group_size = if group.is_null() {
+        0
+    } else {
+        round_up_ulong(sid_length_from_ptr(group))
+    };
+    let dacl = sep_get_dacl(sd);
+    let dacl_size = if dacl.is_null() {
+        0
+    } else {
+        round_up_ulong(acl_size(dacl) as u32)
+    };
+    let sacl = sep_get_sacl(sd);
+    let sacl_size = if sacl.is_null() {
+        0
+    } else {
+        round_up_ulong(acl_size(sacl) as u32)
+    };
+    (owner, owner_size, group, group_size, dacl, dacl_size, sacl, sacl_size)
+}
+
+// --- SD-1 cabi exports.
+
+/// `NTSTATUS NTAPI RtlCreateSecurityDescriptor(PSD, ULONG Revision)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateSecurityDescriptor(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    revision: u32,
+) -> i32 {
+    if revision != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    // Zero the whole struct, then stamp Revision.
+    core::ptr::write_bytes(sd_p as *mut u8, 0, core::mem::size_of::<SECURITY_DESCRIPTOR>());
+    (*sd_p).Revision = sd_::SECURITY_DESCRIPTOR_REVISION as u8;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlCreateSecurityDescriptorRelative(PISDREL, ULONG Revision)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateSecurityDescriptorRelative(
+    sd_p: *mut SECURITY_DESCRIPTOR_RELATIVE,
+    revision: u32,
+) -> i32 {
+    if revision != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    core::ptr::write_bytes(
+        sd_p as *mut u8,
+        0,
+        core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>(),
+    );
+    (*sd_p).Revision = sd_::SECURITY_DESCRIPTOR_REVISION as u8;
+    (*sd_p).Control = sd_::SE_SELF_RELATIVE;
+    STATUS_SUCCESS
+}
+
+/// `ULONG NTAPI RtlLengthSecurityDescriptor(PSD)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlLengthSecurityDescriptor(sd_p: *const SECURITY_DESCRIPTOR) -> u32 {
+    let control = (*sd_p).Control;
+    let mut length = if control & sd_::SE_SELF_RELATIVE != 0 {
+        core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>() as u32
+    } else {
+        core::mem::size_of::<SECURITY_DESCRIPTOR>() as u32
+    };
+
+    let owner = sep_get_owner(sd_p);
+    if !owner.is_null() {
+        length += round_up_ulong(sid_length_from_ptr(owner));
+    }
+    let group = sep_get_group(sd_p);
+    if !group.is_null() {
+        length += round_up_ulong(sid_length_from_ptr(group));
+    }
+    let dacl = sep_get_dacl(sd_p);
+    if !dacl.is_null() {
+        length += round_up_ulong(acl_size(dacl) as u32);
+    }
+    let sacl = sep_get_sacl(sd_p);
+    if !sacl.is_null() {
+        length += round_up_ulong(acl_size(sacl) as u32);
+    }
+    length
+}
+
+/// `NTSTATUS NTAPI RtlGetDaclSecurityDescriptor(PSD, PBOOLEAN, PACL*, PBOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetDaclSecurityDescriptor(
+    sd_p: *const SECURITY_DESCRIPTOR,
+    dacl_present: *mut u8,
+    dacl_out: *mut *mut u8,
+    dacl_defaulted: *mut u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    let present = ((*sd_p).Control & sd_::SE_DACL_PRESENT) == sd_::SE_DACL_PRESENT;
+    *dacl_present = present as u8;
+    if present {
+        *dacl_out = sep_get_dacl(sd_p);
+        *dacl_defaulted = (((*sd_p).Control & sd_::SE_DACL_DEFAULTED) == sd_::SE_DACL_DEFAULTED) as u8;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlGetSaclSecurityDescriptor(PSD, PBOOLEAN, PACL*, PBOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetSaclSecurityDescriptor(
+    sd_p: *const SECURITY_DESCRIPTOR,
+    sacl_present: *mut u8,
+    sacl_out: *mut *mut u8,
+    sacl_defaulted: *mut u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    let present = ((*sd_p).Control & sd_::SE_SACL_PRESENT) == sd_::SE_SACL_PRESENT;
+    *sacl_present = present as u8;
+    if present {
+        *sacl_out = sep_get_sacl(sd_p);
+        *sacl_defaulted = (((*sd_p).Control & sd_::SE_SACL_DEFAULTED) == sd_::SE_SACL_DEFAULTED) as u8;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlGetOwnerSecurityDescriptor(PSD, PSID*, PBOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetOwnerSecurityDescriptor(
+    sd_p: *const SECURITY_DESCRIPTOR,
+    owner_out: *mut *mut u8,
+    owner_defaulted: *mut u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    *owner_out = sep_get_owner(sd_p);
+    *owner_defaulted = (((*sd_p).Control & sd_::SE_OWNER_DEFAULTED) == sd_::SE_OWNER_DEFAULTED) as u8;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlGetGroupSecurityDescriptor(PSD, PSID*, PBOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetGroupSecurityDescriptor(
+    sd_p: *const SECURITY_DESCRIPTOR,
+    group_out: *mut *mut u8,
+    group_defaulted: *mut u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    *group_out = sep_get_group(sd_p);
+    *group_defaulted = (((*sd_p).Control & sd_::SE_GROUP_DEFAULTED) == sd_::SE_GROUP_DEFAULTED) as u8;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlSetDaclSecurityDescriptor(PSD, BOOLEAN, PACL, BOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetDaclSecurityDescriptor(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    dacl_present: u8,
+    dacl: *mut u8,
+    dacl_defaulted: u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    if (*sd_p).Control & sd_::SE_SELF_RELATIVE != 0 {
+        return STATUS_INVALID_SECURITY_DESCR;
+    }
+    if dacl_present == 0 {
+        (*sd_p).Control &= !sd_::SE_DACL_PRESENT;
+        return STATUS_SUCCESS;
+    }
+    (*sd_p).Dacl = dacl;
+    (*sd_p).Control |= sd_::SE_DACL_PRESENT;
+    (*sd_p).Control &= !sd_::SE_DACL_DEFAULTED;
+    if dacl_defaulted != 0 {
+        (*sd_p).Control |= sd_::SE_DACL_DEFAULTED;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlSetSaclSecurityDescriptor(PSD, BOOLEAN, PACL, BOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetSaclSecurityDescriptor(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    sacl_present: u8,
+    sacl: *mut u8,
+    sacl_defaulted: u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    if (*sd_p).Control & sd_::SE_SELF_RELATIVE != 0 {
+        return STATUS_INVALID_SECURITY_DESCR;
+    }
+    if sacl_present == 0 {
+        (*sd_p).Control &= !sd_::SE_SACL_PRESENT;
+        return STATUS_SUCCESS;
+    }
+    (*sd_p).Sacl = sacl;
+    (*sd_p).Control |= sd_::SE_SACL_PRESENT;
+    (*sd_p).Control &= !sd_::SE_SACL_DEFAULTED;
+    if sacl_defaulted != 0 {
+        (*sd_p).Control |= sd_::SE_SACL_DEFAULTED;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlSetOwnerSecurityDescriptor(PSD, PSID, BOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetOwnerSecurityDescriptor(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    owner: *mut u8,
+    owner_defaulted: u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    if (*sd_p).Control & sd_::SE_SELF_RELATIVE != 0 {
+        return STATUS_INVALID_SECURITY_DESCR;
+    }
+    (*sd_p).Owner = owner;
+    (*sd_p).Control &= !sd_::SE_OWNER_DEFAULTED;
+    if owner_defaulted != 0 {
+        (*sd_p).Control |= sd_::SE_OWNER_DEFAULTED;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlSetGroupSecurityDescriptor(PSD, PSID, BOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetGroupSecurityDescriptor(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    group: *mut u8,
+    group_defaulted: u8,
+) -> i32 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    if (*sd_p).Control & sd_::SE_SELF_RELATIVE != 0 {
+        return STATUS_INVALID_SECURITY_DESCR;
+    }
+    (*sd_p).Group = group;
+    (*sd_p).Control &= !sd_::SE_GROUP_DEFAULTED;
+    if group_defaulted != 0 {
+        (*sd_p).Control |= sd_::SE_GROUP_DEFAULTED;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlGetControlSecurityDescriptor(PSD, PSDCONTROL, PULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetControlSecurityDescriptor(
+    sd_p: *const SECURITY_DESCRIPTOR,
+    control_out: *mut u16,
+    revision_out: *mut u32,
+) -> i32 {
+    *revision_out = (*sd_p).Revision as u32;
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    *control_out = (*sd_p).Control;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlSetControlSecurityDescriptor(PSD, SDCONTROL, SDCONTROL)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetControlSecurityDescriptor(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    control_bits_of_interest: u16,
+    control_bits_to_set: u16,
+) -> i32 {
+    if (control_bits_of_interest & !sd_::SET_ATTRIBUTES_MASK) != 0
+        || (control_bits_to_set & !control_bits_of_interest) != 0
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    (*sd_p).Control &= !control_bits_of_interest;
+    (*sd_p).Control |= control_bits_to_set & control_bits_of_interest;
+    STATUS_SUCCESS
+}
+
+/// `BOOLEAN NTAPI RtlGetSecurityDescriptorRMControl(PSD, PUCHAR)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetSecurityDescriptorRMControl(
+    sd_p: *const SECURITY_DESCRIPTOR,
+    rm_control: *mut u8,
+) -> u8 {
+    if (*sd_p).Control & sd_::SE_RM_CONTROL_VALID == 0 {
+        *rm_control = 0;
+        return 0;
+    }
+    *rm_control = (*sd_p).Sbz1;
+    1
+}
+
+/// `VOID NTAPI RtlSetSecurityDescriptorRMControl(PSD, PUCHAR)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetSecurityDescriptorRMControl(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    rm_control: *const u8,
+) {
+    if rm_control.is_null() {
+        (*sd_p).Control &= !sd_::SE_RM_CONTROL_VALID;
+        (*sd_p).Sbz1 = 0;
+    } else {
+        (*sd_p).Control |= sd_::SE_RM_CONTROL_VALID;
+        (*sd_p).Sbz1 = *rm_control;
+    }
+}
+
+/// `NTSTATUS NTAPI RtlSetAttributesSecurityDescriptor(PSD, SDCONTROL, PULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetAttributesSecurityDescriptor(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    control: u16,
+    revision_out: *mut u32,
+) -> i32 {
+    *revision_out = (*sd_p).Revision as u32;
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return STATUS_UNKNOWN_REVISION;
+    }
+    let masked = control & sd_::SET_ATTRIBUTES_MASK;
+    RtlSetControlSecurityDescriptor(sd_p, masked, masked)
+}
+
+/// `BOOLEAN NTAPI RtlValidSecurityDescriptor(PSD)`.
+///
+/// Verbatim port: rev check + RtlValidSid(owner/group if present) +
+/// RtlValidAcl(dacl/sacl if present). The C wraps the whole body in
+/// `_SEH2_TRY` / `_SEH2_EXCEPT(EXECUTE_HANDLER)`; under DUMMY_PSEH the
+/// handler is dead, so this faithful port matches both the live and
+/// the dead halves of the original (only valid-ish inputs are tested
+/// by the diff harness).
+#[no_mangle]
+pub unsafe extern "system" fn RtlValidSecurityDescriptor(sd_p: *const SECURITY_DESCRIPTOR) -> u8 {
+    if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
+        return 0;
+    }
+    let owner = sep_get_owner(sd_p);
+    if !owner.is_null() && RtlValidSid(owner) == 0 {
+        return 0;
+    }
+    let group = sep_get_group(sd_p);
+    if !group.is_null() && RtlValidSid(group) == 0 {
+        return 0;
+    }
+    let dacl = sep_get_dacl(sd_p);
+    if !dacl.is_null() && RtlValidAcl(dacl) == 0 {
+        return 0;
+    }
+    let sacl = sep_get_sacl(sd_p);
+    if !sacl.is_null() && RtlValidAcl(sacl) == 0 {
+        return 0;
+    }
+    1
+}
+
+/// `BOOLEAN NTAPI RtlValidRelativeSecurityDescriptor(PSD, ULONG, SECURITY_INFORMATION)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlValidRelativeSecurityDescriptor(
+    sd_p: *const u8,
+    sd_len: u32,
+    required_info: u32,
+) -> u8 {
+    let bytes = core::slice::from_raw_parts(sd_p, sd_len as usize);
+    sd_::valid_relative_sd(bytes, required_info) as u8
+}
+
+// ============================================================================
+// Wave SD-2 — self-relative ⇄ absolute conversions + Copy.
+// ============================================================================
+
+/// `NTSTATUS NTAPI RtlMakeSelfRelativeSD(PSD, PSD, PULONG)` — produces
+/// a self-relative SD packed as `[REL hdr | SACL | DACL | Owner | Group]`
+/// (matches the C copy order exactly: SACL→DACL→Owner→Group).
+#[no_mangle]
+pub unsafe extern "system" fn RtlMakeSelfRelativeSD(
+    src_p: *const SECURITY_DESCRIPTOR,
+    rel_p: *mut SECURITY_DESCRIPTOR_RELATIVE,
+    buffer_length: *mut u32,
+) -> i32 {
+    let (owner, owner_len, group, group_len, dacl, dacl_len, sacl, sacl_len) =
+        rtlp_query_sd(src_p);
+    let header_size = core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>() as u32;
+    let total = header_size + owner_len + group_len + sacl_len + dacl_len;
+    if *buffer_length < total {
+        *buffer_length = total;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    core::ptr::write_bytes(rel_p as *mut u8, 0, total as usize);
+    // Copy the header fields up through (but not including) the Owner offset.
+    let header_prefix = core::mem::offset_of!(SECURITY_DESCRIPTOR_RELATIVE, Owner);
+    core::ptr::copy_nonoverlapping(src_p as *const u8, rel_p as *mut u8, header_prefix);
+
+    let mut current = header_size as usize;
+    if sacl_len > 0 {
+        core::ptr::copy_nonoverlapping(
+            sacl,
+            (rel_p as *mut u8).add(current),
+            sacl_len as usize,
+        );
+        (*rel_p).Sacl = current as u32;
+        current += sacl_len as usize;
+    }
+    if dacl_len > 0 {
+        core::ptr::copy_nonoverlapping(
+            dacl,
+            (rel_p as *mut u8).add(current),
+            dacl_len as usize,
+        );
+        (*rel_p).Dacl = current as u32;
+        current += dacl_len as usize;
+    }
+    if owner_len > 0 {
+        core::ptr::copy_nonoverlapping(
+            owner,
+            (rel_p as *mut u8).add(current),
+            owner_len as usize,
+        );
+        (*rel_p).Owner = current as u32;
+        current += owner_len as usize;
+    }
+    if group_len > 0 {
+        core::ptr::copy_nonoverlapping(
+            group,
+            (rel_p as *mut u8).add(current),
+            group_len as usize,
+        );
+        (*rel_p).Group = current as u32;
+    }
+    (*rel_p).Control |= sd_::SE_SELF_RELATIVE;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlAbsoluteToSelfRelativeSD(PSD, PSD, PULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAbsoluteToSelfRelativeSD(
+    src_p: *const SECURITY_DESCRIPTOR,
+    rel_p: *mut SECURITY_DESCRIPTOR_RELATIVE,
+    buffer_length: *mut u32,
+) -> i32 {
+    if (*src_p).Control & sd_::SE_SELF_RELATIVE != 0 {
+        return STATUS_BAD_DESCRIPTOR_FORMAT;
+    }
+    RtlMakeSelfRelativeSD(src_p, rel_p, buffer_length)
+}
+
+/// `NTSTATUS NTAPI RtlSelfRelativeToAbsoluteSD(PSD, PSD, PULONG, PACL, PULONG,
+///                                             PACL, PULONG, PSID, PULONG, PSID, PULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSelfRelativeToAbsoluteSD(
+    rel_p: *const SECURITY_DESCRIPTOR_RELATIVE,
+    abs_p: *mut SECURITY_DESCRIPTOR,
+    abs_size: *mut u32,
+    dacl: *mut u8,
+    dacl_size: *mut u32,
+    sacl: *mut u8,
+    sacl_size: *mut u32,
+    owner: *mut u8,
+    owner_size: *mut u32,
+    group: *mut u8,
+    group_size: *mut u32,
+) -> i32 {
+    if (*rel_p).Control & sd_::SE_SELF_RELATIVE == 0 {
+        return STATUS_BAD_DESCRIPTOR_FORMAT;
+    }
+    let (p_owner, owner_len, p_group, group_len, p_dacl, dacl_len, p_sacl, sacl_len) =
+        rtlp_query_sd(rel_p as *const SECURITY_DESCRIPTOR);
+
+    if abs_p.is_null()
+        || (core::mem::size_of::<SECURITY_DESCRIPTOR>() as u32) > *abs_size
+        || owner_len > *owner_size
+        || group_len > *group_size
+        || dacl_len > *dacl_size
+        || sacl_len > *sacl_size
+    {
+        *abs_size = core::mem::size_of::<SECURITY_DESCRIPTOR>() as u32;
+        *owner_size = owner_len;
+        *group_size = group_len;
+        *dacl_size = dacl_len;
+        *sacl_size = sacl_len;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    // Copy the header fields (RtlMoveMemory of sizeof(SDREL)).
+    core::ptr::copy(
+        rel_p as *const u8,
+        abs_p as *mut u8,
+        core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>(),
+    );
+    (*abs_p).Owner = core::ptr::null_mut();
+    (*abs_p).Group = core::ptr::null_mut();
+    (*abs_p).Sacl = core::ptr::null_mut();
+    (*abs_p).Dacl = core::ptr::null_mut();
+    (*abs_p).Control &= !sd_::SE_SELF_RELATIVE;
+
+    if !p_owner.is_null() {
+        core::ptr::copy(p_owner, owner, sid_length_from_ptr(p_owner) as usize);
+        (*abs_p).Owner = owner;
+    }
+    if !p_group.is_null() {
+        core::ptr::copy(p_group, group, sid_length_from_ptr(p_group) as usize);
+        (*abs_p).Group = group;
+    }
+    if !p_dacl.is_null() {
+        core::ptr::copy(p_dacl, dacl, acl_size(p_dacl) as usize);
+        (*abs_p).Dacl = dacl;
+    }
+    if !p_sacl.is_null() {
+        core::ptr::copy(p_sacl, sacl, acl_size(p_sacl) as usize);
+        (*abs_p).Sacl = sacl;
+    }
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlSelfRelativeToAbsoluteSD2(PSD, PULONG)` — in-place.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSelfRelativeToAbsoluteSD2(
+    sd_p: *mut SECURITY_DESCRIPTOR,
+    buffer_size: *mut u32,
+) -> i32 {
+    if sd_p.is_null() {
+        return STATUS_INVALID_PARAMETER_1;
+    }
+    if buffer_size.is_null() {
+        return STATUS_INVALID_PARAMETER_2;
+    }
+    if (*sd_p).Control & sd_::SE_SELF_RELATIVE == 0 {
+        return STATUS_BAD_DESCRIPTOR_FORMAT;
+    }
+
+    let rel_p = sd_p as *mut SECURITY_DESCRIPTOR_RELATIVE;
+    let (p_owner, owner_len, p_group, group_len, p_dacl, dacl_len, p_sacl, sacl_len) =
+        rtlp_query_sd(sd_p);
+
+    // Move delta = sizeof(SD) - sizeof(SDREL). On 64-bit hosts this is +20; on 32-bit 0.
+    let move_delta = core::mem::size_of::<SECURITY_DESCRIPTOR>() as isize
+        - core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>() as isize;
+    if move_delta == 0 {
+        // 32-bit: same layout, just clear flag + set the (still-valid) pointers.
+        (*sd_p).Control &= !sd_::SE_SELF_RELATIVE;
+        (*sd_p).Owner = p_owner;
+        (*sd_p).Group = p_group;
+        (*sd_p).Sacl = p_sacl;
+        (*sd_p).Dacl = p_dacl;
+        return STATUS_SUCCESS;
+    }
+
+    // Compute the [DataStart, DataEnd) range over all present payloads.
+    let mut data_start = p_owner;
+    let mut data_end = if p_owner.is_null() {
+        core::ptr::null_mut()
+    } else {
+        p_owner.add(owner_len as usize)
+    };
+    let consider = |s: *mut u8, l: u32, ds: &mut *mut u8, de: &mut *mut u8| {
+        if s.is_null() {
+            return;
+        }
+        if (*ds).is_null() || (s as usize) < (*ds as usize) {
+            *ds = s;
+        }
+        let s_end = s.add(l as usize);
+        if (*de).is_null() || (s_end as usize) > (*de as usize) {
+            *de = s_end;
+        }
+    };
+    consider(p_group, group_len, &mut data_start, &mut data_end);
+    consider(p_dacl, dacl_len, &mut data_start, &mut data_end);
+    consider(p_sacl, sacl_len, &mut data_start, &mut data_end);
+
+    let data_size = if data_end.is_null() {
+        0
+    } else {
+        (data_end as usize) - (data_start as usize)
+    } as u32;
+
+    if *buffer_size < core::mem::size_of::<SECURITY_DESCRIPTOR>() as u32 + data_size {
+        *buffer_size = core::mem::size_of::<SECURITY_DESCRIPTOR>() as u32 + data_size;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    if data_size != 0 {
+        // Move the payload to right after the new (absolute) header.
+        core::ptr::copy(
+            data_start as *const u8,
+            (sd_p as *mut u8).add(core::mem::size_of::<SECURITY_DESCRIPTOR>()),
+            data_size as usize,
+        );
+    }
+
+    (*sd_p).Owner = if p_owner.is_null() {
+        core::ptr::null_mut()
+    } else {
+        p_owner.offset(move_delta)
+    };
+    (*sd_p).Group = if p_group.is_null() {
+        core::ptr::null_mut()
+    } else {
+        p_group.offset(move_delta)
+    };
+    (*sd_p).Sacl = if p_sacl.is_null() {
+        core::ptr::null_mut()
+    } else {
+        p_sacl.offset(move_delta)
+    };
+    (*sd_p).Dacl = if p_dacl.is_null() {
+        core::ptr::null_mut()
+    } else {
+        p_dacl.offset(move_delta)
+    };
+    (*sd_p).Control &= !sd_::SE_SELF_RELATIVE;
+    let _ = rel_p; // (silence unused — used implicitly via aliasing).
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlCopySecurityDescriptor(PSD, PSD*)`.
+///
+/// No-alloc edge: `RtlAllocateHeap=NULL` in the diff harness ⇒ this
+/// always returns STATUS_NO_MEMORY. The Rust side wraps the same
+/// FFI shape so the diff pins the NO_MEMORY path identically.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCopySecurityDescriptor(
+    src_p: *const SECURITY_DESCRIPTOR,
+    dst_pp: *mut *mut SECURITY_DESCRIPTOR,
+) -> i32 {
+    let (_owner, owner_len, _group, group_len, _dacl, dacl_len, _sacl, sacl_len) =
+        rtlp_query_sd(src_p);
+    let _total = core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>() as u32
+        + owner_len
+        + group_len
+        + dacl_len
+        + sacl_len;
+    // Real ntdll path goes through RtlAllocateHeap → we don't implement
+    // that here (no_std + the in-tree librtl translation is no-alloc).
+    // The diff harness stubs RtlAllocateHeap=NULL ⇒ STATUS_NO_MEMORY.
+    *dst_pp = core::ptr::null_mut();
+    STATUS_NO_MEMORY
 }

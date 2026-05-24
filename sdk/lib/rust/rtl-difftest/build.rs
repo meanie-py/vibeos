@@ -648,4 +648,143 @@ fn main() {
     for obj in abuild.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+
+    // Wave SD: genuine sdk/lib/rtl/sd.c — own ref TU. Same se.h include
+    // trick as acl.c (reuses the aclinc stub already created above).
+    // SECURITY_DESCRIPTOR (absolute) bears pointers, so the host x86_64
+    // layout has 4 bytes of header pad between Control and Owner just
+    // like the kernel amd64/arm64 — sizeof = 40 here.
+    // RtlValidSid/RtlValidAcl/RtlLengthSid are NOT renamed → they
+    // resolve to the diff-proven rtl-strings cabi exports.
+    // RtlAllocateHeap → NULL stub pins the RtlCopySecurityDescriptor
+    // NO_MEMORY edge (same no-alloc discipline as SID/ACL waves).
+    let sd_c = repo.join("sdk/lib/rtl/sd.c");
+    let sd_body = format!(
+        "#include <rtl.h>\n#include <string.h>\n\
+         typedef ULONG ACCESS_MASK;\n\
+         typedef USHORT SECURITY_DESCRIPTOR_CONTROL, *PSECURITY_DESCRIPTOR_CONTROL;\n\
+         typedef ULONG SECURITY_INFORMATION;\n\
+         #define ANYSIZE_ARRAY 1\n\
+         #define FIELD_OFFSET(t,f) ((ULONG)(ULONG_PTR)&(((t*)0)->f))\n\
+         #define ALIGN_DOWN(v,t) ((ULONG)(v) & ~(sizeof(t)-1))\n\
+         #define ROUND_DOWN(n,a) (((ULONG_PTR)(n)) & ~((ULONG_PTR)(a)-1))\n\
+         #define ROUND_UP(n,a) ROUND_DOWN(((ULONG_PTR)(n))+(a)-1,(a))\n\
+         #define PAGED_CODE_RTL() ((void)0)\n\
+         #define OWNER_SECURITY_INFORMATION 0x1\n\
+         #define GROUP_SECURITY_INFORMATION 0x2\n\
+         #define SECURITY_DESCRIPTOR_REVISION 1\n\
+         #define SE_OWNER_DEFAULTED 0x0001\n#define SE_GROUP_DEFAULTED 0x0002\n\
+         #define SE_DACL_PRESENT    0x0004\n#define SE_DACL_DEFAULTED  0x0008\n\
+         #define SE_SACL_PRESENT    0x0010\n#define SE_SACL_DEFAULTED  0x0020\n\
+         #define SE_DACL_UNTRUSTED  0x0040\n#define SE_SERVER_SECURITY 0x0080\n\
+         #define SE_DACL_AUTO_INHERIT_REQ 0x0100\n#define SE_SACL_AUTO_INHERIT_REQ 0x0200\n\
+         #define SE_DACL_AUTO_INHERITED   0x0400\n#define SE_SACL_AUTO_INHERITED   0x0800\n\
+         #define SE_DACL_PROTECTED  0x1000\n#define SE_SACL_PROTECTED  0x2000\n\
+         #define SE_RM_CONTROL_VALID 0x4000\n#define SE_SELF_RELATIVE   0x8000\n\
+         #define STATUS_UNKNOWN_REVISION        ((NTSTATUS)0xC0000058L)\n\
+         #define STATUS_INVALID_SECURITY_DESCR  ((NTSTATUS)0xC0000079L)\n\
+         #define STATUS_BAD_DESCRIPTOR_FORMAT   ((NTSTATUS)0xC00000E7L)\n\
+         #define STATUS_BUFFER_TOO_SMALL        ((NTSTATUS)0xC0000023L)\n\
+         #define STATUS_NO_MEMORY               ((NTSTATUS)0xC0000017L)\n\
+         #define STATUS_INVALID_PARAMETER_1     ((NTSTATUS)0xC00000EFL)\n\
+         #define STATUS_INVALID_PARAMETER_2     ((NTSTATUS)0xC00000F0L)\n\
+         #define _SEH2_TRY\n#define _SEH2_EXCEPT(x) if(0)\n#define _SEH2_FINALLY\n\
+         #define _SEH2_END\n#define _SEH2_YIELD(s) s\n#define EXCEPTION_EXECUTE_HANDLER 1\n\
+         #define RtlZeroMemory(d,n) memset((d),0,(n))\n\
+         #define RtlCopyMemory(d,s,n) memcpy((d),(s),(n))\n\
+         #define RtlMoveMemory(d,s,n) memmove((d),(s),(n))\n\
+         typedef struct _SID_IDENTIFIER_AUTHORITY {{ UCHAR Value[6]; }} SID_IDENTIFIER_AUTHORITY,*PSID_IDENTIFIER_AUTHORITY;\n\
+         typedef struct _SID {{ UCHAR Revision; UCHAR SubAuthorityCount;\n\
+            SID_IDENTIFIER_AUTHORITY IdentifierAuthority; ULONG SubAuthority[ANYSIZE_ARRAY]; }} SID,*PISID;\n\
+         typedef PVOID PSID;\n\
+         typedef struct _ACL {{ UCHAR AclRevision; UCHAR Sbz1; USHORT AclSize;\n\
+            USHORT AceCount; USHORT Sbz2; }} ACL,*PACL;\n\
+         typedef PVOID PSECURITY_DESCRIPTOR;\n\
+         typedef struct _SECURITY_DESCRIPTOR_RELATIVE {{\n\
+            UCHAR Revision; UCHAR Sbz1; SECURITY_DESCRIPTOR_CONTROL Control;\n\
+            ULONG Owner; ULONG Group; ULONG Sacl; ULONG Dacl;\n\
+         }} SECURITY_DESCRIPTOR_RELATIVE,*PISECURITY_DESCRIPTOR_RELATIVE;\n\
+         typedef struct _SECURITY_DESCRIPTOR {{\n\
+            UCHAR Revision; UCHAR Sbz1; SECURITY_DESCRIPTOR_CONTROL Control;\n\
+            PSID Owner; PSID Group; PACL Sacl; PACL Dacl;\n\
+         }} SECURITY_DESCRIPTOR,*PISECURITY_DESCRIPTOR;\n\
+         /* Heap stubs — RtlAllocateHeap=NULL pins NO_MEMORY edge in\n\
+            RtlCopySecurityDescriptor (same no-alloc discipline). */\n\
+         PVOID RtlAllocateHeap(PVOID h,ULONG f,SIZE_T n){{(void)h;(void)f;(void)n;return 0;}}\n\
+         BOOLEAN RtlFreeHeap(PVOID h,ULONG f,PVOID p){{(void)h;(void)f;(void)p;return 0;}}\n\
+         PVOID RtlGetProcessHeap(void){{return 0;}}\n\
+         /* SepGet*FromDescriptor — FORCEINLINE in the real internal/se.h\n\
+            (which the empty stub bypasses). Verbatim ports here so the\n\
+            ref TU links and behaves byte-identically to the kernel. */\n\
+         static inline PSID SepGetOwnerFromDescriptor(PVOID _d){{\n\
+            PISECURITY_DESCRIPTOR d=(PISECURITY_DESCRIPTOR)_d;\n\
+            if(d->Control&SE_SELF_RELATIVE){{\n\
+              PISECURITY_DESCRIPTOR_RELATIVE r=(PISECURITY_DESCRIPTOR_RELATIVE)d;\n\
+              if(!r->Owner)return 0; return (PSID)((ULONG_PTR)d+r->Owner);\n\
+            }} return d->Owner; }}\n\
+         static inline PSID SepGetGroupFromDescriptor(PVOID _d){{\n\
+            PISECURITY_DESCRIPTOR d=(PISECURITY_DESCRIPTOR)_d;\n\
+            if(d->Control&SE_SELF_RELATIVE){{\n\
+              PISECURITY_DESCRIPTOR_RELATIVE r=(PISECURITY_DESCRIPTOR_RELATIVE)d;\n\
+              if(!r->Group)return 0; return (PSID)((ULONG_PTR)d+r->Group);\n\
+            }} return d->Group; }}\n\
+         static inline PACL SepGetDaclFromDescriptor(PVOID _d){{\n\
+            PISECURITY_DESCRIPTOR d=(PISECURITY_DESCRIPTOR)_d;\n\
+            if(!(d->Control&SE_DACL_PRESENT))return 0;\n\
+            if(d->Control&SE_SELF_RELATIVE){{\n\
+              PISECURITY_DESCRIPTOR_RELATIVE r=(PISECURITY_DESCRIPTOR_RELATIVE)d;\n\
+              if(!r->Dacl)return 0; return (PACL)((ULONG_PTR)d+r->Dacl);\n\
+            }} return d->Dacl; }}\n\
+         static inline PACL SepGetSaclFromDescriptor(PVOID _d){{\n\
+            PISECURITY_DESCRIPTOR d=(PISECURITY_DESCRIPTOR)_d;\n\
+            if(!(d->Control&SE_SACL_PRESENT))return 0;\n\
+            if(d->Control&SE_SELF_RELATIVE){{\n\
+              PISECURITY_DESCRIPTOR_RELATIVE r=(PISECURITY_DESCRIPTOR_RELATIVE)d;\n\
+              if(!r->Sacl)return 0; return (PACL)((ULONG_PTR)d+r->Sacl);\n\
+            }} return d->Sacl; }}\n\
+         /* RtlValidSid/RtlValidAcl/RtlLengthSid stay UN-renamed →\n\
+            resolve at link to the diff-proven rtl-strings cabi. */\n\
+         #define RtlCreateSecurityDescriptor ref_RtlCreateSecurityDescriptor\n\
+         #define RtlCreateSecurityDescriptorRelative ref_RtlCreateSecurityDescriptorRelative\n\
+         #define RtlLengthSecurityDescriptor ref_RtlLengthSecurityDescriptor\n\
+         #define RtlGetDaclSecurityDescriptor ref_RtlGetDaclSecurityDescriptor\n\
+         #define RtlGetSaclSecurityDescriptor ref_RtlGetSaclSecurityDescriptor\n\
+         #define RtlGetOwnerSecurityDescriptor ref_RtlGetOwnerSecurityDescriptor\n\
+         #define RtlGetGroupSecurityDescriptor ref_RtlGetGroupSecurityDescriptor\n\
+         #define RtlSetDaclSecurityDescriptor ref_RtlSetDaclSecurityDescriptor\n\
+         #define RtlSetSaclSecurityDescriptor ref_RtlSetSaclSecurityDescriptor\n\
+         #define RtlSetOwnerSecurityDescriptor ref_RtlSetOwnerSecurityDescriptor\n\
+         #define RtlSetGroupSecurityDescriptor ref_RtlSetGroupSecurityDescriptor\n\
+         #define RtlGetControlSecurityDescriptor ref_RtlGetControlSecurityDescriptor\n\
+         #define RtlSetControlSecurityDescriptor ref_RtlSetControlSecurityDescriptor\n\
+         #define RtlGetSecurityDescriptorRMControl ref_RtlGetSecurityDescriptorRMControl\n\
+         #define RtlSetSecurityDescriptorRMControl ref_RtlSetSecurityDescriptorRMControl\n\
+         #define RtlSetAttributesSecurityDescriptor ref_RtlSetAttributesSecurityDescriptor\n\
+         #define RtlValidSecurityDescriptor ref_RtlValidSecurityDescriptor\n\
+         #define RtlValidRelativeSecurityDescriptor ref_RtlValidRelativeSecurityDescriptor\n\
+         #define RtlCopySecurityDescriptor ref_RtlCopySecurityDescriptor\n\
+         #define RtlMakeSelfRelativeSD ref_RtlMakeSelfRelativeSD\n\
+         #define RtlAbsoluteToSelfRelativeSD ref_RtlAbsoluteToSelfRelativeSD\n\
+         #define RtlSelfRelativeToAbsoluteSD ref_RtlSelfRelativeToAbsoluteSD\n\
+         #define RtlSelfRelativeToAbsoluteSD2 ref_RtlSelfRelativeToAbsoluteSD2\n\
+         {}\
+         #include \"{}\"\n",
+        scrape_protos(&fs::read_to_string(&sd_c).unwrap()),
+        sd_c.display()
+    );
+    let sd_src = out.join("ref_sd.c");
+    fs::write(&sd_src, sd_body).unwrap();
+    let mut dbuild2 = cc::Build::new();
+    dbuild2
+        .include(&refstub)
+        .include(&se_root)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&sd_src);
+    println!("cargo:rerun-if-changed={}", sd_c.display());
+    for obj in dbuild2.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
 }
