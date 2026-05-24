@@ -249,12 +249,31 @@ pub fn ROUND_UP<T: IntAlign>(n: T, align: T) -> T {
     ROUND_DOWN(n + align - T::from(1u8), align)
 }
 
-/// `RtlZeroMemory` — C macro (memset(d,0,n)).
-#[inline(always)]
-#[no_mangle]
-pub unsafe extern "C" fn RtlZeroMemory(dst: PVOID, len: usize) {
-    core::ptr::write_bytes(dst as *mut u8, 0, len)
-}
+// `RtlZeroMemory` — re-exported from `ntkrnl_sys::rtl` (NTAPI / stdcall).
+//
+// We DO NOT define a Rust body here. `libblrtl.a` (sdk/lib/rtl/i386/rtlmem.s)
+// provides the real `_RtlZeroMemory@8` symbol; both freeldr_pe.exe and
+// uefildr.efi link against it.
+//
+// History (preserved as a load-bearing memo — see feedback_ud2_abi_vs_captures.md):
+// this file used to define `pub unsafe extern "C" fn RtlZeroMemory(...)` so
+// callers importing `crate::frldr::*` had it in scope. That `extern "C"` was
+// cdecl, which exported the (undecorated) symbol `_RtlZeroMemory`, distinct
+// from libblrtl.a's stdcall `_RtlZeroMemory@8`. The linker was happy.
+//
+// But at the LLVM IR layer the IR-level name `@RtlZeroMemory` was shared
+// with the `ntkrnl_sys::rtl::RtlZeroMemory` extern decl (`extern "system"` =
+// stdcall). LLVM marked our local cdecl body as `available_externally` and
+// used it for IPO. The next time a function in this crate called the
+// stdcall `RtlZeroMemory`, LLVM compared the call convention to the visible
+// local body, proved contradiction → emitted `unreachable` for the
+// remainder of the caller. That `unreachable` quietly folded
+// `PeLdrAllocateDataTableEntry` / `PeLdrLoadImage` into 0x30-byte `ud2`
+// stubs that triple-faulted i386 boot before SeaBIOS even printed.
+//
+// The re-export below keeps the `crate::frldr::*` callers compiling without
+// re-introducing a duplicate definition.
+pub use ntkrnl_sys::rtl::RtlZeroMemory;
 
 /// `ASSERT(cond)` — no-op in the freeldr release build (NDEBUG).
 #[inline(always)]

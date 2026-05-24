@@ -414,7 +414,15 @@ pub unsafe extern "C" fn DetectBiosDisks(
 
         DriveNumber = 0x80 + i as UCHAR;
 
-        PartialResourceList = (GetHarddiskConfigurationData.unwrap())(DriveNumber, core::ptr::addr_of_mut!(Size));
+        // read_volatile: machpc.rs initializes GetHarddiskConfigurationData at
+        // runtime via an extern `*mut c_void` view (different type than this
+        // crate's Option<fn>). LLVM cannot see that cross-CGU write, so without
+        // the volatile load it folds the static's value to its compile-time
+        // initializer (None), proves unwrap() panics, and emits `unreachable`
+        // for every caller — folding DetectBiosDisks to a ud2 stub that
+        // triple-faulted PcHwDetect before any serial output.
+        let gh = core::ptr::read_volatile(core::ptr::addr_of!(GetHarddiskConfigurationData));
+        PartialResourceList = (gh.unwrap())(DriveNumber, core::ptr::addr_of_mut!(Size));
         Identifier = GetHarddiskIdentifier(DriveNumber);
 
         FldrCreateComponentKey(

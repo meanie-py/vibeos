@@ -19,9 +19,16 @@ pub static mut MmHighestUserAddress: PVOID = 0x0000_7FFF_FFFF_F000 as PVOID;
 
 extern "C" {
     fn FrLdrHeapAlloc(Bytes: ULONG, Tag: ULONG) -> PVOID;
+    // FrLdrHeapFree must be cdecl — heap.rs:498 defines it as
+    // `pub unsafe extern "C" fn FrLdrHeapFree(...)`. Declaring it
+    // `extern "system"` here matched no real symbol AND produced an
+    // IR-level captures(none)/ABI mismatch (LLVM saw the heap.rs cdecl
+    // body as `available_externally`, the call site was stdcall, → emitted
+    // `unreachable` for every caller of RtlpFreeMemory). Same pattern as
+    // the RtlZeroMemory regression. See feedback_ud2_abi_vs_captures.md.
+    fn FrLdrHeapFree(Mem: PVOID, Tag: ULONG);
 }
 extern "system" {
-    fn FrLdrHeapFree(Mem: PVOID, Tag: ULONG);
     fn RtlpImageNtHeaderEx( Flags: ULONG, Base: PVOID, Size: ULONG64, OutHeaders: *mut PIMAGE_NT_HEADERS, ) -> NTSTATUS;
 }
 
