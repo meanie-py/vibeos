@@ -744,17 +744,6 @@ pub unsafe extern "C" fn PeLdrLoadImageEx(
     ImageBasePA: *mut PVOID,
     KernelMapping: BOOLEAN,
 ) -> BOOLEAN {
-    crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'X'); crate::frldr::dbgcon(b'1');
-    // dump FilePath
-    crate::frldr::dbgcon(b'[');
-    let mut p = FilePath;
-    let mut n = 0;
-    while !p.is_null() && *p != 0 && n < 80 {
-        crate::frldr::dbgcon(*p as u8);
-        p = p.add(1);
-        n += 1;
-    }
-    crate::frldr::dbgcon(b']');
     let mut FileId: ULONG = 0;
     let mut PhysicalBase: PVOID;
     let mut VirtualBase: PVOID = core::ptr::null_mut();
@@ -772,9 +761,7 @@ pub unsafe extern "C" fn PeLdrLoadImageEx(
     TRACE!(b"PeLdrLoadImage('%s', %ld)\n\0".as_ptr() as PSTR, FilePath, MemoryType);
 
     Status = ArcOpen(FilePath as PSTR, OpenReadOnly, &mut FileId);
-    crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'X'); crate::frldr::dbgcon(b'2');
     if Status != ESUCCESS {
-        crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'X'); crate::frldr::dbgcon(b'O');
         WARN!(b"ArcOpen('%s') failed. Status: %u\n\0".as_ptr() as PSTR, FilePath, Status);
         return 0u8;
     }
