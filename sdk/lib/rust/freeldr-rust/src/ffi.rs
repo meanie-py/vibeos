@@ -247,21 +247,13 @@ pub unsafe extern "C" fn RtlStringCbCatA(dest: *mut CHAR, cb_dest: usize, src: *
     if *src.add(s) == 0 { STATUS_SUCCESS } else { STATUS_BUFFER_OVERFLOW }
 }
 
-// ntstrsafe RtlStringCbPrintfA — variadic inline from ntstrsafe.h (no C
-// symbol in non-MSVC freeldr; rustconv emitted `extern { fn ...(...) }` +
-// call sites across winldr/tui/wlregistry/machpc/hwdisk/pchw/uefidisk).
-// Rust stable has no c_variadic, so this is a NON-variadic (dst,cb,fmt)
-// def: bounded copy of the format literal (same degradation as the
-// keystone TRACE/ERR). cdecl ABI → caller cleans the stack, so the
-// dropped varargs are ABI-safe. UNIQUE: no C/asm defines this symbol.
-#[no_mangle]
-pub unsafe extern "C" fn RtlStringCbPrintfA(
-    dest: *mut CHAR,
-    cb_dest: usize,
-    fmt: *const CHAR,
-) -> NTSTATUS {
-    RtlStringCbCopyA(dest, cb_dest, fmt)
-}
+// ntstrsafe RtlStringCbPrintfA — REAL out-of-line def lives in
+// boot/freeldr/freeldr/lib/strsafe_shim.c (forwards to
+// RtlStringCbVPrintfA via va_list — Rust can't host the variadic def on
+// stable). The previous degraded `RtlStringCbCopyA` shim here silently
+// left %u/%s/%x unformatted in boot paths (rosload.exe failed to load
+// because `multi(0)disk(0)cdrom(%u)\rosload.exe` reached ArcOpen
+// verbatim).
 
 // ntstrsafe RtlStringCbPrintfW — wide variadic inline from ntstrsafe.h.
 // In non-MSVC freeldr the W variant is only emitted `static` (local `t`

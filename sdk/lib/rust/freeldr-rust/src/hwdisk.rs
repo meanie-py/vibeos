@@ -486,13 +486,17 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
         }
         Checksum = (!Checksum).wrapping_add(1);
         TRACE(b"Checksum: %x\n\0".as_ptr() as *const i8, (Checksum) as usize);
+        crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'7');
 
         AddReactOSArcDiskInfo(FrLdrBootPath.as_ptr() as PCHAR, Signature, Checksum, 1u8);
+        crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'8');
 
         FsRegisterDevice(FrLdrBootPath.as_ptr() as PCHAR, &DiskVtbl as *const _ as *const core::ffi::c_void);
+        crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'9');
         DiskCount = DiskCount.wrapping_add(1);
         TRACE(b"Additional boot drive detected: 0x%02X\n\0".as_ptr() as *const i8, (FrldrBootDrive as i32) as usize);
     }
+    crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'Z');
 
     if DiskCount != 0 { 1u8 } else { 0u8 }
 }

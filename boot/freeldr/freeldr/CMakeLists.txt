@@ -135,7 +135,13 @@ else()
 endif()
 
 list(APPEND FREELDR_BASE_SOURCE
-    freeldr.c)
+    freeldr.c
+    lib/strsafe_shim.c)
+    # lib/strsafe_shim.c — variadic RtlStringCbPrintfA out-of-line shim. The
+    # Rust freeldr-rust crate cannot host the variadic def on stable
+    # (c_variadic still unstable for the DEF side); rustconv's degraded
+    # stub silently left %u/%s unformatted in boot paths. Real shim
+    # forwards to ntstrsafe.h's static-inline RtlStringCbVPrintfA.
     # lib/rtl/libsupp.c → Rust (freeldr-rust/src/libsupp.rs). Completing
     # the cohabitation flip (49677d6f wired pub mod, left .c active).
     # lib/rtl/libsupp.c   # replaced by Rust (freeldr-rust/src/libsupp.rs)
