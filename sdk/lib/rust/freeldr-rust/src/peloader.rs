@@ -643,6 +643,29 @@ pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
         crate::frldr::dbgcon(b'N');
         return 0u8;
     }
+    // Heap dump after successful alloc.
+    {
+        let dh = crate::heap::FrLdrDefaultHeap as crate::heap::PHEAP;
+        if !dh.is_null() {
+            crate::frldr::dbgcon_str(b"{na=");
+            crate::frldr::dbgcon_hex32((*dh).NumAllocs);
+            let term = core::ptr::addr_of_mut!((*dh).Blocks).offset((*dh).TerminatingBlock as isize);
+            let mut walk: u32 = (*(*term).Data.as_mut_ptr()).Flink;
+            let mut depth = 0u32;
+            crate::frldr::dbgcon_str(b",fl=");
+            while depth < 5 {
+                let blk = core::ptr::addr_of_mut!((*dh).Blocks).offset(walk as isize);
+                crate::frldr::dbgcon_hex32(walk);
+                crate::frldr::dbgcon(b':');
+                crate::frldr::dbgcon_hex32((*blk).Size as u32);
+                crate::frldr::dbgcon(b' ');
+                if (*blk).Size == 0 { break; }
+                walk = (*(*blk).Data.as_mut_ptr()).Flink;
+                depth += 1;
+            }
+            crate::frldr::dbgcon_str(b"}");
+        }
+    }
     crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'4');
 
     NtHeaders = RtlImageNtHeader(BasePA);
@@ -793,21 +816,31 @@ pub unsafe extern "C" fn PeLdrLoadImageEx(
     NumberOfSections = (*NtHeaders).FileHeader.NumberOfSections as ULONG;
     SectionHeader = IMAGE_FIRST_SECTION(NtHeaders);
 
+    crate::frldr::dbgcon_str(b"\nLI[ib=");
+    crate::frldr::dbgcon_hex32((*NtHeaders).OptionalHeader.ImageBase as u32);
+    crate::frldr::dbgcon_str(b",sz=");
+    crate::frldr::dbgcon_hex32((*NtHeaders).OptionalHeader.SizeOfImage);
     PhysicalBase = MmAllocateMemoryAtAddress(
         (*NtHeaders).OptionalHeader.SizeOfImage as usize,
         ((*NtHeaders).OptionalHeader.ImageBase as usize & crate::ffi::KSEG0_BASE.wrapping_sub(1)) as PVOID,
         MemoryType,
     );
+    crate::frldr::dbgcon_str(b",pa1=");
+    crate::frldr::dbgcon_hex32(PhysicalBase as usize as u32);
 
     if PhysicalBase.is_null() {
         PhysicalBase = MmAllocateMemoryWithType((*NtHeaders).OptionalHeader.SizeOfImage as usize, MemoryType);
+        crate::frldr::dbgcon_str(b",pa2=");
+        crate::frldr::dbgcon_hex32(PhysicalBase as usize as u32);
 
         if PhysicalBase.is_null() {
+            crate::frldr::dbgcon_str(b",FAIL]");
             ERR!(b"Failed to alloc %lu bytes for image %s\n\0".as_ptr() as PSTR, (*NtHeaders).OptionalHeader.SizeOfImage, FilePath);
             ArcClose(FileId);
             return 0u8;
         }
     }
+    crate::frldr::dbgcon_str(b"]\n");
 
     VirtualBase = if KernelMapping != 0 {
         PaToVa(PhysicalBase)

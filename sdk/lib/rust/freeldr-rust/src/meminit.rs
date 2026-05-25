@@ -189,11 +189,16 @@ pub unsafe extern "C" fn ArcGetMemoryDescriptor(
 }
 
 unsafe fn MmCheckFreeldrImageFile() {
+    crate::frldr::dbgcon_str(b"ck[ib=");
+    crate::frldr::dbgcon_hex32(core::ptr::addr_of!(__ImageBase) as usize as u32);
+    let NtHeaders: PIMAGE_NT_HEADERS = RtlImageNtHeader(core::ptr::addr_of!(__ImageBase) as *mut _);
+    crate::frldr::dbgcon_str(b",nt=");
+    crate::frldr::dbgcon_hex32(NtHeaders as usize as u32);
+    crate::frldr::dbgcon_str(b"]");
     #[cfg(not(uefiboot))]
     {
-
-        let NtHeaders: PIMAGE_NT_HEADERS = RtlImageNtHeader(core::ptr::addr_of!(__ImageBase) as *mut _);
         if NtHeaders.is_null() {
+            crate::frldr::dbgcon_str(b"NULL!");
             ERR(b"Could not get NtHeaders!\n\0".as_ptr() as PCHAR);
             FrLdrBugCheckWithMessage(
                 FREELDR_IMAGE_CORRUPTION,
@@ -204,6 +209,13 @@ unsafe fn MmCheckFreeldrImageFile() {
         }
 
         let FileHeader: PIMAGE_FILE_HEADER = core::ptr::addr_of_mut!((*NtHeaders).FileHeader);
+        crate::frldr::dbgcon_str(b"fh[m=");
+        crate::frldr::dbgcon_hex32((*FileHeader).Machine as u32);
+        crate::frldr::dbgcon_str(b",ns=");
+        crate::frldr::dbgcon_hex32((*FileHeader).NumberOfSections as u32);
+        crate::frldr::dbgcon_str(b",so=");
+        crate::frldr::dbgcon_hex32((*FileHeader).SizeOfOptionalHeader as u32);
+        crate::frldr::dbgcon_str(b"]");
         // NumberOfSections check intentionally relaxed from C's exact `== FREELDR_SECTION_COUNT`:
         // the Rust integration introduces additional PE sections (.eh_frame, .reloc, .buildid,
         // .gcc_exc) that the C-only assumption (i386=3, amd64/arm64=4) did not anticipate.
@@ -267,6 +279,7 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
     dbgcon(b'C');
 
     BiosMemoryMap = (MachVtbl.GetMemoryMap.unwrap())(core::ptr::addr_of_mut!(BiosMemoryMapEntryCount));
+    dbgcon(b'1');
 
     #[cfg(debug_assertions)]
     {
@@ -284,26 +297,34 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
             );
         }
     }
+    dbgcon(b'2');
 
     TotalPagesInLookupTable = MmGetAddressablePageCountIncludingHoles();
+    dbgcon(b'3');
     PageLookupTableAddress = MmFindLocationForPageLookupTable(TotalPagesInLookupTable);
+    dbgcon(b'4');
     LastFreePageHint = MmHighestPhysicalPage;
 
     if PageLookupTableAddress.is_null() {
+        dbgcon(b'X');
         printf(b"Error initializing memory manager!\n\0".as_ptr() as *const i8);
         return 0u8;
     }
 
     MmInitPageLookupTable(PageLookupTableAddress, TotalPagesInLookupTable);
+    dbgcon(b'5');
 
     MmUpdateLastFreePageHint(PageLookupTableAddress, TotalPagesInLookupTable);
+    dbgcon(b'6');
 
     FreePagesInLookupTable = MmCountFreePagesInLookupTable(
         PageLookupTableAddress,
         TotalPagesInLookupTable,
     );
+    dbgcon(b'7');
 
     MmInitializeHeap(PageLookupTableAddress);
+    dbgcon(b'8');
 
     TRACE(
         b"Memory Manager initialized. 0x%x pages available.\n\0".as_ptr() as *const i8,

@@ -326,7 +326,12 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
     }
 
     if (ByteSize + core::mem::size_of::<HEAP_BLOCK>()) > MAXUSHORT as usize * core::mem::size_of::<HEAP_BLOCK>() {
+        crate::frldr::dbgcon_str(b"HUGE!");
         ERR(b"HEAP: Allocation of 0x%lx bytes too large\n\0".as_ptr() as PCHAR, ByteSize);
+        return core::ptr::null_mut();
+    }
+    if Heap.is_null() {
+        crate::frldr::dbgcon_str(b"HEAPnull!");
         return core::ptr::null_mut();
     }
 
@@ -400,6 +405,29 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
         return (*Block).Data.as_mut_ptr() as PVOID;
     }
 
+    crate::frldr::dbgcon_str(b"HEAPfull[bsz=");
+    crate::frldr::dbgcon_hex32(BlockSize as u32);
+    crate::frldr::dbgcon_str(b",tb=");
+    crate::frldr::dbgcon_hex32((*Heap).TerminatingBlock as u32);
+    // Walk free list.
+    crate::frldr::dbgcon_str(b",fl=");
+    let term_idx = (*Heap).TerminatingBlock as u32;
+    let term = core::ptr::addr_of_mut!((*Heap).Blocks).offset(term_idx as isize);
+    let mut walk_idx: u32 = (*(*term).Data.as_mut_ptr()).Flink;
+    let mut depth = 0u32;
+    while depth < 8 {
+        let blk = core::ptr::addr_of_mut!((*Heap).Blocks).offset(walk_idx as isize);
+        crate::frldr::dbgcon_hex32(walk_idx);
+        crate::frldr::dbgcon(b':');
+        crate::frldr::dbgcon_hex32((*blk).Size as u32);
+        crate::frldr::dbgcon(b'/');
+        crate::frldr::dbgcon_hex32((*blk).Tag);
+        crate::frldr::dbgcon(b' ');
+        if (*blk).Size == 0 { break; }
+        walk_idx = (*(*blk).Data.as_mut_ptr()).Flink;
+        depth += 1;
+    }
+    crate::frldr::dbgcon_str(b"]");
     WARN(b"HEAP: nothing suitable found for 0x%lx bytes\n\0".as_ptr() as PCHAR, ByteSize);
     core::ptr::null_mut()
 }
@@ -462,8 +490,12 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     PrevBlock = Block.offset(-((*Block).PreviousSize as isize) - 1);
     NextBlock = Block.offset((*Block).Size as isize + 1);
 
+    // Use u32 for the overflow guard — Rust u16+u16+1 wraps silently in
+    // release mode. The C version is safe because integer promotion does
+    // the add in `int`. Without widening, a coalesce of two ~65535-sized
+    // free blocks wraps Size to a small value, smashing the free list.
     if ((*NextBlock).Tag == 0) &&
-        (((*Block).Size + (*NextBlock).Size + 1) <= 0xFFFF)
+        (((*Block).Size as u32 + (*NextBlock).Size as u32 + 1) <= 0xFFFF)
     {
         (*Block).Size = (*Block).Size.wrapping_add((*NextBlock).Size).wrapping_add(1);
         FrLdrHeapRemoveFreeList(Heap, NextBlock);
@@ -472,7 +504,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     }
 
     if ((*Block).PreviousSize != 0) && ((*PrevBlock).Tag == 0) &&
-        (((*PrevBlock).Size + (*Block).Size + 1) <= 0xFFFF)
+        (((*PrevBlock).Size as u32 + (*Block).Size as u32 + 1) <= 0xFFFF)
     {
         (*PrevBlock).Size = (*PrevBlock).Size.wrapping_add((*Block).Size).wrapping_add(1);
         Block = PrevBlock;
@@ -537,6 +569,30 @@ pub unsafe extern "C" fn MmInitializeHeap(PageLookupTable: PVOID) {
 
     FrLdrTempHeap = FrLdrHeapCreate(TEMP_HEAP_SIZE, LoaderFirmwareTemporary);
     ASSERT(FrLdrTempHeap as usize != 0);
+
+    // Dump default heap free list right after init.
+    crate::frldr::dbgcon_str(b"\nHeapInit[def=");
+    crate::frldr::dbgcon_hex32(FrLdrDefaultHeap as usize as u32);
+    crate::frldr::dbgcon_str(b",tmp=");
+    crate::frldr::dbgcon_hex32(FrLdrTempHeap as usize as u32);
+    let dh = FrLdrDefaultHeap as PHEAP;
+    crate::frldr::dbgcon_str(b",tb=");
+    crate::frldr::dbgcon_hex32((*dh).TerminatingBlock as u32);
+    let term = core::ptr::addr_of_mut!((*dh).Blocks).offset((*dh).TerminatingBlock as isize);
+    let mut walk: u32 = (*(*term).Data.as_mut_ptr()).Flink;
+    let mut depth = 0u32;
+    crate::frldr::dbgcon_str(b",fl=");
+    while depth < 8 {
+        let blk = core::ptr::addr_of_mut!((*dh).Blocks).offset(walk as isize);
+        crate::frldr::dbgcon_hex32(walk);
+        crate::frldr::dbgcon(b':');
+        crate::frldr::dbgcon_hex32((*blk).Size as u32);
+        crate::frldr::dbgcon(b' ');
+        if (*blk).Size == 0 { break; }
+        walk = (*(*blk).Data.as_mut_ptr()).Flink;
+        depth += 1;
+    }
+    crate::frldr::dbgcon_str(b"]\n");
 
     TRACE(
         b"MmInitializeHeap() done, default heap %p, temp heap %p\n\0".as_ptr() as PCHAR,

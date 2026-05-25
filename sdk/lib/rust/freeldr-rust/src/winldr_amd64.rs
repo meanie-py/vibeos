@@ -289,7 +289,8 @@ unsafe fn MempMapRangeOfPages(mut VirtualAddress: u64, mut PhysicalAddress: u64,
     return i;
 }
 
-unsafe fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: PFN_NUMBER, KernelMapping: u8) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: PFN_NUMBER, KernelMapping: u8) -> u8 {
 
     TRACE(b">>> MempSetupPaging(0x%lx, %ld, %p)\n\0".as_ptr() as *const i8, (StartPage) as usize, (NumberOfPages) as usize, ((StartPage * PAGE_SIZE + KSEG0_BASE) as *mut core::ffi::c_void) as usize);
 
@@ -433,7 +434,8 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
     TRACE(b"leave WinLdrSetProcessorContext\n\0".as_ptr() as *const i8);
 }
 
-unsafe fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
+#[no_mangle]
+pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
 
     let mut SharedUserDataAddress: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut Tss: usize = 0;

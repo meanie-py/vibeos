@@ -282,12 +282,12 @@ pub fn ASSERT<T>(_cond: T) {}
 /// Debug-only: write a single character to QEMU's debugcon (port 0xe9). Lets
 /// us trace boot progress past the screen-clear in PcVideoInit without
 /// needing serial init. Cheap; safe to leave in.
-#[cfg(target_arch = "x86")]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
 pub unsafe fn dbgcon(c: u8) {
     core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c, options(nostack, preserves_flags));
 }
-#[cfg(not(target_arch = "x86"))]
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
 #[inline(always)]
 pub unsafe fn dbgcon(_c: u8) {}
 
@@ -465,7 +465,7 @@ pub const _TYPE_OF_MEMORY_LoaderErrorLogMemory: TYPE_OF_MEMORY = 28;
 pub const LoaderMaximum: TYPE_OF_MEMORY = 29;
 pub const _TYPE_OF_MEMORY_LoaderMaximum: TYPE_OF_MEMORY = 29;
 
-// freeldr layout / PE / heap constants (i386 smoke target values).
+// freeldr layout / PE / heap constants.
 pub type POOL_TYPE = u32;
 pub const FREELDR_BASE: usize = 0xF800;
 pub const FREELDR_PE_BASE: usize = 0x10000;
@@ -482,8 +482,18 @@ pub const REDZONE_MARK: u64 = 0xCCCCCCCCCCCCCCCC;
 pub const REDZONE_ALLOCATION: usize = 24;
 pub const HEAP_ZERO_MEMORY: ULONG = 0x00000008;
 pub const MAXUSHORT: USHORT = 0xffff;
+// IMAGE_NT_OPTIONAL_HDR_MAGIC: 0x10b = PE32 (i386), 0x20b = PE32+ (amd64/arm64).
+// IMAGE_FILE_MACHINE_NATIVE: 0x014c = I386, 0x8664 = AMD64, 0xaa64 = ARM64.
+#[cfg(target_arch = "x86")]
 pub const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x10b;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x20b;
+#[cfg(target_arch = "x86")]
 pub const IMAGE_FILE_MACHINE_NATIVE: u16 = 0x014c;
+#[cfg(target_arch = "x86_64")]
+pub const IMAGE_FILE_MACHINE_NATIVE: u16 = 0x8664;
+#[cfg(target_arch = "aarch64")]
+pub const IMAGE_FILE_MACHINE_NATIVE: u16 = 0xaa64;
 pub const IMAGE_SUBSYSTEM_NATIVE: u16 = 1;
 // _FRLDR_BUGCHECK_CODES enum (debug.h:143). Off-by-one in earlier rustconv
 // output dropped TEST_BUGCHECK/MISSING_HARDWARE_REQUIREMENTS — shifted all
@@ -587,9 +597,12 @@ pub unsafe extern "C" fn WRITE_PORT_USHORT(_port: *mut u16, _val: u16) {
 }
 /// MSVC `__cpuid(int info[4], int leaf)` intrinsic. rustconv emitted it
 /// as `extern { fn __cpuid(info: *mut i32, function: i32) }` (winldr
-/// CPU detect). LLVM reserves ebx on i386 → save/restore via the stack.
+/// CPU detect). LLVM reserves rbx/ebx → save/restore via xchg.
+/// **The xchg MUST be full-width on amd64** (`xchg rbx, ...`): a 32-bit
+/// `xchg ebx, ...` zero-extends rbx in 64-bit mode, wiping any pointer
+/// the caller had stashed there. See feedback_cpuid_xchg_32bit_zext.md.
 /// UNIQUE — keystone.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "C" fn __cpuid(info: *mut i32, function: i32) {
     let (mut a, mut b, mut c, mut d): (i32, i32, i32, i32);
@@ -605,6 +618,27 @@ pub unsafe extern "C" fn __cpuid(info: *mut i32, function: i32) {
     );
     *info.offset(0) = a;
     *info.offset(1) = b;
+    *info.offset(2) = c;
+    *info.offset(3) = d;
+}
+
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "C" fn __cpuid(info: *mut i32, function: i32) {
+    let (mut a, mut c, mut d): (i32, i32, i32);
+    let mut b_save: i64;
+    core::arch::asm!(
+        "xchg {rbx_save}, rbx",
+        "cpuid",
+        "xchg {rbx_save}, rbx",
+        rbx_save = inout(reg) 0i64 => b_save,
+        inout("eax") function => a,
+        out("ecx") c,
+        out("edx") d,
+        options(nostack, preserves_flags),
+    );
+    *info.offset(0) = a;
+    *info.offset(1) = b_save as i32; // cpuid only writes low 32 of rbx
     *info.offset(2) = c;
     *info.offset(3) = d;
 }
