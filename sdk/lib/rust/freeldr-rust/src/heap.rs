@@ -492,8 +492,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
 
     // Use u32 for the overflow guard — Rust u16+u16+1 wraps silently in
     // release mode. The C version is safe because integer promotion does
-    // the add in `int`. Without widening, a coalesce of two ~65535-sized
-    // free blocks wraps Size to a small value, smashing the free list.
+    // the add in `int`.
     if ((*NextBlock).Tag == 0) &&
         (((*Block).Size as u32 + (*NextBlock).Size as u32 + 1) <= 0xFFFF)
     {
