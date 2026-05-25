@@ -126,7 +126,6 @@ static SavedNoUiVtbl: UIVTBL = NOUI_VTBL;
 
 #[no_mangle]
 pub unsafe extern "C" fn UiInitialize(ShowUi: u8) -> u8 {
-    crate::frldr::dbgcon(b'U'); crate::frldr::dbgcon(b'I');
     let mut UiDisplayMode: u32;
     let mut UiMinimal: u8 = 0u8;
     let mut SectionId: usize = 0;

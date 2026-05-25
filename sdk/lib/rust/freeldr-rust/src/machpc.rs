@@ -349,9 +349,7 @@ extern "C" {
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
     fn strlen(s: *const i8) -> usize;
-    fn CpDoesPortExist(Port: PUCHAR) -> BOOLEAN;
     fn UlongToPtr(ul: ULONG) -> *mut core::ffi::c_void;
-    fn Rs232PortInUse(Port: PUCHAR) -> BOOLEAN;
     fn DetectBiosDisks(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusKey: PCONFIGURATION_COMPONENT_DATA);
     fn FldrCreateSystemKey(SystemKey: *mut PCONFIGURATION_COMPONENT_DATA, Identifier: PCSTR);
     fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mut ULONG);
@@ -385,9 +383,26 @@ unsafe fn _disable() {
     core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
 }
 
-extern "system" {
+// FREELDR spec marks these as cdecl (`@ cdecl NtLdrGetOption()`); the Rust
+// impl in ntldropts.rs is `extern "C"`. The previous `extern "system"` here
+// was stdcall on i386 → callee-cleans 8 bytes of args after `ret`, but cdecl
+// callee does NOT clean → caller's ESP ends up 8 bytes too low after each
+// NtLdrGetOption call. Subsequent ESP-relative local writes overwrote saved
+// EBP/RIP, causing the wrapper to `ret` to garbage 0x10006 (rosload PE
+// header bytes) on i386.
+extern "C" {
     fn NtLdrGetOption(Options: PCSTR, Name: PCSTR) -> u32;
     fn NtLdrGetOptionEx(Options: PCSTR, Name: PCSTR, OptionLength: *mut u32) -> PCSTR;
+}
+
+// stdcall on i386 — these are stdcall in freeldr.spec / cportlib.
+// (CpDoesPortExist was previously also declared in the `extern "C"` block
+// above as cdecl, but the actual symbol is `_CpDoesPortExist@4`. Same class
+// of ABI mismatch as the NtLdrGetOption bug; was latent because heap
+// corruption masked it earlier in boot.)
+extern "system" {
+    fn CpDoesPortExist(Port: PUCHAR) -> BOOLEAN;
+    fn Rs232PortInUse(Port: PUCHAR) -> BOOLEAN;
 }
 
 // NOTE: REGS / BYTEREGS / WORDREGS / DWORDREGS come from the frldr keystone
@@ -1816,6 +1831,7 @@ unsafe extern "C" fn PcGetFloppyCount() -> u8 {
     (if Data & 0xF0 != 0 { 1 } else { 0 }) + (if Data & 0x0F != 0 { 1 } else { 0 })
 }
 
+#[cfg(not(feature = "uefi"))]
 #[no_mangle]
 pub unsafe extern "C" fn PcHwDetect(Options: PCSTR) -> PCONFIGURATION_COMPONENT_DATA {
 

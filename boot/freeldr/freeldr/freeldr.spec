@@ -28,6 +28,7 @@
 @ cdecl FrLdrHeapCleanupAll()
 @ cdecl FrLdrHeapDump(long)
 @ cdecl FrLdrDbgcon(long)
+@ cdecl FrLdrDbgconHex32(long)
 
 # INI (check if we can move this to rosload)
 @ cdecl IniAddSection()

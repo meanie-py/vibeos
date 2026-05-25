@@ -567,6 +567,12 @@ pub unsafe extern "C" fn FrLdrDbgcon(b: u8) {
         options(nostack, preserves_flags));
 }
 
+/// Diagnostic: emit 8 hex digits + space to debugcon.
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrDbgconHex32(v: u32) {
+    crate::frldr::dbgcon_hex32(v);
+}
+
 /// Diagnostic: dump default-heap free-list state to debugcon.
 /// Tag byte identifies the call site. All reads via `read_volatile` to
 /// defeat any LLVM aliasing assumption about the heap memory being immutable.
