@@ -28,8 +28,7 @@ list(APPEND UEFILDR_ARC_SOURCE
     # arch/uefi/uefivid.c   # replaced by Rust (freeldr-rust/src/uefivid.rs)
 
 if(ARCH STREQUAL "i386")
-    list(APPEND UEFILDR_ARC_SOURCE
-        arch/i386/i386idt.c)
+    # arch/i386/i386idt.c  # replaced by Rust (freeldr-rust/src/i386idt.rs)
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/i386/uefiasm.S
         arch/i386/i386trap.S)

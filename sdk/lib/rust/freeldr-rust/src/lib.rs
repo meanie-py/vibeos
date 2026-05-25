@@ -61,6 +61,19 @@ pub mod pcdisk;
 pub mod pcmem;
 pub mod pcvesa;
 pub mod pchw;
+// pc-hw sweep continued — pcbeep/pccons/pcrtc (BIOS-only, not built for uefi).
+#[cfg(not(feature = "uefi"))]
+pub mod pcbeep;
+#[cfg(not(feature = "uefi"))]
+pub mod pccons;
+#[cfg(not(feature = "uefi"))]
+pub mod pcrtc;
+// i386-hw — hwapm (BIOS-only), i386idt (i386 only; lives in both pcat
+// and uefi i386 builds, so always built for i386).
+#[cfg(not(feature = "uefi"))]
+pub mod hwapm;
+#[cfg(target_arch = "x86")]
+pub mod i386idt;
 
 // 🟢 sweep — i386-hw unit (arch/i386/{hwdisk,hwpci,hwacpi}.c, arch/drivers/hwide.c).
 pub mod hwdisk;
