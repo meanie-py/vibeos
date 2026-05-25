@@ -150,10 +150,14 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         return;
     }
 
-    Size = (core::mem::size_of::<CM_PARTIAL_RESOURCE_LIST>() 
-           - core::mem::size_of::<PCM_PARTIAL_RESOURCE_DESCRIPTOR>() 
-           + 2 * core::mem::size_of::<PCM_PARTIAL_RESOURCE_DESCRIPTOR>()
-           + core::mem::size_of::<CM_FRAMEBUF_DEVICE_DATA>()) as u32;
+    // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[2])
+    //         + sizeof(*FramebufData);
+    // rustconv used `sizeof(PCM_PARTIAL_RESOURCE_DESCRIPTOR)` (pointer size)
+    // instead of struct size, under-allocating by sizeof(DESC) - sizeof(*ptr)
+    // bytes (8 i386 / 4 amd64). This is the amd64 freeldr heap-corruption
+    // smasher: this routine runs from uefildr.efi during BootMain hw detect.
+    Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[2])
+           + core::mem::size_of::<CM_FRAMEBUF_DEVICE_DATA>() as u32;
     
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {

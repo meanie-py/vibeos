@@ -238,7 +238,11 @@ unsafe fn DetectBiosFloppyPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DAT
             return;
         }
 
-        core::ptr::write_bytes(PartialResourceList, 0, 1);
+        // C: RtlZeroMemory(PartialResourceList, Size).
+        // rustconv emitted `write_bytes(typed_ptr, 0, 1)` which zeroes
+        // sizeof(*typed_ptr) bytes — bigger than the trailing-flex-array
+        // alloc, smashing the next heap block. Use byte-count form.
+        core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
         (*PartialResourceList).Version = 1;
         (*PartialResourceList).Revision = 1;
         (*PartialResourceList).Count = 1;
@@ -289,7 +293,13 @@ unsafe fn DetectBiosFloppyController(BusKey: PCONFIGURATION_COMPONENT_DATA) -> P
     FloppyCount = MachGetFloppyCount();
     TRACE(b"Floppy count: %u\n\0".as_ptr() as PCHAR, (FloppyCount) as usize);
 
-    Size = core::mem::size_of::<CM_PARTIAL_RESOURCE_LIST>() as ULONG + 2 * core::mem::size_of::<PCM_PARTIAL_RESOURCE_DESCRIPTOR>() as ULONG;
+    // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[3]).
+    // rustconv emitted `sizeof(CM_PARTIAL_RESOURCE_LIST) + 2 * sizeof(PCM_PARTIAL_RESOURCE_DESCRIPTOR)`
+    // where `PCM_…` is a *pointer* (4 bytes on i386), under-allocating by
+    // 2*sizeof(descriptor) - 2*sizeof(ptr). The under-alloc's RtlZeroMemory +
+    // descriptor writes overflowed into the next free block's header,
+    // corrupting the default-heap free list right after rosload UiInit.
+    Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[3]);
     PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x52736c50) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList == core::ptr::null_mut() {
         ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);

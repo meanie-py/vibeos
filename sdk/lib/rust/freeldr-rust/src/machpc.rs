@@ -1410,16 +1410,20 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
     if DetectPS2AuxPort() != 0 {
         TRACE(b"Detected PS2 port\n\0".as_ptr() as *const i8);
 
-        Size = (core::mem::size_of::<CM_PARTIAL_RESOURCE_LIST>() 
-                - core::mem::size_of::<[u8; 20]>() 
-                + core::mem::size_of::<[u8; 20]>()) as u32;
+        // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]).
+        // rustconv emitted a `[u8; 20]` literal-size stand-in for
+        // CM_PARTIAL_RESOURCE_DESCRIPTOR; correct on amd64 (20B) but
+        // 4 bytes too BIG on i386 (16B). Use FIELD_OFFSET! for both arches.
+        Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]);
         PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x52736c48) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
             ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
             return;
         }
 
-        core::ptr::write_bytes(PartialResourceList, 0, 1);
+        // C: RtlZeroMemory(PartialResourceList, Size). Byte-count, not
+        // element-count (see [[feedback_write_bytes_element_count]]).
+        core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
         (*PartialResourceList).Version = 1;
         (*PartialResourceList).Revision = 1;
         (*PartialResourceList).Count = 1;
@@ -1447,15 +1451,16 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         if DetectPS2AuxDevice() != 0 {
             TRACE(b"Detected PS2 mouse\n\0".as_ptr() as *const i8);
 
-            Size = core::mem::size_of::<CM_PARTIAL_RESOURCE_LIST>() as u32 
-                   - core::mem::size_of::<[u8; 20]>() as u32;
+            // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors).
+            Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors);
             PartialResourceList = FrLdrHeapAlloc(Size as usize, 0x52736c48) as PCM_PARTIAL_RESOURCE_LIST;
             if PartialResourceList.is_null() {
                 ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
                 return;
             }
 
-            core::ptr::write_bytes(PartialResourceList, 0, 1);
+            // C: RtlZeroMemory(PartialResourceList, Size). Byte-count form.
+            core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
             (*PartialResourceList).Version = 1;
             (*PartialResourceList).Revision = 1;
             (*PartialResourceList).Count = 0;
@@ -1494,10 +1499,11 @@ unsafe fn CreateBusMousePeripheralKey(
     const CmResourceTypePort: u8 = 1;
     const CmResourceTypeInterrupt: u8 = 2;
 
-    Size = (core::mem::size_of::<CM_PARTIAL_RESOURCE_LIST>() - 
-            core::mem::size_of::<PCM_PARTIAL_RESOURCE_DESCRIPTOR>() +
-            2 * core::mem::size_of::<PCM_PARTIAL_RESOURCE_DESCRIPTOR>()) as u32;
-    
+    // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[2]).
+    // rustconv used `sizeof(PCM_*)` (pointer size 4/8) instead of struct
+    // size (12), under-allocating → heap overflow when writing 2 descs.
+    Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[2]);
+
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null()
     {
@@ -1537,9 +1543,11 @@ unsafe fn CreateBusMousePeripheralKey(
                            Size,
                            core::ptr::addr_of_mut!(ControllerKey));
 
-    Size = (core::mem::size_of::<CM_PARTIAL_RESOURCE_LIST>() - 
-            core::mem::size_of::<PCM_PARTIAL_RESOURCE_DESCRIPTOR>()) as u32;
-    
+    // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors).
+    // rustconv used `sizeof(LIST) - sizeof(PCM_*)`, over-allocating slightly
+    // (sizeof(LIST) includes one inline DESC). Fixed to the canonical form.
+    Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors);
+
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null()
     {

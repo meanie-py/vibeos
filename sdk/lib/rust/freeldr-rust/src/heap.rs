@@ -559,6 +559,56 @@ pub unsafe extern "C" fn FrLdrTempFree(
     FrLdrHeapFreeEx(heap, Allocation, Tag);
 }
 
+/// Diagnostic: emit a single byte to QEMU debugcon (port 0xE9).
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrDbgcon(b: u8) {
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b,
+        options(nostack, preserves_flags));
+}
+
+/// Diagnostic: dump default-heap free-list state to debugcon.
+/// Tag byte identifies the call site. All reads via `read_volatile` to
+/// defeat any LLVM aliasing assumption about the heap memory being immutable.
+/// Output: `<H label idx:size/tag idx:size/tag ...>`
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrHeapDump(label: u8) {
+    let h = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrDefaultHeap)) as PHEAP;
+    if h.is_null() { return; }
+    crate::frldr::dbgcon_str(b"<H");
+    crate::frldr::dbgcon(label);
+    crate::frldr::dbgcon(b' ');
+    let term_idx = core::ptr::read_volatile(core::ptr::addr_of!((*h).TerminatingBlock)) as u32;
+    let blocks_base = core::ptr::addr_of_mut!((*h).Blocks);
+    let term = blocks_base.offset(term_idx as isize);
+    let mut walk: u32 = core::ptr::read_volatile(
+        core::ptr::addr_of!((*(*term).Data.as_ptr()).Flink));
+    let mut depth = 0u32;
+    while depth < 12 {
+        let max_idx = (core::ptr::read_volatile(core::ptr::addr_of!((*h).MaximumSize))
+            / core::mem::size_of::<HEAP_BLOCK>()) as u32;
+        if walk > max_idx {
+            crate::frldr::dbgcon_str(b"OOB:");
+            crate::frldr::dbgcon_hex32(walk);
+            break;
+        }
+        let blk = blocks_base.offset(walk as isize);
+        let sz = core::ptr::read_volatile(core::ptr::addr_of!((*blk).Size));
+        let tg = core::ptr::read_volatile(core::ptr::addr_of!((*blk).Tag));
+        crate::frldr::dbgcon_hex32(walk);
+        crate::frldr::dbgcon(b':');
+        crate::frldr::dbgcon_hex32(sz as u32);
+        crate::frldr::dbgcon(b'/');
+        crate::frldr::dbgcon_hex32(tg);
+        crate::frldr::dbgcon(b' ');
+        if sz == 0 { break; }
+        walk = core::ptr::read_volatile(
+            core::ptr::addr_of!((*(*blk).Data.as_ptr()).Flink));
+        depth += 1;
+    }
+    crate::frldr::dbgcon_str(b">");
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn MmInitializeHeap(PageLookupTable: PVOID) {
     TRACE(b"MmInitializeHeap()\n\0".as_ptr() as PCHAR);

@@ -26,6 +26,8 @@
 @ cdecl FrLdrTempAlloc()
 @ cdecl FrLdrTempFree()
 @ cdecl FrLdrHeapCleanupAll()
+@ cdecl FrLdrHeapDump(long)
+@ cdecl FrLdrDbgcon(long)
 
 # INI (check if we can move this to rosload)
 @ cdecl IniAddSection()
