@@ -2223,6 +2223,55 @@ extern "C" {
     fn ref_RtlGetAce(a: *mut u8, idx: u32, ace: *mut *mut u8) -> i32;
     fn ref_RtlQueryInformationAcl(a: *mut u8, i: *mut u8, l: u32, c: u32) -> i32;
     fn ref_RtlSetInformationAcl(a: *mut u8, i: *mut u8, l: u32, c: u32) -> i32;
+    // Wave ACL-2
+    fn ref_RtlpAddData(al: *const u8, all: u32, ace: *mut u8, off: u32);
+    fn ref_RtlpDeleteData(ace: *mut u8, asz: u32, off: u32);
+    fn ref_RtlpAddKnownAce(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        s: *const u8,
+        ty: u8,
+    ) -> i32;
+    fn ref_RtlpAddKnownObjectAce(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        otg: *const u8,
+        iotg: *const u8,
+        s: *const u8,
+        ty: u8,
+    ) -> i32;
+    fn ref_RtlAddAce(a: *mut u8, rev: u32, idx: u32, l: *mut u8, ll: u32) -> i32;
+    fn ref_RtlDeleteAce(a: *mut u8, idx: u32) -> i32;
+    fn ref_RtlAddAccessAllowedAce(a: *mut u8, rev: u32, m: u32, s: *const u8) -> i32;
+    fn ref_RtlAddAccessAllowedAceEx(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        s: *const u8,
+    ) -> i32;
+    fn ref_RtlAddAccessAllowedObjectAce(
+        a: *mut u8,
+        rev: u32,
+        fl: u32,
+        m: u32,
+        otg: *const u8,
+        iotg: *const u8,
+        s: *const u8,
+    ) -> i32;
+    fn ref_RtlAddAccessDeniedAce(a: *mut u8, rev: u32, m: u32, s: *const u8) -> i32;
+    fn ref_RtlAddAuditAccessAce(
+        a: *mut u8,
+        rev: u32,
+        m: u32,
+        s: *const u8,
+        su: u8,
+        fa: u8,
+    ) -> i32;
 }
 
 /// Build a well-formed ACL: `[rev,0,AclSize(le16),AceCount(le16),0,0]`
@@ -2716,3 +2765,874 @@ fn diff_rtl_create_service_sid() {
     };
     assert_eq!(sc, sr);
 }
+
+// ── Wave ACL-2: ACE add/delete + workers + typed wrappers ─────────
+
+/// An empty ACL `[rev,0,cap(le16),0,0,0]` of `cap` bytes (+16 slack).
+fn mk_empty_acl(rev: u8, cap: u16) -> Vec<u8> {
+    let cap = (cap | 1) ^ 1; // USHORT-align (even)
+    let mut v = vec![0u8; cap as usize + 16];
+    v[0] = rev;
+    v[2..4].copy_from_slice(&cap.to_le_bytes());
+    v
+}
+
+#[test]
+fn diff_rtl_add_known_ace_via_wrappers() {
+    let mut rng = Rng(0xAC20_0001);
+    for _ in 0..15_000 {
+        let acl_rev = 2 + (rng.byte() % 4) as u32; // incl 5 (bad)
+        let cap = 8 + ((rng.byte() as u16) & 0xFE) + 8;
+        let mut bc = mk_empty_acl(acl_rev as u8, cap);
+        let mut br = bc.clone();
+        // Up to a few Add* operations on the same evolving ACL.
+        for _ in 0..(1 + rng.byte() % 4) {
+            let sub = rng.byte() % 4;
+            let sid = mk_sid(&mut rng, 1, sub);
+            let rev = (rng.byte() % 6) as u32;
+            let flags = rng.next() as u32 & 0xFF;
+            let mask = rng.next() as u32;
+            let kind = rng.byte() % 5;
+            let (sc, sr) = unsafe {
+                match kind {
+                    0 => (
+                        cabi::RtlAddAccessAllowedAce(bc.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                        ref_RtlAddAccessAllowedAce(br.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                    ),
+                    1 => (
+                        cabi::RtlAddAccessAllowedAceEx(bc.as_mut_ptr(), rev, flags, mask, sid.as_ptr()),
+                        ref_RtlAddAccessAllowedAceEx(br.as_mut_ptr(), rev, flags, mask, sid.as_ptr()),
+                    ),
+                    2 => (
+                        cabi::RtlAddAccessDeniedAce(bc.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                        ref_RtlAddAccessDeniedAce(br.as_mut_ptr(), rev, mask, sid.as_ptr()),
+                    ),
+                    3 => {
+                        let su = rng.byte() & 1;
+                        let fa = rng.byte() & 1;
+                        (
+                            cabi::RtlAddAuditAccessAce(bc.as_mut_ptr(), rev, mask, sid.as_ptr(), su, fa),
+                            ref_RtlAddAuditAccessAce(br.as_mut_ptr(), rev, mask, sid.as_ptr(), su, fa),
+                        )
+                    }
+                    _ => (
+                        cabi::RtlpAddKnownAce(bc.as_mut_ptr(), rev, flags, mask, sid.as_ptr(), 2),
+                        ref_RtlpAddKnownAce(br.as_mut_ptr(), rev, flags, mask, sid.as_ptr(), 2),
+                    ),
+                }
+            };
+            assert_eq!(sc, sr, "AddKnownAce status kind={kind} rev={rev}");
+            assert_eq!(bc, br, "AddKnownAce buffer kind={kind} rev={rev}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_add_known_object_ace() {
+    let mut rng = Rng(0xAC20_0002);
+    for _ in 0..10_000 {
+        let acl_rev = 2 + (rng.byte() % 3) as u8;
+        let cap = 8 + ((rng.byte() as u16) & 0xFE) + 64;
+        let mut bc = mk_empty_acl(acl_rev, cap);
+        let mut br = bc.clone();
+        let sub = rng.byte() % 3;
+        let sid = mk_sid(&mut rng, 1, sub);
+        let rev = if rng.byte() & 1 == 0 { 4 } else { (rng.byte() % 6) as u32 };
+        let flags = rng.next() as u32 & 0xFF;
+        let mask = rng.next() as u32;
+        let g0: [u8; 16] = core::array::from_fn(|_| rng.byte());
+        let g1: [u8; 16] = core::array::from_fn(|_| rng.byte());
+        let otg = if rng.byte() & 1 == 0 { g0.as_ptr() } else { core::ptr::null() };
+        let iotg = if rng.byte() & 1 == 0 { g1.as_ptr() } else { core::ptr::null() };
+        let sc = unsafe {
+            cabi::RtlAddAccessAllowedObjectAce(bc.as_mut_ptr(), rev, flags, mask, otg, iotg, sid.as_ptr())
+        };
+        let sr = unsafe {
+            ref_RtlAddAccessAllowedObjectAce(br.as_mut_ptr(), rev, flags, mask, otg, iotg, sid.as_ptr())
+        };
+        assert_eq!(sc, sr, "AddObjectAce status rev={rev}");
+        assert_eq!(bc, br, "AddObjectAce buffer rev={rev}");
+    }
+}
+
+#[test]
+fn diff_rtl_p_add_delete_data() {
+    let mut rng = Rng(0xAC20_0003);
+    for _ in 0..20_000 {
+        let n = 32 + rng.upto(64);
+        let base: Vec<u8> = (0..n).map(|_| rng.byte()).collect();
+        let ace_off = rng.upto(n / 2);
+        let max_tail = n - ace_off;
+        // RtlpAddData — non-overlapping domain (all==0 or all>=off).
+        {
+            let off = rng.upto(max_tail.max(1));
+            let all = if rng.byte() & 1 == 0 { 0 } else { off + rng.upto(8) };
+            if ace_off + all + off + 8 <= n {
+                let payload: Vec<u8> = (0..all).map(|_| rng.byte()).collect();
+                let mut bc = base.clone();
+                let mut br = base.clone();
+                unsafe {
+                    cabi::RtlpAddData(payload.as_ptr(), all as u32, bc.as_mut_ptr().add(ace_off), off as u32);
+                    ref_RtlpAddData(payload.as_ptr(), all as u32, br.as_mut_ptr().add(ace_off), off as u32);
+                }
+                assert_eq!(bc, br, "RtlpAddData all={all} off={off}");
+            }
+        }
+        // RtlpDeleteData.
+        {
+            let off = rng.upto(max_tail.max(1));
+            let asz = rng.upto(off + 1);
+            let mut bc = base.clone();
+            let mut br = base.clone();
+            unsafe {
+                cabi::RtlpDeleteData(bc.as_mut_ptr().add(ace_off), asz as u32, off as u32);
+                ref_RtlpDeleteData(br.as_mut_ptr().add(ace_off), asz as u32, off as u32);
+            }
+            assert_eq!(bc, br, "RtlpDeleteData asz={asz} off={off}");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_add_and_delete_ace() {
+    let mut rng = Rng(0xAC20_0004);
+    for _ in 0..8_000 {
+        // Build a populated ACL with free space.
+        let n = rng.byte() % 4;
+        let rev = 2 + rng.byte() % 3;
+        let slack = 64u16;
+        let mut bc = mk_acl(&mut rng, rev, n, slack);
+        let mut br = bc.clone();
+
+        // RtlAddAce: a small ACE list (one ACCESS_ALLOWED ACE).
+        let sub = rng.byte() % 3;
+        let sid = mk_sid(&mut rng, 1, sub);
+        let sidlen = 8 + 4 * sub as usize;
+        let asz = 8 + sidlen;
+        let mut list = vec![0u8; asz];
+        list[0] = 0;
+        list[1] = (rng.byte() & 0x1F) as u8;
+        list[2..4].copy_from_slice(&(asz as u16).to_le_bytes());
+        let m = rng.next() as u32;
+        list[4..8].copy_from_slice(&m.to_le_bytes());
+        list[8..8 + sidlen].copy_from_slice(&sid[..sidlen]);
+        let start_idx = (rng.byte() % (n + 2)) as u32;
+        let arev = 2 + (rng.byte() % 4) as u32;
+        let ac = unsafe {
+            cabi::RtlAddAce(bc.as_mut_ptr(), arev, start_idx, list.as_mut_ptr(), asz as u32)
+        };
+        let ar = unsafe {
+            ref_RtlAddAce(br.as_mut_ptr(), arev, start_idx, list.as_mut_ptr(), asz as u32)
+        };
+        assert_eq!(ac, ar, "RtlAddAce status n={n} idx={start_idx}");
+        assert_eq!(bc, br, "RtlAddAce buffer n={n} idx={start_idx}");
+
+        // RtlDeleteAce an index.
+        let di = (rng.byte() % (n + 2)) as u32;
+        let dc = unsafe { cabi::RtlDeleteAce(bc.as_mut_ptr(), di) };
+        let dr = unsafe { ref_RtlDeleteAce(br.as_mut_ptr(), di) };
+        assert_eq!(dc, dr, "RtlDeleteAce status di={di}");
+        assert_eq!(bc, br, "RtlDeleteAce buffer di={di}");
+    }
+}
+
+// ============================================================================
+// Wave SD-1 — sdk/lib/rtl/sd.c structural surface.
+//
+// SECURITY_DESCRIPTOR (absolute) on host x86_64: 1+1+2 header + 4 pad
+// + 4*8 pointers = 40 bytes. SECURITY_DESCRIPTOR_RELATIVE: flat 20
+// bytes everywhere. All tests build per-side byte buffers, cast to the
+// cabi struct on the Rust side and the ref TU struct on the C side,
+// and compare both the returned NTSTATUS/values AND the buffer bytes.
+// ============================================================================
+
+use rtl_strings::cabi::{SECURITY_DESCRIPTOR, SECURITY_DESCRIPTOR_RELATIVE};
+
+extern "C" {
+    fn ref_RtlCreateSecurityDescriptor(sd: *mut u8, rev: u32) -> i32;
+    fn ref_RtlCreateSecurityDescriptorRelative(sd: *mut u8, rev: u32) -> i32;
+    fn ref_RtlLengthSecurityDescriptor(sd: *const u8) -> u32;
+    fn ref_RtlGetDaclSecurityDescriptor(
+        sd: *const u8,
+        present: *mut u8,
+        dacl: *mut *mut u8,
+        defaulted: *mut u8,
+    ) -> i32;
+    fn ref_RtlGetSaclSecurityDescriptor(
+        sd: *const u8,
+        present: *mut u8,
+        sacl: *mut *mut u8,
+        defaulted: *mut u8,
+    ) -> i32;
+    fn ref_RtlGetOwnerSecurityDescriptor(
+        sd: *const u8,
+        owner: *mut *mut u8,
+        defaulted: *mut u8,
+    ) -> i32;
+    fn ref_RtlGetGroupSecurityDescriptor(
+        sd: *const u8,
+        group: *mut *mut u8,
+        defaulted: *mut u8,
+    ) -> i32;
+    fn ref_RtlSetDaclSecurityDescriptor(
+        sd: *mut u8,
+        present: u8,
+        dacl: *mut u8,
+        defaulted: u8,
+    ) -> i32;
+    fn ref_RtlSetSaclSecurityDescriptor(
+        sd: *mut u8,
+        present: u8,
+        sacl: *mut u8,
+        defaulted: u8,
+    ) -> i32;
+    fn ref_RtlSetOwnerSecurityDescriptor(sd: *mut u8, owner: *mut u8, defaulted: u8) -> i32;
+    fn ref_RtlSetGroupSecurityDescriptor(sd: *mut u8, group: *mut u8, defaulted: u8) -> i32;
+    fn ref_RtlGetControlSecurityDescriptor(sd: *const u8, ctl: *mut u16, rev: *mut u32) -> i32;
+    fn ref_RtlSetControlSecurityDescriptor(sd: *mut u8, of_interest: u16, to_set: u16) -> i32;
+    fn ref_RtlGetSecurityDescriptorRMControl(sd: *const u8, rm: *mut u8) -> u8;
+    fn ref_RtlSetSecurityDescriptorRMControl(sd: *mut u8, rm: *const u8);
+    fn ref_RtlSetAttributesSecurityDescriptor(sd: *mut u8, ctl: u16, rev: *mut u32) -> i32;
+    fn ref_RtlValidSecurityDescriptor(sd: *const u8) -> u8;
+    fn ref_RtlValidRelativeSecurityDescriptor(sd: *const u8, len: u32, info: u32) -> u8;
+}
+
+/// `sizeof(SECURITY_DESCRIPTOR)` host: 40 (1+1+2+4 pad + 4*8 ptr).
+const SD_SIZE: usize = core::mem::size_of::<SECURITY_DESCRIPTOR>();
+const SDREL_SIZE: usize = core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>();
+
+#[test]
+fn diff_rtl_create_security_descriptor() {
+    let mut rng = Rng(0x5D10_0001);
+    for _ in 0..2_000 {
+        // Pre-fill with junk so the "zero rest of struct" effect shows.
+        let mut bc = vec![0xCDu8; SD_SIZE];
+        let mut br = bc.clone();
+        for b in bc.iter_mut() {
+            *b = rng.byte();
+        }
+        br.copy_from_slice(&bc);
+        let rev = if rng.byte() & 1 == 0 { 1 } else { rng.byte() as u32 };
+        let sc = unsafe { cabi::RtlCreateSecurityDescriptor(bc.as_mut_ptr() as _, rev) };
+        let sr = unsafe { ref_RtlCreateSecurityDescriptor(br.as_mut_ptr(), rev) };
+        assert_eq!(sc, sr, "RtlCreateSecurityDescriptor rev={rev:#x}");
+        assert_eq!(bc, br, "RtlCreateSecurityDescriptor buf rev={rev:#x}");
+    }
+}
+
+#[test]
+fn diff_rtl_create_security_descriptor_relative() {
+    let mut rng = Rng(0x5D10_0002);
+    for _ in 0..2_000 {
+        let mut bc = vec![0xABu8; SDREL_SIZE];
+        for b in bc.iter_mut() {
+            *b = rng.byte();
+        }
+        let mut br = bc.clone();
+        let rev = if rng.byte() & 1 == 0 { 1 } else { rng.byte() as u32 };
+        let sc = unsafe { cabi::RtlCreateSecurityDescriptorRelative(bc.as_mut_ptr() as _, rev) };
+        let sr = unsafe { ref_RtlCreateSecurityDescriptorRelative(br.as_mut_ptr(), rev) };
+        assert_eq!(sc, sr, "RtlCreateSDRel rev={rev:#x}");
+        assert_eq!(bc, br, "RtlCreateSDRel buf rev={rev:#x}");
+    }
+}
+
+/// Build an absolute SD with random combinations of owner/group/dacl/
+/// sacl present + the matching presence flags. Returns the SD buffer
+/// (40 bytes) plus owned backing vectors keyed alive for the test
+/// scope. The DACL/SACL bytes are well-formed (use mk_acl); SIDs use
+/// mk_sid. Identical byte sequences on Rust + C sides.
+fn mk_absolute_sd(
+    rng: &mut Rng,
+) -> (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>) {
+    let mut sd = vec![0u8; SD_SIZE];
+    sd[0] = 1; // Revision
+    sd[1] = 0; // Sbz1
+
+    let owner_sub = rng.byte() % 4;
+    let group_sub = rng.byte() % 4;
+    let n_dacl = rng.byte() % 3;
+    let n_sacl = rng.byte() % 3;
+
+    let owner = if rng.byte() & 1 != 0 {
+        Some(mk_sid(rng, 1, owner_sub))
+    } else {
+        None
+    };
+    let group = if rng.byte() & 1 != 0 {
+        Some(mk_sid(rng, 1, group_sub))
+    } else {
+        None
+    };
+    let dacl_present = rng.byte() & 1 != 0;
+    let dacl = if dacl_present {
+        Some(mk_acl(rng, 2, n_dacl, 0))
+    } else {
+        None
+    };
+    let sacl_present = rng.byte() & 1 != 0;
+    let sacl = if sacl_present {
+        Some(mk_acl(rng, 2, n_sacl, 0))
+    } else {
+        None
+    };
+
+    let mut control: u16 = 0;
+    if rng.byte() & 1 != 0 && owner.is_some() {
+        control |= 0x0001;
+    } // OWNER_DEFAULTED
+    if rng.byte() & 1 != 0 && group.is_some() {
+        control |= 0x0002;
+    } // GROUP_DEFAULTED
+    if dacl_present {
+        control |= 0x0004;
+    } // DACL_PRESENT
+    if dacl_present && rng.byte() & 1 != 0 {
+        control |= 0x0008;
+    } // DACL_DEFAULTED
+    if sacl_present {
+        control |= 0x0010;
+    } // SACL_PRESENT
+    if sacl_present && rng.byte() & 1 != 0 {
+        control |= 0x0020;
+    } // SACL_DEFAULTED
+    sd[2..4].copy_from_slice(&control.to_le_bytes());
+
+    // Pointers at offsets 8 / 16 / 24 / 32 (after 4-byte pad).
+    let owner_ptr = owner.as_ref().map(|v| v.as_ptr() as usize).unwrap_or(0);
+    let group_ptr = group.as_ref().map(|v| v.as_ptr() as usize).unwrap_or(0);
+    let sacl_ptr = sacl.as_ref().map(|v| v.as_ptr() as usize).unwrap_or(0);
+    let dacl_ptr = dacl.as_ref().map(|v| v.as_ptr() as usize).unwrap_or(0);
+    sd[8..16].copy_from_slice(&(owner_ptr as u64).to_le_bytes());
+    sd[16..24].copy_from_slice(&(group_ptr as u64).to_le_bytes());
+    sd[24..32].copy_from_slice(&(sacl_ptr as u64).to_le_bytes());
+    sd[32..40].copy_from_slice(&(dacl_ptr as u64).to_le_bytes());
+
+    (sd, owner, group, dacl, sacl)
+}
+
+#[test]
+fn diff_rtl_length_security_descriptor() {
+    let mut rng = Rng(0x5D10_0003);
+    for _ in 0..2_000 {
+        let (sd, _o, _g, _d, _s) = mk_absolute_sd(&mut rng);
+        let lc = unsafe { cabi::RtlLengthSecurityDescriptor(sd.as_ptr() as _) };
+        let lr = unsafe { ref_RtlLengthSecurityDescriptor(sd.as_ptr()) };
+        assert_eq!(lc, lr, "RtlLengthSecurityDescriptor");
+    }
+}
+
+#[test]
+fn diff_rtl_get_security_descriptor_fields() {
+    let mut rng = Rng(0x5D10_0004);
+    for _ in 0..2_000 {
+        let (sd, _o, _g, _d, _s) = mk_absolute_sd(&mut rng);
+
+        // RtlGetDacl
+        let (mut pc, mut pr) = (0u8, 0u8);
+        let (mut dc_ptr, mut dr_ptr) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let (mut fc, mut fr) = (0u8, 0u8);
+        let sc = unsafe {
+            cabi::RtlGetDaclSecurityDescriptor(sd.as_ptr() as _, &mut pc, &mut dc_ptr, &mut fc)
+        };
+        let sr = unsafe {
+            ref_RtlGetDaclSecurityDescriptor(sd.as_ptr(), &mut pr, &mut dr_ptr, &mut fr)
+        };
+        assert_eq!((sc, pc, dc_ptr as usize, fc), (sr, pr, dr_ptr as usize, fr), "GetDacl");
+
+        // RtlGetSacl
+        let (mut pc, mut pr) = (0u8, 0u8);
+        let (mut dc_ptr, mut dr_ptr) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let (mut fc, mut fr) = (0u8, 0u8);
+        let sc = unsafe {
+            cabi::RtlGetSaclSecurityDescriptor(sd.as_ptr() as _, &mut pc, &mut dc_ptr, &mut fc)
+        };
+        let sr = unsafe {
+            ref_RtlGetSaclSecurityDescriptor(sd.as_ptr(), &mut pr, &mut dr_ptr, &mut fr)
+        };
+        assert_eq!((sc, pc, dc_ptr as usize, fc), (sr, pr, dr_ptr as usize, fr), "GetSacl");
+
+        // RtlGetOwner
+        let (mut dc_ptr, mut dr_ptr) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let (mut fc, mut fr) = (0u8, 0u8);
+        let sc = unsafe {
+            cabi::RtlGetOwnerSecurityDescriptor(sd.as_ptr() as _, &mut dc_ptr, &mut fc)
+        };
+        let sr = unsafe { ref_RtlGetOwnerSecurityDescriptor(sd.as_ptr(), &mut dr_ptr, &mut fr) };
+        assert_eq!((sc, dc_ptr as usize, fc), (sr, dr_ptr as usize, fr), "GetOwner");
+
+        // RtlGetGroup
+        let (mut dc_ptr, mut dr_ptr) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let (mut fc, mut fr) = (0u8, 0u8);
+        let sc = unsafe {
+            cabi::RtlGetGroupSecurityDescriptor(sd.as_ptr() as _, &mut dc_ptr, &mut fc)
+        };
+        let sr = unsafe { ref_RtlGetGroupSecurityDescriptor(sd.as_ptr(), &mut dr_ptr, &mut fr) };
+        assert_eq!((sc, dc_ptr as usize, fc), (sr, dr_ptr as usize, fr), "GetGroup");
+
+        // RtlGetControl
+        let (mut cc, mut cr) = (0u16, 0u16);
+        let (mut revc, mut revr) = (0u32, 0u32);
+        let sc =
+            unsafe { cabi::RtlGetControlSecurityDescriptor(sd.as_ptr() as _, &mut cc, &mut revc) };
+        let sr =
+            unsafe { ref_RtlGetControlSecurityDescriptor(sd.as_ptr(), &mut cr, &mut revr) };
+        assert_eq!((sc, cc, revc), (sr, cr, revr), "GetControl");
+
+        // RtlGetSecurityDescriptorRMControl (only meaningful if RM_CONTROL_VALID set,
+        // but the API gives a deterministic answer either way).
+        let (mut rmc, mut rmr) = (0u8, 0u8);
+        let bc = unsafe { cabi::RtlGetSecurityDescriptorRMControl(sd.as_ptr() as _, &mut rmc) };
+        let br = unsafe { ref_RtlGetSecurityDescriptorRMControl(sd.as_ptr(), &mut rmr) };
+        assert_eq!((bc, rmc), (br, rmr), "GetRMControl");
+    }
+}
+
+#[test]
+fn diff_rtl_set_security_descriptor_fields() {
+    let mut rng = Rng(0x5D10_0005);
+    for _ in 0..2_000 {
+        // Build a fresh (absolute, no self-relative) SD with assorted control bits.
+        let (mut bc, owner_v, group_v, dacl_v, sacl_v) = mk_absolute_sd(&mut rng);
+        // Force absolute: clear SE_SELF_RELATIVE if our mock set it (it doesn't,
+        // but be explicit).
+        let mut control = u16::from_le_bytes([bc[2], bc[3]]);
+        control &= !0x8000;
+        bc[2..4].copy_from_slice(&control.to_le_bytes());
+        let mut br = bc.clone();
+
+        // Random new pointers (use the existing owned backing) + defaulted bits.
+        let new_owner = owner_v
+            .as_ref()
+            .map(|v| v.as_ptr() as *mut u8)
+            .unwrap_or(core::ptr::null_mut());
+        let new_group = group_v
+            .as_ref()
+            .map(|v| v.as_ptr() as *mut u8)
+            .unwrap_or(core::ptr::null_mut());
+        let new_dacl = dacl_v
+            .as_ref()
+            .map(|v| v.as_ptr() as *mut u8)
+            .unwrap_or(core::ptr::null_mut());
+        let new_sacl = sacl_v
+            .as_ref()
+            .map(|v| v.as_ptr() as *mut u8)
+            .unwrap_or(core::ptr::null_mut());
+
+        let dpres = rng.byte() & 1;
+        let ddef = rng.byte() & 1;
+        let sc = unsafe { cabi::RtlSetDaclSecurityDescriptor(bc.as_mut_ptr() as _, dpres, new_dacl, ddef) };
+        let sr = unsafe { ref_RtlSetDaclSecurityDescriptor(br.as_mut_ptr(), dpres, new_dacl, ddef) };
+        assert_eq!(sc, sr, "SetDacl");
+        assert_eq!(bc, br, "SetDacl buf");
+
+        let spres = rng.byte() & 1;
+        let sdef = rng.byte() & 1;
+        let sc = unsafe { cabi::RtlSetSaclSecurityDescriptor(bc.as_mut_ptr() as _, spres, new_sacl, sdef) };
+        let sr = unsafe { ref_RtlSetSaclSecurityDescriptor(br.as_mut_ptr(), spres, new_sacl, sdef) };
+        assert_eq!(sc, sr, "SetSacl");
+        assert_eq!(bc, br, "SetSacl buf");
+
+        let odef = rng.byte() & 1;
+        let sc = unsafe { cabi::RtlSetOwnerSecurityDescriptor(bc.as_mut_ptr() as _, new_owner, odef) };
+        let sr = unsafe { ref_RtlSetOwnerSecurityDescriptor(br.as_mut_ptr(), new_owner, odef) };
+        assert_eq!(sc, sr, "SetOwner");
+        assert_eq!(bc, br, "SetOwner buf");
+
+        let gdef = rng.byte() & 1;
+        let sc = unsafe { cabi::RtlSetGroupSecurityDescriptor(bc.as_mut_ptr() as _, new_group, gdef) };
+        let sr = unsafe { ref_RtlSetGroupSecurityDescriptor(br.as_mut_ptr(), new_group, gdef) };
+        assert_eq!(sc, sr, "SetGroup");
+        assert_eq!(bc, br, "SetGroup buf");
+
+        // SetControl — random control bits and a partial mask.
+        let of_int = (rng.next() as u16) & 0x3FC0; // mostly in SET_ATTRIBUTES_MASK + invalid bits
+        let to_set = (rng.next() as u16) & 0x3FC0;
+        let sc = unsafe {
+            cabi::RtlSetControlSecurityDescriptor(bc.as_mut_ptr() as _, of_int, to_set)
+        };
+        let sr =
+            unsafe { ref_RtlSetControlSecurityDescriptor(br.as_mut_ptr(), of_int, to_set) };
+        assert_eq!(sc, sr, "SetControl");
+        assert_eq!(bc, br, "SetControl buf");
+
+        // SetAttributes
+        let attr = (rng.next() as u16) & 0xFFFF;
+        let (mut revc, mut revr) = (0u32, 0u32);
+        let sc = unsafe {
+            cabi::RtlSetAttributesSecurityDescriptor(bc.as_mut_ptr() as _, attr, &mut revc)
+        };
+        let sr = unsafe {
+            ref_RtlSetAttributesSecurityDescriptor(br.as_mut_ptr(), attr, &mut revr)
+        };
+        assert_eq!((sc, revc), (sr, revr), "SetAttributes");
+        assert_eq!(bc, br, "SetAttributes buf");
+
+        // SetSecurityDescriptorRMControl — both NULL and non-NULL.
+        let raw = rng.byte();
+        let p = if rng.byte() & 1 != 0 { &raw as *const u8 } else { core::ptr::null() };
+        unsafe { cabi::RtlSetSecurityDescriptorRMControl(bc.as_mut_ptr() as _, p) };
+        unsafe { ref_RtlSetSecurityDescriptorRMControl(br.as_mut_ptr(), p) };
+        assert_eq!(bc, br, "SetRMControl buf");
+    }
+}
+
+#[test]
+fn diff_rtl_valid_security_descriptor() {
+    let mut rng = Rng(0x5D10_0006);
+    for _ in 0..3_000 {
+        let (sd, _o, _g, _d, _s) = mk_absolute_sd(&mut rng);
+        let bc = unsafe { cabi::RtlValidSecurityDescriptor(sd.as_ptr() as _) };
+        let br = unsafe { ref_RtlValidSecurityDescriptor(sd.as_ptr()) };
+        assert_eq!(bc, br, "RtlValidSecurityDescriptor (well-formed)");
+
+        // Sprinkle a bad rev in 1/4 of iterations.
+        if rng.byte() & 3 == 0 {
+            let mut sd2 = sd.clone();
+            sd2[0] = rng.byte();
+            let bc = unsafe { cabi::RtlValidSecurityDescriptor(sd2.as_ptr() as _) };
+            let br = unsafe { ref_RtlValidSecurityDescriptor(sd2.as_ptr()) };
+            assert_eq!(bc, br, "RtlValidSecurityDescriptor (rev={:#x})", sd2[0]);
+        }
+    }
+}
+
+/// Build a self-relative SD as a flat byte buffer. Layout: 20-byte
+/// SECURITY_DESCRIPTOR_RELATIVE header followed by ULONG-aligned SACL,
+/// DACL, Owner, Group payloads at offsets stored in the header. This
+/// is exactly the shape `RtlMakeSelfRelativeSD` emits.
+fn mk_relative_sd(rng: &mut Rng) -> Vec<u8> {
+    let mut header = [0u8; SDREL_SIZE];
+    header[0] = 1;
+    let mut payload: Vec<u8> = Vec::new();
+    let mut control: u16 = 0x8000; // SE_SELF_RELATIVE
+    let mut current_off: u32 = SDREL_SIZE as u32;
+
+    let owner_off;
+    if rng.byte() & 1 != 0 {
+        let sub = rng.byte() % 4;
+        let sid = mk_sid(rng, 1, sub);
+        let len = (8 + 4 * sub as usize + 3) & !3;
+        payload.extend_from_slice(&sid[..len.min(sid.len())]);
+        while payload.len() % 4 != 0 {
+            payload.push(0);
+        }
+        owner_off = current_off;
+        current_off = SDREL_SIZE as u32 + payload.len() as u32;
+        if rng.byte() & 1 != 0 {
+            control |= 0x0001;
+        }
+    } else {
+        owner_off = 0;
+    }
+    let group_off;
+    if rng.byte() & 1 != 0 {
+        let sub = rng.byte() % 4;
+        let sid = mk_sid(rng, 1, sub);
+        let len = (8 + 4 * sub as usize + 3) & !3;
+        payload.extend_from_slice(&sid[..len.min(sid.len())]);
+        while payload.len() % 4 != 0 {
+            payload.push(0);
+        }
+        group_off = current_off;
+        current_off = SDREL_SIZE as u32 + payload.len() as u32;
+        if rng.byte() & 1 != 0 {
+            control |= 0x0002;
+        }
+    } else {
+        group_off = 0;
+    }
+    let dacl_off;
+    if rng.byte() & 1 != 0 {
+        let n = rng.byte() % 3;
+        let acl = mk_acl(rng, 2, n, 0);
+        payload.extend_from_slice(&acl);
+        while payload.len() % 4 != 0 {
+            payload.push(0);
+        }
+        dacl_off = current_off;
+        current_off = SDREL_SIZE as u32 + payload.len() as u32;
+        control |= 0x0004;
+    } else {
+        dacl_off = 0;
+    }
+    let sacl_off;
+    if rng.byte() & 1 != 0 {
+        let n = rng.byte() % 3;
+        let acl = mk_acl(rng, 2, n, 0);
+        payload.extend_from_slice(&acl);
+        while payload.len() % 4 != 0 {
+            payload.push(0);
+        }
+        sacl_off = current_off;
+        let _ = current_off;
+        control |= 0x0010;
+    } else {
+        sacl_off = 0;
+    }
+
+    header[2..4].copy_from_slice(&control.to_le_bytes());
+    header[4..8].copy_from_slice(&owner_off.to_le_bytes());
+    header[8..12].copy_from_slice(&group_off.to_le_bytes());
+    header[12..16].copy_from_slice(&sacl_off.to_le_bytes());
+    header[16..20].copy_from_slice(&dacl_off.to_le_bytes());
+
+    let mut out = Vec::with_capacity(SDREL_SIZE + payload.len());
+    out.extend_from_slice(&header);
+    out.extend_from_slice(&payload);
+    out
+}
+
+#[test]
+fn diff_rtl_valid_relative_security_descriptor() {
+    let mut rng = Rng(0x5D10_0007);
+    for _ in 0..3_000 {
+        let sd = mk_relative_sd(&mut rng);
+        let req = (rng.next() & 0xF) as u32;
+        let bc = unsafe {
+            cabi::RtlValidRelativeSecurityDescriptor(sd.as_ptr(), sd.len() as u32, req)
+        };
+        let br =
+            unsafe { ref_RtlValidRelativeSecurityDescriptor(sd.as_ptr(), sd.len() as u32, req) };
+        assert_eq!(bc, br, "RtlValidRelativeSecurityDescriptor (well-formed)");
+
+        // Try a too-short length in 1/3 of iterations to drive the
+        // buffer-too-small path.
+        if rng.byte() % 3 == 0 && sd.len() > SDREL_SIZE + 1 {
+            let short = SDREL_SIZE + (rng.byte() as usize % (sd.len() - SDREL_SIZE));
+            let bc = unsafe {
+                cabi::RtlValidRelativeSecurityDescriptor(sd.as_ptr(), short as u32, req)
+            };
+            let br = unsafe {
+                ref_RtlValidRelativeSecurityDescriptor(sd.as_ptr(), short as u32, req)
+            };
+            assert_eq!(bc, br, "RtlValidRelativeSD (truncated, len={short})");
+        }
+    }
+}
+
+// ============================================================================
+// Wave SD-2 — self-relative ⇄ absolute + Copy.
+// ============================================================================
+
+extern "C" {
+    fn ref_RtlMakeSelfRelativeSD(src: *const u8, rel: *mut u8, len: *mut u32) -> i32;
+    fn ref_RtlAbsoluteToSelfRelativeSD(src: *const u8, rel: *mut u8, len: *mut u32) -> i32;
+    fn ref_RtlSelfRelativeToAbsoluteSD(
+        rel: *const u8,
+        abs: *mut u8,
+        abs_sz: *mut u32,
+        dacl: *mut u8,
+        dacl_sz: *mut u32,
+        sacl: *mut u8,
+        sacl_sz: *mut u32,
+        owner: *mut u8,
+        owner_sz: *mut u32,
+        group: *mut u8,
+        group_sz: *mut u32,
+    ) -> i32;
+    fn ref_RtlSelfRelativeToAbsoluteSD2(sd: *mut u8, buf_sz: *mut u32) -> i32;
+    fn ref_RtlCopySecurityDescriptor(src: *const u8, dst: *mut *mut u8) -> i32;
+}
+
+#[test]
+fn diff_rtl_make_self_relative_sd() {
+    let mut rng = Rng(0x5D20_0001);
+    for _ in 0..2_000 {
+        let (sd, _o, _g, _d, _s) = mk_absolute_sd(&mut rng);
+
+        // First call with a too-small buffer to drive the BUFFER_TOO_SMALL
+        // path AND read the needed length.
+        let mut bufc = vec![0u8; 8];
+        let mut bufr = bufc.clone();
+        let mut lenc = 0u32;
+        let mut lenr = 0u32;
+        let rc = unsafe {
+            cabi::RtlMakeSelfRelativeSD(sd.as_ptr() as _, bufc.as_mut_ptr() as _, &mut lenc)
+        };
+        let rr = unsafe {
+            ref_RtlMakeSelfRelativeSD(sd.as_ptr(), bufr.as_mut_ptr(), &mut lenr)
+        };
+        assert_eq!(rc, rr, "MakeSelfRelative (too-small)");
+        assert_eq!(lenc, lenr, "MakeSelfRelative needed-len");
+        assert_eq!(bufc, bufr, "MakeSelfRelative untouched buf");
+
+        // Now allocate the full size and emit.
+        let mut bufc = vec![0u8; lenc as usize];
+        let mut bufr = bufc.clone();
+        let mut lenc2 = lenc;
+        let mut lenr2 = lenr;
+        let rc = unsafe {
+            cabi::RtlMakeSelfRelativeSD(sd.as_ptr() as _, bufc.as_mut_ptr() as _, &mut lenc2)
+        };
+        let rr = unsafe {
+            ref_RtlMakeSelfRelativeSD(sd.as_ptr(), bufr.as_mut_ptr(), &mut lenr2)
+        };
+        assert_eq!(rc, rr, "MakeSelfRelative status");
+        assert_eq!(lenc2, lenr2, "MakeSelfRelative len");
+        // The byte payload is identical because the layout (SACL→DACL→
+        // Owner→Group) is identical on both sides.
+        assert_eq!(bufc, bufr, "MakeSelfRelative buf");
+
+        // RtlAbsoluteToSelfRelativeSD is the same logic + a relative-flag
+        // rejection at the front; pin it too.
+        let mut lenc3 = lenc;
+        let mut lenr3 = lenr;
+        let mut bc = vec![0u8; lenc as usize];
+        let mut br = bc.clone();
+        let rc = unsafe {
+            cabi::RtlAbsoluteToSelfRelativeSD(
+                sd.as_ptr() as _,
+                bc.as_mut_ptr() as _,
+                &mut lenc3,
+            )
+        };
+        let rr = unsafe {
+            ref_RtlAbsoluteToSelfRelativeSD(sd.as_ptr(), br.as_mut_ptr(), &mut lenr3)
+        };
+        assert_eq!((rc, lenc3, &bc), (rr, lenr3, &br), "AbsoluteToSelfRelativeSD");
+    }
+}
+
+#[test]
+fn diff_rtl_self_relative_to_absolute_sd() {
+    let mut rng = Rng(0x5D20_0002);
+    for _ in 0..2_000 {
+        let rel = mk_relative_sd(&mut rng);
+
+        // Output buffers — start zero and big enough.
+        let mut abs_c = vec![0u8; SD_SIZE];
+        let mut abs_r = vec![0u8; SD_SIZE];
+        let mut sacl_c = vec![0u8; 256];
+        let mut sacl_r = vec![0u8; 256];
+        let mut dacl_c = vec![0u8; 256];
+        let mut dacl_r = vec![0u8; 256];
+        let mut owner_c = vec![0u8; 64];
+        let mut owner_r = vec![0u8; 64];
+        let mut group_c = vec![0u8; 64];
+        let mut group_r = vec![0u8; 64];
+
+        // Sometimes ask with too-small sizes (sprinkle).
+        let undersized = rng.byte() % 3 == 0;
+        let (abs_sz_i, sacl_sz_i, dacl_sz_i, owner_sz_i, group_sz_i) = if undersized {
+            (4u32, 4u32, 4u32, 4u32, 4u32)
+        } else {
+            (
+                SD_SIZE as u32,
+                sacl_c.len() as u32,
+                dacl_c.len() as u32,
+                owner_c.len() as u32,
+                group_c.len() as u32,
+            )
+        };
+        let mut a = abs_sz_i;
+        let mut s = sacl_sz_i;
+        let mut d = dacl_sz_i;
+        let mut o = owner_sz_i;
+        let mut g = group_sz_i;
+        let (mut ar, mut sr_, mut dr, mut or_, mut gr) = (a, s, d, o, g);
+
+        let rc = unsafe {
+            cabi::RtlSelfRelativeToAbsoluteSD(
+                rel.as_ptr() as _,
+                abs_c.as_mut_ptr() as _,
+                &mut a,
+                dacl_c.as_mut_ptr(),
+                &mut d,
+                sacl_c.as_mut_ptr(),
+                &mut s,
+                owner_c.as_mut_ptr(),
+                &mut o,
+                group_c.as_mut_ptr(),
+                &mut g,
+            )
+        };
+        let rr = unsafe {
+            ref_RtlSelfRelativeToAbsoluteSD(
+                rel.as_ptr(),
+                abs_r.as_mut_ptr(),
+                &mut ar,
+                dacl_r.as_mut_ptr(),
+                &mut dr,
+                sacl_r.as_mut_ptr(),
+                &mut sr_,
+                owner_r.as_mut_ptr(),
+                &mut or_,
+                group_r.as_mut_ptr(),
+                &mut gr,
+            )
+        };
+        assert_eq!(rc, rr, "SelfRelativeToAbsolute status (undersized={undersized})");
+        assert_eq!((a, s, d, o, g), (ar, sr_, dr, or_, gr), "needed sizes");
+
+        if rc == 0 {
+            // The absolute SD bytes will contain pointers (different in
+            // the addresses pointed to by Rust vs C buffers) — compare
+            // only the header bytes (first 4) plus the *content* of the
+            // owner/group/dacl/sacl payload buffers.
+            assert_eq!(abs_c[..4], abs_r[..4], "SD header bytes");
+            // u16 control (offset 2) matches.
+            assert_eq!(&abs_c[2..4], &abs_r[2..4], "SD control");
+            // Payload bytes: SID/ACL bytes should be byte-identical (both
+            // sides used RtlMoveMemory of the same source bytes).
+            assert_eq!(owner_c, owner_r, "owner payload");
+            assert_eq!(group_c, group_r, "group payload");
+            assert_eq!(dacl_c, dacl_r, "dacl payload");
+            assert_eq!(sacl_c, sacl_r, "sacl payload");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_self_relative_to_absolute_sd2() {
+    let mut rng = Rng(0x5D20_0003);
+    for _ in 0..2_000 {
+        let rel = mk_relative_sd(&mut rng);
+
+        // Allocate generously so the move can succeed.
+        let work = rel.len() + 64;
+        let mut bc = vec![0u8; work];
+        let mut br = bc.clone();
+        bc[..rel.len()].copy_from_slice(&rel);
+        br[..rel.len()].copy_from_slice(&rel);
+
+        let mut szc = work as u32;
+        let mut szr = work as u32;
+        let rc = unsafe { cabi::RtlSelfRelativeToAbsoluteSD2(bc.as_mut_ptr() as _, &mut szc) };
+        let rr = unsafe { ref_RtlSelfRelativeToAbsoluteSD2(br.as_mut_ptr(), &mut szr) };
+        assert_eq!(rc, rr, "SelfRelativeToAbsoluteSD2 status");
+        assert_eq!(szc, szr, "size");
+
+        if rc == 0 {
+            // Header bytes (rev + sbz1 + control) match.
+            assert_eq!(bc[..4], br[..4], "header");
+            // Pointer fields (16 bytes on 64-bit host: pointers at off 8/16/24/32)
+            // differ in absolute address but match in NULL-ness.
+            for i in 0..4 {
+                let off = 8 + i * 8;
+                let pc =
+                    u64::from_le_bytes(bc[off..off + 8].try_into().unwrap()) != 0;
+                let pr =
+                    u64::from_le_bytes(br[off..off + 8].try_into().unwrap()) != 0;
+                assert_eq!(pc, pr, "ptr[{i}] null-ness");
+            }
+            // The trailing payload (bytes after sizeof(SD)) is byte-identical.
+            assert_eq!(&bc[SD_SIZE..], &br[SD_SIZE..], "payload");
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_copy_security_descriptor() {
+    // RtlAllocateHeap=NULL in the harness ⇒ both sides return STATUS_NO_MEMORY.
+    let mut rng = Rng(0x5D20_0004);
+    for _ in 0..1_000 {
+        let (sd, _o, _g, _d, _s) = mk_absolute_sd(&mut rng);
+        let (mut dc, mut dr): (*mut u8, *mut u8) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let rc = unsafe { cabi::RtlCopySecurityDescriptor(sd.as_ptr() as _, &mut dc as *mut _ as _) };
+        let rr = unsafe { ref_RtlCopySecurityDescriptor(sd.as_ptr(), &mut dr) };
+        assert_eq!(rc, rr, "RtlCopySecurityDescriptor status");
+        assert_eq!(dc as usize, dr as usize, "RtlCopySecurityDescriptor out ptr");
+    }
+}
+

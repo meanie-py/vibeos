@@ -335,7 +335,13 @@ unsafe fn PeLdrpLoadAndScanReferencedDll(
     1u8
 }
 
-const LoaderBootDriver: TYPE_OF_MEMORY = 2;
+// _TYPE_OF_MEMORY_LoaderBootDriver = 11 (NOT 2). 2 is LoaderFree! Treating
+// boot-driver allocations as "free" made MmFindAvailablePages reuse the same
+// pages for subsequent drivers — usbport.sys's export table got clobbered
+// by usbhub.sys at the same pa=0xE7E000, so usbohci.sys's import scan saw
+// a NULL export directory for usbport and BD-failed (then UiMessageBox
+// "Cannot load boot driver" hung the smoke harness).
+const LoaderBootDriver: TYPE_OF_MEMORY = 11;
 const LDRP_DRIVER_DEPENDENT_DLL: u32 = 0x00000040;
 type TYPE_OF_MEMORY = u32;
 type BOOLEAN = u8;
@@ -368,10 +374,14 @@ unsafe fn PeLdrpScanImportAddressTable(
         ERR!(b"DllBase == NULL\n\0".as_ptr());
         return 0u8;
     } else {
+        // 0 = IMAGE_DIRECTORY_ENTRY_EXPORT (NOT 1 = IMPORT).
+        // rustconv translated the C `IMAGE_DIRECTORY_ENTRY_EXPORT` macro
+        // as `1u16`, the wrong constant, which made every import lookup
+        // hit a NULL export table and silently fail.
         ExportDirectory = RtlImageDirectoryEntryToData(
             VaToPa(DllBase),
             1u8,
-            1u16,
+            0u16,
             &mut ExportSize,
         ) as PIMAGE_EXPORT_DIRECTORY;
     }
@@ -421,9 +431,11 @@ unsafe fn PeLdrpScanImportAddressTable(
 
 #[no_mangle]
 pub unsafe extern "C" fn PeLdrInitializeModuleList() -> BOOLEAN {
+    crate::frldr::dbgcon(b'P'); crate::frldr::dbgcon(b'I');
     let mut FreeldrDTE: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
 
     InitializeListHead(core::ptr::addr_of_mut!(FrLdrModuleList));
+    crate::frldr::dbgcon(b'L');
 
     if PeLdrAllocateDataTableEntry(
         core::ptr::addr_of_mut!(FrLdrModuleList),
@@ -436,6 +448,7 @@ pub unsafe extern "C" fn PeLdrInitializeModuleList() -> BOOLEAN {
         ERR!(b"Failed to allocate DTE for freeldr\n\0".as_ptr() as *const i8);
         return 0u8;
     }
+    crate::frldr::dbgcon(b'l');
 
     1u8
 }
@@ -611,6 +624,7 @@ pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
     BaseVA: PVOID,
     NewEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'1');
     let BasePA = VaToPa(BaseVA);
     let mut BaseDllNameBuffer: PWSTR;
     let mut Buffer: PWSTR;
@@ -625,28 +639,60 @@ pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
         BasePA,
     );
 
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'2');
     DataTableEntry = FrLdrHeapAlloc(
         core::mem::size_of::<LDR_DATA_TABLE_ENTRY>(),
         TAG_WLDR_DTE,
     ) as PLDR_DATA_TABLE_ENTRY;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'3');
     if DataTableEntry.is_null() {
+        crate::frldr::dbgcon(b'N');
         return 0u8;
     }
+    // Heap dump after successful alloc.
+    {
+        let dh = crate::heap::FrLdrDefaultHeap as crate::heap::PHEAP;
+        if !dh.is_null() {
+            crate::frldr::dbgcon_str(b"{na=");
+            crate::frldr::dbgcon_hex32((*dh).NumAllocs);
+            let term = core::ptr::addr_of_mut!((*dh).Blocks).offset((*dh).TerminatingBlock as isize);
+            let mut walk: u32 = (*(*term).Data.as_mut_ptr()).Flink;
+            let mut depth = 0u32;
+            crate::frldr::dbgcon_str(b",fl=");
+            while depth < 5 {
+                let blk = core::ptr::addr_of_mut!((*dh).Blocks).offset(walk as isize);
+                crate::frldr::dbgcon_hex32(walk);
+                crate::frldr::dbgcon(b':');
+                crate::frldr::dbgcon_hex32((*blk).Size as u32);
+                crate::frldr::dbgcon(b' ');
+                if (*blk).Size == 0 { break; }
+                walk = (*(*blk).Data.as_mut_ptr()).Flink;
+                depth += 1;
+            }
+            crate::frldr::dbgcon_str(b"}");
+        }
+    }
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'4');
 
     NtHeaders = RtlImageNtHeader(BasePA);
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'5');
 
     RtlZeroMemory(
         DataTableEntry as PVOID,
         core::mem::size_of::<LDR_DATA_TABLE_ENTRY>(),
     );
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'6');
     (*DataTableEntry).DllBase = BaseVA;
     (*DataTableEntry).SizeOfImage = (*NtHeaders).OptionalHeader.SizeOfImage;
     (*DataTableEntry).EntryPoint = RVA(BaseVA, (*NtHeaders).OptionalHeader.AddressOfEntryPoint);
     (*DataTableEntry).__bindgen_anon_1.__bindgen_anon_1.SectionPointer = core::ptr::null_mut();
     (*DataTableEntry).__bindgen_anon_1.__bindgen_anon_1.CheckSum = (*NtHeaders).OptionalHeader.CheckSum;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'7');
 
     Length = (strlen(BaseDllName) * core::mem::size_of::<WCHAR>()) as USHORT;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'8');
     Buffer = FrLdrHeapAlloc(Length as usize, TAG_WLDR_NAME) as PWSTR;
+    crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'9');
     if Buffer.is_null() {
         FrLdrHeapFree(DataTableEntry as PVOID, TAG_WLDR_DTE);
         return 0u8;
@@ -776,21 +822,31 @@ pub unsafe extern "C" fn PeLdrLoadImageEx(
     NumberOfSections = (*NtHeaders).FileHeader.NumberOfSections as ULONG;
     SectionHeader = IMAGE_FIRST_SECTION(NtHeaders);
 
+    crate::frldr::dbgcon_str(b"\nLI[ib=");
+    crate::frldr::dbgcon_hex32((*NtHeaders).OptionalHeader.ImageBase as u32);
+    crate::frldr::dbgcon_str(b",sz=");
+    crate::frldr::dbgcon_hex32((*NtHeaders).OptionalHeader.SizeOfImage);
     PhysicalBase = MmAllocateMemoryAtAddress(
         (*NtHeaders).OptionalHeader.SizeOfImage as usize,
         ((*NtHeaders).OptionalHeader.ImageBase as usize & crate::ffi::KSEG0_BASE.wrapping_sub(1)) as PVOID,
         MemoryType,
     );
+    crate::frldr::dbgcon_str(b",pa1=");
+    crate::frldr::dbgcon_hex32(PhysicalBase as usize as u32);
 
     if PhysicalBase.is_null() {
         PhysicalBase = MmAllocateMemoryWithType((*NtHeaders).OptionalHeader.SizeOfImage as usize, MemoryType);
+        crate::frldr::dbgcon_str(b",pa2=");
+        crate::frldr::dbgcon_hex32(PhysicalBase as usize as u32);
 
         if PhysicalBase.is_null() {
+            crate::frldr::dbgcon_str(b",FAIL]");
             ERR!(b"Failed to alloc %lu bytes for image %s\n\0".as_ptr() as PSTR, (*NtHeaders).OptionalHeader.SizeOfImage, FilePath);
             ArcClose(FileId);
             return 0u8;
         }
     }
+    crate::frldr::dbgcon_str(b"]\n");
 
     VirtualBase = if KernelMapping != 0 {
         PaToVa(PhysicalBase)
@@ -916,6 +972,7 @@ pub unsafe extern "C" fn PeLdrLoadBootImage(
     ImageBase: *mut PVOID,
     DataTableEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
+    crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'1');
 
     let mut Success: BOOLEAN;
 
@@ -925,7 +982,9 @@ pub unsafe extern "C" fn PeLdrLoadBootImage(
         ImageBase,
         0u8,
     );
+    crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'2');
     if Success == 0 {
+        crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'F');
         WARN!(b"Failed to load boot image '%s'\n\0".as_ptr(), FilePath);
         return 0u8;
     }
@@ -937,6 +996,7 @@ pub unsafe extern "C" fn PeLdrLoadBootImage(
         *ImageBase,
         DataTableEntry,
     );
+    crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'3');
     if Success == 0 {
         ERR!(b"Failed to allocate DTE for '%s'\n\0".as_ptr(), FilePath);
         MmFreeMemory(*ImageBase);
@@ -948,6 +1008,7 @@ pub unsafe extern "C" fn PeLdrLoadBootImage(
         b"\0".as_ptr() as PCCH,
         *DataTableEntry,
     );
+    crate::frldr::dbgcon(b'L'); crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'4');
     if Success == 0 {
         ERR!(b"Failed to resolve imports for '%s'\n\0".as_ptr(), FilePath);
         PeLdrFreeDataTableEntry(*DataTableEntry);

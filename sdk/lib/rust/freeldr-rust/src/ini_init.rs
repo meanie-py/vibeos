@@ -16,7 +16,11 @@ extern "C" {
     fn ArcRead(FileId: u32, Buffer: *mut c_void, N: u32, Count: *mut u32) -> ARC_STATUS;
     fn UiMessageBoxCritical(Message: *const i8);
     fn IniParseFile(IniFileData: *const i8, IniFileSize: u32) -> u8;
-    static FrLdrBootPath: *const i8;
+    // C: `CCHAR FrLdrBootPath[MAX_PATH]` — an ARRAY whose name decays to a
+    // pointer at use sites. Declaring it `*const i8` in Rust would create a
+    // pointer-shaped SLOT at the symbol's address and read the first 4 bytes
+    // of the path string as a pointer (silent garbage). Use the accessor.
+    fn FrLdrGetBootPath() -> *const i8;
 }
 
 #[no_mangle]
@@ -31,9 +35,11 @@ pub unsafe extern "C" fn IniFileInitialize() -> u8 {
 
     TRACE(b"IniFileInitialize()\n\0".as_ptr() as *const i8);
 
+    let boot_path = FrLdrGetBootPath();
+
     Status = FsOpenFile(
         b"freeldr.ini\0".as_ptr() as *const i8,
-        FrLdrBootPath,
+        boot_path,
         OpenReadOnly,
         &mut FileId,
     );
@@ -45,7 +51,7 @@ pub unsafe extern "C" fn IniFileInitialize() -> u8 {
 
         Status = FsOpenFile(
             b"boot.ini\0".as_ptr() as *const i8,
-            FrLdrBootPath,
+            boot_path,
             OpenReadOnly,
             &mut FileId,
         );

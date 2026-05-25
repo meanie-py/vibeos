@@ -1,0 +1,11 @@
+; Kernel Mode Driver Framework Loader (wdfldr.sys)
+; Loaded on demand - only when explicitly referenced via Wdf01000.
+; Auto-loading at Boot start was attempted but caused a kernel hang
+; (wdfldr DriverEntry never returned); deferred to demand-start so USB
+; drivers can still load and the system reaches shell ready.
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Services\WdfLdr","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\WdfLdr","DisplayName",0x00000000,"Kernel Mode Driver Framework Loader service"
+HKLM,"SYSTEM\CurrentControlSet\Services\WdfLdr","ImagePath",0x00020000,"system32\drivers\wdfldr.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\WdfLdr","Start",0x00010001,0x00000003
+HKLM,"SYSTEM\CurrentControlSet\Services\WdfLdr","Type",0x00010001,0x00000001

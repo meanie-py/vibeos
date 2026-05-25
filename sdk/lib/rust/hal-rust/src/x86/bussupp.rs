@@ -1333,6 +1333,12 @@ pub unsafe extern "system" fn HalpInitializePciBus() {
 
     PciRegistryInfo = HalpQueryPciRegistryInfo();
     if PciRegistryInfo.is_null() {
+        KeInitializeSpinLock(&raw mut HalpPCIConfigLock);
+        DbgPrint(b"HAL: No PCI registry info, probing type 1 bus 0\n\0".as_ptr());
+        HalpAllocateAndInitPciBusHandler(1, 0, 0);
+        HalpFixupPciSupportedRanges(1);
+        HalpGetNMICrashFlag();
+        HalpMarkChipsetDecode(0);
         return;
     }
 

@@ -29,7 +29,7 @@ list(APPEND SOURCE
     ${RTL_WINE_SOURCE}
     wine_debug.c
     # access.c — replaced by Rust implementation (sdk/lib/rust/access/)
-    acl.c
+    # acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)
     appverifier.c
     assert.c
     atom.c
@@ -73,7 +73,7 @@ list(APPEND SOURCE
     res.c
     resource.c
     rxact.c
-    sd.c
+    # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
     security.c
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
     slist.c
@@ -216,6 +216,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/dos8dot3.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/acl.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sd.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sid.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs

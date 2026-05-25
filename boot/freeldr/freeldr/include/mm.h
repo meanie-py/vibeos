@@ -187,6 +187,15 @@ FrLdrHeapVerify(
 VOID
 FrLdrHeapCleanupAll(VOID);
 
+VOID
+FrLdrHeapDump(UCHAR Label);
+
+VOID
+FrLdrDbgcon(UCHAR Byte);
+
+VOID
+FrLdrDbgconHex32(ULONG Value);
+
 PVOID
 FrLdrHeapAllocateEx(
     PVOID HeapHandle,

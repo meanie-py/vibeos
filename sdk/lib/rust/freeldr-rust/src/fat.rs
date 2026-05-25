@@ -251,17 +251,38 @@ extern "C" {
     fn _stricmp(s1: *const i8, s2: *const i8) -> i32;
     fn sprintf(s: *mut i8, format: *const i8, ...) -> i32;
     fn FileSystemError(msg: PCHAR);
-    fn ISFATX(fat_type: ULONG) -> BOOLEAN;
     fn ArcSeek(DeviceId: ULONG, Position: *mut LARGE_INTEGER, SeekMode: ULONG) -> ARC_STATUS;
     fn ArcRead(DeviceId: ULONG, Buffer: PVOID, Length: ULONG, Count: *mut ULONG) -> ARC_STATUS;
     fn RtlEqualMemory(Source1: *const VOID, Source2: *const VOID, Length: usize) -> BOOLEAN;
     fn ArcGetFileInformation(DeviceId: ULONG, FileInformation: *mut FILEINFORMATION) -> ARC_STATUS;
     fn ERR(fmt: *const i8, ...);
-    fn FAT_IS_END_CLUSTER(Cluster: UINT32) -> BOOLEAN;
     fn FsGetNumPathParts(path: PCSTR) -> ULONG;
     fn FsGetFirstNameFromPath(dest: PCHAR, src: PCSTR);
     fn FsGetDeviceId(fileid: ULONG) -> ULONG;
     fn FsSetDeviceSpecific(fileid: ULONG, specific: *mut core::ffi::c_void);
+}
+
+// fat.h:161 `#define ISFATX(FT) ((FT)==FATX16 || (FT)==FATX32)` — pure
+// value macro; rustconv emitted it as `extern { fn ISFATX }`. Local fn
+// (only fat.rs uses it); removing the extern decl drops the bogus
+// symbol reference entirely.
+#[inline]
+unsafe fn ISFATX(fat_type: ULONG) -> BOOLEAN {
+    (fat_type == FATX16 || fat_type == FATX32) as BOOLEAN
+}
+
+// fat.c:25 `#define FAT_IS_END_CLUSTER(clnumber)` — a C macro that
+// implicitly captures `Volume` from the enclosing scope (NOT a macro
+// parameter). rustconv mistranslated it as `extern { fn
+// FAT_IS_END_CLUSTER(Cluster) }`, dropping the `Volume` dependency.
+// Faithful local fn taking the volume explicitly; call sites updated to
+// pass their in-scope `Volume`.
+#[inline]
+unsafe fn FAT_IS_END_CLUSTER(Volume: PFAT_VOLUME_INFO, clnumber: UINT32) -> BOOLEAN {
+    let ft = (*Volume).FatType as ULONG;
+    (((ft == FAT12) && (clnumber >= 0xff8))
+        || ((ft == FAT16 || ft == FATX16) && (clnumber >= 0xfff8))
+        || ((ft == FAT32 || ft == FATX32) && (clnumber >= 0x0fff_fff8))) as BOOLEAN
 }
 
 #[inline(always)]
@@ -1189,7 +1210,7 @@ unsafe fn FatCountClustersInChain(Volume: PFAT_VOLUME_INFO, mut StartCluster: UI
     TRACE(b"FatCountClustersInChain() StartCluster = %d\n\0".as_ptr() as PCHAR, (StartCluster) as usize);
 
     loop {
-        if FAT_IS_END_CLUSTER(StartCluster) != 0 {
+        if FAT_IS_END_CLUSTER(Volume, StartCluster) != 0 {
             break;
         }
 
@@ -1226,7 +1247,7 @@ unsafe fn FatReadAdjacentClusters(
         return 0u8;
     }
 
-    while FAT_IS_END_CLUSTER(NextClusterNumber) == 0u8 && ClustersToRead < MaxClusters && (NextClusterNumber == PrevClusterNumber + 1) {
+    while FAT_IS_END_CLUSTER(Volume, NextClusterNumber) == 0u8 && ClustersToRead < MaxClusters && (NextClusterNumber == PrevClusterNumber + 1) {
         ClustersToRead += 1;
         PrevClusterNumber = NextClusterNumber;
         if FatGetFatEntry(Volume, PrevClusterNumber, &mut NextClusterNumber) == 0u8 {
@@ -1241,7 +1262,7 @@ unsafe fn FatReadAdjacentClusters(
     *ClustersRead = ClustersToRead;
     *LastClusterNumber = NextClusterNumber;
 
-    if FAT_IS_END_CLUSTER(NextClusterNumber) == 0u8 && ClustersToRead < MaxClusters { 1u8 } else { 0u8 }
+    if FAT_IS_END_CLUSTER(Volume, NextClusterNumber) == 0u8 && ClustersToRead < MaxClusters { 1u8 } else { 0u8 }
 }
 
 unsafe fn FatReadClusterChain(

@@ -171,7 +171,7 @@ pub unsafe extern "C" fn MsgBoxPrint(Format: *const i8) -> u32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KeBugCheckEx(
+pub unsafe extern "system" fn KeBugCheckEx(
     BugCheckCode: ULONG,
     BugCheckParameter1: ULONG_PTR,
     BugCheckParameter2: ULONG_PTR,
@@ -197,7 +197,7 @@ pub unsafe extern "C" fn KeBugCheckEx(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RtlAssert(
+pub unsafe extern "system" fn RtlAssert(
     FailedAssertion: PVOID,
     FileName: PVOID,
     LineNumber: ULONG,

@@ -88,39 +88,59 @@ LaunchSecondStageLoader(VOID)
     return (*EntryPoint)();
 }
 
+#if (defined(_M_IX86) || defined(_M_AMD64)) && !defined(UEFIBOOT)
+#define BM_DBGCON(c) __asm__ volatile ("outb %0, $0xe9" : : "a"((unsigned char)(c)))
+#else
+#define BM_DBGCON(c) (void)0
+#endif
+
 VOID __cdecl BootMain(IN PCCH CmdLine)
 {
+    BM_DBGCON('m');  /* BootMain enter */
     /* Load the default settings from the command-line */
     LoadSettings(CmdLine);
+    BM_DBGCON('s');  /* after LoadSettings */
 
     /* Debugger pre-initialization */
     DebugInit(BootMgrInfo.DebugString);
+    BM_DBGCON('d');  /* after DebugInit */
 
     MachInit(CmdLine);
+    BM_DBGCON('M');  /* after MachInit */
 
     TRACE("BootMain() called.\n");
 
 #ifndef UEFIBOOT
     /* Check if the CPU is new enough */
+    BM_DBGCON('K');  /* before FrLdrCheckCpuCompatibility */
     FrLdrCheckCpuCompatibility(); // FIXME: Should be done inside MachInit!
+    BM_DBGCON('k');  /* after FCC */
 #endif
 
     /* UI pre-initialization */
+    BM_DBGCON('u');  /* before UiInitialize */
     if (!UiInitialize(FALSE))
     {
+        BM_DBGCON('U');  /* UiInit fail */
         UiMessageBoxCritical("Unable to initialize UI.");
         goto Quit;
     }
+    BM_DBGCON('o');  /* after UiInitialize */
 
     /* Initialize memory manager */
+    BM_DBGCON('z');  /* before MmInit */
     if (!MmInitializeMemoryManager())
     {
+        BM_DBGCON('Z');  /* MmInit fail */
         UiMessageBoxCritical("Unable to initialize memory manager.");
         goto Quit;
     }
+    BM_DBGCON('Y');  /* after MmInit */
 
     /* Initialize I/O subsystem */
+    BM_DBGCON('y');  /* before FsInit */
     FsInit();
+    BM_DBGCON('I');  /* after FsInit */
 
     /* Initialize the module list */
     if (!PeLdrInitializeModuleList())
