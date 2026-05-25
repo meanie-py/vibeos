@@ -76,7 +76,7 @@ list(APPEND SOURCE
     gdi/eng/lineto.c
     gdi/eng/ldevobj.c
     gdi/eng/mapping.c
-    gdi/eng/math.c
+    # gdi/eng/math.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/math.rs) — cohabitation
     gdi/eng/mdevobj.c
     gdi/eng/mem.c
     gdi/eng/engmisc.c
@@ -275,6 +275,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/sort.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdiobj.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/object.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/math.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

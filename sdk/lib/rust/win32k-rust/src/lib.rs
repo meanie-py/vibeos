@@ -35,3 +35,4 @@ extern crate win32k_sys;
 pub mod sort; // gdi/eng/sort.c — EngSort (proving slice)
 pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]
 pub mod object; // user/ntuser/object.c — USER handle/object table [Phase 1b]
+pub mod math;   // gdi/eng/math.c — EngMulDiv (Phase 2a proving slice)
