@@ -26,9 +26,9 @@ include_directories(
 add_definitions(-D_NTHAL_ -D_BLDR_ -D_NTSYSTEM_)
 
 list(APPEND FREELDR_ARC_SOURCE
-    arcname.c
-    arch/arcemul.c
-    arch/archwsup.c
+    # arcname.c          # replaced by Rust (freeldr-rust/src/arcname.rs)
+    # arch/arcemul.c     # replaced by Rust (freeldr-rust/src/arcemul.rs)
+    # arch/archwsup.c    # replaced by Rust (freeldr-rust/src/archwsup.rs)
     disk/disk.c)
     # disk unit → Rust (freeldr-rust: partition.rs/ramdisk.rs). Cohabitation:
     # .c kept on disk, Rust #[no_mangle] takes over.
@@ -74,7 +74,7 @@ list(APPEND FREELDR_BOOTLIB_SOURCE)
 
 list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
-    settings.c
+    # settings.c        # replaced by Rust (freeldr-rust/src/settings.rs)
     # ui unit → Rust (freeldr-rust: ui/tui/tuimenu/minitui/noui/video.rs).
     # ui/directui.c is `#if 0` dead code in C (compiles to nothing) and the
     # Rust directui.rs is deliberately NOT wired — symmetric, kept on disk.

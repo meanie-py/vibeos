@@ -38,6 +38,10 @@ pub mod heap;
 pub mod rs232;
 pub mod libsupp;
 pub mod arcsupp;
+pub mod arcname;
+pub mod arcemul;
+pub mod archwsup;
+pub mod settings;
 pub mod debug;
 
 // 🟢 sweep — fs unit (lib/fs/{fs,iso,fat}.c; ntfs/ext/btrfs pruned).

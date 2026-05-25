@@ -846,6 +846,61 @@ pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE as CONFIGURATION_TYPE;
 pub const DiskPeripheral: CONFIGURATION_TYPE = 25;
 pub const FloppyDiskPeripheral: CONFIGURATION_TYPE = 26;
 
+// arc.h enum constants used by archwsup.c hardware-tree builder + freeldr
+// configuration translations. rustconv imports the bare unprefixed names
+// (`SystemClass`, `MaximumType`, `Failed`, …) — bindgen prefixes them
+// (`_CONFIGURATION_CLASS_SystemClass`, …). Keystone aliases each bare name.
+pub const MaximumType: CONFIGURATION_TYPE = 41;
+pub use ntkrnl_sys::ddk::_CONFIGURATION_CLASS as CONFIGURATION_CLASS;
+pub const SystemClass: CONFIGURATION_CLASS = 0;
+pub const ProcessorClass: CONFIGURATION_CLASS = 1;
+pub const CacheClass: CONFIGURATION_CLASS = 2;
+pub const AdapterClass: CONFIGURATION_CLASS = 3;
+pub const ControllerClass: CONFIGURATION_CLASS = 4;
+pub const PeripheralClass: CONFIGURATION_CLASS = 5;
+pub const MemoryClass: CONFIGURATION_CLASS = 6;
+pub const MaximumClass: CONFIGURATION_CLASS = 7;
+pub use ntkrnl_sys::ddk::_IDENTIFIER_FLAG as IDENTIFIER_FLAG;
+pub const Failed: IDENTIFIER_FLAG = 0x01;
+pub const ReadOnly: IDENTIFIER_FLAG = 0x02;
+pub const Removable: IDENTIFIER_FLAG = 0x04;
+pub const ConsoleIn: IDENTIFIER_FLAG = 0x08;
+pub const ConsoleOut: IDENTIFIER_FLAG = 0x10;
+pub const Input: IDENTIFIER_FLAG = 0x20;
+pub const Output: IDENTIFIER_FLAG = 0x40;
+
+// CCHAR — narrow ANSI char alias used by freeldr settings.c static buffers.
+// xdk: `typedef char CCHAR;` (signed on Win32 PE-COFF).
+pub type CCHAR = i8;
+
+// arc.h _ARC_DISK_SIGNATURE_EX (freeldr's ntldr/winldr.h extension wrapping
+// the kernel's ARC_DISK_SIGNATURE with the bundled ArcName buffer).
+// MAX_PATH = 260. Mirror C layout exactly (#[repr(C)]).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ARC_DISK_SIGNATURE_EX {
+    pub DiskSignature: ntkrnl_sys::ddk::ARC_DISK_SIGNATURE,
+    pub ArcName: [i8; 260],
+}
+pub type PARC_DISK_SIGNATURE_EX = *mut ARC_DISK_SIGNATURE_EX;
+
+// settings.h _BOOTMGRINFO — boot-manager settings populated by settings.c
+// from the command line and freeldr.ini. C declares FrLdrSection as
+// ULONG_PTR but the IniOpenSection callers pass &BootMgrInfo.FrLdrSection
+// as a (PVOID*) out-param. Layout-identical to ULONG_PTR on all targets
+// (sizeof(uintptr_t) == sizeof(void*)); keep as *mut c_void so callers
+// don't need raw casts on every use.
+#[repr(C)]
+pub struct BOOTMGRINFO {
+    pub DebugString: ntkrnl_sys::ddk::PCSTR,
+    pub VideoOptions: ntkrnl_sys::ddk::PCSTR,
+    pub DefaultOs: ntkrnl_sys::ddk::PCSTR,
+    pub TimeOut: i32,
+    pub FrLdrSection: *mut c_void, // ULONG_PTR (PVOID out-param holder)
+}
+unsafe impl Sync for BOOTMGRINFO {}
+pub type PBOOTMGRINFO = *mut BOOTMGRINFO;
+
 // ===========================================================================
 // pc-hw unit — shared real-mode BIOS surface (include/arch/pc/pcbios.h +
 // x86common.h). pshpack1 → packed; the Int386 asm thunk reads exact REGS
