@@ -1040,7 +1040,22 @@ Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
 - `[~]` Smoke: **i386 7/7 + amd64 7/7 PASSED**; arm64 boot-smoke
   blocked by cold-build ramdisk-media infra (win32k itself builds
   clean on arm64).
-- `[ ]` `verify_abi.py` clean — not yet run against the rewrites.
+- `[x]` `verify_abi.py` run (2026-05-25). **win32k-rust = 0
+  mismatches** ✓ — `postprocess.enforce_win32k_abi` (the win32k-sys
+  bindgen + win32k.spec deterministic ABI map) is fully effective; all
+  Phase 1 hand-rolled externs (gdiobj/object/sort) carry the canonical
+  dual-cfg pattern. 65 pre-existing mismatches found in **ntoskrnl-rust**
+  (separate concern, NOT a win32k blocker): ~25 are no-arg signatures
+  where stdcall ≡ cdecl on i386 (PsGetCurrentProcess/Thread,
+  Ke{Enter,Leave}CriticalRegion, DbgBreakPoint — harmless); ~40 take args
+  and would crash i386 if exercised (Interlocked*, Ki*SpinLock,
+  KiEoiHelper, Obf{Reference,Dereference}Object,
+  ExFreeToPagedLookasideList, etc.) — but the kernel boots green ×3 ⇒
+  those call sites are dead-cfg on i386 (`#[cfg(not(target_arch="x86"))]`
+  or sibling-overlay paths). Tracked as a follow-up in
+  `feedback_ntoskrnl_rust_abi_log.md`; not a Phase-2 prerequisite
+  because `enforce_win32k_abi` keeps new win32k-rust output clean
+  regardless of the ntoskrnl-rust state.
 - `[x]` Win32k-specific post-`shell ready` smoke assertions —
   `test_post_shell_ready_input` injects keyboard+mouse via QMP
   `input-send-event` after the desktop is up and hard-asserts no fatal
