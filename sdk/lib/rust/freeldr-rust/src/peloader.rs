@@ -335,7 +335,13 @@ unsafe fn PeLdrpLoadAndScanReferencedDll(
     1u8
 }
 
-const LoaderBootDriver: TYPE_OF_MEMORY = 2;
+// _TYPE_OF_MEMORY_LoaderBootDriver = 11 (NOT 2). 2 is LoaderFree! Treating
+// boot-driver allocations as "free" made MmFindAvailablePages reuse the same
+// pages for subsequent drivers — usbport.sys's export table got clobbered
+// by usbhub.sys at the same pa=0xE7E000, so usbohci.sys's import scan saw
+// a NULL export directory for usbport and BD-failed (then UiMessageBox
+// "Cannot load boot driver" hung the smoke harness).
+const LoaderBootDriver: TYPE_OF_MEMORY = 11;
 const LDRP_DRIVER_DEPENDENT_DLL: u32 = 0x00000040;
 type TYPE_OF_MEMORY = u32;
 type BOOLEAN = u8;

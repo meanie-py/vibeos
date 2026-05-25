@@ -117,7 +117,11 @@ extern "C" {
     fn WinLdrScanSystemHive(LoaderBlock: PLOADER_PARAMETER_BLOCK, SystemRoot: PCSTR) -> u8;
 }
 
-unsafe extern "C" fn NtLdrImportDllLoadCallback(
+// C declaration in peloader.h is `VOID (NTAPI *)(PCSTR)` → `extern "system"`
+// (stdcall on i386). Was `extern "C"` (cdecl) — see commentary on
+// `PELDR_IMPORTDLL_LOAD_CALLBACK` in ffi.rs for the i386 stack-corruption
+// chain it caused before the fix.
+unsafe extern "system" fn NtLdrImportDllLoadCallback(
     FileName: PCSTR)
 {
     NtLdrOutputLoadMsg(FileName, core::ptr::null());

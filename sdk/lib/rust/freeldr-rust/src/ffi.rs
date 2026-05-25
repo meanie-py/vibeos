@@ -187,8 +187,15 @@ pub static mut FrLdrModuleList: LIST_ENTRY = LIST_ENTRY {
 };
 
 /// `PELDR_IMPORTDLL_LOAD_CALLBACK PeLdrImportDllLoadCallback = NULL;`
-/// (`typedef VOID (*)(PCCH)`).
-pub type PELDR_IMPORTDLL_LOAD_CALLBACK = Option<unsafe extern "C" fn(*const CHAR)>;
+/// C typedef is `VOID (NTAPI *)(PCSTR)` — NTAPI = `stdcall` on i386,
+/// `cdecl` elsewhere → `extern "system"`. Was `extern "C"` (cdecl), which
+/// leaked 8 bytes of ESP per i386 invocation: caller (cdecl) does
+/// `add esp,4` after CALL, but stdcall callee already did `ret 4`. The next
+/// `PeLdrLoadImage(...)` call's pushed args then wrote OVER the caller's
+/// `FullDllName` buffer (the pushed `1u8` KernelMapping landed at offset 0),
+/// turning the bootvid.dll path into `\x01\0` → ArcOpen EINVAL → loader
+/// hangs after kdcom load on i386.
+pub type PELDR_IMPORTDLL_LOAD_CALLBACK = Option<unsafe extern "system" fn(*const CHAR)>;
 #[no_mangle]
 pub static mut PeLdrImportDllLoadCallback: PELDR_IMPORTDLL_LOAD_CALLBACK = None;
 
