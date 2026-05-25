@@ -12,20 +12,46 @@ extern "C" {
 // fs.c FileSystems[] — PRUNED to iso+fat+pxe (ntfs/ext/btrfs dropped:
 // livecd boots ISO, ramdisk is FAT; their .c are commented out of
 // FREELDR_BOOTLIB_SOURCE as a consequence of this omission).
+//
+// fs.c:69 gates PxeMount with `#if defined(_M_IX86) || defined(_M_AMD64)`
+// then `#ifndef UEFIBOOT`. rustconv dropped both guards. Restore faithfully:
+// PxeMount is in the table ONLY on x86/amd64 AND only in the non-UEFI
+// (BIOS freeldr_pe) build. arm64 (UEFI-only) and the x86 uefildr archive
+// exclude it — pxe.rs is correspondingly cfg(any(x86,x86_64)) only and the
+// uefi feature mirrors the UEFIBOOT define.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 extern "C" {
     fn IsoMount(DeviceId: ULONG) -> *const DEVVTBL;
     fn FatMount(DeviceId: ULONG) -> *const DEVVTBL;
     fn PxeMount(DeviceId: ULONG) -> *const DEVVTBL;
 }
+#[cfg(not(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi"))))]
+extern "C" {
+    fn IsoMount(DeviceId: ULONG) -> *const DEVVTBL;
+    fn FatMount(DeviceId: ULONG) -> *const DEVVTBL;
+}
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 static FileSystems: [PFS_MOUNT; 3] = [IsoMount, FatMount, PxeMount];
+#[cfg(not(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi"))))]
+static FileSystems: [PFS_MOUNT; 2] = [IsoMount, FatMount];
 
 extern "C" {
     fn DbgPrint(fmt: *const i8, ...) -> NTSTATUS;
-    fn IS_VALID_FILEID(FileId: ULONG) -> BOOLEAN;
     fn ERR(fmt: *const i8, ...);
     fn UiMessageBox(msg: PCSTR);
     fn strlen(s: *const i8) -> usize;
     fn TRACE(fmt: *const i8, ...);
+}
+
+// fs.c:54 `#define IS_VALID_FILEID(FileId) \
+//   ((ULONG)(FileId) < _countof(FileData) && FileData[(ULONG)(FileId)].FuncTable)`
+// — file-scoped macro over fs.c's static FileData[]; rustconv emitted it
+// as `extern { fn IS_VALID_FILEID }` + call sites. Real cdecl wrapper
+// here (fs.rs owns the FileData translation). UNIQUE (C macro).
+#[no_mangle]
+pub unsafe extern "C" fn IS_VALID_FILEID(FileId: ULONG) -> BOOLEAN {
+    ((FileId < MAX_FDS as ULONG)
+        && !FileData[FileId as usize].FuncTable.is_null()) as BOOLEAN
 }
 
 // fs.c: 'NDsF'/'vDsF' multichar literals (big-endian). AI emitted the wrong
@@ -666,10 +692,19 @@ pub unsafe extern "C" fn FsGetDeviceId(FileId: ULONG) -> ULONG {
 
 #[no_mangle]
 pub unsafe extern "C" fn FsInit() {
+    crate::frldr::dbgcon(b'F'); crate::frldr::dbgcon(b's');
     let mut i: u32;
 
+    // rustconv translated C `memset(FileData, 0, sizeof(FileData))` as
+    // `write_bytes(FileData.as_mut_ptr(), 0, sizeof_val)`. That's a UB-class
+    // bug: write_bytes::<T>(ptr, val, count) writes count * sizeof::<T>()
+    // bytes, so this was clobbering `count * sizeof(FILEDATA)` = 60 * 16 *
+    // 16 = ~15KB of BSS PAST FileData, including FrLdrDefaultHeap,
+    // FrLdrTempHeap, and any other static-mut in adjacent BSS — causing
+    // FrLdrHeapAlloc to read back NULL and hang the freelist walker.
+    // See feedback_write_bytes_element_count.md.
     core::ptr::write_bytes(
-        FileData.as_mut_ptr(),
+        FileData.as_mut_ptr() as *mut u8,
         0,
         core::mem::size_of_val(&FileData),
     );

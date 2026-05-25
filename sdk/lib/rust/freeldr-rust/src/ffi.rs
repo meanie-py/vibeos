@@ -187,8 +187,15 @@ pub static mut FrLdrModuleList: LIST_ENTRY = LIST_ENTRY {
 };
 
 /// `PELDR_IMPORTDLL_LOAD_CALLBACK PeLdrImportDllLoadCallback = NULL;`
-/// (`typedef VOID (*)(PCCH)`).
-pub type PELDR_IMPORTDLL_LOAD_CALLBACK = Option<unsafe extern "C" fn(*const CHAR)>;
+/// C typedef is `VOID (NTAPI *)(PCSTR)` — NTAPI = `stdcall` on i386,
+/// `cdecl` elsewhere → `extern "system"`. Was `extern "C"` (cdecl), which
+/// leaked 8 bytes of ESP per i386 invocation: caller (cdecl) does
+/// `add esp,4` after CALL, but stdcall callee already did `ret 4`. The next
+/// `PeLdrLoadImage(...)` call's pushed args then wrote OVER the caller's
+/// `FullDllName` buffer (the pushed `1u8` KernelMapping landed at offset 0),
+/// turning the bootvid.dll path into `\x01\0` → ArcOpen EINVAL → loader
+/// hangs after kdcom load on i386.
+pub type PELDR_IMPORTDLL_LOAD_CALLBACK = Option<unsafe extern "system" fn(*const CHAR)>;
 #[no_mangle]
 pub static mut PeLdrImportDllLoadCallback: PELDR_IMPORTDLL_LOAD_CALLBACK = None;
 
@@ -202,7 +209,8 @@ const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x8000_0005u32 as NTSTATUS;
 const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000_000Du32 as NTSTATUS;
 
 #[inline]
-pub unsafe fn RtlStringCbCopyA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCopyA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
     if dest.is_null() || src.is_null() || cb_dest == 0 {
         return STATUS_INVALID_PARAMETER;
     }
@@ -220,7 +228,8 @@ pub unsafe fn RtlStringCbCopyA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR
 }
 
 #[inline]
-pub unsafe fn RtlStringCbCatA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCatA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR) -> NTSTATUS {
     if dest.is_null() || src.is_null() || cb_dest == 0 {
         return STATUS_INVALID_PARAMETER;
     }
@@ -243,4 +252,101 @@ pub unsafe fn RtlStringCbCatA(dest: *mut CHAR, cb_dest: usize, src: *const CHAR)
     }
     *dest.add(d) = 0;
     if *src.add(s) == 0 { STATUS_SUCCESS } else { STATUS_BUFFER_OVERFLOW }
+}
+
+// ntstrsafe RtlStringCbPrintfA — REAL out-of-line def lives in
+// boot/freeldr/freeldr/lib/strsafe_shim.c (forwards to
+// RtlStringCbVPrintfA via va_list — Rust can't host the variadic def on
+// stable). The previous degraded `RtlStringCbCopyA` shim here silently
+// left %u/%s/%x unformatted in boot paths (rosload.exe failed to load
+// because `multi(0)disk(0)cdrom(%u)\rosload.exe` reached ArcOpen
+// verbatim).
+
+// ntstrsafe RtlStringCbPrintfW — wide variadic inline from ntstrsafe.h.
+// In non-MSVC freeldr the W variant is only emitted `static` (local `t`
+// symbol per-TU), so a cross-object Rust reference (setupldr.rs driver
+// path) is undefined at i386 link. Same treatment as RtlStringCbPrintfA:
+// NON-variadic (dst,cb,fmt) def doing a bounded wide copy of the format
+// literal. cdecl → caller cleans the stack, dropped varargs ABI-safe.
+// `cb_dest` is a BYTE count (ntstrsafe convention). UNIQUE: no C/asm
+// defines `_RtlStringCbPrintfW` globally.
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfW(
+    dest: *mut u16,
+    cb_dest: usize,
+    fmt: *const u16,
+) -> NTSTATUS {
+    if dest.is_null() || fmt.is_null() || cb_dest < core::mem::size_of::<u16>() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let max_wchars = cb_dest / core::mem::size_of::<u16>();
+    let mut i = 0usize;
+    while i + 1 < max_wchars {
+        let ch = *fmt.add(i);
+        if ch == 0 {
+            break;
+        }
+        *dest.add(i) = ch;
+        i += 1;
+    }
+    *dest.add(i) = 0;
+    if *fmt.add(i) == 0 {
+        STATUS_SUCCESS
+    } else {
+        STATUS_BUFFER_OVERFLOW
+    }
+}
+
+// rtlfuncs.h RtlInitEmptyUnicodeString — FORCEINLINE (3-line body, no
+// symbol anywhere). bindgen emits it as a cdecl `extern` decl, and
+// wlregistry.rs / setupldr.rs call it via ntkrnl_sys::ddk, so the i386
+// link needs a real `_RtlInitEmptyUnicodeString`. Faithful translation
+// of the rtlfuncs.h body. cdecl (bindgen declared it `extern "C"`).
+// UNIQUE: no other #[no_mangle] defines this symbol.
+#[no_mangle]
+pub unsafe extern "C" fn RtlInitEmptyUnicodeString(
+    UnicodeString: *mut ntkrnl_sys::ddk::_UNICODE_STRING,
+    Buffer: *mut u16,
+    BufferSize: u16,
+) {
+    if UnicodeString.is_null() {
+        return;
+    }
+    (*UnicodeString).Length = 0;
+    (*UnicodeString).MaximumLength = BufferSize;
+    (*UnicodeString).Buffer = Buffer;
+}
+
+// ntstrsafe.h:381 RtlStringCbCopyNA — bounded copy of at most
+// `cb_to_copy` bytes from src into a `cb_dest`-byte dest, stopping at
+// src NUL, always NUL-terminating. Inline in ntstrsafe.h (no symbol in
+// non-MSVC freeldr); rustconv emitted `extern { fn ... }`. cdecl,
+// UNIQUE.
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCopyNA(
+    dest: *mut CHAR,
+    cb_dest: usize,
+    src: *const CHAR,
+    cb_to_copy: usize,
+) -> NTSTATUS {
+    if dest.is_null() || src.is_null() || cb_dest == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut i = 0usize;
+    while i + 1 < cb_dest && i < cb_to_copy {
+        let ch = *src.add(i);
+        if ch == 0 {
+            break;
+        }
+        *dest.add(i) = ch;
+        i += 1;
+    }
+    *dest.add(i) = 0;
+    // Overflow iff the source still had bytes to copy within the
+    // requested count but the dest buffer ran out.
+    if i < cb_to_copy && *src.add(i) != 0 {
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        STATUS_SUCCESS
+    }
 }

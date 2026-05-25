@@ -189,14 +189,21 @@ unsafe fn IsoSearchDirectoryBufferForFile(
             return 0u8;
         }
 
-        if (*Record).FileIdLength == 1 && (*Record).FileId[0] == 0 {
+        // `FileId: [UCHAR; 1]` is a C flexible-array sentinel; the real data
+        // extends past the struct. Index via raw pointer to avoid Rust's
+        // bounds panic.
+        let file_id_ptr = (*Record).FileId.as_ptr();
+        let id0 = if (*Record).FileIdLength >= 1 { *file_id_ptr } else { 0 };
+        if (*Record).FileIdLength == 1 && id0 == 0 {
             TRACE(b"Name '.'\n\0".as_ptr() as PCHAR);
-        } else if (*Record).FileIdLength == 1 && (*Record).FileId[0] == 1 {
+        } else if (*Record).FileIdLength == 1 && id0 == 1 {
             TRACE(b"Name '..'\n\0".as_ptr() as PCHAR);
         } else {
             i = 0;
-            while i < (*Record).FileIdLength as ULONG && (*Record).FileId[i as usize] != ((b';' as CHAR) as u8) {
-                Name[i as usize] = (((*Record).FileId[i as usize]) as i8);
+            while i < (*Record).FileIdLength as ULONG {
+                let c = *file_id_ptr.add(i as usize);
+                if c == b';' { break; }
+                Name[i as usize] = c as i8;
                 i += 1;
             }
             Name[i as usize] = 0;

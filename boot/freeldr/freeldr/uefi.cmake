@@ -14,15 +14,18 @@ include_directories(BEFORE
 list(APPEND UEFILDR_ARC_SOURCE
     ${FREELDR_ARC_SOURCE}
     arch/uefi/stubs.c
-    arch/uefi/ueficon.c
-    arch/uefi/uefidisk.c
-    arch/uefi/uefihw.c
-    arch/uefi/uefimem.c
     arch/uefi/uefisetup.c
     arch/uefi/uefiutil.c
-    arch/uefi/uefivid.c
     arch/vidfb.c
     arch/vgafont.c)
+    # uefi-hw unit → Rust (freeldr-rust: ueficon/uefidisk/uefihw/uefimem/
+    # uefivid.rs). Cohabitation: .c kept on disk, Rust #[no_mangle] takes
+    # over. (stubs/uefisetup/uefiutil kept — not translated.)
+    # arch/uefi/ueficon.c   # replaced by Rust (freeldr-rust/src/ueficon.rs)
+    # arch/uefi/uefidisk.c  # replaced by Rust (freeldr-rust/src/uefidisk.rs)
+    # arch/uefi/uefihw.c    # replaced by Rust (freeldr-rust/src/uefihw.rs)
+    # arch/uefi/uefimem.c   # replaced by Rust (freeldr-rust/src/uefimem.rs)
+    # arch/uefi/uefivid.c   # replaced by Rust (freeldr-rust/src/uefivid.rs)
 
 if(ARCH STREQUAL "i386")
     list(APPEND UEFILDR_ARC_SOURCE
@@ -77,8 +80,8 @@ add_pch(uefifreeldr_common include/arch/uefi/uefildr.h PCH_SOURCE)
 add_dependencies(uefifreeldr_common bugcodes asm xdk)
 
 # Rust peloader (replaces lib/peloader.c — see boot/freeldr/freeldr/CMakeLists.txt)
-target_link_libraries(uefifreeldr_common ${FREELDR_RUST_LIB})
-add_dependencies(uefifreeldr_common rust_freeldr)
+target_link_libraries(uefifreeldr_common ${FREELDR_RUST_UEFI_LIB})
+add_dependencies(uefifreeldr_common rust_freeldr_uefi)
 
 ## GCC builds need this extra thing for some reason...
 if(ARCH STREQUAL "i386" AND NOT MSVC)
@@ -93,9 +96,10 @@ list(APPEND UEFILDR_BASE_SOURCE
     include/arch/uefi/uefildr.h
     arch/uefi/uefildr.c
     bootmgr.c
-    ntldr/setupldr.c
-    ntldr/inffile.c
     ${FREELDR_BASE_SOURCE})
+    # setup/legacy unit → Rust (freeldr-rust: setupldr.rs/inffile.rs).
+    # ntldr/setupldr.c  # replaced by Rust (freeldr-rust/src/setupldr.rs)
+    # ntldr/inffile.c   # replaced by Rust (freeldr-rust/src/inffile.rs)
 
 if(ARCH STREQUAL "i386")
     # Must be included together with disk/scsiport.c

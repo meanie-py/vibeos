@@ -12,5 +12,16 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+# Mirrors hal-rust's `minihal`. freeldr_pe (BIOS) and uefildr (UEFI)
+# link the SAME libfreeldr_rust.a but different per-binary C/asm: the
+# PC-AT machine entry (machpc.rs MachInit, pchw.rs StallExecution-
+# Processor) and the vidfb_pc_fallback shim are BIOS-only — on the
+# UEFI link uefisetup.c/vidfb.c/uefildr.c own those symbols, so the
+# Rust defs would dup. `uefi` gates those out; uefi.cmake builds a
+# second archive (libfreeldr_rust_uefi.a) with --features uefi.
+default = []
+uefi = []
+
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }

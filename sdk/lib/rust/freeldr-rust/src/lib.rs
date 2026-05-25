@@ -45,6 +45,69 @@ pub mod fs;
 pub mod iso;
 pub mod fat;
 
+// 🟢 sweep — disk unit (disk/{partition,ramdisk}.c, ntldr/conversion.c).
+pub mod partition;
+pub mod ramdisk;
+pub mod conversion;
+
+// 🟢 sweep — pc-hw unit (arch/i386/pc/{machpc,pcvideo,pcdisk,pcmem,pcvesa,pchw}.c).
+pub mod machpc;
+pub mod pcvideo;
+pub mod pcdisk;
+pub mod pcmem;
+pub mod pcvesa;
+pub mod pchw;
+
+// 🟢 sweep — i386-hw unit (arch/i386/{hwdisk,hwpci,hwacpi}.c, arch/drivers/hwide.c).
+pub mod hwdisk;
+pub mod hwpci;
+pub mod hwacpi;
+pub mod hwide;
+
+// 🟢 sweep — uefi-hw unit (arch/uefi/{uefidisk,uefimem,uefivid,ueficon,uefihw}.c).
+pub mod uefidisk;
+pub mod uefimem;
+pub mod uefivid;
+pub mod ueficon;
+pub mod uefihw;
+// PC-link fallback for vidfb.c's UEFI-only FbCons*/GlobalSystemTable
+// (ueficon/uefivid extern-consume them; their C providers are UEFI-only
+// so freeldr_pe/BIOS has no provider). BIOS-only — on the `uefi`
+// archive vidfb.c/uefildr.c own those symbols (dup otherwise).
+#[cfg(not(feature = "uefi"))]
+pub mod vidfb_pc_fallback;
+
+// 🟢 sweep — winldr kernel-handoff unit (ntldr/{winldr,registry,wlregistry,
+// wlmemory,ntldropts}.c + ntldr/arch/<a>/winldr.c + arch/i386/ntoskrnl.c).
+// arch winldr.c are per-arch in C (CMakeLists FREELDR_NTLDR_SOURCE) → cfg-gate.
+pub mod winldr;
+pub mod registry;
+pub mod wlregistry;
+pub mod wlmemory;
+pub mod ntldropts;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod ntoskrnl;
+#[cfg(target_arch = "x86")]
+pub mod winldr_i386;
+#[cfg(target_arch = "x86_64")]
+pub mod winldr_amd64;
+#[cfg(target_arch = "aarch64")]
+pub mod winldr_arm64;
+
+// 🟢 sweep — setup/legacy unit (ntldr/{setupldr,inffile,headless}.c +
+// arch/i386/{drivemap,i386bug}.c + lib/fs/pxe.c). setupldr/inffile/
+// headless = arch-neutral loader logic; drivemap/i386bug/pxe = x86
+// BIOS-era (PC-AT i386/amd64, not arm64) → cfg-gate.
+pub mod setupldr;
+pub mod inffile;
+pub mod headless;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod drivemap;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod i386bug;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod pxe;
+
 // --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
 // builds/commits at green; re-enable when the ui unit converges. ---
 pub mod ui_keystone;

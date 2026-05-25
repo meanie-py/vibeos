@@ -15,7 +15,10 @@ extern "C" {
     fn va_start(ap: *mut va_list, last: ...);
     fn _vsnprintf(buf: *mut i8, size: usize, fmt: PCSTR, ap: va_list) -> i32;
     fn va_end(ap: va_list);
-    fn MachConsPutChar(c: i8);
+    // machine.h: VOID (*ConsPutChar)(int Ch) — canonical i32 (the
+    // machpc.rs #[no_mangle] def matches machine.h; the rustconv `i8`
+    // decl was the outlier).
+    fn MachConsPutChar(c: i32);
     fn strlen(s: *const i8) -> usize;
     fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
     fn MachVideoClearScreen(attr: u8);
@@ -49,10 +52,46 @@ extern "C" {
 pub unsafe extern "C" fn TuiPrintf(Format: PCSTR) -> i32 {
     let mut i: i32 = 0;
     while *Format.offset(i as isize) != 0 {
-        MachConsPutChar(*Format.offset(i as isize));
+        MachConsPutChar(*Format.offset(i as isize) as i32);
         i += 1;
     }
     i
+}
+
+// freeldr.h `#define printf TuiPrintf` — rustconv expanded the macro to
+// `extern { fn printf(...) }` + call sites instead of resolving to
+// TuiPrintf. Real cdecl alias forwarding to TuiPrintf (non-variadic,
+// same verbatim-format degradation; cdecl caller-cleans → ABI-safe).
+// UNIQUE: printf is a C macro, never a real symbol.
+#[no_mangle]
+pub unsafe extern "C" fn printf(Format: PCSTR) -> i32 {
+    TuiPrintf(Format)
+}
+
+// `puts` — LLVM lowers `printf("...\n")` (constant string, trailing \n)
+// to a `puts` call. Faithful: emit the string then a newline. cdecl,
+// UNIQUE (no C/asm freeldr puts; it's a libc-fold artifact).
+#[no_mangle]
+pub unsafe extern "C" fn puts(Str: PCSTR) -> i32 {
+    let mut i: i32 = 0;
+    while *Str.offset(i as isize) != 0 {
+        MachConsPutChar(*Str.offset(i as isize) as i32);
+        i += 1;
+    }
+    MachConsPutChar(b'\n' as i32);
+    i + 1
+}
+
+// pcvideo.c:1038 `#define TRACE_printf(Format,...) do { TRACE(Format,...);
+// printf(Format,...); } while(0)`. TRACE is a no-op in the NDEBUG
+// freeldr build; printf == TuiPrintf. Non-variadic cdecl def emitting
+// the format verbatim (same degradation as TuiPrintf/the keystone
+// TRACE). Defined here (declared `extern` variadic in pcvideo.rs) so
+// the variadic call sites compile; cdecl caller-cleans → ABI-safe.
+// UNIQUE (C macro, no symbol).
+#[no_mangle]
+pub unsafe extern "C" fn TRACE_printf(Format: PCSTR) {
+    TuiPrintf(Format);
 }
 
 #[no_mangle]

@@ -426,6 +426,12 @@ WdfVersionBind(
 
     DPRINT_TRACE_ENTRY();
 
+    /* Lazy init: WdfLdr is loaded on demand (no Boot-start service entry),
+     * so its own DriverEntry/DllInitialize may not have run before the
+     * first client driver calls in here.  Without this, WdfLdrGlobals
+     * stays zero-initialized and the LoadedModulesList walks crash. */
+    (void) DllInitialize(NULL);
+
     if (ComponentGlobals == NULL || BindInfo == NULL || BindInfo->FuncTable == NULL)
     {
         DPRINT_ERROR(("Invalid parameters: ComponentGlobals=%p, BindInfo=%p\n",

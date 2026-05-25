@@ -287,7 +287,7 @@ unsafe fn FrLdrHeapInsertFreeList(
 {
     let mut ListHead: *mut HEAP_BLOCK;
     let mut NextBlock: *mut HEAP_BLOCK;
-    
+
     ListHead = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*Heap).TerminatingBlock as isize);
 
     NextBlock = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*ListHead).Data.as_mut_ptr()).Flink as isize);
@@ -326,7 +326,12 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
     }
 
     if (ByteSize + core::mem::size_of::<HEAP_BLOCK>()) > MAXUSHORT as usize * core::mem::size_of::<HEAP_BLOCK>() {
+        crate::frldr::dbgcon_str(b"HUGE!");
         ERR(b"HEAP: Allocation of 0x%lx bytes too large\n\0".as_ptr() as PCHAR, ByteSize);
+        return core::ptr::null_mut();
+    }
+    if Heap.is_null() {
+        crate::frldr::dbgcon_str(b"HEAPnull!");
         return core::ptr::null_mut();
     }
 
@@ -400,6 +405,29 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
         return (*Block).Data.as_mut_ptr() as PVOID;
     }
 
+    crate::frldr::dbgcon_str(b"HEAPfull[bsz=");
+    crate::frldr::dbgcon_hex32(BlockSize as u32);
+    crate::frldr::dbgcon_str(b",tb=");
+    crate::frldr::dbgcon_hex32((*Heap).TerminatingBlock as u32);
+    // Walk free list.
+    crate::frldr::dbgcon_str(b",fl=");
+    let term_idx = (*Heap).TerminatingBlock as u32;
+    let term = core::ptr::addr_of_mut!((*Heap).Blocks).offset(term_idx as isize);
+    let mut walk_idx: u32 = (*(*term).Data.as_mut_ptr()).Flink;
+    let mut depth = 0u32;
+    while depth < 8 {
+        let blk = core::ptr::addr_of_mut!((*Heap).Blocks).offset(walk_idx as isize);
+        crate::frldr::dbgcon_hex32(walk_idx);
+        crate::frldr::dbgcon(b':');
+        crate::frldr::dbgcon_hex32((*blk).Size as u32);
+        crate::frldr::dbgcon(b'/');
+        crate::frldr::dbgcon_hex32((*blk).Tag);
+        crate::frldr::dbgcon(b' ');
+        if (*blk).Size == 0 { break; }
+        walk_idx = (*(*blk).Data.as_mut_ptr()).Flink;
+        depth += 1;
+    }
+    crate::frldr::dbgcon_str(b"]");
     WARN(b"HEAP: nothing suitable found for 0x%lx bytes\n\0".as_ptr() as PCHAR, ByteSize);
     core::ptr::null_mut()
 }
@@ -462,8 +490,11 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     PrevBlock = Block.offset(-((*Block).PreviousSize as isize) - 1);
     NextBlock = Block.offset((*Block).Size as isize + 1);
 
+    // Use u32 for the overflow guard — Rust u16+u16+1 wraps silently in
+    // release mode. The C version is safe because integer promotion does
+    // the add in `int`.
     if ((*NextBlock).Tag == 0) &&
-        (((*Block).Size + (*NextBlock).Size + 1) <= 0xFFFF)
+        (((*Block).Size as u32 + (*NextBlock).Size as u32 + 1) <= 0xFFFF)
     {
         (*Block).Size = (*Block).Size.wrapping_add((*NextBlock).Size).wrapping_add(1);
         FrLdrHeapRemoveFreeList(Heap, NextBlock);
@@ -472,7 +503,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     }
 
     if ((*Block).PreviousSize != 0) && ((*PrevBlock).Tag == 0) &&
-        (((*PrevBlock).Size + (*Block).Size + 1) <= 0xFFFF)
+        (((*PrevBlock).Size as u32 + (*Block).Size as u32 + 1) <= 0xFFFF)
     {
         (*PrevBlock).Size = (*PrevBlock).Size.wrapping_add((*Block).Size).wrapping_add(1);
         Block = PrevBlock;
@@ -489,15 +520,25 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
     }
 }
 
+// read_volatile on the static-mut load. Without it, LLVM (cgu=256 + lto=false)
+// sees the file-local initializer `static mut FrLdrDefaultHeap: PVOID = null()`
+// and caches NULL as the value. MmInitializeHeap's runtime assignment lives in
+// (potentially) another CGU and isn't visible. The cached NULL feeds into
+// FrLdrHeapAllocateEx → InsertFreeList where `(*Heap).Blocks` becomes `NULL + 0x2c`
+// and the freelist walk reads garbage from low memory (BIOS IVT) and loops
+// forever. Same class as the GetHarddiskConfigurationData fix in pchw.rs.
+// See feedback_dup_abi_name_collision.md (cross-CGU static-mut variant).
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrHeapAlloc(MemorySize: SIZE_T, Tag: ULONG) -> PVOID {
-    FrLdrHeapAllocateEx(FrLdrDefaultHeap, MemorySize, Tag)
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrDefaultHeap));
+    FrLdrHeapAllocateEx(heap, MemorySize, Tag)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrHeapFree(MemoryPointer: PVOID, Tag: ULONG)
 {
-    FrLdrHeapFreeEx(FrLdrDefaultHeap, MemoryPointer, Tag);
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrDefaultHeap));
+    FrLdrHeapFreeEx(heap, MemoryPointer, Tag);
 }
 
 #[no_mangle]
@@ -505,7 +546,8 @@ pub unsafe extern "C" fn FrLdrTempAlloc(
     Size: SIZE_T,
     Tag: ULONG) -> PVOID
 {
-    FrLdrHeapAllocateEx(FrLdrTempHeap, Size, Tag)
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrTempHeap));
+    FrLdrHeapAllocateEx(heap, Size, Tag)
 }
 
 #[no_mangle]
@@ -513,7 +555,64 @@ pub unsafe extern "C" fn FrLdrTempFree(
     Allocation: PVOID,
     Tag: ULONG)
 {
-    FrLdrHeapFreeEx(FrLdrTempHeap, Allocation, Tag);
+    let heap = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrTempHeap));
+    FrLdrHeapFreeEx(heap, Allocation, Tag);
+}
+
+/// Diagnostic: emit a single byte to QEMU debugcon (port 0xE9).
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrDbgcon(b: u8) {
+    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b,
+        options(nostack, preserves_flags));
+}
+
+/// Diagnostic: emit 8 hex digits + space to debugcon.
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrDbgconHex32(v: u32) {
+    crate::frldr::dbgcon_hex32(v);
+}
+
+/// Diagnostic: dump default-heap free-list state to debugcon.
+/// Tag byte identifies the call site. All reads via `read_volatile` to
+/// defeat any LLVM aliasing assumption about the heap memory being immutable.
+/// Output: `<H label idx:size/tag idx:size/tag ...>`
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrHeapDump(label: u8) {
+    let h = core::ptr::read_volatile(core::ptr::addr_of!(FrLdrDefaultHeap)) as PHEAP;
+    if h.is_null() { return; }
+    crate::frldr::dbgcon_str(b"<H");
+    crate::frldr::dbgcon(label);
+    crate::frldr::dbgcon(b' ');
+    let term_idx = core::ptr::read_volatile(core::ptr::addr_of!((*h).TerminatingBlock)) as u32;
+    let blocks_base = core::ptr::addr_of_mut!((*h).Blocks);
+    let term = blocks_base.offset(term_idx as isize);
+    let mut walk: u32 = core::ptr::read_volatile(
+        core::ptr::addr_of!((*(*term).Data.as_ptr()).Flink));
+    let mut depth = 0u32;
+    while depth < 12 {
+        let max_idx = (core::ptr::read_volatile(core::ptr::addr_of!((*h).MaximumSize))
+            / core::mem::size_of::<HEAP_BLOCK>()) as u32;
+        if walk > max_idx {
+            crate::frldr::dbgcon_str(b"OOB:");
+            crate::frldr::dbgcon_hex32(walk);
+            break;
+        }
+        let blk = blocks_base.offset(walk as isize);
+        let sz = core::ptr::read_volatile(core::ptr::addr_of!((*blk).Size));
+        let tg = core::ptr::read_volatile(core::ptr::addr_of!((*blk).Tag));
+        crate::frldr::dbgcon_hex32(walk);
+        crate::frldr::dbgcon(b':');
+        crate::frldr::dbgcon_hex32(sz as u32);
+        crate::frldr::dbgcon(b'/');
+        crate::frldr::dbgcon_hex32(tg);
+        crate::frldr::dbgcon(b' ');
+        if sz == 0 { break; }
+        walk = core::ptr::read_volatile(
+            core::ptr::addr_of!((*(*blk).Data.as_ptr()).Flink));
+        depth += 1;
+    }
+    crate::frldr::dbgcon_str(b">");
 }
 
 #[no_mangle]
@@ -526,6 +625,30 @@ pub unsafe extern "C" fn MmInitializeHeap(PageLookupTable: PVOID) {
     FrLdrTempHeap = FrLdrHeapCreate(TEMP_HEAP_SIZE, LoaderFirmwareTemporary);
     ASSERT(FrLdrTempHeap as usize != 0);
 
+    // Dump default heap free list right after init.
+    crate::frldr::dbgcon_str(b"\nHeapInit[def=");
+    crate::frldr::dbgcon_hex32(FrLdrDefaultHeap as usize as u32);
+    crate::frldr::dbgcon_str(b",tmp=");
+    crate::frldr::dbgcon_hex32(FrLdrTempHeap as usize as u32);
+    let dh = FrLdrDefaultHeap as PHEAP;
+    crate::frldr::dbgcon_str(b",tb=");
+    crate::frldr::dbgcon_hex32((*dh).TerminatingBlock as u32);
+    let term = core::ptr::addr_of_mut!((*dh).Blocks).offset((*dh).TerminatingBlock as isize);
+    let mut walk: u32 = (*(*term).Data.as_mut_ptr()).Flink;
+    let mut depth = 0u32;
+    crate::frldr::dbgcon_str(b",fl=");
+    while depth < 8 {
+        let blk = core::ptr::addr_of_mut!((*dh).Blocks).offset(walk as isize);
+        crate::frldr::dbgcon_hex32(walk);
+        crate::frldr::dbgcon(b':');
+        crate::frldr::dbgcon_hex32((*blk).Size as u32);
+        crate::frldr::dbgcon(b' ');
+        if (*blk).Size == 0 { break; }
+        walk = (*(*blk).Data.as_mut_ptr()).Flink;
+        depth += 1;
+    }
+    crate::frldr::dbgcon_str(b"]\n");
+
     TRACE(
         b"MmInitializeHeap() done, default heap %p, temp heap %p\n\0".as_ptr() as PCHAR,
         FrLdrDefaultHeap,
@@ -534,7 +657,7 @@ pub unsafe extern "C" fn MmInitializeHeap(PageLookupTable: PVOID) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExAllocatePoolWithTag(
+pub unsafe extern "system" fn ExAllocatePoolWithTag(
     PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T,
     Tag: ULONG) -> PVOID
@@ -543,7 +666,7 @@ pub unsafe extern "C" fn ExAllocatePoolWithTag(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExAllocatePool(
+pub unsafe extern "system" fn ExAllocatePool(
     PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T) -> PVOID
 {
@@ -551,14 +674,14 @@ pub unsafe extern "C" fn ExAllocatePool(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExFreePool(
+pub unsafe extern "system" fn ExFreePool(
     P: PVOID)
 {
     FrLdrHeapFreeEx(FrLdrDefaultHeap, P, 0);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ExFreePoolWithTag(
+pub unsafe extern "system" fn ExFreePoolWithTag(
     P: PVOID,
     Tag: ULONG)
 {
@@ -566,7 +689,7 @@ pub unsafe extern "C" fn ExFreePoolWithTag(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RtlAllocateHeap(
+pub unsafe extern "system" fn RtlAllocateHeap(
     HeapHandle: PVOID,
     Flags: ULONG,
     Size: SIZE_T) -> PVOID
@@ -581,7 +704,7 @@ pub unsafe extern "C" fn RtlAllocateHeap(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RtlFreeHeap(
+pub unsafe extern "system" fn RtlFreeHeap(
     HeapHandle: PVOID,
     Flags: ULONG,
     HeapBase: PVOID) -> BOOLEAN
