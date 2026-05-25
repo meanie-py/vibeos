@@ -318,6 +318,12 @@ WdfRegisterLibrary(
 
     PAGED_CODE();
 
+    /*
+     * Wdf01000 may be loaded as a boot-start import consumer before wdfldr's
+     * own DriverEntry has run. Initialize the loader globals on this path too.
+     */
+    (void) DllInitialize(NULL);
+
     FxLdrAcquireLoadedModuleLock();
     pLibModule = FindLibraryByServicePathLocked(ServicePath);
 
