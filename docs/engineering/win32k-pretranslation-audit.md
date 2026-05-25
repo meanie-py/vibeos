@@ -989,8 +989,34 @@ Progress as of 2026-05-16 (`[x]` done, `[~]` partial, `[ ]` not started):
   oracle-validated. No source rewrite (sidecar is the deliverable).
 - `[~]` (c) sites flagged: the 1 site (`gdi/eng/mem.c`) is identified
   and left verbatim; a standalone residual-SEH doc is not yet written.
-- `[ ]` All (d) sites deleted (36 identified; not yet actioned —
-  needs the cross-site "relies on prior probe" review).
+- `[!]` All (d) sites deletion — **CROSS-CHECK FAILED, DO NOT ACTION**
+  (2026-05-25). Built the deterministic Pass-1c rewriter
+  (`tools/rustconv/rustconv/seh_belt.py`, `rustconv seh-belt`) with the
+  same oracle/guards pattern as Pass 1/1b (live re-classification via
+  `classify_span`, brace-delta preserved, idempotent, opt-in `--apply`).
+  Oracle PASS. Dry-run found 28 live (d) sites across 18 files (sidecar
+  said 29; Pass 1 lowering drifted lines + 1 site rolled out of (d)
+  shape). Apply → all 3 arches built win32k.sys clean → i386
+  `test_post_shell_ready_input` **REGRESSED** (kbdclass keystroke
+  oracle didn't fire; serial empty); baseline at HEAD with the same
+  command alone = PASS. Root cause: under `_USE_DUMMY_PSEH` the
+  `_SEH2_EXCEPT` body is wrapped in `if (_SEH2_Volatile0 || ...)` where
+  `_SEH2_Volatile0` is an `extern volatile int` (sdk/lib/pseh/include/
+  pseh/pseh2.h:184) — the **volatile read is a load-bearing implicit
+  compiler barrier** that suppresses captures(none)/hoisting on the
+  surrounding TRY body. Removing the wrapper removes the barrier; the
+  user-mode CLIENTINFO writes in the kbd-hook path
+  (`hook.split2.c` × 6 sites, especially `co_HOOK_CallHooks` →
+  `ClientInfo->phkCurrent = Hook`) become hoistable across the foreign
+  KeUserModeCallback boundary — same class as Phase-1a `gdiobj.c`
+  ENTRY_ReferenceEntryByHandle. The (d) wrappers are NOT semantically
+  cosmetic; they are load-bearing on i386 under current LLVM.
+  Resolution: tool retained (audit infrastructure), `--apply` NOT
+  run. Re-evaluate after LLVM toolchain bump OR after handle-table-
+  style `read_volatile`/`write_volatile` surgery on the affected
+  callers (mostly the hook + callback hot paths). The 28-site
+  ledger lives in the stash on `worktree-win32k-translation`.
+  Lesson banked in `feedback_seh_belt_llvm_barrier.md`.
 - `[x]` Sidecar JSON for the rustconv prompt — **written AND now
   consumed**: `prompt_builder.build_file_prompt` loads the
   Pass-0/2/3 sidecars next to each keep-set `.c` and injects
