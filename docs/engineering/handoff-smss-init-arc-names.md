@@ -3,10 +3,16 @@
 **Audience:** Codex (or any agent picking up this kernel-stage debug).
 **Branch:** `continue-rust-port` (freeldr-rust-port just merged in via
 commit `e450a4332ee`).
-**Status:** arm64 smoke GREEN (5+5skip, unchanged). i386 + amd64 boot
-**all the way through freeldr + boot-driver init** but BUGCHECK 0x6B at
-the SMSS/user-mode handoff. This doc is everything needed to pick the
-debug up cold.
+
+**UPDATE 2026-05-25 (post-codex):** i386 is now GREEN (10 passed + 1
+skipped) thanks to commit `2894e56860c` (HAL PCI bus-handler fallback
++ uniata CriticalDeviceDatabase + WDF lazy-init in WdfRegisterLibrary).
+**amd64 still BUGCHECK 0x6B** but for a DIFFERENT upstream cause: the
+amd64 HAL goes through `halacpi.rs::HalpInitializePciBus` (not
+`bussupp.rs`) and PnP enumeration of `ACPI_HAL\PNP0C08\0` returns
+STATUS_UNSUCCESSFUL — no PCI/IDE children ever enumerated. The rest of
+this doc captures the original investigation and is left intact for
+reference; the amd64 follow-up is task #19.
 
 ---
 
