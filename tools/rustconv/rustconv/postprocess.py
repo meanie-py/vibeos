@@ -1215,6 +1215,25 @@ def fix_variadic_extern_system(code: str) -> str:
     return '\n'.join(result)
 
 
+def fix_markdown_fence_leak(code: str) -> str:
+    """Strip stray markdown ``` fences the LLM occasionally leaks into
+    the preamble translation output (empty preambles → bare ```rust\\n```).
+
+    Bare fence lines are never valid Rust — drop them. Only strips
+    fence-marker lines (open + close); preserves any code between them.
+    """
+    out = []
+    for line in code.splitlines(keepends=False):
+        stripped = line.strip()
+        # match `\`\`\`rust`, `\`\`\``, `\`\`\`c`, etc. — language tag is `\w*`
+        if re.fullmatch(r"```\w*", stripped):
+            continue
+        out.append(line)
+    # preserve trailing newline shape
+    suffix = "\n" if code.endswith("\n") else ""
+    return "\n".join(out) + suffix
+
+
 def fix_duplicate_extern_decls(code: str) -> str:
     """Deduplicate extern block declarations within a single file.
 
@@ -1344,6 +1363,7 @@ def postprocess(
     code = fix_extern_const(code)
     code = fix_variadic_extern_system(code)
     code = fix_duplicate_extern_decls(code)
+    code = fix_markdown_fence_leak(code)
     return code
 
 

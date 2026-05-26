@@ -42,3 +42,7 @@ pub mod error;     // gdi/eng/error.c — Eng{Get,Set}LastError + SetLastNtError
 // pub mod float; // gdi/eng/float.c — DEFERRED (rustconv emitted only EngRestoreFloatingPointState; EngSaveFloatingPointState missing — re-translate later)
 pub mod multidisp; // gdi/eng/multidisp.c — MultiEnableDriver stub
 pub mod perfcnt;   // gdi/eng/perfcnt.c — EngQueryPerformance{Frequency,Counter}
+// pub mod driverobj; // DEFERRED (rustconv emitted extern decls for DRIVEROBJ_AllocObjectWithHandle / UnlockObject / TryLockObject — actually macros in driverobj.h that expand to GDIOBJ_AllocObjWithHandle/vUnlockObject/TryLockObject calls; needs prompt-side macro recognition for the GDIOBJ_* family)
+// pub mod engevent; // DEFERRED (20+ missing imports: ExAllocate/FreePoolWithTag, KeSet/ClearEvent, GDITAG_ENG_EVENT, EVENT_ALL_ACCESS, NT_SUCCESS — system prompt needs to surface these; re-translate later)
+// pub mod mdevobj;  // DEFERRED (rustconv only emitted 1/4 fns)
+// pub mod semaphor; // DEFERRED (rustconv only emitted 7/9 fns — missing EngCreateSemaphore + EngAcquireSemaphore)

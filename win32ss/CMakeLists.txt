@@ -65,11 +65,11 @@ list(APPEND SOURCE
     gdi/eng/alphablend.c
     gdi/eng/bitblt.c
     gdi/eng/engbrush.c
-    gdi/eng/engevent.c
+    gdi/eng/engevent.c  # engevent.rs deferred (20+ missing imports; re-translate later)
     gdi/eng/clip.c
     gdi/eng/debug.c
     gdi/eng/device.c
-    gdi/eng/driverobj.c
+    gdi/eng/driverobj.c  # driverobj.rs deferred (macro-as-extern hazard)
     # gdi/eng/error.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/error.rs) — cohabitation
     gdi/eng/float.c  # float.rs deferred (rustconv missed EngSaveFloatingPointState)
     gdi/eng/gradient.c
