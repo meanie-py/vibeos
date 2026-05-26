@@ -619,18 +619,23 @@ unsafe extern "system" fn CsrInitCsrRootProcess() -> NTSTATUS {
         return STATUS_NO_MEMORY;
     }
 
+    // ServerData is a C flexible array (`PVOID ServerData[ANYSIZE_ARRAY]`);
+    // bindgen emits it as `[PVOID; 1]`. Index past 0 must use raw
+    // pointer arithmetic — Rust's bounds-checked indexing would
+    // panic-abort the process.
+    let server_data_ptr = (*CsrRootProcess).ServerData.as_mut_ptr();
     for i in 0..CSR_SERVER_DLL_MAX {
-        ServerDll = CsrLoadedServerDll[i as usize];
+        ServerDll = *CsrLoadedServerDll.as_ptr().add(i as usize);
         if !ServerDll.is_null() && (*ServerDll).SizeOfProcessData != 0 {
-            (*CsrRootProcess).ServerData[i as usize] = ProcessData;
+            *server_data_ptr.add(i as usize) = ProcessData;
             ProcessData = (ProcessData as usize + (*ServerDll).SizeOfProcessData as usize) as PVOID;
         } else {
-            (*CsrRootProcess).ServerData[i as usize] = core::ptr::null_mut();
+            *server_data_ptr.add(i as usize) = core::ptr::null_mut();
         }
     }
 
     for i in 0..CSR_SERVER_DLL_MAX {
-        ServerDll = CsrLoadedServerDll[i as usize];
+        ServerDll = *CsrLoadedServerDll.as_ptr().add(i as usize);
         if !ServerDll.is_null() && (*ServerDll).NewProcessCallback.is_some() {
             ((*ServerDll).NewProcessCallback.unwrap())(core::ptr::null_mut(), CsrRootProcess);
         }
