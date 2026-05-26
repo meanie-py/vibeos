@@ -305,7 +305,8 @@ unsafe fn UefiReadGptHeader(
     return 1u8;
 }
 
-unsafe fn UefiGetGptPartitionEntry(
+#[no_mangle]
+pub unsafe extern "C" fn UefiGetGptPartitionEntry(
     DriveNumber: UCHAR,
     PartitionNumber: ULONG,
     PartitionTableEntry: PPARTITION_TABLE_ENTRY,
