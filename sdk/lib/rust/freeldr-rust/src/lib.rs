@@ -20,6 +20,29 @@ pub mod ffi;
 pub mod frldr;
 pub mod peloader;
 
+// freeldr.c — BIOS entry point translation unit (BootMain + wide-char/math
+// stubs + FrLdr* accessors). PARKED behind `freeldr-rust-entry` feature
+// (off by default): the pow/log/log10/wctomb/iswctype stubs are
+// deliberately FPU-free, shadow libcntpr's CRT versions, and currently
+// rely on the .c.obj's archive-precedence ordering before libcntpr.a.
+// Standard cohabitation (comment .c, let .rs win) breaks that ordering
+// → libcntpr's defs get pulled in and conflict. The clean fix is either
+// (a) a link-line reorder to put libfreeldr_rust.a strictly before
+// libcntpr, or (b) split freeldr.c into a thin CRT-stubs .c that stays +
+// the rest translated. Both are out of scope for this pass; parking
+// per [[feedback_translation_philosophy]] (never delete .rs).
+#[cfg(feature = "freeldr-rust-entry")]
+pub mod freeldr;
+
+// arch/arm64/debug.c — ARM64 UEFI PL011 UART + Rs232Port stubs. PARKED
+// behind `arm64-debug-rust-entry` (off by default): its
+// `Rs232PortInitialize` conflicts with rs232.rs's (which is wired
+// unconditionally and provides the x86 COM port driver). Properly
+// flipping requires `#[cfg(not(target_arch = "aarch64"))]` on rs232.rs
+// + comment-out of arch/arm64/debug.c in uefi.cmake — out of scope here.
+#[cfg(all(target_arch = "aarch64", feature = "arm64-debug-rust-entry"))]
+pub mod arm64_debug;
+
 // 🟢 sweep — cache unit (lib/cache/{blocklist,cache}.c).
 pub mod blocklist;
 pub mod cache;
