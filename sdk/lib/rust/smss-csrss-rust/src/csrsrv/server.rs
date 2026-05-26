@@ -221,9 +221,13 @@ pub unsafe extern "system" fn CsrSrvClientConnect(
 
     *ReplyCode = CsrReplyImmediately;
 
+    DbgPrint(b"[CSRSRV] CliCon: ServerId=%lu InfoSize=%lu\n\0".as_ptr() as *const i8, ClientConnect.ServerId, ClientConnect.ConnectionInfoSize);
+
     if ClientConnect.ServerId >= CSR_SERVER_DLL_MAX {
+        DbgPrint(b"[CSRSRV] CliCon: ServerId>=MAX rejecting\n\0".as_ptr() as *const i8);
         return STATUS_TOO_MANY_NAMES;
     } else if CsrLoadedServerDll[ClientConnect.ServerId as usize].is_null() {
+        DbgPrint(b"[CSRSRV] CliCon: ServerDll[%lu] NULL\n\0".as_ptr() as *const i8, ClientConnect.ServerId);
         return STATUS_INVALID_PARAMETER;
     }
 

@@ -19,6 +19,13 @@ crate-type = ["staticlib"]
 # (the modern path) compile and the legacy arms are excluded.
 default = ["ntddi_ws03"]
 ntddi_ws03 = []
+# `csrss_main_only` — when set, only the csrss.exe `_main` shim is
+# compiled. csrsrv/csrlib/smlib/smss/basesrv are excluded. csrss.exe
+# uses this feature to AVOID a second static copy of `_CsrApiPort`
+# (and the rest of the csrsrv globals) which would shadow csrsrv.dll's
+# real exports when csrss.exe links the full archive. Set by
+# subsystems/csr/csrss/CMakeLists.txt only.
+csrss_main_only = []
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }

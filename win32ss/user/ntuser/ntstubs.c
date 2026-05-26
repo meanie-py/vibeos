@@ -795,6 +795,8 @@ NtUserSetInformationThread(IN HANDLE ThreadHandle,
             }
             _SEH2_END;
 
+            ERR("[WIN32K] UserThreadCsrApiPort: captured CsrPortHandle=%p (ThreadInformation=%p, len=%lu)\n",
+                    CsrPortHandle, ThreadInformation, ThreadInformationLength);
             Status = InitCsrApiPort(CsrPortHandle);
             break;
         }

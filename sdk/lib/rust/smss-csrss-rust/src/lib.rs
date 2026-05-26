@@ -28,7 +28,18 @@ pub mod csrss;
 // / dosdev.c 1110 / vdm.c 1459) still want rustconv translate
 // (per feedback_rustconv_translate_vs_batch). Wire them in once
 // per-file cargo check ×3 is green; until then keep them silent.
+//
+// `csrss_main_only`: when set, csrss.exe consumes ONLY the `_main`
+// shim from `csrss.rs`. The rest of the modules below are gated OUT
+// so they don't produce a duplicate static copy of csrsrv's globals
+// (notably `_CsrApiPort`) in csrss.exe. csrss.exe instead resolves
+// `CsrServerInitialization` (and friends) via PE imports from
+// csrsrv.dll, which means the *real* csrsrv.dll instance of the data
+// statics gets written by `NtCreatePort` and read back by
+// `CsrQueryApiPort` from any other DLL (winsrv, basesrv, …).
+#[cfg(not(feature = "csrss_main_only"))]
 pub mod smss;
+#[cfg(not(feature = "csrss_main_only"))]
 pub mod basesrv;
 
 // Phase 1 — SM/CSR LPC protocol contract (translated 2026-05-16).
@@ -36,12 +47,15 @@ pub mod basesrv;
 // ntdll.dll — cohabitation flip deferred, see audit §csrlib). smlib =
 // SM client (consumed by csrsrv.dll + smss.exe; cohabitation flips in
 // their phases). Modules carry the #[no_mangle] protocol symbols.
+#[cfg(not(feature = "csrss_main_only"))]
 pub mod csrlib;
+#[cfg(not(feature = "csrss_main_only"))]
 pub mod smlib;
 
 // Phase 2 — csrsrv.dll server runtime (translated 2026-05-16).
 // 35 csrsrv.spec exports; cohabited into csrsrv.dll (the 7 .c
 // commented out in subsystems/csr/csrsrv/CMakeLists.txt).
+#[cfg(not(feature = "csrss_main_only"))]
 pub mod csrsrv;
 
 // Standalone `#![no_std]` staticlib → needs its own panic handler +

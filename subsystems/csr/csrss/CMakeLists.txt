@@ -25,12 +25,24 @@ elseif(ARCH STREQUAL "arm64")
     set(RUST_EXTRA_ENV "")
 endif()
 set(SMSS_CSRSS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsmss_csrss_rust.a")
+# csrss.exe builds smss-csrss-rust with `--no-default-features
+# --features csrss_main_only,ntddi_ws03`. This excludes the csrsrv /
+# csrlib / smlib / smss / basesrv modules so csrss.exe's archive
+# carries ONLY `_main` + `CsrpSetDefaultProcessHardErrorMode`. If we
+# linked the full archive, csrss.exe would get its own static copy of
+# `_CsrApiPort`/`_CsrApiPortName`/etc. via `#[no_mangle]` definitions
+# in csrsrv/init.rs — those would *shadow* the imports from csrsrv.dll
+# and break cross-DLL data sharing (winsrv → CsrQueryApiPort →
+# csrsrv.dll's `_CsrApiPort` reads 0 because csrss.exe wrote to its
+# OWN copy at NtCreatePort time). Keep this lean shim.
 add_custom_command(
     OUTPUT ${SMSS_CSRSS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
             -p smss-csrss-rust
+            --no-default-features
+            --features csrss_main_only,ntddi_ws03
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libsmss_csrss_rust.a

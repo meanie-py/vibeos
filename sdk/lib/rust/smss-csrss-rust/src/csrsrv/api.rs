@@ -427,13 +427,17 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         CsrLockedReferenceThread(CsrThread);
         CsrReleaseProcessLock();
 
-        ServerId = ((ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber) >> 16) & 0xFFFF;
+        let raw_api_number = ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber;
+        ServerId = ((raw_api_number) >> 16) & 0xFFFF;
         ServerDll = core::ptr::null_mut();
+
+        DbgPrint(b"[CSRSRV] LPC_REQ: ApiNumber=0x%lx ServerId=%lu MsgType=%lu\n\0".as_ptr() as *const i8, raw_api_number, ServerId, MessageType);
 
         if (ServerId >= CSR_SERVER_DLL_MAX) || {
             ServerDll = *CsrLoadedServerDll.as_ptr().add(ServerId as usize);
             ServerDll.is_null()
         } {
+            DbgPrint(b"[CSRSRV] LPC_REQ: BAD ServerId=%lu (MAX=%lu) ServerDll=%p\n\0".as_ptr() as *const i8, ServerId, CSR_SERVER_DLL_MAX, ServerDll);
             ReplyPort = CsrApiPort;
             ReplyMsg = &raw mut ReceiveMsg;
             (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_ILLEGAL_FUNCTION;
@@ -441,10 +445,13 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
             continue;
         }
 
-        ApiId = ((ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber) & 0xFFFF)
+        ApiId = ((raw_api_number) & 0xFFFF)
             .wrapping_sub((*ServerDll).ApiBase);
 
+        DbgPrint(b"[CSRSRV] LPC_REQ: ServerDll=%p ApiBase=%lu HiApi=%lu ApiId=%lu DispatchTable=%p\n\0".as_ptr() as *const i8, ServerDll, (*ServerDll).ApiBase, (*ServerDll).HighestApiSupported, ApiId, (*ServerDll).DispatchTable);
+
         if ApiId >= (*ServerDll).HighestApiSupported {
+            DbgPrint(b"[CSRSRV] LPC_REQ: ApiId %lu >= HiApi %lu, ILLEGAL_FUNCTION\n\0".as_ptr() as *const i8, ApiId, (*ServerDll).HighestApiSupported);
             ReplyPort = CsrApiPort;
             ReplyMsg = &raw mut ReceiveMsg;
             (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_ILLEGAL_FUNCTION;
@@ -468,9 +475,14 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         ReplyCode = CsrReplyImmediately;
 
         let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
+        let dispatch_target: *mut core::ffi::c_void = *(dispatch_fn as *mut *mut core::ffi::c_void);
+        DbgPrint(b"[CSRSRV] LPC_REQ: dispatch_fn_slot=%p target=%p\n\0".as_ptr() as *const i8, dispatch_fn, dispatch_target);
         if let Some(func) = *dispatch_fn {
-            (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status =
-                func(&raw mut ReceiveMsg, &raw mut ReplyCode);
+            let st = func(&raw mut ReceiveMsg, &raw mut ReplyCode);
+            DbgPrint(b"[CSRSRV] LPC_REQ: dispatch returned st=0x%lx ReplyCode=%lu\n\0".as_ptr() as *const i8, st, ReplyCode);
+            (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = st;
+        } else {
+            DbgPrint(b"[CSRSRV] LPC_REQ: dispatch fn is None (NULL slot)\n\0".as_ptr() as *const i8);
         }
 
         InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
@@ -684,6 +696,7 @@ pub unsafe extern "system" fn CsrConnectToUser() -> PCSR_THREAD {
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrQueryApiPort() -> HANDLE {
+    DbgPrint(b"[CSRSRV] CsrQueryApiPort -> %p\n\0".as_ptr() as *const i8, CsrApiPort);
     CsrApiPort
 }
 
