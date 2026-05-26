@@ -51,11 +51,11 @@ endif()
 
 list(APPEND UEFILDR_BOOTMGR_SOURCE
     ${FREELDR_BOOTMGR_SOURCE}
-    custom.c
+    # custom.c   — replaced by Rust (sdk/lib/rust/freeldr-rust/src/custom.rs)
     # options.c — replaced by Rust (sdk/lib/rust/freeldr-rust/src/options.rs)
     # oslist.c  — replaced by Rust (sdk/lib/rust/freeldr-rust/src/oslist.rs)
-    # NOTE: rosload.cmake keeps its own C copies of these two (rosload.exe
-    # does not link libfreeldr_rust.a; cohabitation flip is a future task).
+    # NOTE: rosload.cmake keeps its own C copies of these (rosload.exe does
+    # not link libfreeldr_rust.a; cohabitation flip is a future task).
 )
 
 add_asm_files(uefifreeldr_common_asm ${FREELDR_COMMON_ASM_SOURCE} ${UEFILDR_COMMON_ASM_SOURCE})
@@ -101,7 +101,7 @@ spec2def(uefildr.exe freeldr.spec)
 list(APPEND UEFILDR_BASE_SOURCE
     include/arch/uefi/uefildr.h
     arch/uefi/uefildr.c
-    bootmgr.c
+    # bootmgr.c  # replaced by Rust (sdk/lib/rust/freeldr-rust/src/bootmgr.rs)
     ${FREELDR_BASE_SOURCE})
     # setup/legacy unit → Rust (freeldr-rust: setupldr.rs/inffile.rs).
     # ntldr/setupldr.c  # replaced by Rust (freeldr-rust/src/setupldr.rs)

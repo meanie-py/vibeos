@@ -107,6 +107,10 @@ pub mod uefildr;
 pub mod options;
 #[cfg(feature = "uefi")]
 pub mod oslist;
+#[cfg(feature = "uefi")]
+pub mod bootmgr;
+#[cfg(feature = "uefi")]
+pub mod custom;
 // miscboot.c lives in rosload.cmake only; translate-and-park: the Rust
 // fn is gated behind an off-by-default feature so rosload's C copy keeps
 // symbol ownership (no dup #[no_mangle]). Per AGENTS, never delete a .rs.
