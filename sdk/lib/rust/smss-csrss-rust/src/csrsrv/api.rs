@@ -701,7 +701,7 @@ pub unsafe extern "system" fn CsrCaptureArguments(
     let Length: ULONG;
     let PointerCount: ULONG;
     let mut OffsetPointer: PULONG_PTR;
-    let CurrentOffset: ULONG_PTR;
+    let _CurrentOffset: ULONG_PTR;
 
     ClientCaptureBuffer = (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData;
 
@@ -808,7 +808,7 @@ pub unsafe extern "system" fn CsrReleaseCapturedArguments(ApiMessage: PCSR_API_M
     let BufferDistance: usize;
     let PointerCount: ULONG;
     let mut OffsetPointer: PULONG_PTR;
-    let CurrentOffset: ULONG_PTR;
+    let _CurrentOffset: ULONG_PTR;
 
     ServerCaptureBuffer = (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData;
 

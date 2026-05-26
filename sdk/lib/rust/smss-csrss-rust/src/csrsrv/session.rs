@@ -243,7 +243,7 @@ pub unsafe extern "system" fn CsrSbApiHandleConnectionRequest(Message: PSB_API_M
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrSbApiRequestThread(Parameter: PVOID) {
+pub unsafe extern "system" fn CsrSbApiRequestThread(_Parameter: PVOID) {
     let mut ReceiveMsg: _SB_API_MSG = core::mem::zeroed();
     let mut ReplyMsg: PSB_API_MSG = core::ptr::null_mut();
     let mut PortContext: PVOID = core::ptr::null_mut();

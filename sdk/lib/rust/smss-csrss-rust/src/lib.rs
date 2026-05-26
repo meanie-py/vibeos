@@ -19,6 +19,18 @@
 // N green smokes).
 pub mod csrss;
 
+// Phase 3 (smss.exe) + Phase 4 (basesrv.dll) translations sit under
+// src/smss/ and src/basesrv/ respectively — not yet `pub mod`d in.
+// Rustconv batched 7/9 smss + 5/7 basesrv files on 2026-05-25 (~$0.92
+// API spend, see feedback_rustconv_main_repo_leak for the
+// main-repo-leak gotcha). Integration tail: ~100 per-site cast/anon-
+// union fixups + the >1000 LOC files (sminit.c 2581 / pagefile.c 1150
+// / dosdev.c 1110 / vdm.c 1459) still want rustconv translate
+// (per feedback_rustconv_translate_vs_batch). Wire them in once
+// per-file cargo check ×3 is green; until then keep them silent.
+// pub mod smss;
+// pub mod basesrv;
+
 // Phase 1 — SM/CSR LPC protocol contract (translated 2026-05-16).
 // csrlib = client CSR API + capture-buffer marshalling (lands in
 // ntdll.dll — cohabitation flip deferred, see audit §csrlib). smlib =

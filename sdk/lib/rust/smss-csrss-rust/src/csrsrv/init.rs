@@ -45,8 +45,8 @@ unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {
     let mut Length: ULONG = 0;
     let mut TokenInfo: PTOKEN_USER = core::ptr::null_mut();
     let mut ProcSd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
-    let mut Dacl: PACL;
-    let mut UserSid: PSID;
+    let Dacl: PACL;
+    let UserSid: PSID;
 
     Status = NtOpenProcessToken(hProcess, TOKEN_QUERY, &mut hToken);
     if Status < 0 {
@@ -143,7 +143,7 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
     let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut ProtectionModeLocal: ULONG = 0;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut Dacl: PACL;
+    let Dacl: PACL;
     let mut Ace: PACCESS_ALLOWED_ACE = core::ptr::null_mut();
     let mut hKey: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
@@ -649,8 +649,8 @@ pub unsafe extern "system" fn CsrCreateLocalSystemSD(LocalSystemSd: *mut PSECURI
     let NtSidAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
     let mut SystemSid: PSID = core::ptr::null_mut();
     let Length: ULONG;
-    let mut SystemSd: PSECURITY_DESCRIPTOR;
-    let mut Dacl: PACL;
+    let SystemSd: PSECURITY_DESCRIPTOR;
+    let Dacl: PACL;
     let mut Status: NTSTATUS;
 
     RtlAllocateAndInitializeSid(

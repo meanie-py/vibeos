@@ -7,7 +7,6 @@ use super::srv_inlines::*;
 pub static mut CsrProcessLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 #[no_mangle]
 #[used]
-#[no_mangle]
 pub static mut CsrRootProcess: PCSR_PROCESS = core::ptr::null_mut();
 static mut CsrSecurityQos: SECURITY_QUALITY_OF_SERVICE = SECURITY_QUALITY_OF_SERVICE {
     Length: core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as u32,
@@ -564,7 +563,7 @@ pub unsafe extern "system" fn CsrShutdownProcesses(CallerLuid: *mut LUID, Flags:
         (*CsrProcess).ShutdownFlags = 0;
     }
     CsrSetToShutdownPriority();
-    let mut Status: i32;
+    let Status: i32;
     loop {
         let CsrProcess = FindProcessForShutdown(CallerLuid);
         if CsrProcess.is_null() {

@@ -359,7 +359,7 @@ pub unsafe extern "system" fn CsrSrvAttachSharedSection(
     CsrProcess: PCSR_PROCESS,
     ConnectInfo: PCSR_API_CONNECTINFO,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut ViewSize: SIZE_T = 0;
 
     if !CsrProcess.is_null() {

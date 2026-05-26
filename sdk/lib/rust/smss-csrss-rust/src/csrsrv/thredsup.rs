@@ -13,7 +13,6 @@ fn CsrHashThread(t: HANDLE) -> usize {
 
 #[no_mangle]
 #[used]
-#[no_mangle]
 pub static mut CsrThreadHashTable: [LIST_ENTRY; NUMBER_THREAD_HASH_BUCKETS as usize] =
     [LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() }; NUMBER_THREAD_HASH_BUCKETS as usize];
 
