@@ -157,7 +157,10 @@ if(ARCH STREQUAL "i386")
     add_dependencies(uefildr rust_hal_mini)
 endif()
 
-target_link_libraries(uefildr uefifreeldr_common cportlib blcmlib blrtl libcntpr chkstk)
+# libfreeldr_rust_uefi.a explicitly BEFORE libcntpr so freeldr.rs's
+# FPU-free pow/log/log10/wctomb stubs satisfy refs first (same reason
+# as pcat.cmake's freeldr_pe link line).
+target_link_libraries(uefildr uefifreeldr_common ${FREELDR_RUST_UEFI_LIB} cportlib blcmlib blrtl libcntpr chkstk)
 
 # dynamic analysis switches
 if(STACK_PROTECTOR)

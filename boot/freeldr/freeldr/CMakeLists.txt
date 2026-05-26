@@ -135,7 +135,7 @@ else()
 endif()
 
 list(APPEND FREELDR_BASE_SOURCE
-    freeldr.c
+    # freeldr.c          # replaced by Rust (freeldr-rust/src/freeldr.rs)
     lib/strsafe_shim.c)
     # lib/strsafe_shim.c — variadic RtlStringCbPrintfA out-of-line shim. The
     # Rust freeldr-rust crate cannot host the variadic def on stable

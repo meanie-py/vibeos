@@ -30,12 +30,6 @@ miscboot-rust-entry = []
 # uefildr.c is the uefildr.exe binary entry source; same translate-and-
 # park pattern as miscboot — Rust translation preserved, C keeps entry.
 uefildr-rust-entry = []
-# freeldr.c contains pow/log/log10/wctomb/iswctype CRT-shadowing stubs
-# that rely on archive-precedence (.c.obj before libcntpr.a). Standard
-# cohabitation breaks that ordering. Translation parked until either the
-# link order is fixed or freeldr.c is split into CRT-stub + entry .c
-# files. See lib.rs comment for the resolution paths.
-freeldr-rust-entry = []
 
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }

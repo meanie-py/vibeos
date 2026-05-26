@@ -20,18 +20,16 @@ pub mod ffi;
 pub mod frldr;
 pub mod peloader;
 
-// freeldr.c — BIOS entry point translation unit (BootMain + wide-char/math
-// stubs + FrLdr* accessors). PARKED behind `freeldr-rust-entry` feature
-// (off by default): the pow/log/log10/wctomb/iswctype stubs are
-// deliberately FPU-free, shadow libcntpr's CRT versions, and currently
-// rely on the .c.obj's archive-precedence ordering before libcntpr.a.
-// Standard cohabitation (comment .c, let .rs win) breaks that ordering
-// → libcntpr's defs get pulled in and conflict. The clean fix is either
-// (a) a link-line reorder to put libfreeldr_rust.a strictly before
-// libcntpr, or (b) split freeldr.c into a thin CRT-stubs .c that stays +
-// the rest translated. Both are out of scope for this pass; parking
-// per [[feedback_translation_philosophy]] (never delete .rs).
-#[cfg(feature = "freeldr-rust-entry")]
+// freeldr.c — top-level entry-point translation unit. Contains BootMain
+// (called from arch/*/multiboot.S asm), LoadRosload, LaunchSecondStage-
+// Loader, FrLdr{GetBootPath,GetBootDrive,GetBootPartition} accessors,
+// plus the deliberate FPU-free CRT-shadow stubs (pow/log/log10/wctomb/
+// mbtowc/iswctype). Cohabitation works because libfreeldr_rust.a is
+// linked into freeldr_common BEFORE libcntpr in both pcat.cmake
+// (target_link_libraries freeldr_pe freeldr_common cportlib libcntpr)
+// and uefi.cmake (target_link_libraries uefildr uefifreeldr_common
+// cportlib blcmlib blrtl libcntpr) — the Rust stubs satisfy the refs
+// first, libcntpr's real pow/log/wctomb members never get pulled.
 pub mod freeldr;
 
 // arch/arm64/debug.c — ARM64 UEFI PL011 UART + Rs232Port stubs.

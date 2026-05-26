@@ -211,7 +211,13 @@ if(ARCH STREQUAL "i386")
     add_dependencies(freeldr_pe rust_hal_mini)
 endif()
 
-target_link_libraries(freeldr_pe freeldr_common cportlib libcntpr blrtl)
+# libfreeldr_rust.a explicitly BEFORE libcntpr so freeldr.rs's
+# FPU-free pow/log/log10/wctomb stubs satisfy refs first; otherwise
+# CMake's propagated-dep ordering puts libfreeldr_rust AFTER libcntpr,
+# libcntpr's pow_asm.s/log10_asm.s/wcstombs_nt.c get pulled in, then
+# the Rust stubs collide as dups. The Rust stubs match the C ones
+# (deliberately FPU-free; just int3/__debugbreak — see freeldr.rs).
+target_link_libraries(freeldr_pe freeldr_common ${FREELDR_RUST_LIB} cportlib libcntpr blrtl)
 
 # dynamic analysis switches
 if(STACK_PROTECTOR)
