@@ -145,10 +145,14 @@ pub mod ddk {
 // HAL gets a Rust translation per the revised hal-translation-audit.md
 // "Strategic update 2026-05-10".
 
-#[cfg(target_arch = "x86_64")]
+// Gated behind `hal_bindgen` feature (default-on): pre-kernel consumers
+// (freeldr-rust) opt out via `default-features = false` to avoid
+// rustc emitting raw-dylib import thunks for ntoskrnl.exe statics that
+// only exist in kernel-mode (task #33 — NlsMb*/NlsOem* dup vs blrtl).
+#[cfg(all(target_arch = "x86_64", feature = "hal_bindgen"))]
 mod hal_bindgen_amd64;
 
-#[cfg(target_arch = "x86")]
+#[cfg(all(target_arch = "x86", feature = "hal_bindgen"))]
 mod hal_bindgen_i386;
 
 /// HAL-private types + ACPI table layouts.
@@ -166,7 +170,7 @@ mod hal_bindgen_i386;
 /// boundary as needed; layouts are spec-equivalent.
 ///
 /// arm64 not provided — see top of module for rationale.
-#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+#[cfg(all(any(target_arch = "x86_64", target_arch = "x86"), feature = "hal_bindgen"))]
 pub mod hal_ddk {
     #[cfg(target_arch = "x86_64")]
     pub use super::hal_bindgen_amd64::*;

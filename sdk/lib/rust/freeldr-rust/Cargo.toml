@@ -32,4 +32,9 @@ miscboot-rust-entry = []
 uefildr-rust-entry = []
 
 [dependencies]
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+# default-features = false drops the `hal_bindgen` feature: freeldr is
+# pre-kernel and doesn't need HAL's raw-dylib import surface for
+# ntoskrnl.exe symbols. Without this, rustc emits import thunk .o files
+# for ntoskrnl.exe statics (NlsMb*/NlsOem*) into freeldr-rust's .a,
+# duplicating blrtl/nlsboot.c at link time (task #33).
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }
