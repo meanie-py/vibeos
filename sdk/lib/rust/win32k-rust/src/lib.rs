@@ -37,12 +37,12 @@ pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]
 pub mod object; // user/ntuser/object.c — USER handle/object table [Phase 1b]
 pub mod math;   // gdi/eng/math.c — EngMulDiv (Phase 2a proving slice)
 pub mod error;     // gdi/eng/error.c — Eng{Get,Set}LastError + SetLastNtError (FASTCALL)
-// pub mod string; // gdi/eng/string.c — DEFERRED (rustc E0308 at STROBJ_bEnumPositionsOnly Pos parameter — suspected fn-pointer-table coercion from bindgen; re-translate with more context later)
-// pub mod paint; // gdi/eng/paint.c — DEFERRED (translation needs MIX_TO_ROP4/ROP4_USES_SOURCE/GDIDEVFUNCS macros + Option<extern fn> call site fix; re-translate with richer prompt later)
-// pub mod float; // gdi/eng/float.c — DEFERRED (rustconv emitted only EngRestoreFloatingPointState; EngSaveFloatingPointState missing — re-translate later)
+pub mod string;    // gdi/eng/string.c — STROBJ_* (re-translated with upgraded pipeline)
+pub mod paint;     // gdi/eng/paint.c — FillSolid + Eng/IntEngPaint (re-translated)
+pub mod float;     // gdi/eng/float.c — EngRestoreFloatingPointState (EngSave still missing — scanner gap, see notes)
 pub mod multidisp; // gdi/eng/multidisp.c — MultiEnableDriver stub
 pub mod perfcnt;   // gdi/eng/perfcnt.c — EngQueryPerformance{Frequency,Counter}
-// pub mod driverobj; // DEFERRED (rustconv emitted extern decls for DRIVEROBJ_AllocObjectWithHandle / UnlockObject / TryLockObject — actually macros in driverobj.h that expand to GDIOBJ_AllocObjWithHandle/vUnlockObject/TryLockObject calls; needs prompt-side macro recognition for the GDIOBJ_* family)
-// pub mod engevent; // DEFERRED (20+ missing imports: ExAllocate/FreePoolWithTag, KeSet/ClearEvent, GDITAG_ENG_EVENT, EVENT_ALL_ACCESS, NT_SUCCESS — system prompt needs to surface these; re-translate later)
-// pub mod mdevobj;  // DEFERRED (rustconv only emitted 1/4 fns)
-// pub mod semaphor; // DEFERRED (rustconv only emitted 7/9 fns — missing EngCreateSemaphore + EngAcquireSemaphore)
+pub mod driverobj; // gdi/eng/driverobj.c — DRIVEROBJ_* macros inline-expanded to GDIOBJ_AllocObjWithHandle/TryLockObject/vUnlockObject per win32k_translation_prompt.md §6
+pub mod engevent;  // gdi/eng/engevent.c — EngCreateEvent + 7 sibling fns (re-translated)
+pub mod mdevobj;   // gdi/eng/mdevobj.c — MDEVOBJ_{Create,vDestroy,bDisable,vEnable} (re-translated, now 4/4)
+pub mod semaphor;  // gdi/eng/semaphor.c — 7/9 fns (EngCreateSemaphore + EngAcquireSemaphore scanner-skipped — re-translate later)

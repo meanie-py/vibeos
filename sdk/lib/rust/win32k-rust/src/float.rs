@@ -1,21 +1,46 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{KeRestoreFloatingPointState, KeSaveFloatingPointState};
-use core::ffi::c_void;
+use ntkrnl_sys::NT_SUCCESS;
 
-// NT_SUCCESS is a macro in the C headers — `(NTSTATUS)>=0`. Rust-side helper.
+// Per-arch FP save/restore wrappers. On i386/amd64 these are real exports
+// (ntoskrnl.spec:681-686, x86-only). On arm64, `sdk/include/xdk/arm64/ke.h:69`
+// has them as FORCEINLINE stubs that just return STATUS_SUCCESS — bindgen's
+// `ntkrnl_sys::ddk::Ke{Save,Restore}FloatingPointState` extern on arm64 is a
+// phantom (no link symbol exists). Mirror the FORCEINLINE bodies inline here.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use ntkrnl_sys::ddk::{KeSaveFloatingPointState, KeRestoreFloatingPointState};
+
+#[cfg(target_arch = "aarch64")]
 #[inline(always)]
-fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
+unsafe fn KeSaveFloatingPointState(_FloatSave: *mut ntkrnl_sys::ddk::KFLOATING_SAVE) -> ntkrnl_sys::base::NTSTATUS {
+    // arm64: FORCEINLINE stub in xdk/arm64/ke.h returns STATUS_SUCCESS.
+    0
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn KeRestoreFloatingPointState(_FloatSave: *mut ntkrnl_sys::ddk::KFLOATING_SAVE) -> ntkrnl_sys::base::NTSTATUS {
+    // arm64: FORCEINLINE stub in xdk/arm64/ke.h returns STATUS_SUCCESS.
+    0
+}
 
 // ---- file-scope preamble (translated) ----
+//
+// IMPORTANT (cross-crate type identity, win32k_translation_prompt.md §5):
+// `KFLOATING_SAVE` is bindgen'd independently in BOTH `win32k_sys::win32k`
+// AND `ntkrnl_sys::ddk` as DISTINCT Rust types (same C layout). The kernel
+// fns `KeSaveFloatingPointState` / `KeRestoreFloatingPointState` live in
+// `ntkrnl_sys::ddk` and expect `ntkrnl_sys::ddk::KFLOATING_SAVE`. So the
+// `FloatState` field is fully-qualified `ntkrnl_sys::ddk::KFLOATING_SAVE`,
+// NOT the `win32k_sys::win32k::*` glob version.
 #[repr(C)]
-pub struct WIN32K_FLOATING_SAVE {
-    // ntkrnl_sys version, not the win32k_sys re-bindgen — must match the
-    // KeRestoreFloatingPointState param type to avoid cross-crate-type error.
-    pub FloatState: ntkrnl_sys::ddk::_KFLOATING_SAVE,
+pub struct _WIN32K_FLOATING_SAVE {
+    pub FloatState: ntkrnl_sys::ddk::KFLOATING_SAVE,
     pub IsFloatingPointSaved: BOOLEAN,
 }
 
-pub type PWIN32K_FLOATING_SAVE = *mut WIN32K_FLOATING_SAVE;
+pub type WIN32K_FLOATING_SAVE = _WIN32K_FLOATING_SAVE;
+pub type PWIN32K_FLOATING_SAVE = *mut _WIN32K_FLOATING_SAVE;
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn EngRestoreFloatingPointState(
@@ -27,7 +52,7 @@ pub unsafe extern "stdcall" fn EngRestoreFloatingPointState(
         return 0;
     }
 
-    (*State).IsFloatingPointSaved = 0u8;
+    (*State).IsFloatingPointSaved = 0;
     let Status = KeRestoreFloatingPointState(core::ptr::addr_of_mut!((*State).FloatState));
     if !NT_SUCCESS(Status) {
         return 0;
@@ -46,11 +71,83 @@ pub unsafe extern "C" fn EngRestoreFloatingPointState(
         return 0;
     }
 
-    (*State).IsFloatingPointSaved = 0u8;
+    (*State).IsFloatingPointSaved = 0;
     let Status = KeRestoreFloatingPointState(core::ptr::addr_of_mut!((*State).FloatState));
     if !NT_SUCCESS(Status) {
         return 0;
     }
+    return 1;
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn EngSaveFloatingPointState(
+    pBuffer: PVOID,
+    cjBufferSize: ULONG,
+) -> ULONG {
+    if pBuffer.is_null() || cjBufferSize == 0 {
+        let mut TempBuffer: ntkrnl_sys::ddk::KFLOATING_SAVE = core::mem::zeroed();
+
+        // Check for floating point support.
+        let Status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(TempBuffer));
+        if Status != ntkrnl_sys::STATUS_SUCCESS {
+            return 0;
+        }
+        KeRestoreFloatingPointState(core::ptr::addr_of_mut!(TempBuffer));
+        return core::mem::size_of::<WIN32K_FLOATING_SAVE>() as ULONG;
+    }
+
+    if (cjBufferSize as usize) < core::mem::size_of::<WIN32K_FLOATING_SAVE>() {
+        return 0;
+    }
+
+    // Per MSDN, "This buffer must be zero-initialized, and must be in nonpaged memory."
+    let State: PWIN32K_FLOATING_SAVE = pBuffer as PWIN32K_FLOATING_SAVE;
+
+    // (Driver may have already saved — C just DPRINT1s and continues.)
+
+    let Status = KeSaveFloatingPointState(core::ptr::addr_of_mut!((*State).FloatState));
+    if !NT_SUCCESS(Status) {
+        return 0;
+    }
+
+    (*State).IsFloatingPointSaved = 1;
+    return 1;
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn EngSaveFloatingPointState(
+    pBuffer: PVOID,
+    cjBufferSize: ULONG,
+) -> ULONG {
+    if pBuffer.is_null() || cjBufferSize == 0 {
+        let mut TempBuffer: ntkrnl_sys::ddk::KFLOATING_SAVE = core::mem::zeroed();
+
+        // Check for floating point support.
+        let Status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(TempBuffer));
+        if Status != ntkrnl_sys::STATUS_SUCCESS {
+            return 0;
+        }
+        KeRestoreFloatingPointState(core::ptr::addr_of_mut!(TempBuffer));
+        return core::mem::size_of::<WIN32K_FLOATING_SAVE>() as ULONG;
+    }
+
+    if (cjBufferSize as usize) < core::mem::size_of::<WIN32K_FLOATING_SAVE>() {
+        return 0;
+    }
+
+    // Per MSDN, "This buffer must be zero-initialized, and must be in nonpaged memory."
+    let State: PWIN32K_FLOATING_SAVE = pBuffer as PWIN32K_FLOATING_SAVE;
+
+    // (Driver may have already saved — C just DPRINT1s and continues.)
+
+    let Status = KeSaveFloatingPointState(core::ptr::addr_of_mut!((*State).FloatState));
+    if !NT_SUCCESS(Status) {
+        return 0;
+    }
+
+    (*State).IsFloatingPointSaved = 1;
     return 1;
 }
 

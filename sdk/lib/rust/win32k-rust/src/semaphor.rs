@@ -1,55 +1,145 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{ExDeleteResourceLite, ExEnterCriticalRegionAndAcquireResourceExclusive, ExEnterCriticalRegionAndAcquireResourceShared, ExInitializeResourceLite, ExIsResourceAcquiredExclusiveLite, ExReleaseResourceAndLeaveCriticalRegion, PsGetCurrentThread, PsGetThreadWin32Thread};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{
+    ExAllocatePoolWithTag,
+    ExDeleteResourceLite,
+    ExEnterCriticalRegionAndAcquireResourceExclusive,
+    ExEnterCriticalRegionAndAcquireResourceShared,
+    ExFreePoolWithTag,
+    ExInitializeResourceLite,
+    ExIsResourceAcquiredExclusiveLite,
+    ExReleaseResourceAndLeaveCriticalRegion,
+    PsGetCurrentThread,
+    PsGetThreadWin32Thread,
+};
+use ntkrnl_sys::interlocked::{
+    InterlockedDecrement,
+    InterlockedExchangePointer,
+    InterlockedIncrement,
+};
+use ntkrnl_sys::base::NT_SUCCESS;
+
+// Cross-crate kernel-type alias (see §5 of win32k_translation_prompt.md):
+// `_ERESOURCE` is bindgen'd in BOTH `win32k_sys::win32k` and
+// `ntkrnl_sys::ddk` as DISTINCT types. The kernel APIs we call here all
+// live in `ntkrnl_sys::ddk` and want THEIR `PERESOURCE`, so use the
+// ddk-qualified alias for every HSEMAPHORE→PERESOURCE cast in this file.
+type DdkPERESOURCE = ntkrnl_sys::ddk::PERESOURCE;
+
+// GDITAG_SEMAPHORE = 'mesG' (win32ss/user/ntuser/tags.h:159).
+const GDITAG_SEMAPHORE: u32 = 0x6d655347u32;
 
 // ---- file-scope preamble (translated) ----
-// No file-scope declarations to translate from the preamble.
-// The C code contains only SAL annotations and macro definitions
-// that do not translate to Rust declarations.
+// No file-scope preamble declarations to translate.
+// The provided C code contains only SAL annotations and a #define,
+// neither of which produce Rust declarations.
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngReleaseSemaphore(
-    hsem: HSEMAPHORE
-) {
-    let W32Thread: PTHREADINFO;
-
-    if hsem.is_null() {
-        return;
+pub unsafe extern "stdcall" fn EngCreateSemaphore() -> HSEMAPHORE {
+    // www.osr.com/ddk/graphics/gdifncs_95lz.htm
+    let psem: DdkPERESOURCE = ExAllocatePoolWithTag(
+        NonPagedPool,
+        core::mem::size_of::<ntkrnl_sys::ddk::_ERESOURCE>() as SIZE_T,
+        GDITAG_SEMAPHORE,
+    ) as DdkPERESOURCE;
+    if psem.is_null() {
+        return core::ptr::null_mut();
     }
 
-    W32Thread = PsGetThreadWin32Thread(PsGetCurrentThread());
-    if !W32Thread.is_null() {
-        (*W32Thread).dwEngAcquireCount = (*W32Thread).dwEngAcquireCount.wrapping_sub(1);
+    if !NT_SUCCESS(ExInitializeResourceLite(psem)) {
+        ExFreePoolWithTag(psem as *mut core::ffi::c_void, GDITAG_SEMAPHORE);
+        return core::ptr::null_mut();
     }
-    ExReleaseResourceAndLeaveCriticalRegion(hsem as PERESOURCE);
+
+    psem as HSEMAPHORE
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngReleaseSemaphore(
-    hsem: HSEMAPHORE
-) {
-    let W32Thread: PTHREADINFO;
+pub unsafe extern "C" fn EngCreateSemaphore() -> HSEMAPHORE {
+    let psem: DdkPERESOURCE = ExAllocatePoolWithTag(
+        NonPagedPool,
+        core::mem::size_of::<ntkrnl_sys::ddk::_ERESOURCE>() as SIZE_T,
+        GDITAG_SEMAPHORE,
+    ) as DdkPERESOURCE;
+    if psem.is_null() {
+        return core::ptr::null_mut();
+    }
 
+    if !NT_SUCCESS(ExInitializeResourceLite(psem)) {
+        ExFreePoolWithTag(psem as *mut core::ffi::c_void, GDITAG_SEMAPHORE);
+        return core::ptr::null_mut();
+    }
+
+    psem as HSEMAPHORE
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
+    // www.osr.com/ddk/graphics/gdifncs_14br.htm
+    // On Windows a NULL hsem is ignored
     if hsem.is_null() {
         return;
     }
 
-    W32Thread = PsGetThreadWin32Thread(PsGetCurrentThread());
-    if !W32Thread.is_null() {
-        (*W32Thread).dwEngAcquireCount = (*W32Thread).dwEngAcquireCount.wrapping_sub(1);
+    ExEnterCriticalRegionAndAcquireResourceExclusive(hsem as DdkPERESOURCE);
+    // dwEngAcquireCount lives on W32THREAD (THREADINFO's prefix). The
+    // bindgen'd _THREADINFO buries it in __bindgen_padding_0, so go via
+    // PW32THREAD.
+    let w32thread = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
+    if !w32thread.is_null() {
+        (*w32thread).dwEngAcquireCount = (*w32thread).dwEngAcquireCount.wrapping_add(1);
     }
-    ExReleaseResourceAndLeaveCriticalRegion(hsem as PERESOURCE);
 }
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
+    if hsem.is_null() {
+        return;
+    }
+
+    ExEnterCriticalRegionAndAcquireResourceExclusive(hsem as DdkPERESOURCE);
+    let w32thread = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
+    if !w32thread.is_null() {
+        (*w32thread).dwEngAcquireCount = (*w32thread).dwEngAcquireCount.wrapping_add(1);
+    }
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngAcquireSemaphoreShared(
-    hsem: HSEMAPHORE
-) {
-    let pti: PTHREADINFO;
+pub unsafe extern "stdcall" fn EngReleaseSemaphore(hsem: HSEMAPHORE) {
+    if hsem.is_null() {
+        return;
+    }
 
-    ExEnterCriticalRegionAndAcquireResourceShared(hsem as PERESOURCE);
-    pti = PsGetThreadWin32Thread(PsGetCurrentThread());
+    let w32thread = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
+    if !w32thread.is_null() {
+        (*w32thread).dwEngAcquireCount = (*w32thread).dwEngAcquireCount.wrapping_sub(1);
+    }
+    ExReleaseResourceAndLeaveCriticalRegion(hsem as DdkPERESOURCE);
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn EngReleaseSemaphore(hsem: HSEMAPHORE) {
+    if hsem.is_null() {
+        return;
+    }
+
+    let w32thread = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
+    if !w32thread.is_null() {
+        (*w32thread).dwEngAcquireCount = (*w32thread).dwEngAcquireCount.wrapping_sub(1);
+    }
+    ExReleaseResourceAndLeaveCriticalRegion(hsem as DdkPERESOURCE);
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn EngAcquireSemaphoreShared(hsem: HSEMAPHORE) {
+    ExEnterCriticalRegionAndAcquireResourceShared(hsem as DdkPERESOURCE);
+    let pti = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
     if !pti.is_null() {
         (*pti).dwEngAcquireCount = (*pti).dwEngAcquireCount.wrapping_add(1);
     }
@@ -57,83 +147,69 @@ pub unsafe extern "stdcall" fn EngAcquireSemaphoreShared(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngAcquireSemaphoreShared(
-    hsem: HSEMAPHORE
-) {
-    let pti: PTHREADINFO;
-
-    ExEnterCriticalRegionAndAcquireResourceShared(hsem as PERESOURCE);
-    pti = PsGetThreadWin32Thread(PsGetCurrentThread());
+pub unsafe extern "C" fn EngAcquireSemaphoreShared(hsem: HSEMAPHORE) {
+    ExEnterCriticalRegionAndAcquireResourceShared(hsem as DdkPERESOURCE);
+    let pti = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
     if !pti.is_null() {
         (*pti).dwEngAcquireCount = (*pti).dwEngAcquireCount.wrapping_add(1);
     }
 }
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteSemaphore(
-    hsem: HSEMAPHORE
-) {
-    ExDeleteResourceLite(hsem as PERESOURCE);
-    ExFreePoolWithTag(hsem as PVOID, GDITAG_SEMAPHORE);
+pub unsafe extern "stdcall" fn EngDeleteSemaphore(hsem: HSEMAPHORE) {
+    ExDeleteResourceLite(hsem as DdkPERESOURCE);
+    ExFreePoolWithTag(hsem as *mut core::ffi::c_void, GDITAG_SEMAPHORE);
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteSemaphore(
-    hsem: HSEMAPHORE
-) {
-    ExDeleteResourceLite(hsem as PERESOURCE);
-    ExFreePoolWithTag(hsem as PVOID, GDITAG_SEMAPHORE);
+pub unsafe extern "C" fn EngDeleteSemaphore(hsem: HSEMAPHORE) {
+    ExDeleteResourceLite(hsem as DdkPERESOURCE);
+    ExFreePoolWithTag(hsem as *mut core::ffi::c_void, GDITAG_SEMAPHORE);
 }
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngIsSemaphoreOwned(
-    hsem: HSEMAPHORE
-) -> i32 {
-    (*(hsem as PERESOURCE)).ActiveCount > 0
+pub unsafe extern "stdcall" fn EngIsSemaphoreOwned(hsem: HSEMAPHORE) -> BOOL {
+    ((*(hsem as DdkPERESOURCE)).ActiveCount > 0) as BOOL
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngIsSemaphoreOwned(
-    hsem: HSEMAPHORE
-) -> i32 {
-    (*(hsem as PERESOURCE)).ActiveCount > 0
+pub unsafe extern "C" fn EngIsSemaphoreOwned(hsem: HSEMAPHORE) -> BOOL {
+    ((*(hsem as DdkPERESOURCE)).ActiveCount > 0) as BOOL
 }
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngIsSemaphoreOwnedByCurrentThread(
-    hsem: HSEMAPHORE,
-) -> i32 {
-    ExIsResourceAcquiredExclusiveLite(hsem as PERESOURCE)
+pub unsafe extern "stdcall" fn EngIsSemaphoreOwnedByCurrentThread(hsem: HSEMAPHORE) -> BOOL {
+    ExIsResourceAcquiredExclusiveLite(hsem as DdkPERESOURCE) as BOOL
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngIsSemaphoreOwnedByCurrentThread(
-    hsem: HSEMAPHORE,
-) -> i32 {
-    ExIsResourceAcquiredExclusiveLite(hsem as PERESOURCE)
+pub unsafe extern "C" fn EngIsSemaphoreOwnedByCurrentThread(hsem: HSEMAPHORE) -> BOOL {
+    ExIsResourceAcquiredExclusiveLite(hsem as DdkPERESOURCE) as BOOL
 }
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn EngInitializeSafeSemaphore(
     Semaphore: *mut ENGSAFESEMAPHORE,
-) -> i32 {
-    let hSem: HSEMAPHORE;
-
+) -> BOOL {
     if InterlockedIncrement(&mut (*Semaphore).lCount) == 1 {
-        hSem = EngCreateSemaphore();
-        if hSem == 0 {
+        let hSem = EngCreateSemaphore();
+        if hSem.is_null() {
             InterlockedDecrement(&mut (*Semaphore).lCount);
             return 0;
         }
         InterlockedExchangePointer(
-            core::ptr::addr_of_mut!((*Semaphore).hsem) as *mut *mut core::ffi::c_void,
+            &mut (*Semaphore).hsem as *mut HSEMAPHORE as *mut *mut core::ffi::c_void,
             hSem as *mut core::ffi::c_void,
         );
     } else {
-        while (*Semaphore).hsem == core::ptr::null_mut() {}
+        while (*Semaphore).hsem.is_null() {}
     }
 
     1
@@ -143,49 +219,44 @@ pub unsafe extern "stdcall" fn EngInitializeSafeSemaphore(
 #[no_mangle]
 pub unsafe extern "C" fn EngInitializeSafeSemaphore(
     Semaphore: *mut ENGSAFESEMAPHORE,
-) -> i32 {
-    let hSem: HSEMAPHORE;
-
+) -> BOOL {
     if InterlockedIncrement(&mut (*Semaphore).lCount) == 1 {
-        hSem = EngCreateSemaphore();
-        if hSem == 0 {
+        let hSem = EngCreateSemaphore();
+        if hSem.is_null() {
             InterlockedDecrement(&mut (*Semaphore).lCount);
             return 0;
         }
         InterlockedExchangePointer(
-            core::ptr::addr_of_mut!((*Semaphore).hsem) as *mut *mut core::ffi::c_void,
+            &mut (*Semaphore).hsem as *mut HSEMAPHORE as *mut *mut core::ffi::c_void,
             hSem as *mut core::ffi::c_void,
         );
     } else {
-        while (*Semaphore).hsem == core::ptr::null_mut() {}
+        while (*Semaphore).hsem.is_null() {}
     }
 
     1
 }
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteSafeSemaphore(
-    pssem: *mut ENGSAFESEMAPHORE
-) {
+pub unsafe extern "stdcall" fn EngDeleteSafeSemaphore(pssem: *mut ENGSAFESEMAPHORE) {
     if InterlockedDecrement(&mut (*pssem).lCount) == 0 {
         EngDeleteSemaphore((*pssem).hsem);
         InterlockedExchangePointer(
-            core::ptr::addr_of_mut!((*pssem).hsem) as *mut PVOID,
-            core::ptr::null_mut()
+            &mut (*pssem).hsem as *mut HSEMAPHORE as *mut *mut core::ffi::c_void,
+            core::ptr::null_mut(),
         );
     }
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteSafeSemaphore(
-    pssem: *mut ENGSAFESEMAPHORE
-) {
+pub unsafe extern "C" fn EngDeleteSafeSemaphore(pssem: *mut ENGSAFESEMAPHORE) {
     if InterlockedDecrement(&mut (*pssem).lCount) == 0 {
         EngDeleteSemaphore((*pssem).hsem);
         InterlockedExchangePointer(
-            core::ptr::addr_of_mut!((*pssem).hsem) as *mut PVOID,
-            core::ptr::null_mut()
+            &mut (*pssem).hsem as *mut HSEMAPHORE as *mut *mut core::ffi::c_void,
+            core::ptr::null_mut(),
         );
     }
 }

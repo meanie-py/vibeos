@@ -65,32 +65,32 @@ list(APPEND SOURCE
     gdi/eng/alphablend.c
     gdi/eng/bitblt.c
     gdi/eng/engbrush.c
-    gdi/eng/engevent.c  # engevent.rs deferred (20+ missing imports; re-translate later)
+    # gdi/eng/engevent.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/engevent.rs) — cohabitation
     gdi/eng/clip.c
     gdi/eng/debug.c
     gdi/eng/device.c
-    gdi/eng/driverobj.c  # driverobj.rs deferred (macro-as-extern hazard)
+    # gdi/eng/driverobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/driverobj.rs) — cohabitation
     # gdi/eng/error.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/error.rs) — cohabitation
-    gdi/eng/float.c  # float.rs deferred (rustconv missed EngSaveFloatingPointState)
+    # gdi/eng/float.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/float.rs) — cohabitation (EngSave still C, scanner gap)
     gdi/eng/gradient.c
     gdi/eng/lineto.c
     gdi/eng/ldevobj.c
     gdi/eng/mapping.c
     # gdi/eng/math.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/math.rs) — cohabitation
-    gdi/eng/mdevobj.c
+    # gdi/eng/mdevobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/mdevobj.rs) — cohabitation
     gdi/eng/mem.c
     gdi/eng/engmisc.c
     gdi/eng/mouse.c
     # gdi/eng/multidisp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/multidisp.rs) — cohabitation
     gdi/eng/pandisp.c
-    gdi/eng/paint.c  # paint.rs deferred (re-translate later with richer macro context)
+    # gdi/eng/paint.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/paint.rs) — cohabitation
     gdi/eng/pathobj.c
     gdi/eng/pdevobj.c
     # gdi/eng/perfcnt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/perfcnt.rs) — cohabitation
     gdi/eng/rlecomp.c
-    gdi/eng/semaphor.c
+    # gdi/eng/semaphor.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/semaphor.rs) — cohabitation (EngCreate/Acquire still C)
     # gdi/eng/sort.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/sort.rs) — cohabitation
-    gdi/eng/string.c  # string.rs deferred (rustc E0308 fn-ptr coercion suspected; re-translate later)
+    # gdi/eng/string.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/string.rs) — cohabitation
     gdi/eng/stretchblt.c
     gdi/eng/surface.c
     gdi/eng/transblt.c
@@ -279,6 +279,13 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/error.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/multidisp.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/perfcnt.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/driverobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/string.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/paint.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/float.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/engevent.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/mdevobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/semaphor.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
