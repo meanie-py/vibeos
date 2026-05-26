@@ -70,8 +70,8 @@ list(APPEND SOURCE
     gdi/eng/debug.c
     gdi/eng/device.c
     gdi/eng/driverobj.c
-    gdi/eng/error.c
-    gdi/eng/float.c
+    # gdi/eng/error.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/error.rs) — cohabitation
+    gdi/eng/float.c  # float.rs deferred (rustconv missed EngSaveFloatingPointState)
     gdi/eng/gradient.c
     gdi/eng/lineto.c
     gdi/eng/ldevobj.c
@@ -81,16 +81,16 @@ list(APPEND SOURCE
     gdi/eng/mem.c
     gdi/eng/engmisc.c
     gdi/eng/mouse.c
-    gdi/eng/multidisp.c
+    # gdi/eng/multidisp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/multidisp.rs) — cohabitation
     gdi/eng/pandisp.c
-    gdi/eng/paint.c
+    gdi/eng/paint.c  # paint.rs deferred (re-translate later with richer macro context)
     gdi/eng/pathobj.c
     gdi/eng/pdevobj.c
-    gdi/eng/perfcnt.c
+    # gdi/eng/perfcnt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/perfcnt.rs) — cohabitation
     gdi/eng/rlecomp.c
     gdi/eng/semaphor.c
     # gdi/eng/sort.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/sort.rs) — cohabitation
-    gdi/eng/string.c
+    gdi/eng/string.c  # string.rs deferred (rustc E0308 fn-ptr coercion suspected; re-translate later)
     gdi/eng/stretchblt.c
     gdi/eng/surface.c
     gdi/eng/transblt.c
@@ -276,6 +276,9 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdiobj.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/object.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/math.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/error.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/multidisp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/perfcnt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

@@ -36,3 +36,9 @@ pub mod sort; // gdi/eng/sort.c — EngSort (proving slice)
 pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]
 pub mod object; // user/ntuser/object.c — USER handle/object table [Phase 1b]
 pub mod math;   // gdi/eng/math.c — EngMulDiv (Phase 2a proving slice)
+pub mod error;     // gdi/eng/error.c — Eng{Get,Set}LastError + SetLastNtError (FASTCALL)
+// pub mod string; // gdi/eng/string.c — DEFERRED (rustc E0308 at STROBJ_bEnumPositionsOnly Pos parameter — suspected fn-pointer-table coercion from bindgen; re-translate with more context later)
+// pub mod paint; // gdi/eng/paint.c — DEFERRED (translation needs MIX_TO_ROP4/ROP4_USES_SOURCE/GDIDEVFUNCS macros + Option<extern fn> call site fix; re-translate with richer prompt later)
+// pub mod float; // gdi/eng/float.c — DEFERRED (rustconv emitted only EngRestoreFloatingPointState; EngSaveFloatingPointState missing — re-translate later)
+pub mod multidisp; // gdi/eng/multidisp.c — MultiEnableDriver stub
+pub mod perfcnt;   // gdi/eng/perfcnt.c — EngQueryPerformance{Frequency,Counter}
