@@ -152,6 +152,9 @@ pub mod headless;
 // out under feature="uefi" to avoid the dup #[no_mangle] collision.
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 pub mod drivemap;
+// linuxboot — BIOS-only (pcat.cmake; uefi.cmake doesn't list it). x86 only.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
+pub mod linuxboot;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386bug;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

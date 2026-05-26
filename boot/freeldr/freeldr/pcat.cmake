@@ -31,7 +31,8 @@ list(APPEND PCATLDR_ARC_SOURCE
 
 list(APPEND PCATLDR_BOOTMGR_SOURCE
     ${FREELDR_BOOTMGR_SOURCE}
-    linuxboot.c)
+    # linuxboot.c    # replaced by Rust (freeldr-rust/src/linuxboot.rs)
+)
 
 list(APPEND PCATLDR_BASE_ASM_SOURCE)
 
