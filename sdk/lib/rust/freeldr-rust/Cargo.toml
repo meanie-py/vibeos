@@ -36,10 +36,6 @@ uefildr-rust-entry = []
 # link order is fixed or freeldr.c is split into CRT-stub + entry .c
 # files. See lib.rs comment for the resolution paths.
 freeldr-rust-entry = []
-# arch/arm64/debug.c — arm64 UEFI PL011 stubs. Rs232PortInitialize
-# conflicts with rs232.rs's x86 COM driver (which is wired
-# unconditionally). Parking until rs232.rs gets arch-gated.
-arm64-debug-rust-entry = []
 
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }

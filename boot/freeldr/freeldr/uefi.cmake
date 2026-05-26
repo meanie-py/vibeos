@@ -43,7 +43,8 @@ elseif(ARCH STREQUAL "amd64")
         arch/uefi/amd64/uefiasm.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND UEFILDR_ARC_SOURCE
-        arch/arm64/debug.c)
+        # arch/arm64/debug.c   # replaced by Rust (freeldr-rust/src/arm64_debug.rs)
+    )
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/arm64/uefiasm.S)
 else()

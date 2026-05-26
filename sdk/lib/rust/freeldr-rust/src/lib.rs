@@ -34,13 +34,10 @@ pub mod peloader;
 #[cfg(feature = "freeldr-rust-entry")]
 pub mod freeldr;
 
-// arch/arm64/debug.c — ARM64 UEFI PL011 UART + Rs232Port stubs. PARKED
-// behind `arm64-debug-rust-entry` (off by default): its
-// `Rs232PortInitialize` conflicts with rs232.rs's (which is wired
-// unconditionally and provides the x86 COM port driver). Properly
-// flipping requires `#[cfg(not(target_arch = "aarch64"))]` on rs232.rs
-// + comment-out of arch/arm64/debug.c in uefi.cmake — out of scope here.
-#[cfg(all(target_arch = "aarch64", feature = "arm64-debug-rust-entry"))]
+// arch/arm64/debug.c — ARM64 UEFI PL011 UART + Rs232Port stubs.
+// Active on arm64 UEFI builds; rs232.rs is gated out on arm64 (x86
+// port-IO model doesn't apply) so no Rs232Port* symbol collision.
+#[cfg(all(target_arch = "aarch64", feature = "uefi"))]
 pub mod arm64_debug;
 
 // 🟢 sweep — cache unit (lib/cache/{blocklist,cache}.c).
@@ -58,6 +55,10 @@ pub mod mm;
 pub mod heap;
 
 // 🟢 sweep — lib-pure tail.
+// rs232.rs is x86-only: uses cportlib's CpInitialize/CpPutByte which
+// drive 8250-family UARTs at I/O ports (BaseArray = [0,0x3F8,0x2F8,...]).
+// arm64 has no x86 port I/O and uses the PL011 MMIO UART via arm64_debug.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod rs232;
 pub mod libsupp;
 pub mod arcsupp;
