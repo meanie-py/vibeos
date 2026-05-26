@@ -145,6 +145,13 @@ pub mod miscboot;
 // archive vidfb.c/uefildr.c own those symbols (dup otherwise).
 #[cfg(not(feature = "uefi"))]
 pub mod vidfb_pc_fallback;
+// arch/vidfb.c (linear framebuffer driver) + arch/vgafont.c (8x16 bitmap).
+// UEFI-only: only the UEFI link unit owns the FbCons*/VidFb* symbols
+// (vidfb_pc_fallback.rs owns them under `not(feature="uefi")`).
+#[cfg(feature = "uefi")]
+pub mod vgafont;
+#[cfg(feature = "uefi")]
+pub mod vidfb;
 
 // 🟢 sweep — winldr kernel-handoff unit (ntldr/{winldr,registry,wlregistry,
 // wlmemory,ntldropts}.c + ntldr/arch/<a>/winldr.c + arch/i386/ntoskrnl.c).

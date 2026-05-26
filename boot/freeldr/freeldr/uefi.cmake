@@ -13,8 +13,9 @@ include_directories(BEFORE
 
 list(APPEND UEFILDR_ARC_SOURCE
     ${FREELDR_ARC_SOURCE}
-    arch/vidfb.c
-    arch/vgafont.c)
+    # arch/vidfb.c    # replaced by Rust (freeldr-rust/src/vidfb.rs)
+    # arch/vgafont.c  # replaced by Rust (freeldr-rust/src/vgafont.rs)
+)
     # uefi-hw unit → Rust (freeldr-rust: ueficon/uefidisk/uefihw/uefimem/
     # uefivid.rs + uefisetup/uefi_stubs/uefiutil.rs under feature="uefi").
     # Cohabitation: .c kept on disk, Rust #[no_mangle] takes over.
