@@ -287,7 +287,16 @@ pub fn ASSERT<T>(_cond: T) {}
 pub unsafe fn dbgcon(c: u8) {
     core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c, options(nostack, preserves_flags));
 }
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+/// Debug-only trace for arm64: write one byte to QEMU virt PL011 UART at
+/// 0x09000000. Lets us trace boot progress on arm64 the same way x86 uses
+/// debugcon. Cheap; safe to leave in.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub unsafe fn dbgcon(c: u8) {
+    // PL011 UART data register at 0x09000000 (QEMU virt)
+    core::ptr::write_volatile(0x0900_0000 as *mut u32, c as u32);
+}
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 #[inline(always)]
 pub unsafe fn dbgcon(_c: u8) {}
 
