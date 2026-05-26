@@ -1,6 +1,12 @@
 
 use ntdll_sys::nt::*;
 
+// RtlCopyMemory is a memmove macro (C). Re-translate as memcpy.
+#[inline]
+unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, len: usize) {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
+}
+
 extern "system" {
     fn InitializeObjectAttributes( ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ObjectName: *mut _UNICODE_STRING, Attributes: ULONG, RootDirectory: HANDLE, SecurityDescriptor: PVOID, );
     fn RtlFillMemory(Destination: PVOID, Length: SIZE_T, Fill: UCHAR);
@@ -50,8 +56,8 @@ pub struct _CLIENT_ID {
 
 #[repr(C)]
 pub union BASE_API_MESSAGE_DATA {
-    pub NlsCreateSection: std::mem::ManuallyDrop<BASE_NLS_CREATE_SECTION>,
-    pub NlsGetUserInfo: BASE_NLS_GET_USER_INFO,
+    pub NlsCreateSection: core::mem::ManuallyDrop<BASE_NLS_CREATE_SECTION>,
+    pub NlsGetUserInfo: core::mem::ManuallyDrop<BASE_NLS_GET_USER_INFO>,
 }
 
 #[repr(C)]
@@ -143,7 +149,7 @@ static mut BaseSrvKernel32Imports: [BASESRV_KERNEL_IMPORTS; 10] = [
 
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvDelayLoadKernel32() -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut i: ULONG;
     let mut ProcedureName: ANSI_STRING = core::mem::zeroed();
 
@@ -237,8 +243,8 @@ pub unsafe extern "system" fn BaseSrvNlsSetMultipleUserInfo(_ApiMessage: *mut BA
 pub unsafe extern "system" fn BaseSrvNlsCreateSection(ApiMessage: *mut BASE_API_MESSAGE) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut SectionHandle: HANDLE = core::ptr::null_mut();
-    let mut ProcessHandle: HANDLE;
-    let mut FileHandle: HANDLE;
+    let mut ProcessHandle: HANDLE = core::ptr::null_mut();
+    let mut FileHandle: HANDLE = core::ptr::null_mut();
     let LocaleId: ULONG;
     let mut NlsSectionName: _UNICODE_STRING = core::mem::zeroed();
     let mut NlsFileName: *const WCHAR;
@@ -246,7 +252,9 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(ApiMessage: *mut BASE_API_
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut FileNameBuffer: [WCHAR; 32] = [0; 32];
     let mut NlsSectionNameBuffer: [WCHAR; 32] = [0; 32];
-    let NlsMsg: *mut BASE_NLS_CREATE_SECTION = core::ptr::addr_of_mut!((*ApiMessage).Data.NlsCreateSection);
+    let NlsMsg: *mut BASE_NLS_CREATE_SECTION =
+        core::ptr::addr_of_mut!((*ApiMessage).Data.NlsCreateSection)
+            as *mut core::mem::ManuallyDrop<BASE_NLS_CREATE_SECTION> as *mut BASE_NLS_CREATE_SECTION;
 
     Status = BaseSrvDelayLoadKernel32();
     if Status < 0 {
@@ -492,7 +500,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(ApiMessage: *mut BASE_API_
         core::ptr::addr_of_mut!(ProcessHandle),
         PROCESS_DUP_HANDLE,
         core::ptr::addr_of_mut!(ObjectAttributes),
-        core::ptr::addr_of_mut!((*ApiMessage).Header.ClientId),
+        core::ptr::addr_of_mut!((*ApiMessage).Header.ClientId) as *mut ntdll_sys::nt::_CLIENT_ID,
     );
     if Status < 0 {
         NtClose(SectionHandle);
@@ -520,7 +528,9 @@ pub unsafe extern "system" fn BaseSrvNlsUpdateCacheCount(_ApiMessage: *mut BASE_
 #[no_mangle]
 pub unsafe extern "system" fn BaseSrvNlsGetUserInfo(ApiMessage: *mut BASE_API_MESSAGE) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let NlsMsg: *mut BASE_NLS_GET_USER_INFO = core::ptr::addr_of_mut!((*ApiMessage).Data.NlsGetUserInfo);
+    let NlsMsg: *mut BASE_NLS_GET_USER_INFO =
+        core::ptr::addr_of_mut!((*ApiMessage).Data.NlsGetUserInfo)
+            as *mut core::mem::ManuallyDrop<BASE_NLS_GET_USER_INFO> as *mut BASE_NLS_GET_USER_INFO;
 
     if CsrValidateMessageBuffer(
         ApiMessage as PVOID,
@@ -535,7 +545,7 @@ pub unsafe extern "system" fn BaseSrvNlsGetUserInfo(ApiMessage: *mut BASE_API_ME
             RtlCopyMemory(
                 (*NlsMsg).NlsUserInfo as PVOID,
                 pNlsRegUserInfo as PVOID,
-                (*NlsMsg).Size as SIZE_T,
+                (*NlsMsg).Size as usize,
             );
             RtlLeaveCriticalSection(core::ptr::addr_of_mut!(NlsCacheCriticalSection));
         }
@@ -547,7 +557,7 @@ pub unsafe extern "system" fn BaseSrvNlsGetUserInfo(ApiMessage: *mut BASE_API_ME
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvNlsLogon(Unknown: ULONG) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvNlsLogon(_Unknown: ULONG) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 

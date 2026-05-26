@@ -1,5 +1,12 @@
 
 use ntdll_sys::nt::*;
+use core::ffi::c_void;
+
+// RtlCopyMemory is a memmove macro (C). Re-translate as memcpy.
+#[inline]
+unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, len: usize) {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
+}
 
 extern "system" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PSECURITY_DESCRIPTOR, );
@@ -161,9 +168,14 @@ struct BASE_STATIC_SERVER_DATA {
     LUIDDeviceMapsEnabled: BOOLEAN,
 }
 
+// NtCurrentPeb is a TEB-inline (ntdll-sys::inlines), NOT an extern — the
+// rustconv translation fabricated an extern decl that shadowed the real
+// inline and broke field access on the returned PPEB. Use the inline.
 extern "C" {
-    static mut NtCurrentPeb: unsafe extern "C" fn() -> *mut c_void;
-    static mut BaseSrvDDDBSMCritSec: c_void;
+    // BaseSrvDDDBSMCritSec lives in basesrv/dosdev.c (not yet translated) —
+    // a real RTL_CRITICAL_SECTION export. Forward-declare with the right type
+    // so callers see a typed reference.
+    static mut BaseSrvDDDBSMCritSec: _RTL_CRITICAL_SECTION;
     fn BaseSrvNLSInit(StaticServerData: PBASE_STATIC_SERVER_DATA);
     fn BaseSrvNlsConnect(CsrProcess: PCSR_PROCESS, ConnectionInfo: PVOID, ConnectionInfoLength: *mut ULONG) -> NTSTATUS;
     fn BaseSrvCleanupVDMResources(CsrProcess: PCSR_PROCESS);
@@ -240,14 +252,14 @@ pub unsafe extern "system" fn CreateBaseAcls(
     let mut Status: NTSTATUS;
     let mut KeyValueBuffer: [u8; 0x40] = [0; 0x40];
     let KeyValuePartialInfo: PKEY_VALUE_PARTIAL_INFORMATION;
-    let mut KeyName: _UNICODE_STRING;
-    let mut AclLength: ULONG;
+    let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
+    let AclLength: ULONG;
     let mut ResultLength: ULONG = 0;
     let mut hKey: HANDLE = core::ptr::null_mut();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut ObjectSecurityMode: ULONG;
-    let mut WorldAccess: ACCESS_MASK;
-    let mut RestrictedAccess: ACCESS_MASK;
+    let mut ObjectSecurityMode: ULONG = 0;
+    let WorldAccess: ACCESS_MASK;
+    let RestrictedAccess: ACCESS_MASK;
 
     RtlInitUnicodeString(&mut KeyName, SM_REG_KEY.as_ptr());
     InitializeObjectAttributes(
@@ -417,7 +429,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     let mut BnoBuffer: [WCHAR; 100] = [0; 100];
     let mut Buffer: [WCHAR; MAX_PATH] = [0; MAX_PATH];
     let mut HeapBuffer: *mut WCHAR;
-    let mut SystemRootString: _UNICODE_STRING;
+    let mut SystemRootString: _UNICODE_STRING = core::mem::zeroed();
     static UNEXPANDED_SYSTEM_ROOT: [u16; 13] = [
         b'%' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16,
         b'e' as u16, b'm' as u16, b'R' as u16, b'o' as u16, b'o' as u16,
@@ -429,9 +441,9 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         Buffer: UNEXPANDED_SYSTEM_ROOT.as_ptr() as *mut u16,
     };
     let mut BaseSrvCSDString: _UNICODE_STRING = core::mem::zeroed();
-    let mut BaseSrvWindowsDirectory: _UNICODE_STRING;
-    let mut BaseSrvWindowsSystemDirectory: _UNICODE_STRING;
-    let mut BnoString: _UNICODE_STRING;
+    let mut BaseSrvWindowsDirectory: _UNICODE_STRING = core::mem::zeroed();
+    let mut BaseSrvWindowsSystemDirectory: _UNICODE_STRING = core::mem::zeroed();
+    let mut BnoString: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut BaseSrvNamedObjectDirectory: HANDLE = core::ptr::null_mut();
     let mut BaseSrvRestrictedObjectDirectory: HANDLE = core::ptr::null_mut();
@@ -439,8 +451,8 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     let mut BnoRestrictedDacl: PACL = core::ptr::null_mut();
     let mut BnoSd: PSECURITY_DESCRIPTOR;
     let mut SymHandle: HANDLE = core::ptr::null_mut();
-    let mut DirectoryName: _UNICODE_STRING;
-    let mut SymlinkName: _UNICODE_STRING;
+    let mut DirectoryName: _UNICODE_STRING = core::mem::zeroed();
+    let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
     let mut LuidEnabled: ULONG = 0;
     let mut BaseServerRegistryConfigurationTable: [RTL_QUERY_REGISTRY_TABLE; 2] = [
         RTL_QUERY_REGISTRY_TABLE {
@@ -599,7 +611,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
 
     (*BaseStaticServerData).NamedObjectDirectory = BnoString;
     (*BaseStaticServerData).NamedObjectDirectory.MaximumLength =
-        BnoString.Length + core::mem::size_of::<UNICODE_NULL>() as USHORT;
+        BnoString.Length + core::mem::size_of::<WCHAR>() as USHORT;
     HeapBuffer = RtlAllocateHeap(
         BaseSrvSharedHeap,
         0,
@@ -690,7 +702,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
 
     if !(*BaseStaticServerData).LUIDDeviceMapsEnabled != 0
         || RtlInitializeCriticalSectionAndSpinCount(
-            &mut BaseSrvDDDBSMCritSec as *mut _ as PVOID,
+            core::ptr::addr_of_mut!(BaseSrvDDDBSMCritSec),
             0x80000000,
         ) >= 0
     {
@@ -748,7 +760,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
             b'o' as u16, b'n' as u16, 0,
         ];
         RtlInitUnicodeString(&mut DirectoryName, SESSION.as_ptr());
-        static BNOLINKS: [u16; 21] = [
+        static BNOLINKS: [u16; 19] = [
             b'\\' as u16, b'S' as u16, b'e' as u16, b's' as u16, b's' as u16,
             b'i' as u16, b'o' as u16, b'n' as u16, b's' as u16, b'\\' as u16,
             b'B' as u16, b'N' as u16, b'O' as u16, b'L' as u16, b'I' as u16,
@@ -903,8 +915,15 @@ struct CSR_SERVER_DLL_FULL {
     SharedSection: PVOID,
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn DllMain(
+// basesrv's DllMain — kept as a private fn (not #[no_mangle]) so the staticlib
+// doesn't collide with csrsrv's DllMain. basesrv.dll's real DllMain is still
+// provided by the cohabiting C `init.c` translation unit; this is dead code
+// today. When basesrv is cohabited to Rust DllMain, rename the export to
+// `BaseSrvDllMain` (or use `#[export_name = "DllMain"]` inside a `cfg(basesrv)`
+// gate plus equivalent for csrsrv) so the archive stays free of duplicate
+// `DllMain` symbols.
+#[allow(dead_code)]
+unsafe fn DllMain(
     _hInstanceDll: HINSTANCE,
     dwReason: ULONG,
     _lpReserved: PVOID,

@@ -1,6 +1,38 @@
 
 use ntdll_sys::nt::*;
 
+// User-mode constants the rustconv translation referenced as if extern;
+// they're macros in C and not in ntdll-sys bindgen output. Hand-pinned
+// here. Values from <ntpsapi.h> / <ntstatus.h>.
+const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001F0FFF;
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
+const STATUS_WAIT_0: NTSTATUS = 0x00000000;
+const STATUS_WAIT_1: NTSTATUS = 0x00000001;
+const STATUS_NO_SUCH_PACKAGE: NTSTATUS = 0xC00000FEu32 as NTSTATUS;
+
+#[inline] unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
+
+// RtlCopyMemory is a memmove macro, not an export.
+#[inline]
+unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, len: usize) {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
+}
+
+// RtlGetProcessHeap is a TEB inline (NtCurrentTeb()->ProcessEnvironmentBlock->ProcessHeap).
+// Not exported; re-translate.
+#[inline]
+unsafe fn RtlGetProcessHeap() -> PVOID {
+    (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessHeap
+}
+
+// _wcsicmp / RtlStringCbCatW — pulled in by the libraries that provide
+// the user-mode string CRT (RtlStringCbCatW lives in ntdll on win2k3+).
+// Forward-declare as system-ABI externs.
+extern "system" {
+    fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32;
+    fn RtlStringCbCatW(dst: *mut u16, cb_dst: usize, src: *const u16) -> NTSTATUS;
+}
+
 extern "system" {
     fn CONTAINING_RECORD(ptr: PLIST_ENTRY, ty: usize, field_offset: usize) -> *mut core::ffi::c_void;
 }
@@ -18,17 +50,17 @@ pub unsafe extern "system" fn SmpCallCsrCreateProcess(
     MessageLength: USHORT,
     PortHandle: HANDLE,
 ) -> NTSTATUS {
-    (*SbApiMsg).h.__bindgen_anon_1.u2.ZeroInit = 0;
-    (*SbApiMsg).h.__bindgen_anon_1.u1.s1.DataLength = MessageLength + 8;
-    (*SbApiMsg).h.__bindgen_anon_1.u1.s1.TotalLength = core::mem::size_of::<SB_API_MSG>() as u16;
-    (*SbApiMsg).ApiNumber = SbpCreateProcess;
+    (*SbApiMsg).h.u2.ZeroInit = 0;
+    (*SbApiMsg).h.u1.s1.DataLength = (MessageLength + 8) as i16;
+    (*SbApiMsg).h.u1.s1.TotalLength = core::mem::size_of::<SB_API_MSG>() as i16;
+    (*SbApiMsg).__bindgen_anon_1.__bindgen_anon_1.ApiNumber = SbpCreateProcess as SB_API_NUMBER;
     let mut Status = NtRequestWaitReplyPort(
         PortHandle,
         core::ptr::addr_of_mut!((*SbApiMsg).h) as *mut _,
         core::ptr::addr_of_mut!((*SbApiMsg).h) as *mut _,
     );
     if Status >= 0 {
-        Status = (*SbApiMsg).ReturnValue;
+        Status = (*SbApiMsg).__bindgen_anon_1.__bindgen_anon_1.ReturnValue;
     }
     Status
 }
@@ -134,7 +166,7 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut SbApiMsg: SB_API_MSG = core::mem::zeroed();
     let mut ProcessInformation: RTL_USER_PROCESS_INFORMATION = core::mem::zeroed();
-    let mut Timeout: LARGE_INTEGER;
+    let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
     let mut State: PVOID = core::ptr::null_mut();
 
     if Flags & SMP_INVALID_PATH != 0 {
@@ -229,17 +261,17 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
             }
         }
 
-        let CreateProcess = core::ptr::addr_of_mut!(SbApiMsg.u.CreateProcess);
-        (*CreateProcess).In.ImageName = FileName;
-        (*CreateProcess).In.CurrentDirectory = Directory;
-        (*CreateProcess).In.CommandLine = CommandLine;
-        (*CreateProcess).In.DllPath = if SmpDefaultLibPath.Length != 0 {
+        let CreateProcess = core::ptr::addr_of_mut!(SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.u.CreateProcess);
+        (*CreateProcess).__bindgen_anon_1.In.ImageName = FileName;
+        (*CreateProcess).__bindgen_anon_1.In.CurrentDirectory = Directory;
+        (*CreateProcess).__bindgen_anon_1.In.CommandLine = CommandLine;
+        (*CreateProcess).__bindgen_anon_1.In.DllPath = if SmpDefaultLibPath.Length != 0 {
             core::ptr::addr_of_mut!(SmpDefaultLibPath)
         } else {
             core::ptr::null_mut()
         };
-        (*CreateProcess).In.Flags = Flags | SMP_DEFERRED_FLAG;
-        (*CreateProcess).In.DebugFlags = SmpDebug;
+        (*CreateProcess).__bindgen_anon_1.In.Flags = Flags | SMP_DEFERRED_FLAG;
+        (*CreateProcess).__bindgen_anon_1.In.DebugFlags = SmpDebug as ULONG;
         Status = SmpCallCsrCreateProcess(
             core::ptr::addr_of_mut!(SbApiMsg),
             core::mem::size_of::<SB_CREATE_PROCESS_MSG>() as u16,
@@ -264,10 +296,10 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
             }
         }
 
-        ProcessInformation.ProcessHandle = (*CreateProcess).Out.ProcessHandle;
-        ProcessInformation.ThreadHandle = (*CreateProcess).Out.ThreadHandle;
-        ProcessInformation.ClientId = (*CreateProcess).Out.ClientId;
-        ProcessInformation.ImageInformation.SubSystemType = (*CreateProcess).Out.SubsystemType;
+        ProcessInformation.ProcessHandle = (*CreateProcess).__bindgen_anon_1.Out.ProcessHandle;
+        ProcessInformation.ThreadHandle = (*CreateProcess).__bindgen_anon_1.Out.ThreadHandle;
+        ProcessInformation.ClientId = (*CreateProcess).__bindgen_anon_1.Out.ClientId;
+        ProcessInformation.ImageInformation.SubSystemType = (*CreateProcess).__bindgen_anon_1.Out.SubsystemType;
     } else {
         Status = SmpExecuteImage(
             FileName,
@@ -311,7 +343,7 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
             SmpWindowsSubSysProcess = ProcessInformation.ProcessHandle;
         }
     } else {
-        let CreateSession = core::ptr::addr_of_mut!(SbApiMsg.u.CreateSession);
+        let CreateSession = core::ptr::addr_of_mut!(SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.u.CreateSession);
         (*CreateSession).ProcessInfo = ProcessInformation;
         (*CreateSession).DbgSessionId = 0;
         *(core::ptr::addr_of_mut!((*CreateSession).DbgUiClientId) as PULONGLONG) = 0;
@@ -360,7 +392,7 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         }
 
         Status = NtDuplicateObject(
-            NtCurrentProcess!(),
+            NtCurrentProcess(),
             ProcessInformation.ProcessHandle,
             (*Subsystem).ProcessHandle,
             core::ptr::addr_of_mut!((*CreateSession).ProcessInfo.ProcessHandle),
@@ -407,7 +439,7 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         }
 
         Status = NtDuplicateObject(
-            NtCurrentProcess!(),
+            NtCurrentProcess(),
             ProcessInformation.ThreadHandle,
             (*Subsystem).ProcessHandle,
             core::ptr::addr_of_mut!((*CreateSession).ProcessInfo.ThreadHandle),
@@ -455,18 +487,18 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
 
         (*CreateSession).SessionId = SmpAllocateSessionId(Subsystem, core::ptr::null_mut());
 
-        SbApiMsg.ReturnValue = STATUS_SUCCESS;
-        SbApiMsg.h.__bindgen_anon_1.u2.ZeroInit = 0;
-        SbApiMsg.h.__bindgen_anon_1.u1.s1.DataLength = (core::mem::size_of::<SB_CREATE_SESSION_MSG>() + 8) as u16;
-        SbApiMsg.h.__bindgen_anon_1.u1.s1.TotalLength = core::mem::size_of::<SB_API_MSG>() as u16;
-        SbApiMsg.ApiNumber = SbpCreateSession;
+        SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.ReturnValue = STATUS_SUCCESS;
+        SbApiMsg.h.u2.ZeroInit = 0;
+        SbApiMsg.h.u1.s1.DataLength = (core::mem::size_of::<SB_CREATE_SESSION_MSG>() + 8) as i16;
+        SbApiMsg.h.u1.s1.TotalLength = core::mem::size_of::<SB_API_MSG>() as i16;
+        SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber = SbpCreateSession as SB_API_NUMBER;
         Status = NtRequestWaitReplyPort(
             (*Subsystem).SbApiPort,
             core::ptr::addr_of_mut!(SbApiMsg.h) as *mut _,
             core::ptr::addr_of_mut!(SbApiMsg.h) as *mut _,
         );
         if Status >= 0 {
-            Status = SbApiMsg.ReturnValue;
+            Status = SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.ReturnValue;
         }
         if Status < 0 {
             SmpDeleteSession((*CreateSession).SessionId);
@@ -551,7 +583,7 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         Timeout.QuadPart = -600000000;
         Status = NtWaitForSingleObject((*NewSubsystem).Event, 0u8, core::ptr::addr_of_mut!(Timeout));
 
-        if !SmpCheckDuplicateMuSessionId(MuSessionId) {
+        if SmpCheckDuplicateMuSessionId(MuSessionId) == 0 {
             return STATUS_DELETE_PENDING;
         }
 
@@ -627,7 +659,7 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
     let mut DestinationString: _UNICODE_STRING = core::mem::zeroed();
     let mut NtPath: _UNICODE_STRING = core::mem::zeroed();
     let mut NextEntry: PLIST_ENTRY;
-    let mut Timeout: LARGE_INTEGER;
+    let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
     let mut State: PVOID = core::ptr::null_mut();
 
     SmpTranslateSystemPartitionInformation();

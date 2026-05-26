@@ -69,7 +69,7 @@ pub unsafe extern "system" fn SmpCheckDuplicateMuSessionId(MuSessionId: ULONG) -
     FoundDuplicate
 }
 
-unsafe fn SmpSessionIdToSession(SessionId: ULONG) -> PSMP_SESSION {
+unsafe fn SmpSessionIdToSession(SessionIdParam: ULONG) -> PSMP_SESSION {
     let mut FoundSession: PSMP_SESSION = core::ptr::null_mut();
     let mut NextEntry: PLIST_ENTRY;
 
@@ -80,8 +80,8 @@ unsafe fn SmpSessionIdToSession(SessionId: ULONG) -> PSMP_SESSION {
             core::ptr::null(),
             core::mem::offset_of!(SMP_SESSION, Entry),
         ) as PSMP_SESSION;
-        
-        if (*Session).SessionId == SessionId {
+
+        if (*Session).SessionId == SessionIdParam {
             FoundSession = Session;
             break;
         }
@@ -93,9 +93,9 @@ unsafe fn SmpSessionIdToSession(SessionId: ULONG) -> PSMP_SESSION {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmpDeleteSession(SessionId: ULONG) {
+pub unsafe extern "system" fn SmpDeleteSession(SessionIdParam: ULONG) {
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(SmpSessionListLock));
-    let Session = SmpSessionIdToSession(SessionId);
+    let Session = SmpSessionIdToSession(SessionIdParam);
     
     if !Session.is_null() {
         RemoveEntryList(core::ptr::addr_of_mut!((*Session).Entry));
@@ -111,10 +111,10 @@ pub unsafe extern "system" fn SmpAllocateSessionId(
     Subsystem: PSMP_SUBSYSTEM,
     OtherSubsystem: PSMP_SUBSYSTEM,
 ) -> ULONG {
-    let SessionId: ULONG;
+    let SessionIdLocal: ULONG;
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(SmpSessionListLock));
-    SessionId = SmpNextSessionId;
+    SessionIdLocal = SmpNextSessionId;
     SmpNextSessionId = SmpNextSessionId.wrapping_add(1);
 
     if SmpNextSessionIdScanMode != 0 {
@@ -130,10 +130,10 @@ pub unsafe extern "system" fn SmpAllocateSessionId(
         0,
         core::mem::size_of::<SMP_SESSION>().try_into().unwrap(),
     ) as PSMP_SESSION;
-    
+
     if !Session.is_null() {
         (*Session).Subsystem = Subsystem;
-        (*Session).SessionId = SessionId;
+        (*Session).SessionId = SessionIdLocal;
         (*Session).OtherSubsystem = OtherSubsystem;
         InsertTailList(
             core::ptr::addr_of_mut!(SmpSessionListHead),
@@ -142,13 +142,13 @@ pub unsafe extern "system" fn SmpAllocateSessionId(
     }
 
     RtlLeaveCriticalSection(core::ptr::addr_of_mut!(SmpSessionListLock));
-    SessionId
+    SessionIdLocal
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpGetProcessMuSessionId(
     ProcessHandle: HANDLE,
-    SessionId: *mut ULONG,
+    SessionIdOut: *mut ULONG,
 ) -> NTSTATUS {
     let mut ProcessSession: ULONG = 0;
 
@@ -159,11 +159,11 @@ pub unsafe extern "system" fn SmpGetProcessMuSessionId(
         core::mem::size_of::<ULONG>() as ULONG,
         core::ptr::null_mut(),
     );
-    
+
     if Status >= 0 {
-        *SessionId = ProcessSession;
+        *SessionIdOut = ProcessSession;
     } else {
-        *SessionId = 0;
+        *SessionIdOut = 0;
     }
 
     Status
@@ -172,12 +172,12 @@ pub unsafe extern "system" fn SmpGetProcessMuSessionId(
 #[no_mangle]
 pub unsafe extern "system" fn SmpSetProcessMuSessionId(
     ProcessHandle: HANDLE,
-    SessionId: ULONG,
+    SessionIdIn: ULONG,
 ) -> NTSTATUS {
     let Status = NtSetInformationProcess(
         ProcessHandle,
         ProcessSessionInformation,
-        core::ptr::addr_of!(SessionId) as PVOID,
+        core::ptr::addr_of!(SessionIdIn) as PVOID,
         core::mem::size_of::<ULONG>() as ULONG,
     );
 

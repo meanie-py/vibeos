@@ -1,6 +1,9 @@
 
 use ntdll_sys::nt::*;
 
+const STATUS_WAIT_0: NTSTATUS = 0x00000000;
+const STATUS_WAIT_1: NTSTATUS = 0x00000001;
+
 extern "C" {
     static mut SmpDefaultLibPath: _UNICODE_STRING;
     static mut SmpDefaultEnvironment: PVOID;
@@ -94,7 +97,7 @@ pub unsafe extern "system" fn SmpExecuteImage(
         },
         Directory,
         CommandLine,
-        SmpDefaultEnvironment,
+        SmpDefaultEnvironment as PWSTR,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -290,6 +293,10 @@ pub unsafe extern "system" fn SmpExecuteCommand(
 pub unsafe extern "system" fn SmpExecuteInitialCommand(
     MuSessionId: ULONG,
     InitialCommand: PUNICODE_STRING,
+    // C declared `IN HANDLE InitialCommandProcess` but passes it to NtDuplicateObject
+    // (4th arg = PHANDLE/TargetHandle out-param). The C type is sloppy; we keep the
+    // HANDLE ABI for compatibility with the ntdll.dll/csrsrv.dll consumers and cast
+    // internally at the NtDuplicateObject call site.
     InitialCommandProcess: HANDLE,
     ReturnPid: PHANDLE,
 ) -> NTSTATUS {
@@ -357,7 +364,7 @@ pub unsafe extern "system" fn SmpExecuteInitialCommand(
         NtCurrentProcess(),
         ProcessInfo.ProcessHandle,
         NtCurrentProcess(),
-        InitialCommandProcess,
+        InitialCommandProcess as PHANDLE,
         PROCESS_ALL_ACCESS,
         0,
         0,
@@ -443,8 +450,12 @@ pub unsafe extern "C" fn SmpUnhandledExceptionFilter(ExceptionInfo: PEXCEPTION_P
     EXCEPTION_EXECUTE_HANDLER
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _main(
+// smss.exe `_main` — symbol kept private to avoid collision with csrss.rs's
+// `_main` in the umbrella staticlib. When smss is cohabited to Rust main,
+// rename the export (e.g. `SmpMain`) and have the C smss `main` call it, or
+// move it into a separate staticlib. Until then, dead code.
+#[allow(dead_code)]
+unsafe extern "C" fn _main_smss_disabled(
     _argc: i32,
     _argv: *const *const i8,
     _envp: *const *const i8,
@@ -505,7 +516,7 @@ pub unsafe extern "C" fn _main(
         DbgPrint(b"Global Flags Set to SMSS Debugging: Not yet supported\n\0".as_ptr() as *const i8);
     }
 
-    Status = SmpExecuteInitialCommand(0, &mut InitialCommand, Handles[1], core::ptr::null_mut());
+    Status = SmpExecuteInitialCommand(0, &mut InitialCommand, &mut Handles[1] as *mut HANDLE as HANDLE, core::ptr::null_mut());
     if Status < 0 {
         static EXEC_MSG: [u16; 40] = [
             b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16,

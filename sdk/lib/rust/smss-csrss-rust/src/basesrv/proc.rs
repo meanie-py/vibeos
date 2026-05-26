@@ -1,14 +1,37 @@
 
 use ntdll_sys::nt::*;
-// `crate::csr` / `crate::vdm` were fabricated by the rustconv translation
-// (no such modules exist); keep stubs so the glob lookup resolves and
-// suppresses 100+ cascading "unresolved" name errors in this file. The
-// PCSR_API_MESSAGE / BASE_API_MESSAGE / vdm types come from ntdll_sys.
-#[allow(non_camel_case_types)] pub use core::ffi::c_void as csr_stub;
-use ntdll_sys as crate_csr_alias;
-use ntdll_sys as crate_vdm_alias;
-#[allow(unused_imports)] use crate_csr_alias::nt::*;
-#[allow(unused_imports)] use crate_vdm_alias::nt::*;
+
+// Helper: HandleToUlong (C macro from handleapi.h) — handle truncated to ULONG.
+#[inline]
+unsafe fn HandleToUlong(h: HANDLE) -> ULONG {
+    h as usize as ULONG
+}
+
+// CsrGetClientThread is a CSR macro defined in csrsrv.h — TEB->CsrClientThread.
+// basesrv.dll links against csrsrv.dll but the macro isn't exported, so
+// re-translate it here (same as csrsrv/srv_inlines.rs).
+#[inline]
+unsafe fn CsrGetClientThread() -> PCSR_THREAD {
+    (*NtCurrentTeb()).CsrClientThread as PCSR_THREAD
+}
+
+// vdm.h defines VDM_CONSOLE_RECORD — basesrv-private; not in ntdll-sys (no
+// vdm.c translation yet). Minimal opaque alias so this file builds. When
+// vdm.c lands, replace with the real layout. Owed: vdm.c translation.
+#[repr(C)]
+pub struct VDM_CONSOLE_RECORD {
+    pub ProcessId: ULONG,
+    // ...other fields handled by vdm.c (not yet translated)
+}
+pub type PVDM_CONSOLE_RECORD = *mut VDM_CONSOLE_RECORD;
+
+// VDM console-record helpers live in basesrv/vdm.c (not yet translated).
+// Forward-declare so this file compiles; the symbols will resolve from
+// the cohabiting C vdm.c until vdm is also Rusted.
+extern "system" {
+    fn GetConsoleRecordBySessionId(SessionId: ULONG, Record: *mut PVDM_CONSOLE_RECORD) -> NTSTATUS;
+    fn BaseSrvGetConsoleRecord(hVDM: HANDLE, Record: *mut PVDM_CONSOLE_RECORD) -> NTSTATUS;
+}
 
 // User notification procedure to be called when a process is created
 static mut UserNotifyProcessCreate: Option<BASE_PROCESS_CREATE_NOTIFY_ROUTINE> = None;
@@ -287,7 +310,7 @@ pub unsafe extern "system" fn BaseSrvExitProcess(
     
     // Remove the CSR_THREADs and CSR_PROCESS
     CsrDestroyProcess(
-        &(*CsrThread).ClientId,
+        core::ptr::addr_of_mut!((*CsrThread).ClientId),
         (*(ApiMessage as *mut BASE_API_MESSAGE)).Data.ExitProcessRequest.uExitCode as NTSTATUS,
     )
 }

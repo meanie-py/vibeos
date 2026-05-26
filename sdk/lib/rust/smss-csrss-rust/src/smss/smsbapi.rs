@@ -1,6 +1,10 @@
 
 use ntdll_sys::nt::*;
 
+const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001F0FFF;
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
+#[inline] unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
+
 
 // DBG subsystem name strings - only used in debug builds
 #[cfg(debug_assertions)]
@@ -27,9 +31,9 @@ pub unsafe extern "system" fn SmpSbCreateSession(
 ) -> NTSTATUS {
     let SubSystemType = (*ProcessInformation).ImageInformation.SubSystemType;
     let mut MuSessionId: ULONG = 0;
-    let SessionId: ULONG;
+    let SessionIdLocal: ULONG;
     let mut SbApiMsg: SB_API_MSG = core::mem::zeroed();
-    let CreateSessionMsg = &mut SbApiMsg.u.CreateSession;
+    let CreateSessionMsg = &mut SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.u.CreateSession;
 
     // Write out the create session message including its initial process
     CreateSessionMsg.ProcessInfo = *ProcessInformation;
@@ -94,14 +98,14 @@ pub unsafe extern "system" fn SmpSbCreateSession(
             NtClose((*ProcessInformation).ThreadHandle);
 
             // Finally, allocate a new SMSS session ID for this session
-            SessionId = SmpAllocateSessionId(KnownSubsys, OtherSubsystem);
-            CreateSessionMsg.SessionId = SessionId;
+            SessionIdLocal = SmpAllocateSessionId(KnownSubsys, OtherSubsystem);
+            CreateSessionMsg.SessionId = SessionIdLocal;
 
             // Fill out the LPC message header and send it to the client!
-            SbApiMsg.ApiNumber = SbpCreateSession as u16;
+            SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber = SbpCreateSession as SB_API_NUMBER;
             SbApiMsg.h.u2.ZeroInit = 0;
-            SbApiMsg.h.u1.s1.DataLength = (core::mem::size_of::<SB_CREATE_SESSION_MSG>() + 8) as u16;
-            SbApiMsg.h.u1.s1.TotalLength = core::mem::size_of::<SB_API_MSG>() as u16;
+            SbApiMsg.h.u1.s1.DataLength = (core::mem::size_of::<SB_CREATE_SESSION_MSG>() + 8) as i16;
+            SbApiMsg.h.u1.s1.TotalLength = core::mem::size_of::<SB_API_MSG>() as i16;
             Status = NtRequestWaitReplyPort(
                 (*KnownSubsys).SbApiPort,
                 &mut SbApiMsg.h,
@@ -111,12 +115,12 @@ pub unsafe extern "system" fn SmpSbCreateSession(
                 // Bail out
             } else {
                 // If the API succeeded, get the result value from the LPC
-                Status = SbApiMsg.ReturnValue;
+                Status = SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.ReturnValue;
             }
 
             // Delete the session on any kind of failure
             if !NT_SUCCESS(Status) {
-                SmpDeleteSession(SessionId);
+                SmpDeleteSession(SessionIdLocal);
             }
         } else {
             // Close the handles on failure

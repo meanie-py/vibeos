@@ -44,7 +44,9 @@ type PBASE_APP_COMPAT_DATA = *mut BASE_APP_COMPAT_DATA;
 pub unsafe extern "system" fn BaseSrvCheckApplicationCompatibility(
     ApiMessage: PVOID,
 ) -> NTSTATUS {
-    let AppCompatData = core::ptr::addr_of_mut!((*(ApiMessage as *mut CSR_API_MESSAGE)).Data) as PBASE_APP_COMPAT_DATA;
+    let AppCompatData = core::ptr::addr_of_mut!(
+        (*(ApiMessage as *mut CSR_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data
+    ) as PBASE_APP_COMPAT_DATA;
     
     (*AppCompatData).CheckRunAppResult = 0u8;
 

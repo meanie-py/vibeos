@@ -1,6 +1,9 @@
 
 use ntdll_sys::nt::*;
 
+const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001F0FFF;
+const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
+
 extern "system" {
     fn CONTAINING_RECORD(address: PVOID, type_: PVOID, field: PVOID) -> PVOID;
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
@@ -73,7 +76,7 @@ unsafe extern "system" fn SmpExecPgm(
         &mut ProcessHandle,
         PROCESS_DUP_HANDLE,
         &mut ObjectAttributes,
-        &(*SmApiMsg).h.ClientId,
+        core::ptr::addr_of_mut!((*SmApiMsg).h.__bindgen_anon_1.ClientId),
     );
     if Status < 0 {
         return Status;
@@ -118,7 +121,7 @@ unsafe extern "system" fn SmpExecPgm(
         &mut ProcessInformation,
         0,
         if (*SmExecPgm).DebugFlag != 0 {
-            &(*SmApiMsg).h.ClientId as *const _ as *mut _
+            &(*SmApiMsg).h.__bindgen_anon_1.ClientId as *const _ as *mut _
         } else {
             core::ptr::null_mut()
         },
@@ -128,7 +131,7 @@ unsafe extern "system" fn SmpExecPgm(
 unsafe extern "system" fn SmpLoadDeferedSubsystem(
     SmApiMsg: PSM_API_MSG,
     ClientContext: PSMP_CLIENT_CONTEXT,
-    SmApiPort: HANDLE,
+    _SmApiPort: HANDLE,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_OBJECT_NAME_NOT_FOUND;
     let SmLoadDefered: PSM_LOAD_DEFERED_SUBSYSTEM_MSG = &mut (*SmApiMsg).u.LoadDefered;
@@ -196,15 +199,15 @@ unsafe extern "system" fn SmpStartCsr(
     }
 
     if (*SmStartCsr).Length != 0 {
-        InitialCommand.Length = (*SmStartCsr).Length;
-        InitialCommand.MaximumLength = (*SmStartCsr).Length;
+        InitialCommand.Length = (*SmStartCsr).Length as u16;
+        InitialCommand.MaximumLength = (*SmStartCsr).Length as u16;
         InitialCommand.Buffer = (*SmStartCsr).Buffer.as_mut_ptr();
     }
 
     Status = SmpExecuteInitialCommand(
         (*SmStartCsr).MuSessionId,
         &mut InitialCommand,
-        InitialCommandProcess,
+        &mut InitialCommandProcess as *mut HANDLE as HANDLE,
         &mut InitialCommandProcessId,
     );
     if Status < 0 {
@@ -244,7 +247,7 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
     let mut Accept: BOOLEAN = 1u8;
     let mut PortHandle: HANDLE = core::ptr::null_mut();
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
-    let mut SessionId: ULONG = 0;
+    let mut SessionIdLocal: ULONG = 0;
     let mut SubsystemPort: _UNICODE_STRING = core::mem::zeroed();
     let mut ClientContext: PSMP_CLIENT_CONTEXT;
     let mut Status: NTSTATUS;
@@ -255,12 +258,12 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
     let mut TypeSubsystem: PSMP_SUBSYSTEM;
 
     SecurityQos.ImpersonationLevel = SecurityIdentification;
-    SecurityQos.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING;
+    SecurityQos.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING as u8;
     SecurityQos.EffectiveOnly = 1u8;
 
-    if (*SbApiMsg).h.ClientId.UniqueProcess == SmUniqueProcessId {
+    if (*SbApiMsg).h.__bindgen_anon_1.ClientId.UniqueProcess == SmUniqueProcessId {
         ProcessHandle = core::ptr::null_mut();
-        SessionId = 0;
+        SessionIdLocal = 0;
     } else {
         InitializeObjectAttributes(
             &mut ObjectAttributes,
@@ -273,22 +276,22 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
             &mut ProcessHandle,
             PROCESS_QUERY_INFORMATION,
             &mut ObjectAttributes,
-            &(*SbApiMsg).h.ClientId,
+            core::ptr::addr_of_mut!((*SbApiMsg).h.__bindgen_anon_1.ClientId),
         );
         if Status < 0 {
             Accept = 0u8;
         }
 
-        SmpGetProcessMuSessionId(ProcessHandle, &mut SessionId);
+        SmpGetProcessMuSessionId(ProcessHandle, &mut SessionIdLocal);
     }
 
-    CidSubsystem = SmpLocateKnownSubSysByCid(&(*SbApiMsg).h.ClientId);
+    CidSubsystem = SmpLocateKnownSubSysByCid(core::ptr::addr_of_mut!((*SbApiMsg).h.__bindgen_anon_1.ClientId));
     if !CidSubsystem.is_null() && Accept != 0 {
-        TypeSubsystem = SmpLocateKnownSubSysByType(SessionId, (*SbApiMsg).ConnectionInfo.SubsystemType);
+        TypeSubsystem = SmpLocateKnownSubSysByType(SessionIdLocal, (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SubsystemType);
         if TypeSubsystem == CidSubsystem {
             Accept = 0u8;
         } else {
-            (*CidSubsystem).ImageType = (*SbApiMsg).ConnectionInfo.SubsystemType;
+            (*CidSubsystem).ImageType = (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SubsystemType;
         }
 
         if !TypeSubsystem.is_null() {
@@ -318,7 +321,7 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
     Status = NtAcceptConnectPort(
         &mut PortHandle,
         ClientContext as PVOID,
-        &(*SbApiMsg).h,
+        core::ptr::addr_of_mut!((*SbApiMsg).h),
         Accept,
         core::ptr::null_mut(),
         &mut PortView,
@@ -345,10 +348,10 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
 
     Status = NtCompleteConnectPort(PortHandle);
     if Status >= 0 && !CidSubsystem.is_null() {
-        (*SbApiMsg).ConnectionInfo.SbApiPortName[119] = 0u16;
+        (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SbApiPortName[119] = 0u16;
         RtlCreateUnicodeString(
             &mut SubsystemPort,
-            (*SbApiMsg).ConnectionInfo.SbApiPortName.as_ptr(),
+            (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SbApiPortName.as_ptr(),
         );
         Status = NtConnectPort(
             &mut (*CidSubsystem).SbApiPort,
@@ -414,12 +417,12 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
             continue;
         }
 
-        match RequestMsg.h.u2.s2.Type as i32 {
-            LPC_CONNECTION_REQUEST => {
+        match RequestMsg.h.u2.s2.Type as u32 {
+            x if x == LPC_CONNECTION_REQUEST => {
                 SmpHandleConnectionRequest(SmApiPort, &mut RequestMsg as *mut _ as PSB_API_MSG);
                 ReplyMsg = core::ptr::null_mut();
             }
-            LPC_PORT_CLOSED => {
+            x if x == LPC_PORT_CLOSED => {
                 ReplyMsg = core::ptr::null_mut();
             }
             _ => {
@@ -449,6 +452,7 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
             }
         }
     }
+    0
 }
 
 
@@ -744,7 +748,7 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
 //
 //     /* Initialize QoS data */
 //     SecurityQos.ImpersonationLevel = SecurityIdentification;
-//     SecurityQos.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING;
+//     SecurityQos.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING as u8;
 //     SecurityQos.EffectiveOnly = TRUE;
 //
 //     /* Check if this is SM connecting to itself */

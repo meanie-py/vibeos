@@ -5,7 +5,7 @@ extern "system" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
 }
 
-const VALUE_BUFFER_SIZE: usize = core::mem::size_of::<ntkrnl_sys::ddk::_KEY_VALUE_PARTIAL_INFORMATION>() + 512;
+const VALUE_BUFFER_SIZE: usize = core::mem::size_of::<_KEY_VALUE_PARTIAL_INFORMATION>() + 512;
 
 #[repr(C)]
 struct SMP_PRIVILEGE_STATE {
@@ -30,7 +30,7 @@ extern "system" {
     static mut SmpDefaultLibPath: _UNICODE_STRING;
     static mut SmpDefaultEnvironment: PVOID;
     fn NtCurrentProcess() -> HANDLE;
-    static SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
+    static SharedUserData: *mut _KUSER_SHARED_DATA;
 }
 
 const TOKEN_ADJUST_PRIVILEGES: u32 = 0x0020;
@@ -59,7 +59,7 @@ pub unsafe extern "system" fn SmpAcquirePrivilege(
     Privilege: ULONG,
     PrivilegeState: *mut PVOID,
 ) -> NTSTATUS {
-    let mut State: *mut SMP_PRIVILEGE_STATE;
+    let State: *mut SMP_PRIVILEGE_STATE;
     let mut Size: ULONG;
     let mut Status: NTSTATUS;
 
@@ -206,7 +206,7 @@ pub unsafe extern "system" fn SmpParseToken(
             Length += core::mem::size_of::<u16>() as ULONG;
         }
 
-        TokenLength = pp as usize - p as usize;
+        TokenLength = (pp as usize - p as usize) as ULONG;
         while Length < InputLength {
             if *pp > b' ' as u16 {
                 break;
@@ -220,13 +220,13 @@ pub unsafe extern "system" fn SmpParseToken(
         (*Token).Buffer = RtlAllocateHeap(
             SmpHeap,
             SmBaseTag,
-            ((TokenLength + core::mem::size_of::<u16>()) as usize).try_into().unwrap(),
+            ((TokenLength as usize + core::mem::size_of::<u16>()) as usize).try_into().unwrap(),
         ) as PWSTR;
         if (*Token).Buffer.is_null() {
             return STATUS_NO_MEMORY;
         }
 
-        (*Token).MaximumLength = (TokenLength + core::mem::size_of::<u16>()) as u16;
+        (*Token).MaximumLength = (TokenLength as usize + core::mem::size_of::<u16>()) as u16;
         (*Token).Length = TokenLength as u16;
         core::ptr::copy_nonoverlapping(
             p as *const u8,
@@ -360,7 +360,7 @@ pub unsafe extern "system" fn SmpParseCommandLine(
     }
 
     Status = RtlQueryEnvironmentVariable_U(
-        SmpDefaultEnvironment,
+        SmpDefaultEnvironment as PWSTR,
         core::ptr::addr_of_mut!(EnvString),
         core::ptr::addr_of_mut!(PathString),
     );
@@ -379,7 +379,7 @@ pub unsafe extern "system" fn SmpParseCommandLine(
         }
 
         Status = RtlQueryEnvironmentVariable_U(
-            SmpDefaultEnvironment,
+            SmpDefaultEnvironment as PWSTR,
             core::ptr::addr_of_mut!(EnvString),
             core::ptr::addr_of_mut!(PathString),
         );
@@ -467,7 +467,7 @@ pub unsafe extern "system" fn SmpQueryRegistrySosOption() -> BOOLEAN {
     let mut ValueBuffer: [u8; VALUE_BUFFER_SIZE] = [0; VALUE_BUFFER_SIZE];
     let PartialInfo = ValueBuffer.as_mut_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
 
-    static KEY_PATH: [u16; 63] = [
+    static KEY_PATH: [u16; 65] = [
         b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16,
         b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16,
         b'e' as u16, b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,

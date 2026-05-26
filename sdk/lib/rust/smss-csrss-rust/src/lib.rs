@@ -28,8 +28,8 @@ pub mod csrss;
 // / dosdev.c 1110 / vdm.c 1459) still want rustconv translate
 // (per feedback_rustconv_translate_vs_batch). Wire them in once
 // per-file cargo check ×3 is green; until then keep them silent.
-// pub mod smss;
-// pub mod basesrv;
+pub mod smss;
+pub mod basesrv;
 
 // Phase 1 — SM/CSR LPC protocol contract (translated 2026-05-16).
 // csrlib = client CSR API + capture-buffer marshalling (lands in
