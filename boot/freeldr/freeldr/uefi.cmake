@@ -13,19 +13,24 @@ include_directories(BEFORE
 
 list(APPEND UEFILDR_ARC_SOURCE
     ${FREELDR_ARC_SOURCE}
-    arch/uefi/stubs.c
-    arch/uefi/uefisetup.c
-    arch/uefi/uefiutil.c
     arch/vidfb.c
     arch/vgafont.c)
     # uefi-hw unit → Rust (freeldr-rust: ueficon/uefidisk/uefihw/uefimem/
-    # uefivid.rs). Cohabitation: .c kept on disk, Rust #[no_mangle] takes
-    # over. (stubs/uefisetup/uefiutil kept — not translated.)
+    # uefivid.rs + uefisetup/uefi_stubs/uefiutil.rs under feature="uefi").
+    # Cohabitation: .c kept on disk, Rust #[no_mangle] takes over.
     # arch/uefi/ueficon.c   # replaced by Rust (freeldr-rust/src/ueficon.rs)
     # arch/uefi/uefidisk.c  # replaced by Rust (freeldr-rust/src/uefidisk.rs)
     # arch/uefi/uefihw.c    # replaced by Rust (freeldr-rust/src/uefihw.rs)
     # arch/uefi/uefimem.c   # replaced by Rust (freeldr-rust/src/uefimem.rs)
     # arch/uefi/uefivid.c   # replaced by Rust (freeldr-rust/src/uefivid.rs)
+    # arch/uefi/stubs.c     # replaced by Rust (freeldr-rust/src/uefi_stubs.rs)
+    # arch/uefi/uefisetup.c # replaced by Rust (freeldr-rust/src/uefisetup.rs)
+    # arch/uefi/uefiutil.c  # replaced by Rust (freeldr-rust/src/uefiutil.rs)
+    # arch/uefi/uefildr.c   # NOT commented — owns uefildr.exe binary entry.
+    #                       # The Rust translation lives in freeldr-rust/src/
+    #                       # uefildr.rs, compiled but with #[no_mangle] gated
+    #                       # behind off-by-default `uefildr-rust-entry`
+    #                       # feature pending a future cohabitation flip.
 
 if(ARCH STREQUAL "i386")
     # arch/i386/i386idt.c  # replaced by Rust (freeldr-rust/src/i386idt.rs)

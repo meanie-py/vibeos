@@ -87,6 +87,19 @@ pub mod uefimem;
 pub mod uefivid;
 pub mod ueficon;
 pub mod uefihw;
+// uefi-only translation unit — UEFI MACHVTBL fill + stubs + utils + entry.
+// uefisetup/uefi_stubs/uefiutil are .a-bound (cohabitation under feature
+// "uefi"); uefildr.rs is the .efi binary-entry translation gated behind
+// `uefildr-rust-entry` so C uefildr.c retains symbol ownership for the
+// uefildr.exe link until a future cohabitation flip.
+#[cfg(feature = "uefi")]
+pub mod uefisetup;
+#[cfg(feature = "uefi")]
+pub mod uefi_stubs;
+#[cfg(feature = "uefi")]
+pub mod uefiutil;
+#[cfg(feature = "uefi")]
+pub mod uefildr;
 // PC-link fallback for vidfb.c's UEFI-only FbCons*/GlobalSystemTable
 // (ueficon/uefivid extern-consume them; their C providers are UEFI-only
 // so freeldr_pe/BIOS has no provider). BIOS-only — on the `uefi`
@@ -118,7 +131,10 @@ pub mod winldr_arm64;
 pub mod setupldr;
 pub mod inffile;
 pub mod headless;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// drivemap is BIOS-only (x86 BIOS Int13 drive remapping); UEFI's stubs.c
+// provides DriveMapGetBiosDriveNumber returning 0, so gate the BIOS impl
+// out under feature="uefi" to avoid the dup #[no_mangle] collision.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 pub mod drivemap;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386bug;
