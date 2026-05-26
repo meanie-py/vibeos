@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{acl, conv, dos8dot3, misc, nls, sd as sd_, sid, ustr};
+use crate::core_rs::{acl, conv, dos8dot3, misc, nls, priv_, sd as sd_, sid, ustr};
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
 
@@ -3750,4 +3750,626 @@ pub unsafe extern "system" fn RtlCopySecurityDescriptor(
     // The diff harness stubs RtlAllocateHeap=NULL ⇒ STATUS_NO_MEMORY.
     *dst_pp = core::ptr::null_mut();
     STATUS_NO_MEMORY
+}
+
+// ============================================================================
+// Wave PRIV — straight translation of `sdk/lib/rtl/priv.c` (6 fns,
+// all pure syscall plumbing → Zw* chains). No byte-diff harness (the
+// outputs are syscall traces, not data buffers); user-mode lsass/
+// services/csrss-tuiterm exercise it during boot. Per user choice
+// "translate + smoke (fast)".
+// ============================================================================
+
+const STATUS_BUFFER_TOO_SMALL_2: i32 = 0xC000_0023u32 as i32;
+const STATUS_PRIVILEGE_NOT_HELD: i32 = 0xC000_0061u32 as i32;
+const STATUS_NOT_ALL_ASSIGNED: i32 = 0x0000_0106;
+
+/// `LUID` (winnt.h).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LUID {
+    pub LowPart: u32,
+    pub HighPart: i32,
+}
+
+/// `LUID_AND_ATTRIBUTES`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LUID_AND_ATTRIBUTES {
+    pub Luid: LUID,
+    pub Attributes: u32,
+}
+
+/// `TOKEN_PRIVILEGES` header — followed by `[LUID_AND_ATTRIBUTES; PrivilegeCount]`.
+/// We only need the header here; the array is accessed by offset.
+#[repr(C)]
+pub struct TOKEN_PRIVILEGES_HDR {
+    pub PrivilegeCount: u32,
+    pub Privileges: [LUID_AND_ATTRIBUTES; 1], // ANYSIZE_ARRAY
+}
+
+/// `OBJECT_ATTRIBUTES`.
+#[repr(C)]
+pub struct OBJECT_ATTRIBUTES_FFI {
+    pub Length: u32,
+    pub RootDirectory: *mut u8,
+    pub ObjectName: *mut u8,
+    pub Attributes: u32,
+    pub SecurityDescriptor: *mut u8,
+    pub SecurityQualityOfService: *mut u8,
+}
+
+/// `SECURITY_QUALITY_OF_SERVICE`.
+#[repr(C)]
+pub struct SECURITY_QUALITY_OF_SERVICE_FFI {
+    pub Length: u32,
+    pub ImpersonationLevel: u32,
+    pub ContextTrackingMode: u8,
+    pub EffectiveOnly: u8,
+}
+
+/// `RTL_ACQUIRE_STATE` (ndk/rtltypes.h). `OldPrivBuffer[1024]` is a
+/// static inline buffer the C code uses to avoid an alloc in the
+/// common case (privilege count fits).
+#[repr(C)]
+pub struct RTL_ACQUIRE_STATE_FFI {
+    pub Token: *mut u8,
+    pub OldImpersonationToken: *mut u8,
+    pub OldPrivileges: *mut u8,
+    pub NewPrivileges: *mut u8,
+    pub Flags: u32,
+    pub OldPrivBuffer: [u8; 1024],
+}
+
+// --- Zw* / Rtl heap externs. NTAPI = stdcall on i386, cdecl on
+// amd64/arm64 → `extern "system"`. Resolved by ntoskrnl (kernel) or
+// ntdll (user-mode) at link time.
+
+extern "system" {
+    fn ZwOpenThreadToken(
+        ThreadHandle: *mut u8,
+        DesiredAccess: u32,
+        OpenAsSelf: u8,
+        TokenHandle: *mut *mut u8,
+    ) -> i32;
+    fn ZwOpenProcessToken(
+        ProcessHandle: *mut u8,
+        DesiredAccess: u32,
+        TokenHandle: *mut *mut u8,
+    ) -> i32;
+    fn ZwDuplicateToken(
+        ExistingTokenHandle: *mut u8,
+        DesiredAccess: u32,
+        ObjectAttributes: *mut OBJECT_ATTRIBUTES_FFI,
+        EffectiveOnly: u8,
+        TokenType: u32,
+        NewTokenHandle: *mut *mut u8,
+    ) -> i32;
+    fn ZwSetInformationThread(
+        ThreadHandle: *mut u8,
+        InfoClass: u32,
+        Info: *const u8,
+        InfoLen: u32,
+    ) -> i32;
+    fn ZwAdjustPrivilegesToken(
+        TokenHandle: *mut u8,
+        DisableAllPrivileges: u8,
+        NewState: *const TOKEN_PRIVILEGES_HDR,
+        BufferLength: u32,
+        PreviousState: *mut TOKEN_PRIVILEGES_HDR,
+        ReturnLength: *mut u32,
+    ) -> i32;
+    fn ZwQueryInformationToken(
+        TokenHandle: *mut u8,
+        InfoClass: u32,
+        Info: *mut u8,
+        InfoLen: u32,
+        ReturnLength: *mut u32,
+    ) -> i32;
+    fn ZwClose(Handle: *mut u8) -> i32;
+    fn RtlAllocateHeap(Heap: *mut u8, Flags: u32, Size: usize) -> *mut u8;
+    fn RtlFreeHeap(Heap: *mut u8, Flags: u32, Ptr: *mut u8) -> u8;
+    fn RtlGetProcessHeap() -> *mut u8;
+    fn RtlRaiseStatus(Status: i32) -> !;
+}
+
+/// Read `NtCurrentTeb()->IsImpersonating` via per-arch inline asm
+/// (offset constant lives in `core_rs::priv_`). Safe to call from
+/// user-mode threads; in kernel mode (where this translation unit's
+/// `RtlAcquirePrivilege` is dead — no kernel caller) the read
+/// points at whatever the kernel has GS/FS/X18 set to.
+#[inline]
+unsafe fn read_is_impersonating() -> u32 {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        let val: u32;
+        let tmp: u64;
+        core::arch::asm!(
+            "mov {tmp}, gs:[0x30]",
+            "mov {val:e}, [{tmp} + {off}]",
+            tmp = out(reg) tmp,
+            val = out(reg) val,
+            off = const priv_::TEB_IS_IMPERSONATING_OFFSET,
+            options(nostack, preserves_flags, readonly),
+        );
+        let _ = tmp;
+        val
+    }
+    #[cfg(all(target_os = "windows", target_arch = "x86"))]
+    {
+        let val: u32;
+        let tmp: u32;
+        core::arch::asm!(
+            "mov {tmp:e}, fs:[0x18]",
+            "mov {val:e}, [{tmp:e} + {off}]",
+            tmp = out(reg) tmp,
+            val = out(reg) val,
+            off = const priv_::TEB_IS_IMPERSONATING_OFFSET,
+            options(nostack, preserves_flags, readonly),
+        );
+        let _ = tmp;
+        val
+    }
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        let val: u32;
+        core::arch::asm!(
+            "ldr {val:w}, [x18, {off}]",
+            val = out(reg) val,
+            off = const priv_::TEB_IS_IMPERSONATING_OFFSET,
+            options(nostack, preserves_flags, readonly),
+        );
+        val
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Host (rtl-difftest): no TEB. priv shims not exercised by
+        // the difftest harness; return 0 (= "not impersonating").
+        0
+    }
+}
+
+/// `NTSTATUS NTAPI RtlpOpenThreadToken(ACCESS_MASK, PHANDLE)` —
+/// private helper, calls ZwOpenThreadToken twice (`OpenAsSelf=TRUE`
+/// then `FALSE`).
+#[no_mangle]
+pub unsafe extern "system" fn RtlpOpenThreadToken(
+    desired_access: u32,
+    token_handle: *mut *mut u8,
+) -> i32 {
+    let mut status = ZwOpenThreadToken(priv_::nt_current_thread(), desired_access, 1, token_handle);
+    if !nt_success(status) {
+        status = ZwOpenThreadToken(priv_::nt_current_thread(), desired_access, 0, token_handle);
+    }
+    status
+}
+
+/// `NTSTATUS NTAPI RtlImpersonateSelf(SECURITY_IMPERSONATION_LEVEL)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlImpersonateSelf(impersonation_level: u32) -> i32 {
+    let mut process_token: *mut u8 = core::ptr::null_mut();
+    let mut impersonation_token: *mut u8 = core::ptr::null_mut();
+
+    let mut status = ZwOpenProcessToken(priv_::nt_current_process(), priv_::TOKEN_DUPLICATE, &mut process_token);
+    if !nt_success(status) {
+        return status;
+    }
+
+    let mut sqos = SECURITY_QUALITY_OF_SERVICE_FFI {
+        Length: core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE_FFI>() as u32,
+        ImpersonationLevel: impersonation_level,
+        ContextTrackingMode: 0,
+        EffectiveOnly: 0,
+    };
+    let mut obj_attr = OBJECT_ATTRIBUTES_FFI {
+        Length: core::mem::size_of::<OBJECT_ATTRIBUTES_FFI>() as u32,
+        RootDirectory: core::ptr::null_mut(),
+        ObjectName: core::ptr::null_mut(),
+        Attributes: 0,
+        SecurityDescriptor: core::ptr::null_mut(),
+        SecurityQualityOfService: &mut sqos as *mut _ as *mut u8,
+    };
+
+    status = ZwDuplicateToken(
+        process_token,
+        priv_::TOKEN_IMPERSONATE,
+        &mut obj_attr,
+        sqos.EffectiveOnly,
+        priv_::TOKEN_IMPERSONATION_TYPE,
+        &mut impersonation_token,
+    );
+    if !nt_success(status) {
+        let _ = ZwClose(process_token);
+        return status;
+    }
+
+    status = ZwSetInformationThread(
+        priv_::nt_current_thread(),
+        priv_::THREAD_IMPERSONATION_TOKEN,
+        &impersonation_token as *const _ as *const u8,
+        core::mem::size_of::<*mut u8>() as u32,
+    );
+    // The C ignores this status's NT_SUCCESS check (does DPRINT only).
+    let _ = ZwClose(impersonation_token);
+    let _ = ZwClose(process_token);
+    status
+}
+
+/// `NTSTATUS NTAPI RtlAcquirePrivilege(PULONG, ULONG, ULONG, PVOID*)`.
+///
+/// Straight translation; uses `read_is_impersonating()` (TEB inline
+/// asm) for the user-mode impersonation check.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAcquirePrivilege(
+    privilege: *mut u32,
+    num_priv: u32,
+    flags: u32,
+    returned_state: *mut *mut u8,
+) -> i32 {
+    if flags & !(priv_::RTL_ACQUIRE_PRIVILEGE_PROCESS | priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE) != 0
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut flags = flags;
+    if flags & priv_::RTL_ACQUIRE_PRIVILEGE_PROCESS != 0 {
+        flags |= priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE;
+    }
+
+    // alloc state + new-privileges trailing area
+    let alloc_size = core::mem::size_of::<RTL_ACQUIRE_STATE_FFI>()
+        + core::mem::size_of::<TOKEN_PRIVILEGES_HDR>()
+        + (num_priv as usize).saturating_sub(1)
+            * core::mem::size_of::<LUID_AND_ATTRIBUTES>();
+    let state_p = RtlAllocateHeap(RtlGetProcessHeap(), 0, alloc_size) as *mut RTL_ACQUIRE_STATE_FFI;
+    if state_p.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+    (*state_p).Token = core::ptr::null_mut();
+    (*state_p).OldImpersonationToken = core::ptr::null_mut();
+    (*state_p).Flags = 0;
+    (*state_p).OldPrivileges = core::ptr::null_mut();
+
+    let mut imp_token: *mut u8 = core::ptr::null_mut();
+    let mut status: i32;
+
+    if read_is_impersonating() != 0 {
+        if flags & priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE != 0 {
+            status = RtlpOpenThreadToken(
+                priv_::TOKEN_ADJUST_PRIVILEGES | priv_::TOKEN_QUERY,
+                &mut (*state_p).Token,
+            );
+            if !nt_success(status) {
+                let _ = RtlFreeHeap(RtlGetProcessHeap(), 0, state_p as *mut u8);
+                return status;
+            }
+        } else {
+            status = RtlpOpenThreadToken(priv_::TOKEN_IMPERSONATE, &mut (*state_p).OldImpersonationToken);
+            if !nt_success(status) {
+                let _ = RtlFreeHeap(RtlGetProcessHeap(), 0, state_p as *mut u8);
+                return status;
+            }
+            (*state_p).Flags |= priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE;
+            // revert impersonation (give 0 as handle)
+            let _ = ZwSetInformationThread(
+                priv_::nt_current_thread(),
+                priv_::THREAD_IMPERSONATION_TOKEN,
+                &imp_token as *const _ as *const u8,
+                core::mem::size_of::<*mut u8>() as u32,
+            );
+        }
+    }
+
+    if (*state_p).Token.is_null() {
+        if flags & priv_::RTL_ACQUIRE_PRIVILEGE_PROCESS != 0 {
+            status = ZwOpenProcessToken(
+                priv_::nt_current_process(),
+                priv_::TOKEN_ADJUST_PRIVILEGES | priv_::TOKEN_QUERY,
+                &mut (*state_p).Token,
+            );
+            if !nt_success(status) {
+                return cleanup_acquire(state_p, status, flags);
+            }
+        } else {
+            let mut process_token: *mut u8 = core::ptr::null_mut();
+            // (C calls ZwOpenProcessToken without checking the status here
+            // and relies on ZwDuplicateToken to fail if the token is bad —
+            // verbatim port of that exact misdesign.)
+            let _ignored = ZwOpenProcessToken(priv_::nt_current_process(), priv_::TOKEN_DUPLICATE, &mut process_token);
+            let mut sqos = SECURITY_QUALITY_OF_SERVICE_FFI {
+                Length: core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE_FFI>() as u32,
+                ImpersonationLevel: priv_::SECURITY_DELEGATION,
+                ContextTrackingMode: 1,
+                EffectiveOnly: 0,
+            };
+            let mut obj_attr = OBJECT_ATTRIBUTES_FFI {
+                Length: core::mem::size_of::<OBJECT_ATTRIBUTES_FFI>() as u32,
+                RootDirectory: core::ptr::null_mut(),
+                ObjectName: core::ptr::null_mut(),
+                Attributes: 0,
+                SecurityDescriptor: core::ptr::null_mut(),
+                SecurityQualityOfService: &mut sqos as *mut _ as *mut u8,
+            };
+            status = ZwDuplicateToken(
+                process_token,
+                priv_::TOKEN_ADJUST_PRIVILEGES | priv_::TOKEN_QUERY | priv_::TOKEN_IMPERSONATE,
+                &mut obj_attr,
+                0,
+                priv_::TOKEN_IMPERSONATION_TYPE,
+                &mut imp_token,
+            );
+            if !nt_success(status) {
+                let _ = ZwClose(process_token);
+                return cleanup_acquire(state_p, status, flags);
+            }
+            status = ZwSetInformationThread(
+                priv_::nt_current_thread(),
+                priv_::THREAD_IMPERSONATION_TOKEN,
+                &imp_token as *const _ as *const u8,
+                core::mem::size_of::<*mut u8>() as u32,
+            );
+            if !nt_success(status) {
+                let _ = ZwClose(imp_token);
+                let _ = ZwClose(process_token);
+                return cleanup_acquire(state_p, status, flags);
+            }
+            (*state_p).Token = imp_token;
+            (*state_p).Flags |= priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE;
+            let _ = ZwClose(process_token);
+        }
+    }
+
+    // Wire OldPrivileges → into OldPrivBuffer; NewPrivileges → right after.
+    let buffer_start = &mut (*state_p).OldPrivBuffer as *mut [u8; 1024] as *mut u8;
+    (*state_p).OldPrivileges = buffer_start;
+    (*state_p).NewPrivileges = buffer_start.add((*state_p).OldPrivBuffer.len());
+
+    let new_p = (*state_p).NewPrivileges as *mut TOKEN_PRIVILEGES_HDR;
+    (*new_p).PrivilegeCount = num_priv;
+    let privs_arr = &mut (*new_p).Privileges as *mut [LUID_AND_ATTRIBUTES; 1] as *mut LUID_AND_ATTRIBUTES;
+    for i in 0..num_priv {
+        let priv_id = *privilege.add(i as usize);
+        let entry = privs_arr.add(i as usize);
+        (*entry).Luid.LowPart = priv_id;
+        (*entry).Luid.HighPart = 0;
+        (*entry).Attributes = priv_::SE_PRIVILEGE_ENABLED;
+    }
+
+    let mut old_size = (*state_p).OldPrivBuffer.len() as u32;
+    loop {
+        let mut return_length: u32 = (*state_p).OldPrivBuffer.len() as u32;
+        status = ZwAdjustPrivilegesToken(
+            (*state_p).Token,
+            0,
+            (*state_p).NewPrivileges as *const TOKEN_PRIVILEGES_HDR,
+            old_size,
+            (*state_p).OldPrivileges as *mut TOKEN_PRIVILEGES_HDR,
+            &mut return_length,
+        );
+
+        if status == STATUS_BUFFER_TOO_SMALL_2 {
+            let new_old =
+                RtlAllocateHeap(RtlGetProcessHeap(), 0, return_length as usize);
+            if !new_old.is_null() {
+                (*state_p).OldPrivileges = new_old;
+                old_size = return_length;
+                continue;
+            }
+            status = STATUS_NO_MEMORY;
+        }
+
+        if status == STATUS_NOT_ALL_ASSIGNED && num_priv == 1 {
+            status = STATUS_PRIVILEGE_NOT_HELD;
+        }
+
+        if !nt_success(status) {
+            return cleanup_acquire(state_p, status, flags);
+        }
+        *returned_state = state_p as *mut u8;
+        return status;
+    }
+}
+
+unsafe fn cleanup_acquire(state_p: *mut RTL_ACQUIRE_STATE_FFI, status: i32, _flags: u32) -> i32 {
+    let buffer_start = &mut (*state_p).OldPrivBuffer as *mut [u8; 1024] as *mut u8;
+    if !(*state_p).OldPrivileges.is_null() && (*state_p).OldPrivileges != buffer_start {
+        let _ = RtlFreeHeap(RtlGetProcessHeap(), 0, (*state_p).OldPrivileges);
+    }
+    if (*state_p).Flags & priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE != 0 {
+        let int_status = ZwSetInformationThread(
+            priv_::nt_current_thread(),
+            priv_::THREAD_IMPERSONATION_TOKEN,
+            &(*state_p).OldImpersonationToken as *const _ as *const u8,
+            core::mem::size_of::<*mut u8>() as u32,
+        );
+        if !nt_success(int_status) {
+            RtlRaiseStatus(int_status);
+        }
+    }
+    if !(*state_p).Token.is_null() {
+        let _ = ZwClose((*state_p).Token);
+    }
+    let _ = RtlFreeHeap(RtlGetProcessHeap(), 0, state_p as *mut u8);
+    status
+}
+
+/// `VOID NTAPI RtlReleasePrivilege(PVOID)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlReleasePrivilege(returned_state: *mut u8) {
+    let state_p = returned_state as *mut RTL_ACQUIRE_STATE_FFI;
+
+    if (*state_p).Flags & priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE != 0 {
+        let status = ZwSetInformationThread(
+            priv_::nt_current_thread(),
+            priv_::THREAD_IMPERSONATION_TOKEN,
+            &(*state_p).OldImpersonationToken as *const _ as *const u8,
+            core::mem::size_of::<*mut u8>() as u32,
+        );
+        if !nt_success(status) {
+            RtlRaiseStatus(status);
+        }
+        if !(*state_p).OldImpersonationToken.is_null() {
+            let _ = ZwClose((*state_p).OldImpersonationToken);
+        }
+    } else {
+        let status = ZwAdjustPrivilegesToken(
+            (*state_p).Token,
+            0,
+            (*state_p).OldPrivileges as *const TOKEN_PRIVILEGES_HDR,
+            0,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        if !nt_success(status) {
+            RtlRaiseStatus(status);
+        }
+    }
+
+    let buffer_start = &mut (*state_p).OldPrivBuffer as *mut [u8; 1024] as *mut u8;
+    if (*state_p).OldPrivileges != buffer_start {
+        let _ = RtlFreeHeap(RtlGetProcessHeap(), 0, (*state_p).OldPrivileges);
+    }
+    let _ = ZwClose((*state_p).Token);
+    let _ = RtlFreeHeap(RtlGetProcessHeap(), 0, state_p as *mut u8);
+}
+
+/// `NTSTATUS NTAPI RtlAdjustPrivilege(ULONG, BOOLEAN, BOOLEAN, PBOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAdjustPrivilege(
+    privilege: u32,
+    enable: u8,
+    current_thread: u8,
+    enabled: *mut u8,
+) -> i32 {
+    let mut token_handle: *mut u8 = core::ptr::null_mut();
+    let mut status = if current_thread != 0 {
+        ZwOpenThreadToken(
+            priv_::nt_current_thread(),
+            priv_::TOKEN_ADJUST_PRIVILEGES | priv_::TOKEN_QUERY,
+            0,
+            &mut token_handle,
+        )
+    } else {
+        ZwOpenProcessToken(
+            priv_::nt_current_process(),
+            priv_::TOKEN_ADJUST_PRIVILEGES | priv_::TOKEN_QUERY,
+            &mut token_handle,
+        )
+    };
+    if !nt_success(status) {
+        return status;
+    }
+
+    let mut new_state = TOKEN_PRIVILEGES_HDR {
+        PrivilegeCount: 1,
+        Privileges: [LUID_AND_ATTRIBUTES {
+            Luid: LUID { LowPart: privilege, HighPart: 0 },
+            Attributes: if enable != 0 { priv_::SE_PRIVILEGE_ENABLED } else { 0 },
+        }],
+    };
+    let mut old_state = TOKEN_PRIVILEGES_HDR {
+        PrivilegeCount: 1,
+        Privileges: [LUID_AND_ATTRIBUTES {
+            Luid: LUID { LowPart: 0, HighPart: 0 },
+            Attributes: 0,
+        }],
+    };
+    let mut return_length: u32 = 0;
+
+    status = ZwAdjustPrivilegesToken(
+        token_handle,
+        0,
+        &new_state,
+        core::mem::size_of::<TOKEN_PRIVILEGES_HDR>() as u32,
+        &mut old_state,
+        &mut return_length,
+    );
+    let _ = ZwClose(token_handle);
+    if status == STATUS_NOT_ALL_ASSIGNED {
+        return STATUS_PRIVILEGE_NOT_HELD;
+    }
+    if !nt_success(status) {
+        return status;
+    }
+
+    if old_state.PrivilegeCount == 0 {
+        *enabled = enable;
+    } else {
+        *enabled = if old_state.Privileges[0].Attributes & priv_::SE_PRIVILEGE_ENABLED != 0 {
+            1
+        } else {
+            0
+        };
+    }
+    // mute unused-mut
+    let _ = &mut new_state;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlRemovePrivileges(HANDLE, PULONG, ULONG)` —
+/// Vista+. Removes all privileges except those listed in
+/// `PrivilegesToKeep`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlRemovePrivileges(
+    token_handle: *mut u8,
+    privileges_to_keep: *mut u32,
+    privilege_count: u32,
+) -> i32 {
+    let mut keep_bitmap: u64 = 0;
+    if privilege_count != 0 {
+        for i in 0..privilege_count {
+            let p = *privileges_to_keep.add(i as usize);
+            if (p as u64) > priv_::SE_MAX_WELL_KNOWN_PRIVILEGE {
+                return STATUS_INVALID_PARAMETER;
+            }
+            keep_bitmap |= 1u64 << p;
+        }
+    }
+
+    // Fixed-size buffer:
+    //   sizeof(TOKEN_PRIVILEGES) +
+    //   sizeof(LUID_AND_ATTRIBUTES) *
+    //       (SE_MAX_WELL_KNOWN_PRIVILEGE - SE_MIN_WELL_KNOWN_PRIVILEGE)
+    const BUF_SIZE: usize = core::mem::size_of::<TOKEN_PRIVILEGES_HDR>()
+        + core::mem::size_of::<LUID_AND_ATTRIBUTES>()
+            * priv_::SE_MAX_OLD_PRIV_BUFFER_ENTRIES;
+    let mut buffer = [0u8; BUF_SIZE];
+    let mut return_length: u32 = 0;
+
+    let mut status = ZwQueryInformationToken(
+        token_handle,
+        priv_::TOKEN_PRIVILEGES_CLASS,
+        buffer.as_mut_ptr(),
+        BUF_SIZE as u32,
+        &mut return_length,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    let hdr = buffer.as_mut_ptr() as *mut TOKEN_PRIVILEGES_HDR;
+    let priv_count = (*hdr).PrivilegeCount;
+    let arr = &mut (*hdr).Privileges as *mut [LUID_AND_ATTRIBUTES; 1] as *mut LUID_AND_ATTRIBUTES;
+    for i in 0..priv_count {
+        let entry = arr.add(i as usize);
+        let luid_q = ((*entry).Luid.LowPart as u64) | (((*entry).Luid.HighPart as u32 as u64) << 32);
+        if keep_bitmap & (1u64 << luid_q) != 0 {
+            keep_bitmap &= !(1u64 << luid_q);
+        } else {
+            (*entry).Attributes = priv_::SE_PRIVILEGE_REMOVED;
+        }
+    }
+
+    if keep_bitmap != 0 {
+        status = STATUS_NOT_ALL_ASSIGNED;
+    } else {
+        status = ZwAdjustPrivilegesToken(
+            token_handle,
+            0,
+            hdr as *const TOKEN_PRIVILEGES_HDR,
+            BUF_SIZE as u32,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+    }
+    status
 }

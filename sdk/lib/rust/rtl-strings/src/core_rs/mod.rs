@@ -7,6 +7,8 @@ pub mod conv;
 pub mod dos8dot3;
 pub mod misc;
 pub mod nls;
+#[path = "priv_mod.rs"]
+pub mod priv_;
 pub mod sd;
 pub mod sid;
 pub mod ustr;
