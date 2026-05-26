@@ -37,15 +37,28 @@ pub mod csrsrv;
 // NOT use privileged `hlt`/`wfe` (csrss.exe runs in ring 3) — abort
 // the process via the Native API instead.
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
     unsafe {
-        // STATUS_UNSUCCESSFUL (0xC0000001). Translated code is
-        // panic=abort and the C had no panics — this never executes
-        // in practice, but the symbol must resolve and be sound.
-        ntdll_sys::nt::NtTerminateProcess(
-            ntdll_sys::nt::NtCurrentProcess(),
-            0xC0000001u32 as i32,
-        );
+        let banner = b"\n!!! [SMSS-CSRSS] RUST PANIC HIT !!!\n\0";
+        ntdll_sys::nt::DbgPrint(banner.as_ptr() as *const i8);
+        if let Some(loc) = info.location() {
+            // Filenames in core are NUL-terminated UTF-8 string literals;
+            // location().file() returns a &str whose underlying bytes are
+            // typically a static C-string. Use the slice's ptr directly +
+            // print line/column separately.
+            let mut buf = [0u8; 256];
+            let s = loc.file().as_bytes();
+            let n = s.len().min(buf.len() - 1);
+            buf[..n].copy_from_slice(&s[..n]);
+            buf[n] = 0;
+            let fmt = b"PANIC LOC: %s:%u:%u\n\0";
+            ntdll_sys::nt::DbgPrint(
+                fmt.as_ptr() as *const i8,
+                buf.as_ptr() as *const i8,
+                loc.line(),
+                loc.column(),
+            );
+        }
     }
     loop {
         core::hint::spin_loop();

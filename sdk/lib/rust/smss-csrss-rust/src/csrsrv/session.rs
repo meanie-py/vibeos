@@ -171,16 +171,21 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
 
     CsrSetBackgroundPriority(CsrProcess);
 
-    let mut ProcessData = (*CsrProcess).ServerData.as_mut_ptr().add(CSR_SERVER_DLL_MAX as usize) as PVOID;
+    // ServerData is a C flexible array (`PVOID ServerData[ANYSIZE_ARRAY]`)
+    // surfaced by bindgen as `[PVOID; 1]`; index past 0 with raw-pointer
+    // arithmetic, not `[i]`, or panic_bounds_check fires.
+    // See feedback_bindgen_flexible_array_index.
+    let server_data_ptr = (*CsrProcess).ServerData.as_mut_ptr();
+    let mut ProcessData = server_data_ptr.add(CSR_SERVER_DLL_MAX as usize) as PVOID;
 
     for i in 0..CSR_SERVER_DLL_MAX {
         let ServerDll = *CsrLoadedServerDll.as_mut_ptr().add(i as usize);
 
         if !ServerDll.is_null() && (*ServerDll).SizeOfProcessData != 0 {
-            (*CsrProcess).ServerData[i as usize] = ProcessData;
+            *server_data_ptr.add(i as usize) = ProcessData;
             ProcessData = (ProcessData as ULONG_PTR + (*ServerDll).SizeOfProcessData as ULONG_PTR) as PVOID;
         } else {
-            (*CsrProcess).ServerData[i as usize] = core::ptr::null_mut();
+            *server_data_ptr.add(i as usize) = core::ptr::null_mut();
         }
     }
 

@@ -180,6 +180,8 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
     let mut i: ULONG;
     let mut ReplyPort: HANDLE;
 
+    DbgPrint(b"[CSRSRV] ApiRequestThread: enter param=%p\n\0".as_ptr() as *const i8, Parameter);
+
     ReplyMsg = core::ptr::null_mut();
     ReplyPort = CsrApiPort;
 
@@ -189,12 +191,16 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
+        let mut connect_attempts: u32 = 0;
         while CsrConnectToUser().is_null() {
+            connect_attempts += 1;
+            DbgPrint(b"[CSRSRV] ApiRequestThread: CsrConnectToUser null, attempt %u\n\0".as_ptr() as *const i8, connect_attempts);
             let mut TimeOut: LARGE_INTEGER = core::mem::zeroed();
             TimeOut.QuadPart = -30 * 1000 * 1000 * 10;
             (*Teb).Win32ClientInfo[0] = 0;
             NtDelayExecution(0u8, &raw mut TimeOut);
         }
+        DbgPrint(b"[CSRSRV] ApiRequestThread: CsrConnectToUser OK\n\0".as_ptr() as *const i8);
     }
 
     CurrentThread = (*Teb).CsrClientThread as PCSR_THREAD;
@@ -203,9 +209,15 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         Status = NtSetEvent(Parameter as HANDLE, core::ptr::null_mut());
         InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
         InterlockedIncrementUL(&raw mut CsrpDynamicThreadTotal);
+        DbgPrint(b"[CSRSRV] ApiRequestThread: NtSetEvent st=0x%lx, entering loop\n\0".as_ptr() as *const i8, Status);
     }
 
+    let mut loop_iter: u32 = 0;
     loop {
+        loop_iter += 1;
+        if loop_iter <= 5 {
+            DbgPrint(b"[CSRSRV] ApiReqThr: iter %u, calling NtReplyWaitReceivePort port=%p\n\0".as_ptr() as *const i8, loop_iter, ReplyPort);
+        }
         (*Teb).RealClientId = (*Teb).ClientId;
 
         Status = NtReplyWaitReceivePort(
@@ -219,6 +231,9 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
             &raw mut ReceiveMsg.Header,
         );
 
+        if loop_iter <= 5 {
+            DbgPrint(b"[CSRSRV] ApiReqThr: iter %u, NtReplyWaitReceivePort st=0x%lx\n\0".as_ptr() as *const i8, loop_iter, Status);
+        }
         if Status != STATUS_SUCCESS {
             if Status < 0 {
                 ReplyMsg = core::ptr::null_mut();
@@ -496,6 +511,7 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
     let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut ServerThread: PCSR_THREAD;
+    DbgPrint(b"[CSRSRV] ApiPortInit: enter\n\0".as_ptr() as *const i8);
 
     Size = CsrDirectoryName.Length as ULONG + core::mem::size_of::<[u16; 10]>() as ULONG;
 
@@ -537,6 +553,7 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
         16 * PAGE_SIZE as ULONG,
     );
 
+    DbgPrint(b"[CSRSRV] ApiPortInit: NtCreatePort st=0x%lx\n\0".as_ptr() as *const i8, Status);
     if Status >= 0 {
         Status = NtCreateEvent(
             &raw mut hRequestEvent,
@@ -545,6 +562,7 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
             _EVENT_TYPE_SynchronizationEvent,
             0u8,
         );
+        DbgPrint(b"[CSRSRV] ApiPortInit: NtCreateEvent st=0x%lx h=%p\n\0".as_ptr() as *const i8, Status, hRequestEvent);
 
         if Status >= 0 {
             Status = RtlCreateUserThread(
@@ -559,33 +577,43 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
                 &raw mut hThread,
                 &raw mut ClientId,
             );
+            DbgPrint(b"[CSRSRV] ApiPortInit: RtlCreateUserThread st=0x%lx h=%p\n\0".as_ptr() as *const i8, Status, hThread);
 
             if Status >= 0 {
-                CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread);
+                let added = CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread);
+                DbgPrint(b"[CSRSRV] ApiPortInit: CsrAddStaticServerThread -> %p (CsrRootProcess=%p)\n\0".as_ptr() as *const i8, added, CsrRootProcess);
 
                 ListHead = &raw mut (*CsrRootProcess).ThreadList;
                 NextEntry = (*ListHead).Flink;
+                DbgPrint(b"[CSRSRV] ApiPortInit: resume loop start ListHead=%p Flink=%p\n\0".as_ptr() as *const i8, ListHead, NextEntry);
 
+                let mut iter_n: u32 = 0;
                 while NextEntry != ListHead {
                     ServerThread = ((NextEntry as usize)
                         - core::mem::offset_of!(_CSR_THREAD, Link))
                         as PCSR_THREAD;
+                    DbgPrint(b"[CSRSRV] ApiPortInit: iter %u ServerThread=%p Flags=0x%x hT=%p\n\0".as_ptr() as *const i8, iter_n, ServerThread, (*ServerThread).Flags, (*ServerThread).ThreadHandle);
 
                     Status = NtResumeThread((*ServerThread).ThreadHandle, core::ptr::null_mut());
+                    DbgPrint(b"[CSRSRV] ApiPortInit: NtResumeThread st=0x%lx\n\0".as_ptr() as *const i8, Status);
 
                     if (*ServerThread).Flags & CsrThreadIsServerThread != 0 {
                         Status =
                             NtWaitForSingleObject(hRequestEvent, 0u8, core::ptr::null_mut());
+                        DbgPrint(b"[CSRSRV] ApiPortInit: NtWaitForSingleObject st=0x%lx\n\0".as_ptr() as *const i8, Status);
                     }
 
                     NextEntry = (*NextEntry).Flink;
+                    iter_n += 1;
                 }
 
+                DbgPrint(b"[CSRSRV] ApiPortInit: resume loop done iters=%u\n\0".as_ptr() as *const i8, iter_n);
                 NtClose(hRequestEvent);
             }
         }
     }
 
+    DbgPrint(b"[CSRSRV] ApiPortInit: exit st=0x%lx\n\0".as_ptr() as *const i8, Status);
     Status
 }
 

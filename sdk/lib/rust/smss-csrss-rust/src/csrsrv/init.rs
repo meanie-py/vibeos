@@ -785,6 +785,7 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrServerInitialization(ArgumentCount: ULONG, Arguments: *mut PCHAR) -> NTSTATUS {
+    DbgPrint(b"[CSRSRV] CSI: ENTRY argc=%u\n\0".as_ptr() as *const i8, ArgumentCount);
     let mut Status = STATUS_SUCCESS;
 
     Status = NtQuerySystemInformation(
@@ -819,12 +820,16 @@ pub unsafe extern "system" fn CsrServerInitialization(ArgumentCount: ULONG, Argu
         return Status;
     }
 
+    DbgPrint(b"[CSRSRV] CSI: before CsrInitCsrRootProcess\n\0".as_ptr() as *const i8);
     Status = CsrInitCsrRootProcess();
+    DbgPrint(b"[CSRSRV] CSI: after CsrInitCsrRootProcess st=0x%lx\n\0".as_ptr() as *const i8, Status);
     if Status < 0 {
         return Status;
     }
 
+    DbgPrint(b"[CSRSRV] CSI: before CsrApiPortInitialize\n\0".as_ptr() as *const i8);
     Status = CsrApiPortInitialize();
+    DbgPrint(b"[CSRSRV] CSI: after CsrApiPortInitialize st=0x%lx\n\0".as_ptr() as *const i8, Status);
     if Status < 0 {
         return Status;
     }

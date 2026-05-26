@@ -38,6 +38,20 @@ add_custom_command(
     DEPENDS
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/lib.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrss.rs
+        # csrss.exe statically links the whole smss-csrss-rust archive
+        # (the csrsrv stem ships inside csrss.exe AND csrsrv.dll, via
+        # two independent cargo target dirs). The crate's whole-tree
+        # source tracking lives below — anything touched by a rebuild
+        # of -p smss-csrss-rust must invalidate the csrss.exe link.
+        # See feedback_rustconv_main_repo_leak (different leak) for
+        # the parallel cmake-DEPENDS surprise mode.
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrsrv/api.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrsrv/init.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrsrv/procsup.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrsrv/server.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrsrv/session.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrsrv/thredsup.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/csrsrv/wait.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/inlines.rs
