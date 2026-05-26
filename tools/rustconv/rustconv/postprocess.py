@@ -1215,6 +1215,78 @@ def fix_variadic_extern_system(code: str) -> str:
     return '\n'.join(result)
 
 
+_GDIOBJ_MACRO_FAMILIES = (
+    "DRIVEROBJ", "BRUSHOBJ", "DC", "PATH", "REGION", "SURFACE",
+    "PALETTE", "XLATEOBJ", "LFONT", "TEXTOBJ", "COLORSPACEOBJ", "ICMLCS",
+)
+
+_GDIOBJ_MACRO_VERBS = (
+    # exact suffix patterns the headers use
+    "AllocObject", "AllocObjectWithHandle", "AllocPath", "AllocPathWithHandle",
+    "AllocCS", "AllocCSWithHandle", "AllocFont", "AllocFontWithHandle",
+    "AllocBrush", "AllocBrushWithHandle", "AllocPalette", "AllocPaletteWithHandle",
+    "AllocSurface", "AllocSurfaceWithHandle", "AllocRgn", "AllocRgnWithHandle",
+    "AllocText", "AllocTextWithHandle",
+    "LockObject", "LockBrush", "LockDc", "LockPath", "LockRgn", "LockSurface",
+    "LockPalette", "LockFont", "LockText", "LockCS",
+    "UnlockObject", "UnlockBrush", "UnlockDc", "UnlockPath", "UnlockRgn",
+    "UnlockSurface", "UnlockPalette", "UnlockFont", "UnlockText", "UnlockCS",
+    "TryLockObject", "ShareLockObject", "ShareLockSurface", "ShareLockPalette",
+    "ShareLockFont", "ShareUnlockObject", "ShareUnlockSurface",
+    "ShareUnlockPalette", "ShareUnlockFont", "vUnlockObject", "vReleaseObj",
+)
+
+
+def drop_gdiobj_macro_externs(code: str) -> str:
+    """Mode-4 safety net: drop `extern "C" { fn <T>_<Verb>(...); }` decls
+    where <T>_<Verb> is a known GDI-object macro family pattern.
+
+    These names look like C functions but are macros (gdi/eng/<T>.h,
+    gdi/ntgdi/<T>.h) — declaring them extern produces undefined symbols
+    at link. Dropping the extern downgrades the failure to a clean
+    compile error at the call site, much easier to fix. The Rust
+    translation should inline-expand to the underlying GDIOBJ_*
+    primitives (see win32k_translation_prompt.md §6).
+    """
+    pat = re.compile(
+        r'^extern\s+"(?:C|system|stdcall|fastcall)"\s*\{\s*\n'
+        r'((?:[ \t]+(?:#\[[^\]]+\]\s*\n[ \t]+)?fn\s+[A-Za-z_]\w*\b'
+        r'(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)'
+        r'\}\s*\n?',
+        re.MULTILINE,
+    )
+
+    def rewrite_block(m: re.Match) -> str:
+        body = m.group(1)
+        kept_fns: list[str] = []
+        dropped: list[str] = []
+        for line in body.splitlines(keepends=False):
+            fn_m = re.match(r'^\s*fn\s+([A-Za-z_]\w*)\b', line)
+            if not fn_m:
+                kept_fns.append(line)
+                continue
+            name = fn_m.group(1)
+            prefix, _, rest = name.partition("_")
+            if prefix in _GDIOBJ_MACRO_FAMILIES and rest in _GDIOBJ_MACRO_VERBS:
+                dropped.append(name)
+                continue
+            kept_fns.append(line)
+        if not dropped:
+            return m.group(0)
+        out = ""
+        if any(ln.strip() for ln in kept_fns):
+            out += 'extern "C" {\n' + "\n".join(kept_fns) + "\n}\n"
+        out += (f"// drop_gdiobj_macro_externs: dropped {len(dropped)} bogus "
+                f"extern decl(s) for GDI-object macro(s): "
+                f"{', '.join(dropped)} — these are macros in "
+                f"gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. "
+                f"Inline-expand via GDIOBJ_* primitives per "
+                f"win32k_translation_prompt.md §6.\n")
+        return out
+
+    return pat.sub(rewrite_block, code)
+
+
 def fix_markdown_fence_leak(code: str) -> str:
     """Strip stray markdown ``` fences the LLM occasionally leaks into
     the preamble translation output (empty preambles → bare ```rust\\n```).
@@ -1354,6 +1426,7 @@ def postprocess(
         code = fix_win32k_crate_path(code)
         code = normalize_win32k_imports(code)
         code = enforce_win32k_abi(code)
+        code = drop_gdiobj_macro_externs(code)
     if globals:
         code = fix_global_exports(code, globals)
     code = fix_self_imports(code)
@@ -1368,6 +1441,19 @@ def postprocess(
 
 
 def postprocess_file(path: Path) -> str:
-    """Read a file, post-process it, return the result."""
+    """Read a file, post-process it, return the result.
+
+    Auto-detects the target (ntoskrnl/hal/win32k/freeldr) from the path
+    so target-gated passes (e.g. `enforce_win32k_abi`,
+    `drop_gdiobj_macro_externs`) fire on win32k-rust files.
+    """
     code = path.read_text()
-    return postprocess(code)
+    target_name = "ntoskrnl"
+    p = path.as_posix()
+    if "/win32k-rust/" in p:
+        target_name = "win32k"
+    elif "/hal-rust/" in p:
+        target_name = "hal"
+    elif "/freeldr-rust/" in p:
+        target_name = "freeldr"
+    return postprocess(code, target_name=target_name)

@@ -1105,7 +1105,16 @@ def cmd_postprocess(args):
     total_changed = 0
     for rs_file in rs_files:
         original = rs_file.read_text()
-        processed = postprocess(original)
+        # detect target from path so win32k/hal/freeldr-gated passes fire
+        target_name = "ntoskrnl"
+        p = rs_file.as_posix()
+        if "/win32k-rust/" in p:
+            target_name = "win32k"
+        elif "/hal-rust/" in p:
+            target_name = "hal"
+        elif "/freeldr-rust/" in p:
+            target_name = "freeldr"
+        processed = postprocess(original, target_name=target_name)
 
         if processed == original:
             print(f"  {rs_file.name}: unchanged", file=sys.stderr)
