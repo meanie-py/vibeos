@@ -62,6 +62,37 @@ const RTL_SKIP_BUFFER_COPY: u32 = 0x0000_0001;
 const RTL_DUP_NULL_TERMINATE: u32 = 1;
 const RTL_DUP_ALLOCATE_NULL_STRING: u32 = 2;
 
+// String allocator tags (sdk/lib/rtl/rtlp.h). C multi-char literals
+// are big-endian; `u32::from_le_bytes(*b"RTSU")` gives the same value.
+const TAG_USTR: u32 = u32::from_le_bytes(*b"RTSU");
+const TAG_ASTR: u32 = u32::from_le_bytes(*b"RTSA");
+const TAG_OSTR: u32 = u32::from_le_bytes(*b"RTSO");
+
+// Kernel-side allocator: when linked into ntoskrnl, route through the
+// existing C `RtlpAllocateMemory` (ntoskrnl/rtl/libsupp.c — wraps
+// ExAllocatePoolWithTag(PagedPool, ...)). The difftest harness keeps
+// the NULL stub so its alloc-failure model paths still fire.
+#[cfg(feature = "kernel")]
+extern "system" {
+    fn RtlpAllocateMemory(Bytes: u32, Tag: u32) -> *mut u8;
+    fn RtlpFreeMemory(Mem: *mut u8, Tag: u32);
+}
+#[inline]
+unsafe fn rtl_alloc(bytes: usize, tag: u32) -> *mut u8 {
+    #[cfg(feature = "kernel")]
+    { RtlpAllocateMemory(bytes as u32, tag) }
+    #[cfg(not(feature = "kernel"))]
+    { let _ = (bytes, tag); core::ptr::null_mut() }
+}
+#[inline]
+#[allow(dead_code)]
+unsafe fn rtl_free(p: *mut u8, tag: u32) {
+    #[cfg(feature = "kernel")]
+    { if !p.is_null() { RtlpFreeMemory(p, tag); } }
+    #[cfg(not(feature = "kernel"))]
+    { let _ = (p, tag); }
+}
+
 /// `RTL_BUFFER` (ndk/rtltypes.h) — host layout (SIZE_T = 8).
 #[repr(C)]
 pub struct RTL_BUFFER {
@@ -598,10 +629,12 @@ pub unsafe extern "system" fn RtlAnsiStringToUnicodeString(
     }
     (*dest).Length = length as u16 - 2;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_USTR) as *mut u16;
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -638,12 +671,13 @@ pub unsafe extern "system" fn RtlUnicodeStringToAnsiString(
     (*dest).Length = length as u16 - 1;
     let mut status = STATUS_SUCCESS;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_ASTR);
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
-    }
-    if (*dest).Length >= (*dest).MaximumLength {
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
+    } else if (*dest).Length >= (*dest).MaximumLength {
         if (*dest).MaximumLength == 0 {
             return STATUS_BUFFER_OVERFLOW;
         }
@@ -696,10 +730,12 @@ pub unsafe extern "system" fn RtlOemStringToUnicodeString(
     }
     (*dest).Length = length as u16 - 2;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_USTR) as *mut u16;
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -726,10 +762,12 @@ pub unsafe extern "system" fn RtlUnicodeStringToOemString(
     }
     (*dest).Length = length as u16 - 1;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_OSTR);
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -767,10 +805,12 @@ pub unsafe extern "system" fn RtlOemStringToCountedUnicodeString(
     }
     (*dest).Length = length as u16;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_USTR) as *mut u16;
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -803,10 +843,12 @@ pub unsafe extern "system" fn RtlUnicodeStringToCountedOemString(
     }
     (*dest).Length = length as u16;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_OSTR);
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -837,8 +879,12 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeString(
     alloc: u8,
 ) -> i32 {
     if alloc != 0 {
+        let buf = rtl_alloc((*src).Length as usize, TAG_USTR) as *mut u16;
         (*dest).MaximumLength = (*src).Length;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*src).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -868,12 +914,13 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToAnsiString(
     }
     (*dest).Length = length as u16 - 1;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_ASTR);
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
-    }
-    if (*dest).Length >= (*dest).MaximumLength && (*dest).MaximumLength == 0 {
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
+    } else if (*dest).Length >= (*dest).MaximumLength && (*dest).MaximumLength == 0 {
         return STATUS_BUFFER_OVERFLOW;
     }
     let dlen = (*dest).Length;
@@ -905,10 +952,12 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToCountedOemString(
     }
     (*dest).Length = length as u16;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_OSTR);
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -940,10 +989,12 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToOemString(
     }
     (*dest).Length = length as u16 - 1;
     if alloc != 0 {
-        // genuine sets MaximumLength = Length BEFORE the NULL-alloc
-        // check, so it persists even when allocation fails.
+        let buf = rtl_alloc(length as usize, TAG_OSTR);
         (*dest).MaximumLength = length as u16;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -980,8 +1031,12 @@ pub unsafe extern "system" fn RtlDowncaseUnicodeString(
     alloc: u8,
 ) -> i32 {
     if alloc != 0 {
+        let buf = rtl_alloc((*src).Length as usize, TAG_USTR) as *mut u16;
         (*dest).MaximumLength = (*src).Length;
-        return STATUS_NO_MEMORY;
+        if buf.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*dest).Buffer = buf;
     }
     if (*src).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
@@ -1339,8 +1394,9 @@ pub unsafe extern "system" fn RtlDnsHostNameToComputerName(
 // as RTL-3 slice 2).
 
 /// `BOOLEAN NTAPI RtlCreateUnicodeString(PUNICODE_STRING, PCWSTR)`.
-/// `Size = (wcslen+1)*2`; `Size > MAXUSHORT` ⇒ FALSE (no writes);
-/// else `Buffer = alloc = NULL` ⇒ FALSE (Length/Max untouched).
+/// `Size = (wcslen+1)*2`; `Size > MAXUSHORT` ⇒ FALSE; allocate via
+/// `RtlpAllocateMemory` (kernel) and copy. Difftest harness still gets
+/// the NULL-alloc model (rtl_alloc returns NULL ⇒ FALSE).
 #[no_mangle]
 pub unsafe extern "system" fn RtlCreateUnicodeString(
     uni_dest: *mut UNICODE_STRING,
@@ -1350,8 +1406,16 @@ pub unsafe extern "system" fn RtlCreateUnicodeString(
     if size > MAXUSHORT as usize {
         return 0;
     }
-    (*uni_dest).Buffer = core::ptr::null_mut();
-    0
+    (*uni_dest).MaximumLength = size as u16;
+    let buf = rtl_alloc(size, TAG_USTR) as *mut u16;
+    if buf.is_null() {
+        (*uni_dest).Buffer = core::ptr::null_mut();
+        return 0;
+    }
+    core::ptr::copy_nonoverlapping(source, buf, size / 2);
+    (*uni_dest).Buffer = buf;
+    (*uni_dest).Length = size as u16 - 2;
+    1
 }
 
 /// `BOOLEAN NTAPI RtlCreateUnicodeStringFromAsciiz(PUNICODE_STRING,
@@ -1363,19 +1427,18 @@ pub unsafe extern "system" fn RtlCreateUnicodeStringFromAsciiz(
     destination: *mut UNICODE_STRING,
     source: *const u8,
 ) -> u8 {
-    let (alen, _) = if source.is_null() {
-        (0u16, 0u16)
-    } else {
-        ustr::ansi_lengths(strlen(source))
+    let mut ansi = STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
     };
-    let length = (alen as u32 + 1) * 2;
-    if length > MAXUSHORT {
-        return 0; // STATUS_INVALID_PARAMETER_2 before any field write
+    RtlInitAnsiString(&mut ansi, source);
+    let status = RtlAnsiStringToUnicodeString(destination, &ansi, 1);
+    if nt_success(status) {
+        1
+    } else {
+        0
     }
-    (*destination).Length = length as u16 - 2;
-    (*destination).Buffer = core::ptr::null_mut();
-    (*destination).MaximumLength = length as u16;
-    0 // NT_SUCCESS(STATUS_NO_MEMORY) == false
 }
 
 /// `NTSTATUS NTAPI RtlDuplicateUnicodeString(ULONG, PCUNICODE_STRING,
@@ -1404,9 +1467,30 @@ pub unsafe extern "system" fn RtlDuplicateUnicodeString(
         (*destination).MaximumLength = 0;
         (*destination).Buffer = core::ptr::null_mut();
     } else {
-        // alloc → NULL ⇒ NO_MEMORY (Buffer written, Length/Max not).
-        (*destination).Buffer = core::ptr::null_mut();
-        return STATUS_NO_MEMORY;
+        // alloc length matches C: Length + 2 if NULL-terminate flag set,
+        // else just Length. Bytes; min 2 for the empty-NUL-string case.
+        let alloc_len = if (flags & RTL_DUP_NULL_TERMINATE) != 0 {
+            (*source).Length as usize + 2
+        } else {
+            (*source).Length as usize
+        };
+        let alloc_len = if alloc_len == 0 { 2 } else { alloc_len };
+        let buf = rtl_alloc(alloc_len, TAG_USTR) as *mut u16;
+        if buf.is_null() {
+            (*destination).Buffer = core::ptr::null_mut();
+            return STATUS_NO_MEMORY;
+        }
+        core::ptr::copy_nonoverlapping(
+            (*source).Buffer,
+            buf,
+            (*source).Length as usize / 2,
+        );
+        if (flags & RTL_DUP_NULL_TERMINATE) != 0 {
+            *buf.add((*source).Length as usize / 2) = 0;
+        }
+        (*destination).Buffer = buf;
+        (*destination).Length = (*source).Length;
+        (*destination).MaximumLength = alloc_len as u16;
     }
     STATUS_SUCCESS
 }
@@ -1567,6 +1651,7 @@ pub unsafe extern "system" fn RtlEraseUnicodeString(
 #[no_mangle]
 pub unsafe extern "system" fn RtlFreeAnsiString(ansi_string: *mut STRING) {
     if !(*ansi_string).Buffer.is_null() {
+        rtl_free((*ansi_string).Buffer, TAG_ASTR);
         (*ansi_string).Length = 0;
         (*ansi_string).MaximumLength = 0;
         (*ansi_string).Buffer = core::ptr::null_mut();
@@ -1576,8 +1661,11 @@ pub unsafe extern "system" fn RtlFreeAnsiString(ansi_string: *mut STRING) {
 /// `VOID NTAPI RtlFreeOemString(POEM_STRING)`. Buffer non-NULL ⇒ free
 /// **only** — genuine does NOT zero the struct (the pinned quirk).
 #[no_mangle]
-pub unsafe extern "system" fn RtlFreeOemString(_oem_string: *mut STRING) {
-    // free is the harness no-op stub; no field writes (faithful).
+pub unsafe extern "system" fn RtlFreeOemString(oem_string: *mut STRING) {
+    if !(*oem_string).Buffer.is_null() {
+        rtl_free((*oem_string).Buffer, TAG_OSTR);
+        // genuine: no field writes (pinned quirk).
+    }
 }
 
 /// `VOID NTAPI RtlFreeUnicodeString(PUNICODE_STRING)`. Buffer
@@ -1587,6 +1675,7 @@ pub unsafe extern "system" fn RtlFreeUnicodeString(
     unicode_string: *mut UNICODE_STRING,
 ) {
     if !(*unicode_string).Buffer.is_null() {
+        rtl_free((*unicode_string).Buffer as *mut u8, TAG_USTR);
         (*unicode_string).Length = 0;
         (*unicode_string).MaximumLength = 0;
         (*unicode_string).Buffer = core::ptr::null_mut();
