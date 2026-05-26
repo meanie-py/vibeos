@@ -52,8 +52,10 @@ endif()
 list(APPEND UEFILDR_BOOTMGR_SOURCE
     ${FREELDR_BOOTMGR_SOURCE}
     custom.c
-    options.c
-    oslist.c
+    # options.c — replaced by Rust (sdk/lib/rust/freeldr-rust/src/options.rs)
+    # oslist.c  — replaced by Rust (sdk/lib/rust/freeldr-rust/src/oslist.rs)
+    # NOTE: rosload.cmake keeps its own C copies of these two (rosload.exe
+    # does not link libfreeldr_rust.a; cohabitation flip is a future task).
 )
 
 add_asm_files(uefifreeldr_common_asm ${FREELDR_COMMON_ASM_SOURCE} ${UEFILDR_COMMON_ASM_SOURCE})

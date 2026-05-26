@@ -22,6 +22,11 @@ crate-type = ["staticlib"]
 # second archive (libfreeldr_rust_uefi.a) with --features uefi.
 default = []
 uefi = []
+# miscboot.c lives in rosload.cmake only and rosload doesn't link
+# libfreeldr_rust.a, so the Rust translation is parked behind an
+# off-by-default feature to avoid a dup #[no_mangle] when/if rosload
+# ever flips to the .a (see lib.rs comment).
+miscboot-rust-entry = []
 
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }

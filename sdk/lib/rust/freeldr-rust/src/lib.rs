@@ -100,6 +100,18 @@ pub mod uefi_stubs;
 pub mod uefiutil;
 #[cfg(feature = "uefi")]
 pub mod uefildr;
+
+// UEFI-build-only fns (uefi.cmake lists options.c + oslist.c); rosload.exe
+// keeps its own C copies and does NOT link libfreeldr_rust.a so no clash.
+#[cfg(feature = "uefi")]
+pub mod options;
+#[cfg(feature = "uefi")]
+pub mod oslist;
+// miscboot.c lives in rosload.cmake only; translate-and-park: the Rust
+// fn is gated behind an off-by-default feature so rosload's C copy keeps
+// symbol ownership (no dup #[no_mangle]). Per AGENTS, never delete a .rs.
+#[cfg(feature = "miscboot-rust-entry")]
+pub mod miscboot;
 // PC-link fallback for vidfb.c's UEFI-only FbCons*/GlobalSystemTable
 // (ueficon/uefivid extern-consume them; their C providers are UEFI-only
 // so freeldr_pe/BIOS has no provider). BIOS-only — on the `uefi`
