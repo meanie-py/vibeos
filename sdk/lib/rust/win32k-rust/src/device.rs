@@ -1,0 +1,1537 @@
+use win32k_sys::win32k::*;
+// Several imports below are unused because their using functions are currently DEFERRED-STUBs;
+// keep them so resurrection from the inline C source needs zero re-discovery.
+#[allow(unused_imports)]
+use ntkrnl_sys::ddk::{ExAllocatePoolZero, ExFreePool, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoGetDeviceObjectPointer, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoOpenDeviceRegistryKey, IoSynchronousInvalidateDeviceRelations, KeInitializeEvent, KeWaitForSingleObject, RtlEqualUnicodeString, RtlInitUnicodeString, RtlQueryRegistryValues, ZwClose};
+// Bring in NT_SUCCESS, STATUS_*, ExAllocatePoolWithTag, ExFreePoolWithTag, RtlCopyMemory,
+// ObDereferenceObject from ntkrnl_sys. These are not in `win32k_sys::win32k::*` but the
+// translation needs them constantly.
+use ntkrnl_sys::base::NT_SUCCESS;
+#[allow(unused_imports)]
+use ntkrnl_sys::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NOT_IMPLEMENTED};
+#[allow(unused_imports)]
+use ntkrnl_sys::constants::{
+    STATUS_UNSUCCESSFUL, STATUS_PENDING, STATUS_NOT_SUPPORTED, STATUS_INVALID_PARAMETER,
+    STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_HANDLE,
+};
+#[allow(unused_imports)]
+use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
+#[allow(unused_imports)]
+use ntkrnl_sys::rtl::RtlCopyMemory;
+#[allow(unused_imports)]
+use ntkrnl_sys::ob::ObDereferenceObject;
+#[allow(unused_imports)]
+use core::ffi::c_void;
+
+// C debug macros — silenced via macro_rules! (variadic no-op).
+#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
+#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
+
+
+// STATUS_DEVICE_DOES_NOT_EXIST not in ntkrnl_sys::constants — define locally
+// (matches winerror.h / ntstatus.h).
+const STATUS_DEVICE_DOES_NOT_EXIST: NTSTATUS = 0xC00000C0_u32 as i32;
+
+// IoCallDriver is a C macro `#define IoCallDriver(a,b) IofCallDriver(a,b)`. Forward to the
+// ntkrnl_sys IofCallDriver but accept the win32k-sys flavoured pointers (layouts are
+// identical — both crates bindgen the same C struct).
+unsafe fn IoCallDriver(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
+    ntkrnl_sys::ddk::IofCallDriver(
+        device as *mut ntkrnl_sys::ddk::_DEVICE_OBJECT,
+        irp as *mut ntkrnl_sys::ddk::_IRP,
+    )
+}
+
+extern "C" {
+
+    fn RegOpenKey(KeyName: *const u16, phKey: *mut HKEY) -> i32;
+    fn RegQueryValue(hKey: HKEY, ValueName: *const u16, Type: u32, Data: *mut core::ffi::c_void, DataSize: *mut u32) -> i32;
+
+    fn RtlStringCbCopyNW(pszDest: PWSTR, cbDest: usize, pszSrc: PWSTR, cbSrc: usize) -> NTSTATUS;
+    fn RtlStringCbPrintfW(pszDest: PWSTR, cbDest: usize, pszFormat: PWSTR, ...) -> NTSTATUS;
+    static ScreenDeviceContext: HDC;
+    static GDITAG_GDEVICE: ULONG;
+    static GDITAG_DRVSUP: ULONG;
+    static IOCTL_VIDEO_INIT_WIN32K_CALLBACKS: ULONG;
+    static IOCTL_VIDEO_ENUM_MONITOR_PDO: ULONG;
+}
+
+// ---- file-scope preamble (translated) ----
+static mut gpPrimaryGraphicsDevice: PGRAPHICS_DEVICE = core::ptr::null_mut();
+static mut gpVgaGraphicsDevice: PGRAPHICS_DEVICE = core::ptr::null_mut();
+static mut gpGraphicsDeviceFirst: PGRAPHICS_DEVICE = core::ptr::null_mut();
+static mut gpGraphicsDeviceLast: PGRAPHICS_DEVICE = core::ptr::null_mut();
+static mut ghsemGraphicsDeviceList: HSEMAPHORE = core::ptr::null_mut();
+static mut giDevNum: ULONG = 1;
+
+#[inline(always)]
+unsafe fn InitDeviceImpl_impl() -> NTSTATUS {
+    ghsemGraphicsDeviceList = EngCreateSemaphore();
+    if ghsemGraphicsDeviceList.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    STATUS_SUCCESS
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn InitDeviceImpl() -> NTSTATUS {
+    InitDeviceImpl_impl()
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn InitDeviceImpl() -> NTSTATUS {
+    InitDeviceImpl_impl()
+}
+
+unsafe fn EngpHasVgaDriver(pGraphicsDevice: PGRAPHICS_DEVICE) -> u8 {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = pGraphicsDevice;
+    0u8
+}
+
+unsafe fn EngpLinkGraphicsDevice(
+    pToAdd: PGRAPHICS_DEVICE)
+{
+    let mut pGraphicsDevice: PGRAPHICS_DEVICE;
+
+    TRACE!(b"EngLinkGraphicsDevice(%p)\n\0".as_ptr() as PCHAR, pToAdd);
+
+    pGraphicsDevice = gpGraphicsDeviceFirst;
+    while !pGraphicsDevice.is_null() {
+        if pGraphicsDevice == pToAdd {
+            return;
+        }
+        pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+    }
+
+    (*pToAdd).pNextGraphicsDevice = core::ptr::null_mut();
+    if !gpGraphicsDeviceLast.is_null() {
+        (*gpGraphicsDeviceLast).pNextGraphicsDevice = pToAdd;
+    }
+    gpGraphicsDeviceLast = pToAdd;
+    if gpGraphicsDeviceFirst.is_null() {
+        gpGraphicsDeviceFirst = pToAdd;
+    }
+}
+
+unsafe fn EngpUnlinkGraphicsDevice(
+    pToDelete: PGRAPHICS_DEVICE)
+{
+    let mut pPrevGraphicsDevice: PGRAPHICS_DEVICE = core::ptr::null_mut();
+    let mut pGraphicsDevice: PGRAPHICS_DEVICE = gpGraphicsDeviceFirst;
+
+    TRACE!(b"EngpUnlinkGraphicsDevice('%S')\n\0".as_ptr() as PCHAR, (*pToDelete).szNtDeviceName.as_ptr());
+
+    while !pGraphicsDevice.is_null()
+    {
+        if pGraphicsDevice != pToDelete
+        {
+            pPrevGraphicsDevice = pGraphicsDevice;
+            pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+        }
+        else
+        {
+            if !(*pGraphicsDevice).pVgaDevice.is_null() {
+                EngpLinkGraphicsDevice((*pGraphicsDevice).pVgaDevice);
+            }
+
+            pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+
+            if pPrevGraphicsDevice.is_null() {
+                gpGraphicsDeviceFirst = (*pToDelete).pNextGraphicsDevice;
+            } else {
+                (*pPrevGraphicsDevice).pNextGraphicsDevice = (*pToDelete).pNextGraphicsDevice;
+            }
+            if gpGraphicsDeviceLast == pToDelete {
+                gpGraphicsDeviceLast = pPrevGraphicsDevice;
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn EngpUpdateGraphicsDeviceList() -> NTSTATUS {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    // Return STATUS_SUCCESS as a no-op so callers proceed (display registration
+    // happens later via other paths); link symbol is the priority here.
+    STATUS_SUCCESS
+}
+
+unsafe fn EngpGetRegistryHandleFromDeviceMap(
+    pGraphicsDevice: PGRAPHICS_DEVICE
+) -> HKEY {
+    static KEY_VIDEO: &[u16] = &[
+        92, 82, 101, 103, 105, 115, 116, 114, 121, 92, 77, 97, 99, 104, 105, 110, 101, 92,
+        72, 65, 82, 68, 87, 65, 82, 69, 92, 68, 69, 86, 73, 67, 69, 77, 65, 80, 92, 86, 73, 68, 69, 79, 0
+    ];
+    
+    let mut hKey: HKEY = core::ptr::null_mut();
+    let mut szDeviceKey: [u16; 256] = [0; 256];
+    let mut cbSize: u32;
+    let mut Status: i32;
+
+    Status = RegOpenKey(KEY_VIDEO.as_ptr(), &mut hKey);
+    if !NT_SUCCESS(Status) {
+        ERR!(b"Could not open HARDWARE\\DEVICEMAP\\VIDEO registry key: status 0x%08x\n\0".as_ptr() as *const i8, Status);
+        return core::ptr::null_mut();
+    }
+
+    cbSize = core::mem::size_of_val(&szDeviceKey) as u32;
+    RegQueryValue(hKey,
+                  (*pGraphicsDevice).szNtDeviceName.as_ptr(),
+                  REG_SZ,
+                  szDeviceKey.as_mut_ptr() as *mut core::ffi::c_void,
+                  &mut cbSize);
+    ZwClose(hKey as *mut core::ffi::c_void);
+
+    Status = RegOpenKey(szDeviceKey.as_ptr(), &mut hKey);
+    if !NT_SUCCESS(Status) {
+        ERR!(b"Could not open registry key '%S': status 0x%08x\n\0".as_ptr() as *const i8, szDeviceKey.as_ptr(), Status);
+        return core::ptr::null_mut();
+    }
+
+    hKey
+}
+
+// Plain cdecl in C (device.h:47, device.c:381).
+#[no_mangle]
+pub unsafe extern "C" fn EngpGetDisplayDriverParameters(
+    pGraphicsDevice: PGRAPHICS_DEVICE,
+    pdm: PDEVMODEW
+) -> i32 {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (pGraphicsDevice, pdm);
+    STATUS_UNSUCCESSFUL
+}
+
+// Plain cdecl in C (device.h:53, device.c:427).
+#[no_mangle]
+pub unsafe extern "C" fn EngpGetDisplayDriverAccelerationLevel(
+    pGraphicsDevice: PGRAPHICS_DEVICE
+) -> u32 {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = pGraphicsDevice;
+    0u32
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn VideoPortCallout(
+    Params: PVOID,
+) {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = Params;
+}
+
+unsafe fn EngpPnPTargetRelationRequest(
+    pDeviceObject: PDEVICE_OBJECT,
+    pDeviceRelations: *mut PDEVICE_RELATIONS) -> NTSTATUS
+{
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (pDeviceObject, pDeviceRelations);
+    STATUS_NOT_IMPLEMENTED
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn EngpUpdateMonitorDevices(
+    pGraphicsDevice: PGRAPHICS_DEVICE) -> NTSTATUS
+{
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = pGraphicsDevice;
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn EngpRegisterGraphicsDevice(
+    pustrDeviceName: PUNICODE_STRING,
+    pustrDiplayDrivers: PUNICODE_STRING,
+    pustrDescription: PUNICODE_STRING,
+) -> PGRAPHICS_DEVICE {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (pustrDeviceName, pustrDiplayDrivers, pustrDescription);
+    core::ptr::null_mut()
+}
+
+// NTAPI in C — stdcall on i386, cdecl elsewhere.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn EngpFindGraphicsDevice(
+    pustrDevice: PUNICODE_STRING,
+    iDevNum: u32,
+) -> PGRAPHICS_DEVICE {
+    EngpFindGraphicsDevice_impl(pustrDevice, iDevNum)
+}
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn EngpFindGraphicsDevice(
+    pustrDevice: PUNICODE_STRING,
+    iDevNum: u32,
+) -> PGRAPHICS_DEVICE {
+    EngpFindGraphicsDevice_impl(pustrDevice, iDevNum)
+}
+
+unsafe fn EngpFindGraphicsDevice_impl(
+    pustrDevice: PUNICODE_STRING,
+    iDevNum: u32,
+) -> PGRAPHICS_DEVICE {
+    // Use ntkrnl_sys flavour of _UNICODE_STRING for compatibility with RtlInit/RtlEqual.
+    let mut ustrCurrent: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
+    let mut pGraphicsDevice: PGRAPHICS_DEVICE;
+    let mut i: u32;
+
+    EngAcquireSemaphore(ghsemGraphicsDeviceList);
+
+    if !pustrDevice.is_null() && !(*pustrDevice).Buffer.is_null() {
+        pGraphicsDevice = gpGraphicsDeviceFirst;
+        while !pGraphicsDevice.is_null() {
+            RtlInitUnicodeString(
+                core::ptr::addr_of_mut!(ustrCurrent),
+                (*pGraphicsDevice).szWinDeviceName.as_ptr(),
+            );
+            if RtlEqualUnicodeString(
+                core::ptr::addr_of_mut!(ustrCurrent),
+                pustrDevice as *mut ntkrnl_sys::ddk::_UNICODE_STRING,
+                0u8,
+            ) != 0
+            {
+                break;
+            }
+            pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+        }
+    } else {
+        pGraphicsDevice = gpGraphicsDeviceFirst;
+        i = 0;
+        while !pGraphicsDevice.is_null() && i < iDevNum {
+            pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+            i += 1;
+        }
+    }
+
+    EngReleaseSemaphore(ghsemGraphicsDeviceList);
+
+    pGraphicsDevice
+}
+
+unsafe fn EngpFileIoRequest(
+    pFileObject: PFILE_OBJECT,
+    ulMajorFunction: ULONG,
+    lpBuffer: PVOID,
+    nBufferSize: SIZE_T,
+    ullStartOffset: ULONGLONG,
+    lpInformation: PULONG_PTR,
+) -> NTSTATUS {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (pFileObject, ulMajorFunction, lpBuffer, nBufferSize, ullStartOffset, lpInformation);
+    STATUS_NOT_IMPLEMENTED
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn EngFileWrite(
+    pFileObject: PFILE_OBJECT,
+    lpBuffer: PVOID,
+    nLength: SIZE_T,
+    lpBytesWritten: PSIZE_T,
+) {
+    let status: NTSTATUS;
+
+    status = EngpFileIoRequest(
+        pFileObject,
+        IRP_MJ_WRITE,
+        lpBuffer,
+        nLength,
+        0,
+        lpBytesWritten,
+    );
+    if !NT_SUCCESS(status) {
+        *lpBytesWritten = 0;
+    }
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn EngFileWrite(
+    pFileObject: PFILE_OBJECT,
+    lpBuffer: PVOID,
+    nLength: SIZE_T,
+    lpBytesWritten: PSIZE_T,
+) {
+    let status: NTSTATUS;
+
+    status = EngpFileIoRequest(
+        pFileObject,
+        IRP_MJ_WRITE,
+        lpBuffer,
+        nLength,
+        0,
+        lpBytesWritten,
+    );
+    if !NT_SUCCESS(status) {
+        *lpBytesWritten = 0;
+    }
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn EngFileIoControl(
+    pFileObject: PFILE_OBJECT,
+    dwIoControlCode: u32,
+    lpInBuffer: *mut core::ffi::c_void,
+    nInBufferSize: usize,
+    lpOutBuffer: *mut core::ffi::c_void,
+    nOutBufferSize: usize,
+    lpInformation: PULONG_PTR,
+) -> i32 {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (pFileObject, dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize, lpInformation);
+    STATUS_NOT_IMPLEMENTED
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn EngFileIoControl(
+    pFileObject: PFILE_OBJECT,
+    dwIoControlCode: u32,
+    lpInBuffer: *mut core::ffi::c_void,
+    nInBufferSize: usize,
+    lpOutBuffer: *mut core::ffi::c_void,
+    nOutBufferSize: usize,
+    lpInformation: PULONG_PTR,
+) -> i32 {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (pFileObject, dwIoControlCode, lpInBuffer, nInBufferSize, lpOutBuffer, nOutBufferSize, lpInformation);
+    STATUS_NOT_IMPLEMENTED
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn EngDeviceIoControl(
+    hDevice: HANDLE,
+    dwIoControlCode: DWORD,
+    lpInBuffer: LPVOID,
+    cjInBufferSize: DWORD,
+    lpOutBuffer: LPVOID,
+    cjOutBufferSize: DWORD,
+    lpBytesReturned: LPDWORD,
+) -> DWORD {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (hDevice, dwIoControlCode, lpInBuffer, cjInBufferSize, lpOutBuffer, cjOutBufferSize, lpBytesReturned);
+    0u32
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn EngDeviceIoControl(
+    hDevice: HANDLE,
+    dwIoControlCode: DWORD,
+    lpInBuffer: LPVOID,
+    cjInBufferSize: DWORD,
+    lpOutBuffer: LPVOID,
+    cjOutBufferSize: DWORD,
+    lpBytesReturned: LPDWORD,
+) -> DWORD {
+    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
+    // TODO: resurrect from the original C in the bottom-of-file source block.
+    let _ = (hDevice, dwIoControlCode, lpInBuffer, cjInBufferSize, lpOutBuffer, cjOutBufferSize, lpBytesReturned);
+    0u32
+}
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*
+//  * COPYRIGHT:         See COPYING in the top level directory
+//  * PROJECT:           ReactOS kernel
+//  * PURPOSE:           GDI Driver Device Functions
+//  * FILE:              win32ss/gdi/eng/device.c
+//  * PROGRAMER:         Jason Filby
+//  *                    Timo Kreuzer
+//  */
+//
+// #include <win32k.h>
+// #include <ntddvdeo.h>
+//
+// DBG_DEFAULT_CHANNEL(EngDev);
+//
+// static PGRAPHICS_DEVICE gpPrimaryGraphicsDevice;
+// static PGRAPHICS_DEVICE gpVgaGraphicsDevice;
+//
+// static PGRAPHICS_DEVICE gpGraphicsDeviceFirst = NULL;
+// static PGRAPHICS_DEVICE gpGraphicsDeviceLast = NULL;
+// static HSEMAPHORE ghsemGraphicsDeviceList;
+// static ULONG giDevNum = 1;
+//
+// CODE_SEG("INIT")
+// NTSTATUS
+// NTAPI
+// InitDeviceImpl(VOID)
+// {
+//     ghsemGraphicsDeviceList = EngCreateSemaphore();
+//     if (!ghsemGraphicsDeviceList)
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//
+//     return STATUS_SUCCESS;
+// }
+//
+// static
+// BOOLEAN
+// EngpHasVgaDriver(
+//     _In_ PGRAPHICS_DEVICE pGraphicsDevice)
+// {
+//     WCHAR awcDeviceKey[256], awcServiceName[100];
+//     PWSTR lastBkSlash;
+//     NTSTATUS Status;
+//     ULONG cbValue;
+//     HKEY hkey;
+//
+//     /* Open the key for the adapters */
+//     Status = RegOpenKey(L"\\Registry\\Machine\\HARDWARE\\DEVICEMAP\\VIDEO", &hkey);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not open HARDWARE\\DEVICEMAP\\VIDEO registry key: 0x%08lx\n", Status);
+//         return FALSE;
+//     }
+//
+//     /* Read the name of the device key */
+//     cbValue = sizeof(awcDeviceKey);
+//     Status = RegQueryValue(hkey, pGraphicsDevice->szNtDeviceName, REG_SZ, awcDeviceKey, &cbValue);
+//     ZwClose(hkey);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not read '%S' registry value: 0x%08lx\n", Status);
+//         return FALSE;
+//     }
+//
+//     /* Replace 'DeviceN' by 'Video' */
+//     lastBkSlash = wcsrchr(awcDeviceKey, L'\\');
+//     if (!lastBkSlash)
+//     {
+//         ERR("Invalid registry key '%S'\n", lastBkSlash);
+//         return FALSE;
+//     }
+//     if (!NT_SUCCESS(RtlStringCchCopyW(lastBkSlash + 1,
+//                                       ARRAYSIZE(awcDeviceKey) - (lastBkSlash + 1 - awcDeviceKey),
+//                                       L"Video")))
+//     {
+//         ERR("Failed to add 'Video' to registry key '%S'\n", awcDeviceKey);
+//         return FALSE;
+//     }
+//
+//     /* Open device key */
+//     Status = RegOpenKey(awcDeviceKey, &hkey);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not open %S registry key: 0x%08lx\n", awcDeviceKey, Status);
+//         return FALSE;
+//     }
+//
+//     /* Read service name */
+//     cbValue = sizeof(awcServiceName);
+//     Status = RegQueryValue(hkey, L"Service", REG_SZ, awcServiceName, &cbValue);
+//     ZwClose(hkey);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not read Service registry value in %S: 0x%08lx\n", awcDeviceKey, Status);
+//         return FALSE;
+//     }
+//
+//     /* Device is using VGA driver if service name is 'VGASave' (case insensitive) */
+//     return (_wcsicmp(awcServiceName, L"VGASave") == 0);
+// }
+//
+// /*
+//  * Add a device to gpGraphicsDeviceFirst/gpGraphicsDeviceLast list (if not already present).
+//  */
+// _Requires_lock_held_(ghsemGraphicsDeviceList)
+// static
+// VOID
+// EngpLinkGraphicsDevice(
+//     _In_ PGRAPHICS_DEVICE pToAdd)
+// {
+//     PGRAPHICS_DEVICE pGraphicsDevice;
+//
+//     TRACE("EngLinkGraphicsDevice(%p)\n", pToAdd);
+//
+//     /* Search if device is not already linked */
+//     for (pGraphicsDevice = gpGraphicsDeviceFirst;
+//          pGraphicsDevice;
+//          pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice)
+//     {
+//         if (pGraphicsDevice == pToAdd)
+//             return;
+//     }
+//
+//     pToAdd->pNextGraphicsDevice = NULL;
+//     if (gpGraphicsDeviceLast)
+//         gpGraphicsDeviceLast->pNextGraphicsDevice = pToAdd;
+//     gpGraphicsDeviceLast = pToAdd;
+//     if (!gpGraphicsDeviceFirst)
+//         gpGraphicsDeviceFirst = pToAdd;
+// }
+//
+// /*
+//  * Remove a device from gpGraphicsDeviceFirst/gpGraphicsDeviceLast list.
+//  */
+// _Requires_lock_held_(ghsemGraphicsDeviceList)
+// static
+// VOID
+// EngpUnlinkGraphicsDevice(
+//     _In_ PGRAPHICS_DEVICE pToDelete)
+// {
+//     PGRAPHICS_DEVICE pPrevGraphicsDevice = NULL;
+//     PGRAPHICS_DEVICE pGraphicsDevice = gpGraphicsDeviceFirst;
+//
+//     TRACE("EngpUnlinkGraphicsDevice('%S')\n", pToDelete->szNtDeviceName);
+//
+//     while (pGraphicsDevice)
+//     {
+//         if (pGraphicsDevice != pToDelete)
+//         {
+//             /* Keep current device */
+//             pPrevGraphicsDevice = pGraphicsDevice;
+//             pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice;
+//         }
+//         else
+//         {
+//             /* At first, link again associated VGA Device */
+//             if (pGraphicsDevice->pVgaDevice)
+//                 EngpLinkGraphicsDevice(pGraphicsDevice->pVgaDevice);
+//
+//             /* We need to remove current device */
+//             pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice;
+//
+//             /* Unlink chain */
+//             if (!pPrevGraphicsDevice)
+//                 gpGraphicsDeviceFirst = pToDelete->pNextGraphicsDevice;
+//             else
+//                 pPrevGraphicsDevice->pNextGraphicsDevice = pToDelete->pNextGraphicsDevice;
+//             if (gpGraphicsDeviceLast == pToDelete)
+//                 gpGraphicsDeviceLast = pPrevGraphicsDevice;
+//         }
+//     }
+// }
+//
+// /* Goal of this function is to:
+//  * - detect new graphic devices (from registry) and initialize them
+//  * - link primary device and VGA device (if available) using pVgaDevice field
+//  * - handle gbBaseVideo global flag
+//  * - set DISPLAY_DEVICE_PRIMARY_DEVICE on at least one device
+//  * - set gpPrimaryGraphicsDevice
+//  * - set gpVgaGraphicsDevice
+//  */
+// NTSTATUS
+// EngpUpdateGraphicsDeviceList(VOID)
+// {
+//     ULONG iDevNum, ulMaxObjectNumber = 0;
+//     WCHAR awcDeviceName[20], awcWinDeviceName[20];
+//     UNICODE_STRING ustrDeviceName;
+//     WCHAR awcBuffer[256];
+//     NTSTATUS Status;
+//     PGRAPHICS_DEVICE pGraphicsDevice, pNewPrimaryGraphicsDevice = NULL;
+//     ULONG cbValue;
+//     HKEY hkey;
+//
+//     /* Open the key for the adapters */
+//     Status = RegOpenKey(L"\\Registry\\Machine\\HARDWARE\\DEVICEMAP\\VIDEO", &hkey);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not open HARDWARE\\DEVICEMAP\\VIDEO registry key:0x%lx\n", Status);
+//         return Status;
+//     }
+//
+//     /* Get the maximum number of adapters */
+//     if (!RegReadDWORD(hkey, L"MaxObjectNumber", &ulMaxObjectNumber))
+//     {
+//         ERR("Could not read MaxObjectNumber, defaulting to 0.\n");
+//     }
+//
+//     ERR("EngpUpdateGraphicsDeviceList: Found %lu devices\n", ulMaxObjectNumber + 1);
+//
+//     /* Loop through all adapters, to detect new ones */
+//     for (iDevNum = 0; iDevNum <= ulMaxObjectNumber; iDevNum++)
+//     {
+//         /* Create the adapter's key name */
+//         swprintf(awcDeviceName, L"\\Device\\Video%lu", iDevNum);
+//
+//         /* Create the display device name */
+//         swprintf(awcWinDeviceName, L"\\\\.\\DISPLAY%lu", iDevNum + 1);
+//         RtlInitUnicodeString(&ustrDeviceName, awcWinDeviceName);
+//
+//         /* Check if the device exists already */
+//         pGraphicsDevice = EngpFindGraphicsDevice(&ustrDeviceName, iDevNum);
+//         if (pGraphicsDevice != NULL)
+//         {
+//             continue;
+//         }
+//
+//         /* Read the reg key name */
+//         cbValue = sizeof(awcBuffer);
+//         Status = RegQueryValue(hkey, awcDeviceName, REG_SZ, awcBuffer, &cbValue);
+//         if (!NT_SUCCESS(Status))
+//         {
+//             ERR("EngpUpdateGraphicsDeviceList: failed to query %S: 0x%lx\n", awcDeviceName, Status);
+//             continue;
+//         }
+//
+//         ERR("EngpUpdateGraphicsDeviceList: dev %lu = %S -> %S\n", iDevNum, awcDeviceName, awcBuffer);
+//
+//         /* Initialize the driver for this device */
+//         pGraphicsDevice = InitDisplayDriver(awcDeviceName, awcBuffer);
+//         if (!pGraphicsDevice)
+//         {
+//             ERR("EngpUpdateGraphicsDeviceList: InitDisplayDriver failed for %S\n", awcDeviceName);
+//             continue;
+//         }
+//         ERR("EngpUpdateGraphicsDeviceList: registered device %S\n", pGraphicsDevice->szWinDeviceName);
+//     }
+//
+//     /* Close the device map registry key */
+//     ZwClose(hkey);
+//
+//     /* Choose a VGA device */
+//     /* Try a device with DISPLAY_DEVICE_VGA_COMPATIBLE flag. If not found,
+//      * fall back to current VGA device */
+//     for (pGraphicsDevice = gpGraphicsDeviceFirst;
+//          pGraphicsDevice;
+//          pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice)
+//     {
+//         if (pGraphicsDevice == gpVgaGraphicsDevice)
+//             continue;
+//         if (pGraphicsDevice->StateFlags & DISPLAY_DEVICE_VGA_COMPATIBLE && EngpHasVgaDriver(pGraphicsDevice))
+//         {
+//             gpVgaGraphicsDevice = pGraphicsDevice;
+//             break;
+//         }
+//     }
+//
+//     /* Handle gbBaseVideo */
+//     if (gbBaseVideo)
+//     {
+//         PGRAPHICS_DEVICE pToDelete;
+//
+//         /* Lock list */
+//         EngAcquireSemaphore(ghsemGraphicsDeviceList);
+//
+//         /* Remove every device from linked list, except base-video one */
+//         pGraphicsDevice = gpGraphicsDeviceFirst;
+//         while (pGraphicsDevice)
+//         {
+//             if (!EngpHasVgaDriver(pGraphicsDevice))
+//             {
+//                 /* Not base-video device. Remove it */
+//                 pToDelete = pGraphicsDevice;
+//                 TRACE("Removing non-base-video device %S (%S)\n", pToDelete->szWinDeviceName, pToDelete->szNtDeviceName);
+//
+//                 EngpUnlinkGraphicsDevice(pGraphicsDevice);
+//                 pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice;
+//
+//                 /* Free memory */
+//                 ExFreePoolWithTag(pToDelete->pDiplayDrivers, GDITAG_DRVSUP);
+//                 ExFreePoolWithTag(pToDelete, GDITAG_GDEVICE);
+//             }
+//             else
+//             {
+//                 pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice;
+//             }
+//         }
+//
+//         /* Unlock list */
+//         EngReleaseSemaphore(ghsemGraphicsDeviceList);
+//     }
+//
+//     /* Choose a primary device (if none already exists) */
+//     if (!gpPrimaryGraphicsDevice)
+//     {
+//         for (pGraphicsDevice = gpGraphicsDeviceFirst;
+//              pGraphicsDevice;
+//              pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice)
+//         {
+//             if (!EngpHasVgaDriver(pGraphicsDevice))
+//             {
+//                 pNewPrimaryGraphicsDevice = pGraphicsDevice;
+//                 break;
+//             }
+//         }
+//         if (!pNewPrimaryGraphicsDevice)
+//             pNewPrimaryGraphicsDevice = gpGraphicsDeviceFirst;
+//         if (pNewPrimaryGraphicsDevice)
+//         {
+//             pNewPrimaryGraphicsDevice->StateFlags |= DISPLAY_DEVICE_PRIMARY_DEVICE;
+//             gpPrimaryGraphicsDevice = pNewPrimaryGraphicsDevice;
+//         }
+//     }
+//
+//     /* Can we link VGA device to primary device? */
+//     if (gpPrimaryGraphicsDevice &&
+//         gpVgaGraphicsDevice &&
+//         gpPrimaryGraphicsDevice != gpVgaGraphicsDevice &&
+//         !gpPrimaryGraphicsDevice->pVgaDevice)
+//     {
+//         /* Yes. Remove VGA device from global list, and attach it to primary device */
+//         TRACE("Linking VGA device %S to primary device %S\n", gpVgaGraphicsDevice->szNtDeviceName, gpPrimaryGraphicsDevice->szNtDeviceName);
+//         EngAcquireSemaphore(ghsemGraphicsDeviceList);
+//         EngpUnlinkGraphicsDevice(gpVgaGraphicsDevice);
+//         gpPrimaryGraphicsDevice->pVgaDevice = gpVgaGraphicsDevice;
+//         EngReleaseSemaphore(ghsemGraphicsDeviceList);
+//     }
+//
+//     return STATUS_SUCCESS;
+// }
+//
+// /* Open display settings registry key
+//  * Returns NULL in case of error. */
+// static HKEY
+// EngpGetRegistryHandleFromDeviceMap(
+//     _In_ PGRAPHICS_DEVICE pGraphicsDevice)
+// {
+//     static const PWCHAR KEY_VIDEO = L"\\Registry\\Machine\\HARDWARE\\DEVICEMAP\\VIDEO";
+//     HKEY hKey;
+//     WCHAR szDeviceKey[256];
+//     ULONG cbSize;
+//     NTSTATUS Status;
+//
+//     /* Open the device map registry key */
+//     Status = RegOpenKey(KEY_VIDEO, &hKey);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not open HARDWARE\\DEVICEMAP\\VIDEO registry key: status 0x%08x\n", Status);
+//         return NULL;
+//     }
+//
+//     /* Query the registry path */
+//     cbSize = sizeof(szDeviceKey);
+//     RegQueryValue(hKey,
+//                   pGraphicsDevice->szNtDeviceName,
+//                   REG_SZ,
+//                   szDeviceKey,
+//                   &cbSize);
+//     ZwClose(hKey);
+//
+//     /* Open the registry key */
+//     Status = RegOpenKey(szDeviceKey, &hKey);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not open registry key '%S': status 0x%08x\n", szDeviceKey, Status);
+//         return NULL;
+//     }
+//
+//     return hKey;
+// }
+//
+// NTSTATUS
+// EngpGetDisplayDriverParameters(
+//     _In_ PGRAPHICS_DEVICE pGraphicsDevice,
+//     _Out_ PDEVMODEW pdm)
+// {
+//     HKEY hKey;
+//     NTSTATUS Status;
+//     RTL_QUERY_REGISTRY_TABLE DisplaySettingsTable[] =
+//     {
+// #define READ(field, str) \
+//         { \
+//             NULL, \
+//             RTL_QUERY_REGISTRY_DIRECT, \
+//             L ##str, \
+//             &pdm->field, \
+//             REG_NONE, NULL, 0 \
+//         },
+//     READ(dmBitsPerPel, "DefaultSettings.BitsPerPel")
+//     READ(dmPelsWidth, "DefaultSettings.XResolution")
+//     READ(dmPelsHeight, "DefaultSettings.YResolution")
+//     READ(dmDisplayFlags, "DefaultSettings.Flags")
+//     READ(dmDisplayFrequency, "DefaultSettings.VRefresh")
+//     READ(dmPanningWidth, "DefaultSettings.XPanning")
+//     READ(dmPanningHeight, "DefaultSettings.YPanning")
+//     READ(dmDisplayOrientation, "DefaultSettings.Orientation")
+//     READ(dmDisplayFixedOutput, "DefaultSettings.FixedOutput")
+//     READ(dmPosition.x, "Attach.RelativeX")
+//     READ(dmPosition.y, "Attach.RelativeY")
+// #undef READ
+//         {0}
+//     };
+//
+//     hKey = EngpGetRegistryHandleFromDeviceMap(pGraphicsDevice);
+//     if (!hKey)
+//         return STATUS_UNSUCCESSFUL;
+//
+//     Status = RtlQueryRegistryValues(RTL_REGISTRY_HANDLE,
+//                                     (PWSTR)hKey,
+//                                     DisplaySettingsTable,
+//                                     NULL,
+//                                     NULL);
+//
+//     ZwClose(hKey);
+//     return Status;
+// }
+//
+// DWORD
+// EngpGetDisplayDriverAccelerationLevel(
+//     _In_ PGRAPHICS_DEVICE pGraphicsDevice)
+// {
+//     HKEY hKey;
+//     DWORD dwAccelerationLevel = 0;
+//     RTL_QUERY_REGISTRY_TABLE DisplaySettingsTable[] =
+//     {
+//         {
+//             NULL,
+//             RTL_QUERY_REGISTRY_DIRECT,
+//             L"Acceleration.Level",
+//             &dwAccelerationLevel,
+//             REG_NONE, NULL, 0
+//         },
+//         {0}
+//     };
+//
+//     hKey = EngpGetRegistryHandleFromDeviceMap(pGraphicsDevice);
+//     if (!hKey)
+//         return 0;
+//
+//     RtlQueryRegistryValues(RTL_REGISTRY_HANDLE,
+//                            (PWSTR)hKey,
+//                            DisplaySettingsTable,
+//                            NULL,
+//                            NULL);
+//     ZwClose(hKey);
+//
+//     return dwAccelerationLevel;
+// }
+//
+// extern VOID
+// UserRefreshDisplay(IN PPDEVOBJ ppdev);
+//
+// // PVIDEO_WIN32K_CALLOUT
+// VOID
+// NTAPI
+// VideoPortCallout(
+//     _In_ PVOID Params)
+// {
+// /*
+//  * IMPORTANT NOTICE!! On Windows XP/2003 this function triggers the creation of
+//  * a specific VideoPortCalloutThread() system thread using the same mechanism
+//  * as the RIT/desktop/Ghost system threads.
+//  */
+//
+//     PVIDEO_WIN32K_CALLBACKS_PARAMS CallbackParams = (PVIDEO_WIN32K_CALLBACKS_PARAMS)Params;
+//
+//     TRACE("VideoPortCallout(0x%p, 0x%x)\n",
+//           CallbackParams, CallbackParams ? CallbackParams->CalloutType : -1);
+//
+//     if (!CallbackParams)
+//         return;
+//
+//     switch (CallbackParams->CalloutType)
+//     {
+//         case VideoFindAdapterCallout:
+//         {
+//             TRACE("VideoPortCallout: VideoFindAdapterCallout called - Param = %s\n",
+//                   CallbackParams->Param ? "TRUE" : "FALSE");
+//             if (CallbackParams->Param == TRUE)
+//             {
+//                 /* Re-enable the display */
+//                 UserRefreshDisplay(gpmdev->ppdevGlobal);
+//             }
+//             else
+//             {
+//                 /* Disable the display */
+//                 NOTHING; // Nothing to do for the moment...
+//             }
+//
+//             CallbackParams->Status = STATUS_SUCCESS;
+//             break;
+//         }
+//
+//         case VideoPowerNotifyCallout:
+//         case VideoDisplaySwitchCallout:
+//         case VideoEnumChildPdoNotifyCallout:
+//         case VideoWakeupCallout:
+//         case VideoChangeDisplaySettingsCallout:
+//         case VideoPnpNotifyCallout:
+//         case VideoDxgkDisplaySwitchCallout:
+//         case VideoDxgkMonitorEventCallout:
+//         case VideoDxgkFindAdapterTdrCallout:
+//             ERR("VideoPortCallout: CalloutType 0x%x is UNIMPLEMENTED!\n", CallbackParams->CalloutType);
+//             CallbackParams->Status = STATUS_NOT_IMPLEMENTED;
+//             break;
+//
+//         default:
+//             ERR("VideoPortCallout: Unknown CalloutType 0x%x\n", CallbackParams->CalloutType);
+//             CallbackParams->Status = STATUS_UNSUCCESSFUL;
+//             break;
+//     }
+// }
+//
+// /* Sends a TargetDeviceRelation request to PDO
+//  * On success, caller needs to free pDeviceRelations with ExFreePool()
+//  */
+// static
+// NTSTATUS
+// EngpPnPTargetRelationRequest(
+//     _In_ PDEVICE_OBJECT pDeviceObject,
+//     _Out_ PDEVICE_RELATIONS *pDeviceRelations)
+// {
+//     PIO_STACK_LOCATION IrpSp;
+//     KEVENT Event;
+//     PIRP pIrp;
+//     IO_STATUS_BLOCK Iosb;
+//     NTSTATUS Status;
+//
+//     /* Initialize an event */
+//     KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+//
+//     /* Build IRP */
+//     pIrp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP,
+//                                         pDeviceObject,
+//                                         NULL, 0,
+//                                         NULL,
+//                                         &Event,
+//                                         &Iosb);
+//     if (!pIrp)
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//
+//     /* Initialize IRP */
+//     pIrp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+//     IrpSp = IoGetNextIrpStackLocation(pIrp);
+//     IrpSp->MinorFunction = IRP_MN_QUERY_DEVICE_RELATIONS;
+//     IrpSp->Parameters.QueryDeviceRelations.Type = TargetDeviceRelation;
+//
+//     /* Call the driver */
+//     Status = IoCallDriver(pDeviceObject, pIrp);
+//
+//     /* Wait if neccessary */
+//     if (Status == STATUS_PENDING)
+//     {
+//         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, 0);
+//         Status = Iosb.Status;
+//     }
+//
+//     /* Return information to the caller about the operation. */
+//     if (NT_SUCCESS(Status))
+//         *pDeviceRelations = (PDEVICE_RELATIONS)Iosb.Information;
+//
+//     return Status;
+// }
+//
+// NTSTATUS
+// NTAPI
+// EngpUpdateMonitorDevices(
+//     _In_ PGRAPHICS_DEVICE pGraphicsDevice)
+// {
+//     PDEVICE_RELATIONS pDeviceRelations;
+//     PVIDEO_MONITOR_DEVICE pMonitorDevices;
+//     ULONG i, bytesWritten, monitorCount;
+//     NTSTATUS Status;
+//     HANDLE hkRegistry;
+//
+//     /* Request right PDO for device relations */
+//     Status = EngpPnPTargetRelationRequest(pGraphicsDevice->DeviceObject, &pDeviceRelations);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("EngpPnPTargetRelationRequest() failed with status 0x%08x\n", Status);
+//         return Status;
+//     }
+//     ASSERT(pDeviceRelations->Count == 1);
+//
+//     /* Invalidate relations, so that videoprt reenumerates its monitors.
+//      * Only do this for valid PDOs - check by trying to open registry key. */
+//     Status = IoOpenDeviceRegistryKey(pDeviceRelations->Objects[0],
+//                                      PLUGPLAY_REGKEY_DRIVER,
+//                                      KEY_READ,
+//                                      &hkRegistry);
+//     if (NT_SUCCESS(Status))
+//     {
+//         ZwClose(hkRegistry);
+//         IoSynchronousInvalidateDeviceRelations(pDeviceRelations->Objects[0], BusRelations);
+//     }
+//     else
+//     {
+//         /* Legacy device without valid PDO - skip invalidation.
+//          * This is expected for non-PnP devices like VGA. */
+//     }
+//
+//     /* Free returned structure */
+//     for (i = 0; i < pDeviceRelations->Count; i++)
+//         ObDereferenceObject(pDeviceRelations->Objects[i]);
+//     ExFreePool(pDeviceRelations);
+//
+//     /* Now, get list of monitor PDOs */
+//     Status = EngDeviceIoControl(pGraphicsDevice->DeviceObject,
+//                                 IOCTL_VIDEO_ENUM_MONITOR_PDO,
+//                                 NULL, 0,
+//                                 &pMonitorDevices, sizeof(pMonitorDevices),
+//                                 &bytesWritten);
+//     if (Status != ERROR_SUCCESS)
+//     {
+//         ERR("EngDeviceIoControl(IOCTL_VIDEO_ENUM_MONITOR_PDO) failed with status 0x%08x\n", Status);
+//         return Status;
+//     }
+//     ASSERT(bytesWritten == sizeof(pMonitorDevices));
+//
+//     /* Count number of available monitors */
+//     for (monitorCount = 0; pMonitorDevices[monitorCount].pdo; ++monitorCount)
+//         ;
+//
+//     if (pGraphicsDevice->pvMonDev)
+//     {
+//         /* Erase everything */
+//         for (i = 0; i < pGraphicsDevice->dwMonCnt; i++)
+//             ObDereferenceObject(pGraphicsDevice->pvMonDev[i].pdo);
+//         ExFreePoolWithTag(pGraphicsDevice->pvMonDev, GDITAG_GDEVICE);
+//         pGraphicsDevice->pvMonDev = NULL;
+//         pGraphicsDevice->dwMonCnt = 0;
+//     }
+//
+//     if (monitorCount > 0)
+//     {
+//         pGraphicsDevice->pvMonDev = ExAllocatePoolZero(PagedPool,
+//                                                        monitorCount * sizeof(VIDEO_MONITOR_DEVICE),
+//                                                        GDITAG_GDEVICE);
+//         if (!pGraphicsDevice->pvMonDev)
+//         {
+//             for (i = 0; pMonitorDevices[i].pdo; ++i)
+//                 ObDereferenceObject(pMonitorDevices[i].pdo);
+//             ExFreePool(pMonitorDevices);
+//             return STATUS_INSUFFICIENT_RESOURCES;
+//         }
+//
+//         /* Copy data */
+//         for (i = 0; i < monitorCount; i++)
+//         {
+//             TRACE("%S\\Monitor%u: PDO %p HwID %u\n", pGraphicsDevice->szWinDeviceName, i, pMonitorDevices[i].pdo, pMonitorDevices[i].HwID);
+//             pGraphicsDevice->pvMonDev[pGraphicsDevice->dwMonCnt++] = pMonitorDevices[i];
+//         }
+//     }
+//
+//     ExFreePool(pMonitorDevices);
+//     return STATUS_SUCCESS;
+// }
+//
+// PGRAPHICS_DEVICE
+// NTAPI
+// EngpRegisterGraphicsDevice(
+//     _In_ PUNICODE_STRING pustrDeviceName,
+//     _In_ PUNICODE_STRING pustrDiplayDrivers,
+//     _In_ PUNICODE_STRING pustrDescription)
+// {
+//     PGRAPHICS_DEVICE pGraphicsDevice;
+//     PDEVICE_OBJECT pDeviceObject;
+//     PFILE_OBJECT pFileObject;
+//     NTSTATUS Status;
+//     VIDEO_WIN32K_CALLBACKS Win32kCallbacks;
+//     ULONG ulReturn;
+//     PWSTR pwsz;
+//     ULONG cj;
+//
+//     TRACE("EngpRegisterGraphicsDevice(%wZ)\n", pustrDeviceName);
+//
+//     /* Allocate a GRAPHICS_DEVICE structure */
+//     pGraphicsDevice = ExAllocatePoolZero(PagedPool,
+//                                          sizeof(GRAPHICS_DEVICE),
+//                                          GDITAG_GDEVICE);
+//     if (!pGraphicsDevice)
+//     {
+//         ERR("ExAllocatePoolWithTag failed\n");
+//         return NULL;
+//     }
+//
+//     /* Try to open and enable the device */
+//     Status = IoGetDeviceObjectPointer(pustrDeviceName,
+//                                       FILE_READ_DATA | FILE_WRITE_DATA,
+//                                       &pFileObject,
+//                                       &pDeviceObject);
+//     if (!NT_SUCCESS(Status))
+//     {
+//         ERR("Could not open device %wZ, 0x%lx\n", pustrDeviceName, Status);
+//         ExFreePoolWithTag(pGraphicsDevice, GDITAG_GDEVICE);
+//         return NULL;
+//     }
+//
+//     /* Copy the device and file object pointers */
+//     pGraphicsDevice->DeviceObject = pDeviceObject;
+//     pGraphicsDevice->FileObject = pFileObject;
+//
+//     /* Initialize and register the device with videoprt for Win32k callbacks */
+//     Win32kCallbacks.PhysDisp = pGraphicsDevice;
+//     Win32kCallbacks.Callout = VideoPortCallout;
+//     // Reset the data being returned prior to the call.
+//     Win32kCallbacks.bACPI = FALSE;
+//     Win32kCallbacks.pPhysDeviceObject = NULL;
+//     Win32kCallbacks.DualviewFlags = 0;
+//     Status = (NTSTATUS)EngDeviceIoControl((HANDLE)pDeviceObject,
+//                                           IOCTL_VIDEO_INIT_WIN32K_CALLBACKS,
+//                                           &Win32kCallbacks,
+//                                           sizeof(Win32kCallbacks),
+//                                           &Win32kCallbacks,
+//                                           sizeof(Win32kCallbacks),
+//                                           &ulReturn);
+//     if (Status != ERROR_SUCCESS)
+//     {
+//         ERR("EngDeviceIoControl(0x%p, IOCTL_VIDEO_INIT_WIN32K_CALLBACKS) failed, Status 0x%lx\n",
+//             pDeviceObject, Status);
+//     }
+//     // TODO: Set flags according to the results.
+//     // if (Win32kCallbacks.bACPI)
+//     // if (Win32kCallbacks.DualviewFlags & ???)
+//     pGraphicsDevice->PhysDeviceHandle = Win32kCallbacks.pPhysDeviceObject;
+//
+//     /* Copy the device name */
+//     RtlStringCbCopyNW(pGraphicsDevice->szNtDeviceName,
+//                       sizeof(pGraphicsDevice->szNtDeviceName),
+//                       pustrDeviceName->Buffer,
+//                       pustrDeviceName->Length);
+//
+//     /* Create a Win32 device name (FIXME: virtual devices!) */
+//     RtlStringCbPrintfW(pGraphicsDevice->szWinDeviceName,
+//                        sizeof(pGraphicsDevice->szWinDeviceName),
+//                        L"\\\\.\\DISPLAY%d",
+//                        (int)giDevNum);
+//
+//     /* Allocate a buffer for the strings */
+//     cj = pustrDiplayDrivers->Length + pustrDescription->Length + sizeof(WCHAR);
+//     pwsz = ExAllocatePoolWithTag(PagedPool, cj, GDITAG_DRVSUP);
+//     if (!pwsz)
+//     {
+//         ERR("Could not allocate string buffer\n");
+//         ASSERT(FALSE); // FIXME
+//         ExFreePoolWithTag(pGraphicsDevice, GDITAG_GDEVICE);
+//         return NULL;
+//     }
+//
+//     /* Copy the display driver names */
+//     pGraphicsDevice->pDiplayDrivers = pwsz;
+//     RtlCopyMemory(pGraphicsDevice->pDiplayDrivers,
+//                   pustrDiplayDrivers->Buffer,
+//                   pustrDiplayDrivers->Length);
+//
+//     /* Copy the description */
+//     pGraphicsDevice->pwszDescription = pwsz + pustrDiplayDrivers->Length / sizeof(WCHAR);
+//     RtlCopyMemory(pGraphicsDevice->pwszDescription,
+//                   pustrDescription->Buffer,
+//                   pustrDescription->Length);
+//     pGraphicsDevice->pwszDescription[pustrDescription->Length/sizeof(WCHAR)] = 0;
+//
+//     /* Update list of connected monitors */
+//     EngpUpdateMonitorDevices(pGraphicsDevice);
+//
+//     /* Lock loader */
+//     EngAcquireSemaphore(ghsemGraphicsDeviceList);
+//
+//     /* Insert the device into the global list */
+//     EngpLinkGraphicsDevice(pGraphicsDevice);
+//
+//     /* Increment the device number */
+//     giDevNum++;
+//
+//     /* Unlock loader */
+//     EngReleaseSemaphore(ghsemGraphicsDeviceList);
+//
+//     /* HACK: already in graphic mode; display wallpaper on this new display */
+//     if (ScreenDeviceContext)
+//     {
+//         UNICODE_STRING DriverName = RTL_CONSTANT_STRING(L"DISPLAY");
+//         UNICODE_STRING DisplayName;
+//         HDC hdc;
+//         RtlInitUnicodeString(&DisplayName, pGraphicsDevice->szWinDeviceName);
+//         hdc = IntGdiCreateDC(&DriverName, &DisplayName, NULL, NULL, FALSE);
+//         IntPaintDesktop(hdc);
+//     }
+//
+//     return pGraphicsDevice;
+// }
+//
+// PGRAPHICS_DEVICE
+// NTAPI
+// EngpFindGraphicsDevice(
+//     _In_opt_ PUNICODE_STRING pustrDevice,
+//     _In_ ULONG iDevNum)
+// {
+//     UNICODE_STRING ustrCurrent;
+//     PGRAPHICS_DEVICE pGraphicsDevice;
+//     ULONG i;
+//     TRACE("EngpFindGraphicsDevice('%wZ', %lu)\n",
+//            pustrDevice, iDevNum);
+//
+//     /* Lock list */
+//     EngAcquireSemaphore(ghsemGraphicsDeviceList);
+//
+//     if (pustrDevice && pustrDevice->Buffer)
+//     {
+//         /* Find specified video adapter by name */
+//         for (pGraphicsDevice = gpGraphicsDeviceFirst;
+//              pGraphicsDevice;
+//              pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice)
+//         {
+//             /* Compare the device name */
+//             RtlInitUnicodeString(&ustrCurrent, pGraphicsDevice->szWinDeviceName);
+//             if (RtlEqualUnicodeString(&ustrCurrent, pustrDevice, FALSE))
+//             {
+//                 break;
+//             }
+//         }
+//
+//         if (pGraphicsDevice)
+//         {
+//             /* Validate selected monitor number */
+// #if 0
+//             if (iDevNum >= pGraphicsDevice->dwMonCnt)
+//                 pGraphicsDevice = NULL;
+// #else
+//             /* FIXME: dwMonCnt not initialized, see EngpRegisterGraphicsDevice */
+// #endif
+//         }
+//     }
+//     else
+//     {
+//         /* Select video adapter by device number */
+//         for (pGraphicsDevice = gpGraphicsDeviceFirst, i = 0;
+//              pGraphicsDevice && i < iDevNum;
+//              pGraphicsDevice = pGraphicsDevice->pNextGraphicsDevice, i++);
+//     }
+//
+//     /* Unlock list */
+//     EngReleaseSemaphore(ghsemGraphicsDeviceList);
+//
+//     return pGraphicsDevice;
+// }
+//
+// static
+// NTSTATUS
+// EngpFileIoRequest(
+//     _In_ PFILE_OBJECT pFileObject,
+//     _In_ ULONG ulMajorFunction,
+//     _In_reads_(nBufferSize) PVOID lpBuffer,
+//     _In_ SIZE_T nBufferSize,
+//     _In_ ULONGLONG ullStartOffset,
+//     _Out_ PULONG_PTR lpInformation)
+// {
+//     PDEVICE_OBJECT pDeviceObject;
+//     KEVENT Event;
+//     PIRP pIrp;
+//     IO_STATUS_BLOCK Iosb;
+//     NTSTATUS Status;
+//     LARGE_INTEGER liStartOffset;
+//
+//     /* Get corresponding device object */
+//     pDeviceObject = IoGetRelatedDeviceObject(pFileObject);
+//     if (!pDeviceObject)
+//     {
+//         return STATUS_INVALID_PARAMETER;
+//     }
+//
+//     /* Initialize an event */
+//     KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+//
+//     /* Build IRP */
+//     liStartOffset.QuadPart = ullStartOffset;
+//     pIrp = IoBuildSynchronousFsdRequest(ulMajorFunction,
+//                                         pDeviceObject,
+//                                         lpBuffer,
+//                                         (ULONG)nBufferSize,
+//                                         &liStartOffset,
+//                                         &Event,
+//                                         &Iosb);
+//     if (!pIrp)
+//     {
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//
+//     /* Call the driver */
+//     Status = IoCallDriver(pDeviceObject, pIrp);
+//
+//     /* Wait if neccessary */
+//     if (STATUS_PENDING == Status)
+//     {
+//         KeWaitForSingleObject(&Event, Executive, KernelMode, TRUE, 0);
+//         Status = Iosb.Status;
+//     }
+//
+//     /* Return information to the caller about the operation. */
+//     *lpInformation = Iosb.Information;
+//
+//     /* Return NTSTATUS */
+//     return Status;
+// }
+//
+// VOID
+// APIENTRY
+// EngFileWrite(
+//     _In_ PFILE_OBJECT pFileObject,
+//     _In_reads_(nLength) PVOID lpBuffer,
+//     _In_ SIZE_T nLength,
+//     _Out_ PSIZE_T lpBytesWritten)
+// {
+//     NTSTATUS status;
+//
+//     status = EngpFileIoRequest(pFileObject,
+//                                IRP_MJ_WRITE,
+//                                lpBuffer,
+//                                nLength,
+//                                0,
+//                                lpBytesWritten);
+//     if (!NT_SUCCESS(status))
+//     {
+//         *lpBytesWritten = 0;
+//     }
+// }
+//
+// _Success_(return>=0)
+// NTSTATUS
+// APIENTRY
+// EngFileIoControl(
+//     _In_ PFILE_OBJECT pFileObject,
+//     _In_ DWORD dwIoControlCode,
+//     _In_reads_(nInBufferSize) PVOID lpInBuffer,
+//     _In_ SIZE_T nInBufferSize,
+//     _Out_writes_(nOutBufferSize) PVOID lpOutBuffer,
+//     _In_ SIZE_T nOutBufferSize,
+//     _Out_ PULONG_PTR lpInformation)
+// {
+//     PDEVICE_OBJECT pDeviceObject;
+//     KEVENT Event;
+//     PIRP pIrp;
+//     IO_STATUS_BLOCK Iosb;
+//     NTSTATUS Status;
+//
+//     /* Get corresponding device object */
+//     pDeviceObject = IoGetRelatedDeviceObject(pFileObject);
+//     if (!pDeviceObject)
+//     {
+//         return STATUS_INVALID_PARAMETER;
+//     }
+//
+//     /* Initialize an event */
+//     KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+//
+//     /* Build IO control IRP */
+//     pIrp = IoBuildDeviceIoControlRequest(dwIoControlCode,
+//                                          pDeviceObject,
+//                                          lpInBuffer,
+//                                          (ULONG)nInBufferSize,
+//                                          lpOutBuffer,
+//                                          (ULONG)nOutBufferSize,
+//                                          FALSE,
+//                                          &Event,
+//                                          &Iosb);
+//     if (!pIrp)
+//     {
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//
+//     /* Call the driver */
+//     Status = IoCallDriver(pDeviceObject, pIrp);
+//
+//     /* Wait if neccessary */
+//     if (Status == STATUS_PENDING)
+//     {
+//         KeWaitForSingleObject(&Event, Executive, KernelMode, TRUE, 0);
+//         Status = Iosb.Status;
+//     }
+//
+//     /* Return information to the caller about the operation. */
+//     *lpInformation = Iosb.Information;
+//
+//     /* This function returns NTSTATUS */
+//     return Status;
+// }
+//
+// /*
+//  * @implemented
+//  */
+// _Success_(return==0)
+// DWORD
+// APIENTRY
+// EngDeviceIoControl(
+//     _In_ HANDLE hDevice,
+//     _In_ DWORD dwIoControlCode,
+//     _In_reads_bytes_opt_(cjInBufferSize) LPVOID lpInBuffer,
+//     _In_ DWORD cjInBufferSize,
+//     _Out_writes_bytes_opt_(cjOutBufferSize) LPVOID lpOutBuffer,
+//     _In_ DWORD cjOutBufferSize,
+//     _Out_ LPDWORD lpBytesReturned)
+// {
+//     PIRP Irp;
+//     NTSTATUS Status;
+//     KEVENT Event;
+//     IO_STATUS_BLOCK Iosb;
+//     PDEVICE_OBJECT DeviceObject;
+//
+//     TRACE("EngDeviceIoControl() called\n");
+//
+//     if (!hDevice)
+//     {
+//         return ERROR_INVALID_HANDLE;
+//     }
+//
+//     KeInitializeEvent(&Event, SynchronizationEvent, FALSE);
+//
+//     DeviceObject = (PDEVICE_OBJECT) hDevice;
+//
+//     Irp = IoBuildDeviceIoControlRequest(dwIoControlCode,
+//                                         DeviceObject,
+//                                         lpInBuffer,
+//                                         cjInBufferSize,
+//                                         lpOutBuffer,
+//                                         cjOutBufferSize,
+//                                         FALSE,
+//                                         &Event,
+//                                         &Iosb);
+//     if (!Irp) return ERROR_NOT_ENOUGH_MEMORY;
+//
+//     Status = IoCallDriver(DeviceObject, Irp);
+//
+//     if (Status == STATUS_PENDING)
+//     {
+//         (VOID)KeWaitForSingleObject(&Event, Executive, KernelMode, TRUE, 0);
+//         Status = Iosb.Status;
+//     }
+//
+//     TRACE("EngDeviceIoControl(): Returning %X/%X\n", Iosb.Status,
+//            Iosb.Information);
+//
+//     /* Return information to the caller about the operation. */
+//     *lpBytesReturned = (DWORD)Iosb.Information;
+//
+//     /* Convert NT status values to win32 error codes. */
+//     switch (Status)
+//     {
+//         case STATUS_INSUFFICIENT_RESOURCES:
+//             return ERROR_NOT_ENOUGH_MEMORY;
+//
+//         case STATUS_BUFFER_OVERFLOW:
+//             return ERROR_MORE_DATA;
+//
+//         case STATUS_NOT_IMPLEMENTED:
+//             return ERROR_INVALID_FUNCTION;
+//
+//         case STATUS_INVALID_PARAMETER:
+//             return ERROR_INVALID_PARAMETER;
+//
+//         case STATUS_BUFFER_TOO_SMALL:
+//             return ERROR_INSUFFICIENT_BUFFER;
+//
+//         case STATUS_DEVICE_DOES_NOT_EXIST:
+//             return ERROR_DEV_NOT_EXIST;
+//
+//         case STATUS_PENDING:
+//             return ERROR_IO_PENDING;
+//     }
+//
+//     return Status;
+// }
+//
+// /* EOF */
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

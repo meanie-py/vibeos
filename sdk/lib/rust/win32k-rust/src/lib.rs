@@ -46,3 +46,11 @@ pub mod driverobj; // gdi/eng/driverobj.c — DRIVEROBJ_* macros inline-expanded
 pub mod engevent;  // gdi/eng/engevent.c — EngCreateEvent + 7 sibling fns (re-translated)
 pub mod mdevobj;   // gdi/eng/mdevobj.c — MDEVOBJ_{Create,vDestroy,bDisable,vEnable} (re-translated, now 4/4)
 pub mod semaphor;  // gdi/eng/semaphor.c — 7/9 fns (EngCreateSemaphore + EngAcquireSemaphore scanner-skipped — re-translate later)
+// ── Phase 2a wave 2 — remaining gdi/eng/ leaves (25 files) ──────────
+pub mod alphablend; pub mod bitblt; pub mod clip; pub mod copybits;
+pub mod debug;      pub mod device; pub mod engbrush; pub mod engmisc;
+pub mod engwindow;  pub mod gradient; pub mod ldevobj; pub mod lineto;
+pub mod mapping;    pub mod mem;     pub mod mouse;    pub mod pandisp;
+pub mod pathobj;    pub mod pdevobj; pub mod rlecomp;  pub mod stretchblt;
+pub mod stubs;      pub mod surface; pub mod transblt; pub mod umpdstubs;
+pub mod xlateobj;
