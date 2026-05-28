@@ -87,7 +87,7 @@ pub struct _GUICONSOLE_MENUITEM {
 pub type GUICONSOLE_MENUITEM = _GUICONSOLE_MENUITEM;
 pub type PGUICONSOLE_MENUITEM = *mut _GUICONSOLE_MENUITEM;
 
-pub static GuiConsoleEditMenuItems: [GUICONSOLE_MENUITEM; 7] = [
+pub static mut GuiConsoleEditMenuItems: [GUICONSOLE_MENUITEM; 7] = [
     GUICONSOLE_MENUITEM { uID: IDS_MARK, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_MARK as u16 },
     GUICONSOLE_MENUITEM { uID: IDS_COPY, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_COPY as u16 },
     GUICONSOLE_MENUITEM { uID: IDS_PASTE, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_PASTE as u16 },
@@ -97,8 +97,8 @@ pub static GuiConsoleEditMenuItems: [GUICONSOLE_MENUITEM; 7] = [
     GUICONSOLE_MENUITEM { uID: 0, SubMenu: core::ptr::null(), wCmdID: 0 },
 ];
 
-pub static GuiConsoleMainMenuItems: [GUICONSOLE_MENUITEM; 4] = [
-    GUICONSOLE_MENUITEM { uID: IDS_EDIT, SubMenu: GuiConsoleEditMenuItems.as_ptr(), wCmdID: 0 },
+pub static mut GuiConsoleMainMenuItems: [GUICONSOLE_MENUITEM; 4] = [
+    GUICONSOLE_MENUITEM { uID: IDS_EDIT, SubMenu: unsafe { GuiConsoleEditMenuItems.as_ptr() }, wCmdID: 0 },
     GUICONSOLE_MENUITEM { uID: IDS_DEFAULTS, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_DEFAULTS as u16 },
     GUICONSOLE_MENUITEM { uID: IDS_PROPERTIES, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_PROPERTIES as u16 },
     GUICONSOLE_MENUITEM { uID: 0, SubMenu: core::ptr::null(), wCmdID: 0 },
@@ -286,7 +286,7 @@ unsafe fn SendMenuEvent(Console: PCONSRV_CONSOLE, CmdId: u32) {
     }
 
     er.EventType = MENU_EVENT as u16;
-    (*er.Event.MenuEvent()).dwCommandId = CmdId;
+    er.Event.MenuEvent.dwCommandId = CmdId;
     ConioProcessInputEvent(Console, &mut er);
 
     LeaveCriticalSection(core::ptr::addr_of_mut!((*Console).Lock));
@@ -672,7 +672,7 @@ unsafe fn OnFocus(GuiData: PGUI_CONSOLE_DATA, SetFocus: BOOL) {
     ConSrvSetConsoleProcessFocus(Console, SetFocus as u8);
 
     er.EventType = FOCUS_EVENT as u16;
-    (*er.Event.FocusEvent.as_mut()).bSetFocus = SetFocus;
+    (*(&mut er.Event.FocusEvent)).bSetFocus = SetFocus;
     ConioProcessInputEvent(Console, &mut er);
 
     LeaveCriticalSection(&mut (*Console).Lock);
@@ -799,8 +799,8 @@ unsafe fn PaintSelectionRect(GuiData: PGUI_CONSOLE_DATA, pps: PPAINTSTRUCT) {
     let rgnSel: HRGN = CreateSelectionRgn(
         GuiData,
         (*GuiData).LineSelection,
-        &(*GuiData).Selection.dwSelectionAnchor,
-        &(*GuiData).Selection.srSelection,
+        core::ptr::addr_of_mut!((*GuiData).Selection.dwSelectionAnchor),
+        core::ptr::addr_of_mut!((*GuiData).Selection.srSelection),
     );
 
     let ErrorCode: i32 = CombineRgn(rgnPaint, rgnPaint, rgnSel, RGN_AND as i32);
@@ -942,14 +942,14 @@ unsafe fn OnPaint(GuiData: PGUI_CONSOLE_DATA) {
             GuiPaintTextModeBuffer(
                 ActiveBuffer as PTEXTMODE_SCREEN_BUFFER,
                 GuiData,
-                &ps.rcPaint,
+                core::ptr::addr_of_mut!(ps.rcPaint),
                 &mut rcPaint,
             );
         } else {
             GuiPaintGraphicsBuffer(
                 ActiveBuffer as PGRAPHICS_SCREEN_BUFFER,
                 GuiData,
-                &ps.rcPaint,
+                core::ptr::addr_of_mut!(ps.rcPaint),
                 &mut rcPaint,
             );
         }
@@ -1403,9 +1403,9 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
                 let wDelta: SHORT = GET_WHEEL_DELTA_WPARAM(wParam);
 
                 if msg == WM_MOUSEWHEEL {
-                    nBar = SB_VERT;
+                    nBar = SB_VERT as INT;
                 } else {
-                    nBar = SB_HORZ;
+                    nBar = SB_HORZ as INT;
                 }
 
                 if GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16 != 0 {
@@ -1443,9 +1443,9 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
                 let wDelta: SHORT = GET_WHEEL_DELTA_WPARAM(wParam);
 
                 if msg == WM_MOUSEWHEEL {
-                    nBar = SB_VERT;
+                    nBar = SB_VERT as INT;
                 } else {
-                    nBar = SB_HORZ;
+                    nBar = SB_HORZ as INT;
                 }
 
                 if GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16 != 0 {
@@ -1474,9 +1474,9 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
                 let wDelta: SHORT = GET_WHEEL_DELTA_WPARAM(wParam);
 
                 if msg == WM_MOUSEWHEEL {
-                    nBar = SB_VERT;
+                    nBar = SB_VERT as INT;
                 } else {
-                    nBar = SB_HORZ;
+                    nBar = SB_HORZ as INT;
                 }
 
                 if GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16 != 0 {
@@ -1535,7 +1535,7 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
 
                     cL = PointToCoord(GuiData, lParam);
                     cR = cL;
-                    ptrL = ConioCoordToPointer(TextBuffer, cL.X, cL.Y);
+                    ptrL = ConioCoordToPointer(TextBuffer, cL.X as u32, cL.Y as u32);
                     ptrR = ptrL;
 
                     while (0 < cL.X) && !IS_WORD_SEP((*ptrL).Char.UnicodeChar)
@@ -1710,19 +1710,19 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
         }
 
         if DoDefault == 0 {
-            if (wKeyState & MK_LBUTTON) != 0 {
+            if (wKeyState & MK_LBUTTON as u16) != 0 {
                 dwButtonState |= FROM_LEFT_1ST_BUTTON_PRESSED;
             }
-            if (wKeyState & MK_MBUTTON) != 0 {
+            if (wKeyState & MK_MBUTTON as u16) != 0 {
                 dwButtonState |= FROM_LEFT_2ND_BUTTON_PRESSED;
             }
-            if (wKeyState & MK_RBUTTON) != 0 {
+            if (wKeyState & MK_RBUTTON as u16) != 0 {
                 dwButtonState |= RIGHTMOST_BUTTON_PRESSED;
             }
-            if (wKeyState & MK_XBUTTON1) != 0 {
+            if (wKeyState & MK_XBUTTON1 as u16) != 0 {
                 dwButtonState |= FROM_LEFT_3RD_BUTTON_PRESSED;
             }
-            if (wKeyState & MK_XBUTTON2) != 0 {
+            if (wKeyState & MK_XBUTTON2 as u16) != 0 {
                 dwButtonState |= FROM_LEFT_4TH_BUTTON_PRESSED;
             }
 
@@ -1755,10 +1755,10 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             }
 
             er.EventType = MOUSE_EVENT as u16;
-            (*er.Event.MouseEvent()).dwMousePosition   = PointToCoord(GuiData, lParam);
-            (*er.Event.MouseEvent()).dwButtonState     = dwButtonState;
-            (*er.Event.MouseEvent()).dwControlKeyState = dwControlKeyState;
-            (*er.Event.MouseEvent()).dwEventFlags      = dwEventFlags;
+            er.Event.MouseEvent.dwMousePosition   = PointToCoord(GuiData, lParam);
+            er.Event.MouseEvent.dwButtonState     = dwButtonState;
+            er.Event.MouseEvent.dwControlKeyState = dwControlKeyState;
+            er.Event.MouseEvent.dwEventFlags      = dwEventFlags;
 
             ConioProcessInputEvent(Console, core::ptr::addr_of_mut!(er));
         }
@@ -1778,9 +1778,9 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
         let wDelta: SHORT = GET_WHEEL_DELTA_WPARAM(wParam);
 
         if msg == WM_MOUSEWHEEL {
-            nBar = SB_VERT;
+            nBar = SB_VERT as INT;
         } else {
-            nBar = SB_HORZ;
+            nBar = SB_HORZ as INT;
         }
 
         if (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) != 0 {
@@ -1841,20 +1841,20 @@ unsafe fn OnGetMinMaxInfo(GuiData: PGUI_CONSOLE_DATA, minMaxInfo: PMINMAXINFO) {
 
     GetScreenBufferSizeUnits(ActiveBuffer, GuiData, &mut WidthUnit, &mut HeightUnit);
 
-    windx = CONGUI_MIN_WIDTH * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
-    windy = CONGUI_MIN_HEIGHT * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
+    windx = CONGUI_MIN_WIDTH as u32 * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME as i32) as u32 + GetSystemMetrics(SM_CXEDGE as i32) as u32);
+    windy = CONGUI_MIN_HEIGHT as u32 * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) as u32 + GetSystemMetrics(SM_CYEDGE as i32) as u32) + GetSystemMetrics(SM_CYCAPTION as i32) as u32;
 
     (*minMaxInfo).ptMinTrackSize.x = windx as i32;
     (*minMaxInfo).ptMinTrackSize.y = windy as i32;
 
-    windx = (*ActiveBuffer).ScreenBufferSize.X as u32 * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
-    windy = (*ActiveBuffer).ScreenBufferSize.Y as u32 * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
+    windx = (*ActiveBuffer).ScreenBufferSize.X as u32 * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME as i32) as u32 + GetSystemMetrics(SM_CXEDGE as i32) as u32);
+    windy = (*ActiveBuffer).ScreenBufferSize.Y as u32 * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) as u32 + GetSystemMetrics(SM_CYEDGE as i32) as u32) + GetSystemMetrics(SM_CYCAPTION as i32) as u32;
 
     if (*ActiveBuffer).ViewSize.X < (*ActiveBuffer).ScreenBufferSize.X {
-        windy += GetSystemMetrics(SM_CYHSCROLL as i32);
+        windy += GetSystemMetrics(SM_CYHSCROLL as i32) as u32;
     }
     if (*ActiveBuffer).ViewSize.Y < (*ActiveBuffer).ScreenBufferSize.Y {
-        windx += GetSystemMetrics(SM_CXVSCROLL as i32);
+        windx += GetSystemMetrics(SM_CXVSCROLL as i32) as u32;
     }
 
     (*minMaxInfo).ptMaxTrackSize.x = windx as i32;
@@ -3310,12 +3310,12 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //         if (GetType(ActiveBuffer) == TEXTMODE_BUFFER)
 //         {
 //             GuiPaintTextModeBuffer((PTEXTMODE_SCREEN_BUFFER)ActiveBuffer,
-//                                    GuiData, &ps.rcPaint, &rcPaint);
+//                                    GuiData, core::ptr::addr_of_mut!(ps.rcPaint), &rcPaint);
 //         }
 //         else /* if (GetType(ActiveBuffer) == GRAPHICS_BUFFER) */
 //         {
 //             GuiPaintGraphicsBuffer((PGRAPHICS_SCREEN_BUFFER)ActiveBuffer,
-//                                    GuiData, &ps.rcPaint, &rcPaint);
+//                                    GuiData, core::ptr::addr_of_mut!(ps.rcPaint), &rcPaint);
 //         }
 //
 //         /* Send it to screen */
@@ -3968,7 +3968,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //
 //                     /* Starting point */
 //                     cL = cR = PointToCoord(GuiData, lParam);
-//                     ptrL = ptrR = ConioCoordToPointer(TextBuffer, cL.X, cL.Y);
+//                     ptrL = ptrR = ConioCoordToPointer(TextBuffer, cL.X as u32, cL.Y as u32);
 //
 //                     /* Enlarge the selection by checking for whitespace */
 //                     while ((0 < cL.X) && !IS_WORD_SEP(ptrL->Char.UnicodeChar)
@@ -4218,15 +4218,15 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //
 //         if (!DoDefault)
 //         {
-//             if (wKeyState & MK_LBUTTON)
+//             if (wKeyState & MK_LBUTTON as u16)
 //                 dwButtonState |= FROM_LEFT_1ST_BUTTON_PRESSED;
-//             if (wKeyState & MK_MBUTTON)
+//             if (wKeyState & MK_MBUTTON as u16)
 //                 dwButtonState |= FROM_LEFT_2ND_BUTTON_PRESSED;
-//             if (wKeyState & MK_RBUTTON)
+//             if (wKeyState & MK_RBUTTON as u16)
 //                 dwButtonState |= RIGHTMOST_BUTTON_PRESSED;
-//             if (wKeyState & MK_XBUTTON1)
+//             if (wKeyState & MK_XBUTTON1 as u16)
 //                 dwButtonState |= FROM_LEFT_3RD_BUTTON_PRESSED;
-//             if (wKeyState & MK_XBUTTON2)
+//             if (wKeyState & MK_XBUTTON2 as u16)
 //                 dwButtonState |= FROM_LEFT_4TH_BUTTON_PRESSED;
 //
 //             if (GetKeyState(VK_RMENU as i32) & KEY_PRESSED as i16)
@@ -4278,9 +4278,9 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //         SHORT wDelta    = GET_WHEEL_DELTA_WPARAM(wParam);
 //
 //         if (msg == WM_MOUSEWHEEL)
-//             nBar = SB_VERT;
+//             nBar = SB_VERT as INT;
 //         else // if (msg == WM_MOUSEHWHEEL)
-//             nBar = SB_HORZ;
+//             nBar = SB_HORZ as INT;
 //
 //         // NOTE: We currently do not support zooming...
 //         // if (wKeyState & MK_CONTROL)
