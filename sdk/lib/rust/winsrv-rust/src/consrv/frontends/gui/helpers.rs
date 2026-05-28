@@ -11,6 +11,8 @@ use winsrv_sys::winsrv::*;
 
 // ---- resource.h system menu / string IDs (gui/resource.h) ----
 
+// System menu IDs are u32 (used in match arms against LOWORD(wParam)
+// which is UINT). Static array initializers cast them to u16 inline.
 pub const ID_SYSTEM_EDIT_MARK: u32      = 0xFFF0;
 pub const ID_SYSTEM_EDIT_COPY: u32      = 0xFFF1;
 pub const ID_SYSTEM_EDIT_PASTE: u32     = 0xFFF2;

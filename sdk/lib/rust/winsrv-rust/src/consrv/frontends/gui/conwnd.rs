@@ -91,19 +91,19 @@ pub type GUICONSOLE_MENUITEM = _GUICONSOLE_MENUITEM;
 pub type PGUICONSOLE_MENUITEM = *mut _GUICONSOLE_MENUITEM;
 
 pub static GuiConsoleEditMenuItems: [GUICONSOLE_MENUITEM; 7] = [
-    GUICONSOLE_MENUITEM { uID: IDS_MARK, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_MARK },
-    GUICONSOLE_MENUITEM { uID: IDS_COPY, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_COPY },
-    GUICONSOLE_MENUITEM { uID: IDS_PASTE, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_PASTE },
-    GUICONSOLE_MENUITEM { uID: IDS_SELECTALL, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_SELECTALL },
-    GUICONSOLE_MENUITEM { uID: IDS_SCROLL, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_SCROLL },
-    GUICONSOLE_MENUITEM { uID: IDS_FIND, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_FIND },
+    GUICONSOLE_MENUITEM { uID: IDS_MARK, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_MARK as u16 },
+    GUICONSOLE_MENUITEM { uID: IDS_COPY, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_COPY as u16 },
+    GUICONSOLE_MENUITEM { uID: IDS_PASTE, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_PASTE as u16 },
+    GUICONSOLE_MENUITEM { uID: IDS_SELECTALL, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_SELECTALL as u16 },
+    GUICONSOLE_MENUITEM { uID: IDS_SCROLL, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_SCROLL as u16 },
+    GUICONSOLE_MENUITEM { uID: IDS_FIND, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_EDIT_FIND as u16 },
     GUICONSOLE_MENUITEM { uID: 0, SubMenu: core::ptr::null(), wCmdID: 0 },
 ];
 
 pub static GuiConsoleMainMenuItems: [GUICONSOLE_MENUITEM; 4] = [
     GUICONSOLE_MENUITEM { uID: IDS_EDIT, SubMenu: GuiConsoleEditMenuItems.as_ptr(), wCmdID: 0 },
-    GUICONSOLE_MENUITEM { uID: IDS_DEFAULTS, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_DEFAULTS },
-    GUICONSOLE_MENUITEM { uID: IDS_PROPERTIES, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_PROPERTIES },
+    GUICONSOLE_MENUITEM { uID: IDS_DEFAULTS, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_DEFAULTS as u16 },
+    GUICONSOLE_MENUITEM { uID: IDS_PROPERTIES, SubMenu: core::ptr::null(), wCmdID: ID_SYSTEM_PROPERTIES as u16 },
     GUICONSOLE_MENUITEM { uID: 0, SubMenu: core::ptr::null(), wCmdID: 0 },
 ];
 
@@ -151,16 +151,16 @@ unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
         hInstance,
         MAKEINTRESOURCEW(IDI_TERMINAL),
         IMAGE_ICON,
-        GetSystemMetrics(SM_CXICON),
-        GetSystemMetrics(SM_CYICON),
+        GetSystemMetrics(SM_CXICON as i32),
+        GetSystemMetrics(SM_CYICON as i32),
         LR_SHARED,
     ) as HICON;
     ghDefaultIconSm = LoadImageW(
         hInstance,
         MAKEINTRESOURCEW(IDI_TERMINAL),
         IMAGE_ICON,
-        GetSystemMetrics(SM_CXSMICON),
-        GetSystemMetrics(SM_CYSMICON),
+        GetSystemMetrics(SM_CXSMICON as i32),
+        GetSystemMetrics(SM_CYSMICON as i32),
         LR_SHARED,
     ) as HICON;
     ghDefaultCursor = LoadCursorW(core::ptr::null_mut(), IDC_ARROW);
@@ -391,9 +391,9 @@ unsafe fn ResizeConWnd(GuiData: PGUI_CONSOLE_DATA, WidthUnit: DWORD, HeightUnit:
     let mut Height: DWORD;
 
     Width = (*Buff).ViewSize.X as DWORD * WidthUnit +
-            2 * (GetSystemMetrics(SM_CXFRAME) as DWORD + GetSystemMetrics(SM_CXEDGE) as DWORD);
+            2 * (GetSystemMetrics(SM_CXFRAME as i32) as DWORD + GetSystemMetrics(SM_CXEDGE as i32) as DWORD);
     Height = (*Buff).ViewSize.Y as DWORD * HeightUnit +
-             2 * (GetSystemMetrics(SM_CYFRAME) as DWORD + GetSystemMetrics(SM_CYEDGE) as DWORD) + GetSystemMetrics(SM_CYCAPTION) as DWORD;
+             2 * (GetSystemMetrics(SM_CYFRAME as i32) as DWORD + GetSystemMetrics(SM_CYEDGE as i32) as DWORD) + GetSystemMetrics(SM_CYCAPTION as i32) as DWORD;
 
     sInfo.cbSize = core::mem::size_of::<SCROLLINFO>() as UINT;
     sInfo.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
@@ -402,22 +402,22 @@ unsafe fn ResizeConWnd(GuiData: PGUI_CONSOLE_DATA, WidthUnit: DWORD, HeightUnit:
         sInfo.nMax = (*Buff).ScreenBufferSize.Y as i32 - 1;
         sInfo.nPage = (*Buff).ViewSize.Y as UINT;
         sInfo.nPos = (*Buff).ViewOrigin.Y as i32;
-        SetScrollInfo((*GuiData).hWindow, SB_VERT, core::ptr::addr_of_mut!(sInfo), 1);
-        Width += GetSystemMetrics(SM_CXVSCROLL) as DWORD;
-        ShowScrollBar((*GuiData).hWindow, SB_VERT, 1);
+        SetScrollInfo((*GuiData).hWindow, SB_VERT as i32, core::ptr::addr_of_mut!(sInfo), 1);
+        Width += GetSystemMetrics(SM_CXVSCROLL as i32) as DWORD;
+        ShowScrollBar((*GuiData).hWindow, SB_VERT as i32, 1);
     } else {
-        ShowScrollBar((*GuiData).hWindow, SB_VERT, 0);
+        ShowScrollBar((*GuiData).hWindow, SB_VERT as i32, 0);
     }
 
     if (*Buff).ScreenBufferSize.X > (*Buff).ViewSize.X {
         sInfo.nMax = (*Buff).ScreenBufferSize.X as i32 - 1;
         sInfo.nPage = (*Buff).ViewSize.X as UINT;
         sInfo.nPos = (*Buff).ViewOrigin.X as i32;
-        SetScrollInfo((*GuiData).hWindow, SB_HORZ, core::ptr::addr_of_mut!(sInfo), 1);
-        Height += GetSystemMetrics(SM_CYHSCROLL) as DWORD;
-        ShowScrollBar((*GuiData).hWindow, SB_HORZ, 1);
+        SetScrollInfo((*GuiData).hWindow, SB_HORZ as i32, core::ptr::addr_of_mut!(sInfo), 1);
+        Height += GetSystemMetrics(SM_CYHSCROLL as i32) as DWORD;
+        ShowScrollBar((*GuiData).hWindow, SB_HORZ as i32, 1);
     } else {
-        ShowScrollBar((*GuiData).hWindow, SB_HORZ, 0);
+        ShowScrollBar((*GuiData).hWindow, SB_HORZ as i32, 0);
     }
 
     SetWindowPos((*GuiData).hWindow, core::ptr::null_mut(), 0, 0, Width as i32, Height as i32,
@@ -1164,10 +1164,10 @@ unsafe fn OnTimer(GuiData: PGUI_CONSOLE_DATA) {
             sInfo.cbSize = core::mem::size_of::<SCROLLINFO>() as u32;
             sInfo.fMask = SIF_POS;
             
-            if GetScrollInfo((*GuiData).hWindow, SB_HORZ, &mut sInfo) != 0 {
+            if GetScrollInfo((*GuiData).hWindow, SB_HORZ as i32, &mut sInfo) != 0 {
                 OldScrollX = sInfo.nPos;
             }
-            if GetScrollInfo((*GuiData).hWindow, SB_VERT, &mut sInfo) != 0 {
+            if GetScrollInfo((*GuiData).hWindow, SB_VERT as i32, &mut sInfo) != 0 {
                 OldScrollY = sInfo.nPos;
             }
 
@@ -1212,11 +1212,11 @@ unsafe fn OnTimer(GuiData: PGUI_CONSOLE_DATA) {
                 );
                 if NewScrollX >= 0 {
                     sInfo.nPos = NewScrollX;
-                    SetScrollInfo((*GuiData).hWindow, SB_HORZ, &mut sInfo, 1);
+                    SetScrollInfo((*GuiData).hWindow, SB_HORZ as i32, &mut sInfo, 1);
                 }
                 if NewScrollY >= 0 {
                     sInfo.nPos = NewScrollY;
-                    SetScrollInfo((*GuiData).hWindow, SB_VERT, &mut sInfo, 1);
+                    SetScrollInfo((*GuiData).hWindow, SB_VERT as i32, &mut sInfo, 1);
                 }
                 UpdateWindow((*GuiData).hWindow);
                 (*GuiData).OldCursor.x = (*Buff).CursorPosition.X;
@@ -1844,20 +1844,20 @@ unsafe fn OnGetMinMaxInfo(GuiData: PGUI_CONSOLE_DATA, minMaxInfo: PMINMAXINFO) {
 
     GetScreenBufferSizeUnits(ActiveBuffer, GuiData, &mut WidthUnit, &mut HeightUnit);
 
-    windx = CONGUI_MIN_WIDTH * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXEDGE));
-    windy = CONGUI_MIN_HEIGHT * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYEDGE)) + GetSystemMetrics(SM_CYCAPTION);
+    windx = CONGUI_MIN_WIDTH * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
+    windy = CONGUI_MIN_HEIGHT * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
 
     (*minMaxInfo).ptMinTrackSize.x = windx as i32;
     (*minMaxInfo).ptMinTrackSize.y = windy as i32;
 
-    windx = (*ActiveBuffer).ScreenBufferSize.X as u32 * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXEDGE));
-    windy = (*ActiveBuffer).ScreenBufferSize.Y as u32 * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYEDGE)) + GetSystemMetrics(SM_CYCAPTION);
+    windx = (*ActiveBuffer).ScreenBufferSize.X as u32 * WidthUnit + 2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
+    windy = (*ActiveBuffer).ScreenBufferSize.Y as u32 * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
 
     if (*ActiveBuffer).ViewSize.X < (*ActiveBuffer).ScreenBufferSize.X {
-        windy += GetSystemMetrics(SM_CYHSCROLL);
+        windy += GetSystemMetrics(SM_CYHSCROLL as i32);
     }
     if (*ActiveBuffer).ViewSize.Y < (*ActiveBuffer).ScreenBufferSize.Y {
-        windx += GetSystemMetrics(SM_CXVSCROLL);
+        windx += GetSystemMetrics(SM_CXVSCROLL as i32);
     }
 
     (*minMaxInfo).ptMaxTrackSize.x = windx as i32;
@@ -1896,10 +1896,10 @@ unsafe fn OnSize(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM, lParam: LPARAM) {
         windy = HIWORD(lParam as u32);
 
         if (*Buff).ViewSize.X < (*Buff).ScreenBufferSize.X {
-            windy = windy.wrapping_add(GetSystemMetrics(SM_CYHSCROLL) as DWORD);
+            windy = windy.wrapping_add(GetSystemMetrics(SM_CYHSCROLL as i32) as DWORD);
         }
         if (*Buff).ViewSize.Y < (*Buff).ScreenBufferSize.Y {
-            windx = windx.wrapping_add(GetSystemMetrics(SM_CXVSCROLL) as DWORD);
+            windx = windx.wrapping_add(GetSystemMetrics(SM_CXVSCROLL as i32) as DWORD);
         }
 
         charx = windx / WidthUnit;
@@ -1913,10 +1913,10 @@ unsafe fn OnSize(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM, lParam: LPARAM) {
         }
 
         if (*Buff).ViewSize.X < (*Buff).ScreenBufferSize.X {
-            windy = windy.wrapping_sub(GetSystemMetrics(SM_CYHSCROLL) as DWORD);
+            windy = windy.wrapping_sub(GetSystemMetrics(SM_CYHSCROLL as i32) as DWORD);
         }
         if (*Buff).ViewSize.Y < (*Buff).ScreenBufferSize.Y {
-            windx = windx.wrapping_sub(GetSystemMetrics(SM_CXVSCROLL) as DWORD);
+            windx = windx.wrapping_sub(GetSystemMetrics(SM_CXVSCROLL as i32) as DWORD);
         }
 
         charx = windx / WidthUnit;
@@ -2115,11 +2115,11 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
             }
 
             WM_HSCROLL => {
-                OnScroll(GuiData, SB_HORZ, LOWORD(wParam));
+                OnScroll(GuiData, SB_HORZ as i32, LOWORD(wParam));
             }
 
             WM_VSCROLL => {
-                OnScroll(GuiData, SB_VERT, LOWORD(wParam));
+                OnScroll(GuiData, SB_VERT as i32, LOWORD(wParam));
             }
 
             WM_CONTEXTMENU => {
@@ -2391,14 +2391,14 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //     ghDefaultIcon   = LoadImageW(hInstance,
 //                                  MAKEINTRESOURCEW(IDI_TERMINAL),
 //                                  IMAGE_ICON,
-//                                  GetSystemMetrics(SM_CXICON),
-//                                  GetSystemMetrics(SM_CYICON),
+//                                  GetSystemMetrics(SM_CXICON as i32),
+//                                  GetSystemMetrics(SM_CYICON as i32),
 //                                  LR_SHARED);
 //     ghDefaultIconSm = LoadImageW(hInstance,
 //                                  MAKEINTRESOURCEW(IDI_TERMINAL),
 //                                  IMAGE_ICON,
-//                                  GetSystemMetrics(SM_CXSMICON),
-//                                  GetSystemMetrics(SM_CYSMICON),
+//                                  GetSystemMetrics(SM_CXSMICON as i32),
+//                                  GetSystemMetrics(SM_CYSMICON as i32),
 //                                  LR_SHARED);
 //     ghDefaultCursor = LoadCursorW(NULL, IDC_ARROW);
 //
@@ -2683,9 +2683,9 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //     DWORD Width, Height;
 //
 //     Width  = Buff->ViewSize.X * WidthUnit  +
-//              2 * (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXEDGE));
+//              2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
 //     Height = Buff->ViewSize.Y * HeightUnit +
-//              2 * (GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYEDGE)) + GetSystemMetrics(SM_CYCAPTION);
+//              2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
 //
 //     /* Set scrollbar sizes */
 //     sInfo.cbSize = sizeof(sInfo);
@@ -2696,13 +2696,13 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         sInfo.nMax  = Buff->ScreenBufferSize.Y - 1;
 //         sInfo.nPage = Buff->ViewSize.Y;
 //         sInfo.nPos  = Buff->ViewOrigin.Y;
-//         SetScrollInfo(GuiData->hWindow, SB_VERT, &sInfo, TRUE);
-//         Width += GetSystemMetrics(SM_CXVSCROLL);
-//         ShowScrollBar(GuiData->hWindow, SB_VERT, TRUE);
+//         SetScrollInfo(GuiData->hWindow, SB_VERT as i32, &sInfo, TRUE);
+//         Width += GetSystemMetrics(SM_CXVSCROLL as i32);
+//         ShowScrollBar(GuiData->hWindow, SB_VERT as i32, TRUE);
 //     }
 //     else
 //     {
-//         ShowScrollBar(GuiData->hWindow, SB_VERT, FALSE);
+//         ShowScrollBar(GuiData->hWindow, SB_VERT as i32, FALSE);
 //     }
 //
 //     if (Buff->ScreenBufferSize.X > Buff->ViewSize.X)
@@ -2710,13 +2710,13 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         sInfo.nMax  = Buff->ScreenBufferSize.X - 1;
 //         sInfo.nPage = Buff->ViewSize.X;
 //         sInfo.nPos  = Buff->ViewOrigin.X;
-//         SetScrollInfo(GuiData->hWindow, SB_HORZ, &sInfo, TRUE);
-//         Height += GetSystemMetrics(SM_CYHSCROLL);
-//         ShowScrollBar(GuiData->hWindow, SB_HORZ, TRUE);
+//         SetScrollInfo(GuiData->hWindow, SB_HORZ as i32, &sInfo, TRUE);
+//         Height += GetSystemMetrics(SM_CYHSCROLL as i32);
+//         ShowScrollBar(GuiData->hWindow, SB_HORZ as i32, TRUE);
 //     }
 //     else
 //     {
-//         ShowScrollBar(GuiData->hWindow, SB_HORZ, FALSE);
+//         ShowScrollBar(GuiData->hWindow, SB_HORZ as i32, FALSE);
 //     }
 //
 //     /* Resize the window */
@@ -2984,18 +2984,18 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         if (GuiData->GuiInfo.FullScreen)
 //         {
 //             EnterFullScreen(GuiData);
-//             // // PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE, 0);
-//             // SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE, 0);
+//             // // PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE as i32, 0);
+//             // SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE as i32, 0);
 //         }
 //     }
 //     else // if (ActivationState == WA_INACTIVE)
 //     {
 //         if (GuiData->GuiInfo.FullScreen)
 //         {
-//             SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+//             SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE as i32, 0);
 //             LeaveFullScreen(GuiData);
-//             // // PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-//             // SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+//             // // PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE as i32, 0);
+//             // SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE as i32, 0);
 //         }
 //     }
 //
@@ -3593,8 +3593,8 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //             sInfo.cbSize = sizeof(sInfo);
 //             sInfo.fMask = SIF_POS;
 //             // Capture the original position of the scroll bars and save them.
-//             if (GetScrollInfo(GuiData->hWindow, SB_HORZ, &sInfo)) OldScrollX = sInfo.nPos;
-//             if (GetScrollInfo(GuiData->hWindow, SB_VERT, &sInfo)) OldScrollY = sInfo.nPos;
+//             if (GetScrollInfo(GuiData->hWindow, SB_HORZ as i32, &sInfo)) OldScrollX = sInfo.nPos;
+//             if (GetScrollInfo(GuiData->hWindow, SB_VERT as i32, &sInfo)) OldScrollY = sInfo.nPos;
 //
 //             // If we successfully got the info for the horizontal scrollbar
 //             if (OldScrollX >= 0)
@@ -3650,12 +3650,12 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //                 if (NewScrollX >= 0)
 //                 {
 //                     sInfo.nPos = NewScrollX;
-//                     SetScrollInfo(GuiData->hWindow, SB_HORZ, &sInfo, TRUE);
+//                     SetScrollInfo(GuiData->hWindow, SB_HORZ as i32, &sInfo, TRUE);
 //                 }
 //                 if (NewScrollY >= 0)
 //                 {
 //                     sInfo.nPos = NewScrollY;
-//                     SetScrollInfo(GuiData->hWindow, SB_VERT, &sInfo, TRUE);
+//                     SetScrollInfo(GuiData->hWindow, SB_VERT as i32, &sInfo, TRUE);
 //                 }
 //                 UpdateWindow(GuiData->hWindow);
 //                 // InvalidateRect(GuiData->hWindow, NULL, FALSE);
@@ -4360,17 +4360,17 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //
 //     GetScreenBufferSizeUnits(ActiveBuffer, GuiData, &WidthUnit, &HeightUnit);
 //
-//     windx = CONGUI_MIN_WIDTH  * WidthUnit  + 2 * (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXEDGE));
-//     windy = CONGUI_MIN_HEIGHT * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYEDGE)) + GetSystemMetrics(SM_CYCAPTION);
+//     windx = CONGUI_MIN_WIDTH  * WidthUnit  + 2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
+//     windy = CONGUI_MIN_HEIGHT * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
 //
 //     minMaxInfo->ptMinTrackSize.x = windx;
 //     minMaxInfo->ptMinTrackSize.y = windy;
 //
-//     windx = (ActiveBuffer->ScreenBufferSize.X) * WidthUnit  + 2 * (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXEDGE));
-//     windy = (ActiveBuffer->ScreenBufferSize.Y) * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYEDGE)) + GetSystemMetrics(SM_CYCAPTION);
+//     windx = (ActiveBuffer->ScreenBufferSize.X) * WidthUnit  + 2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
+//     windy = (ActiveBuffer->ScreenBufferSize.Y) * HeightUnit + 2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
 //
-//     if (ActiveBuffer->ViewSize.X < ActiveBuffer->ScreenBufferSize.X) windy += GetSystemMetrics(SM_CYHSCROLL); // Window currently has a horizontal scrollbar
-//     if (ActiveBuffer->ViewSize.Y < ActiveBuffer->ScreenBufferSize.Y) windx += GetSystemMetrics(SM_CXVSCROLL); // Window currently has a vertical scrollbar
+//     if (ActiveBuffer->ViewSize.X < ActiveBuffer->ScreenBufferSize.X) windy += GetSystemMetrics(SM_CYHSCROLL as i32); // Window currently has a horizontal scrollbar
+//     if (ActiveBuffer->ViewSize.Y < ActiveBuffer->ScreenBufferSize.Y) windx += GetSystemMetrics(SM_CXVSCROLL as i32); // Window currently has a vertical scrollbar
 //
 //     minMaxInfo->ptMaxTrackSize.x = windx;
 //     minMaxInfo->ptMaxTrackSize.y = windy;
@@ -4403,8 +4403,8 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         windy = HIWORD(lParam);
 //
 //         /* Compensate for existing scroll bars (because lParam values do not accommodate scroll bar) */
-//         if (Buff->ViewSize.X < Buff->ScreenBufferSize.X) windy += GetSystemMetrics(SM_CYHSCROLL); // Window currently has a horizontal scrollbar
-//         if (Buff->ViewSize.Y < Buff->ScreenBufferSize.Y) windx += GetSystemMetrics(SM_CXVSCROLL); // Window currently has a vertical scrollbar
+//         if (Buff->ViewSize.X < Buff->ScreenBufferSize.X) windy += GetSystemMetrics(SM_CYHSCROLL as i32); // Window currently has a horizontal scrollbar
+//         if (Buff->ViewSize.Y < Buff->ScreenBufferSize.Y) windx += GetSystemMetrics(SM_CXVSCROLL as i32); // Window currently has a vertical scrollbar
 //
 //         charx = windx / (int)WidthUnit ;
 //         chary = windy / (int)HeightUnit;
@@ -4414,8 +4414,8 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         if ((windy % HeightUnit) >= (HeightUnit / 2)) ++chary;
 //
 //         /* Compensate for added scroll bars in window */
-//         if (Buff->ViewSize.X < Buff->ScreenBufferSize.X) windy -= GetSystemMetrics(SM_CYHSCROLL); // Window will have a horizontal scroll bar
-//         if (Buff->ViewSize.Y < Buff->ScreenBufferSize.Y) windx -= GetSystemMetrics(SM_CXVSCROLL); // Window will have a vertical scroll bar
+//         if (Buff->ViewSize.X < Buff->ScreenBufferSize.X) windy -= GetSystemMetrics(SM_CYHSCROLL as i32); // Window will have a horizontal scroll bar
+//         if (Buff->ViewSize.Y < Buff->ScreenBufferSize.Y) windx -= GetSystemMetrics(SM_CXVSCROLL as i32); // Window will have a vertical scroll bar
 //
 //         charx = windx / (int)WidthUnit ;
 //         chary = windy / (int)HeightUnit;
@@ -4716,11 +4716,11 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         }
 //
 //         case WM_HSCROLL:
-//             OnScroll(GuiData, SB_HORZ, LOWORD(wParam));
+//             OnScroll(GuiData, SB_HORZ as i32, LOWORD(wParam));
 //             break;
 //
 //         case WM_VSCROLL:
-//             OnScroll(GuiData, SB_VERT, LOWORD(wParam));
+//             OnScroll(GuiData, SB_VERT as i32, LOWORD(wParam));
 //             break;
 //
 //         case WM_CONTEXTMENU:
