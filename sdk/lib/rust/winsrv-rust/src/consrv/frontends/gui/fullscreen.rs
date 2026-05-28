@@ -33,7 +33,7 @@ pub unsafe extern "system" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullS
     if (*GuiData).GuiInfo.FullScreen == 0 {
         (*GuiData).IsWndMax = IsZoomed((*GuiData).hWindow);
         if (*GuiData).IsWndMax != 0 {
-            SendMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_RESTORE, 0);
+            SendMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_RESTORE as WPARAM, 0);
         }
 
         (*GuiData).WndPl.length = core::mem::size_of::<WINDOWPLACEMENT>() as u32;
@@ -47,7 +47,7 @@ pub unsafe extern "system" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullS
     }
 
     if FullScreen != 0 {
-        SendMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        SendMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_MINIMIZE as WPARAM, 0);
 
         if EnterFullScreen(GuiData) != 0 {
             (*Console).FixedSize = 1u8;
@@ -78,21 +78,21 @@ pub unsafe extern "system" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullS
 
             SetForegroundWindow((*GuiData).hWindow);
 
-            PostMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+            PostMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_MAXIMIZE as WPARAM, 0);
         }
 
         PostMessageW(
             (*GuiData).hWindow,
             WM_SYSCOMMAND,
             if (*GuiData).GuiInfo.FullScreen != 0 || (*GuiData).IsWndMax != 0 {
-                SC_MAXIMIZE
+                SC_MAXIMIZE as WPARAM
             } else {
-                SC_RESTORE
+                SC_RESTORE as WPARAM
             },
             0,
         );
     } else {
-        SendMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        SendMessageW((*GuiData).hWindow, WM_SYSCOMMAND, SC_MINIMIZE as WPARAM, 0);
 
         LeaveFullScreen(GuiData);
 
@@ -122,9 +122,9 @@ pub unsafe extern "system" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullS
             (*GuiData).hWindow,
             WM_SYSCOMMAND,
             if (*GuiData).IsWndMax != 0 {
-                SC_MAXIMIZE
+                SC_MAXIMIZE as WPARAM
             } else {
-                SC_RESTORE
+                SC_RESTORE as WPARAM
             },
             0,
         );
@@ -224,7 +224,7 @@ pub unsafe extern "C" fn GuiConsoleSwitchFullScreen(GuiData: PGUI_CONSOLE_DATA) 
 //     {
 //         GuiData->IsWndMax = IsZoomed(GuiData->hWindow);
 //         if (GuiData->IsWndMax)
-//             SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE, 0);
+//             SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE as WPARAM, 0);
 //
 //         /* Save its old position and size and show state */
 //         GuiData->WndPl.length = sizeof(WINDOWPLACEMENT);
@@ -237,7 +237,7 @@ pub unsafe extern "C" fn GuiConsoleSwitchFullScreen(GuiData: PGUI_CONSOLE_DATA) 
 //
 //     if (FullScreen)
 //     {
-//         SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+//         SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE as WPARAM, 0);
 //
 //         /* Switch to full screen */
 //         if (EnterFullScreen(GuiData))
@@ -269,8 +269,8 @@ pub unsafe extern "C" fn GuiConsoleSwitchFullScreen(GuiData: PGUI_CONSOLE_DATA) 
 //             // // GuiConsoleResizeWindow(GuiData);
 //             // GuiConsoleResize(GuiData, SIZE_RESTORED, MAKELPARAM(640, 480));
 //
-//             PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
-//             // SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+//             PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MAXIMIZE as WPARAM, 0);
+//             // SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MAXIMIZE as WPARAM, 0);
 //         }
 //
 //         PostMessageW(GuiData->hWindow, WM_SYSCOMMAND,
@@ -281,7 +281,7 @@ pub unsafe extern "C" fn GuiConsoleSwitchFullScreen(GuiData: PGUI_CONSOLE_DATA) 
 //     }
 //     else
 //     {
-//         SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+//         SendMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_MINIMIZE as WPARAM, 0);
 //
 //         /* Restore windowing mode */
 //         LeaveFullScreen(GuiData);
@@ -321,7 +321,7 @@ pub unsafe extern "C" fn GuiConsoleSwitchFullScreen(GuiData: PGUI_CONSOLE_DATA) 
 //         /* Resize it */
 //         // GuiConsoleResizeWindow(GuiData);
 //
-//         // PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE, 0);
+//         // PostMessageW(GuiData->hWindow, WM_SYSCOMMAND, SC_RESTORE as WPARAM, 0);
 //         // // ShowWindowAsync(GuiData->hWindow, SW_RESTORE);
 //     }
 // }

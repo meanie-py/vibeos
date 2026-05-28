@@ -133,7 +133,7 @@ pub unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
     let mut pcsrt: PCSR_THREAD = core::ptr::null_mut();
     let GuiInitInfo: PGUI_INIT_INFO = Param as PGUI_INIT_INFO;
     let mut DesktopConsoleThreadInfo: DESKTOP_CONSOLE_THREAD = core::mem::zeroed();
-    let InputThreadId: ULONG_PTR = HandleToUlong((*winsrv_sys::nt::NtCurrentTeb()).ClientId.UniqueThread);
+    let InputThreadId: ULONG_PTR = HandleToUlong((*winsrv_sys::nt::NtCurrentTeb()).ClientId.UniqueThread) as ULONG_PTR;
     let mut hThread: HANDLE = core::ptr::null_mut();
 
     let mut WindowCount: LONG = 0;
@@ -575,7 +575,7 @@ pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTST
         0u8
     );
 
-    PostThreadMessageW((*GuiData).InputThreadId, PM_CREATE_CONSOLE, 0, GuiData as LPARAM);
+    PostThreadMessageW((*GuiData).InputThreadId as u32, PM_CREATE_CONSOLE, 0, GuiData as LPARAM);
 
     NtWaitForSingleObject((*GuiData).hGuiInitEvent, 0u8, core::ptr::null_mut());
     NtClose((*GuiData).hGuiInitEvent);
@@ -592,7 +592,7 @@ pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTST
 pub unsafe fn GuiDeinitFrontEnd(This: PFRONTEND) {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
 
-    PostThreadMessageW((*GuiData).InputThreadId, PM_DESTROY_CONSOLE, 0, GuiData as LPARAM);
+    PostThreadMessageW((*GuiData).InputThreadId as u32, PM_DESTROY_CONSOLE, 0, GuiData as LPARAM);
     NtWaitForSingleObject((*GuiData).hGuiTermEvent, 0u8, core::ptr::null_mut());
     NtClose((*GuiData).hGuiTermEvent);
     (*GuiData).hGuiTermEvent = core::ptr::null_mut();
@@ -850,8 +850,8 @@ pub unsafe fn GuiChangeIcon(
         (*GuiData).hIcon = hIcon;
         (*GuiData).hIconSm = hIconSm;
 
-        PostMessageW((*GuiData).hWindow, WM_SETICON, ICON_BIG, (*GuiData).hIcon as LPARAM);
-        PostMessageW((*GuiData).hWindow, WM_SETICON, ICON_SMALL, (*GuiData).hIconSm as LPARAM);
+        PostMessageW((*GuiData).hWindow, WM_SETICON, ICON_BIG as WPARAM, (*GuiData).hIcon as LPARAM);
+        PostMessageW((*GuiData).hWindow, WM_SETICON, ICON_SMALL as WPARAM, (*GuiData).hIconSm as LPARAM);
     }
 
     1u8
@@ -2113,7 +2113,7 @@ pub unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS
 //
 //         DPRINT("Set icons in GuiChangeIcon\n");
 //         PostMessageW(GuiData->hWindow, WM_SETICON, ICON_BIG  , (LPARAM)GuiData->hIcon  );
-//         PostMessageW(GuiData->hWindow, WM_SETICON, ICON_SMALL, (LPARAM)GuiData->hIconSm);
+//         PostMessageW(GuiData->hWindow, WM_SETICON, ICON_SMALL as WPARAM, (LPARAM)GuiData->hIconSm);
 //     }
 //
 //     return TRUE;

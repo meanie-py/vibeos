@@ -612,8 +612,8 @@ unsafe fn OnNcCreate(hWnd: HWND, Create: LPCREATESTRUCTW) -> BOOL {
     (*GuiData).hSysPalette = core::ptr::null_mut();
 
     if (*GuiData).hIcon != ghDefaultIcon {
-        DefWindowProcW((*GuiData).hWindow, WM_SETICON, ICON_BIG, (*GuiData).hIcon as LPARAM);
-        DefWindowProcW((*GuiData).hWindow, WM_SETICON, ICON_SMALL, (*GuiData).hIconSm as LPARAM);
+        DefWindowProcW((*GuiData).hWindow, WM_SETICON, ICON_BIG as WPARAM, (*GuiData).hIcon as LPARAM);
+        DefWindowProcW((*GuiData).hWindow, WM_SETICON, ICON_SMALL as WPARAM, (*GuiData).hIconSm as LPARAM);
     }
 
     (*(*Console).ActiveBuffer).CursorBlinkOn = 1;
