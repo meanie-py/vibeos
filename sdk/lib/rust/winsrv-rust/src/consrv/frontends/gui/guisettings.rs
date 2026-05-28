@@ -1,5 +1,9 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+use super::helpers::*;
+use super::guiterm::*;
+use super::fullscreen::*;
 
 extern "system" {
     fn _SEH2_GetExceptionCode() -> i32;

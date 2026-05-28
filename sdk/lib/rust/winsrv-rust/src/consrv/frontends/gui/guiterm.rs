@@ -1,5 +1,14 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+use super::helpers::*;
+use super::conwnd::*;
+use super::fullscreen::*;
+use super::guisettings::*;
+use super::text::*;
+use super::graphics::*;
+use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
+use super::super::input::{ConioProcessInputEvent, ConioProcessKey};
 use core::ffi::c_void;
 
 extern "C" {

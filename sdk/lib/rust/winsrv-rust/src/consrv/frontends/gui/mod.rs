@@ -7,6 +7,7 @@
 //! conwnd is added once its translate completes — leave commented
 //! here in the interim.
 
+pub mod helpers;
 pub mod conwnd;
 pub mod fullscreen;
 pub mod graphics;

@@ -1,5 +1,8 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+use super::helpers::*;
+use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
 
 const IS_WHITESPACE: fn(u16) -> bool = |c| c == 0 || c == b' ' as u16 || c == b'\t' as u16;
 

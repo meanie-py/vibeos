@@ -1,5 +1,8 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+use super::helpers::*;
+use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty};
 
 pub unsafe extern "C" fn GuiCopyFromGraphicsBuffer(
     Buffer: PGRAPHICS_SCREEN_BUFFER,

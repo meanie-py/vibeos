@@ -1,5 +1,8 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+use super::helpers::*;
+use super::guiterm::*;
 
 pub unsafe extern "C" fn EnterFullScreen(GuiData: PGUI_CONSOLE_DATA) -> BOOLEAN {
     let mut DevMode: DEVMODEW = core::mem::zeroed();
