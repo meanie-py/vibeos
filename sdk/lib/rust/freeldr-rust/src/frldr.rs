@@ -287,7 +287,17 @@ pub fn ASSERT<T>(_cond: T) {}
 pub unsafe fn dbgcon(c: u8) {
     core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c, options(nostack, preserves_flags));
 }
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+// arm64 — write directly to PL011 UART DR at 0x9000000 (QEMU virt). Same
+// MMIO base as arm64_debug::Rs232PortPutByte. Lets the meminit dbgcon('M'/
+// 'C'/'1'/...) trace markers escape on arm64 (previously a no-op, hiding
+// any internal progress past `[freeldr] UI initialized`).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub unsafe fn dbgcon(c: u8) {
+    let uart_dr = 0x0900_0000usize as *mut u32;
+    core::ptr::write_volatile(uart_dr, c as u32);
+}
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 #[inline(always)]
 pub unsafe fn dbgcon(_c: u8) {}
 
@@ -1044,7 +1054,19 @@ macro_rules! RTL_SIZEOF_THROUGH_FIELD {
 pub type UINT64 = u64;
 pub type INT16 = i16;
 pub type INT32 = i32;
-pub type UINTN = u32; // i386: typedef UINT32 UINTN;
+// UINTN/INTN are native UEFI pointer width — UINT64 on amd64+arm64,
+// UINT32 on i386. The 32-bit-everywhere hardcoding "worked" on amd64
+// (high stack-slot bytes happened to zero) but BREAKS arm64 freeldr's
+// GetMemoryMap retry loop: UEFI tries to write the 8-byte required size
+// into our 4-byte slot, overflowing into adjacent stack vars and corrupting
+// MapKey/DescriptorSize. Root-caused 2026-05-28 via dbgcon PL011 trace.
+#[cfg(target_pointer_width = "64")]
+pub type UINTN = u64;
+#[cfg(target_pointer_width = "32")]
+pub type UINTN = u32;
+#[cfg(target_pointer_width = "64")]
+pub type INTN = i64;
+#[cfg(target_pointer_width = "32")]
 pub type INTN = i32;
 pub type CHAR8 = i8;
 pub type CHAR16 = u16;
