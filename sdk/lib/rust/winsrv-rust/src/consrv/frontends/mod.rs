@@ -7,8 +7,11 @@
 //! width table used by the TUI/GUI frontends.
 //!
 //! Phase 5.4 lands `input.rs`, `terminal.rs`, `wcwidth.rs`.
-//! `gui/` and `tui/` and `serial/` subdirs remain C for now.
+//! Phase 5.5 lands `tui/tuiterm.rs` and `serial/serialterm.rs`.
+//! `gui/` subdir remains C for now.
 
 pub mod input;
+pub mod serial;
 pub mod terminal;
+pub mod tui;
 pub mod wcwidth;
