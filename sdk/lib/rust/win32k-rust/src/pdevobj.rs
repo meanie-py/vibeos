@@ -92,15 +92,18 @@ extern "C" {
 // feedback_win32k_raw_dylib_freeldr_oom hazard 2):
 // - i386: needs `raw-dylib +verbatim` for the `__imp_` thunk under
 //   --disable-auto-import; plain extern fails link.
-// - amd64/arm64: auto-resolve via regular implib; adding raw-dylib here
-//   risks BUGCHECK 0x6B regressions (cgu=256 dup-descriptor interaction).
-#[cfg(target_arch = "x86")]
+// - amd64: auto-resolves via regular implib; adding raw-dylib here risks
+//   BUGCHECK 0x6B regressions (cgu=256 dup-descriptor interaction).
+// - arm64: USED to auto-resolve but the wave-2-after-device.rs cgu shift
+//   moved the reference into a partition that no longer resolves (link
+//   error on `MmSystemRangeStart`). Gate raw-dylib in for arm64 too.
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     static MmSystemRangeStart: *mut core::ffi::c_void;
 }
 
-#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86_64")]
 extern "C" {
     static MmSystemRangeStart: *mut core::ffi::c_void;
 }

@@ -64,10 +64,21 @@ pub mod bitblt;     pub mod gradient;
 pub mod lineto; pub mod mouse; pub mod umpdstubs;
 pub mod surface; pub mod stretchblt; pub mod xlateobj;
 pub mod pdevobj; pub mod stubs;
-// Highest-risk — both have semantic bugs that break NtUserInitialize:
-// - device.rs: 14 load-bearing DEFERRED-STUBs (EngpUpdateGraphicsDeviceList etc.)
-// - ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
-// pub mod device;
+// device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
+// EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
+// arches but i386 smoke hangs pre-`shell ready` (kernel reaches deep into
+// loader/pool activity, then `I/J/i/#` byte alternation = stuck in some
+// dispatch/idle loop). Bisect confirms: parking device.rs → boot OK
+// (39s pass); enabling → 300s timeout. Translation kept in tree per
+// AGENTS.md ("a broken Rust translation integrated and failing IS the
+// correct state when a regression is unsolved"). Audit candidates for
+// the runtime bug:
+//   - swprintf %d/%lu format buffer overruns on szWinDeviceName[16]
+//   - Win32kCallbacks.Callout fn-ptr transmute (stdcall vs system)
+//   - PFILE_OBJECT/PDEVICE_OBJECT cross-crate cast in IoGetDeviceObjectPointer
+//   - RtlStringCb{Copy,Print}fW inline impls (off-by-one?)
+pub mod device;
+// ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
 // pub mod ldevobj;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──

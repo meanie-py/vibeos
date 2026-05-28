@@ -43,14 +43,87 @@ unsafe fn IoCallDriver(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
 }
 
 extern "C" {
+    // libcnt string helpers (UCRT shape; libcntpr exports these undecorated).
+    fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
+    fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32;
+    fn swprintf(buf: *mut u16, fmt: *const u16, ...) -> i32;
 
-    fn RegOpenKey(KeyName: *const u16, phKey: *mut HKEY) -> i32;
-    fn RegQueryValue(hKey: HKEY, ValueName: *const u16, Type: u32, Data: *mut core::ffi::c_void, DataSize: *mut u32) -> i32;
-
-    fn RtlStringCbCopyNW(pszDest: PWSTR, cbDest: usize, pszSrc: PWSTR, cbSrc: usize) -> NTSTATUS;
-    fn RtlStringCbPrintfW(pszDest: PWSTR, cbDest: usize, pszFormat: PWSTR, ...) -> NTSTATUS;
     // ScreenDeviceContext is a real global in user/ntuser/desktop.c — plain extern.
     static ScreenDeviceContext: HDC;
+}
+
+// win32ss/user/ntuser/misc/registry.c — NTAPI = stdcall on i386, cdecl elsewhere.
+#[cfg(target_arch = "x86")]
+extern "stdcall" {
+    fn RegOpenKey(KeyName: *const u16, phKey: *mut HKEY) -> i32;
+    fn RegQueryValue(hKey: HKEY, ValueName: *const u16, Type: u32, Data: *mut core::ffi::c_void, DataSize: *mut u32) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn RegOpenKey(KeyName: *const u16, phKey: *mut HKEY) -> i32;
+    fn RegQueryValue(hKey: HKEY, ValueName: *const u16, Type: u32, Data: *mut core::ffi::c_void, DataSize: *mut u32) -> i32;
+}
+
+// win32ss/user/ntuser/misc/registry.c:147 — NTAPI = stdcall on i386, cdecl elsewhere.
+#[cfg(target_arch = "x86")]
+extern "stdcall" {
+    fn RegReadDWORD(hkey: HKEY, pwszValue: *const u16, pdwData: *mut DWORD) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn RegReadDWORD(hkey: HKEY, pwszValue: *const u16, pdwData: *mut DWORD) -> BOOL;
+}
+
+// win32ss/user/ntuser/display.c:67 — NTAPI = stdcall on i386, cdecl elsewhere.
+// Called from EngpUpdateGraphicsDeviceList for each \Device\VideoN registry entry.
+#[cfg(target_arch = "x86")]
+extern "stdcall" {
+    fn InitDisplayDriver(pwszDeviceName: *mut u16, pwszRegKey: *mut u16) -> PGRAPHICS_DEVICE;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn InitDisplayDriver(pwszDeviceName: *mut u16, pwszRegKey: *mut u16) -> PGRAPHICS_DEVICE;
+}
+
+// RtlStringCchCopyW is NTSTRSAFEAPI (`static __inline NTSTATUS NTAPI`) — no extern
+// symbol exists, so we inline a Rust equivalent. Copies up to cch_dest-1 wide chars
+// from src then null-terminates. Returns STATUS_SUCCESS on success.
+unsafe fn RtlStringCchCopyW(dest: *mut u16, cch_dest: usize, src: *const u16) -> NTSTATUS {
+    if cch_dest == 0 {
+        return STATUS_INVALID_PARAMETER as NTSTATUS;
+    }
+    let mut i: usize = 0;
+    while i < cch_dest - 1 {
+        let c = *src.add(i);
+        *dest.add(i) = c;
+        if c == 0 {
+            return STATUS_SUCCESS;
+        }
+        i += 1;
+    }
+    // Truncated: terminate and report buffer overflow.
+    *dest.add(cch_dest - 1) = 0;
+    STATUS_BUFFER_OVERFLOW as NTSTATUS
+}
+
+// Mirror of RtlStringCbCopyNW (NTSTRSAFEAPI, byte-counted Unicode copy). Used by
+// EngpRegisterGraphicsDevice to copy the NT device name into the GRAPHICS_DEVICE.
+unsafe fn RtlStringCbCopyNW(dest: *mut u16, cb_dest: usize, src: *const u16, cb_src: usize) -> NTSTATUS {
+    let cch_dest = cb_dest / core::mem::size_of::<u16>();
+    let cch_src = cb_src / core::mem::size_of::<u16>();
+    if cch_dest == 0 {
+        return STATUS_INVALID_PARAMETER as NTSTATUS;
+    }
+    let copy = cch_src.min(cch_dest - 1);
+    for i in 0..copy {
+        *dest.add(i) = *src.add(i);
+    }
+    *dest.add(copy) = 0;
+    if cch_src >= cch_dest {
+        STATUS_BUFFER_OVERFLOW as NTSTATUS
+    } else {
+        STATUS_SUCCESS
+    }
 }
 
 // These are C `#define` macros, NOT symbols. Earlier rustconv emitted them as
@@ -100,11 +173,85 @@ pub unsafe extern "C" fn InitDeviceImpl() -> NTSTATUS {
     InitDeviceImpl_impl()
 }
 
+// Translated from device.c:36-99 (2026-05-28 resurrection).
+// Reads HARDWARE\DEVICEMAP\VIDEO, finds the device key, opens it, reads its
+// Service name, returns TRUE iff the service is "VGASave" (case-insensitive).
 unsafe fn EngpHasVgaDriver(pGraphicsDevice: PGRAPHICS_DEVICE) -> u8 {
-    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
-    // TODO: resurrect from the original C in the bottom-of-file source block.
-    let _ = pGraphicsDevice;
-    0u8
+    // L"\Registry\Machine\HARDWARE\DEVICEMAP\VIDEO" + L"Service" + L"VGASave" wide literals.
+    static KEY_VIDEO: &[u16] = &[
+        0x005c, 0x0052, 0x0065, 0x0067, 0x0069, 0x0073, 0x0074, 0x0072, 0x0079,
+        0x005c, 0x004d, 0x0061, 0x0063, 0x0068, 0x0069, 0x006e, 0x0065,
+        0x005c, 0x0048, 0x0041, 0x0052, 0x0044, 0x0057, 0x0041, 0x0052, 0x0045,
+        0x005c, 0x0044, 0x0045, 0x0056, 0x0049, 0x0043, 0x0045, 0x004d, 0x0041, 0x0050,
+        0x005c, 0x0056, 0x0049, 0x0044, 0x0045, 0x004f, 0x0000,
+    ];
+    static SERVICE: &[u16] = &[0x0053, 0x0065, 0x0072, 0x0076, 0x0069, 0x0063, 0x0065, 0x0000];
+    static VGASAVE: &[u16] = &[0x0056, 0x0047, 0x0041, 0x0053, 0x0061, 0x0076, 0x0065, 0x0000];
+    static VIDEO: &[u16] = &[0x0056, 0x0069, 0x0064, 0x0065, 0x006f, 0x0000];
+
+    let mut awcDeviceKey: [u16; 256] = [0; 256];
+    let mut awcServiceName: [u16; 100] = [0; 100];
+    let mut hkey: HKEY = core::ptr::null_mut();
+    let mut cbValue: ULONG;
+
+    // Open the key for the adapters
+    let mut Status = RegOpenKey(KEY_VIDEO.as_ptr(), &mut hkey);
+    if !NT_SUCCESS(Status) {
+        ERR!(b"EngpHasVgaDriver: open DEVICEMAP\\VIDEO failed 0x%08x\n\0".as_ptr() as *const i8, Status);
+        return 0;
+    }
+
+    // Read the name of the device key
+    cbValue = core::mem::size_of_val(&awcDeviceKey) as ULONG;
+    Status = RegQueryValue(
+        hkey,
+        (*pGraphicsDevice).szNtDeviceName.as_ptr(),
+        REG_SZ,
+        awcDeviceKey.as_mut_ptr() as *mut core::ffi::c_void,
+        &mut cbValue,
+    );
+    ZwClose(hkey as *mut core::ffi::c_void);
+    if !NT_SUCCESS(Status) {
+        return 0;
+    }
+
+    // Replace last "...\DeviceN" component with "...\Video"
+    let lastBkSlash = wcsrchr(awcDeviceKey.as_ptr(), 0x005c /* '\\' */);
+    if lastBkSlash.is_null() {
+        return 0;
+    }
+    // Offset from start of awcDeviceKey to char after '\'.
+    let prefix_chars = lastBkSlash.offset_from(awcDeviceKey.as_ptr()) as usize + 1;
+    let remaining = awcDeviceKey.len() - prefix_chars;
+    if !NT_SUCCESS(RtlStringCchCopyW(
+        awcDeviceKey.as_mut_ptr().add(prefix_chars),
+        remaining,
+        VIDEO.as_ptr(),
+    )) {
+        return 0;
+    }
+
+    // Open device key
+    Status = RegOpenKey(awcDeviceKey.as_ptr(), &mut hkey);
+    if !NT_SUCCESS(Status) {
+        return 0;
+    }
+
+    // Read service name
+    cbValue = core::mem::size_of_val(&awcServiceName) as ULONG;
+    Status = RegQueryValue(
+        hkey,
+        SERVICE.as_ptr(),
+        REG_SZ,
+        awcServiceName.as_mut_ptr() as *mut core::ffi::c_void,
+        &mut cbValue,
+    );
+    ZwClose(hkey as *mut core::ffi::c_void);
+    if !NT_SUCCESS(Status) {
+        return 0;
+    }
+
+    if _wcsicmp(awcServiceName.as_ptr(), VGASAVE.as_ptr()) == 0 { 1 } else { 0 }
 }
 
 unsafe fn EngpLinkGraphicsDevice(
@@ -167,12 +314,168 @@ unsafe fn EngpUnlinkGraphicsDevice(
     }
 }
 
+// Translated from device.c:182-338 (2026-05-28 resurrection).
+// Walks HARDWARE\DEVICEMAP\VIDEO, calls InitDisplayDriver (user/display.c)
+// for each new \Device\VideoN, then classifies VGA / primary devices and
+// links the VGA device under the primary when both exist.
 #[no_mangle]
 pub unsafe extern "C" fn EngpUpdateGraphicsDeviceList() -> NTSTATUS {
-    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
-    // TODO: resurrect from the original C in the bottom-of-file source block.
-    // Return STATUS_SUCCESS as a no-op so callers proceed (display registration
-    // happens later via other paths); link symbol is the priority here.
+    // L"\Registry\Machine\HARDWARE\DEVICEMAP\VIDEO"
+    static KEY_VIDEO: &[u16] = &[
+        0x005c, 0x0052, 0x0065, 0x0067, 0x0069, 0x0073, 0x0074, 0x0072, 0x0079,
+        0x005c, 0x004d, 0x0061, 0x0063, 0x0068, 0x0069, 0x006e, 0x0065,
+        0x005c, 0x0048, 0x0041, 0x0052, 0x0044, 0x0057, 0x0041, 0x0052, 0x0045,
+        0x005c, 0x0044, 0x0045, 0x0056, 0x0049, 0x0043, 0x0045, 0x004d, 0x0041, 0x0050,
+        0x005c, 0x0056, 0x0049, 0x0044, 0x0045, 0x004f, 0x0000,
+    ];
+    // L"MaxObjectNumber"
+    static MAX_OBJ_NUMBER: &[u16] = &[
+        0x004d, 0x0061, 0x0078, 0x004f, 0x0062, 0x006a, 0x0065, 0x0063, 0x0074,
+        0x004e, 0x0075, 0x006d, 0x0062, 0x0065, 0x0072, 0x0000,
+    ];
+    // L"\\Device\\Video%lu"
+    static FMT_DEVICE_VIDEO: &[u16] = &[
+        0x005c, 0x0044, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065,
+        0x005c, 0x0056, 0x0069, 0x0064, 0x0065, 0x006f,
+        0x0025, 0x006c, 0x0075, 0x0000,
+    ];
+    // L"\\\\.\\DISPLAY%lu"
+    static FMT_DISPLAY: &[u16] = &[
+        0x005c, 0x005c, 0x002e, 0x005c,
+        0x0044, 0x0049, 0x0053, 0x0050, 0x004c, 0x0041, 0x0059,
+        0x0025, 0x006c, 0x0075, 0x0000,
+    ];
+
+    let mut ulMaxObjectNumber: ULONG = 0;
+    let mut awcDeviceName: [u16; 20] = [0; 20];
+    let mut awcWinDeviceName: [u16; 20] = [0; 20];
+    let mut ustrDeviceName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
+    let mut awcBuffer: [u16; 256] = [0; 256];
+    let mut hkey: HKEY = core::ptr::null_mut();
+
+    // Open the key for the adapters
+    let mut Status = RegOpenKey(KEY_VIDEO.as_ptr(), &mut hkey);
+    if !NT_SUCCESS(Status) {
+        ERR!(b"EngpUpdateGraphicsDeviceList: open DEVICEMAP\\VIDEO failed 0x%lx\n\0".as_ptr() as *const i8, Status);
+        return Status;
+    }
+
+    // Get the maximum number of adapters
+    if RegReadDWORD(hkey, MAX_OBJ_NUMBER.as_ptr(), &mut ulMaxObjectNumber as *mut ULONG as *mut DWORD) == 0 {
+        ERR!(b"Could not read MaxObjectNumber, defaulting to 0.\n\0".as_ptr() as *const i8);
+    }
+
+    // Loop through all adapters, to detect new ones
+    let mut iDevNum: ULONG = 0;
+    while iDevNum <= ulMaxObjectNumber {
+        // Build adapter key name
+        swprintf(awcDeviceName.as_mut_ptr(), FMT_DEVICE_VIDEO.as_ptr(), iDevNum);
+        // Build Win32 display device name
+        swprintf(awcWinDeviceName.as_mut_ptr(), FMT_DISPLAY.as_ptr(), iDevNum + 1);
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(ustrDeviceName), awcWinDeviceName.as_ptr());
+
+        // Already registered?
+        let pGraphicsDevice = EngpFindGraphicsDevice(
+            core::ptr::addr_of_mut!(ustrDeviceName) as PUNICODE_STRING,
+            iDevNum,
+        );
+        if !pGraphicsDevice.is_null() {
+            iDevNum += 1;
+            continue;
+        }
+
+        // Read the reg key name
+        let mut cbValue: ULONG = core::mem::size_of_val(&awcBuffer) as ULONG;
+        Status = RegQueryValue(
+            hkey,
+            awcDeviceName.as_ptr(),
+            REG_SZ,
+            awcBuffer.as_mut_ptr() as *mut core::ffi::c_void,
+            &mut cbValue,
+        );
+        if !NT_SUCCESS(Status) {
+            iDevNum += 1;
+            continue;
+        }
+
+        // Initialize the driver for this device
+        let pGraphicsDevice = InitDisplayDriver(awcDeviceName.as_mut_ptr(), awcBuffer.as_mut_ptr());
+        if pGraphicsDevice.is_null() {
+            iDevNum += 1;
+            continue;
+        }
+        iDevNum += 1;
+    }
+
+    // Close the device map registry key
+    ZwClose(hkey as *mut core::ffi::c_void);
+
+    // Choose a VGA device — DISPLAY_DEVICE_VGA_COMPATIBLE + VGASave service.
+    let mut pGraphicsDevice = gpGraphicsDeviceFirst;
+    while !pGraphicsDevice.is_null() {
+        if pGraphicsDevice == gpVgaGraphicsDevice {
+            pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+            continue;
+        }
+        if ((*pGraphicsDevice).StateFlags & DISPLAY_DEVICE_VGA_COMPATIBLE) != 0
+            && EngpHasVgaDriver(pGraphicsDevice) != 0
+        {
+            gpVgaGraphicsDevice = pGraphicsDevice;
+            break;
+        }
+        pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+    }
+
+    // Handle gbBaseVideo — remove every non-base-video device from the global list.
+    if gbBaseVideo != 0 {
+        EngAcquireSemaphore(ghsemGraphicsDeviceList);
+        let mut pGraphicsDevice = gpGraphicsDeviceFirst;
+        while !pGraphicsDevice.is_null() {
+            if EngpHasVgaDriver(pGraphicsDevice) == 0 {
+                let pToDelete = pGraphicsDevice;
+                EngpUnlinkGraphicsDevice(pGraphicsDevice);
+                pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+                ExFreePoolWithTag((*pToDelete).pDiplayDrivers as PVOID, GDITAG_DRVSUP);
+                ExFreePoolWithTag(pToDelete as PVOID, GDITAG_GDEVICE);
+            } else {
+                pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+            }
+        }
+        EngReleaseSemaphore(ghsemGraphicsDeviceList);
+    }
+
+    // Choose a primary device if none yet — prefer non-VGA-Save, fall back to first.
+    if gpPrimaryGraphicsDevice.is_null() {
+        let mut pNewPrimaryGraphicsDevice: PGRAPHICS_DEVICE = core::ptr::null_mut();
+        let mut pGraphicsDevice = gpGraphicsDeviceFirst;
+        while !pGraphicsDevice.is_null() {
+            if EngpHasVgaDriver(pGraphicsDevice) == 0 {
+                pNewPrimaryGraphicsDevice = pGraphicsDevice;
+                break;
+            }
+            pGraphicsDevice = (*pGraphicsDevice).pNextGraphicsDevice;
+        }
+        if pNewPrimaryGraphicsDevice.is_null() {
+            pNewPrimaryGraphicsDevice = gpGraphicsDeviceFirst;
+        }
+        if !pNewPrimaryGraphicsDevice.is_null() {
+            (*pNewPrimaryGraphicsDevice).StateFlags |= DISPLAY_DEVICE_PRIMARY_DEVICE;
+            gpPrimaryGraphicsDevice = pNewPrimaryGraphicsDevice;
+        }
+    }
+
+    // If both primary and VGA exist and aren't already linked, splice VGA under primary.
+    if !gpPrimaryGraphicsDevice.is_null()
+        && !gpVgaGraphicsDevice.is_null()
+        && gpPrimaryGraphicsDevice != gpVgaGraphicsDevice
+        && (*gpPrimaryGraphicsDevice).pVgaDevice.is_null()
+    {
+        EngAcquireSemaphore(ghsemGraphicsDeviceList);
+        EngpUnlinkGraphicsDevice(gpVgaGraphicsDevice);
+        (*gpPrimaryGraphicsDevice).pVgaDevice = gpVgaGraphicsDevice;
+        EngReleaseSemaphore(ghsemGraphicsDeviceList);
+    }
+
     STATUS_SUCCESS
 }
 
@@ -264,16 +567,153 @@ pub unsafe extern "system" fn EngpUpdateMonitorDevices(
     STATUS_SUCCESS
 }
 
+// Translated from device.c:667-798 (2026-05-28 resurrection).
+// Allocates a GRAPHICS_DEVICE, opens the device, sets up Win32K callbacks via
+// IOCTL_VIDEO_INIT_WIN32K_CALLBACKS, copies the NT/Win32 names + driver list,
+// then links into the global graphics device list. Returns NULL on failure.
 #[no_mangle]
 pub unsafe extern "system" fn EngpRegisterGraphicsDevice(
     pustrDeviceName: PUNICODE_STRING,
     pustrDiplayDrivers: PUNICODE_STRING,
     pustrDescription: PUNICODE_STRING,
 ) -> PGRAPHICS_DEVICE {
-    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
-    // TODO: resurrect from the original C in the bottom-of-file source block.
-    let _ = (pustrDeviceName, pustrDiplayDrivers, pustrDescription);
-    core::ptr::null_mut()
+    // L"\\\\.\\DISPLAY%d"
+    static FMT_DISPLAY: &[u16] = &[
+        0x005c, 0x005c, 0x002e, 0x005c,
+        0x0044, 0x0049, 0x0053, 0x0050, 0x004c, 0x0041, 0x0059,
+        0x0025, 0x0064, 0x0000,
+    ];
+    // L"DISPLAY" for the wallpaper-paint HACK at the end.
+    static DRIVER_DISPLAY: &[u16] = &[0x0044, 0x0049, 0x0053, 0x0050, 0x004c, 0x0041, 0x0059, 0x0000];
+
+    // Allocate a GRAPHICS_DEVICE structure (zero-init).
+    // ExAllocatePoolZero is FORCEINLINE in exfuncs.h (= AllocPoolWithTag + ZeroMemory),
+    // so no exported symbol — inline the same pattern.
+    let size = core::mem::size_of::<GRAPHICS_DEVICE>();
+    let pGraphicsDevice = ExAllocatePoolWithTag(PagedPool, size as _, GDITAG_GDEVICE) as PGRAPHICS_DEVICE;
+    if pGraphicsDevice.is_null() {
+        ERR!(b"ExAllocatePoolWithTag failed\n\0".as_ptr() as *const i8);
+        return core::ptr::null_mut();
+    }
+    core::ptr::write_bytes(pGraphicsDevice as *mut u8, 0, size);
+
+    // Try to open and enable the device.
+    let mut pFileObject: PFILE_OBJECT = core::ptr::null_mut();
+    let mut pDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+    let Status = IoGetDeviceObjectPointer(
+        pustrDeviceName as *mut ntkrnl_sys::ddk::_UNICODE_STRING,
+        FILE_READ_DATA | FILE_WRITE_DATA,
+        &mut pFileObject as *mut _ as *mut *mut ntkrnl_sys::ddk::_FILE_OBJECT,
+        &mut pDeviceObject as *mut _ as *mut *mut ntkrnl_sys::ddk::_DEVICE_OBJECT,
+    );
+    if !NT_SUCCESS(Status) {
+        ERR!(b"Could not open device, 0x%lx\n\0".as_ptr() as *const i8, Status);
+        ExFreePoolWithTag(pGraphicsDevice as PVOID, GDITAG_GDEVICE);
+        return core::ptr::null_mut();
+    }
+
+    // Copy the device and file object pointers.
+    (*pGraphicsDevice).DeviceObject = pDeviceObject;
+    (*pGraphicsDevice).FileObject = pFileObject;
+
+    // Initialize and register the device with videoprt for Win32k callbacks.
+    let mut Win32kCallbacks: VIDEO_WIN32K_CALLBACKS = core::mem::zeroed();
+    Win32kCallbacks.PhysDisp = pGraphicsDevice as PVOID;
+    // PVIDEO_WIN32K_CALLOUT is `extern "stdcall" fn` on i386 / `extern "C" fn`
+    // elsewhere — VideoPortCallout uses `extern "system"` (= stdcall on i386,
+    // cdecl elsewhere), which is identical at the ABI level but a distinct
+    // type to rustc. Transmute via raw fn-pointer pun.
+    Win32kCallbacks.Callout = Some(core::mem::transmute::<usize, _>(VideoPortCallout as usize));
+    // bACPI/pPhysDeviceObject/DualviewFlags already zeroed.
+    let mut ulReturn: ULONG = 0;
+    let ioctl_status = EngDeviceIoControl(
+        pDeviceObject as HANDLE,
+        IOCTL_VIDEO_INIT_WIN32K_CALLBACKS,
+        core::ptr::addr_of_mut!(Win32kCallbacks) as LPVOID,
+        core::mem::size_of_val(&Win32kCallbacks) as DWORD,
+        core::ptr::addr_of_mut!(Win32kCallbacks) as LPVOID,
+        core::mem::size_of_val(&Win32kCallbacks) as DWORD,
+        &mut ulReturn as *mut ULONG as LPDWORD,
+    );
+    if ioctl_status != ERROR_SUCCESS {
+        ERR!(b"EngDeviceIoControl(IOCTL_VIDEO_INIT_WIN32K_CALLBACKS) failed 0x%lx\n\0".as_ptr() as *const i8, ioctl_status);
+    }
+    (*pGraphicsDevice).PhysDeviceHandle = Win32kCallbacks.pPhysDeviceObject as PDEVICE_OBJECT;
+
+    // Copy the device name.
+    RtlStringCbCopyNW(
+        (*pGraphicsDevice).szNtDeviceName.as_mut_ptr(),
+        core::mem::size_of_val(&(*pGraphicsDevice).szNtDeviceName),
+        (*pustrDeviceName).Buffer,
+        (*pustrDeviceName).Length as usize,
+    );
+
+    // Create a Win32 device name (FIXME: virtual devices!)
+    // C uses RtlStringCbPrintfW, which is FORCEINLINE in ntstrsafe.h — no
+    // exported symbol. Use libcntpr swprintf instead (output max ~14 chars
+    // for DISPLAY%d, well within the 16-wchar szWinDeviceName buffer).
+    swprintf(
+        (*pGraphicsDevice).szWinDeviceName.as_mut_ptr(),
+        FMT_DISPLAY.as_ptr(),
+        giDevNum as i32,
+    );
+
+    // Allocate a buffer for the strings (drivers || description || trailing NUL).
+    let cj = (*pustrDiplayDrivers).Length as usize
+        + (*pustrDescription).Length as usize
+        + core::mem::size_of::<u16>();
+    let pwsz = ExAllocatePoolWithTag(PagedPool, cj as _, GDITAG_DRVSUP) as PWSTR;
+    if pwsz.is_null() {
+        ERR!(b"Could not allocate string buffer\n\0".as_ptr() as *const i8);
+        ExFreePoolWithTag(pGraphicsDevice as PVOID, GDITAG_GDEVICE);
+        return core::ptr::null_mut();
+    }
+
+    // Copy the display driver names (REG_MULTI_SZ).
+    (*pGraphicsDevice).pDiplayDrivers = pwsz;
+    RtlCopyMemory(
+        (*pGraphicsDevice).pDiplayDrivers as *mut core::ffi::c_void,
+        (*pustrDiplayDrivers).Buffer as *const core::ffi::c_void,
+        (*pustrDiplayDrivers).Length as usize,
+    );
+
+    // Copy the description right after.
+    let desc_offset_chars = (*pustrDiplayDrivers).Length as usize / core::mem::size_of::<u16>();
+    (*pGraphicsDevice).pwszDescription = pwsz.add(desc_offset_chars);
+    RtlCopyMemory(
+        (*pGraphicsDevice).pwszDescription as *mut core::ffi::c_void,
+        (*pustrDescription).Buffer as *const core::ffi::c_void,
+        (*pustrDescription).Length as usize,
+    );
+    let desc_chars = (*pustrDescription).Length as usize / core::mem::size_of::<u16>();
+    *(*pGraphicsDevice).pwszDescription.add(desc_chars) = 0;
+
+    // Update list of connected monitors (stub for now — STATUS_SUCCESS no-op).
+    EngpUpdateMonitorDevices(pGraphicsDevice);
+
+    // Insert the device into the global list under the loader semaphore.
+    EngAcquireSemaphore(ghsemGraphicsDeviceList);
+    EngpLinkGraphicsDevice(pGraphicsDevice);
+    giDevNum += 1;
+    EngReleaseSemaphore(ghsemGraphicsDeviceList);
+
+    // HACK: already in graphic mode → repaint desktop on this new display.
+    if !ScreenDeviceContext.is_null() {
+        let mut DriverName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
+        let mut DisplayName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(DriverName), DRIVER_DISPLAY.as_ptr());
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(DisplayName), (*pGraphicsDevice).szWinDeviceName.as_ptr());
+        let hdc = IntGdiCreateDC(
+            core::ptr::addr_of_mut!(DriverName) as PUNICODE_STRING,
+            core::ptr::addr_of_mut!(DisplayName) as PUNICODE_STRING,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            0,
+        );
+        IntPaintDesktop(hdc);
+    }
+
+    pGraphicsDevice
 }
 
 // NTAPI in C — stdcall on i386, cdecl elsewhere.

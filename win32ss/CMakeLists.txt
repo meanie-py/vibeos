@@ -68,7 +68,7 @@ list(APPEND SOURCE
     # gdi/eng/engevent.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/engevent.rs) — cohabitation
     # gdi/eng/clip.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/clip.rs) — cohabitation
     # gdi/eng/debug.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/debug.rs) — cohabitation
-    gdi/eng/device.c       # device.rs has 14 DEFERRED-STUBs — re-translate before enabling
+    # gdi/eng/device.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/device.rs) — 3 boot-critical fns resurrected 2026-05-28 (HasVga/UpdateGraphicsDeviceList/RegisterGraphicsDevice); 7 non-boot stubs remain as STATUS_SUCCESS no-ops; INTEGRATED + FAILING (i386 smoke hangs pre-`shell ready`) per AGENTS.md "broken translation as debug signal" rule
     # gdi/eng/driverobj.c   # replaced by Rust (sdk/lib/rust/win32k-rust/src/driverobj.rs) — cohabitation
     # gdi/eng/error.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/error.rs) — cohabitation
     # gdi/eng/float.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/float.rs) — cohabitation (EngSave still C, scanner gap)

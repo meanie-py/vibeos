@@ -30,16 +30,20 @@ const EVENT_INCREMENT: KPRIORITY = 1;
 // ExEventObjectType is in libntoskrnl_implib.def as DATA. Per-arch ABI:
 // - i386 PE needs the `__imp_` thunk that `raw-dylib +verbatim` generates
 //   (cross-DLL data refs with --disable-auto-import). Plain extern fails link.
-// - amd64/arm64 auto-resolve through the regular import library. Adding
-//   raw-dylib here causes a boot regression (BUGCHECK 0x6B at PsLocateSystemDll),
-//   likely due to dup-descriptor interaction with cgu=256 partitioning.
-#[cfg(target_arch = "x86")]
+// - amd64 auto-resolves through the regular import library AND bugchecks
+//   0x6B at PsLocateSystemDll when raw-dylib is added (dup-descriptor +
+//   cgu=256 partitioning interaction).
+// - arm64 USED to auto-resolve but the wave-2-after-device.rs cgu shift
+//   moved the reference into a partition that doesn't (link error on
+//   `ExEventObjectType`). Gate raw-dylib in for arm64 too — same way as i386.
+//   (Boot test still needed; arm64 doesn't have the amd64 BUGCHECK exposure.)
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     static mut ExEventObjectType: *mut _OBJECT_TYPE;
 }
 
-#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86_64")]
 extern "C" {
     static mut ExEventObjectType: *mut _OBJECT_TYPE;
 }
