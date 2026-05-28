@@ -622,7 +622,7 @@ unsafe fn OnNcCreate(hWnd: HWND, Create: LPCREATESTRUCTW) -> BOOL {
     (*(*Console).ActiveBuffer).CursorBlinkOn = 1;
     (*(*Console).ActiveBuffer).ForceCursorOff = 0;
 
-    SetWindowLongPtrW((*GuiData).hWindow, GWLP_USERDATA, GuiData as DWORD_PTR);
+    SetWindowLongPtrW((*GuiData).hWindow, GWLP_USERDATA, GuiData as LONG_PTR);
 
     if (*GuiData).IsWindowVisible != 0 {
         SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER, CONGUI_UPDATE_TIME, core::ptr::null_mut());
@@ -674,7 +674,7 @@ unsafe fn OnFocus(GuiData: PGUI_CONSOLE_DATA, SetFocus: BOOL) {
 
     ConSrvSetConsoleProcessFocus(Console, SetFocus);
 
-    er.EventType = FOCUS_EVENT;
+    er.EventType = FOCUS_EVENT as u16;
     (*er.Event.FocusEvent.as_mut()).bSetFocus = SetFocus;
     ConioProcessInputEvent(Console, &mut er);
 
@@ -785,8 +785,8 @@ unsafe fn CreateSelectionRgn(
             rg2 = CreateRectRgnIndirect(&r2);
             rg3 = CreateRectRgnIndirect(&r3);
 
-            CombineRgn(rg1, rg1, rg2, RGN_XOR);
-            CombineRgn(rg1, rg1, rg3, RGN_XOR);
+            CombineRgn(rg1, rg1, rg2, RGN_XOR as i32);
+            CombineRgn(rg1, rg1, rg3, RGN_XOR as i32);
             DeleteObject(rg3);
             DeleteObject(rg2);
 
@@ -806,8 +806,8 @@ unsafe fn PaintSelectionRect(GuiData: PGUI_CONSOLE_DATA, pps: PPAINTSTRUCT) {
         &(*GuiData).Selection.srSelection,
     );
 
-    let ErrorCode: i32 = CombineRgn(rgnPaint, rgnPaint, rgnSel, RGN_AND);
-    if ErrorCode != ERROR && ErrorCode != NULLREGION {
+    let ErrorCode: i32 = CombineRgn(rgnPaint, rgnPaint, rgnSel, RGN_AND as i32);
+    if ErrorCode != ERROR as i32 && ErrorCode != NULLREGION as i32 {
         InvertRgn((*pps).hdc, rgnPaint);
     }
 
@@ -837,7 +837,7 @@ unsafe fn UpdateSelection(
         let newRgn: HRGN;
 
         let OldLineSel: BOOL = (*GuiData).LineSelection;
-        (*GuiData).LineSelection = if (GetKeyState(VK_CONTROL) & 0x8000u16 as i16) != 0 { 1 } else { 0 };
+        (*GuiData).LineSelection = if (GetKeyState(VK_CONTROL as i32) & 0x8000u16 as i16) != 0 { 1 } else { 0 };
 
         rc.Left = min((*GuiData).Selection.dwSelectionAnchor.X, (*coord).X);
         rc.Top = min((*GuiData).Selection.dwSelectionAnchor.Y, (*coord).Y);
@@ -859,7 +859,7 @@ unsafe fn UpdateSelection(
                     core::mem::size_of::<SMALL_RECT>(),
                 ) != 0
             {
-                if !oldRgn.is_null() && !newRgn.is_null() && CombineRgn(newRgn, newRgn, oldRgn, RGN_XOR) != ERROR as i32 {
+                if !oldRgn.is_null() && !newRgn.is_null() && CombineRgn(newRgn, newRgn, oldRgn, RGN_XOR as i32) != ERROR as i32 {
                     InvalidateRgn((*GuiData).hWindow, newRgn, 0);
                 }
             }
@@ -992,7 +992,7 @@ unsafe fn OnPaletteChanged(GuiData: PGUI_CONSOLE_DATA) {
 }
 
 unsafe fn IsSystemKey(VirtualKeyCode: WORD) -> BOOL {
-    match VirtualKeyCode as i32 {
+    match VirtualKeyCode as u32 {
         VK_RETURN | VK_SHIFT | VK_CONTROL | VK_MENU | VK_PAUSE | VK_CAPITAL | 
         VK_ESCAPE | VK_LWIN | VK_RWIN | VK_NUMLOCK | VK_SCROLL => 1,
         _ => 0,
@@ -1022,7 +1022,7 @@ unsafe fn OnKey(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam: L
             LeaveCriticalSection(core::ptr::addr_of_mut!((*Console).Lock));
             return;
         } else if VirtualKeyCode == VK_ESCAPE as WORD ||
-                  (VirtualKeyCode == b'C' as WORD && (GetKeyState(VK_CONTROL) & KEY_PRESSED) != 0) {
+                  (VirtualKeyCode == b'C' as WORD && (GetKeyState(VK_CONTROL as i32) & KEY_PRESSED as i16) != 0) {
             UpdateSelection(GuiData, core::ptr::null_mut(), core::ptr::null_mut());
             LeaveCriticalSection(core::ptr::addr_of_mut!((*Console).Lock));
             return;
@@ -1030,9 +1030,9 @@ unsafe fn OnKey(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam: L
 
         if ((*GuiData).Selection.dwFlags & CONSOLE_MOUSE_SELECTION) == 0 {
             let mut Interpreted: BOOL = 0;
-            let MajPressed: BOOL = if (GetKeyState(VK_SHIFT) & KEY_PRESSED) != 0 { 1 } else { 0 };
+            let MajPressed: BOOL = if (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) != 0 { 1 } else { 0 };
 
-            match VirtualKeyCode as i32 {
+            match VirtualKeyCode as u32 {
                 VK_LEFT => {
                     Interpreted = 1;
                     if (*GuiData).dwSelectionCursor.X > 0 {
@@ -1244,7 +1244,7 @@ unsafe fn OnClose(GuiData: PGUI_CONSOLE_DATA) -> BOOL {
 unsafe fn OnNcDestroy(hWnd: HWND) -> LRESULT {
     let GuiData = GuiGetGuiData(hWnd);
 
-    SetWindowLongPtrW(hWnd, GWLP_USERDATA, 0 as DWORD_PTR);
+    SetWindowLongPtrW(hWnd, GWLP_USERDATA, 0 as LONG_PTR);
 
     GetSystemMenu(hWnd, 1);
 
@@ -1411,10 +1411,10 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
                     nBar = SB_HORZ;
                 }
 
-                if GetKeyState(VK_SHIFT) & KEY_PRESSED != 0 {
-                    sbCode = if wDelta >= 0 { SB_PAGEUP } else { SB_PAGEDOWN };
+                if GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16 != 0 {
+                    sbCode = if wDelta >= 0 { SB_PAGEUP as u16 } else { SB_PAGEDOWN as u16 };
                 } else {
-                    sbCode = if wDelta >= 0 { SB_LINEUP } else { SB_LINEDOWN };
+                    sbCode = if wDelta >= 0 { SB_LINEUP as u16 } else { SB_LINEDOWN as u16 };
                 }
 
                 OnScroll(GuiData, nBar, sbCode);
@@ -1451,10 +1451,10 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
                     nBar = SB_HORZ;
                 }
 
-                if GetKeyState(VK_SHIFT) & KEY_PRESSED != 0 {
-                    sbCode = if wDelta >= 0 { SB_PAGEUP } else { SB_PAGEDOWN };
+                if GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16 != 0 {
+                    sbCode = if wDelta >= 0 { SB_PAGEUP as u16 } else { SB_PAGEDOWN as u16 };
                 } else {
-                    sbCode = if wDelta >= 0 { SB_LINEUP } else { SB_LINEDOWN };
+                    sbCode = if wDelta >= 0 { SB_LINEUP as u16 } else { SB_LINEDOWN as u16 };
                 }
 
                 OnScroll(GuiData, nBar, sbCode);
@@ -1482,10 +1482,10 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
                     nBar = SB_HORZ;
                 }
 
-                if GetKeyState(VK_SHIFT) & KEY_PRESSED != 0 {
-                    sbCode = if wDelta >= 0 { SB_PAGEUP } else { SB_PAGEDOWN };
+                if GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16 != 0 {
+                    sbCode = if wDelta >= 0 { SB_PAGEUP as u16 } else { SB_PAGEDOWN as u16 };
                 } else {
-                    sbCode = if wDelta >= 0 { SB_LINEUP } else { SB_LINEDOWN };
+                    sbCode = if wDelta >= 0 { SB_LINEUP as u16 } else { SB_LINEDOWN as u16 };
                 }
 
                 OnScroll(GuiData, nBar, sbCode);
@@ -1502,7 +1502,7 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             WM_LBUTTONDOWN => {
                 if ((*GuiData).Selection.dwFlags & CONSOLE_SELECTION_IN_PROGRESS) != 0 &&
                     ((*GuiData).Selection.dwFlags & CONSOLE_MOUSE_SELECTION) != 0 &&
-                    (GetKeyState(VK_SHIFT) & KEY_PRESSED) != 0
+                    (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) != 0
                 {
                     (*GuiData).dwSelectionCursor = PointToCoord(GuiData, lParam);
                     UpdateSelection(GuiData, core::ptr::null_mut(), core::ptr::addr_of_mut!((*GuiData).dwSelectionCursor));
@@ -1729,35 +1729,35 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
                 dwButtonState |= FROM_LEFT_4TH_BUTTON_PRESSED;
             }
 
-            if (GetKeyState(VK_RMENU) & KEY_PRESSED) != 0 {
+            if (GetKeyState(VK_RMENU as i32) & KEY_PRESSED as i16) != 0 {
                 dwControlKeyState |= RIGHT_ALT_PRESSED;
             }
-            if (GetKeyState(VK_LMENU) & KEY_PRESSED) != 0 {
+            if (GetKeyState(VK_LMENU as i32) & KEY_PRESSED as i16) != 0 {
                 dwControlKeyState |= LEFT_ALT_PRESSED;
             }
-            if (GetKeyState(VK_RCONTROL) & KEY_PRESSED) != 0 {
+            if (GetKeyState(VK_RCONTROL as i32) & KEY_PRESSED as i16) != 0 {
                 dwControlKeyState |= RIGHT_CTRL_PRESSED;
             }
-            if (GetKeyState(VK_LCONTROL) & KEY_PRESSED) != 0 {
+            if (GetKeyState(VK_LCONTROL as i32) & KEY_PRESSED as i16) != 0 {
                 dwControlKeyState |= LEFT_CTRL_PRESSED;
             }
-            if (GetKeyState(VK_SHIFT) & KEY_PRESSED) != 0 {
+            if (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) != 0 {
                 dwControlKeyState |= SHIFT_PRESSED;
             }
-            if (GetKeyState(VK_NUMLOCK) & KEY_TOGGLED) != 0 {
+            if (GetKeyState(VK_NUMLOCK as i32) & KEY_TOGGLED as i16) != 0 {
                 dwControlKeyState |= NUMLOCK_ON;
             }
-            if (GetKeyState(VK_SCROLL) & KEY_TOGGLED) != 0 {
+            if (GetKeyState(VK_SCROLL as i32) & KEY_TOGGLED as i16) != 0 {
                 dwControlKeyState |= SCROLLLOCK_ON;
             }
-            if (GetKeyState(VK_CAPITAL) & KEY_TOGGLED) != 0 {
+            if (GetKeyState(VK_CAPITAL as i32) & KEY_TOGGLED as i16) != 0 {
                 dwControlKeyState |= CAPSLOCK_ON;
             }
             if (HIWORD(lParam as u32) & KF_EXTENDED) != 0 {
                 dwControlKeyState |= ENHANCED_KEY;
             }
 
-            er.EventType = MOUSE_EVENT;
+            er.EventType = MOUSE_EVENT as u16;
             (*er.Event.MouseEvent()).dwMousePosition   = PointToCoord(GuiData, lParam);
             (*er.Event.MouseEvent()).dwButtonState     = dwButtonState;
             (*er.Event.MouseEvent()).dwControlKeyState = dwControlKeyState;
@@ -1786,10 +1786,10 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             nBar = SB_HORZ;
         }
 
-        if (GetKeyState(VK_SHIFT) & KEY_PRESSED) != 0 {
-            sbCode = if wDelta >= 0 { SB_PAGEUP } else { SB_PAGEDOWN };
+        if (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) != 0 {
+            sbCode = if wDelta >= 0 { SB_PAGEUP as u16 } else { SB_PAGEDOWN as u16 };
         } else {
-            sbCode = if wDelta >= 0 { SB_LINEUP } else { SB_LINEDOWN };
+            sbCode = if wDelta >= 0 { SB_LINEUP as u16 } else { SB_LINEDOWN as u16 };
         }
 
         OnScroll(GuiData, nBar, sbCode);
@@ -2530,7 +2530,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //     if (!ConDrvValidateConsoleUnsafe((PCONSOLE)Console, CONSOLE_RUNNING, TRUE)) return;
 //
 //     /* Send a menu event */
-//     er.EventType = MENU_EVENT;
+//     er.EventType = MENU_EVENT as u16;
 //     er.Event.MenuEvent.dwCommandId = CmdId;
 //     ConioProcessInputEvent(Console, &er);
 //
@@ -3026,7 +3026,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //     ConSrvSetConsoleProcessFocus(Console, SetFocus);
 //
 //     /* Send a focus event */
-//     er.EventType = FOCUS_EVENT;
+//     er.EventType = FOCUS_EVENT as u16;
 //     er.Event.FocusEvent.bSetFocus = SetFocus;
 //     ConioProcessInputEvent(Console, &er);
 //
@@ -3137,8 +3137,8 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //             rg2 = CreateRectRgnIndirect(&r2);
 //             rg3 = CreateRectRgnIndirect(&r3);
 //
-//             CombineRgn(rg1, rg1, rg2, RGN_XOR);
-//             CombineRgn(rg1, rg1, rg3, RGN_XOR);
+//             CombineRgn(rg1, rg1, rg2, RGN_XOR as i32);
+//             CombineRgn(rg1, rg1, rg3, RGN_XOR as i32);
 //             DeleteObject(rg3);
 //             DeleteObject(rg2);
 //
@@ -3159,8 +3159,8 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //
 //     /* Invert the selection */
 //
-//     int ErrorCode = CombineRgn(rgnPaint, rgnPaint, rgnSel, RGN_AND);
-//     if (ErrorCode != ERROR && ErrorCode != NULLREGION)
+//     int ErrorCode = CombineRgn(rgnPaint, rgnPaint, rgnSel, RGN_AND as i32);
+//     if (ErrorCode != ERROR as i32 && ErrorCode != NULLREGION as i32)
 //     {
 //         InvertRgn(pps->hdc, rgnPaint);
 //     }
@@ -3195,7 +3195,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //          * into line-selection mode, the selection mode of *nix terminals.
 //          */
 //         BOOL OldLineSel = GuiData->LineSelection;
-//         GuiData->LineSelection = !!(GetKeyState(VK_CONTROL) & KEY_PRESSED);
+//         GuiData->LineSelection = !!(GetKeyState(VK_CONTROL as i32) & KEY_PRESSED as i16);
 //
 //         /* Exchange left/top with right/bottom if required */
 //         rc.Left   = min(GuiData->Selection.dwSelectionAnchor.X, coord->X);
@@ -3213,7 +3213,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //                 memcmp(&rc, &GuiData->Selection.srSelection, sizeof(SMALL_RECT)) != 0)
 //             {
 //                 /* Calculate the region that needs to be updated */
-//                 if (oldRgn && newRgn && CombineRgn(newRgn, newRgn, oldRgn, RGN_XOR) != ERROR)
+//                 if (oldRgn && newRgn && CombineRgn(newRgn, newRgn, oldRgn, RGN_XOR as i32) != ERROR)
 //                 {
 //                     InvalidateRgn(GuiData->hWindow, newRgn, FALSE);
 //                 }
@@ -3417,7 +3417,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //             goto Quit;
 //         }
 //         else if ( VirtualKeyCode == VK_ESCAPE ||
-//                  (VirtualKeyCode == 'C' && (GetKeyState(VK_CONTROL) & KEY_PRESSED)) )
+//                  (VirtualKeyCode == 'C' && (GetKeyState(VK_CONTROL as i32) & KEY_PRESSED as i16)) )
 //         {
 //             /* Cancel selection if ESC or Ctrl-C are pressed */
 //             UpdateSelection(GuiData, NULL, NULL);
@@ -3428,7 +3428,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         {
 //             /* Keyboard selection mode */
 //             BOOL Interpreted = FALSE;
-//             BOOL MajPressed  = !!(GetKeyState(VK_SHIFT) & KEY_PRESSED);
+//             BOOL MajPressed  = !!(GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16);
 //
 //             switch (VirtualKeyCode)
 //             {
@@ -3917,7 +3917,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //                 /* Check for selection state */
 //                 if ( (GuiData->Selection.dwFlags & CONSOLE_SELECTION_IN_PROGRESS) &&
 //                      (GuiData->Selection.dwFlags & CONSOLE_MOUSE_SELECTION)       &&
-//                      (GetKeyState(VK_SHIFT) & KEY_PRESSED) )
+//                      (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) )
 //                 {
 //                     /*
 //                      * A mouse selection is currently in progress and the user
@@ -4232,28 +4232,28 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //             if (wKeyState & MK_XBUTTON2)
 //                 dwButtonState |= FROM_LEFT_4TH_BUTTON_PRESSED;
 //
-//             if (GetKeyState(VK_RMENU) & KEY_PRESSED)
+//             if (GetKeyState(VK_RMENU as i32) & KEY_PRESSED as i16)
 //                 dwControlKeyState |= RIGHT_ALT_PRESSED;
-//             if (GetKeyState(VK_LMENU) & KEY_PRESSED)
+//             if (GetKeyState(VK_LMENU as i32) & KEY_PRESSED as i16)
 //                 dwControlKeyState |= LEFT_ALT_PRESSED;
-//             if (GetKeyState(VK_RCONTROL) & KEY_PRESSED)
+//             if (GetKeyState(VK_RCONTROL as i32) & KEY_PRESSED as i16)
 //                 dwControlKeyState |= RIGHT_CTRL_PRESSED;
-//             if (GetKeyState(VK_LCONTROL) & KEY_PRESSED)
+//             if (GetKeyState(VK_LCONTROL as i32) & KEY_PRESSED as i16)
 //                 dwControlKeyState |= LEFT_CTRL_PRESSED;
-//             if (GetKeyState(VK_SHIFT) & KEY_PRESSED)
+//             if (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16)
 //                 dwControlKeyState |= SHIFT_PRESSED;
-//             if (GetKeyState(VK_NUMLOCK) & KEY_TOGGLED)
+//             if (GetKeyState(VK_NUMLOCK as i32) & KEY_TOGGLED as i16)
 //                 dwControlKeyState |= NUMLOCK_ON;
-//             if (GetKeyState(VK_SCROLL) & KEY_TOGGLED)
+//             if (GetKeyState(VK_SCROLL as i32) & KEY_TOGGLED as i16)
 //                 dwControlKeyState |= SCROLLLOCK_ON;
-//             if (GetKeyState(VK_CAPITAL) & KEY_TOGGLED)
+//             if (GetKeyState(VK_CAPITAL as i32) & KEY_TOGGLED as i16)
 //                 dwControlKeyState |= CAPSLOCK_ON;
 //             /* See WM_CHAR MSDN documentation for instance */
 //             if (HIWORD(lParam) & KF_EXTENDED)
 //                 dwControlKeyState |= ENHANCED_KEY;
 //
 //             /* Send a mouse event */
-//             er.EventType = MOUSE_EVENT;
+//             er.EventType = MOUSE_EVENT as u16;
 //             er.Event.MouseEvent.dwMousePosition   = PointToCoord(GuiData, lParam);
 //             er.Event.MouseEvent.dwButtonState     = dwButtonState;
 //             er.Event.MouseEvent.dwControlKeyState = dwControlKeyState;
@@ -4291,7 +4291,7 @@ unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPara
 //         // FIXME: For some reason our win32k does not set the key states
 //         // when sending WM_MOUSEWHEEL or WM_MOUSEHWHEEL ...
 //         // if (wKeyState & MK_SHIFT)
-//         if (GetKeyState(VK_SHIFT) & KEY_PRESSED)
+//         if (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16)
 //             sbCode = (wDelta >= 0 ? SB_PAGEUP : SB_PAGEDOWN);
 //         else
 //             sbCode = (wDelta >= 0 ? SB_LINEUP : SB_LINEDOWN);

@@ -57,38 +57,41 @@ pub fn MAKEINTRESOURCEW(i: u32) -> *const u16 {
 }
 
 #[inline]
-pub fn GET_KEYSTATE_WPARAM(w: WPARAM) -> u32 {
-    (w as u32) & 0xFFFF
+pub fn GET_KEYSTATE_WPARAM<W: Into<u64>>(w: W) -> u32 {
+    (w.into() as u32) & 0xFFFF
 }
 
 #[inline]
-pub fn GET_WHEEL_DELTA_WPARAM(w: WPARAM) -> i16 {
-    ((w as u32 >> 16) & 0xFFFF) as i16
+pub fn GET_WHEEL_DELTA_WPARAM<W: Into<u64>>(w: W) -> i16 {
+    (((w.into() as u32) >> 16) & 0xFFFF) as i16
 }
 
 #[inline]
-pub fn GET_XBUTTON_WPARAM(w: WPARAM) -> u32 {
-    (w as u32 >> 16) & 0xFFFF
+pub fn GET_XBUTTON_WPARAM<W: Into<u64>>(w: W) -> u32 {
+    ((w.into() as u32) >> 16) & 0xFFFF
+}
+
+/// `LOWORD(l)` — extract low 16 bits. C `#define LOWORD(l) ((WORD)(((DWORD_PTR)(l)) & 0xffff))`.
+/// Use a u32 arg since WPARAM is `c_uint` on i386 (and amd64/arm64 truncate via the mask).
+#[inline]
+pub fn LOWORD<L: Into<u64>>(l: L) -> u16 {
+    (l.into() & 0xFFFF) as u16
+}
+
+/// `HIWORD(l)` — extract high 16 bits of low 32. Polymorphic over int types.
+#[inline]
+pub fn HIWORD<L: Into<u64>>(l: L) -> u16 {
+    ((l.into() >> 16) & 0xFFFF) as u16
 }
 
 #[inline]
-pub fn LOWORD(l: usize) -> u16 {
-    (l & 0xFFFF) as u16
+pub fn GET_X_LPARAM<L: Into<i64>>(lp: L) -> i32 {
+    (lp.into() & 0xFFFF) as i16 as i32
 }
 
 #[inline]
-pub fn HIWORD(l: usize) -> u16 {
-    ((l >> 16) & 0xFFFF) as u16
-}
-
-#[inline]
-pub fn GET_X_LPARAM(lp: isize) -> i32 {
-    (lp & 0xFFFF) as i16 as i32
-}
-
-#[inline]
-pub fn GET_Y_LPARAM(lp: isize) -> i32 {
-    ((lp >> 16) & 0xFFFF) as i16 as i32
+pub fn GET_Y_LPARAM<L: Into<i64>>(lp: L) -> i32 {
+    ((lp.into() >> 16) & 0xFFFF) as i16 as i32
 }
 
 #[inline]
