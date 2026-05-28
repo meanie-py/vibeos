@@ -1134,7 +1134,7 @@ pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
         core::ptr::null_mut(),
     ) == 0
     {
-        return 0u8;
+        return 0;
     }
 
     1

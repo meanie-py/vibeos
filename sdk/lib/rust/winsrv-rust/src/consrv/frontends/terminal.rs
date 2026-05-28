@@ -323,7 +323,7 @@ pub(crate) unsafe extern "system" fn ConSrvTermReadStream(
             memcpy(
                 (*Console).LineBuffer as PVOID,
                 Buffer,
-                ((*Console).LineSize as usize) * core::mem::size_of::<WCHAR>(),
+                (((*Console).LineSize as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T,
             );
             if (*Console).LineSize >= (*Console).LineMaxSize {
                 (*Console).LineComplete = 1u8;
@@ -457,7 +457,7 @@ pub(crate) unsafe fn ConioWriteConsole(
 
     let mut i: u32;
     let mut Ptr: PCHAR_INFO;
-    let mut UpdateRect: SMALL_RECT;
+    let mut UpdateRect: SMALL_RECT = core::mem::zeroed();
     let CursorStartX: i16;
     let CursorStartY: i16;
     let mut ScrolledLines: u32;

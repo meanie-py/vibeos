@@ -379,7 +379,7 @@ pub unsafe extern "system" fn ConSrvConnect(
                 (*(*ProcessData).Process).ProcessHandle,
                 (*ConnectInfo).Desktop as PVOID,
                 ConsoleInitInfo.Desktop as PVOID,
-                ConsoleInitInfo.DesktopLength as usize as ULONG,
+                ConsoleInitInfo.DesktopLength as SIZE_T,
                 core::ptr::null_mut(),
             );
             if Status < 0 {
