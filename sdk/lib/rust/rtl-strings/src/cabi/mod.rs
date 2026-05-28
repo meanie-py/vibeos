@@ -1406,15 +1406,17 @@ pub unsafe extern "system" fn RtlCreateUnicodeString(
     if size > MAXUSHORT as usize {
         return 0;
     }
-    (*uni_dest).MaximumLength = size as u16;
     let buf = rtl_alloc(size, TAG_USTR) as *mut u16;
     if buf.is_null() {
         (*uni_dest).Buffer = core::ptr::null_mut();
         return 0;
     }
+    // C mutates the destination only after a successful alloc+copy; match
+    // that so the alloc-failure path leaves MaximumLength untouched.
     core::ptr::copy_nonoverlapping(source, buf, size / 2);
     (*uni_dest).Buffer = buf;
     (*uni_dest).Length = size as u16 - 2;
+    (*uni_dest).MaximumLength = size as u16;
     1
 }
 
