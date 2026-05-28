@@ -1,4 +1,5 @@
 use winsrv_sys::nt::*;
+use winsrv_sys::winsrv::*;
 use core::ffi::c_void;
 
 extern "C" {
