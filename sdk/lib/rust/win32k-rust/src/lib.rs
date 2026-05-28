@@ -56,22 +56,15 @@ pub mod engbrush;   pub mod engmisc;  pub mod engwindow;
 pub mod mapping;    pub mod mem;     pub mod pandisp;
 pub mod pathobj;    pub mod rlecomp;  pub mod transblt;
 pub mod bitblt;     pub mod gradient;
-// 10 modules deferred — runtime-incompatible (cause freeldr OOM, same
-// failure mode as the engmisc raw-dylib bug but different mechanism).
-// Bisect confirmed device.rs and ldevobj.rs as culprits; the other 8 are
-// untested. Translation work is preserved in tree for follow-up.
-// pub mod device;     // bisect iter 11 RED
-// pub mod ldevobj;    // bisect iter 14 RED
-// pub mod lineto;     pub mod mouse;
-// pub mod pdevobj;    pub mod stretchblt;
-// pub mod stubs;      pub mod surface;
-// pub mod umpdstubs;  pub mod xlateobj;
-// 6 large OFF:
-// pub mod pdevobj; pub mod stretchblt;
-// pub mod stubs; pub mod surface; pub mod umpdstubs; pub mod xlateobj;
-// Other off:
-// pub mod mapping; pub mod mem; pub mod pandisp; pub mod pathobj;
-// pub mod rlecomp; pub mod transblt;
-// pub mod bitblt; pub mod device; pub mod gradient; pub mod ldevobj;
-// pub mod lineto; pub mod mouse; pub mod pdevobj; pub mod stretchblt;
-// pub mod stubs; pub mod surface; pub mod umpdstubs; pub mod xlateobj;
+// ── Wave 2 deferred-mods sweep — try the 6 with minimal extern statics ──
+// Earlier "RED" bisects on these were under the CGU-shift confound (the
+// engevent.rs unconditional raw-dylib was the real culprit, not the wave-2
+// mods themselves — see commit 7dfb9250fe5 + feedback_win32k_raw_dylib_freeldr_oom).
+// Retry with engevent.rs per-arch raw-dylib in place; expect they're clean.
+pub mod lineto; pub mod mouse; pub mod umpdstubs;
+pub mod surface; pub mod stretchblt; pub mod xlateobj;
+// Higher-risk (more extern statics or known raw-dylib/SharedUserData patterns):
+// pub mod device;     // 20 extern statics
+// pub mod ldevobj;    // 8 extern statics
+// pub mod pdevobj;    // has raw-dylib decl + MmSystemRangeStart cross-DLL data
+// pub mod stubs;      // SharedUserData via per-arch (already fixed)

@@ -73,14 +73,14 @@ list(APPEND SOURCE
     # gdi/eng/error.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/error.rs) — cohabitation
     # gdi/eng/float.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/float.rs) — cohabitation (EngSave still C, scanner gap)
     # gdi/eng/gradient.c   # replaced by Rust (cohabitation, bisect iter 12)
-    gdi/eng/lineto.c
+    # gdi/eng/lineto.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/lineto.rs) — cohabitation [wave 2 sweep]
     gdi/eng/ldevobj.c
     # gdi/eng/mapping.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/math.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/math.rs) — cohabitation
     # gdi/eng/mdevobj.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/mdevobj.rs) — cohabitation
     # gdi/eng/mem.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/engmisc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/engmisc.rs) — bisect ON
-    gdi/eng/mouse.c
+    # gdi/eng/mouse.c  # replaced by Rust (mouse.rs) — cohabitation [wave 2 sweep]
     # gdi/eng/multidisp.c   # replaced by Rust (sdk/lib/rust/win32k-rust/src/multidisp.rs) — cohabitation
     # gdi/eng/pandisp.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/paint.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/paint.rs) — cohabitation
@@ -91,11 +91,11 @@ list(APPEND SOURCE
     # gdi/eng/semaphor.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/semaphor.rs) — cohabitation (EngCreate/Acquire still C)
     # gdi/eng/sort.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/sort.rs) — cohabitation
     # gdi/eng/string.c      # replaced by Rust (sdk/lib/rust/win32k-rust/src/string.rs) — cohabitation
-    gdi/eng/stretchblt.c
-    gdi/eng/surface.c
+    # gdi/eng/stretchblt.c  # replaced by Rust (stretchblt.rs) — cohabitation [wave 2 sweep]
+    # gdi/eng/surface.c     # replaced by Rust (surface.rs) — cohabitation [wave 2 sweep]
     # gdi/eng/transblt.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/engwindow.c     # replaced by Rust (cohabitation, bisect iter 7)
-    gdi/eng/xlateobj.c
+    # gdi/eng/xlateobj.c  # replaced by Rust (xlateobj.rs) — cohabitation [wave 2 sweep]
     user/ntuser/main.c
     user/ntuser/misc/file.c
     user/ntuser/misc/rtlstr.c
@@ -205,7 +205,7 @@ list(APPEND SOURCE
     gdi/ntgdi/wingl.c
     gdi/ntgdi/xformobj.c
     gdi/eng/stubs.c
-    gdi/eng/umpdstubs.c
+    # gdi/eng/umpdstubs.c  # replaced by Rust (umpdstubs.rs) — cohabitation [wave 2 sweep]
     pch.h)
 
 if(USE_DIBLIB)
