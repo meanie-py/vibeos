@@ -69,3 +69,24 @@ pub mod pdevobj; pub mod stubs;
 // - ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
 // pub mod device;
 // pub mod ldevobj;
+
+// ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
+//
+// drvdbg.rs and bitblt_new.rs are the last 2 of 39 gdi/eng leaves; both
+// translated to Rust (Phase 2a 2026-05-28) but parked here, not enabled.
+//
+// **drvdbg.rs** — DbgDrv* pfn-dispatch wrappers (78 fns). drvdbg.c was an
+// orphan: not in any cmake SOURCE list, AND its `DbgLookupDHPDEV` helper is
+// only forward-declared, never defined anywhere in the tree. Translating it
+// gives a Rust skeleton with the same "incomplete by design" shape — enabling
+// would require both (a) defining DbgLookupDHPDEV and (b) wiring drvdbg into
+// the driver dispatch path. Match the C status: parked.
+//
+// **bitblt_new.rs** — alternate EngBitBlt/EngCopyBits implementation for the
+// USE_DIBLIB=TRUE build path (bitblt_new.c only enters SOURCE when USE_DIBLIB
+// is set in win32ss/CMakeLists.txt, default FALSE). Its exports would collide
+// with the already-active bitblt.rs + copybits.rs cohabitation. Flip on only
+// when USE_DIBLIB flips AND bitblt.rs/copybits.rs flip off the same way.
+//
+// pub mod drvdbg;
+// pub mod bitblt_new;
