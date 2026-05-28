@@ -6722,15 +6722,19 @@ pub unsafe extern "system" fn RtlpCreateUserStack(
         }
     }
 
-    // Check if the commit is higher than the reserve.
-    if stack_commit >= stack_reserve {
-        // Grow the reserve beyond the commit, up to 1MB alignment.
-        stack_reserve = thr::round_up_pow2(stack_commit, 1024 * 1024);
-    }
-
-    // Align everything to page size / allocation granularity.
-    stack_commit = thr::round_up_pow2(stack_commit, sbi.PageSize as usize);
-    stack_reserve = thr::round_up_pow2(stack_reserve, sbi.AllocationGranularity as usize);
+    // Pure decision: derive reserve/commit/use_guard. Delegates
+    // every alignment + grow + guard-fit branch to
+    // `core_rs::thread::compute_stack_layout`. See its unit tests
+    // for the spec.
+    let layout = thr::compute_stack_layout(
+        stack_reserve,
+        stack_commit,
+        sbi.PageSize as usize,
+        sbi.AllocationGranularity as usize,
+    );
+    stack_reserve = layout.stack_reserve;
+    stack_commit = layout.stack_commit; // includes guard page if use_guard
+    let use_guard = layout.use_guard;
 
     // Reserve memory for the stack.
     let mut stack: *mut u8 = core::ptr::null_mut();
@@ -6754,15 +6758,11 @@ pub unsafe extern "system" fn RtlpCreateUserStack(
     it.PreviousStackBase = core::ptr::null_mut();
     it.PreviousStackLimit = core::ptr::null_mut();
 
-    // Update the stack position — Stack += StackReserve - StackCommit.
+    // Stack top = base + reserve - commit. `stack_commit` already
+    // includes the guard page if use_guard, so the stack_top here
+    // is already pointing at the start of the guard page (or first
+    // committed page when !use_guard).
     let mut stack_top = stack.add(stack_reserve - stack_commit);
-
-    // Check if we can add a guard page.
-    let use_guard = stack_reserve >= stack_commit + sbi.PageSize as usize;
-    if use_guard {
-        stack_top = stack_top.sub(sbi.PageSize as usize);
-        stack_commit += sbi.PageSize as usize;
-    }
 
     // Allocate memory for the stack.
     let mut commit_size = stack_commit;
@@ -7475,7 +7475,8 @@ pub unsafe extern "system" fn RtlCreateUserProcess(
 }
 
 /// `PVOID NTAPI RtlEncodePointer(PVOID)`. XOR the pointer with the
-/// per-process `ProcessCookie` queried lazily on first call.
+/// per-process `ProcessCookie` queried lazily on first call. The
+/// XOR itself lives in `core_rs::process::xor_pointer` (tested).
 #[no_mangle]
 pub unsafe extern "system" fn RtlEncodePointer(pointer: *mut u8) -> *mut u8 {
     let mut cookie: u32 = 0;
@@ -7489,7 +7490,7 @@ pub unsafe extern "system" fn RtlEncodePointer(pointer: *mut u8) -> *mut u8 {
     if status < 0 {
         return pointer;
     }
-    ((pointer as usize) ^ (cookie as usize)) as *mut u8
+    prc::xor_pointer(pointer as usize, cookie) as *mut u8
 }
 
 /// `PVOID NTAPI RtlDecodePointer(PVOID)` — same XOR.
@@ -7504,7 +7505,7 @@ pub unsafe extern "system" fn RtlDecodePointer(pointer: *mut u8) -> *mut u8 {
 pub unsafe extern "system" fn RtlEncodeSystemPointer(pointer: *mut u8) -> *mut u8 {
     let cookie_addr = (prc::KI_USER_SHARED_DATA_VA + prc::KUSER_SHARED_COOKIE_OFFSET) as *const u32;
     let cookie = core::ptr::read_volatile(cookie_addr);
-    ((pointer as usize) ^ (cookie as usize)) as *mut u8
+    prc::xor_pointer(pointer as usize, cookie) as *mut u8
 }
 
 /// `PVOID NTAPI RtlDecodeSystemPointer(PVOID)`.
@@ -7559,13 +7560,9 @@ pub unsafe extern "system" fn RtlGetCurrentProcessorNumber() -> u32 {
 
 /// `ULONG NTAPI RtlRosGetAppcompatVersion(VOID)` — ReactOS-specific.
 /// Returns `(PEB.OSMajorVersion << 8) | PEB.OSMinorVersion`, or the
-/// Server 2003 default if no PEB.
+/// Server 2003 default if no PEB. Decision in
+/// `core_rs::process::appcompat_version` (tested).
 #[no_mangle]
 pub unsafe extern "system" fn RtlRosGetAppcompatVersion() -> u32 {
-    let major = RtlpPrcGetPebOSMajorVersion();
-    let minor = RtlpPrcGetPebOSMinorVersion();
-    if major == 0 && minor == 0 {
-        return prc::WIN32_WINNT_WS03;
-    }
-    (major << 8) | minor
+    prc::appcompat_version(RtlpPrcGetPebOSMajorVersion(), RtlpPrcGetPebOSMinorVersion())
 }

@@ -8,6 +8,7 @@ pub mod dos8dot3;
 pub mod env;
 pub mod misc;
 pub mod nls;
+pub mod path;
 #[path = "priv_mod.rs"]
 pub mod priv_;
 pub mod process;

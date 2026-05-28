@@ -122,3 +122,127 @@ pub const CONTEXT_SIZE: usize = 1232;
 pub const fn round_up_pow2(n: usize, multiple: usize) -> usize {
     (n + multiple - 1) & !(multiple - 1)
 }
+
+/// Pure decision kernel for `RtlpCreateUserStack`'s stack-size
+/// finalization. Given the inputs (after PE-image defaults are
+/// applied), returns the reserve/commit sizes that
+/// `ZwAllocateVirtualMemory` should be asked for, plus whether a
+/// guard page can be tucked at the bottom of the committed region.
+///
+/// Faithful to lines 73-105 of `sdk/lib/rtl/thread.c`:
+/// 1. If `commit >= reserve`, grow `reserve` to the next 1MB
+///    multiple of `commit`.
+/// 2. Round `commit` up to `page_size`, `reserve` up to
+///    `allocation_granularity`.
+/// 3. Guard-page is added iff `reserve >= commit + page_size`;
+///    when added it bumps `commit` by `page_size` and shifts the
+///    commit window down by `page_size`.
+///
+/// `use_guard == true` ⇒ caller must subtract `page_size` from the
+/// commit-base before `ZwAllocateVirtualMemory(MEM_COMMIT)` and call
+/// `ZwProtectVirtualMemory(PAGE_GUARD)` for the bottom page.
+pub fn compute_stack_layout(
+    mut stack_reserve: usize,
+    mut stack_commit: usize,
+    page_size: usize,
+    allocation_granularity: usize,
+) -> StackLayout {
+    // 1. Commit > reserve → grow reserve to 1MB-aligned commit.
+    if stack_commit >= stack_reserve {
+        stack_reserve = round_up_pow2(stack_commit, 1024 * 1024);
+    }
+    // 2. Align both.
+    stack_commit = round_up_pow2(stack_commit, page_size);
+    stack_reserve = round_up_pow2(stack_reserve, allocation_granularity);
+    // 3. Decide on guard page.
+    let use_guard = stack_reserve >= stack_commit + page_size;
+    let final_commit = if use_guard {
+        stack_commit + page_size
+    } else {
+        stack_commit
+    };
+    StackLayout {
+        stack_reserve,
+        stack_commit: final_commit,
+        use_guard,
+    }
+}
+
+/// Result of `compute_stack_layout`.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct StackLayout {
+    pub stack_reserve: usize,
+    /// Final commit size, including the guard page if `use_guard`.
+    pub stack_commit: usize,
+    pub use_guard: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // round_up_pow2 — sanity floor.
+    #[test]
+    fn round_up_zero_returns_zero() {
+        assert_eq!(round_up_pow2(0, 16), 0);
+    }
+    #[test]
+    fn round_up_already_aligned() {
+        assert_eq!(round_up_pow2(4096, 4096), 4096);
+        assert_eq!(round_up_pow2(8192, 4096), 8192);
+    }
+    #[test]
+    fn round_up_partial_rounds_up() {
+        assert_eq!(round_up_pow2(1, 4096), 4096);
+        assert_eq!(round_up_pow2(4095, 4096), 4096);
+        assert_eq!(round_up_pow2(4097, 4096), 8192);
+    }
+
+    // compute_stack_layout — the typical 1MB reserve / 4KB commit
+    // case used by every ordinary PE: reserve=1MB, commit=4KB,
+    // page=4KB, granularity=64KB. Should yield a guard page.
+    #[test]
+    fn stack_layout_typical_pe() {
+        let s = compute_stack_layout(1024 * 1024, 4096, 4096, 64 * 1024);
+        assert_eq!(s.stack_reserve, 1024 * 1024);
+        assert_eq!(s.stack_commit, 8192); // 4K + 4K guard
+        assert!(s.use_guard);
+    }
+
+    // commit >= reserve: reserve grows to 1MB of commit, then
+    // aligns down to allocation_granularity.
+    #[test]
+    fn stack_layout_commit_exceeds_reserve() {
+        // 8KB commit, 4KB reserve → reserve grown to round_up(8K, 1M) = 1M.
+        let s = compute_stack_layout(4096, 8192, 4096, 64 * 1024);
+        assert_eq!(s.stack_reserve, 1024 * 1024);
+        // 1M reserve - 8K commit = 1040384 ≥ 4K, so guard is added.
+        assert!(s.use_guard);
+        assert_eq!(s.stack_commit, 8192 + 4096);
+    }
+
+    // Tight fit: commit < reserve initially (so we skip the
+    // grow-reserve-to-1MB branch); after alignment reserve and
+    // commit collapse to the same page → no room for a guard.
+    #[test]
+    fn stack_layout_no_guard_when_tight() {
+        // commit=4095 < reserve=4096 ⇒ no grow.
+        // commit round_up(4095, 4096) = 4096; reserve already 4096.
+        // guard? 4096 >= 4096 + 4096 = 8192 → false.
+        let s = compute_stack_layout(4096, 4095, 4096, 4096);
+        assert!(!s.use_guard);
+        assert_eq!(s.stack_reserve, 4096);
+        assert_eq!(s.stack_commit, 4096);
+    }
+
+    // Alignment kicks in: commit=5000 rounds up to 8192 (page=4K);
+    // reserve=10000 rounds up to 65536 (granularity=64K).
+    #[test]
+    fn stack_layout_alignment_rounds_up() {
+        let s = compute_stack_layout(10_000, 5000, 4096, 64 * 1024);
+        assert_eq!(s.stack_reserve, 65_536);
+        // After round_up commit=8192; guard fits → commit becomes 8192+4096.
+        assert!(s.use_guard);
+        assert_eq!(s.stack_commit, 8192 + 4096);
+    }
+}

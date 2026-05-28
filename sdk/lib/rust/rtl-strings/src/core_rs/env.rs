@@ -206,3 +206,169 @@ pub fn expand_env_strings(env: &[u16], source: &[u16], dest: &mut [u16]) -> Expa
         dest_chars_written: d as u32,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn w(s: &str) -> Vec<u16> {
+        s.encode_utf16().collect()
+    }
+
+    // --- wstrlen ---
+
+    #[test]
+    fn wstrlen_empty_slice() {
+        assert_eq!(wstrlen(&[]), 0);
+    }
+    #[test]
+    fn wstrlen_no_nul_returns_full() {
+        assert_eq!(wstrlen(&w("hello")), 5);
+    }
+    #[test]
+    fn wstrlen_stops_at_nul() {
+        let s: Vec<u16> = "ab".encode_utf16().chain([0, b'c' as u16]).collect();
+        assert_eq!(wstrlen(&s), 2);
+    }
+    #[test]
+    fn wstrlen_starts_with_nul_returns_zero() {
+        assert_eq!(wstrlen(&[0u16, b'a' as u16]), 0);
+    }
+
+    // --- find_env_var ---
+
+    /// Build a NUL-separated env block from `(name, value)` pairs +
+    /// final double-NUL terminator.
+    fn mk_env(pairs: &[(&str, &str)]) -> Vec<u16> {
+        let mut v = Vec::new();
+        for (n, val) in pairs {
+            v.extend(n.encode_utf16());
+            v.push(b'=' as u16);
+            v.extend(val.encode_utf16());
+            v.push(0);
+        }
+        v.push(0);
+        v
+    }
+
+    #[test]
+    fn find_env_var_simple_hit() {
+        let env = mk_env(&[("PATH", "C:\\Windows"), ("FOO", "bar")]);
+        let r = find_env_var(&env, &w("FOO"));
+        match r {
+            EnvQuery::Found {
+                value_start,
+                value_len,
+            } => {
+                assert_eq!(value_len, 3);
+                let slice = &env[value_start..value_start + value_len];
+                assert_eq!(slice, &w("bar")[..]);
+            }
+            _ => panic!("expected Found"),
+        }
+    }
+
+    #[test]
+    fn find_env_var_case_insensitive() {
+        let env = mk_env(&[("Path", "C:\\Windows")]);
+        let r = find_env_var(&env, &w("PATH"));
+        assert!(matches!(r, EnvQuery::Found { .. }));
+        let r2 = find_env_var(&env, &w("path"));
+        assert!(matches!(r2, EnvQuery::Found { .. }));
+    }
+
+    #[test]
+    fn find_env_var_miss() {
+        let env = mk_env(&[("FOO", "bar")]);
+        assert_eq!(find_env_var(&env, &w("BAZ")), EnvQuery::NotFound);
+    }
+
+    #[test]
+    fn find_env_var_empty_env() {
+        // Just the double-NUL terminator.
+        let env = vec![0u16];
+        assert_eq!(find_env_var(&env, &w("ANY")), EnvQuery::NotFound);
+    }
+
+    #[test]
+    fn find_env_var_empty_value() {
+        let env = mk_env(&[("EMPTY", "")]);
+        let r = find_env_var(&env, &w("EMPTY"));
+        match r {
+            EnvQuery::Found { value_len, .. } => {
+                assert_eq!(value_len, 0);
+            }
+            _ => panic!("expected Found"),
+        }
+    }
+
+    #[test]
+    fn find_env_var_hidden_per_drive_cwd() {
+        // Windows stores per-drive CWDs as `=C:=C:\foo\0`. The C walk
+        // and our port skip the leading '=' by starting the '=' search
+        // at i+1, so the name is `=C:` and the value is `C:\foo`.
+        let env = mk_env(&[("=C:", "C:\\foo"), ("PATH", "ok")]);
+        let r = find_env_var(&env, &w("=C:"));
+        match r {
+            EnvQuery::Found {
+                value_start,
+                value_len,
+            } => {
+                assert_eq!(&env[value_start..value_start + value_len], &w("C:\\foo")[..]);
+            }
+            _ => panic!("expected Found"),
+        }
+        // PATH still findable after the hidden entry.
+        let r2 = find_env_var(&env, &w("PATH"));
+        assert!(matches!(r2, EnvQuery::Found { .. }));
+    }
+
+    // --- expand_env_strings ---
+
+    #[test]
+    fn expand_no_percents_is_copy() {
+        let env = mk_env(&[]);
+        let mut dst = [0u16; 16];
+        let r = expand_env_strings(&env, &w("hello"), &mut dst);
+        assert_eq!(r.status, STATUS_SUCCESS);
+        assert_eq!(r.dest_chars_written, 5);
+        assert_eq!(&dst[..5], &w("hello")[..]);
+        assert_eq!(dst[5], 0);
+    }
+
+    #[test]
+    fn expand_substitutes_known_var() {
+        let env = mk_env(&[("FOO", "BAR")]);
+        let mut dst = [0u16; 16];
+        let r = expand_env_strings(&env, &w("a%FOO%c"), &mut dst);
+        assert_eq!(r.status, STATUS_SUCCESS);
+        assert_eq!(&dst[..5], &w("aBARc")[..]);
+        assert_eq!(dst[5], 0);
+    }
+
+    #[test]
+    fn expand_unknown_var_copies_literal() {
+        let env = mk_env(&[]);
+        let mut dst = [0u16; 16];
+        let r = expand_env_strings(&env, &w("a%NOPE%c"), &mut dst);
+        assert_eq!(r.status, STATUS_SUCCESS);
+        assert_eq!(&dst[..8], &w("a%NOPE%c")[..]);
+    }
+
+    #[test]
+    fn expand_unterminated_percent_copies_literal() {
+        let env = mk_env(&[("X", "y")]);
+        let mut dst = [0u16; 16];
+        let r = expand_env_strings(&env, &w("a%FOO"), &mut dst);
+        assert_eq!(r.status, STATUS_SUCCESS);
+        assert_eq!(&dst[..5], &w("a%FOO")[..]);
+    }
+
+    #[test]
+    fn expand_buffer_too_small() {
+        let env = mk_env(&[("PATH", "C:\\Windows")]);
+        let mut dst = [0u16; 5]; // way too small
+        let r = expand_env_strings(&env, &w("%PATH%"), &mut dst);
+        assert_eq!(r.status, STATUS_BUFFER_TOO_SMALL);
+    }
+}

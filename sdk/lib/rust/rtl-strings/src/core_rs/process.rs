@@ -200,3 +200,124 @@ pub struct RTL_USER_PROCESS_INFORMATION {
 // what we want, but the bare alias is unused.
 #[doc(hidden)]
 const _USE_THR: usize = core::mem::size_of::<thr::INITIAL_TEB>();
+
+// --- pure decision kernels --------------------------------------------------
+
+/// `RtlEncodePointer` / `RtlDecodePointer` body — XOR with a cookie.
+/// `Encode` and `Decode` are the same op (XOR is self-inverse).
+/// Faithful to lines 393-422 of `sdk/lib/rtl/process.c`.
+#[inline]
+pub fn xor_pointer(pointer: usize, cookie: u32) -> usize {
+    pointer ^ (cookie as usize)
+}
+
+/// `RtlRosGetAppcompatVersion` decision: `(major << 8) | minor`,
+/// or the Server-2003 sentinel `0x0502` when both are zero (which
+/// the C original interprets as "no PEB → fallback").
+/// Faithful to lines 497-512 of `sdk/lib/rtl/process.c`.
+#[inline]
+pub fn appcompat_version(os_major: u32, os_minor: u32) -> u32 {
+    if os_major == 0 && os_minor == 0 {
+        WIN32_WINNT_WS03
+    } else {
+        (os_major << 8) | os_minor
+    }
+}
+
+/// Compute the total `WCHAR` count of a double-NUL-terminated
+/// environment block, INCLUDING the terminating double-NUL.
+///
+/// Faithful to the C `do { walk += wcslen+1 } while (*walk); walk++;`
+/// loop in `RtlpInitEnvironment` (sdk/lib/rtl/process.c:104). Treats
+/// an empty block (first WCHAR is 0) as a single terminator NUL.
+///
+/// Pure (slice in, count out) — the cabi shim does the `*const u16`
+/// → `&[u16]` walk by finding the last `0\0` pair.
+pub fn env_block_chars(env: &[u16]) -> usize {
+    if env.is_empty() || env[0] == 0 {
+        return 1;
+    }
+    let mut i = 0usize;
+    loop {
+        // Walk to the end of the current entry's NUL.
+        while i < env.len() && env[i] != 0 {
+            i += 1;
+        }
+        i += 1; // consume the NUL
+        // If the next char is NUL, block ends here.
+        if i >= env.len() || env[i] == 0 {
+            return i + 1; // include the second NUL
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // xor_pointer is its own inverse.
+    #[test]
+    fn xor_pointer_self_inverse() {
+        let ptr: usize = 0xDEADBEEF;
+        let cookie: u32 = 0x12345678;
+        let enc = xor_pointer(ptr, cookie);
+        assert_ne!(enc, ptr);
+        assert_eq!(xor_pointer(enc, cookie), ptr);
+    }
+    #[test]
+    fn xor_pointer_zero_cookie_is_identity() {
+        assert_eq!(xor_pointer(0xCAFE, 0), 0xCAFE);
+    }
+    #[test]
+    fn xor_pointer_null_pointer() {
+        assert_eq!(xor_pointer(0, 0x42), 0x42);
+    }
+
+    // appcompat_version — the WS03 fallback path.
+    #[test]
+    fn appcompat_version_ws03_fallback() {
+        assert_eq!(appcompat_version(0, 0), 0x0502);
+    }
+    #[test]
+    fn appcompat_version_normal() {
+        // Server 2003 actual = 5.2 = 0x0502
+        assert_eq!(appcompat_version(5, 2), 0x0502);
+        // Vista = 6.0
+        assert_eq!(appcompat_version(6, 0), 0x0600);
+        // Win10 = 10.0
+        assert_eq!(appcompat_version(10, 0), 0x0A00);
+    }
+    #[test]
+    fn appcompat_version_minor_only() {
+        // major=0, minor=42 → NOT zero on aggregate, so plain shift.
+        assert_eq!(appcompat_version(0, 42), 42);
+    }
+
+    // env_block_chars — terminator-only block.
+    #[test]
+    fn env_block_chars_empty() {
+        let env = [0u16];
+        assert_eq!(env_block_chars(&env), 1);
+    }
+    #[test]
+    fn env_block_chars_single_entry() {
+        // "PATH=C:\\\0\0" — 8 chars + double-NUL.
+        let env: Vec<u16> = "PATH=C:\\".encode_utf16().chain([0, 0]).collect();
+        assert_eq!(env_block_chars(&env), 10);
+    }
+    #[test]
+    fn env_block_chars_two_entries() {
+        // "A=1\0B=2\0\0" — 4 + 4 + 1 = 9
+        let env: Vec<u16> = "A=1\0B=2".encode_utf16().chain([0, 0]).collect();
+        assert_eq!(env_block_chars(&env), 9);
+    }
+    #[test]
+    fn env_block_chars_three_entries_unicode() {
+        // The walk should be independent of content; test ASCII triplet.
+        let env: Vec<u16> = "X=1\0YY=22\0ZZZ=333"
+            .encode_utf16()
+            .chain([0, 0])
+            .collect();
+        assert_eq!(env_block_chars(&env), 4 + 6 + 8 + 1); // = 19
+    }
+}
