@@ -1114,7 +1114,7 @@ pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
         return 1;
     }
     if (*(*TuiData).Console).ActiveBuffer != Buff {
-        return 1u8;
+        return 1;
     }
     if GetType(Buff) != TEXTMODE_BUFFER {
         return 0u8;

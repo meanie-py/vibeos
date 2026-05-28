@@ -127,7 +127,7 @@ pub(crate) unsafe fn TEXTMODE_BUFFER_Initialize(
     *Buffer = core::ptr::null_mut();
 
     Status = CONSOLE_SCREEN_BUFFER_Initialize(
-        &mut NewBuffer as *mut PTEXTMODE_SCREEN_BUFFER as *mut PCONSOLE_IO_OBJECT,
+        &mut NewBuffer as *mut PTEXTMODE_SCREEN_BUFFER as *mut PCONSOLE_SCREEN_BUFFER,
         Console,
         TEXTMODE_BUFFER,
         core::mem::size_of::<TEXTMODE_SCREEN_BUFFER>(),
@@ -744,11 +744,11 @@ pub unsafe extern "system" fn ConDrvWriteConsole(
     if !Buffer.is_null() {
         if NT_SUCCESS(Status) {
             Status = TermWriteStream(
-                Console,
+                Console as PCONSRV_CONSOLE,
                 ScreenBuffer,
                 Buffer,
                 NumCharsToWrite,
-                1u8,
+                1,
             );
             if NT_SUCCESS(Status) {
                 Written = NumCharsToWrite;
@@ -1237,7 +1237,7 @@ pub(crate) unsafe fn ConDrvFillConsoleOutput(
     if (*Console).IsCJK != 0 {
         bFullwidth = IS_FULL_WIDTH(Code.UnicodeChar) as u8;
         if X > 0 {
-            Ptr = ConioCoordToPointer(Buffer, (X - 1 as u32) as u32, Y as u32);
+            Ptr = ConioCoordToPointer(Buffer, (X as u32 - 1), Y as u32);
             if (*Ptr).Attributes & (COMMON_LVB_LEADING_BYTE as u16) != 0 {
                 (*Ptr).Char.UnicodeChar = ' ' as u16;
                 (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
@@ -1287,7 +1287,7 @@ pub(crate) unsafe fn ConDrvFillConsoleOutput(
 
     if (nNumChars & 1) & bFullwidth as u32 != 0 {
         if X as i32 + Y as i32 * (*Buffer).ScreenBufferSize.X as i32 > 0 {
-            Ptr = ConioCoordToPointer(Buffer, (X - 1 as u32) as u32, Y as u32);
+            Ptr = ConioCoordToPointer(Buffer, (X as u32 - 1), Y as u32);
             (*Ptr).Char.UnicodeChar = ' ' as u16;
             (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
         }
@@ -1333,7 +1333,7 @@ pub unsafe extern "system" fn ConDrvGetConsoleScreenBufferInfo(
     *ViewSize = (*Buffer).ViewSize;
     *Attributes = (*Buffer).ScreenDefaultAttrib;
 
-    TermGetLargestConsoleWindowSize(Console, &mut LargestWindowSize);
+    TermGetLargestConsoleWindowSize(Console as PCONSRV_CONSOLE, &mut LargestWindowSize);
     LargestWindowSize.X = min(LargestWindowSize.X, (*Buffer).ScreenBufferSize.X);
     LargestWindowSize.Y = min(LargestWindowSize.Y, (*Buffer).ScreenBufferSize.Y);
     *MaximumViewSize = LargestWindowSize;
@@ -1502,7 +1502,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleWindowInfo(
     }
 
     LargestWindowSize = core::mem::zeroed();
-    TermGetLargestConsoleWindowSize(Console, core::ptr::addr_of_mut!(LargestWindowSize));
+    TermGetLargestConsoleWindowSize(Console as PCONSRV_CONSOLE, core::ptr::addr_of_mut!(LargestWindowSize));
     LargestWindowSize.X = min(LargestWindowSize.X, (*Buffer).ScreenBufferSize.X);
     LargestWindowSize.Y = min(LargestWindowSize.Y, (*Buffer).ScreenBufferSize.Y);
     if (ConioRectWidth(core::ptr::addr_of_mut!(CapturedWindowRect)) > LargestWindowSize.X) ||

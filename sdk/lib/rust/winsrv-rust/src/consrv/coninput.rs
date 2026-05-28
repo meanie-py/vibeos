@@ -130,7 +130,7 @@ pub(crate) unsafe fn PreprocessInput(
     while NumEvents > 0 {
         if (*CurrentEvent).EventType == KEY_EVENT as u16 && (*CurrentEvent).Event.KeyEvent.bKeyDown != 0 {
             let vk = (*CurrentEvent).Event.KeyEvent.wVirtualKeyCode;
-            if ((*Console).PauseFlags & PAUSED_FROM_KEYBOARD) == 0 {
+            if ((*Console).PauseFlags & PAUSED_FROM_KEYBOARD as u8) == 0 {
                 let cks = (*CurrentEvent).Event.KeyEvent.dwControlKeyState;
                 if ((*Console).InputBuffer.Mode & ENABLE_LINE_INPUT as u16) != 0
                     && (vk == VK_PAUSE as u16
@@ -138,7 +138,7 @@ pub(crate) unsafe fn PreprocessInput(
                             && (cks & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0
                             && (cks & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) == 0))
                 {
-                    ConioPause(Console, PAUSED_FROM_KEYBOARD);
+                    ConioPause(Console, PAUSED_FROM_KEYBOARD as u8);
 
                     RtlMoveMemory(
                         CurrentEvent as PVOID,
@@ -156,7 +156,7 @@ pub(crate) unsafe fn PreprocessInput(
                     && vk != VK_NUMLOCK as u16
                     && vk != VK_SCROLL as u16
                 {
-                    ConioUnpause(Console, PAUSED_FROM_KEYBOARD);
+                    ConioUnpause(Console, PAUSED_FROM_KEYBOARD as u8);
 
                     RtlMoveMemory(
                         CurrentEvent as PVOID,
@@ -235,7 +235,7 @@ pub unsafe extern "system" fn ConioProcessInputEvent(
 
         if (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT as u16) != 0
             && Down != 0
-            && (VirtualKeyCode == VK_PAUSE as u16 || VirtualKeyCode == b'C' as u32)
+            && (VirtualKeyCode == VK_PAUSE as u32 || VirtualKeyCode == b'C' as u32)
             && (ShiftState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0
         {
             ConSrvConsoleProcessCtrlEvent(Console, 0, CTRL_C_EVENT);
@@ -386,7 +386,7 @@ pub(crate) unsafe fn ReadChars(
     );
 
     if Status == STATUS_PENDING {
-        WaitBeforeReading(InputInfo, ApiMessage, Some(ReadCharsThread), CreateWaitBlock)
+        WaitBeforeReading(InputInfo, ApiMessage, Some(core::mem::transmute(ReadCharsThread as *const ())), CreateWaitBlock)
     } else {
         (*ReadConsoleRequest).NumBytes = NrCharactersRead * CharSize;
         (*ReadConsoleRequest).ControlKeyState = ReadControl.dwControlKeyState;
@@ -462,7 +462,7 @@ pub(crate) unsafe fn ReadInputBuffer(
     );
 
     if Status == STATUS_PENDING {
-        WaitBeforeReading(InputInfo, ApiMessage, Some(ReadInputBufferThread), CreateWaitBlock)
+        WaitBeforeReading(InputInfo, ApiMessage, Some(core::mem::transmute(ReadInputBufferThread as *const ())), CreateWaitBlock)
     } else {
         (*GetInputRequest).NumRecords = NumEventsRead;
 
@@ -550,7 +550,7 @@ pub unsafe extern "system" fn SrvGetConsoleInput(
         (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetInputRequest
     );
 
-    if ((*GetInputRequest).Flags & !(CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT)) != 0 {
+    if ((*GetInputRequest).Flags & !(CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT) as u16) != 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
