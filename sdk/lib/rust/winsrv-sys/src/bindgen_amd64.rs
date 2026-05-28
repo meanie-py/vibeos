@@ -59834,7 +59834,20 @@ pub type PTEXTMODE_BUFFER_INFO = *mut _TEXTMODE_BUFFER_INFO;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _TEXTMODE_SCREEN_BUFFER {
-    pub __bindgen_padding_0: [u16; 56usize],
+    pub Header: CONSOLE_IO_OBJECT,
+    pub ListEntry: LIST_ENTRY,
+    pub ScreenBufferSize: COORD,
+    pub ViewSize: COORD,
+    pub OldScreenBufferSize: COORD,
+    pub OldViewSize: COORD,
+    pub ViewOrigin: COORD,
+    pub CursorPosition: COORD,
+    pub CursorBlinkOn: BOOLEAN,
+    pub ForceCursorOff: BOOLEAN,
+    pub CursorInfo: CONSOLE_CURSOR_INFO,
+    pub PaletteHandle: HPALETTE,
+    pub PaletteUsage: UINT,
+    pub Mode: USHORT,
     pub VirtualY: USHORT,
     pub Buffer: PCHAR_INFO,
     pub ScreenDefaultAttrib: USHORT,
@@ -59852,7 +59865,20 @@ pub type PGRAPHICS_BUFFER_INFO = *mut _GRAPHICS_BUFFER_INFO;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _GRAPHICS_SCREEN_BUFFER {
-    pub __bindgen_padding_0: [u32; 28usize],
+    pub Header: CONSOLE_IO_OBJECT,
+    pub ListEntry: LIST_ENTRY,
+    pub ScreenBufferSize: COORD,
+    pub ViewSize: COORD,
+    pub OldScreenBufferSize: COORD,
+    pub OldViewSize: COORD,
+    pub ViewOrigin: COORD,
+    pub CursorPosition: COORD,
+    pub CursorBlinkOn: BOOLEAN,
+    pub ForceCursorOff: BOOLEAN,
+    pub CursorInfo: CONSOLE_CURSOR_INFO,
+    pub PaletteHandle: HPALETTE,
+    pub PaletteUsage: UINT,
+    pub Mode: USHORT,
     pub BitMapInfoLength: ULONG,
     pub BitMapInfo: LPBITMAPINFO,
     pub BitMapUsage: ULONG,

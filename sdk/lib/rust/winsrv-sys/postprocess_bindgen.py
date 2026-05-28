@@ -181,6 +181,61 @@ def fix_bitfield_ctor_const_collisions(content: str) -> tuple[str, int]:
     return block_re.sub(fix_block, content), renamed
 
 
+# Bases bindgen flattens into `__bindgen_padding_0: [_; N]` because of the
+# MS-extension anonymous-typedef-as-member syntax C uses for cheap "base
+# class" inheritance (`struct _DERIVED { CONSOLE_SCREEN_BUFFER; … }`). The
+# downstream Rust translation accesses base fields via flat names (mirrors
+# the C source), so the padding-array shape is unusable. We expand the
+# padding back into the named base struct fields.
+#
+# Add an entry per affected derived → base type. The dependent base struct
+# definition has to APPEAR before the derived one in the bindgen output so
+# Rust can refer to its fields by name; bindgen orders by topology already
+# so this holds for the cases we know about.
+ANON_BASE_INLINE = {
+    "_TEXTMODE_SCREEN_BUFFER": "_CONSOLE_SCREEN_BUFFER",
+    "_GRAPHICS_SCREEN_BUFFER": "_CONSOLE_SCREEN_BUFFER",
+}
+
+
+def inline_anon_base_padding(content: str) -> tuple[str, int]:
+    """Replace `pub __bindgen_padding_0: [_; N]` in derived structs with
+    the named fields of the base struct.
+
+    Bindgen reduces an MS-extension anonymous base member to a
+    padding-array placeholder. We splice the base struct's pub-field
+    list in front of the derived's tail, so derived struct accesses
+    like `(*buf).ScreenBufferSize.X` resolve normally.
+    """
+    if not ANON_BASE_INLINE:
+        return content, 0
+    n = 0
+    for derived, base in ANON_BASE_INLINE.items():
+        # Pull the base struct's body. Tolerate Debug/Copy/Clone derives.
+        base_re = re.compile(
+            rf'pub struct {re.escape(base)} \{{\n((?:    pub [^\n]+\n)+)\}}',
+        )
+        bm = base_re.search(content)
+        if not bm:
+            print(f"  WARN: base struct {base} not found; skip {derived}")
+            continue
+        base_fields = bm.group(1)
+
+        # Patch the derived struct body in place.
+        derived_re = re.compile(
+            rf'(pub struct {re.escape(derived)} \{{\n)'
+            rf'    pub __bindgen_padding_0: \[[a-z0-9 ;]+\],\n',
+        )
+        new_content, did = derived_re.subn(rf'\1{base_fields}', content)
+        if did:
+            content = new_content
+            n += did
+        else:
+            print(f"  WARN: derived {derived} __bindgen_padding_0 line "
+                  f"not found; leaving as-is")
+    return content, n
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("input", help="raw bindgen output (.rs)")
@@ -223,6 +278,15 @@ def main():
     content, n_bf_fixed = fix_bitfield_ctor_const_collisions(content)
     if n_bf_fixed:
         print(f"  {arch}: renamed {n_bf_fixed} bitfield-ctor param(s) colliding with pub const")
+
+    # Inline MS-extension anonymous base members
+    # (_TEXTMODE_SCREEN_BUFFER / _GRAPHICS_SCREEN_BUFFER inherit
+    # CONSOLE_SCREEN_BUFFER). Bindgen flattens these to
+    # `__bindgen_padding_0: [u16;42]`; we splice the base's fields back
+    # in so flat field accesses translate cleanly.
+    content, n_inlined = inline_anon_base_padding(content)
+    if n_inlined:
+        print(f"  {arch}: inlined {n_inlined} anonymous-base struct(s)")
 
     # HAL output needs raw-dylib decoration on kernel-data extern statics.
     n_wrapped = 0
