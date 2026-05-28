@@ -359,18 +359,18 @@ pub unsafe extern "system" fn ConSrvConnect(
         ConsoleInitInfo.ConsoleStartInfo = core::ptr::addr_of_mut!((*ConnectInfo).ConsoleStartInfo);
         ConsoleInitInfo.IsWindowVisible = (*ConnectInfo).IsWindowVisible;
         ConsoleInitInfo.TitleLength = (*ConnectInfo).TitleLength;
-        ConsoleInitInfo.ConsoleTitle = (*ConnectInfo).ConsoleTitle;
+        ConsoleInitInfo.ConsoleTitle = (*ConnectInfo).ConsoleTitle.as_mut_ptr();
         ConsoleInitInfo.DesktopLength = 0;
         ConsoleInitInfo.Desktop = core::ptr::null_mut();
         ConsoleInitInfo.AppNameLength = (*ConnectInfo).AppNameLength;
-        ConsoleInitInfo.AppName = (*ConnectInfo).AppName;
+        ConsoleInitInfo.AppName = (*ConnectInfo).AppName.as_mut_ptr();
         ConsoleInitInfo.CurDirLength = (*ConnectInfo).CurDirLength;
-        ConsoleInitInfo.CurDir = (*ConnectInfo).CurDir;
+        ConsoleInitInfo.CurDir = (*ConnectInfo).CurDir.as_mut_ptr();
 
         if (*ConnectInfo).DesktopLength != 0 {
             ConsoleInitInfo.DesktopLength = (*ConnectInfo).DesktopLength;
 
-            ConsoleInitInfo.Desktop = ConsoleAllocHeap(HEAP_ZERO_MEMORY, ConsoleInitInfo.DesktopLength as usize);
+            ConsoleInitInfo.Desktop = ConsoleAllocHeap(HEAP_ZERO_MEMORY, ConsoleInitInfo.DesktopLength as usize) as *mut u16;
             if ConsoleInitInfo.Desktop.is_null() {
                 return STATUS_NO_MEMORY;
             }
@@ -378,12 +378,12 @@ pub unsafe extern "system" fn ConSrvConnect(
             Status = NtReadVirtualMemory(
                 (*(*ProcessData).Process).ProcessHandle,
                 (*ConnectInfo).Desktop as PVOID,
-                ConsoleInitInfo.Desktop,
-                ConsoleInitInfo.DesktopLength as usize,
+                ConsoleInitInfo.Desktop as PVOID,
+                ConsoleInitInfo.DesktopLength as usize as ULONG,
                 core::ptr::null_mut(),
             );
             if Status < 0 {
-                ConsoleFreeHeap(ConsoleInitInfo.Desktop);
+                ConsoleFreeHeap(ConsoleInitInfo.Desktop as *mut core::ffi::c_void);
                 return Status;
             }
         }
@@ -397,7 +397,7 @@ pub unsafe extern "system" fn ConSrvConnect(
         );
 
         if ConsoleInitInfo.DesktopLength != 0 {
-            ConsoleFreeHeap(ConsoleInitInfo.Desktop);
+            ConsoleFreeHeap(ConsoleInitInfo.Desktop as *mut core::ffi::c_void);
         }
 
         if Status < 0 {

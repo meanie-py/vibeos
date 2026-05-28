@@ -153,7 +153,7 @@ pub(crate) unsafe fn InsertConsole(
         ) as *mut PCONSRV_CONSOLE;
         
         if Block.is_null() {
-            Status = 0xC0000001u32;
+            Status = 0xC0000001u32 as NTSTATUS;
             ConSrvUnlockConsoleList();
             return Status;
         }
@@ -233,14 +233,15 @@ pub(crate) unsafe fn RemoveConsoleByPointer(Console: PCONSRV_CONSOLE) -> NTSTATU
 }
 
 pub(crate) unsafe fn RemoveConsole(Console: PCONSOLE) -> NTSTATUS {
+    // NB: C `#if 0`'d. Console->ListEntry field doesn't exist on _CONSOLE or
+    // _CONSRV_CONSOLE in the current header (commented out). Preserved here
+    // as a no-op so the rest of the translation builds; callers no longer
+    // expect this fn to mutate anything.
     if Console.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
 
     ConSrvLockConsoleListExclusive();
-
-    RemoveEntryList(core::ptr::addr_of_mut!((*Console).ListEntry));
-
     ConSrvUnlockConsoleList();
     return STATUS_SUCCESS;
 }
@@ -404,7 +405,7 @@ pub(crate) unsafe fn LoadShellLinkConsoleInfo(
                         core::mem::size_of_val(&Buffer) as u32,
                         Buffer.as_mut_ptr(),
                         core::ptr::null_mut(),
-                    );
+                    ) as usize;
                     if Length > 0 && (Length as usize) < core::mem::size_of_val(&Buffer) {
                         IconPath = Buffer.as_mut_ptr();
                     } else {
@@ -452,7 +453,7 @@ pub(crate) unsafe fn LoadShellLinkConsoleInfo(
         return RetVal;
     }
 
-    LinkName = wcsrchr((*ConsoleInfo).ConsoleTitle.as_mut_ptr(), PATH_SEPARATOR as i32);
+    LinkName = wcsrchr((*ConsoleInfo).ConsoleTitle.as_mut_ptr(), PATH_SEPARATOR as u16);
     if LinkName == core::ptr::null_mut() {
         LinkName = (*ConsoleInfo).ConsoleTitle.as_mut_ptr();
     } else {
@@ -525,7 +526,7 @@ pub(crate) unsafe fn LoadShellLinkConsoleInfo(
                     core::mem::size_of_val(&Buffer) as u32,
                     Buffer.as_mut_ptr(),
                     core::ptr::null_mut(),
-                );
+                ) as usize;
                 if Length > 0 && (Length as usize) < core::mem::size_of_val(&Buffer) {
                     IconPath = Buffer.as_mut_ptr();
                 } else {
@@ -1005,7 +1006,7 @@ pub unsafe extern "system" fn ConSrvConsoleCtrlEventTimeout(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    if (*ProcessData).CtrlRoutine.is_null() {
+    if (*ProcessData).CtrlRoutine.is_none() {
         return Status;
     }
 

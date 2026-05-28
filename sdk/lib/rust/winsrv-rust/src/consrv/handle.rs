@@ -338,7 +338,7 @@ pub unsafe extern "system" fn SrvOpenConsole(
             core::ptr::addr_of_mut!(OpenConsoleRequest.Handle),
             Object,
             DesiredAccess,
-            OpenConsoleRequest.InheritHandle,
+            OpenConsoleRequest.InheritHandle as u8,
             ShareMode,
         )
     };
