@@ -164,7 +164,7 @@ pub unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
 
     WndClass.cbSize = core::mem::size_of::<WNDCLASSEXW>() as u32;
     WndClass.lpszClassName = GUI_CONWND_CLASS_W.as_ptr();
-    WndClass.lpfnWndProc = Some(ConWndProc);
+    WndClass.lpfnWndProc = Some(core::mem::transmute(ConWndProc as *const ()));
     WndClass.style = CS_DBLCLKS;
     WndClass.hInstance = hInstance;
     WndClass.hIcon = ghDefaultIcon;
@@ -173,7 +173,7 @@ pub unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
     WndClass.hbrBackground = core::ptr::null_mut();
     WndClass.lpszMenuName = core::ptr::null();
     WndClass.cbClsExtra = 0;
-    WndClass.cbWndExtra = GWLP_CONWND_ALLOC;
+    WndClass.cbWndExtra = GWLP_CONWND_ALLOC as i32;
 
     WndClassAtom = RegisterClassExW(&WndClass);
     if WndClassAtom == 0 {
@@ -425,7 +425,7 @@ pub unsafe fn DeleteFonts(GuiData: PGUI_CONSOLE_DATA) {
     let mut i: ULONG = 0;
     while i < ((*GuiData).Font.len() as ULONG) {
         if (*GuiData).Font[i as usize] != core::ptr::null_mut() {
-            DeleteObject((*GuiData).Font[i as usize]);
+            DeleteObject((*GuiData).Font[i as usize] as *mut core::ffi::c_void);
         }
         (*GuiData).Font[i as usize] = core::ptr::null_mut();
         i += 1;
@@ -440,7 +440,7 @@ unsafe fn CreateDerivedFont(
 ) -> HFONT {
     let mut lf: LOGFONTW = core::mem::zeroed();
 
-    if GetObjectW(OrgFont, core::mem::size_of::<LOGFONTW>() as i32, &mut lf as *mut _ as *mut core::ffi::c_void) == 0 {
+    if GetObjectW(OrgFont as *mut core::ffi::c_void, core::mem::size_of::<LOGFONTW>() as i32, &mut lf as *mut _ as *mut core::ffi::c_void) == 0 {
         return core::ptr::null_mut();
     }
 
@@ -506,7 +506,7 @@ pub unsafe fn InitFonts(
     ) == 0
     {
         ReleaseDC((*GuiData).hWindow, hDC);
-        DeleteObject(hFont);
+        DeleteObject(hFont as *mut core::ffi::c_void);
         return 0;
     }
     ReleaseDC((*GuiData).hWindow, hDC);
@@ -547,7 +547,7 @@ pub unsafe fn InitFonts(
         || (OldCharHeight != (*GuiData).CharHeight)
         || (OldFontSize.X != FontData.Size.X || OldFontSize.Y != FontData.Size.Y)
     {
-        TermResizeTerminal((*GuiData).Console);
+        TermResizeTerminal((*GuiData).Console as *mut core::ffi::c_void);
     }
 
     1
@@ -622,7 +622,7 @@ unsafe fn OnNcCreate(hWnd: HWND, Create: LPCREATESTRUCTW) -> BOOL {
     SetWindowLongPtrW((*GuiData).hWindow, GWLP_USERDATA, GuiData as LONG_PTR);
 
     if (*GuiData).IsWindowVisible != 0 {
-        SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER, CONGUI_UPDATE_TIME, core::ptr::null_mut());
+        SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER as UINT_PTR, CONGUI_UPDATE_TIME, None);
     }
 
     // DPRINT removed
@@ -635,7 +635,7 @@ unsafe fn OnNcCreate(hWnd: HWND, Create: LPCREATESTRUCTW) -> BOOL {
 
 unsafe fn OnActivate(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM) {
 
-    let ActivationState: u16 = LOWORD(wParam);
+    let ActivationState: u16 = LOWORD(wParam) as u16;
 
     (*GuiData).IsWindowActive = (ActivationState != WA_INACTIVE as u16) as u8;
 
@@ -655,7 +655,7 @@ unsafe fn OnActivate(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM) {
     }
 
     if ActivationState == WA_CLICKACTIVE as u16 {
-        (*GuiData).IgnoreNextMouseEvent = 1u8;
+        (*GuiData).IgnoreNextMouseEvent = 1;
     }
 }
 
@@ -667,9 +667,9 @@ unsafe fn OnFocus(GuiData: PGUI_CONSOLE_DATA, SetFocus: BOOL) {
         return;
     }
 
-    (*Console).HasFocus = SetFocus;
+    (*Console).HasFocus = SetFocus as u8;
 
-    ConSrvSetConsoleProcessFocus(Console, SetFocus);
+    ConSrvSetConsoleProcessFocus(Console, SetFocus as u8);
 
     er.EventType = FOCUS_EVENT as u16;
     (*er.Event.FocusEvent.as_mut()).bSetFocus = SetFocus;
@@ -784,8 +784,8 @@ unsafe fn CreateSelectionRgn(
 
             CombineRgn(rg1, rg1, rg2, RGN_XOR as i32);
             CombineRgn(rg1, rg1, rg3, RGN_XOR as i32);
-            DeleteObject(rg3);
-            DeleteObject(rg2);
+            DeleteObject(rg3 as *mut core::ffi::c_void);
+            DeleteObject(rg2 as *mut core::ffi::c_void);
 
             SelRgn = rg1;
         }
@@ -808,8 +808,8 @@ unsafe fn PaintSelectionRect(GuiData: PGUI_CONSOLE_DATA, pps: PPAINTSTRUCT) {
         InvertRgn((*pps).hdc, rgnPaint);
     }
 
-    DeleteObject(rgnSel);
-    DeleteObject(rgnPaint);
+    DeleteObject(rgnSel as *mut core::ffi::c_void);
+    DeleteObject(rgnPaint as *mut core::ffi::c_void);
 }
 
 pub unsafe fn UpdateSelection(
@@ -1007,7 +1007,7 @@ unsafe fn OnKey(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam: L
     ActiveBuffer = (*GuiData).ActiveBuffer;
 
     if ((*GuiData).Selection.dwFlags & CONSOLE_SELECTION_IN_PROGRESS) != 0 {
-        let VirtualKeyCode: WORD = LOWORD(wParam);
+        let VirtualKeyCode: WORD = LOWORD(wParam) as WORD;
 
         if msg != WM_KEYDOWN {
             LeaveCriticalSection(core::ptr::addr_of_mut!((*Console).Lock));
@@ -1136,7 +1136,7 @@ unsafe fn OnTimer(GuiData: PGUI_CONSOLE_DATA) {
         return;
     }
 
-    SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER, CURSOR_BLINK_TIME, core::ptr::null_mut());
+    SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER as UINT_PTR, CURSOR_BLINK_TIME, None);
 
     if ConDrvValidateConsoleUnsafe(Console as PCONSOLE, CONSOLE_RUNNING, 1u8) == 0 {
         return;
@@ -1150,8 +1150,8 @@ unsafe fn OnTimer(GuiData: PGUI_CONSOLE_DATA) {
             (*Buff).CursorBlinkOn = if (*Buff).CursorBlinkOn != 0 { 0u8 } else { 1u8 };
         }
 
-        if (*GuiData).OldCursor.x != (*Buff).CursorPosition.X ||
-           (*GuiData).OldCursor.y != (*Buff).CursorPosition.Y {
+        if (*GuiData).OldCursor.x != (*Buff).CursorPosition.X as i32 as i32 ||
+           (*GuiData).OldCursor.y != (*Buff).CursorPosition.Y as i32 as i32 {
             let mut sInfo: SCROLLINFO = core::mem::zeroed();
             let mut OldScrollX: i32 = -1;
             let mut OldScrollY: i32 = -1;
@@ -1216,8 +1216,8 @@ unsafe fn OnTimer(GuiData: PGUI_CONSOLE_DATA) {
                     SetScrollInfo((*GuiData).hWindow, SB_VERT as i32, &mut sInfo, 1);
                 }
                 UpdateWindow((*GuiData).hWindow);
-                (*GuiData).OldCursor.x = (*Buff).CursorPosition.X;
-                (*GuiData).OldCursor.y = (*Buff).CursorPosition.Y;
+                (*GuiData).OldCursor.x = (*Buff).CursorPosition.X as i32;
+                (*GuiData).OldCursor.y = (*Buff).CursorPosition.Y as i32;
             }
         }
     }
@@ -1254,7 +1254,7 @@ unsafe fn OnNcDestroy(hWnd: HWND) -> LRESULT {
             DeleteDC((*GuiData).hMemDC);
         }
         if (*GuiData).hBitmap != core::ptr::null_mut() {
-            DeleteObject((*GuiData).hBitmap);
+            DeleteObject((*GuiData).hBitmap as *mut core::ffi::c_void);
         }
         DeleteFonts(GuiData);
     }
@@ -1270,7 +1270,7 @@ unsafe fn OnScroll(GuiData: PGUI_CONSOLE_DATA, nBar: INT, sbCode: WORD) {
     let Maximum: INT;
     let pOriginXY: PSHORT;
 
-    if nBar != SB_HORZ && nBar != SB_VERT {
+    if nBar != SB_HORZ as i32 && nBar != SB_VERT as i32 {
         return;
     }
 
@@ -1280,7 +1280,7 @@ unsafe fn OnScroll(GuiData: PGUI_CONSOLE_DATA, nBar: INT, sbCode: WORD) {
 
     Buff = (*GuiData).ActiveBuffer;
 
-    if nBar == SB_HORZ {
+    if nBar == SB_HORZ as i32 {
         Maximum = (*Buff).ScreenBufferSize.X as INT - (*Buff).ViewSize.X as INT;
         pOriginXY = core::ptr::addr_of_mut!((*Buff).ViewOrigin.X);
     } else {
@@ -1331,8 +1331,8 @@ unsafe fn OnScroll(GuiData: PGUI_CONSOLE_DATA, nBar: INT, sbCode: WORD) {
     sInfo.nPos = min(max(sInfo.nPos, 0), Maximum);
 
     if oldPos != sInfo.nPos {
-        let OldX: USHORT = (*Buff).ViewOrigin.X;
-        let OldY: USHORT = (*Buff).ViewOrigin.Y;
+        let OldX: USHORT = (*Buff).ViewOrigin.X as USHORT;
+        let OldY: USHORT = (*Buff).ViewOrigin.Y as USHORT;
         let mut WidthUnit: UINT = 0;
         let mut HeightUnit: UINT = 0;
 
@@ -1591,7 +1591,7 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
         }
     } else if (GetConsoleInputBufferMode(Console) & ENABLE_MOUSE_INPUT) != 0 {
         let mut er: INPUT_RECORD = core::mem::zeroed();
-        let wKeyState: WORD = GET_KEYSTATE_WPARAM(wParam);
+        let wKeyState: WORD = GET_KEYSTATE_WPARAM(wParam) as WORD;
         let mut dwButtonState: DWORD = 0;
         let mut dwControlKeyState: DWORD = 0;
         let mut dwEventFlags: DWORD = 0;
@@ -1616,13 +1616,13 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             }
 
             WM_XBUTTONDOWN => {
-                let wButton: WORD = GET_XBUTTON_WPARAM(wParam);
+                let wButton: WORD = GET_XBUTTON_WPARAM(wParam) as WORD;
 
-                if (wButton & !(XBUTTON1 | XBUTTON2)) != 0 {
+                if (wButton & !((XBUTTON1 | XBUTTON2) as WORD)) != 0 {
                     DoDefault = 1;
                 } else {
                     SetCapture((*GuiData).hWindow);
-                    dwButtonState = if wButton == XBUTTON1 { FROM_LEFT_3RD_BUTTON_PRESSED } else { FROM_LEFT_4TH_BUTTON_PRESSED };
+                    dwButtonState = if wButton == XBUTTON1 as WORD { FROM_LEFT_3RD_BUTTON_PRESSED } else { FROM_LEFT_4TH_BUTTON_PRESSED };
                     dwEventFlags  = 0;
                 }
             }
@@ -1646,9 +1646,9 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             }
 
             WM_XBUTTONUP => {
-                let wButton: WORD = GET_XBUTTON_WPARAM(wParam);
+                let wButton: WORD = GET_XBUTTON_WPARAM(wParam) as WORD;
 
-                if (wButton & !(XBUTTON1 | XBUTTON2)) != 0 {
+                if (wButton & !((XBUTTON1 | XBUTTON2) as WORD)) != 0 {
                 }
 
                 ReleaseCapture();
@@ -1672,12 +1672,12 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             }
 
             WM_XBUTTONDBLCLK => {
-                let wButton: WORD = GET_XBUTTON_WPARAM(wParam);
+                let wButton: WORD = GET_XBUTTON_WPARAM(wParam) as WORD;
 
-                if (wButton & !(XBUTTON1 | XBUTTON2)) != 0 {
+                if (wButton & !((XBUTTON1 | XBUTTON2) as WORD)) != 0 {
                     DoDefault = 1;
                 } else {
-                    dwButtonState = if wButton == XBUTTON1 { FROM_LEFT_3RD_BUTTON_PRESSED } else { FROM_LEFT_4TH_BUTTON_PRESSED };
+                    dwButtonState = if wButton == XBUTTON1 as WORD { FROM_LEFT_3RD_BUTTON_PRESSED } else { FROM_LEFT_4TH_BUTTON_PRESSED };
                     dwEventFlags  = DOUBLE_CLICK;
                 }
             }
@@ -1887,7 +1887,7 @@ unsafe fn OnSize(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM, lParam: LPARAM) {
 
         GetScreenBufferSizeUnits(Buff, GuiData, &mut WidthUnit, &mut HeightUnit);
 
-        (*GuiData).WindowSizeLock = 1u8;
+        (*GuiData).WindowSizeLock = 1;
 
         windx = LOWORD(lParam as u32);
         windy = HIWORD(lParam as u32);
@@ -1949,7 +1949,7 @@ unsafe fn OnSize(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM, lParam: LPARAM) {
         }
         InvalidateRect((*GuiData).hWindow, core::ptr::null_mut(), 1);
 
-        (*GuiData).WindowSizeLock = 0u8;
+        (*GuiData).WindowSizeLock = 0;
     }
 
     LeaveCriticalSection(core::ptr::addr_of_mut!((*Console).Lock));
@@ -2410,7 +2410,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //     WndClass.hbrBackground = NULL;
 //     WndClass.lpszMenuName = NULL;
 //     WndClass.cbClsExtra = 0;
-//     WndClass.cbWndExtra = GWLP_CONWND_ALLOC;
+//     WndClass.cbWndExtra = GWLP_CONWND_ALLOC as i32;
 //
 //     WndClassAtom = RegisterClassExW(&WndClass);
 //     if (WndClassAtom == 0)
@@ -2749,7 +2749,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //     RtlZeroMemory(&lf, sizeof(lf));
 //
 //     /* Retrieve the details of the current font */
-//     if (GetObjectW(OrgFont, sizeof(lf), &lf) == 0)
+//     if (GetObjectW(OrgFont as *mut core::ffi::c_void, sizeof(lf), &lf) == 0)
 //         return NULL;
 //
 //     /* Change the font attributes */
@@ -2818,7 +2818,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //     {
 //         DPRINT1("InitFonts: GetFontCellSize failed\n");
 //         ReleaseDC(GuiData->hWindow, hDC);
-//         DeleteObject(hFont);
+//         DeleteObject(hFont as *mut core::ffi::c_void);
 //         return FALSE;
 //     }
 //     ReleaseDC(GuiData->hWindow, hDC);
@@ -3020,7 +3020,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //      * Set the priority of the processes of this console
 //      * in accordance with the console focus state.
 //      */
-//     ConSrvSetConsoleProcessFocus(Console, SetFocus);
+//     ConSrvSetConsoleProcessFocus(Console, SetFocus as u8);
 //
 //     /* Send a focus event */
 //     er.EventType = FOCUS_EVENT as u16;
@@ -3136,8 +3136,8 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //
 //             CombineRgn(rg1, rg1, rg2, RGN_XOR as i32);
 //             CombineRgn(rg1, rg1, rg3, RGN_XOR as i32);
-//             DeleteObject(rg3);
-//             DeleteObject(rg2);
+//             DeleteObject(rg3 as *mut core::ffi::c_void);
+//             DeleteObject(rg2 as *mut core::ffi::c_void);
 //
 //             SelRgn = rg1;
 //         }
@@ -3162,8 +3162,8 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //         InvertRgn(pps->hdc, rgnPaint);
 //     }
 //
-//     DeleteObject(rgnSel);
-//     DeleteObject(rgnPaint);
+//     DeleteObject(rgnSel as *mut core::ffi::c_void);
+//     DeleteObject(rgnPaint as *mut core::ffi::c_void);
 // }
 //
 // static VOID
@@ -3724,18 +3724,18 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //     INT oldPos, Maximum;
 //     PSHORT pOriginXY;
 //
-//     ASSERT(nBar == SB_HORZ || nBar == SB_VERT);
+//     ASSERT(nBar == SB_HORZ as i32 || nBar == SB_VERT as i32);
 //
 //     if (!ConDrvValidateConsoleUnsafe((PCONSOLE)Console, CONSOLE_RUNNING, TRUE)) return;
 //
 //     Buff = GuiData->ActiveBuffer;
 //
-//     if (nBar == SB_HORZ)
+//     if (nBar == SB_HORZ as i32)
 //     {
 //         Maximum = Buff->ScreenBufferSize.X - Buff->ViewSize.X;
 //         pOriginXY = &Buff->ViewOrigin.X;
 //     }
-//     else // if (nBar == SB_VERT)
+//     else // if (nBar == SB_VERT as i32)
 //     {
 //         Maximum = Buff->ScreenBufferSize.Y - Buff->ViewSize.Y;
 //         pOriginXY = &Buff->ViewOrigin.Y;
@@ -4089,7 +4089,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //                 WORD wButton = GET_XBUTTON_WPARAM(wParam);
 //
 //                 /* Check for X-button validity */
-//                 if (wButton & ~(XBUTTON1 | XBUTTON2))
+//                 if (wButton & ~((XBUTTON1 | XBUTTON2) as WORD))
 //                 {
 //                     DPRINT1("X-button 0x%04x invalid\n", wButton);
 //                     DoDefault = TRUE;
@@ -4097,7 +4097,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //                 }
 //
 //                 SetCapture(GuiData->hWindow);
-//                 dwButtonState = (wButton == XBUTTON1 ? FROM_LEFT_3RD_BUTTON_PRESSED
+//                 dwButtonState = (wButton == XBUTTON1 as WORD ? FROM_LEFT_3RD_BUTTON_PRESSED
 //                                                      : FROM_LEFT_4TH_BUTTON_PRESSED);
 //                 dwEventFlags  = 0;
 //                 break;
@@ -4127,7 +4127,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //                 WORD wButton = GET_XBUTTON_WPARAM(wParam);
 //
 //                 /* Check for X-button validity */
-//                 if (wButton & ~(XBUTTON1 | XBUTTON2))
+//                 if (wButton & ~((XBUTTON1 | XBUTTON2) as WORD))
 //                 {
 //                     DPRINT1("X-button 0x%04x invalid\n", wButton);
 //                     /* Ok, just release the button anyway... */
@@ -4160,14 +4160,14 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //                 WORD wButton = GET_XBUTTON_WPARAM(wParam);
 //
 //                 /* Check for X-button validity */
-//                 if (wButton & ~(XBUTTON1 | XBUTTON2))
+//                 if (wButton & ~((XBUTTON1 | XBUTTON2) as WORD))
 //                 {
 //                     DPRINT1("X-button 0x%04x invalid\n", wButton);
 //                     DoDefault = TRUE;
 //                     break;
 //                 }
 //
-//                 dwButtonState = (wButton == XBUTTON1 ? FROM_LEFT_3RD_BUTTON_PRESSED
+//                 dwButtonState = (wButton == XBUTTON1 as WORD ? FROM_LEFT_3RD_BUTTON_PRESSED
 //                                                      : FROM_LEFT_4TH_BUTTON_PRESSED);
 //                 dwEventFlags  = DOUBLE_CLICK;
 //                 break;
