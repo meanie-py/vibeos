@@ -26,6 +26,14 @@ ntddi_ws03 = []
 # real exports when csrss.exe links the full archive. Set by
 # subsystems/csr/csrss/CMakeLists.txt only.
 csrss_main_only = []
+# Reserved feature names for future per-binary cohabitation flips
+# (basesrv.dll, smss.exe). Tracked as deferred work — see
+# project_smss_csrss_track + task #18. Each cohab flip would also
+# require careful attention to cgu shift risk and per-DLL data-global
+# ownership (the basesrv-flip experiment in this session hung csrss
+# inside ServerDllInitialization → not yet root-caused).
+basesrv_dll_only = []
+smss_exe_only    = []
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }

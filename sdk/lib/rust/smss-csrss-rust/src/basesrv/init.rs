@@ -8,8 +8,34 @@ unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, len: usize) {
     core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
 }
 
-extern "system" {
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PSECURITY_DESCRIPTOR, );
+// InitializeObjectAttributes is a C macro, not a function — rustconv
+// emitted an extern decl. Inline equivalent.
+#[inline(always)]
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES,
+    n: *mut _UNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PSECURITY_DESCRIPTOR,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).Attributes = a;
+    (*p).ObjectName = n;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
+}
+
+// RtlInitEmptyUnicodeString is a C macro — inline equivalent.
+#[inline(always)]
+unsafe fn RtlInitEmptyUnicodeString(
+    s: *mut _UNICODE_STRING,
+    buf: *mut u16,
+    len: USHORT,
+) {
+    (*s).Length = 0;
+    (*s).MaximumLength = len;
+    (*s).Buffer = buf;
 }
 
 #[no_mangle]
@@ -26,12 +52,19 @@ pub static mut BaseSrvSharedHeap: HANDLE = core::ptr::null_mut();
 #[no_mangle]
 pub static mut BaseStaticServerData: PBASE_STATIC_SERVER_DATA = core::ptr::null_mut();
 
-static mut SessionId: ULONG = 0;
-static mut ProtectionMode: ULONG = 0;
+// Exported so the C dosdev.c (still cohabited) can read them via
+// `extern ULONG SessionId, ProtectionMode;` references.
+#[no_mangle]
+pub static mut SessionId: ULONG = 0;
+#[no_mangle]
+pub static mut ProtectionMode: ULONG = 0;
 
 static mut BaseSrvIniFileMapping: PINIFILE_MAPPING = core::ptr::null_mut();
 
-extern "C" {
+// CSR_API_ROUTINE in C is NTAPI / stdcall on i386, so the BaseSrv*
+// handlers are exported as `_BaseSrv*@8`. `extern "system"` selects
+// the right convention per arch (stdcall on i386, cdecl elsewhere).
+extern "system" {
     fn BaseSrvCreateProcess(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvCreateThread(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvGetTempFile(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
@@ -64,7 +97,7 @@ extern "C" {
     fn BaseSrvNlsGetUserInfo(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
 }
 
-type PCSR_API_ROUTINE = Option<unsafe extern "C" fn(*mut c_void, *mut c_void) -> NTSTATUS>;
+type PCSR_API_ROUTINE = Option<unsafe extern "system" fn(*mut c_void, *mut c_void) -> NTSTATUS>;
 
 #[no_mangle]
 pub static mut BaseServerApiDispatchTable: [PCSR_API_ROUTINE; 31] = [
@@ -107,9 +140,12 @@ pub static BaseServerApiServerValidTable: [BOOLEAN; 31] = [
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
 ];
 
-#[cfg(feature = "CSR_DBG")]
+// Always defined — project's -DDBG=1 build enables CSR_DBG, so the
+// NameTable slot in CSR_SERVER_DLL is real and csrsrv may read it.
+// `static mut` because raw pointers aren't Sync; this table is read-only
+// at runtime so the `mut` is a Rust hoop, not a hazard.
 #[no_mangle]
-pub static BaseServerApiNameTable: [*const i8; 31] = [
+pub static mut BaseServerApiNameTable: [*const i8; 31] = [
     b"BaseCreateProcess\0".as_ptr() as *const i8,
     b"BaseCreateThread\0".as_ptr() as *const i8,
     b"BaseGetTempFile\0".as_ptr() as *const i8,
@@ -171,13 +207,25 @@ struct BASE_STATIC_SERVER_DATA {
 // NtCurrentPeb is a TEB-inline (ntdll-sys::inlines), NOT an extern — the
 // rustconv translation fabricated an extern decl that shadowed the real
 // inline and broke field access on the returned PPEB. Use the inline.
+// Data import is convention-free; the cdecl `extern "C"` is fine.
 extern "C" {
     // BaseSrvDDDBSMCritSec lives in basesrv/dosdev.c (not yet translated) —
     // a real RTL_CRITICAL_SECTION export. Forward-declare with the right type
     // so callers see a typed reference.
     static mut BaseSrvDDDBSMCritSec: _RTL_CRITICAL_SECTION;
+}
+
+// Per-fn ABI matches the C declarations:
+//   nls.c BaseSrvNLSInit / BaseSrvNlsConnect      — NTAPI = stdcall ("system")
+//   vdm.c BaseSrvCleanupVDMResources              — plain VOID  = cdecl ("C")
+//   dosdev.c BaseInitDefineDosDevice /
+//            BaseCleanupDefineDosDevice           — plain VOID  = cdecl ("C")
+//   vdm.c BaseInitializeVDM                       — plain VOID  = cdecl ("C")
+extern "system" {
     fn BaseSrvNLSInit(StaticServerData: PBASE_STATIC_SERVER_DATA);
     fn BaseSrvNlsConnect(CsrProcess: PCSR_PROCESS, ConnectionInfo: PVOID, ConnectionInfoLength: *mut ULONG) -> NTSTATUS;
+}
+extern "C" {
     fn BaseSrvCleanupVDMResources(CsrProcess: PCSR_PROCESS);
     fn BaseInitDefineDosDevice();
     fn BaseInitializeVDM();
@@ -467,16 +515,26 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         core::mem::zeroed(),
     ];
 
-    BaseSrvHeap = core::ptr::addr_of_mut!((*(LoadedServerDll as *mut CSR_SERVER_DLL_STRUCT)).ProcessHeap).read();
-    BaseSrvSharedHeap = core::ptr::addr_of_mut!((*(LoadedServerDll as *mut CSR_SERVER_DLL_STRUCT)).SharedSection).read();
+    DbgPrint(b"[BISD] enter\n\0".as_ptr() as *const i8);
+    // C: BaseSrvHeap = RtlGetProcessHeap()           (TEB inline)
+    // C: BaseSrvSharedHeap = LoadedServerDll->SharedSection
+    // The earlier rustconv translation invented a fake CSR_SERVER_DLL_STRUCT
+    // with ProcessHeap at offset 0 — that read NULL (the C struct has
+    // `Length` there) and zeroed BaseSrvHeap. See task #18 / memory
+    // feedback_cohab_flip_runtime_traps.
+    BaseSrvHeap = (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessHeap;
+    BaseSrvSharedHeap = (*(LoadedServerDll as *const CSR_SERVER_DLL_FULL)).SharedSection;
+    DbgPrint(b"[BISD] heap=%p shared=%p\n\0".as_ptr() as *const i8, BaseSrvHeap, BaseSrvSharedHeap);
 
     SessionId = (*(NtCurrentPeb())).SessionId;
+    DbgPrint(b"[BISD] SessionId=%u\n\0".as_ptr() as *const i8, SessionId);
 
     RtlInitEmptyUnicodeString(
         &mut SystemRootString,
         Buffer.as_mut_ptr(),
         (core::mem::size_of_val(&Buffer)) as USHORT,
     );
+    DbgPrint(b"[BISD] before RtlExpandEnvironmentStrings_U\n\0".as_ptr() as *const i8);
     Status = RtlExpandEnvironmentStrings_U(
         core::ptr::null_mut(),
         &UnexpandedSystemRootString as *const _ as *mut _,
@@ -484,8 +542,10 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         core::ptr::null_mut(),
     );
 
+    DbgPrint(b"[BISD] after Expand status=%lx len=%u\n\0".as_ptr() as *const i8, Status, SystemRootString.Length as ULONG);
     Buffer[SystemRootString.Length as usize / 2] = UNICODE_NULL;
     Success = RtlCreateUnicodeString(&mut BaseSrvWindowsDirectory, SystemRootString.Buffer);
+    DbgPrint(b"[BISD] after WinDir create=%u\n\0".as_ptr() as *const i8, Success as ULONG);
 
     let system32 = [
         b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16,
@@ -806,13 +866,13 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
 
     BaseSrvNLSInit(BaseStaticServerData);
 
-    (*(LoadedServerDll as *mut CSR_SERVER_DLL_STRUCT)).SharedSection = BaseStaticServerData as PVOID;
-}
-
-#[repr(C)]
-struct CSR_SERVER_DLL_STRUCT {
-    ProcessHeap: HANDLE,
-    SharedSection: PVOID,
+    // C: LoadedServerDll->SharedSection = BaseStaticServerData.
+    // Use the real struct layout (CSR_SERVER_DLL_FULL) — the old hack
+    // CSR_SERVER_DLL_STRUCT had SharedSection at offset 4, but C has
+    // it at 0x3C (CSR_DBG path). Writing to the wrong offset left
+    // CsrSrvSharedStaticServerData[BASESRV_INDEX] NULL, which made
+    // kernel32 client/dllmain.c:188 fail ASSERT(BaseStaticServerData).
+    (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).SharedSection = BaseStaticServerData as PVOID;
 }
 
 #[repr(C)]
@@ -864,10 +924,17 @@ pub unsafe extern "system" fn BaseClientDisconnectRoutine(CsrProcess: PCSR_PROCE
 type BASESRV_API_CONNECTINFO = c_void;
 type INIFILE_MAPPING = c_void;
 
-#[no_mangle]
-pub unsafe extern "C" fn ServerDllInitialization(LoadedServerDll: PCSR_SERVER_DLL) -> NTSTATUS {
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> ULONG;
+}
+
+#[cfg_attr(feature = "basesrv_dll_only", no_mangle)]
+#[allow(dead_code)]
+pub unsafe extern "system" fn ServerDllInitialization(LoadedServerDll: PCSR_SERVER_DLL) -> NTSTATUS {
     const BASESRV_FIRST_API_NUMBER: ULONG = 0;
     const BasepMaxApiNumber: ULONG = 31;
+
+    DbgPrint(b"[BASESRV] ServerDllInitialization entered LoadedServerDll=%p\n\0".as_ptr() as *const i8, LoadedServerDll);
 
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ApiBase = BASESRV_FIRST_API_NUMBER;
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).HighestApiSupported = BasepMaxApiNumber;
@@ -875,11 +942,11 @@ pub unsafe extern "C" fn ServerDllInitialization(LoadedServerDll: PCSR_SERVER_DL
         BaseServerApiDispatchTable.as_ptr() as *const c_void;
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ValidTable =
         BaseServerApiServerValidTable.as_ptr();
-    #[cfg(feature = "CSR_DBG")]
-    {
-        (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).NameTable =
-            BaseServerApiNameTable.as_ptr() as *const *const i8;
-    }
+    // NameTable is always present in the struct layout (CSR_DBG path,
+    // which the project's -DDBG=1 build selects). Fill it; csrsrv may
+    // read it for diagnostic purposes.
+    (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).NameTable =
+        BaseServerApiNameTable.as_ptr() as *const *const i8;
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).SizeOfProcessData = 0;
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ConnectCallback =
         Some(BaseClientConnectRoutine);
@@ -889,41 +956,70 @@ pub unsafe extern "C" fn ServerDllInitialization(LoadedServerDll: PCSR_SERVER_DL
 
     BaseSrvDllInstance = (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ServerHandle;
 
+    DbgPrint(b"[BASESRV] before BaseInitializeStaticServerData\n\0".as_ptr() as *const i8);
     BaseInitializeStaticServerData(LoadedServerDll);
+    DbgPrint(b"[BASESRV] after BaseInitializeStaticServerData, BaseStaticServerData=%p\n\0".as_ptr() as *const i8, BaseStaticServerData);
 
+    DbgPrint(b"[BASESRV] before BaseInitDefineDosDevice\n\0".as_ptr() as *const i8);
     BaseInitDefineDosDevice();
+    DbgPrint(b"[BASESRV] after BaseInitDefineDosDevice\n\0".as_ptr() as *const i8);
 
+    DbgPrint(b"[BASESRV] before BaseInitializeVDM\n\0".as_ptr() as *const i8);
     BaseInitializeVDM();
+    DbgPrint(b"[BASESRV] after BaseInitializeVDM, returning SUCCESS\n\0".as_ptr() as *const i8);
 
     STATUS_SUCCESS
 }
 
+// Mirrors the C `_CSR_SERVER_DLL` struct in csrsrv.h. Fields BEFORE
+// ApiBase (Length, Name, ServerHandle, ServerId, Unknown) MUST be
+// present in the right order — earlier rustconv translations omitted
+// the preamble and corrupted CsrLoadedServerDll[] entries by writing
+// ApiBase at offset 0 (where C has `Length`). The C_ASSERT at the
+// bottom of csrsrv.h pins SharedSection at offset 0x38 (no CSR_DBG).
 #[repr(C)]
-struct CSR_SERVER_DLL_FULL {
-    ApiBase: ULONG,
-    HighestApiSupported: ULONG,
-    DispatchTable: *const c_void,
-    ValidTable: *const BOOLEAN,
-    #[cfg(feature = "CSR_DBG")]
-    NameTable: *const *const i8,
-    SizeOfProcessData: ULONG,
-    ConnectCallback: Option<unsafe extern "system" fn(PCSR_PROCESS, PVOID, *mut ULONG) -> NTSTATUS>,
-    DisconnectCallback: Option<unsafe extern "system" fn(PCSR_PROCESS)>,
-    ShutdownProcessCallback: Option<unsafe extern "system" fn(PCSR_PROCESS, ULONG, BOOLEAN) -> NTSTATUS>,
-    ServerHandle: HANDLE,
-    ProcessHeap: HANDLE,
-    SharedSection: PVOID,
+struct ANSI_STRING_REPR {
+    Length: USHORT,
+    MaximumLength: USHORT,
+    Buffer: *mut i8,
 }
 
-// basesrv's DllMain — kept as a private fn (not #[no_mangle]) so the staticlib
-// doesn't collide with csrsrv's DllMain. basesrv.dll's real DllMain is still
-// provided by the cohabiting C `init.c` translation unit; this is dead code
-// today. When basesrv is cohabited to Rust DllMain, rename the export to
-// `BaseSrvDllMain` (or use `#[export_name = "DllMain"]` inside a `cfg(basesrv)`
-// gate plus equivalent for csrsrv) so the archive stays free of duplicate
-// `DllMain` symbols.
+#[repr(C)]
+struct CSR_SERVER_DLL_FULL {
+    Length: ULONG,                  // +0x00
+    Name: ANSI_STRING_REPR,         // +0x04 (8 bytes on i386)
+    ServerHandle: HANDLE,           // +0x0C
+    ServerId: ULONG,                // +0x10
+    Unknown: ULONG,                 // +0x14
+    ApiBase: ULONG,                 // +0x18
+    HighestApiSupported: ULONG,     // +0x1C
+    DispatchTable: *const c_void,   // +0x20
+    ValidTable: *const BOOLEAN,     // +0x24
+    // NameTable is `#ifdef CSR_DBG` in csrsrv.h, which is set when
+    // the project builds with -DDBG=1 (the default debug build).
+    // The C_ASSERT at the bottom of csrsrv.h confirms SharedSection
+    // is at 0x3C when CSR_DBG is on (0x38 without). bindgen i386 also
+    // includes NameTable unconditionally, matching the DBG=1 layout.
+    NameTable: *const *const i8,    // +0x28 (CSR_DBG branch)
+    SizeOfProcessData: ULONG,       // +0x2C
+    ConnectCallback: Option<unsafe extern "system" fn(PCSR_PROCESS, PVOID, *mut ULONG) -> NTSTATUS>, // +0x30
+    DisconnectCallback: Option<unsafe extern "system" fn(PCSR_PROCESS)>,                              // +0x34
+    HardErrorCallback: PVOID,        // +0x38
+    SharedSection: PVOID,            // +0x3C  ← C_ASSERT (CSR_DBG) verifies this
+    NewProcessCallback: PVOID,       // +0x40
+    ShutdownProcessCallback: Option<unsafe extern "system" fn(PCSR_PROCESS, ULONG, BOOLEAN) -> NTSTATUS>, // +0x44
+    Unknown2: [ULONG; 3],
+}
+
+// basesrv.dll DllMain — gated to basesrv_dll_only feature so csrsrv's
+// `#[no_mangle] DllMain` doesn't collide with this one in the
+// default-features archive. The lean basesrv archive (--features
+// basesrv_dll_only) excludes csrsrv, leaving this DllMain as the sole
+// owner. Cohabitation cmake flip is reverted (task #18) until
+// BASE_STATIC_SERVER_DATA layout is repaired.
+#[cfg_attr(feature = "basesrv_dll_only", no_mangle)]
 #[allow(dead_code)]
-unsafe fn DllMain(
+pub unsafe extern "system" fn DllMain(
     _hInstanceDll: HINSTANCE,
     dwReason: ULONG,
     _lpReserved: PVOID,

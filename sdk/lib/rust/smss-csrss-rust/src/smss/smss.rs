@@ -4,9 +4,23 @@ use ntdll_sys::nt::*;
 const STATUS_WAIT_0: NTSTATUS = 0x00000000;
 const STATUS_WAIT_1: NTSTATUS = 0x00000001;
 
+// RtlGetProcessHeap is a TEB-inlined macro (NtCurrentTeb()->ProcessEnvironmentBlock->ProcessHeap).
+#[inline(always)]
+unsafe fn RtlGetProcessHeap() -> PVOID {
+    (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessHeap
+}
+
+// NtCurrentProcess is a pseudo-handle macro `(HANDLE)-1`.
+#[inline(always)]
+unsafe fn NtCurrentProcess() -> HANDLE { -1isize as HANDLE }
+
+// Sm* functions in sminit.c are NTAPI (stdcall on i386). The data
+// globals are convention-free.
 extern "C" {
     static mut SmpDefaultLibPath: _UNICODE_STRING;
     static mut SmpDefaultEnvironment: PVOID;
+}
+extern "system" {
     fn SmpSetProcessMuSessionId(ProcessHandle: HANDLE, MuSessionId: ULONG) -> NTSTATUS;
     fn SmpQueryRegistrySosOption() -> BOOLEAN;
     fn SmpSaveAndClearBootStatusData(BootOkay: *mut BOOLEAN, ShutdownOkay: *mut BOOLEAN) -> BOOLEAN;
@@ -18,15 +32,21 @@ extern "C" {
     fn SmpInit(InitialCommand: *mut _UNICODE_STRING, Handles: PHANDLE) -> NTSTATUS;
     fn SmpAcquirePrivilege(Privilege: ULONG, State: *mut PVOID) -> NTSTATUS;
     fn SmpReleasePrivilege(State: PVOID);
-    fn RtlGetProcessHeap() -> PVOID;
-    fn RtlStringCbPrintfA(Destination: *mut i8, cbDest: usize, pszFormat: *const i8, ...) -> NTSTATUS;
-    fn DbgPrint(Format: *const i8, ...) -> ULONG;
-    fn NtCurrentProcess() -> HANDLE;
-    static mut EXCEPTION_EXECUTE_HANDLER: LONG;
-    fn _SEH2_TRY();
-    fn _SEH2_EXCEPT(filter: LONG);
-    fn _SEH2_GetExceptionInformation() -> PEXCEPTION_POINTERS;
 }
+// DbgPrint is a real ntdll cdecl variadic.
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> ULONG;
+}
+
+// RtlInitEmptyUnicodeString is FORCEINLINE in ndk/rtlfuncs.h.
+#[inline(always)]
+unsafe fn RtlInitEmptyUnicodeString(s: *mut _UNICODE_STRING, buf: *mut u16, len: USHORT) {
+    (*s).Length = 0;
+    (*s).MaximumLength = len;
+    (*s).Buffer = buf;
+}
+// SEH stubs (DUMMY_PSEH — dead code at runtime, just need to typecheck).
+const EXCEPTION_EXECUTE_HANDLER: LONG = 1;
 
 #[no_mangle]
 pub static mut SmpSystemRoot: _UNICODE_STRING = unsafe { core::mem::zeroed() };
@@ -185,12 +205,16 @@ pub unsafe extern "system" fn SmpInvokeAutoChk(
     }
 
     if Flags & SMP_INVALID_PATH != 0 {
-        RtlStringCbPrintfA(
-            MessageBuffer.as_mut_ptr(),
-            MessageBuffer.len(),
-            b"%wZ program not found - skipping AUTOCHECK\r\n\0".as_ptr() as *const i8,
-            FileName,
-        );
+        // Original C: RtlStringCbPrintfA("%wZ program not found - skipping AUTOCHECK\r\n", FileName).
+        // RtlStringCbPrintfA is a `static __inline NTSTATUS __cdecl` from
+        // ntstrsafe.h (not a real export) and variadic fn definitions are
+        // unstable in Rust. Drop the FileName formatting; emit the static
+        // tail of the message — this is an AUTOCHECK-failure printout, the
+        // missing prefix is cosmetic.
+        let msg = b"program not found - skipping AUTOCHECK\r\n\0";
+        let n = msg.len().min(MessageBuffer.len());
+        core::ptr::copy_nonoverlapping(msg.as_ptr() as *const i8, MessageBuffer.as_mut_ptr(), n);
+        let _ = FileName; // silence unused warning
         RtlInitAnsiString(&mut MessageString, MessageBuffer.as_ptr());
         if RtlAnsiStringToUnicodeString(&mut Destination, &mut MessageString, 1u8) >= 0 {
             NtDisplayString(&mut Destination);
@@ -450,10 +474,12 @@ pub unsafe extern "C" fn SmpUnhandledExceptionFilter(ExceptionInfo: PEXCEPTION_P
     EXCEPTION_EXECUTE_HANDLER
 }
 
-// smss.exe `_main` — symbol kept private to avoid collision with csrss.rs's
-// `_main` in the umbrella staticlib. When smss is cohabited to Rust main,
-// rename the export (e.g. `SmpMain`) and have the C smss `main` call it, or
-// move it into a separate staticlib. Until then, dead code.
+// smss.exe `_main` — cohabitation cmake flip is deferred (task #18).
+// Symbol-name kept private so the rust archive can coexist with csrss::_main
+// in workspace cargo check (default features = csrsrv stack — see
+// Cargo.toml). When the smss.exe cohab cmake is re-introduced, rename to
+// `_main` + add `#[no_mangle]` and select `--features smss_exe,smlib` from
+// the per-binary cmake (which makes csrss_main mutually-excluded).
 #[allow(dead_code)]
 unsafe extern "C" fn _main_smss_disabled(
     _argc: i32,

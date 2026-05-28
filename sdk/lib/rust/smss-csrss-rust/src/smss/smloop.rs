@@ -4,9 +4,27 @@ use ntdll_sys::nt::*;
 const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001F0FFF;
 const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
 
-extern "system" {
-    fn CONTAINING_RECORD(address: PVOID, type_: PVOID, field: PVOID) -> PVOID;
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+// CONTAINING_RECORD + InitializeObjectAttributes are C macros, not
+// exports. Inline equivalents.
+#[inline(always)]
+unsafe fn CONTAINING_RECORD(address: PVOID, _type_: PVOID, field: PVOID) -> PVOID {
+    (address as *mut u8).wrapping_sub(field as usize) as PVOID
+}
+
+#[inline(always)]
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES,
+    n: *mut _UNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).Attributes = a;
+    (*p).ObjectName = n;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 
 #[repr(C)]

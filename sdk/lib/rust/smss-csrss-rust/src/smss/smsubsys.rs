@@ -25,23 +25,50 @@ unsafe fn RtlGetProcessHeap() -> PVOID {
     (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessHeap
 }
 
-// _wcsicmp / RtlStringCbCatW — pulled in by the libraries that provide
-// the user-mode string CRT (RtlStringCbCatW lives in ntdll on win2k3+).
-// Forward-declare as system-ABI externs.
-extern "system" {
+// _wcsicmp is a C CRT helper (cdecl, exported from libcntpr / ntdll).
+extern "C" {
     fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32;
-    fn RtlStringCbCatW(dst: *mut u16, cb_dst: usize, src: *const u16) -> NTSTATUS;
 }
 
-extern "system" {
-    fn CONTAINING_RECORD(ptr: PLIST_ENTRY, ty: usize, field_offset: usize) -> *mut core::ffi::c_void;
+// RtlStringCbCatW is `static __inline NTSTATUS NTAPI` from
+// ddk/ntstrsafe.h — not a real export. Inline equivalent that
+// concatenates wide-char src onto NUL-terminated dst within cb_dst
+// bytes. Used to assemble the initial command line.
+#[inline(always)]
+unsafe fn RtlStringCbCatW(dst: *mut u16, cb_dst: usize, src: *const u16) -> NTSTATUS {
+    let max_chars = cb_dst / 2;
+    if max_chars == 0 { return 0xC0000023u32 as NTSTATUS; } // STATUS_BUFFER_TOO_SMALL
+    let mut dst_len = 0usize;
+    while dst_len < max_chars && *dst.add(dst_len) != 0 { dst_len += 1; }
+    if dst_len >= max_chars { return 0xC0000023u32 as NTSTATUS; }
+    let mut i = 0usize;
+    while *src.add(i) != 0 && dst_len + i + 1 < max_chars {
+        *dst.add(dst_len + i) = *src.add(i);
+        i += 1;
+    }
+    *dst.add(dst_len + i) = 0;
+    if *src.add(i) != 0 { 0xC0000023u32 as NTSTATUS } else { 0 }
 }
 
-static mut SmpKnownSubSysLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
-static mut SmpKnownSubSysHead: LIST_ENTRY = LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() };
-static mut SmpWindowsSubSysProcess: HANDLE = core::ptr::null_mut();
-static mut SmpWindowsSubSysProcessId: HANDLE = core::ptr::null_mut();
-static mut RegPosixSingleInstance: BOOLEAN = 0u8;
+// CONTAINING_RECORD is a C macro (`(type*)((char*)ptr - offsetof(type, field))`).
+// Call sites pass `core::mem::offset_of!(T, Field)` as the third arg.
+#[inline(always)]
+unsafe fn CONTAINING_RECORD(ptr: PLIST_ENTRY, _ty: usize, field_offset: usize) -> *mut core::ffi::c_void {
+    (ptr as *mut u8).wrapping_sub(field_offset) as *mut core::ffi::c_void
+}
+
+// Exported so cohabited C sminit.c (still on the rustconv translate
+// queue) can read/write them via `extern` declarations.
+#[no_mangle]
+pub static mut SmpKnownSubSysLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut SmpKnownSubSysHead: LIST_ENTRY = LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() };
+#[no_mangle]
+pub static mut SmpWindowsSubSysProcess: HANDLE = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SmpWindowsSubSysProcessId: HANDLE = core::ptr::null_mut();
+#[no_mangle]
+pub static mut RegPosixSingleInstance: BOOLEAN = 0u8;
 static mut InitialCommandBuffer: [u16; 256] = [0; 256];
 
 #[no_mangle]

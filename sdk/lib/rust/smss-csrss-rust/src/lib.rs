@@ -20,14 +20,14 @@
 pub mod csrss;
 
 // Phase 3 (smss.exe) + Phase 4 (basesrv.dll) translations sit under
-// src/smss/ and src/basesrv/ respectively — not yet `pub mod`d in.
-// Rustconv batched 7/9 smss + 5/7 basesrv files on 2026-05-25 (~$0.92
-// API spend, see feedback_rustconv_main_repo_leak for the
-// main-repo-leak gotcha). Integration tail: ~100 per-site cast/anon-
-// union fixups + the >1000 LOC files (sminit.c 2581 / pagefile.c 1150
-// / dosdev.c 1110 / vdm.c 1459) still want rustconv translate
-// (per feedback_rustconv_translate_vs_batch). Wire them in once
-// per-file cargo check ×3 is green; until then keep them silent.
+// src/smss/ and src/basesrv/. Both modules compile in default
+// features and provide reusable `#[no_mangle]` data globals + macro
+// inlines, but their **cohabitation cmake flips are deferred**
+// (task #18). The naive smss.exe flip bugchecked SMSS at
+// SmpAcquirePrivilege / NtWaitForMultipleObjects; the naive
+// basesrv.dll flip hung csrss inside ServerDllInitialization
+// (suspected BaseInitializeStaticServerData runtime divergence).
+// Keeping the source in tree for the next debug session.
 //
 // `csrss_main_only`: when set, csrss.exe consumes ONLY the `_main`
 // shim from `csrss.rs`. The rest of the modules below are gated OUT
@@ -37,9 +37,13 @@ pub mod csrss;
 // csrsrv.dll, which means the *real* csrsrv.dll instance of the data
 // statics gets written by `NtCreatePort` and read back by
 // `CsrQueryApiPort` from any other DLL (winsrv, basesrv, …).
-#[cfg(not(feature = "csrss_main_only"))]
+// `lean_features` matches any per-binary opt-in (csrss.exe / basesrv.dll
+// / smss.exe). When ANY lean feature is on, csrsrv / csrlib / smlib are
+// gated OUT — each lean binary defines only the entry points it owns
+// and PE-imports everything else from csrsrv.dll.
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
 pub mod smss;
-#[cfg(not(feature = "csrss_main_only"))]
+#[cfg(any(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")), feature = "basesrv_dll_only"))]
 pub mod basesrv;
 
 // Phase 1 — SM/CSR LPC protocol contract (translated 2026-05-16).
@@ -47,15 +51,15 @@ pub mod basesrv;
 // ntdll.dll — cohabitation flip deferred, see audit §csrlib). smlib =
 // SM client (consumed by csrsrv.dll + smss.exe; cohabitation flips in
 // their phases). Modules carry the #[no_mangle] protocol symbols.
-#[cfg(not(feature = "csrss_main_only"))]
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
 pub mod csrlib;
-#[cfg(not(feature = "csrss_main_only"))]
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
 pub mod smlib;
 
 // Phase 2 — csrsrv.dll server runtime (translated 2026-05-16).
 // 35 csrsrv.spec exports; cohabited into csrsrv.dll (the 7 .c
 // commented out in subsystems/csr/csrsrv/CMakeLists.txt).
-#[cfg(not(feature = "csrss_main_only"))]
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
 pub mod csrsrv;
 
 // Standalone `#![no_std]` staticlib → needs its own panic handler +

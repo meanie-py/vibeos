@@ -1,8 +1,27 @@
 
 use ntdll_sys::nt::*;
 
-extern "system" {
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+// RtlConvertUlongToLuid is FORCEINLINE in ndk/rtlfuncs.h.
+#[inline(always)]
+unsafe fn RtlConvertUlongToLuid(u: ULONG) -> LUID {
+    LUID { LowPart: u, HighPart: 0 }
+}
+
+// InitializeObjectAttributes is a C macro — inline.
+#[inline(always)]
+unsafe fn InitializeObjectAttributes(
+    p: *mut _OBJECT_ATTRIBUTES,
+    n: *mut _UNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PVOID,
+) {
+    (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*p).RootDirectory = r;
+    (*p).Attributes = a;
+    (*p).ObjectName = n;
+    (*p).SecurityDescriptor = s;
+    (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 
 const VALUE_BUFFER_SIZE: usize = core::mem::size_of::<_KEY_VALUE_PARTIAL_INFORMATION>() + 512;
@@ -23,15 +42,28 @@ pub static mut SmpASyncKeyword: _UNICODE_STRING = unsafe { core::mem::zeroed() }
 #[no_mangle]
 pub static mut SmpAutoChkKeyword: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 
-extern "system" {
+// NtCurrentProcess is a macro: pseudo-handle `(HANDLE)-1`.
+#[inline(always)]
+unsafe fn NtCurrentProcess() -> HANDLE { -1isize as HANDLE }
+
+// KUSER_SHARED_DATA lives at a fixed user-mode VA on Windows / ReactOS.
+// Expose as a const pointer so call sites that did `(*SharedUserData).Field`
+// or `SharedUserData->Field` (translated to Rust `(*SharedUserData).Field`)
+// continue to work — the const is the address itself, deref reaches the
+// struct mapped by the kernel at boot.
+#[allow(non_upper_case_globals)]
+const SharedUserData: *mut _KUSER_SHARED_DATA = 0x7FFE0000 as *mut _KUSER_SHARED_DATA;
+
+// Data globals live in sminit.c (still C) — convention-free import.
+extern "C" {
     static mut SmpHeap: PVOID;
     static SmBaseTag: ULONG;
-    static mut SmpSystemRoot: _UNICODE_STRING;
     static mut SmpDefaultLibPath: _UNICODE_STRING;
     static mut SmpDefaultEnvironment: PVOID;
-    fn NtCurrentProcess() -> HANDLE;
-    static SharedUserData: *mut _KUSER_SHARED_DATA;
 }
+// SmpSystemRoot is defined in this crate (smss/smss.rs) as a no_mangle
+// pub static — use it directly via `crate::smss::smss::SmpSystemRoot`.
+use crate::smss::smss::SmpSystemRoot;
 
 const TOKEN_ADJUST_PRIVILEGES: u32 = 0x0020;
 const TOKEN_QUERY: u32 = 0x0008;

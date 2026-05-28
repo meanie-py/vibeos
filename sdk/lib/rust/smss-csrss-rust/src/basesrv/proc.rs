@@ -26,9 +26,8 @@ pub struct VDM_CONSOLE_RECORD {
 pub type PVDM_CONSOLE_RECORD = *mut VDM_CONSOLE_RECORD;
 
 // VDM console-record helpers live in basesrv/vdm.c (not yet translated).
-// Forward-declare so this file compiles; the symbols will resolve from
-// the cohabiting C vdm.c until vdm is also Rusted.
-extern "system" {
+// C signatures have no NTAPI/__stdcall — default cdecl → `extern "C"`.
+extern "C" {
     fn GetConsoleRecordBySessionId(SessionId: ULONG, Record: *mut PVDM_CONSOLE_RECORD) -> NTSTATUS;
     fn BaseSrvGetConsoleRecord(hVDM: HANDLE, Record: *mut PVDM_CONSOLE_RECORD) -> NTSTATUS;
 }

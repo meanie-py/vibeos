@@ -7,11 +7,32 @@ unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, len: usize) {
     core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
 }
 
+// InitializeObjectAttributes + NtCurrentProcess are C macros, not
+// exports. Inline equivalents.
+#[inline(always)]
+unsafe fn InitializeObjectAttributes(
+    ObjectAttributes: *mut _OBJECT_ATTRIBUTES,
+    ObjectName: *mut _UNICODE_STRING,
+    Attributes: ULONG,
+    RootDirectory: HANDLE,
+    SecurityDescriptor: PVOID,
+) {
+    (*ObjectAttributes).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    (*ObjectAttributes).RootDirectory = RootDirectory;
+    (*ObjectAttributes).Attributes = Attributes;
+    (*ObjectAttributes).ObjectName = ObjectName;
+    (*ObjectAttributes).SecurityDescriptor = SecurityDescriptor;
+    (*ObjectAttributes).SecurityQualityOfService = core::ptr::null_mut();
+}
+
+#[inline(always)]
+unsafe fn NtCurrentProcess() -> HANDLE {
+    -1isize as HANDLE
+}
+
 extern "system" {
-    fn InitializeObjectAttributes( ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ObjectName: *mut _UNICODE_STRING, Attributes: ULONG, RootDirectory: HANDLE, SecurityDescriptor: PVOID, );
     fn RtlFillMemory(Destination: PVOID, Length: SIZE_T, Fill: UCHAR);
     fn LdrLoadDll( SearchPath: ULONG, LoadFlags: ULONG, DllName: *mut _UNICODE_STRING, DllHandle: *mut HANDLE, ) -> NTSTATUS;
-    fn NtCurrentProcess() -> HANDLE;
     fn CsrValidateMessageBuffer( ApiMessage: PVOID, Buffer: *mut PVOID, Count: ULONG, ElementSize: ULONG, ) -> BOOLEAN;
 }
 
@@ -230,17 +251,26 @@ pub unsafe extern "system" fn BaseSrvNlsConnect(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvNlsSetUserInfo(_ApiMessage: *mut BASE_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvNlsSetUserInfo(
+    _ApiMessage: *mut BASE_API_MESSAGE,
+    _ReplyCode: *mut ULONG,
+) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvNlsSetMultipleUserInfo(_ApiMessage: *mut BASE_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvNlsSetMultipleUserInfo(
+    _ApiMessage: *mut BASE_API_MESSAGE,
+    _ReplyCode: *mut ULONG,
+) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvNlsCreateSection(ApiMessage: *mut BASE_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvNlsCreateSection(
+    ApiMessage: *mut BASE_API_MESSAGE,
+    _ReplyCode: *mut ULONG,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut SectionHandle: HANDLE = core::ptr::null_mut();
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
@@ -521,12 +551,18 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(ApiMessage: *mut BASE_API_
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvNlsUpdateCacheCount(_ApiMessage: *mut BASE_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvNlsUpdateCacheCount(
+    _ApiMessage: *mut BASE_API_MESSAGE,
+    _ReplyCode: *mut ULONG,
+) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvNlsGetUserInfo(ApiMessage: *mut BASE_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvNlsGetUserInfo(
+    ApiMessage: *mut BASE_API_MESSAGE,
+    _ReplyCode: *mut ULONG,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let NlsMsg: *mut BASE_NLS_GET_USER_INFO =
         core::ptr::addr_of_mut!((*ApiMessage).Data.NlsGetUserInfo)

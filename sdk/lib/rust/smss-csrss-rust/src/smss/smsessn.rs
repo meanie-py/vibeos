@@ -1,8 +1,10 @@
 
 use ntdll_sys::nt::*;
 
-extern "system" {
-    fn CONTAINING_RECORD(address: PLIST_ENTRY, type_: *const u8, field_offset: usize) -> *mut u8;
+// CONTAINING_RECORD is a C macro. Inline as `*mut u8` (call sites cast).
+#[inline(always)]
+unsafe fn CONTAINING_RECORD(address: PLIST_ENTRY, _type_: *const u8, field_offset: usize) -> *mut u8 {
+    (address as *mut u8).wrapping_sub(field_offset)
 }
 
 #[repr(C)]
@@ -30,13 +32,18 @@ extern "C" {
     static mut SmpHeap: PVOID;
 }
 
-static mut SmpSessionListLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
-static mut SmpSessionListHead: LIST_ENTRY = LIST_ENTRY {
+// Exported so cohabited C sminit.c can read/write them via extern decls.
+#[no_mangle]
+pub static mut SmpSessionListLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut SmpSessionListHead: LIST_ENTRY = LIST_ENTRY {
     Flink: core::ptr::null_mut(),
     Blink: core::ptr::null_mut(),
 };
-static mut SmpNextSessionId: ULONG = 0;
-static mut SmpNextSessionIdScanMode: BOOLEAN = 0u8;
+#[no_mangle]
+pub static mut SmpNextSessionId: ULONG = 0;
+#[no_mangle]
+pub static mut SmpNextSessionIdScanMode: BOOLEAN = 0u8;
 #[no_mangle]
 pub static mut SmpDbgSsLoaded: BOOLEAN = 0u8;
 #[no_mangle]

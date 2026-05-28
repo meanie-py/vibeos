@@ -24,6 +24,12 @@ elseif(ARCH STREQUAL "arm64")
     set(RUST_EXTRA_ENV "")
 endif()
 set(SMSS_CSRSS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsmss_csrss_rust.a")
+# csrsrv.dll keeps the kitchen-sink default-features build (which now
+# resolves to csrsrv_dll + csrlib + smlib + ntddi_ws03 per Cargo.toml,
+# the same union as before the per-binary feature refactor). Changing
+# this changes cgu partitioning and risks
+# feedback_workspace_member_cgu_shift / captures(none)-ud2 mode bugs,
+# so we leave it alone for now.
 add_custom_command(
     OUTPUT ${SMSS_CSRSS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

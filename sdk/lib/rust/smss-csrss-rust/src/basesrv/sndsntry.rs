@@ -58,7 +58,10 @@ unsafe extern "system" fn FirstSoundSentry() -> BOOLEAN {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvSoundSentryNotification() -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvSoundSentryNotification(
+    _ApiMessage: *mut core::ffi::c_void,
+    _ReplyCode: *mut ULONG,
+) -> NTSTATUS {
     if (_UserSoundSentry.unwrap())() != 0 {
         STATUS_SUCCESS
     } else {
