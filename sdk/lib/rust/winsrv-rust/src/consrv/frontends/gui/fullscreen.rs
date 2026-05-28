@@ -4,11 +4,11 @@ use winsrv_sys::consts::*;
 use super::helpers::*;
 use super::guiterm::*;
 
-pub unsafe extern "C" fn EnterFullScreen(GuiData: PGUI_CONSOLE_DATA) -> BOOLEAN {
+pub unsafe extern "system" fn EnterFullScreen(GuiData: PGUI_CONSOLE_DATA) -> BOOLEAN {
     let mut DevMode: DEVMODEW = core::mem::zeroed();
     DevMode.dmSize = core::mem::size_of::<DEVMODEW>() as u16;
 
-    DevMode.dmDisplayFixedOutput = DMDFO_CENTER;
+    DevMode.__bindgen_anon_1.__bindgen_anon_2.dmDisplayFixedOutput = DMDFO_CENTER;
     DevMode.dmPelsWidth = 640;
     DevMode.dmPelsHeight = 480;
     DevMode.dmFields = DM_DISPLAYFIXEDOUTPUT | DM_PELSWIDTH | DM_PELSHEIGHT;
@@ -16,14 +16,14 @@ pub unsafe extern "C" fn EnterFullScreen(GuiData: PGUI_CONSOLE_DATA) -> BOOLEAN 
     (ChangeDisplaySettingsW(
         core::ptr::addr_of_mut!(DevMode),
         CDS_FULLSCREEN,
-    ) == DISP_CHANGE_SUCCESSFUL) as BOOLEAN
+    ) == DISP_CHANGE_SUCCESSFUL as i32) as BOOLEAN
 }
 
-pub unsafe extern "C" fn LeaveFullScreen(GuiData: PGUI_CONSOLE_DATA) {
+pub unsafe extern "system" fn LeaveFullScreen(_GuiData: PGUI_CONSOLE_DATA) {
     ChangeDisplaySettingsW(core::ptr::null_mut(), CDS_RESET);
 }
 
-pub unsafe extern "C" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullScreen: BOOLEAN) {
+pub unsafe extern "system" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullScreen: BOOL) {
     let Console: PCONSRV_CONSOLE = (*GuiData).Console;
 
     if FullScreen == (*GuiData).GuiInfo.FullScreen {
@@ -51,19 +51,19 @@ pub unsafe extern "C" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullScreen
 
         if EnterFullScreen(GuiData) != 0 {
             (*Console).FixedSize = 1u8;
-            (*GuiData).GuiInfo.FullScreen = 1u8;
+            (*GuiData).GuiInfo.FullScreen = 1;
 
             (*(*GuiData).ActiveBuffer).OldViewSize = (*(*GuiData).ActiveBuffer).ViewSize;
 
             SetWindowLongPtrW(
                 (*GuiData).hWindow,
                 GWL_STYLE,
-                (WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN) as isize,
+                (WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN) as LONG_PTR,
             );
             SetWindowLongPtrW(
                 (*GuiData).hWindow,
                 GWL_EXSTYLE,
-                WS_EX_APPWINDOW as isize,
+                WS_EX_APPWINDOW as LONG_PTR,
             );
 
             SetWindowPos(
@@ -96,7 +96,7 @@ pub unsafe extern "C" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullScreen
 
         LeaveFullScreen(GuiData);
 
-        (*GuiData).GuiInfo.FullScreen = 0u8;
+        (*GuiData).GuiInfo.FullScreen = 0;
         (*Console).FixedSize = 0u8;
 
         (*(*GuiData).ActiveBuffer).ViewSize = (*(*GuiData).ActiveBuffer).OldViewSize;
@@ -135,13 +135,13 @@ pub unsafe extern "C" fn SwitchFullScreen(GuiData: PGUI_CONSOLE_DATA, FullScreen
 
 pub unsafe extern "C" fn GuiConsoleSwitchFullScreen(GuiData: PGUI_CONSOLE_DATA) {
     let Console: PCONSRV_CONSOLE = (*GuiData).Console;
-    let FullScreen: BOOLEAN;
+    let FullScreen: BOOL;
 
     if ConDrvValidateConsoleUnsafe(Console as PCONSOLE, CONSOLE_RUNNING, 1u8) == 0 {
         return;
     }
 
-    FullScreen = if (*GuiData).GuiInfo.FullScreen != 0 { 0u8 } else { 1u8 };
+    FullScreen = if (*GuiData).GuiInfo.FullScreen != 0 { 0 } else { 1 };
 
     SwitchFullScreen(GuiData, FullScreen);
 

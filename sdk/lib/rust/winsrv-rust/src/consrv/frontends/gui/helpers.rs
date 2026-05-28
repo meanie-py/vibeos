@@ -213,3 +213,64 @@ pub unsafe fn atomic_xchg_seqcst<T>(p: *mut T, v: T) -> T {
 /// `STATUS_INVALID_VIEW_SIZE` — section-API error not in the
 /// hand-written nt:: STATUS_* list.
 pub const STATUS_INVALID_VIEW_SIZE: i32 = 0xC000001F_u32 as i32;
+
+// ---- strsafe.h inline wrappers (bindgen doesn't emit static inlines) ----
+
+/// `StringCchCopyNW(pszDest, cchDest, pszSrc, cchToCopy)` — copies at
+/// most `cchToCopy` chars from `pszSrc` to `pszDest`, NUL-terminates
+/// `pszDest`, truncates safely if needed. Returns S_OK or STRSAFE_E_*.
+/// HRESULT shape (i32): 0 = S_OK, 0x8007007A = STRSAFE_E_INSUFFICIENT_BUFFER.
+#[inline]
+pub unsafe fn StringCchCopyNW(
+    pszDest: *mut u16, cchDest: usize, pszSrc: *const u16, cchToCopy: usize,
+) -> i32 {
+    if cchDest == 0 || pszDest.is_null() {
+        return 0x80070057_u32 as i32; // E_INVALIDARG
+    }
+    let mut i = 0usize;
+    let max = if cchToCopy < cchDest - 1 { cchToCopy } else { cchDest - 1 };
+    while i < max && !pszSrc.is_null() && *pszSrc.add(i) != 0 {
+        *pszDest.add(i) = *pszSrc.add(i);
+        i += 1;
+    }
+    *pszDest.add(i) = 0;
+    0 // S_OK
+}
+
+/// `StringCchCatW(pszDest, cchDest, pszSrc)` — append `pszSrc` to
+/// `pszDest`, NUL-terminating, with overflow-safe truncation.
+#[inline]
+pub unsafe fn StringCchCatW(pszDest: *mut u16, cchDest: usize, pszSrc: *const u16) -> i32 {
+    if cchDest == 0 || pszDest.is_null() || pszSrc.is_null() {
+        return 0x80070057_u32 as i32; // E_INVALIDARG
+    }
+    // Find end of pszDest
+    let mut dst_len = 0usize;
+    while dst_len < cchDest && *pszDest.add(dst_len) != 0 {
+        dst_len += 1;
+    }
+    if dst_len >= cchDest - 1 {
+        return 0x8007007A_u32 as i32; // STRSAFE_E_INSUFFICIENT_BUFFER
+    }
+    let mut i = 0usize;
+    while dst_len + i < cchDest - 1 && *pszSrc.add(i) != 0 {
+        *pszDest.add(dst_len + i) = *pszSrc.add(i);
+        i += 1;
+    }
+    *pszDest.add(dst_len + i) = 0;
+    0
+}
+
+/// `ARRAYSIZE(x)` — `_countof(x)` for C arrays. In Rust this is a
+/// generic helper that takes a slice reference and returns its len.
+/// At call sites where rustconv lowered the C macro to `ARRAYSIZE(arr)`
+/// the arg is already a typed array reference.
+#[inline]
+pub fn ARRAYSIZE<T, const N: usize>(_arr: &[T; N]) -> usize { N }
+
+/// `SendNotifyMessage` — C macro alias for `SendNotifyMessageW` when
+/// `UNICODE` is defined (always the case in consrv).
+#[inline]
+pub unsafe fn SendNotifyMessage(hWnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL {
+    SendNotifyMessageW(hWnd, msg, wParam, lParam)
+}

@@ -22109,6 +22109,9 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn Beep(arg1: DWORD, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
     pub fn BeginUpdateResourceA(arg1: LPCSTR, arg2: BOOL) -> HANDLE;
 }
 unsafe extern "C" {
@@ -22618,6 +22621,17 @@ unsafe extern "C" {
     pub fn DisableThreadLibraryCalls(arg1: HMODULE) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn DuplicateHandle(
+        arg1: HANDLE,
+        arg2: HANDLE,
+        arg3: HANDLE,
+        arg4: PHANDLE,
+        arg5: DWORD,
+        arg6: BOOL,
+        arg7: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
     pub fn EndUpdateResourceA(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
 unsafe extern "C" {
@@ -22668,6 +22682,12 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn EqualSid(arg1: PSID, arg2: PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ExitProcess(arg1: UINT) -> !;
+}
+unsafe extern "C" {
+    pub fn ExitThread(dwExitCode: DWORD) -> !;
 }
 unsafe extern "C" {
     pub fn FindActCtxSectionGuid(
@@ -23842,6 +23862,27 @@ unsafe extern "C" {
     pub fn LoadResource(arg1: HINSTANCE, arg2: HRSRC) -> HGLOBAL;
 }
 unsafe extern "C" {
+    pub fn LocalAlloc(arg1: UINT, arg2: SIZE_T) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalFree(arg1: HLOCAL) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalHandle(arg1: LPCVOID) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalLock(arg1: HLOCAL) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn LocalReAlloc(arg1: HLOCAL, arg2: SIZE_T, arg3: UINT) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalSize(arg1: HLOCAL) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn LocalUnlock(arg1: HLOCAL) -> BOOL;
+}
+unsafe extern "C" {
     pub fn LockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
 }
 unsafe extern "C" {
@@ -23856,6 +23897,21 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn LockResource(arg1: HGLOBAL) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn lstrcmpW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn lstrcpynW(arg1: LPWSTR, arg2: LPCWSTR, arg3: ::core::ffi::c_int) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn lstrlenW(arg1: LPCWSTR) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     pub fn MakeAbsoluteSD(
@@ -24184,6 +24240,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn ResetWriteWatch(arg1: LPVOID, arg2: SIZE_T) -> UINT;
+}
+unsafe extern "C" {
+    pub fn ResumeThread(arg1: HANDLE) -> DWORD;
 }
 unsafe extern "C" {
     pub fn SetAclInformation(
@@ -24550,6 +24609,9 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn Sleep(arg1: DWORD);
+}
+unsafe extern "C" {
     pub fn SleepConditionVariableCS(
         arg1: PCONDITION_VARIABLE,
         arg2: PCRITICAL_SECTION,
@@ -24566,6 +24628,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn SleepEx(arg1: DWORD, arg2: BOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SuspendThread(arg1: HANDLE) -> DWORD;
 }
 unsafe extern "C" {
     pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
@@ -24623,6 +24688,15 @@ unsafe extern "C" {
         lpData: LPVOID,
         cb: DWORD,
     ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualAlloc(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: DWORD) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn VirtualFree(arg1: PVOID, arg2: SIZE_T, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualProtect(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: PDWORD) -> BOOL;
 }
 unsafe extern "C" {
     pub fn WaitCommEvent(arg1: HANDLE, arg2: PDWORD, arg3: LPOVERLAPPED) -> BOOL;
@@ -27511,6 +27585,12 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn FillRect(arg1: HDC, arg2: LPCRECT, arg3: HBRUSH) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn FillRgn(arg1: HDC, arg2: HRGN, arg3: HBRUSH) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     pub fn GdiTransparentBlt(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -28321,6 +28401,23 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn SetWorldTransform(arg1: HDC, arg2: *const XFORM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn StretchDIBits(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: *const ::core::ffi::c_void,
+        arg11: *const BITMAPINFO,
+        arg12: UINT,
+        arg13: DWORD,
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     pub fn TextOutW(
@@ -48260,6 +48357,9 @@ pub type fpos_t = ::core::ffi::c_longlong;
 unsafe extern "C" {
     pub static mut _commode: ::core::ffi::c_int;
 }
+unsafe extern "C" {
+    pub fn swscanf(_Src: *const wchar_t, _Format: *const wchar_t, ...) -> ::core::ffi::c_int;
+}
 pub type _onexit_t = ::core::option::Option<unsafe extern "C" fn() -> ::core::ffi::c_int>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -50162,6 +50262,9 @@ unsafe extern "C" {
     pub fn CharUpperBuffW(lpsz: LPWSTR, cchLength: DWORD) -> DWORD;
 }
 unsafe extern "C" {
+    pub fn CheckMenuItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> DWORD;
+}
+unsafe extern "C" {
     pub fn ClientToScreen(arg1: HWND, arg2: LPPOINT) -> BOOL;
 }
 unsafe extern "C" {
@@ -50687,6 +50790,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn FindWindowExW(arg1: HWND, arg2: HWND, arg3: LPCWSTR, arg4: LPCWSTR) -> HWND;
+}
+unsafe extern "C" {
+    pub fn FrameRect(arg1: HDC, arg2: LPCRECT, arg3: HBRUSH) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     pub fn GetActiveWindow() -> HWND;
@@ -51232,6 +51338,15 @@ unsafe extern "C" {
     pub fn InflateRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn InsertMenuW(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InsertMenuItemW(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IntersectRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
     pub fn InvalidateRect(arg1: HWND, arg2: LPCRECT, arg3: BOOL) -> BOOL;
 }
 unsafe extern "C" {
@@ -51501,6 +51616,15 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn MsgWaitForMultipleObjects(
+        nCount: DWORD,
+        pHandles: *const HANDLE,
+        fWaitAll: BOOL,
+        dwMilliseconds: DWORD,
+        dwWakeMask: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
     pub fn NotifyWinEvent(arg1: DWORD, arg2: HWND, arg3: LONG, arg4: LONG);
 }
 unsafe extern "C" {
@@ -51616,6 +51740,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn ReleaseDC(arg1: HWND, arg2: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn RemoveMenu(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
 }
 unsafe extern "C" {
     pub fn ReplyMessage(arg1: LRESULT) -> BOOL;
@@ -52029,6 +52156,12 @@ unsafe extern "C" {
     pub fn ShowWindowAsync(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn SubtractRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SwitchDesktop(arg1: HDESK) -> BOOL;
+}
+unsafe extern "C" {
     pub fn SystemParametersInfoA(
         uiAction: UINT,
         uiParam: UINT,
@@ -52121,6 +52254,9 @@ unsafe extern "C" {
     pub fn TranslateMessage(arg1: *const MSG) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn UnionRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
     pub fn UnregisterClassA(arg1: LPCSTR, arg2: HINSTANCE) -> BOOL;
 }
 unsafe extern "C" {
@@ -52167,6 +52303,12 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn WindowFromPoint(arg1: POINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn wsprintfW(arg1: LPWSTR, arg2: LPCWSTR, ...) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn wvsprintfW(arg1: LPWSTR, arg2: LPCWSTR, arglist: va_list) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     pub fn LockSetForegroundWindow(arg1: UINT) -> BOOL;

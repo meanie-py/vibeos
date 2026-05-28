@@ -37,6 +37,8 @@ extern "system" {
     );
     /// `CON_SET_OUTPUT_CP` — code-page helper macro lowered to fn.
     pub fn CON_SET_OUTPUT_CP(Console: PCONSRV_CONSOLE, CodePage: UINT);
+    /// `GetConsoleInputBufferMode` — consrv/coninput.c.
+    pub fn GetConsoleInputBufferMode(Console: PCONSRV_CONSOLE) -> u32;
 }
 
 // DPRINT/DPRINT1 are debug macros — translate to no-ops here so call
@@ -702,8 +704,8 @@ pub unsafe fn GetSelectionBeginEnd(
     };
 
     if (*Begin).Y > (*End).Y || ((*Begin).Y == (*End).Y && (*Begin).X > (*End).X) {
-        (*End).X = core::intrinsics::atomic_xchg_seqcst(core::ptr::addr_of_mut!((*Begin).X), (*End).X);
-        (*End).Y = core::intrinsics::atomic_xchg_seqcst(core::ptr::addr_of_mut!((*Begin).Y), (*End).Y);
+        (*End).X = atomic_xchg_seqcst(core::ptr::addr_of_mut!((*Begin).X), (*End).X);
+        (*End).Y = atomic_xchg_seqcst(core::ptr::addr_of_mut!((*Begin).Y), (*End).Y);
     }
 }
 

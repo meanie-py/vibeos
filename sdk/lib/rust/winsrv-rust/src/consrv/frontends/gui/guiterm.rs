@@ -11,6 +11,10 @@ use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIs
 use super::super::input::{ConioProcessInputEvent, ConioProcessKey};
 use core::ffi::c_void;
 
+extern "system" {
+    /// `InitTTFontCache`/`RefreshTTFontCache` — concfg-side helpers.
+    fn InitTTFontCache();
+}
 extern "C" {
     fn GetScreenBufferSizeUnits( Buffer: PCONSOLE_SCREEN_BUFFER, GuiData: *mut GUI_CONSOLE_DATA, WidthUnit: *mut UINT, HeightUnit: *mut UINT, );
     fn MonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR;

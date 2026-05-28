@@ -4,9 +4,15 @@ use winsrv_sys::consts::*;
 use super::helpers::*;
 use super::guiterm::*;
 use super::fullscreen::*;
+use super::conwnd::*;
 
 extern "system" {
     fn _SEH2_GetExceptionCode() -> i32;
+    /// `GetType` — sibling C-side helper (conoutput.c).
+    fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
+    /// `InitTTFontCache`/`RefreshTTFontCache` — concfg-side helpers.
+    fn InitTTFontCache();
+    fn RefreshTTFontCache();
 }
 
 #[no_mangle]
