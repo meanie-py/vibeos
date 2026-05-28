@@ -609,6 +609,14 @@ unsafe fn FatBufferDirectory(
         RootDirectory = 0u8;
     }
 
+    // C source uses `LIST_ENTRY DirectoryBufferListHead = {&LH, &LH}` —
+    // a self-referential static initializer the Rust translator can't
+    // express. Without this, Flink/Blink stay NULL and the walker below
+    // dereferences NULL+0x10 on the first iteration (arm64 Bug #3).
+    if DirectoryBufferListHead.Flink.is_null() {
+        InitializeListHead(core::ptr::addr_of_mut!(DirectoryBufferListHead));
+    }
+
     Entry = DirectoryBufferListHead.Flink;
     loop {
         if Entry == core::ptr::addr_of_mut!(DirectoryBufferListHead) {
