@@ -27,7 +27,7 @@ extern "system" {
     fn CopyIcon(hIcon: HICON) -> HICON;
     fn SelectPalette(hdc: HDC, hpal: HPALETTE, bForceBkgd: BOOL) -> HPALETTE;
     fn RealizePalette(hdc: HDC) -> UINT;
-    fn InitFonts( GuiData: *mut GUI_CONSOLE_DATA, FaceName: *const u16, FontWeight: u32, FontFamily: u32, FontSize: u32, CodePage: u32, UseDefaultFallback: u8, ) -> u8;
+    // InitFonts comes from super::conwnd::* with correct sig.
     fn EnableMenuItem(hMenu: HMENU, uIDEnableItem: UINT, uEnable: UINT) -> BOOL;
     fn ConsoleAllocHeap(Flags: ULONG, Size: SIZE_T) -> PVOID;
     fn ConsoleFreeHeap(Ptr: PVOID);
@@ -256,7 +256,7 @@ pub unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
 
                     ShowWindowAsync(NewWindow, (*GuiData).GuiInfo.ShowWindow as i32);
                 } else {
-                    ShowWindowAsync(NewWindow, SW_HIDE);
+                    ShowWindowAsync(NewWindow, SW_HIDE as i32);
                 }
 
                 continue;
@@ -333,11 +333,11 @@ pub unsafe fn GuiInit(
     let mut Success: BOOL = 1;
     let mut DesktopPath: _UNICODE_STRING = core::mem::zeroed();
     let mut DesktopConsoleThreadInfo: DESKTOP_CONSOLE_THREAD = core::mem::zeroed();
-    let mut hWinSta: HWINSTA;
+    let mut hWinSta: HWINSTA = core::ptr::null_mut();
     let mut hDesk: HDESK;
 
     let mut Status: NTSTATUS;
-    let mut hInputThread: HANDLE;
+    let mut hInputThread: HANDLE = core::ptr::null_mut();
     let mut ClientId: _CLIENT_ID = core::mem::zeroed();
 
     if ConsInitialized == 0 {
@@ -355,7 +355,7 @@ pub unsafe fn GuiInit(
     }
 
     if (*ConsoleInitInfo).DesktopLength != 0 {
-        DesktopPath.MaximumLength = (*ConsoleInitInfo).DesktopLength;
+        DesktopPath.MaximumLength = (*ConsoleInitInfo).DesktopLength as u16;
         DesktopPath.Length = DesktopPath.MaximumLength - core::mem::size_of::<WCHAR>() as u16;
         DesktopPath.Buffer = (*ConsoleInitInfo).Desktop;
     } else {
@@ -417,7 +417,7 @@ pub unsafe fn GuiInit(
 
     Status = NtDuplicateObject(
         (-1isize) as HANDLE,
-        hDesk,
+        hDesk as HANDLE,
         (-1isize) as HANDLE,
         &mut (*GuiInitInfo).Desktop as *mut _ as PHANDLE,
         0,
@@ -442,7 +442,7 @@ pub unsafe fn GuiInit(
         0,
         0,
         0,
-        GuiConsoleInputThread as PVOID,
+        Some(core::mem::transmute(GuiConsoleInputThread as *const ())),
         GuiInitInfo as PVOID,
         &mut hInputThread,
         &mut ClientId,
@@ -496,7 +496,7 @@ pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTST
 
     GuiInitInfo = (*This).Context2 as PGUI_INIT_INFO;
 
-    GuiData = ConsoleAllocHeap(HEAP_ZERO_MEMORY, core::mem::size_of::<GUI_CONSOLE_DATA>()) as PGUI_CONSOLE_DATA;
+    GuiData = ConsoleAllocHeap(HEAP_ZERO_MEMORY, core::mem::size_of::<GUI_CONSOLE_DATA>() as SIZE_T) as PGUI_CONSOLE_DATA;
     if GuiData.is_null() {
         return STATUS_UNSUCCESSFUL;
     }
@@ -687,7 +687,7 @@ pub unsafe extern "system" fn GuiWriteStream(
     }
 
     (*Buff).CursorBlinkOn = 1;
-    SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER, CONGUI_UPDATE_TIME, core::ptr::null_mut());
+    SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER as UINT_PTR, CONGUI_UPDATE_TIME, None);
 }
 
 pub unsafe fn GuiRingBell(This: PFRONTEND) {
@@ -707,7 +707,7 @@ pub unsafe fn GuiSetCursorInfo(
         return 1u8;
     }
 
-    if (*GuiData).ActiveBuffer == Buff as *mut core::ffi::c_void {
+    if (*GuiData).ActiveBuffer == Buff {
         InvalidateCell(
             GuiData,
             (*Buff).CursorPosition.X,
@@ -784,7 +784,7 @@ pub unsafe fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCR
         return;
     }
 
-    if GetCurrentObject((*GuiData).hMemDC, OBJ_PAL) == (*ScreenBuffer).PaletteHandle {
+    if GetCurrentObject((*GuiData).hMemDC, OBJ_PAL) == (*ScreenBuffer).PaletteHandle as *mut core::ffi::c_void {
         SelectPalette((*GuiData).hMemDC, (*GuiData).hSysPalette, 0);
     }
 
@@ -890,15 +890,15 @@ pub unsafe extern "system" fn GuiGetLargestConsoleWindowSize(
         Width = MonitorInfo.rcWork.right - MonitorInfo.rcWork.left;
         Height = MonitorInfo.rcWork.bottom - MonitorInfo.rcWork.top;
     } else {
-        Width = GetSystemMetrics(SM_CXFULLSCREEN);
-        Height = GetSystemMetrics(SM_CYFULLSCREEN);
+        Width = GetSystemMetrics(SM_CXFULLSCREEN as i32);
+        Height = GetSystemMetrics(SM_CYFULLSCREEN as i32);
     }
 
     ActiveBuffer = (*GuiData).ActiveBuffer;
     GetScreenBufferSizeUnits(ActiveBuffer, GuiData, &mut WidthUnit, &mut HeightUnit);
 
-    Width -= 2 * (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXEDGE));
-    Height -= 2 * (GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYEDGE)) + GetSystemMetrics(SM_CYCAPTION);
+    Width -= 2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32));
+    Height -= 2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32);
 
     if Width < 0 {
         Width = 0;
@@ -975,7 +975,7 @@ pub unsafe fn GuiSetCodePage(
         (*GuiData).GuiInfo.FontFamily,
         (*GuiData).GuiInfo.FontSize,
         CodePage,
-        0u8,
+        0,
     ) == 0
     {
         return 0u8;
@@ -1056,7 +1056,7 @@ pub unsafe fn GuiSetMouseCursor(
         ghDefaultCursor
     };
 
-    PostMessageW((*GuiData).hWindow, WM_SETCURSOR, -1isize as usize, -1isize as isize);
+    PostMessageW((*GuiData).hWindow, WM_SETCURSOR, -1i32 as WPARAM, -1i32 as LPARAM);
 
     1u8
 }
@@ -1126,8 +1126,8 @@ pub unsafe extern "system" fn GuiLoadFrontEnd(
     if (*GuiInitInfo).IsWindowVisible != 0 {
         let mut UserObjectFlags: USEROBJECTFLAGS = core::mem::zeroed();
         if GetUserObjectInformationW(
-            (*GuiInitInfo).WinSta,
-            UOI_FLAGS,
+            (*GuiInitInfo).WinSta as HANDLE,
+            UOI_FLAGS as i32,
             &mut UserObjectFlags as *mut _ as PVOID,
             core::mem::size_of::<USEROBJECTFLAGS>() as DWORD,
             core::ptr::null_mut(),
@@ -1139,20 +1139,20 @@ pub unsafe extern "system" fn GuiLoadFrontEnd(
         }
     }
 
-    (*GuiInitInfo).TermInfo.ShowWindow = SW_SHOWNORMAL as UINT;
+    (*GuiInitInfo).TermInfo.ShowWindow = SW_SHOWNORMAL as WORD;
 
     if (*GuiInitInfo).IsWindowVisible != 0 {
         if ((*ConsoleStartInfo).dwStartupFlags & STARTF_TITLEISLINKNAME) == 0 {
             if (*ConsoleStartInfo).dwStartupFlags & STARTF_USESHOWWINDOW != 0 {
-                (*GuiInitInfo).TermInfo.ShowWindow = (*ConsoleStartInfo).wShowWindow as UINT;
+                (*GuiInitInfo).TermInfo.ShowWindow = (*ConsoleStartInfo).wShowWindow as WORD;
             }
             if (*ConsoleStartInfo).dwStartupFlags & STARTF_USEPOSITION != 0 {
-                (*ConsoleInfo).AutoPosition = 0u8;
+                (*ConsoleInfo).AutoPosition = 0;
                 (*ConsoleInfo).WindowPosition.x = (*ConsoleStartInfo).dwWindowOrigin.X as LONG;
                 (*ConsoleInfo).WindowPosition.y = (*ConsoleStartInfo).dwWindowOrigin.Y as LONG;
             }
             if (*ConsoleStartInfo).dwStartupFlags & STARTF_RUNFULLSCREEN != 0 {
-                (*ConsoleInfo).FullScreen = 1u8;
+                (*ConsoleInfo).FullScreen = 1;
             }
         }
     }
@@ -1411,7 +1411,7 @@ pub unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS
 //                 else
 //                 {
 //                     DPRINT("PM_CREATE_CONSOLE -- hidden window\n");
-//                     ShowWindowAsync(NewWindow, SW_HIDE);
+//                     ShowWindowAsync(NewWindow, SW_HIDE as i32);
 //                 }
 //
 //                 continue;
@@ -2164,8 +2164,8 @@ pub unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS
 //          * Retrieve the width and height of the client area for a full-screen
 //          * window on the primary display monitor.
 //          */
-//         Width  = GetSystemMetrics(SM_CXFULLSCREEN);
-//         Height = GetSystemMetrics(SM_CYFULLSCREEN);
+//         Width  = GetSystemMetrics(SM_CXFULLSCREEN as i32);
+//         Height = GetSystemMetrics(SM_CYFULLSCREEN as i32);
 //
 //         // RECT WorkArea;
 //         // SystemParametersInfoW(SPI_GETWORKAREA, 0, &WorkArea, 0);
@@ -2185,8 +2185,8 @@ pub unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS
 //         WidthUnit = HeightUnit = 1;
 // #endif
 //
-//     Width  -= (2 * (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXEDGE)));
-//     Height -= (2 * (GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYEDGE)) + GetSystemMetrics(SM_CYCAPTION));
+//     Width  -= (2 * (GetSystemMetrics(SM_CXFRAME as i32) + GetSystemMetrics(SM_CXEDGE as i32)));
+//     Height -= (2 * (GetSystemMetrics(SM_CYFRAME as i32) + GetSystemMetrics(SM_CYEDGE as i32)) + GetSystemMetrics(SM_CYCAPTION as i32));
 //
 //     if (Width  < 0) Width  = 0;
 //     if (Height < 0) Height = 0;
