@@ -323,6 +323,13 @@ pub unsafe fn dbgcon_hex32(v: u32) {
     dbgcon_hex8(v);
 }
 
+/// Print eight bytes (u64) as 16 hex chars to debugcon.
+#[inline(always)]
+pub unsafe fn dbgcon_hex64(v: u64) {
+    dbgcon_hex32((v >> 32) as u32);
+    dbgcon_hex32(v as u32);
+}
+
 
 
 // ===========================================================================
