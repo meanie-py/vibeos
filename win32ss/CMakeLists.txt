@@ -63,39 +63,39 @@ list(APPEND SOURCE
     gdi/dib/floodfill.c
     gdi/dib/stretchblt.c
     # gdi/eng/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/alphablend.rs) — cohabitation [Phase 2a wave 2]
-    # gdi/eng/bitblt.c      # replaced by Rust (sdk/lib/rust/win32k-rust/src/bitblt.rs) — cohabitation
-    # gdi/eng/engbrush.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/engbrush.rs) — cohabitation
+    # gdi/eng/bitblt.c     # replaced by Rust (cohabitation, bisect iter 8)
+    # gdi/eng/engbrush.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/engbrush.rs) — bisect ON
     # gdi/eng/engevent.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/engevent.rs) — cohabitation
     # gdi/eng/clip.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/clip.rs) — cohabitation
     # gdi/eng/debug.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/debug.rs) — cohabitation
-    # gdi/eng/device.c      # replaced by Rust (sdk/lib/rust/win32k-rust/src/device.rs) — cohabitation
+    gdi/eng/device.c
     # gdi/eng/driverobj.c   # replaced by Rust (sdk/lib/rust/win32k-rust/src/driverobj.rs) — cohabitation
     # gdi/eng/error.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/error.rs) — cohabitation
     # gdi/eng/float.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/float.rs) — cohabitation (EngSave still C, scanner gap)
-    # gdi/eng/gradient.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/gradient.rs) — cohabitation
-    # gdi/eng/lineto.c      # replaced by Rust (sdk/lib/rust/win32k-rust/src/lineto.rs) — cohabitation
-    # gdi/eng/ldevobj.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/ldevobj.rs) — cohabitation
-    # gdi/eng/mapping.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/mapping.rs) — cohabitation
+    # gdi/eng/gradient.c   # replaced by Rust (cohabitation, bisect iter 12)
+    gdi/eng/lineto.c
+    gdi/eng/ldevobj.c
+    # gdi/eng/mapping.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/math.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/math.rs) — cohabitation
     # gdi/eng/mdevobj.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/mdevobj.rs) — cohabitation
-    # gdi/eng/mem.c         # replaced by Rust (sdk/lib/rust/win32k-rust/src/mem.rs) — cohabitation
-    # gdi/eng/engmisc.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/engmisc.rs) — cohabitation
-    # gdi/eng/mouse.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/mouse.rs) — cohabitation
+    # gdi/eng/mem.c     # replaced by Rust (cohabitation, bisect iter 7)
+    # gdi/eng/engmisc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/engmisc.rs) — bisect ON
+    gdi/eng/mouse.c
     # gdi/eng/multidisp.c   # replaced by Rust (sdk/lib/rust/win32k-rust/src/multidisp.rs) — cohabitation
-    # gdi/eng/pandisp.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/pandisp.rs) — cohabitation
+    # gdi/eng/pandisp.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/paint.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/paint.rs) — cohabitation
-    # gdi/eng/pathobj.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/pathobj.rs) — cohabitation
-    # gdi/eng/pdevobj.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/pdevobj.rs) — cohabitation
+    # gdi/eng/pathobj.c     # replaced by Rust (cohabitation, bisect iter 7)
+    gdi/eng/pdevobj.c
     # gdi/eng/perfcnt.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/perfcnt.rs) — cohabitation
-    # gdi/eng/rlecomp.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/rlecomp.rs) — cohabitation
+    # gdi/eng/rlecomp.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/semaphor.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/semaphor.rs) — cohabitation (EngCreate/Acquire still C)
     # gdi/eng/sort.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/sort.rs) — cohabitation
     # gdi/eng/string.c      # replaced by Rust (sdk/lib/rust/win32k-rust/src/string.rs) — cohabitation
-    # gdi/eng/stretchblt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/stretchblt.rs) — cohabitation
-    # gdi/eng/surface.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/surface.rs) — cohabitation
-    # gdi/eng/transblt.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/transblt.rs) — cohabitation
-    # gdi/eng/engwindow.c   # replaced by Rust (sdk/lib/rust/win32k-rust/src/engwindow.rs) — cohabitation
-    # gdi/eng/xlateobj.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/xlateobj.rs) — cohabitation
+    gdi/eng/stretchblt.c
+    gdi/eng/surface.c
+    # gdi/eng/transblt.c     # replaced by Rust (cohabitation, bisect iter 7)
+    # gdi/eng/engwindow.c     # replaced by Rust (cohabitation, bisect iter 7)
+    gdi/eng/xlateobj.c
     user/ntuser/main.c
     user/ntuser/misc/file.c
     user/ntuser/misc/rtlstr.c
@@ -204,8 +204,8 @@ list(APPEND SOURCE
     gdi/ntgdi/utils.c
     gdi/ntgdi/wingl.c
     gdi/ntgdi/xformobj.c
-    # gdi/eng/stubs.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/stubs.rs) — cohabitation
-    # gdi/eng/umpdstubs.c   # replaced by Rust (sdk/lib/rust/win32k-rust/src/umpdstubs.rs) — cohabitation
+    gdi/eng/stubs.c
+    gdi/eng/umpdstubs.c
     pch.h)
 
 if(USE_DIBLIB)

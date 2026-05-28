@@ -27,13 +27,10 @@ const EVENT_ALL_ACCESS: ACCESS_MASK = 0x1F0003;
 const IO_NO_INCREMENT: KPRIORITY = 0;
 const EVENT_INCREMENT: KPRIORITY = 1;
 
-// ExEventObjectType is a kernel global, exported by ntoskrnl (ntoskrnl.spec line 85).
-// Cross-DLL data import — needs raw-dylib (`+verbatim` so descriptor is exactly
-// "ntoskrnl.exe", not "ntoskrnl.exe.dll"). Pattern from
-// `sdk/lib/rust/bootvid-rust/src/pc.rs:78`; see memory
-// `feedback_raw_dylib_cross_dll_data`. Without raw-dylib, lld would look for an
-// `__imp_` thunk that doesn't exist for cross-DLL data refs.
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+// ExEventObjectType is in libntoskrnl_implib.def as DATA — plain extern resolves
+// via the regular import library. raw-dylib here would add a duplicate
+// IMAGE_IMPORT_DESCRIPTOR which stresses freeldr's PE loader
+// (see memory feedback_hal_raw_dylib_dup_descriptors).
 extern "C" {
     static mut ExEventObjectType: *mut _OBJECT_TYPE;
 }

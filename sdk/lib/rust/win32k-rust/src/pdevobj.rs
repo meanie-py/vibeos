@@ -87,9 +87,12 @@ extern "C" {
     static gPanDispDrvCount: ULONG;
 }
 
-// MmSystemRangeStart is a cross-DLL data export from ntoskrnl
-// (ntoskrnl.spec:821). Needs raw-dylib with `+verbatim`.
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+// MmSystemRangeStart is a cross-DLL data export (ntoskrnl.spec:821).
+// `libntoskrnl_implib.def` contains it as DATA — so we can declare it as a
+// plain extern static and the regular import library resolves it. Avoiding
+// `raw-dylib` here is intentional: with cgu=256, multiple raw-dylib blocks
+// in win32k.sys produce duplicate IMAGE_IMPORT_DESCRIPTOR entries which
+// stress freeldr's PE loader (see memory `feedback_hal_raw_dylib_dup_descriptors`).
 extern "C" {
     static MmSystemRangeStart: *mut core::ffi::c_void;
 }

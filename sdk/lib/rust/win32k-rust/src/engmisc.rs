@@ -2,12 +2,14 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{NtQuerySystemInformation, RtlGetDefaultCodePage};
 use ntkrnl_sys::base::NT_SUCCESS;
 
-// SharedUserData is exported by ntoskrnl.exe as a data symbol (see ntoskrnl
-// objdump). Cross-DLL data import — needs raw-dylib (`+verbatim` so the lld
-// import descriptor name is exactly "ntoskrnl.exe").
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
-extern "C" {
-    static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
+// SharedUserData lives at a fixed kernel VA — NOT exported by ntoskrnl.exe.
+// Raw-dylib import is WRONG (freeldr's PE loader chokes on the fake
+// "ntoskrnl.exe imports SharedUserData" descriptor it generates and OOMs in
+// MmFindLocationForPageLookupTable). Cast the fixed VA directly instead.
+// Per-arch: amd64/arm64 = 0xFFFFF78000000000, i386 = 0xFFDF0000.
+#[inline(always)]
+unsafe fn shared_user_data() -> *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA {
+    ntkrnl_sys::mm::KI_USER_SHARED_DATA as usize as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA
 }
 
 // ---- file-scope helpers (preserve C macro semantics) ----
@@ -18,7 +20,10 @@ extern "C" {
 // win32ss/gdi/eng/surface.h:108-109.
 #[inline(always)]
 unsafe fn BitsPerFormat(format: u32) -> u32 {
-    crate::surface::gajBitsPerFormat[format as usize] as u32
+    // Use bindgen path so this works whether the surface mod is built into
+    // the umbrella or not — gajBitsPerFormat is a real exported global in
+    // either case (cohabitation cycles between .c and .rs owner).
+    *core::ptr::addr_of!(win32k_sys::win32k::gajBitsPerFormat).cast::<u8>().add(format as usize) as u32
 }
 
 // `WIDTH_BYTES_ALIGN32(cx, bpp)` macro from win32ss/gdi/gdi32/objects/bitmap.c:55:
@@ -560,7 +565,7 @@ unsafe fn read_tick_count() -> u64 {
     // High1Time == High2Time; SharedUserData mirrors it so we do
     // the equivalent read here. `TickCount` lives in an anonymous
     // union (`__bindgen_anon_2`) on the bindgen output.
-    let tc = core::ptr::addr_of!((*SharedUserData).__bindgen_anon_2.TickCount);
+    let tc = core::ptr::addr_of!((*shared_user_data()).__bindgen_anon_2.TickCount);
     loop {
         let high1 = core::ptr::read_volatile(core::ptr::addr_of!((*tc).High1Time));
         let low   = core::ptr::read_volatile(core::ptr::addr_of!((*tc).LowPart));
@@ -577,7 +582,7 @@ pub unsafe extern "stdcall" fn EngGetTickCount() -> u64 {
     let tick_qword = read_tick_count();
     let low: u32 = tick_qword as u32;
     let high: i32 = (tick_qword >> 32) as i32;
-    let Multiplier: u32 = (*SharedUserData).TickCountMultiplier;
+    let Multiplier: u32 = (*shared_user_data()).TickCountMultiplier;
 
     Int64ShrlMod32(UInt32x32To64(Multiplier, low), 24)
         + (Multiplier as u64).wrapping_mul((high as u32 as u64) << 8)
@@ -589,7 +594,7 @@ pub unsafe extern "C" fn EngGetTickCount() -> u64 {
     let tick_qword = read_tick_count();
     let low: u32 = tick_qword as u32;
     let high: i32 = (tick_qword >> 32) as i32;
-    let Multiplier: u32 = (*SharedUserData).TickCountMultiplier;
+    let Multiplier: u32 = (*shared_user_data()).TickCountMultiplier;
 
     Int64ShrlMod32(UInt32x32To64(Multiplier, low), 24)
         + (Multiplier as u64).wrapping_mul((high as u32 as u64) << 8)

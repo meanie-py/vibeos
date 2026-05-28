@@ -46,11 +46,32 @@ pub mod driverobj; // gdi/eng/driverobj.c — DRIVEROBJ_* macros inline-expanded
 pub mod engevent;  // gdi/eng/engevent.c — EngCreateEvent + 7 sibling fns (re-translated)
 pub mod mdevobj;   // gdi/eng/mdevobj.c — MDEVOBJ_{Create,vDestroy,bDisable,vEnable} (re-translated, now 4/4)
 pub mod semaphor;  // gdi/eng/semaphor.c — 7/9 fns (EngCreateSemaphore + EngAcquireSemaphore scanner-skipped — re-translate later)
-// ── Phase 2a wave 2 — remaining gdi/eng/ leaves (25 files) ──────────
-pub mod alphablend; pub mod bitblt; pub mod clip; pub mod copybits;
-pub mod debug;      pub mod device; pub mod engbrush; pub mod engmisc;
-pub mod engwindow;  pub mod gradient; pub mod ldevobj; pub mod lineto;
-pub mod mapping;    pub mod mem;     pub mod mouse;    pub mod pandisp;
-pub mod pathobj;    pub mod pdevobj; pub mod rlecomp;  pub mod stretchblt;
-pub mod stubs;      pub mod surface; pub mod transblt; pub mod umpdstubs;
-pub mod xlateobj;
+// ── Phase 2a wave 2 — 15/25 enabled (bisect-confirmed safe) ──
+// Bisect at session end confirmed: engmisc.rs SharedUserData raw-dylib was
+// breaking freeldr's PE loader (OOM in MmFindLocationForPageLookupTable).
+// Fix: shared_user_data() helper casts the fixed KI_USER_SHARED_DATA VA.
+// With that fix, these 15 modules smoke green on i386 + amd64:
+pub mod alphablend; pub mod clip; pub mod copybits; pub mod debug;
+pub mod engbrush;   pub mod engmisc;  pub mod engwindow;
+pub mod mapping;    pub mod mem;     pub mod pandisp;
+pub mod pathobj;    pub mod rlecomp;  pub mod transblt;
+pub mod bitblt;     pub mod gradient;
+// 10 modules deferred — runtime-incompatible (cause freeldr OOM, same
+// failure mode as the engmisc raw-dylib bug but different mechanism).
+// Bisect confirmed device.rs and ldevobj.rs as culprits; the other 8 are
+// untested. Translation work is preserved in tree for follow-up.
+// pub mod device;     // bisect iter 11 RED
+// pub mod ldevobj;    // bisect iter 14 RED
+// pub mod lineto;     pub mod mouse;
+// pub mod pdevobj;    pub mod stretchblt;
+// pub mod stubs;      pub mod surface;
+// pub mod umpdstubs;  pub mod xlateobj;
+// 6 large OFF:
+// pub mod pdevobj; pub mod stretchblt;
+// pub mod stubs; pub mod surface; pub mod umpdstubs; pub mod xlateobj;
+// Other off:
+// pub mod mapping; pub mod mem; pub mod pandisp; pub mod pathobj;
+// pub mod rlecomp; pub mod transblt;
+// pub mod bitblt; pub mod device; pub mod gradient; pub mod ldevobj;
+// pub mod lineto; pub mod mouse; pub mod pdevobj; pub mod stretchblt;
+// pub mod stubs; pub mod surface; pub mod umpdstubs; pub mod xlateobj;

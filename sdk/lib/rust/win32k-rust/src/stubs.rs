@@ -431,14 +431,23 @@ pub unsafe extern "stdcall" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
     let mut liLocalTime: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
 
     /* Query the system time */
-    // KeQuerySystemTime is FORCEINLINE on amd64/arm64 (reads SharedUserData,
-    // lives in ntkrnl_sys::inline::ke) and a real exported function on i386
-    // (ntkrnl_sys::ddk::KeQuerySystemTime). The inline wrapper is gated
-    // `#[cfg(not(target_arch = "x86"))]`, so we pick per-arch here.
+    // i386: real ntoskrnl export (KeQuerySystemTime). amd64/arm64: read from
+    // SharedUserData via the fixed VA cast (NOT the inline::ke wrapper,
+    // which uses `extern { static SharedUserData; }` that doesn't link in
+    // win32k.sys — SharedUserData is not in ntoskrnl.spec, it's the fixed
+    // KI_USER_SHARED_DATA macro page).
     #[cfg(target_arch = "x86")]
     ntkrnl_sys::ddk::KeQuerySystemTime(&mut liSystemTime);
     #[cfg(not(target_arch = "x86"))]
-    ntkrnl_sys::inline::ke::KeQuerySystemTime(&mut liSystemTime);
+    {
+        let sud = ntkrnl_sys::mm::KI_USER_SHARED_DATA as usize as *const ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
+        loop {
+            let high1 = core::ptr::read_volatile(core::ptr::addr_of!((*sud).SystemTime.High1Time));
+            let low   = core::ptr::read_volatile(core::ptr::addr_of!((*sud).SystemTime.LowPart));
+            let high2 = core::ptr::read_volatile(core::ptr::addr_of!((*sud).SystemTime.High2Time));
+            if high1 == high2 { liSystemTime.QuadPart = ((high1 as i64) << 32) | (low as u32 as i64); break; }
+        }
+    }
 
     /* Convert it to local time */
     ntkrnl_sys::ddk::ExSystemTimeToLocalTime(&mut liSystemTime, &mut liLocalTime);
@@ -457,10 +466,17 @@ pub unsafe extern "C" fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS) {
     let mut liSystemTime: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
     let mut liLocalTime: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
 
-    // KeQuerySystemTime is FORCEINLINE on amd64/arm64 (reads SharedUserData);
-    // a real exported function on i386. The `inline::ke::KeQuerySystemTime`
-    // wrapper picks the right per-arch implementation.
-    ntkrnl_sys::inline::ke::KeQuerySystemTime(&mut liSystemTime);
+    // amd64/arm64: read SharedUserData->SystemTime via fixed-VA cast.
+    // See the x86 cfg branch above for the rationale.
+    {
+        let sud = ntkrnl_sys::mm::KI_USER_SHARED_DATA as usize as *const ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
+        loop {
+            let high1 = core::ptr::read_volatile(core::ptr::addr_of!((*sud).SystemTime.High1Time));
+            let low   = core::ptr::read_volatile(core::ptr::addr_of!((*sud).SystemTime.LowPart));
+            let high2 = core::ptr::read_volatile(core::ptr::addr_of!((*sud).SystemTime.High2Time));
+            if high1 == high2 { liSystemTime.QuadPart = ((high1 as i64) << 32) | (low as u32 as i64); break; }
+        }
+    }
 
     ntkrnl_sys::ddk::ExSystemTimeToLocalTime(&mut liSystemTime, &mut liLocalTime);
 
