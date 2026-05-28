@@ -22,4 +22,9 @@ ntddi_ws03 = []
 winsrv_dll_only = []
 
 [dependencies]
+# ntdll-sys is re-exported from winsrv-sys::nt, so listing both is
+# redundant once Phase 5.0b lands. Keep ntdll-sys for now until the
+# init.c init-port (which references `nt::*` directly) is rewritten
+# through winsrv_sys.
 ntdll-sys = { path = "../ntdll-sys" }
+winsrv-sys = { path = "../winsrv-sys" }

@@ -20,6 +20,9 @@
 #[cfg(any(feature = "winsrv_dll_only", not(feature = "winsrv_dll_only")))]
 pub mod init;
 
+// concfg/ — console settings + font cache (leaf, no consrv/usersrv deps).
+pub mod concfg;
+
 // USER-MODE no_std staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust). Must NOT use
 // privileged instructions; abort via the Native API instead.

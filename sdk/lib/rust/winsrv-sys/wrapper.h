@@ -1,0 +1,54 @@
+/* winsrv-sys bindgen wrapper — winsrv.dll's USER + Console server FFI
+ * surface (consrv/usersrv/concfg static libs + winsrv.dll top-level).
+ *
+ * Phase 5 of the SMSS+CSRSS translation track. User-mode analog of
+ * ntkrnl-sys / win32k-sys / ntdll-sys, but ABOVE ntdll-sys: pulls
+ * wincon/winuser/wingdi/imm + the internal headers that ntdll-sys
+ * intentionally stops short of (CONSOLE_PROCESS_DATA, CONSRV_*,
+ * TERMINAL_VTBL, FRONTEND_VTBL, SHUTDOWN_SETTINGS, …). See
+ * docs/engineering/smss-csrss-translation-audit.md (Phase 5 plan) and
+ * memory `project_phase5_winsrv_audit`.
+ *
+ * Uses -fms-extensions (consrv anon nested struct/union, e.g.
+ * CONSOLE_SCREEN_BUFFER) but NEVER -fms-compatibility (would flip
+ * mingw's _mingw.h to the MSVC branch and break math.h, same gotcha
+ * as ntkrnl-sys/win32k-sys/ntdll-sys).
+ */
+#define __REACTOS__
+#define _USE_DUMMY_PSEH 1
+/* Skip compiler intrinsics — not available in libclang. */
+#define _INTRIN_H_
+#define _INTRIN_X86_H_
+#ifndef __int64
+#define __int64 long long
+#endif
+/* ARM64 intrinsic stubs. */
+#define __wfi() ((void)0)
+#define __yield() ((void)0)
+#undef FORCEINLINE
+#define FORCEINLINE
+
+/* vcruntime/vadefs.h compatibility (same as ntdll-sys). */
+typedef __builtin_va_list __gnuc_va_list;
+
+/* concfg/precomp.h pulls a small subset (no winsrv.h, NTOS_MODE_USER)
+   so it is includable BEFORE the winsrv master without duplication
+   risk thanks to #include guards. We pull it explicitly so the
+   bindgen sees TT_FONT_ENTRY, CONSOLE_STATE_INFO, etc. */
+#include "concfg/precomp.h"
+#include "concfg/concfg.h"
+
+/* winsrv master header (windef/winbase/wingdi/winreg/winuser + imm/
+   imm32_undoc + undocuser + NDK cm/ex/ob/ps/rtl + ntuser + csr/csrsrv +
+   SHUTDOWN_SETTINGS). */
+#include "winsrv.h"
+
+/* consrv internal master (winsrv.h + strsafe + winnls/wincon/
+   wincon_undoc + mmfuncs + win/conmsg + heap.h + the consrv-private
+   conio/console/settings/term/console/coninput/conoutput/handle/
+   lineinput headers + ConsoleClientShutdown decl). */
+#include "consrv/consrv.h"
+
+/* usersrv internal master (winsrv.h + win/base + win/winmsg +
+   FindTopLevelWnd + UserInitHardErrorsCache decls). */
+#include "usersrv/usersrv.h"

@@ -63,6 +63,17 @@ NTDLL_BINDGEN_FILES = {
     "i386": NTDLL_SYS_DIR / "bindgen_i386.rs",
 }
 
+# winsrv (Phase 5 of the SMSS→CSRSS spine — win32ss/user/winsrv/). Built
+# atop ntdll-sys: winsrv-sys re-exports `ntdll_sys::nt` and adds the
+# wincon/winuser/wingdi/imm + consrv/usersrv/concfg internal surface.
+WINSRV_DIR = REACTOS_ROOT / "win32ss" / "user" / "winsrv"
+WINSRV_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "winsrv-sys" / "src"
+WINSRV_BINDGEN_FILES = {
+    "arm64": WINSRV_SYS_DIR / "bindgen_arm64.rs",
+    "amd64": WINSRV_SYS_DIR / "bindgen_amd64.rs",
+    "i386": WINSRV_SYS_DIR / "bindgen_i386.rs",
+}
+
 HAND_WRITTEN_MODULES = [
     "base.rs", "ke.rs", "mm.rs", "ex.rs", "ps.rs", "ob.rs",
     "rtl.rs", "interlocked.rs",
@@ -100,6 +111,7 @@ class Target:
     cmake_source_files: list = field(default_factory=list)  # generic.cmake etc. to edit
     arches: tuple = ("i386", "amd64", "arm64")  # supported arches
     win32k_bindgen_files: dict = field(default_factory=dict)  # arch → win32k-sys .rs (win32k only)
+    winsrv_bindgen_files: dict = field(default_factory=dict)  # arch → winsrv-sys .rs (winsrv only)
     # FFI substrate crate the translated Rust imports from. Default is
     # the kernel crate with per-module paths (ntkrnl_sys::ddk/base/…).
     # A user-mode target (smss-csrss) sets sys_crate="ntdll_sys" +
@@ -263,6 +275,37 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # winsrv.dll — USER + Console server (consrv + usersrv + concfg
+    # aggregated into winsrv.dll, loaded by csrss). Phase 5 of the
+    # SMSS→CSRSS spine. CSR server DLL, NOT a standalone exe — entry
+    # is DllMain (not _main), and the *DllInitialization callbacks
+    # come from winsrv.spec.
+    #
+    # FFI substrate is winsrv-sys (a superset of ntdll-sys via
+    # `pub use ntdll_sys::nt;`). NT/CSR/SM/BASE surface scanned as
+    # "ddk" via NTDLL_BINDGEN_FILES and collapsed to winsrv_sys::nt
+    # in postprocess; consrv/usersrv/concfg-specific surface scanned
+    # as "winsrv" via WINSRV_BINDGEN_FILES and rendered as
+    # winsrv_sys::winsrv (mirrors win32k_sys::win32k).
+    "winsrv": Target(
+        name="winsrv",
+        source_dir=WINSRV_DIR,
+        output_crate=RUST_DIR / "winsrv-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=WINSRV_DIR / "winsrv.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        # None ⇒ assembler namespaces by C parent dir
+        # (winsrv-rust/src/{init,concfg,consrv,usersrv}/…).
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        winsrv_bindgen_files=WINSRV_BINDGEN_FILES,
+        sys_crate="winsrv_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_winsrv.md",
+    ),
 }
 
 
@@ -284,6 +327,11 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["smss-csrss"]
     if "/drivers/input/arm64input" in posix:
         return TARGETS["arm64input"]
+    # winsrv (Phase 5) lives under /win32ss/user/winsrv — keep this
+    # branch BEFORE the generic /win32ss/ → win32k fallback so the
+    # winsrv-specific substrate + addendum get picked up.
+    if "/win32ss/user/winsrv" in posix:
+        return TARGETS["winsrv"]
     if "/win32ss/" in posix:
         return TARGETS["win32k"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:

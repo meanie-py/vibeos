@@ -269,6 +269,26 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
             if s.name not in catalog.functions:
                 catalog.functions[s.name] = s
 
+    # For the winsrv target, also scan winsrv-sys bindgen → module "winsrv".
+    # winsrv calls both ntdll-sys (NT/CSR/SM/BASE — scanned above as "ddk")
+    # AND its own internal surface (CONSOLE_PROCESS_DATA, TERMINAL_VTBL,
+    # FRONTEND_VTBL, SHUTDOWN_SETTINGS, CONSOLE_*, COORD, INPUT_RECORD,
+    # HWND/HDC/LOGFONTW/MSG/WNDPROC, …). winsrv-internal types/constants
+    # are authoritative for winsrv code; functions add-if-absent so the
+    # NT surface stays the linkable surface and winsrv adds Con*/Term*/
+    # Concfg* helpers. Mirrors the win32k branch.
+    winsrv_files = getattr(target, "winsrv_bindgen_files", {}) or {}
+    winsrv_bindgen_path = winsrv_files.get(arch)
+    if winsrv_bindgen_path and winsrv_bindgen_path.exists():
+        types, functions, constants = _scan_bindgen(winsrv_bindgen_path, "winsrv")
+        for s in types:
+            catalog.types[s.name] = s
+        for s in constants:
+            catalog.constants[s.name] = s
+        for s in functions:
+            if s.name not in catalog.functions:
+                catalog.functions[s.name] = s
+
     # Also scan bindgen_common.rs
     common_path = NTKRNL_SYS_DIR / "bindgen_common.rs"
     if common_path.exists():
