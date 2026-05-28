@@ -81,7 +81,7 @@ list(APPEND SOURCE
     sysvol.c
     thread.c
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
-    timezone.c
+    # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
     trace.c
     # unicode.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
@@ -220,6 +220,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/acl.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sd.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sid.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/timezone.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/Cargo.toml

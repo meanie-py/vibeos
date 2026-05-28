@@ -5,7 +5,7 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{acl, conv, dos8dot3, misc, nls, priv_, sd as sd_, sid, ustr};
+use crate::core_rs::{acl, conv, dos8dot3, misc, nls, priv_, sd as sd_, sid, timezone as tz, ustr};
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
 
@@ -4372,4 +4372,303 @@ pub unsafe extern "system" fn RtlRemovePrivileges(
         );
     }
     status
+}
+
+// =====================================================================
+// Wave TZ — straight translation of `sdk/lib/rtl/timezone.c` (2 fns,
+// pure registry plumbing: 1× RtlQueryRegistryValues + 7× RtlWriteRegistryValue).
+// No byte-diff: there's no algorithmic content to diff — these are
+// thin wrappers over already-Rust registry infra. Smoke is the net.
+// =====================================================================
+
+/// Layout-match for NDK `TIME_FIELDS` (`CSHORT × 8 = 16 bytes`).
+#[repr(C)]
+struct TIME_FIELDS_TZ {
+    Year: i16,
+    Month: i16,
+    Day: i16,
+    Hour: i16,
+    Minute: i16,
+    Second: i16,
+    Milliseconds: i16,
+    Weekday: i16,
+}
+
+/// Layout-match for NDK `RTL_TIME_ZONE_INFORMATION` (172 bytes).
+#[repr(C)]
+pub struct RTL_TIME_ZONE_INFORMATION {
+    Bias: i32,
+    StandardName: [u16; 32],
+    StandardDate: TIME_FIELDS_TZ,
+    StandardBias: i32,
+    DaylightName: [u16; 32],
+    DaylightDate: TIME_FIELDS_TZ,
+    DaylightBias: i32,
+}
+
+/// Layout-match for XDK `RTL_QUERY_REGISTRY_TABLE`.
+#[repr(C)]
+struct RTL_QUERY_REGISTRY_TABLE_TZ {
+    QueryRoutine: *mut u8,
+    Flags: u32,
+    Name: *const u16,
+    EntryContext: *mut u8,
+    DefaultType: u32,
+    DefaultData: *mut u8,
+    DefaultLength: u32,
+}
+
+extern "system" {
+    fn RtlQueryRegistryValues(
+        RelativeTo: u32,
+        Path: *const u16,
+        QueryTable: *mut RTL_QUERY_REGISTRY_TABLE_TZ,
+        Context: *mut u8,
+        Environment: *mut u8,
+    ) -> i32;
+    fn RtlWriteRegistryValue(
+        RelativeTo: u32,
+        Path: *const u16,
+        ValueName: *const u16,
+        ValueType: u32,
+        ValueData: *mut u8,
+        ValueLength: u32,
+    ) -> i32;
+}
+
+/// `const fn` widening from ASCII bytes (with trailing NUL) to a
+/// null-terminated `[u16; N]`. Replaces the C `L"…"` literal.
+const fn wsz<const N: usize>(s: &[u8; N]) -> [u16; N] {
+    let mut out = [0u16; N];
+    let mut i = 0;
+    while i < N {
+        out[i] = s[i] as u16;
+        i += 1;
+    }
+    out
+}
+static TZ_PATH:       [u16; 20] = wsz(b"TimeZoneInformation\0");
+static TZ_BIAS:       [u16; 5]  = wsz(b"Bias\0");
+static TZ_STD_NAME:   [u16; 13] = wsz(b"StandardName\0");
+static TZ_STD_BIAS:   [u16; 13] = wsz(b"StandardBias\0");
+static TZ_STD_START:  [u16; 14] = wsz(b"StandardStart\0");
+static TZ_DAY_NAME:   [u16; 13] = wsz(b"DaylightName\0");
+static TZ_DAY_BIAS:   [u16; 13] = wsz(b"DaylightBias\0");
+static TZ_DAY_START:  [u16; 14] = wsz(b"DaylightStart\0");
+
+/// `RtlQueryTimeZoneInformation(PRTL_TIME_ZONE_INFORMATION)`.
+///
+/// Builds an 8-entry RTL_QUERY_REGISTRY_TABLE (entry 7 = zero
+/// sentinel) over `Control\TimeZoneInformation`, then defers to
+/// `RtlQueryRegistryValues`. Faithful to the C — including the
+/// `UNICODE_STRING` wrapper around the inline `StandardName` /
+/// `DaylightName` `WCHAR[32]` buffers needed by the
+/// `RTL_QUERY_REGISTRY_DIRECT` REG_SZ direct-write path.
+#[no_mangle]
+pub unsafe extern "system" fn RtlQueryTimeZoneInformation(
+    tzi: *mut RTL_TIME_ZONE_INFORMATION,
+) -> i32 {
+    // UNICODE_STRING wrappers around the inline name buffers.
+    // Layout-match for NDK UNICODE_STRING (Length: u16, Max: u16, Buffer: *mut u16).
+    #[repr(C)]
+    struct US {
+        Length: u16,
+        MaximumLength: u16,
+        Buffer: *mut u16,
+    }
+    let mut standard = US {
+        Length: 0,
+        MaximumLength: tz::TZ_NAME_CHARS * 2,
+        Buffer: (*tzi).StandardName.as_mut_ptr(),
+    };
+    let mut daylight = US {
+        Length: 0,
+        MaximumLength: tz::TZ_NAME_CHARS * 2,
+        Buffer: (*tzi).DaylightName.as_mut_ptr(),
+    };
+
+    let zero = RTL_QUERY_REGISTRY_TABLE_TZ {
+        QueryRoutine: core::ptr::null_mut(),
+        Flags: 0,
+        Name: core::ptr::null(),
+        EntryContext: core::ptr::null_mut(),
+        DefaultType: 0,
+        DefaultData: core::ptr::null_mut(),
+        DefaultLength: 0,
+    };
+    let mut table: [RTL_QUERY_REGISTRY_TABLE_TZ; 8] = [
+        // [0] Bias (REG_DWORD → LONG)
+        RTL_QUERY_REGISTRY_TABLE_TZ {
+            QueryRoutine: core::ptr::null_mut(),
+            Flags: tz::RTL_QUERY_REGISTRY_DIRECT,
+            Name: TZ_BIAS.as_ptr(),
+            EntryContext: core::ptr::addr_of_mut!((*tzi).Bias) as *mut u8,
+            DefaultType: 0,
+            DefaultData: core::ptr::null_mut(),
+            DefaultLength: 0,
+        },
+        // [1] StandardName (REG_SZ → UNICODE_STRING)
+        RTL_QUERY_REGISTRY_TABLE_TZ {
+            QueryRoutine: core::ptr::null_mut(),
+            Flags: tz::RTL_QUERY_REGISTRY_DIRECT,
+            Name: TZ_STD_NAME.as_ptr(),
+            EntryContext: core::ptr::addr_of_mut!(standard) as *mut u8,
+            DefaultType: 0,
+            DefaultData: core::ptr::null_mut(),
+            DefaultLength: 0,
+        },
+        // [2] StandardBias
+        RTL_QUERY_REGISTRY_TABLE_TZ {
+            QueryRoutine: core::ptr::null_mut(),
+            Flags: tz::RTL_QUERY_REGISTRY_DIRECT,
+            Name: TZ_STD_BIAS.as_ptr(),
+            EntryContext: core::ptr::addr_of_mut!((*tzi).StandardBias) as *mut u8,
+            DefaultType: 0,
+            DefaultData: core::ptr::null_mut(),
+            DefaultLength: 0,
+        },
+        // [3] StandardStart (REG_BINARY → TIME_FIELDS / SYSTEMTIME-shaped)
+        RTL_QUERY_REGISTRY_TABLE_TZ {
+            QueryRoutine: core::ptr::null_mut(),
+            Flags: tz::RTL_QUERY_REGISTRY_DIRECT,
+            Name: TZ_STD_START.as_ptr(),
+            EntryContext: core::ptr::addr_of_mut!((*tzi).StandardDate) as *mut u8,
+            DefaultType: 0,
+            DefaultData: core::ptr::null_mut(),
+            DefaultLength: 0,
+        },
+        // [4] DaylightName
+        RTL_QUERY_REGISTRY_TABLE_TZ {
+            QueryRoutine: core::ptr::null_mut(),
+            Flags: tz::RTL_QUERY_REGISTRY_DIRECT,
+            Name: TZ_DAY_NAME.as_ptr(),
+            EntryContext: core::ptr::addr_of_mut!(daylight) as *mut u8,
+            DefaultType: 0,
+            DefaultData: core::ptr::null_mut(),
+            DefaultLength: 0,
+        },
+        // [5] DaylightBias
+        RTL_QUERY_REGISTRY_TABLE_TZ {
+            QueryRoutine: core::ptr::null_mut(),
+            Flags: tz::RTL_QUERY_REGISTRY_DIRECT,
+            Name: TZ_DAY_BIAS.as_ptr(),
+            EntryContext: core::ptr::addr_of_mut!((*tzi).DaylightBias) as *mut u8,
+            DefaultType: 0,
+            DefaultData: core::ptr::null_mut(),
+            DefaultLength: 0,
+        },
+        // [6] DaylightStart
+        RTL_QUERY_REGISTRY_TABLE_TZ {
+            QueryRoutine: core::ptr::null_mut(),
+            Flags: tz::RTL_QUERY_REGISTRY_DIRECT,
+            Name: TZ_DAY_START.as_ptr(),
+            EntryContext: core::ptr::addr_of_mut!((*tzi).DaylightDate) as *mut u8,
+            DefaultType: 0,
+            DefaultData: core::ptr::null_mut(),
+            DefaultLength: 0,
+        },
+        // [7] zero sentinel
+        zero,
+    ];
+
+    RtlQueryRegistryValues(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        table.as_mut_ptr(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    )
+}
+
+/// `RtlSetTimeZoneInformation(PRTL_TIME_ZONE_INFORMATION)`.
+///
+/// Seven sequential `RtlWriteRegistryValue` calls; bails on first
+/// failure. Faithful to the C — `wcslen` on the inline name buffers
+/// (caller's responsibility to null-terminate within `WCHAR[32]`).
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetTimeZoneInformation(
+    tzi: *mut RTL_TIME_ZONE_INFORMATION,
+) -> i32 {
+    let status = RtlWriteRegistryValue(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        TZ_BIAS.as_ptr(),
+        tz::REG_DWORD,
+        core::ptr::addr_of_mut!((*tzi).Bias) as *mut u8,
+        core::mem::size_of::<i32>() as u32,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    let std_len = (wcslen((*tzi).StandardName.as_ptr()) + 1) * 2;
+    let status = RtlWriteRegistryValue(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        TZ_STD_NAME.as_ptr(),
+        tz::REG_SZ,
+        (*tzi).StandardName.as_mut_ptr() as *mut u8,
+        std_len as u32,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    let status = RtlWriteRegistryValue(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        TZ_STD_BIAS.as_ptr(),
+        tz::REG_DWORD,
+        core::ptr::addr_of_mut!((*tzi).StandardBias) as *mut u8,
+        core::mem::size_of::<i32>() as u32,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    let status = RtlWriteRegistryValue(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        TZ_STD_START.as_ptr(),
+        tz::REG_BINARY,
+        core::ptr::addr_of_mut!((*tzi).StandardDate) as *mut u8,
+        tz::SIZEOF_SYSTEMTIME,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    let day_len = (wcslen((*tzi).DaylightName.as_ptr()) + 1) * 2;
+    let status = RtlWriteRegistryValue(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        TZ_DAY_NAME.as_ptr(),
+        tz::REG_SZ,
+        (*tzi).DaylightName.as_mut_ptr() as *mut u8,
+        day_len as u32,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    let status = RtlWriteRegistryValue(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        TZ_DAY_BIAS.as_ptr(),
+        tz::REG_DWORD,
+        core::ptr::addr_of_mut!((*tzi).DaylightBias) as *mut u8,
+        core::mem::size_of::<i32>() as u32,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    RtlWriteRegistryValue(
+        tz::RTL_REGISTRY_CONTROL,
+        TZ_PATH.as_ptr(),
+        TZ_DAY_START.as_ptr(),
+        tz::REG_BINARY,
+        core::ptr::addr_of_mut!((*tzi).DaylightDate) as *mut u8,
+        tz::SIZEOF_SYSTEMTIME,
+    )
 }

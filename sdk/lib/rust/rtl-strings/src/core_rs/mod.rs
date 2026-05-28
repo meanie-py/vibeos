@@ -11,5 +11,6 @@ pub mod nls;
 pub mod priv_;
 pub mod sd;
 pub mod sid;
+pub mod timezone;
 pub mod ustr;
 pub mod utf8;
