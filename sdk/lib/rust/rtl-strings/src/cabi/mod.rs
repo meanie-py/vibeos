@@ -5,7 +5,9 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
-use crate::core_rs::{acl, conv, dos8dot3, misc, nls, priv_, sd as sd_, sid, timezone as tz, ustr};
+use crate::core_rs::{
+    acl, conv, dos8dot3, env, misc, nls, priv_, sd as sd_, sid, timezone as tz, ustr,
+};
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
 
@@ -4671,4 +4673,574 @@ pub unsafe extern "system" fn RtlSetTimeZoneInformation(
         core::ptr::addr_of_mut!((*tzi).DaylightDate) as *mut u8,
         tz::SIZEOF_SYSTEMTIME,
     )
+}
+
+// =====================================================================
+// Wave ENV-1 — pure string-walk slice of `sdk/lib/rtl/env.c`:
+//   - RtlQueryEnvironmentVariable_U (find var in env block)
+//   - RtlExpandEnvironmentStrings_U (%VAR% substitution)
+// Byte-diff coverage in rtl-difftest. The 5 syscall-bearing fns
+// (Create/Destroy/SetCurrent/SetEnvironmentVariable/SetEnvironmentStrings)
+// land in Wave ENV-2 as translate-only.
+// =====================================================================
+
+/// Compute length-in-chars (excluding trailing NUL) of a
+/// double-NUL-terminated environment block. Faithful to the C
+/// `do { env_end += wcslen+1 } while(*env_end); env_end++` loop.
+/// Returns total chars including the terminating double-NUL.
+unsafe fn env_block_chars(env: *const u16) -> usize {
+    if env.is_null() || *env == 0 {
+        return 1; // just the terminator
+    }
+    let mut end = 0usize;
+    loop {
+        let mut k = 0;
+        while *env.add(end + k) != 0 {
+            k += 1;
+        }
+        end += k + 1;
+        if *env.add(end) == 0 {
+            return end + 1;
+        }
+    }
+}
+
+/// PEB helpers used by the env shims. `RtlpGetPebEnvironment` /
+/// `RtlpSetPebEnvironment` are C helpers in `{dll/ntdll, ntoskrnl}
+/// /rtl/libsupp.c` that know the real PEB / RTL_USER_PROCESS_PARAMETERS
+/// layout per arch — we go through them instead of mirroring those
+/// structs in Rust. `RtlAcquirePebLock` / `RtlReleasePebLock` are
+/// no-ops in kernel mode.
+extern "system" {
+    fn RtlpGetPebEnvironment() -> *mut u16;
+    fn RtlpSetPebEnvironment(new_env: *mut u16);
+    fn RtlAcquirePebLock();
+    fn RtlReleasePebLock();
+}
+
+/// Syscalls used by the env-VM plumbing fns. NTAPI on all 3 arches.
+extern "system" {
+    fn NtQueryVirtualMemory(
+        process: *mut u8,
+        base: *mut u8,
+        info_class: u32,
+        info: *mut MemoryBasicInformation,
+        info_size: usize,
+        return_size: *mut usize,
+    ) -> i32;
+    fn NtAllocateVirtualMemory(
+        process: *mut u8,
+        base: *mut *mut u8,
+        zero_bits: usize,
+        region_size: *mut usize,
+        allocation_type: u32,
+        protect: u32,
+    ) -> i32;
+    fn NtFreeVirtualMemory(
+        process: *mut u8,
+        base: *mut *mut u8,
+        region_size: *mut usize,
+        free_type: u32,
+    ) -> i32;
+}
+
+/// Layout-match for `MEMORY_BASIC_INFORMATION` (psdk/winnt.h). Only
+/// the `RegionSize` field is read; the rest is sized correctly for
+/// the syscall's `info_size` byte count.
+#[repr(C)]
+struct MemoryBasicInformation {
+    BaseAddress: *mut u8,
+    AllocationBase: *mut u8,
+    AllocationProtect: u32,
+    _pad1: [u8; 4], // alignment on x86_64
+    RegionSize: usize,
+    State: u32,
+    Protect: u32,
+    Type: u32,
+    _pad2: [u8; 4], // tail padding
+}
+
+const PAGE_SIZE: usize = 0x1000;
+const MEM_RESERVE: u32 = 0x2000;
+const MEM_COMMIT: u32 = 0x1000;
+const MEM_RELEASE: u32 = 0x8000;
+const PAGE_READWRITE: u32 = 0x04;
+const MEMORY_BASIC_INFORMATION_CLASS: u32 = 0;
+
+/// `NtCurrentProcess()` — pseudo-handle (-1) for the calling process.
+#[inline]
+fn nt_current_process() -> *mut u8 {
+    -1isize as usize as *mut u8
+}
+
+/// `RtlQueryEnvironmentVariable_U(Environment, Name, Value) -> NTSTATUS`.
+///
+/// If `Environment` is NULL, uses the PEB's process parameters
+/// (faithful to C). The core string-walk is in `core_rs::env`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
+    environment: *mut u16,
+    name: *const UNICODE_STRING,
+    value: *mut UNICODE_STRING,
+) -> i32 {
+    let mut env_ptr = environment;
+    let mut sys_env_used = false;
+
+    if env_ptr.is_null() {
+        RtlAcquirePebLock();
+        env_ptr = RtlpGetPebEnvironment();
+        sys_env_used = true;
+    }
+
+    if env_ptr.is_null() {
+        if sys_env_used {
+            RtlReleasePebLock();
+        }
+        return env::STATUS_VARIABLE_NOT_FOUND;
+    }
+
+    // Mirror C: Value->Length = 0 (cleared before search)
+    (*value).Length = 0;
+
+    let env_chars = env_block_chars(env_ptr);
+    let env_slice = core::slice::from_raw_parts(env_ptr, env_chars);
+    let name_chars = ((*name).Length / 2) as usize;
+    let name_slice = core::slice::from_raw_parts((*name).Buffer, name_chars);
+
+    let result = env::find_env_var(env_slice, name_slice);
+
+    let status = match result {
+        env::EnvQuery::NotFound => env::STATUS_VARIABLE_NOT_FOUND,
+        env::EnvQuery::Found { value_start, value_len } => {
+            // Faithful: Value->Length = (USHORT)(wcs - val) * sizeof(WCHAR)
+            (*value).Length = (value_len * 2) as u16;
+            if (*value).Length <= (*value).MaximumLength {
+                // memcpy(Buffer, val, min(Length + sizeof(WCHAR), MaximumLength))
+                let bytes_to_copy = core::cmp::min(
+                    ((value_len * 2) + 2) as usize,
+                    (*value).MaximumLength as usize,
+                );
+                core::ptr::copy_nonoverlapping(
+                    env_ptr.add(value_start) as *const u8,
+                    (*value).Buffer as *mut u8,
+                    bytes_to_copy,
+                );
+                env::STATUS_SUCCESS
+            } else {
+                env::STATUS_BUFFER_TOO_SMALL
+            }
+        }
+    };
+
+    if sys_env_used {
+        RtlReleasePebLock();
+    }
+    status
+}
+
+/// `RtlExpandEnvironmentStrings_U(Env, Source, Destination, Length*)`.
+///
+/// Walks `Source` substituting `%VAR%` against `Env`. The core
+/// algorithm lives in `core_rs::env::expand_env_strings`. We wrap
+/// the UNICODE_STRING ABI here. Faithful to C: `Environment` may be
+/// non-NULL; the C does *not* fall back to PEB inside this fn
+/// (callers pass `Peb->ProcessParameters->Environment` explicitly).
+#[no_mangle]
+pub unsafe extern "system" fn RtlExpandEnvironmentStrings_U(
+    environment: *mut u16,
+    source: *const UNICODE_STRING,
+    destination: *mut UNICODE_STRING,
+    length: *mut u32,
+) -> i32 {
+    let src_chars = ((*source).Length / 2) as usize;
+    let src_slice = core::slice::from_raw_parts((*source).Buffer, src_chars);
+    let dst_chars = ((*destination).MaximumLength / 2) as usize;
+    let dst_slice = core::slice::from_raw_parts_mut((*destination).Buffer, dst_chars);
+
+    let env_slice: &[u16] = if environment.is_null() {
+        &[]
+    } else {
+        let n = env_block_chars(environment);
+        core::slice::from_raw_parts(environment, n)
+    };
+
+    let result = env::expand_env_strings(env_slice, src_slice, dst_slice);
+
+    (*destination).Length = (result.dest_chars_written * 2) as u16;
+    if !length.is_null() {
+        *length = result.total_chars * 2;
+    }
+    result.status
+}
+
+// =====================================================================
+// Wave ENV-2 — syscall-plumbing translation of `sdk/lib/rtl/env.c`
+// (5 fns: stub + Create/Destroy/SetCurrent/SetEnvironmentVariable).
+// No byte-diff (PEB + Nt*VirtualMemory dependencies); smoke is the
+// regression net.
+// =====================================================================
+
+/// `RtlSetEnvironmentStrings(PWCHAR, ULONG) -> NTSTATUS`. Stub; the
+/// genuine C is `UNIMPLEMENTED; return STATUS_NOT_IMPLEMENTED;`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetEnvironmentStrings(
+    _new_environment: *mut u16,
+    _new_environment_size: u32,
+) -> i32 {
+    STATUS_NOT_IMPLEMENTED
+}
+
+/// `RtlCreateEnvironment(BOOLEAN Inherit, PWSTR* OutEnvironment) -> NTSTATUS`.
+/// Faithful port of the C. If `Inherit`, copies the calling process'
+/// current env block (under PEB lock); else allocates an empty page.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateEnvironment(
+    inherit: u8,
+    out_environment: *mut *mut u16,
+) -> i32 {
+    let mut mem_info = MemoryBasicInformation {
+        BaseAddress: core::ptr::null_mut(),
+        AllocationBase: core::ptr::null_mut(),
+        AllocationProtect: 0,
+        _pad1: [0; 4],
+        RegionSize: 0,
+        State: 0,
+        Protect: 0,
+        Type: 0,
+        _pad2: [0; 4],
+    };
+    let mut new_env: *mut u8 = core::ptr::null_mut();
+    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut region_size: usize = PAGE_SIZE;
+
+    if inherit != 0 {
+        RtlAcquirePebLock();
+        let current_env = RtlpGetPebEnvironment();
+        if !current_env.is_null() {
+            status = NtQueryVirtualMemory(
+                nt_current_process(),
+                current_env as *mut u8,
+                MEMORY_BASIC_INFORMATION_CLASS,
+                &mut mem_info,
+                core::mem::size_of::<MemoryBasicInformation>(),
+                core::ptr::null_mut(),
+            );
+            if !nt_success(status) {
+                RtlReleasePebLock();
+                *out_environment = core::ptr::null_mut();
+                return status;
+            }
+
+            region_size = mem_info.RegionSize;
+            status = NtAllocateVirtualMemory(
+                nt_current_process(),
+                &mut new_env,
+                0,
+                &mut region_size,
+                MEM_RESERVE | MEM_COMMIT,
+                PAGE_READWRITE,
+            );
+            if !nt_success(status) {
+                RtlReleasePebLock();
+                *out_environment = core::ptr::null_mut();
+                return status;
+            }
+
+            core::ptr::copy_nonoverlapping(
+                current_env as *const u8,
+                new_env,
+                mem_info.RegionSize,
+            );
+        }
+        RtlReleasePebLock();
+    }
+
+    if new_env.is_null() {
+        status = NtAllocateVirtualMemory(
+            nt_current_process(),
+            &mut new_env,
+            0,
+            &mut region_size,
+            MEM_RESERVE | MEM_COMMIT,
+            PAGE_READWRITE,
+        );
+        if nt_success(status) {
+            core::ptr::write_bytes(new_env, 0, region_size);
+        }
+    }
+
+    *out_environment = new_env as *mut u16;
+    status
+}
+
+/// `VOID RtlDestroyEnvironment(PWSTR Environment)`. Frees the env
+/// block via `NtFreeVirtualMemory`. Faithful to C: passes a
+/// stack-local `&Environment` and `Size=0` (full release).
+#[no_mangle]
+pub unsafe extern "system" fn RtlDestroyEnvironment(environment: *mut u16) {
+    let mut env_ptr = environment as *mut u8;
+    let mut size: usize = 0;
+    NtFreeVirtualMemory(
+        nt_current_process(),
+        &mut env_ptr,
+        &mut size,
+        MEM_RELEASE,
+    );
+}
+
+/// `VOID RtlSetCurrentEnvironment(NewEnvironment, PWSTR* OldEnvironment)`.
+/// Swaps the PEB env pointer under PEB lock; reports the old pointer
+/// in `*OldEnvironment` if non-NULL.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetCurrentEnvironment(
+    new_environment: *mut u16,
+    old_environment: *mut *mut u16,
+) {
+    RtlAcquirePebLock();
+    let env_ptr = RtlpGetPebEnvironment();
+    RtlpSetPebEnvironment(new_environment);
+    if !old_environment.is_null() {
+        *old_environment = env_ptr;
+    }
+    RtlReleasePebLock();
+}
+
+/// `RtlSetEnvironmentVariable(PWSTR* Environment, PUNICODE_STRING Name,
+///                            PUNICODE_STRING Value) -> NTSTATUS`.
+///
+/// Faithful translation of the C. The walk is sorted-insert:
+/// inserts a new entry in case-insensitive sort order, or replaces
+/// the value of an existing entry. If `Value` is NULL, removes the
+/// variable. May reallocate the env block via Nt*VirtualMemory.
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetEnvironmentVariable(
+    environment: *mut *mut u16,
+    name: *const UNICODE_STRING,
+    value: *const UNICODE_STRING,
+) -> i32 {
+    let mut mbi = MemoryBasicInformation {
+        BaseAddress: core::ptr::null_mut(),
+        AllocationBase: core::ptr::null_mut(),
+        AllocationProtect: 0,
+        _pad1: [0; 4],
+        RegionSize: 0,
+        State: 0,
+        Protect: 0,
+        Type: 0,
+        _pad2: [0; 4],
+    };
+    let mut new_env: *mut u16 = core::ptr::null_mut();
+    let mut env_len: usize = 0;
+    let mut env_end: *mut u16 = core::ptr::null_mut();
+    let mut val_ptr: *mut u16 = core::ptr::null_mut();
+    let mut tail: *mut u16 = core::ptr::null_mut();
+    let mut hole: *mut u16 = core::ptr::null_mut();
+    let mut head: *mut u16 = core::ptr::null_mut();
+    let mut new_size: usize;
+    let mut f: i32 = 1; // 1 = insert (default); 0 = exact match
+    let mut status: i32 = 0;
+
+    // Variable name must not be empty.
+    if (*name).Length < 2 {
+        return env::STATUS_INVALID_PARAMETER;
+    }
+
+    // Variable names can't contain '=' except as a first character.
+    let name_chars = ((*name).Length / 2) as usize;
+    let name_buf = (*name).Buffer;
+    let mut idx = 1usize;
+    while idx < name_chars {
+        if *name_buf.add(idx) == b'=' as u16 {
+            return env::STATUS_INVALID_PARAMETER;
+        }
+        idx += 1;
+    }
+
+    let env: *mut u16 = if !environment.is_null() {
+        *environment
+    } else {
+        RtlAcquirePebLock();
+        RtlpGetPebEnvironment()
+    };
+
+    if !env.is_null() {
+        // get environment length: walk by `wcslen+1` until null entry.
+        let mut wcs = env;
+        env_end = env;
+        loop {
+            env_end = env_end.add(wcslen(env_end) + 1);
+            if *env_end == 0 {
+                break;
+            }
+        }
+        env_end = env_end.add(1);
+        env_len = ((env_end as usize) - (env as usize)) / 2;
+
+        // find insertion point: walk entries comparing names.
+        'outer: loop {
+            if *wcs == 0 {
+                break;
+            }
+            let var_buf = wcs;
+            wcs = wcs.add(1);
+            // search for '='
+            let mut p = wcs;
+            while *p != 0 && *p != b'=' as u16 {
+                p = p.add(1);
+            }
+            wcs = p;
+            if *wcs == 0 {
+                wcs = var_buf.add(wcslen(var_buf));
+            }
+            if *wcs != 0 {
+                let var_length = ((wcs as usize) - (var_buf as usize)) as u16;
+                let var = UNICODE_STRING {
+                    Length: var_length,
+                    MaximumLength: var_length,
+                    Buffer: var_buf,
+                };
+                val_ptr = wcs.add(1);
+                wcs = val_ptr;
+                wcs = wcs.add(wcslen(wcs));
+                f = RtlCompareUnicodeString(&var, name, 1);
+                if f >= 0 {
+                    if f != 0 {
+                        // Insert before found.
+                        hole = var_buf;
+                        tail = var_buf;
+                    } else {
+                        // Exact match.
+                        head = var_buf;
+                        wcs = wcs.add(1);
+                        tail = wcs;
+                        hole = val_ptr;
+                    }
+                    break 'outer;
+                }
+            }
+            wcs = wcs.add(1);
+        }
+        if hole.is_null() {
+            // Append to environment.
+            hole = wcs;
+            tail = wcs;
+        }
+    }
+
+    if !value.is_null() && !(*value).Buffer.is_null() {
+        let hole_len = ((tail as usize) - (hole as usize)) / 2;
+        new_size = (*value).Length as usize + 2;
+        if f != 0 {
+            new_size += (*name).Length as usize + 2;
+        }
+        let new_len = new_size / 2;
+        if hole_len < new_len {
+            // enlarge environment size
+            new_size += (env_len - hole_len) * 2;
+            // ROUND_UP to PAGE_SIZE
+            new_size = (new_size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+            mbi.RegionSize = 0;
+
+            if !env.is_null() {
+                status = NtQueryVirtualMemory(
+                    nt_current_process(),
+                    env as *mut u8,
+                    MEMORY_BASIC_INFORMATION_CLASS,
+                    &mut mbi,
+                    core::mem::size_of::<MemoryBasicInformation>(),
+                    core::ptr::null_mut(),
+                );
+                if !nt_success(status) {
+                    if environment.is_null() {
+                        RtlReleasePebLock();
+                    }
+                    return status;
+                }
+            }
+
+            if new_size > mbi.RegionSize {
+                // Reallocate.
+                let mut tmp_base: *mut u8 = core::ptr::null_mut();
+                status = NtAllocateVirtualMemory(
+                    nt_current_process(),
+                    &mut tmp_base,
+                    0,
+                    &mut new_size,
+                    MEM_RESERVE | MEM_COMMIT,
+                    PAGE_READWRITE,
+                );
+                new_env = tmp_base as *mut u16;
+                if !nt_success(status) {
+                    if environment.is_null() {
+                        RtlReleasePebLock();
+                    }
+                    return status;
+                }
+
+                if !env.is_null() {
+                    let pre_len = ((hole as usize) - (env as usize)) / 2;
+                    core::ptr::copy_nonoverlapping(env, new_env, pre_len);
+                    hole = new_env.add(pre_len);
+                } else {
+                    tail = new_env;
+                    hole = new_env;
+                    *hole = 0;
+                    env_end = hole.add(1);
+                }
+            }
+        }
+
+        // Move the tail to make room.
+        let tail_chars = ((env_end as usize) - (tail as usize)) / 2;
+        core::ptr::copy(tail, hole.add(new_len), tail_chars);
+
+        if !new_env.is_null() {
+            // We reallocated; free the old env.
+            if !environment.is_null() {
+                *environment = new_env;
+            } else {
+                RtlpSetPebEnvironment(new_env);
+            }
+            if !env.is_null() {
+                let mut env_p = env as *mut u8;
+                let mut sz: usize = 0;
+                NtFreeVirtualMemory(
+                    nt_current_process(),
+                    &mut env_p,
+                    &mut sz,
+                    MEM_RELEASE,
+                );
+            }
+        }
+
+        // Copy in the name (if inserting) and the value.
+        if f != 0 {
+            core::ptr::copy_nonoverlapping(
+                (*name).Buffer,
+                hole,
+                ((*name).Length / 2) as usize,
+            );
+            hole = hole.add(((*name).Length / 2) as usize);
+            *hole = b'=' as u16;
+            hole = hole.add(1);
+        }
+        core::ptr::copy_nonoverlapping(
+            (*value).Buffer,
+            hole,
+            ((*value).Length / 2) as usize,
+        );
+        hole = hole.add(((*value).Length / 2) as usize);
+        *hole = 0;
+    } else {
+        // remove the environment variable
+        if f == 0 && !head.is_null() && !tail.is_null() {
+            let tail_chars = ((env_end as usize) - (tail as usize)) / 2;
+            core::ptr::copy(tail, head, tail_chars);
+        }
+    }
+
+    if environment.is_null() {
+        RtlReleasePebLock();
+    }
+    status
 }

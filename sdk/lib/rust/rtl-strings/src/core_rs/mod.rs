@@ -5,6 +5,7 @@
 pub mod acl;
 pub mod conv;
 pub mod dos8dot3;
+pub mod env;
 pub mod misc;
 pub mod nls;
 #[path = "priv_mod.rs"]

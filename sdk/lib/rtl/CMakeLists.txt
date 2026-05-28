@@ -43,7 +43,7 @@ list(APPEND SOURCE
     debug.c
     # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # encode.c — replaced by Rust implementation (sdk/lib/rust/encode/)
-    env.c
+    # env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
     error.c
     exception.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
@@ -214,6 +214,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/conv.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/dos8dot3.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/env.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/priv_mod.rs

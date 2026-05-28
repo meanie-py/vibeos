@@ -787,4 +787,141 @@ fn main() {
     for obj in dbuild2.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+
+    // Wave ENV-1: genuine sdk/lib/rtl/env.c — own ref TU.
+    // env.c has 7 fns; only the 2 PURE string-walk fns are byte-diff
+    // tested (RtlQueryEnvironmentVariable_U + RtlExpandEnvironmentStrings_U).
+    // The other 5 hit PEB / Nt*VirtualMemory; we stub those so the TU
+    // *links* but the tests never drive the syscall path (we always
+    // pass a non-NULL Environment). RtlCompareUnicodeString /
+    // RtlEqualUnicodeString stay UN-renamed → resolve at link to the
+    // diff-proven rtl-strings cabi exports.
+    let env_c = repo.join("sdk/lib/rtl/env.c");
+    let env_body = format!(
+        "#include <rtl.h>\n#include <string.h>\n\
+         #define PAGE_SIZE 0x1000\n\
+         #define MEM_RESERVE 0x2000\n#define MEM_COMMIT 0x1000\n\
+         #define MEM_RELEASE 0x8000\n#define PAGE_READWRITE 0x04\n\
+         #define ROUND_UP(n,a) ((((ULONG_PTR)(n))+(a)-1) & ~((ULONG_PTR)(a)-1))\n\
+         #define min(a,b) ((a)<(b)?(a):(b))\n\
+         #define STATUS_VARIABLE_NOT_FOUND      ((NTSTATUS)0xC0000100L)\n\
+         #define STATUS_NOT_IMPLEMENTED         ((NTSTATUS)0xC0000002L)\n\
+         #define STATUS_BUFFER_TOO_SMALL        ((NTSTATUS)0xC0000023L)\n\
+         #define STATUS_INVALID_PARAMETER       ((NTSTATUS)0xC000000DL)\n\
+         #define UNIMPLEMENTED ((void)0)\n\
+         #define MemoryBasicInformation 0\n\
+         typedef PVOID HANDLE;\n\
+         typedef SIZE_T* PSIZE_T;\n\
+         /* u16-friendly wcschr (host wchar_t is 32-bit). */\n\
+         static __inline WCHAR* refenv_wcschr(const WCHAR* s, WCHAR c){{\n\
+            while(*s){{ if(*s==c) return (WCHAR*)s; s++; }} return 0; }}\n\
+         #define wcschr refenv_wcschr\n\
+         typedef struct _MEMORY_BASIC_INFORMATION {{\n\
+            PVOID BaseAddress; PVOID AllocationBase; ULONG AllocationProtect;\n\
+            SIZE_T RegionSize; ULONG State; ULONG Protect; ULONG Type;\n\
+         }} MEMORY_BASIC_INFORMATION,*PMEMORY_BASIC_INFORMATION;\n\
+         /* Tiny PEB / ProcessParameters layout — just enough for the C\n\
+            to compile. The 5 syscall-bearing fns are never exercised. */\n\
+         typedef struct _ENV_RPP {{ PWSTR Environment; }} ENV_RPP,*PENV_RPP;\n\
+         typedef struct _ENV_PEB {{ PENV_RPP ProcessParameters; }} ENV_PEB,*PENV_PEB;\n\
+         static ENV_RPP g_rpp = {{ 0 }};\n\
+         static ENV_PEB g_peb = {{ &g_rpp }};\n\
+         #define PEB ENV_PEB\n#define PPEB PENV_PEB\n\
+         #define NtCurrentProcess() ((HANDLE)0)\n\
+         #define NtCurrentPeb() (&g_peb)\n\
+         PPEB RtlGetCurrentPeb(void){{ return &g_peb; }}\n\
+         VOID NTAPI RtlAcquirePebLock(void){{ }}\n\
+         VOID NTAPI RtlReleasePebLock(void){{ }}\n\
+         /* PEB-env helper called by the rtl-strings cabi shim — host\n\
+            never exercises the NULL-Env path, just needs the link. */\n\
+         PWSTR NTAPI RtlpGetPebEnvironment(void){{ return 0; }}\n\
+         VOID NTAPI RtlpSetPebEnvironment(PWSTR e){{ (void)e; }}\n\
+         /* Heap-backed Nt*VirtualMemory stubs: enough for the env\n\
+            Set-side fuzzer to exercise reallocation paths. Each\n\
+            allocation gets a vm_header_t prefix that NtQuery reads\n\
+            to report the region size faithfully. The cabi-Rust shim\n\
+            and the C ref TU both link to these — they're the unified\n\
+            VM oracle. PAGE_SIZE-rounded so ROUND_UP semantics match\n\
+            the genuine RtlSetEnvironmentVariable path. */\n\
+         #include <stdlib.h>\n\
+         #include <stdio.h>\n\
+         typedef struct {{ SIZE_T region_size; }} vm_header_t;\n\
+         static SIZE_T vm_round_up(SIZE_T s) {{\n\
+            return (s + 0xFFF) & ~((SIZE_T)0xFFF);\n\
+         }}\n\
+         NTSTATUS NTAPI NtQueryVirtualMemory(HANDLE p, PVOID base, int cls,\n\
+                                              PVOID info, SIZE_T ilen, PSIZE_T ret) {{\n\
+            (void)p; (void)cls; (void)ilen; if (ret) *ret = 0;\n\
+            vm_header_t* h = ((vm_header_t*)base) - 1;\n\
+            MEMORY_BASIC_INFORMATION* mbi = (MEMORY_BASIC_INFORMATION*)info;\n\
+            mbi->BaseAddress = base; mbi->AllocationBase = base;\n\
+            mbi->AllocationProtect = 4; mbi->RegionSize = h->region_size;\n\
+            mbi->State = 0x1000; mbi->Protect = 4; mbi->Type = 0x20000;\n\
+            return 0;\n\
+         }}\n\
+         NTSTATUS NTAPI NtAllocateVirtualMemory(HANDLE p, PVOID* base, ULONG_PTR z,\n\
+                                                  PSIZE_T sz, ULONG type, ULONG prot) {{\n\
+            (void)p; (void)z; (void)type; (void)prot;\n\
+            SIZE_T req = vm_round_up(*sz); if (req == 0) req = 0x1000;\n\
+            void* raw = NULL;\n\
+            if (posix_memalign(&raw, 0x1000, req + sizeof(vm_header_t)) != 0) {{\n\
+               return (NTSTATUS)0xC0000017L;\n\
+            }}\n\
+            vm_header_t* h = (vm_header_t*)raw; h->region_size = req;\n\
+            *base = (PVOID)(h + 1); *sz = req;\n\
+            memset(*base, 0, req);\n\
+            return 0;\n\
+         }}\n\
+         NTSTATUS NTAPI NtFreeVirtualMemory(HANDLE p, PVOID* base, PSIZE_T sz, ULONG t) {{\n\
+            (void)p; (void)t; if (!base || !*base) return (NTSTATUS)0xC0000005L;\n\
+            vm_header_t* h = ((vm_header_t*)(*base)) - 1;\n\
+            free(h); *base = NULL; if (sz) *sz = 0; return 0;\n\
+         }}\n\
+         /* Workaround for an x86_64 SysV ABI quirk: Rust `extern\n\
+            \"system\" fn -> u8` doesn't zero-extend EAX, and gcc at\n\
+            the BOOLEAN call sites emits `test %eax,%eax` against the\n\
+            full register — garbage upper bits then falsely signal\n\
+            TRUE and the walk mis-matches the first var. We wrap the\n\
+            call so the `(unsigned int)result & 1u` cast forces a\n\
+            `movzbl` between the cabi call and the env.c test. The\n\
+            real kernel build (Microsoft x64 / i386 stdcall) isn't\n\
+            affected; this is a host-difftest-only worry. */\n\
+         static __inline BOOLEAN refenv_zext_eq(PCUNICODE_STRING a, PCUNICODE_STRING b, BOOLEAN ci) {{\n\
+            extern BOOLEAN NTAPI RtlEqualUnicodeString(PCUNICODE_STRING,PCUNICODE_STRING,BOOLEAN);\n\
+            return (BOOLEAN)((unsigned int)RtlEqualUnicodeString(a,b,ci) & 1u);\n\
+         }}\n\
+         static __inline LONG refenv_zext_cmp(PCUNICODE_STRING a, PCUNICODE_STRING b, BOOLEAN ci) {{\n\
+            extern LONG NTAPI RtlCompareUnicodeString(PCUNICODE_STRING,PCUNICODE_STRING,BOOLEAN);\n\
+            return RtlCompareUnicodeString(a,b,ci); /* LONG return is fine */\n\
+         }}\n\
+         #define RtlEqualUnicodeString refenv_zext_eq\n\
+         #define RtlCompareUnicodeString refenv_zext_cmp\n\
+         /* Rename all 7 env.c exports to ref_*. The 2 we test live\n\
+            entirely in their string-walk path — no PEB / Nt* touched. */\n\
+         #define RtlSetEnvironmentStrings ref_RtlSetEnvironmentStrings\n\
+         #define RtlCreateEnvironment ref_RtlCreateEnvironment\n\
+         #define RtlDestroyEnvironment ref_RtlDestroyEnvironment\n\
+         #define RtlExpandEnvironmentStrings_U ref_RtlExpandEnvironmentStrings_U\n\
+         #define RtlSetCurrentEnvironment ref_RtlSetCurrentEnvironment\n\
+         #define RtlSetEnvironmentVariable ref_RtlSetEnvironmentVariable\n\
+         #define RtlQueryEnvironmentVariable_U ref_RtlQueryEnvironmentVariable_U\n\
+         {}\
+         #include \"{}\"\n",
+        scrape_protos(&fs::read_to_string(&env_c).unwrap()),
+        env_c.display()
+    );
+    let env_src = out.join("ref_env.c");
+    fs::write(&env_src, env_body).unwrap();
+    let mut dbuild3 = cc::Build::new();
+    dbuild3
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&env_src);
+    println!("cargo:rerun-if-changed={}", env_c.display());
+    for obj in dbuild3.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
 }

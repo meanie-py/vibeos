@@ -68,6 +68,29 @@ RtlGetCurrentPeb(VOID)
 }
 
 /*
+ * Helper for the rtl-strings Rust env shims. Lets the Rust side
+ * fetch `Peb->ProcessParameters->Environment` without having to
+ * mirror the per-arch PEB / RTL_USER_PROCESS_PARAMETERS layouts.
+ */
+PWSTR
+NTAPI
+RtlpGetPebEnvironment(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    if (!Peb || !Peb->ProcessParameters) return NULL;
+    return Peb->ProcessParameters->Environment;
+}
+
+VOID
+NTAPI
+RtlpSetPebEnvironment(IN PWSTR NewEnvironment)
+{
+    PPEB Peb = NtCurrentPeb();
+    if (Peb && Peb->ProcessParameters)
+        Peb->ProcessParameters->Environment = NewEnvironment;
+}
+
+/*
  * @implemented
  */
 VOID NTAPI

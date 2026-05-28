@@ -155,6 +155,30 @@ RtlGetCurrentPeb(VOID)
    return ((PEPROCESS)(KeGetCurrentThread()->ApcState.Process))->Peb;
 }
 
+/*
+ * Helper for the rtl-strings Rust env shims. Lets the Rust side
+ * fetch `Peb->ProcessParameters->Environment` without having to
+ * mirror the per-arch PEB / RTL_USER_PROCESS_PARAMETERS layouts.
+ * Returns NULL if no PEB / no parameters / no environment.
+ */
+PWSTR
+NTAPI
+RtlpGetPebEnvironment(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    if (!Peb || !Peb->ProcessParameters) return NULL;
+    return Peb->ProcessParameters->Environment;
+}
+
+VOID
+NTAPI
+RtlpSetPebEnvironment(IN PWSTR NewEnvironment)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    if (Peb && Peb->ProcessParameters)
+        Peb->ProcessParameters->Environment = NewEnvironment;
+}
+
 NTSTATUS
 NTAPI
 RtlDeleteHeapLock(IN OUT PHEAP_LOCK Lock)
