@@ -120,7 +120,7 @@ unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
     let mut pcsrt: PCSR_THREAD = core::ptr::null_mut();
     let GuiInitInfo: PGUI_INIT_INFO = Param as PGUI_INIT_INFO;
     let mut DesktopConsoleThreadInfo: DESKTOP_CONSOLE_THREAD = core::mem::zeroed();
-    let InputThreadId: ULONG_PTR = HandleToUlong((*NtCurrentTeb()).ClientId.UniqueThread);
+    let InputThreadId: ULONG_PTR = HandleToUlong((*winsrv_sys::nt::NtCurrentTeb()).ClientId.UniqueThread);
     let mut hThread: HANDLE = core::ptr::null_mut();
 
     let mut WindowCount: LONG = 0;

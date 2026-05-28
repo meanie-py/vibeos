@@ -73,6 +73,11 @@ extern "system" {
     pub fn wcslen(s: *const u16) -> usize;
     pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
     pub fn wcsncpy(dest: *mut u16, src: *const u16, n: usize) -> *mut u16;
+    pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
+    pub fn wcschr(s: *const u16, c: u16) -> *mut u16;
+    pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
+    pub fn wcscmp(s1: *const u16, s2: *const u16) -> i32;
+    pub fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32;
     pub fn _stricmp(s1: *const i8, s2: *const i8) -> i32;
     pub fn strchr(s: *const i8, c: i32) -> *mut i8;

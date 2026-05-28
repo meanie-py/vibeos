@@ -27799,6 +27799,9 @@ unsafe extern "C" {
     pub fn PtVisible(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn RealizePalette(arg1: HDC) -> UINT;
+}
+unsafe extern "C" {
     pub fn SelectClipPath(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "C" {
@@ -51089,6 +51092,15 @@ unsafe extern "C" {
     pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
+    pub fn MonitorFromPoint(arg1: POINT, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "C" {
+    pub fn MonitorFromRect(arg1: LPCRECT, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "C" {
+    pub fn MonitorFromWindow(arg1: HWND, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "C" {
     pub fn MoveWindow(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -51619,6 +51631,14 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn ShowWindowAsync(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SystemParametersInfoW(
+        uiAction: UINT,
+        uiParam: UINT,
+        pvParam: PVOID,
+        fWinIni: UINT,
+    ) -> BOOL;
 }
 unsafe extern "C" {
     pub fn ToUnicodeEx(

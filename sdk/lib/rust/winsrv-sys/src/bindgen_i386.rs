@@ -26796,6 +26796,9 @@ unsafe extern "stdcall" {
     pub fn PtVisible(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn RealizePalette(arg1: HDC) -> UINT;
+}
+unsafe extern "stdcall" {
     pub fn SelectClipPath(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -46930,6 +46933,15 @@ unsafe extern "stdcall" {
     pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
 unsafe extern "stdcall" {
+    pub fn MonitorFromPoint(arg1: POINT, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "stdcall" {
+    pub fn MonitorFromRect(arg1: LPCRECT, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "stdcall" {
+    pub fn MonitorFromWindow(arg1: HWND, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "stdcall" {
     pub fn MoveWindow(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -47448,6 +47460,14 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn ShowWindowAsync(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SystemParametersInfoW(
+        uiAction: UINT,
+        uiParam: UINT,
+        pvParam: PVOID,
+        fWinIni: UINT,
+    ) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn ToUnicodeEx(

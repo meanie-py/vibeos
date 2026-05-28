@@ -38,6 +38,15 @@ pub const IDS_TERMINAL_TITLE: u32 = 400;
 
 pub const CW_USEDEFAULT: i32 = 0x80000000_u32 as i32;
 
+/// `IDC_ARROW` — `MAKEINTRESOURCE(32512)` standard arrow cursor.
+pub const IDC_ARROW: *const u16 = 32512_usize as *const u16;
+
+/// `HWND_DESKTOP` — desktop window pseudo-handle (`(HWND)0`).
+pub const HWND_DESKTOP: HWND = core::ptr::null_mut();
+
+/// `HWND_MESSAGE` — message-only window pseudo-handle (`(HWND)(-3)`).
+pub const HWND_MESSAGE: HWND = (-3_isize) as usize as HWND;
+
 // ---- winuser.h LPARAM unpacker macros ----
 
 #[inline]
@@ -183,28 +192,17 @@ pub unsafe fn _InterlockedDecrement(p: *mut i32) -> i32 {
     InterlockedDecrement(p)
 }
 
-/// `InterlockedExchangePointer(p, v)` — interlocked pointer exchange.
-#[inline]
-pub unsafe fn InterlockedExchangePointer(
-    p: *mut *mut core::ffi::c_void,
-    v: *mut core::ffi::c_void,
-) -> *mut core::ffi::c_void {
-    let ap = core::sync::atomic::AtomicPtr::from_ptr(p);
-    ap.swap(v, core::sync::atomic::Ordering::SeqCst)
-}
+// NOTE: NT_SUCCESS and InterlockedExchangePointer are in
+// winsrv_sys::consts — do not redeclare here (would E0659-conflict
+// with the `use winsrv_sys::consts::*;` glob already in every gui/*.rs).
 
 /// `atomic_xchg_seqcst(p, v)` — generic atomic swap (used by a few
-/// rustconv outputs).
+/// rustconv outputs). Lives here because `core::intrinsics::atomic_xchg_seqcst`
+/// is an unstable nightly intrinsic — translations should use this stable
+/// `core::sync::atomic` shim instead.
 #[inline]
 pub unsafe fn atomic_xchg_seqcst<T>(p: *mut T, v: T) -> T {
     core::ptr::replace(p, v)
-}
-
-// ---- NT_SUCCESS macro ----
-
-#[inline]
-pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
-    s >= 0
 }
 
 /// `STATUS_INVALID_VIEW_SIZE` — section-API error not in the
