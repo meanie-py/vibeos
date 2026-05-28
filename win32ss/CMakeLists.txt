@@ -85,7 +85,7 @@ list(APPEND SOURCE
     # gdi/eng/pandisp.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/paint.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/paint.rs) — cohabitation
     # gdi/eng/pathobj.c     # replaced by Rust (cohabitation, bisect iter 7)
-    gdi/eng/pdevobj.c
+    # gdi/eng/pdevobj.c  # replaced by Rust (pdevobj.rs) — cohabitation [wave 2 sweep, per-arch raw-dylib]
     # gdi/eng/perfcnt.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/perfcnt.rs) — cohabitation
     # gdi/eng/rlecomp.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/semaphor.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/semaphor.rs) — cohabitation (EngCreate/Acquire still C)
@@ -204,8 +204,8 @@ list(APPEND SOURCE
     gdi/ntgdi/utils.c
     gdi/ntgdi/wingl.c
     gdi/ntgdi/xformobj.c
-    gdi/eng/stubs.c
-    # gdi/eng/umpdstubs.c  # replaced by Rust (umpdstubs.rs) — cohabitation [wave 2 sweep]
+    # gdi/eng/stubs.c       # replaced by Rust (stubs.rs) — cohabitation [wave 2 sweep, per-arch SharedUserData]
+    # gdi/eng/umpdstubs.c   # replaced by Rust (umpdstubs.rs) — cohabitation [wave 2 sweep]
     pch.h)
 
 if(USE_DIBLIB)

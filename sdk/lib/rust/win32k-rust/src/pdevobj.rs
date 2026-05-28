@@ -73,12 +73,12 @@ unsafe fn RtlEqualUnicodeString(
     )
 }
 
-// LDEVOBJ_bBuildDevmodeList lives in ldevobj.rs (sibling). It's NTAPI
-// (extern "system"). Use a local extern decl; lld resolves via first-match.
-// Likewise gPanDispDrvFn / gPanDispDrvCount live in pandisp.rs as
-// `#[no_mangle] pub static`; declare here so we can use them as gpDxFuncs-style
-// pointers.
-extern "system" {
+// LDEVOBJ_bBuildDevmodeList lives in ldevobj.c (or ldevobj.rs when enabled).
+// C decl in ldevobj.h is plain `BOOL LDEVOBJ_bBuildDevmodeList(...)` with no
+// calling convention attribute — that's cdecl (i386: `_LDEVOBJ_bBuildDevmodeList`,
+// NOT `@4`-decorated). `extern "C"` matches.
+// gPanDispDrvFn / gPanDispDrvCount live in pandisp.rs as `#[no_mangle] pub static`.
+extern "C" {
     fn LDEVOBJ_bBuildDevmodeList(pGraphicsDevice: PGRAPHICS_DEVICE) -> BOOL;
 }
 
@@ -88,11 +88,19 @@ extern "C" {
 }
 
 // MmSystemRangeStart is a cross-DLL data export (ntoskrnl.spec:821).
-// `libntoskrnl_implib.def` contains it as DATA — so we can declare it as a
-// plain extern static and the regular import library resolves it. Avoiding
-// `raw-dylib` here is intentional: with cgu=256, multiple raw-dylib blocks
-// in win32k.sys produce duplicate IMAGE_IMPORT_DESCRIPTOR entries which
-// stress freeldr's PE loader (see memory `feedback_hal_raw_dylib_dup_descriptors`).
+// Per-arch ABI (same pattern as engevent.rs's ExEventObjectType — see
+// feedback_win32k_raw_dylib_freeldr_oom hazard 2):
+// - i386: needs `raw-dylib +verbatim` for the `__imp_` thunk under
+//   --disable-auto-import; plain extern fails link.
+// - amd64/arm64: auto-resolve via regular implib; adding raw-dylib here
+//   risks BUGCHECK 0x6B regressions (cgu=256 dup-descriptor interaction).
+#[cfg(target_arch = "x86")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    static MmSystemRangeStart: *mut core::ffi::c_void;
+}
+
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     static MmSystemRangeStart: *mut core::ffi::c_void;
 }
