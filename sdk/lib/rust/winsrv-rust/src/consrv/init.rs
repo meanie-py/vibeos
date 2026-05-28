@@ -75,8 +75,20 @@ pub static mut ConSrvDllInstance: HINSTANCE = core::ptr::null_mut();
 #[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
 pub static mut ConSrvHeap: HANDLE = core::ptr::null_mut();
 
+// Shadow PCSR_API_ROUTINE locally with extern "system" — bindgen
+// emits arch-specific ABI literals (extern "stdcall" on i386, extern
+// "C" elsewhere) and Rust's type system treats those as distinct from
+// extern "system" even when codegen is identical. `LoadedServerDll.
+// DispatchTable` is `*mut PCSR_API_ROUTINE` so the pointer is cast at
+// the assignment site. Mirrors basesrv/init.rs in smss-csrss-rust and
+// the 5.2 usersrv init.rs CsrApiRoutineSystem pattern.
+type ConsoleApiRoutineSystem = Option<unsafe extern "system" fn(
+    ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS>;
+
 #[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
-pub static mut ConsoleServerApiDispatchTable: [PCSR_API_ROUTINE; ConsolepMaxApiNumber as usize - CONSRV_FIRST_API_NUMBER as usize] = [
+pub static mut ConsoleServerApiDispatchTable: [ConsoleApiRoutineSystem; ConsolepMaxApiNumber as usize - CONSRV_FIRST_API_NUMBER as usize] = [
     Some(SrvOpenConsole),
     Some(SrvGetConsoleInput),
     Some(SrvWriteConsoleInput),
@@ -430,7 +442,7 @@ pub unsafe extern "system" fn ConServerDllInitialization(LoadedServerDll: PCSR_S
 
     (*LoadedServerDll).ApiBase = CONSRV_FIRST_API_NUMBER;
     (*LoadedServerDll).HighestApiSupported = ConsolepMaxApiNumber;
-    (*LoadedServerDll).DispatchTable = ConsoleServerApiDispatchTable.as_mut_ptr();
+    (*LoadedServerDll).DispatchTable = ConsoleServerApiDispatchTable.as_mut_ptr() as *mut PCSR_API_ROUTINE;
     (*LoadedServerDll).ValidTable = ConsoleServerApiServerValidTable.as_mut_ptr();
     #[cfg(feature = "CSR_DBG")]
     {

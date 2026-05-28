@@ -293,6 +293,25 @@ def main():
     if n_bf_fixed:
         print(f"  {arch}: renamed {n_bf_fixed} bitfield-ctor param(s) colliding with pub const")
 
+    # Retype the console mode + char-attribute constants from u32 → u16
+    # — they're untyped `#define X 0xN` literals in wincon.h that
+    # bindgen defaults to u32, but every consumer field
+    # (CONSOLE_SCREEN_BUFFER.Mode is USHORT, CHAR_INFO.Attributes is
+    # WORD) is u16, producing systematic `u16 op u32` E0277 trait
+    # mismatches in winsrv-rust. Catches ENABLE_*, COMMON_LVB_*,
+    # FOREGROUND_* and BACKGROUND_*.
+    n_retyped = 0
+    def retype_console_flags(m):
+        nonlocal n_retyped
+        n_retyped += 1
+        return f'pub const {m.group(1)}: u16 = {m.group(2)};'
+    content = re.sub(
+        r'pub const ((?:ENABLE_|COMMON_LVB_|FOREGROUND_|BACKGROUND_)[A-Z_]+):\s*u32\s*=\s*(\d+|0x[0-9a-fA-F]+);',
+        retype_console_flags, content,
+    )
+    if n_retyped:
+        print(f"  {arch}: retyped {n_retyped} console flag constants u32 → u16")
+
     # Inline MS-extension anonymous base members
     # (_TEXTMODE_SCREEN_BUFFER / _GRAPHICS_SCREEN_BUFFER inherit
     # CONSOLE_SCREEN_BUFFER). Bindgen flattens these to

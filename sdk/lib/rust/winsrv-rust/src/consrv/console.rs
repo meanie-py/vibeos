@@ -577,7 +577,7 @@ pub(crate) unsafe fn ConSrvInitProcessHandles(
         1u8,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         RtlLeaveCriticalSection(core::ptr::addr_of_mut!((*ProcessData).HandleTableLock));
         ConSrvFreeHandlesTable(ProcessData);
         return Status;
@@ -591,7 +591,7 @@ pub(crate) unsafe fn ConSrvInitProcessHandles(
         1u8,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         RtlLeaveCriticalSection(core::ptr::addr_of_mut!((*ProcessData).HandleTableLock));
         ConSrvFreeHandlesTable(ProcessData);
         return Status;
@@ -605,7 +605,7 @@ pub(crate) unsafe fn ConSrvInitProcessHandles(
         1u8,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         RtlLeaveCriticalSection(core::ptr::addr_of_mut!((*ProcessData).HandleTableLock));
         ConSrvFreeHandlesTable(ProcessData);
         return Status;
@@ -640,7 +640,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
         ConsoleInitInfo,
         (*ProcessData).Process,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return Status;
     }
 
@@ -653,7 +653,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
         pOutputHandle,
         pErrorHandle,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         ConSrvDeleteConsole(Console);
         (*ProcessData).ConsoleHandle = core::ptr::null_mut();
         return Status;
@@ -668,7 +668,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
         0,
         0,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         ConSrvFreeHandlesTable(ProcessData);
         ConSrvDeleteConsole(Console);
         (*ProcessData).ConsoleHandle = core::ptr::null_mut();
@@ -684,7 +684,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
         0,
         0,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         NtDuplicateObject(
             (*(*ProcessData).Process).ProcessHandle,
             (*(*ConsoleInitInfo).ConsoleStartInfo).InitEvents[INIT_SUCCESS as usize],
@@ -709,7 +709,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
         0,
         0,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         NtDuplicateObject(
             (*(*ProcessData).Process).ProcessHandle,
             (*(*ConsoleInitInfo).ConsoleStartInfo).InitEvents[INIT_FAILURE as usize],
@@ -786,7 +786,7 @@ pub(crate) unsafe fn ConSrvInheritConsole(
             pOutputHandle,
             pErrorHandle,
         );
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             (*ProcessData).ConsoleHandle = core::ptr::null_mut();
             LeaveCriticalSection(core::ptr::addr_of_mut!((*Console).Lock));
             return Status;
@@ -802,7 +802,7 @@ pub(crate) unsafe fn ConSrvInheritConsole(
         0,
         0,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         ConSrvFreeHandlesTable(ProcessData);
         (*ProcessData).ConsoleHandle = core::ptr::null_mut();
         LeaveCriticalSection(core::ptr::addr_of_mut!((*Console).Lock));
@@ -818,7 +818,7 @@ pub(crate) unsafe fn ConSrvInheritConsole(
         0,
         0,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         NtDuplicateObject(
             (*(*ProcessData).Process).ProcessHandle,
             (*ConsoleStartInfo).InitEvents[INIT_SUCCESS as usize],
@@ -843,7 +843,7 @@ pub(crate) unsafe fn ConSrvInheritConsole(
         0,
         0,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         NtDuplicateObject(
             (*(*ProcessData).Process).ProcessHandle,
             (*ConsoleStartInfo).InitEvents[INIT_FAILURE as usize],

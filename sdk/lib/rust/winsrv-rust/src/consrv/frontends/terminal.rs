@@ -135,7 +135,7 @@ pub(crate) unsafe fn ConSrvLoadFrontEnd(
             ConsoleInitInfo,
             ConsoleLeaderProcessHandle,
         );
-        if NT_SUCCESS(Status) != 0 {
+        if NT_SUCCESS(Status) {
             (*FrontEnd).UnloadFrontEnd = FrontEndLoadingMethods[i as usize].2;
             break;
         }
@@ -173,7 +173,7 @@ pub unsafe extern "system" fn ConSrvInitTerminal(
         ConsoleInitInfo,
         ConsoleLeaderProcessHandle,
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         ConsoleFreeHeap(FrontEnd as PVOID);
         return Status;
     }
@@ -215,7 +215,7 @@ pub(crate) unsafe fn ConSrvTermInitTerminal(
     );
 
     let Status = ((*(*FrontEnd).Vtbl).InitFrontEnd.unwrap())(FrontEnd, ConSrvConsole);
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         // DPRINT1 omitted
     }
 
