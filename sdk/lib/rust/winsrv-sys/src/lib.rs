@@ -60,7 +60,10 @@ pub mod nt {
     };
     // STATUS_* hand-written codes (ntstatus.h cast-macros are not
     // bindgen-evaluable, so they live in ntdll-sys::constants).
+    // Re-export ALL of them — they're pure `pub const … = i32 = …;`
+    // entries, no collision risk with the winsrv bindgen.
     pub use ntdll_sys::nt::{
+        STATUS_SUCCESS,
         STATUS_UNSUCCESSFUL, STATUS_INVALID_HANDLE, STATUS_INVALID_PARAMETER,
         STATUS_ACCESS_DENIED, STATUS_OBJECT_TYPE_MISMATCH,
         STATUS_OBJECT_NAME_COLLISION, STATUS_QUOTA_EXCEEDED,
@@ -75,6 +78,67 @@ pub mod nt {
         STATUS_OBJECT_PATH_NOT_FOUND, STATUS_OBJECT_PATH_INVALID,
         STATUS_OBJECT_PATH_SYNTAX_BAD, STATUS_INFO_LENGTH_MISMATCH,
         STATUS_BUFFER_TOO_SMALL, STATUS_BUFFER_OVERFLOW,
+        STATUS_NOT_IMPLEMENTED, STATUS_NO_MEMORY,
+        STATUS_LOGON_SESSION_EXISTS, STATUS_NOT_LOGON_PROCESS,
+        STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_TOKEN,
+        STATUS_TIMEOUT, STATUS_INVALID_PARAMETER_MIX,
+    };
+}
+
+/// Hand-written constants for winsrv that aren't bindgen-derivable
+/// (cast-macros in ntstatus.h, #defines in headers bindgen doesn't
+/// follow, etc.).
+pub mod consts {
+    /// `USER_VERSION = MAKELONG(0x0000, 0x0005)` — passed to
+    /// `NtUserInitialize`. ntuser.h:1149.
+    pub const USER_VERSION: u32 = 0x0005_0000;
+
+    /// `DWLP_USER` — winuser.h GetWindowLongPtr offset for user
+    /// data. The DWLP_USER value depends on pointer size:
+    /// DLGWINDOWEXTRA + sizeof(LRESULT) + sizeof(DLGPROC).
+    /// i386: 8 + 4 + 4 = 16 → DLGWINDOWEXTRA(30) + 4 + 4 = 38.
+    /// Actually: `#define DWLP_MSGRESULT 0` `#define DWLP_DLGPROC
+    /// (DWLP_MSGRESULT + sizeof(LRESULT))` `#define DWLP_USER
+    /// (DWLP_DLGPROC + sizeof(DLGPROC))`. sizeof(LRESULT) =
+    /// sizeof(DLGPROC) = ptr size, so on i386 = 0 + 4 + 4 = 8.
+    /// On amd64/arm64 = 0 + 8 + 8 = 16.
+    #[cfg(target_pointer_width = "32")]
+    pub const DWLP_USER: i32 = 8;
+    #[cfg(target_pointer_width = "64")]
+    pub const DWLP_USER: i32 = 16;
+
+    /// `IDC_PROGRESS` — commctrl.h resource id for the progress
+    /// control. Used by usersrv shutdown progress dialog.
+    pub const IDC_PROGRESS: i32 = 100;
+
+    /// `STATUS_SERVICE_NOTIFICATION` — used by usersrv harderror.c
+    /// to detect service-notification dialog mode (no host process).
+    /// ntstatus.h: 0x40000018.
+    pub const STATUS_SERVICE_NOTIFICATION: i32 = 0x40000018u32 as i32;
+
+    /// `LANGIDFROMLCID(lcid)` — macro `(WORD)(lcid)`.
+    #[inline]
+    pub fn LANGIDFROMLCID(lcid: u32) -> u16 {
+        (lcid & 0xFFFF) as u16
+    }
+
+    /// `NT_SUCCESS(Status)` — macro `(((NTSTATUS)(Status)) >= 0)`.
+    #[inline]
+    pub fn NT_SUCCESS(status: i32) -> bool {
+        status >= 0
+    }
+}
+
+/// Hand-written type aliases for winsrv that bindgen sees only under
+/// their `_USERCONNECT` original names — the win/winmsg.h `#define`
+/// chain (`#define _USERSRV_API_CONNECTINFO _USERCONNECT`) isn't
+/// followed by bindgen.
+pub mod aliases {
+    pub use crate::winsrv::{
+        _USERCONNECT as _USERSRV_API_CONNECTINFO,
+        _USERCONNECT as USERSRV_API_CONNECTINFO,
+        USERCONNECT,
+        PUSERCONNECT as PUSERSRV_API_CONNECTINFO,
     };
 }
 

@@ -23,6 +23,9 @@ pub mod init;
 // concfg/ — console settings + font cache (leaf, no consrv/usersrv deps).
 pub mod concfg;
 
+// usersrv/ — USER API server (CSR server DLL surface, no consrv deps).
+pub mod usersrv;
+
 // USER-MODE no_std staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust). Must NOT use
 // privileged instructions; abort via the Native API instead.
