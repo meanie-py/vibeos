@@ -1,9 +1,21 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
+use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+// Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
+use super::handle::ConSrvGetObject;
+use super::handle::ConSrvReleaseObject;
+use super::console::ConSrvConsoleProcessCtrlEvent;
 
-extern "system" {
-    fn RtlMoveMemory(Destination: PVOID, Source: PVOID, Length: usize);
-}
 
 macro_rules! ConSrvGetInputBuffer {
     ($ProcessData:expr, $Handle:expr, $Ptr:expr, $Access:expr, $LockConsole:expr) => {
@@ -81,8 +93,8 @@ struct GET_INPUT_INFO {
 
 type PGET_INPUT_INFO = *mut GET_INPUT_INFO;
 
-unsafe fn ConioInputEventToAnsi(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
-    if (*InputEvent).EventType == KEY_EVENT {
+pub(crate) unsafe fn ConioInputEventToAnsi(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
+    if (*InputEvent).EventType == KEY_EVENT as u16 {
         let UnicodeChar = (*InputEvent).Event.KeyEvent.uChar.UnicodeChar;
         (*InputEvent).Event.KeyEvent.uChar.UnicodeChar = 0;
         ConsoleInputUnicodeToAnsiChar!(
@@ -93,8 +105,8 @@ unsafe fn ConioInputEventToAnsi(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
     }
 }
 
-unsafe fn ConioInputEventToUnicode(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
-    if (*InputEvent).EventType == KEY_EVENT {
+pub(crate) unsafe fn ConioInputEventToUnicode(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
+    if (*InputEvent).EventType == KEY_EVENT as u16 {
         let AsciiChar = (*InputEvent).Event.KeyEvent.uChar.AsciiChar;
         (*InputEvent).Event.KeyEvent.uChar.AsciiChar = 0;
         ConsoleInputAnsiToUnicodeChar!(
@@ -105,7 +117,7 @@ unsafe fn ConioInputEventToUnicode(Console: PCONSOLE, InputEvent: PINPUT_RECORD)
     }
 }
 
-unsafe fn PreprocessInput(
+pub(crate) unsafe fn PreprocessInput(
     Console: PCONSRV_CONSOLE,
     InputEvent: PINPUT_RECORD,
     mut NumEventsToWrite: ULONG,
@@ -114,12 +126,12 @@ unsafe fn PreprocessInput(
     let mut CurrentEvent = InputEvent;
 
     while NumEvents > 0 {
-        if (*CurrentEvent).EventType == KEY_EVENT && (*CurrentEvent).Event.KeyEvent.bKeyDown != 0 {
+        if (*CurrentEvent).EventType == KEY_EVENT as u16 && (*CurrentEvent).Event.KeyEvent.bKeyDown != 0 {
             let vk = (*CurrentEvent).Event.KeyEvent.wVirtualKeyCode;
             if ((*Console).PauseFlags & PAUSED_FROM_KEYBOARD) == 0 {
                 let cks = (*CurrentEvent).Event.KeyEvent.dwControlKeyState;
-                if ((*Console).InputBuffer.Mode & ENABLE_LINE_INPUT) != 0
-                    && (vk == VK_PAUSE
+                if ((*Console).InputBuffer.Mode & ENABLE_LINE_INPUT as u16) != 0
+                    && (vk == VK_PAUSE as u16
                         || (vk == b'S' as u16
                             && (cks & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0
                             && (cks & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) == 0))
@@ -129,25 +141,25 @@ unsafe fn PreprocessInput(
                     RtlMoveMemory(
                         CurrentEvent as PVOID,
                         CurrentEvent.add(1) as PVOID,
-                        ((NumEvents - 1) * core::mem::size_of::<INPUT_RECORD>()) as usize,
+                        ((NumEvents - 1) * core::mem::size_of::<INPUT_RECORD>() as u32) as usize,
                     );
                     NumEventsToWrite = NumEventsToWrite.wrapping_sub(1);
                     NumEvents = NumEvents.wrapping_sub(1);
                     continue;
                 }
             } else {
-                if (vk < VK_SHIFT || vk > VK_CAPITAL)
-                    && vk != VK_LWIN
-                    && vk != VK_RWIN
-                    && vk != VK_NUMLOCK
-                    && vk != VK_SCROLL
+                if (vk < VK_SHIFT as u16 || vk > VK_CAPITAL as u16)
+                    && vk != VK_LWIN as u16
+                    && vk != VK_RWIN as u16
+                    && vk != VK_NUMLOCK as u16
+                    && vk != VK_SCROLL as u16
                 {
                     ConioUnpause(Console, PAUSED_FROM_KEYBOARD);
 
                     RtlMoveMemory(
                         CurrentEvent as PVOID,
                         CurrentEvent.add(1) as PVOID,
-                        ((NumEvents - 1) * core::mem::size_of::<INPUT_RECORD>()) as usize,
+                        ((NumEvents - 1) * core::mem::size_of::<INPUT_RECORD>() as u32) as usize,
                     );
                     NumEventsToWrite = NumEventsToWrite.wrapping_sub(1);
                     NumEvents = NumEvents.wrapping_sub(1);
@@ -163,7 +175,7 @@ unsafe fn PreprocessInput(
     NumEventsToWrite
 }
 
-unsafe fn PostprocessInput(Console: PCONSRV_CONSOLE) {
+pub(crate) unsafe fn PostprocessInput(Console: PCONSRV_CONSOLE) {
     CsrNotifyWait(
         core::ptr::addr_of_mut!((*Console).ReadWaitQueue),
         0u8,
@@ -175,11 +187,7 @@ unsafe fn PostprocessInput(Console: PCONSRV_CONSOLE) {
     }
 }
 
-extern "system" {
-    fn ConDrvWriteConsoleInput( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, AppendToEnd: BOOLEAN, InputRecord: PINPUT_RECORD, NumEventsToWrite: ULONG, NumEventsWritten: *mut ULONG, ) -> NTSTATUS;
-}
-
-unsafe fn ConioAddInputEvents(
+pub(crate) unsafe fn ConioAddInputEvents(
     Console: PCONSRV_CONSOLE,
     InputRecords: PINPUT_RECORD,
     mut NumEventsToWrite: ULONG,
@@ -218,14 +226,14 @@ pub unsafe extern "system" fn ConioProcessInputEvent(
 ) -> NTSTATUS {
     let mut NumEventsWritten: ULONG = 0;
 
-    if (*InputEvent).EventType == KEY_EVENT {
+    if (*InputEvent).EventType == KEY_EVENT as u16 {
         let Down = (*InputEvent).Event.KeyEvent.bKeyDown;
         let VirtualKeyCode = (*InputEvent).Event.KeyEvent.wVirtualKeyCode as u32;
         let ShiftState = (*InputEvent).Event.KeyEvent.dwControlKeyState;
 
-        if (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT) != 0
+        if (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT as u16) != 0
             && Down != 0
-            && (VirtualKeyCode == VK_PAUSE || VirtualKeyCode == b'C' as u32)
+            && (VirtualKeyCode == VK_PAUSE as u16 || VirtualKeyCode == b'C' as u32)
             && (ShiftState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0
         {
             ConSrvConsoleProcessCtrlEvent(Console, 0, CTRL_C_EVENT);
@@ -242,7 +250,7 @@ pub unsafe extern "system" fn ConioProcessInputEvent(
     ConioAddInputEvents(Console, InputEvent, 1, &mut NumEventsWritten, 1u8)
 }
 
-unsafe fn WaitBeforeReading(
+pub(crate) unsafe fn WaitBeforeReading(
     InputInfo: PGET_INPUT_INFO,
     ApiMessage: PCSR_API_MESSAGE,
     WaitFunction: CSR_WAIT_FUNCTION,
@@ -278,7 +286,7 @@ unsafe fn WaitBeforeReading(
     STATUS_PENDING
 }
 
-unsafe fn ReadChars(
+pub(crate) unsafe fn ReadChars(
     InputInfo: PGET_INPUT_INFO,
     ApiMessage: PCSR_API_MESSAGE,
     CreateWaitBlock: BOOLEAN,
@@ -319,16 +327,16 @@ unsafe extern "system" fn ReadCharsThread(
 }
 
 extern "system" {
-    fn ConDrvReadConsole( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, Unicode: BOOLEAN, Buffer: PVOID, ReadControl: PCONSOLE_READCONSOLE_CONTROL, Parameter: PVOID, NumCharsToRead: ULONG, NumCharsRead: *mut ULONG, ) -> NTSTATUS;
+    pub fn ConDrvReadConsole( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, Unicode: BOOLEAN, Buffer: PVOID, ReadControl: PCONSOLE_READCONSOLE_CONTROL, Parameter: PVOID, NumCharsToRead: ULONG, NumCharsRead: *mut ULONG, ) -> NTSTATUS;
 }
 
-unsafe fn ReadChars(
+pub(crate) unsafe fn ReadChars(
     InputInfo: PGET_INPUT_INFO,
     ApiMessage: PCSR_API_MESSAGE,
     CreateWaitBlock: BOOLEAN,
 ) -> NTSTATUS {
     let ReadConsoleRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PCONSOLE_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data.ReadConsoleRequest
+        (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.ReadConsoleRequest
     );
     let InputBuffer = (*InputInfo).InputBuffer;
 
@@ -390,7 +398,7 @@ unsafe fn ReadChars(
     }
 }
 
-unsafe fn ReadInputBuffer(
+pub(crate) unsafe fn ReadInputBuffer(
     InputInfo: PGET_INPUT_INFO,
     ApiMessage: PCSR_API_MESSAGE,
     CreateWaitBlock: BOOLEAN,
@@ -431,16 +439,16 @@ unsafe extern "system" fn ReadInputBufferThread(
 }
 
 extern "system" {
-    fn ConDrvGetConsoleInput( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, KeepEvents: BOOLEAN, WaitForMoreEvents: BOOLEAN, InputRecord: PINPUT_RECORD, NumEventsToRead: ULONG, NumEventsRead: *mut ULONG, ) -> NTSTATUS;
+    pub fn ConDrvGetConsoleInput( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, KeepEvents: BOOLEAN, WaitForMoreEvents: BOOLEAN, InputRecord: PINPUT_RECORD, NumEventsToRead: ULONG, NumEventsRead: *mut ULONG, ) -> NTSTATUS;
 }
 
-unsafe fn ReadInputBuffer(
+pub(crate) unsafe fn ReadInputBuffer(
     InputInfo: PGET_INPUT_INFO,
     ApiMessage: PCSR_API_MESSAGE,
     CreateWaitBlock: BOOLEAN,
 ) -> NTSTATUS {
     let GetInputRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PCONSOLE_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data.GetInputRequest
+        (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetInputRequest
     );
     let InputBuffer = (*InputInfo).InputBuffer;
     let mut NumEventsRead: ULONG = 0;
@@ -456,8 +464,8 @@ unsafe fn ReadInputBuffer(
     let Status = ConDrvGetConsoleInput(
         (*InputBuffer).Header.Console,
         InputBuffer,
-        if ((*GetInputRequest).Flags & CONSOLE_READ_NOREMOVE) != 0 { 1u8 } else { 0u8 },
-        if ((*GetInputRequest).Flags & CONSOLE_READ_NOWAIT) == 0 { 1u8 } else { 0u8 },
+        if ((*GetInputRequest).Flags as u32 & CONSOLE_READ_NOREMOVE) != 0 { 1u8 } else { 0u8 },
+        if ((*GetInputRequest).Flags as u32 & CONSOLE_READ_NOWAIT) == 0 { 1u8 } else { 0u8 },
         InputRecord,
         (*GetInputRequest).NumRecords,
         &mut NumEventsRead,
@@ -485,18 +493,18 @@ pub unsafe extern "system" fn SrvReadConsole(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut ULONG,
 ) -> NTSTATUS {
-    let ProcessData = ConsoleGetPerProcessData((*((*ApiMessage).__bindgen_anon_1.ClientId.UniqueProcess as PCSR_PROCESS)).ProcessHandle);
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
     let ReadConsoleRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PCONSOLE_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data.ReadConsoleRequest
+        (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.ReadConsoleRequest
     );
 
     if (*ReadConsoleRequest).CaptureBufferSize > core::mem::size_of_val(&(*ReadConsoleRequest).StaticBuffer) as ULONG {
         if CsrValidateMessageBuffer(
             ApiMessage,
-            core::ptr::addr_of_mut!((*ReadConsoleRequest).Buffer) as *mut *mut PVOID,
+            core::ptr::addr_of_mut!((*ReadConsoleRequest).Buffer) as *mut PVOID,
             (*ReadConsoleRequest).CaptureBufferSize,
-            core::mem::size_of::<u8>(),
+            core::mem::size_of::<u8>() as ULONG,
         ) == 0
         {
             return STATUS_INVALID_PARAMETER;
@@ -542,10 +550,10 @@ pub unsafe extern "system" fn SrvGetConsoleInput(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut ULONG,
 ) -> NTSTATUS {
-    let ProcessData = ConsoleGetPerProcessData((*((*ApiMessage).__bindgen_anon_1.ClientId.UniqueProcess as PCSR_PROCESS)).ProcessHandle);
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
     let GetInputRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PCONSOLE_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data.GetInputRequest
+        (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetInputRequest
     );
 
     if ((*GetInputRequest).Flags & !(CONSOLE_READ_NOREMOVE | CONSOLE_READ_NOWAIT)) != 0 {
@@ -555,9 +563,9 @@ pub unsafe extern "system" fn SrvGetConsoleInput(
     if (*GetInputRequest).NumRecords > (core::mem::size_of_val(&(*GetInputRequest).RecordStaticBuffer) / core::mem::size_of::<INPUT_RECORD>()) as ULONG {
         if CsrValidateMessageBuffer(
             ApiMessage,
-            core::ptr::addr_of_mut!((*GetInputRequest).RecordBufPtr) as *mut *mut PVOID,
+            core::ptr::addr_of_mut!((*GetInputRequest).RecordBufPtr) as *mut PVOID,
             (*GetInputRequest).NumRecords,
-            core::mem::size_of::<INPUT_RECORD>(),
+            core::mem::size_of::<INPUT_RECORD>() as ULONG,
         ) == 0
         {
             return STATUS_INVALID_PARAMETER;
@@ -599,10 +607,10 @@ pub unsafe extern "system" fn SrvWriteConsoleInput(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut ULONG,
 ) -> NTSTATUS {
-    let ProcessData = ConsoleGetPerProcessData((*((*ApiMessage).__bindgen_anon_1.ClientId.UniqueProcess as PCSR_PROCESS)).ProcessHandle);
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
     let WriteInputRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PCONSOLE_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data.WriteInputRequest
+        (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.WriteInputRequest
     );
 
     let InputRecord: PINPUT_RECORD;
@@ -612,9 +620,9 @@ pub unsafe extern "system" fn SrvWriteConsoleInput(
     } else {
         if CsrValidateMessageBuffer(
             ApiMessage,
-            core::ptr::addr_of_mut!((*WriteInputRequest).RecordBufPtr) as *mut *mut PVOID,
+            core::ptr::addr_of_mut!((*WriteInputRequest).RecordBufPtr) as *mut PVOID,
             (*WriteInputRequest).NumRecords,
-            core::mem::size_of::<INPUT_RECORD>(),
+            core::mem::size_of::<INPUT_RECORD>() as ULONG,
         ) == 0
         {
             return STATUS_INVALID_PARAMETER;
@@ -658,7 +666,7 @@ pub unsafe extern "system" fn SrvWriteConsoleInput(
 }
 
 extern "system" {
-    fn ConDrvFlushConsoleInputBuffer( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, ) -> NTSTATUS;
+    pub fn ConDrvFlushConsoleInputBuffer( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, ) -> NTSTATUS;
 }
 
 #[no_mangle]
@@ -666,10 +674,10 @@ pub unsafe extern "system" fn SrvFlushConsoleInputBuffer(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut ULONG,
 ) -> NTSTATUS {
-    let ProcessData = ConsoleGetPerProcessData((*((*ApiMessage).__bindgen_anon_1.ClientId.UniqueProcess as PCSR_PROCESS)).ProcessHandle);
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
     let FlushInputBufferRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PCONSOLE_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data.FlushInputBufferRequest
+        (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.FlushInputBufferRequest
     );
 
     let mut InputBuffer: PCONSOLE_INPUT_BUFFER = core::ptr::null_mut();
@@ -691,7 +699,7 @@ pub unsafe extern "system" fn SrvFlushConsoleInputBuffer(
 }
 
 extern "system" {
-    fn ConDrvGetConsoleNumberOfInputEvents( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, NumberOfEvents: *mut ULONG, ) -> NTSTATUS;
+    pub fn ConDrvGetConsoleNumberOfInputEvents( Console: PCONSOLE, InputBuffer: PCONSOLE_INPUT_BUFFER, NumberOfEvents: *mut ULONG, ) -> NTSTATUS;
 }
 
 #[no_mangle]
@@ -699,10 +707,10 @@ pub unsafe extern "system" fn SrvGetConsoleNumberOfInputEvents(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut ULONG,
 ) -> NTSTATUS {
-    let ProcessData = ConsoleGetPerProcessData((*((*ApiMessage).__bindgen_anon_1.ClientId.UniqueProcess as PCSR_PROCESS)).ProcessHandle);
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
     let GetNumInputEventsRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PCONSOLE_API_MESSAGE)).__bindgen_anon_1.__bindgen_anon_1.Data.GetNumInputEventsRequest
+        (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetNumInputEventsRequest
     );
 
     let mut InputBuffer: PCONSOLE_INPUT_BUFFER = core::ptr::null_mut();

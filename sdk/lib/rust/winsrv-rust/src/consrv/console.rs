@@ -1,14 +1,51 @@
 use winsrv_sys::nt::*;
+use super::{wcslen, wcsrchr, wcsncpy, _wcsicmp, PrivateExtractIconsW};
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
+use super::{ConsoleAllocHeap, ConsoleFreeHeap};
+use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+// Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
+use super::handle::ConSrvFreeHandlesTable;
+use super::handle::ConSrvInsertObject;
+use super::condrv::console::ConDrvDeleteConsole;
+use super::condrv::console::ConDrvPause;
+use super::condrv::console::ConDrvUnpause;
+use super::condrv::console::ConDrvValidateConsoleState;
+use super::condrv::console::ConDrvValidateConsoleUnsafe;
+
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-static mut ConsoleListSize: ULONG = 0;
-static mut ConsoleList: *mut PCONSRV_CONSOLE = core::ptr::null_mut();
-static mut ListLock: RTL_RESOURCE = unsafe { core::mem::zeroed() };
+pub(crate) static mut ConsoleListSize: ULONG = 0;
+pub(crate) static mut ConsoleList: *mut PCONSRV_CONSOLE = core::ptr::null_mut();
+pub(crate) static mut ListLock: RTL_RESOURCE = unsafe { core::mem::zeroed() };
 
-pub const CONSOLE_VALID_CONTROL_MODES: ULONG = ENABLE_EXTENDED_FLAGS | ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE;
+pub const CONSOLE_VALID_CONTROL_MODES: ULONG = ENABLE_EXTENDED_FLAGS | ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE as u16;
 
-unsafe fn ConDrvInsertConsole(Console: PCONSOLE) -> NTSTATUS {
+// console.c file-scope macros — bindgen doesn't see file-static macros.
+#[inline]
+pub(crate) unsafe fn ConSrvLockConsoleListExclusive() -> BOOLEAN {
+    RtlAcquireResourceExclusive(core::ptr::addr_of_mut!(ListLock), 1)
+}
+
+#[inline]
+pub(crate) unsafe fn ConSrvLockConsoleListShared() -> BOOLEAN {
+    RtlAcquireResourceShared(core::ptr::addr_of_mut!(ListLock), 1)
+}
+
+#[inline]
+pub(crate) unsafe fn ConSrvUnlockConsoleList() {
+    RtlReleaseResource(core::ptr::addr_of_mut!(ListLock));
+}
+
+pub(crate) unsafe fn ConDrvInsertConsole(Console: PCONSOLE) -> NTSTATUS {
     ConSrvLockConsoleListExclusive();
 
     InsertTailList(
@@ -26,7 +63,7 @@ unsafe fn ConDrvInsertConsole(Console: PCONSOLE) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-unsafe fn InsertConsole(
+pub(crate) unsafe fn InsertConsole(
     Handle: PHANDLE,
     Console: PCONSRV_CONSOLE
 ) -> NTSTATUS {
@@ -50,7 +87,7 @@ unsafe fn InsertConsole(
     if i >= ConsoleListSize {
         Block = ConsoleAllocHeap(
             HEAP_ZERO_MEMORY,
-            (ConsoleListSize + CONSOLE_HANDLES_INCREMENT) * core::mem::size_of::<PCONSRV_CONSOLE>()
+            (ConsoleListSize + CONSOLE_HANDLES_INCREMENT) as usize * core::mem::size_of::<PCONSRV_CONSOLE>()
         ) as *mut PCONSRV_CONSOLE;
         
         if Block.is_null() {
@@ -78,7 +115,7 @@ unsafe fn InsertConsole(
     Status
 }
 
-unsafe fn RemoveConsoleByHandle(Handle: HANDLE) -> NTSTATUS {
+pub(crate) unsafe fn RemoveConsoleByHandle(Handle: HANDLE) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut Console: PCONSRV_CONSOLE;
 
@@ -110,7 +147,7 @@ unsafe fn RemoveConsoleByHandle(Handle: HANDLE) -> NTSTATUS {
     Status
 }
 
-unsafe fn RemoveConsoleByPointer(Console: PCONSRV_CONSOLE) -> NTSTATUS {
+pub(crate) unsafe fn RemoveConsoleByPointer(Console: PCONSRV_CONSOLE) -> NTSTATUS {
     let mut i: ULONG = 0;
 
     if Console.is_null() {
@@ -133,7 +170,7 @@ unsafe fn RemoveConsoleByPointer(Console: PCONSRV_CONSOLE) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-unsafe fn RemoveConsole(Console: PCONSOLE) -> NTSTATUS {
+pub(crate) unsafe fn RemoveConsole(Console: PCONSOLE) -> NTSTATUS {
     if Console.is_null() {
         return STATUS_INVALID_PARAMETER;
     }
@@ -146,7 +183,7 @@ unsafe fn RemoveConsole(Console: PCONSOLE) -> NTSTATUS {
     return STATUS_SUCCESS;
 }
 
-unsafe fn ConsoleCreateUnicodeString(
+pub(crate) unsafe fn ConsoleCreateUnicodeString(
     UniDest: PUNICODE_STRING,
     Source: PCWSTR
 ) -> u8 {
@@ -171,10 +208,10 @@ unsafe fn ConsoleCreateUnicodeString(
     1u8
 }
 
-unsafe fn ConsoleFreeUnicodeString(UnicodeString: PUNICODE_STRING) {
+pub(crate) unsafe fn ConsoleFreeUnicodeString(UnicodeString: PUNICODE_STRING) {
     if !(*UnicodeString).Buffer.is_null() {
         ConsoleFreeHeap((*UnicodeString).Buffer as *mut core::ffi::c_void);
-        RtlZeroMemory(UnicodeString as *mut core::ffi::c_void, core::mem::size_of::<_UNICODE_STRING>() as u32);
+        RtlZeroMemory(UnicodeString as *mut core::ffi::c_void, core::mem::size_of::<_UNICODE_STRING>());
     }
 }
 
@@ -278,7 +315,7 @@ pub unsafe extern "system" fn ConSrvInitConsoleSupport() {
     RtlInitializeResource(core::ptr::addr_of_mut!(ListLock));
 }
 
-unsafe fn LoadShellLinkConsoleInfo(
+pub(crate) unsafe fn LoadShellLinkConsoleInfo(
     ConsoleInfo: PCONSOLE_STATE_INFO,
     ConsoleInitInfo: PCONSOLE_INIT_INFO,
 ) -> u8 {
@@ -495,12 +532,12 @@ pub unsafe extern "system" fn ConSrvDeleteConsole(Console: PCONSRV_CONSOLE) {
     ConDrvDeleteConsole(Console as PCONSOLE);
 }
 
-unsafe fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u8) {
+pub(crate) unsafe fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u8) {
     (*Console).PauseFlags |= Flags;
     ConDrvPause(Console as PCONSOLE);
 }
 
-unsafe fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u8) {
+pub(crate) unsafe fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u8) {
     (*Console).PauseFlags &= !Flags;
 
     if (*Console).PauseFlags == 0 {
@@ -518,7 +555,7 @@ unsafe fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u8) {
     }
 }
 
-unsafe fn ConSrvInitProcessHandles(
+pub(crate) unsafe fn ConSrvInitProcessHandles(
     ProcessData: PCONSOLE_PROCESS_DATA,
     Console: PCONSRV_CONSOLE,
     pInputHandle: PHANDLE,
@@ -715,7 +752,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
     STATUS_SUCCESS
 }
 
-unsafe fn ConSrvInheritConsole(
+pub(crate) unsafe fn ConSrvInheritConsole(
     ProcessData: PCONSOLE_PROCESS_DATA,
     ConsoleHandle: HANDLE,
     CreateNewHandleTable: u8,
@@ -852,7 +889,7 @@ unsafe fn ConSrvInheritConsole(
     return Status;
 }
 
-unsafe fn ConSrvRemoveConsole(
+pub(crate) unsafe fn ConSrvRemoveConsole(
     ProcessData: PCONSOLE_PROCESS_DATA,
 ) -> NTSTATUS {
     let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
@@ -952,7 +989,7 @@ pub unsafe extern "system" fn ConSrvGetConsoleLeaderProcess(
     (blink as *mut u8).offset(-(offset as isize)) as PCONSOLE_PROCESS_DATA
 }
 
-unsafe fn ConSrvGetConsoleProcessList(
+pub(crate) unsafe fn ConSrvGetConsoleProcessList(
     Console: PCONSRV_CONSOLE,
     ProcessIdsList: *mut ULONG,
     MaxIdListItems: ULONG,

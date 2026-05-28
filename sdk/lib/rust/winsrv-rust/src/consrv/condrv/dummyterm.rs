@@ -127,7 +127,7 @@ static mut DummyVtbl: TERMINAL_VTBL = TERMINAL_VTBL {
     ShowMouseCursor: None,
 };
 
-unsafe fn InitDummyVtblIfNeeded() {
+pub(crate) unsafe fn InitDummyVtblIfNeeded() {
     if DummyVtbl.InitTerminal.is_some() {
         return;
     }

@@ -1,19 +1,18 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
+use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 
 extern "system" {
-    fn CONTAINING_RECORD(address: PVOID, struct_type: PVOID, field_offset: usize) -> PVOID;
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PVOID, a: ULONG, r: PVOID, s: PVOID, );
-    fn ConsoleAllocHeap(flags: ULONG, size: usize) -> PVOID;
-    fn ConsoleFreeHeap(ptr: PVOID);
-    fn TermReadStream( console: PCONSOLE, unicode: BOOLEAN, buffer: PVOID, read_control: PCONSOLE_READCONSOLE_CONTROL, parameter: PVOID, num_chars_to_read: ULONG, num_chars_read: *mut ULONG, ) -> NTSTATUS;
-    fn _InterlockedIncrement(addend: *mut LONG) -> LONG;
-    fn _InterlockedDecrement(addend: *mut LONG) -> LONG;
-    fn _InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
+    pub fn CONTAINING_RECORD(address: PVOID, struct_type: PVOID, field_offset: usize) -> PVOID;
+    pub fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PVOID, a: ULONG, r: PVOID, s: PVOID, );
+    pub fn TermReadStream( console: PCONSOLE, unicode: BOOLEAN, buffer: PVOID, read_control: PCONSOLE_READCONSOLE_CONTROL, parameter: PVOID, num_chars_to_read: ULONG, num_chars_read: *mut ULONG, ) -> NTSTATUS;
+    pub fn _InterlockedIncrement(addend: *mut LONG) -> LONG;
+    pub fn _InterlockedDecrement(addend: *mut LONG) -> LONG;
+    pub fn _InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
 }
 
-unsafe fn AddInputEvents(
+pub(crate) unsafe fn AddInputEvents(
     Console: PCONSOLE,
     mut InputRecords: PINPUT_RECORD,
     NumEventsToWrite: ULONG,
@@ -149,7 +148,7 @@ unsafe fn AddInputEvents(
     Status
 }
 
-unsafe fn PurgeInputBuffer(InputBuffer: PCONSOLE_INPUT_BUFFER) {
+pub(crate) unsafe fn PurgeInputBuffer(InputBuffer: PCONSOLE_INPUT_BUFFER) {
     let mut CurrentEntry: PLIST_ENTRY;
     let mut Event: *mut ConsoleInput;
 
@@ -198,8 +197,7 @@ pub unsafe extern "system" fn ConDrvInitInputBuffer(
     (*Console).InputBuffer.InputBufferSize = InputBufferSize;
     (*Console).InputBuffer.NumberOfEvents = 0;
     InitializeListHead(core::ptr::addr_of_mut!((*Console).InputBuffer.InputEvents));
-    (*Console).InputBuffer.Mode = (ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT |
-                                  ENABLE_ECHO_INPUT | ENABLE_MOUSE_INPUT) as u16;
+    (*Console).InputBuffer.Mode = (ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_MOUSE_INPUT) as u16;
 
     STATUS_SUCCESS
 }

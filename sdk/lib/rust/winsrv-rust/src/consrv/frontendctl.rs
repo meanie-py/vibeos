@@ -1,5 +1,19 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+// Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
+use super::console::ConSrvGetConsole;
+use super::console::ConSrvReleaseConsole;
+
 
 // CON_API macro expansion helper
 // CON_API(Name, RequestType, RequestField) expands to a function signature
@@ -30,7 +44,7 @@ pub unsafe extern "system" fn SrvGetConsoleDisplayMode(
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetDisplayModeRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetDisplayModeRequest
+        (*ApiMessage).Data.GetDisplayModeRequest
     );
     (*GetDisplayModeRequest).DisplayMode = TermGetDisplayMode(Console);
     STATUS_SUCCESS
@@ -43,14 +57,14 @@ pub unsafe extern "system" fn SrvSetConsoleDisplayMode(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let SetDisplayModeRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.SetDisplayModeRequest
+        (*ApiMessage).Data.SetDisplayModeRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetScreenBuffer(
         ProcessData,
         (*SetDisplayModeRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -76,14 +90,14 @@ pub unsafe extern "system" fn SrvGetLargestConsoleWindowSize(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetLargestWindowSizeRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetLargestWindowSizeRequest
+        (*ApiMessage).Data.GetLargestWindowSizeRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetLargestWindowSizeRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -107,14 +121,14 @@ pub unsafe extern "system" fn SrvShowConsoleCursor(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let ShowCursorRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.ShowCursorRequest
+        (*ApiMessage).Data.ShowCursorRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetScreenBuffer(
         ProcessData,
         (*ShowCursorRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -135,14 +149,14 @@ pub unsafe extern "system" fn SrvSetConsoleCursor(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let SetCursorRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.SetCursorRequest
+        (*ApiMessage).Data.SetCursorRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetGraphicsBuffer(
         ProcessData,
         (*SetCursorRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -163,14 +177,14 @@ pub unsafe extern "system" fn SrvConsoleMenuControl(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let MenuControlRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.MenuControlRequest
+        (*ApiMessage).Data.MenuControlRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetScreenBuffer(
         ProcessData,
         (*MenuControlRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -195,7 +209,7 @@ pub unsafe extern "system" fn SrvSetConsoleMenuClose(
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let SetMenuCloseRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.SetMenuCloseRequest
+        (*ApiMessage).Data.SetMenuCloseRequest
     );
     
     if TermSetMenuClose(Console, (*SetMenuCloseRequest).Enable) != 0 {
@@ -243,7 +257,7 @@ pub unsafe extern "system" fn SrvGetConsoleWindow(
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetWindowRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetWindowRequest
+        (*ApiMessage).Data.GetWindowRequest
     );
     
     (*GetWindowRequest).WindowHandle = TermGetConsoleWindowHandle(Console);
@@ -257,7 +271,7 @@ pub unsafe extern "system" fn SrvSetConsoleIcon(
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let SetIconRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.SetIconRequest
+        (*ApiMessage).Data.SetIconRequest
     );
     
     if TermChangeIcon(Console, (*SetIconRequest).IconHandle) != 0 {
@@ -274,7 +288,7 @@ pub unsafe extern "system" fn SrvGetConsoleSelectionInfo(
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetSelectionInfoRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetSelectionInfoRequest
+        (*ApiMessage).Data.GetSelectionInfoRequest
     );
     
     if TermGetSelectionInfo(
@@ -294,7 +308,7 @@ pub unsafe extern "system" fn SrvGetConsoleNumberOfFonts(
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetNumFontsRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetNumFontsRequest
+        (*ApiMessage).Data.GetNumFontsRequest
     );
     
     (*GetNumFontsRequest).NumFonts = 0;
@@ -308,14 +322,14 @@ pub unsafe extern "system" fn SrvGetConsoleFontInfo(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetFontInfoRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetFontInfoRequest
+        (*ApiMessage).Data.GetFontInfoRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetFontInfoRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -336,14 +350,14 @@ pub unsafe extern "system" fn SrvGetConsoleFontSize(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetFontSizeRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetFontSizeRequest
+        (*ApiMessage).Data.GetFontSizeRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetFontSizeRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -362,14 +376,14 @@ pub unsafe extern "system" fn SrvGetConsoleCurrentFont(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let GetCurrentFontRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.GetCurrentFontRequest
+        (*ApiMessage).Data.GetCurrentFontRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetCurrentFontRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -390,14 +404,14 @@ pub unsafe extern "system" fn SrvSetConsoleFont(
     ProcessData: *mut CONSOLE_PROCESS_DATA,
 ) -> i32 {
     let SetFontRequest = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.SetFontRequest
+        (*ApiMessage).Data.SetFontRequest
     );
     
     let mut Buff: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*SetFontRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut Buff as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );

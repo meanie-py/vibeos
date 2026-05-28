@@ -1,4 +1,15 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
+use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -7,7 +18,7 @@ use core::ffi::c_void;
 // All functions reference types already imported from ntkrnl_sys (PCONSOLE, PTEXTMODE_SCREEN_BUFFER, etc.)
 // and contain no static data, typedefs, enums, or constant definitions at file scope.
 
-unsafe fn WriteConsoleThread(
+pub(crate) unsafe fn WriteConsoleThread(
     WaitList: PLIST_ENTRY,
     WaitThread: PCSR_THREAD,
     WaitApiMessage: PCSR_API_MESSAGE,
@@ -37,7 +48,7 @@ unsafe fn WriteConsoleThread(
     if Status == STATUS_PENDING { 0u8 } else { 1u8 }
 }
 
-unsafe fn DoWriteConsole(
+pub(crate) unsafe fn DoWriteConsole(
     ApiMessage: PCSR_API_MESSAGE,
     ClientThread: PCSR_THREAD,
     CreateWaitBlock: u8,

@@ -2,17 +2,9 @@ use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 
-unsafe fn RtlZeroMemory(dst: *mut core::ffi::c_void, len: usize) {
-    core::ptr::write_bytes(dst as *mut u8, 0, len);
-}
-
 extern "C" {
-    fn ResetTerminal(Console: PCONSOLE);
-    fn InitializeCriticalSection(cs: *mut RTL_CRITICAL_SECTION);
-    fn EnterCriticalSection(cs: *mut RTL_CRITICAL_SECTION);
-    fn LeaveCriticalSection(cs: *mut RTL_CRITICAL_SECTION);
-    fn DeleteCriticalSection(cs: *mut RTL_CRITICAL_SECTION);
-    fn TermSetCodePage(Console: PCONSOLE, CodePage: UINT) -> BOOLEAN;
+    pub fn ResetTerminal(Console: PCONSOLE);
+    pub fn TermSetCodePage(Console: PCONSOLE, CodePage: UINT) -> BOOLEAN;
 }
 
 #[no_mangle]

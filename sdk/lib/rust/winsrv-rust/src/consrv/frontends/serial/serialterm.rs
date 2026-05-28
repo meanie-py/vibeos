@@ -1,5 +1,34 @@
 use winsrv_sys::nt::*;
+use super::super::super::{VkKeyScanW};
+use super::super::super::condrv::text::*;
+use super::super::super::condrv::conoutput::*;
+use super::super::super::condrv::coninput::*;
+use super::super::super::condrv::console::*;
+use super::super::super::console::*;
+use super::super::super::handle::*;
+use super::super::super::lineinput::*;
+use super::super::super::history::*;
+use super::super::super::init::*;
+use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+// Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
+use super::super::super::condrv::console::ConDrvValidateConsoleUnsafe;
+
+
+// Win32 API not bindgen-exposed by winsrv-sys (kernel32 outside FN_ALLOW).
+extern "system" {
+    pub fn DeviceIoControl(
+        hDevice: HANDLE,
+        dwIoControlCode: u32,
+        lpInBuffer: *const core::ffi::c_void,
+        nInBufferSize: u32,
+        lpOutBuffer: *mut core::ffi::c_void,
+        nOutBufferSize: u32,
+        lpBytesReturned: *mut u32,
+        lpOverlapped: *mut core::ffi::c_void,
+    ) -> BOOL;
+}
 
 const IOCTL_ARM64INPUT_INJECT_BYTE: u32 = ((0x0000000B << 16) | (0x800 << 2) | (0 << 14) | (0));
 const IOCTL_ARM64INPUT_INJECT_MOUSE: u32 = ((0x0000000F << 16) | (0x800 << 2) | (0 << 14) | (0));
@@ -40,7 +69,7 @@ union MOUSE_INPUT_DATA_UNION {
     ButtonData: u32,
 }
 
-unsafe fn SerialProcessKeyByte(SerialData: PSERIAL_CONSOLE_DATA, ch: u8) {
+pub(crate) unsafe fn SerialProcessKeyByte(SerialData: PSERIAL_CONSOLE_DATA, ch: u8) {
     let Console = (*SerialData).Console;
     let mut er: INPUT_RECORD = core::mem::zeroed();
 
@@ -111,7 +140,7 @@ unsafe fn SerialProcessKeyByte(SerialData: PSERIAL_CONSOLE_DATA, ch: u8) {
     }
 }
 
-unsafe fn SerialProcessMouseEscape(SerialData: PSERIAL_CONSOLE_DATA, buf: *const u8) {
+pub(crate) unsafe fn SerialProcessMouseEscape(SerialData: PSERIAL_CONSOLE_DATA, buf: *const u8) {
     let action = *buf.add(0);
     let x = (*buf.add(1) as u16) | ((*buf.add(2) as u16) << 8);
     let y = (*buf.add(3) as u16) | ((*buf.add(4) as u16) << 8);

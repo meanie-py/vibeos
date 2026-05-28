@@ -1,27 +1,26 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
+use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 
 extern "system" {
-    fn CONTAINING_RECORD(addr: *const u8, Type: usize, field_offset: usize) -> *mut u8;
+    pub fn CONTAINING_RECORD(addr: *const u8, Type: usize, field_offset: usize) -> *mut u8;
 }
 
 extern "system" {
-    fn TEXTMODE_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, TextModeInfo: PTEXTMODE_BUFFER_INFO, ) -> NTSTATUS;
-    fn GRAPHICS_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, GraphicsInfo: PGRAPHICS_BUFFER_INFO, ) -> NTSTATUS;
-    fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    fn GRAPHICS_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    fn ConsoleAllocHeap(flags: ULONG, size: usize) -> PVOID;
-    fn ConsoleFreeHeap(ptr: PVOID);
-    fn TermReleaseScreenBuffer(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER);
-    fn TermSetActiveScreenBuffer(Console: PCONSOLE);
-    fn TermDrawRegion(Console: PCONSOLE, Region: PSMALL_RECT);
-    fn TermSetPalette(Console: PCONSOLE, PaletteHandle: HPALETTE, PaletteUsage: UINT) -> BOOL;
-    fn TermSetCursorInfo(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER) -> BOOL;
-    fn TermSetScreenInfo(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER, OldCursorX: SHORT, OldCursorY: SHORT) -> BOOL;
+    pub fn TEXTMODE_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, TextModeInfo: PTEXTMODE_BUFFER_INFO, ) -> NTSTATUS;
+    pub fn GRAPHICS_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, GraphicsInfo: PGRAPHICS_BUFFER_INFO, ) -> NTSTATUS;
+    pub fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
+    pub fn GRAPHICS_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
+    pub fn TermReleaseScreenBuffer(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER);
+    pub fn TermSetActiveScreenBuffer(Console: PCONSOLE);
+    pub fn TermDrawRegion(Console: PCONSOLE, Region: PSMALL_RECT);
+    pub fn TermSetPalette(Console: PCONSOLE, PaletteHandle: HPALETTE, PaletteUsage: UINT) -> BOOL;
+    pub fn TermSetCursorInfo(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER) -> BOOL;
+    pub fn TermSetScreenInfo(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER, OldCursorX: SHORT, OldCursorY: SHORT) -> BOOL;
 }
 
-unsafe fn CONSOLE_SCREEN_BUFFER_Initialize(
+pub(crate) unsafe fn CONSOLE_SCREEN_BUFFER_Initialize(
     Buffer: *mut PCONSOLE_SCREEN_BUFFER,
     Console: PCONSOLE,
     Type: CONSOLE_IO_OBJECT_TYPE,
@@ -50,7 +49,7 @@ unsafe fn CONSOLE_SCREEN_BUFFER_Initialize(
     STATUS_SUCCESS
 }
 
-unsafe fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
+pub(crate) unsafe fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
     match (*Buffer).Header.Type {
         TEXTMODE_BUFFER => {
             TEXTMODE_BUFFER_Destroy(Buffer);
@@ -123,7 +122,7 @@ pub unsafe extern "system" fn ConDrvCreateScreenBuffer(
     Status
 }
 
-unsafe fn ConioSetActiveScreenBuffer(Buffer: PCONSOLE_SCREEN_BUFFER) {
+pub(crate) unsafe fn ConioSetActiveScreenBuffer(Buffer: PCONSOLE_SCREEN_BUFFER) {
     let Console = (*Buffer).Header.Console;
     (*Console).ActiveBuffer = Buffer;
     TermSetActiveScreenBuffer(Console);

@@ -1,5 +1,73 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+// Phase 5.4 sibling Srv* definitions
+use super::alias::*;
+use super::coninput::*;
+use super::conoutput::*;
+use super::frontendctl::*;
+use super::shutdown::*;
+use super::subsysreg::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+// Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
+use super::handle::ConSrvInheritHandlesTable;
+use super::console::ConSrvValidateConsole;
+use super::console::ConSrvInitConsoleSupport;
+
+use super::{ConsoleAllocHeap, ConsoleFreeHeap};
+
+
+// Srv* dispatch fns translated in other C files (conoutput.c/console.c etc.)
+// — declared here so the dispatch table compiles. Real symbols come from C link.
+extern "system" {
+    pub fn SrvAllocConsole(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvAttachConsole(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvConsoleNotifyLastClose(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvCreateConsoleScreenBuffer(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvFillConsoleOutput(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvFreeConsole(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGenerateConsoleCtrlEvent(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleCP(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleCharType(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleCursorInfo(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleCursorMode(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleKeyboardLayoutName(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleLangId(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleMode(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleMouseInfo(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleNlsMode(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleProcessList(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleScreenBufferInfo(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvGetConsoleTitle(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvInvalidateBitMapRect(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvReadConsoleOutput(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvReadConsoleOutputString(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvScrollConsoleScreenBuffer(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleActiveScreenBuffer(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleCP(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleCursorInfo(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleCursorMode(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleCursorPosition(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleKeyShortcuts(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleLocalEUDC(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleMode(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleNlsMode(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsolePalette(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleScreenBufferSize(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleTextAttribute(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleTitle(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvSetConsoleWindowInfo(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvWriteConsole(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvWriteConsoleOutput(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+    pub fn SrvWriteConsoleOutputString(ApiMessage: PCSR_API_MESSAGE, ReplyCode: *mut ULONG) -> NTSTATUS;
+}
 
 #[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
 pub static mut ConSrvDllInstance: HINSTANCE = core::ptr::null_mut();

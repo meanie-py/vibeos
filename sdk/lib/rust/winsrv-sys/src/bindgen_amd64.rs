@@ -58893,7 +58893,34 @@ pub struct _CONSOLE_START_INFO {
     pub OutputHandle: HANDLE,
     pub ErrorHandle: HANDLE,
     pub InitEvents: [HANDLE; 2usize],
-    pub __bindgen_padding_0: [u64; 30usize],
+    pub IconIndex: INT,
+    pub hIcon: HICON,
+    pub hIconSm: HICON,
+    pub dwHotKey: DWORD,
+    pub dwStartupFlags: DWORD,
+    pub wFillAttribute: WORD,
+    pub wPopupFillAttribute: WORD,
+    pub wShowWindow: WORD,
+    pub wUnknown: WORD,
+    pub dwScreenBufferSize: COORD,
+    pub dwWindowSize: COORD,
+    pub dwWindowOrigin: COORD,
+    pub nFont: DWORD,
+    pub nInputBufferSize: DWORD,
+    pub dwFontSize: COORD,
+    pub uFontFamily: UINT,
+    pub uFontWeight: UINT,
+    pub FaceName: [WCHAR; 32usize],
+    pub uCursorSize: UINT,
+    pub bFullScreen: BOOL,
+    pub bQuickEdit: BOOL,
+    pub bInsertMode: BOOL,
+    pub bAutoPosition: BOOL,
+    pub uHistoryBufferSize: UINT,
+    pub uNumberOfHistoryBuffers: UINT,
+    pub bHistoryNoDup: BOOL,
+    pub ColorTable: [COLORREF; 16usize],
+    pub uCodePage: UINT,
 }
 pub type CONSOLE_START_INFO = _CONSOLE_START_INFO;
 pub type PCONSOLE_START_INFO = *mut _CONSOLE_START_INFO;
@@ -60109,7 +60136,19 @@ pub struct _FRONTEND {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _CONSRV_CONSOLE {
-    pub __bindgen_padding_0: [u64; 27usize],
+    pub ReferenceCount: LONG,
+    pub Lock: CRITICAL_SECTION,
+    pub State: CONSOLE_STATE,
+    pub TermIFace: TERMINAL,
+    pub ConsolePaused: BOOLEAN,
+    pub InputBuffer: CONSOLE_INPUT_BUFFER,
+    pub InputCodePage: UINT,
+    pub BufferList: LIST_ENTRY,
+    pub ActiveBuffer: PCONSOLE_SCREEN_BUFFER,
+    pub OutputCodePage: UINT,
+    pub ConsoleSize: COORD,
+    pub FixedSize: BOOLEAN,
+    pub IsCJK: BOOLEAN,
     pub InitEvents: [HANDLE; 2usize],
     pub FrontEndIFace: FRONTEND,
     pub ProcessList: LIST_ENTRY,
@@ -60737,6 +60776,773 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ElfFlushEventLog(hEventLog: HANDLE) -> NTSTATUS;
 }
+unsafe extern "C" {
+    pub fn NtAddBootEntry(BootEntry: PBOOT_ENTRY, Id: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtAddDriverEntry(BootEntry: PEFI_DRIVER_ENTRY, Id: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtCancelIoFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtCreateFile(
+        FileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        AllocationSize: PLARGE_INTEGER,
+        FileAttributes: ULONG,
+        ShareAccess: ULONG,
+        CreateDisposition: ULONG,
+        CreateOptions: ULONG,
+        EaBuffer: PVOID,
+        EaLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtCreateIoCompletion(
+        IoCompletionHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        NumberOfConcurrentThreads: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtCreateMailslotFile(
+        MailSlotFileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileAttributes: ULONG,
+        ShareAccess: ULONG,
+        MaxMessageSize: ULONG,
+        TimeOut: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtCreateNamedPipeFile(
+        NamedPipeFileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ShareAccess: ULONG,
+        CreateDisposition: ULONG,
+        CreateOptions: ULONG,
+        WriteModeMessage: ULONG,
+        ReadModeMessage: ULONG,
+        NonBlocking: ULONG,
+        MaxInstances: ULONG,
+        InBufferSize: ULONG,
+        OutBufferSize: ULONG,
+        DefaultTimeOut: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtDeleteDriverEntry(Id: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtDeleteBootEntry(Id: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtDeleteFile(ObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtDeviceIoControlFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        IoControlCode: ULONG,
+        InputBuffer: PVOID,
+        InputBufferLength: ULONG,
+        OutputBuffer: PVOID,
+        OutputBufferLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtEnumerateBootEntries(Buffer: PVOID, BufferLength: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtEnumerateDriverEntries(Buffer: PVOID, BufferLength: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtFlushBuffersFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtFlushWriteBuffer() -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtFsControlFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FsControlCode: ULONG,
+        InputBuffer: PVOID,
+        InputBufferLength: ULONG,
+        OutputBuffer: PVOID,
+        OutputBufferLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtLoadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtLockFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ByteOffset: PLARGE_INTEGER,
+        Length: PLARGE_INTEGER,
+        Key: ULONG,
+        FailImmediatedly: BOOLEAN,
+        ExclusiveLock: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtModifyBootEntry(BootEntry: PBOOT_ENTRY) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtModifyDriverEntry(DriverEntry: PEFI_DRIVER_ENTRY) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtNotifyChangeDirectoryFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        BufferSize: ULONG,
+        CompletionFilter: ULONG,
+        WatchTree: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtOpenFile(
+        FileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ShareAccess: ULONG,
+        OpenOptions: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtOpenIoCompletion(
+        CompetionPort: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryAttributesFile(
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        FileInformation: PFILE_BASIC_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryDriverEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryBootEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryBootOptions(BootOptions: PBOOT_OPTIONS, BootOptionsLength: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryDirectoryFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileInformation: PVOID,
+        Length: ULONG,
+        FileInformationClass: FILE_INFORMATION_CLASS,
+        ReturnSingleEntry: BOOLEAN,
+        FileName: PUNICODE_STRING,
+        RestartScan: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryEaFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ReturnSingleEntry: BOOLEAN,
+        EaList: PVOID,
+        EaListLength: ULONG,
+        EaIndex: PULONG,
+        RestartScan: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryFullAttributesFile(
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        FileInformation: PFILE_NETWORK_OPEN_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileInformation: PVOID,
+        Length: ULONG,
+        FileInformationClass: FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryIoCompletion(
+        IoCompletionHandle: HANDLE,
+        IoCompletionInformationClass: IO_COMPLETION_INFORMATION_CLASS,
+        IoCompletionInformation: PVOID,
+        IoCompletionInformationLength: ULONG,
+        ResultLength: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryQuotaInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ReturnSingleEntry: BOOLEAN,
+        SidList: PVOID,
+        SidListLength: ULONG,
+        StartSid: PSID,
+        RestartScan: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQueryVolumeInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FsInformation: PVOID,
+        Length: ULONG,
+        FsInformationClass: FS_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtReadFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtReadFileScatter(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        UserApcRoutine: PIO_APC_ROUTINE,
+        UserApcContext: PVOID,
+        UserIoStatusBlock: PIO_STATUS_BLOCK,
+        BufferDescription: *mut FILE_SEGMENT_ELEMENT,
+        BufferLength: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtRemoveIoCompletion(
+        IoCompletionHandle: HANDLE,
+        CompletionKey: *mut PVOID,
+        CompletionContext: *mut PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Timeout: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetBootEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetBootOptions(BootOptions: PBOOT_OPTIONS, FieldsToChange: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetDriverEntryOrder(Ids: PULONG, Count: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetEaFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        EaBuffer: PVOID,
+        EaBufferSize: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileInformation: PVOID,
+        Length: ULONG,
+        FileInformationClass: FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetIoCompletion(
+        IoCompletionPortHandle: HANDLE,
+        CompletionKey: PVOID,
+        CompletionContext: PVOID,
+        CompletionStatus: NTSTATUS,
+        CompletionInformation: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetQuotaInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        BufferLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtSetVolumeInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FsInformation: PVOID,
+        Length: ULONG,
+        FsInformationClass: FS_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtTranslateFilePath(
+        InputFilePath: PFILE_PATH,
+        OutputType: ULONG,
+        OutputFilePath: PFILE_PATH,
+        OutputFilePathLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtUnloadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtUnlockFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ByteOffset: PLARGE_INTEGER,
+        Length: PLARGE_INTEGER,
+        Key: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtWriteFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtWriteFileGather(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        BufferDescription: *mut FILE_SEGMENT_ELEMENT,
+        BufferLength: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwAddBootEntry(EntryName: PUNICODE_STRING, EntryValue: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwCancelIoFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwCreateFile(
+        FileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        AllocationSize: PLARGE_INTEGER,
+        FileAttributes: ULONG,
+        ShareAccess: ULONG,
+        CreateDisposition: ULONG,
+        CreateOptions: ULONG,
+        EaBuffer: PVOID,
+        EaLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwCreateIoCompletion(
+        IoCompletionHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        NumberOfConcurrentThreads: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwCreateMailslotFile(
+        MailSlotFileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileAttributes: ULONG,
+        ShareAccess: ULONG,
+        MaxMessageSize: ULONG,
+        TimeOut: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwCreateNamedPipeFile(
+        NamedPipeFileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ShareAccess: ULONG,
+        CreateDisposition: ULONG,
+        CreateOptions: ULONG,
+        WriteModeMessage: ULONG,
+        ReadModeMessage: ULONG,
+        NonBlocking: ULONG,
+        MaxInstances: ULONG,
+        InBufferSize: ULONG,
+        OutBufferSize: ULONG,
+        DefaultTimeOut: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwDeleteBootEntry(EntryName: PUNICODE_STRING, EntryValue: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwDeleteFile(ObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwDeviceIoControlFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        IoControlCode: ULONG,
+        InputBuffer: PVOID,
+        InputBufferLength: ULONG,
+        OutputBuffer: PVOID,
+        OutputBufferLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwFlushBuffersFile(FileHandle: HANDLE, IoStatusBlock: PIO_STATUS_BLOCK) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwFlushWriteBuffer() -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwFsControlFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FsControlCode: ULONG,
+        InputBuffer: PVOID,
+        InputBufferLength: ULONG,
+        OutputBuffer: PVOID,
+        OutputBufferLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwLoadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwLockFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ByteOffset: PLARGE_INTEGER,
+        Length: PLARGE_INTEGER,
+        Key: ULONG,
+        FailImmediatedly: BOOLEAN,
+        ExclusiveLock: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwNotifyChangeDirectoryFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        BufferSize: ULONG,
+        CompletionFilter: ULONG,
+        WatchTree: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwOpenFile(
+        FileHandle: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ShareAccess: ULONG,
+        OpenOptions: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwOpenIoCompletion(
+        CompetionPort: PHANDLE,
+        DesiredAccess: ACCESS_MASK,
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryAttributesFile(
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        FileInformation: PFILE_BASIC_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryDirectoryFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileInformation: PVOID,
+        Length: ULONG,
+        FileInformationClass: FILE_INFORMATION_CLASS,
+        ReturnSingleEntry: BOOLEAN,
+        FileName: PUNICODE_STRING,
+        RestartScan: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryEaFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ReturnSingleEntry: BOOLEAN,
+        EaList: PVOID,
+        EaListLength: ULONG,
+        EaIndex: PULONG,
+        RestartScan: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryFullAttributesFile(
+        ObjectAttributes: POBJECT_ATTRIBUTES,
+        FileInformation: PFILE_NETWORK_OPEN_INFORMATION,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileInformation: PVOID,
+        Length: ULONG,
+        FileInformationClass: FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryIoCompletion(
+        IoCompletionHandle: HANDLE,
+        IoCompletionInformationClass: IO_COMPLETION_INFORMATION_CLASS,
+        IoCompletionInformation: PVOID,
+        IoCompletionInformationLength: ULONG,
+        ResultLength: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryQuotaInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ReturnSingleEntry: BOOLEAN,
+        SidList: PVOID,
+        SidListLength: ULONG,
+        StartSid: PSID,
+        RestartScan: BOOLEAN,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwQueryVolumeInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FsInformation: PVOID,
+        Length: ULONG,
+        FsInformationClass: FS_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwReadFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwReadFileScatter(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        UserApcRoutine: PIO_APC_ROUTINE,
+        UserApcContext: PVOID,
+        UserIoStatusBlock: PIO_STATUS_BLOCK,
+        BufferDescription: *mut FILE_SEGMENT_ELEMENT,
+        BufferLength: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwRemoveIoCompletion(
+        IoCompletionHandle: HANDLE,
+        CompletionKey: *mut PVOID,
+        CompletionContext: *mut PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Timeout: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwSetEaFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        EaBuffer: PVOID,
+        EaBufferSize: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwSetInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FileInformation: PVOID,
+        Length: ULONG,
+        FileInformationClass: FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwSetIoCompletion(
+        IoCompletionPortHandle: HANDLE,
+        CompletionKey: PVOID,
+        CompletionContext: PVOID,
+        CompletionStatus: NTSTATUS,
+        CompletionInformation: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwSetQuotaInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        BufferLength: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwSetVolumeInformationFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        FsInformation: PVOID,
+        Length: ULONG,
+        FsInformationClass: FS_INFORMATION_CLASS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwUnloadDriver(DriverServiceName: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwUnlockFile(
+        FileHandle: HANDLE,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        ByteOffset: PLARGE_INTEGER,
+        Length: PLARGE_INTEGER,
+        Key: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwWriteFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        Buffer: PVOID,
+        Length: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn ZwWriteFileGather(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PIO_APC_ROUTINE,
+        ApcContext: PVOID,
+        IoStatusBlock: PIO_STATUS_BLOCK,
+        BufferDescription: *mut FILE_SEGMENT_ELEMENT,
+        BufferLength: ULONG,
+        ByteOffset: PLARGE_INTEGER,
+        Key: PULONG,
+    ) -> NTSTATUS;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagCONSOLE_MODE {
+    pub dwMode: ULONG,
+}
+pub type CONSOLE_MODE = tagCONSOLE_MODE;
+pub type PCONSOLE_MODE = *mut tagCONSOLE_MODE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagOUTPUT_ATTRIBUTE {
+    pub wAttribute: USHORT,
+    pub nLength: ULONG,
+    pub dwCoord: COORD,
+    pub dwTransfered: ULONG,
+}
+pub type OUTPUT_ATTRIBUTE = tagOUTPUT_ATTRIBUTE;
+pub type POUTPUT_ATTRIBUTE = *mut tagOUTPUT_ATTRIBUTE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagOUTPUT_CHARACTER {
+    pub cCharacter: CHAR,
+    pub nLength: ULONG,
+    pub dwCoord: COORD,
+    pub dwTransfered: ULONG,
+}
+pub type OUTPUT_CHARACTER = tagOUTPUT_CHARACTER;
+pub type POUTPUT_CHARACTER = *mut tagOUTPUT_CHARACTER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagCONSOLE_DRAW {
+    pub X: USHORT,
+    pub Y: USHORT,
+    pub SizeX: USHORT,
+    pub SizeY: USHORT,
+    pub CursorX: USHORT,
+    pub CursorY: USHORT,
+}
+pub type CONSOLE_DRAW = tagCONSOLE_DRAW;
+pub type PCONSOLE_DRAW = *mut tagCONSOLE_DRAW;
 pub type __builtin_va_list = *mut ::core::ffi::c_char;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

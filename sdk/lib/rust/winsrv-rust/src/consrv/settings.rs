@@ -1,16 +1,26 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 extern "C" {
     static s_Colors: [COLORREF; 16];
 }
 
 extern "system" {
-    fn ConDrvChangeScreenBufferAttributes( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, NewScreenAttrib: u16, NewPopupAttrib: u16, ) -> i32;
-    fn HistoryReshapeAllBuffers( Console: PCONSRV_CONSOLE, HistoryBufferSize: u32, NumberOfHistoryBuffers: u32, HistoryNoDup: u32, );
-    fn TermSetCodePage( Console: PCONSRV_CONSOLE, CodePage: u32, ) -> u8;
-    fn TermResizeTerminal(Console: PCONSRV_CONSOLE);
-    fn ConioResizeBuffer( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Size: COORD, ) -> i32;
+    pub fn ConDrvChangeScreenBufferAttributes( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, NewScreenAttrib: u16, NewPopupAttrib: u16, ) -> i32;
+    pub fn HistoryReshapeAllBuffers( Console: PCONSRV_CONSOLE, HistoryBufferSize: u32, NumberOfHistoryBuffers: u32, HistoryNoDup: u32, );
+    pub fn TermSetCodePage( Console: PCONSRV_CONSOLE, CodePage: u32, ) -> u8;
+    pub fn TermResizeTerminal(Console: PCONSRV_CONSOLE);
+    pub fn ConioResizeBuffer( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Size: COORD, ) -> i32;
 }
 
 #[no_mangle]

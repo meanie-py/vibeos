@@ -3,8 +3,8 @@ use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 
 extern "system" {
-    fn NtUserSetInformationThread( ThreadHandle: HANDLE, ThreadInformationClass: u32, ThreadInformation: *const core::ffi::c_void, ThreadInformationLength: ULONG, ) -> NTSTATUS;
-    fn NtUserCallNoParam(Routine: u32) -> ULONG_PTR;
+    pub fn NtUserSetInformationThread( ThreadHandle: HANDLE, ThreadInformationClass: u32, ThreadInformation: *const core::ffi::c_void, ThreadInformationLength: ULONG, ) -> NTSTATUS;
+    pub fn NtUserCallNoParam(Routine: u32) -> ULONG_PTR;
 }
 
 const NOPARAM_ROUTINE_ISCONSOLEMODE: u32 = 0;

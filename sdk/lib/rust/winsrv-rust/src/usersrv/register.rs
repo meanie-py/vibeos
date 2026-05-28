@@ -9,7 +9,7 @@ pub static mut LogonProcessId: ULONG_PTR = 0;
 
 extern "system" {
     pub static mut CsrApiPort: HANDLE;
-    fn CsrQueryApiPort() -> HANDLE;
+    pub fn CsrQueryApiPort() -> HANDLE;
 }
 
 #[no_mangle]

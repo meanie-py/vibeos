@@ -294,6 +294,40 @@ pub mod nt {
         ul as usize as *mut _
     }
 
+    /// `ULongToHandle(ul)` — same as `UlongToHandle`. basetsd.h spells
+    /// it with capital `L`; provide both spellings.
+    #[inline]
+    pub fn ULongToHandle(ul: u32) -> *mut core::ffi::c_void {
+        ul as usize as *mut _
+    }
+
+    /// `HandleToULong(h)` — basetsd.h cast macro: truncate the pointer
+    /// back to u32. On i386 it's a straight cast; on amd64/arm64 the
+    /// truncation is lossy by design (the caller knows the upper bits
+    /// were ULONG-zero).
+    #[inline]
+    pub fn HandleToULong(h: *mut core::ffi::c_void) -> u32 {
+        h as usize as u32
+    }
+
+    /// `HandleToUlong(h)` — alternative spelling.
+    #[inline]
+    pub fn HandleToUlong(h: *mut core::ffi::c_void) -> u32 {
+        h as usize as u32
+    }
+
+    /// `UlongToPtr(ul)` — basetsd.h cast macro: same shape as
+    /// `UlongToHandle` but returns `*mut c_void` directly.
+    #[inline]
+    pub fn UlongToPtr(ul: u32) -> *mut core::ffi::c_void {
+        ul as usize as *mut _
+    }
+
+    /// `INVALID_HANDLE_VALUE` — winbase.h: `((HANDLE)(LONG_PTR)-1)`.
+    /// Bindgen treats this as an opaque pointer; hand-define for
+    /// translated consumers.
+    pub const INVALID_HANDLE_VALUE: *mut core::ffi::c_void = !0usize as *mut _;
+
     /// `GetWindowLongPtrW(hWnd, nIndex)` — on i386 winuser.h:4931
     /// `#define GetWindowLongPtrW GetWindowLongW` (no real Ptr variant);
     /// bindgen doesn't follow the `#define` so we hand-write the
@@ -368,6 +402,206 @@ pub mod consts {
     /// here so condrv/text.rs (and friends) can pull it via the
     /// `winsrv_sys::consts::*` glob.
     pub const STATUS_NOT_SUPPORTED: i32 = 0xC00000BB_u32 as i32;
+
+    /// `STATUS_THREAD_IS_TERMINATING` — ntstatus.h: 0xC000004B.
+    pub const STATUS_THREAD_IS_TERMINATING: i32 = 0xC000004B_u32 as i32;
+
+    /// `STATUS_ALERTED` — ntstatus.h: 0x00000101 (success-class).
+    pub const STATUS_ALERTED: i32 = 0x00000101;
+
+    /// `STATUS_USER_APC` — ntstatus.h: 0x000000C0.
+    pub const STATUS_USER_APC: i32 = 0x000000C0;
+
+    /// `SUCCEEDED(hr)` — winerror.h macro: `(((HRESULT)(hr)) >= 0)`.
+    /// HRESULT is i32 in winsrv-sys::winsrv.
+    #[inline]
+    pub fn SUCCEEDED(hr: i32) -> bool {
+        hr >= 0
+    }
+
+    /// `FAILED(hr)` — winerror.h macro.
+    #[inline]
+    pub fn FAILED(hr: i32) -> bool {
+        hr < 0
+    }
+
+    /// `RtlZeroMemory(dest, len)` — Windows macro that aliases memset(dest,0,len).
+    #[inline]
+    pub unsafe fn RtlZeroMemory(
+        dest: *mut core::ffi::c_void,
+        len: usize,
+    ) {
+        core::ptr::write_bytes(dest as *mut u8, 0, len);
+    }
+
+    /// `EnterCriticalSection(cs)` — kernel32.dll API. Bindgen sees only
+    /// `DeleteCriticalSection`; Enter/Leave/Initialize aren't in our
+    /// allowlist (kernel32 not strictly needed at translation time).
+    /// Delegate to the Rtl* form which bindgen DOES expose.
+    #[inline]
+    pub unsafe fn EnterCriticalSection(cs: crate::winsrv::PRTL_CRITICAL_SECTION) {
+        let _ = crate::winsrv::RtlEnterCriticalSection(cs);
+    }
+
+    /// `LeaveCriticalSection(cs)`.
+    #[inline]
+    pub unsafe fn LeaveCriticalSection(cs: crate::winsrv::PRTL_CRITICAL_SECTION) {
+        let _ = crate::winsrv::RtlLeaveCriticalSection(cs);
+    }
+
+    /// `InitializeCriticalSection(cs)`.
+    #[inline]
+    pub unsafe fn InitializeCriticalSection(cs: crate::winsrv::PRTL_CRITICAL_SECTION) {
+        let _ = crate::winsrv::RtlInitializeCriticalSection(cs);
+    }
+
+    /// `SE_LOAD_DRIVER_PRIVILEGE` — winnt.h: 10. Privilege LUID
+    /// low part.
+    pub const SE_LOAD_DRIVER_PRIVILEGE: u32 = 10;
+
+    /// `SE_SHUTDOWN_PRIVILEGE` — winnt.h: 19.
+    pub const SE_SHUTDOWN_PRIVILEGE: u32 = 19;
+
+    /// `min(a, b)` — windef.h macro. Generic since C usage spans
+    /// every integer/short/long width.
+    #[inline]
+    pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+        if a < b { a } else { b }
+    }
+
+    /// `max(a, b)` — windef.h macro. Generic for the same reason.
+    #[inline]
+    pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+        if a > b { a } else { b }
+    }
+
+    /// `RtlMoveMemory(dest, src, len)` — Windows macro that aliases
+    /// memmove. Overlap-safe (uses `core::ptr::copy`).
+    #[inline]
+    pub unsafe fn RtlMoveMemory(
+        dest: *mut core::ffi::c_void,
+        src: *const core::ffi::c_void,
+        len: usize,
+    ) {
+        core::ptr::copy(src as *const u8, dest as *mut u8, len);
+    }
+
+    /// `RtlFillMemory(dest, len, val)` — Windows macro for memset.
+    #[inline]
+    pub unsafe fn RtlFillMemory(
+        dest: *mut core::ffi::c_void,
+        len: usize,
+        val: u8,
+    ) {
+        core::ptr::write_bytes(dest as *mut u8, val, len);
+    }
+
+    // conoutput.h macros — expand to ConSrvGetObject with the right
+    // buffer-type enum tag. Bindgen sees ConSrvGetObject but not the
+    // wrapper macros.
+    use crate::winsrv::{
+        PCONSOLE_PROCESS_DATA, PCONSOLE_IO_OBJECT, TEXTMODE_BUFFER,
+        GRAPHICS_BUFFER, SCREEN_BUFFER, ConSrvGetObject, ConSrvReleaseObject,
+    };
+    use crate::winsrv::{HANDLE, BOOLEAN, NTSTATUS, ULONG, PVOID};
+
+    #[inline]
+    pub unsafe fn ConSrvGetTextModeBuffer(
+        ProcessData: PCONSOLE_PROCESS_DATA,
+        Handle: HANDLE,
+        Ptr: *mut PCONSOLE_IO_OBJECT,
+        Access: ULONG,
+        LockConsole: BOOLEAN,
+    ) -> NTSTATUS {
+        ConSrvGetObject(ProcessData, Handle, Ptr, core::ptr::null_mut(),
+                        Access, LockConsole, TEXTMODE_BUFFER)
+    }
+
+    #[inline]
+    pub unsafe fn ConSrvGetTextModeBufferAndHandleEntry(
+        ProcessData: PCONSOLE_PROCESS_DATA,
+        Handle: HANDLE,
+        Ptr: *mut PCONSOLE_IO_OBJECT,
+        Entry: *mut PVOID,
+        Access: ULONG,
+        LockConsole: BOOLEAN,
+    ) -> NTSTATUS {
+        ConSrvGetObject(ProcessData, Handle, Ptr, Entry,
+                        Access, LockConsole, TEXTMODE_BUFFER)
+    }
+
+    #[inline]
+    pub unsafe fn ConSrvGetGraphicsBuffer(
+        ProcessData: PCONSOLE_PROCESS_DATA,
+        Handle: HANDLE,
+        Ptr: *mut PCONSOLE_IO_OBJECT,
+        Access: ULONG,
+        LockConsole: BOOLEAN,
+    ) -> NTSTATUS {
+        ConSrvGetObject(ProcessData, Handle, Ptr, core::ptr::null_mut(),
+                        Access, LockConsole, GRAPHICS_BUFFER)
+    }
+
+    #[inline]
+    pub unsafe fn ConSrvGetScreenBuffer(
+        ProcessData: PCONSOLE_PROCESS_DATA,
+        Handle: HANDLE,
+        Ptr: *mut PCONSOLE_IO_OBJECT,
+        Access: ULONG,
+        LockConsole: BOOLEAN,
+    ) -> NTSTATUS {
+        ConSrvGetObject(ProcessData, Handle, Ptr, core::ptr::null_mut(),
+                        Access, LockConsole, SCREEN_BUFFER)
+    }
+
+    #[inline]
+    pub unsafe fn ConSrvGetScreenBufferAndHandleEntry(
+        ProcessData: PCONSOLE_PROCESS_DATA,
+        Handle: HANDLE,
+        Ptr: *mut PCONSOLE_IO_OBJECT,
+        Entry: *mut PVOID,
+        Access: ULONG,
+        LockConsole: BOOLEAN,
+    ) -> NTSTATUS {
+        ConSrvGetObject(ProcessData, Handle, Ptr, Entry,
+                        Access, LockConsole, SCREEN_BUFFER)
+    }
+
+    /// `ConSrvReleaseScreenBuffer(Buff, IsConsoleLocked)` —
+    /// `ConSrvReleaseObject(&(Buff)->Header, IsConsoleLocked)`.
+    /// The macro is generic over screen/textmode/graphics buffer
+    /// pointer types since each has a `Header` of type
+    /// `CONSOLE_IO_OBJECT`; we just take a `*mut c_void` and
+    /// cast.
+    #[inline]
+    pub unsafe fn ConSrvReleaseScreenBuffer<T>(
+        Buff: *mut T,
+        IsConsoleLocked: BOOLEAN,
+    ) {
+        // CONSOLE_IO_OBJECT is the first member of the screen buffer
+        // structs (CONSOLE_SCREEN_BUFFER.Header, TEXTMODE_SCREEN_BUFFER
+        // also has .Header at offset 0). Cast and dispatch.
+        ConSrvReleaseObject(Buff as PCONSOLE_IO_OBJECT, IsConsoleLocked);
+    }
+
+    /// `IsConsoleHandle(h)` — console.h:14 macro:
+    /// `(((ULONG_PTR)(h) & 0x10000003) == 0x3)`.
+    #[inline]
+    pub fn IsConsoleHandle(h: *mut core::ffi::c_void) -> bool {
+        (h as usize & 0x10000003) == 0x3
+    }
+
+    /// `ConsoleGetPerProcessData(Process)` — consrv.h:38 macro:
+    /// `((PCONSOLE_PROCESS_DATA)((Process)->ServerData[CONSRV_SERVERDLL_INDEX]))`.
+    /// CSR_PROCESS has a ServerData PVOID flexible array; index 2 is consrv's slot.
+    #[inline]
+    pub unsafe fn ConsoleGetPerProcessData(
+        Process: *mut crate::winsrv::CSR_PROCESS,
+    ) -> crate::winsrv::PCONSOLE_PROCESS_DATA {
+        let server_data_base = core::ptr::addr_of_mut!((*Process).ServerData) as *mut crate::winsrv::PVOID;
+        let slot = *server_data_base.add(crate::winsrv::CONSRV_SERVERDLL_INDEX as usize);
+        slot as crate::winsrv::PCONSOLE_PROCESS_DATA
+    }
 
     /// `LANGIDFROMLCID(lcid)` — macro `(WORD)(lcid)`.
     #[inline]

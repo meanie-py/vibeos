@@ -65,3 +65,11 @@ typedef __builtin_va_list __gnuc_va_list;
    shutdown.c. Pull explicitly — they're #defines bindgen DOES read
    when the header is included. */
 #include "usersrv/resource.h"
+
+/* tuiterm.c pulls NT IO surface (NtLoadDriver/NtUnloadDriver/NtOpenFile/
+   NtDeviceIoControlFile + IO_STATUS_BLOCK + FILE_*). NTOS_MODE_USER is
+   set by winsrv.h above, so the user-mode ndk/iofuncs.h shape is in
+   scope. Add the IOCTL_CONSOLE_* constants the BlueScreen driver
+   exposes (ntddblue.h). */
+#include <ndk/iofuncs.h>
+#include <reactos/drivers/blue/ntddblue.h>

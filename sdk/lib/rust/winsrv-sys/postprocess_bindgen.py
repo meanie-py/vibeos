@@ -195,6 +195,16 @@ def fix_bitfield_ctor_const_collisions(content: str) -> tuple[str, int]:
 ANON_BASE_INLINE = {
     "_TEXTMODE_SCREEN_BUFFER": "_CONSOLE_SCREEN_BUFFER",
     "_GRAPHICS_SCREEN_BUFFER": "_CONSOLE_SCREEN_BUFFER",
+    # CONSRV_CONSOLE inherits from CONSOLE (conio_winsrv.h:206 — `CONSOLE;`
+    # as an MS-extension anonymous base member). Phase 5.4 console.rs +
+    # consumers access ReferenceCount/Lock/InputBuffer/etc. through the
+    # CONSRV_CONSOLE pointer as flat fields.
+    "_CONSRV_CONSOLE": "_CONSOLE",
+    # CONSOLE_START_INFO embeds CONSOLE_PROPERTIES (the kernel32 →
+    # csrss console-creation payload, conmsg.h). Without inline,
+    # IconIndex / hIcon / hIconSm / wShowWindow / dwStartupFlags /
+    # wFillAttribute / etc. are unreachable through PCONSOLE_START_INFO.
+    "_CONSOLE_START_INFO": "_CONSOLE_PROPERTIES",
 }
 
 
@@ -221,9 +231,13 @@ def inline_anon_base_padding(content: str) -> tuple[str, int]:
             continue
         base_fields = bm.group(1)
 
-        # Patch the derived struct body in place.
+        # Patch the derived struct body in place. The anonymous base
+        # member can be at the start (e.g. _TEXTMODE_SCREEN_BUFFER) or
+        # the end (e.g. _CONSOLE_START_INFO has explicit fields, then
+        # the anon `CONSOLE_PROPERTIES;` last). Match the padding line
+        # ANYWHERE in the struct body; replace just that one line.
         derived_re = re.compile(
-            rf'(pub struct {re.escape(derived)} \{{\n)'
+            rf'(pub struct {re.escape(derived)} \{{\n(?:(?:    pub [^\n]+\n)*?))'
             rf'    pub __bindgen_padding_0: \[[a-z0-9 ;]+\],\n',
         )
         new_content, did = derived_re.subn(rf'\1{base_fields}', content)

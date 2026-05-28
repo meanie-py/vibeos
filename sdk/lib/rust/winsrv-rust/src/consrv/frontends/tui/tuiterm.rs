@@ -1,14 +1,28 @@
 use winsrv_sys::nt::*;
+use super::super::super::{wcslen, _stricmp, strchr};
+use super::super::super::condrv::text::*;
+use super::super::super::condrv::conoutput::*;
+use super::super::super::condrv::coninput::*;
+use super::super::super::condrv::console::*;
+use super::super::super::console::*;
+use super::super::super::handle::*;
+use super::super::super::lineinput::*;
+use super::super::super::history::*;
+use super::super::super::init::*;
+use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
+use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
+// Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
+use super::super::super::init::ConSrvDllInstance;
+use super::super::super::condrv::console::ConDrvValidateConsoleUnsafe;
+
 use core::ffi::c_void;
 
 extern "C" {
-    fn ConsoleAllocHeap(flags: u32, size: usize) -> *mut core::ffi::c_void;
-    fn ConsoleFreeHeap(ptr: *mut core::ffi::c_void);
-    fn wcslen(s: *const u16) -> usize;
-    fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
-    fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
-    fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
-    fn InitializeCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
+    pub fn wcslen(s: *const u16) -> usize;
+    pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
+    pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
+    pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -91,7 +105,7 @@ static TuiVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
     SetMenuClose: TuiSetMenuClose,
 };
 
-unsafe fn ScmLoadDriver(lpServiceName: LPCWSTR) -> u32 {
+pub(crate) unsafe fn ScmLoadDriver(lpServiceName: LPCWSTR) -> u32 {
     let mut Status: i32 = STATUS_SUCCESS;
     let mut WasPrivilegeEnabled: u8 = 0u8;
     let pszDriverPath: PWSTR;
@@ -137,7 +151,7 @@ unsafe fn ScmLoadDriver(lpServiceName: LPCWSTR) -> u32 {
     RtlNtStatusToDosError(Status)
 }
 
-unsafe fn ScmUnloadDriver(lpServiceName: LPCWSTR) -> u32 {
+pub(crate) unsafe fn ScmUnloadDriver(lpServiceName: LPCWSTR) -> u32 {
     let mut Status: i32 = STATUS_SUCCESS;
     let mut WasPrivilegeEnabled: u8 = 0u8;
     let pszDriverPath: PWSTR;
@@ -185,7 +199,7 @@ unsafe fn ScmUnloadDriver(lpServiceName: LPCWSTR) -> u32 {
     RtlNtStatusToDosError(Status)
 }
 
-unsafe fn TuiSwapConsole(Next: i32) -> u8 {
+pub(crate) unsafe fn TuiSwapConsole(Next: i32) -> u8 {
     static mut SwapConsole: *mut _TUI_CONSOLE_DATA = core::ptr::null_mut();
     let mut BytesReturned: u32 = 0;
     let mut Title: ANSI_STRING = core::mem::zeroed();
@@ -258,7 +272,7 @@ unsafe fn TuiSwapConsole(Next: i32) -> u8 {
     }
 }
 
-unsafe fn TuiCopyRect(Dest: PCHAR, Buff: PTEXTMODE_SCREEN_BUFFER, Region: *mut SMALL_RECT) {
+pub(crate) unsafe fn TuiCopyRect(Dest: PCHAR, Buff: PTEXTMODE_SCREEN_BUFFER, Region: *mut SMALL_RECT) {
     let mut SrcDelta: u32;
     let mut DestDelta: u32;
     let mut i: i32;
@@ -294,7 +308,7 @@ unsafe fn TuiCopyRect(Dest: PCHAR, Buff: PTEXTMODE_SCREEN_BUFFER, Region: *mut S
     }
 }
 
-unsafe fn TuiConsoleWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+pub(crate) unsafe fn TuiConsoleWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     match msg {
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP => {
             if ConDrvValidateConsoleUnsafe(
@@ -376,7 +390,7 @@ unsafe extern "system" fn TuiConsoleThread(Param: PVOID) -> DWORD {
     0
 }
 
-unsafe fn TuiSetConsoleOutputCP(
+pub(crate) unsafe fn TuiSetConsoleOutputCP(
     hNtConddHandle: HANDLE,
     CodePage: UINT,
 ) -> BOOLEAN
@@ -651,7 +665,7 @@ unsafe fn TuiSetConsoleOutputCP(
     if NT_SUCCESS(Status) { 1u8 } else { 0u8 }
 }
 
-unsafe fn TuiInit(OemCP: UINT) -> BOOL {
+pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     let mut Success: BOOL;
     let mut ScrInfo: CONSOLE_SCREEN_BUFFER_INFO = core::mem::zeroed();
     let mut BytesReturned: u32 = 0;
@@ -768,7 +782,7 @@ unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     return Success;
 }
 
-unsafe fn TuiInitFrontEnd(
+pub(crate) unsafe fn TuiInitFrontEnd(
     This: PFRONTEND,
     Console: PCONSRV_CONSOLE,
 ) -> NTSTATUS {
@@ -825,7 +839,7 @@ unsafe fn TuiInitFrontEnd(
     STATUS_SUCCESS
 }
 
-unsafe fn TuiDeinitFrontEnd(This: PFRONTEND) {
+pub(crate) unsafe fn TuiDeinitFrontEnd(This: PFRONTEND) {
     let TuiData = (*This).Context as PTUI_CONSOLE_DATA;
 
     DestroyWindow((*TuiData).hWindow);
@@ -883,7 +897,7 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
     ConsoleFreeHeap(ConsoleDraw as *mut core::ffi::c_void);
 }
 
-unsafe fn TuiWriteStream(
+pub(crate) unsafe fn TuiWriteStream(
     This: PFRONTEND,
     Region: *mut SMALL_RECT,
     CursorStartX: i16,
@@ -948,11 +962,11 @@ unsafe fn TuiWriteStream(
     RtlFreeHeap(RtlGetProcessHeap(), 0, NewBuffer as *mut core::ffi::c_void);
 }
 
-unsafe fn TuiRingBell(This: PFRONTEND) {
+pub(crate) unsafe fn TuiRingBell(This: PFRONTEND) {
     Beep(800, 200);
 }
 
-unsafe fn TuiSetCursorInfo(
+pub(crate) unsafe fn TuiSetCursorInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
 ) -> BOOL {
@@ -992,7 +1006,7 @@ unsafe fn TuiSetCursorInfo(
     1
 }
 
-unsafe fn TuiSetScreenInfo(
+pub(crate) unsafe fn TuiSetScreenInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
     OldCursorX: SHORT,
@@ -1032,7 +1046,7 @@ unsafe fn TuiSetScreenInfo(
     1u8
 }
 
-unsafe fn TuiResizeTerminal(This: *mut PFRONTEND) {
+pub(crate) unsafe fn TuiResizeTerminal(This: *mut PFRONTEND) {
 }
 
 unsafe extern "system" fn TuiSetActiveScreenBuffer(This: *mut PFRONTEND) {
@@ -1047,10 +1061,10 @@ unsafe extern "system" fn TuiReleaseScreenBuffer(
 unsafe extern "system" fn TuiRefreshInternalInfo(This: *mut PFRONTEND) {
 }
 
-unsafe fn TuiChangeTitle(This: *mut PFRONTEND) {
+pub(crate) unsafe fn TuiChangeTitle(This: *mut PFRONTEND) {
 }
 
-unsafe fn TuiChangeIcon(
+pub(crate) unsafe fn TuiChangeIcon(
     This: PFRONTEND,
     IconHandle: HICON,
 ) -> BOOL {
@@ -1061,12 +1075,12 @@ unsafe extern "system" fn TuiGetThreadConsoleDesktop(This: *mut PFRONTEND) -> HD
     core::ptr::null_mut()
 }
 
-unsafe fn TuiGetConsoleWindowHandle(This: *mut PFRONTEND) -> HWND {
+pub(crate) unsafe fn TuiGetConsoleWindowHandle(This: *mut PFRONTEND) -> HWND {
     let TuiData = (*This).Context as *mut _TUI_CONSOLE_DATA;
     (*TuiData).hWindow
 }
 
-unsafe fn TuiGetLargestConsoleWindowSize(
+pub(crate) unsafe fn TuiGetLargestConsoleWindowSize(
     This: PFRONTEND,
     pSize: PCOORD,
 ) {
@@ -1076,14 +1090,14 @@ unsafe fn TuiGetLargestConsoleWindowSize(
     *pSize = PhysicalConsoleSize;
 }
 
-unsafe fn TuiGetSelectionInfo(
+pub(crate) unsafe fn TuiGetSelectionInfo(
     This: PFRONTEND,
     pSelectionInfo: PCONSOLE_SELECTION_INFO,
 ) -> BOOL {
     1u8
 }
 
-unsafe fn TuiSetPalette(
+pub(crate) unsafe fn TuiSetPalette(
     This: PFRONTEND,
     PaletteHandle: HPALETTE,
     PaletteUsage: u32,
@@ -1106,21 +1120,21 @@ unsafe extern "system" fn TuiGetDisplayMode(This: PFRONTEND) -> ULONG {
     CONSOLE_FULLSCREEN_HARDWARE
 }
 
-unsafe fn TuiSetDisplayMode(
+pub(crate) unsafe fn TuiSetDisplayMode(
     This: *mut PFRONTEND,
     NewMode: ULONG,
 ) -> BOOL {
     1u8
 }
 
-unsafe fn TuiShowMouseCursor(
+pub(crate) unsafe fn TuiShowMouseCursor(
     This: PFRONTEND,
     Show: BOOL,
 ) -> INT {
     return 0;
 }
 
-unsafe fn TuiSetMouseCursor(
+pub(crate) unsafe fn TuiSetMouseCursor(
     This: *mut PFRONTEND,
     CursorHandle: HCURSOR,
 ) -> BOOL {
@@ -1135,14 +1149,14 @@ unsafe extern "system" fn TuiMenuControl(
     core::ptr::null_mut()
 }
 
-unsafe fn TuiSetMenuClose(
+pub(crate) unsafe fn TuiSetMenuClose(
     This: PFRONTEND,
     Enable: BOOL,
 ) -> BOOL {
     1u8
 }
 
-unsafe fn IsConsoleMode() -> BOOLEAN {
+pub(crate) unsafe fn IsConsoleMode() -> BOOLEAN {
     NtUserCallNoParam(NOPARAM_ROUTINE_ISCONSOLEMODE) as BOOLEAN
 }
 

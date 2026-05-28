@@ -1,26 +1,36 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::history::*;
+use super::init::*;
+use super::popup::{POPUP_WINDOW, PPOPUP_WINDOW, _POPUP_WINDOW};
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 // Forward declarations for functions from other modules
 extern "system" {
-    fn GetConsoleInputBufferMode(Console: PCONSRV_CONSOLE) -> u32;
-    fn TermSetScreenInfo( Console: PCONSRV_CONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER, OldCursorX: i16, OldCursorY: i16, );
-    fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
-    fn TermWriteStream( Console: PCONSRV_CONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, String: *const u16, Length: u32, Visible: u8, );
-    fn TermSetCursorInfo(Console: PCONSRV_CONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER);
-    fn HistoryRecallHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Offset: i32, Entry: *mut _UNICODE_STRING, ) -> u8;
-    fn HistoryGetCurrentEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *mut _UNICODE_STRING, );
-    fn HistoryAddEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *const _UNICODE_STRING, );
-    fn HistoryDeleteCurrentBuffer(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING);
-    fn HistoryDisplayCurrentHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, ) -> PPOPUP_WINDOW;
-    fn DestroyPopupWindow(Popup: PPOPUP_WINDOW);
-    fn HistoryFindEntryByPrefix( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Prefix: *const _UNICODE_STRING, EntryFound: *mut _UNICODE_STRING, ) -> u8;
+    pub fn GetConsoleInputBufferMode(Console: PCONSRV_CONSOLE) -> u32;
+    pub fn TermSetScreenInfo( Console: PCONSRV_CONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER, OldCursorX: i16, OldCursorY: i16, );
+    pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
+    pub fn TermWriteStream( Console: PCONSRV_CONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, String: *const u16, Length: u32, Visible: u8, );
+    pub fn TermSetCursorInfo(Console: PCONSRV_CONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER);
+    pub fn HistoryRecallHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Offset: i32, Entry: *mut _UNICODE_STRING, ) -> u8;
+    pub fn HistoryGetCurrentEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *mut _UNICODE_STRING, );
+    pub fn HistoryAddEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *const _UNICODE_STRING, );
+    pub fn HistoryDeleteCurrentBuffer(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING);
+    pub fn HistoryDisplayCurrentHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, ) -> PPOPUP_WINDOW;
+    pub fn DestroyPopupWindow(Popup: PPOPUP_WINDOW);
+    pub fn HistoryFindEntryByPrefix( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Prefix: *const _UNICODE_STRING, EntryFound: *mut _UNICODE_STRING, ) -> u8;
 }
 
 static mut Popup: PPOPUP_WINDOW = core::ptr::null_mut();
 
-unsafe fn LineInputSetPos(Console: PCONSRV_CONSOLE, Pos: u32) {
-    if Pos != (*Console).LinePos && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT) != 0 {
+pub(crate) unsafe fn LineInputSetPos(Console: PCONSRV_CONSOLE, Pos: u32) {
+    if Pos != (*Console).LinePos && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0 {
         let Buffer = (*Console).ActiveBuffer;
         let OldCursorX = (*Buffer).CursorPosition.X;
         let OldCursorY = (*Buffer).CursorPosition.Y;
@@ -41,7 +51,7 @@ unsafe fn LineInputSetPos(Console: PCONSRV_CONSOLE, Pos: u32) {
     (*Console).LinePos = Pos;
 }
 
-unsafe fn LineInputEdit(
+pub(crate) unsafe fn LineInputEdit(
     Console: PCONSRV_CONSOLE,
     NumToDelete: u32,
     NumToInsert: u32,
@@ -72,7 +82,7 @@ unsafe fn LineInputEdit(
         );
     }
 
-    if (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT) != 0 {
+    if (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0 {
         if Pos < NewSize {
             TermWriteStream(
                 Console,
@@ -95,7 +105,7 @@ unsafe fn LineInputEdit(
     LineInputSetPos(Console, Pos + NumToInsert);
 }
 
-unsafe fn LineInputRecallHistory(
+pub(crate) unsafe fn LineInputRecallHistory(
     Console: PCONSRV_CONSOLE,
     ExeName: PUNICODE_STRING,
     Offset: i32,
@@ -284,14 +294,14 @@ pub unsafe extern "system" fn LineInputKeyDown(
     }
 
     if (*KeyEvent).uChar.UnicodeChar == b'\x08' as u16
-        && (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT) != 0
+        && (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT as u16) != 0
     {
         if Pos > 0 {
             LineInputSetPos(Console, Pos - 1);
             LineInputEdit(Console, 1, 0, core::ptr::null());
         }
     } else if (*KeyEvent).uChar.UnicodeChar == b'\r' as u16 {
-        if (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT) != 0 {
+        if (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0 {
             Entry.Length = ((*Console).LineSize as u16)
                 .wrapping_mul(core::mem::size_of::<u16>() as u16);
             Entry.MaximumLength = Entry.Length;
@@ -303,7 +313,7 @@ pub unsafe extern "system" fn LineInputKeyDown(
         *(*Console).LineBuffer.add((*Console).LineSize as usize) = b'\r' as u16;
         (*Console).LineSize += 1;
         if GetType((*Console).ActiveBuffer) == TEXTMODE_BUFFER
-            && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT) != 0
+            && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0
         {
             static CR: [u16; 1] = [b'\r' as u16];
             TermWriteStream(
@@ -315,13 +325,13 @@ pub unsafe extern "system" fn LineInputKeyDown(
             );
         }
 
-        if (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT) != 0
+        if (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT as u16) != 0
             && (*Console).LineSize < (*Console).LineMaxSize
         {
             *(*Console).LineBuffer.add((*Console).LineSize as usize) = b'\n' as u16;
             (*Console).LineSize += 1;
             if GetType((*Console).ActiveBuffer) == TEXTMODE_BUFFER
-                && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT) != 0
+                && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0
             {
                 static LF: [u16; 1] = [b'\n' as u16];
                 TermWriteStream(

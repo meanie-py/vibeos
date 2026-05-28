@@ -1,45 +1,112 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
+use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 use core::ffi::c_void;
 
 extern "C" {
-    fn C_ASSERT(x: bool);
-    fn RTL_FIELD_SIZE(t: usize, f: usize) -> usize;
+    pub fn C_ASSERT(x: bool);
+    pub fn RTL_FIELD_SIZE(t: usize, f: usize) -> usize;
 }
 extern "system" {
-    fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    fn ConsoleFreeHeap(ptr: *mut core::ffi::c_void);
-    fn ConsoleAllocHeap(flags: u32, size: usize) -> *mut core::ffi::c_void;
-    fn TermWriteStream( Console: PCONSOLE, ScreenBuffer: PTEXTMODE_SCREEN_BUFFER, Buffer: *mut u16, Length: u32, Attrib: u8, ) -> i32;
-    fn TermGetLargestConsoleWindowSize(Console: PCONSOLE, LargestWindowSize: PCOORD);
-    fn min(a: i16, b: i16) -> i16;
-    fn ConioIsRectEmpty(Rect: PSMALL_RECT) -> i32;
-    fn ConioRectHeight(Rect: PSMALL_RECT) -> i16;
-    fn ConioRectWidth(Rect: PSMALL_RECT) -> i16;
-    fn TermResizeTerminal(Console: PCONSOLE);
-    fn ConioInitRect(Rect: *mut SMALL_RECT, Top: i16, Left: i16, Bottom: i16, Right: i16);
-    fn ConioGetIntersection(Intersection: *mut SMALL_RECT, Rect1: *const SMALL_RECT, Rect2: *const SMALL_RECT) -> u8;
-    fn ConioGetUnion(Union: *mut SMALL_RECT, Rect1: *const SMALL_RECT, Rect2: *const SMALL_RECT) -> u8;
-    fn ConDrvWriteConsoleInput(
-        Console: PCONSOLE,
-        InputBuffer: PCONSOLE_INPUT_BUFFER,
-        AppendToEnd: BOOLEAN,
-        InputRecord: PINPUT_RECORD,
-        NumEventsToWrite: ULONG,
-        NumEventsWritten: *mut ULONG,
-    ) -> NTSTATUS;
-    fn ConsoleOutputAnsiToUnicodeChar(Console: PCONSOLE, dWChar: *mut u16, sChar: *const i8);
-    fn TermDrawRegion(Console: PCONSOLE, Region: *mut SMALL_RECT);
-    fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut i8, cbMultiByte: i32, lpDefaultChar: *const i8, lpUsedDefaultChar: *mut i32, ) -> i32;
-    fn IS_FULL_WIDTH(c: u16) -> u32;
-    fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: u32, Size: usize, ) -> i32;
+    pub fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
+    pub fn TermWriteStream( Console: PCONSOLE, ScreenBuffer: PTEXTMODE_SCREEN_BUFFER, Buffer: *mut u16, Length: u32, Attrib: u8, ) -> i32;
+    pub fn TermResizeTerminal(Console: PCONSOLE);
+    pub fn TermDrawRegion(Console: PCONSOLE, Region: *mut SMALL_RECT);
+    pub fn IS_FULL_WIDTH(c: u16) -> u32;
+    pub fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: u32, Size: usize, ) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: () = ();
 
-unsafe fn TEXTMODE_BUFFER_Initialize(
+// `ConsoleOutputAnsiToUnicodeChar(Console, dWChar, sChar)` — text.c:31 macro.
+// `MultiByteToWideChar((Console)->OutputCodePage, 0, (sChar), 1, (dWChar), 1)`.
+#[inline]
+pub(crate) unsafe fn ConsoleOutputAnsiToUnicodeChar(
+    Console: PCONSOLE,
+    dWChar: *mut u16,
+    sChar: *const i8,
+) {
+    let _ = MultiByteToWideChar(
+        (*Console).OutputCodePage,
+        0,
+        sChar,
+        1,
+        dWChar,
+        1,
+    );
+}
+
+// rect.h macros — pure expressions / wrappers, no real C symbol.
+#[inline]
+pub(crate) unsafe fn ConioIsRectEmpty(Rect: PSMALL_RECT) -> i32 {
+    if (*Rect).Left > (*Rect).Right || (*Rect).Top > (*Rect).Bottom { 1 } else { 0 }
+}
+
+#[inline]
+pub(crate) unsafe fn ConioRectHeight(Rect: PSMALL_RECT) -> i16 {
+    if (*Rect).Top > (*Rect).Bottom { 0 } else { (*Rect).Bottom - (*Rect).Top + 1 }
+}
+
+#[inline]
+pub(crate) unsafe fn ConioRectWidth(Rect: PSMALL_RECT) -> i16 {
+    if (*Rect).Left > (*Rect).Right { 0 } else { (*Rect).Right - (*Rect).Left + 1 }
+}
+
+#[inline]
+pub(crate) unsafe fn ConioInitRect(Rect: *mut SMALL_RECT, Top: i16, Left: i16, Bottom: i16, Right: i16) {
+    (*Rect).Top = Top;
+    (*Rect).Left = Left;
+    (*Rect).Bottom = Bottom;
+    (*Rect).Right = Right;
+}
+
+#[inline]
+pub(crate) unsafe fn ConioGetIntersection(
+    Intersection: *mut SMALL_RECT, Rect1: *const SMALL_RECT, Rect2: *const SMALL_RECT,
+) -> u8 {
+    if ConioIsRectEmpty(Rect1 as PSMALL_RECT) != 0 || ConioIsRectEmpty(Rect2 as PSMALL_RECT) != 0
+        || (*Rect1).Top > (*Rect2).Bottom || (*Rect1).Left > (*Rect2).Right
+        || (*Rect1).Bottom < (*Rect2).Top || (*Rect1).Right < (*Rect2).Left {
+        ConioInitRect(Intersection, 0, -1, 0, -1);
+        return 0;
+    }
+    ConioInitRect(
+        Intersection,
+        if (*Rect1).Top > (*Rect2).Top { (*Rect1).Top } else { (*Rect2).Top },
+        if (*Rect1).Left > (*Rect2).Left { (*Rect1).Left } else { (*Rect2).Left },
+        if (*Rect1).Bottom < (*Rect2).Bottom { (*Rect1).Bottom } else { (*Rect2).Bottom },
+        if (*Rect1).Right < (*Rect2).Right { (*Rect1).Right } else { (*Rect2).Right },
+    );
+    1
+}
+
+#[inline]
+pub(crate) unsafe fn ConioGetUnion(
+    Union: *mut SMALL_RECT, Rect1: *const SMALL_RECT, Rect2: *const SMALL_RECT,
+) -> u8 {
+    if ConioIsRectEmpty(Rect1 as PSMALL_RECT) != 0 {
+        if ConioIsRectEmpty(Rect2 as PSMALL_RECT) != 0 {
+            ConioInitRect(Union, 0, -1, 0, -1);
+        } else {
+            *Union = *Rect2;
+        }
+    } else if ConioIsRectEmpty(Rect2 as PSMALL_RECT) != 0 {
+        *Union = *Rect1;
+    } else {
+        ConioInitRect(
+            Union,
+            if (*Rect1).Top < (*Rect2).Top { (*Rect1).Top } else { (*Rect2).Top },
+            if (*Rect1).Left < (*Rect2).Left { (*Rect1).Left } else { (*Rect2).Left },
+            if (*Rect1).Bottom > (*Rect2).Bottom { (*Rect1).Bottom } else { (*Rect2).Bottom },
+            if (*Rect1).Right > (*Rect2).Right { (*Rect1).Right } else { (*Rect2).Right },
+        );
+    }
+    1
+}
+
+pub(crate) unsafe fn TEXTMODE_BUFFER_Initialize(
     Buffer: *mut PCONSOLE_SCREEN_BUFFER,
     Console: PCONSOLE,
     ProcessHandle: *mut core::ffi::c_void,
@@ -59,7 +126,7 @@ unsafe fn TEXTMODE_BUFFER_Initialize(
     *Buffer = core::ptr::null_mut();
 
     Status = CONSOLE_SCREEN_BUFFER_Initialize(
-        &mut NewBuffer as *mut PTEXTMODE_SCREEN_BUFFER as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut NewBuffer as *mut PTEXTMODE_SCREEN_BUFFER as *mut PCONSOLE_IO_OBJECT,
         Console,
         TEXTMODE_BUFFER,
         core::mem::size_of::<TEXTMODE_SCREEN_BUFFER>(),
@@ -112,13 +179,13 @@ unsafe fn TEXTMODE_BUFFER_Initialize(
     (*NewBuffer).CursorPosition.X = 0;
     (*NewBuffer).CursorPosition.Y = 0;
 
-    (*NewBuffer).Mode = (ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT) as u16;
+    (*NewBuffer).Mode = (ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT as u16) as u16;
 
     *Buffer = NewBuffer as PCONSOLE_SCREEN_BUFFER;
     STATUS_SUCCESS
 }
 
-unsafe fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
+pub(crate) unsafe fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
     let Buff = Buffer as PTEXTMODE_SCREEN_BUFFER;
 
     (*Buffer).Header.Type = SCREEN_BUFFER;
@@ -128,14 +195,14 @@ unsafe fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
     CONSOLE_SCREEN_BUFFER_Destroy(Buffer);
 }
 
-unsafe fn ConioCoordToPointer(Buff: PTEXTMODE_SCREEN_BUFFER, X: u32, Y: u32) -> PCHAR_INFO {
+pub(crate) unsafe fn ConioCoordToPointer(Buff: PTEXTMODE_SCREEN_BUFFER, X: u32, Y: u32) -> PCHAR_INFO {
     (*Buff).Buffer.offset(
         ((((Y + (*Buff).VirtualY as u32) % (*Buff).ScreenBufferSize.Y as u32) * (*Buff).ScreenBufferSize.X as u32 + X) as isize)
     )
 }
 
-unsafe fn ClearLineBuffer(Buff: PTEXTMODE_SCREEN_BUFFER) {
-    let mut Ptr = ConioCoordToPointer(Buff, 0, (*Buff).CursorPosition.Y as u32);
+pub(crate) unsafe fn ClearLineBuffer(Buff: PTEXTMODE_SCREEN_BUFFER) {
+    let mut Ptr = ConioCoordToPointer(Buff, 0 as u32, (*Buff).CursorPosition.Y as u32);
     let mut LinePos: i16 = 0;
 
     while LinePos < (*Buff).ScreenBufferSize.X {
@@ -146,7 +213,7 @@ unsafe fn ClearLineBuffer(Buff: PTEXTMODE_SCREEN_BUFFER) {
     }
 }
 
-unsafe fn ConioComputeUpdateRect(
+pub(crate) unsafe fn ConioComputeUpdateRect(
     Buff: PTEXTMODE_SCREEN_BUFFER,
     UpdateRect: PSMALL_RECT,
     Start: PCOORD,
@@ -166,7 +233,7 @@ unsafe fn ConioComputeUpdateRect(
     }
 }
 
-unsafe fn ConioCopyRegion(
+pub(crate) unsafe fn ConioCopyRegion(
     ScreenBuffer: PTEXTMODE_SCREEN_BUFFER,
     SrcRegion: PSMALL_RECT,
     DstOrigin: PCOORD)
@@ -214,7 +281,7 @@ unsafe fn ConioCopyRegion(
     }
 }
 
-unsafe fn ConioFillRegion(
+pub(crate) unsafe fn ConioFillRegion(
     ScreenBuffer: PTEXTMODE_SCREEN_BUFFER,
     Region: PSMALL_RECT,
     ExcludeRegion: PSMALL_RECT,
@@ -253,7 +320,7 @@ unsafe fn ConioFillRegion(
     }
 }
 
-unsafe fn ConioResizeBuffer(
+pub(crate) unsafe fn ConioResizeBuffer(
     Console: PCONSOLE,
     ScreenBuffer: PTEXTMODE_SCREEN_BUFFER,
     Size: COORD,
@@ -293,7 +360,7 @@ unsafe fn ConioResizeBuffer(
 
     CurrentY = 0;
     while (CurrentY as i16) < (*ScreenBuffer).ScreenBufferSize.Y && (CurrentY as i16) < Size.Y {
-        Ptr = ConioCoordToPointer(ScreenBuffer, 0, CurrentY as u32);
+        Ptr = ConioCoordToPointer(ScreenBuffer, 0 as u32, CurrentY as u32);
 
         if Size.X <= (*ScreenBuffer).ScreenBufferSize.X {
             core::ptr::copy_nonoverlapping(Ptr, Buffer.add(Offset), Size.X as usize);
@@ -398,7 +465,7 @@ pub unsafe extern "system" fn ConDrvChangeScreenBufferAttributes(
 
     Y = 0;
     while Y < (*Buffer).ScreenBufferSize.Y as u16 {
-        Ptr = ConioCoordToPointer(Buffer, 0, Y as u32);
+        Ptr = ConioCoordToPointer(Buffer, 0 as u32, Y as u32);
         X = 0;
         while X < (*Buffer).ScreenBufferSize.X as u16 {
             if ((*Ptr).Attributes & 0x0F) == (OldScreenAttrib & 0x0F) {
@@ -699,7 +766,7 @@ pub unsafe extern "system" fn ConDrvWriteConsole(
     Status
 }
 
-unsafe fn IntReadConsoleOutputStringChars(
+pub(crate) unsafe fn IntReadConsoleOutputStringChars(
     Console: PCONSOLE,
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     StringBuffer: *mut core::ffi::c_void,
@@ -785,7 +852,7 @@ unsafe fn IntReadConsoleOutputStringChars(
     STATUS_SUCCESS
 }
 
-unsafe fn IntReadConsoleOutputStringAttributes(
+pub(crate) unsafe fn IntReadConsoleOutputStringAttributes(
     Console: PCONSOLE,
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     StringBuffer: PWORD,
@@ -901,7 +968,7 @@ pub unsafe extern "system" fn ConDrvReadConsoleOutputString(
     }
 }
 
-unsafe fn IntWriteConsoleOutputStringChars(
+pub(crate) unsafe fn IntWriteConsoleOutputStringChars(
     Console: PCONSOLE,
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     StringBuffer: *mut core::ffi::c_void,
@@ -1001,7 +1068,7 @@ unsafe fn IntWriteConsoleOutputStringChars(
     Status
 }
 
-unsafe fn IntWriteConsoleOutputStringAttribute(
+pub(crate) unsafe fn IntWriteConsoleOutputStringAttribute(
     Console: PCONSOLE,
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     StringBuffer: PWORD,
@@ -1117,7 +1184,7 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutputString(
     Status
 }
 
-unsafe fn ConDrvFillConsoleOutput(
+pub(crate) unsafe fn ConDrvFillConsoleOutput(
     Console: PCONSOLE,
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     CodeType: u32,
@@ -1169,7 +1236,7 @@ unsafe fn ConDrvFillConsoleOutput(
     if (*Console).IsCJK != 0 {
         bFullwidth = IS_FULL_WIDTH(Code.UnicodeChar) as u8;
         if X > 0 {
-            Ptr = ConioCoordToPointer(Buffer, (X - 1) as u32, Y as u32);
+            Ptr = ConioCoordToPointer(Buffer, (X - 1 as u32) as u32, Y as u32);
             if (*Ptr).Attributes & (COMMON_LVB_LEADING_BYTE as u16) != 0 {
                 (*Ptr).Char.UnicodeChar = ' ' as u16;
                 (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
@@ -1219,7 +1286,7 @@ unsafe fn ConDrvFillConsoleOutput(
 
     if (nNumChars & 1) & bFullwidth as u32 != 0 {
         if X as i32 + Y as i32 * (*Buffer).ScreenBufferSize.X as i32 > 0 {
-            Ptr = ConioCoordToPointer(Buffer, (X - 1) as u32, Y as u32);
+            Ptr = ConioCoordToPointer(Buffer, (X - 1 as u32) as u32, Y as u32);
             (*Ptr).Char.UnicodeChar = ' ' as u16;
             (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
         }

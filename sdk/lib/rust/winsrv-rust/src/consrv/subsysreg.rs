@@ -1,13 +1,23 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvRegisterConsoleVDM(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut ULONG,
 ) -> NTSTATUS {
-    let RegisterVDMRequest = &mut (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.RegisterVDMRequest;
-    let Console = (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.RegisterVDMRequest.ConsoleHandle as PCONSOLE_INFO;
+    let RegisterVDMRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.RegisterVDMRequest;
+    let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.RegisterVDMRequest.ConsoleHandle as PCONSRV_CONSOLE;
 
     if RegisterVDMRequest.RegisterFlags != 0 {
         let mut SectionSize: LARGE_INTEGER = core::mem::zeroed();

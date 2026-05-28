@@ -1,14 +1,13 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
+use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 
 
 
 extern "system" {
-    fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: CONSOLE_IO_OBJECT_TYPE, Size: usize, ) -> NTSTATUS;
-    fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    fn ConsoleAllocHeap(Flags: ULONG, Size: usize) -> PVOID;
-    fn ConsoleFreeHeap(Ptr: PVOID);
+    pub fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: CONSOLE_IO_OBJECT_TYPE, Size: usize, ) -> NTSTATUS;
+    pub fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
 }
 
 #[no_mangle]
@@ -31,7 +30,7 @@ pub unsafe extern "system" fn GRAPHICS_BUFFER_Initialize(
     *Buffer = core::ptr::null_mut();
 
     Status = CONSOLE_SCREEN_BUFFER_Initialize(
-        &mut NewBuffer as *mut PGRAPHICS_SCREEN_BUFFER as *mut PCONSOLE_SCREEN_BUFFER,
+        &mut NewBuffer as *mut PGRAPHICS_SCREEN_BUFFER as *mut PCONSOLE_IO_OBJECT,
         Console,
         GRAPHICS_BUFFER,
         core::mem::size_of::<GRAPHICS_SCREEN_BUFFER>(),

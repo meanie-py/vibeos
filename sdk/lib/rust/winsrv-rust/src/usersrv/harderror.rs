@@ -8,7 +8,7 @@ use core::ffi::c_void;
 // truly cdecl C-runtime entry points (msvcrt/ntdll exports) — not
 // NTAPI — so `extern "C"` is correct here.
 extern "C" {
-    fn wcslen(s: *const u16) -> usize;
+    pub fn wcslen(s: *const u16) -> usize;
 }
 
 /// `MAKELANGID(p, s) = ((((WORD)(s)) << 10) | (WORD)(p))` —
@@ -32,12 +32,12 @@ fn HandleToUlong(h: *mut core::ffi::c_void) -> u32 {
 }
 
 extern "system" {
-    fn RtlUnicodeStringToAnsiSize(SourceString: *const _UNICODE_STRING) -> u32;
-    fn RtlStringCbCopyNW( pszDest: *mut u16, cbDest: usize, pszSrc: *const u16, cbSrc: usize, ) -> i32;
+    pub fn RtlUnicodeStringToAnsiSize(SourceString: *const _UNICODE_STRING) -> u32;
+    pub fn RtlStringCbCopyNW( pszDest: *mut u16, cbDest: usize, pszSrc: *const u16, cbSrc: usize, ) -> i32;
 }
 
 extern "C" {
-    fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
+    pub fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
 }
 
 // `RtlStringCbPrintfW` and `RtlStringCbPrintfExW` are NTAPI-cdecl
@@ -46,13 +46,13 @@ extern "C" {
 // inside `extern "C" {}` blocks (which IS stable for IMPORTS, not
 // definitions). The call sites pack up to 5 ULONG_PTR-sized args.
 extern "C" {
-    fn RtlStringCbPrintfW(
+    pub fn RtlStringCbPrintfW(
         pszDest: PWSTR,
         cbDest: usize,
         pszFormat: PCWSTR,
         ...
     ) -> i32;
-    fn RtlStringCbPrintfExW(
+    pub fn RtlStringCbPrintfExW(
         pszDest: PWSTR,
         cbDest: usize,
         ppszDestEnd: *mut PWSTR,

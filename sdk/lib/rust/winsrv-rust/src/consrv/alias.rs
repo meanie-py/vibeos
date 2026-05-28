@@ -1,5 +1,16 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
+use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 #[repr(C)]
 struct ALIAS_ENTRY {
@@ -19,7 +30,7 @@ struct ALIAS_HEADER {
 
 type PALIAS_HEADER = *mut ALIAS_HEADER;
 
-unsafe fn ConvertInputAnsiToUnicode(
+pub(crate) unsafe fn ConvertInputAnsiToUnicode(
     Console: PCONSRV_CONSOLE,
     Source: PVOID,
     SourceLength: USHORT,
@@ -53,7 +64,7 @@ unsafe fn ConvertInputAnsiToUnicode(
     1u8
 }
 
-unsafe fn ConvertInputUnicodeToAnsi(
+pub(crate) unsafe fn ConvertInputUnicodeToAnsi(
     Console: PCONSRV_CONSOLE,
     Source: PVOID,
     SourceLength: USHORT,
@@ -74,14 +85,14 @@ unsafe fn ConvertInputUnicodeToAnsi(
     1u8
 }
 
-unsafe fn IntFindAliasHeader(
+pub(crate) unsafe fn IntFindAliasHeader(
     Console: PCONSRV_CONSOLE,
     ExeName: PVOID,
     ExeLength: USHORT,
     UnicodeExe: BOOLEAN,
 ) -> PALIAS_HEADER {
     let mut ExeNameU: _UNICODE_STRING = core::mem::zeroed();
-    let mut RootHeader = (*Console).Aliases;
+    let mut RootHeader = ((*Console).Aliases as PALIAS_HEADER);
     let mut Diff: i32;
 
     if ExeName.is_null() {
@@ -130,7 +141,7 @@ unsafe fn IntFindAliasHeader(
     core::ptr::null_mut()
 }
 
-unsafe fn IntCreateAliasHeader(
+pub(crate) unsafe fn IntCreateAliasHeader(
     Console: PCONSRV_CONSOLE,
     ExeName: PVOID,
     ExeLength: USHORT,
@@ -188,7 +199,7 @@ unsafe fn IntCreateAliasHeader(
     Entry
 }
 
-unsafe fn IntInsertAliasHeader(RootHeader: *mut PALIAS_HEADER, NewHeader: PALIAS_HEADER) {
+pub(crate) unsafe fn IntInsertAliasHeader(RootHeader: *mut PALIAS_HEADER, NewHeader: PALIAS_HEADER) {
     let mut CurrentHeader: PALIAS_HEADER;
     let mut LastLink = RootHeader;
     let mut Diff: i32;
@@ -215,7 +226,7 @@ unsafe fn IntInsertAliasHeader(RootHeader: *mut PALIAS_HEADER, NewHeader: PALIAS
     (*NewHeader).Next = CurrentHeader;
 }
 
-unsafe fn IntGetAliasEntry(
+pub(crate) unsafe fn IntGetAliasEntry(
     Console: PCONSRV_CONSOLE,
     Header: PALIAS_HEADER,
     Source: PVOID,
@@ -273,7 +284,7 @@ unsafe fn IntGetAliasEntry(
     core::ptr::null_mut()
 }
 
-unsafe fn IntCreateAliasEntry(
+pub(crate) unsafe fn IntCreateAliasEntry(
     Console: PCONSRV_CONSOLE,
     Source: PVOID,
     SourceLength: USHORT,
@@ -354,7 +365,7 @@ unsafe fn IntCreateAliasEntry(
     Entry
 }
 
-unsafe fn IntInsertAliasEntry(Header: PALIAS_HEADER, NewEntry: PALIAS_ENTRY) {
+pub(crate) unsafe fn IntInsertAliasEntry(Header: PALIAS_HEADER, NewEntry: PALIAS_ENTRY) {
     let mut CurrentEntry: PALIAS_ENTRY;
     let mut LastLink = core::ptr::addr_of_mut!((*Header).Data);
     let mut Diff: i32;
@@ -381,7 +392,7 @@ unsafe fn IntInsertAliasEntry(Header: PALIAS_HEADER, NewEntry: PALIAS_ENTRY) {
     (*NewEntry).Next = CurrentEntry;
 }
 
-unsafe fn IntDeleteAliasEntry(Header: PALIAS_HEADER, Entry: PALIAS_ENTRY) {
+pub(crate) unsafe fn IntDeleteAliasEntry(Header: PALIAS_HEADER, Entry: PALIAS_ENTRY) {
     let mut LastLink = core::ptr::addr_of_mut!((*Header).Data);
     let mut CurEntry: PALIAS_ENTRY;
 
@@ -400,7 +411,7 @@ unsafe fn IntDeleteAliasEntry(Header: PALIAS_HEADER, Entry: PALIAS_ENTRY) {
     }
 }
 
-unsafe fn IntGetConsoleAliasesExesLength(mut RootHeader: PALIAS_HEADER, IsUnicode: BOOLEAN) -> UINT {
+pub(crate) unsafe fn IntGetConsoleAliasesExesLength(mut RootHeader: PALIAS_HEADER, IsUnicode: BOOLEAN) -> UINT {
     let mut Length: UINT = 0;
 
     while !RootHeader.is_null() {
@@ -415,7 +426,7 @@ unsafe fn IntGetConsoleAliasesExesLength(mut RootHeader: PALIAS_HEADER, IsUnicod
     Length
 }
 
-unsafe fn IntGetAllConsoleAliasesLength(Header: PALIAS_HEADER, IsUnicode: BOOLEAN) -> UINT {
+pub(crate) unsafe fn IntGetAllConsoleAliasesLength(Header: PALIAS_HEADER, IsUnicode: BOOLEAN) -> UINT {
     let mut Length: UINT = 0;
     let mut CurEntry = (*Header).Data;
 
@@ -435,7 +446,7 @@ unsafe fn IntGetAllConsoleAliasesLength(Header: PALIAS_HEADER, IsUnicode: BOOLEA
 
 #[no_mangle]
 pub unsafe extern "C" fn IntDeleteAllAliases(Console: PCONSRV_CONSOLE) {
-    let mut Header = (*Console).Aliases;
+    let mut Header = ((*Console).Aliases as PALIAS_HEADER);
     let mut NextHeader: PALIAS_HEADER;
     let mut Entry: PALIAS_ENTRY;
     let mut NextEntry: PALIAS_ENTRY;
@@ -458,27 +469,28 @@ pub unsafe extern "system" fn SrvAddConsoleAlias(
     ApiMessage: PCSR_API_MESSAGE,
     ConsoleAliasRequest: PCONSOLE_ADDGETALIAS,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.h.ClientId.UniqueProcess);
+    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
+    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Header: PALIAS_HEADER;
     let mut Entry: PALIAS_ENTRY;
     let lpTarget: PVOID;
 
-    if !CsrValidateMessageBuffer(
+    if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*ConsoleAliasRequest).Source) as *mut PVOID,
         (*ConsoleAliasRequest).SourceLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) || !CsrValidateMessageBuffer(
+    ) == 0 || CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*ConsoleAliasRequest).Target) as *mut PVOID,
         (*ConsoleAliasRequest).TargetLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) || !CsrValidateMessageBuffer(
+    ) == 0 || CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*ConsoleAliasRequest).ExeName) as *mut PVOID,
         (*ConsoleAliasRequest).ExeLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) {
+    ) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -505,7 +517,7 @@ pub unsafe extern "system" fn SrvAddConsoleAlias(
             return STATUS_NO_MEMORY;
         }
 
-        IntInsertAliasHeader(core::ptr::addr_of_mut!((*Console).Aliases), Header);
+        IntInsertAliasHeader(core::ptr::addr_of_mut!(((*Console).Aliases as PALIAS_HEADER)), Header);
     }
 
     if lpTarget.is_null() {
@@ -545,28 +557,29 @@ pub unsafe extern "system" fn SrvGetConsoleAlias(
     ApiMessage: PCSR_API_MESSAGE,
     ConsoleAliasRequest: PCONSOLE_ADDGETALIAS,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.h.ClientId.UniqueProcess);
+    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
+    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let Header: PALIAS_HEADER;
     let Entry: PALIAS_ENTRY;
     let mut Length: UINT;
     let lpTarget: PVOID;
 
-    if !CsrValidateMessageBuffer(
+    if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*ConsoleAliasRequest).Source) as *mut PVOID,
         (*ConsoleAliasRequest).SourceLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) || !CsrValidateMessageBuffer(
+    ) == 0 || CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*ConsoleAliasRequest).Target) as *mut PVOID,
         (*ConsoleAliasRequest).TargetLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) || !CsrValidateMessageBuffer(
+    ) == 0 || CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*ConsoleAliasRequest).ExeName) as *mut PVOID,
         (*ConsoleAliasRequest).ExeLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) {
+    ) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -638,22 +651,23 @@ pub unsafe extern "system" fn SrvGetConsoleAliases(
     ApiMessage: PCSR_API_MESSAGE,
     GetAllAliasesRequest: PCONSOLE_GETALLALIASES,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.h.ClientId.UniqueProcess);
+    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
+    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Status = STATUS_SUCCESS;
     let mut BytesWritten: ULONG = 0;
     let Header: PALIAS_HEADER;
 
-    if !CsrValidateMessageBuffer(
+    if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of!((*GetAllAliasesRequest).ExeName) as *mut PVOID,
         (*GetAllAliasesRequest).ExeLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) || !CsrValidateMessageBuffer(
+    ) == 0 || CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of!((*GetAllAliasesRequest).AliasesBuffer) as *mut PVOID,
         (*GetAllAliasesRequest).AliasesBufferLength,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) {
+    ) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -754,16 +768,17 @@ pub unsafe extern "system" fn SrvGetConsoleAliasesLength(
     ApiMessage: PCSR_API_MESSAGE,
     GetAllAliasesLengthRequest: PCONSOLE_GETALLALIASESLENGTH,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.h.ClientId.UniqueProcess);
+    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
+    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Status = STATUS_SUCCESS;
     let Header: PALIAS_HEADER;
 
-    if !CsrValidateMessageBuffer(
+    if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of!((*GetAllAliasesLengthRequest).ExeName) as *mut PVOID,
         (*GetAllAliasesLengthRequest).ExeLength as ULONG,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) {
+    ) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -789,25 +804,26 @@ pub unsafe extern "system" fn SrvGetConsoleAliasExes(
     ApiMessage: PCSR_API_MESSAGE,
     GetAliasesExesRequest: PCONSOLE_GETALIASESEXES,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.h.ClientId.UniqueProcess);
+    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
+    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Status = STATUS_SUCCESS;
     let mut BytesWritten: UINT = 0;
 
-    if !CsrValidateMessageBuffer(
+    if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*GetAliasesExesRequest).ExeNames) as *mut PVOID,
         (*GetAliasesExesRequest).Length,
         core::mem::size_of::<BYTE>() as ULONG,
-    ) {
+    ) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
-    if IntGetConsoleAliasesExesLength((*Console).Aliases, (*GetAliasesExesRequest).Unicode)
+    if IntGetConsoleAliasesExesLength(((*Console).Aliases as PALIAS_HEADER), (*GetAliasesExesRequest).Unicode)
         > (*GetAliasesExesRequest).Length
     {
         Status = STATUS_BUFFER_OVERFLOW;
     } else {
-        let mut RootHeader = (*Console).Aliases;
+        let mut RootHeader = ((*Console).Aliases as PALIAS_HEADER);
 
         let TargetBufferA: LPSTR;
         let TargetBufferW: LPWSTR;
@@ -872,10 +888,11 @@ pub unsafe extern "system" fn SrvGetConsoleAliasExesLength(
     ApiMessage: PCSR_API_MESSAGE,
     GetAliasesExesLengthRequest: PCONSOLE_GETALIASESEXESLENGTH,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.h.ClientId.UniqueProcess);
+    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
+    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
 
     (*GetAliasesExesLengthRequest).Length = IntGetConsoleAliasesExesLength(
-        (*Console).Aliases,
+        ((*Console).Aliases as PALIAS_HEADER),
         (*GetAliasesExesLengthRequest).Unicode,
     );
 

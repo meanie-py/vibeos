@@ -1,16 +1,24 @@
 use winsrv_sys::nt::*;
+use super::super::condrv::text::*;
+use super::super::condrv::conoutput::*;
+use super::super::condrv::coninput::*;
+use super::super::condrv::console::*;
+use super::super::console::*;
+use super::super::handle::*;
+use super::super::lineinput::*;
+use super::super::history::*;
+use super::super::init::*;
+use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
+use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn ConsoleAllocHeap(Flags: ULONG, Size: SIZE_T) -> PVOID;
-    fn ConsoleFreeHeap(Memory: PVOID);
-    fn LineInputKeyDown(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, KeyEvent: *mut KEY_EVENT_RECORD);
-    fn _InterlockedDecrement(Target: *mut LONG) -> LONG;
-    fn memcpy(dest: PVOID, src: PVOID, count: SIZE_T) -> PVOID;
+    pub fn LineInputKeyDown(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, KeyEvent: *mut KEY_EVENT_RECORD);
+    pub fn _InterlockedDecrement(Target: *mut LONG) -> LONG;
+    pub fn memcpy(dest: PVOID, src: PVOID, count: SIZE_T) -> PVOID;
 }
-extern "system" {
-    fn ConioInitRect(Region: *mut SMALL_RECT, top: i16, left: i16, bottom: i16, right: i16);
-    fn TermDrawRegion(Console: PCONSRV_CONSOLE, Region: *mut SMALL_RECT);
+extern "system" {    pub fn TermDrawRegion(Console: PCONSRV_CONSOLE, Region: *mut SMALL_RECT);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -70,7 +78,7 @@ pub static mut ConSrvTermVtbl: TERMINAL_VTBL = TERMINAL_VTBL {
 
 pub const TAB_WIDTH: i32 = 8;
 
-unsafe fn ConioInputEventToAnsi(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
+pub(crate) unsafe fn ConioInputEventToAnsi(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
     if (*InputEvent).EventType == KEY_EVENT as u16 {
         let UnicodeChar: u16 = (*InputEvent).Event.KeyEvent.uChar.UnicodeChar;
         (*InputEvent).Event.KeyEvent.uChar.UnicodeChar = 0;
@@ -90,8 +98,8 @@ unsafe fn ConioInputEventToAnsi(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
     }
 }
 
-unsafe fn ConioInputEventToUnicode(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
-    if (*InputEvent).EventType == KEY_EVENT {
+pub(crate) unsafe fn ConioInputEventToUnicode(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
+    if (*InputEvent).EventType == KEY_EVENT as u16 {
         let AsciiChar: CHAR = (*InputEvent).Event.KeyEvent.uChar.AsciiChar;
         (*InputEvent).Event.KeyEvent.uChar.AsciiChar = 0;
         MultiByteToWideChar(
@@ -105,7 +113,7 @@ unsafe fn ConioInputEventToUnicode(Console: PCONSOLE, InputEvent: PINPUT_RECORD)
     }
 }
 
-unsafe fn ConSrvLoadFrontEnd(
+pub(crate) unsafe fn ConSrvLoadFrontEnd(
     FrontEnd: PFRONTEND,
     ConsoleInfo: PCONSOLE_STATE_INFO,
     ConsoleInitInfo: PCONSOLE_INIT_INFO,
@@ -137,7 +145,7 @@ unsafe fn ConSrvLoadFrontEnd(
     Status
 }
 
-unsafe fn ConSrvUnloadFrontEnd(FrontEnd: PFRONTEND) -> i32 {
+pub(crate) unsafe fn ConSrvUnloadFrontEnd(FrontEnd: PFRONTEND) -> i32 {
     if FrontEnd.is_null() {
         return 0xC000000Di32;
     }
@@ -191,7 +199,7 @@ pub unsafe extern "system" fn ConSrvDeinitTerminal(Terminal: PTERMINAL) -> i32 {
     Status
 }
 
-unsafe fn ConSrvTermInitTerminal(
+pub(crate) unsafe fn ConSrvTermInitTerminal(
     This: PTERMINAL,
     Console: PCONSOLE,
 ) -> NTSTATUS {
@@ -220,12 +228,12 @@ unsafe fn ConSrvTermInitTerminal(
     Status
 }
 
-unsafe fn ConSrvTermDeinitTerminal(This: PTERMINAL) {
+pub(crate) unsafe fn ConSrvTermDeinitTerminal(This: PTERMINAL) {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).DeinitFrontEnd.unwrap())(FrontEnd);
 }
 
-unsafe fn ConSrvTermReadStream(
+pub(crate) unsafe fn ConSrvTermReadStream(
     This: PTERMINAL,
     Unicode: BOOLEAN,
     Buffer: PVOID,
@@ -246,7 +254,7 @@ unsafe fn ConSrvTermReadStream(
     let mut Input: *mut ConsoleInput;
     let mut i: ULONG = 0;
 
-    if (*InputBuffer).Mode & ENABLE_LINE_INPUT != 0 {
+    if (*InputBuffer).Mode & ENABLE_LINE_INPUT as u16 != 0 {
         if (*Console).LineBuffer.is_null() {
             (*Console).LineMaxSize = if 256 > NumCharsToRead { 256 } else { NumCharsToRead };
 
@@ -287,8 +295,7 @@ unsafe fn ConSrvTermReadStream(
             }
             Input = (CurrentEntry as usize - core::mem::offset_of!(ConsoleInput, ListEntry)) as *mut ConsoleInput;
 
-            if (*Input).InputEvent.EventType == KEY_EVENT as u16
-                && (*Input).InputEvent.Event.KeyEvent.bKeyDown != 0
+            if (*Input).InputEvent.EventType == KEY_EVENT as u16 && (*Input).InputEvent.Event.KeyEvent.bKeyDown != 0
             {
                 LineInputKeyDown(Console, ExeName, core::ptr::addr_of_mut!((*Input).InputEvent.Event.KeyEvent));
                 (*ReadControl).dwControlKeyState = (*Input).InputEvent.Event.KeyEvent.dwControlKeyState;
@@ -338,8 +345,7 @@ unsafe fn ConSrvTermReadStream(
             }
             Input = (CurrentEntry as usize - core::mem::offset_of!(ConsoleInput, ListEntry)) as *mut ConsoleInput;
 
-            if (*Input).InputEvent.EventType == KEY_EVENT as u16
-                && (*Input).InputEvent.Event.KeyEvent.bKeyDown != 0
+            if (*Input).InputEvent.EventType == KEY_EVENT as u16 && (*Input).InputEvent.Event.KeyEvent.bKeyDown != 0
                 && (*Input).InputEvent.Event.KeyEvent.uChar.UnicodeChar != 0
             {
                 let Char = (*Input).InputEvent.Event.KeyEvent.uChar.UnicodeChar;
@@ -373,7 +379,7 @@ unsafe fn ConSrvTermReadStream(
     Status
 }
 
-unsafe fn ConioNextLine(
+pub(crate) unsafe fn ConioNextLine(
     Buff: PTEXTMODE_SCREEN_BUFFER,
     UpdateRect: PSMALL_RECT,
     ScrolledLines: PUINT,
@@ -396,7 +402,7 @@ unsafe fn ConioNextLine(
     (*UpdateRect).Bottom = (*Buff).CursorPosition.Y;
 }
 
-unsafe fn ConioWriteConsole(
+pub(crate) unsafe fn ConioWriteConsole(
     FrontEnd: PFRONTEND,
     Buff: PTEXTMODE_SCREEN_BUFFER,
     Buffer: *mut u16,
@@ -428,7 +434,7 @@ unsafe fn ConioWriteConsole(
 
     i = 0;
     while i < Length {
-        if (*Buff).Mode & ENABLE_PROCESSED_OUTPUT != 0 {
+        if (*Buff).Mode & ENABLE_PROCESSED_OUTPUT as u16 != 0 {
             if *Buffer.add(i as usize) == 0x000D {
                 (*Buff).CursorPosition.X = 0;
                 let CursorStartX = (*Buff).CursorPosition.X;
@@ -455,7 +461,7 @@ unsafe fn ConioWriteConsole(
                 } else {
                     (*Buff).CursorPosition.X -= 1;
                 }
-                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
 
                 if (*Ptr).Attributes & COMMON_LVB_LEADING_BYTE != 0 {
                     if (*Buff).CursorPosition.X == 0 && (*Buff).CursorPosition.Y == 0 {
@@ -470,11 +476,11 @@ unsafe fn ConioWriteConsole(
                     } else {
                         (*Buff).CursorPosition.X -= 1;
                     }
-                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
                 }
 
                 if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
-                    (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                    (*Ptr).Char.UnicodeChar = 0x0020;
                     if Attrib != 0 {
                         (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
                     }
@@ -483,10 +489,10 @@ unsafe fn ConioWriteConsole(
                     if (*Buff).CursorPosition.X > 0 {
                         (*Buff).CursorPosition.X -= 1;
                     }
-                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
                 }
 
-                (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                (*Ptr).Char.UnicodeChar = 0x0020;
                 if Attrib != 0 {
                     (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
                 }
@@ -499,13 +505,13 @@ unsafe fn ConioWriteConsole(
             } else if *Buffer.add(i as usize) == 0x0009 {
                 let mut EndX: u32;
 
-                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
 
                 if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
                     if (*Buff).CursorPosition.X > 0 {
                         (*Buff).CursorPosition.X -= 1;
                     }
-                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
                 }
 
                 UpdateRect.Left = min(UpdateRect.Left, (*Buff).CursorPosition.X);
@@ -514,7 +520,7 @@ unsafe fn ConioWriteConsole(
                 EndX = min(EndX, (*Buff).ScreenBufferSize.X as u32);
 
                 while ((*Buff).CursorPosition.X as u32) < EndX {
-                    (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                    (*Ptr).Char.UnicodeChar = 0x0020;
                     if Attrib != 0 {
                         (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
                     }
@@ -525,7 +531,7 @@ unsafe fn ConioWriteConsole(
                 }
                 if (*Buff).CursorPosition.X < (*Buff).ScreenBufferSize.X {
                     if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
-                        (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                        (*Ptr).Char.UnicodeChar = 0x0020;
                         if Attrib != 0 {
                             (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
                         }
@@ -535,7 +541,7 @@ unsafe fn ConioWriteConsole(
                 UpdateRect.Right = max(UpdateRect.Right, (*Buff).CursorPosition.X);
 
                 if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X {
-                    if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
+                    if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT as u16 != 0 {
                         (*Buff).CursorPosition.X = 0;
                         let CursorStartX = (*Buff).CursorPosition.X;
                         ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
@@ -558,7 +564,7 @@ unsafe fn ConioWriteConsole(
 
         if bFullwidth != 0 {
             if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X - 1 {
-                if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
+                if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT as u16 != 0 {
                     (*Buff).CursorPosition.X = 0;
                     let CursorStartX = (*Buff).CursorPosition.X;
                     ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
@@ -573,22 +579,22 @@ unsafe fn ConioWriteConsole(
             }
         }
 
-        Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+        Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
 
         if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
             if (*Buff).CursorPosition.X > 0 {
                 Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X - 1, (*Buff).CursorPosition.Y);
-                (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                (*Ptr).Char.UnicodeChar = 0x0020;
                 if Attrib != 0 {
                     (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
                 }
                 (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
             }
-            Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+            Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
         }
 
         if bFullwidth != 0 {
-            (*Ptr).__bindgen_anon_1.Char.UnicodeChar = *Buffer.add(i as usize);
+            (*Ptr).Char.UnicodeChar = *Buffer.add(i as usize);
             if Attrib != 0 {
                 (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
             }
@@ -596,14 +602,14 @@ unsafe fn ConioWriteConsole(
             (*Ptr).Attributes |= COMMON_LVB_LEADING_BYTE;
 
             (*Buff).CursorPosition.X += 1;
-            Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+            Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X as u32, (*Buff).CursorPosition.Y as u32);
             if Attrib != 0 {
                 (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
             }
             (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
             (*Ptr).Attributes |= COMMON_LVB_TRAILING_BYTE;
         } else {
-            (*Ptr).__bindgen_anon_1.Char.UnicodeChar = *Buffer.add(i as usize);
+            (*Ptr).Char.UnicodeChar = *Buffer.add(i as usize);
             if Attrib != 0 {
                 (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
             }
@@ -615,7 +621,7 @@ unsafe fn ConioWriteConsole(
 
         if (*Buff).CursorPosition.X < (*Buff).ScreenBufferSize.X {
             if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
-                (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                (*Ptr).Char.UnicodeChar = 0x0020;
                 if Attrib != 0 {
                     (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
                 }
@@ -624,7 +630,7 @@ unsafe fn ConioWriteConsole(
         }
 
         if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X {
-            if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
+            if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT as u16 != 0 {
                 (*Buff).CursorPosition.X = 0;
                 let CursorStartX = (*Buff).CursorPosition.X;
                 ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
@@ -651,7 +657,7 @@ unsafe fn ConioWriteConsole(
     STATUS_SUCCESS
 }
 
-unsafe fn ConSrvTermWriteStream(
+pub(crate) unsafe fn ConSrvTermWriteStream(
     This: PTERMINAL,
     Buff: PTEXTMODE_SCREEN_BUFFER,
     Buffer: *mut u16,
@@ -662,7 +668,7 @@ unsafe fn ConSrvTermWriteStream(
     ConioWriteConsole(FrontEnd, Buff, Buffer, Length, Attrib)
 }
 
-unsafe fn ConioDrawConsole(Console: PCONSRV_CONSOLE) {
+pub(crate) unsafe fn ConioDrawConsole(Console: PCONSRV_CONSOLE) {
     let mut Region: SMALL_RECT = core::mem::zeroed();
     let ActiveBuffer: PCONSOLE_SCREEN_BUFFER = (*Console).ActiveBuffer;
 
@@ -680,7 +686,7 @@ unsafe fn ConioDrawConsole(Console: PCONSRV_CONSOLE) {
     TermDrawRegion(Console, &mut Region);
 }
 
-unsafe fn ConSrvTermDrawRegion(
+pub(crate) unsafe fn ConSrvTermDrawRegion(
     This: PTERMINAL,
     Region: *mut SMALL_RECT,
 ) {
@@ -688,7 +694,7 @@ unsafe fn ConSrvTermDrawRegion(
     ((*(*FrontEnd).Vtbl).DrawRegion.unwrap())(FrontEnd, Region);
 }
 
-unsafe fn ConSrvTermSetCursorInfo(
+pub(crate) unsafe fn ConSrvTermSetCursorInfo(
     This: PTERMINAL,
     ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
 ) -> BOOL {
@@ -696,7 +702,7 @@ unsafe fn ConSrvTermSetCursorInfo(
     ((*(*FrontEnd).Vtbl).SetCursorInfo.unwrap())(FrontEnd, ScreenBuffer)
 }
 
-unsafe fn ConSrvTermSetScreenInfo(
+pub(crate) unsafe fn ConSrvTermSetScreenInfo(
     This: PTERMINAL,
     ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
     OldCursorX: i16,
@@ -711,17 +717,17 @@ unsafe fn ConSrvTermSetScreenInfo(
     )
 }
 
-unsafe fn ConSrvTermResizeTerminal(This: PTERMINAL) {
+pub(crate) unsafe fn ConSrvTermResizeTerminal(This: PTERMINAL) {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).ResizeTerminal.unwrap())(FrontEnd);
 }
 
-unsafe fn ConSrvTermSetActiveScreenBuffer(This: PTERMINAL) {
+pub(crate) unsafe fn ConSrvTermSetActiveScreenBuffer(This: PTERMINAL) {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).SetActiveScreenBuffer.unwrap())(FrontEnd);
 }
 
-unsafe fn ConSrvTermReleaseScreenBuffer(
+pub(crate) unsafe fn ConSrvTermReleaseScreenBuffer(
     This: PTERMINAL,
     ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
 ) {
@@ -730,7 +736,7 @@ unsafe fn ConSrvTermReleaseScreenBuffer(
     ((*vtbl).ReleaseScreenBuffer.unwrap())(FrontEnd, ScreenBuffer);
 }
 
-unsafe fn ConSrvTermGetLargestConsoleWindowSize(
+pub(crate) unsafe fn ConSrvTermGetLargestConsoleWindowSize(
     This: PTERMINAL,
     pSize: PCOORD,
 ) {
@@ -738,7 +744,7 @@ unsafe fn ConSrvTermGetLargestConsoleWindowSize(
     ((*(*FrontEnd).Vtbl).GetLargestConsoleWindowSize.unwrap())(FrontEnd, pSize);
 }
 
-unsafe fn ConSrvTermSetPalette(
+pub(crate) unsafe fn ConSrvTermSetPalette(
     This: PTERMINAL,
     PaletteHandle: HPALETTE,
     PaletteUsage: u32,
@@ -747,7 +753,7 @@ unsafe fn ConSrvTermSetPalette(
     ((*(*FrontEnd).Vtbl).SetPalette.unwrap())(FrontEnd, PaletteHandle, PaletteUsage)
 }
 
-unsafe fn ConSrvTermSetCodePage(
+pub(crate) unsafe fn ConSrvTermSetCodePage(
     This: PTERMINAL,
     CodePage: u32,
 ) -> u8 {
@@ -755,7 +761,7 @@ unsafe fn ConSrvTermSetCodePage(
     ((*(*FrontEnd).Vtbl).SetCodePage.unwrap())(FrontEnd, CodePage)
 }
 
-unsafe fn ConSrvTermShowMouseCursor(
+pub(crate) unsafe fn ConSrvTermShowMouseCursor(
     This: PTERMINAL,
     Show: BOOL,
 ) -> INT {
@@ -763,7 +769,7 @@ unsafe fn ConSrvTermShowMouseCursor(
     ((*(*FrontEnd).Vtbl).ShowMouseCursor.unwrap())(FrontEnd, Show)
 }
 
-unsafe fn ResetFrontEnd(Console: PCONSOLE) {
+pub(crate) unsafe fn ResetFrontEnd(Console: PCONSOLE) {
     let ConSrvConsole: PCONSRV_CONSOLE = Console as PCONSRV_CONSOLE;
     if Console.is_null() {
         return;

@@ -1,13 +1,35 @@
 use winsrv_sys::nt::*;
+use super::condrv::text::*;
+use super::condrv::conoutput::*;
+use super::condrv::coninput::*;
+use super::condrv::console::*;
+use super::console::*;
+use super::handle::*;
+use super::lineinput::*;
+use super::history::*;
+use super::init::*;
+use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
-extern "system" {
-    fn ConDrvFillConsoleOutput( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, CodeType: CODE_TYPE, Code: CODE_ELEMENT, NumCodesToWrite: ULONG, WriteCoord: PCOORD, NumCodesWritten: *mut ULONG, ) -> NTSTATUS;
-    fn ConDrvReadConsoleOutput( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Unicode: BOOLEAN, CharInfo: PCHAR_INFO, ReadRegion: PSMALL_RECT, ) -> NTSTATUS;
-    fn ConDrvWriteConsoleOutput( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Unicode: BOOLEAN, CharInfo: PCHAR_INFO, WriteRegion: PSMALL_RECT, ) -> NTSTATUS;
+// popup.h:15 — typedef struct _POPUP_WINDOW (not included by bindgen
+// since popup.h isn't pulled by alias.c, the bindgen TU). Hand-written
+// here so popup.rs/history.rs/lineinput.rs see it; pub-re-exported.
+pub type PPOPUP_INPUT_ROUTINE = Option<unsafe extern "system" fn()>;
+
+#[repr(C)]
+pub struct _POPUP_WINDOW {
+    pub ListEntry: LIST_ENTRY,
+    pub ScreenBuffer: PTEXTMODE_SCREEN_BUFFER,
+    pub Origin: COORD,
+    pub Size: COORD,
+    pub OldContents: PCHAR_INFO,
+    pub PopupInputRoutine: PPOPUP_INPUT_ROUTINE,
 }
+pub type POPUP_WINDOW = _POPUP_WINDOW;
+pub type PPOPUP_WINDOW = *mut _POPUP_WINDOW;
 
-unsafe fn DrawBox(
+pub(crate) unsafe fn DrawBox(
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     xLeft: SHORT,
     yTop: SHORT,
@@ -19,7 +41,7 @@ unsafe fn DrawBox(
     let mut Code: CODE_ELEMENT = core::mem::zeroed();
 
     coPos.X = xLeft;
-    Code.__bindgen_anon_1.Attribute = (*Buffer).PopupDefaultAttrib;
+    Code.Attribute = (*Buffer).PopupDefaultAttrib;
     coPos.Y = yTop;
     while coPos.Y < yTop + Height {
         ConDrvFillConsoleOutput(
@@ -36,7 +58,7 @@ unsafe fn DrawBox(
 
     coPos.X = xLeft;
     coPos.Y = yTop;
-    Code.__bindgen_anon_1.AsciiChar = 0xDA;
+    Code.AsciiChar = 0xDA;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -49,7 +71,7 @@ unsafe fn DrawBox(
 
     coPos.X = xLeft + 1;
     coPos.Y = yTop;
-    Code.__bindgen_anon_1.AsciiChar = 0xC4;
+    Code.AsciiChar = 0xC4;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -62,7 +84,7 @@ unsafe fn DrawBox(
 
     coPos.X = xLeft + Width - 1;
     coPos.Y = yTop;
-    Code.__bindgen_anon_1.AsciiChar = 0xBF;
+    Code.AsciiChar = 0xBF;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -76,7 +98,7 @@ unsafe fn DrawBox(
     coPos.Y = yTop + 1;
     while coPos.Y < yTop + Height - 1 {
         coPos.X = xLeft;
-        Code.__bindgen_anon_1.AsciiChar = 0xB3;
+        Code.AsciiChar = 0xB3;
         ConDrvFillConsoleOutput(
             (*Buffer).Header.Console,
             Buffer,
@@ -88,7 +110,7 @@ unsafe fn DrawBox(
         );
 
         coPos.X = xLeft + 1;
-        Code.__bindgen_anon_1.AsciiChar = b' ';
+        Code.AsciiChar = b' ';
         ConDrvFillConsoleOutput(
             (*Buffer).Header.Console,
             Buffer,
@@ -100,7 +122,7 @@ unsafe fn DrawBox(
         );
 
         coPos.X = xLeft + Width - 1;
-        Code.__bindgen_anon_1.AsciiChar = 0xB3;
+        Code.AsciiChar = 0xB3;
         ConDrvFillConsoleOutput(
             (*Buffer).Header.Console,
             Buffer,
@@ -116,7 +138,7 @@ unsafe fn DrawBox(
 
     coPos.X = xLeft;
     coPos.Y = yTop + Height - 1;
-    Code.__bindgen_anon_1.AsciiChar = 0xC0;
+    Code.AsciiChar = 0xC0;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -129,7 +151,7 @@ unsafe fn DrawBox(
 
     coPos.X = xLeft + 1;
     coPos.Y = yTop + Height - 1;
-    Code.__bindgen_anon_1.AsciiChar = 0xC4;
+    Code.AsciiChar = 0xC4;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -142,7 +164,7 @@ unsafe fn DrawBox(
 
     coPos.X = xLeft + Width - 1;
     coPos.Y = yTop + Height - 1;
-    Code.__bindgen_anon_1.AsciiChar = 0xD9;
+    Code.AsciiChar = 0xD9;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
