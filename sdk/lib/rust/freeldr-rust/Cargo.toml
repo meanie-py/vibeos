@@ -22,10 +22,17 @@ crate-type = ["staticlib"]
 # second archive (libfreeldr_rust_uefi.a) with --features uefi.
 default = []
 uefi = []
-# miscboot.c lives in rosload.cmake only and rosload doesn't link
-# libfreeldr_rust.a, so the Rust translation is parked behind an
-# off-by-default feature to avoid a dup #[no_mangle] when/if rosload
-# ever flips to the .a (see lib.rs comment).
+# rosload — the 2nd-stage loader (rosload.exe). Built as a separate PE
+# binary from freeldr.sys/uefildr.efi. Links libfreeldr_rust_rosload.a
+# (3rd archive, see boot/freeldr/freeldr/CMakeLists.txt). Selects the
+# loader-only Rust modules (bootmgr/custom/options/oslist/winldr/...)
+# while gating out the BIOS/UEFI hardware-detection code (machpc/pchw/
+# tui/ueficon/etc) — rosload imports those services from freeldr.sys
+# via the importlib (add_importlibs rosload freeldr).
+rosload = []
+# miscboot.c lives in rosload.cmake; activated via the `rosload` feature
+# (see lib.rs cfg). The original `miscboot-rust-entry` opt-in flag is
+# kept as a no-op alias for any out-of-tree consumer.
 miscboot-rust-entry = []
 # uefildr.c is the uefildr.exe binary entry source; same translate-and-
 # park pattern as miscboot — Rust translation preserved, C keeps entry.

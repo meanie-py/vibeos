@@ -56,8 +56,8 @@ pub unsafe extern "C" fn LoadAndBootSector(
     let mut BiosDriveNumber: u8 = 0;
     let mut PartitionNumber: u32 = 0;
     let LoadAddress: u32;
-    let mut FileId: u32;
-    let mut BytesRead: u32;
+    let mut FileId: u32 = 0;
+    let mut BytesRead: u32 = 0;
     let mut ArcPath: [i8; 260] = [0; 260];
 
     #[cfg(debug_assertions)]

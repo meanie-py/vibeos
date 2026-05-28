@@ -30,6 +30,13 @@ pub mod peloader;
 // and uefi.cmake (target_link_libraries uefildr uefifreeldr_common
 // cportlib blcmlib blrtl libcntpr) — the Rust stubs satisfy the refs
 // first, libcntpr's real pow/log/wctomb members never get pulled.
+//
+// Gated OFF for `rosload`: rosload.exe is a SEPARATE PE binary and
+// imports FrLdr* / BootMain accessors from freeldr.sys via the importlib.
+// Duplicating FrLdrBootPath here would give rosload its own data slot
+// distinct from freeldr.sys's (per feedback_static_lib_shared_globals_
+// per_consumer.md) — wrong, since both must observe the same boot path.
+#[cfg(not(feature = "rosload"))]
 pub mod freeldr;
 
 // arch/arm64/debug.c — ARM64 UEFI PL011 UART + Rs232Port stubs.
@@ -39,75 +46,127 @@ pub mod freeldr;
 pub mod arm64_debug;
 
 // 🟢 sweep — cache unit (lib/cache/{blocklist,cache}.c).
+// Gated off for `rosload` — rosload uses CacheRead* indirectly via Arc/FS
+// imports from freeldr.sys.
+#[cfg(not(feature = "rosload"))]
 pub mod blocklist;
+#[cfg(not(feature = "rosload"))]
 pub mod cache;
 
 // 🟢 sweep — inifile unit (lib/inifile/{ini_init,inifile,parse}.c).
+// Gated off for `rosload` — Ini* are exported by freeldr.sys (freeldr.spec)
+// and imported via add_importlibs(rosload freeldr).
+#[cfg(not(feature = "rosload"))]
 pub mod ini_init;
+#[cfg(not(feature = "rosload"))]
 pub mod inifile;
+#[cfg(not(feature = "rosload"))]
 pub mod parse;
 
 // 🟢 sweep — mm unit (lib/mm/{meminit,mm,heap}.c).
+// Gated off for `rosload` — MmAllocateMemoryWithType/FrLdrHeap* exported
+// by freeldr.sys; rosload imports.
+#[cfg(not(feature = "rosload"))]
 pub mod meminit;
+#[cfg(not(feature = "rosload"))]
 pub mod mm;
+#[cfg(not(feature = "rosload"))]
 pub mod heap;
 
 // 🟢 sweep — lib-pure tail.
 // rs232.rs is x86-only: uses cportlib's CpInitialize/CpPutByte which
 // drive 8250-family UARTs at I/O ports (BaseArray = [0,0x3F8,0x2F8,...]).
 // arm64 has no x86 port I/O and uses the PL011 MMIO UART via arm64_debug.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// Gated off for `rosload` — Rs232Port* and serial init owned by freeldr.sys.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "rosload")))]
 pub mod rs232;
+// libsupp.rs — RtlAssert / RtlAssertImpl. rosload DEFINES its own copy
+// (no spec export, called locally) so keep it on for rosload too.
 pub mod libsupp;
+// arcsupp/arcname/arcemul/archwsup/settings/debug — ARC path + machine
+// helpers; all exported by freeldr.sys, gated off for rosload.
+#[cfg(not(feature = "rosload"))]
 pub mod arcsupp;
+#[cfg(not(feature = "rosload"))]
 pub mod arcname;
+#[cfg(not(feature = "rosload"))]
 pub mod arcemul;
+#[cfg(not(feature = "rosload"))]
 pub mod archwsup;
+#[cfg(not(feature = "rosload"))]
 pub mod settings;
+#[cfg(not(feature = "rosload"))]
 pub mod debug;
 
 // 🟢 sweep — fs unit (lib/fs/{fs,iso,fat}.c; ntfs/ext/btrfs pruned).
+// Gated off for `rosload` — FsOpenFile and friends exported by freeldr.sys.
+#[cfg(not(feature = "rosload"))]
 pub mod fs;
+#[cfg(not(feature = "rosload"))]
 pub mod iso;
+#[cfg(not(feature = "rosload"))]
 pub mod fat;
 
 // 🟢 sweep — disk unit (disk/{partition,ramdisk}.c, ntldr/conversion.c).
+// conversion.rs is DEFINED in rosload (used by setupldr/winldr); keep on
+// for rosload. partition/ramdisk exported by freeldr.sys, gated off.
+#[cfg(not(feature = "rosload"))]
 pub mod partition;
+#[cfg(not(feature = "rosload"))]
 pub mod ramdisk;
 pub mod conversion;
 
 // 🟢 sweep — pc-hw unit (arch/i386/pc/{machpc,pcvideo,pcdisk,pcmem,pcvesa,pchw}.c).
+// Gated off for `rosload` — Mach* dispatch + MachVtbl + ChainLoadBiosBootSector
+// owned by freeldr.sys (exported in spec); rosload uses via importlib.
+#[cfg(not(feature = "rosload"))]
 pub mod machpc;
+#[cfg(not(feature = "rosload"))]
 pub mod pcvideo;
+#[cfg(not(feature = "rosload"))]
 pub mod pcdisk;
+#[cfg(not(feature = "rosload"))]
 pub mod pcmem;
+#[cfg(not(feature = "rosload"))]
 pub mod pcvesa;
+#[cfg(not(feature = "rosload"))]
 pub mod pchw;
 // pc-hw sweep continued — pcbeep/pccons/pcrtc (BIOS-only, not built for uefi).
-#[cfg(not(feature = "uefi"))]
+#[cfg(all(not(feature = "uefi"), not(feature = "rosload")))]
 pub mod pcbeep;
-#[cfg(not(feature = "uefi"))]
+#[cfg(all(not(feature = "uefi"), not(feature = "rosload")))]
 pub mod pccons;
-#[cfg(not(feature = "uefi"))]
+#[cfg(all(not(feature = "uefi"), not(feature = "rosload")))]
 pub mod pcrtc;
 // i386-hw — hwapm (BIOS-only), i386idt (i386 only; lives in both pcat
 // and uefi i386 builds, so always built for i386).
-#[cfg(not(feature = "uefi"))]
+#[cfg(all(not(feature = "uefi"), not(feature = "rosload")))]
 pub mod hwapm;
-#[cfg(target_arch = "x86")]
+#[cfg(all(target_arch = "x86", not(feature = "rosload")))]
 pub mod i386idt;
 
 // 🟢 sweep — i386-hw unit (arch/i386/{hwdisk,hwpci,hwacpi}.c, arch/drivers/hwide.c).
+#[cfg(not(feature = "rosload"))]
 pub mod hwdisk;
+#[cfg(not(feature = "rosload"))]
 pub mod hwpci;
+#[cfg(not(feature = "rosload"))]
 pub mod hwacpi;
+#[cfg(not(feature = "rosload"))]
 pub mod hwide;
 
 // 🟢 sweep — uefi-hw unit (arch/uefi/{uefidisk,uefimem,uefivid,ueficon,uefihw}.c).
+// Gated off for `rosload` (UEFI hardware, not relevant; also avoid pulling
+// UEFI type deps into the BIOS-or-rosload archive variants).
+#[cfg(not(feature = "rosload"))]
 pub mod uefidisk;
+#[cfg(not(feature = "rosload"))]
 pub mod uefimem;
+#[cfg(not(feature = "rosload"))]
 pub mod uefivid;
+#[cfg(not(feature = "rosload"))]
 pub mod ueficon;
+#[cfg(not(feature = "rosload"))]
 pub mod uefihw;
 // uefi-only translation unit — UEFI MACHVTBL fill + stubs + utils + entry.
 // uefisetup/uefi_stubs/uefiutil are .a-bound (cohabitation under feature
@@ -123,26 +182,25 @@ pub mod uefiutil;
 #[cfg(feature = "uefi")]
 pub mod uefildr;
 
-// UEFI-build-only fns (uefi.cmake lists options.c + oslist.c); rosload.exe
-// keeps its own C copies and does NOT link libfreeldr_rust.a so no clash.
-#[cfg(feature = "uefi")]
+// Boot menu / OS loader dispatch — present in both uefildr.efi and rosload.exe.
+// freeldr.sys (BIOS) does NOT have these (the BIOS path hands off to rosload).
+#[cfg(any(feature = "uefi", feature = "rosload"))]
 pub mod options;
-#[cfg(feature = "uefi")]
+#[cfg(any(feature = "uefi", feature = "rosload"))]
 pub mod oslist;
-#[cfg(feature = "uefi")]
+#[cfg(any(feature = "uefi", feature = "rosload"))]
 pub mod bootmgr;
-#[cfg(feature = "uefi")]
+#[cfg(any(feature = "uefi", feature = "rosload"))]
 pub mod custom;
-// miscboot.c lives in rosload.cmake only; translate-and-park: the Rust
-// fn is gated behind an off-by-default feature so rosload's C copy keeps
-// symbol ownership (no dup #[no_mangle]). Per AGENTS, never delete a .rs.
-#[cfg(feature = "miscboot-rust-entry")]
+// miscboot.c lives in rosload.cmake; activated via the `rosload` feature
+// (or the legacy `miscboot-rust-entry` opt-in). Per AGENTS, never delete .rs.
+#[cfg(any(feature = "rosload", feature = "miscboot-rust-entry"))]
 pub mod miscboot;
 // PC-link fallback for vidfb.c's UEFI-only FbCons*/GlobalSystemTable
 // (ueficon/uefivid extern-consume them; their C providers are UEFI-only
 // so freeldr_pe/BIOS has no provider). BIOS-only — on the `uefi`
 // archive vidfb.c/uefildr.c own those symbols (dup otherwise).
-#[cfg(not(feature = "uefi"))]
+#[cfg(all(not(feature = "uefi"), not(feature = "rosload")))]
 pub mod vidfb_pc_fallback;
 // arch/vidfb.c (linear framebuffer driver) + arch/vgafont.c (8x16 bitmap).
 // UEFI-only: only the UEFI link unit owns the FbCons*/VidFb* symbols
@@ -171,32 +229,53 @@ pub mod winldr_arm64;
 
 // 🟢 sweep — setup/legacy unit (ntldr/{setupldr,inffile,headless}.c +
 // arch/i386/{drivemap,i386bug}.c + lib/fs/pxe.c). setupldr/inffile/
-// headless = arch-neutral loader logic; drivemap/i386bug/pxe = x86
-// BIOS-era (PC-AT i386/amd64, not arm64) → cfg-gate.
+// headless = arch-neutral loader logic — DEFINED in rosload (rosload.cmake
+// owns the C copies; flipping = these Rust modules take over). Always on.
 pub mod setupldr;
 pub mod inffile;
 pub mod headless;
 // drivemap is BIOS-only (x86 BIOS Int13 drive remapping); UEFI's stubs.c
 // provides DriveMapGetBiosDriveNumber returning 0, so gate the BIOS impl
 // out under feature="uefi" to avoid the dup #[no_mangle] collision.
+// rosload also owns drivemap (rosload.cmake has the .c i386-only).
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 pub mod drivemap;
 // linuxboot — BIOS-only (pcat.cmake; uefi.cmake doesn't list it). x86 only.
+// Also present in rosload.cmake (loaded by rosload's bootmgr → LoadAndBootLinux).
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
 pub mod linuxboot;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// i386bug — FrLdrBugCheck/i386PrintException — exported via freeldr.spec
+// (rosload imports). Gate off for rosload.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "rosload")))]
 pub mod i386bug;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// pxe — BIOS network-boot init; owned by freeldr.sys (PxeInit() called
+// from hwdisk.c). Not in rosload.cmake — gate off for rosload.
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "rosload")))]
 pub mod pxe;
 
-// --- ui unit WIP (subagent) — temporarily un-wired so the fs milestone
-// builds/commits at green; re-enable when the ui unit converges. ---
+// Tiny printf/puts shims for rosload — tui.rs (which owns them on the
+// freeldr.sys/uefildr archives) is gated off for rosload, but rosload's
+// translated winldr/meminit/noui call sites still need a printf symbol.
+// Forwards to TuiPrintf (imported from freeldr.sys via the importlib).
+#[cfg(feature = "rosload")]
+pub mod rosload_shims;
+
+// UI unit (ui/tui/tuimenu/minitui/noui/video + ui_keystone). UI dispatch
+// is owned by freeldr.sys (UiVtbl, UiDisplayMenu, TuiPrintf exported in
+// freeldr.spec); rosload imports via add_importlibs.
+#[cfg(not(feature = "rosload"))]
 pub mod ui_keystone;
+#[cfg(not(feature = "rosload"))]
 pub mod ui;
+#[cfg(not(feature = "rosload"))]
 pub mod tui;
+#[cfg(not(feature = "rosload"))]
 pub mod tuimenu;
+#[cfg(not(feature = "rosload"))]
 pub mod minitui;
+#[cfg(not(feature = "rosload"))]
 pub mod noui;
+#[cfg(not(feature = "rosload"))]
 pub mod video;
 
 
