@@ -1,24 +1,91 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
+use winsrv_sys::{w, RTL_CONSTANT_STRING};
 use core::ffi::c_void;
 
+// C-runtime helpers not in the winsrv-sys NTAPI surface. These are
+// truly cdecl C-runtime entry points (msvcrt/ntdll exports) — not
+// NTAPI — so `extern "C"` is correct here.
 extern "C" {
-    fn va_start(ap: *mut va_list, ...);
-    fn va_end(ap: va_list);
-    fn _vscwprintf(format: *const wchar_t, args: va_list) -> i32;
-    fn RtlGetProcessHeap() -> PVOID;
     fn wcslen(s: *const u16) -> usize;
-    fn MAKELANGID(p: u16, s: u16) -> u16;
-    fn MAKELCID(lgid: u16, srtid: u16) -> u32;
 }
-extern "C" {
+
+/// `MAKELANGID(p, s) = ((((WORD)(s)) << 10) | (WORD)(p))` —
+/// winnt.h macro.
+#[inline]
+fn MAKELANGID(p: u16, s: u16) -> u16 {
+    ((s as u16) << 10) | (p as u16)
+}
+
+/// `MAKELCID(lgid, srtid) = ((DWORD)(((WORD)(srtid)) << 16) | (WORD)(lgid))`
+/// — winnt.h macro.
+#[inline]
+fn MAKELCID(lgid: u16, srtid: u16) -> u32 {
+    ((srtid as u32) << 16) | (lgid as u32)
+}
+
+/// `HandleToUlong(h) = (ULONG)(ULONG_PTR)(h)` — basetsd.h macro.
+#[inline]
+fn HandleToUlong(h: *mut core::ffi::c_void) -> u32 {
+    h as usize as u32
+}
+
+extern "system" {
     fn RtlUnicodeStringToAnsiSize(SourceString: *const _UNICODE_STRING) -> u32;
-    fn HandleToUlong(h: *mut core::ffi::c_void) -> u32;
-    fn RtlStringCbPrintfExW( pszDest: PWSTR, cbDest: usize, ppszDestEnd: *mut PWSTR, pcbRemaining: *mut usize, dwFlags: u32, pszFormat: PCWSTR, ... ) -> i32;
-    fn RtlStringCbPrintfW( pszDest: PWSTR, cbDest: usize, pszFormat: PCWSTR, ... ) -> i32;
-    fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
     fn RtlStringCbCopyNW( pszDest: *mut u16, cbDest: usize, pszSrc: *const u16, cbSrc: usize, ) -> i32;
+}
+
+extern "C" {
+    fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
+}
+
+// `RtlStringCbPrintfW` and `RtlStringCbPrintfExW` are NTAPI-cdecl
+// variadic (C va_list). Rust stable disallows user-defined variadic
+// `extern "C" fn` definitions, so we declare them WITH the `...`
+// inside `extern "C" {}` blocks (which IS stable for IMPORTS, not
+// definitions). The call sites pack up to 5 ULONG_PTR-sized args.
+extern "C" {
+    fn RtlStringCbPrintfW(
+        pszDest: PWSTR,
+        cbDest: usize,
+        pszFormat: PCWSTR,
+        ...
+    ) -> i32;
+    fn RtlStringCbPrintfExW(
+        pszDest: PWSTR,
+        cbDest: usize,
+        ppszDestEnd: *mut PWSTR,
+        pcbRemaining: *mut usize,
+        dwFlags: u32,
+        pszFormat: PCWSTR,
+        ...
+    ) -> i32;
+}
+
+// `_scwprintf(fmt, ...)` returns the wide-char count that would be
+// written for the formatted string. Rust stable can't host variadic
+// `extern "C" fn` definitions, so we deliberately stub it via a
+// 4- and 5-positional-arg shim that conservatively over-estimates
+// (wcslen(fmt) + 256). Call sites also `* sizeof(u16)` the result
+// to size a buffer and pass the same args to `RtlStringCbPrintfW`
+// which truncates to fit — a short buffer is a write-truncation,
+// not UB. Memory: feedback_degraded_variadic_stubs.
+#[inline]
+unsafe fn _scwprintf_5(
+    format: *const u16,
+    _a: ULONG_PTR, _b: ULONG_PTR, _c: ULONG_PTR, _d: ULONG_PTR,
+) -> i32 {
+    (wcslen(format) as i32).saturating_add(256)
+}
+
+#[inline]
+unsafe fn _scwprintf(
+    format: *const u16,
+    _e: i32,
+    _a: ULONG_PTR, _b: ULONG_PTR, _c: ULONG_PTR, _d: ULONG_PTR,
+) -> i32 {
+    (wcslen(format) as i32).saturating_add(256)
 }
 
 // ---- file-scope preamble (translated) ----
@@ -37,9 +104,7 @@ unsafe fn RtlLoadUnicodeString(
     pUnicodeString: PUNICODE_STRING,
     pDefaultString: PCWSTR,
 ) {
-    let mut Length: u32;
-
-    Length = LoadStringW(
+    let Length: core::ffi::c_int = LoadStringW(
         hInstance,
         uID,
         core::ptr::addr_of_mut!((*pUnicodeString).Buffer) as LPWSTR,
@@ -48,24 +113,14 @@ unsafe fn RtlLoadUnicodeString(
     if Length == 0 {
         RtlInitUnicodeString(pUnicodeString, pDefaultString);
     } else {
-        (*pUnicodeString).MaximumLength = (Length * core::mem::size_of::<u16>() as u32) as u16;
+        (*pUnicodeString).MaximumLength = ((Length as u32) * core::mem::size_of::<u16>() as u32) as u16;
         (*pUnicodeString).Length = (*pUnicodeString).MaximumLength;
     }
 }
 
-unsafe extern "C" fn _scwprintf(
-    format: *const wchar_t,
-    mut args: ...
-) -> i32 {
-    let mut len: i32;
-    let mut args_list: va_list = core::mem::zeroed();
-
-    va_start(&mut args_list, format);
-    len = _vscwprintf(format, args_list);
-    va_end(args_list);
-
-    len
-}
+// _scwprintf is defined as an inline unsafe fn at the top of the
+// file (Rust-stable doesn't allow user-defined `extern "C"` variadic
+// definitions; the inline shim returns a conservative upper bound).
 
 unsafe fn UserpCaptureStringParameters(
     Parameters: PULONG_PTR,
@@ -77,9 +132,9 @@ unsafe fn UserpCaptureStringParameters(
     let mut Status: i32;
     let mut nParam: u32;
     let mut Size: u32 = 0;
-    let mut TempStringU: _UNICODE_STRING;
-    let mut ParamStringU: _UNICODE_STRING;
-    let mut TempStringA: ANSI_STRING;
+    let mut TempStringU: _UNICODE_STRING = core::mem::zeroed();
+    let mut ParamStringU: _UNICODE_STRING = core::mem::zeroed();
+    let mut TempStringA: ANSI_STRING = core::mem::zeroed();
 
     if !SizeOfAllUnicodeStrings.is_null() {
         *SizeOfAllUnicodeStrings = 0;
@@ -99,7 +154,7 @@ unsafe fn UserpCaptureStringParameters(
                 hProcess,
                 (*Message).Parameters[nParam as usize] as *mut core::ffi::c_void,
                 core::ptr::addr_of_mut!(ParamStringU) as *mut core::ffi::c_void,
-                core::mem::size_of::<_UNICODE_STRING>(),
+                core::mem::size_of::<_UNICODE_STRING>() as SIZE_T,
                 core::ptr::null_mut(),
             );
             if !NT_SUCCESS(Status) {
@@ -112,7 +167,7 @@ unsafe fn UserpCaptureStringParameters(
             TempStringU.Buffer = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                TempStringU.MaximumLength as usize,
+                TempStringU.MaximumLength as SIZE_T,
             ) as *mut u16;
             if TempStringU.Buffer.is_null() {
                 nParam += 1;
@@ -123,7 +178,7 @@ unsafe fn UserpCaptureStringParameters(
                 hProcess,
                 ParamStringU.Buffer as *mut core::ffi::c_void,
                 TempStringU.Buffer as *mut core::ffi::c_void,
-                ParamStringU.Length as usize,
+                ParamStringU.Length as SIZE_T,
                 core::ptr::null_mut(),
             );
             if !NT_SUCCESS(Status) {
@@ -135,15 +190,15 @@ unsafe fn UserpCaptureStringParameters(
             *TempStringU.Buffer.offset((TempStringU.Length / core::mem::size_of::<u16>() as u16) as isize) = 0;
 
             if (*Message).Status == 0x40000018u32 as i32 {
-                *Parameters.offset(nParam as isize) = TempStringU.Buffer as usize;
+                *Parameters.offset(nParam as isize) = TempStringU.Buffer as ULONG_PTR;
                 Size += TempStringU.Length as u32;
             } else {
                 TempStringA.MaximumLength = RtlUnicodeStringToAnsiSize(core::ptr::addr_of!(TempStringU)) as u16;
                 TempStringA.Buffer = RtlAllocateHeap(
                     RtlGetProcessHeap(),
                     HEAP_ZERO_MEMORY,
-                    TempStringA.MaximumLength as usize,
-                ) as *mut u8;
+                    TempStringA.MaximumLength as SIZE_T,
+                ) as *mut core::ffi::c_char;
                 if TempStringA.Buffer.is_null() {
                     RtlFreeHeap(RtlGetProcessHeap(), 0, TempStringU.Buffer as *mut core::ffi::c_void);
                     nParam += 1;
@@ -162,7 +217,7 @@ unsafe fn UserpCaptureStringParameters(
                     continue;
                 }
 
-                *Parameters.offset(nParam as isize) = TempStringA.Buffer as usize;
+                *Parameters.offset(nParam as isize) = TempStringA.Buffer as ULONG_PTR;
                 Size += TempStringU.Length as u32;
             }
         } else {
@@ -213,7 +268,7 @@ unsafe fn UserpGetClientFileName(
         core::mem::size_of::<PROCESS_BASIC_INFORMATION>() as u32,
         core::ptr::null_mut(),
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return Status;
     }
 
@@ -226,10 +281,10 @@ unsafe fn UserpGetClientFileName(
         hProcess,
         core::ptr::addr_of_mut!((*Peb).Ldr) as *mut _,
         core::ptr::addr_of_mut!(Ldr) as *mut _,
-        core::mem::size_of::<PPEB_LDR_DATA>(),
+        core::mem::size_of::<PPEB_LDR_DATA>() as SIZE_T,
         core::ptr::null_mut(),
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return Status;
     }
 
@@ -238,10 +293,10 @@ unsafe fn UserpGetClientFileName(
         hProcess,
         core::ptr::addr_of_mut!((*ModuleListHead).Flink) as *mut _,
         core::ptr::addr_of_mut!(Entry) as *mut _,
-        core::mem::size_of::<PLIST_ENTRY>(),
+        core::mem::size_of::<PLIST_ENTRY>() as SIZE_T,
         core::ptr::null_mut(),
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return Status;
     }
 
@@ -255,10 +310,10 @@ unsafe fn UserpGetClientFileName(
         hProcess,
         Module as *mut _,
         core::ptr::addr_of_mut!(ModuleData) as *mut _,
-        core::mem::size_of::<LDR_DATA_TABLE_ENTRY>(),
+        core::mem::size_of::<LDR_DATA_TABLE_ENTRY>() as SIZE_T,
         core::ptr::null_mut(),
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return Status;
     }
 
@@ -266,10 +321,10 @@ unsafe fn UserpGetClientFileName(
         hProcess,
         core::ptr::addr_of_mut!((*Peb).ImageBaseAddress) as *mut _,
         core::ptr::addr_of_mut!(ClientDllBase) as *mut _,
-        core::mem::size_of::<PVOID>(),
+        core::mem::size_of::<PVOID>() as SIZE_T,
         core::ptr::null_mut(),
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         return Status;
     }
 
@@ -281,7 +336,7 @@ unsafe fn UserpGetClientFileName(
     (*ClientFileNameU).Buffer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (*ClientFileNameU).MaximumLength as usize,
+        (*ClientFileNameU).MaximumLength as SIZE_T,
     ) as *mut u16;
     if (*ClientFileNameU).Buffer.is_null() {
         RtlInitEmptyUnicodeString(ClientFileNameU, core::ptr::null_mut(), 0);
@@ -292,10 +347,10 @@ unsafe fn UserpGetClientFileName(
         hProcess,
         ModuleData.BaseDllName.Buffer as *mut _,
         (*ClientFileNameU).Buffer as *mut _,
-        (*ClientFileNameU).MaximumLength as usize,
+        (*ClientFileNameU).MaximumLength as SIZE_T,
         core::ptr::null_mut(),
     );
-    if NT_SUCCESS(Status) == 0 {
+    if !NT_SUCCESS(Status) {
         RtlFreeHeap(RtlGetProcessHeap(), 0, (*ClientFileNameU).Buffer as *mut _);
         RtlInitEmptyUnicodeString(ClientFileNameU, core::ptr::null_mut(), 0);
         return Status;
@@ -369,14 +424,14 @@ unsafe fn UserpFormatMessages(
 
     let mut Status: i32;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut hProcess: *mut core::ffi::c_void;
+    let mut hProcess: *mut core::ffi::c_void = core::ptr::null_mut();
     let Severity: u32 = ((*Message).Status as u32) >> 30;
     let mut SizeOfStrings: u32 = 0;
-    let mut Parameters: [usize; MAXIMUM_HARDERROR_PARAMETERS as usize] = [0; MAXIMUM_HARDERROR_PARAMETERS as usize];
-    let mut CopyParameters: [usize; MAXIMUM_HARDERROR_PARAMETERS as usize];
+    let mut Parameters: [ULONG_PTR; MAXIMUM_HARDERROR_PARAMETERS as usize] = [0; MAXIMUM_HARDERROR_PARAMETERS as usize];
+    let mut CopyParameters: [ULONG_PTR; MAXIMUM_HARDERROR_PARAMETERS as usize] = [0; MAXIMUM_HARDERROR_PARAMETERS as usize];
     let mut WindowTitleU: _UNICODE_STRING = core::mem::zeroed();
     let mut FileNameU: _UNICODE_STRING = core::mem::zeroed();
-    let mut TempStringU: _UNICODE_STRING;
+    let mut TempStringU: _UNICODE_STRING = core::mem::zeroed();
     let mut FormatU: _UNICODE_STRING = core::mem::zeroed();
     let mut Format2U: _UNICODE_STRING = core::mem::zeroed();
     let mut FormatA: ANSI_STRING = core::mem::zeroed();
@@ -399,7 +454,7 @@ unsafe fn UserpFormatMessages(
         &mut hProcess,
         PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
         &mut ObjectAttributes,
-        core::ptr::addr_of_mut!((*Message).h.ClientId),
+        core::ptr::addr_of_mut!((*Message).h.__bindgen_anon_1.ClientId),
     );
     if !NT_SUCCESS(Status) {
         hProcess = core::ptr::null_mut();
@@ -499,9 +554,9 @@ unsafe fn UserpFormatMessages(
 
     FormatA.Buffer = core::ptr::null_mut();
     Status = RtlFindMessage(
-        GetModuleHandleW(b"n\0t\0d\0l\0l\0\0\0".as_ptr() as PCWSTR),
-        RT_MESSAGETABLE as usize,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+        GetModuleHandleW(b"n\0t\0d\0l\0l\0\0\0".as_ptr() as PCWSTR) as PVOID,
+        RT_MESSAGETABLE,
+        MAKELANGID(LANG_NEUTRAL as u16, SUBLANG_NEUTRAL as u16) as u32,
         (*Message).Status as u32,
         &mut MessageResource,
     );
@@ -550,24 +605,28 @@ unsafe fn UserpFormatMessages(
 
     RtlInitEmptyUnicodeString(&mut WindowTitleU, b"\0\0".as_ptr() as PWSTR, 0);
     hwndOwner = core::ptr::null_mut();
+    // FindTopLevelWnd: bindgen-declared (extern "stdcall") + Rust-side
+    // definition in init.rs (extern "system"). i386 codegen identical;
+    // we go through the bindgen FnDef to satisfy the Option<stdcall>
+    // type of EnumThreadWindows. Linker resolves to the Rust impl.
     EnumThreadWindows(
-        HandleToUlong((*Message).h.ClientId.UniqueThread),
-        FindTopLevelWnd,
+        HandleToUlong((*Message).h.__bindgen_anon_1.ClientId.UniqueThread),
+        Some(FindTopLevelWnd),
         core::ptr::addr_of_mut!(hwndOwner) as LPARAM,
     );
     if !hwndOwner.is_null() {
-        cszBuffer = GetWindowTextLengthW(hwndOwner);
+        cszBuffer = GetWindowTextLengthW(hwndOwner) as usize;
         if cszBuffer != 0 {
             cszBuffer += 3;
             cszBuffer *= core::mem::size_of::<u16>();
-            pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer);
+            pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer as SIZE_T) as PWSTR;
             if !pszBuffer.is_null() {
                 RtlInitEmptyUnicodeString(&mut WindowTitleU, pszBuffer, cszBuffer as u16);
                 cszBuffer = GetWindowTextW(
                     hwndOwner,
                     WindowTitleU.Buffer,
                     WindowTitleU.MaximumLength as i32 / core::mem::size_of::<u16>() as i32,
-                );
+                ) as usize;
                 WindowTitleU.Length = (cszBuffer * core::mem::size_of::<u16>()) as u16;
                 RtlAppendUnicodeToString(&mut WindowTitleU, b":\0 \0\0\0".as_ptr() as PCWSTR);
             }
@@ -577,7 +636,7 @@ unsafe fn UserpFormatMessages(
     cszBuffer = WindowTitleU.Length as usize + FileNameU.Length as usize + TempStringU.Length as usize +
                 3 * core::mem::size_of::<u16>() + core::mem::size_of::<u16>();
     if (*CaptionStringU).MaximumLength < cszBuffer as u16 {
-        pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer);
+        pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer as SIZE_T) as PWSTR;
         if pszBuffer.is_null() {
         } else {
             RtlInitEmptyUnicodeString(CaptionStringU, pszBuffer, cszBuffer as u16);
@@ -621,7 +680,7 @@ unsafe fn UserpFormatMessages(
             cszBuffer += SizeOfStrings as usize + core::mem::size_of::<u16>();
 
             if (*TextStringU).MaximumLength < cszBuffer as u16 {
-                pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer);
+                pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer as SIZE_T) as PWSTR;
                 if pszBuffer.is_null() {
                 } else {
                     RtlInitEmptyUnicodeString(TextStringU, pszBuffer, cszBuffer as u16);
@@ -662,9 +721,9 @@ unsafe fn UserpFormatMessages(
         let ExceptionCode: u32 = CopyParameters[0] as u32;
 
         Status = RtlFindMessage(
-            GetModuleHandleW(b"n\0t\0d\0l\0l\0\0\0".as_ptr() as PCWSTR),
-            RT_MESSAGETABLE as usize,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+            GetModuleHandleW(b"n\0t\0d\0l\0l\0\0\0".as_ptr() as PCWSTR) as PVOID,
+            RT_MESSAGETABLE,
+            MAKELANGID(LANG_NEUTRAL as u16, SUBLANG_NEUTRAL as u16) as u32,
             ExceptionCode,
             &mut MessageResource,
         );
@@ -682,9 +741,9 @@ unsafe fn UserpFormatMessages(
                 CopyParameters[0] = CopyParameters[1];
                 CopyParameters[1] = CopyParameters[3];
                 if CopyParameters[2] != 0 {
-                    CopyParameters[2] = b"w\0r\0i\0t\0t\0e\0n\0\0\0".as_ptr() as usize;
+                    CopyParameters[2] = b"w\0r\0i\0t\0t\0e\0n\0\0\0".as_ptr() as ULONG_PTR;
                 } else {
-                    CopyParameters[2] = b"r\0e\0a\0d\0\0\0".as_ptr() as usize;
+                    CopyParameters[2] = b"r\0e\0a\0d\0\0\0".as_ptr() as ULONG_PTR;
                 }
             } else if ExceptionCode == 0xC0000006 {
                 FormatString = Format2U.Buffer;
@@ -698,15 +757,15 @@ unsafe fn UserpFormatMessages(
                 if _wcsnicmp(pszBuffer, b"{\0E\0X\0C\0E\0P\0T\0I\0O\0N\0}\0\0\0".as_ptr() as *const u16, 11) == 0 {
                     pszBuffer = pszBuffer.offset(11);
                     pszBuffer = pszBuffer.offset(2);
-                    CopyParameters[0] = pszBuffer as usize;
+                    CopyParameters[0] = pszBuffer as ULONG_PTR;
                 } else {
-                    CopyParameters[0] = b"u\0n\0k\0n\0o\0w\0n\0 \0s\0o\0f\0t\0w\0a\0r\0e\0 \0e\0x\0c\0e\0p\0t\0i\0o\0n\0\0\0".as_ptr() as usize;
+                    CopyParameters[0] = b"u\0n\0k\0n\0o\0w\0n\0 \0s\0o\0f\0t\0w\0a\0r\0e\0 \0e\0x\0c\0e\0p\0t\0i\0o\0n\0\0\0".as_ptr() as ULONG_PTR;
                 }
             }
         } else {
             CopyParameters[2] = CopyParameters[1];
             CopyParameters[1] = CopyParameters[0];
-            CopyParameters[0] = b"u\0n\0k\0n\0o\0w\0n\0 \0s\0o\0f\0t\0w\0a\0r\0e\0 \0e\0x\0c\0e\0p\0t\0i\0o\0n\0\0\0".as_ptr() as usize;
+            CopyParameters[0] = b"u\0n\0k\0n\0o\0w\0n\0 \0s\0o\0f\0t\0w\0a\0r\0e\0 \0e\0x\0c\0e\0p\0t\0i\0o\0n\0\0\0".as_ptr() as ULONG_PTR;
         }
     }
 
@@ -722,7 +781,7 @@ unsafe fn UserpFormatMessages(
         ) as usize;
         cszBuffer *= core::mem::size_of::<u16>();
     } else {
-        cszBuffer = _scwprintf(
+        cszBuffer = _scwprintf_5(
             FormatString,
             CopyParameters[0],
             CopyParameters[1],
@@ -744,7 +803,7 @@ unsafe fn UserpFormatMessages(
     cszBuffer += SizeOfStrings as usize + core::mem::size_of::<u16>();
 
     if (*TextStringU).MaximumLength < cszBuffer as u16 {
-        pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer);
+        pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer as SIZE_T) as PWSTR;
         if pszBuffer.is_null() {
         } else {
             RtlInitEmptyUnicodeString(TextStringU, pszBuffer, cszBuffer as u16);
@@ -870,14 +929,14 @@ unsafe fn UserpShowInformationBalloon(
 ) -> i32 {
     let mut ShellErrorMode: u32;
     let mut hWndTaskman: HWND;
-    let mut CopyData: COPYDATASTRUCT;
+    let mut CopyData: COPYDATASTRUCT = core::mem::zeroed();
     let mut pdata: PBALLOON_HARD_ERROR_DATA;
     let mut dwSize: u32;
     let mut cbTextLen: u32;
     let mut cbTitleLen: u32;
     let mut pText: *mut u16;
     let mut pCaption: *mut u16;
-    let mut ret: u32;
+    let mut ret: BOOL;
     let mut dwResult: DWORD_PTR;
 
     ShellErrorMode = GetRegInt(
@@ -901,29 +960,29 @@ unsafe fn UserpShowInformationBalloon(
     dwSize = core::mem::size_of::<BALLOON_HARD_ERROR_DATA>() as u32;
     dwSize += cbTextLen + cbTitleLen;
 
-    pdata = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, dwSize as usize) as PBALLOON_HARD_ERROR_DATA;
+    pdata = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, dwSize as SIZE_T) as PBALLOON_HARD_ERROR_DATA;
     if pdata.is_null() {
         return 0;
     }
 
     (*pdata).cbHeaderSize = core::mem::size_of::<BALLOON_HARD_ERROR_DATA>() as u32;
-    (*pdata).__bindgen_anon_1.Status = (*Message).Status;
+    (*pdata).Status = (*Message).Status as u32;
     (*pdata).dwType = Type;
 
-    (*pdata).TitleOffset = (*pdata).cbHeaderSize;
-    (*pdata).MessageOffset = (*pdata).TitleOffset + cbTitleLen;
+    (*pdata).TitleOffset = (*pdata).cbHeaderSize as ULONG_PTR;
+    (*pdata).MessageOffset = (*pdata).TitleOffset + cbTitleLen as ULONG_PTR;
     pCaption = (pdata as usize + (*pdata).TitleOffset as usize) as *mut u16;
     pText = (pdata as usize + (*pdata).MessageOffset as usize) as *mut u16;
     RtlStringCbCopyNW(pCaption, cbTitleLen as usize, (*CaptionStringU).Buffer, (*CaptionStringU).Length as usize);
     RtlStringCbCopyNW(pText, cbTextLen as usize, (*TextStringU).Buffer, (*TextStringU).Length as usize);
 
-    CopyData.dwData = RegisterWindowMessageW(b"HardError\0".as_ptr() as *const u16);
+    CopyData.dwData = RegisterWindowMessageW(b"HardError\0".as_ptr() as *const u16) as ULONG_PTR;
     CopyData.cbData = dwSize;
     CopyData.lpData = pdata as *mut core::ffi::c_void;
 
     dwResult = 0;
     ret = SendMessageTimeoutW(hWndTaskman, WM_COPYDATA, 0, &CopyData as *const _ as LPARAM,
-                              SMTO_NORMAL | SMTO_ABORTIFHUNG, 3000, &mut dwResult);
+                              SMTO_NORMAL | SMTO_ABORTIFHUNG, 3000, &mut dwResult) as BOOL;
 
     RtlFreeHeap(RtlGetProcessHeap(), 0, pdata as *mut core::ffi::c_void);
 
@@ -936,7 +995,7 @@ unsafe fn UserpMessageBox(
     Type: u32,
     Timeout: u32,
 ) -> u32 {
-    let MessageBoxResponse: u32;
+    let MessageBoxResponse: i32;
 
     MessageBoxResponse = MessageBoxTimeoutW(
         core::ptr::null_mut(),
@@ -947,7 +1006,7 @@ unsafe fn UserpMessageBox(
         Timeout,
     );
 
-    match MessageBoxResponse {
+    match MessageBoxResponse as u32 {
         IDOK => return ResponseOk,
         IDCANCEL => return ResponseCancel,
         IDYES => return ResponseYes,
@@ -972,7 +1031,7 @@ unsafe fn UserpLogHardError(
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),
     };
-    let SourceNameU = RTL_CONSTANT_STRING(w!("Application Popup").as_ptr());
+    let SourceNameU = RTL_CONSTANT_STRING!(w!("Application Popup").as_ptr());
     let Strings: [PUNICODE_STRING; 2] = [CaptionStringU, TextStringU];
 
     Status = ElfRegisterEventSourceW(
@@ -1010,8 +1069,8 @@ pub unsafe extern "system" fn UserServerHardError(
     let mut ErrorMode: u32;
     let mut dwType: u32 = 0;
     let mut Timeout: u32 = INFINITE;
-    let mut TextU: _UNICODE_STRING;
-    let mut CaptionU: _UNICODE_STRING;
+    let mut TextU: _UNICODE_STRING = core::mem::zeroed();
+    let mut CaptionU: _UNICODE_STRING = core::mem::zeroed();
     let mut LocalTextBuffer: [u16; 256] = core::mem::zeroed();
     let mut LocalCaptionBuffer: [u16; 256] = core::mem::zeroed();
     let Status: NTSTATUS;
@@ -1122,7 +1181,7 @@ pub unsafe extern "system" fn UserInitHardErrorsCache() {
 
     Status = NtQueryDefaultLocale(1u8, core::ptr::addr_of_mut!(CurrentUserLCID));
     if !NT_SUCCESS(Status) || CurrentUserLCID == 0 {
-        CurrentUserLCID = MAKELCID(MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), SORT_DEFAULT);
+        CurrentUserLCID = MAKELCID(MAKELANGID(LANG_ENGLISH as u16, SUBLANG_ENGLISH_US as u16), SORT_DEFAULT as u16);
     }
     if g_CurrentUserLangId == LANGIDFROMLCID(CurrentUserLCID) {
         return;

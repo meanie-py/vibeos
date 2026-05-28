@@ -23,7 +23,19 @@ pub static mut CsrApiPort: HANDLE = core::ptr::null_mut();
 #[no_mangle]
 pub static mut UserServerHeap: HANDLE = core::ptr::null_mut();
 
-static mut UserServerApiDispatchTable: [PCSR_API_ROUTINE; 10] = [
+// Shadow PCSR_API_ROUTINE locally with extern "system" — bindgen
+// emits arch-specific ABI literals (extern "stdcall" on i386,
+// extern "C" elsewhere) and Rust's type system treats those as
+// distinct from extern "system" even when codegen is identical.
+// `LoadedServerDll.DispatchTable` is `*mut c_void` so this pointer
+// is cast at the assignment site. Mirrors basesrv/init.rs in
+// smss-csrss-rust (memory feedback_extern_c_abi).
+type CsrApiRoutineSystem = Option<unsafe extern "system" fn(
+    ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS>;
+
+static mut UserServerApiDispatchTable: [CsrApiRoutineSystem; 10] = [
     Some(SrvExitWindowsEx),
     Some(SrvEndTask),
     Some(SrvLogon),
@@ -87,27 +99,27 @@ unsafe extern "system" fn CreateSystemThreads(pParam: PVOID) -> ULONG {
 }
 
 unsafe extern "system" fn SrvCreateSystemThreads(
-    ApiMessage: *mut _CSR_API_MESSAGE,
-    ReplyStatus: *mut ULONG,
-) -> ULONG {
-    let Status = CsrExecServerThread(Some(CreateSystemThreads), core::ptr::null_mut());
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let Status = CsrExecServerThread(CreateSystemThreads as PVOID, 0);
     if Status < 0 {
         // DPRINT1 omitted
     }
-    Status as ULONG
+    Status
 }
 
 unsafe extern "system" fn SrvActivateDebugger(
-    ApiMessage: *mut _CSR_API_MESSAGE,
-    ReplyStatus: *mut ULONG,
-) -> ULONG {
-    STATUS_NOT_IMPLEMENTED as ULONG
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    STATUS_NOT_IMPLEMENTED
 }
 
 unsafe extern "system" fn SrvGetThreadConsoleDesktop(
-    ApiMessage: *mut _CSR_API_MESSAGE,
-    ReplyStatus: *mut ULONG,
-) -> ULONG {
+    ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
     let GetThreadConsoleDesktopRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as *mut _USER_API_MESSAGE)).Data.GetThreadConsoleDesktopRequest
     );
@@ -121,32 +133,28 @@ unsafe extern "system" fn SrvGetThreadConsoleDesktop(
         // DPRINT1 omitted
     }
 
-    STATUS_SUCCESS as ULONG
+    STATUS_SUCCESS
 }
 
 unsafe extern "system" fn SrvDeviceEvent(
-    ApiMessage: *mut _CSR_API_MESSAGE,
-    ReplyStatus: *mut ULONG,
-) -> ULONG {
-    STATUS_NOT_IMPLEMENTED as ULONG
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    STATUS_NOT_IMPLEMENTED
 }
 
 unsafe extern "system" fn SrvLogon(
-    ApiMessage: *mut _CSR_API_MESSAGE,
-    ReplyStatus: *mut ULONG,
-) -> ULONG {
-    let LogonRequest = core::ptr::addr_of_mut!(
-        (*(ApiMessage as *mut _USER_API_MESSAGE)).Data.LogonRequest
-    );
-
+    _ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
     if CsrImpersonateClient(core::ptr::null_mut()) == 0 {
-        return STATUS_UNSUCCESSFUL as ULONG;
+        return STATUS_UNSUCCESSFUL;
     }
 
     GetTimeouts(core::ptr::addr_of_mut!(ShutdownSettings));
 
     CsrRevertToSelf();
-    STATUS_SUCCESS as ULONG
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -162,8 +170,8 @@ pub unsafe extern "system" fn UserClientConnect(
 
         let Status = NtUserSetInformationThread(
             NtCurrentThread(),
-            UserThreadCsrApiPort as i32,
-            core::ptr::addr_of!(CsrApiPort) as *const core::ffi::c_void,
+            UserThreadCsrApiPort as u32,
+            core::ptr::addr_of!(CsrApiPort) as *mut core::ffi::c_void,
             core::mem::size_of::<HANDLE>() as ULONG,
         );
         if Status < 0 {
@@ -180,7 +188,7 @@ pub unsafe extern "system" fn UserClientConnect(
     (*ConnectInfo).dwDispatchCount = 0;
     let Status = NtUserProcessConnect(
         (*CsrProcess).ProcessHandle,
-        ConnectInfo as *mut core::ffi::c_void,
+        ConnectInfo,
         *ConnectionInfoLength,
     );
 
@@ -195,25 +203,33 @@ pub unsafe extern "system" fn UserServerDllInitialization(
 
     (*LoadedServerDll).ApiBase = USERSRV_FIRST_API_NUMBER;
     (*LoadedServerDll).HighestApiSupported = UserpMaxApiNumber;
-    (*LoadedServerDll).DispatchTable = UserServerApiDispatchTable.as_mut_ptr();
+    (*LoadedServerDll).DispatchTable = UserServerApiDispatchTable.as_mut_ptr() as *mut PCSR_API_ROUTINE;
     (*LoadedServerDll).ValidTable = UserServerApiServerValidTable.as_mut_ptr();
     #[cfg(feature = "CSR_DBG")]
     {
         (*LoadedServerDll).NameTable = UserServerApiNameTable.as_mut_ptr() as *mut *mut i8;
     }
     (*LoadedServerDll).SizeOfProcessData = 0;
-    (*LoadedServerDll).ConnectCallback = Some(UserClientConnect);
+    // ConnectCallback / HardErrorCallback / ShutdownProcessCallback are
+    // bindgen-typed `extern "stdcall"`; our Rust impls use `extern "system"`.
+    // On i386 these have identical codegen; transmute is sound. On
+    // amd64/arm64 the calling-convention literal is irrelevant (single
+    // ABI) and the layout matches. Mirror of basesrv/init.rs pattern.
+    (*LoadedServerDll).ConnectCallback =
+        Some(core::mem::transmute(UserClientConnect as *const ()));
     (*LoadedServerDll).DisconnectCallback = None;
-    (*LoadedServerDll).HardErrorCallback = Some(UserServerHardError);
-    (*LoadedServerDll).ShutdownProcessCallback = Some(UserClientShutdown);
+    (*LoadedServerDll).HardErrorCallback =
+        Some(core::mem::transmute(UserServerHardError as *const ()));
+    (*LoadedServerDll).ShutdownProcessCallback =
+        Some(core::mem::transmute(UserClientShutdown as *const ()));
 
-    UserServerDllInstance = (*LoadedServerDll).ServerHandle;
+    UserServerDllInstance = (*LoadedServerDll).ServerHandle as HINSTANCE;
 
     let mut Status = NtCreateEvent(
         core::ptr::addr_of_mut!(ghPowerRequestEvent),
         EVENT_ALL_ACCESS,
         core::ptr::null_mut(),
-        _EVENT_TYPE_SynchronizationEvent as i32,
+        _EVENT_TYPE_SynchronizationEvent,
         0,
     );
     if Status < 0 {
@@ -224,7 +240,7 @@ pub unsafe extern "system" fn UserServerDllInitialization(
         core::ptr::addr_of_mut!(ghMediaRequestEvent),
         EVENT_ALL_ACCESS,
         core::ptr::null_mut(),
-        _EVENT_TYPE_SynchronizationEvent as i32,
+        _EVENT_TYPE_SynchronizationEvent,
         0,
     );
     if Status < 0 {

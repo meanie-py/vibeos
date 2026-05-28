@@ -98,7 +98,7 @@ unsafe fn UpdateProgressBarImpl(ProgressBar: HWND, NotifyContext: *mut NOTIFY_CO
     if (*(*NotifyContext).ShutdownSettings).WaitToKillAppTimeout < Passed {
         Passed = (*(*NotifyContext).ShutdownSettings).WaitToKillAppTimeout;
     }
-    SendMessageW(ProgressBar, PBM_SETPOS, Passed / 2, 0);
+    SendMessageW(ProgressBar, PBM_SETPOS, (Passed / 2) as WPARAM, 0);
 }
 
 unsafe extern "system" fn EndNowDlgProc(
@@ -118,13 +118,13 @@ unsafe extern "system" fn EndNowDlgProc(
         WM_INITDIALOG => {
             NotifyContext = lParam as *mut NOTIFY_CONTEXT;
             (*NotifyContext).EndNowResult = QUERY_RESULT_ABORT;
-            SetWindowLongPtrW(Dlg, DWLP_USER, lParam as isize);
+            SetWindowLongPtrW(Dlg, DWLP_USER, lParam as LONG_PTR);
             TitleLength = SendMessageW((*NotifyContext).WndClient, WM_GETTEXTLENGTH, 0, 0) as DWORD
                 + GetWindowTextLengthW(Dlg) as DWORD;
             Title = HeapAlloc(
                 UserServerHeap,
                 0,
-                ((TitleLength + 1) * core::mem::size_of::<u16>() as DWORD) as usize,
+                ((TitleLength + 1) * core::mem::size_of::<u16>() as DWORD) as SIZE_T,
             ) as LPWSTR;
             if !Title.is_null() {
                 Len = GetWindowTextW(Dlg, Title, (TitleLength + 1) as i32);
@@ -137,7 +137,7 @@ unsafe extern "system" fn EndNowDlgProc(
                 SetWindowTextW(Dlg, Title);
                 HeapFree(UserServerHeap, 0, Title as LPVOID);
             }
-            ProgressBar = GetDlgItem(Dlg, IDC_PROGRESS);
+            ProgressBar = GetDlgItem(Dlg, IDC_PROGRESS as i32);
             SendMessageW(
                 ProgressBar,
                 PBM_SETRANGE32,
@@ -145,13 +145,13 @@ unsafe extern "system" fn EndNowDlgProc(
                 ((*(*NotifyContext).ShutdownSettings).WaitToKillAppTimeout / 2) as LPARAM,
             );
             UpdateProgressBar(ProgressBar, NotifyContext);
-            SetTimer(Dlg, 0, 200, core::ptr::null_mut());
+            SetTimer(Dlg, 0, 200, None);
             Result = 0;
         }
 
         WM_TIMER => {
             NotifyContext = GetWindowLongPtrW(Dlg, DWLP_USER) as *mut NOTIFY_CONTEXT;
-            ProgressBar = GetDlgItem(Dlg, IDC_PROGRESS);
+            ProgressBar = GetDlgItem(Dlg, IDC_PROGRESS as i32);
             UpdateProgressBar(ProgressBar, NotifyContext);
             Result = 1;
         }
@@ -202,16 +202,18 @@ unsafe extern "system" fn EndNowThreadProc(Parameter: LPVOID) -> DWORD {
     CallInitCommonControls();
     (*NotifyContext).Dlg = CreateDialogParamW(
         UserServerDllInstance,
-        IDD_END_NOW as LPWSTR,
+        IDD_END_NOW as usize as LPWSTR,
         core::ptr::null_mut(),
-        Some(EndNowDlgProc),
+        // extern "system" → extern "stdcall" — same ABI on i386,
+        // single ABI on amd64/arm64; transmute is sound.
+        Some(core::mem::transmute(EndNowDlgProc as *const ())),
         NotifyContext as LPARAM,
     );
     if (*NotifyContext).Dlg.is_null() {
         return 0;
     }
 
-    ShowWindow((*NotifyContext).Dlg, SW_SHOWNORMAL);
+    ShowWindow((*NotifyContext).Dlg, SW_SHOWNORMAL as i32);
 
     while GetMessageW(&mut Msg, core::ptr::null_mut(), 0, 0) != 0 {
         if IsDialogMessageW((*NotifyContext).Dlg, &mut Msg) == 0 {
@@ -220,14 +222,14 @@ unsafe extern "system" fn EndNowThreadProc(Parameter: LPVOID) -> DWORD {
         }
     }
 
-    Msg.wParam
+    Msg.wParam as DWORD
 }
 
 unsafe extern "system" fn SendClientShutdown(Parameter: LPVOID) -> DWORD {
     let Context = Parameter as *mut MESSAGE_CONTEXT;
     let mut Result: DWORD_PTR = 0;
 
-    if ((*Context).wParam & (MCS_QUERYENDSESSION | MCS_ENDSESSION)) == 0 {
+    if ((*Context).wParam & (MCS_QUERYENDSESSION | MCS_ENDSESSION) as WPARAM) == 0 {
         SendNotifyMessageW(
             (*Context).Wnd,
             WM_CLIENTSHUTDOWN,
@@ -249,7 +251,7 @@ unsafe extern "system" fn SendClientShutdown(Parameter: LPVOID) -> DWORD {
     {
         let Ret: DWORD;
 
-        if ((*Context).wParam & MCS_QUERYENDSESSION) != 0 {
+        if ((*Context).wParam & MCS_QUERYENDSESSION as WPARAM) != 0 {
             match Result as DWORD {
                 MCSR_DONOTSHUTDOWN => {
                     Ret = QUERY_RESULT_ABORT;
@@ -302,7 +304,7 @@ unsafe fn NotifyTopLevelWindow(Wnd: HWND, NotifyContext: *mut NOTIFY_CONTEXT) ->
         MessageThread = CreateThread(
             core::ptr::null_mut(),
             0,
-            Some(SendClientShutdown),
+            Some(core::mem::transmute(SendClientShutdown as *const ())),
             &mut MessageContext as *mut _ as LPVOID,
             0,
             core::ptr::null_mut(),
@@ -324,7 +326,7 @@ unsafe fn NotifyTopLevelWindow(Wnd: HWND, NotifyContext: *mut NOTIFY_CONTEXT) ->
                 (*NotifyContext).UIThread = CreateThread(
                     core::ptr::null_mut(),
                     0,
-                    Some(EndNowThreadProc),
+                    Some(core::mem::transmute(EndNowThreadProc as *const ())),
                     NotifyContext as LPVOID,
                     0,
                     core::ptr::null_mut(),
@@ -430,7 +432,7 @@ unsafe fn ThreadShutdownNotify(
 
 unsafe fn NotifyUserProcessForShutdown(
     CsrProcess: *mut CSR_PROCESS,
-    ShutdownSettings: *mut SHUTDOWN_SETTINGS,
+    ShutdownSettingsParam: *mut SHUTDOWN_SETTINGS,
     Flags: UINT,
 ) -> ULONG {
     let mut QueryResult = QUERY_RESULT_CONTINUE;
@@ -444,7 +446,7 @@ unsafe fn NotifyUserProcessForShutdown(
         return CsrShutdownCsrProcess;
     }
 
-    Context.ShutdownSettings = ShutdownSettings;
+    Context.ShutdownSettings = ShutdownSettingsParam;
     Context.QueryResult = QUERY_RESULT_CONTINUE;
 
     CsrLockProcessByClientId((*CsrProcess).ClientId.UniqueProcess, &mut Process);
@@ -531,8 +533,8 @@ unsafe fn UserExitReactOSImpl(CsrThread: *mut CSR_THREAD, Flags: UINT) -> NTSTAT
     let mut Status: NTSTATUS;
     let mut CallerLuid: LUID = core::mem::zeroed();
 
-    let ProcessId = (*CsrThread).ClientId.UniqueProcess as DWORD;
-    let ThreadId = (*CsrThread).ClientId.UniqueThread as DWORD;
+    let ProcessId = (*CsrThread).ClientId.UniqueProcess as ULONG_PTR;
+    let _ThreadId = (*CsrThread).ClientId.UniqueThread as ULONG_PTR;
 
     let mut Flags = Flags;
 
@@ -631,14 +633,17 @@ pub unsafe extern "system" fn UserClientShutdown(
     }
 
     NtTerminateProcess((*CsrProcess).ProcessHandle, 0);
-    WaitForSingleObject((*CsrProcess).ProcessHandle, (*ShutdownSettings).ProcessTerminateTimeout);
+    WaitForSingleObject((*CsrProcess).ProcessHandle, ShutdownSettings.ProcessTerminateTimeout);
 
     CsrDereferenceProcess(CsrProcess);
     CsrShutdownCsrProcess
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SrvExitWindowsEx(ApiMessage: *mut CSR_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn SrvExitWindowsEx(
+    ApiMessage: *mut CSR_API_MESSAGE,
+    _ReplyCode: *mut u32,
+) -> NTSTATUS {
     let ExitReactOSRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as *mut _USER_API_MESSAGE)).Data.ExitReactOSRequest
     );
@@ -654,7 +659,7 @@ pub unsafe extern "system" fn SrvExitWindowsEx(ApiMessage: *mut CSR_API_MESSAGE)
     }
 
     Status = UserExitReactOS(CsrGetClientThread(), (*ExitReactOSRequest).Flags);
-    (*ExitReactOSRequest).Success = (Status >= 0) as BOOLEAN;
+    (*ExitReactOSRequest).Success = (Status >= 0) as BOOL;
     (*ExitReactOSRequest).LastError = GetLastError();
 
     NtUserSetInformationThread(NtCurrentThread(), UserThreadRestoreDesktop, core::ptr::null(), 0);
@@ -663,7 +668,10 @@ pub unsafe extern "system" fn SrvExitWindowsEx(ApiMessage: *mut CSR_API_MESSAGE)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SrvEndTask(ApiMessage: *mut CSR_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn SrvEndTask(
+    ApiMessage: *mut CSR_API_MESSAGE,
+    _ReplyCode: *mut u32,
+) -> NTSTATUS {
     let EndTaskRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as *mut _USER_API_MESSAGE)).Data.EndTaskRequest
     );
@@ -682,7 +690,7 @@ pub unsafe extern "system" fn SrvEndTask(ApiMessage: *mut CSR_API_MESSAGE) -> NT
 
     if IsWindow((*EndTaskRequest).WndHandle) != 0 {
         if (*EndTaskRequest).Force != 0 {
-            (*EndTaskRequest).Success = DestroyWindow((*EndTaskRequest).WndHandle) as BOOLEAN;
+            (*EndTaskRequest).Success = DestroyWindow((*EndTaskRequest).WndHandle) as BOOL;
             (*EndTaskRequest).LastError = GetLastError();
         } else {
             (*EndTaskRequest).Success = 0;
@@ -698,6 +706,9 @@ pub unsafe extern "system" fn SrvEndTask(ApiMessage: *mut CSR_API_MESSAGE) -> NT
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SrvRecordShutdownReason(_ApiMessage: *mut CSR_API_MESSAGE) -> NTSTATUS {
+pub unsafe extern "system" fn SrvRecordShutdownReason(
+    _ApiMessage: *mut CSR_API_MESSAGE,
+    _ReplyCode: *mut u32,
+) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

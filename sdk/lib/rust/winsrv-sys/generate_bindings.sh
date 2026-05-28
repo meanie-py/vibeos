@@ -50,7 +50,7 @@ WINSRV_FNS='Con(Drv|Srv|sole)[A-Za-z0-9_]*|Cnsl[A-Za-z0-9_]*|Term[A-Za-z0-9_]+|C
 # nls+locale, user32+gdi32 GUI surface, strsafe macros, msvcrt). These
 # are the "outer ring" of FFI consrv/usersrv/concfg/winsrv top-level
 # call into for their actual work.
-WIN32_FNS='Reg[A-Z][A-Za-z0-9_]+|String(Cb|Cch)[A-Z][A-Za-z0-9_]+|(Get|Set|Is|Format|Find|Translate|Beep|Activate|Show|Update|Invalidate|Get|Send|Post|Register|Unregister|Create|Destroy|Read|Write|Open|Close|Delete|Enum|Query|Map|Unmap|Wait|Release|Acquire|Lock|Unlock|Load|Free)[A-Z][A-Za-z0-9_]*|MultiByteToWideChar|WideCharToMultiByte|TranslateCharsetInfo|TranslateMessage|DispatchMessageW|DefWindowProcW|CallWindowProcW|GdiTransparentBlt|PolyTextOutW|ExtTextOutW|TextOutW|CharNextW|CharPrevW|MAKE[A-Z][A-Za-z0-9_]+|IMM[A-Z][A-Za-z0-9_]+|CoCreateInstance|CoInitializeEx|CoUninitialize'
+WIN32_FNS='Reg[A-Z][A-Za-z0-9_]+|String(Cb|Cch)[A-Z][A-Za-z0-9_]+|(Get|Set|Is|Format|Find|Translate|Beep|Activate|Show|Update|Invalidate|Get|Send|Post|Register|Unregister|Create|Destroy|Read|Write|Open|Close|Delete|Enum|Query|Map|Unmap|Wait|Release|Acquire|Lock|Unlock|Load|Free|Kill|Heap|Elf|Message)[A-Z][A-Za-z0-9_]*|MultiByteToWideChar|WideCharToMultiByte|TranslateCharsetInfo|TranslateMessage|DispatchMessageW|DefWindowProcW|CallWindowProcW|GdiTransparentBlt|PolyTextOutW|ExtTextOutW|TextOutW|CharNextW|CharPrevW|MAKE[A-Z][A-Za-z0-9_]+|IMM[A-Z][A-Za-z0-9_]+|CoCreateInstance|CoInitializeEx|CoUninitialize'
 FN_ALLOW="${NTDLL_FNS}|${WINSRV_FNS}|${WIN32_FNS}"
 
 run_bindgen() {

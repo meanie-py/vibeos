@@ -44,7 +44,7 @@ pub unsafe extern "system" fn SrvRegisterLogonProcess(
         let Status = NtUserSetInformationThread(
             NtCurrentThread(),
             UserThreadCsrApiPort,
-            core::ptr::addr_of!(CsrApiPort) as *const core::ffi::c_void,
+            core::ptr::addr_of!(CsrApiPort) as *mut core::ffi::c_void,
             core::mem::size_of::<HANDLE>() as ULONG,
         );
 

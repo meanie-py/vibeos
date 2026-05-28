@@ -12096,6 +12096,19 @@ pub const PAUSED_FROM_SCROLLBAR: u32 = 2;
 pub const PAUSED_FROM_SELECTION: u32 = 4;
 pub const USERSRV_SERVERDLL_INDEX: u32 = 3;
 pub const USERSRV_FIRST_API_NUMBER: u32 = 1024;
+pub const IDD_END_NOW: u32 = 10;
+pub const IDD_NOT_RESPONDING: u32 = 11;
+pub const IDC_STATIC: i32 = -1;
+pub const IDC_PROGRESS: u32 = 20;
+pub const IDC_END_NOW: u32 = 21;
+pub const IDS_SEVERITY_SUCCESS: u32 = 100;
+pub const IDS_SEVERITY_INFORMATIONAL: u32 = 101;
+pub const IDS_SEVERITY_WARNING: u32 = 102;
+pub const IDS_SEVERITY_ERROR: u32 = 103;
+pub const IDS_SYSTEM_PROCESS: u32 = 104;
+pub const IDS_UNKNOWN_SOFTWARE_EXCEPT: u32 = 105;
+pub const IDS_OK_TERMINATE_PROGRAM: u32 = 106;
+pub const IDS_CANCEL_DEBUG_PROGRAM: u32 = 107;
 pub type __gnuc_va_list = __builtin_va_list;
 pub type ULONG = ::core::ffi::c_ulong;
 pub type PULONG = *mut ULONG;
@@ -22419,6 +22432,56 @@ unsafe extern "stdcall" {
         arg5: PULONG_PTR,
         arg6: PULONG,
     ) -> UINT;
+}
+unsafe extern "stdcall" {
+    pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;
+}
+unsafe extern "stdcall" {
+    pub fn HeapCompact(arg1: HANDLE, arg2: DWORD) -> SIZE_T;
+}
+unsafe extern "stdcall" {
+    pub fn HeapCreate(arg1: DWORD, arg2: SIZE_T, arg3: SIZE_T) -> HANDLE;
+}
+unsafe extern "stdcall" {
+    pub fn HeapDestroy(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn HeapFree(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn HeapLock(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn HeapQueryInformation(
+        arg1: HANDLE,
+        arg2: HEAP_INFORMATION_CLASS,
+        arg3: PVOID,
+        arg4: SIZE_T,
+        arg5: PSIZE_T,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn HeapReAlloc(arg1: HANDLE, arg2: DWORD, arg3: PVOID, arg4: SIZE_T) -> PVOID;
+}
+unsafe extern "stdcall" {
+    pub fn HeapSetInformation(
+        arg1: HANDLE,
+        arg2: HEAP_INFORMATION_CLASS,
+        arg3: PVOID,
+        arg4: SIZE_T,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn HeapSize(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> SIZE_T;
+}
+unsafe extern "stdcall" {
+    pub fn HeapUnlock(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn HeapValidate(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn HeapWalk(arg1: HANDLE, arg2: LPPROCESS_HEAP_ENTRY) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn SetCriticalSectionSpinCount(arg1: LPCRITICAL_SECTION, arg2: DWORD) -> DWORD;
@@ -46146,6 +46209,12 @@ unsafe extern "stdcall" {
     pub fn IsZoomed(arg1: HWND) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn KillTimer(arg1: HWND, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn KillSystemTimer(arg1: HWND, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn LoadAcceleratorsA(arg1: HINSTANCE, arg2: LPCSTR) -> HACCEL;
 }
 unsafe extern "stdcall" {
@@ -46264,6 +46333,49 @@ unsafe extern "stdcall" {
         lpPoints: LPPOINT,
         cPoints: UINT,
     ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBeep(uType: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBoxA(
+        hWnd: HWND,
+        lpText: LPCSTR,
+        lpCaption: LPCSTR,
+        uType: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBoxW(
+        hWnd: HWND,
+        lpText: LPCWSTR,
+        lpCaption: LPCWSTR,
+        uType: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBoxExA(
+        hWnd: HWND,
+        lpText: LPCSTR,
+        lpCaption: LPCSTR,
+        uType: UINT,
+        wLanguageId: WORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBoxExW(
+        hWnd: HWND,
+        lpText: LPCWSTR,
+        lpCaption: LPCWSTR,
+        uType: UINT,
+        wLanguageId: WORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBoxIndirectA(lpmbp: *const MSGBOXPARAMSA) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
 unsafe extern "stdcall" {
     pub fn OpenClipboard(arg1: HWND) -> BOOL;
@@ -47588,6 +47700,26 @@ pub struct _MSGBOXDATA {
 pub type MSGBOXDATA = _MSGBOXDATA;
 pub type PMSGBOXDATA = *mut _MSGBOXDATA;
 pub type LPMSGBOXDATA = *mut _MSGBOXDATA;
+unsafe extern "stdcall" {
+    pub fn MessageBoxTimeoutA(
+        hWnd: HWND,
+        lpText: LPCSTR,
+        lpCaption: LPCSTR,
+        uType: UINT,
+        wLanguageId: WORD,
+        dwTimeout: DWORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn MessageBoxTimeoutW(
+        hWnd: HWND,
+        lpText: LPCWSTR,
+        lpCaption: LPCWSTR,
+        uType: UINT,
+        wLanguageId: WORD,
+        dwTimeout: DWORD,
+    ) -> ::core::ffi::c_int;
+}
 pub const _UPDATE_INPUT_CONTEXT_UIC_CLIENTIMCDATA: _UPDATE_INPUT_CONTEXT = 0;
 pub const _UPDATE_INPUT_CONTEXT_UIC_IMEWINDOW: _UPDATE_INPUT_CONTEXT = 1;
 pub type _UPDATE_INPUT_CONTEXT = ::core::ffi::c_uint;
@@ -56289,6 +56421,151 @@ unsafe extern "stdcall" {
 }
 unsafe extern "C" {
     pub fn UserInitHardErrorsCache();
+}
+unsafe extern "stdcall" {
+    pub fn ElfBackupEventLogFileA(hEventLog: HANDLE, BackupFileNameA: PANSI_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfBackupEventLogFileW(hEventLog: HANDLE, BackupFileNameU: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfClearEventLogFileA(hEventLog: HANDLE, BackupFileNameA: PANSI_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfClearEventLogFileW(hEventLog: HANDLE, BackupFileNameU: PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfCloseEventLog(hEventLog: HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfDeregisterEventSource(hEventLog: HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfNumberOfRecords(hEventLog: HANDLE, NumberOfRecords: PULONG) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfOldestRecord(hEventLog: HANDLE, OldestRecordNumber: PULONG) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfChangeNotify(hEventLog: HANDLE, hEvent: HANDLE) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfOpenBackupEventLogA(
+        UNCServerNameA: PANSI_STRING,
+        BackupFileNameA: PANSI_STRING,
+        phEventLog: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfOpenBackupEventLogW(
+        UNCServerNameU: PUNICODE_STRING,
+        BackupFileNameU: PUNICODE_STRING,
+        phEventLog: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfOpenEventLogA(
+        UNCServerNameA: PANSI_STRING,
+        SourceNameA: PANSI_STRING,
+        phEventLog: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfOpenEventLogW(
+        UNCServerNameU: PUNICODE_STRING,
+        SourceNameU: PUNICODE_STRING,
+        phEventLog: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfReadEventLogA(
+        hEventLog: HANDLE,
+        ReadFlags: ULONG,
+        RecordOffset: ULONG,
+        Buffer: LPVOID,
+        NumberOfBytesToRead: ULONG,
+        NumberOfBytesRead: PULONG,
+        MinNumberOfBytesNeeded: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfReadEventLogW(
+        hEventLog: HANDLE,
+        ReadFlags: ULONG,
+        RecordOffset: ULONG,
+        Buffer: LPVOID,
+        NumberOfBytesToRead: ULONG,
+        NumberOfBytesRead: PULONG,
+        MinNumberOfBytesNeeded: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfRegisterEventSourceA(
+        UNCServerNameA: PANSI_STRING,
+        SourceNameA: PANSI_STRING,
+        phEventLog: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfRegisterEventSourceW(
+        UNCServerNameU: PUNICODE_STRING,
+        SourceNameU: PUNICODE_STRING,
+        phEventLog: PHANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfReportEventA(
+        hEventLog: HANDLE,
+        EventType: USHORT,
+        EventCategory: USHORT,
+        EventID: ULONG,
+        UserSID: PSID,
+        NumStrings: USHORT,
+        DataSize: ULONG,
+        Strings: *mut PANSI_STRING,
+        Data: PVOID,
+        Flags: USHORT,
+        RecordNumber: PULONG,
+        TimeWritten: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfReportEventW(
+        hEventLog: HANDLE,
+        EventType: USHORT,
+        EventCategory: USHORT,
+        EventID: ULONG,
+        UserSID: PSID,
+        NumStrings: USHORT,
+        DataSize: ULONG,
+        Strings: *mut PUNICODE_STRING,
+        Data: PVOID,
+        Flags: USHORT,
+        RecordNumber: PULONG,
+        TimeWritten: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfReportEventAndSourceW(
+        hEventLog: HANDLE,
+        Time: ULONG,
+        ComputerName: PUNICODE_STRING,
+        EventType: USHORT,
+        EventCategory: USHORT,
+        EventID: ULONG,
+        UserSID: PSID,
+        SourceName: PUNICODE_STRING,
+        NumStrings: USHORT,
+        DataSize: ULONG,
+        Strings: *mut PUNICODE_STRING,
+        Data: PVOID,
+        Flags: USHORT,
+        RecordNumber: PULONG,
+        TimeWritten: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "stdcall" {
+    pub fn ElfFlushEventLog(hEventLog: HANDLE) -> NTSTATUS;
 }
 pub type __builtin_va_list = *mut ::core::ffi::c_char;
 #[repr(C)]

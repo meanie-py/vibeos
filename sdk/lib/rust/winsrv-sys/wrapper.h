@@ -52,3 +52,16 @@ typedef __builtin_va_list __gnuc_va_list;
 /* usersrv internal master (winsrv.h + win/base + win/winmsg +
    FindTopLevelWnd + UserInitHardErrorsCache decls). */
 #include "usersrv/usersrv.h"
+
+/* usersrv harderror.c pulls undocelfapi for ElfReportEventW/
+   ElfRegisterEventSourceW/ElfDeregisterEventSource and undocuser
+   for MessageBoxTimeoutW (already pulled by winsrv.h, but
+   undocelfapi.h is harderror-only). */
+#include <undocelfapi.h>
+
+/* usersrv resource IDs (IDS_SEVERITY_*, IDS_SYSTEM_PROCESS, IDC_END_NOW,
+   IDD_END_NOW, IDS_OK_TERMINATE_PROGRAM, IDS_CANCEL_DEBUG_PROGRAM …)
+   live in usersrv/resource.h and are referenced by harderror.c +
+   shutdown.c. Pull explicitly — they're #defines bindgen DOES read
+   when the header is included. */
+#include "usersrv/resource.h"

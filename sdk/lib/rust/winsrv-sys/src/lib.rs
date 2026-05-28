@@ -29,6 +29,119 @@
 // boundary (same pattern as `ntkrnl_sys::ddk` vs `win32k_sys::win32k`).
 #![allow(clashing_extern_declarations)]
 
+/// `w!("…")` — wide string literal, produces a `&'static [u16; N+1]`
+/// with NUL terminator. Mirrors the C `L"..."` literal that winsrv
+/// code uses heavily. Marked `#[macro_export]` so it's reachable as
+/// `winsrv_sys::w!` from any winsrv-rust crate.
+///
+/// Returns an array reference; callers wanting a pointer use
+/// `w!("…").as_ptr()`.
+#[macro_export]
+macro_rules! w {
+    ($s:literal) => {{
+        // Pre-evaluated at macro expansion: const fn builds a
+        // [u16; N+1] from the &str literal, no heap, no formatting.
+        const __W_BYTES: &str = $s;
+        const __W_LEN: usize = {
+            // Count UTF-16 code units in the source &str. ASCII-only
+            // strings (the vast majority of winsrv literals) round-trip
+            // 1:1, but we handle UTF-8 properly via char iteration.
+            let bytes = __W_BYTES.as_bytes();
+            let mut len = 0usize;
+            let mut i = 0;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if b < 0x80 {
+                    len += 1;
+                    i += 1;
+                } else if b < 0xC0 {
+                    // continuation byte — should never start a sequence
+                    i += 1;
+                } else if b < 0xE0 {
+                    len += 1;
+                    i += 2;
+                } else if b < 0xF0 {
+                    len += 1;
+                    i += 3;
+                } else {
+                    // BMP overflow — surrogate pair
+                    len += 2;
+                    i += 4;
+                }
+            }
+            len
+        };
+        const __W: [u16; __W_LEN + 1] = {
+            let bytes = __W_BYTES.as_bytes();
+            let mut out = [0u16; __W_LEN + 1];
+            let mut i = 0;
+            let mut j = 0;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if b < 0x80 {
+                    out[j] = b as u16;
+                    j += 1;
+                    i += 1;
+                } else if b < 0xE0 {
+                    let c = ((b as u32 & 0x1F) << 6)
+                        | (bytes[i + 1] as u32 & 0x3F);
+                    out[j] = c as u16;
+                    j += 1;
+                    i += 2;
+                } else if b < 0xF0 {
+                    let c = ((b as u32 & 0x0F) << 12)
+                        | ((bytes[i + 1] as u32 & 0x3F) << 6)
+                        | (bytes[i + 2] as u32 & 0x3F);
+                    out[j] = c as u16;
+                    j += 1;
+                    i += 3;
+                } else {
+                    let c = ((b as u32 & 0x07) << 18)
+                        | ((bytes[i + 1] as u32 & 0x3F) << 12)
+                        | ((bytes[i + 2] as u32 & 0x3F) << 6)
+                        | (bytes[i + 3] as u32 & 0x3F);
+                    let c2 = c - 0x10000;
+                    out[j] = (0xD800 | (c2 >> 10)) as u16;
+                    out[j + 1] = (0xDC00 | (c2 & 0x3FF)) as u16;
+                    j += 2;
+                    i += 4;
+                }
+            }
+            // out[__W_LEN] stays 0 (NUL terminator).
+            out
+        };
+        &__W
+    }};
+}
+
+/// `RTL_CONSTANT_STRING(s)` — produce a `UNICODE_STRING` aimed at a
+/// pre-NUL-terminated wide string literal. Maps the C macro:
+/// `{ sizeof(s) - sizeof(WCHAR), sizeof(s), s }`. Callers typically
+/// pass `w!("…").as_ptr() as *mut u16` or another `*mut u16`.
+///
+/// Implemented as a non-`const` inline fn so the produced
+/// UNICODE_STRING is usable at runtime (`let s = RTL_CONSTANT_STRING(...)`).
+#[macro_export]
+macro_rules! RTL_CONSTANT_STRING {
+    ($s:expr) => {{
+        let p: *const u16 = $s;
+        let mut n: u16 = 0;
+        // SAFETY: caller passes a NUL-terminated wide pointer (w!()
+        // literal or similar). Walking until 0 is the standard way.
+        unsafe {
+            while *p.add(n as usize) != 0 {
+                n += 1;
+            }
+        }
+        let bytes = n * (core::mem::size_of::<u16>() as u16);
+        $crate::winsrv::_UNICODE_STRING {
+            Length: bytes,
+            MaximumLength: bytes + (core::mem::size_of::<u16>() as u16),
+            Buffer: p as *mut u16,
+        }
+    }};
+}
+
 mod bindgen_common;
 
 #[cfg(target_arch = "aarch64")]
@@ -82,7 +195,75 @@ pub mod nt {
         STATUS_LOGON_SESSION_EXISTS, STATUS_NOT_LOGON_PROCESS,
         STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_TOKEN,
         STATUS_TIMEOUT, STATUS_INVALID_PARAMETER_MIX,
+        STATUS_PENDING, STATUS_BAD_IMPERSONATION_LEVEL,
     };
+
+    // STATUS_* codes that aren't in ntdll-sys::constants — hand-written here.
+    // ntstatus.h:215  STATUS_LOG_HARD_ERROR     0x4000001A
+    pub const STATUS_LOG_HARD_ERROR: u32 = 0x4000_001A;
+    // ntstatus.h     STATUS_CANT_WAIT          0xC00000D8
+    pub const STATUS_CANT_WAIT: i32 = 0xC00000D8_u32 as i32;
+    // ntstatus.h     STATUS_RETRY              0xC000022D
+    pub const STATUS_RETRY: i32 = 0xC000022D_u32 as i32;
+
+    // Inline FORCEINLINE macro/accessor wrappers — bindgen can't see
+    // through #define chains.
+
+    /// `RtlGetProcessHeap()` — ndk/rtlfuncs.h:1127:
+    /// `(NtCurrentPeb()->ProcessHeap)`. NTAPI macro; live in nt:: so
+    /// translated code uses `RtlGetProcessHeap()` via the same glob.
+    #[inline]
+    pub unsafe fn RtlGetProcessHeap() -> *mut core::ffi::c_void {
+        let peb = ntdll_sys::nt::NtCurrentPeb();
+        (*peb).ProcessHeap as *mut _
+    }
+
+    /// `CsrGetClientThread()` — csr/csrsrv.h:77:
+    /// `((PCSR_THREAD)(NtCurrentTeb()->CsrClientThread))`. The result
+    /// is treated as `*mut crate::winsrv::CSR_THREAD` at call sites
+    /// (Rust handles the cast through the return type).
+    #[inline]
+    pub unsafe fn CsrGetClientThread() -> *mut crate::winsrv::CSR_THREAD {
+        let teb = ntdll_sys::nt::NtCurrentTeb();
+        (*teb).CsrClientThread as *mut crate::winsrv::CSR_THREAD
+    }
+
+    /// `UlongToHandle(ul)` — basetsd.h:91 is `ULongToHandle(ul)` which is
+    /// `((HANDLE)(ULONG_PTR)(ul))`. On i386 ULONG_PTR is u32 = ptr size
+    /// so the cast widens through usize. Returns a HANDLE (raw pointer).
+    #[inline]
+    pub fn UlongToHandle(ul: u32) -> *mut core::ffi::c_void {
+        ul as usize as *mut _
+    }
+
+    /// `GetWindowLongPtrW(hWnd, nIndex)` — on i386 winuser.h:4931
+    /// `#define GetWindowLongPtrW GetWindowLongW` (no real Ptr variant);
+    /// bindgen doesn't follow the `#define` so we hand-write the
+    /// alias here. On amd64/arm64 the real fn IS bindgen-derivable —
+    /// use that directly; gate the shim to i386 only to avoid an
+    /// E0659 ambiguity with the bindgen-declared one.
+    #[cfg(target_arch = "x86")]
+    #[inline]
+    pub unsafe fn GetWindowLongPtrW(
+        hWnd: crate::winsrv::HWND,
+        nIndex: i32,
+    ) -> i32 {
+        crate::winsrv::GetWindowLongW(hWnd, nIndex)
+    }
+
+    /// `SetWindowLongPtrW(hWnd, nIndex, dwNewLong)` — i386 macro
+    /// alias for `SetWindowLongW`. Same shape as `GetWindowLongPtrW`:
+    /// hand-written shim ON i386 only; on amd64/arm64 the bindgen
+    /// version is the canonical one.
+    #[cfg(target_arch = "x86")]
+    #[inline]
+    pub unsafe fn SetWindowLongPtrW(
+        hWnd: crate::winsrv::HWND,
+        nIndex: i32,
+        dwNewLong: i32,
+    ) -> i32 {
+        crate::winsrv::SetWindowLongW(hWnd, nIndex, dwNewLong)
+    }
 }
 
 /// Hand-written constants for winsrv that aren't bindgen-derivable
@@ -107,9 +288,18 @@ pub mod consts {
     #[cfg(target_pointer_width = "64")]
     pub const DWLP_USER: i32 = 16;
 
-    /// `IDC_PROGRESS` — commctrl.h resource id for the progress
-    /// control. Used by usersrv shutdown progress dialog.
-    pub const IDC_PROGRESS: i32 = 100;
+    /// `PBM_SETPOS` — `WM_USER + 2` from commctrl.h. Progress bar
+    /// position-set message. commctrl.h isn't pulled by winsrv's
+    /// internal-header chain so the const is hand-written here.
+    pub const PBM_SETPOS: u32 = 0x0402;
+
+    /// `PBM_SETRANGE32` — `WM_USER + 6` from commctrl.h.
+    pub const PBM_SETRANGE32: u32 = 0x0406;
+
+    /// `MUTANT_ALL_ACCESS` — STANDARD_RIGHTS_REQUIRED (0x000F0000) |
+    /// SYNCHRONIZE (0x00100000) | MUTANT_QUERY_STATE (0x1) = 0x001F0001.
+    /// extypes.h:110 / winnt_old.h:393.
+    pub const MUTANT_ALL_ACCESS: u32 = 0x001F_0001;
 
     /// `STATUS_SERVICE_NOTIFICATION` — used by usersrv harderror.c
     /// to detect service-notification dialog mode (no host process).
@@ -123,6 +313,9 @@ pub mod consts {
     }
 
     /// `NT_SUCCESS(Status)` — macro `(((NTSTATUS)(Status)) >= 0)`.
+    /// Returns `bool` (Rust-idiomatic); call sites using the C
+    /// `NT_SUCCESS(s) == 0` pattern must be rewritten to
+    /// `!NT_SUCCESS(s)`.
     #[inline]
     pub fn NT_SUCCESS(status: i32) -> bool {
         status >= 0
@@ -132,7 +325,8 @@ pub mod consts {
 /// Hand-written type aliases for winsrv that bindgen sees only under
 /// their `_USERCONNECT` original names — the win/winmsg.h `#define`
 /// chain (`#define _USERSRV_API_CONNECTINFO _USERCONNECT`) isn't
-/// followed by bindgen.
+/// followed by bindgen. Glob-re-exported into `winsrv::*` so the
+/// translator's single glob picks them up.
 pub mod aliases {
     pub use crate::winsrv::{
         _USERCONNECT as _USERSRV_API_CONNECTINFO,
@@ -163,4 +357,7 @@ pub mod winsrv {
 
     #[cfg(target_arch = "x86")]
     pub use super::bindgen_i386::*;
+
+    // Hand-written aliases the bindgen #define chain doesn't follow.
+    pub use super::aliases::*;
 }
