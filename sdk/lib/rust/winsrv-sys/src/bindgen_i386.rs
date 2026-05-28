@@ -20929,6 +20929,32 @@ unsafe extern "stdcall" {
     pub fn ActivateActCtx(arg1: HANDLE, arg2: *mut ULONG_PTR) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn AdjustTokenGroups(
+        arg1: HANDLE,
+        arg2: BOOL,
+        arg3: PTOKEN_GROUPS,
+        arg4: DWORD,
+        arg5: PTOKEN_GROUPS,
+        arg6: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn AdjustTokenPrivileges(
+        arg1: HANDLE,
+        arg2: BOOL,
+        arg3: PTOKEN_PRIVILEGES,
+        arg4: DWORD,
+        arg5: PTOKEN_PRIVILEGES,
+        arg6: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn BeginUpdateResourceA(arg1: LPCSTR, arg2: BOOL) -> HANDLE;
+}
+unsafe extern "stdcall" {
+    pub fn BeginUpdateResourceW(arg1: LPCWSTR, arg2: BOOL) -> HANDLE;
+}
+unsafe extern "stdcall" {
     pub fn CloseEventLog(arg1: HANDLE) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -21306,6 +21332,14 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn ChangeTimerQueueTimer(
+        TimerQueue: HANDLE,
+        Timer: HANDLE,
+        DueTime: ULONG,
+        Period: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn CreateThread(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: DWORD,
@@ -21382,6 +21416,12 @@ unsafe extern "stdcall" {
     pub fn DestroyPrivateObjectSecurity(arg1: *mut PSECURITY_DESCRIPTOR) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn EndUpdateResourceA(arg1: HANDLE, arg2: BOOL) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EndUpdateResourceW(arg1: HANDLE, arg2: BOOL) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn EnumResourceLanguagesA(
         arg1: HMODULE,
         arg2: LPCSTR,
@@ -21420,6 +21460,12 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn EnumResourceTypesW(arg1: HMODULE, arg2: ENUMRESTYPEPROCW, arg3: LONG_PTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EqualPrefixSid(arg1: PSID, arg2: PSID) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EqualSid(arg1: PSID, arg2: PSID) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn FindActCtxSectionGuid(
@@ -22444,6 +22490,27 @@ unsafe extern "stdcall" {
     ) -> UINT;
 }
 unsafe extern "stdcall" {
+    pub fn GlobalAlloc(arg1: UINT, arg2: SIZE_T) -> HGLOBAL;
+}
+unsafe extern "stdcall" {
+    pub fn GlobalFree(arg1: HGLOBAL) -> HGLOBAL;
+}
+unsafe extern "stdcall" {
+    pub fn GlobalHandle(arg1: LPCVOID) -> HGLOBAL;
+}
+unsafe extern "stdcall" {
+    pub fn GlobalLock(arg1: HGLOBAL) -> LPVOID;
+}
+unsafe extern "stdcall" {
+    pub fn GlobalReAlloc(arg1: HGLOBAL, arg2: SIZE_T, arg3: UINT) -> HGLOBAL;
+}
+unsafe extern "stdcall" {
+    pub fn GlobalSize(arg1: HGLOBAL) -> SIZE_T;
+}
+unsafe extern "stdcall" {
+    pub fn GlobalUnlock(arg1: HGLOBAL) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;
 }
 unsafe extern "stdcall" {
@@ -22611,6 +22678,39 @@ unsafe extern "stdcall" {
     ) -> PVOID;
 }
 unsafe extern "stdcall" {
+    pub fn MoveFileA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MoveFileW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MoveFileExA(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MoveFileWithProgressA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MoveFileWithProgressW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn NotifyChangeEventLog(arg1: HANDLE, arg2: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn OpenBackupEventLogA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
 }
 unsafe extern "stdcall" {
@@ -22676,6 +22776,16 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn OpenWaitableTimerW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "stdcall" {
+    pub fn PeekNamedPipe(
+        arg1: HANDLE,
+        arg2: PVOID,
+        arg3: DWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+        arg6: PDWORD,
+    ) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn QueryActCtxW(
@@ -23196,6 +23306,24 @@ unsafe extern "stdcall" {
         arg5: PVOID,
         arg6: BOOL,
     ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SleepConditionVariableCS(
+        arg1: PCONDITION_VARIABLE,
+        arg2: PCRITICAL_SECTION,
+        arg3: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SleepConditionVariableSRW(
+        arg1: PCONDITION_VARIABLE,
+        arg2: PSRWLOCK,
+        arg3: DWORD,
+        arg4: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SleepEx(arg1: DWORD, arg2: BOOL) -> DWORD;
 }
 unsafe extern "stdcall" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
@@ -25668,6 +25796,30 @@ pub type LPFNDEVCAPS = ::core::option::Option<
     ) -> DWORD,
 >;
 unsafe extern "stdcall" {
+    pub fn AnimatePalette(
+        hPal: HPALETTE,
+        iStartIndex: UINT,
+        cEntries: UINT,
+        ppe: *const PALETTEENTRY,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn BeginPath(hdc: HDC) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn BitBlt(
+        hdcDest: HDC,
+        xDest: INT,
+        yDest: INT,
+        cxDest: INT,
+        cyDest: INT,
+        hdcSrc: HDC,
+        xSrc: INT,
+        ySrc: INT,
+        dwRop: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn CloseEnhMetaFile(hdc: HDC) -> HENHMETAFILE;
 }
 unsafe extern "stdcall" {
@@ -25675,6 +25827,21 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn CloseMetaFile(hdc: HDC) -> HMETAFILE;
+}
+unsafe extern "stdcall" {
+    pub fn CombineRgn(
+        hrgnDest: HRGN,
+        hrgnSrc1: HRGN,
+        hrgnSrc2: HRGN,
+        fnCombineMode: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn CombineTransform(
+        pxformResult: LPXFORM,
+        pxform1: *const XFORM,
+        pxform2: *const XFORM,
+    ) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn CreateBitmap(
@@ -25919,6 +26086,23 @@ unsafe extern "stdcall" {
     pub fn DeleteObject(arg1: HGDIOBJ) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn DrawEscape(
+        hdc: HDC,
+        iEscape: ::core::ffi::c_int,
+        cjIn: ::core::ffi::c_int,
+        lpIn: LPCSTR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn EndDoc(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn EndPage(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn EndPath(arg1: HDC) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn EnumEnhMetaFile(
         arg1: HDC,
         arg2: HENHMETAFILE,
@@ -25993,6 +26177,55 @@ unsafe extern "stdcall" {
         arg3: GOBJENUMPROC,
         arg4: LPARAM,
     ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn EqualRgn(arg1: HRGN, arg2: HRGN) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ExtCreatePen(
+        iPenStyle: DWORD,
+        cWidth: DWORD,
+        plbrush: *const LOGBRUSH,
+        cStyle: DWORD,
+        pstyle: *const DWORD,
+    ) -> HPEN;
+}
+unsafe extern "stdcall" {
+    pub fn ExtCreateRegion(lpx: *const XFORM, nCount: DWORD, lpData: *const RGNDATA) -> HRGN;
+}
+unsafe extern "stdcall" {
+    pub fn ExtEscape(
+        hdc: HDC,
+        iEscape: ::core::ffi::c_int,
+        cjInput: ::core::ffi::c_int,
+        lpInData: LPCSTR,
+        cjOutput: ::core::ffi::c_int,
+        lpOutData: LPSTR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn ExtFloodFill(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: COLORREF,
+        arg5: UINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ExtSelectClipRgn(arg1: HDC, arg2: HRGN, arg3: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn ExtTextOutA(
+        hdc: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        options: UINT,
+        lprect: *const RECT,
+        lpString: LPCSTR,
+        c: UINT,
+        lpDx: *const INT,
+    ) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn ExtTextOutW(
@@ -26503,7 +26736,76 @@ unsafe extern "stdcall" {
     pub fn GetWorldTransform(arg1: HDC, arg2: LPXFORM) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn InvertRgn(arg1: HDC, arg2: HRGN) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MoveToEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn OffsetClipRgn(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn OffsetRgn(
+        arg1: HRGN,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn OffsetViewportOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn OffsetWindowOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn PatBlt(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn PolyTextOutW(hdc: HDC, ppt: *const POLYTEXTW, nstrings: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn PtInRegion(arg1: HRGN, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn PtVisible(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SelectClipPath(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SelectClipRgn(arg1: HDC, arg2: HRGN) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn SelectObject(arg1: HDC, arg2: HGDIOBJ) -> HGDIOBJ;
+}
+unsafe extern "stdcall" {
+    pub fn SelectPalette(arg1: HDC, arg2: HPALETTE, arg3: BOOL) -> HPALETTE;
 }
 unsafe extern "stdcall" {
     pub fn SetAbortProc(arg1: HDC, arg2: ABORTPROC) -> ::core::ffi::c_int;
@@ -27159,6 +27461,22 @@ unsafe extern "stdcall" {
     pub fn GetNumberOfConsoleMouseButtons(lpNumberOfMouseButtons: LPDWORD) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn PeekConsoleInputA(
+        hConsoleInput: HANDLE,
+        lpBuffer: PINPUT_RECORD,
+        nLength: DWORD,
+        lpNumberOfEventsRead: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn PeekConsoleInputW(
+        hConsoleInput: HANDLE,
+        lpBuffer: PINPUT_RECORD,
+        nLength: DWORD,
+        lpNumberOfEventsRead: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn ReadConsoleA(
         hConsoleInput: HANDLE,
         lpBuffer: LPVOID,
@@ -27235,6 +27553,24 @@ unsafe extern "stdcall" {
         dwBufferSize: COORD,
         dwBufferCoord: COORD,
         lpReadRegion: PSMALL_RECT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ScrollConsoleScreenBufferA(
+        hConsoleOutput: HANDLE,
+        lpScrollRectangle: *const SMALL_RECT,
+        lpClipRectangle: *const SMALL_RECT,
+        dwDestinationOrigin: COORD,
+        lpFill: *const CHAR_INFO,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ScrollConsoleScreenBufferW(
+        hConsoleOutput: HANDLE,
+        lpScrollRectangle: *const SMALL_RECT,
+        lpClipRectangle: *const SMALL_RECT,
+        dwDestinationOrigin: COORD,
+        lpFill: *const CHAR_INFO,
     ) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -45273,6 +45609,27 @@ unsafe extern "stdcall" {
     pub fn ActivateKeyboardLayout(arg1: HKL, arg2: UINT) -> HKL;
 }
 unsafe extern "stdcall" {
+    pub fn AdjustWindowRect(arg1: LPRECT, arg2: DWORD, arg3: BOOL) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn AdjustWindowRectEx(arg1: LPRECT, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn AnimateWindow(arg1: HWND, arg2: DWORD, arg3: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn AppendMenuA(arg1: HMENU, arg2: UINT, arg3: UINT_PTR, arg4: LPCSTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn AppendMenuW(arg1: HMENU, arg2: UINT, arg3: UINT_PTR, arg4: LPCWSTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn BeginDeferWindowPos(arg1: ::core::ffi::c_int) -> HDWP;
+}
+unsafe extern "stdcall" {
+    pub fn BeginPaint(arg1: HWND, arg2: LPPAINTSTRUCT) -> HDC;
+}
+unsafe extern "stdcall" {
     pub fn CallWindowProcW(
         arg1: WNDPROC,
         arg2: HWND,
@@ -45282,10 +45639,46 @@ unsafe extern "stdcall" {
     ) -> LRESULT;
 }
 unsafe extern "stdcall" {
+    pub fn ChangeClipboardChain(arg1: HWND, arg2: HWND) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ChangeDisplaySettingsA(arg1: PDEVMODEA, arg2: DWORD) -> LONG;
+}
+unsafe extern "stdcall" {
+    pub fn ChangeDisplaySettingsW(arg1: PDEVMODEW, arg2: DWORD) -> LONG;
+}
+unsafe extern "stdcall" {
+    pub fn ChangeDisplaySettingsExA(
+        arg1: LPCSTR,
+        arg2: LPDEVMODEA,
+        arg3: HWND,
+        arg4: DWORD,
+        arg5: LPVOID,
+    ) -> LONG;
+}
+unsafe extern "stdcall" {
+    pub fn ChangeDisplaySettingsExW(
+        arg1: LPCWSTR,
+        arg2: LPDEVMODEW,
+        arg3: HWND,
+        arg4: DWORD,
+        arg5: LPVOID,
+    ) -> LONG;
+}
+unsafe extern "stdcall" {
+    pub fn ChangeMenuA(arg1: HMENU, arg2: UINT, arg3: LPCSTR, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ChangeMenuW(arg1: HMENU, arg2: UINT, arg3: LPCWSTR, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn CharNextW(arg1: LPCWSTR) -> LPWSTR;
 }
 unsafe extern "stdcall" {
     pub fn CharPrevW(arg1: LPCWSTR, arg2: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "stdcall" {
+    pub fn ClientToScreen(arg1: HWND, arg2: LPPOINT) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn CloseClipboard() -> BOOL;
@@ -45496,6 +45889,9 @@ unsafe extern "stdcall" {
     ) -> HWINSTA;
 }
 unsafe extern "stdcall" {
+    pub fn DefDlgProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "stdcall" {
     pub fn DefWindowProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
 unsafe extern "stdcall" {
@@ -45521,6 +45917,143 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn DispatchMessageW(arg1: *const MSG) -> LRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn DragDetect(arg1: HWND, arg2: POINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DragObject(arg1: HWND, arg2: HWND, arg3: UINT, arg4: ULONG_PTR, arg5: HCURSOR) -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn DrawAnimatedRects(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: LPCRECT,
+        arg4: LPCRECT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawCaption(arg1: HWND, arg2: HDC, arg3: LPCRECT, arg4: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawEdge(arg1: HDC, arg2: LPRECT, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawFocusRect(arg1: HDC, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawFrameControl(arg1: HDC, arg2: LPRECT, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawIcon(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: HICON,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawIconEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: HICON,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: UINT,
+        arg8: HBRUSH,
+        arg9: UINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawMenuBar(arg1: HWND) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawMenuBarTemp(arg1: HWND, arg2: HDC, arg3: LPRECT, arg4: HMENU, arg5: HFONT) -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn DrawStateA(
+        arg1: HDC,
+        arg2: HBRUSH,
+        arg3: DRAWSTATEPROC,
+        arg4: LPARAM,
+        arg5: WPARAM,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: UINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawStateW(
+        arg1: HDC,
+        arg2: HBRUSH,
+        arg3: DRAWSTATEPROC,
+        arg4: LPARAM,
+        arg5: WPARAM,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: UINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawTextA(
+        hdc: HDC,
+        lpchText: LPCSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn DrawTextW(
+        hdc: HDC,
+        lpchText: LPCWSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn DrawTextExA(
+        hdc: HDC,
+        lpchText: LPSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+        lpdtp: LPDRAWTEXTPARAMS,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn DrawTextExW(
+        hdc: HDC,
+        lpchText: LPWSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+        lpdtp: LPDRAWTEXTPARAMS,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn EmptyClipboard() -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EndDeferWindowPos(arg1: HDWP) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EndDialog(arg1: HWND, arg2: INT_PTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EndMenu() -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EndPaint(arg1: HWND, arg2: *const PAINTSTRUCT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EndTask(arg1: HWND, arg2: BOOL, arg3: BOOL) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn EnumChildWindows(arg1: HWND, arg2: WNDENUMPROC, arg3: LPARAM) -> BOOL;
@@ -45602,6 +46135,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn EnumWindowStationsW(arg1: WINSTAENUMPROCW, lParam: LPARAM) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EqualRect(arg1: LPCRECT, arg2: LPCRECT) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn FindWindowA(arg1: LPCSTR, arg2: LPCSTR) -> HWND;
@@ -46141,10 +46677,16 @@ unsafe extern "stdcall" {
     pub fn GetWindowModuleFileNameW(hwnd: HWND, pszFileName: LPWSTR, cchFileNameMax: UINT) -> UINT;
 }
 unsafe extern "stdcall" {
+    pub fn InflateRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn InvalidateRect(arg1: HWND, arg2: LPCRECT, arg3: BOOL) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn InvalidateRgn(arg1: HWND, arg2: HRGN, arg3: BOOL) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn InvertRect(arg1: HDC, arg2: LPCRECT) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn IsCharAlphaA(ch: CHAR) -> BOOL;
@@ -46388,6 +46930,22 @@ unsafe extern "stdcall" {
     pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
 unsafe extern "stdcall" {
+    pub fn MoveWindow(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn NotifyWinEvent(arg1: DWORD, arg2: HWND, arg3: LONG, arg4: LONG);
+}
+unsafe extern "stdcall" {
+    pub fn OffsetRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn OpenClipboard(arg1: HWND) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -46409,6 +46967,12 @@ unsafe extern "stdcall" {
     pub fn OpenWindowStationW(arg1: LPCWSTR, arg2: BOOL, arg3: DWORD) -> HWINSTA;
 }
 unsafe extern "stdcall" {
+    pub fn PeekMessageA(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn PeekMessageW(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn PostMessageA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -46422,6 +46986,18 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn PostThreadMessageW(arg1: DWORD, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn PtInRect(arg1: LPCRECT, arg2: POINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn RealChildWindowFromPoint(arg1: HWND, arg2: POINT) -> HWND;
+}
+unsafe extern "stdcall" {
+    pub fn RealGetWindowClassA(hwnd: HWND, ptszClassName: LPSTR, cchClassNameMax: UINT) -> UINT;
+}
+unsafe extern "stdcall" {
+    pub fn RealGetWindowClassW(hwnd: HWND, ptszClassName: LPWSTR, cchClassNameMax: UINT) -> UINT;
 }
 unsafe extern "stdcall" {
     pub fn RegisterClassA(arg1: *const WNDCLASSA) -> ATOM;
@@ -46476,6 +47052,44 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn ReleaseDC(arg1: HWND, arg2: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn ScreenToClient(arg1: HWND, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ScrollChildren(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM);
+}
+unsafe extern "stdcall" {
+    pub fn ScrollDC(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPCRECT,
+        arg5: LPCRECT,
+        arg6: HRGN,
+        arg7: LPRECT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ScrollWindow(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPCRECT,
+        arg5: LPCRECT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ScrollWindowEx(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPCRECT,
+        arg5: LPCRECT,
+        arg6: HRGN,
+        arg7: LPRECT,
+        arg8: UINT,
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "stdcall" {
     pub fn SendDlgItemMessageA(
@@ -46836,6 +47450,41 @@ unsafe extern "stdcall" {
     pub fn ShowWindowAsync(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn ToUnicodeEx(
+        wVirtKey: UINT,
+        wScanCode: UINT,
+        lpKeyState: *const BYTE,
+        pwszBuff: LPWSTR,
+        cchBuff: ::core::ffi::c_int,
+        wFlags: UINT,
+        dwhkl: HKL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn TrackMouseEvent(arg1: LPTRACKMOUSEEVENT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn TrackPopupMenu(
+        arg1: HMENU,
+        arg2: UINT,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HWND,
+        arg7: LPCRECT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn TrackPopupMenuEx(
+        arg1: HMENU,
+        arg2: UINT,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: HWND,
+        arg6: LPTPMPARAMS,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn TranslateAcceleratorA(arg1: HWND, arg2: HACCEL, arg3: LPMSG) -> ::core::ffi::c_int;
 }
 unsafe extern "stdcall" {
@@ -46863,10 +47512,31 @@ unsafe extern "stdcall" {
     pub fn UpdateWindow(arg1: HWND) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn ValidateRect(arg1: HWND, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ValidateRgn(arg1: HWND, arg2: HRGN) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn VkKeyScanExW(arg1: WCHAR, arg2: HKL) -> SHORT;
+}
+unsafe extern "stdcall" {
+    pub fn VkKeyScanW(arg1: WCHAR) -> SHORT;
+}
+unsafe extern "stdcall" {
     pub fn WaitForInputIdle(arg1: HANDLE, arg2: DWORD) -> DWORD;
 }
 unsafe extern "stdcall" {
     pub fn WaitMessage() -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn WindowFromDC(hDC: HDC) -> HWND;
+}
+unsafe extern "stdcall" {
+    pub fn WindowFromPhysicalPoint(arg1: POINT) -> HWND;
+}
+unsafe extern "stdcall" {
+    pub fn WindowFromPoint(arg1: POINT) -> HWND;
 }
 unsafe extern "stdcall" {
     pub fn LockSetForegroundWindow(arg1: UINT) -> BOOL;
@@ -47262,6 +47932,9 @@ pub type TRANSMSGLIST = _tagTRANSMSGLIST;
 pub type PTRANSMSGLIST = *mut _tagTRANSMSGLIST;
 pub type NPTRANSMSGLIST = *mut _tagTRANSMSGLIST;
 pub type LPTRANSMSGLIST = *mut _tagTRANSMSGLIST;
+unsafe extern "stdcall" {
+    pub fn NotifyIME(hIMC: HIMC, dwAction: DWORD, dwIndex: DWORD, dwValue: DWORD_PTR) -> BOOL;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _tagDATETIME {
@@ -47681,6 +48354,28 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn SetShellWindowEx(arg1: HWND, arg2: HWND) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawCaptionTempA(
+        arg1: HWND,
+        arg2: HDC,
+        arg3: *const RECT,
+        arg4: HFONT,
+        arg5: HICON,
+        arg6: LPCSTR,
+        arg7: UINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DrawCaptionTempW(
+        arg1: HWND,
+        arg2: HDC,
+        arg3: *const RECT,
+        arg4: HFONT,
+        arg5: HICON,
+        arg6: LPCWSTR,
+        arg7: UINT,
+    ) -> BOOL;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
