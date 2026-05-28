@@ -27,10 +27,19 @@ const EVENT_ALL_ACCESS: ACCESS_MASK = 0x1F0003;
 const IO_NO_INCREMENT: KPRIORITY = 0;
 const EVENT_INCREMENT: KPRIORITY = 1;
 
-// ExEventObjectType is in libntoskrnl_implib.def as DATA — plain extern resolves
-// via the regular import library. raw-dylib here would add a duplicate
-// IMAGE_IMPORT_DESCRIPTOR which stresses freeldr's PE loader
-// (see memory feedback_hal_raw_dylib_dup_descriptors).
+// ExEventObjectType is in libntoskrnl_implib.def as DATA. Per-arch ABI:
+// - i386 PE needs the `__imp_` thunk that `raw-dylib +verbatim` generates
+//   (cross-DLL data refs with --disable-auto-import). Plain extern fails link.
+// - amd64/arm64 auto-resolve through the regular import library. Adding
+//   raw-dylib here causes a boot regression (BUGCHECK 0x6B at PsLocateSystemDll),
+//   likely due to dup-descriptor interaction with cgu=256 partitioning.
+#[cfg(target_arch = "x86")]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    static mut ExEventObjectType: *mut _OBJECT_TYPE;
+}
+
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     static mut ExEventObjectType: *mut _OBJECT_TYPE;
 }
