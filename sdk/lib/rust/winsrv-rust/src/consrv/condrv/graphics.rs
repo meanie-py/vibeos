@@ -1,5 +1,6 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 
 
@@ -20,8 +21,8 @@ pub unsafe extern "system" fn GRAPHICS_BUFFER_Initialize(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut NewBuffer: PGRAPHICS_SCREEN_BUFFER = core::ptr::null_mut();
 
-    let mut SectionSize: LARGE_INTEGER;
-    let mut ViewSize: usize = 0;
+    let mut SectionSize: LARGE_INTEGER = core::mem::zeroed();
+    let mut ViewSize: SIZE_T = 0;
 
     if Buffer.is_null() || Console.is_null() || GraphicsInfo.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -49,12 +50,12 @@ pub unsafe extern "system" fn GRAPHICS_BUFFER_Initialize(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    if (*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biHeight > 0 {
-        (*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biHeight = -(*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biHeight;
+    if (*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biHeight > 0 {
+        (*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biHeight = -(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biHeight;
     }
 
-    if (*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biCompression != BI_RGB {
-        (*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biCompression = BI_RGB;
+    if (*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biCompression != BI_RGB {
+        (*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biCompression = BI_RGB;
     }
 
     RtlCopyMemory(
@@ -65,11 +66,11 @@ pub unsafe extern "system" fn GRAPHICS_BUFFER_Initialize(
 
     (*NewBuffer).BitMapUsage = (*GraphicsInfo).Info.dwUsage;
 
-    if (*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biWidth <= 0xFFFF
-        && -(*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biHeight <= 0xFFFF
+    if (*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biWidth <= 0xFFFF
+        && -(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biHeight <= 0xFFFF
     {
-        (*NewBuffer).ScreenBufferSize.X = (*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biWidth as i16;
-        (*NewBuffer).ScreenBufferSize.Y = (-(*(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader).biHeight) as i16;
+        (*NewBuffer).ScreenBufferSize.X = (*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biWidth as i16;
+        (*NewBuffer).ScreenBufferSize.Y = (-(*(*GraphicsInfo).Info.lpBitMapInfo).bmiHeader.biHeight) as i16;
 
         (*NewBuffer).OldViewSize = (*NewBuffer).ViewSize;
         (*NewBuffer).ViewSize = (*NewBuffer).ScreenBufferSize;
@@ -203,7 +204,7 @@ pub unsafe extern "system" fn GRAPHICS_BUFFER_Initialize(
 
     (*NewBuffer).CursorBlinkOn = 0u8;
     (*NewBuffer).ForceCursorOff = 1u8;
-    (*NewBuffer).CursorInfo.bVisible = 0u8;
+    (*NewBuffer).CursorInfo.bVisible = 0i32;
     (*NewBuffer).CursorInfo.dwSize = 0;
     (*NewBuffer).CursorPosition.X = 0;
     (*NewBuffer).CursorPosition.Y = 0;

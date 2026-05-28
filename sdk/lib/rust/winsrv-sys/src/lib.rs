@@ -168,9 +168,67 @@ pub mod nt {
     pub use ntdll_sys::nt::{
         NtCurrentPeb, NtCurrentProcess, NtCurrentTeb, NtCurrentThread,
         ZwCurrentProcess, ZwCurrentThread,
-        InitializeListHead, IsListEmpty, InsertHeadList, InsertTailList,
-        RemoveEntryList, RemoveHeadList, RemoveTailList,
     };
+
+    // LIST_ENTRY helpers are winsrv-flavored — the bindgen-generated
+    // `winsrv_sys::winsrv::_LIST_ENTRY` is layout-identical to
+    // `ntdll_sys::nt::_LIST_ENTRY`, but the type identities are
+    // distinct (windef.h pulls them through different chains for each
+    // *-sys crate). Defining the helpers here keeps the type
+    // identities consistent across all callers in the
+    // `use winsrv_sys::winsrv::*` one-glob world.
+    use crate::winsrv::{LIST_ENTRY, PLIST_ENTRY};
+
+    #[inline]
+    pub unsafe fn InitializeListHead(head: *mut LIST_ENTRY) {
+        (*head).Flink = head;
+        (*head).Blink = head;
+    }
+
+    #[inline]
+    pub unsafe fn InsertHeadList(head: *mut LIST_ENTRY, entry: *mut LIST_ENTRY) {
+        let flink = (*head).Flink;
+        (*entry).Flink = flink;
+        (*entry).Blink = head;
+        (*flink).Blink = entry;
+        (*head).Flink = entry;
+    }
+
+    #[inline]
+    pub unsafe fn InsertTailList(head: *mut LIST_ENTRY, entry: *mut LIST_ENTRY) {
+        let blink = (*head).Blink;
+        (*entry).Flink = head;
+        (*entry).Blink = blink;
+        (*blink).Flink = entry;
+        (*head).Blink = entry;
+    }
+
+    #[inline]
+    pub unsafe fn RemoveEntryList(entry: *mut LIST_ENTRY) -> u8 {
+        let flink = (*entry).Flink;
+        let blink = (*entry).Blink;
+        (*blink).Flink = flink;
+        (*flink).Blink = blink;
+        if flink == blink { 1 } else { 0 }
+    }
+
+    #[inline]
+    pub unsafe fn RemoveHeadList(head: *mut LIST_ENTRY) -> PLIST_ENTRY {
+        let entry = (*head).Flink;
+        let flink = (*entry).Flink;
+        (*head).Flink = flink;
+        (*flink).Blink = head;
+        entry
+    }
+
+    #[inline]
+    pub unsafe fn RemoveTailList(head: *mut LIST_ENTRY) -> PLIST_ENTRY {
+        let entry = (*head).Blink;
+        let blink = (*entry).Blink;
+        (*head).Blink = blink;
+        (*blink).Flink = head;
+        entry
+    }
     // STATUS_* hand-written codes (ntstatus.h cast-macros are not
     // bindgen-evaluable, so they live in ntdll-sys::constants).
     // Re-export ALL of them — they're pure `pub const … = i32 = …;`
@@ -306,6 +364,11 @@ pub mod consts {
     /// ntstatus.h: 0x40000018.
     pub const STATUS_SERVICE_NOTIFICATION: i32 = 0x40000018u32 as i32;
 
+    /// `STATUS_NOT_SUPPORTED` — ntstatus.h: 0xC00000BB. Re-exported
+    /// here so condrv/text.rs (and friends) can pull it via the
+    /// `winsrv_sys::consts::*` glob.
+    pub const STATUS_NOT_SUPPORTED: i32 = 0xC00000BB_u32 as i32;
+
     /// `LANGIDFROMLCID(lcid)` — macro `(WORD)(lcid)`.
     #[inline]
     pub fn LANGIDFROMLCID(lcid: u32) -> u16 {
@@ -319,6 +382,31 @@ pub mod consts {
     #[inline]
     pub fn NT_SUCCESS(status: i32) -> bool {
         status >= 0
+    }
+
+    /// `RtlCopyMemory(dest, src, len)` — Windows macro that aliases
+    /// memcpy. Translated as inline wrapper around `core::ptr::copy`.
+    #[inline]
+    pub unsafe fn RtlCopyMemory(
+        dest: *mut core::ffi::c_void,
+        src: *const core::ffi::c_void,
+        len: usize,
+    ) {
+        core::ptr::copy(src as *const u8, dest as *mut u8, len);
+    }
+
+    /// `InterlockedExchangePointer(target, value)` — atomic
+    /// pointer swap. Implemented via `AtomicPtr::swap` with
+    /// `SeqCst` ordering (the conservative match for the Win32
+    /// Interlocked* full-barrier semantics).
+    #[inline]
+    pub unsafe fn InterlockedExchangePointer(
+        target: *mut *mut core::ffi::c_void,
+        value: *mut core::ffi::c_void,
+    ) -> *mut core::ffi::c_void {
+        use core::sync::atomic::{AtomicPtr, Ordering};
+        let atomic = &*(target as *const AtomicPtr<core::ffi::c_void>);
+        atomic.swap(value, Ordering::SeqCst)
     }
 }
 

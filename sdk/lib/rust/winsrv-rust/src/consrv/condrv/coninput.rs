@@ -1,5 +1,6 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 extern "system" {
     fn CONTAINING_RECORD(address: PVOID, struct_type: PVOID, field_offset: usize) -> PVOID;
@@ -49,10 +50,10 @@ unsafe fn AddInputEvents(
         }
         LastInputRecord = core::ptr::addr_of_mut!((*ConInRec).InputEvent);
 
-        if (*InputRecord).EventType == KEY_EVENT
+        if (*InputRecord).EventType == (KEY_EVENT as u16)
             && (*InputRecord).Event.KeyEvent.bKeyDown != 0
         {
-            if (*LastInputRecord).EventType == KEY_EVENT
+            if (*LastInputRecord).EventType == (KEY_EVENT as u16)
                 && (*LastInputRecord).Event.KeyEvent.bKeyDown != 0
                 && (*LastInputRecord).Event.KeyEvent.wVirtualScanCode == (*InputRecord).Event.KeyEvent.wVirtualScanCode
                 && (*LastInputRecord).Event.KeyEvent.uChar.UnicodeChar == (*InputRecord).Event.KeyEvent.uChar.UnicodeChar
@@ -66,10 +67,10 @@ unsafe fn AddInputEvents(
                 i = 1;
                 Status = STATUS_SUCCESS;
             }
-        } else if (*InputRecord).EventType == MOUSE_EVENT
+        } else if (*InputRecord).EventType == (MOUSE_EVENT as u16)
             && (*InputRecord).Event.MouseEvent.dwEventFlags == MOUSE_MOVED
         {
-            if (*LastInputRecord).EventType == MOUSE_EVENT
+            if (*LastInputRecord).EventType == (MOUSE_EVENT as u16)
                 && (*LastInputRecord).Event.MouseEvent.dwEventFlags == MOUSE_MOVED
             {
                 (*LastInputRecord).Event.MouseEvent.dwMousePosition.X =
@@ -197,8 +198,8 @@ pub unsafe extern "system" fn ConDrvInitInputBuffer(
     (*Console).InputBuffer.InputBufferSize = InputBufferSize;
     (*Console).InputBuffer.NumberOfEvents = 0;
     InitializeListHead(core::ptr::addr_of_mut!((*Console).InputBuffer.InputEvents));
-    (*Console).InputBuffer.Mode = ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT |
-                                  ENABLE_ECHO_INPUT | ENABLE_MOUSE_INPUT;
+    (*Console).InputBuffer.Mode = (ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT |
+                                  ENABLE_ECHO_INPUT | ENABLE_MOUSE_INPUT) as u16;
 
     STATUS_SUCCESS
 }

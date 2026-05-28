@@ -1,14 +1,6 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
-
-unsafe fn InitializeListHead(list: *mut LIST_ENTRY) {
-    (*list).Flink = list;
-    (*list).Blink = list;
-}
-
-unsafe fn IsListEmpty(list: *const LIST_ENTRY) -> bool {
-    (*list).Flink == list
-}
+use winsrv_sys::consts::*;
 
 unsafe fn RtlZeroMemory(dst: *mut core::ffi::c_void, len: usize) {
     core::ptr::write_bytes(dst as *mut u8, 0, len);
@@ -61,7 +53,7 @@ pub unsafe extern "system" fn ConDrvInitConsole(
     ConsoleInfo: PCONSOLE_INFO,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut ScreenBufferInfo: TEXTMODE_BUFFER_INFO;
+    let mut ScreenBufferInfo: TEXTMODE_BUFFER_INFO = core::mem::zeroed();
     let mut NewBuffer: PCONSOLE_SCREEN_BUFFER = core::ptr::null_mut();
 
     if Console.is_null() || ConsoleInfo.is_null() {
@@ -198,7 +190,7 @@ pub unsafe extern "system" fn ConDrvDeleteConsole(Console: PCONSOLE) {
 
     ConDrvDeleteScreenBuffer((*Console).ActiveBuffer);
     (*Console).ActiveBuffer = core::ptr::null_mut();
-    if !IsListEmpty(core::ptr::addr_of!((*Console).BufferList)) {
+    if IsListEmpty(core::ptr::addr_of!((*Console).BufferList)) == 0 {
         core::debug_assert!(false, "BUGBUGBUG!! screen buffer list not empty");
     }
 
@@ -242,10 +234,10 @@ pub unsafe extern "system" fn ConDrvGetConsoleMode(
 
     if (*Object).Type == INPUT_BUFFER {
         let InputBuffer = Object as PCONSOLE_INPUT_BUFFER;
-        *ConsoleMode = (*InputBuffer).Mode;
+        *ConsoleMode = (*InputBuffer).Mode as u32;
     } else if (*Object).Type == TEXTMODE_BUFFER || (*Object).Type == GRAPHICS_BUFFER {
         let Buffer = Object as PCONSOLE_SCREEN_BUFFER;
-        *ConsoleMode = (*Buffer).Mode;
+        *ConsoleMode = (*Buffer).Mode as u32;
     } else {
         Status = STATUS_INVALID_HANDLE;
     }
@@ -274,7 +266,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleMode(
         if (ConsoleMode & !CONSOLE_VALID_INPUT_MODES) != 0 {
             Status = STATUS_INVALID_PARAMETER;
         } else {
-            (*InputBuffer).Mode = ConsoleMode & CONSOLE_VALID_INPUT_MODES;
+            (*InputBuffer).Mode = (ConsoleMode & CONSOLE_VALID_INPUT_MODES) as u16;
         }
     } else if (*Object).Type == TEXTMODE_BUFFER || (*Object).Type == GRAPHICS_BUFFER {
         let Buffer = Object as PCONSOLE_SCREEN_BUFFER;
@@ -282,7 +274,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleMode(
         if (ConsoleMode & !CONSOLE_VALID_OUTPUT_MODES) != 0 {
             Status = STATUS_INVALID_PARAMETER;
         } else {
-            (*Buffer).Mode = ConsoleMode & CONSOLE_VALID_OUTPUT_MODES;
+            (*Buffer).Mode = (ConsoleMode & CONSOLE_VALID_OUTPUT_MODES) as u16;
         }
     } else {
         Status = STATUS_INVALID_HANDLE;

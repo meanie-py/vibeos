@@ -1,5 +1,6 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 extern "system" {
     fn CONTAINING_RECORD(addr: *const u8, Type: usize, field_offset: usize) -> *mut u8;
@@ -59,7 +60,7 @@ unsafe fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
         }
         SCREEN_BUFFER => {
             if !(*Buffer).PaletteHandle.is_null() {
-                DeleteObject((*Buffer).PaletteHandle);
+                DeleteObject((*Buffer).PaletteHandle as HGDIOBJ);
             }
             ConsoleFreeHeap(Buffer as PVOID);
         }
@@ -137,7 +138,7 @@ pub unsafe extern "system" fn ConDrvDeleteScreenBuffer(Buffer: PCONSOLE_SCREEN_B
     RemoveEntryList(core::ptr::addr_of_mut!((*Buffer).ListEntry) as PLIST_ENTRY);
 
     if Buffer == (*Console).ActiveBuffer {
-        if !IsListEmpty(core::ptr::addr_of_mut!((*Console).BufferList) as PLIST_ENTRY) {
+        if IsListEmpty(core::ptr::addr_of_mut!((*Console).BufferList) as PLIST_ENTRY) == 0 {
             let NewBuffer = (((*Console).BufferList.Flink as usize)
                 - core::mem::offset_of!(CONSOLE_SCREEN_BUFFER, ListEntry))
                 as PCONSOLE_SCREEN_BUFFER;
@@ -226,7 +227,7 @@ pub unsafe extern "system" fn ConDrvSetConsolePalette(
     let Success = TermSetPalette(Console, PaletteHandle, PaletteUsage);
     if Success != 0 {
         if !(*Buffer).PaletteHandle.is_null() && (*Buffer).PaletteHandle != PaletteHandle {
-            DeleteObject((*Buffer).PaletteHandle);
+            DeleteObject((*Buffer).PaletteHandle as HGDIOBJ);
         }
 
         (*Buffer).PaletteHandle = PaletteHandle;

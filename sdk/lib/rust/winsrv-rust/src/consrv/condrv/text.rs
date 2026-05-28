@@ -20,9 +20,18 @@ extern "system" {
     fn TermResizeTerminal(Console: PCONSOLE);
     fn ConioInitRect(Rect: *mut SMALL_RECT, Top: i16, Left: i16, Bottom: i16, Right: i16);
     fn ConioGetIntersection(Intersection: *mut SMALL_RECT, Rect1: *const SMALL_RECT, Rect2: *const SMALL_RECT) -> u8;
+    fn ConioGetUnion(Union: *mut SMALL_RECT, Rect1: *const SMALL_RECT, Rect2: *const SMALL_RECT) -> u8;
+    fn ConDrvWriteConsoleInput(
+        Console: PCONSOLE,
+        InputBuffer: PCONSOLE_INPUT_BUFFER,
+        AppendToEnd: BOOLEAN,
+        InputRecord: PINPUT_RECORD,
+        NumEventsToWrite: ULONG,
+        NumEventsWritten: *mut ULONG,
+    ) -> NTSTATUS;
     fn ConsoleOutputAnsiToUnicodeChar(Console: PCONSOLE, dWChar: *mut u16, sChar: *const i8);
     fn TermDrawRegion(Console: PCONSOLE, Region: *mut SMALL_RECT);
-    fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut u8, cbMultiByte: i32, lpDefaultChar: *const u8, lpUsedDefaultChar: *mut i32, ) -> i32;
+    fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut i8, cbMultiByte: i32, lpDefaultChar: *const i8, lpUsedDefaultChar: *mut i32, ) -> i32;
     fn IS_FULL_WIDTH(c: u16) -> u32;
     fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: u32, Size: usize, ) -> i32;
 }
@@ -92,8 +101,8 @@ unsafe fn TEXTMODE_BUFFER_Initialize(
     (*NewBuffer).CursorInfo.bVisible = if (*TextModeInfo).IsCursorVisible != 0 && (*TextModeInfo).CursorSize != 0 { 1 } else { 0 };
     (*NewBuffer).CursorInfo.dwSize = core::cmp::min(core::cmp::max((*TextModeInfo).CursorSize, 0), 100);
 
-    (*NewBuffer).ScreenDefaultAttrib = (*TextModeInfo).ScreenAttrib & !COMMON_LVB_SBCSDBCS;
-    (*NewBuffer).PopupDefaultAttrib = (*TextModeInfo).PopupAttrib & !COMMON_LVB_SBCSDBCS;
+    (*NewBuffer).ScreenDefaultAttrib = (*TextModeInfo).ScreenAttrib & !(COMMON_LVB_SBCSDBCS as u16);
+    (*NewBuffer).PopupDefaultAttrib = (*TextModeInfo).PopupAttrib & !(COMMON_LVB_SBCSDBCS as u16);
 
     (*NewBuffer).CursorPosition.Y = 0;
     while (*NewBuffer).CursorPosition.Y < (*NewBuffer).ScreenBufferSize.Y {
@@ -103,7 +112,7 @@ unsafe fn TEXTMODE_BUFFER_Initialize(
     (*NewBuffer).CursorPosition.X = 0;
     (*NewBuffer).CursorPosition.Y = 0;
 
-    (*NewBuffer).Mode = ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT;
+    (*NewBuffer).Mode = (ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT) as u16;
 
     *Buffer = NewBuffer as PCONSOLE_SCREEN_BUFFER;
     STATUS_SUCCESS
@@ -121,18 +130,18 @@ unsafe fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
 
 unsafe fn ConioCoordToPointer(Buff: PTEXTMODE_SCREEN_BUFFER, X: u32, Y: u32) -> PCHAR_INFO {
     (*Buff).Buffer.offset(
-        ((((Y + (*Buff).VirtualY) % (*Buff).ScreenBufferSize.Y) * (*Buff).ScreenBufferSize.X + X) as isize)
+        ((((Y + (*Buff).VirtualY as u32) % (*Buff).ScreenBufferSize.Y as u32) * (*Buff).ScreenBufferSize.X as u32 + X) as isize)
     )
 }
 
 unsafe fn ClearLineBuffer(Buff: PTEXTMODE_SCREEN_BUFFER) {
     let mut Ptr = ConioCoordToPointer(Buff, 0, (*Buff).CursorPosition.Y as u32);
-    let mut Pos: i16 = 0;
+    let mut LinePos: i16 = 0;
 
-    while Pos < (*Buff).ScreenBufferSize.X {
-        (*Ptr).Char.UnicodeChar = L' ' as u16;
+    while LinePos < (*Buff).ScreenBufferSize.X {
+        (*Ptr).Char.UnicodeChar = ' ' as u16;
         (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
-        Pos += 1;
+        LinePos += 1;
         Ptr = Ptr.offset(1);
     }
 }
@@ -151,7 +160,7 @@ unsafe fn ConioComputeUpdateRect(
         (*UpdateRect).Right = (*Start).X + Length as i16 - 1;
     }
     (*UpdateRect).Top = (*Start).Y;
-    (*UpdateRect).Bottom = (*Start).Y + ((*Start).X as u32 + Length - 1) / (*Buff).ScreenBufferSize.X as u32 as i16;
+    (*UpdateRect).Bottom = (*Start).Y + (((*Start).X as u32 + Length - 1) / (*Buff).ScreenBufferSize.X as u32) as i16;
     if (*Buff).ScreenBufferSize.Y <= (*UpdateRect).Bottom {
         (*UpdateRect).Bottom = (*Buff).ScreenBufferSize.Y - 1;
     }
@@ -166,7 +175,7 @@ unsafe fn ConioCopyRegion(
     let mut Height: u32;
     let mut SY: i16;
     let mut DY: i16;
-    let YDelta: i16;
+    let mut YDelta: i16;
     let mut PtrSrc: PCHAR_INFO;
     let mut PtrDst: PCHAR_INFO;
 
@@ -189,8 +198,8 @@ unsafe fn ConioCopyRegion(
         YDelta = 1;
     }
 
-    Width = ConioRectWidth(SrcRegion);
-    Height = ConioRectHeight(SrcRegion);
+    Width = ConioRectWidth(SrcRegion) as u32;
+    Height = ConioRectHeight(SrcRegion) as u32;
 
     while Height > 0 {
         Height -= 1;
@@ -283,7 +292,7 @@ unsafe fn ConioResizeBuffer(
     OldBuffer = (*ScreenBuffer).Buffer;
 
     CurrentY = 0;
-    while CurrentY < (*ScreenBuffer).ScreenBufferSize.Y && CurrentY < Size.Y {
+    while (CurrentY as i16) < (*ScreenBuffer).ScreenBufferSize.Y && (CurrentY as i16) < Size.Y {
         Ptr = ConioCoordToPointer(ScreenBuffer, 0, CurrentY as u32);
 
         if Size.X <= (*ScreenBuffer).ScreenBufferSize.X {
@@ -291,16 +300,16 @@ unsafe fn ConioResizeBuffer(
             Offset += Size.X as usize;
 
             Ptr = Buffer.add(Offset - 1);
-            if (*Ptr).Attributes & COMMON_LVB_LEADING_BYTE != 0 {
+            if (*Ptr).Attributes & (COMMON_LVB_LEADING_BYTE as u16) != 0 {
                 (*Ptr).Char.UnicodeChar = ' ' as u16;
-                (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+                (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
             }
         } else {
             core::ptr::copy_nonoverlapping(Ptr, Buffer.add(Offset), (*ScreenBuffer).ScreenBufferSize.X as usize);
             Offset += (*ScreenBuffer).ScreenBufferSize.X as usize;
 
             CurrentAttribute = (*ConioCoordToPointer(ScreenBuffer, (*ScreenBuffer).ScreenBufferSize.X as u32 - 1, CurrentY as u32)).Attributes;
-            CurrentAttribute &= !COMMON_LVB_SBCSDBCS;
+            CurrentAttribute &= !(COMMON_LVB_SBCSDBCS as u16);
 
             diff = Size.X as u32 - (*ScreenBuffer).ScreenBufferSize.X as u32;
 
@@ -340,11 +349,11 @@ unsafe fn ConioResizeBuffer(
     (*ScreenBuffer).ViewOrigin.X = min((*ScreenBuffer).ViewOrigin.X, Size.X - (*ScreenBuffer).ViewSize.X);
     (*ScreenBuffer).ViewOrigin.Y = min((*ScreenBuffer).ViewOrigin.Y, Size.Y - (*ScreenBuffer).ViewSize.Y);
 
-    if (*Console).InputBuffer.Mode & ENABLE_WINDOW_INPUT != 0 {
+    if (*Console).InputBuffer.Mode & (ENABLE_WINDOW_INPUT as u16) != 0 {
         let mut NumEventsWritten: u32 = 0;
         let mut er: INPUT_RECORD = core::mem::zeroed();
 
-        er.EventType = WINDOW_BUFFER_SIZE_EVENT;
+        er.EventType = WINDOW_BUFFER_SIZE_EVENT as u16;
         er.Event.WindowBufferSizeEvent.dwSize = (*ScreenBuffer).ScreenBufferSize;
 
         ConDrvWriteConsoleInput(
@@ -380,8 +389,8 @@ pub unsafe extern "system" fn ConDrvChangeScreenBufferAttributes(
         return STATUS_INVALID_PARAMETER;
     }
 
-    let mut NewScreenAttrib = NewScreenAttrib & !COMMON_LVB_SBCSDBCS;
-    let mut NewPopupAttrib = NewPopupAttrib & !COMMON_LVB_SBCSDBCS;
+    let mut NewScreenAttrib = NewScreenAttrib & !(COMMON_LVB_SBCSDBCS as u16);
+    let mut NewPopupAttrib = NewPopupAttrib & !(COMMON_LVB_SBCSDBCS as u16);
 
     NumCodesToWrite = ((*Buffer).ScreenBufferSize.X as u32) * ((*Buffer).ScreenBufferSize.Y as u32);
     OldScreenAttrib = (*Buffer).ScreenDefaultAttrib;
@@ -479,7 +488,7 @@ pub unsafe extern "system" fn ConDrvReadConsoleOutput(
             }
             #[cfg(not(feature = "win8"))]
             {
-                (*CurCharInfo).Attributes = (*Ptr).Attributes & !COMMON_LVB_SBCSDBCS;
+                (*CurCharInfo).Attributes = (*Ptr).Attributes & !(COMMON_LVB_SBCSDBCS as u16);
             }
             #[cfg(feature = "win8")]
             {
@@ -566,9 +575,9 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutputVDM(
 ) -> i32 {
     let mut X: i16;
     let mut Y: i16;
-    let mut ScreenBuffer: SMALL_RECT;
+    let mut ScreenBuffer: SMALL_RECT = core::mem::zeroed();
     let mut CurCharInfo: PCHAR_CELL;
-    let mut CapturedWriteRegion: SMALL_RECT;
+    let mut CapturedWriteRegion: SMALL_RECT = core::mem::zeroed();
     let mut Ptr: PCHAR_INFO;
 
     if Console.is_null() || Buffer.is_null() || CharInfo.is_null() || WriteRegion.is_null() {
@@ -605,7 +614,7 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutputVDM(
                 core::ptr::addr_of_mut!((*Ptr).Char.UnicodeChar),
                 core::ptr::addr_of_mut!((*CurCharInfo).Char),
             );
-            (*Ptr).Attributes = (*CurCharInfo).Attributes;
+            (*Ptr).Attributes = (*CurCharInfo).Attributes as u16;
             Ptr = Ptr.offset(1);
             CurCharInfo = CurCharInfo.offset(1);
             X += 1;
@@ -645,19 +654,19 @@ pub unsafe extern "system" fn ConDrvWriteConsole(
             (*Console).OutputCodePage,
             0,
             StringBuffer as *const i8,
-            NumCharsToWrite,
+            NumCharsToWrite as i32,
             core::ptr::null_mut(),
             0,
-        );
+        ) as u32;
         Buffer = ConsoleAllocHeap(0, (Length as usize) * core::mem::size_of::<u16>()) as *mut u16;
         if !Buffer.is_null() {
             MultiByteToWideChar(
                 (*Console).OutputCodePage,
                 0,
                 StringBuffer as *const i8,
-                NumCharsToWrite,
+                NumCharsToWrite as i32,
                 Buffer,
-                Length,
+                Length as i32,
             );
         } else {
             Status = STATUS_NO_MEMORY;
@@ -733,7 +742,7 @@ unsafe fn IntReadConsoleOutputStringChars(
                 break 'outer;
             }
 
-            if bCJK != 0 && ((*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE) != 0 {
+            if bCJK != 0 && ((*Ptr).Attributes & (COMMON_LVB_TRAILING_BYTE as u16)) != 0 {
                 if NumCodesToRead > 0 {
                     NumCodesToRead -= 1;
                 }
@@ -750,7 +759,7 @@ unsafe fn IntReadConsoleOutputStringChars(
                     0,
                     core::ptr::addr_of!((*Ptr).Char.UnicodeChar),
                     1,
-                    ReadBuffer as *mut u8,
+                    ReadBuffer as *mut i8,
                     1,
                     core::ptr::null(),
                     core::ptr::null_mut(),
@@ -921,11 +930,11 @@ unsafe fn IntWriteConsoleOutputStringChars(
             Length = MultiByteToWideChar(
                 (*Console).OutputCodePage,
                 0,
-                StringBuffer as *mut u8,
-                NumCodesToWrite,
+                StringBuffer as *const i8,
+                NumCodesToWrite as i32,
                 core::ptr::null_mut(),
                 0,
-            );
+            ) as u32;
             tmpString = ConsoleAllocHeap(0, (Length as usize) * core::mem::size_of::<u16>()) as *mut u16;
             if tmpString.is_null() {
                 Status = STATUS_NO_MEMORY;
@@ -935,10 +944,10 @@ unsafe fn IntWriteConsoleOutputStringChars(
             MultiByteToWideChar(
                 (*Console).OutputCodePage,
                 0,
-                StringBuffer as *mut u8,
-                NumCodesToWrite,
+                StringBuffer as *const i8,
+                NumCodesToWrite as i32,
                 tmpString,
-                Length,
+                Length as i32,
             );
 
             NumCodesToWrite = Length;
@@ -960,13 +969,13 @@ unsafe fn IntWriteConsoleOutputStringChars(
                     }
 
                     (*Ptr).Char.UnicodeChar = *WriteBuffer;
-                    (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
-                    (*Ptr).Attributes |= COMMON_LVB_LEADING_BYTE;
+                    (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
+                    (*Ptr).Attributes |= (COMMON_LVB_LEADING_BYTE as u16);
                     Ptr = Ptr.offset(1);
 
                     (*Ptr).Char.UnicodeChar = b' ' as u16;
-                    (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
-                    (*Ptr).Attributes |= COMMON_LVB_TRAILING_BYTE;
+                    (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
+                    (*Ptr).Attributes |= (COMMON_LVB_TRAILING_BYTE as u16);
                 } else {
                     (*Ptr).Char.UnicodeChar = *WriteBuffer;
                 }
@@ -1012,8 +1021,8 @@ unsafe fn IntWriteConsoleOutputStringAttribute(
                 break 'outer;
             }
 
-            (*Ptr).Attributes &= COMMON_LVB_SBCSDBCS;
-            (*Ptr).Attributes |= *StringBufferPtr & !COMMON_LVB_SBCSDBCS;
+            (*Ptr).Attributes &= (COMMON_LVB_SBCSDBCS as u16);
+            (*Ptr).Attributes |= *StringBufferPtr & !(COMMON_LVB_SBCSDBCS as u16);
 
             Ptr = Ptr.offset(1);
 
@@ -1058,7 +1067,7 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutputString(
         return STATUS_SUCCESS;
     }
 
-    let NumCodesToWrite = min(NumCodesToWrite, (*Buffer).ScreenBufferSize.X as u32 * (*Buffer).ScreenBufferSize.Y as u32);
+    let NumCodesToWrite = core::cmp::min(NumCodesToWrite, (*Buffer).ScreenBufferSize.X as u32 * (*Buffer).ScreenBufferSize.Y as u32);
 
     let Status = match CodeType {
         CODE_ASCII => {
@@ -1102,7 +1111,7 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutputString(
     if Buffer as PCONSOLE_SCREEN_BUFFER == (*Console).ActiveBuffer {
         let mut UpdateRect: SMALL_RECT = core::mem::zeroed();
         ConioComputeUpdateRect(Buffer, &mut UpdateRect, WriteCoord, NumCodesToWrite);
-        TermDrawRegion(Console, &UpdateRect);
+        TermDrawRegion(Console, &mut UpdateRect);
     }
 
     Status
@@ -1142,7 +1151,7 @@ unsafe fn ConDrvFillConsoleOutput(
         return STATUS_SUCCESS;
     }
 
-    let NumCodesToWrite = min(NumCodesToWrite, (*Buffer).ScreenBufferSize.X as u32 * (*Buffer).ScreenBufferSize.Y as u32);
+    let NumCodesToWrite = core::cmp::min(NumCodesToWrite, (*Buffer).ScreenBufferSize.X as u32 * (*Buffer).ScreenBufferSize.Y as u32);
 
     let mut Code = Code;
     if CodeType == CODE_ASCII {
@@ -1158,12 +1167,12 @@ unsafe fn ConDrvFillConsoleOutput(
     bLead = 1;
     bFullwidth = 0;
     if (*Console).IsCJK != 0 {
-        bFullwidth = IS_FULL_WIDTH(Code.UnicodeChar);
+        bFullwidth = IS_FULL_WIDTH(Code.UnicodeChar) as u8;
         if X > 0 {
             Ptr = ConioCoordToPointer(Buffer, (X - 1) as u32, Y as u32);
-            if (*Ptr).Attributes & COMMON_LVB_LEADING_BYTE != 0 {
+            if (*Ptr).Attributes & (COMMON_LVB_LEADING_BYTE as u16) != 0 {
                 (*Ptr).Char.UnicodeChar = ' ' as u16;
-                (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+                (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
             }
         }
     }
@@ -1181,19 +1190,19 @@ unsafe fn ConDrvFillConsoleOutput(
                 match CodeType {
                     CODE_ASCII | CODE_UNICODE => {
                         (*Ptr).Char.UnicodeChar = Code.UnicodeChar;
-                        (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+                        (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
                         if bFullwidth != 0 {
                             if bLead != 0 {
-                                (*Ptr).Attributes |= COMMON_LVB_LEADING_BYTE;
+                                (*Ptr).Attributes |= (COMMON_LVB_LEADING_BYTE as u16);
                             } else {
-                                (*Ptr).Attributes |= COMMON_LVB_TRAILING_BYTE;
+                                (*Ptr).Attributes |= (COMMON_LVB_TRAILING_BYTE as u16);
                             }
                         }
                         bLead = if bLead != 0 { 0 } else { 1 };
                     }
                     CODE_ATTRIBUTE => {
-                        (*Ptr).Attributes &= COMMON_LVB_SBCSDBCS;
-                        (*Ptr).Attributes |= Code.Attribute & !COMMON_LVB_SBCSDBCS;
+                        (*Ptr).Attributes &= (COMMON_LVB_SBCSDBCS as u16);
+                        (*Ptr).Attributes |= Code.Attribute & !(COMMON_LVB_SBCSDBCS as u16);
                     }
                     _ => {}
                 }
@@ -1212,7 +1221,7 @@ unsafe fn ConDrvFillConsoleOutput(
         if X as i32 + Y as i32 * (*Buffer).ScreenBufferSize.X as i32 > 0 {
             Ptr = ConioCoordToPointer(Buffer, (X - 1) as u32, Y as u32);
             (*Ptr).Char.UnicodeChar = ' ' as u16;
-            (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+            (*Ptr).Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
         }
     }
 
@@ -1274,7 +1283,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleTextAttribute(
         return STATUS_INVALID_PARAMETER;
     }
 
-    (*Buffer).ScreenDefaultAttrib = Attributes & !COMMON_LVB_SBCSDBCS;
+    (*Buffer).ScreenDefaultAttrib = Attributes & !(COMMON_LVB_SBCSDBCS as u16);
     STATUS_SUCCESS
 }
 
@@ -1308,12 +1317,12 @@ pub unsafe fn ConDrvScrollConsoleScreenBuffer(
     DestinationOrigin: PCOORD,
     FillChar: CHAR_INFO,
 ) -> i32 {
-    let mut CapturedDestinationOrigin: COORD;
-    let mut ScreenBuffer: SMALL_RECT;
-    let mut CapturedClipRectangle: SMALL_RECT;
-    let mut SrcRegion: SMALL_RECT;
-    let mut DstRegion: SMALL_RECT;
-    let mut UpdateRegion: SMALL_RECT;
+    let mut CapturedDestinationOrigin: COORD = core::mem::zeroed();
+    let mut ScreenBuffer: SMALL_RECT = core::mem::zeroed();
+    let mut CapturedClipRectangle: SMALL_RECT = core::mem::zeroed();
+    let mut SrcRegion: SMALL_RECT = core::mem::zeroed();
+    let mut DstRegion: SMALL_RECT = core::mem::zeroed();
+    let mut UpdateRegion: SMALL_RECT = core::mem::zeroed();
 
     if Console.is_null() || Buffer.is_null() || ScrollRectangle.is_null() ||
         (UseClipRectangle != 0 && ClipRectangle.is_null()) || DestinationOrigin.is_null()
@@ -1381,7 +1390,7 @@ pub unsafe fn ConDrvScrollConsoleScreenBuffer(
         ConsoleOutputAnsiToUnicodeChar(Console, core::ptr::addr_of_mut!(tmp), core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(FillChar.Char)).AsciiChar));
         (*core::ptr::addr_of_mut!(FillChar.Char)).UnicodeChar = tmp;
     }
-    FillChar.Attributes &= !COMMON_LVB_SBCSDBCS;
+    FillChar.Attributes &= !(COMMON_LVB_SBCSDBCS as u16);
 
     ConioFillRegion(Buffer, core::ptr::addr_of_mut!(UpdateRegion), core::ptr::addr_of_mut!(DstRegion), FillChar);
 

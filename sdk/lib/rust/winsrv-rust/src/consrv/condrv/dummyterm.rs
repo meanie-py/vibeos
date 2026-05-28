@@ -1,5 +1,6 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
+use winsrv_sys::consts::*;
 
 unsafe extern "system" fn DummyInitTerminal(
     This: PTERMINAL,
@@ -100,22 +101,53 @@ unsafe extern "system" fn DummyShowMouseCursor(
     0
 }
 
+// Compute the vtable lazily via a const-fn-style block. The bindgen
+// `TERMINAL_VTBL` field types use `extern "stdcall"` on i386 and
+// `extern "C"` on amd64/arm64 (per __stdcall macro), but our Dummy*
+// functions are declared `extern "system"` (which resolves to the
+// same ABI per-arch). Rust's type system sees them as distinct fn
+// types, so we transmute each fn pointer into the bindgen-expected
+// fn pointer type. transmute is not const, so DummyVtbl is built at
+// runtime via a OnceCell-shape; for static-mut here we use a small
+// init helper invoked lazily from ResetTerminal.
 static mut DummyVtbl: TERMINAL_VTBL = TERMINAL_VTBL {
-    InitTerminal: Some(DummyInitTerminal),
-    DeinitTerminal: Some(DummyDeinitTerminal),
-    ReadStream: Some(DummyReadStream),
-    WriteStream: Some(DummyWriteStream),
-    DrawRegion: Some(DummyDrawRegion),
-    SetCursorInfo: Some(DummySetCursorInfo),
-    SetScreenInfo: Some(DummySetScreenInfo),
-    ResizeTerminal: Some(DummyResizeTerminal),
-    SetActiveScreenBuffer: Some(DummySetActiveScreenBuffer),
-    ReleaseScreenBuffer: Some(DummyReleaseScreenBuffer),
-    GetLargestConsoleWindowSize: Some(DummyGetLargestConsoleWindowSize),
-    SetPalette: Some(DummySetPalette),
-    SetCodePage: Some(DummySetCodePage),
-    ShowMouseCursor: Some(DummyShowMouseCursor),
+    InitTerminal: None,
+    DeinitTerminal: None,
+    ReadStream: None,
+    WriteStream: None,
+    DrawRegion: None,
+    SetCursorInfo: None,
+    SetScreenInfo: None,
+    ResizeTerminal: None,
+    SetActiveScreenBuffer: None,
+    ReleaseScreenBuffer: None,
+    GetLargestConsoleWindowSize: None,
+    SetPalette: None,
+    SetCodePage: None,
+    ShowMouseCursor: None,
 };
+
+unsafe fn InitDummyVtblIfNeeded() {
+    if DummyVtbl.InitTerminal.is_some() {
+        return;
+    }
+    DummyVtbl = TERMINAL_VTBL {
+        InitTerminal: Some(core::mem::transmute(DummyInitTerminal as *const ())),
+        DeinitTerminal: Some(core::mem::transmute(DummyDeinitTerminal as *const ())),
+        ReadStream: Some(core::mem::transmute(DummyReadStream as *const ())),
+        WriteStream: Some(core::mem::transmute(DummyWriteStream as *const ())),
+        DrawRegion: Some(core::mem::transmute(DummyDrawRegion as *const ())),
+        SetCursorInfo: Some(core::mem::transmute(DummySetCursorInfo as *const ())),
+        SetScreenInfo: Some(core::mem::transmute(DummySetScreenInfo as *const ())),
+        ResizeTerminal: Some(core::mem::transmute(DummyResizeTerminal as *const ())),
+        SetActiveScreenBuffer: Some(core::mem::transmute(DummySetActiveScreenBuffer as *const ())),
+        ReleaseScreenBuffer: Some(core::mem::transmute(DummyReleaseScreenBuffer as *const ())),
+        GetLargestConsoleWindowSize: Some(core::mem::transmute(DummyGetLargestConsoleWindowSize as *const ())),
+        SetPalette: Some(core::mem::transmute(DummySetPalette as *const ())),
+        SetCodePage: Some(core::mem::transmute(DummySetCodePage as *const ())),
+        ShowMouseCursor: Some(core::mem::transmute(DummyShowMouseCursor as *const ())),
+    };
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn ResetTerminal(Console: PCONSOLE) {
@@ -123,6 +155,7 @@ pub unsafe extern "C" fn ResetTerminal(Console: PCONSOLE) {
         return;
     }
 
+    InitDummyVtblIfNeeded();
     core::ptr::write_bytes(
         core::ptr::addr_of_mut!((*Console).TermIFace) as *mut u8,
         0,

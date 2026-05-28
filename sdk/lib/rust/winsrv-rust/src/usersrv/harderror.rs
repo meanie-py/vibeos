@@ -717,7 +717,7 @@ unsafe fn UserpFormatMessages(
         }
     }
 
-    if (*Message).Status == 0xC0000374 - 0x40000000 {
+    if (*Message).Status == (0xC0000374u32 as i32) - 0x40000000 {
         let ExceptionCode: u32 = CopyParameters[0] as u32;
 
         Status = RtlFindMessage(
@@ -790,7 +790,7 @@ unsafe fn UserpFormatMessages(
         ) as usize;
         cszBuffer *= core::mem::size_of::<u16>();
 
-        if (*Message).Status == 0xC0000374 - 0x40000000 {
+        if (*Message).Status == (0xC0000374u32 as i32) - 0x40000000 {
             if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
                 cszBuffer += core::mem::size_of::<u16>() + g_OKTerminateU.Length as usize;
             }
@@ -840,7 +840,7 @@ unsafe fn UserpFormatMessages(
             CopyParameters[3],
         );
 
-        if (*Message).Status == 0xC0000374 - 0x40000000 {
+        if (*Message).Status == (0xC0000374u32 as i32) - 0x40000000 {
             if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
                 RtlStringCbPrintfExW(
                     pszBuffer,
