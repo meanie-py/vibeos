@@ -63,8 +63,9 @@ pub mod bitblt;     pub mod gradient;
 // Retry with engevent.rs per-arch raw-dylib in place; expect they're clean.
 pub mod lineto; pub mod mouse; pub mod umpdstubs;
 pub mod surface; pub mod stretchblt; pub mod xlateobj;
-// Phase 2 of the deferred sweep — pdevobj + stubs (after per-arch raw-dylib fix on pdevobj):
 pub mod pdevobj; pub mod stubs;
-// Highest-risk (many extern statics — audit-before-enable):
-// pub mod device;     // 20 extern statics
-// pub mod ldevobj;    // 8 extern statics
+// Highest-risk — both have semantic bugs that break NtUserInitialize:
+// - device.rs: 14 load-bearing DEFERRED-STUBs (EngpUpdateGraphicsDeviceList etc.)
+// - ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
+// pub mod device;
+// pub mod ldevobj;

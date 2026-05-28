@@ -638,8 +638,10 @@ pub unsafe extern "system" fn LDEVOBJ_ulGetDriverModes(
     cbSize
 }
 
+// C decl in ldevobj.h has no calling-convention attribute = cdecl.
+// On i386 cdecl = `_LDEVOBJ_bBuildDevmodeList` (undecorated). Use extern "C".
 #[no_mangle]
-pub unsafe extern "system" fn LDEVOBJ_bBuildDevmodeList(
+pub unsafe extern "C" fn LDEVOBJ_bBuildDevmodeList(
     pGraphicsDevice: PGRAPHICS_DEVICE,
 ) -> u8 {
 

@@ -49,12 +49,26 @@ extern "C" {
 
     fn RtlStringCbCopyNW(pszDest: PWSTR, cbDest: usize, pszSrc: PWSTR, cbSrc: usize) -> NTSTATUS;
     fn RtlStringCbPrintfW(pszDest: PWSTR, cbDest: usize, pszFormat: PWSTR, ...) -> NTSTATUS;
+    // ScreenDeviceContext is a real global in user/ntuser/desktop.c — plain extern.
     static ScreenDeviceContext: HDC;
-    static GDITAG_GDEVICE: ULONG;
-    static GDITAG_DRVSUP: ULONG;
-    static IOCTL_VIDEO_INIT_WIN32K_CALLBACKS: ULONG;
-    static IOCTL_VIDEO_ENUM_MONITOR_PDO: ULONG;
 }
+
+// These are C `#define` macros, NOT symbols. Earlier rustconv emitted them as
+// `extern static ULONG` which produces undefined-symbol link errors AND, on
+// arches that auto-link them somewhere, reads random memory at runtime.
+// Convert to `const` with the actual values.
+//
+// Pool tags: C `'vdgG'` (multi-char literal, big-endian) = u32::from_le_bytes(b"Ggdv")
+// per AGENTS.md convention.
+const GDITAG_GDEVICE: ULONG = u32::from_le_bytes(*b"Ggdv");   // 'vdgG'
+const GDITAG_DRVSUP:  ULONG = u32::from_le_bytes(*b"Gdrs");   // 'srdG'
+
+// IOCTLs from sdk/include/psdk/ntddvdeo.h:
+//   #define IOCTL_VIDEO_ENUM_MONITOR_PDO        CTL_CODE(FILE_DEVICE_VIDEO=0x23, 0x06, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
+//   #define IOCTL_VIDEO_INIT_WIN32K_CALLBACKS   CTL_CODE(0x23, 0x07, 0, 0)
+// CTL_CODE = (Device << 16) | (Access << 14) | (Function << 2) | Method
+const IOCTL_VIDEO_ENUM_MONITOR_PDO:      ULONG = 0x00230018;  // (0x23<<16) | (0x06<<2)
+const IOCTL_VIDEO_INIT_WIN32K_CALLBACKS: ULONG = 0x0023001C;  // (0x23<<16) | (0x07<<2)
 
 // ---- file-scope preamble (translated) ----
 static mut gpPrimaryGraphicsDevice: PGRAPHICS_DEVICE = core::ptr::null_mut();
