@@ -20,8 +20,8 @@ pub unsafe extern "C" fn GuiCopyFromGraphicsBuffer(
         return;
     }
 
-    selWidth = ConioRectWidth(core::ptr::addr_of!((*GuiData).Selection.srSelection));
-    selHeight = ConioRectHeight(core::ptr::addr_of!((*GuiData).Selection.srSelection));
+    selWidth = ConioRectWidth(core::ptr::addr_of_mut!((*GuiData).Selection.srSelection)) as ULONG;
+    selHeight = ConioRectHeight(core::ptr::addr_of_mut!((*GuiData).Selection.srSelection)) as ULONG;
 
     hMemDC = CreateCompatibleDC((*GuiData).hMemDC);
     if hMemDC.is_null() {
@@ -54,10 +54,10 @@ pub unsafe extern "C" fn GuiCopyFromGraphicsBuffer(
         hMemDC,
         0,
         0,
-        selWidth as i32,
-        selHeight as i32,
-        (*GuiData).Selection.srSelection.Left,
-        (*GuiData).Selection.srSelection.Top,
+        selWidth,
+        selHeight,
+        (*GuiData).Selection.srSelection.Left as i32,
+        (*GuiData).Selection.srSelection.Top as i32,
         0,
         (*Buffer).ScreenBufferSize.Y as u32,
         (*Buffer).BitMap as *const core::ffi::c_void,
@@ -121,8 +121,8 @@ pub unsafe extern "C" fn GuiPaintGraphicsBuffer(
         (*GuiData).hMemDC,
         (*rcFramebuffer).left,
         (*rcFramebuffer).top,
-        (*rcFramebuffer).right - (*rcFramebuffer).left,
-        (*rcFramebuffer).bottom - (*rcFramebuffer).top,
+        ((*rcFramebuffer).right - (*rcFramebuffer).left) as u32,
+        ((*rcFramebuffer).bottom - (*rcFramebuffer).top) as u32,
         (*rcFramebuffer).left,
         (*rcFramebuffer).top,
         0,

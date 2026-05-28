@@ -59,7 +59,7 @@ pub unsafe extern "system" fn GuiConsoleShowConsoleProperties(
     if Defaults == 0 {
         let ActiveBuffer: PCONSOLE_SCREEN_BUFFER = (*GuiData).ActiveBuffer;
         let mut SectionSize: LARGE_INTEGER = core::mem::zeroed();
-        let mut ViewSize: usize = 0;
+        let mut ViewSize: SIZE_T = 0;
         let mut pSharedInfo: PCONSOLE_STATE_INFO = core::ptr::null_mut();
 
         SectionSize.QuadPart = core::mem::size_of::<CONSOLE_STATE_INFO>() as i64;
@@ -99,14 +99,14 @@ pub unsafe extern "system" fn GuiConsoleShowConsoleProperties(
             return;
         }
 
-        (*pSharedInfo).cbSize = SectionSize.QuadPart as u64;
+        (*pSharedInfo).cbSize = SectionSize.QuadPart as u32;
         (*pSharedInfo).hWnd = (*GuiData).hWindow;
 
-        (*pSharedInfo).QuickEdit = (*Console).QuickEdit;
-        (*pSharedInfo).InsertMode = (*Console).InsertMode;
+        (*pSharedInfo).QuickEdit = (*Console).QuickEdit as BOOL;
+        (*pSharedInfo).InsertMode = (*Console).InsertMode as BOOL;
         (*pSharedInfo).NumberOfHistoryBuffers = (*Console).MaxNumberOfHistoryBuffers;
         (*pSharedInfo).HistoryBufferSize = (*Console).HistoryBufferSize;
-        (*pSharedInfo).HistoryNoDup = (*Console).HistoryNoDup;
+        (*pSharedInfo).HistoryNoDup = (*Console).HistoryNoDup as BOOL;
         (*pSharedInfo).ScreenBufferSize = (*ActiveBuffer).ScreenBufferSize;
         (*pSharedInfo).WindowSize = (*ActiveBuffer).ViewSize;
         (*pSharedInfo).CursorSize = (*ActiveBuffer).CursorInfo.dwSize;
@@ -116,8 +116,8 @@ pub unsafe extern "system" fn GuiConsoleShowConsoleProperties(
             (*pSharedInfo).ScreenAttributes = (*Buffer).ScreenDefaultAttrib;
             (*pSharedInfo).PopupAttributes = (*Buffer).PopupDefaultAttrib;
         } else {
-            (*pSharedInfo).ScreenAttributes = DEFAULT_SCREEN_ATTRIB;
-            (*pSharedInfo).PopupAttributes = DEFAULT_POPUP_ATTRIB;
+            (*pSharedInfo).ScreenAttributes = DEFAULT_SCREEN_ATTRIB as u16;
+            (*pSharedInfo).PopupAttributes = DEFAULT_POPUP_ATTRIB as u16;
         }
 
         (*pSharedInfo).CodePage = (*Console).OutputCodePage;
@@ -209,7 +209,7 @@ pub unsafe extern "system" fn GuiApplyUserSettings(
     let mut Status: i32 = STATUS_SUCCESS;
     let Console: PCONSRV_CONSOLE = (*GuiData).Console;
     let mut hSection: HANDLE = core::ptr::null_mut();
-    let mut ViewSize: usize = 0;
+    let mut ViewSize: SIZE_T = 0;
     let mut pConInfo: PCONSOLE_STATE_INFO = core::ptr::null_mut();
 
     if ConDrvValidateConsoleUnsafe(Console as PCONSOLE, CONSOLE_RUNNING, 1u8) == 0 {
@@ -253,8 +253,8 @@ pub unsafe extern "system" fn GuiApplyUserSettings(
     }
 
     let inner_result = 'seh: {
-        if ViewSize < core::mem::size_of::<CONSOLE_STATE_INFO>() ||
-           (*pConInfo).cbSize < core::mem::size_of::<CONSOLE_STATE_INFO>() as u64
+        if (ViewSize as usize) < core::mem::size_of::<CONSOLE_STATE_INFO>() ||
+           ((*pConInfo).cbSize as usize) < core::mem::size_of::<CONSOLE_STATE_INFO>()
         {
             Status = STATUS_INVALID_VIEW_SIZE;
             break 'seh Status;
@@ -270,17 +270,17 @@ pub unsafe extern "system" fn GuiApplyUserSettings(
             (*pConInfo).FontFamily,
             (*pConInfo).FontSize,
             0,
-            0u8,
+            0,
         );
 
-        (*GuiData).GuiInfo.AutoPosition = if (*pConInfo).AutoPosition != 0 { 1u8 } else { 0u8 };
+        (*GuiData).GuiInfo.AutoPosition = if (*pConInfo).AutoPosition != 0 { 1 } else { 0 };
         (*GuiData).GuiInfo.WindowOrigin = (*pConInfo).WindowPosition;
         GuiConsoleMoveWindow(GuiData);
 
         InvalidateRect((*GuiData).hWindow, core::ptr::null_mut(), 1);
 
-        if (if (*pConInfo).FullScreen != 0 { 1u8 } else { 0u8 }) != (*GuiData).GuiInfo.FullScreen {
-            SwitchFullScreen(GuiData, if (*pConInfo).FullScreen != 0 { 1u8 } else { 0u8 });
+        if (if (*pConInfo).FullScreen != 0 { 1 } else { 0 }) != (*GuiData).GuiInfo.FullScreen {
+            SwitchFullScreen(GuiData, if (*pConInfo).FullScreen != 0 { 1 } else { 0 });
         }
 
         STATUS_SUCCESS
