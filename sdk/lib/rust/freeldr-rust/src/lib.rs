@@ -287,6 +287,26 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
         }
     }
+    // arm64 had a SILENT panic handler (loop {wfe}) which made every Rust
+    // panic look like an opaque boot hang. Emit the marker + file:line over
+    // PL011 (QEMU virt UART DR @ 0x09000000) so panics are diagnosable.
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let uart_dr = 0x0900_0000usize as *mut u32;
+        let putc = |c: u8| core::ptr::write_volatile(uart_dr, c as u32);
+        for &b in b"\n!!FREELDR-RUST-PANIC@" { putc(b); }
+        if let Some(loc) = info.location() {
+            for &b in loc.file().as_bytes() { putc(b); }
+            putc(b':');
+            let mut line = loc.line();
+            let mut buf = [0u8; 10];
+            let mut n = 0usize;
+            if line == 0 { putc(b'0'); }
+            while line > 0 { buf[n] = b'0' + (line % 10) as u8; line /= 10; n += 1; }
+            while n > 0 { n -= 1; putc(buf[n]); }
+        }
+        putc(b'\n');
+    }
     let _ = info;
     loop {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

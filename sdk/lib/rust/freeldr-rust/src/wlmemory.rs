@@ -298,8 +298,18 @@ unsafe fn WinLdrInsertDescriptor(
     let mut PreviousDescriptor: PMEMORY_ALLOCATION_DESCRIPTOR = core::ptr::null_mut();
     let mut NextDescriptor: PMEMORY_ALLOCATION_DESCRIPTOR = core::ptr::null_mut();
 
+    // C indexes MemTypeDesc[MemoryType] unconditionally (OOB just reads
+    // garbage and prints it via %s). In Rust a slice index is bounds-checked
+    // and panics — and the arm64 panic handler spins silently, which looked
+    // exactly like a WinLdrSetupMemoryLayout loop2 boot hang. Guard the index.
+    let mt_idx = (*NewDescriptor).MemoryType as usize;
+    let mt_desc: *const u8 = if mt_idx < MemTypeDesc.len() {
+        MemTypeDesc[mt_idx].as_ptr()
+    } else {
+        b"Unknown           \0".as_ptr()
+    };
     TRACE(
-        b"BP=0x%X PC=0x%X %s\n\0".as_ptr() as *const i8, ((*NewDescriptor).BasePage) as usize, ((*NewDescriptor).PageCount) as usize, (MemTypeDesc[(*NewDescriptor).MemoryType as usize].as_ptr()) as usize,
+        b"BP=0x%X PC=0x%X %s\n\0".as_ptr() as *const i8, ((*NewDescriptor).BasePage) as usize, ((*NewDescriptor).PageCount) as usize, (mt_desc) as usize,
     );
 
     PreviousEntry = ListHead;
