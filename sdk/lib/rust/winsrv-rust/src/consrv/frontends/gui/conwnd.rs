@@ -249,7 +249,7 @@ unsafe fn AppendMenuItems(hMenu: HMENU, Items: *const GUICONSOLE_MENUITEM) {
 }
 
 pub unsafe fn CreateSysMenu(hWnd: HWND) {
-    let mut mii: MENUITEMINFOW;
+    let mut mii: MENUITEMINFOW = core::mem::zeroed();
     let hMenu: HMENU;
     let mut ptrTab: *mut u16;
     let mut szMenuStringBack: [u16; 255] = [0; 255];
@@ -1589,7 +1589,7 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             }
             _ => {}
         }
-    } else if (GetConsoleInputBufferMode(Console) & ENABLE_MOUSE_INPUT) != 0 {
+    } else if (GetConsoleInputBufferMode(Console) & ENABLE_MOUSE_INPUT as u32) != 0 {
         let mut er: INPUT_RECORD = core::mem::zeroed();
         let wKeyState: WORD = GET_KEYSTATE_WPARAM(wParam) as WORD;
         let mut dwButtonState: DWORD = 0;
@@ -1750,7 +1750,7 @@ unsafe fn OnMouse(GuiData: PGUI_CONSOLE_DATA, msg: UINT, wParam: WPARAM, lParam:
             if (GetKeyState(VK_CAPITAL as i32) & KEY_TOGGLED as i16) != 0 {
                 dwControlKeyState |= CAPSLOCK_ON;
             }
-            if (HIWORD(lParam as u32) & KF_EXTENDED) != 0 {
+            if (HIWORD(lParam as u32) & KF_EXTENDED as u16) != 0 {
                 dwControlKeyState |= ENHANCED_KEY;
             }
 
@@ -1875,7 +1875,7 @@ unsafe fn OnSize(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM, lParam: LPARAM) {
     }
 
     if (*GuiData).WindowSizeLock == 0 &&
-       (wParam == SIZE_RESTORED as usize || wParam == SIZE_MAXIMIZED as usize || wParam == SIZE_MINIMIZED as usize)
+       (wParam == SIZE_RESTORED as WPARAM || wParam == SIZE_MAXIMIZED as WPARAM || wParam == SIZE_MINIMIZED as WPARAM)
     {
         let Buff: PCONSOLE_SCREEN_BUFFER = (*GuiData).ActiveBuffer;
         let mut windx: DWORD;
@@ -1889,8 +1889,8 @@ unsafe fn OnSize(GuiData: PGUI_CONSOLE_DATA, wParam: WPARAM, lParam: LPARAM) {
 
         (*GuiData).WindowSizeLock = 1;
 
-        windx = LOWORD(lParam as u32);
-        windy = HIWORD(lParam as u32);
+        windx = LOWORD(lParam as u32) as DWORD;
+        windy = HIWORD(lParam as u32) as DWORD;
 
         if (*Buff).ViewSize.X < (*Buff).ScreenBufferSize.X {
             windy = windy.wrapping_add(GetSystemMetrics(SM_CYHSCROLL as i32) as DWORD);
@@ -1969,17 +1969,17 @@ unsafe fn OnDropFiles(Console: PCONSRV_CONSOLE, hDrop: HDROP) {
 
     szPath[0] = b'"' as u16;
 
-    DragQueryFileW(hDrop, 0, &mut szPath[1], ARRAYSIZE(szPath.as_ptr()) - 1);
+    DragQueryFileW(hDrop, 0, szPath.as_mut_ptr().add(1), (ARRAYSIZE(&szPath) - 1) as u32);
     DragFinish(hDrop);
 
-    if wcschr(&mut szPath[1], b' ' as u16) != core::ptr::null_mut() {
-        StringCchCatW(szPath.as_mut_ptr(), ARRAYSIZE(szPath.as_ptr()), b"\"\0".as_ptr() as *const u16);
+    if !wcschr(szPath.as_ptr().add(1), b' ' as u16).is_null() {
+        StringCchCatW(szPath.as_mut_ptr(), ARRAYSIZE(&szPath), b"\"\0".as_ptr() as *const u16);
         pszPath = szPath.as_mut_ptr();
     } else {
-        pszPath = &mut szPath[1];
+        pszPath = szPath.as_mut_ptr().add(1);
     }
 
-    PasteText(Console, pszPath, wcslen(pszPath));
+    super::text::PasteText(Console, pszPath, wcslen(pszPath) as usize);
 }
 
 unsafe fn CreateFrameBufferBitmap(hDC: HDC, width: i32, height: i32) -> HBITMAP {
@@ -1988,7 +1988,7 @@ unsafe fn CreateFrameBufferBitmap(hDC: HDC, width: i32, height: i32) -> HBITMAP 
     bmi.bmiHeader.biWidth = width;
     bmi.bmiHeader.biHeight = height;
     bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = GetDeviceCaps(hDC, BITSPIXEL) as u16;
+    bmi.bmiHeader.biBitCount = GetDeviceCaps(hDC, BITSPIXEL as i32) as u16;
     bmi.bmiHeader.biCompression = BI_RGB;
     CreateDIBSection(
         core::ptr::null_mut(),
@@ -2056,18 +2056,18 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
             }
 
             WM_KEYDOWN | WM_KEYUP | WM_CHAR | WM_DEADCHAR | WM_SYSKEYDOWN | WM_SYSKEYUP | WM_SYSCHAR | WM_SYSDEADCHAR => {
-                if msg == WM_SYSKEYDOWN && (HIWORD(lParam) & KF_ALTDOWN) != 0 && wParam == VK_RETURN as usize {
-                    if (HIWORD(lParam) & (KF_UP | KF_REPEAT)) != KF_REPEAT {
+                if msg == WM_SYSKEYDOWN && (HIWORD(lParam as u32) & KF_ALTDOWN as u16) != 0 && wParam == VK_RETURN as WPARAM {
+                    if (HIWORD(lParam as u32) & (KF_UP | KF_REPEAT) as u16) != KF_REPEAT as u16 {
                         GuiConsoleSwitchFullScreen(GuiData);
                     }
                     break;
                 }
 
-                if (HIWORD(lParam) & KF_ALTDOWN) != 0 && (wParam == VK_ESCAPE as usize || wParam == VK_SPACE as usize || wParam == VK_TAB as usize) {
+                if (HIWORD(lParam as u32) & KF_ALTDOWN as u16) != 0 && (wParam == VK_ESCAPE as WPARAM || wParam == VK_SPACE as WPARAM || wParam == VK_TAB as WPARAM) {
                     return DefWindowProcW(hWnd, msg, wParam, lParam);
                 }
 
-                if wParam == VK_SHIFT as usize && (msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
+                if wParam == VK_SHIFT as WPARAM && (msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP) {
                     return DefWindowProcW(hWnd, msg, wParam, lParam);
                 }
 
@@ -2082,7 +2082,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
                 let mut final_wParam = wParam;
                 let mut final_lParam = lParam;
 
-                if wParam == (-1isize) as usize && lParam == (-1isize) as isize {
+                if wParam == (-1i32) as WPARAM && lParam == (-1i32) as LPARAM {
                     let mut mouseCoords: POINT = core::mem::zeroed();
                     let hWndHit: HWND;
 
@@ -2090,12 +2090,12 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
                     hWndHit = WindowFromPoint(mouseCoords);
 
                     if hWndHit == hWnd {
-                        final_wParam = hWnd as usize;
+                        final_wParam = hWnd as WPARAM;
                         final_lParam = DefWindowProcW(hWndHit, WM_NCHITTEST, 0, MAKELPARAM(mouseCoords.x as u16, mouseCoords.y as u16));
                     }
                 }
 
-                if final_wParam as HWND == hWnd && LOWORD(final_lParam as usize) == HTCLIENT as u16 {
+                if (final_wParam as usize) as HWND == hWnd && LOWORD(final_lParam as u32) == HTCLIENT as u16 {
                     if (*GuiData).MouseCursorRefCount >= 0 {
                         SetCursor((*GuiData).hCursor);
                     } else {
@@ -2124,11 +2124,11 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
                     break;
                 }
 
-                if DefWindowProcW(hWnd, WM_NCHITTEST, 0, lParam) == HTCLIENT as isize {
+                if DefWindowProcW(hWnd, WM_NCHITTEST, 0, lParam) == HTCLIENT as LRESULT {
                     let hMenu: HMENU = CreatePopupMenu();
                     if !hMenu.is_null() {
                         AppendMenuItems(hMenu, GuiConsoleEditMenuItems.as_ptr());
-                        TrackPopupMenuEx(hMenu, TPM_RIGHTBUTTON, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), hWnd, core::ptr::null());
+                        TrackPopupMenuEx(hMenu, TPM_RIGHTBUTTON, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), hWnd, core::ptr::null_mut());
                         DestroyMenu(hMenu);
                     }
                     break;
@@ -2161,7 +2161,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
             }
 
             WM_DROPFILES => {
-                OnDropFiles(Console, wParam as *mut core::ffi::c_void);
+                OnDropFiles(Console, wParam as HDROP);
             }
 
             WM_SETFOCUS | WM_KILLFOCUS => {
@@ -4246,7 +4246,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //             if (GetKeyState(VK_CAPITAL as i32) & KEY_TOGGLED as i16)
 //                 dwControlKeyState |= CAPSLOCK_ON;
 //             /* See WM_CHAR MSDN documentation for instance */
-//             if (HIWORD(lParam) & KF_EXTENDED)
+//             if (HIWORD(lParam as u32) & KF_EXTENDED as u16)
 //                 dwControlKeyState |= ENHANCED_KEY;
 //
 //             /* Send a mouse event */
@@ -4618,16 +4618,16 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //         case WM_SYSDEADCHAR:
 //         {
 //             /* Detect Alt-Enter presses and switch back and forth to fullscreen mode */
-//             if (msg == WM_SYSKEYDOWN && (HIWORD(lParam) & KF_ALTDOWN) && wParam == VK_RETURN)
+//             if (msg == WM_SYSKEYDOWN && (HIWORD(lParam as u32) & KF_ALTDOWN as u16) && wParam == VK_RETURN)
 //             {
 //                 /* Switch only at first Alt-Enter press, and ignore subsequent key repetitions */
-//                 if ((HIWORD(lParam) & (KF_UP | KF_REPEAT)) != KF_REPEAT)
+//                 if ((HIWORD(lParam as u32) & (KF_UP | KF_REPEAT) as u16) != KF_REPEAT as u16)
 //                     GuiConsoleSwitchFullScreen(GuiData);
 //
 //                 break;
 //             }
 //             /* Detect Alt-Esc/Space/Tab presses defer to DefWindowProc */
-//             if ( (HIWORD(lParam) & KF_ALTDOWN) && (wParam == VK_ESCAPE || wParam == VK_SPACE || wParam == VK_TAB))
+//             if ( (HIWORD(lParam as u32) & KF_ALTDOWN as u16) && (wParam == VK_ESCAPE || wParam == VK_SPACE || wParam == VK_TAB))
 //             {
 //                 return DefWindowProcW(hWnd, msg, wParam, lParam);
 //             }

@@ -110,8 +110,8 @@ pub fn GET_Y_LPARAM<L: Into<i64>>(lp: L) -> i32 {
 }
 
 #[inline]
-pub fn MAKELPARAM(l: u16, h: u16) -> isize {
-    ((l as u32) | ((h as u32) << 16)) as i32 as isize
+pub fn MAKELPARAM(l: u16, h: u16) -> LPARAM {
+    ((l as u32) | ((h as u32) << 16)) as LPARAM
 }
 
 // ---- wingdi.h colour helpers ----
