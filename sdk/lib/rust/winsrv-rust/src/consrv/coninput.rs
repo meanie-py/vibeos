@@ -24,7 +24,7 @@ macro_rules! ConSrvGetInputBuffer {
         ConSrvGetObject(
             $ProcessData,
             $Handle,
-            $Ptr as *mut PCONSOLE_IO_OBJECT,
+            $Ptr as *mut _ as *mut PCONSOLE_IO_OBJECT,
             core::ptr::null_mut(),
             $Access,
             $LockConsole,
@@ -38,7 +38,7 @@ macro_rules! ConSrvGetInputBufferAndHandleEntry {
         ConSrvGetObject(
             $ProcessData,
             $Handle,
-            $Ptr as *mut PCONSOLE_IO_OBJECT,
+            $Ptr as *mut _ as *mut PCONSOLE_IO_OBJECT,
             $Entry,
             $Access,
             $LockConsole,

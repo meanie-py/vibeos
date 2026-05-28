@@ -968,10 +968,10 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
     if ConsoleDraw.is_null() {
         return;
     }
-    (*ConsoleDraw).X = (*Region).Left;
-    (*ConsoleDraw).Y = (*Region).Top;
-    (*ConsoleDraw).SizeX = ConioRectWidth(Region);
-    (*ConsoleDraw).SizeY = ConioRectHeight(Region);
+    (*ConsoleDraw).X = (*Region).Left as u16;
+    (*ConsoleDraw).Y = (*Region).Top as u16;
+    (*ConsoleDraw).SizeX = (ConioRectWidth(Region)) as u16;
+    (*ConsoleDraw).SizeY = (ConioRectHeight(Region)) as u16;
     (*ConsoleDraw).CursorX = (*Buff).CursorPosition.X;
     (*ConsoleDraw).CursorY = (*Buff).CursorPosition.Y;
 

@@ -3,6 +3,7 @@ use super::super::super::{VkKeyScanW};
 use super::super::super::condrv::text::*;
 use super::super::super::condrv::conoutput::*;
 use super::super::super::condrv::coninput::*;
+use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::condrv::console::*;
 use super::super::super::console::*;
 use super::super::super::handle::*;

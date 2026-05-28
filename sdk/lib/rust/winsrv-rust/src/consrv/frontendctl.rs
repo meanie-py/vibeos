@@ -121,7 +121,7 @@ pub(crate) unsafe fn SrvSetConsoleDisplayModeImpl(
     let Status = ConSrvGetScreenBuffer(
         ProcessData,
         (*SetDisplayModeRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -168,7 +168,7 @@ pub(crate) unsafe fn SrvGetLargestConsoleWindowSizeImpl(
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetLargestWindowSizeRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -213,7 +213,7 @@ pub(crate) unsafe fn SrvShowConsoleCursorImpl(
     let Status = ConSrvGetScreenBuffer(
         ProcessData,
         (*ShowCursorRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -255,7 +255,7 @@ pub(crate) unsafe fn SrvSetConsoleCursorImpl(
     let Status = ConSrvGetGraphicsBuffer(
         ProcessData,
         (*SetCursorRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -297,7 +297,7 @@ pub(crate) unsafe fn SrvConsoleMenuControlImpl(
     let Status = ConSrvGetScreenBuffer(
         ProcessData,
         (*MenuControlRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );
@@ -526,7 +526,7 @@ pub(crate) unsafe fn SrvGetConsoleFontInfoImpl(
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetFontInfoRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -568,7 +568,7 @@ pub(crate) unsafe fn SrvGetConsoleFontSizeImpl(
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetFontSizeRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -608,7 +608,7 @@ pub(crate) unsafe fn SrvGetConsoleCurrentFontImpl(
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*GetCurrentFontRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x80000000, // GENERIC_READ
         1u8,
     );
@@ -650,7 +650,7 @@ pub(crate) unsafe fn SrvSetConsoleFontImpl(
     let Status = ConSrvGetTextModeBuffer(
         ProcessData,
         (*SetFontRequest).OutputHandle,
-        &mut Buff as *mut PCONSOLE_IO_OBJECT,
+        &mut Buff as *mut _ as *mut PCONSOLE_IO_OBJECT,
         0x40000000, // GENERIC_WRITE
         1u8,
     );

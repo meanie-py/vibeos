@@ -3,6 +3,7 @@ use super::super::{ToUnicodeEx};
 use super::super::condrv::text::*;
 use super::super::condrv::conoutput::*;
 use super::super::condrv::coninput::*;
+use super::super::coninput::ConioProcessInputEvent;
 use super::super::condrv::console::*;
 use super::super::console::*;
 use super::super::handle::*;

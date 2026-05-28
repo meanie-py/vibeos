@@ -112,13 +112,15 @@ pub unsafe extern "C" fn mk_wcwidth(ucs: wchar_t) -> i32 {
          ((ucs as u32) >= 0xfe10 && (ucs as u32) <= 0xfe19) ||
          ((ucs as u32) >= 0xfe30 && (ucs as u32) <= 0xfe6f) ||
          ((ucs as u32) >= 0xff00 && (ucs as u32) <= 0xff60) ||
-         ((ucs as u32) >= 0xffe0 && (ucs as u32) <= 0xffe6)
-#[cfg(any(not(target_os = "windows"), all(target_os = "windows", target_pointer_width = "64")))]
-         ||
-         ((ucs as u32) >= 0x20000 && (ucs as u32) <= 0x2fffd) ||
-         ((ucs as u32) >= 0x30000 && (ucs as u32) <= 0x3fffd)
-#[cfg(not(any(not(target_os = "windows"), all(target_os = "windows", target_pointer_width = "64"))))]
-         false
+         ((ucs as u32) >= 0xffe0 && (ucs as u32) <= 0xffe6) ||
+         (
+             // Astral plane CJK ranges — sizeof(wchar_t) == 4 in C.
+             // On Windows wchar_t is u16, so these are dead. Guard with
+             // a runtime cfg-style flag so the parser stays valid.
+             (core::mem::size_of::<wchar_t>() > 2) &&
+             ( ((ucs as u32) >= 0x20000 && (ucs as u32) <= 0x2fffd) ||
+               ((ucs as u32) >= 0x30000 && (ucs as u32) <= 0x3fffd) )
+         )
         ) { 1 } else { 0 }
 }
 

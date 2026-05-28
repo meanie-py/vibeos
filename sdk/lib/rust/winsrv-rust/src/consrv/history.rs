@@ -9,6 +9,7 @@ use super::{GetConsoleInputBufferMode, GetType};
 use super::lineinput::*;
 use super::init::*;
 use super::popup::{POPUP_WINDOW, PPOPUP_WINDOW, _POPUP_WINDOW};
+use super::popup::CreatePopupWindow;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;

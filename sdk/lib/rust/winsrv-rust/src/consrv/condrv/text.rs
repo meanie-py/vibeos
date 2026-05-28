@@ -3,6 +3,8 @@ use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
+use crate::consrv::GetType;
+use super::coninput::ConDrvWriteConsoleInput;
 use core::ffi::c_void;
 
 extern "C" {
