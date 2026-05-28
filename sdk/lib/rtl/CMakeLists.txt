@@ -71,7 +71,7 @@ list(APPEND SOURCE
     rangelist.c
     registry.c
     res.c
-    resource.c
+    # resource.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave RES)
     rxact.c
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
     # security.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SEC)
@@ -218,6 +218,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/priv_mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/resource.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/acl.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sd.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sec.rs

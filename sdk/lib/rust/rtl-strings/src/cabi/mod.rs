@@ -6,7 +6,8 @@
 #![allow(non_snake_case)]
 
 use crate::core_rs::{
-    acl, conv, dos8dot3, env, misc, nls, priv_, sd as sd_, sec, sid, timezone as tz, ustr,
+    acl, conv, dos8dot3, env, misc, nls, priv_, resource as res, sd as sd_, sec, sid,
+    timezone as tz, ustr,
 };
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
@@ -6177,4 +6178,400 @@ pub unsafe extern "system" fn RtlNewSecurityGrantedAccess(
         (*privileges).Privilege[0].Attributes = SE_PRIVILEGE_USED_FOR_ACCESS;
     }
     0
+}
+
+// =====================================================================
+// Wave RES — straight translation of `sdk/lib/rtl/resource.c` (8 fns,
+// pure plumbing: critsec + 2 semaphores + ULONG counters). No byte
+// diff — every output observable lives behind a syscall or a private
+// critsec; smoke is the net.
+// =====================================================================
+
+extern "system" {
+    fn RtlInitializeCriticalSection(crit: *mut u8) -> i32;
+    fn RtlDeleteCriticalSection(crit: *mut u8) -> i32;
+    fn RtlEnterCriticalSection(crit: *mut u8) -> i32;
+    fn RtlLeaveCriticalSection(crit: *mut u8) -> i32;
+    fn NtCreateSemaphore(
+        Handle: *mut *mut u8,
+        DesiredAccess: u32,
+        ObjectAttributes: *mut u8,
+        InitialCount: i32,
+        MaximumCount: i32,
+    ) -> i32;
+    fn NtReleaseSemaphore(
+        SemaphoreHandle: *mut u8,
+        ReleaseCount: i32,
+        PreviousCount: *mut i32,
+    ) -> i32;
+    fn NtWaitForSingleObject(
+        Handle: *mut u8,
+        Alertable: u8,
+        Timeout: *mut i64,
+    ) -> i32;
+}
+
+/// Read `NtCurrentTeb()->ClientId.UniqueThread` via per-arch inline asm.
+/// The C original uses the `NtCurrentTeb()` macro intrinsic; we replicate
+/// the GS/FS/X18 load + offset directly so we don't drag a C macro into
+/// the Rust translation. Offset constant lives in `core_rs::resource`.
+#[inline]
+unsafe fn read_current_thread_id() -> *mut u8 {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        let val: u64;
+        let teb: u64;
+        core::arch::asm!(
+            "mov {teb}, gs:[0x30]",
+            "mov {val}, [{teb} + {off}]",
+            teb = out(reg) teb,
+            val = out(reg) val,
+            off = const res::TEB_UNIQUE_THREAD_OFFSET,
+            options(nostack, preserves_flags, readonly),
+        );
+        let _ = teb;
+        val as *mut u8
+    }
+    #[cfg(all(target_os = "windows", target_arch = "x86"))]
+    {
+        let val: u32;
+        let teb: u32;
+        core::arch::asm!(
+            "mov {teb:e}, fs:[0x18]",
+            "mov {val:e}, [{teb:e} + {off}]",
+            teb = out(reg) teb,
+            val = out(reg) val,
+            off = const res::TEB_UNIQUE_THREAD_OFFSET,
+            options(nostack, preserves_flags, readonly),
+        );
+        let _ = teb;
+        val as *mut u8
+    }
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        let val: u64;
+        core::arch::asm!(
+            "ldr {val}, [x18, {off}]",
+            val = out(reg) val,
+            off = const res::TEB_UNIQUE_THREAD_OFFSET,
+            options(nostack, preserves_flags, readonly),
+        );
+        val as *mut u8
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Host (rtl-difftest): no TEB. Wave RES has no diff harness;
+        // return NULL — only RtlAcquire*/Release flow would touch this.
+        core::ptr::null_mut()
+    }
+}
+
+/// `VOID NTAPI RtlInitializeResource(PRTL_RESOURCE)`.
+///
+/// Allocates the critsec + the two semaphores; on any failure raises
+/// the failing NTSTATUS via `RtlRaiseStatus`. Counters/owner cleared.
+#[no_mangle]
+pub unsafe extern "system" fn RtlInitializeResource(resource: *mut res::RTL_RESOURCE) {
+    let r = &mut *resource;
+
+    let status = RtlInitializeCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+    if status < 0 {
+        RtlRaiseStatus(status);
+    }
+
+    let status = NtCreateSemaphore(
+        &mut r.SharedSemaphore,
+        res::SEMAPHORE_ALL_ACCESS,
+        core::ptr::null_mut(),
+        0,
+        65535,
+    );
+    if status < 0 {
+        RtlRaiseStatus(status);
+    }
+    r.SharedWaiters = 0;
+
+    let status = NtCreateSemaphore(
+        &mut r.ExclusiveSemaphore,
+        res::SEMAPHORE_ALL_ACCESS,
+        core::ptr::null_mut(),
+        0,
+        65535,
+    );
+    if status < 0 {
+        RtlRaiseStatus(status);
+    }
+    r.ExclusiveWaiters = 0;
+    r.NumberActive = 0;
+    r.OwningThread = core::ptr::null_mut();
+    r.TimeoutBoost = 0; // C comment: no info on this one, default is 0
+}
+
+/// `VOID NTAPI RtlDeleteResource(PRTL_RESOURCE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDeleteResource(resource: *mut res::RTL_RESOURCE) {
+    let r = &mut *resource;
+    let _ = RtlDeleteCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+    let _ = NtClose(r.ExclusiveSemaphore);
+    let _ = NtClose(r.SharedSemaphore);
+    r.OwningThread = core::ptr::null_mut();
+    r.ExclusiveWaiters = 0;
+    r.SharedWaiters = 0;
+    r.NumberActive = 0;
+}
+
+/// `BOOLEAN NTAPI RtlAcquireResourceExclusive(PRTL_RESOURCE, BOOLEAN)`.
+///
+/// Faithful port of the C `goto`-driven state machine (start/wait/done).
+#[no_mangle]
+pub unsafe extern "system" fn RtlAcquireResourceExclusive(
+    resource: *mut res::RTL_RESOURCE,
+    wait: u8,
+) -> u8 {
+    let r = &mut *resource;
+    let mut ret_val: u8 = 0;
+
+    'start: loop {
+        let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+
+        if r.NumberActive == 0 {
+            // lock is free
+            r.NumberActive = -1;
+            ret_val = 1;
+        } else if r.NumberActive < 0 {
+            // exclusive lock in progress
+            if r.OwningThread == read_current_thread_id() {
+                ret_val = 1;
+                r.NumberActive -= 1;
+                // C: goto done — skip the `if (retVal)` owner write.
+                let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                return ret_val;
+            }
+            // wait label
+            if wait != 0 {
+                r.ExclusiveWaiters += 1;
+                let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                let status = NtWaitForSingleObject(
+                    r.ExclusiveSemaphore,
+                    0,
+                    core::ptr::null_mut(),
+                );
+                if status < 0 {
+                    // C: goto done — but Lock is released and we
+                    // haven't re-entered yet. Falls into the bare
+                    // RtlLeaveCriticalSection below; the C code is
+                    // technically buggy here (double-leaves) but we
+                    // mirror the original faithfully.
+                    let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                    return ret_val;
+                }
+                // C: goto start — restart acquisition.
+                continue 'start;
+            }
+        } else {
+            // one or more shared locks are in progress
+            if wait != 0 {
+                // C: goto wait — same shape as the wait above.
+                r.ExclusiveWaiters += 1;
+                let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                let status = NtWaitForSingleObject(
+                    r.ExclusiveSemaphore,
+                    0,
+                    core::ptr::null_mut(),
+                );
+                if status < 0 {
+                    let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                    return ret_val;
+                }
+                continue 'start;
+            }
+        }
+
+        if ret_val != 0 {
+            r.OwningThread = read_current_thread_id();
+        }
+        // C: done label.
+        let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+        return ret_val;
+    }
+}
+
+/// `BOOLEAN NTAPI RtlAcquireResourceShared(PRTL_RESOURCE, BOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAcquireResourceShared(
+    resource: *mut res::RTL_RESOURCE,
+    wait: u8,
+) -> u8 {
+    let r = &mut *resource;
+    // C: STATUS_UNSUCCESSFUL = 0xC0000001 — used to gate the
+    // "NumberActive++ vs already-counted" branch on first entry.
+    let mut status: i32 = 0xC000_0001u32 as i32;
+    let mut ret_val: u8 = 0;
+
+    'start: loop {
+        let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+        if r.NumberActive < 0 {
+            if r.OwningThread == read_current_thread_id() {
+                r.NumberActive -= 1;
+                ret_val = 1;
+                let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                return ret_val;
+            }
+            if wait != 0 {
+                r.SharedWaiters += 1;
+                let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                status = NtWaitForSingleObject(
+                    r.SharedSemaphore,
+                    0,
+                    core::ptr::null_mut(),
+                );
+                if status < 0 {
+                    let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+                    return ret_val;
+                }
+                continue 'start;
+            }
+        } else {
+            // C: "otherwise RtlReleaseResource() has already done it"
+            // — STATUS_WAIT_0 means we were woken out of the shared
+            // semaphore and our slot is already accounted for.
+            if status != res::STATUS_WAIT_0 {
+                r.NumberActive += 1;
+            }
+            ret_val = 1;
+        }
+        let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+        return ret_val;
+    }
+}
+
+/// `VOID NTAPI RtlConvertExclusiveToShared(PRTL_RESOURCE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlConvertExclusiveToShared(resource: *mut res::RTL_RESOURCE) {
+    let r = &mut *resource;
+    let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+
+    if r.NumberActive == -1 {
+        r.OwningThread = core::ptr::null_mut();
+
+        if r.SharedWaiters > 0 {
+            // Prevent new writers from joining until all queued
+            // readers have done their thing.
+            let n = r.SharedWaiters;
+            r.NumberActive = (r.SharedWaiters + 1) as i32;
+            r.SharedWaiters = 0;
+            let _ = NtReleaseSemaphore(
+                r.SharedSemaphore,
+                n as i32,
+                core::ptr::null_mut(),
+            );
+        } else {
+            r.NumberActive = 1;
+        }
+    }
+
+    let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+}
+
+/// `VOID NTAPI RtlConvertSharedToExclusive(PRTL_RESOURCE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlConvertSharedToExclusive(resource: *mut res::RTL_RESOURCE) {
+    let r = &mut *resource;
+    let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+
+    if r.NumberActive == 1 {
+        r.OwningThread = read_current_thread_id();
+        r.NumberActive = -1;
+    } else {
+        r.ExclusiveWaiters += 1;
+        let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+        let status = NtWaitForSingleObject(
+            r.ExclusiveSemaphore,
+            0,
+            core::ptr::null_mut(),
+        );
+        if status < 0 {
+            return;
+        }
+        let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+        r.OwningThread = read_current_thread_id();
+        r.NumberActive = -1;
+    }
+    let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+}
+
+/// `VOID NTAPI RtlReleaseResource(PRTL_RESOURCE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlReleaseResource(resource: *mut res::RTL_RESOURCE) {
+    let r = &mut *resource;
+    let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+
+    if r.NumberActive > 0 {
+        // one or more readers
+        r.NumberActive -= 1;
+        if r.NumberActive == 0 && r.ExclusiveWaiters > 0 {
+            // wake_exclusive label
+            r.ExclusiveWaiters -= 1;
+            let _ = NtReleaseSemaphore(
+                r.ExclusiveSemaphore,
+                1,
+                core::ptr::null_mut(),
+            );
+        }
+    } else if r.NumberActive < 0 {
+        // writer, possibly recursive
+        r.NumberActive += 1;
+        if r.NumberActive == 0 {
+            r.OwningThread = core::ptr::null_mut();
+            if r.ExclusiveWaiters > 0 {
+                // wake_exclusive
+                r.ExclusiveWaiters -= 1;
+                let _ = NtReleaseSemaphore(
+                    r.ExclusiveSemaphore,
+                    1,
+                    core::ptr::null_mut(),
+                );
+            } else if r.SharedWaiters > 0 {
+                // Prevent new writers from joining until all queued
+                // readers have done their thing.
+                let n = r.SharedWaiters;
+                r.NumberActive = r.SharedWaiters as i32;
+                r.SharedWaiters = 0;
+                let _ = NtReleaseSemaphore(
+                    r.SharedSemaphore,
+                    n as i32,
+                    core::ptr::null_mut(),
+                );
+            }
+        }
+    }
+    let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
+}
+
+/// `VOID NTAPI RtlDumpResource(PRTL_RESOURCE)`.
+///
+/// Faithful translation: emit one `DbgPrint` line via the kernel/user
+/// `DbgPrint` extern. Format strings use ANSI literals (`%p`, `%d`,
+/// `%u`) — same as the C original.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDumpResource(resource: *mut res::RTL_RESOURCE) {
+    extern "C" {
+        fn DbgPrint(fmt: *const u8, ...) -> u32;
+    }
+    let r = &*resource;
+
+    // C: "RtlDumpResource(%p):\n\tactive count = %d\n\twaiting readers = %u\n\twaiting writers = %u\n"
+    let fmt1 = b"RtlDumpResource(%p):\n\tactive count = %d\n\twaiting readers = %u\n\twaiting writers = %u\n\0";
+    let _ = DbgPrint(
+        fmt1.as_ptr(),
+        resource as *const u8,
+        r.NumberActive,
+        r.SharedWaiters,
+        r.ExclusiveWaiters,
+    );
+
+    if r.NumberActive != 0 {
+        let fmt2 = b"\towner thread = %p\n\0";
+        let _ = DbgPrint(fmt2.as_ptr(), r.OwningThread);
+    }
 }
