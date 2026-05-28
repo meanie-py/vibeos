@@ -4,58 +4,90 @@
 `rtl-priv-port`). Last commit (this session, 2026-05-28 evening):
 `7741bafeb1e rtl-strings Wave PRC` + the libsupp postfix to come.
 
-## ⚠️ CRITICAL: 2026-05-28 session left x86 boot broken (visible)
+## 2026-05-28 session — x86 boot resolved through Phase 0; blocks on documented upstream PnP bug
 
-This session committed Waves RES/THR/PRC on top of SEC. During the
-session the smokes appeared green, but **all of those green runs were
-running a stale pre-session `ntoskrnl.exe`** — the kernel link was
-silently failing on undefined `Rtlp{Thr,Prc}*` / `RtlGetProcessHeap`
-symbols (the user-mode `dll/ntdll/rtl/libsupp.c` got the helpers but
-`ntoskrnl/rtl/libsupp.c` is `#`-commented in `ntos.cmake` — replaced
-by `ntoskrnl-rust/src/rtl/libsupp.rs`, which I never updated). Ninja
-left the old `ntoskrnl.exe` in place; livecd packaged the old one;
-smoke ran the old one. Discovered while wiring Wave PATH-1.
+Status at end of session, **fresh cold-build** of the worktree:
 
-After adding the kernel-side stub helpers to
-`sdk/lib/rust/ntoskrnl-rust/src/rtl/libsupp.rs` (return NULL/0/no-op,
-since they're only reachable from user-mode primitives) — the kernel
-link now actually succeeds and a fresh `ntoskrnl.exe` ships. **With
-the new binary in the ISO, i386 + amd64 smoke crash in the very first
-moments of kernel boot:**
+| arch | result | next |
+|---|---|---|
+| **arm64** | 6/6 + 5 skip ✅ | clean, ship-ready |
+| **i386** | bugcheck 0x6B (PROCESS1_INIT, `\ArcName\multi(0)disk(0)cdrom(96)` NOT_FOUND) | upstream PnP/uniata IDE-binding bug, see `304abfa3cc1` |
+| **amd64** | bugcheck 0x6B (same chain, same diagnosis) | same |
 
-- **i386:** 0 milestones reached. Crashes before `KiSystemStartup`
-  entry (`ke/i386/kiinit.rs:1024`).
-- **amd64:** 2 milestones (`i`, `j`). Crashes after the Prcb-read in
-  `KiSystemStartupBootStack` (`ke/amd64/krnlinit.rs:152`), before the
-  Thread-read on line 154.
-- **arm64:** 6/6 + 5 skip — clean (different boot path).
+The boot **gets through Phase 0 init** (which the pre-allocator-fix
+state could not), past system-driver init, into IopReassignSystemRoot,
+hits the documented `IopCreateArcNamesCd CdRomCount=0` blocker.
+Boot trace `[CDARC] matched signature, CdRomCount=0 EnabledDisks=0`
+matches the symptom in `docs/engineering/handoff-smss-init-arc-names.md`
+to the byte. The PCI IDE controller PDO (`PCI\VEN_8086&DEV_7010`)
+enumerates with `NO RELATIONS` — uniata never binds children, no
+CD-ROM PDO exists. Fix lives upstream of rtl-libs.
 
-Per AGENTS.md rules a broken Rust translation integrated and failing
-visibly is the correct state when the regression is unsolved. **Do
-not revert the Wave RES / THR / PRC commits.** Debug from there.
-Hypotheses to triage:
+### What this session unstuck
 
-1. One of the Wave RES/THR/PRC Rust translations runs on a cold kernel
-   boot path I didn't expect, and has a real bug. Suspects: anything
-   in resource.c (`RtlInitializeResource` may be called via early ke/
-   init?) or process.c's `RtlEncodeSystemPointer` (touches
-   `KI_USER_SHARED_DATA + 0x330` — wrong VA per-arch?).
-2. The new no_mangle Rust shims overlap a sibling `.o` whose addresses
-   shifted under CGU=256 → captures(none)/ud2 elsewhere. Run
-   `python3 tools/scan_ud2.py build-amd64` / `build-i386`.
-3. The libsupp.rs stubs themselves trigger a layout shift in
-   libkernel_rust.a sufficient to bump a sacred symbol off-page.
-   Cross-check `bash tools/verify_sacred_primitives.sh build-i386`.
+**`095f0461ee8` postfix** — kernel-side libsupp.rs stubs + ntdll
+`RtlGetProcessHeap` real fn. Without these, the kernel link
+silently failed and Ninja left a stale `ntoskrnl.exe` in place →
+smokes ran the wrong binary. The 3 Wave RES/THR/PRC "green" runs
+mid-session were that stale binary.
 
-Reproducer:
+**`fd05ea9f8c4` allocator fix** (cherry-pick of
+`d99ffd568d7bf3 rtl-strings cabi: real allocator on the kernel
+feature` from `worktree-smss-csrss`) — the cabi alloc paths were
+design-stubbed to unconditionally return `STATUS_NO_MEMORY` (correct
+for the diff harness, wrong for the live kernel). With this in,
+`RtlAnsiStringToUnicodeString(alloc=TRUE)` from Phase 0 init no
+longer bugchecks. Same fix landed earlier on
+`worktree-smss-csrss`; rtl-priv-port needed it picked.
+
+**`6873bdef7e6` testing harness** — 69 host unit tests in
+`core_rs/{resource,thread,process,env,path}.rs` covering the
+pure-decision parts of all the swaps. Found 1 test-input bug
+(stack-layout no-guard tight case), 0 translation bugs. Runs
+in 10ms with `cargo test -p rtl-strings --lib`.
+
+### The remaining (upstream, documented) blocker
+
+`docs/engineering/handoff-smss-init-arc-names.md` (commit
+`304abfa3cc1`) and `2894e56860c` "i386 smoke green: HAL PCI bus
+fallback + WDF boot-start + uniata critdev" both apply on this
+branch. The `[CDARC] CdRomCount=0` symptom still manifests on a
+fresh cold-build despite all three of: (1) the HAL PCI fallback
+firing (`HAL: No PCI registry info, probing type 1 bus 0`),
+(2) `Wdf01000` Start=0 in the registry, (3) `CriticalDeviceDatabase
+PCI#CC_0101 → uniata` mapping present. So either the
+`2894e56860c "10/10 GREEN"` claim was the same stale-cache artifact
+that `d99ffd568d7`'s commit-message identified for "crp HEAD's
+i386 GREEN", or there is a 2nd PnP-binding step that landed on a
+different branch and hasn't been merged forward. Verify before
+spending more cycles:
+
 ```
 cd /home/curi/Projects/os-playground/vibeos
-rm build-{i386,amd64}/ntoskrnl/libkernel_rust.a \
-   build-{i386,amd64}/sdk/lib/rtl/librtl_rust.a \
-   build-{i386,amd64}/ntoskrnl/ntoskrnl.exe
-ninja -C build-i386  ntoskrnl ntdll livecd
-ninja -C build-amd64 ntoskrnl ntdll livecd
-.venv/bin/python -m pytest tests/qemu/test_smoke.py -v --arch i386 --timeout 600 --skip-clean-build
+git checkout 28e83905bc6  # crp HEAD, no allocator fix
+rm -rf build-i386/sdk/lib/rtl/{rust-target,librtl_rust.a} \
+       build-i386/ntoskrnl/{libkernel_rust.a,ntoskrnl.exe}
+ninja -C build-i386 livecd
+timeout 90 bash qemu/run.sh --arch i386 --livecd | tail -30
+```
+
+Expected: same `CdRomCount=0` symptom (proves it's pre-existing,
+not introduced by my work). If crp HEAD actually boots to
+`shell ready` cold, then my work introduced a regression and the
+diff is the merge of allocator-fix + RES/THR/PRC.
+
+### Repro (current rtl-priv-port HEAD)
+
+```
+cd /home/curi/Projects/os-playground/vibeos
+git checkout rtl-priv-port
+rm build-i386/ntoskrnl/{libkernel_rust.a,ntoskrnl.exe} \
+   build-i386/sdk/lib/rtl/librtl_rust.a 2>/dev/null
+ninja -C build-i386 livecd
+timeout 90 bash qemu/run.sh --arch i386 --livecd | tail -30
+# → ends with: *** BUGCHECK: 0x0000006B (0xc000003a, 0x2, 0, 0)
+
+cargo test -p rtl-strings --lib  # → 69 passed
 ```
 
 ## Where the track stands (2026-05-28)
