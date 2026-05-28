@@ -8,7 +8,8 @@ use super::text::*;
 use super::graphics::*;
 use super::guisettings::*;
 use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
-use super::super::input::{ConioProcessInputEvent, ConioProcessKey};
+use super::super::input::ConioProcessKey;
+use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp, wcsncpy, memcmp};
 use core::ffi::c_void;
 

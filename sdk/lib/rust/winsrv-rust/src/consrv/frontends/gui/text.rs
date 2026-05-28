@@ -2,7 +2,8 @@ use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 use super::helpers::*;
-use super::super::input::{ConioProcessInputEvent, ConioProcessKey, ConioEffectiveCursorSize};
+use super::super::input::{ConioProcessKey, ConioEffectiveCursorSize};
+use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
 use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp};
 
@@ -21,7 +22,7 @@ pub unsafe fn PaletteRGBFromAttrib(Console: PCONSRV_CONSOLE, Attribute: WORD) ->
 }
 
 pub unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT) {
-    let InlineCopyMode = (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i32) != 0;
+    let InlineCopyMode = (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) != 0;
 
     let mut ptr: PCHAR_INFO;
     let mut data: LPWSTR;
@@ -34,8 +35,8 @@ pub unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT)
         return;
     }
 
-    selWidth = ConioRectWidth(Selection);
-    selHeight = ConioRectHeight(Selection);
+    selWidth = ConioRectWidth(Selection) as ULONG;
+    selHeight = ConioRectHeight(Selection) as ULONG;
 
     size = selWidth;
     if selHeight > 0 {
@@ -45,7 +46,7 @@ pub unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT)
     size += 1;
     size *= core::mem::size_of::<WCHAR>() as ULONG;
 
-    let hData = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size as usize);
+    let hData = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size as _);
     if hData.is_null() {
         return;
     }
@@ -63,8 +64,8 @@ pub unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT)
 
         ptr = ConioCoordToPointer(
             Buffer,
-            (*Selection).Left,
-            (*Selection).Top + yPos as SHORT,
+            (*Selection).Left as u32,
+            ((*Selection).Top as u32) + yPos,
         );
 
         while length > 0 {
@@ -125,7 +126,7 @@ pub unsafe fn CopyLines(Buffer: PTEXTMODE_SCREEN_BUFFER, Begin: PCOORD, End: PCO
 
     size = (NumChars + 1) * core::mem::size_of::<WCHAR>() as ULONG;
 
-    let hData = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size as usize);
+    let hData = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size as _);
     if hData.is_null() {
         return;
     }
@@ -143,7 +144,7 @@ pub unsafe fn CopyLines(Buffer: PTEXTMODE_SCREEN_BUFFER, Begin: PCOORD, End: PCO
         let xBeg = if yPos == (*Begin).Y { (*Begin).X } else { 0 };
         let xEnd = if yPos == (*End).Y { (*End).X } else { (*Buffer).ScreenBufferSize.X - 1 };
 
-        ptr = ConioCoordToPointer(Buffer, 0, yPos);
+        ptr = ConioCoordToPointer(Buffer, 0 as u32, yPos as u32);
 
         let mut xPos = xBeg;
         while xPos <= xEnd && NumChars > 0 {
@@ -191,7 +192,7 @@ pub unsafe extern "system" fn PasteText(
         Buffer = Buffer.add(1);
         cchSize -= 1;
 
-        VkKey = VkKeyScanW(CurChar);
+        VkKey = VkKeyScanW(CurChar) as USHORT;
         if VkKey == 0xFFFF {
             // VkKeyScanW failed
         }
@@ -229,7 +230,7 @@ pub unsafe extern "system" fn GuiCopyFromTextModeBuffer(
 ) {
     let LineSelection = (*GuiData).LineSelection;
 
-    if !LineSelection {
+    if LineSelection == 0 {
         CopyBlock(Buffer, core::ptr::addr_of_mut!((*GuiData).Selection.srSelection));
     } else {
         let mut Begin: COORD = core::mem::zeroed();
@@ -296,11 +297,11 @@ pub unsafe fn GuiPaintCaret(
 
             Attribute = (*ConioCoordToPointer(
                 Buffer,
-                (*Buffer).CursorPosition.X,
-                (*Buffer).CursorPosition.Y,
+                (*Buffer).CursorPosition.X as u32,
+                (*Buffer).CursorPosition.Y as u32,
             ))
             .Attributes;
-            if Attribute == DEFAULT_SCREEN_ATTRIB {
+            if Attribute == DEFAULT_SCREEN_ATTRIB as u16 {
                 Attribute = (*Buffer).ScreenDefaultAttrib;
             }
 
@@ -390,7 +391,7 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
         BottomLine = ((*Buffer).ScreenBufferSize.Y - 1) as ULONG;
     }
 
-    LastAttribute = (*ConioCoordToPointer(Buffer, LeftColumn as SHORT, TopLine as SHORT)).Attributes;
+    LastAttribute = (*ConioCoordToPointer(Buffer, LeftColumn  as u32, TopLine  as u32)).Attributes;
 
     SetTextColor(
         (*GuiData).hMemDC,
@@ -402,13 +403,13 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
     );
 
     IsUnderline = if (LastAttribute & COMMON_LVB_UNDERSCORE) != 0 { 1 } else { 0 };
-    NewFont = (*GuiData).Font[if IsUnderline != 0 { FONT_BOLD } else { FONT_NORMAL }];
+    NewFont = (*GuiData).Font[(if IsUnderline != 0 { FONT_BOLD } else { FONT_NORMAL }) as usize];
     OldFont = SelectObject((*GuiData).hMemDC, NewFont as _) as HFONT;
 
     if (*Console).IsCJK != 0 {
         for Line in TopLine..=BottomLine {
             for Char in LeftColumn..=RightColumn {
-                let From = ConioCoordToPointer(Buffer, Char as SHORT, Line as SHORT);
+                let From = ConioCoordToPointer(Buffer, Char  as u32, Line  as u32);
                 Attribute = (*From).Attributes;
                 SetTextColor(
                     (*GuiData).hMemDC,
@@ -421,7 +422,7 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
 
                 if ((Attribute & COMMON_LVB_UNDERSCORE) != 0) != (IsUnderline != 0) {
                     IsUnderline = if (Attribute & COMMON_LVB_UNDERSCORE) != 0 { 1 } else { 0 };
-                    NewFont = (*GuiData).Font[if IsUnderline != 0 { FONT_BOLD } else { FONT_NORMAL }];
+                    NewFont = (*GuiData).Font[(if IsUnderline != 0 { FONT_BOLD } else { FONT_NORMAL }) as usize];
                     SelectObject((*GuiData).hMemDC, NewFont as _);
                 }
 
@@ -441,7 +442,7 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
     } else {
         for Line in TopLine..=BottomLine {
             let mut LineBuffer: [WCHAR; 80] = [0; 80];
-            let mut From = ConioCoordToPointer(Buffer, LeftColumn as SHORT, Line as SHORT);
+            let mut From = ConioCoordToPointer(Buffer, LeftColumn  as u32, Line  as u32);
             let mut Start = LeftColumn;
             let mut To = LineBuffer.as_mut_ptr();
 
@@ -472,7 +473,7 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
 
                         if ((LastAttribute & COMMON_LVB_UNDERSCORE) != 0) != (IsUnderline != 0) {
                             IsUnderline = if (LastAttribute & COMMON_LVB_UNDERSCORE) != 0 { 1 } else { 0 };
-                            NewFont = (*GuiData).Font[if IsUnderline != 0 { FONT_BOLD } else { FONT_NORMAL }];
+                            NewFont = (*GuiData).Font[(if IsUnderline != 0 { FONT_BOLD } else { FONT_NORMAL }) as usize];
                             SelectObject((*GuiData).hMemDC, NewFont as _);
                         }
                     }
@@ -715,7 +716,7 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
 //         xBeg = (yPos == Begin->Y ? Begin->X : 0);
 //         xEnd = (yPos ==   End->Y ?   End->X : Buffer->ScreenBufferSize.X - 1);
 //
-//         ptr = ConioCoordToPointer(Buffer, 0, yPos);
+//         ptr = ConioCoordToPointer(Buffer, 0 as u32, yPos as u32);
 //
 //         /* Copy only the characters, leave attributes alone */
 //         for (xPos = xBeg; (xPos <= xEnd) && (NumChars-- > 0); xPos++)
@@ -768,7 +769,7 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
 //         CurChar = *Buffer++;
 //
 //         /* Get the key code (+ shift state) corresponding to the character */
-//         VkKey = VkKeyScanW(CurChar);
+//         VkKey = VkKeyScanW(CurChar) as USHORT;
 //         if (VkKey == 0xFFFF)
 //         {
 //             DPRINT1("FIXME: TODO: VkKeyScanW failed - Should simulate the key!\n");
