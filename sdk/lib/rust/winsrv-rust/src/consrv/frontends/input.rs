@@ -16,36 +16,36 @@ use winsrv_sys::consts::*;
 static mut KeyState: [u8; 256] = [0; 256];
 static mut LastVirtualKey: UINT = 0;
 
-pub(crate) unsafe fn ConioGetShiftState(KeyState: PBYTE, lParam: LPARAM) -> DWORD {
+pub(crate) unsafe fn ConioGetShiftState(KeyStatePtr: PBYTE, lParam: LPARAM) -> DWORD {
     let mut ssOut = 0u32;
 
-    if *KeyState.offset(VK_CAPITAL as isize) & 0x01 != 0 {
+    if *KeyStatePtr.offset(VK_CAPITAL as isize) & 0x01 != 0 {
         ssOut |= CAPSLOCK_ON;
     }
 
-    if *KeyState.offset(VK_NUMLOCK as isize) & 0x01 != 0 {
+    if *KeyStatePtr.offset(VK_NUMLOCK as isize) & 0x01 != 0 {
         ssOut |= NUMLOCK_ON;
     }
 
-    if *KeyState.offset(VK_SCROLL as isize) & 0x01 != 0 {
+    if *KeyStatePtr.offset(VK_SCROLL as isize) & 0x01 != 0 {
         ssOut |= SCROLLLOCK_ON;
     }
 
-    if *KeyState.offset(VK_SHIFT as isize) & 0x80 != 0 {
+    if *KeyStatePtr.offset(VK_SHIFT as isize) & 0x80 != 0 {
         ssOut |= SHIFT_PRESSED;
     }
 
-    if *KeyState.offset(VK_LCONTROL as isize) & 0x80 != 0 {
+    if *KeyStatePtr.offset(VK_LCONTROL as isize) & 0x80 != 0 {
         ssOut |= LEFT_CTRL_PRESSED;
     }
-    if *KeyState.offset(VK_RCONTROL as isize) & 0x80 != 0 {
+    if *KeyStatePtr.offset(VK_RCONTROL as isize) & 0x80 != 0 {
         ssOut |= RIGHT_CTRL_PRESSED;
     }
 
-    if *KeyState.offset(VK_LMENU as isize) & 0x80 != 0 {
+    if *KeyStatePtr.offset(VK_LMENU as isize) & 0x80 != 0 {
         ssOut |= LEFT_ALT_PRESSED;
     }
-    if *KeyState.offset(VK_RMENU as isize) & 0x80 != 0 {
+    if *KeyStatePtr.offset(VK_RMENU as isize) & 0x80 != 0 {
         ssOut |= RIGHT_ALT_PRESSED;
     }
 

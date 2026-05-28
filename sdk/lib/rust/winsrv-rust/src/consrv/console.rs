@@ -1053,7 +1053,7 @@ pub unsafe extern "system" fn ConSrvGetConsoleLeaderProcess(
 
 pub(crate) unsafe fn ConSrvGetConsoleProcessList(
     Console: PCONSRV_CONSOLE,
-    ProcessIdsList: *mut ULONG,
+    mut ProcessIdsList: *mut ULONG,
     MaxIdListItems: ULONG,
     ProcessIdsTotal: *mut ULONG,
 ) -> NTSTATUS {
