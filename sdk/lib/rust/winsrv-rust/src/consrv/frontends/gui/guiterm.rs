@@ -84,7 +84,7 @@ pub static mut GuiVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
     SetMenuClose: GuiSetMenuClose,
 };
 
-unsafe fn GuiConsoleMoveWindow(GuiData: PGUI_CONSOLE_DATA) {
+pub unsafe fn GuiConsoleMoveWindow(GuiData: PGUI_CONSOLE_DATA) {
     if (*GuiData).GuiInfo.AutoPosition == 0 {
         SetWindowPos(
             (*GuiData).hWindow,
@@ -98,14 +98,14 @@ unsafe fn GuiConsoleMoveWindow(GuiData: PGUI_CONSOLE_DATA) {
     }
 }
 
-unsafe fn DrawRegion(GuiData: PGUI_CONSOLE_DATA, Region: *mut SMALL_RECT) {
+pub unsafe fn DrawRegion(GuiData: PGUI_CONSOLE_DATA, Region: *mut SMALL_RECT) {
     let mut RegionRect: RECT = core::mem::zeroed();
 
     SmallRectToRect(GuiData, &mut RegionRect, Region);
     InvalidateRect((*GuiData).hWindow, &RegionRect, 0);
 }
 
-unsafe fn InvalidateCell(GuiData: PGUI_CONSOLE_DATA, x: i16, y: i16) {
+pub unsafe fn InvalidateCell(GuiData: PGUI_CONSOLE_DATA, x: i16, y: i16) {
     let mut CellRect: SMALL_RECT = SMALL_RECT {
         Left: x,
         Top: y,
@@ -115,7 +115,7 @@ unsafe fn InvalidateCell(GuiData: PGUI_CONSOLE_DATA, x: i16, y: i16) {
     DrawRegion(GuiData, &mut CellRect);
 }
 
-unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
+pub unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
     let mut Status: NTSTATUS;
     let mut pcsrt: PCSR_THREAD = core::ptr::null_mut();
     let GuiInitInfo: PGUI_INIT_INFO = Param as PGUI_INIT_INFO;
@@ -312,7 +312,7 @@ unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
     0
 }
 
-unsafe fn GuiInit(
+pub unsafe fn GuiInit(
     ConsoleInitInfo: PCONSOLE_INIT_INFO,
     ConsoleLeaderProcessHandle: HANDLE,
     GuiInitInfo: PGUI_INIT_INFO,
@@ -473,7 +473,7 @@ unsafe fn GuiInit(
     Success
 }
 
-unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTSTATUS {
+pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTSTATUS {
     let GuiInitInfo: PGUI_INIT_INFO;
     let GuiData: PGUI_CONSOLE_DATA;
 
@@ -576,7 +576,7 @@ unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTSTATUS
     STATUS_SUCCESS
 }
 
-unsafe fn GuiDeinitFrontEnd(This: PFRONTEND) {
+pub unsafe fn GuiDeinitFrontEnd(This: PFRONTEND) {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
 
     PostThreadMessageW((*GuiData).InputThreadId, PM_DESTROY_CONSOLE, 0, GuiData as LPARAM);
@@ -599,7 +599,7 @@ unsafe fn GuiDeinitFrontEnd(This: PFRONTEND) {
     ConsoleFreeHeap(GuiData as *mut _);
 }
 
-unsafe fn GuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT) {
+pub unsafe fn GuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT) {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
 
     if (*GuiData).IsWindowVisible == 0 {
@@ -609,7 +609,7 @@ unsafe fn GuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT) {
     DrawRegion(GuiData, Region);
 }
 
-unsafe extern "system" fn GuiWriteStream(
+pub unsafe extern "system" fn GuiWriteStream(
     This: PFRONTEND,
     Region: *mut SMALL_RECT,
     CursorStartX: i16,
@@ -677,14 +677,14 @@ unsafe extern "system" fn GuiWriteStream(
     SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER, CONGUI_UPDATE_TIME, core::ptr::null_mut());
 }
 
-unsafe fn GuiRingBell(This: PFRONTEND) {
+pub unsafe fn GuiRingBell(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
     
     
     SendNotifyMessageW((*GuiData).hWindow, PM_CONSOLE_BEEP, 0, 0);
 }
 
-unsafe fn GuiSetCursorInfo(
+pub unsafe fn GuiSetCursorInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
 ) -> u8 {
@@ -705,7 +705,7 @@ unsafe fn GuiSetCursorInfo(
     1u8
 }
 
-unsafe extern "system" fn GuiSetScreenInfo(
+pub unsafe extern "system" fn GuiSetScreenInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
     OldCursorX: i16,
@@ -725,13 +725,13 @@ unsafe extern "system" fn GuiSetScreenInfo(
     1u8
 }
 
-unsafe fn GuiResizeTerminal(This: PFRONTEND) {
+pub unsafe fn GuiResizeTerminal(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
 
     PostMessageW((*GuiData).hWindow, PM_RESIZE_TERMINAL, 0, 0);
 }
 
-unsafe fn GuiSetActiveScreenBuffer(This: PFRONTEND) {
+pub unsafe fn GuiSetActiveScreenBuffer(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
     let ActiveBuffer: PCONSOLE_SCREEN_BUFFER;
     let hPalette: HPALETTE;
@@ -764,7 +764,7 @@ unsafe fn GuiSetActiveScreenBuffer(This: PFRONTEND) {
     GuiResizeTerminal(This);
 }
 
-unsafe fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCREEN_BUFFER) {
+pub unsafe fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCREEN_BUFFER) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
 
     if ScreenBuffer != (*GuiData).ActiveBuffer {
@@ -791,7 +791,7 @@ unsafe fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCREEN_
     }
 }
 
-unsafe fn GuiRefreshInternalInfo(This: PFRONTEND) {
+pub unsafe fn GuiRefreshInternalInfo(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut _GUI_CONSOLE_DATA;
 
     SetConWndConsoleLeaderCID(GuiData);
@@ -800,12 +800,12 @@ unsafe fn GuiRefreshInternalInfo(This: PFRONTEND) {
     GuiSetMouseCursor(This, core::ptr::null_mut());
 }
 
-unsafe fn GuiChangeTitle(This: PFRONTEND) {
+pub unsafe fn GuiChangeTitle(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
     PostMessageW((*GuiData).hWindow, PM_CONSOLE_SET_TITLE, 0, 0);
 }
 
-unsafe fn GuiChangeIcon(
+pub unsafe fn GuiChangeIcon(
     This: PFRONTEND,
     IconHandle: HICON
 ) -> u8 {
@@ -844,17 +844,17 @@ unsafe fn GuiChangeIcon(
     1u8
 }
 
-unsafe fn GuiGetThreadConsoleDesktop(This: PFRONTEND) -> HDESK {
+pub unsafe fn GuiGetThreadConsoleDesktop(This: PFRONTEND) -> HDESK {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
     (*GuiData).Desktop
 }
 
-unsafe fn GuiGetConsoleWindowHandle(This: PFRONTEND) -> HWND {
+pub unsafe fn GuiGetConsoleWindowHandle(This: PFRONTEND) -> HWND {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
     (*GuiData).hWindow
 }
 
-unsafe extern "system" fn GuiGetLargestConsoleWindowSize(
+pub unsafe extern "system" fn GuiGetLargestConsoleWindowSize(
     This: PFRONTEND,
     pSize: PCOORD,
 ) {
@@ -898,7 +898,7 @@ unsafe extern "system" fn GuiGetLargestConsoleWindowSize(
     (*pSize).Y = (Height / HeightUnit as i32) as SHORT + 1;
 }
 
-unsafe fn GuiGetSelectionInfo(
+pub unsafe fn GuiGetSelectionInfo(
     This: PFRONTEND,
     pSelectionInfo: PCONSOLE_SELECTION_INFO,
 ) -> u8 {
@@ -920,7 +920,7 @@ unsafe fn GuiGetSelectionInfo(
     1u8
 }
 
-unsafe fn GuiSetPalette(
+pub unsafe fn GuiSetPalette(
     This: PFRONTEND,
     PaletteHandle: HPALETTE,
     PaletteUsage: UINT,
@@ -949,7 +949,7 @@ unsafe fn GuiSetPalette(
     1
 }
 
-unsafe fn GuiSetCodePage(
+pub unsafe fn GuiSetCodePage(
     This: PFRONTEND,
     CodePage: u32,
 ) -> u8 {
@@ -971,7 +971,7 @@ unsafe fn GuiSetCodePage(
     1u8
 }
 
-unsafe fn GuiGetDisplayMode(This: PFRONTEND) -> ULONG {
+pub unsafe fn GuiGetDisplayMode(This: PFRONTEND) -> ULONG {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
     let mut DisplayMode: ULONG = 0;
 
@@ -984,7 +984,7 @@ unsafe fn GuiGetDisplayMode(This: PFRONTEND) -> ULONG {
     DisplayMode
 }
 
-unsafe fn GuiSetDisplayMode(
+pub unsafe fn GuiSetDisplayMode(
     This: PFRONTEND,
     NewMode: ULONG,
 ) -> BOOL {
@@ -1008,7 +1008,7 @@ unsafe fn GuiSetDisplayMode(
     1
 }
 
-unsafe fn GuiShowMouseCursor(
+pub unsafe fn GuiShowMouseCursor(
     This: PFRONTEND,
     Show: BOOL,
 ) -> INT {
@@ -1027,7 +1027,7 @@ unsafe fn GuiShowMouseCursor(
     (*GuiData).MouseCursorRefCount
 }
 
-unsafe fn GuiSetMouseCursor(
+pub unsafe fn GuiSetMouseCursor(
     This: PFRONTEND,
     CursorHandle: HCURSOR,
 ) -> u8 {
@@ -1048,7 +1048,7 @@ unsafe fn GuiSetMouseCursor(
     1u8
 }
 
-unsafe fn GuiMenuControl(
+pub unsafe fn GuiMenuControl(
     This: PFRONTEND,
     CmdIdLow: UINT,
     CmdIdHigh: UINT,
@@ -1061,7 +1061,7 @@ unsafe fn GuiMenuControl(
     (*GuiData).hSysMenu
 }
 
-unsafe fn GuiSetMenuClose(
+pub unsafe fn GuiSetMenuClose(
     This: PFRONTEND,
     Enable: BOOL,
 ) -> BOOL {
@@ -1168,7 +1168,7 @@ pub unsafe extern "system" fn GuiLoadFrontEnd(
     STATUS_SUCCESS
 }
 
-unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS {
+pub unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS {
     if FrontEnd.is_null() {
         return STATUS_INVALID_PARAMETER;
     }

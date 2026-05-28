@@ -12119,6 +12119,149 @@ pub const FONT_NORMAL: u32 = 0;
 pub const FONT_BOLD: u32 = 1;
 pub const FONT_UNDERLINE: u32 = 2;
 pub const FONT_MAXNO: u32 = 4;
+pub const ABE_LEFT: u32 = 0;
+pub const ABE_TOP: u32 = 1;
+pub const ABE_RIGHT: u32 = 2;
+pub const ABE_BOTTOM: u32 = 3;
+pub const ABS_AUTOHIDE: u32 = 1;
+pub const ABS_ALWAYSONTOP: u32 = 2;
+pub const SEE_MASK_DEFAULT: u32 = 0;
+pub const SEE_MASK_CLASSNAME: u32 = 1;
+pub const SEE_MASK_CLASSKEY: u32 = 3;
+pub const SEE_MASK_IDLIST: u32 = 4;
+pub const SEE_MASK_INVOKEIDLIST: u32 = 12;
+pub const SEE_MASK_ICON: u32 = 16;
+pub const SEE_MASK_HOTKEY: u32 = 32;
+pub const SEE_MASK_NOCLOSEPROCESS: u32 = 64;
+pub const SEE_MASK_CONNECTNETDRV: u32 = 128;
+pub const SEE_MASK_NOASYNC: u32 = 256;
+pub const SEE_MASK_FLAG_DDEWAIT: u32 = 256;
+pub const SEE_MASK_DOENVSUBST: u32 = 512;
+pub const SEE_MASK_FLAG_NO_UI: u32 = 1024;
+pub const SEE_MASK_UNICODE: u32 = 16384;
+pub const SEE_MASK_NO_CONSOLE: u32 = 32768;
+pub const SEE_MASK_ASYNCOK: u32 = 1048576;
+pub const SEE_MASK_HMONITOR: u32 = 2097152;
+pub const SEE_MASK_NOZONECHECKS: u32 = 8388608;
+pub const SEE_MASK_NOQUERYCLASSSTORE: u32 = 16777216;
+pub const SEE_MASK_WAITFORINPUTIDLE: u32 = 33554432;
+pub const SEE_MASK_FLAG_LOG_USAGE: u32 = 67108864;
+pub const SEE_MASK_FLAG_HINST_IS_SITE: u32 = 134217728;
+pub const ABM_NEW: u32 = 0;
+pub const ABM_REMOVE: u32 = 1;
+pub const ABM_QUERYPOS: u32 = 2;
+pub const ABM_SETPOS: u32 = 3;
+pub const ABM_GETSTATE: u32 = 4;
+pub const ABM_GETTASKBARPOS: u32 = 5;
+pub const ABM_ACTIVATE: u32 = 6;
+pub const ABM_GETAUTOHIDEBAR: u32 = 7;
+pub const ABM_SETAUTOHIDEBAR: u32 = 8;
+pub const ABM_WINDOWPOSCHANGED: u32 = 9;
+pub const ABM_SETSTATE: u32 = 10;
+pub const ABN_STATECHANGE: u32 = 0;
+pub const ABN_POSCHANGED: u32 = 1;
+pub const ABN_FULLSCREENAPP: u32 = 2;
+pub const ABN_WINDOWARRANGE: u32 = 3;
+pub const NIN_SELECT: u32 = 1024;
+pub const NINF_KEY: u32 = 1;
+pub const NIN_KEYSELECT: u32 = 1025;
+pub const NIN_BALLOONSHOW: u32 = 1026;
+pub const NIN_BALLOONHIDE: u32 = 1027;
+pub const NIN_BALLOONTIMEOUT: u32 = 1028;
+pub const NIN_BALLOONUSERCLICK: u32 = 1029;
+pub const NIN_POPUPOPEN: u32 = 1030;
+pub const NIN_POPUPCLOSE: u32 = 1031;
+pub const NIM_ADD: u32 = 0;
+pub const NIM_MODIFY: u32 = 1;
+pub const NIM_DELETE: u32 = 2;
+pub const NIM_SETFOCUS: u32 = 3;
+pub const NIM_SETVERSION: u32 = 4;
+pub const NOTIFYICON_VERSION: u32 = 3;
+pub const NOTIFYICON_VERSION_4: u32 = 4;
+pub const NIF_MESSAGE: u32 = 1;
+pub const NIF_ICON: u32 = 2;
+pub const NIF_TIP: u32 = 4;
+pub const NIF_STATE: u32 = 8;
+pub const NIF_INFO: u32 = 16;
+pub const NIS_HIDDEN: u32 = 1;
+pub const NIS_SHAREDICON: u32 = 2;
+pub const NIIF_NONE: u32 = 0;
+pub const NIIF_INFO: u32 = 1;
+pub const NIIF_WARNING: u32 = 2;
+pub const NIIF_ERROR: u32 = 3;
+pub const NIIF_USER: u32 = 4;
+pub const NIF_GUID: u32 = 32;
+pub const NIIF_ICON_MASK: u32 = 15;
+pub const NIIF_NOSOUND: u32 = 16;
+pub const SE_ERR_FNF: u32 = 2;
+pub const SE_ERR_PNF: u32 = 3;
+pub const SE_ERR_ACCESSDENIED: u32 = 5;
+pub const SE_ERR_OOM: u32 = 8;
+pub const SE_ERR_DLLNOTFOUND: u32 = 32;
+pub const SE_ERR_SHARE: u32 = 26;
+pub const SE_ERR_ASSOCINCOMPLETE: u32 = 27;
+pub const SE_ERR_DDETIMEOUT: u32 = 28;
+pub const SE_ERR_DDEFAIL: u32 = 29;
+pub const SE_ERR_DDEBUSY: u32 = 30;
+pub const SE_ERR_NOASSOC: u32 = 31;
+pub const FO_MOVE: u32 = 1;
+pub const FO_COPY: u32 = 2;
+pub const FO_DELETE: u32 = 3;
+pub const FO_RENAME: u32 = 4;
+pub const FOF_MULTIDESTFILES: u32 = 1;
+pub const FOF_CONFIRMMOUSE: u32 = 2;
+pub const FOF_SILENT: u32 = 4;
+pub const FOF_RENAMEONCOLLISION: u32 = 8;
+pub const FOF_NOCONFIRMATION: u32 = 16;
+pub const FOF_WANTMAPPINGHANDLE: u32 = 32;
+pub const FOF_ALLOWUNDO: u32 = 64;
+pub const FOF_FILESONLY: u32 = 128;
+pub const FOF_SIMPLEPROGRESS: u32 = 256;
+pub const FOF_NOCONFIRMMKDIR: u32 = 512;
+pub const FOF_NOERRORUI: u32 = 1024;
+pub const FOF_NOCOPYSECURITYATTRIBS: u32 = 2048;
+pub const FOF_NORECURSION: u32 = 4096;
+pub const FOF_NO_CONNECTED_ELEMENTS: u32 = 8192;
+pub const FOF_WANTNUKEWARNING: u32 = 16384;
+pub const FOF_NORECURSEREPARSE: u32 = 32768;
+pub const PO_DELETE: u32 = 19;
+pub const PO_RENAME: u32 = 20;
+pub const PO_PORTCHANGE: u32 = 32;
+pub const PO_REN_PORT: u32 = 52;
+pub const SHGFI_ADDOVERLAYS: u32 = 32;
+pub const SHGFI_OVERLAYINDEX: u32 = 64;
+pub const SHGFI_ICON: u32 = 256;
+pub const SHGSI_ICON: u32 = 256;
+pub const SHGFI_DISPLAYNAME: u32 = 512;
+pub const SHGFI_TYPENAME: u32 = 1024;
+pub const SHGFI_ATTRIBUTES: u32 = 2048;
+pub const SHGFI_ICONLOCATION: u32 = 4096;
+pub const SHGFI_EXETYPE: u32 = 8192;
+pub const SHGFI_SYSICONINDEX: u32 = 16384;
+pub const SHGFI_LINKOVERLAY: u32 = 32768;
+pub const SHGFI_SELECTED: u32 = 65536;
+pub const SHGFI_ATTR_SPECIFIED: u32 = 131072;
+pub const SHGFI_LARGEICON: u32 = 0;
+pub const SHGFI_SMALLICON: u32 = 1;
+pub const SHGSI_SMALLICON: u32 = 1;
+pub const SHGFI_OPENICON: u32 = 2;
+pub const SHGFI_SHELLICONSIZE: u32 = 4;
+pub const SHGFI_PIDL: u32 = 8;
+pub const SHGFI_USEFILEATTRIBUTES: u32 = 16;
+pub const SHIL_LARGE: u32 = 0;
+pub const SHIL_SMALL: u32 = 1;
+pub const SHIL_EXTRALARGE: u32 = 2;
+pub const SHIL_SYSSMALL: u32 = 3;
+pub const SHIL_JUMBO: u32 = 4;
+pub const SHIL_LAST: u32 = 4;
+pub const SHERB_NOCONFIRMATION: u32 = 1;
+pub const SHERB_NOPROGRESSUI: u32 = 2;
+pub const SHERB_NOSOUND: u32 = 4;
+pub const SHGNLI_PIDL: u32 = 1;
+pub const SHGNLI_PREFIXNAME: u32 = 2;
+pub const SHGNLI_NOUNIQUE: u32 = 4;
+pub const SHGNLI_NOLNK: u32 = 8;
+pub const SHGSI_ICONLOCATION: u32 = 0;
 pub type __gnuc_va_list = __builtin_va_list;
 pub type ULONG = ::core::ffi::c_ulong;
 pub type PULONG = *mut ULONG;
@@ -19056,6 +19199,9 @@ pub struct _REASON_CONTEXT__bindgen_ty_1__bindgen_ty_1 {
 pub type REASON_CONTEXT = _REASON_CONTEXT;
 pub type PREASON_CONTEXT = *mut _REASON_CONTEXT;
 unsafe extern "stdcall" {
+    pub fn CancelIo(hFile: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn CreateIoCompletionPort(
         FileHandle: HANDLE,
         ExistingCompletionPort: HANDLE,
@@ -19106,6 +19252,12 @@ unsafe extern "stdcall" {
         dwMilliseconds: DWORD,
         fAlertable: BOOL,
     ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CancelIoEx(hFile: HANDLE, lpOverlapped: LPOVERLAPPED) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CancelSynchronousIo(hThread: HANDLE) -> BOOL;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -19298,6 +19450,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn CloseThreadpoolIo(pio: PTP_IO);
+}
+unsafe extern "stdcall" {
+    pub fn CancelThreadpoolIo(pio: PTP_IO);
 }
 unsafe extern "stdcall" {
     pub fn WaitForThreadpoolIoCallbacks(pio: PTP_IO, fCancelPendingCallbacks: BOOL);
@@ -20955,10 +21110,49 @@ unsafe extern "stdcall" {
     pub fn BeginUpdateResourceW(arg1: LPCWSTR, arg2: BOOL) -> HANDLE;
 }
 unsafe extern "stdcall" {
+    pub fn CancelDeviceWakeupRequest(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CancelWaitableTimer(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn CloseEventLog(arg1: HANDLE) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn CloseHandle(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CopyFileA(arg1: LPCSTR, arg2: LPCSTR, arg3: BOOL) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CopyFileW(
+        lpExistingFileName: LPCWSTR,
+        lpNewFileName: LPCWSTR,
+        bFailIfExists: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CopyFileExA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: LPBOOL,
+        arg6: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CopyFileExW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: LPBOOL,
+        arg6: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CopySid(arg1: DWORD, arg2: PSID, arg3: PSID) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn CreateActCtxA(arg1: PCACTCTXA) -> HANDLE;
@@ -21414,6 +21608,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn DestroyPrivateObjectSecurity(arg1: *mut PSECURITY_DESCRIPTOR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn DisableThreadLibraryCalls(arg1: HMODULE) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn EndUpdateResourceA(arg1: HANDLE, arg2: BOOL) -> BOOL;
@@ -22656,6 +22853,28 @@ unsafe extern "stdcall" {
     pub fn LockResource(arg1: HGLOBAL) -> PVOID;
 }
 unsafe extern "stdcall" {
+    pub fn MakeAbsoluteSD(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: PSECURITY_DESCRIPTOR,
+        arg3: PDWORD,
+        arg4: PACL,
+        arg5: PDWORD,
+        arg6: PACL,
+        arg7: PDWORD,
+        arg8: PSID,
+        arg9: PDWORD,
+        arg10: PSID,
+        arg11: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn MakeSelfRelativeSD(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: PSECURITY_DESCRIPTOR,
+        arg3: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn MapGenericMask(arg1: PDWORD, arg2: PGENERIC_MAPPING);
 }
 unsafe extern "stdcall" {
@@ -22778,6 +22997,12 @@ unsafe extern "stdcall" {
     pub fn OpenWaitableTimerW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
 unsafe extern "stdcall" {
+    pub fn OutputDebugStringA(arg1: LPCSTR);
+}
+unsafe extern "stdcall" {
+    pub fn OutputDebugStringW(arg1: LPCWSTR);
+}
+unsafe extern "stdcall" {
     pub fn PeekNamedPipe(
         arg1: HANDLE,
         arg2: PVOID,
@@ -22786,6 +23011,9 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
         arg6: PDWORD,
     ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ProcessIdToSessionId(arg1: DWORD, arg2: *mut DWORD) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn QueryActCtxW(
@@ -22945,6 +23173,12 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn ReleaseSRWLockShared(arg1: PSRWLOCK);
+}
+unsafe extern "stdcall" {
+    pub fn ResetEvent(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ResetWriteWatch(arg1: LPVOID, arg2: SIZE_T) -> UINT;
 }
 unsafe extern "stdcall" {
     pub fn SetAclInformation(
@@ -23286,6 +23520,9 @@ unsafe extern "stdcall" {
     ) -> LPTOP_LEVEL_EXCEPTION_FILTER;
 }
 unsafe extern "stdcall" {
+    pub fn SetupComm(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn SetVolumeLabelA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -23324,6 +23561,16 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn SleepEx(arg1: DWORD, arg2: BOOL) -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SystemTimeToTzSpecificLocalTime(
+        arg1: *const TIME_ZONE_INFORMATION,
+        arg2: *const SYSTEMTIME,
+        arg3: LPSYSTEMTIME,
+    ) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
@@ -25820,6 +26067,12 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn CancelDC(hdc: HDC) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
     pub fn CloseEnhMetaFile(hdc: HDC) -> HENHMETAFILE;
 }
 unsafe extern "stdcall" {
@@ -25827,6 +26080,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn CloseMetaFile(hdc: HDC) -> HMETAFILE;
+}
+unsafe extern "stdcall" {
+    pub fn ColorMatchToTarget(hdc: HDC, hdcTarget: HDC, uAction: DWORD) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn CombineRgn(
@@ -25842,6 +26098,18 @@ unsafe extern "stdcall" {
         pxform1: *const XFORM,
         pxform2: *const XFORM,
     ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CopyEnhMetaFileA(hemfSrc: HENHMETAFILE, pszFile: LPCSTR) -> HENHMETAFILE;
+}
+unsafe extern "stdcall" {
+    pub fn CopyEnhMetaFileW(hemfSrc: HENHMETAFILE, pszFile: LPCWSTR) -> HENHMETAFILE;
+}
+unsafe extern "stdcall" {
+    pub fn CopyMetaFileA(hmfSrc: HMETAFILE, pszFile: LPCSTR) -> HMETAFILE;
+}
+unsafe extern "stdcall" {
+    pub fn CopyMetaFileW(hmfSrc: HMETAFILE, pszFile: LPCWSTR) -> HMETAFILE;
 }
 unsafe extern "stdcall" {
     pub fn CreateBitmap(
@@ -26797,6 +27065,18 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn RealizePalette(arg1: HDC) -> UINT;
+}
+unsafe extern "stdcall" {
+    pub fn RectInRegion(arg1: HRGN, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn RectVisible(arg1: HDC, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ResetDCA(arg1: HDC, arg2: *const DEVMODEA) -> HDC;
+}
+unsafe extern "stdcall" {
+    pub fn ResetDCW(arg1: HDC, arg2: *const DEVMODEW) -> HDC;
 }
 unsafe extern "stdcall" {
     pub fn SelectClipPath(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
@@ -45675,13 +45955,70 @@ unsafe extern "stdcall" {
     pub fn ChangeMenuW(arg1: HMENU, arg2: UINT, arg3: LPCWSTR, arg4: UINT, arg5: UINT) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn CharLowerA(arg1: LPSTR) -> LPSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharLowerW(arg1: LPWSTR) -> LPWSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharLowerBuffA(lpsz: LPSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn CharLowerBuffW(lpsz: LPWSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn CharNextA(arg1: LPCSTR) -> LPSTR;
+}
+unsafe extern "stdcall" {
     pub fn CharNextW(arg1: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharNextExA(arg1: WORD, arg2: LPCSTR, arg3: DWORD) -> LPSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharNextExW(arg1: WORD, arg2: LPCWSTR, arg3: DWORD) -> LPWSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharPrevA(arg1: LPCSTR, arg2: LPCSTR) -> LPSTR;
 }
 unsafe extern "stdcall" {
     pub fn CharPrevW(arg1: LPCWSTR, arg2: LPCWSTR) -> LPWSTR;
 }
 unsafe extern "stdcall" {
+    pub fn CharPrevExA(arg1: WORD, arg2: LPCSTR, arg3: LPCSTR, arg4: DWORD) -> LPSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharPrevExW(arg1: WORD, arg2: LPCWSTR, arg3: LPCWSTR, arg4: DWORD) -> LPWSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharToOemA(pSrc: LPCSTR, pDst: LPSTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CharToOemW(pSrc: LPCWSTR, pDst: LPSTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CharToOemBuffA(lpszSrc: LPCSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CharToOemBuffW(lpszSrc: LPCWSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CharUpperA(arg1: LPSTR) -> LPSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharUpperW(arg1: LPWSTR) -> LPWSTR;
+}
+unsafe extern "stdcall" {
+    pub fn CharUpperBuffA(lpsz: LPSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn CharUpperBuffW(lpsz: LPWSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "stdcall" {
     pub fn ClientToScreen(arg1: HWND, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ClipCursor(arg1: LPCRECT) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn CloseClipboard() -> BOOL;
@@ -45694,6 +46031,35 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn CloseWindowStation(arg1: HWINSTA) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn CopyAcceleratorTableA(
+        hAccelSrc: HACCEL,
+        lpAccelDst: LPACCEL,
+        cAccelEntries: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn CopyAcceleratorTableW(
+        hAccelSrc: HACCEL,
+        lpAccelDst: LPACCEL,
+        cAccelEntries: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn CopyIcon(arg1: HICON) -> HICON;
+}
+unsafe extern "stdcall" {
+    pub fn CopyImage(
+        arg1: HANDLE,
+        arg2: UINT,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: UINT,
+    ) -> HANDLE;
+}
+unsafe extern "stdcall" {
+    pub fn CopyRect(arg1: LPRECT, arg2: LPCRECT) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn CreateAcceleratorTableA(paccel: LPACCEL, cAccel: ::core::ffi::c_int) -> HACCEL;
@@ -45895,6 +46261,18 @@ unsafe extern "stdcall" {
     pub fn DefDlgProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
 unsafe extern "stdcall" {
+    pub fn DeferWindowPos(
+        arg1: HDWP,
+        arg2: HWND,
+        arg3: HWND,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: UINT,
+    ) -> HDWP;
+}
+unsafe extern "stdcall" {
     pub fn DefWindowProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
 unsafe extern "stdcall" {
@@ -46042,6 +46420,15 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn EmptyClipboard() -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EnableMenuItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EnableScrollBar(arg1: HWND, arg2: UINT, arg3: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn EnableWindow(arg1: HWND, arg2: BOOL) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn EndDeferWindowPos(arg1: HDWP) -> BOOL;
@@ -46680,6 +47067,9 @@ unsafe extern "stdcall" {
     pub fn GetWindowModuleFileNameW(hwnd: HWND, pszFileName: LPWSTR, cchFileNameMax: UINT) -> UINT;
 }
 unsafe extern "stdcall" {
+    pub fn HideCaret(arg1: HWND) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn InflateRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -47000,6 +47390,9 @@ unsafe extern "stdcall" {
     pub fn PostThreadMessageW(arg1: DWORD, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn PrintWindow(arg1: HWND, arg2: HDC, arg3: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn PtInRect(arg1: LPCRECT, arg2: POINT) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -47064,6 +47457,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn ReleaseDC(arg1: HWND, arg2: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn ReplyMessage(arg1: LRESULT) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn ScreenToClient(arg1: HWND, arg2: LPPOINT) -> BOOL;
@@ -47462,12 +47858,49 @@ unsafe extern "stdcall" {
     pub fn ShowWindowAsync(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn SystemParametersInfoA(
+        uiAction: UINT,
+        uiParam: UINT,
+        pvParam: PVOID,
+        fWinIni: UINT,
+    ) -> BOOL;
+}
+unsafe extern "stdcall" {
     pub fn SystemParametersInfoW(
         uiAction: UINT,
         uiParam: UINT,
         pvParam: PVOID,
         fWinIni: UINT,
     ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ToAscii(
+        arg1: UINT,
+        arg2: UINT,
+        arg3: *const BYTE,
+        arg4: LPWORD,
+        arg5: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn ToAsciiEx(
+        arg1: UINT,
+        arg2: UINT,
+        arg3: *const BYTE,
+        arg4: LPWORD,
+        arg5: UINT,
+        arg6: HKL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "stdcall" {
+    pub fn ToUnicode(
+        wVirtKey: UINT,
+        wScanCode: UINT,
+        lpKeyState: *const BYTE,
+        pwszBuff: LPWSTR,
+        cchBuff: ::core::ffi::c_int,
+        wFlags: UINT,
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "stdcall" {
     pub fn ToUnicodeEx(
@@ -47536,6 +47969,12 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn ValidateRgn(arg1: HWND, arg2: HRGN) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn VkKeyScanA(arg1: CHAR) -> SHORT;
+}
+unsafe extern "stdcall" {
+    pub fn VkKeyScanExA(arg1: CHAR, arg2: HKL) -> SHORT;
 }
 unsafe extern "stdcall" {
     pub fn VkKeyScanExW(arg1: WCHAR, arg2: HKL) -> SHORT;
@@ -58195,6 +58634,393 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeleteFonts(GuiData: PGUI_CONSOLE_DATA);
 }
+unsafe extern "C" {
+    pub fn PasteText(Console: PCONSRV_CONSOLE, Buffer: PWCHAR, cchSize: SIZE_T);
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHCREATEPROCESSINFOW {
+    pub cbSize: DWORD,
+    pub fMask: ULONG,
+    pub hwnd: HWND,
+    pub pszFile: LPCWSTR,
+    pub pszParameters: LPCWSTR,
+    pub pszCurrentDirectory: LPCWSTR,
+    pub hUserToken: HANDLE,
+    pub lpProcessAttributes: LPSECURITY_ATTRIBUTES,
+    pub lpThreadAttributes: LPSECURITY_ATTRIBUTES,
+    pub bInheritHandles: BOOL,
+    pub dwCreationFlags: DWORD,
+    pub lpStartupInfo: LPSTARTUPINFOW,
+    pub lpProcessInformation: LPPROCESS_INFORMATION,
+}
+pub type SHCREATEPROCESSINFOW = _SHCREATEPROCESSINFOW;
+pub type PSHCREATEPROCESSINFOW = *mut _SHCREATEPROCESSINFOW;
+pub type FILEOP_FLAGS = WORD;
+pub type PRINTEROP_FLAGS = WORD;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _AppBarData {
+    pub cbSize: DWORD,
+    pub hWnd: HWND,
+    pub uCallbackMessage: UINT,
+    pub uEdge: UINT,
+    pub rc: RECT,
+    pub lParam: LPARAM,
+}
+pub type APPBARDATA = _AppBarData;
+pub type PAPPBARDATA = *mut _AppBarData;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct HDROP__ {
+    pub unused: ::core::ffi::c_int,
+}
+pub type HDROP = *mut HDROP__;
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct _NOTIFYICONDATAA {
+    pub cbSize: DWORD,
+    pub hWnd: HWND,
+    pub uID: UINT,
+    pub uFlags: UINT,
+    pub uCallbackMessage: UINT,
+    pub hIcon: HICON,
+    pub szTip: [CHAR; 128usize],
+    pub dwState: DWORD,
+    pub dwStateMask: DWORD,
+    pub szInfo: [CHAR; 256usize],
+    pub __bindgen_anon_1: _NOTIFYICONDATAA__bindgen_ty_1,
+    pub szInfoTitle: [CHAR; 64usize],
+    pub dwInfoFlags: DWORD,
+    pub guidItem: GUID,
+    pub hBalloonIcon: HICON,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub union _NOTIFYICONDATAA__bindgen_ty_1 {
+    pub uTimeout: UINT,
+    pub uVersion: UINT,
+}
+pub type NOTIFYICONDATAA = _NOTIFYICONDATAA;
+pub type PNOTIFYICONDATAA = *mut _NOTIFYICONDATAA;
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct _NOTIFYICONDATAW {
+    pub cbSize: DWORD,
+    pub hWnd: HWND,
+    pub uID: UINT,
+    pub uFlags: UINT,
+    pub uCallbackMessage: UINT,
+    pub hIcon: HICON,
+    pub szTip: [WCHAR; 128usize],
+    pub dwState: DWORD,
+    pub dwStateMask: DWORD,
+    pub szInfo: [WCHAR; 256usize],
+    pub __bindgen_anon_1: _NOTIFYICONDATAW__bindgen_ty_1,
+    pub szInfoTitle: [WCHAR; 64usize],
+    pub dwInfoFlags: DWORD,
+    pub guidItem: GUID,
+    pub hBalloonIcon: HICON,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub union _NOTIFYICONDATAW__bindgen_ty_1 {
+    pub uTimeout: UINT,
+    pub uVersion: UINT,
+}
+pub type NOTIFYICONDATAW = _NOTIFYICONDATAW;
+pub type PNOTIFYICONDATAW = *mut _NOTIFYICONDATAW;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _DRAGINFOA {
+    pub uSize: UINT,
+    pub pt: POINT,
+    pub fNC: BOOL,
+    pub lpFileList: LPSTR,
+    pub grfKeyState: DWORD,
+}
+pub type DRAGINFOA = _DRAGINFOA;
+pub type LPDRAGINFOA = *mut _DRAGINFOA;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _DRAGINFOW {
+    pub uSize: UINT,
+    pub pt: POINT,
+    pub fNC: BOOL,
+    pub lpFileList: LPWSTR,
+    pub grfKeyState: DWORD,
+}
+pub type DRAGINFOW = _DRAGINFOW;
+pub type LPDRAGINFOW = *mut _DRAGINFOW;
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct _SHELLEXECUTEINFOA {
+    pub cbSize: DWORD,
+    pub fMask: ULONG,
+    pub hwnd: HWND,
+    pub lpVerb: LPCSTR,
+    pub lpFile: LPCSTR,
+    pub lpParameters: LPCSTR,
+    pub lpDirectory: LPCSTR,
+    pub nShow: ::core::ffi::c_int,
+    pub hInstApp: HINSTANCE,
+    pub lpIDList: PVOID,
+    pub lpClass: LPCSTR,
+    pub hkeyClass: HKEY,
+    pub dwHotKey: DWORD,
+    pub __bindgen_anon_1: _SHELLEXECUTEINFOA__bindgen_ty_1,
+    pub hProcess: HANDLE,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub union _SHELLEXECUTEINFOA__bindgen_ty_1 {
+    pub hIcon: HANDLE,
+    pub hMonitor: HANDLE,
+}
+pub type SHELLEXECUTEINFOA = _SHELLEXECUTEINFOA;
+pub type LPSHELLEXECUTEINFOA = *mut _SHELLEXECUTEINFOA;
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct _SHELLEXECUTEINFOW {
+    pub cbSize: DWORD,
+    pub fMask: ULONG,
+    pub hwnd: HWND,
+    pub lpVerb: LPCWSTR,
+    pub lpFile: LPCWSTR,
+    pub lpParameters: LPCWSTR,
+    pub lpDirectory: LPCWSTR,
+    pub nShow: ::core::ffi::c_int,
+    pub hInstApp: HINSTANCE,
+    pub lpIDList: PVOID,
+    pub lpClass: LPCWSTR,
+    pub hkeyClass: HKEY,
+    pub dwHotKey: DWORD,
+    pub __bindgen_anon_1: _SHELLEXECUTEINFOW__bindgen_ty_1,
+    pub hProcess: HANDLE,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub union _SHELLEXECUTEINFOW__bindgen_ty_1 {
+    pub hIcon: HANDLE,
+    pub hMonitor: HANDLE,
+}
+pub type SHELLEXECUTEINFOW = _SHELLEXECUTEINFOW;
+pub type LPSHELLEXECUTEINFOW = *mut _SHELLEXECUTEINFOW;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHFILEOPSTRUCTA {
+    pub hwnd: HWND,
+    pub wFunc: UINT,
+    pub pFrom: LPCSTR,
+    pub pTo: LPCSTR,
+    pub fFlags: FILEOP_FLAGS,
+    pub fAnyOperationsAborted: BOOL,
+    pub hNameMappings: PVOID,
+    pub lpszProgressTitle: LPCSTR,
+}
+pub type SHFILEOPSTRUCTA = _SHFILEOPSTRUCTA;
+pub type LPSHFILEOPSTRUCTA = *mut _SHFILEOPSTRUCTA;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHFILEOPSTRUCTW {
+    pub hwnd: HWND,
+    pub wFunc: UINT,
+    pub pFrom: LPCWSTR,
+    pub pTo: LPCWSTR,
+    pub fFlags: FILEOP_FLAGS,
+    pub fAnyOperationsAborted: BOOL,
+    pub hNameMappings: PVOID,
+    pub lpszProgressTitle: LPCWSTR,
+}
+pub type SHFILEOPSTRUCTW = _SHFILEOPSTRUCTW;
+pub type LPSHFILEOPSTRUCTW = *mut _SHFILEOPSTRUCTW;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHFILEINFOA {
+    pub hIcon: HICON,
+    pub iIcon: ::core::ffi::c_int,
+    pub dwAttributes: DWORD,
+    pub szDisplayName: [CHAR; 260usize],
+    pub szTypeName: [CHAR; 80usize],
+}
+pub type SHFILEINFOA = _SHFILEINFOA;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHFILEINFOW {
+    pub hIcon: HICON,
+    pub iIcon: ::core::ffi::c_int,
+    pub dwAttributes: DWORD,
+    pub szDisplayName: [WCHAR; 260usize],
+    pub szTypeName: [WCHAR; 80usize],
+}
+pub type SHFILEINFOW = _SHFILEINFOW;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHQUERYRBINFO {
+    pub cbSize: DWORD,
+    pub i64Size: ::core::ffi::c_longlong,
+    pub i64NumItems: ::core::ffi::c_longlong,
+}
+pub type SHQUERYRBINFO = _SHQUERYRBINFO;
+pub type LPSHQUERYRBINFO = *mut _SHQUERYRBINFO;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHNAMEMAPPINGA {
+    pub pszOldPath: LPSTR,
+    pub pszNewPath: LPSTR,
+    pub cchOldPath: ::core::ffi::c_int,
+    pub cchNewPath: ::core::ffi::c_int,
+}
+pub type SHNAMEMAPPINGA = _SHNAMEMAPPINGA;
+pub type LPSHNAMEMAPPINGA = *mut _SHNAMEMAPPINGA;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHNAMEMAPPINGW {
+    pub pszOldPath: LPWSTR,
+    pub pszNewPath: LPWSTR,
+    pub cchOldPath: ::core::ffi::c_int,
+    pub cchNewPath: ::core::ffi::c_int,
+}
+pub type SHNAMEMAPPINGW = _SHNAMEMAPPINGW;
+pub type LPSHNAMEMAPPINGW = *mut _SHNAMEMAPPINGW;
+unsafe extern "stdcall" {
+    pub fn DragAcceptFiles(arg1: HWND, arg2: BOOL);
+}
+unsafe extern "stdcall" {
+    pub fn DragFinish(arg1: HDROP);
+}
+unsafe extern "stdcall" {
+    pub fn DragQueryFileA(hDrop: HDROP, iFile: UINT, lpszFile: LPSTR, cch: UINT) -> UINT;
+}
+unsafe extern "stdcall" {
+    pub fn DragQueryFileW(hDrop: HDROP, iFile: UINT, lpszFile: LPWSTR, cch: UINT) -> UINT;
+}
+unsafe extern "stdcall" {
+    pub fn DragQueryPoint(arg1: HDROP, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn FindExecutableA(lpFile: LPCSTR, lpDirectory: LPCSTR, lpResult: LPSTR) -> HINSTANCE;
+}
+unsafe extern "stdcall" {
+    pub fn FindExecutableW(lpFile: LPCWSTR, lpDirectory: LPCWSTR, lpResult: LPWSTR) -> HINSTANCE;
+}
+pub type NOTIFYICONDATA = NOTIFYICONDATAW;
+pub type PNOTIFYICONDATA = *mut NOTIFYICONDATAW;
+pub type DRAGINFO = DRAGINFOW;
+pub type LPDRAGINFO = *mut DRAGINFOW;
+pub type SHELLEXECUTEINFO = SHELLEXECUTEINFOW;
+pub type LPSHELLEXECUTEINFO = *mut SHELLEXECUTEINFOW;
+pub type SHFILEOPSTRUCT = SHFILEOPSTRUCTW;
+pub type LPSHFILEOPSTRUCT = *mut SHFILEOPSTRUCTW;
+pub type SHFILEINFO = SHFILEINFOW;
+pub type SHNAMEMAPPING = SHNAMEMAPPINGW;
+pub type LPSHNAMEMAPPING = LPSHNAMEMAPPINGW;
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHSTOCKICONINFO {
+    pub cbSize: DWORD,
+    pub hIcon: HICON,
+    pub iSysImageIndex: ::core::ffi::c_int,
+    pub iIcon: ::core::ffi::c_int,
+    pub szPath: [WCHAR; 260usize],
+}
+pub type SHSTOCKICONINFO = _SHSTOCKICONINFO;
+pub const SHSTOCKICONID_SIID_INVALID: SHSTOCKICONID = -1;
+pub const SHSTOCKICONID_SIID_DOCNOASSOC: SHSTOCKICONID = 0;
+pub const SHSTOCKICONID_SIID_DOCASSOC: SHSTOCKICONID = 1;
+pub const SHSTOCKICONID_SIID_APPLICATION: SHSTOCKICONID = 2;
+pub const SHSTOCKICONID_SIID_FOLDER: SHSTOCKICONID = 3;
+pub const SHSTOCKICONID_SIID_FOLDEROPEN: SHSTOCKICONID = 4;
+pub const SHSTOCKICONID_SIID_DRIVE525: SHSTOCKICONID = 5;
+pub const SHSTOCKICONID_SIID_DRIVE35: SHSTOCKICONID = 6;
+pub const SHSTOCKICONID_SIID_DRIVERREMOVE: SHSTOCKICONID = 7;
+pub const SHSTOCKICONID_SIID_DRIVERFIXED: SHSTOCKICONID = 8;
+pub const SHSTOCKICONID_SIID_DRIVERNET: SHSTOCKICONID = 9;
+pub const SHSTOCKICONID_SIID_DRIVERNETDISABLE: SHSTOCKICONID = 10;
+pub const SHSTOCKICONID_SIID_DRIVERCD: SHSTOCKICONID = 11;
+pub const SHSTOCKICONID_SIID_DRIVERRAM: SHSTOCKICONID = 12;
+pub const SHSTOCKICONID_SIID_WORLD: SHSTOCKICONID = 13;
+pub const SHSTOCKICONID_SIID_SERVER: SHSTOCKICONID = 15;
+pub const SHSTOCKICONID_SIID_PRINTER: SHSTOCKICONID = 16;
+pub const SHSTOCKICONID_SIID_MYNETWORK: SHSTOCKICONID = 17;
+pub const SHSTOCKICONID_SIID_FIND: SHSTOCKICONID = 22;
+pub const SHSTOCKICONID_SIID_HELP: SHSTOCKICONID = 23;
+pub const SHSTOCKICONID_SIID_SHARE: SHSTOCKICONID = 28;
+pub const SHSTOCKICONID_SIID_LINK: SHSTOCKICONID = 29;
+pub const SHSTOCKICONID_SIID_SLOWFILE: SHSTOCKICONID = 30;
+pub const SHSTOCKICONID_SIID_RECYCLER: SHSTOCKICONID = 31;
+pub const SHSTOCKICONID_SIID_RECYCLERFULL: SHSTOCKICONID = 32;
+pub const SHSTOCKICONID_SIID_MEDIACDAUDIO: SHSTOCKICONID = 40;
+pub const SHSTOCKICONID_SIID_LOCK: SHSTOCKICONID = 47;
+pub const SHSTOCKICONID_SIID_AUTOLIST: SHSTOCKICONID = 49;
+pub const SHSTOCKICONID_SIID_PRINTERNET: SHSTOCKICONID = 50;
+pub const SHSTOCKICONID_SIID_SERVERSHARE: SHSTOCKICONID = 51;
+pub const SHSTOCKICONID_SIID_PRINTERFAX: SHSTOCKICONID = 52;
+pub const SHSTOCKICONID_SIID_PRINTERFAXNET: SHSTOCKICONID = 53;
+pub const SHSTOCKICONID_SIID_PRINTERFILE: SHSTOCKICONID = 54;
+pub const SHSTOCKICONID_SIID_STACK: SHSTOCKICONID = 55;
+pub const SHSTOCKICONID_SIID_MEDIASVCD: SHSTOCKICONID = 56;
+pub const SHSTOCKICONID_SIID_STUFFEDFOLDER: SHSTOCKICONID = 57;
+pub const SHSTOCKICONID_SIID_DRIVEUNKNOWN: SHSTOCKICONID = 58;
+pub const SHSTOCKICONID_SIID_DRIVEDVD: SHSTOCKICONID = 59;
+pub const SHSTOCKICONID_SIID_MEDIADVD: SHSTOCKICONID = 60;
+pub const SHSTOCKICONID_SIID_MEDIADVDRAM: SHSTOCKICONID = 61;
+pub const SHSTOCKICONID_SIID_MEDIADVDRW: SHSTOCKICONID = 62;
+pub const SHSTOCKICONID_SIID_MEDIADVDR: SHSTOCKICONID = 63;
+pub const SHSTOCKICONID_SIID_MEDIADVDROM: SHSTOCKICONID = 64;
+pub const SHSTOCKICONID_SIID_MEDIACDAUDIOPLUS: SHSTOCKICONID = 65;
+pub const SHSTOCKICONID_SIID_MEDIACDRW: SHSTOCKICONID = 66;
+pub const SHSTOCKICONID_SIID_MEDIACDR: SHSTOCKICONID = 67;
+pub const SHSTOCKICONID_SIID_MEDIACDBURN: SHSTOCKICONID = 68;
+pub const SHSTOCKICONID_SIID_MEDIABLANKCD: SHSTOCKICONID = 69;
+pub const SHSTOCKICONID_SIID_MEDIACDROM: SHSTOCKICONID = 70;
+pub const SHSTOCKICONID_SIID_AUDIOFILES: SHSTOCKICONID = 71;
+pub const SHSTOCKICONID_SIID_IMAGEFILES: SHSTOCKICONID = 72;
+pub const SHSTOCKICONID_SIID_VIDEOFILES: SHSTOCKICONID = 73;
+pub const SHSTOCKICONID_SIID_MIXEDFILES: SHSTOCKICONID = 74;
+pub const SHSTOCKICONID_SIID_FOLDERBACK: SHSTOCKICONID = 75;
+pub const SHSTOCKICONID_SIID_FOLDERFRONT: SHSTOCKICONID = 76;
+pub const SHSTOCKICONID_SIID_SHIELD: SHSTOCKICONID = 77;
+pub const SHSTOCKICONID_SIID_WARNING: SHSTOCKICONID = 78;
+pub const SHSTOCKICONID_SIID_INFO: SHSTOCKICONID = 79;
+pub const SHSTOCKICONID_SIID_ERROR: SHSTOCKICONID = 80;
+pub const SHSTOCKICONID_SIID_KEY: SHSTOCKICONID = 81;
+pub const SHSTOCKICONID_SIID_SOFTWARE: SHSTOCKICONID = 82;
+pub const SHSTOCKICONID_SIID_RENAME: SHSTOCKICONID = 83;
+pub const SHSTOCKICONID_SIID_DELETE: SHSTOCKICONID = 84;
+pub const SHSTOCKICONID_SIID_MEDIAAUDIODVD: SHSTOCKICONID = 85;
+pub const SHSTOCKICONID_SIID_MEDIAMOVIEDVD: SHSTOCKICONID = 86;
+pub const SHSTOCKICONID_SIID_MEDIAENHANCEDCD: SHSTOCKICONID = 87;
+pub const SHSTOCKICONID_SIID_MEDIAENHANCEDDVD: SHSTOCKICONID = 88;
+pub const SHSTOCKICONID_SIID_MEDIAHDDVD: SHSTOCKICONID = 89;
+pub const SHSTOCKICONID_SIID_MEDIABLUERAY: SHSTOCKICONID = 90;
+pub const SHSTOCKICONID_SIID_MEDIAVCD: SHSTOCKICONID = 91;
+pub const SHSTOCKICONID_SIID_MEDIADVDPLUSR: SHSTOCKICONID = 92;
+pub const SHSTOCKICONID_SIID_MEDIADVDPLUSRW: SHSTOCKICONID = 93;
+pub const SHSTOCKICONID_SIID_DESKTOPPC: SHSTOCKICONID = 94;
+pub const SHSTOCKICONID_SIID_MOBILEPC: SHSTOCKICONID = 95;
+pub const SHSTOCKICONID_SIID_USERS: SHSTOCKICONID = 96;
+pub const SHSTOCKICONID_SIID_MEDIASMARTMEDIA: SHSTOCKICONID = 97;
+pub const SHSTOCKICONID_SIID_MEDIACOMPACTFLASH: SHSTOCKICONID = 98;
+pub const SHSTOCKICONID_SIID_DEVICECELLPHONE: SHSTOCKICONID = 99;
+pub const SHSTOCKICONID_SIID_DEVICECAMERA: SHSTOCKICONID = 100;
+pub const SHSTOCKICONID_SIID_DEVICEVIDEOCAMERA: SHSTOCKICONID = 101;
+pub const SHSTOCKICONID_SIID_DEVICEAUDIOPLAYER: SHSTOCKICONID = 102;
+pub const SHSTOCKICONID_SIID_NETWORKCONNECT: SHSTOCKICONID = 103;
+pub const SHSTOCKICONID_SIID_INTERNET: SHSTOCKICONID = 104;
+pub const SHSTOCKICONID_SIID_ZIPFILE: SHSTOCKICONID = 105;
+pub const SHSTOCKICONID_SIID_SETTINGS: SHSTOCKICONID = 106;
+pub const SHSTOCKICONID_SIID_DRIVEHDDVD: SHSTOCKICONID = 132;
+pub const SHSTOCKICONID_SIID_DRIVEBD: SHSTOCKICONID = 133;
+pub const SHSTOCKICONID_SIID_MEDIAHDDVDROM: SHSTOCKICONID = 134;
+pub const SHSTOCKICONID_SIID_MEDIAHDDVDR: SHSTOCKICONID = 135;
+pub const SHSTOCKICONID_SIID_MEDIAHDDVDRAM: SHSTOCKICONID = 136;
+pub const SHSTOCKICONID_SIID_MEDIABDROM: SHSTOCKICONID = 137;
+pub const SHSTOCKICONID_SIID_MEDIABDR: SHSTOCKICONID = 138;
+pub const SHSTOCKICONID_SIID_MEDIABDRE: SHSTOCKICONID = 139;
+pub const SHSTOCKICONID_SIID_CLUSTEREDDRIVE: SHSTOCKICONID = 140;
+pub const SHSTOCKICONID_SIID_MAX_ICONS: SHSTOCKICONID = 175;
+pub type SHSTOCKICONID = ::core::ffi::c_int;
 pub type __builtin_va_list = *mut ::core::ffi::c_char;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -59984,3 +60810,98 @@ pub const UserpRegisterLogonProcess: _USERSRV_API_NUMBER = _USERSRV_API_NUMBER_U
 pub const UserpCreateSystemThreads: _USERSRV_API_NUMBER = _USERSRV_API_NUMBER_UserpCreateSystemThreads;
 pub const UserpRecordShutdownReason: _USERSRV_API_NUMBER = _USERSRV_API_NUMBER_UserpRecordShutdownReason;
 pub const UserpMaxApiNumber: _USERSRV_API_NUMBER = _USERSRV_API_NUMBER_UserpMaxApiNumber;
+pub const SIID_INVALID: SHSTOCKICONID = SHSTOCKICONID_SIID_INVALID;
+pub const SIID_DOCNOASSOC: SHSTOCKICONID = SHSTOCKICONID_SIID_DOCNOASSOC;
+pub const SIID_DOCASSOC: SHSTOCKICONID = SHSTOCKICONID_SIID_DOCASSOC;
+pub const SIID_APPLICATION: SHSTOCKICONID = SHSTOCKICONID_SIID_APPLICATION;
+pub const SIID_FOLDER: SHSTOCKICONID = SHSTOCKICONID_SIID_FOLDER;
+pub const SIID_FOLDEROPEN: SHSTOCKICONID = SHSTOCKICONID_SIID_FOLDEROPEN;
+pub const SIID_DRIVE525: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVE525;
+pub const SIID_DRIVE35: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVE35;
+pub const SIID_DRIVERREMOVE: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVERREMOVE;
+pub const SIID_DRIVERFIXED: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVERFIXED;
+pub const SIID_DRIVERNET: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVERNET;
+pub const SIID_DRIVERNETDISABLE: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVERNETDISABLE;
+pub const SIID_DRIVERCD: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVERCD;
+pub const SIID_DRIVERRAM: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVERRAM;
+pub const SIID_WORLD: SHSTOCKICONID = SHSTOCKICONID_SIID_WORLD;
+pub const SIID_SERVER: SHSTOCKICONID = SHSTOCKICONID_SIID_SERVER;
+pub const SIID_PRINTER: SHSTOCKICONID = SHSTOCKICONID_SIID_PRINTER;
+pub const SIID_MYNETWORK: SHSTOCKICONID = SHSTOCKICONID_SIID_MYNETWORK;
+pub const SIID_FIND: SHSTOCKICONID = SHSTOCKICONID_SIID_FIND;
+pub const SIID_HELP: SHSTOCKICONID = SHSTOCKICONID_SIID_HELP;
+pub const SIID_SHARE: SHSTOCKICONID = SHSTOCKICONID_SIID_SHARE;
+pub const SIID_LINK: SHSTOCKICONID = SHSTOCKICONID_SIID_LINK;
+pub const SIID_SLOWFILE: SHSTOCKICONID = SHSTOCKICONID_SIID_SLOWFILE;
+pub const SIID_RECYCLER: SHSTOCKICONID = SHSTOCKICONID_SIID_RECYCLER;
+pub const SIID_RECYCLERFULL: SHSTOCKICONID = SHSTOCKICONID_SIID_RECYCLERFULL;
+pub const SIID_MEDIACDAUDIO: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIACDAUDIO;
+pub const SIID_LOCK: SHSTOCKICONID = SHSTOCKICONID_SIID_LOCK;
+pub const SIID_AUTOLIST: SHSTOCKICONID = SHSTOCKICONID_SIID_AUTOLIST;
+pub const SIID_PRINTERNET: SHSTOCKICONID = SHSTOCKICONID_SIID_PRINTERNET;
+pub const SIID_SERVERSHARE: SHSTOCKICONID = SHSTOCKICONID_SIID_SERVERSHARE;
+pub const SIID_PRINTERFAX: SHSTOCKICONID = SHSTOCKICONID_SIID_PRINTERFAX;
+pub const SIID_PRINTERFAXNET: SHSTOCKICONID = SHSTOCKICONID_SIID_PRINTERFAXNET;
+pub const SIID_PRINTERFILE: SHSTOCKICONID = SHSTOCKICONID_SIID_PRINTERFILE;
+pub const SIID_STACK: SHSTOCKICONID = SHSTOCKICONID_SIID_STACK;
+pub const SIID_MEDIASVCD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIASVCD;
+pub const SIID_STUFFEDFOLDER: SHSTOCKICONID = SHSTOCKICONID_SIID_STUFFEDFOLDER;
+pub const SIID_DRIVEUNKNOWN: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVEUNKNOWN;
+pub const SIID_DRIVEDVD: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVEDVD;
+pub const SIID_MEDIADVD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIADVD;
+pub const SIID_MEDIADVDRAM: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIADVDRAM;
+pub const SIID_MEDIADVDRW: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIADVDRW;
+pub const SIID_MEDIADVDR: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIADVDR;
+pub const SIID_MEDIADVDROM: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIADVDROM;
+pub const SIID_MEDIACDAUDIOPLUS: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIACDAUDIOPLUS;
+pub const SIID_MEDIACDRW: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIACDRW;
+pub const SIID_MEDIACDR: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIACDR;
+pub const SIID_MEDIACDBURN: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIACDBURN;
+pub const SIID_MEDIABLANKCD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIABLANKCD;
+pub const SIID_MEDIACDROM: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIACDROM;
+pub const SIID_AUDIOFILES: SHSTOCKICONID = SHSTOCKICONID_SIID_AUDIOFILES;
+pub const SIID_IMAGEFILES: SHSTOCKICONID = SHSTOCKICONID_SIID_IMAGEFILES;
+pub const SIID_VIDEOFILES: SHSTOCKICONID = SHSTOCKICONID_SIID_VIDEOFILES;
+pub const SIID_MIXEDFILES: SHSTOCKICONID = SHSTOCKICONID_SIID_MIXEDFILES;
+pub const SIID_FOLDERBACK: SHSTOCKICONID = SHSTOCKICONID_SIID_FOLDERBACK;
+pub const SIID_FOLDERFRONT: SHSTOCKICONID = SHSTOCKICONID_SIID_FOLDERFRONT;
+pub const SIID_SHIELD: SHSTOCKICONID = SHSTOCKICONID_SIID_SHIELD;
+pub const SIID_WARNING: SHSTOCKICONID = SHSTOCKICONID_SIID_WARNING;
+pub const SIID_INFO: SHSTOCKICONID = SHSTOCKICONID_SIID_INFO;
+pub const SIID_ERROR: SHSTOCKICONID = SHSTOCKICONID_SIID_ERROR;
+pub const SIID_KEY: SHSTOCKICONID = SHSTOCKICONID_SIID_KEY;
+pub const SIID_SOFTWARE: SHSTOCKICONID = SHSTOCKICONID_SIID_SOFTWARE;
+pub const SIID_RENAME: SHSTOCKICONID = SHSTOCKICONID_SIID_RENAME;
+pub const SIID_DELETE: SHSTOCKICONID = SHSTOCKICONID_SIID_DELETE;
+pub const SIID_MEDIAAUDIODVD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAAUDIODVD;
+pub const SIID_MEDIAMOVIEDVD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAMOVIEDVD;
+pub const SIID_MEDIAENHANCEDCD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAENHANCEDCD;
+pub const SIID_MEDIAENHANCEDDVD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAENHANCEDDVD;
+pub const SIID_MEDIAHDDVD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAHDDVD;
+pub const SIID_MEDIABLUERAY: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIABLUERAY;
+pub const SIID_MEDIAVCD: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAVCD;
+pub const SIID_MEDIADVDPLUSR: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIADVDPLUSR;
+pub const SIID_MEDIADVDPLUSRW: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIADVDPLUSRW;
+pub const SIID_DESKTOPPC: SHSTOCKICONID = SHSTOCKICONID_SIID_DESKTOPPC;
+pub const SIID_MOBILEPC: SHSTOCKICONID = SHSTOCKICONID_SIID_MOBILEPC;
+pub const SIID_USERS: SHSTOCKICONID = SHSTOCKICONID_SIID_USERS;
+pub const SIID_MEDIASMARTMEDIA: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIASMARTMEDIA;
+pub const SIID_MEDIACOMPACTFLASH: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIACOMPACTFLASH;
+pub const SIID_DEVICECELLPHONE: SHSTOCKICONID = SHSTOCKICONID_SIID_DEVICECELLPHONE;
+pub const SIID_DEVICECAMERA: SHSTOCKICONID = SHSTOCKICONID_SIID_DEVICECAMERA;
+pub const SIID_DEVICEVIDEOCAMERA: SHSTOCKICONID = SHSTOCKICONID_SIID_DEVICEVIDEOCAMERA;
+pub const SIID_DEVICEAUDIOPLAYER: SHSTOCKICONID = SHSTOCKICONID_SIID_DEVICEAUDIOPLAYER;
+pub const SIID_NETWORKCONNECT: SHSTOCKICONID = SHSTOCKICONID_SIID_NETWORKCONNECT;
+pub const SIID_INTERNET: SHSTOCKICONID = SHSTOCKICONID_SIID_INTERNET;
+pub const SIID_ZIPFILE: SHSTOCKICONID = SHSTOCKICONID_SIID_ZIPFILE;
+pub const SIID_SETTINGS: SHSTOCKICONID = SHSTOCKICONID_SIID_SETTINGS;
+pub const SIID_DRIVEHDDVD: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVEHDDVD;
+pub const SIID_DRIVEBD: SHSTOCKICONID = SHSTOCKICONID_SIID_DRIVEBD;
+pub const SIID_MEDIAHDDVDROM: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAHDDVDROM;
+pub const SIID_MEDIAHDDVDR: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAHDDVDR;
+pub const SIID_MEDIAHDDVDRAM: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIAHDDVDRAM;
+pub const SIID_MEDIABDROM: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIABDROM;
+pub const SIID_MEDIABDR: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIABDR;
+pub const SIID_MEDIABDRE: SHSTOCKICONID = SHSTOCKICONID_SIID_MEDIABDRE;
+pub const SIID_CLUSTEREDDRIVE: SHSTOCKICONID = SHSTOCKICONID_SIID_CLUSTEREDDRIVE;
+pub const SIID_MAX_ICONS: SHSTOCKICONID = SHSTOCKICONID_SIID_MAX_ICONS;

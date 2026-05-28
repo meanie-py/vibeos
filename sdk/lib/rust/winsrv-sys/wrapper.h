@@ -83,3 +83,9 @@ typedef __builtin_va_list __gnuc_va_list;
 #include "consrv/frontends/gui/guisettings.h"
 #include "consrv/frontends/gui/conwnd.h"
 #include "consrv/frontends/gui/guiterm.h"
+
+/* conwnd.c uses DragQueryFileW/DragFinish/DragAcceptFiles via
+   <shellapi.h> — pull explicitly for bindgen. */
+#include <shellapi.h>
+/* conwnd.c also uses strsafe.h's StringCchCopyNW/StringCchCatW. */
+#include <strsafe.h>

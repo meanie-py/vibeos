@@ -6,59 +6,53 @@ use super::guiterm::*;
 use super::fullscreen::*;
 use super::text::*;
 use super::graphics::*;
+use super::guisettings::*;
 use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
 use super::super::input::{ConioProcessInputEvent, ConioProcessKey};
+use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp, wcsncpy, memcmp};
 use core::ffi::c_void;
 
-extern "C" {
-    fn LOWORD(l: usize) -> u16;
-    fn EnterFullScreen(GuiData: PGUI_CONSOLE_DATA);
-    fn LeaveFullScreen(GuiData: PGUI_CONSOLE_DATA);
-    fn StringCchCopyNW(pszDest: *mut u16, cchDest: usize, pszSrc: *const u16, cchSrc: usize) -> i32;
-    fn TermResizeTerminal(Console: *mut core::ffi::c_void);
-    fn max(a: ULONG, b: ULONG) -> ULONG;
-    fn DPRINT1(fmt: *const u8, ...);
-    fn DPRINT(fmt: *const u8, ...);
-    fn DragAcceptFiles(hWnd: HWND, fAccept: BOOL);
-    fn CON_SET_OUTPUT_CP(Console: PCONSRV_CONSOLE, CodePage: UINT);
-    fn CombineRgn(hrgnDst: HRGN, hrgnSrc1: HRGN, hrgnSrc2: HRGN, iMode: i32) -> i32;
-    fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u32);
-    fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u32);
-    fn ConsoleAllocHeap(Flags: u32, Size: usize) -> *mut core::ffi::c_void;
-    fn ConsoleFreeHeap(Ptr: *mut core::ffi::c_void);
-    fn min(a: i16, b: i16) -> i16;
-    fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
-    fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
-    fn wcsncpy(dest: *mut u16, src: *const u16, n: usize) -> *mut u16;
-    fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
-    fn GuiPaintTextModeBuffer(Buffer: PTEXTMODE_SCREEN_BUFFER, GuiData: PGUI_CONSOLE_DATA, rcView: *const RECT, rcFramebuffer: *mut RECT);
-    fn GuiPaintGraphicsBuffer(Buffer: PGRAPHICS_SCREEN_BUFFER, GuiData: PGUI_CONSOLE_DATA, rcView: *const RECT, rcFramebuffer: *mut RECT);
-    fn HIWORD(l: usize) -> u16;
-    fn GET_X_LPARAM(lp: isize) -> i32;
-    fn GET_Y_LPARAM(lp: isize) -> i32;
-    fn MAKELPARAM(l: u16, h: u16) -> isize;
-    fn EnableMenuItem(hMenu: HMENU, uIDEnableItem: u32, uEnable: u32) -> i32;
-    fn WindowFromPoint(Point: POINT) -> HWND;
-    fn TrackPopupMenuEx(hMenu: HMENU, fuFlags: u32, x: i32, y: i32, hwnd: HWND, lptpm: *const core::ffi::c_void) -> i32;
-    fn SelectObject(hdc: HDC, h: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn GetScreenBufferSizeUnits(Buffer: PCONSOLE_SCREEN_BUFFER, GuiData: PGUI_CONSOLE_DATA, WidthUnit: *mut u32, HeightUnit: *mut u32);
-    fn GuiApplyUserSettings(GuiData: PGUI_CONSOLE_DATA, hClientSection: *mut core::ffi::c_void);
-    fn GuiConsoleSwitchFullScreen(GuiData: PGUI_CONSOLE_DATA);
-    fn Beep(dwFreq: u32, dwDuration: u32);
-}
+// Local extern fn block — kept lean because the bulk of Win32 +
+// consrv-internal fns now resolve via use winsrv_sys::winsrv::*;
+// (post-regen) + super::*; sibling imports + super::helpers::*.
 extern "system" {
-    fn ARRAYSIZE(arr: *const u16) -> usize;
-    fn AppendMenuW(hMenu: HMENU, uFlags: u32, uIDNewItem: UINT_PTR, lpNewItem: *const u16) -> i32;
-    fn wcschr(s: *const u16, c: u16) -> *mut u16;
-    fn wcslen(s: *const u16) -> usize;
-    fn DrawMenuBar(hWnd: HWND) -> i32;
-    fn InvertRgn(hdc: HDC, hrgn: HRGN) -> BOOL;
-    fn BeginPaint(hWnd: HWND, lpPaint: *mut PAINTSTRUCT) -> HDC;
-    fn EndPaint(hWnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL;
-    fn BitBlt(hdc: HDC, x: i32, y: i32, cx: i32, cy: i32, hdcSrc: HDC, x1: i32, y1: i32, rop: DWORD) -> BOOL;
-    fn EnterCriticalSection(lpCriticalSection: *mut RTL_CRITICAL_SECTION);
-    fn LeaveCriticalSection(lpCriticalSection: *mut RTL_CRITICAL_SECTION);
+    /// `ConsoleAllocHeap`/`ConsoleFreeHeap` live in consrv/heap.c; not
+    /// in the bindgen allowlist (no real "outer ring" prefix).
+    pub fn ConsoleAllocHeap(Flags: u32, Size: usize) -> *mut core::ffi::c_void;
+    pub fn ConsoleFreeHeap(Ptr: *mut core::ffi::c_void);
+    /// `TermResizeTerminal` — TERMINAL_VTBL dispatcher in terminal.c.
+    /// Takes the abstract PCONSOLE (not the consrv-flavoured
+    /// PCONSRV_CONSOLE), so the Console cast is needed at call sites.
+    pub fn TermResizeTerminal(Console: *mut core::ffi::c_void);
+    /// `ConioPause`/`ConioUnpause` — consrv/conoutput.c.
+    pub fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u32);
+    pub fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u32);
+    /// `GetType` — sibling C-side helper in conoutput.c that returns
+    /// the buffer-type discriminant (TEXTMODE_BUFFER vs GRAPHICS_BUFFER).
+    pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
+    /// `GetScreenBufferSizeUnits` — consrv/conoutput.c.
+    pub fn GetScreenBufferSizeUnits(
+        Buffer: PCONSOLE_SCREEN_BUFFER, GuiData: PGUI_CONSOLE_DATA,
+        WidthUnit: *mut u32, HeightUnit: *mut u32,
+    );
+    /// `CON_SET_OUTPUT_CP` — code-page helper macro lowered to fn.
+    pub fn CON_SET_OUTPUT_CP(Console: PCONSRV_CONSOLE, CodePage: UINT);
 }
+
+// DPRINT/DPRINT1 are debug macros — translate to no-ops here so call
+// sites can keep their `DPRINT1("...", ...)` syntax (variadic). The
+// printf-family doesn't have a clean stable Rust analog; replace with
+// a macro stub that swallows args.
+macro_rules! DPRINT  { ($($t:tt)*) => { () } }
+macro_rules! DPRINT1 { ($($t:tt)*) => { () } }
+pub(crate) use DPRINT;
+pub(crate) use DPRINT1;
+
+// `max(a, b)`/`min(a, b)` — C `MAX/MIN` macros, polymorphic. Use Rust's
+// generic Ord-based versions so we don't need monomorphic ULONG vs i16
+// duplicates.
+#[inline] pub fn max<T: Ord>(a: T, b: T) -> T { if a >= b { a } else { b } }
+#[inline] pub fn min<T: Ord>(a: T, b: T) -> T { if a <= b { a } else { b } }
 
 // ---- file-scope preamble (translated) ----
 pub const CONGUI_MIN_WIDTH: i32 = 10;
@@ -126,7 +120,7 @@ pub const s_Colors: [COLORREF; 16] = [
     0x00ffffff,
 ];
 
-unsafe fn SetConWndConsoleLeaderCID(GuiData: PGUI_CONSOLE_DATA) {
+pub unsafe fn SetConWndConsoleLeaderCID(GuiData: PGUI_CONSOLE_DATA) {
     let ProcessData: PCONSOLE_PROCESS_DATA;
 
     ProcessData = ConSrvGetConsoleLeaderProcess((*GuiData).Console);
@@ -143,7 +137,7 @@ unsafe fn SetConWndConsoleLeaderCID(GuiData: PGUI_CONSOLE_DATA) {
     }
 }
 
-unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
+pub unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
     let mut WndClass: WNDCLASSEXW = core::mem::zeroed();
     let mut WndClassAtom: ATOM;
 
@@ -191,7 +185,7 @@ unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
     if WndClassAtom != 0 { 1u8 } else { 0u8 }
 }
 
-unsafe fn UnRegisterConWndClass(hInstance: HINSTANCE) -> u8 {
+pub unsafe fn UnRegisterConWndClass(hInstance: HINSTANCE) -> u8 {
     if UnregisterClassW(b"C\0o\0n\0W\0n\0d\0C\0l\0a\0s\0s\0\0\0".as_ptr() as *const u16, hInstance) != 0 {
         1u8
     } else {
@@ -251,7 +245,7 @@ unsafe fn AppendMenuItems(hMenu: HMENU, Items: *const GUICONSOLE_MENUITEM) {
     }
 }
 
-unsafe fn CreateSysMenu(hWnd: HWND) {
+pub unsafe fn CreateSysMenu(hWnd: HWND) {
     let mut mii: MENUITEMINFOW;
     let hMenu: HMENU;
     let mut ptrTab: *mut u16;
@@ -383,7 +377,7 @@ unsafe fn GuiGetGuiData(hWnd: HWND) -> PGUI_CONSOLE_DATA {
     }
 }
 
-unsafe fn ResizeConWnd(GuiData: PGUI_CONSOLE_DATA, WidthUnit: DWORD, HeightUnit: DWORD) {
+pub unsafe fn ResizeConWnd(GuiData: PGUI_CONSOLE_DATA, WidthUnit: DWORD, HeightUnit: DWORD) {
     let Buff: PCONSOLE_SCREEN_BUFFER = (*GuiData).ActiveBuffer;
     let mut sInfo: SCROLLINFO = core::mem::zeroed();
 
@@ -424,7 +418,7 @@ unsafe fn ResizeConWnd(GuiData: PGUI_CONSOLE_DATA, WidthUnit: DWORD, HeightUnit:
                  SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOCOPYBITS);
 }
 
-unsafe fn DeleteFonts(GuiData: PGUI_CONSOLE_DATA) {
+pub unsafe fn DeleteFonts(GuiData: PGUI_CONSOLE_DATA) {
     let mut i: ULONG = 0;
     while i < ((*GuiData).Font.len() as ULONG) {
         if (*GuiData).Font[i as usize] != core::ptr::null_mut() {
@@ -454,7 +448,7 @@ unsafe fn CreateDerivedFont(
     CreateFontIndirectW(&lf)
 }
 
-unsafe fn InitFonts(
+pub unsafe fn InitFonts(
     GuiData: PGUI_CONSOLE_DATA,
     FaceName: PCWSTR,
     FontWeight: ULONG,
@@ -685,7 +679,7 @@ unsafe fn OnFocus(GuiData: PGUI_CONSOLE_DATA, SetFocus: BOOL) {
     }
 }
 
-unsafe fn GetSelectionBeginEnd(
+pub unsafe fn GetSelectionBeginEnd(
     Begin: PCOORD,
     End: PCOORD,
     SelectionAnchor: PCOORD,
@@ -815,7 +809,7 @@ unsafe fn PaintSelectionRect(GuiData: PGUI_CONSOLE_DATA, pps: PPAINTSTRUCT) {
     DeleteObject(rgnPaint);
 }
 
-unsafe fn UpdateSelection(
+pub unsafe fn UpdateSelection(
     GuiData: PGUI_CONSOLE_DATA,
     SelectionAnchor: PCOORD,
     coord: PCOORD,
@@ -2003,7 +1997,7 @@ unsafe fn CreateFrameBufferBitmap(hDC: HDC, width: i32, height: i32) -> HBITMAP 
     )
 }
 
-unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
 
     let mut Result: LRESULT = 0;
     let mut GuiData: PGUI_CONSOLE_DATA = core::ptr::null_mut();

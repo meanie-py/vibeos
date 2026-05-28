@@ -8,7 +8,7 @@ use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp};
 
 const IS_WHITESPACE: fn(u16) -> bool = |c| c == 0 || c == b' ' as u16 || c == b'\t' as u16;
 
-unsafe fn PaletteRGBFromAttrib(Console: PCONSRV_CONSOLE, Attribute: WORD) -> COLORREF {
+pub unsafe fn PaletteRGBFromAttrib(Console: PCONSRV_CONSOLE, Attribute: WORD) -> COLORREF {
     let hPalette = (*(*Console).ActiveBuffer).PaletteHandle;
     let mut pe: PALETTEENTRY = core::mem::zeroed();
 
@@ -20,7 +20,7 @@ unsafe fn PaletteRGBFromAttrib(Console: PCONSRV_CONSOLE, Attribute: WORD) -> COL
     PALETTERGB(pe.peRed, pe.peGreen, pe.peBlue)
 }
 
-unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT) {
+pub unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT) {
     let InlineCopyMode = (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i32) != 0;
 
     let mut ptr: PCHAR_INFO;
@@ -97,7 +97,7 @@ unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT) {
     SetClipboardData(CF_UNICODETEXT, hData);
 }
 
-unsafe fn CopyLines(Buffer: PTEXTMODE_SCREEN_BUFFER, Begin: PCOORD, End: PCOORD) {
+pub unsafe fn CopyLines(Buffer: PTEXTMODE_SCREEN_BUFFER, Begin: PCOORD, End: PCOORD) {
     let mut ptr: PCHAR_INFO;
     let mut data: LPWSTR;
     let mut dstPos: LPWSTR;
@@ -268,7 +268,7 @@ pub unsafe extern "system" fn GuiPasteToTextModeBuffer(
     GlobalUnlock(hData);
 }
 
-unsafe fn GuiPaintCaret(
+pub unsafe fn GuiPaintCaret(
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     GuiData: PGUI_CONSOLE_DATA,
     TopLine: ULONG,
