@@ -38,14 +38,19 @@ extern "C" {
     pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
     pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
     pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
+    pub fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: usize, pszFormat: *const i8, ...) -> NTSTATUS;
+}
+extern "system" {
+    pub fn Beep(dwFreq: u32, dwDuration: u32) -> BOOL;
+    pub fn Sleep(dwMilliseconds: u32);
 }
 
 // tuiterm.c-internal helpers (file-static in C). Phase 5.6 will
 // promote these from the gui/ translation, or land as Rust stubs.
 extern "system" {
-    pub fn ConioProcessKey(Console: PCONSRV_CONSOLE, KeyEvent: *mut KEY_EVENT_RECORD);
+    pub fn ConioProcessKey(Console: PCONSRV_CONSOLE, msg: *mut tagMSG);
     pub fn ConioEffectiveCursorSize(Console: PCONSRV_CONSOLE, n: u32) -> u32;
-    pub fn ConsoleOutputUnicodeToAnsiChar(Console: PCONSRV_CONSOLE, src: u16) -> u8;
+    pub fn ConsoleOutputUnicodeToAnsiChar(Console: PCONSRV_CONSOLE, dChar: *mut i8, sWChar: *mut u16) -> u8;
     pub fn RtlUnicodeStringToAnsiSize(Str: PUNICODE_STRING) -> u32;
 }
 
@@ -361,25 +366,25 @@ pub(crate) unsafe fn TuiSwapConsole(Next: i32) -> u8 {
     }
 }
 
-pub(crate) unsafe fn TuiCopyRect(Dest: PCHAR, Buff: PTEXTMODE_SCREEN_BUFFER, Region: *mut SMALL_RECT) {
+pub(crate) unsafe fn TuiCopyRect(mut Dest: PCHAR, Buff: PTEXTMODE_SCREEN_BUFFER, Region: *mut SMALL_RECT) {
     let mut SrcDelta: u32;
     let mut DestDelta: u32;
     let mut i: i32;
     let mut Src: PCHAR_INFO;
     let SrcEnd: PCHAR_INFO;
 
-    Src = ConioCoordToPointer(Buff, (*Region).Left, (*Region).Top);
+    Src = ConioCoordToPointer(Buff, (*Region).Left as u32, (*Region).Top as u32);
     SrcDelta = ((*Buff).ScreenBufferSize.X as u32) * core::mem::size_of::<CHAR_INFO>() as u32;
-    SrcEnd = ((*Buff).Buffer as usize + 
-              ((*Buff).ScreenBufferSize.Y as usize) * 
-              ((*Buff).ScreenBufferSize.X as usize) * 
+    SrcEnd = ((*Buff).Buffer as usize +
+              ((*Buff).ScreenBufferSize.Y as usize) *
+              ((*Buff).ScreenBufferSize.X as usize) *
               core::mem::size_of::<CHAR_INFO>()) as PCHAR_INFO;
-    DestDelta = ConioRectWidth(Region) * 2;
-    
+    DestDelta = (ConioRectWidth(Region) as u32) * 2;
+
     i = (*Region).Top as i32;
     while i <= (*Region).Bottom as i32 {
         ConsoleOutputUnicodeToAnsiChar(
-            (*Buff).Header.Console,
+            (*Buff).Header.Console as PCONSRV_CONSOLE,
             Dest,
             core::ptr::addr_of_mut!((*Src).Char.UnicodeChar)
         );
@@ -424,7 +429,7 @@ pub(crate) unsafe fn TuiConsoleWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lPa
                 1u8,
             ) != 0
             {
-                if LOWORD(wParam as u32) != WA_INACTIVE {
+                if LOWORD(wParam as u32) as u32 != WA_INACTIVE {
                     SetFocus(hWnd);
                     ConioDrawConsole((*ActiveConsole).Console);
                 }
@@ -599,7 +604,7 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
     {
         CabFileHeader = FileBuffer as PCFHEADER;
 
-        if FileSize <= core::mem::size_of::<CFHEADER>() ||
+        if FileSize <= core::mem::size_of::<CFHEADER>() as SIZE_T ||
             (*CabFileHeader).Signature != CAB_SIGNATURE ||
             (*CabFileHeader).Version != CAB_VERSION ||
             (*CabFileHeader).FolderCount == 0 ||
@@ -689,7 +694,7 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
             }
         }
 
-        FontBitField = RtlAllocateHeap(RtlGetProcessHeap(), 0, (*FoundFile).FileSize);
+        FontBitField = RtlAllocateHeap(RtlGetProcessHeap(), 0, (*FoundFile).FileSize as SIZE_T) as PUCHAR;
         if FontBitField.is_null() {
             Status = STATUS_NO_MEMORY;
             'Exit: {
@@ -714,7 +719,7 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
         Data.Buffer = (Data.Buffer as ULONG_PTR + 8) as PVOID;
         Data.Buffer = (Data.Buffer as ULONG_PTR + (*FoundFile).FileOffset as ULONG_PTR) as PVOID;
 
-        core::ptr::copy_nonoverlapping(Data.Buffer as *const u8, FontBitField, (*FoundFile).FileSize);
+        core::ptr::copy_nonoverlapping(Data.Buffer as *const u8, FontBitField, (*FoundFile).FileSize as usize);
         Status = STATUS_SUCCESS;
     }
 
@@ -769,7 +774,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     const IOCTL_CONSOLE_GET_SCREEN_BUFFER_INFO: u32 = 0x00020008;
 
     if ConsInitialized != 0 {
-        return 1u8;
+        return 1;
     }
 
     ScmLoadDriver(b"B\0l\0u\0e\0\0\0".as_ptr() as *const u16);
@@ -785,10 +790,10 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     );
 
     if ConsoleDeviceHandle == INVALID_HANDLE_VALUE {
-        return 0u8;
+        return 0;
     }
 
-    Success = 1u8;
+    Success = 1;
     if DeviceIoControl(
         ConsoleDeviceHandle,
         IOCTL_CONSOLE_RESET_SCREEN,
@@ -801,7 +806,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     ) == 0
     {
         CloseHandle(ConsoleDeviceHandle);
-        return 0u8;
+        return 0;
     }
 
     if TuiSetConsoleOutputCP(ConsoleDeviceHandle, OemCP) == 0 {
@@ -835,7 +840,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
         core::ptr::null_mut(),
     ) == 0
     {
-        Success = 0u8;
+        Success = 0;
         'Quit: loop {
             if Success == 0 {
                 DeleteCriticalSection(&mut ActiveVirtConsLock);
@@ -851,15 +856,15 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     core::ptr::write_bytes(&mut wc as *mut WNDCLASSEXW, 0, 1);
     wc.cbSize = core::mem::size_of::<WNDCLASSEXW>() as u32;
     wc.lpszClassName = b"T\0u\0i\0C\0o\0n\0s\0o\0l\0e\0W\0i\0n\0d\0o\0w\0C\0l\0a\0s\0s\0\0\0".as_ptr() as *const u16;
-    wc.lpfnWndProc = Some(TuiConsoleWndProc);
+    wc.lpfnWndProc = Some(core::mem::transmute(TuiConsoleWndProc as *const ()));
     wc.cbWndExtra = 0;
     wc.hInstance = ConSrvDllInstance;
 
     ConsoleClassAtom = RegisterClassExW(&wc);
     if ConsoleClassAtom == 0 {
-        Success = 0u8;
+        Success = 0;
     } else {
-        Success = 1u8;
+        Success = 1;
     }
 
     if Success == 0 {
@@ -903,7 +908,7 @@ pub(crate) unsafe extern "system" fn TuiInitFrontEnd(
     ThreadHandle = CreateThread(
         core::ptr::null_mut(),
         0,
-        Some(TuiConsoleThread),
+        Some(core::mem::transmute(TuiConsoleThread as *const ())),
         TuiData as PVOID,
         0,
         core::ptr::null_mut(),
@@ -952,7 +957,7 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
     let TuiData = (*This).Context as PTUI_CONSOLE_DATA;
     let Buff = (*(*TuiData).Console).ActiveBuffer;
     let mut ConsoleDraw: PCONSOLE_DRAW;
-    let mut BytesReturned: u32;
+    let mut BytesReturned: u32 = 0;
     let ConsoleDrawSize: u32;
 
     if TuiData != ActiveConsole {
@@ -963,8 +968,8 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
     }
 
     ConsoleDrawSize = core::mem::size_of::<CONSOLE_DRAW>() as u32 +
-                      (ConioRectWidth(Region) * ConioRectHeight(Region)) * 2;
-    ConsoleDraw = ConsoleAllocHeap(0, ConsoleDrawSize) as PCONSOLE_DRAW;
+                      ((ConioRectWidth(Region) as u32) * (ConioRectHeight(Region) as u32)) * 2;
+    ConsoleDraw = ConsoleAllocHeap(0, ConsoleDrawSize as usize) as PCONSOLE_DRAW;
     if ConsoleDraw.is_null() {
         return;
     }
@@ -972,8 +977,8 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
     (*ConsoleDraw).Y = (*Region).Top as u16;
     (*ConsoleDraw).SizeX = (ConioRectWidth(Region)) as u16;
     (*ConsoleDraw).SizeY = (ConioRectHeight(Region)) as u16;
-    (*ConsoleDraw).CursorX = (*Buff).CursorPosition.X;
-    (*ConsoleDraw).CursorY = (*Buff).CursorPosition.Y;
+    (*ConsoleDraw).CursorX = (*Buff).CursorPosition.X as u16;
+    (*ConsoleDraw).CursorY = (*Buff).CursorPosition.Y as u16;
 
     TuiCopyRect((ConsoleDraw.offset(1) as *mut i8), Buff as PTEXTMODE_SCREEN_BUFFER, Region);
 
@@ -1012,16 +1017,16 @@ pub(crate) unsafe extern "system" fn TuiWriteStream(
         (*(*TuiData).Console).OutputCodePage,
         0,
         Buffer,
-        Length,
+        Length as i32,
         core::ptr::null_mut(),
         0,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-    );
+    ) as u32;
     NewBuffer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        (NewLength as usize) * core::mem::size_of::<i8>(),
+        ((NewLength as usize) * core::mem::size_of::<i8>()) as SIZE_T,
     ) as *mut i8;
     if NewBuffer.is_null() {
         return;
@@ -1031,9 +1036,9 @@ pub(crate) unsafe extern "system" fn TuiWriteStream(
         (*(*TuiData).Console).OutputCodePage,
         0,
         Buffer,
-        Length,
+        Length as i32,
         NewBuffer,
-        NewLength,
+        NewLength as i32,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
@@ -1041,7 +1046,7 @@ pub(crate) unsafe extern "system" fn TuiWriteStream(
     if WriteFile(
         ConsoleDeviceHandle,
         NewBuffer as *const core::ffi::c_void,
-        (NewLength as usize) * core::mem::size_of::<i8>(),
+        ((NewLength as usize) * core::mem::size_of::<i8>()) as u32,
         &mut BytesWritten,
         core::ptr::null_mut(),
     ) == 0
@@ -1067,7 +1072,7 @@ pub(crate) unsafe extern "system" fn TuiSetCursorInfo(
         return 1;
     }
     if (*TuiData).Console as *mut _ as *mut core::ffi::c_void
-        != (*Buff).Console as *mut _ as *mut core::ffi::c_void
+        != (*Buff).Header.Console as *mut _ as *mut core::ffi::c_void
     {
         return 1;
     }
@@ -1106,7 +1111,7 @@ pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
     let mut BytesReturned: DWORD = 0;
 
     if TuiData != ActiveConsole {
-        return 1u8;
+        return 1;
     }
     if (*(*TuiData).Console).ActiveBuffer != Buff {
         return 1u8;
@@ -1132,7 +1137,7 @@ pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
         return 0u8;
     }
 
-    1u8
+    1
 }
 
 pub(crate) unsafe extern "system" fn TuiResizeTerminal(This: PFRONTEND) {
@@ -1157,7 +1162,7 @@ pub(crate) unsafe extern "system" fn TuiChangeIcon(
     This: PFRONTEND,
     IconHandle: HICON,
 ) -> BOOL {
-    1u8
+    1
 }
 
 unsafe extern "system" fn TuiGetThreadConsoleDesktop(This: PFRONTEND) -> HDESK {
@@ -1183,7 +1188,7 @@ pub(crate) unsafe extern "system" fn TuiGetSelectionInfo(
     This: PFRONTEND,
     pSelectionInfo: PCONSOLE_SELECTION_INFO,
 ) -> BOOL {
-    1u8
+    1
 }
 
 pub(crate) unsafe extern "system" fn TuiSetPalette(
@@ -1213,7 +1218,7 @@ pub(crate) unsafe extern "system" fn TuiSetDisplayMode(
     This: PFRONTEND,
     NewMode: ULONG,
 ) -> BOOL {
-    1u8
+    1
 }
 
 pub(crate) unsafe extern "system" fn TuiShowMouseCursor(
@@ -1227,7 +1232,7 @@ pub(crate) unsafe extern "system" fn TuiSetMouseCursor(
     This: PFRONTEND,
     CursorHandle: HCURSOR,
 ) -> BOOL {
-    1u8
+    1
 }
 
 unsafe extern "system" fn TuiMenuControl(
@@ -1242,7 +1247,7 @@ pub(crate) unsafe extern "system" fn TuiSetMenuClose(
     This: PFRONTEND,
     Enable: BOOL,
 ) -> BOOL {
-    1u8
+    1
 }
 
 pub(crate) unsafe fn IsConsoleMode() -> BOOLEAN {
