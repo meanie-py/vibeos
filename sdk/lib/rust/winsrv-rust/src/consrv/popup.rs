@@ -59,7 +59,7 @@ pub(crate) unsafe fn DrawBox(
 
     coPos.X = xLeft;
     coPos.Y = yTop;
-    Code.AsciiChar = 0xDA;
+    Code.AsciiChar = 0xDAu8 as i8;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -72,7 +72,7 @@ pub(crate) unsafe fn DrawBox(
 
     coPos.X = xLeft + 1;
     coPos.Y = yTop;
-    Code.AsciiChar = 0xC4;
+    Code.AsciiChar = 0xC4u8 as i8;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -85,7 +85,7 @@ pub(crate) unsafe fn DrawBox(
 
     coPos.X = xLeft + Width - 1;
     coPos.Y = yTop;
-    Code.AsciiChar = 0xBF;
+    Code.AsciiChar = 0xBFu8 as i8;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -99,7 +99,7 @@ pub(crate) unsafe fn DrawBox(
     coPos.Y = yTop + 1;
     while coPos.Y < yTop + Height - 1 {
         coPos.X = xLeft;
-        Code.AsciiChar = 0xB3;
+        Code.AsciiChar = 0xB3u8 as i8;
         ConDrvFillConsoleOutput(
             (*Buffer).Header.Console,
             Buffer,
@@ -123,7 +123,7 @@ pub(crate) unsafe fn DrawBox(
         );
 
         coPos.X = xLeft + Width - 1;
-        Code.AsciiChar = 0xB3;
+        Code.AsciiChar = 0xB3u8 as i8;
         ConDrvFillConsoleOutput(
             (*Buffer).Header.Console,
             Buffer,
@@ -139,7 +139,7 @@ pub(crate) unsafe fn DrawBox(
 
     coPos.X = xLeft;
     coPos.Y = yTop + Height - 1;
-    Code.AsciiChar = 0xC0;
+    Code.AsciiChar = 0xC0u8 as i8;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -152,7 +152,7 @@ pub(crate) unsafe fn DrawBox(
 
     coPos.X = xLeft + 1;
     coPos.Y = yTop + Height - 1;
-    Code.AsciiChar = 0xC4;
+    Code.AsciiChar = 0xC4u8 as i8;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,
@@ -165,7 +165,7 @@ pub(crate) unsafe fn DrawBox(
 
     coPos.X = xLeft + Width - 1;
     coPos.Y = yTop + Height - 1;
-    Code.AsciiChar = 0xD9;
+    Code.AsciiChar = 0xD9u8 as i8;
     ConDrvFillConsoleOutput(
         (*Buffer).Header.Console,
         Buffer,

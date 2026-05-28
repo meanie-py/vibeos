@@ -190,7 +190,7 @@ pub(crate) unsafe fn ConSrvLoadFrontEnd(
 
 pub(crate) unsafe fn ConSrvUnloadFrontEnd(FrontEnd: PFRONTEND) -> i32 {
     if FrontEnd.is_null() {
-        return 0xC000000Di32;
+        return 0xC000000Du32 as i32;
     }
     ((*FrontEnd).UnloadFrontEnd.unwrap())(FrontEnd)
 }
