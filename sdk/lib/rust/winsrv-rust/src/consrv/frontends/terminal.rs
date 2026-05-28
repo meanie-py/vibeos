@@ -1,0 +1,777 @@
+use winsrv_sys::nt::*;
+use core::ffi::c_void;
+
+extern "C" {
+    fn ConsoleAllocHeap(Flags: ULONG, Size: SIZE_T) -> PVOID;
+    fn ConsoleFreeHeap(Memory: PVOID);
+    fn LineInputKeyDown(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, KeyEvent: *mut KEY_EVENT_RECORD);
+    fn _InterlockedDecrement(Target: *mut LONG) -> LONG;
+    fn memcpy(dest: PVOID, src: PVOID, count: SIZE_T) -> PVOID;
+}
+extern "system" {
+    fn ConioInitRect(Region: *mut SMALL_RECT, top: i16, left: i16, bottom: i16, right: i16);
+    fn TermDrawRegion(Console: PCONSRV_CONSOLE, Region: *mut SMALL_RECT);
+}
+
+// ---- file-scope preamble (translated) ----
+pub type FRONTEND_LOAD = Option<
+    unsafe extern "system" fn(
+        FrontEnd: PFRONTEND,
+        ConsoleInfo: PCONSOLE_STATE_INFO,
+        ConsoleInitInfo: PCONSOLE_INIT_INFO,
+        ConsoleLeaderProcessHandle: HANDLE,
+    ) -> NTSTATUS,
+>;
+
+pub type FRONTEND_UNLOAD = Option<
+    unsafe extern "system" fn(
+        FrontEnd: PFRONTEND,
+    ) -> NTSTATUS,
+>;
+
+#[repr(C)]
+pub struct FrontEndLoadingMethod {
+    pub FrontEndName: [CHAR; 80],
+    pub FrontEndLoad: FRONTEND_LOAD,
+    pub FrontEndUnload: FRONTEND_UNLOAD,
+}
+
+pub static mut FrontEndLoadingMethods: [FrontEndLoadingMethod; 1] = [
+    FrontEndLoadingMethod {
+        FrontEndName: [
+            b'G' as CHAR, b'U' as CHAR, b'I' as CHAR, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        FrontEndLoad: Some(GuiLoadFrontEnd),
+        FrontEndUnload: Some(GuiUnloadFrontEnd),
+    },
+];
+
+pub static mut ConSrvTermVtbl: TERMINAL_VTBL = TERMINAL_VTBL {
+    InitTerminal: Some(ConSrvTermInitTerminal),
+    DeinitTerminal: Some(ConSrvTermDeinitTerminal),
+    ReadStream: Some(ConSrvTermReadStream),
+    WriteStream: Some(ConSrvTermWriteStream),
+    DrawRegion: Some(ConSrvTermDrawRegion),
+    SetCursorInfo: Some(ConSrvTermSetCursorInfo),
+    SetScreenInfo: Some(ConSrvTermSetScreenInfo),
+    ResizeTerminal: Some(ConSrvTermResizeTerminal),
+    SetActiveScreenBuffer: Some(ConSrvTermSetActiveScreenBuffer),
+    ReleaseScreenBuffer: Some(ConSrvTermReleaseScreenBuffer),
+    GetLargestConsoleWindowSize: Some(ConSrvTermGetLargestConsoleWindowSize),
+    SetPalette: Some(ConSrvTermSetPalette),
+    SetCodePage: Some(ConSrvTermSetCodePage),
+    ShowMouseCursor: Some(ConSrvTermShowMouseCursor),
+};
+
+pub const TAB_WIDTH: i32 = 8;
+
+unsafe fn ConioInputEventToAnsi(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
+    if (*InputEvent).EventType == KEY_EVENT as u16 {
+        let UnicodeChar: u16 = (*InputEvent).Event.KeyEvent.uChar.UnicodeChar;
+        (*InputEvent).Event.KeyEvent.uChar.UnicodeChar = 0;
+        
+        let mut AnsiChar: u8 = 0;
+        WideCharToMultiByte(
+            (*Console).InputCodePage,
+            0,
+            &UnicodeChar as *const u16,
+            1,
+            &mut AnsiChar as *mut u8 as *mut i8,
+            1,
+            core::ptr::null(),
+            core::ptr::null_mut()
+        );
+        (*InputEvent).Event.KeyEvent.uChar.AsciiChar = AnsiChar as i8;
+    }
+}
+
+unsafe fn ConioInputEventToUnicode(Console: PCONSOLE, InputEvent: PINPUT_RECORD) {
+    if (*InputEvent).EventType == KEY_EVENT {
+        let AsciiChar: CHAR = (*InputEvent).Event.KeyEvent.uChar.AsciiChar;
+        (*InputEvent).Event.KeyEvent.uChar.AsciiChar = 0;
+        MultiByteToWideChar(
+            (*Console).InputCodePage,
+            0,
+            &AsciiChar,
+            1,
+            &mut (*InputEvent).Event.KeyEvent.uChar.UnicodeChar,
+            1,
+        );
+    }
+}
+
+unsafe fn ConSrvLoadFrontEnd(
+    FrontEnd: PFRONTEND,
+    ConsoleInfo: PCONSOLE_STATE_INFO,
+    ConsoleInitInfo: PCONSOLE_INIT_INFO,
+    ConsoleLeaderProcessHandle: HANDLE,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut i: ULONG;
+
+    i = 0;
+    while i < (core::mem::size_of_val(&FrontEndLoadingMethods) / core::mem::size_of::<(
+        [CHAR; 80],
+        FRONTEND_LOAD,
+        FRONTEND_UNLOAD,
+    )>()) as ULONG
+    {
+        Status = (FrontEndLoadingMethods[i as usize].1)(
+            FrontEnd,
+            ConsoleInfo,
+            ConsoleInitInfo,
+            ConsoleLeaderProcessHandle,
+        );
+        if NT_SUCCESS(Status) != 0 {
+            (*FrontEnd).UnloadFrontEnd = FrontEndLoadingMethods[i as usize].2;
+            break;
+        }
+        i += 1;
+    }
+
+    Status
+}
+
+unsafe fn ConSrvUnloadFrontEnd(FrontEnd: PFRONTEND) -> i32 {
+    if FrontEnd.is_null() {
+        return 0xC000000Di32;
+    }
+    ((*FrontEnd).UnloadFrontEnd.unwrap())(FrontEnd)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn ConSrvInitTerminal(
+    Terminal: PTERMINAL,
+    ConsoleInfo: PCONSOLE_STATE_INFO,
+    ConsoleInitInfo: PCONSOLE_INIT_INFO,
+    ConsoleLeaderProcessHandle: HANDLE,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+    let FrontEnd: PFRONTEND;
+
+    FrontEnd = ConsoleAllocHeap(HEAP_ZERO_MEMORY, core::mem::size_of::<_FRONTEND>() as ULONG);
+    if FrontEnd.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    Status = ConSrvLoadFrontEnd(
+        FrontEnd,
+        ConsoleInfo,
+        ConsoleInitInfo,
+        ConsoleLeaderProcessHandle,
+    );
+    if NT_SUCCESS(Status) == 0 {
+        ConsoleFreeHeap(FrontEnd as PVOID);
+        return Status;
+    }
+
+    (*Terminal).Vtbl = core::ptr::addr_of_mut!(ConSrvTermVtbl);
+    (*Terminal).Context = FrontEnd as PVOID;
+
+    STATUS_SUCCESS
+}
+
+pub unsafe extern "system" fn ConSrvDeinitTerminal(Terminal: PTERMINAL) -> i32 {
+    let mut Status: i32 = STATUS_SUCCESS;
+    let FrontEnd: PFRONTEND = (*Terminal).Context as PFRONTEND;
+
+    (*Terminal).Context = core::ptr::null_mut();
+    (*Terminal).Vtbl = core::ptr::null_mut();
+
+    if !FrontEnd.is_null() {
+        Status = ConSrvUnloadFrontEnd(FrontEnd);
+        ConsoleFreeHeap(FrontEnd as *mut core::ffi::c_void);
+    }
+
+    Status
+}
+
+unsafe fn ConSrvTermInitTerminal(
+    This: PTERMINAL,
+    Console: PCONSOLE,
+) -> NTSTATUS {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    let ConSrvConsole: PCONSRV_CONSOLE = Console as PCONSRV_CONSOLE;
+
+    (*FrontEnd).Console = ConSrvConsole;
+
+    core::ptr::copy_nonoverlapping(
+        FrontEnd as *const u8,
+        core::ptr::addr_of_mut!((*ConSrvConsole).FrontEndIFace) as *mut u8,
+        core::mem::size_of::<_FRONTEND>(),
+    );
+
+    let Status = ((*(*FrontEnd).Vtbl).InitFrontEnd.unwrap())(FrontEnd, ConSrvConsole);
+    if NT_SUCCESS(Status) == 0 {
+        // DPRINT1 omitted
+    }
+
+    core::ptr::copy_nonoverlapping(
+        FrontEnd as *const u8,
+        core::ptr::addr_of_mut!((*ConSrvConsole).FrontEndIFace) as *mut u8,
+        core::mem::size_of::<_FRONTEND>(),
+    );
+
+    Status
+}
+
+unsafe fn ConSrvTermDeinitTerminal(This: PTERMINAL) {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).DeinitFrontEnd.unwrap())(FrontEnd);
+}
+
+unsafe fn ConSrvTermReadStream(
+    This: PTERMINAL,
+    Unicode: BOOLEAN,
+    Buffer: PVOID,
+    ReadControl: PCONSOLE_READCONSOLE_CONTROL,
+    Parameter: PVOID,
+    NumCharsToRead: ULONG,
+    NumCharsRead: PULONG,
+) -> NTSTATUS {
+
+    let FrontEnd = (*This).Context as PFRONTEND;
+    let Console = (*FrontEnd).Console;
+    let InputBuffer = core::ptr::addr_of_mut!((*Console).InputBuffer);
+    let ExeName = Parameter as PUNICODE_STRING;
+
+    let mut Status = STATUS_PENDING;
+
+    let mut CurrentEntry: PLIST_ENTRY;
+    let mut Input: *mut ConsoleInput;
+    let mut i: ULONG = 0;
+
+    if (*InputBuffer).Mode & ENABLE_LINE_INPUT != 0 {
+        if (*Console).LineBuffer.is_null() {
+            (*Console).LineMaxSize = if 256 > NumCharsToRead { 256 } else { NumCharsToRead };
+
+            (*ReadControl).nInitialChars = if (*ReadControl).nInitialChars < NumCharsToRead {
+                (*ReadControl).nInitialChars
+            } else {
+                NumCharsToRead
+            };
+
+            (*Console).LineBuffer = ConsoleAllocHeap(0, ((*Console).LineMaxSize as SIZE_T) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+            if (*Console).LineBuffer.is_null() {
+                return STATUS_NO_MEMORY;
+            }
+
+            (*Console).LinePos = (*ReadControl).nInitialChars;
+            (*Console).LineSize = (*ReadControl).nInitialChars;
+            (*Console).LineComplete = 0u8;
+            (*Console).LineUpPressed = 0u8;
+            (*Console).LineInsertToggle = (*Console).InsertMode;
+            (*Console).LineWakeupMask = (*ReadControl).dwCtrlWakeupMask;
+
+            memcpy(
+                (*Console).LineBuffer as PVOID,
+                Buffer,
+                ((*Console).LineSize as SIZE_T) * core::mem::size_of::<WCHAR>(),
+            );
+            if (*Console).LineSize >= (*Console).LineMaxSize {
+                (*Console).LineComplete = 1u8;
+                (*Console).LinePos = 0;
+            }
+        }
+
+        while (*Console).LineComplete == 0 && IsListEmpty(core::ptr::addr_of_mut!((*InputBuffer).InputEvents)) == 0 {
+            _InterlockedDecrement(core::ptr::addr_of_mut!((*InputBuffer).NumberOfEvents) as *mut LONG);
+            CurrentEntry = RemoveHeadList(core::ptr::addr_of_mut!((*InputBuffer).InputEvents));
+            if IsListEmpty(core::ptr::addr_of_mut!((*InputBuffer).InputEvents)) != 0 {
+                NtClearEvent((*InputBuffer).ActiveEvent);
+            }
+            Input = (CurrentEntry as usize - core::mem::offset_of!(ConsoleInput, ListEntry)) as *mut ConsoleInput;
+
+            if (*Input).InputEvent.EventType == KEY_EVENT as u16
+                && (*Input).InputEvent.Event.KeyEvent.bKeyDown != 0
+            {
+                LineInputKeyDown(Console, ExeName, core::ptr::addr_of_mut!((*Input).InputEvent.Event.KeyEvent));
+                (*ReadControl).dwControlKeyState = (*Input).InputEvent.Event.KeyEvent.dwControlKeyState;
+            }
+            ConsoleFreeHeap(Input as PVOID);
+        }
+
+        if (*Console).LineComplete != 0 {
+            while i < NumCharsToRead && (*Console).LinePos < (*Console).LineSize {
+                let Char = *(*Console).LineBuffer.add((*Console).LinePos as usize);
+                (*Console).LinePos += 1;
+
+                if Unicode != 0 {
+                    *(Buffer as *mut WCHAR).add(i as usize) = Char;
+                } else {
+                    WideCharToMultiByte(
+                        (*Console).InputCodePage,
+                        0,
+                        core::ptr::addr_of!(Char),
+                        1,
+                        (Buffer as *mut CHAR).add(i as usize),
+                        1,
+                        core::ptr::null(),
+                        core::ptr::null_mut(),
+                    );
+                }
+                i += 1;
+            }
+
+            if (*Console).LinePos >= (*Console).LineSize {
+                ConsoleFreeHeap((*Console).LineBuffer as PVOID);
+                (*Console).LineBuffer = core::ptr::null_mut();
+                (*Console).LinePos = 0;
+                (*Console).LineMaxSize = 0;
+                (*Console).LineSize = 0;
+                (*Console).LineComplete = 0u8;
+            }
+
+            Status = STATUS_SUCCESS;
+        }
+    } else {
+        while i < NumCharsToRead && IsListEmpty(core::ptr::addr_of_mut!((*InputBuffer).InputEvents)) == 0 {
+            _InterlockedDecrement(core::ptr::addr_of_mut!((*InputBuffer).NumberOfEvents) as *mut LONG);
+            CurrentEntry = RemoveHeadList(core::ptr::addr_of_mut!((*InputBuffer).InputEvents));
+            if IsListEmpty(core::ptr::addr_of_mut!((*InputBuffer).InputEvents)) != 0 {
+                NtClearEvent((*InputBuffer).ActiveEvent);
+            }
+            Input = (CurrentEntry as usize - core::mem::offset_of!(ConsoleInput, ListEntry)) as *mut ConsoleInput;
+
+            if (*Input).InputEvent.EventType == KEY_EVENT as u16
+                && (*Input).InputEvent.Event.KeyEvent.bKeyDown != 0
+                && (*Input).InputEvent.Event.KeyEvent.uChar.UnicodeChar != 0
+            {
+                let Char = (*Input).InputEvent.Event.KeyEvent.uChar.UnicodeChar;
+
+                if Unicode != 0 {
+                    *(Buffer as *mut WCHAR).add(i as usize) = Char;
+                } else {
+                    WideCharToMultiByte(
+                        (*Console).InputCodePage,
+                        0,
+                        core::ptr::addr_of!(Char),
+                        1,
+                        (Buffer as *mut CHAR).add(i as usize),
+                        1,
+                        core::ptr::null(),
+                        core::ptr::null_mut(),
+                    );
+                }
+                i += 1;
+
+                Status = STATUS_SUCCESS;
+            }
+            ConsoleFreeHeap(Input as PVOID);
+        }
+    }
+
+    if !NumCharsRead.is_null() {
+        *NumCharsRead = i;
+    }
+
+    Status
+}
+
+unsafe fn ConioNextLine(
+    Buff: PTEXTMODE_SCREEN_BUFFER,
+    UpdateRect: PSMALL_RECT,
+    ScrolledLines: PUINT,
+) {
+    (*Buff).CursorPosition.Y += 1;
+    if (*Buff).CursorPosition.Y == (*Buff).ScreenBufferSize.Y {
+        (*Buff).CursorPosition.Y -= 1;
+        (*Buff).VirtualY += 1;
+        if (*Buff).VirtualY == (*Buff).ScreenBufferSize.Y {
+            (*Buff).VirtualY = 0;
+        }
+        *ScrolledLines += 1;
+        ClearLineBuffer(Buff);
+        if (*UpdateRect).Top != 0 {
+            (*UpdateRect).Top -= 1;
+        }
+    }
+    (*UpdateRect).Left = 0;
+    (*UpdateRect).Right = (*Buff).ScreenBufferSize.X - 1;
+    (*UpdateRect).Bottom = (*Buff).CursorPosition.Y;
+}
+
+unsafe fn ConioWriteConsole(
+    FrontEnd: PFRONTEND,
+    Buff: PTEXTMODE_SCREEN_BUFFER,
+    Buffer: *mut u16,
+    Length: u32,
+    Attrib: u8,
+) -> i32 {
+    let Console: PCONSRV_CONSOLE = (*FrontEnd).Console;
+
+    let mut i: u32;
+    let mut Ptr: PCHAR_INFO;
+    let mut UpdateRect: SMALL_RECT;
+    let CursorStartX: i16;
+    let CursorStartY: i16;
+    let mut ScrolledLines: u32;
+    let mut bFullwidth: u8;
+    let bCJK: u8 = (*Console).IsCJK;
+
+    if Length == 0 {
+        return STATUS_SUCCESS;
+    }
+
+    CursorStartX = (*Buff).CursorPosition.X;
+    CursorStartY = (*Buff).CursorPosition.Y;
+    UpdateRect.Left = (*Buff).ScreenBufferSize.X;
+    UpdateRect.Top = (*Buff).CursorPosition.Y;
+    UpdateRect.Right = -1;
+    UpdateRect.Bottom = (*Buff).CursorPosition.Y;
+    ScrolledLines = 0;
+
+    i = 0;
+    while i < Length {
+        if (*Buff).Mode & ENABLE_PROCESSED_OUTPUT != 0 {
+            if *Buffer.add(i as usize) == 0x000D {
+                (*Buff).CursorPosition.X = 0;
+                let CursorStartX = (*Buff).CursorPosition.X;
+                UpdateRect.Left = min(UpdateRect.Left, (*Buff).CursorPosition.X);
+                UpdateRect.Right = max(UpdateRect.Right, (*Buff).CursorPosition.X);
+                i += 1;
+                continue;
+            } else if *Buffer.add(i as usize) == 0x000A {
+                (*Buff).CursorPosition.X = 0;
+                let CursorStartX = (*Buff).CursorPosition.X;
+                ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
+                i += 1;
+                continue;
+            } else if *Buffer.add(i as usize) == 0x0008 {
+                if (*Buff).CursorPosition.X == 0 && (*Buff).CursorPosition.Y == 0 {
+                    i += 1;
+                    continue;
+                }
+
+                if (*Buff).CursorPosition.X == 0 {
+                    (*Buff).CursorPosition.X = (*Buff).ScreenBufferSize.X - 1;
+                    (*Buff).CursorPosition.Y -= 1;
+                    UpdateRect.Top = min(UpdateRect.Top, (*Buff).CursorPosition.Y);
+                } else {
+                    (*Buff).CursorPosition.X -= 1;
+                }
+                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+
+                if (*Ptr).Attributes & COMMON_LVB_LEADING_BYTE != 0 {
+                    if (*Buff).CursorPosition.X == 0 && (*Buff).CursorPosition.Y == 0 {
+                        i += 1;
+                        continue;
+                    }
+
+                    if (*Buff).CursorPosition.X == 0 {
+                        (*Buff).CursorPosition.X = (*Buff).ScreenBufferSize.X - 1;
+                        (*Buff).CursorPosition.Y -= 1;
+                        UpdateRect.Top = min(UpdateRect.Top, (*Buff).CursorPosition.Y);
+                    } else {
+                        (*Buff).CursorPosition.X -= 1;
+                    }
+                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                }
+
+                if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
+                    (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                    if Attrib != 0 {
+                        (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+                    }
+                    (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+
+                    if (*Buff).CursorPosition.X > 0 {
+                        (*Buff).CursorPosition.X -= 1;
+                    }
+                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                }
+
+                (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                if Attrib != 0 {
+                    (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+                }
+                (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+
+                UpdateRect.Left = min(UpdateRect.Left, (*Buff).CursorPosition.X);
+                UpdateRect.Right = max(UpdateRect.Right, (*Buff).CursorPosition.X);
+                i += 1;
+                continue;
+            } else if *Buffer.add(i as usize) == 0x0009 {
+                let mut EndX: u32;
+
+                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+
+                if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
+                    if (*Buff).CursorPosition.X > 0 {
+                        (*Buff).CursorPosition.X -= 1;
+                    }
+                    Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+                }
+
+                UpdateRect.Left = min(UpdateRect.Left, (*Buff).CursorPosition.X);
+
+                EndX = ((*Buff).CursorPosition.X as u32 + 8) & !(8 - 1);
+                EndX = min(EndX, (*Buff).ScreenBufferSize.X as u32);
+
+                while ((*Buff).CursorPosition.X as u32) < EndX {
+                    (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                    if Attrib != 0 {
+                        (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+                    }
+                    (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+
+                    Ptr = Ptr.add(1);
+                    (*Buff).CursorPosition.X += 1;
+                }
+                if (*Buff).CursorPosition.X < (*Buff).ScreenBufferSize.X {
+                    if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
+                        (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                        if Attrib != 0 {
+                            (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+                        }
+                        (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+                    }
+                }
+                UpdateRect.Right = max(UpdateRect.Right, (*Buff).CursorPosition.X);
+
+                if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X {
+                    if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
+                        (*Buff).CursorPosition.X = 0;
+                        let CursorStartX = (*Buff).CursorPosition.X;
+                        ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
+                    } else {
+                        (*Buff).CursorPosition.X = CursorStartX;
+                    }
+                }
+                i += 1;
+                continue;
+            } else if *Buffer.add(i as usize) == 0x0007 {
+                ((*(*FrontEnd).Vtbl).RingBell.unwrap())(FrontEnd);
+                i += 1;
+                continue;
+            }
+        }
+        UpdateRect.Left = min(UpdateRect.Left, (*Buff).CursorPosition.X);
+        UpdateRect.Right = max(UpdateRect.Right, (*Buff).CursorPosition.X);
+
+        bFullwidth = if bCJK != 0 && IS_FULL_WIDTH(*Buffer.add(i as usize)) != 0 { 1 } else { 0 };
+
+        if bFullwidth != 0 {
+            if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X - 1 {
+                if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
+                    (*Buff).CursorPosition.X = 0;
+                    let CursorStartX = (*Buff).CursorPosition.X;
+                    ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
+                } else {
+                    (*Buff).CursorPosition.X = CursorStartX;
+                }
+            }
+
+            if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X - 1 {
+                i += 1;
+                continue;
+            }
+        }
+
+        Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+
+        if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
+            if (*Buff).CursorPosition.X > 0 {
+                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X - 1, (*Buff).CursorPosition.Y);
+                (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                if Attrib != 0 {
+                    (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+                }
+                (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+            }
+            Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+        }
+
+        if bFullwidth != 0 {
+            (*Ptr).__bindgen_anon_1.Char.UnicodeChar = *Buffer.add(i as usize);
+            if Attrib != 0 {
+                (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+            }
+            (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+            (*Ptr).Attributes |= COMMON_LVB_LEADING_BYTE;
+
+            (*Buff).CursorPosition.X += 1;
+            Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
+            if Attrib != 0 {
+                (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+            }
+            (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+            (*Ptr).Attributes |= COMMON_LVB_TRAILING_BYTE;
+        } else {
+            (*Ptr).__bindgen_anon_1.Char.UnicodeChar = *Buffer.add(i as usize);
+            if Attrib != 0 {
+                (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+            }
+            (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+        }
+
+        Ptr = Ptr.add(1);
+        (*Buff).CursorPosition.X += 1;
+
+        if (*Buff).CursorPosition.X < (*Buff).ScreenBufferSize.X {
+            if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
+                (*Ptr).__bindgen_anon_1.Char.UnicodeChar = 0x0020;
+                if Attrib != 0 {
+                    (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
+                }
+                (*Ptr).Attributes &= !COMMON_LVB_SBCSDBCS;
+            }
+        }
+
+        if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X {
+            if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
+                (*Buff).CursorPosition.X = 0;
+                let CursorStartX = (*Buff).CursorPosition.X;
+                ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
+            } else {
+                (*Buff).CursorPosition.X = CursorStartX;
+            }
+        }
+
+        i += 1;
+    }
+
+    if ConioIsRectEmpty(&UpdateRect) == 0 && Buff as PCONSOLE_SCREEN_BUFFER == (*Console).ActiveBuffer {
+        ((*(*FrontEnd).Vtbl).WriteStream.unwrap())(
+            FrontEnd,
+            &mut UpdateRect,
+            CursorStartX,
+            CursorStartY,
+            ScrolledLines,
+            Buffer,
+            Length,
+        );
+    }
+
+    STATUS_SUCCESS
+}
+
+unsafe fn ConSrvTermWriteStream(
+    This: PTERMINAL,
+    Buff: PTEXTMODE_SCREEN_BUFFER,
+    Buffer: *mut u16,
+    Length: u32,
+    Attrib: u8,
+) -> i32 {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ConioWriteConsole(FrontEnd, Buff, Buffer, Length, Attrib)
+}
+
+unsafe fn ConioDrawConsole(Console: PCONSRV_CONSOLE) {
+    let mut Region: SMALL_RECT = core::mem::zeroed();
+    let ActiveBuffer: PCONSOLE_SCREEN_BUFFER = (*Console).ActiveBuffer;
+
+    if ActiveBuffer.is_null() {
+        return;
+    }
+
+    ConioInitRect(
+        &mut Region,
+        0,
+        0,
+        (*ActiveBuffer).ViewSize.Y - 1,
+        (*ActiveBuffer).ViewSize.X - 1,
+    );
+    TermDrawRegion(Console, &mut Region);
+}
+
+unsafe fn ConSrvTermDrawRegion(
+    This: PTERMINAL,
+    Region: *mut SMALL_RECT,
+) {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).DrawRegion.unwrap())(FrontEnd, Region);
+}
+
+unsafe fn ConSrvTermSetCursorInfo(
+    This: PTERMINAL,
+    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+) -> BOOL {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).SetCursorInfo.unwrap())(FrontEnd, ScreenBuffer)
+}
+
+unsafe fn ConSrvTermSetScreenInfo(
+    This: PTERMINAL,
+    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+    OldCursorX: i16,
+    OldCursorY: i16,
+) -> u8 {
+    let FrontEnd = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).SetScreenInfo.unwrap())(
+        FrontEnd,
+        ScreenBuffer,
+        OldCursorX,
+        OldCursorY,
+    )
+}
+
+unsafe fn ConSrvTermResizeTerminal(This: PTERMINAL) {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).ResizeTerminal.unwrap())(FrontEnd);
+}
+
+unsafe fn ConSrvTermSetActiveScreenBuffer(This: PTERMINAL) {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).SetActiveScreenBuffer.unwrap())(FrontEnd);
+}
+
+unsafe fn ConSrvTermReleaseScreenBuffer(
+    This: PTERMINAL,
+    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+) {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    let vtbl = (*FrontEnd).Vtbl;
+    ((*vtbl).ReleaseScreenBuffer.unwrap())(FrontEnd, ScreenBuffer);
+}
+
+unsafe fn ConSrvTermGetLargestConsoleWindowSize(
+    This: PTERMINAL,
+    pSize: PCOORD,
+) {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).GetLargestConsoleWindowSize.unwrap())(FrontEnd, pSize);
+}
+
+unsafe fn ConSrvTermSetPalette(
+    This: PTERMINAL,
+    PaletteHandle: HPALETTE,
+    PaletteUsage: u32,
+) -> u8 {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).SetPalette.unwrap())(FrontEnd, PaletteHandle, PaletteUsage)
+}
+
+unsafe fn ConSrvTermSetCodePage(
+    This: PTERMINAL,
+    CodePage: u32,
+) -> u8 {
+    let FrontEnd = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).SetCodePage.unwrap())(FrontEnd, CodePage)
+}
+
+unsafe fn ConSrvTermShowMouseCursor(
+    This: PTERMINAL,
+    Show: BOOL,
+) -> INT {
+    let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
+    ((*(*FrontEnd).Vtbl).ShowMouseCursor.unwrap())(FrontEnd, Show)
+}
+
+unsafe fn ResetFrontEnd(Console: PCONSOLE) {
+    let ConSrvConsole: PCONSRV_CONSOLE = Console as PCONSRV_CONSOLE;
+    if Console.is_null() {
+        return;
+    }
+
+    RtlZeroMemory(
+        core::ptr::addr_of_mut!((*ConSrvConsole).FrontEndIFace) as *mut core::ffi::c_void,
+        core::mem::size_of_val(&(*ConSrvConsole).FrontEndIFace),
+    );
+    (*ConSrvConsole).FrontEndIFace.Vtbl = core::ptr::addr_of_mut!(ConSrvTermVtbl);
+}

@@ -1,0 +1,246 @@
+use winsrv_sys::nt::*;
+use winsrv_sys::winsrv::*;
+
+extern "system" {
+    fn ConDrvFillConsoleOutput( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, CodeType: CODE_TYPE, Code: CODE_ELEMENT, NumCodesToWrite: ULONG, WriteCoord: PCOORD, NumCodesWritten: *mut ULONG, ) -> NTSTATUS;
+    fn ConDrvReadConsoleOutput( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Unicode: BOOLEAN, CharInfo: PCHAR_INFO, ReadRegion: PSMALL_RECT, ) -> NTSTATUS;
+    fn ConDrvWriteConsoleOutput( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Unicode: BOOLEAN, CharInfo: PCHAR_INFO, WriteRegion: PSMALL_RECT, ) -> NTSTATUS;
+}
+
+unsafe fn DrawBox(
+    Buffer: PTEXTMODE_SCREEN_BUFFER,
+    xLeft: SHORT,
+    yTop: SHORT,
+    Width: SHORT,
+    Height: SHORT,
+) {
+    let mut coPos: COORD = core::mem::zeroed();
+    let mut Written: DWORD = 0;
+    let mut Code: CODE_ELEMENT = core::mem::zeroed();
+
+    coPos.X = xLeft;
+    Code.__bindgen_anon_1.Attribute = (*Buffer).PopupDefaultAttrib;
+    coPos.Y = yTop;
+    while coPos.Y < yTop + Height {
+        ConDrvFillConsoleOutput(
+            (*Buffer).Header.Console,
+            Buffer,
+            CODE_ATTRIBUTE,
+            Code,
+            Width as ULONG,
+            &mut coPos as *mut COORD,
+            &mut Written,
+        );
+        coPos.Y += 1;
+    }
+
+    coPos.X = xLeft;
+    coPos.Y = yTop;
+    Code.__bindgen_anon_1.AsciiChar = 0xDA;
+    ConDrvFillConsoleOutput(
+        (*Buffer).Header.Console,
+        Buffer,
+        CODE_ASCII,
+        Code,
+        1,
+        &mut coPos as *mut COORD,
+        &mut Written,
+    );
+
+    coPos.X = xLeft + 1;
+    coPos.Y = yTop;
+    Code.__bindgen_anon_1.AsciiChar = 0xC4;
+    ConDrvFillConsoleOutput(
+        (*Buffer).Header.Console,
+        Buffer,
+        CODE_ASCII,
+        Code,
+        (Width - 2) as ULONG,
+        &mut coPos as *mut COORD,
+        &mut Written,
+    );
+
+    coPos.X = xLeft + Width - 1;
+    coPos.Y = yTop;
+    Code.__bindgen_anon_1.AsciiChar = 0xBF;
+    ConDrvFillConsoleOutput(
+        (*Buffer).Header.Console,
+        Buffer,
+        CODE_ASCII,
+        Code,
+        1,
+        &mut coPos as *mut COORD,
+        &mut Written,
+    );
+
+    coPos.Y = yTop + 1;
+    while coPos.Y < yTop + Height - 1 {
+        coPos.X = xLeft;
+        Code.__bindgen_anon_1.AsciiChar = 0xB3;
+        ConDrvFillConsoleOutput(
+            (*Buffer).Header.Console,
+            Buffer,
+            CODE_ASCII,
+            Code,
+            1,
+            &mut coPos as *mut COORD,
+            &mut Written,
+        );
+
+        coPos.X = xLeft + 1;
+        Code.__bindgen_anon_1.AsciiChar = b' ';
+        ConDrvFillConsoleOutput(
+            (*Buffer).Header.Console,
+            Buffer,
+            CODE_ASCII,
+            Code,
+            (Width - 2) as ULONG,
+            &mut coPos as *mut COORD,
+            &mut Written,
+        );
+
+        coPos.X = xLeft + Width - 1;
+        Code.__bindgen_anon_1.AsciiChar = 0xB3;
+        ConDrvFillConsoleOutput(
+            (*Buffer).Header.Console,
+            Buffer,
+            CODE_ASCII,
+            Code,
+            1,
+            &mut coPos as *mut COORD,
+            &mut Written,
+        );
+
+        coPos.Y += 1;
+    }
+
+    coPos.X = xLeft;
+    coPos.Y = yTop + Height - 1;
+    Code.__bindgen_anon_1.AsciiChar = 0xC0;
+    ConDrvFillConsoleOutput(
+        (*Buffer).Header.Console,
+        Buffer,
+        CODE_ASCII,
+        Code,
+        1,
+        &mut coPos as *mut COORD,
+        &mut Written,
+    );
+
+    coPos.X = xLeft + 1;
+    coPos.Y = yTop + Height - 1;
+    Code.__bindgen_anon_1.AsciiChar = 0xC4;
+    ConDrvFillConsoleOutput(
+        (*Buffer).Header.Console,
+        Buffer,
+        CODE_ASCII,
+        Code,
+        (Width - 2) as ULONG,
+        &mut coPos as *mut COORD,
+        &mut Written,
+    );
+
+    coPos.X = xLeft + Width - 1;
+    coPos.Y = yTop + Height - 1;
+    Code.__bindgen_anon_1.AsciiChar = 0xD9;
+    ConDrvFillConsoleOutput(
+        (*Buffer).Header.Console,
+        Buffer,
+        CODE_ASCII,
+        Code,
+        1,
+        &mut coPos as *mut COORD,
+        &mut Written,
+    );
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CreatePopupWindow(
+    Console: PCONSRV_CONSOLE,
+    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+    xLeft: SHORT,
+    yTop: SHORT,
+    Width: SHORT,
+    Height: SHORT,
+) -> PPOPUP_WINDOW {
+    let Buffer: PTEXTMODE_SCREEN_BUFFER;
+    let Popup: PPOPUP_WINDOW;
+    let mut Region: SMALL_RECT = core::mem::zeroed();
+
+    if (*ScreenBuffer).Header.Console as PCONSOLE != Console as PCONSOLE {
+        return core::ptr::null_mut();
+    }
+
+    if GetType(ScreenBuffer) != TEXTMODE_BUFFER {
+        return core::ptr::null_mut();
+    }
+
+    Buffer = ScreenBuffer as PTEXTMODE_SCREEN_BUFFER;
+
+    Popup = ConsoleAllocHeap(HEAP_ZERO_MEMORY, core::mem::size_of::<POPUP_WINDOW>()) as PPOPUP_WINDOW;
+    if Popup.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    (*Popup).ScreenBuffer = Buffer;
+    (*Popup).Origin.X = xLeft;
+    (*Popup).Origin.Y = yTop;
+    (*Popup).Size.X = Width;
+    (*Popup).Size.Y = Height;
+
+    (*Popup).OldContents = ConsoleAllocHeap(
+        HEAP_ZERO_MEMORY,
+        ((*Popup).Size.X as usize) * ((*Popup).Size.Y as usize) * core::mem::size_of::<CHAR_INFO>(),
+    ) as PCHAR_INFO;
+    if (*Popup).OldContents.is_null() {
+        ConsoleFreeHeap(Popup as PVOID);
+        return core::ptr::null_mut();
+    }
+
+    Region.Left = (*Popup).Origin.X;
+    Region.Top = (*Popup).Origin.Y;
+    Region.Right = (*Popup).Origin.X + (*Popup).Size.X - 1;
+    Region.Bottom = (*Popup).Origin.Y + (*Popup).Size.Y - 1;
+    ConDrvReadConsoleOutput(
+        (*Buffer).Header.Console,
+        Buffer,
+        1u8,
+        (*Popup).OldContents,
+        &mut Region as *mut SMALL_RECT,
+    );
+
+    DrawBox(Buffer, xLeft, yTop, Width, Height);
+
+    InsertTailList(
+        core::ptr::addr_of_mut!((*Console).PopupWindows) as PLIST_ENTRY,
+        core::ptr::addr_of_mut!((*Popup).ListEntry) as PLIST_ENTRY,
+    );
+
+    Popup
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn DestroyPopupWindow(Popup: PPOPUP_WINDOW) {
+    let mut Region: SMALL_RECT = core::mem::zeroed();
+
+    if Popup.is_null() {
+        return;
+    }
+
+    RemoveEntryList(core::ptr::addr_of_mut!((*Popup).ListEntry) as PLIST_ENTRY);
+
+    Region.Left = (*Popup).Origin.X;
+    Region.Top = (*Popup).Origin.Y;
+    Region.Right = (*Popup).Origin.X + (*Popup).Size.X - 1;
+    Region.Bottom = (*Popup).Origin.Y + (*Popup).Size.Y - 1;
+    ConDrvWriteConsoleOutput(
+        (*(*Popup).ScreenBuffer).Header.Console,
+        (*Popup).ScreenBuffer,
+        1u8,
+        (*Popup).OldContents,
+        &mut Region as *mut SMALL_RECT,
+    );
+
+    ConsoleFreeHeap((*Popup).OldContents as PVOID);
+    ConsoleFreeHeap(Popup as PVOID);
+}
