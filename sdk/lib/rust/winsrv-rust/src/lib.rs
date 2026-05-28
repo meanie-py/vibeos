@@ -23,6 +23,9 @@ pub mod init;
 // concfg/ — console settings + font cache (leaf, no consrv/usersrv deps).
 pub mod concfg;
 
+// consrv/ — Console subsystem server (Phase 5.3 lands consrv/condrv/).
+pub mod consrv;
+
 // usersrv/ — USER API server (CSR server DLL surface, no consrv deps).
 pub mod usersrv;
 
