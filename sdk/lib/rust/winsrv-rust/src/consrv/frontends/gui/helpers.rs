@@ -36,6 +36,21 @@ pub const IDS_SELECT_TITLE: u32   = 221;
 pub const IDI_TERMINAL: u32       = 1;
 pub const IDS_TERMINAL_TITLE: u32 = 400;
 
+// ---- conwnd.h string macros lowered to const arrays ----
+
+/// `GUI_CONWND_CLASS` — the conwnd window class name as a wide string.
+/// Bindgen sees the C `#define GUI_CONWND_CLASS L"ConsoleWindowClass"`
+/// as a byte literal because `L"..."` doesn't preserve through the
+/// preprocessor; this provides the right `*const u16` shape that
+/// CreateWindowExW/RegisterClassExW expect.
+pub static GUI_CONWND_CLASS_W: [u16; 19] = [
+    b'C' as u16, b'o' as u16, b'n' as u16, b's' as u16,
+    b'o' as u16, b'l' as u16, b'e' as u16, b'W' as u16,
+    b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16,
+    b'w' as u16, b'C' as u16, b'l' as u16, b'a' as u16,
+    b's' as u16, b's' as u16, 0,
+];
+
 // ---- winuser.h class-style / window-style constants ----
 
 pub const CW_USEDEFAULT: i32 = 0x80000000_u32 as i32;

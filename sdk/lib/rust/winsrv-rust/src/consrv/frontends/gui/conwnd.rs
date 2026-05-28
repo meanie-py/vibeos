@@ -163,7 +163,7 @@ pub unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
     ghDefaultCursor = LoadCursorW(core::ptr::null_mut(), IDC_ARROW);
 
     WndClass.cbSize = core::mem::size_of::<WNDCLASSEXW>() as u32;
-    WndClass.lpszClassName = GUI_CONWND_CLASS;
+    WndClass.lpszClassName = GUI_CONWND_CLASS_W.as_ptr();
     WndClass.lpfnWndProc = Some(ConWndProc);
     WndClass.style = CS_DBLCLKS;
     WndClass.hInstance = hInstance;
@@ -2400,7 +2400,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 //     ghDefaultCursor = LoadCursorW(NULL, IDC_ARROW);
 //
 //     WndClass.cbSize = sizeof(WNDCLASSEXW);
-//     WndClass.lpszClassName = GUI_CONWND_CLASS;
+//     WndClass.lpszClassName = GUI_CONWND_CLASS_W.as_ptr();
 //     WndClass.lpfnWndProc = ConWndProc;
 //     WndClass.style = CS_DBLCLKS /* | CS_HREDRAW | CS_VREDRAW */;
 //     WndClass.hInstance = hInstance;
@@ -2428,7 +2428,7 @@ pub unsafe extern "system" fn ConWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, l
 // BOOLEAN
 // UnRegisterConWndClass(HINSTANCE hInstance)
 // {
-//     return !!UnregisterClassW(GUI_CONWND_CLASS, hInstance);
+//     return !!UnregisterClassW(GUI_CONWND_CLASS_W.as_ptr(), hInstance);
 // }
 //
 // static VOID

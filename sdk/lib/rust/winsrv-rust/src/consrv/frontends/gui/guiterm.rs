@@ -8,7 +8,8 @@ use super::guisettings::*;
 use super::text::*;
 use super::graphics::*;
 use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
-use super::super::input::{ConioProcessInputEvent, ConioProcessKey};
+use super::super::input::ConioProcessKey;
+use super::super::super::coninput::ConioProcessInputEvent;
 use core::ffi::c_void;
 
 extern "system" {
@@ -60,33 +61,41 @@ pub type PGUI_INIT_INFO = *mut GUI_INIT_INFO;
 
 pub static mut ConsInitialized: BOOL = 0;
 
-pub static mut GuiVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
-    InitFrontEnd: GuiInitFrontEnd,
-    DeinitFrontEnd: GuiDeinitFrontEnd,
-    DrawRegion: GuiDrawRegion,
-    WriteStream: GuiWriteStream,
-    RingBell: GuiRingBell,
-    SetCursorInfo: GuiSetCursorInfo,
-    SetScreenInfo: GuiSetScreenInfo,
-    ResizeTerminal: GuiResizeTerminal,
-    SetActiveScreenBuffer: GuiSetActiveScreenBuffer,
-    ReleaseScreenBuffer: GuiReleaseScreenBuffer,
-    RefreshInternalInfo: GuiRefreshInternalInfo,
-    ChangeTitle: GuiChangeTitle,
-    ChangeIcon: GuiChangeIcon,
-    GetThreadConsoleDesktop: GuiGetThreadConsoleDesktop,
-    GetConsoleWindowHandle: GuiGetConsoleWindowHandle,
-    GetLargestConsoleWindowSize: GuiGetLargestConsoleWindowSize,
-    GetSelectionInfo: GuiGetSelectionInfo,
-    SetPalette: GuiSetPalette,
-    SetCodePage: GuiSetCodePage,
-    GetDisplayMode: GuiGetDisplayMode,
-    SetDisplayMode: GuiSetDisplayMode,
-    ShowMouseCursor: GuiShowMouseCursor,
-    SetMouseCursor: GuiSetMouseCursor,
-    MenuControl: GuiMenuControl,
-    SetMenuClose: GuiSetMenuClose,
-};
+// SAFETY: FRONTEND_VTBL slots are typed as `Option<unsafe extern "stdcall"
+// fn(...)>` on i386 / `Option<unsafe extern "C" fn(...)>` on amd64/arm64
+// (bindgen mirrors the C TERMINAL_VTBL calling-conv per-arch). Our Rust
+// impls are `extern "system"`, which IS the right ABI in each case
+// (system = stdcall on i386, sysv = C on amd64). LLVM models the two as
+// distinct fn types even though they call-compatibly, so we transmute
+// to bypass the type-system shape check. Mirrors the
+// ConsoleApiRoutineSystem shim in consrv/init.rs.
+pub static mut GuiVtbl: FRONTEND_VTBL = unsafe { FRONTEND_VTBL {
+    InitFrontEnd: Some(core::mem::transmute(GuiInitFrontEnd as *const ())),
+    DeinitFrontEnd: Some(core::mem::transmute(GuiDeinitFrontEnd as *const ())),
+    DrawRegion: Some(core::mem::transmute(GuiDrawRegion as *const ())),
+    WriteStream: Some(core::mem::transmute(GuiWriteStream as *const ())),
+    RingBell: Some(core::mem::transmute(GuiRingBell as *const ())),
+    SetCursorInfo: Some(core::mem::transmute(GuiSetCursorInfo as *const ())),
+    SetScreenInfo: Some(core::mem::transmute(GuiSetScreenInfo as *const ())),
+    ResizeTerminal: Some(core::mem::transmute(GuiResizeTerminal as *const ())),
+    SetActiveScreenBuffer: Some(core::mem::transmute(GuiSetActiveScreenBuffer as *const ())),
+    ReleaseScreenBuffer: Some(core::mem::transmute(GuiReleaseScreenBuffer as *const ())),
+    RefreshInternalInfo: Some(core::mem::transmute(GuiRefreshInternalInfo as *const ())),
+    ChangeTitle: Some(core::mem::transmute(GuiChangeTitle as *const ())),
+    ChangeIcon: Some(core::mem::transmute(GuiChangeIcon as *const ())),
+    GetThreadConsoleDesktop: Some(core::mem::transmute(GuiGetThreadConsoleDesktop as *const ())),
+    GetConsoleWindowHandle: Some(core::mem::transmute(GuiGetConsoleWindowHandle as *const ())),
+    GetLargestConsoleWindowSize: Some(core::mem::transmute(GuiGetLargestConsoleWindowSize as *const ())),
+    GetSelectionInfo: Some(core::mem::transmute(GuiGetSelectionInfo as *const ())),
+    SetPalette: Some(core::mem::transmute(GuiSetPalette as *const ())),
+    SetCodePage: Some(core::mem::transmute(GuiSetCodePage as *const ())),
+    GetDisplayMode: Some(core::mem::transmute(GuiGetDisplayMode as *const ())),
+    SetDisplayMode: Some(core::mem::transmute(GuiSetDisplayMode as *const ())),
+    ShowMouseCursor: Some(core::mem::transmute(GuiShowMouseCursor as *const ())),
+    SetMouseCursor: Some(core::mem::transmute(GuiSetMouseCursor as *const ())),
+    MenuControl: Some(core::mem::transmute(GuiMenuControl as *const ())),
+    SetMenuClose: Some(core::mem::transmute(GuiSetMenuClose as *const ())),
+} };
 
 pub unsafe fn GuiConsoleMoveWindow(GuiData: PGUI_CONSOLE_DATA) {
     if (*GuiData).GuiInfo.AutoPosition == 0 {
@@ -211,7 +220,7 @@ pub unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
 
                 NewWindow = CreateWindowExW(
                     WS_EX_CLIENTEDGE,
-                    GUI_CONWND_CLASS,
+                    GUI_CONWND_CLASS_W.as_ptr(),
                     (*Console).Title.Buffer,
                     WS_OVERLAPPEDWINDOW,
                     CW_USEDEFAULT,
@@ -522,10 +531,10 @@ pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTST
     (*GuiData).hCursor = ghDefaultCursor;
     (*GuiData).MouseCursorRefCount = 0;
 
-    (*GuiData).IgnoreNextMouseEvent = 0u8;
-    (*GuiData).HackCORE8394IgnoreNextMove = 0u8;
+    (*GuiData).IgnoreNextMouseEvent = 0;
+    (*GuiData).HackCORE8394IgnoreNextMove = 0;
 
-    (*GuiData).IsCloseButtonEnabled = 1u8;
+    (*GuiData).IsCloseButtonEnabled = 1;
 
     (*GuiData).CmdIdLow = 0;
     (*GuiData).CmdIdHigh = 0;
@@ -541,7 +550,7 @@ pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTST
         0,
         core::mem::size_of_val(&(*GuiData).dwSelectionCursor)
     );
-    (*GuiData).LineSelection = 0u8;
+    (*GuiData).LineSelection = 0;
 
     (*GuiData).InputThreadId = (*GuiInitInfo).InputThreadId;
     (*GuiData).WinSta = (*GuiInitInfo).WinSta;
@@ -741,14 +750,14 @@ pub unsafe fn GuiSetActiveScreenBuffer(This: PFRONTEND) {
     let hPalette: HPALETTE;
 
     EnterCriticalSection(core::ptr::addr_of_mut!((*GuiData).Lock));
-    (*GuiData).WindowSizeLock = 1u8;
+    (*GuiData).WindowSizeLock = 1;
 
     InterlockedExchangePointer(
         core::ptr::addr_of_mut!((*GuiData).ActiveBuffer) as *mut *mut core::ffi::c_void,
         ConDrvGetActiveScreenBuffer((*GuiData).Console as PCONSOLE) as *mut core::ffi::c_void
     );
 
-    (*GuiData).WindowSizeLock = 0u8;
+    (*GuiData).WindowSizeLock = 0;
     LeaveCriticalSection(core::ptr::addr_of_mut!((*GuiData).Lock));
 
     ActiveBuffer = (*GuiData).ActiveBuffer;
@@ -783,14 +792,14 @@ pub unsafe fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCR
         GuiSetActiveScreenBuffer(This);
     } else {
         EnterCriticalSection(core::ptr::addr_of_mut!((*GuiData).Lock));
-        (*GuiData).WindowSizeLock = 1u8;
+        (*GuiData).WindowSizeLock = 1;
 
         InterlockedExchangePointer(
             core::ptr::addr_of_mut!((*GuiData).ActiveBuffer) as *mut *mut core::ffi::c_void,
             core::ptr::null_mut()
         );
 
-        (*GuiData).WindowSizeLock = 0u8;
+        (*GuiData).WindowSizeLock = 0;
         LeaveCriticalSection(core::ptr::addr_of_mut!((*GuiData).Lock));
     }
 }
@@ -1348,7 +1357,7 @@ pub unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS
 //                 DPRINT("PM_CREATE_CONSOLE -- creating window\n");
 //
 //                 NewWindow = CreateWindowExW(WS_EX_CLIENTEDGE,
-//                                             GUI_CONWND_CLASS,
+//                                             GUI_CONWND_CLASS_W.as_ptr(),
 //                                             Console->Title.Buffer,
 //                                             WS_OVERLAPPEDWINDOW,
 //                                             CW_USEDEFAULT,
