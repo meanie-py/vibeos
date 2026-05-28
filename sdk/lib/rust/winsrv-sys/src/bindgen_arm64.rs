@@ -12060,6 +12060,16 @@ pub const IDS_SYSTEM_PROCESS: u32 = 104;
 pub const IDS_UNKNOWN_SOFTWARE_EXCEPT: u32 = 105;
 pub const IDS_OK_TERMINATE_PROGRAM: u32 = 106;
 pub const IDS_CANCEL_DEBUG_PROGRAM: u32 = 107;
+pub const GUI_CONWND_CLASS: &[u8; 19] = b"ConsoleWindowClass\0";
+pub const PM_RESIZE_TERMINAL: u32 = 32771;
+pub const PM_CONSOLE_BEEP: u32 = 32772;
+pub const PM_CONSOLE_SET_TITLE: u32 = 32773;
+pub const KEY_TOGGLED: u32 = 1;
+pub const KEY_PRESSED: u32 = 32768;
+pub const FONT_NORMAL: u32 = 0;
+pub const FONT_BOLD: u32 = 1;
+pub const FONT_UNDERLINE: u32 = 2;
+pub const FONT_MAXNO: u32 = 4;
 pub type __gnuc_va_list = __builtin_va_list;
 pub type ULONG = ::core::ffi::c_ulong;
 pub type PULONG = *mut ULONG;
@@ -60835,6 +60845,77 @@ pub struct tagCONSOLE_DRAW {
 }
 pub type CONSOLE_DRAW = tagCONSOLE_DRAW;
 pub type PCONSOLE_DRAW = *mut tagCONSOLE_DRAW;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _GUI_CONSOLE_INFO {
+    pub FaceName: [WCHAR; 32usize],
+    pub FontWeight: ULONG,
+    pub FontFamily: ULONG,
+    pub FontSize: COORD,
+    pub FullScreen: BOOL,
+    pub ShowWindow: WORD,
+    pub AutoPosition: BOOL,
+    pub WindowOrigin: POINT,
+}
+pub type GUI_CONSOLE_INFO = _GUI_CONSOLE_INFO;
+pub type PGUI_CONSOLE_INFO = *mut _GUI_CONSOLE_INFO;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _GUI_CONSOLE_DATA {
+    pub Lock: CRITICAL_SECTION,
+    pub WindowSizeLock: BOOL,
+    pub hGuiInitEvent: HANDLE,
+    pub hGuiTermEvent: HANDLE,
+    pub InputThreadId: ULONG_PTR,
+    pub WinSta: HWINSTA,
+    pub Desktop: HDESK,
+    pub IsWindowVisible: BOOLEAN,
+    pub IsWindowActive: BOOLEAN,
+    pub OldCursor: POINT,
+    pub WndStyle: LONG_PTR,
+    pub WndStyleEx: LONG_PTR,
+    pub IsWndMax: BOOL,
+    pub WndPl: WINDOWPLACEMENT,
+    pub hWindow: HWND,
+    pub hMemDC: HDC,
+    pub hBitmap: HBITMAP,
+    pub hSysPalette: HPALETTE,
+    pub hIcon: HICON,
+    pub hIconSm: HICON,
+    pub hCursor: HCURSOR,
+    pub MouseCursorRefCount: INT,
+    pub IgnoreNextMouseEvent: BOOL,
+    pub HackCORE8394IgnoreNextMove: BOOL,
+    pub hSysMenu: HMENU,
+    pub IsCloseButtonEnabled: BOOL,
+    pub CmdIdLow: UINT,
+    pub CmdIdHigh: UINT,
+    pub Font: [HFONT; 4usize],
+    pub CharWidth: UINT,
+    pub CharHeight: UINT,
+    pub Console: PCONSRV_CONSOLE,
+    pub ActiveBuffer: PCONSOLE_SCREEN_BUFFER,
+    pub Selection: CONSOLE_SELECTION_INFO,
+    pub dwSelectionCursor: COORD,
+    pub LineSelection: BOOL,
+    pub GuiInfo: GUI_CONSOLE_INFO,
+}
+pub type GUI_CONSOLE_DATA = _GUI_CONSOLE_DATA;
+pub type PGUI_CONSOLE_DATA = *mut _GUI_CONSOLE_DATA;
+unsafe extern "C" {
+    pub fn GetScreenBufferSizeUnits(
+        Buffer: PCONSOLE_SCREEN_BUFFER,
+        GuiData: PGUI_CONSOLE_DATA,
+        WidthUnit: PUINT,
+        HeightUnit: PUINT,
+    );
+}
+unsafe extern "C" {
+    pub fn SmallRectToRect(GuiData: PGUI_CONSOLE_DATA, Rect: PRECT, SmallRect: PSMALL_RECT);
+}
+unsafe extern "C" {
+    pub fn DeleteFonts(GuiData: PGUI_CONSOLE_DATA);
+}
 pub type __builtin_va_list = *mut ::core::ffi::c_char;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

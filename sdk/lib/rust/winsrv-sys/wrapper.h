@@ -73,3 +73,13 @@ typedef __builtin_va_list __gnuc_va_list;
    exposes (ntddblue.h). */
 #include <ndk/iofuncs.h>
 #include <reactos/drivers/blue/ntddblue.h>
+
+/* Phase 5.6: gui/ frontend private headers — GUI_CONSOLE_DATA,
+   GUI_CONSOLE_INFO, FONT_*, KEY_TOGGLED/PRESSED, PM_* WM_APP
+   commands, plus the guisettings/guiterm function decls used by
+   conwnd/fullscreen/graphics/guisettings/guiterm/text. Order
+   matters: guisettings.h defines GUI_CONSOLE_INFO used by
+   conwnd.h's GUI_CONSOLE_DATA. */
+#include "consrv/frontends/gui/guisettings.h"
+#include "consrv/frontends/gui/conwnd.h"
+#include "consrv/frontends/gui/guiterm.h"

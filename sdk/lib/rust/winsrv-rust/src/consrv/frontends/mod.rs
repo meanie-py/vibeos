@@ -8,8 +8,10 @@
 //!
 //! Phase 5.4 lands `input.rs`, `terminal.rs`, `wcwidth.rs`.
 //! Phase 5.5 lands `tui/tuiterm.rs` and `serial/serialterm.rs`.
-//! `gui/` subdir remains C for now.
+//! Phase 5.6 lands `gui/` (conwnd, fullscreen, graphics, guisettings,
+//! guiterm, text).
 
+pub mod gui;
 pub mod input;
 pub mod serial;
 pub mod terminal;
