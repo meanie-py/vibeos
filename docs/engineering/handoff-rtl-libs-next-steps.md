@@ -1,7 +1,7 @@
 # Handoff: rtl-libs translation track — next steps
 
 **Session anchor:** `rtl-libs` (worktree `vibeos-wt-rtl-priv`, branch
-`rtl-priv-port`). Last commit `64ccdaeea0c rtl-strings Wave ENV`.
+`rtl-priv-port`). Last commit `67f09af35e4 rtl-strings Wave SEC`.
 
 ## Where the track stands (2026-05-28)
 
@@ -17,8 +17,10 @@ chronological order of swap):
 | **priv.c** | **PRIV** | **`7a1b030cd38`** | **rtl-priv-port (NOT merged)** |
 | **timezone.c** | **TZ** | **`33a0609a2b0`** | **rtl-priv-port (NOT merged)** |
 | **env.c** | **ENV-1+2** | **`64ccdaeea0c`** | **rtl-priv-port (NOT merged)** |
+| **security.c** | **SEC** | **`67f09af35e4`** | **rtl-priv-port (NOT merged)** |
 
-rtl-difftest **85/85** (+4 env: query / expand / set-seq / set-rand);
+rtl-difftest **87/87** (+4 env, +2 sec, +1 SD copy upgrade from
+status-only to content);
 3-arch smoke: i386 has a **pre-existing** idle-cpu regression unrelated
 to any of the rtl-strings waves — see "Open follow-up debt" below.
 
@@ -26,8 +28,8 @@ to any of the rtl-strings waves — see "Open follow-up debt" below.
 
 ### 1. Merge rtl-priv-port → continue-rust-port
 
-`rtl-priv-port` is **4 commits ahead** of `continue-rust-port`
-(PRIV, docs-handoff, TZ, ENV). From
+`rtl-priv-port` is **6 commits ahead** of `continue-rust-port`
+(PRIV, docs-handoff, TZ, ENV, docs-update, SEC). From
 the main worktree (`vibeos`):
 
 ```bash
@@ -153,17 +155,13 @@ weaken the test markers (per `[[smoke-tests]]`).
 
 ## Next translation candidates (ranked)
 
-Five remaining `sdk/lib/rtl/*.c` files have the sid/acl/sd shape —
-low syscall density, structural data ops — and would fit the proven
-byte-diff harness directly. Listed by ease + value:
-
 | File | LOC | Zw* | RtlHeap | Notes |
 |---|---|---|---|---|
 | ~~timezone.c~~ | 175 | 0 | 0 | DONE Wave TZ `33a0609a2b0`. |
-| **resource.c** | 326 | 0 | 0 | SRW-style reader/writer locks. Pointer-bearing but flat structs. |
+| **resource.c** | 326 | 0 | 0 | SRW-style reader/writer locks. Heavy `NtCreateSemaphore` / `NtWaitForSingleObject` — translate-only shape (priv.c-like), no byte-diff. |
 | ~~env.c~~ | 593 | 0 | 0 | DONE Wave ENV `64ccdaeea0c`. |
-| **atom.c** | 749 | 0 | 0 | Atom table data structure. Pointer-bearing tree. |
-| **security.c** | 835 | 0 | 9 | Closes the SE family (sid/acl/sd/+SE helpers). Alloc-edge like RtlCopySD. |
+| **atom.c** | 749 | 0 | 0 | **Layout puzzle** — `RTL_ATOM_TABLE` has a `FAST_MUTEX` (kernel) vs `RTL_CRITICAL_SECTION` (user) union ⇒ different `NumberOfBuckets`/`Buckets` offsets per consumer. Needs ~3 C accessor helpers per libsupp.c (kernel + user) for layout-opaque tail access. See "Skipped this session" below for the rabbit hole. |
+| ~~security.c~~ | 835 | 0 | 9 | DONE Wave SEC `67f09af35e4`. |
 | **path.c** | 3040 | 1 | 20 | Big but structural. Would need to split SD-style into 2-3 waves. |
 
 Files that are pure syscall plumbing (priv.c-shape, use
@@ -182,10 +180,17 @@ track):
   allocator (locks / VM / free-lists). Owed to the Kani/property
   track per `[[project_rtl_strings_track]]`.
 
-**Recommended next:** `atom.c` (749 LOC) for the next byte-diff wave —
-similar shape to env.c walk algorithms but pointer-bearing-tree heavy.
-Alternative: `resource.c` (326 LOC) is smaller but exercises SRW locks
-which add concurrency surface to the harness.
+### Recommended next session (in order)
+
+1. **Merge first.** `git checkout continue-rust-port && git merge --ff-only rtl-priv-port` from main worktree. 6 commits land in one fast-forward. Validate `git status -s` is clean afterwards (priv_mod.rs / env.rs / sec.rs / timezone.rs leave the untracked list; AGENTS.md stays).
+
+2. **resource.c (326 LOC, translate-only).** Smallest unswapped file. priv.c-style: `extern "system" fn` for each `NtCreateSemaphore` / `NtWaitForSingleObject` / `NtReleaseSemaphore` / `NtClose`, mirror `RTL_RESOURCE` struct layout (8 fields, all flat — `RTL_CRITICAL_SECTION` Lock, two HANDLE semaphores, four counters, owner thread). No byte-diff possible (concurrency primitives), smoke is the only net. ~1h wave. Pattern: same as priv.c → no `core_rs/`, single block in `cabi/mod.rs`, comment in `CMakeLists.txt`, ship.
+
+3. **process.c (512 LOC, translate-only) OR thread.c (352 LOC).** Both are syscall wrappers. process.c has 30 Zw\* calls (NtCreateProcess, NtTerminateProcess, RtlCloneUserProcess, etc.). thread.c has 9 — easier first if going translate-only. Same priv.c pattern.
+
+4. **atom.c — if you want the puzzle.** The layout differs per consumer. Cleanest fix: add `RtlpAtomTableNumberOfBuckets(*table) -> u32` + `RtlpAtomTableBuckets(*table) -> **Entry` + `RtlpAtomTableSetSignature/SetNumberOfBuckets` accessor helpers to BOTH `ntoskrnl/rtl/libsupp.c` AND `dll/ntdll/rtl/libsupp.c`. Each consumer uses ITS native struct layout. Rust port treats `RTL_ATOM_TABLE` as opaque; only `RTL_ATOM_TABLE_ENTRY` (no union, flat layout) is replicated in Rust. ~2-3h wave including diff harness with mocked Rtlp\* helpers.
+
+5. **path.c — split into sub-waves.** 3040 LOC. Suggested split: PATH-1 (validation + canonicalization helpers, the byte-diff'able core), PATH-2 (full path resolution + RtlNtPathNameToDosPathName + DOS path arg handling), PATH-3 (the file-system roundtrip wrappers — mostly translate-only). Don't tackle in one shot.
 
 ## Conventions reminder (for the next session)
 
@@ -212,9 +217,64 @@ which add concurrency surface to the harness.
   `win32k-(kernel-)?rust`, `win32k-sys`, `sdk/lib/rust/Cargo.toml`
   workspace edit, `Cargo.lock` for unrelated edges.
 
+## Skipped this session (atom.c rabbit hole)
+
+Looked at atom.c (749 LOC) for the next byte-diff wave; bailed after
+mapping the per-flavor layout puzzle. Notes for whoever picks it up:
+
+- `RTL_ATOM_TABLE` (ndk/rtltypes.h:1704) has TWO unions whose
+  per-arm sizes differ between kernel and user mode:
+  - kernel: `FAST_MUTEX` + `PHANDLE_TABLE` (~24 bytes)
+  - user:   `RTL_CRITICAL_SECTION` + `RTL_HANDLE_TABLE` (~76 bytes)
+- librtl is compiled with `-D_NTOSKRNL_` (no `NTOS_MODE_USER`), so
+  atom.c's view of `Table->NumberOfBuckets` and `Table->Buckets[i]`
+  is the KERNEL layout's offset.
+- But `dll/ntdll/rtl/libsupp.c` allocates the table with USER-mode
+  sizeof, then writes to `Table->CriticalSection` (user offset).
+- This is an existing latent inconsistency that ReactOS apparently
+  doesn't hit at scale (atom tables are rarely used from ntdll).
+- Clean fix without inheriting the inconsistency: 3 C accessor
+  helpers per libsupp.c (kernel + user) for layout-opaque access:
+  `RtlpAtomTableGetSignature/SetSignature`,
+  `RtlpAtomTableGetNumberOfBuckets/SetNumberOfBuckets`,
+  `RtlpAtomTableBuckets(*table) -> **Entry` (returns the bucket
+  array head, sized by the consumer's native struct).
+- Then Rust treats `RTL_ATOM_TABLE` as opaque, but mirrors
+  `RTL_ATOM_TABLE_ENTRY` (which has no union — flat layout) directly.
+- Diff harness can stub `Rtlp*` helpers with C arrays + no-op locks.
+
+## Reusable infrastructure built this session
+
+- **Heap-backed Nt\*VirtualMemory** in `rtl-difftest/build.rs` (env
+  ref TU). `posix_memalign + vm_header_t` page-aligned alloc + free,
+  with a per-region size header that `NtQueryVirtualMemory` reads
+  back faithfully. Replaces the prior `STATUS_NOT_IMPLEMENTED` stubs
+  so `RtlSetEnvironmentVariable` realloc paths run end-to-end.
+
+- **Heap-backed RtlAllocateHeap** in the SD ref TU. Used to be a
+  `NULL`-returning stub to pin the `RtlCopySecurityDescriptor`
+  `NO_MEMORY` edge; now `posix_memalign`-backed. `RtlCopySecurityDescriptor`
+  upgraded from a NO_MEMORY stub to the faithful port, and its
+  difftest from status-only to byte-content diff.
+
+- **x86_64 SysV BOOLEAN-return ABI workaround** in the env ref TU,
+  reused by sec ref TU. Rust `extern "system" fn -> u8` doesn't
+  zero-extend EAX. C callers doing `if (RtlEqualUnicodeString(...))`
+  generate `test %eax, %eax` against the full register and read
+  garbage upper bits. Workaround: wrap the call in
+  `(unsigned int)X & 1u` to force `movzbl` between the cabi call
+  and the C test. Real kernel build (MS x64 / i386 stdcall) is
+  unaffected. See env build.rs + `refsec_zext_vsid` in sec body.
+
+- **PEB accessor C helpers** in `{ntoskrnl,dll/ntdll}/rtl/libsupp.c`:
+  `RtlpGetPebEnvironment` / `RtlpSetPebEnvironment`. Lets Rust shims
+  fetch/set `Peb->ProcessParameters->Environment` without mirroring
+  the per-arch PEB layout. Same pattern is what atom.c needs at scale.
+
 ## Pointer trail
 
-- This branch: `rtl-priv-port` @ `7a1b030cd38`
+- This branch: `rtl-priv-port` @ `67f09af35e4` (head); 6 commits
+  ahead of `continue-rust-port`.
 - Related memories: `[[project_rtl_strings_track]]`,
   `[[feedback_smoke_input_flake]]`,
   `[[feedback_worktree_build_reality]]`,
@@ -223,5 +283,6 @@ which add concurrency surface to the harness.
   pattern).
 - Difftest harness: `sdk/lib/rust/rtl-difftest/build.rs` (per-file
   ref TU) + `tests/diff.rs` (per-fn fuzz tests). Pattern documented
-  in the build.rs comments — copy the sid/acl/sd ref TU block when
-  adding the next file.
+  in the build.rs comments — copy the sec ref TU block (newest, has
+  the heap-backed `RtlAllocateHeap` + Nt-token stubs + BOOLEAN
+  zero-extend workaround pre-wired) when adding the next file.
