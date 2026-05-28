@@ -1013,7 +1013,13 @@ pub unsafe extern "C" fn INT386_SUCCESS(regs: REGS) -> BOOLEAN {
 // Misc shared pc/hw symbols (unique — keystone-safe).
 pub type INT = i32;
 pub const TAG_HW_RESOURCE_LIST: ULONG = u32::from_be_bytes(*b"lRwH");
-pub const CmResourceTypeDeviceSpecific: u8 = 0x81; // CM_RESOURCE_TYPE
+// CM_RESOURCE_TYPE (cmtypes.h): CmResourceTypeDeviceSpecific is 5, NOT 0x81.
+// 0x81 (129) is CmResourceTypeDevicePrivate — a wrong value here made
+// uefihw::DetectDisplayController tag the framebuffer's DeviceSpecific
+// descriptor as 0x81, so arm64vid.sys (checking ==5) skipped it, never read
+// the CM_FRAMEBUF_DEVICE_DATA (ScreenWidth stayed 0), failed discovery, and
+// bugchecked 0xB4 VIDEO_DRIVER_INIT_FAILURE. machpc.rs already had it right.
+pub const CmResourceTypeDeviceSpecific: u8 = 5; // CM_RESOURCE_TYPE
 // arc.h IDENTIFIER_FLAG bits not already pulled from ddk by consumers.
 pub const IDENTIFIER_FLAG_Input: i32 = 0x20;
 pub const IDENTIFIER_FLAG_Output: i32 = 0x40;
