@@ -33,7 +33,7 @@ pub(crate) unsafe fn WriteConsoleThread(
         Status = STATUS_THREAD_IS_TERMINATING;
         'Quit: {
             if Status != STATUS_PENDING {
-                (*WaitApiMessage).__bindgen_anon_1.Status = Status;
+                (*WaitApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = Status;
             }
             return if Status == STATUS_PENDING { 0u8 } else { 1u8 };
         }
@@ -42,7 +42,7 @@ pub(crate) unsafe fn WriteConsoleThread(
     Status = DoWriteConsole(WaitApiMessage, WaitThread, 0u8);
 
     if Status != STATUS_PENDING {
-        (*WaitApiMessage).__bindgen_anon_1.Status = Status;
+        (*WaitApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = Status;
     }
 
     if Status == STATUS_PENDING { 0u8 } else { 1u8 }
@@ -69,7 +69,7 @@ pub(crate) unsafe fn DoWriteConsole(
     Status = ConSrvGetTextModeBuffer(
         ConsoleGetPerProcessData((*ClientThread).Process),
         (*WriteConsoleRequest).OutputHandle,
-        &mut ScreenBuffer,
+        &mut ScreenBuffer as *mut PTEXTMODE_SCREEN_BUFFER as *mut PCONSOLE_IO_OBJECT,
         GENERIC_WRITE,
         0u8,
     );
@@ -100,7 +100,7 @@ pub(crate) unsafe fn DoWriteConsole(
 
             if CsrCreateWait(
                 core::ptr::addr_of_mut!((*Console).WriteWaitQueue),
-                WriteConsoleThread,
+                Some(core::mem::transmute(WriteConsoleThread as *const ())),
                 ClientThread,
                 ApiMessage,
                 core::ptr::null_mut(),

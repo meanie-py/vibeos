@@ -534,7 +534,7 @@ pub(crate) unsafe fn SrvAddConsoleAliasImpl(
             return STATUS_NO_MEMORY;
         }
 
-        IntInsertAliasHeader(core::ptr::addr_of_mut!(((*Console).Aliases as PALIAS_HEADER)), Header);
+        IntInsertAliasHeader(core::ptr::addr_of_mut!((*Console).Aliases) as *mut PALIAS_HEADER, Header);
     }
 
     if lpTarget.is_null() {
@@ -729,8 +729,8 @@ pub(crate) unsafe fn SrvGetConsoleAliasesImpl(
     {
         Status = STATUS_BUFFER_OVERFLOW;
     } else {
-        let TargetBufferA: LPSTR;
-        let TargetBufferW: LPWSTR;
+        let mut TargetBufferA: LPSTR = core::ptr::null_mut();
+        let mut TargetBufferW: LPWSTR = core::ptr::null_mut();
         let mut TargetBufferLength = (*GetAllAliasesRequest).AliasesBufferLength;
 
         let mut CurEntry = (*Header).Data;
@@ -898,8 +898,8 @@ pub(crate) unsafe fn SrvGetConsoleAliasExesImpl(
     } else {
         let mut RootHeader = ((*Console).Aliases as PALIAS_HEADER);
 
-        let TargetBufferA: LPSTR;
-        let TargetBufferW: LPWSTR;
+        let mut TargetBufferA: LPSTR = core::ptr::null_mut();
+        let mut TargetBufferW: LPWSTR = core::ptr::null_mut();
         let mut TargetBufferSize = (*GetAliasesExesRequest).Length;
 
         let mut Offset: UINT = 0;

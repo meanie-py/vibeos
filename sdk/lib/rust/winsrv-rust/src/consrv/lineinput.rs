@@ -97,7 +97,7 @@ pub(crate) unsafe fn LineInputEdit(
         let mut i = NewSize;
         while i < (*Console).LineSize {
             static SPACE: [u16; 1] = [b' ' as u16];
-            TermWriteStream(Console, ActiveBuffer, SPACE.as_ptr(), 1, 1);
+            TermWriteStream(Console, ActiveBuffer, SPACE.as_ptr() as *mut u16, 1, 1);
             i += 1;
         }
         (*Console).LinePos = i;
@@ -321,7 +321,7 @@ pub unsafe extern "system" fn LineInputKeyDown(
             TermWriteStream(
                 Console,
                 (*Console).ActiveBuffer as PTEXTMODE_SCREEN_BUFFER,
-                CR.as_ptr(),
+                CR.as_ptr() as *mut u16,
                 1,
                 1,
             );
@@ -339,7 +339,7 @@ pub unsafe extern "system" fn LineInputKeyDown(
                 TermWriteStream(
                     Console,
                     (*Console).ActiveBuffer as PTEXTMODE_SCREEN_BUFFER,
-                    LF.as_ptr(),
+                    LF.as_ptr() as *mut u16,
                     1,
                     1,
                 );

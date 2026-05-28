@@ -17,7 +17,7 @@ struct interval {
     last: i32,
 }
 
-pub(crate) unsafe fn bisearch(ucs: wchar_t, table: *const interval, max: i32) -> i32 {
+pub(crate) unsafe fn bisearch(ucs: wchar_t, table: *const interval, mut max: i32) -> i32 {
     let mut min = 0i32;
     let mut mid: i32;
 
@@ -40,7 +40,7 @@ pub(crate) unsafe fn bisearch(ucs: wchar_t, table: *const interval, max: i32) ->
 
 #[no_mangle]
 pub unsafe extern "C" fn mk_wcwidth(ucs: wchar_t) -> i32 {
-    static combining: [interval; 137] = [
+    static combining: [interval; 142] = [
         interval { first: 0x0300, last: 0x036F }, interval { first: 0x0483, last: 0x0486 }, interval { first: 0x0488, last: 0x0489 },
         interval { first: 0x0591, last: 0x05BD }, interval { first: 0x05BF, last: 0x05BF }, interval { first: 0x05C1, last: 0x05C2 },
         interval { first: 0x05C4, last: 0x05C5 }, interval { first: 0x05C7, last: 0x05C7 }, interval { first: 0x0600, last: 0x0603 },
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn mk_wcswidth(mut pwcs: *const wchar_t, mut n: usize) -> 
 
 #[no_mangle]
 pub unsafe extern "C" fn mk_wcwidth_cjk(ucs: wchar_t) -> i32 {
-    static ambiguous: [interval; 138] = [
+    static ambiguous: [interval; 156] = [
         interval { first: 0x00A1, last: 0x00A1 }, interval { first: 0x00A4, last: 0x00A4 }, interval { first: 0x00A7, last: 0x00A8 },
         interval { first: 0x00AA, last: 0x00AA }, interval { first: 0x00AE, last: 0x00AE }, interval { first: 0x00B0, last: 0x00B4 },
         interval { first: 0x00B6, last: 0x00BA }, interval { first: 0x00BC, last: 0x00BF }, interval { first: 0x00C6, last: 0x00C6 },
