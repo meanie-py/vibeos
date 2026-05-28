@@ -5,6 +5,8 @@ use super::condrv::coninput::*;
 use super::condrv::console::*;
 use super::console::*;
 use super::handle::*;
+use super::console::ConSrvGetConsole;
+use super::{GetConsoleInputBufferMode, GetType};
 use super::lineinput::*;
 use super::history::*;
 use super::init::*;
@@ -286,12 +288,6 @@ pub(crate) unsafe fn WaitBeforeReading(
     STATUS_PENDING
 }
 
-pub(crate) unsafe fn ReadChars(
-    InputInfo: PGET_INPUT_INFO,
-    ApiMessage: PCSR_API_MESSAGE,
-    CreateWaitBlock: BOOLEAN,
-) -> NTSTATUS;
-
 unsafe extern "system" fn ReadCharsThread(
     WaitList: PLIST_ENTRY,
     WaitThread: PCSR_THREAD,
@@ -398,12 +394,6 @@ pub(crate) unsafe fn ReadChars(
     }
 }
 
-pub(crate) unsafe fn ReadInputBuffer(
-    InputInfo: PGET_INPUT_INFO,
-    ApiMessage: PCSR_API_MESSAGE,
-    CreateWaitBlock: BOOLEAN,
-) -> NTSTATUS;
-
 unsafe extern "system" fn ReadInputBufferThread(
     WaitList: PLIST_ENTRY,
     WaitThread: PCSR_THREAD,
@@ -491,10 +481,12 @@ pub(crate) unsafe fn ReadInputBuffer(
 #[no_mangle]
 pub unsafe extern "system" fn SrvReadConsole(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
-    let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let ReadConsoleRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.ReadConsoleRequest
     );
@@ -548,10 +540,12 @@ pub unsafe extern "system" fn SrvReadConsole(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleInput(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
-    let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let GetInputRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetInputRequest
     );
@@ -605,10 +599,12 @@ pub unsafe extern "system" fn SrvGetConsoleInput(
 #[no_mangle]
 pub unsafe extern "system" fn SrvWriteConsoleInput(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
-    let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let WriteInputRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.WriteInputRequest
     );
@@ -672,10 +668,12 @@ extern "system" {
 #[no_mangle]
 pub unsafe extern "system" fn SrvFlushConsoleInputBuffer(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
-    let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let FlushInputBufferRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.FlushInputBufferRequest
     );
@@ -705,10 +703,12 @@ extern "system" {
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleNumberOfInputEvents(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
-    let Console = (*(ProcessData as PCONSOLE_PROCESS_DATA)).Console;
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let GetNumInputEventsRequest = core::ptr::addr_of_mut!(
         (*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetNumInputEventsRequest
     );

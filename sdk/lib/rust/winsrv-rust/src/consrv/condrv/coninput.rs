@@ -1,3 +1,4 @@
+use super::super::term::*;
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -6,11 +7,11 @@ use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 extern "system" {
     pub fn CONTAINING_RECORD(address: PVOID, struct_type: PVOID, field_offset: usize) -> PVOID;
     pub fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PVOID, a: ULONG, r: PVOID, s: PVOID, );
-    pub fn TermReadStream( console: PCONSOLE, unicode: BOOLEAN, buffer: PVOID, read_control: PCONSOLE_READCONSOLE_CONTROL, parameter: PVOID, num_chars_to_read: ULONG, num_chars_read: *mut ULONG, ) -> NTSTATUS;
     pub fn _InterlockedIncrement(addend: *mut LONG) -> LONG;
     pub fn _InterlockedDecrement(addend: *mut LONG) -> LONG;
     pub fn _InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
 }
+// TermReadStream supplied by super::super::term::*
 
 pub(crate) unsafe fn AddInputEvents(
     Console: PCONSOLE,

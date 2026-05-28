@@ -11,6 +11,9 @@ use super::init::*;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
+// Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
+use super::console::ConSrvGetConsole;
+use super::console::ConSrvReleaseConsole;
 
 #[repr(C)]
 struct ALIAS_ENTRY {
@@ -467,10 +470,24 @@ pub unsafe extern "C" fn IntDeleteAllAliases(Console: PCONSRV_CONSOLE) {
 #[no_mangle]
 pub unsafe extern "system" fn SrvAddConsoleAlias(
     ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let Request_w = core::ptr::addr_of_mut!((*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.ConsoleAliasRequest) as PCONSOLE_ADDGETALIAS;
+    let result = SrvAddConsoleAliasImpl(Console, ApiMessage, Request_w);
+    ConSrvReleaseConsole(Console, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvAddConsoleAliasImpl(
+    Console: PCONSRV_CONSOLE,
+    ApiMessage: PCSR_API_MESSAGE,
     ConsoleAliasRequest: PCONSOLE_ADDGETALIAS,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
-    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Header: PALIAS_HEADER;
     let mut Entry: PALIAS_ENTRY;
     let lpTarget: PVOID;
@@ -555,10 +572,24 @@ pub unsafe extern "system" fn SrvAddConsoleAlias(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleAlias(
     ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let Request_w = core::ptr::addr_of_mut!((*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.ConsoleAliasRequest) as PCONSOLE_ADDGETALIAS;
+    let result = SrvGetConsoleAliasImpl(Console, ApiMessage, Request_w);
+    ConSrvReleaseConsole(Console, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleAliasImpl(
+    Console: PCONSRV_CONSOLE,
+    ApiMessage: PCSR_API_MESSAGE,
     ConsoleAliasRequest: PCONSOLE_ADDGETALIAS,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
-    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let Header: PALIAS_HEADER;
     let Entry: PALIAS_ENTRY;
     let mut Length: UINT;
@@ -649,10 +680,24 @@ pub unsafe extern "system" fn SrvGetConsoleAlias(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleAliases(
     ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let Request_w = core::ptr::addr_of_mut!((*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetAllAliasesRequest) as PCONSOLE_GETALLALIASES;
+    let result = SrvGetConsoleAliasesImpl(Console, ApiMessage, Request_w);
+    ConSrvReleaseConsole(Console, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleAliasesImpl(
+    Console: PCONSRV_CONSOLE,
+    ApiMessage: PCSR_API_MESSAGE,
     GetAllAliasesRequest: PCONSOLE_GETALLALIASES,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
-    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Status = STATUS_SUCCESS;
     let mut BytesWritten: ULONG = 0;
     let Header: PALIAS_HEADER;
@@ -766,10 +811,24 @@ pub unsafe extern "system" fn SrvGetConsoleAliases(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleAliasesLength(
     ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let Request_w = core::ptr::addr_of_mut!((*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetAllAliasesLengthRequest) as PCONSOLE_GETALLALIASESLENGTH;
+    let result = SrvGetConsoleAliasesLengthImpl(Console, ApiMessage, Request_w);
+    ConSrvReleaseConsole(Console, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleAliasesLengthImpl(
+    Console: PCONSRV_CONSOLE,
+    ApiMessage: PCSR_API_MESSAGE,
     GetAllAliasesLengthRequest: PCONSOLE_GETALLALIASESLENGTH,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
-    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Status = STATUS_SUCCESS;
     let Header: PALIAS_HEADER;
 
@@ -802,10 +861,24 @@ pub unsafe extern "system" fn SrvGetConsoleAliasesLength(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleAliasExes(
     ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let Request_w = core::ptr::addr_of_mut!((*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetAliasesExesRequest) as PCONSOLE_GETALIASESEXES;
+    let result = SrvGetConsoleAliasExesImpl(Console, ApiMessage, Request_w);
+    ConSrvReleaseConsole(Console, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleAliasExesImpl(
+    Console: PCONSRV_CONSOLE,
+    ApiMessage: PCSR_API_MESSAGE,
     GetAliasesExesRequest: PCONSOLE_GETALIASESEXES,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
-    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
     let mut Status = STATUS_SUCCESS;
     let mut BytesWritten: UINT = 0;
 
@@ -886,10 +959,24 @@ pub unsafe extern "system" fn SrvGetConsoleAliasExes(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleAliasExesLength(
     ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let Request_w = core::ptr::addr_of_mut!((*(ApiMessage as PCONSOLE_API_MESSAGE)).Data.GetAliasesExesLengthRequest) as PCONSOLE_GETALIASESEXESLENGTH;
+    let result = SrvGetConsoleAliasExesLengthImpl(Console, ApiMessage, Request_w);
+    ConSrvReleaseConsole(Console, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleAliasExesLengthImpl(
+    Console: PCONSRV_CONSOLE,
+    ApiMessage: PCSR_API_MESSAGE,
     GetAliasesExesLengthRequest: PCONSOLE_GETALIASESEXESLENGTH,
 ) -> NTSTATUS {
-    let Console = ConsoleGetPerProcessData((*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess as *mut _CSR_PROCESS);
-    let Console = Console as PCONSRV_CONSOLE;  // FIXME: translator confused ProcessData and Console — should be ConSrvGetConsole(ProcessData, &mut Console, TRUE)
 
     (*GetAliasesExesLengthRequest).Length = IntGetConsoleAliasesExesLength(
         ((*Console).Aliases as PALIAS_HEADER),

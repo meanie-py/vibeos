@@ -14,7 +14,7 @@ use winsrv_sys::consts::*;
 #[no_mangle]
 pub unsafe extern "system" fn SrvRegisterConsoleVDM(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let RegisterVDMRequest = &mut (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.RegisterVDMRequest;
     let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.RegisterVDMRequest.ConsoleHandle as PCONSRV_CONSOLE;
@@ -107,7 +107,7 @@ pub unsafe extern "system" fn SrvRegisterConsoleVDM(
 #[no_mangle]
 pub unsafe extern "system" fn SrvVDMConsoleOperation(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -115,7 +115,7 @@ pub unsafe extern "system" fn SrvVDMConsoleOperation(
 #[no_mangle]
 pub unsafe extern "system" fn SrvRegisterConsoleOS2(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -123,7 +123,7 @@ pub unsafe extern "system" fn SrvRegisterConsoleOS2(
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleOS2OemFormat(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -131,7 +131,7 @@ pub unsafe extern "system" fn SrvSetConsoleOS2OemFormat(
 #[no_mangle]
 pub unsafe extern "system" fn SrvRegisterConsoleIME(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -139,7 +139,7 @@ pub unsafe extern "system" fn SrvRegisterConsoleIME(
 #[no_mangle]
 pub unsafe extern "system" fn SrvUnregisterConsoleIME(
     ApiMessage: PCSR_API_MESSAGE,
-    ReplyCode: *mut ULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

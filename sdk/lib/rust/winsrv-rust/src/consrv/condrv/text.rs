@@ -1,3 +1,4 @@
+use super::super::term::*;
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -10,12 +11,10 @@ extern "C" {
 }
 extern "system" {
     pub fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    pub fn TermWriteStream( Console: PCONSOLE, ScreenBuffer: PTEXTMODE_SCREEN_BUFFER, Buffer: *mut u16, Length: u32, Attrib: u8, ) -> i32;
-    pub fn TermResizeTerminal(Console: PCONSOLE);
-    pub fn TermDrawRegion(Console: PCONSOLE, Region: *mut SMALL_RECT);
     pub fn IS_FULL_WIDTH(c: u16) -> u32;
     pub fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: u32, Size: usize, ) -> i32;
 }
+// TermWriteStream/TermResizeTerminal/TermDrawRegion supplied by super::super::term::*
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: () = ();
@@ -494,7 +493,7 @@ pub unsafe extern "system" fn ConDrvChangeScreenBufferAttributes(
     if Buffer as PCONSOLE_SCREEN_BUFFER == (*Console).ActiveBuffer {
         let mut UpdateRect: SMALL_RECT = core::mem::zeroed();
         ConioComputeUpdateRect(Buffer, &mut UpdateRect, &mut TopLeft, NumCodesToWrite);
-        TermDrawRegion(Console, &mut UpdateRect);
+        TermDrawRegion(Console as PCONSRV_CONSOLE, &mut UpdateRect);
     }
 
     STATUS_SUCCESS
@@ -625,7 +624,7 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutput(
         Y += 1;
     }
 
-    TermDrawRegion(Console, &mut CapturedWriteRegion);
+    TermDrawRegion(Console as PCONSRV_CONSOLE, &mut CapturedWriteRegion);
 
     *WriteRegion = CapturedWriteRegion;
 
@@ -1178,7 +1177,7 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutputString(
     if Buffer as PCONSOLE_SCREEN_BUFFER == (*Console).ActiveBuffer {
         let mut UpdateRect: SMALL_RECT = core::mem::zeroed();
         ConioComputeUpdateRect(Buffer, &mut UpdateRect, WriteCoord, NumCodesToWrite);
-        TermDrawRegion(Console, &mut UpdateRect);
+        TermDrawRegion(Console as PCONSRV_CONSOLE, &mut UpdateRect);
     }
 
     Status
@@ -1299,7 +1298,7 @@ pub(crate) unsafe fn ConDrvFillConsoleOutput(
     if Buffer as PCONSOLE_SCREEN_BUFFER == (*Console).ActiveBuffer {
         let mut UpdateRect: SMALL_RECT = core::mem::zeroed();
         ConioComputeUpdateRect(Buffer, core::ptr::addr_of_mut!(UpdateRect), WriteCoord, nNumChars);
-        TermDrawRegion(Console, core::ptr::addr_of_mut!(UpdateRect));
+        TermDrawRegion(Console as PCONSRV_CONSOLE, core::ptr::addr_of_mut!(UpdateRect));
     }
 
     STATUS_SUCCESS
@@ -1368,7 +1367,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleScreenBufferSize(
 
     Status = ConioResizeBuffer(Console, Buffer, *Size);
     if NT_SUCCESS(Status) {
-        TermResizeTerminal(Console);
+        TermResizeTerminal(Console as PCONSRV_CONSOLE);
     }
 
     Status
@@ -1466,7 +1465,7 @@ pub unsafe fn ConDrvScrollConsoleScreenBuffer(
         ConioGetUnion(core::ptr::addr_of_mut!(UpdateRegion), core::ptr::addr_of_mut!(UpdateRegion), core::ptr::addr_of_mut!(DstRegion));
         if ConioGetIntersection(core::ptr::addr_of_mut!(UpdateRegion), core::ptr::addr_of_mut!(UpdateRegion), core::ptr::addr_of_mut!(CapturedClipRectangle)) != 0
         {
-            TermDrawRegion(Console, core::ptr::addr_of_mut!(UpdateRegion));
+            TermDrawRegion(Console as PCONSRV_CONSOLE, core::ptr::addr_of_mut!(UpdateRegion));
         }
     }
 
@@ -1527,7 +1526,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleWindowInfo(
     (*Buffer).ViewSize.X = ConioRectWidth(core::ptr::addr_of_mut!(CapturedWindowRect));
     (*Buffer).ViewSize.Y = ConioRectHeight(core::ptr::addr_of_mut!(CapturedWindowRect));
 
-    TermResizeTerminal(Console);
+    TermResizeTerminal(Console as PCONSRV_CONSOLE);
 
     STATUS_SUCCESS
 }

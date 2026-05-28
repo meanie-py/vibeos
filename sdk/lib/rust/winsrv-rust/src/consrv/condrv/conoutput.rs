@@ -1,3 +1,4 @@
+use super::super::term::*;
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -12,13 +13,9 @@ extern "system" {
     pub fn GRAPHICS_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, GraphicsInfo: PGRAPHICS_BUFFER_INFO, ) -> NTSTATUS;
     pub fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
     pub fn GRAPHICS_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    pub fn TermReleaseScreenBuffer(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER);
-    pub fn TermSetActiveScreenBuffer(Console: PCONSOLE);
-    pub fn TermDrawRegion(Console: PCONSOLE, Region: PSMALL_RECT);
-    pub fn TermSetPalette(Console: PCONSOLE, PaletteHandle: HPALETTE, PaletteUsage: UINT) -> BOOL;
-    pub fn TermSetCursorInfo(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER) -> BOOL;
-    pub fn TermSetScreenInfo(Console: PCONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER, OldCursorX: SHORT, OldCursorY: SHORT) -> BOOL;
 }
+// Term* macros are provided by super::super::term (PCONSRV_CONSOLE-typed
+// inline wrappers around the vtbl call). Don't redeclare them as extern.
 
 pub(crate) unsafe fn CONSOLE_SCREEN_BUFFER_Initialize(
     Buffer: *mut PCONSOLE_SCREEN_BUFFER,
@@ -125,14 +122,14 @@ pub unsafe extern "system" fn ConDrvCreateScreenBuffer(
 pub(crate) unsafe fn ConioSetActiveScreenBuffer(Buffer: PCONSOLE_SCREEN_BUFFER) {
     let Console = (*Buffer).Header.Console;
     (*Console).ActiveBuffer = Buffer;
-    TermSetActiveScreenBuffer(Console);
+    TermSetActiveScreenBuffer(Console as PCONSRV_CONSOLE);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn ConDrvDeleteScreenBuffer(Buffer: PCONSOLE_SCREEN_BUFFER) {
     let Console = (*Buffer).Header.Console;
 
-    TermReleaseScreenBuffer(Console, Buffer);
+    TermReleaseScreenBuffer(Console as PCONSRV_CONSOLE, Buffer);
 
     RemoveEntryList(core::ptr::addr_of_mut!((*Buffer).ListEntry) as PLIST_ENTRY);
 
@@ -197,7 +194,7 @@ pub unsafe extern "system" fn ConDrvInvalidateBitMapRect(
     debug_assert!(Console == (*Buffer).Header.Console);
 
     if Buffer == (*Console).ActiveBuffer {
-        TermDrawRegion(Console, Region);
+        TermDrawRegion(Console as PCONSRV_CONSOLE, Region);
     }
 
     STATUS_SUCCESS
@@ -223,7 +220,7 @@ pub unsafe extern "system" fn ConDrvSetConsolePalette(
 
     debug_assert!(Console == (*Buffer).Header.Console);
 
-    let Success = TermSetPalette(Console, PaletteHandle, PaletteUsage);
+    let Success = TermSetPalette(Console as PCONSRV_CONSOLE, PaletteHandle, PaletteUsage);
     if Success != 0 {
         if !(*Buffer).PaletteHandle.is_null() && (*Buffer).PaletteHandle != PaletteHandle {
             DeleteObject((*Buffer).PaletteHandle as HGDIOBJ);
@@ -281,7 +278,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleCursorInfo(
         (*Buffer).CursorInfo.dwSize = Size;
         (*Buffer).CursorInfo.bVisible = Visible;
 
-        Success = TermSetCursorInfo(Console, Buffer as PCONSOLE_SCREEN_BUFFER) as u8;
+        Success = TermSetCursorInfo(Console as PCONSRV_CONSOLE, Buffer as PCONSOLE_SCREEN_BUFFER) as u8;
     }
 
     if Success != 0 {
@@ -316,7 +313,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleCursorPosition(
     (*Buffer).CursorPosition = *Position;
 
     if (Buffer as PCONSOLE_SCREEN_BUFFER) == (*Console).ActiveBuffer
-        && TermSetScreenInfo(Console, Buffer as PCONSOLE_SCREEN_BUFFER, OldCursorX, OldCursorY) == 0
+        && TermSetScreenInfo(Console as PCONSRV_CONSOLE, Buffer as PCONSOLE_SCREEN_BUFFER, OldCursorX, OldCursorY) == 0
     {
         return STATUS_UNSUCCESSFUL;
     }

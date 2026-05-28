@@ -5,19 +5,18 @@ use super::condrv::coninput::*;
 use super::condrv::console::*;
 use super::console::*;
 use super::handle::*;
+use super::{GetConsoleInputBufferMode, GetType};
+use super::term::*;
 use super::history::*;
 use super::init::*;
 use super::popup::{POPUP_WINDOW, PPOPUP_WINDOW, _POPUP_WINDOW};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 
-// Forward declarations for functions from other modules
+// Forward declarations for functions from other modules.
+// Term* macros are provided by super::term::* (imported above);
+// GetType/GetConsoleInputBufferMode are bindgen-resolved.
 extern "system" {
-    pub fn GetConsoleInputBufferMode(Console: PCONSRV_CONSOLE) -> u32;
-    pub fn TermSetScreenInfo( Console: PCONSRV_CONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER, OldCursorX: i16, OldCursorY: i16, );
-    pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
-    pub fn TermWriteStream( Console: PCONSRV_CONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, String: *const u16, Length: u32, Visible: u8, );
-    pub fn TermSetCursorInfo(Console: PCONSRV_CONSOLE, Buffer: PCONSOLE_SCREEN_BUFFER);
     pub fn HistoryRecallHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Offset: i32, Entry: *mut _UNICODE_STRING, ) -> u8;
     pub fn HistoryGetCurrentEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *mut _UNICODE_STRING, );
     pub fn HistoryAddEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *const _UNICODE_STRING, );
@@ -29,14 +28,17 @@ extern "system" {
 
 static mut Popup: PPOPUP_WINDOW = core::ptr::null_mut();
 
-pub(crate) unsafe fn LineInputSetPos(Console: PCONSRV_CONSOLE, Pos: u32) {
-    if Pos != (*Console).LinePos && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0 {
+pub(crate) unsafe fn LineInputSetPos(Console: PCONSRV_CONSOLE, NewPos: u32) {
+    // `LinePosVal` collides with winsrv_sys::winsrv::LinePosVal (_BUS_DATA_TYPE_Pos
+    // enum variant glob-imported via use winsrv_sys::winsrv::*).
+    // Reference the parameter as `NewPos` instead.
+    if NewPos != (*Console).LinePos && (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0 {
         let Buffer = (*Console).ActiveBuffer;
         let OldCursorX = (*Buffer).CursorPosition.X;
         let OldCursorY = (*Buffer).CursorPosition.Y;
         let mut XY = OldCursorY as i32 * (*Buffer).ScreenBufferSize.X as i32 + OldCursorX as i32;
 
-        XY += (Pos as i32 - (*Console).LinePos as i32);
+        XY += NewPos as i32 - (*Console).LinePos as i32;
         if XY < 0 {
             XY = 0;
         } else if XY >= (*Buffer).ScreenBufferSize.Y as i32 * (*Buffer).ScreenBufferSize.X as i32 {
@@ -48,7 +50,7 @@ pub(crate) unsafe fn LineInputSetPos(Console: PCONSRV_CONSOLE, Pos: u32) {
         TermSetScreenInfo(Console, Buffer, OldCursorX, OldCursorY);
     }
 
-    (*Console).LinePos = Pos;
+    (*Console).LinePos = NewPos;
 }
 
 pub(crate) unsafe fn LineInputEdit(
@@ -57,8 +59,8 @@ pub(crate) unsafe fn LineInputEdit(
     NumToInsert: u32,
     Insertion: *const u16,
 ) {
-    let Pos = (*Console).LinePos;
-    let NewSize = (*Console).LineSize - NumToDelete + NumToInsert;
+    let LinePosVal: u32 = (*Console).LinePos;
+    let NewSize: u32 = (*Console).LineSize - NumToDelete + NumToInsert;
 
     if GetType((*Console).ActiveBuffer) != TEXTMODE_BUFFER {
         return;
@@ -70,25 +72,25 @@ pub(crate) unsafe fn LineInputEdit(
     }
 
     core::ptr::copy(
-        (*Console).LineBuffer.add((Pos + NumToDelete) as usize),
-        (*Console).LineBuffer.add((Pos + NumToInsert) as usize),
-        ((*Console).LineSize - (Pos + NumToDelete)) as usize,
+        (*Console).LineBuffer.add((LinePosVal + NumToDelete) as usize),
+        (*Console).LineBuffer.add((LinePosVal + NumToInsert) as usize),
+        ((*Console).LineSize - (LinePosVal + NumToDelete)) as usize,
     );
     if !Insertion.is_null() {
         core::ptr::copy_nonoverlapping(
             Insertion,
-            (*Console).LineBuffer.add(Pos as usize),
+            (*Console).LineBuffer.add(LinePosVal as usize),
             NumToInsert as usize,
         );
     }
 
     if (GetConsoleInputBufferMode(Console) & ENABLE_ECHO_INPUT as u16) != 0 {
-        if Pos < NewSize {
+        if LinePosVal < NewSize {
             TermWriteStream(
                 Console,
                 ActiveBuffer,
-                (*Console).LineBuffer.add(Pos as usize),
-                NewSize - Pos,
+                (*Console).LineBuffer.add(LinePosVal as usize),
+                NewSize - LinePosVal,
                 1,
             );
         }
@@ -102,7 +104,7 @@ pub(crate) unsafe fn LineInputEdit(
     }
 
     (*Console).LineSize = NewSize;
-    LineInputSetPos(Console, Pos + NumToInsert);
+    LineInputSetPos(Console, LinePosVal + NumToInsert);
 }
 
 pub(crate) unsafe fn LineInputRecallHistory(
@@ -131,7 +133,7 @@ pub unsafe extern "system" fn LineInputKeyDown(
     ExeName: PUNICODE_STRING,
     KeyEvent: *mut KEY_EVENT_RECORD,
 ) {
-    let mut Pos = (*Console).LinePos;
+    let mut LinePosVal: u32 = (*Console).LinePos;
     let mut Entry: _UNICODE_STRING = core::mem::zeroed();
 
     match (*KeyEvent).wVirtualKeyCode as u32 {
@@ -149,14 +151,14 @@ pub unsafe extern "system" fn LineInputKeyDown(
         VK_HOME => {
             LineInputSetPos(Console, 0);
             if ((*KeyEvent).dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0 {
-                LineInputEdit(Console, Pos, 0, core::ptr::null());
+                LineInputEdit(Console, LinePosVal, 0, core::ptr::null());
             }
             return;
         }
 
         VK_END => {
             if ((*KeyEvent).dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0 {
-                LineInputEdit(Console, (*Console).LineSize - Pos, 0, core::ptr::null());
+                LineInputEdit(Console, (*Console).LineSize - LinePosVal, 0, core::ptr::null());
             } else {
                 LineInputSetPos(Console, (*Console).LineSize);
             }
@@ -165,38 +167,38 @@ pub unsafe extern "system" fn LineInputKeyDown(
 
         VK_LEFT => {
             if ((*KeyEvent).dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0 {
-                while Pos > 0 && *(*Console).LineBuffer.add((Pos - 1) as usize) == b' ' as u16 {
-                    Pos -= 1;
+                while LinePosVal > 0 && *(*Console).LineBuffer.add((LinePosVal - 1) as usize) == b' ' as u16 {
+                    LinePosVal -= 1;
                 }
-                while Pos > 0 && *(*Console).LineBuffer.add((Pos - 1) as usize) != b' ' as u16 {
-                    Pos -= 1;
+                while LinePosVal > 0 && *(*Console).LineBuffer.add((LinePosVal - 1) as usize) != b' ' as u16 {
+                    LinePosVal -= 1;
                 }
             } else {
-                Pos -= if Pos > 0 { 1 } else { 0 };
+                LinePosVal -= if LinePosVal > 0 { 1u32 } else { 0u32 };
             }
-            LineInputSetPos(Console, Pos);
+            LineInputSetPos(Console, LinePosVal);
             return;
         }
 
         VK_RIGHT | VK_F1 => {
             if ((*KeyEvent).dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0 {
-                while Pos < (*Console).LineSize
-                    && *(*Console).LineBuffer.add(Pos as usize) != b' ' as u16
+                while LinePosVal < (*Console).LineSize
+                    && *(*Console).LineBuffer.add(LinePosVal as usize) != b' ' as u16
                 {
-                    Pos += 1;
+                    LinePosVal += 1;
                 }
-                while Pos < (*Console).LineSize
-                    && *(*Console).LineBuffer.add(Pos as usize) == b' ' as u16
+                while LinePosVal < (*Console).LineSize
+                    && *(*Console).LineBuffer.add(LinePosVal as usize) == b' ' as u16
                 {
-                    Pos += 1;
+                    LinePosVal += 1;
                 }
-                LineInputSetPos(Console, Pos);
+                LineInputSetPos(Console, LinePosVal);
             } else {
                 HistoryGetCurrentEntry(Console, ExeName, &mut Entry);
-                if Pos < (*Console).LineSize {
-                    LineInputSetPos(Console, Pos + 1);
-                } else if (Pos as usize * core::mem::size_of::<u16>()) < Entry.Length as usize {
-                    LineInputEdit(Console, 0, 1, Entry.Buffer.add(Pos as usize));
+                if LinePosVal < (*Console).LineSize {
+                    LineInputSetPos(Console, LinePosVal + 1);
+                } else if (LinePosVal as usize * core::mem::size_of::<u16>()) < Entry.Length as usize {
+                    LineInputEdit(Console, 0, 1, Entry.Buffer.add(LinePosVal as usize));
                 }
             }
             return;
@@ -209,7 +211,7 @@ pub unsafe extern "system" fn LineInputKeyDown(
         }
 
         VK_DELETE => {
-            if Pos != (*Console).LineSize {
+            if LinePosVal != (*Console).LineSize {
                 LineInputEdit(Console, 1, 0, core::ptr::null());
             }
             return;
@@ -242,14 +244,14 @@ pub unsafe extern "system" fn LineInputKeyDown(
 
         VK_F3 => {
             HistoryGetCurrentEntry(Console, ExeName, &mut Entry);
-            if (Pos as usize * core::mem::size_of::<u16>()) < Entry.Length as usize {
-                let InsertSize = (Entry.Length as u32 / core::mem::size_of::<u16>() as u32) - Pos;
-                let DeleteSize = core::cmp::min((*Console).LineSize - Pos, InsertSize);
+            if (LinePosVal as usize * core::mem::size_of::<u16>()) < Entry.Length as usize {
+                let InsertSize = (Entry.Length as u32 / core::mem::size_of::<u16>() as u32) - LinePosVal;
+                let DeleteSize = core::cmp::min((*Console).LineSize - LinePosVal, InsertSize);
                 LineInputEdit(
                     Console,
                     DeleteSize,
                     InsertSize,
-                    Entry.Buffer.add(Pos as usize),
+                    Entry.Buffer.add(LinePosVal as usize),
                 );
             }
             return;
@@ -280,11 +282,11 @@ pub unsafe extern "system" fn LineInputKeyDown(
             if HistoryFindEntryByPrefix(Console, ExeName, &Entry, &mut EntryFound) != 0 {
                 LineInputEdit(
                     Console,
-                    (*Console).LineSize - Pos,
-                    (EntryFound.Length as u32 / core::mem::size_of::<u16>() as u32) - Pos,
-                    EntryFound.Buffer.add(Pos as usize),
+                    (*Console).LineSize - LinePosVal,
+                    (EntryFound.Length as u32 / core::mem::size_of::<u16>() as u32) - LinePosVal,
+                    EntryFound.Buffer.add(LinePosVal as usize),
                 );
-                LineInputSetPos(Console, Pos);
+                LineInputSetPos(Console, LinePosVal);
             }
 
             return;
@@ -296,8 +298,8 @@ pub unsafe extern "system" fn LineInputKeyDown(
     if (*KeyEvent).uChar.UnicodeChar == b'\x08' as u16
         && (GetConsoleInputBufferMode(Console) & ENABLE_PROCESSED_INPUT as u16) != 0
     {
-        if Pos > 0 {
-            LineInputSetPos(Console, Pos - 1);
+        if LinePosVal > 0 {
+            LineInputSetPos(Console, LinePosVal - 1);
             LineInputEdit(Console, 1, 0, core::ptr::null());
         }
     } else if (*KeyEvent).uChar.UnicodeChar == b'\r' as u16 {

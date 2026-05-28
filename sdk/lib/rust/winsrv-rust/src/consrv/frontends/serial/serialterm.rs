@@ -578,33 +578,70 @@ unsafe extern "system" fn SerialSetMenuClose(This: *mut FRONTEND, Enable: i32) -
     1
 }
 
-static SerialVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
-    InitFrontEnd: Some(SerialInitFrontEnd),
-    DeinitFrontEnd: Some(SerialDeinitFrontEnd),
-    DrawRegion: Some(SerialDrawRegion),
-    WriteStream: Some(SerialWriteStream),
-    RingBell: Some(SerialRingBell),
-    SetCursorInfo: Some(SerialSetCursorInfo),
-    SetScreenInfo: Some(SerialSetScreenInfo),
-    ResizeTerminal: Some(SerialResizeTerminal),
-    SetActiveScreenBuffer: Some(SerialSetActiveScreenBuffer),
-    ReleaseScreenBuffer: Some(SerialReleaseScreenBuffer),
-    RefreshInternalInfo: Some(SerialRefreshInternalInfo),
-    ChangeTitle: Some(SerialChangeTitle),
-    ChangeIcon: Some(SerialChangeIcon),
-    GetThreadConsoleDesktop: Some(SerialGetThreadConsoleDesktop),
-    GetConsoleWindowHandle: Some(SerialGetConsoleWindowHandle),
-    GetLargestConsoleWindowSize: Some(SerialGetLargestConsoleWindowSize),
-    GetSelectionInfo: Some(SerialGetSelectionInfo),
-    SetPalette: Some(SerialSetPalette),
-    SetCodePage: Some(SerialSetCodePage),
-    GetDisplayMode: Some(SerialGetDisplayMode),
-    SetDisplayMode: Some(SerialSetDisplayMode),
-    ShowMouseCursor: Some(SerialShowMouseCursor),
-    SetMouseCursor: Some(SerialSetMouseCursor),
-    MenuControl: Some(SerialMenuControl),
-    SetMenuClose: Some(SerialSetMenuClose),
+// `FRONTEND_VTBL` field types use `extern "stdcall"` on i386 and
+// `extern "C"` on amd64/arm64 (per bindgen translating __stdcall).
+// Our Serial* impls are `extern "system"` (same ABI per arch, distinct
+// Rust type). Lazy-init via `*const ()` runtime-transmute pattern.
+static mut SerialVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
+    InitFrontEnd: None,
+    DeinitFrontEnd: None,
+    DrawRegion: None,
+    WriteStream: None,
+    RingBell: None,
+    SetCursorInfo: None,
+    SetScreenInfo: None,
+    ResizeTerminal: None,
+    SetActiveScreenBuffer: None,
+    ReleaseScreenBuffer: None,
+    RefreshInternalInfo: None,
+    ChangeTitle: None,
+    ChangeIcon: None,
+    GetThreadConsoleDesktop: None,
+    GetConsoleWindowHandle: None,
+    GetLargestConsoleWindowSize: None,
+    GetSelectionInfo: None,
+    SetPalette: None,
+    SetCodePage: None,
+    GetDisplayMode: None,
+    SetDisplayMode: None,
+    ShowMouseCursor: None,
+    SetMouseCursor: None,
+    MenuControl: None,
+    SetMenuClose: None,
 };
+
+pub(crate) unsafe fn InitSerialVtblIfNeeded() {
+    if SerialVtbl.InitFrontEnd.is_some() {
+        return;
+    }
+    SerialVtbl = FRONTEND_VTBL {
+        InitFrontEnd: Some(core::mem::transmute(SerialInitFrontEnd as *const ())),
+        DeinitFrontEnd: Some(core::mem::transmute(SerialDeinitFrontEnd as *const ())),
+        DrawRegion: Some(core::mem::transmute(SerialDrawRegion as *const ())),
+        WriteStream: Some(core::mem::transmute(SerialWriteStream as *const ())),
+        RingBell: Some(core::mem::transmute(SerialRingBell as *const ())),
+        SetCursorInfo: Some(core::mem::transmute(SerialSetCursorInfo as *const ())),
+        SetScreenInfo: Some(core::mem::transmute(SerialSetScreenInfo as *const ())),
+        ResizeTerminal: Some(core::mem::transmute(SerialResizeTerminal as *const ())),
+        SetActiveScreenBuffer: Some(core::mem::transmute(SerialSetActiveScreenBuffer as *const ())),
+        ReleaseScreenBuffer: Some(core::mem::transmute(SerialReleaseScreenBuffer as *const ())),
+        RefreshInternalInfo: Some(core::mem::transmute(SerialRefreshInternalInfo as *const ())),
+        ChangeTitle: Some(core::mem::transmute(SerialChangeTitle as *const ())),
+        ChangeIcon: Some(core::mem::transmute(SerialChangeIcon as *const ())),
+        GetThreadConsoleDesktop: Some(core::mem::transmute(SerialGetThreadConsoleDesktop as *const ())),
+        GetConsoleWindowHandle: Some(core::mem::transmute(SerialGetConsoleWindowHandle as *const ())),
+        GetLargestConsoleWindowSize: Some(core::mem::transmute(SerialGetLargestConsoleWindowSize as *const ())),
+        GetSelectionInfo: Some(core::mem::transmute(SerialGetSelectionInfo as *const ())),
+        SetPalette: Some(core::mem::transmute(SerialSetPalette as *const ())),
+        SetCodePage: Some(core::mem::transmute(SerialSetCodePage as *const ())),
+        GetDisplayMode: Some(core::mem::transmute(SerialGetDisplayMode as *const ())),
+        SetDisplayMode: Some(core::mem::transmute(SerialSetDisplayMode as *const ())),
+        ShowMouseCursor: Some(core::mem::transmute(SerialShowMouseCursor as *const ())),
+        SetMouseCursor: Some(core::mem::transmute(SerialSetMouseCursor as *const ())),
+        MenuControl: Some(core::mem::transmute(SerialMenuControl as *const ())),
+        SetMenuClose: Some(core::mem::transmute(SerialSetMenuClose as *const ())),
+    };
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn SerialLoadFrontEnd(
@@ -620,7 +657,8 @@ pub unsafe extern "system" fn SerialLoadFrontEnd(
         return STATUS_INVALID_PARAMETER;
     }
 
-    (*FrontEnd).Vtbl = &SerialVtbl as *const FRONTEND_VTBL;
+    InitSerialVtblIfNeeded();
+    (*FrontEnd).Vtbl = core::ptr::addr_of_mut!(SerialVtbl);
     (*FrontEnd).Context = core::ptr::null_mut();
     (*FrontEnd).Context2 = core::ptr::null_mut();
 

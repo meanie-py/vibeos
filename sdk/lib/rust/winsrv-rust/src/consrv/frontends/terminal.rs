@@ -18,6 +18,20 @@ extern "C" {
     pub fn _InterlockedDecrement(Target: *mut LONG) -> LONG;
     pub fn memcpy(dest: PVOID, src: PVOID, count: SIZE_T) -> PVOID;
 }
+
+// GUI frontend (Phase 5.6 — not yet translated). Stub extern so the
+// FrontEndLoadingMethods static and ConSrvLoadFrontEnd dispatch can
+// reference these by name; consrv-gui-rust (or the C consrv-gui.dll)
+// will define them.
+extern "system" {
+    pub fn GuiLoadFrontEnd(
+        FrontEnd: PFRONTEND,
+        ConsoleInfo: PCONSOLE_STATE_INFO,
+        ConsoleInitInfo: PCONSOLE_INIT_INFO,
+        ConsoleLeaderProcessHandle: HANDLE,
+    ) -> NTSTATUS;
+    pub fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS;
+}
 extern "system" {    pub fn TermDrawRegion(Console: PCONSRV_CONSOLE, Region: *mut SMALL_RECT);
 }
 
@@ -59,22 +73,51 @@ pub static mut FrontEndLoadingMethods: [FrontEndLoadingMethod; 1] = [
     },
 ];
 
+// `TERMINAL_VTBL` field types use `extern "stdcall"` on i386 and
+// `extern "C"` on amd64/arm64 (per bindgen translating __stdcall),
+// while our ConSrvTerm* fns are `extern "system"` (same ABI per arch,
+// distinct Rust type). transmute is not const-stable for these
+// zero-sized fn items, so we lazy-init the vtable at first load via
+// the `*const ()` runtime-transmute pattern (mirrors DummyVtbl in
+// consrv/condrv/dummyterm.rs).
 pub static mut ConSrvTermVtbl: TERMINAL_VTBL = TERMINAL_VTBL {
-    InitTerminal: Some(ConSrvTermInitTerminal),
-    DeinitTerminal: Some(ConSrvTermDeinitTerminal),
-    ReadStream: Some(ConSrvTermReadStream),
-    WriteStream: Some(ConSrvTermWriteStream),
-    DrawRegion: Some(ConSrvTermDrawRegion),
-    SetCursorInfo: Some(ConSrvTermSetCursorInfo),
-    SetScreenInfo: Some(ConSrvTermSetScreenInfo),
-    ResizeTerminal: Some(ConSrvTermResizeTerminal),
-    SetActiveScreenBuffer: Some(ConSrvTermSetActiveScreenBuffer),
-    ReleaseScreenBuffer: Some(ConSrvTermReleaseScreenBuffer),
-    GetLargestConsoleWindowSize: Some(ConSrvTermGetLargestConsoleWindowSize),
-    SetPalette: Some(ConSrvTermSetPalette),
-    SetCodePage: Some(ConSrvTermSetCodePage),
-    ShowMouseCursor: Some(ConSrvTermShowMouseCursor),
+    InitTerminal: None,
+    DeinitTerminal: None,
+    ReadStream: None,
+    WriteStream: None,
+    DrawRegion: None,
+    SetCursorInfo: None,
+    SetScreenInfo: None,
+    ResizeTerminal: None,
+    SetActiveScreenBuffer: None,
+    ReleaseScreenBuffer: None,
+    GetLargestConsoleWindowSize: None,
+    SetPalette: None,
+    SetCodePage: None,
+    ShowMouseCursor: None,
 };
+
+pub(crate) unsafe fn InitConSrvTermVtblIfNeeded() {
+    if ConSrvTermVtbl.InitTerminal.is_some() {
+        return;
+    }
+    ConSrvTermVtbl = TERMINAL_VTBL {
+        InitTerminal: Some(core::mem::transmute(ConSrvTermInitTerminal as *const ())),
+        DeinitTerminal: Some(core::mem::transmute(ConSrvTermDeinitTerminal as *const ())),
+        ReadStream: Some(core::mem::transmute(ConSrvTermReadStream as *const ())),
+        WriteStream: Some(core::mem::transmute(ConSrvTermWriteStream as *const ())),
+        DrawRegion: Some(core::mem::transmute(ConSrvTermDrawRegion as *const ())),
+        SetCursorInfo: Some(core::mem::transmute(ConSrvTermSetCursorInfo as *const ())),
+        SetScreenInfo: Some(core::mem::transmute(ConSrvTermSetScreenInfo as *const ())),
+        ResizeTerminal: Some(core::mem::transmute(ConSrvTermResizeTerminal as *const ())),
+        SetActiveScreenBuffer: Some(core::mem::transmute(ConSrvTermSetActiveScreenBuffer as *const ())),
+        ReleaseScreenBuffer: Some(core::mem::transmute(ConSrvTermReleaseScreenBuffer as *const ())),
+        GetLargestConsoleWindowSize: Some(core::mem::transmute(ConSrvTermGetLargestConsoleWindowSize as *const ())),
+        SetPalette: Some(core::mem::transmute(ConSrvTermSetPalette as *const ())),
+        SetCodePage: Some(core::mem::transmute(ConSrvTermSetCodePage as *const ())),
+        ShowMouseCursor: Some(core::mem::transmute(ConSrvTermShowMouseCursor as *const ())),
+    };
+}
 
 pub const TAB_WIDTH: i32 = 8;
 
@@ -129,14 +172,14 @@ pub(crate) unsafe fn ConSrvLoadFrontEnd(
         FRONTEND_UNLOAD,
     )>()) as ULONG
     {
-        Status = (FrontEndLoadingMethods[i as usize].1)(
+        Status = (FrontEndLoadingMethods[i as usize].FrontEndLoad.unwrap())(
             FrontEnd,
             ConsoleInfo,
             ConsoleInitInfo,
             ConsoleLeaderProcessHandle,
         );
         if NT_SUCCESS(Status) {
-            (*FrontEnd).UnloadFrontEnd = FrontEndLoadingMethods[i as usize].2;
+            (*FrontEnd).UnloadFrontEnd = core::mem::transmute(FrontEndLoadingMethods[i as usize].FrontEndUnload);
             break;
         }
         i += 1;
@@ -162,7 +205,7 @@ pub unsafe extern "system" fn ConSrvInitTerminal(
     let mut Status: NTSTATUS;
     let FrontEnd: PFRONTEND;
 
-    FrontEnd = ConsoleAllocHeap(HEAP_ZERO_MEMORY, core::mem::size_of::<_FRONTEND>() as ULONG);
+    FrontEnd = ConsoleAllocHeap(HEAP_ZERO_MEMORY, core::mem::size_of::<_FRONTEND>()) as PFRONTEND;
     if FrontEnd.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -178,6 +221,7 @@ pub unsafe extern "system" fn ConSrvInitTerminal(
         return Status;
     }
 
+    InitConSrvTermVtblIfNeeded();
     (*Terminal).Vtbl = core::ptr::addr_of_mut!(ConSrvTermVtbl);
     (*Terminal).Context = FrontEnd as PVOID;
 
@@ -199,7 +243,7 @@ pub unsafe extern "system" fn ConSrvDeinitTerminal(Terminal: PTERMINAL) -> i32 {
     Status
 }
 
-pub(crate) unsafe fn ConSrvTermInitTerminal(
+pub(crate) unsafe extern "system" fn ConSrvTermInitTerminal(
     This: PTERMINAL,
     Console: PCONSOLE,
 ) -> NTSTATUS {
@@ -228,12 +272,12 @@ pub(crate) unsafe fn ConSrvTermInitTerminal(
     Status
 }
 
-pub(crate) unsafe fn ConSrvTermDeinitTerminal(This: PTERMINAL) {
+pub(crate) unsafe extern "system" fn ConSrvTermDeinitTerminal(This: PTERMINAL) {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).DeinitFrontEnd.unwrap())(FrontEnd);
 }
 
-pub(crate) unsafe fn ConSrvTermReadStream(
+pub(crate) unsafe extern "system" fn ConSrvTermReadStream(
     This: PTERMINAL,
     Unicode: BOOLEAN,
     Buffer: PVOID,
@@ -657,12 +701,12 @@ pub(crate) unsafe fn ConioWriteConsole(
     STATUS_SUCCESS
 }
 
-pub(crate) unsafe fn ConSrvTermWriteStream(
+pub(crate) unsafe extern "system" fn ConSrvTermWriteStream(
     This: PTERMINAL,
     Buff: PTEXTMODE_SCREEN_BUFFER,
     Buffer: *mut u16,
     Length: u32,
-    Attrib: u8,
+    Attrib: BOOL,
 ) -> i32 {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ConioWriteConsole(FrontEnd, Buff, Buffer, Length, Attrib)
@@ -686,7 +730,7 @@ pub(crate) unsafe fn ConioDrawConsole(Console: PCONSRV_CONSOLE) {
     TermDrawRegion(Console, &mut Region);
 }
 
-pub(crate) unsafe fn ConSrvTermDrawRegion(
+pub(crate) unsafe extern "system" fn ConSrvTermDrawRegion(
     This: PTERMINAL,
     Region: *mut SMALL_RECT,
 ) {
@@ -694,7 +738,7 @@ pub(crate) unsafe fn ConSrvTermDrawRegion(
     ((*(*FrontEnd).Vtbl).DrawRegion.unwrap())(FrontEnd, Region);
 }
 
-pub(crate) unsafe fn ConSrvTermSetCursorInfo(
+pub(crate) unsafe extern "system" fn ConSrvTermSetCursorInfo(
     This: PTERMINAL,
     ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
 ) -> BOOL {
@@ -702,12 +746,12 @@ pub(crate) unsafe fn ConSrvTermSetCursorInfo(
     ((*(*FrontEnd).Vtbl).SetCursorInfo.unwrap())(FrontEnd, ScreenBuffer)
 }
 
-pub(crate) unsafe fn ConSrvTermSetScreenInfo(
+pub(crate) unsafe extern "system" fn ConSrvTermSetScreenInfo(
     This: PTERMINAL,
     ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
-    OldCursorX: i16,
-    OldCursorY: i16,
-) -> u8 {
+    OldCursorX: SHORT,
+    OldCursorY: SHORT,
+) -> BOOL {
     let FrontEnd = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).SetScreenInfo.unwrap())(
         FrontEnd,
@@ -717,17 +761,17 @@ pub(crate) unsafe fn ConSrvTermSetScreenInfo(
     )
 }
 
-pub(crate) unsafe fn ConSrvTermResizeTerminal(This: PTERMINAL) {
+pub(crate) unsafe extern "system" fn ConSrvTermResizeTerminal(This: PTERMINAL) {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).ResizeTerminal.unwrap())(FrontEnd);
 }
 
-pub(crate) unsafe fn ConSrvTermSetActiveScreenBuffer(This: PTERMINAL) {
+pub(crate) unsafe extern "system" fn ConSrvTermSetActiveScreenBuffer(This: PTERMINAL) {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).SetActiveScreenBuffer.unwrap())(FrontEnd);
 }
 
-pub(crate) unsafe fn ConSrvTermReleaseScreenBuffer(
+pub(crate) unsafe extern "system" fn ConSrvTermReleaseScreenBuffer(
     This: PTERMINAL,
     ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
 ) {
@@ -736,7 +780,7 @@ pub(crate) unsafe fn ConSrvTermReleaseScreenBuffer(
     ((*vtbl).ReleaseScreenBuffer.unwrap())(FrontEnd, ScreenBuffer);
 }
 
-pub(crate) unsafe fn ConSrvTermGetLargestConsoleWindowSize(
+pub(crate) unsafe extern "system" fn ConSrvTermGetLargestConsoleWindowSize(
     This: PTERMINAL,
     pSize: PCOORD,
 ) {
@@ -744,24 +788,24 @@ pub(crate) unsafe fn ConSrvTermGetLargestConsoleWindowSize(
     ((*(*FrontEnd).Vtbl).GetLargestConsoleWindowSize.unwrap())(FrontEnd, pSize);
 }
 
-pub(crate) unsafe fn ConSrvTermSetPalette(
+pub(crate) unsafe extern "system" fn ConSrvTermSetPalette(
     This: PTERMINAL,
     PaletteHandle: HPALETTE,
-    PaletteUsage: u32,
-) -> u8 {
+    PaletteUsage: UINT,
+) -> BOOL {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).SetPalette.unwrap())(FrontEnd, PaletteHandle, PaletteUsage)
 }
 
-pub(crate) unsafe fn ConSrvTermSetCodePage(
+pub(crate) unsafe extern "system" fn ConSrvTermSetCodePage(
     This: PTERMINAL,
-    CodePage: u32,
-) -> u8 {
+    CodePage: UINT,
+) -> BOOL {
     let FrontEnd = (*This).Context as PFRONTEND;
     ((*(*FrontEnd).Vtbl).SetCodePage.unwrap())(FrontEnd, CodePage)
 }
 
-pub(crate) unsafe fn ConSrvTermShowMouseCursor(
+pub(crate) unsafe extern "system" fn ConSrvTermShowMouseCursor(
     This: PTERMINAL,
     Show: BOOL,
 ) -> INT {
@@ -779,5 +823,10 @@ pub(crate) unsafe fn ResetFrontEnd(Console: PCONSOLE) {
         core::ptr::addr_of_mut!((*ConSrvConsole).FrontEndIFace) as *mut core::ffi::c_void,
         core::mem::size_of_val(&(*ConSrvConsole).FrontEndIFace),
     );
-    (*ConSrvConsole).FrontEndIFace.Vtbl = core::ptr::addr_of_mut!(ConSrvTermVtbl);
+    InitConSrvTermVtblIfNeeded();
+    // C source: `ConSrvConsole->FrontEndIFace.Vtbl = &ConSrvTermVtbl;` —
+    // FrontEndIFace.Vtbl is PFRONTEND_VTBL but ConSrvTermVtbl is
+    // TERMINAL_VTBL. C's permissive pointer cast is benign here; bridge
+    // explicitly in Rust.
+    (*ConSrvConsole).FrontEndIFace.Vtbl = core::ptr::addr_of_mut!(ConSrvTermVtbl) as PFRONTEND_VTBL;
 }

@@ -1,5 +1,5 @@
 use winsrv_sys::nt::*;
-use super::super::super::{wcslen, _stricmp, strchr};
+use super::super::super::{_stricmp, strchr};
 use super::super::super::condrv::text::*;
 use super::super::super::condrv::conoutput::*;
 use super::super::super::condrv::coninput::*;
@@ -9,6 +9,9 @@ use super::super::super::handle::*;
 use super::super::super::lineinput::*;
 use super::super::super::history::*;
 use super::super::super::init::*;
+use super::super::super::{GetType, GetConsoleInputBufferMode, wcslen};
+use super::super::super::term::*;
+use super::super::terminal::ConioDrawConsole;
 use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
@@ -18,12 +21,46 @@ use super::super::super::condrv::console::ConDrvValidateConsoleUnsafe;
 
 use core::ffi::c_void;
 
+// IOCTL_CONSOLE_* — from sdk/include/reactos/drivers/blue/ntddblue.h.
+// Hand-evaluated CTL_CODE values to avoid pulling that header into bindgen.
+// CTL_CODE(FILE_DEVICE_SCREEN=0x1C, fn, method, access)
+//   = (DeviceType << 16) | (Access << 14) | (Function << 2) | Method
+// FILE_DEVICE_SCREEN=0x1C, FILE_READ_ACCESS=1, FILE_WRITE_ACCESS=2,
+// METHOD_BUFFERED=0, METHOD_IN_DIRECT=1, METHOD_OUT_DIRECT=2.
+pub const IOCTL_CONSOLE_WRITE_OUTPUT_CHARACTER: u32 = (0x1C << 16) | (2 << 14) | (0x822 << 2) | 1;
+pub const IOCTL_CONSOLE_DRAW:                    u32 = (0x1C << 16) | (2 << 14) | (0x830 << 2) | 1;
+pub const IOCTL_CONSOLE_LOADFONT:                u32 = (0x1C << 16) | (2 << 14) | (0x840 << 2) | 1;
+pub const IOCTL_CONSOLE_SET_CURSOR_INFO:         u32 = (0x1C << 16) | (2 << 14) | (0x806 << 2) | 0;
+pub const IOCTL_CONSOLE_SET_SCREEN_BUFFER_INFO:  u32 = (0x1C << 16) | (2 << 14) | (0x807 << 2) | 0;
+pub const STATUS_INVALID_BUFFER_SIZE: NTSTATUS = 0xC0000206u32 as NTSTATUS;
+
 extern "C" {
-    pub fn wcslen(s: *const u16) -> usize;
     pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
     pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
     pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
 }
+
+// tuiterm.c-internal helpers (file-static in C). Phase 5.6 will
+// promote these from the gui/ translation, or land as Rust stubs.
+extern "system" {
+    pub fn ConioProcessKey(Console: PCONSRV_CONSOLE, KeyEvent: *mut KEY_EVENT_RECORD);
+    pub fn ConioEffectiveCursorSize(Console: PCONSRV_CONSOLE, n: u32) -> u32;
+    pub fn ConsoleOutputUnicodeToAnsiChar(Console: PCONSRV_CONSOLE, src: u16) -> u8;
+    pub fn RtlUnicodeStringToAnsiSize(Str: PUNICODE_STRING) -> u32;
+}
+
+// Win32 user32 helpers tuiterm.c relies on.
+extern "system" {
+    pub fn CreateWindowW(
+        lpClassName: LPCWSTR, lpWindowName: LPCWSTR,
+        dwStyle: u32, X: i32, Y: i32, nWidth: i32, nHeight: i32,
+        hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE,
+        lpParam: *mut core::ffi::c_void,
+    ) -> HWND;
+}
+#[inline(always)]
+#[allow(non_snake_case)]
+fn LOWORD(x: u32) -> u16 { (x & 0xFFFF) as u16 }
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -43,6 +80,7 @@ pub struct _CFHEADER {
 }
 
 pub type PCFHEADER = *mut _CFHEADER;
+pub type CFHEADER = _CFHEADER;
 
 #[repr(C)]
 pub struct _CFFILE {
@@ -69,6 +107,19 @@ pub struct _TUI_CONSOLE_DATA {
 }
 
 pub type PTUI_CONSOLE_DATA = *mut _TUI_CONSOLE_DATA;
+pub type TUI_CONSOLE_DATA = _TUI_CONSOLE_DATA;
+
+// tuiterm.c file-static macros for the doubly-linked TUI_CONSOLE_DATA list.
+#[inline(always)]
+#[allow(non_snake_case)]
+unsafe fn GetNextConsole(Console: PTUI_CONSOLE_DATA) -> PTUI_CONSOLE_DATA {
+    (((*Console).Entry.Flink as usize) - core::mem::offset_of!(TUI_CONSOLE_DATA, Entry)) as PTUI_CONSOLE_DATA
+}
+#[inline(always)]
+#[allow(non_snake_case)]
+unsafe fn GetPrevConsole(Console: PTUI_CONSOLE_DATA) -> PTUI_CONSOLE_DATA {
+    (((*Console).Entry.Blink as usize) - core::mem::offset_of!(TUI_CONSOLE_DATA, Entry)) as PTUI_CONSOLE_DATA
+}
 
 static mut VirtConsList: LIST_ENTRY = LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() };
 static mut ActiveConsole: PTUI_CONSOLE_DATA = core::ptr::null_mut();
@@ -77,33 +128,71 @@ static mut PhysicalConsoleSize: COORD = COORD { X: 0, Y: 0 };
 static mut ConsoleDeviceHandle: HANDLE = core::ptr::null_mut();
 static mut ConsInitialized: BOOL = 0;
 
-static TuiVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
-    InitFrontEnd: TuiInitFrontEnd,
-    DeinitFrontEnd: TuiDeinitFrontEnd,
-    DrawRegion: TuiDrawRegion,
-    WriteStream: TuiWriteStream,
-    RingBell: TuiRingBell,
-    SetCursorInfo: TuiSetCursorInfo,
-    SetScreenInfo: TuiSetScreenInfo,
-    ResizeTerminal: TuiResizeTerminal,
-    SetActiveScreenBuffer: TuiSetActiveScreenBuffer,
-    ReleaseScreenBuffer: TuiReleaseScreenBuffer,
-    RefreshInternalInfo: TuiRefreshInternalInfo,
-    ChangeTitle: TuiChangeTitle,
-    ChangeIcon: TuiChangeIcon,
-    GetThreadConsoleDesktop: TuiGetThreadConsoleDesktop,
-    GetConsoleWindowHandle: TuiGetConsoleWindowHandle,
-    GetLargestConsoleWindowSize: TuiGetLargestConsoleWindowSize,
-    GetSelectionInfo: TuiGetSelectionInfo,
-    SetPalette: TuiSetPalette,
-    SetCodePage: TuiSetCodePage,
-    GetDisplayMode: TuiGetDisplayMode,
-    SetDisplayMode: TuiSetDisplayMode,
-    ShowMouseCursor: TuiShowMouseCursor,
-    SetMouseCursor: TuiSetMouseCursor,
-    MenuControl: TuiMenuControl,
-    SetMenuClose: TuiSetMenuClose,
+// `FRONTEND_VTBL` field types use `extern "stdcall"` on i386 and
+// `extern "C"` on amd64/arm64 (per bindgen translating __stdcall).
+// Our Tui* impls are `extern "system"` (same ABI per arch, distinct
+// Rust type). Lazy-init via `*const ()` runtime-transmute (mirrors
+// DummyVtbl in consrv/condrv/dummyterm.rs).
+static mut TuiVtbl: FRONTEND_VTBL = FRONTEND_VTBL {
+    InitFrontEnd: None,
+    DeinitFrontEnd: None,
+    DrawRegion: None,
+    WriteStream: None,
+    RingBell: None,
+    SetCursorInfo: None,
+    SetScreenInfo: None,
+    ResizeTerminal: None,
+    SetActiveScreenBuffer: None,
+    ReleaseScreenBuffer: None,
+    RefreshInternalInfo: None,
+    ChangeTitle: None,
+    ChangeIcon: None,
+    GetThreadConsoleDesktop: None,
+    GetConsoleWindowHandle: None,
+    GetLargestConsoleWindowSize: None,
+    GetSelectionInfo: None,
+    SetPalette: None,
+    SetCodePage: None,
+    GetDisplayMode: None,
+    SetDisplayMode: None,
+    ShowMouseCursor: None,
+    SetMouseCursor: None,
+    MenuControl: None,
+    SetMenuClose: None,
 };
+
+pub(crate) unsafe fn InitTuiVtblIfNeeded() {
+    if TuiVtbl.InitFrontEnd.is_some() {
+        return;
+    }
+    TuiVtbl = FRONTEND_VTBL {
+        InitFrontEnd: Some(core::mem::transmute(TuiInitFrontEnd as *const ())),
+        DeinitFrontEnd: Some(core::mem::transmute(TuiDeinitFrontEnd as *const ())),
+        DrawRegion: Some(core::mem::transmute(TuiDrawRegion as *const ())),
+        WriteStream: Some(core::mem::transmute(TuiWriteStream as *const ())),
+        RingBell: Some(core::mem::transmute(TuiRingBell as *const ())),
+        SetCursorInfo: Some(core::mem::transmute(TuiSetCursorInfo as *const ())),
+        SetScreenInfo: Some(core::mem::transmute(TuiSetScreenInfo as *const ())),
+        ResizeTerminal: Some(core::mem::transmute(TuiResizeTerminal as *const ())),
+        SetActiveScreenBuffer: Some(core::mem::transmute(TuiSetActiveScreenBuffer as *const ())),
+        ReleaseScreenBuffer: Some(core::mem::transmute(TuiReleaseScreenBuffer as *const ())),
+        RefreshInternalInfo: Some(core::mem::transmute(TuiRefreshInternalInfo as *const ())),
+        ChangeTitle: Some(core::mem::transmute(TuiChangeTitle as *const ())),
+        ChangeIcon: Some(core::mem::transmute(TuiChangeIcon as *const ())),
+        GetThreadConsoleDesktop: Some(core::mem::transmute(TuiGetThreadConsoleDesktop as *const ())),
+        GetConsoleWindowHandle: Some(core::mem::transmute(TuiGetConsoleWindowHandle as *const ())),
+        GetLargestConsoleWindowSize: Some(core::mem::transmute(TuiGetLargestConsoleWindowSize as *const ())),
+        GetSelectionInfo: Some(core::mem::transmute(TuiGetSelectionInfo as *const ())),
+        SetPalette: Some(core::mem::transmute(TuiSetPalette as *const ())),
+        SetCodePage: Some(core::mem::transmute(TuiSetCodePage as *const ())),
+        GetDisplayMode: Some(core::mem::transmute(TuiGetDisplayMode as *const ())),
+        SetDisplayMode: Some(core::mem::transmute(TuiSetDisplayMode as *const ())),
+        ShowMouseCursor: Some(core::mem::transmute(TuiShowMouseCursor as *const ())),
+        SetMouseCursor: Some(core::mem::transmute(TuiSetMouseCursor as *const ())),
+        MenuControl: Some(core::mem::transmute(TuiMenuControl as *const ())),
+        SetMenuClose: Some(core::mem::transmute(TuiSetMenuClose as *const ())),
+    };
+}
 
 pub(crate) unsafe fn ScmLoadDriver(lpServiceName: LPCWSTR) -> u32 {
     let mut Status: i32 = STATUS_SUCCESS;
@@ -782,7 +871,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     return Success;
 }
 
-pub(crate) unsafe fn TuiInitFrontEnd(
+pub(crate) unsafe extern "system" fn TuiInitFrontEnd(
     This: PFRONTEND,
     Console: PCONSRV_CONSOLE,
 ) -> NTSTATUS {
@@ -839,7 +928,7 @@ pub(crate) unsafe fn TuiInitFrontEnd(
     STATUS_SUCCESS
 }
 
-pub(crate) unsafe fn TuiDeinitFrontEnd(This: PFRONTEND) {
+pub(crate) unsafe extern "system" fn TuiDeinitFrontEnd(This: PFRONTEND) {
     let TuiData = (*This).Context as PTUI_CONSOLE_DATA;
 
     DestroyWindow((*TuiData).hWindow);
@@ -897,7 +986,7 @@ unsafe extern "system" fn TuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT
     ConsoleFreeHeap(ConsoleDraw as *mut core::ffi::c_void);
 }
 
-pub(crate) unsafe fn TuiWriteStream(
+pub(crate) unsafe extern "system" fn TuiWriteStream(
     This: PFRONTEND,
     Region: *mut SMALL_RECT,
     CursorStartX: i16,
@@ -962,11 +1051,11 @@ pub(crate) unsafe fn TuiWriteStream(
     RtlFreeHeap(RtlGetProcessHeap(), 0, NewBuffer as *mut core::ffi::c_void);
 }
 
-pub(crate) unsafe fn TuiRingBell(This: PFRONTEND) {
+pub(crate) unsafe extern "system" fn TuiRingBell(This: PFRONTEND) {
     Beep(800, 200);
 }
 
-pub(crate) unsafe fn TuiSetCursorInfo(
+pub(crate) unsafe extern "system" fn TuiSetCursorInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
 ) -> BOOL {
@@ -1006,7 +1095,7 @@ pub(crate) unsafe fn TuiSetCursorInfo(
     1
 }
 
-pub(crate) unsafe fn TuiSetScreenInfo(
+pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
     OldCursorX: SHORT,
@@ -1046,10 +1135,10 @@ pub(crate) unsafe fn TuiSetScreenInfo(
     1u8
 }
 
-pub(crate) unsafe fn TuiResizeTerminal(This: *mut PFRONTEND) {
+pub(crate) unsafe extern "system" fn TuiResizeTerminal(This: PFRONTEND) {
 }
 
-unsafe extern "system" fn TuiSetActiveScreenBuffer(This: *mut PFRONTEND) {
+unsafe extern "system" fn TuiSetActiveScreenBuffer(This: PFRONTEND) {
 }
 
 unsafe extern "system" fn TuiReleaseScreenBuffer(
@@ -1058,29 +1147,29 @@ unsafe extern "system" fn TuiReleaseScreenBuffer(
 ) {
 }
 
-unsafe extern "system" fn TuiRefreshInternalInfo(This: *mut PFRONTEND) {
+unsafe extern "system" fn TuiRefreshInternalInfo(This: PFRONTEND) {
 }
 
-pub(crate) unsafe fn TuiChangeTitle(This: *mut PFRONTEND) {
+pub(crate) unsafe extern "system" fn TuiChangeTitle(This: PFRONTEND) {
 }
 
-pub(crate) unsafe fn TuiChangeIcon(
+pub(crate) unsafe extern "system" fn TuiChangeIcon(
     This: PFRONTEND,
     IconHandle: HICON,
 ) -> BOOL {
     1u8
 }
 
-unsafe extern "system" fn TuiGetThreadConsoleDesktop(This: *mut PFRONTEND) -> HDESK {
+unsafe extern "system" fn TuiGetThreadConsoleDesktop(This: PFRONTEND) -> HDESK {
     core::ptr::null_mut()
 }
 
-pub(crate) unsafe fn TuiGetConsoleWindowHandle(This: *mut PFRONTEND) -> HWND {
+pub(crate) unsafe extern "system" fn TuiGetConsoleWindowHandle(This: PFRONTEND) -> HWND {
     let TuiData = (*This).Context as *mut _TUI_CONSOLE_DATA;
     (*TuiData).hWindow
 }
 
-pub(crate) unsafe fn TuiGetLargestConsoleWindowSize(
+pub(crate) unsafe extern "system" fn TuiGetLargestConsoleWindowSize(
     This: PFRONTEND,
     pSize: PCOORD,
 ) {
@@ -1090,14 +1179,14 @@ pub(crate) unsafe fn TuiGetLargestConsoleWindowSize(
     *pSize = PhysicalConsoleSize;
 }
 
-pub(crate) unsafe fn TuiGetSelectionInfo(
+pub(crate) unsafe extern "system" fn TuiGetSelectionInfo(
     This: PFRONTEND,
     pSelectionInfo: PCONSOLE_SELECTION_INFO,
 ) -> BOOL {
     1u8
 }
 
-pub(crate) unsafe fn TuiSetPalette(
+pub(crate) unsafe extern "system" fn TuiSetPalette(
     This: PFRONTEND,
     PaletteHandle: HPALETTE,
     PaletteUsage: u32,
@@ -1120,22 +1209,22 @@ unsafe extern "system" fn TuiGetDisplayMode(This: PFRONTEND) -> ULONG {
     CONSOLE_FULLSCREEN_HARDWARE
 }
 
-pub(crate) unsafe fn TuiSetDisplayMode(
-    This: *mut PFRONTEND,
+pub(crate) unsafe extern "system" fn TuiSetDisplayMode(
+    This: PFRONTEND,
     NewMode: ULONG,
 ) -> BOOL {
     1u8
 }
 
-pub(crate) unsafe fn TuiShowMouseCursor(
+pub(crate) unsafe extern "system" fn TuiShowMouseCursor(
     This: PFRONTEND,
     Show: BOOL,
 ) -> INT {
     return 0;
 }
 
-pub(crate) unsafe fn TuiSetMouseCursor(
-    This: *mut PFRONTEND,
+pub(crate) unsafe extern "system" fn TuiSetMouseCursor(
+    This: PFRONTEND,
     CursorHandle: HCURSOR,
 ) -> BOOL {
     1u8
@@ -1149,7 +1238,7 @@ unsafe extern "system" fn TuiMenuControl(
     core::ptr::null_mut()
 }
 
-pub(crate) unsafe fn TuiSetMenuClose(
+pub(crate) unsafe extern "system" fn TuiSetMenuClose(
     This: PFRONTEND,
     Enable: BOOL,
 ) -> BOOL {
@@ -1179,6 +1268,7 @@ pub unsafe extern "system" fn TuiLoadFrontEnd(
         return STATUS_UNSUCCESSFUL;
     }
 
+    InitTuiVtblIfNeeded();
     (*FrontEnd).Vtbl = core::ptr::addr_of_mut!(TuiVtbl);
     (*FrontEnd).Context = core::ptr::null_mut();
     (*FrontEnd).Context2 = core::ptr::null_mut();

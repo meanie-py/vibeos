@@ -24,6 +24,21 @@ pub mod popup;
 pub mod settings;
 pub mod shutdown;
 pub mod subsysreg;
+pub mod term;
+
+// include/conio.h macros — bindgen doesn't see file-scope macros.
+#[inline(always)]
+#[allow(non_snake_case)]
+pub unsafe fn GetType(this: winsrv_sys::winsrv::PCONSOLE_SCREEN_BUFFER) -> winsrv_sys::winsrv::CONSOLE_IO_OBJECT_TYPE {
+    (*this).Header.Type
+}
+
+// InputBuffer.Mode is USHORT (u16); the conio.h macro expands to it directly.
+#[inline(always)]
+#[allow(non_snake_case)]
+pub unsafe fn GetConsoleInputBufferMode(Console: winsrv_sys::winsrv::PCONSRV_CONSOLE) -> winsrv_sys::winsrv::USHORT {
+    (*Console).InputBuffer.Mode
+}
 
 // Phase 5.4: frontends dispatch
 pub mod frontends;

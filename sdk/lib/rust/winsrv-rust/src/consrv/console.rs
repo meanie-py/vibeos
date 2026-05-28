@@ -5,6 +5,7 @@ use super::condrv::conoutput::*;
 use super::condrv::coninput::*;
 use super::condrv::console::*;
 use super::handle::*;
+use super::term::*;
 use super::lineinput::*;
 use super::history::*;
 use super::init::*;
@@ -22,12 +23,76 @@ use super::condrv::console::ConDrvValidateConsoleUnsafe;
 
 use core::ffi::c_void;
 
+// COM externs (objbase.h / shlobj.h) — bindgen FN_ALLOW doesn't pull
+// these in. Stubs so the IShellLink path in ConSrvOpenLNKLink links.
+extern "system" {
+    pub fn CoInitialize(pvReserved: PVOID) -> HRESULT;
+    pub fn CoUninitialize();
+    pub fn CoCreateInstance(
+        rclsid: *const GUID,
+        pUnkOuter: *mut c_void,
+        dwClsContext: DWORD,
+        riid: *const GUID,
+        ppv: *mut LPVOID,
+    ) -> HRESULT;
+}
+extern "system" {
+    // IShellLinkW vtbl wrappers — supplied by the per-process shell32.
+    // C source uses `IShellLinkW_*` macros; we declare them as
+    // extern symbols for the linker to satisfy from a shim layer.
+    pub fn IShellLinkW_GetShowCmd(pshl: LPVOID, ShowCmd: *mut i32) -> HRESULT;
+    pub fn IShellLinkW_GetIconLocation(
+        pshl: LPVOID,
+        IconPath: *mut WCHAR,
+        cchIconPath: i32,
+        IconIndex: *mut i32,
+    ) -> HRESULT;
+    pub fn IShellLinkW_Release(pshl: LPVOID) -> ULONG;
+    pub fn IPersistFile_QueryInterface(
+        pshl: LPVOID,
+        riid: *const GUID,
+        ppvObject: *mut LPVOID,
+    ) -> HRESULT;
+    pub fn IPersistFile_Load(ppf: LPVOID, pszFileName: *const WCHAR, dwMode: DWORD) -> HRESULT;
+    pub fn IPersistFile_Release(ppf: LPVOID) -> ULONG;
+}
+extern {
+    pub static CLSID_ShellLink: GUID;
+    pub static IID_IShellLinkW: GUID;
+    pub static IID_IPersistFile: GUID;
+}
+
+// alias.c-internal helper (file-static in C). The cohabitation flip
+// would promote it to `#[no_mangle] pub fn IntDeleteAllAliases`; for
+// now declare extern so console.rs links.
+extern "system" {
+    pub fn IntDeleteAllAliases(Console: PCONSRV_CONSOLE);
+}
+
+// C `FIELD_OFFSET(t, f)` → Rust `core::mem::offset_of!(t, f)` macro.
+// Same call shape so the translation can keep `FIELD_OFFSET(T, F)`.
+macro_rules! FIELD_OFFSET {
+    ($t:ty, $f:ident) => {
+        core::mem::offset_of!($t, $f)
+    };
+}
+
 // ---- file-scope preamble (translated) ----
 pub(crate) static mut ConsoleListSize: ULONG = 0;
 pub(crate) static mut ConsoleList: *mut PCONSRV_CONSOLE = core::ptr::null_mut();
 pub(crate) static mut ListLock: RTL_RESOURCE = unsafe { core::mem::zeroed() };
 
-pub const CONSOLE_VALID_CONTROL_MODES: ULONG = ENABLE_EXTENDED_FLAGS | ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE as u16;
+// C source has these `// static` commented-out (console.c:30,35).
+// They feed the dead-code `ConDrvInsertConsole` only. Keep as
+// file-scope stubs to satisfy the translator.
+#[allow(non_upper_case_globals)]
+pub(crate) static mut CurrentConsoleID: ULONG = 0;
+pub(crate) static mut ConDrvConsoleList: LIST_ENTRY = LIST_ENTRY {
+    Flink: core::ptr::null_mut(),
+    Blink: core::ptr::null_mut(),
+};
+
+pub const CONSOLE_VALID_CONTROL_MODES: ULONG = (ENABLE_EXTENDED_FLAGS as u32) | (ENABLE_INSERT_MODE as u32) | (ENABLE_QUICK_EDIT_MODE as u32);
 
 // console.c file-scope macros — bindgen doesn't see file-static macros.
 #[inline]
@@ -46,19 +111,16 @@ pub(crate) unsafe fn ConSrvUnlockConsoleList() {
 }
 
 pub(crate) unsafe fn ConDrvInsertConsole(Console: PCONSOLE) -> NTSTATUS {
+    // C source for this body is bracketed `#if 0`-style (lines using
+    // ConDrvConsoleList / CurrentConsoleID / Console->ListEntry /
+    // Console->ConsoleID are all commented out in win32ss/user/winsrv/
+    // consrv/console.c:30-65). Keep the lock acquire/release for shape
+    // but suppress the body so it compiles against bindgen _CONSOLE
+    // (which lacks ListEntry / ConsoleID fields).
+    let _ = Console;
     ConSrvLockConsoleListExclusive();
-
-    InsertTailList(
-        core::ptr::addr_of_mut!(ConDrvConsoleList),
-        core::ptr::addr_of_mut!((*Console).ListEntry)
-    );
-
-    _InterlockedExchange(
-        core::ptr::addr_of_mut!((*Console).ConsoleID) as PLONG,
-        CurrentConsoleID
-    );
-    _InterlockedIncrement(core::ptr::addr_of_mut!(CurrentConsoleID) as PLONG);
-
+    // InsertTailList / _InterlockedExchange / _InterlockedIncrement —
+    // dead in upstream C, suppressed here.
     ConSrvUnlockConsoleList();
     STATUS_SUCCESS
 }
@@ -422,7 +484,7 @@ pub(crate) unsafe fn LoadShellLinkConsoleInfo(
 
                     Length = min(
                         Length - 4,
-                        ((*ConsoleInfo).cbSize as usize - FIELD_OFFSET(_CONSOLE_STATE_INFO, ConsoleTitle) - core::mem::size_of::<u16>()) / core::mem::size_of::<u16>(),
+                        ((*ConsoleInfo).cbSize as usize - FIELD_OFFSET!(_CONSOLE_STATE_INFO, ConsoleTitle) - core::mem::size_of::<u16>()) / core::mem::size_of::<u16>(),
                     );
                     wcsncpy((*ConsoleInfo).ConsoleTitle.as_mut_ptr(), LinkName, Length);
                     (*ConsoleInfo).ConsoleTitle[Length] = 0;

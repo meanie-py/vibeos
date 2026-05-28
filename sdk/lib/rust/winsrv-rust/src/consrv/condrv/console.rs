@@ -1,11 +1,12 @@
+use super::super::term::*;
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 
 extern "C" {
     pub fn ResetTerminal(Console: PCONSOLE);
-    pub fn TermSetCodePage(Console: PCONSOLE, CodePage: UINT) -> BOOLEAN;
 }
+// TermSetCodePage supplied by super::super::term::*
 
 #[no_mangle]
 pub unsafe extern "system" fn ConDrvValidateConsoleState(
@@ -305,7 +306,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleCP(
     }
 
     if OutputCP != 0 {
-        if TermSetCodePage(Console, CodePage) == 0 {
+        if TermSetCodePage(Console as PCONSRV_CONSOLE, CodePage) == 0 {
             return STATUS_UNSUCCESSFUL;
         }
 

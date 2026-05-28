@@ -5,6 +5,7 @@ use super::condrv::coninput::*;
 use super::condrv::console::*;
 use super::console::*;
 use super::handle::*;
+use super::term::*;
 use super::lineinput::*;
 use super::history::*;
 use super::init::*;
@@ -21,6 +22,20 @@ use super::console::ConSrvReleaseConsole;
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleHardwareState(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleHardwareStateImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleHardwareStateImpl(
     _ApiMessage: *mut CONSOLE_API_MESSAGE,
     _Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -30,6 +45,20 @@ pub unsafe extern "system" fn SrvGetConsoleHardwareState(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleHardwareState(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvSetConsoleHardwareStateImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvSetConsoleHardwareStateImpl(
     _ApiMessage: *mut CONSOLE_API_MESSAGE,
     _Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -39,6 +68,20 @@ pub unsafe extern "system" fn SrvSetConsoleHardwareState(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleDisplayMode(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleDisplayModeImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleDisplayModeImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -52,6 +95,20 @@ pub unsafe extern "system" fn SrvGetConsoleDisplayMode(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleDisplayMode(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvSetConsoleDisplayModeImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvSetConsoleDisplayModeImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -85,6 +142,20 @@ pub unsafe extern "system" fn SrvSetConsoleDisplayMode(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetLargestConsoleWindowSize(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetLargestConsoleWindowSizeImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetLargestConsoleWindowSizeImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -116,6 +187,20 @@ pub unsafe extern "system" fn SrvGetLargestConsoleWindowSize(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvShowConsoleCursor(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvShowConsoleCursorImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvShowConsoleCursorImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -144,6 +229,20 @@ pub unsafe extern "system" fn SrvShowConsoleCursor(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleCursor(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvSetConsoleCursorImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvSetConsoleCursorImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -172,6 +271,20 @@ pub unsafe extern "system" fn SrvSetConsoleCursor(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvConsoleMenuControl(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvConsoleMenuControlImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvConsoleMenuControlImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -204,6 +317,20 @@ pub unsafe extern "system" fn SrvConsoleMenuControl(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleMenuClose(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvSetConsoleMenuCloseImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvSetConsoleMenuCloseImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -252,6 +379,20 @@ pub unsafe extern "system" fn GetThreadConsoleDesktop(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleWindow(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleWindowImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleWindowImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -266,6 +407,20 @@ pub unsafe extern "system" fn SrvGetConsoleWindow(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleIcon(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvSetConsoleIconImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvSetConsoleIconImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -283,6 +438,20 @@ pub unsafe extern "system" fn SrvSetConsoleIcon(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleSelectionInfo(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleSelectionInfoImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleSelectionInfoImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -303,6 +472,20 @@ pub unsafe extern "system" fn SrvGetConsoleSelectionInfo(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleNumberOfFonts(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleNumberOfFontsImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleNumberOfFontsImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     _Console: PCONSRV_CONSOLE,
     _ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -317,6 +500,20 @@ pub unsafe extern "system" fn SrvGetConsoleNumberOfFonts(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleFontInfo(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleFontInfoImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleFontInfoImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     _Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -345,6 +542,20 @@ pub unsafe extern "system" fn SrvGetConsoleFontInfo(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleFontSize(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleFontSizeImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleFontSizeImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     _Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -371,6 +582,20 @@ pub unsafe extern "system" fn SrvGetConsoleFontSize(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleCurrentFont(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvGetConsoleCurrentFontImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvGetConsoleCurrentFontImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     _Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,
@@ -399,6 +624,20 @@ pub unsafe extern "system" fn SrvGetConsoleCurrentFont(
 
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleFont(
+    ApiMessage_outer: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
+    let _ = ReplyCode;
+    let ProcessData_w = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console_w: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let Status = ConSrvGetConsole(ProcessData_w, core::ptr::addr_of_mut!(Console_w), 1u8);
+    if !NT_SUCCESS(Status) { return Status; }
+    let result = SrvSetConsoleFontImpl(ApiMessage_outer as *mut CONSOLE_API_MESSAGE, Console_w, ProcessData_w as *mut CONSOLE_PROCESS_DATA);
+    ConSrvReleaseConsole(Console_w, 1u8);
+    result
+}
+
+pub(crate) unsafe fn SrvSetConsoleFontImpl(
     ApiMessage: *mut CONSOLE_API_MESSAGE,
     _Console: PCONSRV_CONSOLE,
     ProcessData: *mut CONSOLE_PROCESS_DATA,

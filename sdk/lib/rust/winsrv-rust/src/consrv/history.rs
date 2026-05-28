@@ -5,6 +5,7 @@ use super::condrv::coninput::*;
 use super::condrv::console::*;
 use super::console::*;
 use super::handle::*;
+use super::{GetConsoleInputBufferMode, GetType};
 use super::lineinput::*;
 use super::init::*;
 use super::popup::{POPUP_WINDOW, PPOPUP_WINDOW, _POPUP_WINDOW};
@@ -419,9 +420,12 @@ pub unsafe extern "C" fn HistoryReshapeAllBuffers(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleCommandHistory(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    Reply: PULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.GetCommandHistoryRequest.Console;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let GetCommandHistoryRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.GetCommandHistoryRequest);
 
     let mut Status = STATUS_SUCCESS;
@@ -430,13 +434,13 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistory(
     if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*GetCommandHistoryRequest).History) as *mut PVOID,
-        (*GetCommandHistoryRequest).HistoryLength as usize,
+        (*GetCommandHistoryRequest).HistoryLength as ULONG,
         core::mem::size_of::<u8>() as ULONG,
     ) == 0 ||
        CsrValidateMessageBuffer(
            ApiMessage,
            core::ptr::addr_of_mut!((*GetCommandHistoryRequest).ExeName) as *mut PVOID,
-           (*GetCommandHistoryRequest).ExeLength as usize,
+           (*GetCommandHistoryRequest).ExeLength as ULONG,
            core::mem::size_of::<u8>() as ULONG,
        ) == 0
     {
@@ -510,9 +514,12 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistory(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleCommandHistoryLength(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    Reply: PULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.GetCommandHistoryLengthRequest.Console;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let GetCommandHistoryLengthRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.GetCommandHistoryLengthRequest);
 
     let mut Length: ULONG = 0;
@@ -520,7 +527,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistoryLength(
     if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*GetCommandHistoryLengthRequest).ExeName) as *mut PVOID,
-        (*GetCommandHistoryLengthRequest).ExeLength as usize,
+        (*GetCommandHistoryLengthRequest).ExeLength as ULONG,
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
@@ -553,15 +560,18 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistoryLength(
 #[no_mangle]
 pub unsafe extern "system" fn SrvExpungeConsoleCommandHistory(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    Reply: PULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.ExpungeCommandHistoryRequest.Console;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let ExpungeCommandHistoryRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.ExpungeCommandHistoryRequest);
 
     if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*ExpungeCommandHistoryRequest).ExeName) as *mut PVOID,
-        (*ExpungeCommandHistoryRequest).ExeLength as usize,
+        (*ExpungeCommandHistoryRequest).ExeLength as ULONG,
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
@@ -582,9 +592,12 @@ pub unsafe extern "system" fn SrvExpungeConsoleCommandHistory(
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    Reply: PULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.SetHistoryNumberCommandsRequest.Console;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let SetHistoryNumberCommandsRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.SetHistoryNumberCommandsRequest);
 
     let mut Status = STATUS_SUCCESS;
@@ -592,7 +605,7 @@ pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
     if CsrValidateMessageBuffer(
         ApiMessage,
         core::ptr::addr_of_mut!((*SetHistoryNumberCommandsRequest).ExeName) as *mut PVOID,
-        (*SetHistoryNumberCommandsRequest).ExeLength as usize,
+        (*SetHistoryNumberCommandsRequest).ExeLength as ULONG,
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
@@ -615,9 +628,9 @@ pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleHistory(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    Reply: PULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let ProcessData = (*ApiMessage).__bindgen_anon_1.ConnectionInfo as PCSR_PROCESS;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let HistoryInfoRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.HistoryInfoRequest);
 
     let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
@@ -642,9 +655,9 @@ pub unsafe extern "system" fn SrvGetConsoleHistory(
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleHistory(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    Reply: PULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let ProcessData = (*ApiMessage).__bindgen_anon_1.ConnectionInfo as PCSR_PROCESS;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let HistoryInfoRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.HistoryInfoRequest);
 
     let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
@@ -672,9 +685,12 @@ pub unsafe extern "system" fn SrvSetConsoleHistory(
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleCommandHistoryMode(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    Reply: PULONG,
+    ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let Console = (*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.SetHistoryModeRequest.Console;
+    let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
+    let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
+    let _gs = ConSrvGetConsole(ProcessData, core::ptr::addr_of_mut!(Console), 1u8);
+    if !NT_SUCCESS(_gs) { let _ = ReplyCode; return _gs; }
     let SetHistoryModeRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.SetHistoryModeRequest);
 
     (*Console).InsertMode = if (*SetHistoryModeRequest).Mode & 1 != 0 { 1u8 } else { 0u8 };

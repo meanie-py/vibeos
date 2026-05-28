@@ -5,6 +5,7 @@ use super::condrv::coninput::*;
 use super::condrv::console::*;
 use super::console::*;
 use super::handle::*;
+use super::{GetConsoleInputBufferMode, GetType};
 use super::lineinput::*;
 use super::history::*;
 use super::init::*;
