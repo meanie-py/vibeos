@@ -14,6 +14,7 @@ pub mod resource;
 pub mod sd;
 pub mod sec;
 pub mod sid;
+pub mod thread;
 pub mod timezone;
 pub mod ustr;
 pub mod utf8;

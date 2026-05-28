@@ -79,7 +79,7 @@ list(APPEND SOURCE
     slist.c
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
     sysvol.c
-    thread.c
+    # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
     # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
     trace.c
@@ -223,6 +223,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sd.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sec.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sid.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/thread.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/timezone.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs

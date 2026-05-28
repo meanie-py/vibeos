@@ -91,6 +91,71 @@ RtlpSetPebEnvironment(IN PWSTR NewEnvironment)
 }
 
 /*
+ * Helpers for the rtl-strings Rust Wave THR (thread.c) shims. Same
+ * pattern as the env helpers above: lets the Rust side read fields
+ * out of PEB / TEB / IMAGE_NT_HEADERS without having to mirror the
+ * per-arch layouts.
+ */
+PVOID
+NTAPI
+RtlpThrGetPebImageBaseAddress(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->ImageBaseAddress : NULL;
+}
+
+SIZE_T
+NTAPI
+RtlpThrGetPebMinimumStackCommit(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->MinimumStackCommit : 0;
+}
+
+ULONG
+NTAPI
+RtlpThrGetPebNtGlobalFlag(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->NtGlobalFlag : 0;
+}
+
+VOID
+NTAPI
+RtlpThrSetFreeStackOnTermination(VOID)
+{
+    NtCurrentTeb()->FreeStackOnTermination = TRUE;
+}
+
+PVOID
+NTAPI
+RtlpThrTebDeallocStackAddr(PVOID TebBase)
+{
+    return &((PTEB)TebBase)->DeallocationStack;
+}
+
+SIZE_T
+NTAPI
+RtlpThrImageStackReserve(PVOID Headers)
+{
+    return ((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackReserve;
+}
+
+SIZE_T
+NTAPI
+RtlpThrImageStackCommit(PVOID Headers)
+{
+    return ((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackCommit;
+}
+
+PVOID
+NTAPI
+RtlpThrCurrentTeb(VOID)
+{
+    return (PVOID)NtCurrentTeb();
+}
+
+/*
  * @implemented
  */
 VOID NTAPI

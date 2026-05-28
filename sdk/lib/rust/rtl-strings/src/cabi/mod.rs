@@ -7,7 +7,7 @@
 
 use crate::core_rs::{
     acl, conv, dos8dot3, env, misc, nls, priv_, resource as res, sd as sd_, sec, sid,
-    timezone as tz, ustr,
+    thread as thr, timezone as tz, ustr,
 };
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
@@ -6574,4 +6574,459 @@ pub unsafe extern "system" fn RtlDumpResource(resource: *mut res::RTL_RESOURCE) 
         let fmt2 = b"\towner thread = %p\n\0";
         let _ = DbgPrint(fmt2.as_ptr(), r.OwningThread);
     }
+}
+
+// =====================================================================
+// Wave THR — straight translation of `sdk/lib/rtl/thread.c` (8 fns,
+// pure plumbing: `Zw*`/`Nt*` thread + VM syscalls + `Rtl*` helpers).
+// PEB/TEB/IMAGE_NT_HEADERS field reads go through `RtlpThr*` libsupp
+// helpers — same pattern as Wave ENV's `RtlpGetPebEnvironment`. No
+// byte-diff: every observable lives behind a syscall.
+// =====================================================================
+
+extern "system" {
+    fn ZwQuerySystemInformation(
+        InfoClass: u32,
+        Info: *mut u8,
+        InfoLen: u32,
+        ReturnLength: *mut u32,
+    ) -> i32;
+    fn ZwAllocateVirtualMemory(
+        ProcessHandle: *mut u8,
+        BaseAddress: *mut *mut u8,
+        ZeroBits: u32,
+        RegionSize: *mut usize,
+        AllocationType: u32,
+        Protect: u32,
+    ) -> i32;
+    fn ZwFreeVirtualMemory(
+        ProcessHandle: *mut u8,
+        BaseAddress: *mut *mut u8,
+        RegionSize: *mut usize,
+        FreeType: u32,
+    ) -> i32;
+    fn ZwProtectVirtualMemory(
+        ProcessHandle: *mut u8,
+        BaseAddress: *mut *mut u8,
+        RegionSize: *mut usize,
+        NewProtect: u32,
+        OldProtect: *mut u32,
+    ) -> i32;
+    // NtFreeVirtualMemory + ZwSetInformationThread declared earlier
+    // (Wave ENV + Wave PRIV); reused here.
+    fn NtReadVirtualMemory(
+        ProcessHandle: *mut u8,
+        BaseAddress: *const u8,
+        Buffer: *mut u8,
+        BytesToRead: usize,
+        NumberOfBytesRead: *mut usize,
+    ) -> i32;
+    fn NtQueryInformationThread(
+        ThreadHandle: *mut u8,
+        ThreadInformationClass: u32,
+        ThreadInformation: *mut u8,
+        ThreadInformationLength: u32,
+        ReturnLength: *mut u32,
+    ) -> i32;
+    fn ZwQueryInformationThread(
+        ThreadHandle: *mut u8,
+        ThreadInformationClass: u32,
+        ThreadInformation: *mut u8,
+        ThreadInformationLength: u32,
+        ReturnLength: *mut u32,
+    ) -> i32;
+    fn ZwCreateThread(
+        ThreadHandle: *mut *mut u8,
+        DesiredAccess: u32,
+        ObjectAttributes: *mut thr::OBJECT_ATTRIBUTES,
+        ProcessHandle: *mut u8,
+        ClientId: *mut thr::CLIENT_ID,
+        ThreadContext: *mut u8,
+        InitialTeb: *mut thr::INITIAL_TEB,
+        CreateSuspended: u8,
+    ) -> i32;
+    fn NtTerminateThread(ThreadHandle: *mut u8, ExitStatus: i32) -> i32;
+    fn LdrShutdownThread() -> i32;
+    fn RtlImageNtHeader(Base: *mut u8) -> *mut u8;
+    fn RtlInitializeContext(
+        ProcessHandle: *mut u8,
+        ThreadContext: *mut u8,
+        ThreadStartParam: *mut u8,
+        ThreadStartAddress: *mut u8,
+        InitialTeb: *mut u8,
+    );
+
+    // libsupp helpers (per-flavor: ntoskrnl/rtl/libsupp.c or
+    // dll/ntdll/rtl/libsupp.c). See env-wave precedent.
+    fn RtlpThrGetPebImageBaseAddress() -> *mut u8;
+    fn RtlpThrGetPebMinimumStackCommit() -> usize;
+    fn RtlpThrGetPebNtGlobalFlag() -> u32;
+    fn RtlpThrSetFreeStackOnTermination();
+    fn RtlpThrTebDeallocStackAddr(TebBase: *mut u8) -> *mut u8;
+    fn RtlpThrImageStackReserve(Headers: *mut u8) -> usize;
+    fn RtlpThrImageStackCommit(Headers: *mut u8) -> usize;
+    fn RtlpThrCurrentTeb() -> *mut u8;
+}
+
+/// `NTSTATUS NTAPI RtlpCreateUserStack(HANDLE, SIZE_T, SIZE_T, ULONG, PINITIAL_TEB)`.
+///
+/// Faithful translation: query system info, reserve+commit a stack
+/// region, optionally guard-page the bottom. All-or-nothing — on the
+/// commit failure path the reserved region is released. Per-image
+/// stack defaults come from PE OptionalHeader when the target is the
+/// current process.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpCreateUserStack(
+    process_handle: *mut u8,
+    mut stack_reserve: usize,
+    mut stack_commit: usize,
+    stack_zero_bits: u32,
+    initial_teb: *mut thr::INITIAL_TEB,
+) -> i32 {
+    let mut sbi: thr::SYSTEM_BASIC_INFORMATION = core::mem::zeroed();
+    let status = ZwQuerySystemInformation(
+        thr::SYSTEM_BASIC_INFORMATION_CLASS,
+        &mut sbi as *mut _ as *mut u8,
+        core::mem::size_of::<thr::SYSTEM_BASIC_INFORMATION>() as u32,
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        return status;
+    }
+
+    // Use the Image Settings if we are dealing with the current Process.
+    if process_handle == thr::NT_CURRENT_PROCESS as *mut u8 {
+        let headers = RtlImageNtHeader(RtlpThrGetPebImageBaseAddress());
+        if headers.is_null() {
+            return thr::STATUS_INVALID_IMAGE_FORMAT;
+        }
+
+        if stack_reserve == 0 {
+            stack_reserve = RtlpThrImageStackReserve(headers);
+        }
+        if stack_commit == 0 {
+            stack_commit = RtlpThrImageStackCommit(headers);
+        }
+
+        let minimum = RtlpThrGetPebMinimumStackCommit();
+        if minimum != 0 && stack_commit < minimum {
+            stack_commit = minimum;
+        }
+    } else {
+        // Use the System Settings if needed.
+        if stack_reserve == 0 {
+            stack_reserve = sbi.AllocationGranularity as usize;
+        }
+        if stack_commit == 0 {
+            stack_commit = sbi.PageSize as usize;
+        }
+    }
+
+    // Check if the commit is higher than the reserve.
+    if stack_commit >= stack_reserve {
+        // Grow the reserve beyond the commit, up to 1MB alignment.
+        stack_reserve = thr::round_up_pow2(stack_commit, 1024 * 1024);
+    }
+
+    // Align everything to page size / allocation granularity.
+    stack_commit = thr::round_up_pow2(stack_commit, sbi.PageSize as usize);
+    stack_reserve = thr::round_up_pow2(stack_reserve, sbi.AllocationGranularity as usize);
+
+    // Reserve memory for the stack.
+    let mut stack: *mut u8 = core::ptr::null_mut();
+    let mut reserve_size = stack_reserve;
+    let status = ZwAllocateVirtualMemory(
+        process_handle,
+        &mut stack,
+        stack_zero_bits,
+        &mut reserve_size,
+        thr::MEM_RESERVE,
+        thr::PAGE_READWRITE,
+    );
+    if status < 0 {
+        return status;
+    }
+
+    // Now set up some basic Initial TEB Parameters.
+    let it = &mut *initial_teb;
+    it.AllocatedStackBase = stack;
+    it.StackBase = stack.add(stack_reserve);
+    it.PreviousStackBase = core::ptr::null_mut();
+    it.PreviousStackLimit = core::ptr::null_mut();
+
+    // Update the stack position — Stack += StackReserve - StackCommit.
+    let mut stack_top = stack.add(stack_reserve - stack_commit);
+
+    // Check if we can add a guard page.
+    let use_guard = stack_reserve >= stack_commit + sbi.PageSize as usize;
+    if use_guard {
+        stack_top = stack_top.sub(sbi.PageSize as usize);
+        stack_commit += sbi.PageSize as usize;
+    }
+
+    // Allocate memory for the stack.
+    let mut commit_size = stack_commit;
+    let status = ZwAllocateVirtualMemory(
+        process_handle,
+        &mut stack_top,
+        0,
+        &mut commit_size,
+        thr::MEM_COMMIT,
+        thr::PAGE_READWRITE,
+    );
+    if status < 0 {
+        let mut guard_size: usize = 0;
+        let _ = ZwFreeVirtualMemory(
+            process_handle,
+            &mut stack_top,
+            &mut guard_size,
+            thr::MEM_RELEASE,
+        );
+        return status;
+    }
+
+    // Now set the current Stack Limit.
+    it.StackLimit = stack_top;
+
+    // Create a guard page if needed.
+    if use_guard {
+        let mut guard_size: usize = sbi.PageSize as usize;
+        let mut dummy: u32 = 0;
+        let status = ZwProtectVirtualMemory(
+            process_handle,
+            &mut stack_top,
+            &mut guard_size,
+            thr::PAGE_GUARD | thr::PAGE_READWRITE,
+            &mut dummy,
+        );
+        if status < 0 {
+            return status;
+        }
+        // Update the Stack Limit keeping in mind the Guard Page.
+        it.StackLimit = (it.StackLimit as usize + guard_size) as *mut u8;
+    }
+
+    0 // STATUS_SUCCESS
+}
+
+/// `VOID NTAPI RtlpFreeUserStack(HANDLE, PINITIAL_TEB)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpFreeUserStack(
+    process_handle: *mut u8,
+    initial_teb: *mut thr::INITIAL_TEB,
+) {
+    let mut dummy: usize = 0;
+    let it = &mut *initial_teb;
+    let _ = ZwFreeVirtualMemory(
+        process_handle,
+        &mut it.AllocatedStackBase,
+        &mut dummy,
+        thr::MEM_RELEASE,
+    );
+    // RtlZeroMemory(InitialTeb, sizeof(*InitialTeb));
+    core::ptr::write_bytes(
+        initial_teb as *mut u8,
+        0,
+        core::mem::size_of::<thr::INITIAL_TEB>(),
+    );
+}
+
+/// `NTSTATUS __cdecl RtlSetThreadIsCritical(BOOLEAN, PBOOLEAN, BOOLEAN)`.
+///
+/// Note: C declares this `__cdecl`, not `NTAPI`. `extern "C"` on all
+/// arches matches — Wave THR is the only fn here with this calling
+/// convention.
+#[no_mangle]
+pub unsafe extern "C" fn RtlSetThreadIsCritical(
+    new_value: u8,
+    old_value: *mut u8,
+    need_breaks: u8,
+) -> i32 {
+    // Initialize OldValue to FALSE.
+    if !old_value.is_null() {
+        *old_value = 0;
+    }
+
+    // Fail, if the critical breaks flag is required but is not set.
+    if need_breaks != 0
+        && (RtlpThrGetPebNtGlobalFlag() & thr::FLG_ENABLE_SYSTEM_CRIT_BREAKS) == 0
+    {
+        return thr::STATUS_UNSUCCESSFUL;
+    }
+
+    // Check if the caller wants the old value.
+    if !old_value.is_null() {
+        let mut break_on_termination: u32 = 0;
+        let _ = ZwQueryInformationThread(
+            thr::NT_CURRENT_THREAD as *mut u8,
+            thr::THREAD_BREAK_ON_TERMINATION,
+            &mut break_on_termination as *mut _ as *mut u8,
+            core::mem::size_of::<u32>() as u32,
+            core::ptr::null_mut(),
+        );
+        *old_value = break_on_termination as u8;
+    }
+
+    // Set the break on termination flag for the process.
+    let break_on_termination: u32 = new_value as u32;
+    ZwSetInformationThread(
+        thr::NT_CURRENT_THREAD as *mut u8,
+        thr::THREAD_BREAK_ON_TERMINATION,
+        &break_on_termination as *const _ as *const u8,
+        core::mem::size_of::<u32>() as u32,
+    )
+}
+
+/// `NTSTATUS NTAPI RtlCreateUserThread(HANDLE, PSECURITY_DESCRIPTOR,
+/// BOOLEAN, ULONG, SIZE_T, SIZE_T, PTHREAD_START_ROUTINE, PVOID,
+/// PHANDLE, PCLIENT_ID)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateUserThread(
+    process_handle: *mut u8,
+    security_descriptor: *mut u8,
+    create_suspended: u8,
+    stack_zero_bits: u32,
+    stack_reserve: usize,
+    stack_commit: usize,
+    start_address: *mut u8,
+    parameter: *mut u8,
+    thread_handle: *mut *mut u8,
+    client_id: *mut thr::CLIENT_ID,
+) -> i32 {
+    let mut initial_teb: thr::INITIAL_TEB = core::mem::zeroed();
+    let mut context = [0u8; thr::CONTEXT_SIZE];
+
+    // First, create the Stack.
+    let status = RtlpCreateUserStack(
+        process_handle,
+        stack_reserve,
+        stack_commit,
+        stack_zero_bits,
+        &mut initial_teb,
+    );
+    if status < 0 {
+        return status;
+    }
+
+    // Next, set up the Initial Context (per-arch RtlInitializeContext).
+    RtlInitializeContext(
+        process_handle,
+        context.as_mut_ptr(),
+        parameter,
+        start_address,
+        &mut initial_teb as *mut _ as *mut u8,
+    );
+
+    // InitializeObjectAttributes(&oa, NULL, 0, NULL, SecurityDescriptor)
+    let mut oa: thr::OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = core::mem::size_of::<thr::OBJECT_ATTRIBUTES>() as u32;
+    oa.SecurityDescriptor = security_descriptor;
+
+    // Create the Kernel Thread Object.
+    let mut handle: *mut u8 = core::ptr::null_mut();
+    let mut thread_cid: thr::CLIENT_ID = core::mem::zeroed();
+    let status = ZwCreateThread(
+        &mut handle,
+        thr::THREAD_ALL_ACCESS,
+        &mut oa,
+        process_handle,
+        &mut thread_cid,
+        context.as_mut_ptr(),
+        &mut initial_teb,
+        create_suspended,
+    );
+    if status < 0 {
+        // Free the stack.
+        RtlpFreeUserStack(process_handle, &mut initial_teb);
+    } else {
+        // Return thread data.
+        if !thread_handle.is_null() {
+            *thread_handle = handle;
+        } else {
+            let _ = NtClose(handle);
+        }
+        if !client_id.is_null() {
+            *client_id = thread_cid;
+        }
+    }
+
+    status
+}
+
+/// `VOID NTAPI RtlExitUserThread(NTSTATUS)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlExitUserThread(status: i32) {
+    // Call the Loader and tell him to notify the DLLs.
+    let _ = LdrShutdownThread();
+    // NtCurrentTeb()->FreeStackOnTermination = TRUE; via libsupp.
+    RtlpThrSetFreeStackOnTermination();
+    let _ = NtTerminateThread(thr::NT_CURRENT_THREAD as *mut u8, status);
+}
+
+/// `VOID NTAPI RtlFreeUserThreadStack(HANDLE, HANDLE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlFreeUserThreadStack(
+    process_handle: *mut u8,
+    thread_handle: *mut u8,
+) {
+    // Query the Basic Info.
+    let mut tbi: thr::THREAD_BASIC_INFORMATION = core::mem::zeroed();
+    let status = NtQueryInformationThread(
+        thread_handle,
+        thr::THREAD_BASIC_INFORMATION_CLASS,
+        &mut tbi as *mut _ as *mut u8,
+        core::mem::size_of::<thr::THREAD_BASIC_INFORMATION>() as u32,
+        core::ptr::null_mut(),
+    );
+    if status < 0 || tbi.TebBaseAddress.is_null() {
+        return;
+    }
+
+    // Get the deallocation stack — read &teb->DeallocationStack out of
+    // the foreign process at the libsupp-computed offset.
+    let mut stack_location: *mut u8 = core::ptr::null_mut();
+    let mut dummy: usize = 0;
+    let status = NtReadVirtualMemory(
+        process_handle,
+        RtlpThrTebDeallocStackAddr(tbi.TebBaseAddress),
+        &mut stack_location as *mut _ as *mut u8,
+        core::mem::size_of::<*mut u8>(),
+        &mut dummy,
+    );
+    if status < 0 || stack_location.is_null() {
+        return;
+    }
+
+    // Free it.
+    let mut size: usize = 0;
+    let _ = NtFreeVirtualMemory(
+        process_handle,
+        &mut stack_location,
+        &mut size,
+        thr::MEM_RELEASE,
+    );
+}
+
+/// `PTEB NTAPI _NtCurrentTeb(VOID)` — exported NTAPI primitive that
+/// just returns the current thread's TEB. User-mode: libsupp's
+/// `RtlpThrCurrentTeb` reads gs/fs/x18 via the C `NtCurrentTeb()`
+/// macro. Kernel-mode: libsupp returns NULL (no current TEB).
+#[no_mangle]
+pub unsafe extern "system" fn _NtCurrentTeb() -> *mut u8 {
+    RtlpThrCurrentTeb()
+}
+
+/// `NTSTATUS NTAPI RtlRemoteCall(HANDLE, HANDLE, PVOID, ULONG, PULONG,
+/// BOOLEAN, BOOLEAN)` — UNIMPLEMENTED in the C original.
+#[no_mangle]
+pub unsafe extern "system" fn RtlRemoteCall(
+    _process: *mut u8,
+    _thread: *mut u8,
+    _call_site: *mut u8,
+    _arg_count: u32,
+    _args: *mut u32,
+    _pass_context: u8,
+    _already_suspended: u8,
+) -> i32 {
+    thr::STATUS_NOT_IMPLEMENTED
 }
