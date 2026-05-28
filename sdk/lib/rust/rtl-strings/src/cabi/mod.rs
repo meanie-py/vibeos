@@ -6,8 +6,8 @@
 #![allow(non_snake_case)]
 
 use crate::core_rs::{
-    acl, conv, dos8dot3, env, misc, nls, priv_, resource as res, sd as sd_, sec, sid,
-    thread as thr, timezone as tz, ustr,
+    acl, conv, dos8dot3, env, misc, nls, priv_, process as prc, resource as res, sd as sd_, sec,
+    sid, thread as thr, timezone as tz, ustr,
 };
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
@@ -7029,4 +7029,543 @@ pub unsafe extern "system" fn RtlRemoteCall(
     _already_suspended: u8,
 ) -> i32 {
     thr::STATUS_NOT_IMPLEMENTED
+}
+
+// =====================================================================
+// Wave PRC — straight translation of `sdk/lib/rtl/process.c` (9 fns,
+// pure Zw*/Nt*/Rtl* plumbing: process create + encode/decode pointer
+// + critical flag + processor + os version). No byte-diff: every
+// observable lives behind a syscall.
+// =====================================================================
+
+extern "system" {
+    fn ZwOpenFile(
+        FileHandle: *mut *mut u8,
+        DesiredAccess: u32,
+        ObjectAttributes: *mut prc::IO_STATUS_BLOCK,
+        IoStatusBlock: *mut prc::IO_STATUS_BLOCK,
+        ShareAccess: u32,
+        OpenOptions: u32,
+    ) -> i32;
+    fn ZwCreateSection(
+        SectionHandle: *mut *mut u8,
+        DesiredAccess: u32,
+        ObjectAttributes: *mut u8,
+        MaximumSize: *mut i64,
+        SectionPageProtection: u32,
+        AllocationAttributes: u32,
+        FileHandle: *mut u8,
+    ) -> i32;
+    fn ZwCreateProcess(
+        ProcessHandle: *mut *mut u8,
+        DesiredAccess: u32,
+        ObjectAttributes: *mut thr::OBJECT_ATTRIBUTES,
+        ParentProcess: *mut u8,
+        InheritObjectTable: u8,
+        SectionHandle: *mut u8,
+        DebugPort: *mut u8,
+        ExceptionPort: *mut u8,
+    ) -> i32;
+    fn ZwQuerySection(
+        SectionHandle: *mut u8,
+        InformationClass: u32,
+        InformationBuffer: *mut u8,
+        InformationBufferSize: usize,
+        ResultLength: *mut usize,
+    ) -> i32;
+    fn ZwQueryInformationProcess(
+        ProcessHandle: *mut u8,
+        InfoClass: u32,
+        Info: *mut u8,
+        InfoLen: u32,
+        ReturnLength: *mut u32,
+    ) -> i32;
+    fn ZwSetInformationProcess(
+        ProcessHandle: *mut u8,
+        InfoClass: u32,
+        Info: *const u8,
+        InfoLen: u32,
+    ) -> i32;
+    fn ZwDuplicateObject(
+        SourceProcessHandle: *mut u8,
+        SourceHandle: *mut u8,
+        TargetProcessHandle: *mut u8,
+        TargetHandle: *mut *mut u8,
+        DesiredAccess: u32,
+        HandleAttributes: u32,
+        Options: u32,
+    ) -> i32;
+    // ZwClose declared earlier (priv wave); reused here.
+    fn NtGetCurrentProcessorNumber() -> u32;
+    fn RtlGetNtGlobalFlags() -> u32;
+    fn ZwWriteVirtualMemory(
+        ProcessHandle: *mut u8,
+        BaseAddress: *mut u8,
+        Buffer: *const u8,
+        BytesToWrite: usize,
+        NumberOfBytesWritten: *mut usize,
+    ) -> i32;
+
+    // libsupp helpers (per-flavor: ntoskrnl/rtl/libsupp.c or
+    // dll/ntdll/rtl/libsupp.c).
+    fn RtlpPrcGetPebOSMajorVersion() -> u32;
+    fn RtlpPrcGetPebOSMinorVersion() -> u32;
+    fn RtlpPrcPebProcessParametersAddr(PebBase: *mut u8) -> *mut u8;
+}
+
+extern "C" {
+    fn wcsstr(haystack: *const u16, needle: *const u16) -> *const u16;
+}
+
+/// `NTSTATUS NTAPI RtlpMapFile(PUNICODE_STRING, ULONG, PHANDLE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpMapFile(
+    image_file_name: *mut UNICODE_STRING,
+    attributes: u32,
+    section: *mut *mut u8,
+) -> i32 {
+    let mut oa: thr::OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = core::mem::size_of::<thr::OBJECT_ATTRIBUTES>() as u32;
+    oa.ObjectName = image_file_name as *mut u8;
+    oa.Attributes = attributes & (prc::OBJ_CASE_INSENSITIVE | prc::OBJ_INHERIT);
+
+    let mut io_status_block: prc::IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut h_file: *mut u8 = core::ptr::null_mut();
+
+    let status = ZwOpenFile(
+        &mut h_file,
+        prc::SYNCHRONIZE | prc::FILE_EXECUTE | prc::FILE_READ_DATA,
+        &mut oa as *mut _ as *mut prc::IO_STATUS_BLOCK,
+        &mut io_status_block,
+        prc::FILE_SHARE_DELETE | prc::FILE_SHARE_READ,
+        prc::FILE_SYNCHRONOUS_IO_NONALERT | prc::FILE_NON_DIRECTORY_FILE,
+    );
+    if status < 0 {
+        return status;
+    }
+
+    // Create a section for this image.
+    let status = ZwCreateSection(
+        section,
+        prc::SECTION_ALL_ACCESS,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        prc::PAGE_EXECUTE,
+        prc::SEC_IMAGE,
+        h_file,
+    );
+    let _ = ZwClose(h_file);
+    status
+}
+
+/// `NTSTATUS NTAPI RtlpInitEnvironment(HANDLE, PPEB,
+/// PRTL_USER_PROCESS_PARAMETERS)`.
+///
+/// Allocates env block + parameter block in the foreign process,
+/// copies them across via ZwWriteVirtualMemory, then writes the
+/// parameter-block base address into the foreign PEB's
+/// ProcessParameters slot.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpInitEnvironment(
+    process_handle: *mut u8,
+    peb: *mut u8,
+    process_parameters: *mut prc::RTL_USER_PROCESS_PARAMETERS,
+) -> i32 {
+    let pp = &mut *process_parameters;
+    let mut base_address: *mut u8 = core::ptr::null_mut();
+    let mut enviro_size: usize = 0;
+
+    // Give the caller 1MB if requested (reserve at fixed VA 4).
+    if (pp.Flags & prc::RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB) != 0 {
+        base_address = 4 as *mut u8;
+        enviro_size = 1024 * 1024 - 256;
+        let mut size = enviro_size;
+        let status = ZwAllocateVirtualMemory(
+            process_handle,
+            &mut base_address,
+            0,
+            &mut size,
+            prc::MEM_RESERVE,
+            prc::PAGE_READWRITE,
+        );
+        if status < 0 {
+            return status;
+        }
+    }
+
+    // Walk to the end of the environment block (double-NUL terminated).
+    let env_ptr = pp.Environment;
+    if !env_ptr.is_null() {
+        let mut walk = env_ptr;
+        // C: while (*Environment++) while (*Environment++);
+        // Walk through pairs of inner-strings.
+        loop {
+            if *walk == 0 {
+                walk = walk.add(1);
+                break;
+            }
+            walk = walk.add(1);
+            while *walk != 0 {
+                walk = walk.add(1);
+            }
+            walk = walk.add(1);
+        }
+        enviro_size = (walk as usize) - (env_ptr as usize);
+
+        // Allocate + reserve + commit env block in foreign process.
+        let mut size = enviro_size;
+        base_address = core::ptr::null_mut();
+        let status = ZwAllocateVirtualMemory(
+            process_handle,
+            &mut base_address,
+            0,
+            &mut size,
+            prc::MEM_RESERVE | prc::MEM_COMMIT,
+            prc::PAGE_READWRITE,
+        );
+        if status < 0 {
+            return status;
+        }
+
+        // Copy env bytes across.
+        let _ = ZwWriteVirtualMemory(
+            process_handle,
+            base_address,
+            pp.Environment as *const u8,
+            enviro_size,
+            core::ptr::null_mut(),
+        );
+
+        pp.Environment = base_address as *mut u16;
+    }
+
+    // Allocate Parameter Block in foreign process.
+    base_address = core::ptr::null_mut();
+    let mut size = pp.MaximumLength as usize;
+    let status = ZwAllocateVirtualMemory(
+        process_handle,
+        &mut base_address,
+        0,
+        &mut size,
+        prc::MEM_COMMIT,
+        prc::PAGE_READWRITE,
+    );
+    if status < 0 {
+        return status;
+    }
+
+    // Write the Parameter Block across.
+    let status = ZwWriteVirtualMemory(
+        process_handle,
+        base_address,
+        process_parameters as *const u8,
+        pp.Length as usize,
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        return status;
+    }
+
+    // Write pointer-to-Parameter-Block into foreign PEB's
+    // ProcessParameters slot.
+    let mut ba = base_address;
+    let status = ZwWriteVirtualMemory(
+        process_handle,
+        RtlpPrcPebProcessParametersAddr(peb),
+        &ba as *const *mut u8 as *const u8,
+        core::mem::size_of::<*mut u8>(),
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        return status;
+    }
+    let _ = &mut ba; // suppress unused-mut
+
+    0 // STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlCreateUserProcess(...)`.
+///
+/// Faithful translation. The SEH around the StandardInput/Output/Error
+/// duplication block is dead under `USE_DUMMY_PSEH` (per AGENTS.md);
+/// the body of the `_SEH2_TRY` becomes the function body, and the
+/// `_SEH2_FINALLY` cleanup runs on any failure status — implemented
+/// here as a plain on-error block.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateUserProcess(
+    image_file_name: *mut UNICODE_STRING,
+    attributes: u32,
+    process_parameters: *mut prc::RTL_USER_PROCESS_PARAMETERS,
+    process_security_descriptor: *mut u8,
+    thread_security_descriptor: *mut u8,
+    mut parent_process: *mut u8,
+    inherit_handles: u8,
+    debug_port: *mut u8,
+    exception_port: *mut u8,
+    process_info: *mut prc::RTL_USER_PROCESS_INFORMATION,
+) -> i32 {
+    let pp = &mut *process_parameters;
+    let pi = &mut *process_info;
+    let mut h_section: *mut u8 = core::ptr::null_mut();
+
+    // Map and Load the File.
+    let status = RtlpMapFile(image_file_name, attributes, &mut h_section);
+    if status < 0 {
+        return status;
+    }
+
+    // Clean out the current directory handle if we won't use it.
+    if inherit_handles == 0 {
+        pp.CurrentDirectory.Handle = core::ptr::null_mut();
+    }
+
+    // Use us as parent if none other specified.
+    if parent_process.is_null() {
+        parent_process = thr::NT_CURRENT_PROCESS as *mut u8;
+    }
+
+    // Initialize Object Attributes (NULL name).
+    let mut oa: thr::OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = core::mem::size_of::<thr::OBJECT_ATTRIBUTES>() as u32;
+    oa.SecurityDescriptor = process_security_descriptor;
+
+    // CSRSS-under-WindowsSS check.
+    let debug_string: [u16; 11] = [
+        '\\' as u16, 'W' as u16, 'i' as u16, 'n' as u16, 'd' as u16, 'o' as u16,
+        'w' as u16, 's' as u16, 'S' as u16, 'S' as u16, 0,
+    ];
+    let csrss_pat: [u16; 6] = [
+        'c' as u16, 's' as u16, 'r' as u16, 's' as u16, 's' as u16, 0,
+    ];
+    let mut debug_us = UNICODE_STRING {
+        Length: 20, // "\\WindowsSS" = 10 chars * 2 bytes
+        MaximumLength: 22,
+        Buffer: debug_string.as_ptr() as *mut u16,
+    };
+    if (RtlGetNtGlobalFlags() & prc::FLG_ENABLE_CSRDEBUG) != 0
+        && !(*image_file_name).Buffer.is_null()
+        && !wcsstr((*image_file_name).Buffer, csrss_pat.as_ptr()).is_null()
+    {
+        oa.ObjectName = &mut debug_us as *mut _ as *mut u8;
+    }
+
+    // Create Kernel Process Object.
+    let status = ZwCreateProcess(
+        &mut pi.ProcessHandle,
+        prc::PROCESS_ALL_ACCESS,
+        &mut oa,
+        parent_process,
+        inherit_handles,
+        h_section,
+        debug_port,
+        exception_port,
+    );
+    if status < 0 {
+        let _ = ZwClose(h_section);
+        return status;
+    }
+
+    // Query the section image info.
+    let status = ZwQuerySection(
+        h_section,
+        prc::SECTION_IMAGE_INFORMATION_CLASS,
+        &mut pi.ImageInformation as *mut _ as *mut u8,
+        core::mem::size_of::<prc::SECTION_IMAGE_INFORMATION>(),
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        let _ = ZwClose(pi.ProcessHandle);
+        let _ = ZwClose(h_section);
+        return status;
+    }
+
+    // Query process basic info to get PEB base.
+    let mut process_basic_info: prc::PROCESS_BASIC_INFORMATION = core::mem::zeroed();
+    let status = ZwQueryInformationProcess(
+        pi.ProcessHandle,
+        prc::PROCESS_BASIC_INFORMATION_CLASS,
+        &mut process_basic_info as *mut _ as *mut u8,
+        core::mem::size_of::<prc::PROCESS_BASIC_INFORMATION>() as u32,
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        let _ = ZwClose(pi.ProcessHandle);
+        let _ = ZwClose(h_section);
+        return status;
+    }
+
+    // Duplicate the standard handles. The original C wraps this in
+    // _SEH2_TRY + _SEH2_FINALLY; under DUMMY_PSEH the handlers are
+    // dead — the cleanup block runs unconditionally as plain code.
+    let mut status: i32 = 0;
+    if !pp.StandardInput.is_null() {
+        status = ZwDuplicateObject(
+            parent_process,
+            pp.StandardInput,
+            pi.ProcessHandle,
+            &mut pp.StandardInput,
+            0,
+            0,
+            prc::DUPLICATE_SAME_ACCESS | prc::DUPLICATE_SAME_ATTRIBUTES,
+        );
+    }
+    if status >= 0 && !pp.StandardOutput.is_null() {
+        status = ZwDuplicateObject(
+            parent_process,
+            pp.StandardOutput,
+            pi.ProcessHandle,
+            &mut pp.StandardOutput,
+            0,
+            0,
+            prc::DUPLICATE_SAME_ACCESS | prc::DUPLICATE_SAME_ATTRIBUTES,
+        );
+    }
+    if status >= 0 && !pp.StandardError.is_null() {
+        status = ZwDuplicateObject(
+            parent_process,
+            pp.StandardError,
+            pi.ProcessHandle,
+            &mut pp.StandardError,
+            0,
+            0,
+            prc::DUPLICATE_SAME_ACCESS | prc::DUPLICATE_SAME_ATTRIBUTES,
+        );
+    }
+    // _SEH2_FINALLY block.
+    if status < 0 {
+        let _ = ZwClose(pi.ProcessHandle);
+        let _ = ZwClose(h_section);
+        return status;
+    }
+
+    // Create Process Environment.
+    let status = RtlpInitEnvironment(
+        pi.ProcessHandle,
+        process_basic_info.PebBaseAddress,
+        process_parameters,
+    );
+    if status < 0 {
+        let _ = ZwClose(pi.ProcessHandle);
+        let _ = ZwClose(h_section);
+        return status;
+    }
+
+    // Create the first Thread.
+    let status = RtlCreateUserThread(
+        pi.ProcessHandle,
+        thread_security_descriptor,
+        1, // CreateSuspended = TRUE
+        pi.ImageInformation.ZeroBits,
+        pi.ImageInformation.MaximumStackSize,
+        pi.ImageInformation.CommittedStackSize,
+        pi.ImageInformation.TransferAddress,
+        process_basic_info.PebBaseAddress,
+        &mut pi.ThreadHandle,
+        &mut pi.ClientId,
+    );
+    if status < 0 {
+        let _ = ZwClose(pi.ProcessHandle);
+        let _ = ZwClose(h_section);
+        return status;
+    }
+
+    // Close the Section Handle and return.
+    let _ = ZwClose(h_section);
+    0 // STATUS_SUCCESS
+}
+
+/// `PVOID NTAPI RtlEncodePointer(PVOID)`. XOR the pointer with the
+/// per-process `ProcessCookie` queried lazily on first call.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEncodePointer(pointer: *mut u8) -> *mut u8 {
+    let mut cookie: u32 = 0;
+    let status = ZwQueryInformationProcess(
+        thr::NT_CURRENT_PROCESS as *mut u8,
+        prc::PROCESS_COOKIE_CLASS,
+        &mut cookie as *mut _ as *mut u8,
+        core::mem::size_of::<u32>() as u32,
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        return pointer;
+    }
+    ((pointer as usize) ^ (cookie as usize)) as *mut u8
+}
+
+/// `PVOID NTAPI RtlDecodePointer(PVOID)` — same XOR.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDecodePointer(pointer: *mut u8) -> *mut u8 {
+    RtlEncodePointer(pointer)
+}
+
+/// `PVOID NTAPI RtlEncodeSystemPointer(PVOID)` — XOR with
+/// `SharedUserData->Cookie` at fixed VA.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEncodeSystemPointer(pointer: *mut u8) -> *mut u8 {
+    let cookie_addr = (prc::KI_USER_SHARED_DATA_VA + prc::KUSER_SHARED_COOKIE_OFFSET) as *const u32;
+    let cookie = core::ptr::read_volatile(cookie_addr);
+    ((pointer as usize) ^ (cookie as usize)) as *mut u8
+}
+
+/// `PVOID NTAPI RtlDecodeSystemPointer(PVOID)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDecodeSystemPointer(pointer: *mut u8) -> *mut u8 {
+    RtlEncodeSystemPointer(pointer)
+}
+
+/// `NTSTATUS __cdecl RtlSetProcessIsCritical(BOOLEAN, PBOOLEAN, BOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "C" fn RtlSetProcessIsCritical(
+    new_value: u8,
+    old_value: *mut u8,
+    need_breaks: u8,
+) -> i32 {
+    if !old_value.is_null() {
+        *old_value = 0;
+    }
+
+    if need_breaks != 0
+        && (RtlpThrGetPebNtGlobalFlag() & prc::FLG_ENABLE_SYSTEM_CRIT_BREAKS) == 0
+    {
+        return prc::STATUS_UNSUCCESSFUL;
+    }
+
+    if !old_value.is_null() {
+        let mut break_on_termination: u32 = 0;
+        let _ = ZwQueryInformationProcess(
+            thr::NT_CURRENT_PROCESS as *mut u8,
+            prc::PROCESS_BREAK_ON_TERMINATION_CLASS,
+            &mut break_on_termination as *mut _ as *mut u8,
+            core::mem::size_of::<u32>() as u32,
+            core::ptr::null_mut(),
+        );
+        *old_value = break_on_termination as u8;
+    }
+
+    let break_on_termination: u32 = new_value as u32;
+    ZwSetInformationProcess(
+        thr::NT_CURRENT_PROCESS as *mut u8,
+        prc::PROCESS_BREAK_ON_TERMINATION_CLASS,
+        &break_on_termination as *const _ as *const u8,
+        core::mem::size_of::<u32>() as u32,
+    )
+}
+
+/// `ULONG NTAPI RtlGetCurrentProcessorNumber(VOID)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetCurrentProcessorNumber() -> u32 {
+    NtGetCurrentProcessorNumber()
+}
+
+/// `ULONG NTAPI RtlRosGetAppcompatVersion(VOID)` — ReactOS-specific.
+/// Returns `(PEB.OSMajorVersion << 8) | PEB.OSMinorVersion`, or the
+/// Server 2003 default if no PEB.
+#[no_mangle]
+pub unsafe extern "system" fn RtlRosGetAppcompatVersion() -> u32 {
+    let major = RtlpPrcGetPebOSMajorVersion();
+    let minor = RtlpPrcGetPebOSMinorVersion();
+    if major == 0 && minor == 0 {
+        return prc::WIN32_WINNT_WS03;
+    }
+    (major << 8) | minor
 }

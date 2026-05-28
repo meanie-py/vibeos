@@ -156,6 +156,32 @@ RtlpThrCurrentTeb(VOID)
 }
 
 /*
+ * Helpers for the rtl-strings Rust Wave PRC (process.c) shims.
+ */
+ULONG
+NTAPI
+RtlpPrcGetPebOSMajorVersion(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->OSMajorVersion : 0;
+}
+
+ULONG
+NTAPI
+RtlpPrcGetPebOSMinorVersion(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->OSMinorVersion : 0;
+}
+
+PVOID
+NTAPI
+RtlpPrcPebProcessParametersAddr(PVOID PebBase)
+{
+    return &((PPEB)PebBase)->ProcessParameters;
+}
+
+/*
  * @implemented
  */
 VOID NTAPI

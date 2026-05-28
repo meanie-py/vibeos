@@ -10,6 +10,7 @@ pub mod misc;
 pub mod nls;
 #[path = "priv_mod.rs"]
 pub mod priv_;
+pub mod process;
 pub mod resource;
 pub mod sd;
 pub mod sec;

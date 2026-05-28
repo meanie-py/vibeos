@@ -65,7 +65,7 @@ list(APPEND SOURCE
     ppb.c
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
     # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
-    process.c
+    # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
     propvar.c
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
     rangelist.c
@@ -218,6 +218,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/priv_mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/process.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/resource.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/acl.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sd.rs

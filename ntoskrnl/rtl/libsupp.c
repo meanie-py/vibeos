@@ -251,6 +251,34 @@ RtlpThrCurrentTeb(VOID)
     return NULL;
 }
 
+/*
+ * Helpers for the rtl-strings Rust Wave PRC (process.c) shims.
+ */
+ULONG
+NTAPI
+RtlpPrcGetPebOSMajorVersion(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    return Peb ? Peb->OSMajorVersion : 0;
+}
+
+ULONG
+NTAPI
+RtlpPrcGetPebOSMinorVersion(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    return Peb ? Peb->OSMinorVersion : 0;
+}
+
+PVOID
+NTAPI
+RtlpPrcPebProcessParametersAddr(PVOID PebBase)
+{
+    /* &((PPEB)PebBase)->ProcessParameters — used to compute the
+     * target address for ZwWriteVirtualMemory in RtlpInitEnvironment. */
+    return &((PPEB)PebBase)->ProcessParameters;
+}
+
 NTSTATUS
 NTAPI
 RtlDeleteHeapLock(IN OUT PHEAP_LOCK Lock)
