@@ -182,6 +182,23 @@ RtlpPrcPebProcessParametersAddr(PVOID PebBase)
 }
 
 /*
+ * `RtlGetProcessHeap()` is a macro in ndk/rtlfuncs.h. The Rust
+ * cabi declares it as `extern "system" fn RtlGetProcessHeap`,
+ * which on i386 stdcall produces `_RtlGetProcessHeap@0` as an
+ * undefined symbol. C call sites inline the macro and don't
+ * import the symbol. Provide a real exported function so the
+ * Rust call from RtlAcquirePrivilege & friends resolves cleanly
+ * in the ntdll user-mode link.
+ */
+#undef RtlGetProcessHeap
+PVOID
+NTAPI
+RtlGetProcessHeap(VOID)
+{
+    return NtCurrentPeb()->ProcessHeap;
+}
+
+/*
  * @implemented
  */
 VOID NTAPI

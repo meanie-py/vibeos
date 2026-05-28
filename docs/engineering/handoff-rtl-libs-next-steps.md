@@ -1,7 +1,62 @@
 # Handoff: rtl-libs translation track — next steps
 
 **Session anchor:** `rtl-libs` (worktree `vibeos-wt-rtl-priv`, branch
-`rtl-priv-port`). Last commit `67f09af35e4 rtl-strings Wave SEC`.
+`rtl-priv-port`). Last commit (this session, 2026-05-28 evening):
+`7741bafeb1e rtl-strings Wave PRC` + the libsupp postfix to come.
+
+## ⚠️ CRITICAL: 2026-05-28 session left x86 boot broken (visible)
+
+This session committed Waves RES/THR/PRC on top of SEC. During the
+session the smokes appeared green, but **all of those green runs were
+running a stale pre-session `ntoskrnl.exe`** — the kernel link was
+silently failing on undefined `Rtlp{Thr,Prc}*` / `RtlGetProcessHeap`
+symbols (the user-mode `dll/ntdll/rtl/libsupp.c` got the helpers but
+`ntoskrnl/rtl/libsupp.c` is `#`-commented in `ntos.cmake` — replaced
+by `ntoskrnl-rust/src/rtl/libsupp.rs`, which I never updated). Ninja
+left the old `ntoskrnl.exe` in place; livecd packaged the old one;
+smoke ran the old one. Discovered while wiring Wave PATH-1.
+
+After adding the kernel-side stub helpers to
+`sdk/lib/rust/ntoskrnl-rust/src/rtl/libsupp.rs` (return NULL/0/no-op,
+since they're only reachable from user-mode primitives) — the kernel
+link now actually succeeds and a fresh `ntoskrnl.exe` ships. **With
+the new binary in the ISO, i386 + amd64 smoke crash in the very first
+moments of kernel boot:**
+
+- **i386:** 0 milestones reached. Crashes before `KiSystemStartup`
+  entry (`ke/i386/kiinit.rs:1024`).
+- **amd64:** 2 milestones (`i`, `j`). Crashes after the Prcb-read in
+  `KiSystemStartupBootStack` (`ke/amd64/krnlinit.rs:152`), before the
+  Thread-read on line 154.
+- **arm64:** 6/6 + 5 skip — clean (different boot path).
+
+Per AGENTS.md rules a broken Rust translation integrated and failing
+visibly is the correct state when the regression is unsolved. **Do
+not revert the Wave RES / THR / PRC commits.** Debug from there.
+Hypotheses to triage:
+
+1. One of the Wave RES/THR/PRC Rust translations runs on a cold kernel
+   boot path I didn't expect, and has a real bug. Suspects: anything
+   in resource.c (`RtlInitializeResource` may be called via early ke/
+   init?) or process.c's `RtlEncodeSystemPointer` (touches
+   `KI_USER_SHARED_DATA + 0x330` — wrong VA per-arch?).
+2. The new no_mangle Rust shims overlap a sibling `.o` whose addresses
+   shifted under CGU=256 → captures(none)/ud2 elsewhere. Run
+   `python3 tools/scan_ud2.py build-amd64` / `build-i386`.
+3. The libsupp.rs stubs themselves trigger a layout shift in
+   libkernel_rust.a sufficient to bump a sacred symbol off-page.
+   Cross-check `bash tools/verify_sacred_primitives.sh build-i386`.
+
+Reproducer:
+```
+cd /home/curi/Projects/os-playground/vibeos
+rm build-{i386,amd64}/ntoskrnl/libkernel_rust.a \
+   build-{i386,amd64}/sdk/lib/rtl/librtl_rust.a \
+   build-{i386,amd64}/ntoskrnl/ntoskrnl.exe
+ninja -C build-i386  ntoskrnl ntdll livecd
+ninja -C build-amd64 ntoskrnl ntdll livecd
+.venv/bin/python -m pytest tests/qemu/test_smoke.py -v --arch i386 --timeout 600 --skip-clean-build
+```
 
 ## Where the track stands (2026-05-28)
 
@@ -18,6 +73,15 @@ chronological order of swap):
 | **timezone.c** | **TZ** | **`33a0609a2b0`** | **rtl-priv-port (NOT merged)** |
 | **env.c** | **ENV-1+2** | **`64ccdaeea0c`** | **rtl-priv-port (NOT merged)** |
 | **security.c** | **SEC** | **`67f09af35e4`** | **rtl-priv-port (NOT merged)** |
+| **resource.c** | **RES** | **`acce697403f`** | **rtl-priv-port (NOT merged) — x86 boot broken ⚠️** |
+| **thread.c** | **THR** | **`3f99b5f7fe1`** | **rtl-priv-port (NOT merged) — x86 boot broken ⚠️** |
+| **process.c** | **PRC** | **`7741bafeb1e`** | **rtl-priv-port (NOT merged) — x86 boot broken ⚠️** |
+| (postfix: libsupp.rs kernel stubs + ntdll `RtlGetProcessHeap`) | postfix | (to commit next) | rtl-priv-port |
+
+PATH-1 (path.c leaf fns, 6 fns, ~250 LOC) is **stashed** at
+`stash@{0}` (`wave-path-1-wip`) — do NOT pop until x86 boot is
+restored; PATH-1 builds clean but its smoke would be masked by the
+RES/THR/PRC boot crash above.
 
 rtl-difftest **87/87** (+4 env, +2 sec, +1 SD copy upgrade from
 status-only to content);
