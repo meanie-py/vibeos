@@ -268,6 +268,20 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
 
     WinLdrpDumpMemoryDescriptors(LoaderBlock);
 
+    // UEFILDR can be above the 2GB-ish range, we don't want to map the whole area
+    #[cfg(feature = "uefi")]
+    {
+        extern "C" {
+            static mut OsLoaderBase: PVOID;
+            static mut OsLoaderSize: SIZE_T;
+        }
+        MempSetupPaging(
+            (OsLoaderBase as usize / MM_PAGE_SIZE as usize) as PFN_NUMBER,
+            (OsLoaderSize / MM_PAGE_SIZE as usize) as PFN_NUMBER,
+            0u8,
+        );
+    }
+
     TRACE(b"Memory Descriptor List prepared, printing PDE\n\0".as_ptr() as *const i8);
     List_PaToVa(core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead));
 
