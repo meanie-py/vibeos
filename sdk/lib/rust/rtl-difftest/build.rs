@@ -708,11 +708,27 @@ fn main() {
             UCHAR Revision; UCHAR Sbz1; SECURITY_DESCRIPTOR_CONTROL Control;\n\
             PSID Owner; PSID Group; PACL Sacl; PACL Dacl;\n\
          }} SECURITY_DESCRIPTOR,*PISECURITY_DESCRIPTOR;\n\
-         /* Heap stubs — RtlAllocateHeap=NULL pins NO_MEMORY edge in\n\
-            RtlCopySecurityDescriptor (same no-alloc discipline). */\n\
-         PVOID RtlAllocateHeap(PVOID h,ULONG f,SIZE_T n){{(void)h;(void)f;(void)n;return 0;}}\n\
-         BOOLEAN RtlFreeHeap(PVOID h,ULONG f,PVOID p){{(void)h;(void)f;(void)p;return 0;}}\n\
-         PVOID RtlGetProcessHeap(void){{return 0;}}\n\
+         /* Heap-backed via posix_memalign (page-aligned with a vm_header_t\n\
+            prefix that NtQueryVirtualMemory in the env ref TU also relies\n\
+            on). Wave SEC needs working alloc for RtlpSetSecurityObject's\n\
+            build path; the SD wave's NO_MEMORY edge for RtlCopySecurityDescriptor\n\
+            is now covered via the in-tree Rust harness rather than via stub. */\n\
+         #include <stdlib.h>\n\
+         typedef struct {{ SIZE_T region_size; }} sd_vm_header_t;\n\
+         PVOID RtlAllocateHeap(PVOID h, ULONG f, SIZE_T n){{\n\
+            (void)h; (void)f;\n\
+            SIZE_T req = (n + 0xFFF) & ~((SIZE_T)0xFFF); if (req == 0) req = 0x1000;\n\
+            void* raw = NULL;\n\
+            if (posix_memalign(&raw, 0x1000, req + sizeof(sd_vm_header_t)) != 0) return 0;\n\
+            sd_vm_header_t* hdr = (sd_vm_header_t*)raw; hdr->region_size = req;\n\
+            void* user = (void*)(hdr + 1); memset(user, 0, n);\n\
+            return user;\n\
+         }}\n\
+         BOOLEAN RtlFreeHeap(PVOID h, ULONG f, PVOID p){{\n\
+            (void)h; (void)f; if (!p) return 1;\n\
+            sd_vm_header_t* hdr = ((sd_vm_header_t*)p) - 1; free(hdr); return 1;\n\
+         }}\n\
+         PVOID RtlGetProcessHeap(void){{ return (PVOID)0x12345678; }}\n\
          /* SepGet*FromDescriptor — FORCEINLINE in the real internal/se.h\n\
             (which the empty stub bypasses). Verbatim ports here so the\n\
             ref TU links and behaves byte-identically to the kernel. */\n\
@@ -922,6 +938,177 @@ fn main() {
         .file(&env_src);
     println!("cargo:rerun-if-changed={}", env_c.display());
     for obj in dbuild3.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+
+    // Wave SEC: genuine sdk/lib/rtl/security.c — own ref TU. Reuses the
+    // SD-wave aclinc/se_root stub trick + the env-wave Nt* token stubs.
+    // The byte-diff tests exercise only RtlpSetSecurityObject and
+    // RtlQuerySecurityObject — both are pure SD bytes-in/bytes-out
+    // (no syscalls); the rest of security.c links via no-op stubs.
+    // Rtl{Allocate,Free}Heap stay heap-backed (same vm_header_t trick
+    // as env stubs, so realloc paths work end-to-end).
+    let sec_c = repo.join("sdk/lib/rtl/security.c");
+    let sec_body = format!(
+        "#include <rtl.h>\n#include <string.h>\n\
+         typedef ULONG ACCESS_MASK;\n\
+         typedef USHORT SECURITY_DESCRIPTOR_CONTROL, *PSECURITY_DESCRIPTOR_CONTROL;\n\
+         typedef ULONG SECURITY_INFORMATION;\n\
+         #define ANYSIZE_ARRAY 1\n\
+         #define FIELD_OFFSET(t,f) ((ULONG)(ULONG_PTR)&(((t*)0)->f))\n\
+         #define RTL_FIELD_SIZE(t,f) sizeof(((t*)0)->f)\n\
+         #define ROUND_UP(n,a) (((ULONG_PTR)(n)+(a)-1) & ~((ULONG_PTR)(a)-1))\n\
+         #define ASSERT(x) ((void)0)\n\
+         #define UNIMPLEMENTED ((void)0)\n\
+         #define PAGED_CODE_RTL() ((void)0)\n\
+         #define OWNER_SECURITY_INFORMATION 0x1\n\
+         #define GROUP_SECURITY_INFORMATION 0x2\n\
+         #define DACL_SECURITY_INFORMATION 0x4\n\
+         #define SACL_SECURITY_INFORMATION 0x8\n\
+         #define SECURITY_DESCRIPTOR_REVISION 1\n\
+         #define SE_DACL_PRESENT 0x0004\n#define SE_DACL_DEFAULTED 0x0008\n\
+         #define SE_SACL_PRESENT 0x0010\n#define SE_SACL_DEFAULTED 0x0020\n\
+         #define SE_SELF_RELATIVE 0x8000\n\
+         #define STATUS_INVALID_OWNER         ((NTSTATUS)0xC000005AL)\n\
+         #define STATUS_INVALID_PRIMARY_GROUP ((NTSTATUS)0xC000005BL)\n\
+         #define STATUS_NO_TOKEN              ((NTSTATUS)0xC00000A9L)\n\
+         #define STATUS_NO_MEMORY             ((NTSTATUS)0xC0000017L)\n\
+         #define STATUS_NOT_IMPLEMENTED       ((NTSTATUS)0xC0000002L)\n\
+         #define STATUS_BUFFER_TOO_SMALL      ((NTSTATUS)0xC0000023L)\n\
+         #define TOKEN_QUERY 0x0008\n\
+         #define TokenOwner 4\n#define TokenStatistics 10\n\
+         #define PagedPool 1\n\
+         #define ACL_REVISION2 2\n\
+         #define GENERIC_ALL 0x10000000\n#define GENERIC_READ 0x80000000\n\
+         #define ACCESS_SYSTEM_SECURITY 0x01000000\n\
+         #define SE_SECURITY_PRIVILEGE 8\n\
+         #define SE_PRIVILEGE_USED_FOR_ACCESS 0x80000000\n\
+         #define SECURITY_NT_AUTHORITY {{0,0,0,0,0,5}}\n\
+         #define SECURITY_WORLD_SID_AUTHORITY {{0,0,0,0,0,1}}\n\
+         #define SECURITY_LOCAL_SYSTEM_RID 0x12\n\
+         #define SECURITY_BUILTIN_DOMAIN_RID 0x20\n\
+         #define DOMAIN_ALIAS_RID_ADMINS 0x220\n\
+         #define SECURITY_ANONYMOUS_LOGON_RID 7\n#define SECURITY_WORLD_RID 0\n\
+         #define _SEH2_TRY\n#define _SEH2_EXCEPT(x) if(0)\n\
+         #define _SEH2_FINALLY\n#define _SEH2_END\n\
+         #define RtlZeroMemory(d,n) memset((d),0,(n))\n\
+         #define RtlCopyMemory(d,s,n) memcpy((d),(s),(n))\n\
+         typedef PVOID HANDLE;\n\
+         typedef SIZE_T* PSIZE_T;\n\
+         typedef struct _SID_IDENTIFIER_AUTHORITY {{ UCHAR Value[6]; }} SID_IDENTIFIER_AUTHORITY,*PSID_IDENTIFIER_AUTHORITY;\n\
+         typedef struct _SID {{ UCHAR Revision; UCHAR SubAuthorityCount;\n\
+            SID_IDENTIFIER_AUTHORITY IdentifierAuthority; ULONG SubAuthority[ANYSIZE_ARRAY]; }} SID,*PISID;\n\
+         typedef PVOID PSID;\n\
+         typedef struct _ACL {{ UCHAR AclRevision; UCHAR Sbz1; USHORT AclSize;\n\
+            USHORT AceCount; USHORT Sbz2; }} ACL,*PACL;\n\
+         typedef struct _ACE {{ UCHAR AceType; UCHAR AceFlags; USHORT AceSize; }} ACE,*PACE;\n\
+         typedef struct _ACCESS_ALLOWED_ACE {{ ACE Header; ACCESS_MASK Mask; ULONG SidStart; }} ACCESS_ALLOWED_ACE;\n\
+         typedef PVOID PSECURITY_DESCRIPTOR;\n\
+         typedef struct _SECURITY_DESCRIPTOR_RELATIVE {{\n\
+            UCHAR Revision; UCHAR Sbz1; SECURITY_DESCRIPTOR_CONTROL Control;\n\
+            ULONG Owner; ULONG Group; ULONG Sacl; ULONG Dacl;\n\
+         }} SECURITY_DESCRIPTOR_RELATIVE,*PISECURITY_DESCRIPTOR_RELATIVE;\n\
+         typedef struct _SECURITY_DESCRIPTOR {{\n\
+            UCHAR Revision; UCHAR Sbz1; SECURITY_DESCRIPTOR_CONTROL Control;\n\
+            PSID Owner; PSID Group; PACL Sacl; PACL Dacl;\n\
+         }} SECURITY_DESCRIPTOR,*PISECURITY_DESCRIPTOR;\n\
+         typedef struct _GENERIC_MAPPING {{ ACCESS_MASK r,w,x,a; }} GENERIC_MAPPING,*PGENERIC_MAPPING;\n\
+         typedef struct _LUID {{ ULONG LowPart; LONG HighPart; }} LUID,*PLUID;\n\
+         typedef struct _LUID_AND_ATTRIBUTES {{ LUID Luid; ULONG Attributes; }} LUID_AND_ATTRIBUTES;\n\
+         typedef struct _PRIVILEGE_SET {{ ULONG PrivilegeCount; ULONG Control;\n\
+            LUID_AND_ATTRIBUTES Privilege[1]; }} PRIVILEGE_SET,*PPRIVILEGE_SET;\n\
+         typedef struct _TOKEN_OWNER {{ PSID Owner; }} TOKEN_OWNER,*PTOKEN_OWNER;\n\
+         typedef struct _TOKEN_STATISTICS {{ LUID TokenId; LUID AuthenticationId;\n\
+            LARGE_INTEGER ExpirationTime; LONG TokenType; LONG ImpersonationLevel;\n\
+            ULONG DynamicCharged; ULONG DynamicAvailable; ULONG GroupCount;\n\
+            ULONG PrivilegeCount; LUID ModifiedId;\n\
+         }} TOKEN_STATISTICS,*PTOKEN_STATISTICS;\n\
+         typedef PVOID PRTL_ACE_DATA;\n\
+         typedef PVOID PRTL_SECURE_MEMORY_CACHE_CALLBACK;\n\
+         typedef ACCESS_MASK* PACCESS_MASK;\n\
+         /* Heap-backed via env-wave vm_header_t (already provided by ref_env.c). */\n\
+         extern PVOID NTAPI RtlAllocateHeap(PVOID, ULONG, SIZE_T);\n\
+         extern BOOLEAN NTAPI RtlFreeHeap(PVOID, ULONG, PVOID);\n\
+         extern PVOID NTAPI RtlGetProcessHeap(void);\n\
+         /* Forward-decl Rtl* used in non-renamed call sites. The cabi\n\
+            exports the real impls. */\n\
+         extern PULONG NTAPI RtlSubAuthoritySid(PSID, ULONG);\n\
+         extern NTSTATUS NTAPI RtlInitializeSid(PSID, PSID_IDENTIFIER_AUTHORITY, UCHAR);\n\
+         extern NTSTATUS NTAPI RtlCreateAcl(PACL, ULONG, ULONG);\n\
+         extern NTSTATUS NTAPI RtlAddAccessAllowedAce(PACL, ULONG, ACCESS_MASK, PSID);\n\
+         extern ULONG NTAPI RtlLengthSid(PSID);\n\
+         extern ULONG NTAPI RtlLengthRequiredSid(ULONG);\n\
+         extern NTSTATUS NTAPI RtlCreateSecurityDescriptor(PSECURITY_DESCRIPTOR, ULONG);\n\
+         extern NTSTATUS NTAPI RtlCreateSecurityDescriptorRelative(PISECURITY_DESCRIPTOR_RELATIVE, ULONG);\n\
+         extern NTSTATUS NTAPI RtlGetOwnerSecurityDescriptor(PSECURITY_DESCRIPTOR, PSID*, PBOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlGetGroupSecurityDescriptor(PSECURITY_DESCRIPTOR, PSID*, PBOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlGetDaclSecurityDescriptor(PSECURITY_DESCRIPTOR, PBOOLEAN, PACL*, PBOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlGetSaclSecurityDescriptor(PSECURITY_DESCRIPTOR, PBOOLEAN, PACL*, PBOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlSetOwnerSecurityDescriptor(PSECURITY_DESCRIPTOR, PSID, BOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlSetGroupSecurityDescriptor(PSECURITY_DESCRIPTOR, PSID, BOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlSetDaclSecurityDescriptor(PSECURITY_DESCRIPTOR, BOOLEAN, PACL, BOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlSetSaclSecurityDescriptor(PSECURITY_DESCRIPTOR, BOOLEAN, PACL, BOOLEAN);\n\
+         extern NTSTATUS NTAPI RtlAbsoluteToSelfRelativeSD(PSECURITY_DESCRIPTOR, PISECURITY_DESCRIPTOR_RELATIVE, PULONG);\n\
+         extern VOID NTAPI RtlMapGenericMask(PACCESS_MASK, PGENERIC_MAPPING);\n\
+         extern BOOLEAN NTAPI RtlEqualLuid(PLUID, PLUID);\n\
+         /* Nt* token syscalls: no-op stubs (the byte-diff tests don't\n\
+            exercise NtOpenToken / NtQueryInformationToken paths). */\n\
+         NTSTATUS NTAPI NtOpenThreadToken(HANDLE t, ULONG da, BOOLEAN oa, HANDLE* h) {{\n\
+            (void)t;(void)da;(void)oa;*h=0; return STATUS_NO_TOKEN;\n\
+         }}\n\
+         NTSTATUS NTAPI NtOpenProcessToken(HANDLE p, ULONG da, HANDLE* h) {{\n\
+            (void)p;(void)da;*h=0; return STATUS_NO_TOKEN;\n\
+         }}\n\
+         NTSTATUS NTAPI NtQueryInformationToken(HANDLE t, ULONG c, PVOID i, ULONG il, PULONG rl) {{\n\
+            (void)t;(void)c;(void)i;(void)il; if(rl) *rl=0;\n\
+            return STATUS_NOT_IMPLEMENTED;\n\
+         }}\n\
+         NTSTATUS NTAPI NtClose(HANDLE h) {{ (void)h; return 0; }}\n\
+         #define NtCurrentProcess() ((HANDLE)0)\n\
+         #define NtCurrentThread() ((HANDLE)0)\n\
+         /* Mirror the env-wave gcc movzbl workaround for the BOOLEAN\n\
+            return ABI (see env body). */\n\
+         static __inline BOOLEAN refsec_zext_vsid(PSID s) {{\n\
+            extern BOOLEAN NTAPI RtlValidSid(PSID);\n\
+            return (BOOLEAN)((unsigned int)RtlValidSid(s) & 1u);\n\
+         }}\n\
+         #define RtlValidSid refsec_zext_vsid\n\
+         /* Rename security.c exports to ref_*. */\n\
+         #define RtlpSetSecurityObject ref_RtlpSetSecurityObject\n\
+         #define RtlpNewSecurityObject ref_RtlpNewSecurityObject\n\
+         #define RtlpConvertToAutoInheritSecurityObject ref_RtlpConvertToAutoInheritSecurityObject\n\
+         #define RtlCreateAndSetSD ref_RtlCreateAndSetSD\n\
+         #define RtlDefaultNpAcl ref_RtlDefaultNpAcl\n\
+         #define RtlDeleteSecurityObject ref_RtlDeleteSecurityObject\n\
+         #define RtlNewSecurityObject ref_RtlNewSecurityObject\n\
+         #define RtlNewSecurityObjectEx ref_RtlNewSecurityObjectEx\n\
+         #define RtlNewSecurityObjectWithMultipleInheritance ref_RtlNewSecurityObjectWithMultipleInheritance\n\
+         #define RtlNewInstanceSecurityObject ref_RtlNewInstanceSecurityObject\n\
+         #define RtlCreateUserSecurityObject ref_RtlCreateUserSecurityObject\n\
+         #define RtlNewSecurityGrantedAccess ref_RtlNewSecurityGrantedAccess\n\
+         #define RtlQuerySecurityObject ref_RtlQuerySecurityObject\n\
+         #define RtlSetSecurityObject ref_RtlSetSecurityObject\n\
+         #define RtlSetSecurityObjectEx ref_RtlSetSecurityObjectEx\n\
+         #define RtlConvertToAutoInheritSecurityObject ref_RtlConvertToAutoInheritSecurityObject\n\
+         #define RtlRegisterSecureMemoryCacheCallback ref_RtlRegisterSecureMemoryCacheCallback\n\
+         #define RtlFlushSecureMemoryCache ref_RtlFlushSecureMemoryCache\n\
+         {}\
+         #include \"{}\"\n",
+        scrape_protos(&fs::read_to_string(&sec_c).unwrap()),
+        sec_c.display()
+    );
+    let sec_src = out.join("ref_sec.c");
+    fs::write(&sec_src, sec_body).unwrap();
+    let mut dbuild4 = cc::Build::new();
+    dbuild4
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&sec_src);
+    println!("cargo:rerun-if-changed={}", sec_c.display());
+    for obj in dbuild4.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
 }

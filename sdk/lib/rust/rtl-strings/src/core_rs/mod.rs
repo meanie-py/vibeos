@@ -11,6 +11,7 @@ pub mod nls;
 #[path = "priv_mod.rs"]
 pub mod priv_;
 pub mod sd;
+pub mod sec;
 pub mod sid;
 pub mod timezone;
 pub mod ustr;

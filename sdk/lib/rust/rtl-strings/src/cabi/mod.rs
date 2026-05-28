@@ -6,7 +6,7 @@
 #![allow(non_snake_case)]
 
 use crate::core_rs::{
-    acl, conv, dos8dot3, env, misc, nls, priv_, sd as sd_, sid, timezone as tz, ustr,
+    acl, conv, dos8dot3, env, misc, nls, priv_, sd as sd_, sec, sid, timezone as tz, ustr,
 };
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
@@ -3742,16 +3742,20 @@ pub unsafe extern "system" fn RtlCopySecurityDescriptor(
 ) -> i32 {
     let (_owner, owner_len, _group, group_len, _dacl, dacl_len, _sacl, sacl_len) =
         rtlp_query_sd(src_p);
-    let _total = core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>() as u32
+    let total = core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>() as u32
         + owner_len
         + group_len
         + dacl_len
         + sacl_len;
-    // Real ntdll path goes through RtlAllocateHeap → we don't implement
-    // that here (no_std + the in-tree librtl translation is no-alloc).
-    // The diff harness stubs RtlAllocateHeap=NULL ⇒ STATUS_NO_MEMORY.
-    *dst_pp = core::ptr::null_mut();
-    STATUS_NO_MEMORY
+    // Faithful to sd.c RtlCopySecurityDescriptor: alloc + memcpy.
+    let dst = RtlAllocateHeap(RtlGetProcessHeap(), 0, total as usize);
+    if dst.is_null() {
+        *dst_pp = core::ptr::null_mut();
+        return STATUS_NO_MEMORY;
+    }
+    core::ptr::copy_nonoverlapping(src_p as *const u8, dst, total as usize);
+    *dst_pp = dst as *mut SECURITY_DESCRIPTOR;
+    0
 }
 
 // ============================================================================
@@ -5243,4 +5247,934 @@ pub unsafe extern "system" fn RtlSetEnvironmentVariable(
         RtlReleasePebLock();
     }
     status
+}
+
+// =====================================================================
+// Wave SEC — translation of `sdk/lib/rtl/security.c` (18 fns):
+//   byte-diff:   RtlpSetSecurityObject + RtlQuerySecurityObject
+//   translate-only stubs:
+//      RtlpNewSecurityObject, RtlpConvertToAutoInheritSecurityObject,
+//      RtlCreateAndSetSD, RtlRegisterSecureMemoryCacheCallback,
+//      RtlFlushSecureMemoryCache  (UNIMPLEMENTED in C)
+//   translate-only thin wrappers:
+//      RtlSetSecurityObject(Ex), RtlConvertToAutoInheritSecurityObject,
+//      RtlNewSecurityObject(Ex)(WithMultipleInheritance),
+//      RtlDeleteSecurityObject, RtlNewInstanceSecurityObject,
+//      RtlCreateUserSecurityObject
+//   translate-only syscall-bearing:
+//      RtlDefaultNpAcl, RtlNewSecurityGrantedAccess
+// =====================================================================
+
+const STATUS_INVALID_OWNER: i32 = 0xC000_005Au32 as i32;
+const STATUS_INVALID_PRIMARY_GROUP: i32 = 0xC000_005Bu32 as i32;
+const STATUS_NO_TOKEN: i32 = 0xC000_00A9u32 as i32;
+const STATUS_NOT_IMPLEMENTED_SEC: i32 = 0xC000_0002u32 as i32;
+
+const PAGED_POOL: u32 = 1;
+
+const TOKEN_OWNER_INFO_CLASS: u32 = 4;
+const TOKEN_STATISTICS_INFO_CLASS: u32 = 10;
+
+const SE_SECURITY_PRIVILEGE: u32 = 8;
+const SE_PRIVILEGE_USED_FOR_ACCESS: u32 = 0x8000_0000;
+const ACCESS_SYSTEM_SECURITY: u32 = 0x0100_0000;
+
+const SECURITY_NT_AUTHORITY_VAL: [u8; 6] = [0, 0, 0, 0, 0, 5];
+const SECURITY_WORLD_AUTHORITY_VAL: [u8; 6] = [0, 0, 0, 0, 0, 1];
+const SECURITY_LOCAL_SYSTEM_RID: u32 = 0x12;
+const SECURITY_BUILTIN_DOMAIN_RID: u32 = 0x20;
+const DOMAIN_ALIAS_RID_ADMINS: u32 = 0x220;
+const SECURITY_ANONYMOUS_LOGON_RID: u32 = 7;
+const SECURITY_WORLD_RID: u32 = 0;
+
+const ACL_REVISION2: u8 = 2;
+const GENERIC_ALL: u32 = 0x1000_0000;
+const GENERIC_READ: u32 = 0x8000_0000;
+
+/// Layout-match for `GENERIC_MAPPING` (winnt.h) — 4 ACCESS_MASK fields.
+#[repr(C)]
+pub struct GENERIC_MAPPING_FFI {
+    pub GenericRead: u32,
+    pub GenericWrite: u32,
+    pub GenericExecute: u32,
+    pub GenericAll: u32,
+}
+
+/// Layout-match for `LUID` (FFI mirror of `priv_::LUID`-shaped pair).
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct LUID_FFI {
+    pub LowPart: u32,
+    pub HighPart: i32,
+}
+
+/// `LUID_AND_ATTRIBUTES`.
+#[repr(C)]
+pub struct LUID_AND_ATTRIBUTES_FFI {
+    pub Luid: LUID_FFI,
+    pub Attributes: u32,
+}
+
+/// `PRIVILEGE_SET` header (followed by `Privilege[Count]`).
+#[repr(C)]
+pub struct PRIVILEGE_SET_FFI {
+    pub PrivilegeCount: u32,
+    pub Control: u32,
+    pub Privilege: [LUID_AND_ATTRIBUTES_FFI; 1],
+}
+
+/// `TOKEN_STATISTICS` — only the `ModifiedId` field is read here.
+/// Layout-match: TokenId + AuthenticationId + ExpirationTime +
+/// TokenType + ImpersonationLevel + DynamicCharged + DynamicAvailable +
+/// GroupCount + PrivilegeCount + ModifiedId. We mirror with a
+/// minimal-enough fixed buffer instead of replicating the full struct.
+const SIZEOF_TOKEN_STATISTICS: usize = 64;
+
+/// `SID_IDENTIFIER_AUTHORITY` (FFI shape).
+#[repr(C)]
+pub struct SID_IDENTIFIER_AUTHORITY_FFI {
+    pub Value: [u8; 6],
+}
+
+/// SID with up to 2 SubAuthorities, as needed by `RtlDefaultNpAcl`.
+#[repr(C)]
+pub struct SID2 {
+    pub Revision: u8,
+    pub SubAuthorityCount: u8,
+    pub IdentifierAuthority: SID_IDENTIFIER_AUTHORITY_FFI,
+    pub SubAuthority: [u32; 2],
+}
+
+extern "system" {
+    fn NtOpenThreadToken(
+        thread: *mut u8,
+        desired_access: u32,
+        open_as_self: u8,
+        token_handle: *mut *mut u8,
+    ) -> i32;
+    fn NtOpenProcessToken(process: *mut u8, desired_access: u32, token_handle: *mut *mut u8) -> i32;
+    fn NtQueryInformationToken(
+        token: *mut u8,
+        info_class: u32,
+        info: *mut u8,
+        info_len: u32,
+        return_len: *mut u32,
+    ) -> i32;
+    fn RtlMapGenericMask(access_mask: *mut u32, generic_mapping: *const GENERIC_MAPPING_FFI);
+    fn RtlEqualLuid(luid1: *const LUID_FFI, luid2: *const LUID_FFI) -> u8;
+    fn NtClose(handle: *mut u8) -> i32;
+}
+
+#[inline]
+unsafe fn round_up_4(n: u32) -> u32 {
+    sec::round_up_4(n)
+}
+
+// ---------------------------------------------------------------------
+// RtlpSetSecurityObject — THE byte-diff target.
+// ---------------------------------------------------------------------
+
+/// `NTSTATUS RtlpSetSecurityObject(Object?, SecurityInformation,
+///     ModificationDescriptor, *ObjectsSecurityDescriptor,
+///     AutoInheritFlags, PoolType, GenericMapping, Token?) -> NTSTATUS`
+///
+/// Builds a fresh self-relative SD by merging fields from the
+/// modification descriptor (for components signalled by
+/// `SecurityInformation`) with the existing descriptor's other
+/// components. Faithful port of security.c.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpSetSecurityObject(
+    _object: *mut u8,
+    security_information: u32,
+    modification_descriptor: *const u8,
+    objects_security_descriptor: *mut *mut u8,
+    _auto_inherit_flags: u32,
+    _pool_type: u32,
+    _generic_mapping: *const GENERIC_MAPPING_FFI,
+    _token: *mut u8,
+) -> i32 {
+    let mut p_owner_sid: *mut u8 = core::ptr::null_mut();
+    let mut p_group_sid: *mut u8 = core::ptr::null_mut();
+    let mut p_dacl: *mut u8 = core::ptr::null_mut();
+    let mut p_sacl: *mut u8 = core::ptr::null_mut();
+    let mut defaulted: u8 = 0;
+    let mut present: u8 = 0;
+    let mut control: u16 = sd_::SE_SELF_RELATIVE;
+
+    // Owner
+    let status = if security_information & sd_::OWNER_SECURITY_INFORMATION != 0 {
+        RtlGetOwnerSecurityDescriptor(
+            modification_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut p_owner_sid,
+            &mut defaulted,
+        )
+    } else {
+        RtlGetOwnerSecurityDescriptor(
+            *objects_security_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut p_owner_sid,
+            &mut defaulted,
+        )
+    };
+    if !nt_success(status) {
+        return status;
+    }
+    if p_owner_sid.is_null() || RtlValidSid(p_owner_sid) == 0 {
+        return STATUS_INVALID_OWNER;
+    }
+    let owner_sid_size = RtlLengthSid(p_owner_sid);
+
+    // Group
+    let status = if security_information & sd_::GROUP_SECURITY_INFORMATION != 0 {
+        RtlGetGroupSecurityDescriptor(
+            modification_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut p_group_sid,
+            &mut defaulted,
+        )
+    } else {
+        RtlGetGroupSecurityDescriptor(
+            *objects_security_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut p_group_sid,
+            &mut defaulted,
+        )
+    };
+    if !nt_success(status) {
+        return status;
+    }
+    if p_group_sid.is_null() || RtlValidSid(p_group_sid) == 0 {
+        return STATUS_INVALID_PRIMARY_GROUP;
+    }
+    let group_sid_size = round_up_4(RtlLengthSid(p_group_sid));
+
+    // DACL
+    let status = if security_information & sd_::DACL_SECURITY_INFORMATION != 0 {
+        let s = RtlGetDaclSecurityDescriptor(
+            modification_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut present,
+            &mut p_dacl,
+            &mut defaulted,
+        );
+        if nt_success(s) {
+            control |= sd_::SE_DACL_PRESENT;
+        }
+        s
+    } else {
+        let s = RtlGetDaclSecurityDescriptor(
+            *objects_security_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut present,
+            &mut p_dacl,
+            &mut defaulted,
+        );
+        if nt_success(s) {
+            if present != 0 {
+                control |= sd_::SE_DACL_PRESENT;
+            }
+            if defaulted != 0 {
+                control |= sd_::SE_DACL_DEFAULTED;
+            }
+        }
+        s
+    };
+    if !nt_success(status) {
+        return status;
+    }
+    let dacl_size = if !p_dacl.is_null() {
+        *(p_dacl.add(2) as *const u16) as u32 // ACL.AclSize at offset 2
+    } else {
+        0
+    };
+
+    // SACL
+    let status = if security_information & sd_::SACL_SECURITY_INFORMATION != 0 {
+        let s = RtlGetSaclSecurityDescriptor(
+            modification_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut present,
+            &mut p_sacl,
+            &mut defaulted,
+        );
+        if nt_success(s) {
+            control |= sd_::SE_SACL_PRESENT;
+        }
+        s
+    } else {
+        let s = RtlGetSaclSecurityDescriptor(
+            *objects_security_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut present,
+            &mut p_sacl,
+            &mut defaulted,
+        );
+        if nt_success(s) {
+            if present != 0 {
+                control |= sd_::SE_SACL_PRESENT;
+            }
+            if defaulted != 0 {
+                control |= sd_::SE_SACL_DEFAULTED;
+            }
+        }
+        s
+    };
+    if !nt_success(status) {
+        return status;
+    }
+    let sacl_size = if !p_sacl.is_null() {
+        *(p_sacl.add(2) as *const u16) as u32
+    } else {
+        0
+    };
+
+    // Compute total size.
+    let new_sd_size = sec::sd_total_size(owner_sid_size, group_sid_size, dacl_size, sacl_size);
+
+    let p_new_sd = RtlAllocateHeap(RtlGetProcessHeap(), 0, new_sd_size as usize);
+    if p_new_sd.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    let status = RtlCreateSecurityDescriptorRelative(
+        p_new_sd as *mut SECURITY_DESCRIPTOR_RELATIVE,
+        sd_::SECURITY_DESCRIPTOR_REVISION,
+    );
+    if !nt_success(status) {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, p_new_sd);
+        return status;
+    }
+
+    // Set control on the relative SD header (offset 2: Sbz1 + Control).
+    let sdr = p_new_sd as *mut SECURITY_DESCRIPTOR_RELATIVE;
+    (*sdr).Control = control;
+
+    let mut p_dest = p_new_sd.add(sec::SDR_HEADER_SIZE as usize);
+
+    // Copy order: SACL, DACL, Owner, Group (faithful to C).
+    if !p_sacl.is_null() {
+        core::ptr::copy_nonoverlapping(p_sacl, p_dest, sacl_size as usize);
+        (*sdr).Sacl = (p_dest as usize - p_new_sd as usize) as u32;
+        p_dest = p_dest.add(round_up_4(sacl_size) as usize);
+    }
+    if !p_dacl.is_null() {
+        core::ptr::copy_nonoverlapping(p_dacl, p_dest, dacl_size as usize);
+        (*sdr).Dacl = (p_dest as usize - p_new_sd as usize) as u32;
+        p_dest = p_dest.add(round_up_4(dacl_size) as usize);
+    }
+    core::ptr::copy_nonoverlapping(p_owner_sid, p_dest, owner_sid_size as usize);
+    (*sdr).Owner = (p_dest as usize - p_new_sd as usize) as u32;
+    p_dest = p_dest.add(round_up_4(owner_sid_size) as usize);
+    core::ptr::copy_nonoverlapping(p_group_sid, p_dest, group_sid_size as usize);
+    (*sdr).Group = (p_dest as usize - p_new_sd as usize) as u32;
+
+    // Free old SD, install new.
+    RtlFreeHeap(RtlGetProcessHeap(), 0, *objects_security_descriptor);
+    *objects_security_descriptor = p_new_sd;
+
+    0 // STATUS_SUCCESS
+}
+
+// ---------------------------------------------------------------------
+// SEC translate-only stubs (UNIMPLEMENTED in C).
+// ---------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpNewSecurityObject(
+    _parent: *const u8,
+    _creator: *const u8,
+    _new_descriptor: *mut *mut u8,
+    _object_types: *mut *mut u8,
+    _guid_count: u32,
+    _is_directory_object: u8,
+    _auto_inherit_flags: u32,
+    _token: *mut u8,
+    _generic_mapping: *const GENERIC_MAPPING_FFI,
+) -> i32 {
+    STATUS_NOT_IMPLEMENTED_SEC
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpConvertToAutoInheritSecurityObject(
+    _parent: *const u8,
+    _creator: *const u8,
+    _new_descriptor: *mut *mut u8,
+    _object_type: *mut u8,
+    _is_directory_object: u8,
+    _generic_mapping: *const GENERIC_MAPPING_FFI,
+) -> i32 {
+    STATUS_NOT_IMPLEMENTED_SEC
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateAndSetSD(
+    _ace_data: *mut u8,
+    _ace_count: u32,
+    _owner_sid: *mut u8,
+    _group_sid: *mut u8,
+    _new_descriptor: *mut *mut u8,
+) -> i32 {
+    STATUS_NOT_IMPLEMENTED_SEC
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlRegisterSecureMemoryCacheCallback(_callback: *mut u8) -> i32 {
+    STATUS_NOT_IMPLEMENTED_SEC
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlFlushSecureMemoryCache(
+    _memory_cache: *mut u8,
+    _memory_length: usize,
+) -> u8 {
+    0
+}
+
+// ---------------------------------------------------------------------
+// SEC thin wrappers + simple fns.
+// ---------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlDeleteSecurityObject(
+    object_descriptor: *mut *mut u8,
+) -> i32 {
+    RtlFreeHeap(RtlGetProcessHeap(), 0, *object_descriptor);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlNewSecurityObject(
+    parent: *const u8,
+    creator: *const u8,
+    new_descriptor: *mut *mut u8,
+    is_directory_object: u8,
+    token: *mut u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+) -> i32 {
+    RtlpNewSecurityObject(
+        parent,
+        creator,
+        new_descriptor,
+        core::ptr::null_mut(),
+        0,
+        is_directory_object,
+        0,
+        token,
+        generic_mapping,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlNewSecurityObjectEx(
+    parent: *const u8,
+    creator: *const u8,
+    new_descriptor: *mut *mut u8,
+    object_type: *mut u8,
+    is_directory_object: u8,
+    auto_inherit_flags: u32,
+    token: *mut u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+) -> i32 {
+    let mut ot_local = object_type;
+    let (otp, count) = if !object_type.is_null() {
+        (&mut ot_local as *mut *mut u8, 1u32)
+    } else {
+        (core::ptr::null_mut(), 0u32)
+    };
+    RtlpNewSecurityObject(
+        parent,
+        creator,
+        new_descriptor,
+        otp,
+        count,
+        is_directory_object,
+        auto_inherit_flags,
+        token,
+        generic_mapping,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlNewSecurityObjectWithMultipleInheritance(
+    parent: *const u8,
+    creator: *const u8,
+    new_descriptor: *mut *mut u8,
+    object_types: *mut *mut u8,
+    guid_count: u32,
+    is_directory_object: u8,
+    auto_inherit_flags: u32,
+    token: *mut u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+) -> i32 {
+    RtlpNewSecurityObject(
+        parent,
+        creator,
+        new_descriptor,
+        object_types,
+        guid_count,
+        is_directory_object,
+        auto_inherit_flags,
+        token,
+        generic_mapping,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlNewInstanceSecurityObject(
+    parent_descriptor_changed: u8,
+    creator_descriptor_changed: u8,
+    old_client_token_modified_id: *const LUID_FFI,
+    new_client_token_modified_id: *mut LUID_FFI,
+    parent_descriptor: *const u8,
+    creator_descriptor: *const u8,
+    new_descriptor: *mut *mut u8,
+    is_directory_object: u8,
+    token: *mut u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+) -> i32 {
+    // Query the token statistics → ModifiedId. The genuine TOKEN_STATISTICS
+    // layout puts ModifiedId at offset 24 (LUID after TokenId+AuthenticationId).
+    let mut buf = [0u8; SIZEOF_TOKEN_STATISTICS];
+    let mut size: u32 = 0;
+    let status = NtQueryInformationToken(
+        token,
+        TOKEN_STATISTICS_INFO_CLASS,
+        buf.as_mut_ptr(),
+        SIZEOF_TOKEN_STATISTICS as u32,
+        &mut size,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+    // ModifiedId offset in TOKEN_STATISTICS: TokenId (8) + AuthenticationId (8)
+    // + ExpirationTime (8) = 24.
+    let modified_id = *(buf.as_ptr().add(24) as *const LUID_FFI);
+    *new_client_token_modified_id = modified_id;
+
+    if RtlEqualLuid(new_client_token_modified_id, old_client_token_modified_id) != 0
+        && parent_descriptor_changed == 0
+        && creator_descriptor_changed == 0
+    {
+        *new_descriptor = core::ptr::null_mut();
+        return 0;
+    }
+
+    RtlNewSecurityObject(
+        parent_descriptor,
+        creator_descriptor,
+        new_descriptor,
+        is_directory_object,
+        token,
+        generic_mapping,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateUserSecurityObject(
+    ace_data: *mut u8,
+    ace_count: u32,
+    owner_sid: *mut u8,
+    group_sid: *mut u8,
+    is_directory_object: u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+    new_descriptor: *mut *mut u8,
+) -> i32 {
+    let mut sd_ptr: *mut u8 = core::ptr::null_mut();
+    let status = RtlCreateAndSetSD(ace_data, ace_count, owner_sid, group_sid, &mut sd_ptr);
+    if !nt_success(status) {
+        return status;
+    }
+    let mut token_handle: *mut u8 = core::ptr::null_mut();
+    let status = NtOpenProcessToken(
+        priv_::nt_current_process(),
+        priv_::TOKEN_QUERY,
+        &mut token_handle,
+    );
+    if !nt_success(status) {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, sd_ptr);
+        return status;
+    }
+    let status = RtlNewSecurityObject(
+        core::ptr::null(),
+        sd_ptr,
+        new_descriptor,
+        is_directory_object,
+        token_handle,
+        generic_mapping,
+    );
+    let _ = NtClose(token_handle);
+    RtlFreeHeap(RtlGetProcessHeap(), 0, sd_ptr);
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetSecurityObject(
+    security_information: u32,
+    modification_descriptor: *const u8,
+    objects_security_descriptor: *mut *mut u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+    token: *mut u8,
+) -> i32 {
+    RtlpSetSecurityObject(
+        core::ptr::null_mut(),
+        security_information,
+        modification_descriptor,
+        objects_security_descriptor,
+        0,
+        PAGED_POOL,
+        generic_mapping,
+        token,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetSecurityObjectEx(
+    security_information: u32,
+    modification_descriptor: *const u8,
+    objects_security_descriptor: *mut *mut u8,
+    auto_inherit_flags: u32,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+    token: *mut u8,
+) -> i32 {
+    RtlpSetSecurityObject(
+        core::ptr::null_mut(),
+        security_information,
+        modification_descriptor,
+        objects_security_descriptor,
+        auto_inherit_flags,
+        PAGED_POOL,
+        generic_mapping,
+        token,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlConvertToAutoInheritSecurityObject(
+    parent: *const u8,
+    creator: *const u8,
+    new_descriptor: *mut *mut u8,
+    object_type: *mut u8,
+    is_directory_object: u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+) -> i32 {
+    RtlpConvertToAutoInheritSecurityObject(
+        parent,
+        creator,
+        new_descriptor,
+        object_type,
+        is_directory_object,
+        generic_mapping,
+    )
+}
+
+// ---------------------------------------------------------------------
+// RtlQuerySecurityObject — second byte-diff target. Composes an
+// absolute SD from existing-SD pieces (filtered by SecurityInformation),
+// then converts to self-relative in the caller's buffer.
+// ---------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlQuerySecurityObject(
+    object_descriptor: *const u8,
+    security_information: u32,
+    resultant_descriptor: *mut u8,
+    descriptor_length: u32,
+    return_length: *mut u32,
+) -> i32 {
+    let mut desc = SECURITY_DESCRIPTOR {
+        Revision: 0,
+        Sbz1: 0,
+        Control: 0,
+        Owner: core::ptr::null_mut(),
+        Group: core::ptr::null_mut(),
+        Sacl: core::ptr::null_mut(),
+        Dacl: core::ptr::null_mut(),
+    };
+    let status = RtlCreateSecurityDescriptor(
+        &mut desc as *mut SECURITY_DESCRIPTOR,
+        sd_::SECURITY_DESCRIPTOR_REVISION,
+    );
+    if !nt_success(status) {
+        return status;
+    }
+
+    let mut psid: *mut u8 = core::ptr::null_mut();
+    let mut defaulted: u8 = 0;
+    let mut present: u8 = 0;
+    let mut pacl: *mut u8 = core::ptr::null_mut();
+
+    if security_information & sd_::OWNER_SECURITY_INFORMATION != 0 {
+        let s = RtlGetOwnerSecurityDescriptor(
+            object_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut psid,
+            &mut defaulted,
+        );
+        if !nt_success(s) {
+            return s;
+        }
+        let s =
+            RtlSetOwnerSecurityDescriptor(&mut desc as *mut SECURITY_DESCRIPTOR, psid, defaulted);
+        if !nt_success(s) {
+            return s;
+        }
+    }
+
+    if security_information & sd_::GROUP_SECURITY_INFORMATION != 0 {
+        let s = RtlGetGroupSecurityDescriptor(
+            object_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut psid,
+            &mut defaulted,
+        );
+        if !nt_success(s) {
+            return s;
+        }
+        let s =
+            RtlSetGroupSecurityDescriptor(&mut desc as *mut SECURITY_DESCRIPTOR, psid, defaulted);
+        if !nt_success(s) {
+            return s;
+        }
+    }
+
+    if security_information & sd_::DACL_SECURITY_INFORMATION != 0 {
+        let s = RtlGetDaclSecurityDescriptor(
+            object_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut present,
+            &mut pacl,
+            &mut defaulted,
+        );
+        if !nt_success(s) {
+            return s;
+        }
+        let s = RtlSetDaclSecurityDescriptor(
+            &mut desc as *mut SECURITY_DESCRIPTOR,
+            present,
+            pacl,
+            defaulted,
+        );
+        if !nt_success(s) {
+            return s;
+        }
+    }
+
+    if security_information & sd_::SACL_SECURITY_INFORMATION != 0 {
+        let s = RtlGetSaclSecurityDescriptor(
+            object_descriptor as *const SECURITY_DESCRIPTOR,
+            &mut present,
+            &mut pacl,
+            &mut defaulted,
+        );
+        if !nt_success(s) {
+            return s;
+        }
+        let s = RtlSetSaclSecurityDescriptor(
+            &mut desc as *mut SECURITY_DESCRIPTOR,
+            present,
+            pacl,
+            defaulted,
+        );
+        if !nt_success(s) {
+            return s;
+        }
+    }
+
+    *return_length = descriptor_length;
+    RtlAbsoluteToSelfRelativeSD(
+        &mut desc as *mut SECURITY_DESCRIPTOR,
+        resultant_descriptor as *mut SECURITY_DESCRIPTOR_RELATIVE,
+        return_length,
+    )
+}
+
+// ---------------------------------------------------------------------
+// RtlDefaultNpAcl + RtlNewSecurityGrantedAccess: heavy syscalls.
+// Translate-only; no byte-diff coverage.
+// ---------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
+    let nt_authority = SID_IDENTIFIER_AUTHORITY_FFI {
+        Value: SECURITY_NT_AUTHORITY_VAL,
+    };
+    let world_authority = SID_IDENTIFIER_AUTHORITY_FFI {
+        Value: SECURITY_WORLD_AUTHORITY_VAL,
+    };
+
+    // SID buffer big enough for max 2 SubAuthorities.
+    let mut sid_buf = SID2 {
+        Revision: 0,
+        SubAuthorityCount: 0,
+        IdentifierAuthority: SID_IDENTIFIER_AUTHORITY_FFI { Value: [0; 6] },
+        SubAuthority: [0; 2],
+    };
+    let p_sid = &mut sid_buf as *mut SID2 as *mut u8;
+
+    *p_acl = core::ptr::null_mut();
+
+    let mut token_handle: *mut u8 = core::ptr::null_mut();
+    let mut status = NtOpenThreadToken(
+        priv_::nt_current_thread(),
+        priv_::TOKEN_QUERY,
+        1,
+        &mut token_handle,
+    );
+    if status == STATUS_NO_TOKEN {
+        status = NtOpenProcessToken(
+            priv_::nt_current_process(),
+            priv_::TOKEN_QUERY,
+            &mut token_handle,
+        );
+    }
+    if !nt_success(status) {
+        return status;
+    }
+
+    let mut return_length: u32 = 0;
+    let status = NtQueryInformationToken(
+        token_handle,
+        TOKEN_OWNER_INFO_CLASS,
+        core::ptr::null_mut(),
+        0,
+        &mut return_length,
+    );
+    if status != env::STATUS_BUFFER_TOO_SMALL {
+        let _ = NtClose(token_handle);
+        return status;
+    }
+
+    let owner_sid_buf = RtlAllocateHeap(RtlGetProcessHeap(), 0, return_length as usize);
+    if owner_sid_buf.is_null() {
+        let _ = NtClose(token_handle);
+        return STATUS_NO_MEMORY;
+    }
+
+    let status = NtQueryInformationToken(
+        token_handle,
+        TOKEN_OWNER_INFO_CLASS,
+        owner_sid_buf,
+        return_length,
+        &mut return_length,
+    );
+    if !nt_success(status) {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, owner_sid_buf);
+        let _ = NtClose(token_handle);
+        return status;
+    }
+
+    // TOKEN_OWNER->Owner is just a PSID pointer at offset 0.
+    let owner_sid_ptr = *(owner_sid_buf as *const *mut u8);
+
+    let acl_size = (core::mem::size_of::<ACL_HDR>() as u32) +    // ACL header (8)
+        5 * 8u32 +                                                // 5 ACE headers
+        RtlLengthRequiredSid(1)                                   // LocalSystem
+        + RtlLengthRequiredSid(2)                                 // Administrators
+        + RtlLengthRequiredSid(1)                                 // Anonymous
+        + RtlLengthRequiredSid(1)                                 // World
+        + RtlLengthSid(owner_sid_ptr); // Owner
+
+    let acl = RtlAllocateHeap(RtlGetProcessHeap(), 0, acl_size as usize);
+    if acl.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, owner_sid_buf);
+        let _ = NtClose(token_handle);
+        return STATUS_NO_MEMORY;
+    }
+    *p_acl = acl;
+
+    let mut status = RtlCreateAcl(acl, acl_size, ACL_REVISION2 as u32);
+
+    // Local System SID.
+    let _ = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 1);
+    *RtlSubAuthoritySid(p_sid, 0) = SECURITY_LOCAL_SYSTEM_RID;
+    status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_ALL, p_sid);
+
+    // Administrators SID.
+    let _ = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 2);
+    *RtlSubAuthoritySid(p_sid, 0) = SECURITY_BUILTIN_DOMAIN_RID;
+    *RtlSubAuthoritySid(p_sid, 1) = DOMAIN_ALIAS_RID_ADMINS;
+    status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_ALL, p_sid);
+
+    // Owner SID.
+    let _ = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_ALL, owner_sid_ptr);
+
+    // Anonymous SID.
+    let _ = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 1);
+    *RtlSubAuthoritySid(p_sid, 0) = SECURITY_ANONYMOUS_LOGON_RID;
+    status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_READ, p_sid);
+
+    // World SID.
+    let _ = RtlInitializeSid(p_sid, &world_authority as *const _ as *const u8, 1);
+    *RtlSubAuthoritySid(p_sid, 0) = SECURITY_WORLD_RID;
+    status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_READ, p_sid);
+
+    if !nt_success(status) {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, acl);
+        *p_acl = core::ptr::null_mut();
+    }
+
+    RtlFreeHeap(RtlGetProcessHeap(), 0, owner_sid_buf);
+    let _ = NtClose(token_handle);
+    status
+}
+
+#[repr(C)]
+struct ACL_HDR {
+    AclRevision: u8,
+    Sbz1: u8,
+    AclSize: u16,
+    AceCount: u16,
+    Sbz2: u16,
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlNewSecurityGrantedAccess(
+    mut desired_access: u32,
+    privileges: *mut PRIVILEGE_SET_FFI,
+    length: *mut u32,
+    mut token: *mut u8,
+    generic_mapping: *const GENERIC_MAPPING_FFI,
+    remaining_desired_access: *mut u32,
+) -> i32 {
+    let caller_token = !token.is_null();
+    if !caller_token {
+        let s = NtOpenThreadToken(
+            priv_::nt_current_thread(),
+            priv_::TOKEN_QUERY,
+            1,
+            &mut token,
+        );
+        if !nt_success(s) {
+            return s;
+        }
+    }
+
+    let mut buf = [0u8; SIZEOF_TOKEN_STATISTICS];
+    let mut sz: u32 = 0;
+    let _ = NtQueryInformationToken(
+        token,
+        TOKEN_STATISTICS_INFO_CLASS,
+        buf.as_mut_ptr(),
+        SIZEOF_TOKEN_STATISTICS as u32,
+        &mut sz,
+    );
+
+    RtlMapGenericMask(&mut desired_access, generic_mapping);
+    *remaining_desired_access = desired_access;
+
+    let granted = if desired_access & ACCESS_SYSTEM_SECURITY != 0 {
+        *remaining_desired_access &= !ACCESS_SYSTEM_SECURITY;
+        true
+    } else {
+        false
+    };
+
+    if !caller_token {
+        let _ = NtClose(token);
+    }
+
+    let needed = core::mem::size_of::<PRIVILEGE_SET_FFI>() as u32;
+    if needed > *length {
+        *length = needed;
+        return env::STATUS_BUFFER_TOO_SMALL;
+    }
+
+    core::ptr::write_bytes(privileges as *mut u8, 0, needed as usize);
+    if granted {
+        (*privileges).PrivilegeCount = 1;
+        (*privileges).Privilege[0].Luid.LowPart = SE_SECURITY_PRIVILEGE;
+        (*privileges).Privilege[0].Luid.HighPart = 0;
+        (*privileges).Privilege[0].Attributes = SE_PRIVILEGE_USED_FOR_ACCESS;
+    }
+    0
 }

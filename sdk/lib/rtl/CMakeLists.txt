@@ -74,7 +74,7 @@ list(APPEND SOURCE
     resource.c
     rxact.c
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
-    security.c
+    # security.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SEC)
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
     slist.c
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
@@ -220,6 +220,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/priv_mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/acl.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sd.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sec.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sid.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/timezone.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs

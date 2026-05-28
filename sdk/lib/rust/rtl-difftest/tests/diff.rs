@@ -3624,15 +3624,27 @@ fn diff_rtl_self_relative_to_absolute_sd2() {
 
 #[test]
 fn diff_rtl_copy_security_descriptor() {
-    // RtlAllocateHeap=NULL in the harness ⇒ both sides return STATUS_NO_MEMORY.
+    // RtlAllocateHeap is now heap-backed in the harness (Wave SEC).
+    // Use mk_relative_sd inputs (self-relative, contiguous in one buffer)
+    // so the C-faithful `memcpy(total_bytes_from_src)` actually copies
+    // valid payload. Absolute-SD inputs would memcpy past the small
+    // header struct into uninit memory — matches the C bug but breaks
+    // the post-copy `RtlLengthSecurityDescriptor` walk.
     let mut rng = Rng(0x5D20_0004);
     for _ in 0..1_000 {
-        let (sd, _o, _g, _d, _s) = mk_absolute_sd(&mut rng);
+        let sd = mk_relative_sd(&mut rng);
         let (mut dc, mut dr): (*mut u8, *mut u8) = (core::ptr::null_mut(), core::ptr::null_mut());
         let rc = unsafe { cabi::RtlCopySecurityDescriptor(sd.as_ptr() as _, &mut dc as *mut _ as _) };
         let rr = unsafe { ref_RtlCopySecurityDescriptor(sd.as_ptr(), &mut dr) };
         assert_eq!(rc, rr, "RtlCopySecurityDescriptor status");
-        assert_eq!(dc as usize, dr as usize, "RtlCopySecurityDescriptor out ptr");
+        if rc == 0 {
+            let len = unsafe { cabi::RtlLengthSecurityDescriptor(dc as *const _) };
+            let cs = unsafe { core::slice::from_raw_parts(dc, len as usize) };
+            let rs = unsafe { core::slice::from_raw_parts(dr, len as usize) };
+            assert_eq!(cs, rs, "RtlCopySecurityDescriptor content");
+        } else {
+            assert_eq!(dc as usize, dr as usize, "RtlCopySecurityDescriptor failure out ptr");
+        }
     }
 }
 
@@ -3659,6 +3671,24 @@ extern "C" {
     ) -> i32;
     fn ref_RtlCreateEnvironment(inherit: u8, out_env: *mut *mut u16) -> i32;
     fn ref_RtlDestroyEnvironment(env: *mut u16);
+    // Wave SEC
+    fn ref_RtlpSetSecurityObject(
+        object: *mut u8,
+        security_information: u32,
+        modification_descriptor: *const u8,
+        objects_security_descriptor: *mut *mut u8,
+        auto_inherit_flags: u32,
+        pool_type: u32,
+        generic_mapping: *const u8,
+        token: *mut u8,
+    ) -> i32;
+    fn ref_RtlQuerySecurityObject(
+        object_descriptor: *const u8,
+        security_information: u32,
+        resultant_descriptor: *mut u8,
+        descriptor_length: u32,
+        return_length: *mut u32,
+    ) -> i32;
     // The shared heap-backed Nt*VirtualMemory stubs (in env ref TU).
     fn NtAllocateVirtualMemory(
         process: *mut u8,
@@ -4104,6 +4134,252 @@ fn diff_rtl_set_environment_variable_random() {
                         to_str(rs)
                     );
                 }
+            }
+        }
+    }
+}
+
+// =====================================================================
+// Wave SEC — security.c byte-diff
+// =====================================================================
+
+/// Heap-alloc + populate a self-relative SD with the given owner/group
+/// SIDs and dacl/sacl ACL byte slices. The result is leaked (test
+/// process lifetime). Faithful to mk_relative_sd's layout from SD wave.
+unsafe fn mk_sdr_for_sec(
+    owner: &[u8],
+    group: &[u8],
+    dacl: Option<&[u8]>,
+    sacl: Option<&[u8]>,
+) -> Vec<u8> {
+    let owner_n = (owner.len() + 3) & !3;
+    let group_n = (group.len() + 3) & !3;
+    let dacl_n = dacl.map(|d| (d.len() + 3) & !3).unwrap_or(0);
+    let sacl_n = sacl.map(|s| (s.len() + 3) & !3).unwrap_or(0);
+
+    let mut buf = vec![0u8; 20 + owner_n + group_n + dacl_n + sacl_n];
+    buf[0] = 1; // Revision
+    // Control: SE_SELF_RELATIVE
+    let mut ctrl: u16 = 0x8000;
+    if dacl.is_some() {
+        ctrl |= 0x0004; // SE_DACL_PRESENT
+    }
+    if sacl.is_some() {
+        ctrl |= 0x0010; // SE_SACL_PRESENT
+    }
+    buf[2..4].copy_from_slice(&ctrl.to_le_bytes());
+
+    let mut off = 20u32;
+    let mut sacl_off = 0u32;
+    if let Some(s) = sacl {
+        sacl_off = off;
+        buf[off as usize..off as usize + s.len()].copy_from_slice(s);
+        off += sacl_n as u32;
+    }
+    let mut dacl_off = 0u32;
+    if let Some(d) = dacl {
+        dacl_off = off;
+        buf[off as usize..off as usize + d.len()].copy_from_slice(d);
+        off += dacl_n as u32;
+    }
+    let owner_off = off;
+    buf[off as usize..off as usize + owner.len()].copy_from_slice(owner);
+    off += owner_n as u32;
+    let group_off = off;
+    buf[off as usize..off as usize + group.len()].copy_from_slice(group);
+
+    // Owner/Group/Sacl/Dacl offsets in SDR header (offsets 4/8/12/16).
+    buf[4..8].copy_from_slice(&owner_off.to_le_bytes());
+    buf[8..12].copy_from_slice(&group_off.to_le_bytes());
+    buf[12..16].copy_from_slice(&sacl_off.to_le_bytes());
+    buf[16..20].copy_from_slice(&dacl_off.to_le_bytes());
+
+    buf
+}
+
+/// Build a minimal valid SID. authority=NT(5), one subauthority value.
+fn mk_simple_sid(rid: u32) -> Vec<u8> {
+    let mut sid = Vec::with_capacity(12);
+    sid.push(1); // Revision
+    sid.push(1); // SubAuthorityCount
+    sid.extend_from_slice(&[0u8, 0, 0, 0, 0, 5]); // NT authority
+    sid.extend_from_slice(&rid.to_le_bytes());
+    sid
+}
+
+/// Build a minimal ACL with the given byte content as opaque body.
+/// Just the ACL header + zero ACEs (AclSize matches).
+fn mk_empty_acl_sec() -> Vec<u8> {
+    let mut acl = Vec::with_capacity(8);
+    acl.push(2); // AclRevision
+    acl.push(0); // Sbz1
+    acl.extend_from_slice(&8u16.to_le_bytes()); // AclSize
+    acl.extend_from_slice(&0u16.to_le_bytes()); // AceCount
+    acl.extend_from_slice(&0u16.to_le_bytes()); // Sbz2
+    acl
+}
+
+#[test]
+fn diff_rtl_p_set_security_object() {
+    // Each scenario: existing_sd_parts, modification_sd_parts, security_info bits.
+    let owner1 = mk_simple_sid(0x100);
+    let group1 = mk_simple_sid(0x101);
+    let dacl1 = mk_empty_acl_sec();
+    let sacl1 = mk_empty_acl_sec();
+
+    let owner2 = mk_simple_sid(0x200);
+    let group2 = mk_simple_sid(0x201);
+
+    unsafe {
+        // Allocate existing + modification descriptors via the vm-backed
+        // RtlAllocateHeap so cabi's RtlFreeHeap works on the old one.
+        let allocate = |bytes: &[u8]| -> *mut u8 {
+            extern "C" {
+                fn RtlAllocateHeap(h: *mut u8, f: u32, n: usize) -> *mut u8;
+            }
+            let p = RtlAllocateHeap(core::ptr::null_mut(), 0, bytes.len());
+            assert!(!p.is_null(), "vm alloc");
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), p, bytes.len());
+            p
+        };
+
+        let cases: &[(u32, &[u8], &[u8], Option<&[u8]>, Option<&[u8]>)] = &[
+            (
+                0x1, // OWNER only
+                &owner2,
+                &group1,
+                Some(&dacl1),
+                None,
+            ),
+            (
+                0x2, // GROUP only
+                &owner1,
+                &group2,
+                None,
+                None,
+            ),
+            (
+                0x4, // DACL only
+                &owner1,
+                &group1,
+                Some(&dacl1),
+                None,
+            ),
+            (
+                0x8, // SACL only
+                &owner1,
+                &group1,
+                None,
+                Some(&sacl1),
+            ),
+            (
+                0xF, // ALL four
+                &owner2,
+                &group2,
+                Some(&dacl1),
+                Some(&sacl1),
+            ),
+            (
+                0x0, // None — should still produce a copy
+                &owner1,
+                &group1,
+                None,
+                None,
+            ),
+        ];
+
+        for (idx, (sec_info, mod_owner, mod_group, mod_dacl, mod_sacl)) in cases.iter().enumerate()
+        {
+            // existing SD: always full owner/group, no DACL/SACL.
+            let existing = mk_sdr_for_sec(&owner1, &group1, Some(&dacl1), Some(&sacl1));
+            let modification = mk_sdr_for_sec(mod_owner, mod_group, *mod_dacl, *mod_sacl);
+
+            let mut existing_c = allocate(&existing);
+            let mut existing_r = allocate(&existing);
+            let mod_c = allocate(&modification);
+            let mod_r = allocate(&modification);
+
+            let sc = cabi::RtlpSetSecurityObject(
+                core::ptr::null_mut(),
+                *sec_info,
+                mod_c,
+                &mut existing_c,
+                0,
+                1,
+                core::ptr::null(),
+                core::ptr::null_mut(),
+            );
+            let sr = ref_RtlpSetSecurityObject(
+                core::ptr::null_mut(),
+                *sec_info,
+                mod_r,
+                &mut existing_r,
+                0,
+                1,
+                core::ptr::null(),
+                core::ptr::null_mut(),
+            );
+
+            assert_eq!(sc, sr, "scenario {} status", idx);
+
+            if sc == 0 {
+                // Both succeeded — compare new SD byte-for-byte.
+                // The new SD is at *existing_c / *existing_r. Length is
+                // read from offsets (group is last; its size = round_up_4(SID)).
+                // Easier: rely on RtlLengthSecurityDescriptor.
+                let lc = cabi::RtlLengthSecurityDescriptor(existing_c as *const _);
+                let lr = cabi::RtlLengthSecurityDescriptor(existing_r as *const _);
+                assert_eq!(lc, lr, "scenario {} length", idx);
+                let bytes_c = core::slice::from_raw_parts(existing_c, lc as usize);
+                let bytes_r = core::slice::from_raw_parts(existing_r, lc as usize);
+                assert_eq!(bytes_c, bytes_r, "scenario {} bytes", idx);
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_query_security_object() {
+    let owner = mk_simple_sid(0x100);
+    let group = mk_simple_sid(0x101);
+    let dacl = mk_empty_acl_sec();
+    let sacl = mk_empty_acl_sec();
+
+    let existing = unsafe { mk_sdr_for_sec(&owner, &group, Some(&dacl), Some(&sacl)) };
+
+    let cases: &[u32] = &[0x0, 0x1, 0x2, 0x4, 0x8, 0xF];
+    let buf_sizes = [128usize, 256, 512];
+
+    for &sec_info in cases {
+        for &bsz in &buf_sizes {
+            let mut bc = vec![0u8; bsz];
+            let mut br = vec![0u8; bsz];
+            let mut lc: u32 = 0;
+            let mut lr: u32 = 0;
+
+            let sc = unsafe {
+                cabi::RtlQuerySecurityObject(
+                    existing.as_ptr(),
+                    sec_info,
+                    bc.as_mut_ptr(),
+                    bsz as u32,
+                    &mut lc,
+                )
+            };
+            let sr = unsafe {
+                ref_RtlQuerySecurityObject(
+                    existing.as_ptr(),
+                    sec_info,
+                    br.as_mut_ptr(),
+                    bsz as u32,
+                    &mut lr,
+                )
+            };
+            assert_eq!(sc, sr, "sec_info={:#x} bsz={} status", sec_info, bsz);
+            assert_eq!(lc, lr, "sec_info={:#x} bsz={} length", sec_info, bsz);
+            if sc == 0 {
+                assert_eq!(&bc[..lc as usize], &br[..lc as usize],
+                           "sec_info={:#x} bsz={} bytes", sec_info, bsz);
             }
         }
     }
