@@ -308,7 +308,7 @@ pub(crate) unsafe extern "system" fn ConSrvTermReadStream(
                 NumCharsToRead
             };
 
-            (*Console).LineBuffer = ConsoleAllocHeap(0, ((*Console).LineMaxSize as SIZE_T) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+            (*Console).LineBuffer = ConsoleAllocHeap(0, ((*Console).LineMaxSize as usize) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
             if (*Console).LineBuffer.is_null() {
                 return STATUS_NO_MEMORY;
             }
@@ -323,7 +323,7 @@ pub(crate) unsafe extern "system" fn ConSrvTermReadStream(
             memcpy(
                 (*Console).LineBuffer as PVOID,
                 Buffer,
-                ((*Console).LineSize as SIZE_T) * core::mem::size_of::<WCHAR>(),
+                ((*Console).LineSize as usize) * core::mem::size_of::<WCHAR>(),
             );
             if (*Console).LineSize >= (*Console).LineMaxSize {
                 (*Console).LineComplete = 1u8;
@@ -432,7 +432,7 @@ pub(crate) unsafe fn ConioNextLine(
     if (*Buff).CursorPosition.Y == (*Buff).ScreenBufferSize.Y {
         (*Buff).CursorPosition.Y -= 1;
         (*Buff).VirtualY += 1;
-        if (*Buff).VirtualY == (*Buff).ScreenBufferSize.Y {
+        if (*Buff).VirtualY == (*Buff).ScreenBufferSize.Y as u16 {
             (*Buff).VirtualY = 0;
         }
         *ScrolledLines += 1;
@@ -627,7 +627,7 @@ pub(crate) unsafe fn ConioWriteConsole(
 
         if (*Ptr).Attributes & COMMON_LVB_TRAILING_BYTE != 0 {
             if (*Buff).CursorPosition.X > 0 {
-                Ptr = ConioCoordToPointer(Buff, (*Buff).CursorPosition.X - 1, (*Buff).CursorPosition.Y);
+                Ptr = ConioCoordToPointer(Buff, ((*Buff).CursorPosition.X - 1) as u32, (*Buff).CursorPosition.Y as u32);
                 (*Ptr).Char.UnicodeChar = 0x0020;
                 if Attrib != 0 {
                     (*Ptr).Attributes = (*Buff).ScreenDefaultAttrib;
@@ -686,7 +686,7 @@ pub(crate) unsafe fn ConioWriteConsole(
         i += 1;
     }
 
-    if ConioIsRectEmpty(&UpdateRect) == 0 && Buff as PCONSOLE_SCREEN_BUFFER == (*Console).ActiveBuffer {
+    if ConioIsRectEmpty(&mut UpdateRect) == 0 && Buff as PCONSOLE_SCREEN_BUFFER == (*Console).ActiveBuffer {
         ((*(*FrontEnd).Vtbl).WriteStream.unwrap())(
             FrontEnd,
             &mut UpdateRect,
@@ -709,7 +709,7 @@ pub(crate) unsafe extern "system" fn ConSrvTermWriteStream(
     Attrib: BOOL,
 ) -> i32 {
     let FrontEnd: PFRONTEND = (*This).Context as PFRONTEND;
-    ConioWriteConsole(FrontEnd, Buff, Buffer, Length, Attrib)
+    ConioWriteConsole(FrontEnd, Buff, Buffer, Length, Attrib as u8)
 }
 
 pub(crate) unsafe fn ConioDrawConsole(Console: PCONSRV_CONSOLE) {

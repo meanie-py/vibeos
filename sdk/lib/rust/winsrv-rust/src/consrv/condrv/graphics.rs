@@ -30,7 +30,7 @@ pub unsafe extern "system" fn GRAPHICS_BUFFER_Initialize(
     *Buffer = core::ptr::null_mut();
 
     Status = CONSOLE_SCREEN_BUFFER_Initialize(
-        &mut NewBuffer as *mut PGRAPHICS_SCREEN_BUFFER as *mut PCONSOLE_IO_OBJECT,
+        &mut NewBuffer as *mut PGRAPHICS_SCREEN_BUFFER as *mut PCONSOLE_SCREEN_BUFFER,
         Console,
         GRAPHICS_BUFFER,
         core::mem::size_of::<GRAPHICS_SCREEN_BUFFER>(),

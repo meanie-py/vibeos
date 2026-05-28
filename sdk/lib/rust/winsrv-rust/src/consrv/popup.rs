@@ -111,7 +111,7 @@ pub(crate) unsafe fn DrawBox(
         );
 
         coPos.X = xLeft + 1;
-        Code.AsciiChar = b' ';
+        Code.AsciiChar = b' ' as i8;
         ConDrvFillConsoleOutput(
             (*Buffer).Header.Console,
             Buffer,

@@ -29,6 +29,7 @@ extern "system" {
         lpBytesReturned: *mut u32,
         lpOverlapped: *mut core::ffi::c_void,
     ) -> BOOL;
+    pub fn Sleep(dwMilliseconds: u32);
 }
 
 const IOCTL_ARM64INPUT_INJECT_BYTE: u32 = ((0x0000000B << 16) | (0x800 << 2) | (0 << 14) | (0));
@@ -408,7 +409,7 @@ unsafe extern "system" fn SerialWriteStream(
     let AnsiBuffer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        AnsiLength as usize,
+        AnsiLength as SIZE_T,
     ) as *mut i8;
     if AnsiBuffer.is_null() {
         return;

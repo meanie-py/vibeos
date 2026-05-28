@@ -1117,7 +1117,7 @@ pub(crate) unsafe extern "system" fn TuiSetScreenInfo(
         return 1;
     }
     if GetType(Buff) != TEXTMODE_BUFFER {
-        return 0u8;
+        return 0;
     }
 
     Info.dwCursorPosition = (*Buff).CursorPosition;

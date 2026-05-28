@@ -49,7 +49,7 @@ pub(crate) unsafe fn ConioGetShiftState(KeyStatePtr: PBYTE, lParam: LPARAM) -> D
         ssOut |= RIGHT_ALT_PRESSED;
     }
 
-    if ((lParam >> 16) as u16) & KF_EXTENDED != 0 {
+    if ((lParam >> 16) as u32) & KF_EXTENDED != 0 {
         ssOut |= ENHANCED_KEY;
     }
 

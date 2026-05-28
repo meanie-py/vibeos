@@ -38,7 +38,7 @@ pub unsafe extern "C" fn ConSrvApplyUserSettings(
         Console,
         (*ConsoleInfo).HistoryBufferSize,
         (*ConsoleInfo).NumberOfHistoryBuffers,
-        (*ConsoleInfo).HistoryNoDup,
+        (*ConsoleInfo).HistoryNoDup as u32,
     );
 
     core::ptr::copy_nonoverlapping(

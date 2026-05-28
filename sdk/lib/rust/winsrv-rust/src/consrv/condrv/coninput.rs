@@ -227,7 +227,7 @@ pub unsafe extern "system" fn ConDrvReadConsole(
     }
 
     TermReadStream(
-        Console,
+        Console as PCONSRV_CONSOLE,
         Unicode,
         Buffer,
         ReadControl,
