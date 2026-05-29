@@ -1849,6 +1849,17 @@ HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ImagePath",0x00020000,"system32
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,0x00000001
 
+; GOP/linear-framebuffer video device driver (UEFI boots). Boot start so that
+; \Device\Video0 exists before win32k's InitVideo runs. On a legacy-BIOS boot
+; there is no GOP framebuffer in the ARC tree, so the driver bails in DriverEntry
+; and the VGA miniport drives the display instead. ErrorControl=0 (ignore) keeps
+; that bail non-fatal.
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
+
 ; EHCI controller driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","ErrorControl",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","Group",0x00000000,"Boot Bus Extender"
