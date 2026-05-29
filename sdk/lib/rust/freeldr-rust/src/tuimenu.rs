@@ -38,6 +38,17 @@ pub unsafe extern "C" fn TuiDisplayMenu(
     let mut CurrentClockSecond: ULONG;
     let mut KeyPress: ULONG;
 
+    // Drain any pending keystrokes left over from firmware/BdsDxe (UEFI),
+    // otherwise the first MachConsKbHit() inside the loop will return
+    // success and TuiProcessMenuKeyboardEvent disables the timeout.
+    // Bounded so a buggy MachConsKbHit (e.g. UEFI ReadKeyStroke returning
+    // success without producing a real key) can't infinite-loop us here.
+    let mut drain_count = 0;
+    while drain_count < 32 && MachConsKbHit() != 0 {
+        let _ = MachConsGetCh();
+        drain_count += 1;
+    }
+
     if MenuTimeOut == 0 && KeyPressFilter.is_some() && MachConsKbHit() != 0 {
         KeyPress = MachConsGetCh();
         if KeyPress == KEY_EXTENDED {

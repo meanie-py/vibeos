@@ -195,7 +195,7 @@ unsafe fn MmCheckFreeldrImageFile() {
     crate::frldr::dbgcon_str(b",nt=");
     crate::frldr::dbgcon_hex32(NtHeaders as usize as u32);
     crate::frldr::dbgcon_str(b"]");
-    #[cfg(not(uefiboot))]
+    #[cfg(not(feature = "uefi"))]
     {
         if NtHeaders.is_null() {
             crate::frldr::dbgcon_str(b"NULL!");
