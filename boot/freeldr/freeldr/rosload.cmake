@@ -38,7 +38,9 @@ if(ARCH STREQUAL "i386")
     list(APPEND ROSLOAD_SOURCE
         arch/i386/halstub.c
         # arch/i386/ntoskrnl.c       # replaced by Rust (freeldr-rust/src/ntoskrnl.rs)
-        disk/scsiport.c
+        # disk/scsiport.c — DELETED: SCSI emulation (ScsiPort* exports for
+        #   ntbootdd.sys SCSI/RAID boot). Unused on our targets; exports
+        #   removed from rosload.spec too.
         # ntldr/arch/i386/winldr.c   # replaced by Rust (freeldr-rust/src/winldr_i386.rs)
         # ntldr/headless.c           # replaced by Rust (freeldr-rust/src/headless.rs)
     )
