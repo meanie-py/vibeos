@@ -1,16 +1,87 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{KeRestoreFloatingPointState, KeSaveFloatingPointState};
 use core::ffi::c_void;
+use crate::brushbody::pbrushbody;
+use crate::floatobj::*;
+
+// KeSave/RestoreFloatingPointState: real KE functions on i386/amd64, but
+// FORCEINLINE no-ops (return STATUS_SUCCESS) on arm64 (xdk/arm64/ke.h) — no
+// symbol there. Provide inline no-ops on arm64 to match.
+#[cfg(not(target_arch = "aarch64"))]
+use ntkrnl_sys::ddk::{KeRestoreFloatingPointState, KeSaveFloatingPointState};
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn KeSaveFloatingPointState(_fs: *mut c_void) -> NTSTATUS { 0 }
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn KeRestoreFloatingPointState(_fs: *mut c_void) -> NTSTATUS { 0 }
+
+// NT_SUCCESS(s) = s >= 0  (NTSTATUS is i32)
+#[inline(always)]
+fn NT_SUCCESS(status: NTSTATUS) -> bool { status >= 0 }
+// ROP2_TO_MIX(Rop2) = ((Rop2) << 8) | (Rop2)  [inteng.h]; jROP2 is BYTE.
+#[inline(always)]
+fn ROP2_TO_MIX(rop2: u8) -> MIX { ((rop2 as MIX) << 8) | (rop2 as MIX) }
 
 extern "C" {
-    fn IntLPtoDP(dc: *mut DC, pt: LPPOINT, count: i32) -> i32;
-    fn PEN_ShareLockPen(hpen: HPEN) -> PBRUSH;
-    fn PEN_ShareUnlockPen(pbrush: PBRUSH);
     fn atan2(y: f64, x: f64) -> f64;
     fn abs(x: i32) -> i32;
-    fn PATH_IsPathOpen(dclevel: *mut core::ffi::c_void) -> i32;
     fn cos(x: f64) -> f64;
     fn sin(x: f64) -> f64;
+}
+
+// PEN_ShareLockPen is FASTCALL (pen.h).
+#[cfg(target_arch = "x86")]
+extern "fastcall" { fn PEN_ShareLockPen(hpen: HPEN) -> PBRUSH; }
+#[cfg(not(target_arch = "x86"))]
+extern "C" { fn PEN_ShareLockPen(hpen: HPEN) -> PBRUSH; }
+
+// PEN_ShareUnlockPen / PATH_IsPathOpen are macros (pen.h / path.h) — inline.
+#[inline(always)]
+unsafe fn PEN_ShareUnlockPen(ppen: PBRUSH) { GDIOBJ_vDereferenceObject(ppen as POBJ); }
+#[inline(always)]
+unsafe fn PATH_IsPathOpen(dclevel: *mut c_void) -> i32 {
+    let d = dclevel as *mut _DCLEVEL;
+    ((!(*d).hPath.is_null()) && ((*d).flPath & DCPATH_ACTIVE) != 0) as i32
+}
+
+// IntLPtoDP is `static inline` (coord.h) — no symbol. Inline it and its
+// callee chain (INTERNAL_LPTODP → INTERNAL_APPLY_MATRIX), using the shared
+// per-arch FLOATOBJ shim.
+#[inline(always)]
+unsafe fn INTERNAL_APPLY_MATRIX(matrix: PMATRIX, points: LPPOINT, mut count: u32) -> u8 {
+    while count != 0 {
+        count -= 1;
+        let p = points.offset(count as isize);
+        let mut x: FLOATOBJ = core::mem::zeroed();
+        let mut y: FLOATOBJ = core::mem::zeroed();
+        let mut tmp: FLOATOBJ;
+        // x = x * efM11 + y * efM21 + efDx
+        FLOATOBJ_SetLong(core::ptr::addr_of_mut!(x), (*p).x);
+        FLOATOBJ_Mul(core::ptr::addr_of_mut!(x), core::ptr::addr_of_mut!((*matrix).efM11));
+        tmp = (*matrix).efM21;
+        FLOATOBJ_MulLong(core::ptr::addr_of_mut!(tmp), (*p).y);
+        FLOATOBJ_Add(core::ptr::addr_of_mut!(x), core::ptr::addr_of_mut!(tmp));
+        FLOATOBJ_Add(core::ptr::addr_of_mut!(x), core::ptr::addr_of_mut!((*matrix).efDx));
+        // y = x * efM12 + y * efM22 + efDy
+        FLOATOBJ_SetLong(core::ptr::addr_of_mut!(y), (*p).y);
+        FLOATOBJ_Mul(core::ptr::addr_of_mut!(y), core::ptr::addr_of_mut!((*matrix).efM22));
+        tmp = (*matrix).efM12;
+        FLOATOBJ_MulLong(core::ptr::addr_of_mut!(tmp), (*p).x);
+        FLOATOBJ_Add(core::ptr::addr_of_mut!(y), core::ptr::addr_of_mut!(tmp));
+        FLOATOBJ_Add(core::ptr::addr_of_mut!(y), core::ptr::addr_of_mut!((*matrix).efDy));
+        if FLOATOBJ_bConvertToLong(core::ptr::addr_of!(x), core::ptr::addr_of_mut!((*p).x)) == 0 { return 0; }
+        if FLOATOBJ_bConvertToLong(core::ptr::addr_of!(y), core::ptr::addr_of_mut!((*p).y)) == 0 { return 0; }
+    }
+    1
+}
+#[inline(always)]
+unsafe fn IntLPtoDP(pdc: *mut DC, ppt: LPPOINT, count: i32) -> i32 {
+    DC_vUpdateWorldToDevice(pdc);
+    INTERNAL_APPLY_MATRIX(
+        core::ptr::addr_of_mut!((*(*pdc).pdcattr).mxWorldToDevice) as PMATRIX,
+        ppt,
+        count as u32,
+    ) as i32
 }
 
 // ---- file-scope preamble (translated) ----
@@ -39,8 +110,8 @@ unsafe extern "fastcall" fn IntArc(
     arctype: ARCTYPE,
 ) -> BOOL {
     let pdcattr: PDC_ATTR;
-    let mut RectBounds: RECTL;
-    let mut RectSEpts: RECTL;
+    let mut RectBounds: RECTL = core::mem::zeroed();
+    let mut RectSEpts: RECTL = core::mem::zeroed();
     let pbrPen: PBRUSH;
     let psurf: *mut SURFACE;
     let mut ret: BOOL = 1;
@@ -74,19 +145,19 @@ unsafe extern "fastcall" fn IntArc(
 
     pdcattr = (*dc).pdcattr;
 
-    pbrPen = PEN_ShareLockPen((*pdcattr).hpen);
+    pbrPen = PEN_ShareLockPen((*pdcattr).hpen as HPEN);
     if pbrPen.is_null() {
         EngSetLastError(ERROR_INTERNAL_ERROR);
         return 0;
     }
 
-    PenOrigWidth = (*pbrPen).lWidth;
+    PenOrigWidth = (*pbrushbody(pbrPen)).lWidth;
     PenWidth = PenOrigWidth;
-    if (*pbrPen).ulPenStyle == PS_NULL {
+    if (*pbrushbody(pbrPen)).ulPenStyle == PS_NULL {
         PenWidth = 0;
     }
 
-    if (*pbrPen).ulPenStyle == PS_INSIDEFRAME {
+    if (*pbrushbody(pbrPen)).ulPenStyle == PS_INSIDEFRAME {
         if 2 * PenWidth > (Right - Left) {
             PenWidth = (Right - Left + 1) / 2;
         }
@@ -102,7 +173,7 @@ unsafe extern "fastcall" fn IntArc(
     if PenWidth == 0 {
         PenWidth = 1;
     }
-    (*pbrPen).lWidth = PenWidth;
+    (*pbrushbody(pbrPen)).lWidth = PenWidth;
 
     RectBounds.left = Left;
     RectBounds.right = Right;
@@ -179,7 +250,7 @@ unsafe extern "fastcall" fn IntArc(
             CenterY,
             RectSEpts.left,
             RectSEpts.top,
-            &RectBounds,
+            core::ptr::addr_of_mut!(RectBounds),
             ROP2_TO_MIX((*pdcattr).jROP2),
         );
         ret = ret & IntEngLineTo(
@@ -190,7 +261,7 @@ unsafe extern "fastcall" fn IntArc(
             RectSEpts.bottom,
             CenterX,
             CenterY,
-            &RectBounds,
+            core::ptr::addr_of_mut!(RectBounds),
             ROP2_TO_MIX((*pdcattr).jROP2),
         );
     }
@@ -203,12 +274,12 @@ unsafe extern "fastcall" fn IntArc(
             RectSEpts.bottom,
             RectSEpts.left,
             RectSEpts.top,
-            &RectBounds,
+            core::ptr::addr_of_mut!(RectBounds),
             ROP2_TO_MIX((*pdcattr).jROP2),
         );
     }
 
-    (*pbrPen).lWidth = PenOrigWidth;
+    (*pbrushbody(pbrPen)).lWidth = PenOrigWidth;
     PEN_ShareUnlockPen(pbrPen);
     ret
 }
@@ -227,8 +298,8 @@ unsafe extern "C" fn IntArc(
     arctype: ARCTYPE,
 ) -> BOOL {
     let pdcattr: PDC_ATTR;
-    let mut RectBounds: RECTL;
-    let mut RectSEpts: RECTL;
+    let mut RectBounds: RECTL = core::mem::zeroed();
+    let mut RectSEpts: RECTL = core::mem::zeroed();
     let pbrPen: PBRUSH;
     let psurf: *mut SURFACE;
     let mut ret: BOOL = 1;
@@ -262,19 +333,19 @@ unsafe extern "C" fn IntArc(
 
     pdcattr = (*dc).pdcattr;
 
-    pbrPen = PEN_ShareLockPen((*pdcattr).hpen);
+    pbrPen = PEN_ShareLockPen((*pdcattr).hpen as HPEN);
     if pbrPen.is_null() {
         EngSetLastError(ERROR_INTERNAL_ERROR);
         return 0;
     }
 
-    PenOrigWidth = (*pbrPen).lWidth;
+    PenOrigWidth = (*pbrushbody(pbrPen)).lWidth;
     PenWidth = PenOrigWidth;
-    if (*pbrPen).ulPenStyle == PS_NULL {
+    if (*pbrushbody(pbrPen)).ulPenStyle == PS_NULL {
         PenWidth = 0;
     }
 
-    if (*pbrPen).ulPenStyle == PS_INSIDEFRAME {
+    if (*pbrushbody(pbrPen)).ulPenStyle == PS_INSIDEFRAME {
         if 2 * PenWidth > (Right - Left) {
             PenWidth = (Right - Left + 1) / 2;
         }
@@ -290,7 +361,7 @@ unsafe extern "C" fn IntArc(
     if PenWidth == 0 {
         PenWidth = 1;
     }
-    (*pbrPen).lWidth = PenWidth;
+    (*pbrushbody(pbrPen)).lWidth = PenWidth;
 
     RectBounds.left = Left;
     RectBounds.right = Right;
@@ -367,7 +438,7 @@ unsafe extern "C" fn IntArc(
             CenterY,
             RectSEpts.left,
             RectSEpts.top,
-            &RectBounds,
+            core::ptr::addr_of_mut!(RectBounds),
             ROP2_TO_MIX((*pdcattr).jROP2),
         );
         ret = ret & IntEngLineTo(
@@ -378,7 +449,7 @@ unsafe extern "C" fn IntArc(
             RectSEpts.bottom,
             CenterX,
             CenterY,
-            &RectBounds,
+            core::ptr::addr_of_mut!(RectBounds),
             ROP2_TO_MIX((*pdcattr).jROP2),
         );
     }
@@ -391,19 +462,19 @@ unsafe extern "C" fn IntArc(
             RectSEpts.bottom,
             RectSEpts.left,
             RectSEpts.top,
-            &RectBounds,
+            core::ptr::addr_of_mut!(RectBounds),
             ROP2_TO_MIX((*pdcattr).jROP2),
         );
     }
 
-    (*pbrPen).lWidth = PenOrigWidth;
+    (*pbrushbody(pbrPen)).lWidth = PenOrigWidth;
     PEN_ShareUnlockPen(pbrPen);
     ret
 }
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntGdiArcInternal(
-    arctype: i32,
+    arctype: ARCTYPE,
     dc: *mut DC,
     LeftRect: i32,
     TopRect: i32,
@@ -420,7 +491,7 @@ unsafe extern "fastcall" fn IntGdiArcInternal(
         return 1;
     }
 
-    if PATH_IsPathOpen((*dc).dclevel) != 0 {
+    if PATH_IsPathOpen(core::ptr::addr_of_mut!((*dc).dclevel) as *mut c_void) != 0 {
         return PATH_Arc(
             dc,
             LeftRect,
@@ -432,7 +503,7 @@ unsafe extern "fastcall" fn IntGdiArcInternal(
             XEndArc,
             YEndArc,
             0,
-            arctype,
+            arctype as i32,
         );
     }
 
@@ -470,7 +541,7 @@ unsafe extern "fastcall" fn IntGdiArcInternal(
 
 #[cfg(not(target_arch = "x86"))]
 unsafe extern "C" fn IntGdiArcInternal(
-    arctype: i32,
+    arctype: ARCTYPE,
     dc: *mut DC,
     LeftRect: i32,
     TopRect: i32,
@@ -487,7 +558,7 @@ unsafe extern "C" fn IntGdiArcInternal(
         return 1;
     }
 
-    if PATH_IsPathOpen((*dc).dclevel) != 0 {
+    if PATH_IsPathOpen(core::ptr::addr_of_mut!((*dc).dclevel) as *mut c_void) != 0 {
         return PATH_Arc(
             dc,
             LeftRect,
@@ -499,7 +570,7 @@ unsafe extern "C" fn IntGdiArcInternal(
             XEndArc,
             YEndArc,
             0,
-            arctype,
+            arctype as i32,
         );
     }
 
@@ -657,7 +728,7 @@ pub unsafe extern "stdcall" fn NtGdiAngleArc(
         return 0;
     }
 
-    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
     if !NT_SUCCESS(status) {
         DC_UnlockDc(pDC);
         return 0;
@@ -683,7 +754,7 @@ pub unsafe extern "stdcall" fn NtGdiAngleArc(
     DC_vFinishBlit(pDC, core::ptr::null_mut());
     DC_UnlockDc(pDC);
 
-    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
 
     Ret
 }
@@ -711,7 +782,7 @@ pub unsafe extern "C" fn NtGdiAngleArc(
         return 0;
     }
 
-    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
     if !NT_SUCCESS(status) {
         DC_UnlockDc(pDC);
         return 0;
@@ -737,14 +808,14 @@ pub unsafe extern "C" fn NtGdiAngleArc(
     DC_vFinishBlit(pDC, core::ptr::null_mut());
     DC_UnlockDc(pDC);
 
-    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
 
     Ret
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn NtGdiArcInternal(
-    arctype: i32,
+    arctype: ARCTYPE,
     hDC: HDC,
     LeftRect: i32,
     TopRect: i32,
@@ -781,7 +852,7 @@ pub unsafe extern "stdcall" fn NtGdiArcInternal(
         DC_vUpdateLineBrush(dc);
     }
 
-    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
     if !NT_SUCCESS(status) {
         DC_UnlockDc(dc);
         return 0;
@@ -818,7 +889,7 @@ pub unsafe extern "stdcall" fn NtGdiArcInternal(
         );
     }
 
-    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
     DC_vFinishBlit(dc, core::ptr::null_mut());
     DC_UnlockDc(dc);
     Ret
@@ -827,7 +898,7 @@ pub unsafe extern "stdcall" fn NtGdiArcInternal(
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn NtGdiArcInternal(
-    arctype: i32,
+    arctype: ARCTYPE,
     hDC: HDC,
     LeftRect: i32,
     TopRect: i32,
@@ -864,7 +935,7 @@ pub unsafe extern "C" fn NtGdiArcInternal(
         DC_vUpdateLineBrush(dc);
     }
 
-    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    status = KeSaveFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
     if !NT_SUCCESS(status) {
         DC_UnlockDc(dc);
         return 0;
@@ -901,7 +972,7 @@ pub unsafe extern "C" fn NtGdiArcInternal(
         );
     }
 
-    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave));
+    KeRestoreFloatingPointState(core::ptr::addr_of_mut!(FloatSave) as *mut _);
     DC_vFinishBlit(dc, core::ptr::null_mut());
     DC_UnlockDc(dc);
     Ret

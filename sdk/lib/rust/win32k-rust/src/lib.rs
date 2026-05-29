@@ -109,13 +109,17 @@ pub mod dib;
 // arc/ellipse, polygon scan-fill, XFORMOBJ matrix transforms, RECTL helpers,
 // DC-attr alloc, misc utils, stock objects. Translated via rustconv.
 pub mod dcattr; pub mod rect; pub mod bezier; pub mod utils; pub mod polyfill;
-// Wave 2 PARKED (translated, on disk, integration WIP — don't compile yet so
-// not enabled; C stays live): arc (needs _BRUSH/PEN BRUSHBODY view for
-// lWidth/ulPenStyle + ROP2_TO_MIX/NT_SUCCESS macros), xformobj (FLOATOBJ_Sub
-// helper + a `pmx` undefined-var translation bug), stockobj (76 type fixes +
-// extensive _BRUSH/SERVERINFO bindgen-anon-field views — the engbrush.rs
-// BRUSHBODY_View pattern). Finish next pass.
-// pub mod stockobj; pub mod arc; pub mod xformobj;
+// Shared BRUSHBODY view (full layout incl. PEN fields) for arc/stockobj — the
+// engbrush.rs BRUSHBODY_View pattern, generalized. See brushbody.rs.
+pub mod brushbody;
+// Shared per-arch FLOATOBJ shim (engine fns on i386 / f32 ops on amd64+arm64)
+// for xformobj/arc/stockobj — see floatobj.rs.
+pub mod floatobj;
+// Wave 2 (geometry/math, float-heavy): arc (libm cos/sin/atan2 + BRUSHBODY
+// PEN view + ROP2_TO_MIX/NT_SUCCESS), xformobj (per-arch FLOATOBJ shim:
+// engine fns on i386 / f32 ops on amd64+arm64), stockobj (BRUSHBODY PEN view
+// + FLOATOBJ_SetLong + type fixes).
+pub mod stockobj; pub mod arc; pub mod xformobj;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust

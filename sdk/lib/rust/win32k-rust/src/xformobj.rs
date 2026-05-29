@@ -1,27 +1,30 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
+// Per-arch FLOATOBJ shim (engine fns on i386 / f32 ops on amd64+arm64).
+use crate::floatobj::*;
 
-extern "system" {
-    fn FLOATOBJ_Add(pfo: PFLOATOBJ, pfo2: PFLOATOBJ);
-    fn FLOATOBJ_Mul(pfo: PFLOATOBJ, pfo2: PFLOATOBJ);
-    fn FLOATOBJ_MulLong(pfo: PFLOATOBJ, l: i32);
-    fn FLOATOBJ_Set0(pf: *mut core::ffi::c_void);
-    fn FLOATOBJ_bConvertToLong(pfo: *const FLOATOBJ, pl: *mut i32) -> i32;
-    fn Int32x32To64(a: i32, b: i32) -> i64;
-    fn NT_ASSERT(expr: i32);
-    fn XFORMOBJ_pmx(pxo: *mut XFORMOBJ) -> PMATRIX;
-    fn FLOATOBJ_GetFix(pf: *const FLOATOBJ) -> i32;
-    fn FLOATOBJ_Equal0(pf: *const FLOATOBJ) -> u32;
-    fn FLOATOBJ_Equal1(pf: *const FLOATOBJ) -> u32;
-    fn FLOATOBJ_IsLong(pf: *const FLOATOBJ) -> u32;
-    fn FLOATOBJ_GetFloat(pf: *const core::ffi::c_void) -> f32;
-    fn FLOATOBJ_SetFloat(pf: *mut FLOATOBJ, f: f32);
-    fn FLOATOBJ_Div(pfo: *mut FLOATOBJ, pfo2: *mut FLOATOBJ);
-    fn FLOATOBJ_Neg(pfo: *mut FLOATOBJ);
-    fn XFORMOBJ_vInit(pxo: *mut XFORMOBJ, pmx: *mut MATRIX);
-    fn FIX2LONG(x: i32) -> i32;
-    fn LONG2FIX(x: i32) -> i32;
+// Pure macros on every arch.
+#[inline(always)]
+fn Int32x32To64(a: i32, b: i32) -> i64 { (a as i64) * (b as i64) }
+#[inline(always)]
+fn FIX2LONG(x: i32) -> i32 { (x + 8) >> 4 }
+#[inline(always)]
+fn LONG2FIX(x: i32) -> i32 { x << 4 }
+#[inline(always)]
+fn NT_ASSERT(_expr: i32) {}
+#[inline(always)]
+unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
 }
+
+// XFORMOBJ_pmx / XFORMOBJ_vInit are FORCEINLINE (xformobj.h) — no symbol. The
+// win32k-internal XFORMOBJ is EXFORMOBJ {MATRIX *pmx} (xformobj.h #defines
+// XFORMOBJ→EXFORMOBJ); bindgen's public `XFORMOBJ` is the opaque {ulReserved}
+// DDI handle, so reinterpret the pointer as _EXFORMOBJ to reach `pmx`.
+#[inline(always)]
+unsafe fn XFORMOBJ_pmx(pxo: *mut XFORMOBJ) -> PMATRIX { (*(pxo as *mut _EXFORMOBJ)).pmx }
+#[inline(always)]
+unsafe fn XFORMOBJ_vInit(pxo: *mut XFORMOBJ, pmx: *mut MATRIX) { (*(pxo as *mut _EXFORMOBJ)).pmx = pmx; }
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: () = ();
@@ -134,14 +137,10 @@ pub unsafe extern "system" fn XFORMOBJ_UpdateAccel(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn XFORMOBJ_iSetXform(
+pub unsafe extern "system" fn EXFORMOBJ_iSetXform(
     pxo: *mut XFORMOBJ,
     pxform: *const XFORML,
 ) -> u32 {
-
-    #[cfg(target_pointer_width = "32")]
-
-    #[cfg(target_pointer_width = "64")]
 
     let pmx: PMATRIX;
     let mut mxTemp: MATRIX = core::mem::zeroed();
@@ -179,7 +178,7 @@ pub unsafe extern "system" fn XFORMOBJ_iSetXform(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn XFORMOBJ_iCombine(
+pub unsafe extern "system" fn EXFORMOBJ_iCombine(
     pxo: *mut XFORMOBJ,
     pxo1: *mut XFORMOBJ,
     pxo2: *mut XFORMOBJ,
@@ -251,7 +250,7 @@ pub unsafe extern "system" fn XFORMOBJ_iCombine(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn XFORMOBJ_iCombineXform(
+pub unsafe extern "system" fn EXFORMOBJ_iCombineXform(
     pxo: *mut XFORMOBJ,
     pxo1: *mut XFORMOBJ,
     pxform: *const XFORML,
@@ -262,18 +261,19 @@ pub unsafe extern "system" fn XFORMOBJ_iCombineXform(
     let mut xo2: XFORMOBJ = core::mem::zeroed();
 
     XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo2), core::ptr::addr_of_mut!(mx));
-    XFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo2), pxform);
+    EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo2), pxform);
 
     if bLeftMultiply != 0 {
-        XFORMOBJ_iCombine(pxo, core::ptr::addr_of_mut!(xo2), pxo1)
+        EXFORMOBJ_iCombine(pxo, core::ptr::addr_of_mut!(xo2), pxo1)
     } else {
-        XFORMOBJ_iCombine(pxo, pxo1, core::ptr::addr_of_mut!(xo2))
+        EXFORMOBJ_iCombine(pxo, pxo1, core::ptr::addr_of_mut!(xo2))
     }
 }
 
 #[cfg(target_pointer_width = "32")]
 #[inline(always)]
-unsafe extern "fastcall" fn MX_IsInvertible(pmx: PMATRIX) -> BOOL {
+#[no_mangle]
+pub unsafe extern "fastcall" fn MX_IsInvertible(pmx: PMATRIX) -> BOOL {
     let mut foDet: FLOATOBJ = core::mem::zeroed();
     MulSub(
         &mut foDet,
@@ -291,7 +291,8 @@ unsafe extern "fastcall" fn MX_IsInvertible(pmx: PMATRIX) -> BOOL {
 
 #[cfg(target_pointer_width = "64")]
 #[inline(always)]
-unsafe extern "C" fn MX_IsInvertible(pmx: PMATRIX) -> BOOL {
+#[no_mangle]
+pub unsafe extern "C" fn MX_IsInvertible(pmx: PMATRIX) -> BOOL {
     let mut foDet: FLOATOBJ = core::mem::zeroed();
     MulSub(
         &mut foDet,
@@ -308,7 +309,8 @@ unsafe extern "C" fn MX_IsInvertible(pmx: PMATRIX) -> BOOL {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn MX_Set0(pmx: PMATRIX) {
+#[no_mangle]
+pub unsafe extern "fastcall" fn MX_Set0(pmx: PMATRIX) {
     
     FLOATOBJ_Set0(core::ptr::addr_of_mut!((*pmx).efM11) as *mut core::ffi::c_void);
     FLOATOBJ_Set0(core::ptr::addr_of_mut!((*pmx).efM12) as *mut core::ffi::c_void);
@@ -319,7 +321,8 @@ unsafe extern "fastcall" fn MX_Set0(pmx: PMATRIX) {
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn MX_Set0(pmx: PMATRIX) {
+#[no_mangle]
+pub unsafe extern "C" fn MX_Set0(pmx: PMATRIX) {
     
     FLOATOBJ_Set0(core::ptr::addr_of_mut!((*pmx).efM11) as *mut core::ffi::c_void);
     FLOATOBJ_Set0(core::ptr::addr_of_mut!((*pmx).efM12) as *mut core::ffi::c_void);
@@ -330,7 +333,7 @@ unsafe extern "C" fn MX_Set0(pmx: PMATRIX) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn XFORMOBJ_iInverse(
+pub unsafe extern "system" fn EXFORMOBJ_iInverse(
     pxoDst: *mut XFORMOBJ,
     pxoSrc: *mut XFORMOBJ,
 ) -> u32 {
@@ -343,9 +346,9 @@ pub unsafe extern "system" fn XFORMOBJ_iInverse(
     pmxDst = XFORMOBJ_pmx(pxoDst);
     pmxSrc = XFORMOBJ_pmx(pxoSrc);
 
-    XFORMOBJ_iGetXform(pxoSrc, &mut xformSrc as *mut XFORM as *mut XFORML);
+    EXFORMOBJ_iGetXform(pxoSrc, &mut xformSrc as *mut XFORM as *mut XFORML);
 
-    MulSub(&mut foDet, &(*pmxSrc).efM11, &(*pmxSrc).efM22, &(*pmxSrc).efM12, &(*pmxSrc).efM21);
+    MulSub(&mut foDet, core::ptr::addr_of_mut!((*pmxSrc).efM11), core::ptr::addr_of_mut!((*pmxSrc).efM22), core::ptr::addr_of_mut!((*pmxSrc).efM12), core::ptr::addr_of_mut!((*pmxSrc).efM21));
 
     if FLOATOBJ_Equal0(&foDet) != 0 {
         return DDI_ERROR;
@@ -364,11 +367,11 @@ pub unsafe extern "system" fn XFORMOBJ_iInverse(
 
     (*pmxDst).efDx = (*pmxSrc).efDx;
     FLOATOBJ_Neg(&mut (*pmxDst).efDx);
-    MulSub(&mut (*pmxDst).efDx, &(*pmxDst).efDx, &(*pmxDst).efM11, &(*pmxSrc).efDy, &(*pmxDst).efM21);
+    MulSub(&mut (*pmxDst).efDx, core::ptr::addr_of_mut!((*pmxDst).efDx), core::ptr::addr_of_mut!((*pmxDst).efM11), core::ptr::addr_of_mut!((*pmxSrc).efDy), core::ptr::addr_of_mut!((*pmxDst).efM21));
 
     (*pmxDst).efDy = (*pmxSrc).efDy;
     FLOATOBJ_Neg(&mut (*pmxDst).efDy);
-    MulSub(&mut (*pmxDst).efDy, &(*pmxDst).efDy, &(*pmxDst).efM22, &(*pmxSrc).efDx, &(*pmxDst).efM12);
+    MulSub(&mut (*pmxDst).efDy, core::ptr::addr_of_mut!((*pmxDst).efDy), core::ptr::addr_of_mut!((*pmxDst).efM22), core::ptr::addr_of_mut!((*pmxSrc).efDx), core::ptr::addr_of_mut!((*pmxDst).efM12));
 
     XFORMOBJ_UpdateAccel(pxoDst)
 }
@@ -382,8 +385,8 @@ unsafe fn XFORMOBJ_bXformFixPoints(
 
     let pmx: PMATRIX;
     let mut i: i32;
-    let mut fo1: FLOATOBJ;
-    let mut fo2: FLOATOBJ;
+    let mut fo1: FLOATOBJ = core::mem::zeroed();
+    let mut fo2: FLOATOBJ = core::mem::zeroed();
     let flAccel: FLONG;
     let mut lM11: i32 = 0;
     let mut lM12: i32 = 0;
@@ -603,7 +606,7 @@ unsafe fn XFORMOBJ_bXformFixPoints(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn XFORMOBJ_iGetXform(
+pub unsafe extern "stdcall" fn EXFORMOBJ_iGetXform(
     pxo: *mut XFORMOBJ,
     pxform: *mut XFORML,
 ) -> u32 {
@@ -626,7 +629,7 @@ pub unsafe extern "stdcall" fn XFORMOBJ_iGetXform(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn XFORMOBJ_iGetXform(
+pub unsafe extern "C" fn EXFORMOBJ_iGetXform(
     pxo: *mut XFORMOBJ,
     pxform: *mut XFORML,
 ) -> u32 {
@@ -648,7 +651,7 @@ pub unsafe extern "C" fn XFORMOBJ_iGetXform(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn XFORMOBJ_iGetFloatObjXform(
+pub unsafe extern "stdcall" fn EXFORMOBJ_iGetFloatObjXform(
     pxo: *mut XFORMOBJ,
     pxfo: *mut FLOATOBJ_XFORM,
 ) -> u32 {
@@ -670,7 +673,7 @@ pub unsafe extern "stdcall" fn XFORMOBJ_iGetFloatObjXform(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn XFORMOBJ_iGetFloatObjXform(
+pub unsafe extern "C" fn EXFORMOBJ_iGetFloatObjXform(
     pxo: *mut XFORMOBJ,
     pxfo: *mut FLOATOBJ_XFORM,
 ) -> u32 {
@@ -691,7 +694,7 @@ pub unsafe extern "C" fn XFORMOBJ_iGetFloatObjXform(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn XFORMOBJ_bApplyXform(
+pub unsafe extern "stdcall" fn EXFORMOBJ_bApplyXform(
     pxo: *mut XFORMOBJ,
     iMode: u32,
     cPoints: u32,
@@ -713,7 +716,7 @@ pub unsafe extern "stdcall" fn XFORMOBJ_bApplyXform(
 
     if iMode == XF_INV_FXTOL || iMode == XF_INV_LTOL {
         XFORMOBJ_vInit(core::ptr::addr_of_mut!(xoInv), core::ptr::addr_of_mut!(mx));
-        if XFORMOBJ_iInverse(core::ptr::addr_of_mut!(xoInv), pxo) == DDI_ERROR {
+        if EXFORMOBJ_iInverse(core::ptr::addr_of_mut!(xoInv), pxo) == DDI_ERROR {
             return 0;
         }
         pxo_local = core::ptr::addr_of_mut!(xoInv);
@@ -751,7 +754,7 @@ pub unsafe extern "stdcall" fn XFORMOBJ_bApplyXform(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn XFORMOBJ_bApplyXform(
+pub unsafe extern "C" fn EXFORMOBJ_bApplyXform(
     pxo: *mut XFORMOBJ,
     iMode: u32,
     cPoints: u32,
@@ -773,7 +776,7 @@ pub unsafe extern "C" fn XFORMOBJ_bApplyXform(
 
     if iMode == XF_INV_FXTOL || iMode == XF_INV_LTOL {
         XFORMOBJ_vInit(core::ptr::addr_of_mut!(xoInv), core::ptr::addr_of_mut!(mx));
-        if XFORMOBJ_iInverse(core::ptr::addr_of_mut!(xoInv), pxo) == DDI_ERROR {
+        if EXFORMOBJ_iInverse(core::ptr::addr_of_mut!(xoInv), pxo) == DDI_ERROR {
             return 0;
         }
         pxo_local = core::ptr::addr_of_mut!(xoInv);

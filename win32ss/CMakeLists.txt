@@ -166,7 +166,7 @@ list(APPEND SOURCE
     # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
     user/rtl/image.c
     user/rtl/text.c
-    gdi/ntgdi/arc.c
+    # gdi/ntgdi/arc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/arc.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/ntgdi/bezier.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bezier.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/bitblt.c
     gdi/ntgdi/bitmaps.c
@@ -199,11 +199,11 @@ list(APPEND SOURCE
     gdi/ntgdi/print.c
     # gdi/ntgdi/rect.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rect.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/region.c
-    gdi/ntgdi/stockobj.c
+    # gdi/ntgdi/stockobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/stockobj.rs) — cohabitation [Phase 2c geometry wave 2]
     gdi/ntgdi/text.c
-    gdi/ntgdi/utils.c
+    # gdi/ntgdi/utils.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/utils.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/wingl.c
-    gdi/ntgdi/xformobj.c
+    # gdi/ntgdi/xformobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/xformobj.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/eng/stubs.c       # replaced by Rust (stubs.rs) — cohabitation [wave 2 sweep, per-arch SharedUserData]
     # gdi/eng/umpdstubs.c   # replaced by Rust (umpdstubs.rs) — cohabitation [wave 2 sweep]
     pch.h)
@@ -330,6 +330,10 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/bezier.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/utils.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/polyfill.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/brushbody.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/arc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/stockobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/xformobj.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

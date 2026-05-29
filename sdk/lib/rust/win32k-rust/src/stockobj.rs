@@ -1,15 +1,46 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{RtlGetDefaultCodePage};
 use core::ffi::c_void;
+use crate::brushbody::pbrushbody;
+use crate::floatobj::FLOATOBJ_SetLong;
 
 extern "C" {
-    fn FLOATOBJ_SetLong(arg1: *mut core::ffi::c_void, arg2: i32);
-    fn PEN_AllocPenWithHandle() -> PBRUSH;
-    fn PEN_UnlockPen(arg1: PBRUSH);
     fn abs(arg1: i32) -> i32;
-    fn TextIntCreateFontIndirect(lplf: *mut LOGFONTW, hFont: *mut HFONT);
     fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
-    fn RGB(r: u8, g: u8, b: u8) -> u32;
+}
+
+// PEN_AllocPenWithHandle is NTAPI (pen.h) — stdcall on i386.
+extern "system" {
+    fn PEN_AllocPenWithHandle() -> PBRUSH;
+}
+
+// TextIntCreateFontIndirect is FASTCALL (text.h).
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn TextIntCreateFontIndirect(lplf: *mut LOGFONTW, hFont: *mut HFONT);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn TextIntCreateFontIndirect(lplf: *mut LOGFONTW, hFont: *mut HFONT);
+}
+
+// RGB / PEN_UnlockPen are macros (wingdi.h / pen.h) — inline them.
+#[inline(always)]
+fn RGB(r: u8, g: u8, b: u8) -> u32 {
+    (r as u32) | ((g as u32) << 8) | ((b as u32) << 16)
+}
+#[inline(always)]
+unsafe fn PEN_UnlockPen(p: PBRUSH) {
+    GDIOBJ_vUnlockObject(p as POBJ);
+}
+
+// SERVERINFO embeds an anonymous PERUSERSERVERINFO (ntuser.h:1072). bindgen
+// flattened it into `tagSERVERINFO.__bindgen_padding_0`, so argbSystem/
+// ahbrSystem are unreachable on `*gpsi`. The padding field begins exactly at
+// the PERUSERSERVERINFO offset, so its address re-typed gives the real view.
+#[inline(always)]
+unsafe fn peruser(psi: PSERVERINFO) -> *mut _PERUSERSERVERINFO {
+    core::ptr::addr_of_mut!((*psi).__bindgen_padding_0) as *mut _PERUSERSERVERINFO
 }
 
 // ---- file-scope preamble (translated) ----
@@ -47,145 +78,148 @@ pub static SysColors: [COLORREF; 31] = [
     0x00D8E9EC  /* COLOR_MENUBAR  */
 ];
 
+#[no_mangle]
 pub static mut hSystemBM: HDC = core::ptr::null_mut();
 
 pub static WhitePen: LOGPEN = LOGPEN {
     lopnStyle: PS_SOLID,
-    lopnWidth: POINT { x: 0, y: 0 },
+    lopnWidth: POINTL { x: 0, y: 0 },
     lopnColor: 0x00FFFFFF,
 };
 
 pub static BlackPen: LOGPEN = LOGPEN {
     lopnStyle: PS_SOLID,
-    lopnWidth: POINT { x: 0, y: 0 },
+    lopnWidth: POINTL { x: 0, y: 0 },
     lopnColor: 0x00000000,
 };
 
 pub static NullPen: LOGPEN = LOGPEN {
     lopnStyle: PS_NULL,
-    lopnWidth: POINT { x: 0, y: 0 },
+    lopnWidth: POINTL { x: 0, y: 0 },
     lopnColor: 0,
 };
 
-pub static OEMFixedFont: LOGFONTW = LOGFONTW {
+pub static mut OEMFixedFont: LOGFONTW = LOGFONTW {
     lfHeight: 12,
     lfWidth: 0,
     lfEscapement: 0,
     lfOrientation: 0,
-    lfWeight: FW_NORMAL,
+    lfWeight: (FW_NORMAL) as _,
     lfItalic: 0u8,
     lfUnderline: 0u8,
     lfStrikeOut: 0u8,
-    lfCharSet: OEM_CHARSET,
-    lfOutPrecision: OUT_DEFAULT_PRECIS,
-    lfClipPrecision: CLIP_DEFAULT_PRECIS,
-    lfQuality: DEFAULT_QUALITY,
-    lfPitchAndFamily: FF_DONTCARE | FIXED_PITCH,
+    lfCharSet: (OEM_CHARSET) as _,
+    lfOutPrecision: (OUT_DEFAULT_PRECIS) as _,
+    lfClipPrecision: (CLIP_DEFAULT_PRECIS) as _,
+    lfQuality: (DEFAULT_QUALITY) as _,
+    lfPitchAndFamily: (FF_DONTCARE | FIXED_PITCH) as _,
     lfFaceName: [84u16, 101, 114, 109, 105, 110, 97, 108, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-pub static AnsiFixedFont: LOGFONTW = LOGFONTW {
+pub static mut AnsiFixedFont: LOGFONTW = LOGFONTW {
     lfHeight: 12,
     lfWidth: 0,
     lfEscapement: 0,
     lfOrientation: 0,
-    lfWeight: FW_NORMAL,
+    lfWeight: (FW_NORMAL) as _,
     lfItalic: 0u8,
     lfUnderline: 0u8,
     lfStrikeOut: 0u8,
-    lfCharSet: ANSI_CHARSET,
-    lfOutPrecision: OUT_DEFAULT_PRECIS,
-    lfClipPrecision: CLIP_STROKE_PRECIS,
-    lfQuality: PROOF_QUALITY,
-    lfPitchAndFamily: FF_DONTCARE | FIXED_PITCH,
+    lfCharSet: (ANSI_CHARSET) as _,
+    lfOutPrecision: (OUT_DEFAULT_PRECIS) as _,
+    lfClipPrecision: (CLIP_STROKE_PRECIS) as _,
+    lfQuality: (PROOF_QUALITY) as _,
+    lfPitchAndFamily: (FF_DONTCARE | FIXED_PITCH) as _,
     lfFaceName: [67u16, 111, 117, 114, 105, 101, 114, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-pub static AnsiVarFont: LOGFONTW = LOGFONTW {
+pub static mut AnsiVarFont: LOGFONTW = LOGFONTW {
     lfHeight: 12,
     lfWidth: 0,
     lfEscapement: 0,
     lfOrientation: 0,
-    lfWeight: FW_NORMAL,
+    lfWeight: (FW_NORMAL) as _,
     lfItalic: 0u8,
     lfUnderline: 0u8,
     lfStrikeOut: 0u8,
-    lfCharSet: ANSI_CHARSET,
-    lfOutPrecision: OUT_DEFAULT_PRECIS,
-    lfClipPrecision: CLIP_STROKE_PRECIS,
-    lfQuality: PROOF_QUALITY,
-    lfPitchAndFamily: FF_DONTCARE | VARIABLE_PITCH,
+    lfCharSet: (ANSI_CHARSET) as _,
+    lfOutPrecision: (OUT_DEFAULT_PRECIS) as _,
+    lfClipPrecision: (CLIP_STROKE_PRECIS) as _,
+    lfQuality: (PROOF_QUALITY) as _,
+    lfPitchAndFamily: (FF_DONTCARE | VARIABLE_PITCH) as _,
     lfFaceName: [77u16, 83, 32, 83, 97, 110, 115, 32, 83, 101, 114, 105, 102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-pub static SystemFont: LOGFONTW = LOGFONTW {
+#[no_mangle]
+pub static mut SystemFont: LOGFONTW = LOGFONTW {
     lfHeight: 16,
     lfWidth: 0,
     lfEscapement: 0,
     lfOrientation: 0,
-    lfWeight: FW_BOLD,
+    lfWeight: (FW_BOLD) as _,
     lfItalic: 0u8,
     lfUnderline: 0u8,
     lfStrikeOut: 0u8,
-    lfCharSet: DEFAULT_CHARSET,
-    lfOutPrecision: OUT_DEFAULT_PRECIS,
-    lfClipPrecision: CLIP_DEFAULT_PRECIS,
-    lfQuality: DEFAULT_QUALITY,
-    lfPitchAndFamily: FF_DONTCARE | VARIABLE_PITCH,
+    lfCharSet: (DEFAULT_CHARSET) as _,
+    lfOutPrecision: (OUT_DEFAULT_PRECIS) as _,
+    lfClipPrecision: (CLIP_DEFAULT_PRECIS) as _,
+    lfQuality: (DEFAULT_QUALITY) as _,
+    lfPitchAndFamily: (FF_DONTCARE | VARIABLE_PITCH) as _,
     lfFaceName: [83u16, 121, 115, 116, 101, 109, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-pub static DeviceDefaultFont: LOGFONTW = LOGFONTW {
+pub static mut DeviceDefaultFont: LOGFONTW = LOGFONTW {
     lfHeight: 16,
     lfWidth: 0,
     lfEscapement: 0,
     lfOrientation: 0,
-    lfWeight: FW_BOLD,
+    lfWeight: (FW_BOLD) as _,
     lfItalic: 0u8,
     lfUnderline: 0u8,
     lfStrikeOut: 0u8,
-    lfCharSet: ANSI_CHARSET,
-    lfOutPrecision: OUT_DEFAULT_PRECIS,
-    lfClipPrecision: CLIP_DEFAULT_PRECIS,
-    lfQuality: DEFAULT_QUALITY,
-    lfPitchAndFamily: FF_SWISS | VARIABLE_PITCH,
+    lfCharSet: (ANSI_CHARSET) as _,
+    lfOutPrecision: (OUT_DEFAULT_PRECIS) as _,
+    lfClipPrecision: (CLIP_DEFAULT_PRECIS) as _,
+    lfQuality: (DEFAULT_QUALITY) as _,
+    lfPitchAndFamily: (FF_SWISS | VARIABLE_PITCH) as _,
     lfFaceName: [83u16, 121, 115, 116, 101, 109, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-pub static SystemFixedFont: LOGFONTW = LOGFONTW {
+pub static mut SystemFixedFont: LOGFONTW = LOGFONTW {
     lfHeight: 15,
     lfWidth: 0,
     lfEscapement: 0,
     lfOrientation: 0,
-    lfWeight: FW_NORMAL,
+    lfWeight: (FW_NORMAL) as _,
     lfItalic: 0u8,
     lfUnderline: 0u8,
     lfStrikeOut: 0u8,
-    lfCharSet: DEFAULT_CHARSET,
-    lfOutPrecision: OUT_DEFAULT_PRECIS,
-    lfClipPrecision: CLIP_DEFAULT_PRECIS,
-    lfQuality: DEFAULT_QUALITY,
-    lfPitchAndFamily: FF_DONTCARE | FIXED_PITCH,
+    lfCharSet: (DEFAULT_CHARSET) as _,
+    lfOutPrecision: (OUT_DEFAULT_PRECIS) as _,
+    lfClipPrecision: (CLIP_DEFAULT_PRECIS) as _,
+    lfQuality: (DEFAULT_QUALITY) as _,
+    lfPitchAndFamily: (FF_DONTCARE | FIXED_PITCH) as _,
     lfFaceName: [70u16, 105, 120, 101, 100, 115, 121, 115, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-pub static DefaultGuiFont: LOGFONTW = LOGFONTW {
+pub static mut DefaultGuiFont: LOGFONTW = LOGFONTW {
     lfHeight: -11i32 as i32,
     lfWidth: 0,
     lfEscapement: 0,
     lfOrientation: 0,
-    lfWeight: FW_NORMAL,
+    lfWeight: (FW_NORMAL) as _,
     lfItalic: 0u8,
     lfUnderline: 0u8,
     lfStrikeOut: 0u8,
-    lfCharSet: DEFAULT_CHARSET,
-    lfOutPrecision: OUT_DEFAULT_PRECIS,
-    lfClipPrecision: CLIP_DEFAULT_PRECIS,
-    lfQuality: PROOF_QUALITY,
-    lfPitchAndFamily: DEFAULT_PITCH | FF_DONTCARE,
+    lfCharSet: (DEFAULT_CHARSET) as _,
+    lfOutPrecision: (OUT_DEFAULT_PRECIS) as _,
+    lfClipPrecision: (CLIP_DEFAULT_PRECIS) as _,
+    lfQuality: (PROOF_QUALITY) as _,
+    lfPitchAndFamily: (DEFAULT_PITCH | FF_DONTCARE) as _,
     lfFaceName: [77u16, 83, 32, 83, 104, 101, 108, 108, 32, 68, 108, 103, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
+#[no_mangle]
 pub static mut StockObjects: [HGDIOBJ; NB_STOCK_OBJECTS as usize] = [core::ptr::null_mut(); NB_STOCK_OBJECTS as usize];
 
 #[cfg(target_arch = "x86")]
@@ -207,28 +241,28 @@ unsafe extern "fastcall" fn IntCreateStockPen(
         dwWidth = 1;
     }
 
-    (*pbrushPen).iHatch = 0;
-    (*pbrushPen).lWidth = abs(dwWidth as i32);
-    FLOATOBJ_SetLong(core::ptr::addr_of_mut!((*pbrushPen).eWidth) as *mut core::ffi::c_void, (*pbrushPen).lWidth);
-    (*pbrushPen).ulPenStyle = dwPenStyle;
-    (*pbrushPen).BrushAttr.lbColor = ulColor;
-    (*pbrushPen).iBrushStyle = ulBrushStyle;
-    (*pbrushPen).hbmClient = core::ptr::null_mut();
-    (*pbrushPen).dwStyleCount = 0;
-    (*pbrushPen).pStyle = core::ptr::null_mut();
-    (*pbrushPen).flAttrs = BR_IS_OLDSTYLEPEN;
+    (*pbrushbody(pbrushPen)).iHatch = 0;
+    (*pbrushbody(pbrushPen)).lWidth = abs(dwWidth as i32);
+    FLOATOBJ_SetLong(core::ptr::addr_of_mut!((*pbrushbody(pbrushPen)).eWidth), (*pbrushbody(pbrushPen)).lWidth);
+    (*pbrushbody(pbrushPen)).ulPenStyle = dwPenStyle;
+    (*pbrushbody(pbrushPen)).BrushAttr.lbColor = ulColor;
+    (*pbrushbody(pbrushPen)).iBrushStyle = ulBrushStyle as INT;
+    (*pbrushbody(pbrushPen)).hbmClient = core::ptr::null_mut();
+    (*pbrushbody(pbrushPen)).dwStyleCount = 0;
+    (*pbrushbody(pbrushPen)).pStyle = core::ptr::null_mut();
+    (*pbrushbody(pbrushPen)).flAttrs = BR_IS_OLDSTYLEPEN;
 
     match dwPenStyle & PS_STYLE_MASK {
         PS_NULL => {
-            (*pbrushPen).flAttrs |= BR_IS_NULL;
+            (*pbrushbody(pbrushPen)).flAttrs |= BR_IS_NULL;
         }
         PS_SOLID => {
-            (*pbrushPen).flAttrs |= BR_IS_SOLID;
+            (*pbrushbody(pbrushPen)).flAttrs |= BR_IS_SOLID;
         }
         _ => {}
     }
     
-    let hPen = (*pbrushPen).BaseObject.hHmgr;
+    let hPen = (*pbrushPen).BaseObject.hHmgr as HPEN;
     PEN_UnlockPen(pbrushPen);
     hPen
 }
@@ -252,28 +286,28 @@ unsafe extern "C" fn IntCreateStockPen(
         dwWidth = 1;
     }
 
-    (*pbrushPen).iHatch = 0;
-    (*pbrushPen).lWidth = abs(dwWidth as i32);
-    FLOATOBJ_SetLong(core::ptr::addr_of_mut!((*pbrushPen).eWidth) as *mut core::ffi::c_void, (*pbrushPen).lWidth);
-    (*pbrushPen).ulPenStyle = dwPenStyle;
-    (*pbrushPen).BrushAttr.lbColor = ulColor;
-    (*pbrushPen).iBrushStyle = ulBrushStyle;
-    (*pbrushPen).hbmClient = core::ptr::null_mut();
-    (*pbrushPen).dwStyleCount = 0;
-    (*pbrushPen).pStyle = core::ptr::null_mut();
-    (*pbrushPen).flAttrs = BR_IS_OLDSTYLEPEN;
+    (*pbrushbody(pbrushPen)).iHatch = 0;
+    (*pbrushbody(pbrushPen)).lWidth = abs(dwWidth as i32);
+    FLOATOBJ_SetLong(core::ptr::addr_of_mut!((*pbrushbody(pbrushPen)).eWidth), (*pbrushbody(pbrushPen)).lWidth);
+    (*pbrushbody(pbrushPen)).ulPenStyle = dwPenStyle;
+    (*pbrushbody(pbrushPen)).BrushAttr.lbColor = ulColor;
+    (*pbrushbody(pbrushPen)).iBrushStyle = ulBrushStyle as INT;
+    (*pbrushbody(pbrushPen)).hbmClient = core::ptr::null_mut();
+    (*pbrushbody(pbrushPen)).dwStyleCount = 0;
+    (*pbrushbody(pbrushPen)).pStyle = core::ptr::null_mut();
+    (*pbrushbody(pbrushPen)).flAttrs = BR_IS_OLDSTYLEPEN;
 
     match dwPenStyle & PS_STYLE_MASK {
         PS_NULL => {
-            (*pbrushPen).flAttrs |= BR_IS_NULL;
+            (*pbrushbody(pbrushPen)).flAttrs |= BR_IS_NULL;
         }
         PS_SOLID => {
-            (*pbrushPen).flAttrs |= BR_IS_SOLID;
+            (*pbrushbody(pbrushPen)).flAttrs |= BR_IS_SOLID;
         }
         _ => {}
     }
     
-    let hPen = (*pbrushPen).BaseObject.hHmgr;
+    let hPen = (*pbrushPen).BaseObject.hHmgr as HPEN;
     PEN_UnlockPen(pbrushPen);
     hPen
 }
@@ -289,11 +323,11 @@ unsafe fn CreateStockFonts() {
     let Batang: [u16; 3] = [0xBC14, 0xD0D5, 0];
 
     RtlGetDefaultCodePage(core::ptr::addr_of_mut!(ActiveCodePage), core::ptr::addr_of_mut!(OemCodePage));
-    bActiveCharSet = IntCharSetFromCodePage(ActiveCodePage);
-    bOemCharSet = IntCharSetFromCodePage(OemCodePage);
+    bActiveCharSet = IntCharSetFromCodePage(ActiveCodePage as UINT);
+    bOemCharSet = IntCharSetFromCodePage(OemCodePage as UINT);
 
-    if bOemCharSet == DEFAULT_CHARSET {
-        bOemCharSet = OEM_CHARSET;
+    if bOemCharSet == DEFAULT_CHARSET as u8 {
+        bOemCharSet = OEM_CHARSET as u8;
     }
 
     match ActiveCodePage {
@@ -325,27 +359,27 @@ unsafe fn CreateStockFonts() {
 
     if bIsCJK != 0 {
         OEMFixedFont.lfHeight = 18;
-        OEMFixedFont.lfPitchAndFamily = FF_DONTCARE | FIXED_PITCH;
+        OEMFixedFont.lfPitchAndFamily = (FF_DONTCARE | FIXED_PITCH) as _;
         SystemFont.lfHeight = 18;
-        SystemFont.lfPitchAndFamily = FF_DONTCARE | VARIABLE_PITCH;
+        SystemFont.lfPitchAndFamily = (FF_DONTCARE | VARIABLE_PITCH) as _;
         DeviceDefaultFont.lfHeight = 18;
-        DeviceDefaultFont.lfPitchAndFamily = FF_DONTCARE | VARIABLE_PITCH;
+        DeviceDefaultFont.lfPitchAndFamily = (FF_DONTCARE | VARIABLE_PITCH) as _;
         SystemFixedFont.lfHeight = 18;
-        SystemFixedFont.lfPitchAndFamily = FF_DONTCARE | FIXED_PITCH;
+        SystemFixedFont.lfPitchAndFamily = (FF_DONTCARE | FIXED_PITCH) as _;
         DefaultGuiFont.lfHeight = -12;
     } else {
         OEMFixedFont.lfHeight = 12;
-        OEMFixedFont.lfPitchAndFamily = FF_MODERN | FIXED_PITCH;
+        OEMFixedFont.lfPitchAndFamily = (FF_MODERN | FIXED_PITCH) as _;
         SystemFont.lfHeight = 16;
-        SystemFont.lfPitchAndFamily = FF_SWISS | VARIABLE_PITCH;
+        SystemFont.lfPitchAndFamily = (FF_SWISS | VARIABLE_PITCH) as _;
         DeviceDefaultFont.lfHeight = 16;
-        DeviceDefaultFont.lfPitchAndFamily = FF_SWISS | VARIABLE_PITCH;
-        if bActiveCharSet == RUSSIAN_CHARSET {
+        DeviceDefaultFont.lfPitchAndFamily = (FF_SWISS | VARIABLE_PITCH) as _;
+        if bActiveCharSet == RUSSIAN_CHARSET as u8 {
             SystemFixedFont.lfHeight = 16;
-            SystemFixedFont.lfPitchAndFamily = FF_SWISS | FIXED_PITCH;
+            SystemFixedFont.lfPitchAndFamily = (FF_SWISS | FIXED_PITCH) as _;
         } else {
             SystemFixedFont.lfHeight = 15;
-            SystemFixedFont.lfPitchAndFamily = FF_MODERN | FIXED_PITCH;
+            SystemFixedFont.lfPitchAndFamily = (FF_MODERN | FIXED_PITCH) as _;
         }
         DefaultGuiFont.lfHeight = -11;
     }
@@ -366,28 +400,29 @@ unsafe fn CreateStockFonts() {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn CreateStockObjects() {
+#[no_mangle]
+pub unsafe extern "fastcall" fn CreateStockObjects() {
     let mut Object: u32;
 
-    StockObjects[WHITE_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(255, 255, 255));
-    StockObjects[DC_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(255, 255, 255));
-    StockObjects[LTGRAY_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(192, 192, 192));
-    StockObjects[GRAY_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(128, 128, 128));
-    StockObjects[DKGRAY_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(64, 64, 64));
-    StockObjects[BLACK_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(0, 0, 0));
-    StockObjects[NULL_BRUSH as usize] = IntGdiCreateNullBrush();
+    StockObjects[WHITE_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(255, 255, 255))) as HGDIOBJ;
+    StockObjects[DC_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(255, 255, 255))) as HGDIOBJ;
+    StockObjects[LTGRAY_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(192, 192, 192))) as HGDIOBJ;
+    StockObjects[GRAY_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(128, 128, 128))) as HGDIOBJ;
+    StockObjects[DKGRAY_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(64, 64, 64))) as HGDIOBJ;
+    StockObjects[BLACK_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(0, 0, 0))) as HGDIOBJ;
+    StockObjects[NULL_BRUSH as usize] = (IntGdiCreateNullBrush()) as HGDIOBJ;
 
-    StockObjects[WHITE_PEN as usize] = IntCreateStockPen(WhitePen.lopnStyle, WhitePen.lopnWidth.x, BS_SOLID, WhitePen.lopnColor);
-    StockObjects[BLACK_PEN as usize] = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x, BS_SOLID, BlackPen.lopnColor);
-    StockObjects[DC_PEN as usize] = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x, BS_SOLID, BlackPen.lopnColor);
-    StockObjects[NULL_PEN as usize] = IntCreateStockPen(NullPen.lopnStyle, NullPen.lopnWidth.x, BS_SOLID, NullPen.lopnColor);
+    StockObjects[WHITE_PEN as usize] = (IntCreateStockPen(WhitePen.lopnStyle, WhitePen.lopnWidth.x as u32, BS_SOLID, WhitePen.lopnColor)) as HGDIOBJ;
+    StockObjects[BLACK_PEN as usize] = (IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x as u32, BS_SOLID, BlackPen.lopnColor)) as HGDIOBJ;
+    StockObjects[DC_PEN as usize] = (IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x as u32, BS_SOLID, BlackPen.lopnColor)) as HGDIOBJ;
+    StockObjects[NULL_PEN as usize] = (IntCreateStockPen(NullPen.lopnStyle, NullPen.lopnWidth.x as u32, BS_SOLID, NullPen.lopnColor)) as HGDIOBJ;
 
-    StockObjects[20] = core::ptr::null_mut();
-    StockObjects[DEFAULT_BITMAP as usize] = GreCreateBitmap(1, 1, 1, 1, core::ptr::null_mut());
+    StockObjects[20] = (core::ptr::null_mut()) as HGDIOBJ;
+    StockObjects[DEFAULT_BITMAP as usize] = (GreCreateBitmap(1, 1, 1, 1, core::ptr::null_mut())) as HGDIOBJ;
 
     CreateStockFonts();
 
-    StockObjects[DEFAULT_PALETTE as usize] = (*gppalDefault).BaseObject.hHmgr as HGDIOBJ;
+    StockObjects[DEFAULT_PALETTE as usize] = ((*gppalDefault).BaseObject.hHmgr as HGDIOBJ) as HGDIOBJ;
 
     Object = 0;
     while Object < NB_STOCK_OBJECTS {
@@ -399,28 +434,29 @@ unsafe extern "fastcall" fn CreateStockObjects() {
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CreateStockObjects() {
+#[no_mangle]
+pub unsafe extern "C" fn CreateStockObjects() {
     let mut Object: u32;
 
-    StockObjects[WHITE_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(255, 255, 255));
-    StockObjects[DC_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(255, 255, 255));
-    StockObjects[LTGRAY_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(192, 192, 192));
-    StockObjects[GRAY_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(128, 128, 128));
-    StockObjects[DKGRAY_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(64, 64, 64));
-    StockObjects[BLACK_BRUSH as usize] = IntGdiCreateSolidBrush(RGB(0, 0, 0));
-    StockObjects[NULL_BRUSH as usize] = IntGdiCreateNullBrush();
+    StockObjects[WHITE_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(255, 255, 255))) as HGDIOBJ;
+    StockObjects[DC_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(255, 255, 255))) as HGDIOBJ;
+    StockObjects[LTGRAY_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(192, 192, 192))) as HGDIOBJ;
+    StockObjects[GRAY_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(128, 128, 128))) as HGDIOBJ;
+    StockObjects[DKGRAY_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(64, 64, 64))) as HGDIOBJ;
+    StockObjects[BLACK_BRUSH as usize] = (IntGdiCreateSolidBrush(RGB(0, 0, 0))) as HGDIOBJ;
+    StockObjects[NULL_BRUSH as usize] = (IntGdiCreateNullBrush()) as HGDIOBJ;
 
-    StockObjects[WHITE_PEN as usize] = IntCreateStockPen(WhitePen.lopnStyle, WhitePen.lopnWidth.x, BS_SOLID, WhitePen.lopnColor);
-    StockObjects[BLACK_PEN as usize] = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x, BS_SOLID, BlackPen.lopnColor);
-    StockObjects[DC_PEN as usize] = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x, BS_SOLID, BlackPen.lopnColor);
-    StockObjects[NULL_PEN as usize] = IntCreateStockPen(NullPen.lopnStyle, NullPen.lopnWidth.x, BS_SOLID, NullPen.lopnColor);
+    StockObjects[WHITE_PEN as usize] = (IntCreateStockPen(WhitePen.lopnStyle, WhitePen.lopnWidth.x as u32, BS_SOLID, WhitePen.lopnColor)) as HGDIOBJ;
+    StockObjects[BLACK_PEN as usize] = (IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x as u32, BS_SOLID, BlackPen.lopnColor)) as HGDIOBJ;
+    StockObjects[DC_PEN as usize] = (IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x as u32, BS_SOLID, BlackPen.lopnColor)) as HGDIOBJ;
+    StockObjects[NULL_PEN as usize] = (IntCreateStockPen(NullPen.lopnStyle, NullPen.lopnWidth.x as u32, BS_SOLID, NullPen.lopnColor)) as HGDIOBJ;
 
-    StockObjects[20] = core::ptr::null_mut();
-    StockObjects[DEFAULT_BITMAP as usize] = GreCreateBitmap(1, 1, 1, 1, core::ptr::null_mut());
+    StockObjects[20] = (core::ptr::null_mut()) as HGDIOBJ;
+    StockObjects[DEFAULT_BITMAP as usize] = (GreCreateBitmap(1, 1, 1, 1, core::ptr::null_mut())) as HGDIOBJ;
 
     CreateStockFonts();
 
-    StockObjects[DEFAULT_PALETTE as usize] = (*gppalDefault).BaseObject.hHmgr as HGDIOBJ;
+    StockObjects[DEFAULT_PALETTE as usize] = ((*gppalDefault).BaseObject.hHmgr as HGDIOBJ) as HGDIOBJ;
 
     Object = 0;
     while Object < NB_STOCK_OBJECTS {
@@ -451,6 +487,7 @@ pub unsafe extern "C" fn NtGdiGetStockObject(Object: INT) -> HGDIOBJ {
 }
 
 #[cfg(target_arch = "x86")]
+#[no_mangle]
 pub unsafe extern "fastcall" fn IntSetSysColors(nColors: u32, Elements: *const i32, Colors: *const COLORREF) {
     let mut i: u32 = 0;
     let mut elem_ptr = Elements;
@@ -458,8 +495,8 @@ pub unsafe extern "fastcall" fn IntSetSysColors(nColors: u32, Elements: *const i
     
     while i < nColors {
         if (*elem_ptr as u32) < NUM_SYSCOLORS {
-            (*gpsi).argbSystem[*elem_ptr as usize] = *color_ptr;
-            IntGdiSetSolidBrushColor((*gpsi).ahbrSystem[*elem_ptr as usize], *color_ptr);
+            (*peruser(gpsi)).argbSystem[*elem_ptr as usize] = *color_ptr;
+            IntGdiSetSolidBrushColor((*peruser(gpsi)).ahbrSystem[*elem_ptr as usize], *color_ptr);
         }
         elem_ptr = elem_ptr.offset(1);
         color_ptr = color_ptr.offset(1);
@@ -468,6 +505,7 @@ pub unsafe extern "fastcall" fn IntSetSysColors(nColors: u32, Elements: *const i
 }
 
 #[cfg(not(target_arch = "x86"))]
+#[no_mangle]
 pub unsafe extern "C" fn IntSetSysColors(nColors: u32, Elements: *const i32, Colors: *const COLORREF) {
     let mut i: u32 = 0;
     let mut elem_ptr = Elements;
@@ -475,8 +513,8 @@ pub unsafe extern "C" fn IntSetSysColors(nColors: u32, Elements: *const i32, Col
     
     while i < nColors {
         if (*elem_ptr as u32) < NUM_SYSCOLORS {
-            (*gpsi).argbSystem[*elem_ptr as usize] = *color_ptr;
-            IntGdiSetSolidBrushColor((*gpsi).ahbrSystem[*elem_ptr as usize], *color_ptr);
+            (*peruser(gpsi)).argbSystem[*elem_ptr as usize] = *color_ptr;
+            IntGdiSetSolidBrushColor((*peruser(gpsi)).ahbrSystem[*elem_ptr as usize], *color_ptr);
         }
         elem_ptr = elem_ptr.offset(1);
         color_ptr = color_ptr.offset(1);
@@ -485,20 +523,22 @@ pub unsafe extern "C" fn IntSetSysColors(nColors: u32, Elements: *const i32, Col
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn IntGetSysColorBrush(Object: INT) -> HGDIOBJ {
+#[no_mangle]
+pub unsafe extern "fastcall" fn IntGetSysColorBrush(Object: INT) -> HGDIOBJ {
     if (Object < 0) || (NUM_SYSCOLORS as INT <= Object) {
         core::ptr::null_mut()
     } else {
-        (*gpsi).ahbrSystem[Object as usize]
+        (*peruser(gpsi)).ahbrSystem[Object as usize] as HGDIOBJ
     }
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IntGetSysColorBrush(Object: INT) -> HGDIOBJ {
+#[no_mangle]
+pub unsafe extern "C" fn IntGetSysColorBrush(Object: INT) -> HGDIOBJ {
     if (Object < 0) || (NUM_SYSCOLORS as INT <= Object) {
         core::ptr::null_mut()
     } else {
-        (*gpsi).ahbrSystem[Object as usize]
+        (*peruser(gpsi)).ahbrSystem[Object as usize] as HGDIOBJ
     }
 }
 
@@ -508,7 +548,7 @@ pub unsafe extern "fastcall" fn IntGetSysColor(nIndex: INT) -> DWORD {
     if NUM_SYSCOLORS <= nIndex as UINT {
         0
     } else {
-        (*gpsi).argbSystem[nIndex as usize]
+        (*peruser(gpsi)).argbSystem[nIndex as usize]
     }
 }
 
@@ -518,37 +558,39 @@ pub unsafe extern "C" fn IntGetSysColor(nIndex: INT) -> DWORD {
     if NUM_SYSCOLORS <= nIndex as UINT {
         0
     } else {
-        (*gpsi).argbSystem[nIndex as usize]
+        (*peruser(gpsi)).argbSystem[nIndex as usize]
     }
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn CreateSysColorObjects() {
+#[no_mangle]
+pub unsafe extern "fastcall" fn CreateSysColorObjects() {
     for i in 0..NUM_SYSCOLORS as usize {
-        (*gpsi).argbSystem[i] = SysColors[i];
+        (*peruser(gpsi)).argbSystem[i] = SysColors[i];
     }
 
     for i in 0..NUM_SYSCOLORS as usize {
-        if (*gpsi).ahbrSystem[i].is_null() {
-            (*gpsi).ahbrSystem[i] = IntGdiCreateSolidBrush(SysColors[i]);
-            if !(*gpsi).ahbrSystem[i].is_null() {
-                GDIOBJ_ConvertToStockObj(core::ptr::addr_of_mut!((*gpsi).ahbrSystem[i]) as *mut HGDIOBJ);
+        if (*peruser(gpsi)).ahbrSystem[i].is_null() {
+            (*peruser(gpsi)).ahbrSystem[i] = IntGdiCreateSolidBrush(SysColors[i]);
+            if !(*peruser(gpsi)).ahbrSystem[i].is_null() {
+                GDIOBJ_ConvertToStockObj(core::ptr::addr_of_mut!((*peruser(gpsi)).ahbrSystem[i]) as *mut HGDIOBJ);
             }
         }
     }
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CreateSysColorObjects() {
+#[no_mangle]
+pub unsafe extern "C" fn CreateSysColorObjects() {
     for i in 0..NUM_SYSCOLORS as usize {
-        (*gpsi).argbSystem[i] = SysColors[i];
+        (*peruser(gpsi)).argbSystem[i] = SysColors[i];
     }
 
     for i in 0..NUM_SYSCOLORS as usize {
-        if (*gpsi).ahbrSystem[i].is_null() {
-            (*gpsi).ahbrSystem[i] = IntGdiCreateSolidBrush(SysColors[i]);
-            if !(*gpsi).ahbrSystem[i].is_null() {
-                GDIOBJ_ConvertToStockObj(core::ptr::addr_of_mut!((*gpsi).ahbrSystem[i]) as *mut HGDIOBJ);
+        if (*peruser(gpsi)).ahbrSystem[i].is_null() {
+            (*peruser(gpsi)).ahbrSystem[i] = IntGdiCreateSolidBrush(SysColors[i]);
+            if !(*peruser(gpsi)).ahbrSystem[i].is_null() {
+                GDIOBJ_ConvertToStockObj(core::ptr::addr_of_mut!((*peruser(gpsi)).ahbrSystem[i]) as *mut HGDIOBJ);
             }
         }
     }
@@ -713,11 +755,11 @@ unsafe extern "C" fn CreateSysColorObjects() {
 //     static const WCHAR Batang[] = { 0xBC14, 0xD0D5, 0 };
 //
 //     RtlGetDefaultCodePage(&ActiveCodePage, &OemCodePage);
-//     bActiveCharSet = IntCharSetFromCodePage(ActiveCodePage);
-//     bOemCharSet = IntCharSetFromCodePage(OemCodePage);
+//     bActiveCharSet = IntCharSetFromCodePage(ActiveCodePage as UINT);
+//     bOemCharSet = IntCharSetFromCodePage(OemCodePage as UINT);
 //
-//     if (bOemCharSet == DEFAULT_CHARSET)
-//         bOemCharSet = OEM_CHARSET;
+//     if (bOemCharSet == DEFAULT_CHARSET as u8)
+//         bOemCharSet = OEM_CHARSET as u8;
 //
 //     switch (ActiveCodePage)
 //     {
@@ -756,32 +798,32 @@ unsafe extern "C" fn CreateSysColorObjects() {
 //     if (bIsCJK)
 //     {
 //         OEMFixedFont.lfHeight = 18;
-//         OEMFixedFont.lfPitchAndFamily = FF_DONTCARE | FIXED_PITCH;
+//         OEMFixedFont.lfPitchAndFamily = (FF_DONTCARE | FIXED_PITCH) as _;
 //         SystemFont.lfHeight = 18;
-//         SystemFont.lfPitchAndFamily = FF_DONTCARE | VARIABLE_PITCH;
+//         SystemFont.lfPitchAndFamily = (FF_DONTCARE | VARIABLE_PITCH) as _;
 //         DeviceDefaultFont.lfHeight = 18;
-//         DeviceDefaultFont.lfPitchAndFamily = FF_DONTCARE | VARIABLE_PITCH;
+//         DeviceDefaultFont.lfPitchAndFamily = (FF_DONTCARE | VARIABLE_PITCH) as _;
 //         SystemFixedFont.lfHeight = 18;
-//         SystemFixedFont.lfPitchAndFamily = FF_DONTCARE | FIXED_PITCH;
+//         SystemFixedFont.lfPitchAndFamily = (FF_DONTCARE | FIXED_PITCH) as _;
 //         DefaultGuiFont.lfHeight = -12;
 //     }
 //     else
 //     {
 //         OEMFixedFont.lfHeight = 12;
-//         OEMFixedFont.lfPitchAndFamily = FF_MODERN | FIXED_PITCH;
+//         OEMFixedFont.lfPitchAndFamily = (FF_MODERN | FIXED_PITCH) as _;
 //         SystemFont.lfHeight = 16;
-//         SystemFont.lfPitchAndFamily = FF_SWISS | VARIABLE_PITCH;
+//         SystemFont.lfPitchAndFamily = (FF_SWISS | VARIABLE_PITCH) as _;
 //         DeviceDefaultFont.lfHeight = 16;
-//         DeviceDefaultFont.lfPitchAndFamily = FF_SWISS | VARIABLE_PITCH;
-//         if (bActiveCharSet == RUSSIAN_CHARSET)
+//         DeviceDefaultFont.lfPitchAndFamily = (FF_SWISS | VARIABLE_PITCH) as _;
+//         if (bActiveCharSet == RUSSIAN_CHARSET as u8)
 //         {
 //             SystemFixedFont.lfHeight = 16;
-//             SystemFixedFont.lfPitchAndFamily = FF_SWISS | FIXED_PITCH;
+//             SystemFixedFont.lfPitchAndFamily = (FF_SWISS | FIXED_PITCH) as _;
 //         }
 //         else
 //         {
 //             SystemFixedFont.lfHeight = 15;
-//             SystemFixedFont.lfPitchAndFamily = FF_MODERN | FIXED_PITCH;
+//             SystemFixedFont.lfPitchAndFamily = (FF_MODERN | FIXED_PITCH) as _;
 //         }
 //         DefaultGuiFont.lfHeight = -11;
 //     }
@@ -821,10 +863,10 @@ unsafe extern "C" fn CreateSysColorObjects() {
 //     StockObjects[BLACK_BRUSH] =  IntGdiCreateSolidBrush(RGB(0,0,0));
 //     StockObjects[NULL_BRUSH] =   IntGdiCreateNullBrush();
 //
-//     StockObjects[WHITE_PEN] = IntCreateStockPen(WhitePen.lopnStyle, WhitePen.lopnWidth.x, BS_SOLID, WhitePen.lopnColor);
-//     StockObjects[BLACK_PEN] = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x, BS_SOLID, BlackPen.lopnColor);
-//     StockObjects[DC_PEN]    = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x, BS_SOLID, BlackPen.lopnColor);
-//     StockObjects[NULL_PEN]  = IntCreateStockPen(NullPen.lopnStyle, NullPen.lopnWidth.x, BS_SOLID, NullPen.lopnColor);
+//     StockObjects[WHITE_PEN] = IntCreateStockPen(WhitePen.lopnStyle, WhitePen.lopnWidth.x as u32, BS_SOLID, WhitePen.lopnColor);
+//     StockObjects[BLACK_PEN] = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x as u32, BS_SOLID, BlackPen.lopnColor);
+//     StockObjects[DC_PEN]    = IntCreateStockPen(BlackPen.lopnStyle, BlackPen.lopnWidth.x as u32, BS_SOLID, BlackPen.lopnColor);
+//     StockObjects[NULL_PEN]  = IntCreateStockPen(NullPen.lopnStyle, NullPen.lopnWidth.x as u32, BS_SOLID, NullPen.lopnColor);
 //
 //     StockObjects[20] = NULL; /* TODO: Unknown internal stock object */
 //     StockObjects[DEFAULT_BITMAP] = GreCreateBitmap(1, 1, 1, 1, NULL);

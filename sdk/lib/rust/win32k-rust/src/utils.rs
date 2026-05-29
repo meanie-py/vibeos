@@ -54,9 +54,11 @@ fn SUBLANGID(lgid: u16) -> u32 { (lgid >> 10) as u32 }
 fn ROP4_FROM_INDEX(index: u32) -> u32 { index | (index << 8) }
 
 // ---- file-scope preamble (translated) ----
+#[no_mangle]
 pub static mut g_PointZero: POINTL = POINTL { x: 0, y: 0 };
 
-unsafe fn SZZ_GetSize(pszz: PCZZWSTR) -> usize {
+#[no_mangle]
+pub unsafe extern "C" fn SZZ_GetSize(pszz: PCZZWSTR) -> usize {
     
     let mut ret: usize = 0;
     let mut pch = pszz;
@@ -69,7 +71,8 @@ unsafe fn SZZ_GetSize(pszz: PCZZWSTR) -> usize {
     ret * core::mem::size_of::<u16>()
 }
 
-unsafe fn IntRebaseList(
+#[no_mangle]
+pub unsafe extern "C" fn IntRebaseList(
     pNewHead: PLIST_ENTRY,
     pOldHead: PLIST_ENTRY)
 {
@@ -82,7 +85,8 @@ unsafe fn IntRebaseList(
     }
 }
 
-unsafe fn IntNormalizeAngle(nTenthsOfDegrees: LONG) -> LONG {
+#[no_mangle]
+pub unsafe extern "C" fn IntNormalizeAngle(nTenthsOfDegrees: LONG) -> LONG {
     let mut nTenthsOfDegrees = nTenthsOfDegrees % (360 * 10);
     if nTenthsOfDegrees >= 0 {
         return nTenthsOfDegrees;
@@ -91,7 +95,8 @@ unsafe fn IntNormalizeAngle(nTenthsOfDegrees: LONG) -> LONG {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn IntNameFromCharSet(CharSet: u8) -> LPCWSTR {
+#[no_mangle]
+pub unsafe extern "fastcall" fn IntNameFromCharSet(CharSet: u8) -> LPCWSTR {
     match CharSet as u32 {
         ANSI_CHARSET => w!("ANSI").as_ptr(),
         DEFAULT_CHARSET => w!("Default").as_ptr(),
@@ -117,7 +122,8 @@ unsafe extern "fastcall" fn IntNameFromCharSet(CharSet: u8) -> LPCWSTR {
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IntNameFromCharSet(CharSet: u8) -> LPCWSTR {
+#[no_mangle]
+pub unsafe extern "C" fn IntNameFromCharSet(CharSet: u8) -> LPCWSTR {
     match CharSet as u32 {
         ANSI_CHARSET => w!("ANSI").as_ptr(),
         DEFAULT_CHARSET => w!("Default").as_ptr(),
@@ -142,7 +148,8 @@ unsafe extern "C" fn IntNameFromCharSet(CharSet: u8) -> LPCWSTR {
     }
 }
 
-unsafe fn IntCharSetFromLangID(LangID: LANGID) -> u8 {
+#[no_mangle]
+pub unsafe extern "C" fn IntCharSetFromLangID(LangID: LANGID) -> u8 {
     match PRIMARYLANGID(LangID) {
         LANG_CHINESE => {
             match SUBLANGID(LangID) {
@@ -182,7 +189,8 @@ unsafe fn IntCharSetFromLangID(LangID: LANGID) -> u8 {
     }
 }
 
-unsafe fn IntSwapEndian(pvData: LPVOID, mut Size: u32) {
+#[no_mangle]
+pub unsafe extern "C" fn IntSwapEndian(pvData: LPVOID, mut Size: u32) {
     let mut pb = pvData as *mut u8;
     Size /= 2;
     while Size > 0 {
@@ -195,7 +203,8 @@ unsafe fn IntSwapEndian(pvData: LPVOID, mut Size: u32) {
     }
 }
 
-unsafe fn PathFindFileNameW(pszPath: PCWSTR) -> PWSTR {
+#[no_mangle]
+pub unsafe extern "C" fn PathFindFileNameW(pszPath: PCWSTR) -> PWSTR {
     let mut lastSlash: PCWSTR = pszPath;
     let mut current: PCWSTR = pszPath;
     while *current != 0 {
@@ -208,7 +217,8 @@ unsafe fn PathFindFileNameW(pszPath: PCWSTR) -> PWSTR {
     lastSlash as PWSTR
 }
 
-unsafe fn PathIsRelativeW(lpszPath: LPCWSTR) -> i32 {
+#[no_mangle]
+pub unsafe extern "C" fn PathIsRelativeW(lpszPath: LPCWSTR) -> i32 {
     if lpszPath.is_null() || *lpszPath == 0 {
         return 1;
     }
@@ -218,7 +228,8 @@ unsafe fn PathIsRelativeW(lpszPath: LPCWSTR) -> i32 {
     return 1;
 }
 
-unsafe fn IntUnicodeStringToBuffer(
+#[no_mangle]
+pub unsafe extern "C" fn IntUnicodeStringToBuffer(
     pszBuffer: LPWSTR,
     cbBuffer: usize,
     pString: *const _UNICODE_STRING,
@@ -241,7 +252,8 @@ unsafe fn IntUnicodeStringToBuffer(
     *pszBuffer.add(cbLength / core::mem::size_of::<u16>()) = 0u16;
 }
 
-unsafe fn IntDuplicateUnicodeString(
+#[no_mangle]
+pub unsafe extern "C" fn IntDuplicateUnicodeString(
     Source: PCUNICODE_STRING,
     Destination: PUNICODE_STRING) -> NTSTATUS
 {
@@ -266,9 +278,9 @@ unsafe fn IntDuplicateUnicodeString(
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn IntEngFillBox(
+#[no_mangle]
+pub unsafe extern "fastcall" fn IntEngFillBox(
     dc: PDC,
-    _edx: usize,
     X: i32,
     Y: i32,
     Width: i32,
@@ -317,7 +329,8 @@ unsafe extern "fastcall" fn IntEngFillBox(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn IntEngFillBox(
+#[no_mangle]
+pub unsafe extern "C" fn IntEngFillBox(
     dc: PDC,
     X: i32,
     Y: i32,
