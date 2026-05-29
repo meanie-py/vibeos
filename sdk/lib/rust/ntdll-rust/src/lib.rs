@@ -33,6 +33,14 @@ pub mod nt_0600;
 // ntdll.dll proper.
 pub mod rtl;
 
+// etw/ — main ntdll.dll Event Tracing API (the etwtrace static lib:
+// etw/trace.c). Always compiled — lands in ntdll.dll proper.
+pub mod etw;
+
+// dbg/ — main ntdll.dll debug-UI native wrappers (dbg/dbgui.c). Always
+// compiled — lands in ntdll.dll proper.
+pub mod dbg;
+
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust/kdcom-rust/hal-rust).
 // USER-MODE: must NOT use privileged `hlt`/`wfe` (ntdll runs in ring 3).

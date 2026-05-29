@@ -63,6 +63,10 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/uilist.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/version.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/etw/mod.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/etw/trace.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/mod.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/dbgui.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
@@ -73,13 +77,18 @@ add_custom_command(
 add_custom_target(ntdll_rust_main_lib DEPENDS ${NTDLL_RUST_MAIN_LIB})
 # --------------------------------------------------------------------
 
-# On NT6+ this is used by advapi32
-add_library(etwtrace etw/trace.c)
+# On NT6+ this is used by advapi32 (only linked at DLL_EXPORT_VERSION>=0x600;
+# at 0x502 — our whole build matrix — etwtrace is linked ONLY into ntdll).
+# etw/trace.c replaced by Rust (ntdll-rust/src/etw/trace.rs); the Etw* exports
+# now come from libntdll_rust.a (linked into ntdll below). The stub keeps the
+# library target valid. The .c stays on disk. See etw/etwtrace_rust_stub.c.
+add_library(etwtrace etw/etwtrace_rust_stub.c)
 target_link_libraries(etwtrace ${PSEH_LIB})
 add_dependencies(etwtrace psdk)
 
 list(APPEND SOURCE
-    dbg/dbgui.c
+    # dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
+    #   DbgUi* now provided by libntdll_rust.a (below)
     ldr/ldrapi.c
     ldr/ldrinit.c
     ldr/ldrpe.c
