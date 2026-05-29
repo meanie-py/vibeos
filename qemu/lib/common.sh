@@ -7,7 +7,10 @@
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QEMU_DIR="$(dirname "$_LIB_DIR")"
 VIBEOS_ROOT="$(dirname "$QEMU_DIR")"
-RUNS_DIR="$QEMU_DIR/runs"
+# RUNS_DIR holds per-run artifacts; the QMP/serial socket paths live under it
+# and must stay < 108 bytes (AF_UNIX limit). From a deep worktree the default
+# overflows, so honor an env override (e.g. RUNS_DIR=/tmp/vibeos-runs).
+RUNS_DIR="${RUNS_DIR:-$QEMU_DIR/runs}"
 
 SUPPORTED_ARCHES=(i386 amd64 arm64)
 

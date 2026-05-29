@@ -66,17 +66,29 @@ pub mod surface; pub mod stretchblt; pub mod xlateobj;
 pub mod pdevobj; pub mod stubs;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
-// arches but i386 smoke hangs pre-`shell ready` (kernel reaches deep into
-// loader/pool activity, then `I/J/i/#` byte alternation = stuck in some
-// dispatch/idle loop). Bisect confirms: parking device.rs → boot OK
-// (39s pass); enabling → 300s timeout. Translation kept in tree per
-// AGENTS.md ("a broken Rust translation integrated and failing IS the
-// correct state when a regression is unsolved"). Audit candidates for
-// the runtime bug:
-//   - swprintf %d/%lu format buffer overruns on szWinDeviceName[16]
-//   - Win32kCallbacks.Callout fn-ptr transmute (stdcall vs system)
-//   - PFILE_OBJECT/PDEVICE_OBJECT cross-crate cast in IoGetDeviceObjectPointer
-//   - RtlStringCb{Copy,Print}fW inline impls (off-by-one?)
+// arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
+// translation integrated and failing IS the correct state when a regression
+// is unsolved"). Bisect: parking device.rs → boot OK; enabling → red.
+//
+// ROOT CAUSE (corrected 2026-05-28 gdb-attach session — NOT a device.rs body
+// bug): this is a SILENT cgu-shift captures(none) miscompile. Adding device.rs
+// to the workspace repartitions cgu=256 and elides a pointer write on the
+// PnP/MM path, leaving a corrupt pointer that faults later.
+//   - amd64: boots to PnP display-adapter enum (DISPLAY\RHT1234), then
+//     BUGCHECK 0x1E / STATUS_IN_PAGE_ERROR at a corrupt-pointer store
+//     (`mov [rax+3],ecx`) in unsymbolized MM/PnP code (amd64 PTE self-map math
+//     + pnpmgr::pnpmap refs). scan_ud2: NO new ud2 → silent captures(none),
+//     not the ud2 variant.
+//   - i386: hangs pre-`shell ready` (loader/pool activity → `I/J/i/#` idle
+//     loop, 300s timeout). Same root cause suspected.
+// The 3 fn BODIES are the cgu *trigger*, not the direct culprit (crash is on
+// the ntoskrnl PnP/MM path, before/around win32k video init).
+// Exact miscompiled fn NOT yet pinned: faulting code is in an unsymbolized
+// .data gap after MainSSDT (absent from gdb DWARF + symbols-amd64.tsv), and
+// QEMU+KVM/WSL2 won't honor gdb breakpoints (mem-reads only). Full debug log
+// + how-to-resume: memory feedback_win32k_device_rs_resurrection_state.md.
+// Next decisive step: rebuild-bisect (stub bodies to no-ops, keep this mod) to
+// separate pure-cgu-shift from body-bug, then chase the partition.
 pub mod device;
 // ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
 // pub mod ldevobj;
