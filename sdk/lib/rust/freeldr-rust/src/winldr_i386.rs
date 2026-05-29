@@ -375,6 +375,7 @@ const KGDT_NMI_TSS: u16 = 0x58;
 const _WIN32_WINNT_VISTA: u16 = 0x0600;
 // i386 CR0 paging bit
 const CR0_PG: u32 = 0x80000000;
+const CR4_PAE: u32 = 0x00000020;
 
 // winldr.c `#pragma pack(2) typedef struct { USHORT Limit; ULONG Base; } GDTIDT;`
 #[repr(C, packed(2))]
@@ -481,6 +482,16 @@ unsafe fn __i386_readcr0() -> u32 {
 unsafe fn __i386_writecr0(v: u32) {
     core::arch::asm!("mov cr0, {0}", in(reg) v, options(nomem, nostack, preserves_flags));
 }
+#[inline]
+unsafe fn __i386_readcr4() -> u32 {
+    let v: u32;
+    core::arch::asm!("mov {0}, cr4", out(reg) v, options(nomem, nostack, preserves_flags));
+    v
+}
+#[inline]
+unsafe fn __i386_writecr4(v: u32) {
+    core::arch::asm!("mov cr4, {0}", in(reg) v, options(nomem, nostack, preserves_flags));
+}
 
 // intrin_i.h Ke386Set* segment / table loaders
 #[inline]
@@ -536,6 +547,28 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(OperatingSystemVersion: u16) 
 
     /* Re-initialize EFLAGS */
     __i386_writeeflags(0);
+
+    /*
+     * UEFI hands control over with paging already enabled, and on x86 the
+     * firmware (OVMF/EDK2) runs in PAE mode (CR4.PAE = 1). The i386 kernel
+     * uses classic 2-level *non-PAE* paging, and PDE here is a non-PAE page
+     * directory. Simply loading CR3=PDE while CR4.PAE=1 makes the MMU read
+     * PDE as a PAE PDPT — garbage translation, immediate triple fault.
+     *
+     * Transition cleanly to the non-PAE directory: disable paging, clear
+     * CR4.PAE, load CR3, then re-enable paging. While paging is off the CPU
+     * runs identity (linear == physical), which holds because the loader
+     * image and its stack live in identity-mapped low memory under the
+     * firmware. On a legacy BIOS boot paging is already off here, so the
+     * CR0_PG test makes this a no-op. (i386 UEFI boot bring-up.)
+     */
+    let cr0_now = __i386_readcr0();
+    if (cr0_now & CR0_PG) != 0 {
+        /* Disable paging first (still on the firmware's PAE tables). */
+        __i386_writecr0(cr0_now & !CR0_PG);
+        /* Now clear CR4.PAE so the upcoming CR3 is read as a 32-bit PDE. */
+        __i386_writecr4(__i386_readcr4() & !CR4_PAE);
+    }
 
     /* Set the PDBR */
     __i386_writecr3(PDE as u32);
