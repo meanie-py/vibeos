@@ -39,15 +39,339 @@ AcpiOsTerminate(void)
     return AE_OK;
 }
 
+/*
+ * UEFI fallback for AcpiOsGetRootPointer.
+ *
+ * Under UEFI boot the legacy BIOS scan (AcpiFindRootPointer) fails because the
+ * RSDP does not live in the 0xE0000-0xFFFFF area.  FreeLDR records the RSDT/XSDT
+ * physical address in the ARC "ACPI BIOS" multifunction-adapter configuration
+ * data.  We read that address from the registry and synthesize a valid
+ * ACPI_TABLE_RSDP (in a stable nonpaged-data static) that points ACPICA at the
+ * XSDT.
+ */
+static ACPI_TABLE_RSDP AcpipSyntheticRsdp;
+static ACPI_PHYSICAL_ADDRESS AcpipCachedRootPointer = 0;
+static BOOLEAN AcpipRootPointerComputed = FALSE;
+
+/*
+ * Read the RSDT/XSDT physical address from the freeldr-registered
+ * "ACPI BIOS" multifunction-adapter Configuration Data in the registry.
+ */
+static
+NTSTATUS
+AcpipGetRsdtAddressFromRegistry(
+    PPHYSICAL_ADDRESS Out)
+{
+    static const WCHAR McfgPath[] =
+        L"\\Registry\\Machine\\HARDWARE\\DESCRIPTION\\System\\MultifunctionAdapter";
+    static const WCHAR AcpiBiosId[] = L"ACPI BIOS";
+
+    UNICODE_STRING KeyName;
+    UNICODE_STRING ValueName;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE RootKey = NULL;
+    HANDLE SubKey = NULL;
+    NTSTATUS Status;
+    ULONG Index;
+    PVOID Buffer = NULL;
+    ULONG BufferSize = 0;
+    ULONG ResultLength;
+    NTSTATUS RetStatus = STATUS_NOT_FOUND;
+
+    Out->QuadPart = 0;
+
+    RtlInitUnicodeString(&KeyName, McfgPath);
+    InitializeObjectAttributes(&ObjectAttributes,
+                               &KeyName,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                               NULL,
+                               NULL);
+
+    Status = ZwOpenKey(&RootKey, KEY_READ, &ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("AcpiOsGetRootPointer: ZwOpenKey(MultifunctionAdapter) failed 0x%08lx\n", Status);
+        return Status;
+    }
+
+    /* Walk the numbered subkeys "0", "1", "2", ... */
+    for (Index = 0; ; Index++)
+    {
+        PKEY_BASIC_INFORMATION BasicInfo;
+        WCHAR SubKeyNameBuffer[16];
+        UNICODE_STRING SubKeyName;
+        UCHAR BasicInfoBuffer[sizeof(KEY_BASIC_INFORMATION) + 16 * sizeof(WCHAR)];
+
+        BasicInfo = (PKEY_BASIC_INFORMATION)BasicInfoBuffer;
+        Status = ZwEnumerateKey(RootKey,
+                                Index,
+                                KeyBasicInformation,
+                                BasicInfo,
+                                sizeof(BasicInfoBuffer),
+                                &ResultLength);
+        if (Status == STATUS_NO_MORE_ENTRIES)
+        {
+            break;
+        }
+        if (!NT_SUCCESS(Status))
+        {
+            /* A too-small subkey name is unexpected here; just stop. */
+            DPRINT1("AcpiOsGetRootPointer: ZwEnumerateKey(%lu) failed 0x%08lx\n", Index, Status);
+            break;
+        }
+
+        if (BasicInfo->NameLength == 0 ||
+            BasicInfo->NameLength >= sizeof(SubKeyNameBuffer))
+        {
+            continue;
+        }
+
+        RtlCopyMemory(SubKeyNameBuffer, BasicInfo->Name, BasicInfo->NameLength);
+        SubKeyNameBuffer[BasicInfo->NameLength / sizeof(WCHAR)] = UNICODE_NULL;
+        RtlInitUnicodeString(&SubKeyName, SubKeyNameBuffer);
+
+        InitializeObjectAttributes(&ObjectAttributes,
+                                   &SubKeyName,
+                                   OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                   RootKey,
+                                   NULL);
+
+        Status = ZwOpenKey(&SubKey, KEY_READ, &ObjectAttributes);
+        if (!NT_SUCCESS(Status))
+        {
+            continue;
+        }
+
+        /* Query "Identifier" and check it equals "ACPI BIOS". */
+        RtlInitUnicodeString(&ValueName, L"Identifier");
+        Status = ZwQueryValueKey(SubKey,
+                                 &ValueName,
+                                 KeyValuePartialInformation,
+                                 NULL,
+                                 0,
+                                 &ResultLength);
+        if (Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW)
+        {
+            PKEY_VALUE_PARTIAL_INFORMATION IdInfo;
+
+            IdInfo = ExAllocatePoolWithTag(NonPagedPool, ResultLength, 'pcaA');
+            if (IdInfo != NULL)
+            {
+                Status = ZwQueryValueKey(SubKey,
+                                         &ValueName,
+                                         KeyValuePartialInformation,
+                                         IdInfo,
+                                         ResultLength,
+                                         &ResultLength);
+                if (NT_SUCCESS(Status) &&
+                    IdInfo->Type == REG_SZ &&
+                    IdInfo->DataLength >= sizeof(AcpiBiosId))
+                {
+                    PWCHAR IdStr = (PWCHAR)IdInfo->Data;
+
+                    /* AcpiBiosId includes its terminating NUL; this matches the
+                     * REG_SZ data which is NUL-terminated as well. */
+                    if (RtlCompareMemory(IdStr, AcpiBiosId, sizeof(AcpiBiosId)) ==
+                        sizeof(AcpiBiosId))
+                    {
+                        ExFreePoolWithTag(IdInfo, 'pcaA');
+
+                        /* Found the ACPI BIOS adapter. Read Configuration Data. */
+                        RtlInitUnicodeString(&ValueName, L"Configuration Data");
+                        Status = ZwQueryValueKey(SubKey,
+                                                 &ValueName,
+                                                 KeyValuePartialInformation,
+                                                 NULL,
+                                                 0,
+                                                 &ResultLength);
+                        if (Status == STATUS_BUFFER_TOO_SMALL ||
+                            Status == STATUS_BUFFER_OVERFLOW)
+                        {
+                            BufferSize = ResultLength;
+                            Buffer = ExAllocatePoolWithTag(NonPagedPool, BufferSize, 'pcaA');
+                            if (Buffer != NULL)
+                            {
+                                Status = ZwQueryValueKey(SubKey,
+                                                         &ValueName,
+                                                         KeyValuePartialInformation,
+                                                         Buffer,
+                                                         BufferSize,
+                                                         &ResultLength);
+                                if (NT_SUCCESS(Status))
+                                {
+                                    RetStatus = STATUS_SUCCESS;
+                                }
+                            }
+                        }
+
+                        ZwClose(SubKey);
+                        SubKey = NULL;
+                        break;
+                    }
+                }
+
+                ExFreePoolWithTag(IdInfo, 'pcaA');
+            }
+        }
+
+        ZwClose(SubKey);
+        SubKey = NULL;
+    }
+
+    ZwClose(RootKey);
+
+    if (!NT_SUCCESS(RetStatus) || Buffer == NULL)
+    {
+        if (Buffer != NULL)
+        {
+            ExFreePoolWithTag(Buffer, 'pcaA');
+        }
+        return STATUS_NOT_FOUND;
+    }
+
+    /*
+     * Parse the Configuration Data blob:
+     *   KEY_VALUE_PARTIAL_INFORMATION.Data -> CM_FULL_RESOURCE_DESCRIPTOR
+     *   { InterfaceType; BusNumber; PartialResourceList { ...; Count; Descriptors[] } }
+     * Find the CmResourceTypeDeviceSpecific descriptor; the freeldr ACPI_BIOS_DATA
+     * begins immediately after it, with PHYSICAL_ADDRESS RSDTAddress as its first
+     * field.
+     */
+    {
+        PKEY_VALUE_PARTIAL_INFORMATION ValueInfo = (PKEY_VALUE_PARTIAL_INFORMATION)Buffer;
+        PUCHAR DataStart;
+        PUCHAR DataEnd;
+        PCM_FULL_RESOURCE_DESCRIPTOR FullDesc;
+        PCM_PARTIAL_RESOURCE_LIST PartialList;
+        ULONG i;
+        ULONG DataLength;
+
+        RetStatus = STATUS_NOT_FOUND;
+
+        DataLength = ValueInfo->DataLength;
+        DataStart = (PUCHAR)ValueInfo->Data;
+        DataEnd = DataStart + DataLength;
+
+        if (DataLength < sizeof(CM_FULL_RESOURCE_DESCRIPTOR))
+        {
+            DPRINT1("AcpiOsGetRootPointer: Configuration Data too small (%lu)\n", DataLength);
+            ExFreePoolWithTag(Buffer, 'pcaA');
+            return STATUS_NOT_FOUND;
+        }
+
+        FullDesc = (PCM_FULL_RESOURCE_DESCRIPTOR)DataStart;
+        PartialList = &FullDesc->PartialResourceList;
+
+        for (i = 0; i < PartialList->Count; i++)
+        {
+            PCM_PARTIAL_RESOURCE_DESCRIPTOR Desc = &PartialList->PartialDescriptors[i];
+            PUCHAR DescBytes = (PUCHAR)Desc;
+
+            /* Ensure the descriptor itself is fully inside the blob. */
+            if (DescBytes + sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR) > DataEnd)
+            {
+                break;
+            }
+
+            if (Desc->Type == CmResourceTypeDeviceSpecific)
+            {
+                PUCHAR AcpiBiosData = DescBytes + sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR);
+
+                /* The first field of freeldr ACPI_BIOS_DATA is
+                 * PHYSICAL_ADDRESS RSDTAddress (8 bytes). */
+                if (AcpiBiosData + sizeof(PHYSICAL_ADDRESS) <= DataEnd)
+                {
+                    PHYSICAL_ADDRESS RsdtAddress;
+
+                    RtlCopyMemory(&RsdtAddress, AcpiBiosData, sizeof(PHYSICAL_ADDRESS));
+                    *Out = RsdtAddress;
+                    RetStatus = STATUS_SUCCESS;
+                }
+                break;
+            }
+        }
+    }
+
+    ExFreePoolWithTag(Buffer, 'pcaA');
+    return RetStatus;
+}
+
 ACPI_PHYSICAL_ADDRESS
 AcpiOsGetRootPointer (
     void)
 {
     ACPI_PHYSICAL_ADDRESS pa = 0;
+    PHYSICAL_ADDRESS RsdtAddress;
+    NTSTATUS Status;
+    PUCHAR Bytes;
+    ULONG Sum;
+    ULONG i;
 
     DPRINT("AcpiOsGetRootPointer\n");
 
+    /* Return the cached result once computed. */
+    if (AcpipRootPointerComputed)
+    {
+        return AcpipCachedRootPointer;
+    }
+
+    /* 1) Legacy BIOS path: scan the BIOS area. Unchanged behavior. */
     AcpiFindRootPointer(&pa);
+    if (pa != 0)
+    {
+        DPRINT1("AcpiOsGetRootPointer: BIOS scan found RSDP at 0x%I64x\n",
+                (UINT64)pa);
+        AcpipCachedRootPointer = pa;
+        AcpipRootPointerComputed = TRUE;
+        return pa;
+    }
+
+    /* 2) UEFI path: BIOS scan failed. Get the RSDT/XSDT physical address from
+     *    the freeldr "ACPI BIOS" registry entry and synthesize an RSDP. */
+    Status = AcpipGetRsdtAddressFromRegistry(&RsdtAddress);
+    if (!NT_SUCCESS(Status) || RsdtAddress.QuadPart == 0)
+    {
+        DPRINT1("AcpiOsGetRootPointer: no RSDP from scan or registry!\n");
+        AcpipCachedRootPointer = 0;
+        AcpipRootPointerComputed = TRUE;
+        return 0;
+    }
+
+    /* Synthesize a valid ACPI 2.0+ RSDP pointing at the XSDT. */
+    RtlZeroMemory(&AcpipSyntheticRsdp, sizeof(AcpipSyntheticRsdp));
+    RtlCopyMemory(AcpipSyntheticRsdp.Signature, "RSD PTR ", 8);   /* no NUL */
+    RtlCopyMemory(AcpipSyntheticRsdp.OemId, "REACTS", ACPI_OEM_ID_SIZE);
+    AcpipSyntheticRsdp.Revision = 2;
+    AcpipSyntheticRsdp.Length = sizeof(ACPI_TABLE_RSDP);   /* 36 */
+    AcpipSyntheticRsdp.RsdtPhysicalAddress = 0;            /* point at XSDT */
+    AcpipSyntheticRsdp.XsdtPhysicalAddress = (UINT64)RsdtAddress.QuadPart;
+
+    /* ACPI 1.0 checksum: unsigned 8-bit sum of first 20 bytes must be 0. */
+    AcpipSyntheticRsdp.Checksum = 0;
+    Bytes = (PUCHAR)&AcpipSyntheticRsdp;
+    Sum = 0;
+    for (i = 0; i < 20; i++)
+    {
+        Sum += Bytes[i];
+    }
+    AcpipSyntheticRsdp.Checksum = (UINT8)(0 - (Sum & 0xFF));
+
+    /* Extended checksum: unsigned 8-bit sum of all 36 bytes must be 0. */
+    AcpipSyntheticRsdp.ExtendedChecksum = 0;
+    Sum = 0;
+    for (i = 0; i < sizeof(ACPI_TABLE_RSDP); i++)
+    {
+        Sum += Bytes[i];
+    }
+    AcpipSyntheticRsdp.ExtendedChecksum = (UINT8)(0 - (Sum & 0xFF));
+
+    pa = MmGetPhysicalAddress(&AcpipSyntheticRsdp).QuadPart;
+
+    DPRINT1("AcpiOsGetRootPointer: BIOS scan failed, using registry RSDT/XSDT 0x%I64x, synthetic RSDP\n",
+            (UINT64)RsdtAddress.QuadPart);
+
+    AcpipCachedRootPointer = pa;
+    AcpipRootPointerComputed = TRUE;
     return pa;
 }
 
