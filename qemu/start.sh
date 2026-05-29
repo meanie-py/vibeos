@@ -20,6 +20,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$SCRIPT_DIR/lib/manifest.sh"
 . "$SCRIPT_DIR/lib/runid.sh"
 
+# Resolve the owning session NOW, before anything else. owner_pid_for walks
+# parents past shell processes (bash/zsh/sh/dash/fish/ksh) and returns the
+# first long-lived non-shell ancestor — typically claude, tmux, sshd, or a
+# terminal-emulator server. That's what qemu/reap.sh uses as the liveness
+# key to decide whether this run is orphaned. We seed the walk at $PPID
+# (not $$) because start.sh itself is short-lived; we want to skip past the
+# calling bash (per-tool-call in claude, login in terminal, transient in $()).
+# See lib/common.sh:owner_pid_for for the rationale in full.
+OWNER_PID="$(owner_pid_for "$PPID")"
+
 # --- arg parsing ------------------------------------------------------------
 ARCH=""
 GDB=0
@@ -53,26 +63,17 @@ if [ "$SKIP_PREFLIGHT" -eq 0 ]; then
     fi
 fi
 
-# --- idempotent zombie cleanup ---------------------------------------------
-# Kill any prior QEMU instances for this arch whose runs we tracked but didn't
-# stop cleanly. We only touch processes whose pid file matches our manifest.
-for prior_run in "$RUNS_DIR"/${ARCH}-*; do
-    [ -d "$prior_run" ] || continue
-    rid="$(basename "$prior_run")"
-    pid="$(manifest_get "$rid" qemu_pid 2>/dev/null || echo null)"
-    stopped="$(manifest_get "$rid" stopped_at 2>/dev/null || echo "")"
-    if [ -n "$pid" ] && [ "$pid" != "null" ] && [ -z "$stopped" ]; then
-        if kill -0 "$pid" 2>/dev/null; then
-            log_info "found prior live QEMU for $ARCH: pid=$pid run-id=$rid — killing"
-            kill -TERM "$pid" 2>/dev/null || true
-            for _ in 1 2 3 4 5; do
-                kill -0 "$pid" 2>/dev/null || break
-                sleep 0.2
-            done
-            kill -KILL "$pid" 2>/dev/null || true
-        fi
-    fi
-done
+# --- parent-aware orphan reap ----------------------------------------------
+# Sweep any prior QEMU (this arch or any other, this worktree or any other)
+# whose owning shell/launcher is dead. Live owners — including other agents'
+# active sessions — are NEVER touched. See qemu/reap.sh for the exact rules.
+# reap.sh writes [reap] action lines to stderr (which flows through to the
+# user) and the kill count to stdout (which we capture for the summary log).
+if reaped="$("$SCRIPT_DIR/reap.sh")"; then
+    [ "${reaped:-0}" -gt 0 ] && log_info "reaped $reaped orphan QEMU(s)"
+else
+    log_warn "qemu/reap.sh exited nonzero; continuing"
+fi
 
 # --- allocate run-id, ports, sockets ---------------------------------------
 RUN_ID="$(runid_new "$ARCH")"
@@ -80,7 +81,7 @@ RUN_DIR="$RUNS_DIR/$RUN_ID"
 mkdir -p "$RUN_DIR"
 
 KERNEL_IMAGE="$(arch_kernel_image "$ARCH")"
-manifest_init "$RUN_ID" "$ARCH" "$KERNEL_IMAGE"
+manifest_init "$RUN_ID" "$ARCH" "$KERNEL_IMAGE" "$OWNER_PID"
 
 GDB_PORT=""
 if [ "$GDB" -eq 1 ]; then
@@ -182,6 +183,25 @@ disown "$QEMU_PID" 2>/dev/null || true
 echo "$QEMU_PID" > "$PID_FILE"
 manifest_set "$RUN_ID" qemu_pid "$QEMU_PID" --json
 manifest_set "$RUN_ID" qemu_cmd "$QEMU_CMD_STR"
+
+# Drop a shared lockfile so the reaper can reach this run cross-worktree.
+# RUNS_DIR is per-worktree (qemu/runs/) so a sibling worktree's reaper can't
+# see our manifest, but /tmp/vibeos-qemu-locks/ is global. Schema mirrors
+# tests/qemu/vm.py: launcher_pid = the long-lived owner whose death means
+# orphan (claude / tmux / sshd / terminal).
+LOCK_DIR="/tmp/vibeos-qemu-locks"
+mkdir -p "$LOCK_DIR" 2>/dev/null || true
+LOCK_FILE="$LOCK_DIR/${OWNER_PID}-${QEMU_PID}.json"
+jq -n \
+    --argjson launcher_pid "$OWNER_PID" \
+    --argjson qemu_pid "$QEMU_PID" \
+    --arg arch "$ARCH" \
+    --arg run_id "$RUN_ID" \
+    --arg manifest_path "$(manifest_path "$RUN_ID")" \
+    --arg source "qemu/start.sh" \
+    '{launcher_pid: $launcher_pid, qemu_pid: $qemu_pid, arch: $arch,
+      run_id: $run_id, manifest_path: $manifest_path, source: $source}' \
+    > "$LOCK_FILE" 2>/dev/null || log_warn "could not write $LOCK_FILE"
 
 # --- wait briefly for QEMU to actually start ------------------------------
 # If it dies in the first 1s, almost always a bad command line — surface the

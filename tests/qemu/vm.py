@@ -404,10 +404,10 @@ class QemuVM:
             preexec_fn=os.setpgrp,
         )
 
-        # Drop a scoped lock so a *future* run (once this code is merged and
-        # other agents write locks too) can safely reap THIS qemu iff our
-        # launcher dies. Writing the lock is harmless today; reaping is NOT
-        # auto-wired anywhere yet on purpose.
+        # Drop a scoped lock so the reaper can safely kill THIS qemu iff our
+        # launcher (this pytest process) dies. reap_orphan_qemus() is auto-
+        # wired in conftest.py at session start. qemu/reap.sh covers both
+        # this lock dir and the kernel-debug-toolkit's manifest.json files.
         try:
             LOCK_DIR.mkdir(parents=True, exist_ok=True)
             self._lock_path = LOCK_DIR / f"{os.getpid()}-{self._proc.pid}.json"
