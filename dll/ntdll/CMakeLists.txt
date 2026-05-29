@@ -21,7 +21,10 @@ add_library(rtl_um OBJECT
     rtl/libsupp.c
     # rtl/uilist.c — replaced by Rust (ntdll-rust/src/rtl/uilist.rs);
     #   RtlConvertUiListToApiList now provided by libntdll_rust.a (below)
-    rtl/version.c)
+    # rtl/version.c — replaced by Rust (ntdll-rust/src/rtl/version.rs);
+    #   RtlGetNtProductType / RtlGetNtVersionNumbers / RtlGetVersion now
+    #   provided by libntdll_rust.a (below)
+    )
 target_link_libraries(rtl_um apisets ${PSEH_LIB})
 add_dependencies(rtl_um psdk)
 
@@ -59,6 +62,7 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/lib.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/uilist.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/version.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs

@@ -3,3 +3,4 @@
 //! land in ntdll.dll proper (NOT the ntdll_vista companion).
 
 pub mod uilist;
+pub mod version;
