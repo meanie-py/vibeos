@@ -20,7 +20,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--arch",
         default="arm64",
-        choices=["arm64", "arm64-test", "i386", "i386-uefi", "amd64", "amd64-uefi"],
+        # BIOS boot is gone: x86 is UEFI-only (i386-uefi / amd64-uefi). The
+        # legacy "i386"/"amd64" BIOS arches were dropped with the BIOS prune.
+        choices=["arm64", "arm64-test", "i386-uefi", "amd64-uefi"],
         help="Target architecture (default: arm64)",
     )
     parser.addoption(

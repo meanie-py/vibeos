@@ -409,12 +409,13 @@ class Arm64TestKernelConfig(Arm64Config):
         ]
 
 
+# x86 is UEFI-only after the BIOS prune. I386Config / Amd64Config remain only as
+# the (non-selectable) base classes that hold shared defaults for the -uefi
+# variants; their legacy BIOS -cdrom qemu_args are no longer reachable.
 ARCH_CONFIGS: dict[str, type[ArchConfig]] = {
     "arm64": Arm64Config,
     "arm64-test": Arm64TestKernelConfig,
-    "i386": I386Config,
     "i386-uefi": I386UefiConfig,
-    "amd64": Amd64Config,
     "amd64-uefi": Amd64UefiConfig,
 }
 
