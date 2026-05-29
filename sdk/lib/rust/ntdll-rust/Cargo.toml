@@ -1,0 +1,21 @@
+[package]
+name = "ntdll-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# staticlib → libntdll_rust.a, linked into the cmake-built ntdll.dll /
+# ntdll_vista.dll PEs with the .c kept + --allow-multiple-definition
+# during each per-file swap-in window (mirrors smss-csrss-rust /
+# csrsrv cohabitation + the sdk/lib/rtl cmake-driven cargo→.a pattern).
+# Archive extraction is per-object + reference-driven, so the same .a
+# can serve both DLLs: ntdll_vista.dll pulls only the objects it
+# references (DllMain + nt_0600 helpers); ntdll.dll never references
+# DllMain so it is not pulled into it.
+crate-type = ["staticlib"]
+
+[dependencies]
+# User-mode Native API + Ldr/Rtl/Dbg FFI surface — the same substrate
+# smss-csrss-rust / winsrv-rust build on. See
+# docs/engineering/ntdll-translation-audit.md §Substrate.
+ntdll-sys = { path = "../ntdll-sys" }
