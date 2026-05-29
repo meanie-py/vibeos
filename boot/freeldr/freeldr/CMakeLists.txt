@@ -25,11 +25,11 @@ include_directories(
 
 add_definitions(-D_NTHAL_ -D_BLDR_ -D_NTSYSTEM_)
 
-list(APPEND FREELDR_ARC_SOURCE
+list(APPEND FREELDR_ARC_SOURCE)
     # arcname.c          # replaced by Rust (freeldr-rust/src/arcname.rs)
     # arch/arcemul.c     # replaced by Rust (freeldr-rust/src/arcemul.rs)
     # arch/archwsup.c    # replaced by Rust (freeldr-rust/src/archwsup.rs)
-    disk/disk.c)
+    # disk/disk.c        # empty TU (only #include <freeldr.h>) — removed
     # disk unit → Rust (freeldr-rust: partition.rs/ramdisk.rs). Cohabitation:
     # .c kept on disk, Rust #[no_mangle] takes over.
     # disk/partition.c  # replaced by Rust (freeldr-rust/src/partition.rs)
