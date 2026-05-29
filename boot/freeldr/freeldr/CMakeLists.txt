@@ -50,16 +50,13 @@ list(APPEND FREELDR_BOOTLIB_SOURCE)
     # lib/cache/cache.c   # replaced by Rust (freeldr-rust/src/cache.rs)
     # lib/comm/rs232.c    # replaced by Rust (freeldr-rust/src/rs232.rs)
     ## add KD support
-    # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). ntfs/ext/btrfs
-    # PRUNED entirely (no Rust, no C): livecd boots ISO, ramdisk is FAT,
-    # so fs.rs FileSystems[] = [Iso,Fat,Pxe] only; the other 3 are dead
-    # weight. Keep .c files on disk (never-delete), just unreferenced.
-    # lib/fs/btrfs.c   # pruned (not in fs.rs FileSystems[])
-    # lib/fs/ext.c     # pruned
+    # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). livecd boots ISO,
+    # ramdisk is FAT, so fs.rs FileSystems[] = [Iso,Fat,Pxe] only.
+    # btrfs/ext/ntfs read drivers had no Rust + no live caller → DELETED
+    # (lib/fs/{btrfs,ext,ntfs}.c + include/fs/{btrfs,ext,ntfs}.h).
     # lib/fs/fat.c     # replaced by Rust (freeldr-rust/src/fat.rs)
     # lib/fs/fs.c      # replaced by Rust (freeldr-rust/src/fs.rs)
     # lib/fs/iso.c     # replaced by Rust (freeldr-rust/src/iso.rs)
-    # lib/fs/ntfs.c    # pruned
     # lib/inifile/ini_init.c  # replaced by Rust (freeldr-rust/src/ini_init.rs)
     # lib/inifile/inifile.c   # replaced by Rust (freeldr-rust/src/inifile.rs)
     # lib/inifile/parse.c     # replaced by Rust (freeldr-rust/src/parse.rs)
@@ -76,11 +73,9 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
     # settings.c        # replaced by Rust (freeldr-rust/src/settings.rs)
     # ui unit → Rust (freeldr-rust: ui/tui/tuimenu/minitui/noui/video.rs).
-    # ui/directui.c is `#if 0` dead code in C (compiles to nothing) and the
-    # Rust directui.rs is deliberately NOT wired — symmetric, kept on disk.
-    # ui/gui.c untranslated (already commented). Cohabitation: .c kept on
-    # disk, Rust #[no_mangle] takes over.
-    ui/directui.c
+    # ui/directui.c was `#if 0` dead code — deleted. The Rust directui.rs is
+    # kept on disk (deliberately NOT wired). ui/gui.c untranslated (commented).
+    # Cohabitation: live .c kept on disk, Rust #[no_mangle] takes over.
     # ui/gui.c
     # ui/minitui.c  # replaced by Rust (freeldr-rust/src/minitui.rs)
     # ui/noui.c     # replaced by Rust (freeldr-rust/src/noui.rs)
