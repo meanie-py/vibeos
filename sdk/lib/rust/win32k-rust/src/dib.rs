@@ -1,145 +1,213 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
+// Per-format renderer entrypoints + generic stretch/alpha (DIB_XXBPP_*),
+// referenced by DibFunctionsForBitmapFormat. The DIB_NBPP_* live in the
+// sibling renderer modules (#[no_mangle] extern "C") or i386 hand-asm;
+// DIB_XXBPP_{StretchBlt,AlphaBlend} are the generic C impls (stretchblt.c/
+// alphablend.c, still live). Declared here so the table can take their
+// addresses; the linker resolves each by name (the bitblt.rs/dib_helpers
+// cross-module pattern).
+extern "C" {
+    fn DIB_1BPP_PutPixel(so: *mut SURFOBJ, x: LONG, y: LONG, c: ULONG);
+    fn DIB_1BPP_GetPixel(so: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG;
+    fn DIB_1BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
+    fn DIB_1BPP_VLine(so: *mut SURFOBJ, x: LONG, y1: LONG, y2: LONG, c: ULONG);
+    fn DIB_1BPP_BitBlt(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_1BPP_BitBltSrcCopy(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_1BPP_TransparentBlt(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, xlo: *mut XLATEOBJ, tc: ULONG) -> BOOLEAN;
+    fn DIB_1BPP_ColorFill(d: *mut SURFOBJ, dr: *mut RECTL, c: ULONG) -> BOOLEAN;
+    fn DIB_4BPP_PutPixel(so: *mut SURFOBJ, x: LONG, y: LONG, c: ULONG);
+    fn DIB_4BPP_GetPixel(so: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG;
+    fn DIB_4BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
+    fn DIB_4BPP_VLine(so: *mut SURFOBJ, x: LONG, y1: LONG, y2: LONG, c: ULONG);
+    fn DIB_4BPP_BitBlt(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_4BPP_BitBltSrcCopy(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_4BPP_TransparentBlt(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, xlo: *mut XLATEOBJ, tc: ULONG) -> BOOLEAN;
+    fn DIB_4BPP_ColorFill(d: *mut SURFOBJ, dr: *mut RECTL, c: ULONG) -> BOOLEAN;
+    fn DIB_8BPP_PutPixel(so: *mut SURFOBJ, x: LONG, y: LONG, c: ULONG);
+    fn DIB_8BPP_GetPixel(so: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG;
+    fn DIB_8BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
+    fn DIB_8BPP_VLine(so: *mut SURFOBJ, x: LONG, y1: LONG, y2: LONG, c: ULONG);
+    fn DIB_8BPP_BitBlt(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_8BPP_BitBltSrcCopy(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_8BPP_TransparentBlt(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, xlo: *mut XLATEOBJ, tc: ULONG) -> BOOLEAN;
+    fn DIB_8BPP_ColorFill(d: *mut SURFOBJ, dr: *mut RECTL, c: ULONG) -> BOOLEAN;
+    fn DIB_16BPP_PutPixel(so: *mut SURFOBJ, x: LONG, y: LONG, c: ULONG);
+    fn DIB_16BPP_GetPixel(so: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG;
+    fn DIB_16BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
+    fn DIB_16BPP_VLine(so: *mut SURFOBJ, x: LONG, y1: LONG, y2: LONG, c: ULONG);
+    fn DIB_16BPP_BitBlt(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_16BPP_BitBltSrcCopy(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_16BPP_TransparentBlt(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, xlo: *mut XLATEOBJ, tc: ULONG) -> BOOLEAN;
+    fn DIB_16BPP_ColorFill(d: *mut SURFOBJ, dr: *mut RECTL, c: ULONG) -> BOOLEAN;
+    fn DIB_24BPP_PutPixel(so: *mut SURFOBJ, x: LONG, y: LONG, c: ULONG);
+    fn DIB_24BPP_GetPixel(so: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG;
+    fn DIB_24BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
+    fn DIB_24BPP_VLine(so: *mut SURFOBJ, x: LONG, y1: LONG, y2: LONG, c: ULONG);
+    fn DIB_24BPP_BitBlt(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_24BPP_BitBltSrcCopy(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_24BPP_TransparentBlt(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, xlo: *mut XLATEOBJ, tc: ULONG) -> BOOLEAN;
+    fn DIB_24BPP_ColorFill(d: *mut SURFOBJ, dr: *mut RECTL, c: ULONG) -> BOOLEAN;
+    fn DIB_32BPP_PutPixel(so: *mut SURFOBJ, x: LONG, y: LONG, c: ULONG);
+    fn DIB_32BPP_GetPixel(so: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG;
+    fn DIB_32BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
+    fn DIB_32BPP_VLine(so: *mut SURFOBJ, x: LONG, y1: LONG, y2: LONG, c: ULONG);
+    fn DIB_32BPP_BitBlt(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_32BPP_BitBltSrcCopy(bi: PBLTINFO) -> BOOLEAN;
+    fn DIB_32BPP_TransparentBlt(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, xlo: *mut XLATEOBJ, tc: ULONG) -> BOOLEAN;
+    fn DIB_32BPP_ColorFill(d: *mut SURFOBJ, dr: *mut RECTL, c: ULONG) -> BOOLEAN;
+    fn DIB_16BPP_AlphaBlend(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, clip: *mut CLIPOBJ, xlo: *mut XLATEOBJ, bo: *mut BLENDOBJ) -> BOOLEAN;
+    fn DIB_24BPP_AlphaBlend(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, clip: *mut CLIPOBJ, xlo: *mut XLATEOBJ, bo: *mut BLENDOBJ) -> BOOLEAN;
+    fn DIB_32BPP_AlphaBlend(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, clip: *mut CLIPOBJ, xlo: *mut XLATEOBJ, bo: *mut BLENDOBJ) -> BOOLEAN;
+    fn DIB_XXBPP_StretchBlt(d: *mut SURFOBJ, sr: *mut SURFOBJ, ps: *mut SURFOBJ, ms: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, mo: *mut POINTL, br: *mut BRUSHOBJ, bo: *mut POINTL, xlo: *mut XLATEOBJ, rop: ROP4) -> BOOLEAN;
+    fn DIB_XXBPP_AlphaBlend(d: *mut SURFOBJ, sr: *mut SURFOBJ, dr: *mut RECTL, srr: *mut RECTL, clip: *mut CLIPOBJ, xlo: *mut XLATEOBJ, bo: *mut BLENDOBJ) -> BOOLEAN;
+}
+
+
 // ---- file-scope preamble (translated) ----
+#[no_mangle]
 pub static mut notmask: [u8; 2] = [0x0f, 0xf0];
+#[no_mangle]
 pub static mut altnotmask: [u8; 2] = [0xf0, 0x0f];
+#[no_mangle]
 pub static mut DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 11] = [
     DIB_FUNCTIONS {
-        PutPixel: Some(Dummy_PutPixel),
-        GetPixel: Some(Dummy_GetPixel),
-        HLine: Some(Dummy_HLine),
-        VLine: Some(Dummy_VLine),
-        BitBlt: Some(Dummy_BitBlt),
-        BitBltSrcCopy: Some(Dummy_BitBlt),
-        StretchBlt: Some(Dummy_StretchBlt),
-        TransparentBlt: Some(Dummy_TransparentBlt),
-        ColorFill: Some(Dummy_ColorFill),
-        AlphaBlend: Some(Dummy_AlphaBlend),
+        DIB_PutPixel: Some(Dummy_PutPixel),
+        DIB_GetPixel: Some(Dummy_GetPixel),
+        DIB_HLine: Some(Dummy_HLine),
+        DIB_VLine: Some(Dummy_VLine),
+        DIB_BitBlt: Some(Dummy_BitBlt),
+        DIB_BitBltSrcCopy: Some(Dummy_BitBlt),
+        DIB_StretchBlt: Some(Dummy_StretchBlt),
+        DIB_TransparentBlt: Some(Dummy_TransparentBlt),
+        DIB_ColorFill: Some(Dummy_ColorFill),
+        DIB_AlphaBlend: Some(Dummy_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(DIB_1BPP_PutPixel),
-        GetPixel: Some(DIB_1BPP_GetPixel),
-        HLine: Some(DIB_1BPP_HLine),
-        VLine: Some(DIB_1BPP_VLine),
-        BitBlt: Some(DIB_1BPP_BitBlt),
-        BitBltSrcCopy: Some(DIB_1BPP_BitBltSrcCopy),
-        StretchBlt: Some(DIB_XXBPP_StretchBlt),
-        TransparentBlt: Some(DIB_1BPP_TransparentBlt),
-        ColorFill: Some(DIB_1BPP_ColorFill),
-        AlphaBlend: Some(DIB_XXBPP_AlphaBlend),
+        DIB_PutPixel: Some(DIB_1BPP_PutPixel),
+        DIB_GetPixel: Some(DIB_1BPP_GetPixel),
+        DIB_HLine: Some(DIB_1BPP_HLine),
+        DIB_VLine: Some(DIB_1BPP_VLine),
+        DIB_BitBlt: Some(DIB_1BPP_BitBlt),
+        DIB_BitBltSrcCopy: Some(DIB_1BPP_BitBltSrcCopy),
+        DIB_StretchBlt: Some(DIB_XXBPP_StretchBlt),
+        DIB_TransparentBlt: Some(DIB_1BPP_TransparentBlt),
+        DIB_ColorFill: Some(DIB_1BPP_ColorFill),
+        DIB_AlphaBlend: Some(DIB_XXBPP_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(DIB_4BPP_PutPixel),
-        GetPixel: Some(DIB_4BPP_GetPixel),
-        HLine: Some(DIB_4BPP_HLine),
-        VLine: Some(DIB_4BPP_VLine),
-        BitBlt: Some(DIB_4BPP_BitBlt),
-        BitBltSrcCopy: Some(DIB_4BPP_BitBltSrcCopy),
-        StretchBlt: Some(DIB_XXBPP_StretchBlt),
-        TransparentBlt: Some(DIB_4BPP_TransparentBlt),
-        ColorFill: Some(DIB_4BPP_ColorFill),
-        AlphaBlend: Some(DIB_XXBPP_AlphaBlend),
+        DIB_PutPixel: Some(DIB_4BPP_PutPixel),
+        DIB_GetPixel: Some(DIB_4BPP_GetPixel),
+        DIB_HLine: Some(DIB_4BPP_HLine),
+        DIB_VLine: Some(DIB_4BPP_VLine),
+        DIB_BitBlt: Some(DIB_4BPP_BitBlt),
+        DIB_BitBltSrcCopy: Some(DIB_4BPP_BitBltSrcCopy),
+        DIB_StretchBlt: Some(DIB_XXBPP_StretchBlt),
+        DIB_TransparentBlt: Some(DIB_4BPP_TransparentBlt),
+        DIB_ColorFill: Some(DIB_4BPP_ColorFill),
+        DIB_AlphaBlend: Some(DIB_XXBPP_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(DIB_8BPP_PutPixel),
-        GetPixel: Some(DIB_8BPP_GetPixel),
-        HLine: Some(DIB_8BPP_HLine),
-        VLine: Some(DIB_8BPP_VLine),
-        BitBlt: Some(DIB_8BPP_BitBlt),
-        BitBltSrcCopy: Some(DIB_8BPP_BitBltSrcCopy),
-        StretchBlt: Some(DIB_XXBPP_StretchBlt),
-        TransparentBlt: Some(DIB_8BPP_TransparentBlt),
-        ColorFill: Some(DIB_8BPP_ColorFill),
-        AlphaBlend: Some(DIB_XXBPP_AlphaBlend),
+        DIB_PutPixel: Some(DIB_8BPP_PutPixel),
+        DIB_GetPixel: Some(DIB_8BPP_GetPixel),
+        DIB_HLine: Some(DIB_8BPP_HLine),
+        DIB_VLine: Some(DIB_8BPP_VLine),
+        DIB_BitBlt: Some(DIB_8BPP_BitBlt),
+        DIB_BitBltSrcCopy: Some(DIB_8BPP_BitBltSrcCopy),
+        DIB_StretchBlt: Some(DIB_XXBPP_StretchBlt),
+        DIB_TransparentBlt: Some(DIB_8BPP_TransparentBlt),
+        DIB_ColorFill: Some(DIB_8BPP_ColorFill),
+        DIB_AlphaBlend: Some(DIB_XXBPP_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(DIB_16BPP_PutPixel),
-        GetPixel: Some(DIB_16BPP_GetPixel),
-        HLine: Some(DIB_16BPP_HLine),
-        VLine: Some(DIB_16BPP_VLine),
-        BitBlt: Some(DIB_16BPP_BitBlt),
-        BitBltSrcCopy: Some(DIB_16BPP_BitBltSrcCopy),
-        StretchBlt: Some(DIB_XXBPP_StretchBlt),
-        TransparentBlt: Some(DIB_16BPP_TransparentBlt),
-        ColorFill: Some(DIB_16BPP_ColorFill),
-        AlphaBlend: Some(DIB_16BPP_AlphaBlend),
+        DIB_PutPixel: Some(DIB_16BPP_PutPixel),
+        DIB_GetPixel: Some(DIB_16BPP_GetPixel),
+        DIB_HLine: Some(DIB_16BPP_HLine),
+        DIB_VLine: Some(DIB_16BPP_VLine),
+        DIB_BitBlt: Some(DIB_16BPP_BitBlt),
+        DIB_BitBltSrcCopy: Some(DIB_16BPP_BitBltSrcCopy),
+        DIB_StretchBlt: Some(DIB_XXBPP_StretchBlt),
+        DIB_TransparentBlt: Some(DIB_16BPP_TransparentBlt),
+        DIB_ColorFill: Some(DIB_16BPP_ColorFill),
+        DIB_AlphaBlend: Some(DIB_16BPP_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(DIB_24BPP_PutPixel),
-        GetPixel: Some(DIB_24BPP_GetPixel),
-        HLine: Some(DIB_24BPP_HLine),
-        VLine: Some(DIB_24BPP_VLine),
-        BitBlt: Some(DIB_24BPP_BitBlt),
-        BitBltSrcCopy: Some(DIB_24BPP_BitBltSrcCopy),
-        StretchBlt: Some(DIB_XXBPP_StretchBlt),
-        TransparentBlt: Some(DIB_24BPP_TransparentBlt),
-        ColorFill: Some(DIB_24BPP_ColorFill),
-        AlphaBlend: Some(DIB_24BPP_AlphaBlend),
+        DIB_PutPixel: Some(DIB_24BPP_PutPixel),
+        DIB_GetPixel: Some(DIB_24BPP_GetPixel),
+        DIB_HLine: Some(DIB_24BPP_HLine),
+        DIB_VLine: Some(DIB_24BPP_VLine),
+        DIB_BitBlt: Some(DIB_24BPP_BitBlt),
+        DIB_BitBltSrcCopy: Some(DIB_24BPP_BitBltSrcCopy),
+        DIB_StretchBlt: Some(DIB_XXBPP_StretchBlt),
+        DIB_TransparentBlt: Some(DIB_24BPP_TransparentBlt),
+        DIB_ColorFill: Some(DIB_24BPP_ColorFill),
+        DIB_AlphaBlend: Some(DIB_24BPP_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(DIB_32BPP_PutPixel),
-        GetPixel: Some(DIB_32BPP_GetPixel),
-        HLine: Some(DIB_32BPP_HLine),
-        VLine: Some(DIB_32BPP_VLine),
-        BitBlt: Some(DIB_32BPP_BitBlt),
-        BitBltSrcCopy: Some(DIB_32BPP_BitBltSrcCopy),
-        StretchBlt: Some(DIB_XXBPP_StretchBlt),
-        TransparentBlt: Some(DIB_32BPP_TransparentBlt),
-        ColorFill: Some(DIB_32BPP_ColorFill),
-        AlphaBlend: Some(DIB_32BPP_AlphaBlend),
+        DIB_PutPixel: Some(DIB_32BPP_PutPixel),
+        DIB_GetPixel: Some(DIB_32BPP_GetPixel),
+        DIB_HLine: Some(DIB_32BPP_HLine),
+        DIB_VLine: Some(DIB_32BPP_VLine),
+        DIB_BitBlt: Some(DIB_32BPP_BitBlt),
+        DIB_BitBltSrcCopy: Some(DIB_32BPP_BitBltSrcCopy),
+        DIB_StretchBlt: Some(DIB_XXBPP_StretchBlt),
+        DIB_TransparentBlt: Some(DIB_32BPP_TransparentBlt),
+        DIB_ColorFill: Some(DIB_32BPP_ColorFill),
+        DIB_AlphaBlend: Some(DIB_32BPP_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(Dummy_PutPixel),
-        GetPixel: Some(Dummy_GetPixel),
-        HLine: Some(Dummy_HLine),
-        VLine: Some(Dummy_VLine),
-        BitBlt: Some(Dummy_BitBlt),
-        BitBltSrcCopy: Some(Dummy_BitBlt),
-        StretchBlt: Some(Dummy_StretchBlt),
-        TransparentBlt: Some(Dummy_TransparentBlt),
-        ColorFill: Some(Dummy_ColorFill),
-        AlphaBlend: Some(Dummy_AlphaBlend),
+        DIB_PutPixel: Some(Dummy_PutPixel),
+        DIB_GetPixel: Some(Dummy_GetPixel),
+        DIB_HLine: Some(Dummy_HLine),
+        DIB_VLine: Some(Dummy_VLine),
+        DIB_BitBlt: Some(Dummy_BitBlt),
+        DIB_BitBltSrcCopy: Some(Dummy_BitBlt),
+        DIB_StretchBlt: Some(Dummy_StretchBlt),
+        DIB_TransparentBlt: Some(Dummy_TransparentBlt),
+        DIB_ColorFill: Some(Dummy_ColorFill),
+        DIB_AlphaBlend: Some(Dummy_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(Dummy_PutPixel),
-        GetPixel: Some(Dummy_GetPixel),
-        HLine: Some(Dummy_HLine),
-        VLine: Some(Dummy_VLine),
-        BitBlt: Some(Dummy_BitBlt),
-        BitBltSrcCopy: Some(Dummy_BitBlt),
-        StretchBlt: Some(Dummy_StretchBlt),
-        TransparentBlt: Some(Dummy_TransparentBlt),
-        ColorFill: Some(Dummy_ColorFill),
-        AlphaBlend: Some(Dummy_AlphaBlend),
+        DIB_PutPixel: Some(Dummy_PutPixel),
+        DIB_GetPixel: Some(Dummy_GetPixel),
+        DIB_HLine: Some(Dummy_HLine),
+        DIB_VLine: Some(Dummy_VLine),
+        DIB_BitBlt: Some(Dummy_BitBlt),
+        DIB_BitBltSrcCopy: Some(Dummy_BitBlt),
+        DIB_StretchBlt: Some(Dummy_StretchBlt),
+        DIB_TransparentBlt: Some(Dummy_TransparentBlt),
+        DIB_ColorFill: Some(Dummy_ColorFill),
+        DIB_AlphaBlend: Some(Dummy_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(Dummy_PutPixel),
-        GetPixel: Some(Dummy_GetPixel),
-        HLine: Some(Dummy_HLine),
-        VLine: Some(Dummy_VLine),
-        BitBlt: Some(Dummy_BitBlt),
-        BitBltSrcCopy: Some(Dummy_BitBlt),
-        StretchBlt: Some(Dummy_StretchBlt),
-        TransparentBlt: Some(Dummy_TransparentBlt),
-        ColorFill: Some(Dummy_ColorFill),
-        AlphaBlend: Some(Dummy_AlphaBlend),
+        DIB_PutPixel: Some(Dummy_PutPixel),
+        DIB_GetPixel: Some(Dummy_GetPixel),
+        DIB_HLine: Some(Dummy_HLine),
+        DIB_VLine: Some(Dummy_VLine),
+        DIB_BitBlt: Some(Dummy_BitBlt),
+        DIB_BitBltSrcCopy: Some(Dummy_BitBlt),
+        DIB_StretchBlt: Some(Dummy_StretchBlt),
+        DIB_TransparentBlt: Some(Dummy_TransparentBlt),
+        DIB_ColorFill: Some(Dummy_ColorFill),
+        DIB_AlphaBlend: Some(Dummy_AlphaBlend),
     },
     DIB_FUNCTIONS {
-        PutPixel: Some(Dummy_PutPixel),
-        GetPixel: Some(Dummy_GetPixel),
-        HLine: Some(Dummy_HLine),
-        VLine: Some(Dummy_VLine),
-        BitBlt: Some(Dummy_BitBlt),
-        BitBltSrcCopy: Some(Dummy_BitBlt),
-        StretchBlt: Some(Dummy_StretchBlt),
-        TransparentBlt: Some(Dummy_TransparentBlt),
-        ColorFill: Some(Dummy_ColorFill),
-        AlphaBlend: Some(Dummy_AlphaBlend),
+        DIB_PutPixel: Some(Dummy_PutPixel),
+        DIB_GetPixel: Some(Dummy_GetPixel),
+        DIB_HLine: Some(Dummy_HLine),
+        DIB_VLine: Some(Dummy_VLine),
+        DIB_BitBlt: Some(Dummy_BitBlt),
+        DIB_BitBltSrcCopy: Some(Dummy_BitBlt),
+        DIB_StretchBlt: Some(Dummy_StretchBlt),
+        DIB_TransparentBlt: Some(Dummy_TransparentBlt),
+        DIB_ColorFill: Some(Dummy_ColorFill),
+        DIB_AlphaBlend: Some(Dummy_AlphaBlend),
     },
 ];
 
-unsafe fn DIB_DoRop(Rop: ULONG, Dest: ULONG, Source: ULONG, Pattern: ULONG) -> ULONG {
+#[no_mangle]
+pub unsafe extern "C" fn DIB_DoRop(Rop: ULONG, Dest: ULONG, Source: ULONG, Pattern: ULONG) -> ULONG {
     let mut ResultNibble: ULONG;
     let mut Result: ULONG = 0;
     let mut i: ULONG;
@@ -243,23 +311,23 @@ pub unsafe extern "C" fn Dummy_PutPixel(SurfObj: *mut SURFOBJ, x: LONG, y: LONG,
     return;
 }
 
-unsafe fn Dummy_GetPixel(SurfObj: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG {
+unsafe extern "C" fn Dummy_GetPixel(SurfObj: *mut SURFOBJ, x: LONG, y: LONG) -> ULONG {
     return 0;
 }
 
-unsafe fn Dummy_HLine(SurfObj: *mut SURFOBJ, x1: i32, x2: i32, y: i32, c: u32) {
+unsafe extern "C" fn Dummy_HLine(SurfObj: *mut SURFOBJ, x1: i32, x2: i32, y: i32, c: u32) {
     return;
 }
 
-unsafe fn Dummy_VLine(SurfObj: *mut SURFOBJ, x: i32, y1: i32, y2: i32, c: u32) {
+unsafe extern "C" fn Dummy_VLine(SurfObj: *mut SURFOBJ, x: i32, y1: i32, y2: i32, c: u32) {
     return;
 }
 
-unsafe fn Dummy_BitBlt(BltInfo: PBLTINFO) -> BOOLEAN {
+unsafe extern "C" fn Dummy_BitBlt(BltInfo: PBLTINFO) -> BOOLEAN {
     0u8
 }
 
-unsafe fn Dummy_StretchBlt(
+unsafe extern "C" fn Dummy_StretchBlt(
     DestSurf: *mut SURFOBJ,
     SourceSurf: *mut SURFOBJ,
     PatternSurface: *mut SURFOBJ,
@@ -275,7 +343,7 @@ unsafe fn Dummy_StretchBlt(
     0u8
 }
 
-unsafe fn Dummy_TransparentBlt(
+unsafe extern "C" fn Dummy_TransparentBlt(
     DestSurf: *mut SURFOBJ,
     SourceSurf: *mut SURFOBJ,
     DestRect: *mut RECTL,
@@ -286,11 +354,11 @@ unsafe fn Dummy_TransparentBlt(
     0u8
 }
 
-unsafe fn Dummy_ColorFill(Dest: *mut SURFOBJ, DestRect: *mut RECTL, Color: u32) -> u8 {
+unsafe extern "C" fn Dummy_ColorFill(Dest: *mut SURFOBJ, DestRect: *mut RECTL, Color: u32) -> u8 {
     0u8
 }
 
-unsafe fn Dummy_AlphaBlend(
+unsafe extern "C" fn Dummy_AlphaBlend(
     Dest: *mut SURFOBJ,
     Source: *mut SURFOBJ,
     DestRect: *mut RECTL,

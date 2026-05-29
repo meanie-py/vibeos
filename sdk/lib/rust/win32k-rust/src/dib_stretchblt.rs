@@ -2,26 +2,14 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 use crate::dib_helpers::*;
 
-extern "system" {
+// DIB_DoRop is cdecl in C (dib.rs). The fn*_GetPixel/PutPixel are LOCAL
+// fn-pointer vars below (the rustconv output also phantom-externed them, and
+// IS_VALID_ROP4 which is a macro) — dropped. DibFunctionsForBitmapFormat
+// (dib.rs) declared with the real [_; 11] layout for correct stride/offsets
+// (the win32k_sys bindgen glob is `[DIB_FUNCTIONS; 0]`).
+extern "C" {
     fn DIB_DoRop(rop: ROP4, dest: u32, source: u32, pattern: u32) -> u32;
-    fn IS_VALID_ROP4(rop: ROP4) -> u32;
-    fn fnDest_GetPixel(surf: *mut SURFOBJ, x: i32, y: i32) -> u32;
-    fn fnDest_PutPixel(surf: *mut SURFOBJ, x: i32, y: i32, color: u32);
-    fn fnMask_GetPixel(surf: *mut SURFOBJ, x: i32, y: i32) -> u32;
-    fn fnPattern_GetPixel(surf: *mut SURFOBJ, x: i32, y: i32) -> u32;
-    fn fnSource_GetPixel(surf: *mut SURFOBJ, x: i32, y: i32) -> u32;
-    static DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 32];
-}
-
-// ---- file-scope preamble (translated) ----
-// No file-scope declarations to translate from the given preamble.
-// The #define NDEBUG is a preprocessor directive that affects debug builds
-// and does not translate to Rust runtime code.
-
-#[repr(C)]
-struct DIB_FUNCTIONS {
-    DIB_GetPixel: PFN_DIB_GetPixel,
-    DIB_PutPixel: PFN_DIB_PutPixel,
+    static DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 11];
 }
 
 #[no_mangle]

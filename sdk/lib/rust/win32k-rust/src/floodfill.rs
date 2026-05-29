@@ -2,8 +2,16 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 use crate::dib_helpers::*;
 
-extern "system" {
-    fn RECTL_bPointInRect(rect: *mut RECTL, x: ULONG, y: ULONG) -> BOOL;
+// RECTL_bPointInRect is FORCEINLINE in rect.h (no exported symbol) — inline it.
+#[inline(always)]
+unsafe fn RECTL_bPointInRect(prcl: *const RECTL, x: INT, y: INT) -> BOOL {
+    ((x >= (*prcl).left && x < (*prcl).right && y >= (*prcl).top && y < (*prcl).bottom) as BOOL)
+}
+// DibFunctionsForBitmapFormat (defined #[no_mangle] in dib.rs) — declared with
+// the real [_; 11] layout so indexing uses the correct stride (the win32k_sys
+// bindgen glob is `[DIB_FUNCTIONS; 0]`, useless). dib_helpers cross-module pattern.
+extern "C" {
+    static DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 11];
 }
 
 // ---- file-scope preamble (translated) ----
@@ -31,7 +39,7 @@ unsafe fn initFlood(info: *mut FLOODINFO, DstRect: *mut RECTL) -> u8 {
     let height = (*DstRect).bottom - (*DstRect).top;
     (*info).floodData = ExAllocatePoolWithTag(
         NonPagedPool,
-        (width * height * core::mem::size_of::<FLOODITEM>() as u32) as usize,
+        (width as u32 * height as u32 * core::mem::size_of::<FLOODITEM>() as u32) as SIZE_T,
         0x20424944u32,
     ) as *mut FLOODITEM;
     if (*info).floodData.is_null() {
@@ -55,7 +63,7 @@ unsafe fn addItemFlood(
     isSurf: BOOL,
 ) {
 
-    if RECTL_bPointInRect(DstRect, x, y) != 0 {
+    if RECTL_bPointInRect(DstRect, x as INT, y as INT) != 0 {
         if isSurf != 0
             && DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize]
                 .DIB_GetPixel
@@ -106,7 +114,7 @@ pub unsafe extern "C" fn DIB_XXBPP_FloodFillSolid(
     y = (*Origin).y as ULONG;
 
     if FillType == FLOODFILLBORDER {
-        if DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_GetPixel.unwrap()(DstSurf, x, y) == ConvColor {
+        if DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_GetPixel.unwrap()(DstSurf, x as i32, y as i32) == ConvColor {
             return 0u8;
         }
 
@@ -119,7 +127,7 @@ pub unsafe extern "C" fn DIB_XXBPP_FloodFillSolid(
             y = (*flood.floodStart).y;
             removeItemFlood(&mut flood);
 
-            DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_PutPixel.unwrap()(DstSurf, x, y, BrushColor);
+            DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_PutPixel.unwrap()(DstSurf, x as i32, y as i32, BrushColor);
             if flood.floodStart.offset(-4) < flood.floodData {
                 finalizeFlood(&mut flood);
                 return 0u8;
@@ -131,7 +139,7 @@ pub unsafe extern "C" fn DIB_XXBPP_FloodFillSolid(
         }
         finalizeFlood(&mut flood);
     } else if FillType == FLOODFILLSURFACE {
-        if DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_GetPixel.unwrap()(DstSurf, x, y) != ConvColor {
+        if DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_GetPixel.unwrap()(DstSurf, x as i32, y as i32) != ConvColor {
             return 0u8;
         }
 
@@ -144,7 +152,7 @@ pub unsafe extern "C" fn DIB_XXBPP_FloodFillSolid(
             y = (*flood.floodStart).y;
             removeItemFlood(&mut flood);
 
-            DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_PutPixel.unwrap()(DstSurf, x, y, BrushColor);
+            DibFunctionsForBitmapFormat[(*DstSurf).iBitmapFormat as usize].DIB_PutPixel.unwrap()(DstSurf, x as i32, y as i32, BrushColor);
             if flood.floodStart.offset(-4) < flood.floodData {
                 finalizeFlood(&mut flood);
                 return 0u8;

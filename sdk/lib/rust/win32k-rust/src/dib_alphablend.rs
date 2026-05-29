@@ -2,48 +2,42 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 use crate::dib_helpers::*;
 
+// EXLATEOBJ_vInitialize/Cleanup are NTAPI (xlateobj.c); ppalSrc/ppalDst are
+// PALETTE* in C. gpalRGB (a PALETTE) comes from the win32k_sys glob.
 extern "system" {
-    fn EXLATEOBJ_vCleanup(exlate: *mut EXLATEOBJ);
-    fn EXLATEOBJ_vInitialize(exlate: *mut EXLATEOBJ, ppalSrc: *mut core::ffi::c_void, ppalDst: *mut core::ffi::c_void, arg3: u32, arg4: u32, arg5: u32);
-    fn pfnDibPutPixel(surf: *mut SURFOBJ, x: i32, y: i32, color: u32);
-    static gpalRGB: core::ffi::c_void;
-    static DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 256];
+    fn EXLATEOBJ_vInitialize(
+        exlo: *mut EXLATEOBJ,
+        ppalSrc: *mut _PALETTE,
+        ppalDst: *mut _PALETTE,
+        crSrcBackColor: COLORREF,
+        crDstBackColor: COLORREF,
+        crDstForeColor: COLORREF,
+    );
+    fn EXLATEOBJ_vCleanup(exlo: *mut EXLATEOBJ);
+}
+// The DibFunctionsForBitmapFormat dispatch table (defined #[no_mangle] in
+// dib.rs); declared here with the real DIB_FUNCTIONS layout so per-format
+// PutPixel indexing uses the correct stride (the dib_helpers cross-module
+// pattern). `[_; 11]` matches the table length.
+extern "C" {
+    static DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 11];
 }
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub union NICEPIXEL32 {
     pub ul: ULONG,
     pub col: NICEPIXEL32_col,
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct NICEPIXEL32_col {
     pub red: UCHAR,
     pub green: UCHAR,
     pub blue: UCHAR,
     pub alpha: UCHAR,
-}
-
-#[inline(always)]
-
-#[repr(C)]
-union NICEPIXEL32 {
-    ul: u32,
-    col: NICEPIXEL32_col,
-}
-
-#[repr(C)]
-struct NICEPIXEL32_col {
-    red: u8,
-    green: u8,
-    blue: u8,
-    alpha: u8,
-}
-
-#[repr(C)]
-struct DIB_FUNCTIONS {
-    DIB_PutPixel: PFN_DIB_PutPixel,
 }
 
 unsafe fn Clamp8(val: u32) -> u8 {
@@ -65,10 +59,10 @@ pub unsafe extern "C" fn DIB_XXBPP_AlphaBlend(
     let mut SrcX: i32;
     let mut SrcY: i32;
     let BlendFunc: BLENDFUNCTION;
-    let mut DstPixel32: NICEPIXEL32;
-    let mut SrcPixel32: NICEPIXEL32;
+    let mut DstPixel32: NICEPIXEL32 = core::mem::zeroed();
+    let mut SrcPixel32: NICEPIXEL32 = core::mem::zeroed();
     let mut Alpha: u8;
-    let SrcBpp: u8 = BitsPerFormat((*Source).iBitmapFormat);
+    let SrcBpp: u32 = BitsPerFormat((*Source).iBitmapFormat);
     let pexlo: *mut EXLATEOBJ;
     let mut exloSrcRGB: EXLATEOBJ = core::mem::zeroed();
     let mut exloDstRGB: EXLATEOBJ = core::mem::zeroed();
@@ -76,16 +70,16 @@ pub unsafe extern "C" fn DIB_XXBPP_AlphaBlend(
     let pfnDibPutPixel: PFN_DIB_PutPixel = (*DibFunctionsForBitmapFormat.as_ptr().add((*Dest).iBitmapFormat as usize)).DIB_PutPixel;
 
     BlendFunc = (*BlendObj).BlendFunction;
-    if BlendFunc.BlendOp != AC_SRC_OVER {
+    if BlendFunc.BlendOp as u32 != AC_SRC_OVER {
         return 0u8;
     }
     if BlendFunc.BlendFlags != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & !AC_SRC_ALPHA) != 0 {
+    if (BlendFunc.AlphaFormat as u32 & !AC_SRC_ALPHA) != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 && SrcBpp != 32 {
+    if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 && SrcBpp != 32 {
         return 0u8;
     }
 
@@ -97,7 +91,7 @@ pub unsafe extern "C" fn DIB_XXBPP_AlphaBlend(
     EXLATEOBJ_vInitialize(
         core::ptr::addr_of_mut!(exloSrcRGB),
         (*pexlo).ppalSrc,
-        core::ptr::addr_of!(gpalRGB) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!(gpalRGB),
         0,
         0,
         0,
@@ -105,14 +99,14 @@ pub unsafe extern "C" fn DIB_XXBPP_AlphaBlend(
     EXLATEOBJ_vInitialize(
         core::ptr::addr_of_mut!(exloDstRGB),
         (*pexlo).ppalDst,
-        core::ptr::addr_of!(gpalRGB) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!(gpalRGB),
         0,
         0,
         0,
     );
     EXLATEOBJ_vInitialize(
         core::ptr::addr_of_mut!(exloRGBSrc),
-        core::ptr::addr_of!(gpalRGB) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!(gpalRGB),
         (*pexlo).ppalSrc,
         0,
         0,
@@ -130,7 +124,7 @@ pub unsafe extern "C" fn DIB_XXBPP_AlphaBlend(
             SrcPixel32.col.green = (SrcPixel32.col.green as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8;
             SrcPixel32.col.blue = (SrcPixel32.col.blue as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8;
 
-            Alpha = if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 {
+            Alpha = if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 {
                 (SrcPixel32.col.alpha as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8
             } else {
                 BlendFunc.SourceConstantAlpha

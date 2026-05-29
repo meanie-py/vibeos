@@ -53,15 +53,15 @@ add_custom_command(
 
 list(APPEND SOURCE
     safe_user_io.c
-    gdi/dib/alphablend.c
+    # gdi/dib/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_alphablend.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_AlphaBlend]
     # gdi/dib/dib1bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib1bpp.rs) — cohabitation [Phase 2b dib wave 1]
     # gdi/dib/dib4bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib4bpp.rs) — cohabitation [Phase 2b dib wave 1]
     # gdi/dib/dib8bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib8bpp.rs) — cohabitation [Phase 2b dib wave 1]
     # gdi/dib/dib16bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib16bpp.rs) — cohabitation [Phase 2b dib wave 2]
     # gdi/dib/dib24bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib24bpp.rs) — cohabitation [Phase 2b dib wave 2]
     # gdi/dib/dib32bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib32bpp.rs) — cohabitation [Phase 2b dib wave 2]
-    gdi/dib/floodfill.c
-    gdi/dib/stretchblt.c
+    # gdi/dib/floodfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/floodfill.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_FloodFillSolid]
+    # gdi/dib/stretchblt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_stretchblt.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_StretchBlt]
     # gdi/eng/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/alphablend.rs) — cohabitation [Phase 2a wave 2]
     # gdi/eng/bitblt.c     # replaced by Rust (cohabitation, bisect iter 8)
     # gdi/eng/engbrush.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/engbrush.rs) — bisect ON
@@ -215,7 +215,7 @@ if(USE_DIBLIB)
         gdi/eng/bitblt_new.c)
 else()
     list(APPEND SOURCE
-        gdi/dib/dib.c
+        # gdi/dib/dib.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib.rs) — cohabitation [Phase 2b dib wave 2b: table + DIB_DoRop + Dummy_*]
         # gdi/eng/copybits.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/copybits.rs) — cohabitation
         ${GENDIB_FILES})
 endif()
@@ -324,6 +324,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_alphablend.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_stretchblt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/floodfill.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

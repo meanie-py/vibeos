@@ -91,14 +91,19 @@ pub mod dib1bpp; pub mod dib4bpp; pub mod dib8bpp;
 // use (the asm was a micro-opt, not behavior). C flipped off in
 // win32ss/CMakeLists.txt SOURCE.
 pub mod dib16bpp; pub mod dib24bpp; pub mod dib32bpp;
-// Wave 2b — PARKED: translated + on disk, integration WIP (C stays live).
-// dib_alphablend/dib_stretchblt have a local DIB_FUNCTIONS struct + wrong-ABI
-// DIB_DoRop import; floodfill needs LONG-vs-ULONG coordinate retyping + a local
-// table decl. dib.rs is the DibFunctionsForBitmapFormat fn-pointer table +
-// DIB_DoRop + Dummy_* — enabling it must coordinate with dib_helpers' private
-// table extern. Finish these next pass.
-// pub mod floodfill; pub mod dib_alphablend; pub mod dib_stretchblt;
-// pub mod dib;
+// Wave 2b — the dispatch engine. dib.rs is the DibFunctionsForBitmapFormat
+// fn-pointer table (11 formats) + DIB_DoRop + Dummy_* + notmask/altnotmask;
+// dib_alphablend/dib_stretchblt/floodfill are the generic DIB_XXBPP_* ops the
+// table points at for the formats without a native impl. The table entries are
+// `Some(fn)` over win32k_sys's DIB_FUNCTIONS (bindgen field names are DIB_*-
+// prefixed, NOT the unprefixed names rustconv emitted); per-format fns are
+// declared in an extern "C" block and resolved cross-module by the linker.
+// Consumers (alphablend/stretchblt/floodfill) declare the table locally with
+// the real [_;11] layout (the win32k_sys glob is [_;0] — wrong stride).
+// C flipped off in win32ss/CMakeLists.txt (dib.c in the !USE_DIBLIB else-branch
+// + alphablend.c/stretchblt.c/floodfill.c). The whole gdi/dib cluster is Rust.
+pub mod floodfill; pub mod dib_alphablend; pub mod dib_stretchblt;
+pub mod dib;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
