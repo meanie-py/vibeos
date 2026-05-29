@@ -25,7 +25,10 @@ typedef unsigned short  WCHAR;
 typedef WCHAR          *PWCHAR;
 typedef unsigned short  USHORT;
 typedef unsigned long   ULONG;
-typedef unsigned int    SIZE_T;   /* size_t on i386 (matches Rust usize) */
+typedef __SIZE_TYPE__   SIZE_T;   /* pointer-width size_t — MUST match Rust usize
+                                   * (4 bytes on i386, 8 on amd64/arm64). Using a
+                                   * fixed `unsigned int` here silently truncated
+                                   * the byte-counts on 64-bit. */
 
 typedef struct _UNICODE_STRING {
     USHORT Length;
@@ -36,6 +39,39 @@ typedef struct _UNICODE_STRING {
 #define STATUS_SUCCESS            ((NTSTATUS)0x00000000L)
 #define STATUS_BUFFER_OVERFLOW    ((NTSTATUS)0x80000005L)
 #define STATUS_INVALID_PARAMETER  ((NTSTATUS)0xC000000DL)
+
+/*
+ * 64-bit only: the (C-shadowed, dormant) consrv Rust members in
+ * libwinsrv_rust.a — consrv/condrv/coninput.rs, frontends/terminal.rs —
+ * extern-reference these MSVC intrinsics and IsListEmpty with PLAIN
+ * (undecorated) names. On i386 the references are `@N`-decorated and resolve
+ * via libcntpr, so they never reach this link; on amd64/arm64 they're
+ * undecorated and unprovided → undefined-symbol link failure. Provide them
+ * here (gated to 64-bit so i386's libcntpr path is untouched). These are not
+ * MSVC-builtin-named on the def side here — we forward to __atomic builtins.
+ */
+#if defined(__x86_64__) || defined(__aarch64__)
+/* `_Interlocked*` are clang builtins, so we can't define functions by that
+ * literal name; declare under a private C identifier with an asm label that
+ * emits the exact symbol the consrv Rust members reference. */
+long winsrv_shim_interlocked_inc(long volatile *addend) __asm__("_InterlockedIncrement");
+long winsrv_shim_interlocked_dec(long volatile *addend) __asm__("_InterlockedDecrement");
+
+long winsrv_shim_interlocked_inc(long volatile *addend)
+{
+    return __atomic_add_fetch(addend, 1, __ATOMIC_SEQ_CST);
+}
+long winsrv_shim_interlocked_dec(long volatile *addend)
+{
+    return __atomic_sub_fetch(addend, 1, __ATOMIC_SEQ_CST);
+}
+/* IsListEmpty(ListHead) — LIST_ENTRY.Flink is the first field; empty iff it
+ * points back at the head. Returns BOOLEAN (UCHAR). */
+unsigned char IsListEmpty(const void *ListHead)
+{
+    return (unsigned char)(*(const void *const *)ListHead == ListHead);
+}
+#endif
 
 /* libcntpr — wide vsnprintf; writes at most `count` wchars (incl. NUL on
  * success), returns the number written, or a negative value on truncation. */
