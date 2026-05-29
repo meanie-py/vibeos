@@ -307,7 +307,7 @@ pub unsafe extern "system" fn RtlpFindAvlTableNodeOrParent(
             if !lc.is_null() {
                 current = lc;
             } else {
-                *node_or_parent = current;
+                core::ptr::write_volatile(node_or_parent, current);
                 return TABLE_INSERT_AS_LEFT;
             }
         } else if cmp > 0 {
@@ -315,11 +315,11 @@ pub unsafe extern "system" fn RtlpFindAvlTableNodeOrParent(
             if !rc.is_null() {
                 current = rc;
             } else {
-                *node_or_parent = current;
+                core::ptr::write_volatile(node_or_parent, current);
                 return TABLE_INSERT_AS_RIGHT;
             }
         } else {
-            *node_or_parent = current;
+            core::ptr::write_volatile(node_or_parent, current);
             return TABLE_FOUND_NODE;
         }
     }

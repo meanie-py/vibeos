@@ -373,29 +373,32 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
     
     if (*BaseAddress).is_null() {
         let tmpLength = ((Length + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
-        *BaseAddress = MmFindGap(
+        let found_base = MmFindGap(
             AddressSpace,
             tmpLength,
             Granularity as ULONG_PTR,
             if (AllocationFlags & MEM_TOP_DOWN as ULONG) == MEM_TOP_DOWN as ULONG { 1 } else { 0 },
         );
+        core::ptr::write_volatile(BaseAddress, found_base);
         
-        if (*BaseAddress).is_null() {
+        if found_base.is_null() {
             if (Type & MEMORY_AREA_STATIC) == 0 {
                 ExFreePoolWithTag(MemoryArea as PVOID, TAG_MAREA);
             }
             return STATUS_NO_MEMORY;
         }
         
-        (*MemoryArea).VadNode.StartingVpn = ((*BaseAddress) as ULONG_PTR >> PAGE_SHIFT) as _;
-        (*MemoryArea).VadNode.EndingVpn = (((*BaseAddress) as ULONG_PTR + tmpLength - 1) >> PAGE_SHIFT) as _;
+        (*MemoryArea).VadNode.StartingVpn = (found_base as ULONG_PTR >> PAGE_SHIFT) as _;
+        (*MemoryArea).VadNode.EndingVpn = ((found_base as ULONG_PTR + tmpLength - 1) >> PAGE_SHIFT) as _;
         MmInsertMemoryArea(AddressSpace, MemoryArea, Protect);
     } else {
-        let EndingAddress = ((*BaseAddress) as ULONG_PTR + Length - 1) | (PAGE_SIZE - 1);
-        *BaseAddress = ((*BaseAddress) as ULONG_PTR & !(Granularity as usize - 1)) as PVOID;
-        let tmpLength = EndingAddress + 1 - (*BaseAddress) as ULONG_PTR;
+        let input_base = core::ptr::read_volatile(BaseAddress);
+        let EndingAddress = (input_base as ULONG_PTR + Length - 1) | (PAGE_SIZE - 1);
+        let aligned_base = (input_base as ULONG_PTR & !(Granularity as usize - 1)) as PVOID;
+        core::ptr::write_volatile(BaseAddress, aligned_base);
+        let tmpLength = EndingAddress + 1 - aligned_base as ULONG_PTR;
         
-        if MmGetAddressSpaceOwner(AddressSpace).is_null() && (*BaseAddress) < MmSystemRangeStart {
+        if MmGetAddressSpaceOwner(AddressSpace).is_null() && aligned_base < MmSystemRangeStart {
             if (Type & MEMORY_AREA_STATIC) == 0 {
                 ExFreePoolWithTag(MemoryArea as PVOID, TAG_MAREA);
             }
@@ -403,7 +406,7 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
         }
         
         if !MmGetAddressSpaceOwner(AddressSpace).is_null() &&
-            (*BaseAddress) as ULONG_PTR + (tmpLength as ULONG_PTR) > MmSystemRangeStart as ULONG_PTR {
+            aligned_base as ULONG_PTR + (tmpLength as ULONG_PTR) > MmSystemRangeStart as ULONG_PTR {
             if (Type & MEMORY_AREA_STATIC) == 0 {
                 ExFreePoolWithTag(MemoryArea as PVOID, TAG_MAREA);
             }
@@ -411,7 +414,7 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
         }
         
         if (*MemoryArea).Type != MEMORY_AREA_OWNED_BY_ARM3 {
-            if MmIsAddressRangeFree(AddressSpace, *BaseAddress, tmpLength) == 0 {
+            if MmIsAddressRangeFree(AddressSpace, aligned_base, tmpLength) == 0 {
                 if (Type & MEMORY_AREA_STATIC) == 0 {
                     ExFreePoolWithTag(MemoryArea as PVOID, TAG_MAREA);
                 }
@@ -419,12 +422,12 @@ pub unsafe extern "system" fn MmCreateMemoryArea(
             }
         }
         
-        (*MemoryArea).VadNode.StartingVpn = ((*BaseAddress) as ULONG_PTR >> PAGE_SHIFT) as _;
-        (*MemoryArea).VadNode.EndingVpn = (((*BaseAddress) as ULONG_PTR + tmpLength - 1) >> PAGE_SHIFT) as _;
+        (*MemoryArea).VadNode.StartingVpn = (aligned_base as ULONG_PTR >> PAGE_SHIFT) as _;
+        (*MemoryArea).VadNode.EndingVpn = ((aligned_base as ULONG_PTR + tmpLength - 1) >> PAGE_SHIFT) as _;
         MmInsertMemoryArea(AddressSpace, MemoryArea, Protect);
     }
     
-    *Result = MemoryArea;
+    core::ptr::write_volatile(Result, MemoryArea);
     
     STATUS_SUCCESS
 }
