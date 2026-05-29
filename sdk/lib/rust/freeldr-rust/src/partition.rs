@@ -383,11 +383,11 @@ pub unsafe extern "C" fn DiskGetPartitionEntry(
             return DiskGetMbrPartitionEntry(DriveNumber, PartitionNumber, PartitionTableEntry);
         }
         PARTITION_STYLE_GPT => {
-            #[cfg(feature = "UEFIBOOT")]
+            #[cfg(feature = "uefi")]
             {
                 return UefiGetGptPartitionEntry(DriveNumber, PartitionNumber, PartitionTableEntry);
             }
-            #[cfg(not(feature = "UEFIBOOT"))]
+            #[cfg(not(feature = "uefi"))]
             {
                 FIXME(b"DiskGetPartitionEntry() unimplemented for GPT\n\0".as_ptr() as PCHAR);
                 return 0u8;

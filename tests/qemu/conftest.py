@@ -130,6 +130,17 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
     # is never touched. Safe by construction; see vm.reap_orphan_qemus.
     for line in reap_orphan_qemus():
         print(f"[pytest] {line}")
+    # Also sweep kernel-debug-toolkit orphans (qemu/start.sh manifests with
+    # a dead owner_pid). The Python reaper above only knows the smoke
+    # harness's /tmp/vibeos-qemu-locks/ lockfiles; reap.sh covers both halves.
+    reap_sh = PROJECT_DIR / "qemu" / "reap.sh"
+    if reap_sh.is_file():
+        result = subprocess.run(
+            [str(reap_sh)], capture_output=True, text=True, check=False
+        )
+        for line in result.stderr.splitlines():
+            if line.startswith("[reap] killed") or line.startswith("[reap] FAILED"):
+                print(f"[pytest] {line}")
     if not request.config.getoption("--skip-clean-build"):
         _ensure_clean_rust_build(arch)
     _run_post_build_checks(arch)

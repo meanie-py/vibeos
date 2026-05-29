@@ -89,6 +89,7 @@ Quit:
     return 0;
 }
 
+DECLSPEC_NORETURN
 void
 ExecuteLoaderCleanly(PVOID PreviousStack)
 {
@@ -100,6 +101,7 @@ ExecuteLoaderCleanly(PVOID PreviousStack)
     /* RunLoader can return if no boot configuration was found */
     WARN("RunLoader returned, halting\n");
     Reboot();
+    UNREACHABLE;
 }
 
 #if !defined(_M_ARM)

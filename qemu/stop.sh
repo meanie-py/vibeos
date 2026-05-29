@@ -49,4 +49,12 @@ if kill -0 "$PID" 2>/dev/null; then
 fi
 
 manifest_set "$RUN_ID" stopped_at "$(date -u +%FT%TZ)"
+
+# Purge the shared lockfile if start.sh wrote one. Best-effort; the reaper
+# also cleans up stale locks naturally.
+OWNER_FIELD="$(manifest_get "$RUN_ID" owner_pid 2>/dev/null || echo null)"
+if [ -n "$OWNER_FIELD" ] && [ "$OWNER_FIELD" != "null" ]; then
+    rm -f "/tmp/vibeos-qemu-locks/${OWNER_FIELD}-${PID}.json" 2>/dev/null || true
+fi
+
 log_info "QEMU stopped (run-id=$RUN_ID)"

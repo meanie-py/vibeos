@@ -130,7 +130,23 @@ unsafe fn ConvertToBiosExtValue(KeyIn: UCHAR) -> UCHAR {
 #[cfg_attr(feature = "uefi", no_mangle)]
 pub unsafe extern "C" fn UefiConsKbHit() -> u8 {
     // C shares the file-scope `static EFI_INPUT_KEY Key` across KbHit/GetCh.
-    ((*(*GlobalSystemTable).ConIn).ReadKeyStroke.unwrap()((*GlobalSystemTable).ConIn, core::ptr::addr_of_mut!(Key)) != EFI_NOT_READY) as u8
+    //
+    // The C upstream uses `!= EFI_NOT_READY` as the "key available" predicate,
+    // which is wrong: only `EFI_SUCCESS` (0) means a valid key was read.
+    // Some firmwares (e.g. OVMF) appear to return success-with-empty-key in
+    // certain states, so additionally require non-zero key data. Otherwise
+    // every poll returns "key pressed" and the boot-menu timeout never ticks.
+    let status = ((*(*GlobalSystemTable).ConIn).ReadKeyStroke.unwrap())(
+        (*GlobalSystemTable).ConIn,
+        core::ptr::addr_of_mut!(Key),
+    );
+    if status == EFI_SUCCESS && (Key.UnicodeChar != 0 || Key.ScanCode != 0) {
+        1u8
+    } else {
+        Key.UnicodeChar = 0;
+        Key.ScanCode = 0;
+        0u8
+    }
 }
 
 #[cfg_attr(feature = "uefi", no_mangle)]

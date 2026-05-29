@@ -193,7 +193,7 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
     }
 
     Status = (*(*GlobalSystemTable).BootServices).AllocatePool.unwrap()(EfiLoaderData,
-                                                           ((DiskReadBufferSize + ((RequiredAlignment) as usize)) as u32),
+                                                           ((DiskReadBufferSize + ((RequiredAlignment) as usize)) as UINTN),
                                                            &mut DiskReadBufferRaw as *mut _ as *mut *mut core::ffi::c_void);
     if EFI_ERROR(Status) != 0 || DiskReadBufferRaw == core::ptr::null_mut()
     {
@@ -275,7 +275,7 @@ unsafe fn UefiReadGptHeader(
         BlockIo,
         (*(*BlockIo).Media).MediaId,
         HeaderLba,
-        BlockSize,
+        BlockSize as UINTN,
         DiskReadBuffer,
     );
 
@@ -305,7 +305,8 @@ unsafe fn UefiReadGptHeader(
     return 1u8;
 }
 
-unsafe fn UefiGetGptPartitionEntry(
+#[no_mangle]
+pub unsafe extern "C" fn UefiGetGptPartitionEntry(
     DriveNumber: UCHAR,
     PartitionNumber: ULONG,
     PartitionTableEntry: PPARTITION_TABLE_ENTRY,
@@ -360,7 +361,7 @@ unsafe fn UefiGetGptPartitionEntry(
         BlockIo,
         (*(*BlockIo).Media).MediaId,
         EntryLba,
-        BlockSize,
+        BlockSize as UINTN,
         DiskReadBuffer as *mut core::ffi::c_void,
     );
 
@@ -492,7 +493,7 @@ unsafe fn UefiGetBootPartitionEntry(
                 RootBlockIo,
                 (*(*RootBlockIo).Media).MediaId,
                 EntryLba,
-                BlockSize,
+                BlockSize as UINTN,
                 DiskReadBuffer as *mut core::ffi::c_void,
             );
 
@@ -772,7 +773,7 @@ unsafe extern "C" fn UefiDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count:
             BlockIo,
             (*(*BlockIo).Media).MediaId,
             SectorOffset,
-            ReadSectors * (*Context).SectorSize,
+            (ReadSectors * (*Context).SectorSize) as UINTN,
             DiskReadBuffer as PVOID,
         );
 
@@ -944,7 +945,7 @@ unsafe fn UefiSetupBlockDevices() {
         return;
     }
 
-    SystemHandleCount = HandleSize / ((core::mem::size_of::<EFI_HANDLE>()) as u32);
+    SystemHandleCount = (HandleSize / ((core::mem::size_of::<EFI_HANDLE>()) as UINTN)) as ULONG;
     if SystemHandleCount == 0 {
         ERR(b"No block devices found\n\0".as_ptr() as PCHAR);
         return;

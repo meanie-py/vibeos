@@ -5,3 +5,12 @@ edition = "2021"
 
 [lib]
 crate-type = ["rlib"]
+
+[features]
+# hal_bindgen on by default — kernel + HAL crates use it. Pre-kernel
+# consumers (freeldr-rust) opt out via `default-features = false` to
+# avoid rustc emitting raw-dylib import thunks for ntoskrnl.exe symbols
+# (NlsMb*/NlsOem*) that don't exist at freeldr's link time and conflict
+# with blrtl/nlsboot.c (task #33).
+default = ["hal_bindgen"]
+hal_bindgen = []

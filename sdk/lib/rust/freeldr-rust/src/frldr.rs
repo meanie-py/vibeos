@@ -287,7 +287,17 @@ pub fn ASSERT<T>(_cond: T) {}
 pub unsafe fn dbgcon(c: u8) {
     core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c, options(nostack, preserves_flags));
 }
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+// arm64 — write directly to PL011 UART DR at 0x9000000 (QEMU virt). Same
+// MMIO base as arm64_debug::Rs232PortPutByte. Lets the meminit dbgcon('M'/
+// 'C'/'1'/...) trace markers escape on arm64 (previously a no-op, hiding
+// any internal progress past `[freeldr] UI initialized`).
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub unsafe fn dbgcon(c: u8) {
+    let uart_dr = 0x0900_0000usize as *mut u32;
+    core::ptr::write_volatile(uart_dr, c as u32);
+}
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 #[inline(always)]
 pub unsafe fn dbgcon(_c: u8) {}
 
@@ -311,6 +321,13 @@ pub unsafe fn dbgcon_hex32(v: u32) {
     dbgcon_hex8(v >> 16);
     dbgcon_hex8(v >> 8);
     dbgcon_hex8(v);
+}
+
+/// Print eight bytes (u64) as 16 hex chars to debugcon.
+#[inline(always)]
+pub unsafe fn dbgcon_hex64(v: u64) {
+    dbgcon_hex32((v >> 32) as u32);
+    dbgcon_hex32(v as u32);
 }
 
 
@@ -846,6 +863,61 @@ pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE as CONFIGURATION_TYPE;
 pub const DiskPeripheral: CONFIGURATION_TYPE = 25;
 pub const FloppyDiskPeripheral: CONFIGURATION_TYPE = 26;
 
+// arc.h enum constants used by archwsup.c hardware-tree builder + freeldr
+// configuration translations. rustconv imports the bare unprefixed names
+// (`SystemClass`, `MaximumType`, `Failed`, …) — bindgen prefixes them
+// (`_CONFIGURATION_CLASS_SystemClass`, …). Keystone aliases each bare name.
+pub const MaximumType: CONFIGURATION_TYPE = 41;
+pub use ntkrnl_sys::ddk::_CONFIGURATION_CLASS as CONFIGURATION_CLASS;
+pub const SystemClass: CONFIGURATION_CLASS = 0;
+pub const ProcessorClass: CONFIGURATION_CLASS = 1;
+pub const CacheClass: CONFIGURATION_CLASS = 2;
+pub const AdapterClass: CONFIGURATION_CLASS = 3;
+pub const ControllerClass: CONFIGURATION_CLASS = 4;
+pub const PeripheralClass: CONFIGURATION_CLASS = 5;
+pub const MemoryClass: CONFIGURATION_CLASS = 6;
+pub const MaximumClass: CONFIGURATION_CLASS = 7;
+pub use ntkrnl_sys::ddk::_IDENTIFIER_FLAG as IDENTIFIER_FLAG;
+pub const Failed: IDENTIFIER_FLAG = 0x01;
+pub const ReadOnly: IDENTIFIER_FLAG = 0x02;
+pub const Removable: IDENTIFIER_FLAG = 0x04;
+pub const ConsoleIn: IDENTIFIER_FLAG = 0x08;
+pub const ConsoleOut: IDENTIFIER_FLAG = 0x10;
+pub const Input: IDENTIFIER_FLAG = 0x20;
+pub const Output: IDENTIFIER_FLAG = 0x40;
+
+// CCHAR — narrow ANSI char alias used by freeldr settings.c static buffers.
+// xdk: `typedef char CCHAR;` (signed on Win32 PE-COFF).
+pub type CCHAR = i8;
+
+// arc.h _ARC_DISK_SIGNATURE_EX (freeldr's ntldr/winldr.h extension wrapping
+// the kernel's ARC_DISK_SIGNATURE with the bundled ArcName buffer).
+// MAX_PATH = 260. Mirror C layout exactly (#[repr(C)]).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ARC_DISK_SIGNATURE_EX {
+    pub DiskSignature: ntkrnl_sys::ddk::ARC_DISK_SIGNATURE,
+    pub ArcName: [i8; 260],
+}
+pub type PARC_DISK_SIGNATURE_EX = *mut ARC_DISK_SIGNATURE_EX;
+
+// settings.h _BOOTMGRINFO — boot-manager settings populated by settings.c
+// from the command line and freeldr.ini. C declares FrLdrSection as
+// ULONG_PTR but the IniOpenSection callers pass &BootMgrInfo.FrLdrSection
+// as a (PVOID*) out-param. Layout-identical to ULONG_PTR on all targets
+// (sizeof(uintptr_t) == sizeof(void*)); keep as *mut c_void so callers
+// don't need raw casts on every use.
+#[repr(C)]
+pub struct BOOTMGRINFO {
+    pub DebugString: ntkrnl_sys::ddk::PCSTR,
+    pub VideoOptions: ntkrnl_sys::ddk::PCSTR,
+    pub DefaultOs: ntkrnl_sys::ddk::PCSTR,
+    pub TimeOut: i32,
+    pub FrLdrSection: *mut c_void, // ULONG_PTR (PVOID out-param holder)
+}
+unsafe impl Sync for BOOTMGRINFO {}
+pub type PBOOTMGRINFO = *mut BOOTMGRINFO;
+
 // ===========================================================================
 // pc-hw unit — shared real-mode BIOS surface (include/arch/pc/pcbios.h +
 // x86common.h). pshpack1 → packed; the Int386 asm thunk reads exact REGS
@@ -941,7 +1013,13 @@ pub unsafe extern "C" fn INT386_SUCCESS(regs: REGS) -> BOOLEAN {
 // Misc shared pc/hw symbols (unique — keystone-safe).
 pub type INT = i32;
 pub const TAG_HW_RESOURCE_LIST: ULONG = u32::from_be_bytes(*b"lRwH");
-pub const CmResourceTypeDeviceSpecific: u8 = 0x81; // CM_RESOURCE_TYPE
+// CM_RESOURCE_TYPE (cmtypes.h): CmResourceTypeDeviceSpecific is 5, NOT 0x81.
+// 0x81 (129) is CmResourceTypeDevicePrivate — a wrong value here made
+// uefihw::DetectDisplayController tag the framebuffer's DeviceSpecific
+// descriptor as 0x81, so arm64vid.sys (checking ==5) skipped it, never read
+// the CM_FRAMEBUF_DEVICE_DATA (ScreenWidth stayed 0), failed discovery, and
+// bugchecked 0xB4 VIDEO_DRIVER_INIT_FAILURE. machpc.rs already had it right.
+pub const CmResourceTypeDeviceSpecific: u8 = 5; // CM_RESOURCE_TYPE
 // arc.h IDENTIFIER_FLAG bits not already pulled from ddk by consumers.
 pub const IDENTIFIER_FLAG_Input: i32 = 0x20;
 pub const IDENTIFIER_FLAG_Output: i32 = 0x40;
@@ -989,7 +1067,19 @@ macro_rules! RTL_SIZEOF_THROUGH_FIELD {
 pub type UINT64 = u64;
 pub type INT16 = i16;
 pub type INT32 = i32;
-pub type UINTN = u32; // i386: typedef UINT32 UINTN;
+// UINTN/INTN are native UEFI pointer width — UINT64 on amd64+arm64,
+// UINT32 on i386. The 32-bit-everywhere hardcoding "worked" on amd64
+// (high stack-slot bytes happened to zero) but BREAKS arm64 freeldr's
+// GetMemoryMap retry loop: UEFI tries to write the 8-byte required size
+// into our 4-byte slot, overflowing into adjacent stack vars and corrupting
+// MapKey/DescriptorSize. Root-caused 2026-05-28 via dbgcon PL011 trace.
+#[cfg(target_pointer_width = "64")]
+pub type UINTN = u64;
+#[cfg(target_pointer_width = "32")]
+pub type UINTN = u32;
+#[cfg(target_pointer_width = "64")]
+pub type INTN = i64;
+#[cfg(target_pointer_width = "32")]
 pub type INTN = i32;
 pub type CHAR8 = i8;
 pub type CHAR16 = u16;

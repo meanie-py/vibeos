@@ -14,14 +14,19 @@ pub const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as NTSTATUS;
 
 extern "C" {
 }
-extern "system" {
+// freeldr.spec declares these cdecl — use extern "C" (NOT extern "system")
+// to match the cdecl decoration (no `@N` suffix) emitted by freeldr.sys.
+extern "C" {
     fn ArcSeek(FileId: usize, Position: *mut LARGE_INTEGER, SeekMode: u32) -> ARC_STATUS;
     fn ArcRead(FileId: usize, Buffer: *mut core::ffi::c_void, Length: u32, Count: *mut u32) -> ARC_STATUS;
     fn StallExecutionProcessor(MicroSeconds: ULONG);
 }
 
+// Ke* stubs MUST be extern "system" (NTAPI stdcall on i386 → `_Name@N`
+// decoration). Callers in rosload's winldr/bootmgr declare these via the
+// NTAPI macro and link expects the stdcall-decorated symbol.
 #[no_mangle]
-pub unsafe extern "C" fn KeInitializeEvent(
+pub unsafe extern "system" fn KeInitializeEvent(
     Event: PRKEVENT,
     Type: EVENT_TYPE,
     State: BOOLEAN,
@@ -30,7 +35,7 @@ pub unsafe extern "C" fn KeInitializeEvent(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KeSetTimeIncrement(
+pub unsafe extern "system" fn KeSetTimeIncrement(
     MaxIncrement: ULONG,
     MinIncrement: ULONG,
 ) {
@@ -313,7 +318,7 @@ pub unsafe extern "C" fn IoWritePartitionTable(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KeStallExecutionProcessor(
+pub unsafe extern "system" fn KeStallExecutionProcessor(
     MicroSeconds: ULONG,
 ) {
     StallExecutionProcessor(MicroSeconds);

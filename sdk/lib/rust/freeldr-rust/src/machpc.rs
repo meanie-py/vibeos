@@ -283,6 +283,10 @@ pub unsafe extern "C" fn MachDiskGetDriveGeometry(
     (MachVtbl.DiskGetDriveGeometry.unwrap())(DriveNumber, DriveGeometry)
 }
 #[no_mangle]
+pub unsafe extern "C" fn MachDiskGetCacheableBlockCount(DriveNumber: UCHAR) -> ULONG {
+    (MachVtbl.DiskGetCacheableBlockCount.unwrap())(DriveNumber)
+}
+#[no_mangle]
 pub unsafe extern "C" fn MachVideoPutChar(
     Ch: i32,
     Attr: UCHAR,

@@ -67,7 +67,8 @@ extern "C" {
     fn ArcGetFileInformation(FileId: u32, FileInfo: *mut FILEINFORMATION) -> ARC_STATUS;
     fn ArcOpen(Path: PSTR, OpenMode: u32, FileId: *mut u32) -> ARC_STATUS;
     fn ArcRead(FileId: u32, Buffer: *mut core::ffi::c_void, Length: u32, Count: *mut u32) -> ARC_STATUS;
-    fn MmAllocateMemoryWithType(MemorySize: u32, MemoryType: u32) -> *mut core::ffi::c_void;
+    // mm.c canonical takes SIZE_T (usize). u32-decl truncated arg on 64-bit.
+    fn MmAllocateMemoryWithType(MemorySize: usize, MemoryType: u32) -> *mut core::ffi::c_void;
     fn WARN(fmt: *const i8, ...);
     fn UiUpdateProgressBar(Percentage: u32, ProgressString: PCCH);
     fn RtlStringCbCatA(pszDest: *mut u8, cbDest: usize, pszSrc: PCCH) -> i32;
@@ -156,7 +157,7 @@ pub unsafe extern "C" fn AllocateAndInitLPB(
     let Extension: PLOADER_PARAMETER_EXTENSION;
 
     WinLdrSystemBlock = MmAllocateMemoryWithType(
-        ((core::mem::size_of::<LOADER_SYSTEM_BLOCK>()) as u32),
+        core::mem::size_of::<LOADER_SYSTEM_BLOCK>(),
         LoaderSystemBlock,
     ) as *mut LOADER_SYSTEM_BLOCK;
     
@@ -497,7 +498,7 @@ unsafe fn WinLdrLoadBootDrivers(
             ERR(
                 b"Cannot load boot driver '%wZ'!\n\0".as_ptr() as PCSTR, (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize,
             );
-            #[cfg(not(feature = "UEFIBOOT"))]
+            #[cfg(not(feature = "uefi"))]
             UiMessageBox(
                 b"Cannot load boot driver '%wZ'!\0".as_ptr() as PCSTR,
                 core::ptr::addr_of_mut!((*BootDriver).FilePath),
@@ -542,7 +543,7 @@ pub unsafe extern "C" fn WinLdrLoadModule(
     FileSize = FileInfo.EndingAddress.__bindgen_anon_1.LowPart;
     *Size = FileSize;
 
-    PhysicalBase = MmAllocateMemoryWithType(FileSize, MemoryType);
+    PhysicalBase = MmAllocateMemoryWithType(FileSize as usize, MemoryType);
     if PhysicalBase.is_null() {
         ERR(b"Could not allocate memory for '%s'\n\0".as_ptr() as PCSTR, (ModuleName) as usize);
         ArcClose(FileId);
@@ -1246,13 +1247,13 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
             DebugPortLength = 3;
         }
 
-        #[cfg(feature = "UEFIBOOT")]
+        #[cfg(feature = "uefi")]
         {
             ERR(
                 b"Debug mode: connect debugger on port %.*s\n\0".as_ptr() as PCSTR, (DebugPortLength) as usize, (DebugPort) as usize,
             );
         }
-        #[cfg(not(feature = "UEFIBOOT"))]
+        #[cfg(not(feature = "uefi"))]
         {
             TuiPrintf(
                 b"You need to connect a debugger on port %.*s\nFor more information, visit https://reactos.org/wiki/Debugging.\n\0".as_ptr() as PCSTR,

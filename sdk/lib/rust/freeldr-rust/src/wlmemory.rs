@@ -268,6 +268,20 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
 
     WinLdrpDumpMemoryDescriptors(LoaderBlock);
 
+    // UEFILDR can be above the 2GB-ish range, we don't want to map the whole area
+    #[cfg(feature = "uefi")]
+    {
+        extern "C" {
+            static mut OsLoaderBase: PVOID;
+            static mut OsLoaderSize: SIZE_T;
+        }
+        MempSetupPaging(
+            (OsLoaderBase as usize / MM_PAGE_SIZE as usize) as PFN_NUMBER,
+            (OsLoaderSize / MM_PAGE_SIZE as usize) as PFN_NUMBER,
+            0u8,
+        );
+    }
+
     TRACE(b"Memory Descriptor List prepared, printing PDE\n\0".as_ptr() as *const i8);
     List_PaToVa(core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead));
 
@@ -284,8 +298,18 @@ unsafe fn WinLdrInsertDescriptor(
     let mut PreviousDescriptor: PMEMORY_ALLOCATION_DESCRIPTOR = core::ptr::null_mut();
     let mut NextDescriptor: PMEMORY_ALLOCATION_DESCRIPTOR = core::ptr::null_mut();
 
+    // C indexes MemTypeDesc[MemoryType] unconditionally (OOB just reads
+    // garbage and prints it via %s). In Rust a slice index is bounds-checked
+    // and panics — and the arm64 panic handler spins silently, which looked
+    // exactly like a WinLdrSetupMemoryLayout loop2 boot hang. Guard the index.
+    let mt_idx = (*NewDescriptor).MemoryType as usize;
+    let mt_desc: *const u8 = if mt_idx < MemTypeDesc.len() {
+        MemTypeDesc[mt_idx].as_ptr()
+    } else {
+        b"Unknown           \0".as_ptr()
+    };
     TRACE(
-        b"BP=0x%X PC=0x%X %s\n\0".as_ptr() as *const i8, ((*NewDescriptor).BasePage) as usize, ((*NewDescriptor).PageCount) as usize, (MemTypeDesc[(*NewDescriptor).MemoryType as usize].as_ptr()) as usize,
+        b"BP=0x%X PC=0x%X %s\n\0".as_ptr() as *const i8, ((*NewDescriptor).BasePage) as usize, ((*NewDescriptor).PageCount) as usize, (mt_desc) as usize,
     );
 
     PreviousEntry = ListHead;

@@ -8,6 +8,8 @@
 #     "arch":           "amd64",
 #     "qemu_pid":       12345,
 #     "qemu_cmd":       "qemu-system-x86_64 -M pc ...",
+#     "owner_pid":      8529,
+#     "owner_comm":     "claude",
 #     "gdb_port":       12001,
 #     "qmp_socket":     "/abs/path/to/qmp.sock",
 #     "serial_socket":  "/abs/path/to/serial.sock",
@@ -17,6 +19,14 @@
 #     "git_sha":        "a2d5a6e4...",
 #     "git_dirty":      false
 #   }
+#
+# owner_pid is the PID of the first non-shell ancestor of start.sh — the
+# long-lived session that owns this run (claude, tmux, sshd, terminal
+# emulator, etc.). See owner_pid_for() in lib/common.sh for the rationale.
+# qemu/reap.sh uses this to identify orphans: when owner_pid is dead but
+# qemu_pid is alive, the owning session died without stopping QEMU and the
+# run should be reaped. owner_comm is the recorded command name at launch
+# time, for forensic clarity in stale manifests.
 #
 # Fields populated by start.sh; other tools read but never modify (except
 # stop.sh, which sets a "stopped_at" field). The schema is intentionally flat:
@@ -44,9 +54,18 @@ manifest_get() {
 # are populated; gdb_port etc. are filled by manifest_set after port allocation
 # and qemu_pid is filled after launching qemu.
 manifest_init() {
-    local run_id="$1" arch="$2" kernel_image="$3"
+    local run_id="$1" arch="$2" kernel_image="$3" owner_pid="${4:-}"
     local run_dir="$RUNS_DIR/$run_id"
     mkdir -p "$run_dir"
+
+    # Default to the first-non-shell-ancestor walk if no owner explicitly
+    # passed; start.sh always passes one so this fallback rarely fires.
+    # Seed from $PPID (manifest.sh is sourced into start.sh, so $$ would be
+    # start.sh's own pid → walk would land on start.sh itself, which dies
+    # immediately and would mark the run orphaned).
+    [ -z "$owner_pid" ] && owner_pid="$(owner_pid_for "$PPID")"
+    local owner_comm
+    owner_comm="$(ps -o comm= -p "$owner_pid" 2>/dev/null | tr -d ' ')"
 
     local kernel_mtime=""
     if [ -f "$kernel_image" ]; then
@@ -64,6 +83,8 @@ manifest_init() {
     jq -n \
         --arg run_id "$run_id" \
         --arg arch "$arch" \
+        --argjson owner_pid "${owner_pid:-null}" \
+        --arg owner_comm "${owner_comm:-}" \
         --arg start_time "$(date -u +%FT%TZ)" \
         --arg kernel_image "$kernel_image" \
         --arg kernel_mtime "$kernel_mtime" \
@@ -74,6 +95,8 @@ manifest_init() {
           arch:          $arch,
           qemu_pid:      null,
           qemu_cmd:      null,
+          owner_pid:     $owner_pid,
+          owner_comm:    $owner_comm,
           gdb_port:      null,
           qmp_socket:    null,
           serial_socket: null,
