@@ -20,7 +20,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--arch",
         default="arm64",
-        choices=["arm64", "arm64-test", "i386", "amd64"],
+        choices=["arm64", "arm64-test", "i386", "i386-uefi", "amd64"],
         help="Target architecture (default: arm64)",
     )
     parser.addoption(
@@ -44,13 +44,20 @@ def arch(request: pytest.FixtureRequest) -> str:
     return request.config.getoption("--arch")
 
 
+def _base_arch(arch: str) -> str:
+    """Map a smoke variant to its build directory arch. Variants like
+    'i386-uefi' and 'arm64-test' build from the base 'build-i386'/'build-arm64'
+    trees (same binaries, different boot media/firmware)."""
+    return arch.replace("-uefi", "").replace("-test", "")
+
+
 def _ensure_clean_rust_build(arch: str) -> None:
     """Force a clean Rust rebuild to prevent stale artifact false passes.
 
     Cargo's incremental compilation cache can mask regressions — a change that
     breaks boot may pass smoke tests if stale object files are linked.
     """
-    build_dir = PROJECT_DIR / f"build-{arch}"
+    build_dir = PROJECT_DIR / f"build-{_base_arch(arch)}"
     target_dir = build_dir / "ntoskrnl" / "rust-kernel-target"
     lib_file = build_dir / "ntoskrnl" / "libkernel_rust.a"
 
@@ -62,7 +69,7 @@ def _ensure_clean_rust_build(arch: str) -> None:
         print(f"[pytest] Removed {lib_file}")
 
     # Rebuild
-    build_target = "livecd" if arch in ("i386", "amd64") else "ntoskrnl"
+    build_target = "livecd" if _base_arch(arch) in ("i386", "amd64") else "ntoskrnl"
     ninja = subprocess.run(
         ["ninja", build_target],
         cwd=build_dir, capture_output=True, text=True, timeout=600,
@@ -97,7 +104,7 @@ def _ensure_clean_rust_build(arch: str) -> None:
 def _run_post_build_checks(arch: str) -> list[str]:
     """Run static analysis on the built binary. Returns list of warnings."""
     warnings = []
-    build_dir = PROJECT_DIR / f"build-{arch}"
+    build_dir = PROJECT_DIR / f"build-{_base_arch(arch)}"
     ntoskrnl = build_dir / "ntoskrnl" / "ntoskrnl.exe"
     if not ntoskrnl.exists():
         return warnings

@@ -96,18 +96,6 @@ InstallFat32BootCode(
     IN HANDLE DstPath,
     IN HANDLE RootPartition);
 
-NTSTATUS
-InstallBtrfsBootCode(
-    IN PCWSTR SrcPath,
-    IN HANDLE DstPath,
-    IN HANDLE RootPartition);
-
-NTSTATUS
-InstallNtfsBootCode(
-    IN PCWSTR SrcPath,
-    IN HANDLE DstPath,
-    IN HANDLE RootPartition);
-
 
 //
 // Formatting routines

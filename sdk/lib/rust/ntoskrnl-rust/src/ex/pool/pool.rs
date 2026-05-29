@@ -995,7 +995,10 @@ pub unsafe extern "system" fn MmRaisePoolQuota(
                 return FALSE;
             }
             MmTotalNonPagedPoolQuota += MI_CHARGE_NON_PAGED_POOL_QUOTA;
-            *new_max_quota = current_max_quota + MI_CHARGE_NON_PAGED_POOL_QUOTA;
+            core::ptr::write_volatile(
+                new_max_quota,
+                current_max_quota + MI_CHARGE_NON_PAGED_POOL_QUOTA,
+            );
             TRUE
         }
         PagedPool => {
@@ -1005,7 +1008,10 @@ pub unsafe extern "system" fn MmRaisePoolQuota(
                 return FALSE;
             }
             MmTotalPagedPoolQuota += MI_CHARGE_PAGED_POOL_QUOTA;
-            *new_max_quota = current_max_quota + MI_CHARGE_PAGED_POOL_QUOTA;
+            core::ptr::write_volatile(
+                new_max_quota,
+                current_max_quota + MI_CHARGE_PAGED_POOL_QUOTA,
+            );
             TRUE
         }
         _ => {

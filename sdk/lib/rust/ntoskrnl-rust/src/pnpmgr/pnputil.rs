@@ -78,12 +78,13 @@ pub unsafe extern "system" fn PnpRegMultiSzToUnicodeStrings(
         Count += 1;
     }
 
-    *UnicodeStringList = ExAllocatePoolWithTag(
+    let unicode_string_list = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_UNICODE_STRING>() * Count as usize,
         0x73557050, // 'sUpP'
     ) as PUNICODE_STRING;
-    if (*UnicodeStringList).is_null() {
+    core::ptr::write_volatile(UnicodeStringList, unicode_string_list);
+    if unicode_string_list.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -94,24 +95,24 @@ pub unsafe extern "system" fn PnpRegMultiSzToUnicodeStrings(
         if *p == 0 {
             n = (p as ULONG_PTR - ps as ULONG_PTR) + core::mem::size_of::<WCHAR>();
 
-            (*(*UnicodeStringList).add(i as usize)).Buffer = ExAllocatePoolWithTag(
+            (*unicode_string_list.add(i as usize)).Buffer = ExAllocatePoolWithTag(
                 PagedPool,
                 n,
                 0x73557050, // 'sUpP'
             ) as PWCHAR;
-            if (*(*UnicodeStringList).add(i as usize)).Buffer.is_null() {
-                PnpFreeUnicodeStringList(*UnicodeStringList, i);
+            if (*unicode_string_list.add(i as usize)).Buffer.is_null() {
+                PnpFreeUnicodeStringList(unicode_string_list, i);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             core::ptr::copy_nonoverlapping(
                 ps as *const u8,
-                (*(*UnicodeStringList).add(i as usize)).Buffer as *mut u8,
+                (*unicode_string_list.add(i as usize)).Buffer as *mut u8,
                 n,
             );
 
-            (*(*UnicodeStringList).add(i as usize)).MaximumLength = n as u16;
-            (*(*UnicodeStringList).add(i as usize)).Length = (n - core::mem::size_of::<WCHAR>()) as u16;
+            (*unicode_string_list.add(i as usize)).MaximumLength = n as u16;
+            (*unicode_string_list.add(i as usize)).Length = (n - core::mem::size_of::<WCHAR>()) as u16;
 
             i += 1;
 
@@ -128,31 +129,31 @@ pub unsafe extern "system" fn PnpRegMultiSzToUnicodeStrings(
     if p == pp {
         n = p as ULONG_PTR - ps as ULONG_PTR;
 
-        (*(*UnicodeStringList).add(i as usize)).Buffer = ExAllocatePoolWithTag(
+        (*unicode_string_list.add(i as usize)).Buffer = ExAllocatePoolWithTag(
             PagedPool,
             n + core::mem::size_of::<WCHAR>(),
             0x73557050, // 'sUpP'
         ) as PWCHAR;
-        if (*(*UnicodeStringList).add(i as usize)).Buffer.is_null() {
-            PnpFreeUnicodeStringList(*UnicodeStringList, i);
+        if (*unicode_string_list.add(i as usize)).Buffer.is_null() {
+            PnpFreeUnicodeStringList(unicode_string_list, i);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         if n != 0 {
             core::ptr::copy_nonoverlapping(
                 ps as *const u8,
-                (*(*UnicodeStringList).add(i as usize)).Buffer as *mut u8,
+                (*unicode_string_list.add(i as usize)).Buffer as *mut u8,
                 n,
             );
         }
 
-        *(*(*UnicodeStringList).add(i as usize)).Buffer.add(n / core::mem::size_of::<WCHAR>()) = UNICODE_NULL;
+        *(*unicode_string_list.add(i as usize)).Buffer.add(n / core::mem::size_of::<WCHAR>()) = UNICODE_NULL;
 
-        (*(*UnicodeStringList).add(i as usize)).Length = n as u16;
-        (*(*UnicodeStringList).add(i as usize)).MaximumLength = (n + core::mem::size_of::<WCHAR>()) as u16;
+        (*unicode_string_list.add(i as usize)).Length = n as u16;
+        (*unicode_string_list.add(i as usize)).MaximumLength = (n + core::mem::size_of::<WCHAR>()) as u16;
     }
 
-    *UnicodeStringCount = Count;
+    core::ptr::write_volatile(UnicodeStringCount, Count);
     STATUS_SUCCESS
 }
 
@@ -174,7 +175,10 @@ pub unsafe extern "system" fn PnpRegSzToString(
     }
 
     if !StringLength.is_null() {
-        *StringLength = ((p as usize - RegSzData as usize) / core::mem::size_of::<WCHAR>() * core::mem::size_of::<WCHAR>()) as u16;
+        core::ptr::write_volatile(
+            StringLength,
+            ((p as usize - RegSzData as usize) / core::mem::size_of::<WCHAR>() * core::mem::size_of::<WCHAR>()) as u16,
+        );
     }
 
     1u8
