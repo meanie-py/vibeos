@@ -104,6 +104,18 @@ pub mod dib16bpp; pub mod dib24bpp; pub mod dib32bpp;
 // + alphablend.c/stretchblt.c/floodfill.c). The whole gdi/dib cluster is Rust.
 pub mod floodfill; pub mod dib_alphablend; pub mod dib_stretchblt;
 pub mod dib;
+// ── gdi/ntgdi geometry/math wave [Phase 2c] — pure curve/shape/transform
+// math, no SEH/locks/callouts (the dib-renderer flavor): bezier flattening,
+// arc/ellipse, polygon scan-fill, XFORMOBJ matrix transforms, RECTL helpers,
+// DC-attr alloc, misc utils, stock objects. Translated via rustconv.
+pub mod dcattr; pub mod rect; pub mod bezier; pub mod utils; pub mod polyfill;
+// Wave 2 PARKED (translated, on disk, integration WIP — don't compile yet so
+// not enabled; C stays live): arc (needs _BRUSH/PEN BRUSHBODY view for
+// lWidth/ulPenStyle + ROP2_TO_MIX/NT_SUCCESS macros), xformobj (FLOATOBJ_Sub
+// helper + a `pmx` undefined-var translation bug), stockobj (76 type fixes +
+// extensive _BRUSH/SERVERINFO bindgen-anon-field views — the engbrush.rs
+// BRUSHBODY_View pattern). Finish next pass.
+// pub mod stockobj; pub mod arc; pub mod xformobj;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust

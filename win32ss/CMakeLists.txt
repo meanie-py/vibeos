@@ -167,13 +167,13 @@ list(APPEND SOURCE
     user/rtl/image.c
     user/rtl/text.c
     gdi/ntgdi/arc.c
-    gdi/ntgdi/bezier.c
+    # gdi/ntgdi/bezier.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bezier.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/bitblt.c
     gdi/ntgdi/bitmaps.c
     gdi/ntgdi/cliprgn.c
     gdi/ntgdi/coord.c
     gdi/ntgdi/d3dkmt.c
-    gdi/ntgdi/dcattr.c
+    # gdi/ntgdi/dcattr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcattr.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/dclife.c
     gdi/ntgdi/dcobjs.c
     gdi/ntgdi/dcstate.c
@@ -195,9 +195,9 @@ list(APPEND SOURCE
     gdi/ntgdi/palette.c
     gdi/ntgdi/path.c
     gdi/ntgdi/pen.c
-    gdi/ntgdi/polyfill.c
+    # gdi/ntgdi/polyfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/polyfill.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/print.c
-    gdi/ntgdi/rect.c
+    # gdi/ntgdi/rect.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rect.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/region.c
     gdi/ntgdi/stockobj.c
     gdi/ntgdi/text.c
@@ -325,6 +325,11 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_stretchblt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/floodfill.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcattr.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/rect.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/bezier.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/utils.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/polyfill.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
