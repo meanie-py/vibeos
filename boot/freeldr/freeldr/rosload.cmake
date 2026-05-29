@@ -36,7 +36,7 @@ list(APPEND ROSLOAD_SOURCE
 if(ARCH STREQUAL "i386")
 
     list(APPEND ROSLOAD_SOURCE
-        arch/i386/halstub.c
+        # arch/i386/halstub.c        # replaced by Rust (freeldr-rust/src/halstub.rs)
         # arch/i386/ntoskrnl.c       # replaced by Rust (freeldr-rust/src/ntoskrnl.rs)
         # disk/scsiport.c — DELETED: SCSI emulation (ScsiPort* exports for
         #   ntbootdd.sys SCSI/RAID boot). Unused on our targets; exports
@@ -94,6 +94,12 @@ set_entrypoint(rosload RunLoader)
 if(ARCH STREQUAL "i386")
     target_link_libraries(rosload mini_hal ${HAL_RUST_MINI_LIB})
     add_dependencies(rosload rust_hal_mini)
+    # Force-include the Rust halstub HAL dispatch tables
+    # (freeldr-rust/src/halstub.rs). They are unreferenced + unexported — the
+    # C halstub.c was a source object that always linked them in, but as a
+    # Rust staticlib archive member they would be dropped. Pull them
+    # explicitly so rosload.exe carries the same HAL surface as the C build.
+    target_link_options(rosload PRIVATE "LINKER:-u,_HalDispatchTable" "LINKER:-u,_HalPrivateDispatchTable")
 endif()
 
 # rosload cohabitation flip — link the rosload variant of libfreeldr_rust.a
