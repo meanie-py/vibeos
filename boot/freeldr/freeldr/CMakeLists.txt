@@ -243,11 +243,17 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_freeldr_rosload DEPENDS ${FREELDR_RUST_ROSLOAD_LIB})
 
-# ARM64 uses UEFI only, no legacy PC-AT boot
+# BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
+# built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. We still
+# need the freeldr import LIBRARY that rosload links against (add_importlibs(
+# rosload freeldr)); under UEFI rosload's "freeldr.sys" imports resolve at
+# runtime against uefildr.efi, which is registered as "freeldr.sys" by the PE
+# loader and exports the same freeldr.spec symbols. So generate just the import
+# lib here (ADD_IMPORTLIB needs only the .spec, not the BIOS loader binary).
 if(NOT ARCH STREQUAL "arm64")
-    include(pcat.cmake)
+    spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB)
 endif()
-# rosload is the 2nd stage PC-AT loader; ARM64 uses UEFI-only boot
+# rosload is the 2nd stage loader (loads ntoskrnl); ARM64 uses UEFI-only boot
 if(NOT ARCH STREQUAL "arm64")
     include(rosload.cmake)
 endif()
