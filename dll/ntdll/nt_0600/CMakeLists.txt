@@ -11,7 +11,8 @@ include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
 list(APPEND SOURCE
-    ldr/ldrinit.c
+    # ldr/ldrinit.c — replaced by Rust (ntdll-rust/src/nt_0600/ldr/ldrinit.rs)
+    #   (whole file is `PVOID LdrpHeap;`; provided by libntdll_rust.a)
     ldr/ldrnotify.c)
 
 add_library(ntdll_vista_static ${SOURCE})
@@ -53,6 +54,8 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/ntdll-rust/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/mod.rs
         ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/dllmain.rs
+        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/mod.rs
+        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
         ${RUST_WORKSPACE_DIR}/ntdll-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
     COMMENT "Building ntdll-rust (${RUST_TARGET}) for ntdll_vista.dll"

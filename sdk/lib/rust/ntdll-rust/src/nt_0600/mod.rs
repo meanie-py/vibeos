@@ -5,3 +5,4 @@
 //! Vista+ compatibility layer.
 
 pub mod dllmain;
+pub mod ldr;
