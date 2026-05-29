@@ -544,6 +544,21 @@ const _: () = assert!(
     "MACHVTBL must hold exactly 30 pointers to match C arcemul.c");
 extern "C" { pub static MachVtbl: MACHVTBL; }
 
+// MachInitializeBootDevices() is a macro in C (machine.h):
+//   #define MachInitializeBootDevices() MachVtbl.InitializeBootDevices()
+// MACHVTBL above only names GetMemoryMap; reach InitializeBootDevices
+// (slot 27 — 3 Cons + 13 Video + Beep + Prepare + GetMemoryDescriptor +
+// GetMemoryMap + GetExtendedBIOSData + GetFloppyCount + 3 Disk + GetTime +
+// GetRelativeTime → InitializeBootDevices) via raw slot index. Shared by
+// freeldr.rs (BIOS BootMain) and uefildr.rs (EfiEntry).
+#[inline]
+pub unsafe fn MachInitializeBootDevices() -> BOOLEAN {
+    let vtbl = core::ptr::addr_of!(MachVtbl) as *const *const core::ffi::c_void;
+    let slot = *vtbl.add(27);
+    let f: extern "C" fn() -> BOOLEAN = core::mem::transmute(slot);
+    f()
+}
+
 // debug.h — DPRINT channels + levels (shared).
 pub const DPRINT_NONE: ULONG = 0;
 pub const DPRINT_WARNING: ULONG = 1;

@@ -25,11 +25,11 @@ include_directories(
 
 add_definitions(-D_NTHAL_ -D_BLDR_ -D_NTSYSTEM_)
 
-list(APPEND FREELDR_ARC_SOURCE
+list(APPEND FREELDR_ARC_SOURCE)
     # arcname.c          # replaced by Rust (freeldr-rust/src/arcname.rs)
     # arch/arcemul.c     # replaced by Rust (freeldr-rust/src/arcemul.rs)
     # arch/archwsup.c    # replaced by Rust (freeldr-rust/src/archwsup.rs)
-    disk/disk.c)
+    # disk/disk.c        # empty TU (only #include <freeldr.h>) — removed
     # disk unit → Rust (freeldr-rust: partition.rs/ramdisk.rs). Cohabitation:
     # .c kept on disk, Rust #[no_mangle] takes over.
     # disk/partition.c  # replaced by Rust (freeldr-rust/src/partition.rs)
@@ -50,16 +50,13 @@ list(APPEND FREELDR_BOOTLIB_SOURCE)
     # lib/cache/cache.c   # replaced by Rust (freeldr-rust/src/cache.rs)
     # lib/comm/rs232.c    # replaced by Rust (freeldr-rust/src/rs232.rs)
     ## add KD support
-    # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). ntfs/ext/btrfs
-    # PRUNED entirely (no Rust, no C): livecd boots ISO, ramdisk is FAT,
-    # so fs.rs FileSystems[] = [Iso,Fat,Pxe] only; the other 3 are dead
-    # weight. Keep .c files on disk (never-delete), just unreferenced.
-    # lib/fs/btrfs.c   # pruned (not in fs.rs FileSystems[])
-    # lib/fs/ext.c     # pruned
+    # fs unit → Rust (freeldr-rust: fs.rs/fat.rs/iso.rs). livecd boots ISO,
+    # ramdisk is FAT, so fs.rs FileSystems[] = [Iso,Fat,Pxe] only.
+    # btrfs/ext/ntfs read drivers had no Rust + no live caller → DELETED
+    # (lib/fs/{btrfs,ext,ntfs}.c + include/fs/{btrfs,ext,ntfs}.h).
     # lib/fs/fat.c     # replaced by Rust (freeldr-rust/src/fat.rs)
     # lib/fs/fs.c      # replaced by Rust (freeldr-rust/src/fs.rs)
     # lib/fs/iso.c     # replaced by Rust (freeldr-rust/src/iso.rs)
-    # lib/fs/ntfs.c    # pruned
     # lib/inifile/ini_init.c  # replaced by Rust (freeldr-rust/src/ini_init.rs)
     # lib/inifile/inifile.c   # replaced by Rust (freeldr-rust/src/inifile.rs)
     # lib/inifile/parse.c     # replaced by Rust (freeldr-rust/src/parse.rs)
@@ -76,12 +73,10 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
     # settings.c        # replaced by Rust (freeldr-rust/src/settings.rs)
     # ui unit → Rust (freeldr-rust: ui/tui/tuimenu/minitui/noui/video.rs).
-    # ui/directui.c is `#if 0` dead code in C (compiles to nothing) and the
-    # Rust directui.rs is deliberately NOT wired — symmetric, kept on disk.
-    # ui/gui.c untranslated (already commented). Cohabitation: .c kept on
-    # disk, Rust #[no_mangle] takes over.
-    ui/directui.c
-    # ui/gui.c
+    # ui/directui.c (#if 0) and ui/gui.c (never-implemented empty-stub GUI,
+    # GuiVtbl only referenced under #if 0 "no GUI mode yet") were dead — deleted.
+    # directui.rs kept on disk (deliberately NOT wired).
+    # Cohabitation: live .c kept on disk, Rust #[no_mangle] takes over.
     # ui/minitui.c  # replaced by Rust (freeldr-rust/src/minitui.rs)
     # ui/noui.c     # replaced by Rust (freeldr-rust/src/noui.rs)
     # ui/tui.c      # replaced by Rust (freeldr-rust/src/tui.rs)
@@ -175,6 +170,16 @@ elseif(ARCH STREQUAL "arm64")
     set(FREELDR_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(FREELDR_RUST_EXTRA_ENV "")
 endif()
+# Track ALL freeldr-rust sources so editing any .rs (e.g. frldr.rs/uefildr.rs,
+# not just lib/ffi/peloader) re-triggers the cargo rebuild. Without this, a
+# changed .rs leaves the copied .a stale and the link silently uses old objects
+# (cost a "MachInitializeBootDevices undefined" cold-link false alarm 2026-05).
+file(GLOB_RECURSE FREELDR_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/*.rs)
+set(FREELDR_RUST_DEPS
+    ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
+    ${FREELDR_RUST_SOURCES})
+
 set(FREELDR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust.a")
 add_custom_command(
     OUTPUT ${FREELDR_RUST_LIB}
@@ -186,10 +191,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${FREELDR_RUST_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
         ${FREELDR_RUST_LIB}
-    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    DEPENDS ${FREELDR_RUST_DEPS}
     COMMENT "Building freeldr-rust (libfreeldr_rust.a)"
     VERBATIM)
 add_custom_target(rust_freeldr DEPENDS ${FREELDR_RUST_LIB})
@@ -207,15 +209,12 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${FREELDR_RUST_UEFI_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
         cargo build --release --target ${FREELDR_RUST_TARGET}
-            -p freeldr-rust --features uefi
+            -p freeldr-rust --features uefi,uefildr-rust-entry
             --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${FREELDR_RUST_UEFI_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
         ${FREELDR_RUST_UEFI_LIB}
-    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    DEPENDS ${FREELDR_RUST_DEPS}
     COMMENT "Building freeldr-rust UEFI variant (libfreeldr_rust_uefi.a, --features uefi)"
     VERBATIM)
 add_custom_target(rust_freeldr_uefi DEPENDS ${FREELDR_RUST_UEFI_LIB})
@@ -239,10 +238,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${FREELDR_RUST_ROSLOAD_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
         ${FREELDR_RUST_ROSLOAD_LIB}
-    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    DEPENDS ${FREELDR_RUST_DEPS}
     COMMENT "Building freeldr-rust rosload variant (libfreeldr_rust_rosload.a, --features rosload)"
     VERBATIM)
 add_custom_target(rust_freeldr_rosload DEPENDS ${FREELDR_RUST_ROSLOAD_LIB})

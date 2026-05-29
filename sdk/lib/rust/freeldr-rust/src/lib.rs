@@ -260,6 +260,11 @@ pub mod pxe;
 #[cfg(feature = "rosload")]
 pub mod rosload_shims;
 
+// arch/i386/halstub.c → Rust. HAL dispatch-table stubs, rosload.exe only
+// (i386). FASTCALL/stdcall fn-ptrs require x86 ABI strings, so double-gate.
+#[cfg(all(target_arch = "x86", feature = "rosload"))]
+pub mod halstub;
+
 // UI unit (ui/tui/tuimenu/minitui/noui/video + ui_keystone). UI dispatch
 // is owned by freeldr.sys (UiVtbl, UiDisplayMenu, TuiPrintf exported in
 // freeldr.spec); rosload imports via add_importlibs.

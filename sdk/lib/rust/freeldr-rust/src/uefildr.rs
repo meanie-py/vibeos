@@ -47,7 +47,8 @@ extern "C" {
     fn MmInitializeMemoryManager() -> BOOLEAN;
     fn FsInit();
     fn PeLdrInitializeModuleList() -> BOOLEAN;
-    fn MachInitializeBootDevices() -> BOOLEAN;
+    // MachInitializeBootDevices() is a C macro (MachVtbl.InitializeBootDevices()),
+    // not a real symbol — provided by the shared crate::frldr helper instead.
     fn MmAllocateMemoryWithType(MemorySize: SIZE_T, MemoryType: ULONG) -> PVOID;
     fn RunLoader();
     fn _changestack();
