@@ -35,3 +35,81 @@ extern crate win32k_sys;
 pub mod sort; // gdi/eng/sort.c — EngSort (proving slice)
 pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]
 pub mod object; // user/ntuser/object.c — USER handle/object table [Phase 1b]
+pub mod math;   // gdi/eng/math.c — EngMulDiv (Phase 2a proving slice)
+pub mod error;     // gdi/eng/error.c — Eng{Get,Set}LastError + SetLastNtError (FASTCALL)
+pub mod string;    // gdi/eng/string.c — STROBJ_* (re-translated with upgraded pipeline)
+pub mod paint;     // gdi/eng/paint.c — FillSolid + Eng/IntEngPaint (re-translated)
+pub mod float;     // gdi/eng/float.c — EngRestoreFloatingPointState (EngSave still missing — scanner gap, see notes)
+pub mod multidisp; // gdi/eng/multidisp.c — MultiEnableDriver stub
+pub mod perfcnt;   // gdi/eng/perfcnt.c — EngQueryPerformance{Frequency,Counter}
+pub mod driverobj; // gdi/eng/driverobj.c — DRIVEROBJ_* macros inline-expanded to GDIOBJ_AllocObjWithHandle/TryLockObject/vUnlockObject per win32k_translation_prompt.md §6
+pub mod engevent;  // gdi/eng/engevent.c — EngCreateEvent + 7 sibling fns (re-translated)
+pub mod mdevobj;   // gdi/eng/mdevobj.c — MDEVOBJ_{Create,vDestroy,bDisable,vEnable} (re-translated, now 4/4)
+pub mod semaphor;  // gdi/eng/semaphor.c — 7/9 fns (EngCreateSemaphore + EngAcquireSemaphore scanner-skipped — re-translate later)
+// ── Phase 2a wave 2 — 15/25 enabled (bisect-confirmed safe) ──
+// Bisect at session end confirmed: engmisc.rs SharedUserData raw-dylib was
+// breaking freeldr's PE loader (OOM in MmFindLocationForPageLookupTable).
+// Fix: shared_user_data() helper casts the fixed KI_USER_SHARED_DATA VA.
+// With that fix, these 15 modules smoke green on i386 + amd64:
+pub mod alphablend; pub mod clip; pub mod copybits; pub mod debug;
+pub mod engbrush;   pub mod engmisc;  pub mod engwindow;
+pub mod mapping;    pub mod mem;     pub mod pandisp;
+pub mod pathobj;    pub mod rlecomp;  pub mod transblt;
+pub mod bitblt;     pub mod gradient;
+// ── Wave 2 deferred-mods sweep — try the 6 with minimal extern statics ──
+// Earlier "RED" bisects on these were under the CGU-shift confound (the
+// engevent.rs unconditional raw-dylib was the real culprit, not the wave-2
+// mods themselves — see commit 7dfb9250fe5 + feedback_win32k_raw_dylib_freeldr_oom).
+// Retry with engevent.rs per-arch raw-dylib in place; expect they're clean.
+pub mod lineto; pub mod mouse; pub mod umpdstubs;
+pub mod surface; pub mod stretchblt; pub mod xlateobj;
+pub mod pdevobj; pub mod stubs;
+// device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
+// EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
+// arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
+// translation integrated and failing IS the correct state when a regression
+// is unsolved"). Bisect: parking device.rs → boot OK; enabling → red.
+//
+// ROOT CAUSE (corrected 2026-05-28 gdb-attach session — NOT a device.rs body
+// bug): this is a SILENT cgu-shift captures(none) miscompile. Adding device.rs
+// to the workspace repartitions cgu=256 and elides a pointer write on the
+// PnP/MM path, leaving a corrupt pointer that faults later.
+//   - amd64: boots to PnP display-adapter enum (DISPLAY\RHT1234), then
+//     BUGCHECK 0x1E / STATUS_IN_PAGE_ERROR at a corrupt-pointer store
+//     (`mov [rax+3],ecx`) in unsymbolized MM/PnP code (amd64 PTE self-map math
+//     + pnpmgr::pnpmap refs). scan_ud2: NO new ud2 → silent captures(none),
+//     not the ud2 variant.
+//   - i386: hangs pre-`shell ready` (loader/pool activity → `I/J/i/#` idle
+//     loop, 300s timeout). Same root cause suspected.
+// The 3 fn BODIES are the cgu *trigger*, not the direct culprit (crash is on
+// the ntoskrnl PnP/MM path, before/around win32k video init).
+// Exact miscompiled fn NOT yet pinned: faulting code is in an unsymbolized
+// .data gap after MainSSDT (absent from gdb DWARF + symbols-amd64.tsv), and
+// QEMU+KVM/WSL2 won't honor gdb breakpoints (mem-reads only). Full debug log
+// + how-to-resume: memory feedback_win32k_device_rs_resurrection_state.md.
+// Next decisive step: rebuild-bisect (stub bodies to no-ops, keep this mod) to
+// separate pure-cgu-shift from body-bug, then chase the partition.
+pub mod device;
+// ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
+// pub mod ldevobj;
+
+// ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
+//
+// drvdbg.rs and bitblt_new.rs are the last 2 of 39 gdi/eng leaves; both
+// translated to Rust (Phase 2a 2026-05-28) but parked here, not enabled.
+//
+// **drvdbg.rs** — DbgDrv* pfn-dispatch wrappers (78 fns). drvdbg.c was an
+// orphan: not in any cmake SOURCE list, AND its `DbgLookupDHPDEV` helper is
+// only forward-declared, never defined anywhere in the tree. Translating it
+// gives a Rust skeleton with the same "incomplete by design" shape — enabling
+// would require both (a) defining DbgLookupDHPDEV and (b) wiring drvdbg into
+// the driver dispatch path. Match the C status: parked.
+//
+// **bitblt_new.rs** — alternate EngBitBlt/EngCopyBits implementation for the
+// USE_DIBLIB=TRUE build path (bitblt_new.c only enters SOURCE when USE_DIBLIB
+// is set in win32ss/CMakeLists.txt, default FALSE). Its exports would collide
+// with the already-active bitblt.rs + copybits.rs cohabitation. Flip on only
+// when USE_DIBLIB flips AND bitblt.rs/copybits.rs flip off the same way.
+//
+// pub mod drvdbg;
+// pub mod bitblt_new;

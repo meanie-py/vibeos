@@ -622,7 +622,7 @@ pub unsafe extern "C" fn PnpRootCreateDevice(
                         );
                         (*DeviceExtension).DeviceListCount += 1;
 
-                        *PhysicalDeviceObject = (*Device).Pdo;
+                        core::ptr::write_volatile(PhysicalDeviceObject, (*Device).Pdo);
                         Status = STATUS_SUCCESS;
                         Device = core::ptr::null_mut();
                     }

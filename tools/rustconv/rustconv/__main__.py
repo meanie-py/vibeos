@@ -402,6 +402,60 @@ def cmd_seh_rewrite(args):
         sys.exit(1)
 
 
+def cmd_seh_belt(args):
+    """Pass 1c: delete (d) BELT_SUSPENDERS SEH wrappers (live re-classify)."""
+    import difflib
+    from .seh_belt import rewrite_file, iter_keepset, run_oracle
+    from .config import REACTOS_ROOT
+
+    if args.oracle:
+        sys.exit(run_oracle())
+
+    target = Path(args.path)
+    if not target.is_absolute():
+        target = REACTOS_ROOT / args.path
+
+    def do_one(p: Path):
+        orig = p.read_text(errors="replace")
+        res = rewrite_file(p)
+        if args.apply and res.rewritten:
+            p.write_text(res.text)
+        if not args.apply and res.text != orig:
+            diff = difflib.unified_diff(
+                orig.splitlines(True), res.text.splitlines(True),
+                f"a/{p.name}", f"b/{p.name}")
+            sys.stdout.writelines(diff)
+        return res
+
+    if target.is_file():
+        res = do_one(target)
+        print(f"\n{target.name}: rewritten={res.rewritten} "
+              f"skipped={len(res.skipped)}", file=sys.stderr)
+        for ln, why in res.skipped:
+            print(f"  skip L{ln}: {why}", file=sys.stderr)
+    elif target.is_dir():
+        tot_rw = tot_sk = files_touched = 0
+        skip_reasons: list[tuple[str, int, str]] = []
+        for p in iter_keepset(target):
+            r = do_one(p)
+            if r.rewritten or r.skipped:
+                if r.rewritten:
+                    files_touched += 1
+                tot_rw += r.rewritten
+                tot_sk += len(r.skipped)
+                for ln, why in r.skipped:
+                    skip_reasons.append((str(p.relative_to(target)), ln, why))
+        print(f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
+              f"{tot_rw} BELT_SUSPENDERS sites deleted across "
+              f"{files_touched} files; {tot_sk} skipped",
+              file=sys.stderr)
+        for f, ln, why in skip_reasons:
+            print(f"  skip {f}:L{ln} — {why}", file=sys.stderr)
+    else:
+        print(f"Error: not found: {target}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_callout_annotate(args):
     from .callout_annotate import (
         extract_file, extract_keepset, write_sidecar,
@@ -1056,7 +1110,16 @@ def cmd_postprocess(args):
     total_changed = 0
     for rs_file in rs_files:
         original = rs_file.read_text()
-        processed = postprocess(original)
+        # detect target from path so win32k/hal/freeldr-gated passes fire
+        target_name = "ntoskrnl"
+        p = rs_file.as_posix()
+        if "/win32k-rust/" in p:
+            target_name = "win32k"
+        elif "/hal-rust/" in p:
+            target_name = "hal"
+        elif "/freeldr-rust/" in p:
+            target_name = "freeldr"
+        processed = postprocess(original, target_name=target_name)
 
         if processed == original:
             print(f"  {rs_file.name}: unchanged", file=sys.stderr)
@@ -1162,6 +1225,18 @@ def main():
                    help="Write changes in place (default: print unified diff)")
     p.add_argument("--oracle", action="store_true",
                    help="Run the winsta.c spike self-test and exit")
+
+    # seh-belt (win32k Pass 1c: delete (d) BELT_SUSPENDERS SEH wrappers)
+    p = sub.add_parser("seh-belt",
+                       help="Win32k Pass 1c: delete category-(d) BELT_SUSPENDERS "
+                            "SEH wrappers (user write, no probe, dead handler "
+                            "under DUMMY_PSEH)")
+    p.add_argument("path", nargs="?", default="win32ss",
+                   help="C file or dir (relative to repo root or absolute)")
+    p.add_argument("--apply", action="store_true",
+                   help="Write changes in place (default: print unified diff)")
+    p.add_argument("--oracle", action="store_true",
+                   help="Run the synthetic self-test and exit")
 
     # callout-annotate (win32k Pass 3 USER callout extraction — no rewrite)
     p = sub.add_parser("callout-annotate",
@@ -1313,6 +1388,7 @@ def main():
         "seh-classify": cmd_seh_classify,
         "seh-inventory": cmd_seh_inventory,
         "seh-rewrite": cmd_seh_rewrite,
+        "seh-belt": cmd_seh_belt,
         "callout-annotate": cmd_callout_annotate,
         "gdi-locks": cmd_gdi_locks,
         "user-locks": cmd_user_locks,

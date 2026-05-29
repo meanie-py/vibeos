@@ -195,6 +195,12 @@ unsafe fn MmCheckFreeldrImageFile() {
     crate::frldr::dbgcon_str(b",nt=");
     crate::frldr::dbgcon_hex32(NtHeaders as usize as u32);
     crate::frldr::dbgcon_str(b"]");
+    // BIOS-only validation: UEFI freeldr (uefildr.efi) has Subsystem=EFI_APPLICATION
+    // and runtime ImageBase ≠ FREELDR_PE_BASE (0x10000), so this whole block must be
+    // skipped on UEFI builds. The cfg was previously `not(uefiboot)` — but no code
+    // sets a `uefiboot` cfg flag (the gate is `feature = "uefi"` per Cargo.toml).
+    // The mismatched name made the validation run on UEFI, failing every check, and
+    // FrLdrBugCheckWithMessage then hangs the arm64 boot at exactly this point.
     #[cfg(not(feature = "uefi"))]
     {
         if NtHeaders.is_null() {

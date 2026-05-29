@@ -2,6 +2,14 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{KeEnterCriticalRegion, KeLeaveCriticalRegion};
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement, InterlockedExchangeAdd};
 
+// C debug macros — silenced via macro_rules! (variadic no-op).
+#[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
+#[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
+#[allow(unused_macros)] macro_rules! WARN { ($($t:tt)*) => { () }; }
+#[allow(unused_macros)] macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
+#[allow(unused_macros)] macro_rules! FIXME { ($($t:tt)*) => { () }; }
+#[allow(unused_macros)] macro_rules! DPRINT1 { ($($t:tt)*) => { () }; }
+
 // These are real exported kernel symbols. ntkrnl-sys declares them too, but
 // nominally typed against ntkrnl-sys's own bindgen structs (distinct nominal
 // types from win32k-sys's, even though byte-identical — both bindgen the same C
@@ -833,13 +841,12 @@ pub unsafe extern "stdcall" fn GDIOBJ_vFreeObject(pobj: POBJ) {
 
     let objt: UCHAR;
 
-
     objt = (((*pobj).hHmgr as ULONG_PTR >> 16) & 0x1f) as UCHAR;
 
     if apfnDelete[objt as usize].is_some() {
         apfnDelete[objt as usize].unwrap()(pobj as PVOID);
     } else {
-        NT_ASSERT(apfnCleanup[objt as usize].is_some());
+        NT_ASSERT!(apfnCleanup[objt as usize].is_some());
         apfnCleanup[objt as usize].unwrap()(pobj as PVOID);
 
         if (*pobj).BaseFlags & (BASEFLAG_LOOKASIDE as u16) != 0 {
@@ -859,13 +866,12 @@ pub unsafe extern "C" fn GDIOBJ_vFreeObject(pobj: POBJ) {
 
     let objt: UCHAR;
 
-
     objt = (((*pobj).hHmgr as ULONG_PTR >> 16) & 0x1f) as UCHAR;
 
     if apfnDelete[objt as usize].is_some() {
         apfnDelete[objt as usize].unwrap()(pobj as PVOID);
     } else {
-        NT_ASSERT(apfnCleanup[objt as usize].is_some());
+        NT_ASSERT!(apfnCleanup[objt as usize].is_some());
         apfnCleanup[objt as usize].unwrap()(pobj as PVOID);
 
         if (*pobj).BaseFlags & (BASEFLAG_LOOKASIDE as u16) != 0 {
@@ -1275,6 +1281,21 @@ pub unsafe extern "C" fn GDIOBJ_vUnlockObject(pobj: POBJ) {
 
     cRefs = InterlockedDecrement(gpaulRefCount.add(ulIndex as usize) as *mut LONG) as ULONG;
 }
+
+// DC_LockDc / DC_UnlockDc — FORCEINLINE in dc.h:219/238 (plain cdecl per bindgen).
+// Provide as #[no_mangle] cdecl so consumers (pdevobj.rs, mouse.rs) resolve.
+#[no_mangle]
+pub unsafe extern "C" fn DC_LockDc(hdc: HDC) -> PDC {
+    // PDC pdc = (PDC)GDIOBJ_LockObject(hdc, GDIObjType_DC_TYPE);
+    GDIOBJ_LockObject(hdc as HGDIOBJ, GDIObjType_GDIObjType_DC_TYPE as u8) as PDC
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn DC_UnlockDc(pdc: PDC) {
+    // GDIOBJ_vUnlockObject(&pdc->BaseObject);
+    GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*pdc).BaseObject) as POBJ);
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn GDIOBJ_hInsertObject(
@@ -1361,7 +1382,7 @@ pub unsafe extern "stdcall" fn GDIOBJ_vSetObjectOwner(
         return;
     }
 
-    NT_ASSERT(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) != 0);
+    NT_ASSERT!(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) != 0);
     pentry = &mut (*gpentHmgr.offset(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) as isize));
 
     ulOldOwner = (*pentry).ObjectOwner.ulObj;
@@ -1387,7 +1408,7 @@ pub unsafe extern "stdcall" fn GDIOBJ_vSetObjectOwner(
        (ulNewOwner != GDI_OBJ_HMGR_NONE) {
         IncrementGdiHandleCount(ulNewOwner);
     } else {
-        NT_ASSERT((*pentry).pUser.is_null());
+        NT_ASSERT!((*pentry).pUser.is_null());
     }
 
     (*pentry).ObjectOwner.ulObj = ulNewOwner;
@@ -1407,7 +1428,7 @@ pub unsafe extern "C" fn GDIOBJ_vSetObjectOwner(
         return;
     }
 
-    NT_ASSERT(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) != 0);
+    NT_ASSERT!(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) != 0);
     pentry = &mut (*gpentHmgr.offset(GDI_HANDLE_GET_INDEX((*pobj).hHmgr) as isize));
 
     ulOldOwner = (*pentry).ObjectOwner.ulObj;
@@ -1433,7 +1454,7 @@ pub unsafe extern "C" fn GDIOBJ_vSetObjectOwner(
        (ulNewOwner != GDI_OBJ_HMGR_NONE) {
         IncrementGdiHandleCount(ulNewOwner);
     } else {
-        NT_ASSERT((*pentry).pUser.is_null());
+        NT_ASSERT!((*pentry).pUser.is_null());
     }
 
     (*pentry).ObjectOwner.ulObj = ulNewOwner;
@@ -2418,7 +2439,6 @@ pub unsafe extern "C" fn GetBrushAttrPool() -> PGDI_POOL {
     
     (*ppi).pPoolBrushAttr
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE
