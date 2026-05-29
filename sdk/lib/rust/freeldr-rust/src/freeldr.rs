@@ -186,15 +186,8 @@ pub unsafe extern "C" fn BootMain(CmdLine: PCCH) {
     }
 
     // MachInitializeBootDevices() — macro `MachVtbl.InitializeBootDevices()`
-    // in C. frldr.rs's MACHVTBL struct only exposes GetMemoryMap; reach the
-    // InitializeBootDevices slot (index 27 — see machine.h MACHVTBL: 3 Cons +
-    // 13 Video + Beep + Prepare + GetMemoryDescriptor + GetMemoryMap +
-    // GetExtendedBIOSData + GetFloppyCount + 3 Disk + GetTime +
-    // GetRelativeTime → InitializeBootDevices) via raw slot index.
-    let vtbl = core::ptr::addr_of!(MachVtbl) as *const *const core::ffi::c_void;
-    let slot = *vtbl.add(27);
-    let init_boot_devs: extern "C" fn() -> BOOLEAN = core::mem::transmute(slot);
-    if init_boot_devs() == FALSE {
+    // in C; resolved via the shared frldr.rs slot-27 helper.
+    if MachInitializeBootDevices() == FALSE {
         UiMessageBoxCritical(b"Error when detecting hardware.\0".as_ptr() as PCCH);
         Reboot();
     }

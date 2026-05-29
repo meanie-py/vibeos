@@ -170,6 +170,16 @@ elseif(ARCH STREQUAL "arm64")
     set(FREELDR_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(FREELDR_RUST_EXTRA_ENV "")
 endif()
+# Track ALL freeldr-rust sources so editing any .rs (e.g. frldr.rs/uefildr.rs,
+# not just lib/ffi/peloader) re-triggers the cargo rebuild. Without this, a
+# changed .rs leaves the copied .a stale and the link silently uses old objects
+# (cost a "MachInitializeBootDevices undefined" cold-link false alarm 2026-05).
+file(GLOB_RECURSE FREELDR_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/*.rs)
+set(FREELDR_RUST_DEPS
+    ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
+    ${FREELDR_RUST_SOURCES})
+
 set(FREELDR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust.a")
 add_custom_command(
     OUTPUT ${FREELDR_RUST_LIB}
@@ -181,10 +191,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${FREELDR_RUST_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
         ${FREELDR_RUST_LIB}
-    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    DEPENDS ${FREELDR_RUST_DEPS}
     COMMENT "Building freeldr-rust (libfreeldr_rust.a)"
     VERBATIM)
 add_custom_target(rust_freeldr DEPENDS ${FREELDR_RUST_LIB})
@@ -202,15 +209,12 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${FREELDR_RUST_UEFI_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
         cargo build --release --target ${FREELDR_RUST_TARGET}
-            -p freeldr-rust --features uefi
+            -p freeldr-rust --features uefi,uefildr-rust-entry
             --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${FREELDR_RUST_UEFI_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
         ${FREELDR_RUST_UEFI_LIB}
-    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    DEPENDS ${FREELDR_RUST_DEPS}
     COMMENT "Building freeldr-rust UEFI variant (libfreeldr_rust_uefi.a, --features uefi)"
     VERBATIM)
 add_custom_target(rust_freeldr_uefi DEPENDS ${FREELDR_RUST_UEFI_LIB})
@@ -234,10 +238,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${FREELDR_RUST_ROSLOAD_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
         ${FREELDR_RUST_ROSLOAD_LIB}
-    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
-            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    DEPENDS ${FREELDR_RUST_DEPS}
     COMMENT "Building freeldr-rust rosload variant (libfreeldr_rust_rosload.a, --features rosload)"
     VERBATIM)
 add_custom_target(rust_freeldr_rosload DEPENDS ${FREELDR_RUST_ROSLOAD_LIB})

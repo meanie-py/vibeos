@@ -102,7 +102,9 @@ spec2def(uefildr.exe freeldr.spec)
 
 list(APPEND UEFILDR_BASE_SOURCE
     include/arch/uefi/uefildr.h
-    arch/uefi/uefildr.c
+    # arch/uefi/uefildr.c  # replaced by Rust (freeldr-rust/src/uefildr.rs);
+    #   EfiEntry + ExecuteLoaderCleanly + Reboot + the 4 UEFI globals now come
+    #   from libfreeldr_rust_uefi.a built with --features uefildr-rust-entry.
     # bootmgr.c  # replaced by Rust (sdk/lib/rust/freeldr-rust/src/bootmgr.rs)
     ${FREELDR_BASE_SOURCE})
     # setup/legacy unit → Rust (freeldr-rust: setupldr.rs/inffile.rs).
