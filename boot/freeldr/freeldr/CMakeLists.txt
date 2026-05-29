@@ -73,10 +73,10 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
     # settings.c        # replaced by Rust (freeldr-rust/src/settings.rs)
     # ui unit → Rust (freeldr-rust: ui/tui/tuimenu/minitui/noui/video.rs).
-    # ui/directui.c was `#if 0` dead code — deleted. The Rust directui.rs is
-    # kept on disk (deliberately NOT wired). ui/gui.c untranslated (commented).
+    # ui/directui.c (#if 0) and ui/gui.c (never-implemented empty-stub GUI,
+    # GuiVtbl only referenced under #if 0 "no GUI mode yet") were dead — deleted.
+    # directui.rs kept on disk (deliberately NOT wired).
     # Cohabitation: live .c kept on disk, Rust #[no_mangle] takes over.
-    # ui/gui.c
     # ui/minitui.c  # replaced by Rust (freeldr-rust/src/minitui.rs)
     # ui/noui.c     # replaced by Rust (freeldr-rust/src/noui.rs)
     # ui/tui.c      # replaced by Rust (freeldr-rust/src/tui.rs)
