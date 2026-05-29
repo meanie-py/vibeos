@@ -53,7 +53,8 @@ add_custom_target(winsrv_rust_lib DEPENDS ${WINSRV_RUST_LIB})
 # --------------------------------------------------------------------
 
 list(APPEND SOURCE
-    init.c
+    # init.c      — replaced by Rust (winsrv-rust/src/init.rs): ShutdownSettings
+    #               global + GetTimeouts (FASTCALL) + DllMain (winsrv_dll_only).
     winsrv.rc
     ${CMAKE_CURRENT_BINARY_DIR}/winsrv.def)
 
