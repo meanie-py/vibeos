@@ -17,12 +17,21 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code)]
 
-// nt_0600/ — the ntdll_vista.dll companion module (separate PE; its own
-// .spec + DllMain entry point). First cohabitation proof: its DllMain
-// is a tiny, isolated module entry, so flipping it exercises the whole
-// cargo→.a + --allow-multiple-definition path without touching the main
-// ntdll.dll. See audit Phase 2 step 1.
+// nt_0600/ — the ntdll_vista C subdir. Always compiled, but its submodules
+// are split by audience (see nt_0600/mod.rs):
+//   * dllmain (DllMain) is `vista`-gated — it is ntdll_vista.dll's ENTRY
+//     point and must not be pulled into ntdll.dll.
+//   * ldr (LdrpHeap) is UNgated — although the C lives in the nt_0600 subdir,
+//     the loader-heap global is referenced by the MAIN ntdll.dll loader
+//     (ldrinit.c/ldrutils.c), which historically resolved it from
+//     ntdll_vista_static linked into ntdll.dll. So it must exist in BOTH the
+//     default (ntdll.dll) and vista (ntdll_vista.dll) builds.
 pub mod nt_0600;
+
+// rtl/ — main ntdll.dll rtl-glue translations (the rtl_um OBJECT lib:
+// uilist.c / version.c / libsupp.c). Always compiled — these land in
+// ntdll.dll proper.
+pub mod rtl;
 
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust/kdcom-rust/hal-rust).

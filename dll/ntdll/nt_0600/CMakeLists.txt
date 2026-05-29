@@ -45,7 +45,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
         cargo build --release --target ${RUST_TARGET}
-            -p ntdll-rust
+            -p ntdll-rust --features vista
             --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libntdll_rust.a

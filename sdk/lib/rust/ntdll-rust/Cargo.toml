@@ -3,15 +3,23 @@ name = "ntdll-rust"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# `vista` — compile the nt_0600/ module (the ntdll_vista.dll companion:
+# DllMain + LdrpHeap). Default-OFF so the main ntdll.dll build excludes
+# those symbols (DllMain is an entry point, LdrpHeap a data global — both
+# would leak into / collide within the main loader). ntdll_vista.dll's
+# cmake builds `-p ntdll-rust --features vista`; ntdll.dll builds default.
+# Separate per-consumer rust-target dirs (csrss/csrsrv dual-archive pattern).
+vista = []
+
 [lib]
 # staticlib → libntdll_rust.a, linked into the cmake-built ntdll.dll /
 # ntdll_vista.dll PEs with the .c kept + --allow-multiple-definition
 # during each per-file swap-in window (mirrors smss-csrss-rust /
 # csrsrv cohabitation + the sdk/lib/rtl cmake-driven cargo→.a pattern).
-# Archive extraction is per-object + reference-driven, so the same .a
-# can serve both DLLs: ntdll_vista.dll pulls only the objects it
-# references (DllMain + nt_0600 helpers); ntdll.dll never references
-# DllMain so it is not pulled into it.
+# The two consumers build with DIFFERENT features (vista vs default) into
+# DIFFERENT target dirs → two distinct .a files, so nt_0600 stays out of
+# ntdll.dll.
 crate-type = ["staticlib"]
 
 [dependencies]
