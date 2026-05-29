@@ -11,10 +11,16 @@ extern "C" {
     pub fn C_ASSERT(x: bool);
     pub fn RTL_FIELD_SIZE(t: usize, f: usize) -> usize;
 }
-extern "system" {
+// CONSOLE_SCREEN_BUFFER_* are plain-cdecl (no NTAPI) in the still-C condrv
+// (text.c / conoutput.c) → extern "C".
+extern "C" {
     pub fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    pub fn IS_FULL_WIDTH(c: u16) -> u32;
     pub fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: u32, Size: usize, ) -> i32;
+}
+// IS_FULL_WIDTH is a C macro in the original source; the consrv Rust shim
+// (consrv_rust_shim.c) provides a real __stdcall implementation → "system".
+extern "system" {
+    pub fn IS_FULL_WIDTH(c: u16) -> u32;
 }
 // TermWriteStream/TermResizeTerminal/TermDrawRegion supplied by super::super::term::*
 

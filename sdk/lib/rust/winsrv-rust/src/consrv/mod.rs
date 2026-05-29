@@ -69,7 +69,11 @@ pub unsafe fn ConsoleFreeHeap(HeapBase: winsrv_sys::winsrv::PVOID) -> winsrv_sys
 
 // Helpers that bindgen didn't pull in (user32/msvcrt fns outside FN_ALLOW).
 // Declared here so all 5.4 + 5.5 files can resolve them via super:: globs.
-extern "system" {
+//
+// CRT string/mem helpers are plain cdecl (provided by libcntpr as `_name`),
+// so they MUST be extern "C" — declaring them extern "system" decorates them
+// `_name@N` on i386, which libcntpr does not export.
+extern "C" {
     pub fn wcslen(s: *const u16) -> usize;
     pub fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
     pub fn wcsncpy(dest: *mut u16, src: *const u16, n: usize) -> *mut u16;
@@ -81,6 +85,9 @@ extern "system" {
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32;
     pub fn _stricmp(s1: *const i8, s2: *const i8) -> i32;
     pub fn strchr(s: *const i8, c: i32) -> *mut i8;
+}
+// Win32 user32/shell32 APIs are stdcall → extern "system".
+extern "system" {
     pub fn PrivateExtractIconsW(
         szFileName: winsrv_sys::winsrv::LPCWSTR,
         nIconIndex: i32,

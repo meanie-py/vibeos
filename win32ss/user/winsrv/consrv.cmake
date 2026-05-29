@@ -25,19 +25,21 @@ list(APPEND CONSRV_SOURCE
     # crash cause) + provider shims, and the dropped handlers need new
     # paid translation. Tracked, not abandoned. The Rust source stays in
     # the crate (built + verified), shadowed by the live C below.
-    consrv/alias.c
-    consrv/coninput.c
-    consrv/conoutput.c
-    consrv/console.c
-    consrv/frontendctl.c
-    consrv/handle.c
-    consrv/history.c
-    consrv/init.c
-    consrv/lineinput.c
-    consrv/popup.c
-    consrv/settings.c
-    consrv/shutdown.c
-    consrv/subsysreg.c
+    # --- consrv top-level flip → Rust (winsrv-rust/src/consrv/*.rs) ----
+    # condrv/ + frontends/ stay C for now (separate flip slice).
+    # consrv/alias.c        — replaced by Rust (consrv/alias.rs)
+    # consrv/coninput.c     — replaced by Rust (consrv/coninput.rs)
+    # consrv/conoutput.c    — replaced by Rust (consrv/conoutput.rs)
+    # consrv/console.c      — replaced by Rust (consrv/console.rs)
+    # consrv/frontendctl.c  — replaced by Rust (consrv/frontendctl.rs)
+    # consrv/handle.c       — replaced by Rust (consrv/handle.rs)
+    # consrv/history.c      — replaced by Rust (consrv/history.rs)
+    # consrv/init.c         — replaced by Rust (consrv/init.rs)
+    # consrv/lineinput.c    — replaced by Rust (consrv/lineinput.rs)
+    # consrv/popup.c        — replaced by Rust (consrv/popup.rs)
+    # consrv/settings.c     — replaced by Rust (consrv/settings.rs)
+    # consrv/shutdown.c     — replaced by Rust (consrv/shutdown.rs)
+    # consrv/subsysreg.c    — replaced by Rust (consrv/subsysreg.rs)
     consrv/condrv/coninput.c
     consrv/condrv/conoutput.c
     consrv/condrv/console.c
@@ -55,6 +57,10 @@ list(APPEND CONSRV_SOURCE
     consrv/frontends/gui/text.c
     consrv/frontends/tui/tuiterm.c
     consrv/frontends/serial/serialterm.c
+    # Provider shim for C macros / MSVC intrinsics that the Rust consrv
+    # translation extern-declares (IS_FULL_WIDTH, IsListEmpty, _Interlocked*,
+    # IShellLinkW_*/IPersistFile_* COBJMACROS). Self-contained (no SDK headers).
+    consrv/consrv_rust_shim.c
     # consrv/consrv.rc
     consrv/consrv.h)
 
@@ -82,6 +88,10 @@ if(ARCH STREQUAL "arm64")
     target_compile_definitions(consrv PRIVATE SERIALTERM_COMPILE)
 endif()
 add_pch(consrv consrv/consrv.h CONSRV_SOURCE)
+# The Rust-shim is intentionally self-contained (no SDK headers) so it can
+# define the macro/intrinsic providers without colliding with their macro
+# declarations; keep the consrv PCH (and -fms-extensions) out of it.
+set_source_files_properties(consrv/consrv_rust_shim.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_OPTIONS "")
 #add_object_library(consrv ${CONSRV_SOURCE})
 #list(APPEND CONSRV_IMPORT_LIBS)
 if(ARCH STREQUAL "arm64")

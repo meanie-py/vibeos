@@ -8,7 +8,9 @@ extern "system" {
     pub fn CONTAINING_RECORD(addr: *const u8, Type: usize, field_offset: usize) -> *mut u8;
 }
 
-extern "system" {
+// These condrv buffer fns are defined plain-cdecl (no NTAPI) in the still-C
+// condrv (conoutput.c / text.c / graphics.c) → extern "C".
+extern "C" {
     pub fn TEXTMODE_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, TextModeInfo: PTEXTMODE_BUFFER_INFO, ) -> NTSTATUS;
     pub fn GRAPHICS_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, GraphicsInfo: PGRAPHICS_BUFFER_INFO, ) -> NTSTATUS;
     pub fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);

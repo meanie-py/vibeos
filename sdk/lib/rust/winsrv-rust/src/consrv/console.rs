@@ -23,6 +23,13 @@ use super::condrv::console::ConDrvValidateConsoleUnsafe;
 // Disambiguate sibling-Rust handle helpers vs winsrv:: bindgen glob.
 use super::handle::ConSrvGetObject;
 use super::handle::ConSrvReleaseObject;
+// Helpers used by the recovered ConSrvInitConsole translation.
+use super::condrv::console::ConDrvInitConsole;
+use super::condrv::console::ConDrvAttachTerminal;
+use super::frontends::terminal::ConSrvInitTerminal;
+use super::frontends::terminal::ConSrvDeinitTerminal;
+use crate::concfg::settings::ConCfgGetDefaultSettings;
+use crate::concfg::settings::ConCfgReadUserSettings;
 
 use core::ffi::c_void;
 
@@ -281,6 +288,7 @@ pub(crate) unsafe fn ConsoleFreeUnicodeString(UnicodeString: PUNICODE_STRING) {
     }
 }
 
+#[no_mangle]
 pub unsafe extern "system" fn ConSrvValidateConsole(
     Console: *mut PCONSRV_CONSOLE,
     ConsoleHandle: HANDLE,
@@ -328,7 +336,8 @@ pub unsafe extern "system" fn ConSrvValidateConsole(
     RetVal
 }
 
-pub unsafe extern "system" fn ConSrvGetConsole(
+#[no_mangle]
+pub unsafe extern "C" fn ConSrvGetConsole(
     ProcessData: PCONSOLE_PROCESS_DATA,
     Console: *mut PCONSRV_CONSOLE,
     LockConsole: BOOLEAN,
@@ -353,7 +362,8 @@ pub unsafe extern "system" fn ConSrvGetConsole(
     Status
 }
 
-pub unsafe extern "system" fn ConSrvReleaseConsole(
+#[no_mangle]
+pub unsafe extern "C" fn ConSrvReleaseConsole(
     Console: PCONSRV_CONSOLE,
     IsConsoleLocked: u8,
 ) {
@@ -379,6 +389,235 @@ pub unsafe extern "system" fn ConSrvInitConsoleSupport() {
     ConsoleListSize = 0;
     ConsoleList = core::ptr::null_mut();
     RtlInitializeResource(core::ptr::addr_of_mut!(ListLock));
+}
+
+// Recovered dropped translation of console.c:ConSrvInitConsole (NTAPI).
+// Called by ConSrvAllocateConsole; previously only present as a winsrv-sys
+// bindgen extern resolving to the now-removed C console.c.
+#[no_mangle]
+pub unsafe extern "system" fn ConSrvInitConsole(
+    NewConsoleHandle: PHANDLE,
+    NewConsole: *mut PCONSRV_CONSOLE,
+    ConsoleInitInfo: PCONSOLE_INIT_INFO,
+    ConsoleLeaderProcess: PCSR_PROCESS,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+    let mut ConsoleHandle: HANDLE = core::ptr::null_mut();
+    let Console: PCONSRV_CONSOLE;
+
+    // BYTE ConsoleInfoBuffer[sizeof(CONSOLE_STATE_INFO) + MAX_PATH * sizeof(WCHAR)]
+    const CONSOLE_INFO_BUFFER_SIZE: usize =
+        core::mem::size_of::<CONSOLE_STATE_INFO>() + (MAX_PATH as usize) * core::mem::size_of::<WCHAR>();
+    let mut ConsoleInfoBuffer: [u8; CONSOLE_INFO_BUFFER_SIZE] = [0u8; CONSOLE_INFO_BUFFER_SIZE];
+    let ConsoleInfo: PCONSOLE_STATE_INFO = ConsoleInfoBuffer.as_mut_ptr() as PCONSOLE_STATE_INFO;
+    let mut DrvConsoleInfo: CONSOLE_INFO = core::mem::zeroed();
+
+    let mut Length: usize;
+
+    let mut Terminal: TERMINAL = core::mem::zeroed();
+
+    if NewConsole.is_null() || ConsoleInitInfo.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *NewConsole = core::ptr::null_mut();
+
+    /* Load the console settings */
+    RtlZeroMemory(
+        ConsoleInfoBuffer.as_mut_ptr() as *mut core::ffi::c_void,
+        CONSOLE_INFO_BUFFER_SIZE,
+    );
+    (*ConsoleInfo).cbSize = CONSOLE_INFO_BUFFER_SIZE as ULONG;
+
+    /* 1. Get the title of the console (initialize ConsoleInfo->ConsoleTitle) */
+    let cap = ((*ConsoleInfo).cbSize as usize)
+        .saturating_sub(core::mem::offset_of!(CONSOLE_STATE_INFO, ConsoleTitle))
+        .saturating_sub(core::mem::size_of::<u16>())
+        / core::mem::size_of::<WCHAR>();
+    Length = core::cmp::min((*ConsoleInitInfo).TitleLength as usize, cap);
+    let TitleDst = core::ptr::addr_of_mut!((*ConsoleInfo).ConsoleTitle) as *mut u16;
+    wcsncpy(TitleDst, (*ConsoleInitInfo).ConsoleTitle, Length);
+    *TitleDst.add(Length) = 0u16; // NULL-terminate it.
+
+    /* 2. Impersonate the caller in order to retrieve settings in its context */
+    if CsrImpersonateClient(core::ptr::null_mut()) == 0u8 {
+        return STATUS_BAD_IMPERSONATION_LEVEL;
+    }
+
+    /* 3. Load the default settings */
+    ConCfgGetDefaultSettings(ConsoleInfo);
+
+    /*
+     * 4. Load per-application terminal settings.
+     */
+    {
+        if LoadShellLinkConsoleInfo(ConsoleInfo, ConsoleInitInfo) == 0u8 {
+            (*(*ConsoleInitInfo).ConsoleStartInfo).dwStartupFlags &= !STARTF_TITLEISLINKNAME;
+        }
+    }
+
+    /* 5. Load the remaining console settings via the registry. */
+    if ((*(*ConsoleInitInfo).ConsoleStartInfo).dwStartupFlags & STARTF_TITLEISLINKNAME) == 0 {
+        ConCfgReadUserSettings(ConsoleInfo, 0u8);
+
+        if ((*(*ConsoleInitInfo).ConsoleStartInfo).dwStartupFlags & STARTF_USEFILLATTRIBUTE) != 0 {
+            (*ConsoleInfo).ScreenAttributes =
+                (*(*ConsoleInitInfo).ConsoleStartInfo).wFillAttribute as USHORT;
+        }
+        if ((*(*ConsoleInitInfo).ConsoleStartInfo).dwStartupFlags & STARTF_USECOUNTCHARS) != 0 {
+            (*ConsoleInfo).ScreenBufferSize =
+                (*(*ConsoleInitInfo).ConsoleStartInfo).dwScreenBufferSize;
+        }
+        if ((*(*ConsoleInitInfo).ConsoleStartInfo).dwStartupFlags & STARTF_USESIZE) != 0 {
+            (*ConsoleInfo).WindowSize = (*(*ConsoleInitInfo).ConsoleStartInfo).dwWindowSize;
+        }
+    }
+
+    /* 6. Revert impersonation */
+    CsrRevertToSelf();
+
+    /* Set-up the code page */
+    (*ConsoleInfo).CodePage = GetOEMCP();
+
+    /*
+     * Initialize the ConSrv terminal and give it a chance to load
+     * its own settings and override the console settings.
+     */
+    Status = ConSrvInitTerminal(
+        core::ptr::addr_of_mut!(Terminal),
+        ConsoleInfo,
+        ConsoleInitInfo,
+        (*ConsoleLeaderProcess).ProcessHandle,
+    );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
+    /* Initialize a new console via the driver */
+    DrvConsoleInfo.ScreenBufferSize = (*ConsoleInfo).ScreenBufferSize;
+    DrvConsoleInfo.ConsoleSize = (*ConsoleInfo).WindowSize;
+    DrvConsoleInfo.CursorSize = (*ConsoleInfo).CursorSize;
+    DrvConsoleInfo.ScreenAttrib = (*ConsoleInfo).ScreenAttributes;
+    DrvConsoleInfo.PopupAttrib = (*ConsoleInfo).PopupAttributes;
+    DrvConsoleInfo.CodePage = (*ConsoleInfo).CodePage;
+
+    /* Allocate a new console */
+    Console = ConsoleAllocHeap(HEAP_ZERO_MEMORY, core::mem::size_of::<CONSRV_CONSOLE>())
+        as PCONSRV_CONSOLE;
+    if Console.is_null() {
+        ConSrvDeinitTerminal(core::ptr::addr_of_mut!(Terminal));
+        return STATUS_NO_MEMORY;
+    }
+
+    Status = ConDrvInitConsole(Console as PCONSOLE, core::ptr::addr_of_mut!(DrvConsoleInfo));
+    if !NT_SUCCESS(Status) {
+        ConsoleFreeHeap(Console as PVOID);
+        ConSrvDeinitTerminal(core::ptr::addr_of_mut!(Terminal));
+        return Status;
+    }
+
+    /*** Register ConSrv features ***/
+
+    /* Initialize the console title */
+    ConsoleCreateUnicodeString(
+        core::ptr::addr_of_mut!((*Console).OriginalTitle),
+        core::ptr::addr_of!((*ConsoleInfo).ConsoleTitle) as PCWSTR,
+    );
+    ConsoleCreateUnicodeString(
+        core::ptr::addr_of_mut!((*Console).Title),
+        core::ptr::addr_of!((*ConsoleInfo).ConsoleTitle) as PCWSTR,
+    );
+
+    /* Initialize process support */
+    InitializeListHead(core::ptr::addr_of_mut!((*Console).ProcessList));
+    (*Console).NotifiedLastCloseProcess = core::ptr::null_mut();
+    (*Console).NotifyLastClose = 0u8;
+    (*Console).HasFocus = 0u8;
+
+    /* Initialize pausing support */
+    (*Console).PauseFlags = 0;
+    InitializeListHead(core::ptr::addr_of_mut!((*Console).ReadWaitQueue));
+    InitializeListHead(core::ptr::addr_of_mut!((*Console).WriteWaitQueue));
+
+    /* Initialize the alias and history buffers */
+    (*Console).Aliases = core::ptr::null_mut();
+    InitializeListHead(core::ptr::addr_of_mut!((*Console).HistoryBuffers));
+    (*Console).NumberOfHistoryBuffers = 0;
+    (*Console).MaxNumberOfHistoryBuffers = (*ConsoleInfo).NumberOfHistoryBuffers;
+    (*Console).HistoryBufferSize = (*ConsoleInfo).HistoryBufferSize;
+    (*Console).HistoryNoDup = (*ConsoleInfo).HistoryNoDup as BOOLEAN;
+
+    /* Initialize the Input Line Discipline */
+    (*Console).LineBuffer = core::ptr::null_mut();
+    (*Console).LinePos = 0;
+    (*Console).LineMaxSize = 0;
+    (*Console).LineSize = 0;
+    (*Console).LineComplete = 0u8;
+    (*Console).LineUpPressed = 0u8;
+    (*Console).LineInsertToggle = (*ConsoleInfo).InsertMode as BOOLEAN;
+    (*Console).InsertMode = (*ConsoleInfo).InsertMode as BOOLEAN;
+    (*Console).QuickEdit = (*ConsoleInfo).QuickEdit as BOOLEAN;
+
+    /* Popup windows */
+    InitializeListHead(core::ptr::addr_of_mut!((*Console).PopupWindows));
+
+    /* Colour table */
+    RtlCopyMemory(
+        core::ptr::addr_of_mut!((*Console).Colors) as *mut core::ffi::c_void,
+        core::ptr::addr_of!((*ConsoleInfo).ColorTable) as *const core::ffi::c_void,
+        core::mem::size_of_val(&(*ConsoleInfo).ColorTable),
+    );
+
+    /* Create the Initialization Events */
+    Status = NtCreateEvent(
+        core::ptr::addr_of_mut!((*Console).InitEvents[INIT_SUCCESS as usize]),
+        EVENT_ALL_ACCESS,
+        core::ptr::null_mut(),
+        NotificationEvent,
+        0u8,
+    );
+    if !NT_SUCCESS(Status) {
+        ConDrvDeleteConsole(Console as PCONSOLE);
+        ConSrvDeinitTerminal(core::ptr::addr_of_mut!(Terminal));
+        return Status;
+    }
+    Status = NtCreateEvent(
+        core::ptr::addr_of_mut!((*Console).InitEvents[INIT_FAILURE as usize]),
+        EVENT_ALL_ACCESS,
+        core::ptr::null_mut(),
+        NotificationEvent,
+        0u8,
+    );
+    if !NT_SUCCESS(Status) {
+        NtClose((*Console).InitEvents[INIT_SUCCESS as usize]);
+        ConDrvDeleteConsole(Console as PCONSOLE);
+        ConSrvDeinitTerminal(core::ptr::addr_of_mut!(Terminal));
+        return Status;
+    }
+
+    /*
+     * Attach the ConSrv terminal to the console.
+     * This call makes a copy of our local Terminal variable.
+     */
+    Status = ConDrvAttachTerminal(Console as PCONSOLE, core::ptr::addr_of_mut!(Terminal));
+    if !NT_SUCCESS(Status) {
+        NtClose((*Console).InitEvents[INIT_FAILURE as usize]);
+        NtClose((*Console).InitEvents[INIT_SUCCESS as usize]);
+        ConDrvDeleteConsole(Console as PCONSOLE);
+        ConSrvDeinitTerminal(core::ptr::addr_of_mut!(Terminal));
+        return Status;
+    }
+
+    /* All went right, so add the console to the list */
+    let _ = InsertConsole(core::ptr::addr_of_mut!(ConsoleHandle), Console);
+
+    // FIXME! We do not support at all asynchronous console creation!
+    NtSetEvent((*Console).InitEvents[INIT_SUCCESS as usize], core::ptr::null_mut());
+
+    /* Return the newly created console to the caller and a success code too */
+    *NewConsoleHandle = ConsoleHandle;
+    *NewConsole = Console;
+    STATUS_SUCCESS
 }
 
 pub(crate) unsafe fn LoadShellLinkConsoleInfo(
@@ -598,12 +837,16 @@ pub unsafe extern "system" fn ConSrvDeleteConsole(Console: PCONSRV_CONSOLE) {
     ConDrvDeleteConsole(Console as PCONSOLE);
 }
 
-pub(crate) unsafe fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u8) {
+// C decl (console.c) is plain cdecl (no NTAPI): VOID ConioPause(PCONSRV_CONSOLE, UCHAR).
+// Still-C conwnd.c references `_ConioPause` → #[no_mangle] extern "C".
+#[no_mangle]
+pub unsafe extern "C" fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u8) {
     (*Console).PauseFlags |= Flags;
     ConDrvPause(Console as PCONSOLE);
 }
 
-pub(crate) unsafe fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u8) {
+#[no_mangle]
+pub unsafe extern "C" fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u8) {
     (*Console).PauseFlags &= !Flags;
 
     if (*Console).PauseFlags == 0 {
@@ -687,7 +930,7 @@ pub(crate) unsafe fn ConSrvInitProcessHandles(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ConSrvAllocateConsole(
+pub unsafe extern "C" fn ConSrvAllocateConsole(
     ProcessData: PCONSOLE_PROCESS_DATA,
     pInputHandle: PHANDLE,
     pOutputHandle: PHANDLE,
@@ -726,7 +969,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
     }
 
     Status = NtDuplicateObject(
-        core::ptr::null_mut::<core::ffi::c_void>() as HANDLE,
+        (-1isize) as HANDLE,
         (*Console).InitEvents[INIT_SUCCESS as usize],
         (*(*ProcessData).Process).ProcessHandle,
         core::ptr::addr_of_mut!((*(*ConsoleInitInfo).ConsoleStartInfo).InitEvents[INIT_SUCCESS as usize]),
@@ -742,7 +985,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
     }
 
     Status = NtDuplicateObject(
-        core::ptr::null_mut::<core::ffi::c_void>() as HANDLE,
+        (-1isize) as HANDLE,
         (*Console).InitEvents[INIT_FAILURE as usize],
         (*(*ProcessData).Process).ProcessHandle,
         core::ptr::addr_of_mut!((*(*ConsoleInitInfo).ConsoleStartInfo).InitEvents[INIT_FAILURE as usize]),
@@ -767,7 +1010,7 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
     }
 
     Status = NtDuplicateObject(
-        core::ptr::null_mut::<core::ffi::c_void>() as HANDLE,
+        (-1isize) as HANDLE,
         (*Console).InputBuffer.ActiveEvent,
         (*(*ProcessData).Process).ProcessHandle,
         core::ptr::addr_of_mut!((*(*ConsoleInitInfo).ConsoleStartInfo).InputWaitHandle),
@@ -818,7 +1061,8 @@ pub unsafe extern "system" fn ConSrvAllocateConsole(
     STATUS_SUCCESS
 }
 
-pub(crate) unsafe fn ConSrvInheritConsole(
+#[no_mangle]
+pub unsafe extern "C" fn ConSrvInheritConsole(
     ProcessData: PCONSOLE_PROCESS_DATA,
     ConsoleHandle: HANDLE,
     CreateNewHandleTable: u8,
@@ -955,7 +1199,8 @@ pub(crate) unsafe fn ConSrvInheritConsole(
     return Status;
 }
 
-pub(crate) unsafe fn ConSrvRemoveConsole(
+#[no_mangle]
+pub unsafe extern "C" fn ConSrvRemoveConsole(
     ProcessData: PCONSOLE_PROCESS_DATA,
 ) -> NTSTATUS {
     let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
@@ -1002,7 +1247,7 @@ pub(crate) unsafe fn ConSrvRemoveConsole(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ConSrvConsoleCtrlEventTimeout(
+pub unsafe extern "C" fn ConSrvConsoleCtrlEventTimeout(
     CtrlEvent: ULONG,
     ProcessData: PCONSOLE_PROCESS_DATA,
     Timeout: ULONG,
@@ -1043,6 +1288,9 @@ pub unsafe extern "system" fn ConSrvConsoleCtrlEvent(
     ConSrvConsoleCtrlEventTimeout(CtrlEvent, ProcessData, 0)
 }
 
+// C decl (console.c) is NTAPI → keep extern "system"; export the symbol
+// (`_ConSrvGetConsoleLeaderProcess@4`) for the still-C conwnd.c/guiterm.c.
+#[no_mangle]
 pub unsafe extern "system" fn ConSrvGetConsoleLeaderProcess(
     Console: PCONSRV_CONSOLE,
 ) -> PCONSOLE_PROCESS_DATA {
@@ -1162,7 +1410,8 @@ pub unsafe extern "system" fn ConSrvSetConsoleProcessFocus(
 // `CodePageToCharSet` is a real C function (win32ss/user/winsrv/concfg/font.c)
 // that is not surfaced by the winsrv-sys bindgen catalog. Declare it extern so
 // the SrvGetConsoleLangId path links against the per-process concfg.
-extern "system" {
+// C decl (concfg/font.h) is plain cdecl (no NTAPI) → extern "C".
+extern "C" {
     pub fn CodePageToCharSet(CodePage: UINT) -> BYTE;
 }
 

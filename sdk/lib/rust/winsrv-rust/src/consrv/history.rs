@@ -445,6 +445,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistory(
            core::mem::size_of::<u8>() as ULONG,
        ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -509,6 +510,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistory(
 
     (*GetCommandHistoryRequest).HistoryLength = BytesWritten;
 
+    ConSrvReleaseConsole(Console, 1u8);
     Status
 }
 
@@ -532,6 +534,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistoryLength(
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -555,6 +558,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistoryLength(
 
     (*GetCommandHistoryLengthRequest).HistoryLength = Length;
 
+    ConSrvReleaseConsole(Console, 1u8);
     STATUS_SUCCESS
 }
 
@@ -576,6 +580,7 @@ pub unsafe extern "system" fn SrvExpungeConsoleCommandHistory(
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -587,6 +592,7 @@ pub unsafe extern "system" fn SrvExpungeConsoleCommandHistory(
     );
     HistoryDeleteBuffer(Hist);
 
+    ConSrvReleaseConsole(Console, 1u8);
     STATUS_SUCCESS
 }
 
@@ -610,6 +616,7 @@ pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -623,6 +630,7 @@ pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
         Status = HistoryResizeBuffer(Hist, (*SetHistoryNumberCommandsRequest).NumCommands);
     }
 
+    ConSrvReleaseConsole(Console, 1u8);
     Status
 }
 
@@ -695,5 +703,7 @@ pub unsafe extern "system" fn SrvSetConsoleCommandHistoryMode(
     let SetHistoryModeRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.SetHistoryModeRequest);
 
     (*Console).InsertMode = if (*SetHistoryModeRequest).Mode & 1 != 0 { 1u8 } else { 0u8 };
+
+    ConSrvReleaseConsole(Console, 1u8);
     STATUS_SUCCESS
 }

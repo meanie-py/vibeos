@@ -13,6 +13,13 @@ use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp, wcsncpy, memcmp};
 use core::ffi::c_void;
 
+// `ConioPause`/`ConioUnpause` are plain-cdecl (no NTAPI) in console.c
+// (now the Rust consrv::console) → extern "C", UCHAR Flags.
+extern "C" {
+    pub fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u8);
+    pub fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u8);
+}
+
 // Local extern fn block — kept lean because the bulk of Win32 +
 // consrv-internal fns now resolve via use winsrv_sys::winsrv::*;
 // (post-regen) + super::*; sibling imports + super::helpers::*.
@@ -25,9 +32,6 @@ extern "system" {
     /// Takes the abstract PCONSOLE (not the consrv-flavoured
     /// PCONSRV_CONSOLE), so the Console cast is needed at call sites.
     pub fn TermResizeTerminal(Console: *mut core::ffi::c_void);
-    /// `ConioPause`/`ConioUnpause` — consrv/conoutput.c.
-    pub fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u32);
-    pub fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u32);
     /// `GetType` — sibling C-side helper in conoutput.c that returns
     /// the buffer-type discriminant (TEXTMODE_BUFFER vs GRAPHICS_BUFFER).
     pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
@@ -905,7 +909,7 @@ pub unsafe fn UpdateSelection(
             }
 
             (*GuiData).Selection.dwFlags |= CONSOLE_SELECTION_IN_PROGRESS;
-            ConioPause(Console, PAUSED_FROM_SELECTION);
+            ConioPause(Console, PAUSED_FROM_SELECTION as u8);
         }
     } else {
         if ((*GuiData).Selection.dwFlags & CONSOLE_SELECTION_NOT_EMPTY) != 0 {
@@ -913,7 +917,7 @@ pub unsafe fn UpdateSelection(
         }
 
         (*GuiData).Selection.dwFlags = CONSOLE_NO_SELECTION;
-        ConioUnpause(Console, PAUSED_FROM_SELECTION);
+        ConioUnpause(Console, PAUSED_FROM_SELECTION as u8);
 
         SetWindowTextW((*GuiData).hWindow, (*Console).Title.Buffer);
     }
@@ -1313,11 +1317,11 @@ unsafe fn OnScroll(GuiData: PGUI_CONSOLE_DATA, nBar: INT, sbCode: WORD) {
         }
         SB_THUMBTRACK => {
             sInfo.nPos = sInfo.nTrackPos;
-            ConioPause(Console, PAUSED_FROM_SCROLLBAR);
+            ConioPause(Console, PAUSED_FROM_SCROLLBAR as u8);
         }
         SB_THUMBPOSITION => {
             sInfo.nPos = sInfo.nTrackPos;
-            ConioUnpause(Console, PAUSED_FROM_SCROLLBAR);
+            ConioUnpause(Console, PAUSED_FROM_SCROLLBAR as u8);
         }
         SB_TOP => {
             sInfo.nPos = sInfo.nMin;

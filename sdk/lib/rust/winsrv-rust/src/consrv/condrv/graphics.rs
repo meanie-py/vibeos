@@ -5,7 +5,8 @@ use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 
 
 
-extern "system" {
+// Plain-cdecl (no NTAPI) in the still-C condrv (text.c) → extern "C".
+extern "C" {
     pub fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: CONSOLE_IO_OBJECT_TYPE, Size: usize, ) -> NTSTATUS;
     pub fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
 }
