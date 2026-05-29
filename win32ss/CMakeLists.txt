@@ -54,9 +54,9 @@ add_custom_command(
 list(APPEND SOURCE
     safe_user_io.c
     gdi/dib/alphablend.c
-    gdi/dib/dib1bpp.c
-    gdi/dib/dib4bpp.c
-    gdi/dib/dib8bpp.c
+    # gdi/dib/dib1bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib1bpp.rs) — cohabitation [Phase 2b dib wave 1]
+    # gdi/dib/dib4bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib4bpp.rs) — cohabitation [Phase 2b dib wave 1]
+    # gdi/dib/dib8bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib8bpp.rs) — cohabitation [Phase 2b dib wave 1]
     gdi/dib/dib16bpp.c
     gdi/dib/dib24bpp.c
     gdi/dib/dib32bpp.c
@@ -229,8 +229,9 @@ list(APPEND ASM_SOURCE
 list(APPEND SOURCE gdi/eng/i386/floatobj.c)
 else()
 list(APPEND SOURCE
-    gdi/dib/dib24bppc.c
-    gdi/dib/dib32bppc.c)
+    # gdi/dib/dib24bppc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib24bppc.rs) — cohabitation [Phase 2b dib wave 1, non-x86]
+    # gdi/dib/dib32bppc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib32bppc.rs) — cohabitation [Phase 2b dib wave 1, non-x86]
+    )
 endif()
 
 if(KDBG)
@@ -311,6 +312,18 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/transblt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/umpdstubs.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/xlateobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_helpers.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib1bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib4bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib8bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib16bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib24bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib32bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib24bppc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib32bppc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_alphablend.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_stretchblt.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/floodfill.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
