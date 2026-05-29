@@ -39,6 +39,28 @@ unsafe fn NEXT_MEMORY_DESCRIPTOR(
     (Descriptor as *mut u8).add(DescriptorSize as usize) as *mut EFI_MEMORY_DESCRIPTOR
 }
 
+/// Debug print helper: writes a UTF-16 null-terminated string to UEFI ConOut.
+/// Only usable BEFORE ExitBootServices. Caller passes a pointer to the wide
+/// literal (e.g. via `crate::wide!("...\0")`).
+///
+/// Kept available (not stripped) because UEFI freeldr has no equivalent to
+/// debugcon — when something hangs before the kernel hand-off, sprinkling
+/// these is the only way to bisect. Linker-DCE'd when unused.
+#[cfg(feature = "uefi")]
+#[inline(always)]
+#[allow(dead_code)]
+pub unsafe fn uefi_dbg_str(s: *const u16) {
+    use crate::uefildr::EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
+    if !GlobalSystemTable.is_null() {
+        let conout = (*GlobalSystemTable).ConOut as *mut EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
+        if !conout.is_null() {
+            if let Some(out) = (*conout).OutputString {
+                out(conout, s as *mut u16);
+            }
+        }
+    }
+}
+
 // uefimem.c file-scope globals (external linkage — this TU is the definer).
 #[no_mangle]
 pub static mut EfiMemoryMap: *mut EFI_MEMORY_DESCRIPTOR = core::ptr::null_mut();
@@ -73,7 +95,7 @@ unsafe fn PUEFI_LoadMemoryMap(
             ((*(*GlobalSystemTable).BootServices).FreePool).unwrap()(EfiMemoryMap as *mut core::ffi::c_void);
         }
 
-        AllocationSize = *LocMapSize + (*LocDescriptorSize * Count);
+        AllocationSize = *LocMapSize + (*LocDescriptorSize * (Count as UINTN));
         ((*(*GlobalSystemTable).BootServices).AllocatePool).unwrap()(
             EfiLoaderData,
             AllocationSize,
@@ -178,7 +200,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
     FreeldrMemMapSize = (core::mem::size_of::<FREELDR_MEMORY_DESCRIPTOR>() * EntryCount as usize) as SIZE_T;
     let status_alloc = ((*(*GlobalSystemTable).BootServices).AllocatePool).unwrap()(
         EfiLoaderData,
-        ((FreeldrMemMapSize) as u32),
+        ((FreeldrMemMapSize) as UINTN),
         core::ptr::addr_of_mut!(FreeldrMem) as *mut *mut core::ffi::c_void,
     );
     if status_alloc != EFI_SUCCESS {
@@ -197,7 +219,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
             let status_alloc_pages = ((*(*GlobalSystemTable).BootServices).AllocatePages).unwrap()(
                 AllocateAddress,
                 EfiLoaderData,
-                (((*MapEntry).NumberOfPages) as u32),
+                (((*MapEntry).NumberOfPages) as UINTN),
                 core::ptr::addr_of_mut!(PhysAddr),
             );
             if status_alloc_pages != EFI_SUCCESS {
@@ -343,7 +365,7 @@ pub unsafe extern "C" fn UefiPrepareForReactOS() {
 //             GlobalSystemTable->BootServices->FreePool(EfiMemoryMap);
 //
 //         /* If MapSize never reports the correct size after the first time, increment */
-//         AllocationSize = *LocMapSize + (*LocDescriptorSize * Count);
+//         AllocationSize = *LocMapSize + (*LocDescriptorSize * (Count as UINTN));
 //         GlobalSystemTable->BootServices->AllocatePool(EfiLoaderData, AllocationSize,
 //                                                       (VOID**)&EfiMemoryMap);
 //         Status = GlobalSystemTable->BootServices->GetMemoryMap(LocMapSize,

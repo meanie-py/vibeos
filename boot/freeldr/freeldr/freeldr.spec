@@ -1,10 +1,14 @@
 
+# Cache (consumed by rosload's DriveMapMapDrivesInSection)
+@ cdecl CacheInvalidateCacheData()
+
 # ARC
 @ cdecl ArcClose()
 @ cdecl ArcGetDiskCount()
 @ cdecl ArcGetDiskInfo()
 @ cdecl ArcGetFileInformation()
 @ cdecl ArcGetTime()
+@ cdecl ArcGetRelativeTime()
 @ cdecl ArcOpen()
 @ cdecl ArcRead()
 @ cdecl ArcSeek()

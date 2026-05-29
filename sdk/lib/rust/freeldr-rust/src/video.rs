@@ -16,7 +16,12 @@ extern "C" {
     fn MachVideoSync();
     fn MachVideoSetPaletteColor(Color: UCHAR, Red: UCHAR, Green: UCHAR, Blue: UCHAR);
     fn MachVideoGetBufferSize() -> u32;
-    fn MmAllocateMemoryWithType(size: u32, type_: u32) -> *mut core::ffi::c_void;
+    // mm.c canonical: `PVOID MmAllocateMemoryWithType(SIZE_T MemorySize, TYPE_OF_MEMORY MemoryType)`.
+    // SIZE_T = usize; on arm64+amd64 that's 8 bytes. rustconv declared this
+    // as `(u32, u32)` which writes only w0 (low 32 of x0); the high 32 bits
+    // of x0 are then caller-side garbage, so MmAllocateMemoryWithType saw a
+    // multi-GB size and failed. Critical for arm64 boot (Bug #5).
+    fn MmAllocateMemoryWithType(size: usize, type_: u32) -> *mut core::ffi::c_void;
 }
 
 #[no_mangle]
@@ -28,7 +33,7 @@ pub unsafe extern "C" fn VideoAllocateOffScreenBuffer() -> *mut core::ffi::c_voi
 
     BufferSize = MachVideoGetBufferSize();
 
-    VideoOffScreenBuffer = MmAllocateMemoryWithType(BufferSize, LoaderFirmwareTemporary);
+    VideoOffScreenBuffer = MmAllocateMemoryWithType(BufferSize as usize, LoaderFirmwareTemporary);
 
     return VideoOffScreenBuffer;
 }

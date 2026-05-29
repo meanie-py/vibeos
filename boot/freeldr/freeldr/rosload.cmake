@@ -9,31 +9,39 @@ spec2def(rosload.exe rosload.spec)
 
 list(APPEND ROSLOAD_SOURCE
     include/freeldr.h
-    bootmgr.c
-    custom.c
-    linuxboot.c
-    miscboot.c
-    options.c
-    oslist.c
-    lib/rtl/libsupp.c
+    # strsafe_shim.c — variadic RtlStringCbPrintfA out-of-line shim;
+    # the Rust freeldr-rust crate can't host a variadic def on stable
+    # (same constraint as freeldr_pe.exe / uefildr.efi). Compiled into
+    # rosload.exe directly, matching FREELDR_BASE_SOURCE in CMakeLists.txt.
+    lib/strsafe_shim.c
+    # Cohabitation: each .c below is replaced by its Rust translation in
+    # libfreeldr_rust_rosload.a (--features rosload). .c kept on disk.
+    # bootmgr.c          # replaced by Rust (freeldr-rust/src/bootmgr.rs)
+    # custom.c           # replaced by Rust (freeldr-rust/src/custom.rs)
+    # linuxboot.c        # replaced by Rust (freeldr-rust/src/linuxboot.rs)
+    # miscboot.c         # replaced by Rust (freeldr-rust/src/miscboot.rs)
+    # options.c          # replaced by Rust (freeldr-rust/src/options.rs)
+    # oslist.c           # replaced by Rust (freeldr-rust/src/oslist.rs)
+    # lib/rtl/libsupp.c  # replaced by Rust (freeldr-rust/src/libsupp.rs)
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
-    ntldr/conversion.c
-    ntldr/inffile.c
-    ntldr/registry.c
-    ntldr/setupldr.c
-    ntldr/winldr.c
-    ntldr/wlmemory.c
-    ntldr/wlregistry.c
+    # ntldr/conversion.c # replaced by Rust (freeldr-rust/src/conversion.rs)
+    # ntldr/inffile.c    # replaced by Rust (freeldr-rust/src/inffile.rs)
+    # ntldr/registry.c   # replaced by Rust (freeldr-rust/src/registry.rs)
+    # ntldr/setupldr.c   # replaced by Rust (freeldr-rust/src/setupldr.rs)
+    # ntldr/winldr.c     # replaced by Rust (freeldr-rust/src/winldr.rs)
+    # ntldr/wlmemory.c   # replaced by Rust (freeldr-rust/src/wlmemory.rs)
+    # ntldr/wlregistry.c # replaced by Rust (freeldr-rust/src/wlregistry.rs)
 )
 
 if(ARCH STREQUAL "i386")
 
     list(APPEND ROSLOAD_SOURCE
         arch/i386/halstub.c
-        arch/i386/ntoskrnl.c
+        # arch/i386/ntoskrnl.c       # replaced by Rust (freeldr-rust/src/ntoskrnl.rs)
         disk/scsiport.c
-        ntldr/arch/i386/winldr.c
-        ntldr/headless.c)
+        # ntldr/arch/i386/winldr.c   # replaced by Rust (freeldr-rust/src/winldr_i386.rs)
+        # ntldr/headless.c           # replaced by Rust (freeldr-rust/src/headless.rs)
+    )
 
     if(CMAKE_ASM16_GCC)
         compile_asm_with_gcc(arch/i386/drvmap.S _rosload_drvmap_obj)
@@ -47,7 +55,8 @@ if(ARCH STREQUAL "i386")
 elseif(ARCH STREQUAL "amd64")
 
     list(APPEND ROSLOAD_SOURCE
-        ntldr/arch/amd64/winldr.c)
+        # ntldr/arch/amd64/winldr.c  # replaced by Rust (freeldr-rust/src/winldr_amd64.rs)
+    )
 
     list(APPEND ROSLOAD_ASM_SOURCE
         arch/amd64/misc.S
@@ -85,7 +94,16 @@ if(ARCH STREQUAL "i386")
     add_dependencies(rosload rust_hal_mini)
 endif()
 
-target_link_libraries(rosload blcmlib blrtl libcntpr)
+# rosload cohabitation flip — link the rosload variant of libfreeldr_rust.a
+# (built from boot/freeldr/freeldr/CMakeLists.txt with --features rosload).
+# The Rust archive defines bootmgr/oslist/options/custom/winldr/wlmemory/
+# wlregistry/registry/setupldr/inffile/headless/conversion/libsupp/miscboot/
+# linuxboot/drivemap/ntoskrnl/winldr_<arch>. The corresponding rosload .c
+# entries below are commented out (cohabitation) so the Rust #[no_mangle]
+# exports take over. Mach* / Ui* / Ini* / FrLdrHeap* / etc. are owned by
+# freeldr.sys and reach rosload through add_importlibs(rosload freeldr).
+target_link_libraries(rosload ${FREELDR_RUST_ROSLOAD_LIB} blcmlib blrtl libcntpr)
+add_dependencies(rosload rust_freeldr_rosload)
 add_importlibs(rosload freeldr)
 
 # dynamic analysis switches

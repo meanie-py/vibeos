@@ -13,23 +13,28 @@ include_directories(BEFORE
 
 list(APPEND UEFILDR_ARC_SOURCE
     ${FREELDR_ARC_SOURCE}
-    arch/uefi/stubs.c
-    arch/uefi/uefisetup.c
-    arch/uefi/uefiutil.c
-    arch/vidfb.c
-    arch/vgafont.c)
+    # arch/vidfb.c    # replaced by Rust (freeldr-rust/src/vidfb.rs)
+    # arch/vgafont.c  # replaced by Rust (freeldr-rust/src/vgafont.rs)
+)
     # uefi-hw unit → Rust (freeldr-rust: ueficon/uefidisk/uefihw/uefimem/
-    # uefivid.rs). Cohabitation: .c kept on disk, Rust #[no_mangle] takes
-    # over. (stubs/uefisetup/uefiutil kept — not translated.)
+    # uefivid.rs + uefisetup/uefi_stubs/uefiutil.rs under feature="uefi").
+    # Cohabitation: .c kept on disk, Rust #[no_mangle] takes over.
     # arch/uefi/ueficon.c   # replaced by Rust (freeldr-rust/src/ueficon.rs)
     # arch/uefi/uefidisk.c  # replaced by Rust (freeldr-rust/src/uefidisk.rs)
     # arch/uefi/uefihw.c    # replaced by Rust (freeldr-rust/src/uefihw.rs)
     # arch/uefi/uefimem.c   # replaced by Rust (freeldr-rust/src/uefimem.rs)
     # arch/uefi/uefivid.c   # replaced by Rust (freeldr-rust/src/uefivid.rs)
+    # arch/uefi/stubs.c     # replaced by Rust (freeldr-rust/src/uefi_stubs.rs)
+    # arch/uefi/uefisetup.c # replaced by Rust (freeldr-rust/src/uefisetup.rs)
+    # arch/uefi/uefiutil.c  # replaced by Rust (freeldr-rust/src/uefiutil.rs)
+    # arch/uefi/uefildr.c   # NOT commented — owns uefildr.exe binary entry.
+    #                       # The Rust translation lives in freeldr-rust/src/
+    #                       # uefildr.rs, compiled but with #[no_mangle] gated
+    #                       # behind off-by-default `uefildr-rust-entry`
+    #                       # feature pending a future cohabitation flip.
 
 if(ARCH STREQUAL "i386")
-    list(APPEND UEFILDR_ARC_SOURCE
-        arch/i386/i386idt.c)
+    # arch/i386/i386idt.c  # replaced by Rust (freeldr-rust/src/i386idt.rs)
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/i386/uefiasm.S
         arch/i386/i386trap.S)
@@ -38,7 +43,8 @@ elseif(ARCH STREQUAL "amd64")
         arch/uefi/amd64/uefiasm.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND UEFILDR_ARC_SOURCE
-        arch/arm64/debug.c)
+        # arch/arm64/debug.c   # replaced by Rust (freeldr-rust/src/arm64_debug.rs)
+    )
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/arm64/uefiasm.S)
 else()
@@ -47,9 +53,11 @@ endif()
 
 list(APPEND UEFILDR_BOOTMGR_SOURCE
     ${FREELDR_BOOTMGR_SOURCE}
-    custom.c
-    options.c
-    oslist.c
+    # custom.c   — replaced by Rust (sdk/lib/rust/freeldr-rust/src/custom.rs)
+    # options.c — replaced by Rust (sdk/lib/rust/freeldr-rust/src/options.rs)
+    # oslist.c  — replaced by Rust (sdk/lib/rust/freeldr-rust/src/oslist.rs)
+    # NOTE: rosload.cmake keeps its own C copies of these (rosload.exe does
+    # not link libfreeldr_rust.a; cohabitation flip is a future task).
 )
 
 add_asm_files(uefifreeldr_common_asm ${FREELDR_COMMON_ASM_SOURCE} ${UEFILDR_COMMON_ASM_SOURCE})
@@ -95,7 +103,7 @@ spec2def(uefildr.exe freeldr.spec)
 list(APPEND UEFILDR_BASE_SOURCE
     include/arch/uefi/uefildr.h
     arch/uefi/uefildr.c
-    bootmgr.c
+    # bootmgr.c  # replaced by Rust (sdk/lib/rust/freeldr-rust/src/bootmgr.rs)
     ${FREELDR_BASE_SOURCE})
     # setup/legacy unit → Rust (freeldr-rust: setupldr.rs/inffile.rs).
     # ntldr/setupldr.c  # replaced by Rust (freeldr-rust/src/setupldr.rs)
@@ -149,7 +157,10 @@ if(ARCH STREQUAL "i386")
     add_dependencies(uefildr rust_hal_mini)
 endif()
 
-target_link_libraries(uefildr uefifreeldr_common cportlib blcmlib blrtl libcntpr chkstk)
+# libfreeldr_rust_uefi.a explicitly BEFORE libcntpr so freeldr.rs's
+# FPU-free pow/log/log10/wctomb stubs satisfy refs first (same reason
+# as pcat.cmake's freeldr_pe link line).
+target_link_libraries(uefildr uefifreeldr_common ${FREELDR_RUST_UEFI_LIB} cportlib blcmlib blrtl libcntpr chkstk)
 
 # dynamic analysis switches
 if(STACK_PROTECTOR)

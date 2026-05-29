@@ -137,7 +137,7 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
     }
 
     VramAddress = (*(*gop).Mode).FrameBufferBase as ULONG_PTR;
-    VramSize = (*(*gop).Mode).FrameBufferSize;
+    VramSize = (*(*gop).Mode).FrameBufferSize as ULONG;
     if VidFbInitializeVideo(
         &mut FrameBufferData,
         VramAddress,

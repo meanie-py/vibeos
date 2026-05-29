@@ -26,9 +26,9 @@ include_directories(
 add_definitions(-D_NTHAL_ -D_BLDR_ -D_NTSYSTEM_)
 
 list(APPEND FREELDR_ARC_SOURCE
-    arcname.c
-    arch/arcemul.c
-    arch/archwsup.c
+    # arcname.c          # replaced by Rust (freeldr-rust/src/arcname.rs)
+    # arch/arcemul.c     # replaced by Rust (freeldr-rust/src/arcemul.rs)
+    # arch/archwsup.c    # replaced by Rust (freeldr-rust/src/archwsup.rs)
     disk/disk.c)
     # disk unit → Rust (freeldr-rust: partition.rs/ramdisk.rs). Cohabitation:
     # .c kept on disk, Rust #[no_mangle] takes over.
@@ -74,7 +74,7 @@ list(APPEND FREELDR_BOOTLIB_SOURCE)
 
 list(APPEND FREELDR_BOOTMGR_SOURCE
     include/freeldr.h
-    settings.c
+    # settings.c        # replaced by Rust (freeldr-rust/src/settings.rs)
     # ui unit → Rust (freeldr-rust: ui/tui/tuimenu/minitui/noui/video.rs).
     # ui/directui.c is `#if 0` dead code in C (compiles to nothing) and the
     # Rust directui.rs is deliberately NOT wired — symmetric, kept on disk.
@@ -135,7 +135,7 @@ else()
 endif()
 
 list(APPEND FREELDR_BASE_SOURCE
-    freeldr.c
+    # freeldr.c          # replaced by Rust (freeldr-rust/src/freeldr.rs)
     lib/strsafe_shim.c)
     # lib/strsafe_shim.c — variadic RtlStringCbPrintfA out-of-line shim. The
     # Rust freeldr-rust crate cannot host the variadic def on stable
@@ -219,6 +219,33 @@ add_custom_command(
     COMMENT "Building freeldr-rust UEFI variant (libfreeldr_rust_uefi.a, --features uefi)"
     VERBATIM)
 add_custom_target(rust_freeldr_uefi DEPENDS ${FREELDR_RUST_UEFI_LIB})
+
+# Third archive for the rosload.exe link (2nd-stage loader). Same crate,
+# --features rosload, separate CARGO_TARGET_DIR. Selects bootmgr/custom/
+# options/oslist/winldr/wlmemory/wlregistry/registry/setupldr/inffile/
+# headless/conversion/libsupp/miscboot/linuxboot/drivemap/ntoskrnl/winldr_arch
+# and gates out the BIOS/UEFI hardware code (machpc/pchw/tui/ueficon/etc).
+# rosload imports those services from freeldr.sys via add_importlibs(rosload
+# freeldr). See lib.rs `feature = "rosload"` cfg gates for the module split.
+set(FREELDR_RUST_ROSLOAD_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-freeldr-rosload-target")
+set(FREELDR_RUST_ROSLOAD_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust_rosload.a")
+add_custom_command(
+    OUTPUT ${FREELDR_RUST_ROSLOAD_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${FREELDR_RUST_ROSLOAD_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
+        cargo build --release --target ${FREELDR_RUST_TARGET}
+            -p freeldr-rust --features rosload
+            --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${FREELDR_RUST_ROSLOAD_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
+        ${FREELDR_RUST_ROSLOAD_LIB}
+    DEPENDS ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/lib.rs
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/ffi.rs
+            ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/peloader.rs
+    COMMENT "Building freeldr-rust rosload variant (libfreeldr_rust_rosload.a, --features rosload)"
+    VERBATIM)
+add_custom_target(rust_freeldr_rosload DEPENDS ${FREELDR_RUST_ROSLOAD_LIB})
 
 # ARM64 uses UEFI only, no legacy PC-AT boot
 if(NOT ARCH STREQUAL "arm64")

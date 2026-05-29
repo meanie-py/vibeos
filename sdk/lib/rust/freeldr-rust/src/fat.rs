@@ -481,7 +481,7 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
         FatSize = (PartitionSectorCount / ((*Volume).SectorsPerCluster as ULONGLONG) * if (*Volume).FatType == ((FATX16) as u8) { 2 } else { 4 }) as ULONG;
         (*Volume).SectorsPerFat = ((ROUND_UP(((FatSize) as usize), 4096) / (((*Volume).BytesPerSector) as usize)) as u32);
 
-        (*Volume).RootDirSectorStart = (*Volume).FatSectorStart + (((*Volume).NumberOfFats * (((*Volume).SectorsPerFat) as u8)) as u32);
+        (*Volume).RootDirSectorStart = (*Volume).FatSectorStart + ((*Volume).NumberOfFats as ULONG) * (*Volume).SectorsPerFat;
         (*Volume).RootDirSectors = (*FatXVolumeBootSector).SectorsPerCluster;
 
         (*Volume).DataSectorStart = (*Volume).RootDirSectorStart + (*Volume).RootDirSectors;
@@ -493,7 +493,7 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
         (*Volume).NumberOfFats = (((*FatVolumeBootSector).NumberOfFats as ULONG) as u8);
         (*Volume).SectorsPerFat = (*FatVolumeBootSector).SectorsPerFat as ULONG;
 
-        (*Volume).RootDirSectorStart = (*Volume).FatSectorStart + (((*Volume).NumberOfFats * (((*Volume).SectorsPerFat) as u8)) as u32);
+        (*Volume).RootDirSectorStart = (*Volume).FatSectorStart + ((*Volume).NumberOfFats as ULONG) * (*Volume).SectorsPerFat;
         (*Volume).RootDirSectors = (((*FatVolumeBootSector).RootDirEntries as ULONG * 32) + ((((*Volume).BytesPerSector - 1)) as u32)) / (((*Volume).BytesPerSector) as u32);
 
         (*Volume).DataSectorStart = (*Volume).RootDirSectorStart + (*Volume).RootDirSectors;
@@ -506,7 +506,7 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
         (*Volume).SectorsPerFat = (*Fat32VolumeBootSector).SectorsPerFatBig;
 
         (*Volume).RootDirStartCluster = (*Fat32VolumeBootSector).RootDirStartCluster;
-        (*Volume).DataSectorStart = (*Volume).FatSectorStart + (((*Volume).NumberOfFats * (((*Volume).SectorsPerFat) as u8)) as u32);
+        (*Volume).DataSectorStart = (*Volume).FatSectorStart + ((*Volume).NumberOfFats as ULONG) * (*Volume).SectorsPerFat;
 
         if (*Fat32VolumeBootSector).FileSystemVersion != 0 {
             FileSystemError(b"FreeLoader is too old to work with this FAT32 filesystem.\nPlease update FreeLoader.\0".as_ptr() as PCHAR);
@@ -607,6 +607,14 @@ unsafe fn FatBufferDirectory(
     if RootDirectory != 0 && (*Volume).FatType == ((FAT32) as u8) {
         DirectoryStartCluster = (*Volume).RootDirStartCluster;
         RootDirectory = 0u8;
+    }
+
+    // C source uses `LIST_ENTRY DirectoryBufferListHead = {&LH, &LH}` —
+    // a self-referential static initializer the Rust translator can't
+    // express. Without this, Flink/Blink stay NULL and the walker below
+    // dereferences NULL+0x10 on the first iteration (arm64 Bug #3).
+    if DirectoryBufferListHead.Flink.is_null() {
+        InitializeListHead(core::ptr::addr_of_mut!(DirectoryBufferListHead));
     }
 
     Entry = DirectoryBufferListHead.Flink;
@@ -1365,7 +1373,7 @@ unsafe fn FatReadFile(FatFileInfo: PFAT_FILE_INFO, BytesToRead: ULONG, BytesRead
         BytesToRead = (*FatFileInfo).FileSize - (*FatFileInfo).FilePointer;
     }
 
-    BytesPerCluster = (((*Volume).SectorsPerCluster * (((*Volume).BytesPerSector) as u8)) as u32);
+    BytesPerCluster = ((*Volume).SectorsPerCluster as ULONG) * ((*Volume).BytesPerSector as ULONG);
 
     if (*FatFileInfo).FilePointer % BytesPerCluster != 0 {
         let OffsetInCluster: UINT32 = (*FatFileInfo).FilePointer % BytesPerCluster;
@@ -1577,8 +1585,8 @@ pub unsafe extern "C" fn FatSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, Se
     TRACE(b"FatSeek() NewPosition = %u, OldPointer = %u, SeekMode = %d\n\0".as_ptr() as PCHAR, (NewPosition.u.LowPart) as usize, ((*FileHandle).FilePointer) as usize, (SeekMode) as usize);
 
     {
-        let OldClusterIdx: UINT32 = (*FileHandle).FilePointer / ((((*Volume).SectorsPerCluster * (((*Volume).BytesPerSector) as u8))) as u32);
-        let NewClusterIdx: UINT32 = NewPosition.u.LowPart / ((((*Volume).SectorsPerCluster * (((*Volume).BytesPerSector) as u8))) as u32);
+        let OldClusterIdx: UINT32 = (*FileHandle).FilePointer / (((*Volume).SectorsPerCluster as u32) * ((*Volume).BytesPerSector as u32));
+        let NewClusterIdx: UINT32 = NewPosition.u.LowPart / (((*Volume).SectorsPerCluster as u32) * ((*Volume).BytesPerSector as u32));
 
         TRACE(b"FatSeek() OldClusterIdx: %u, NewClusterIdx: %u\n\0".as_ptr() as PCHAR, (OldClusterIdx) as usize, (NewClusterIdx) as usize);
 

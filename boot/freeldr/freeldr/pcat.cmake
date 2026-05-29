@@ -31,7 +31,8 @@ list(APPEND PCATLDR_ARC_SOURCE
 
 list(APPEND PCATLDR_BOOTMGR_SOURCE
     ${FREELDR_BOOTMGR_SOURCE}
-    linuxboot.c)
+    # linuxboot.c    # replaced by Rust (freeldr-rust/src/linuxboot.rs)
+)
 
 list(APPEND PCATLDR_BASE_ASM_SOURCE)
 
@@ -61,9 +62,11 @@ if(ARCH STREQUAL "i386")
 
     list(APPEND PCATLDR_ARC_SOURCE
         # disk/scsiport.c
-        arch/i386/hwapm.c
         # arch/i386/i386bug.c
-        arch/i386/i386idt.c)
+        )
+        # i386-hw unit → Rust (freeldr-rust: hwapm/i386idt.rs). Cohabitation.
+        # arch/i386/hwapm.c    # replaced by Rust (freeldr-rust/src/hwapm.rs)
+        # arch/i386/i386idt.c  # replaced by Rust (freeldr-rust/src/i386idt.rs)
         # setup/legacy unit → Rust (freeldr-rust: pxe.rs/drivemap.rs).
         # lib/fs/pxe.c        # replaced by Rust (freeldr-rust/src/pxe.rs)
         # arch/i386/drivemap.c  # replaced by Rust (freeldr-rust/src/drivemap.rs)
@@ -72,17 +75,16 @@ if(ARCH STREQUAL "i386")
         # arch/i386/hwdisk.c  # replaced by Rust (freeldr-rust/src/hwdisk.rs)
         # arch/i386/hwpci.c   # replaced by Rust (freeldr-rust/src/hwpci.rs)
 
-    list(APPEND PCATLDR_ARC_SOURCE
-        arch/i386/pc/pcbeep.c
-        arch/i386/pc/pccons.c
-        arch/i386/pc/pcrtc.c)
-        # pc-hw unit → Rust (freeldr-rust: machpc/pcvideo/pcdisk/pcmem/
-        # pcvesa/pchw.rs). Cohabitation: .c kept on disk, Rust #[no_mangle]
-        # takes over.
+    # pc-hw unit → Rust (freeldr-rust: machpc/pcvideo/pcdisk/pcmem/pcvesa/
+    # pchw/pcbeep/pccons/pcrtc.rs). Cohabitation: .c kept on disk, Rust
+    # #[no_mangle] takes over.
         # arch/i386/pc/machpc.c   # replaced by Rust (freeldr-rust/src/machpc.rs)
+        # arch/i386/pc/pcbeep.c   # replaced by Rust (freeldr-rust/src/pcbeep.rs)
+        # arch/i386/pc/pccons.c   # replaced by Rust (freeldr-rust/src/pccons.rs)
         # arch/i386/pc/pcdisk.c   # replaced by Rust (freeldr-rust/src/pcdisk.rs)
         # arch/i386/pc/pchw.c     # replaced by Rust (freeldr-rust/src/pchw.rs)
         # arch/i386/pc/pcmem.c    # replaced by Rust (freeldr-rust/src/pcmem.rs)
+        # arch/i386/pc/pcrtc.c    # replaced by Rust (freeldr-rust/src/pcrtc.rs)
         # arch/i386/pc/pcvesa.c   # replaced by Rust (freeldr-rust/src/pcvesa.rs)
         # arch/i386/pc/pcvideo.c  # replaced by Rust (freeldr-rust/src/pcvideo.rs)
 
@@ -102,23 +104,24 @@ elseif(ARCH STREQUAL "amd64")
     endif()
 
     list(APPEND PCATLDR_ARC_SOURCE
-        arch/i386/hwapm.c
         # arch/i386/i386bug.c
+        )
         # setup/legacy unit → Rust (freeldr-rust: pxe.rs/drivemap.rs).
         # lib/fs/pxe.c          # replaced by Rust (freeldr-rust/src/pxe.rs)
         # arch/i386/drivemap.c  # replaced by Rust (freeldr-rust/src/drivemap.rs)
-        # i386-hw unit → Rust (freeldr-rust: hwacpi/hwdisk/hwpci.rs).
+        # i386-hw unit → Rust (freeldr-rust: hwacpi/hwapm/hwdisk/hwpci.rs).
         # arch/i386/hwacpi.c  # replaced by Rust (freeldr-rust/src/hwacpi.rs)
+        # arch/i386/hwapm.c   # replaced by Rust (freeldr-rust/src/hwapm.rs)
         # arch/i386/hwdisk.c  # replaced by Rust (freeldr-rust/src/hwdisk.rs)
         # arch/i386/hwpci.c   # replaced by Rust (freeldr-rust/src/hwpci.rs)
-        arch/i386/pc/pcbeep.c
-        arch/i386/pc/pccons.c
-        arch/i386/pc/pcrtc.c)
         # pc-hw unit → Rust (freeldr-rust). Cohabitation: .c kept on disk.
         # arch/i386/pc/machpc.c   # replaced by Rust (freeldr-rust/src/machpc.rs)
+        # arch/i386/pc/pcbeep.c   # replaced by Rust (freeldr-rust/src/pcbeep.rs)
+        # arch/i386/pc/pccons.c   # replaced by Rust (freeldr-rust/src/pccons.rs)
         # arch/i386/pc/pcdisk.c   # replaced by Rust (freeldr-rust/src/pcdisk.rs)
         # arch/i386/pc/pchw.c     # replaced by Rust (freeldr-rust/src/pchw.rs)
         # arch/i386/pc/pcmem.c    # replaced by Rust (freeldr-rust/src/pcmem.rs)
+        # arch/i386/pc/pcrtc.c    # replaced by Rust (freeldr-rust/src/pcrtc.rs)
         # arch/i386/pc/pcvesa.c   # replaced by Rust (freeldr-rust/src/pcvesa.rs)
         # arch/i386/pc/pcvideo.c  # replaced by Rust (freeldr-rust/src/pcvideo.rs)
 
@@ -208,7 +211,13 @@ if(ARCH STREQUAL "i386")
     add_dependencies(freeldr_pe rust_hal_mini)
 endif()
 
-target_link_libraries(freeldr_pe freeldr_common cportlib libcntpr blrtl)
+# libfreeldr_rust.a explicitly BEFORE libcntpr so freeldr.rs's
+# FPU-free pow/log/log10/wctomb stubs satisfy refs first; otherwise
+# CMake's propagated-dep ordering puts libfreeldr_rust AFTER libcntpr,
+# libcntpr's pow_asm.s/log10_asm.s/wcstombs_nt.c get pulled in, then
+# the Rust stubs collide as dups. The Rust stubs match the C ones
+# (deliberately FPU-free; just int3/__debugbreak — see freeldr.rs).
+target_link_libraries(freeldr_pe freeldr_common ${FREELDR_RUST_LIB} cportlib libcntpr blrtl)
 
 # dynamic analysis switches
 if(STACK_PROTECTOR)
