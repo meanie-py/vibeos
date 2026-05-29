@@ -531,10 +531,14 @@ The translation pipeline has multiple stages, each refining the previous output:
 ```
 Stage 1: C → Rust        (rustconv submit/batch)   — bulk transliteration
 Stage 2: Probe migration (rustconv probe-migrate)  — ProbeForRead/Write → Result<T>
-Stage 3: SEH idiomation  (planned)                  — full SEH → Result/RAII/match
+Stage 3: Result+Drop-RAII idiomation (planned)     — de-transliterate to idiomatic Rust
 ```
 
-Stage 3 will operate **function-by-function** (not file-by-file) using paired C+Rust function context, a dependency graph (SQLite cache), and Rust-native API surface for RAII guards, safe user-mode copies, and Result patterns. The LLM sees the original C (with SEH blocks visible) alongside the current Rust translation, plus callees and type context.
+**Stage 3 is NOT "SEH idiomation."** There is no SEH to convert: `USE_DUMMY_PSEH` makes `_SEH2_EXCEPT` handlers dead code on all 3 arches (see DUMMY_PSEH section above), and the kernel is `panic=abort` with no unwinding. Stage 1 already produced Rust where the exception path doesn't execute. Stage 3's job is to de-transliterate the *normal* path: replace the C goto-cleanup cascades and manual lock/unlock pairs with `Drop`-based RAII (`Drop` *is* the `finally`, and it is sound here precisely because every scope exit is an explicit `return` — no unwind), bare `NTSTATUS` i32 with `Result<T, NTSTATUS>`, and magic integer constants with `enum`/newtype/`bitflags!`.
+
+The shape per function: an idiomatic `<snake_name>_rs(...) -> Result<T, NTSTATUS>` core (suffix `_rs`; distinct from the existing `_rs_<CName>` inline-shim *prefix*), with the existing `#[no_mangle] extern "system"` C symbol collapsed to a thin trampoline (`Ok(v)` → `write_volatile` outparams + `STATUS_SUCCESS`, `Err(s)` → `s`). The trampoline MUST keep `write_volatile` on every output-pointer write (a naive `*out = v` reintroduces the captures(none)/ud2 miscompile) and keep the `extern "system"` ABI. Adoptable one function at a time so smoke stays green throughout.
+
+Stage 3 will operate **function-by-function** (not file-by-file) using paired C+Rust function context, a dependency graph (SQLite cache), and Rust-native API surface for RAII guards, safe user-mode copies, and Result patterns. The LLM sees the original C alongside the current Rust translation, plus callees and type context.
 
 ### Cost (Sonnet Batch API)
 
