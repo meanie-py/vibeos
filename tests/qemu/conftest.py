@@ -20,7 +20,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--arch",
         default="arm64",
-        choices=["arm64", "arm64-test", "i386", "i386-uefi", "amd64"],
+        choices=["arm64", "arm64-test", "i386", "i386-uefi", "amd64", "amd64-uefi"],
         help="Target architecture (default: arm64)",
     )
     parser.addoption(
