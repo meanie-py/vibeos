@@ -1,3 +1,4 @@
 
 add_subdirectory(framebuf)
-add_subdirectory(vga)
+# displays/vga (vgaddi) dropped: legacy VGA planar GDI driver, paired with the
+# removed vga miniport. framebuf.dll is the UEFI display driver.
