@@ -151,4 +151,14 @@ pub const DBG_CONTINUE: i32 = 0x00010002;
 pub const DBG_TERMINATE_PROCESS: i32 = 0x40010004;
 pub const DBG_TERMINATE_THREAD: i32 = 0x40010003;
 pub const DBG_EXCEPTION_NOT_HANDLED: i32 = 0x80010001_u32 as i32;
+// `#define SECURITY_DESCRIPTOR_MIN_LENGTH (sizeof(SECURITY_DESCRIPTOR))` — the
+// *absolute* SECURITY_DESCRIPTOR. On 32-bit it is 20 bytes (4-byte header + four
+// 4-byte pointer fields); on 64-bit it is 40 bytes (4-byte header + 4 bytes pad +
+// four 8-byte pointer fields). Hardcoding 20 on 64-bit makes csrsrv place the
+// DACL at ProcSd+20, overlapping the SD's own Group/Sacl/Dacl pointer fields —
+// the overlap corrupts the Group pointer, and SeCaptureSecurityDescriptor then
+// probes that garbage pointer → STATUS_ACCESS_VIOLATION (arm64 CsrSetProcessSecurity).
+#[cfg(target_pointer_width = "32")]
 pub const SECURITY_DESCRIPTOR_MIN_LENGTH: u32 = 20;
+#[cfg(target_pointer_width = "64")]
+pub const SECURITY_DESCRIPTOR_MIN_LENGTH: u32 = 40;
