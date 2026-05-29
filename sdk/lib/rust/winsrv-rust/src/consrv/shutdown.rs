@@ -53,7 +53,7 @@ pub unsafe extern "system" fn ConsoleClientShutdown(
     Flags: ULONG,
     FirstPhase: BOOLEAN,
 ) -> ULONG {
-    let ProcessData = ((*CsrProcess).ServerData[CONSRV_SERVERDLL_INDEX as usize]) as PCONSOLE_PROCESS_DATA;
+    let ProcessData = (*(*CsrProcess).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as PCONSOLE_PROCESS_DATA;
 
     if (Flags & EWX_SHUTDOWN) == EWX_LOGOFF &&
        ((*CsrProcess).ShutdownFlags & (CsrShutdownSystem | CsrShutdownOther)) != 0

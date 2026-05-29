@@ -7,6 +7,24 @@ include_directories(
     consrv)
 
 list(APPEND CONSRV_SOURCE
+    # --- Rust cohabitation: consrv core (top + condrv) — DEFERRED ----
+    # The consrv-core flip is blocked on translation gaps discovered at
+    # link time (cargo-check could not see them):
+    #   1. ~40 CON_API/CSR_API Srv* handlers in conoutput.c + console.c
+    #      were DROPPED by rustconv (conoutput.rs/console.rs are partial
+    #      stubs); init.rs only extern-declares them.
+    #   2. ~13 condrv/lineinput internal fns (ConDrvFillConsoleOutput,
+    #      CONSOLE_SCREEN_BUFFER_Initialize, ConioCoordToPointer, …) are
+    #      `pub(crate) fn` with no linkable symbol, yet are called from
+    #      both still-C files and sibling Rust via extern decls — and the
+    #      decl ABIs are inconsistent (mixed cdecl/stdcall) vs the C.
+    #   3. 7 C macros/intrinsics (CONTAINING_RECORD, Interlocked*,
+    #      IS_FULL_WIDTH, InitializeObjectAttributes, IsListEmpty) are
+    #      extern-declared by Rust with no implementation.
+    # Closing these needs careful per-fn ABI reconciliation (#1 i386
+    # crash cause) + provider shims, and the dropped handlers need new
+    # paid translation. Tracked, not abandoned. The Rust source stays in
+    # the crate (built + verified), shadowed by the live C below.
     consrv/alias.c
     consrv/coninput.c
     consrv/conoutput.c
