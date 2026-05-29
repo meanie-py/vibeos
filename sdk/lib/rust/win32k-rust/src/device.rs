@@ -521,10 +521,128 @@ pub unsafe extern "C" fn EngpGetDisplayDriverParameters(
     pGraphicsDevice: PGRAPHICS_DEVICE,
     pdm: PDEVMODEW
 ) -> i32 {
-    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
-    // TODO: resurrect from the original C in the bottom-of-file source block.
-    let _ = (pGraphicsDevice, pdm);
-    STATUS_UNSUCCESSFUL
+    const RTL_REGISTRY_HANDLE_LOCAL: ULONG = 0x40000000;
+    const RTL_QUERY_REGISTRY_DIRECT_LOCAL: ULONG = 0x20;
+    const REG_NONE_LOCAL: ULONG = 0;
+
+    static DEFAULT_BITS_PER_PEL: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 66, 105,
+        116, 115, 80, 101, 114, 80, 101, 108, 0,
+    ];
+    static DEFAULT_X_RESOLUTION: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 88, 82,
+        101, 115, 111, 108, 117, 116, 105, 111, 110, 0,
+    ];
+    static DEFAULT_Y_RESOLUTION: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 89, 82,
+        101, 115, 111, 108, 117, 116, 105, 111, 110, 0,
+    ];
+    static DEFAULT_FLAGS: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 70, 108,
+        97, 103, 115, 0,
+    ];
+    static DEFAULT_V_REFRESH: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 86, 82,
+        101, 102, 114, 101, 115, 104, 0,
+    ];
+    static DEFAULT_X_PANNING: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 88, 80,
+        97, 110, 110, 105, 110, 103, 0,
+    ];
+    static DEFAULT_Y_PANNING: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 89, 80,
+        97, 110, 110, 105, 110, 103, 0,
+    ];
+    static DEFAULT_ORIENTATION: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 79, 114,
+        105, 101, 110, 116, 97, 116, 105, 111, 110, 0,
+    ];
+    static DEFAULT_FIXED_OUTPUT: &[u16] = &[
+        68, 101, 102, 97, 117, 108, 116, 83, 101, 116, 116, 105, 110, 103, 115, 46, 70, 105,
+        120, 101, 100, 79, 117, 116, 112, 117, 116, 0,
+    ];
+    static ATTACH_RELATIVE_X: &[u16] = &[
+        65, 116, 116, 97, 99, 104, 46, 82, 101, 108, 97, 116, 105, 118, 101, 88, 0,
+    ];
+    static ATTACH_RELATIVE_Y: &[u16] = &[
+        65, 116, 116, 97, 99, 104, 46, 82, 101, 108, 97, 116, 105, 118, 101, 89, 0,
+    ];
+
+    if pdm.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let mut table: [ntkrnl_sys::ddk::_RTL_QUERY_REGISTRY_TABLE; 12] = core::mem::zeroed();
+
+    table[0].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[0].Name = DEFAULT_BITS_PER_PEL.as_ptr();
+    table[0].EntryContext = core::ptr::addr_of_mut!((*pdm).dmBitsPerPel) as PVOID;
+    table[0].DefaultType = REG_NONE_LOCAL;
+
+    table[1].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[1].Name = DEFAULT_X_RESOLUTION.as_ptr();
+    table[1].EntryContext = core::ptr::addr_of_mut!((*pdm).dmPelsWidth) as PVOID;
+    table[1].DefaultType = REG_NONE_LOCAL;
+
+    table[2].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[2].Name = DEFAULT_Y_RESOLUTION.as_ptr();
+    table[2].EntryContext = core::ptr::addr_of_mut!((*pdm).dmPelsHeight) as PVOID;
+    table[2].DefaultType = REG_NONE_LOCAL;
+
+    table[3].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[3].Name = DEFAULT_FLAGS.as_ptr();
+    table[3].EntryContext = core::ptr::addr_of_mut!((*pdm).__bindgen_anon_2.dmDisplayFlags) as PVOID;
+    table[3].DefaultType = REG_NONE_LOCAL;
+
+    table[4].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[4].Name = DEFAULT_V_REFRESH.as_ptr();
+    table[4].EntryContext = core::ptr::addr_of_mut!((*pdm).dmDisplayFrequency) as PVOID;
+    table[4].DefaultType = REG_NONE_LOCAL;
+
+    table[5].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[5].Name = DEFAULT_X_PANNING.as_ptr();
+    table[5].EntryContext = core::ptr::addr_of_mut!((*pdm).dmPanningWidth) as PVOID;
+    table[5].DefaultType = REG_NONE_LOCAL;
+
+    table[6].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[6].Name = DEFAULT_Y_PANNING.as_ptr();
+    table[6].EntryContext = core::ptr::addr_of_mut!((*pdm).dmPanningHeight) as PVOID;
+    table[6].DefaultType = REG_NONE_LOCAL;
+
+    table[7].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[7].Name = DEFAULT_ORIENTATION.as_ptr();
+    table[7].EntryContext = core::ptr::addr_of_mut!((*pdm).__bindgen_anon_1.__bindgen_anon_2.dmDisplayOrientation) as PVOID;
+    table[7].DefaultType = REG_NONE_LOCAL;
+
+    table[8].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[8].Name = DEFAULT_FIXED_OUTPUT.as_ptr();
+    table[8].EntryContext = core::ptr::addr_of_mut!((*pdm).__bindgen_anon_1.__bindgen_anon_2.dmDisplayFixedOutput) as PVOID;
+    table[8].DefaultType = REG_NONE_LOCAL;
+
+    table[9].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[9].Name = ATTACH_RELATIVE_X.as_ptr();
+    table[9].EntryContext = core::ptr::addr_of_mut!((*pdm).__bindgen_anon_1.__bindgen_anon_2.dmPosition.x) as PVOID;
+    table[9].DefaultType = REG_NONE_LOCAL;
+
+    table[10].Flags = RTL_QUERY_REGISTRY_DIRECT_LOCAL;
+    table[10].Name = ATTACH_RELATIVE_Y.as_ptr();
+    table[10].EntryContext = core::ptr::addr_of_mut!((*pdm).__bindgen_anon_1.__bindgen_anon_2.dmPosition.y) as PVOID;
+    table[10].DefaultType = REG_NONE_LOCAL;
+
+    let hKey = EngpGetRegistryHandleFromDeviceMap(pGraphicsDevice);
+    if hKey.is_null() {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    let status = RtlQueryRegistryValues(
+        RTL_REGISTRY_HANDLE_LOCAL,
+        hKey as ntkrnl_sys::ddk::PCWSTR,
+        table.as_mut_ptr(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    ZwClose(hKey as *mut core::ffi::c_void);
+    status
 }
 
 // Plain cdecl in C (device.h:53, device.c:427).
@@ -878,10 +996,15 @@ pub unsafe extern "stdcall" fn EngDeviceIoControl(
     cjOutBufferSize: DWORD,
     lpBytesReturned: LPDWORD,
 ) -> DWORD {
-    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
-    // TODO: resurrect from the original C in the bottom-of-file source block.
-    let _ = (hDevice, dwIoControlCode, lpInBuffer, cjInBufferSize, lpOutBuffer, cjOutBufferSize, lpBytesReturned);
-    0u32
+    EngDeviceIoControl_impl(
+        hDevice,
+        dwIoControlCode,
+        lpInBuffer,
+        cjInBufferSize,
+        lpOutBuffer,
+        cjOutBufferSize,
+        lpBytesReturned,
+    )
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -895,10 +1018,90 @@ pub unsafe extern "C" fn EngDeviceIoControl(
     cjOutBufferSize: DWORD,
     lpBytesReturned: LPDWORD,
 ) -> DWORD {
-    // DEFERRED-STUB (win32k-translation): translation has cross-crate type / missing-decl issues.
-    // TODO: resurrect from the original C in the bottom-of-file source block.
-    let _ = (hDevice, dwIoControlCode, lpInBuffer, cjInBufferSize, lpOutBuffer, cjOutBufferSize, lpBytesReturned);
-    0u32
+    EngDeviceIoControl_impl(
+        hDevice,
+        dwIoControlCode,
+        lpInBuffer,
+        cjInBufferSize,
+        lpOutBuffer,
+        cjOutBufferSize,
+        lpBytesReturned,
+    )
+}
+
+unsafe fn EngDeviceIoControl_impl(
+    hDevice: HANDLE,
+    dwIoControlCode: DWORD,
+    lpInBuffer: LPVOID,
+    cjInBufferSize: DWORD,
+    lpOutBuffer: LPVOID,
+    cjOutBufferSize: DWORD,
+    lpBytesReturned: LPDWORD,
+) -> DWORD {
+    const ERROR_INVALID_FUNCTION_LOCAL: DWORD = 1;
+    const ERROR_INVALID_HANDLE_LOCAL: DWORD = 6;
+    const ERROR_NOT_ENOUGH_MEMORY_LOCAL: DWORD = 8;
+    const ERROR_DEV_NOT_EXIST_LOCAL: DWORD = 55;
+    const ERROR_INVALID_PARAMETER_LOCAL: DWORD = 87;
+    const ERROR_INSUFFICIENT_BUFFER_LOCAL: DWORD = 122;
+    const ERROR_MORE_DATA_LOCAL: DWORD = 234;
+    const ERROR_IO_PENDING_LOCAL: DWORD = 997;
+
+    if hDevice.is_null() {
+        return ERROR_INVALID_HANDLE_LOCAL;
+    }
+
+    let mut event: ntkrnl_sys::ddk::_KEVENT = core::mem::zeroed();
+    let mut iosb: ntkrnl_sys::ddk::_IO_STATUS_BLOCK = core::mem::zeroed();
+    let device_object = hDevice as ntkrnl_sys::ddk::PDEVICE_OBJECT;
+
+    KeInitializeEvent(
+        core::ptr::addr_of_mut!(event),
+        ntkrnl_sys::ddk::_EVENT_TYPE_SynchronizationEvent,
+        0,
+    );
+
+    let irp = IoBuildDeviceIoControlRequest(
+        dwIoControlCode,
+        device_object,
+        lpInBuffer,
+        cjInBufferSize,
+        lpOutBuffer,
+        cjOutBufferSize,
+        0,
+        core::ptr::addr_of_mut!(event),
+        core::ptr::addr_of_mut!(iosb),
+    );
+    if irp.is_null() {
+        return ERROR_NOT_ENOUGH_MEMORY_LOCAL;
+    }
+
+    let mut status = ntkrnl_sys::ddk::IofCallDriver(device_object, irp);
+    if status == STATUS_PENDING {
+        KeWaitForSingleObject(
+            core::ptr::addr_of_mut!(event) as *mut core::ffi::c_void,
+            ntkrnl_sys::ddk::_KWAIT_REASON_Executive,
+            ntkrnl_sys::ddk::_MODE_KernelMode as ntkrnl_sys::ddk::KPROCESSOR_MODE,
+            1,
+            core::ptr::null_mut(),
+        );
+        status = iosb.__bindgen_anon_1.Status;
+    }
+
+    if !lpBytesReturned.is_null() {
+        *lpBytesReturned = iosb.Information as DWORD;
+    }
+
+    match status {
+        STATUS_INSUFFICIENT_RESOURCES => ERROR_NOT_ENOUGH_MEMORY_LOCAL,
+        STATUS_BUFFER_OVERFLOW => ERROR_MORE_DATA_LOCAL,
+        STATUS_NOT_IMPLEMENTED => ERROR_INVALID_FUNCTION_LOCAL,
+        STATUS_INVALID_PARAMETER => ERROR_INVALID_PARAMETER_LOCAL,
+        STATUS_BUFFER_TOO_SMALL => ERROR_INSUFFICIENT_BUFFER_LOCAL,
+        STATUS_DEVICE_DOES_NOT_EXIST => ERROR_DEV_NOT_EXIST_LOCAL,
+        STATUS_PENDING => ERROR_IO_PENDING_LOCAL,
+        _ => status as DWORD,
+    }
 }
 
 // ============================================================================

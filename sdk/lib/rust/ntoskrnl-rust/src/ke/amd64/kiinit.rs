@@ -35,7 +35,7 @@ use super::stubs::KeXStateLength;
 
 extern "system" {
     fn KiInitializeXStateConfiguration(Cpu: u8);
-    fn KiSwitchToBootStack(InitialStack: u64);
+    fn KiSwitchToBootStack(InitialStack: u64) -> !;
     fn KdInitSystem(Phase: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u32;
     fn KdPollBreakIn() -> u32;
     fn DbgBreakPointWithStatus(Status: u32);
@@ -764,7 +764,6 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
     InitialStack = ALIGN_DOWN_BY(((*LoaderBlock).KernelStack - KeXStateLength as u64) as usize, 64) as u64;
 
     KiSwitchToBootStack(InitialStack);
-    core::hint::unreachable_unchecked();
 }
 
 unsafe fn strstr(haystack: *const u8, needle: *const u8) -> bool {

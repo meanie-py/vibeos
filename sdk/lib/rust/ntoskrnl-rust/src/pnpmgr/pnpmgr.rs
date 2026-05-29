@@ -618,7 +618,7 @@ pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut P
             core::ptr::addr_of_mut!(IopDeviceTreeLock),
             &mut OldIrql,
         );
-        *DeviceObject = (*PopSystemPowerDeviceNode).PhysicalDeviceObject;
+        core::ptr::write_volatile(DeviceObject, (*PopSystemPowerDeviceNode).PhysicalDeviceObject);
         KeReleaseSpinLock(
             core::ptr::addr_of_mut!(IopDeviceTreeLock),
             OldIrql,
@@ -758,7 +758,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
     let mut Length: USHORT;
     let mut Status: NTSTATUS;
 
-    *Handle = core::ptr::null_mut();
+    core::ptr::write_volatile(Handle, core::ptr::null_mut());
 
     Status = IopOpenRegistryKeyEx(&mut hParent, core::ptr::null_mut(), &EnumU as *const _ as *mut _, KEY_CREATE_SUB_KEY);
     if Status < 0 {
@@ -809,7 +809,7 @@ pub unsafe extern "system" fn IopCreateDeviceKeyPath(
         }
 
         if (Current as usize) == (Last as usize) {
-            *Handle = hKey;
+            core::ptr::write_volatile(Handle, hKey);
             return STATUS_SUCCESS;
         }
 
@@ -1131,7 +1131,7 @@ pub unsafe extern "system" fn IopOpenRegistryKeyEx(
     let Name = opaque_ptr(Name);
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    *KeyHandle = core::ptr::null_mut();
+    core::ptr::write_volatile(KeyHandle, core::ptr::null_mut());
 
     InitializeObjectAttributes(
         &mut ObjectAttributes,
@@ -1257,9 +1257,9 @@ pub unsafe extern "system" fn IopCreateRegistryKeyEx(
     }
 
     if Status >= 0 {
-        *Handle = HandleArray[i as usize];
+        core::ptr::write_volatile(Handle, HandleArray[i as usize]);
         if !Disposition.is_null() {
-            *Disposition = KeyDisposition;
+            core::ptr::write_volatile(Disposition, KeyDisposition);
         }
     }
 
@@ -1312,7 +1312,7 @@ pub unsafe extern "system" fn IopGetRegistryValue(
         return Status;
     }
 
-    *Information = FullInformation;
+    core::ptr::write_volatile(Information, FullInformation);
     STATUS_SUCCESS
 }
 
@@ -1570,7 +1570,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
     let Policy: DEVICE_REMOVAL_POLICY;
     let mut Length: ULONG = 0;
 
-    *ResultLength = 0;
+    core::ptr::write_volatile(ResultLength, 0);
 
     if DeviceNode.is_null() {
         return STATUS_INVALID_DEVICE_REQUEST;
@@ -1630,7 +1630,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
         }
         DevicePropertyBootConfigurationTranslated => {
             if (*DeviceNode).BootResources.is_null() {
-                *ResultLength = 0;
+                core::ptr::write_volatile(ResultLength, 0);
                 return STATUS_SUCCESS;
             }
 
@@ -1657,7 +1657,9 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
                 Data = (*ObjectNameInfo).Name.Buffer as PVOID;
                 Status = STATUS_SUCCESS;
             } else {
-                *ResultLength -= core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG;
+                let adjusted_length = core::ptr::read_volatile(ResultLength)
+                    - core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG;
+                core::ptr::write_volatile(ResultLength, adjusted_length);
                 if !ObjectNameInfo.is_null() {
                     ExFreePool(ObjectNameInfo as PVOID);
                 }
@@ -1725,7 +1727,7 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
     }
 
     if !ValueName.is_null() {
-        *ResultLength = BufferLength;
+        core::ptr::write_volatile(ResultLength, BufferLength);
 
         Status = PiGetDeviceRegistryProperty(
             DeviceObject,
@@ -1740,8 +1742,9 @@ pub unsafe extern "system" fn IoGetDeviceProperty(
             ResultLength,
         );
     } else if Status >= 0 {
-        *ResultLength = ReturnLength + if NullTerminate != 0 { core::mem::size_of::<WCHAR>() as ULONG } else { 0 };
-        if *ResultLength <= BufferLength {
+        let result_length = ReturnLength + if NullTerminate != 0 { core::mem::size_of::<WCHAR>() as ULONG } else { 0 };
+        core::ptr::write_volatile(ResultLength, result_length);
+        if result_length <= BufferLength {
             core::ptr::copy_nonoverlapping(Data as *const u8, PropertyBuffer as *mut u8, ReturnLength as usize);
 
             if NullTerminate != 0 {
