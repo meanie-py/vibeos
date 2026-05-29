@@ -67,6 +67,8 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/etw/trace.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/dbgui.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/mod.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/verifier.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
@@ -93,7 +95,10 @@ list(APPEND SOURCE
     ldr/ldrinit.c
     ldr/ldrpe.c
     ldr/ldrutils.c
-    ldr/verifier.c)
+    # ldr/verifier.c — replaced by Rust (ntdll-rust/src/ldr/verifier.rs);
+    #   AVrf*/LdrpInitializeApplicationVerifierPackage now provided by
+    #   libntdll_rust.a (below)
+    )
 
 if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE dispatch/i386/dispatch.S)

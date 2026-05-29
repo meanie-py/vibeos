@@ -41,6 +41,10 @@ pub mod etw;
 // compiled — lands in ntdll.dll proper.
 pub mod dbg;
 
+// ldr/ — main ntdll.dll loader translations (ldr/verifier.c, …). Always
+// compiled — lands in ntdll.dll proper. Distinct from nt_0600::ldr.
+pub mod ldr;
+
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust/kdcom-rust/hal-rust).
 // USER-MODE: must NOT use privileged `hlt`/`wfe` (ntdll runs in ring 3).
