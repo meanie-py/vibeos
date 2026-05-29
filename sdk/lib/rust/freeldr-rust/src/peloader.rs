@@ -649,7 +649,11 @@ pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
         crate::frldr::dbgcon(b'N');
         return 0u8;
     }
-    // Heap dump after successful alloc.
+    // Heap dump after successful alloc. Gated off for `rosload` — when this
+    // crate builds for rosload.exe the heap module is excluded (FrLdrHeap*
+    // comes from freeldr.sys via importlib) so the HEAP/PHEAP types and the
+    // FrLdrDefaultHeap static aren't visible here.
+    #[cfg(not(feature = "rosload"))]
     {
         let dh = crate::heap::FrLdrDefaultHeap as crate::heap::PHEAP;
         if !dh.is_null() {
