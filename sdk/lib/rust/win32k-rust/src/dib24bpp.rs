@@ -10,33 +10,19 @@ extern "system" {
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub union NICEPIXEL32 {
     pub ul: ULONG,
     pub col: NICEPIXEL32_col,
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct NICEPIXEL32_col {
     pub red: UCHAR,
     pub green: UCHAR,
     pub blue: UCHAR,
     pub alpha: UCHAR,
-}
-
-#[inline]
-
-#[repr(C)]
-union NICEPIXEL32 {
-    ul: ULONG,
-    col: NICEPIXEL32_col,
-}
-
-#[repr(C)]
-struct NICEPIXEL32_col {
-    red: UCHAR,
-    green: UCHAR,
-    blue: UCHAR,
-    alpha: UCHAR,
 }
 
 #[no_mangle]
@@ -323,7 +309,7 @@ pub unsafe extern "C" fn DIB_24BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                         let mut Index: u32;
                         let store = ExAllocatePoolWithTag(
                             NonPagedPool,
-                            (((*BltInfo).DestRect.right - (*BltInfo).DestRect.left + 1) * 4) as usize,
+                            (((*BltInfo).DestRect.right - (*BltInfo).DestRect.left + 1) * 4) as SIZE_T,
                             0x20424944
                         ) as PDWORD;
                         if store == core::ptr::null_mut() {
@@ -366,7 +352,7 @@ pub unsafe extern "C" fn DIB_24BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                         let mut Index: u32;
                         let store = ExAllocatePoolWithTag(
                             NonPagedPool,
-                            (((*BltInfo).DestRect.bottom - (*BltInfo).DestRect.top + 1) * 4) as usize,
+                            (((*BltInfo).DestRect.bottom - (*BltInfo).DestRect.top + 1) * 4) as SIZE_T,
                             0x20424944
                         ) as PDWORD;
                         if store == core::ptr::null_mut() {
@@ -456,7 +442,7 @@ pub unsafe extern "C" fn DIB_24BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
         }
 
         _ => {
-            DbgPrint(b"DIB_24BPP_Bitblt: Unhandled Source BPP: %u\n\0".as_ptr() as *const i8, BitsPerFormat((*(*BltInfo).SourceSurface).iBitmapFormat));
+            DbgPrint(b"DIB_24BPP_Bitblt: Unhandled Source BPP: %u\n\0".as_ptr() as *const u8, BitsPerFormat((*(*BltInfo).SourceSurface).iBitmapFormat));
             return 0u8;
         }
     }
@@ -474,8 +460,8 @@ pub unsafe extern "C" fn DIB_24BPP_BitBlt(BltInfo: PBLTINFO) -> u8 {
     let mut Dest: u32;
     let mut Source: u32 = 0;
     let mut Pattern: u32 = 0;
-    let UsesSource: i32;
-    let UsesPattern: i32;
+    let UsesSource: u32;
+    let UsesPattern: u32;
     let mut DestBits: PBYTE;
 
     UsesSource = ROP4_USES_SOURCE((*BltInfo).Rop4);
@@ -551,89 +537,11 @@ pub unsafe extern "C" fn DIB_24BPP_ColorFill(DestSurface: *mut SURFOBJ, DestRect
 
     RECTL_vMakeWellOrdered(DestRect);
 
-    #[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
-    {
-        let mut xaddr: PBYTE = ((*DestSurface).pvScan0 as PBYTE)
-            .offset(((*DestRect).top * (*DestSurface).lDelta) as isize)
-            .offset((((*DestRect).left << 1) + (*DestRect).left) as isize);
-        let mut addr: PBYTE;
-        let mut Count: u32;
-        let xCount: u32 = ((*DestRect).right - (*DestRect).left) as u32;
-
-        DestY = (*DestRect).top;
-        while DestY < (*DestRect).bottom {
-            Count = xCount;
-            addr = xaddr;
-            xaddr = (addr as usize + (*DestSurface).lDelta as usize) as PBYTE;
-
-            if Count < 8 {
-                while Count > 0 {
-                    *(addr as *mut u16) = color as u16;
-                    addr = addr.offset(2);
-                    *addr = (color >> 16) as u8;
-                    addr = addr.offset(1);
-                    Count -= 1;
-                }
-            } else {
-                while (addr as usize) & 0x3 != 0 {
-                    *(addr as *mut u16) = color as u16;
-                    addr = addr.offset(2);
-                    *addr = (color >> 16) as u8;
-                    addr = addr.offset(1);
-                    Count -= 1;
-                }
-
-                core::arch::asm!(
-                    "movl {color}, %ecx",
-                    "andl $0xffffff, %ecx",
-                    "movl %ecx, %ebx",
-                    "shrl $8, %ebx",
-                    "movl %ecx, %eax",
-                    "shll $16, %eax",
-                    "orl  %eax, %ebx",
-                    "movl %ecx, %edx",
-                    "shll $8, %edx",
-                    "movl %ecx, %eax",
-                    "shrl $16, %eax",
-                    "orl  %eax, %edx",
-                    "movl %ecx, %eax",
-                    "shll $24, %eax",
-                    "orl  %ecx, %eax",
-                    "movl {count}, %ecx",
-                    "shr  $2, %ecx",
-                    "movl {addr}, %edi",
-                    "1:",
-                    "movl %eax, (%edi)",
-                    "movl %ebx, 4(%edi)",
-                    "movl %edx, 8(%edi)",
-                    "addl $12, %edi",
-                    "dec  %ecx",
-                    "jnz  1b",
-                    "movl %edi, {addr}",
-                    color = in(reg) color,
-                    count = in(reg) Count,
-                    addr = inout(reg) addr,
-                    out("eax") _,
-                    out("ebx") _,
-                    out("ecx") _,
-                    out("edx") _,
-                    out("edi") _,
-                );
-
-                Count = Count & 0x03;
-                while Count != 0 {
-                    *(addr as *mut u16) = color as u16;
-                    addr = addr.offset(2);
-                    *addr = (color >> 16) as u8;
-                    addr = addr.offset(1);
-                    Count -= 1;
-                }
-            }
-            DestY += 1;
-        }
-    }
-
-    #[cfg(not(all(target_arch = "x86", not(target_env = "msvc"))))]
+    // C original has an i386 GCC-asm fast-fill (12 bytes / 4 pixels per
+    // iteration); the rustconv translation used AT&T syntax in a default-Intel
+    // asm! block, clobbered LLVM-reserved ebx, and used 0/1-only labels — all
+    // rejected. It is a micro-opt of this portable HLine loop (used by
+    // amd64/arm64) — keep portable on all arches for correctness.
     {
         DestY = (*DestRect).top;
         while DestY < (*DestRect).bottom {
@@ -660,7 +568,7 @@ pub unsafe extern "C" fn DIB_24BPP_TransparentBlt(
     let mut SourceY: i32 = 0;
     let wd: i32;
     let mut Source: u32 = 0;
-    let Dest: u32;
+    let mut Dest: u32;
     let mut DestBits: *mut u8;
 
     let DstHeight: i32;
@@ -727,21 +635,21 @@ pub unsafe extern "C" fn DIB_24BPP_AlphaBlend(
     let mut SrcY: INT;
     let mut Dst: PUCHAR;
     let BlendFunc: BLENDFUNCTION;
-    let mut DstPixel: NICEPIXEL32;
-    let mut SrcPixel: NICEPIXEL32;
+    let mut DstPixel: NICEPIXEL32 = core::mem::zeroed();
+    let mut SrcPixel: NICEPIXEL32 = core::mem::zeroed();
     let mut Alpha: UCHAR;
 
     BlendFunc = (*BlendObj).BlendFunction;
-    if BlendFunc.BlendOp != AC_SRC_OVER {
+    if BlendFunc.BlendOp as u32 != AC_SRC_OVER {
         return 0u8;
     }
     if BlendFunc.BlendFlags != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & !AC_SRC_ALPHA) != 0 {
+    if (BlendFunc.AlphaFormat as u32 & !AC_SRC_ALPHA) != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 &&
+    if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 &&
        BitsPerFormat((*Source).iBitmapFormat) != 32 {
         return 0u8;
     }
@@ -760,7 +668,7 @@ pub unsafe extern "C" fn DIB_24BPP_AlphaBlend(
             SrcPixel.col.red = (SrcPixel.col.red as ULONG * BlendFunc.SourceConstantAlpha as ULONG / 255) as UCHAR;
             SrcPixel.col.green = (SrcPixel.col.green as ULONG * BlendFunc.SourceConstantAlpha as ULONG / 255) as UCHAR;
             SrcPixel.col.blue = (SrcPixel.col.blue as ULONG * BlendFunc.SourceConstantAlpha as ULONG / 255) as UCHAR;
-            if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) == 0 {
+            if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) == 0 {
                 Alpha = BlendFunc.SourceConstantAlpha;
             } else {
                 Alpha = (SrcPixel.col.alpha as ULONG * BlendFunc.SourceConstantAlpha as ULONG / 255) as UCHAR;
@@ -1546,7 +1454,7 @@ pub unsafe extern "C" fn DIB_24BPP_AlphaBlend(
 //       DPRINT1("Unsupported AlphaFormat (0x%x)\n", BlendFunc.AlphaFormat);
 //       return FALSE;
 //    }
-//    if ((BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 &&
+//    if ((BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 &&
 //        BitsPerFormat(Source->iBitmapFormat) != 32)
 //    {
 //       DPRINT1("Source bitmap must be 32bpp when AC_SRC_ALPHA is set\n");
@@ -1569,7 +1477,7 @@ pub unsafe extern "C" fn DIB_24BPP_AlphaBlend(
 //       SrcPixel.col.red = (SrcPixel.col.red * BlendFunc.SourceConstantAlpha) / 255;
 //       SrcPixel.col.green = (SrcPixel.col.green * BlendFunc.SourceConstantAlpha) / 255;
 //       SrcPixel.col.blue = (SrcPixel.col.blue * BlendFunc.SourceConstantAlpha) / 255;
-//       if (!(BlendFunc.AlphaFormat & AC_SRC_ALPHA))
+//       if (!(BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA))
 //       {
 //           Alpha = BlendFunc.SourceConstantAlpha ;
 //       }

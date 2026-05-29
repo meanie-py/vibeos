@@ -57,9 +57,9 @@ list(APPEND SOURCE
     # gdi/dib/dib1bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib1bpp.rs) — cohabitation [Phase 2b dib wave 1]
     # gdi/dib/dib4bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib4bpp.rs) — cohabitation [Phase 2b dib wave 1]
     # gdi/dib/dib8bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib8bpp.rs) — cohabitation [Phase 2b dib wave 1]
-    gdi/dib/dib16bpp.c
-    gdi/dib/dib24bpp.c
-    gdi/dib/dib32bpp.c
+    # gdi/dib/dib16bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib16bpp.rs) — cohabitation [Phase 2b dib wave 2]
+    # gdi/dib/dib24bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib24bpp.rs) — cohabitation [Phase 2b dib wave 2]
+    # gdi/dib/dib32bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib32bpp.rs) — cohabitation [Phase 2b dib wave 2]
     gdi/dib/floodfill.c
     gdi/dib/stretchblt.c
     # gdi/eng/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/alphablend.rs) — cohabitation [Phase 2a wave 2]

@@ -23,21 +23,6 @@ pub struct NICEPIXEL32_col {
     pub alpha: UCHAR,
 }
 
-#[inline]
-
-#[repr(C)]
-union NICEPIXEL32 {
-    ul: ULONG,
-    col: NICEPIXEL32_col,
-}
-
-#[repr(C)]
-struct NICEPIXEL32_col {
-    red: UCHAR,
-    green: UCHAR,
-    blue: UCHAR,
-    alpha: UCHAR,
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn DIB_32BPP_PutPixel(SurfObj: *mut SURFOBJ, x: i32, y: i32, c: u32) {
@@ -174,7 +159,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                 i = (*BltInfo).DestRect.left;
                 while i < (*BltInfo).DestRect.right {
                     xColor = XLATEOBJ_iXlate((*BltInfo).XlateSourceToDest,
-                        ((*SourceLine_4BPP as i32 & altnotmask[f1 as usize] as i32) >> (4 * (1 - f1))) as u32);
+                        ((*SourceLine_4BPP as i32 & altnotmask[f1 as usize] as i32) >> (4 * (1 - f1))) as u32) as i32;
                     DIB_32BPP_PutPixel((*BltInfo).DestSurface, i, j, xColor as u32);
                     if f1 == 1 {
                         SourceLine_4BPP = if bLeftToRight != 0 { SourceLine_4BPP.offset(-1) } else { SourceLine_4BPP.offset(1) };
@@ -442,7 +427,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                     let mut TopToBottomDone: u8 = 0u8;
 
                     if (bLeftToRight != 0) && (DestWidth > 1) {
-                        let store = ExAllocatePoolWithTag(NonPagedPool, ((DestWidth + 1) * 4) as usize, TAG_DIB);
+                        let store = ExAllocatePoolWithTag(NonPagedPool, ((DestWidth + 1) * 4) as SIZE_T, TAG_DIB);
                         if store == core::ptr::null_mut() {
                             return 0u8;
                         }
@@ -488,7 +473,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                     }
 
                     if (bTopToBottom != 0) && (DestHeight > 1) {
-                        let store = ExAllocatePoolWithTag(NonPagedPool, ((DestWidth + 1) * 4) as usize, TAG_DIB);
+                        let store = ExAllocatePoolWithTag(NonPagedPool, ((DestWidth + 1) * 4) as SIZE_T, TAG_DIB);
                         if store == core::ptr::null_mut() {
                             return 0u8;
                         }
@@ -579,7 +564,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn DIB_32BPP_TransparentBlt(
+pub unsafe extern "C" fn DIB_32BPP_TransparentBlt(
     DestSurf: *mut SURFOBJ,
     SourceSurf: *mut SURFOBJ,
     DestRect: *mut RECTL,
@@ -657,22 +642,22 @@ pub unsafe extern "C" fn DIB_32BPP_AlphaBlend(
     let mut SrcY: INT;
     let mut Dst: *mut ULONG;
     let BlendFunc: BLENDFUNCTION;
-    let mut DstPixel: NICEPIXEL32;
-    let mut SrcPixel: NICEPIXEL32;
+    let mut DstPixel: NICEPIXEL32 = core::mem::zeroed();
+    let mut SrcPixel: NICEPIXEL32 = core::mem::zeroed();
     let mut Alpha: UCHAR;
-    let SrcBpp: UCHAR;
+    let SrcBpp: ULONG;
 
     BlendFunc = (*BlendObj).BlendFunction;
-    if BlendFunc.BlendOp != AC_SRC_OVER {
+    if BlendFunc.BlendOp as u32 != AC_SRC_OVER {
         return 0u8;
     }
     if BlendFunc.BlendFlags != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & !AC_SRC_ALPHA) != 0 {
+    if (BlendFunc.AlphaFormat as u32 & !AC_SRC_ALPHA) != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0
+    if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0
         && BitsPerFormat((*Source).iBitmapFormat) != 32
     {
         return 0u8;
@@ -705,7 +690,7 @@ pub unsafe extern "C" fn DIB_32BPP_AlphaBlend(
                 BlendFunc.SourceConstantAlpha
             };
 
-            Alpha = if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 {
+            Alpha = if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 {
                 SrcPixel.col.alpha
             } else {
                 BlendFunc.SourceConstantAlpha
@@ -1542,7 +1527,7 @@ pub unsafe extern "C" fn DIB_32BPP_AlphaBlend(
 //     DPRINT1("Unsupported AlphaFormat (0x%x)\n", BlendFunc.AlphaFormat);
 //     return FALSE;
 //   }
-//   if ((BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 &&
+//   if ((BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 &&
 //        BitsPerFormat(Source->iBitmapFormat) != 32)
 //   {
 //     DPRINT1("Source bitmap must be 32bpp when AC_SRC_ALPHA is set\n");
@@ -1569,7 +1554,7 @@ pub unsafe extern "C" fn DIB_32BPP_AlphaBlend(
 //                         (SrcPixel.col.alpha * BlendFunc.SourceConstantAlpha) / 255 :
 //                         BlendFunc.SourceConstantAlpha ;
 //
-//       Alpha = ((BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0) ?
+//       Alpha = ((BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0) ?
 //            SrcPixel.col.alpha : BlendFunc.SourceConstantAlpha ;
 //
 //       DstPixel.ul = *Dst;

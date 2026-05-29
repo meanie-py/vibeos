@@ -82,17 +82,22 @@ mod dib_helpers;
 pub mod dib1bpp; pub mod dib4bpp; pub mod dib8bpp;
 #[cfg(not(target_arch = "x86"))] pub mod dib24bppc;
 #[cfg(not(target_arch = "x86"))] pub mod dib32bppc;
-// Wave 2 — PARKED: translated + on disk, integration WIP (NOT a regression
-// dodge — the C versions stay live for these formats). dib16/24/32bpp carry
-// NICEPIXEL bitfield-union defects (field-vs-method `.col.red`, duplicate
-// NICEPIXEL32 defs, Copy on union fields) in their AlphaBlend paths;
+// Wave 2 — per-format renderers (16/24/32 bpp). NICEPIXEL bitfield-union
+// surgery done (16bpp dest is a 5/5/5 or 5/6/5 bitfield → `.col.set_red()` /
+// `.col.red()` accessor methods; 24/32bpp dest is NICEPIXEL32 with real byte
+// fields). The C i386 GCC-asm fast paths (HLine/VLine/ColorFill) were
+// mistranslated by rustconv (wrong store direction, broken operand binding,
+// 0/1-only asm labels) — replaced with the portable loops amd64/arm64 already
+// use (the asm was a micro-opt, not behavior). C flipped off in
+// win32ss/CMakeLists.txt SOURCE.
+pub mod dib16bpp; pub mod dib24bpp; pub mod dib32bpp;
+// Wave 2b — PARKED: translated + on disk, integration WIP (C stays live).
 // dib_alphablend/dib_stretchblt have a local DIB_FUNCTIONS struct + wrong-ABI
 // DIB_DoRop import; floodfill needs LONG-vs-ULONG coordinate retyping + a local
-// table decl. Finish these next pass.
-// pub mod dib16bpp; pub mod dib24bpp; pub mod dib32bpp;
+// table decl. dib.rs is the DibFunctionsForBitmapFormat fn-pointer table +
+// DIB_DoRop + Dummy_* — enabling it must coordinate with dib_helpers' private
+// table extern. Finish these next pass.
 // pub mod floodfill; pub mod dib_alphablend; pub mod dib_stretchblt;
-// dib.rs (dispatch table + DIB_DoRop + Dummy_*) translated but PARKED — enable
-// in a follow-up that handles the DibFunctionsForBitmapFormat fn-pointer table.
 // pub mod dib;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3

@@ -3,17 +3,31 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 use crate::dib_helpers::*;
 
-extern "C" {
+// EXLATEOBJ_vInitialize/Cleanup are NTAPI in C (win32ss/gdi/eng/xlateobj.c).
+// NTAPI = stdcall on i386, cdecl on amd64/arm64; `extern "system"` resolves
+// per-arch. ppalSrc/ppalDst are typed `PALETTE *` in C.
+extern "system" {
+    fn EXLATEOBJ_vInitialize(
+        exlo: *mut EXLATEOBJ,
+        ppalSrc: *mut _PALETTE,
+        ppalDst: *mut _PALETTE,
+        crSrcBackColor: COLORREF,
+        crDstBackColor: COLORREF,
+        crDstForeColor: COLORREF,
+    );
+    fn EXLATEOBJ_vCleanup(exlo: *mut EXLATEOBJ);
 }
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub union NICEPIXEL32 {
     pub ul: ULONG,
     pub col: NICEPIXEL32_col,
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct NICEPIXEL32_col {
     pub red: UCHAR,
     pub green: UCHAR,
@@ -22,12 +36,14 @@ pub struct NICEPIXEL32_col {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub union NICEPIXEL16_565 {
     pub us: USHORT,
     pub col: NICEPIXEL16_565_col,
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct NICEPIXEL16_565_col {
     _bitfield: USHORT,
 }
@@ -54,12 +70,14 @@ impl NICEPIXEL16_565_col {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub union NICEPIXEL16_555 {
     pub us: USHORT,
     pub col: NICEPIXEL16_555_col,
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct NICEPIXEL16_555_col {
     _bitfield: USHORT,
 }
@@ -113,44 +131,11 @@ pub unsafe extern "C" fn DIB_16BPP_HLine(SurfObj: *mut SURFOBJ, x1: i32, x2: i32
     addr = addr.offset(x1 as isize);
     let mut addr = addr as PDWORD;
 
-    #[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
-    {
-        let Count = x2 - x1;
-
-        if x1 >= x2 {
-            return;
-        }
-
-        core::arch::asm!(
-            "  cld",
-            "  mov  {0:e}, eax",
-            "  shl  eax, 16",
-            "  and  {0:e}, 0xffff",
-            "  or   eax, {0:e}",
-            "  mov  {2}, edi",
-            "  test edi, 0x03",
-            "  jz   0f",
-            "  stosw",
-            "  dec  {1:e}",
-            "  jz   1f",
-            "0:",
-            "  mov  ecx, {1:e}",
-            "  shr  ecx, 1",
-            "  rep stosd",
-            "  test {1:e}, 0x01",
-            "  jz   1f",
-            "  stosw",
-            "1:",
-            in(reg) c,
-            in(reg) Count,
-            in(reg) addr,
-            out("eax") _,
-            out("ecx") _,
-            out("edi") _,
-        );
-    }
-
-    #[cfg(not(all(target_arch = "x86", not(target_env = "msvc"))))]
+    // C original has an i386 GCC-asm `rep stosd/stosw` fast fill; the rustconv
+    // translation mistranslated the operand binding (scratch on input-only
+    // operands, addr→edi) and used 0/1-only asm labels (rejected by Rust
+    // asm!). It is a micro-opt of this portable two-pixels-at-a-time loop
+    // (used by amd64/arm64) — keep portable on all arches for correctness.
     {
         let mut cx = x1;
         let cc: u32;
@@ -178,53 +163,21 @@ pub unsafe extern "C" fn DIB_16BPP_HLine(SurfObj: *mut SURFOBJ, x1: i32, x2: i32
 
 #[no_mangle]
 pub unsafe extern "C" fn DIB_16BPP_VLine(SurfObj: *mut SURFOBJ, x: i32, y1: i32, y2: i32, c: u32) {
-    #[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
-    {
-        core::arch::asm!(
-            "   testl {len}, {len}",
-            "   jle   2f",
-            "   movl  {len}, ecx",
-            "   shrl  $2, {len}",
-            "   andl  $3, ecx",
-            "   jz    1f",
-            "0:",
-            "   movw  ax, [{addr}]",
-            "   addl  {delta}, {addr}",
-            "   decl  ecx",
-            "   jnz   0b",
-            "   testl {len}, {len}",
-            "   jz    2f",
-            "1:",
-            "   movw  ax, [{addr}]",
-            "   addl  {delta}, {addr}",
-            "   movw  ax, [{addr}]",
-            "   addl  {delta}, {addr}",
-            "   movw  ax, [{addr}]",
-            "   addl  {delta}, {addr}",
-            "   movw  ax, [{addr}]",
-            "   addl  {delta}, {addr}",
-            "   decl  {len}",
-            "   jnz   1b",
-            "2:",
-            addr = inout(reg) ((*SurfObj).pvScan0 as PBYTE).offset((y1 * (*SurfObj).lDelta) as isize).offset((x * core::mem::size_of::<u16>() as i32) as isize),
-            delta = in(reg) (*SurfObj).lDelta,
-            len = inout(reg) y2 - y1 => _,
-            in("ax") c,
-            out("ecx") _,
-            options(nostack)
-        );
-    }
-    #[cfg(not(all(target_arch = "x86", not(target_env = "msvc"))))]
+    // The C original (dib16bpp.c) has a hand-unrolled i386 GCC-asm store loop
+    // for `_M_IX86 && !_MSC_VER`; the rustconv translation of it was broken
+    // (load instead of store, `inout` on an rvalue). The asm is a pure
+    // micro-optimization of this portable column-store loop, which amd64/arm64
+    // already use — keep the portable path on all arches for correctness.
     {
         let byteaddr = ((*SurfObj).pvScan0 as PBYTE).offset((y1 * (*SurfObj).lDelta) as isize);
         let mut addr = (byteaddr as PWORD).offset(x as isize);
         let lDelta = (*SurfObj).lDelta;
-        
+
         let mut byteaddr = addr as PBYTE;
         let mut y = y1;
         while y < y2 {
             *addr = c as u16;
-            
+
             byteaddr = byteaddr.offset(lDelta as isize);
             addr = byteaddr as PWORD;
             y += 1;
@@ -491,7 +444,7 @@ pub unsafe extern "C" fn DIB_16BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                     if bLeftToRight != 0 {
                         let store = ExAllocatePoolWithTag(
                             NonPagedPool,
-                            (((*BltInfo).DestRect.right - (*BltInfo).DestRect.left + 1) * 2) as usize,
+                            (((*BltInfo).DestRect.right - (*BltInfo).DestRect.left + 1) * 2) as SIZE_T,
                             TAG_DIB
                         ) as *mut u16;
                         if store.is_null() {
@@ -549,7 +502,7 @@ pub unsafe extern "C" fn DIB_16BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                     if bTopToBottom != 0 {
                         let store = ExAllocatePoolWithTag(
                             NonPagedPool,
-                            (((*BltInfo).DestRect.bottom - (*BltInfo).DestRect.top + 1) * 2) as usize,
+                            (((*BltInfo).DestRect.bottom - (*BltInfo).DestRect.top + 1) * 2) as SIZE_T,
                             TAG_DIB
                         ) as *mut u16;
                         if store.is_null() {
@@ -564,7 +517,7 @@ pub unsafe extern "C" fn DIB_16BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                             .offset(((*BltInfo).DestRect.top * (*(*BltInfo).DestSurface).lDelta) as isize)
                             .offset((2 * (*BltInfo).DestRect.left) as isize);
 
-                        if ((*(*BltInfo).SourceSurface).fjBitmap & BMF_TOPDOWN) == 0 {
+                        if ((*(*BltInfo).SourceSurface).fjBitmap as u32 & BMF_TOPDOWN) == 0 {
                             DestBits = DestBits.offset((*(*BltInfo).DestSurface).lDelta as isize);
                         }
 
@@ -705,55 +658,14 @@ pub unsafe extern "C" fn DIB_16BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
 }
 
 #[no_mangle]
-#[no_mangle]
 pub unsafe extern "C" fn DIB_16BPP_ColorFill(DestSurface: *mut SURFOBJ, DestRect: *mut RECTL, color: u32) -> u8 {
-
-    let DestY: i32;
 
     RECTL_vMakeWellOrdered(DestRect);
 
-    #[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
-    {
-        let delta = (*DestSurface).lDelta;
-        let width = ((*DestRect).right - (*DestRect).left) as u32;
-        let mut pos = ((*DestSurface).pvScan0 as PBYTE)
-            .offset((*DestRect).top as isize * delta as isize)
-            .offset(((*DestRect).left << 1) as isize) as *mut u32;
-        let mut color = color & 0xffff;
-        color += color << 16;
-
-        let mut DestY = (*DestRect).top;
-        while DestY < (*DestRect).bottom {
-            core::arch::asm!(
-                "cld",
-                "mov  {1:e}, ebx",
-                "mov  {2}, edi",
-                "test edi, 0x03",
-                "jz   1f",
-                "stosw",
-                "dec  ebx",
-                "jz   2f",
-                "1:",
-                "mov  ebx, ecx",
-                "shr  ecx, 1",
-                "rep stosl",
-                "test ebx, 0x01",
-                "jz   2f",
-                "stosw",
-                "2:",
-                inout("eax") color => _,
-                in(reg) width,
-                in(reg) pos,
-                out("ecx") _,
-                out("ebx") _,
-                out("edi") _,
-            );
-            pos = (pos as usize + delta as usize) as *mut u32;
-            DestY += 1;
-        }
-    }
-
-    #[cfg(not(all(target_arch = "x86", not(target_env = "msvc"))))]
+    // C original has an i386 GCC-asm `rep stosl/stosw` fast fill for
+    // `_M_IX86 && !_MSC_VER`; rustconv mistranslated the operand binding
+    // (named/positional mix). It is a micro-opt of this portable HLine loop
+    // (used by amd64/arm64) — keep portable on all arches for correctness.
     {
         let mut DestY = (*DestRect).top;
         while DestY < (*DestRect).bottom {
@@ -765,6 +677,7 @@ pub unsafe extern "C" fn DIB_16BPP_ColorFill(DestSurface: *mut SURFOBJ, DestRect
     1u8
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn DIB_16BPP_TransparentBlt(
     DestSurf: *mut SURFOBJ,
     SourceSurf: *mut SURFOBJ,
@@ -886,22 +799,22 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
     let mut SrcX: i32;
     let mut SrcY: i32;
     let BlendFunc: BLENDFUNCTION;
-    let mut SrcPixel32: NICEPIXEL32;
+    let mut SrcPixel32: NICEPIXEL32 = core::mem::zeroed();
     let mut Alpha: u8;
     let mut pexlo: *mut EXLATEOBJ;
     let mut exloSrcRGB: EXLATEOBJ = core::mem::zeroed();
 
     BlendFunc = (*BlendObj).BlendFunction;
-    if BlendFunc.BlendOp != AC_SRC_OVER {
+    if BlendFunc.BlendOp as u32 != AC_SRC_OVER {
         return 0u8;
     }
     if BlendFunc.BlendFlags != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & !AC_SRC_ALPHA) != 0 {
+    if (BlendFunc.AlphaFormat as u32 & !AC_SRC_ALPHA) != 0 {
         return 0u8;
     }
-    if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0
+    if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0
         && (BitsPerFormat((*Source).iBitmapFormat) != 32)
     {
         return 0u8;
@@ -914,10 +827,10 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
     pexlo = (ColorTranslation as *mut u8).sub(
         core::mem::offset_of!(EXLATEOBJ, xlo)
     ) as *mut EXLATEOBJ;
-    EXLATEOBJ_vInitialize(&mut exloSrcRGB, (*pexlo).ppalSrc, &gpalRGB, 0, 0, 0);
+    EXLATEOBJ_vInitialize(&mut exloSrcRGB, (*pexlo).ppalSrc, core::ptr::addr_of_mut!(gpalRGB), 0, 0, 0);
 
     if ((*(*pexlo).ppalDst).flFlags & PAL_RGB16_555) != 0 {
-        let mut DstPixel16: NICEPIXEL16_555;
+        let mut DstPixel16: NICEPIXEL16_555 = core::mem::zeroed();
 
         SrcY = (*SourceRect).top;
         DstY = (*DestRect).top;
@@ -930,7 +843,7 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
                 SrcPixel32.col.green = (SrcPixel32.col.green as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8;
                 SrcPixel32.col.blue = (SrcPixel32.col.blue as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8;
 
-                Alpha = if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 {
+                Alpha = if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 {
                     (SrcPixel32.col.alpha as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8
                 } else {
                     BlendFunc.SourceConstantAlpha
@@ -943,9 +856,9 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
                 SrcPixel32.col.green >>= 3;
                 SrcPixel32.col.blue >>= 3;
 
-                DstPixel16.col.red = Clamp5((DstPixel16.col.red as u32 * (31 - Alpha as u32)) / 31 + SrcPixel32.col.red as u32) as u16;
-                DstPixel16.col.green = Clamp5((DstPixel16.col.green as u32 * (31 - Alpha as u32)) / 31 + SrcPixel32.col.green as u32) as u16;
-                DstPixel16.col.blue = Clamp5((DstPixel16.col.blue as u32 * (31 - Alpha as u32)) / 31 + SrcPixel32.col.blue as u32) as u16;
+                DstPixel16.col.set_red(Clamp5((DstPixel16.col.red() as u32 * (31 - Alpha as u32)) / 31 + SrcPixel32.col.red as u32) as u16);
+                DstPixel16.col.set_green(Clamp5((DstPixel16.col.green() as u32 * (31 - Alpha as u32)) / 31 + SrcPixel32.col.green as u32) as u16);
+                DstPixel16.col.set_blue(Clamp5((DstPixel16.col.blue() as u32 * (31 - Alpha as u32)) / 31 + SrcPixel32.col.blue as u32) as u16);
 
                 DIB_16BPP_PutPixel(Dest, DstX, DstY, DstPixel16.us as u32);
 
@@ -958,7 +871,7 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
                 / ((*DestRect).bottom - (*DestRect).top);
         }
     } else {
-        let mut DstPixel16: NICEPIXEL16_565;
+        let mut DstPixel16: NICEPIXEL16_565 = core::mem::zeroed();
         let mut Alpha6: u8;
         let mut Alpha5: u8;
 
@@ -973,7 +886,7 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
                 SrcPixel32.col.green = (SrcPixel32.col.green as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8;
                 SrcPixel32.col.blue = (SrcPixel32.col.blue as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8;
 
-                Alpha = if (BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 {
+                Alpha = if (BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 {
                     (SrcPixel32.col.alpha as u32 * BlendFunc.SourceConstantAlpha as u32 / 255) as u8
                 } else {
                     BlendFunc.SourceConstantAlpha
@@ -987,9 +900,9 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
                 SrcPixel32.col.green >>= 2;
                 SrcPixel32.col.blue >>= 3;
 
-                DstPixel16.col.red = Clamp5((DstPixel16.col.red as u32 * (31 - Alpha5 as u32)) / 31 + SrcPixel32.col.red as u32) as u16;
-                DstPixel16.col.green = Clamp6((DstPixel16.col.green as u32 * (63 - Alpha6 as u32)) / 63 + SrcPixel32.col.green as u32) as u16;
-                DstPixel16.col.blue = Clamp5((DstPixel16.col.blue as u32 * (31 - Alpha5 as u32)) / 31 + SrcPixel32.col.blue as u32) as u16;
+                DstPixel16.col.set_red(Clamp5((DstPixel16.col.red() as u32 * (31 - Alpha5 as u32)) / 31 + SrcPixel32.col.red as u32) as u16);
+                DstPixel16.col.set_green(Clamp6((DstPixel16.col.green() as u32 * (63 - Alpha6 as u32)) / 63 + SrcPixel32.col.green as u32) as u16);
+                DstPixel16.col.set_blue(Clamp5((DstPixel16.col.blue() as u32 * (31 - Alpha5 as u32)) / 31 + SrcPixel32.col.blue as u32) as u16);
 
                 DIB_16BPP_PutPixel(Dest, DstX, DstY, DstPixel16.us as u32);
 
@@ -1900,7 +1813,7 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
 //     DPRINT1("Unsupported AlphaFormat (0x%x)\n", BlendFunc.AlphaFormat);
 //     return FALSE;
 //   }
-//   if ((BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0 &&
+//   if ((BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0 &&
 //           (BitsPerFormat(Source->iBitmapFormat) != 32))
 //   {
 //     DPRINT1("Source bitmap must be 32bpp when AC_SRC_ALPHA is set\n");
@@ -1933,7 +1846,7 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
 //           SrcPixel32.col.green = (SrcPixel32.col.green * BlendFunc.SourceConstantAlpha) / 255;
 //           SrcPixel32.col.blue = (SrcPixel32.col.blue * BlendFunc.SourceConstantAlpha) / 255;
 //
-//           Alpha = ((BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0) ?
+//           Alpha = ((BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0) ?
 //                (SrcPixel32.col.alpha * BlendFunc.SourceConstantAlpha) / 255 :
 //                BlendFunc.SourceConstantAlpha;
 //
@@ -1979,7 +1892,7 @@ pub unsafe extern "C" fn DIB_16BPP_AlphaBlend(
 //           SrcPixel32.col.green = (SrcPixel32.col.green * BlendFunc.SourceConstantAlpha) / 255;
 //           SrcPixel32.col.blue = (SrcPixel32.col.blue * BlendFunc.SourceConstantAlpha) / 255;
 //
-//           Alpha = ((BlendFunc.AlphaFormat & AC_SRC_ALPHA) != 0) ?
+//           Alpha = ((BlendFunc.AlphaFormat as u32 & AC_SRC_ALPHA) != 0) ?
 //                (SrcPixel32.col.alpha * BlendFunc.SourceConstantAlpha) / 255 :
 //                BlendFunc.SourceConstantAlpha;
 //
