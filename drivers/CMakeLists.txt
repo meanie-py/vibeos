@@ -1,9 +1,9 @@
 
 PROJECT(Drivers)
 
-add_subdirectory(acpi)
+# acpi (cmbatt) + battery (battc/compbatt) dropped: ACPI/composite battery
+# drivers, no battery in QEMU VMs, never load — pre-Vista-era optional hardware.
 add_subdirectory(base)
-add_subdirectory(battery)
 add_subdirectory(bluetooth)
 add_subdirectory(bus)
 add_subdirectory(crypto)
@@ -15,7 +15,7 @@ add_subdirectory(input)
 add_subdirectory(ksfilter)
 add_subdirectory(multimedia)
 add_subdirectory(network)
-add_subdirectory(parallel)
+# parallel (parport) dropped: legacy LPT, not emulated by QEMU q35/i440fx/virt.
 add_subdirectory(processor)
 add_subdirectory(serial)
 add_subdirectory(setup)
