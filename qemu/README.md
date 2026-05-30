@@ -23,7 +23,7 @@ qemu/stop.sh $RUN
 | `start.sh` | Spawn a QEMU run (preflight + manifest + run-id). `--gdb` opens gdbstub. Acquires a concurrency slot; auto-reaps orphans first. |
 | `stop.sh` | Stop a run, preserve artifacts. Idempotent. |
 | `status.sh` | Read-only state of **one** run-id (process, serial size, gdb). |
-| `ps.sh` | **What's running right now across ALL worktrees** + slot usage. Start here when you're unsure what's live. |
+| `ps` | **What's running right now across ALL worktrees** + slot usage (Python; first piece of the `q` CLI port). Start here when you're unsure what's live. |
 | `wait-for.sh` | Poll a run's serial log for a regex; rich timeout response. |
 | `tail.sh` | Sanitized read of a run's serial log. |
 | `inspect.sh` | Single-shot GDB inspection (`bt`, `dump-thread`, `triage-bugcheck`, …). |
@@ -61,7 +61,7 @@ from exhausting host KVM/RAM:
   queue-wait doesn't count against it.
 - **Orphan reaping** — `reap.sh` culls QEMUs whose owning session died.
 
-`qemu/ps.sh` is the one-glance view of all of the above. See
+`qemu/ps` is the one-glance view of all of the above. See
 `docs/engineering/kernel-debugging-infra.md` for the full design.
 
 ## Deprecated / superseded

@@ -221,10 +221,11 @@ jq -n \
     --arg arch "$ARCH" \
     --arg run_id "$RUN_ID" \
     --arg manifest_path "$(manifest_path "$RUN_ID")" \
+    --arg live_log "$SERIAL_LOG" \
     --arg source "qemu/start.sh" \
     '{launcher_pid: $launcher_pid, qemu_pid: $qemu_pid, deadline: $deadline,
       slot: $slot, arch: $arch, run_id: $run_id, manifest_path: $manifest_path,
-      source: $source}' \
+      live_log: $live_log, source: $source}' \
     > "$LOCK_FILE" 2>/dev/null || log_warn "could not write $LOCK_FILE"
 
 # Detached hard-cap watchdog. Sleeps until the deadline, then kills the QEMU

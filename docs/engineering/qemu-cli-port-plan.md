@@ -1,8 +1,14 @@
 # Plan: port the `qemu/` shell toolkit to a Python `q` CLI
 
-**Status:** Proposed (captured 2026-05-30). Not started. Decided scope: *full*
-port to a Python CLI, executed incrementally, with shell scripts kept as
-deprecated shims until each command is proven on a real debug session.
+**Status:** In progress (captured 2026-05-30). Decided scope: *full* port to a
+Python CLI, executed incrementally, with shell scripts kept as deprecated shims
+until each command is proven on a real debug session.
+
+**Done so far:** `qemu/ps` (was `ps.sh`) ported to Python — the lowest-risk
+piece (read-only observability, no lifecycle), done first because the shell
+version hit two shell-only bugs in one session: multibyte `printf` misalignment
+and `$(( ))` choking on the float `deadline` the harness writes. Standalone
+today; folds into `q ps` when the dispatcher lands.
 
 ## Motivation
 

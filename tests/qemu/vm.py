@@ -482,6 +482,8 @@ class QemuVM:
                 "started": started,
                 "deadline": started + MAX_VM_LIFETIME_SECONDS,
                 "slot": self._slot_index,
+                # Absolute so qemu/ps.sh can point at it from ANY worktree.
+                "live_log": str(self.live_log_path),
                 "cmd": cmd,
             }))
             atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
