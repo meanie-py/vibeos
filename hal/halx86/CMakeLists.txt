@@ -5,8 +5,7 @@ add_definitions(
 
 include_directories(
     include
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/include
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/fast486)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 
 # ============================================================================
 # Rust HAL static archive (sdk/lib/rust/hal-rust → libhal_rust.a)
@@ -48,7 +47,6 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apic_halinit.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apictimer.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bios.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/buildtype.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/busemul.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bushndlr.rs
@@ -93,7 +91,6 @@ add_custom_command(
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/tsc.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/up.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/usage.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/x86bios.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/irql/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/arbiter/mod.rs
             ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/acpi/mod.rs
@@ -170,9 +167,9 @@ function(add_hal _halname)
         ${CMAKE_CURRENT_BINARY_DIR}/hal.def)
 
     if(${_halname} STREQUAL "hal")
-        target_link_libraries(${_halname} libcntpr setjmp arbiter fast486 ${PSEH_LIB} ${HAL_RUST_LIB})
+        target_link_libraries(${_halname} libcntpr setjmp arbiter ${PSEH_LIB} ${HAL_RUST_LIB})
     else()
-        target_link_libraries(${_halname} libcntpr setjmp fast486 ${PSEH_LIB})
+        target_link_libraries(${_halname} libcntpr setjmp ${PSEH_LIB})
     endif()
 
     add_importlibs(${_halname} ntoskrnl)

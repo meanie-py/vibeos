@@ -60,13 +60,15 @@ CSR_API(SrvRegisterLogonProcess)
         /* Query the API port and save it globally */
         CsrApiPort = CsrQueryApiPort();
 
-        DPRINT("Giving win32k our api port\n");
+        DPRINT1("[USERSRV] SrvRegisterLogonProcess: CsrApiPort=%p (after CsrQueryApiPort), &CsrApiPort=%p, sizeof=%lu\n",
+                CsrApiPort, &CsrApiPort, (ULONG)sizeof(CsrApiPort));
 
         /* Inform win32k about the API port */
         Status = NtUserSetInformationThread(NtCurrentThread(),
                                             UserThreadCsrApiPort,
                                             &CsrApiPort,
                                             sizeof(CsrApiPort));
+        DPRINT1("[USERSRV] SrvRegisterLogonProcess: NtUserSetInformationThread(UserThreadCsrApiPort) -> 0x%lx\n", Status);
         if (!NT_SUCCESS(Status))
         {
             return Status;

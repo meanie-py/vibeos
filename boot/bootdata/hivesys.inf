@@ -20,23 +20,8 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0A08","ClassGU
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0604","Service",0x00000000,"pci"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0604","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
 
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0601","Service",0x00000000,"isapnp"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0601","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
-
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0101","Service",0x00000000,"uniata"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0101","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_0001","Service",0x00000000,"isapnp"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_0001","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_002C","Service",0x00000000,"isapnp"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_002C","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_002D","Service",0x00000000,"isapnp"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_002D","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_003B","Service",0x00000000,"isapnp"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1033&DEV_003B","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
 
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0C08","Service",0x00000000,"acpi"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0C08","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
@@ -88,18 +73,6 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\HID_DEVICE_SYSTEM_
 
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\HID_DEVICE_SYSTEM_MOUSE","Service",0x00000000,"mouhid"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\HID_DEVICE_SYSTEM_MOUSE","ClassGUID",0x00000000,"{4D36E96F-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0000","Service",0x00000000,"vga"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0000","ClassGUID",0x00000000,"{4D36E968-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0001","Service",0x00000000,"vga"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0001","ClassGUID",0x00000000,"{4D36E968-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0300","Service",0x00000000,"vga"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0300","ClassGUID",0x00000000,"{4D36E968-E325-11CE-BFC1-08002BE10318}"
-
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0301","Service",0x00000000,"vga"
-HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0301","ClassGUID",0x00000000,"{4D36E968-E325-11CE-BFC1-08002BE10318}"
 
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0303","Service",0x00000000,"i8042prt"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0303","ClassGUID",0x00000000,"{4D36E96B-E325-11CE-BFC1-08002BE10318}"
@@ -157,24 +130,19 @@ HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\PNP Filter","",0x0000000
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\Primary Disk","",0x00000000,"Driver Group"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\RpcSs","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\SCSI Class","",0x00000000,"Driver Group"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\sermouse.sys","",0x00000000,"Driver"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\sr.sys","",0x00000000,"FSFilter System Recovery"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\SRService","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\System Bus Extender","",0x00000000,"Driver Group"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\vga.sys","",0x00000000,"Driver"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\vgasave.sys","",0x00000000,"Driver"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\WinMgmt","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{36FC9E60-C465-11CF-8056-444553540000}","",0x00000000,"Universal Serial Bus controllers"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E965-E325-11CE-BFC1-08002BE10318}","",0x00000000,"CD-ROM Drive"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E967-E325-11CE-BFC1-08002BE10318}","",0x00000000,"DiskDrive"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E969-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Standard floppy disk controller"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E96A-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Hdc"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E96B-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Keyboard"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E96F-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Mouse"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E977-E325-11CE-BFC1-08002BE10318}","",0x00000000,"PCMCIA Adapters"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E97B-E325-11CE-BFC1-08002BE10318}","",0x00000000,"SCSIAdapter"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E97D-E325-11CE-BFC1-08002BE10318}","",0x00000000,"System"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{4D36E980-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Floppy disk drive"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{71A27CDD-812A-11D0-BEC7-08002BE2092F}","",0x00000000,"Volume"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}","",0x00000000,"Human Interface Devices"
 
@@ -226,7 +194,6 @@ HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\rdpwd.sys","",0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\rdsessmgr","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\RpcSs","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\SCSI Class","",0x00000000,"Driver Group"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\sermouse.sys","",0x00000000,"Driver"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\SharedAccess","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\sr.sys","",0x00000000,"FSFilter System Recovery"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\SRService","",0x00000000,"Service"
@@ -237,14 +204,11 @@ HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\TDI","",0x00000000,"Driv
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\tdpipe.sys","",0x00000000,"Driver"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\tdtcp.sys","",0x00000000,"Driver"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\termservice","",0x00000000,"Service"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\vga.sys","",0x00000000,"Driver"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\vgasave.sys","",0x00000000,"Driver"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\WinMgmt","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\WZCSVC","",0x00000000,"Service"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{36FC9E60-C465-11CF-8056-444553540000}","",0x00000000,"Universal Serial Bus controllers"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E965-E325-11CE-BFC1-08002BE10318}","",0x00000000,"CD-ROM Drive"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E967-E325-11CE-BFC1-08002BE10318}","",0x00000000,"DiskDrive"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E969-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Standard floppy disk controller"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E96A-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Hdc"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E96B-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Keyboard"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E96F-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Mouse"
@@ -255,7 +219,6 @@ HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E975-E325-11CE-BFC1
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E977-E325-11CE-BFC1-08002BE10318}","",0x00000000,"PCMCIA Adapters"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E97B-E325-11CE-BFC1-08002BE10318}","",0x00000000,"SCSIAdapter"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E97D-E325-11CE-BFC1-08002BE10318}","",0x00000000,"System"
-HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{4D36E980-E325-11CE-BFC1-08002BE10318}","",0x00000000,"Floppy disk drive"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{71A27CDD-812A-11D0-BEC7-08002BE2092F}","",0x00000000,"Volume"
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot\Network\{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}","",0x00000000,"Human Interface Devices"
 
@@ -1848,6 +1811,17 @@ HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Group",0x00000000,"Boot Bus Ext
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ImagePath",0x00020000,"system32\drivers\usbhub.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,0x00000001
+
+; GOP/linear-framebuffer video device driver (UEFI boots). Boot start so that
+; \Device\Video0 exists before win32k's InitVideo runs. On a legacy-BIOS boot
+; there is no GOP framebuffer in the ARC tree, so the driver bails in DriverEntry
+; and the VGA miniport drives the display instead. ErrorControl=0 (ignore) keeps
+; that bail non-fatal.
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
 
 ; EHCI controller driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","ErrorControl",0x00010001,0x00000001

@@ -317,6 +317,46 @@ class Amd64Config(ArchConfig):
 
 
 @dataclass
+class Amd64UefiConfig(Amd64Config):
+    """amd64 booted via UEFI (OVMF) from the livecd ISO's EFI El Torito entry.
+
+    Mirrors I386UefiConfig: i440fx (-M pc) + 64-bit OVMF, the ISO attached as an
+    ide-cd with bootindex=0 (the CD is reachable over IDE, so uniata serves it
+    and no AHCI driver is needed — q35 would put it on SATA). The uefildr.efi
+    (Rust EfiEntry) loader boots the same kernel; the GOP framebuffer (arm64vid
+    + framebuf) and synthetic-RSDP ACPI path make the desktop render and PS/2
+    input work, same as i386-uefi.
+    """
+    arch: str = "amd64-uefi"
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        iso = PROJECT_DIR / "build-amd64" / "livecd.iso"
+        ovmf_code = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
+        ovmf_vars_src = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
+        # Writable VARS pflash must be qcow2 for QMP savevm (raw is rejected).
+        ovmf_vars_raw = work_dir / "ovmf_vars.fd"
+        ovmf_vars = work_dir / "ovmf_vars.qcow2"
+        shutil.copy2(ovmf_vars_src, ovmf_vars_raw)
+        subprocess.run(
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
+             str(ovmf_vars_raw), str(ovmf_vars)],
+            check=True, capture_output=True,
+        )
+        ovmf_vars_raw.unlink()
+        return [
+            *self.machine_args,
+            "-m", self.memory,
+            "-drive", f"if=pflash,format=raw,file={ovmf_code},readonly=on",
+            "-drive", f"if=pflash,format=qcow2,file={ovmf_vars}",
+            "-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on",
+            "-device", "ide-cd,drive=cd0,bootindex=0",
+            "-vga", "std",
+            "-display", "none",
+            "-no-reboot",
+        ]
+
+
+@dataclass
 class Arm64TestKernelConfig(Arm64Config):
     """ARM64 config with /TESTKERNEL appended to freeldr.ini boot options."""
     arch: str = "arm64-test"
@@ -369,12 +409,14 @@ class Arm64TestKernelConfig(Arm64Config):
         ]
 
 
+# x86 is UEFI-only after the BIOS prune. I386Config / Amd64Config remain only as
+# the (non-selectable) base classes that hold shared defaults for the -uefi
+# variants; their legacy BIOS -cdrom qemu_args are no longer reachable.
 ARCH_CONFIGS: dict[str, type[ArchConfig]] = {
     "arm64": Arm64Config,
     "arm64-test": Arm64TestKernelConfig,
-    "i386": I386Config,
     "i386-uefi": I386UefiConfig,
-    "amd64": Amd64Config,
+    "amd64-uefi": Amd64UefiConfig,
 }
 
 

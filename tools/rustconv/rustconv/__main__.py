@@ -127,7 +127,7 @@ def cmd_submit(args):
     # For Claude, use separate system prompt (for caching)
     # For Gemini, combine into single prompt
     if model.startswith("claude-"):
-        system_prompt = load_system_prompt()
+        system_prompt = load_system_prompt(target)
         file_prompt = build_file_prompt(scan, res)
     else:
         system_prompt = ""
@@ -149,17 +149,20 @@ def cmd_submit(args):
     if args.output:
         # Post-process before writing
         code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
-                           target_name=target.name)
+                           target_name=target.name,
+                           sys_crate=target.sys_crate, sys_umbrella=target.sys_umbrella)
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
     elif args.assemble:
         out_path = assemble_file(result, subsystem, scan.raw_source,
-                                 exports=res.exports, scan=scan)
+                                 exports=res.exports, scan=scan,
+                                 target=target, c_source_path=path)
         print(f"Assembled to {out_path}", file=sys.stderr)
     else:
         # Post-process before printing
         code = postprocess(result.rust_code, exports=res.exports, globals=scan.globals,
-                           target_name=target.name)
+                           target_name=target.name,
+                           sys_crate=target.sys_crate, sys_umbrella=target.sys_umbrella)
         print(code)
 
 
@@ -946,7 +949,9 @@ def cmd_translate(args):
 
         # Post-process
         code = postprocess(stitched, exports=file_res.exports, globals=scan.globals,
-                           target_name=rustconv_target.name)
+                           target_name=rustconv_target.name,
+                           sys_crate=rustconv_target.sys_crate,
+                           sys_umbrella=rustconv_target.sys_umbrella)
 
         if args.output and total_files == 1:
             Path(args.output).write_text(code)

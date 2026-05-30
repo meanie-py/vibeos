@@ -1,0 +1,164 @@
+//! Hand-written NTSTATUS codes for the user-mode Native API.
+//!
+//! ntstatus.h `(NTSTATUS)0x...` cast-macros are NOT bindgen-
+//! evaluable by design (audit §Phase 0.2). This is the ntdll-sys
+//! analog of `ntkrnl-sys/src/constants.rs` — ported verbatim
+//! (the STATUS_* block only; other constant families come from
+//! the subsys-header bindgen and must NOT be duplicated here or
+//! they glob-collide). NTSTATUS == c_long == i32 on all 3 targets,
+//! so these are written as plain `i32` to avoid a circular dep on
+//! the `nt` umbrella that re-exports them.
+
+pub const STATUS_UNSUCCESSFUL: i32 = 0xC0000001_u32 as i32;
+pub const STATUS_INVALID_HANDLE: i32 = 0xC0000008_u32 as i32;
+pub const STATUS_INVALID_PARAMETER: i32 = 0xC000000D_u32 as i32;
+pub const STATUS_ACCESS_DENIED: i32 = 0xC0000022_u32 as i32;
+pub const STATUS_OBJECT_TYPE_MISMATCH: i32 = 0xC0000024_u32 as i32;
+pub const STATUS_OBJECT_NAME_COLLISION: i32 = 0xC0000035_u32 as i32;
+pub const STATUS_QUOTA_EXCEEDED: i32 = 0xC0000044_u32 as i32;
+pub const STATUS_PROCESS_IS_TERMINATING: i32 = 0xC000010A_u32 as i32;
+pub const STATUS_HANDLE_NOT_CLOSABLE: i32 = 0xC0000235_u32 as i32;
+pub const STATUS_OBJECT_NAME_EXISTS: i32 = 0x40000000_u32 as i32;
+pub const STATUS_OBJECT_NAME_NOT_FOUND: i32 = 0xC0000034_u32 as i32;
+pub const STATUS_PORT_ALREADY_SET: i32 = 0xC0000048_u32 as i32;
+pub const STATUS_PORT_DISCONNECTED: i32 = 0xC0000037_u32 as i32;
+pub const STATUS_REPLY_MESSAGE_MISMATCH: i32 = 0xC000002D_u32 as i32;
+pub const STATUS_INVALID_PORT_HANDLE: i32 = 0xC0000042_u32 as i32;
+pub const STATUS_PORT_MESSAGE_TOO_LONG: i32 = 0xC000002F_u32 as i32;
+pub const STATUS_SERVER_SID_MISMATCH: i32 = 0xC00000A4_u32 as i32;
+pub const STATUS_PORT_CONNECTION_REFUSED: i32 = 0xC0000041_u32 as i32;
+pub const STATUS_PORT_NOT_SET: i32 = 0xC0000353_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_3: i32 = 0xC00000F1_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_4: i32 = 0xC00000F2_u32 as i32;
+pub const STATUS_LPC_REPLY_LOST: i32 = 0xC0000253_u32 as i32;
+pub const STATUS_OBJECT_NAME_INVALID: i32 = 0xC0000033_u32 as i32;
+pub const STATUS_OBJECT_PATH_NOT_FOUND: i32 = 0xC000003A_u32 as i32;
+pub const STATUS_OBJECT_PATH_INVALID: i32 = 0xC0000039_u32 as i32;
+pub const STATUS_OBJECT_PATH_SYNTAX_BAD: i32 = 0xC000003B_u32 as i32;
+pub const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC0000004_u32 as i32;
+pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023_u32 as i32;
+pub const STATUS_BUFFER_OVERFLOW: i32 = 0x80000005_u32 as i32;
+pub const STATUS_PRIVILEGE_NOT_HELD: i32 = 0xC0000061_u32 as i32;
+pub const STATUS_REPARSE: i32 = 0x00000104;
+pub const STATUS_REPARSE_OBJECT: i32 = 0x00000118;
+pub const STATUS_NO_MORE_ENTRIES: i32 = 0x8000001A_u32 as i32;
+pub const STATUS_INVALID_INFO_CLASS: i32 = 0xC0000003_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_1: i32 = 0xC00000EF_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_2: i32 = 0xC00000F0_u32 as i32;
+pub const STATUS_REVISION_MISMATCH: i32 = 0xC0000059_u32 as i32;
+pub const STATUS_NOT_SUPPORTED: i32 = 0xC00000BB_u32 as i32;
+pub const STATUS_CANCELLED: i32 = 0xC0000120_u32 as i32;
+pub const STATUS_BAD_IMPERSONATION_LEVEL: i32 = 0xC00000A5_u32 as i32;
+pub const STATUS_NOT_FOUND: i32 = 0xC0000225_u32 as i32;
+pub const STATUS_NO_TOKEN: i32 = 0xC000007C_u32 as i32;
+pub const STATUS_NO_SUCH_LOGON_SESSION: i32 = 0xC000005F_u32 as i32;
+pub const STATUS_INVALID_SID: i32 = 0xC0000078_u32 as i32;
+pub const STATUS_INVALID_OWNER: i32 = 0xC000005A_u32 as i32;
+pub const STATUS_INVALID_PRIMARY_GROUP: i32 = 0xC000005B_u32 as i32;
+pub const STATUS_INVALID_ACL: i32 = 0xC0000077_u32 as i32;
+pub const STATUS_INVALID_SECURITY_DESCR: i32 = 0xC0000079_u32 as i32;
+pub const STATUS_UNKNOWN_REVISION: i32 = 0xC0000058_u32 as i32;
+pub const STATUS_GENERIC_NOT_MAPPED: i32 = 0xC0000067_u32 as i32;
+pub const STATUS_NOT_ALL_ASSIGNED: i32 = 0x00000106;
+pub const STATUS_TOKEN_ALREADY_IN_USE: i32 = 0xC000015A_u32 as i32;
+pub const STATUS_NO_SECURITY_ON_OBJECT: i32 = 0xC00000D7_u32 as i32;
+pub const STATUS_NO_IMPERSONATION_TOKEN: i32 = 0xC000005C_u32 as i32;
+pub const STATUS_LOGON_SESSION_EXISTS: i32 = 0xC0000068_u32 as i32;
+pub const STATUS_NOT_LOGON_PROCESS: i32 = 0xC0000136_u32 as i32;
+pub const STATUS_BAD_LOGON_SESSION_STATE: i32 = 0xC0000104_u32 as i32;
+pub const STATUS_ALLOTTED_SPACE_EXCEEDED: i32 = 0xC0000099_u32 as i32;
+pub const STATUS_BAD_TOKEN_TYPE: i32 = 0xC00000A8_u32 as i32;
+pub const STATUS_CANT_OPEN_ANONYMOUS: i32 = 0xC00000A6_u32 as i32;
+pub const STATUS_CANT_ENABLE_DENY_ONLY: i32 = 0xC000025F_u32 as i32;
+pub const STATUS_CANT_DISABLE_MANDATORY: i32 = 0xC0000260_u32 as i32;
+pub const STATUS_PENDING: i32 = 0x00000103;
+pub const STATUS_ALERTED: i32 = 0x00000101;
+pub const STATUS_NOTHING_TO_TERMINATE: i32 = 0xC0000187_u32 as i32;
+pub const STATUS_THREAD_IS_TERMINATING: i32 = 0xC000004B_u32 as i32;
+pub const STATUS_CANT_TERMINATE_SELF: i32 = 0xC00000DB_u32 as i32;
+pub const STATUS_SYSTEM_SHUTDOWN: i32 = 0xC00002FE_u32 as i32;
+pub const STATUS_PROCESS_IN_JOB: i32 = 0x00000124;
+pub const STATUS_PROCESS_NOT_IN_JOB: i32 = 0x00000123;
+pub const STATUS_INVALID_CID: i32 = 0xC000000B_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_MIX: i32 = 0xC0000030_u32 as i32;
+pub const STATUS_PROCEDURE_NOT_FOUND: i32 = 0xC000007A_u32 as i32;
+pub const STATUS_PAGEFILE_QUOTA_EXCEEDED: i32 = 0xC000012C_u32 as i32;
+pub const STATUS_END_OF_FILE: i32 = 0xC0000011_u32 as i32;
+pub const STATUS_MEDIA_WRITE_PROTECTED: i32 = 0xC00000A2_u32 as i32;
+pub const STATUS_FILE_LOCK_CONFLICT: i32 = 0xC0000054_u32 as i32;
+pub const STATUS_RANGE_NOT_LOCKED: i32 = 0xC000007E_u32 as i32;
+pub const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010_u32 as i32;
+pub const STATUS_CRC_ERROR: i32 = 0xC000003F_u32 as i32;
+pub const STATUS_DEVICE_DATA_ERROR: i32 = 0xC000009C_u32 as i32;
+pub const STATUS_DATATYPE_MISALIGNMENT: i32 = 0x80000002_u32 as i32;
+pub const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+pub const STATUS_ILLEGAL_INSTRUCTION: i32 = 0xC000001D_u32 as i32;
+pub const STATUS_INSTRUCTION_MISALIGNMENT: i32 = 0xC00000AA_u32 as i32;
+pub const STATUS_DELETE_PENDING: i32 = 0xC0000056_u32 as i32;
+pub const STATUS_NOTIFY_ENUM_DIR: i32 = 0x0000010C;
+pub const STATUS_NOTIFY_CLEANUP: i32 = 0x0000010B;
+pub const STATUS_INVALID_OPLOCK_PROTOCOL: i32 = 0xC00000E3_u32 as i32;
+pub const STATUS_OPLOCK_NOT_GRANTED: i32 = 0xC00000E2_u32 as i32;
+pub const STATUS_OPLOCK_BREAK_IN_PROGRESS: i32 = 0x00000108;
+pub const STATUS_BREAKPOINT: i32 = 0x80000003_u32 as i32;
+pub const STATUS_SINGLE_STEP: i32 = 0x80000004_u32 as i32;
+pub const STATUS_DEBUGGER_INACTIVE: i32 = 0xC0000354_u32 as i32;
+pub const STATUS_ASSERTION_FAILURE: i32 = 0xC0000420_u32 as i32;
+pub const STATUS_DEVICE_NOT_CONNECTED: i32 = 0xC000009D_u32 as i32;
+pub const STATUS_LOCK_NOT_GRANTED: i32 = 0xC0000055_u32 as i32;
+pub const STATUS_NO_SUCH_FILE: i32 = 0xC000000F_u32 as i32;
+pub const STATUS_TIMEOUT: i32 = 0x00000102;
+pub const STATUS_MORE_ENTRIES: i32 = 0x00000105;
+pub const STATUS_SHARING_VIOLATION: i32 = 0xC0000043_u32 as i32;
+pub const STATUS_UNABLE_TO_DELETE_SECTION: i32 = 0xC000001B_u32 as i32;
+pub const STATUS_SECTION_NOT_EXTENDED: i32 = 0xC0000087_u32 as i32;
+pub const STATUS_MAPPED_FILE_SIZE_ZERO: i32 = 0xC000011E_u32 as i32;
+pub const STATUS_CANNOT_DELETE: i32 = 0xC0000121_u32 as i32;
+pub const STATUS_USER_MAPPED_FILE: i32 = 0xC0000243_u32 as i32;
+pub const STATUS_KEY_DELETED: i32 = 0xC000017C_u32 as i32;
+pub const STATUS_DATA_OVERRUN: i32 = 0xC000003C_u32 as i32;
+pub const STATUS_IMAGE_ALREADY_LOADED: i32 = 0xC000010E_u32 as i32;
+pub const STATUS_LOGON_FAILURE: i32 = 0xC000006D_u32 as i32;
+pub const STATUS_INVALID_ADDRESS: i32 = 0xC0000141_u32 as i32;
+pub const STATUS_INVALID_FILE_FOR_SECTION: i32 = 0xC0000020_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_5: i32 = 0xC00000F3_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_6: i32 = 0xC00000F4_u32 as i32;
+pub const STATUS_INVALID_PARAMETER_9: i32 = 0xC00000F7_u32 as i32;
+pub const STATUS_INVALID_VIEW_SIZE: i32 = 0xC000001F_u32 as i32;
+pub const STATUS_NOT_MAPPED_VIEW: i32 = 0xC0000019_u32 as i32;
+pub const STATUS_SECTION_NOT_IMAGE: i32 = 0xC0000049_u32 as i32;
+pub const STATUS_SECTION_TOO_BIG: i32 = 0xC0000040_u32 as i32;
+pub const STATUS_SECTION_PROTECTION: i32 = 0xC000004E_u32 as i32;
+pub const STATUS_UNABLE_TO_FREE_VM: i32 = 0xC000001A_u32 as i32;
+pub const STATUS_FREE_VM_NOT_AT_BASE: i32 = 0xC000009F_u32 as i32;
+pub const STATUS_MEMORY_NOT_ALLOCATED: i32 = 0xC00000A0_u32 as i32;
+pub const STATUS_INCOMPATIBLE_FILE_MAP: i32 = 0xC0000047_u32 as i32;
+pub const STATUS_IMAGE_NOT_AT_BASE: i32 = 0x40000003_u32 as i32;
+
+// --- from ntkrnl-sys/src/base.rs (STATUS_ block, deduped) ---
+pub const STATUS_ALREADY_COMMITTED: i32 = 0xC0000021_u32 as i32;
+pub const STATUS_INSUFFICIENT_RESOURCES: i32 = 0xC000009A_u32 as i32;
+pub const STATUS_NOT_IMPLEMENTED: i32 = 0xC0000002_u32 as i32;
+pub const STATUS_NO_MEMORY: i32 = 0xC0000017_u32 as i32;
+pub const STATUS_SUCCESS: i32 = 0;
+
+// --- additions surfaced by csrsrv (Phase 2) ---
+pub const STATUS_ILLEGAL_FUNCTION: i32 = 0xC00000AF_u32 as i32;
+pub const STATUS_TOO_MANY_NAMES: i32 = 0xC00000CD_u32 as i32;
+pub const STATUS_ABANDONED: i32 = 0x00000080;
+pub const STATUS_SYSTEM_PROCESS_TERMINATED: i32 = 0xC000021A_u32 as i32;
+pub const DBG_CONTINUE: i32 = 0x00010002;
+pub const DBG_TERMINATE_PROCESS: i32 = 0x40010004;
+pub const DBG_TERMINATE_THREAD: i32 = 0x40010003;
+pub const DBG_EXCEPTION_NOT_HANDLED: i32 = 0x80010001_u32 as i32;
+// `#define SECURITY_DESCRIPTOR_MIN_LENGTH (sizeof(SECURITY_DESCRIPTOR))` — the
+// *absolute* SECURITY_DESCRIPTOR. On 32-bit it is 20 bytes (4-byte header + four
+// 4-byte pointer fields); on 64-bit it is 40 bytes (4-byte header + 4 bytes pad +
+// four 8-byte pointer fields). Hardcoding 20 on 64-bit makes csrsrv place the
+// DACL at ProcSd+20, overlapping the SD's own Group/Sacl/Dacl pointer fields —
+// the overlap corrupts the Group pointer, and SeCaptureSecurityDescriptor then
+// probes that garbage pointer → STATUS_ACCESS_VIOLATION (arm64 CsrSetProcessSecurity).
+#[cfg(target_pointer_width = "32")]
+pub const SECURITY_DESCRIPTOR_MIN_LENGTH: u32 = 20;
+#[cfg(target_pointer_width = "64")]
+pub const SECURITY_DESCRIPTOR_MIN_LENGTH: u32 = 40;

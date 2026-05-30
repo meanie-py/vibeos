@@ -38,8 +38,8 @@ typedef struct _ARM64VID_DEVICE_EXTENSION {
 } ARM64VID_DEVICE_EXTENSION, *PARM64VID_DEVICE_EXTENSION;
 
 /* Forward declarations */
-static NTSTATUS Arm64VidCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-static NTSTATUS Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+static NTSTATUS NTAPI Arm64VidCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+static NTSTATUS NTAPI Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 static NTSTATUS Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt);
 static NTSTATUS Arm64VidWriteDeviceMap(void);
 static NTSTATUS Arm64VidWriteServiceConfig(PARM64VID_DEVICE_EXTENSION DevExt);
@@ -135,19 +135,19 @@ DriverEntry(
     Status = Arm64VidDiscoverFramebuffer(DevExt);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Failed to discover framebuffer: 0x%08lx\n", Status);
-        DPRINT1("[arm64vid] Using fallback 1024x768x32\n");
-        /* Fallback: assume standard QEMU ramfb defaults */
-        DevExt->FrameBufferPhysical.QuadPart = 0;
-        DevExt->ScreenWidth = 1024;
-        DevExt->ScreenHeight = 768;
-        DevExt->BitsPerPixel = 32;
-        DevExt->PixelsPerScanLine = 1024;
-        DevExt->ScreenStride = 1024 * 4;
-        DevExt->RedMask   = 0x00FF0000;
-        DevExt->GreenMask = 0x0000FF00;
-        DevExt->BlueMask  = 0x000000FF;
-        DevExt->FrameBufferSize = 1024 * 768 * 4;
+        /* No GOP/linear framebuffer in the ARC config tree. This is the
+         * normal case on a legacy-BIOS boot (no UEFI GOP) where the VGA
+         * miniport owns the display. We MUST bail here rather than register
+         * a bogus framebuffer: doing so would steal \Device\Video0 from VGA
+         * and point framebuf.dll at invalid memory, blanking the screen on
+         * BIOS. On a UEFI boot the framebuffer is always present, so this
+         * path is only taken when there is genuinely nothing for us to drive.
+         */
+        DPRINT1("[arm64vid] No ARC framebuffer (BIOS/no-GOP boot): 0x%08lx — "
+                "bailing, leaving display to VGA\n", Status);
+        IoDeleteSymbolicLink(&SymlinkName);
+        IoDeleteDevice(DeviceObject);
+        return Status;
     }
 
     DPRINT1("[arm64vid] Framebuffer: %ldx%ld %ld BPP, phys=0x%I64x, size=0x%lx, stride=%ld\n",
@@ -177,7 +177,7 @@ DriverEntry(
 /*
  * IRP_MJ_CREATE / IRP_MJ_CLOSE — just succeed
  */
-static NTSTATUS
+static NTSTATUS NTAPI
 Arm64VidCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     Irp->IoStatus.Status = STATUS_SUCCESS;
@@ -189,7 +189,7 @@ Arm64VidCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 /*
  * IRP_MJ_DEVICE_CONTROL — handle video IOCTLs
  */
-static NTSTATUS
+static NTSTATUS NTAPI
 Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);

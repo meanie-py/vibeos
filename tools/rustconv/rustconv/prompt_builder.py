@@ -109,7 +109,11 @@ def load_system_prompt(target: Target | None = None) -> str:
     """Load the system prompt template for the given target."""
     if target is None:
         target = TARGETS["ntoskrnl"]
-    return target.system_prompt.read_text()
+    prompt = target.system_prompt.read_text()
+    addendum = getattr(target, "system_prompt_addendum", None)
+    if addendum and addendum.exists():
+        prompt += "\n\n" + addendum.read_text()
+    return prompt
 
 
 def load_shim_signatures(subsystem: str) -> dict[str, str]:
@@ -186,6 +190,8 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
     def _crate_path(module: str) -> str:
         if module == "win32k":
             return "win32k_sys::win32k"
+        if module == "winsrv":
+            return "winsrv_sys::winsrv"
         return f"ntkrnl_sys::{module}"
 
     if resolve.imports:
@@ -194,7 +200,7 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
         for module, group in sorted(resolve.imports.items()):
             names = sorted(s.name for s in group.symbols)
             path = _crate_path(module)
-            if module in ("ddk", "hal_ddk", "win32k"):
+            if module in ("ddk", "hal_ddk", "win32k", "winsrv"):
                 parts.append(f"From `{path}::*`: {', '.join(f'`{n}`' for n in names[:50])}")
                 if len(names) > 50:
                     parts.append(f"  ... and {len(names) - 50} more")
