@@ -217,6 +217,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/env.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/path.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/priv_mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/process.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/resource.rs

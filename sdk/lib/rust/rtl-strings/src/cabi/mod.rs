@@ -6,8 +6,8 @@
 #![allow(non_snake_case)]
 
 use crate::core_rs::{
-    acl, conv, dos8dot3, env, misc, nls, priv_, process as prc, resource as res, sd as sd_, sec,
-    sid, thread as thr, timezone as tz, ustr,
+    acl, conv, dos8dot3, env, misc, nls, path as path_, priv_, process as prc, resource as res,
+    sd as sd_, sec, sid, thread as thr, timezone as tz, ustr,
 };
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
@@ -7656,4 +7656,276 @@ pub unsafe extern "system" fn RtlGetCurrentProcessorNumber() -> u32 {
 #[no_mangle]
 pub unsafe extern "system" fn RtlRosGetAppcompatVersion() -> u32 {
     prc::appcompat_version(RtlpPrcGetPebOSMajorVersion(), RtlpPrcGetPebOSMinorVersion())
+}
+
+// =====================================================================
+// Wave PATH-1 — pure-decision leaf fns of `sdk/lib/rtl/path.c`.
+// PARTIAL swap (path.c stays in cmake; per-fn `#if 0` blocks
+// remove the C body). Smoke is the net.
+// =====================================================================
+
+/// Bring in the device-name globals defined in path.c (still C —
+/// the rest of path.c uses them too). These are `const
+/// UNICODE_STRING` at file scope without `static`, so they're
+/// exposed as external linkage symbols.
+extern "system" {
+    static RtlpDosLPTDevice: UNICODE_STRING;
+    static RtlpDosCOMDevice: UNICODE_STRING;
+    static RtlpDosPRNDevice: UNICODE_STRING;
+    static RtlpDosAUXDevice: UNICODE_STRING;
+    static RtlpDosCONDevice: UNICODE_STRING;
+    static RtlpDosNULDevice: UNICODE_STRING;
+    static RtlpDosSlashCONDevice: UNICODE_STRING;
+    static DeviceRootString: UNICODE_STRING;
+    // RtlEqualUnicodeString is defined locally above; call it directly.
+}
+
+/// `RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_Ustr(PCUNICODE_STRING)`.
+/// Note: `RTL_PATH_TYPE` is an enum — `extern "system" fn -> u32`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDetermineDosPathNameType_Ustr(
+    path_string: *const UNICODE_STRING,
+) -> u32 {
+    let s = &*path_string;
+    let chars = (s.Length / 2) as usize;
+    let buf = core::slice::from_raw_parts(s.Buffer as *const u16, chars);
+    path_::determine_dos_path_name_type_ustr(buf)
+}
+
+/// `RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_U(PCWSTR)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDetermineDosPathNameType_U(path: *const u16) -> u32 {
+    // Faithful: the C version peeks Path[0..=3] unconditionally
+    // (assumes 4 chars of lookahead are valid). Mirror that here.
+    let p0 = *path;
+    let p1 = *path.add(1);
+    let p2 = *path.add(2);
+    let p3 = *path.add(3);
+    path_::determine_dos_path_name_type_u_prefix(p0, p1, p2, p3)
+}
+
+/// `ULONG NTAPI RtlGetLongestNtPathLength(VOID)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetLongestNtPathLength() -> u32 {
+    path_::LONGEST_NT_PATH_LENGTH
+}
+
+/// `NTSTATUS NTAPI RtlGetLengthWithoutTrailingPathSeparators(ULONG,
+/// PCUNICODE_STRING, PULONG)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetLengthWithoutTrailingPathSeparators(
+    flags: u32,
+    path_string: *const UNICODE_STRING,
+    length: *mut u32,
+) -> i32 {
+    if length.is_null() {
+        return path_::STATUS_INVALID_PARAMETER;
+    }
+    *length = 0;
+    if path_string.is_null() {
+        return path_::STATUS_INVALID_PARAMETER;
+    }
+    if flags != 0 {
+        return path_::STATUS_INVALID_PARAMETER;
+    }
+    let s = &*path_string;
+    let chars = (s.Length / 2) as usize;
+    let buf = core::slice::from_raw_parts(s.Buffer as *const u16, chars);
+    *length = path_::length_without_trailing_separators(buf);
+    path_::STATUS_SUCCESS
+}
+
+/// Build a stack `UNICODE_STRING` describing `[buf, len_chars)` —
+/// matches the C-side `PathCopy` local in `RtlIsDosDeviceName_Ustr`.
+#[inline]
+unsafe fn us_view(buf: *mut u16, len_chars: u16) -> UNICODE_STRING {
+    UNICODE_STRING {
+        Length: len_chars.saturating_mul(2),
+        MaximumLength: len_chars.saturating_mul(2),
+        Buffer: buf,
+    }
+}
+
+/// `ULONG NTAPI RtlIsDosDeviceName_Ustr(PCUNICODE_STRING)`. Faithful
+/// translation of path.c lines 92-251. Returns 0 if the path is not
+/// a DOS device name, or `MAKELONG(length_bytes, offset_bytes)` if
+/// it is.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(
+    path_string: *const UNICODE_STRING,
+) -> u32 {
+    if path_string.is_null() {
+        return 0;
+    }
+    let path_str = &*path_string;
+
+    // Check what type of path this is.
+    let pt = RtlDetermineDosPathNameType_Ustr(path_string);
+    match pt {
+        path_::RTL_PATH_TYPE_UNKNOWN | path_::RTL_PATH_TYPE_UNC_ABSOLUTE => return 0,
+        path_::RTL_PATH_TYPE_LOCAL_DEVICE => {
+            // Make special check for the CON device.
+            if RtlEqualUnicodeString(path_string, &RtlpDosSlashCONDevice, 1) != 0 {
+                // MAKELONG(RtlpDosCONDevice.Length, DeviceRootString.Length)
+                return ((DeviceRootString.Length as u32) << 16)
+                    | (RtlpDosCONDevice.Length as u32);
+            }
+            return 0;
+        }
+        _ => {}
+    }
+
+    // Make a copy of the string.
+    let original_length = path_str.Length;
+    let mut path_copy_buf = path_str.Buffer;
+    let mut path_copy_len = path_str.Length;
+    let mut path_chars = (path_copy_len / 2) as u16;
+    if path_chars == 0 {
+        return 0;
+    }
+
+    let mut colon_count: u16 = 0;
+    let mut return_offset: u16 = 0;
+
+    // Check for drive path and truncate trailing colon.
+    if *path_copy_buf.add((path_chars - 1) as usize) == b':' as u16 {
+        path_copy_len -= 2;
+        path_chars -= 1;
+        if path_chars == 0 {
+            return 0;
+        }
+        colon_count = 1;
+    }
+
+    // Check for extension or space, and truncate.
+    while path_chars > 0 {
+        let c = *path_copy_buf.add((path_chars - 1) as usize);
+        if c != b'.' as u16 && c != b' ' as u16 {
+            break;
+        }
+        path_copy_len -= 2;
+        colon_count += 1;
+        path_chars -= 1;
+    }
+
+    if path_chars > 0 {
+        // Loop from the end looking for a path or drive separator.
+        let mut found = false;
+        let mut end_idx: isize = (path_chars - 1) as isize;
+        while end_idx >= 0 {
+            let c = *path_copy_buf.add(end_idx as usize);
+            let is_drive_colon =
+                c == b':' as u16 && end_idx == 1; // End == Buffer+1
+            if path_::is_path_separator(c) || is_drive_colon {
+                // Get next-lowercase character at End+1.
+                end_idx += 1;
+                if (end_idx as usize) >= (original_length / 2) as usize {
+                    return 0;
+                }
+                let c_next = path_::ascii_lower(*path_copy_buf.add(end_idx as usize));
+                if c_next == b'l' as u16
+                    || c_next == b'c' as u16
+                    || c_next == b'p' as u16
+                    || c_next == b'a' as u16
+                    || c_next == b'n' as u16
+                {
+                    // Calculate the offset (in bytes from start of buffer).
+                    return_offset = ((end_idx as usize) * 2) as u16;
+                    // Build the final string.
+                    path_copy_len =
+                        original_length - return_offset - colon_count.saturating_mul(2);
+                    path_copy_buf = path_copy_buf.add(end_idx as usize);
+                    path_chars = (path_copy_len / 2) as u16;
+                    found = true;
+                    break;
+                } else {
+                    return 0;
+                }
+            }
+            end_idx -= 1;
+        }
+
+        if !found {
+            // No separator found — check the first char.
+            let c = path_::ascii_lower(*path_copy_buf);
+            if c != b'l' as u16
+                && c != b'c' as u16
+                && c != b'p' as u16
+                && c != b'a' as u16
+                && c != b'n' as u16
+            {
+                return 0;
+            }
+        }
+    }
+
+    // Skip past any extra extension or drive-letter characters.
+    let mut start: usize = 0;
+    let end = path_chars as usize;
+    while start < end {
+        let c = *path_copy_buf.add(start);
+        if c == b'.' as u16 || c == b':' as u16 {
+            break;
+        }
+        start += 1;
+    }
+
+    // And then go backwards to get rid of spaces.
+    while start > 0 && *path_copy_buf.add(start - 1) == b' ' as u16 {
+        start -= 1;
+    }
+
+    // Finally see how many characters are left.
+    let final_chars = start as u16;
+    let final_us = us_view(path_copy_buf, final_chars);
+
+    // Check if this is a COM or LPT port (3 chars + non-zero digit).
+    if final_chars == 4
+        && path_::is_digit(*path_copy_buf.add(3))
+        && *path_copy_buf.add(3) != b'0' as u16
+    {
+        // Don't compare the number part, just check for LPT or COM.
+        let trimmed = us_view(path_copy_buf, 3);
+        if RtlEqualUnicodeString(&trimmed, &RtlpDosLPTDevice, 1) != 0
+            || RtlEqualUnicodeString(&trimmed, &RtlpDosCOMDevice, 1) != 0
+        {
+            // sizeof(L"COM1") - sizeof(WCHAR) = 4*2 - 2 = 6 bytes.
+            return ((return_offset as u32) << 16) | 6;
+        }
+    } else if final_chars == 3 {
+        if RtlEqualUnicodeString(&final_us, &RtlpDosPRNDevice, 1) != 0
+            || RtlEqualUnicodeString(&final_us, &RtlpDosAUXDevice, 1) != 0
+            || RtlEqualUnicodeString(&final_us, &RtlpDosNULDevice, 1) != 0
+            || RtlEqualUnicodeString(&final_us, &RtlpDosCONDevice, 1) != 0
+        {
+            // sizeof(L"AUX") - sizeof(WCHAR) = 4*2 - 2 = 6 bytes.
+            return ((return_offset as u32) << 16) | 6;
+        }
+    }
+
+    0
+}
+
+/// `ULONG NTAPI RtlIsDosDeviceName_U(PCWSTR)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlIsDosDeviceName_U(path: *const u16) -> u32 {
+    // Build a UNICODE_STRING from the NUL-terminated path (faithful
+    // to RtlInitUnicodeStringEx semantics: success iff <=MAXUSHORT/2
+    // chars). For PATH-1 we keep the failure path tight.
+    if path.is_null() {
+        return 0;
+    }
+    let mut len: usize = 0;
+    while *path.add(len) != 0 {
+        len += 1;
+        if len > 32767 {
+            return 0; // STATUS_NAME_TOO_LONG — would fail in C
+        }
+    }
+    let us = UNICODE_STRING {
+        Length: (len * 2) as u16,
+        MaximumLength: ((len + 1) * 2) as u16,
+        Buffer: path as *mut u16,
+    };
+    RtlIsDosDeviceName_Ustr(&us)
 }
