@@ -2545,7 +2545,7 @@ pub unsafe extern "system" fn MmProtectSectionView(
     }
 
     if !OldProtect.is_null() {
-        *OldProtect = (*Region).Protect;
+        core::ptr::write_volatile(OldProtect, (*Region).Protect);
     }
     Status = MmAlterRegion(
         AddressSpace,
@@ -2599,7 +2599,7 @@ pub unsafe extern "system" fn MmQuerySectionView(
     (*Info).State = MEM_COMMIT;
     (*Info).Protect = (*Region).Protect;
 
-    *ResultLength = core::mem::size_of::<MEMORY_BASIC_INFORMATION>();
+    core::ptr::write_volatile(ResultLength, core::mem::size_of::<MEMORY_BASIC_INFORMATION>());
     STATUS_SUCCESS
 }
 
@@ -2782,7 +2782,7 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
     }
     (*Section).SizeOfSection = MaximumSize;
 
-    *SectionObject = Section;
+    core::ptr::write_volatile(SectionObject, Section);
     STATUS_SUCCESS
 }
 
@@ -3106,7 +3106,7 @@ pub unsafe extern "C" fn MmCreateImageSection(
             (*Section).SizeOfSection.QuadPart = (*ImageSectionObject).ImageInformation.ImageFileSize as i64;
         }
 
-        *SectionObject = Section;
+        core::ptr::write_volatile(SectionObject, Section);
 
         return Status;
     }
@@ -3592,8 +3592,8 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             }
         }
 
-        *BaseAddress = ImageBase as PVOID;
-        *ViewSize = ImageSize;
+        core::ptr::write_volatile(BaseAddress, ImageBase as PVOID);
+        core::ptr::write_volatile(ViewSize, ImageSize);
 
         InterlockedIncrementUL(core::ptr::addr_of_mut!((*ImageSectionObject).MapCount) as *mut ULONG);
     } else {
@@ -3605,7 +3605,8 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         };
 
         // Check if the offset and size would cause an overflow
-        if (ViewOffset as u64).wrapping_add(*ViewSize as u64) < ViewOffset as u64 {
+        let mut current_view_size = core::ptr::read_volatile(ViewSize);
+        if (ViewOffset as u64).wrapping_add(current_view_size as u64) < ViewOffset as u64 {
             MmUnlockAddressSpace(AddressSpace);
             if IsAttached != 0 {
                 KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
@@ -3614,7 +3615,7 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         }
 
         // Check if the offset and size are bigger than the section itself
-        if (ViewOffset as u64).wrapping_add(*ViewSize as u64) > (*Section).SizeOfSection.QuadPart as u64 {
+        if (ViewOffset as u64).wrapping_add(current_view_size as u64) > (*Section).SizeOfSection.QuadPart as u64 {
             if (*Section).u.Flags.PhysicalMemory() == 0 || ExGetPreviousMode() != 0i8 {
                 MmUnlockAddressSpace(AddressSpace);
                 if IsAttached != 0 {
@@ -3625,7 +3626,7 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         }
 
         // Handle ViewSize == 0: expand to section size minus offset
-        if *ViewSize == 0 {
+        if current_view_size == 0 {
             let calculated_size = (*Section).SizeOfSection.QuadPart as u64 - ViewOffset as u64;
             if calculated_size > usize::MAX as u64 {
                 MmUnlockAddressSpace(AddressSpace);
@@ -3634,11 +3635,13 @@ pub unsafe extern "system" fn MmMapViewOfSection(
                 }
                 return STATUS_INVALID_VIEW_SIZE;
             }
-            *ViewSize = calculated_size as SIZE_T;
+            current_view_size = calculated_size as SIZE_T;
+            core::ptr::write_volatile(ViewSize, current_view_size);
         }
 
         // Page-round the view size
-        *ViewSize = PAGE_ROUND_UP(*ViewSize);
+        current_view_size = PAGE_ROUND_UP(current_view_size);
+        core::ptr::write_volatile(ViewSize, current_view_size);
 
         MmLockSectionSegment(Segment as PVOID);
         Status = MmMapViewOfSegment(
@@ -3646,7 +3649,7 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             0u8,
             Segment,
             BaseAddress,
-            *ViewSize,
+            current_view_size,
             Protect,
             ViewOffset,
             AllocationType,

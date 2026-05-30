@@ -93,12 +93,11 @@
 #include <peloader.h>
 
 /* File system headers */
-#include <fs/ext.h>
+/* ext/ntfs/btrfs read drivers pruned — freeldr FS dispatch (fs.rs) supports
+ * only fat/iso/pxe; the C drivers were dead (no live caller). */
 #include <fs/fat.h>
-#include <fs/ntfs.h>
 #include <fs/iso.h>
 #include <fs/pxe.h>
-#include <fs/btrfs.h>
 
 /* UI support */
 #define printf TuiPrintf

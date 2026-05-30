@@ -130,3 +130,70 @@ pattern. The Map tags each with its Pass-0 category:
 When in doubt, **mirror the normalized C exactly** — it already
 encodes the decision. Under-idiomatic but faithful beats clever but
 divergent. Never reintroduce `_SEH2_*`.
+
+## 5. Cross-crate kernel types — `ntkrnl_sys::ddk` vs `win32k_sys::win32k`
+
+Both `win32k_sys` and `ntkrnl_sys` independently `bindgen` the same
+underlying C kernel types (e.g. `_LARGE_INTEGER`, `_KFLOATING_SAVE`,
+`_TEB`, `_KTHREAD`, `_KPROCESS`, `_KEVENT`, `_KSEMAPHORE`,
+`_KMUTEX`, `_KTIMER`, `_KDPC`, `_KAPC`, `_KSPIN_LOCK`, …) into
+**their own namespaces** — Rust sees them as DISTINCT types even
+though they're layout-identical.
+
+The blanket `use win32k_sys::win32k::*;` you emit at file top
+**shadows** the ntkrnl_sys versions. When the body then calls a
+kernel API (e.g. `KeQueryPerformanceCounter`, `KeWaitForSingleObject`,
+`KeSetEvent`, `NtCurrentTeb`, `KeSaveFloatingPointState`) the
+typecheck fails: `expected ntkrnl_sys::ddk::_X, found
+win32k_sys::win32k::_X`.
+
+**Rule:** for the **kernel-shared types** listed above, declare and
+allocate them via the fully-qualified `ntkrnl_sys::ddk::_TYPE` form
+whenever they will be passed to any `ntkrnl_sys::ddk::*` function.
+Do NOT rely on the `win32k_sys::win32k::*` re-bindgen for these.
+
+```rust
+// WRONG — typecheck fails at KeQueryPerformanceCounter call
+let mut freq: LARGE_INTEGER = core::mem::zeroed();  // = win32k_sys
+ntkrnl_sys::ddk::KeQueryPerformanceCounter(&mut freq);
+
+// RIGHT
+let mut freq: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
+ntkrnl_sys::ddk::KeQueryPerformanceCounter(&mut freq);
+```
+
+For `NtCurrentTeb`, prefer `ntkrnl_sys::inline::ke::NtCurrentTeb` (the
+real per-arch TIB-read intrinsic — `ntkrnl_sys::ddk::NtCurrentTeb` is
+just a bindgen extern decl with no link symbol on i386, will fail
+link). Cast its `PVOID` return to `*mut ntkrnl_sys::ddk::_TEB` if you
+need the field-access form.
+
+## 6. GDI object macros — inline-expand, do NOT extern-declare
+
+`win32ss/gdi/{eng,ntgdi}/*.h` defines per-object-type macro families
+that look like function calls but are **`#define` macros** —
+attempting to `extern "C" { fn X(); }` them will produce undefined
+symbols at link.
+
+Recognized macro families and their canonical expansions:
+
+| Macro form | Expansion |
+|---|---|
+| `<T>_AllocObjectWithHandle()` | `GDIOBJ_AllocObjWithHandle(GDI_OBJECT_TYPE_<T>, sizeof(E<T>)) as P<T>` |
+| `<T>_Alloc<X>WithHandle()` | `GDIOBJ_AllocObjWithHandle(GDI_OBJECT_TYPE_<X>, sizeof(<INTERNAL>)) as P<T>` |
+| `<T>_AllocObject()` | `GDIOBJ_AllocObj(GDI_OBJECT_TYPE_<T>, sizeof(E<T>)) as P<T>` |
+| `<T>_TryLockObject(h)` | `GDIOBJ_TryLockObject(h as HGDIOBJ, GDI_OBJECT_TYPE_<T>) as P<T>` |
+| `<T>_LockObject(h)` / `<T>_Lock<X>(h)` | `GDIOBJ_LockObject(h as HGDIOBJ, GDI_OBJECT_TYPE_<T>) as P<T>` |
+| `<T>_UnlockObject(p)` / `<T>_Unlock<X>(p)` | `GDIOBJ_vUnlockObject(p as POBJ)` |
+| `<T>_ShareLockObject(h)` / `<T>_ShareLock<X>(h)` | `GDIOBJ_ShareLockObj(h as HGDIOBJ, GDI_OBJECT_TYPE_<T>) as P<T>` |
+| `<T>_ShareUnlockObject(p)` / `<T>_ShareUnlock<X>(p)` | `GDIOBJ_vReleaseObj(p as POBJ)` |
+
+`<T>` is the object family: `DRIVEROBJ`, `BRUSHOBJ`, `DC`, `PATH`,
+`REGION`, `SURFACE`, `PALETTE`, `XLATEOBJ`, `LFONT`, `TEXTOBJ`,
+`COLORSPACEOBJ`, `ICMLCS`. The underlying `GDIOBJ_*` primitives are
+real functions in the `win32k-sys` bindgen — use them directly.
+
+**Do NOT emit:** `extern "C" { fn DRIVEROBJ_AllocObjectWithHandle() -> PEDRIVEROBJ; }` etc.
+**Do emit:** inline-expanded calls, plus a one-line comment pointing
+at the C macro source (`gdi/eng/driverobj.h:17`) so reviewers can
+verify the expansion.

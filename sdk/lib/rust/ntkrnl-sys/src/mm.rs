@@ -630,10 +630,16 @@ pub fn MiPdeToPte(pde: PMMPDE) -> PMMPTE {
 }
 
 /// Convert PTE pointer to PDE pointer (MiPteToPde).
-/// C: `#define MiPteToPde(_Pte) ((PMMPDE)MiAddressToPde(_Pte))`
 #[inline]
 pub fn MiPteToPde(pte: PMMPTE) -> PMMPDE {
-    MiAddressToPde(pte as PVOID)
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        MiAddressToPte(pte as PVOID) as PMMPDE
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        MiAddressToPde(pte as PVOID)
+    }
 }
 
 // ============================================================================
@@ -1274,14 +1280,28 @@ pub fn MiPxeToPte(pxe: PMMPTE) -> PMMPTE {
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[inline]
 pub fn MiPteToPpe(pte: PMMPTE) -> PMMPTE {
-    MiAddressToPde(pte as PVOID)
+    #[cfg(target_arch = "x86_64")]
+    {
+        MiAddressToPde(pte as PVOID)
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        MiAddressToPpe(pte as PVOID)
+    }
 }
 
 /// MiPteToPxe — PTE to its corresponding PXE
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[inline]
 pub fn MiPteToPxe(pte: PMMPTE) -> PMMPTE {
-    MiAddressToPpe(pte as PVOID)
+    #[cfg(target_arch = "x86_64")]
+    {
+        MiAddressToPpe(pte as PVOID)
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        MiAddressToPxe(pte as PVOID)
+    }
 }
 
 /// MiPdeToPpe — PDE to its corresponding PPE

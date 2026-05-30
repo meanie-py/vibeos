@@ -240,6 +240,47 @@ class I386Config(ArchConfig):
 
 
 @dataclass
+class I386UefiConfig(I386Config):
+    """i386 booted via UEFI (OVMF32) from the livecd ISO's EFI El Torito entry.
+
+    The uefildr.efi (Rust EfiEntry) is the loader; WinLdrSetProcessorContext
+    performs the PAE→non-PAE transition the firmware requires. OVMF only
+    auto-boots removable media when the CD carries an explicit bootindex, so
+    the ISO is attached as an ide-cd device with bootindex=0 (a bare -cdrom
+    drops to the UEFI shell instead).
+    """
+    arch: str = "i386-uefi"
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        iso = PROJECT_DIR / "build-i386" / "livecd.iso"
+        ovmf_code = QEMU_DIR / "OVMF32_CODE.fd"
+        ovmf_vars_src = QEMU_DIR / "OVMF32_VARS.fd"
+        # The writable VARS pflash must be qcow2: QMP savevm refuses to
+        # snapshot a writable raw block device ("does not support snapshots").
+        # Mirror the arm64 efivars handling — raw → qcow2 convert.
+        ovmf_vars_raw = work_dir / "ovmf32_vars.fd"
+        ovmf_vars = work_dir / "ovmf32_vars.qcow2"
+        shutil.copy2(ovmf_vars_src, ovmf_vars_raw)
+        subprocess.run(
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2",
+             str(ovmf_vars_raw), str(ovmf_vars)],
+            check=True, capture_output=True,
+        )
+        ovmf_vars_raw.unlink()
+        return [
+            *self.machine_args,
+            "-m", self.memory,
+            "-drive", f"if=pflash,format=raw,file={ovmf_code},readonly=on",
+            "-drive", f"if=pflash,format=qcow2,file={ovmf_vars}",
+            "-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on",
+            "-device", "ide-cd,drive=cd0,bootindex=0",
+            "-vga", "std",
+            "-display", "none",
+            "-no-reboot",
+        ]
+
+
+@dataclass
 class Amd64Config(ArchConfig):
     arch: str = "amd64"
     qemu_bin: str = "qemu-system-x86_64"
@@ -332,6 +373,7 @@ ARCH_CONFIGS: dict[str, type[ArchConfig]] = {
     "arm64": Arm64Config,
     "arm64-test": Arm64TestKernelConfig,
     "i386": I386Config,
+    "i386-uefi": I386UefiConfig,
     "amd64": Amd64Config,
 }
 
@@ -385,7 +427,7 @@ class QemuVM:
             *(
                 ["-device", "virtio-blk-device,drive=scratch" if self.config.arch.startswith("arm64")
                      else "virtio-blk-pci,drive=scratch"]
-                if self.config.arch != "i386" else []
+                if not self.config.arch.startswith("i386") else []
             ),
             "-monitor", "none",
             *(
