@@ -36,11 +36,8 @@ extern "system" {
     /// `GetType` — sibling C-side helper in conoutput.c that returns
     /// the buffer-type discriminant (TEXTMODE_BUFFER vs GRAPHICS_BUFFER).
     pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
-    /// `GetScreenBufferSizeUnits` — consrv/conoutput.c.
-    pub fn GetScreenBufferSizeUnits(
-        Buffer: PCONSOLE_SCREEN_BUFFER, GuiData: PGUI_CONSOLE_DATA,
-        WidthUnit: *mut u32, HeightUnit: *mut u32,
-    );
+    // GetScreenBufferSizeUnits is now a plain Rust helper in super::helpers
+    // (FORCEINLINE in guiterm.h), resolved via `use super::helpers::*`.
     /// `CON_SET_OUTPUT_CP` — code-page helper macro lowered to fn.
     pub fn CON_SET_OUTPUT_CP(Console: PCONSRV_CONSOLE, CodePage: UINT);
     /// `GetConsoleInputBufferMode` — consrv/coninput.c.
@@ -109,7 +106,11 @@ pub static mut GuiConsoleMainMenuItems: [GUICONSOLE_MENUITEM; 4] = [
     GUICONSOLE_MENUITEM { uID: 0, SubMenu: core::ptr::null(), wCmdID: 0 },
 ];
 
-pub const s_Colors: [COLORREF; 16] = [
+// `const COLORREF s_Colors[16]` in conwnd.c — a real static array with
+// external linkage (settings.rs reads it via `extern "C" { static s_Colors }`).
+// Must be a #[no_mangle] static (a `const` is inlined and exports no symbol).
+#[no_mangle]
+pub static s_Colors: [COLORREF; 16] = [
     0x00000000,
     0x00800000,
     0x00008000,
@@ -687,7 +688,10 @@ unsafe fn OnFocus(GuiData: PGUI_CONSOLE_DATA, SetFocus: BOOL) {
     }
 }
 
-pub unsafe fn GetSelectionBeginEnd(
+// Promoted #[no_mangle] extern "system" so text.rs (now Rust) can extern-link
+// it across the gui/* modules (#36 frontends flip).
+#[no_mangle]
+pub unsafe extern "system" fn GetSelectionBeginEnd(
     Begin: PCOORD,
     End: PCOORD,
     SelectionAnchor: PCOORD,

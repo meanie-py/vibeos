@@ -18,7 +18,14 @@ list(APPEND CONSRV_SOURCE
     #      C says NTAPI) and their cross-crate extern decls reconciled to match.
     #   3. The C macros/intrinsics (CONTAINING_RECORD, InitializeObjectAttributes,
     #      _InterlockedExchange) are provided by consrv_rust_shim.c (i386 block).
-    # frontends/ stays C for now (the next flip slice).
+    # frontends/ (input/terminal/wcwidth + gui/tui/serial) is ALSO flipped now
+    # (#36): the FORCEINLINE/macro helpers GetScreenBufferSizeUnits, SmallRectToRect,
+    # GetType, GetConsoleInputBufferMode, ConsoleAllocHeap/FreeHeap, CON_SET_OUTPUT_CP,
+    # GetSelectionBeginEnd were #[no_mangle]-provided in consrv/mod.rs+conwnd.rs
+    # with canonical ABI (cdecl helpers extern "C"; consrv-internal extern "system");
+    # InitTTFontCache/RefreshTTFontCache stay cdecl (concfg exports); MonitorFromWindow/
+    # ScrollWindowEx are user32 stdcall; s_Colors is a #[no_mangle] static.
+    # Only the macro/intrinsic shim (consrv_rust_shim.c) remains C.
     # --- consrv top-level flip → Rust (winsrv-rust/src/consrv/*.rs) ----
     # consrv/alias.c        — replaced by Rust (consrv/alias.rs)
     # consrv/coninput.c     — replaced by Rust (consrv/coninput.rs)
@@ -42,17 +49,23 @@ list(APPEND CONSRV_SOURCE
     # consrv/condrv/dummyterm.c  — replaced by Rust (consrv/condrv/dummyterm.rs)
     # consrv/condrv/graphics.c   — replaced by Rust (consrv/condrv/graphics.rs)
     # consrv/condrv/text.c       — replaced by Rust (consrv/condrv/text.rs)
-    consrv/frontends/input.c
-    consrv/frontends/terminal.c
-    consrv/frontends/wcwidth.c
-    consrv/frontends/gui/conwnd.c
-    consrv/frontends/gui/fullscreen.c
-    consrv/frontends/gui/guiterm.c
-    consrv/frontends/gui/guisettings.c
-    consrv/frontends/gui/graphics.c
-    consrv/frontends/gui/text.c
-    consrv/frontends/tui/tuiterm.c
-    consrv/frontends/serial/serialterm.c
+    # --- frontends/ flip → Rust (winsrv-rust/src/consrv/frontends/*.rs) ----
+    # Top layer: terminal dispatch (terminal.rs owns FrontEndLoadingMethods +
+    # ConSrvTermVtbl), input event conversion (input.rs), wide-char width
+    # table (wcwidth.rs, exports mk_wcwidth_cjk cdecl for the shim), plus the
+    # gui/tui/serial frontends. GuiLoadFrontEnd is the only registered frontend
+    # on i386/amd64 (the live boot path); arm64 also compiles serialterm.
+    # consrv/frontends/input.c          — replaced by Rust (frontends/input.rs)
+    # consrv/frontends/terminal.c       — replaced by Rust (frontends/terminal.rs)
+    # consrv/frontends/wcwidth.c        — replaced by Rust (frontends/wcwidth.rs)
+    # consrv/frontends/gui/conwnd.c     — replaced by Rust (frontends/gui/conwnd.rs)
+    # consrv/frontends/gui/fullscreen.c — replaced by Rust (frontends/gui/fullscreen.rs)
+    # consrv/frontends/gui/guiterm.c    — replaced by Rust (frontends/gui/guiterm.rs)
+    # consrv/frontends/gui/guisettings.c— replaced by Rust (frontends/gui/guisettings.rs)
+    # consrv/frontends/gui/graphics.c   — replaced by Rust (frontends/gui/graphics.rs)
+    # consrv/frontends/gui/text.c       — replaced by Rust (frontends/gui/text.rs)
+    # consrv/frontends/tui/tuiterm.c    — replaced by Rust (frontends/tui/tuiterm.rs)
+    # consrv/frontends/serial/serialterm.c — replaced by Rust (frontends/serial/serialterm.rs)
     # Provider shim for C macros / MSVC intrinsics that the Rust consrv
     # translation extern-declares (IS_FULL_WIDTH, IsListEmpty, _Interlocked*,
     # IShellLinkW_*/IPersistFile_* COBJMACROS). Self-contained (no SDK headers).
