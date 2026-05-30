@@ -19,6 +19,7 @@ members = [
     "freeldr-rust",
     "arm64input-rust",
     "arm64vid-rust",
+    "framebuf-rust",
     "handle",
     "interlck",
     "kernel-rust",
