@@ -198,7 +198,7 @@ list(APPEND SOURCE
     # gdi/ntgdi/polyfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/polyfill.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/print.c
     # gdi/ntgdi/rect.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rect.rs) — cohabitation [Phase 2c geometry wave 1]
-    gdi/ntgdi/region.c
+    # gdi/ntgdi/region.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/region.rs) — cohabitation [Phase 2c geometry wave 4: region algebra; region.c + split2/3/4 = one TU, 68 fns]
     # gdi/ntgdi/stockobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/stockobj.rs) — cohabitation [Phase 2c geometry wave 2]
     gdi/ntgdi/text.c
     # gdi/ntgdi/utils.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/utils.rs) — cohabitation [Phase 2c geometry wave 1]
@@ -337,6 +337,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/drawing.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/line.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/fillshap.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/region.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

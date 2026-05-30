@@ -126,6 +126,10 @@ pub mod stockobj; pub mod arc; pub mod xformobj;
 // coord chain), fillshap (NtGdi{Ellipse,Rectangle,RoundRect,PolyPolyDraw,
 // GradientFill,ExtFloodFill} + IntGdiPolygon, user-POINT[] probe paths).
 pub mod drawing; pub mod line; pub mod fillshap;
+// Phase 2c geometry wave 4: region algebra — region.c + split2/3/4 = one TU,
+// 68 fns (REGION_* rect-set algebra, edge-table polygon scan-conversion,
+// NtGdi{CombineRgn,Create*Rgn,EqualRgn,ExtCreateRegion,GetRegionData,...}).
+pub mod region;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
