@@ -30,7 +30,8 @@ struct HISTORY_BUFFER {
 
 type PHISTORY_BUFFER = *mut HISTORY_BUFFER;
 
-extern "system" {
+// condrv flip: alias.rs defines these plain-cdecl (C: BOOLEAN, no NTAPI).
+extern "C" {
     pub fn ConvertInputAnsiToUnicode( Console: PCONSRV_CONSOLE, Source: PVOID, SourceLength: USHORT, Target: *mut PWCHAR, TargetLength: PUSHORT, ) -> BOOLEAN;
     pub fn ConvertInputUnicodeToAnsi( Console: PCONSRV_CONSOLE, Source: PVOID, SourceLength: USHORT, Target: PCHAR, TargetLength: USHORT, ) -> BOOLEAN;
 }
@@ -182,8 +183,10 @@ pub(crate) unsafe fn HistoryResizeBuffer(Hist: PHISTORY_BUFFER, NumCommands: ULO
     STATUS_SUCCESS
 }
 
+// condrv flip: lineinput.rs calls this as `_HistoryAddEntry@12` (stdcall),
+// matching its History* sibling family (Rust-only callers, self-consistent).
 #[no_mangle]
-pub unsafe extern "C" fn HistoryAddEntry(
+pub unsafe extern "system" fn HistoryAddEntry(
     Console: PCONSRV_CONSOLE,
     ExeName: PUNICODE_STRING,
     Entry: PUNICODE_STRING,

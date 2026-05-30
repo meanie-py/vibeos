@@ -11,8 +11,10 @@ extern "C" {
     pub fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
 }
 
+// condrv flip: defined plain-cdecl (NTSTATUS, no NTAPI) in C graphics.c;
+// conoutput.rs declares it extern "C" → match (was wrongly extern "system").
 #[no_mangle]
-pub unsafe extern "system" fn GRAPHICS_BUFFER_Initialize(
+pub unsafe extern "C" fn GRAPHICS_BUFFER_Initialize(
     Buffer: *mut PCONSOLE_SCREEN_BUFFER,
     Console: PCONSOLE,
     ProcessHandle: HANDLE,

@@ -7,26 +7,19 @@ include_directories(
     consrv)
 
 list(APPEND CONSRV_SOURCE
-    # --- Rust cohabitation: consrv core (top + condrv) — DEFERRED ----
-    # The consrv-core flip is blocked on translation gaps discovered at
-    # link time (cargo-check could not see them):
-    #   1. ~40 CON_API/CSR_API Srv* handlers in conoutput.c + console.c
-    #      were DROPPED by rustconv (conoutput.rs/console.rs are partial
-    #      stubs); init.rs only extern-declares them.
-    #   2. ~13 condrv/lineinput internal fns (ConDrvFillConsoleOutput,
-    #      CONSOLE_SCREEN_BUFFER_Initialize, ConioCoordToPointer, …) are
-    #      `pub(crate) fn` with no linkable symbol, yet are called from
-    #      both still-C files and sibling Rust via extern decls — and the
-    #      decl ABIs are inconsistent (mixed cdecl/stdcall) vs the C.
-    #   3. 7 C macros/intrinsics (CONTAINING_RECORD, Interlocked*,
-    #      IS_FULL_WIDTH, InitializeObjectAttributes, IsListEmpty) are
-    #      extern-declared by Rust with no implementation.
-    # Closing these needs careful per-fn ABI reconciliation (#1 i386
-    # crash cause) + provider shims, and the dropped handlers need new
-    # paid translation. Tracked, not abandoned. The Rust source stays in
-    # the crate (built + verified), shadowed by the live C below.
+    # --- Rust cohabitation: consrv core (top + condrv) — DONE ----------
+    # Both the consrv top-level AND condrv/ layers are now flipped to Rust.
+    # The three gaps that previously blocked this are all closed:
+    #   1. The ~40 dropped CON_API Srv* handlers were recovered (81ae68dd).
+    #   2. The condrv internal helpers (TEXTMODE_BUFFER_Initialize,
+    #      ConDrvFillConsoleOutput, CONSOLE_SCREEN_BUFFER_*, ConioCoordToPointer,
+    #      ClearLineBuffer, ConDrvGetActiveScreenBuffer, Convert*, Term*, …)
+    #      were #[no_mangle]-promoted with canonical per-fn ABI (cdecl unless
+    #      C says NTAPI) and their cross-crate extern decls reconciled to match.
+    #   3. The C macros/intrinsics (CONTAINING_RECORD, InitializeObjectAttributes,
+    #      _InterlockedExchange) are provided by consrv_rust_shim.c (i386 block).
+    # frontends/ stays C for now (the next flip slice).
     # --- consrv top-level flip → Rust (winsrv-rust/src/consrv/*.rs) ----
-    # condrv/ + frontends/ stay C for now (separate flip slice).
     # consrv/alias.c        — replaced by Rust (consrv/alias.rs)
     # consrv/coninput.c     — replaced by Rust (consrv/coninput.rs)
     # consrv/conoutput.c    — replaced by Rust (consrv/conoutput.rs)
@@ -40,12 +33,15 @@ list(APPEND CONSRV_SOURCE
     # consrv/settings.c     — replaced by Rust (consrv/settings.rs)
     # consrv/shutdown.c     — replaced by Rust (consrv/shutdown.rs)
     # consrv/subsysreg.c    — replaced by Rust (consrv/subsysreg.rs)
-    consrv/condrv/coninput.c
-    consrv/condrv/conoutput.c
-    consrv/condrv/console.c
-    consrv/condrv/dummyterm.c
-    consrv/condrv/graphics.c
-    consrv/condrv/text.c
+    # --- condrv core flip → Rust (winsrv-rust/src/consrv/condrv/*.rs) ----
+    # frontends/ stays C and imports condrv ConDrv*/Conio* symbols, so the
+    # condrv .rs exports must be #[no_mangle] with matching ABI (42 exports).
+    # consrv/condrv/coninput.c   — replaced by Rust (consrv/condrv/coninput.rs)
+    # consrv/condrv/conoutput.c  — replaced by Rust (consrv/condrv/conoutput.rs)
+    # consrv/condrv/console.c    — replaced by Rust (consrv/condrv/console.rs)
+    # consrv/condrv/dummyterm.c  — replaced by Rust (consrv/condrv/dummyterm.rs)
+    # consrv/condrv/graphics.c   — replaced by Rust (consrv/condrv/graphics.rs)
+    # consrv/condrv/text.c       — replaced by Rust (consrv/condrv/text.rs)
     consrv/frontends/input.c
     consrv/frontends/terminal.c
     consrv/frontends/wcwidth.c

@@ -74,6 +74,25 @@ LONG __stdcall shim_ild_stdcall(LONG volatile *p)
 { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
 LONG __cdecl   shim_ild_cdecl(LONG volatile *p)
 { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
+
+/* _InterlockedExchange — condrv/coninput.rs extern "system" -> __InterlockedExchange@8. */
+LONG __stdcall shim_ixchg_stdcall(LONG volatile *p, LONG v) __asm__("__InterlockedExchange@8");
+LONG __stdcall shim_ixchg_stdcall(LONG volatile *p, LONG v)
+{ return __atomic_exchange_n(p, v, __ATOMIC_SEQ_CST); }
+
+/* CONTAINING_RECORD(addr, type, field_off) — NT macro; condrv coninput/conoutput.rs
+ * extern "system" (3 ptr-sized args) -> _CONTAINING_RECORD@12.  type is unused. */
+PVOID __stdcall shim_containing_record(const void *addr, PVOID type, ULONG field_off) __asm__("_CONTAINING_RECORD@12");
+PVOID __stdcall shim_containing_record(const void *addr, PVOID type, ULONG field_off)
+{ (void)type; return (PVOID)((const char *)addr - field_off); }
+
+/* InitializeObjectAttributes(p, ObjectName, Attributes, RootDir, SecDesc) — NT
+ * macro; condrv/coninput.rs extern "system" (5 args) -> _InitializeObjectAttributes@20. */
+struct shim_obja { ULONG Length; PVOID RootDirectory; PVOID ObjectName; ULONG Attributes; PVOID SecurityDescriptor; PVOID SecurityQualityOfService; };
+void __stdcall shim_init_obja(struct shim_obja *p, PVOID n, ULONG a, PVOID r, PVOID s) __asm__("_InitializeObjectAttributes@20");
+void __stdcall shim_init_obja(struct shim_obja *p, PVOID n, ULONG a, PVOID r, PVOID s)
+{ p->Length = sizeof(struct shim_obja); p->RootDirectory = r; p->ObjectName = n;
+  p->Attributes = a; p->SecurityDescriptor = s; p->SecurityQualityOfService = (PVOID)0; }
 #endif /* __i386__ */
 
 /*

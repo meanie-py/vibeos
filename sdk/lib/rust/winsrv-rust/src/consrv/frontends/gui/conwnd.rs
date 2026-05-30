@@ -23,15 +23,16 @@ extern "C" {
 // Local extern fn block — kept lean because the bulk of Win32 +
 // consrv-internal fns now resolve via use winsrv_sys::winsrv::*;
 // (post-regen) + super::*; sibling imports + super::helpers::*.
+// condrv flip: TermResizeTerminal is term.rs's vtbl dispatcher, exported cdecl
+// `_TermResizeTerminal` (abstract PCONSOLE arg; cast at call sites).
+extern "C" {
+    pub fn TermResizeTerminal(Console: *mut core::ffi::c_void);
+}
 extern "system" {
     /// `ConsoleAllocHeap`/`ConsoleFreeHeap` live in consrv/heap.c; not
     /// in the bindgen allowlist (no real "outer ring" prefix).
     pub fn ConsoleAllocHeap(Flags: u32, Size: usize) -> *mut core::ffi::c_void;
     pub fn ConsoleFreeHeap(Ptr: *mut core::ffi::c_void);
-    /// `TermResizeTerminal` — TERMINAL_VTBL dispatcher in terminal.c.
-    /// Takes the abstract PCONSOLE (not the consrv-flavoured
-    /// PCONSRV_CONSOLE), so the Console cast is needed at call sites.
-    pub fn TermResizeTerminal(Console: *mut core::ffi::c_void);
     /// `GetType` — sibling C-side helper in conoutput.c that returns
     /// the buffer-type discriminant (TEXTMODE_BUFFER vs GRAPHICS_BUFFER).
     pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
