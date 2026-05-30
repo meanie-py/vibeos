@@ -23,6 +23,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arm64vid-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "avltable"
 version = "0.1.0"
 
