@@ -1,10 +1,7 @@
 
-add_subdirectory(dc21x4)
+# Legacy NICs dropped (ne2000 ISA, pcnet, dc21x4 DEC Tulip, nvnet proprietary):
+# pre-Vista / not the QEMU-relevant cards. Kept: e1000 + rtl8139 (QEMU-emulated
+# PCI) + netkvm (virtio) as the networking translation targets.
 add_subdirectory(e1000)
-add_subdirectory(ne2000)
 add_subdirectory(netkvm)
-if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
-    add_subdirectory(nvnet)
-endif()
-add_subdirectory(pcnet)
 add_subdirectory(rtl8139)
