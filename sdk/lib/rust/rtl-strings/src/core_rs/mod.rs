@@ -3,6 +3,7 @@
 //! to these. Faithful to ReactOS `sdk/lib/rtl/unicode.c`.
 
 pub mod acl;
+pub mod atom;
 pub mod conv;
 pub mod dos8dot3;
 pub mod env;

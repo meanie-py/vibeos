@@ -7929,3 +7929,613 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_U(path: *const u16) -> u32 {
     };
     RtlIsDosDeviceName_Ustr(&us)
 }
+
+// =====================================================================
+// Wave ATM — straight translation of `sdk/lib/rtl/atom.c` (11 NTAPI
+// fns). FULL swap (atom.c removed from cmake). atom.c is compiled ONCE
+// with -D_NTOSKRNL_ into the single `rtl` lib that links into BOTH
+// ntoskrnl and ntdll, so the KERNEL `RTL_ATOM_TABLE` union layout
+// (FAST_MUTEX + PHANDLE_TABLE) is the one atom.c always sees. We mirror
+// it with nested #[repr(C)] types so rustc computes per-arch offsets
+// (no hardcoded numbers). atom.c never touches the union members
+// directly — only the cdecl `Rtlp*` helpers in libsupp.c do, and those
+// stay C. Smoke is the net (no byte-diff: concurrency + handle FFI).
+// =====================================================================
+
+use crate::core_rs::atom as atom_;
+
+// --- atom.c local STATUS values (some are success-class!). ---
+const ATM_STATUS_INVALID_HANDLE: i32 = 0xC000_0008u32 as i32;
+const ATM_STATUS_OBJECT_NAME_INVALID: i32 = 0xC000_0033u32 as i32;
+const ATM_STATUS_OBJECT_NAME_NOT_FOUND: i32 = 0xC000_0034u32 as i32;
+const ATM_STATUS_WAS_LOCKED: i32 = 0x0000_0001; // NOT a failure code
+const ATM_STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
+const ATM_STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC000_0004u32 as i32;
+const HASH_STRING_ALGORITHM_X65599: u32 = 1;
+const RTL_ATOM_IS_PINNED: u8 = atom_::RTL_ATOM_IS_PINNED;
+
+#[inline]
+fn atm_nt_success(s: i32) -> bool {
+    s >= 0
+}
+
+// --- KERNEL `RTL_ATOM_TABLE` layout mirror. Built from the nested NDK
+//     types so the compiler lays out NumberOfBuckets/Buckets at the
+//     correct per-arch offset (FAST_MUTEX size differs by pointer
+//     width). Only NumberOfBuckets + Buckets are read by atom.c; the
+//     FastMutex/ExHandleTable members are opaque padding to us. ---
+
+#[repr(C)]
+struct AtmListEntry {
+    flink: *mut core::ffi::c_void,
+    blink: *mut core::ffi::c_void,
+}
+
+/// `DISPATCHER_HEADER` — the leading union is 4 bytes (UCHAR Type + 3
+/// one-byte sub-unions, == `volatile LONG Lock`), then `LONG SignalState`
+/// and `LIST_ENTRY WaitListHead`.
+#[repr(C)]
+struct AtmDispatcherHeader {
+    lock: i32,
+    signal_state: i32,
+    wait_list_head: AtmListEntry,
+}
+
+/// `KEVENT` == one `DISPATCHER_HEADER`.
+#[repr(C)]
+struct AtmKevent {
+    header: AtmDispatcherHeader,
+}
+
+/// `FAST_MUTEX` (extypes.h).
+#[repr(C)]
+struct AtmFastMutex {
+    count: i32,
+    owner: *mut core::ffi::c_void, // PKTHREAD
+    contention: u32,
+    event: AtmKevent,
+    old_irql: u32,
+}
+
+/// `RTL_ATOM_TABLE_ENTRY` (rtltypes.h) — no union, flat layout, identical
+/// kernel/user. `Name` is a `WCHAR[1]` flexible tail.
+#[repr(C)]
+pub struct RTL_ATOM_TABLE_ENTRY {
+    hash_link: *mut RTL_ATOM_TABLE_ENTRY,
+    handle_index: u16,
+    atom: u16,
+    reference_count: u16,
+    flags: u8,
+    name_length: u8,
+    name: [u16; 1],
+}
+
+/// `RTL_ATOM_TABLE` — KERNEL union arm (FAST_MUTEX + PHANDLE_TABLE).
+#[repr(C)]
+pub struct RTL_ATOM_TABLE {
+    signature: u32,
+    fast_mutex: AtmFastMutex,         // union arm: kernel FAST_MUTEX
+    ex_handle_table: *mut core::ffi::c_void, // union arm: kernel PHANDLE_TABLE
+    number_of_buckets: u32,
+    buckets: [*mut RTL_ATOM_TABLE_ENTRY; 1], // flexible tail
+}
+
+// --- libsupp.c helpers. C declares these WITHOUT NTAPI ⇒ __cdecl on
+//     all arches ⇒ `extern "C"`. (Mismatching this with extern "system"
+//     would be the #1 i386 crash cause — see feedback_extern_c_abi.) ---
+extern "C" {
+    fn RtlpInitAtomTableLock(atom_table: *mut RTL_ATOM_TABLE) -> i32;
+    fn RtlpDestroyAtomTableLock(atom_table: *mut RTL_ATOM_TABLE);
+    fn RtlpLockAtomTable(atom_table: *mut RTL_ATOM_TABLE) -> u8;
+    fn RtlpUnlockAtomTable(atom_table: *mut RTL_ATOM_TABLE);
+    fn RtlpCreateAtomHandleTable(atom_table: *mut RTL_ATOM_TABLE) -> u8;
+    fn RtlpDestroyAtomHandleTable(atom_table: *mut RTL_ATOM_TABLE);
+    fn RtlpAllocAtomTable(size: u32) -> *mut RTL_ATOM_TABLE;
+    fn RtlpFreeAtomTable(atom_table: *mut RTL_ATOM_TABLE);
+    fn RtlpAllocAtomTableEntry(size: u32) -> *mut RTL_ATOM_TABLE_ENTRY;
+    fn RtlpFreeAtomTableEntry(entry: *mut RTL_ATOM_TABLE_ENTRY);
+    fn RtlpCreateAtomHandle(
+        atom_table: *mut RTL_ATOM_TABLE,
+        entry: *mut RTL_ATOM_TABLE_ENTRY,
+    ) -> u8;
+    fn RtlpFreeAtomHandle(atom_table: *mut RTL_ATOM_TABLE, entry: *mut RTL_ATOM_TABLE_ENTRY);
+    fn RtlpGetAtomEntry(
+        atom_table: *mut RTL_ATOM_TABLE,
+        index: u32,
+    ) -> *mut RTL_ATOM_TABLE_ENTRY;
+    // CRT wide compare (cdecl). Same fn atom.c calls; matches its fold.
+    fn _wcsicmp(a: *const u16, b: *const u16) -> i32;
+}
+
+/// Pointer to bucket[0] — strides by pointer size, == C `Buckets`.
+#[inline]
+unsafe fn atm_buckets(table: *mut RTL_ATOM_TABLE) -> *mut *mut RTL_ATOM_TABLE_ENTRY {
+    (*table).buckets.as_mut_ptr()
+}
+
+/// Write `"#<decimal>\0"` into `buf`, return chars written excluding the
+/// NUL (== what `swprintf(buf, L"#%lu", value)` returns).
+unsafe fn atm_format_int_name(buf: *mut u16, value: u32) -> u8 {
+    *buf = b'#' as u16;
+    let mut digits = [0u8; 10];
+    let mut v = value;
+    let mut n = 0usize;
+    if v == 0 {
+        digits[0] = b'0';
+        n = 1;
+    } else {
+        while v > 0 {
+            digits[n] = b'0' + (v % 10) as u8;
+            v /= 10;
+            n += 1;
+        }
+    }
+    for i in 0..n {
+        *buf.add(1 + i) = digits[n - 1 - i] as u16;
+    }
+    *buf.add(1 + n) = 0;
+    (1 + n) as u8
+}
+
+/// `static RtlpHashAtomName` — file-local in C, private here. Finds the
+/// existing entry for `atom_name`, and sets `*hash_link` to the
+/// insertion slot (bucket head or prior entry's HashLink), or NULL.
+unsafe fn RtlpHashAtomName(
+    atom_table: *mut RTL_ATOM_TABLE,
+    atom_name: *const u16,
+    hash_link: *mut *mut *mut RTL_ATOM_TABLE_ENTRY,
+) -> *mut RTL_ATOM_TABLE_ENTRY {
+    let mut name = UNICODE_STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    RtlInitUnicodeString(&mut name, atom_name);
+
+    let mut hash: u32 = 0;
+    if name.Length != 0
+        && atm_nt_success(RtlHashUnicodeString(
+            &name,
+            1,
+            HASH_STRING_ALGORITHM_X65599,
+            &mut hash,
+        ))
+    {
+        let idx = atom_::bucket_index(hash, (*atom_table).number_of_buckets);
+        let mut link: *mut *mut RTL_ATOM_TABLE_ENTRY = atm_buckets(atom_table).add(idx as usize);
+
+        let mut current = *link;
+        while !current.is_null() {
+            if (*current).name_length as u32 == (name.Length / 2) as u32
+                && _wcsicmp((*current).name.as_ptr(), name.Buffer) == 0
+            {
+                *hash_link = link;
+                return current;
+            }
+            link = core::ptr::addr_of_mut!((*current).hash_link);
+            current = (*current).hash_link;
+        }
+        *hash_link = link;
+    } else {
+        *hash_link = core::ptr::null_mut();
+    }
+    core::ptr::null_mut()
+}
+
+/// `static RtlpCheckIntegerAtom` — file-local in C.
+unsafe fn RtlpCheckIntegerAtom(atom_name: *const u16, atom_value: *mut u16) -> bool {
+    match atom_::check_packed_integer_atom(atom_name as usize) {
+        atom_::IntegerAtom::Packed(v) => {
+            if !atom_value.is_null() {
+                *atom_value = v;
+            }
+            return true;
+        }
+        atom_::IntegerAtom::NotPacked => {}
+    }
+    // Real pointer (high bits set ⇒ non-NULL, per C's ASSERT).
+    if *atom_name != b'#' as u16 {
+        return false;
+    }
+    let mut p = atom_name.add(1);
+    while *p != 0 {
+        if *p < b'0' as u16 || *p > b'9' as u16 {
+            return false;
+        }
+        p = p.add(1);
+    }
+    let mut atom_string = UNICODE_STRING {
+        Length: 0,
+        MaximumLength: 0,
+        Buffer: core::ptr::null_mut(),
+    };
+    RtlInitUnicodeString(&mut atom_string, atom_name.add(1));
+    let mut long_value: u32 = 0;
+    RtlUnicodeStringToInteger(&atom_string, 10, &mut long_value);
+    // C writes *AtomValue unconditionally here (no NULL check).
+    *atom_value = (long_value & 0xFFFF) as u16;
+    true
+}
+
+/// `NTSTATUS NTAPI RtlCreateAtomTable(ULONG, PRTL_ATOM_TABLE*)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateAtomTable(
+    table_size: u32,
+    atom_table: *mut *mut RTL_ATOM_TABLE,
+) -> i32 {
+    if !(*atom_table).is_null() {
+        return STATUS_SUCCESS;
+    }
+    let table_size = atom_::clamp_table_size(table_size);
+
+    let size = ((table_size - 1) as usize
+        * core::mem::size_of::<*mut RTL_ATOM_TABLE_ENTRY>()
+        + core::mem::size_of::<RTL_ATOM_TABLE>()) as u32;
+    let table = RtlpAllocAtomTable(size);
+    if table.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    (*table).number_of_buckets = table_size;
+
+    let status = RtlpInitAtomTableLock(table);
+    if !atm_nt_success(status) {
+        RtlpFreeAtomTable(table);
+        return status;
+    }
+
+    if RtlpCreateAtomHandleTable(table) == 0 {
+        RtlpDestroyAtomTableLock(table);
+        RtlpFreeAtomTable(table);
+        return STATUS_NO_MEMORY;
+    }
+
+    *atom_table = table;
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlDestroyAtomTable(PRTL_ATOM_TABLE)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDestroyAtomTable(atom_table: *mut RTL_ATOM_TABLE) -> i32 {
+    if RtlpLockAtomTable(atom_table) == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let n = (*atom_table).number_of_buckets as usize;
+    let base = atm_buckets(atom_table);
+    for i in 0..n {
+        let current_bucket = base.add(i);
+        let mut next_entry = *current_bucket;
+        *current_bucket = core::ptr::null_mut();
+        while !next_entry.is_null() {
+            let current_entry = next_entry;
+            next_entry = (*next_entry).hash_link;
+            // handles freed wholesale by RtlpDestroyAtomHandleTable below
+            RtlpFreeAtomTableEntry(current_entry);
+        }
+    }
+
+    RtlpDestroyAtomHandleTable(atom_table);
+    RtlpUnlockAtomTable(atom_table);
+    RtlpDestroyAtomTableLock(atom_table);
+    RtlpFreeAtomTable(atom_table);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlEmptyAtomTable(PRTL_ATOM_TABLE, BOOLEAN)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlEmptyAtomTable(
+    atom_table: *mut RTL_ATOM_TABLE,
+    delete_pinned: u8,
+) -> i32 {
+    if RtlpLockAtomTable(atom_table) == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let n = (*atom_table).number_of_buckets as usize;
+    let base = atm_buckets(atom_table);
+    for i in 0..n {
+        let current_bucket = base.add(i);
+        let mut next_entry = *current_bucket;
+        let mut ptr_entry: *mut *mut RTL_ATOM_TABLE_ENTRY = current_bucket;
+        while !next_entry.is_null() {
+            let current_entry = next_entry;
+            next_entry = (*next_entry).hash_link;
+            if delete_pinned != 0 || ((*current_entry).flags & RTL_ATOM_IS_PINNED) == 0 {
+                *ptr_entry = next_entry;
+                RtlpFreeAtomHandle(atom_table, current_entry);
+                RtlpFreeAtomTableEntry(current_entry);
+            } else {
+                ptr_entry = core::ptr::addr_of_mut!((*current_entry).hash_link);
+            }
+        }
+    }
+
+    RtlpUnlockAtomTable(atom_table);
+    STATUS_SUCCESS
+}
+
+/// `NTSTATUS NTAPI RtlAddAtomToAtomTable(PRTL_ATOM_TABLE, PWSTR, PRTL_ATOM)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddAtomToAtomTable(
+    atom_table: *mut RTL_ATOM_TABLE,
+    atom_name: *mut u16,
+    atom: *mut u16,
+) -> i32 {
+    let mut atom_value: u16 = 0;
+    let mut status = STATUS_SUCCESS;
+
+    if RtlpCheckIntegerAtom(atom_name, &mut atom_value) {
+        if atom_value >= 0xC000 {
+            status = STATUS_INVALID_PARAMETER;
+        } else if !atom.is_null() {
+            *atom = atom_value;
+        }
+        return status;
+    }
+
+    RtlpLockAtomTable(atom_table);
+
+    let mut hash_link: *mut *mut RTL_ATOM_TABLE_ENTRY = core::ptr::null_mut();
+    let entry = RtlpHashAtomName(atom_table, atom_name, &mut hash_link);
+
+    if !entry.is_null() {
+        if ((*entry).flags & RTL_ATOM_IS_PINNED) == 0 {
+            (*entry).reference_count = (*entry).reference_count.wrapping_add(1);
+            if (*entry).reference_count == 0 {
+                (*entry).flags |= RTL_ATOM_IS_PINNED;
+            }
+        }
+        if !atom.is_null() {
+            *atom = (*entry).atom;
+        }
+    } else if !hash_link.is_null() {
+        let atom_name_len = wcslen(atom_name) as u32;
+        if !atom_::atom_name_len_ok(atom_name_len) {
+            status = STATUS_INVALID_PARAMETER;
+        } else {
+            let size = (core::mem::size_of::<RTL_ATOM_TABLE_ENTRY>() - 2
+                + ((atom_name_len + 1) * 2) as usize) as u32;
+            let new_entry = RtlpAllocAtomTableEntry(size);
+            if !new_entry.is_null() {
+                (*new_entry).hash_link = core::ptr::null_mut();
+                (*new_entry).reference_count = 1;
+                (*new_entry).flags = 0;
+                (*new_entry).name_length = atom_name_len as u8;
+                core::ptr::copy_nonoverlapping(
+                    atom_name,
+                    (*new_entry).name.as_mut_ptr(),
+                    (atom_name_len + 1) as usize,
+                );
+                if RtlpCreateAtomHandle(atom_table, new_entry) != 0 {
+                    *hash_link = new_entry;
+                    if !atom.is_null() {
+                        *atom = (*new_entry).atom;
+                    }
+                } else {
+                    RtlpFreeAtomTableEntry(new_entry);
+                    status = STATUS_NO_MEMORY;
+                }
+            } else {
+                status = STATUS_NO_MEMORY;
+            }
+        }
+    } else {
+        status = ATM_STATUS_OBJECT_NAME_INVALID;
+    }
+
+    RtlpUnlockAtomTable(atom_table);
+    status
+}
+
+/// `NTSTATUS NTAPI RtlDeleteAtomFromAtomTable(PRTL_ATOM_TABLE, RTL_ATOM)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDeleteAtomFromAtomTable(
+    atom_table: *mut RTL_ATOM_TABLE,
+    atom: u16,
+) -> i32 {
+    let mut status = STATUS_SUCCESS;
+
+    if atom >= 0xC000 {
+        RtlpLockAtomTable(atom_table);
+
+        let entry = RtlpGetAtomEntry(atom_table, (atom - 0xC000) as u32);
+
+        if !entry.is_null() && (*entry).atom == atom {
+            if ((*entry).flags & RTL_ATOM_IS_PINNED) == 0 {
+                (*entry).reference_count = (*entry).reference_count.wrapping_sub(1);
+                if (*entry).reference_count == 0 {
+                    let mut hash_link: *mut *mut RTL_ATOM_TABLE_ENTRY = core::ptr::null_mut();
+                    if !RtlpHashAtomName(atom_table, (*entry).name.as_ptr(), &mut hash_link)
+                        .is_null()
+                    {
+                        *hash_link = (*entry).hash_link;
+                        RtlpFreeAtomHandle(atom_table, entry);
+                        RtlpFreeAtomTableEntry(entry);
+                    }
+                    // else: C ASSERT(FALSE) — unreachable; do nothing.
+                }
+            } else {
+                status = ATM_STATUS_WAS_LOCKED;
+            }
+        } else {
+            status = ATM_STATUS_INVALID_HANDLE;
+        }
+
+        RtlpUnlockAtomTable(atom_table);
+    }
+
+    status
+}
+
+/// `NTSTATUS NTAPI RtlLookupAtomInAtomTable(PRTL_ATOM_TABLE, PWSTR, PRTL_ATOM)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlLookupAtomInAtomTable(
+    atom_table: *mut RTL_ATOM_TABLE,
+    atom_name: *mut u16,
+    atom: *mut u16,
+) -> i32 {
+    let mut atom_value: u16 = 0;
+    let mut found_atom: u16 = 0;
+    let mut status = STATUS_SUCCESS;
+
+    if RtlpCheckIntegerAtom(atom_name, &mut atom_value) {
+        if atom_value >= 0xC000 {
+            status = STATUS_INVALID_PARAMETER;
+        } else if !atom.is_null() {
+            *atom = atom_value;
+        }
+        return status;
+    }
+
+    RtlpLockAtomTable(atom_table);
+    status = ATM_STATUS_OBJECT_NAME_NOT_FOUND;
+
+    let mut hash_link: *mut *mut RTL_ATOM_TABLE_ENTRY = core::ptr::null_mut();
+    let entry = RtlpHashAtomName(atom_table, atom_name, &mut hash_link);
+    if !entry.is_null() {
+        status = STATUS_SUCCESS;
+        found_atom = (*entry).atom;
+    }
+
+    RtlpUnlockAtomTable(atom_table);
+    if atm_nt_success(status) && !atom.is_null() {
+        *atom = found_atom;
+    }
+    status
+}
+
+/// `NTSTATUS NTAPI RtlPinAtomInAtomTable(PRTL_ATOM_TABLE, RTL_ATOM)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlPinAtomInAtomTable(
+    atom_table: *mut RTL_ATOM_TABLE,
+    atom: u16,
+) -> i32 {
+    let mut status = STATUS_SUCCESS;
+
+    if atom >= 0xC000 {
+        RtlpLockAtomTable(atom_table);
+
+        let entry = RtlpGetAtomEntry(atom_table, (atom - 0xC000) as u32);
+        if !entry.is_null() && (*entry).atom == atom {
+            (*entry).flags |= RTL_ATOM_IS_PINNED;
+        } else {
+            status = ATM_STATUS_INVALID_HANDLE;
+        }
+
+        RtlpUnlockAtomTable(atom_table);
+    }
+
+    status
+}
+
+/// `NTSTATUS NTAPI RtlQueryAtomInAtomTable(PRTL_ATOM_TABLE, RTL_ATOM,
+/// PULONG RefCount, PULONG PinCount, PWSTR AtomName, PULONG NameLength)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlQueryAtomInAtomTable(
+    atom_table: *mut RTL_ATOM_TABLE,
+    atom: u16,
+    ref_count: *mut u32,
+    pin_count: *mut u32,
+    atom_name: *mut u16,
+    name_length: *mut u32,
+) -> i32 {
+    let mut status = STATUS_SUCCESS;
+    let mut unlock = false;
+
+    // union { RTL_ATOM_TABLE_ENTRY; WCHAR[sizeof(entry)/2 + 12] }
+    const NUMBER_ENTRY_WORDS: usize =
+        core::mem::size_of::<RTL_ATOM_TABLE_ENTRY>() / 2 + 12;
+    let mut number_entry: [u16; NUMBER_ENTRY_WORDS] = [0; NUMBER_ENTRY_WORDS];
+    let synth = number_entry.as_mut_ptr() as *mut RTL_ATOM_TABLE_ENTRY;
+
+    let entry: *mut RTL_ATOM_TABLE_ENTRY = if atom < 0xC000 {
+        (*synth).atom = atom;
+        (*synth).name_length = atm_format_int_name((*synth).name.as_mut_ptr(), atom as u32);
+        (*synth).reference_count = 1;
+        (*synth).flags = RTL_ATOM_IS_PINNED;
+        synth
+    } else {
+        RtlpLockAtomTable(atom_table);
+        unlock = true;
+        RtlpGetAtomEntry(atom_table, (atom - 0xC000) as u32)
+    };
+
+    if !entry.is_null() && (*entry).atom == atom {
+        if !ref_count.is_null() {
+            *ref_count = (*entry).reference_count as u32;
+        }
+        if !pin_count.is_null() {
+            *pin_count = (((*entry).flags & RTL_ATOM_IS_PINNED) != 0) as u32;
+        }
+        if !name_length.is_null() {
+            let mut length = (*entry).name_length as u32 * 2;
+            if !atom_name.is_null() {
+                if *name_length < length + 2 {
+                    if *name_length < 4 {
+                        *name_length = length;
+                        status = ATM_STATUS_BUFFER_TOO_SMALL;
+                    } else {
+                        length = *name_length - 2;
+                    }
+                }
+                if atm_nt_success(status) {
+                    core::ptr::copy_nonoverlapping(
+                        (*entry).name.as_ptr(),
+                        atom_name,
+                        (length / 2) as usize,
+                    );
+                    *atom_name.add((length / 2) as usize) = 0;
+                    *name_length = length;
+                }
+            } else {
+                *name_length = length;
+            }
+        } else if !atom_name.is_null() {
+            status = STATUS_INVALID_PARAMETER;
+        }
+    } else {
+        status = ATM_STATUS_INVALID_HANDLE;
+    }
+
+    if unlock {
+        RtlpUnlockAtomTable(atom_table);
+    }
+    status
+}
+
+/// `NTSTATUS NTAPI RtlQueryAtomListInAtomTable(PRTL_ATOM_TABLE, ULONG,
+/// PULONG AtomCount, PRTL_ATOM AtomList)`. (NtQueryInformationAtom.)
+#[no_mangle]
+pub unsafe extern "system" fn RtlQueryAtomListInAtomTable(
+    atom_table: *mut RTL_ATOM_TABLE,
+    mut max_atom_count: u32,
+    atom_count: *mut u32,
+    mut atom_list: *mut u16,
+) -> i32 {
+    let mut atoms: u32 = 0;
+    let mut status = STATUS_SUCCESS;
+
+    RtlpLockAtomTable(atom_table);
+
+    let n = (*atom_table).number_of_buckets as usize;
+    let base = atm_buckets(atom_table);
+    for i in 0..n {
+        let mut current_entry = *base.add(i);
+        while !current_entry.is_null() {
+            if max_atom_count > 0 {
+                *atom_list = (*current_entry).atom;
+                atom_list = atom_list.add(1);
+                max_atom_count -= 1;
+            } else {
+                status = ATM_STATUS_INFO_LENGTH_MISMATCH;
+            }
+            atoms += 1;
+            current_entry = (*current_entry).hash_link;
+        }
+    }
+
+    *atom_count = atoms;
+    RtlpUnlockAtomTable(atom_table);
+    status
+}
