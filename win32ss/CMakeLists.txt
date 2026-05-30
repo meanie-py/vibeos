@@ -180,8 +180,8 @@ list(APPEND SOURCE
     gdi/ntgdi/dcutil.c
     gdi/ntgdi/device.c
     gdi/ntgdi/dibobj.c
-    gdi/ntgdi/drawing.c
-    gdi/ntgdi/fillshap.c
+    # gdi/ntgdi/drawing.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/drawing.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
+    # gdi/ntgdi/fillshap.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/fillshap.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     gdi/ntgdi/font.c
     gdi/ntgdi/freetype.c
     gdi/ntgdi/gdibatch.c
@@ -190,7 +190,7 @@ list(APPEND SOURCE
     gdi/ntgdi/gdipool.c
     gdi/ntgdi/icm.c
     gdi/ntgdi/init.c
-    gdi/ntgdi/line.c
+    # gdi/ntgdi/line.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/line.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     gdi/ntgdi/metafile.c
     gdi/ntgdi/palette.c
     gdi/ntgdi/path.c
@@ -334,6 +334,9 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/arc.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/stockobj.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/xformobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/drawing.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/line.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/fillshap.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

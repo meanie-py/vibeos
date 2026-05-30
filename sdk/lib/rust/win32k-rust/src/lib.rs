@@ -120,6 +120,12 @@ pub mod floatobj;
 // engine fns on i386 / f32 ops on amd64+arm64), stockobj (BRUSHBODY PEN view
 // + FLOATOBJ_SetLong + type fixes).
 pub mod stockobj; pub mod arc; pub mod xformobj;
+// Wave 3 (drawing/output primitives, atop the geometry/math waves): drawing
+// (Int{Draw,Fill}{Arc,Ellipse,RoundRect,Rect} via IntEngBitBlt + BRUSHBODY
+// PEN view), line (NtGdi{LineTo,MoveTo,PolyDraw} + IntGdiPoly* + LPtoDP/DPtoLP
+// coord chain), fillshap (NtGdi{Ellipse,Rectangle,RoundRect,PolyPolyDraw,
+// GradientFill,ExtFloodFill} + IntGdiPolygon, user-POINT[] probe paths).
+pub mod drawing; pub mod line; pub mod fillshap;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
