@@ -174,10 +174,10 @@ list(APPEND SOURCE
     gdi/ntgdi/coord.c
     gdi/ntgdi/d3dkmt.c
     # gdi/ntgdi/dcattr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcattr.rs) — cohabitation [Phase 2c geometry wave 1]
-    gdi/ntgdi/dclife.c
-    gdi/ntgdi/dcobjs.c
-    gdi/ntgdi/dcstate.c
-    gdi/ntgdi/dcutil.c
+    # gdi/ntgdi/dclife.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dclife.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
+    # gdi/ntgdi/dcobjs.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcobjs.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
+    # gdi/ntgdi/dcstate.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcstate.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
+    # gdi/ntgdi/dcutil.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcutil.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
     gdi/ntgdi/device.c
     gdi/ntgdi/dibobj.c
     # gdi/ntgdi/drawing.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/drawing.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
@@ -338,6 +338,10 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/line.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/fillshap.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/region.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcstate.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcobjs.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dclife.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcutil.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

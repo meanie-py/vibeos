@@ -130,6 +130,8 @@ pub mod drawing; pub mod line; pub mod fillshap;
 // 68 fns (REGION_* rect-set algebra, edge-table polygon scan-conversion,
 // NtGdi{CombineRgn,Create*Rgn,EqualRgn,ExtCreateRegion,GetRegionData,...}).
 pub mod region;
+// Phase 2c geometry wave 5: DC lifecycle (device-context object mgmt tier)
+pub mod dcstate; pub mod dcobjs; pub mod dclife; pub mod dcutil;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
