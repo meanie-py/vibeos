@@ -1,0 +1,14 @@
+[package]
+name = "winsrv-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# winsrv-sys is a SUPERSET of ntdll-sys' surface (Nt/Zw/Rtl/Csr/Sm/Base) —
+# instead of duplicating those into the winsrv bindgen, re-export from
+# ntdll-sys::nt. The winsrv-specific layer adds wincon/winuser/wingdi +
+# the concfg/consrv/usersrv internal headers.
+ntdll-sys = { path = "../ntdll-sys" }

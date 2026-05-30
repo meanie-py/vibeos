@@ -1,0 +1,39 @@
+[package]
+name = "smss-csrss-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# staticlib → libsmss_csrss_rust.a, linked into the cmake-built native
+# PEs (csrss.exe …) with the .c kept + --allow-multiple-definition
+# during the swap-in window (mirrors kdcom-rust crate / rtl cmake).
+crate-type = ["staticlib"]
+
+[features]
+# `ntddi_ws03` == "NTDDI_VERSION >= NTDDI_WS03". ReactOS targets
+# NT 5.2 (WS03+) and ntdll-sys is bindgen'd at that level, so the
+# pre-WS03 legacy code paths (e.g. csrmsg.h's
+# CSR_IDENTIFY_ALERTABLE_THREAD / CSR_SET_PRIORITY_CLASS, which only
+# exist `#if NTDDI_VERSION < NTDDI_WS03`) must be cfg'd OUT to match
+# the substrate. Default-on so `#[cfg(feature="ntddi_ws03")]` arms
+# (the modern path) compile and the legacy arms are excluded.
+default = ["ntddi_ws03"]
+ntddi_ws03 = []
+# `csrss_main_only` — when set, only the csrss.exe `_main` shim is
+# compiled. csrsrv/csrlib/smlib/smss/basesrv are excluded. csrss.exe
+# uses this feature to AVOID a second static copy of `_CsrApiPort`
+# (and the rest of the csrsrv globals) which would shadow csrsrv.dll's
+# real exports when csrss.exe links the full archive. Set by
+# subsystems/csr/csrss/CMakeLists.txt only.
+csrss_main_only = []
+# Reserved feature names for future per-binary cohabitation flips
+# (basesrv.dll, smss.exe). Tracked as deferred work — see
+# project_smss_csrss_track + task #18. Each cohab flip would also
+# require careful attention to cgu shift risk and per-DLL data-global
+# ownership (the basesrv-flip experiment in this session hung csrss
+# inside ServerDllInitialization → not yet root-caused).
+basesrv_dll_only = []
+smss_exe_only    = []
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }

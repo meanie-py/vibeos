@@ -39,12 +39,14 @@ InitCsrApiPort(IN HANDLE CsrPortHandle)
 {
     NTSTATUS Status;
 
+    ERR("[WIN32K] InitCsrApiPort: CsrPortHandle=%p LpcPortObjectType=%p\n", CsrPortHandle, LpcPortObjectType);
     Status = ObReferenceObjectByHandle(CsrPortHandle,
                                        0,
                                        /* * */LpcPortObjectType, // or NULL,
                                        UserMode,
                                        &CsrApiPort,
                                        NULL);
+    ERR("[WIN32K] InitCsrApiPort: ObReferenceObjectByHandle -> 0x%lx CsrApiPort=%p\n", Status, CsrApiPort);
     if (!NT_SUCCESS(Status))
     {
         CsrApiPort = NULL;

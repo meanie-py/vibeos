@@ -70,6 +70,8 @@ def assemble_file(
         exports=exports,
         globals=scan.globals if scan else None,
         target_name=target.name,
+        sys_crate=target.sys_crate,
+        sys_umbrella=target.sys_umbrella,
     )
 
     # Build the file content with C source as trailing comments

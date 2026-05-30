@@ -30,6 +30,8 @@ members = [
     "mem",
     "hal-cargo",
     "ntkrnl-sys",
+    "ntdll-sys",
+    "smss-csrss-rust",
     "ntoskrnl-cargo",
     "ntoskrnl-rust",
     "ntprintf",
@@ -49,6 +51,8 @@ members = [
     "win32k-kernel-rust",
     "win32k-rust",
     "win32k-sys",
+    "winsrv-rust",
+    "winsrv-sys",
 ]
 resolver = "2"
 
