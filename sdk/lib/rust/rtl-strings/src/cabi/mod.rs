@@ -1492,18 +1492,76 @@ pub unsafe extern "system" fn RtlDuplicateUnicodeString(
     STATUS_SUCCESS
 }
 
-/// `NTSTATUS NTAPI RtlStringFromGUID(REFGUID, PUNICODE_STRING)` —
-/// Length=76, MaximumLength=78 set before `Buffer = alloc = NULL` ⇒
-/// STATUS_NO_MEMORY.
+/// `NTSTATUS NTAPI RtlStringFromGUID(REFGUID, PUNICODE_STRING)`.
 #[no_mangle]
 pub unsafe extern "system" fn RtlStringFromGUID(
-    _guid: *const GUID,
+    guid: *const GUID,
     guid_string: *mut UNICODE_STRING,
 ) -> i32 {
+    const GUID_STRING_CHARS: usize = 38;
+
+    #[inline]
+    fn hex_digit(value: u8) -> u16 {
+        match value & 0x0f {
+            n @ 0..=9 => b'0' as u16 + n as u16,
+            n => b'a' as u16 + (n as u16 - 10),
+        }
+    }
+
+    #[inline]
+    unsafe fn write_hex_u32(buffer: *mut u16, offset: &mut usize, value: u32, digits: usize) {
+        for shift in (0..digits).rev() {
+            *buffer.add(*offset) = hex_digit((value >> (shift * 4)) as u8);
+            *offset += 1;
+        }
+    }
+
+    #[inline]
+    unsafe fn write_hex_u16(buffer: *mut u16, offset: &mut usize, value: u16, digits: usize) {
+        write_hex_u32(buffer, offset, value as u32, digits);
+    }
+
+    #[inline]
+    unsafe fn write_hex_u8(buffer: *mut u16, offset: &mut usize, value: u8) {
+        *buffer.add(*offset) = hex_digit(value >> 4);
+        *offset += 1;
+        *buffer.add(*offset) = hex_digit(value);
+        *offset += 1;
+    }
+
     (*guid_string).Length = 38 * 2;
     (*guid_string).MaximumLength = 38 * 2 + 2;
-    (*guid_string).Buffer = core::ptr::null_mut();
-    STATUS_NO_MEMORY
+    (*guid_string).Buffer = rtl_alloc((*guid_string).MaximumLength as usize, TAG_USTR) as *mut u16;
+    if (*guid_string).Buffer.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    let buffer = (*guid_string).Buffer;
+    let mut offset = 0usize;
+    *buffer.add(offset) = b'{' as u16;
+    offset += 1;
+    write_hex_u32(buffer, &mut offset, (*guid).Data1, 8);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    write_hex_u16(buffer, &mut offset, (*guid).Data2, 4);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    write_hex_u16(buffer, &mut offset, (*guid).Data3, 4);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    write_hex_u8(buffer, &mut offset, (*guid).Data4[0]);
+    write_hex_u8(buffer, &mut offset, (*guid).Data4[1]);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    for i in 2..8 {
+        write_hex_u8(buffer, &mut offset, (*guid).Data4[i]);
+    }
+    *buffer.add(offset) = b'}' as u16;
+    offset += 1;
+    debug_assert_eq!(offset, GUID_STRING_CHARS);
+    *buffer.add(offset) = 0;
+
+    STATUS_SUCCESS
 }
 
 /// `NTSTATUS NTAPI RtlpEnsureBufferSize(ULONG, PRTL_BUFFER, SIZE_T)`.
