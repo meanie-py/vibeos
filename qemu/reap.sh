@@ -126,6 +126,7 @@ if [ -d "$RUNS_DIR" ]; then
         # deadline is reaped even if its owner is still alive (it has overrun
         # any legitimate lifetime). Owner liveness only protects within the cap.
         dl="$(jq -r '.deadline // empty' "$manifest" 2>/dev/null)"
+        dl="${dl%.*}"   # tolerate a float deadline — `[ -ge ]` errors on one
         if [ -n "$dl" ] && [ "$dl" != "null" ] && [ "$(date +%s)" -ge "$dl" ] 2>/dev/null; then
             kill_qemu_pgroup "$qpid" "manifest $rid exceeded lifetime cap (deadline=$dl)"
             continue
@@ -149,6 +150,7 @@ if [ -d "$SMOKE_LOCK_DIR" ]; then
         lpid="$(jq -r '.launcher_pid // empty' "$lf" 2>/dev/null)"
         qpid="$(jq -r '.qemu_pid // empty' "$lf" 2>/dev/null)"
         dl="$(jq -r '.deadline // empty' "$lf" 2>/dev/null)"
+        dl="${dl%.*}"   # tolerate a float deadline (smoke lockfiles) — see Walk 1
         if [ -z "$qpid" ] || [ "$qpid" = "null" ]; then
             vlog "lock $(basename "$lf"): no qemu_pid — purging stale lock"
             [ "$DRY_RUN" -eq 0 ] && rm -f "$lf"

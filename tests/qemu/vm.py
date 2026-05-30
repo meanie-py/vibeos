@@ -480,7 +480,11 @@ class QemuVM:
                 "arch": self.config.arch,
                 "work_dir": str(self.work_dir),
                 "started": started,
-                "deadline": started + MAX_VM_LIFETIME_SECONDS,
+                # Integer epoch seconds: shell consumers (reap.sh) compare this
+                # with `[ "$(date +%s)" -ge "$dl" ]`, which errors on a float and
+                # would silently treat the VM as never-expired. Sub-second
+                # precision is meaningless for a 30-min cap anyway.
+                "deadline": int(started + MAX_VM_LIFETIME_SECONDS),
                 "slot": self._slot_index,
                 # Absolute so qemu/ps.sh can point at it from ANY worktree.
                 "live_log": str(self.live_log_path),
