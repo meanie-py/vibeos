@@ -50,6 +50,14 @@ class SerialClient:
         self._reader: threading.Thread | None = None
         self._sock_dead = False            # set when peer closes
 
+        # Optional live-log tee. When set, the drainer appends every byte it
+        # receives to this file handle and flushes immediately, so an agent can
+        # `tail -f` boot progress in real time instead of guessing whether a
+        # long TCG/cold-cache boot is making progress or wedged. Strictly a
+        # side-channel: a write failure here must NEVER stall the drainer (see
+        # the class docstring — a stalled drainer re-starves the polled guest).
+        self._tee = None
+
     def listen(self, path: str) -> None:
         """Create Unix socket server. Call BEFORE starting QEMU."""
         try:
@@ -61,6 +69,22 @@ class SerialClient:
         self._server.bind(path)
         self._server.listen(1)
         self._server.setblocking(False)
+
+    def set_tee(self, path: str, header: str = "") -> None:
+        """Mirror all received serial bytes to `path` in real time (truncates).
+
+        Call BEFORE accept(). The drainer flushes per chunk so an external
+        `tail -f` sees boot progress live. Best-effort: if the file can't be
+        opened the tee is silently disabled — it must never break serial drain.
+        """
+        try:
+            self._tee = open(path, "w", encoding="latin-1",
+                             errors="replace", buffering=1)
+            if header:
+                self._tee.write(header)
+                self._tee.flush()
+        except OSError:
+            self._tee = None
 
     def accept(self, timeout: float = 30.0) -> None:
         """Wait for QEMU to connect, then start the lifetime drainer thread."""
@@ -116,6 +140,13 @@ class SerialClient:
             with self._lock:
                 self._buf += text
                 self._last_data = time.monotonic()
+            # Live-log tee (side-channel, never allowed to break the drain).
+            if self._tee is not None:
+                try:
+                    self._tee.write(text)
+                    self._tee.flush()
+                except (OSError, ValueError):
+                    pass
             # Keep the guest's kernel debugger / pager from wedging boot.
             tail = self._buf[-(len(text) + 80):]
             try:
@@ -216,3 +247,9 @@ class SerialClient:
                     pass
         self._conn = None
         self._server = None
+        if self._tee is not None:
+            try:
+                self._tee.close()
+            except OSError:
+                pass
+            self._tee = None

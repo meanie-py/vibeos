@@ -150,6 +150,10 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
 
     vm = QemuVM(config, work_dir)
     vm.start()
+    # Tell watchers where to follow boot progress live — a cold arm64 TCG boot
+    # is silent for minutes, so this is how an agent distinguishes "working"
+    # from "wedged" without restarting the run.
+    print(f"\n[pytest] Live serial: tail -f {vm.live_log_path}")
     try:
         boot_output = vm.wait_for_boot()
     except (TimeoutError, ConnectionError, RuntimeError) as e:

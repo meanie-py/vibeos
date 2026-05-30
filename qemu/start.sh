@@ -169,10 +169,23 @@ case "$ARCH" in
         ;;
 esac
 
+# --- acquire a global concurrency slot -------------------------------------
+# Block (queue) until one of the QEMU_MAX_CONCURRENT slots is free. The slot is
+# held on fd 200, which the QEMU below inherits — so the slot stays occupied
+# for exactly QEMU's lifetime and releases when it exits, even though start.sh
+# itself exits moments from now. We acquire HERE (after preflight/build, just
+# before launch) so we never hold a slot during our own prep, and the lifetime
+# deadline computed after launch excludes all of this queue wait.
+SLOT_INDEX=""
+if ! acquire_qemu_slot; then
+    die "timed out waiting for a free QEMU slot (cap=$QEMU_MAX_CONCURRENT, run-id=$RUN_ID)"
+fi
+
 # --- launch QEMU as a daemon ----------------------------------------------
 # Detach from terminal: stdin from /dev/null, stdout+stderr to qemu.launch.log.
-# disown so the shell exit doesn't hand it a SIGHUP.
-log_info "launching QEMU for $ARCH (run-id=$RUN_ID)"
+# disown so the shell exit doesn't hand it a SIGHUP. fd 200 (the concurrency
+# slot) is intentionally left open here so QEMU inherits and holds it.
+log_info "launching QEMU for $ARCH (run-id=$RUN_ID, slot=$SLOT_INDEX)"
 QEMU_CMD_STR="${QEMU_CMD[*]}"
 log_info "command: $QEMU_CMD_STR"
 
@@ -183,6 +196,14 @@ disown "$QEMU_PID" 2>/dev/null || true
 echo "$QEMU_PID" > "$PID_FILE"
 manifest_set "$RUN_ID" qemu_pid "$QEMU_PID" --json
 manifest_set "$RUN_ID" qemu_cmd "$QEMU_CMD_STR"
+
+# Hard lifetime cap (default 30 min, $VIBEOS_QEMU_MAX_LIFETIME override).
+# Recorded in the manifest + lockfile so any reaper invocation culls this VM
+# once past deadline, and enforced immediately by a detached watchdog below
+# (start.sh exits right after launch — there's no long-lived launcher process
+# to host an in-band timer like vm.py's threading.Timer).
+DEADLINE_EPOCH=$(( $(date +%s) + QEMU_MAX_LIFETIME_SECONDS ))
+manifest_set "$RUN_ID" deadline "$DEADLINE_EPOCH" --json
 
 # Drop a shared lockfile so the reaper can reach this run cross-worktree.
 # RUNS_DIR is per-worktree (qemu/runs/) so a sibling worktree's reaper can't
@@ -195,13 +216,36 @@ LOCK_FILE="$LOCK_DIR/${OWNER_PID}-${QEMU_PID}.json"
 jq -n \
     --argjson launcher_pid "$OWNER_PID" \
     --argjson qemu_pid "$QEMU_PID" \
+    --argjson deadline "$DEADLINE_EPOCH" \
+    --argjson slot "$SLOT_INDEX" \
     --arg arch "$ARCH" \
     --arg run_id "$RUN_ID" \
     --arg manifest_path "$(manifest_path "$RUN_ID")" \
     --arg source "qemu/start.sh" \
-    '{launcher_pid: $launcher_pid, qemu_pid: $qemu_pid, arch: $arch,
-      run_id: $run_id, manifest_path: $manifest_path, source: $source}' \
+    '{launcher_pid: $launcher_pid, qemu_pid: $qemu_pid, deadline: $deadline,
+      slot: $slot, arch: $arch, run_id: $run_id, manifest_path: $manifest_path,
+      source: $source}' \
     > "$LOCK_FILE" 2>/dev/null || log_warn "could not write $LOCK_FILE"
+
+# Detached hard-cap watchdog. Sleeps until the deadline, then kills the QEMU
+# process group iff it's still alive AND still actually QEMU (guards pid reuse).
+# setsid+disown so it outlives start.sh and never receives the shell's SIGHUP.
+# Self-exits early-and-cheap if QEMU is already gone.
+# `200>&-` closes the inherited concurrency-slot fd in the watchdog: ONLY QEMU
+# should pin the slot. If the watchdog held fd 200 too, the slot would stay
+# occupied for the full cap even after QEMU exited early.
+setsid bash -c '
+    qpid="$1"; secs="$2"
+    sleep "$secs"
+    kill -0 "$qpid" 2>/dev/null || exit 0
+    grep -q qemu "/proc/$qpid/comm" 2>/dev/null || exit 0
+    pgid="$(ps -o pgid= -p "$qpid" 2>/dev/null | tr -d " ")"
+    [ -n "$pgid" ] || exit 0
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+    sleep 5
+    kill -0 "$qpid" 2>/dev/null && kill -KILL -- "-$pgid" 2>/dev/null || true
+' _ "$QEMU_PID" "$QEMU_MAX_LIFETIME_SECONDS" </dev/null >/dev/null 2>&1 200>&- &
+disown 2>/dev/null || true
 
 # --- wait briefly for QEMU to actually start ------------------------------
 # If it dies in the first 1s, almost always a bad command line — surface the

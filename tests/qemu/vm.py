@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import atexit
+import fcntl
 import json
 import os
 import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +34,35 @@ QEMU_DIR = PROJECT_DIR / "qemu"
 # --------------------------------------------------------------------------- #
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
 _CLK = os.sysconf("SC_CLK_TCK")
+
+# Hard wall-clock ceiling on any single QEMU we launch. The longest legitimate
+# run is a cold-cache arm64 TCG boot (~5 min) plus a 120s desktop settle — well
+# under this. The cap exists to guarantee a wedged guest, a hung test, or a
+# deadlocked QMP can NEVER hold a KVM slot / GBs of RAM indefinitely. Enforced
+# three ways for defence in depth:
+#   1. an in-process threading.Timer that kills the VM the instant it fires;
+#   2. a "deadline" field in each lock file, so ANY reaper invocation (every
+#      smoke session start, every qemu/start.sh) culls a VM past its deadline
+#      even if the owning launcher is still alive but wedged;
+#   3. (qemu/start.sh) a detached watchdog subshell for toolkit-launched VMs.
+MAX_VM_LIFETIME_SECONDS = 30 * 60
+
+# Predictable, per-arch live serial log. Agents `tail -f` this to watch boot
+# progress in real time (a cold arm64 TCG boot is silent for long stretches —
+# the live log is the difference between "making progress" and "wedged").
+# qemu/*.log is gitignored.
+LIVE_LOG_DIR = QEMU_DIR
+
+# Global concurrency cap: at most this many QEMUs running at once across ALL
+# worktrees/sessions. Mirrors qemu/lib/common.sh:QEMU_MAX_CONCURRENT. Enforced
+# with a shared pool of flock'd slot files — a launcher that can't get a slot
+# QUEUES rather than piling another VM onto an already-saturated host. The time
+# spent queued is excluded from the 30-min lifetime cap: we acquire the slot
+# BEFORE recording the VM's start/deadline, so queue wait never shortens the
+# VM's allowed runtime.
+QEMU_MAX_CONCURRENT = int(os.environ.get("VIBEOS_QEMU_MAX_CONCURRENT", "10"))
+QEMU_QUEUE_TIMEOUT = float(os.environ.get("VIBEOS_QEMU_QUEUE_TIMEOUT", "1800"))
+SLOT_DIR = LOCK_DIR / "slots"
 
 
 def process_cpu_pct(pid: int, window: float = 3.0) -> float:
@@ -89,18 +120,28 @@ def reap_orphan_qemus() -> list[str]:
             lf.unlink(missing_ok=True)
             continue
         lpid, qpid = info.get("launcher_pid"), info.get("qemu_pid")
-        if lpid and _pid_alive(lpid):
-            continue  # live session (maybe another agent) — DO NOT TOUCH
-        # Launcher is dead → this run crashed. Reap its (and only its) qemu.
+        deadline = info.get("deadline")
+        launcher_alive = bool(lpid) and _pid_alive(lpid)
+        # A VM past its 30-min hard cap is reaped REGARDLESS of launcher
+        # liveness — the cap is an absolute ceiling, not an orphan check. A
+        # live launcher only protects a VM that's still within its lifetime.
+        expired = bool(deadline) and time.time() >= deadline
+        if launcher_alive and not expired:
+            continue  # live session (maybe another agent), within cap — DO NOT TOUCH
         if qpid and _pid_alive(qpid) and _proc_is_qemu(qpid):
+            reason = (
+                "exceeded 30-min lifetime cap" if expired
+                else f"launcher {lpid} dead"
+            )
             try:
                 os.killpg(os.getpgid(qpid), signal.SIGTERM)
                 time.sleep(2)
                 if _pid_alive(qpid):
                     os.killpg(os.getpgid(qpid), signal.SIGKILL)
-                actions.append(f"reaped orphan qemu pid={qpid} (launcher {lpid} dead)")
+                actions.append(f"reaped qemu pid={qpid} ({reason})")
             except (ProcessLookupError, OSError) as e:
                 actions.append(f"qemu pid={qpid} reap failed: {e}")
+                continue  # leave the lock; don't claim it's gone if kill failed
         lf.unlink(missing_ok=True)
     return actions
 
@@ -363,6 +404,9 @@ class QemuVM:
         self.serial = SerialClient()
         self._proc: subprocess.Popen | None = None
         self._boot_output: str = ""
+        self._watchdog: threading.Timer | None = None
+        self._slot_fd: int | None = None
+        self._slot_index: int | None = None
 
     def start(self) -> None:
         """Start QEMU process, connect QMP + serial."""
@@ -372,6 +416,18 @@ class QemuVM:
         )
 
         self.serial.listen(str(self.serial_path))
+
+        # Tee all serial bytes to a predictable per-arch live log so agents can
+        # `tail -f` boot progress. Truncated fresh each session.
+        self.live_log_path = LIVE_LOG_DIR / f"{self.config.arch}_smoke_live.log"
+        # ASCII-only header: the tee file is opened latin-1 (byte-faithful to
+        # the latin-1-decoded serial stream), which can't encode non-latin-1.
+        self.serial.set_tee(
+            str(self.live_log_path),
+            header=f"# vibeos smoke live serial -- {self.config.arch} -- "
+                   f"pid(launcher)={os.getpid()} -- started {time.ctime()}\n"
+                   f"# tail -f {self.live_log_path}\n",
+        )
 
         cmd = [
             self.config.qemu_bin,
@@ -397,6 +453,12 @@ class QemuVM:
 
         print(f"[QemuVM] {' '.join(cmd)}")
 
+        # Acquire a global concurrency slot BEFORE launching — and before we
+        # record the start/deadline below, so the time spent queued here is
+        # excluded from the 30-min lifetime cap. Held for this pytest process's
+        # lifetime; released in stop()/atexit.
+        self._acquire_slot()
+
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -408,6 +470,7 @@ class QemuVM:
         # launcher (this pytest process) dies. reap_orphan_qemus() is auto-
         # wired in conftest.py at session start. qemu/reap.sh covers both
         # this lock dir and the kernel-debug-toolkit's manifest.json files.
+        started = time.time()
         try:
             LOCK_DIR.mkdir(parents=True, exist_ok=True)
             self._lock_path = LOCK_DIR / f"{os.getpid()}-{self._proc.pid}.json"
@@ -416,12 +479,22 @@ class QemuVM:
                 "qemu_pid": self._proc.pid,
                 "arch": self.config.arch,
                 "work_dir": str(self.work_dir),
-                "started": time.time(),
+                "started": started,
+                "deadline": started + MAX_VM_LIFETIME_SECONDS,
+                "slot": self._slot_index,
                 "cmd": cmd,
             }))
             atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
         except OSError:
             self._lock_path = None
+
+        # In-process hard-cap watchdog: kills this VM the instant the 30-min
+        # ceiling is hit, regardless of what the test is doing. Belt to the
+        # lock-file "deadline" suspenders (which other reapers enforce if this
+        # process is itself wedged). Daemon timer — never blocks interpreter exit.
+        self._watchdog = threading.Timer(MAX_VM_LIFETIME_SECONDS, self._watchdog_kill)
+        self._watchdog.daemon = True
+        self._watchdog.start()
 
         self.serial.accept(timeout=15.0)
 
@@ -517,8 +590,77 @@ class QemuVM:
         except Exception:
             return f"Debugcon: {len(raw)} bytes (catalog unavailable)"
 
+    def _acquire_slot(self) -> None:
+        """Take one of QEMU_MAX_CONCURRENT global slots, queuing until free.
+
+        A slot is an flock on a shared slot-NN file (same pool qemu/start.sh
+        uses). Held on self._slot_fd for this process's lifetime; the kernel
+        closes the fd if pytest dies, freeing the slot (the orphan QEMU is then
+        reaped separately). Raises TimeoutError if no slot frees within the
+        queue timeout.
+        """
+        SLOT_DIR.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + QEMU_QUEUE_TIMEOUT
+        announced = False
+        while True:
+            for i in range(QEMU_MAX_CONCURRENT):
+                fd = os.open(str(SLOT_DIR / f"slot-{i:02d}"),
+                             os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self._slot_fd = fd
+                    self._slot_index = i
+                    if announced:
+                        print(f"[QemuVM] acquired slot {i} after queuing")
+                    return
+                except OSError:
+                    os.close(fd)
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"no free QEMU slot after {QEMU_QUEUE_TIMEOUT:.0f}s "
+                    f"(concurrency cap={QEMU_MAX_CONCURRENT})")
+            if not announced:
+                print(f"[QemuVM] all {QEMU_MAX_CONCURRENT} QEMU slots busy; "
+                      f"queuing (queue time excluded from "
+                      f"{MAX_VM_LIFETIME_SECONDS // 60}-min lifetime cap)...")
+                announced = True
+            time.sleep(2)
+
+    def _release_slot(self) -> None:
+        """Release the concurrency slot (idempotent)."""
+        if self._slot_fd is not None:
+            try:
+                os.close(self._slot_fd)
+            except OSError:
+                pass
+            self._slot_fd = None
+
+    def _watchdog_kill(self) -> None:
+        """Fired by the 30-min hard-cap timer. Kill the VM's process group.
+
+        Independent of the normal stop() path — the VM has overrun any
+        legitimate lifetime, so we go straight to a pgroup TERM→KILL. Safe if
+        the proc is already gone (stop() ran first). The serial drainer is left
+        to close() so the live log keeps the final bytes.
+        """
+        proc = self._proc
+        if proc is None:
+            return
+        print(f"[QemuVM] WATCHDOG: {self.config.arch} VM exceeded "
+              f"{MAX_VM_LIFETIME_SECONDS // 60}-min hard cap — killing pid={proc.pid}")
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            time.sleep(3)
+            if proc.poll() is None:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+
     def stop(self) -> None:
         """Kill QEMU process, clean up sockets."""
+        if self._watchdog is not None:
+            self._watchdog.cancel()
+            self._watchdog = None
         self.serial.close()
         self.qmp.close()
 
@@ -537,6 +679,10 @@ class QemuVM:
         lock = getattr(self, "_lock_path", None)
         if lock is not None:
             lock.unlink(missing_ok=True)
+
+        # Release the concurrency slot only after QEMU is actually dead, so the
+        # slot count reflects running VMs (not ones still shutting down).
+        self._release_slot()
 
         shutil.rmtree(self._sock_dir, ignore_errors=True)
 
