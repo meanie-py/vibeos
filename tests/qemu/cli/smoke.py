@@ -1,0 +1,148 @@
+"""`vibeos-cli smoke` — the verdict front door (plan §9, §20.1).
+
+Staleness preflight (hard-fail unless --allow-stale), then boot via the existing
+QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
+(independent cold boots for flake rate), --until <marker>, --fail-on <regex>
+(abort at first hard-failure marker), and auto-triage on failure.
+"""
+from __future__ import annotations
+
+import re
+import shutil
+import time
+from pathlib import Path
+
+from . import provenance, triage
+from .artifacts import Run, Stage
+from ..vm import QemuVM, get_arch_config
+
+
+def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
+    """Poll serial for the success marker or a fail-marker regex. Returns
+    (outcome, text) where outcome in {reached, failmarker, timeout, dead}."""
+    fail_re = re.compile(fail_on) if fail_on else None
+    buf = ""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        chunk = vm.serial.read_available(timeout=0.5)
+        if chunk:
+            buf += chunk
+            if until in buf:
+                return "reached", buf
+            if fail_re and fail_re.search(buf):
+                return "failmarker", buf
+    return "timeout", buf
+
+
+def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | None,
+              idx: int, total: int) -> dict:
+    """A single independent boot. Returns {ok, outcome, classification, ...}."""
+    config = get_arch_config(arch)
+    marker = until or config.boot_marker
+    work = run.dir / f"boot{idx}"
+    work.mkdir(exist_ok=True)
+    vm = QemuVM(config, work)
+    label = f"boot {idx+1}/{total}" if total > 1 else "boot"
+    try:
+        vm.start()
+    except Exception as e:  # noqa: BLE001 — surface any launch failure
+        run.log(f"{label}: start failed: {e}", header=label)
+        return {"ok": False, "outcome": "launch_fail", "classification": "LAUNCH_FAIL",
+                "salient": [str(e).splitlines()[0][:140]]}
+    try:
+        outcome, text = _watch(vm, marker, fail_on, config.boot_timeout)
+        run.log(text[-8000:], header=f"{label} serial tail")
+        if outcome == "reached":
+            return {"ok": True, "outcome": "reached", "classification": ""}
+        # failure — gather evidence
+        dbg = None
+        try:
+            dbg = vm.debugcon_report()
+        except Exception:
+            pass
+        shot = work / "screen.ppm"
+        try:
+            vm.screendump(shot)
+        except Exception:
+            shot = None
+        tri = triage.classify(text, reached=False,
+                              fail_marker=(marker if outcome == "failmarker" and fail_on else None),
+                              debugcon=dbg)
+        sym = triage.symbolicate_pc(repo, arch, text)
+        if sym:
+            tri["salient"].append(sym)
+        if shot and shot.exists():
+            tri["screenshot"] = str(shot)
+        return {"ok": False, "outcome": outcome, **tri}
+    finally:
+        vm.stop()
+
+
+def smoke(args, repo: Path) -> int:
+    arch = args.arch
+    run = Run("smoke", arch)
+
+    # --- staleness preflight (hard boundary) ---
+    st = provenance.check_staleness(repo, arch)
+    if st.stale and not args.allow_stale:
+        run.classification = "STALE_MEDIA"
+        run.add(Stage("staleness", status="fail", detail="stale",
+                      salient=st.reasons + ["run `vibeos-cli build` (or --allow-stale)"]))
+        return run.finalize(repo)
+    if st.warm:
+        run.add(Stage("staleness", status="warn", detail="WARM build"))
+    elif st.stale and args.allow_stale:
+        run.add(Stage("staleness", status="warn", detail="stale (--allow-stale)",
+                      salient=st.reasons[:2]))
+    else:
+        run.add(Stage("staleness", status="ok", detail="current"))
+
+    total = max(1, int(getattr(args, "repeat", 1) or 1))
+    until = getattr(args, "until", None) or ""
+    fail_on = getattr(args, "fail_on", None)
+
+    results = []
+    for i in range(total):
+        r = _one_boot(run, repo, arch, until=until, fail_on=fail_on, idx=i, total=total)
+        results.append(r)
+        status = "ok" if r["ok"] else "fail"
+        detail = "reached" if r["ok"] else r.get("classification", r["outcome"])
+        run.add(Stage(f"run{i+1}" if total > 1 else "boot", status=status,
+                      detail=detail, salient=r.get("salient", [])))
+        # carry first failure's evidence to the top-level verdict
+        if not r["ok"] and not run.classification:
+            run.classification = r.get("classification", "FAIL")
+            if r.get("screenshot"):
+                run.extra["screenshot"] = r["screenshot"]
+        # fail-fast within a single run already handled by _watch; across runs
+        # we keep going to characterize a flake.
+
+    npass = sum(1 for r in results if r["ok"])
+    run.extra["passes"] = npass
+    run.extra["runs"] = total
+    run.extra["live_log"] = str((repo / "qemu" / f"{arch}_smoke_live.log"))
+    if total > 1:
+        run.extra["flake_rate"] = f"{npass}/{total}"
+        if 0 < npass < total:
+            run.classification = run.classification or "FLAKY"
+            # a flake is a real signal — don't call it green
+            run.verdict = "FAIL"
+            run.add(Stage("flake", status="fail", detail=f"{npass}/{total} pass"))
+    return run.finalize(repo)
+
+
+def boot(args, repo: Path) -> int:
+    """Raw fast boot — NO staleness gate, reuses smoke's EXACT arch-config
+    (machine/KVM/vga/media/debugcon) so the fast path can't diverge from smoke
+    (smss-csrss #3: q35-vs-pc misdiagnosis). Writes artifacts, decodes debugcon."""
+    arch = args.arch
+    run = Run("boot", arch)
+    r = _one_boot(run, repo, arch, until=(args.until or ""),
+                  fail_on=getattr(args, "fail_on", None), idx=0, total=1)
+    run.add(Stage("boot", status="ok" if r["ok"] else "fail",
+                  detail="reached" if r["ok"] else r.get("classification", r["outcome"]),
+                  salient=r.get("salient", [])))
+    if not r["ok"]:
+        run.classification = r.get("classification", "FAIL")
+    run.extra["live_log"] = str((repo / "qemu" / f"{arch}_smoke_live.log"))
+    return run.finalize(repo)

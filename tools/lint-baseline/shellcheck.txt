@@ -1,0 +1,8 @@
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/inspect.sh:55:20: warning: JSON appears unused. Verify use (or export if used externally). [SC2034]
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/lib/common.sh:10:1: warning: RUNS_DIR appears unused. Verify use (or export if used externally). [SC2034]
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/lib/common.sh:18:1: warning: QEMU_MAX_LIFETIME_SECONDS appears unused. Verify use (or export if used externally). [SC2034]
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/lib/common.sh:1:1: error: Tips depend on target shell and yours is unknown. Add a shebang or a 'shell' directive. [SC2148]
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/lib/common.sh:54:17: warning: SLOT_INDEX appears unused. Verify use (or export if used externally). [SC2034]
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/lib/manifest.sh:1:1: error: Tips depend on target shell and yours is unknown. Add a shebang or a 'shell' directive. [SC2148]
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/lib/runid.sh:1:1: error: Tips depend on target shell and yours is unknown. Add a shebang or a 'shell' directive. [SC2148]
+/home/curi/Projects/os-playground/vibeos-smoke-harness/qemu/start.sh:44:27: warning: LIVECD appears unused. Verify use (or export if used externally). [SC2034]
