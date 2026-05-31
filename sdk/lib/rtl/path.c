@@ -2630,7 +2630,12 @@ RtlDosSearchPath_Ustr(IN ULONG Flags,
     /* Now check relative vs non-relative paths */
     if (PathType == RtlPathTypeRelative)
     {
-        /* Does the caller want SxS? */
+#ifndef _NTOSKRNL_
+        /* Does the caller want SxS? (user-mode only — SxS / activation
+         * contexts do not exist in the kernel, and
+         * RtlDosApplyFileIsolationRedirection_Ustr is an ntdll-only
+         * symbol, so guard the whole branch out of the _NTOSKRNL_ build
+         * to keep path.c.obj link-clean in ntoskrnl.) */
         if (Flags & 1)
         {
             /* Apply the SxS magic */
@@ -2662,6 +2667,7 @@ RtlDosSearchPath_Ustr(IN ULONG Flags,
                 goto Quickie;
             }
         }
+#endif /* !_NTOSKRNL_ */
 
         /* No SxS key found, or not requested, check if there's an extension */
         if (ExtensionString)
