@@ -115,10 +115,17 @@ add_cd_file(TARGET basesrv DESTINATION reactos/system32 FOR all)
 #   5. `INIFILE_MAPPING`/`BASESRV_API_CONNECTINFO` were `type X = c_void`
 #      (size 0) → undersized RtlAllocateHeap + rejected client connects.
 #      FIXED: real #[repr(C)] structs + size asserts (16 i386 / 4).
+#   6. CSDVersion registry value name was a `b"C\0S\0D\0..."` byte-string
+#      literal (align 1) cast to `*mut u16` in the RtlQueryRegistryValues
+#      table → landed at an ODD address in basesrv.dll on amd64. NtQueryValueKey
+#      → ProbeAndCaptureUnicodeString → ProbeForRead(buf,len,sizeof(WCHAR))
+#      raises STATUS_DATATYPE_MISALIGNMENT (amd64 enforces; i386/arm64 got lucky
+#      / lenient) → unhandled (DUMMY_PSEH) → BUGCHECK 0x1E in BISD right after
+#      "WinDir create". FIXED 2026-05-31: real [u16;11] static (align 2).
 # The Rust source improvements (CSR_SERVER_DLL layout, no_mangle on data
 # globals, NameTable export, BASE_STATIC_SERVER_DATA layout, NLS offset,
-# IniFileMapping/ConnectInfo sizes) ARE landed. PARTIAL cohab flip is LIVE:
-# dosdev.c + vdm.c stay C (no Rust yet); the other 5 .c are Rust via
-# libsmss_csrss_rust.a (--features basesrv_dll_only,ntddi_ws03). i386-uefi boot
-# now reaches the win32k/explorer zone (parity with C basesrv) — the msacm32
-# hang is cleared.
+# IniFileMapping/ConnectInfo sizes, CSDVersion alignment) ARE landed. PARTIAL
+# cohab flip is LIVE: dosdev.c + vdm.c stay C (no Rust yet); the other 5 .c are
+# Rust via libsmss_csrss_rust.a (--features basesrv_dll_only,ntddi_ws03).
+# ALL 3 ARCHES GREEN to `shell ready` (i386-uefi + amd64-uefi smoke 8/8,
+# arm64 6/6) — the basesrv.dll cohab flip is no longer integrated+failing.

@@ -523,11 +523,22 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     let mut DirectoryName: _UNICODE_STRING = core::mem::zeroed();
     let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
     let mut LuidEnabled: ULONG = 0;
+    // MUST be a [u16] static (align 2), NOT a `b"..."` byte-string literal
+    // (align 1). RtlQueryRegistryValues hands this to NtQueryValueKey as a
+    // UNICODE_STRING value name; ProbeAndCaptureUnicodeString does
+    // ProbeForRead(Buffer, Length, sizeof(WCHAR)) which raises
+    // STATUS_DATATYPE_MISALIGNMENT on amd64 if the buffer is odd-addressed.
+    // The old `b"CSDVersion\0".as_ptr() as *mut u16` landed at an odd offset in
+    // basesrv.dll on amd64 → BUGCHECK 0x1E. (i386/arm64 only got lucky.)
+    static CSDVERSION_NAME: [u16; 11] = [
+        b'C' as u16, b'S' as u16, b'D' as u16, b'V' as u16, b'e' as u16,
+        b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+    ];
     let mut BaseServerRegistryConfigurationTable: [RTL_QUERY_REGISTRY_TABLE; 2] = [
         RTL_QUERY_REGISTRY_TABLE {
             QueryRoutine: None,
             Flags: RTL_QUERY_REGISTRY_DIRECT,
-            Name: b"C\0S\0D\0V\0e\0r\0s\0i\0o\0n\0\0\0".as_ptr() as *mut u16,
+            Name: CSDVERSION_NAME.as_ptr() as *mut u16,
             EntryContext: &mut BaseSrvCSDString as *mut _UNICODE_STRING as PVOID,
             DefaultType: REG_NONE,
             DefaultData: core::ptr::null_mut(),
