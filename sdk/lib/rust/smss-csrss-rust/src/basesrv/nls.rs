@@ -48,10 +48,10 @@ pub struct NLS_USER_INFO {
     pub ulCacheUpdateCount: ULONG,
 }
 
-#[repr(C)]
-pub struct BASE_STATIC_SERVER_DATA {
-    pub NlsUserInfo: NLS_USER_INFO,
-}
+// NOTE: a `BASE_STATIC_SERVER_DATA` mirror with NlsUserInfo @offset 0 used to
+// live here and was fed to BaseSrvNLSInit — it clobbered WindowsDirectory.
+// BaseSrvNLSInit now receives the correctly-offset NlsUserInfo pointer directly
+// (see init.rs), so no struct mirror is needed in this module. (task #18)
 
 #[repr(C)]
 pub struct CSR_PROCESS {
@@ -218,13 +218,21 @@ pub unsafe extern "system" fn BaseSrvDelayLoadKernel32() -> NTSTATUS {
     Status
 }
 
+// task #18: caller (init.rs) passes the *correctly-offset* NlsUserInfo pointer
+// (`addr_of_mut!((*BaseStaticServerData).NlsUserInfo)`), NOT a pointer to a
+// local `BASE_STATIC_SERVER_DATA` mirror. The old signature took
+// `*mut BASE_STATIC_SERVER_DATA` where this module's mirror had NlsUserInfo at
+// OFFSET 0 — so the 0xFF fill + NtQueryDefaultLocale wrote UserLocaleId (0x409)
+// over WindowsDirectory{Length,MaxLength,Buffer} at offset 0, NULL-faulting
+// kernel32 GetWindowsDirectoryW the first time any process read system.ini
+// (msacm32 boot hang). NlsUserInfo truly lives at offset 0x184 (i386).
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvNLSInit(StaticData: *mut BASE_STATIC_SERVER_DATA) {
+pub unsafe extern "system" fn BaseSrvNLSInit(pNlsUserInfo: *mut NLS_USER_INFO) {
     RtlInitializeCriticalSection(core::ptr::addr_of_mut!(NlsCacheCriticalSection));
 
-    pNlsRegUserInfo = core::ptr::addr_of_mut!((*StaticData).NlsUserInfo);
+    pNlsRegUserInfo = pNlsUserInfo;
     RtlFillMemory(
-        core::ptr::addr_of_mut!((*StaticData).NlsUserInfo) as PVOID,
+        pNlsUserInfo as PVOID,
         core::mem::size_of::<NLS_USER_INFO>().try_into().unwrap(),
         0xFF,
     );

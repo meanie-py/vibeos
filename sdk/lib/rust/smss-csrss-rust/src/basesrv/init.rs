@@ -180,7 +180,7 @@ pub static mut BaseServerApiNameTable: [*const i8; 31] = [
 ];
 
 type PBASE_STATIC_SERVER_DATA = *mut BASE_STATIC_SERVER_DATA;
-type PINIFILE_MAPPING = *mut c_void;
+type PINIFILE_MAPPING = *mut INIFILE_MAPPING;
 type PCSR_SERVER_DLL = *mut c_void;
 type PCSR_PROCESS = *mut c_void;
 type PBASESRV_API_CONNECTINFO = *mut c_void;
@@ -241,7 +241,9 @@ extern "C" {
 //            BaseCleanupDefineDosDevice           — plain VOID  = cdecl ("C")
 //   vdm.c BaseInitializeVDM                       — plain VOID  = cdecl ("C")
 extern "system" {
-    fn BaseSrvNLSInit(StaticServerData: PBASE_STATIC_SERVER_DATA);
+    // task #18: pass the correctly-offset NlsUserInfo pointer, not the whole
+    // struct — nls.rs's BASE_STATIC_SERVER_DATA mirror had NlsUserInfo @0.
+    fn BaseSrvNLSInit(pNlsUserInfo: PVOID);
     fn BaseSrvNlsConnect(CsrProcess: PCSR_PROCESS, ConnectionInfo: PVOID, ConnectionInfoLength: *mut ULONG) -> NTSTATUS;
 }
 extern "C" {
@@ -883,7 +885,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         );
     }
 
-    BaseSrvNLSInit(BaseStaticServerData);
+    BaseSrvNLSInit(core::ptr::addr_of_mut!((*BaseStaticServerData).NlsUserInfo) as PVOID);
 
     // C: LoadedServerDll->SharedSection = BaseStaticServerData.
     // Use the real struct layout (CSR_SERVER_DLL_FULL) — the old hack
@@ -940,8 +942,36 @@ pub unsafe extern "system" fn BaseClientDisconnectRoutine(CsrProcess: PCSR_PROCE
     BaseSrvCleanupVDMResources(CsrProcess);
 }
 
-type BASESRV_API_CONNECTINFO = c_void;
-type INIFILE_MAPPING = c_void;
+// C `_BASESRV_API_CONNECTINFO` (basemsg.h): `{ ULONG DebugFlags; }`, with
+// C_ASSERT(sizeof == 0x04). BaseClientConnectRoutine rejects a connect whose
+// `*ConnectionInfoLength != size_of::<BASESRV_API_CONNECTINFO>()`. The old
+// `= c_void` made that size 0, so every real client (4-byte connect info)
+// was rejected with STATUS_INVALID_PARAMETER. Same class as INIFILE_MAPPING.
+#[repr(C)]
+#[allow(dead_code)]
+struct BASESRV_API_CONNECTINFO {
+    DebugFlags: ULONG,
+}
+const _: () = assert!(core::mem::size_of::<BASESRV_API_CONNECTINFO>() == 0x04);
+// INIFILE_MAPPING: 3 pointers + ULONG → 16 on i386, 32 on LLP64 (repr(C) pad).
+#[cfg(target_arch = "x86")]
+const _: () = assert!(core::mem::size_of::<INIFILE_MAPPING>() == 16);
+// C `_INIFILE_MAPPING` (sdk/include/reactos/subsys/win/base.h): 3 list-head
+// pointers + a ULONG. The old `type INIFILE_MAPPING = c_void` made
+// `size_of::<INIFILE_MAPPING>()` 0, so BaseSrvInitializeIniFileMappings
+// allocated a ~0-byte block — kernel32's GetPrivateProfile* (via CSR) then
+// read FileNames/DefaultFileNameMapping/WinIniFileMapping from adjacent heap
+// garbage and walked a bogus mapping list → csrss wedged at the first
+// system.ini lookup (msacm32 MSACM_RegisterAllDrivers). Real struct → correct
+// HEAP_ZERO_MEMORY size → all three heads NULL → empty mapping (matches C).
+#[repr(C)]
+#[allow(dead_code)]
+struct INIFILE_MAPPING {
+    FileNames: PVOID,              // PINIFILE_MAPPING_FILENAME
+    DefaultFileNameMapping: PVOID, // PINIFILE_MAPPING_FILENAME
+    WinIniFileMapping: PVOID,      // PINIFILE_MAPPING_FILENAME
+    Reserved: ULONG,
+}
 
 extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> ULONG;

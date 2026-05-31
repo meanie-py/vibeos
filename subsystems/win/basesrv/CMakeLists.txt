@@ -104,10 +104,21 @@ add_cd_file(TARGET basesrv DESTINATION reactos/system32 FOR all)
 #      SYSTEM_TIMEOFDAY_INFORMATION / NLS_USER_INFO / TIME_ZONE_INFORMATION
 #      / KSYSTEM_TIME). i386 size-asserted == 0x1AC8 (matches base.h
 #      `#if _M_IX86`); 64-bit correct by construction. 3 arches cargo-green.
+#   4. `BaseSrvNLSInit` (nls.rs) took `*mut BASE_STATIC_SERVER_DATA` where
+#      nls.rs defined its OWN mirror with NlsUserInfo at OFFSET 0. So the
+#      0xFF fill + NtQueryDefaultLocale wrote UserLocaleId (0x409) over
+#      WindowsDirectory{Len,Max,Buf} at offset 0 → kernel32 GetWindowsDirectoryW
+#      RtlCopyMemory(dst, NULL, 0x409) NULL-faulted the first time any process
+#      read system.ini (csrss wedged in msacm32 MSACM_RegisterAllDrivers during
+#      winsrv UserServerDllInit). FIXED 2026-05-31: BaseSrvNLSInit now takes the
+#      correctly-offset NlsUserInfo pointer (addr_of_mut, arch-robust).
+#   5. `INIFILE_MAPPING`/`BASESRV_API_CONNECTINFO` were `type X = c_void`
+#      (size 0) → undersized RtlAllocateHeap + rejected client connects.
+#      FIXED: real #[repr(C)] structs + size asserts (16 i386 / 4).
 # The Rust source improvements (CSR_SERVER_DLL layout, no_mangle on data
-# globals, NameTable export, BASE_STATIC_SERVER_DATA layout) ARE landed.
-# Remaining to land the cmake flip: (a) dosdev.c + vdm.c have no Rust
-# equivalent yet → must stay C in a PARTIAL cohab; (b) add the per-binary
-# cargo build (--features basesrv_dll_only,ntddi_ws03) + basesrv_rust_stub.c
-# + comment the 5 translated .c files; (c) boot-test to confirm the
-# ServerDllInitialization hang is cleared by the layout repair.
+# globals, NameTable export, BASE_STATIC_SERVER_DATA layout, NLS offset,
+# IniFileMapping/ConnectInfo sizes) ARE landed. PARTIAL cohab flip is LIVE:
+# dosdev.c + vdm.c stay C (no Rust yet); the other 5 .c are Rust via
+# libsmss_csrss_rust.a (--features basesrv_dll_only,ntddi_ws03). i386-uefi boot
+# now reaches the win32k/explorer zone (parity with C basesrv) — the msacm32
+# hang is cleared.
