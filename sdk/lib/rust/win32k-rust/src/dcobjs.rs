@@ -76,8 +76,12 @@ extern "system" { fn SafeProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: 
     (*pdc).dclevel.ppal = ppal;
 }
 
-extern "C" {
-    fn EBRUSHOBJ_vSetSolidRGBColor(pebo: *mut EBRUSHOBJ, crColor: COLORREF);
+// ABI: EBRUSHOBJ_vSetSolidRGBColor=FASTCALL (dual-cfg), EBRUSHOBJ_vUpdateFromDC=NTAPI(system).
+// rustconv mis-declared both extern "C" → on i386 the decoration mismatches the real
+// definitions → crate-wide CC collision folds callers to ud2. (feedback_dup_abi_name_collision)
+#[cfg(target_arch = "x86")] extern "fastcall" { fn EBRUSHOBJ_vSetSolidRGBColor(pebo: *mut EBRUSHOBJ, crColor: COLORREF); }
+#[cfg(not(target_arch = "x86"))] extern "C" { fn EBRUSHOBJ_vSetSolidRGBColor(pebo: *mut EBRUSHOBJ, crColor: COLORREF); }
+extern "system" {
     fn EBRUSHOBJ_vUpdateFromDC(pebo: *mut EBRUSHOBJ, pbrush: PBRUSH, pdc: PDC);
 }
 // drop_gdiobj_macro_externs: dropped 2 bogus extern decl(s) for GDI-object macro(s): LFONT_ShareLockFont, LFONT_ShareUnlockFont — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.

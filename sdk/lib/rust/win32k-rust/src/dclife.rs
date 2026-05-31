@@ -85,16 +85,24 @@ extern "system" { fn MouseSafetyOnDrawEnd(ppdev: *mut core::ffi::c_void); }
     (*pdc).dclevel.ppal = ppal;
 }
 
-extern "C" {
+// ABI: EBRUSHOBJ_vCleanup=NTAPI(system), MouseSafetyOnDrawStart=stdcall(≡system on i386).
+// rustconv put these in extern "C" → on i386 the cdecl decoration mismatches the
+// stdcall definition → crate-wide CC collision folds callers to ud2. (feedback_dup_abi_name_collision)
+extern "system" {
     fn EBRUSHOBJ_vCleanup(pebo: *mut EBRUSHOBJ);
     fn MouseSafetyOnDrawStart( ppdev: *mut core::ffi::c_void, left: i32, top: i32, right: i32, bottom: i32);
 }
 // drop_gdiobj_macro_externs: dropped 2 bogus extern decl(s) for GDI-object macro(s): LFONT_ShareUnlockFont, SURFACE_ShareUnlockSurface — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.
-extern "C" {
+// ABI: EBRUSHOBJ_vInitFromDC=stdcall, EngpGetPDEV=NTAPI(system) — both ≡ system on i386.
+// EngpGetPDEV is the GreOpenDCW killer: defined extern "system" in pdevobj.rs, declared
+// extern "C" here → CC mismatch made LLVM fold GreOpenDCW's whole body to ud2.
+extern "system" {
     fn EBRUSHOBJ_vInitFromDC(pebo: PEBRUSHOBJ, pbrush: PBRUSH, pdc: PDC);
     fn EngpGetPDEV(pustrDevice: PUNICODE_STRING) -> PPDEVOBJ;
-    fn SetLastNtError(Status: NTSTATUS);
 }
+// SetLastNtError is FASTCALL (@SetLastNtError@4 on i386) — needs dual-cfg.
+#[cfg(target_arch = "x86")] extern "fastcall" { fn SetLastNtError(Status: NTSTATUS); }
+#[cfg(not(target_arch = "x86"))] extern "C" { fn SetLastNtError(Status: NTSTATUS); }
 // drop_gdiobj_macro_externs: dropped 2 bogus extern decl(s) for GDI-object macro(s): LFONT_ShareLockFont, PALETTE_ShareLockPalette — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.
 // ---- file-scope preamble (translated) ----
 pub const DIRTY_DEFAULT: u32 = DIRTY_CHARSET | DIRTY_BACKGROUND | DIRTY_TEXT | DIRTY_LINE | DIRTY_FILL;

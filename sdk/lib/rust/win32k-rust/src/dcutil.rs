@@ -89,11 +89,17 @@ const INT_MAX: INT = i32::MAX;
 // ── end shared preamble ──
 extern "system" { fn SafeProbeForRead(a: *const core::ffi::c_void, l: usize, al: u32) -> i32; fn SafeProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32) -> i32; }
 
-extern "C" {
+// ABI: RECTL_bUnionRect, RECTL_vMakeWellOrdered, SetLastNtError are all FASTCALL
+// (@Name@N on i386). rustconv mis-declared them extern "C"/"system" → on i386 the
+// decoration mismatches the fastcall definitions → CC collision folds callers to ud2.
+#[cfg(target_arch = "x86")] extern "fastcall" {
     fn RECTL_bUnionRect(dst: PRECTL, src1: *const RECTL, src2: *const RECTL) -> i32;
     fn RECTL_vMakeWellOrdered(rect: *mut RECTL);
+    fn SetLastNtError(Status: NTSTATUS);
 }
-extern "system" {
+#[cfg(not(target_arch = "x86"))] extern "C" {
+    fn RECTL_bUnionRect(dst: PRECTL, src1: *const RECTL, src2: *const RECTL) -> i32;
+    fn RECTL_vMakeWellOrdered(rect: *mut RECTL);
     fn SetLastNtError(Status: NTSTATUS);
 }
 
