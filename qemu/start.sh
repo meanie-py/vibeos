@@ -47,13 +47,16 @@ while [ $# -gt 0 ]; do
             sed -n '2,15p' "$0"
             exit 0
             ;;
-        i386|amd64|arm64) ARCH="$1" ;;
+        # x86 boots UEFI now; accept the -uefi aliases and normalize to base.
+        i386|i386-uefi)   ARCH="i386" ;;
+        amd64|amd64-uefi) ARCH="amd64" ;;
+        arm64)            ARCH="arm64" ;;
         *) die "unknown argument: $1" ;;
     esac
     shift
 done
 
-[ -n "$ARCH" ] || die "arch required (i386 | amd64 | arm64)"
+[ -n "$ARCH" ] || die "arch required (i386 | amd64 | arm64; x86 boots UEFI)"
 arch_validate "$ARCH"
 
 # --- preflight --------------------------------------------------------------
@@ -127,28 +130,45 @@ declare -a QEMU_CMD
 
 case "$ARCH" in
     i386)
+        # UEFI boot (OVMF32 → uefildr.efi), mirroring tests/qemu/vm.py
+        # I386UefiConfig — x86 BIOS is dead (smoke only registers *-uefi), so the
+        # debug toolkit must boot the SAME loader smoke tests, or gdb debugs a
+        # boot path that no longer exists. (Should later derive from vm.py rather
+        # than mirror it — plan §15 shared arch-config.)
         ISO="$(arch_build_dir i386)/livecd.iso"
         [ -f "$ISO" ] || die "missing $ISO — run: ninja -C $(arch_build_dir i386) livecd"
+        OVMF_CODE="$QEMU_DIR/OVMF32_CODE.fd"
+        [ -f "$OVMF_CODE" ] || die "missing $OVMF_CODE (i386 UEFI firmware) — copy qemu/OVMF32_{CODE,VARS}.fd from another worktree"
+        OVMF_VARS="$RUN_DIR/ovmf32_vars.fd"   # per-run writable copy
+        cp "$QEMU_DIR/OVMF32_VARS.fd" "$OVMF_VARS"
         KVM_FLAGS=()
-        if [ -r /dev/kvm ]; then
-            KVM_FLAGS=(-accel kvm -cpu host)
-        else
-            KVM_FLAGS=(-cpu Westmere)
-        fi
+        if [ -r /dev/kvm ]; then KVM_FLAGS=(-accel kvm -cpu host); else KVM_FLAGS=(-cpu Westmere); fi
         QEMU_CMD=(
             qemu-system-i386 -M pc "${KVM_FLAGS[@]}" -m 512M
-            -cdrom "$ISO" -no-reboot
+            -drive "if=pflash,format=raw,file=$OVMF_CODE,readonly=on"
+            -drive "if=pflash,format=raw,file=$OVMF_VARS"
+            -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
+            -device ide-cd,drive=cd0,bootindex=0
+            -vga std -no-reboot
             "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
         )
         ;;
     amd64)
+        # UEFI boot (system OVMF → uefildr.efi), mirroring vm.py Amd64UefiConfig.
         ISO="$(arch_build_dir amd64)/livecd.iso"
         [ -f "$ISO" ] || die "missing $ISO — run: ninja -C $(arch_build_dir amd64) livecd"
-        KVM_FLAGS=(-accel kvm -cpu host)
         [ -r /dev/kvm ] || die "amd64 requires /dev/kvm but it's not readable; check kvm group membership"
+        OVMF_CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
+        [ -f "$OVMF_CODE" ] || die "missing $OVMF_CODE — apt install ovmf"
+        OVMF_VARS="$RUN_DIR/ovmf_vars.fd"
+        cp /usr/share/OVMF/OVMF_VARS_4M.fd "$OVMF_VARS"
         QEMU_CMD=(
-            qemu-system-x86_64 -M pc "${KVM_FLAGS[@]}" -m 512M
-            -cdrom "$ISO" -no-reboot
+            qemu-system-x86_64 -M pc -accel kvm -cpu host -m 512M
+            -drive "if=pflash,format=raw,file=$OVMF_CODE,readonly=on"
+            -drive "if=pflash,format=raw,file=$OVMF_VARS"
+            -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
+            -device ide-cd,drive=cd0,bootindex=0
+            -vga std -no-reboot
             "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
         )
         ;;
@@ -169,10 +189,23 @@ case "$ARCH" in
         ;;
 esac
 
+# --- acquire a global concurrency slot -------------------------------------
+# Block (queue) until one of the QEMU_MAX_CONCURRENT slots is free. The slot is
+# held on fd 200, which the QEMU below inherits — so the slot stays occupied
+# for exactly QEMU's lifetime and releases when it exits, even though start.sh
+# itself exits moments from now. We acquire HERE (after preflight/build, just
+# before launch) so we never hold a slot during our own prep, and the lifetime
+# deadline computed after launch excludes all of this queue wait.
+SLOT_INDEX=""
+if ! acquire_qemu_slot; then
+    die "timed out waiting for a free QEMU slot (cap=$QEMU_MAX_CONCURRENT, run-id=$RUN_ID)"
+fi
+
 # --- launch QEMU as a daemon ----------------------------------------------
 # Detach from terminal: stdin from /dev/null, stdout+stderr to qemu.launch.log.
-# disown so the shell exit doesn't hand it a SIGHUP.
-log_info "launching QEMU for $ARCH (run-id=$RUN_ID)"
+# disown so the shell exit doesn't hand it a SIGHUP. fd 200 (the concurrency
+# slot) is intentionally left open here so QEMU inherits and holds it.
+log_info "launching QEMU for $ARCH (run-id=$RUN_ID, slot=$SLOT_INDEX)"
 QEMU_CMD_STR="${QEMU_CMD[*]}"
 log_info "command: $QEMU_CMD_STR"
 
@@ -183,6 +216,14 @@ disown "$QEMU_PID" 2>/dev/null || true
 echo "$QEMU_PID" > "$PID_FILE"
 manifest_set "$RUN_ID" qemu_pid "$QEMU_PID" --json
 manifest_set "$RUN_ID" qemu_cmd "$QEMU_CMD_STR"
+
+# Hard lifetime cap (default 30 min, $VIBEOS_QEMU_MAX_LIFETIME override).
+# Recorded in the manifest + lockfile so any reaper invocation culls this VM
+# once past deadline, and enforced immediately by a detached watchdog below
+# (start.sh exits right after launch — there's no long-lived launcher process
+# to host an in-band timer like vm.py's threading.Timer).
+DEADLINE_EPOCH=$(( $(date +%s) + QEMU_MAX_LIFETIME_SECONDS ))
+manifest_set "$RUN_ID" deadline "$DEADLINE_EPOCH" --json
 
 # Drop a shared lockfile so the reaper can reach this run cross-worktree.
 # RUNS_DIR is per-worktree (qemu/runs/) so a sibling worktree's reaper can't
@@ -195,13 +236,37 @@ LOCK_FILE="$LOCK_DIR/${OWNER_PID}-${QEMU_PID}.json"
 jq -n \
     --argjson launcher_pid "$OWNER_PID" \
     --argjson qemu_pid "$QEMU_PID" \
+    --argjson deadline "$DEADLINE_EPOCH" \
+    --argjson slot "$SLOT_INDEX" \
     --arg arch "$ARCH" \
     --arg run_id "$RUN_ID" \
     --arg manifest_path "$(manifest_path "$RUN_ID")" \
+    --arg live_log "$SERIAL_LOG" \
     --arg source "qemu/start.sh" \
-    '{launcher_pid: $launcher_pid, qemu_pid: $qemu_pid, arch: $arch,
-      run_id: $run_id, manifest_path: $manifest_path, source: $source}' \
+    '{launcher_pid: $launcher_pid, qemu_pid: $qemu_pid, deadline: $deadline,
+      slot: $slot, arch: $arch, run_id: $run_id, manifest_path: $manifest_path,
+      live_log: $live_log, source: $source}' \
     > "$LOCK_FILE" 2>/dev/null || log_warn "could not write $LOCK_FILE"
+
+# Detached hard-cap watchdog. Sleeps until the deadline, then kills the QEMU
+# process group iff it's still alive AND still actually QEMU (guards pid reuse).
+# setsid+disown so it outlives start.sh and never receives the shell's SIGHUP.
+# Self-exits early-and-cheap if QEMU is already gone.
+# `200>&-` closes the inherited concurrency-slot fd in the watchdog: ONLY QEMU
+# should pin the slot. If the watchdog held fd 200 too, the slot would stay
+# occupied for the full cap even after QEMU exited early.
+setsid bash -c '
+    qpid="$1"; secs="$2"
+    sleep "$secs"
+    kill -0 "$qpid" 2>/dev/null || exit 0
+    grep -q qemu "/proc/$qpid/comm" 2>/dev/null || exit 0
+    pgid="$(ps -o pgid= -p "$qpid" 2>/dev/null | tr -d " ")"
+    [ -n "$pgid" ] || exit 0
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+    sleep 5
+    kill -0 "$qpid" 2>/dev/null && kill -KILL -- "-$pgid" 2>/dev/null || true
+' _ "$QEMU_PID" "$QEMU_MAX_LIFETIME_SECONDS" </dev/null >/dev/null 2>&1 200>&- &
+disown 2>/dev/null || true
 
 # --- wait briefly for QEMU to actually start ------------------------------
 # If it dies in the first 1s, almost always a bad command line — surface the
