@@ -13,7 +13,7 @@ from pathlib import Path
 from . import build as build_mod
 from . import smoke as smoke_mod
 from . import debugcmd
-from .archcfg import ARCHES
+from .archcfg import ACCEPTED_ARCHES
 
 # repo root = .../tests/qemu/cli/__main__.py -> up 3
 REPO = Path(__file__).resolve().parents[3]
@@ -34,8 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def arch_arg(sp, required=True):
-        sp.add_argument("--arch", choices=ARCHES, required=required,
-                        help="target arch (required; no default)")
+        sp.add_argument("--arch", choices=ACCEPTED_ARCHES, required=required,
+                        help="target arch (i386/amd64 alias to UEFI; no default)")
 
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
@@ -45,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.set_defaults(fn=build_mod.build)
 
     c = sub.add_parser("check", help="source lints (baseline-diff gate)")
-    c.add_argument("--arch", choices=ARCHES, required=False)
+    c.add_argument("--arch", choices=ACCEPTED_ARCHES, required=False)
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
     c.add_argument("--update-baseline", action="store_true",
                    help="capture current findings as the accepted baseline")
