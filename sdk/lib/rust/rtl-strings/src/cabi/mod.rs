@@ -68,20 +68,39 @@ const TAG_USTR: u32 = u32::from_le_bytes(*b"RTSU");
 const TAG_ASTR: u32 = u32::from_le_bytes(*b"RTSA");
 const TAG_OSTR: u32 = u32::from_le_bytes(*b"RTSO");
 
-// Kernel-side allocator: when linked into ntoskrnl, route through the
-// existing C `RtlpAllocateMemory` (ntoskrnl/rtl/libsupp.c — wraps
-// ExAllocatePoolWithTag(PagedPool, ...)). The difftest harness keeps
-// the NULL stub so its alloc-failure model paths still fire.
+// Allocator routing — three distinct link contexts, selected by the
+// `kernel` feature + `target_os`:
+//
+//   1. Kernel  (`kernel` feature, PE):   route through the existing C
+//      `RtlpAllocateMemory` (ntoskrnl/rtl/libsupp.c — wraps
+//      ExAllocatePoolWithTag(PagedPool, ...)).
+//   2. User-mode (`cabi` only, windows): route through the process heap
+//      via `RtlAllocateHeap(RtlGetProcessHeap(), ...)` — this is the
+//      same librtl.a, linked into ntdll. Without this branch every
+//      user-mode SID/SD/ACL/string alloc returns NULL → SMSS dies with
+//      STATUS_NO_MEMORY (bugcheck 0x4C). See memory
+//      feedback_rtl_strings_alloc_stubs.
+//   3. Host difftest (`cabi` only, NOT windows): the cdylib dlopened by
+//      the C harness keeps the NULL stub so its alloc-failure model
+//      paths still fire (and RtlAllocateHeap isn't linkable on host).
 #[cfg(feature = "kernel")]
 extern "system" {
     fn RtlpAllocateMemory(Bytes: u32, Tag: u32) -> *mut u8;
     fn RtlpFreeMemory(Mem: *mut u8, Tag: u32);
 }
+#[cfg(all(not(feature = "kernel"), target_os = "windows"))]
+extern "system" {
+    fn RtlGetProcessHeap() -> *mut core::ffi::c_void;
+    fn RtlAllocateHeap(HeapHandle: *mut core::ffi::c_void, Flags: u32, Size: usize) -> *mut u8;
+    fn RtlFreeHeap(HeapHandle: *mut core::ffi::c_void, Flags: u32, BaseAddress: *mut u8) -> u8;
+}
 #[inline]
 unsafe fn rtl_alloc(bytes: usize, tag: u32) -> *mut u8 {
     #[cfg(feature = "kernel")]
     { RtlpAllocateMemory(bytes as u32, tag) }
-    #[cfg(not(feature = "kernel"))]
+    #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
+    { let _ = tag; RtlAllocateHeap(RtlGetProcessHeap(), 0, bytes) }
+    #[cfg(all(not(feature = "kernel"), not(target_os = "windows")))]
     { let _ = (bytes, tag); core::ptr::null_mut() }
 }
 #[inline]
@@ -89,7 +108,9 @@ unsafe fn rtl_alloc(bytes: usize, tag: u32) -> *mut u8 {
 unsafe fn rtl_free(p: *mut u8, tag: u32) {
     #[cfg(feature = "kernel")]
     { if !p.is_null() { RtlpFreeMemory(p, tag); } }
-    #[cfg(not(feature = "kernel"))]
+    #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
+    { let _ = tag; if !p.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, p); } }
+    #[cfg(all(not(feature = "kernel"), not(target_os = "windows")))]
     { let _ = (p, tag); }
 }
 
