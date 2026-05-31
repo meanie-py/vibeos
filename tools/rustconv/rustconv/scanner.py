@@ -27,6 +27,27 @@ RE_SEH_EXCEPT = re.compile(r'_SEH2_EXCEPT')
 # CODE_SEG
 RE_CODE_SEG = re.compile(r'CODE_SEG\("(\w+)"\)')
 
+# CSR_API(n) is a macro (sdk/include/reactos/subsys/csr/csrsrv.h) that expands to
+#   NTSTATUS NTAPI n(IN OUT PCSR_API_MESSAGE ApiMessage,
+#                    IN OUT PCSR_REPLY_CODE ReplyCode OPTIONAL)
+# tree-sitter parses `CSR_API(name){...}` as an expression_statement + block,
+# NOT a function_definition, so the scanner skips every CSR server API handler
+# (all of basesrv dosdev/vdm's BaseSrv* entry points; same for winsrv consrv/
+# usersrv). Splice it to the real signature before parsing so each handler is
+# seen as a normal function. The param names (ApiMessage/ReplyCode) match the
+# macro, so the captured bodies still resolve. Plain-C splice — safe per the
+# differential-oracle rule. NB: \bCSR_API\s*\( won't match CSR_API_NUMBER_*().
+RE_CSR_API_DEF = re.compile(r'\bCSR_API\s*\(\s*(\w+)\s*\)')
+
+
+def _expand_csr_api(text: str) -> str:
+    """Rewrite `CSR_API(Name)` → the real NTAPI signature so tree-sitter sees a
+    function_definition (otherwise the CSR API handlers are silently skipped)."""
+    return RE_CSR_API_DEF.sub(
+        r'NTSTATUS NTAPI \1(PCSR_API_MESSAGE ApiMessage, PCSR_REPLY_CODE ReplyCode)',
+        text,
+    )
+
 
 @dataclass
 class CFunction:
@@ -328,8 +349,10 @@ def extract_preamble(scan: "ScanResult") -> str:
 
 def scan_file(path: Path) -> ScanResult:
     """Parse a C source file and extract structural information."""
-    source_text = _strip_known_off_ifdefs(
-        _expand_split_includes(path, path.read_text(errors='replace'))
+    source_text = _expand_csr_api(
+        _strip_known_off_ifdefs(
+            _expand_split_includes(path, path.read_text(errors='replace'))
+        )
     )
     source = source_text.encode('utf-8')
 
