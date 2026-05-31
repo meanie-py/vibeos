@@ -18,6 +18,8 @@ extern "system" {
     pub fn FLOATOBJ_Sub(pfo: PFLOATOBJ, pfo2: PFLOATOBJ);
     pub fn FLOATOBJ_Mul(pfo: PFLOATOBJ, pfo2: PFLOATOBJ);
     pub fn FLOATOBJ_MulLong(pfo: PFLOATOBJ, l: i32);
+    pub fn FLOATOBJ_AddLong(pfo: PFLOATOBJ, l: i32);
+    pub fn FLOATOBJ_DivLong(pfo: PFLOATOBJ, l: i32);
     pub fn FLOATOBJ_Div(pfo: *mut FLOATOBJ, pfo2: *mut FLOATOBJ);
     pub fn FLOATOBJ_Neg(pfo: *mut FLOATOBJ);
     pub fn FLOATOBJ_SetFloat(pf: *mut FLOATOBJ, f: FLOATL);
@@ -35,6 +37,10 @@ extern "system" {
 #[inline(always)] pub unsafe fn FLOATOBJ_Mul(pf: PFLOATOBJ, pf1: PFLOATOBJ) { *pf *= *pf1; }
 #[cfg(not(target_arch = "x86"))]
 #[inline(always)] pub unsafe fn FLOATOBJ_MulLong(pf: PFLOATOBJ, l: i32) { *pf *= l as FLOATOBJ; }
+#[cfg(not(target_arch = "x86"))]
+#[inline(always)] pub unsafe fn FLOATOBJ_AddLong(pf: PFLOATOBJ, l: i32) { *pf += l as FLOATOBJ; }
+#[cfg(not(target_arch = "x86"))]
+#[inline(always)] pub unsafe fn FLOATOBJ_DivLong(pf: PFLOATOBJ, l: i32) { *pf /= l as FLOATOBJ; }
 #[cfg(not(target_arch = "x86"))]
 #[inline(always)] pub unsafe fn FLOATOBJ_Div(pf: *mut FLOATOBJ, pf1: *mut FLOATOBJ) { *pf /= *pf1; }
 #[cfg(not(target_arch = "x86"))]

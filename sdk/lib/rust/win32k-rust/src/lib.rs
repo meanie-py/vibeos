@@ -132,6 +132,15 @@ pub mod drawing; pub mod line; pub mod fillshap;
 pub mod region;
 // Phase 2c geometry wave 5: DC lifecycle (device-context object mgmt tier)
 pub mod dcstate; pub mod dcobjs; pub mod dclife; pub mod dcutil;
+// Phase 2c geometry wave 6: PEN object tier (pen.c) — PEN_{Alloc,ShareLock,
+// GetObject}, IntGdiExtCreatePen, NtGdi{Create,ExtCreate}Pen. Sibling to the
+// brush/dc work; DC init locks pens via PEN_ShareLockPen.
+pub mod pen;
+// Phase 2c geometry wave 6: coordinate transforms (coord.c + coord.split2.c =
+// one TU). DC world/page/device MATRIX update chain (DC_vUpdate{World,Device}*,
+// DC_vGetPageToDevice), map-mode/viewport/window org+ext, Nt/Gre transform &
+// DCPoint entry points (FLOATOBJ-heavy, pairs with xformobj/dcutil mapping).
+pub mod coord;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
