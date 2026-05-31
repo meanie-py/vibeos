@@ -18,12 +18,17 @@ include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
 add_library(rtl_um OBJECT
-    rtl/libsupp.c
+    # rtl/libsupp.c — replaced by Rust (ntdll-rust/src/rtl/libsupp.rs);
+    #   the rtl↔ntdll glue (RtlpAllocateMemory/RtlpGetStackLimits/
+    #   RtlAcquirePebLock/RtlWalkFrameChain/RtlImageNtHeaderEx/atom-table
+    #   locks/RtlDosApplyFileIsolationRedirection_Ustr/…) now provided by
+    #   libntdll_rust.a (below)
     # rtl/uilist.c — replaced by Rust (ntdll-rust/src/rtl/uilist.rs);
     #   RtlConvertUiListToApiList now provided by libntdll_rust.a (below)
     # rtl/version.c — replaced by Rust (ntdll-rust/src/rtl/version.rs);
     #   RtlGetNtProductType / RtlGetNtVersionNumbers / RtlGetVersion now
     #   provided by libntdll_rust.a (below)
+    rtl/rtl_um_rust_stub.c  # keeps the now-empty OBJECT lib valid
     )
 target_link_libraries(rtl_um apisets ${PSEH_LIB})
 add_dependencies(rtl_um psdk)
@@ -63,6 +68,7 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/uilist.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/version.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/libsupp.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/etw/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/etw/trace.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/mod.rs
