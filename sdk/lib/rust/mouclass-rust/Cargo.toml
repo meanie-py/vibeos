@@ -1,0 +1,19 @@
+# mouclass-rust — Rust translation of the mouse class driver
+# (drivers/input/mouclass/mouclass.c + misc.c). crate-type=staticlib →
+# libmouclass_rust.a, linked into the cmake-built mouclass.sys with the C
+# sources commented out — arm64input-rust / framebuf-rust style cohabitation.
+#
+# Live on the PS/2 input path (i8042prt -> mouclass -> win32k) which the
+# smoke test test_post_shell_ready_mouse exercises on i386/amd64. Built for
+# all three arches (per-arch RUST_TARGET selected in the cohab cmake).
+
+[package]
+name = "mouclass-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
