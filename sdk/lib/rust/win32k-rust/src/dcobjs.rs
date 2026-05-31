@@ -574,7 +574,7 @@ pub unsafe extern "system" fn DC_bIsBitmapCompatible(pdc: PDC, psurf: PSURFACE) 
         return TRUE as _;
     }
 
-    cBitsPixel = gajBitsPerFormat[(*psurf).SurfObj.iBitmapFormat as usize] as _;
+    cBitsPixel = BitsPerFormat((*psurf).SurfObj.iBitmapFormat as _) as _;
 
     if (cBitsPixel == 1) || (cBitsPixel == (*(*pdc).ppdev).gdiinfo.cBitsPixel) {
         return TRUE as _;
