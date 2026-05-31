@@ -3,12 +3,14 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
 spec2def(basesrv.dll basesrv.spec ADD_IMPORTLIB)
 
-# --- Rust cohabitation (smss-csrss-rust, basesrv_dll_only) — task #18 -----
-# PARTIAL flip: appcompat/init/nls/proc/sndsntry → Rust; dosdev.c + vdm.c stay
-# C (no Rust translation yet) and keep defining the VDM/DOS helpers the Rust
-# dispatch table extern-refs. Mirrors the csrss.exe cohab pattern (own cargo
-# target dir; the 5 flipped .c files are removed from SOURCE so lld pulls their
-# symbols from the archive; basesrv_rust_stub.c keeps add_library valid).
+# --- Rust cohabitation (smss-csrss-rust, basesrv_dll_only) — task #18/#41 --
+# FULL flip: ALL 7 basesrv .c → Rust (appcompat/dosdev/init/nls/proc/sndsntry/
+# vdm). dosdev.rs + vdm.rs were translated by Opus 4.8 (task #41) after the
+# rustconv scanner learned the CSR_API() macro. Mirrors the csrss.exe cohab
+# pattern (own cargo target dir; every flipped .c removed from SOURCE so lld
+# pulls its symbols from the archive; basesrv_rust_stub.c keeps add_library
+# valid). The basesrv-private VDM types/constants (not in ntdll-sys) live in
+# the shared smss-csrss-rust/src/basesrv/vdm_types.rs.
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
 if(ARCH STREQUAL "i386")
@@ -38,10 +40,13 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/lib.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/mod.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/appcompat.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/dosdev.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/init.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/nls.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/proc.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/sndsntry.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/vdm.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/vdm_types.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
     COMMENT "Building smss-csrss-rust basesrv_dll_only (${RUST_TARGET})"
@@ -51,11 +56,11 @@ add_custom_target(basesrv_rust_lib DEPENDS ${BASESRV_RUST_LIB})
 
 list(APPEND SOURCE
     # appcompat.c — replaced by Rust (smss-csrss-rust/src/basesrv/appcompat.rs)
-    dosdev.c
+    # dosdev.c    — replaced by Rust (smss-csrss-rust/src/basesrv/dosdev.rs)
     # init.c      — replaced by Rust (smss-csrss-rust/src/basesrv/init.rs)
     # proc.c      — replaced by Rust (smss-csrss-rust/src/basesrv/proc.rs)
     # sndsntry.c  — replaced by Rust (smss-csrss-rust/src/basesrv/sndsntry.rs)
-    vdm.c
+    # vdm.c       — replaced by Rust (smss-csrss-rust/src/basesrv/vdm.rs)
     # nls.c       — replaced by Rust (smss-csrss-rust/src/basesrv/nls.rs)
     basesrv_rust_stub.c
     basesrv.h)
@@ -124,8 +129,11 @@ add_cd_file(TARGET basesrv DESTINATION reactos/system32 FOR all)
 #      "WinDir create". FIXED 2026-05-31: real [u16;11] static (align 2).
 # The Rust source improvements (CSR_SERVER_DLL layout, no_mangle on data
 # globals, NameTable export, BASE_STATIC_SERVER_DATA layout, NLS offset,
-# IniFileMapping/ConnectInfo sizes, CSDVersion alignment) ARE landed. PARTIAL
-# cohab flip is LIVE: dosdev.c + vdm.c stay C (no Rust yet); the other 5 .c are
-# Rust via libsmss_csrss_rust.a (--features basesrv_dll_only,ntddi_ws03).
-# ALL 3 ARCHES GREEN to `shell ready` (i386-uefi + amd64-uefi smoke 8/8,
-# arm64 6/6) — the basesrv.dll cohab flip is no longer integrated+failing.
+# IniFileMapping/ConnectInfo sizes, CSDVersion alignment) ARE landed.
+# 2026-06 (task #41): dosdev.c + vdm.c translated (Opus 4.8) and flipped too —
+# basesrv.dll is now a FULL Rust cohab (all 7 .c → Rust). Integration notes:
+# VDM types/constants moved to the shared vdm_types.rs (proc.rs's truncated
+# VDM_CONSOLE_RECORD mirror — ProcessId@0 vs real @24 — reconciled to it);
+# the preamble-dropped BaseSrvDDDBSMCritSec global re-added (#[no_mangle]); the
+# CsrGetClientThread CSR macro re-translated as an inline (it has no symbol);
+# RtlAllocateHeap size casts use `as _` (SIZE_T is u32 on i386, u64 on 64-bit).
