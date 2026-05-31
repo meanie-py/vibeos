@@ -56,6 +56,10 @@ WIN32K_BINDGEN_FILES = {
 SMSS_DIR = REACTOS_ROOT / "base" / "system" / "smss"
 CSR_DIR = REACTOS_ROOT / "subsystems" / "csr"
 BASESRV_DIR = REACTOS_ROOT / "subsystems" / "win" / "basesrv"
+# ntdll.dll itself — the user-mode loader/dispatch/rtl-glue body. Same
+# user-mode substrate as smss-csrss (ntdll-sys), output to its own
+# ntdll-rust crate. See docs/engineering/ntdll-translation-audit.md.
+NTDLL_DIR = REACTOS_ROOT / "dll" / "ntdll"
 NTDLL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntdll-sys" / "src"
 NTDLL_BINDGEN_FILES = {
     "arm64": NTDLL_SYS_DIR / "bindgen_arm64.rs",
@@ -275,6 +279,31 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # ntdll.dll — the user-mode NT loader / exception+APC dispatch /
+    # rtl-glue body. Same user-mode substrate as smss-csrss (ntdll-sys
+    # scanned as "ddk", collapsed to ntdll_sys::nt in postprocess), its
+    # own ntdll-rust crate. Per-file cohabitation; the assembler
+    # namespaces by C parent dir (nt_0600/ldr/rtl/dispatch/dbg/etw).
+    # spec_file=None: ntdll.spec is mostly forwarders + generated
+    # syscall stubs and nt_0600 carries its own ntdll_vista.spec, so the
+    # ABI step resolves the right .spec per file (mirrors smss-csrss).
+    # See docs/engineering/ntdll-translation-audit.md.
+    "ntdll": Target(
+        name="ntdll",
+        source_dir=NTDLL_DIR,
+        output_crate=RUST_DIR / "ntdll-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
     # winsrv.dll — USER + Console server (consrv + usersrv + concfg
     # aggregated into winsrv.dll, loaded by csrss). Phase 5 of the
     # SMSS→CSRSS spine. CSR server DLL, NOT a standalone exe — entry
@@ -325,6 +354,12 @@ def detect_target(c_path: Path) -> Target:
             or "/subsystems/win/basesrv" in posix
             or "/sdk/lib/smlib" in posix):
         return TARGETS["smss-csrss"]
+    # ntdll.dll body (loader/dispatch/rtl-glue). Its own ntdll-rust crate
+    # on the same user-mode substrate. Note: the shared rtl algorithms it
+    # links (sdk/lib/rtl/*) are NOT routed here — those are the rtl-rust /
+    # rtl-strings crates; only dll/ntdll/'s own .c belong to this target.
+    if "/dll/ntdll/" in posix:
+        return TARGETS["ntdll"]
     if "/drivers/input/arm64input" in posix:
         return TARGETS["arm64input"]
     # winsrv (Phase 5) lives under /win32ss/user/winsrv — keep this
