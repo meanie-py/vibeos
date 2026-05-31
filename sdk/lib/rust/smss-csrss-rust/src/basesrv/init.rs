@@ -185,24 +185,43 @@ type PCSR_SERVER_DLL = *mut c_void;
 type PCSR_PROCESS = *mut c_void;
 type PBASESRV_API_CONNECTINFO = *mut c_void;
 
+// Layout MUST match C `BASE_STATIC_SERVER_DATA` (sdk/include/reactos/subsys/
+// win/base.h) field-for-field: basesrv.dll writes this struct into the shared
+// section and kernel32 (+ ~7 user DLLs) read it back. The prior Rust mirror had
+// a scrambled field order and opaque blobs → every BaseStaticServerData->X read
+// from kernel32 got garbage and boot hung ~7 DLLs after kernel32 DllMain. Using
+// the real bindgen nested types in exact C order makes repr(C) reproduce the C
+// layout per-arch; the size assert below pins it to the C C_ASSERT (0x1AC8).
 #[repr(C)]
 struct BASE_STATIC_SERVER_DATA {
-    TermsrvClientTimeZoneId: ULONG,
-    TermsrvClientTimeZoneChangeNum: ULONG,
-    TimeOfDay: [u8; 48],
     WindowsDirectory: _UNICODE_STRING,
     WindowsSystemDirectory: _UNICODE_STRING,
-    WindowsSys32x86Directory: _UNICODE_STRING,
     NamedObjectDirectory: _UNICODE_STRING,
+    WindowsMajorVersion: USHORT,
+    WindowsMinorVersion: USHORT,
+    BuildNumber: USHORT,
     CSDNumber: USHORT,
     RCNumber: USHORT,
     CSDVersion: [WCHAR; 128],
-    SysInfo: [u8; 64],
-    IniFileMapping: PINIFILE_MAPPING,
+    SysInfo: SYSTEM_BASIC_INFORMATION,
+    TimeOfDay: SYSTEM_TIMEOFDAY_INFORMATION,
+    IniFileMapping: PINIFILE_MAPPING, // C: PVOID — same layout
+    NlsUserInfo: NLS_USER_INFO,
     DefaultSeparateVDM: BOOLEAN,
     IsWowTaskReady: BOOLEAN,
+    WindowsSys32x86Directory: _UNICODE_STRING,
+    fTermsrvAppInstallMode: BOOLEAN,
+    tziTermsrvClientTimeZone: TIME_ZONE_INFORMATION,
+    ktTermsrvClientBias: KSYSTEM_TIME,
+    TermsrvClientTimeZoneId: ULONG,
     LUIDDeviceMapsEnabled: BOOLEAN,
+    TermsrvClientTimeZoneChangeNum: ULONG,
 }
+// C pins the i386 size (base.h: `#if defined(_M_IX86) C_ASSERT(==0x1AC8)`).
+// 64-bit has a different size (pointer-width fields); there the layout is
+// guaranteed by repr(C) + the size-verified ntdll-sys nested types.
+#[cfg(target_arch = "x86")]
+const _: () = assert!(core::mem::size_of::<BASE_STATIC_SERVER_DATA>() == 0x1AC8);
 
 // NtCurrentPeb is a TEB-inline (ntdll-sys::inlines), NOT an extern — the
 // rustconv translation fabricated an extern decl that shadowed the real
@@ -632,7 +651,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     (*BaseStaticServerData).TermsrvClientTimeZoneChangeNum = 0;
     Status = NtQuerySystemInformation(
         SystemTimeOfDayInformation,
-        (*BaseStaticServerData).TimeOfDay.as_mut_ptr() as PVOID,
+        core::ptr::addr_of_mut!((*BaseStaticServerData).TimeOfDay) as PVOID,
         core::mem::size_of_val(&(*BaseStaticServerData).TimeOfDay) as ULONG,
         core::ptr::null_mut(),
     );
@@ -712,7 +731,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
 
     Status = NtQuerySystemInformation(
         SystemBasicInformation,
-        (*BaseStaticServerData).SysInfo.as_mut_ptr() as PVOID,
+        core::ptr::addr_of_mut!((*BaseStaticServerData).SysInfo) as PVOID,
         core::mem::size_of_val(&(*BaseStaticServerData).SysInfo) as ULONG,
         core::ptr::null_mut(),
     );
