@@ -1808,7 +1808,7 @@ unsafe extern "fastcall" fn REGION_bXformRgn(
     prgn: PREGION,
     pmx: PMATRIX,
 ) -> BOOL {
-    let mut xo: XFORMOBJ = core::mem::zeroed();
+    let mut xo: EXFORMOBJ = core::mem::zeroed(); // 8B on 64-bit: holds the pmx XFORMOBJ_vInit writes (XFORMOBJ itself is 4B → OOB)
     let mut i: ULONG;
     let mut cjSize: ULONG;
     let mut ppt: PPOINT;
@@ -1824,10 +1824,10 @@ unsafe extern "fastcall" fn REGION_bXformRgn(
         if ((*pmx).flAccel & XFORM_UNITY) != 0 {
             return REGION_bOffsetRgn(prgn, ((*pmx).fxDx + 8) / 16, ((*pmx).fxDy + 8) / 16) as BOOL;
         } else {
-            XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), pmx);
+            XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), pmx);
 
             if EXFORMOBJ_bApplyXform(
-                core::ptr::addr_of_mut!(xo),
+                (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
                 XF_LTOL,
                 2,
                 core::ptr::addr_of_mut!((*prgn).rdh.rcBound) as *mut core::ffi::c_void,
@@ -1838,7 +1838,7 @@ unsafe extern "fastcall" fn REGION_bXformRgn(
             }
 
             if EXFORMOBJ_bApplyXform(
-                core::ptr::addr_of_mut!(xo),
+                (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
                 XF_LTOL,
                 (*prgn).rdh.nCount * 2,
                 (*prgn).Buffer as *mut core::ffi::c_void,
@@ -1896,10 +1896,10 @@ unsafe extern "fastcall" fn REGION_bXformRgn(
             i += 1;
         }
 
-        XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), pmx);
+        XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), pmx);
 
         if EXFORMOBJ_bApplyXform(
-            core::ptr::addr_of_mut!(xo),
+            (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
             XF_LTOL,
             (*prgn).rdh.nCount * 2,
             ppt as *mut core::ffi::c_void,
@@ -1930,7 +1930,7 @@ unsafe extern "C" fn REGION_bXformRgn(
     prgn: PREGION,
     pmx: PMATRIX,
 ) -> BOOL {
-    let mut xo: XFORMOBJ = core::mem::zeroed();
+    let mut xo: EXFORMOBJ = core::mem::zeroed(); // 8B on 64-bit: holds the pmx XFORMOBJ_vInit writes (XFORMOBJ itself is 4B → OOB)
     let mut i: ULONG;
     let mut cjSize: ULONG;
     let mut ppt: PPOINT;
@@ -1946,10 +1946,10 @@ unsafe extern "C" fn REGION_bXformRgn(
         if ((*pmx).flAccel & XFORM_UNITY) != 0 {
             return REGION_bOffsetRgn(prgn, ((*pmx).fxDx + 8) / 16, ((*pmx).fxDy + 8) / 16) as BOOL;
         } else {
-            XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), pmx);
+            XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), pmx);
 
             if EXFORMOBJ_bApplyXform(
-                core::ptr::addr_of_mut!(xo),
+                (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
                 XF_LTOL,
                 2,
                 core::ptr::addr_of_mut!((*prgn).rdh.rcBound) as *mut core::ffi::c_void,
@@ -1960,7 +1960,7 @@ unsafe extern "C" fn REGION_bXformRgn(
             }
 
             if EXFORMOBJ_bApplyXform(
-                core::ptr::addr_of_mut!(xo),
+                (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
                 XF_LTOL,
                 (*prgn).rdh.nCount * 2,
                 (*prgn).Buffer as *mut core::ffi::c_void,
@@ -2018,10 +2018,10 @@ unsafe extern "C" fn REGION_bXformRgn(
             i += 1;
         }
 
-        XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), pmx);
+        XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), pmx);
 
         if EXFORMOBJ_bApplyXform(
-            core::ptr::addr_of_mut!(xo),
+            (core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
             XF_LTOL,
             (*prgn).rdh.nCount * 2,
             ppt as *mut core::ffi::c_void,
@@ -4622,7 +4622,7 @@ pub unsafe extern "stdcall" fn NtGdiExtCreateRegion(
     let mut rects: *mut RECT = core::ptr::null_mut();
     let mut Status: i32 = STATUS_SUCCESS;
     let mut matrix: MATRIX = core::mem::zeroed();
-    let mut xo: XFORMOBJ = core::mem::zeroed();
+    let mut xo: EXFORMOBJ = core::mem::zeroed(); // 8B on 64-bit: holds the pmx XFORMOBJ_vInit writes (XFORMOBJ itself is 4B → OOB)
 
     Status = SafeProbeForRead(RgnData as *const core::ffi::c_void, Count as usize, 1);
     if NT_SUCCESS(Status) {
@@ -4669,11 +4669,11 @@ pub unsafe extern "stdcall" fn NtGdiExtCreateRegion(
             let ret: u32;
 
             Status = ERROR_INVALID_PARAMETER as i32;
-            XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), core::ptr::addr_of_mut!(matrix));
-            ret = EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo), Xform as *mut XFORML);
+            XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), core::ptr::addr_of_mut!(matrix));
+            ret = EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), Xform as *mut XFORML);
 
             if ret != DDI_ERROR {
-                if EXFORMOBJ_bApplyXform(core::ptr::addr_of_mut!(xo),
+                if EXFORMOBJ_bApplyXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
                                         XF_LTOL,
                                         (*Region).rdh.nCount * 2,
                                         (*Region).Buffer as *mut core::ffi::c_void,
@@ -4713,7 +4713,7 @@ pub unsafe extern "C" fn NtGdiExtCreateRegion(
     let mut rects: *mut RECT = core::ptr::null_mut();
     let mut Status: i32 = STATUS_SUCCESS;
     let mut matrix: MATRIX = core::mem::zeroed();
-    let mut xo: XFORMOBJ = core::mem::zeroed();
+    let mut xo: EXFORMOBJ = core::mem::zeroed(); // 8B on 64-bit: holds the pmx XFORMOBJ_vInit writes (XFORMOBJ itself is 4B → OOB)
 
     Status = SafeProbeForRead(RgnData as *const core::ffi::c_void, Count as usize, 1);
     if NT_SUCCESS(Status) {
@@ -4760,11 +4760,11 @@ pub unsafe extern "C" fn NtGdiExtCreateRegion(
             let ret: u32;
 
             Status = ERROR_INVALID_PARAMETER as i32;
-            XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), core::ptr::addr_of_mut!(matrix));
-            ret = EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo), Xform as *mut XFORML);
+            XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), core::ptr::addr_of_mut!(matrix));
+            ret = EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), Xform as *mut XFORML);
 
             if ret != DDI_ERROR {
-                if EXFORMOBJ_bApplyXform(core::ptr::addr_of_mut!(xo),
+                if EXFORMOBJ_bApplyXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
                                         XF_LTOL,
                                         (*Region).rdh.nCount * 2,
                                         (*Region).Buffer as *mut core::ffi::c_void,

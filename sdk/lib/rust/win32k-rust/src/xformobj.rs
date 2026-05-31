@@ -258,15 +258,15 @@ pub unsafe extern "system" fn EXFORMOBJ_iCombineXform(
 ) -> u32 {
 
     let mut mx: MATRIX = core::mem::zeroed();
-    let mut xo2: XFORMOBJ = core::mem::zeroed();
+    let mut xo2: EXFORMOBJ = core::mem::zeroed(); // 8B on 64-bit: holds pmx (XFORMOBJ is 4B → vInit OOB)
 
-    XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo2), core::ptr::addr_of_mut!(mx));
-    EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo2), pxform);
+    XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo2) as *mut XFORMOBJ), core::ptr::addr_of_mut!(mx));
+    EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo2) as *mut XFORMOBJ), pxform);
 
     if bLeftMultiply != 0 {
-        EXFORMOBJ_iCombine(pxo, core::ptr::addr_of_mut!(xo2), pxo1)
+        EXFORMOBJ_iCombine(pxo, (core::ptr::addr_of_mut!(xo2) as *mut XFORMOBJ), pxo1)
     } else {
-        EXFORMOBJ_iCombine(pxo, pxo1, core::ptr::addr_of_mut!(xo2))
+        EXFORMOBJ_iCombine(pxo, pxo1, (core::ptr::addr_of_mut!(xo2) as *mut XFORMOBJ))
     }
 }
 
@@ -703,7 +703,7 @@ pub unsafe extern "stdcall" fn EXFORMOBJ_bApplyXform(
 ) -> i32 {
 
     let mut mx: MATRIX = core::mem::zeroed();
-    let mut xoInv: XFORMOBJ = core::mem::zeroed();
+    let mut xoInv: EXFORMOBJ = core::mem::zeroed(); // 8B on 64-bit: holds pmx (XFORMOBJ is 4B → vInit OOB)
     let mut pptlIn: PPOINTL;
     let mut pptlOut: PPOINTL;
     let mut i: i32;
@@ -715,11 +715,11 @@ pub unsafe extern "stdcall" fn EXFORMOBJ_bApplyXform(
     }
 
     if iMode == XF_INV_FXTOL || iMode == XF_INV_LTOL {
-        XFORMOBJ_vInit(core::ptr::addr_of_mut!(xoInv), core::ptr::addr_of_mut!(mx));
-        if EXFORMOBJ_iInverse(core::ptr::addr_of_mut!(xoInv), pxo) == DDI_ERROR {
+        XFORMOBJ_vInit((core::ptr::addr_of_mut!(xoInv) as *mut XFORMOBJ), core::ptr::addr_of_mut!(mx));
+        if EXFORMOBJ_iInverse((core::ptr::addr_of_mut!(xoInv) as *mut XFORMOBJ), pxo) == DDI_ERROR {
             return 0;
         }
-        pxo_local = core::ptr::addr_of_mut!(xoInv);
+        pxo_local = (core::ptr::addr_of_mut!(xoInv) as *mut XFORMOBJ);
     }
 
     if iMode == XF_LTOFX || iMode == XF_LTOL || iMode == XF_INV_LTOL {
@@ -763,7 +763,7 @@ pub unsafe extern "C" fn EXFORMOBJ_bApplyXform(
 ) -> i32 {
 
     let mut mx: MATRIX = core::mem::zeroed();
-    let mut xoInv: XFORMOBJ = core::mem::zeroed();
+    let mut xoInv: EXFORMOBJ = core::mem::zeroed(); // 8B on 64-bit: holds pmx (XFORMOBJ is 4B → vInit OOB)
     let mut pptlIn: PPOINTL;
     let mut pptlOut: PPOINTL;
     let mut i: i32;
@@ -775,11 +775,11 @@ pub unsafe extern "C" fn EXFORMOBJ_bApplyXform(
     }
 
     if iMode == XF_INV_FXTOL || iMode == XF_INV_LTOL {
-        XFORMOBJ_vInit(core::ptr::addr_of_mut!(xoInv), core::ptr::addr_of_mut!(mx));
-        if EXFORMOBJ_iInverse(core::ptr::addr_of_mut!(xoInv), pxo) == DDI_ERROR {
+        XFORMOBJ_vInit((core::ptr::addr_of_mut!(xoInv) as *mut XFORMOBJ), core::ptr::addr_of_mut!(mx));
+        if EXFORMOBJ_iInverse((core::ptr::addr_of_mut!(xoInv) as *mut XFORMOBJ), pxo) == DDI_ERROR {
             return 0;
         }
-        pxo_local = core::ptr::addr_of_mut!(xoInv);
+        pxo_local = (core::ptr::addr_of_mut!(xoInv) as *mut XFORMOBJ);
     }
 
     if iMode == XF_LTOFX || iMode == XF_LTOL || iMode == XF_INV_LTOL {
