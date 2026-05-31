@@ -46,6 +46,14 @@ def _finding_lines(out: str) -> set[str]:
     return {ln.rstrip() for ln in out.splitlines() if ln.strip()}
 
 
+def _rel(text: str, repo: Path) -> str:
+    """Strip the worktree's absolute repo prefix from tool output so findings
+    are repo-relative — otherwise a baseline captured in one worktree never
+    matches another (the abs path differs: vibeos vs vibeos-smoke-harness),
+    making every finding spuriously 'new'. Makes baselines cross-worktree."""
+    return text.replace(str(repo) + "/", "").replace(str(repo), "")
+
+
 def _lint_stage(run: Run, repo: Path, name: str, cmd: list[str], *,
                 cwd: Path | None = None, strict: bool,
                 findings_from: str = "stdout") -> Stage:
@@ -54,6 +62,7 @@ def _lint_stage(run: Run, repo: Path, name: str, cmd: list[str], *,
         return run.add(Stage(name, status="skip", detail="tool unavailable"))
     cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
     text = cp.stdout if findings_from == "stdout" else (cp.stdout + "\n" + cp.stderr)
+    text = _rel(text, repo)
     base = _baseline(repo, name)
     cur = _finding_lines(text)
     new = cur - base
@@ -118,7 +127,7 @@ def write_baselines(repo: Path) -> dict:
             cp = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=600)
         except (OSError, subprocess.SubprocessError):
             continue
-        text = cp.stdout if src == "stdout" else (cp.stdout + "\n" + cp.stderr)
+        text = _rel(cp.stdout if src == "stdout" else (cp.stdout + "\n" + cp.stderr), repo)
         findings = sorted(_finding_lines(text))
         (bdir / f"{name}.txt").write_text("\n".join(findings) + ("\n" if findings else ""))
         out[name] = len(findings)
