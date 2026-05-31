@@ -11,7 +11,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ARCHES = ("i386", "amd64", "arm64")
+ARCHES = ("i386", "amd64", "arm64")          # base arches (build side)
+
+# CLI --arch choices. BIOS x86 is dead; smoke registers only the -uefi configs,
+# so plain i386/amd64 are accepted as ALIASES that resolve to the UEFI config.
+ACCEPTED_ARCHES = ("i386", "i386-uefi", "amd64", "amd64-uefi", "arm64")
+
+
+def base_arch(arch: str) -> str:
+    """Build-side arch: build-<base>, ninja, stamp. Strips firmware/test suffix."""
+    return arch.replace("-uefi", "").replace("-test", "")
+
+
+def vm_arch(arch: str) -> str:
+    """Runtime/boot config name as registered in vm.py:ARCH_CONFIGS. x86 boots
+    UEFI now, so i386/amd64 resolve to i386-uefi/amd64-uefi (BIOS deregistered)."""
+    return {"i386": "i386-uefi", "amd64": "amd64-uefi", "arm64": "arm64"}[base_arch(arch)]
 
 
 @dataclass(frozen=True)
@@ -63,9 +78,10 @@ _CFGS = {
 
 
 def arch_build(arch: str) -> ArchBuild:
-    if arch not in _CFGS:
-        raise ValueError(f"unknown arch {arch!r}; choose from {ARCHES}")
-    return _CFGS[arch]
+    b = base_arch(arch)
+    if b not in _CFGS:
+        raise ValueError(f"unknown arch {arch!r}; choose from {ACCEPTED_ARCHES}")
+    return _CFGS[b]
 
 
 # Rust workspace source root (one hash of this answers "did any rust source

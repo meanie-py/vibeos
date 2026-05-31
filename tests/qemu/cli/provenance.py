@@ -113,7 +113,7 @@ def contributing_hashes(repo: Path, arch: str) -> dict:
     preflight can detect a warm-cached/un-grafted contributor even when the
     whole-media hash 'passes' (ntdll #1, rtl-priv #2)."""
     cfg = archcfg.arch_build(arch)
-    build_dir = repo / f"build-{arch}"
+    build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     out = {}
     for rel in cfg.staged_bins_rel:
         f = build_dir / rel
@@ -121,8 +121,8 @@ def contributing_hashes(repo: Path, arch: str) -> dict:
             out[rel] = _sha256_file(f)
     # x86: hash the key binaries the iso carries even though ninja tracks the
     # iso DAG — catches a warm-cached contributor whose content differs cold.
-    if arch in ("i386", "amd64"):
-        for rel in ("ntoskrnl/ntoskrnl.exe", f"hal/halx86/hal.dll",
+    if archcfg.base_arch(arch) in ("i386", "amd64"):
+        for rel in ("ntoskrnl/ntoskrnl.exe", "hal/halx86/hal.dll",
                     "boot/freeldr/freeldr/freeldr.sys"):
             f = build_dir / rel
             if f.is_file():
@@ -132,11 +132,11 @@ def contributing_hashes(repo: Path, arch: str) -> dict:
 
 def make_stamp(repo: Path, arch: str, cold: bool, ts: int) -> Stamp:
     cfg = archcfg.arch_build(arch)
-    build_dir = repo / f"build-{arch}"
+    build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     media = repo / cfg.boot_media_rel
     targets = [str(p.relative_to(repo)) for p in discover_rust_targets(build_dir)]
     return Stamp(
-        arch=arch, ts=ts,
+        arch=archcfg.base_arch(arch), ts=ts,
         git_fingerprint=git_fingerprint(repo),
         rust_src_hash=rust_src_hash(repo),
         boot_media=cfg.boot_media_rel,
@@ -184,7 +184,7 @@ def _ninja_has_work(build_dir: Path, target: str) -> bool:
 
 def check_staleness(repo: Path, arch: str) -> Staleness:
     cfg = archcfg.arch_build(arch)
-    build_dir = repo / f"build-{arch}"
+    build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     media = repo / cfg.boot_media_rel
     stamp = Stamp.read(build_dir)
 
