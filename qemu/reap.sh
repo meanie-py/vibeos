@@ -122,12 +122,21 @@ if [ -d "$RUNS_DIR" ]; then
             vlog "manifest $rid: pid=$qpid is not a qemu process (pid reuse?) — skipping"
             continue
         fi
+        # Hard lifetime cap takes precedence over owner liveness: a VM past its
+        # deadline is reaped even if its owner is still alive (it has overrun
+        # any legitimate lifetime). Owner liveness only protects within the cap.
+        dl="$(jq -r '.deadline // empty' "$manifest" 2>/dev/null)"
+        dl="${dl%.*}"   # tolerate a float deadline — `[ -ge ]` errors on one
+        if [ -n "$dl" ] && [ "$dl" != "null" ] && [ "$(date +%s)" -ge "$dl" ] 2>/dev/null; then
+            kill_qemu_pgroup "$qpid" "manifest $rid exceeded lifetime cap (deadline=$dl)"
+            continue
+        fi
         if [ -z "$opid" ] || [ "$opid" = "null" ]; then
-            vlog "manifest $rid: no owner_pid recorded (legacy manifest) — skipping"
+            vlog "manifest $rid: no owner_pid recorded (legacy manifest), within cap — skipping"
             continue
         fi
         if pid_alive "$opid"; then
-            vlog "manifest $rid: owner_pid=$opid alive — skipping (owner still here)"
+            vlog "manifest $rid: owner_pid=$opid alive, within cap — skipping (owner still here)"
             continue
         fi
         kill_qemu_pgroup "$qpid" "manifest $rid owner pid=$opid dead"
@@ -140,13 +149,20 @@ if [ -d "$SMOKE_LOCK_DIR" ]; then
         [ -f "$lf" ] || continue
         lpid="$(jq -r '.launcher_pid // empty' "$lf" 2>/dev/null)"
         qpid="$(jq -r '.qemu_pid // empty' "$lf" 2>/dev/null)"
+        dl="$(jq -r '.deadline // empty' "$lf" 2>/dev/null)"
+        dl="${dl%.*}"   # tolerate a float deadline (smoke lockfiles) — see Walk 1
         if [ -z "$qpid" ] || [ "$qpid" = "null" ]; then
             vlog "lock $(basename "$lf"): no qemu_pid — purging stale lock"
             [ "$DRY_RUN" -eq 0 ] && rm -f "$lf"
             continue
         fi
-        if [ -n "$lpid" ] && [ "$lpid" != "null" ] && pid_alive "$lpid"; then
-            vlog "lock $(basename "$lf"): launcher_pid=$lpid alive — skipping"
+        # Hard lifetime cap precedes launcher liveness — see Walk 1.
+        expired=0
+        if [ -n "$dl" ] && [ "$dl" != "null" ] && [ "$(date +%s)" -ge "$dl" ] 2>/dev/null; then
+            expired=1
+        fi
+        if [ "$expired" -eq 0 ] && [ -n "$lpid" ] && [ "$lpid" != "null" ] && pid_alive "$lpid"; then
+            vlog "lock $(basename "$lf"): launcher_pid=$lpid alive, within cap — skipping"
             continue
         fi
         if ! pid_alive "$qpid"; then
@@ -159,7 +175,12 @@ if [ -d "$SMOKE_LOCK_DIR" ]; then
             [ "$DRY_RUN" -eq 0 ] && rm -f "$lf"
             continue
         fi
-        if kill_qemu_pgroup "$qpid" "lockfile launcher pid=$lpid dead"; then
+        if [ "$expired" -eq 1 ]; then
+            reason="lockfile exceeded lifetime cap (deadline=$dl)"
+        else
+            reason="lockfile launcher pid=$lpid dead"
+        fi
+        if kill_qemu_pgroup "$qpid" "$reason"; then
             [ "$DRY_RUN" -eq 0 ] && rm -f "$lf"
         fi
     done

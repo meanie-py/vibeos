@@ -129,6 +129,16 @@ A small set of orthogonal commands, all run-id-based, all batch-invocable. Each 
 | `qemu/stop.sh <run-id>` | Kills QEMU; preserves artifacts. Idempotent. |
 | `qemu/wait-for.sh <run-id> --pattern <regex> --timeout <secs>` | Polls serial log for pattern. Sanitizes output (`tr -cd '\11\12\15\40-\176'`) before regex match and before returning to caller — KDB ANSI escapes and bugcheck binary garbage otherwise break grep mid-match. On timeout: returns last 10 serial lines + QEMU process state. |
 | `qemu/tail.sh <run-id> [--lines N]` | Cheap read-only access to serial log. Sanitized on read; raw bytes preserved on disk. |
+| `qemu/ps [--json]` | Global "what's running right now" snapshot across **all** worktrees/sessions (reads the shared `/tmp/vibeos-qemu-locks/` lockfiles, not the per-worktree manifests). Columns: arch, source (smoke/start), qemu pid, owner pid (`!` = owning session dead), age, time-to-deadline (`OVERDUE` if past the cap), slot, and where to follow its serial. Plus a `slots: N/10 in use` summary. One-shot, never streams. |
+| `qemu/reap.sh [--dry-run] [--verbose]` | Cull orphan QEMUs — those whose owning session died, **or** any VM past its 30-min lifetime cap regardless of owner. Auto-invoked by `start.sh` and the smoke harness; safe to run manually anytime (idempotent, never touches a live-owner VM still within its cap). |
+
+### Resource management — concurrency cap, lifetime cap, orphan reaping
+
+Three independent guards keep QEMUs from exhausting the host's KVM slots / RAM, all coordinated through the shared lock dir `/tmp/vibeos-qemu-locks/`:
+
+- **Global concurrency cap** (`QEMU_MAX_CONCURRENT`, default 10; env `VIBEOS_QEMU_MAX_CONCURRENT`). A pool of `flock`'d slot files (`slots/slot-NN`) caps how many QEMUs run at once *across every worktree*. A launcher that can't get a slot **queues** (up to `VIBEOS_QEMU_QUEUE_TIMEOUT`, default 30 min) instead of piling another VM onto a saturated host. The slot is acquired on an fd that the QEMU **inherits**, so it releases automatically when QEMU exits — even though `start.sh` exits immediately after launch (BSD flock OFD semantics). Queue time is excluded from the lifetime cap (the deadline is computed *after* the slot is acquired).
+- **Hard lifetime cap** (`QEMU_MAX_LIFETIME_SECONDS`, default 1800; env `VIBEOS_QEMU_MAX_LIFETIME`). No QEMU outlives 30 min. Enforced three ways: the smoke harness arms an in-process `threading.Timer`; `start.sh` spawns a detached watchdog (it has no long-lived launcher to host a timer); and every lockfile/manifest records a `deadline` so any `reap.sh` pass culls a past-deadline VM even if its owner is still alive but wedged.
+- **Orphan reaping** (`reap.sh`). An orphan = a QEMU whose owning session (the first non-shell ancestor — claude/tmux/sshd/terminal — resolved by `lib/common.sh:owner_pid_for`) has died. Reaping a live-owner VM within its cap is never done; it might be another agent's active run.
 
 ### Inspection (single-shot, no execution)
 
