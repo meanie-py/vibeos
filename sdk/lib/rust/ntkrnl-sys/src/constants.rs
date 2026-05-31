@@ -374,7 +374,14 @@ pub const DOMAIN_ALIAS_RID_BACKUP_OPS: ULONG = 0x00000227;
 // ============================================================================
 
 pub const SECURITY_DESCRIPTOR_REVISION1: ULONG = 1;
-pub const SECURITY_DESCRIPTOR_MIN_LENGTH: ULONG = 20; // sizeof(SECURITY_DESCRIPTOR)
+// `sizeof(SECURITY_DESCRIPTOR)` (absolute form): 20 bytes on 32-bit (4-byte
+// header + four 4-byte pointers), 40 bytes on 64-bit (4-byte header + 4 pad +
+// four 8-byte pointers). Hardcoding 20 on 64-bit undersizes SD allocations and
+// the capture-length guard.
+#[cfg(target_pointer_width = "32")]
+pub const SECURITY_DESCRIPTOR_MIN_LENGTH: ULONG = 20;
+#[cfg(target_pointer_width = "64")]
+pub const SECURITY_DESCRIPTOR_MIN_LENGTH: ULONG = 40;
 
 // ============================================================================
 // Token access rights (from winnt.h)

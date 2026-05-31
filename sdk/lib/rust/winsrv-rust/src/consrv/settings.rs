@@ -19,6 +19,10 @@ extern "C" {
 extern "system" {
     pub fn ConDrvChangeScreenBufferAttributes( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, NewScreenAttrib: u16, NewPopupAttrib: u16, ) -> i32;
     pub fn HistoryReshapeAllBuffers( Console: PCONSRV_CONSOLE, HistoryBufferSize: u32, NumberOfHistoryBuffers: u32, HistoryNoDup: u32, );
+}
+// condrv flip: cdecl — Term* are term.rs vtbl wrappers; ConioResizeBuffer is
+// C plain-cdecl (NTSTATUS, no NTAPI). Match the extern "C" definitions.
+extern "C" {
     pub fn TermSetCodePage( Console: PCONSRV_CONSOLE, CodePage: u32, ) -> u8;
     pub fn TermResizeTerminal(Console: PCONSRV_CONSOLE);
     pub fn ConioResizeBuffer( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Size: COORD, ) -> i32;

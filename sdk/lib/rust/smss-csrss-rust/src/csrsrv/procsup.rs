@@ -113,7 +113,7 @@ pub unsafe extern "system" fn CsrInitializeProcessStructure() -> i32 {
     (*CsrRootProcess).ClientId = (*NtCurrentTeb()).ClientId;
     // Index each LIST_ENTRY individually; `addr_of_mut!(<array>).add(i)`
     // advances by sizeof(<whole array>), not sizeof(LIST_ENTRY).
-    for i in 0..256 {
+    for i in 0..NUMBER_THREAD_HASH_BUCKETS as usize {
         InitializeListHead(&mut CsrThreadHashTable[i] as *mut LIST_ENTRY as PLIST_ENTRY);
     }
     RtlInitializeCriticalSection(core::ptr::addr_of_mut!(CsrWaitListsLock))

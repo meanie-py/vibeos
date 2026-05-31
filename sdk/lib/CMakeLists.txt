@@ -27,7 +27,8 @@ add_subdirectory(drivers)
 add_subdirectory(dxguid)
 add_subdirectory(epsapi)
 add_subdirectory(evtlib)
-add_subdirectory(fast486)
+# fast486 (x86 software CPU) removed: its only consumers were the HAL x86bios
+# INT10 emulation and NTVDM, both dropped in the pre-Vista prune.
 add_subdirectory(fslib)
 
 if(STACK_PROTECTOR)

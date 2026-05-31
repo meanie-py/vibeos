@@ -13,29 +13,31 @@ use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp, wcsncpy, memcmp};
 use core::ffi::c_void;
 
+// `ConioPause`/`ConioUnpause` are plain-cdecl (no NTAPI) in console.c
+// (now the Rust consrv::console) → extern "C", UCHAR Flags.
+extern "C" {
+    pub fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u8);
+    pub fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u8);
+}
+
 // Local extern fn block — kept lean because the bulk of Win32 +
 // consrv-internal fns now resolve via use winsrv_sys::winsrv::*;
 // (post-regen) + super::*; sibling imports + super::helpers::*.
+// condrv flip: TermResizeTerminal is term.rs's vtbl dispatcher, exported cdecl
+// `_TermResizeTerminal` (abstract PCONSOLE arg; cast at call sites).
+extern "C" {
+    pub fn TermResizeTerminal(Console: *mut core::ffi::c_void);
+}
 extern "system" {
     /// `ConsoleAllocHeap`/`ConsoleFreeHeap` live in consrv/heap.c; not
     /// in the bindgen allowlist (no real "outer ring" prefix).
     pub fn ConsoleAllocHeap(Flags: u32, Size: usize) -> *mut core::ffi::c_void;
     pub fn ConsoleFreeHeap(Ptr: *mut core::ffi::c_void);
-    /// `TermResizeTerminal` — TERMINAL_VTBL dispatcher in terminal.c.
-    /// Takes the abstract PCONSOLE (not the consrv-flavoured
-    /// PCONSRV_CONSOLE), so the Console cast is needed at call sites.
-    pub fn TermResizeTerminal(Console: *mut core::ffi::c_void);
-    /// `ConioPause`/`ConioUnpause` — consrv/conoutput.c.
-    pub fn ConioPause(Console: PCONSRV_CONSOLE, Flags: u32);
-    pub fn ConioUnpause(Console: PCONSRV_CONSOLE, Flags: u32);
     /// `GetType` — sibling C-side helper in conoutput.c that returns
     /// the buffer-type discriminant (TEXTMODE_BUFFER vs GRAPHICS_BUFFER).
     pub fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
-    /// `GetScreenBufferSizeUnits` — consrv/conoutput.c.
-    pub fn GetScreenBufferSizeUnits(
-        Buffer: PCONSOLE_SCREEN_BUFFER, GuiData: PGUI_CONSOLE_DATA,
-        WidthUnit: *mut u32, HeightUnit: *mut u32,
-    );
+    // GetScreenBufferSizeUnits is now a plain Rust helper in super::helpers
+    // (FORCEINLINE in guiterm.h), resolved via `use super::helpers::*`.
     /// `CON_SET_OUTPUT_CP` — code-page helper macro lowered to fn.
     pub fn CON_SET_OUTPUT_CP(Console: PCONSRV_CONSOLE, CodePage: UINT);
     /// `GetConsoleInputBufferMode` — consrv/coninput.c.
@@ -104,7 +106,11 @@ pub static mut GuiConsoleMainMenuItems: [GUICONSOLE_MENUITEM; 4] = [
     GUICONSOLE_MENUITEM { uID: 0, SubMenu: core::ptr::null(), wCmdID: 0 },
 ];
 
-pub const s_Colors: [COLORREF; 16] = [
+// `const COLORREF s_Colors[16]` in conwnd.c — a real static array with
+// external linkage (settings.rs reads it via `extern "C" { static s_Colors }`).
+// Must be a #[no_mangle] static (a `const` is inlined and exports no symbol).
+#[no_mangle]
+pub static s_Colors: [COLORREF; 16] = [
     0x00000000,
     0x00800000,
     0x00008000,
@@ -682,7 +688,10 @@ unsafe fn OnFocus(GuiData: PGUI_CONSOLE_DATA, SetFocus: BOOL) {
     }
 }
 
-pub unsafe fn GetSelectionBeginEnd(
+// Promoted #[no_mangle] extern "system" so text.rs (now Rust) can extern-link
+// it across the gui/* modules (#36 frontends flip).
+#[no_mangle]
+pub unsafe extern "system" fn GetSelectionBeginEnd(
     Begin: PCOORD,
     End: PCOORD,
     SelectionAnchor: PCOORD,
@@ -905,7 +914,7 @@ pub unsafe fn UpdateSelection(
             }
 
             (*GuiData).Selection.dwFlags |= CONSOLE_SELECTION_IN_PROGRESS;
-            ConioPause(Console, PAUSED_FROM_SELECTION);
+            ConioPause(Console, PAUSED_FROM_SELECTION as u8);
         }
     } else {
         if ((*GuiData).Selection.dwFlags & CONSOLE_SELECTION_NOT_EMPTY) != 0 {
@@ -913,7 +922,7 @@ pub unsafe fn UpdateSelection(
         }
 
         (*GuiData).Selection.dwFlags = CONSOLE_NO_SELECTION;
-        ConioUnpause(Console, PAUSED_FROM_SELECTION);
+        ConioUnpause(Console, PAUSED_FROM_SELECTION as u8);
 
         SetWindowTextW((*GuiData).hWindow, (*Console).Title.Buffer);
     }
@@ -1313,11 +1322,11 @@ unsafe fn OnScroll(GuiData: PGUI_CONSOLE_DATA, nBar: INT, sbCode: WORD) {
         }
         SB_THUMBTRACK => {
             sInfo.nPos = sInfo.nTrackPos;
-            ConioPause(Console, PAUSED_FROM_SCROLLBAR);
+            ConioPause(Console, PAUSED_FROM_SCROLLBAR as u8);
         }
         SB_THUMBPOSITION => {
             sInfo.nPos = sInfo.nTrackPos;
-            ConioUnpause(Console, PAUSED_FROM_SCROLLBAR);
+            ConioUnpause(Console, PAUSED_FROM_SCROLLBAR as u8);
         }
         SB_TOP => {
             sInfo.nPos = sInfo.nMin;

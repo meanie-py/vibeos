@@ -32,8 +32,10 @@ extern "system" {
     ) -> NTSTATUS;
     pub fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS;
 }
-extern "system" {    pub fn TermDrawRegion(Console: PCONSRV_CONSOLE, Region: *mut SMALL_RECT);
-}
+// TermDrawRegion is a TERMINAL_VTBL dispatch helper (term.h #define in C);
+// use the sibling-Rust inline implementation in consrv::term rather than an
+// extern symbol (there is no exported `_TermDrawRegion@N`).
+use super::super::term::TermDrawRegion;
 
 // ---- file-scope preamble (translated) ----
 pub type FRONTEND_LOAD = Option<

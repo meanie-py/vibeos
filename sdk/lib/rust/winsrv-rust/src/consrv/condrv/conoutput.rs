@@ -8,7 +8,9 @@ extern "system" {
     pub fn CONTAINING_RECORD(addr: *const u8, Type: usize, field_offset: usize) -> *mut u8;
 }
 
-extern "system" {
+// These condrv buffer fns are defined plain-cdecl (no NTAPI) in the still-C
+// condrv (conoutput.c / text.c / graphics.c) → extern "C".
+extern "C" {
     pub fn TEXTMODE_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, TextModeInfo: PTEXTMODE_BUFFER_INFO, ) -> NTSTATUS;
     pub fn GRAPHICS_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, GraphicsInfo: PGRAPHICS_BUFFER_INFO, ) -> NTSTATUS;
     pub fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
@@ -17,7 +19,8 @@ extern "system" {
 // Term* macros are provided by super::super::term (PCONSRV_CONSOLE-typed
 // inline wrappers around the vtbl call). Don't redeclare them as extern.
 
-pub(crate) unsafe fn CONSOLE_SCREEN_BUFFER_Initialize(
+#[no_mangle]
+pub unsafe extern "C" fn CONSOLE_SCREEN_BUFFER_Initialize(
     Buffer: *mut PCONSOLE_SCREEN_BUFFER,
     Console: PCONSOLE,
     Type: CONSOLE_IO_OBJECT_TYPE,
@@ -46,7 +49,8 @@ pub(crate) unsafe fn CONSOLE_SCREEN_BUFFER_Initialize(
     STATUS_SUCCESS
 }
 
-pub(crate) unsafe fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
+#[no_mangle]
+pub unsafe extern "C" fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
     match (*Buffer).Header.Type {
         TEXTMODE_BUFFER => {
             TEXTMODE_BUFFER_Destroy(Buffer);
@@ -173,7 +177,7 @@ pub unsafe extern "system" fn ConDrvSetConsoleActiveScreenBuffer(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ConDrvGetActiveScreenBuffer(Console: PCONSOLE) -> PCONSOLE_SCREEN_BUFFER {
+pub unsafe extern "C" fn ConDrvGetActiveScreenBuffer(Console: PCONSOLE) -> PCONSOLE_SCREEN_BUFFER {
     if !Console.is_null() {
         (*Console).ActiveBuffer
     } else {

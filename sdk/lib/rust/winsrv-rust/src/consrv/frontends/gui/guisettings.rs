@@ -8,9 +8,12 @@ use super::conwnd::*;
 
 extern "system" {
     fn _SEH2_GetExceptionCode() -> i32;
-    /// `GetType` — sibling C-side helper (conoutput.c).
+    /// `GetType` — consrv-internal helper (def consrv/mod.rs, #[no_mangle] system).
     fn GetType(Buffer: PCONSOLE_SCREEN_BUFFER) -> u32;
-    /// `InitTTFontCache`/`RefreshTTFontCache` — concfg-side helpers.
+}
+extern "C" {
+    /// `InitTTFontCache`/`RefreshTTFontCache` — concfg-side helpers (cdecl;
+    /// concfg exports the undecorated `_InitTTFontCache`/`_RefreshTTFontCache`).
     fn InitTTFontCache();
     fn RefreshTTFontCache();
 }

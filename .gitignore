@@ -30,6 +30,7 @@ CMakeFiles/
 sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devaction_codex.rs.bak
 
 # Build directories and toolchain
+.build-tools
 .build-tools/
 build-amd64/
 build-arm64/

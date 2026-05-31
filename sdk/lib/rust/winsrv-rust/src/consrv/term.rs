@@ -65,8 +65,10 @@ pub unsafe fn TermSetScreenInfo(
     ((*vtbl).SetScreenInfo.unwrap())(term_iface, ScreenBuffer, OldCursorX, OldCursorY)
 }
 
-#[inline(always)]
-pub unsafe fn TermResizeTerminal(Console: PCONSRV_CONSOLE) {
+// condrv flip: settings.rs/conwnd.rs reference this as a linked cdecl symbol
+// `_TermResizeTerminal` (vtbl dispatcher) — export it (was inline-only).
+#[no_mangle]
+pub unsafe extern "C" fn TermResizeTerminal(Console: PCONSRV_CONSOLE) {
     let term_iface = core::ptr::addr_of_mut!((*Console).TermIFace);
     let vtbl = (*term_iface).Vtbl;
     ((*vtbl).ResizeTerminal.unwrap())(term_iface);
@@ -100,8 +102,9 @@ pub unsafe fn TermSetPalette(Console: PCONSRV_CONSOLE, PaletteHandle: HPALETTE, 
     ((*vtbl).SetPalette.unwrap())(term_iface, PaletteHandle, PaletteUsage)
 }
 
-#[inline(always)]
-pub unsafe fn TermSetCodePage(Console: PCONSRV_CONSOLE, CodePage: UINT) -> BOOL {
+// condrv flip: settings.rs references this as a linked cdecl `_TermSetCodePage`.
+#[no_mangle]
+pub unsafe extern "C" fn TermSetCodePage(Console: PCONSRV_CONSOLE, CodePage: UINT) -> BOOL {
     let term_iface = core::ptr::addr_of_mut!((*Console).TermIFace);
     let vtbl = (*term_iface).Vtbl;
     ((*vtbl).SetCodePage.unwrap())(term_iface, CodePage)

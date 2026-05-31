@@ -12,12 +12,16 @@ use super::super::input::ConioProcessKey;
 use super::super::super::coninput::ConioProcessInputEvent;
 use core::ffi::c_void;
 
-extern "system" {
-    /// `InitTTFontCache`/`RefreshTTFontCache` — concfg-side helpers.
+extern "C" {
+    /// `InitTTFontCache`/`RefreshTTFontCache` — concfg-side helpers (cdecl;
+    /// concfg exports the undecorated `_InitTTFontCache`).
     fn InitTTFontCache();
 }
-extern "C" {
-    fn GetScreenBufferSizeUnits( Buffer: PCONSOLE_SCREEN_BUFFER, GuiData: *mut GUI_CONSOLE_DATA, WidthUnit: *mut UINT, HeightUnit: *mut UINT, );
+extern "system" {
+    /// `GetType` — consrv-internal helper (def consrv/mod.rs, #[no_mangle]
+    /// extern "system"). `MonitorFromWindow`/`ScrollWindowEx` — user32 stdcall.
+    /// (`GetScreenBufferSizeUnits`/`SmallRectToRect` are now plain Rust helpers
+    /// in super::helpers, resolved via `use super::helpers::*`.)
     fn MonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR;
     fn GetType(Buff: PCONSOLE_SCREEN_BUFFER) -> u32;
     fn ScrollWindowEx( hWnd: HWND, dx: i32, dy: i32, prcScroll: *const RECT, prcClip: *const RECT, hrgnUpdate: HRGN, prcUpdate: *mut RECT, flags: UINT, ) -> i32;
@@ -33,7 +37,7 @@ extern "system" {
     fn ConsoleFreeHeap(Ptr: PVOID);
     fn GuiConsoleGetDefaultSettings(TermInfo: *mut GUI_CONSOLE_INFO);
     fn GuiConsoleReadUserSettings(TermInfo: *mut GUI_CONSOLE_INFO);
-    fn StringCchCopyNW( pszDest: PWSTR, cchDest: SIZE_T, pszSrc: PCWSTR, cchToCopy: SIZE_T, ) -> HRESULT;
+    // StringCchCopyNW is a plain Rust helper in super::helpers (via glob import).
 }
 
 // ---- file-scope preamble (translated) ----
@@ -1159,9 +1163,9 @@ pub unsafe extern "system" fn GuiLoadFrontEnd(
 
     StringCchCopyNW(
         (*GuiInitInfo).TermInfo.FaceName.as_mut_ptr(),
-        (*GuiInitInfo).TermInfo.FaceName.len() as SIZE_T,
+        (*GuiInitInfo).TermInfo.FaceName.len(),
         (*ConsoleInfo).FaceName.as_ptr(),
-        (*ConsoleInfo).FaceName.len() as SIZE_T,
+        (*ConsoleInfo).FaceName.len(),
     );
     (*GuiInitInfo).TermInfo.FontFamily = (*ConsoleInfo).FontFamily;
     (*GuiInitInfo).TermInfo.FontSize = (*ConsoleInfo).FontSize;
@@ -1181,6 +1185,7 @@ pub unsafe extern "system" fn GuiLoadFrontEnd(
     STATUS_SUCCESS
 }
 
+#[no_mangle]
 pub unsafe extern "system" fn GuiUnloadFrontEnd(FrontEnd: PFRONTEND) -> NTSTATUS {
     if FrontEnd.is_null() {
         return STATUS_INVALID_PARAMETER;

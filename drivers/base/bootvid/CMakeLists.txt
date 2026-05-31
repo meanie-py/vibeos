@@ -50,9 +50,9 @@ function(add_bootvid _target _configfile)
     add_cd_file(TARGET ${_target} DESTINATION reactos/system32 NO_CAB NAME_ON_CD ${_bviddata_NAME_ON_CD} FOR all)
 endfunction()
 
-if((ARCH STREQUAL "i386") OR (ARCH STREQUAL "amd64"))
-    add_bootvid(bootvid i386/pc/vgabvid.cmake)
-elseif(ARCH STREQUAL "arm64")
-    add_bootvid(bootvid framebuf/lfbbvid.cmake)
-endif()
+# All architectures now boot via UEFI and drive the GOP linear framebuffer, so
+# bootvid uses the framebuffer (lfb) path everywhere. The legacy i386/pc VGA
+# INT10h bootvid (i386/pc/vgabvid.cmake) is dead under UEFI (no VGA BIOS / the
+# card is in a linear GOP mode) and was removed with the BIOS prune.
+add_bootvid(bootvid framebuf/lfbbvid.cmake)
 add_bootvid(lfbbvid framebuf/lfbbvid.cmake)

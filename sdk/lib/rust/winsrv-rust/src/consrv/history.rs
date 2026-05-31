@@ -30,7 +30,8 @@ struct HISTORY_BUFFER {
 
 type PHISTORY_BUFFER = *mut HISTORY_BUFFER;
 
-extern "system" {
+// condrv flip: alias.rs defines these plain-cdecl (C: BOOLEAN, no NTAPI).
+extern "C" {
     pub fn ConvertInputAnsiToUnicode( Console: PCONSRV_CONSOLE, Source: PVOID, SourceLength: USHORT, Target: *mut PWCHAR, TargetLength: PUSHORT, ) -> BOOLEAN;
     pub fn ConvertInputUnicodeToAnsi( Console: PCONSRV_CONSOLE, Source: PVOID, SourceLength: USHORT, Target: PCHAR, TargetLength: USHORT, ) -> BOOLEAN;
 }
@@ -182,8 +183,10 @@ pub(crate) unsafe fn HistoryResizeBuffer(Hist: PHISTORY_BUFFER, NumCommands: ULO
     STATUS_SUCCESS
 }
 
+// condrv flip: lineinput.rs calls this as `_HistoryAddEntry@12` (stdcall),
+// matching its History* sibling family (Rust-only callers, self-consistent).
 #[no_mangle]
-pub unsafe extern "C" fn HistoryAddEntry(
+pub unsafe extern "system" fn HistoryAddEntry(
     Console: PCONSRV_CONSOLE,
     ExeName: PUNICODE_STRING,
     Entry: PUNICODE_STRING,
@@ -445,6 +448,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistory(
            core::mem::size_of::<u8>() as ULONG,
        ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -509,6 +513,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistory(
 
     (*GetCommandHistoryRequest).HistoryLength = BytesWritten;
 
+    ConSrvReleaseConsole(Console, 1u8);
     Status
 }
 
@@ -532,6 +537,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistoryLength(
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -555,6 +561,7 @@ pub unsafe extern "system" fn SrvGetConsoleCommandHistoryLength(
 
     (*GetCommandHistoryLengthRequest).HistoryLength = Length;
 
+    ConSrvReleaseConsole(Console, 1u8);
     STATUS_SUCCESS
 }
 
@@ -576,6 +583,7 @@ pub unsafe extern "system" fn SrvExpungeConsoleCommandHistory(
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -587,6 +595,7 @@ pub unsafe extern "system" fn SrvExpungeConsoleCommandHistory(
     );
     HistoryDeleteBuffer(Hist);
 
+    ConSrvReleaseConsole(Console, 1u8);
     STATUS_SUCCESS
 }
 
@@ -610,6 +619,7 @@ pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
     {
+        ConSrvReleaseConsole(Console, 1u8);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -623,6 +633,7 @@ pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
         Status = HistoryResizeBuffer(Hist, (*SetHistoryNumberCommandsRequest).NumCommands);
     }
 
+    ConSrvReleaseConsole(Console, 1u8);
     Status
 }
 
@@ -695,5 +706,7 @@ pub unsafe extern "system" fn SrvSetConsoleCommandHistoryMode(
     let SetHistoryModeRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.SetHistoryModeRequest);
 
     (*Console).InsertMode = if (*SetHistoryModeRequest).Mode & 1 != 0 { 1u8 } else { 0u8 };
+
+    ConSrvReleaseConsole(Console, 1u8);
     STATUS_SUCCESS
 }

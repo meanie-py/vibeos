@@ -33,7 +33,9 @@ struct ALIAS_HEADER {
 
 type PALIAS_HEADER = *mut ALIAS_HEADER;
 
-pub(crate) unsafe fn ConvertInputAnsiToUnicode(
+// condrv flip: history.rs (sibling) calls this cdecl `_ConvertInputAnsiToUnicode`.
+#[no_mangle]
+pub unsafe extern "C" fn ConvertInputAnsiToUnicode(
     Console: PCONSRV_CONSOLE,
     Source: PVOID,
     SourceLength: USHORT,
@@ -67,7 +69,8 @@ pub(crate) unsafe fn ConvertInputAnsiToUnicode(
     1u8
 }
 
-pub(crate) unsafe fn ConvertInputUnicodeToAnsi(
+#[no_mangle]
+pub unsafe extern "C" fn ConvertInputUnicodeToAnsi(
     Console: PCONSRV_CONSOLE,
     Source: PVOID,
     SourceLength: USHORT,

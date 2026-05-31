@@ -15,8 +15,8 @@
 // KeBugCheckEx resolves fine via the import library.
 use ntkrnl_sys::ddk::KeBugCheckEx;
 use ntkrnl_sys::hal_ddk::{
-    HalDispatchTable, HalInitializeBios, HalPrivateDispatchTable, HalStopProfileInterrupt,
-    HalpActiveProcessors, HalpAddressUsageList, HalpBiosDisplayReset, HalpBusType,
+    HalDispatchTable, HalPrivateDispatchTable, HalStopProfileInterrupt,
+    HalpActiveProcessors, HalpAddressUsageList, HalpBusType,
     HalpCalibrateStallExecution, HalpDefaultInterruptAffinity, HalpDefaultIoSpace,
     HalpGetDmaAdapter, HalpInitPhase0, HalpInitPhase1, HalpInitProcessor,
     HalpInitializeClock, HalpInitializeCmos, HalpInitializePICs,
@@ -204,7 +204,10 @@ pub unsafe extern "system" fn HalInitSystem(
             HalDispatchTable.HalInitPnpDriver = Some(core::mem::transmute(HaliInitPnpDriver as usize));
             HalDispatchTable.HalGetDmaAdapter = Some(core::mem::transmute(HalpGetDmaAdapter as usize));
             HalDispatchTable.HalGetInterruptTranslator = None; // FIXME: TODO
-            HalPrivateDispatchTable.HalResetDisplay = Some(core::mem::transmute(HalpBiosDisplayReset as usize));
+            // INT10/VGA-BIOS display reset removed (no fast486 / x86bios). The
+            // kernel's default HalResetDisplay is NULL (see halstub) and callers
+            // null-check it; on a GOP framebuffer there is no text mode to reset.
+            HalPrivateDispatchTable.HalResetDisplay = None;
             HalPrivateDispatchTable.HalHaltSystem = Some(core::mem::transmute(HaliHaltSystem as usize));
 
             // Stitch the default I/O space into the address-usage list.
@@ -219,11 +222,9 @@ pub unsafe extern "system" fn HalInitSystem(
             HalStopProfileInterrupt(ProfileTime);
 
             HalpInitPhase0(LoaderBlock);
-            HalInitializeBios(0, LoaderBlock);
         } else if BootPhase == 1 {
             ntkrnl_sys::hal_ddk::HalpInitBusHandlers();
             HalpInitPhase1();
-            HalInitializeBios(1, LoaderBlock);
         }
     }
     1 /* TRUE */

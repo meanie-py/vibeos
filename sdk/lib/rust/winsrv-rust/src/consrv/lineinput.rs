@@ -127,8 +127,9 @@ pub(crate) unsafe fn LineInputRecallHistory(
     );
 }
 
+// condrv flip: terminal.rs declares this cdecl `_LineInputKeyDown` (C: VOID, no NTAPI).
 #[no_mangle]
-pub unsafe extern "system" fn LineInputKeyDown(
+pub unsafe extern "C" fn LineInputKeyDown(
     Console: PCONSRV_CONSOLE,
     ExeName: PUNICODE_STRING,
     KeyEvent: *mut KEY_EVENT_RECORD,

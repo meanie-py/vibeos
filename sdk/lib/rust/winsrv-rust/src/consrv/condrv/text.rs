@@ -11,10 +11,16 @@ extern "C" {
     pub fn C_ASSERT(x: bool);
     pub fn RTL_FIELD_SIZE(t: usize, f: usize) -> usize;
 }
-extern "system" {
+// CONSOLE_SCREEN_BUFFER_* are plain-cdecl (no NTAPI) in the still-C condrv
+// (text.c / conoutput.c) → extern "C".
+extern "C" {
     pub fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER);
-    pub fn IS_FULL_WIDTH(c: u16) -> u32;
     pub fn CONSOLE_SCREEN_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, Type: u32, Size: usize, ) -> i32;
+}
+// IS_FULL_WIDTH is a C macro in the original source; the consrv Rust shim
+// (consrv_rust_shim.c) provides a real __stdcall implementation → "system".
+extern "system" {
+    pub fn IS_FULL_WIDTH(c: u16) -> u32;
 }
 // TermWriteStream/TermResizeTerminal/TermDrawRegion supplied by super::super::term::*
 
@@ -107,7 +113,10 @@ pub(crate) unsafe fn ConioGetUnion(
     1
 }
 
-pub(crate) unsafe fn TEXTMODE_BUFFER_Initialize(
+// condrv flip: conoutput.rs (sibling) calls this as plain-cdecl
+// `_TEXTMODE_BUFFER_Initialize` (NTSTATUS, no NTAPI) — export it.
+#[no_mangle]
+pub unsafe extern "C" fn TEXTMODE_BUFFER_Initialize(
     Buffer: *mut PCONSOLE_SCREEN_BUFFER,
     Console: PCONSOLE,
     ProcessHandle: *mut core::ffi::c_void,
@@ -186,7 +195,8 @@ pub(crate) unsafe fn TEXTMODE_BUFFER_Initialize(
     STATUS_SUCCESS
 }
 
-pub(crate) unsafe fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
+#[no_mangle]
+pub unsafe extern "C" fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
     let Buff = Buffer as PTEXTMODE_SCREEN_BUFFER;
 
     (*Buffer).Header.Type = SCREEN_BUFFER;
@@ -196,13 +206,15 @@ pub(crate) unsafe fn TEXTMODE_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
     CONSOLE_SCREEN_BUFFER_Destroy(Buffer);
 }
 
-pub(crate) unsafe fn ConioCoordToPointer(Buff: PTEXTMODE_SCREEN_BUFFER, X: u32, Y: u32) -> PCHAR_INFO {
+#[no_mangle]
+pub unsafe extern "C" fn ConioCoordToPointer(Buff: PTEXTMODE_SCREEN_BUFFER, X: u32, Y: u32) -> PCHAR_INFO {
     (*Buff).Buffer.offset(
         ((((Y + (*Buff).VirtualY as u32) % (*Buff).ScreenBufferSize.Y as u32) * (*Buff).ScreenBufferSize.X as u32 + X) as isize)
     )
 }
 
-pub(crate) unsafe fn ClearLineBuffer(Buff: PTEXTMODE_SCREEN_BUFFER) {
+#[no_mangle]
+pub unsafe extern "C" fn ClearLineBuffer(Buff: PTEXTMODE_SCREEN_BUFFER) {
     let mut Ptr = ConioCoordToPointer(Buff, 0 as u32, (*Buff).CursorPosition.Y as u32);
     let mut LinePos: i16 = 0;
 
@@ -321,7 +333,9 @@ pub(crate) unsafe fn ConioFillRegion(
     }
 }
 
-pub(crate) unsafe fn ConioResizeBuffer(
+// condrv flip: settings.c (still C) calls `_ConioResizeBuffer` (cdecl) — export.
+#[no_mangle]
+pub unsafe extern "C" fn ConioResizeBuffer(
     Console: PCONSOLE,
     ScreenBuffer: PTEXTMODE_SCREEN_BUFFER,
     Size: COORD,
@@ -1185,7 +1199,9 @@ pub unsafe extern "system" fn ConDrvWriteConsoleOutputString(
     Status
 }
 
-pub(crate) unsafe fn ConDrvFillConsoleOutput(
+// condrv flip: popup.c (still C) calls `_ConDrvFillConsoleOutput@28` (NTAPI).
+#[no_mangle]
+pub unsafe extern "system" fn ConDrvFillConsoleOutput(
     Console: PCONSOLE,
     Buffer: PTEXTMODE_SCREEN_BUFFER,
     CodeType: u32,
