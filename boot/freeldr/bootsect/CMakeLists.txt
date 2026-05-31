@@ -22,16 +22,15 @@ if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
     # CreateBootSectorTarget(fat32_new ${CMAKE_CURRENT_SOURCE_DIR}/faty.S ${CMAKE_CURRENT_BINARY_DIR}/fat32_new.bin 7c00)
     # remove_definitions(-DFAT32)
 
-    CreateBootSectorTarget(isoboot ${CMAKE_CURRENT_SOURCE_DIR}/isoboot.S ${CMAKE_CURRENT_BINARY_DIR}/isoboot.bin 7000)
-    CreateBootSectorTarget(isobtrt ${CMAKE_CURRENT_SOURCE_DIR}/isobtrt.S ${CMAKE_CURRENT_BINARY_DIR}/isobtrt.bin 7000)
-    CreateBootSectorTarget(isombr ${CMAKE_CURRENT_SOURCE_DIR}/isombr.S ${CMAKE_CURRENT_BINARY_DIR}/isombr.bin 7000)
+    # isoboot/isobtrt/isombr (BIOS El Torito boot sector + isohybrid MBR) removed
+    # with the BIOS prune — the ISO boots UEFI-only via the EFI El Torito entry
+    # (efisys.bin). dosmbr/ext/extldr stay (legacy BIOS disk-boot sectors,
+    # bootcd-only, not on the booted livecd); fat/fat32 stay because their FAT
+    # VBR is reused to synthesize the UEFI efisys.bin FAT image.
 
     add_cd_file(TARGET dosmbr DESTINATION loader NO_CAB FILE ${CMAKE_CURRENT_BINARY_DIR}/dosmbr.bin FOR bootcd regtest)
     add_cd_file(TARGET ext DESTINATION loader NO_CAB FILE ${CMAKE_CURRENT_BINARY_DIR}/ext.bin FOR bootcd regtest)
     add_cd_file(TARGET extldr DESTINATION loader NO_CAB FILE ${CMAKE_CURRENT_BINARY_DIR}/extldr.sys FOR bootcd regtest)
     add_cd_file(TARGET fat DESTINATION loader NO_CAB FILE ${CMAKE_CURRENT_BINARY_DIR}/fat.bin FOR bootcd regtest)
     add_cd_file(TARGET fat32 DESTINATION loader NO_CAB FILE ${CMAKE_CURRENT_BINARY_DIR}/fat32.bin FOR bootcd regtest)
-    add_cd_file(TARGET isoboot DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FILE ${CMAKE_CURRENT_BINARY_DIR}/isoboot.bin FOR all hybridcd)
-    add_cd_file(TARGET isobtrt DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FILE ${CMAKE_CURRENT_BINARY_DIR}/isobtrt.bin FOR bootcd regtest)
-    add_cd_file(TARGET isombr DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FILE ${CMAKE_CURRENT_BINARY_DIR}/isombr.bin FOR all hybridcd)
 endif()

@@ -1,0 +1,29 @@
+# framebuf-rust — Rust translation of the generic framebuffer GDI display
+# driver (win32ss/drivers/displays/framebuf/*.c). crate-type=staticlib →
+# libframebuf_rust.a, linked into the cmake-built framebuf.dll with the C
+# sources commented out — arm64vid-rust / hal-rust style cohabitation.
+#
+# Unlike arm64vid (a video *miniport*-adjacent driver linking ntoskrnl),
+# framebuf is a GDI *display* driver: it links win32k (the GDI engine that
+# exports Eng*/PALOBJ_*/DDI types) plus libcntpr. So this crate depends on
+# win32k-sys (the win32k FFI substrate) rather than ntkrnl-sys alone.
+#
+# Built for all three arches (i386/amd64/arm64) — framebuf is the display
+# driver for every UEFI GOP/linear-framebuffer boot. NOT arch-gated.
+
+[package]
+name = "framebuf-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# win32k-sys is a superset FFI surface (base ntdef types + DDI types + Eng*
+# exports), so it alone covers everything the framebuf modules need via a
+# single `use win32k_sys::*` glob. We deliberately do NOT also depend on
+# ntkrnl-sys directly: a second direct path to the shared ntkrnl-sys tree
+# made cargo build win32k-sys twice (two rmeta hashes), which made
+# `win32k_sys` ambiguous and kept it out of the prelude (E0432).
+win32k-sys = { path = "../win32k-sys" }

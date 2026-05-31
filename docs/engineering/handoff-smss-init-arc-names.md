@@ -1,5 +1,17 @@
 # Handoff: i386+amd64 BUGCHECK 0x6B SMSS init / IopCreateArcNames
 
+> **✅ RESOLVED for amd64 (2026-05-29):** the amd64 0x6B is fixed. Root cause was
+> NOT "no CD-ROM PDO / PCI not enumerated" (that was already working). The
+> storage stack runs end-to-end; the real failure was `RtlStringFromGUID`
+> (`sdk/lib/rust/rtl-strings/src/cabi/mod.rs`) always returning
+> `STATUS_NO_MEMORY` from a stubbed cabi alloc path — cdrom.sys's KMDF
+> `EvtDriverDeviceAdd` calls it to register the device interface, so the device
+> add failed → no `\Device\CdRom0` → `CdRomCount=0` → ARC fail → 0x6B. Codex
+> implemented the real GUID-string formatting; amd64 now reaches `CdRomCount=1`,
+> `IopCreateArcNames done`, and SMSS — then hits a NEW, later blocker:
+> `SMSS: Load of WIN32K failed`, BUGCHECK 0x4C. This doc is retained for the
+> freeldr/WDF/uniata fix history only.
+
 **Audience:** Codex (or any agent picking up this kernel-stage debug).
 **Branch:** `continue-rust-port` (freeldr-rust-port just merged in via
 commit `e450a4332ee`).

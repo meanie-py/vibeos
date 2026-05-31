@@ -31,7 +31,7 @@ ApicSpuriousService:
 TRAP_ENTRY HalpClockInterrupt, KI_PUSH_FAKE_ERROR_CODE
 TRAP_ENTRY HalpClockIpi, KI_PUSH_FAKE_ERROR_CODE
 TRAP_ENTRY HalpProfileInterrupt, KI_PUSH_FAKE_ERROR_CODE
-TRAP_ENTRY HalpTrap0D, 0
+/* HalpTrap0D (V86-mode #GP dispatch) removed with generic/bios.c — see trap.S. */
 TRAP_ENTRY HalpApcInterrupt, KI_PUSH_FAKE_ERROR_CODE
 TRAP_ENTRY HalpDispatchInterrupt, KI_PUSH_FAKE_ERROR_CODE
 

@@ -30,6 +30,7 @@ CMakeFiles/
 sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devaction_codex.rs.bak
 
 # Build directories and toolchain
+.build-tools
 .build-tools/
 build-amd64/
 build-arm64/
@@ -62,3 +63,4 @@ Makefile
 cmake_install.cmake
 qemu/manual-arm64-*/
 ~*.md
+.cargo-wt-target/

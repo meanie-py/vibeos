@@ -1,11 +1,20 @@
 [project]
 name = "reactos-tests"
 version = "0.1.0"
-requires-python = ">=3.12"
+# The project venv is 3.10 (was declared 3.12, which would block `pip install`
+# on the actual interpreter the smoke harness runs under).
+requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
-qemu = ["pytest>=8.0", "pytest-timeout>=2.2"]
+# Everything the QEMU smoke harness needs. Install with:
+#   pip install -e '.[qemu]'
+# Pillow converts QMP screendump PPMs → PNG; without it screenshots fall back
+# to raw .ppm (and the boot-failure screenshot can't be saved as PNG). NOT
+# optional in practice — every screenshot test and the failure-diagnosis path
+# uses it. (Do not substitute ImageMagick `convert`: it mangles uniform-color
+# PPMs to 1-bit colormap PNGs that render solid black.)
+qemu = ["pytest>=8.0", "pytest-timeout>=2.2", "pillow>=10.0"]
 
 [tool.setuptools.packages.find]
 include = ["tests*"]

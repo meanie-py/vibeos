@@ -1497,18 +1497,76 @@ pub unsafe extern "system" fn RtlDuplicateUnicodeString(
     STATUS_SUCCESS
 }
 
-/// `NTSTATUS NTAPI RtlStringFromGUID(REFGUID, PUNICODE_STRING)` —
-/// Length=76, MaximumLength=78 set before `Buffer = alloc = NULL` ⇒
-/// STATUS_NO_MEMORY.
+/// `NTSTATUS NTAPI RtlStringFromGUID(REFGUID, PUNICODE_STRING)`.
 #[no_mangle]
 pub unsafe extern "system" fn RtlStringFromGUID(
-    _guid: *const GUID,
+    guid: *const GUID,
     guid_string: *mut UNICODE_STRING,
 ) -> i32 {
+    const GUID_STRING_CHARS: usize = 38;
+
+    #[inline]
+    fn hex_digit(value: u8) -> u16 {
+        match value & 0x0f {
+            n @ 0..=9 => b'0' as u16 + n as u16,
+            n => b'a' as u16 + (n as u16 - 10),
+        }
+    }
+
+    #[inline]
+    unsafe fn write_hex_u32(buffer: *mut u16, offset: &mut usize, value: u32, digits: usize) {
+        for shift in (0..digits).rev() {
+            *buffer.add(*offset) = hex_digit((value >> (shift * 4)) as u8);
+            *offset += 1;
+        }
+    }
+
+    #[inline]
+    unsafe fn write_hex_u16(buffer: *mut u16, offset: &mut usize, value: u16, digits: usize) {
+        write_hex_u32(buffer, offset, value as u32, digits);
+    }
+
+    #[inline]
+    unsafe fn write_hex_u8(buffer: *mut u16, offset: &mut usize, value: u8) {
+        *buffer.add(*offset) = hex_digit(value >> 4);
+        *offset += 1;
+        *buffer.add(*offset) = hex_digit(value);
+        *offset += 1;
+    }
+
     (*guid_string).Length = 38 * 2;
     (*guid_string).MaximumLength = 38 * 2 + 2;
-    (*guid_string).Buffer = core::ptr::null_mut();
-    STATUS_NO_MEMORY
+    (*guid_string).Buffer = rtl_alloc((*guid_string).MaximumLength as usize, TAG_USTR) as *mut u16;
+    if (*guid_string).Buffer.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    let buffer = (*guid_string).Buffer;
+    let mut offset = 0usize;
+    *buffer.add(offset) = b'{' as u16;
+    offset += 1;
+    write_hex_u32(buffer, &mut offset, (*guid).Data1, 8);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    write_hex_u16(buffer, &mut offset, (*guid).Data2, 4);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    write_hex_u16(buffer, &mut offset, (*guid).Data3, 4);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    write_hex_u8(buffer, &mut offset, (*guid).Data4[0]);
+    write_hex_u8(buffer, &mut offset, (*guid).Data4[1]);
+    *buffer.add(offset) = b'-' as u16;
+    offset += 1;
+    for i in 2..8 {
+        write_hex_u8(buffer, &mut offset, (*guid).Data4[i]);
+    }
+    *buffer.add(offset) = b'}' as u16;
+    offset += 1;
+    debug_assert_eq!(offset, GUID_STRING_CHARS);
+    *buffer.add(offset) = 0;
+
+    STATUS_SUCCESS
 }
 
 /// `NTSTATUS NTAPI RtlpEnsureBufferSize(ULONG, PRTL_BUFFER, SIZE_T)`.
@@ -2309,28 +2367,49 @@ pub unsafe extern "system" fn RtlCopySidAndAttributesArray(
     STATUS_SUCCESS
 }
 
-/// `NTSTATUS NTAPI RtlAllocateAndInitializeSid(...)`. No-alloc
-/// discipline: `SubAuthorityCount > 8` ⇒ STATUS_INVALID_SID; else
-/// the allocation fails ⇒ STATUS_NO_MEMORY (genuine writes nothing
-/// before the NULL check; `*Sid` untouched).
+/// `NTSTATUS NTAPI RtlAllocateAndInitializeSid(...)`. `> 8`
+/// subauthorities ⇒ STATUS_INVALID_SID; else allocate a SID via
+/// `RtlpAllocateMemory` (kernel/ntdll wraps PagedPool / process heap)
+/// and fill in the header + the requested subauthorities. Difftest
+/// harness keeps the NULL-alloc model (rtl_alloc → NULL ⇒ NO_MEMORY).
+///
+/// SID layout (winnt.h SID): 1 byte Revision + 1 byte SubAuthorityCount
+/// + 6 bytes IdentifierAuthority + N×4 SubAuthorities = 8 + N*4 bytes.
+const TAG_SID: u32 = u32::from_le_bytes(*b"pSid"); // 'diSp' (sdk/lib/rtl/sid.c:15)
 #[no_mangle]
 pub unsafe extern "system" fn RtlAllocateAndInitializeSid(
-    _id_auth: *const u8,
+    id_auth: *const u8,
     sub_authority_count: u8,
-    _s0: u32,
-    _s1: u32,
-    _s2: u32,
-    _s3: u32,
-    _s4: u32,
-    _s5: u32,
-    _s6: u32,
-    _s7: u32,
-    _sid: *mut *mut u8,
+    s0: u32,
+    s1: u32,
+    s2: u32,
+    s3: u32,
+    s4: u32,
+    s5: u32,
+    s6: u32,
+    s7: u32,
+    sid: *mut *mut u8,
 ) -> i32 {
     if sub_authority_count > 8 {
         return STATUS_INVALID_SID;
     }
-    STATUS_NO_MEMORY
+    let size = 8usize + (sub_authority_count as usize) * 4;
+    let buf = rtl_alloc(size, TAG_SID);
+    if buf.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+    // Header: Revision=1, SubAuthorityCount, IdentifierAuthority[6].
+    *buf.add(0) = 1u8; // SID_REVISION
+    *buf.add(1) = sub_authority_count;
+    core::ptr::copy_nonoverlapping(id_auth, buf.add(2), 6);
+    // Subauthorities (variable count).
+    let subs = [s0, s1, s2, s3, s4, s5, s6, s7];
+    let sub_ptr = buf.add(8) as *mut u32;
+    for i in 0..sub_authority_count as usize {
+        *sub_ptr.add(i) = subs[i];
+    }
+    *sid = buf;
+    STATUS_SUCCESS
 }
 
 /// `NTSTATUS NTAPI RtlConvertSidToUnicodeString(PUNICODE_STRING,

@@ -1,0 +1,30 @@
+[package]
+name = "winsrv-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# staticlib → libwinsrv_rust.a, linked into the cmake-built winsrv.dll
+# via per-binary cohabitation cmake (mirrors smss-csrss-rust pattern).
+# `.c` source stays in tree; cohabitation flips file-by-file as Rust
+# parity is verified.
+crate-type = ["staticlib"]
+
+[features]
+# Phase 5 audit (project_phase5_winsrv_audit) called for a dedicated
+# winsrv-sys bindgen substrate when the GUI/console paths come in.
+# Until then, the init.c + concfg leaf spike only needs ntdll-sys.
+default = ["ntddi_ws03"]
+ntddi_ws03 = []
+# Reserved per-binary cohab feature for winsrv.dll. Off by default;
+# the winsrv.dll cmake selects it via `--no-default-features --features
+# winsrv_dll_only,ntddi_ws03` once the cohab flip is wired up.
+winsrv_dll_only = []
+
+[dependencies]
+# ntdll-sys is re-exported from winsrv-sys::nt, so listing both is
+# redundant once Phase 5.0b lands. Keep ntdll-sys for now until the
+# init.c init-port (which references `nt::*` directly) is rewritten
+# through winsrv_sys.
+ntdll-sys = { path = "../ntdll-sys" }
+winsrv-sys = { path = "../winsrv-sys" }

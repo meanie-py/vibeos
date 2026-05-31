@@ -1378,11 +1378,93 @@ def fix_duplicate_extern_decls(code: str) -> str:
 # Main entry point
 # ============================================================================
 
+def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
+    """Deterministically retarget a user-mode translation's FFI imports.
+
+    rustconv's prompt/catalog are kernel-oriented, so the LLM emits
+    `ntkrnl_sys::{ddk,base,constants,globals,macros}::Sym`. A user-mode
+    target's substrate (ntdll-sys) re-exports its whole bindgen under
+    one umbrella module (`ntdll_sys::nt`). This collapses every
+    `ntkrnl_sys::<mod>::` to `<sys_crate>::<sys_umbrella>::` and
+    replaces the now-redundant explicit `use` lines with a single glob
+    — LLM-independent, mirrors enforce_win32k_abi philosophy.
+    """
+    pfx = f"{sys_crate}::{sys_umbrella}::"
+    # 1. Any ntkrnl_sys::<module>:: (incl. nested) → <crate>::<umbrella>::
+    code = re.sub(r'\bntkrnl_sys::\w+::', pfx, code)
+    # 2. Drop every `use <crate>::<umbrella>::(* | {…} | Name);` line
+    #    (single- or multi-line braced list) — replaced by one glob.
+    use_pat = re.compile(
+        rf'^[ \t]*use\s+{re.escape(sys_crate)}::{re.escape(sys_umbrella)}::'
+        r'(?:\*|\{[^}]*\}|\w+)\s*;[ \t]*\n',
+        re.MULTILINE | re.DOTALL,
+    )
+    code = use_pat.sub('', code)
+    # 3. Prepend a single glob use after the leading //! doc / comments.
+    lines = code.split('\n')
+    insert_at = 0
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if s.startswith('//!') or s.startswith('//') or s == '':
+            insert_at = i + 1
+        else:
+            break
+    glob = f'use {sys_crate}::{sys_umbrella}::*;'
+    if glob not in code:
+        lines.insert(insert_at, glob)
+    return '\n'.join(lines)
+
+
+_USER_INLINE_NAMES = {
+    "NtCurrentPeb", "NtCurrentTeb", "NtCurrentProcess", "NtCurrentThread",
+    "ZwCurrentProcess", "ZwCurrentThread",
+}
+
+
+def strip_user_inline_redeclarations(code: str) -> str:
+    """Deterministic net for user-mode targets: drop LLM re-declarations
+    of substrate-provided FORCEINLINE accessors + bogus local PEB/TEB.
+
+    Even with the user-mode prompt addendum the LLM sometimes still
+    emits `extern "system" { fn NtCurrentPeb …; }` (a guaranteed link
+    failure — those are not ntdll exports) and a hand-rolled
+    `struct PEB { _padding: [u8; 0x…], SessionId … }` (arch-wrong
+    guessed offset). The real ones come from `ntdll_sys::nt::*`. This
+    is target-scoped (only called when sys_umbrella is set).
+    """
+    # 1. Remove extern blocks whose every `fn NAME` is a known inline.
+    def drop_extern(m: re.Match) -> str:
+        body = m.group(2)
+        fns = re.findall(r'\bfn\s+(\w+)', body)
+        if fns and all(f in _USER_INLINE_NAMES for f in fns):
+            return ''
+        return m.group(0)
+
+    code = re.sub(
+        r'(extern\s+"[^"]+"\s*\{)(.*?)(\})',
+        drop_extern, code, flags=re.DOTALL,
+    )
+    # 2. Remove a bogus local `struct PEB|TEB { … _padding … }` (with
+    #    or without a #[repr(C)] / #[derive(...)] attr line above it).
+    code = re.sub(
+        r'(?:#\[[^\]]*\]\s*)*'
+        r'(?:pub\s+)?struct\s+(?:PEB|TEB)\s*\{[^}]*?_padding[^}]*?\}\s*',
+        '', code, flags=re.DOTALL,
+    )
+    # 3. Retarget casts that referenced those local structs onto the
+    #    genuine bindgen layouts (in scope via the nt glob).
+    code = re.sub(r'\bas\s+(\*\s*(?:const|mut)\s*)PEB\b', r'as \1_PEB', code)
+    code = re.sub(r'\bas\s+(\*\s*(?:const|mut)\s*)TEB\b', r'as \1_TEB', code)
+    return code
+
+
 def postprocess(
     code: str,
     exports: dict[str, SpecEntry] | None = None,
     globals: list[CGlobal] | None = None,
     target_name: str = "ntoskrnl",
+    sys_crate: str = "ntkrnl_sys",
+    sys_umbrella: str | None = None,
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
 
@@ -1437,6 +1519,12 @@ def postprocess(
     code = fix_variadic_extern_system(code)
     code = fix_duplicate_extern_decls(code)
     code = fix_markdown_fence_leak(code)
+    # User-mode target: collapse the kernel-crate imports the kernel-
+    # oriented prompt produced onto the user-mode substrate umbrella.
+    # Last (after all import fixes have settled).
+    if sys_umbrella:
+        code = collapse_sys_crate(code, sys_crate, sys_umbrella)
+        code = strip_user_inline_redeclarations(code)
     return code
 
 

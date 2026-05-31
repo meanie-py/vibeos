@@ -19,8 +19,6 @@ pub mod apic_halinit;
 #[cfg(target_arch = "x86_64")]
 pub mod apictimer;
 pub mod beep;
-#[cfg(all(target_arch = "x86", not(feature = "minihal")))]
-pub mod bios;
 pub mod buildtype;
 #[cfg(target_arch = "x86_64")]
 pub mod busemul;
@@ -101,7 +99,6 @@ pub mod timer;
 pub mod tsc;
 pub mod up;
 pub mod usage;
-// x86bios was UNCONDITIONAL (i386 AND amd64) — only gate out of minihal,
-// do NOT add target_arch (amd64 hal.dll needs x86BiosCall/AllocateBuffer).
-#[cfg(not(feature = "minihal"))]
-pub mod x86bios;
+// x86bios / bios (INT10 + V86 real-mode BIOS emulation via fast486) removed:
+// pre-Vista platform support, dead under UEFI. The only consumer (videoprt
+// INT10) was stubbed and the legacy video miniports were dropped.

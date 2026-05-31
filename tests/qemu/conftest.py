@@ -20,7 +20,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--arch",
         default="arm64",
-        choices=["arm64", "arm64-test", "i386", "i386-uefi", "amd64"],
+        # BIOS boot is gone: x86 is UEFI-only (i386-uefi / amd64-uefi). The
+        # legacy "i386"/"amd64" BIOS arches were dropped with the BIOS prune.
+        choices=["arm64", "arm64-test", "i386-uefi", "amd64-uefi"],
         help="Target architecture (default: arm64)",
     )
     parser.addoption(
@@ -148,6 +150,15 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
         for line in result.stderr.splitlines():
             if line.startswith("[reap] killed") or line.startswith("[reap] FAILED"):
                 print(f"[pytest] {line}")
+    # Surface a missing screenshot dependency up front (don't fail — boot is
+    # still verifiable via serial markers — but tell the operator how to fix it,
+    # since screenshots silently degrade to raw .ppm without it).
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        print("[pytest] WARNING: Pillow not installed — screenshots will save "
+              "as raw .ppm. Fix: pip install -e '.[qemu]'")
+
     if not request.config.getoption("--skip-clean-build"):
         _ensure_clean_rust_build(arch)
     _run_post_build_checks(arch)
@@ -157,6 +168,10 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
 
     vm = QemuVM(config, work_dir)
     vm.start()
+    # Tell watchers where to follow boot progress live — a cold arm64 TCG boot
+    # is silent for minutes, so this is how an agent distinguishes "working"
+    # from "wedged" without restarting the run.
+    print(f"\n[pytest] Live serial: tail -f {vm.live_log_path}")
     try:
         boot_output = vm.wait_for_boot()
     except (TimeoutError, ConnectionError, RuntimeError) as e:
@@ -166,11 +181,15 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
             ppm = work_dir / "fail_screen.ppm"
             vm.screendump(ppm)
             png = PROJECT_DIR / "qemu" / f"{arch}_smoke.png"
-            import subprocess as _sp
+            # Convert via PIL, NOT ImageMagick `convert`: IM 6.x writes a 1-bit
+            # colormap PNG when the source PPM is mostly one color (e.g. a bare
+            # blue desktop or a solid BSOD), which renders as solid black and
+            # hides the very failure state we're trying to capture. Mirrors
+            # test_smoke.py::test_screenshot.
             try:
-                _sp.run(["convert", str(ppm), str(png)],
-                        check=True, capture_output=True, timeout=10)
-            except (FileNotFoundError, _sp.CalledProcessError):
+                from PIL import Image
+                Image.open(ppm).save(png, "PNG")
+            except ImportError:
                 import shutil as _sh
                 png = PROJECT_DIR / "qemu" / f"{arch}_smoke.ppm"
                 _sh.copy2(ppm, png)

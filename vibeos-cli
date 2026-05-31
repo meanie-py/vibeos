@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# vibeos-cli — unified build/check/smoke/debug control plane.
+# Thin wrapper: locates the repo root (this script's dir) and a Python with the
+# harness deps, then runs `python -m tests.qemu.cli`. Worktree-aware: a worktree
+# has no local .venv, so we fall back to a sibling repo's .venv (the main repo).
+set -u
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+pick_python() {
+    # 1) explicit override
+    [ -n "${VIBEOS_PYTHON:-}" ] && { echo "$VIBEOS_PYTHON"; return; }
+    # 2) local venv
+    [ -x "$REPO/.venv/bin/python" ] && { echo "$REPO/.venv/bin/python"; return; }
+    # 3) the MAIN checkout's venv — deterministic. Worktrees share the main
+    #    repo's .git (common dir); its parent is the canonical checkout that
+    #    holds the deps. (Avoids non-deterministically grabbing a sibling
+    #    worktree's venv that may be missing pillow/shellcheck.)
+    local common main
+    common="$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null)"
+    if [ -n "$common" ]; then
+        case "$common" in /*) ;; *) common="$REPO/$common" ;; esac
+        main="$(cd "$(dirname "$common")" 2>/dev/null && pwd)"
+        [ -n "$main" ] && [ -x "$main/.venv/bin/python" ] && { echo "$main/.venv/bin/python"; return; }
+    fi
+    # 4) any sibling venv (last-resort fallback)
+    local p
+    for p in "$REPO"/../*/.venv/bin/python; do
+        [ -x "$p" ] && { echo "$p"; return; }
+    done
+    # 5) system python
+    command -v python3
+}
+
+PY="$(pick_python)"
+[ -n "$PY" ] || { echo "vibeos-cli: no python found (set VIBEOS_PYTHON)" >&2; exit 127; }
+
+# PYTHONPATH=repo so `tests.qemu.cli` imports regardless of cwd.
+exec env PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m tests.qemu.cli "$@"

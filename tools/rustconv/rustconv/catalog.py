@@ -165,6 +165,18 @@ def _scan_bindgen(path: Path, module_name: str) -> tuple[list[Symbol], list[Symb
                         Symbol(cname[len(pfx):], "const", module_name))
             continue
 
+        # Extern static data — bindgen emits `pub static mut NAME: TYPE;`
+        # inside `unsafe extern "C" {}` blocks for data exports
+        # (CsrObjectDirectory/CsrHeap/CsrRootProcess; kernel data like
+        # KdDebuggerNotPresent). Previously dropped: only
+        # _scan_hand_written matched RE_PUB_STATIC, _scan_bindgen never
+        # did, so every bindgen data export was a phantom "unresolved".
+        # Generic fix — helps every target, not just smss-csrss.
+        m = RE_PUB_STATIC.match(stripped)
+        if m and current_extern_cc:
+            constants.append(Symbol(m.group(1), "static", module_name))
+            continue
+
         # Function declarations (inside extern blocks)
         m = RE_BINDGEN_FN.match(line)
         if m and current_extern_cc:
@@ -249,6 +261,26 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
     win32k_bindgen_path = win32k_files.get(arch)
     if win32k_bindgen_path and win32k_bindgen_path.exists():
         types, functions, constants = _scan_bindgen(win32k_bindgen_path, "win32k")
+        for s in types:
+            catalog.types[s.name] = s
+        for s in constants:
+            catalog.constants[s.name] = s
+        for s in functions:
+            if s.name not in catalog.functions:
+                catalog.functions[s.name] = s
+
+    # For the winsrv target, also scan winsrv-sys bindgen → module "winsrv".
+    # winsrv calls both ntdll-sys (NT/CSR/SM/BASE — scanned above as "ddk")
+    # AND its own internal surface (CONSOLE_PROCESS_DATA, TERMINAL_VTBL,
+    # FRONTEND_VTBL, SHUTDOWN_SETTINGS, CONSOLE_*, COORD, INPUT_RECORD,
+    # HWND/HDC/LOGFONTW/MSG/WNDPROC, …). winsrv-internal types/constants
+    # are authoritative for winsrv code; functions add-if-absent so the
+    # NT surface stays the linkable surface and winsrv adds Con*/Term*/
+    # Concfg* helpers. Mirrors the win32k branch.
+    winsrv_files = getattr(target, "winsrv_bindgen_files", {}) or {}
+    winsrv_bindgen_path = winsrv_files.get(arch)
+    if winsrv_bindgen_path and winsrv_bindgen_path.exists():
+        types, functions, constants = _scan_bindgen(winsrv_bindgen_path, "winsrv")
         for s in types:
             catalog.types[s.name] = s
         for s in constants:

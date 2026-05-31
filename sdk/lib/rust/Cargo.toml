@@ -18,6 +18,8 @@ members = [
     "bootvid-cargo",
     "freeldr-rust",
     "arm64input-rust",
+    "arm64vid-rust",
+    "framebuf-rust",
     "handle",
     "interlck",
     "kernel-rust",
@@ -28,6 +30,8 @@ members = [
     "mem",
     "hal-cargo",
     "ntkrnl-sys",
+    "ntdll-sys",
+    "smss-csrss-rust",
     "ntoskrnl-cargo",
     "ntoskrnl-rust",
     "ntprintf",
@@ -47,6 +51,8 @@ members = [
     "win32k-kernel-rust",
     "win32k-rust",
     "win32k-sys",
+    "winsrv-rust",
+    "winsrv-sys",
 ]
 resolver = "2"
 
