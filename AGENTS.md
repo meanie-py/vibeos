@@ -30,6 +30,26 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 - **All 3 architectures must pass independently.**
 - **Always check the screenshot** — the test saves `qemu/<arch>_smoke.png` for visual inspection.
 
+## `vibeos-cli` — The Build/Check/Smoke/Debug Front Door
+
+**Before building, booting, or debugging by hand, reach for `./vibeos-cli` (repo root).** It is the unified control plane over the build, the smoke harness, the lint gate, and the GDB toolkit — built specifically so agents stop reinventing per-arch build incantations, booting stale media, and flooding the transcript with serial logs. Full guide + per-tool motivation: **`tests/qemu/cli/README.md`** (read it once).
+
+```bash
+./vibeos-cli build  --arch i386 [--clean]   # warm by default; --clean = cold (nukes rust targets, proves cold-link)
+./vibeos-cli smoke  --arch i386             # THE verdict — refuses to boot stale media (build first, or --allow-stale)
+./vibeos-cli check                          # source lints, baseline-diff gate (0 NEW vs tools/lint-baseline/)
+./vibeos-cli debug  start amd64 --gdb       # wraps qemu/*.sh (POSITIONAL arch); GDB over the real (UEFI) boot
+./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
+```
+
+Why it matters (the bugs it prevents):
+- **No more false-green from stale artifacts.** `smoke` hard-fails on stale/missing media; warm builds are flagged because cargo incremental can mask regressions. Do a `--clean` build before trusting green or handing off.
+- **No per-arch divergence.** `archcfg.py` is the single source of truth for build targets + boot media (x86 = `ninja livecd`; arm64 = staged set + `mkramdisk --refresh`). `boot` reuses smoke's exact arch-config so the fast path can't drift from the real test.
+- **No token-flooding.** Stdout is a bounded summary; the durable verdict is `summary.json` + `full.log` under `/tmp/vibeos-cli/<ts>-<cmd>-<arch>/`. **Read `summary.json`, don't scrape stdout.**
+- **Auto-triage on failure.** Classifies `RUST_PANIC` (file:line) / `BUGCHECK 0xNN` / `HANG_TIMEOUT` / `KNOWN_FLAKE`, symbolicates the faulting PC, captures a screenshot — no manual objdump round-trip.
+
+**No default arch** (always pass `--arch`; `i386`/`amd64` alias to the UEFI boot configs). This is the front door; the raw `pytest tests/qemu/test_smoke.py` path and the `qemu/*.sh` toolkit still work underneath (see `tests/qemu/cli/README.md` → "Relationship to `qemu/`" for which layer to use when).
+
 ## Directory Layout
 
 ```
