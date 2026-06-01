@@ -75,6 +75,7 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/dbgui.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrpe.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrutils.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/verifier.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
@@ -103,7 +104,9 @@ list(APPEND SOURCE
     # ldr/ldrpe.c — replaced by Rust (ntdll-rust/src/ldr/ldrpe.rs);
     #   LdrpSnapIAT/LdrpSnapThunk/LdrpWalkImportDescriptor/LdrpLoadImportModule
     #   + import-descriptor handlers now provided by libntdll_rust.a (below)
-    ldr/ldrutils.c
+    # ldr/ldrutils.c — replaced by Rust (ntdll-rust/src/ldr/ldrutils.rs);
+    #   LdrpMapDll/LdrpCheckForLoadedDll/LdrpGetProcedureAddress/LdrpSearchPath
+    #   + loader-utility helpers now provided by libntdll_rust.a (below)
     # ldr/verifier.c — replaced by Rust (ntdll-rust/src/ldr/verifier.rs);
     #   AVrf*/LdrpInitializeApplicationVerifierPackage now provided by
     #   libntdll_rust.a (below)

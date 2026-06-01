@@ -3,4 +3,5 @@
 //! (Distinct from `nt_0600::ldr`, the ntdll_vista companion loader glue.)
 
 pub mod ldrpe;
+pub mod ldrutils;
 pub mod verifier;
