@@ -192,7 +192,7 @@ list(APPEND SOURCE
     gdi/ntgdi/init.c
     # gdi/ntgdi/line.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/line.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     gdi/ntgdi/metafile.c
-    gdi/ntgdi/palette.c
+    # gdi/ntgdi/palette.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/palette.rs) — cohabitation [Phase 2c geometry wave 7: PALETTE object tier]
     gdi/ntgdi/path.c
     # gdi/ntgdi/pen.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/pen.rs) — cohabitation [Phase 2c geometry wave 6: PEN object tier]
     # gdi/ntgdi/polyfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/polyfill.rs) — cohabitation [Phase 2c geometry wave 1]
@@ -344,6 +344,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcutil.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/pen.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/coord.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/palette.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

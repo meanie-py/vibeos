@@ -141,6 +141,10 @@ pub mod pen;
 // DC_vGetPageToDevice), map-mode/viewport/window org+ext, Nt/Gre transform &
 // DCPoint entry points (FLOATOBJ-heavy, pairs with xformobj/dcutil mapping).
 pub mod coord;
+// Phase 2c geometry wave 7: PALETTE object tier (palette.c) — PALETTE_{Alloc,
+// GetObject,ulGetNearest*}, Eng/Gre/Nt palette create/realize/animate, color
+// table + nearest-color. Last GDI object type DC init locks (sibling to pen).
+pub mod palette;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
