@@ -169,8 +169,8 @@ list(APPEND SOURCE
     # gdi/ntgdi/arc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/arc.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/ntgdi/bezier.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bezier.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/bitblt.c
-    gdi/ntgdi/bitmaps.c
-    gdi/ntgdi/cliprgn.c
+    # gdi/ntgdi/bitmaps.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bitmaps.rs) — cohabitation [Phase 2c wave 8: bitmap/surface object mgmt]
+    # gdi/ntgdi/cliprgn.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/cliprgn.rs) — cohabitation [Phase 2c wave 8: clip-region functions]
     # gdi/ntgdi/coord.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/coord.rs) — cohabitation [Phase 2c geometry wave 6: coordinate transforms; coord.c + split2 = one TU]
     gdi/ntgdi/d3dkmt.c
     # gdi/ntgdi/dcattr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcattr.rs) — cohabitation [Phase 2c geometry wave 1]
@@ -345,6 +345,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/pen.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/coord.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/palette.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/cliprgn.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/bitmaps.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

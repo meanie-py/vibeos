@@ -145,6 +145,13 @@ pub mod coord;
 // GetObject,ulGetNearest*}, Eng/Gre/Nt palette create/realize/animate, color
 // table + nearest-color. Last GDI object type DC init locks (sibling to pen).
 pub mod palette;
+// cliprgn.rs — Phase 2c wave 8: clip-region functions (Int{Gdi,}SelectClipRgn,
+// NtGdi{Exclude,Intersect}ClipRect, NtGdiOffsetClipRgn, CLIPPING_UpdateGCRegion,
+// Pt/RectVisible). Builds on region.rs algebra + coord IntLPtoDP inlines.
+pub mod cliprgn;
+// bitmaps.rs — Phase 2c wave 8: bitmap/surface object mgmt (GreCreateBitmap{,Ex},
+// NtGdiCreate{,Compatible}Bitmap, Get/SetBitmapBits, BITMAP_GetObject/CopyBitmap).
+pub mod bitmaps;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
