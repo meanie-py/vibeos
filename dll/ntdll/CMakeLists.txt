@@ -76,6 +76,7 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrpe.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrutils.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrinit.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/verifier.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
@@ -100,7 +101,10 @@ list(APPEND SOURCE
     # dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
     #   DbgUi* now provided by libntdll_rust.a (below)
     ldr/ldrapi.c
-    ldr/ldrinit.c
+    # ldr/ldrinit.c — replaced by Rust (ntdll-rust/src/ldr/ldrinit.rs);
+    #   LdrpInitialize/LdrpInitializeProcess/LdrpInitializeThread + loader-init
+    #   core (TLS init, security cookie, exec-options, process-compat) now
+    #   provided by libntdll_rust.a (below)
     # ldr/ldrpe.c — replaced by Rust (ntdll-rust/src/ldr/ldrpe.rs);
     #   LdrpSnapIAT/LdrpSnapThunk/LdrpWalkImportDescriptor/LdrpLoadImportModule
     #   + import-descriptor handlers now provided by libntdll_rust.a (below)
