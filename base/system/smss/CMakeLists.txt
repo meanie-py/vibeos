@@ -1,12 +1,12 @@
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
-# pagefile.c + sminit.c have no Rust equivalent yet → stay C. The other 7
-# smss .c files are replaced by Rust (smss-csrss-rust, smss_exe_only). Keep
+# FULL flip: all 9 smss .c files replaced by Rust (smss-csrss-rust,
+# smss_exe_only). pagefile.c + sminit.c translated by Opus 4.8 (task #44). Keep
 # all .c on disk (never delete the C — translation philosophy).
 list(APPEND SOURCE
     # crashdmp.c — replaced by Rust (smss-csrss-rust/src/smss/crashdmp.rs)
-    pagefile.c
-    sminit.c
+    # pagefile.c — replaced by Rust (smss-csrss-rust/src/smss/pagefile.rs)
+    # sminit.c   — replaced by Rust (smss-csrss-rust/src/smss/sminit.rs)
     # smloop.c   — replaced by Rust (smss-csrss-rust/src/smss/smloop.rs)
     # smsbapi.c  — replaced by Rust (smss-csrss-rust/src/smss/smsbapi.rs)
     # smsessn.c  — replaced by Rust (smss-csrss-rust/src/smss/smsessn.rs)
@@ -16,13 +16,16 @@ list(APPEND SOURCE
     smss_rust_stub.c
     smss.h)
 
-# --- Rust cohabitation (smss-csrss-rust, smss_exe_only) — task #18 --------
+# --- Rust cohabitation (smss-csrss-rust, smss_exe_only) — task #18/#44 -----
 # Mirrors the csrss.exe flip. smss.exe builds the crate with
 # `--no-default-features --features smss_exe_only,ntddi_ws03`, which includes
 # the smss/* + smlib modules and EXCLUDES csrsrv/csrlib/csrss/basesrv so the
 # archive carries only smss's `_main` + Smp* helpers (no duplicate _main, no
-# stray csrsrv data statics). pagefile.c + sminit.c stay C and provide
-# SmpCreatePagingFiles / SmpInit, which the Rust `_main` calls.
+# stray csrsrv data statics). FULL flip (task #44): all 9 smss .c → Rust.
+# pagefile.rs + sminit.rs were translated by Opus 4.8; SmpCreatePagingFiles /
+# SmpInit (plus the 9 shared smss.h globals: SmBaseTag, SmpHeap,
+# SmpDefaultEnvironment, SmpSubSystemList, SmpExecuteList, …) are #[no_mangle]
+# so the sibling modules' extern refs resolve to the Rust definitions.
 set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
 if(ARCH STREQUAL "i386")
@@ -52,6 +55,8 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/lib.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smss/mod.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smss/crashdmp.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smss/pagefile.rs
+        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smss/sminit.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smss/smloop.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smss/smsbapi.rs
         ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smss/smsessn.rs
@@ -93,5 +98,14 @@ add_cd_file(TARGET smss DESTINATION reactos/system32 FOR all)
 #      as MuSessionId, never matched session 0, SmpSbCreateSession returned
 #      OBJECT_NAME_NOT_FOUND → smss (critical) terminated → BUGCHECK 0xc000021a.
 #      Fixed: deleted the truncated mirror (use bindgen _SMP_SUBSYSTEM).
-# After these, all 3 arches boot to `shell ready` with smss.exe in Rust:
-# i386-uefi 8/8, amd64-uefi 8/8, arm64 6/6. pagefile.c + sminit.c stay C.
+# After these, all 3 arches boot to `shell ready` with smss.exe in Rust.
+#
+# Task #44 (2026-05-31): pagefile.c + sminit.c translated by Opus 4.8 and
+# flipped — smss.exe is now C-free at runtime (all 9 .c → Rust). Integration
+# notes: pagefile.rs's SmpValidatePagingFileSizes was split by the stitcher
+# (head + orphaned tail) and re-joined; sminit.rs's rustconv output needed the
+# RTL_QUERY_REGISTRY_TABLE QueryRoutine fn-ptr ABI coerced (stdcall/C vs system)
+# via a const transmute helper (qr()), the dropped {0} sentinel re-added, the
+# alloc::Vec / ntkrnl_sys_wstr() wide-literal hacks replaced with a const wstr!
+# macro, CRT externs re-ABI'd to cdecl, and the ntstrsafe/RtlInitEmpty* inlines
+# re-provided (no exports). 9 shared smss.h globals marked #[no_mangle].
