@@ -49,6 +49,54 @@ def _expand_csr_api(text: str) -> str:
     )
 
 
+# SAL (Source Annotation Language) tokens. The argless ones (`_In_`, `_Out_`)
+# tree-sitter tolerates, but the ones WITH arguments — `_Inout_updates_z_(N)`,
+# `_In_reads_or_z_opt_(N)`, `_Success_(return)`, `_Out_writes_bytes_(cb)` — used
+# in a parameter list or a local-variable declaration make tree-sitter-c parse
+# the whole function_definition as an ERROR node, so the function is silently
+# skipped (concfg/font.c: only 2 of 14 fns found). SAL macros are no-ops outside
+# static analysis, so stripping them is semantically identical to what the C
+# compiler sees and can only REDUCE parse errors (differential-oracle safe).
+# Token grammar: `_<Word>[_<word>...]_` (starts `_` + a SAL keyword, ends `_`),
+# optionally followed by a (balanced-once) argument list.
+_SAL_KEYWORDS = (
+    'In', 'Out', 'Inout', 'Outptr', 'Outref', 'Ret', 'Pre', 'Post', 'Deref',
+    'Field', 'At', 'When', 'Success', 'Return', 'Reserved', 'Notnull',
+    'Maybenull', 'Null', 'Const', 'Check_return', 'Must_inspect_result',
+    'Analysis_noreturn', 'Use_decl_annotations', 'Printf_format_string',
+    'Struct_size_bytes_', 'Frees_ptr', 'Outptr_result', 'Result_nullonfailure',
+)
+RE_SAL = re.compile(
+    r'(?<![A-Za-z0-9_])'
+    r'_(?:' + '|'.join(_SAL_KEYWORDS) + r')'
+    r'[A-Za-z0-9_]*_'          # rest of the SAL token, ending in '_'
+    r'(?:\s*\([^()]*\))?'      # optional ( args ) — SAL args have no nesting
+)
+
+
+def _strip_sal(text: str) -> str:
+    """Remove SAL annotations (no-op macros) so tree-sitter parses the function
+    signatures of annotated Windows headers. Safe: only removes annotations."""
+    return RE_SAL.sub('', text)
+
+
+# Win32 calling-convention macros that tree-sitter-c CANNOT parse between the
+# return type and the function name (it recovers catastrophically — e.g. a
+# `static BOOL CALLBACK Foo(){...}` makes tree-sitter merge every following
+# function into one giant function_definition, so concfg/font.c found 2 of 14
+# fns). They are all __stdcall, which tree-sitter DOES parse (ms_call_modifier).
+# NTAPI/WINAPI are intentionally NOT normalized here: their error-recovery is
+# benign (separate function_definition nodes survive) and they're already in
+# CALLING_CONVENTIONS, so the existing scans depend on seeing them verbatim.
+RE_UNPARSEABLE_CC = re.compile(r'\b(?:CALLBACK|APIENTRY|APIPRIVATE|WINAPIV|PASCAL)\b')
+
+
+def _normalize_callbacks(text: str) -> str:
+    """Map the tree-sitter-unparseable __stdcall aliases to `__stdcall` so the
+    function signatures parse. Differential-oracle safe (same ABI, only helps)."""
+    return RE_UNPARSEABLE_CC.sub('__stdcall', text)
+
+
 @dataclass
 class CFunction:
     name: str
@@ -317,6 +365,67 @@ def _strip_known_off_ifdefs(text: str) -> str:
     return '\n'.join(out)
 
 
+# Feature macros that are NEVER defined in the build — placeholders for
+# not-yet-implemented paths (concfg/font.c's FONT_CACHE_PRESENT). A
+# `#ifndef FONT_CACHE_PRESENT` block sits INSIDE a function body; tree-sitter-c
+# cannot parse a `#if/#endif` inside a compound statement and recovers
+# catastrophically (the enclosing function_definition swallows every following
+# function — font.c found 2 of 14). Resolving them (drop the directive lines,
+# keep the live branch) lets tree-sitter parse the body.
+_KNOWN_UNDEFINED_SYMS = ("FONT_CACHE_PRESENT",)
+_PP_IF = re.compile(r'^[ \t]*#[ \t]*(if|ifdef|ifndef)\b[ \t]*(.*)$')
+
+
+def _eval_pp_cond(kw: str, expr: str) -> Optional[bool]:
+    """Resolve a preprocessor condition to True/False, or None if unknown."""
+    expr = expr.split('//')[0].split('/*')[0].strip()
+    if kw == 'if':
+        return {'0': False, '1': True}.get(expr)
+    sym = expr.split()[0] if expr.split() else ''
+    if sym in _KNOWN_UNDEFINED_SYMS:
+        return kw == 'ifndef'          # #ifndef UNDEF → True, #ifdef UNDEF → False
+    return None
+
+
+def _resolve_known_preproc(text: str) -> str:
+    """Resolve body-internal `#if 0`/`#if 1` and `#if(n)def` of known-undefined
+    feature macros — keep the live branch, drop the dead branch + the directive
+    lines — so tree-sitter parses function bodies that contain them. Leaves any
+    condition it cannot resolve verbatim; bails on `#elif`/nesting (handles only
+    a simple block with at most one `#else`)."""
+    lines = text.split('\n')
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        m = _PP_IF.match(lines[i])
+        if not m:
+            out.append(lines[i]); i += 1; continue
+        cond = _eval_pp_cond(m.group(1), m.group(2))
+        if cond is None:
+            out.append(lines[i]); i += 1; continue
+        depth, j, else_idx, ok = 1, i + 1, None, True
+        while j < n and depth > 0:
+            if _PP_IF.match(lines[j]):
+                depth += 1
+            elif _IF_LINE.match(lines[j]) and re.match(r'^[ \t]*#[ \t]*endif\b', lines[j]):
+                depth -= 1
+            elif depth == 1 and re.match(r'^[ \t]*#[ \t]*elif\b', lines[j]):
+                ok = False
+            elif depth == 1 and re.match(r'^[ \t]*#[ \t]*else\b', lines[j]):
+                if else_idx is None:
+                    else_idx = j
+                else:
+                    ok = False
+            j += 1
+        if depth != 0 or not ok:
+            out.append(lines[i]); i += 1; continue   # bail → verbatim
+        endif_idx = j - 1
+        then_body = lines[i + 1: (else_idx if else_idx is not None else endif_idx)]
+        else_body = lines[else_idx + 1: endif_idx] if else_idx is not None else []
+        out.extend(then_body if cond else else_body)
+        i = j
+    return '\n'.join(out)
+
+
 def extract_preamble(scan: "ScanResult") -> str:
     """File-scope C that `translate` (function-by-function) otherwise drops.
 
@@ -349,9 +458,15 @@ def extract_preamble(scan: "ScanResult") -> str:
 
 def scan_file(path: Path) -> ScanResult:
     """Parse a C source file and extract structural information."""
-    source_text = _expand_csr_api(
-        _strip_known_off_ifdefs(
-            _expand_split_includes(path, path.read_text(errors='replace'))
+    source_text = _normalize_callbacks(
+        _strip_sal(
+            _expand_csr_api(
+                _resolve_known_preproc(
+                    _strip_known_off_ifdefs(
+                        _expand_split_includes(path, path.read_text(errors='replace'))
+                    )
+                )
+            )
         )
     )
     source = source_text.encode('utf-8')
