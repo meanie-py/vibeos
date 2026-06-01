@@ -6,6 +6,12 @@ part of the **agent-driven kernel-debugging toolkit** (design doc:
 one-off symbolicators. Each script's own header (`sed -n '2,15p' qemu/<x>.sh`)
 has full usage.
 
+> **Higher layer:** `./vibeos-cli` (repo root) is the unified front door for
+> building, smoke verdicts, lint gating, and GDB debugging — it wraps these
+> scripts and adds staleness gating + auto-triage + bounded summaries. Prefer it
+> for the build→boot→verdict loop; drop to these scripts for ad-hoc/interactive
+> single ops. Guide: `tests/qemu/cli/README.md`.
+
 ## Kernel-debugging toolkit (run-id based, batch-invocable)
 
 Boot a kernel, watch it, inspect it, tear it down — one batch command in,

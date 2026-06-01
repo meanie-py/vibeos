@@ -2024,7 +2024,11 @@ extern "system" {
     fn RtlImageDirectoryEntryToData(base: PVOID, mapped: u32, dir: u16, size: *mut ULONG) -> PVOID;
     fn RtlUnicodeStringToAnsiString(dest: *mut ANSI_STRING, src: *mut _UNICODE_STRING, alloc: u32) -> NTSTATUS;
     fn RtlFreeAnsiString(s: *mut ANSI_STRING);
-    fn RtlEqualUnicodeString(s1: *const _UNICODE_STRING, s2: *mut _UNICODE_STRING, case_insensitive: u32) -> u32;
+    // RtlEqualUnicodeString returns BOOLEAN (u8) and takes BOOLEAN CaseInSensitive.
+    // Declaring it `u32 -> u32` was an ABI mismatch: on amd64 the impl sets only AL,
+    // so the caller read garbage upper EAX bits and saw a false "equal" — making
+    // win32k's "ftfd.dll" import match the same-length "usbd.sys" module (BUGCHECK 0x4C).
+    fn RtlEqualUnicodeString(s1: *const _UNICODE_STRING, s2: *mut _UNICODE_STRING, case_insensitive: u8) -> u8;
     fn RtlAppendUnicodeStringToString(dest: *mut _UNICODE_STRING, src: *mut _UNICODE_STRING) -> NTSTATUS;
     fn RtlInitAnsiString(dest: *mut ANSI_STRING, src: *const i8);
     fn RtlCopyUnicodeString(dest: *mut _UNICODE_STRING, src: *const _UNICODE_STRING);
