@@ -33,7 +33,10 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WINSRV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwinsrv_rust.a")
 file(GLOB_RECURSE WINSRV_RUST_SOURCES CONFIGURE_DEPENDS
-    "${WINSRV_RUST_WORKSPACE_DIR}/winsrv-rust/src/*.rs")
+    "${WINSRV_RUST_WORKSPACE_DIR}/winsrv-rust/src/*.rs"
+    # concfg-rust is an rlib dependency of winsrv-rust (consrv calls it directly);
+    # a change there must rebuild libwinsrv_rust.a too.
+    "${WINSRV_RUST_WORKSPACE_DIR}/concfg-rust/src/*.rs")
 add_custom_command(
     OUTPUT ${WINSRV_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

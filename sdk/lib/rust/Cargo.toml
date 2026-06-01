@@ -53,6 +53,7 @@ members = [
     "win32k-sys",
     "winsrv-rust",
     "winsrv-sys",
+    "concfg-rust",
 ]
 resolver = "2"
 

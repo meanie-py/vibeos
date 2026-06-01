@@ -95,6 +95,14 @@ name = "compress"
 version = "0.1.0"
 
 [[package]]
+name = "concfg-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winsrv-sys",
+]
+
+[[package]]
 name = "crc32"
 version = "0.1.0"
 
@@ -587,6 +595,7 @@ dependencies = [
 name = "winsrv-rust"
 version = "0.1.0"
 dependencies = [
+ "concfg-rust",
  "ntdll-sys",
  "winsrv-sys",
 ]
