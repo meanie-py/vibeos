@@ -155,6 +155,130 @@ RtlGetCurrentPeb(VOID)
    return ((PEPROCESS)(KeGetCurrentThread()->ApcState.Process))->Peb;
 }
 
+/*
+ * Helper for the rtl-strings Rust env shims. Lets the Rust side
+ * fetch `Peb->ProcessParameters->Environment` without having to
+ * mirror the per-arch PEB / RTL_USER_PROCESS_PARAMETERS layouts.
+ * Returns NULL if no PEB / no parameters / no environment.
+ */
+PWSTR
+NTAPI
+RtlpGetPebEnvironment(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    if (!Peb || !Peb->ProcessParameters) return NULL;
+    return Peb->ProcessParameters->Environment;
+}
+
+VOID
+NTAPI
+RtlpSetPebEnvironment(IN PWSTR NewEnvironment)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    if (Peb && Peb->ProcessParameters)
+        Peb->ProcessParameters->Environment = NewEnvironment;
+}
+
+/*
+ * Helpers for the rtl-strings Rust Wave THR (thread.c) shims. Same
+ * pattern as the env helpers above: lets the Rust side read fields
+ * out of PEB / TEB / IMAGE_NT_HEADERS without having to mirror the
+ * per-arch layouts.
+ */
+PVOID
+NTAPI
+RtlpThrGetPebImageBaseAddress(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    return Peb ? Peb->ImageBaseAddress : NULL;
+}
+
+SIZE_T
+NTAPI
+RtlpThrGetPebMinimumStackCommit(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    return Peb ? Peb->MinimumStackCommit : 0;
+}
+
+ULONG
+NTAPI
+RtlpThrGetPebNtGlobalFlag(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    return Peb ? Peb->NtGlobalFlag : 0;
+}
+
+VOID
+NTAPI
+RtlpThrSetFreeStackOnTermination(VOID)
+{
+    /* Kernel-mode librtl has no TEB to write into — this codepath is
+     * only reachable from RtlExitUserThread, which is itself a
+     * user-mode primitive. The kernel-mode librtl still links it for
+     * symmetry; no-op here is fine. */
+}
+
+PVOID
+NTAPI
+RtlpThrTebDeallocStackAddr(PVOID TebBase)
+{
+    return &((PTEB)TebBase)->DeallocationStack;
+}
+
+SIZE_T
+NTAPI
+RtlpThrImageStackReserve(PVOID Headers)
+{
+    return ((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackReserve;
+}
+
+SIZE_T
+NTAPI
+RtlpThrImageStackCommit(PVOID Headers)
+{
+    return ((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackCommit;
+}
+
+PVOID
+NTAPI
+RtlpThrCurrentTeb(VOID)
+{
+    /* Kernel-mode: there is no current TEB. _NtCurrentTeb is a
+     * user-mode-exported primitive; kernel callers shouldn't hit it.
+     * Returning NULL matches the "no TEB" condition the C code
+     * already handles in RtlFreeUserThreadStack. */
+    return NULL;
+}
+
+/*
+ * Helpers for the rtl-strings Rust Wave PRC (process.c) shims.
+ */
+ULONG
+NTAPI
+RtlpPrcGetPebOSMajorVersion(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    return Peb ? Peb->OSMajorVersion : 0;
+}
+
+ULONG
+NTAPI
+RtlpPrcGetPebOSMinorVersion(VOID)
+{
+    PPEB Peb = RtlGetCurrentPeb();
+    return Peb ? Peb->OSMinorVersion : 0;
+}
+
+PVOID
+NTAPI
+RtlpPrcPebProcessParametersAddr(PVOID PebBase)
+{
+    /* &((PPEB)PebBase)->ProcessParameters — used to compute the
+     * target address for ZwWriteVirtualMemory in RtlpInitEnvironment. */
+    return &((PPEB)PebBase)->ProcessParameters;
+}
+
 NTSTATUS
 NTAPI
 RtlDeleteHeapLock(IN OUT PHEAP_LOCK Lock)

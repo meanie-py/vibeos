@@ -115,6 +115,13 @@ registry helpers. Already has Rust versions of many components
 The remaining C is mostly hand-rolled algorithms — translatable
 piecewise.
 
+> **This is its own active translation track**, tracked in detail in
+> **`rtl-translation-audit.md`** (the `rtl-strings` cabi waves: the
+> `Rtl*` API bodies — strings/sid/acl/sd/env/process/path/…). The
+> algorithm-crate half (the `rtl-rust` umbrella in "Already-Rust libs"
+> above) is the boundary: this doc owns the cargo-PoC link surface; the
+> rtl audit owns the librtl cohabitation flip status.
+
 ### 5. Translate `libhal.a` (~24 K LOC C)
 
 Hardware Abstraction Layer — i386 interrupt controller, ACPI,

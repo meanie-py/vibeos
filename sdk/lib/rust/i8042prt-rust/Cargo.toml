@@ -1,0 +1,21 @@
+# i8042prt-rust — Rust translation of the PS/2 (i8042) port driver
+# (drivers/input/i8042prt/*.c). crate-type=staticlib → libi8042prt_rust.a,
+# linked into the cmake-built i8042prt.sys with the C sources commented out —
+# arm64input-rust / framebuf-rust style cohabitation.
+#
+# Live on the PS/2 input path: i8042prt is the port driver below
+# kbdclass/mouclass; it owns the 8042 controller, IRQ1/IRQ12 ISRs, and the
+# keyboard/mouse state machines. Validated transitively by
+# test_post_shell_ready_input / _mouse on i386/amd64. Built for all three
+# arches (per-arch RUST_TARGET selected in the cohab cmake).
+
+[package]
+name = "i8042prt-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

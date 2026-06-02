@@ -16,7 +16,10 @@
 // csrss.exe `_main` — clean rustconv translation after the P1a
 // pipeline fixes. Linked into csrss.exe via the rtl-style cmake
 // cargo→.a + --allow-multiple-definition swap-in (csrss.c kept until
-// N green smokes).
+// N green smokes). Gated OUT under smss_exe_only: csrss.rs and smss/smss.rs
+// both define `#[no_mangle] _main`, which would collide in the smss.exe
+// archive — smss.exe owns the entry there.
+#[cfg(not(feature = "smss_exe_only"))]
 pub mod csrss;
 
 // Phase 3 (smss.exe) + Phase 4 (basesrv.dll) translations sit under
@@ -41,7 +44,9 @@ pub mod csrss;
 // / smss.exe). When ANY lean feature is on, csrsrv / csrlib / smlib are
 // gated OUT — each lean binary defines only the entry points it owns
 // and PE-imports everything else from csrsrv.dll.
-#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
+// smss.exe owns smss/* — include under default AND smss_exe_only;
+// gate OUT only for the csrss.exe / basesrv.dll lean binaries.
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only")))]
 pub mod smss;
 #[cfg(any(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")), feature = "basesrv_dll_only"))]
 pub mod basesrv;
@@ -53,7 +58,8 @@ pub mod basesrv;
 // their phases). Modules carry the #[no_mangle] protocol symbols.
 #[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
 pub mod csrlib;
-#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
+// smss.exe links smlib (SM client) — include under default AND smss_exe_only.
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only")))]
 pub mod smlib;
 
 // Phase 2 — csrsrv.dll server runtime (translated 2026-05-16).

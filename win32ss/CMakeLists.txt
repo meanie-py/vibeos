@@ -53,15 +53,15 @@ add_custom_command(
 
 list(APPEND SOURCE
     safe_user_io.c
-    gdi/dib/alphablend.c
-    gdi/dib/dib1bpp.c
-    gdi/dib/dib4bpp.c
-    gdi/dib/dib8bpp.c
-    gdi/dib/dib16bpp.c
-    gdi/dib/dib24bpp.c
-    gdi/dib/dib32bpp.c
-    gdi/dib/floodfill.c
-    gdi/dib/stretchblt.c
+    # gdi/dib/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_alphablend.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_AlphaBlend]
+    # gdi/dib/dib1bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib1bpp.rs) — cohabitation [Phase 2b dib wave 1]
+    # gdi/dib/dib4bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib4bpp.rs) — cohabitation [Phase 2b dib wave 1]
+    # gdi/dib/dib8bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib8bpp.rs) — cohabitation [Phase 2b dib wave 1]
+    # gdi/dib/dib16bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib16bpp.rs) — cohabitation [Phase 2b dib wave 2]
+    # gdi/dib/dib24bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib24bpp.rs) — cohabitation [Phase 2b dib wave 2]
+    # gdi/dib/dib32bpp.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib32bpp.rs) — cohabitation [Phase 2b dib wave 2]
+    # gdi/dib/floodfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/floodfill.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_FloodFillSolid]
+    # gdi/dib/stretchblt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_stretchblt.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_StretchBlt]
     # gdi/eng/alphablend.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/alphablend.rs) — cohabitation [Phase 2a wave 2]
     # gdi/eng/bitblt.c     # replaced by Rust (cohabitation, bisect iter 8)
     # gdi/eng/engbrush.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/engbrush.rs) — bisect ON
@@ -166,22 +166,22 @@ list(APPEND SOURCE
     # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
     user/rtl/image.c
     user/rtl/text.c
-    gdi/ntgdi/arc.c
-    gdi/ntgdi/bezier.c
+    # gdi/ntgdi/arc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/arc.rs) — cohabitation [Phase 2c geometry wave 2]
+    # gdi/ntgdi/bezier.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bezier.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/bitblt.c
-    gdi/ntgdi/bitmaps.c
-    gdi/ntgdi/cliprgn.c
-    gdi/ntgdi/coord.c
+    # gdi/ntgdi/bitmaps.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bitmaps.rs) — cohabitation [Phase 2c wave 8: bitmap/surface object mgmt]
+    # gdi/ntgdi/cliprgn.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/cliprgn.rs) — cohabitation [Phase 2c wave 8: clip-region functions]
+    # gdi/ntgdi/coord.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/coord.rs) — cohabitation [Phase 2c geometry wave 6: coordinate transforms; coord.c + split2 = one TU]
     gdi/ntgdi/d3dkmt.c
-    gdi/ntgdi/dcattr.c
-    gdi/ntgdi/dclife.c
-    gdi/ntgdi/dcobjs.c
-    gdi/ntgdi/dcstate.c
-    gdi/ntgdi/dcutil.c
+    # gdi/ntgdi/dcattr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcattr.rs) — cohabitation [Phase 2c geometry wave 1]
+    # gdi/ntgdi/dclife.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dclife.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
+    # gdi/ntgdi/dcobjs.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcobjs.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
+    # gdi/ntgdi/dcstate.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcstate.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
+    # gdi/ntgdi/dcutil.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcutil.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
     gdi/ntgdi/device.c
-    gdi/ntgdi/dibobj.c
-    gdi/ntgdi/drawing.c
-    gdi/ntgdi/fillshap.c
+    # gdi/ntgdi/dibobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dibobj.rs) — cohabitation [Phase 2c wave 9: DIB sections; dibobj.c + split2 = one TU]
+    # gdi/ntgdi/drawing.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/drawing.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
+    # gdi/ntgdi/fillshap.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/fillshap.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     gdi/ntgdi/font.c
     gdi/ntgdi/freetype.c
     gdi/ntgdi/gdibatch.c
@@ -190,20 +190,20 @@ list(APPEND SOURCE
     gdi/ntgdi/gdipool.c
     gdi/ntgdi/icm.c
     gdi/ntgdi/init.c
-    gdi/ntgdi/line.c
+    # gdi/ntgdi/line.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/line.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     gdi/ntgdi/metafile.c
-    gdi/ntgdi/palette.c
+    # gdi/ntgdi/palette.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/palette.rs) — cohabitation [Phase 2c geometry wave 7: PALETTE object tier]
     gdi/ntgdi/path.c
-    gdi/ntgdi/pen.c
-    gdi/ntgdi/polyfill.c
+    # gdi/ntgdi/pen.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/pen.rs) — cohabitation [Phase 2c geometry wave 6: PEN object tier]
+    # gdi/ntgdi/polyfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/polyfill.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/print.c
-    gdi/ntgdi/rect.c
-    gdi/ntgdi/region.c
-    gdi/ntgdi/stockobj.c
+    # gdi/ntgdi/rect.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rect.rs) — cohabitation [Phase 2c geometry wave 1]
+    # gdi/ntgdi/region.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/region.rs) — cohabitation [Phase 2c geometry wave 4: region algebra; region.c + split2/3/4 = one TU, 68 fns]
+    # gdi/ntgdi/stockobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/stockobj.rs) — cohabitation [Phase 2c geometry wave 2]
     gdi/ntgdi/text.c
-    gdi/ntgdi/utils.c
+    # gdi/ntgdi/utils.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/utils.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/wingl.c
-    gdi/ntgdi/xformobj.c
+    # gdi/ntgdi/xformobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/xformobj.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/eng/stubs.c       # replaced by Rust (stubs.rs) — cohabitation [wave 2 sweep, per-arch SharedUserData]
     # gdi/eng/umpdstubs.c   # replaced by Rust (umpdstubs.rs) — cohabitation [wave 2 sweep]
     pch.h)
@@ -215,7 +215,7 @@ if(USE_DIBLIB)
         gdi/eng/bitblt_new.c)
 else()
     list(APPEND SOURCE
-        gdi/dib/dib.c
+        # gdi/dib/dib.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib.rs) — cohabitation [Phase 2b dib wave 2b: table + DIB_DoRop + Dummy_*]
         # gdi/eng/copybits.c    # replaced by Rust (sdk/lib/rust/win32k-rust/src/copybits.rs) — cohabitation
         ${GENDIB_FILES})
 endif()
@@ -229,8 +229,9 @@ list(APPEND ASM_SOURCE
 list(APPEND SOURCE gdi/eng/i386/floatobj.c)
 else()
 list(APPEND SOURCE
-    gdi/dib/dib24bppc.c
-    gdi/dib/dib32bppc.c)
+    # gdi/dib/dib24bppc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib24bppc.rs) — cohabitation [Phase 2b dib wave 1, non-x86]
+    # gdi/dib/dib32bppc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib32bppc.rs) — cohabitation [Phase 2b dib wave 1, non-x86]
+    )
 endif()
 
 if(KDBG)
@@ -311,6 +312,42 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/transblt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/umpdstubs.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/xlateobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_helpers.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib1bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib4bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib8bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib16bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib24bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib32bpp.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib24bppc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib32bppc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_alphablend.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib_stretchblt.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/floodfill.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dib.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcattr.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/rect.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/bezier.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/utils.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/polyfill.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/brushbody.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/arc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/stockobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/xformobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/drawing.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/line.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/fillshap.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/region.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcstate.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcobjs.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dclife.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dcutil.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/pen.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/coord.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/palette.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/cliprgn.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/bitmaps.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dibobj.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

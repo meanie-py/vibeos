@@ -2,7 +2,10 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_NOT_IMPLEMENTED};
 use ntkrnl_sys::interlocked::InterlockedIncrement;
 
-extern "C" {
+// FillSolid is APIENTRY (paint.c / paint.rs defines it extern "system"). Declaring it
+// extern "C" here collides on i386 (cdecl _FillSolid vs stdcall _FillSolid@12) → same-crate
+// ABI mismatch folds the caller (EngEraseSurface) to ud2. Must match the definition.
+extern "system" {
     fn FillSolid(pso: *mut SURFOBJ, prcl: *mut RECTL, iColor: ULONG) -> BOOL;
 }
 

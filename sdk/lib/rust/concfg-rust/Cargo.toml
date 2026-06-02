@@ -1,0 +1,24 @@
+[package]
+name = "concfg-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# rlib for the winsrv-rust dependency (consrv's direct `use crate::concfg::...`
+# calls). The standalone libconcfg_rust.a — which the `concfg` cmake static lib
+# hands to BOTH consumers (winsrv.dll + dll/cpl/console/console.dll) — is built
+# by the cmake via `cargo rustc --crate-type staticlib --features standalone`
+# (the `standalone` feature supplies the panic_handler the staticlib needs).
+crate-type = ["rlib"]
+
+[features]
+default = ["ntddi_ws03"]
+ntddi_ws03 = []
+# Enabled ONLY for the standalone libconcfg_rust.a (Console CPL); provides the
+# panic_handler + eh_personality. OFF when used as a winsrv-rust rlib dep (that
+# crate supplies them) to avoid a duplicate lang item.
+standalone = []
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }
+winsrv-sys = { path = "../winsrv-sys" }

@@ -194,6 +194,109 @@ pub unsafe extern "system" fn RtlGetNtGlobalFlags() -> ULONG {
     (*pPeb).NtGlobalFlag
 }
 
+// ---- PEB/TEB/PE-header accessor shims for the rtl-strings Rust waves ----
+// These mirror the C helpers in dll/ntdll/rtl/libsupp.c. They let the shared
+// rtl-strings ENV/PRC/THR/PATH waves read process/thread state without
+// mirroring per-arch PEB/TEB/IMAGE_NT_HEADERS layouts. The C `libsupp.c` flip
+// dropped them; restored here so the path.c flip links in the ntdll user link.
+
+/// `RtlpGetPebEnvironment` — `Peb->ProcessParameters->Environment`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpGetPebEnvironment() -> PWSTR {
+    let Peb = NtCurrentPeb();
+    if Peb.is_null() || (*Peb).ProcessParameters.is_null() {
+        return core::ptr::null_mut();
+    }
+    (*(*Peb).ProcessParameters).Environment
+}
+
+/// `RtlpSetPebEnvironment` — set `Peb->ProcessParameters->Environment`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpSetPebEnvironment(NewEnvironment: PWSTR) {
+    let Peb = NtCurrentPeb();
+    if !Peb.is_null() && !(*Peb).ProcessParameters.is_null() {
+        (*(*Peb).ProcessParameters).Environment = NewEnvironment;
+    }
+}
+
+/// `RtlpThrGetPebImageBaseAddress` — `Peb->ImageBaseAddress`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrGetPebImageBaseAddress() -> PVOID {
+    let Peb = NtCurrentPeb();
+    if Peb.is_null() { core::ptr::null_mut() } else { (*Peb).ImageBaseAddress }
+}
+
+/// `RtlpThrGetPebMinimumStackCommit` — `Peb->MinimumStackCommit`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrGetPebMinimumStackCommit() -> SIZE_T {
+    let Peb = NtCurrentPeb();
+    if Peb.is_null() { 0 } else { (*Peb).MinimumStackCommit as SIZE_T }
+}
+
+/// `RtlpThrGetPebNtGlobalFlag` — `Peb->NtGlobalFlag`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrGetPebNtGlobalFlag() -> ULONG {
+    let Peb = NtCurrentPeb();
+    if Peb.is_null() { 0 } else { (*Peb).NtGlobalFlag }
+}
+
+/// `RtlpThrSetFreeStackOnTermination` — `NtCurrentTeb()->FreeStackOnTermination = TRUE`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrSetFreeStackOnTermination() {
+    (*NtCurrentTeb()).FreeStackOnTermination = 1;
+}
+
+/// `RtlpThrTebDeallocStackAddr` — `&((PTEB)TebBase)->DeallocationStack`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrTebDeallocStackAddr(TebBase: PVOID) -> PVOID {
+    core::ptr::addr_of_mut!((*(TebBase as PTEB)).DeallocationStack) as PVOID
+}
+
+/// `RtlpThrImageStackReserve` — `((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackReserve`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrImageStackReserve(Headers: PVOID) -> SIZE_T {
+    (*(Headers as PIMAGE_NT_HEADERS)).OptionalHeader.SizeOfStackReserve as SIZE_T
+}
+
+/// `RtlpThrImageStackCommit` — `((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackCommit`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrImageStackCommit(Headers: PVOID) -> SIZE_T {
+    (*(Headers as PIMAGE_NT_HEADERS)).OptionalHeader.SizeOfStackCommit as SIZE_T
+}
+
+/// `RtlpThrCurrentTeb` — `(PVOID)NtCurrentTeb()`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrCurrentTeb() -> PVOID {
+    NtCurrentTeb() as PVOID
+}
+
+/// `RtlpPrcGetPebOSMajorVersion` — `Peb->OSMajorVersion`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpPrcGetPebOSMajorVersion() -> ULONG {
+    let Peb = NtCurrentPeb();
+    if Peb.is_null() { 0 } else { (*Peb).OSMajorVersion }
+}
+
+/// `RtlpPrcGetPebOSMinorVersion` — `Peb->OSMinorVersion`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpPrcGetPebOSMinorVersion() -> ULONG {
+    let Peb = NtCurrentPeb();
+    if Peb.is_null() { 0 } else { (*Peb).OSMinorVersion }
+}
+
+/// `RtlpPrcPebProcessParametersAddr` — `&((PPEB)PebBase)->ProcessParameters`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlpPrcPebProcessParametersAddr(PebBase: PVOID) -> PVOID {
+    core::ptr::addr_of_mut!((*(PebBase as PPEB)).ProcessParameters) as PVOID
+}
+
+/// `RtlGetProcessHeap` — FORCEINLINE macro in C; real out-of-line symbol for
+/// the Rust callers (`_RtlGetProcessHeap@0` on i386). `Peb->ProcessHeap`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetProcessHeap() -> PVOID {
+    rtl_get_process_heap()
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RtlDeleteHeapLock(Lock: PHEAP_LOCK) -> NTSTATUS {
     RtlDeleteCriticalSection(core::ptr::addr_of_mut!((*Lock).__bindgen_anon_1.CriticalSection))
