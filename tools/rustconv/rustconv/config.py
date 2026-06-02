@@ -86,6 +86,21 @@ WINSRV_BINDGEN_FILES = {
 # own userinit-rust crate. See docs/engineering/smss-csrss-translation-audit.md.
 USERINIT_DIR = REACTOS_ROOT / "base" / "system" / "userinit"
 
+# winlogon.exe — the logon manager (winlogon → userinit → explorer). GINA-
+# independent LEAF files only (setup/environment/shutdown/screensaver/security);
+# the GINA core (wlx.c), SAS state machine (sas.c), main (winlogon.c) and RPC
+# (rpcserver.c) stay C. Own winlogon-sys substrate (self-contained: Win32 GUI/
+# registry/security + winwlx GINA + ndk + the winlogon-private WLSESSION/GINA
+# structs, size-asserted). Own winlogon-rust crate. See
+# docs/engineering/smss-csrss-translation-audit.md + memory project_winlogon_track.
+WINLOGON_DIR = REACTOS_ROOT / "base" / "system" / "winlogon"
+WINLOGON_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "winlogon-sys" / "src"
+WINLOGON_BINDGEN_FILES = {
+    "arm64": WINLOGON_SYS_DIR / "bindgen_arm64.rs",
+    "amd64": WINLOGON_SYS_DIR / "bindgen_amd64.rs",
+    "i386": WINLOGON_SYS_DIR / "bindgen_i386.rs",
+}
+
 HAND_WRITTEN_MODULES = [
     "base.rs", "ke.rs", "mm.rs", "ex.rs", "ps.rs", "ob.rs",
     "rtl.rs", "interlocked.rs",
@@ -366,6 +381,27 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # winlogon.exe — logon manager, GINA-independent leaf files. Self-contained
+    # winlogon-sys substrate (WLSESSION/GINA layout size-asserted ×3). Generic
+    # user-mode prompt addendum. Output to its own winlogon-rust crate.
+    "winlogon": Target(
+        name="winlogon",
+        source_dir=WINLOGON_DIR,
+        output_crate=RUST_DIR / "winlogon-rust",
+        bindgen_files=WINLOGON_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        # winlogon's .c are flat under base/system/winlogon, so they land at
+        # winlogon-rust/src/{setup,environment,...}.rs.
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="winlogon_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
 }
 
 
@@ -389,6 +425,10 @@ def detect_target(c_path: Path) -> Target:
     # winsrv-sys substrate. Keep before any generic base/system fallthrough.
     if "/base/system/userinit" in posix:
         return TARGETS["userinit"]
+    # winlogon.exe (logon manager). Own winlogon-rust crate on the self-contained
+    # winlogon-sys substrate. Leaf files only — keep before base/system fallthrough.
+    if "/base/system/winlogon" in posix:
+        return TARGETS["winlogon"]
     # ntdll.dll body (loader/dispatch/rtl-glue). Its own ntdll-rust crate
     # on the same user-mode substrate. Note: the shared rtl algorithms it
     # links (sdk/lib/rtl/*) are NOT routed here — those are the rtl-rust /
