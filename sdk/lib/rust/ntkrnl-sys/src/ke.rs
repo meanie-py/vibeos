@@ -185,9 +185,22 @@ extern "system" {
 
     pub fn KeClearEvent(Event: PVOID); // PKEVENT
 
-    pub fn KeQueryInterruptTime() -> ULONGLONG;
-
     pub fn DbgBreakPoint();
+}
+
+// KeQueryInterruptTime is an exported NTAPI function on x86, but on amd64/arm64
+// it is a macro reading KUSER_SHARED_DATA (no exported symbol). Mirror the C
+// headers (xdk/amd64/ke.h, xdk/arm64/ke.h): SharedInterruptTime is at
+// KI_USER_SHARED_DATA + 0x8.
+#[cfg(target_arch = "x86")]
+extern "system" {
+    pub fn KeQueryInterruptTime() -> ULONGLONG;
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn KeQueryInterruptTime() -> ULONGLONG {
+    core::ptr::read_volatile((crate::mm::KI_USER_SHARED_DATA + 0x8) as *const ULONGLONG)
 }
 
 // ============================================================================

@@ -172,10 +172,26 @@ def _extract_extern_blocks(code: str) -> tuple[list[str], str]:
 
 def _dedup_uses(use_statements: list[str]) -> list[str]:
     """Deduplicate and sort use statements."""
+    # Drop brace-list items that aren't valid Rust import entries. The LLM
+    # occasionally hallucinates a literal (e.g. `0i32`) into a
+    # `use ...::{A, B, 0i32, C};` list; keeping it yields
+    # `error: expected identifier, found 0i32`. A real entry is an
+    # identifier (optionally `as alias`), `self`, or `*`.
+    _valid_item = re.compile(r'^(?:[A-Za-z_]\w*(?:\s+as\s+[A-Za-z_]\w*)?|self|\*)$')
+
+    def _sanitize_use(stmt: str) -> str:
+        m = re.search(r'\{([^{}]*)\}', stmt)
+        if not m:
+            return stmt
+        items = [x.strip() for x in m.group(1).split(',') if x.strip()]
+        kept = [x for x in items if _valid_item.match(x)]
+        return stmt[:m.start(1)] + ', '.join(kept) + stmt[m.end(1):]
+
     # Normalize: remove trailing semicolons for comparison, re-add
     seen = set()
     deduped = []
     for stmt in use_statements:
+        stmt = _sanitize_use(stmt)
         normalized = stmt.strip().rstrip(';') + ';'
         if normalized not in seen:
             seen.add(normalized)

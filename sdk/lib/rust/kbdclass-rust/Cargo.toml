@@ -1,0 +1,20 @@
+# kbdclass-rust — Rust translation of the keyboard class driver
+# (drivers/input/kbdclass/kbdclass.c). crate-type=staticlib →
+# libkbdclass_rust.a, linked into the cmake-built kbdclass.sys with
+# kbdclass.c commented out — arm64input-rust / framebuf-rust style
+# cohabitation.
+#
+# Live on the PS/2 input path (i8042prt -> kbdclass -> win32k) which the
+# smoke test test_post_shell_ready_input exercises on i386/amd64. Built
+# for all three arches (per-arch RUST_TARGET selected in the cohab cmake).
+
+[package]
+name = "kbdclass-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

@@ -20,8 +20,10 @@
 #[cfg(any(feature = "winsrv_dll_only", not(feature = "winsrv_dll_only")))]
 pub mod init;
 
-// concfg/ — console settings + font cache (leaf, no consrv/usersrv deps).
-pub mod concfg;
+// concfg/ — console settings + font cache. Extracted to its own crate (shared
+// leaf lib: winsrv + Console CPL); re-exported so consrv's `use crate::concfg::`
+// paths keep resolving.
+pub use concfg_rust as concfg;
 
 // consrv/ — Console subsystem server (Phase 5.3 lands consrv/condrv/).
 pub mod consrv;

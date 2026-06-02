@@ -17,14 +17,14 @@ struct SMP_SESSION {
 
 type PSMP_SESSION = *mut SMP_SESSION;
 
-#[repr(C)]
-struct SMP_SUBSYSTEM {
-    Entry: LIST_ENTRY,
-    MuSessionId: ULONG,
-    // ... other fields not accessed in this file
-}
-
-type PSMP_SUBSYSTEM = *mut SMP_SUBSYSTEM;
+// SMP_SUBSYSTEM / PSMP_SUBSYSTEM come from `ntdll_sys::nt::*` (bindgen of
+// smss.h). The earlier local re-definition here had MuSessionId at offset 8
+// (right after Entry) — WRONG: the real layout is Entry, Event, ProcessHandle,
+// ImageType, PortHandle, SbApiPort, ClientId, *then* MuSessionId (offset 36 on
+// i386). So CheckDup read the Event HANDLE (e.g. 0x3D0=976) as MuSessionId,
+// never matched session 0, and SmpSbCreateSession returned OBJECT_NAME_NOT_FOUND
+// → smss terminated → BUGCHECK 0xc000021a (task #18). smsubsys.rs/smloop.rs
+// already use the correct bindgen layout; this file must too.
 
 extern "C" {
     static mut SmpKnownSubSysLock: RTL_CRITICAL_SECTION;
@@ -63,7 +63,6 @@ pub unsafe extern "system" fn SmpCheckDuplicateMuSessionId(MuSessionId: ULONG) -
             core::ptr::null(),
             core::mem::offset_of!(SMP_SUBSYSTEM, Entry),
         ) as PSMP_SUBSYSTEM;
-        
         if (*Subsystem).MuSessionId == MuSessionId {
             FoundDuplicate = 1u8;
             break;

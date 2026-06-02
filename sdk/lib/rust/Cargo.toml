@@ -20,6 +20,9 @@ members = [
     "arm64input-rust",
     "arm64vid-rust",
     "framebuf-rust",
+    "kbdclass-rust",
+    "mouclass-rust",
+    "i8042prt-rust",
     "handle",
     "interlck",
     "kernel-rust",
@@ -54,6 +57,8 @@ members = [
     "win32k-sys",
     "winsrv-rust",
     "winsrv-sys",
+    "concfg-rust",
+    "userinit-rust",
 ]
 resolver = "2"
 
