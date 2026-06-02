@@ -193,7 +193,8 @@ list(APPEND SOURCE
     # gdi/ntgdi/line.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/line.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     # gdi/ntgdi/metafile.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/metafile.rs) — cohabitation [Phase 2c wave 13: server metafile object tier]
     # gdi/ntgdi/palette.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/palette.rs) — cohabitation [Phase 2c geometry wave 7: PALETTE object tier]
-    gdi/ntgdi/path.c
+    # gdi/ntgdi/path.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/path.rs) — cohabitation [Phase 2c wave 18: path tier; path.c + split2/3 = one TU]
+    gdi/ntgdi/path_rust_shims.c  # cdecl wrappers for FORCEINLINE/macro/arch-divergent eng helpers path.rs calls
     # gdi/ntgdi/pen.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/pen.rs) — cohabitation [Phase 2c geometry wave 6: PEN object tier]
     # gdi/ntgdi/polyfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/polyfill.rs) — cohabitation [Phase 2c geometry wave 1]
     # gdi/ntgdi/print.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/print.rs) — cohabitation [Phase 2c wave 16: print/escape tier]
@@ -356,6 +357,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/init.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/print.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdidev.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/path.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"

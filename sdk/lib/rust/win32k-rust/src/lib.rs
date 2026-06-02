@@ -182,6 +182,14 @@ pub mod print;
 // (IntCreatePrimarySurface/Destroy/EnumHDev + NtGdiDrawEscape + defaultDCstate).
 // Named gdidev (not device) to avoid colliding with the eng-tier device.rs below.
 pub mod gdidev;
+// path.rs — Phase 2c wave 18 WIP (NOT flipped): GDI path tier translated (61 fns;
+// PATH_* geometry + Nt*Path syscalls; FP guarded by KeSave/RestoreFloatingPointState;
+// path.c + split2/3 = one TU). Integration in progress: 262->82 compile errors driven
+// down (all mechanical POINT/POINTL + int-signedness casts remain) + a link phase
+// (TRACE/GDI_HANDLE_GET_TYPE macro-externs, FASTCALL ABIs, gef1/libm symbols). Re-enable
+// `pub mod path;` + flip path.c in CMakeLists to resume. COMPILE now clean x3
+// (262->0); remaining is the documented link phase (see header of path.rs).
+pub mod path;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
