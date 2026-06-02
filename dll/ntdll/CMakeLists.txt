@@ -76,10 +76,14 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrpe.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrutils.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrinit.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrapi.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/verifier.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/dispatch/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrnotify.rs
         ${NTDLL_RUST_WS}/ntdll-rust/Cargo.toml
         ${NTDLL_RUST_WS}/ntdll-sys/src/lib.rs
     COMMENT "Building ntdll-rust (${NTDLL_RUST_TGT}, default features) for ntdll.dll"
@@ -99,8 +103,15 @@ add_dependencies(etwtrace psdk)
 list(APPEND SOURCE
     # dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
     #   DbgUi* now provided by libntdll_rust.a (below)
-    ldr/ldrapi.c
-    ldr/ldrinit.c
+    # ldr/ldrapi.c — replaced by Rust (ntdll-rust/src/ldr/ldrapi.rs);
+    #   LdrLoadDll/LdrUnloadDll/LdrGetProcedureAddress/LdrGetDllHandleEx +
+    #   loader public API (LdrLock/UnlockLoaderLock, LdrFindEntryForAddress,
+    #   LdrQueryProcessModuleInformation, LdrEnumerateLoadedModules, …) now
+    #   provided by libntdll_rust.a (below)
+    # ldr/ldrinit.c — replaced by Rust (ntdll-rust/src/ldr/ldrinit.rs);
+    #   LdrpInitialize/LdrpInitializeProcess/LdrpInitializeThread + loader-init
+    #   core (TLS init, security cookie, exec-options, process-compat) now
+    #   provided by libntdll_rust.a (below)
     # ldr/ldrpe.c — replaced by Rust (ntdll-rust/src/ldr/ldrpe.rs);
     #   LdrpSnapIAT/LdrpSnapThunk/LdrpWalkImportDescriptor/LdrpLoadImportModule
     #   + import-descriptor handlers now provided by libntdll_rust.a (below)
@@ -118,7 +129,11 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE dispatch/amd64/dispatch.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE dispatch/arm64/dispatch.S)
-    list(APPEND SOURCE dispatch/dispatch.c)
+    # dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,
+    #   #[cfg(aarch64)]); the arm64 .S still owns KiUserExceptionDispatcher /
+    #   KiUserApcDispatcher / LdrInitializeThunk, so the Rust module provides only
+    #   KiRaiseUserExceptionDispatcher + KiUserCallbackDispatcher (the two the C
+    #   contributed on arm64). Now provided by libntdll_rust.a (below).
 else()
     list(APPEND SOURCE dispatch/dispatch.c)
 endif()
