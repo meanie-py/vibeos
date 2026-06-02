@@ -192,6 +192,8 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
             return "win32k_sys::win32k"
         if module == "winsrv":
             return "winsrv_sys::winsrv"
+        if module == "ft":
+            return "ft_sys::ft"
         return f"ntkrnl_sys::{module}"
 
     if resolve.imports:
@@ -200,7 +202,7 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
         for module, group in sorted(resolve.imports.items()):
             names = sorted(s.name for s in group.symbols)
             path = _crate_path(module)
-            if module in ("ddk", "hal_ddk", "win32k", "winsrv"):
+            if module in ("ddk", "hal_ddk", "win32k", "winsrv", "ft"):
                 parts.append(f"From `{path}::*`: {', '.join(f'`{n}`' for n in names[:50])}")
                 if len(names) > 50:
                     parts.append(f"  ... and {len(names) - 50} more")

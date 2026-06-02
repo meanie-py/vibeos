@@ -289,6 +289,21 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
             if s.name not in catalog.functions:
                 catalog.functions[s.name] = s
 
+    # For the win32k target (freetype.c), also scan ft-sys bindgen → module "ft".
+    # The bundled FreeType lib's FT_*/TT_* types are authoritative (byte-exact
+    # layouts from the real headers); functions add-if-absent. Mirrors win32k.
+    ft_files = getattr(target, "ft_bindgen_files", {}) or {}
+    ft_bindgen_path = ft_files.get(arch)
+    if ft_bindgen_path and ft_bindgen_path.exists():
+        types, functions, constants = _scan_bindgen(ft_bindgen_path, "ft")
+        for s in types:
+            catalog.types[s.name] = s
+        for s in constants:
+            catalog.constants[s.name] = s
+        for s in functions:
+            if s.name not in catalog.functions:
+                catalog.functions[s.name] = s
+
     # Also scan bindgen_common.rs
     common_path = NTKRNL_SYS_DIR / "bindgen_common.rs"
     if common_path.exists():
