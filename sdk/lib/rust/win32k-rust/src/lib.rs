@@ -190,6 +190,7 @@ pub mod gdidev;
 // `pub mod path;` + flip path.c in CMakeLists to resume. COMPILE now clean x3
 // (262->0); remaining is the documented link phase (see header of path.rs).
 pub mod path;
+pub mod font;  // [Phase 2c wave 19: font tier — 21 fns, flip gdi/ntgdi/font.c]
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust

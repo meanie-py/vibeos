@@ -1,0 +1,3025 @@
+use win32k_sys::win32k::*;
+use ntkrnl_sys::ddk::{ExAllocatePoolWithQuotaTag, KeEnterCriticalRegion, KeLeaveCriticalRegion};
+
+// ExAllocatePoolZero is a FORCEINLINE (alloc + zero) with no exported symbol — inline it.
+#[inline(always)]
+unsafe fn ExAllocatePoolZero(pool: POOL_TYPE, n: usize, tag: u32) -> PVOID {
+    let p = ntkrnl_sys::ddk::ExAllocatePoolWithTag(pool, n as _, tag);
+    if !p.is_null() {
+        ntkrnl_sys::rtl::RtlZeroMemory(p, n as _);
+    }
+    p
+}
+
+// _ExInitializePushLock is a FORCEINLINE (`PushLock->Ptr = 0`) — no exported symbol,
+// so inline it here instead of using the (undefined) ddk extern binding. Generic over
+// the pointee so call sites need no cast.
+#[inline(always)]
+unsafe fn ExInitializePushLock<T>(push_lock: *mut T) {
+    *(push_lock as *mut usize) = 0;
+}
+use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
+use core::ffi::c_void;
+
+// usize-accepting wrappers over ddk/rtl primitives (i386 SIZE_T = u32) — same as path.rs.
+#[inline(always)]
+unsafe fn ExAllocatePoolWithTag(pool: POOL_TYPE, n: usize, tag: u32) -> PVOID {
+    ntkrnl_sys::ddk::ExAllocatePoolWithTag(pool, n as _, tag)
+}
+#[inline(always)]
+unsafe fn ExFreePoolWithTag(p: PVOID, tag: u32) {
+    ntkrnl_sys::ddk::ExFreePoolWithTag(p, tag)
+}
+#[inline(always)]
+unsafe fn RtlZeroMemory(d: *mut c_void, n: usize) {
+    ntkrnl_sys::rtl::RtlZeroMemory(d, n as _)
+}
+#[inline(always)]
+unsafe fn RtlCopyMemory(d: *mut c_void, s: *const c_void, n: usize) {
+    ntkrnl_sys::rtl::RtlCopyMemory(d, s, n as _)
+}
+
+// FASTCALL kernel helpers (freetype.c / text.c): i386 decorates @Name@N, cdecl elsewhere.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ftGdiGetTextCharsetInfo(Dc: PDC, lpSig: *mut FONTSIGNATURE, dwFlags: u32) -> u32;
+    fn TextIntRealizeFont(hFont: HFONT, pTextObj: PTEXTOBJ) -> NTSTATUS;
+    fn ftGdiGetGlyphOutline(dc: PDC, wch: u16, iFormat: u32, pgm: LPGLYPHMETRICS, cjBuf: u32, pvBuf: *mut c_void, pmat2: *const MAT2, bIgnoreRotation: i32) -> u32;
+    fn ftGdiGetKerningPairs(FontGDI: PFONTGDI, NumPairs: ULONG, krnpair: LPKERNINGPAIR) -> DWORD;
+    fn TextIntGetTextExtentPoint(pdc: PDC, TextObj: PTEXTOBJ, String: *const u16, Count: core::ffi::c_int, MaxExtent: ULONG, Fit: *mut core::ffi::c_int, Dx: *mut core::ffi::c_int, Size: *mut SIZE, flOpts: FLONG) -> BOOL;
+    fn ftGdiGetTextMetricsW(hDC: HDC, ptmwi: *mut TMW_INTERNAL) -> BOOL;
+    fn SetLastNtError(Status: NTSTATUS);
+    fn ftGetFontUnicodeRanges(Font: PFONTGDI, glyphset: PGLYPHSET) -> DWORD;
+    fn ftGdiRealizationInfo(Font: PFONTGDI, Info: PREALIZATION_INFO) -> BOOL;
+    fn ftGdiGetFontData(FontGdi: PFONTGDI, Table: DWORD, Offset: DWORD, Buffer: PVOID, Size: DWORD) -> DWORD;
+    fn TextIntUpdateSize(dc: PDC, TextObj: PTEXTOBJ, FontGDI: PFONTGDI, bDoLock: BOOL) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ftGdiGetTextCharsetInfo(Dc: PDC, lpSig: *mut FONTSIGNATURE, dwFlags: u32) -> u32;
+    fn TextIntRealizeFont(hFont: HFONT, pTextObj: PTEXTOBJ) -> NTSTATUS;
+    fn ftGdiGetGlyphOutline(dc: PDC, wch: u16, iFormat: u32, pgm: LPGLYPHMETRICS, cjBuf: u32, pvBuf: *mut c_void, pmat2: *const MAT2, bIgnoreRotation: i32) -> u32;
+    fn ftGdiGetKerningPairs(FontGDI: PFONTGDI, NumPairs: ULONG, krnpair: LPKERNINGPAIR) -> DWORD;
+    fn TextIntGetTextExtentPoint(pdc: PDC, TextObj: PTEXTOBJ, String: *const u16, Count: core::ffi::c_int, MaxExtent: ULONG, Fit: *mut core::ffi::c_int, Dx: *mut core::ffi::c_int, Size: *mut SIZE, flOpts: FLONG) -> BOOL;
+    fn ftGdiGetTextMetricsW(hDC: HDC, ptmwi: *mut TMW_INTERNAL) -> BOOL;
+    fn SetLastNtError(Status: NTSTATUS);
+    fn ftGetFontUnicodeRanges(Font: PFONTGDI, glyphset: PGLYPHSET) -> DWORD;
+    fn ftGdiRealizationInfo(Font: PFONTGDI, Info: PREALIZATION_INFO) -> BOOL;
+    fn ftGdiGetFontData(FontGdi: PFONTGDI, Table: DWORD, Offset: DWORD, Buffer: PVOID, Size: DWORD) -> DWORD;
+    fn TextIntUpdateSize(dc: PDC, TextObj: PTEXTOBJ, FontGDI: PFONTGDI, bDoLock: BOOL) -> BOOL;
+}
+
+// NTAPI (STDCALL) helpers: _Name@N on i386, cdecl elsewhere → extern "system".
+// SafeProbe* take SIZE_T length (usize), confirmed _SafeProbeForRead@12 on i386.
+extern "system" {
+    fn SafeProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG) -> NTSTATUS;
+    fn SafeProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG) -> NTSTATUS;
+    fn GDIOBJ_AllocObjWithHandle(ObjectType: ULONG, cjSize: ULONG) -> POBJ;
+    fn GDIOBJ_vUnlockObject(pobj: POBJ);
+}
+
+// Global GDI handle-table pointer; we deref through it but never reassign it.
+extern "C" {
+    static mut GdiHandleTable: PGDI_HANDLE_TABLE;
+}
+
+// cdecl shims (font_rust_shims.c) over the FORCEINLINE TEXTOBJ_LockText/UnlockText.
+extern "C" {
+    fn w32r_TEXTOBJ_LockText(hfont: HFONT) -> PTEXTOBJ;
+    fn w32r_TEXTOBJ_UnlockText(pto: PTEXTOBJ);
+}
+
+// C macro: ObjToGDI(ClipObj, Type) = (Type##GDI *)(ClipObj). Only used with FONT here,
+// so the type token is ignored and the value is a plain cast to PFONTGDI.
+macro_rules! ObjToGDI {
+    ($obj:expr, $ty:ident) => { ($obj) as PFONTGDI };
+    ($obj:expr) => { ($obj) as PFONTGDI };
+}
+
+const GDI_OBJECT_TYPE_FONT: ULONG = 0x000a0000;
+const GDI_HANDLE_COUNT: usize = 0x10000;
+const GDI_HANDLE_INDEX_MASK: ULONG_PTR = (GDI_HANDLE_COUNT - 1) as ULONG_PTR;
+
+// LFONT_* and GDI_HANDLE_GET_INDEX are C macros over GDIOBJ_* / the handle table.
+// Expressed as inline fns (no bare-token args) so call sites need no `!`.
+#[inline]
+unsafe fn LFONT_AllocFontWithHandle() -> PLFONT {
+    GDIOBJ_AllocObjWithHandle(GDI_OBJECT_TYPE_FONT, core::mem::size_of::<TEXTOBJ>() as ULONG) as PLFONT
+}
+#[inline]
+unsafe fn LFONT_UnlockFont(p: PLFONT) {
+    GDIOBJ_vUnlockObject(p as POBJ)
+}
+#[inline]
+unsafe fn GDI_HANDLE_GET_INDEX(h: HGDIOBJ) -> ULONG_PTR {
+    (h as ULONG_PTR) & GDI_HANDLE_INDEX_MASK
+}
+
+// ---- file-scope preamble (translated) ----
+pub const UNICODE_NULL: u16 = 0;
+
+// Pool tags — C multi-char literals are big-endian (e.g. 'ETNF' -> from_be_bytes).
+pub const TAG_STRING: u32 = u32::from_be_bytes(*b" RTS");
+pub const TAG_USTR: u32 = u32::from_be_bytes(*b"RTSU");
+pub const TAG_FONT: u32 = u32::from_be_bytes(*b"ETNF");
+pub const TAG_FINF: u32 = u32::from_be_bytes(*b"FNIF");
+pub const GDITAG_TEXT: u32 = u32::from_be_bytes(*b"txtG");
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn GreCreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT {
+    GreCreateFontIndirectW_impl(lplf)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn GreCreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT {
+    GreCreateFontIndirectW_impl(lplf)
+}
+
+unsafe fn GreCreateFontIndirectW_impl(lplf: *const LOGFONTW) -> HFONT {
+    if !lplf.is_null() {
+        let mut Logfont: ENUMLOGFONTEXDVW = core::mem::zeroed();
+
+        RtlCopyMemory(
+            core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfLogFont) as PVOID,
+            lplf as PVOID,
+            (core::mem::size_of::<LOGFONTW>() as ULONG as _),
+        );
+        RtlZeroMemory(
+            core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfFullName) as PVOID,
+            (core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfFullName) as ULONG as _),
+        );
+        RtlZeroMemory(
+            core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfStyle) as PVOID,
+            (core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfStyle) as ULONG as _),
+        );
+        RtlZeroMemory(
+            core::ptr::addr_of_mut!(Logfont.elfEnumLogfontEx.elfScript) as PVOID,
+            (core::mem::size_of_val(&Logfont.elfEnumLogfontEx.elfScript) as ULONG as _),
+        );
+
+        Logfont.elfDesignVector.dvNumAxes = 0;
+
+        RtlZeroMemory(
+            core::ptr::addr_of_mut!(Logfont.elfDesignVector) as PVOID,
+            (core::mem::size_of::<DESIGNVECTOR>() as ULONG as _),
+        );
+
+        HfontCreate(&Logfont, 0, 0, 0, core::ptr::null_mut())
+    } else {
+        core::ptr::null_mut()
+    }
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn GreGetKerningPairs(
+    hDC: HDC,
+    NumPairs: ULONG,
+    krnpair: LPKERNINGPAIR,
+) -> DWORD {
+    GreGetKerningPairs_impl(hDC, NumPairs, krnpair)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn GreGetKerningPairs(
+    hDC: HDC,
+    NumPairs: ULONG,
+    krnpair: LPKERNINGPAIR,
+) -> DWORD {
+    GreGetKerningPairs_impl(hDC, NumPairs, krnpair)
+}
+
+unsafe fn GreGetKerningPairs_impl(
+    hDC: HDC,
+    NumPairs: ULONG,
+    krnpair: LPKERNINGPAIR,
+) -> DWORD {
+    let dc: PDC;
+    let pdcattr: PDC_ATTR;
+    let TextObj: PTEXTOBJ;
+    let FontGDI: PFONTGDI;
+    let Count: DWORD;
+    let pKP: *mut KERNINGPAIR;
+
+    dc = DC_LockDc(hDC);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    pdcattr = (*dc).pdcattr;
+    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    DC_UnlockDc(dc);
+
+    if TextObj.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    FontGDI = ObjToGDI!((*TextObj).Font as *mut core::ffi::c_void, FONT);
+    w32r_TEXTOBJ_UnlockText(TextObj);
+
+    Count = ftGdiGetKerningPairs(FontGDI, 0, core::ptr::null_mut());
+
+    if Count != 0 && !krnpair.is_null() {
+        if Count > NumPairs {
+            EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+            return 0;
+        }
+        pKP = ExAllocatePoolWithTag(
+            PagedPool,
+            Count as usize * core::mem::size_of::<KERNINGPAIR>(),
+            GDITAG_TEXT,
+        ) as *mut KERNINGPAIR;
+        if pKP.is_null() {
+            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return 0;
+        }
+        ftGdiGetKerningPairs(FontGDI, Count, pKP);
+
+        RtlCopyMemory(
+            krnpair as *mut core::ffi::c_void,
+            pKP as *const core::ffi::c_void,
+            Count as usize * core::mem::size_of::<KERNINGPAIR>(),
+        );
+
+        ExFreePoolWithTag(pKP as *mut core::ffi::c_void, GDITAG_TEXT);
+    }
+    Count
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn FontGetObject(
+    plfont: PTEXTOBJ,
+    mut cjBuffer: ULONG,
+    pvBuffer: *mut core::ffi::c_void,
+) -> ULONG {
+    FontGetObject_impl(plfont, cjBuffer, pvBuffer)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn FontGetObject(
+    plfont: PTEXTOBJ,
+    cjBuffer: ULONG,
+    pvBuffer: *mut core::ffi::c_void,
+) -> ULONG {
+    FontGetObject_impl(plfont, cjBuffer, pvBuffer)
+}
+
+unsafe fn FontGetObject_impl(
+    plfont: PTEXTOBJ,
+    mut cjBuffer: ULONG,
+    pvBuffer: *mut core::ffi::c_void,
+) -> ULONG {
+    let plf: *mut ENUMLOGFONTEXDVW = core::ptr::addr_of_mut!((*plfont).logfont);
+
+    if ((*plfont).fl & TEXTOBJECT_INIT) == 0 {
+        let _Status = TextIntRealizeFont(((*plfont).BaseObject.hHmgr as _), plfont);
+    }
+
+    if pvBuffer.is_null() {
+        return core::mem::size_of::<LOGFONTW>() as ULONG;
+    }
+
+    let base = plf as usize;
+    let field = core::ptr::addr_of!(
+        (*plf).elfDesignVector.dvValues[(*plf).elfDesignVector.dvNumAxes as usize]
+    ) as usize;
+    let cjMaxSize = (field - base) as ULONG;
+
+    if cjBuffer > cjMaxSize {
+        cjBuffer = cjMaxSize;
+    }
+
+    RtlCopyMemory(pvBuffer, plf as *const core::ffi::c_void, cjBuffer as usize);
+
+    cjBuffer
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn IntGetCharDimensions(
+    hdc: HDC,
+    ptm: PTEXTMETRICW,
+    height: PDWORD,
+) -> DWORD {
+    IntGetCharDimensions_impl(hdc, ptm, height)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn IntGetCharDimensions(
+    hdc: HDC,
+    ptm: PTEXTMETRICW,
+    height: PDWORD,
+) -> DWORD {
+    IntGetCharDimensions_impl(hdc, ptm, height)
+}
+
+unsafe fn IntGetCharDimensions_impl(
+    hdc: HDC,
+    ptm: PTEXTMETRICW,
+    height: PDWORD,
+) -> DWORD {
+    let pdc: PDC;
+    let pdcattr: PDC_ATTR;
+    let TextObj: PTEXTOBJ;
+    let mut sz: SIZE = core::mem::zeroed();
+    let mut tmwi: TMW_INTERNAL = core::mem::zeroed();
+    let Good: BOOL;
+
+    static alphabet: [u16; 53] = [
+        'a' as u16, 'b' as u16, 'c' as u16, 'd' as u16, 'e' as u16, 'f' as u16,
+        'g' as u16, 'h' as u16, 'i' as u16, 'j' as u16, 'k' as u16, 'l' as u16,
+        'm' as u16, 'n' as u16, 'o' as u16, 'p' as u16, 'q' as u16, 'r' as u16,
+        's' as u16, 't' as u16, 'u' as u16, 'v' as u16, 'w' as u16, 'x' as u16,
+        'y' as u16, 'z' as u16, 'A' as u16, 'B' as u16, 'C' as u16, 'D' as u16,
+        'E' as u16, 'F' as u16, 'G' as u16, 'H' as u16, 'I' as u16, 'J' as u16,
+        'K' as u16, 'L' as u16, 'M' as u16, 'N' as u16, 'O' as u16, 'P' as u16,
+        'Q' as u16, 'R' as u16, 'S' as u16, 'T' as u16, 'U' as u16, 'V' as u16,
+        'W' as u16, 'X' as u16, 'Y' as u16, 'Z' as u16, 0,
+    ];
+
+    if ftGdiGetTextMetricsW(hdc, &mut tmwi) == 0 {
+        return 0;
+    }
+
+    pdc = DC_LockDc(hdc);
+
+    if pdc.is_null() {
+        return 0;
+    }
+
+    pdcattr = (*pdc).pdcattr;
+
+    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    if TextObj.is_null() {
+        DC_UnlockDc(pdc);
+        return 0;
+    }
+
+    Good = TextIntGetTextExtentPoint(
+        pdc,
+        TextObj,
+        alphabet.as_ptr(),
+        52,
+        0,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        &mut sz,
+        0,
+    );
+    w32r_TEXTOBJ_UnlockText(TextObj);
+    DC_UnlockDc(pdc);
+
+    if Good == 0 {
+        return 0;
+    }
+    if !ptm.is_null() {
+        *ptm = tmwi.TextMetric;
+    }
+    if !height.is_null() {
+        *height = tmwi.TextMetric.tmHeight as DWORD;
+    }
+
+    ((sz.cx / 26 + 1) / 2) as DWORD
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn IntGetFontLanguageInfo(Dc: PDC) -> u32 {
+    IntGetFontLanguageInfo_impl(Dc)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn IntGetFontLanguageInfo(Dc: PDC) -> u32 {
+    IntGetFontLanguageInfo_impl(Dc)
+}
+
+unsafe fn IntGetFontLanguageInfo_impl(Dc: PDC) -> u32 {
+
+    const GCP_DBCS_MASK: u32 = 0x003F0000;
+    const GCP_DIACRITIC_MASK: u32 = 0x00000000;
+    const FLI_GLYPHS_MASK: u32 = 0x00000000;
+    const GCP_GLYPHSHAPE_MASK: u32 = 0x00000040;
+    const GCP_KASHIDA_MASK: u32 = 0x00000000;
+    const GCP_LIGATE_MASK: u32 = 0x00000000;
+    const GCP_USEKERNING_MASK: u32 = 0x00000000;
+    const GCP_REORDER_MASK: u32 = 0x00000060;
+
+    let pdcattr: PDC_ATTR;
+    let mut fontsig: FONTSIGNATURE = core::mem::zeroed();
+    let mut result: u32 = 0;
+
+    ftGdiGetTextCharsetInfo(Dc, &mut fontsig, 0);
+
+    if (fontsig.fsCsb[0] & GCP_DBCS_MASK) != 0 {
+        result |= GCP_DBCS;
+    }
+
+    if (fontsig.fsCsb[0] & GCP_DIACRITIC_MASK) != 0 {
+        result |= GCP_DIACRITIC;
+    }
+
+    if (fontsig.fsCsb[0] & FLI_GLYPHS_MASK) != 0 {
+        result |= FLI_GLYPHS;
+    }
+
+    if (fontsig.fsCsb[0] & GCP_GLYPHSHAPE_MASK) != 0 {
+        result |= GCP_GLYPHSHAPE;
+    }
+
+    if (fontsig.fsCsb[0] & GCP_KASHIDA_MASK) != 0 {
+        result |= GCP_KASHIDA;
+    }
+
+    if (fontsig.fsCsb[0] & GCP_LIGATE_MASK) != 0 {
+        result |= GCP_LIGATE;
+    }
+
+    if (fontsig.fsCsb[0] & GCP_USEKERNING_MASK) != 0 {
+        result |= GCP_USEKERNING;
+    }
+
+    pdcattr = (*Dc).pdcattr;
+
+    if (*pdcattr).flTextAlign & TA_RTLREADING != 0 {
+        if (fontsig.fsCsb[0] & GCP_REORDER_MASK) != 0 {
+            result |= GCP_REORDER;
+        }
+    }
+
+    result
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn RealizeFontInit(hFont: HFONT) -> PTEXTOBJ {
+    RealizeFontInit_impl(hFont)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn RealizeFontInit(hFont: HFONT) -> PTEXTOBJ {
+    RealizeFontInit_impl(hFont)
+}
+
+unsafe fn RealizeFontInit_impl(hFont: HFONT) -> PTEXTOBJ {
+    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
+
+    let pTextObj: PTEXTOBJ = w32r_TEXTOBJ_LockText(hFont);
+
+    if !pTextObj.is_null() && ((*pTextObj).fl & TEXTOBJECT_INIT) == 0 {
+        Status = TextIntRealizeFont(hFont, pTextObj);
+        if !NT_SUCCESS(Status) {
+            w32r_TEXTOBJ_UnlockText(pTextObj);
+            return core::ptr::null_mut();
+        }
+    }
+    pTextObj
+}
+
+unsafe fn IntCheckFontPathNames(
+    pwcFiles: PCWCH,
+    cFiles: ULONG,
+    cwc: ULONG,
+) -> BOOL {
+    let mut ich: ULONG;
+    let mut cRealFiles: ULONG;
+
+    if *pwcFiles.add((cwc - 1) as usize) != UNICODE_NULL as u16 {
+        return 0;
+    }
+
+    ich = 0;
+    cRealFiles = 0;
+    while ich < cwc {
+        if *pwcFiles.add(ich as usize) == 0 {
+            cRealFiles += 1;
+        }
+        ich += 1;
+    }
+
+    (cRealFiles >= cFiles) as BOOL
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiAddFontResourceW(
+    pwcFiles: PCWCH,
+    cwc: ULONG,
+    cFiles: ULONG,
+    fl: FLONG,
+    dwPidTid: DWORD,
+    pdv: *const DESIGNVECTOR,
+) -> INT {
+    let mut SafeFileName: _UNICODE_STRING = core::mem::zeroed();
+    let Ret: INT;
+
+    if (cwc <= 1) || (cwc > UNICODE_STRING_MAX_CHARS) {
+        return 0;
+    }
+
+    SafeFileName.Length = ((cwc - 1) * core::mem::size_of::<u16>() as ULONG) as USHORT;
+    SafeFileName.MaximumLength =
+        SafeFileName.Length + core::mem::size_of::<u16>() as USHORT;
+    SafeFileName.Buffer = ExAllocatePoolWithTag(
+        PagedPool,
+        (SafeFileName.MaximumLength as SIZE_T as _),
+        TAG_STRING,
+    ) as *mut u16;
+    if SafeFileName.Buffer.is_null() {
+        return 0;
+    }
+
+    if !IntCheckFontPathNames(pwcFiles, cFiles, cwc) != 0 {
+    }
+    if IntCheckFontPathNames(pwcFiles, cFiles, cwc) == 0 {
+        return 0;
+    }
+
+    RtlCopyMemory(
+        SafeFileName.Buffer as PVOID,
+        pwcFiles as PVOID,
+        (SafeFileName.Length as SIZE_T as _),
+    );
+
+    *SafeFileName
+        .Buffer
+        .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
+    Ret = IntGdiAddFontResourceEx(&mut SafeFileName, cFiles, fl, 0);
+    ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+    Ret
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiAddFontResourceW(
+    pwcFiles: PCWCH,
+    cwc: ULONG,
+    cFiles: ULONG,
+    fl: FLONG,
+    dwPidTid: DWORD,
+    pdv: *const DESIGNVECTOR,
+) -> INT {
+    let mut SafeFileName: _UNICODE_STRING = core::mem::zeroed();
+    let Ret: INT;
+
+    if (cwc <= 1) || (cwc > UNICODE_STRING_MAX_CHARS) {
+        return 0;
+    }
+
+    SafeFileName.Length = ((cwc - 1) * core::mem::size_of::<u16>() as ULONG) as USHORT;
+    SafeFileName.MaximumLength =
+        SafeFileName.Length + core::mem::size_of::<u16>() as USHORT;
+    SafeFileName.Buffer = ExAllocatePoolWithTag(
+        PagedPool,
+        (SafeFileName.MaximumLength as SIZE_T as _),
+        TAG_STRING,
+    ) as *mut u16;
+    if SafeFileName.Buffer.is_null() {
+        return 0;
+    }
+
+    if !IntCheckFontPathNames(pwcFiles, cFiles, cwc) != 0 {
+    }
+    if IntCheckFontPathNames(pwcFiles, cFiles, cwc) == 0 {
+        return 0;
+    }
+
+    RtlCopyMemory(
+        SafeFileName.Buffer as PVOID,
+        pwcFiles as PVOID,
+        (SafeFileName.Length as SIZE_T as _),
+    );
+
+    *SafeFileName
+        .Buffer
+        .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
+    Ret = IntGdiAddFontResourceEx(&mut SafeFileName, cFiles, fl, 0);
+    ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+    Ret
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiRemoveFontResourceW(
+    pwszFiles: PCWCH,
+    cwc: ULONG,
+    cFiles: ULONG,
+    fl: ULONG,
+    dwPidTid: DWORD,
+    pdv: *const DESIGNVECTOR,
+) -> BOOL {
+    let mut SafeFileName: _UNICODE_STRING = core::mem::zeroed();
+    let Ret: BOOL;
+
+    let _ = dwPidTid;
+    let _ = pdv;
+
+    /* cwc = Length + trailing zero. */
+    if (cwc <= 1) || (cwc > UNICODE_STRING_MAX_CHARS) {
+        return 0;
+    }
+
+    SafeFileName.Length = ((cwc - 1) * core::mem::size_of::<u16>() as ULONG) as USHORT;
+    SafeFileName.MaximumLength =
+        SafeFileName.Length + core::mem::size_of::<u16>() as USHORT;
+    SafeFileName.Buffer = ExAllocatePoolWithTag(
+        PagedPool,
+        SafeFileName.MaximumLength as usize,
+        TAG_STRING,
+    ) as *mut u16;
+    if SafeFileName.Buffer.is_null() {
+        return 0;
+    }
+
+    if IntCheckFontPathNames(pwszFiles, cFiles, cwc) == 0 {
+        return 0;
+    }
+
+    RtlCopyMemory(
+        SafeFileName.Buffer as PVOID,
+        pwszFiles as PVOID,
+        SafeFileName.Length as usize,
+    );
+
+    *SafeFileName
+        .Buffer
+        .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
+
+    Ret = IntGdiRemoveFontResource(&mut SafeFileName, cFiles, fl);
+
+    ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+
+    Ret
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiRemoveFontResourceW(
+    pwszFiles: PCWCH,
+    cwc: ULONG,
+    cFiles: ULONG,
+    fl: ULONG,
+    dwPidTid: DWORD,
+    pdv: *const DESIGNVECTOR,
+) -> BOOL {
+    let mut SafeFileName: _UNICODE_STRING = core::mem::zeroed();
+    let Ret: BOOL;
+
+    let _ = dwPidTid;
+    let _ = pdv;
+
+    /* cwc = Length + trailing zero. */
+    if (cwc <= 1) || (cwc > UNICODE_STRING_MAX_CHARS) {
+        return 0;
+    }
+
+    SafeFileName.Length = ((cwc - 1) * core::mem::size_of::<u16>() as ULONG) as USHORT;
+    SafeFileName.MaximumLength =
+        SafeFileName.Length + core::mem::size_of::<u16>() as USHORT;
+    SafeFileName.Buffer = ExAllocatePoolWithTag(
+        PagedPool,
+        SafeFileName.MaximumLength as usize,
+        TAG_STRING,
+    ) as *mut u16;
+    if SafeFileName.Buffer.is_null() {
+        return 0;
+    }
+
+    if IntCheckFontPathNames(pwszFiles, cFiles, cwc) == 0 {
+        return 0;
+    }
+
+    RtlCopyMemory(
+        SafeFileName.Buffer as PVOID,
+        pwszFiles as PVOID,
+        SafeFileName.Length as usize,
+    );
+
+    *SafeFileName
+        .Buffer
+        .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
+
+    Ret = IntGdiRemoveFontResource(&mut SafeFileName, cFiles, fl);
+
+    ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+
+    Ret
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiAddFontMemResourceEx(
+    pvBuffer: *const core::ffi::c_void,
+    cjBuffer: DWORD,
+    pdv: *const DESIGNVECTOR,
+    cjDV: ULONG,
+    pNumFonts: PDWORD,
+) -> HANDLE {
+    let mut Buffer: PVOID = core::ptr::null_mut();
+    let Ret: HANDLE;
+    let mut NumFonts: DWORD = 0;
+
+    let _ = pdv;
+    let _ = cjDV;
+
+    if pvBuffer.is_null() || cjBuffer == 0 {
+        return core::ptr::null_mut();
+    }
+
+    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, (cjBuffer as usize as _), TAG_FONT);
+    RtlCopyMemory(Buffer, pvBuffer as PVOID, cjBuffer as usize);
+
+    Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &mut NumFonts);
+    ExFreePoolWithTag(Buffer, TAG_FONT);
+
+    {
+        let __SehStatus = SafeProbeForWrite(
+            pNumFonts as PVOID,
+            core::mem::size_of::<DWORD>(),
+            1,
+        );
+        if !NT_SUCCESS(__SehStatus) {
+            return core::ptr::null_mut();
+        }
+    }
+    *pNumFonts = NumFonts;
+    Ret
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiAddFontMemResourceEx(
+    pvBuffer: *const core::ffi::c_void,
+    cjBuffer: DWORD,
+    pdv: *const DESIGNVECTOR,
+    cjDV: ULONG,
+    pNumFonts: PDWORD,
+) -> HANDLE {
+    let mut Buffer: PVOID = core::ptr::null_mut();
+    let Ret: HANDLE;
+    let mut NumFonts: DWORD = 0;
+
+    let _ = pdv;
+    let _ = cjDV;
+
+    if pvBuffer.is_null() || cjBuffer == 0 {
+        return core::ptr::null_mut();
+    }
+
+    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, (cjBuffer as usize as _), TAG_FONT);
+    RtlCopyMemory(Buffer, pvBuffer as PVOID, cjBuffer as usize);
+
+    Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &mut NumFonts);
+    ExFreePoolWithTag(Buffer, TAG_FONT);
+
+    {
+        let __SehStatus = SafeProbeForWrite(
+            pNumFonts as PVOID,
+            core::mem::size_of::<DWORD>(),
+            1,
+        );
+        if !NT_SUCCESS(__SehStatus) {
+            return core::ptr::null_mut();
+        }
+    }
+    *pNumFonts = NumFonts;
+    Ret
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiRemoveFontMemResourceEx(hMMFont: HANDLE) -> BOOL {
+    IntGdiRemoveFontMemResource(hMMFont)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiRemoveFontMemResourceEx(hMMFont: HANDLE) -> BOOL {
+    IntGdiRemoveFontMemResource(hMMFont)
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetCharacterPlacementW(
+    hdc: HDC,
+    pwsz: PCWCH,
+    nCount: INT,
+    nMaxExtent: INT,
+    pgcpw: LPGCP_RESULTSW,
+    dwFlags: DWORD,
+) -> DWORD {
+    0
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetCharacterPlacementW(
+    hdc: HDC,
+    pwsz: PCWCH,
+    nCount: INT,
+    nMaxExtent: INT,
+    pgcpw: LPGCP_RESULTSW,
+    dwFlags: DWORD,
+) -> DWORD {
+    0
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetFontData(
+    hDC: HDC,
+    Table: DWORD,
+    Offset: DWORD,
+    Buffer: PVOID,
+    Size: DWORD,
+) -> DWORD {
+    let Dc: PDC;
+    let pdcattr: PDC_ATTR;
+    let hFont: HFONT;
+    let TextObj: PTEXTOBJ;
+    let FontGdi: PFONTGDI;
+    let mut Result: DWORD = GDI_ERROR;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    if !Buffer.is_null() && Size != 0 {
+        Status = SafeProbeForRead(Buffer, Size as usize, 1);
+    }
+
+    if !NT_SUCCESS(Status) {
+        return Result;
+    }
+
+    Dc = DC_LockDc(hDC);
+    if Dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return GDI_ERROR;
+    }
+    pdcattr = (*Dc).pdcattr;
+
+    hFont = ((*pdcattr).hlfntNew as _);
+    TextObj = RealizeFontInit(hFont);
+    DC_UnlockDc(Dc);
+
+    if TextObj.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return GDI_ERROR;
+    }
+
+    FontGdi = ObjToGDI!((*TextObj).Font);
+
+    Result = ftGdiGetFontData(FontGdi, Table, Offset, Buffer, Size);
+
+    w32r_TEXTOBJ_UnlockText(TextObj);
+
+    Result
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetFontData(
+    hDC: HDC,
+    Table: DWORD,
+    Offset: DWORD,
+    Buffer: PVOID,
+    Size: DWORD,
+) -> DWORD {
+    let Dc: PDC;
+    let pdcattr: PDC_ATTR;
+    let hFont: HFONT;
+    let TextObj: PTEXTOBJ;
+    let FontGdi: PFONTGDI;
+    let mut Result: DWORD = GDI_ERROR;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    if !Buffer.is_null() && Size != 0 {
+        Status = SafeProbeForRead(Buffer, Size as usize, 1);
+    }
+
+    if !NT_SUCCESS(Status) {
+        return Result;
+    }
+
+    Dc = DC_LockDc(hDC);
+    if Dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return GDI_ERROR;
+    }
+    pdcattr = (*Dc).pdcattr;
+
+    hFont = ((*pdcattr).hlfntNew as _);
+    TextObj = RealizeFontInit(hFont);
+    DC_UnlockDc(Dc);
+
+    if TextObj.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return GDI_ERROR;
+    }
+
+    FontGdi = ObjToGDI!((*TextObj).Font);
+
+    Result = ftGdiGetFontData(FontGdi, Table, Offset, Buffer, Size);
+
+    w32r_TEXTOBJ_UnlockText(TextObj);
+
+    Result
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) -> DWORD {
+    let pDc: PDC;
+    let pdcattr: PDC_ATTR;
+    let hFont: HFONT;
+    let mut TextObj: PTEXTOBJ;
+    let FontGdi: PFONTGDI;
+    let mut Size: DWORD = 0;
+    let pgsSafe: PGLYPHSET;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    pDc = DC_LockDc(hdc);
+    if pDc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    pdcattr = (*pDc).pdcattr;
+
+    hFont = ((*pdcattr).hlfntNew as _);
+    TextObj = RealizeFontInit(hFont);
+
+    'exit: {
+        if TextObj.is_null() {
+            EngSetLastError(ERROR_INVALID_HANDLE);
+            break 'exit;
+        }
+        FontGdi = ObjToGDI!((*TextObj).Font, FONT);
+
+        Size = ftGetFontUnicodeRanges(FontGdi, core::ptr::null_mut());
+
+        if Size != 0 && !pgs.is_null() {
+            pgsSafe = ExAllocatePoolWithTag(PagedPool, Size as usize, GDITAG_TEXT) as PGLYPHSET;
+            if pgsSafe.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                Size = 0;
+                break 'exit;
+            }
+
+            Size = ftGetFontUnicodeRanges(FontGdi, pgsSafe);
+
+            if Size != 0 {
+                Status = SafeProbeForWrite(pgs as *mut core::ffi::c_void, (Size as _), 1);
+                if NT_SUCCESS(Status) {
+                    RtlCopyMemory(pgs as *mut core::ffi::c_void, pgsSafe as *mut core::ffi::c_void, Size as usize);
+                }
+
+                if !NT_SUCCESS(Status) {
+                    Size = 0;
+                }
+            }
+            ExFreePoolWithTag(pgsSafe as *mut core::ffi::c_void, GDITAG_TEXT);
+        }
+    }
+
+    w32r_TEXTOBJ_UnlockText(TextObj);
+    DC_UnlockDc(pDc);
+    Size
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) -> DWORD {
+    let pDc: PDC;
+    let pdcattr: PDC_ATTR;
+    let hFont: HFONT;
+    let mut TextObj: PTEXTOBJ;
+    let FontGdi: PFONTGDI;
+    let mut Size: DWORD = 0;
+    let pgsSafe: PGLYPHSET;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    pDc = DC_LockDc(hdc);
+    if pDc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    pdcattr = (*pDc).pdcattr;
+
+    hFont = ((*pdcattr).hlfntNew as _);
+    TextObj = RealizeFontInit(hFont);
+
+    'exit: {
+        if TextObj.is_null() {
+            EngSetLastError(ERROR_INVALID_HANDLE);
+            break 'exit;
+        }
+        FontGdi = ObjToGDI!((*TextObj).Font, FONT);
+
+        Size = ftGetFontUnicodeRanges(FontGdi, core::ptr::null_mut());
+
+        if Size != 0 && !pgs.is_null() {
+            pgsSafe = ExAllocatePoolWithTag(PagedPool, Size as usize, GDITAG_TEXT) as PGLYPHSET;
+            if pgsSafe.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                Size = 0;
+                break 'exit;
+            }
+
+            Size = ftGetFontUnicodeRanges(FontGdi, pgsSafe);
+
+            if Size != 0 {
+                Status = SafeProbeForWrite(pgs as *mut core::ffi::c_void, (Size as _), 1);
+                if NT_SUCCESS(Status) {
+                    RtlCopyMemory(pgs as *mut core::ffi::c_void, pgsSafe as *mut core::ffi::c_void, Size as usize);
+                }
+
+                if !NT_SUCCESS(Status) {
+                    Size = 0;
+                }
+            }
+            ExFreePoolWithTag(pgsSafe as *mut core::ffi::c_void, GDITAG_TEXT);
+        }
+    }
+
+    w32r_TEXTOBJ_UnlockText(TextObj);
+    DC_UnlockDc(pDc);
+    Size
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetGlyphOutline(
+    hdc: HDC,
+    wch: u16,
+    iFormat: u32,
+    pgm: LPGLYPHMETRICS,
+    cjBuf: u32,
+    UnsafeBuf: *mut core::ffi::c_void,
+    pmat2: *const MAT2,
+    bIgnoreRotation: i32,
+) -> u32 {
+
+
+    let mut Ret: u32 = GDI_ERROR;
+    let dc: PDC;
+    let mut pvBuf: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut gm: GLYPHMETRICS = core::mem::zeroed();
+    let mut Status: i32 = STATUS_SUCCESS;
+
+    dc = DC_LockDc(hdc);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return GDI_ERROR;
+    }
+
+    'exit: {
+        if !UnsafeBuf.is_null() && cjBuf != 0 {
+            pvBuf = ExAllocatePoolZero(PagedPool, (cjBuf as u64 as _), GDITAG_TEXT);
+            if pvBuf.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                break 'exit;
+            }
+        }
+
+        Ret = ftGdiGetGlyphOutline(
+            dc,
+            wch,
+            iFormat,
+            if !pgm.is_null() {
+                core::ptr::addr_of_mut!(gm)
+            } else {
+                core::ptr::null_mut()
+            },
+            cjBuf,
+            pvBuf,
+            pmat2,
+            bIgnoreRotation,
+        );
+
+        if !pvBuf.is_null() {
+            Status = SafeProbeForWrite(UnsafeBuf, (cjBuf as _), 1);
+            if NT_SUCCESS(Status) {
+                RtlCopyMemory(UnsafeBuf, pvBuf, cjBuf as usize);
+            }
+
+            ExFreePoolWithTag(pvBuf, GDITAG_TEXT);
+        }
+
+        if !pgm.is_null() {
+            Status = SafeProbeForWrite(
+                pgm as *mut core::ffi::c_void,
+                (core::mem::size_of::<GLYPHMETRICS>() as u32 as _),
+                1,
+            );
+            if NT_SUCCESS(Status) {
+                RtlCopyMemory(
+                    pgm as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(gm) as *const core::ffi::c_void,
+                    core::mem::size_of::<GLYPHMETRICS>(),
+                );
+            }
+        }
+
+        if !NT_SUCCESS(Status) {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            Ret = GDI_ERROR;
+        }
+    }
+
+    DC_UnlockDc(dc);
+    Ret
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetGlyphOutline(
+    hdc: HDC,
+    wch: u16,
+    iFormat: u32,
+    pgm: LPGLYPHMETRICS,
+    cjBuf: u32,
+    UnsafeBuf: *mut core::ffi::c_void,
+    pmat2: *const MAT2,
+    bIgnoreRotation: i32,
+) -> u32 {
+
+
+    let mut Ret: u32 = GDI_ERROR;
+    let dc: PDC;
+    let mut pvBuf: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut gm: GLYPHMETRICS = core::mem::zeroed();
+    let mut Status: i32 = STATUS_SUCCESS;
+
+    dc = DC_LockDc(hdc);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return GDI_ERROR;
+    }
+
+    'exit: {
+        if !UnsafeBuf.is_null() && cjBuf != 0 {
+            pvBuf = ExAllocatePoolZero(PagedPool, cjBuf as usize, GDITAG_TEXT);
+            if pvBuf.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                break 'exit;
+            }
+        }
+
+        Ret = ftGdiGetGlyphOutline(
+            dc,
+            wch,
+            iFormat,
+            if !pgm.is_null() {
+                core::ptr::addr_of_mut!(gm)
+            } else {
+                core::ptr::null_mut()
+            },
+            cjBuf,
+            pvBuf,
+            pmat2,
+            bIgnoreRotation,
+        );
+
+        if !pvBuf.is_null() {
+            Status = SafeProbeForWrite(UnsafeBuf, (cjBuf as _), 1);
+            if NT_SUCCESS(Status) {
+                RtlCopyMemory(UnsafeBuf, pvBuf, cjBuf as usize);
+            }
+
+            ExFreePoolWithTag(pvBuf, GDITAG_TEXT);
+        }
+
+        if !pgm.is_null() {
+            Status = SafeProbeForWrite(
+                pgm as *mut core::ffi::c_void,
+                (core::mem::size_of::<GLYPHMETRICS>() as u32 as _),
+                1,
+            );
+            if NT_SUCCESS(Status) {
+                RtlCopyMemory(
+                    pgm as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(gm) as *const core::ffi::c_void,
+                    core::mem::size_of::<GLYPHMETRICS>(),
+                );
+            }
+        }
+
+        if !NT_SUCCESS(Status) {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            Ret = GDI_ERROR;
+        }
+    }
+
+    DC_UnlockDc(dc);
+    Ret
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetKerningPairs(
+    hDC: HDC,
+    NumPairs: ULONG,
+    krnpair: LPKERNINGPAIR,
+) -> DWORD {
+    let dc: PDC;
+    let pdcattr: PDC_ATTR;
+    let TextObj: PTEXTOBJ;
+    let FontGDI: PFONTGDI;
+    let mut Count: DWORD;
+    let pKP: *mut KERNINGPAIR;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    dc = DC_LockDc(hDC);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    pdcattr = (*dc).pdcattr;
+    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    DC_UnlockDc(dc);
+
+    if TextObj.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    FontGDI = ObjToGDI!((*TextObj).Font) as PFONTGDI;
+    w32r_TEXTOBJ_UnlockText(TextObj);
+
+    Count = ftGdiGetKerningPairs(FontGDI, 0, core::ptr::null_mut());
+
+    if Count != 0 && !krnpair.is_null() {
+        if Count > NumPairs {
+            EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+            return 0;
+        }
+        pKP = ExAllocatePoolWithTag(
+            PagedPool,
+            (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
+            GDITAG_TEXT,
+        ) as *mut KERNINGPAIR;
+        if pKP.is_null() {
+            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return 0;
+        }
+        ftGdiGetKerningPairs(FontGDI, Count, pKP);
+        Status = SafeProbeForWrite(
+            krnpair as *mut core::ffi::c_void,
+            (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
+            1,
+        );
+        if NT_SUCCESS(Status) {
+            RtlCopyMemory(
+                krnpair as *mut core::ffi::c_void,
+                pKP as *const core::ffi::c_void,
+                (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
+            );
+        }
+        if !NT_SUCCESS(Status) {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            Count = 0;
+        }
+        ExFreePoolWithTag(pKP as *mut core::ffi::c_void, GDITAG_TEXT);
+    }
+    Count
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetKerningPairs(
+    hDC: HDC,
+    NumPairs: ULONG,
+    krnpair: LPKERNINGPAIR,
+) -> DWORD {
+    let dc: PDC;
+    let pdcattr: PDC_ATTR;
+    let TextObj: PTEXTOBJ;
+    let FontGDI: PFONTGDI;
+    let mut Count: DWORD;
+    let pKP: *mut KERNINGPAIR;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    dc = DC_LockDc(hDC);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    pdcattr = (*dc).pdcattr;
+    TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    DC_UnlockDc(dc);
+
+    if TextObj.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    FontGDI = ObjToGDI!((*TextObj).Font) as PFONTGDI;
+    w32r_TEXTOBJ_UnlockText(TextObj);
+
+    Count = ftGdiGetKerningPairs(FontGDI, 0, core::ptr::null_mut());
+
+    if Count != 0 && !krnpair.is_null() {
+        if Count > NumPairs {
+            EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+            return 0;
+        }
+        pKP = ExAllocatePoolWithTag(
+            PagedPool,
+            (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
+            GDITAG_TEXT,
+        ) as *mut KERNINGPAIR;
+        if pKP.is_null() {
+            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return 0;
+        }
+        ftGdiGetKerningPairs(FontGDI, Count, pKP);
+        Status = SafeProbeForWrite(
+            krnpair as *mut core::ffi::c_void,
+            (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
+            1,
+        );
+        if NT_SUCCESS(Status) {
+            RtlCopyMemory(
+                krnpair as *mut core::ffi::c_void,
+                pKP as *const core::ffi::c_void,
+                (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
+            );
+        }
+        if !NT_SUCCESS(Status) {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            Count = 0;
+        }
+        ExFreePoolWithTag(pKP as *mut core::ffi::c_void, GDITAG_TEXT);
+    }
+    Count
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetOutlineTextMetricsInternalW(
+    hDC: HDC,
+    Data: ULONG,
+    otm: POUTLINETEXTMETRICW,
+    Tmd: PTMDIFF,
+) -> ULONG {
+    let dc: PDC;
+    let pdcattr: PDC_ATTR;
+    let TextObj: PTEXTOBJ;
+    let FontGDI: PFONTGDI;
+    let mut hFont: HFONT = 0 as HFONT;
+    let mut Size: ULONG;
+    let potm: POUTLINETEXTMETRICW;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    dc = DC_LockDc(hDC);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    pdcattr = (*dc).pdcattr;
+    hFont = ((*pdcattr).hlfntNew as _);
+    TextObj = RealizeFontInit(hFont);
+    DC_UnlockDc(dc);
+    if TextObj.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    FontGDI = ObjToGDI!((*TextObj).Font);
+    if ((*FontGDI).flType & FO_TYPE_TRUETYPE as ULONG) == 0 {
+        w32r_TEXTOBJ_UnlockText(TextObj);
+        return 0;
+    }
+    TextIntUpdateSize(dc, TextObj, FontGDI, (1u8 as _));
+    w32r_TEXTOBJ_UnlockText(TextObj);
+    Size = ((IntGetOutlineTextMetrics(FontGDI, 0, core::ptr::null_mut(), 0 as BOOL)) as _);
+    if otm.is_null() {
+        return Size;
+    }
+    if Size > Data {
+        EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return 0;
+    }
+    potm = ExAllocatePoolWithTag(PagedPool, Size as usize, GDITAG_TEXT) as POUTLINETEXTMETRICW;
+    if potm.is_null() {
+        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return 0;
+    }
+    RtlZeroMemory(potm as *mut _, Size as usize);
+    IntGetOutlineTextMetrics(FontGDI, Size, potm, (0u8 as _));
+
+    Status = SafeProbeForWrite(otm as *mut _, Size as usize, 1);
+    if NT_SUCCESS(Status) {
+        RtlCopyMemory(otm as *mut _, potm as *const _, Size as usize);
+    }
+
+    if !NT_SUCCESS(Status) {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        Size = 0;
+    }
+
+    ExFreePoolWithTag(potm as *mut _, GDITAG_TEXT);
+    Size
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetOutlineTextMetricsInternalW(
+    hDC: HDC,
+    Data: ULONG,
+    otm: POUTLINETEXTMETRICW,
+    Tmd: PTMDIFF,
+) -> ULONG {
+    let dc: PDC;
+    let pdcattr: PDC_ATTR;
+    let TextObj: PTEXTOBJ;
+    let FontGDI: PFONTGDI;
+    let mut hFont: HFONT = 0 as HFONT;
+    let mut Size: ULONG;
+    let potm: POUTLINETEXTMETRICW;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    dc = DC_LockDc(hDC);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    pdcattr = (*dc).pdcattr;
+    hFont = ((*pdcattr).hlfntNew as _);
+    TextObj = RealizeFontInit(hFont);
+    DC_UnlockDc(dc);
+    if TextObj.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    FontGDI = ObjToGDI!((*TextObj).Font);
+    if ((*FontGDI).flType & FO_TYPE_TRUETYPE as ULONG) == 0 {
+        w32r_TEXTOBJ_UnlockText(TextObj);
+        return 0;
+    }
+    TextIntUpdateSize(dc, TextObj, FontGDI, (1u8 as _));
+    w32r_TEXTOBJ_UnlockText(TextObj);
+    Size = ((IntGetOutlineTextMetrics(FontGDI, 0, core::ptr::null_mut(), 0 as BOOL)) as _);
+    if otm.is_null() {
+        return Size;
+    }
+    if Size > Data {
+        EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return 0;
+    }
+    potm = ExAllocatePoolWithTag(PagedPool, Size as usize, GDITAG_TEXT) as POUTLINETEXTMETRICW;
+    if potm.is_null() {
+        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return 0;
+    }
+    RtlZeroMemory(potm as *mut _, Size as usize);
+    IntGetOutlineTextMetrics(FontGDI, Size, potm, (0u8 as _));
+
+    Status = SafeProbeForWrite(otm as *mut _, Size as usize, 1);
+    if NT_SUCCESS(Status) {
+        RtlCopyMemory(otm as *mut _, potm as *const _, Size as usize);
+    }
+
+    if !NT_SUCCESS(Status) {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        Size = 0;
+    }
+
+    ExFreePoolWithTag(potm as *mut _, GDITAG_TEXT);
+    Size
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetFontResourceInfoInternalW(
+    pwszFiles: PCWCH,
+    cwc: ULONG,
+    cFiles: ULONG,
+    cjIn: UINT,
+    pdwBytes: PDWORD,
+    pvBuf: PVOID,
+    dwType: DWORD,
+) -> BOOL {
+    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
+    let mut dwBytes: DWORD;
+    let dwBytesRequested: DWORD;
+    let mut SafeFileNames: _UNICODE_STRING = core::mem::zeroed();
+    let mut bRet: BOOL = 0;
+    let cbStringSize: ULONG;
+    let Buffer: LPVOID;
+
+    /* Check for valid dwType values */
+    if dwType > 5 {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    /* Allocate a safe unicode string buffer */
+    cbStringSize = cwc * core::mem::size_of::<u16>() as ULONG;
+    SafeFileNames.Length = (cbStringSize as u16).wrapping_sub(core::mem::size_of::<u16>() as u16);
+    SafeFileNames.MaximumLength = SafeFileNames.Length;
+    SafeFileNames.Buffer = ExAllocatePoolWithTag(PagedPool, cbStringSize as usize, TAG_USTR) as *mut u16;
+    if SafeFileNames.Buffer.is_null() {
+        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return 0;
+    }
+    RtlZeroMemory(SafeFileNames.Buffer as *mut core::ffi::c_void, SafeFileNames.MaximumLength as usize);
+
+    /* Check buffers and copy pwszFiles to safe unicode string */
+    dwBytes = *pdwBytes;
+    dwBytesRequested = dwBytes;
+
+    RtlCopyMemory(
+        SafeFileNames.Buffer as *mut core::ffi::c_void,
+        pwszFiles as *const core::ffi::c_void,
+        cbStringSize as usize,
+    );
+    if dwBytes > 0 {
+        Buffer = ExAllocatePoolWithTag(PagedPool, dwBytes as usize, TAG_FINF);
+    } else {
+        Buffer = ExAllocatePoolWithTag(PagedPool, core::mem::size_of::<DWORD>(), TAG_FINF);
+    }
+
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+        ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
+        return 0;
+    }
+
+    /* Do the actual call */
+    bRet = IntGdiGetFontResourceInfo(
+        core::ptr::addr_of_mut!(SafeFileNames),
+        if !pvBuf.is_null() { Buffer } else { core::ptr::null_mut() },
+        core::ptr::addr_of_mut!(dwBytes),
+        dwType,
+    );
+
+    /* Check if succeeded */
+    if bRet != 0 {
+        /* Copy the data back to caller */
+        if !pvBuf.is_null() && dwBytesRequested > 0 {
+            let count = if dwBytesRequested < dwBytes { dwBytesRequested } else { dwBytes };
+            RtlCopyMemory(pvBuf, Buffer, count as usize);
+        }
+        *pdwBytes = dwBytes;
+
+        if !NT_SUCCESS(Status) {
+            SetLastNtError(Status);
+            bRet = 0;
+        }
+    }
+
+    ExFreePoolWithTag(Buffer, TAG_FINF);
+    ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
+
+    bRet
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetFontResourceInfoInternalW(
+    pwszFiles: PCWCH,
+    cwc: ULONG,
+    cFiles: ULONG,
+    cjIn: UINT,
+    pdwBytes: PDWORD,
+    pvBuf: PVOID,
+    dwType: DWORD,
+) -> BOOL {
+    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
+    let mut dwBytes: DWORD;
+    let dwBytesRequested: DWORD;
+    let mut SafeFileNames: _UNICODE_STRING = core::mem::zeroed();
+    let mut bRet: BOOL = 0;
+    let cbStringSize: ULONG;
+    let Buffer: LPVOID;
+
+    /* Check for valid dwType values */
+    if dwType > 5 {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    /* Allocate a safe unicode string buffer */
+    cbStringSize = cwc * core::mem::size_of::<u16>() as ULONG;
+    SafeFileNames.Length = (cbStringSize as u16).wrapping_sub(core::mem::size_of::<u16>() as u16);
+    SafeFileNames.MaximumLength = SafeFileNames.Length;
+    SafeFileNames.Buffer = ExAllocatePoolWithTag(PagedPool, cbStringSize as usize, TAG_USTR) as *mut u16;
+    if SafeFileNames.Buffer.is_null() {
+        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return 0;
+    }
+    RtlZeroMemory(SafeFileNames.Buffer as *mut core::ffi::c_void, SafeFileNames.MaximumLength as usize);
+
+    /* Check buffers and copy pwszFiles to safe unicode string */
+    dwBytes = *pdwBytes;
+    dwBytesRequested = dwBytes;
+
+    RtlCopyMemory(
+        SafeFileNames.Buffer as *mut core::ffi::c_void,
+        pwszFiles as *const core::ffi::c_void,
+        cbStringSize as usize,
+    );
+    if dwBytes > 0 {
+        Buffer = ExAllocatePoolWithTag(PagedPool, dwBytes as usize, TAG_FINF);
+    } else {
+        Buffer = ExAllocatePoolWithTag(PagedPool, core::mem::size_of::<DWORD>(), TAG_FINF);
+    }
+
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+        ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
+        return 0;
+    }
+
+    /* Do the actual call */
+    bRet = IntGdiGetFontResourceInfo(
+        core::ptr::addr_of_mut!(SafeFileNames),
+        if !pvBuf.is_null() { Buffer } else { core::ptr::null_mut() },
+        core::ptr::addr_of_mut!(dwBytes),
+        dwType,
+    );
+
+    /* Check if succeeded */
+    if bRet != 0 {
+        /* Copy the data back to caller */
+        if !pvBuf.is_null() && dwBytesRequested > 0 {
+            let count = if dwBytesRequested < dwBytes { dwBytesRequested } else { dwBytes };
+            RtlCopyMemory(pvBuf, Buffer, count as usize);
+        }
+        *pdwBytes = dwBytes;
+
+        if !NT_SUCCESS(Status) {
+            SetLastNtError(Status);
+            bRet = 0;
+        }
+    }
+
+    ExFreePoolWithTag(Buffer, TAG_FINF);
+    ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
+
+    bRet
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiGetRealizationInfo(
+    hdc: HDC,
+    pri: PREALIZATION_INFO,
+    hf: HFONT,
+) -> BOOL {
+    let pDc: PDC;
+    let pTextObj: PTEXTOBJ;
+    let pFontGdi: PFONTGDI;
+    let pdcattr: PDC_ATTR;
+    let mut Ret: BOOL;
+    let mut i: INT = 0;
+    let mut ri: REALIZATION_INFO = core::mem::zeroed();
+
+    pDc = DC_LockDc(hdc);
+    if pDc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    pdcattr = (*pDc).pdcattr;
+    pTextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    pFontGdi = ObjToGDI!((*pTextObj).Font);
+    w32r_TEXTOBJ_UnlockText(pTextObj);
+    DC_UnlockDc(pDc);
+
+    Ret = ftGdiRealizationInfo(pFontGdi, &mut ri);
+    if Ret != 0 {
+        if !pri.is_null() {
+            let Status: NTSTATUS = SafeProbeForWrite(
+                pri as *mut core::ffi::c_void,
+                (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
+                1,
+            );
+            if NT_SUCCESS(Status) {
+                RtlCopyMemory(
+                    pri as *mut core::ffi::c_void,
+                    &mut ri as *mut REALIZATION_INFO as *mut core::ffi::c_void,
+                    (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
+                );
+            }
+
+            if !NT_SUCCESS(Status) {
+                SetLastNtError(Status);
+                return 0;
+            }
+        }
+        loop {
+            if (*GdiHandleTable).cfPublic[i as usize].hf == hf {
+                (*GdiHandleTable).cfPublic[i as usize].iTechnology = ri.iTechnology;
+                (*GdiHandleTable).cfPublic[i as usize].iUniq = ri.iUniq;
+                (*GdiHandleTable).cfPublic[i as usize].dwUnknown = ri.dwUnknown;
+                (*GdiHandleTable).cfPublic[i as usize].dwCFCount = (*GdiHandleTable).dwCFCount;
+                (*GdiHandleTable).cfPublic[i as usize].fl |= CFONT_REALIZATION;
+            }
+            i += 1;
+            if i >= GDI_CFONT_MAX as INT {
+                break;
+            }
+        }
+    }
+    Ret
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiGetRealizationInfo(
+    hdc: HDC,
+    pri: PREALIZATION_INFO,
+    hf: HFONT,
+) -> BOOL {
+    let pDc: PDC;
+    let pTextObj: PTEXTOBJ;
+    let pFontGdi: PFONTGDI;
+    let pdcattr: PDC_ATTR;
+    let mut Ret: BOOL;
+    let mut i: INT = 0;
+    let mut ri: REALIZATION_INFO = core::mem::zeroed();
+
+    pDc = DC_LockDc(hdc);
+    if pDc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    pdcattr = (*pDc).pdcattr;
+    pTextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+    pFontGdi = ObjToGDI!((*pTextObj).Font);
+    w32r_TEXTOBJ_UnlockText(pTextObj);
+    DC_UnlockDc(pDc);
+
+    Ret = ftGdiRealizationInfo(pFontGdi, &mut ri);
+    if Ret != 0 {
+        if !pri.is_null() {
+            let Status: NTSTATUS = SafeProbeForWrite(
+                pri as *mut core::ffi::c_void,
+                (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
+                1,
+            );
+            if NT_SUCCESS(Status) {
+                RtlCopyMemory(
+                    pri as *mut core::ffi::c_void,
+                    &mut ri as *mut REALIZATION_INFO as *mut core::ffi::c_void,
+                    (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
+                );
+            }
+
+            if !NT_SUCCESS(Status) {
+                SetLastNtError(Status);
+                return 0;
+            }
+        }
+        loop {
+            if (*GdiHandleTable).cfPublic[i as usize].hf == hf {
+                (*GdiHandleTable).cfPublic[i as usize].iTechnology = ri.iTechnology;
+                (*GdiHandleTable).cfPublic[i as usize].iUniq = ri.iUniq;
+                (*GdiHandleTable).cfPublic[i as usize].dwUnknown = ri.dwUnknown;
+                (*GdiHandleTable).cfPublic[i as usize].dwCFCount = (*GdiHandleTable).dwCFCount;
+                (*GdiHandleTable).cfPublic[i as usize].fl |= CFONT_REALIZATION;
+            }
+            i += 1;
+            if i >= GDI_CFONT_MAX as INT {
+                break;
+            }
+        }
+    }
+    Ret
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn HfontCreate(
+    pelfw: *const ENUMLOGFONTEXDVW,
+    cjElfw: ULONG,
+    lft: LFTYPE,
+    fl: FLONG,
+    pvCliData: PVOID,
+) -> HFONT {
+    let hNewFont: HFONT;
+    let plfont: PLFONT;
+
+    if pelfw.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    plfont = LFONT_AllocFontWithHandle();
+    if plfont.is_null() {
+        return core::ptr::null_mut();
+    }
+    hNewFont = (*plfont).BaseObject.hHmgr as HFONT;
+
+    (*plfont).lft = lft;
+    (*plfont).fl = fl;
+    RtlCopyMemory(
+        core::ptr::addr_of_mut!((*plfont).logfont) as PVOID,
+        pelfw as PVOID,
+        (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+    );
+    ExInitializePushLock((core::ptr::addr_of_mut!((*plfont).lock) as _));
+
+    if (*pelfw).elfEnumLogfontEx.elfLogFont.lfEscapement
+        != (*pelfw).elfEnumLogfontEx.elfLogFont.lfOrientation
+    {
+        (*plfont).logfont.elfEnumLogfontEx.elfLogFont.lfOrientation =
+            (*plfont).logfont.elfEnumLogfontEx.elfLogFont.lfEscapement;
+    }
+    LFONT_UnlockFont(plfont);
+
+    if !pvCliData.is_null() && !hNewFont.is_null() {
+        KeEnterCriticalRegion();
+        {
+            let Index = GDI_HANDLE_GET_INDEX(hNewFont as HGDIOBJ);
+            let Entry: PGDI_TABLE_ENTRY =
+                core::ptr::addr_of_mut!((*GdiHandleTable).Entries[Index as usize]);
+            (*Entry).UserData = pvCliData;
+        }
+        KeLeaveCriticalRegion();
+    }
+
+    hNewFont
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtGdiHfontCreate(
+    pelfw: *const ENUMLOGFONTEXDVW,
+    cjElfw: ULONG,
+    lft: LFTYPE,
+    fl: FLONG,
+    pvCliData: PVOID,
+) -> HFONT {
+    let mut SafeLogfont: ENUMLOGFONTEXDVW = core::mem::zeroed();
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    SafeLogfont.elfEnumLogfontEx.elfLogFont.lfEscapement = 0;
+    SafeLogfont.elfEnumLogfontEx.elfLogFont.lfOrientation = 0;
+
+    if pelfw.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    Status = SafeProbeForRead(
+        pelfw as PVOID,
+        (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+        1,
+    );
+    if NT_SUCCESS(Status) {
+        RtlCopyMemory(
+            core::ptr::addr_of_mut!(SafeLogfont) as PVOID,
+            pelfw as PVOID,
+            (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+        );
+    }
+
+    if !NT_SUCCESS(Status) {
+        return core::ptr::null_mut();
+    }
+
+    HfontCreate(
+        core::ptr::addr_of!(SafeLogfont),
+        cjElfw,
+        lft,
+        fl,
+        pvCliData,
+    )
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtGdiHfontCreate(
+    pelfw: *const ENUMLOGFONTEXDVW,
+    cjElfw: ULONG,
+    lft: LFTYPE,
+    fl: FLONG,
+    pvCliData: PVOID,
+) -> HFONT {
+    let mut SafeLogfont: ENUMLOGFONTEXDVW = core::mem::zeroed();
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+
+    SafeLogfont.elfEnumLogfontEx.elfLogFont.lfEscapement = 0;
+    SafeLogfont.elfEnumLogfontEx.elfLogFont.lfOrientation = 0;
+
+    if pelfw.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    Status = SafeProbeForRead(
+        pelfw as PVOID,
+        (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+        1,
+    );
+    if NT_SUCCESS(Status) {
+        RtlCopyMemory(
+            core::ptr::addr_of_mut!(SafeLogfont) as PVOID,
+            pelfw as PVOID,
+            (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
+        );
+    }
+
+    if !NT_SUCCESS(Status) {
+        return core::ptr::null_mut();
+    }
+
+    HfontCreate(
+        core::ptr::addr_of!(SafeLogfont),
+        cjElfw,
+        lft,
+        fl,
+        pvCliData,
+    )
+}
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*
+//  * PROJECT:     ReactOS win32 kernel mode subsystem
+//  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+//  * PURPOSE:     Font
+//  * COPYRIGHT:   Copyright (C) James Tabor <james.tabor@reactos.org>
+//  *              Copyright (C) Timo Kreuzer <timo.kreuzer@reactos.org>
+//  *              Copyright (C) Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
+//  */
+//
+// /** Includes ******************************************************************/
+//
+// #include <win32k.h>
+// #include <safe_user_io.h>
+//
+// #define NDEBUG
+// #include <debug.h>
+//
+// HFONT __stdcall
+// HfontCreate(
+//      const ENUMLOGFONTEXDVW *pelfw,
+//      ULONG cjElfw,
+//      LFTYPE lft,
+//      FLONG fl,
+//      PVOID pvCliData);
+//
+// /** Internal ******************************************************************/
+//
+// HFONT FASTCALL
+// GreCreateFontIndirectW( const LOGFONTW *lplf)
+// {
+//     if (lplf)
+//     {
+//         ENUMLOGFONTEXDVW Logfont;
+//
+//         RtlCopyMemory( &Logfont.elfEnumLogfontEx.elfLogFont, lplf, sizeof(LOGFONTW));
+//         RtlZeroMemory( &Logfont.elfEnumLogfontEx.elfFullName,
+//                        sizeof(Logfont.elfEnumLogfontEx.elfFullName));
+//         RtlZeroMemory( &Logfont.elfEnumLogfontEx.elfStyle,
+//                        sizeof(Logfont.elfEnumLogfontEx.elfStyle));
+//         RtlZeroMemory( &Logfont.elfEnumLogfontEx.elfScript,
+//                        sizeof(Logfont.elfEnumLogfontEx.elfScript));
+//
+//         Logfont.elfDesignVector.dvNumAxes = 0;
+//
+//         RtlZeroMemory( &Logfont.elfDesignVector, sizeof(DESIGNVECTOR));
+//
+//         return HfontCreate(&Logfont, 0, 0, 0, NULL);
+//     }
+//     else return NULL;
+// }
+//
+// DWORD
+// FASTCALL
+// GreGetKerningPairs(
+//      HDC hDC,
+//      ULONG NumPairs,
+//      LPKERNINGPAIR krnpair)
+// {
+//   PDC dc;
+//   PDC_ATTR pdcattr;
+//   PTEXTOBJ TextObj;
+//   PFONTGDI FontGDI;
+//   DWORD Count;
+//   KERNINGPAIR *pKP;
+//
+//   dc = DC_LockDc(hDC);
+//   if (!dc)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//
+//   pdcattr = dc->pdcattr;
+//   TextObj = RealizeFontInit(pdcattr->hlfntNew);
+//   DC_UnlockDc(dc);
+//
+//   if (!TextObj)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//
+//   FontGDI = ObjToGDI!(TextObj->Font, FONT);
+//   w32r_TEXTOBJ_UnlockText(TextObj);
+//
+//   Count = ftGdiGetKerningPairs(FontGDI,0,NULL);
+//
+//   if ( Count && krnpair )
+//   {
+//      if (Count > NumPairs)
+//      {
+//         EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+//         return 0;
+//      }
+//      pKP = ExAllocatePoolWithTag(PagedPool, Count * sizeof(KERNINGPAIR), GDITAG_TEXT);
+//      if (!pKP)
+//      {
+//         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+//         return 0;
+//      }
+//      ftGdiGetKerningPairs(FontGDI,Count,pKP);
+//
+//      RtlCopyMemory(krnpair, pKP, Count * sizeof(KERNINGPAIR));
+//
+//      ExFreePoolWithTag(pKP,GDITAG_TEXT);
+//   }
+//   return Count;
+// }
+//
+// /*
+//   It is recommended that an application use the GetFontLanguageInfo function
+//   to determine whether the GCP_DIACRITIC, GCP_DBCS, GCP_USEKERNING, GCP_LIGATE,
+//   GCP_REORDER, GCP_GLYPHSHAPE, and GCP_KASHIDA values are valid for the
+//   currently selected font. If not valid, GetCharacterPlacement ignores the
+//   value.
+//
+//   MS must use a preset "compiled in" support for each language based releases.
+//   ReactOS uses FreeType, this will need to be supported. ATM this is hard coded
+//   for GCPCLASS_LATIN!
+//  */
+//
+// ULONG
+// FASTCALL
+// FontGetObject(
+//      PTEXTOBJ plfont,
+//      ULONG cjBuffer,
+//      PVOID pvBuffer)
+// {
+//     ULONG cjMaxSize;
+//     ENUMLOGFONTEXDVW *plf;
+//
+//     ASSERT(plfont);
+//     plf = &plfont->logfont;
+//
+//     if (!(plfont->fl & TEXTOBJECT_INIT))
+//     {
+//         NTSTATUS Status;
+//         DPRINT("FontGetObject font not initialized!\n");
+//
+//         Status = TextIntRealizeFont(plfont->BaseObject.hHmgr, plfont);
+//         if (!NT_SUCCESS(Status))
+//         {
+//             DPRINT1("FontGetObject(TextIntRealizeFont) Status = 0x%lx\n", Status);
+//         }
+//     }
+//
+//     /* If buffer is NULL, only the size is requested */
+//     if (pvBuffer == NULL) return sizeof(LOGFONTW);
+//
+//     /* Calculate the maximum size according to number of axes */
+//     cjMaxSize = FIELD_OFFSET(ENUMLOGFONTEXDVW,
+//                     elfDesignVector.dvValues[plf->elfDesignVector.dvNumAxes]);
+//
+//     if (cjBuffer > cjMaxSize) cjBuffer = cjMaxSize;
+//
+//     RtlCopyMemory(pvBuffer, plf, cjBuffer);
+//
+//     return cjBuffer;
+// }
+//
+// DWORD
+// FASTCALL
+// IntGetCharDimensions(
+//      HDC hdc,
+//      PTEXTMETRICW ptm,
+//      PDWORD height)
+// {
+//   PDC pdc;
+//   PDC_ATTR pdcattr;
+//   PTEXTOBJ TextObj;
+//   SIZE sz;
+//   TMW_INTERNAL tmwi;
+//   BOOL Good;
+//
+//   static const WCHAR alphabet[] = {
+//         'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q',
+//         'r','s','t','u','v','w','x','y','z','A','B','C','D','E','F','G','H',
+//         'I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',0};
+//
+//   if(!ftGdiGetTextMetricsW(hdc, &tmwi)) return 0;
+//
+//   pdc = DC_LockDc(hdc);
+//
+//   if (!pdc) return 0;
+//
+//   pdcattr = pdc->pdcattr;
+//
+//   TextObj = RealizeFontInit(pdcattr->hlfntNew);
+//   if ( !TextObj )
+//   {
+//      DC_UnlockDc(pdc);
+//      return 0;
+//   }
+//   Good = TextIntGetTextExtentPoint(pdc, TextObj, alphabet, 52, 0, NULL, NULL, &sz, 0);
+//   w32r_TEXTOBJ_UnlockText(TextObj);
+//   DC_UnlockDc(pdc);
+//
+//   if (!Good) return 0;
+//   if (ptm) *ptm = tmwi.TextMetric;
+//   if (height) *height = tmwi.TextMetric.tmHeight;
+//
+//   return (sz.cx / 26 + 1) / 2;
+// }
+//
+//
+// DWORD
+// FASTCALL
+// IntGetFontLanguageInfo( PDC Dc)
+// {
+//   PDC_ATTR pdcattr;
+//   FONTSIGNATURE fontsig;
+//   static const DWORD GCP_DBCS_MASK=0x003F0000,
+// 		GCP_DIACRITIC_MASK=0x00000000,
+// 		FLI_GLYPHS_MASK=0x00000000,
+// 		GCP_GLYPHSHAPE_MASK=0x00000040,
+// 		GCP_KASHIDA_MASK=0x00000000,
+// 		GCP_LIGATE_MASK=0x00000000,
+// 		GCP_USEKERNING_MASK=0x00000000,
+// 		GCP_REORDER_MASK=0x00000060;
+//
+//   DWORD result=0;
+//
+//   ftGdiGetTextCharsetInfo( Dc, &fontsig, 0 );
+//
+//  /* We detect each flag we return using a bitmask on the Codepage Bitfields */
+//   if( (fontsig.fsCsb[0]&GCP_DBCS_MASK)!=0 )
+// 		result|=GCP_DBCS;
+//
+//   if( (fontsig.fsCsb[0]&GCP_DIACRITIC_MASK)!=0 )
+// 		result|=GCP_DIACRITIC;
+//
+//   if( (fontsig.fsCsb[0]&FLI_GLYPHS_MASK)!=0 )
+// 		result|=FLI_GLYPHS;
+//
+//   if( (fontsig.fsCsb[0]&GCP_GLYPHSHAPE_MASK)!=0 )
+// 		result|=GCP_GLYPHSHAPE;
+//
+//   if( (fontsig.fsCsb[0]&GCP_KASHIDA_MASK)!=0 )
+// 		result|=GCP_KASHIDA;
+//
+//   if( (fontsig.fsCsb[0]&GCP_LIGATE_MASK)!=0 )
+// 		result|=GCP_LIGATE;
+//
+//   if( (fontsig.fsCsb[0]&GCP_USEKERNING_MASK)!=0 )
+// 		result|=GCP_USEKERNING;
+//
+//   pdcattr = Dc->pdcattr;
+//
+//   /* This might need a test for a HEBREW- or ARABIC_CHARSET as well */
+//   if ( pdcattr->flTextAlign & TA_RTLREADING )
+//      if( (fontsig.fsCsb[0]&GCP_REORDER_MASK)!=0 )
+//                     result|=GCP_REORDER;
+//
+//   return result;
+// }
+//
+// PTEXTOBJ
+// FASTCALL
+// RealizeFontInit( HFONT hFont)
+// {
+//   NTSTATUS Status = STATUS_SUCCESS;
+//   PTEXTOBJ pTextObj;
+//
+//   pTextObj = w32r_TEXTOBJ_LockText(hFont);
+//
+//   if ( pTextObj && !(pTextObj->fl & TEXTOBJECT_INIT))
+//   {
+//      Status = TextIntRealizeFont(hFont, pTextObj);
+//      if (!NT_SUCCESS(Status))
+//      {
+//         w32r_TEXTOBJ_UnlockText(pTextObj);
+//         return NULL;
+//      }
+//   }
+//   return pTextObj;
+// }
+//
+// static BOOL
+// IntCheckFontPathNames(
+//      PCWCH pwcFiles,
+//      ULONG cFiles,
+//      ULONG cwc)
+// {
+//     ULONG ich, cRealFiles;
+//
+//     if (pwcFiles[cwc - 1] != UNICODE_NULL)
+//         return FALSE;
+//
+//     for (ich = cRealFiles = 0; ich < cwc; ++ich)
+//     {
+//         if (!pwcFiles[ich])
+//             ++cRealFiles;
+//     }
+//
+//     return cRealFiles >= cFiles;
+// }
+//
+// /** Functions ******************************************************************/
+//
+// INT
+// __stdcall
+// NtGdiAddFontResourceW(
+//      PCWCH pwcFiles,
+//      ULONG cwc,
+//      ULONG cFiles,
+//      FLONG fl,
+//      DWORD dwPidTid,
+//      const DESIGNVECTOR *pdv)
+// {
+//     UNICODE_STRING SafeFileName;
+//     INT Ret;
+//
+//     DBG_UNREFERENCED_PARAMETER(dwPidTid);
+//     DBG_UNREFERENCED_PARAMETER(pdv);
+//
+//     DPRINT("NtGdiAddFontResourceW\n");
+//
+//     /* cwc = Length + trailing zero. */
+//     if ((cwc <= 1) || (cwc > UNICODE_STRING_MAX_CHARS))
+//         return 0;
+//
+//     SafeFileName.Length = (USHORT)((cwc - 1) * sizeof(WCHAR));
+//     SafeFileName.MaximumLength = SafeFileName.Length + sizeof(UNICODE_NULL);
+//     SafeFileName.Buffer = ExAllocatePoolWithTag(PagedPool,
+//                                                 SafeFileName.MaximumLength,
+//                                                 TAG_STRING);
+//     if (!SafeFileName.Buffer)
+//         return 0;
+//
+//     _SEH2_TRY
+//     {
+//         ProbeForRead(pwcFiles, cwc * sizeof(WCHAR), sizeof(WCHAR));
+//
+//         if (!IntCheckFontPathNames(pwcFiles, cFiles, cwc))
+//             return 0;
+//  
+//         RtlCopyMemory(SafeFileName.Buffer, pwcFiles, SafeFileName.Length);
+//     }
+//     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+//     {
+//         ExFreePoolWithTag(SafeFileName.Buffer, TAG_STRING);
+//         _SEH2_YIELD(return 0);
+//     }
+//     _SEH2_END;
+//
+//     SafeFileName.Buffer[SafeFileName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+//
+//     Ret = IntGdiAddFontResourceEx(&SafeFileName, cFiles, fl, 0);
+//
+//     ExFreePoolWithTag(SafeFileName.Buffer, TAG_STRING);
+//     return Ret;
+// }
+//
+// BOOL
+// __stdcall
+// NtGdiRemoveFontResourceW(
+//      PCWCH pwszFiles,
+//      ULONG cwc,
+//      ULONG cFiles,
+//      ULONG fl,
+//      DWORD dwPidTid,
+//      const DESIGNVECTOR *pdv)
+// {
+//     UNICODE_STRING SafeFileName;
+//     BOOL Ret;
+//
+//     DBG_UNREFERENCED_PARAMETER(dwPidTid);
+//     DBG_UNREFERENCED_PARAMETER(pdv);
+//
+//     DPRINT("NtGdiRemoveFontResourceW\n");
+//
+//     /* cwc = Length + trailing zero. */
+//     if ((cwc <= 1) || (cwc > UNICODE_STRING_MAX_CHARS))
+//         return FALSE;
+//
+//     SafeFileName.Length = (USHORT)((cwc - 1) * sizeof(WCHAR));
+//     SafeFileName.MaximumLength = SafeFileName.Length + sizeof(UNICODE_NULL);
+//     SafeFileName.Buffer = ExAllocatePoolWithTag(PagedPool,
+//                                                 SafeFileName.MaximumLength,
+//                                                 TAG_STRING);
+//     if (!SafeFileName.Buffer)
+//         return FALSE;
+//
+//     _SEH2_TRY
+//     {
+//         ProbeForRead(pwszFiles, cwc * sizeof(WCHAR), sizeof(WCHAR));
+//
+//         if (!IntCheckFontPathNames(pwszFiles, cFiles, cwc))
+//             return FALSE;
+//
+//         RtlCopyMemory(SafeFileName.Buffer, pwszFiles, SafeFileName.Length);
+//     }
+//     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+//     {
+//         ExFreePoolWithTag(SafeFileName.Buffer, TAG_STRING);
+//         _SEH2_YIELD(return FALSE);
+//     }
+//     _SEH2_END;
+//
+//     SafeFileName.Buffer[SafeFileName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+//
+//     Ret = IntGdiRemoveFontResource(&SafeFileName, cFiles, fl);
+//
+//     ExFreePoolWithTag(SafeFileName.Buffer, TAG_STRING);
+//     return Ret;
+// }
+//
+// HANDLE
+// __stdcall
+// NtGdiAddFontMemResourceEx(
+//      const VOID *pvBuffer,
+//      DWORD cjBuffer,
+//      const DESIGNVECTOR *pdv,
+//      ULONG cjDV,
+//      PDWORD pNumFonts)
+// {
+//     _SEH2_VOLATILE PVOID Buffer = NULL;
+//     HANDLE Ret;
+//     DWORD NumFonts = 0;
+//
+//     DPRINT("NtGdiAddFontMemResourceEx\n");
+//     DBG_UNREFERENCED_PARAMETER(pdv);
+//     DBG_UNREFERENCED_PARAMETER(cjDV);
+//
+//     if (!pvBuffer || !cjBuffer)
+//         return NULL;
+//
+//     _SEH2_TRY
+//     {
+//         ProbeForRead(pvBuffer, cjBuffer, sizeof(BYTE));
+//         Buffer = ExAllocatePoolWithQuotaTag(PagedPool, cjBuffer, TAG_FONT);
+//         RtlCopyMemory(Buffer, pvBuffer, cjBuffer);
+//     }
+//     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+//     {
+//         if (Buffer != NULL)
+//         {
+//             ExFreePoolWithTag(Buffer, TAG_FONT);
+//         }
+//         _SEH2_YIELD(return NULL);
+//     }
+//     _SEH2_END;
+//
+//     Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &NumFonts);
+//     ExFreePoolWithTag(Buffer, TAG_FONT);
+//
+//     {
+//         NTSTATUS __SehStatus = SafeProbeForWrite(pNumFonts, sizeof(NumFonts), 1);
+//         if (!NT_SUCCESS(__SehStatus))
+//         {
+//             /* Leak it? */
+//             return NULL;
+//         }
+//     }
+//     *pNumFonts = NumFonts;
+//
+//
+//     return Ret;
+// }
+//
+//
+// BOOL
+// __stdcall
+// NtGdiRemoveFontMemResourceEx(
+//      HANDLE hMMFont)
+// {
+//     return IntGdiRemoveFontMemResource(hMMFont);
+// }
+//
+//
+//  /*
+//  * @unimplemented
+//  */
+// DWORD
+// __stdcall
+// NtGdiGetCharacterPlacementW(
+//      HDC hdc,
+//      PCWCH pwsz,
+//      INT nCount,
+//      INT nMaxExtent,
+//      LPGCP_RESULTSW pgcpw,
+//      DWORD dwFlags)
+// {
+//     UNIMPLEMENTED;
+//     return 0;
+// }
+//
+// DWORD
+// __stdcall
+// NtGdiGetFontData(
+//      HDC hDC,
+//      DWORD Table,
+//      DWORD Offset,
+//      PVOID Buffer,
+//      DWORD Size)
+// {
+//   PDC Dc;
+//   PDC_ATTR pdcattr;
+//   HFONT hFont;
+//   PTEXTOBJ TextObj;
+//   PFONTGDI FontGdi;
+//   DWORD Result = GDI_ERROR;
+//   NTSTATUS Status = STATUS_SUCCESS;
+//
+//   if (Buffer && Size)
+//   {
+//      Status = SafeProbeForRead(Buffer, Size, 1);
+//   }
+//
+//   if (!NT_SUCCESS(Status)) return Result;
+//
+//   Dc = DC_LockDc(hDC);
+//   if (Dc == NULL)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return GDI_ERROR;
+//   }
+//   pdcattr = Dc->pdcattr;
+//
+//   hFont = pdcattr->hlfntNew;
+//   TextObj = RealizeFontInit(hFont);
+//   DC_UnlockDc(Dc);
+//
+//   if (TextObj == NULL)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return GDI_ERROR;
+//   }
+//
+//   FontGdi = ObjToGDI!(TextObj->Font, FONT);
+//
+//   Result = ftGdiGetFontData(FontGdi, Table, Offset, Buffer, Size);
+//
+//   w32r_TEXTOBJ_UnlockText(TextObj);
+//
+//   return Result;
+// }
+//
+// /* @implemented */
+// DWORD
+// __stdcall
+// NtGdiGetFontUnicodeRanges(
+//      HDC hdc,
+//      LPGLYPHSET pgs)
+// {
+//   PDC pDc;
+//   PDC_ATTR pdcattr;
+//   HFONT hFont;
+//   PTEXTOBJ TextObj;
+//   PFONTGDI FontGdi;
+//   DWORD Size = 0;
+//   PGLYPHSET pgsSafe;
+//   NTSTATUS Status = STATUS_SUCCESS;
+//
+//   pDc = DC_LockDc(hdc);
+//   if (!pDc)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//
+//   pdcattr = pDc->pdcattr;
+//
+//   hFont = pdcattr->hlfntNew;
+//   TextObj = RealizeFontInit(hFont);
+//
+//   if ( TextObj == NULL)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      goto Exit;
+//   }
+//   FontGdi = ObjToGDI!(TextObj->Font, FONT);
+//
+//   Size = ftGetFontUnicodeRanges( FontGdi, NULL);
+//
+//   if (Size && pgs)
+//   {
+//      pgsSafe = ExAllocatePoolWithTag(PagedPool, Size, GDITAG_TEXT);
+//      if (!pgsSafe)
+//      {
+//         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+//         Size = 0;
+//         goto Exit;
+//      }
+//
+//      Size = ftGetFontUnicodeRanges( FontGdi, pgsSafe);
+//
+//      if (Size)
+//      {
+//         Status = SafeProbeForWrite(pgs, Size, 1);
+//         if (NT_SUCCESS(Status))
+//         {
+//             RtlCopyMemory(pgs, pgsSafe, Size);
+//         }
+//
+//         if (!NT_SUCCESS(Status)) Size = 0;
+//      }
+//      ExFreePoolWithTag(pgsSafe, GDITAG_TEXT);
+//   }
+// Exit:
+//   w32r_TEXTOBJ_UnlockText(TextObj);
+//   DC_UnlockDc(pDc);
+//   return Size;
+// }
+//
+// ULONG
+// __stdcall
+// NtGdiGetGlyphOutline(
+//      HDC hdc,
+//      WCHAR wch,
+//      UINT iFormat,
+//      LPGLYPHMETRICS pgm,
+//      ULONG cjBuf,
+//      PVOID UnsafeBuf,
+//      const MAT2 *pmat2,
+//      BOOL bIgnoreRotation)
+// {
+//   ULONG Ret = GDI_ERROR;
+//   PDC dc;
+//   PVOID pvBuf = NULL;
+//   GLYPHMETRICS gm;
+//   NTSTATUS Status = STATUS_SUCCESS;
+//
+//   dc = DC_LockDc(hdc);
+//   if (!dc)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return GDI_ERROR;
+//   }
+//
+//   if (UnsafeBuf && cjBuf)
+//   {
+//      pvBuf = ExAllocatePoolZero(PagedPool, cjBuf, GDITAG_TEXT);
+//      if (!pvBuf)
+//      {
+//         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+//         goto Exit;
+//      }
+//   }
+//
+//   Ret = ftGdiGetGlyphOutline( dc,
+//                              wch,
+//                          iFormat,
+//                              pgm ? &gm : NULL,
+//                            cjBuf,
+//                            pvBuf,
+//                            pmat2,
+//                  bIgnoreRotation);
+//
+//   if (pvBuf)
+//   {
+//      Status = SafeProbeForWrite(UnsafeBuf, cjBuf, 1);
+//      if (NT_SUCCESS(Status))
+//      {
+//          RtlCopyMemory(UnsafeBuf, pvBuf, cjBuf);
+//      }
+//
+//      ExFreePoolWithTag(pvBuf, GDITAG_TEXT);
+//   }
+//
+//   if (pgm)
+//   {
+//      Status = SafeProbeForWrite(pgm, sizeof(GLYPHMETRICS), 1);
+//      if (NT_SUCCESS(Status))
+//      {
+//          RtlCopyMemory(pgm, &gm, sizeof(GLYPHMETRICS));
+//      }
+//   }
+//
+//   if (! NT_SUCCESS(Status))
+//   {
+//      EngSetLastError(ERROR_INVALID_PARAMETER);
+//      Ret = GDI_ERROR;
+//   }
+//
+// Exit:
+//   DC_UnlockDc(dc);
+//   return Ret;
+// }
+//
+// DWORD
+// __stdcall
+// NtGdiGetKerningPairs(
+//      HDC  hDC,
+//      ULONG NumPairs,
+//      LPKERNINGPAIR krnpair)
+// {
+//   PDC dc;
+//   PDC_ATTR pdcattr;
+//   PTEXTOBJ TextObj;
+//   PFONTGDI FontGDI;
+//   DWORD Count;
+//   KERNINGPAIR *pKP;
+//   NTSTATUS Status = STATUS_SUCCESS;
+//
+//   dc = DC_LockDc(hDC);
+//   if (!dc)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//
+//   pdcattr = dc->pdcattr;
+//   TextObj = RealizeFontInit(pdcattr->hlfntNew);
+//   DC_UnlockDc(dc);
+//
+//   if (!TextObj)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//
+//   FontGDI = ObjToGDI!(TextObj->Font, FONT);
+//   w32r_TEXTOBJ_UnlockText(TextObj);
+//
+//   Count = ftGdiGetKerningPairs(FontGDI,0,NULL);
+//
+//   if ( Count && krnpair )
+//   {
+//      if (Count > NumPairs)
+//      {
+//         EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+//         return 0;
+//      }
+//      pKP = ExAllocatePoolWithTag(PagedPool, Count * sizeof(KERNINGPAIR), GDITAG_TEXT);
+//      if (!pKP)
+//      {
+//         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+//         return 0;
+//      }
+//      ftGdiGetKerningPairs(FontGDI,Count,pKP);
+//      Status = SafeProbeForWrite(krnpair, Count * sizeof(KERNINGPAIR), 1);
+//      if (NT_SUCCESS(Status))
+//      {
+//          RtlCopyMemory(krnpair, pKP, Count * sizeof(KERNINGPAIR));
+//      }
+//      if (!NT_SUCCESS(Status))
+//      {
+//         EngSetLastError(ERROR_INVALID_PARAMETER);
+//         Count = 0;
+//      }
+//      ExFreePoolWithTag(pKP,GDITAG_TEXT);
+//   }
+//   return Count;
+// }
+//
+// /*
+//  From "Undocumented Windows 2000 Secrets" Appendix B, Table B-2, page
+//  472, this is NtGdiGetOutlineTextMetricsInternalW.
+//  */
+// ULONG
+// __stdcall
+// NtGdiGetOutlineTextMetricsInternalW(
+//      HDC hDC,
+//      ULONG Data,
+//      POUTLINETEXTMETRICW otm,
+//      PTMDIFF Tmd)
+// {
+//   PDC dc;
+//   PDC_ATTR pdcattr;
+//   PTEXTOBJ TextObj;
+//   PFONTGDI FontGDI;
+//   HFONT hFont = 0;
+//   ULONG Size;
+//   OUTLINETEXTMETRICW *potm;
+//   NTSTATUS Status = STATUS_SUCCESS;
+//
+//   dc = DC_LockDc(hDC);
+//   if (!dc)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//   pdcattr = dc->pdcattr;
+//   hFont = pdcattr->hlfntNew;
+//   TextObj = RealizeFontInit(hFont);
+//   DC_UnlockDc(dc);
+//   if (!TextObj)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//   FontGDI = ObjToGDI!(TextObj->Font, FONT);
+//   if (!(FontGDI->flType & FO_TYPE_TRUETYPE))
+//   {
+//      w32r_TEXTOBJ_UnlockText(TextObj);
+//      return 0;
+//   }
+//   TextIntUpdateSize(dc, TextObj, FontGDI, TRUE);
+//   w32r_TEXTOBJ_UnlockText(TextObj);
+//   Size = IntGetOutlineTextMetrics(FontGDI, 0, NULL, FALSE);
+//   if (!otm) return Size;
+//   if (Size > Data)
+//   {
+//       EngSetLastError(ERROR_INSUFFICIENT_BUFFER);
+//       return 0;
+//   }
+//   potm = ExAllocatePoolWithTag(PagedPool, Size, GDITAG_TEXT);
+//   if (!potm)
+//   {
+//       EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+//       return 0;
+//   }
+//   RtlZeroMemory(potm, Size);
+//   IntGetOutlineTextMetrics(FontGDI, Size, potm, FALSE);
+//
+//   Status = SafeProbeForWrite(otm, Size, 1);
+//   if (NT_SUCCESS(Status))
+//   {
+//       RtlCopyMemory(otm, potm, Size);
+//   }
+//
+//   if (!NT_SUCCESS(Status))
+//   {
+//      EngSetLastError(ERROR_INVALID_PARAMETER);
+//      Size = 0;
+//   }
+//
+//   ExFreePoolWithTag(potm,GDITAG_TEXT);
+//   return Size;
+// }
+//
+// W32KAPI
+// BOOL
+// __stdcall
+// NtGdiGetFontResourceInfoInternalW(
+//      PCWCH pwszFiles,
+//      ULONG cwc,
+//      ULONG cFiles,
+//      UINT cjIn,
+//      PDWORD pdwBytes,
+//      PVOID pvBuf,
+//      DWORD dwType)
+// {
+//     NTSTATUS Status = STATUS_SUCCESS;
+//     DWORD dwBytes, dwBytesRequested;
+//     UNICODE_STRING SafeFileNames;
+//     BOOL bRet = FALSE;
+//     ULONG cbStringSize;
+//     LPVOID Buffer;
+//
+//     /* FIXME: Handle cFiles > 0 */
+//
+//     /* Check for valid dwType values */
+//     if (dwType > 5)
+//     {
+//         EngSetLastError(ERROR_INVALID_PARAMETER);
+//         return FALSE;
+//     }
+//
+//     /* Allocate a safe unicode string buffer */
+//     cbStringSize = cwc * sizeof(WCHAR);
+//     SafeFileNames.MaximumLength = SafeFileNames.Length = (USHORT)cbStringSize - sizeof(WCHAR);
+//     SafeFileNames.Buffer = ExAllocatePoolWithTag(PagedPool,
+//                                                  cbStringSize,
+//                                                  TAG_USTR);
+//     if (!SafeFileNames.Buffer)
+//     {
+//         EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+//         return FALSE;
+//     }
+//     RtlZeroMemory(SafeFileNames.Buffer, SafeFileNames.MaximumLength);
+//
+//     /* Check buffers and copy pwszFiles to safe unicode string */
+//     _SEH2_TRY
+//     {
+//         ProbeForRead(pwszFiles, cbStringSize, 1);
+//         ProbeForWrite(pdwBytes, sizeof(DWORD), 1);
+//         if (pvBuf)
+//             ProbeForWrite(pvBuf, cjIn, 1);
+//
+//         dwBytes = *pdwBytes;
+//         dwBytesRequested = dwBytes;
+//
+//         RtlCopyMemory(SafeFileNames.Buffer, pwszFiles, cbStringSize);
+//         if (dwBytes > 0)
+//         {
+//             Buffer = ExAllocatePoolWithTag(PagedPool, dwBytes, TAG_FINF);
+//         }
+//         else
+//         {
+//             Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(DWORD), TAG_FINF);
+//         }
+//     }
+//     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+//     {
+//         Status = _SEH2_GetExceptionCode();
+//     }
+//     _SEH2_END
+//
+//     if(!NT_SUCCESS(Status))
+//     {
+//         SetLastNtError(Status);
+//         /* Free the string buffer for the safe filename */
+//         ExFreePoolWithTag(SafeFileNames.Buffer, TAG_USTR);
+//         return FALSE;
+//     }
+//
+//     /* Do the actual call */
+//     bRet = IntGdiGetFontResourceInfo(&SafeFileNames,
+//                                      (pvBuf ? Buffer : NULL),
+//                                      &dwBytes, dwType);
+//
+//     /* Check if succeeded */
+//     if (bRet)
+//     {
+//         /* Copy the data back to caller */
+//         _SEH2_TRY
+//         {
+//             /* Buffers are already probed */
+//             if (pvBuf && dwBytesRequested > 0)
+//                 RtlCopyMemory(pvBuf, Buffer, min(dwBytesRequested, dwBytes));
+//             *pdwBytes = dwBytes;
+//         }
+//         _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+//         {
+//             Status = _SEH2_GetExceptionCode();
+//         }
+//         _SEH2_END
+//
+//         if(!NT_SUCCESS(Status))
+//         {
+//             SetLastNtError(Status);
+//             bRet = FALSE;
+//         }
+//     }
+//
+//     ExFreePoolWithTag(Buffer, TAG_FINF);
+//     /* Free the string for the safe filenames */
+//     ExFreePoolWithTag(SafeFileNames.Buffer, TAG_USTR);
+//
+//     return bRet;
+// }
+//
+// /* @unimplemented */
+// BOOL
+// __stdcall
+// NtGdiGetRealizationInfo(
+//      HDC hdc,
+//      PREALIZATION_INFO pri,
+//      HFONT hf)
+// {
+//   PDC pDc;
+//   PTEXTOBJ pTextObj;
+//   PFONTGDI pFontGdi;
+//   PDC_ATTR pdcattr;
+//   BOOL Ret = FALSE;
+//   INT i = 0;
+//   REALIZATION_INFO ri;
+//
+//   pDc = DC_LockDc(hdc);
+//   if (!pDc)
+//   {
+//      EngSetLastError(ERROR_INVALID_HANDLE);
+//      return 0;
+//   }
+//   pdcattr = pDc->pdcattr;
+//   pTextObj = RealizeFontInit(pdcattr->hlfntNew);
+//   ASSERT(pTextObj != NULL);
+//   pFontGdi = ObjToGDI!(pTextObj->Font, FONT);
+//   w32r_TEXTOBJ_UnlockText(pTextObj);
+//   DC_UnlockDc(pDc);
+//
+//   Ret = ftGdiRealizationInfo(pFontGdi, &ri);
+//   if (Ret)
+//   {
+//      if (pri)
+//      {
+//         NTSTATUS Status = STATUS_SUCCESS;
+//         Status = SafeProbeForWrite(pri, sizeof(REALIZATION_INFO), 1);
+//         if (NT_SUCCESS(Status))
+//         {
+//             RtlCopyMemory(pri, &ri, sizeof(REALIZATION_INFO));
+//         }
+//
+//         if(!NT_SUCCESS(Status))
+//         {
+//             SetLastNtError(Status);
+//             return FALSE;
+//         }
+//      }
+//      do
+//      {
+//         if (GdiHandleTable->cfPublic[i].hf == hf)
+//         {
+//            GdiHandleTable->cfPublic[i].iTechnology = ri.iTechnology;
+//            GdiHandleTable->cfPublic[i].iUniq = ri.iUniq;
+//            GdiHandleTable->cfPublic[i].dwUnknown = ri.dwUnknown;
+//            GdiHandleTable->cfPublic[i].dwCFCount = GdiHandleTable->dwCFCount;
+//            GdiHandleTable->cfPublic[i].fl |= CFONT_REALIZATION;
+//         }
+//         i++;
+//      }
+//      while ( i < GDI_CFONT_MAX );
+//   }
+//   return Ret;
+// }
+//
+// HFONT
+// __stdcall
+// HfontCreate(
+//     const ENUMLOGFONTEXDVW *pelfw,
+//      ULONG cjElfw,
+//      LFTYPE lft,
+//      FLONG  fl,
+//      PVOID pvCliData)
+// {
+//   HFONT hNewFont;
+//   PLFONT plfont;
+//
+//   if (!pelfw)
+//   {
+//       return NULL;
+//   }
+//
+//   plfont = LFONT_AllocFontWithHandle();
+//   if (!plfont)
+//   {
+//       return NULL;
+//   }
+//   hNewFont = plfont->BaseObject.hHmgr;
+//
+//   plfont->lft = lft;
+//   plfont->fl  = fl;
+//   RtlCopyMemory (&plfont->logfont, pelfw, sizeof(ENUMLOGFONTEXDVW));
+//   ExInitializePushLock(&plfont->lock);
+//
+//   if (pelfw->elfEnumLogfontEx.elfLogFont.lfEscapement !=
+//       pelfw->elfEnumLogfontEx.elfLogFont.lfOrientation)
+//   {
+//     /* This should really depend on whether GM_ADVANCED is set */
+//     plfont->logfont.elfEnumLogfontEx.elfLogFont.lfOrientation =
+//     plfont->logfont.elfEnumLogfontEx.elfLogFont.lfEscapement;
+//   }
+//   LFONT_UnlockFont(plfont);
+//
+//   if (pvCliData && hNewFont)
+//   {
+//     // FIXME: Use GDIOBJ_InsertUserData
+//     KeEnterCriticalRegion();
+//     {
+//        INT Index = GDI_HANDLE_GET_INDEX((HGDIOBJ)hNewFont);
+//        PGDI_TABLE_ENTRY Entry = &GdiHandleTable->Entries[Index];
+//        Entry->UserData = pvCliData;
+//     }
+//     KeLeaveCriticalRegion();
+//   }
+//
+//   return hNewFont;
+// }
+//
+//
+// HFONT
+// __stdcall
+// NtGdiHfontCreate(
+//      const ENUMLOGFONTEXDVW *pelfw,
+//      ULONG cjElfw,
+//      LFTYPE lft,
+//      FLONG  fl,
+//      PVOID pvCliData)
+// {
+//   ENUMLOGFONTEXDVW SafeLogfont;
+//   NTSTATUS Status = STATUS_SUCCESS;
+//
+//   /* Silence GCC warnings */
+//   SafeLogfont.elfEnumLogfontEx.elfLogFont.lfEscapement = 0;
+//   SafeLogfont.elfEnumLogfontEx.elfLogFont.lfOrientation = 0;
+//
+//   if (!pelfw)
+//   {
+//       return NULL;
+//   }
+//
+//   Status = SafeProbeForRead(pelfw, sizeof(ENUMLOGFONTEXDVW), 1);
+//   if (NT_SUCCESS(Status))
+//   {
+//       RtlCopyMemory(&SafeLogfont, pelfw, sizeof(ENUMLOGFONTEXDVW));
+//   }
+//
+//   if (!NT_SUCCESS(Status))
+//   {
+//       return NULL;
+//   }
+//
+//   return HfontCreate(&SafeLogfont, cjElfw, lft, fl, pvCliData);
+// }
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

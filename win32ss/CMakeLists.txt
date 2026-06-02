@@ -182,7 +182,8 @@ list(APPEND SOURCE
     # gdi/ntgdi/dibobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dibobj.rs) — cohabitation [Phase 2c wave 9: DIB sections; dibobj.c + split2 = one TU]
     # gdi/ntgdi/drawing.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/drawing.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     # gdi/ntgdi/fillshap.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/fillshap.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
-    gdi/ntgdi/font.c
+    # gdi/ntgdi/font.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/font.rs) — cohabitation [Phase 2c wave 19: font tier]
+    gdi/ntgdi/font_rust_shims.c  # cdecl wrappers for FORCEINLINE TEXTOBJ_LockText/UnlockText font.rs calls
     gdi/ntgdi/freetype.c
     gdi/ntgdi/gdibatch.c
     gdi/ntgdi/gdidbg.c
@@ -358,6 +359,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/print.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdidev.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/path.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/font.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
