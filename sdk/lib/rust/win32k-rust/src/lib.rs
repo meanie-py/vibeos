@@ -152,6 +152,10 @@ pub mod cliprgn;
 // bitmaps.rs — Phase 2c wave 8: bitmap/surface object mgmt (GreCreateBitmap{,Ex},
 // NtGdiCreate{,Compatible}Bitmap, Get/SetBitmapBits, BITMAP_GetObject/CopyBitmap).
 pub mod bitmaps;
+// dibobj.rs — Phase 2c wave 9: DIB sections / device-independent bitmaps
+// (NtGdi{Set,Get,Stretch}DIBits*Internal, NtGdiCreateDIB{itmap,Section}Internal,
+// DIB_CreateDIBSection, CreateDIBPalette, DIB_* helpers). dibobj.c + split2 = one TU.
+pub mod dibobj;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
