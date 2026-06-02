@@ -1209,3 +1209,80 @@ inout_effects = "wcstok_s(str, delim, &hidden); hidden = process-global AtomicPt
 preserved_misfeature = "non-reentrant hidden state; str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (wcstok_s asymmetry inherited); NULL delim C UB (never fuzzed)"
 reference    = "sdk/lib/crt/wstring/wcstok.c"
 fuzz_domain  = ["as strtok over wide", "leading/trailing/consecutive delims", "no delim", "empty", "full re-tokenize via NULL calls"]
+
+# --- Wave MEM2: copy-until-byte + case-insensitive compare ----------
+# _memccpy (mem.cmake LIBCNTPR_MEM_SOURCE) + _memicmp. memccpy is a
+# bespoke shim (copy-scan with the signed-char `t==c` + NUL-precedence
+# misfeatures in mem::ccpy). memicmp REUSES the memcmp shape (ptr_len +
+# i32_passthrough) over mem::icmp: ASCII toupper fold for the compare,
+# raw unfolded diff returned; the Vista NULL guard is dead under the
+# NT 5.x kernel so NULL is never passed (diff pins OSMajorVersion=5).
+
+[symbols._memccpy]
+c_signature  = "void *_memccpy(void *to, const void *from, int c, size_t count)"
+family       = "mem"
+slice_pattern = "memccpy"
+core_fn      = "mem::ccpy"
+return_collapse = "memccpy"
+inout_effects = "to[0..=k] ← from[0..=k] where k = first index with from[k] matching c (return &to[k+1]) OR first NUL (return NULL) OR count-1 (return NULL); each byte copied before its test"
+preserved_misfeature = "NUL test PRECEDES c test → c==0 always returns NULL (NUL break wins); the `t==c` match is signed-char `t` vs int `c` (memchr deal: byte 0x90 matches only c==-112, never 0x90); count==0 copies nothing → NULL"
+reference    = "sdk/lib/crt/mem/memccpy.c"
+fuzz_domain  = ["count==0", "c present (signed match)", "c absent", "NUL before c", "c==0 (→NULL via NUL precedence)", "c high-bit positive (no match)", "c negative (high byte match)", "c at last byte"]
+
+[symbols._memicmp]
+c_signature  = "int _memicmp(const void *s1, const void *s2, size_t n)"
+family       = "mem"
+slice_pattern = "ptr_len"
+core_fn      = "mem::icmp"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only)"
+preserved_misfeature = "ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; the Vista (OSMajorVersion>=6) NULL/_NLSCMPERROR guard is dead under the NT 5.x kernel → NULL never validly passed (not modeled)"
+reference    = "sdk/lib/crt/mem/memicmp.c"
+fuzz_domain  = ["n==0", "equal", "differ pre-fold", "differ only by case (→0)", "high-bit >=0x80 (never folded)", "differ at 0", "differ at n-1"]
+
+# --- Wave RAND: rand/srand (stdlib/rand_nt.c) ----------------------
+# 48-bit-multiplier LCG over a u64 seed; hidden static state in the
+# cabi RAND_STATE AtomicU64 (shared by both shims). RAND_MAX=0x7fff
+# (Windows; the host's 0x7fffffff is overridden in the diff ref).
+
+[symbols.rand]
+c_signature  = "int rand(void)"
+family       = "rand"
+slice_pattern = "rand_step"
+core_fn      = "rng::step"
+return_collapse = "rand"
+inout_effects = "advances the hidden LCG state (cabi RAND_STATE); returns (state>>16) & RAND_MAX"
+preserved_misfeature = "LCG next = next*0x5deece66d + 11; returns bits 16..30 (RAND_MAX=0x7fff, NOT the host 0x7fffffff); non-reentrant hidden static (AtomicU64, single-threaded-equivalent)"
+reference    = "sdk/lib/crt/stdlib/rand_nt.c"
+fuzz_domain  = ["fresh (state 0)", "after srand(seed)", "long sequence", "srand resets the sequence"]
+
+[symbols.srand]
+c_signature  = "void srand(unsigned int seed)"
+family       = "rand"
+slice_pattern = "rand_seed"
+core_fn      = "rng::seed"
+return_collapse = "void"
+inout_effects = "RAND_STATE = seed (zero-extended u32 → u64)"
+preserved_misfeature = "seed zero-extended into the 64-bit state with NO scrambling (next = seed directly)"
+reference    = "sdk/lib/crt/stdlib/rand_nt.c"
+fuzz_domain  = ["seed 0", "seed 1", "seed large", "reseed mid-sequence"]
+
+# --- Wave SORT: qsort (stdlib/qsort.c) -----------------------------
+# Callback-based Bentley-McIlroy quicksort. NO pure slice->value core
+# (it invokes a C comparator fn-ptr + swaps raw es-sized elements); the
+# whole algorithm is the bespoke unsafe super::qsort_rs (cabi HELPERS),
+# the shim a thin ABI adapter. cnt-difftest fuzzes WITH ties (small
+# alphabet + first-byte comparator) and asserts byte-identical sorted
+# output vs the genuine qsort.c — only possible because the element-
+# swap sequence is replicated exactly.
+
+[symbols.qsort]
+c_signature  = "void qsort(void *a, size_t n, size_t es, int (__cdecl *cmp)(const void*, const void*))"
+family       = "sort"
+slice_pattern = "sort"
+core_fn      = "(bespoke: cabi::qsort_rs — Bentley-McIlroy, no pure core)"
+return_collapse = "void"
+inout_effects = "a[0..n*es] sorted in place per cmp"
+preserved_misfeature = "Bentley-McIlroy (Engineering a Sort Function): median-of-3 (ninther for n>40), insertion-sort for n<7 + the no-swap fast path, equal keys partitioned to both ends then vecswap'd to the middle, recurse-left/iterate-right; UNSTABLE — equal-key final order IS this exact element-swap sequence (replicated faithfully; the swaptype long/byte choice is result-irrelevant so the port byte-swaps)"
+reference    = "sdk/lib/crt/stdlib/qsort.c"
+fuzz_domain  = ["n 0..60", "es 1/2/3/4/8/12", "small alphabet (many ties → equal-key order)", "full-byte keys (distinct)", "first-byte-only comparator (heavy ties)", "n<7 insertion path", "n>40 ninther path", "already/reverse sorted"]

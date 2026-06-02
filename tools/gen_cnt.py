@@ -73,6 +73,8 @@ def rs_ty(ctype: str) -> str:
         "unsigned__int64": "u64",
         "long": "i32",  # Win i386 LP32
         "unsignedlong": "u32",
+        "unsigned": "u32",
+        "unsignedint": "u32",
         "_locale_t": "*mut core::ffi::c_void",  # ignored
     }[c]
 
@@ -642,11 +644,103 @@ def _int2str_shim(name: str, m: dict, params, rt: str) -> str:
     )
 
 
-def shim(name: str, m: dict) -> str:
-    params = parse_params(m["c_signature"])
+# Wave MEM2 — `_memccpy` (copy-until-byte). One bespoke shim: reads
+# both dst/src as `count`-length raw slices, runs the pure core, and
+# forms `to.add(i+1)` | NULL. The signed-char `t == c` match and the
+# NUL-before-c precedence are the core's (mem::ccpy).
+MEMCCPY = {"memccpy"}
+
+
+def _memccpy_shim(name: str, m: dict, params, rt: str) -> str:
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    to, frm, c, count = [n for _, n in params]
+    b = [
+        f"    let d = raw_mut_slice({to} as *mut u8, {count});",
+        f"    let s = raw_slice({frm} as *const u8, {count});",
+        f"    match crate::core_rs::mem::ccpy(d, s, {c}) {{",
+        f"        Some(i) => ({to} as *mut u8).add(i) as {rt},",
+        "        None => core::ptr::null_mut(),",
+        "    }",
+    ]
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
+# Wave RAND — `rand`/`srand`. Non-reentrant hidden LCG state lives in
+# the shared `super::RAND_STATE` AtomicU64 (the strtok SAVED-pointer
+# precedent); the pure step + seed-install are core_rs::rng.
+RANDFAM = {"rand_step", "rand_seed"}
+
+
+def _rand_shim(name: str, m: dict, params, rt: str) -> str:
     sp = m["slice_pattern"]
-    rc = m["return_collapse"]
+    decl = ", ".join(f"{n}: {rs_ty(t)}" for t, n in params)
+    if sp == "rand_step":
+        b = [
+            "    use core::sync::atomic::Ordering;",
+            "    let s = super::RAND_STATE.load(Ordering::Relaxed);",
+            "    let (ns, r) = crate::core_rs::rng::step(s);",
+            "    super::RAND_STATE.store(ns, Ordering::Relaxed);",
+            "    r",
+        ]
+    else:  # rand_seed
+        seed = params[0][1]
+        b = [
+            "    use core::sync::atomic::Ordering;",
+            f"    super::RAND_STATE.store("
+            f"crate::core_rs::rng::seed({seed}), Ordering::Relaxed);",
+        ]
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}({decl}) -> {rt} {{\n'
+        + "\n".join(b)
+        + "\n}\n"
+    )
+
+
+# Wave SORT — `qsort`. Bespoke: the whole Bentley-McIlroy algorithm is
+# in `super::qsort_rs` (HELPERS); the shim is a thin ABI adapter. Its C
+# signature carries a function-pointer param with embedded commas that
+# the crude `parse_params` can't split, so it's dispatched BEFORE
+# parse_params with a fixed emitted signature.
+SORT = {"sort"}
+
+
+def _sort_shim(name: str, m: dict, rt: str) -> str:
+    misf = m.get("preserved_misfeature", "")
+    return (
+        f"/// `{m['c_signature']}`\n"
+        f"/// preserved misfeature: {misf}\n"
+        f"#[no_mangle]\n"
+        f'pub unsafe extern "C" fn {name}('
+        "base: *mut core::ffi::c_void, num: usize, width: usize, "
+        f"cmp: super::CntCmpFn) -> {rt} {{\n"
+        "    super::qsort_rs(base as *mut u8, num, width, cmp);\n"
+        "}\n"
+    )
+
+
+def shim(name: str, m: dict) -> str:
+    sp = m["slice_pattern"]
     rt = ret_ty(m["c_signature"])
+    if sp in SORT:
+        return _sort_shim(name, m, rt)
+    params = parse_params(m["c_signature"])
+    rc = m["return_collapse"]
+    if sp in MEMCCPY:
+        return _memccpy_shim(name, m, params, rt)
+    if sp in RANDFAM:
+        return _rand_shim(name, m, params, rt)
     if sp in INT2STR:
         return _int2str_shim(name, m, params, rt)
     if sp in MBCP:
@@ -874,6 +968,13 @@ def shim(name: str, m: dict) -> str:
 HELPERS = '''//! Hand-written unsafe primitives the generated shims compose. Kept
 //! tiny + audited; everything symbol-specific is generated.
 
+/// Hidden LCG state shared by the generated `rand`/`srand` shims —
+/// faithful to rand_nt.c's `static unsigned long long next`. An
+/// `AtomicU64` (the strtok SAVED-pointer precedent) so the
+/// non-reentrant CRT state is single-threaded-equivalent.
+pub(crate) static RAND_STATE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// NUL-terminated C string → content slice. NULL → empty (faithful to
 /// libcntpr's explicit NULL guards in tcslen.h / atoi64.c; harmless
 /// for symbols whose fuzz_domain never passes NULL).
@@ -974,6 +1075,166 @@ pub(crate) unsafe fn raw_move(dst: *mut u8, src: *const u8, n: usize) {
             i -= 1;
             *dst.add(i) = *src.add(i);
         }
+    }
+}
+
+/// C `qsort` comparator ABI — `int (__cdecl *)(const void*, const void*)`.
+pub(crate) type CntCmpFn = unsafe extern "C" fn(
+    *const core::ffi::c_void,
+    *const core::ffi::c_void,
+) -> i32;
+
+#[inline]
+unsafe fn q_swap(i: *mut u8, j: *mut u8, es: usize) {
+    // The C `swaptype` long-vs-byte choice is a byte-movement
+    // optimization only — the resulting memory is identical, so a
+    // plain byte swap is result-faithful (incl. equal-key order).
+    let mut k = 0;
+    while k < es {
+        let t = *i.add(k);
+        *i.add(k) = *j.add(k);
+        *j.add(k) = t;
+        k += 1;
+    }
+}
+
+#[inline]
+unsafe fn q_vecswap(i: *mut u8, j: *mut u8, n: usize) {
+    let mut k = 0;
+    while k < n {
+        let t = *i.add(k);
+        *i.add(k) = *j.add(k);
+        *j.add(k) = t;
+        k += 1;
+    }
+}
+
+#[inline]
+unsafe fn q_med3(a: *mut u8, b: *mut u8, c: *mut u8, cmp: CntCmpFn) -> *mut u8 {
+    if cmp(a as _, b as _) < 0 {
+        if cmp(b as _, c as _) < 0 {
+            b
+        } else if cmp(a as _, c as _) < 0 {
+            c
+        } else {
+            a
+        }
+    } else if cmp(b as _, c as _) > 0 {
+        b
+    } else if cmp(a as _, c as _) < 0 {
+        a
+    } else {
+        c
+    }
+}
+
+/// Faithful port of ReactOS `stdlib/qsort.c` (Bentley & McIlroy,
+/// "Engineering a Sort Function"): median-of-3 (ninther for n>40),
+/// insertion sort for n<7 and the no-swap fast path, ties shuffled to
+/// the ends then `vecswap`'d to the middle, recurse-left / iterate-
+/// right. Unstable; the exact element-swap sequence is replicated so
+/// equal-key final order matches byte-for-byte.
+pub(crate) unsafe fn qsort_rs(
+    mut a: *mut u8,
+    mut n: usize,
+    es: usize,
+    cmp: CntCmpFn,
+) {
+    let bdiff = |p: *mut u8, q: *mut u8| (p as usize) - (q as usize);
+    'outer: loop {
+        let mut swap_cnt = 0i32;
+        if n < 7 {
+            let mut pm = a.add(es);
+            let end = a.add(n * es);
+            while pm < end {
+                let mut pl = pm;
+                while pl > a && cmp(pl.sub(es) as _, pl as _) > 0 {
+                    q_swap(pl, pl.sub(es), es);
+                    pl = pl.sub(es);
+                }
+                pm = pm.add(es);
+            }
+            return;
+        }
+        let mut pm = a.add((n / 2) * es);
+        if n > 7 {
+            let mut pl = a;
+            let mut pn = a.add((n - 1) * es);
+            if n > 40 {
+                let d = (n / 8) * es;
+                pl = q_med3(pl, pl.add(d), pl.add(2 * d), cmp);
+                pm = q_med3(pm.sub(d), pm, pm.add(d), cmp);
+                pn = q_med3(pn.sub(2 * d), pn.sub(d), pn, cmp);
+            }
+            pm = q_med3(pl, pm, pn, cmp);
+        }
+        q_swap(a, pm, es);
+        let mut pa = a.add(es);
+        let mut pb = pa;
+        let mut pc = a.add((n - 1) * es);
+        let mut pd = pc;
+        loop {
+            let mut r: i32 = 0;
+            while pb <= pc && {
+                r = cmp(pb as _, a as _);
+                r <= 0
+            } {
+                if r == 0 {
+                    swap_cnt = 1;
+                    q_swap(pa, pb, es);
+                    pa = pa.add(es);
+                }
+                pb = pb.add(es);
+            }
+            while pb <= pc && {
+                r = cmp(pc as _, a as _);
+                r >= 0
+            } {
+                if r == 0 {
+                    swap_cnt = 1;
+                    q_swap(pc, pd, es);
+                    pd = pd.sub(es);
+                }
+                pc = pc.sub(es);
+            }
+            if pb > pc {
+                break;
+            }
+            q_swap(pb, pc, es);
+            swap_cnt = 1;
+            pb = pb.add(es);
+            pc = pc.sub(es);
+        }
+        if swap_cnt == 0 {
+            let mut pm = a.add(es);
+            let end = a.add(n * es);
+            while pm < end {
+                let mut pl = pm;
+                while pl > a && cmp(pl.sub(es) as _, pl as _) > 0 {
+                    q_swap(pl, pl.sub(es), es);
+                    pl = pl.sub(es);
+                }
+                pm = pm.add(es);
+            }
+            return;
+        }
+        let pn = a.add(n * es);
+        let mut r = core::cmp::min(bdiff(pa, a), bdiff(pb, pa));
+        q_vecswap(a, pb.sub(r), r);
+        r = core::cmp::min(bdiff(pd, pc), bdiff(pn, pd) - es);
+        q_vecswap(pb, pn.sub(r), r);
+        let r1 = bdiff(pb, pa);
+        if r1 > es {
+            qsort_rs(a, r1 / es, es, cmp);
+        }
+        let r2 = bdiff(pd, pc);
+        if r2 > es {
+            // Iterate rather than recurse (the C `goto loop`).
+            a = pn.sub(r2);
+            n = r2 / es;
+            continue 'outer;
+        }
+        return;
     }
 }
 '''

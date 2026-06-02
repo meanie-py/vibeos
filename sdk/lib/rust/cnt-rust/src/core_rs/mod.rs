@@ -13,6 +13,7 @@ pub mod mbcp;
 pub mod mem;
 pub mod path;
 pub mod radix;
+pub mod rng;
 #[cfg(feature = "float")]
 pub mod scanf;
 pub mod string;

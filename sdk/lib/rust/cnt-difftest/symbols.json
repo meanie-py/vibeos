@@ -184,6 +184,39 @@
       "NULL path no-op"
     ]
   },
+  "_memccpy": {
+    "c_signature": "void *_memccpy(void *to, const void *from, int c, size_t count)",
+    "family": "mem",
+    "slice_pattern": "memccpy",
+    "return_collapse": "memccpy",
+    "reference": "sdk/lib/crt/mem/memccpy.c",
+    "fuzz_domain": [
+      "count==0",
+      "c present (signed match)",
+      "c absent",
+      "NUL before c",
+      "c==0 (\u2192NULL via NUL precedence)",
+      "c high-bit positive (no match)",
+      "c negative (high byte match)",
+      "c at last byte"
+    ]
+  },
+  "_memicmp": {
+    "c_signature": "int _memicmp(const void *s1, const void *s2, size_t n)",
+    "family": "mem",
+    "slice_pattern": "ptr_len",
+    "return_collapse": "i32_passthrough",
+    "reference": "sdk/lib/crt/mem/memicmp.c",
+    "fuzz_domain": [
+      "n==0",
+      "equal",
+      "differ pre-fold",
+      "differ only by case (\u21920)",
+      "high-bit >=0x80 (never folded)",
+      "differ at 0",
+      "differ at n-1"
+    ]
+  },
   "_splitpath": {
     "c_signature": "void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)",
     "family": "string",
@@ -784,6 +817,49 @@
       "typical",
       "val>255 (trunc)",
       "val<0"
+    ]
+  },
+  "qsort": {
+    "c_signature": "void qsort(void *a, size_t n, size_t es, int (__cdecl *cmp)(const void*, const void*))",
+    "family": "sort",
+    "slice_pattern": "sort",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/stdlib/qsort.c",
+    "fuzz_domain": [
+      "n 0..60",
+      "es 1/2/3/4/8/12",
+      "small alphabet (many ties \u2192 equal-key order)",
+      "full-byte keys (distinct)",
+      "first-byte-only comparator (heavy ties)",
+      "n<7 insertion path",
+      "n>40 ninther path",
+      "already/reverse sorted"
+    ]
+  },
+  "rand": {
+    "c_signature": "int rand(void)",
+    "family": "rand",
+    "slice_pattern": "rand_step",
+    "return_collapse": "rand",
+    "reference": "sdk/lib/crt/stdlib/rand_nt.c",
+    "fuzz_domain": [
+      "fresh (state 0)",
+      "after srand(seed)",
+      "long sequence",
+      "srand resets the sequence"
+    ]
+  },
+  "srand": {
+    "c_signature": "void srand(unsigned int seed)",
+    "family": "rand",
+    "slice_pattern": "rand_seed",
+    "return_collapse": "void",
+    "reference": "sdk/lib/crt/stdlib/rand_nt.c",
+    "fuzz_domain": [
+      "seed 0",
+      "seed 1",
+      "seed large",
+      "reseed mid-sequence"
     ]
   },
   "strcat": {
