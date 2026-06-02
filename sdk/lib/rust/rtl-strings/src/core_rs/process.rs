@@ -70,6 +70,39 @@ pub const KI_USER_SHARED_DATA_VA: usize = 0xFFFFF780_00000000;
 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 pub const KI_USER_SHARED_DATA_VA: usize = 0;
 
+/// `MM_SHARED_USER_DATA_VA` — the read-only user-mode mapping of
+/// KUSER_SHARED_DATA. Fixed at 0x7FFE0000 on every arch.
+pub const USER_SHARED_DATA_VA: usize = 0x7FFE0000;
+
+/// True when executing in kernel mode. rtl-strings is built ONCE (with
+/// the `kernel` cargo feature on, via the rtl-rust umbrella) and the
+/// resulting librtl.a is linked into BOTH ntoskrnl (kernel) AND ntdll
+/// (user), so a compile-time `cfg` cannot tell the two apart. Kernel
+/// virtual addresses have the high bit set on all three targets (i386
+/// >= 0x80000000; amd64/arm64 canonical kernel addresses), so the sign
+/// bit of a stack-probe address distinguishes the mode without a
+/// syscall.
+#[inline(always)]
+pub fn in_kernel_mode() -> bool {
+    let probe: u8 = 0;
+    (core::ptr::addr_of!(probe) as isize) < 0
+}
+
+/// VA of the KUSER_SHARED_DATA page valid in the *current* execution
+/// mode. Reading the kernel VA from user mode faults — that fault is
+/// uncatchable under DUMMY_PSEH and manifested as a silent boot hang at
+/// the first user-mode `RtlEncodeSystemPointer` (winlogon creating
+/// services.exe → apphelp `BaseInitApphelp`). The cookie value itself
+/// is system-wide identical through either mapping.
+#[inline(always)]
+pub fn kuser_shared_data_va() -> usize {
+    if in_kernel_mode() {
+        KI_USER_SHARED_DATA_VA
+    } else {
+        USER_SHARED_DATA_VA
+    }
+}
+
 // --- struct layouts -----------------------------------------------------
 
 /// `IO_STATUS_BLOCK` (ntddk.h). The union is one pointer-sized slot

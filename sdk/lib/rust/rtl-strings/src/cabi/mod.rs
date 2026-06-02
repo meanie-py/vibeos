@@ -7724,7 +7724,10 @@ pub unsafe extern "system" fn RtlDecodePointer(pointer: *mut u8) -> *mut u8 {
 /// `SharedUserData->Cookie` at fixed VA.
 #[no_mangle]
 pub unsafe extern "system" fn RtlEncodeSystemPointer(pointer: *mut u8) -> *mut u8 {
-    let cookie_addr = (prc::KI_USER_SHARED_DATA_VA + prc::KUSER_SHARED_COOKIE_OFFSET) as *const u32;
+    // VA chosen at runtime: librtl.a is shared by ntoskrnl + ntdll, so
+    // the kernel KUSER_SHARED_DATA VA would fault when called from user
+    // mode (see prc::kuser_shared_data_va).
+    let cookie_addr = (prc::kuser_shared_data_va() + prc::KUSER_SHARED_COOKIE_OFFSET) as *const u32;
     let cookie = core::ptr::read_volatile(cookie_addr);
     prc::xor_pointer(pointer as usize, cookie) as *mut u8
 }
