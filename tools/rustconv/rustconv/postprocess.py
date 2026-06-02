@@ -1287,6 +1287,63 @@ def drop_gdiobj_macro_externs(code: str) -> str:
     return pat.sub(rewrite_block, code)
 
 
+_PSEH_MACRO_EXTERN_NAMES_RE = re.compile(
+    r'^(?:_SEH2_\w+|RtlGetProcessHeap)$'
+)
+
+
+def drop_pseh_macro_externs(code: str) -> str:
+    """User-mode safety net: drop `extern "…" { fn _SEH2_…(); … }` decls.
+
+    Under `USE_DUMMY_PSEH` the PSEH handlers are dead code and the system
+    prompt tells the LLM to translate the protected body directly and drop
+    the `_SEH2_EXCEPT` handler — but rustconv still occasionally emits an
+    `extern "system" { fn _SEH2_TRY(); fn _SEH2_GetExceptionCode(); … }`
+    block. Those are PSEH *macros*, not symbols: declaring them extern is a
+    guaranteed link failure if any survives a reference, and dead noise
+    otherwise. `strip_user_inline_redeclarations` only nukes a block when
+    EVERY fn is a known PEB/TEB inline, so a mixed block (SEH2 + a real
+    import like WlStrDup) is left intact and the SEH2 lines leak through.
+
+    This strips just the `_SEH2_*` (and the `RtlGetProcessHeap` macro)
+    decls line-by-line, keeps every real fn under the original ABI, and
+    removes the block entirely if nothing real remains. Mirrors
+    drop_gdiobj_macro_externs (win32k) for the user-mode substrate.
+    """
+    pat = re.compile(
+        r'extern\s+"([^"]+)"\s*\{\s*\n'
+        r'((?:[ \t]*(?:#\[[^\]]+\]\s*\n[ \t]*)?(?:pub\s+)?fn\s+[A-Za-z_]\w*\b'
+        r'(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)'
+        r'[ \t]*\}\s*\n?',
+        re.MULTILINE,
+    )
+
+    def rewrite_block(m: re.Match) -> str:
+        abi = m.group(1)
+        body = m.group(2)
+        kept: list[str] = []
+        dropped: list[str] = []
+        for line in body.splitlines(keepends=False):
+            fn_m = re.match(r'^\s*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b', line)
+            if fn_m and _PSEH_MACRO_EXTERN_NAMES_RE.match(fn_m.group(1)):
+                dropped.append(fn_m.group(1))
+                continue
+            kept.append(line)
+        if not dropped:
+            return m.group(0)
+        out = ""
+        if any(ln.strip() for ln in kept):
+            out += f'extern "{abi}" {{\n' + "\n".join(kept) + "\n}\n"
+        out += (f"// drop_pseh_macro_externs: dropped {len(dropped)} bogus "
+                f"extern decl(s): {', '.join(dropped)} — PSEH _SEH2_* "
+                f"(and RtlGetProcessHeap) are macros, not symbols. Under "
+                f"USE_DUMMY_PSEH the SEH path is dead; translate the body "
+                f"directly. RtlGetProcessHeap → GetProcessHeap().\n")
+        return out
+
+    return pat.sub(rewrite_block, code)
+
+
 def fix_markdown_fence_leak(code: str) -> str:
     """Strip stray markdown ``` fences the LLM occasionally leaks into
     the preamble translation output (empty preambles → bare ```rust\\n```).
@@ -1557,6 +1614,7 @@ def postprocess(
     if sys_umbrella:
         code = collapse_sys_crate(code, sys_crate, sys_umbrella)
         code = strip_user_inline_redeclarations(code)
+        code = drop_pseh_macro_externs(code)
     return code
 
 
