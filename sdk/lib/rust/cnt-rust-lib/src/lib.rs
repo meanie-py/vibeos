@@ -8,25 +8,25 @@
 
 extern crate cnt_rust;
 
-// WEAK `rust_eh_personality` stub. The precompiled `core` /
+// `rust_eh_personality` stub. The precompiled `core` /
 // `compiler_builtins` rlibs ship panic=unwind (we don't rebuild std on
 // stable), so their objects in libcntpr_rust.a carry an undefined
 // `rust_eh_personality` reference even though the workspace is
-// panic=abort. Every OTHER Rust staticlib here defines a *strong* stub
-// (kernel-rust, winsrv-rust, smss-csrss-rust, …) because each links
-// into its own consumer. cnt-rust-lib is special: libcntpr_rust.a links
-// into ntoskrnl ALONGSIDE kernel-rust (already a strong def) — a strong
-// def here would duplicate. A WEAK def yields to kernel-rust's strong
-// one in the ntoskrnl link, yet is the sole provider for the freeldr /
-// driver / ftfd links (which pull no other Rust runtime) if they ever
-// pull a core/compiler_builtins member that references it. panic=abort
-// never unwinds, so the body is never executed — it only needs to
-// resolve as a symbol. global_asm `.weak` is the stable-Rust path
-// (`#[linkage = "weak"]` is unstable). i386 PE prepends `_`.
-#[cfg(target_arch = "x86")]
-core::arch::global_asm!(".weak _rust_eh_personality", "_rust_eh_personality:", "ret");
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-core::arch::global_asm!(".weak rust_eh_personality", "rust_eh_personality:", "ret");
+// panic=abort. ntoskrnl resolves it via kernel-rust's own stub, but the
+// freeldr / driver / ftfd / winsrv links that also pull libcntpr_rust.a
+// have no other Rust runtime, so they'd be left with an undefined
+// symbol (member-pull-order dependent). Provide the SAME strong stub
+// every other Rust staticlib here uses (kernel-rust, winsrv-rust,
+// smss-csrss-rust, …). Where libcntpr_rust.a cohabits with another
+// staticlib that also defines it (ntoskrnl + kernel-rust, winsrv.dll +
+// winsrv-rust), the resulting duplicate is absorbed by
+// `--allow-multiple-definition` (now on EXE/SHARED/MODULE link flags —
+// lld first-match). panic=abort never unwinds, so the body is never
+// called. (A `global_asm ".weak"` here perturbed cnt-rust-lib's CRT
+// symbol emission and broke MODULE relinks with lld "X was replaced" —
+// the plain strong stub avoids the PE weak-external encoding entirely.)
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
 
 // Single shared #[panic_handler] (cnt-rust is an rlib with none).
 // Emits "PANIC:<file>:<line>\n" to QEMU debugcon (0xE9) on x86, then
