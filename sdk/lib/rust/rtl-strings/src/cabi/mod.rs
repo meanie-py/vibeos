@@ -5064,11 +5064,24 @@ pub unsafe extern "system" fn RtlExpandEnvironmentStrings_U(
     let dst_chars = ((*destination).MaximumLength / 2) as usize;
     let dst_slice = core::slice::from_raw_parts_mut((*destination).Buffer, dst_chars);
 
-    let env_slice: &[u16] = if environment.is_null() {
+    // A NULL `environment` means "use the current process environment" —
+    // the C code passes it straight to RtlQueryEnvironmentVariable_U, which
+    // resolves NULL to NtCurrentPeb()->ProcessParameters->Environment. The
+    // pure `expand_env_strings` only looks up variables in the slice it is
+    // given, so we must substitute the PEB environment here; otherwise NULL
+    // (the form RtlQueryRegistryValues uses for REG_EXPAND_SZ) yields an
+    // empty env and `%SystemRoot%`-style references are left unexpanded
+    // (broke smss KnownDll dir resolution → boot failure).
+    let env_ptr: *const u16 = if environment.is_null() {
+        RtlpGetPebEnvironment() as *const u16
+    } else {
+        environment as *const u16
+    };
+    let env_slice: &[u16] = if env_ptr.is_null() {
         &[]
     } else {
-        let n = env_block_chars(environment);
-        core::slice::from_raw_parts(environment, n)
+        let n = env_block_chars(env_ptr);
+        core::slice::from_raw_parts(env_ptr, n)
     };
 
     let result = env::expand_env_strings(env_slice, src_slice, dst_slice);
@@ -7111,12 +7124,18 @@ pub unsafe extern "system" fn RtlCreateUserThread(
     }
 
     // Next, set up the Initial Context (per-arch RtlInitializeContext).
+    // NOTE: the C `RtlInitializeContext` 5th parameter is mistyped
+    // `PINITIAL_TEB` but is actually used as `(ULONG_PTR)StackBase` (the
+    // user-stack top). The original C caller (sdk/lib/rtl/thread.c) passes
+    // `InitialTeb.StackBase`, NOT `&InitialTeb`. Passing the struct address
+    // here set the new thread's user Rsp to a kernel-stack address →
+    // KiInitializeUserApc AV (BUGCHECK 0x1E) at first user-thread startup.
     RtlInitializeContext(
         process_handle,
         context.as_mut_ptr(),
         parameter,
         start_address,
-        &mut initial_teb as *mut _ as *mut u8,
+        initial_teb.StackBase,
     );
 
     // InitializeObjectAttributes(&oa, NULL, 0, NULL, SecurityDescriptor)
@@ -8657,7 +8676,7 @@ mod path_wave {
         RtlPrefixUnicodeString, RtlQueryEnvironmentVariable_U,
         RtlInitUnicodeString, wcslen,
         RtlDetermineDosPathNameType_Ustr, RtlDetermineDosPathNameType_U,
-        RtlIsDosDeviceName_Ustr};
+        RtlIsDosDeviceName_Ustr, RtlCopyUnicodeString, RtlFreeUnicodeString};
 
     type ULONG = u32;
     type USHORT = u16;
@@ -8847,8 +8866,11 @@ mod path_wave {
     // the PE kernel/user-mode targets; the host difftest cdylib never calls a
     // path fn that needs them (cargo check never links).
     extern "system" {
-        fn RtlpAllocateStringMemory(Length: ULONG, Tag: ULONG) -> PWSTR;
-        fn RtlpFreeStringMemory(Buffer: *mut core::ffi::c_void, Tag: ULONG);
+        // rtlp.h: RtlpAllocateStringMemory/RtlpFreeStringMemory are C MACROS for
+        // RtlpAllocateMemory/RtlpFreeMemory — C never emits a `RtlpAllocateString*`
+        // symbol. Bind the real macro targets and wrap them inline below.
+        fn RtlpAllocateMemory(Bytes: ULONG, Tag: ULONG) -> PWSTR;
+        fn RtlpFreeMemory(Mem: *mut core::ffi::c_void, Tag: ULONG);
         fn RtlGetCurrentPeb() -> PPEB;
         fn RtlAcquirePebLock();
         fn RtlReleasePebLock();
@@ -8860,10 +8882,42 @@ mod path_wave {
             FsInformation: PVOID, Length: u32, FsInformationClass: u32) -> NTSTATUS;
         fn ZwQueryAttributesFile(ObjectAttributes: *mut OBJECT_ATTRIBUTES,
             FileInformation: *mut FILE_BASIC_INFORMATION) -> NTSTATUS;
-        fn RtlEnsureBufferSize(Flags: ULONG, Buffer: *mut RTL_BUFFER, RequiredSize: ULONG) -> NTSTATUS;
-        fn NtCurrentTeb() -> *mut NT_TEB;
+        // rtlfuncs.h: RtlEnsureBufferSize is FORCEINLINE → real work is
+        // RtlpEnsureBufferSize. Bind the real symbol; the inline is replicated below.
+        fn RtlpEnsureBufferSize(Flags: ULONG, Buffer: *mut RTL_BUFFER, RequiredSize: ULONG) -> NTSTATUS;
+        // ntdll-only SxS redirection hub (path.c guards it under #ifndef
+        // _NTOSKRNL_). Declared unconditionally — only referenced from the
+        // cfg(not(feature="kernel")) branch of RtlDosSearchPath_Ustr, so the
+        // kernel build never emits a link reference to it.
+        fn RtlDosApplyFileIsolationRedirection_Ustr(
+            Flags: ULONG,
+            OriginalName: PUNICODE_STRING,
+            Extension: PUNICODE_STRING,
+            StaticString: PUNICODE_STRING,
+            DynamicString: PUNICODE_STRING,
+            NewName: *mut PUNICODE_STRING,
+            NewFlags: PULONG,
+            FileNameSize: PSIZE_T,
+            RequiredLength: PSIZE_T,
+        ) -> NTSTATUS;
     }
-    #[inline] unsafe fn NtCurrentPeb() -> PPEB { (*NtCurrentTeb()).ProcessEnvironmentBlock }
+    // RtlpAllocateStringMemory/RtlpFreeStringMemory: rtlp.h macros → Rtlp{Allocate,Free}Memory.
+    #[inline] unsafe fn RtlpAllocateStringMemory(Length: ULONG, Tag: ULONG) -> PWSTR {
+        RtlpAllocateMemory(Length, Tag)
+    }
+    #[inline] unsafe fn RtlpFreeStringMemory(Buffer: *mut core::ffi::c_void, Tag: ULONG) {
+        RtlpFreeMemory(Buffer, Tag)
+    }
+    // RtlEnsureBufferSize: FORCEINLINE in rtlfuncs.h (fast-path + RtlpEnsureBufferSize).
+    #[inline] unsafe fn RtlEnsureBufferSize(Flags: ULONG, Buffer: *mut RTL_BUFFER, RequiredSize: ULONG) -> NTSTATUS {
+        if !Buffer.is_null() && (RequiredSize as usize) <= (*Buffer).Size {
+            return STATUS_SUCCESS;
+        }
+        RtlpEnsureBufferSize(Flags, Buffer, RequiredSize)
+    }
+    // NtCurrentTeb() is a FORCEINLINE macro (no out-of-line symbol); route the
+    // PEB fetch through RtlGetCurrentPeb (a real exported symbol on both targets).
+    #[inline] unsafe fn NtCurrentPeb() -> PPEB { RtlGetCurrentPeb() }
 
     // Heap shims — route the C-translated RtlAllocateHeap/RtlFreeHeap through
     // cabi's 3-way allocator (rtl_alloc/rtl_free). `heap_handle()` is a dummy.
@@ -10947,6 +11001,409 @@ mod path_wave {
             && Status != STATUS_BUFFER_TOO_SMALL
         {
             DbgPrint(b"RTL: %s - failing on filename %wZ with status %08lx\n\0".as_ptr() as *const i8);
+        }
+
+        Status
+    }
+
+    /// `NTSTATUS NTAPI RtlDosSearchPath_Ustr(ULONG Flags, PUNICODE_STRING x5,
+    /// PUNICODE_STRING* FullNameOut, PSIZE_T FilePartSize, PSIZE_T LengthNeeded)`
+    /// — the DOS path/DLL search hub. Hand-translated from
+    /// `sdk/lib/rtl/path.c:2565`. The SxS isolation-redirection branch is
+    /// `#ifndef _NTOSKRNL_` in C (RtlDosApplyFileIsolationRedirection_Ustr is
+    /// an ntdll-only symbol), so it is cfg-gated out of the kernel build here.
+    #[no_mangle]
+    pub unsafe extern "system" fn RtlDosSearchPath_Ustr(
+        Flags: ULONG,
+        PathString: PUNICODE_STRING,
+        FileNameString: PUNICODE_STRING,
+        mut ExtensionString: PUNICODE_STRING,
+        CallerBuffer: PUNICODE_STRING,
+        DynamicString: PUNICODE_STRING,
+        FullNameOut: *mut PUNICODE_STRING,
+        FilePartSize: PSIZE_T,
+        LengthNeeded: PSIZE_T,
+    ) -> NTSTATUS {
+        let is_path_separator = |x: u16| x == b'\\' as u16 || x == b'/' as u16;
+
+        let mut StaticCandidateBuffer: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        let mut StaticCandidateString: UNICODE_STRING = core::mem::zeroed();
+        let mut Status: NTSTATUS = STATUS_SUCCESS;
+        let mut PathType: RTL_PATH_TYPE = RtlPathTypeUnknown;
+        let mut ExtensionLength: USHORT = 0;
+        let mut MaxPathSize: SIZE_T = 0;
+
+        /* Initialize the input string */
+        RtlInitEmptyUnicodeString(
+            &mut StaticCandidateString,
+            StaticCandidateBuffer.as_mut_ptr(),
+            (MAX_PATH as usize * core::mem::size_of::<u16>()) as USHORT,
+        );
+
+        /* Initialize optional arguments */
+        if !FullNameOut.is_null() { *FullNameOut = core::ptr::null_mut(); }
+        if !FilePartSize.is_null() { *FilePartSize = 0; }
+        if !LengthNeeded.is_null() { *LengthNeeded = 0; }
+        if !DynamicString.is_null() {
+            (*DynamicString).Length = 0;
+            (*DynamicString).MaximumLength = 0;
+            (*DynamicString).Buffer = core::ptr::null_mut();
+        }
+
+        'quickie: {
+            /* Check for invalid parameters */
+            if (Flags & !7) != 0
+                || PathString.is_null()
+                || FileNameString.is_null()
+                || (!CallerBuffer.is_null() && !DynamicString.is_null() && FullNameOut.is_null())
+            {
+                Status = STATUS_INVALID_PARAMETER;
+                break 'quickie;
+            }
+
+            /* First check what kind of path this is */
+            PathType = RtlDetermineDosPathNameType_Ustr(FileNameString);
+
+            /* Caller wants to prevent relative .\ and ..\ paths */
+            if (Flags & 2) != 0
+                && PathType == RtlPathTypeRelative
+                && (*FileNameString).Length >= (2 * core::mem::size_of::<u16>()) as USHORT
+                && *(*FileNameString).Buffer == b'.' as u16
+                && (is_path_separator(*(*FileNameString).Buffer.add(1))
+                    || (*(*FileNameString).Buffer.add(1) == b'.' as u16
+                        && (*FileNameString).Length >= (3 * core::mem::size_of::<u16>()) as USHORT
+                        && is_path_separator(*(*FileNameString).Buffer.add(2))))
+            {
+                /* Yes, and this path is like that, so make it seem unknown */
+                PathType = RtlPathTypeUnknown;
+            }
+
+            /* Now check relative vs non-relative paths */
+            if PathType == RtlPathTypeRelative {
+                /* Does the caller want SxS? (ntdll-only; #ifndef _NTOSKRNL_) */
+                #[cfg(not(feature = "kernel"))]
+                {
+                    if (Flags & 1) != 0 {
+                        const STATUS_SXS_KEY_NOT_FOUND: NTSTATUS = 0xC015_0008u32 as i32;
+                        let mut FullIsolatedPath: PUNICODE_STRING = core::ptr::null_mut();
+                        Status = RtlDosApplyFileIsolationRedirection_Ustr(
+                            1,
+                            FileNameString,
+                            ExtensionString,
+                            CallerBuffer,
+                            DynamicString,
+                            &mut FullIsolatedPath,
+                            core::ptr::null_mut(),
+                            FilePartSize,
+                            LengthNeeded,
+                        );
+                        if NT_SUCCESS(Status) {
+                            /* We found the SxS path, return it */
+                            if !FullNameOut.is_null() { *FullNameOut = FullIsolatedPath; }
+                            break 'quickie;
+                        } else if Status != STATUS_SXS_KEY_NOT_FOUND {
+                            /* Critical SxS error, fail */
+                            break 'quickie;
+                        }
+                    }
+                }
+
+                /* No SxS key found, or not requested, check if there's an extension */
+                if !ExtensionString.is_null() {
+                    /* Save the extension length, and check if there's a file name */
+                    ExtensionLength = (*ExtensionString).Length;
+                    if (*FileNameString).Length != 0 {
+                        /* Start parsing the file name */
+                        let mut End = (*FileNameString)
+                            .Buffer
+                            .add((*FileNameString).Length as usize / core::mem::size_of::<u16>());
+                        while End > (*FileNameString).Buffer {
+                            /* If we find a path separator, there's no extension */
+                            End = End.sub(1);
+                            if is_path_separator(*End) { break; }
+
+                            /* Otherwise, did we find an extension dot? */
+                            if *End == b'.' as u16 {
+                                /* Ignore what the caller sent it, use the filename's */
+                                ExtensionString = core::ptr::null_mut();
+                                ExtensionLength = 0;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                /* Check if we got a path */
+                if (*PathString).Length != 0 {
+                    /* Start parsing the path name, looking for path separators */
+                    let mut End = (*PathString)
+                        .Buffer
+                        .add((*PathString).Length as usize / core::mem::size_of::<u16>());
+                    let mut p = End;
+                    while p > (*PathString).Buffer {
+                        p = p.sub(1);
+                        if *p == b';' as u16 {
+                            /* This is the size of the path -- handle a trailing slash */
+                            let mut PathSize = End.offset_from(p) as usize - 1;
+                            if PathSize != 0 && !is_path_separator(*End.sub(1)) { PathSize += 1; }
+
+                            /* Check if we found a bigger path than before */
+                            if PathSize > MaxPathSize { MaxPathSize = PathSize; }
+
+                            /* Keep going with the path after this path separator */
+                            End = p;
+                        }
+                    }
+
+                    /* This is the trailing path, run the same code as above */
+                    let mut PathSize = End.offset_from(p) as usize;
+                    if PathSize != 0 && !is_path_separator(*End.sub(1)) { PathSize += 1; }
+                    if PathSize > MaxPathSize { MaxPathSize = PathSize; }
+
+                    /* Finally, convert the largest path size into WCHAR */
+                    MaxPathSize *= core::mem::size_of::<u16>();
+                }
+
+                /* Use the extension, the file name, and the largest path as the size */
+                let WorstCaseLength: SIZE_T = ExtensionLength as usize
+                    + (*FileNameString).Length as usize
+                    + (MaxPathSize as u16) as usize
+                    + core::mem::size_of::<u16>();
+                if WorstCaseLength > UNICODE_STRING_MAX_BYTES as usize {
+                    /* It has to fit in a registry string, if not, fail here */
+                    Status = STATUS_NAME_TOO_LONG;
+                    break 'quickie;
+                }
+
+                /* Scan the path now, to see if we can find the file */
+                let mut p = (*PathString).Buffer;
+                let End = (*PathString)
+                    .Buffer
+                    .add((*PathString).Length as usize / core::mem::size_of::<u16>());
+                while p < End {
+                    /* Find out where this path ends */
+                    let mut SegmentEnd = p;
+                    while SegmentEnd != End && *SegmentEnd != b';' as u16 {
+                        SegmentEnd = SegmentEnd.add(1);
+                    }
+
+                    /* Compute the size of this path */
+                    let ByteCount: SIZE_T =
+                        (SegmentEnd.offset_from(p) as usize) * core::mem::size_of::<u16>();
+                    let mut SegmentSize: SIZE_T = ByteCount;
+
+                    /* Handle trailing slash if there isn't one */
+                    if SegmentSize != 0 && !is_path_separator(*SegmentEnd.sub(1)) {
+                        SegmentSize += core::mem::size_of::<u16>();
+                    }
+
+                    /* Now check if our initial static buffer is too small */
+                    if (StaticCandidateString.MaximumLength as usize)
+                        < (SegmentSize
+                            + ExtensionLength as usize
+                            + (*FileNameString).Length as usize
+                            + core::mem::size_of::<u16>())
+                    {
+                        /* At this point we should've been using our static buffer */
+                        if StaticCandidateString.Buffer != StaticCandidateBuffer.as_mut_ptr() {
+                            Status = STATUS_INTERNAL_ERROR;
+                            break 'quickie;
+                        }
+
+                        if (SegmentSize + ExtensionLength as usize + (*FileNameString).Length as usize)
+                            > (UNICODE_STRING_MAX_BYTES as usize - core::mem::size_of::<u16>())
+                        {
+                            Status = STATUS_INTERNAL_ERROR;
+                            break 'quickie;
+                        }
+
+                        /* Now allocate the dynamic string */
+                        StaticCandidateString.MaximumLength = WorstCaseLength as USHORT;
+                        StaticCandidateString.Buffer =
+                            RtlpAllocateStringMemory(WorstCaseLength as ULONG, TAG_USTR);
+                        if StaticCandidateString.Buffer.is_null() {
+                            Status = STATUS_NO_MEMORY;
+                            break 'quickie;
+                        }
+                    }
+
+                    /* Copy the path in the string */
+                    RtlCopyMemory(
+                        StaticCandidateString.Buffer as PVOID,
+                        p as *const core::ffi::c_void,
+                        ByteCount,
+                    );
+
+                    /* Get to the end of the string, and add the trailing slash if missing */
+                    let mut CandidateEnd =
+                        StaticCandidateString.Buffer.add(ByteCount / core::mem::size_of::<u16>());
+                    if SegmentSize != 0 && SegmentSize != ByteCount {
+                        *CandidateEnd = OBJ_NAME_PATH_SEPARATOR;
+                        CandidateEnd = CandidateEnd.add(1);
+                    }
+
+                    /* Copy the filename now */
+                    RtlCopyMemory(
+                        CandidateEnd as PVOID,
+                        (*FileNameString).Buffer as *const core::ffi::c_void,
+                        (*FileNameString).Length as usize,
+                    );
+                    CandidateEnd =
+                        CandidateEnd.add((*FileNameString).Length as usize / core::mem::size_of::<u16>());
+
+                    /* Check if there was an extension */
+                    if !ExtensionString.is_null() {
+                        /* Copy the extension too */
+                        RtlCopyMemory(
+                            CandidateEnd as PVOID,
+                            (*ExtensionString).Buffer as *const core::ffi::c_void,
+                            (*ExtensionString).Length as usize,
+                        );
+                        CandidateEnd = CandidateEnd
+                            .add((*ExtensionString).Length as usize / core::mem::size_of::<u16>());
+                    }
+
+                    /* We are done, terminate it */
+                    *CandidateEnd = 0;
+
+                    /* Now set the final length of the string so it becomes valid */
+                    StaticCandidateString.Length =
+                        (CandidateEnd.offset_from(StaticCandidateString.Buffer) as usize
+                            * core::mem::size_of::<u16>()) as USHORT;
+
+                    /* Check if this file exists */
+                    if RtlDoesFileExists_UEx(StaticCandidateString.Buffer as PCWSTR, 0u8) != 0 {
+                        /* Awesome, it does, now get the full path */
+                        Status = RtlGetFullPathName_UstrEx(
+                            &mut StaticCandidateString,
+                            CallerBuffer,
+                            DynamicString,
+                            FullNameOut,
+                            FilePartSize,
+                            core::ptr::null_mut(),
+                            &mut PathType,
+                            LengthNeeded,
+                        );
+                        break 'quickie;
+                    } else {
+                        /* Otherwise, move to the next path */
+                        if SegmentEnd != End {
+                            /* Handle the case of the path separator trailing */
+                            p = SegmentEnd.add(1);
+                        } else {
+                            p = SegmentEnd;
+                        }
+                    }
+                }
+
+                /* Loop finished and we didn't break out -- fail */
+                Status = STATUS_NO_SUCH_FILE;
+            } else {
+                /* We have a full path, so check if it does exist */
+                if RtlDoesFileExists_UstrEx(FileNameString, 1u8) == 0 {
+                    /* It doesn't exist, did we have an extension? */
+                    if ExtensionString.is_null() || (*ExtensionString).Length == 0 {
+                        /* No extension, so just fail */
+                        Status = STATUS_NO_SUCH_FILE;
+                        break 'quickie;
+                    }
+
+                    /* There was an extension, check if the filename already had one */
+                    if (Flags & 4) == 0 && (*FileNameString).Length != 0 {
+                        /* Parse the filename */
+                        let p = (*FileNameString).Buffer;
+                        let mut End =
+                            p.add((*FileNameString).Length as usize / core::mem::size_of::<u16>());
+                        while End > p {
+                            /* If there's a path separator, there's no extension */
+                            End = End.sub(1);
+                            if is_path_separator(*End) { break; }
+
+                            /* Otherwise, did we find an extension dot? */
+                            if *End == b'.' as u16 {
+                                /* File already had an extension, so fail */
+                                Status = STATUS_NO_SUCH_FILE;
+                                break 'quickie;
+                            }
+                        }
+                    }
+
+                    /* So there is an extension, we'll try again by adding it */
+                    let NamePlusExtLength: SIZE_T = (*FileNameString).Length as usize
+                        + (*ExtensionString).Length as usize
+                        + core::mem::size_of::<u16>();
+                    if NamePlusExtLength > UNICODE_STRING_MAX_BYTES as usize {
+                        /* It won't fit in any kind of valid string, so fail */
+                        Status = STATUS_NAME_TOO_LONG;
+                        break 'quickie;
+                    }
+
+                    /* Will it fit in our temporary string? */
+                    if NamePlusExtLength > StaticCandidateString.MaximumLength as usize {
+                        /* It won't fit anymore, allocate a dynamic string for it */
+                        StaticCandidateString.MaximumLength = NamePlusExtLength as USHORT;
+                        StaticCandidateString.Buffer =
+                            RtlpAllocateStringMemory(NamePlusExtLength as ULONG, TAG_USTR);
+                        if StaticCandidateString.Buffer.is_null() {
+                            /* Ran out of memory, so fail */
+                            Status = STATUS_NO_MEMORY;
+                            break 'quickie;
+                        }
+                    }
+
+                    /* Copy the filename */
+                    RtlCopyUnicodeString(&mut StaticCandidateString, FileNameString);
+
+                    /* Copy the extension */
+                    RtlAppendUnicodeStringToString(&mut StaticCandidateString, ExtensionString);
+
+                    /* And check if this file now exists */
+                    if RtlDoesFileExists_UstrEx(
+                        core::ptr::addr_of!(StaticCandidateString),
+                        1u8,
+                    ) == 0
+                    {
+                        /* Still no joy, fail out */
+                        Status = STATUS_NO_SUCH_FILE;
+                        break 'quickie;
+                    }
+
+                    /* File was found, get the final full path */
+                    Status = RtlGetFullPathName_UstrEx(
+                        &mut StaticCandidateString,
+                        CallerBuffer,
+                        DynamicString,
+                        FullNameOut,
+                        FilePartSize,
+                        core::ptr::null_mut(),
+                        &mut PathType,
+                        LengthNeeded,
+                    );
+                } else {
+                    /* File was found on the first try, get the final full path */
+                    Status = RtlGetFullPathName_UstrEx(
+                        FileNameString,
+                        CallerBuffer,
+                        DynamicString,
+                        FullNameOut,
+                        FilePartSize,
+                        core::ptr::null_mut(),
+                        &mut PathType,
+                        LengthNeeded,
+                    );
+                }
+            }
+        }
+
+        /* Quickie: anything that was not an error, turn into STATUS_SUCCESS */
+        if NT_SUCCESS(Status) { Status = STATUS_SUCCESS; }
+
+        /* Check if we had a dynamic string */
+        if !StaticCandidateString.Buffer.is_null()
+            && StaticCandidateString.Buffer != StaticCandidateBuffer.as_mut_ptr()
+        {
+            /* Free it */
+            RtlFreeUnicodeString(&mut StaticCandidateString);
         }
 
         Status

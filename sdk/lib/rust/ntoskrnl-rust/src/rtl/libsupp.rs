@@ -927,8 +927,18 @@ pub unsafe extern "system" fn RtlpPrcGetPebOSMinorVersion() -> ULONG {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlpPrcPebProcessParametersAddr(_peb_base: PVOID) -> PVOID {
-    core::ptr::null_mut()
+pub unsafe extern "system" fn RtlpPrcPebProcessParametersAddr(peb_base: PVOID) -> PVOID {
+    // `&((PPEB)PebBase)->ProcessParameters`. This is pure pointer arithmetic
+    // on the *target* process's PEB base (a user VA passed in by the caller),
+    // NOT a dereference of the current kernel process — so it is valid in
+    // kernel mode. Returning NULL here (the old stub) made
+    // RtlpInitEnvironment's third ZwWriteVirtualMemory target address 0,
+    // faulting in MmCopyVirtualMemory (uncatchable under DUMMY_PSEH) →
+    // BUGCHECK 0x1E during the kernel-side creation of the first user process.
+    if peb_base.is_null() {
+        return core::ptr::null_mut();
+    }
+    core::ptr::addr_of_mut!((*(peb_base as PPEB)).ProcessParameters) as PVOID
 }
 
 /// Kernel-mode `RtlGetProcessHeap()` — no per-process heap exists in
