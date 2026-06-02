@@ -5,11 +5,36 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DRIVER_DISPATCH, DRIVER_INITIALIZE, DRIVER_STARTIO, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateDriverObjectExtension, IoAttachDeviceToDeviceStackSafe, IoBuildDeviceIoControlRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetCurrentIrpStackLocation, IoGetDriverObjectExtension, IoSkipCurrentIrpStackLocation, KEVENT, KeAcquireInterruptSpinLock, KeInitializeEvent, KeInitializeSpinLock, KeReleaseInterruptSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PUNICODE_STRING, Unknown};
+use ntkrnl_sys::ddk::{PDRIVER_DISPATCH as DRIVER_DISPATCH, PDRIVER_INITIALIZE as DRIVER_INITIALIZE, PDRIVER_STARTIO as DRIVER_STARTIO, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoAllocateDriverObjectExtension, IoAttachDeviceToDeviceStackSafe, IoBuildDeviceIoControlRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDriverObjectExtension, KEVENT, KeAcquireInterruptSpinLock, KeInitializeEvent, KeReleaseInterruptSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PUNICODE_STRING};
+// FORCEINLINE accessors (no exported symbol — must use the Rust inline impls).
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
+use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
 use core::ffi::c_void;
+use crate::i8042prt_h::*;
 
+// pub(crate) siblings (importable by path)
+use crate::misc::DuplicateUnicodeString;
+use crate::registry::ReadRegistryEntries;
+use crate::readwrite::{i8042Flush, i8042Write};
+// i8042PacketDpc lives in keyboard.rs; i8042StartPacket/i8042PacketIsr are
+// defined locally in this module.
+use crate::keyboard::i8042PacketDpc;
+
+// #[no_mangle] siblings: not importable by module path (they live at crate root
+// for codegen), so link them by symbol via extern blocks.
 extern "system" {
     fn ForwardIrpAndForget(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn i8042SynchReadPort(Context: PVOID, Value: PUCHAR, WaitForAck: BOOLEAN) -> NTSTATUS;
+    fn i8042SynchWritePortKbd(Context: PVOID, Value: UCHAR, WaitForAck: BOOLEAN) -> NTSTATUS;
+    fn i8042InitializeHwHacks();
+    fn i8042KbdStartIo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
+    fn i8042KbdDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn i8042KbdInternalDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn i8042MouInternalDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn i8042Create(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn i8042Cleanup(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn i8042Close(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+    fn i8042Pnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -170,12 +195,15 @@ pub unsafe extern "system" fn i8042SendHookWorkItem(
             let DeviceExtension: PI8042_KEYBOARD_EXTENSION =
                 FdoDeviceExtension as PI8042_KEYBOARD_EXTENSION;
             if (*DeviceExtension).KeyboardHook.InitializationRoutine.is_some() {
+                // C passes &TurnTranslationOn (PBOOLEAN). rustconv dropped the
+                // local; restore it so the hook can request 8042 translation.
+                let mut TurnTranslationOn: u8 = 0;
                 Status = (*DeviceExtension).KeyboardHook.InitializationRoutine.unwrap()(
                     (*DeviceExtension).KeyboardHook.Context,
                     PortDeviceExtension as PVOID,
-                    Some(i8042SynchReadPort),
-                    Some(i8042SynchWritePortKbd),
-                    0u8,
+                    i8042SynchReadPort as *mut core::ffi::c_void,
+                    i8042SynchWritePortKbd as *mut core::ffi::c_void,
+                    core::ptr::addr_of_mut!(TurnTranslationOn),
                 );
                 if !NT_SUCCESS(Status) {
                     (*(*WorkItemData).Irp).IoStatus.__bindgen_anon_1.Status = Status;
@@ -222,11 +250,11 @@ unsafe fn i8042PacketWrite(DeviceExtension: PPORT_DEVICE_EXTENSION) -> BOOLEAN {
     i8042Write(
         DeviceExtension,
         (*DeviceExtension).DataPort,
-        (*DeviceExtension).Packet.Bytes[(*DeviceExtension).Packet.CurrentByte as usize],
+        *(*DeviceExtension).Packet.Bytes.add((*DeviceExtension).Packet.CurrentByte as usize),
     )
 }
 
-unsafe fn i8042PacketIsr(
+pub(crate) unsafe fn i8042PacketIsr(
     DeviceExtension: PPORT_DEVICE_EXTENSION,
     Output: UCHAR,
 ) -> BOOLEAN {
@@ -276,7 +304,7 @@ unsafe fn i8042PacketIsr(
     1u8
 }
 
-unsafe fn i8042StartPacket(
+pub(crate) unsafe fn i8042StartPacket(
     DeviceExtension: PPORT_DEVICE_EXTENSION,
     FdoDeviceExtension: PFDO_DEVICE_EXTENSION,
     Bytes: PUCHAR,
@@ -438,9 +466,11 @@ pub unsafe extern "system" fn DriverEntry(
         DriverExtension as *mut _,
         core::mem::size_of::<I8042_DRIVER_EXTENSION>(),
     );
-    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DriverExtension).Port.SpinLock));
+    // KeInitializeSpinLock inline takes *mut ULONG_PTR; the KSPIN_LOCK field
+    // type identity differs across the glob, so cast to the expected pointer.
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DriverExtension).Port.SpinLock) as *mut usize);
     InitializeListHead(core::ptr::addr_of_mut!((*DriverExtension).DeviceListHead));
-    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DriverExtension).DeviceListLock));
+    KeInitializeSpinLock(core::ptr::addr_of_mut!((*DriverExtension).DeviceListLock) as *mut usize);
 
     Status = DuplicateUnicodeString(
         RTL_DUPLICATE_UNICODE_STRING_NULL_TERMINATE,
@@ -459,18 +489,17 @@ pub unsafe extern "system" fn DriverEntry(
         return Status;
     }
 
-    (*(*DriverObject).DriverExtension).AddDevice = Some(i8042AddDevice);
-    (*DriverObject).DriverStartIo = Some(i8042StartIo);
+    (*(*DriverObject).DriverExtension).AddDevice = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DRIVER_OBJECT, *mut ntkrnl_sys::ddk::_DEVICE_OBJECT) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_ADD_DEVICE>(Some(i8042AddDevice));
+    (*DriverObject).DriverStartIo = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP)>, ntkrnl_sys::ddk::PDRIVER_STARTIO>(Some(i8042StartIo));
 
-    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(i8042Create);
-    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] = Some(i8042Cleanup);
-    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = Some(i8042Close);
-    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(i8042DeviceControl);
-    (*DriverObject).MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL as usize] =
-        Some(i8042InternalDeviceControl);
-    (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = Some(i8042Power);
-    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = Some(i8042SystemControl);
-    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = Some(i8042Pnp);
+    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042Create));
+    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042Cleanup));
+    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042Close));
+    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042DeviceControl));
+    (*DriverObject).MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042InternalDeviceControl));
+    (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042Power));
+    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042SystemControl));
+    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut ntkrnl_sys::ddk::_IRP) -> NTSTATUS>, ntkrnl_sys::ddk::PDRIVER_DISPATCH>(Some(i8042Pnp));
 
     i8042InitializeHwHacks();
 

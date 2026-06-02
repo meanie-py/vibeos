@@ -4,12 +4,32 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusRelations, CmResourceShareShared, DeviceType, IoConnectInterrupt, IoDeleteDevice, IoDetachDevice, IoDisconnectInterrupt, IoForwardIrpSynchronously, IoGetCurrentIrpStackLocation, IoGetDriverObjectExtension, KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, KeStallExecutionProcessor, Latched, LevelSensitive, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, RemovalRelations};
+use ntkrnl_sys::ddk::{
+    _DEVICE_RELATION_TYPE_BusRelations as BusRelations,
+    _DEVICE_RELATION_TYPE_RemovalRelations as RemovalRelations,
+    _CM_SHARE_DISPOSITION_CmResourceShareShared as CmResourceShareShared,
+    _KINTERRUPT_MODE_Latched as Latched,
+    _KINTERRUPT_MODE_LevelSensitive as LevelSensitive,
+    IoConnectInterrupt, IoDeleteDevice, IoDetachDevice, IoDisconnectInterrupt,
+    IoForwardIrpSynchronously, IoGetDriverObjectExtension,
+    KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, KeStallExecutionProcessor,
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_OBJECT,
+    PIO_STACK_LOCATION, PIRP,
+};
+// FORCEINLINE accessor (no exported symbol — use the Rust inline impl).
+use ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation;
 use core::ffi::c_void;
+use crate::i8042prt_h::*;
+use crate::readwrite::{
+    i8042Write, i8042ReadDataWait, i8042IsrWritePort, i8042SynchWritePort, i8042Flush,
+};
+use crate::misc::ForwardIrpAndForget;
+// i8042HwFlags is a `pub static mut u32` in hwhacks (read-only here).
+use crate::hwhacks::i8042HwFlags;
+use crate::keyboard::i8042KbdInterruptService;
+use crate::mouse::{i8042MouInterruptService, i8042MouInitialize};
 
-extern "system" {
-    fn i8042Flush(DeviceExtension: PPORT_DEVICE_EXTENSION);
-}
+// (i8042Flush now imported from readwrite by path above.)
 
 unsafe fn i8042ChangeMode(
     DeviceExtension: PPORT_DEVICE_EXTENSION,
@@ -17,7 +37,7 @@ unsafe fn i8042ChangeMode(
     FlagsToEnable: UCHAR,
 ) -> BOOLEAN {
     let mut Value: UCHAR = 0;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     if i8042Write(DeviceExtension, (*DeviceExtension).ControlPort, KBD_READ_MODE as UCHAR) == 0 {
         return 0u8;
@@ -45,7 +65,7 @@ unsafe fn i8042ChangeMode(
 unsafe fn i8042BasicDetect(
     DeviceExtension: PPORT_DEVICE_EXTENSION,
 ) -> NTSTATUS {
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
     let mut ResendIterations: ULONG;
     let mut Value: UCHAR = 0;
 
@@ -205,7 +225,7 @@ unsafe fn i8042ConnectKeyboardInterrupt(
 
     Status = IoConnectInterrupt(
         core::ptr::addr_of_mut!((*PortDeviceExtension).KeyboardInterrupt.Object),
-        Some(i8042KbdInterruptService),
+        core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_KINTERRUPT, *mut c_void) -> u8>, ntkrnl_sys::ddk::PKSERVICE_ROUTINE>(Some(i8042KbdInterruptService as unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_KINTERRUPT, *mut c_void) -> u8)),
         DeviceExtension as PVOID,
         core::ptr::addr_of_mut!((*PortDeviceExtension).SpinLock),
         (*PortDeviceExtension).KeyboardInterrupt.Vector,
@@ -249,7 +269,7 @@ unsafe fn i8042ConnectMouseInterrupt(
 
     Status = IoConnectInterrupt(
         core::ptr::addr_of_mut!((*PortDeviceExtension).MouseInterrupt.Object),
-        Some(i8042MouInterruptService),
+        core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_KINTERRUPT, *mut c_void) -> u8>, ntkrnl_sys::ddk::PKSERVICE_ROUTINE>(Some(i8042MouInterruptService as unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_KINTERRUPT, *mut c_void) -> u8)),
         DeviceExtension as *mut _,
         core::ptr::addr_of_mut!((*PortDeviceExtension).SpinLock),
         (*PortDeviceExtension).MouseInterrupt.Vector,
@@ -309,7 +329,7 @@ unsafe fn StartProcedure(
     let mut FlagsToEnable: UCHAR = 0;
     let Irql: KIRQL;
 
-    if (*DeviceExtension).DataPort == 0 {
+    if (*DeviceExtension).DataPort.is_null() {
         return STATUS_SUCCESS;
     }
 
@@ -404,22 +424,31 @@ unsafe fn i8042PnpStartDevice(
 
     i = 0;
     while i < (*AllocatedResources).List[0].PartialResourceList.Count {
-        ResourceDescriptor = core::ptr::addr_of_mut!(
-            (*AllocatedResources).List[0].PartialResourceList.PartialDescriptors[i as usize]
-        );
-        ResourceDescriptorTranslated = core::ptr::addr_of_mut!(
-            (*AllocatedResourcesTranslated).List[0].PartialResourceList.PartialDescriptors[i as usize]
-        );
+        // PartialDescriptors is a C ANYSIZE_ARRAY (bindgen renders it as `[T; 1]`).
+        // Indexing `[i]` past 0 triggers Rust's bounds-check panic; the C source
+        // treats it as a flexible array. Use pointer arithmetic to match C.
+        ResourceDescriptor = (*AllocatedResources)
+            .List[0]
+            .PartialResourceList
+            .PartialDescriptors
+            .as_mut_ptr()
+            .add(i as usize);
+        ResourceDescriptorTranslated = (*AllocatedResourcesTranslated)
+            .List[0]
+            .PartialResourceList
+            .PartialDescriptors
+            .as_mut_ptr()
+            .add(i as usize);
         match (*ResourceDescriptor).Type as u32 {
             CmResourceTypePort => {
                 if (*ResourceDescriptor).u.Port.Length == 1 {
                     if FoundDataPort == 0 {
                         (*PortDeviceExtension).DataPort =
-                            ULongToPtr((*ResourceDescriptor).u.Port.Start.u.__bindgen_anon_1.LowPart) as _;
+                            ULongToPtr((*ResourceDescriptor).u.Port.Start.u.LowPart) as _;
                         FoundDataPort = 1u8;
                     } else if FoundControlPort == 0 {
                         (*PortDeviceExtension).ControlPort =
-                            ULongToPtr((*ResourceDescriptor).u.Port.Start.u.__bindgen_anon_1.LowPart) as _;
+                            ULongToPtr((*ResourceDescriptor).u.Port.Start.u.LowPart) as _;
                         FoundControlPort = 1u8;
                     } else {
                         // FIXME: implement PS/2 Active Multiplexing
@@ -433,7 +462,7 @@ unsafe fn i8042PnpStartDevice(
                 InterruptData.Dirql = (*ResourceDescriptorTranslated).u.Interrupt.Level as KIRQL;
                 InterruptData.Vector = (*ResourceDescriptorTranslated).u.Interrupt.Vector;
                 InterruptData.Affinity = (*ResourceDescriptorTranslated).u.Interrupt.Affinity;
-                if ((*ResourceDescriptorTranslated).Flags as u32 & CM_RESOURCE_INTERRUPT_LATCHED) != 0 {
+                if ((*ResourceDescriptorTranslated).Flags as u32 & CM_RESOURCE_INTERRUPT_LATCHED as u32) != 0 {
                     InterruptData.InterruptMode = Latched;
                 } else {
                     InterruptData.InterruptMode = LevelSensitive;
@@ -503,12 +532,12 @@ unsafe fn i8042RemoveDevice(DeviceObject: PDEVICE_OBJECT) {
 
     let mut OldIrql: KIRQL = 0;
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*DriverExtension).DeviceListLock),
+        core::ptr::addr_of_mut!((*DriverExtension).DeviceListLock) as *mut _,
         &mut OldIrql,
     );
     RemoveEntryList(core::ptr::addr_of_mut!((*DeviceExtension).ListEntry));
     KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*DriverExtension).DeviceListLock),
+        core::ptr::addr_of_mut!((*DriverExtension).DeviceListLock) as *mut _,
         OldIrql,
     );
 
@@ -524,13 +553,15 @@ pub unsafe extern "system" fn i8042Pnp(
 ) -> NTSTATUS {
     let FdoExtension: PFDO_DEVICE_EXTENSION;
     let Stack: PIO_STACK_LOCATION;
-    let MinorFunction: ULONG;
+    // IRP_MN_* constants are UCHAR; keep MinorFunction the same width so the
+    // match arms (which name those UCHAR consts) type-check.
+    let MinorFunction: UCHAR;
     let DeviceType: I8042_DEVICE_TYPE;
     let Information: ULONG_PTR = 0;
     let mut Status: NTSTATUS;
 
     Stack = IoGetCurrentIrpStackLocation(Irp);
-    MinorFunction = (*Stack).MinorFunction as ULONG;
+    MinorFunction = (*Stack).MinorFunction;
     FdoExtension = (*DeviceObject).DeviceExtension as PFDO_DEVICE_EXTENSION;
     DeviceType = (*FdoExtension).Type;
 
@@ -591,7 +622,7 @@ pub unsafe extern "system" fn i8042Pnp(
         }
     }
 
-    (*Irp).IoStatus.Information = Information;
+    (*Irp).IoStatus.Information = Information as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
     Status

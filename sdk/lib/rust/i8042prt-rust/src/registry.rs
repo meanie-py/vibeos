@@ -1,12 +1,33 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{PUNICODE_STRING, RTL_QUERY_REGISTRY_TABLE, RtlCreateUnicodeString, RtlQueryRegistryValues};
-use core::ffi::c_void;
+use crate::i8042prt_h::*;
 
-unsafe fn ReadRegistryEntries(
+// L"..." literal → pointer to a null-terminated `static [u16; N]`. Replaces the
+// `widestring` crate (not a dependency of this driver). The static gives the
+// array a 'static lifetime so the pointer handed to RtlQueryRegistryValues /
+// RtlCreateUnicodeString stays valid (Name and Source are NUL-terminated
+// PCWSTR in the C original; the C wide literals had the same NUL).
+macro_rules! wsz {
+    ($s:literal) => {{
+        const N: usize = $s.len() + 1;
+        static ARR: [u16; N] = {
+            let bytes = $s.as_bytes();
+            let mut out = [0u16; N];
+            let mut i = 0;
+            while i < bytes.len() {
+                out[i] = bytes[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        ARR.as_ptr()
+    }};
+}
+
+pub(crate) unsafe fn ReadRegistryEntries(
     RegistryPath: PUNICODE_STRING,
     Settings: PI8042_SETTINGS,
 ) -> NTSTATUS {
@@ -14,14 +35,12 @@ unsafe fn ReadRegistryEntries(
     let mut Status: NTSTATUS;
 
     let DefaultKeyboardDataQueueSize: ULONG = 0x64;
-    let DefaultKeyboardDeviceBaseName: PCWSTR =
-        widestring::u16cstr!("KeyboardPort").as_ptr();
+    let DefaultKeyboardDeviceBaseName: PCWSTR = wsz!("KeyboardPort");
     let DefaultMouseDataQueueSize: ULONG = 0x64;
     let DefaultMouseResolution: ULONG = 3;
     let DefaultMouseSynchIn100ns: ULONG = 20000000;
     let DefaultNumberOfButtons: ULONG = 2;
-    let DefaultPointerDeviceBaseName: PCWSTR =
-        widestring::u16cstr!("PointerPort").as_ptr();
+    let DefaultPointerDeviceBaseName: PCWSTR = wsz!("PointerPort");
     let DefaultPollStatusIterations: ULONG = 1;
     let DefaultOverrideKeyboardType: ULONG = 4;
     let DefaultOverrideKeyboardSubtype: ULONG = 0;
@@ -33,112 +52,112 @@ unsafe fn ReadRegistryEntries(
 
     RtlZeroMemory(
         Parameters.as_mut_ptr() as *mut _,
-        core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 17]>() as ULONG,
+        core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 17]>(),
     );
 
     Parameters[0].Flags = RTL_QUERY_REGISTRY_SUBKEY;
-    Parameters[0].Name = widestring::u16cstr!("Parameters").as_ptr() as *mut u16;
+    Parameters[0].Name = wsz!("Parameters") as *mut u16;
 
     Parameters[1].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[1].Name = widestring::u16cstr!("KeyboardDataQueueSize").as_ptr() as *mut u16;
+    Parameters[1].Name = wsz!("KeyboardDataQueueSize") as *mut u16;
     Parameters[1].EntryContext = core::ptr::addr_of_mut!((*Settings).KeyboardDataQueueSize) as *mut _;
     Parameters[1].DefaultType = REG_DWORD;
     Parameters[1].DefaultData = core::ptr::addr_of!(DefaultKeyboardDataQueueSize) as *mut _;
     Parameters[1].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[2].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[2].Name = widestring::u16cstr!("KeyboardDeviceBaseName").as_ptr() as *mut u16;
+    Parameters[2].Name = wsz!("KeyboardDeviceBaseName") as *mut u16;
     Parameters[2].EntryContext = core::ptr::addr_of_mut!((*Settings).KeyboardDeviceBaseName) as *mut _;
     Parameters[2].DefaultType = REG_SZ;
     Parameters[2].DefaultData = DefaultKeyboardDeviceBaseName as *mut _;
     Parameters[2].DefaultLength = 0;
 
     Parameters[3].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[3].Name = widestring::u16cstr!("MouseDataQueueSize").as_ptr() as *mut u16;
+    Parameters[3].Name = wsz!("MouseDataQueueSize") as *mut u16;
     Parameters[3].EntryContext = core::ptr::addr_of_mut!((*Settings).MouseDataQueueSize) as *mut _;
     Parameters[3].DefaultType = REG_DWORD;
     Parameters[3].DefaultData = core::ptr::addr_of!(DefaultMouseDataQueueSize) as *mut _;
     Parameters[3].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[4].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[4].Name = widestring::u16cstr!("MouseResolution").as_ptr() as *mut u16;
+    Parameters[4].Name = wsz!("MouseResolution") as *mut u16;
     Parameters[4].EntryContext = core::ptr::addr_of_mut!((*Settings).MouseResolution) as *mut _;
     Parameters[4].DefaultType = REG_DWORD;
     Parameters[4].DefaultData = core::ptr::addr_of!(DefaultMouseResolution) as *mut _;
     Parameters[4].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[5].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[5].Name = widestring::u16cstr!("MouseSynchIn100ns").as_ptr() as *mut u16;
+    Parameters[5].Name = wsz!("MouseSynchIn100ns") as *mut u16;
     Parameters[5].EntryContext = core::ptr::addr_of_mut!((*Settings).MouseSynchIn100ns) as *mut _;
     Parameters[5].DefaultType = REG_DWORD;
     Parameters[5].DefaultData = core::ptr::addr_of!(DefaultMouseSynchIn100ns) as *mut _;
     Parameters[5].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[6].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[6].Name = widestring::u16cstr!("NumberOfButtons").as_ptr() as *mut u16;
+    Parameters[6].Name = wsz!("NumberOfButtons") as *mut u16;
     Parameters[6].EntryContext = core::ptr::addr_of_mut!((*Settings).NumberOfButtons) as *mut _;
     Parameters[6].DefaultType = REG_DWORD;
     Parameters[6].DefaultData = core::ptr::addr_of!(DefaultNumberOfButtons) as *mut _;
     Parameters[6].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[7].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[7].Name = widestring::u16cstr!("PointerDeviceBaseName").as_ptr() as *mut u16;
+    Parameters[7].Name = wsz!("PointerDeviceBaseName") as *mut u16;
     Parameters[7].EntryContext = core::ptr::addr_of_mut!((*Settings).PointerDeviceBaseName) as *mut _;
     Parameters[7].DefaultType = REG_SZ;
     Parameters[7].DefaultData = DefaultPointerDeviceBaseName as *mut _;
     Parameters[7].DefaultLength = 0;
 
     Parameters[8].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[8].Name = widestring::u16cstr!("PollStatusIterations").as_ptr() as *mut u16;
+    Parameters[8].Name = wsz!("PollStatusIterations") as *mut u16;
     Parameters[8].EntryContext = core::ptr::addr_of_mut!((*Settings).PollStatusIterations) as *mut _;
     Parameters[8].DefaultType = REG_DWORD;
     Parameters[8].DefaultData = core::ptr::addr_of!(DefaultPollStatusIterations) as *mut _;
     Parameters[8].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[9].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[9].Name = widestring::u16cstr!("OverrideKeyboardType").as_ptr() as *mut u16;
+    Parameters[9].Name = wsz!("OverrideKeyboardType") as *mut u16;
     Parameters[9].EntryContext = core::ptr::addr_of_mut!((*Settings).OverrideKeyboardType) as *mut _;
     Parameters[9].DefaultType = REG_DWORD;
     Parameters[9].DefaultData = core::ptr::addr_of!(DefaultOverrideKeyboardType) as *mut _;
     Parameters[9].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[10].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[10].Name = widestring::u16cstr!("OverrideKeyboardSubtype").as_ptr() as *mut u16;
+    Parameters[10].Name = wsz!("OverrideKeyboardSubtype") as *mut u16;
     Parameters[10].EntryContext = core::ptr::addr_of_mut!((*Settings).OverrideKeyboardSubtype) as *mut _;
     Parameters[10].DefaultType = REG_DWORD;
     Parameters[10].DefaultData = core::ptr::addr_of!(DefaultOverrideKeyboardSubtype) as *mut _;
     Parameters[10].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[11].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[11].Name = widestring::u16cstr!("PollingIterations").as_ptr() as *mut u16;
+    Parameters[11].Name = wsz!("PollingIterations") as *mut u16;
     Parameters[11].EntryContext = core::ptr::addr_of_mut!((*Settings).PollingIterations) as *mut _;
     Parameters[11].DefaultType = REG_DWORD;
     Parameters[11].DefaultData = core::ptr::addr_of!(DefaultPollingIterations) as *mut _;
     Parameters[11].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[12].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[12].Name = widestring::u16cstr!("PollingIterationsMaximum").as_ptr() as *mut u16;
+    Parameters[12].Name = wsz!("PollingIterationsMaximum") as *mut u16;
     Parameters[12].EntryContext = core::ptr::addr_of_mut!((*Settings).PollingIterationsMaximum) as *mut _;
     Parameters[12].DefaultType = REG_DWORD;
     Parameters[12].DefaultData = core::ptr::addr_of!(DefaultPollingIterationsMaximum) as *mut _;
     Parameters[12].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[13].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[13].Name = widestring::u16cstr!("ResendIterations").as_ptr() as *mut u16;
+    Parameters[13].Name = wsz!("ResendIterations") as *mut u16;
     Parameters[13].EntryContext = core::ptr::addr_of_mut!((*Settings).ResendIterations) as *mut _;
     Parameters[13].DefaultType = REG_DWORD;
     Parameters[13].DefaultData = core::ptr::addr_of!(DefaultResendIterations) as *mut _;
     Parameters[13].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[14].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[14].Name = widestring::u16cstr!("SampleRate").as_ptr() as *mut u16;
+    Parameters[14].Name = wsz!("SampleRate") as *mut u16;
     Parameters[14].EntryContext = core::ptr::addr_of_mut!((*Settings).SampleRate) as *mut _;
     Parameters[14].DefaultType = REG_DWORD;
     Parameters[14].DefaultData = core::ptr::addr_of!(DefaultSampleRate) as *mut _;
     Parameters[14].DefaultLength = core::mem::size_of::<ULONG>() as ULONG;
 
     Parameters[15].Flags = RTL_QUERY_REGISTRY_DIRECT;
-    Parameters[15].Name = widestring::u16cstr!("CrashOnCtrlScroll").as_ptr() as *mut u16;
+    Parameters[15].Name = wsz!("CrashOnCtrlScroll") as *mut u16;
     Parameters[15].EntryContext = core::ptr::addr_of_mut!((*Settings).CrashOnCtrlScroll) as *mut _;
     Parameters[15].DefaultType = REG_DWORD;
     Parameters[15].DefaultData = core::ptr::addr_of!(DefaultCrashOnCtrlScroll) as *mut _;

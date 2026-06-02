@@ -7,8 +7,45 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DelayedWorkQueue, IO_WORKITEM_ROUTINE, Input, Interrupt, IoAllocateWorkItem, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoQueueWorkItem, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoStartNextPacket, IoStartPacket, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeAcquireInterruptSpinLock, KeBugCheck, KeInitializeDpc, KeInsertQueueDpc, KeReleaseInterruptSpinLock, KeStallExecutionProcessor, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INPUT_DATA, PKINTERRUPT};
+use ntkrnl_sys::ddk::{_WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue, IoAllocateWorkItem, IoFreeWorkItem, IoQueueWorkItem, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoStartNextPacket, IoStartPacket, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeAcquireInterruptSpinLock, KeBugCheck, KeInitializeDpc, KeInsertQueueDpc, KeReleaseInterruptSpinLock, KeStallExecutionProcessor, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INPUT_DATA, PKINTERRUPT};
+// FORCEINLINE accessors (no exported symbol — use the Rust inline impls).
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending};
 use core::ffi::c_void;
+use crate::i8042prt_h::*;
+use crate::readwrite::{i8042ReadStatus, i8042ReadKeyboardData};
+use crate::misc::ForwardIrpAndForget;
+use crate::i8042prt::{i8042StartPacket, i8042PacketIsr};
+// SYSDBG_COMMAND is bindgen `_SYSDBG_COMMAND`; KPROCESSOR_MODE is a ddk alias.
+use ntkrnl_sys::ddk::{_SYSDBG_COMMAND as SYSDBG_COMMAND, KPROCESSOR_MODE};
+
+// Crash-on-Ctrl-Scroll debug path: these are not in ntkrnl-sys. NTAPI/cdecl per
+// ntoskrnl exports (KdSystemDebugControl = NTAPI; DbgBreakPointWithStatus =
+// cdecl in ntddk).
+extern "system" {
+    fn KdSystemDebugControl(
+        Command: SYSDBG_COMMAND,
+        InputBuffer: PVOID,
+        InputBufferLength: ULONG,
+        OutputBuffer: PVOID,
+        OutputBufferLength: ULONG,
+        ReturnLength: *mut ULONG,
+        PreviousMode: KPROCESSOR_MODE,
+    ) -> NTSTATUS;
+}
+// DbgBreakPointWithStatus is `@ stdcall` in ntoskrnl.spec → extern "system"
+// (i386 decoration _DbgBreakPointWithStatus@4), NOT cdecl.
+extern "system" {
+    fn DbgBreakPointWithStatus(Status: ULONG);
+}
+// InterlockedExchange is the _InterlockedExchange intrinsic (no exported
+// symbol) — provide it inline as an atomic swap returning the OLD value.
+#[inline]
+unsafe fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
+}
+// InterlockedExchangePointer (PVOID exchange) — from the ntkrnl-sys intrinsics.
+use ntkrnl_sys::interlocked::InterlockedExchangePointer;
 
 extern "system" {
     fn i8042SynchWritePort( DeviceExtension: PPORT_DEVICE_EXTENSION, Port: UCHAR, Value: UCHAR, WaitForAck: BOOLEAN, ) -> NTSTATUS;
@@ -26,11 +63,19 @@ pub type PLOCAL_KEYBOARD_INDICATOR_TRANSLATION = *mut _LOCAL_KEYBOARD_INDICATOR_
 pub static IndicatorTranslation: LOCAL_KEYBOARD_INDICATOR_TRANSLATION = LOCAL_KEYBOARD_INDICATOR_TRANSLATION {
     NumberOfIndicatorKeys: 3,
     IndicatorList: [
-        INDICATOR_LIST { MakeCode: 0x3A, IndicatorFlags: KEYBOARD_CAPS_LOCK_ON },
-        INDICATOR_LIST { MakeCode: 0x45, IndicatorFlags: KEYBOARD_NUM_LOCK_ON },
-        INDICATOR_LIST { MakeCode: 0x46, IndicatorFlags: KEYBOARD_SCROLL_LOCK_ON },
+        INDICATOR_LIST { MakeCode: 0x3A, IndicatorFlags: KEYBOARD_CAPS_LOCK_ON as u16 },
+        INDICATOR_LIST { MakeCode: 0x45, IndicatorFlags: KEYBOARD_NUM_LOCK_ON as u16 },
+        INDICATOR_LIST { MakeCode: 0x46, IndicatorFlags: KEYBOARD_SCROLL_LOCK_ON as u16 },
     ],
 };
+
+// i8042SendHookWorkItem is the IO_WORKITEM_ROUTINE defined in i8042prt.c (the
+// full IRP round-trip + hook-init lives in i8042prt.rs). keyboard.c references
+// it as the IoQueueWorkItem callback; declare it here so the call site below
+// resolves to the single canonical `#[no_mangle]` symbol (no duplicate def).
+extern "system" {
+    fn i8042SendHookWorkItem(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
+}
 
 unsafe extern "system" fn i8042KbdQueuePacket(Context: PVOID) {
     let DeviceExtension = Context as PI8042_KEYBOARD_EXTENSION;
@@ -112,7 +157,7 @@ pub unsafe extern "system" fn i8042KbdStartIo(
     }
 }
 
-unsafe fn i8042PacketDpc(DeviceExtension: PPORT_DEVICE_EXTENSION) {
+pub(crate) unsafe fn i8042PacketDpc(DeviceExtension: PPORT_DEVICE_EXTENSION) {
     let mut FinishIrp: BOOLEAN = 0u8;
     let Irql: KIRQL;
     let mut Result: NTSTATUS = STATUS_INTERNAL_ERROR;
@@ -156,12 +201,12 @@ unsafe extern "system" fn i8042PowerWorkItem(
 
     if (*DeviceExtension).NewCaps != (*DeviceExtension).ReportedCaps {
         let WaitingIrp = InterlockedExchangePointer(
-            core::ptr::addr_of_mut!((*DeviceExtension).PowerIrp) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*DeviceExtension).PowerIrp).cast::<*mut core::ffi::c_void>(),
             core::ptr::null_mut(),
         ) as PIRP;
         if !WaitingIrp.is_null() {
             (*WaitingIrp).IoStatus.__bindgen_anon_1.Status = STATUS_UNSUCCESSFUL;
-            (*WaitingIrp).IoStatus.Information = core::mem::size_of::<ULONG>() as ULONG_PTR;
+            (*WaitingIrp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
             IoCompleteRequest(WaitingIrp, IO_NO_INCREMENT as i8);
         }
 
@@ -196,14 +241,14 @@ unsafe extern "system" fn i8042PowerWorkItem(
     }
 
     let WaitingIrp = InterlockedExchangePointer(
-        core::ptr::addr_of_mut!((*DeviceExtension).PowerIrp) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!((*DeviceExtension).PowerIrp).cast::<*mut core::ffi::c_void>(),
         core::ptr::null_mut(),
     ) as PIRP;
     if !WaitingIrp.is_null() {
         let pEvent = (*WaitingIrp).AssociatedIrp.SystemBuffer as PULONG;
 
         (*WaitingIrp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*WaitingIrp).IoStatus.Information = core::mem::size_of::<ULONG>() as ULONG_PTR;
+        (*WaitingIrp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
         *pEvent = InterlockedExchange(
             core::ptr::addr_of_mut!((*DeviceExtension).LastPowerKey) as PLONG,
             0,
@@ -240,7 +285,7 @@ unsafe fn HandlePowerKeys(DeviceExtension: PI8042_KEYBOARD_EXTENSION) -> BOOLEAN
 
     IoQueueWorkItem(
         (*DeviceExtension).PowerWorkItem,
-        Some(i8042PowerWorkItem),
+        core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut c_void)>, ntkrnl_sys::ddk::PIO_WORKITEM_ROUTINE>(Some(i8042PowerWorkItem as unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut c_void))),
         DelayedWorkQueue,
         DeviceExtension as *mut core::ffi::c_void,
     );
@@ -287,12 +332,14 @@ unsafe extern "system" fn i8042KbdDpcRoutine(
         return;
     }
 
-    let ClassService: PSERVICE_CALLBACK_ROUTINE =
+    // ClassService is a PVOID holding a SERVICE_CALLBACK_ROUTINE (cdecl). Cast
+    // to a bare fn pointer and call (matches the C `(*(PSERVICE_CALLBACK_ROUTINE)..)(..)`).
+    let ClassService: unsafe extern "C" fn(PVOID, PVOID, PVOID, PULONG) =
         core::mem::transmute((*DeviceExtension).KeyboardData.ClassService);
-    (ClassService.expect("non-null function pointer"))(
-        (*DeviceExtension).KeyboardData.ClassDeviceObject,
-        (*DeviceExtension).KeyboardBuffer,
-        (*DeviceExtension).KeyboardBuffer.add(KeysInBufferCopy as usize),
+    ClassService(
+        (*DeviceExtension).KeyboardData.ClassDeviceObject as PVOID,
+        (*DeviceExtension).KeyboardBuffer as PVOID,
+        (*DeviceExtension).KeyboardBuffer.add(KeysInBufferCopy as usize) as PVOID,
         &mut KeysTransferred,
     );
 
@@ -426,6 +473,14 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
         IOCTL_INTERNAL_KEYBOARD_CONNECT => {
             let mut WorkItem: PIO_WORKITEM = core::ptr::null_mut();
             let mut WorkItemData: PI8042_HOOK_WORKITEM = core::ptr::null_mut();
+            // Track resources allocated by THIS invocation. The C cleanup frees
+            // DeviceExtension->KeyboardBuffer/PowerWorkItem/DebugWorkItem
+            // unconditionally, which double-frees a *live* buffer if a second
+            // CONNECT arrives after a successful one (already KEYBOARD_CONNECTED).
+            // Free only what this call created (and only on failure).
+            let buffer_before = (*DeviceExtension).KeyboardBuffer;
+            let power_wi_before = (*DeviceExtension).PowerWorkItem;
+            let debug_wi_before = (*DeviceExtension).DebugWorkItem;
 
             'block: {
                 if (*Stack).Parameters.DeviceIoControl.InputBufferLength as usize
@@ -469,7 +524,7 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
                 RtlZeroMemory((*DeviceExtension).KeyboardBuffer as _, Size as usize);
                 KeInitializeDpc(
                     core::ptr::addr_of_mut!((*DeviceExtension).DpcKeyboard),
-                    Some(i8042KbdDpcRoutine),
+                    core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, *mut c_void, *mut c_void, *mut c_void)>, ntkrnl_sys::ddk::PKDEFERRED_ROUTINE>(Some(i8042KbdDpcRoutine as unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, *mut c_void, *mut c_void, *mut c_void))),
                     DeviceExtension as _,
                 );
                 (*DeviceExtension).PowerWorkItem = IoAllocateWorkItem(DeviceObject);
@@ -493,7 +548,7 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
                 (*DeviceExtension).KeyboardHook.CallContext = DeviceExtension as _;
                 IoQueueWorkItem(
                     WorkItem,
-                    Some(i8042SendHookWorkItem),
+                    core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut c_void)>, ntkrnl_sys::ddk::PIO_WORKITEM_ROUTINE>(Some(i8042SendHookWorkItem as unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut c_void))),
                     DelayedWorkQueue,
                     WorkItemData as _,
                 );
@@ -501,21 +556,39 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
                 break 'block;
             }
 
-            // cleanup
-            if !(*DeviceExtension).KeyboardBuffer.is_null() {
-                ExFreePoolWithTag((*DeviceExtension).KeyboardBuffer as _, I8042PRT_TAG);
-            }
-            if !(*DeviceExtension).PowerWorkItem.is_null() {
-                IoFreeWorkItem((*DeviceExtension).PowerWorkItem);
-            }
-            if !(*DeviceExtension).DebugWorkItem.is_null() {
-                IoFreeWorkItem((*DeviceExtension).DebugWorkItem);
-            }
-            if !WorkItem.is_null() {
-                IoFreeWorkItem(WorkItem);
-            }
-            if !WorkItemData.is_null() {
-                ExFreePoolWithTag(WorkItemData as _, I8042PRT_TAG);
+            // cleanup — C reaches this label ONLY via `goto cleanup` on the error
+            // paths; the success path does `break` out of the switch and SKIPS it.
+            // The Rust `'block`/`break 'block` fall-through runs this code for ALL
+            // paths, so it must be gated to the failure case. Success == STATUS_PENDING;
+            // every error path sets a non-PENDING Status before `break 'block`.
+            if Status != STATUS_PENDING {
+                // Only free the KeyboardBuffer if THIS call allocated it (i.e. the
+                // pointer changed from what it was on entry). Prevents freeing a
+                // live buffer left by a previous successful CONNECT.
+                if !(*DeviceExtension).KeyboardBuffer.is_null()
+                    && (*DeviceExtension).KeyboardBuffer != buffer_before
+                {
+                    ExFreePoolWithTag((*DeviceExtension).KeyboardBuffer as _, I8042PRT_TAG);
+                    (*DeviceExtension).KeyboardBuffer = buffer_before;
+                }
+                if !(*DeviceExtension).PowerWorkItem.is_null()
+                    && (*DeviceExtension).PowerWorkItem != power_wi_before
+                {
+                    IoFreeWorkItem((*DeviceExtension).PowerWorkItem);
+                    (*DeviceExtension).PowerWorkItem = power_wi_before;
+                }
+                if !(*DeviceExtension).DebugWorkItem.is_null()
+                    && (*DeviceExtension).DebugWorkItem != debug_wi_before
+                {
+                    IoFreeWorkItem((*DeviceExtension).DebugWorkItem);
+                    (*DeviceExtension).DebugWorkItem = debug_wi_before;
+                }
+                if !WorkItem.is_null() {
+                    IoFreeWorkItem(WorkItem);
+                }
+                if !WorkItemData.is_null() {
+                    ExFreePoolWithTag(WorkItemData as _, I8042PRT_TAG);
+                }
             }
         }
         IOCTL_INTERNAL_KEYBOARD_DISCONNECT => {
@@ -525,7 +598,7 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
             Status = STATUS_SUCCESS;
         }
         IOCTL_KEYBOARD_QUERY_ATTRIBUTES => {
-            if (*Stack).Parameters.DeviceIoControl.OutputBufferLength as usize
+            if ((*Stack).Parameters.DeviceIoControl.OutputBufferLength as usize)
                 < core::mem::size_of::<KEYBOARD_ATTRIBUTES>()
             {
                 Status = STATUS_BUFFER_TOO_SMALL;
@@ -545,7 +618,7 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
             Status = STATUS_NOT_IMPLEMENTED;
         }
         IOCTL_KEYBOARD_QUERY_INDICATOR_TRANSLATION => {
-            if (*Stack).Parameters.DeviceIoControl.OutputBufferLength as usize
+            if ((*Stack).Parameters.DeviceIoControl.OutputBufferLength as usize)
                 < core::mem::size_of::<LOCAL_KEYBOARD_INDICATOR_TRANSLATION>()
             {
                 Status = STATUS_BUFFER_TOO_SMALL;
@@ -561,7 +634,7 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
             }
         }
         IOCTL_KEYBOARD_QUERY_INDICATORS => {
-            if (*Stack).Parameters.DeviceIoControl.OutputBufferLength as usize
+            if ((*Stack).Parameters.DeviceIoControl.OutputBufferLength as usize)
                 < core::mem::size_of::<KEYBOARD_INDICATOR_PARAMETERS>()
             {
                 Status = STATUS_BUFFER_TOO_SMALL;
@@ -577,7 +650,7 @@ pub unsafe extern "system" fn i8042KbdInternalDeviceControl(
             }
         }
         IOCTL_KEYBOARD_SET_INDICATORS => {
-            if (*Stack).Parameters.DeviceIoControl.InputBufferLength as usize
+            if ((*Stack).Parameters.DeviceIoControl.InputBufferLength as usize)
                 < core::mem::size_of::<KEYBOARD_INDICATOR_PARAMETERS>()
             {
                 Status = STATUS_BUFFER_TOO_SMALL;
@@ -708,7 +781,8 @@ pub unsafe extern "system" fn i8042KbdInterruptService(
                 KeBugCheck(MANUALLY_INITIATED_CRASH);
             } else {
                 KdSystemDebugControl(
-                    b' soR' as SYSDBG_COMMAND,
+                    // C multichar literal ' soR' = (' '<<24)|('s'<<16)|('o'<<8)|'R'
+                    0x20736f52u32 as SYSDBG_COMMAND,
                     (*InputData).MakeCode as ULONG_PTR as PVOID,
                     0,
                     core::ptr::null_mut(),
@@ -1051,7 +1125,7 @@ pub unsafe extern "system" fn i8042KbdInterruptService(
 //
 // 		WaitingIrp->IoStatus.Status = STATUS_SUCCESS;
 // 		WaitingIrp->IoStatus.Information = sizeof(ULONG);
-// 		*pEvent = InterlockedExchange((PLONG)&DeviceExtension->LastPowerKey, 0);
+// 		*pEvent = InterlockedExchangePointer((PLONG)&DeviceExtension->LastPowerKey, 0);
 // 		IoCompleteRequest(WaitingIrp, IO_NO_INCREMENT);
 // 	}
 // }
@@ -1089,7 +1163,7 @@ pub unsafe extern "system" fn i8042KbdInterruptService(
 //
 // 	/* Our work can only be done at passive level, so use a workitem */
 // 	DeviceExtension->NewCaps |= KeyPress;
-// 	InterlockedExchange((PLONG)&DeviceExtension->LastPowerKey, KeyPress);
+// 	InterlockedExchangePointer((PLONG)&DeviceExtension->LastPowerKey, KeyPress);
 // 	IoQueueWorkItem(
 // 		DeviceExtension->PowerWorkItem,
 // 		&i8042PowerWorkItem,
@@ -1221,7 +1295,7 @@ pub unsafe extern "system" fn i8042KbdInterruptService(
 // 				else
 // 				{
 // 					ULONG PowerKey;
-// 					PowerKey = InterlockedExchange((PLONG)&DeviceExtension->LastPowerKey, 0);
+// 					PowerKey = InterlockedExchangePointer((PLONG)&DeviceExtension->LastPowerKey, 0);
 // 					if (PowerKey != 0)
 // 					{
 // 						(VOID)InterlockedCompareExchangePointer((PVOID)&DeviceExtension->PowerIrp, NULL, Irp);

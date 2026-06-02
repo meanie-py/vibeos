@@ -1,26 +1,40 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{Input, MOUSE_INPUT_DATA, PMOUSE_INPUT_DATA};
-use core::ffi::c_void;
+use ntkrnl_sys::rtl::RtlZeroMemory;
+use ntkrnl_sys::ddk::{MOUSE_INPUT_DATA, PMOUSE_INPUT_DATA};
+use crate::i8042prt_h::*;
 
-unsafe fn i8042MouHandlePs2pp(
+// ntddmou.h #defines (not emitted by bindgen). RawButtons/ButtonFlags bit masks.
+const MOUSE_BUTTON_4_DOWN: u32 = 0x0040;
+const MOUSE_BUTTON_5_DOWN: u32 = 0x0100;
+const MOUSE_WHEEL: u32 = 0x0400;
+
+// mouse.c routines — declared extern (cdecl) because mouse.rs is not yet
+// integrated; during cohabitation these resolve against the C-compiled mouse.c.
+// Both are plain (non-NTAPI) C functions in i8042prt.h.
+extern "C" {
+    fn i8042MouHandle(DeviceExtension: PI8042_MOUSE_EXTENSION, Output: UCHAR);
+    fn i8042MouHandleButtons(DeviceExtension: PI8042_MOUSE_EXTENSION, Mask: USHORT);
+}
+
+// C: `VOID i8042MouHandlePs2pp(...)` — plain (non-NTAPI) cdecl in i8042prt.h,
+// called from mouse.c. Export as cdecl (`extern "C"`) so the symbol matches the
+// C declaration on i386 (NTAPI/stdcall would mis-decorate it `_..@8`).
+#[no_mangle]
+pub unsafe extern "C" fn i8042MouHandlePs2pp(
     DeviceExtension: PI8042_MOUSE_EXTENSION,
     Input: UCHAR,
 ) {
     let PktType: UCHAR;
-    let MouseInput: PMOUSE_INPUT_DATA;
-
-    MouseInput = (*DeviceExtension)
+    let MouseInput: PMOUSE_INPUT_DATA = (*DeviceExtension)
         .MouseBuffer
-        .offset((*DeviceExtension).MouseInBuffer as isize);
+        .add((*DeviceExtension).MouseInBuffer as usize);
 
     match (*DeviceExtension).MouseState {
         MouseIdle | XMovement => {
             let state = (*DeviceExtension).MouseState as usize;
             (*DeviceExtension).MouseLogiBuffer[state] = Input;
-            (*DeviceExtension).MouseState += 1;
+            (*DeviceExtension).MouseState =
+                core::mem::transmute(((*DeviceExtension).MouseState as u32) + 1);
         }
 
         YMovement => {
@@ -46,200 +60,72 @@ unsafe fn i8042MouHandlePs2pp(
                 | (((*DeviceExtension).MouseLogiBuffer[1] & 0x30) >> 4);
 
             match PktType {
-                0 => {
-                    return;
-                }
+                0 => {}
                 1 => {
                     RtlZeroMemory(
                         MouseInput as *mut core::ffi::c_void,
-                        core::mem::size_of::<MOUSE_INPUT_DATA>() as ULONG,
+                        core::mem::size_of::<MOUSE_INPUT_DATA>(),
                     );
+                    // RawButtons is a direct field of MOUSE_INPUT_DATA.
                     if (*DeviceExtension).MouseLogiBuffer[2] & 0x10 != 0 {
-                        (*MouseInput).RawButtons |= MOUSE_BUTTON_4_DOWN as USHORT;
+                        let raw = core::ptr::addr_of_mut!((*MouseInput).RawButtons);
+                        core::ptr::write_volatile(
+                            raw,
+                            core::ptr::read_volatile(raw) | MOUSE_BUTTON_4_DOWN as ULONG,
+                        );
                     }
-
                     if (*DeviceExtension).MouseLogiBuffer[2] & 0x20 != 0 {
-                        (*MouseInput).RawButtons |= MOUSE_BUTTON_5_DOWN as USHORT;
+                        let raw = core::ptr::addr_of_mut!((*MouseInput).RawButtons);
+                        core::ptr::write_volatile(
+                            raw,
+                            core::ptr::read_volatile(raw) | MOUSE_BUTTON_5_DOWN as ULONG,
+                        );
                     }
 
+                    // ButtonFlags/ButtonData live in the anonymous union/struct
+                    // (_MOUSE_INPUT_DATA.__bindgen_anon_1.__bindgen_anon_1).
                     if (*DeviceExtension).MouseLogiBuffer[2] & 0x0F != 0 {
-                        (*MouseInput).ButtonFlags |= MOUSE_WHEEL as USHORT;
+                        let bf = core::ptr::addr_of_mut!(
+                            (*MouseInput).__bindgen_anon_1.__bindgen_anon_1.ButtonFlags
+                        );
+                        core::ptr::write_volatile(
+                            bf,
+                            core::ptr::read_volatile(bf) | MOUSE_WHEEL as USHORT,
+                        );
+                        let bd = core::ptr::addr_of_mut!(
+                            (*MouseInput).__bindgen_anon_1.__bindgen_anon_1.ButtonData
+                        );
                         if (*DeviceExtension).MouseLogiBuffer[2] & 0x08 != 0 {
-                            (*MouseInput).ButtonData =
+                            core::ptr::write_volatile(
+                                bd,
                                 (((*DeviceExtension).MouseLogiBuffer[2] & 0x07) as i32 - 8)
-                                    as USHORT;
+                                    as USHORT,
+                            );
                         } else {
-                            (*MouseInput).ButtonData =
-                                ((*DeviceExtension).MouseLogiBuffer[2] & 0x07) as USHORT;
+                            core::ptr::write_volatile(
+                                bd,
+                                ((*DeviceExtension).MouseLogiBuffer[2] & 0x07) as USHORT,
+                            );
                         }
                     }
                     i8042MouHandleButtons(
                         DeviceExtension,
                         (MOUSE_BUTTON_4_DOWN | MOUSE_BUTTON_5_DOWN) as USHORT,
                     );
-                    if let Some(QueueMousePacket) =
-                        (*DeviceExtension).MouseHook.QueueMousePacket
-                    {
-                        QueueMousePacket((*DeviceExtension).MouseHook.CallContext);
+                    // C: DeviceExtension->MouseHook.QueueMousePacket(CallContext).
+                    // The hook field is PVOID (i8042prt_h); cast to the
+                    // PI8042_QUEUE_PACKET fn ptr (ntdd8042.h: NTAPI VOID(*)(PVOID))
+                    // and call if non-null.
+                    let qmp = (*DeviceExtension).MouseHook.QueueMousePacket;
+                    if !qmp.is_none() {
+                        let f: unsafe extern "system" fn(PVOID) = core::mem::transmute(qmp);
+                        f((*DeviceExtension).MouseHook.CallContext);
                     }
-                    return;
                 }
-                _ => {
-                    return;
-                }
+                _ => {}
             }
         }
 
         _ => {}
     }
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*
-//  * PROJECT:     ReactOS i8042 (ps/2 keyboard-mouse controller) driver
-//  * LICENSE:     GPL - See COPYING in the top level directory
-//  * FILE:        drivers/input/i8042prt/ps2pp.c
-//  * PURPOSE:     ps2pp protocol handling
-//  * PROGRAMMERS: Copyright Martijn Vernooij (o112w8r02@sneakemail.com)
-//  *              Copyright 2006-2007 Herv� Poussineau (hpoussin@reactos.org)
-//  */
-//
-// /* INCLUDES ****************************************************************/
-//
-// #include "i8042prt.h"
-//
-// #include <debug.h>
-//
-// /* FUNCTIONS *****************************************************************/
-//
-// VOID
-// i8042MouHandlePs2pp(
-// 	IN PI8042_MOUSE_EXTENSION DeviceExtension,
-// 	IN UCHAR Input)
-// {
-// 	UCHAR PktType;
-// 	PMOUSE_INPUT_DATA MouseInput;
-//
-// 	MouseInput = DeviceExtension->MouseBuffer + DeviceExtension->MouseInBuffer;
-//
-// 	/* First, collect 3 bytes for a packet
-// 	 * We can detect out-of-sync only by checking
-// 	 * the whole packet anyway.
-// 	 *
-// 	 * If bit 7 and 8 of the first byte are 0, its
-// 	 * a normal packet.
-// 	 *
-// 	 * Otherwise, the packet is different, like this:
-// 	 * 1: E  1 b3 b2  1  x  x  x
-// 	 * 2: x  x b1 b0 x1 x0  1  0
-// 	 * 3: x  x  x  x  x  x x1 x0
-// 	 *
-// 	 * b3-0 form a code that specifies the packet type:
-// 	 *
-// 	 * 0  Device Type
-// 	 * 1  Rollers and buttons
-// 	 * 2   Reserved
-// 	 * 3   Reserved
-// 	 * 4  Device ID
-// 	 * 5  Channel & Battery
-// 	 * 6  Wireless notifications
-// 	 * 7   Reserved
-// 	 * 8  ShortID LSB (ShortID is a number that is supposed to differentiate
-// 	 * 9  ShortID MSB  between your mouse and your neighbours')
-// 	 * 10  Reserved
-// 	 * 11 Mouse capabilities
-// 	 * 12 Remote control LSB
-// 	 * 13 Remote control MSB
-// 	 * 14  Reserved
-// 	 * 15 Extended packet
-// 	 */
-//
-// 	switch (DeviceExtension->MouseState)
-// 	{
-// 		case MouseIdle:
-// 		case XMovement:
-// 			DeviceExtension->MouseLogiBuffer[DeviceExtension->MouseState] = Input;
-// 			DeviceExtension->MouseState++;
-// 			break;
-//
-// 		case YMovement:
-// 			DeviceExtension->MouseLogiBuffer[2] = Input;
-// 			DeviceExtension->MouseState = MouseIdle;
-//
-// 			/* first check if it's a normal packet */
-//
-// 			if (!(DeviceExtension->MouseLogiBuffer[0] & 0xC0))
-// 			{
-// 				DeviceExtension->MouseState = MouseIdle;
-// 				i8042MouHandle(DeviceExtension, DeviceExtension->MouseLogiBuffer[0]);
-// 				i8042MouHandle(DeviceExtension, DeviceExtension->MouseLogiBuffer[1]);
-// 				i8042MouHandle(DeviceExtension, DeviceExtension->MouseLogiBuffer[2]);
-// 				/* We could care about wether MouseState really
-// 				 * advances, but we don't need to because we're
-// 				 * only doing three bytes anyway, so the packet
-// 				 * will never complete if it's broken.
-// 				 */
-// 				return;
-// 			}
-//
-// 			/* sanity check */
-// 			if (((DeviceExtension->MouseLogiBuffer[0] & 0x48) != 0x48) ||
-// 			   (((DeviceExtension->MouseLogiBuffer[1] & 0x0C) >> 2) !=
-// 			     (DeviceExtension->MouseLogiBuffer[2] & 0x03)))
-// 				{
-// 					WARN_(I8042PRT, "Ps2pp packet fails sanity checks\n");
-// 					return;
-// 				}
-//
-// 			/* Now get the packet type */
-// 			PktType = ((DeviceExtension->MouseLogiBuffer[0] & 0x30) >> 2) |
-// 			          ((DeviceExtension->MouseLogiBuffer[1] & 0x30) >> 4);
-//
-// 			switch (PktType)
-// 			{
-// 				case 0:
-// 					/* The packet contains the device ID, but we
-// 					 * already read that in the initialization
-// 					 * sequence. Ignore it.
-// 					 */
-// 					return;
-// 				case 1:
-// 					RtlZeroMemory(MouseInput, sizeof(MOUSE_INPUT_DATA));
-// 					if (DeviceExtension->MouseLogiBuffer[2] & 0x10)
-// 						MouseInput->RawButtons |= MOUSE_BUTTON_4_DOWN;
-//
-// 					if (DeviceExtension->MouseLogiBuffer[2] & 0x20)
-// 						MouseInput->RawButtons |= MOUSE_BUTTON_5_DOWN;
-//
-// 					if (DeviceExtension->MouseLogiBuffer[2] & 0x0F)
-// 					{
-// 						MouseInput->ButtonFlags |= MOUSE_WHEEL;
-// 						if (DeviceExtension->MouseLogiBuffer[2] & 0x08)
-// 							MouseInput->ButtonData = (DeviceExtension->MouseLogiBuffer[2] & 0x07) - 8;
-// 						else
-// 							MouseInput->ButtonData = DeviceExtension->MouseLogiBuffer[2] & 0x07;
-// 					}
-// 					i8042MouHandleButtons(
-// 						DeviceExtension,
-// 						MOUSE_BUTTON_4_DOWN | MOUSE_BUTTON_5_DOWN);
-// 					DeviceExtension->MouseHook.QueueMousePacket(DeviceExtension->MouseHook.CallContext);
-// 					return;
-// 				default:
-// 					/* These are for things that would probably
-// 					 * be handled by logitechs own driver.
-// 					 */
-// 					return;
-// 			}
-//
-// 		default:
-// 			WARN_(I8042PRT, "Unexpected input state for ps2pp!\n");
-// 	}
-// }
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================

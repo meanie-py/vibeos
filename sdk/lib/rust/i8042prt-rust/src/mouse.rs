@@ -6,12 +6,41 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DelayedWorkQueue, Input, Interrupt, IoAllocateWorkItem, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoQueueWorkItem, KeAcquireInterruptSpinLock, KeCancelTimer, KeInitializeDpc, KeInitializeTimer, KeInsertQueueDpc, KeReleaseInterruptSpinLock, KeSetTimer, KeStallExecutionProcessor, LARGE_INTEGER, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, NoChange, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKINTERRUPT, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, ULARGE_INTEGER};
+use ntkrnl_sys::ddk::{_WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue, IoAllocateWorkItem, IoFreeWorkItem, IoQueueWorkItem, KeAcquireInterruptSpinLock, KeCancelTimer, KeInitializeDpc, KeInitializeTimer, KeInsertQueueDpc, KeReleaseInterruptSpinLock, KeSetTimer, KeStallExecutionProcessor, LARGE_INTEGER, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKINTERRUPT, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, ULARGE_INTEGER};
+// FORCEINLINE accessors (no exported symbol — use the Rust inline impls).
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending};
 use core::ffi::c_void;
+use crate::i8042prt_h::*;
+
+// pub(crate) siblings (importable by path)
+use crate::readwrite::{i8042IsrWritePort, i8042Write, i8042ReadDataWait, i8042ReadStatus, i8042ReadMouseData};
+use crate::i8042prt::i8042PacketIsr;
+
+// C does `DeviceExtension->MouseResetState++` on a repr(C) enum. Rust enums
+// have no `+=`, so the state-machine increment is expressed as the next
+// discriminant. Sound: every reachable state in i8042MouResetIsr advances to a
+// defined successor (the C code never increments past the last real state).
+#[inline]
+unsafe fn next_reset(s: MOUSE_RESET_SUBSTATE) -> MOUSE_RESET_SUBSTATE {
+    core::mem::transmute(s as u32 + 1)
+}
+
+// #[no_mangle] siblings: link by symbol via extern block.
+extern "system" {
+    fn i8042SendHookWorkItem(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
+    fn ForwardIrpAndForget(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+// i8042MouHandlePs2pp is cdecl (plain C fn in i8042prt.h).
+extern "C" {
+    fn i8042MouHandlePs2pp(DeviceExtension: PI8042_MOUSE_EXTENSION, Input: UCHAR);
+}
 
 // ---- file-scope preamble (translated) ----
-pub static i8042MouDpcRoutine: KDEFERRED_ROUTINE = None;
-pub static i8042DpcRoutineMouseTimeout: KDEFERRED_ROUTINE = None;
+// NOTE: the C had forward declarations `static KDEFERRED_ROUTINE i8042MouDpcRoutine;`
+// and `i8042DpcRoutineMouseTimeout;` — these are forward decls of the DPC routine
+// FUNCTIONS (defined below), not function-pointer globals. rustconv mistranslated
+// them as `static = None` which both (a) collides with the real fn names and
+// (b) nulls the routines. Removed; the real functions follow.
 
 unsafe extern "system" fn i8042MouIsrWritePort(
 	Context: PVOID,
@@ -44,7 +73,10 @@ unsafe extern "system" fn i8042MouQueuePacket(Context: PVOID) {
     );
 }
 
-unsafe fn i8042MouHandle(
+// C: plain (non-NTAPI) `VOID i8042MouHandle(...)` — cdecl. Exported so ps2pp's
+// `extern "C" { fn i8042MouHandle; }` resolves (i386 `_i8042MouHandle`).
+#[no_mangle]
+pub unsafe extern "C" fn i8042MouHandle(
     DeviceExtension: PI8042_MOUSE_EXTENSION,
     Output: UCHAR,
 ) {
@@ -58,7 +90,7 @@ unsafe fn i8042MouHandle(
                 return;
             }
 
-            (*MouseInput).Buttons = 0;
+            (*MouseInput).__bindgen_anon_1.Buttons = 0;
             (*MouseInput).RawButtons = 0;
             (*MouseInput).Flags = MOUSE_MOVE_RELATIVE as USHORT;
 
@@ -74,13 +106,13 @@ unsafe fn i8042MouHandle(
             }
 
             if (Output & 1) != 0 {
-                (*MouseInput).RawButtons |= MOUSE_LEFT_BUTTON_DOWN as USHORT;
+                (*MouseInput).RawButtons |= MOUSE_LEFT_BUTTON_DOWN as u32;
             }
             if (Output & 2) != 0 {
-                (*MouseInput).RawButtons |= MOUSE_RIGHT_BUTTON_DOWN as USHORT;
+                (*MouseInput).RawButtons |= MOUSE_RIGHT_BUTTON_DOWN as u32;
             }
             if (Output & 4) != 0 {
-                (*MouseInput).RawButtons |= MOUSE_MIDDLE_BUTTON_DOWN as USHORT;
+                (*MouseInput).RawButtons |= MOUSE_MIDDLE_BUTTON_DOWN as u32;
             }
 
             (*DeviceExtension).MouseState = _MOUSE_STATE_XMovement;
@@ -110,9 +142,9 @@ unsafe fn i8042MouHandle(
             {
                 i8042MouHandleButtons(
                     DeviceExtension,
-                    (MOUSE_LEFT_BUTTON_DOWN
-                        | MOUSE_RIGHT_BUTTON_DOWN
-                        | MOUSE_MIDDLE_BUTTON_DOWN) as USHORT,
+                    (MOUSE_LEFT_BUTTON_DOWN as u32
+                        | MOUSE_RIGHT_BUTTON_DOWN as u32
+                        | MOUSE_MIDDLE_BUTTON_DOWN as u32) as USHORT,
                 );
                 (*DeviceExtension).MouseHook.QueueMousePacket.unwrap()(
                     (*DeviceExtension).MouseHook.CallContext,
@@ -130,23 +162,23 @@ unsafe fn i8042MouHandle(
             }
 
             if Scroll != 0 {
-                (*MouseInput).RawButtons |= MOUSE_WHEEL as USHORT;
-                (*MouseInput).ButtonData = (Scroll as i32 * -(WHEEL_DELTA as i32)) as USHORT;
+                (*MouseInput).RawButtons |= MOUSE_WHEEL as u32;
+                (*MouseInput).__bindgen_anon_1.__bindgen_anon_1.ButtonData = (Scroll as i32 * -(WHEEL_DELTA as i32)) as USHORT;
             }
 
             if (*DeviceExtension).MouseType == _MOUSE_TYPE_IntellimouseExplorer {
                 if (Output & 16) != 0 {
-                    (*MouseInput).RawButtons |= MOUSE_BUTTON_4_DOWN as USHORT;
+                    (*MouseInput).RawButtons |= MOUSE_BUTTON_4_DOWN as u32;
                 }
                 if (Output & 32) != 0 {
-                    (*MouseInput).RawButtons |= MOUSE_BUTTON_5_DOWN as USHORT;
+                    (*MouseInput).RawButtons |= MOUSE_BUTTON_5_DOWN as u32;
                 }
             }
             i8042MouHandleButtons(
                 DeviceExtension,
-                (MOUSE_LEFT_BUTTON_DOWN
-                    | MOUSE_RIGHT_BUTTON_DOWN
-                    | MOUSE_MIDDLE_BUTTON_DOWN
+                (MOUSE_LEFT_BUTTON_DOWN as u32
+                    | MOUSE_RIGHT_BUTTON_DOWN as u32
+                    | MOUSE_MIDDLE_BUTTON_DOWN as u32
                     | MOUSE_BUTTON_4_DOWN
                     | MOUSE_BUTTON_5_DOWN) as USHORT,
             );
@@ -160,24 +192,27 @@ unsafe fn i8042MouHandle(
     }
 }
 
-unsafe fn i8042MouHandleButtons(
+// C: plain (non-NTAPI) `VOID i8042MouHandleButtons(...)` — cdecl. Exported so
+// ps2pp's `extern "C" { fn i8042MouHandleButtons; }` resolves.
+#[no_mangle]
+pub unsafe extern "C" fn i8042MouHandleButtons(
     DeviceExtension: PI8042_MOUSE_EXTENSION,
     Mask: USHORT,
 ) {
     let MouseInput: PMOUSE_INPUT_DATA =
         (*DeviceExtension).MouseBuffer.add((*DeviceExtension).MouseInBuffer as usize);
-    let NewButtonData: USHORT = ((*MouseInput).RawButtons & Mask) as USHORT;
+    let NewButtonData: USHORT = (((*MouseInput).RawButtons as u16) & Mask) as USHORT;
     let ButtonDiff: USHORT = (NewButtonData ^ (*DeviceExtension).MouseButtonState) & Mask;
 
-    (*MouseInput).ButtonFlags |= (NewButtonData & ButtonDiff)
+    (*MouseInput).__bindgen_anon_1.__bindgen_anon_1.ButtonFlags |= (NewButtonData & ButtonDiff)
         | ((((!NewButtonData) as u32) << 1) as USHORT & ((ButtonDiff as u32) << 1) as USHORT)
-        | ((*MouseInput).RawButtons & 0xfc00);
+        | (((*MouseInput).RawButtons & 0xfc00) as u16);
 
     (*DeviceExtension).MouseButtonState =
         ((*DeviceExtension).MouseButtonState & !Mask) | (NewButtonData & Mask);
 }
 
-unsafe fn i8042MouInitialize(DeviceExtension: PI8042_MOUSE_EXTENSION) -> NTSTATUS {
+pub(crate) unsafe fn i8042MouInitialize(DeviceExtension: PI8042_MOUSE_EXTENSION) -> NTSTATUS {
     let Status: NTSTATUS;
     let mut Value: UCHAR = 0;
 
@@ -269,15 +304,15 @@ unsafe extern "system" fn i8042MouDpcRoutine(
 
     KeReleaseInterruptSpinLock((*PortDeviceExtension).HighestDIRQLInterrupt, Irql);
 
-    if (*DeviceExtension).MouseData.ClassService.is_none() {
+    if (*DeviceExtension).MouseData.ClassService.is_null() {
         return;
     }
 
-    let ClassService: PSERVICE_CALLBACK_ROUTINE = core::mem::transmute((*DeviceExtension).MouseData.ClassService);
+    let ClassService: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void, *mut u32) = core::mem::transmute((*DeviceExtension).MouseData.ClassService);
     (ClassService)(
-        (*DeviceExtension).MouseData.ClassDeviceObject,
-        (*DeviceExtension).MouseBuffer.as_mut_ptr(),
-        (*DeviceExtension).MouseBuffer.as_mut_ptr().add(MouseInBufferCopy as usize),
+        (*DeviceExtension).MouseData.ClassDeviceObject as *mut c_void,
+        (*DeviceExtension).MouseBuffer as *mut c_void,
+        (*DeviceExtension).MouseBuffer.add(MouseInBufferCopy as usize) as *mut c_void,
         &mut MouseTransferred,
     );
 
@@ -285,8 +320,8 @@ unsafe extern "system" fn i8042MouDpcRoutine(
     (*DeviceExtension).MouseInBuffer -= MouseTransferred;
     if (*DeviceExtension).MouseInBuffer != 0 {
         core::ptr::copy(
-            (*DeviceExtension).MouseBuffer.as_ptr().add(MouseTransferred as usize),
-            (*DeviceExtension).MouseBuffer.as_mut_ptr(),
+            (*DeviceExtension).MouseBuffer.add(MouseTransferred as usize),
+            (*DeviceExtension).MouseBuffer,
             (*DeviceExtension).MouseInBuffer as usize,
         );
     }
@@ -371,12 +406,12 @@ pub unsafe extern "system" fn i8042MouInternalDeviceControl(
                         .MouseDataQueueSize;
                 KeInitializeDpc(
                     core::ptr::addr_of_mut!((*DeviceExtension).DpcMouse),
-                    Some(i8042MouDpcRoutine),
+                    core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, *mut c_void, *mut c_void, *mut c_void)>, ntkrnl_sys::ddk::PKDEFERRED_ROUTINE>(Some(i8042MouDpcRoutine as unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, *mut c_void, *mut c_void, *mut c_void))),
                     DeviceExtension as _,
                 );
                 KeInitializeDpc(
                     core::ptr::addr_of_mut!((*DeviceExtension).DpcMouseTimeout),
-                    Some(i8042DpcRoutineMouseTimeout),
+                    core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, *mut c_void, *mut c_void, *mut c_void)>, ntkrnl_sys::ddk::PKDEFERRED_ROUTINE>(Some(i8042DpcRoutineMouseTimeout as unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, *mut c_void, *mut c_void, *mut c_void))),
                     DeviceExtension as _,
                 );
                 KeInitializeTimer(core::ptr::addr_of_mut!(
@@ -393,7 +428,7 @@ pub unsafe extern "system" fn i8042MouInternalDeviceControl(
                 (*DeviceExtension).MouseHook.CallContext = DeviceExtension as _;
                 IoQueueWorkItem(
                     WorkItem,
-                    Some(i8042SendHookWorkItem),
+                    core::mem::transmute::<Option<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut c_void)>, ntkrnl_sys::ddk::PIO_WORKITEM_ROUTINE>(Some(i8042SendHookWorkItem as unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, *mut c_void))),
                     DelayedWorkQueue,
                     WorkItemData as _,
                 );
@@ -499,7 +534,7 @@ unsafe fn i8042MouCallIsrHook(
 	if let Some(IsrRoutine) = (*DeviceExtension).MouseHook.IsrRoutine {
 		HookReturn = IsrRoutine(
 			(*DeviceExtension).MouseHook.Context,
-			(*DeviceExtension).MouseBuffer.as_mut_ptr().add((*DeviceExtension).MouseInBuffer as usize),
+			(*DeviceExtension).MouseBuffer.add((*DeviceExtension).MouseInBuffer as usize),
 			core::ptr::addr_of_mut!((*(*DeviceExtension).Common.PortDeviceExtension).Packet),
 			Status,
 			core::ptr::addr_of_mut!(Input),
@@ -548,7 +583,7 @@ unsafe fn i8042MouResetIsr(
 				return 1u8;
 			}
 			if 0xAA == Value {
-				(*DeviceExtension).MouseResetState += 1;
+				(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			} else {
 				(*PortDeviceExtension).Flags &= !MOUSE_PRESENT;
 				(*DeviceExtension).MouseState = MouseIdle;
@@ -560,7 +595,7 @@ unsafe fn i8042MouResetIsr(
 				return 1u8;
 			}
 			if 0x00 == Value {
-				(*DeviceExtension).MouseResetState += 1;
+				(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 				(*DeviceExtension).MouseType = GenericPS2;
 				(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF2);
 			} else {
@@ -571,9 +606,9 @@ unsafe fn i8042MouResetIsr(
 		}
 		x if x == ExpectingGetDeviceIdACK as ULONG => {
 			if MOUSE_ACK == Value as _ {
-				(*DeviceExtension).MouseResetState += 1;
+				(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			} else if MOUSE_NACK == Value as _ || MOUSE_ERROR == Value as _ {
-				(*DeviceExtension).MouseResetState += 1;
+				(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 				i8042MouResetIsr(DeviceExtension, Status, 0);
 			}
 			1u8
@@ -581,21 +616,21 @@ unsafe fn i8042MouResetIsr(
 		x if x == ExpectingGetDeviceIdValue as ULONG => {
 			match Value {
 				0x02 => {
-					(*DeviceExtension).MouseAttributes.MouseIdentifier = BALLPOINT_I8042_HARDWARE;
+					(*DeviceExtension).MouseAttributes.MouseIdentifier = BALLPOINT_I8042_HARDWARE as u16;
 				}
 				0x03 | 0x04 => {
-					(*DeviceExtension).MouseAttributes.MouseIdentifier = WHEELMOUSE_I8042_HARDWARE;
+					(*DeviceExtension).MouseAttributes.MouseIdentifier = WHEELMOUSE_I8042_HARDWARE as u16;
 				}
 				_ => {
-					(*DeviceExtension).MouseAttributes.MouseIdentifier = MOUSE_I8042_HARDWARE;
+					(*DeviceExtension).MouseAttributes.MouseIdentifier = MOUSE_I8042_HARDWARE as u16;
 				}
 			}
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xE8);
 			1u8
 		}
 		x if x == ExpectingSetResolutionDefaultACK as ULONG => {
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0x00);
 			1u8
 		}
@@ -605,27 +640,27 @@ unsafe fn i8042MouResetIsr(
 			1u8
 		}
 		x if x == ExpectingSetScaling1to1ACK as ULONG || x == ExpectingSetScaling1to1ACK2 as ULONG => {
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xE6);
 			1u8
 		}
 		x if x == ExpectingSetScaling1to1ACK3 as ULONG => {
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xE9);
 			1u8
 		}
 		x if x == ExpectingReadMouseStatusACK as ULONG => {
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		x if x == ExpectingReadMouseStatusByte1 as ULONG => {
 			(*DeviceExtension).MouseLogiBuffer[0] = Value;
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		x if x == ExpectingReadMouseStatusByte2 as ULONG => {
 			(*DeviceExtension).MouseLogiBuffer[1] = Value;
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		x if x == ExpectingReadMouseStatusByte3 as ULONG => {
@@ -643,42 +678,42 @@ unsafe fn i8042MouResetIsr(
 		}
 		x if x == EnableWheel as ULONG => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF3);
-			(*DeviceExtension).MouseResetState = 1001;
+			(*DeviceExtension).MouseResetState = core::mem::transmute(1001u32);
 			1u8
 		}
 		1001 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xC8);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1002 | 1004 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF3);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1003 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0x64);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1005 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0x50);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1006 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF2);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1007 => {
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1008 => {
 			if 0x03 == Value {
 				(*DeviceExtension).MouseAttributes.NumberOfButtons = 3;
-				(*DeviceExtension).MouseAttributes.MouseIdentifier = WHEELMOUSE_I8042_HARDWARE;
+				(*DeviceExtension).MouseAttributes.MouseIdentifier = WHEELMOUSE_I8042_HARDWARE as u16;
 				(*DeviceExtension).MouseType = Intellimouse;
 				(*DeviceExtension).MouseResetState = Enable5Buttons;
 				i8042MouResetIsr(DeviceExtension, Status, Value);
@@ -690,33 +725,33 @@ unsafe fn i8042MouResetIsr(
 		}
 		x if x == Enable5Buttons as ULONG => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF3);
-			(*DeviceExtension).MouseResetState = 1021;
+			(*DeviceExtension).MouseResetState = core::mem::transmute(1021u32);
 			1u8
 		}
 		1022 | 1024 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF3);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1021 | 1023 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xC8);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1025 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0x50);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1026 => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF2);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		1027 => {
 			if 0x04 == Value {
 				(*DeviceExtension).MouseAttributes.NumberOfButtons = 5;
-				(*DeviceExtension).MouseAttributes.MouseIdentifier = WHEELMOUSE_I8042_HARDWARE;
+				(*DeviceExtension).MouseAttributes.MouseIdentifier = WHEELMOUSE_I8042_HARDWARE as u16;
 				(*DeviceExtension).MouseType = IntellimouseExplorer;
 			}
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF3);
@@ -728,14 +763,14 @@ unsafe fn i8042MouResetIsr(
 				(*DeviceExtension).MouseHook.CallContext,
 				(*DeviceExtension).MouseAttributes.SampleRate as UCHAR,
 			);
-			(*DeviceExtension).MouseResetState += 1;
+			(*DeviceExtension).MouseResetState = next_reset((*DeviceExtension).MouseResetState);
 			1u8
 		}
 		x if x == ExpectingSetSamplingRateValueACK as ULONG => {
 			if MOUSE_NACK == Value as _ {
 				(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0x3C);
 				(*DeviceExtension).MouseAttributes.SampleRate = (*PortDeviceExtension).Settings.SampleRate as USHORT;
-				(*DeviceExtension).MouseResetState = 1040;
+				(*DeviceExtension).MouseResetState = core::mem::transmute(1040u32);
 				return 1u8;
 			}
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xE8);

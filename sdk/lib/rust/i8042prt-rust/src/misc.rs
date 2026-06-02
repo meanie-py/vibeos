@@ -5,7 +5,10 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoSkipCurrentIrpStackLocation, PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, PUNICODE_STRING};
+use ntkrnl_sys::ddk::{PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, PUNICODE_STRING};
+// FORCEINLINE accessor (no exported symbol — use the Rust inline impl).
+use ntkrnl_sys::inline::tier1::IoSkipCurrentIrpStackLocation;
+use crate::i8042prt_h::*;
 use core::ffi::c_void;
 
 #[no_mangle]
@@ -20,7 +23,7 @@ pub unsafe extern "system" fn ForwardIrpAndForget(
     IoCallDriver(LowerDevice, Irp)
 }
 
-unsafe fn DuplicateUnicodeString(
+pub(crate) unsafe fn DuplicateUnicodeString(
     Flags: u32,
     SourceString: PCUNICODE_STRING,
     DestinationString: PUNICODE_STRING,

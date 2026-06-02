@@ -22,16 +22,19 @@
 // The .rs are kept (never delete a paid translation) — they are the starting
 // point, not dead weight.
 //
-// pub mod i8042prt;
-// pub mod createclose;
-// pub mod hwhacks;
-// pub mod keyboard;
-// pub mod misc;
-// pub mod mouse;
-// pub mod pnp;
-// pub mod ps2pp;
-// pub mod readwrite;
-// pub mod registry;
+pub mod i8042prt_h;
+pub(crate) use i8042prt_h::*;
+
+pub mod i8042prt;
+pub mod createclose;
+pub mod hwhacks;
+pub mod keyboard;
+pub mod misc;
+pub mod mouse;
+pub mod pnp;
+pub mod ps2pp;
+pub mod readwrite;
+pub mod registry;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

@@ -1,13 +1,99 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ex::*;
-use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{GUID, IoWMIOpenBlock, IoWMIQueryAllData, _OBJECT_ATTRIBUTES, Type, ZwClose, ZwCreateKey, ZwSetValueKey};
-use core::ffi::c_void;
+use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExFreePoolWithTag};
+use ntkrnl_sys::mm::PagedPool;
+use ntkrnl_sys::ddk::{GUID, IoWMIOpenBlock, IoWMIQueryAllData};
 
-// ---- file-scope preamble (translated) ----
+// HANDLE = PVOID (ntdef.h). PVOID comes from base::* above.
+type HANDLE = PVOID;
+// Only FL_INITHACK is used here (FL_NOLOOP entries in the C table are commented
+// out). Glob-importing the i8042 header would re-introduce UNICODE_STRING (also
+// in base) → E0659, so import the one constant by name.
+use crate::i8042prt_h::FL_INITHACK;
+
+// PCSTR is not defined in ntkrnl-sys; PCHAR is (base.rs). Trivial char ptr.
+type PCSTR = *const i8;
+
+// Zw* registry syscalls take this file's local UNICODE_STRING/OBJECT_ATTRIBUTES
+// (layout-compatible with the kernel's). The bindgen ddk Zw* use the bindgen
+// _UNICODE_STRING/_OBJECT_ATTRIBUTES types, which would mismatch our locals;
+// declare our own extern "system" against ntoskrnl's exported symbols instead.
+extern "system" {
+    fn ZwCreateKey(
+        KeyHandle: *mut HANDLE,
+        DesiredAccess: ULONG,
+        ObjectAttributes: *mut OBJECT_ATTRIBUTES,
+        TitleIndex: ULONG,
+        Class: *mut UNICODE_STRING,
+        CreateOptions: ULONG,
+        Disposition: *mut ULONG,
+    ) -> NTSTATUS;
+    fn ZwSetValueKey(
+        KeyHandle: HANDLE,
+        ValueName: *mut UNICODE_STRING,
+        TitleIndex: ULONG,
+        Type: ULONG,
+        Data: PVOID,
+        DataSize: ULONG,
+    ) -> NTSTATUS;
+    fn ZwClose(Handle: HANDLE) -> NTSTATUS;
+}
+
+// ---- dmilib.h constants (NOT in ntoskrnl.h, so not in bindgen) ----
+// Index slots in the parsed DMI string table; ID_NONE marks an unused match
+// entry. From sdk/include/reactos/libs/dmilib/dmilib.h.
+const ID_STRINGS_MAX: usize = 19;
+const ID_NONE: ULONG = 0xFFFFFFFF;
+
+// wmistr.h
+const WMIGUID_QUERY: ULONG = 0x0001;
+
+// wdm.h registry/object constants (define locally to stay self-contained).
+const KEY_WRITE: ULONG = 0x20006;
+const REG_OPTION_VOLATILE: ULONG = 0x00000001;
+const REG_BINARY: ULONG = 3;
+const OBJ_KERNEL_HANDLE: ULONG = 0x00000200;
+const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
+
+// dmilib.h: VOID NTAPI ParseSMBiosTables(PVOID, ULONG, PCHAR Strings[]).
+// Provided by the dmilib static lib linked into the driver. strcmp from CRT.
+extern "C" {
+    fn ParseSMBiosTables(SMBiosTables: PVOID, TableSize: ULONG, Strings: *mut PCHAR);
+    fn strcmp(s1: PCSTR, s2: PCSTR) -> i32;
+}
+
+// WNODE_ALL_DATA / OBJECT_ATTRIBUTES minimal mirrors (wmistr.h / ntdef.h). Only
+// the fields hwhacks.c touches are needed; layout matches the C structs.
+#[repr(C)]
+struct WNODE_HEADER {
+    BufferSize: ULONG,
+    ProviderId: ULONG,
+    HistoricalContext: u64,
+    KernelHandle_TimeStamp: i64,
+    Guid: GUID,
+    Version: ULONG,
+    Linkage: ULONG,
+}
+#[repr(C)]
+struct WNODE_ALL_DATA {
+    WnodeHeader: WNODE_HEADER,
+    DataBlockOffset: ULONG,
+    InstanceCount: ULONG,
+    OffsetInstanceNameOffsets: ULONG,
+    FixedInstanceSize: ULONG, // union with OffsetInstanceDataAndLength
+}
+type PWNODE_ALL_DATA = *mut WNODE_ALL_DATA;
+
+#[repr(C)]
+struct OBJECT_ATTRIBUTES {
+    Length: ULONG,
+    RootDirectory: HANDLE,
+    ObjectName: *mut UNICODE_STRING,
+    Attributes: ULONG,
+    SecurityDescriptor: PVOID,
+    SecurityQualityOfService: PVOID,
+}
+
+// ---- file-scope preamble ----
 pub const MAX_MATCH_ENTRIES: usize = 3;
 
 pub const SMBIOS_DATA_GUID: GUID = GUID {
@@ -19,9 +105,6 @@ pub const SMBIOS_DATA_GUID: GUID = GUID {
 
 pub const SYS_VENDOR: ULONG = 0x01;
 pub const SYS_PRODUCT: ULONG = 0x02;
-
-pub const FL_INITHACK: ULONG = 0x01;
-pub const FL_NOLOOP: ULONG = 0x02;
 
 #[no_mangle]
 pub static MSSmBios_RawSMBiosTables_GUID: GUID = SMBIOS_DATA_GUID;
@@ -47,6 +130,11 @@ pub struct _HARDWARE_TABLE {
 }
 pub type HARDWARE_TABLE = _HARDWARE_TABLE;
 pub type PHARDWARE_TABLE = *mut _HARDWARE_TABLE;
+
+// The C table is `const HARDWARE_TABLE[]` of read-only string-literal pointers;
+// it is never mutated. Raw pointers make the struct non-Sync, so assert Sync
+// for the static (sound: read-only, points at 'static string literals).
+unsafe impl Sync for _HARDWARE_TABLE {}
 
 #[no_mangle]
 pub static i8042HardwareTable: [HARDWARE_TABLE; 15] = [
@@ -173,25 +261,23 @@ pub static i8042HardwareTable: [HARDWARE_TABLE; 15] = [
 ];
 
 unsafe fn i8042ParseSMBiosTables(SMBiosTables: PVOID, TableSize: ULONG) {
-    let mut i: ULONG;
-    let mut j: ULONG;
-    let mut Strings: [PCHAR; ID_STRINGS_MAX as usize] = [core::ptr::null_mut(); ID_STRINGS_MAX as usize];
+    let mut Strings: [PCHAR; ID_STRINGS_MAX] = [core::ptr::null_mut(); ID_STRINGS_MAX];
 
     ParseSMBiosTables(SMBiosTables, TableSize, Strings.as_mut_ptr());
 
-    let table_size = (core::mem::size_of_val(&i8042HardwareTable) / core::mem::size_of::<HARDWARE_TABLE>()) as ULONG;
+    let table_size = i8042HardwareTable.len();
 
-    i = 0;
+    let mut i = 0usize;
     while i < table_size {
-        j = 0;
+        let mut j = 0usize;
         while j < MAX_MATCH_ENTRIES {
-            let Type = i8042HardwareTable[i as usize].MatchEntries[j as usize].Type;
+            let Type = i8042HardwareTable[i].MatchEntries[j].Type;
 
             if Type != ID_NONE {
                 if Strings[Type as usize].is_null()
                     || strcmp(
-                        i8042HardwareTable[i as usize].MatchEntries[j as usize].String,
-                        Strings[i8042HardwareTable[i as usize].MatchEntries[j as usize].Type as usize],
+                        i8042HardwareTable[i].MatchEntries[j].String,
+                        Strings[i8042HardwareTable[i].MatchEntries[j].Type as usize],
                     ) != 0
                 {
                     break;
@@ -201,17 +287,17 @@ unsafe fn i8042ParseSMBiosTables(SMBiosTables: PVOID, TableSize: ULONG) {
         }
 
         if j == MAX_MATCH_ENTRIES {
-            i8042HwFlags = i8042HardwareTable[i as usize].Flags;
+            core::ptr::write_volatile(
+                core::ptr::addr_of_mut!(i8042HwFlags),
+                i8042HardwareTable[i].Flags,
+            );
             break;
         }
         i += 1;
     }
 }
 
-unsafe fn i8042StoreSMBiosTables(
-    SMBiosTables: PVOID,
-    TableSize: ULONG,
-) {
+unsafe fn i8042StoreSMBiosTables(SMBiosTables: PVOID, TableSize: ULONG) {
     let mssmbiosKeyName_buffer: &[u16] = &[
         0x005C, 0x0052, 0x0065, 0x0067, 0x0069, 0x0073, 0x0074, 0x0072, 0x0079,
         0x005C, 0x004D, 0x0061, 0x0063, 0x0068, 0x0069, 0x006E, 0x0065,
@@ -221,13 +307,13 @@ unsafe fn i8042StoreSMBiosTables(
         0x005C, 0x006D, 0x0073, 0x0073, 0x006D, 0x0062, 0x0069, 0x006F, 0x0073,
         0x0000,
     ];
-    let mut mssmbiosKeyName: _UNICODE_STRING = core::mem::zeroed();
+    let mut mssmbiosKeyName: UNICODE_STRING = core::mem::zeroed();
     mssmbiosKeyName.Length = ((mssmbiosKeyName_buffer.len() - 1) * 2) as u16;
     mssmbiosKeyName.MaximumLength = (mssmbiosKeyName_buffer.len() * 2) as u16;
     mssmbiosKeyName.Buffer = mssmbiosKeyName_buffer.as_ptr() as *mut u16;
 
     let DataName_buffer: &[u16] = &[0x0044, 0x0061, 0x0074, 0x0061, 0x0000];
-    let mut DataName: _UNICODE_STRING = core::mem::zeroed();
+    let mut DataName: UNICODE_STRING = core::mem::zeroed();
     DataName.Length = ((DataName_buffer.len() - 1) * 2) as u16;
     DataName.MaximumLength = (DataName_buffer.len() * 2) as u16;
     DataName.Buffer = DataName_buffer.as_ptr() as *mut u16;
@@ -235,19 +321,19 @@ unsafe fn i8042StoreSMBiosTables(
     let ValueName_buffer: &[u16] = &[
         0x0053, 0x004D, 0x0042, 0x0069, 0x006F, 0x0073, 0x0044, 0x0061, 0x0074, 0x0061, 0x0000,
     ];
-    let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
+    let mut ValueName: UNICODE_STRING = core::mem::zeroed();
     ValueName.Length = ((ValueName_buffer.len() - 1) * 2) as u16;
     ValueName.MaximumLength = (ValueName_buffer.len() * 2) as u16;
     ValueName.Buffer = ValueName_buffer.as_ptr() as *mut u16;
 
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut ObjectAttributes: OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut SubKeyHandle: HANDLE = core::ptr::null_mut();
     let Status;
 
-    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    ObjectAttributes.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
-    ObjectAttributes.Attributes = (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE) as ULONG;
+    ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
     ObjectAttributes.ObjectName = core::ptr::addr_of_mut!(mssmbiosKeyName);
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
@@ -255,7 +341,7 @@ unsafe fn i8042StoreSMBiosTables(
     Status = ZwCreateKey(
         &mut KeyHandle,
         KEY_WRITE,
-        &mut ObjectAttributes,
+        core::ptr::addr_of_mut!(ObjectAttributes) as *mut _,
         0,
         core::ptr::null_mut(),
         REG_OPTION_VOLATILE,
@@ -266,9 +352,9 @@ unsafe fn i8042StoreSMBiosTables(
         return;
     }
 
-    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+    ObjectAttributes.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = KeyHandle;
-    ObjectAttributes.Attributes = (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE) as ULONG;
+    ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
     ObjectAttributes.ObjectName = core::ptr::addr_of_mut!(DataName);
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
@@ -276,7 +362,7 @@ unsafe fn i8042StoreSMBiosTables(
     let Status = ZwCreateKey(
         &mut SubKeyHandle,
         KEY_WRITE,
-        &mut ObjectAttributes,
+        core::ptr::addr_of_mut!(ObjectAttributes) as *mut _,
         0,
         core::ptr::null_mut(),
         REG_OPTION_VOLATILE,
@@ -290,7 +376,7 @@ unsafe fn i8042StoreSMBiosTables(
 
     ZwSetValueKey(
         SubKeyHandle,
-        &mut ValueName,
+        core::ptr::addr_of_mut!(ValueName),
         0,
         REG_BINARY,
         SMBiosTables,
@@ -327,7 +413,8 @@ pub unsafe extern "system" fn i8042InitializeHwHacks() {
         return;
     }
 
-    AllData = ExAllocatePoolWithTag(PagedPool, BufferSize, u32::from_le_bytes(*b"SMTB")) as PWNODE_ALL_DATA;
+    AllData = ExAllocatePoolWithTag(PagedPool, BufferSize as usize, u32::from_le_bytes(*b"SMTB"))
+        as PWNODE_ALL_DATA;
     if AllData.is_null() {
         return;
     }
@@ -342,266 +429,10 @@ pub unsafe extern "system" fn i8042InitializeHwHacks() {
         return;
     }
 
-    i8042StoreSMBiosTables(
-        AllData.add(1) as PVOID,
-        (*AllData).FixedInstanceSize,
-    );
+    // C: AllData + 1 (pointer arithmetic in WNODE_ALL_DATA units).
+    i8042StoreSMBiosTables(AllData.add(1) as PVOID, (*AllData).FixedInstanceSize);
 
-    i8042ParseSMBiosTables(
-        AllData.add(1) as PVOID,
-        (*AllData).WnodeHeader.BufferSize,
-    );
+    i8042ParseSMBiosTables(AllData.add(1) as PVOID, (*AllData).WnodeHeader.BufferSize);
 
     ExFreePoolWithTag(AllData as PVOID, u32::from_le_bytes(*b"SMTB"));
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*
-//  * PROJECT:     ReactOS i8042 (ps/2 keyboard-mouse controller) driver
-//  * LICENSE:     GPL - See COPYING in the top level directory
-//  * FILE:        drivers/input/i8042prt/hwhacks.c
-//  * PURPOSE:     Mouse specific functions
-//  * PROGRAMMERS: Timo Kreuzer (timo.kreuzer@reactos.org)
-//  * REFERENCES:  - http://www.dmtf.org/sites/default/files/standards/documents/DSP0134_3.0.0.pdf
-//  *              -
-//  */
-//
-// #include "i8042prt.h"
-// #include <wmiguid.h>
-// #include <wmidata.h>
-// #include <wmistr.h>
-// #include <dmilib.h>
-//
-// #define NDEBUG
-// #include <debug.h>
-//
-// const GUID MSSmBios_RawSMBiosTables_GUID = SMBIOS_DATA_GUID;
-// PVOID i8042SMBiosTables;
-// ULONG i8042HwFlags;
-//
-// typedef struct _MATCHENTRY
-// {
-//     ULONG Type;
-//     PCHAR String;
-// } MATCHENTRY;
-//
-// #define MAX_MATCH_ENTRIES 3
-// typedef struct _HARDWARE_TABLE
-// {
-//     MATCHENTRY MatchEntries[MAX_MATCH_ENTRIES];
-//     ULONG Flags;
-// } HARDWARE_TABLE;
-//
-// const HARDWARE_TABLE i8042HardwareTable[] =
-// {
-// //    { {{BOARD_VENDOR, "RIOWORKS"}, {BOARD_NAME, "HDAMB"}, {BOARD_VERSION, "Rev E"}}, FL_NOLOOP },
-// //    { {{BOARD_VENDOR, "ASUSTeK Computer Inc."}, {BOARD_NAME, "G1S"}, {BOARD_VERSION, "1.0"}}, FL_NOLOOP },
-//
-//     { {{SYS_VENDOR, "Microsoft Corporation"}, {SYS_PRODUCT, "Virtual Machine"}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Inspiron 6000                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D410                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D430                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D530                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D531                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D600                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D610                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D620                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D630                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D810                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude D820                   "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude E4300                  "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude E4310                  "}}, FL_INITHACK },
-//     { {{SYS_VENDOR, "Dell Inc."}, {SYS_PRODUCT, "Latitude E6400                  "}}, FL_INITHACK },
-//
-// };
-//
-//
-//
-// static
-// VOID
-// i8042ParseSMBiosTables(
-//     _In_reads_bytes_(TableSize) PVOID SMBiosTables,
-//     _In_ ULONG TableSize)
-// {
-//     ULONG i, j;
-//     PCHAR Strings[ID_STRINGS_MAX] = { 0 };
-//
-//     ParseSMBiosTables(SMBiosTables, TableSize, Strings);
-//
-// #if 0 // DBG
-//     DbgPrint("i8042prt: Dumping DMI data:\n");
-//     DbgPrint("BIOS_VENDOR: %s\n", Strings[BIOS_VENDOR]);
-//     DbgPrint("BIOS_VERSION: %s\n", Strings[BIOS_VERSION]);
-//     DbgPrint("BIOS_DATE: %s\n", Strings[BIOS_DATE]);
-//     DbgPrint("SYS_VENDOR: %s\n", Strings[SYS_VENDOR]);
-//     DbgPrint("SYS_PRODUCT: %s\n", Strings[SYS_PRODUCT]);
-//     DbgPrint("SYS_VERSION: %s\n", Strings[SYS_VERSION]);
-//     DbgPrint("SYS_SERIAL: %s\n", Strings[SYS_SERIAL]);
-//     DbgPrint("BOARD_VENDOR: %s\n", Strings[BOARD_VENDOR]);
-//     DbgPrint("BOARD_NAME: %s\n", Strings[BOARD_NAME]);
-//     DbgPrint("BOARD_VERSION: %s\n", Strings[BOARD_VERSION]);
-//     DbgPrint("BOARD_SERIAL: %s\n", Strings[BOARD_SERIAL]);
-//     DbgPrint("BOARD_ASSET_TAG: %s\n", Strings[BOARD_ASSET_TAG]);
-// #endif
-//
-//     /* Now loop the hardware table to find a match */
-//     for (i = 0; i < ARRAYSIZE(i8042HardwareTable); i++)
-//     {
-//         for (j = 0; j < MAX_MATCH_ENTRIES; j++)
-//         {
-//             ULONG Type = i8042HardwareTable[i].MatchEntries[j].Type;
-//
-//             if (Type != ID_NONE)
-//             {
-//                 /* Check for a match */
-//                 if ((Strings[Type] == NULL) ||
-//                     strcmp(i8042HardwareTable[i].MatchEntries[j].String,
-//                            Strings[i8042HardwareTable[i].MatchEntries[j].Type]))
-//                 {
-//                     /* Does not match, try next entry */
-//                     break;
-//                 }
-//             }
-//         }
-//
-//         if (j == MAX_MATCH_ENTRIES)
-//         {
-//             /* All items matched! */
-//             i8042HwFlags = i8042HardwareTable[i].Flags;
-//             DPRINT("Found match for hw table index %u\n", i);
-//             break;
-//         }
-//     }
-// }
-//
-// static
-// VOID
-// i8042StoreSMBiosTables(
-//     _In_reads_bytes_(TableSize) PVOID SMBiosTables,
-//     _In_ ULONG TableSize)
-// {
-//     static UNICODE_STRING mssmbiosKeyName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services\\mssmbios");
-//     static UNICODE_STRING DataName = RTL_CONSTANT_STRING(L"Data");
-//     static UNICODE_STRING ValueName = RTL_CONSTANT_STRING(L"SMBiosData");
-//     OBJECT_ATTRIBUTES ObjectAttributes;
-//     HANDLE KeyHandle = NULL, SubKeyHandle = NULL;
-//     NTSTATUS Status;
-//
-//     /* Create registry key */
-//     InitializeObjectAttributes(&ObjectAttributes,
-//                                &mssmbiosKeyName,
-//                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
-//                                NULL,
-//                                NULL);
-//     Status = ZwCreateKey(&KeyHandle,
-//                          KEY_WRITE,
-//                          &ObjectAttributes,
-//                          0,
-//                          NULL,
-//                          REG_OPTION_VOLATILE,
-//                          NULL);
-//
-//     if (!NT_SUCCESS(Status))
-//     {
-//         return;
-//     }
-//
-//     /* Create sub key */
-//     InitializeObjectAttributes(&ObjectAttributes,
-//                                &DataName,
-//                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
-//                                KeyHandle,
-//                                NULL);
-//     Status = ZwCreateKey(&SubKeyHandle,
-//                          KEY_WRITE,
-//                          &ObjectAttributes,
-//                          0,
-//                          NULL,
-//                          REG_OPTION_VOLATILE,
-//                          NULL);
-//
-//     if (!NT_SUCCESS(Status))
-//     {
-//         ZwClose(KeyHandle);
-//         return;
-//     }
-//
-//     /* Write value */
-//     ZwSetValueKey(SubKeyHandle,
-//                   &ValueName,
-//                   0,
-//                   REG_BINARY,
-//                   SMBiosTables,
-//                   TableSize);
-//
-//     ZwClose(SubKeyHandle);
-//     ZwClose(KeyHandle);
-// }
-//
-// VOID
-// NTAPI
-// i8042InitializeHwHacks(
-//     VOID)
-// {
-//     NTSTATUS Status;
-//     PVOID DataBlockObject;
-//     PWNODE_ALL_DATA AllData;
-//     ULONG BufferSize;
-//
-//     /* Open the data block object for the SMBIOS table */
-//     Status = IoWMIOpenBlock(&MSSmBios_RawSMBiosTables_GUID,
-//                             WMIGUID_QUERY,
-//                             &DataBlockObject);
-//     if (!NT_SUCCESS(Status))
-//     {
-//         DPRINT1("IoWMIOpenBlock failed: 0x%08lx\n", Status);
-//         return;
-//     }
-//
-//     /* Query the required buffer size */
-//     BufferSize = 0;
-//     Status = IoWMIQueryAllData(DataBlockObject, &BufferSize, NULL);
-//     if (!NT_SUCCESS(Status))
-//     {
-//         DPRINT1("IoWMIOpenBlock failed: 0x%08lx\n", Status);
-//         return;
-//     }
-//
-//     AllData = ExAllocatePoolWithTag(PagedPool, BufferSize, 'BTMS');
-//     if (AllData == NULL)
-//     {
-//         DPRINT1("Failed to allocate %lu bytes for SMBIOS tables\n", BufferSize);
-//         return;
-//     }
-//
-//     /* Query the buffer data */
-//     Status = IoWMIQueryAllData(DataBlockObject, &BufferSize, AllData);
-//     if (!NT_SUCCESS(Status))
-//     {
-//         DPRINT1("IoWMIOpenBlock failed: 0x%08lx\n", Status);
-//         ExFreePoolWithTag(AllData, 'BTMS');
-//         return;
-//     }
-//
-//     /* FIXME: This function should be removed once the mssmbios driver is implemented */
-//     /* Store SMBios data in registry */
-//     i8042StoreSMBiosTables(AllData + 1,
-//                            AllData->FixedInstanceSize);
-//     DPRINT1("SMBiosTables HACK, see CORE-14867\n");
-//
-//     /* Parse the table */
-//     i8042ParseSMBiosTables(AllData + 1,
-//                            AllData->WnodeHeader.BufferSize);
-//
-//     /* Free the buffer */
-//     ExFreePoolWithTag(AllData, 'BTMS');
-// }
-//
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================
