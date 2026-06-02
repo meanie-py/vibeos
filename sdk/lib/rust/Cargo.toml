@@ -55,6 +55,7 @@ members = [
     "winsrv-rust",
     "winsrv-sys",
     "concfg-rust",
+    "userinit-rust",
 ]
 resolver = "2"
 

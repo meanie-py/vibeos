@@ -542,6 +542,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "userinit-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winsrv-sys",
+]
+
+[[package]]
 name = "utf8"
 version = "0.1.0"
 
