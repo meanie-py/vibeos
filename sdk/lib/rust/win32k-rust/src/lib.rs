@@ -178,6 +178,10 @@ pub mod init;
 // print.rs — Phase 2c wave 16: GDI print/escape tier (NtGdiExtEscape + NtGdiEscape
 // + Doc/Page stubs) dispatching through PDEVOBJ DriverFunctions.Escape.
 pub mod print;
+// gdidev.rs — Phase 2c wave 17: ntgdi/device.c primary-surface tier
+// (IntCreatePrimarySurface/Destroy/EnumHDev + NtGdiDrawEscape + defaultDCstate).
+// Named gdidev (not device) to avoid colliding with the eng-tier device.rs below.
+pub mod gdidev;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
