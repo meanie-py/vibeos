@@ -156,6 +156,16 @@ pub mod bitmaps;
 // (NtGdi{Set,Get,Stretch}DIBits*Internal, NtGdiCreateDIB{itmap,Section}Internal,
 // DIB_CreateDIBSection, CreateDIBPalette, DIB_* helpers). dibobj.c + split2 = one TU.
 pub mod dibobj;
+// text.rs — Phase 2c wave 10: text query tier (NtGdiGetText{ExtentExW,Extent,
+// FaceW,MetricsW,CharsetInfo}, NtGdiGetCharSet, NtGdiGetRasterizerCaps,
+// NtGdiSetTextJustification, Gre{TextOutW,GetTextExtent{,Ex}W,GetTextMetricsW}).
+pub mod text;
+// icm.rs — Phase 2c wave 11: ICM color-management tier (NtGdi{Create,Delete}ColorSpace,
+// NtGdiSet{ColorSpace,IcmMode}, NtGdi{Get,Set}DeviceGammaRamp + Int* helpers).
+pub mod icm;
+// gdipool.rs — Phase 2c wave 12: GDI pool allocator (GdiPool{Allocate,Free,Create,Destroy}
+// + section helpers) — Zw virtual-mem backed slab over a per-pool push lock.
+pub mod gdipool;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust

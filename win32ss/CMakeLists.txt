@@ -187,8 +187,8 @@ list(APPEND SOURCE
     gdi/ntgdi/gdibatch.c
     gdi/ntgdi/gdidbg.c
     # gdi/ntgdi/gdiobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/gdiobj.rs, +split2) — cohabitation [Phase 1a]
-    gdi/ntgdi/gdipool.c
-    gdi/ntgdi/icm.c
+    # gdi/ntgdi/gdipool.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/gdipool.rs) — cohabitation [Phase 2c wave 12: GDI pool allocator]
+    # gdi/ntgdi/icm.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/icm.rs) — cohabitation [Phase 2c wave 11: ICM color mgmt]
     gdi/ntgdi/init.c
     # gdi/ntgdi/line.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/line.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     gdi/ntgdi/metafile.c
@@ -200,7 +200,7 @@ list(APPEND SOURCE
     # gdi/ntgdi/rect.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rect.rs) — cohabitation [Phase 2c geometry wave 1]
     # gdi/ntgdi/region.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/region.rs) — cohabitation [Phase 2c geometry wave 4: region algebra; region.c + split2/3/4 = one TU, 68 fns]
     # gdi/ntgdi/stockobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/stockobj.rs) — cohabitation [Phase 2c geometry wave 2]
-    gdi/ntgdi/text.c
+    # gdi/ntgdi/text.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/text.rs) — cohabitation [Phase 2c wave 10: text query tier]
     # gdi/ntgdi/utils.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/utils.rs) — cohabitation [Phase 2c geometry wave 1]
     gdi/ntgdi/wingl.c
     # gdi/ntgdi/xformobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/xformobj.rs) — cohabitation [Phase 2c geometry wave 2]
@@ -348,6 +348,9 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/cliprgn.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/bitmaps.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dibobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/text.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/icm.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdipool.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
