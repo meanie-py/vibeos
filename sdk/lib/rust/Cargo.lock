@@ -317,6 +317,13 @@ name = "ntdll-sys"
 version = "0.1.0"
 
 [[package]]
+name = "ntdll_vista-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "ntkrnl-sys"
 version = "0.1.0"
 

@@ -34,12 +34,14 @@ pub enum ModuleKind {
     /// `_HalInitSystem@8`, 0x00010000).
     KernelDll { entry: String, image_base: u64 },
     /// `win32dll` — user-mode PE DLL (`-shared`), exports via `.def` so
-    /// NO `--exclude-all-symbols`, default PE alignment (file 0x200), the
-    /// `console:5.01` subsystem (ReactOS' `win32dll` set_subsystem hack),
-    /// no `--gc-sections`. `entry` is the i386-decorated entry symbol —
-    /// `___ImageBase` for ntdll.dll (AddressOfEntryPoint = 0) or e.g.
-    /// `_DllMain@12` for ntdll_vista.dll.
-    Win32Dll { entry: String, image_base: u64 },
+    /// NO `--exclude-all-symbols`, default PE alignment (file 0x200), no
+    /// `--gc-sections`. `entry` is the i386-decorated entry symbol —
+    /// `___ImageBase` for ntdll.dll (AddressOfEntryPoint = 0) or
+    /// `_DllMain@12` for ntdll_vista.dll. `subsystem`: `Some("console:5.01")`
+    /// for ntdll.dll (the win32dll set_subsystem hack); `None` lets lld
+    /// default (GUI 6.0) — matches ntdll_vista.dll, which passes no
+    /// `--subsystem`.
+    Win32Dll { entry: String, image_base: u64, subsystem: Option<String> },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -129,6 +131,7 @@ pub struct Linker {
     pkg_name: String,
     target_json: PathBuf,
     rust_crate: Option<String>,
+    rust_features: Vec<String>,
     c_shims: Vec<String>,
     asm: Vec<String>,
     asm_set: AsmDefineSet,
@@ -173,6 +176,7 @@ impl Linker {
             pkg_name,
             target_json,
             rust_crate: None,
+            rust_features: Vec::new(),
             c_shims: Vec::new(),
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
@@ -189,6 +193,15 @@ impl Linker {
     /// build-std nightly) since cargo can't link a staticlib as a dep.
     pub fn rust_staticlib(mut self, crate_name: &str) -> Self {
         self.rust_crate = Some(crate_name.to_string());
+        self
+    }
+
+    /// Extra cargo `--features` for the `rust_staticlib` build (kept
+    /// additive — default features stay on, mirroring cmake's
+    /// `cargo build … -p ntdll-rust --features vista`). e.g. ntdll_vista.dll
+    /// builds ntdll-rust with `["vista"]` (DllMain/LdrpHeap/ldrnotify).
+    pub fn rust_features(mut self, feats: &[&str]) -> Self {
+        self.rust_features = feats.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -270,8 +283,8 @@ impl Linker {
             let lib_file = format!("lib{}.a", crate_name.replace('-', "_"));
             let workspace = self.repo_root.join("sdk/lib/rust");
             let tgt_dir = workspace.join(format!("target/{}-rustlib", self.pkg_name));
-            let status = Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-                .arg("build")
+            let mut cmd = Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+            cmd.arg("build")
                 .arg("--release")
                 .arg("--target")
                 .arg(&self.target_json)
@@ -280,7 +293,11 @@ impl Linker {
                 .arg("-Z")
                 .arg("build-std-features=compiler-builtins-mem")
                 .arg("-p")
-                .arg(crate_name)
+                .arg(crate_name);
+            if !self.rust_features.is_empty() {
+                cmd.arg("--features").arg(self.rust_features.join(","));
+            }
+            let status = cmd
                 .arg("--manifest-path")
                 .arg(workspace.join("Cargo.toml"))
                 .env("CARGO_TARGET_DIR", &tgt_dir)
@@ -434,12 +451,15 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-shared");
                 (entry, *image_base)
             }
-            ModuleKind::Win32Dll { entry, image_base } => {
-                // user-mode PE DLL (ntdll/ntdll_vista): console subsystem
-                // (ReactOS win32dll hack), exports come from the .def so NO
+            ModuleKind::Win32Dll { entry, image_base, subsystem } => {
+                // user-mode PE DLL: exports come from the .def so NO
                 // --exclude-all-symbols, default PE alignment (file 0x200),
-                // -shared, keep all sections.
-                println!("cargo:rustc-link-arg=-Wl,--subsystem,console:5.01");
+                // -shared, keep all sections. Subsystem is explicit for
+                // ntdll.dll (console:5.01) and lld-default (GUI 6.0) for
+                // ntdll_vista.dll, which passes no --subsystem.
+                if let Some(s) = subsystem {
+                    println!("cargo:rustc-link-arg=-Wl,--subsystem,{s}");
+                }
                 println!("cargo:rustc-link-arg=-shared");
                 (entry, *image_base)
             }

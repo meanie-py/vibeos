@@ -38,6 +38,7 @@ members = [
     "smss-csrss-rust",
     "ntoskrnl-cargo",
     "ntdll-cargo",
+    "ntdll_vista-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",

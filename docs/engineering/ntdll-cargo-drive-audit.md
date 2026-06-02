@@ -13,17 +13,28 @@ i386 build dir. Header counts are transitive closures pulled from
 
 ## Status
 
-**Phase 1, ntdll.dll (i386): DONE 2026-06-02** (branch
-`smlib-csrlib-client-flip`, UNCOMMITTED). `cargo build -p ntdll-cargo`
-drives the link via the `reactos-link` engine (new `Win32Dll` kind +
-`spec_stubs()`); cargo builds ntdll-rust (build-std) + the pre-expanded
-`dispatch-i386.s` + the 48 spec `-stub` bodies, and reuses the cmake-built
-sibling `.a`. Output is a valid PE **byte-identical in headers** to cmake's
-ntdll.dll (PE32, console subsystem, AddressOfEntryPoint 0, base 0x7c920000,
-DllCharacteristics 0x140) with the **identical 1402-export table**. Validate:
-`bash sdk/lib/rust/ntdll-cargo/build-and-test.sh`. Remaining: ntdll_vista.dll
-(entry `_DllMain@12` + importlib ntdll), `check --strict` guard wiring,
-amd64/arm64 (engine arch generalization), boot-swap smoke.
+**Phase 1, ntdll.dll + ntdll_vista.dll (i386): DONE 2026-06-02** (branch
+`smlib-csrlib-client-flip`; ntdll.dll committed `4551c4625fa`, ntdll_vista
+uncommitted). Both links are cargo-driven via the `reactos-link` engine (new
+`Win32Dll` kind + `spec_stubs()` + per-build `rust_features()`); cargo builds
+ntdll-rust (build-std) + pre-expanded asm + spec stubs and reuses the
+cmake-built sibling `.a`.
+- **ntdll.dll** (`ntdll-cargo`): valid PE byte-identical in headers to cmake
+  (PE32, console:5.01, AddressOfEntryPoint 0, base 0x7c920000, DllChar 0x140)
+  + **identical 1402-export table**. `Win32Dll{entry:___ImageBase,
+  subsystem:Some("console:5.01")}`.
+- **ntdll_vista.dll** (`ntdll_vista-cargo`): valid PE, headers match cmake
+  (GUI 6.0 [lld default], DllMain entry, base 0x6fc70000, DllChar 0x140),
+  **all ntdll_vista.spec exports present**. ntdll-rust built `--features vista`;
+  imports ntdll via a self-hosted import lib; reuses the lean smlib archive +
+  rtl_vista. Export set differs from cmake only by incidental compiler_builtins
+  auto-exports (cmake: mem*/strlen; cargo: RtlInitializeCriticalSection) — not
+  the spec contract.
+
+Validate: `bash sdk/lib/rust/ntdll{,_vista}-cargo/build-and-test.sh`.
+Remaining: `check --strict` guard wiring (fold with the stashed ntoskrnl
+guard), amd64/arm64 (engine arch generalization at `reactos-link/src/lib.rs:140`),
+boot-swap smoke.
 
 ## TL;DR
 

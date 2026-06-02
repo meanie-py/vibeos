@@ -48,5 +48,6 @@ fn main() {
         .link(ModuleKind::Win32Dll {
             entry: "___ImageBase".into(),
             image_base: 0x7c92_0000,
+            subsystem: Some("console:5.01".into()),
         });
 }
