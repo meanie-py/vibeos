@@ -54,8 +54,21 @@ static const UNICODE_STRING RtlpPathDividers = RTL_CONSTANT_STRING(L"\\/");
 
 PRTLP_CURDIR_REF RtlpCurDirRef;
 
+/* PATH-1 Rust forward decls — the bodies of these 6 fns live in
+ * sdk/lib/rust/rtl-strings/ cabi (Wave PATH-1). They're #if 0'd
+ * out below; the rest of path.c calls them through these decls. */
+RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_Ustr(IN PCUNICODE_STRING PathString);
+ULONG NTAPI RtlIsDosDeviceName_Ustr(IN PCUNICODE_STRING PathString);
+ULONG NTAPI RtlGetLongestNtPathLength(VOID);
+NTSTATUS NTAPI RtlGetLengthWithoutTrailingPathSeparators(IN ULONG Flags,
+                                                        IN PCUNICODE_STRING PathString,
+                                                        OUT PULONG Length);
+RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_U(IN PCWSTR Path);
+ULONG NTAPI RtlIsDosDeviceName_U(IN PCWSTR Path);
+
 /* PRIVATE FUNCTIONS **********************************************************/
 
+#if 0 /* Replaced by Rust (sdk/lib/rust/rtl-strings/ cabi, Wave PATH-1) */
 RTL_PATH_TYPE
 NTAPI
 RtlDetermineDosPathNameType_Ustr(IN PCUNICODE_STRING PathString)
@@ -249,6 +262,7 @@ RtlIsDosDeviceName_Ustr(IN PCUNICODE_STRING PathString)
     /* Otherwise, this is not a valid DOS device */
     return 0;
 }
+#endif /* PATH-1 Rust override: RtlDetermineDosPathNameType_Ustr + RtlIsDosDeviceName_Ustr */
 
 NTSTATUS
 NTAPI
@@ -1547,9 +1561,7 @@ RtlReleaseRelativeName(IN PRTL_RELATIVE_NAME_U RelativeName)
     }
 }
 
-/*
- * @implemented
- */
+#if 0 /* Replaced by Rust (Wave PATH-1): RtlGetLongestNtPathLength */
 ULONG
 NTAPI
 RtlGetLongestNtPathLength(VOID)
@@ -1562,12 +1574,9 @@ RtlGetLongestNtPathLength(VOID)
      */
     return MAX_PATH + RtlpDosDevicesUncPrefix.Length / sizeof(WCHAR) + sizeof(ANSI_NULL);
 }
+#endif /* PATH-1 Rust override */
 
-/*
- * @implemented
- * @note: the export is called RtlGetLengthWithoutTrailingPathSeperators
- *        (with a 'e' instead of a 'a' in "Seperators").
- */
+#if 0 /* Replaced by Rust (Wave PATH-1): RtlGetLengthWithoutTrailingPathSeparators */
 NTSTATUS
 NTAPI
 RtlGetLengthWithoutTrailingPathSeparators(IN  ULONG Flags,
@@ -1604,10 +1613,9 @@ RtlGetLengthWithoutTrailingPathSeparators(IN  ULONG Flags,
     *Length = NumChars;
     return STATUS_SUCCESS;
 }
+#endif /* PATH-1 Rust override: RtlGetLengthWithoutTrailingPathSeparators */
 
-/*
- * @implemented
- */
+#if 0 /* Replaced by Rust (Wave PATH-1): RtlDetermineDosPathNameType_U + RtlIsDosDeviceName_U */
 RTL_PATH_TYPE
 NTAPI
 RtlDetermineDosPathNameType_U(IN PCWSTR Path)
@@ -1631,9 +1639,6 @@ RtlDetermineDosPathNameType_U(IN PCWSTR Path)
     }
 }
 
-/*
- * @implemented
- */
 ULONG
 NTAPI
 RtlIsDosDeviceName_U(IN PCWSTR Path)
@@ -1652,6 +1657,7 @@ RtlIsDosDeviceName_U(IN PCWSTR Path)
      */
      return RtlIsDosDeviceName_Ustr(&PathString);
 }
+#endif /* PATH-1 Rust override */
 
 /*
  * @implemented
@@ -2624,7 +2630,12 @@ RtlDosSearchPath_Ustr(IN ULONG Flags,
     /* Now check relative vs non-relative paths */
     if (PathType == RtlPathTypeRelative)
     {
-        /* Does the caller want SxS? */
+#ifndef _NTOSKRNL_
+        /* Does the caller want SxS? (user-mode only — SxS / activation
+         * contexts do not exist in the kernel, and
+         * RtlDosApplyFileIsolationRedirection_Ustr is an ntdll-only
+         * symbol, so guard the whole branch out of the _NTOSKRNL_ build
+         * to keep path.c.obj link-clean in ntoskrnl.) */
         if (Flags & 1)
         {
             /* Apply the SxS magic */
@@ -2656,6 +2667,7 @@ RtlDosSearchPath_Ustr(IN ULONG Flags,
                 goto Quickie;
             }
         }
+#endif /* !_NTOSKRNL_ */
 
         /* No SxS key found, or not requested, check if there's an extension */
         if (ExtensionString)

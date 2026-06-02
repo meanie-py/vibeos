@@ -857,6 +857,98 @@ pub unsafe extern "system" fn RtlpSafeCopyMemory(
  * amd64/dynfntbl.c). Do NOT define them here — they belong to the SDK RTL,
  * not the kernel's ntoskrnl/rtl/ support files. */
 
+// ============================================================================
+// Wave THR/PRC/ENV kernel-side libsupp helpers — stub forwarders.
+//
+// These mirror the user-mode helpers in dll/ntdll/rtl/libsupp.c that exist
+// to let the Rust shims (env.rs / thread.rs / process.rs in
+// sdk/lib/rust/rtl-strings) read fields out of PEB / TEB / IMAGE_NT_HEADERS
+// without mirroring those layouts in Rust. In kernel mode the wrapping Rust
+// fns (RtlAcquirePrivilege, RtlExitUserThread, RtlCreateUserProcess, etc.)
+// are user-mode primitives — they get linked in but are never reached on a
+// kernel-mode codepath. The stubs exist only so the linker can resolve the
+// extern fn references from librtl_rust.a.
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpGetPebEnvironment() -> PVOID {
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpSetPebEnvironment(_new_env: PVOID) {}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrGetPebImageBaseAddress() -> PVOID {
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrGetPebMinimumStackCommit() -> SIZE_T {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrGetPebNtGlobalFlag() -> ULONG {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrSetFreeStackOnTermination() {}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrTebDeallocStackAddr(_teb_base: PVOID) -> PVOID {
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrImageStackReserve(_headers: PVOID) -> SIZE_T {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrImageStackCommit(_headers: PVOID) -> SIZE_T {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpThrCurrentTeb() -> PVOID {
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpPrcGetPebOSMajorVersion() -> ULONG {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpPrcGetPebOSMinorVersion() -> ULONG {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpPrcPebProcessParametersAddr(peb_base: PVOID) -> PVOID {
+    // `&((PPEB)PebBase)->ProcessParameters`. This is pure pointer arithmetic
+    // on the *target* process's PEB base (a user VA passed in by the caller),
+    // NOT a dereference of the current kernel process — so it is valid in
+    // kernel mode. Returning NULL here (the old stub) made
+    // RtlpInitEnvironment's third ZwWriteVirtualMemory target address 0,
+    // faulting in MmCopyVirtualMemory (uncatchable under DUMMY_PSEH) →
+    // BUGCHECK 0x1E during the kernel-side creation of the first user process.
+    if peb_base.is_null() {
+        return core::ptr::null_mut();
+    }
+    core::ptr::addr_of_mut!((*(peb_base as PPEB)).ProcessParameters) as PVOID
+}
+
+/// Kernel-mode `RtlGetProcessHeap()` — no per-process heap exists in
+/// kernel mode. Returns NULL. The C macro `(NtCurrentPeb()->ProcessHeap)`
+/// is the user-mode definition; this is the kernel stub equivalent.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetProcessHeap() -> PVOID {
+    core::ptr::null_mut()
+}
+
 
 // ============================================================================
 // ORIGINAL C SOURCE

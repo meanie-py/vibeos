@@ -1,46 +1,41 @@
 //! bootvid-rust — Rust translation of the ReactOS `bootvid.dll` body
-//! (boot-time VGA video + console text rendering).
+//! (boot-time linear-framebuffer video + console text rendering).
 //!
-//! On the non-MSVC i386/amd64 build, `bootvid.dll` is the i386/pc VGA
-//! path: cmake `add_bootvid(bootvid i386/pc/vgabvid.cmake)` compiles
-//! `i386/pc/{bootvid,bootdata,vga}.c` + the shared
-//! `{common,console,fontdata}.c`. (`framebuf/` is the *separate*
-//! `lfbbvid.dll`; arm64's `bootvid.dll` aliases framebuf. The
-//! translation-audit's "keep framebuf, drop i386/pc" was inverted for
-//! our BIOS-boot smoke — same lesson as `feedback_kdcom_is_kdrosdbg`.)
+//! Post-BIOS-prune, ALL arches boot via UEFI and `bootvid.dll` is the
+//! generic linear framebuffer (GOP) path: cmake
+//! `add_bootvid(bootvid framebuf/lfbbvid.cmake)` compiles
+//! `framebuf/bootvid.c` (which `#include`s the shared ARC-tree impl
+//! `<drivers/bootvid/framebuf.c>`) + the shared
+//! `{common,console,fontdata}.c`. The legacy i386/pc VGA path was
+//! removed with the BIOS prune; an earlier translation of it
+//! (vga/pc/bootdata modules) was discarded here.
 //!
 //! Compiled as `crate-type = ["staticlib"]` → `libbootvid_rust.a`,
-//! linked into the kernel-mode PE DLL `bootvid.dll` by `bootvid-cargo`
-//! (the shared `reactos-link` engine), mirroring hal-rust+hal-cargo /
-//! kdcom-rust+kdcom-cargo.
+//! linked into the kernel-mode PE DLL `bootvid.dll` via the
+//! cohabitation flip in `drivers/base/bootvid/framebuf/lfbbvid.cmake`.
 //!
 //! ABI: the 11-symbol `drivers/base/bootvid/bootvid.spec` contract
 //! (`Vid*`), each `#[no_mangle] pub unsafe extern "system"` so i386
 //! stdcall decoration (`_Vid*@N`) matches the spec.
 //!
-//! One C file → one flat module (rustconv `bootvid` Target,
-//! `src_subdir = src`):
-//!   common.c          → common
-//!   console.c         → console
-//!   fontdata.c        → fontdata
-//!   i386/pc/bootvid.c → bootvid
-//!   i386/pc/bootdata.c→ bootdata
-//!   i386/pc/vga.c     → vga
+//! C file → module map:
+//!   common.c                       → common   (VidBitBlt, VidBufferToScreenBlt)
+//!   console.c                      → console  (VidResetDisplay, VidDisplayString, …)
+//!   fontdata.c                     → fontdata (VidpFontData + default palette)
+//!   framebuf/bootvid.c             → bootvid  (VidInitialize/CleanUp/SolidColorFill/ScreenToBufferBlt + SetPixel/DisplayCharacter)
+//!   <drivers/bootvid/framebuf.c>   → framebuf_impl (FindBootDisplay, BootTranslateBusAddress — ARC config-tree)
+//!   precomp.h / framebuf.h / display.h substrate → pc
 
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(unused_imports, unused_unsafe, dead_code)]
 
-// Support surface (headers rustconv doesn't translate) + data TUs
-// (rustconv skips non-function files) + the 4 AI-translated logic
-// modules (common/console/vga/bootvid).
 pub mod pc;
 pub mod fontdata;
-pub mod bootdata;
 pub mod common;
 pub mod console;
-pub mod vga;
 pub mod bootvid;
+pub mod framebuf_impl;
 
 // Standalone `#![no_std]` staticlib built by reactos-link → needs its
 // own panic handler + eh_personality (same as hal-rust / kdcom-rust).

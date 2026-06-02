@@ -842,10 +842,17 @@ PUBLIC KiSystemCallEntry64
     /* Save MCXSR and set kernel value */
     stmxcsr [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_MxCsr]
     /* Sanitize kernel MXCSR — something corrupts Prcb.MxCsr (offset 0 of
-       KPRCB) with values that have reserved bits set, causing #GP.
-       Load the value, clear reserved bits 16-31, write back, then ldmxcsr. */
+       KPRCB) with values that have reserved bits set, causing #GP, AND with
+       the FP exception-mask bits CLEARED (observed 0x4131: only DM masked).
+       An unmasked MXCSR makes kernel-mode FP traps fire — e.g. win32k's
+       FLOATOBJ float->int cvttss2si on an out-of-range matrix element raises
+       #IA → STATUS_FLOAT_INVALID_OPERATION → BUGCHECK 0x1E. The kernel must
+       always run with all FP exceptions masked (this is what INITIAL_MXCSR
+       0x1F80 establishes). Clear reserved bits 16-31 AND the rounding-control
+       bits 13-14, then force all six exception-mask bits (0x1F80) on. */
     mov eax, gs:[PcMxCsr]
-    and eax, HEX(0000FFFF)
+    and eax, HEX(00009FFF)
+    or eax, HEX(00001F80)
     mov gs:[PcMxCsr], eax
     ldmxcsr gs:[PcMxCsr]
 
