@@ -414,7 +414,13 @@ set(CMAKE_C_CREATE_SHARED_MODULE ${CMAKE_C_CREATE_SHARED_LIBRARY})
 set(CMAKE_CXX_CREATE_SHARED_MODULE ${CMAKE_CXX_CREATE_SHARED_LIBRARY})
 set(CMAKE_RC_CREATE_SHARED_MODULE ${CMAKE_RC_CREATE_SHARED_LIBRARY})
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections")
+# --allow-multiple-definition (EXE too): libcntpr_rust.a now reaches EXE
+# links — freeldr rosload.exe / uefildr.efi link BOTH the i386 asm CRT
+# (liblibcntpr.a) and the Rust CRT (libcntpr_rust.a), so a fresh relink
+# double-defines memset/memcpy/strlen/…. SHARED/MODULE already carry the
+# flag for the same Rust-archive reason; EXEs need it now too (lld
+# first-match wins — both CRT impls are correct).
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections,--allow-multiple-definition")
 # --allow-multiple-definition: Rust crates each define __rustc::rust_begin_unwind;
 # when multiple .a libraries link into one PE (e.g. ntdll), LLD sees duplicates.
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
