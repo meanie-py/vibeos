@@ -1378,6 +1378,15 @@ def fix_duplicate_extern_decls(code: str) -> str:
 # Main entry point
 # ============================================================================
 
+# User-mode FFI substrate crates (each re-exports its bindgen under an
+# umbrella module). The LLM sometimes imports the wrong sibling; postprocess
+# retargets it onto the configured one (see collapse_sys_crate).
+_KNOWN_USER_SYS_CRATES = {
+    "ntdll_sys", "win32k_sys", "winsrv_sys", "winlogon_sys",
+    "userinit_sys", "csrsrv_sys", "smss_sys", "basesrv_sys",
+}
+
+
 def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
     """Deterministically retarget a user-mode translation's FFI imports.
 
@@ -1392,6 +1401,15 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
     pfx = f"{sys_crate}::{sys_umbrella}::"
     # 1. Any ntkrnl_sys::<module>:: (incl. nested) → <crate>::<umbrella>::
     code = re.sub(r'\bntkrnl_sys::\w+::', pfx, code)
+    # 1b. Sibling user-mode substrate crates the LLM may have guessed wrong
+    #     (the user-mode prompt names ntdll-sys, so it often imports
+    #     `ntdll_sys::nt::*` even for a winlogon/winsrv/etc. target). Retarget
+    #     any known *-sys crate that isn't THIS target's onto the right one,
+    #     collapsing its module to the umbrella exactly like ntkrnl_sys above.
+    for other in _KNOWN_USER_SYS_CRATES:
+        if other == sys_crate:
+            continue
+        code = re.sub(rf'\b{re.escape(other)}::\w+::', pfx, code)
     # 2. Drop every `use <crate>::<umbrella>::(* | {…} | Name);` line
     #    (single- or multi-line braced list) — replaced by one glob.
     use_pat = re.compile(
