@@ -66,7 +66,7 @@ def _clean(run: Run, repo: Path, arch: str) -> None:
 
 
 def build(args, repo: Path) -> int:
-    arch = args.arch
+    arch = archcfg.base_arch(args.arch)   # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
     build_dir = repo / f"build-{arch}"
     run = Run("build", arch)

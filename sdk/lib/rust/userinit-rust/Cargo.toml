@@ -1,0 +1,26 @@
+[package]
+name = "userinit-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# staticlib → libuserinit_rust.a, linked into the cmake-built userinit.exe
+# via per-binary cohabitation cmake (mirrors smss-csrss-rust / winsrv-rust).
+# The `.c` source stays in tree; the full flip translates both userinit.c
+# and livecd.c. userinit is on the boot path to `shell ready` (it launches
+# explorer.exe), and `/MININT` is set on the livecd, so livecd.c's dialog
+# procs are potentially live — translated faithfully, validated by smoke.
+crate-type = ["staticlib"]
+
+[features]
+default = ["ntddi_ws03"]
+ntddi_ws03 = []
+
+[dependencies]
+# winsrv-sys is the user-mode FFI substrate (superset of ntdll-sys via
+# `pub use ntdll_sys::nt;`). It already covers the bulk of userinit's Win32
+# surface (user32 dialogs, gdi32 bitmaps, advapi32 registry, kernel32 process
+# creation); a small gap-fill (DialogBoxParamW, EndDialog, SHGetFolderPathW,
+# …) is added as the build reveals it.
+ntdll-sys = { path = "../ntdll-sys" }
+winsrv-sys = { path = "../winsrv-sys" }

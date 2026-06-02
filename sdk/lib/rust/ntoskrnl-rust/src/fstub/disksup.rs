@@ -9,7 +9,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{
     ANSI_STRING, DISK_GEOMETRY, DISK_GEOMETRY_EX, DRIVE_LAYOUT_INFORMATION, GUID,
     _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest,
-    IoCreateSymbolicLink, IoGetAttachedDeviceReference, IoGetConfigurationInformation,
+    IoCreateSymbolicLink, IoDeleteSymbolicLink, IoGetAttachedDeviceReference, IoGetConfigurationInformation,
     IoGetDeviceObjectPointer, IoGetNextIrpStackLocation, KEVENT, KeBugCheck,
     KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, MOUNTDEV_NAME,
     MOUNTMGR_CREATE_POINT_INPUT, MOUNTMGR_DRIVE_LETTER_INFORMATION,
@@ -1350,6 +1350,44 @@ unsafe fn xHalIoAssignDriveLetters_impl(
             } else {
                 *NtSystemPath = DriveLetter;
             }
+        }
+
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(StringU1));
+    }
+
+    if !NtDeviceName.is_null()
+        && NT_SUCCESS(RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(StringU1), NtDeviceName, 1))
+    {
+        let mut system_drive_letter = 0u8;
+        let mut is_cdrom = 0u8;
+
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU3), W_DEVICE_CDROM.as_ptr());
+        if RtlPrefixUnicodeString(core::ptr::addr_of_mut!(StringU3), core::ptr::addr_of_mut!(StringU1), 1) != 0 {
+            is_cdrom = 1;
+        }
+
+        if !NtSystemPath.is_null()
+            && *NtSystemPath >= b'A'
+            && *NtSystemPath <= b'Z'
+            && *NtSystemPath.add(1) == b':'
+        {
+            system_drive_letter = *NtSystemPath;
+        } else if is_cdrom != 0 {
+            system_drive_letter = b'X';
+        }
+
+        if system_drive_letter != 0 {
+            crate::swprintf!(
+                Buffer.as_mut_ptr(),
+                Buffer.len(),
+                &W_DOS_DEVICE_DRIVE_FMT,
+                system_drive_letter as u32,
+            );
+            RtlInitUnicodeString(core::ptr::addr_of_mut!(StringU2), Buffer.as_ptr());
+            if is_cdrom != 0 && system_drive_letter == b'X' {
+                Status = IoDeleteSymbolicLink(core::ptr::addr_of_mut!(StringU2));
+            }
+            Status = IoCreateSymbolicLink(core::ptr::addr_of_mut!(StringU2), core::ptr::addr_of_mut!(StringU1));
         }
 
         RtlFreeUnicodeString(core::ptr::addr_of_mut!(StringU1));

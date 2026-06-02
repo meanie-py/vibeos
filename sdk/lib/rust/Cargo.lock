@@ -95,6 +95,14 @@ name = "compress"
 version = "0.1.0"
 
 [[package]]
+name = "concfg-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winsrv-sys",
+]
+
+[[package]]
 name = "crc32"
 version = "0.1.0"
 
@@ -288,6 +296,13 @@ name = "mouclass-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "ntdll-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
 ]
 
 [[package]]
@@ -548,6 +563,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "userinit-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "winsrv-sys",
+]
+
+[[package]]
 name = "utf8"
 version = "0.1.0"
 
@@ -608,6 +631,7 @@ dependencies = [
 name = "winsrv-rust"
 version = "0.1.0"
 dependencies = [
+ "concfg-rust",
  "ntdll-sys",
  "winsrv-sys",
 ]

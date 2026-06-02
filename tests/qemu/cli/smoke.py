@@ -12,7 +12,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import provenance, triage
+from . import archcfg, provenance, triage
 from .artifacts import Run, Stage
 from ..vm import QemuVM, get_arch_config
 
@@ -36,8 +36,10 @@ def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
 
 def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | None,
               idx: int, total: int) -> dict:
-    """A single independent boot. Returns {ok, outcome, classification, ...}."""
-    config = get_arch_config(arch)
+    """A single independent boot. Returns {ok, outcome, classification, ...}.
+    `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
+    (i386 → i386-uefi) since x86 boots UEFI now."""
+    config = get_arch_config(archcfg.vm_arch(arch))
     marker = until or config.boot_marker
     work = run.dir / f"boot{idx}"
     work.mkdir(exist_ok=True)
@@ -79,7 +81,7 @@ def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | Non
 
 
 def smoke(args, repo: Path) -> int:
-    arch = args.arch
+    arch = archcfg.base_arch(args.arch)   # base for staleness/build dir; boot resolves vm_arch
     run = Run("smoke", arch)
 
     # --- staleness preflight (hard boundary) ---
@@ -120,7 +122,7 @@ def smoke(args, repo: Path) -> int:
     npass = sum(1 for r in results if r["ok"])
     run.extra["passes"] = npass
     run.extra["runs"] = total
-    run.extra["live_log"] = str((repo / "qemu" / f"{arch}_smoke_live.log"))
+    run.extra["live_log"] = str((repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log"))
     if total > 1:
         run.extra["flake_rate"] = f"{npass}/{total}"
         if 0 < npass < total:
@@ -135,7 +137,7 @@ def boot(args, repo: Path) -> int:
     """Raw fast boot — NO staleness gate, reuses smoke's EXACT arch-config
     (machine/KVM/vga/media/debugcon) so the fast path can't diverge from smoke
     (smss-csrss #3: q35-vs-pc misdiagnosis). Writes artifacts, decodes debugcon."""
-    arch = args.arch
+    arch = archcfg.base_arch(args.arch)
     run = Run("boot", arch)
     r = _one_boot(run, repo, arch, until=(args.until or ""),
                   fail_on=getattr(args, "fail_on", None), idx=0, total=1)
@@ -144,5 +146,5 @@ def boot(args, repo: Path) -> int:
                   salient=r.get("salient", [])))
     if not r["ok"]:
         run.classification = r.get("classification", "FAIL")
-    run.extra["live_log"] = str((repo / "qemu" / f"{arch}_smoke_live.log"))
+    run.extra["live_log"] = str((repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log"))
     return run.finalize(repo)

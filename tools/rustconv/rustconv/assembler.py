@@ -72,6 +72,7 @@ def assemble_file(
         target_name=target.name,
         sys_crate=target.sys_crate,
         sys_umbrella=target.sys_umbrella,
+        c_source_path=c_source_path,
     )
 
     # Build the file content with C source as trailing comments
