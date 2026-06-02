@@ -7,6 +7,20 @@ cleared, per-site mechanical tail owed); Phase 0 + P1a COMPLETE;
 csrss.exe fully Rust.** (worktree `worktree-smss-csrss`, merged
 `continue-rust-port` at `689cb2f6`.)
 
+> **Client flip DONE 2026-06-02** (worktree `vibeos-wt-ntdll`, branch
+> `smlib-csrlib-client-flip`, UNCOMMITTED): the last two C client pieces of
+> the spine — **csrlib** (16 `Csr*` → ntdll.dll) and **smlib** (7 `Sm*` →
+> ntdll_vista.dll) — are now flipped to the existing Rust translations via lean
+> `csrlib_only` / `smlib_only` cargo features (one client module each, no
+> csrsrv/server globals), built into per-consumer target dirs and linked into
+> ntdll / ntdll_vista (C commented out + stubbed). csrsrv.dll + smss.exe were
+> already green (their archives carry Rust smlib); only ntdll_vista needed the
+> new archive. **GREEN ×3.** One runtime bug fixed (narrow-vs-wide
+> `size_of_val` on `CSR_PORT_NAME` → `STATUS_OBJECT_NAME_INVALID` at connect).
+> The entire smss/csrss spine is now Rust **client + server** on all 3 arches.
+> Details: `project_smlib_csrlib_client_flip_deferred`,
+> `feedback_sizeof_narrow_bindgen_wide_literal`.
+
 ### Phase 1–2 reality + durable learnings (2026-05-16)
 
 - **The Phase-0 substrate was NOT actually complete** ("PROVEN" was

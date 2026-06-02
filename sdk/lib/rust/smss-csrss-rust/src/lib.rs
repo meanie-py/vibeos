@@ -19,7 +19,7 @@
 // N green smokes). Gated OUT under smss_exe_only: csrss.rs and smss/smss.rs
 // both define `#[no_mangle] _main`, which would collide in the smss.exe
 // archive — smss.exe owns the entry there.
-#[cfg(not(feature = "smss_exe_only"))]
+#[cfg(not(any(feature = "smss_exe_only", feature = "csrlib_only", feature = "smlib_only")))]
 pub mod csrss;
 
 // Phase 3 (smss.exe) + Phase 4 (basesrv.dll) translations sit under
@@ -45,27 +45,31 @@ pub mod csrss;
 // gated OUT — each lean binary defines only the entry points it owns
 // and PE-imports everything else from csrsrv.dll.
 // smss.exe owns smss/* — include under default AND smss_exe_only;
-// gate OUT only for the csrss.exe / basesrv.dll lean binaries.
-#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only")))]
+// gate OUT only for the csrss.exe / basesrv.dll / csrlib / smlib lean binaries.
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "csrlib_only", feature = "smlib_only")))]
 pub mod smss;
-#[cfg(any(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")), feature = "basesrv_dll_only"))]
+#[cfg(any(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only", feature = "csrlib_only", feature = "smlib_only")), feature = "basesrv_dll_only"))]
 pub mod basesrv;
 
 // Phase 1 — SM/CSR LPC protocol contract (translated 2026-05-16).
-// csrlib = client CSR API + capture-buffer marshalling (lands in
-// ntdll.dll — cohabitation flip deferred, see audit §csrlib). smlib =
-// SM client (consumed by csrsrv.dll + smss.exe; cohabitation flips in
-// their phases). Modules carry the #[no_mangle] protocol symbols.
-#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
+// csrlib = client CSR API + capture-buffer marshalling. Lands in
+// ntdll.dll via the `csrlib_only` lean archive (client flip 2026-06-02);
+// also compiled in csrsrv.dll's default-features kitchen-sink build.
+// smlib = SM client (consumed by csrsrv.dll + smss.exe + ntdll_vista.dll;
+// ntdll_vista.dll uses the `smlib_only` lean archive). Modules carry the
+// #[no_mangle] protocol symbols.
+//
+// csrlib: default (no lean feature) OR the csrlib_only lean binary.
+#[cfg(any(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only", feature = "csrlib_only", feature = "smlib_only")), feature = "csrlib_only"))]
 pub mod csrlib;
-// smss.exe links smlib (SM client) — include under default AND smss_exe_only.
-#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only")))]
+// smlib: default OR smss_exe_only (smss.exe) OR smlib_only (ntdll_vista.dll).
+#[cfg(any(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "csrlib_only", feature = "smlib_only")), feature = "smlib_only"))]
 pub mod smlib;
 
 // Phase 2 — csrsrv.dll server runtime (translated 2026-05-16).
 // 35 csrsrv.spec exports; cohabited into csrsrv.dll (the 7 .c
 // commented out in subsystems/csr/csrsrv/CMakeLists.txt).
-#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only")))]
+#[cfg(not(any(feature = "csrss_main_only", feature = "basesrv_dll_only", feature = "smss_exe_only", feature = "csrlib_only", feature = "smlib_only")))]
 pub mod csrsrv;
 
 // Standalone `#![no_std]` staticlib → needs its own panic handler +

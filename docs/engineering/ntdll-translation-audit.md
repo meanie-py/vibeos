@@ -909,16 +909,23 @@ what's left is landing + out-of-body follow-ups:
   arm64 green (`shell ready` + `_tWinMain` exercises the win32k callback path).
 
 **Cross-track coordination (smss-csrss-rust agent):**
-- **smlib / csrlib client flip — DEFERRED to post-merge.** smlib
-  (`SmConnectToSm`/`SmSendMsgToSm`, linked into ntdll_vista.dll) and csrlib
-  (`Csr*` client, linked into ntdll.dll at `CMakeLists.txt` target_link_libraries)
-  are translated + server-side green in `smss-csrss-rust`, but their client flip
-  edits the *same* ntdll/ntdll_vista link lines as this track. To avoid two
-  agents editing those lines at once, defer until `ntdll-rust-port` merges to
-  `continue-rust-port`, then wire a lean `smss-csrss-rust` archive (gated behind
-  a `csrlib_only`/`smlib_only` feature, so csrsrv/basesrv/server globals don't
-  leak into ntdll) into the links. Same companion-cascade shape as ldrapi
-  (`feedback_cohab_flip_companion_dll_cascade`). **Do not re-translate** smlib/
+- **smlib / csrlib client flip — DONE 2026-06-02.** csrlib (`Csr*` client →
+  ntdll.dll) and smlib (`SmConnectToSm`/`SmSendMsgToSm` → ntdll_vista.dll)
+  flipped to the existing `smss-csrss-rust` translations via lean
+  `csrlib_only` / `smlib_only` cargo features (compile ONLY the one client
+  module — no csrsrv/server globals). Each built into its own target dir
+  (`csrlib-rust-target` → `libcsrlib_rust.a`, `smlib-rust-target` →
+  `libsmlib_rust.a`) and added to the ntdll / ntdll_vista link lines; the C
+  (api/capture/connect.c, smclient.c) commented out + stubbed. csrsrv.dll +
+  smss.exe were already green (their archives carry Rust smlib) — only
+  ntdll_vista needed the new archive (the companion cascade,
+  `feedback_cohab_flip_companion_dll_cascade`). **GREEN ×3** (i386/amd64 shell
+  ready, arm64 live CSR LPC dispatch). One runtime bug fixed:
+  `size_of_val()` on bindgen's narrow `CSR_PORT_NAME` under-counted the
+  port-name buffer (`feedback_sizeof_narrow_bindgen_wide_literal`). The whole
+  smss/csrss spine is now Rust client+server. Branch
+  `smlib-csrlib-client-flip` (worktree vibeos-wt-ntdll); see
+  `project_smlib_csrlib_client_flip_deferred`. **Do not re-translate** smlib/
   csrlib — they're done.
 
 **Out-of-body follow-ups (separate tracks, not ntdll PE work):**
