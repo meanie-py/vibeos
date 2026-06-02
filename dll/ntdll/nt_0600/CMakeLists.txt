@@ -13,7 +13,12 @@ include_directories(
 list(APPEND SOURCE
     # ldr/ldrinit.c — replaced by Rust (ntdll-rust/src/nt_0600/ldr/ldrinit.rs)
     #   (whole file is `PVOID LdrpHeap;`; provided by libntdll_rust.a)
-    ldr/ldrnotify.c)
+    # ldr/ldrnotify.c — replaced by Rust (ntdll-rust/src/nt_0600/ldr/ldrnotify.rs);
+    #   LdrRegisterDllNotification / LdrUnregisterDllNotification /
+    #   LdrpSendDllNotifications now provided by libntdll_rust.a (UNGATED — both
+    #   the ntdll.dll and ntdll_vista.dll builds, as the C lib was linked into
+    #   both DLLs). The stub keeps the now-empty OBJECT lib valid.
+    ldr/ldrnotify_rust_stub.c)
 
 add_library(ntdll_vista_static ${SOURCE})
 target_link_libraries(ntdll_vista_static)
@@ -56,6 +61,7 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/dllmain.rs
         ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/mod.rs
         ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
+        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/ldrnotify.rs
         ${RUST_WORKSPACE_DIR}/ntdll-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
     COMMENT "Building ntdll-rust (${RUST_TARGET}) for ntdll_vista.dll"

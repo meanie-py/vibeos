@@ -27,7 +27,11 @@ fn nt_success(status: NTSTATUS) -> bool {
 }
 
 extern "system" {
-    // ndk/umfuncs.h — ntdll export, resolved via the ntdll import lib.
+    // ndk/umfuncs.h — ntdll export. Resolved via the ntdll import lib
+    // (add_importlibs(ntdll_vista ntdll)). The main `ldr` module is NOT compiled
+    // into the `vista` build (see lib.rs), so there is no static loader def in
+    // ntdll_vista's staticlib to shadow this import — it binds to ntdll.dll's
+    // export and the main loader is never dragged in.
     fn LdrDisableThreadCalloutsForDll(base_address: *mut c_void) -> NTSTATUS;
     // ntdllp.h — ntdll-private (rtl/libsupp.c). Both return VOID/NTAPI.
     fn RtlpInitializeKeyedEvent();

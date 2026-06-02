@@ -68,6 +68,137 @@ RtlGetCurrentPeb(VOID)
 }
 
 /*
+ * Helper for the rtl-strings Rust env shims. Lets the Rust side
+ * fetch `Peb->ProcessParameters->Environment` without having to
+ * mirror the per-arch PEB / RTL_USER_PROCESS_PARAMETERS layouts.
+ */
+PWSTR
+NTAPI
+RtlpGetPebEnvironment(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    if (!Peb || !Peb->ProcessParameters) return NULL;
+    return Peb->ProcessParameters->Environment;
+}
+
+VOID
+NTAPI
+RtlpSetPebEnvironment(IN PWSTR NewEnvironment)
+{
+    PPEB Peb = NtCurrentPeb();
+    if (Peb && Peb->ProcessParameters)
+        Peb->ProcessParameters->Environment = NewEnvironment;
+}
+
+/*
+ * Helpers for the rtl-strings Rust Wave THR (thread.c) shims. Same
+ * pattern as the env helpers above: lets the Rust side read fields
+ * out of PEB / TEB / IMAGE_NT_HEADERS without having to mirror the
+ * per-arch layouts.
+ */
+PVOID
+NTAPI
+RtlpThrGetPebImageBaseAddress(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->ImageBaseAddress : NULL;
+}
+
+SIZE_T
+NTAPI
+RtlpThrGetPebMinimumStackCommit(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->MinimumStackCommit : 0;
+}
+
+ULONG
+NTAPI
+RtlpThrGetPebNtGlobalFlag(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->NtGlobalFlag : 0;
+}
+
+VOID
+NTAPI
+RtlpThrSetFreeStackOnTermination(VOID)
+{
+    NtCurrentTeb()->FreeStackOnTermination = TRUE;
+}
+
+PVOID
+NTAPI
+RtlpThrTebDeallocStackAddr(PVOID TebBase)
+{
+    return &((PTEB)TebBase)->DeallocationStack;
+}
+
+SIZE_T
+NTAPI
+RtlpThrImageStackReserve(PVOID Headers)
+{
+    return ((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackReserve;
+}
+
+SIZE_T
+NTAPI
+RtlpThrImageStackCommit(PVOID Headers)
+{
+    return ((PIMAGE_NT_HEADERS)Headers)->OptionalHeader.SizeOfStackCommit;
+}
+
+PVOID
+NTAPI
+RtlpThrCurrentTeb(VOID)
+{
+    return (PVOID)NtCurrentTeb();
+}
+
+/*
+ * Helpers for the rtl-strings Rust Wave PRC (process.c) shims.
+ */
+ULONG
+NTAPI
+RtlpPrcGetPebOSMajorVersion(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->OSMajorVersion : 0;
+}
+
+ULONG
+NTAPI
+RtlpPrcGetPebOSMinorVersion(VOID)
+{
+    PPEB Peb = NtCurrentPeb();
+    return Peb ? Peb->OSMinorVersion : 0;
+}
+
+PVOID
+NTAPI
+RtlpPrcPebProcessParametersAddr(PVOID PebBase)
+{
+    return &((PPEB)PebBase)->ProcessParameters;
+}
+
+/*
+ * `RtlGetProcessHeap()` is a macro in ndk/rtlfuncs.h. The Rust
+ * cabi declares it as `extern "system" fn RtlGetProcessHeap`,
+ * which on i386 stdcall produces `_RtlGetProcessHeap@0` as an
+ * undefined symbol. C call sites inline the macro and don't
+ * import the symbol. Provide a real exported function so the
+ * Rust call from RtlAcquirePrivilege & friends resolves cleanly
+ * in the ntdll user-mode link.
+ */
+#undef RtlGetProcessHeap
+PVOID
+NTAPI
+RtlGetProcessHeap(VOID)
+{
+    return NtCurrentPeb()->ProcessHeap;
+}
+
+/*
  * @implemented
  */
 VOID NTAPI

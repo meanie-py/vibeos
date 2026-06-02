@@ -5,3 +5,5 @@
 pub mod ldrpe;
 pub mod ldrutils;
 pub mod verifier;
+pub mod ldrinit;
+pub mod ldrapi;

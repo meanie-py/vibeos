@@ -16,7 +16,7 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::helpers::*;
 
 extern "C" {
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PVOID /* *mut _UNICODE_STRING */, a: ULONG, r: HANDLE, s: *mut _SECURITY_DESCRIPTOR, );
+    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
 }
 
 /// CONTAINING_RECORD macro: given a pointer to a field within a struct, return
@@ -971,10 +971,10 @@ unsafe fn MiCreateMemoryEvent(name: PUNICODE_STRING, event: *mut PKEVENT) -> NTS
 
     InitializeObjectAttributes(
         core::ptr::addr_of_mut!(object_attributes),
-        name as PVOID,
+        name as PUNICODE_STRING,
         OBJ_KERNEL_HANDLE | OBJ_PERMANENT,
         core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(security_descriptor),
+        core::ptr::addr_of_mut!(security_descriptor) as PVOID,
     );
 
     status = ZwCreateEvent(

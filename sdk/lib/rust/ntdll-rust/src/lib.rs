@@ -41,9 +41,25 @@ pub mod etw;
 // compiled — lands in ntdll.dll proper.
 pub mod dbg;
 
-// ldr/ — main ntdll.dll loader translations (ldr/verifier.c, …). Always
-// compiled — lands in ntdll.dll proper. Distinct from nt_0600::ldr.
+// ldr/ — main ntdll.dll loader translations (ldr/verifier.c, ldrapi.c,
+// ldrinit.c, ldrpe.c, ldrutils.c). Lands in ntdll.dll proper. Distinct from
+// nt_0600::ldr. NOT compiled into the `vista` build: ntdll_vista.dll imports
+// the loader API (e.g. LdrDisableThreadCalloutsForDll) from ntdll.dll via its
+// import lib. If the loader def were in ntdll_vista's staticlib, the nt_0600
+// DllMain reference would pull it in statically and cascade the whole loader +
+// its C callees (LdrProcessRelocationBlockLongLong, find_entry_*, … — not
+// linked into ntdll_vista). Gating keeps ntdll_vista a thin companion.
+#[cfg(not(feature = "vista"))]
 pub mod ldr;
+
+// dispatch/ — user-mode NT dispatchers (dispatch/dispatch.c). ARM64-ONLY: on
+// i386/amd64 the dispatcher set is pure asm (dispatch/<arch>/dispatch.S) and the
+// .c is not compiled, so defining these #[no_mangle] symbols there would collide
+// with the .S. On arm64 the .S still owns KiUserExceptionDispatcher/KiUserApc
+// Dispatcher/LdrInitializeThunk; this provides only KiRaiseUserExceptionDispatcher
+// + KiUserCallbackDispatcher. Lands in ntdll.dll proper.
+#[cfg(target_arch = "aarch64")]
+pub mod dispatch;
 
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust/kdcom-rust/hal-rust).
