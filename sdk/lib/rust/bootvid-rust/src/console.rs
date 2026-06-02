@@ -3,9 +3,7 @@
 
 use crate::pc::*;
 #[allow(unused_imports)] use crate::fontdata::*;
-#[allow(unused_imports)] use crate::bootdata::*;
 #[allow(unused_imports)] use crate::common::*;
-#[allow(unused_imports)] use crate::vga::*;
 #[allow(unused_imports)] use crate::bootvid::*;
 use ntkrnl_sys::base::*;
 use core::ffi::c_void;

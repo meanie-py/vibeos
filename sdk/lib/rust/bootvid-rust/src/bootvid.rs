@@ -1,358 +1,477 @@
-//! AI-translated from drivers/base/bootvid/ (bootvid); extern blocks
-//! stripped — header inlines/macros/FFI provided by crate::pc.
-
-use crate::pc::*;
-#[allow(unused_imports)] use crate::fontdata::*;
-#[allow(unused_imports)] use crate::bootdata::*;
-#[allow(unused_imports)] use crate::common::*;
-#[allow(unused_imports)] use crate::console::*;
-#[allow(unused_imports)] use crate::vga::*;
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ddk::{MmAllocateContiguousMemorySpecifyCache, MmMapIoSpace, MmUnmapIoSpace, PHYSICAL_ADDRESS, INTERFACE_TYPE};
 use core::ffi::c_void;
+// precomp.h / display.h / framebuf.h substrate (RGBQUAD, BV_*, SCREEN_*,
+// BOOTCHAR_*, GetFontPtr, InitializePalette, the Vidp* globals, CM_FRAMEBUF_*).
+use crate::pc::*;
+// console.c provides VidResetDisplay; framebuf.c (framebuf_impl) provides
+// FindBootDisplay + BootTranslateBusAddress.
+use crate::console::VidResetDisplay;
+use crate::framebuf_impl::{FindBootDisplay, BootTranslateBusAddress};
 
-pub unsafe fn VgaInterpretCmdStream(
-    CmdStream: *const u16
-) -> u8 {
-    let mut Cmd: u16;
-    let mut Major: u16;
-    let mut Minor: u16;
-    let mut Port: u16;
-    let mut Count: u16;
-    let mut Index: u8;
-    let mut Value: u8;
-    let mut ShortValue: u16;
-    let mut CmdStreamPtr = CmdStream;
+// MEMORY_CACHING_TYPE::MmFrameBufferCached (xdk/mmtypes.h = 2).
+const MmFrameBufferCached: ULONG = 2;
 
-    if CmdStreamPtr.is_null() {
-        return 1u8;
-    }
+#[inline(always)]
+fn min(a: u32, b: u32) -> u32 { if a < b { a } else { b } }
 
-    while *CmdStreamPtr != EOD {
-        Cmd = *CmdStreamPtr;
-        CmdStreamPtr = CmdStreamPtr.offset(1);
-        Major = Cmd & 0xF0;
-        Minor = Cmd & 0x0F;
+// ---- file-scope preamble (translated) ----
+pub static mut FrameBufferStart: ULONG_PTR = 0;
+pub static mut FrameBufferSize: ULONG = 0;
+pub static mut ScreenWidth: ULONG = 0;
+pub static mut ScreenHeight: ULONG = 0;
+pub static mut BytesPerScanLine: ULONG = 0;
+pub static mut BytesPerPixel: UCHAR = 0;
+pub static mut BackBuffer: PUCHAR = core::ptr::null_mut();
+pub static mut BackBufferSize: SIZE_T = 0;
+pub static mut VidpXScale: USHORT = 1;
+pub static mut VidpYScale: USHORT = 1;
+pub static mut PanH: ULONG = 0;
+pub static mut PanV: ULONG = 0;
+pub static mut CachedPalette: [RGBQUAD; BV_MAX_COLORS] = [0 as RGBQUAD; BV_MAX_COLORS];
 
-        if Major == INOUT {
-            if Minor & IO != 0 {
-                if Minor & BW != 0 {
-                    Port = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    ShortValue = __inpw(Port);
-                } else {
-                    Port = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Value = __inpb(Port);
-                }
-            } else if Minor & MULTI != 0 {
-                if Minor & BW != 0 {
-                    Port = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Count = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
+unsafe fn ApplyPalette() {
+    let mut Frame: PULONG;
+    let mut x: ULONG;
+    let mut y: ULONG;
 
-                    WRITE_PORT_BUFFER_USHORT(
-                        (VgaRegisterBase + Port as usize) as *mut u16,
-                        CmdStreamPtr,
-                        Count as u32
-                    );
-
-                    CmdStreamPtr = CmdStreamPtr.offset(Count as isize);
-                } else {
-                    Port = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Count = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-
-                    let mut i = Count;
-                    while i > 0 {
-                        Value = (*CmdStreamPtr) as u8;
-                        __outpb(Port, Value);
-                        i -= 1;
-                        CmdStreamPtr = CmdStreamPtr.offset(1);
-                    }
-                }
-            } else if Minor & BW != 0 {
-                Port = *CmdStreamPtr;
-                CmdStreamPtr = CmdStreamPtr.offset(1);
-
-                ShortValue = *CmdStreamPtr;
-                CmdStreamPtr = CmdStreamPtr.offset(1);
-                __outpw(Port, ShortValue);
-            } else {
-                Port = *CmdStreamPtr;
-                CmdStreamPtr = CmdStreamPtr.offset(1);
-
-                Value = (*CmdStreamPtr) as u8;
-                CmdStreamPtr = CmdStreamPtr.offset(1);
-                __outpb(Port, Value);
+    /* Screen redraw */
+    let mut Back: PUCHAR = BackBuffer;
+    y = 0;
+    while y < SCREEN_HEIGHT {
+        Frame = (FrameBufferStart
+            + (PanV + VidpYScale as ULONG * y) as ULONG_PTR * BytesPerScanLine as ULONG_PTR
+            + (PanH + VidpXScale as ULONG * 0) as ULONG_PTR * BytesPerPixel as ULONG_PTR)
+            as PULONG;
+        let mut Pixel: PULONG = Frame;
+        x = 0;
+        while x < SCREEN_WIDTH {
+            let mut j = VidpXScale as ULONG;
+            while j > 0 {
+                *Pixel = CachedPalette[*Back as usize];
+                Pixel = Pixel.add(1);
+                j -= 1;
             }
-        } else if Major == METAOUT {
-            match Minor {
-                INDXOUT => {
-                    Port = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Count = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Index = (*CmdStreamPtr) as u8;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-
-                    let mut i = Count;
-                    while i > 0 {
-                        ShortValue = Index as u16 + ((*CmdStreamPtr) << 8);
-                        __outpw(Port, ShortValue);
-                        i -= 1;
-                        Index = Index.wrapping_add(1);
-                        CmdStreamPtr = CmdStreamPtr.offset(1);
-                    }
-                }
-
-                ATCOUT => {
-                    Port = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Count = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Index = (*CmdStreamPtr) as u8;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-
-                    let mut i = Count;
-                    while i > 0 {
-                        __outpb(Port, Index);
-
-                        Value = (*CmdStreamPtr) as u8;
-                        __outpb(Port, Value);
-                        i -= 1;
-                        Index = Index.wrapping_add(1);
-                        CmdStreamPtr = CmdStreamPtr.offset(1);
-                    }
-                }
-
-                MASKOUT => {
-                    Port = *CmdStreamPtr;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-
-                    Value = __inpb(Port);
-                    Value &= (*CmdStreamPtr) as u8;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-                    Value ^= (*CmdStreamPtr) as u8;
-                    CmdStreamPtr = CmdStreamPtr.offset(1);
-
-                    __outpb(Port, Value);
-                }
-
-                _ => {
-                    return 0u8;
-                }
-            }
-        } else if Major != NCMD {
-            return 0u8;
+            Back = Back.add(1);
+            x += 1;
         }
-    }
-
-    return 1u8;
-}
-
-pub unsafe fn VgaIsPresent() -> u8 {
-    let mut OrgGCAddr: u8;
-    let mut OrgReadMap: u8;
-    let mut OrgBitMask: u8;
-    let mut OrgSCAddr: u8;
-    let mut OrgMemMode: u8;
-    let mut i: u8;
-
-    OrgGCAddr = __inpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT);
-
-    __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-
-    if (__inpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT) & GRAPH_ADDR_MASK) != IND_READ_MAP {
-        return 0u8;
-    }
-
-    OrgReadMap = __inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT);
-    __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_TEST_SETTING);
-
-    if __inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT) != READ_MAP_TEST_SETTING {
-        __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-        return 0u8;
-    }
-
-    __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_BIT_MASK);
-
-    if (__inpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT) & GRAPH_ADDR_MASK) != IND_BIT_MASK {
-        __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-        __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-        return 0u8;
-    }
-
-    OrgBitMask = __inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT);
-
-    i = 0xBB;
-    while i != 0 {
-        __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, i);
-
-        if __inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT) != i {
-            __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, BIT_MASK_DEFAULT);
-            __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-            __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-            return 0u8;
+        Pixel = Frame;
+        let mut i = VidpYScale as ULONG - 1;
+        while i > 0 {
+            Pixel = ((Pixel as ULONG_PTR) + BytesPerScanLine as ULONG_PTR) as PULONG;
+            RtlCopyMemory(
+                Pixel as *mut core::ffi::c_void,
+                Frame as *const core::ffi::c_void,
+                (VidpXScale as ULONG * SCREEN_WIDTH * BytesPerPixel as ULONG) as usize,
+            );
+            i -= 1;
         }
-
-        i >>= 1;
+        y += 1;
     }
-
-    __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-
-    if __inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT) != READ_MAP_TEST_SETTING {
-        __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-        __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_BIT_MASK);
-        __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, BIT_MASK_DEFAULT);
-        return 0u8;
-    }
-
-    __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, OrgReadMap);
-    __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_BIT_MASK);
-    __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, OrgBitMask);
-    __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, OrgGCAddr);
-
-    OrgSCAddr = __inpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT);
-    __outpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, IND_MEMORY_MODE);
-
-    if (__inpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT) & SEQ_ADDR_MASK) != IND_MEMORY_MODE {
-        return 0u8;
-    }
-
-    OrgMemMode = __inpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT);
-
-    __outpw(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, (IND_SYNC_RESET as u16 + ((START_SYNC_RESET_VALUE as u16) << 8)));
-
-    __outpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, IND_MEMORY_MODE);
-    __outpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT, OrgMemMode ^ CHAIN4_MASK);
-
-    if __inpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT) != (OrgMemMode ^ CHAIN4_MASK) {
-        __outpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT, MEMORY_MODE_TEXT_DEFAULT);
-
-        __outpw(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, (IND_SYNC_RESET as u16 + ((END_SYNC_RESET_VALUE as u16) << 8)));
-
-        return 0u8;
-    }
-
-    __outpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT, OrgMemMode);
-
-    __outpw(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, (IND_SYNC_RESET as u16 + ((END_SYNC_RESET_VALUE as u16) << 8)));
-
-    __outpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, OrgSCAddr);
-
-    return 1u8;
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn VidInitialize(
-    SetMode: u8
-) -> u8 {
-    let mut Context: usize = 0;
-    let mut TranslatedAddress = PHYSICAL_ADDRESS { LowPart: 0, HighPart: 0 };
-    let mut NullAddress = PHYSICAL_ADDRESS { LowPart: 0, HighPart: 0 };
-    let mut VgaAddress: PHYSICAL_ADDRESS;
-    let mut AddressSpace: u32;
-    let mut Result: u8;
-    let mut Base: usize;
+pub unsafe extern "system" fn VidInitialize(SetMode: BOOLEAN) -> BOOLEAN {
+    let mut FrameBuffer: PHYSICAL_ADDRESS = core::mem::zeroed();
+    let mut VramAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
+    let mut VramSize: ULONG = 0;
+    let mut VideoConfigData: CM_FRAMEBUF_DEVICE_DATA = core::mem::zeroed();
+    let mut Interface: INTERFACE_TYPE = core::mem::zeroed();
+    let mut BusNumber: ULONG = 0;
+    let Status: NTSTATUS;
 
-    // C: `if (!HalFindBusAddressTranslation) return FALSE;`
-    // (HALPRIVATEDISPATCH->HalFindBusAddressTranslation macro).
-    let hpd = HALPRIVATEDISPATCH();
-    let fbt = match (*hpd).HalFindBusAddressTranslation {
-        None => return 0u8,
-        Some(f) => f,
-    };
+    /* Find boot-time framebuffer display information from the LoaderBlock */
+    Status = FindBootDisplay(
+        &mut VramAddress,
+        &mut VramSize,
+        &mut VideoConfigData,
+        core::ptr::null_mut(),
+        &mut Interface,
+        &mut BusNumber,
+    );
+    if !NT_SUCCESS(Status) {
+        return 0u8;
+    }
 
-    loop {
-        AddressSpace = 1;
-        Result = fbt(
-            NullAddress,
-            &mut AddressSpace,
-            &mut TranslatedAddress,
-            &mut Context,
-            1u8
-        );
-        if Result == 0 {
+    /* Retrieve the framebuffer address, its visible screen dimensions, and its attributes */
+    FrameBuffer.QuadPart = VramAddress.QuadPart + VideoConfigData.FrameBufferOffset as i64;
+    ScreenWidth = VideoConfigData.ScreenWidth;
+    ScreenHeight = VideoConfigData.ScreenHeight;
+    if ScreenWidth < SCREEN_WIDTH || ScreenHeight < SCREEN_HEIGHT {
+        return 0u8;
+    }
+
+    BytesPerPixel = ((VideoConfigData.BitsPerPixel + 7) / 8) as UCHAR;
+    if BytesPerPixel != 4 {
+        return 0u8;
+    }
+
+    BytesPerScanLine = VideoConfigData.PixelsPerScanLine * BytesPerPixel as ULONG;
+    if BytesPerScanLine < 1 {
+        return 0u8;
+    }
+
+    /* Compute the visible framebuffer size */
+    FrameBufferSize = ScreenHeight * BytesPerScanLine;
+
+    /* Verify that the framebuffer actually fits inside the video RAM */
+    if FrameBuffer.QuadPart + FrameBufferSize as i64 > VramAddress.QuadPart + VramSize as i64 {
+        return 0u8;
+    }
+
+    /* Translate the framebuffer from bus-relative to physical address */
+    let mut TranslatedAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
+    let mut AddressSpace: ULONG = 0;
+    if BootTranslateBusAddress(
+        Interface,
+        BusNumber,
+        FrameBuffer,
+        &mut AddressSpace,
+        &mut TranslatedAddress,
+    ) == 0
+    {
+        return 0u8;
+    }
+
+    /* Map it into system space if necessary */
+    let mut MappedSize: ULONG = 0;
+    let mut FrameBufferBase: PVOID = core::ptr::null_mut();
+    if AddressSpace == 0 {
+        FrameBuffer.__bindgen_anon_1.HighPart = TranslatedAddress.__bindgen_anon_1.HighPart;
+        FrameBuffer.__bindgen_anon_1.LowPart =
+            ALIGN_DOWN_BY(TranslatedAddress.__bindgen_anon_1.LowPart as usize, PAGE_SIZE as usize) as ULONG;
+        MappedSize = FrameBufferSize;
+        MappedSize += (TranslatedAddress.QuadPart - FrameBuffer.QuadPart) as ULONG;
+        MappedSize = ROUND_TO_PAGES(MappedSize as usize) as ULONG;
+        FrameBufferBase = MmMapIoSpace(FrameBuffer, MappedSize as _, MmFrameBufferCached);
+        if FrameBufferBase.is_null() {
+            FrameBufferBase = MmMapIoSpace(FrameBuffer, MappedSize as _, MmNonCached);
+        }
+        if FrameBufferBase.is_null() {
+            if !FrameBufferBase.is_null() && AddressSpace == 0 {
+                MmUnmapIoSpace(FrameBufferBase, MappedSize as _);
+            }
             return 0u8;
         }
-
-        if AddressSpace == 0 {
-            Base = MmMapIoSpace(TranslatedAddress, 0x400, MmNonCached) as usize;
-        } else {
-            Base = TranslatedAddress.LowPart as usize;
-        }
-
-        VgaRegisterBase = Base;
-        if VgaIsPresent() != 0 {
-            VgaAddress = PHYSICAL_ADDRESS { LowPart: MEM_VGA, HighPart: 0 };
-            AddressSpace = 0;
-            Result = fbt(
-                VgaAddress,
-                &mut AddressSpace,
-                &mut TranslatedAddress,
-                &mut Context,
-                0u8
-            );
-            if Result != 0 {
-                break;
-            }
-        } else {
-            if AddressSpace == 0 {
-                MmUnmapIoSpace(VgaRegisterBase as *mut core::ffi::c_void, 0x400);
-            }
-        }
-    }
-
-    if AddressSpace == 0 {
-        Base = MmMapIoSpace(
-            TranslatedAddress,
-            MEM_VGA_SIZE,
-            MmNonCached
-        ) as usize;
+        FrameBufferStart = FrameBufferBase as ULONG_PTR;
+        FrameBufferStart += (TranslatedAddress.QuadPart - FrameBuffer.QuadPart) as ULONG_PTR;
     } else {
-        Base = TranslatedAddress.LowPart as usize;
+        FrameBufferStart = TranslatedAddress.QuadPart as ULONG_PTR;
     }
 
-    VgaBase = Base;
+    BackBufferSize = (SCREEN_WIDTH * (SCREEN_HEIGHT + (BOOTCHAR_HEIGHT + 1))) as SIZE_T;
 
-    /* Check whether we have to set the video mode */
-    if SetMode != 0 {
-        VidpCurrentX = 0;
-        VidpCurrentY = 0;
-
-        if HalResetDisplay() != 0 {
-            /* HAL handled it — re-init only the AC registers */
-            VgaInterpretCmdStream(AT_Initialization.as_ptr());
-        } else {
-            /* HAL didn't — fully re-initialize the VGA */
-            VgaInterpretCmdStream(VGA_640x480.as_ptr());
+    if (VideoConfigData.FrameBufferOffset + FrameBufferSize + BackBufferSize as ULONG)
+        <= (if AddressSpace == 0 { MappedSize } else { VramSize })
+    {
+        BackBuffer = (FrameBufferStart + FrameBufferSize as ULONG_PTR) as PUCHAR;
+    } else {
+        let mut NullAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
+        NullAddress.QuadPart = 0;
+        let mut HighestAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
+        HighestAddress.QuadPart = -1;
+        BackBuffer = MmAllocateContiguousMemorySpecifyCache(
+            BackBufferSize as _,
+            NullAddress,
+            HighestAddress,
+            NullAddress,
+            MmNonCached,
+        ) as PUCHAR;
+        if BackBuffer.is_null() {
+            if !FrameBufferBase.is_null() && AddressSpace == 0 {
+                MmUnmapIoSpace(FrameBufferBase, MappedSize as _);
+            }
+            return 0u8;
         }
+    }
+
+    /* Compute autoscaling; only integer (not fractional) scaling is supported */
+    VidpXScale = (ScreenWidth / SCREEN_WIDTH) as USHORT;
+    VidpYScale = (ScreenHeight / SCREEN_HEIGHT) as USHORT;
+    VidpXScale = min(VidpXScale as u32, VidpYScale as u32) as USHORT;
+    VidpYScale = VidpXScale;
+
+    /* Calculate left/right and top/bottom border values */
+    PanH = (ScreenWidth - VidpXScale as ULONG * SCREEN_WIDTH) / 2;
+    PanV = (ScreenHeight - VidpYScale as ULONG * SCREEN_HEIGHT) / 2;
+
+    /* Reset the video mode if requested */
+    if SetMode != 0 {
+        VidResetDisplay(1u8);
     }
 
     1u8
 }
 
-/// C macro `HalResetDisplay()` = `HALPRIVATEDISPATCH->HalResetDisplay()`.
-#[inline]
-unsafe fn HalResetDisplay() -> u8 {
-    (*HALPRIVATEDISPATCH()).HalResetDisplay.map_or(0u8, |f| f())
+#[no_mangle]
+pub unsafe extern "system" fn VidCleanUp() {
+    VidSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLACK as UCHAR);
 }
+#[no_mangle]
+pub unsafe extern "C" fn ResetDisplay(SetMode: BOOLEAN) {
+    RtlZeroMemory(BackBuffer as PVOID, BackBufferSize);
+    RtlZeroMemory(FrameBufferStart as PVOID, FrameBufferSize as SIZE_T);
 
-pub unsafe fn ResetDisplay(
-    SetMode: u8
-) {
+    /* Re-initialize the palette and fill the screen black */
+    InitializePalette();
+    VidSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLACK as UCHAR);
+}
+#[no_mangle]
+pub unsafe extern "C" fn InitPaletteWithTable(Table: *const ULONG, Count: ULONG) {
+    let mut Entry: *const ULONG = Table;
+    let mut i: ULONG;
+    let mut HasChanged: BOOLEAN = 0u8;
 
-    if SetMode != 0 && HalResetDisplay() == 0 {
-        VgaInterpretCmdStream(VGA_640x480.as_ptr());
+    i = 0;
+    while i < Count {
+        if ((CachedPalette[i as usize] ^ *Entry) & 0x00FFFFFF) != 0 {
+            HasChanged |= 1u8;
+        }
+        CachedPalette[i as usize] = *Entry | 0xFF000000;
+
+        i += 1;
+        Entry = Entry.add(1);
     }
 
-    VgaInterpretCmdStream(AT_Initialization.as_ptr());
+    /* Re-apply the palette if it has changed */
+    if HasChanged != 0 {
+        ApplyPalette();
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn SetPixel(Left: ULONG, Top: ULONG, Color: UCHAR) {
+    let Back: PUCHAR = (BackBuffer as PUCHAR).add((Top * SCREEN_WIDTH + Left) as usize);
+    let mut Frame: PULONG = (FrameBufferStart as PUCHAR)
+        .add(((PanV + VidpYScale as ULONG * Top) * BytesPerScanLine
+            + (PanH + VidpXScale as ULONG * Left) * BytesPerPixel as ULONG) as usize)
+        as PULONG;
 
-    // C macro: InitPaletteWithTable((PULONG)VidpDefaultPalette, BV_MAX_COLORS)
-    InitPaletteWithTable(VidpDefaultPalette.as_ptr() as *mut ULONG, BV_MAX_COLORS as ULONG);
-    VidSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLACK as u8);
+    *Back = Color;
+    let mut i = VidpYScale as ULONG;
+    while i > 0 {
+        let mut Pixel: PULONG = Frame;
+        let mut j = VidpXScale as ULONG;
+        while j > 0 {
+            *Pixel = CachedPalette[Color as usize];
+            Pixel = Pixel.add(1);
+            j -= 1;
+        }
+        Frame = (Frame as ULONG_PTR + BytesPerScanLine as ULONG_PTR) as PULONG;
+        i -= 1;
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn PreserveRow(CurrentTop: ULONG, TopDelta: ULONG, Restore: BOOLEAN) {
+    let mut NewPosition: PUCHAR;
+    let OldPosition: PUCHAR;
+
+    if Restore != 0 {
+        NewPosition = (BackBuffer as PUCHAR).add((CurrentTop as usize) * (SCREEN_WIDTH as usize));
+        OldPosition = (BackBuffer as PUCHAR).add((SCREEN_HEIGHT as usize) * (SCREEN_WIDTH as usize));
+    } else {
+        NewPosition = (BackBuffer as PUCHAR).add((SCREEN_HEIGHT as usize) * (SCREEN_WIDTH as usize));
+        OldPosition = (BackBuffer as PUCHAR).add((CurrentTop as usize) * (SCREEN_WIDTH as usize));
+    }
+
+    let mut Count: ULONG = TopDelta * SCREEN_WIDTH;
+    RtlCopyMemory(NewPosition as *mut _, OldPosition as *const _, Count as usize);
+
+    if Restore != 0 {
+        NewPosition = (BackBuffer as PUCHAR).add((CurrentTop as usize) * (SCREEN_WIDTH as usize));
+        let mut y: ULONG = 0;
+        while y < TopDelta {
+            let Frame = (FrameBufferStart as *mut u8).add(
+                ((PanV + (VidpYScale as ULONG) * (CurrentTop + y)) as usize) * (BytesPerScanLine as usize)
+                    + ((PanH + (VidpXScale as ULONG) * 0) as usize) * (BytesPerPixel as usize),
+            ) as PULONG;
+            let mut Pixel: PULONG = Frame;
+            Count = 0;
+            while Count < SCREEN_WIDTH {
+                let mut j: ULONG = VidpXScale as ULONG;
+                while j > 0 {
+                    *Pixel = CachedPalette[*NewPosition as usize];
+                    Pixel = Pixel.add(1);
+                    j -= 1;
+                }
+                NewPosition = NewPosition.add(1);
+                Count += 1;
+            }
+            Pixel = Frame;
+            let mut i: ULONG = (VidpYScale as ULONG).wrapping_sub(1);
+            while i > 0 {
+                Pixel = ((Pixel as ULONG_PTR) + (BytesPerScanLine as ULONG_PTR)) as PULONG;
+                RtlCopyMemory(
+                    Pixel as *mut _,
+                    Frame as *const _,
+                    ((VidpXScale as ULONG) * SCREEN_WIDTH * (BytesPerPixel as ULONG)) as usize,
+                );
+                i -= 1;
+            }
+            y += 1;
+        }
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn DoScroll(Scroll: ULONG) {
+    let RowSize: ULONG = (VidpScrollRegion.Right - VidpScrollRegion.Left + 1) as ULONG;
+
+    let mut OldPosition: PUCHAR = (BackBuffer as ULONG_PTR
+        + ((VidpScrollRegion.Top + Scroll) as ULONG_PTR) * SCREEN_WIDTH as ULONG_PTR
+        + VidpScrollRegion.Left as ULONG_PTR) as PUCHAR;
+    let mut NewPosition: PUCHAR = (BackBuffer as ULONG_PTR
+        + (VidpScrollRegion.Top as ULONG_PTR) * SCREEN_WIDTH as ULONG_PTR
+        + VidpScrollRegion.Left as ULONG_PTR) as PUCHAR;
+
+    let mut Top: ULONG = VidpScrollRegion.Top as ULONG;
+    while Top <= VidpScrollRegion.Bottom as ULONG {
+        RtlCopyMemory(NewPosition as _, OldPosition as _, RowSize as usize);
+
+        let Frame: PULONG = (FrameBufferStart
+            + (PanV + VidpYScale as ULONG * Top) as ULONG_PTR * BytesPerScanLine as ULONG_PTR
+            + (PanH + VidpXScale as ULONG * VidpScrollRegion.Left as ULONG) as ULONG_PTR * BytesPerPixel as ULONG_PTR)
+            as PULONG;
+        let mut Pixel: PULONG = Frame;
+        let mut Count: ULONG = 0;
+        while Count < RowSize {
+            let mut j: ULONG = VidpXScale as ULONG;
+            while j > 0 {
+                *Pixel = CachedPalette[*NewPosition.add(Count as usize) as usize];
+                Pixel = Pixel.add(1);
+                j -= 1;
+            }
+            Count += 1;
+        }
+        Pixel = Frame;
+        let mut i: ULONG = VidpYScale as ULONG - 1;
+        while i > 0 {
+            Pixel = (Pixel as ULONG_PTR + BytesPerScanLine as ULONG_PTR) as PULONG;
+            RtlCopyMemory(
+                Pixel as _,
+                Frame as _,
+                (VidpXScale as ULONG * RowSize * BytesPerPixel as ULONG) as usize,
+            );
+            i -= 1;
+        }
+
+        OldPosition = OldPosition.add(SCREEN_WIDTH as usize);
+        NewPosition = NewPosition.add(SCREEN_WIDTH as usize);
+        Top += 1;
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn DisplayCharacter(
+    Character: CHAR,
+    Left: ULONG,
+    Top: ULONG,
+    TextColor: ULONG,
+    BackColor: ULONG,
+) {
+    let mut FontChar: *const UCHAR = GetFontPtr(Character);
+
+    let mut y: ULONG = Top;
+    while y < Top + BOOTCHAR_HEIGHT {
+        let mut x: ULONG = Left;
+        let mut bit: UCHAR = 1 << (BOOTCHAR_WIDTH - 1);
+        while bit > 0 {
+            if *FontChar & bit != 0 {
+                SetPixel(x, y, TextColor as UCHAR);
+            } else if BackColor < BV_COLOR_NONE {
+                SetPixel(x, y, BackColor as UCHAR);
+            }
+            bit >>= 1;
+            x += 1;
+        }
+        y += 1;
+        FontChar = FontChar.add(FONT_PTR_DELTA as usize);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn VidSolidColorFill(
+    Left: ULONG,
+    Top: ULONG,
+    Right: ULONG,
+    Bottom: ULONG,
+    Color: UCHAR,
+) {
+    let mut Top = Top;
+    while Top <= Bottom {
+        let mut Back = (BackBuffer as ULONG_PTR + (Top as ULONG_PTR) * SCREEN_WIDTH as ULONG_PTR + Left as ULONG_PTR) as PUCHAR;
+        // NOTE: Assumes 32bpp
+        let Frame = (FrameBufferStart
+            + ((PanV + VidpYScale as ULONG * Top) as ULONG_PTR) * BytesPerScanLine as ULONG_PTR
+            + ((PanH + VidpXScale as ULONG * Left) as ULONG_PTR) * BytesPerPixel as ULONG_PTR)
+            as PULONG;
+        let mut Pixel = Frame;
+        let mut L = Left;
+        while L <= Right {
+            *Back = Color;
+            Back = Back.add(1);
+            let mut j = VidpXScale;
+            while j > 0 {
+                *Pixel = CachedPalette[Color as usize];
+                Pixel = Pixel.add(1);
+                j -= 1;
+            }
+            L += 1;
+        }
+        Pixel = Frame;
+        let mut i = VidpYScale - 1;
+        while i > 0 {
+            Pixel = ((Pixel as ULONG_PTR) + BytesPerScanLine as ULONG_PTR) as PULONG;
+            RtlCopyMemory(
+                Pixel as *mut _,
+                Frame as *const _,
+                (VidpXScale as ULONG * (Right - Left + 1) * BytesPerPixel as ULONG) as usize,
+            );
+            i -= 1;
+        }
+        Top += 1;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn VidScreenToBufferBlt(
+    Buffer: PUCHAR,
+    Left: ULONG,
+    Top: ULONG,
+    Width: ULONG,
+    Height: ULONG,
+    Delta: ULONG,
+) {
+    let mut x: ULONG;
+    let mut y: ULONG;
+
+    /* Clear the destination buffer */
+    RtlZeroMemory(Buffer as *mut core::ffi::c_void, (Delta * Height) as usize);
+
+    /* Start the outer Y height loop */
+    y = 0;
+    while y < Height {
+        /* Set current scanline */
+        let mut Back: PUCHAR =
+            (BackBuffer).add(((Top + y) * SCREEN_WIDTH + Left) as usize);
+        let mut Buf: PUCHAR = Buffer.add((y * Delta) as usize);
+
+        /* Start the X inner loop */
+        x = 0;
+        while x < Width {
+            /* Read the current value */
+            *Buf = (*Back & 0xF) << 4;
+            Back = Back.add(1);
+            *Buf |= *Back & 0xF;
+            Back = Back.add(1);
+            Buf = Buf.add(1);
+
+            x += core::mem::size_of::<USHORT>() as ULONG;
+        }
+
+        y += 1;
+    }
 }
 
 
@@ -361,364 +480,124 @@ pub unsafe fn ResetDisplay(
 // ============================================================================
 //
 // /*
-//  * PROJECT:     ReactOS Boot Video Driver for VGA-compatible cards
+//  * PROJECT:     ReactOS Generic Framebuffer Boot Video Driver
 //  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+//  *              or MIT (https://spdx.org/licenses/MIT)
 //  * PURPOSE:     Main file
-//  * COPYRIGHT:   Copyright 2007 Alex Ionescu <alex.ionescu@reactos.org>
-//  *              Copyright 2019 Hermès Bélusca-Maïto <hermes.belusca-maito@reactos.org>
+//  * COPYRIGHT:   Copyright 2023-2026 Hermès Bélusca-Maïto <hermes.belusca-maito@reactos.org>
 //  */
 //
 // #include "precomp.h"
 //
+// #define NDEBUG
+// #include <debug.h>
+//
+// /* Include the Boot-time (POST) display discovery helper functions */
+// #include <drivers/bootvid/framebuf.c>
+//
+// /* Scaling of the bootvid 640x480 default virtual screen to the larger video framebuffer */
+// #define SCALING_SUPPORT
+// #define SCALING_PROPORTIONAL
+//
+// /* Keep borders black or controlled with palette */
+// // #define COLORED_BORDERS
+//
+//
+// /* GLOBALS ********************************************************************/
+//
+// #define BB_PIXEL(x, y) \
+//     ((PUCHAR)BackBuffer + (y) * SCREEN_WIDTH + (x))
+//
+// #define FB_PIXEL(x, y) \
+//     ((PUCHAR)FrameBufferStart + (PanV + VidpYScale * (y)) * BytesPerScanLine \
+//                               + (PanH + VidpXScale * (x)) * BytesPerPixel)
+//
+// static ULONG_PTR FrameBufferStart = 0;
+// static ULONG FrameBufferSize;
+// static ULONG ScreenWidth, ScreenHeight, BytesPerScanLine;
+// static UCHAR BytesPerPixel;
+// static PUCHAR BackBuffer = NULL;
+// static SIZE_T BackBufferSize;
+//
+// #ifdef SCALING_SUPPORT
+// static USHORT VidpXScale = 1;
+// static USHORT VidpYScale = 1;
+// #else
+// #define VidpXScale 1
+// #define VidpYScale 1
+// #endif
+// static ULONG PanH, PanV;
+//
+// static RGBQUAD CachedPalette[BV_MAX_COLORS];
+//
+//
 // /* PRIVATE FUNCTIONS *********************************************************/
 //
-// static BOOLEAN
-// VgaInterpretCmdStream(
-//     _In_ const USHORT* CmdStream)
+// static VOID
+// ApplyPalette(VOID)
 // {
-//     USHORT Cmd;
-//     UCHAR Major, Minor;
-//     USHORT Port;
-//     USHORT Count;
-//     UCHAR Index;
-//     UCHAR Value;
-//     USHORT ShortValue;
+//     PULONG Frame = (PULONG)FrameBufferStart;
+//     ULONG x, y;
 //
-//     /* First make sure that we have a Command Stream */
-//     if (!CmdStream)
-//         return TRUE;
-//
-//     /* Loop as long as we have commands */
-//     while (*CmdStream != EOD)
+// #ifdef COLORED_BORDERS
+//     /* Top border */
+//     for (x = 0; x < PanV * ScreenWidth; ++x)
 //     {
-//         /* Get the next command and its Major and Minor functions */
-//         Cmd = *CmdStream++;
-//         Major = Cmd & 0xF0;
-//         Minor = Cmd & 0x0F;
+//         *Frame++ = CachedPalette[BV_COLOR_BLACK];
+//     }
 //
-//         /* Check which major function this is */
-//         if (Major == INOUT)
+//     /* Left border */
+//     for (y = 0; y < VidpYScale * SCREEN_HEIGHT; ++y)
+//     {
+//         // Frame = (PULONG)(FrameBufferStart + FB_OFFSET(-(LONG)PanH, y));
+//         Frame = (PULONG)(FrameBufferStart + (PanV + y) * BytesPerScanLine);
+//         for (x = 0; x < PanH; ++x)
 //         {
-//             /* Check the minor function */
-//             if (Minor & IO /* CMD_STREAM_READ */)
-//             {
-//                 /* Check the sub-type */
-//                 if (Minor & BW /* CMD_STREAM_USHORT */)
-//                 {
-//                     /* Get the port and read an USHORT from it */
-//                     Port = *CmdStream++;
-//                     ShortValue = __inpw(Port);
-//                 }
-//                 else // if (Minor & CMD_STREAM_WRITE)
-//                 {
-//                     /* Get the port and read an UCHAR from it */
-//                     Port = *CmdStream++;
-//                     Value = __inpb(Port);
-//                 }
-//             }
-//             else if (Minor & MULTI /* CMD_STREAM_WRITE_ARRAY */)
-//             {
-//                 /* Check the sub-type */
-//                 if (Minor & BW /* CMD_STREAM_USHORT */)
-//                 {
-//                     /* Get the port and the count of elements */
-//                     Port = *CmdStream++;
-//                     Count = *CmdStream++;
-//
-//                     /* Write the USHORT to the port; the buffer is what's in the command stream */
-//                     WRITE_PORT_BUFFER_USHORT((PUSHORT)(VgaRegisterBase + Port), (PUSHORT)CmdStream, Count);
-//
-//                     /* Move past the buffer in the command stream */
-//                     CmdStream += Count;
-//                 }
-//                 else // if (Minor & CMD_STREAM_WRITE)
-//                 {
-//                     /* Get the port and the count of elements */
-//                     Port = *CmdStream++;
-//                     Count = *CmdStream++;
-//
-//                     /* Loop the command array */
-//                     for (; Count; --Count, ++CmdStream)
-//                     {
-//                         /* Get the UCHAR and write it to the port */
-//                         Value = (UCHAR)*CmdStream;
-//                         __outpb(Port, Value);
-//                     }
-//                 }
-//             }
-//             else if (Minor & BW /* CMD_STREAM_USHORT */)
-//             {
-//                 /* Get the port */
-//                 Port = *CmdStream++;
-//
-//                 /* Get the USHORT and write it to the port */
-//                 ShortValue = *CmdStream++;
-//                 __outpw(Port, ShortValue);
-//             }
-//             else // if (Minor & CMD_STREAM_WRITE)
-//             {
-//                 /* Get the port */
-//                 Port = *CmdStream++;
-//
-//                 /* Get the UCHAR and write it to the port */
-//                 Value = (UCHAR)*CmdStream++;
-//                 __outpb(Port, Value);
-//             }
+//             *Frame++ = CachedPalette[BV_COLOR_BLACK];
 //         }
-//         else if (Major == METAOUT)
+//     }
+// #endif // COLORED_BORDERS
+//
+//     /* Screen redraw */
+//     PUCHAR Back = BackBuffer;
+//     for (y = 0; y < SCREEN_HEIGHT; ++y)
+//     {
+//         Frame = (PULONG)FB_PIXEL(0, y);
+//         PULONG Pixel = Frame;
+//         for (x = 0; x < SCREEN_WIDTH; ++x)
 //         {
-//             /* Check the minor function. Note these are not flags. */
-//             switch (Minor)
-//             {
-//                 case INDXOUT:
-//                 {
-//                     /* Get the port, the count of elements and the start index */
-//                     Port = *CmdStream++;
-//                     Count = *CmdStream++;
-//                     Index = (UCHAR)*CmdStream++;
-//
-//                     /* Loop the command array */
-//                     for (; Count; --Count, ++Index, ++CmdStream)
-//                     {
-//                         /* Get the USHORT and write it to the port */
-//                         ShortValue = (USHORT)Index + ((*CmdStream) << 8);
-//                         __outpw(Port, ShortValue);
-//                     }
-//                     break;
-//                 }
-//
-//                 case ATCOUT:
-//                 {
-//                     /* Get the port, the count of elements and the start index */
-//                     Port = *CmdStream++;
-//                     Count = *CmdStream++;
-//                     Index = (UCHAR)*CmdStream++;
-//
-//                     /* Loop the command array */
-//                     for (; Count; --Count, ++Index, ++CmdStream)
-//                     {
-//                         /* Write the index */
-//                         __outpb(Port, Index);
-//
-//                         /* Get the UCHAR and write it to the port */
-//                         Value = (UCHAR)*CmdStream;
-//                         __outpb(Port, Value);
-//                     }
-//                     break;
-//                 }
-//
-//                 case MASKOUT:
-//                 {
-//                     /* Get the port */
-//                     Port = *CmdStream++;
-//
-//                     /* Read the current value and add the stream data */
-//                     Value = __inpb(Port);
-//                     Value &= *CmdStream++;
-//                     Value ^= *CmdStream++;
-//
-//                     /* Write the value */
-//                     __outpb(Port, Value);
-//                     break;
-//                 }
-//
-//                 default:
-//                     /* Unknown command, fail */
-//                     return FALSE;
-//             }
+//             for (ULONG j = VidpXScale; j > 0; --j)
+//                 *Pixel++ = CachedPalette[*Back];
+//             Back++;
 //         }
-//         else if (Major != NCMD)
+//         Pixel = Frame;
+//         for (ULONG i = VidpYScale-1; i > 0; --i)
 //         {
-//             /* Unknown major function, fail */
-//             return FALSE;
+//             Pixel = (PULONG)((ULONG_PTR)Pixel + BytesPerScanLine);
+//             RtlCopyMemory(Pixel, Frame, VidpXScale * SCREEN_WIDTH * BytesPerPixel);
 //         }
 //     }
 //
-//     /* If we got here, return success */
-//     return TRUE;
-// }
-//
-// static BOOLEAN
-// VgaIsPresent(VOID)
-// {
-//     UCHAR OrgGCAddr, OrgReadMap, OrgBitMask;
-//     UCHAR OrgSCAddr, OrgMemMode;
-//     UCHAR i;
-//
-//     /* Remember the original state of the Graphics Controller Address register */
-//     OrgGCAddr = __inpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT);
-//
-//     /*
-//      * Write the Read Map register with a known state so we can verify
-//      * that it isn't changed after we fool with the Bit Mask. This ensures
-//      * that we're dealing with indexed registers, since both the Read Map and
-//      * the Bit Mask are addressed at GRAPH_DATA_PORT.
-//      */
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-//
-//     /*
-//      * If we can't read back the Graphics Address register setting we just
-//      * performed, it's not readable and this isn't a VGA.
-//      */
-//     if ((__inpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT) & GRAPH_ADDR_MASK) != IND_READ_MAP)
-//         return FALSE;
-//
-//     /*
-//      * Set the Read Map register to a known state.
-//      */
-//     OrgReadMap = __inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT);
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_TEST_SETTING);
-//
-//     /* Read it back... it should be the same */
-//     if (__inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT) != READ_MAP_TEST_SETTING)
+// #ifdef COLORED_BORDERS
+//     /* Right border */
+//     for (y = 0; y < VidpYScale * SCREEN_HEIGHT; ++y)
 //     {
-//         /*
-//          * The Read Map setting we just performed can't be read back; not a
-//          * VGA. Restore the default Read Map state and fail.
-//          */
-//         __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-//         return FALSE;
-//     }
-//
-//     /* Remember the original setting of the Bit Mask register */
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_BIT_MASK);
-//
-//     /* Read it back... it should be the same */
-//     if ((__inpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT) & GRAPH_ADDR_MASK) != IND_BIT_MASK)
-//     {
-//         /*
-//          * The Graphics Address register setting we just made can't be read
-//          * back; not a VGA. Restore the default Read Map state and fail.
-//          */
-//         __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-//         __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-//         return FALSE;
-//     }
-//
-//     /* Read the VGA Data Register */
-//     OrgBitMask = __inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT);
-//
-//     /*
-//      * Set up the initial test mask we'll write to and read from the Bit Mask,
-//      * and loop on the bitmasks.
-//      */
-//     for (i = 0xBB; i; i >>= 1)
-//     {
-//         /* Write the test mask to the Bit Mask */
-//         __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, i);
-//
-//         /* Read it back... it should be the same */
-//         if (__inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT) != i)
+//         // Frame = (PULONG)(FrameBufferStart + FB_OFFSET(SCREEN_WIDTH, y));
+//         Frame = (PULONG)(FrameBufferStart + (PanV + y) * BytesPerScanLine + (PanH + VidpXScale * SCREEN_WIDTH) * BytesPerPixel);
+//         for (x = 0; x < PanH; ++x)
 //         {
-//             /*
-//              * The Bit Mask is not properly writable and readable; not a VGA.
-//              * Restore the Bit Mask and Read Map to their default states and fail.
-//              */
-//             __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, BIT_MASK_DEFAULT);
-//             __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-//             __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-//             return FALSE;
+//             *Frame++ = CachedPalette[BV_COLOR_BLACK];
 //         }
 //     }
 //
-//     /*
-//      * There's something readable at GRAPH_DATA_PORT; now switch back and
-//      * make sure that the Read Map register hasn't changed, to verify that
-//      * we're dealing with indexed registers.
-//      */
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_READ_MAP);
-//
-//     /* Read it back */
-//     if (__inpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT) != READ_MAP_TEST_SETTING)
+//     /* Bottom border */
+//     // Frame = (PULONG)(FrameBufferStart + FB_OFFSET(-(LONG)PanH, SCREEN_HEIGHT));
+//     Frame = (PULONG)(FrameBufferStart + (PanV + VidpYScale * SCREEN_HEIGHT) * BytesPerScanLine);
+//     for (x = 0; x < PanV * ScreenWidth; ++x)
 //     {
-//         /*
-//          * The Read Map is not properly writable and readable; not a VGA.
-//          * Restore the Bit Mask and Read Map to their default states, in case
-//          * this is an EGA, so subsequent writes to the screen aren't garbled.
-//          * Then fail.
-//          */
-//         __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, READ_MAP_DEFAULT);
-//         __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_BIT_MASK);
-//         __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, BIT_MASK_DEFAULT);
-//         return FALSE;
+//         *Frame++ = CachedPalette[BV_COLOR_BLACK];
 //     }
-//
-//     /*
-//      * We've pretty surely verified the existence of the Bit Mask register.
-//      * Put the Graphics Controller back to the original state.
-//      */
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, OrgReadMap);
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, IND_BIT_MASK);
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_DATA_PORT, OrgBitMask);
-//     __outpb(VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT, OrgGCAddr);
-//
-//     /*
-//      * Now, check for the existence of the Chain4 bit.
-//      */
-//
-//     /*
-//      * Remember the original states of the Sequencer Address and Memory Mode
-//      * registers.
-//      */
-//     OrgSCAddr = __inpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT);
-//     __outpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, IND_MEMORY_MODE);
-//
-//     /* Read it back... it should be the same */
-//     if ((__inpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT) & SEQ_ADDR_MASK) != IND_MEMORY_MODE)
-//     {
-//         /*
-//          * Couldn't read back the Sequencer Address register setting
-//          * we just performed, fail.
-//          */
-//         return FALSE;
-//     }
-//
-//     /* Read sequencer Data */
-//     OrgMemMode = __inpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT);
-//
-//     /*
-//      * Toggle the Chain4 bit and read back the result. This must be done during
-//      * sync reset, since we're changing the chaining state.
-//      */
-//
-//     /* Begin sync reset */
-//     __outpw(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, (IND_SYNC_RESET + (START_SYNC_RESET_VALUE << 8)));
-//
-//     /* Toggle the Chain4 bit */
-//     __outpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, IND_MEMORY_MODE);
-//     __outpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT, OrgMemMode ^ CHAIN4_MASK);
-//
-//     /* Read it back... it should be the same */
-//     if (__inpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT) != (OrgMemMode ^ CHAIN4_MASK))
-//     {
-//         /*
-//          * Chain4 bit is not there, not a VGA.
-//          * Set text mode default for Memory Mode register.
-//          */
-//         __outpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT, MEMORY_MODE_TEXT_DEFAULT);
-//
-//         /* End sync reset */
-//         __outpw(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, (IND_SYNC_RESET + (END_SYNC_RESET_VALUE << 8)));
-//
-//         /* Fail */
-//         return FALSE;
-//     }
-//
-//     /*
-//      * It's a VGA.
-//      */
-//
-//     /* Restore the original Memory Mode setting */
-//     __outpb(VGA_BASE_IO_PORT + SEQ_DATA_PORT, OrgMemMode);
-//
-//     /* End sync reset */
-//     __outpw(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, (IND_SYNC_RESET + (END_SYNC_RESET_VALUE << 8)));
-//
-//     /* Restore the original Sequencer Address setting */
-//     __outpb(VGA_BASE_IO_PORT + SEQ_ADDRESS_PORT, OrgSCAddr);
-//
-//     /* VGA is present! */
-//     return TRUE;
+// #endif // COLORED_BORDERS
 // }
 //
 // /* PUBLIC FUNCTIONS **********************************************************/
@@ -726,124 +605,418 @@ pub unsafe fn ResetDisplay(
 // BOOLEAN
 // NTAPI
 // VidInitialize(
-//     _In_ BOOLEAN SetMode)
+//      BOOLEAN SetMode)
 // {
-//     ULONG_PTR Context = 0;
-//     PHYSICAL_ADDRESS TranslatedAddress;
-//     PHYSICAL_ADDRESS NullAddress = {{0, 0}}, VgaAddress;
-//     ULONG AddressSpace;
-//     BOOLEAN Result;
-//     ULONG_PTR Base;
+//     PHYSICAL_ADDRESS FrameBuffer;
+//     PHYSICAL_ADDRESS VramAddress;
+//     ULONG VramSize;
+//     CM_FRAMEBUF_DEVICE_DATA VideoConfigData; /* Configuration data from hardware tree */
+//     INTERFACE_TYPE Interface;
+//     ULONG BusNumber;
+//     NTSTATUS Status;
 //
-//     /* Make sure that we have a bus translation function */
-//     if (!HalFindBusAddressTranslation) return FALSE;
-//
-//     /* Loop trying to find possible VGA base addresses */
-//     while (TRUE)
+//     /* Find boot-time framebuffer display information from the LoaderBlock */
+//     Status = FindBootDisplay(&VramAddress,
+//                              &VramSize,
+//                              &VideoConfigData,
+//                              NULL, // MonitorConfigData
+//                              &Interface,
+//                              &BusNumber);
+//     if (!NT_SUCCESS(Status))
 //     {
-//         /* Get the VGA Register address */
-//         AddressSpace = 1;
-//         Result = HalFindBusAddressTranslation(NullAddress,
-//                                               &AddressSpace,
-//                                               &TranslatedAddress,
-//                                               &Context,
-//                                               TRUE);
-//         if (!Result) return FALSE;
-//
-//         /* See if this is I/O Space, which we need to map */
-//         if (!AddressSpace)
-//         {
-//             /* Map it */
-//             Base = (ULONG_PTR)MmMapIoSpace(TranslatedAddress, 0x400, MmNonCached);
-//         }
-//         else
-//         {
-//             /* The base is the translated address, no need to map I/O space */
-//             Base = TranslatedAddress.LowPart;
-//         }
-//
-//         /* Try to see if this is VGA */
-//         VgaRegisterBase = Base;
-//         if (VgaIsPresent())
-//         {
-//             /* Translate the VGA Memory Address */
-//             VgaAddress.LowPart = MEM_VGA;
-//             VgaAddress.HighPart = 0;
-//             AddressSpace = 0;
-//             Result = HalFindBusAddressTranslation(VgaAddress,
-//                                                   &AddressSpace,
-//                                                   &TranslatedAddress,
-//                                                   &Context,
-//                                                   FALSE);
-//             if (Result) break;
-//         }
-//         else
-//         {
-//             /* It's not, so unmap the I/O space if we mapped it */
-//             if (!AddressSpace) MmUnmapIoSpace((PVOID)VgaRegisterBase, 0x400);
-//         }
-//
-//         /* Continue trying to see if there's any other address */
+//         DPRINT1("Boot framebuffer does not exist!\n");
+//         return FALSE;
 //     }
 //
-//     /* Success! See if this is I/O Space, which we need to map */
-//     if (!AddressSpace)
+//     /* The VRAM address must be page-aligned */
+//     if (VramAddress.QuadPart % PAGE_SIZE != 0) // DPRINTed for diagnostics on some systems
+//         DPRINT1("** VramAddress 0x%I64X isn't PAGE_SIZE aligned\n", VramAddress.QuadPart);
+//     ASSERT(VramAddress.QuadPart % PAGE_SIZE == 0);
+//     if (VramSize % PAGE_SIZE != 0)
+//         DPRINT1("** VramSize %lu (0x%lx) isn't multiple of PAGE_SIZE\n", VramSize, VramSize);
+//     // ASSERT(VramSize % PAGE_SIZE == 0); // This assert may fail, e.g. 800x600@32bpp UEFI GOP display
+//
+//     /* Retrieve the framebuffer address, its visible screen dimensions, and its attributes */
+//     FrameBuffer.QuadPart = VramAddress.QuadPart + VideoConfigData.FrameBufferOffset;
+//     ScreenWidth  = VideoConfigData.ScreenWidth;
+//     ScreenHeight = VideoConfigData.ScreenHeight;
+//     if (ScreenWidth < SCREEN_WIDTH || ScreenHeight < SCREEN_HEIGHT)
 //     {
-//         /* Map it */
-//         Base = (ULONG_PTR)MmMapIoSpace(TranslatedAddress,
-//                                        MEM_VGA_SIZE,
-//                                        MmNonCached);
+//         DPRINT1("Unsupported screen resolution!\n");
+//         return FALSE;
+//     }
+//
+//     BytesPerPixel = (VideoConfigData.BitsPerPixel + 7) / 8; // Round up to nearest byte.
+//     ASSERT(BytesPerPixel >= 1 && BytesPerPixel <= 4);
+//     if (BytesPerPixel != 4)
+//     {
+//         UNIMPLEMENTED;
+//         DPRINT1("Unsupported BytesPerPixel = %u\n", BytesPerPixel);
+//         return FALSE;
+//     }
+//
+//     ASSERT(ScreenWidth <= VideoConfigData.PixelsPerScanLine);
+//     BytesPerScanLine = VideoConfigData.PixelsPerScanLine * BytesPerPixel;
+//     if (BytesPerScanLine < 1)
+//     {
+//         DPRINT1("Invalid BytesPerScanLine = %lu\n", BytesPerScanLine);
+//         return FALSE;
+//     }
+//
+//     /* Compute the visible framebuffer size */
+//     FrameBufferSize = ScreenHeight * BytesPerScanLine;
+//
+//     /* Verify that the framebuffer actually fits inside the video RAM */
+//     if (FrameBuffer.QuadPart + FrameBufferSize > VramAddress.QuadPart + VramSize)
+//     {
+//         DPRINT1("The framebuffer exceeds video memory bounds!\n");
+//         return FALSE;
+//     }
+//
+//     /* Translate the framebuffer from bus-relative to physical address */
+//     PHYSICAL_ADDRESS TranslatedAddress;
+//     ULONG AddressSpace = 0; /* MMIO space */
+//     if (!BootTranslateBusAddress(Interface,
+//                                  BusNumber,
+//                                  FrameBuffer,
+//                                  &AddressSpace,
+//                                  &TranslatedAddress))
+//     {
+//         DPRINT1("Could not translate framebuffer bus address 0x%I64X\n", FrameBuffer.QuadPart);
+//         return FALSE;
+//     }
+//
+//     /* Map it into system space if necessary */
+//     ULONG MappedSize = 0;
+//     PVOID FrameBufferBase = NULL;
+//     if (AddressSpace == 0)
+//     {
+//         /* Calculate page-aligned address and size for MmMapIoSpace() */
+//         FrameBuffer.HighPart = TranslatedAddress.HighPart;
+//         FrameBuffer.LowPart  = ALIGN_DOWN_BY(TranslatedAddress.LowPart, PAGE_SIZE);
+//         MappedSize = FrameBufferSize;
+//         MappedSize += (ULONG)(TranslatedAddress.QuadPart - FrameBuffer.QuadPart); // BYTE_OFFSET()
+//         MappedSize = ROUND_TO_PAGES(MappedSize);
+//         /* Essentially MmMapVideoDisplay() */
+//         FrameBufferBase = MmMapIoSpace(FrameBuffer, MappedSize, MmFrameBufferCached);
+//         if (!FrameBufferBase)
+//             FrameBufferBase = MmMapIoSpace(FrameBuffer, MappedSize, MmNonCached);
+//         if (!FrameBufferBase)
+//         {
+//             DPRINT1("Could not map framebuffer 0x%I64X (%lu bytes)\n",
+//                     FrameBuffer.QuadPart, MappedSize);
+//             goto Failure;
+//         }
+//         FrameBufferStart = (ULONG_PTR)FrameBufferBase;
+//         FrameBufferStart += (TranslatedAddress.QuadPart - FrameBuffer.QuadPart); // BYTE_OFFSET()
 //     }
 //     else
 //     {
-//         /* The base is the translated address, no need to map I/O space */
-//         Base = TranslatedAddress.LowPart;
+//         /* The base is the translated address, no need to map */
+//         FrameBufferStart = (ULONG_PTR)TranslatedAddress.QuadPart;
 //     }
 //
-//     /* Set the VGA Memory Base */
-//     VgaBase = Base;
 //
-//     /* Check whether we have to set the video mode */
-//     if (SetMode)
+//     /*
+//      * Reserve off-screen area for the backbuffer that contains
+//      * 8-bit indexed color screen image, plus preserved row data.
+//      */
+//     BackBufferSize = SCREEN_WIDTH * (SCREEN_HEIGHT + (BOOTCHAR_HEIGHT + 1));
+//
+//     /* If there is enough video memory in the physical framebuffer,
+//      * place the backbuffer in the hidden part of the framebuffer,
+//      * otherwise allocate a zone for the backbuffer. */
+//     if (VideoConfigData.FrameBufferOffset + FrameBufferSize + BackBufferSize
+//             <= ((AddressSpace == 0) ? MappedSize : VramSize))
 //     {
-//         /* Clear the current position */
-//         VidpCurrentX = 0;
-//         VidpCurrentY = 0;
-//
-//         /* Reset the display and initialize it */
-//         if (HalResetDisplay())
+//         /* Backbuffer placed following the framebuffer in the hidden part */
+//         BackBuffer = (PUCHAR)(FrameBufferStart + FrameBufferSize);
+//         // BackBuffer = (PUCHAR)(VramAddress + VramSize - BackBufferSize); // Or at the end of VRAM.
+//     }
+//     else
+//     {
+//         /* Allocate the backbuffer */
+//         PHYSICAL_ADDRESS NullAddress = {{0, 0}};
+//         PHYSICAL_ADDRESS HighestAddress = {{-1, -1}};
+//         BackBuffer = MmAllocateContiguousMemorySpecifyCache(
+//                         BackBufferSize, NullAddress, HighestAddress,
+//                         NullAddress, MmNonCached);
+//         if (!BackBuffer)
 //         {
-//             /* The HAL handled the display, re-initialize only the AC registers */
-//             VgaInterpretCmdStream(AT_Initialization);
-//         }
-//         else
-//         {
-//             /* The HAL didn't handle the display, fully re-initialize the VGA */
-//             VgaInterpretCmdStream(VGA_640x480);
+//             DPRINT1("Could not allocate backbuffer (size: %lu)\n", (ULONG)BackBufferSize);
+//             goto Failure;
 //         }
 //     }
+//
+// #ifdef SCALING_SUPPORT
+//     /* Compute autoscaling; only integer (not fractional) scaling is supported */
+//     VidpXScale = ScreenWidth / SCREEN_WIDTH;
+//     VidpYScale = ScreenHeight / SCREEN_HEIGHT;
+//     ASSERT(VidpXScale >= 1);
+//     ASSERT(VidpYScale >= 1);
+// #ifdef SCALING_PROPORTIONAL
+//     VidpXScale = min(VidpXScale, VidpYScale);
+//     VidpYScale = VidpXScale;
+// #endif
+//     DPRINT1("Scaling X = %hu, Y = %hu\n", VidpXScale, VidpYScale);
+// #endif // SCALING_SUPPORT
+//
+//     /* Calculate left/right and top/bottom border values
+//      * to keep the displayed area centered on the screen */
+//     PanH = (ScreenWidth - VidpXScale * SCREEN_WIDTH) / 2;
+//     PanV = (ScreenHeight - VidpYScale * SCREEN_HEIGHT) / 2;
+//     DPRINT1("Borders X = %lu, Y = %lu\n", PanH, PanV);
+//
+//     /* Reset the video mode if requested */
+//     if (SetMode)
+//         VidResetDisplay(TRUE);
 //
 //     return TRUE;
+//
+// Failure:
+//     /* We failed somewhere; unmap the framebuffer if we mapped it */
+//     if (FrameBufferBase && (AddressSpace == 0))
+//         MmUnmapIoSpace(FrameBufferBase, MappedSize);
+//
+//     return FALSE;
+// }
+//
+// VOID
+// NTAPI
+// VidCleanUp(VOID)
+// {
+//     /* Just fill the screen black */
+//     VidSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLACK);
 // }
 //
 // VOID
 // ResetDisplay(
-//     _In_ BOOLEAN SetMode)
+//      BOOLEAN SetMode)
 // {
-//     /* Reset the video mode with HAL if requested */
-//     if (SetMode && !HalResetDisplay())
-//     {
-//         /* The HAL didn't handle the display, fully re-initialize the VGA */
-//         VgaInterpretCmdStream(VGA_640x480);
-//     }
-//
-//     /* Always re-initialize the AC registers */
-//     VgaInterpretCmdStream(AT_Initialization);
+//     RtlZeroMemory(BackBuffer, BackBufferSize);
+//     RtlZeroMemory((PVOID)FrameBufferStart, FrameBufferSize);
 //
 //     /* Re-initialize the palette and fill the screen black */
 //     InitializePalette();
 //     VidSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLACK);
 // }
+//
+// VOID
+// InitPaletteWithTable(
+//      const ULONG* Table,
+//      ULONG Count)
+// {
+//     const ULONG* Entry = Table;
+//     ULONG i;
+//     BOOLEAN HasChanged = FALSE;
+//
+//     for (i = 0; i < Count; i++, Entry++)
+//     {
+//         HasChanged |= !!((CachedPalette[i] ^ *Entry) & 0x00FFFFFF);
+//         CachedPalette[i] = *Entry | 0xFF000000;
+//     }
+//
+//     /* Re-apply the palette if it has changed */
+//     if (HasChanged)
+//         ApplyPalette();
+// }
+//
+// VOID
+// SetPixel(
+//      ULONG Left,
+//      ULONG Top,
+//      UCHAR Color)
+// {
+//     PUCHAR Back = BB_PIXEL(Left, Top);
+//     PULONG Frame = (PULONG)FB_PIXEL(Left, Top);
+//
+//     *Back = Color;
+//     for (ULONG i = VidpYScale; i > 0; --i)
+//     {
+//         PULONG Pixel = Frame;
+//         for (ULONG j = VidpXScale; j > 0; --j)
+//             *Pixel++ = CachedPalette[Color];
+//         Frame = (PULONG)((ULONG_PTR)Frame + BytesPerScanLine);
+//     }
+// }
+//
+// VOID
+// PreserveRow(
+//      ULONG CurrentTop,
+//      ULONG TopDelta,
+//      BOOLEAN Restore)
+// {
+//     PUCHAR NewPosition, OldPosition;
+//
+//     /* Calculate the position in memory for the row */
+//     if (Restore)
+//     {
+//         /* Restore the row by copying back the contents saved off-screen */
+//         NewPosition = BB_PIXEL(0, CurrentTop);
+//         OldPosition = BB_PIXEL(0, SCREEN_HEIGHT);
+//     }
+//     else
+//     {
+//         /* Preserve the row by saving its contents off-screen */
+//         NewPosition = BB_PIXEL(0, SCREEN_HEIGHT);
+//         OldPosition = BB_PIXEL(0, CurrentTop);
+//     }
+//
+//     /* Set the count and copy the pixel data back to the other position in the backbuffer */
+//     ULONG Count = TopDelta * SCREEN_WIDTH;
+//     RtlCopyMemory(NewPosition, OldPosition, Count);
+//
+//     /* On restore, mirror the backbuffer changes to the framebuffer */
+//     if (Restore)
+//     {
+//         NewPosition = BB_PIXEL(0, CurrentTop);
+//         for (ULONG y = 0; y < TopDelta; ++y)
+//         {
+//             PULONG Frame = (PULONG)FB_PIXEL(0, CurrentTop + y);
+//             PULONG Pixel = Frame;
+//             for (Count = 0; Count < SCREEN_WIDTH; ++Count)
+//             {
+//                 for (ULONG j = VidpXScale; j > 0; --j)
+//                     *Pixel++ = CachedPalette[*NewPosition];
+//                 NewPosition++;
+//             }
+//             Pixel = Frame;
+//             for (ULONG i = VidpYScale-1; i > 0; --i)
+//             {
+//                 Pixel = (PULONG)((ULONG_PTR)Pixel + BytesPerScanLine);
+//                 RtlCopyMemory(Pixel, Frame, VidpXScale * SCREEN_WIDTH * BytesPerPixel);
+//             }
+//         }
+//     }
+// }
+//
+// VOID
+// DoScroll(
+//      ULONG Scroll)
+// {
+//     ULONG RowSize = VidpScrollRegion.Right - VidpScrollRegion.Left + 1;
+//
+//     /* Calculate the position in memory for the row */
+//     PUCHAR OldPosition = BB_PIXEL(VidpScrollRegion.Left, VidpScrollRegion.Top + Scroll);
+//     PUCHAR NewPosition = BB_PIXEL(VidpScrollRegion.Left, VidpScrollRegion.Top);
+//
+//     /* Start loop */
+//     for (ULONG Top = VidpScrollRegion.Top; Top <= VidpScrollRegion.Bottom; ++Top)
+//     {
+//         /* Scroll the row */
+//         RtlCopyMemory(NewPosition, OldPosition, RowSize);
+//
+//         PULONG Frame = (PULONG)FB_PIXEL(VidpScrollRegion.Left, Top);
+//         PULONG Pixel = Frame;
+//         for (ULONG Count = 0; Count < RowSize; ++Count)
+//         {
+//             for (ULONG j = VidpXScale; j > 0; --j)
+//                 *Pixel++ = CachedPalette[NewPosition[Count]];
+//         }
+//         Pixel = Frame;
+//         for (ULONG i = VidpYScale-1; i > 0; --i)
+//         {
+//             Pixel = (PULONG)((ULONG_PTR)Pixel + BytesPerScanLine);
+//             RtlCopyMemory(Pixel, Frame, VidpXScale * RowSize * BytesPerPixel);
+//         }
+//
+//         OldPosition += SCREEN_WIDTH;
+//         NewPosition += SCREEN_WIDTH;
+//     }
+// }
+//
+// VOID
+// DisplayCharacter(
+//      CHAR Character,
+//      ULONG Left,
+//      ULONG Top,
+//      ULONG TextColor,
+//      ULONG BackColor)
+// {
+//     /* Get the font line for this character */
+//     const UCHAR* FontChar = GetFontPtr(Character);
+//
+//     /* Loop each pixel height */
+//     for (ULONG y = Top; y < Top + BOOTCHAR_HEIGHT; ++y, FontChar += FONT_PTR_DELTA)
+//     {
+//         /* Loop each pixel width */
+//         ULONG x = Left;
+//         for (UCHAR bit = 1 << (BOOTCHAR_WIDTH - 1); bit > 0; bit >>= 1, ++x)
+//         {
+//             /* If we should draw this pixel, use the text color. Otherwise
+//              * this is a background pixel, draw it unless it's transparent. */
+//             if (*FontChar & bit)
+//                 SetPixel(x, y, (UCHAR)TextColor);
+//             else if (BackColor < BV_COLOR_NONE)
+//                 SetPixel(x, y, (UCHAR)BackColor);
+//         }
+//     }
+// }
+//
+// VOID
+// NTAPI
+// VidSolidColorFill(
+//      ULONG Left,
+//      ULONG Top,
+//      ULONG Right,
+//      ULONG Bottom,
+//      UCHAR Color)
+// {
+//     for (; Top <= Bottom; ++Top)
+//     {
+//         PUCHAR Back = BB_PIXEL(Left, Top);
+//         // NOTE: Assumes 32bpp
+//         PULONG Frame = (PULONG)FB_PIXEL(Left, Top);
+//         PULONG Pixel = Frame;
+//         for (ULONG L = Left; L <= Right; ++L)
+//         {
+//             *Back++ = Color;
+//             for (ULONG j = VidpXScale; j > 0; --j)
+//                 *Pixel++ = CachedPalette[Color];
+//         }
+//         Pixel = Frame;
+//         for (ULONG i = VidpYScale-1; i > 0; --i)
+//         {
+//             Pixel = (PULONG)((ULONG_PTR)Pixel + BytesPerScanLine);
+//             RtlCopyMemory(Pixel, Frame, VidpXScale * (Right - Left + 1) * BytesPerPixel);
+//         }
+//     }
+// }
+//
+// VOID
+// NTAPI
+// VidScreenToBufferBlt(
+//      PUCHAR Buffer,
+//      ULONG Left,
+//      ULONG Top,
+//      ULONG Width,
+//      ULONG Height,
+//      ULONG Delta)
+// {
+//     ULONG x, y;
+//
+//     /* Clear the destination buffer */
+//     RtlZeroMemory(Buffer, Delta * Height);
+//
+//     /* Start the outer Y height loop */
+//     for (y = 0; y < Height; ++y)
+//     {
+//         /* Set current scanline */
+//         PUCHAR Back = BB_PIXEL(Left, Top + y);
+//         PUCHAR Buf = Buffer + y * Delta;
+//
+//         /* Start the X inner loop */
+//         for (x = 0; x < Width; x += sizeof(USHORT))
+//         {
+//             /* Read the current value */
+//             *Buf = (*Back++ & 0xF) << 4;
+//             *Buf |= *Back++ & 0xF;
+//             Buf++;
+//         }
+//     }
+// }
+//
+// /* EOF */
 //
 // ============================================================================
 // END ORIGINAL C SOURCE

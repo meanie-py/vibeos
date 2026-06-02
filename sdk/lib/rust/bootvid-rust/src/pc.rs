@@ -17,8 +17,10 @@ use core::ffi::c_void;
 
 /// `typedef PCSTR` — pointer to const CHAR.
 pub type PCSTR = *const CHAR;
-/// `MEMORY_CACHING_TYPE::MmNonCached`.
-pub const MmNonCached: ULONG = 0;
+// NOTE: `MmNonCached` is provided by `ntkrnl_sys::mm` (value 0); it used
+// to be redefined here, but that shadowed the bindgen one and caused an
+// E0659 ambiguity at the bootvid.rs use site. Consumers should import it
+// from `ntkrnl_sys::mm`.
 
 /// `LARGE_INTEGER` / `PHYSICAL_ADDRESS` (i386 split form; the C uses
 /// `.LowPart`/`.HighPart` and the `{{lo,hi}}` aggregate init).
@@ -39,11 +41,15 @@ pub type PULONG_PTR = *mut usize;
 // is `(PHAL_PRIVATE_DISPATCH)&HalPrivateDispatchTable` — address of the
 // exported table either way. Layout truncated after HalResetDisplay
 // (the only fields bootvid touches); accessed only via pointer.
+// Use the canonical bindgen PHYSICAL_ADDRESS (= ddk `_LARGE_INTEGER`) so
+// this dispatch pointer's signature matches the types BootTranslateBusAddress
+// passes (which come from ntkrnl_sys::ddk). Mixing the local pc::LARGE_INTEGER
+// mirror here triggered an E0308 `LARGE_INTEGER` vs `_LARGE_INTEGER` mismatch.
 pub type pHalFindBusAddressTranslation = Option<
     unsafe extern "system" fn(
-        BusAddress: PHYSICAL_ADDRESS,
+        BusAddress: ntkrnl_sys::ddk::PHYSICAL_ADDRESS,
         AddressSpace: *mut ULONG,
-        TranslatedAddress: PPHYSICAL_ADDRESS,
+        TranslatedAddress: ntkrnl_sys::ddk::PPHYSICAL_ADDRESS,
         Context: PULONG_PTR,
         NextBus: BOOLEAN,
     ) -> BOOLEAN,
@@ -66,26 +72,30 @@ pub struct HAL_PRIVATE_DISPATCH {
     pub HalResetDisplay: pHalResetDisplay,
 }
 
-// Cross-DLL *data* import: a self-generated import lib only provides
-// the `__imp_` thunk, not the bare symbol Rust's refptr wants — so the
-// data symbol must come via raw-dylib (same fix as hal-rust kernel-data
-// externs; see memory feedback_raw_dylib_cross_dll_data).
-// `+verbatim` so the import descriptor is exactly `ntoskrnl.exe` (the
-// kernel module name); without it raw-dylib emits `ntoskrnl.exe.dll`
-// which the kernel PE loader can't resolve. Two `ntoskrnl.exe`
-// descriptors (this data one + the function import-lib one) is fine
-// for a kernel-loaded driver — the standard loader processes both.
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+// Cross-DLL *data* import. bootvid.dll is loaded by FREELDR's PE loader
+// (peloader.rs), NOT the kernel loader — and freeldr can't handle the SECOND
+// `ntoskrnl.exe` import descriptor that `raw-dylib` adds (it already has the
+// import-lib one), so a raw-dylib data import hangs the boot at load time.
+// Instead reference the import lib's `__imp_` IAT thunk directly: for a DATA
+// export the thunk slot already holds the symbol's address, and it lives under
+// the single normal `ntoskrnl.exe` descriptor — exactly what the C build emits.
+// (i386 decorates the thunk `__imp__Name`; amd64/arm64 use `__imp_Name`.)
+// See memory feedback_win32k_raw_dylib_freeldr_oom.
 extern "C" {
-    /// ntoskrnl `@ extern HalPrivateDispatchTable` — the table data.
-    pub static HalPrivateDispatchTable: HAL_PRIVATE_DISPATCH;
+    /// `__imp_` IAT slot for ntoskrnl `@ extern HalPrivateDispatchTable`
+    /// — holds the address of the table.
+    // i386: rustc prepends one `_` to the link_name, so `_imp__X` -> the
+    // import lib's `__imp__X`. amd64/arm64: no underscore prefix, use `__imp_X`.
+    #[cfg_attr(target_arch = "x86", link_name = "_imp__HalPrivateDispatchTable")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__imp_HalPrivateDispatchTable")]
+    static __imp_HalPrivateDispatchTable: *const HAL_PRIVATE_DISPATCH;
 }
 
-/// `#define HALPRIVATEDISPATCH (&HalPrivateDispatchTable)` (driver
-/// variant casts `&` of the export — same address).
+/// `#define HALPRIVATEDISPATCH (&HalPrivateDispatchTable)` — the `__imp_`
+/// slot already holds `&HalPrivateDispatchTable`.
 #[inline]
 pub unsafe fn HALPRIVATEDISPATCH() -> *const HAL_PRIVATE_DISPATCH {
-    core::ptr::addr_of!(HalPrivateDispatchTable)
+    __imp_HalPrivateDispatchTable
 }
 
 // ---------------------------------------------------------------------
@@ -175,6 +185,86 @@ pub unsafe fn GetFontPtr(ch: CHAR) -> *const UCHAR {
         .add((ch as u8 as usize) * BOOTCHAR_HEIGHT as usize)
 }
 pub const FONT_PTR_DELTA: isize = 1;
+
+// ---------------------------------------------------------------------
+// framebuf.h — generic linear-framebuffer (GOP) configuration data.
+// The C `CM_FRAMEBUF_DEVICE_DATA` embeds `CM_VIDEO_DEVICE_DATA`
+// anonymously (`{USHORT Version; USHORT Revision; ULONG VideoClock;}`),
+// then the framebuffer geometry fields. Flatten the anonymous embed.
+// ---------------------------------------------------------------------
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CM_PIXEL_MASKS {
+    pub RedMask: ULONG,
+    pub GreenMask: ULONG,
+    pub BlueMask: ULONG,
+    pub ReservedMask: ULONG,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CM_FRAMEBUF_DEVICE_DATA {
+    pub Version: USHORT, // from anonymous CM_VIDEO_DEVICE_DATA
+    pub Revision: USHORT,
+    pub VideoClock: ULONG,
+    pub FrameBufferOffset: ULONG,
+    pub ScreenWidth: ULONG,
+    pub ScreenHeight: ULONG,
+    pub PixelsPerScanLine: ULONG,
+    pub BitsPerPixel: ULONG,
+    pub PixelMasks: CM_PIXEL_MASKS,
+}
+pub type PCM_FRAMEBUF_DEVICE_DATA = *mut CM_FRAMEBUF_DEVICE_DATA;
+const _: () = {
+    assert!(core::mem::size_of::<CM_FRAMEBUF_DEVICE_DATA>() == 44);
+};
+
+// ---------------------------------------------------------------------
+// xdk/cmtypes.h — CM_RESOURCE_TYPE values + CM_PARTIAL_RESOURCE_DESCRIPTOR
+// flag bits. Used by framebuf_impl.rs's GetVideoData/GetMonitorData,
+// which compare against `Descriptor->Type` (UCHAR) and `->Flags` (USHORT)
+// after a widening cast — so `u32` is fine for all of them.
+// ---------------------------------------------------------------------
+pub const CmResourceTypePort: u32 = 1;
+pub const CmResourceTypeInterrupt: u32 = 2;
+pub const CmResourceTypeMemory: u32 = 3;
+pub const CmResourceTypeDeviceSpecific: u32 = 5;
+
+pub const CM_RESOURCE_PORT_IO: u32 = 0x0001;
+pub const CM_RESOURCE_MEMORY_READ_ONLY: u32 = 0x0001;
+pub const CM_RESOURCE_MEMORY_WRITEABILITY_MASK: u32 = 0x0003;
+
+// psdk/ntstatus.h — declared as NTSTATUS (i32) to match the C `(NTSTATUS)`
+// cast and the `-> NTSTATUS` return type of the framebuf helpers.
+pub const STATUS_DEVICE_DOES_NOT_EXIST: NTSTATUS = 0xC00000C0u32 as NTSTATUS;
+pub const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC0000182u32 as NTSTATUS;
+
+// CRT `_stricmp` — provided by the kernel CRT at link time; just declare it.
+extern "C" {
+    pub fn _stricmp(a: *const CHAR, b: *const CHAR) -> i32;
+}
+
+/// `#define HalFindBusAddressTranslation HALPRIVATEDISPATCH->HalFindBusAddressTranslation`
+/// (ndk/halfuncs.h). Returns the (optional) function pointer field.
+#[inline]
+pub unsafe fn HalFindBusAddressTranslation() -> pHalFindBusAddressTranslation {
+    (*HALPRIVATEDISPATCH()).HalFindBusAddressTranslation
+}
+
+/// framebuf precomp.h `#define PrepareForSetPixel()` — empty (no-op). The
+/// VGA path used this to program the DAC; the linear-framebuffer path
+/// needs no per-pixel preparation.
+#[inline(always)]
+pub unsafe fn PrepareForSetPixel() {}
+
+/// precomp.h `#define InitializePalette() \
+///   InitPaletteWithTable((PULONG)VidpDefaultPalette, BV_MAX_COLORS)`.
+#[inline]
+pub unsafe fn InitializePalette() {
+    crate::bootvid::InitPaletteWithTable(
+        VidpDefaultPalette.as_ptr() as *const ULONG,
+        BV_MAX_COLORS as ULONG,
+    );
+}
 
 // ---------------------------------------------------------------------
 // vga.h — VGA register port / index constants
@@ -366,18 +456,12 @@ pub unsafe fn __movsb(dst: *mut UCHAR, src: *const UCHAR, count: usize) {
     core::ptr::copy(src, dst, count);
 }
 
-/// pc.h `FORCEINLINE VOID SetPixel(Left, Top, Color)`.
-#[inline]
-pub unsafe fn SetPixel(Left: ULONG, Top: ULONG, Color: UCHAR) {
-    let pixel_position =
-        (VgaBase + (Left >> 3) as usize + (Top * (SCREEN_WIDTH / 8)) as usize) as *mut UCHAR;
-    __outpw(
-        VGA_BASE_IO_PORT + GRAPH_ADDRESS_PORT,
-        ((PixelMask[(Left & 7) as usize] as USHORT) << 8) | IND_BIT_MASK as USHORT,
-    );
-    let _ = READ_REGISTER_UCHAR(pixel_position);
-    WRITE_REGISTER_UCHAR(pixel_position, Color);
-}
+// NOTE: pc.h's `FORCEINLINE VOID SetPixel(...)` (the legacy VGA
+// register-mode plotter) was removed here: the live linear-framebuffer
+// `SetPixel` is defined in `bootvid.rs`, and keeping a second definition
+// in this glob-imported module produced an E0659 ambiguity at every
+// `SetPixel` call site (common.rs / console.rs / bootvid.rs). The VGA
+// variant only had callers in the (non-compiled) vga.rs module.
 
 /// vga.c `SET_PIXELS(_PixelPtr, _PixelMask, _TextColor)` macro.
 #[inline]
