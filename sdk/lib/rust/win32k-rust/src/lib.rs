@@ -175,6 +175,9 @@ pub mod wingl;
 // init.rs — Phase 2c wave 15: GDI process/thread callouts + InitializeGreCSRSS +
 // NtGdiInit (boot-critical, exercised every process create).
 pub mod init;
+// print.rs — Phase 2c wave 16: GDI print/escape tier (NtGdiExtEscape + NtGdiEscape
+// + Doc/Page stubs) dispatching through PDEVOBJ DriverFunctions.Escape.
+pub mod print;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust

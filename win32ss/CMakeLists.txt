@@ -196,7 +196,7 @@ list(APPEND SOURCE
     gdi/ntgdi/path.c
     # gdi/ntgdi/pen.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/pen.rs) — cohabitation [Phase 2c geometry wave 6: PEN object tier]
     # gdi/ntgdi/polyfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/polyfill.rs) — cohabitation [Phase 2c geometry wave 1]
-    gdi/ntgdi/print.c
+    # gdi/ntgdi/print.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/print.rs) — cohabitation [Phase 2c wave 16: print/escape tier]
     # gdi/ntgdi/rect.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rect.rs) — cohabitation [Phase 2c geometry wave 1]
     # gdi/ntgdi/region.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/region.rs) — cohabitation [Phase 2c geometry wave 4: region algebra; region.c + split2/3/4 = one TU, 68 fns]
     # gdi/ntgdi/stockobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/stockobj.rs) — cohabitation [Phase 2c geometry wave 2]
@@ -354,6 +354,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/metafile.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/wingl.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/init.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/print.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
