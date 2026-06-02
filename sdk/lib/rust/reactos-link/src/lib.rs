@@ -33,6 +33,14 @@ pub enum ModuleKind {
     /// `kerneldll` — `-shared`, no `--gc-sections` (e.g. hal.dll:
     /// `_HalInitSystem@8`, 0x00010000).
     KernelDll { entry: String, image_base: u64 },
+    /// `efi_application` — a UEFI app (e.g. uefildr.efi). Mirrors the cmake
+    /// `uefildr.efi` link (set_subsystem 10 / `set_entrypoint EfiEntry`):
+    /// `--subsystem,efi_application:5.01`, entry `_EfiEntry`, 0x200
+    /// file/section alignment, `--gc-sections` + no `-shared` (it's an exe),
+    /// and an *auto* image base (`--enable-auto-image-base`, no explicit
+    /// `--image-base` on i386). No `--major-*-version` flags (cmake omits
+    /// them for uefildr). `entry` is already i386-decorated (`_EfiEntry`).
+    EfiApplication { entry: String },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -368,6 +376,32 @@ impl Linker {
             llvm_mingw.join("lib/clang/19/lib/windows/libclang_rt.builtins-i386.a");
         println!("cargo:rustc-link-arg={}", clang_rt.display());
 
+        // ---- Per-kind PE link flags ----------------------------------
+        if let ModuleKind::EfiApplication { entry } = &kind {
+            // UEFI app (uefildr.efi). Mirrors the cmake LINK_FLAGS line for
+            // `boot/freeldr/freeldr/uefildr.efi`: efi_application subsystem,
+            // 0x200 alignment, --gc-sections (no -shared — it's an exe),
+            // auto image base (no explicit --image-base), and NO
+            // --major-*-version flags. We DO add --allow-multiple-definition
+            // (cmake omits it, but the cargo *bin* compiles its own
+            // #[panic_handler] in main.rs which collides with the one in
+            // libfreeldr_rust_uefi.a; lld first-match wins, same as the
+            // KernelDll PoCs).
+            for f in [
+                "-nostdlib",
+                "-fuse-ld=lld",
+                "-Wl,--enable-auto-image-base,--disable-auto-import",
+                "-Wl,--disable-stdcall-fixup,--gc-sections",
+                "-Wl,--exclude-all-symbols,--file-alignment,0x200,--section-alignment,0x200",
+                "-Wl,--subsystem,efi_application:5.01",
+                "-Wl,--allow-multiple-definition",
+            ] {
+                println!("cargo:rustc-link-arg={f}");
+            }
+            println!("cargo:rustc-link-arg=-Wl,-entry,{entry}");
+            return;
+        }
+
         // ---- Kernel-mode PE link flags -------------------------------
         for f in [
             "-nostdlib",
@@ -386,6 +420,7 @@ impl Linker {
         let (entry, image_base, exe) = match &kind {
             ModuleKind::KernelExe { entry, image_base } => (entry, *image_base, true),
             ModuleKind::KernelDll { entry, image_base } => (entry, *image_base, false),
+            ModuleKind::EfiApplication { .. } => unreachable!("handled above"),
         };
         println!("cargo:rustc-link-arg=-Wl,-entry,{entry}");
         println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", image_base);

@@ -189,13 +189,37 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 2. **Prune alternate KD transports.** `kdgdb`, `kdvm`, and the inactive
    `_WINKD_` half (`kdcom` or `kdrosdbg`) are dead for our COM1 smoke
    config. `qemu/inspect.sh` GDB tooling covers the kdgdb use case.
-3. **Delete `boot/freeldr/bootsect/`.** Pure BIOS asm, unreachable now
-   that `pcat.cmake` is gone. Smoke gates it.
-4. **Retire the cmake C `uefildr` build → cargo `bin`.** FreeLDR is
-   already Rust via cohabitation; the long-term shape is a standalone
-   cargo `bin` crate (per the ntoskrnl-cargo PoC) so the C tree under
-   `boot/freeldr/freeldr/` can be dropped from the build entirely.
-   Largest remaining structural step; do last.
+3. **Prune `boot/freeldr/bootsect/`.** ✅ **Partially done (2026-06-02).**
+   The four pure-BIOS sectors (`dosmbr.S`/`ext.S`/`extldr.S` legacy disk/ext
+   boot + experimental `faty.S`) are `git rm`'d — they were `FOR bootcd
+   regtest` only, never on the booted livecd, and feed nothing in the UEFI
+   path. `fat.S`/`fat32.S` **stay**: `native-fatten -boot fat.bin` reads
+   their 512-byte FAT VBR back to stamp the UEFI `efisys.bin` FAT image
+   (smoke boots it), and `installfreeldr` bin2c's them. So the dir is not
+   fully deletable — the original "pure BIOS asm" claim was inexact.
+4. **Retire the cmake C `uefildr` build → cargo `bin`.** 🚧 **PoC started
+   (2026-06-02): `sdk/lib/rust/uefildr-cargo`.** New `ModuleKind::
+   EfiApplication` in the `reactos-link` engine (subsystem
+   `efi_application:5.01`, entry `_EfiEntry`, 0x200 align, `--gc-sections`
+   + auto image base — extracted verbatim from `build.ninja`). The crate
+   reuses the cmake-built `libfreeldr_rust_uefi.a` + sibling libs +
+   `strsafe_shim.c.obj` and drives the final EFI link from cargo (same
+   shape as `ntoskrnl-cargo`/`kdcom-cargo`). **Status: LINKS CLEAN** —
+   produces a `uefildr.efi` whose PE header is identical to cmake's
+   (coff-i386, Subsystem 0x0a EFI application, ImageBase 0x00400000,
+   0x200 file/section align, 5.1 subsystem version; entry differs by 96
+   bytes — the `main.rs` panic stub — both in the `EfiEntry` region).
+   The fix for the initial `_PxeCallApi`/`_DriveMapMapDrivesInSection`
+   `<root>: undefined` was to **not** pass the `.def`: cmake's uefildr
+   link (rules.ninja `C_EXECUTABLE_LINKER__uefildr`) never feeds
+   `uefildr.def` to the linker — the EFI app links `--exclude-all-symbols`
+   and exports nothing (the `.def`/`freeldr.spec` is only for the freeldr
+   *import library* that rosload consumes). Passing it forced every spec
+   export as required, and a few are genuinely absent from the UEFI build.
+   Remaining: full **boot**-validation needs a livecd, currently gated by
+   crp's unrelated `winsrv.dll` cold-link break (cnt-rust/concfg flip,
+   `_wcsicmp was replaced`) — not a uefildr-cargo issue. i386-only
+   (reactos-link is i386-only); amd64/arm64 stay on cmake.
 7. **Optional: `setupldr.c`/`inffile.c` are already translated** (they
    ship in `freeldr-rust`), so the original "prune install-mode?" open
    question is moot — they're in Rust and cheap to keep.
