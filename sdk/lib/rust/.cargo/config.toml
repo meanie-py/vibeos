@@ -19,3 +19,14 @@ linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/i
 rustflags = [
     "-C", "target-feature=-sse,-sse2",
 ]
+
+# amd64 / arm64 cargo-link targets for the ntdll cargo-drive (ntdll-cargo /
+# ntdll_vista-cargo). Same minimal -nostdlib spec as i686-kernel, pinning
+# llvm-mingw's per-arch clang as the linker. NO -sse disable: ntdll is
+# user-mode, so amd64 keeps SSE and arm64 keeps NEON (matches cmake's
+# ntdll-rust build, which only disables SSE on i386).
+[target.x86_64-kernel]
+linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang"
+
+[target.aarch64-kernel]
+linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/aarch64-w64-mingw32-clang"

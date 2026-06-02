@@ -13,28 +13,36 @@ i386 build dir. Header counts are transitive closures pulled from
 
 ## Status
 
-**Phase 1, ntdll.dll + ntdll_vista.dll (i386): DONE 2026-06-02** (branch
-`smlib-csrlib-client-flip`; ntdll.dll committed `4551c4625fa`, ntdll_vista
-uncommitted). Both links are cargo-driven via the `reactos-link` engine (new
-`Win32Dll` kind + `spec_stubs()` + per-build `rust_features()`); cargo builds
-ntdll-rust (build-std) + pre-expanded asm + spec stubs and reuses the
-cmake-built sibling `.a`.
-- **ntdll.dll** (`ntdll-cargo`): valid PE byte-identical in headers to cmake
-  (PE32, console:5.01, AddressOfEntryPoint 0, base 0x7c920000, DllChar 0x140)
-  + **identical 1402-export table**. `Win32Dll{entry:___ImageBase,
-  subsystem:Some("console:5.01")}`.
-- **ntdll_vista.dll** (`ntdll_vista-cargo`): valid PE, headers match cmake
-  (GUI 6.0 [lld default], DllMain entry, base 0x6fc70000, DllChar 0x140),
-  **all ntdll_vista.spec exports present**. ntdll-rust built `--features vista`;
-  imports ntdll via a self-hosted import lib; reuses the lean smlib archive +
-  rtl_vista. Export set differs from cmake only by incidental compiler_builtins
-  auto-exports (cmake: mem*/strlen; cargo: RtlInitializeCriticalSection) — not
-  the spec contract.
+**Phase 1, ntdll.dll + ntdll_vista.dll — ALL 3 ARCHES DONE 2026-06-02**
+(branch `smlib-csrlib-client-flip`; ntdll.dll/vista i386 committed
+`4551c4625fa`/`1bb536bc1a0`, amd64+arm64 + the engine arch-generalization
+uncommitted). Both links are cargo-driven via the `reactos-link` engine
+(now fully arch-aware) for i386/amd64/arm64; cargo builds ntdll-rust
+(build-std) + pre-expanded asm + spec stubs and reuses the cmake-built
+sibling `.a`.
 
-Validate: `bash sdk/lib/rust/ntdll{,_vista}-cargo/build-and-test.sh`.
+| | i386 | amd64 | arm64 |
+|---|---|---|---|
+| ntdll.dll exports vs cmake | 1402 **exact** | 1384 **exact** | 1370 **exact** |
+| ntdll.dll PE | console, base 0x7c920000 | console, 0x7ffb70000000 | console, 0x7ffb70000000 |
+| ntdll_vista.dll | spec ✓, GUI, 0x6fc70000 | spec ✓, GUI, 0x7feb20000000 | spec ✓, GUI, 0x7feb20000000 |
+
+Validate (per arch): `bash sdk/lib/rust/ntdll{,_vista}-cargo/build-and-test.sh <arch>`.
+
+Engine arch-generalization (`reactos-link`): `ArchCfg` from
+`CARGO_CFG_TARGET_ARCH` drives clang triple, `build-<arch>`, spec2def `-a`
+(**`x86_64`** for amd64, not `amd64` — unknown token silently falls back to
+i386 @N decoration), dlltool `-m`, clang_rt suffix, `_M_*` defines, and the
+target-json output stem; `apply_base` gates the x86-only `-march`/`-m*` flags.
+New minimal `x86_64-kernel.json`/`aarch64-kernel.json` (modeled on
+i686-kernel.json — strips the standard windows-gnu late-link-args; user-mode
+so NO softfloat) + `.cargo/config.toml` linker pins. ntdll_vista's amd64/arm64
+entry is undecorated `DllMain` (i386 `_DllMain@12`); ntdll's is `__ImageBase`
+(i386 `___ImageBase`).
+
 Remaining: `check --strict` guard wiring (fold with the stashed ntoskrnl
-guard), amd64/arm64 (engine arch generalization at `reactos-link/src/lib.rs:140`),
-boot-swap smoke.
+`cargo_link` guard), boot-swap smoke. The `.res` are still copies of cmake's
+(a `gen_ntdll_res.py` is owed).
 
 ## TL;DR
 

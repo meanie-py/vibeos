@@ -1,28 +1,37 @@
-//! Cargo-driven `ntdll_vista.dll` link (i386). Manifest for the shared
-//! `reactos-link` engine — companion to ntdll-cargo.
+//! Cargo-driven `ntdll_vista.dll` link (i386 / amd64 / arm64). Manifest for
+//! the shared `reactos-link` engine — companion to ntdll-cargo.
 //!
-//! cmake still owns the sibling static libs; run `ninja` in build-i386
-//! once first. `.res` is a copy of cmake's ntdll_vista.rc.res (regen tool
-//! owed, mirroring gen_ntoskrnl_res.py).
+//! cmake still owns the sibling static libs; run `ninja` in build-<arch>
+//! once first. `.res` are copies of cmake's ntdll_vista.rc.res (a
+//! gen_ntdll_res.py is owed).
 
+use std::env;
 use reactos_link::{Linker, ModuleKind};
 
 fn main() {
-    Linker::new("i686-kernel.json")
-        // ntdll-rust with `vista` feature → DllMain + LdrpHeap + ldrnotify
-        // (the nt_0600 module set). Built into this crate's own rust target
-        // dir, distinct from ntdll-cargo's default-feature build.
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    // ntdll_vista.dll: real DllMain entry; no --subsystem (lld default GUI
+    // 6.0). i386 decorates the entry (_DllMain@12) + has a 32-bit base.
+    let (target_json, res, image_base, entry): (&str, &str, u64, &str) = match arch.as_str() {
+        "x86" => (
+            "i686-kernel.json", "ntdll_vista-i386.rc.res", 0x6fc7_0000, "_DllMain@12",
+        ),
+        "x86_64" => (
+            "x86_64-kernel.json", "ntdll_vista-amd64.rc.res", 0x7feb_2000_0000, "DllMain",
+        ),
+        "aarch64" => (
+            "aarch64-kernel.json", "ntdll_vista-arm64.rc.res", 0x7feb_2000_0000, "DllMain",
+        ),
+        o => panic!("ntdll_vista-cargo: unsupported arch {o}"),
+    };
+
+    Linker::new(target_json)
         .rust_staticlib("ntdll-rust")
-        .rust_features(&["vista"])
-        .resource("data/ntdll_vista-i386.rc.res")
+        .rust_features(&["vista"]) // DllMain + LdrpHeap + ldrnotify
+        .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/nt_0600/ntdll_vista.spec", "ntdll_vista.dll")
-        // ntdll_vista imports Rtl*/Nt*/… from ntdll.dll
-        // (cmake `add_importlibs(ntdll_vista ntdll)`) — self-host the import
-        // lib from ntdll.spec, no cmake-built libntdll.a needed.
+        // imports Rtl*/Nt*/… from ntdll.dll (add_importlibs(ntdll_vista ntdll))
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        // Reused cmake-built .a: the lean smlib archive (smlib_only) +
-        // rtl_vista + utf8 + pseh + chkstk. Everything else is imported
-        // from ntdll.dll above.
         .static_libs(&[
             "dll/ntdll/nt_0600/libsmlib_rust.a",
             "sdk/lib/rtl/librtl_vista.a",
@@ -30,12 +39,9 @@ fn main() {
             "sdk/lib/pseh/libpseh.a",
             "sdk/lib/crt/libchkstk.a",
         ])
-        // ntdll_vista.dll: real DllMain entry (RVA 0x1000), image base
-        // 0x6fc70000 (dwarf baseaddress). No --subsystem → lld default
-        // (GUI 6.0), matching cmake's ntdll_vista.dll.
         .link(ModuleKind::Win32Dll {
-            entry: "_DllMain@12".into(),
-            image_base: 0x6fc7_0000,
-            subsystem: None,
+            entry: entry.into(),
+            image_base,
+            subsystem: None, // lld default → GUI 6.0, matches cmake
         });
 }

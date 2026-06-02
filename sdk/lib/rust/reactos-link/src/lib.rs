@@ -54,8 +54,65 @@ pub enum AsmDefineSet {
     Hal,
 }
 
-/// ntoskrnl C/asm DEFINES (cmake's `DEFINES =` line for any ntoskrnl TU).
-const KERNEL_DEFINES: &[(&str, Option<&str>)] = &[
+/// Per-arch toolchain + codegen facts. Built from `CARGO_CFG_TARGET_ARCH`
+/// in `Linker::new`. i386 was the original (only) arch; amd64/arm64 added
+/// for the ntdll cargo-drive. Threaded through clang triple, build dir,
+/// spec2def/dlltool/clang_rt selectors, and the `_M_*`/`_X_` define set.
+#[derive(Clone, Copy)]
+struct ArchCfg {
+    /// ReactOS arch name + `build-<name>` dir (`i386`/`amd64`/`arm64`).
+    name: &'static str,
+    /// llvm-mingw target triple / binary prefix (`<triple>-clang`).
+    triple: &'static str,
+    /// spec2def `-a=` value.
+    spec2def: &'static str,
+    /// dlltool `-m` machine.
+    dlltool_machine: &'static str,
+    /// `libclang_rt.builtins-<rt>.a` suffix.
+    clang_rt: &'static str,
+    /// `_M_*` / `_X_` / `__arch__` defines (the only arch-varying part of
+    /// the kernel/HAL define sets).
+    arch_defines: &'static [(&'static str, Option<&'static str>)],
+    /// true on x86 (i386+amd64) — gates `-mlong-double-64` etc.; false arm64.
+    is_x86: bool,
+    /// true on i386 only — gates `-march=pentium`/`-mstackrealign`.
+    is_i386: bool,
+}
+
+const I386_ARCH_DEFINES: &[(&str, Option<&str>)] =
+    &[("_M_IX86", None), ("_X86_", None), ("__i386__", None), ("i386", None)];
+const AMD64_ARCH_DEFINES: &[(&str, Option<&str>)] =
+    &[("_M_AMD64", None), ("_AMD64_", None), ("_WIN64", None), ("__x86_64__", None)];
+const ARM64_ARCH_DEFINES: &[(&str, Option<&str>)] =
+    &[("_M_ARM64", None), ("_ARM64_", None), ("_WIN64", None), ("__aarch64__", None)];
+
+fn arch_cfg(target_arch: &str) -> ArchCfg {
+    match target_arch {
+        "x86" => ArchCfg {
+            name: "i386", triple: "i686-w64-mingw32", spec2def: "i386",
+            dlltool_machine: "i386", clang_rt: "i386",
+            arch_defines: I386_ARCH_DEFINES, is_x86: true, is_i386: true,
+        },
+        "x86_64" => ArchCfg {
+            // spec2def's arch token is `x86_64`, NOT `amd64` (an unknown
+            // token silently falls back to i386 → @N stdcall decoration on
+            // a 64-bit .def → undefined-symbol link errors).
+            name: "amd64", triple: "x86_64-w64-mingw32", spec2def: "x86_64",
+            dlltool_machine: "i386:x86-64", clang_rt: "x86_64",
+            arch_defines: AMD64_ARCH_DEFINES, is_x86: true, is_i386: false,
+        },
+        "aarch64" => ArchCfg {
+            name: "arm64", triple: "aarch64-w64-mingw32", spec2def: "arm64",
+            dlltool_machine: "arm64", clang_rt: "aarch64",
+            arch_defines: ARM64_ARCH_DEFINES, is_x86: false, is_i386: false,
+        },
+        other => panic!("reactos-link: unsupported target arch {other}"),
+    }
+}
+
+/// Common (arch-agnostic) ntoskrnl DEFINES — the arch-specific `_M_*` come
+/// from `ArchCfg::arch_defines`.
+const KERNEL_DEFINES_COMMON: &[(&str, Option<&str>)] = &[
     ("D3D_UMD_INTERFACE_VERSION", Some("0x000C")),
     ("DBG", Some("1")),
     ("DLL_EXPORT_VERSION", Some("0x502")),
@@ -69,26 +126,21 @@ const KERNEL_DEFINES: &[(&str, Option<&str>)] = &[
     ("_CRT_NON_CONFORMING_SWPRINTFS", None),
     ("_CRT_SUPPRESS_RESTRICT", None),
     ("_GLIBCXX_HAVE_BROKEN_VSWPRINTF", None),
-    ("_M_IX86", None),
     ("_NEW_DELETE_OPERATORS_", None),
     ("_NTOSKRNL_", None),
     ("_NTSYSTEM_", None),
     ("_SEH_ENABLE_TRACE", None),
     ("_SETUPAPI_VER", Some("0x502")),
-    ("_USE_32BIT_TIME_T", None),
     ("_USE_DUMMY_PSEH", Some("1")),
     ("_WIN32_IE", Some("0x603")),
     ("_WIN32_WINDOWS", Some("0x502")),
     ("_WIN32_WINNT", Some("0x502")),
-    ("_X86_", None),
     ("__REACTOS__", None),
     ("__ROS_ROSSYM__", None),
-    ("__i386__", None),
-    ("i386", None),
 ];
 
-/// HAL asm DEFINES (cmake's line for `hal/halx86/**/*.S.obj`).
-const HAL_ASM_DEFINES: &[(&str, Option<&str>)] = &[
+/// Common (arch-agnostic) HAL asm DEFINES.
+const HAL_ASM_DEFINES_COMMON: &[(&str, Option<&str>)] = &[
     ("D3D_UMD_INTERFACE_VERSION", Some("0x000C")),
     ("DBG", Some("1")),
     ("DLL_EXPORT_VERSION", Some("0x502")),
@@ -99,28 +151,31 @@ const HAL_ASM_DEFINES: &[(&str, Option<&str>)] = &[
     ("_CRT_NON_CONFORMING_SWPRINTFS", None),
     ("_CRT_SUPPRESS_RESTRICT", None),
     ("_GLIBCXX_HAVE_BROKEN_VSWPRINTF", None),
-    ("_M_IX86", None),
     ("_NEW_DELETE_OPERATORS_", None),
     ("_NTHALDLL_", None),
     ("_NTHAL_", None),
     ("_SEH_ENABLE_TRACE", None),
     ("_SETUPAPI_VER", Some("0x502")),
-    ("_USE_32BIT_TIME_T", None),
     ("_USE_DUMMY_PSEH", Some("1")),
     ("_WIN32_IE", Some("0x603")),
     ("_WIN32_WINDOWS", Some("0x502")),
     ("_WIN32_WINNT", Some("0x502")),
-    ("_X86_", None),
     ("__REACTOS__", None),
-    ("__i386__", None),
-    ("i386", None),
 ];
 
-fn defines(set: AsmDefineSet) -> &'static [(&'static str, Option<&'static str>)] {
-    match set {
-        AsmDefineSet::Kernel => KERNEL_DEFINES,
-        AsmDefineSet::Hal => HAL_ASM_DEFINES,
+/// Common set for `set`, plus the arch's `_M_*`/`__arch__` defines, plus
+/// `_USE_32BIT_TIME_T` on i386 only.
+fn defines(set: AsmDefineSet, arch: &ArchCfg) -> Vec<(&'static str, Option<&'static str>)> {
+    let common = match set {
+        AsmDefineSet::Kernel => KERNEL_DEFINES_COMMON,
+        AsmDefineSet::Hal => HAL_ASM_DEFINES_COMMON,
+    };
+    let mut v: Vec<_> = common.to_vec();
+    v.extend_from_slice(arch.arch_defines);
+    if arch.is_i386 {
+        v.push(("_USE_32BIT_TIME_T", None));
     }
+    v
 }
 
 /// Builder for one cargo-driven module link.
@@ -130,6 +185,7 @@ pub struct Linker {
     build_dir: PathBuf,
     pkg_name: String,
     target_json: PathBuf,
+    arch: ArchCfg,
     rust_crate: Option<String>,
     rust_features: Vec<String>,
     c_shims: Vec<String>,
@@ -144,13 +200,11 @@ pub struct Linker {
 
 impl Linker {
     /// `target_json_rel` is relative to the consumer crate dir
-    /// (e.g. `"i686-kernel.json"`). Asserts i386 (only arch supported
-    /// today).
+    /// (e.g. `"i686-kernel.json"`). Arch is taken from
+    /// `CARGO_CFG_TARGET_ARCH` (x86 / x86_64 / aarch64).
     pub fn new(target_json_rel: &str) -> Linker {
         let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
-        if target_arch != "x86" {
-            panic!("reactos-link supports i386 only for now (got {target_arch})");
-        }
+        let arch = arch_cfg(&target_arch);
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
         // sdk/lib/rust/<crate> → repo root is 4 levels up.
         let repo_root = manifest_dir
@@ -158,7 +212,7 @@ impl Linker {
             .nth(4)
             .expect("repo root")
             .to_path_buf();
-        let build_dir = repo_root.join("build-i386");
+        let build_dir = repo_root.join(format!("build-{}", arch.name));
         if !build_dir.exists() {
             panic!(
                 "cmake build dir {} does not exist — run `ninja` there first",
@@ -175,6 +229,7 @@ impl Linker {
             build_dir,
             pkg_name,
             target_json,
+            arch,
             rust_crate: None,
             rust_features: Vec::new(),
             c_shims: Vec::new(),
@@ -276,7 +331,15 @@ impl Linker {
     /// Run everything and emit the cargo: link directives.
     pub fn link(self, kind: ModuleKind) {
         let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
-        let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
+        let clang = llvm_mingw.join(format!("bin/{}-clang", self.arch.triple));
+        // Output dir stem = the target json's file stem (e.g. i686-kernel /
+        // x86_64-kernel / aarch64-kernel) — keyed by cargo's target name.
+        let target_stem = self
+            .target_json
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("target json stem")
+            .to_string();
 
         // ---- Rust staticlib (separate target dir, build-std nightly) --
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
@@ -307,7 +370,7 @@ impl Linker {
             if !status.success() {
                 panic!("cargo build -p {crate_name} failed");
             }
-            let a = tgt_dir.join(format!("i686-kernel/release/{lib_file}"));
+            let a = tgt_dir.join(format!("{target_stem}/release/{lib_file}"));
             if !a.exists() {
                 panic!("{crate_name} produced no {lib_file} at {}", a.display());
             }
@@ -321,7 +384,7 @@ impl Linker {
                 panic!("missing C shim: {}", abs.display());
             }
             let mut b = cc::Build::new();
-            apply_base(&mut b, &clang, AsmDefineSet::Kernel);
+            apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
             b.file(&abs).out_dir(self.obj_dir()).flag("-std=gnu2x");
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
@@ -337,7 +400,7 @@ impl Linker {
                 );
             }
             let mut b = cc::Build::new();
-            apply_base(&mut b, &clang, self.asm_set);
+            apply_base(&mut b, &clang, self.asm_set, &self.arch);
             b.file(&abs)
                 .out_dir(self.obj_dir())
                 .define("__ASM__", None)
@@ -384,7 +447,7 @@ impl Linker {
                     panic!("spec_stubs() set but spec2def produced no stubs at {}", stubs.display());
                 }
                 let mut b = cc::Build::new();
-                apply_base(&mut b, &clang, AsmDefineSet::Kernel);
+                apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
                 // module_stubs.c only `#include <stubs.h>` (self-contained).
                 b.file(&stubs)
                     .out_dir(self.obj_dir())
@@ -416,8 +479,10 @@ impl Linker {
         }
         println!("cargo:rustc-link-arg=-Wl,--end-group");
 
-        let clang_rt =
-            llvm_mingw.join("lib/clang/19/lib/windows/libclang_rt.builtins-i386.a");
+        let clang_rt = llvm_mingw.join(format!(
+            "lib/clang/19/lib/windows/libclang_rt.builtins-{}.a",
+            self.arch.clang_rt
+        ));
         println!("cargo:rustc-link-arg={}", clang_rt.display());
 
         // ---- PE link flags (common to every module kind) -------------
@@ -489,7 +554,7 @@ impl Linker {
         let stubs = out.join("module_stubs.c");
         let status = Command::new(&spec2def)
             .arg(format!("-n={dll_name}"))
-            .arg("-a=i386")
+            .arg(format!("-a={}", self.arch.spec2def))
             .arg(format!("-d={}", def.display()))
             .arg(format!("-s={}", stubs.display()))
             .arg("--version=0x502")
@@ -524,7 +589,7 @@ impl Linker {
             .arg("--version=0x502")
             .arg("--dbg")
             .arg(format!("-n={dll_name}"))
-            .arg("-a=i386")
+            .arg(format!("-a={}", self.arch.spec2def))
             .arg("--implib")
             .arg(format!("-d={}", implib_def.display()))
             .arg(&spec)
@@ -535,11 +600,11 @@ impl Linker {
         }
         let dlltool = self
             .repo_root
-            .join(".build-tools/llvm-mingw/bin/i686-w64-mingw32-dlltool");
+            .join(format!(".build-tools/llvm-mingw/bin/{}-dlltool", self.arch.triple));
         let lib_a = out.join(format!("lib{basename}.a"));
         let status = Command::new(&dlltool)
             .arg("-m")
-            .arg("i386")
+            .arg(self.arch.dlltool_machine)
             .arg("-d")
             .arg(&implib_def)
             .arg("-k")
@@ -588,33 +653,42 @@ impl Linker {
 }
 
 /// Common kernel-mode clang flags + the chosen DEFINES (cmake's
-/// `FLAGS =`/`DEFINES =` lines for any ntoskrnl/HAL TU).
-fn apply_base(build: &mut cc::Build, clang: &Path, set: AsmDefineSet) {
+/// `FLAGS =`/`DEFINES =` lines for any ntoskrnl/HAL TU). Arch-gated: the
+/// `-m`/`-march` x86 codegen flags only apply where valid (clang rejects
+/// `-march=pentium` on aarch64, etc.).
+fn apply_base(build: &mut cc::Build, clang: &Path, set: AsmDefineSet, arch: &ArchCfg) {
     build
         .compiler(clang)
         .warnings(false)
         .extra_warnings(false)
-        .flag("--target=i686-w64-mingw32")
+        .flag(format!("--target={}", arch.triple))
         .flag("-pipe")
         .flag("-fms-extensions")
         .flag("-fno-strict-aliasing")
         .flag("-fno-common")
-        .flag("-mlong-double-64")
         .flag("-Wno-microsoft")
         .flag("-Wno-pragma-pack")
         .flag("-fno-associative-math")
         .flag("-fno-builtin-stpcpy")
         .flag("-gdwarf-2")
         .flag("-gstrict-dwarf")
-        .flag("-march=pentium")
-        .flag("-mtune=generic")
         .flag("-O1")
         .flag("-fno-optimize-sibling-calls")
         .flag("-fno-omit-frame-pointer")
-        .flag("-mstackrealign")
         .flag("-Wno-unknown-warning-option");
-    for (n, v) in defines(set) {
-        build.define(n, *v);
+    if arch.is_x86 {
+        // x87 long double on both i386 + amd64 (matches cmake's kernel CRT).
+        build.flag("-mlong-double-64");
+    }
+    if arch.is_i386 {
+        // i386-only perf/ABI tuning (cmake's ntoskrnl/HAL i386 FLAGS line).
+        build
+            .flag("-march=pentium")
+            .flag("-mtune=generic")
+            .flag("-mstackrealign");
+    }
+    for (n, v) in defines(set, arch) {
+        build.define(n, v);
     }
 }
 
