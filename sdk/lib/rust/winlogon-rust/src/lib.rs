@@ -25,6 +25,23 @@ pub mod preamble;
 // setup.c — GetSetupType / RunSetup (setup-mode shell launch). The spike.
 pub mod setup;
 
+// environment.c — CreateUserEnvironment / BuildVolatileEnvironment. On the
+// autologon boot path (SAS calls it post-logon); reads WLSession->UserToken
+// + ->Profile, so it exercises the full WLSESSION layout at runtime.
+pub mod environment;
+
+// shutdown.c — StartSystemShutdown / TerminateSystemShutdown (RPC-invoked)
+// + the countdown shutdown dialog. Link-checked (not on the boot path).
+pub mod shutdown;
+
+// screensaver.c — InitializeScreenSaver / StartScreenSaver + LL hook procs
+// + the idle monitor thread. Link-checked (runs on real desktop idle).
+pub mod screensaver;
+
+// security.c — winsta/desktop security descriptors + per-session access
+// grants. On the boot/logon path (wlx.c startup + sas.c logon).
+pub mod security;
+
 // USER-MODE no_std staticlib → needs its own panic handler + eh_personality
 // (same role as userinit-rust / smss-csrss-rust). Must NOT use privileged
 // instructions.

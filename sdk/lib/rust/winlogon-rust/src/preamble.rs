@@ -22,6 +22,39 @@ extern "C" {
     pub static mut WLSession: PWLSESSION;
 }
 
+// winlogon.exe module instance, owned by the still-C core
+// (winlogon.c: `HINSTANCE hAppInstance;`). Leaves pass it to resource
+// APIs (LoadStringW / DialogBoxParamW).
+extern "C" {
+    pub static mut hAppInstance: HINSTANCE;
+}
+
+// notify.c (still C) — fires the registered notification DLLs for a logon
+// event. cdecl. `NOTIFICATION_TYPE` is bindgen's `_NOTIFICATION_TYPE`.
+extern "C" {
+    pub fn CallNotificationDlls(pSession: PWLSESSION, Type: _NOTIFICATION_TYPE);
+}
+
+// Undocumented user32 export (WINAPI) — assigns a window station to a
+// logged-in user. No public prototype, so it never appears in bindgen.
+extern "system" {
+    pub fn SetWindowStationUser(
+        hWindowStation: HWINSTA,
+        pluid: PLUID,
+        psid: PSID,
+        size: DWORD,
+    ) -> BOOL;
+}
+
+// RtlGetProcessHeap() is a macro (`NtCurrentPeb()->ProcessHeap`) — not a
+// bindgen symbol. GetProcessHeap() returns the same PEB->ProcessHeap
+// handle, without the arch-specific NtCurrentPeb() segment read.
+#[allow(non_snake_case)]
+#[inline]
+pub unsafe fn RtlGetProcessHeap() -> PVOID {
+    GetProcessHeap() as PVOID
+}
+
 // CRT (cdecl) wide-string helpers the leaves call — not Win32 APIs, so
 // not in winlogon-sys's bindgen. winlogon.exe links msvcrt.
 extern "C" {
@@ -30,4 +63,15 @@ extern "C" {
     pub fn wcschr(s: *const u16, c: u16) -> *mut u16;
     pub fn wcsncpy(dest: *mut u16, src: *const u16, n: usize) -> *mut u16;
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32;
+    pub fn wcscmp(s1: *const u16, s2: *const u16) -> i32;
+    // `int iswspace(wint_t)`. Declared with i32 arg (not u16) so the i386
+    // cdecl call pushes a clean zero-extended 32-bit slot — the CRT reads
+    // its wint_t param from a 4-byte stack slot.
+    pub fn iswspace(c: i32) -> i32;
+    // Variadic CRT formatter — Rust can't *define* a C variadic but may
+    // *call* one. `int swprintf(wchar_t*, const wchar_t* fmt, ...)`.
+    pub fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
+    // user32 `int WINAPIV wsprintfW(LPWSTR, LPCWSTR fmt, ...)` — WINAPIV is
+    // __cdecl for varargs, so extern "C" is the correct ABI on all arches.
+    pub fn wsprintfW(out: *mut u16, fmt: *const u16, ...) -> i32;
 }

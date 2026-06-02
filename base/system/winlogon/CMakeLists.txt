@@ -10,15 +10,15 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 # main (winlogon.c) and RPC (rpcserver.c) stay C. Flipped .c stay on disk
 # (never delete the C — translation philosophy), commented out here.
 list(APPEND SOURCE
-    environment.c
+    # environment.c — replaced by Rust (winlogon-rust/src/environment.rs)
     notify.c
     rpcserver.c
     sas.c
-    screensaver.c
-    security.c
+    # screensaver.c — replaced by Rust (winlogon-rust/src/screensaver.rs)
+    # security.c — replaced by Rust (winlogon-rust/src/security.rs)
     # setup.c    — replaced by Rust (winlogon-rust/src/setup.rs)
     winlogon_rust_stub.c
-    shutdown.c
+    # shutdown.c — replaced by Rust (winlogon-rust/src/shutdown.rs)
     winlogon.c
     wlx.c
     winlogon.h
@@ -57,6 +57,10 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/winlogon-rust/src/lib.rs
         ${RUST_WORKSPACE_DIR}/winlogon-rust/src/preamble.rs
         ${RUST_WORKSPACE_DIR}/winlogon-rust/src/setup.rs
+        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/environment.rs
+        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/shutdown.rs
+        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/screensaver.rs
+        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/security.rs
         ${RUST_WORKSPACE_DIR}/winlogon-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winlogon-sys/src/lib.rs
     COMMENT "Building winlogon-rust (${RUST_TARGET}) for winlogon.exe"

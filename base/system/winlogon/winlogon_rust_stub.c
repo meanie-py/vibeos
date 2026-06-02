@@ -14,7 +14,11 @@
  * This stub keeps add_executable() valid if a flip ever leaves no other
  * winlogon .c referencing the archive.
  *
- * Currently flipped: setup.c (GetSetupType / RunSetup).
+ * Currently flipped: setup.c (GetSetupType / RunSetup),
+ *                     environment.c (CreateUserEnvironment),
+ *                     shutdown.c (StartSystemShutdown / TerminateSystemShutdown),
+ *                     screensaver.c (InitializeScreenSaver / StartScreenSaver),
+ *                     security.c (Create*Security / Allow*AccessToUser / AllowAccessOnSession).
  *
  * Keep the C on disk (translation philosophy: never delete the C); it is
  * simply not compiled while the Rust translation is active.

@@ -34,7 +34,7 @@ BUILD_ROOT = Path(os.environ.get("VIBEOS_BUILD_ROOT", str(SRC)))
 RES = BUILD_ROOT / ".build-tools/llvm-mingw/lib/clang/19/include"
 CLANG = BUILD_ROOT / ".build-tools/llvm-mingw/bin/clang"
 WRAPPER = SCRIPT_DIR / "wrapper.h"
-NINJA_RULE = "winlogon.dir/environment.c.obj:"
+NINJA_RULE = "winlogon.dir/winlogon.c.obj:"
 
 ARCHS = [
     {"name": "i386",  "target": "i686-pc-windows-gnu",    "out": "size_check_i386.rs",  "rs": "bindgen_i386.rs"},
