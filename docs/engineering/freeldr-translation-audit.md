@@ -1,20 +1,20 @@
 # FreeLDR + Boot DLLs C→Rust Translation Audit
 
-Last updated 2026-06-01. **Status: FreeLDR ~done, boot-DLLs split.**
+Last updated 2026-06-01. **Status: FreeLDR + all boot-DLLs flipped.**
 This doc started (2026-05-08) as a pre-translation plan; it is now a
 *state* audit. The headline change since: **FreeLDR is translated and
 integrated** (86 Rust modules, cohabitation, all 3 arches boot green),
-**the BIOS path is pruned** (x86 is UEFI-only), and **the display
-drivers are flipped** (`arm64vid.sys` + `framebuf.dll`). The two small
-sibling DLLs — `kdcom.dll` and `bootvid.dll` — have Rust crates written
-but **not yet wired into the default build**.
+**the BIOS path is pruned** (x86 is UEFI-only), **the display drivers
+are flipped** (`arm64vid.sys` + `framebuf.dll`), and as of 2026-06-01
+the two sibling DLLs **`kdcom.dll` and `bootvid.dll` are flipped to Rust
+via cohabitation and pass smoke on all 3 arches**.
 
 **Scope:** the pre-kernel components FreeLDR loads alongside ntoskrnl +
 HAL before `KiSystemStartup`:
 
 1. **FreeLDR** itself (`uefildr.efi`) — the bootloader binary — **DONE**
-2. **`kdcom.dll`** — kernel debugger COM transport — **crate exists, flip pending**
-3. **`bootvid.dll`** — boot-time framebuffer — **crate exists, flip pending**
+2. **`kdcom.dll`** — kernel debugger COM transport — **DONE** (Rust, 3-arch green)
+3. **`bootvid.dll`** — boot-time framebuffer — **DONE** (Rust, 3-arch green)
 
 Plus two display drivers that landed alongside the boot-track work:
 4. **`arm64vid.sys`** — early UEFI GOP video driver — **DONE**
@@ -35,8 +35,8 @@ Companion to:
 | **rosload** 2nd-stage | `freeldr-rust` (`libfreeldr_rust_rosload.a`) | ✅ 14 files | ✅ cohabitation | ✅ |
 | **arm64vid.sys** | `arm64vid-rust` | ✅ 3-arch | ✅ cohabitation | ✅ (UEFI GOP on every boot) |
 | **framebuf.dll** (GDI) | `framebuf-rust` | ✅ 3-arch | ✅ cohabitation | ✅ |
-| **kdcom.dll** | `kdcom-rust` + `kdcom-cargo` | ✅ (cargo-link PoC) | ❌ cmake still builds C | n/a |
-| **bootvid.dll** | `bootvid-rust` + `bootvid-cargo` | ✅ (cargo-link PoC) | ❌ cmake still builds C | n/a |
+| **kdcom.dll** | `kdcom-rust` | ✅ | ✅ cohabitation (kdrosdbg/CMakeLists) | ✅ 3 arches |
+| **bootvid.dll** | `bootvid-rust` (framebuf GOP) | ✅ | ✅ cohabitation (add_bootvid RUST) | ✅ 3 arches |
 | **BIOS / PC-AT path** | — | — | ✅ **PRUNED** (`pcat.cmake` deleted) | x86 UEFI-only |
 
 **What "DONE" means here:** the C sources stay on disk (never-delete
@@ -177,22 +177,21 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 
 ## Forward path (remaining work, priority order)
 
-1. **kdcom.dll cohabitation flip.** Comment C in
-   `drivers/base/kdcom/CMakeLists.txt` (and/or `kdrosdbg`), link
-   `libkdcom_rust.a`, keep the spec export contract. Smoke-gate (benign
-   failure mode). **0.5 session.** Validates the sibling-DLL flip the
-   `-cargo` PoC already proved out.
-2. **bootvid.dll cohabitation flip.** Same shape against
-   `framebuf/lfbbvid.cmake`. Smoke-gate (boot logo). **0.5–1 session.**
-3. **Decide kdcom-cargo / bootvid-cargo fate.** Either promote the
-   cargo-link PoC to the canonical build, or retire it in favour of the
-   cohabitation flip above. Pick one path so the two don't bit-rot.
-4. **Prune alternate KD transports.** `kdgdb`, `kdvm`, and the inactive
+   *(kdcom.dll + bootvid.dll cohabitation flips: **DONE** 2026-06-01,
+   3-arch smoke green. Lesson: a freeldr-LOADED DLL must NOT use
+   raw-dylib for cross-DLL kernel-data imports — the 2nd ntoskrnl.exe
+   import descriptor hangs freeldr's peloader; use the import lib's
+   `__imp_` thunk instead. See memory feedback_freeldr_loaded_dll_no_raw_dylib.)*
+
+1. **Decide kdcom-cargo / bootvid-cargo fate.** The `-cargo` reactos-link
+   PoCs are now superseded by the cohabitation flips. Either retire them
+   or keep as a parallel CI check — pick one so they don't bit-rot.
+2. **Prune alternate KD transports.** `kdgdb`, `kdvm`, and the inactive
    `_WINKD_` half (`kdcom` or `kdrosdbg`) are dead for our COM1 smoke
    config. `qemu/inspect.sh` GDB tooling covers the kdgdb use case.
-5. **Delete `boot/freeldr/bootsect/`.** Pure BIOS asm, unreachable now
+3. **Delete `boot/freeldr/bootsect/`.** Pure BIOS asm, unreachable now
    that `pcat.cmake` is gone. Smoke gates it.
-6. **Retire the cmake C `uefildr` build → cargo `bin`.** FreeLDR is
+4. **Retire the cmake C `uefildr` build → cargo `bin`.** FreeLDR is
    already Rust via cohabitation; the long-term shape is a standalone
    cargo `bin` crate (per the ntoskrnl-cargo PoC) so the C tree under
    `boot/freeldr/freeldr/` can be dropped from the build entirely.
