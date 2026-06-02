@@ -172,6 +172,9 @@ pub mod metafile;
 // wingl.rs — Phase 2c wave 14: WinGL/pixel-format tier (NtGdiDescribePixelFormat,
 // NtGdiSetPixelFormat, NtGdiSwapBuffers) dispatching through PDEVOBJ DriverFunctions.
 pub mod wingl;
+// init.rs — Phase 2c wave 15: GDI process/thread callouts + InitializeGreCSRSS +
+// NtGdiInit (boot-critical, exercised every process create).
+pub mod init;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
