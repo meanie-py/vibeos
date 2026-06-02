@@ -33,6 +33,13 @@ pub enum ModuleKind {
     /// `kerneldll` — `-shared`, no `--gc-sections` (e.g. hal.dll:
     /// `_HalInitSystem@8`, 0x00010000).
     KernelDll { entry: String, image_base: u64 },
+    /// `win32dll` — user-mode PE DLL (`-shared`), exports via `.def` so
+    /// NO `--exclude-all-symbols`, default PE alignment (file 0x200), the
+    /// `console:5.01` subsystem (ReactOS' `win32dll` set_subsystem hack),
+    /// no `--gc-sections`. `entry` is the i386-decorated entry symbol —
+    /// `___ImageBase` for ntdll.dll (AddressOfEntryPoint = 0) or e.g.
+    /// `_DllMain@12` for ntdll_vista.dll.
+    Win32Dll { entry: String, image_base: u64 },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -127,6 +134,7 @@ pub struct Linker {
     asm_set: AsmDefineSet,
     resource: Option<String>,
     spec: Option<(String, String)>,
+    link_stubs: bool,
     static_libs: Vec<String>,
     import_libs: Vec<(String, String, String)>,
 }
@@ -170,6 +178,7 @@ impl Linker {
             asm_set: AsmDefineSet::Kernel,
             resource: None,
             spec: None,
+            link_stubs: false,
             static_libs: Vec::new(),
             import_libs: Vec::new(),
         }
@@ -210,6 +219,19 @@ impl Linker {
     /// `dll_name` is the `-n=` arg (e.g. `hal.dll`, `ntoskrnl.exe`).
     pub fn spec2def(mut self, spec_rel: &str, dll_name: &str) -> Self {
         self.spec = Some((spec_rel.to_string(), dll_name.to_string()));
+        self
+    }
+
+    /// Also compile + link the spec2def-generated stub bodies
+    /// (`module_stubs.c`, the `-stub` spec entries — e.g. ntdll's 48
+    /// `Etw*`/`Rtl*` unimplemented exports). Opt-in: kernel modules don't
+    /// link them (their `-stub` symbols resolve elsewhere), but a user-mode
+    /// DLL whose `.def` exports them needs the bodies or the link fails
+    /// undefined. The stub TU only `#include <stubs.h>` (self-contained:
+    /// declares its own types + `DbgPrint`/`RtlRaiseException`), so it
+    /// compiles header-free with a single `-I sdk/include/reactos`.
+    pub fn spec_stubs(mut self) -> Self {
+        self.link_stubs = true;
         self
     }
 
@@ -328,9 +350,9 @@ impl Linker {
             println!("cargo:rerun-if-changed={}", src.display());
         }
 
-        // ---- spec2def → .def -----------------------------------------
+        // ---- spec2def → .def (+ optional -stub bodies) ---------------
         if let Some((spec_rel, dll_name)) = &self.spec {
-            let def = self.generate_def(spec_rel, dll_name);
+            let (def, stubs) = self.generate_def(spec_rel, dll_name);
             println!("cargo:rustc-link-arg={}", def.display());
             println!(
                 "cargo:rerun-if-changed={}",
@@ -340,6 +362,19 @@ impl Linker {
                 "cargo:rerun-if-changed={}",
                 self.repo_root.join("sdk/tools/spec2def/spec2def.c").display()
             );
+            if self.link_stubs {
+                if !stubs.exists() {
+                    panic!("spec_stubs() set but spec2def produced no stubs at {}", stubs.display());
+                }
+                let mut b = cc::Build::new();
+                apply_base(&mut b, &clang, AsmDefineSet::Kernel);
+                // module_stubs.c only `#include <stubs.h>` (self-contained).
+                b.file(&stubs)
+                    .out_dir(self.obj_dir())
+                    .include(self.repo_root.join("sdk/include/reactos"))
+                    .flag("-std=gnu2x");
+                emit_objs(&b, &stubs);
+            }
         }
 
         // ---- Static-lib group ----------------------------------------
@@ -368,36 +403,49 @@ impl Linker {
             llvm_mingw.join("lib/clang/19/lib/windows/libclang_rt.builtins-i386.a");
         println!("cargo:rustc-link-arg={}", clang_rt.display());
 
-        // ---- Kernel-mode PE link flags -------------------------------
+        // ---- PE link flags (common to every module kind) -------------
         for f in [
             "-nostdlib",
             "-fuse-ld=lld",
             "-Wl,--enable-auto-image-base,--disable-auto-import",
-            "-Wl,--subsystem,native:5.01",
             "-Wl,--major-image-version,5",
             "-Wl,--minor-image-version,01",
             "-Wl,--major-os-version,5",
             "-Wl,--minor-os-version,01",
-            "-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000",
             "-Wl,--allow-multiple-definition",
+            "-Wl,--disable-stdcall-fixup",
         ] {
             println!("cargo:rustc-link-arg={f}");
         }
-        let (entry, image_base, exe) = match &kind {
-            ModuleKind::KernelExe { entry, image_base } => (entry, *image_base, true),
-            ModuleKind::KernelDll { entry, image_base } => (entry, *image_base, false),
+        // ---- kind-specific subsystem / alignment / sections ----------
+        let (entry, image_base) = match &kind {
+            ModuleKind::KernelExe { entry, image_base } => {
+                // native subsystem; GC unreferenced sections (main.rs anchors
+                // the entry to hold the root); no -shared.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
+                println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
+                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                (entry, *image_base)
+            }
+            ModuleKind::KernelDll { entry, image_base } => {
+                // native subsystem PE DLL; keep all sections, 0x1000 align.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
+                println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
+                println!("cargo:rustc-link-arg=-shared");
+                (entry, *image_base)
+            }
+            ModuleKind::Win32Dll { entry, image_base } => {
+                // user-mode PE DLL (ntdll/ntdll_vista): console subsystem
+                // (ReactOS win32dll hack), exports come from the .def so NO
+                // --exclude-all-symbols, default PE alignment (file 0x200),
+                // -shared, keep all sections.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,console:5.01");
+                println!("cargo:rustc-link-arg=-shared");
+                (entry, *image_base)
+            }
         };
-        println!("cargo:rustc-link-arg=-Wl,-entry,{entry}");
+        println!("cargo:rustc-link-arg=-Wl,-e,{entry}");
         println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", image_base);
-        if exe {
-            // ntoskrnl.exe: GC unreferenced sections (main.rs anchors
-            // the entry to hold the root); no -shared.
-            println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup,--gc-sections");
-        } else {
-            // kerneldll: PE DLL; keep all sections.
-            println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup");
-            println!("cargo:rustc-link-arg=-shared");
-        }
     }
 
     fn obj_dir(&self) -> PathBuf {
@@ -406,7 +454,10 @@ impl Linker {
         d
     }
 
-    fn generate_def(&self, spec_rel: &str, dll_name: &str) -> PathBuf {
+    /// Returns `(def, stubs)` — the `.def` and the generated `-stub`
+    /// bodies TU (`module_stubs.c`). The caller links `def` always and
+    /// `stubs` only when `spec_stubs()` opted in.
+    fn generate_def(&self, spec_rel: &str, dll_name: &str) -> (PathBuf, PathBuf) {
         let spec2def = self.compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def");
         let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("spec-gen");
         std::fs::create_dir_all(&out).expect("mkdir spec-gen");
@@ -432,7 +483,7 @@ impl Linker {
         if !def.exists() {
             panic!("spec2def produced no .def at {}", def.display());
         }
-        def
+        (def, stubs)
     }
 
     /// `spec --implib → .def → i686-w64-mingw32-dlltool → libNAME.a`.

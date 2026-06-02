@@ -861,7 +861,7 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
     i = 0;
     while NextEntry != ListHead {
         LdrEntry = (NextEntry as usize
-            - (&(*(core::ptr::null::<LDR_DATA_TABLE_ENTRY>())).InInitializationOrderLinks as *const _ as usize))
+            - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks))
             as PLDR_DATA_TABLE_ENTRY;
 
         if !LdrRootEntry.is_null() {
@@ -1018,7 +1018,7 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
         NextEntry = (*NextEntry).Flink;
         while NextEntry != ListHead {
             LdrEntry = (NextEntry as usize
-                - (&(*(core::ptr::null::<LDR_DATA_TABLE_ENTRY>())).InInitializationOrderLinks as *const _ as usize))
+                - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks))
                 as PLDR_DATA_TABLE_ENTRY;
             let _ = LdrEntry;
             NextEntry = (*NextEntry).Flink;
@@ -1091,8 +1091,8 @@ pub unsafe extern "system" fn LdrShutdownProcess() -> NTSTATUS {
     NextEntry = (*ListHead).Blink;
     while NextEntry != ListHead {
         LdrEntry = (NextEntry as usize
-            - (&(*(core::ptr::null::<_LDR_DATA_TABLE_ENTRY>())).InInitializationOrderLinks
-                as *const _ as usize)) as PLDR_DATA_TABLE_ENTRY;
+            - core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks))
+            as PLDR_DATA_TABLE_ENTRY;
         NextEntry = (*NextEntry).Blink;
 
         if (*Peb).ImageBaseAddress != (*LdrEntry).DllBase {

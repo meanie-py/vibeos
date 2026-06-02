@@ -1,0 +1,23 @@
+# Cargo-driven `ntdll.dll` link PoC (i386) — phase 1 of removing cmake
+# from the ntdll flow (docs/engineering/ntdll-cargo-drive-audit.md).
+#
+# Mirrors ntoskrnl-cargo: cargo drives the final link via the shared
+# `reactos-link` engine. cargo builds ntdll-rust fresh (build-std) and
+# compiles the one remaining asm (pre-expanded dispatch-i386.s) + the
+# spec2def `-stub` bodies; everything heavy (librtl, libcntpr, the lean
+# csrlib archive, …) is REUSED as cmake-built `.a` (run `ninja` in
+# build-i386 first). Success criterion for phase 1: produces a valid
+# ntdll.dll PE (the `cargo_link` bit-rot guard checks this without booting).
+
+[package]
+name = "ntdll-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ntdll"
+path = "src/main.rs"
+
+[build-dependencies]
+# Shared cargo-link engine — Win32Dll module kind added for ntdll.
+reactos-link = { path = "../reactos-link" }

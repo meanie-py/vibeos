@@ -299,6 +299,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ntdll-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "ntdll-rust"
 version = "0.1.0"
 dependencies = [
