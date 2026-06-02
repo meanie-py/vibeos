@@ -202,7 +202,7 @@ list(APPEND SOURCE
     # gdi/ntgdi/stockobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/stockobj.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/ntgdi/text.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/text.rs) — cohabitation [Phase 2c wave 10: text query tier]
     # gdi/ntgdi/utils.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/utils.rs) — cohabitation [Phase 2c geometry wave 1]
-    gdi/ntgdi/wingl.c
+    # gdi/ntgdi/wingl.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/wingl.rs) — cohabitation [Phase 2c wave 14: WinGL/pixel-format tier]
     # gdi/ntgdi/xformobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/xformobj.rs) — cohabitation [Phase 2c geometry wave 2]
     # gdi/eng/stubs.c       # replaced by Rust (stubs.rs) — cohabitation [wave 2 sweep, per-arch SharedUserData]
     # gdi/eng/umpdstubs.c   # replaced by Rust (umpdstubs.rs) — cohabitation [wave 2 sweep]
@@ -352,6 +352,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/icm.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdipool.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/metafile.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/wingl.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
