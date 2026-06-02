@@ -166,6 +166,9 @@ pub mod icm;
 // gdipool.rs — Phase 2c wave 12: GDI pool allocator (GdiPool{Allocate,Free,Create,Destroy}
 // + section helpers) — Zw virtual-mem backed slab over a per-pool push lock.
 pub mod gdipool;
+// metafile.rs — Phase 2c wave 13: server metafile object tier (NtGdiCreateMetafileDC,
+// NtGdiCreate/GetServerMetaFile{,Bits}, NtGdiConvertMetafileRect over GDIOBJ_*).
+pub mod metafile;
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust

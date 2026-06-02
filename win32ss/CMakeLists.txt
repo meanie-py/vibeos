@@ -191,7 +191,7 @@ list(APPEND SOURCE
     # gdi/ntgdi/icm.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/icm.rs) — cohabitation [Phase 2c wave 11: ICM color mgmt]
     gdi/ntgdi/init.c
     # gdi/ntgdi/line.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/line.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
-    gdi/ntgdi/metafile.c
+    # gdi/ntgdi/metafile.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/metafile.rs) — cohabitation [Phase 2c wave 13: server metafile object tier]
     # gdi/ntgdi/palette.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/palette.rs) — cohabitation [Phase 2c geometry wave 7: PALETTE object tier]
     gdi/ntgdi/path.c
     # gdi/ntgdi/pen.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/pen.rs) — cohabitation [Phase 2c geometry wave 6: PEN object tier]
@@ -351,6 +351,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/text.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/icm.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gdipool.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/metafile.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
