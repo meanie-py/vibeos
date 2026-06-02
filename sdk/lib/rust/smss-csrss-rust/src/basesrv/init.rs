@@ -180,29 +180,48 @@ pub static mut BaseServerApiNameTable: [*const i8; 31] = [
 ];
 
 type PBASE_STATIC_SERVER_DATA = *mut BASE_STATIC_SERVER_DATA;
-type PINIFILE_MAPPING = *mut c_void;
+type PINIFILE_MAPPING = *mut INIFILE_MAPPING;
 type PCSR_SERVER_DLL = *mut c_void;
 type PCSR_PROCESS = *mut c_void;
 type PBASESRV_API_CONNECTINFO = *mut c_void;
 
+// Layout MUST match C `BASE_STATIC_SERVER_DATA` (sdk/include/reactos/subsys/
+// win/base.h) field-for-field: basesrv.dll writes this struct into the shared
+// section and kernel32 (+ ~7 user DLLs) read it back. The prior Rust mirror had
+// a scrambled field order and opaque blobs → every BaseStaticServerData->X read
+// from kernel32 got garbage and boot hung ~7 DLLs after kernel32 DllMain. Using
+// the real bindgen nested types in exact C order makes repr(C) reproduce the C
+// layout per-arch; the size assert below pins it to the C C_ASSERT (0x1AC8).
 #[repr(C)]
 struct BASE_STATIC_SERVER_DATA {
-    TermsrvClientTimeZoneId: ULONG,
-    TermsrvClientTimeZoneChangeNum: ULONG,
-    TimeOfDay: [u8; 48],
     WindowsDirectory: _UNICODE_STRING,
     WindowsSystemDirectory: _UNICODE_STRING,
-    WindowsSys32x86Directory: _UNICODE_STRING,
     NamedObjectDirectory: _UNICODE_STRING,
+    WindowsMajorVersion: USHORT,
+    WindowsMinorVersion: USHORT,
+    BuildNumber: USHORT,
     CSDNumber: USHORT,
     RCNumber: USHORT,
     CSDVersion: [WCHAR; 128],
-    SysInfo: [u8; 64],
-    IniFileMapping: PINIFILE_MAPPING,
+    SysInfo: SYSTEM_BASIC_INFORMATION,
+    TimeOfDay: SYSTEM_TIMEOFDAY_INFORMATION,
+    IniFileMapping: PINIFILE_MAPPING, // C: PVOID — same layout
+    NlsUserInfo: NLS_USER_INFO,
     DefaultSeparateVDM: BOOLEAN,
     IsWowTaskReady: BOOLEAN,
+    WindowsSys32x86Directory: _UNICODE_STRING,
+    fTermsrvAppInstallMode: BOOLEAN,
+    tziTermsrvClientTimeZone: TIME_ZONE_INFORMATION,
+    ktTermsrvClientBias: KSYSTEM_TIME,
+    TermsrvClientTimeZoneId: ULONG,
     LUIDDeviceMapsEnabled: BOOLEAN,
+    TermsrvClientTimeZoneChangeNum: ULONG,
 }
+// C pins the i386 size (base.h: `#if defined(_M_IX86) C_ASSERT(==0x1AC8)`).
+// 64-bit has a different size (pointer-width fields); there the layout is
+// guaranteed by repr(C) + the size-verified ntdll-sys nested types.
+#[cfg(target_arch = "x86")]
+const _: () = assert!(core::mem::size_of::<BASE_STATIC_SERVER_DATA>() == 0x1AC8);
 
 // NtCurrentPeb is a TEB-inline (ntdll-sys::inlines), NOT an extern — the
 // rustconv translation fabricated an extern decl that shadowed the real
@@ -222,7 +241,9 @@ extern "C" {
 //            BaseCleanupDefineDosDevice           — plain VOID  = cdecl ("C")
 //   vdm.c BaseInitializeVDM                       — plain VOID  = cdecl ("C")
 extern "system" {
-    fn BaseSrvNLSInit(StaticServerData: PBASE_STATIC_SERVER_DATA);
+    // task #18: pass the correctly-offset NlsUserInfo pointer, not the whole
+    // struct — nls.rs's BASE_STATIC_SERVER_DATA mirror had NlsUserInfo @0.
+    fn BaseSrvNLSInit(pNlsUserInfo: PVOID);
     fn BaseSrvNlsConnect(CsrProcess: PCSR_PROCESS, ConnectionInfo: PVOID, ConnectionInfoLength: *mut ULONG) -> NTSTATUS;
 }
 extern "C" {
@@ -502,11 +523,22 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     let mut DirectoryName: _UNICODE_STRING = core::mem::zeroed();
     let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
     let mut LuidEnabled: ULONG = 0;
+    // MUST be a [u16] static (align 2), NOT a `b"..."` byte-string literal
+    // (align 1). RtlQueryRegistryValues hands this to NtQueryValueKey as a
+    // UNICODE_STRING value name; ProbeAndCaptureUnicodeString does
+    // ProbeForRead(Buffer, Length, sizeof(WCHAR)) which raises
+    // STATUS_DATATYPE_MISALIGNMENT on amd64 if the buffer is odd-addressed.
+    // The old `b"CSDVersion\0".as_ptr() as *mut u16` landed at an odd offset in
+    // basesrv.dll on amd64 → BUGCHECK 0x1E. (i386/arm64 only got lucky.)
+    static CSDVERSION_NAME: [u16; 11] = [
+        b'C' as u16, b'S' as u16, b'D' as u16, b'V' as u16, b'e' as u16,
+        b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+    ];
     let mut BaseServerRegistryConfigurationTable: [RTL_QUERY_REGISTRY_TABLE; 2] = [
         RTL_QUERY_REGISTRY_TABLE {
             QueryRoutine: None,
             Flags: RTL_QUERY_REGISTRY_DIRECT,
-            Name: b"C\0S\0D\0V\0e\0r\0s\0i\0o\0n\0\0\0".as_ptr() as *mut u16,
+            Name: CSDVERSION_NAME.as_ptr() as *mut u16,
             EntryContext: &mut BaseSrvCSDString as *mut _UNICODE_STRING as PVOID,
             DefaultType: REG_NONE,
             DefaultData: core::ptr::null_mut(),
@@ -632,7 +664,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     (*BaseStaticServerData).TermsrvClientTimeZoneChangeNum = 0;
     Status = NtQuerySystemInformation(
         SystemTimeOfDayInformation,
-        (*BaseStaticServerData).TimeOfDay.as_mut_ptr() as PVOID,
+        core::ptr::addr_of_mut!((*BaseStaticServerData).TimeOfDay) as PVOID,
         core::mem::size_of_val(&(*BaseStaticServerData).TimeOfDay) as ULONG,
         core::ptr::null_mut(),
     );
@@ -712,7 +744,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
 
     Status = NtQuerySystemInformation(
         SystemBasicInformation,
-        (*BaseStaticServerData).SysInfo.as_mut_ptr() as PVOID,
+        core::ptr::addr_of_mut!((*BaseStaticServerData).SysInfo) as PVOID,
         core::mem::size_of_val(&(*BaseStaticServerData).SysInfo) as ULONG,
         core::ptr::null_mut(),
     );
@@ -864,7 +896,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         );
     }
 
-    BaseSrvNLSInit(BaseStaticServerData);
+    BaseSrvNLSInit(core::ptr::addr_of_mut!((*BaseStaticServerData).NlsUserInfo) as PVOID);
 
     // C: LoadedServerDll->SharedSection = BaseStaticServerData.
     // Use the real struct layout (CSR_SERVER_DLL_FULL) — the old hack
@@ -921,8 +953,36 @@ pub unsafe extern "system" fn BaseClientDisconnectRoutine(CsrProcess: PCSR_PROCE
     BaseSrvCleanupVDMResources(CsrProcess);
 }
 
-type BASESRV_API_CONNECTINFO = c_void;
-type INIFILE_MAPPING = c_void;
+// C `_BASESRV_API_CONNECTINFO` (basemsg.h): `{ ULONG DebugFlags; }`, with
+// C_ASSERT(sizeof == 0x04). BaseClientConnectRoutine rejects a connect whose
+// `*ConnectionInfoLength != size_of::<BASESRV_API_CONNECTINFO>()`. The old
+// `= c_void` made that size 0, so every real client (4-byte connect info)
+// was rejected with STATUS_INVALID_PARAMETER. Same class as INIFILE_MAPPING.
+#[repr(C)]
+#[allow(dead_code)]
+struct BASESRV_API_CONNECTINFO {
+    DebugFlags: ULONG,
+}
+const _: () = assert!(core::mem::size_of::<BASESRV_API_CONNECTINFO>() == 0x04);
+// INIFILE_MAPPING: 3 pointers + ULONG → 16 on i386, 32 on LLP64 (repr(C) pad).
+#[cfg(target_arch = "x86")]
+const _: () = assert!(core::mem::size_of::<INIFILE_MAPPING>() == 16);
+// C `_INIFILE_MAPPING` (sdk/include/reactos/subsys/win/base.h): 3 list-head
+// pointers + a ULONG. The old `type INIFILE_MAPPING = c_void` made
+// `size_of::<INIFILE_MAPPING>()` 0, so BaseSrvInitializeIniFileMappings
+// allocated a ~0-byte block — kernel32's GetPrivateProfile* (via CSR) then
+// read FileNames/DefaultFileNameMapping/WinIniFileMapping from adjacent heap
+// garbage and walked a bogus mapping list → csrss wedged at the first
+// system.ini lookup (msacm32 MSACM_RegisterAllDrivers). Real struct → correct
+// HEAP_ZERO_MEMORY size → all three heads NULL → empty mapping (matches C).
+#[repr(C)]
+#[allow(dead_code)]
+struct INIFILE_MAPPING {
+    FileNames: PVOID,              // PINIFILE_MAPPING_FILENAME
+    DefaultFileNameMapping: PVOID, // PINIFILE_MAPPING_FILENAME
+    WinIniFileMapping: PVOID,      // PINIFILE_MAPPING_FILENAME
+    Reserved: ULONG,
+}
 
 extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> ULONG;

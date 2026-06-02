@@ -10,6 +10,7 @@
 #     "qemu_cmd":       "qemu-system-x86_64 -M pc ...",
 #     "owner_pid":      8529,
 #     "owner_comm":     "claude",
+#     "deadline":       1748550000,   # epoch secs; hard 30-min lifetime cap
 #     "gdb_port":       12001,
 #     "qmp_socket":     "/abs/path/to/qmp.sock",
 #     "serial_socket":  "/abs/path/to/serial.sock",
@@ -27,6 +28,12 @@
 # qemu_pid is alive, the owning session died without stopping QEMU and the
 # run should be reaped. owner_comm is the recorded command name at launch
 # time, for forensic clarity in stale manifests.
+#
+# deadline is launch-time + the hard lifetime cap (default 30 min, override via
+# $VIBEOS_QEMU_MAX_LIFETIME). qemu/reap.sh kills any VM past its deadline even
+# if the owner is still alive — the cap is an absolute ceiling, not an orphan
+# check. Set by start.sh after launch (not in manifest_init, which runs before
+# the QEMU clock starts).
 #
 # Fields populated by start.sh; other tools read but never modify (except
 # stop.sh, which sets a "stopped_at" field). The schema is intentionally flat:

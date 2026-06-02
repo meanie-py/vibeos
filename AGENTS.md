@@ -30,6 +30,26 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 - **All 3 architectures must pass independently.**
 - **Always check the screenshot** — the test saves `qemu/<arch>_smoke.png` for visual inspection.
 
+## `vibeos-cli` — The Build/Check/Smoke/Debug Front Door
+
+**Before building, booting, or debugging by hand, reach for `./vibeos-cli` (repo root).** It is the unified control plane over the build, the smoke harness, the lint gate, and the GDB toolkit — built specifically so agents stop reinventing per-arch build incantations, booting stale media, and flooding the transcript with serial logs. Full guide + per-tool motivation: **`tests/qemu/cli/README.md`** (read it once).
+
+```bash
+./vibeos-cli build  --arch i386 [--clean]   # warm by default; --clean = cold (nukes rust targets, proves cold-link)
+./vibeos-cli smoke  --arch i386             # THE verdict — refuses to boot stale media (build first, or --allow-stale)
+./vibeos-cli check                          # source lints, baseline-diff gate (0 NEW vs tools/lint-baseline/)
+./vibeos-cli debug  start amd64 --gdb       # wraps qemu/*.sh (POSITIONAL arch); GDB over the real (UEFI) boot
+./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
+```
+
+Why it matters (the bugs it prevents):
+- **No more false-green from stale artifacts.** `smoke` hard-fails on stale/missing media; warm builds are flagged because cargo incremental can mask regressions. Do a `--clean` build before trusting green or handing off.
+- **No per-arch divergence.** `archcfg.py` is the single source of truth for build targets + boot media (x86 = `ninja livecd`; arm64 = staged set + `mkramdisk --refresh`). `boot` reuses smoke's exact arch-config so the fast path can't drift from the real test.
+- **No token-flooding.** Stdout is a bounded summary; the durable verdict is `summary.json` + `full.log` under `/tmp/vibeos-cli/<ts>-<cmd>-<arch>/`. **Read `summary.json`, don't scrape stdout.**
+- **Auto-triage on failure.** Classifies `RUST_PANIC` (file:line) / `BUGCHECK 0xNN` / `HANG_TIMEOUT` / `KNOWN_FLAKE`, symbolicates the faulting PC, captures a screenshot — no manual objdump round-trip.
+
+**No default arch** (always pass `--arch`; `i386`/`amd64` alias to the UEFI boot configs). This is the front door; the raw `pytest tests/qemu/test_smoke.py` path and the `qemu/*.sh` toolkit still work underneath (see `tests/qemu/cli/README.md` → "Relationship to `qemu/`" for which layer to use when).
+
 ## Directory Layout
 
 ```
@@ -201,6 +221,8 @@ pointer (e.g. "ProcessObject named csrss.exe") — all in one tool call,
 replacing the ~2-min/iter "DbgPrint instrument and rebuild" loop.
 
 **Rules:**
+- `qemu/ps` shows every QEMU running across ALL worktrees + slot usage — run it first when unsure what's live or why KVM is contended. `qemu/README.md` indexes every script in `qemu/`.
+- QEMUs are capped: at most `VIBEOS_QEMU_MAX_CONCURRENT` (default 10) run at once (over the cap, launchers queue on an flock slot pool), and none outlives `VIBEOS_QEMU_MAX_LIFETIME` (default 30 min). `qemu/reap.sh` (auto-run by `start.sh` + smoke) culls orphans whose owning session died and any VM past its deadline.
 - Run `qemu/build-index.sh <arch>` after each kernel build (or before relying on offline sym lookup).
 - Per-run artifacts live at `qemu/runs/<run-id>/` — manifest.json, serial.log (raw bytes), gdb.log. Cleaned up only by explicit `rm`; the dir is gitignored.
 - `qemu/preflight.sh [arch]` runs automatically inside `start.sh`; on failure it prints the exact apt/cmake/cargo command to fix the issue (gdb-multiarch, llvm-dwarfdump, DWARF richness per axis, KdDebuggerDataBlock symbol presence).
@@ -265,7 +287,7 @@ The smoke test framework lives in `tests/qemu/` and provides automated boot veri
 - `vm.py` — VM lifecycle manager with per-arch configs (ArchConfig subclasses). Handles QEMU process, QMP, serial, debugcon.
 - `conftest.py` — pytest fixtures: session-scoped VM boot + per-test snapshot restore via QMP savevm/loadvm. Nukes `rust-kernel-target/` before each session unless `--skip-clean-build` is passed.
 - `test_smoke.py` — 7 tests per arch: boot_and_serial, qmp_status, snapshot_restore, screenshot, sacred_primitives, no_unexpected_ud2, plus the milestone marker check.
-- `serial_client.py` — Unix socket serial client. Creates server socket BEFORE starting QEMU (prevents race). Supports `read_until(marker)` (string match) and `read_until_idle()` (silence detection). Auto-continues past `kdb:>` prompts.
+- `serial_client.py` — Unix socket serial client. Creates server socket BEFORE starting QEMU (prevents race). Supports `read_until(marker)` (string match) and `read_until_idle()` (silence detection). Auto-continues past `kdb:>` prompts. Tees every serial byte (flushed live) to `qemu/<arch>_smoke_live.log` — `tail -f` it to watch a boot in progress instead of guessing whether it's hung (the path is also printed at session start).
 - `qmp_client.py` — QEMU Machine Protocol over Unix socket for screendump, savevm/loadvm, query-status.
 - `debugcon.py` — Decodes bochs debug port (0xE9) output against JSON trace catalogs for boot failure triage.
 
@@ -275,6 +297,8 @@ The smoke test framework lives in `tests/qemu/` and provides automated boot veri
 - amd64: LiveCD ISO (`build-amd64/livecd.iso`)
 
 **KVM acceleration:** i386 and amd64 use `-accel kvm -cpu host` when `/dev/kvm` is available (WSL2 supports this).
+
+**Resource caps (shared with the debug toolkit via `/tmp/vibeos-qemu-locks/`):** every smoke VM takes one of `VIBEOS_QEMU_MAX_CONCURRENT` (default 10) global concurrency slots — parallel runs across worktrees queue instead of thrashing KVM — and is killed at the `VIBEOS_QEMU_MAX_LIFETIME` (default 30 min) hard cap (in-process watchdog + reaper-enforced deadline). Queue time doesn't count against the cap. `qemu/ps` shows live VMs + slot usage.
 
 **Debugcon (boot tracing):**
 Kernel Rust code emits single-byte markers via `out 0xe9, al` at boot milestones. QEMU captures these with `-debugcon file:debugcon.bin` (i386/amd64 only). On boot failure, the test framework decodes the raw bytes against a JSON trace catalog (`tools/rustconv/data/trace_catalog_{arch}.json`) to produce a triage report showing how far the kernel got. Trace catalogs are generated by `rustconv trace-catalog` from inline asm in Rust source (e.g., `ke/i386/kiinit.rs`). i386 has 48 trace points covering KiSystemStartup through KiInitializeKernel.

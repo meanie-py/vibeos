@@ -574,6 +574,94 @@ unsafe fn strlen_(s: *const i8) -> usize {
     n
 }
 
+unsafe fn unicode_string_eq_ascii_ci(unicode: *const _UNICODE_STRING, ascii: *const i8) -> bool {
+    if unicode.is_null() || ascii.is_null() || (*unicode).Buffer.is_null() {
+        return false;
+    }
+
+    let ascii_len = strlen_(ascii);
+    if (*unicode).Length as usize != ascii_len * core::mem::size_of::<u16>() {
+        return false;
+    }
+
+    for i in 0..ascii_len {
+        let mut a = *ascii.add(i) as u8;
+        let mut u = *(*unicode).Buffer.add(i) as u16;
+        if a >= b'A' && a <= b'Z' {
+            a = a.wrapping_add(b'a' - b'A');
+        }
+        if u >= b'A' as u16 && u <= b'Z' as u16 {
+            u = u.wrapping_add((b'a' - b'A') as u16);
+        }
+        if u != a as u16 {
+            return false;
+        }
+    }
+
+    true
+}
+
+unsafe fn unicode_basename_starts_with_ascii_ci(
+    unicode: *const _UNICODE_STRING,
+    ascii: *const i8,
+    ascii_len: usize,
+) -> bool {
+    if unicode.is_null() || ascii.is_null() || (*unicode).Buffer.is_null() {
+        return false;
+    }
+
+    let unicode_len = (*unicode).Length as usize / core::mem::size_of::<u16>();
+    if unicode_len < ascii_len {
+        return false;
+    }
+
+    for i in 0..ascii_len {
+        let mut a = *ascii.add(i) as u8;
+        let mut u = *(*unicode).Buffer.add(i) as u16;
+        if a >= b'A' && a <= b'Z' {
+            a = a.wrapping_add(b'a' - b'A');
+        }
+        if u >= b'A' as u16 && u <= b'Z' as u16 {
+            u = u.wrapping_add((b'a' - b'A') as u16);
+        }
+        if u != a as u16 {
+            return false;
+        }
+    }
+
+    unicode_len == ascii_len || *(*unicode).Buffer.add(ascii_len) == b'.' as u16
+}
+
+unsafe fn unicode_string_eq_unicode_ci(
+    left: *const _UNICODE_STRING,
+    right: *const _UNICODE_STRING,
+) -> bool {
+    if left.is_null() || right.is_null() || (*left).Buffer.is_null() || (*right).Buffer.is_null() {
+        return false;
+    }
+
+    if (*left).Length != (*right).Length {
+        return false;
+    }
+
+    let len = (*left).Length as usize / core::mem::size_of::<u16>();
+    for i in 0..len {
+        let mut l = *(*left).Buffer.add(i);
+        let mut r = *(*right).Buffer.add(i);
+        if l >= b'A' as u16 && l <= b'Z' as u16 {
+            l = l.wrapping_add((b'a' - b'A') as u16);
+        }
+        if r >= b'A' as u16 && r <= b'Z' as u16 {
+            r = r.wrapping_add((b'a' - b'A') as u16);
+        }
+        if l != r {
+            return false;
+        }
+    }
+
+    true
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MiSnapThunk(
     dll_base: PVOID,
@@ -671,7 +759,8 @@ pub unsafe extern "system" fn MiSnapThunk(
         if dot.is_null() {
             return status;
         }
-        let dll_len = (dot.offset_from(dll_buffer) as usize) + 1; // include the '.'
+        let dll_name_len = dot.offset_from(dll_buffer) as usize;
+        let dll_len = dll_name_len + 1; // include the '.'
 
         let mut dll_ansi = ANSI_STRING {
             Length: dll_len as u16,
@@ -695,11 +784,11 @@ pub unsafe extern "system" fn MiSnapThunk(
                 core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
             ) as *mut LDR_DATA_TABLE_ENTRY;
 
-            if RtlPrefixUnicodeString(
-                core::ptr::addr_of!(forwarder_unicode),
-                core::ptr::addr_of!((*ldr_entry).BaseDllName) as *const _UNICODE_STRING,
-                1u8,
-            ) != 0 {
+            if unicode_basename_starts_with_ascii_ci(
+                core::ptr::addr_of!((*ldr_entry).BaseDllName),
+                dll_buffer,
+                dll_name_len,
+            ) {
                 let mut fwd_export_size: ULONG = 0;
                 let fwd_export_dir = RtlImageDirectoryEntryToData(
                     (*ldr_entry).DllBase,
@@ -1154,11 +1243,10 @@ pub unsafe extern "system" fn MmLoadSystemImage(
             let entry = (next_entry as *mut u8).sub(
                 core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
             ) as *mut LDR_DATA_TABLE_ENTRY;
-            if RtlEqualUnicodeString(
+            if unicode_string_eq_unicode_ci(
                 core::ptr::addr_of!(prefix_name),
-                core::ptr::addr_of_mut!((*entry).FullDllName),
-                1,
-            ) != 0 {
+                core::ptr::addr_of!((*entry).FullDllName),
+            ) {
                 found_entry = entry;
                 break;
             }
@@ -1571,11 +1659,10 @@ pub unsafe extern "system" fn MiResolveImageReferences(
                     let entry = (next as *mut u8).sub(
                         core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
                     ) as *mut LDR_DATA_TABLE_ENTRY;
-                    if RtlEqualUnicodeString(
-                        core::ptr::addr_of!(name_string),
-                        core::ptr::addr_of_mut!((*entry).BaseDllName),
-                        1,
-                    ) != 0 {
+                    if unicode_string_eq_ascii_ci(
+                        core::ptr::addr_of!((*entry).BaseDllName),
+                        import_name,
+                    ) {
                         found = (*entry).DllBase;
                         ldr_entry = entry;
                         if reference_needed && ((*entry).Flags & LDRP_LOAD_IN_PROGRESS) == 0 {
@@ -1663,8 +1750,12 @@ pub unsafe extern "system" fn MiResolveImageReferences(
                 let init_status = MmCallDllInitialize(dll_entry, head);
                 if !NT_SUCCESS(init_status) {
                     MmUnloadSystemImage(dll_entry as PVOID);
+                    return Err(init_status);
                 }
-                // Loop back: re-scan the module list (CheckDllState).
+
+                ldr_entry = dll_entry;
+                import_base = dll_base;
+                break;
             }
 
             if reference_needed && !loaded_imports.is_null()
@@ -1933,7 +2024,11 @@ extern "system" {
     fn RtlImageDirectoryEntryToData(base: PVOID, mapped: u32, dir: u16, size: *mut ULONG) -> PVOID;
     fn RtlUnicodeStringToAnsiString(dest: *mut ANSI_STRING, src: *mut _UNICODE_STRING, alloc: u32) -> NTSTATUS;
     fn RtlFreeAnsiString(s: *mut ANSI_STRING);
-    fn RtlEqualUnicodeString(s1: *const _UNICODE_STRING, s2: *mut _UNICODE_STRING, case_insensitive: u32) -> u32;
+    // RtlEqualUnicodeString returns BOOLEAN (u8) and takes BOOLEAN CaseInSensitive.
+    // Declaring it `u32 -> u32` was an ABI mismatch: on amd64 the impl sets only AL,
+    // so the caller read garbage upper EAX bits and saw a false "equal" — making
+    // win32k's "ftfd.dll" import match the same-length "usbd.sys" module (BUGCHECK 0x4C).
+    fn RtlEqualUnicodeString(s1: *const _UNICODE_STRING, s2: *mut _UNICODE_STRING, case_insensitive: u8) -> u8;
     fn RtlAppendUnicodeStringToString(dest: *mut _UNICODE_STRING, src: *mut _UNICODE_STRING) -> NTSTATUS;
     fn RtlInitAnsiString(dest: *mut ANSI_STRING, src: *const i8);
     fn RtlCopyUnicodeString(dest: *mut _UNICODE_STRING, src: *const _UNICODE_STRING);

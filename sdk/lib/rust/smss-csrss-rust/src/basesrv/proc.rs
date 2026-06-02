@@ -15,17 +15,13 @@ unsafe fn CsrGetClientThread() -> PCSR_THREAD {
     (*NtCurrentTeb()).CsrClientThread as PCSR_THREAD
 }
 
-// vdm.h defines VDM_CONSOLE_RECORD — basesrv-private; not in ntdll-sys (no
-// vdm.c translation yet). Minimal opaque alias so this file builds. When
-// vdm.c lands, replace with the real layout. Owed: vdm.c translation.
-#[repr(C)]
-pub struct VDM_CONSOLE_RECORD {
-    pub ProcessId: ULONG,
-    // ...other fields handled by vdm.c (not yet translated)
-}
-pub type PVDM_CONSOLE_RECORD = *mut VDM_CONSOLE_RECORD;
+// VDM_CONSOLE_RECORD (+ the rest of the VDM types) now have the real,
+// layout-exact definition in basesrv/vdm_types.rs, shared with vdm.rs. (This
+// file previously carried a TRUNCATED mirror with ProcessId at offset 0 vs the
+// real offset 24 — latent until vdm.c flipped to Rust.)
+use super::vdm_types::{PVDM_CONSOLE_RECORD, VDM_CONSOLE_RECORD};
 
-// VDM console-record helpers live in basesrv/vdm.c (not yet translated).
+// VDM console-record helpers live in basesrv/vdm.rs (now translated).
 // C signatures have no NTAPI/__stdcall — default cdecl → `extern "C"`.
 extern "C" {
     fn GetConsoleRecordBySessionId(SessionId: ULONG, Record: *mut PVDM_CONSOLE_RECORD) -> NTSTATUS;

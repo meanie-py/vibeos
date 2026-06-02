@@ -81,10 +81,10 @@ const REG_EXPAND_SZ: u32 = 2;
 const UNICODE_NULL: u16 = 0;
 const MAX_PATH: usize = 260;
 
-const SMP_DEBUG_FLAG: u32 = 0x01;
-const SMP_ASYNC_FLAG: u32 = 0x02;
-const SMP_AUTOCHK_FLAG: u32 = 0x04;
-const SMP_INVALID_PATH: u32 = 0x08;
+// SMP_*_FLAG come from `ntdll_sys::nt::*` (bindgen of smss.h). The local
+// SMP_INVALID_PATH here was 0x08 — WRONG (the real value is 0x10; 0x08 is
+// SMP_SUBSYSTEM_FLAG). A stray *Flags |= SMP_INVALID_PATH would have set the
+// subsystem bit instead. See the note in smss.rs (task #18).
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpAcquirePrivilege(

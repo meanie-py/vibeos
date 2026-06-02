@@ -31,6 +31,7 @@ members = [
     "hal-cargo",
     "ntkrnl-sys",
     "ntdll-sys",
+    "ntdll-rust",
     "smss-csrss-rust",
     "ntoskrnl-cargo",
     "ntoskrnl-rust",
@@ -53,6 +54,8 @@ members = [
     "win32k-sys",
     "winsrv-rust",
     "winsrv-sys",
+    "concfg-rust",
+    "userinit-rust",
 ]
 resolver = "2"
 

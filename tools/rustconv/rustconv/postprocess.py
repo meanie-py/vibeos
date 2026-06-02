@@ -1465,6 +1465,7 @@ def postprocess(
     target_name: str = "ntoskrnl",
     sys_crate: str = "ntkrnl_sys",
     sys_umbrella: str | None = None,
+    c_source_path: "Path | None" = None,
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
 
@@ -1511,6 +1512,19 @@ def postprocess(
         code = drop_gdiobj_macro_externs(code)
     if globals:
         code = fix_global_exports(code, globals)
+    # Target-agnostic ABI / #[no_mangle] enforcement from the C source.
+    # Calling convention is the #1 i386 crash cause and dropped-#[no_mangle]
+    # is a top rustconv defect; the C file is ground truth for both. Derives
+    # name -> (convention, is_static) and rewrites each fn the C defines to
+    # its canonical extern/visibility. See abi_enforce.py. (win32k keeps its
+    # own bindgen/spec-fused enforcer above; this covers every other target.)
+    if c_source_path is not None and target_name != "win32k":
+        try:
+            from .abi_enforce import enforce_abi_from_c
+            code = enforce_abi_from_c(code, c_source_path)
+        except Exception as e:
+            import sys
+            print(f"  [abi_enforce] skipped ({e})", file=sys.stderr)
     code = fix_self_imports(code)
     code = fix_extern_vs_local_dups(code)
     code = fix_extern_vs_local_static_dups(code)

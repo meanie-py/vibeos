@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Show every tracked QEMU running RIGHT NOW, across ALL worktrees/sessions.
+
+    qemu/ps            # compact human table + slot summary
+    qemu/ps --json     # machine-readable (for agents)
+
+Reads the GLOBAL lockfiles both launchers drop in /tmp/vibeos-qemu-locks/
+(tests/qemu/vm.py for smoke, qemu/start.sh for the debug toolkit) — so it sees
+runs from sibling worktrees too, which the per-worktree qemu/runs/ manifests
+can't. One-shot snapshot; never streams (to follow one VM live, tail the path in
+the WATCH column).
+
+This is the Python replacement for the former ps.sh — first piece of the
+shell→`q` CLI port (docs/engineering/qemu-cli-port-plan.md). It exists in Python
+specifically because the deadlines it reads are floats written by the harness
+(time.time()+cap), which bash `$(( ))` can't do arithmetic on, and because
+JSON-per-field via jq is both slow and fiddly.
+
+Stdlib only — no venv required.
+"""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+
+LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
+SLOT_DIR = LOCK_DIR / "slots"
+MAX_CONCURRENT = int(os.environ.get("VIBEOS_QEMU_MAX_CONCURRENT", "10"))
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
+
+
+def proc_is_qemu(pid: int) -> bool:
+    try:
+        return "qemu" in (Path(f"/proc/{pid}/comm").read_text())
+    except OSError:
+        return False
+
+
+def proc_age_s(pid: int) -> int | None:
+    """Wall-clock seconds the process has been alive (from `ps -o etimes`)."""
+    try:
+        out = subprocess.run(["ps", "-o", "etimes=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=5)
+        return int(out.stdout.strip())
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return None
+
+
+def human(s: float | int) -> str:
+    s = int(s)
+    neg, s = ("-", -s) if s < 0 else ("", s)
+    if s >= 3600:
+        return f"{neg}{s // 3600}h{(s % 3600) // 60:02d}m"
+    if s >= 60:
+        return f"{neg}{s // 60}m{s % 60:02d}s"
+    return f"{neg}{s}s"
+
+
+def slots_in_use() -> int:
+    """Count slot files whose flock is held — the authoritative concurrency
+    count (a held lock can't be re-acquired non-blocking)."""
+    used = 0
+    if not SLOT_DIR.is_dir():
+        return 0
+    for sf in sorted(SLOT_DIR.glob("slot-*")):
+        try:
+            fd = os.open(str(sf), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        except OSError:
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            used += 1  # held by a live QEMU
+        finally:
+            os.close(fd)
+    return used
+
+
+def gather() -> tuple[list[dict], int]:
+    """Return (running VMs, stale lock count)."""
+    now = time.time()
+    vms: list[dict] = []
+    stale = 0
+    if not LOCK_DIR.is_dir():
+        return vms, stale
+    for lf in sorted(LOCK_DIR.glob("*.json")):
+        try:
+            info = json.loads(lf.read_text())
+        except (OSError, ValueError):
+            stale += 1
+            continue
+        qpid = info.get("qemu_pid")
+        # Only list VMs actually alive; a lockfile whose QEMU is gone is stale
+        # (the reaper purges it) — count, don't list.
+        if not qpid or not pid_alive(qpid) or not proc_is_qemu(qpid):
+            stale += 1
+            continue
+        lpid = info.get("launcher_pid")
+        dl = info.get("deadline")
+        src = info.get("source") or "smoke"          # vm.py omits source
+        if src == "qemu/start.sh":
+            src = "start"
+        # WATCH: absolute live_log (works cross-worktree) → relative hint.
+        watch = info.get("live_log")
+        if not watch:
+            if src == "smoke":
+                watch = f"qemu/{info.get('arch','?')}_smoke_live.log"
+            elif info.get("run_id"):
+                watch = f"tail.sh {info['run_id']}"
+            else:
+                watch = "-"
+        vms.append({
+            "qemu_pid": qpid,
+            "launcher_pid": lpid,
+            "owner_alive": bool(lpid) and pid_alive(lpid),
+            "arch": info.get("arch") or "?",
+            "source": src,
+            "run_id": info.get("run_id"),
+            "deadline": dl,
+            "ttl_s": (int(dl) - int(now)) if dl else None,
+            "slot": info.get("slot"),
+            "age_s": proc_age_s(qpid),
+            "watch": watch,
+        })
+    return vms, stale
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="list running QEMUs across all worktrees")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    args = ap.parse_args()
+
+    vms, stale = gather()
+    used = slots_in_use()
+
+    if args.json:
+        print(json.dumps({
+            "running": len(vms), "stale_locks": stale,
+            "slots": {"used": used, "total": MAX_CONCURRENT},
+            "vms": vms,
+        }, indent=2))
+        return 0
+
+    if not vms:
+        print("no QEMUs running")
+    else:
+        hdr = f"{'ARCH':<7} {'SRC':<6} {'QPID':<7} {'OWNER':<12} {'AGE':<8} {'TTL':<9} {'SLOT':<5} WATCH"
+        print(hdr)
+        for v in vms:
+            owner = f"{v['launcher_pid']}" + ("" if v["owner_alive"] else "!")
+            age = human(v["age_s"]) if v["age_s"] is not None else "?"
+            ttl = ("OVERDUE" if v["ttl_s"] is not None and v["ttl_s"] < 0
+                   else human(v["ttl_s"]) if v["ttl_s"] is not None else "-")
+            slot = "-" if v["slot"] is None else str(v["slot"])
+            print(f"{v['arch']:<7} {v['source']:<6} {v['qemu_pid']:<7} "
+                  f"{owner:<12} {age:<8} {ttl:<9} {slot:<5} {v['watch']}")
+    line = f"slots: {used}/{MAX_CONCURRENT} in use"
+    if stale:
+        line += f"   ({stale} stale lock(s) — run reap.sh)"
+    print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

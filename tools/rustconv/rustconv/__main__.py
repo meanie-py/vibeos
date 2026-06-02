@@ -10,7 +10,7 @@ from .config import NTOSKRNL_DIR, get_backend, DEFAULT_MODELS, detect_target, TA
 MODEL_ALIASES = {
     "sonnet": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
-    "opus": "claude-opus-4-7",
+    "opus": "claude-opus-4-8",
     "gemini-pro": "gemini-2.5-pro",
     "gemini-flash": "gemini-2.5-flash",
 }
@@ -951,7 +951,8 @@ def cmd_translate(args):
         code = postprocess(stitched, exports=file_res.exports, globals=scan.globals,
                            target_name=rustconv_target.name,
                            sys_crate=rustconv_target.sys_crate,
-                           sys_umbrella=rustconv_target.sys_umbrella)
+                           sys_umbrella=rustconv_target.sys_umbrella,
+                           c_source_path=c_file)
 
         if args.output and total_files == 1:
             Path(args.output).write_text(code)

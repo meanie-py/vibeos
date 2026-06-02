@@ -102,8 +102,8 @@ unsafe fn TranslateConsoleName(
     }
 }
 
-#[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
-pub unsafe extern "system" fn ConCfgOpenUserSettings(
+#[no_mangle]
+pub unsafe extern "C" fn ConCfgOpenUserSettings(
     ConsoleTitle: LPCWSTR,
     phSubKey: PHKEY,
     samDesired: REGSAM,
@@ -178,8 +178,8 @@ pub unsafe extern "system" fn ConCfgOpenUserSettings(
     Success
 }
 
-#[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
-pub unsafe extern "system" fn ConCfgReadUserSettings(
+#[no_mangle]
+pub unsafe extern "C" fn ConCfgReadUserSettings(
     ConsoleInfo: PCONSOLE_STATE_INFO,
     DefaultSettings: u8,
 ) -> u8 {
@@ -494,8 +494,8 @@ pub unsafe extern "system" fn ConCfgReadUserSettings(
     Success
 }
 
-#[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
-pub unsafe extern "system" fn ConCfgWriteUserSettings(
+#[no_mangle]
+pub unsafe extern "C" fn ConCfgWriteUserSettings(
     ConsoleInfo: PCONSOLE_STATE_INFO,
     DefaultSettings: u8,
 ) -> u8 {
@@ -679,8 +679,8 @@ pub unsafe extern "system" fn ConCfgWriteUserSettings(
     1
 }
 
-#[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
-pub unsafe extern "system" fn ConCfgInitDefaultSettings(ConsoleInfo: PCONSOLE_STATE_INFO) {
+#[no_mangle]
+pub unsafe extern "C" fn ConCfgInitDefaultSettings(ConsoleInfo: PCONSOLE_STATE_INFO) {
     if ConsoleInfo.is_null() {
         return;
     }
@@ -726,8 +726,8 @@ pub unsafe extern "system" fn ConCfgInitDefaultSettings(ConsoleInfo: PCONSOLE_ST
     (*ConsoleInfo).CodePage = GetOEMCP();
 }
 
-#[cfg_attr(feature = "winsrv_dll_only", no_mangle)]
-pub unsafe extern "system" fn ConCfgGetDefaultSettings(ConsoleInfo: PCONSOLE_STATE_INFO) {
+#[no_mangle]
+pub unsafe extern "C" fn ConCfgGetDefaultSettings(ConsoleInfo: PCONSOLE_STATE_INFO) {
     if ConsoleInfo.is_null() {
         return;
     }

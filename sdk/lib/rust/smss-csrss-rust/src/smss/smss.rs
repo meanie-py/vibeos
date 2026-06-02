@@ -66,12 +66,14 @@ pub static mut SmApiPort: HANDLE = core::ptr::null_mut();
 #[no_mangle]
 pub static mut SmpInitialCommandProcessId: HANDLE = core::ptr::null_mut();
 
-const SMP_DEBUG_FLAG: ULONG = 0x01;
-const SMP_SUBSYSTEM_FLAG: ULONG = 0x02;
-const SMP_ASYNC_FLAG: ULONG = 0x04;
-const SMP_DEFERRED_FLAG: ULONG = 0x08;
-const SMP_AUTOCHK_FLAG: ULONG = 0x10;
-const SMP_INVALID_PATH: ULONG = 0x20;
+// SMP_*_FLAG come from `ntdll_sys::nt::*` (bindgen of base/system/smss/smss.h):
+// DEBUG=0x01 ASYNC=0x02 AUTOCHK=0x04 SUBSYSTEM=0x08 INVALID_PATH=0x10
+// DEFERRED=0x20. The earlier local re-definitions here had SCRAMBLED values
+// (SUBSYSTEM=0x02, ASYNC=0x04, AUTOCHK=0x10, …) that DISAGREED with the correct
+// bindgen values used by smsubsys.rs/smloop.rs — so SmpLoadSubSystemsForMuSession
+// passed SUBSYSTEM=0x08 while SmpExecuteCommand tested &0x02, the bit never
+// matched, SmpLoadSubSystem was never called, csrss never launched and smss
+// terminated → BUGCHECK 0xc000021a (task #18). Use the shared correct values.
 
 const IMAGE_SUBSYSTEM_NATIVE: u16 = 1;
 const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
@@ -474,14 +476,13 @@ pub unsafe extern "C" fn SmpUnhandledExceptionFilter(ExceptionInfo: PEXCEPTION_P
     EXCEPTION_EXECUTE_HANDLER
 }
 
-// smss.exe `_main` — cohabitation cmake flip is deferred (task #18).
-// Symbol-name kept private so the rust archive can coexist with csrss::_main
-// in workspace cargo check (default features = csrsrv stack — see
-// Cargo.toml). When the smss.exe cohab cmake is re-introduced, rename to
-// `_main` + add `#[no_mangle]` and select `--features smss_exe,smlib` from
-// the per-binary cmake (which makes csrss_main mutually-excluded).
-#[allow(dead_code)]
-unsafe extern "C" fn _main_smss_disabled(
+// smss.exe `_main`. Under `smss_exe_only` this is the binary's `#[no_mangle]`
+// entry (csrss.rs is gated out in that feature set, so there is no `_main`
+// collision). Under default features it stays a private mangled symbol so the
+// archive can coexist with csrss::_main in the workspace cargo check.
+#[cfg_attr(feature = "smss_exe_only", no_mangle)]
+#[cfg_attr(not(feature = "smss_exe_only"), allow(dead_code))]
+pub unsafe extern "C" fn _main(
     _argc: i32,
     _argv: *const *const i8,
     _envp: *const *const i8,
