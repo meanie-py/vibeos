@@ -16,6 +16,9 @@ KDCOM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdrosdbg"
 BOOTVID_DIR = REACTOS_ROOT / "drivers" / "base" / "bootvid"
 FREELDR_DIR = REACTOS_ROOT / "boot" / "freeldr" / "freeldr"
 ARM64INPUT_DIR = REACTOS_ROOT / "drivers" / "input" / "arm64input"
+KBDCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "kbdclass"
+MOUCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "mouclass"
+I8042PRT_DIR = REACTOS_ROOT / "drivers" / "input" / "i8042prt"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -89,6 +92,13 @@ USERINIT_DIR = REACTOS_ROOT / "base" / "system" / "userinit"
 HAND_WRITTEN_MODULES = [
     "base.rs", "ke.rs", "mm.rs", "ex.rs", "ps.rs", "ob.rs",
     "rtl.rs", "interlocked.rs",
+    # constants.rs (~685 STATUS_*/OBJ_*/ACCESS_* consts) and driver_ddk.rs
+    # (plain-driver DDK surface: DO_*/IRP_MJ_*/FILE_DEVICE_*/RTL_REGISTRY_* +
+    # IoCompleteRequest/IoCallDriver/DbgPrint wrappers) were previously
+    # invisible to the catalog, so the resolver flagged every driver DDK
+    # symbol as unresolved and each translated .rs needed a hand-written shim.
+    # Scanning them here lets resolve() route those symbols to the right glob.
+    "constants.rs", "driver_ddk.rs",
 ]
 
 # ntoskrnl.spec
@@ -241,6 +251,50 @@ TARGETS = {
         cmake_deps_file=None,
         cmake_source_files=[],
         arches=("arm64",),
+    ),
+    # PS/2 input stack — kernel-mode class/port drivers translated as
+    # standalone-.sys cohabitation crates (arm64input-style: ntddk APIs →
+    # kernel system_prompt + BINDGEN_FILES, no .spec; only DriverEntry is
+    # exported). Unlike arm64input these are live on ALL THREE arches
+    # (i386/amd64 PS/2 + arm64 carries them too), so arches is the full set.
+    "kbdclass": Target(
+        name="kbdclass",
+        source_dir=KBDCLASS_DIR,
+        output_crate=RUST_DIR / "kbdclass-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    "mouclass": Target(
+        name="mouclass",
+        source_dir=MOUCLASS_DIR,
+        output_crate=RUST_DIR / "mouclass-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    "i8042prt": Target(
+        name="i8042prt",
+        source_dir=I8042PRT_DIR,
+        output_crate=RUST_DIR / "i8042prt-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # win32k.sys subsystem. Resolves against BOTH ntkrnl-sys (the
     # ntoskrnl APIs win32k calls) AND win32k-sys (its own internal
@@ -397,6 +451,12 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["ntdll"]
     if "/drivers/input/arm64input" in posix:
         return TARGETS["arm64input"]
+    if "/drivers/input/kbdclass" in posix:
+        return TARGETS["kbdclass"]
+    if "/drivers/input/mouclass" in posix:
+        return TARGETS["mouclass"]
+    if "/drivers/input/i8042prt" in posix:
+        return TARGETS["i8042prt"]
     # winsrv (Phase 5) lives under /win32ss/user/winsrv — keep this
     # branch BEFORE the generic /win32ss/ → win32k fallback so the
     # winsrv-specific substrate + addendum get picked up.
