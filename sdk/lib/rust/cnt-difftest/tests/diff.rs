@@ -19,6 +19,11 @@ extern "C" {
     fn ref_memcmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
     fn ref_memmove(d: *mut c_void, s: *const c_void, n: usize) -> *mut c_void;
     fn ref_memset(d: *mut c_void, v: i32, n: usize) -> *mut c_void;
+    fn ref_memccpy(to: *mut c_void, from: *const c_void, c: i32, count: usize) -> *mut c_void;
+    fn ref_memicmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32;
+    fn ref_rand() -> i32;
+    fn ref_srand(seed: u32);
+    fn ref_qsort(base: *mut c_void, n: usize, es: usize, cmp: QCmp);
     fn ref_strnlen(s: *const u8, cap: usize) -> usize;
     fn ref_strncmp(a: *const u8, b: *const u8, n: usize) -> i32;
     fn ref_strchr(s: *const u8, c: i32) -> *mut u8;
@@ -2636,5 +2641,147 @@ fn diff_gcvt() {
             cabi::_gcvt_s(core::ptr::null_mut(), 16, 1.0, 4),
             ref__gcvt_s(core::ptr::null_mut(), 16, 1.0, 4)
         );
+    }
+}
+
+// ── Wave MEM2 + RAND ────────────────────────────────────────────────
+
+#[test]
+fn diff_memccpy() {
+    let mut rng = Rng(0x5eed_0cc9);
+    for _ in 0..10000 {
+        let n = rng.upto(40);
+        let cap = n.max(1);
+        let src: Vec<u8> = (0..cap).map(|_| rng.byte()).collect();
+        // c: signed-char match / NUL precedence / absent / >0xFF.
+        let c: i32 = match rng.upto(6) {
+            0 => 0,                                      // NUL break wins → NULL
+            1 if n > 0 => src[rng.upto(n)] as i8 as i32, // signed form → can match
+            2 if n > 0 => src[rng.upto(n)] as i32,       // unsigned form: matches iff <128
+            3 => 0x90,                                   // high positive int: never matches a char
+            4 => -112,                                   // 0x90 as signed char → matches a 0x90 byte
+            _ => 0x100 | (rng.byte() as i32),            // >0xFF: never matches
+        };
+        let mut d1 = vec![0xAAu8; cap];
+        let mut d2 = vec![0xAAu8; cap];
+        let r1 = unsafe {
+            cabi::_memccpy(d1.as_mut_ptr() as *mut c_void, src.as_ptr() as *const c_void, c, n)
+        };
+        let r2 = unsafe {
+            ref_memccpy(d2.as_mut_ptr() as *mut c_void, src.as_ptr() as *const c_void, c, n)
+        };
+        assert_eq!(d1, d2, "memccpy buffers c={c} n={n} src={src:?}");
+        let off = |r: *mut c_void, base: *const u8| {
+            if r.is_null() { -1isize } else { (r as usize as isize) - (base as usize as isize) }
+        };
+        assert_eq!(
+            off(r1, d1.as_ptr()),
+            off(r2, d2.as_ptr()),
+            "memccpy ret c={c} n={n} src={src:?}"
+        );
+    }
+}
+
+#[test]
+fn diff_memicmp() {
+    let mut rng = Rng(0x1357_9bdf);
+    for _ in 0..10000 {
+        let n = rng.upto(40);
+        let cap = n.max(1);
+        let a: Vec<u8> = (0..cap)
+            .map(|_| {
+                if rng.next() & 1 == 0 {
+                    b"AaBbZz09 \x80\xff"[rng.upto(11)]
+                } else {
+                    rng.byte()
+                }
+            })
+            .collect();
+        let b: Vec<u8> = match rng.upto(3) {
+            // case-variant: fold-equal but differs pre-fold (→ 0)
+            0 => a.iter().map(|&c| if c.is_ascii_alphabetic() { c ^ 0x20 } else { c }).collect(),
+            1 => a.clone(),
+            _ => (0..cap).map(|_| rng.byte()).collect(),
+        };
+        let c = unsafe { cabi::_memicmp(a.as_ptr() as *const c_void, b.as_ptr() as *const c_void, n) };
+        let r = unsafe { ref_memicmp(a.as_ptr() as *const c_void, b.as_ptr() as *const c_void, n) };
+        assert_eq!(c, r, "memicmp a={a:?} b={b:?} n={n}");
+    }
+}
+
+#[test]
+fn diff_rand() {
+    // fresh (state 0): both statics init to 0 and step identically.
+    for _ in 0..50 {
+        assert_eq!(unsafe { cabi::rand() }, unsafe { ref_rand() }, "rand fresh");
+    }
+    let mut rng = Rng(0x2468_ace0);
+    for _ in 0..3000 {
+        let seed = rng.next() as u32;
+        unsafe {
+            cabi::srand(seed);
+            ref_srand(seed);
+        }
+        let len = 1 + rng.upto(64);
+        for _ in 0..len {
+            assert_eq!(
+                unsafe { cabi::rand() },
+                unsafe { ref_rand() },
+                "rand after srand({seed})"
+            );
+        }
+    }
+}
+
+// ── Wave SORT: qsort ────────────────────────────────────────────────
+
+type QCmp = unsafe extern "C" fn(*const c_void, *const c_void) -> i32;
+
+// Element width for cmp_memcmp_es (the C comparator gets only two
+// pointers, so the width travels via this global — set before each call).
+static QSORT_ES: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+unsafe extern "C" fn cmp_memcmp_es(a: *const c_void, b: *const c_void) -> i32 {
+    let n = QSORT_ES.load(core::sync::atomic::Ordering::Relaxed);
+    let pa = a as *const u8;
+    let pb = b as *const u8;
+    for k in 0..n {
+        let x = *pa.add(k);
+        let y = *pb.add(k);
+        if x != y {
+            return x as i32 - y as i32;
+        }
+    }
+    0
+}
+
+// First byte only → heavy ties → exercises equal-key final order.
+unsafe extern "C" fn cmp_firstbyte(a: *const c_void, b: *const c_void) -> i32 {
+    (*(a as *const u8) as i32) - (*(b as *const u8) as i32)
+}
+
+#[test]
+fn diff_qsort() {
+    let mut rng = Rng(0x90a0_b0c0_d0e0_f001);
+    let sizes = [1usize, 2, 3, 4, 8, 12];
+    for _ in 0..4000 {
+        let es = sizes[rng.upto(sizes.len())];
+        let n = rng.upto(60);
+        let total = (n * es).max(1);
+        // small alphabet biases toward equal keys (the unstable-order
+        // stress); full bytes for the distinct-key path.
+        let small = rng.next() & 1 == 0;
+        let buf: Vec<u8> = (0..total)
+            .map(|_| if small { (rng.next() % 5) as u8 } else { rng.byte() })
+            .collect();
+        let mut b1 = buf.clone();
+        let mut b2 = buf.clone();
+        QSORT_ES.store(es, core::sync::atomic::Ordering::Relaxed);
+        let cmp: QCmp = if rng.next() & 1 == 0 { cmp_memcmp_es } else { cmp_firstbyte };
+        unsafe {
+            cabi::qsort(b1.as_mut_ptr() as *mut c_void, n, es, cmp);
+            ref_qsort(b2.as_mut_ptr() as *mut c_void, n, es, cmp);
+        }
+        assert_eq!(b1, b2, "qsort es={es} n={n} small={small}");
     }
 }

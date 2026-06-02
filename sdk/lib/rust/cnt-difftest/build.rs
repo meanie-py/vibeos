@@ -56,6 +56,39 @@ fn main() {
         ("memcmp", format!("#define __cdecl\n#define memcmp ref_memcmp\n{}", inc(s("mem/memcmp.c")))),
         ("memmove", format!("#define __cdecl\n#define memmove ref_memmove\n{}", inc(s("mem/memmove.c")))),
         ("memset", format!("#define __cdecl\n#define memset ref_memset\n{}", inc(s("mem/memset.c")))),
+        // Wave MEM2 — _memccpy (host <string.h> only, __cdecl) and
+        // _memicmp. memicmp.c pulls <precomp.h> (refstub: CDECL, EINVAL,
+        // MSVCRT_INVALID_PMT no-op, host <ctype.h> toupper == ASCII fold
+        // in the C locale == mem::icmp::up). Supply NtCurrentPeb() with
+        // OSMajorVersion=5 (the NT 5.x kernel) so the Vista NULL/
+        // _NLSCMPERROR guard is dead — pinning the deployed behavior;
+        // NULL is never validly passed (UB in C, not fuzzed).
+        ("memccpy", format!("#define __cdecl\n#define _memccpy ref_memccpy\n{}", inc(s("mem/memccpy.c")))),
+        ("memicmp", format!(
+            "struct cnt_peb {{ unsigned long OSMajorVersion; }};\n\
+             static struct cnt_peb cnt_peb_v = {{ 5 }};\n\
+             #define NtCurrentPeb() (&cnt_peb_v)\n\
+             #define _NLSCMPERROR 0x7fffffff\n\
+             #define _memicmp ref_memicmp\n{}",
+            inc(s("mem/memicmp.c")))),
+        // Wave RAND — rand_nt.c defines rand+srand over a static u64
+        // `next`. Host <stdlib.h> RAND_MAX is 0x7fffffff; clamp to the
+        // Windows 0x7fff (the LP32 ULONG_MAX precedent). Both public
+        // symbols renamed in one TU; clang sets __GNUC__ → the LL
+        // multiplier branch (== rng::step).
+        ("rand_nt", format!(
+            "#define __cdecl\n#include <stdlib.h>\n\
+             #undef RAND_MAX\n#define RAND_MAX 0x7fff\n\
+             #define rand ref_rand\n#define srand ref_srand\n{}",
+            inc(s("stdlib/rand_nt.c")))),
+        // Wave SORT — qsort.c. Pulls host <stdlib.h>/<search.h> (real
+        // `long`) BEFORE its own `#define long intptr_t`, so provide
+        // <stdint.h> for intptr_t. `#define qsort ref_qsort` renames the
+        // host decl, the definition, AND the internal recursive call.
+        ("qsort", format!(
+            "#define __cdecl\n#include <stdint.h>\n\
+             #define qsort ref_qsort\n{}",
+            inc(s("stdlib/qsort.c")))),
         // atol = (long)_atoi64; skip atol.c's _atoldbl (needs _LDOUBLE).
         // Rename the helper so it doesn't collide with cnt-rust's own
         // #[no_mangle] `_atoi64` shim linked into this test binary.
