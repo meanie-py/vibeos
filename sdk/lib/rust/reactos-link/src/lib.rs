@@ -24,8 +24,50 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Final PE-module flavor. Carries the entry symbol (already i386
-/// stdcall-decorated, e.g. `_HalInitSystem@8`) and preferred image base.
+/// Target architecture. i386 is the original (and fully-supported) arch;
+/// amd64 is supported for the `EfiApplication` / `static_libs` path
+/// (uefildr-cargo). The asm/c_shims/spec2def/import_lib paths are still
+/// i386-only and panic on amd64 (no amd64 consumer needs them yet).
+#[derive(Clone, Copy, PartialEq)]
+enum TargetArch {
+    I386,
+    Amd64,
+}
+
+impl TargetArch {
+    fn from_cargo(s: &str) -> TargetArch {
+        match s {
+            "x86" => TargetArch::I386,
+            "x86_64" => TargetArch::Amd64,
+            other => panic!("reactos-link supports i386 (x86) and amd64 (x86_64); got {other}"),
+        }
+    }
+    /// cmake build dir name.
+    fn build_dir(self) -> &'static str {
+        match self {
+            TargetArch::I386 => "build-i386",
+            TargetArch::Amd64 => "build-amd64",
+        }
+    }
+    /// llvm-mingw clang triple prefix (`bin/<triple>-clang`).
+    fn clang_triple(self) -> &'static str {
+        match self {
+            TargetArch::I386 => "i686-w64-mingw32",
+            TargetArch::Amd64 => "x86_64-w64-mingw32",
+        }
+    }
+    /// compiler-rt builtins archive basename.
+    fn clang_rt(self) -> &'static str {
+        match self {
+            TargetArch::I386 => "libclang_rt.builtins-i386.a",
+            TargetArch::Amd64 => "libclang_rt.builtins-x86_64.a",
+        }
+    }
+}
+
+/// Final PE-module flavor. Carries the entry symbol (already arch-decorated:
+/// i386 prepends `_`, e.g. `_HalInitSystem@8` / `_EfiEntry`; amd64 has no
+/// prefix, e.g. `EfiEntry`) and preferred image base.
 pub enum ModuleKind {
     /// `kernelexe` — not `-shared`, `--gc-sections` (e.g. ntoskrnl.exe:
     /// `_KiSystemStartup@4`, 0x00400000).
@@ -35,12 +77,14 @@ pub enum ModuleKind {
     KernelDll { entry: String, image_base: u64 },
     /// `efi_application` — a UEFI app (e.g. uefildr.efi). Mirrors the cmake
     /// `uefildr.efi` link (set_subsystem 10 / `set_entrypoint EfiEntry`):
-    /// `--subsystem,efi_application:5.01`, entry `_EfiEntry`, 0x200
-    /// file/section alignment, `--gc-sections` + no `-shared` (it's an exe),
-    /// and an *auto* image base (`--enable-auto-image-base`, no explicit
-    /// `--image-base` on i386). No `--major-*-version` flags (cmake omits
-    /// them for uefildr). `entry` is already i386-decorated (`_EfiEntry`).
-    EfiApplication { entry: String },
+    /// `--subsystem,efi_application:5.01`, 0x200 file/section alignment,
+    /// `--gc-sections` + no `-shared` (it's an exe), and `--exclude-all-
+    /// symbols`. No `--major-*-version` flags (cmake omits them for uefildr).
+    /// `entry` is already arch-decorated (i386 `_EfiEntry`, amd64 `EfiEntry`).
+    /// `image_base`: `None` → auto (`--enable-auto-image-base`, i386 uefildr);
+    /// `Some(b)` → explicit `--image-base,b` (amd64 uefildr uses 0x10000 to
+    /// stay in the low 1GB freeldr maps).
+    EfiApplication { entry: String, image_base: Option<u64> },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -124,6 +168,7 @@ fn defines(set: AsmDefineSet) -> &'static [(&'static str, Option<&'static str>)]
 
 /// Builder for one cargo-driven module link.
 pub struct Linker {
+    arch: TargetArch,
     repo_root: PathBuf,
     manifest_dir: PathBuf,
     build_dir: PathBuf,
@@ -141,13 +186,11 @@ pub struct Linker {
 
 impl Linker {
     /// `target_json_rel` is relative to the consumer crate dir
-    /// (e.g. `"i686-kernel.json"`). Asserts i386 (only arch supported
-    /// today).
+    /// (e.g. `"i686-kernel.json"`). Arch comes from `CARGO_CFG_TARGET_ARCH`:
+    /// i386 (full support) or amd64 (EfiApplication/static_libs path only).
     pub fn new(target_json_rel: &str) -> Linker {
         let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
-        if target_arch != "x86" {
-            panic!("reactos-link supports i386 only for now (got {target_arch})");
-        }
+        let arch = TargetArch::from_cargo(&target_arch);
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
         // sdk/lib/rust/<crate> → repo root is 4 levels up.
         let repo_root = manifest_dir
@@ -155,7 +198,7 @@ impl Linker {
             .nth(4)
             .expect("repo root")
             .to_path_buf();
-        let build_dir = repo_root.join("build-i386");
+        let build_dir = repo_root.join(arch.build_dir());
         if !build_dir.exists() {
             panic!(
                 "cmake build dir {} does not exist — run `ninja` there first",
@@ -167,6 +210,7 @@ impl Linker {
         println!("cargo:rerun-if-changed=build.rs");
         println!("cargo:rerun-if-changed={}", target_json.display());
         Linker {
+            arch,
             repo_root,
             manifest_dir,
             build_dir,
@@ -249,7 +293,7 @@ impl Linker {
     /// Run everything and emit the cargo: link directives.
     pub fn link(self, kind: ModuleKind) {
         let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
-        let clang = llvm_mingw.join("bin/i686-w64-mingw32-clang");
+        let clang = llvm_mingw.join(format!("bin/{}-clang", self.arch.clang_triple()));
 
         // ---- Rust staticlib (separate target dir, build-std nightly) --
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
@@ -372,21 +416,23 @@ impl Linker {
         }
         println!("cargo:rustc-link-arg=-Wl,--end-group");
 
-        let clang_rt =
-            llvm_mingw.join("lib/clang/19/lib/windows/libclang_rt.builtins-i386.a");
+        let clang_rt = llvm_mingw.join(format!(
+            "lib/clang/19/lib/windows/{}",
+            self.arch.clang_rt()
+        ));
         println!("cargo:rustc-link-arg={}", clang_rt.display());
 
         // ---- Per-kind PE link flags ----------------------------------
-        if let ModuleKind::EfiApplication { entry } = &kind {
+        if let ModuleKind::EfiApplication { entry, image_base } = &kind {
             // UEFI app (uefildr.efi). Mirrors the cmake LINK_FLAGS line for
             // `boot/freeldr/freeldr/uefildr.efi`: efi_application subsystem,
             // 0x200 alignment, --gc-sections (no -shared — it's an exe),
-            // auto image base (no explicit --image-base), and NO
-            // --major-*-version flags. We DO add --allow-multiple-definition
-            // (cmake omits it, but the cargo *bin* compiles its own
-            // #[panic_handler] in main.rs which collides with the one in
-            // libfreeldr_rust_uefi.a; lld first-match wins, same as the
-            // KernelDll PoCs).
+            // --exclude-all-symbols, and NO --major-*-version flags. We DO add
+            // --allow-multiple-definition (cmake omits it, but the cargo *bin*
+            // compiles its own #[panic_handler] in main.rs which collides with
+            // the one in libfreeldr_rust_uefi.a; lld first-match wins, same as
+            // the KernelDll PoCs). Image base: i386 uses auto
+            // (--enable-auto-image-base); amd64 cmake pins 0x10000.
             for f in [
                 "-nostdlib",
                 "-fuse-ld=lld",
@@ -398,8 +444,17 @@ impl Linker {
             ] {
                 println!("cargo:rustc-link-arg={f}");
             }
+            if let Some(base) = image_base {
+                println!("cargo:rustc-link-arg=-Wl,--image-base,0x{base:x}");
+            }
             println!("cargo:rustc-link-arg=-Wl,-entry,{entry}");
             return;
+        }
+
+        // KernelExe/KernelDll below are i386-only (native subsystem + i386
+        // version flags). amd64 only supports EfiApplication today.
+        if self.arch != TargetArch::I386 {
+            panic!("reactos-link: KernelExe/KernelDll are i386-only (amd64 supports EfiApplication only)");
         }
 
         // ---- Kernel-mode PE link flags -------------------------------

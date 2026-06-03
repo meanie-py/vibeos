@@ -19,3 +19,11 @@ linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/i
 rustflags = [
     "-C", "target-feature=-sse,-sse2",
 ]
+
+# amd64 sibling of i686-kernel (cargo-driven uefildr.efi PoC). Pins the
+# linker to llvm-mingw's x86_64 clang. No -sse disable: amd64 runs in long
+# mode with SSE available (matches cmake's amd64 freeldr, whose
+# FREELDR_RUST_EXTRA_ENV is empty). Same ABSOLUTE-path caveat as above —
+# override via CARGO_TARGET_X86_64_KERNEL_LINKER.
+[target.x86_64-kernel]
+linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang"

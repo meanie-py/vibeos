@@ -216,10 +216,20 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
    and exports nothing (the `.def`/`freeldr.spec` is only for the freeldr
    *import library* that rosload consumes). Passing it forced every spec
    export as required, and a few are genuinely absent from the UEFI build.
+   **amd64 too (2026-06-02):** `reactos-link` is now arch-aware (added
+   `TargetArch` + `EfiApplication{image_base: Option}`; build dir / clang
+   triple / clang_rt / image base all per-arch), and `uefildr-cargo` builds
+   for amd64 via `x86_64-kernel.json` (entry `EfiEntry` no-decoration,
+   `--image-base 0x10000`, no mini_hal libs — all from build-amd64's
+   build.ninja). The amd64 `uefildr.efi` is likewise PE-header-identical to
+   cmake's (PE32+, Subsystem 0x0a, ImageBase 0x10000, 0x200 align; entry
+   differs 208 bytes for the panic stub). `reactos-link`'s
+   asm/c_shims/spec2def/import_lib paths stay i386-only (KernelExe/KernelDll
+   panic on amd64) — only the EfiApplication/static_libs path is multi-arch.
    Remaining: full **boot**-validation needs a livecd, currently gated by
    crp's unrelated `winsrv.dll` cold-link break (cnt-rust/concfg flip,
-   `_wcsicmp was replaced`) — not a uefildr-cargo issue. i386-only
-   (reactos-link is i386-only); amd64/arm64 stay on cmake.
+   `_wcsicmp was replaced`) — not a uefildr-cargo issue. arm64 stays on
+   cmake (no llvm-mingw arm64 cargo-link path yet).
 7. **Optional: `setupldr.c`/`inffile.c` are already translated** (they
    ship in `freeldr-rust`), so the original "prune install-mode?" open
    question is moot — they're in Rust and cheap to keep.
