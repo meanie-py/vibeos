@@ -4,6 +4,7 @@ members = [
     "avltable",
     "bitmap",
     "byteswap",
+    "cnt-ctype",
     "cnt-difftest",
     "cnt-rust",
     "cnt-rust-lib",
