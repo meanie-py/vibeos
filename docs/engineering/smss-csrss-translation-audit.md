@@ -1,11 +1,100 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
-Last updated 2026-05-16. **Status: Phase 1 COMPLETE (green ×3,
-committed `30476658`); Phase 2 csrsrv translated+integrated, broken-
-but-visible 239→84 (committed `e5228058`, all systematic roots
-cleared, per-site mechanical tail owed); Phase 0 + P1a COMPLETE;
-csrss.exe fully Rust.** (worktree `worktree-smss-csrss`, merged
-`continue-rust-port` at `689cb2f6`.)
+**Last updated 2026-06-01.** Branch `continue-rust-port` (worktree
+`worktree-smss-csrss`, in sync at `a52dce70629`).
+
+## Current state (2026-06-01) — the spine is essentially flipped
+
+**6 of the 7 PE/DLL targets are FULLY translated, integrated, and
+smoke-green; only the two static *client* libraries (smlib, csrlib)
+remain C — and both are already translated, just not yet cohab-flipped.**
+This is the inverse of the audit's original leaf→root plan (which put
+the protocol client libs in Phase 1): in practice the servers and EXEs
+flipped first, and the client libs are the deferred tail.
+
+| Component | Artifact | Rust crate | State |
+|---|---|---|---|
+| **smss.exe** (10 .c) | `smss.exe` | `smss-csrss-rust/smss` | ✅ FULL flip, integrated, smoke-green (`9013fdab`, `eeb04b6`) |
+| **csrss.exe** (1 .c) | `csrss.exe` | `smss-csrss-rust/csrss.rs` | ✅ FULL flip, integrated, smoke-green (`e0049bf`) |
+| **csrsrv.dll** (7 .c) | `csrsrv.dll` | `smss-csrss-rust/csrsrv` | ✅ FULL flip, integrated, smoke-green |
+| **basesrv.dll** (~8 .c) | `basesrv.dll` | `smss-csrss-rust/basesrv` | ✅ FULL flip ("100% Rust"), integrated, smoke-green (`8fdbf8a`) |
+| **winsrv.dll** (38 .c) | `winsrv.dll` | `winsrv-rust` (consrv+usersrv+init) + `concfg-rust` | ✅ FULL flip, integrated, smoke-green (`068f05f`…`f4a6dee`). Only cohab stubs/shims remain as `.c` |
+| **smlib** (917 LOC) | static `smlib` | `smss-csrss-rust/smlib` (701 LOC, `pub mod smlib`) | ⚠ TRANSLATED, cohab-flip **deferred** — C still compiles |
+| **csrlib** (974 LOC) | static `csrlib` | `smss-csrss-rust/csrlib` (1,800 LOC, `pub mod csrlib`) | ⚠ TRANSLATED, cohab-flip **deferred** (lands in ntdll.dll) — C still compiles |
+
+**Adjacent (downstream of the spine, same kernel→desktop track):**
+- **userinit.exe** (userinit.c + livecd.c) → `userinit-rust` — ✅ FULL
+  flip, integrated, **cold-green ×3** (`a52dce70`, 2026-06-01). This is
+  *right* of winlogon (launched by it), so it is outside this spine's
+  formal scope, but it is the natural continuation of the track. See
+  memory `project_userinit_flip_wip`.
+
+**Smoke (2026-06-01):** all integrated components reach `shell ready` on
+i386 + amd64 (the full smss→csrss→{basesrv,winsrv}→winlogon→userinit→
+explorer chain), and arm64 boots to idle. **Cold-green ×3 confirmed**
+(built one arch at a time — concurrent `--clean` builds trip the
+`KNOWN_CGU_UD2` lottery, memory `feedback_parallel_cold_builds_cgu_lottery`).
+
+**What's left on the spine — smlib + csrlib client-side flip (DEFERRED,
+ntdll-coordination, post-merge):** Both are translated in
+`smss-csrss-rust` (smlib/smclient.rs, csrlib/{api,capture,connect}.rs)
+and their **server-side consumers (smss.exe, csrsrv.dll) already use the
+Rust versions and smoke green.** The blocker is purely the *client-side*
+link, which lands in the **ntdll worktree's** DLLs:
+
+- **csrlib → `ntdll.dll`** (`dll/ntdll/CMakeLists.txt:154`
+  `target_link_libraries(ntdll … csrlib … ${NTDLL_RUST_MAIN_LIB})`;
+  `NTDLL_RUST_MAIN_LIB` = default-features build in its own target dir).
+- **smlib → `ntdll_vista.dll`** (`nt_0600/CMakeLists.txt:72`
+  `target_link_libraries(ntdll_vista … smlib … ${NTDLL_RUST_LIB})`;
+  `NTDLL_RUST_LIB` = `--features vista` build, separate target dir;
+  `add_importlibs(ntdll_vista ntdll)` at :78). ntdll_vista links smlib
+  for its `0x600+` `RtlConnectToSm`/`RtlSendMsgToSm`→`Sm*` forwarders.
+
+A naive `sdk/lib/smlib/CMakeLists.txt` flip (commenting `smclient.c`)
+links smss/csrsrv fine but breaks `ntdll_vista.dll` with `undefined
+symbol _SmConnectToSm@16 / _SmSendMsgToSm@8` — the companion-DLL cascade
+(`feedback_cohab_flip_companion_dll_cascade`): the Rust def isn't in
+ntdll_vista's staticlib. **Verified + reverted 2026-06-01** (Rust source
++ `sdk/lib/smlib/smlib_rust_stub.c` kept on disk; cmake restored so the
+tree links).
+
+**Resolution (agreed with ntdll-rust-port track 2026-06-01): defer to
+after `ntdll-rust-port` merges to `continue-rust-port`; this track owns
+the wiring.** Plan:
+1. Add a **lean `smss-csrss-rust` feature** (`csrlib_only` / `smlib_only`)
+   that compiles *only* that client module — no csrsrv/basesrv/smss
+   server code, **no `_CsrApiPort` & friends** (mirrors the existing
+   `csrss_main_only` gate that avoids a second copy of those globals).
+2. Build that lean archive in **its own per-consumer target dir** and
+   add it (+ matching `DEPENDS`) to the ntdll / ntdll_vista link line —
+   the dual-archive discipline (`feedback_csrss_cohabitation_dual_archive`);
+   wrong target dir / missing DEPENDS → links stale.
+3. Gate per-DLL exactly as ntdll-rust does its own (ldr =
+   `cfg(not(feature="vista"))`, dllmain = `cfg(feature="vista")`).
+4. Validate the csrlib capture-buffer marshalling ABI byte-for-byte
+   (it's the LPC contract every CSR server validates against).
+
+Tracked on the ntdll side too: `ntdll-translation-audit.md`
+(Remaining-work → Cross-track coordination) + memory `project_ldrapi_flip`.
+
+**After both flips:** the C `base/system/smss`, `subsystems/csr`,
+`subsystems/win/basesrv`, `win32ss/user/winsrv` trees are
+deletable-or-parallel-CI per §Definition of done (keep on disk —
+never-delete rule).
+
+**Beyond this spine (remaining kernel→desktop C):** winlogon.exe
+(GINA/RPC-coupled; leaf files like security/environment/shutdown are
+flippable, the GINA core is not yet), services.exe/SCM (RPC-heavy,
+~2× winlogon). Tracked, not started.
+
+---
+
+### Historical status (2026-05-16, when this audit was first written)
+Phase 1 COMPLETE (green ×3, `30476658`); Phase 2 csrsrv
+translated+integrated, broken-but-visible 239→84 (`e5228058`); Phase 0
++ P1a COMPLETE; csrss.exe fully Rust. (The phase-by-phase learnings
+below remain valid and are kept as durable reference.)
 
 > **Client flip DONE 2026-06-02** (worktree `vibeos-wt-ntdll`, branch
 > `smlib-csrlib-client-flip`, UNCOMMITTED): the last two C client pieces of
@@ -613,38 +702,51 @@ symbol is present at the expected i386/amd64 decoration.
 
 ## Definition of done
 
-- `cargo build` produces working `smss.exe`, `csrss.exe`,
-  `csrsrv.dll`, `basesrv.dll` (+ `winsrv.dll` if owned here) for all 3
-  arches.
-- All 3 smoke tests pass on the Rust binaries (`shell ready` reached —
-  which by construction exercises this entire stack).
-- `scan_ud2.py --check`, `verify_abi.py`, `verify_constants.py`,
-  `lint_kernel.py` clean against the Rust output.
-- The C `base/system/smss/`, `subsystems/csr/`, `subsystems/win/basesrv/`
-  (and winsrv if owned) trees can be deleted (or kept as parallel CI).
-- The winsrv ownership conflict with the win32k audit is explicitly
-  resolved (one audit owns it, the other cross-references).
+- ✅ `cargo build` produces working `smss.exe`, `csrss.exe`,
+  `csrsrv.dll`, `basesrv.dll`, `winsrv.dll` for all 3 arches.
+- ✅ All 3 smoke tests pass on the Rust binaries (`shell ready` reached
+  on i386+amd64, arm64 idle — which by construction exercises this
+  entire stack). Cold-green ×3 confirmed 2026-06-01.
+- ✅ The winsrv ownership conflict is resolved (this track owns it; see
+  Open Question 1).
+- ⬜ **smlib + csrlib cohab-flip** (the last C in the spine; both
+  already translated — see Open Question 5).
+- ⬜ `scan_ud2.py --check`, `verify_abi.py`, `verify_constants.py`,
+  `lint_kernel.py` clean pass re-run after the smlib/csrlib flip (note
+  the benign `KNOWN_CGU_UD2` / baselined-constant WARN noise from the
+  workspace-member cgu shift — not blockers).
+- ⬜ The C `base/system/smss/`, `subsystems/csr/`,
+  `subsystems/win/basesrv/`, `win32ss/user/winsrv/` trees kept on disk
+  (never-delete rule) — eligible for parallel-CI-only once smlib/csrlib
+  flip lands.
 
 ## Open questions
 
-1. **winsrv ownership** — this doc Phase 5 vs win32k audit "Phase N+1."
-   Decide at the Phase 5 gate; don't translate twice. (Primary risk.)
+1. ~~**winsrv ownership**~~ **RESOLVED 2026-06-01.** This track owns
+   winsrv: it was flipped here (`winsrv-rust` for consrv+usersrv+init,
+   `concfg-rust` for concfg; commits `068f05f`…`f4a6dee`). The win32k
+   audit's "Phase N+1 / winsrv" line is now moot and should be struck.
 2. ~~**`ntdll-sys` header root**~~ **RESOLVED 2026-05-16.**
    `<ndk/ntndk.h>` does *not* pull SM/CSR/BASE message structs; the
    bindgen wrapper is the fixed 8-header set documented in §Substrate.
    One crate, no second crate needed.
-3. **Fully-Rust native PE entrypoint** — csrss.exe spike must prove
-   `#![no_main]` + native entry + no-CRT linking works before the
-   bulk. If it doesn't, fall back to the ntoskrnl-cargo-style
-   "cmake-built objects, cargo-driven link" PoC shape.
-4. **usersrv ↔ win32k coupling** — usersrv calls `NtUser*` into
-   still-C win32k. Translate usersrv only after consrv, and coordinate
-   the syscall-surface assumptions with the win32k track.
-5. **smlib vs ntdll-sys overlap** — the SM API may already be partly
-   declared in the subsys headers bindgen'd into `ntdll-sys`. Decide
-   whether `smlib-rust` is a thin wrapper over `ntdll-sys` types or
-   owns its own message structs. Lean: own the marshalling logic,
-   borrow the structs from `ntdll-sys`.
+3. ~~**Fully-Rust native PE entrypoint**~~ **RESOLVED.** csrss.exe (and
+   then smss.exe) proved `#![no_std]`/`#![no_main]` + native entry +
+   no-CRT linking; no fallback to the cmake-objects PoC was needed. The
+   `_main`→`__main` i386 decoration is byte-identical to the C entry.
+4. ~~**usersrv ↔ win32k coupling**~~ **RESOLVED in practice.** usersrv
+   was flipped (`winsrv-rust/usersrv`) and smokes green calling into
+   still-C win32k via `NtUser*` — the syscall surface is stable, no
+   win32k-track coordination was required.
+5. **smlib / csrlib cohab-flip (the remaining work)** — both are
+   already translated in `smss-csrss-rust` (smlib/smclient.rs,
+   csrlib/{api,capture,connect}.rs) borrowing the protocol structs from
+   `ntdll-sys` bindgen, which is why the C client libs interop cleanly
+   with the now-Rust servers (shared layout, no drift). What's owed is
+   the cohab integration: comment the `.c` out, link the rlib, validate
+   the capture-buffer ABI. csrlib's wrinkle is that it lands in
+   **ntdll.dll**, so its flip touches the ntdll link rather than a
+   standalone module.
 
 ## Cross-references
 

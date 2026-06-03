@@ -17,6 +17,9 @@
  * defining it would BLOCK extraction; --allow-multiple-definition does
  * NOT force it).
  *
+ * smutils.c is dead (smutils.cmake is included nowhere) and was never
+ * translated; it stays C-on-disk and uncompiled, same as smclient.c.
+ *
  * Keep the C on disk (translation philosophy: never delete the C);
  * it is simply not compiled while the Rust translation is active.
  */

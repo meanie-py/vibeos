@@ -26,3 +26,7 @@ float = ["cnt-rust/float"]
 # default-features=false drops cnt-rust's default `float`; `cabi`
 # alone no longer implies float (decoupled so i386 no-SSE compiles).
 cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi"] }
+# ctype lives in its own crate (keeps cnt-rust's cgu layout untouched —
+# see cnt-ctype/Cargo.toml). `extern crate` in lib.rs force-pulls its
+# #[no_mangle] symbols into this staticlib.
+cnt-ctype = { path = "../cnt-ctype" }

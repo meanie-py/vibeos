@@ -4,6 +4,7 @@ members = [
     "avltable",
     "bitmap",
     "byteswap",
+    "cnt-ctype",
     "cnt-difftest",
     "cnt-rust",
     "cnt-rust-lib",
@@ -31,6 +32,7 @@ members = [
     "largeint",
     "luid",
     "mem",
+    "network",
     "hal-cargo",
     "ntkrnl-sys",
     "ntdll-sys",
@@ -61,6 +63,8 @@ members = [
     "winsrv-sys",
     "concfg-rust",
     "userinit-rust",
+    "winlogon-sys",
+    "winlogon-rust",
 ]
 resolver = "2"
 
