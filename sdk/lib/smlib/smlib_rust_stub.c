@@ -1,17 +1,21 @@
 /*
- * Cohabitation stub for the Rust smlib (SM client library).
+ * Cohabitation stub for the Rust smlib (SM client).
  *
  * smclient.c is commented out of add_library() (see CMakeLists.txt):
- * its 7 live SM-client exports (SmConnectToSm, SmSendMsgToSm,
- * SmSessionComplete, SmExecPgm, SmLoadDeferedSubsystem, SmStartCsr,
- * SmStopCsr) are now provided by libsmss_csrss_rust.a
- * (sdk/lib/rust/smss-csrss-rust/src/smlib/smclient.rs). Both consumers
- * of smlib — smss.exe and csrsrv.dll — already link that archive, so
- * with the C object removed the linker pulls the Rust members instead
- * (an .a is only extracted to satisfy an undefined symbol; a direct
- * .obj defining it would block extraction — --allow-multiple-definition
- * does NOT force it). A static library still needs at least one
- * linkable TU, which this stub provides.
+ * its 7 SM-client exports (SmConnectToSm, SmSendMsgToSm, SmExecPgm,
+ * SmStartCsr, SmStopCsr, SmLoadDeferedSubsystem, SmSessionComplete)
+ * are now provided by the Rust translation in
+ * sdk/lib/rust/smss-csrss-rust/src/smlib/smclient.rs. The three PEs
+ * that link smlib each pull the Rust symbols from a Rust archive:
+ *   - csrsrv.dll  → libsmss_csrss_rust.a (default features)
+ *   - smss.exe    → libsmss_csrss_rust.a (smss_exe_only)
+ *   - ntdll_vista → libsmlib_rust.a      (smlib_only, new this flip)
+ *
+ * A static library still needs at least one linkable TU; with
+ * smclient.c removed the linker pulls the Rust archive members (an .a
+ * is only extracted to satisfy an undefined symbol — a direct .obj
+ * defining it would BLOCK extraction; --allow-multiple-definition does
+ * NOT force it).
  *
  * smutils.c is dead (smutils.cmake is included nowhere) and was never
  * translated; it stays C-on-disk and uncompiled, same as smclient.c.

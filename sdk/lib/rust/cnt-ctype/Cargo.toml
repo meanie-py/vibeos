@@ -1,0 +1,22 @@
+# cnt-ctype — Rust reimplementation of libcntpr `string/ctype.c`
+# (the narrow ctype tables + classification + case, plus wide isw*
+# forwarders to the still-C `iswctype`).
+#
+# A SEPARATE crate (not a cnt-rust module) on purpose: ctype lands in
+# the libcntpr cohab archive (libcntpr_rust.a) alongside cnt-rust, but
+# adding it as a cnt-rust *module* reshuffled cnt-rust's cgu=256
+# partition and relocated `_wcsicmp` into the catch-all cgu winsrv.dll
+# pulls for memcpy — colliding with ntdll's exported `_wcsicmp`
+# ("X was replaced"). Isolating ctype keeps cnt-rust byte-identical to
+# its pre-ctype layout (consumers unperturbed) while ctype's symbols
+# live in their own objects. Pinned vs the genuine compiled C by
+# cnt-difftest. See project_libcntpr_crt_track.
+[package]
+name = "cnt-ctype"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

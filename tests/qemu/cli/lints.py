@@ -134,6 +134,94 @@ def write_baselines(repo: Path) -> dict:
     return out
 
 
+# --- cargo-driven link PoCs (off-default-path → bit-rot risk) ---------------
+# Each: (label, crate dir under sdk/lib/rust, cargo --bin, supported arches,
+#        plausible-output floor in bytes). The cargo-driven links replace the
+#        cmake link long-term; they live OFF the default build path, so nothing
+#        else notices when their machinery (header-free C shims, pre-expanded
+#        .s, self-hosted spec2def, the static-lib list, the reactos-link engine
+#        itself, or the checked-in .res) drifts out of sync with the tree.
+_CARGO_LINK_POCS = [
+    # ntoskrnl-cargo is i386-only (its build.rs predates the engine's arch
+    # generalization); ntdll/ntdll_vista are arch-aware on all three.
+    ("ntoskrnl", "ntoskrnl-cargo", "ntoskrnl", ("i386",), 1_000_000),
+    ("ntdll", "ntdll-cargo", "ntdll", ("i386", "amd64", "arm64"), 1_000_000),
+    ("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista",
+     ("i386", "amd64", "arm64"), 200_000),
+]
+_ARCH_TARGET = {"i386": "i686-kernel", "amd64": "x86_64-kernel", "arm64": "aarch64-kernel"}
+
+
+def _one_cargo_link(run: Run, repo: Path, rust_ws: Path, label: str,
+                    crate: str, binname: str, arch: str, floor: int) -> None:
+    """Re-run one cargo-driven link and assert it still produces a valid PE,
+    WITHOUT booting. Skips cleanly when prerequisites are absent."""
+    stage = f"cargo_link:{label}:{arch}"
+    target = _ARCH_TARGET[arch]
+    if not (rust_ws / crate / f"{target}.json").is_file():
+        run.add(Stage(stage, status="skip", detail="PoC absent"))
+        return
+    # The engine reuses cmake-built sibling .a (librtl is universal); a missing
+    # build-<arch> means the inputs the link consumes were never produced.
+    if not (repo / f"build-{arch}" / "sdk" / "lib" / "rtl" / "librtl.a").is_file():
+        run.add(Stage(stage, status="skip", detail=f"build-{arch} not built"))
+        return
+    if shutil.which("rustup") is None:
+        run.add(Stage(stage, status="skip", detail="no rustup (need nightly+rust-src)"))
+        return
+
+    cp = run.run(
+        ["cargo", "+nightly", "build", "--release",
+         "--target", f"{crate}/{target}.json",
+         "-Z", "build-std=core,alloc,compiler_builtins",
+         "-Z", "build-std-features=compiler-builtins-mem",
+         "-p", crate, "--bin", binname],
+        cwd=rust_ws, stage=stage, timeout=900,
+    )
+    out = rust_ws / "target" / target / "release" / f"{binname}.exe"
+    if cp.returncode != 0:
+        tail = [ln for ln in (cp.stderr or "").splitlines() if ln.strip()][-3:]
+        run.add(Stage(stage, exit=cp.returncode, status="fail",
+                      detail="link FAILED — cmake→cargo PoC bit-rotted", salient=tail))
+        return
+    if not out.is_file():
+        run.add(Stage(stage, status="fail", detail="reported success but no output PE"))
+        return
+    size = out.stat().st_size
+    if size < floor:
+        run.add(Stage(stage, status="fail",
+                      detail=f"{binname}.exe implausibly small ({size} bytes)"))
+        return
+    with open(out, "rb") as f:
+        if f.read(2) != b"MZ":
+            run.add(Stage(stage, status="fail", detail="output not a PE (no MZ header)"))
+            return
+    run.add(Stage(stage, exit=0, status="ok", detail=f"{binname}.exe {size // 1024}K"))
+
+
+def run_cargo_link_guard(run: Run, repo: Path, arch: str | None = None) -> None:
+    """Guard every cargo-driven link PoC against silent bit-rot.
+
+    Re-runs the cargo-driven links (`ntoskrnl-cargo`, `ntdll-cargo`,
+    `ntdll_vista-cargo` via the shared `reactos-link` engine) and asserts each
+    still produces a valid PE. These are the long-term replacement for the
+    cmake-driven links; because they live OFF the default build path, the
+    pre-commit/merge gate (`check --strict`) is exactly where to catch them
+    rotting. Defaults to i386 (canonical, cheapest, the only arch all three
+    PoCs share); pass an arch to guard ntdll/ntdll_vista on amd64/arm64.
+
+    Each link self-skips when its prerequisites (the crate's target json, a
+    built `build-<arch>`, or nightly+rust-src) are absent, so this never blocks
+    a tree without the PoCs. Gated to `--strict` (not every `build`) because
+    each relink re-compiles a Rust staticlib into its own target dir (~20s) and
+    would tax the hot loop."""
+    rust_ws = repo / "sdk" / "lib" / "rust"
+    arch = arch or "i386"
+    for label, crate, binname, arches, floor in _CARGO_LINK_POCS:
+        if arch in arches:
+            _one_cargo_link(run, repo, rust_ws, label, crate, binname, arch, floor)
+
+
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`). scan_ud2 + sacred primitives."""
     py = sys.executable

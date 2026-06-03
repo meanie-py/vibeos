@@ -855,4 +855,74 @@ fn main() {
     for obj in scanf_build.compile_intermediates() {
         redef(&obj);
     }
+
+    // Wave CTYPE — ctype.c (data tables + narrow classification +
+    // wide forwarders). Skip glibc <ctype.h> via its `_CTYPE_H` guard
+    // and supply the MS masks / wint_t / wctype_t ourselves; `_LIBCNT_`
+    // selects the simple `_isctype` (the locale `_isctype_l` branch
+    // needs MSVCRT internals). ctype.c `#undef`s the MS-macro names it
+    // defines (iswlower, _tolower, __isascii, …) at the top, which would
+    // defeat any `#define`-based rename — so the whole symbol set is
+    // renamed to `ref_*` at the OBJECT level via `objcopy
+    // --redefine-syms` (immune to the preprocessor, keeps internal refs
+    // consistent). iswctype_nt.c is pulled in renamed → `ref_iswctype`
+    // (reading `ref_wctype`) so the ref wide funcs + the direct
+    // iswctype/is_wctype diff have a genuine compiled reference.
+    // cnt-ctype now defines `iswctype` itself (the nt flip), so the cnt
+    // side needs no external iswctype TU.
+    let ctype_masks = "#define _CTYPE_H 1\n\
+        typedef unsigned short wint_t;\ntypedef unsigned short wctype_t;\n\
+        #define __cdecl\n#define _Check_return_\n#define _LIBCNT_\n\
+        #define WEOF ((wint_t)0xFFFF)\n\
+        #define _UPPER 0x1\n#define _LOWER 0x2\n#define _DIGIT 0x4\n\
+        #define _SPACE 0x8\n#define _PUNCT 0x10\n#define _CONTROL 0x20\n\
+        #define _BLANK 0x40\n#define _HEX 0x80\n#define _LEADBYTE 0x8000\n\
+        #define _ALPHA (0x0100 | _UPPER | _LOWER)\n";
+    let ctype_a = format!(
+        "{ctype_masks}int iswctype(wint_t, wctype_t);\n{}{}",
+        inc(s("string/ctype.c")),
+        inc(s("string/iswctype_nt.c")),
+    );
+    let ctype_a_c = out.join("ref_ctype.c");
+    fs::write(&ctype_a_c, &ctype_a).unwrap();
+    // Object-level rename map for TU-A. The C names with leading
+    // underscores get unambiguous suffixed ref names.
+    let redefs = "\
+        _ctype ref_ctype\n_wctype ref_wctype\n\
+        _pctype ref_pctype\n_pwctype ref_pwctype\n\
+        _isctype ref_isctype\n\
+        isalpha ref_isalpha\nisalnum ref_isalnum\niscntrl ref_iscntrl\n\
+        isdigit ref_isdigit\nisgraph ref_isgraph\nislower ref_islower\n\
+        isprint ref_isprint\nispunct ref_ispunct\nisspace ref_isspace\n\
+        isupper ref_isupper\nisxdigit ref_isxdigit\n\
+        __isascii ref_isascii_n\niswascii ref_iswascii\n\
+        __toascii ref_toascii_n\n__iscsym ref_iscsym_n\n\
+        __iscsymf ref_iscsymf_n\n_tolower ref_tolower_u\n\
+        _toupper ref_toupper_u\ntoupper ref_toupper\n\
+        iswalnum ref_iswalnum\niswalpha ref_iswalpha\niswcntrl ref_iswcntrl\n\
+        iswdigit ref_iswdigit\niswgraph ref_iswgraph\niswprint ref_iswprint\n\
+        iswpunct ref_iswpunct\niswlower ref_iswlower\niswupper ref_iswupper\n\
+        iswspace ref_iswspace\niswxdigit ref_iswxdigit\ntowlower ref_towlower\n\
+        iswctype ref_iswctype\n__p__pwctype ref_p_pwctype\n\
+        __pwctype_func ref_pwctype_func\n";
+    let redefs_file = out.join("ref_ctype_redefs.txt");
+    fs::write(&redefs_file, redefs).unwrap();
+    // TU-A: full object-level rename → ref_*.
+    let mut ctype_a_build = cc::Build::new();
+    ctype_a_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&ctype_a_c);
+    for obj in ctype_a_build.compile_intermediates() {
+        let st = std::process::Command::new("objcopy")
+            .arg(format!("--redefine-syms={}", redefs_file.display()))
+            .arg(&obj)
+            .status()
+            .expect("objcopy --redefine-syms ref_ctype");
+        assert!(st.success(), "objcopy failed on {}", obj.display());
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
 }

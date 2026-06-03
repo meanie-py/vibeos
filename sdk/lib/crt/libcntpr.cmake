@@ -19,12 +19,17 @@ list(APPEND LIBCNTPR_SOURCE
 # cmakes — because CRT_*_SOURCE (user-mode msvcrt) embeds the same
 # ${LIBCNTPR_*_SOURCE} vars; the swap must touch libcntpr alone.
 # Files kept on disk (never-delete rule). Kept C (NOT removed):
-# ctype/is_wctype/wctype/winesup/wcs/iswctype_nt/bsearch/lfind/
-# mbstrlen/fltused (UNCOVERED) + atol (_atoldbl) + scanf (variadic) —
-# PARTIAL. The mem/mem{chr,cpy,move,set}.c entries are amd64/arm64-only
-# (i386 uses *_asm.s, so REMOVE_ITEM is a harmless no-op there);
-# mem/memccpy.c + mem/memicmp.c + stdlib/rand_nt.c are all-arch (Wave
-# MEM2/RAND, cnt-difftest-gated).
+# wctype/winesup/wcs/bsearch/lfind/mbstrlen/fltused (UNCOVERED) +
+# atol (_atoldbl) + scanf (variadic) — PARTIAL. wctype.c is only the
+# dead wine_wctype_table data (no funcs; unused by the linked iswctype).
+# The mem/mem{chr,cpy,move,set}.c entries are amd64/arm64-only (i386
+# uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
+# + mem/memicmp.c + stdlib/rand_nt.c + string/ctype.c + iswctype_nt.c +
+# is_wctype.c are all-arch (Wave MEM2/RAND/CTYPE, cnt-difftest-gated).
+# Wave CTYPE flips the whole functional ctype cluster to cnt-ctype:
+# ctype.c (tables _ctype/_wctype + _pctype/_pwctype + _isctype + narrow
+# is*/_tolower/_toupper/toupper + wide isw*/towlower) + iswctype_nt.c
+# (iswctype) + is_wctype.c (is_wctype).
 list(REMOVE_ITEM LIBCNTPR_SOURCE
     string/_splitpath.c
     string/_wsplitpath.c
@@ -73,6 +78,9 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     stdlib/rand_nt.c
     stdlib/qsort.c
     stdlib/_invalid_parameter_nt.c
+    string/ctype.c
+    string/iswctype_nt.c
+    string/is_wctype.c
 )
 
 list(APPEND LIBCNTPR_ASM_SOURCE
@@ -138,6 +146,9 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/generated.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/manual.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/mod.rs
+            ${RUST_WORKSPACE_DIR}/cnt-ctype/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/cnt-ctype/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust libcntpr umbrella (${RUST_TARGET})"

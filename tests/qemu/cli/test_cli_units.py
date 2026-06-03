@@ -227,3 +227,34 @@ def test_run_summary_json(tmp_path, monkeypatch):
     assert summary["verdict"] == "FAIL"
     assert summary["classification"] == "BUGCHECK"
     assert summary["arch"] == "i386"
+
+
+# --- cargo-link guard: skips cleanly when the PoCs aren't present ----------
+
+def test_cargo_link_guard_skips_when_pocs_absent(tmp_path, monkeypatch):
+    """The guard must no-op (skip, never fail) when the cargo-link PoCs are
+    absent — so it never blocks `check --strict` on a tree without them. At the
+    default arch (i386) all three PoCs apply (ntoskrnl-cargo is i386-only)."""
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
+    from . import lints
+    run = Run("check", "i386", ts=1700000000)
+    lints.run_cargo_link_guard(run, tmp_path)   # empty repo → no PoCs
+    stages = {s.name: s for s in run.stages}
+    for label in ("ntoskrnl", "ntdll", "ntdll_vista"):
+        name = f"cargo_link:{label}:i386"
+        assert name in stages, f"guard must emit a {name} stage"
+        assert stages[name].status == "skip"
+        assert "PoC absent" in stages[name].detail
+
+
+def test_cargo_link_guard_amd64_skips_ntoskrnl(tmp_path, monkeypatch):
+    """On amd64, ntoskrnl-cargo (i386-only) is not even attempted; ntdll and
+    ntdll_vista are (and skip cleanly on an empty repo)."""
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path))
+    from . import lints
+    run = Run("check", "amd64", ts=1700000000)
+    lints.run_cargo_link_guard(run, tmp_path, "amd64")
+    names = {s.name for s in run.stages}
+    assert "cargo_link:ntoskrnl:amd64" not in names
+    assert "cargo_link:ntdll:amd64" in names
+    assert "cargo_link:ntdll_vista:amd64" in names

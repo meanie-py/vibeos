@@ -108,6 +108,17 @@ Covers: `shellcheck`, `py-syntax`, `verify_abi`, `verify_ffi`,
 `verify_constants`, `lint_kernel` (source); `scan_ud2`, `sacred_primitives`
 (binary, needs a build).
 
+`--strict` additionally runs the **`cargo_link`** guard: it re-runs the
+cargo-driven link PoCs (`sdk/lib/rust/{ntoskrnl,ntdll,ntdll_vista}-cargo` via
+the shared `reactos-link` engine — the long-term replacement for the cmake
+links) and asserts each still produces a valid PE. These live off the default
+build path, so this is what keeps them from silently bit-rotting. Defaults to
+i386 (the only arch all three share — `ntoskrnl-cargo` is i386-only); pass
+`--arch amd64`/`arm64` to guard ntdll/ntdll_vista there. Each link self-skips
+if its target json, `build-<arch>`, or nightly+rust-src is absent. Gated to
+`--strict` (not every `build`) because each relink re-compiles a Rust staticlib
+(~20s) and would tax the hot loop.
+
 ### `debug <verb> ...` — wraps the `qemu/` kernel-debugging toolkit
 Run-id-scoped GDB-over-the-real-boot debugging. Verbs pass through to the proven
 shell tools (`start` → `start.sh`, `inspect`/`bt`/`triage-bugcheck` →

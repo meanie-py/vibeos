@@ -42,15 +42,19 @@ fn main() {
     let mut libs: Vec<&str> =
         vec!["boot/freeldr/freeldr/CMakeFiles/uefildr.dir/lib/strsafe_shim.c.obj"];
 
-    let (target_json, entry, image_base): (&str, &str, Option<u64>) = match arch.as_str() {
+    // image_base: cmake's i386 uefildr links with auto image base, which
+    // resolves to the exe default 0x00400000; amd64 cmake pins 0x10000 to
+    // keep the loader in the low 1GB freeldr maps. reactos-link always emits
+    // an explicit --image-base, so pass the resolved values directly.
+    let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
         "x86" => {
             // i386: mini_hal + libhal_rust_mini are linked BEFORE the freeldr
             // libs (uefi.cmake `if(ARCH STREQUAL i386 AND NOT MSVC)`).
             libs.push("hal/halx86/minihal/libmini_hal.a");
             libs.push("hal/halx86/libhal_rust_mini.a");
-            ("i686-kernel.json", "_EfiEntry", None)
+            ("i686-kernel.json", "_EfiEntry", 0x0040_0000)
         }
-        "x86_64" => ("x86_64-kernel.json", "EfiEntry", Some(0x10000)),
+        "x86_64" => ("x86_64-kernel.json", "EfiEntry", 0x1_0000),
         other => panic!("uefildr-cargo: unsupported arch {other} (i386/amd64 only)"),
     };
 

@@ -144,6 +144,44 @@ extern "C" {
     // _gcvt/_gcvt_s — genuine gcvt.c + streamout.c sprintf("%.*g").
     fn ref__gcvt(number: f64, ndigit: i32, buff: *mut u8) -> *mut u8;
     fn ref__gcvt_s(buff: *mut u8, size: usize, number: f64, digits: i32) -> i32;
+    // Wave CTYPE — ctype.c. Tables + narrow classification + wide
+    // forwarders (the genuine compiled C, build.rs TU-A). The C names
+    // with leading underscores map to suffixed ref names (build.rs).
+    static ref_ctype: [u16; 257];
+    static ref_wctype: [u16; 257];
+    fn ref_isctype(c: i32, f: i32) -> i32;
+    fn ref_isalpha(c: i32) -> i32;
+    fn ref_isalnum(c: i32) -> i32;
+    fn ref_iscntrl(c: i32) -> i32;
+    fn ref_isdigit(c: i32) -> i32;
+    fn ref_isgraph(c: i32) -> i32;
+    fn ref_islower(c: i32) -> i32;
+    fn ref_isprint(c: i32) -> i32;
+    fn ref_ispunct(c: i32) -> i32;
+    fn ref_isspace(c: i32) -> i32;
+    fn ref_isupper(c: i32) -> i32;
+    fn ref_isxdigit(c: i32) -> i32;
+    fn ref_isascii_n(c: i32) -> i32; // __isascii
+    fn ref_toascii_n(c: i32) -> i32; // __toascii
+    fn ref_iscsym_n(c: i32) -> i32; // __iscsym
+    fn ref_iscsymf_n(c: i32) -> i32; // __iscsymf
+    fn ref_tolower_u(c: i32) -> i32; // _tolower
+    fn ref_toupper_u(c: i32) -> i32; // _toupper
+    fn ref_toupper(c: i32) -> i32;
+    fn ref_iswascii(c: u16) -> i32;
+    fn ref_iswalnum(c: u16) -> i32;
+    fn ref_iswalpha(c: u16) -> i32;
+    fn ref_iswcntrl(c: u16) -> i32;
+    fn ref_iswdigit(c: u16) -> i32;
+    fn ref_iswgraph(c: u16) -> i32;
+    fn ref_iswprint(c: u16) -> i32;
+    fn ref_iswpunct(c: u16) -> i32;
+    fn ref_iswlower(c: u16) -> i32;
+    fn ref_iswupper(c: u16) -> i32;
+    fn ref_iswspace(c: u16) -> i32;
+    fn ref_iswxdigit(c: u16) -> i32;
+    fn ref_towlower(c: u16) -> u16;
+    fn ref_iswctype(c: u16, t: u16) -> i32; // iswctype_nt.c (flipped)
 }
 
 use cnt_rust::cabi;
@@ -2783,5 +2821,84 @@ fn diff_qsort() {
             ref_qsort(b2.as_mut_ptr() as *mut c_void, n, es, cmp);
         }
         assert_eq!(b1, b2, "qsort es={es} n={n} small={small}");
+    }
+}
+
+
+#[test]
+fn diff_ctype() {
+    // ctype lives in its own crate (cnt-ctype); shadow the module-level
+    // `cabi` alias so the assertions below read uniformly.
+    use cnt_ctype as cabi;
+    // Tables byte-for-byte: the highest-risk part (514 entries). cnt's
+    // statics are machine-generated from ctype.c; pin vs the genuine
+    // compiled C arrays.
+    for i in 0..257 {
+        assert_eq!(cabi::_ctype[i], unsafe { ref_ctype[i] }, "_ctype[{i}]");
+        assert_eq!(cabi::_wctype[i], unsafe { ref_wctype[i] }, "_wctype[{i}]");
+    }
+    // _pctype / _pwctype point one past the table start (the EOF slot).
+    assert_eq!(unsafe { *cabi::_pctype.0 }, cabi::_ctype[1], "_pctype[0]");
+    assert_eq!(unsafe { *cabi::_pwctype.0 }, cabi::_wctype[1], "_pwctype[0]");
+
+    // Narrow classification + case + ascii/csym over the full int byte
+    // domain plus negatives and >0xFF (exercises the `(unsigned char)`
+    // truncation the C `_isctype` does).
+    for c in -260i32..=520 {
+        unsafe {
+            assert_eq!(cabi::_isctype(c, 0xFFFF), ref_isctype(c, 0xFFFF), "_isctype {c}");
+            assert_eq!(cabi::isalpha(c), ref_isalpha(c), "isalpha {c}");
+            assert_eq!(cabi::isalnum(c), ref_isalnum(c), "isalnum {c}");
+            assert_eq!(cabi::iscntrl(c), ref_iscntrl(c), "iscntrl {c}");
+            assert_eq!(cabi::isdigit(c), ref_isdigit(c), "isdigit {c}");
+            assert_eq!(cabi::isgraph(c), ref_isgraph(c), "isgraph {c}");
+            assert_eq!(cabi::islower(c), ref_islower(c), "islower {c}");
+            assert_eq!(cabi::isprint(c), ref_isprint(c), "isprint {c}");
+            assert_eq!(cabi::ispunct(c), ref_ispunct(c), "ispunct {c}");
+            assert_eq!(cabi::isspace(c), ref_isspace(c), "isspace {c}");
+            assert_eq!(cabi::isupper(c), ref_isupper(c), "isupper {c}");
+            assert_eq!(cabi::isxdigit(c), ref_isxdigit(c), "isxdigit {c}");
+            assert_eq!(cabi::__isascii(c), ref_isascii_n(c), "__isascii {c}");
+            assert_eq!(cabi::__toascii(c), ref_toascii_n(c), "__toascii {c}");
+            assert_eq!(cabi::__iscsym(c), ref_iscsym_n(c), "__iscsym {c}");
+            assert_eq!(cabi::__iscsymf(c), ref_iscsymf_n(c), "__iscsymf {c}");
+            assert_eq!(cabi::_tolower(c), ref_tolower_u(c), "_tolower {c}");
+            assert_eq!(cabi::_toupper(c), ref_toupper_u(c), "_toupper {c}");
+            assert_eq!(cabi::toupper(c), ref_toupper(c), "toupper {c}");
+        }
+    }
+
+    // Wide forwarders (→ iswctype) over the full wint_t domain.
+    for c in 0u32..=0xFFFF {
+        let c = c as u16;
+        unsafe {
+            assert_eq!(cabi::iswascii(c), ref_iswascii(c), "iswascii {c}");
+            assert_eq!(cabi::iswalnum(c), ref_iswalnum(c), "iswalnum {c}");
+            assert_eq!(cabi::iswalpha(c), ref_iswalpha(c), "iswalpha {c}");
+            assert_eq!(cabi::iswcntrl(c), ref_iswcntrl(c), "iswcntrl {c}");
+            assert_eq!(cabi::iswdigit(c), ref_iswdigit(c), "iswdigit {c}");
+            assert_eq!(cabi::iswgraph(c), ref_iswgraph(c), "iswgraph {c}");
+            assert_eq!(cabi::iswprint(c), ref_iswprint(c), "iswprint {c}");
+            assert_eq!(cabi::iswpunct(c), ref_iswpunct(c), "iswpunct {c}");
+            assert_eq!(cabi::iswlower(c), ref_iswlower(c), "iswlower {c}");
+            assert_eq!(cabi::iswupper(c), ref_iswupper(c), "iswupper {c}");
+            assert_eq!(cabi::iswspace(c), ref_iswspace(c), "iswspace {c}");
+            assert_eq!(cabi::iswxdigit(c), ref_iswxdigit(c), "iswxdigit {c}");
+            assert_eq!(cabi::towlower(c), ref_towlower(c), "towlower {c}");
+        }
+    }
+
+    // iswctype / is_wctype (iswctype_nt.c + is_wctype.c flipped) over
+    // the full wint_t domain × every mask combo the wide funcs use.
+    for &t in &[
+        1u16, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 0x103, 0x107, 0xFFFF, 0,
+    ] {
+        for c in 0u32..=0xFFFF {
+            let c = c as u16;
+            unsafe {
+                assert_eq!(cabi::iswctype(c, t), ref_iswctype(c, t), "iswctype c={c} t={t}");
+                assert_eq!(cabi::is_wctype(c, t), ref_iswctype(c, t), "is_wctype c={c} t={t}");
+            }
+        }
     }
 }
