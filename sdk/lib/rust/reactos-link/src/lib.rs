@@ -44,15 +44,22 @@ pub enum ModuleKind {
     Win32Dll { entry: String, image_base: u64, subsystem: Option<String> },
     /// `efi_application` — a UEFI app (uefildr.efi). Mirrors the cmake
     /// `uefildr.efi` link (set_subsystem 10 / `set_entrypoint EfiEntry`):
-    /// `--subsystem,efi_application:5.01`, 0x200 file/section alignment,
-    /// `--gc-sections` + no `-shared` (it's an exe), `--exclude-all-symbols`
-    /// (exports nothing — the freeldr.spec/.def is only for the freeldr
-    /// import lib rosload consumes, not for uefildr's own exports). `entry`
-    /// is already arch-decorated (i386 `_EfiEntry`, amd64 `EfiEntry`).
-    /// `image_base`: i386 uefildr links with auto base which resolves to the
-    /// exe default 0x00400000; amd64 cmake pins 0x10000 to stay in the low
-    /// 1GB freeldr maps — pass those explicitly.
-    EfiApplication { entry: String, image_base: u64 },
+    /// `--subsystem,efi_application:5.01`, `--gc-sections` + no `-shared`
+    /// (it's an exe), `--exclude-all-symbols` (exports nothing — the
+    /// freeldr.spec/.def is only for the freeldr import lib rosload consumes,
+    /// not for uefildr's own exports). `entry` is already arch-decorated
+    /// (i386 `_EfiEntry`, amd64/arm64 `EfiEntry`).
+    ///
+    /// Per-arch knobs (all verbatim from each `build-<arch>/build.ninja`):
+    /// - `alignment`: file == section alignment. x86 (i386/amd64) = 0x200;
+    ///   arm64 = 0x1000.
+    /// - `image_base`: `Some(b)` emits `--image-base 0x{b}`; `None` relies on
+    ///   the common `--enable-auto-image-base` (lld hashes the output name).
+    ///   amd64 cmake pins `Some(0x10000)` to stay in the low 1GB freeldr maps;
+    ///   i386 cmake auto-resolves to the exe default 0x00400000 (passed
+    ///   explicitly as `Some(0x400000)` — identical header); arm64 cmake
+    ///   passes no `--image-base`, so `None` to match its auto-hash base.
+    EfiApplication { entry: String, image_base: Option<u64>, alignment: u64 },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -511,21 +518,21 @@ impl Linker {
             println!("cargo:rustc-link-arg={f}");
         }
         // ---- kind-specific subsystem / alignment / sections ----------
-        let (entry, image_base) = match &kind {
+        let (entry, image_base): (&String, Option<u64>) = match &kind {
             ModuleKind::KernelExe { entry, image_base } => {
                 // native subsystem; GC unreferenced sections (main.rs anchors
                 // the entry to hold the root); no -shared.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
-                (entry, *image_base)
+                (entry, Some(*image_base))
             }
             ModuleKind::KernelDll { entry, image_base } => {
                 // native subsystem PE DLL; keep all sections, 0x1000 align.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
                 println!("cargo:rustc-link-arg=-shared");
-                (entry, *image_base)
+                (entry, Some(*image_base))
             }
             ModuleKind::Win32Dll { entry, image_base, subsystem } => {
                 // user-mode PE DLL: exports come from the .def so NO
@@ -537,26 +544,35 @@ impl Linker {
                     println!("cargo:rustc-link-arg=-Wl,--subsystem,{s}");
                 }
                 println!("cargo:rustc-link-arg=-shared");
-                (entry, *image_base)
+                (entry, Some(*image_base))
             }
-            ModuleKind::EfiApplication { entry, image_base } => {
-                // UEFI app (uefildr.efi): efi_application subsystem, 0x200
-                // file/section alignment, --gc-sections, no -shared (exe),
-                // --exclude-all-symbols (exports nothing). The common flags
-                // above already add --allow-multiple-definition (the cargo
-                // bin's own #[panic_handler] in main.rs collides with
+            ModuleKind::EfiApplication { entry, image_base, alignment } => {
+                // UEFI app (uefildr.efi): efi_application subsystem,
+                // per-arch file/section alignment (x86 0x200, arm64 0x1000),
+                // --gc-sections, no -shared (exe), --exclude-all-symbols
+                // (exports nothing). The common flags above already add
+                // --allow-multiple-definition (the cargo bin's own
+                // #[panic_handler] in main.rs collides with
                 // libfreeldr_rust_uefi.a + cnt-rust CRT dups; lld first-match
                 // wins) and --enable-auto-image-base. cmake's uefildr omits
                 // the --major-*-version flags the common block adds, but those
                 // are harmless for an EFI app the firmware loads by FAT path.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,efi_application:5.01");
-                println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,--file-alignment,0x200,--section-alignment,0x200");
+                println!(
+                    "cargo:rustc-link-arg=-Wl,--exclude-all-symbols,--file-alignment,0x{a:x},--section-alignment,0x{a:x}",
+                    a = alignment
+                );
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
                 (entry, *image_base)
             }
         };
         println!("cargo:rustc-link-arg=-Wl,-e,{entry}");
-        println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", image_base);
+        // Emit an explicit base only when the module pins one; otherwise the
+        // common --enable-auto-image-base resolves it (matches cmake's arm64
+        // uefildr, which passes no --image-base).
+        if let Some(b) = image_base {
+            println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", b);
+        }
     }
 
     fn obj_dir(&self) -> PathBuf {
