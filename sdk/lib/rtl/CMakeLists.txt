@@ -59,7 +59,7 @@ list(APPEND SOURCE
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
     memstream.c
     message.c
-    network.c
+    # network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
     # nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
     # path.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PATH)
     ppb.c
