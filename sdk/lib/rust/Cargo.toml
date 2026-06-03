@@ -32,6 +32,7 @@ members = [
     "largeint",
     "luid",
     "mem",
+    "network",
     "hal-cargo",
     "ntkrnl-sys",
     "ntdll-sys",

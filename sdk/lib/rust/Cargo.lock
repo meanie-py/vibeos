@@ -305,6 +305,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "network"
+version = "0.1.0"
+
+[[package]]
 name = "ntdll-rust"
 version = "0.1.0"
 dependencies = [

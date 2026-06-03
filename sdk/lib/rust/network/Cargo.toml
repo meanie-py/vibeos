@@ -1,0 +1,13 @@
+# network — Rust reimplementation of sdk/lib/rtl/network.c (IP address
+# string <-> binary conversion). Pure algorithm (no heap, no kernel
+# deps): digit<->byte parsing/formatting, faithful to the inet_aton-
+# style multi-part semantics + base detection (0x hex / 0 octal /
+# strict decimal) the C implements. Linked into librtl via the
+# rtl-rust umbrella. IPv4 done; IPv6 is a follow-on wave.
+[package]
+name = "network"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
