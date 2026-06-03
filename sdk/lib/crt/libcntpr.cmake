@@ -91,6 +91,21 @@ list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_STRING_ASM_SOURCE}
 )
 
+# ── Wave CORE-OPS: i386 mem core ops — flip hand asm → cnt-rust ───────
+# libcntpr-ONLY (REMOVE_ITEM from libcntpr's asm list, NOT from the
+# shared LIBCNTPR_MEM_ASM_SOURCE var which also feeds CRT_MEM_ASM_SOURCE
+# for user-mode msvcrt). cnt-rust already provides these #[no_mangle]
+# memchr/memmove/memset (difftest-gated) and is the sole provider on
+# amd64/arm64; dropping the i386 asm gives every arch one Rust impl.
+# (i386 memcpy already came from cnt-rust — no memcpy_asm ever existed.)
+if(ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_ASM_SOURCE
+        mem/i386/memchr_asm.s
+        mem/i386/memmove_asm.s
+        mem/i386/memset_asm.s
+    )
+endif()
+
 set_source_files_properties(${LIBCNTPR_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "NO_RTL_INLINES;_NTSYSTEM_;_NTDLLBUILD_;_LIBCNT_;__CRT__NO_INLINE;CRTDLL")
 add_asm_files(libcntpr_asm ${LIBCNTPR_ASM_SOURCE})
 
