@@ -2,8 +2,8 @@
 //! the shared `reactos-link` engine — companion to ntdll-cargo.
 //!
 //! cmake still owns the sibling static libs; run `ninja` in build-<arch>
-//! once first. `.res` are copies of cmake's ntdll_vista.rc.res (a
-//! gen_ntdll_res.py is owed).
+//! once first. `.res` are regenerated out-of-band by `tools/gen_ntdll_res.py`
+//! (windres on ntdll_vista.rc; canonical REPO llvm-windres, all 3 arches).
 
 use std::env;
 use reactos_link::{Linker, ModuleKind};

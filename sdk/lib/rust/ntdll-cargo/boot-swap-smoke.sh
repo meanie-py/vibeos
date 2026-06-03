@@ -1,0 +1,83 @@
+#!/bin/bash
+# Boot-swap smoke for the cargo-driven ntdll.dll — proves RUNTIME equivalence,
+# not just PE shape. build-and-test.sh only checks export/header parity; this
+# drops the cargo-built ntdll.dll into the real livecd and boots it to
+# `shell ready` (the full kernel → SMSS → csrss → win32k → winlogon → explorer
+# → desktop chain — and the whole chain depends on ntdll).
+#
+# Usage: boot-swap-smoke.sh [i386|amd64]   (default: i386; x86 livecd only)
+#
+# Mechanism: cargo builds ntdll.dll, we overwrite the cmake output
+# build-<arch>/dll/ntdll/ntdll.dll with it (making it the newest file so
+# `ninja livecd` re-rolls the iso WITHOUT relinking ntdll), assert ninja kept
+# our bytes, then run the normal smoke verdict. The cmake ntdll.dll is backed
+# up and ALWAYS restored on exit (trap), so the tree is left as cmake built it.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../.."  # → repo root
+REPO="$PWD"
+
+arch="${1:-i386}"
+case "$arch" in
+  i386)  tgt="i686-kernel" ;;
+  amd64) tgt="x86_64-kernel" ;;
+  *) echo "usage: $0 [i386|amd64]  (arm64 has no livecd)" >&2; exit 2 ;;
+esac
+
+BUILD="build-$arch"
+DLL="$BUILD/dll/ntdll/ntdll.dll"
+CARGO_OUT="sdk/lib/rust/target/$tgt/release/ntdll.exe"
+BAK="$DLL.cmake-bak"
+
+[ -d "$BUILD" ] || { echo "$BUILD/ missing — run cmake first." >&2; exit 1; }
+rustup toolchain list 2>&1 | grep -q nightly || { echo "nightly + rust-src required." >&2; exit 1; }
+
+restore() {
+  if [ -f "$BAK" ]; then
+    mv -f "$BAK" "$DLL"
+    echo "[restore] cmake ntdll.dll restored ($DLL)"
+    # Re-roll the iso back to the cmake ntdll so the tree's media is honest.
+    ( cd "$BUILD" && ninja livecd >/dev/null 2>&1 ) || true
+  fi
+}
+trap restore EXIT
+
+echo "[1/5] cmake baseline ($arch: ntdll → sibling .a + cmake ntdll.dll) ..."
+( cd "$BUILD" && ninja ntdll >/dev/null )
+
+echo "[2/5] Cargo build (ntdll-rust + ntdll-cargo, $tgt) ..."
+( cd sdk/lib/rust && cargo +nightly build --release \
+    --target "ntdll-cargo/$tgt.json" \
+    -Z build-std=core,alloc,compiler_builtins \
+    -Z build-std-features=compiler-builtins-mem \
+    -p ntdll-cargo --bin ntdll )
+test "$(head -c2 "$CARGO_OUT")" = "MZ" || { echo "FAIL: cargo ntdll not a PE"; exit 1; }
+
+echo "[3/5] Swapping cargo ntdll.dll into the cmake tree + re-rolling iso ..."
+cp -f "$DLL" "$BAK"
+cp -f "$CARGO_OUT" "$DLL"   # now newest → ninja won't relink, livecd repacks it
+( cd "$BUILD" && ninja livecd >/dev/null )
+
+# Assert ninja packed OUR bytes (didn't relink the cmake ntdll over them).
+if ! cmp -s "$CARGO_OUT" "$DLL"; then
+  echo "FAIL: ninja relinked the cmake ntdll.dll — swap was overwritten." >&2
+  echo "  (livecd's DAG decided ntdll was out of date; cargo bytes not booted.)" >&2
+  exit 1
+fi
+echo "    confirmed: livecd carries the cargo-built ntdll.dll ($(stat -c %s "$DLL") bytes)"
+
+echo "[4/5] Booting the swapped livecd (smoke verdict) ..."
+# --allow-stale is REQUIRED here, not a shortcut: we deliberately mutated the
+# boot media out of band (swapped in cargo's ntdll.dll), which is exactly the
+# "rebuilt out of band?" condition the staleness preflight is built to catch.
+# We already asserted (cmp, above) the iso carries the cargo bytes, so the
+# only thing left to prove is that they BOOT.
+rc=0
+./vibeos-cli smoke --arch "$arch" --allow-stale || rc=$?
+
+if [ "$rc" -eq 0 ]; then
+  echo "[5/5] PASS — cargo-driven ntdll.dll booted to the smoke marker ($arch)."
+else
+  echo "[5/5] FAIL — smoke verdict nonzero ($rc) with the cargo ntdll.dll ($arch)."
+fi
+exit "$rc"

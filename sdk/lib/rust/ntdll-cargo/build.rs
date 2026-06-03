@@ -4,8 +4,8 @@
 //! cmake still owns the sibling static libs; run `ninja` in build-<arch>
 //! once first. Out-of-band inputs (regenerate when their sources change):
 //!   - `tools/gen_ntdll_asm.py`  → data/asm/dispatch-<arch>.s
-//!   - data/ntdll-<arch>.rc.res  (today copies of cmake's ntdll.rc.res;
-//!     a gen_ntdll_res.py is owed)
+//!   - `tools/gen_ntdll_res.py`  → data/ntdll-<arch>.rc.res (windres on
+//!     ntdll.rc; canonical REPO llvm-windres, all 3 arches)
 
 use std::env;
 use reactos_link::{AsmDefineSet, Linker, ModuleKind};

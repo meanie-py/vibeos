@@ -40,9 +40,26 @@ so NO softfloat) + `.cargo/config.toml` linker pins. ntdll_vista's amd64/arm64
 entry is undecorated `DllMain` (i386 `_DllMain@12`); ntdll's is `__ImageBase`
 (i386 `___ImageBase`).
 
-Remaining: `check --strict` guard wiring (fold with the stashed ntoskrnl
-`cargo_link` guard), boot-swap smoke. The `.res` are still copies of cmake's
-(a `gen_ntdll_res.py` is owed).
+**Phase 1 is complete.** The three remaining tails landed 2026-06-02:
+- **`.res` generator** — `tools/gen_ntdll_res.py` regenerates all six blobs
+  (ntdll/ntdll_vista × i386/amd64/arm64) via the canonical REPO llvm-windres
+  (`--check` gate). The i386 blobs were re-cut from GNU binutils windres
+  (MESSAGETABLE-as-integer, 114798 B) to llvm-windres (MESSAGETABLE-as-string,
+  114978 B) so all three arches are consistent + self-contained; functionally
+  identical (same version info + message table), and the export-parity test is
+  unaffected.
+- **`check --strict` bit-rot guard** — `run_cargo_link_guard` in
+  `tests/qemu/cli/lints.py` folds the ntoskrnl PoC with ntdll/ntdll_vista: it
+  relinks each cargo-driven PoC and asserts a valid PE (no boot). Defaults to
+  i386 (the only arch all three share — ntoskrnl-cargo is i386-only); pass
+  `--arch amd64/arm64` to guard ntdll/ntdll_vista there. Self-skips on missing
+  target json / `build-<arch>` / nightly.
+- **boot-swap smoke** — `sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh` swaps the
+  cargo-built ntdll.dll into the real livecd (overwrites the cmake output so
+  `ninja livecd` repacks without relinking; `cmp`-asserts the iso carries the
+  cargo bytes), boots to `shell ready` (`--allow-stale`, since the swap is a
+  deliberate out-of-band media mutation), and always restores the cmake
+  ntdll.dll on exit. Proves RUNTIME equivalence, not just PE shape.
 
 ## TL;DR
 
