@@ -962,7 +962,7 @@
   "strncmp": {
     "c_signature": "int strncmp(const char *s1, const char *s2, size_t n)",
     "family": "string",
-    "slice_pattern": "nul_in",
+    "slice_pattern": "nul_in_n",
     "return_collapse": "i32_cmp_n",
     "reference": "sdk/lib/crt/string/tcsncmp.h",
     "fuzz_domain": [
@@ -1299,7 +1299,7 @@
   "wcsncmp": {
     "c_signature": "int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)",
     "family": "wstring",
-    "slice_pattern": "wnul_in",
+    "slice_pattern": "wnul_in_n",
     "return_collapse": "i32_cmp_n",
     "reference": "sdk/lib/crt/string/wcsncmp.c",
     "fuzz_domain": [

@@ -1378,7 +1378,7 @@ mod mstrncat {
     pub unsafe extern "C" fn strncat(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
         if n == 0 { return dst; }
         let dl = cstr_slice(dst as *const u8).len();
-        let sc = cstr_slice(src);
+        let sc = cstr_slice_bounded(src, n);
         let m = if sc.len() < n { sc.len() } else { n };
         let tail = raw_mut_slice(dst.add(dl), m + 1);
         crate::core_rs::string::ncat(tail, sc, n);
@@ -1396,8 +1396,8 @@ mod mstrncmp {
     /// preserved misfeature: signed-char diff (tcsncmp.h _TCHAR=signed char); n==0→0; stops at first NUL
     #[no_mangle]
     pub unsafe extern "C" fn strncmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
-        let s1_s = cstr_slice(s1);
-        let s2_s = cstr_slice(s2);
+        let s1_s = cstr_slice_bounded(s1, n);
+        let s2_s = cstr_slice_bounded(s2, n);
         crate::core_rs::string::ncmp(s1_s, s2_s, n)
     }
 
@@ -1413,7 +1413,7 @@ mod mstrncpy {
     #[no_mangle]
     pub unsafe extern "C" fn strncpy(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
         let dst_s = raw_mut_slice(dst, n);
-        let src_s = cstr_slice(src);
+        let src_s = cstr_slice_bounded(src, n);
         let _ = crate::core_rs::string::ncpy(dst_s, src_s);
         dst
     }
@@ -1782,7 +1782,7 @@ mod mwcsncat {
     pub unsafe extern "C" fn wcsncat(dst: *mut u16, src: *const u16, n: usize) -> *mut u16 {
         if n == 0 { return dst; }
         let dl = wcstr_slice(dst as *const u16).len();
-        let sc = wcstr_slice(src);
+        let sc = wcstr_slice_bounded(src, n);
         let m = if sc.len() < n { sc.len() } else { n };
         let tail = wraw_mut_slice(dst.add(dl), m + 1);
         crate::core_rs::string::ncat(tail, sc, n);
@@ -1800,8 +1800,8 @@ mod mwcsncmp {
     /// preserved misfeature: unsigned-u16 diff; n==0→0; stops at first NUL (tcsncmp.h)
     #[no_mangle]
     pub unsafe extern "C" fn wcsncmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
-        let s1_s = wcstr_slice(s1);
-        let s2_s = wcstr_slice(s2);
+        let s1_s = wcstr_slice_bounded(s1, n);
+        let s2_s = wcstr_slice_bounded(s2, n);
         crate::core_rs::string::ncmp(s1_s, s2_s, n)
     }
 
@@ -1817,7 +1817,7 @@ mod mwcsncpy {
     #[no_mangle]
     pub unsafe extern "C" fn wcsncpy(dst: *mut u16, src: *const u16, n: usize) -> *mut u16 {
         let dst_s = wraw_mut_slice(dst, n);
-        let src_s = wcstr_slice(src);
+        let src_s = wcstr_slice_bounded(src, n);
         let _ = crate::core_rs::string::ncpy(dst_s, src_s);
         dst
     }

@@ -81,6 +81,30 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     string/ctype.c
     string/iswctype_nt.c
     string/is_wctype.c
+    # Wave CORE-OPS: string core ops — amd64/arm64 compile these .c
+    # (i386 uses *_asm.s, REMOVE_ITEM'd from the asm list above so the
+    # REMOVE_ITEM here is a no-op on i386). cnt-rust provides all 20
+    # (difftest-gated) → uniform Rust impl across the 3 arches.
+    string/strcat.c
+    string/strchr.c
+    string/strcmp.c
+    string/strcpy.c
+    string/strlen.c
+    string/strncat.c
+    string/strncmp.c
+    string/strncpy.c
+    string/strnlen.c
+    string/strrchr.c
+    string/wcscat.c
+    string/wcschr.c
+    string/wcscmp.c
+    string/wcscpy.c
+    string/wcslen.c
+    string/wcsncat.c
+    string/wcsncmp.c
+    string/wcsncpy.c
+    string/wcsnlen.c
+    string/wcsrchr.c
 )
 
 list(APPEND LIBCNTPR_ASM_SOURCE
@@ -91,18 +115,40 @@ list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_STRING_ASM_SOURCE}
 )
 
-# ── Wave CORE-OPS: i386 mem core ops — flip hand asm → cnt-rust ───────
+# ── Wave CORE-OPS: i386 mem+string core ops — flip hand asm → cnt-rust ─
 # libcntpr-ONLY (REMOVE_ITEM from libcntpr's asm list, NOT from the
-# shared LIBCNTPR_MEM_ASM_SOURCE var which also feeds CRT_MEM_ASM_SOURCE
-# for user-mode msvcrt). cnt-rust already provides these #[no_mangle]
-# memchr/memmove/memset (difftest-gated) and is the sole provider on
-# amd64/arm64; dropping the i386 asm gives every arch one Rust impl.
-# (i386 memcpy already came from cnt-rust — no memcpy_asm ever existed.)
+# shared LIBCNTPR_{MEM,STRING}_ASM_SOURCE vars which also feed
+# CRT_{MEM,STRING}_ASM_SOURCE for user-mode msvcrt). cnt-rust already
+# provides all these #[no_mangle] core ops (difftest-gated); on
+# amd64/arm64 cnt-rust is the sole provider (the matching .c are
+# REMOVE_ITEM'd from LIBCNTPR_SOURCE below). Dropping the i386 asm gives
+# every arch one Rust impl. (i386 memcpy already came from cnt-rust —
+# no memcpy_asm ever existed.)
 if(ARCH STREQUAL "i386")
     list(REMOVE_ITEM LIBCNTPR_ASM_SOURCE
         mem/i386/memchr_asm.s
         mem/i386/memmove_asm.s
         mem/i386/memset_asm.s
+        string/i386/strcat_asm.s
+        string/i386/strchr_asm.s
+        string/i386/strcmp_asm.s
+        string/i386/strcpy_asm.s
+        string/i386/strlen_asm.s
+        string/i386/strncat_asm.s
+        string/i386/strncmp_asm.s
+        string/i386/strncpy_asm.s
+        string/i386/strnlen_asm.s
+        string/i386/strrchr_asm.s
+        string/i386/wcscat_asm.s
+        string/i386/wcschr_asm.s
+        string/i386/wcscmp_asm.s
+        string/i386/wcscpy_asm.s
+        string/i386/wcslen_asm.s
+        string/i386/wcsncat_asm.s
+        string/i386/wcsncmp_asm.s
+        string/i386/wcsncpy_asm.s
+        string/i386/wcsnlen_asm.s
+        string/i386/wcsrchr_asm.s
     )
 endif()
 
