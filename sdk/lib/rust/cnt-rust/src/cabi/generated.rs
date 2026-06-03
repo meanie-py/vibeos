@@ -324,6 +324,29 @@ pub unsafe extern "C" fn _makepath(path: *mut u8, drive: *const u8, dir: *const 
 }
 
 
+/// `void *_memccpy(void *to, const void *from, int c, size_t count)`
+/// preserved misfeature: NUL test PRECEDES c test → c==0 always returns NULL (NUL break wins); the `t==c` match is signed-char `t` vs int `c` (memchr deal: byte 0x90 matches only c==-112, never 0x90); count==0 copies nothing → NULL
+#[no_mangle]
+pub unsafe extern "C" fn _memccpy(to: *mut core::ffi::c_void, from: *const core::ffi::c_void, c: i32, count: usize) -> *mut core::ffi::c_void {
+    let d = raw_mut_slice(to as *mut u8, count);
+    let s = raw_slice(from as *const u8, count);
+    match crate::core_rs::mem::ccpy(d, s, c) {
+        Some(i) => (to as *mut u8).add(i) as *mut core::ffi::c_void,
+        None => core::ptr::null_mut(),
+    }
+}
+
+
+/// `int _memicmp(const void *s1, const void *s2, size_t n)`
+/// preserved misfeature: ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; the Vista (OSMajorVersion>=6) NULL/_NLSCMPERROR guard is dead under the NT 5.x kernel → NULL never validly passed (not modeled)
+#[no_mangle]
+pub unsafe extern "C" fn _memicmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32 {
+    let s1_s = raw_slice(s1 as *const u8, n);
+    let s2_s = raw_slice(s2 as *const u8, n);
+    crate::core_rs::mem::icmp(s1_s, s2_s)
+}
+
+
 /// `void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)`
 /// preserved misfeature: drive = single char path[1]==':' only (no UNC/\\?\); drive synthesized not sliced; dir INCLUDES trailing sep; ext INCLUDES leading '.'; leading-dot filename IS ext (fname empty); dot in dir component discarded (ext_start<file_start); no sep => whole tail is fname; trailing sep => empty fname+ext; NO MBCS (_LIBCNT_ strips _ismbblead); empty path => all ""; INT_MAX copy caps unreachable (not modeled)
 #[no_mangle]
@@ -856,6 +879,35 @@ pub unsafe extern "C" fn memset(src: *mut core::ffi::c_void, val: i32, count: us
     let src_s = raw_mut_slice(src as *mut u8, count);
     crate::core_rs::mem::set(src_s, val);
     src
+}
+
+
+/// `void qsort(void *a, size_t n, size_t es, int (__cdecl *cmp)(const void*, const void*))`
+/// preserved misfeature: Bentley-McIlroy (Engineering a Sort Function): median-of-3 (ninther for n>40), insertion-sort for n<7 + the no-swap fast path, equal keys partitioned to both ends then vecswap'd to the middle, recurse-left/iterate-right; UNSTABLE — equal-key final order IS this exact element-swap sequence (replicated faithfully; the swaptype long/byte choice is result-irrelevant so the port byte-swaps)
+#[no_mangle]
+pub unsafe extern "C" fn qsort(base: *mut core::ffi::c_void, num: usize, width: usize, cmp: super::CntCmpFn) -> () {
+    super::qsort_rs(base as *mut u8, num, width, cmp);
+}
+
+
+/// `int rand(void)`
+/// preserved misfeature: LCG next = next*0x5deece66d + 11; returns bits 16..30 (RAND_MAX=0x7fff, NOT the host 0x7fffffff); non-reentrant hidden static (AtomicU64, single-threaded-equivalent)
+#[no_mangle]
+pub unsafe extern "C" fn rand() -> i32 {
+    use core::sync::atomic::Ordering;
+    let s = super::RAND_STATE.load(Ordering::Relaxed);
+    let (ns, r) = crate::core_rs::rng::step(s);
+    super::RAND_STATE.store(ns, Ordering::Relaxed);
+    r
+}
+
+
+/// `void srand(unsigned int seed)`
+/// preserved misfeature: seed zero-extended into the 64-bit state with NO scrambling (next = seed directly)
+#[no_mangle]
+pub unsafe extern "C" fn srand(seed: u32) -> () {
+    use core::sync::atomic::Ordering;
+    super::RAND_STATE.store(crate::core_rs::rng::seed(seed), Ordering::Relaxed);
 }
 
 

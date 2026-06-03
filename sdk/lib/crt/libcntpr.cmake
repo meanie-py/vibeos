@@ -19,11 +19,12 @@ list(APPEND LIBCNTPR_SOURCE
 # cmakes — because CRT_*_SOURCE (user-mode msvcrt) embeds the same
 # ${LIBCNTPR_*_SOURCE} vars; the swap must touch libcntpr alone.
 # Files kept on disk (never-delete rule). Kept C (NOT removed):
-# ctype/is_wctype/wctype/winesup/wcs/iswctype_nt/memccpy/memicmp/
-# rand_nt/qsort/bsearch/lfind/mbstrlen/fltused (UNCOVERED) + atol
-# (_atoldbl) + scanf (variadic) — PARTIAL. The mem/mem{chr,cpy,move,
-# set}.c entries are amd64/arm64-only (i386 uses *_asm.s, so
-# REMOVE_ITEM is a harmless no-op there).
+# ctype/is_wctype/wctype/winesup/wcs/iswctype_nt/bsearch/lfind/
+# mbstrlen/fltused (UNCOVERED) + atol (_atoldbl) + scanf (variadic) —
+# PARTIAL. The mem/mem{chr,cpy,move,set}.c entries are amd64/arm64-only
+# (i386 uses *_asm.s, so REMOVE_ITEM is a harmless no-op there);
+# mem/memccpy.c + mem/memicmp.c + stdlib/rand_nt.c are all-arch (Wave
+# MEM2/RAND, cnt-difftest-gated).
 list(REMOVE_ITEM LIBCNTPR_SOURCE
     string/_splitpath.c
     string/_wsplitpath.c
@@ -67,6 +68,10 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     mem/memcpy.c
     mem/memmove.c
     mem/memset.c
+    mem/memccpy.c
+    mem/memicmp.c
+    stdlib/rand_nt.c
+    stdlib/qsort.c
     stdlib/_invalid_parameter_nt.c
 )
 
