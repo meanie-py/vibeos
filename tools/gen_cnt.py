@@ -1248,17 +1248,41 @@ def main() -> int:
     man = tomllib.loads(MANIFEST.read_text())
     syms = man["symbols"]
 
+    # Per-function module wrapping: each shim lives in its OWN module so
+    # rustc emits it into a separate codegen unit / object. This restores the
+    # per-function archive-member granularity the C libcntpr had (one .obj per
+    # function). Without it every shim lands in a SINGLE cgu object: any
+    # reference (a consumer's memset / strtol / _stricmp) extracts the whole
+    # object, dragging the kernel-exported CRT (_itow / _wcsicmp / ...) in as
+    # local strong defs that then collide with the same symbols the consumer
+    # IMPORTS from ntoskrnl / ntdll -> `ld.lld: error: X was replaced`. With
+    # one module per fn, a consumer extracts only the objects it actually
+    # references locally and imports the rest, exactly like the C version.
+    helper_use = (
+        "    #[allow(unused_imports)]\n"
+        "    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, "
+        "raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, "
+        "wraw_mut_slice};\n"
+    )
     shims = [
         AUTOGEN,
         "#![allow(non_snake_case)]  // shims mirror C param names verbatim\n"
-        "#[allow(unused_imports)]\n"
-        "use super::{cstr_slice, cstr_slice_bounded, raw_move, "
-        "raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, "
-        "wraw_mut_slice};\n\n",
+        "// One module per shim — keeps each #[no_mangle] export in its own\n"
+        "// codegen unit / object (per-function archive granularity). See\n"
+        "// tools/gen_cnt.py main() for why (lld 'X was replaced' otherwise).\n\n",
     ]
     for nm in sorted(syms):
-        shims.append(shim(nm, syms[nm]))
-        shims.append("")
+        body = shim(nm, syms[nm])
+        # Shim bodies reach cabi-level items (helpers, CntCmpFn, qsort_rs,
+        # RAND_STATE, ...) via `super::`. Nesting each shim one level deeper
+        # (generated::mX) makes cabi `super::super::`, so retarget those paths.
+        body = body.replace("super::", "super::super::")
+        indented = "\n".join(("    " + ln if ln.strip() else ln)
+                             for ln in body.split("\n"))
+        shims.append(
+            f"mod m{nm} {{\n{helper_use}\n{indented}\n}}\n"
+            f"pub use m{nm}::*;\n"
+        )
     generated_rs = "\n".join(shims)
 
     mod_rs = (
