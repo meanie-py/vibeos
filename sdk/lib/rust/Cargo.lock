@@ -638,6 +638,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "winlogon-rust"
+version = "0.1.0"
+dependencies = [
+ "winlogon-sys",
+]
+
+[[package]]
+name = "winlogon-sys"
+version = "0.1.0"
+
+[[package]]
 name = "winsrv-rust"
 version = "0.1.0"
 dependencies = [

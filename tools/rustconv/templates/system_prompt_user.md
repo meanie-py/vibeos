@@ -81,3 +81,24 @@ guidance above where it conflicts:
    `static` `[u16; N]` (UTF-16 code units, NUL-terminated) and pass
    `.as_ptr()`, or build the `UNICODE_STRING` explicitly. Never pass
    a Rust byte string `b"…"` where `*const u16` is expected.
+
+10. **DUMMY_PSEH — drop the SEH belt.** Under `USE_DUMMY_PSEH` the
+    `_SEH2_TRY` / `_SEH2_EXCEPT` / `_SEH2_FINALLY` handlers are DEAD
+    code (the kernel/process is `panic=abort`, no unwinding). Translate
+    a `_SEH2_TRY { body } _SEH2_EXCEPT(filter) { handler } _SEH2_END;`
+    as just `body` — run the protected statements directly; drop the
+    `_SEH2_EXCEPT` handler entirely. NEVER declare `_SEH2_TRY`,
+    `_SEH2_EXCEPT`, `_SEH2_END`, `_SEH2_GetExceptionCode`,
+    `_SEH2_GetExceptionInformation` (or any `_SEH2_*`) in an
+    `extern "system" { … }` / `extern "C" { … }` block — they are PSEH
+    macros, not symbols, and fail to link. (Keep validating pointers
+    before deref, since the except path no longer catches faults.)
+
+11. **Intrusive list ops are FORCEINLINE — provide local impls.**
+    `InitializeListHead` / `IsListEmpty` / `InsertHeadList` /
+    `InsertTailList` / `RemoveHeadList` / `RemoveTailList` /
+    `RemoveEntryList` are FORCEINLINE in the SDK headers (no exported
+    symbol). Do NOT call them as if imported (link failure). Emit small
+    local `unsafe fn` definitions operating on `PLIST_ENTRY.Flink/Blink`.
+    Likewise `RtlGetProcessHeap()` is a macro (`NtCurrentPeb()->ProcessHeap`)
+    — use `GetProcessHeap()` (kernel32, same handle) instead of an extern.
