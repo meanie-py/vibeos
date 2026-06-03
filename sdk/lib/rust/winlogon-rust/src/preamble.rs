@@ -29,10 +29,16 @@ extern "C" {
     pub static mut hAppInstance: HINSTANCE;
 }
 
-// notify.c (still C) — fires the registered notification DLLs for a logon
-// event. cdecl. `NOTIFICATION_TYPE` is bindgen's `_NOTIFICATION_TYPE`.
+// CallNotificationDlls now lives in the Rust notify module (notify.c was
+// flipped). Re-export it so the other leaves keep resolving it through the
+// preamble; declaring it `extern` here too would collide with the in-crate
+// definition (dup-symbol → ud2).
+pub use crate::notify::CallNotificationDlls;
+
+// winlogon.c (still C) — strdup for a wide string into the process heap.
+// cdecl (`PWSTR WlStrDup(PCWSTR)`), no WINAPI.
 extern "C" {
-    pub fn CallNotificationDlls(pSession: PWLSESSION, Type: _NOTIFICATION_TYPE);
+    pub fn WlStrDup(String: PCWSTR) -> PWSTR;
 }
 
 // Undocumented user32 export (WINAPI) — assigns a window station to a

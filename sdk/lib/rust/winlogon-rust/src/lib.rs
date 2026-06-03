@@ -42,6 +42,11 @@ pub mod screensaver;
 // grants. On the boot/logon path (wlx.c startup + sas.c logon).
 pub mod security;
 
+// notify.c — logon notification DLL registry walker + dispatcher
+// (CallNotificationDlls). On the boot/logon path. Owns the (now-Rust)
+// CallNotificationDlls that the other leaves call via the preamble.
+pub mod notify;
+
 // USER-MODE no_std staticlib → needs its own panic handler + eh_personality
 // (same role as userinit-rust / smss-csrss-rust). Must NOT use privileged
 // instructions.

@@ -18,7 +18,8 @@
  *                     environment.c (CreateUserEnvironment),
  *                     shutdown.c (StartSystemShutdown / TerminateSystemShutdown),
  *                     screensaver.c (InitializeScreenSaver / StartScreenSaver),
- *                     security.c (Create*Security / Allow*AccessToUser / AllowAccessOnSession).
+ *                     security.c (Create*Security / Allow*AccessToUser / AllowAccessOnSession),
+ *                     notify.c (InitNotifications / CleanupNotifications / CallNotificationDlls).
  *
  * Keep the C on disk (translation philosophy: never delete the C); it is
  * simply not compiled while the Rust translation is active.

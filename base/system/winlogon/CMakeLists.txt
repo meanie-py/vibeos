@@ -11,7 +11,7 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 # (never delete the C — translation philosophy), commented out here.
 list(APPEND SOURCE
     # environment.c — replaced by Rust (winlogon-rust/src/environment.rs)
-    notify.c
+    # notify.c — replaced by Rust (winlogon-rust/src/notify.rs)
     rpcserver.c
     sas.c
     # screensaver.c — replaced by Rust (winlogon-rust/src/screensaver.rs)
@@ -61,6 +61,7 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/winlogon-rust/src/shutdown.rs
         ${RUST_WORKSPACE_DIR}/winlogon-rust/src/screensaver.rs
         ${RUST_WORKSPACE_DIR}/winlogon-rust/src/security.rs
+        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/notify.rs
         ${RUST_WORKSPACE_DIR}/winlogon-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winlogon-sys/src/lib.rs
     COMMENT "Building winlogon-rust (${RUST_TARGET}) for winlogon.exe"
