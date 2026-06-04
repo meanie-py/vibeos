@@ -1,0 +1,22 @@
+[package]
+name = "lsass-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# staticlib → liblsass_rust.a, linked into the cmake-built lsass.exe via
+# per-binary cohabitation cmake (mirrors userinit-rust / smss-csrss-rust).
+# The `.c` source stays in tree; this leaf flip translates lsass.c (the LSA
+# Subsystem host: wWinMain → make-critical → LsapInitLsa/SamIInitialize/
+# ServiceInit). lsass.exe is on the boot path to `shell ready` (winlogon →
+# LsaLogonUser → lsass authenticates the autologon), and it is process-critical
+# (a crash bugchecks 0xF4), so the smoke harness validates the flip strongly.
+crate-type = ["staticlib"]
+
+[dependencies]
+# ntdll-sys is the user-mode FFI substrate (Nt*/Rtl* via `pub use ... nt`).
+# It covers lsass's entire kernel surface: RtlSetProcessIsCritical,
+# NtTerminateThread, NtCurrentThread, NTSTATUS, STATUS_SUCCESS. The three
+# server-DLL exports (LsapInitLsa/ServiceInit from lsasrv, SamIInitialize from
+# samsrv) are declared locally and resolve against the import libs.
+ntdll-sys = { path = "../ntdll-sys" }

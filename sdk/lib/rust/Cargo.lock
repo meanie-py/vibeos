@@ -275,6 +275,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsass-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
 name = "luid"
 version = "0.1.0"
 

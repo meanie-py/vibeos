@@ -66,6 +66,7 @@ members = [
     "userinit-rust",
     "winlogon-sys",
     "winlogon-rust",
+    "lsass-rust",
 ]
 resolver = "2"
 
