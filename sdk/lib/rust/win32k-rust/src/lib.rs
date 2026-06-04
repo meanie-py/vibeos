@@ -219,6 +219,7 @@ pub mod font;  // [Phase 2c wave 19: font tier — 21 fns, flip gdi/ntgdi/font.c
 // Next decisive step: rebuild-bisect (stub bodies to no-ops, keep this mod) to
 // separate pure-cgu-shift from body-bug, then chase the partition.
 pub mod device;
+pub mod d3dkmt;  // [Phase 2c wave 22: ntgdi/d3dkmt.c — 56 fns, D3DKMT dxgkrnl thunk layer]
 // ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
 // pub mod ldevobj;
 

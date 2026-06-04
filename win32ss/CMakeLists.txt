@@ -173,7 +173,7 @@ list(APPEND SOURCE
     # gdi/ntgdi/bitmaps.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/bitmaps.rs) — cohabitation [Phase 2c wave 8: bitmap/surface object mgmt]
     # gdi/ntgdi/cliprgn.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/cliprgn.rs) — cohabitation [Phase 2c wave 8: clip-region functions]
     # gdi/ntgdi/coord.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/coord.rs) — cohabitation [Phase 2c geometry wave 6: coordinate transforms; coord.c + split2 = one TU]
-    gdi/ntgdi/d3dkmt.c
+    # gdi/ntgdi/d3dkmt.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/d3dkmt.rs) — cohabitation [Phase 2c wave 22: D3DKMT dxgkrnl thunk layer]
     # gdi/ntgdi/dcattr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcattr.rs) — cohabitation [Phase 2c geometry wave 1]
     # gdi/ntgdi/dclife.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dclife.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
     # gdi/ntgdi/dcobjs.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dcobjs.rs) — cohabitation [Phase 2c wave 5: DC lifecycle]
@@ -364,6 +364,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/font.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntbitblt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/freetype.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/d3dkmt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
