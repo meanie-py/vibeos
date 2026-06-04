@@ -1212,7 +1212,10 @@ mod mmemset {
     #[no_mangle]
     pub unsafe extern "C" fn memset(src: *mut core::ffi::c_void, val: i32, count: usize) -> *mut core::ffi::c_void {
         let src_s = raw_mut_slice(src as *mut u8, count);
-        crate::core_rs::mem::set(src_s, val);
+        let __b = val as u8;
+        for __x in src_s.iter_mut() {
+            core::ptr::write_volatile(__x as *mut u8, __b);
+        }
         src
     }
 

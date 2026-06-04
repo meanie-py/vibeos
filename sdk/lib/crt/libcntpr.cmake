@@ -128,6 +128,17 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 
 set(RUST_CNT_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcntpr_rust.a")
+# Track EVERY .rs under the three cnt-* crates, not a hand-curated list.
+# The old explicit DEPENDS named `core_rs/mod.rs` but none of its
+# submodules (mem.rs, str.rs, …), so editing e.g. the memset core never
+# re-ran cargo — a stale libcntpr_rust.a silently masked source fixes
+# (cost a debug session: a memset miscompile fix appeared to "not take").
+# CONFIGURE_DEPENDS re-globs each build so new files are picked up too.
+file(GLOB_RECURSE CNT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
+    ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
+    ${RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs
+)
 add_custom_command(
     OUTPUT ${RUST_CNT_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -139,16 +150,9 @@ add_custom_command(
         ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libcnt_rust_lib.a
         ${RUST_CNT_LIB}
     DEPENDS
-            ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/lib.rs
+            ${CNT_RUST_SOURCES}
             ${RUST_WORKSPACE_DIR}/cnt-rust-lib/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/mod.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/generated.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/manual.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/mod.rs
-            ${RUST_WORKSPACE_DIR}/cnt-ctype/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-ctype/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust libcntpr umbrella (${RUST_TARGET})"

@@ -847,7 +847,23 @@ def shim(name: str, m: dict) -> str:
             body.append(f"    {d}")
         elif sp == "set_raw":
             d = ptrs[0]
-            body.append(f"    {core_call(f'{d}_s, {scal[0]}')};")
+            # memset: write_volatile fill, NOT a `core_rs::mem::set` call.
+            # memset is a #[no_mangle] C-ABI symbol whose only observable
+            # effect is storing through a pointer param — the exact
+            # captures(none)/writeonly shape LLVM's dead-store eliminator
+            # targets. Compiled from a plain `*x = b` loop it is DCE'd to a
+            # guard-only infinite spin in some cgu partitions (observed on
+            # the amd64 cmake freeldr link after the per-fn cgu-split: boot
+            # hangs at RtlZeroMemory(MachVtbl, 0xf0) right after the UEFI
+            # banner; a black_box hint only turned the spin into infinite
+            # recursion). A volatile store is guaranteed to happen and is
+            # never elided, so the fill survives every cgu partition. The
+            # `set` core stays the plain loop for the difftest + Kani model
+            # (core_rs forbids unsafe); only the shipping shim is volatile.
+            body.append(f"    let __b = {scal[0]} as u8;")
+            body.append(f"    for __x in {d}_s.iter_mut() {{")
+            body.append("        core::ptr::write_volatile(__x as *mut u8, __b);")
+            body.append("    }")
             body.append(f"    {d}")
         elif sp == "mem_raw":
             d, s, nn = pnames

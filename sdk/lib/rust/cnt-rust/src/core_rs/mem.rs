@@ -7,6 +7,14 @@
 /// `memset` core: fill `dst` with `val` truncated to a byte (the C
 /// `int val` → `unsigned char` store). Takes the raw C int so the
 /// truncation is the core's faithful responsibility, not the shim's.
+///
+/// NOTE: the C `memset` symbol does NOT route through this core — the cabi
+/// shim does a `write_volatile` fill directly (see `cabi::generated`
+/// `mmemset`). This core stays a plain loop for the difftest + Kani model
+/// (`core_rs` forbids unsafe), but a `#[no_mangle]` memset compiled from
+/// this loop is miscompiled in some cgu partitions: LLVM proves the slice
+/// non-escaping and deletes the stores, leaving an infinite spin (amd64
+/// cmake freeldr boot hang). The volatile shim is the shipping fill.
 #[inline]
 pub fn set(dst: &mut [u8], val: i32) {
     let b = val as u8;
