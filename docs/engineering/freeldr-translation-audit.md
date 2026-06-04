@@ -1,6 +1,6 @@
 # FreeLDR + Boot DLLs C→Rust Translation Audit
 
-Last updated 2026-06-01. **Status: FreeLDR + all boot-DLLs flipped.**
+Last updated 2026-06-02. **Status: FreeLDR + all boot-DLLs flipped.**
 This doc started (2026-05-08) as a pre-translation plan; it is now a
 *state* audit. The headline change since: **FreeLDR is translated and
 integrated** (86 Rust modules, cohabitation, all 3 arches boot green),
@@ -216,20 +216,29 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
    and exports nothing (the `.def`/`freeldr.spec` is only for the freeldr
    *import library* that rosload consumes). Passing it forced every spec
    export as required, and a few are genuinely absent from the UEFI build.
-   **amd64 too (2026-06-02):** `reactos-link` is now arch-aware (added
-   `TargetArch` + `EfiApplication{image_base: Option}`; build dir / clang
-   triple / clang_rt / image base all per-arch), and `uefildr-cargo` builds
-   for amd64 via `x86_64-kernel.json` (entry `EfiEntry` no-decoration,
-   `--image-base 0x10000`, no mini_hal libs — all from build-amd64's
-   build.ninja). The amd64 `uefildr.efi` is likewise PE-header-identical to
-   cmake's (PE32+, Subsystem 0x0a, ImageBase 0x10000, 0x200 align; entry
-   differs 208 bytes for the panic stub). `reactos-link`'s
-   asm/c_shims/spec2def/import_lib paths stay i386-only (KernelExe/KernelDll
-   panic on amd64) — only the EfiApplication/static_libs path is multi-arch.
-   Remaining: full **boot**-validation needs a livecd, currently gated by
-   crp's unrelated `winsrv.dll` cold-link break (cnt-rust/concfg flip,
-   `_wcsicmp was replaced`) — not a uefildr-cargo issue. arm64 stays on
-   cmake (no llvm-mingw arm64 cargo-link path yet).
+   **amd64 too (2026-06-02):** `reactos-link` is now arch-aware (`ArchCfg`
+   threads build dir / clang triple / clang_rt / spec2def all per-arch), and
+   `uefildr-cargo` builds for amd64 via `x86_64-kernel.json` (entry `EfiEntry`
+   no-decoration, `--image-base 0x10000`, no mini_hal libs — all from
+   build-amd64's build.ninja). The amd64 `uefildr.efi` is likewise
+   PE-header-identical to cmake's (PE32+, Subsystem 0x0a, ImageBase 0x10000,
+   0x200 align; entry differs 208 bytes for the panic stub).
+
+   **arm64 too (2026-06-02): all 3 arches now cargo-link.** `EfiApplication`
+   gained two per-arch knobs — `image_base: Option<u64>` (`None` ⇒ rely on the
+   common `--enable-auto-image-base` instead of emitting an explicit base) and
+   `alignment: u64` (x86 0x200, arm64 0x1000). arm64 `uefildr-cargo` builds via
+   `aarch64-kernel.json` (entry `EfiEntry`, NO `--image-base`, 0x1000
+   file/section align, same lib set as amd64 — no mini_hal). The arm64
+   `uefildr.efi` is PE-header-identical to cmake's (coff-arm64, Subsystem 0x0a
+   EFI application, ImageBase 0x140000000 [auto-hash, both use
+   `--enable-auto-image-base`], 0x1000 align, OS/subsystem ver 5.1; entry
+   differs 168 bytes for the panic stub). `reactos-link`'s
+   asm/c_shims/spec2def/import_lib paths stay x86-leaning (the kernel/HAL
+   KernelExe/KernelDll links aren't wired for arm64 yet) — but the
+   EfiApplication/static_libs path is fully tri-arch.
+   Remaining: full **boot**-validation needs a livecd (x86) / ramdisk swap
+   (arm64) under smoke — the link + PE-header parity is proven on all three.
 7. **Optional: `setupldr.c`/`inffile.c` are already translated** (they
    ship in `freeldr-rust`), so the original "prune install-mode?" open
    question is moot — they're in Rust and cheap to keep.
@@ -245,8 +254,11 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
   just the cargo PoC) and smoke-green.
 - ⬜ `tools/scan_ud2.py --check` clean against each boot artifact.
 - ⬜ Dead trees deleted: `boot/freeldr/bootsect/`, unused KD transports.
-- ⬜ (Stretch) cmake C `uefildr`/`rosload` retired in favour of a cargo
-  `bin`, allowing `boot/freeldr/freeldr/` C to be removed.
+- 🚧 (Stretch) cmake C `uefildr`/`rosload` retired in favour of a cargo
+  `bin`, allowing `boot/freeldr/freeldr/` C to be removed. `uefildr-cargo`
+  now links a PE-header-identical `uefildr.efi` on **all 3 arches** (i386 +
+  amd64 + arm64) via the `reactos-link` `EfiApplication` path; `rosload` is
+  the remaining cmake-driven freeldr binary.
 
 ## What this audit doesn't measure
 

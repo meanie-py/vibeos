@@ -1,7 +1,7 @@
 #!/bin/bash
-# Cargo-driven uefildr.efi build PoC — i386 + amd64.
+# Cargo-driven uefildr.efi build PoC — i386 + amd64 + arm64.
 #
-# Usage: build-and-test.sh [i386|amd64]   (default i386)
+# Usage: build-and-test.sh [i386|amd64|arm64]   (default i386)
 #
 # 1. Run cmake/ninja once so the prebuilt strsafe_shim.c.obj + sibling
 #    static libs + libfreeldr_rust_uefi.a exist (cmake does the heavy
@@ -21,9 +21,10 @@ set -euo pipefail
 
 ARCH="${1:-i386}"
 case "$ARCH" in
-  i386)  TARGET_JSON="uefildr-cargo/i686-kernel.json";   SMOKE_ARCH="i386-uefi" ;;
-  amd64) TARGET_JSON="uefildr-cargo/x86_64-kernel.json"; SMOKE_ARCH="amd64-uefi" ;;
-  *) echo "usage: $0 [i386|amd64]" >&2; exit 1 ;;
+  i386)  TARGET_JSON="uefildr-cargo/i686-kernel.json";    SMOKE_ARCH="i386-uefi" ;;
+  amd64) TARGET_JSON="uefildr-cargo/x86_64-kernel.json";  SMOKE_ARCH="amd64-uefi" ;;
+  arm64) TARGET_JSON="uefildr-cargo/aarch64-kernel.json"; SMOKE_ARCH="arm64" ;;
+  *) echo "usage: $0 [i386|amd64|arm64]" >&2; exit 1 ;;
 esac
 
 cd "$(dirname "$0")/../../../.."  # → repo root
