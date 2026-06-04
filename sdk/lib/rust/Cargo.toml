@@ -52,7 +52,6 @@ members = [
     "win32k-kernel-rust",
     "win32k-rust",
     "win32k-sys",
-    "ft-sys",
     "winsrv-rust",
     "winsrv-sys",
     "concfg-rust",

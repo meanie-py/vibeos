@@ -45,15 +45,6 @@ WIN32K_BINDGEN_FILES = {
     "i386": WIN32K_SYS_DIR / "bindgen_i386.rs",
 }
 
-# FreeType FFI crate (ft-sys) — the bundled FreeType lib's FT_*/TT_* surface.
-# Only win32ss/gdi/ntgdi/freetype.c consumes it; scanned for the win32k target
-# so FT_Load_Glyph/FT_FaceRec/etc. resolve instead of being invented per-file.
-FT_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ft-sys" / "src"
-FT_BINDGEN_FILES = {
-    "arm64": FT_SYS_DIR / "bindgen_arm64.rs",
-    "amd64": FT_SYS_DIR / "bindgen_amd64.rs",
-    "i386": FT_SYS_DIR / "bindgen_i386.rs",
-}
 
 # SMSS→CSRSS user-mode subsystem spine + its dedicated FFI crate
 # (ntkrnl-sys analog for *user mode*). These native processes link
@@ -134,7 +125,6 @@ class Target:
     arches: tuple = ("i386", "amd64", "arm64")  # supported arches
     win32k_bindgen_files: dict = field(default_factory=dict)  # arch → win32k-sys .rs (win32k only)
     winsrv_bindgen_files: dict = field(default_factory=dict)  # arch → winsrv-sys .rs (winsrv only)
-    ft_bindgen_files: dict = field(default_factory=dict)      # arch → ft-sys .rs (freetype.c only)
     # FFI substrate crate the translated Rust imports from. Default is
     # the kernel crate with per-module paths (ntkrnl_sys::ddk/base/…).
     # A user-mode target (smss-csrss) sets sys_crate="ntdll_sys" +
@@ -271,7 +261,6 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
         win32k_bindgen_files=WIN32K_BINDGEN_FILES,
-        ft_bindgen_files=FT_BINDGEN_FILES,
     ),
     # SMSS→CSRSS user-mode spine (smss.exe, csrss.exe, csrsrv.dll,
     # basesrv.dll). User-mode native: bindgen_files = ntdll-sys (the
