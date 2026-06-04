@@ -20,6 +20,7 @@ extern crate interlck;
 extern crate largeint;
 extern crate luid;
 extern crate mem;
+extern crate network;
 extern crate prefix;
 extern crate random;
 extern crate slist;
