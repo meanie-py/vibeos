@@ -57,6 +57,7 @@ pub mod mapping;    pub mod mem;     pub mod pandisp;
 pub mod pathobj;    pub mod rlecomp;  pub mod transblt;
 pub mod bitblt;     pub mod gradient;
 pub mod ntbitblt;   // [Phase 2c wave 20: ntgdi/bitblt.c TU — 20 fns (Nt* blt/rgn/pixel syscalls)]
+pub mod freetype;   // [Phase 2c wave 21: ntgdi/freetype.c — 122 fns, FreeType font engine; uses ft-sys]
 // ── Wave 2 deferred-mods sweep — try the 6 with minimal extern statics ──
 // Earlier "RED" bisects on these were under the CGU-shift confound (the
 // engevent.rs unconditional raw-dylib was the real culprit, not the wave-2

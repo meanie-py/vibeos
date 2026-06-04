@@ -22,6 +22,9 @@ BOOL w32r_FLOATOBJ_bConvertToLong(FLOATOBJ *pf, PLONG pl){ return FLOATOBJ_bConv
 
 /* ---- XFORMOBJ / matrix (FORCEINLINE) ---- */
 VOID w32r_XFORMOBJ_vInit(XFORMOBJ *pxo, MATRIX *pmx)     { XFORMOBJ_vInit(pxo, pmx); }
+ULONG w32r_XFORMOBJ_iGetXform(XFORMOBJ *pxo, XFORML *pxform) { return XFORMOBJ_iGetXform(pxo, pxform); }
+BOOL w32r_FLOATOBJ_Equal1(FLOATOBJ *pf)                  { return FLOATOBJ_Equal1(pf); }
+VOID w32r_FLOATOBJ_Set1(FLOATOBJ *pf)                    { FLOATOBJ_SetLong(pf, 1); }
 BOOL w32r_XFORMOBJ_bApplyXform(XFORMOBJ *pxo, ULONG iMode, ULONG cPoints, PVOID pvIn, PVOID pvOut)
 { return XFORMOBJ_bApplyXform(pxo, iMode, cPoints, pvIn, pvOut); }
 VOID w32r_MatrixS2XForm(XFORML *pxform, MATRIX *pmx)     { MatrixS2XForm(pxform, pmx); }
@@ -50,6 +53,9 @@ ULONG w32r_ftGdiGetGlyphOutline(PDC pdc, WCHAR wch, UINT format, LPGLYPHMETRICS 
 /* ---- second batch (more helpers path.rs calls) ---- */
 VOID w32r_FLOATOBJ_DivLong(FLOATOBJ *pf, LONG l)        { FLOATOBJ_DivLong(pf, l); }
 FLOATL w32r_FLOATOBJ_GetFloat(FLOATOBJ *pf)            { return FLOATOBJ_GetFloat(pf); }
+LONG w32r_FLOATOBJ_GetLong(FLOATOBJ *pf)               { return FLOATOBJ_GetLong(pf); }
+VOID w32r_FLOATOBJ_Mul(FLOATOBJ *pf, FLOATOBJ *pf2)    { FLOATOBJ_Mul(pf, pf2); }
+BOOL w32r_FLOATOBJ_Equal(FLOATOBJ *pf, FLOATOBJ *pf2)  { return FLOATOBJ_Equal(pf, pf2); }
 VOID w32r_FLOATOBJ_SetLong(FLOATOBJ *pf, LONG l)        { FLOATOBJ_SetLong(pf, l); }
 VOID w32r_FLOATOBJ_Sub(FLOATOBJ *pf, FLOATOBJ *pf2)     { FLOATOBJ_Sub(pf, pf2); }
 VOID w32r_INTERNAL_LPTODP(DC *dc, LPPOINT points, UINT count) { INTERNAL_LPTODP(dc, points, count); }

@@ -185,7 +185,7 @@ list(APPEND SOURCE
     # gdi/ntgdi/fillshap.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/fillshap.rs) — cohabitation [Phase 2c geometry wave 3: drawing primitives]
     # gdi/ntgdi/font.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/font.rs) — cohabitation [Phase 2c wave 19: font tier]
     gdi/ntgdi/font_rust_shims.c  # cdecl wrappers for FORCEINLINE TEXTOBJ_LockText/UnlockText font.rs calls
-    gdi/ntgdi/freetype.c
+    # gdi/ntgdi/freetype.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/freetype.rs) — cohabitation [Phase 2c wave 21: FreeType font engine; uses ft-sys FFI crate]
     gdi/ntgdi/gdibatch.c
     gdi/ntgdi/gdidbg.c
     # gdi/ntgdi/gdiobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/gdiobj.rs, +split2) — cohabitation [Phase 1a]
@@ -197,6 +197,7 @@ list(APPEND SOURCE
     # gdi/ntgdi/palette.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/palette.rs) — cohabitation [Phase 2c geometry wave 7: PALETTE object tier]
     # gdi/ntgdi/path.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/path.rs) — cohabitation [Phase 2c wave 18: path tier; path.c + split2/3 = one TU]
     gdi/ntgdi/path_rust_shims.c  # cdecl wrappers for FORCEINLINE/macro/arch-divergent eng helpers path.rs calls
+    gdi/ntgdi/freetype_rust_shims.c  # ntstrsafe header-inline wrappers for freetype.rs calls
     # gdi/ntgdi/pen.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/pen.rs) — cohabitation [Phase 2c geometry wave 6: PEN object tier]
     # gdi/ntgdi/polyfill.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/polyfill.rs) — cohabitation [Phase 2c geometry wave 1]
     # gdi/ntgdi/print.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/print.rs) — cohabitation [Phase 2c wave 16: print/escape tier]
@@ -362,6 +363,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/path.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/font.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntbitblt.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/freetype.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
