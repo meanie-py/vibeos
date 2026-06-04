@@ -119,11 +119,20 @@ if(ARCH STREQUAL "i386")
     set(CNT_RUST_FEATURES "")
 elseif(ARCH STREQUAL "amd64")
     set(RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "")
+    # -C no-prepopulate-passes: match i386. The per-fn cgu-split (one tiny
+    # #[no_mangle] shim per cgu) lets LLVM's aggressive whole-pipeline
+    # optimization miscompile isolated cnt shims on amd64 — memset's stores
+    # were DCE'd into an infinite spin, _strnicmp's compare collapsed to
+    # "always equal" (made DissectArcPath match ramdisk(0) for a CD path,
+    # so freeldr couldn't open freeldr.ini → amd64 boot hang). Disabling the
+    # prepopulated pass pipeline (as i386 already does) tames it class-wide.
+    # amd64 keeps SSE (user/kernel both use it post-Phase-0).
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C no-prepopulate-passes")
     set(CNT_RUST_FEATURES "--features" "float")
 elseif(ARCH STREQUAL "arm64")
     set(RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_EXTRA_ENV "")
+    # Same class-wide miscompile guard as amd64 (see above); arm64 keeps NEON.
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C no-prepopulate-passes")
     set(CNT_RUST_FEATURES "--features" "float")
 endif()
 
