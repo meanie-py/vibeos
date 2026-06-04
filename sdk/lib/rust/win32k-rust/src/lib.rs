@@ -128,6 +128,12 @@ pub mod stockobj; pub mod arc; pub mod xformobj;
 // coord chain), fillshap (NtGdi{Ellipse,Rectangle,RoundRect,PolyPolyDraw,
 // GradientFill,ExtFloodFill} + IntGdiPolygon, user-POINT[] probe paths).
 pub mod drawing; pub mod line; pub mod fillshap;
+// Phase 2c geometry wave 24: GDI batch-flush processor (gdibatch.c).
+// DoDeviceSync / SynchronizeDriver / GdiFlushUserBatch (FASTCALL dual-cfg)
+// + NtGdiFlush / NtGdiFlushUserBatch (stdcall). Full switch (9 cases) translated.
+pub mod gdibatch;
+pub mod gdidbg;     // [Phase 2c wave 25: ntgdi/gdidbg.c — GDI debug machinery (DBG on)]
+pub mod gdikdbgext; // [Phase 2c wave 26: ntgdi/gdikdbgext.c — KDBG GDI debugger-ext commands]
 // Phase 2c geometry wave 4: region algebra — region.c + split2/3/4 = one TU,
 // 68 fns (REGION_* rect-set algebra, edge-table polygon scan-conversion,
 // NtGdi{CombineRgn,Create*Rgn,EqualRgn,ExtCreateRegion,GetRegionData,...}).
