@@ -1,19 +1,26 @@
 # NTDLL C→Rust Translation Audit
 
-Created 2026-05-24. **Status: scoped, not started.** All findings are
-from research in conversation; no code has been written, no commits
-made. The user-mode substrate the smss-csrss track built
-(`ntdll-sys`, rustconv `system_prompt_user.md` + `collapse_sys_crate`)
-is reused as-is — ntdll does not need its own Phase 0. This audit
-defines the scope, the keep-set, the two hard cores (kernel↔user
-boundary, bootstrap), the cohabitation mechanism, and the translation
-order.
+Created 2026-05-24. **Status (updated 2026-06-01): the ntdll PE body is
+100% flipped to Rust and boots to `shell ready` on all 3 arches.** All
+14 planned translation steps are done, and the last two leaf C files were
+flipped this session (`nt_0600/ldr/ldrnotify.c` 154 LOC → ungated
+`nt_0600/ldr/ldrnotify.rs`; `dispatch/dispatch.c` 89 LOC arm64 dispatchers
+→ `#[cfg(aarch64)]` `dispatch/mod.rs`). The only C/asm left is the per-arch
+`dispatch/<arch>/dispatch.S`, which **stays asm by design** (kernel→user
+trap-entry trampolines). The
+original scope/analysis below is preserved as the design record; the new
+**[Current state](#current-state-2026-06-01)** and **[Remaining work +
+future plans](#remaining-work--future-plans)** sections at the top and
+bottom carry the live status. The user-mode substrate the smss-csrss track
+built (`ntdll-sys`, rustconv `system_prompt_user.md` + `collapse_sys_crate`)
+was reused as-is — ntdll did not need its own Phase 0.
 
 Companion to:
 - [smss-csrss-translation-audit.md](smss-csrss-translation-audit.md) — built the user-mode substrate (`ntdll-sys`, rustconv user-mode pipeline). **Hard dep.**
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — pattern source (cohabitation, milestone-16 asm pre-processing, `verify_sizes`); also the kernel half of every kernel↔user contract this audit lists.
 - [freeldr-translation-audit.md](freeldr-translation-audit.md) — direct precedent for **spec-driven user-mode DLL** cohabitation (kdcom, bootvid, **peloader**).
-- [static-libs-translation-audit.md](static-libs-translation-audit.md) — `librtl.a` and `liblibcntpr.a`, both of which ntdll links and which are *explicitly out of scope here*.
+- [rtl-translation-audit.md](rtl-translation-audit.md) — the `sdk/lib/rtl/*.c` `Rtl*` API bodies (strings/security/env/process/path/…) → the `rtl-strings` crate, **and** the still-C exception engine / heap / `image.c` that ntdll cohabits with via FFI. **The authoritative reference for everything ntdll links from `librtl.a`.** (On branch `rtl-priv-port`.)
+- [static-libs-translation-audit.md](static-libs-translation-audit.md) — `librtl.a` pure-algorithm rlibs (bitmap/avl/crc32/…) and `liblibcntpr.a`, both of which ntdll links and which are *explicitly out of scope here*.
 - [pseh-elimination.md](pseh-elimination.md) — overall PSEH/DUMMY_PSEH strategy.
 - [kernel-exception-handling.md](kernel-exception-handling.md) — the kernel half of the exception dispatch contract ntdll consumes.
 
@@ -57,6 +64,77 @@ Companion to:
   more state. Neither is a substrate blocker; both are coordination
   calls.
 
+## Current state (2026-06-01)
+
+The track ran in worktree `vibeos-wt-ntdll`, branch `ntdll-rust-port`
+(10 commits, audit steps 1→14). The Rust crate `sdk/lib/rust/ntdll-rust/`
+(`libntdll_rust.a`, default features → ntdll.dll; `--features vista` →
+ntdll_vista.dll) carries the whole flipped body. **All 3 arches cold-build
+clean and smoke to `shell ready` (arm64 reaches `[EXPLORER] _tWinMain`).**
+
+| File | LOC | Status | Commit |
+|---|--:|---|---|
+| `nt_0600/DllMain.c` | 31 | ✅ Rust (`nt_0600/dllmain.rs`) | 889740a |
+| `nt_0600/ldr/ldrinit.c` (LdrpHeap) | 3 | ✅ Rust (`nt_0600/ldr/ldrinit.rs`) | ae60dfb |
+| `rtl/uilist.c` | 40 | ✅ Rust (`rtl/uilist.rs`) | 528c0af |
+| `rtl/version.c` | 231 | ✅ Rust (`rtl/version.rs`) | 9584d7a |
+| `etw/trace.c` | 277 | ✅ Rust (`etw/trace.rs`, etwtrace lib kept as stub) | 0f48369 |
+| `dbg/dbgui.c` | 387 | ✅ Rust (`dbg/dbgui.rs`) | 0f48369 |
+| `ldr/verifier.c` | 745 | ✅ Rust (`ldr/verifier.rs`) | 9a0c989 |
+| `rtl/libsupp.c` | 1,261 | ✅ Rust (`rtl/libsupp.rs`) | 5a46a15 |
+| `ldr/ldrpe.c` | 1,281 | ✅ Rust (`ldr/ldrpe.rs`) | 9dcab30 |
+| `ldr/ldrutils.c` | 2,799 | ✅ Rust (`ldr/ldrutils.rs`) | cb04507 |
+| `ldr/ldrinit.c` (bootstrap) | 2,735 | ✅ Rust (`ldr/ldrinit.rs`) | 92c31cc |
+| `ldr/ldrapi.c` | 1,666 | ✅ Rust (`ldr/ldrapi.rs`) — **cold-green ×3, UNCOMMITTED** | (this session) |
+| `nt_0600/ldr/ldrnotify.c` | 154 | ✅ Rust (`nt_0600/ldr/ldrnotify.rs`, ungated) — **i386 cold-green, amd64/arm64 green, UNCOMMITTED** | (this session) |
+| `dispatch/dispatch.c` | 89 | ✅ Rust (`dispatch/mod.rs`, `#[cfg(aarch64)]`) — arm64 only (KiRaise/KiUserCallbackDispatcher); **arm64 green, UNCOMMITTED** | (this session) |
+| `dispatch/{i386,amd64,arm64}/dispatch.S` | 708 | ⏸ **stays asm** (cmake-compiled, untouched) | — |
+
+**~11.2K of ~11.7K translatable LOC flipped (96%); 243 LOC of C remain.**
+
+### How reality diverged from the plan
+
+- **No Phase 0 / substrate delta as written.** `ntdllp.h` was **not** added
+  to the `ntdll-sys` wrapper, and `ldrtypes.h`/bindgen-regen was not the
+  path. Instead the loader's intra-component types/consts/globals were
+  supplied **per-file at integration** (shared header-type modules, inline
+  const/extern blocks, truncated-mirror reconciliation) — see
+  `feedback_rustconv_header_types_integration`. Cheaper than a wrapper
+  rebuild; the cost moved into per-file integration.
+- **ABI enforcement is target-agnostic, not `abi_map_ntdll.py`.** Commit
+  5a46a15 added a generic ABI enforcer rather than an ntdll-specific
+  `abi_map`. The 4 must-not-drift exports are still validated by `nm`
+  /smoke (process init crashes without them).
+- **Dispatchers stayed plain `.S` in the C build.** The doc's plan to
+  pre-process them into `ntdll-rust/data/asm/*.s` + a `build.rs` was **not**
+  done — there is no `build.rs`/`data/asm/`. The `dispatch/*.S` files are
+  still compiled by cmake unchanged, which is functionally identical (asm
+  stays asm) and avoids the cc-rs plumbing. The DUMMY_PSEH safety-net
+  blocks therefore live in the original `.S` (untouched), not a checked-in
+  pre-processed copy.
+- **`rtl_um` → `rtl`.** The crate module is `ntdll-rust/src/rtl/`, not the
+  planned `rtl_um/`. etw was absorbed (Option 1) but the `etwtrace` cmake
+  lib is kept as a stub (`etwtrace_rust_stub.c`) rather than deleted.
+
+### Bugs found + fixed during the flip (reusable lessons)
+
+- **`ldrapi.rs` i386 hang in `LdrUnloadDll`** (msacm32 DllMain unload path):
+  `write_bytes(addr_of_mut!(ActCtx.Frame), 0, size_of::<…>())` missing the
+  `as *mut u8` cast → wrote `size_of()²` bytes → stack overflow → hang.
+  i386-only (stack-layout-exposed). See `feedback_write_bytes_element_count`.
+- **ntdll_vista.dll cold-link cascade.** Flipping `LdrDisableThreadCalloutsForDll`
+  (referenced by nt_0600 `DllMain`) into the shared staticlib made the
+  companion's cold link pull the whole Rust loader + 20 undefined C callees.
+  Fix: `#[cfg(not(feature = "vista"))] pub mod ldr;` in lib.rs (companion
+  imports the loader from ntdll.dll). See
+  `feedback_cohab_flip_companion_dll_cascade`. **Warm builds masked it** —
+  only cold `--clean` exposed it; always cold-verify a cohab flip.
+- **FORCEINLINE link gaps:** `NtCurrentPeb`/`RtlInitEmptyUnicodeString` have
+  no exported symbol → needed inline Rust shadows (mirror ldrinit.rs).
+- **scanner SAL bug** dropped `LdrGetProcedureAddress` +
+  `LdrQueryProcessModuleInformation` — hand-recovered as trivial wrappers.
+  See `feedback_rustconv_scanner_sal_callback_preproc`.
+
 ## Scope — and what's out of scope
 
 **In scope** — `dll/ntdll/` (the PE body of `ntdll.dll`):
@@ -89,9 +167,11 @@ nt_0600/ ....... ntdll_vista.dll — SEPARATE module (see below)
 **Out of scope — explicitly:**
 
 - `sdk/lib/rtl/` (~59K LOC C, ntdll links `librtl.a`). Tracked under
-  `static-libs-translation-audit.md` and `project_rtl_strings_track`
-  (unicode/nls/dos8dot3/sid/acl already Rust as of 2026-05; sd.c/priv.c
-  next). The interesting exception engine — `RtlDispatchException`,
+  **`rtl-translation-audit.md`** (the `Rtl*` API bodies → `rtl-strings`
+  crate; ~20 `.c` flipped incl. the big `path.c` as of 2026-06-01;
+  `registry.c`/`heap.c`/`image.c` remain C) and
+  `static-libs-translation-audit.md` (the algorithm rlibs). The
+  interesting exception engine — `RtlDispatchException`,
   `RtlUnwind`, `RtlRaiseException`, frame walking, `.pdata`/`.xdata` on
   amd64/arm64, `fs:[0]` chain walk on i386 — lives here, **not** in
   ntdll. ntdll-rust cohabits with C `RtlDispatchException` via ntdll-sys
@@ -692,6 +772,13 @@ one cmake target.
 
 ## Translation order
 
+> **STATUS 2026-06-01:** Phases 1–5 below are **complete** (steps 1–14, all
+> ✅ — see [Current state](#current-state-2026-06-01)). The plan executed
+> essentially as written, leaf→root, smoke-gated per flip. Deviations:
+> Phase 1's substrate delta was done per-file at integration instead of via a
+> wrapper rebuild, and the dispatch `.S` pre-processing (Phase 1 last bullet)
+> was skipped (asm left in the C build). Steps below are kept for the record.
+
 Leaf→root, smoke-gated per file flip. Every file is on the boot spine,
 so smoke is a complete regression gate (`feedback_no_post_shell_harness_prereq`).
 
@@ -790,46 +877,92 @@ until fixed.
   (verify by `grep _DummyPseh_RaiseSecondChance
   sdk/lib/rust/ntdll-rust/data/asm/*.s` — must hit ×2 per arch file).
 
-## Open questions
+## Remaining work + future plans
 
-1. **Track placement.** Own audit/branch (`worktree-ntdll`?), or fold
-   into the in-flight smss-csrss worktree (extends an audit that
-   currently scopes ntdll *out*)? Decision pending — surfaced in
-   brainstorm; no clear winner. Either works; affects parallelism with
-   smss-csrss agent.
-2. **Timing.** Per the user's direction (2026-05-24), gate on
-   `libcntpr` and `rtl-strings` tracks landing more state — the
-   stateful-rtl bits ntdll cohabits with should mature first. Not a
-   hard blocker (cohabitation works with C rtl) but reduces churn.
-3. ~~**rtl_um OBJECT lib reuse check.**~~ **RESOLVED 2026-05-24.**
-   Verified `rtl/libsupp.c`/`uilist.c`/`version.c` are *only* compiled
-   into ntdll (`grep -rn` returns no hits outside `dll/ntdll/`). No
-   family-vars `feedback_libcntpr_shared_source_crt` treatment needed;
-   per-file `OBJECT`-lib comment-out works directly.
-4. **Rust `LdrpLoaderLock` layout.** Does Rust's `core::sync::atomic`
-   ABI for `compare_exchange` match C `_InterlockedCompareExchange` on
-   the embedded `RTL_CRITICAL_SECTION.LockCount` field for all 3 arches?
-   Verified pattern elsewhere in the kernel port; document and
-   size-assert before flipping libsupp.c.
-5. **ntdll_vista ownership.** It's a separate DLL (16 LOC of glue + 154
-   LOC of ldrnotify + 3 LOC stub + a separate `rtl_vista` linkage).
-   Translate as part of this audit (recommended) or defer as "Vista+
-   surface"? Recommend in-scope — the LOC is trivial and it shares
-   substrate.
-6. **PE forwarder decoration on i386.** spec2def emits PE forwarder
-   records for export entries that redirect to other DLLs (count is
-   small in ntdll.spec — the audit's earlier "616 forwarders" claim
-   was wrong, regex matched `-version=0x502` flags not forwarder
-   targets). The LLD i386 forwarder-decoration bug
-   (`feedback_i386_pe_decoration`, FreeLDR peloader workaround)
-   applies — verify any forwarder targets survive cohabitation.
-7. **PSEH source-level macro vs the `dispatch.S` `_USE_DUMMY_PSEH`
-   blocks.** The dispatch.S blocks are gated on
-   `_USE_DUMMY_PSEH || _USE_PSEH_CLANG`. If the project ever moves to
-   PSEH_CLANG (real SEH), the blocks need to stay (the comment
-   acknowledges PSEH_CLANG handlers can miss some exceptions). Document
-   in the pre-processed `.s` files so they aren't stripped on a later
-   "PSEH cleanup" pass.
+The body is **100% flipped** and boots green ×3. The C bodies are all done;
+what's left is landing + out-of-body follow-ups:
+
+1. **Commit the uncommitted flips** (this session). All three translated +
+   integrated, green ×3 (i386 cold-green), currently UNCOMMITTED on
+   `ntdll-rust-port`. The user asked to bundle the doc update into this commit:
+   - `ldr/ldrapi.rs` (loader public API) + `ldr/mod.rs`, `lib.rs`,
+     `nt_0600/dllmain.rs`, `dll/ntdll/CMakeLists.txt`. **Closes `ldr/`.**
+   - `nt_0600/ldr/ldrnotify.rs` (+ `nt_0600/ldr/mod.rs`, `nt_0600/CMakeLists.txt`,
+     `ldrnotify_rust_stub.c`) — ungated (both ntdll.dll + ntdll_vista.dll, like
+     `nt_0600::ldr`'s `LdrpHeap`).
+   - `dispatch/mod.rs` (+ `lib.rs` cfg-gate, `CMakeLists.txt`) — `#[cfg(aarch64)]`.
+   Then ff-merge `ntdll-rust-port` → `continue-rust-port`.
+2. **Dispatcher `.S` stays asm — permanently.** Not a translation target
+   (kernel-built stack contracts + ml64 SEH pseudo-ops). The DUMMY_PSEH
+   safety-net blocks in `dispatch/{i386,amd64}/dispatch.S` are load-bearing;
+   do not "clean up" (see design note in §"Dispatchers stay asm").
+
+**Done this session (was "remaining"):**
+- ✅ `nt_0600/ldr/ldrnotify.c` → `ldrnotify.rs`. The self-referential static CS
+  + list head became zeroed statics + lazy `RtlInitializeCriticalSection` /
+  `InitializeListHead` (AtomicU32 once-guard). Watched the companion-DLL cascade
+  rule (`feedback_cohab_flip_companion_dll_cascade`) — clean because the module
+  only calls ntdll imports + `LdrpHeap`. i386 cold-green.
+- ✅ `dispatch/dispatch.c` → `dispatch/mod.rs` (arm64 only:
+  `KiRaiseUserExceptionDispatcher` + `KiUserCallbackDispatcher`; `#[cfg(aarch64)]`
+  so the x86 `.S` keeps ownership — `nm` confirms 0 defs in the x86 rust `.a`).
+  arm64 green (`shell ready` + `_tWinMain` exercises the win32k callback path).
+
+**Cross-track coordination (smss-csrss-rust agent):**
+- **smlib / csrlib client flip — DONE 2026-06-02.** csrlib (`Csr*` client →
+  ntdll.dll) and smlib (`SmConnectToSm`/`SmSendMsgToSm` → ntdll_vista.dll)
+  flipped to the existing `smss-csrss-rust` translations via lean
+  `csrlib_only` / `smlib_only` cargo features (compile ONLY the one client
+  module — no csrsrv/server globals). Each built into its own target dir
+  (`csrlib-rust-target` → `libcsrlib_rust.a`, `smlib-rust-target` →
+  `libsmlib_rust.a`) and added to the ntdll / ntdll_vista link lines; the C
+  (api/capture/connect.c, smclient.c) commented out + stubbed. csrsrv.dll +
+  smss.exe were already green (their archives carry Rust smlib) — only
+  ntdll_vista needed the new archive (the companion cascade,
+  `feedback_cohab_flip_companion_dll_cascade`). **GREEN ×3** (i386/amd64 shell
+  ready, arm64 live CSR LPC dispatch). One runtime bug fixed:
+  `size_of_val()` on bindgen's narrow `CSR_PORT_NAME` under-counted the
+  port-name buffer (`feedback_sizeof_narrow_bindgen_wide_literal`). The whole
+  smss/csrss spine is now Rust client+server. Branch
+  `smlib-csrlib-client-flip` (worktree vibeos-wt-ntdll); see
+  `project_smlib_csrlib_client_flip_deferred`. **Do not re-translate** smlib/
+  csrlib — they're done.
+
+**Out-of-body follow-ups (separate tracks, not ntdll PE work):**
+- The rtl exception engine (`RtlDispatchException`/`RtlUnwind`/`.pdata`),
+  rtl heap, and libcntpr printf-family still cohabit as C via FFI. Maturing
+  those (rtl-strings / cnt_rust_prep tracks) reduces the C surface ntdll
+  links but is **not** required for the ntdll body to be "done".
+- Optional hardening: an explicit `tests/qemu/test_ntdll_exports.py` that
+  `nm`s the final `ntdll.dll` and asserts the 4 must-not-drift exports at
+  exact i386/amd64/arm64 decorations (smoke covers this implicitly today).
+- Idiomation pass (Stage 2/3): the flipped files are transliterations
+  (`write_volatile`/`Result`/RAII not yet applied). De-transliteration per
+  `project_rust_idiomation_plan` is future polish, not correctness.
+
+## Open questions — resolved by implementation
+
+1. ~~**Track placement.**~~ **RESOLVED.** Own worktree `vibeos-wt-ntdll`,
+   branch `ntdll-rust-port` (ff to `continue-rust-port`). Ran in parallel
+   with smss-csrss without conflict.
+2. ~~**Timing / gate on libcntpr+rtl-strings.**~~ **RESOLVED — proceeded
+   anyway.** Cohabitation with C rtl/libcntpr worked fine; the body flipped
+   without waiting. Some churn absorbed (e.g. rtl-strings cabi alloc stubs,
+   `feedback_rtl_strings_alloc_stubs`) but no blocker.
+3. ~~**rtl_um OBJECT lib reuse check.**~~ **RESOLVED 2026-05-24.** Sources
+   only compiled into ntdll; per-file OBJECT-lib comment-out works directly.
+4. ~~**Rust `LdrpLoaderLock` layout / atomic ABI.**~~ **RESOLVED.**
+   libsupp.c + ldrinit.c flipped and boot green ×3 — the
+   `RTL_CRITICAL_SECTION`/interlocked layout holds across arches.
+5. ~~**ntdll_vista ownership.**~~ **RESOLVED — in-scope.** DllMain + LdrpHeap
+   flipped; only ldrnotify.c (154 LOC) remains. Surfaced the companion-DLL
+   cold-link cascade lesson (`feedback_cohab_flip_companion_dll_cascade`).
+6. **PE forwarder decoration on i386** — no forwarder breakage observed
+   through the flip; `feedback_i386_pe_decoration` discipline held. Keep the
+   check in mind for the remaining ldrnotify flip.
+7. **PSEH / `dispatch.S` DUMMY_PSEH blocks** — moot for now: the `.S` files
+   were left untouched in the C build, so the blocks are intact. Re-check if
+   a future PSEH_CLANG move happens.
 
 ## Cross-references
 
@@ -839,7 +972,13 @@ until fixed.
   `feedback_sibling_rlib_ntapi_abi`, `feedback_i386_pe_decoration`
 - Cohabitation pattern: `feedback_freeldr_dll_translation`,
   `feedback_libcntpr_shared_source_crt`,
-  `feedback_csrss_cohabitation_dual_archive`
+  `feedback_csrss_cohabitation_dual_archive`,
+  `feedback_cohab_flip_companion_dll_cascade` (companion-DLL cold-link
+  cascade — the ntdll_vista lesson)
+- Integration hygiene: `feedback_rustconv_header_types_integration`,
+  `feedback_write_bytes_element_count`,
+  `feedback_rustconv_scanner_sal_callback_preproc`,
+  `feedback_rtl_strings_alloc_stubs`
 - Asm pre-processing: `feedback_hal_asm_not_global_asm_reducible`,
   ntoskrnl-translation-audit.md milestone 16
 - `static`-on-data-export: `feedback_volatile_static`,

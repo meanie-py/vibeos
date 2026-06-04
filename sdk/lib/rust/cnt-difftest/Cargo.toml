@@ -12,6 +12,7 @@ publish = false
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", features = ["cabi"] }
+cnt-ctype = { path = "../cnt-ctype" }
 
 [build-dependencies]
 cc = "1"

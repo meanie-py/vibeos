@@ -29,6 +29,15 @@ static CSR_PORT_NAME_W: [u16; 8] = [
 // consume it via the ntdll-sys bindgen `extern { static mut CsrApiPort }`
 // (in scope through `use ntdll_sys::nt::*`).
 // #[no_mangle] pub static mut CsrApiPort: HANDLE = core::ptr::null_mut();
+//
+// EXCEPTION — the `csrlib_only` lean build (ntdll.dll client flip): there
+// csrsrv/init.rs is gated OUT of the archive, so nobody else defines
+// `_CsrApiPort` and the loader symbol would be undefined. csrlib supplies
+// its own copy here, exactly as the C connect.c did (`HANDLE CsrApiPort;`).
+// In every other build csrsrv/init.rs owns it and this stays OFF (no dup).
+#[cfg(feature = "csrlib_only")]
+#[no_mangle]
+pub static mut CsrApiPort: HANDLE = core::ptr::null_mut();
 
 #[no_mangle]
 pub static mut CsrProcessId: HANDLE = core::ptr::null_mut();
@@ -76,8 +85,13 @@ unsafe fn CsrpConnectToServer(ObjectDirectory: PCWSTR) -> NTSTATUS {
         ptr = ptr.add(1);
     }
 
+    // C: sizeof(CSR_PORT_NAME) == sizeof(L"ApiPort") == 8 WCHAR == 16 bytes.
+    // bindgen mangled CSR_PORT_NAME to a narrow &[u8;8] (8 bytes), so
+    // size_of_val(CSR_PORT_NAME) under-counts by 8 → buffer too short →
+    // RtlAppendUnicodeToString can't fit "ApiPort" → STATUS_OBJECT_NAME_INVALID
+    // at connect → critical client dies → 0xc000021a. Use the wide [u16;8].
     PortNameLength = ((dir_len + 1) * core::mem::size_of::<u16>()) +
-                     core::mem::size_of_val(CSR_PORT_NAME);
+                     core::mem::size_of_val(&CSR_PORT_NAME_W);
     if PortNameLength > UNICODE_STRING_MAX_BYTES {
         return STATUS_NAME_TOO_LONG;
     }

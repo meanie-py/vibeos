@@ -1,0 +1,36 @@
+# Cargo-driven `uefildr.efi` link PoC (i386). UEFI-bootloader sibling of
+# `ntoskrnl-cargo` / `kdcom-cargo` / `bootvid-cargo`.
+#
+# FreeLDR's body is already Rust (freeldr-rust, cohabitation); this crate
+# drives the *final* `uefildr.efi` link from cargo instead of cmake. Like
+# the other -cargo PoCs it REUSES the cmake-built artifacts (run `ninja
+# uefildr` / `ninja livecd` in build-i386/ first) — the big C aggregate
+# `libuefifreeldr_common.a`, the sibling leaf libs, the prebuilt
+# `strsafe_shim.c.obj`, and crucially `libfreeldr_rust_uefi.a` (built by
+# cmake with `--features uefi,uefildr-rust-entry`, which is where the
+# `_EfiEntry` entry point lives). build.rs then links them with the EFI
+# subsystem via the shared `reactos-link` engine
+# (`ModuleKind::EfiApplication`).
+#
+# Reusing the cmake-built libfreeldr_rust_uefi.a (rather than rebuilding
+# the staticlib through reactos-link) guarantees byte-identical Rust
+# codegen to the shipping cmake loader and carries the two cargo features
+# that the engine's `.rust_staticlib()` can't pass.
+#
+# Success criterion: cargo's uefildr.efi boots the i386 livecd in QEMU
+# exactly like cmake's (smoke i386). amd64/arm64 stay on the cmake link
+# (reactos-link is i386-only today).
+
+[package]
+name = "uefildr-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "uefildr"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

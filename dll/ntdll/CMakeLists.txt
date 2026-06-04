@@ -76,15 +76,55 @@ add_custom_command(
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrpe.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrutils.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrinit.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrapi.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/verifier.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/dispatch/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
         ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
+        ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrnotify.rs
         ${NTDLL_RUST_WS}/ntdll-rust/Cargo.toml
         ${NTDLL_RUST_WS}/ntdll-sys/src/lib.rs
     COMMENT "Building ntdll-rust (${NTDLL_RUST_TGT}, default features) for ntdll.dll"
     VERBATIM)
 add_custom_target(ntdll_rust_main_lib DEPENDS ${NTDLL_RUST_MAIN_LIB})
+# --------------------------------------------------------------------
+
+# --- Rust cohabitation (smss-csrss-rust, csrlib_only) ---------------
+# csrlib's 16 client CSR exports (api.c/capture.c/connect.c, commented
+# out in subsystems/csr/csrlib/CMakeLists.txt) now come from a LEAN
+# `csrlib_only` build of smss-csrss-rust — ONLY the csrlib module, NO
+# csrsrv server runtime and NO csrsrv data globals (csrlib supplies its
+# own client-side `CsrApiPort`, mirroring the C connect.c). Its own
+# target dir (separate from ntdll-rust above) → a distinct
+# libcsrlib_rust.a. Mirrors csrsrv.dll's cargo→.a cohab. The .c stay on
+# disk. See project_smlib_csrlib_client_flip_deferred (landed 2026-06-02)
+# + docs/engineering/ntdll-translation-audit.md.
+set(NTDLL_CSRLIB_RUST_TGTDIR "${CMAKE_CURRENT_BINARY_DIR}/csrlib-rust-target")
+set(NTDLL_CSRLIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcsrlib_rust.a")
+add_custom_command(
+    OUTPUT ${NTDLL_CSRLIB_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${NTDLL_CSRLIB_RUST_TGTDIR} ${NTDLL_RUST_ENV}
+        cargo build --release --target ${NTDLL_RUST_TGT}
+            -p smss-csrss-rust
+            --no-default-features --features csrlib_only,ntddi_ws03
+            --manifest-path ${NTDLL_RUST_WS}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${NTDLL_CSRLIB_RUST_TGTDIR}/${NTDLL_RUST_TGT}/release/libsmss_csrss_rust.a
+        ${NTDLL_CSRLIB_RUST_LIB}
+    DEPENDS
+        ${NTDLL_RUST_WS}/smss-csrss-rust/src/lib.rs
+        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/mod.rs
+        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/api.rs
+        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/capture.rs
+        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/connect.rs
+        ${NTDLL_RUST_WS}/smss-csrss-rust/Cargo.toml
+        ${NTDLL_RUST_WS}/ntdll-sys/src/lib.rs
+    COMMENT "Building smss-csrss-rust (csrlib_only, ${NTDLL_RUST_TGT}) for ntdll.dll"
+    VERBATIM)
+add_custom_target(ntdll_csrlib_rust_lib DEPENDS ${NTDLL_CSRLIB_RUST_LIB})
 # --------------------------------------------------------------------
 
 # On NT6+ this is used by advapi32 (only linked at DLL_EXPORT_VERSION>=0x600;
@@ -99,8 +139,15 @@ add_dependencies(etwtrace psdk)
 list(APPEND SOURCE
     # dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
     #   DbgUi* now provided by libntdll_rust.a (below)
-    ldr/ldrapi.c
-    ldr/ldrinit.c
+    # ldr/ldrapi.c — replaced by Rust (ntdll-rust/src/ldr/ldrapi.rs);
+    #   LdrLoadDll/LdrUnloadDll/LdrGetProcedureAddress/LdrGetDllHandleEx +
+    #   loader public API (LdrLock/UnlockLoaderLock, LdrFindEntryForAddress,
+    #   LdrQueryProcessModuleInformation, LdrEnumerateLoadedModules, …) now
+    #   provided by libntdll_rust.a (below)
+    # ldr/ldrinit.c — replaced by Rust (ntdll-rust/src/ldr/ldrinit.rs);
+    #   LdrpInitialize/LdrpInitializeProcess/LdrpInitializeThread + loader-init
+    #   core (TLS init, security cookie, exec-options, process-compat) now
+    #   provided by libntdll_rust.a (below)
     # ldr/ldrpe.c — replaced by Rust (ntdll-rust/src/ldr/ldrpe.rs);
     #   LdrpSnapIAT/LdrpSnapThunk/LdrpWalkImportDescriptor/LdrpLoadImportModule
     #   + import-descriptor handlers now provided by libntdll_rust.a (below)
@@ -118,7 +165,11 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE dispatch/amd64/dispatch.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE dispatch/arm64/dispatch.S)
-    list(APPEND SOURCE dispatch/dispatch.c)
+    # dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,
+    #   #[cfg(aarch64)]); the arm64 .S still owns KiUserExceptionDispatcher /
+    #   KiUserApcDispatcher / LdrInitializeThunk, so the Rust module provides only
+    #   KiRaiseUserExceptionDispatcher + KiUserCallbackDispatcher (the two the C
+    #   contributed on arm64). Now provided by libntdll_rust.a (below).
 else()
     list(APPEND SOURCE dispatch/dispatch.c)
 endif()
@@ -142,12 +193,14 @@ set_target_properties(ntdll PROPERTIES C_STANDARD 23)
 set_subsystem(ntdll console)
 ################# END  HACK #################
 
-target_link_libraries(ntdll ntdll_vista_static etwtrace csrlib rtl rtl_um rtl_vista ntdllsys libcntpr setjmp uuid ${PSEH_LIB} ${NTDLL_RUST_MAIN_LIB})
+target_link_libraries(ntdll ntdll_vista_static etwtrace csrlib rtl rtl_um rtl_vista ntdllsys libcntpr setjmp uuid ${PSEH_LIB} ${NTDLL_RUST_MAIN_LIB} ${NTDLL_CSRLIB_RUST_LIB})
 # Rust .a provides the rtl_um symbols whose .c are commented out
 # (RtlConvertUiListToApiList, …); --allow-multiple-definition covers the
 # panic_handler/eh_personality overlap with librtl's Rust and the cohab
-# swap-in window (lld first-match). add_dependencies forces the cargo build.
-add_dependencies(ntdll ntdll_rust_main_lib)
+# swap-in window (lld first-match). libcsrlib_rust.a likewise provides the
+# 16 Csr* client exports (csrlib's .c commented out). add_dependencies
+# forces both cargo builds.
+add_dependencies(ntdll ntdll_rust_main_lib ntdll_csrlib_rust_lib)
 target_link_options(ntdll PRIVATE "-Wl,--allow-multiple-definition")
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     target_link_libraries(ntdll cryptlib)

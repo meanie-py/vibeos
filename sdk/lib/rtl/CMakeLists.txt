@@ -32,7 +32,7 @@ list(APPEND SOURCE
     # acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)
     appverifier.c
     assert.c
-    atom.c
+    # atom.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ATM)
     # avltable.c — replaced by Rust implementation (sdk/lib/rust/avltable/)
     # bitmap.c — replaced by Rust implementation (sdk/lib/rust/bitmap/)
     bootdata.c
@@ -43,7 +43,7 @@ list(APPEND SOURCE
     debug.c
     # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # encode.c — replaced by Rust implementation (sdk/lib/rust/encode/)
-    env.c
+    # env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
     error.c
     exception.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
@@ -59,29 +59,29 @@ list(APPEND SOURCE
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
     memstream.c
     message.c
-    network.c
+    # network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
     # nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
-    path.c
+    # path.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PATH)
     ppb.c
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
-    priv.c
-    process.c
+    # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
+    # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
     propvar.c
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
     rangelist.c
     registry.c
     res.c
-    resource.c
+    # resource.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave RES)
     rxact.c
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
-    security.c
+    # security.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SEC)
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
     slist.c
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
     sysvol.c
-    thread.c
+    # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
-    timezone.c
+    # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
     trace.c
     # unicode.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
@@ -214,11 +214,19 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/conv.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/dos8dot3.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/env.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/misc.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/nls.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/path.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/priv_mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/process.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/resource.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/acl.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sd.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sec.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/sid.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/thread.rs
+            ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/timezone.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/Cargo.toml

@@ -3624,15 +3624,763 @@ fn diff_rtl_self_relative_to_absolute_sd2() {
 
 #[test]
 fn diff_rtl_copy_security_descriptor() {
-    // RtlAllocateHeap=NULL in the harness ⇒ both sides return STATUS_NO_MEMORY.
+    // RtlAllocateHeap is now heap-backed in the harness (Wave SEC).
+    // Use mk_relative_sd inputs (self-relative, contiguous in one buffer)
+    // so the C-faithful `memcpy(total_bytes_from_src)` actually copies
+    // valid payload. Absolute-SD inputs would memcpy past the small
+    // header struct into uninit memory — matches the C bug but breaks
+    // the post-copy `RtlLengthSecurityDescriptor` walk.
     let mut rng = Rng(0x5D20_0004);
     for _ in 0..1_000 {
-        let (sd, _o, _g, _d, _s) = mk_absolute_sd(&mut rng);
+        let sd = mk_relative_sd(&mut rng);
         let (mut dc, mut dr): (*mut u8, *mut u8) = (core::ptr::null_mut(), core::ptr::null_mut());
         let rc = unsafe { cabi::RtlCopySecurityDescriptor(sd.as_ptr() as _, &mut dc as *mut _ as _) };
         let rr = unsafe { ref_RtlCopySecurityDescriptor(sd.as_ptr(), &mut dr) };
         assert_eq!(rc, rr, "RtlCopySecurityDescriptor status");
-        assert_eq!(dc as usize, dr as usize, "RtlCopySecurityDescriptor out ptr");
+        if rc == 0 {
+            let len = unsafe { cabi::RtlLengthSecurityDescriptor(dc as *const _) };
+            let cs = unsafe { core::slice::from_raw_parts(dc, len as usize) };
+            let rs = unsafe { core::slice::from_raw_parts(dr, len as usize) };
+            assert_eq!(cs, rs, "RtlCopySecurityDescriptor content");
+        } else {
+            assert_eq!(dc as usize, dr as usize, "RtlCopySecurityDescriptor failure out ptr");
+        }
     }
 }
 
+// =====================================================================
+// Wave ENV-1 — env.c pure string-walk diff
+// =====================================================================
+
+extern "C" {
+    fn ref_RtlQueryEnvironmentVariable_U(
+        env: *mut u16,
+        name: *const UNICODE_STRING,
+        value: *mut UNICODE_STRING,
+    ) -> i32;
+    fn ref_RtlExpandEnvironmentStrings_U(
+        env: *mut u16,
+        source: *const UNICODE_STRING,
+        destination: *mut UNICODE_STRING,
+        length: *mut u32,
+    ) -> i32;
+    fn ref_RtlSetEnvironmentVariable(
+        env: *mut *mut u16,
+        name: *const UNICODE_STRING,
+        value: *const UNICODE_STRING,
+    ) -> i32;
+    fn ref_RtlCreateEnvironment(inherit: u8, out_env: *mut *mut u16) -> i32;
+    fn ref_RtlDestroyEnvironment(env: *mut u16);
+    // Wave SEC
+    fn ref_RtlpSetSecurityObject(
+        object: *mut u8,
+        security_information: u32,
+        modification_descriptor: *const u8,
+        objects_security_descriptor: *mut *mut u8,
+        auto_inherit_flags: u32,
+        pool_type: u32,
+        generic_mapping: *const u8,
+        token: *mut u8,
+    ) -> i32;
+    fn ref_RtlQuerySecurityObject(
+        object_descriptor: *const u8,
+        security_information: u32,
+        resultant_descriptor: *mut u8,
+        descriptor_length: u32,
+        return_length: *mut u32,
+    ) -> i32;
+    // The shared heap-backed Nt*VirtualMemory stubs (in env ref TU).
+    fn NtAllocateVirtualMemory(
+        process: *mut u8,
+        base: *mut *mut u8,
+        zero_bits: usize,
+        size: *mut usize,
+        alloc_type: u32,
+        protect: u32,
+    ) -> i32;
+}
+
+/// Build an env block from `(name, value)` pairs. Format:
+///   NAME=VALUE\0NAME=VALUE\0...\0
+/// The final extra `\0` terminates the block (double-NUL).
+fn mk_env(pairs: &[(&str, &str)]) -> Vec<u16> {
+    let mut out: Vec<u16> = Vec::new();
+    for &(n, v) in pairs {
+        out.extend(n.encode_utf16());
+        out.push(b'=' as u16);
+        out.extend(v.encode_utf16());
+        out.push(0);
+    }
+    out.push(0); // double-NUL terminator
+    out
+}
+
+fn to_u16(s: &str) -> Vec<u16> {
+    s.encode_utf16().collect()
+}
+
+fn mk_us(buf: &mut [u16]) -> UNICODE_STRING {
+    UNICODE_STRING {
+        Length: (buf.iter().take_while(|&&c| c != 0).count() * 2) as u16,
+        MaximumLength: (buf.len() * 2) as u16,
+        Buffer: buf.as_mut_ptr(),
+    }
+}
+
+/// Build a query-input UNICODE_STRING from a string (no trailing NUL).
+fn mk_us_in(buf: &mut Vec<u16>) -> UNICODE_STRING {
+    UNICODE_STRING {
+        Length: (buf.len() * 2) as u16,
+        MaximumLength: (buf.len() * 2) as u16,
+        Buffer: buf.as_mut_ptr(),
+    }
+}
+
+#[test]
+fn diff_rtl_query_environment_variable_u() {
+    let cases: &[&[(&str, &str)]] = &[
+        &[("PATH", "/usr/bin"), ("HOME", "/root"), ("USER", "admin")],
+        &[("A", "1"), ("B", "22"), ("C", "333")],
+        &[("EMPTY", ""), ("X", "y")],
+        &[("=C:", "C:\\foo"), ("PATH", "C:\\bin")], // hidden cwd
+        &[
+            ("Long_Variable_Name_42", "and_a_long_value_too_yes_yes"),
+            ("short", "v"),
+        ],
+        &[],
+        &[("ONE", "1")],
+    ];
+    let queries = &[
+        "PATH", "path", "PaTh", "HOME", "USER", "MISSING", "A", "B", "C", "EMPTY", "ONE",
+        "Long_Variable_Name_42", "long_variable_name_42",
+    ];
+    let buf_sizes = [0usize, 1, 8, 32, 128];
+
+    for case in cases {
+        let mut env = mk_env(case);
+        for q in queries {
+            for &bsz in &buf_sizes {
+                let mut name_buf = to_u16(q);
+                let name_us = mk_us_in(&mut name_buf);
+
+                let mut bc = vec![0u16; bsz.max(1)];
+                let mut br = vec![0u16; bsz.max(1)];
+                let mut us_c = UNICODE_STRING {
+                    Length: 0,
+                    MaximumLength: (bsz * 2) as u16,
+                    Buffer: bc.as_mut_ptr(),
+                };
+                let mut us_r = UNICODE_STRING {
+                    Length: 0,
+                    MaximumLength: (bsz * 2) as u16,
+                    Buffer: br.as_mut_ptr(),
+                };
+
+                let sc = unsafe {
+                    cabi::RtlQueryEnvironmentVariable_U(env.as_mut_ptr(), &name_us, &mut us_c)
+                };
+                let sr = unsafe {
+                    ref_RtlQueryEnvironmentVariable_U(env.as_mut_ptr(), &name_us, &mut us_r)
+                };
+                assert_eq!(sc, sr, "status mismatch: query={:?} bsz={}", q, bsz);
+                assert_eq!(us_c.Length, us_r.Length, "Length mismatch: query={:?}", q);
+                // Compare buffers up to whatever MaximumLength allowed.
+                let cmp_len = (us_r.Length as usize / 2).min(bsz);
+                assert_eq!(
+                    &bc[..cmp_len],
+                    &br[..cmp_len],
+                    "buffer mismatch: query={:?} bsz={}",
+                    q,
+                    bsz
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_expand_environment_strings_u() {
+    let env_pairs: &[(&str, &str)] = &[
+        ("PATH", "/usr/bin"),
+        ("HOME", "/root"),
+        ("USER", "admin"),
+        ("EMPTY", ""),
+        ("X", "y"),
+    ];
+    let sources = &[
+        "no vars here",
+        "%PATH%",
+        "prefix %PATH% middle %HOME% suffix",
+        "%MISSING% literal",
+        "%PATH",                  // unfinished
+        "literal % alone",
+        "%%escape",               // double percent (literal first %)
+        "%X%%Y%",                 // adjacent
+        "",
+        "%PATH%%USER%/%HOME%",
+        "%EMPTY%",
+        "%path%",                 // case-insensitive
+        "tail%",
+    ];
+    let dst_sizes = [0usize, 1, 4, 16, 64, 256];
+
+    let mut env = mk_env(env_pairs);
+    for src in sources {
+        let mut src_buf = to_u16(src);
+        let src_us = UNICODE_STRING {
+            Length: (src_buf.len() * 2) as u16,
+            MaximumLength: (src_buf.len() * 2) as u16,
+            Buffer: src_buf.as_mut_ptr(),
+        };
+        for &dsz in &dst_sizes {
+            let mut bc = vec![0u16; dsz.max(1)];
+            let mut br = vec![0u16; dsz.max(1)];
+            let mut dc = UNICODE_STRING {
+                Length: 0,
+                MaximumLength: (dsz * 2) as u16,
+                Buffer: bc.as_mut_ptr(),
+            };
+            let mut dr = UNICODE_STRING {
+                Length: 0,
+                MaximumLength: (dsz * 2) as u16,
+                Buffer: br.as_mut_ptr(),
+            };
+            let mut lc: u32 = 0xDEAD_BEEF;
+            let mut lr: u32 = 0xDEAD_BEEF;
+            let sc = unsafe {
+                cabi::RtlExpandEnvironmentStrings_U(
+                    env.as_mut_ptr(),
+                    &src_us,
+                    &mut dc,
+                    &mut lc as *mut u32,
+                )
+            };
+            let sr = unsafe {
+                ref_RtlExpandEnvironmentStrings_U(
+                    env.as_mut_ptr(),
+                    &src_us,
+                    &mut dr,
+                    &mut lr as *mut u32,
+                )
+            };
+            assert_eq!(sc, sr, "status mismatch: src={:?} dsz={}", src, dsz);
+            assert_eq!(dc.Length, dr.Length, "Length: src={:?} dsz={}", src, dsz);
+            assert_eq!(lc, lr, "Length out-param: src={:?} dsz={}", src, dsz);
+            let n = (dc.Length / 2) as usize;
+            // Buffer must match up to chars written. (Trailing NUL
+            // beyond that may or may not be present.)
+            assert_eq!(&bc[..n], &br[..n], "buf: src={:?} dsz={}", src, dsz);
+        }
+    }
+    let _ = mk_us;
+}
+
+/// Allocate a page-aligned env block via the VM stub and copy
+/// `pairs` into it (double-NUL-terminated). Returns the env pointer
+/// (NOT freed by this test — leaks; that's fine for fuzz coverage).
+unsafe fn vm_alloc_env(pairs: &[(&str, &str)]) -> *mut u16 {
+    let mut base: *mut u8 = core::ptr::null_mut();
+    let mut size: usize = 0x1000; // one page; stubs round up
+    let s = NtAllocateVirtualMemory(
+        core::ptr::null_mut(),
+        &mut base,
+        0,
+        &mut size,
+        0x3000, /* MEM_RESERVE|MEM_COMMIT */
+        4,      /* PAGE_READWRITE */
+    );
+    assert_eq!(s, 0, "vm alloc");
+    let env = base as *mut u16;
+    let mut off = 0usize;
+    for &(n, v) in pairs {
+        for c in n.encode_utf16() {
+            env.add(off).write(c);
+            off += 1;
+        }
+        env.add(off).write(b'=' as u16);
+        off += 1;
+        for c in v.encode_utf16() {
+            env.add(off).write(c);
+            off += 1;
+        }
+        env.add(off).write(0);
+        off += 1;
+    }
+    env.add(off).write(0); // double-NUL
+    env
+}
+
+/// Compute walkable env length (chars incl. final double-NUL) by
+/// the same algorithm SetEnvironmentVariable uses internally.
+unsafe fn env_chars(env: *mut u16) -> usize {
+    if env.is_null() || *env == 0 {
+        return 1;
+    }
+    let mut end = 0usize;
+    loop {
+        let mut k = 0;
+        while *env.add(end + k) != 0 {
+            k += 1;
+        }
+        end += k + 1;
+        if *env.add(end) == 0 {
+            return end + 1;
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_set_environment_variable_seq() {
+    // Each scenario = (initial env, sequence of (name, Option<value>) ops).
+    // value=None means delete the variable.
+    let scenarios: &[(&[(&str, &str)], &[(&str, Option<&str>)])] = &[
+        // Pure insertion-at-end (alphabetical order matters):
+        (&[], &[("PATH", Some("/usr/bin"))]),
+        // Insert + replace + delete:
+        (
+            &[("PATH", "/old"), ("HOME", "/root")],
+            &[
+                ("USER", Some("admin")),
+                ("PATH", Some("/new/longer/path/value")),
+                ("HOME", None),
+            ],
+        ),
+        // Insert before existing var (sort order):
+        (
+            &[("ZZZ", "last")],
+            &[("AAA", Some("first")), ("MMM", Some("middle"))],
+        ),
+        // Replace with shorter value (no realloc):
+        (
+            &[("VAR", "very_long_value_here_xxx")],
+            &[("VAR", Some("y"))],
+        ),
+        // Replace with longer value (forces tail-shift):
+        (
+            &[("A", "1"), ("B", "2"), ("C", "3")],
+            &[("B", Some("very_long_replacement_22"))],
+        ),
+        // Delete first / last / middle entries:
+        (
+            &[("A", "1"), ("B", "2"), ("C", "3")],
+            &[("A", None), ("C", None), ("B", None)],
+        ),
+        // Delete non-existing (no-op):
+        (&[("X", "1")], &[("NOPE", None)]),
+        // Hidden cwd entries (var name starts with '='):
+        (
+            &[("=C:", "C:\\foo"), ("PATH", "/bin")],
+            &[("PATH", Some("/usr/local/bin"))],
+        ),
+        // Many inserts forcing tail-shift each time:
+        (
+            &[("M", "5")],
+            &[
+                ("A", Some("1")),
+                ("B", Some("2")),
+                ("C", Some("3")),
+                ("Z", Some("26")),
+            ],
+        ),
+        // Empty value:
+        (&[("X", "1")], &[("EMPTY", Some(""))]),
+        // Case-insensitive replacement:
+        (
+            &[("Path", "/foo")],
+            &[("PATH", Some("/bar")), ("path", Some("/baz"))],
+        ),
+    ];
+
+    for (idx, (initial, ops)) in scenarios.iter().enumerate() {
+        unsafe {
+            let mut env_c = vm_alloc_env(initial);
+            let mut env_r = vm_alloc_env(initial);
+
+            for (step, &(name, val)) in ops.iter().enumerate() {
+                let mut name_buf = to_u16(name);
+                let name_us = mk_us_in(&mut name_buf);
+
+                let (sc, sr) = match val {
+                    Some(v) => {
+                        let mut val_buf = to_u16(v);
+                        let val_us = UNICODE_STRING {
+                            Length: (val_buf.len() * 2) as u16,
+                            MaximumLength: (val_buf.len() * 2) as u16,
+                            Buffer: val_buf.as_mut_ptr(),
+                        };
+                        let sc = cabi::RtlSetEnvironmentVariable(&mut env_c, &name_us, &val_us);
+                        let sr = ref_RtlSetEnvironmentVariable(&mut env_r, &name_us, &val_us);
+                        (sc, sr)
+                    }
+                    None => {
+                        let sc = cabi::RtlSetEnvironmentVariable(
+                            &mut env_c,
+                            &name_us,
+                            core::ptr::null(),
+                        );
+                        let sr = ref_RtlSetEnvironmentVariable(
+                            &mut env_r,
+                            &name_us,
+                            core::ptr::null(),
+                        );
+                        (sc, sr)
+                    }
+                };
+
+                assert_eq!(
+                    sc, sr,
+                    "scenario {} step {} '{}' status",
+                    idx, step, name
+                );
+
+                // Compare resulting env blocks byte-for-byte. Use the
+                // larger of the two walked lengths so we catch
+                // missing/extra terminator divergence.
+                let lc = env_chars(env_c);
+                let lr = env_chars(env_r);
+                assert_eq!(
+                    lc, lr,
+                    "scenario {} step {} '{}' env-block length: cabi={} ref={}",
+                    idx, step, name, lc, lr
+                );
+                let cs = core::slice::from_raw_parts(env_c, lc);
+                let rs = core::slice::from_raw_parts(env_r, lr);
+                assert_eq!(
+                    cs, rs,
+                    "scenario {} step {} '{}' env-block contents diverged",
+                    idx, step, name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_set_environment_variable_random() {
+    // Random sequences of {insert, replace, delete} operations on a
+    // shared env block. Drift between the two impls compounds at each
+    // step, so a divergence at step N pins exactly which op broke.
+    let mut rng = Rng(0x5E10_0001);
+    // Pre-load a "vocabulary" of var names + values.
+    let names = ["PATH", "HOME", "USER", "SHELL", "TEMP", "TMP", "LANG", "TZ",
+                 "PWD", "ABC", "DEF", "XYZ", "Foo", "BAR", "baz", "=C:"];
+    let values = ["/usr/bin", "/root", "admin", "/bin/sh", "/tmp",
+                  "", "C:\\foo", "y", "a very long value indeed",
+                  "x", "12345"];
+
+    for trial in 0..30 {
+        unsafe {
+            let mut env_c = vm_alloc_env(&[]);
+            let mut env_r = vm_alloc_env(&[]);
+
+            for step in 0..40 {
+                let name = names[(rng.byte() as usize) % names.len()];
+                let do_delete = rng.byte() & 3 == 0;
+                let mut name_buf = to_u16(name);
+                let name_us = mk_us_in(&mut name_buf);
+
+                let (sc, sr) = if do_delete {
+                    let sc = cabi::RtlSetEnvironmentVariable(
+                        &mut env_c,
+                        &name_us,
+                        core::ptr::null(),
+                    );
+                    let sr = ref_RtlSetEnvironmentVariable(
+                        &mut env_r,
+                        &name_us,
+                        core::ptr::null(),
+                    );
+                    (sc, sr)
+                } else {
+                    let v = values[(rng.byte() as usize) % values.len()];
+                    let mut val_buf = to_u16(v);
+                    let val_us = UNICODE_STRING {
+                        Length: (val_buf.len() * 2) as u16,
+                        MaximumLength: (val_buf.len() * 2) as u16,
+                        Buffer: val_buf.as_mut_ptr(),
+                    };
+                    let sc = cabi::RtlSetEnvironmentVariable(&mut env_c, &name_us, &val_us);
+                    let sr = ref_RtlSetEnvironmentVariable(&mut env_r, &name_us, &val_us);
+                    (sc, sr)
+                };
+
+                assert_eq!(sc, sr, "trial {} step {} '{}' status", trial, step, name);
+                let lc = env_chars(env_c);
+                let lr = env_chars(env_r);
+                let cs = core::slice::from_raw_parts(env_c, lc);
+                let rs = core::slice::from_raw_parts(env_r, lr);
+                if cs != rs {
+                    // Dump for debugging.
+                    let to_str = |s: &[u16]| -> String {
+                        s.iter()
+                            .map(|&c| {
+                                if c == 0 {
+                                    "\\0".to_string()
+                                } else if c < 0x80 {
+                                    String::from(char::from_u32(c as u32).unwrap_or('?'))
+                                } else {
+                                    format!("\\x{:04x}", c)
+                                }
+                            })
+                            .collect()
+                    };
+                    panic!(
+                        "trial {} step {} op={} name='{}' diverged\n  cabi: {}\n  ref:  {}",
+                        trial,
+                        step,
+                        if do_delete { "DEL" } else { "SET" },
+                        name,
+                        to_str(cs),
+                        to_str(rs)
+                    );
+                }
+            }
+        }
+    }
+}
+
+// =====================================================================
+// Wave SEC — security.c byte-diff
+// =====================================================================
+
+/// Heap-alloc + populate a self-relative SD with the given owner/group
+/// SIDs and dacl/sacl ACL byte slices. The result is leaked (test
+/// process lifetime). Faithful to mk_relative_sd's layout from SD wave.
+unsafe fn mk_sdr_for_sec(
+    owner: &[u8],
+    group: &[u8],
+    dacl: Option<&[u8]>,
+    sacl: Option<&[u8]>,
+) -> Vec<u8> {
+    let owner_n = (owner.len() + 3) & !3;
+    let group_n = (group.len() + 3) & !3;
+    let dacl_n = dacl.map(|d| (d.len() + 3) & !3).unwrap_or(0);
+    let sacl_n = sacl.map(|s| (s.len() + 3) & !3).unwrap_or(0);
+
+    let mut buf = vec![0u8; 20 + owner_n + group_n + dacl_n + sacl_n];
+    buf[0] = 1; // Revision
+    // Control: SE_SELF_RELATIVE
+    let mut ctrl: u16 = 0x8000;
+    if dacl.is_some() {
+        ctrl |= 0x0004; // SE_DACL_PRESENT
+    }
+    if sacl.is_some() {
+        ctrl |= 0x0010; // SE_SACL_PRESENT
+    }
+    buf[2..4].copy_from_slice(&ctrl.to_le_bytes());
+
+    let mut off = 20u32;
+    let mut sacl_off = 0u32;
+    if let Some(s) = sacl {
+        sacl_off = off;
+        buf[off as usize..off as usize + s.len()].copy_from_slice(s);
+        off += sacl_n as u32;
+    }
+    let mut dacl_off = 0u32;
+    if let Some(d) = dacl {
+        dacl_off = off;
+        buf[off as usize..off as usize + d.len()].copy_from_slice(d);
+        off += dacl_n as u32;
+    }
+    let owner_off = off;
+    buf[off as usize..off as usize + owner.len()].copy_from_slice(owner);
+    off += owner_n as u32;
+    let group_off = off;
+    buf[off as usize..off as usize + group.len()].copy_from_slice(group);
+
+    // Owner/Group/Sacl/Dacl offsets in SDR header (offsets 4/8/12/16).
+    buf[4..8].copy_from_slice(&owner_off.to_le_bytes());
+    buf[8..12].copy_from_slice(&group_off.to_le_bytes());
+    buf[12..16].copy_from_slice(&sacl_off.to_le_bytes());
+    buf[16..20].copy_from_slice(&dacl_off.to_le_bytes());
+
+    buf
+}
+
+/// Build a minimal valid SID. authority=NT(5), one subauthority value.
+fn mk_simple_sid(rid: u32) -> Vec<u8> {
+    let mut sid = Vec::with_capacity(12);
+    sid.push(1); // Revision
+    sid.push(1); // SubAuthorityCount
+    sid.extend_from_slice(&[0u8, 0, 0, 0, 0, 5]); // NT authority
+    sid.extend_from_slice(&rid.to_le_bytes());
+    sid
+}
+
+/// Build a minimal ACL with the given byte content as opaque body.
+/// Just the ACL header + zero ACEs (AclSize matches).
+fn mk_empty_acl_sec() -> Vec<u8> {
+    let mut acl = Vec::with_capacity(8);
+    acl.push(2); // AclRevision
+    acl.push(0); // Sbz1
+    acl.extend_from_slice(&8u16.to_le_bytes()); // AclSize
+    acl.extend_from_slice(&0u16.to_le_bytes()); // AceCount
+    acl.extend_from_slice(&0u16.to_le_bytes()); // Sbz2
+    acl
+}
+
+#[test]
+fn diff_rtl_p_set_security_object() {
+    // Each scenario: existing_sd_parts, modification_sd_parts, security_info bits.
+    let owner1 = mk_simple_sid(0x100);
+    let group1 = mk_simple_sid(0x101);
+    let dacl1 = mk_empty_acl_sec();
+    let sacl1 = mk_empty_acl_sec();
+
+    let owner2 = mk_simple_sid(0x200);
+    let group2 = mk_simple_sid(0x201);
+
+    unsafe {
+        // Allocate existing + modification descriptors via the vm-backed
+        // RtlAllocateHeap so cabi's RtlFreeHeap works on the old one.
+        let allocate = |bytes: &[u8]| -> *mut u8 {
+            extern "C" {
+                fn RtlAllocateHeap(h: *mut u8, f: u32, n: usize) -> *mut u8;
+            }
+            let p = RtlAllocateHeap(core::ptr::null_mut(), 0, bytes.len());
+            assert!(!p.is_null(), "vm alloc");
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), p, bytes.len());
+            p
+        };
+
+        let cases: &[(u32, &[u8], &[u8], Option<&[u8]>, Option<&[u8]>)] = &[
+            (
+                0x1, // OWNER only
+                &owner2,
+                &group1,
+                Some(&dacl1),
+                None,
+            ),
+            (
+                0x2, // GROUP only
+                &owner1,
+                &group2,
+                None,
+                None,
+            ),
+            (
+                0x4, // DACL only
+                &owner1,
+                &group1,
+                Some(&dacl1),
+                None,
+            ),
+            (
+                0x8, // SACL only
+                &owner1,
+                &group1,
+                None,
+                Some(&sacl1),
+            ),
+            (
+                0xF, // ALL four
+                &owner2,
+                &group2,
+                Some(&dacl1),
+                Some(&sacl1),
+            ),
+            (
+                0x0, // None — should still produce a copy
+                &owner1,
+                &group1,
+                None,
+                None,
+            ),
+        ];
+
+        for (idx, (sec_info, mod_owner, mod_group, mod_dacl, mod_sacl)) in cases.iter().enumerate()
+        {
+            // existing SD: always full owner/group, no DACL/SACL.
+            let existing = mk_sdr_for_sec(&owner1, &group1, Some(&dacl1), Some(&sacl1));
+            let modification = mk_sdr_for_sec(mod_owner, mod_group, *mod_dacl, *mod_sacl);
+
+            let mut existing_c = allocate(&existing);
+            let mut existing_r = allocate(&existing);
+            let mod_c = allocate(&modification);
+            let mod_r = allocate(&modification);
+
+            let sc = cabi::RtlpSetSecurityObject(
+                core::ptr::null_mut(),
+                *sec_info,
+                mod_c,
+                &mut existing_c,
+                0,
+                1,
+                core::ptr::null(),
+                core::ptr::null_mut(),
+            );
+            let sr = ref_RtlpSetSecurityObject(
+                core::ptr::null_mut(),
+                *sec_info,
+                mod_r,
+                &mut existing_r,
+                0,
+                1,
+                core::ptr::null(),
+                core::ptr::null_mut(),
+            );
+
+            assert_eq!(sc, sr, "scenario {} status", idx);
+
+            if sc == 0 {
+                // Both succeeded — compare new SD byte-for-byte.
+                // The new SD is at *existing_c / *existing_r. Length is
+                // read from offsets (group is last; its size = round_up_4(SID)).
+                // Easier: rely on RtlLengthSecurityDescriptor.
+                let lc = cabi::RtlLengthSecurityDescriptor(existing_c as *const _);
+                let lr = cabi::RtlLengthSecurityDescriptor(existing_r as *const _);
+                assert_eq!(lc, lr, "scenario {} length", idx);
+                let bytes_c = core::slice::from_raw_parts(existing_c, lc as usize);
+                let bytes_r = core::slice::from_raw_parts(existing_r, lc as usize);
+                assert_eq!(bytes_c, bytes_r, "scenario {} bytes", idx);
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_rtl_query_security_object() {
+    let owner = mk_simple_sid(0x100);
+    let group = mk_simple_sid(0x101);
+    let dacl = mk_empty_acl_sec();
+    let sacl = mk_empty_acl_sec();
+
+    let existing = unsafe { mk_sdr_for_sec(&owner, &group, Some(&dacl), Some(&sacl)) };
+
+    let cases: &[u32] = &[0x0, 0x1, 0x2, 0x4, 0x8, 0xF];
+    let buf_sizes = [128usize, 256, 512];
+
+    for &sec_info in cases {
+        for &bsz in &buf_sizes {
+            let mut bc = vec![0u8; bsz];
+            let mut br = vec![0u8; bsz];
+            let mut lc: u32 = 0;
+            let mut lr: u32 = 0;
+
+            let sc = unsafe {
+                cabi::RtlQuerySecurityObject(
+                    existing.as_ptr(),
+                    sec_info,
+                    bc.as_mut_ptr(),
+                    bsz as u32,
+                    &mut lc,
+                )
+            };
+            let sr = unsafe {
+                ref_RtlQuerySecurityObject(
+                    existing.as_ptr(),
+                    sec_info,
+                    br.as_mut_ptr(),
+                    bsz as u32,
+                    &mut lr,
+                )
+            };
+            assert_eq!(sc, sr, "sec_info={:#x} bsz={} status", sec_info, bsz);
+            assert_eq!(lc, lr, "sec_info={:#x} bsz={} length", sec_info, bsz);
+            if sc == 0 {
+                assert_eq!(&bc[..lc as usize], &br[..lc as usize],
+                           "sec_info={:#x} bsz={} bytes", sec_info, bsz);
+            }
+        }
+    }
+}

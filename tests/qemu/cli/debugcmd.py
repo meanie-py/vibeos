@@ -92,6 +92,12 @@ def check(args, repo: Path) -> int:
     run = Run("check", args.arch if getattr(args, "arch", None) else "all")
     strict = bool(getattr(args, "strict", False))
     lints.run_source_lints(run, repo, strict=strict)
-    if strict and getattr(args, "arch", None):
-        lints.run_binary_lints(run, repo, args.arch, strict=True)
+    if strict:
+        # Guard the cargo-driven link PoCs (ntoskrnl/ntdll/ntdll_vista) against
+        # silent bit-rot — the pre-commit/merge gate is where to catch the
+        # off-default-path replacement links drifting. Self-skips when their
+        # prerequisites (target json / build-<arch> / nightly) are absent.
+        lints.run_cargo_link_guard(run, repo, getattr(args, "arch", None))
+        if getattr(args, "arch", None):
+            lints.run_binary_lints(run, repo, args.arch, strict=True)
     return run.finalize(repo)

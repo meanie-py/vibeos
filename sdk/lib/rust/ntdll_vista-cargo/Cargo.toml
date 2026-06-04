@@ -1,0 +1,19 @@
+# Cargo-driven `ntdll_vista.dll` link PoC (i386) — phase 1 companion to
+# ntdll-cargo. See docs/engineering/ntdll-cargo-drive-audit.md.
+#
+# ntdll_vista.dll is the NT6 layer: DllMain + Rtl*→Sm* forwarders. cargo
+# builds ntdll-rust with `--features vista` (DllMain/LdrpHeap/ldrnotify),
+# reuses the lean smlib archive + rtl_vista, and imports everything else
+# from ntdll.dll (a self-hosted import lib). Run `ninja` in build-i386 first.
+
+[package]
+name = "ntdll_vista-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ntdll_vista"
+path = "src/main.rs"
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

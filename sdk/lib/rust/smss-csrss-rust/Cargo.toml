@@ -34,6 +34,16 @@ csrss_main_only = []
 # inside ServerDllInitialization → not yet root-caused).
 basesrv_dll_only = []
 smss_exe_only    = []
+# `csrlib_only` / `smlib_only` — client-side cohabitation flips into
+# ntdll.dll (csrlib → 16 Csr* client/capture exports) and
+# ntdll_vista.dll (smlib → 7 Sm* client exports). Each compiles ONLY
+# its one client module (+ the panic handler / eh_personality), with
+# NO server code and NO `_CsrApiPort` / csrsrv data globals — so the
+# lean archive linked into the ntdll DLLs cannot shadow csrsrv.dll's
+# real data-static exports (the same reason csrss_main_only exists).
+# Set by dll/ntdll/CMakeLists.txt + dll/ntdll/nt_0600/CMakeLists.txt.
+csrlib_only = []
+smlib_only  = []
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }

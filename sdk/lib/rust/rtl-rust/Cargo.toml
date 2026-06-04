@@ -24,6 +24,7 @@ interlck     = { path = "../interlck" }
 largeint     = { path = "../largeint" }
 luid         = { path = "../luid" }
 mem          = { path = "../mem" }
+network      = { path = "../network" }
 prefix       = { path = "../prefix" }
 random       = { path = "../random" }
 slist        = { path = "../slist" }
