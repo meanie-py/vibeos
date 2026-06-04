@@ -105,7 +105,28 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     string/wcsncpy.c
     string/wcsnlen.c
     string/wcsrchr.c
+    # Wave PRINTF: the streamout/wstreamout format engine flips to
+    # cnt-rust (cabi/streamout.rs). The thin variadic + va_list wrapper
+    # .c (sprintf/_snprintf/_vsnprintf/_vscprintf/vsprintf/… + wide
+    # twins) STAY C — they are irreducible `va_start; streamout(...);
+    # va_end` shells that call the Rust engine.
+    printf/streamout.c
+    printf/wstreamout.c
 )
+
+# Wave PRINTF (float residual): the float-formatting half of streamout
+# (format_float/format_floatw) is irreducibly floating-point. On i386
+# the kernel builds Rust no-SSE (no by-value f64 ABI), so it stays C —
+# the extracted printf/format_float.c + format_floatw.c, which the Rust
+# `streamout` calls as externs. On amd64/arm64 cnt-rust's Rust
+# `format_float`/`format_floatw` (behind the `float` feature) own those
+# symbols, so these .c are NOT compiled there.
+if(ARCH STREQUAL "i386")
+    list(APPEND LIBCNTPR_SOURCE
+        printf/format_float.c
+        printf/format_floatw.c
+    )
+endif()
 
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
@@ -206,6 +227,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/generated.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/manual.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/streamout.rs
+            ${RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/floatcvt.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/mod.rs
             ${RUST_WORKSPACE_DIR}/cnt-ctype/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-ctype/Cargo.toml

@@ -2902,3 +2902,189 @@ fn diff_ctype() {
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// printf engine (streamout) — narrow differential
+//
+// cnt-rust's Rust `streamout` (cabi::streamout) vs the genuine compiled
+// `printf/streamout.c` (`ref_streamout`, build.rs). Both are driven
+// with the SAME hand-built flat va_list (one 8-byte slot per arg — the
+// 64-bit host slot size cnt-rust's `va_next` uses) over the SAME `FILE`
+// setup, so this pins the parser + va_arg layout + the `_cnt` overflow
+// guard + the format_float path against ReactOS's own code (no
+// glibc-vs-ReactOS quirk divergence). Narrow only (the wide twin needs
+// 16-bit L"" literals the host can't express; wide is covered by the
+// ACPI swprintf boot path). See build.rs for the oracle setup.
+// ═══════════════════════════════════════════════════════════════════
+extern "C" {
+    fn ref_run(base: *mut u8, cnt: i32, fmt: *const u8, va: *mut u8) -> i32;
+}
+
+/// Lay a printf arg into one flat va slot (8 bytes, little-endian) the
+/// way cnt-rust's `va_next::<T>` reads it.
+trait ToSlot {
+    fn slot(self) -> u64;
+}
+impl ToSlot for i32 {
+    fn slot(self) -> u64 {
+        self as u32 as u64
+    }
+}
+impl ToSlot for u32 {
+    fn slot(self) -> u64 {
+        self as u64
+    }
+}
+impl ToSlot for i64 {
+    fn slot(self) -> u64 {
+        self as u64
+    }
+}
+impl ToSlot for u64 {
+    fn slot(self) -> u64 {
+        self
+    }
+}
+impl ToSlot for f64 {
+    fn slot(self) -> u64 {
+        self.to_bits()
+    }
+}
+impl ToSlot for *const u8 {
+    fn slot(self) -> u64 {
+        self as u64
+    }
+}
+
+/// Run a format through both engines with the given initial `_cnt`
+/// (pass a negative value to exercise the unbounded swprintf overflow
+/// path) and assert identical return value AND identical 512-byte
+/// output buffer.
+fn so_both(fmt: &str, slots: &[u64], cnt_init: i32) {
+    let mut fmtz: Vec<u8> = fmt.as_bytes().to_vec();
+    fmtz.push(0);
+    let va = if slots.is_empty() {
+        core::ptr::null_mut()
+    } else {
+        slots.as_ptr() as *mut u8
+    };
+
+    let mut rbuf = [0u8; 512];
+    let rn = unsafe { ref_run(rbuf.as_mut_ptr(), cnt_init, fmtz.as_ptr(), va) };
+
+    let mut cbuf = [0u8; 512];
+    let mut f = cabi::File {
+        _ptr: cbuf.as_mut_ptr(),
+        _cnt: cnt_init,
+        _base: cbuf.as_mut_ptr(),
+        _flag: 0x40 | 0x2, // _IOSTRG | _IOWRT
+        _file: 0,
+        _charbuf: 0,
+        _bufsiz: 0,
+        _tmpfname: core::ptr::null_mut(),
+    };
+    let cn = unsafe { cabi::streamout(&mut f, fmtz.as_ptr(), va) };
+
+    assert_eq!(
+        cn, rn,
+        "return mismatch: fmt={fmt:?} cnt_init={cnt_init} cnt={cn} ref={rn}"
+    );
+    assert_eq!(
+        &cbuf[..], &rbuf[..],
+        "output mismatch: fmt={:?} cnt_init={} \n cnt={:?}\n ref={:?}",
+        fmt,
+        cnt_init,
+        String::from_utf8_lossy(&cbuf[..rn.max(0) as usize]),
+        String::from_utf8_lossy(&rbuf[..rn.max(0) as usize]),
+    );
+}
+
+macro_rules! so {
+    ($cnt:expr, $fmt:literal $(, $a:expr)* $(,)?) => {
+        so_both($fmt, &[$( ToSlot::slot($a) ),*], $cnt)
+    };
+}
+
+#[test]
+fn diff_streamout_integers() {
+    // d/i/u/x/X/o across signs, zero, extremes; flags; width; precision.
+    for &cnt in &[512i32, -2, 8, 1, 0] {
+        so!(cnt, "plain");
+        so!(cnt, "%d", 0i32);
+        so!(cnt, "%d", 42i32);
+        so!(cnt, "%d", -42i32);
+        so!(cnt, "%i", -1i32);
+        so!(cnt, "%d", i32::MIN);
+        so!(cnt, "%d", i32::MAX);
+        so!(cnt, "%u", 0u32);
+        so!(cnt, "%u", 4000000000u32);
+        so!(cnt, "%x", 0xdeadbeefu32);
+        so!(cnt, "%X", 0xabcdu32);
+        so!(cnt, "%o", 0o777u32);
+        so!(cnt, "%5d", 42i32);
+        so!(cnt, "%-5d", 42i32);
+        so!(cnt, "%05d", 42i32);
+        so!(cnt, "%+d", 42i32);
+        so!(cnt, "% d", 42i32);
+        so!(cnt, "%8.5d", 42i32);
+        so!(cnt, "%.0d", 0i32);
+        so!(cnt, "%#x", 0x2au32);
+        so!(cnt, "%#o", 0o17u32);
+        so!(cnt, "%10.4x", 0xabu32);
+        so!(cnt, "%-#10x", 0x2au32);
+        so!(cnt, "a=%d b=%x c=%u", 1i32, 0x10u32, 99u32);
+        so!(cnt, "%lld", 0x1_0000_0000i64);
+        so!(cnt, "%llx", 0xdead_beef_cafeu64);
+        so!(cnt, "%llu", u64::MAX);
+        so!(cnt, "%I64d", -5i64);
+        // '*' width / precision
+        so!(cnt, "%*d", 6i32, 42i32);
+        so!(cnt, "%.*d", 4i32, 42i32);
+        so!(cnt, "%-*d", 6i32, 42i32);
+    }
+}
+
+#[test]
+fn diff_streamout_chars_strings_percent() {
+    let hello = b"Hello, world\0";
+    let empty = b"\0";
+    for &cnt in &[512i32, -2, 6, 1, 0] {
+        so!(cnt, "100%%");
+        so!(cnt, "%c", b'A' as i32);
+        so!(cnt, "%5c", b'Z' as i32);
+        so!(cnt, "%-5c", b'Z' as i32);
+        so!(cnt, "%s", hello.as_ptr() as *const u8);
+        so!(cnt, "%s", empty.as_ptr() as *const u8);
+        so!(cnt, "%s", core::ptr::null::<u8>()); // (null)
+        so!(cnt, "%10s", hello.as_ptr() as *const u8);
+        so!(cnt, "%-15s", hello.as_ptr() as *const u8);
+        so!(cnt, "%.5s", hello.as_ptr() as *const u8);
+        so!(cnt, "[%8.3s]", hello.as_ptr() as *const u8);
+    }
+}
+
+#[test]
+fn diff_streamout_float() {
+    // %f/%e/%g/%E/%G — ref uses the SAME fl libm model as cnt's
+    // format_float (build.rs #defines floor/log10/pow bit-identically),
+    // so finite values pin format_float exactly.
+    let vals = [
+        0.0f64, 1.0, -1.0, 3.14159265, -2.5, 0.5, 1234.5678, 0.000123, 1e6, 1e-6, 42.0,
+    ];
+    for &cnt in &[512i32, -2] {
+        for &v in &vals {
+            so!(cnt, "%f", v);
+            so!(cnt, "%.2f", v);
+            so!(cnt, "%.0f", v);
+            so!(cnt, "%10.3f", v);
+            so!(cnt, "%-12.4f", v);
+            so!(cnt, "%+.3f", v);
+            so!(cnt, "%e", v);
+            so!(cnt, "%.3e", v);
+            so!(cnt, "%E", v);
+            so!(cnt, "%g", v);
+            so!(cnt, "%.8g", v);
+            so!(cnt, "%G", v);
+        }
+    }
+}

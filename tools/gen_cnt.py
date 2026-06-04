@@ -1309,6 +1309,11 @@ def main() -> int:
         + "\nmod generated;\npub use generated::*;\n"
         # hand-written, no differential target (see manual.rs)
         + "mod manual;\npub use manual::*;\n"
+        # hand-written printf engine (streamout/wstreamout + the Rust
+        # format_float on amd64/arm64); not a gen_cnt family, its
+        # differential lives in cnt-difftest's ref_streamout. See
+        # streamout.rs.
+        + "mod streamout;\npub use streamout::*;\n"
     )
 
     spec = {

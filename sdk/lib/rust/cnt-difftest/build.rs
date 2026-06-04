@@ -18,6 +18,10 @@ fn main() {
     // sdk/lib/rust/cnt-difftest → repo root is 4 up.
     let repo = manifest.ancestors().nth(4).unwrap().to_path_buf();
     let refstub = manifest.join("refstub");
+    // Printf-only include dir: a flat `va_list` <stdarg.h> so the
+    // genuine streamout can be driven with cnt-rust's Windows-model
+    // (char*) va_list on the SysV host (see the printf ref unit below).
+    let refstub_printf = manifest.join("refstub_printf");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let crt = repo.join("sdk/lib/crt");
 
@@ -660,6 +664,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", trampoline.display());
     println!("cargo:rerun-if-changed={}", crt.display());
     println!("cargo:rerun-if-changed={}", refstub.display());
+    println!("cargo:rerun-if-changed={}", refstub_printf.display());
     // Link the reference .o files *directly* (not as a static archive).
     // build-script rustc-link-lib doesn't reliably reach integration
     // tests; trailing link-args do, and direct objects sidestep
@@ -838,6 +843,77 @@ fn main() {
     for obj in gcvt_build.compile_intermediates() {
         redef(&obj);
     }
+
+    // ── printf engine (streamout) — narrow differential ──────────────
+    // The genuine `printf/streamout.c` is the AUTHORITATIVE oracle for
+    // cnt-rust's Rust `streamout` engine (every printf-family entry
+    // funnels through it). We compile it as `ref_streamout` and drive
+    // BOTH it and the cnt engine with the SAME hand-built flat va_list
+    // (refstub_printf/stdarg.h: one 8-byte slot per arg, the 64-bit
+    // host slot cnt-rust uses) over the SAME `FILE` setup — so the diff
+    // pins the parser, the va_arg layout, the `_cnt` overflow guard
+    // (the signed/unsigned promotion that broke ACPI's unbounded
+    // swprintf — see [[feedback]]) and the float path, with NO
+    // glibc-vs-ReactOS quirk divergence (ReactOS's own code is the
+    // reference). Only NARROW: the wide twin needs 16-bit `L""` wchar
+    // literals which the host can't express (host wchar_t literals are
+    // 32-bit even under `#define wchar_t unsigned short`); the wide
+    // engine is covered end-to-end by the ACPI swprintf boot path.
+    // floor/log10/pow are #defined bit-identical to core_rs::floatcvt::fl
+    // (the ecvt/gcvt shared-model discipline) so `%f/%e/%g` pin the Rust
+    // format_float against the genuine, libm-exactness factored out.
+    let so_body = format!(
+        "#include <stddef.h>\n#include <math.h>\n#include <float.h>\n\
+         #define _LIBCNT_\n#define __declspec(x)\n#define __int64 long long\n\
+         #define _TCHAR char\n#define _T(x) x\n\
+         #define _tcscpy strcpy\n#define _tcslen strlen\n#define _tcschr strchr\n\
+         #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+         static double cnt_floor(double x){{ if(!isfinite(x))return x;\
+           long long i=(long long)x; double di=(double)i;\
+           return di>x?di-1.0:di; }}\n\
+         static double cnt_pow10i(int n){{ double r=1.0,b=10.0;\
+           unsigned k=(n<0)?(unsigned)(-(long)n):(unsigned)n;\
+           while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
+         static double cnt_powm(double a,double e){{ (void)a;\
+           return cnt_pow10i((int)e); }}\n\
+         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+           if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
+           v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
+           int e=(int)(((double)(biased-1023))*0.3010299956639812);\
+           while(cnt_pow10i(e)>f)e--; while(cnt_pow10i(e+1)<=f)e++;\
+           return (double)e; }}\n\
+         #define floor(x) cnt_floor(x)\n#define log10(x) cnt_log10(x)\n\
+         #define pow(a,b) cnt_powm((a),(b))\n\
+         static int so_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
+         static int so_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
+         #define mbtowc so_mbtowc\n#define wctomb so_wctomb\n\
+         #define streamout ref_streamout\n#define format_float ref_format_float\n\
+         {}\
+         /* driver: build a FILE and run the genuine engine over a flat\
+            va_list (refstub_printf stdarg). `cnt` is the initial\
+            _iobuf._cnt; pass a negative value to exercise the unbounded\
+            swprintf overflow path. */\n\
+         int ref_run(char* base,int cnt,const char* fmt,char* va){{\
+           FILE f; f._base=base; f._ptr=base; f._cnt=cnt;\
+           f._flag=0x40|0x2; f._charbuf=0; f._bufsiz=0; f._tmpfname=0; f._file=0;\
+           return ref_streamout(&f, fmt, (va_list)va); }}\n",
+        inc(s("printf/streamout.c")));
+    let so_c = out.join("ref_streamout.c");
+    fs::write(&so_c, &so_body).unwrap();
+    let mut so_build = cc::Build::new();
+    so_build
+        .include(&refstub_printf)
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&so_c);
+    for obj in so_build.compile_intermediates() {
+        redef(&obj);
+    }
+
     // Dedicated scanf build with `-mlong-double-64` (Windows MSVC ABI:
     // long double == double == 64-bit; SysV host default is 80-bit
     // x87, which would diverge from the f64 engine AND the target).
