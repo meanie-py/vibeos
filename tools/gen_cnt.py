@@ -182,7 +182,11 @@ def _strfam_shim(name: str, m: dict, params, rt: str) -> str:
         b += [
             f"    if {n} == 0 {{ return {d}; }}",
             f"    let dl = {cstr}({d} as *const {el}).len();",
-            f"    let sc = {cstr}({src});",
+            # Bound the SOURCE read to n: strncat reads at most n chars from
+            # src, so the slice must stop at NUL-or-n. An unbounded cstr_slice
+            # over-reads a non-NUL-terminated fixed src field into an unmapped
+            # page → BUGCHECK 0x50. See feedback_cnt_nbounded_source_overread.
+            f"    let sc = {cstr}_bounded({src}, {n});",
             f"    let m = if sc.len() < {n} {{ sc.len() }} else {{ {n} }};",
             f"    let tail = {rawm}({d}.add(dl), m + 1);",
             f"    crate::core_rs::string::ncat(tail, sc, {n});",
@@ -786,6 +790,17 @@ def shim(name: str, m: dict) -> str:
     elif sp == "wnul_in":  # wide twin: NUL-terminated u16 → &[u16]
         for n in ptrs:
             body.append(f"    let {n}_s = wcstr_slice({n});")
+    elif sp == "nul_in_n":
+        # strncmp-shape: bound EACH source to the count param. strncmp reads
+        # at most n chars per arg, so an unbounded cstr_slice over-reads a
+        # non-NUL-terminated fixed field into an unmapped page → BUGCHECK 0x50
+        # (see feedback_cnt_nbounded_source_overread). cstr_slice_bounded
+        # stops at NUL-or-n; the core's n bound + NUL semantics are unchanged.
+        for n in ptrs:
+            body.append(f"    let {n}_s = cstr_slice_bounded({n}, {szp});")
+    elif sp == "wnul_in_n":  # wide twin of nul_in_n (wcsncmp)
+        for n in ptrs:
+            body.append(f"    let {n}_s = wcstr_slice_bounded({n}, {szp});")
     elif sp == "nul_in_maxlen":
         # strnlen-shape: walk the C string but never past the count
         # param (textbook strnlen must not read beyond maxlen).
@@ -797,11 +812,15 @@ def shim(name: str, m: dict) -> str:
     elif sp == "dst_fixed_n":
         d, s, _ = pnames
         body.append(f"    let {d}_s = raw_mut_slice({d}, {szp});")
-        body.append(f"    let {s}_s = cstr_slice({s});")
+        # Bound the source read to n: strncpy reads at most n chars from src,
+        # so an unbounded cstr_slice over-reads a non-NUL-terminated fixed
+        # field into an unmapped page → BUGCHECK 0x50 (see
+        # feedback_cnt_nbounded_source_overread).
+        body.append(f"    let {s}_s = cstr_slice_bounded({s}, {szp});")
     elif sp == "wdst_fixed_n":  # wcsncpy
         d, s, _ = pnames
         body.append(f"    let {d}_s = wraw_mut_slice({d}, {szp});")
-        body.append(f"    let {s}_s = wcstr_slice({s});")
+        body.append(f"    let {s}_s = wcstr_slice_bounded({s}, {szp});")
     elif sp == "ptr_len":
         for p in ptrs:
             body.append(f"    let {p}_s = raw_slice({p} as *const u8, {szp});")

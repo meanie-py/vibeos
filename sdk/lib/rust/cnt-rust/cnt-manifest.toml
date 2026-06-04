@@ -187,7 +187,7 @@ fuzz_domain  = ["NULL", "empty", "shorter than cap", "exactly cap", "no NUL with
 [symbols.strncmp]
 c_signature  = "int strncmp(const char *s1, const char *s2, size_t n)"
 family       = "string"
-slice_pattern = "nul_in"
+slice_pattern = "nul_in_n"
 core_fn      = "string::ncmp"
 return_collapse = "i32_cmp_n"
 inout_effects = "none"
@@ -652,7 +652,7 @@ fuzz_domain  = ["equal", "differ-at-0", "differ-mid", "prefix", ">0x7F and >0xFF
 [symbols.wcsncmp]
 c_signature  = "int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)"
 family       = "wstring"
-slice_pattern = "wnul_in"
+slice_pattern = "wnul_in_n"
 core_fn      = "string::ncmp"
 return_collapse = "i32_cmp_n"
 inout_effects = "none"
