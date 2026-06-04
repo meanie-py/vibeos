@@ -365,6 +365,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntbitblt.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/freetype.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/d3dkmt.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/brush.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust win32k code (${RUST_WIN32K_RUST_TARGET})"
@@ -373,7 +374,7 @@ add_custom_target(rust_win32k DEPENDS ${RUST_WIN32K_LIB})
 
 add_library(win32k MODULE
     ${SOURCE}
-    gdi/ntgdi/brush.cpp
+    # gdi/ntgdi/brush.cpp  # replaced by Rust (sdk/lib/rust/win32k-rust/src/brush.rs) — cohabitation [Phase 2c wave 23: BRUSH object]
     ${win32k_asm}
     win32k.rc
     ${CMAKE_CURRENT_BINARY_DIR}/win32k.def)
