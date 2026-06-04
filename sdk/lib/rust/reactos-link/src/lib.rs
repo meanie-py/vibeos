@@ -82,6 +82,12 @@ struct ArchCfg {
     name: &'static str,
     /// llvm-mingw target triple / binary prefix (`<triple>-clang`).
     triple: &'static str,
+    /// Standard *user-mode* Rust target triple (hardfloat, precompiled std —
+    /// NO build-std). Tier-B sibling crates (rtl-rust/utf8/cnt-rust-lib/…) are
+    /// USER-mode and MUST build with this, exactly like cmake — building them
+    /// against the kernel json (`x86-softfloat`) corrupts cnt-rust-lib's
+    /// by-value f64 ABI and crashes i386 boot (2026-06-02).
+    rust_user_target: &'static str,
     /// spec2def `-a=` value.
     spec2def: &'static str,
     /// dlltool `-m` machine.
@@ -107,7 +113,8 @@ const ARM64_ARCH_DEFINES: &[(&str, Option<&str>)] =
 fn arch_cfg(target_arch: &str) -> ArchCfg {
     match target_arch {
         "x86" => ArchCfg {
-            name: "i386", triple: "i686-w64-mingw32", spec2def: "i386",
+            name: "i386", triple: "i686-w64-mingw32",
+            rust_user_target: "i686-pc-windows-gnu", spec2def: "i386",
             dlltool_machine: "i386", clang_rt: "i386",
             arch_defines: I386_ARCH_DEFINES, is_x86: true, is_i386: true,
         },
@@ -115,12 +122,14 @@ fn arch_cfg(target_arch: &str) -> ArchCfg {
             // spec2def's arch token is `x86_64`, NOT `amd64` (an unknown
             // token silently falls back to i386 → @N stdcall decoration on
             // a 64-bit .def → undefined-symbol link errors).
-            name: "amd64", triple: "x86_64-w64-mingw32", spec2def: "x86_64",
+            name: "amd64", triple: "x86_64-w64-mingw32",
+            rust_user_target: "x86_64-pc-windows-gnu", spec2def: "x86_64",
             dlltool_machine: "i386:x86-64", clang_rt: "x86_64",
             arch_defines: AMD64_ARCH_DEFINES, is_x86: true, is_i386: false,
         },
         "aarch64" => ArchCfg {
-            name: "arm64", triple: "aarch64-w64-mingw32", spec2def: "arm64",
+            name: "arm64", triple: "aarch64-w64-mingw32",
+            rust_user_target: "aarch64-pc-windows-gnullvm", spec2def: "arm64",
             dlltool_machine: "arm64", clang_rt: "aarch64",
             arch_defines: ARM64_ARCH_DEFINES, is_x86: false, is_i386: false,
         },
@@ -206,6 +215,12 @@ pub struct Linker {
     arch: ArchCfg,
     rust_crate: Option<String>,
     rust_features: Vec<String>,
+    /// Extra sibling Rust staticlib crates (crate, features, default_features)
+    /// cargo-built alongside the main one — Tier-B of the ntdll cargo-drive
+    /// (replaces reuse of cmake-built `librtl_rust.a`/`libutf8.a`/… with a
+    /// direct cargo build). All share the main's `target/<pkg>-rustlib` dir so
+    /// build-std compiles core/alloc once.
+    rust_libs: Vec<(String, Vec<String>, bool)>,
     c_shims: Vec<String>,
     asm: Vec<String>,
     asm_set: AsmDefineSet,
@@ -250,6 +265,7 @@ impl Linker {
             arch,
             rust_crate: None,
             rust_features: Vec::new(),
+            rust_libs: Vec::new(),
             c_shims: Vec::new(),
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
@@ -275,6 +291,24 @@ impl Linker {
     /// builds ntdll-rust with `["vista"]` (DllMain/LdrpHeap/ldrnotify).
     pub fn rust_features(mut self, feats: &[&str]) -> Self {
         self.rust_features = feats.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// An additional sibling Rust staticlib crate cargo-built alongside the
+    /// main `rust_staticlib` and linked into the module — the Tier-B path of
+    /// the ntdll cargo-drive that replaces reuse of a cmake-built rust `.a`
+    /// (e.g. `librtl_rust.a`, `libutf8.a`, `libcnt_rust_lib.a`,
+    /// `libsmss_csrss_rust.a`) with a direct cargo build. `default_features`
+    /// = false maps to `--no-default-features` (e.g. smss-csrss-rust built
+    /// `csrlib_only`). The produced `lib<crate_>.a` is linked in the
+    /// start-group after the main crate, before the cmake static libs.
+    /// Chainable — call once per sibling crate, in link order.
+    pub fn rust_lib(mut self, crate_name: &str, features: &[&str], default_features: bool) -> Self {
+        self.rust_libs.push((
+            crate_name.to_string(),
+            features.iter().map(|s| s.to_string()).collect(),
+            default_features,
+        ));
         self
     }
 
@@ -359,41 +393,28 @@ impl Linker {
             .expect("target json stem")
             .to_string();
 
-        // ---- Rust staticlib (separate target dir, build-std nightly) --
+        // ---- Rust staticlib(s) (per-crate target dir) ----------------
+        // A Win32Dll is USER-mode: its main body crate AND its rust_lib
+        // siblings build the STANDARD user-mode target (hardfloat, precompiled
+        // std, no build-std) on the default toolchain — exactly like cmake
+        // (`ntdll-rust` builds `i686-pc-windows-gnu`, NOT the kernel json).
+        // Building a user-mode crate against the `x86-softfloat` kernel json
+        // corrupts the by-value f64 ABI and crashes boot. Kernel modules
+        // (ntoskrnl/HAL/uefildr) build the custom kernel json with `-Z
+        // build-std` on nightly. The main crate goes first, then siblings.
+        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. });
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
-            let lib_file = format!("lib{}.a", crate_name.replace('-', "_"));
-            let workspace = self.repo_root.join("sdk/lib/rust");
-            let tgt_dir = workspace.join(format!("target/{}-rustlib", self.pkg_name));
-            let mut cmd = Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
-            cmd.arg("build")
-                .arg("--release")
-                .arg("--target")
-                .arg(&self.target_json)
-                .arg("-Z")
-                .arg("build-std=core,alloc,compiler_builtins")
-                .arg("-Z")
-                .arg("build-std-features=compiler-builtins-mem")
-                .arg("-p")
-                .arg(crate_name);
-            if !self.rust_features.is_empty() {
-                cmd.arg("--features").arg(self.rust_features.join(","));
-            }
-            let status = cmd
-                .arg("--manifest-path")
-                .arg(workspace.join("Cargo.toml"))
-                .env("CARGO_TARGET_DIR", &tgt_dir)
-                .env("RUSTUP_TOOLCHAIN", "nightly")
-                .status()
-                .unwrap_or_else(|e| panic!("cargo build -p {crate_name}: {e}"));
-            if !status.success() {
-                panic!("cargo build -p {crate_name} failed");
-            }
-            let a = tgt_dir.join(format!("{target_stem}/release/{lib_file}"));
-            if !a.exists() {
-                panic!("{crate_name} produced no {lib_file} at {}", a.display());
-            }
-            a
+            let feats: Vec<&str> = self.rust_features.iter().map(|s| s.as_str()).collect();
+            self.build_rust_crate(crate_name, &feats, true, &target_stem, kernel_rust)
         });
+        let sibling_rust_a: Vec<PathBuf> = self
+            .rust_libs
+            .iter()
+            .map(|(crate_name, feats, default_features)| {
+                let f: Vec<&str> = feats.iter().map(|s| s.as_str()).collect();
+                self.build_rust_crate(crate_name, &f, *default_features, &target_stem, kernel_rust)
+            })
+            .collect();
 
         // ---- C shims (cc-rs) -----------------------------------------
         for rel in &self.c_shims {
@@ -476,11 +497,18 @@ impl Linker {
         }
 
         // ---- Static-lib group ----------------------------------------
+        // ORDER MATTERS: emit the cmake C archives FIRST, then the Rust
+        // archives (main staticlib + rust_lib siblings) LAST — exactly as
+        // cmake does for every module (verified on ntdll.dll AND ntoskrnl.exe:
+        // librtl.a / liblibcntpr.a precede libkernel_rust.a / librtl_rust.a /
+        // libcntpr_rust.a). The cnt CORE mem/string ops (memcpy/memset/strcmp/
+        // strncpy/wcs*/… ~25 on a CLEAN archive) are defined in BOTH the C
+        // liblibcntpr.a (i386 asm) AND cnt-rust (cohabitation, C not yet
+        // REMOVE_ITEM'd). Under --allow-multiple-definition lld takes the FIRST
+        // by command-line order, so C-first selects the vetted i386-asm variant
+        // cmake ships; Rust-first selected not-yet-fully-vetted Rust twins and
+        // bugchecked at boot. See feedback_cargo_drive_usermode_target.md.
         println!("cargo:rustc-link-arg=-Wl,--start-group");
-        if let Some(a) = &rust_a {
-            println!("cargo:rustc-link-arg={}", a.display());
-            println!("cargo:rerun-if-changed={}", a.display());
-        }
         for lib in &self.static_libs {
             let full = self.build_dir.join(lib);
             if !full.exists() {
@@ -494,6 +522,14 @@ impl Linker {
             // then boots the OLD code. Cost a debug session: a cargo uefildr
             // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
             println!("cargo:rerun-if-changed={}", full.display());
+        }
+        if let Some(a) = &rust_a {
+            println!("cargo:rustc-link-arg={}", a.display());
+            println!("cargo:rerun-if-changed={}", a.display());
+        }
+        for a in &sibling_rust_a {
+            println!("cargo:rustc-link-arg={}", a.display());
+            println!("cargo:rerun-if-changed={}", a.display());
         }
         for (spec_rel, dll_name, basename) in &self.import_libs {
             let a = self.generate_import_lib(spec_rel, dll_name, basename);
@@ -581,6 +617,114 @@ impl Linker {
         if let Some(b) = image_base {
             println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", b);
         }
+    }
+
+    /// Build one workspace Rust staticlib crate (`crate-type=["staticlib"]`)
+    /// into its own per-crate `target/<pkg>-<crate>-rustlib` dir, returning
+    /// the path to its `lib<crate_>.a`. `default_features=false` →
+    /// `--no-default-features`.
+    ///
+    /// `kernel=true` (the main module body, e.g. ntoskrnl-rust / ntdll-rust):
+    /// builds the custom kernel json with `-Z build-std` on nightly.
+    /// `kernel=false` (Tier-B user-mode sibling, e.g. rtl-rust / cnt-rust-lib):
+    /// builds the STANDARD user-mode target (`arch.rust_user_target`,
+    /// hardfloat, precompiled std) on the default toolchain, NO build-std —
+    /// exactly as cmake builds these. Using the kernel json for a user-mode
+    /// sibling corrupts cnt-rust-lib's by-value f64 ABI (`x86-softfloat`) and
+    /// crashes i386 boot.
+    ///
+    /// PER-CRATE dir (not shared): a shared dir lets cargo feature-unify across
+    /// crates and emit duplicate symbols with different code that
+    /// `--allow-multiple-definition` resolves first-match to the wrong variant.
+    fn build_rust_crate(
+        &self,
+        crate_name: &str,
+        features: &[&str],
+        default_features: bool,
+        target_stem: &str,
+        kernel: bool,
+    ) -> PathBuf {
+        let lib_file = format!("lib{}.a", crate_name.replace('-', "_"));
+        let workspace = self.repo_root.join("sdk/lib/rust");
+        let tgt_dir = workspace.join(format!(
+            "target/{}-{}-rustlib",
+            self.pkg_name,
+            crate_name.replace('-', "_")
+        ));
+        // Kernel: the env CARGO (nightly, set by the outer `cargo +nightly`)
+        // drives build-std. User-mode siblings: that nightly binary lacks the
+        // standard target's precompiled std (E0463), so invoke the rustup
+        // DEFAULT (stable) cargo via `rustup run stable cargo` — exactly the
+        // toolchain cmake uses for these crates.
+        let mut cmd = if kernel {
+            Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+        } else {
+            let mut c = Command::new("rustup");
+            c.arg("run").arg("stable").arg("cargo");
+            c
+        };
+        cmd.arg("build").arg("--release").arg("--target");
+        // out_stem = the subdir cargo writes under (json file stem for a custom
+        // target path; the triple for a builtin target name).
+        let out_stem: String = if kernel {
+            cmd.arg(&self.target_json)
+                .arg("-Z")
+                .arg("build-std=core,alloc,compiler_builtins")
+                .arg("-Z")
+                .arg("build-std-features=compiler-builtins-mem");
+            target_stem.to_string()
+        } else {
+            cmd.arg(self.arch.rust_user_target);
+            self.arch.rust_user_target.to_string()
+        };
+        cmd.arg("-p").arg(crate_name);
+        if !default_features {
+            cmd.arg("--no-default-features");
+        }
+        if !features.is_empty() {
+            cmd.arg("--features").arg(features.join(","));
+        }
+        cmd.arg("--manifest-path")
+            .arg(workspace.join("Cargo.toml"))
+            .env("CARGO_TARGET_DIR", &tgt_dir);
+        if kernel {
+            // build-std needs nightly.
+            cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+        } else {
+            // User-mode siblings build on the rustup DEFAULT (stable) via the
+            // `rustup run stable cargo` above. But the outer `cargo +nightly`
+            // (ntdll-cargo) injects a full cargo/rustc env into build scripts —
+            // RUSTC pointing at the NIGHTLY rustc, RUSTUP_TOOLCHAIN=nightly,
+            // encoded build-std rustflags — all of which override the stable
+            // toolchain and reintroduce the missing-std E0463. Scrub them so
+            // the child cargo starts clean, exactly like cmake's fresh process.
+            for v in [
+                "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTDOC",
+                "RUSTUP_TOOLCHAIN", "CARGO", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS",
+                "CARGO_BUILD_TARGET", "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_RUSTC",
+                "CARGO_UNSTABLE_BUILD_STD", "CARGO_UNSTABLE_BUILD_STD_FEATURES",
+            ] {
+                cmd.env_remove(v);
+            }
+            // Run from the cmake build dir, exactly like cmake's custom_command.
+            // Cargo discovers `.cargo/config.toml` by CWD, not by --manifest-path:
+            // from here the workspace `sdk/lib/rust/.cargo/config.toml` is NOT
+            // found, so its `[target.i686-pc-windows-gnu] -sse,-sse2` rustflags
+            // don't apply — cnt-rust's `float` feature needs SSE, and cmake
+            // builds it with SSE for this exact reason.
+            cmd.current_dir(&self.build_dir);
+        }
+        let status = cmd
+            .status()
+            .unwrap_or_else(|e| panic!("cargo build -p {crate_name}: {e}"));
+        if !status.success() {
+            panic!("cargo build -p {crate_name} failed");
+        }
+        let a = tgt_dir.join(format!("{out_stem}/release/{lib_file}"));
+        if !a.exists() {
+            panic!("{crate_name} produced no {lib_file} at {}", a.display());
+        }
+        a
     }
 
     fn obj_dir(&self) -> PathBuf {
