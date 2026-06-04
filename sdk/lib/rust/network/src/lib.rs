@@ -801,10 +801,10 @@ unsafe fn ipv4_to_string_ex<C: pure::IpChar>(
         let dst = core::slice::from_raw_parts_mut(out, n + 1);
         dst[..n].copy_from_slice(&tmp[..n]);
         dst[n] = C::from_ascii(0);
-        *out_len = (n + 1) as u32;
+        core::ptr::write_volatile(out_len, (n + 1) as u32);
         STATUS_SUCCESS
     } else {
-        *out_len = (n + 1) as u32;
+        core::ptr::write_volatile(out_len, (n + 1) as u32);
         STATUS_INVALID_PARAMETER
     }
 }
@@ -841,11 +841,11 @@ unsafe fn ipv4_string_to_address<C: pure::IpChar>(
     let s = cstr(string);
     let (res, term) = pure::string_to_address(s, strict != 0);
     if !terminator.is_null() {
-        *terminator = string.add(term);
+        core::ptr::write_volatile(terminator, string.add(term));
     }
     match res {
         Ok(be) => {
-            (*addr).s_addr = be;
+            core::ptr::write_volatile(core::ptr::addr_of_mut!((*addr).s_addr), be);
             STATUS_SUCCESS
         }
         Err(()) => STATUS_INVALID_PARAMETER,
@@ -889,11 +889,11 @@ unsafe fn ipv4_string_to_address_ex<C: pure::IpChar>(
     if res.is_err() {
         return STATUS_INVALID_PARAMETER;
     }
-    (*addr).s_addr = res.unwrap();
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*addr).s_addr), res.unwrap());
 
     // remainder after the address
     if term >= s.len() {
-        *port = 0;
+        core::ptr::write_volatile(port, 0);
         return STATUS_SUCCESS;
     }
     if s[term].code() != b':' as u32 {
@@ -901,7 +901,7 @@ unsafe fn ipv4_string_to_address_ex<C: pure::IpChar>(
     }
     match pure::parse_port(&s[term + 1..]) {
         Ok(p) => {
-            *port = wn2h(p as u16);
+            core::ptr::write_volatile(port, wn2h(p as u16));
             STATUS_SUCCESS
         }
         Err(()) => STATUS_INVALID_PARAMETER,
@@ -1003,10 +1003,10 @@ unsafe fn ipv6_to_string_ex<C: pure::IpChar>(
         let dst = core::slice::from_raw_parts_mut(out, length + 1);
         dst[..length].copy_from_slice(&buf[..length]);
         dst[length] = C::from_ascii(0);
-        *out_len = (length + 1) as u32;
+        core::ptr::write_volatile(out_len, (length + 1) as u32);
         STATUS_SUCCESS
     } else {
-        *out_len = (length + 1) as u32;
+        core::ptr::write_volatile(out_len, (length + 1) as u32);
         STATUS_INVALID_PARAMETER
     }
 }
@@ -1047,8 +1047,8 @@ pub unsafe extern "system" fn RtlIpv6StringToAddressW(
     }
     let s = cstr(string);
     let r = pure::ipv6_string_to_address(s, false);
-    *terminator = string.add(r.terminator);
-    (*addr).bytes = r.addr;
+    core::ptr::write_volatile(terminator, string.add(r.terminator));
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*addr).bytes), r.addr);
     r.status
 }
 
@@ -1067,9 +1067,9 @@ pub unsafe extern "system" fn RtlIpv6StringToAddressA(
     // C only writes the terminator when non-NULL ("Windows doesn't
     // always write it"); map the 1:1 ASCII index.
     if !terminator.is_null() {
-        *terminator = string.add(r.terminator);
+        core::ptr::write_volatile(terminator, string.add(r.terminator));
     }
-    (*addr).bytes = r.addr;
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*addr).bytes), r.addr);
     r.status
 }
 
@@ -1086,10 +1086,10 @@ pub unsafe extern "system" fn RtlIpv6StringToAddressExW(
     }
     let s = cstr(string);
     let r = pure::ipv6_string_to_address(s, true);
-    (*addr).bytes = r.addr;
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*addr).bytes), r.addr);
     if r.status == STATUS_SUCCESS {
-        *scope = r.scope;
-        *port = r.port_net;
+        core::ptr::write_volatile(scope, r.scope);
+        core::ptr::write_volatile(port, r.port_net);
     }
     r.status
 }
@@ -1107,10 +1107,10 @@ pub unsafe extern "system" fn RtlIpv6StringToAddressExA(
     }
     let s = cstr(string);
     let r = pure::ipv6_string_to_address(s, true);
-    (*addr).bytes = r.addr;
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*addr).bytes), r.addr);
     if r.status == STATUS_SUCCESS {
-        *scope = r.scope;
-        *port = r.port_net;
+        core::ptr::write_volatile(scope, r.scope);
+        core::ptr::write_volatile(port, r.port_net);
     }
     r.status
 }

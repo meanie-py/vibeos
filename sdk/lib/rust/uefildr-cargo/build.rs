@@ -1,5 +1,5 @@
-//! Cargo-driven `uefildr.efi` link (i386 + amd64). Manifest for the shared
-//! `reactos-link` engine. UEFI sibling of `kdcom-cargo`'s build.rs.
+//! Cargo-driven `uefildr.efi` link (i386 + amd64 + arm64). Manifest for the
+//! shared `reactos-link` engine. UEFI sibling of `kdcom-cargo`'s build.rs.
 //!
 //! Mirrors the cmake `uefildr.efi` link line (from build-<arch>/build.ninja,
 //! target `boot/freeldr/freeldr/uefildr.efi`):
@@ -17,10 +17,13 @@
 //!              .def to the linker either; matching it = no .def.)
 //!
 //! Per-arch differences (verbatim from each build.ninja):
-//!   i386 : entry `_EfiEntry` (cdecl `_` prefix), auto image base, links
-//!          mini_hal + libhal_rust_mini (the i386-only freeldr mini-HAL).
+//!   i386 : entry `_EfiEntry` (cdecl `_` prefix), auto image base
+//!          (0x00400000), 0x200 align, links mini_hal + libhal_rust_mini
+//!          (the i386-only freeldr mini-HAL).
 //!   amd64: entry `EfiEntry` (no decoration), `--image-base 0x10000` (keep
-//!          the loader in the low 1GB freeldr maps), NO mini_hal libs.
+//!          the loader in the low 1GB freeldr maps), 0x200 align, NO mini_hal.
+//!   arm64: entry `EfiEntry`, NO `--image-base` (auto-hash base), 0x1000
+//!          file/section align, NO mini_hal (same lib set as amd64).
 //!
 //! Inputs are the cmake-built artifacts (run `ninja uefildr` in build-<arch>/
 //! first): the freeldr C aggregate `libuefifreeldr_common.a`, the prebuilt
@@ -42,21 +45,28 @@ fn main() {
     let mut libs: Vec<&str> =
         vec!["boot/freeldr/freeldr/CMakeFiles/uefildr.dir/lib/strsafe_shim.c.obj"];
 
-    // image_base: cmake's i386 uefildr links with auto image base, which
-    // resolves to the exe default 0x00400000; amd64 cmake pins 0x10000 to
-    // keep the loader in the low 1GB freeldr maps. reactos-link always emits
-    // an explicit --image-base, so pass the resolved values directly.
-    let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
-        "x86" => {
-            // i386: mini_hal + libhal_rust_mini are linked BEFORE the freeldr
-            // libs (uefi.cmake `if(ARCH STREQUAL i386 AND NOT MSVC)`).
-            libs.push("hal/halx86/minihal/libmini_hal.a");
-            libs.push("hal/halx86/libhal_rust_mini.a");
-            ("i686-kernel.json", "_EfiEntry", 0x0040_0000)
-        }
-        "x86_64" => ("x86_64-kernel.json", "EfiEntry", 0x1_0000),
-        other => panic!("uefildr-cargo: unsupported arch {other} (i386/amd64 only)"),
-    };
+    // Per-arch link knobs (verbatim from each build-<arch>/build.ninja's
+    // uefildr.efi LINK_FLAGS):
+    //   entry      i386 `_EfiEntry` (cdecl `_`); amd64/arm64 `EfiEntry`.
+    //   image_base i386 cmake auto-resolves to the exe default 0x00400000;
+    //              amd64 cmake pins 0x10000 (low 1GB freeldr maps); arm64
+    //              cmake passes no --image-base → None (auto-hash base).
+    //   alignment  x86 (i386/amd64) 0x200; arm64 0x1000.
+    let (target_json, entry, image_base, alignment): (&str, &str, Option<u64>, u64) =
+        match arch.as_str() {
+            "x86" => {
+                // i386: mini_hal + libhal_rust_mini are linked BEFORE the
+                // freeldr libs (uefi.cmake `if(ARCH STREQUAL i386 AND NOT MSVC)`).
+                libs.push("hal/halx86/minihal/libmini_hal.a");
+                libs.push("hal/halx86/libhal_rust_mini.a");
+                ("i686-kernel.json", "_EfiEntry", Some(0x0040_0000), 0x200)
+            }
+            "x86_64" => ("x86_64-kernel.json", "EfiEntry", Some(0x1_0000), 0x200),
+            "aarch64" => ("aarch64-kernel.json", "EfiEntry", None, 0x1000),
+            other => {
+                panic!("uefildr-cargo: unsupported arch {other} (i386/amd64/arm64 only)")
+            }
+        };
 
     libs.extend_from_slice(&[
         "boot/freeldr/freeldr/libuefifreeldr_common.a",
@@ -76,5 +86,6 @@ fn main() {
         .link(ModuleKind::EfiApplication {
             entry: entry.into(),
             image_base,
+            alignment,
         });
 }

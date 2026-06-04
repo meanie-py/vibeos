@@ -44,15 +44,22 @@ pub enum ModuleKind {
     Win32Dll { entry: String, image_base: u64, subsystem: Option<String> },
     /// `efi_application` — a UEFI app (uefildr.efi). Mirrors the cmake
     /// `uefildr.efi` link (set_subsystem 10 / `set_entrypoint EfiEntry`):
-    /// `--subsystem,efi_application:5.01`, 0x200 file/section alignment,
-    /// `--gc-sections` + no `-shared` (it's an exe), `--exclude-all-symbols`
-    /// (exports nothing — the freeldr.spec/.def is only for the freeldr
-    /// import lib rosload consumes, not for uefildr's own exports). `entry`
-    /// is already arch-decorated (i386 `_EfiEntry`, amd64 `EfiEntry`).
-    /// `image_base`: i386 uefildr links with auto base which resolves to the
-    /// exe default 0x00400000; amd64 cmake pins 0x10000 to stay in the low
-    /// 1GB freeldr maps — pass those explicitly.
-    EfiApplication { entry: String, image_base: u64 },
+    /// `--subsystem,efi_application:5.01`, `--gc-sections` + no `-shared`
+    /// (it's an exe), `--exclude-all-symbols` (exports nothing — the
+    /// freeldr.spec/.def is only for the freeldr import lib rosload consumes,
+    /// not for uefildr's own exports). `entry` is already arch-decorated
+    /// (i386 `_EfiEntry`, amd64/arm64 `EfiEntry`).
+    ///
+    /// Per-arch knobs (all verbatim from each `build-<arch>/build.ninja`):
+    /// - `alignment`: file == section alignment. x86 (i386/amd64) = 0x200;
+    ///   arm64 = 0x1000.
+    /// - `image_base`: `Some(b)` emits `--image-base 0x{b}`; `None` relies on
+    ///   the common `--enable-auto-image-base` (lld hashes the output name).
+    ///   amd64 cmake pins `Some(0x10000)` to stay in the low 1GB freeldr maps;
+    ///   i386 cmake auto-resolves to the exe default 0x00400000 (passed
+    ///   explicitly as `Some(0x400000)` — identical header); arm64 cmake
+    ///   passes no `--image-base`, so `None` to match its auto-hash base.
+    EfiApplication { entry: String, image_base: Option<u64>, alignment: u64 },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -494,14 +501,13 @@ impl Linker {
         // archives (main staticlib + rust_lib siblings) LAST — exactly as
         // cmake does for every module (verified on ntdll.dll AND ntoskrnl.exe:
         // librtl.a / liblibcntpr.a precede libkernel_rust.a / librtl_rust.a /
-        // libcntpr_rust.a). Many cnt/rtl symbols are defined in BOTH the C and
-        // Rust archives (e.g. 131 cnt CRT funcs like __itoa/__strrev that the
-        // cohab kept C-side and cnt-rust ALSO provides as a superset). Under
-        // --allow-multiple-definition lld takes the FIRST definition by
-        // command-line order, so C-first selects the vetted C variant cmake
-        // ships. Rust-first selected the not-yet-vetted Rust variant — one of
-        // which is buggy and bugchecked ntdll at boot (0x6A). See
-        // feedback_cargo_drive_usermode_target.md.
+        // libcntpr_rust.a). The cnt CORE mem/string ops (memcpy/memset/strcmp/
+        // strncpy/wcs*/… ~25 on a CLEAN archive) are defined in BOTH the C
+        // liblibcntpr.a (i386 asm) AND cnt-rust (cohabitation, C not yet
+        // REMOVE_ITEM'd). Under --allow-multiple-definition lld takes the FIRST
+        // by command-line order, so C-first selects the vetted i386-asm variant
+        // cmake ships; Rust-first selected not-yet-fully-vetted Rust twins and
+        // bugchecked at boot. See feedback_cargo_drive_usermode_target.md.
         println!("cargo:rustc-link-arg=-Wl,--start-group");
         for lib in &self.static_libs {
             let full = self.build_dir.join(lib);
@@ -509,12 +515,21 @@ impl Linker {
                 panic!("missing static lib: {} — run ninja first", full.display());
             }
             println!("cargo:rustc-link-arg={}", full.display());
+            // rerun-if-changed on each input .a: a rustc-link-arg is NOT a
+            // tracked input, so without this cargo silently reuses a stale
+            // binary when an input archive changes (e.g. a rebuilt
+            // libcntpr_rust.a with a CRT miscompile fix) — the linked module
+            // then boots the OLD code. Cost a debug session: a cargo uefildr
+            // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
+            println!("cargo:rerun-if-changed={}", full.display());
         }
         if let Some(a) = &rust_a {
             println!("cargo:rustc-link-arg={}", a.display());
+            println!("cargo:rerun-if-changed={}", a.display());
         }
         for a in &sibling_rust_a {
             println!("cargo:rustc-link-arg={}", a.display());
+            println!("cargo:rerun-if-changed={}", a.display());
         }
         for (spec_rel, dll_name, basename) in &self.import_libs {
             let a = self.generate_import_lib(spec_rel, dll_name, basename);
@@ -547,21 +562,21 @@ impl Linker {
             println!("cargo:rustc-link-arg={f}");
         }
         // ---- kind-specific subsystem / alignment / sections ----------
-        let (entry, image_base) = match &kind {
+        let (entry, image_base): (&String, Option<u64>) = match &kind {
             ModuleKind::KernelExe { entry, image_base } => {
                 // native subsystem; GC unreferenced sections (main.rs anchors
                 // the entry to hold the root); no -shared.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
-                (entry, *image_base)
+                (entry, Some(*image_base))
             }
             ModuleKind::KernelDll { entry, image_base } => {
                 // native subsystem PE DLL; keep all sections, 0x1000 align.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,-file-alignment=0x1000,-section-alignment=0x1000");
                 println!("cargo:rustc-link-arg=-shared");
-                (entry, *image_base)
+                (entry, Some(*image_base))
             }
             ModuleKind::Win32Dll { entry, image_base, subsystem } => {
                 // user-mode PE DLL: exports come from the .def so NO
@@ -573,26 +588,35 @@ impl Linker {
                     println!("cargo:rustc-link-arg=-Wl,--subsystem,{s}");
                 }
                 println!("cargo:rustc-link-arg=-shared");
-                (entry, *image_base)
+                (entry, Some(*image_base))
             }
-            ModuleKind::EfiApplication { entry, image_base } => {
-                // UEFI app (uefildr.efi): efi_application subsystem, 0x200
-                // file/section alignment, --gc-sections, no -shared (exe),
-                // --exclude-all-symbols (exports nothing). The common flags
-                // above already add --allow-multiple-definition (the cargo
-                // bin's own #[panic_handler] in main.rs collides with
+            ModuleKind::EfiApplication { entry, image_base, alignment } => {
+                // UEFI app (uefildr.efi): efi_application subsystem,
+                // per-arch file/section alignment (x86 0x200, arm64 0x1000),
+                // --gc-sections, no -shared (exe), --exclude-all-symbols
+                // (exports nothing). The common flags above already add
+                // --allow-multiple-definition (the cargo bin's own
+                // #[panic_handler] in main.rs collides with
                 // libfreeldr_rust_uefi.a + cnt-rust CRT dups; lld first-match
                 // wins) and --enable-auto-image-base. cmake's uefildr omits
                 // the --major-*-version flags the common block adds, but those
                 // are harmless for an EFI app the firmware loads by FAT path.
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,efi_application:5.01");
-                println!("cargo:rustc-link-arg=-Wl,--exclude-all-symbols,--file-alignment,0x200,--section-alignment,0x200");
+                println!(
+                    "cargo:rustc-link-arg=-Wl,--exclude-all-symbols,--file-alignment,0x{a:x},--section-alignment,0x{a:x}",
+                    a = alignment
+                );
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
                 (entry, *image_base)
             }
         };
         println!("cargo:rustc-link-arg=-Wl,-e,{entry}");
-        println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", image_base);
+        // Emit an explicit base only when the module pins one; otherwise the
+        // common --enable-auto-image-base resolves it (matches cmake's arm64
+        // uefildr, which passes no --image-base).
+        if let Some(b) = image_base {
+            println!("cargo:rustc-link-arg=-Wl,--image-base,0x{:08x}", b);
+        }
     }
 
     /// Build one workspace Rust staticlib crate (`crate-type=["staticlib"]`)
