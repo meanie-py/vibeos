@@ -479,6 +479,7 @@ impl Linker {
         println!("cargo:rustc-link-arg=-Wl,--start-group");
         if let Some(a) = &rust_a {
             println!("cargo:rustc-link-arg={}", a.display());
+            println!("cargo:rerun-if-changed={}", a.display());
         }
         for lib in &self.static_libs {
             let full = self.build_dir.join(lib);
@@ -486,6 +487,13 @@ impl Linker {
                 panic!("missing static lib: {} — run ninja first", full.display());
             }
             println!("cargo:rustc-link-arg={}", full.display());
+            // rerun-if-changed on each input .a: a rustc-link-arg is NOT a
+            // tracked input, so without this cargo silently reuses a stale
+            // binary when an input archive changes (e.g. a rebuilt
+            // libcntpr_rust.a with a CRT miscompile fix) — the linked module
+            // then boots the OLD code. Cost a debug session: a cargo uefildr
+            // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
+            println!("cargo:rerun-if-changed={}", full.display());
         }
         for (spec_rel, dll_name, basename) in &self.import_libs {
             let a = self.generate_import_lib(spec_rel, dll_name, basename);
