@@ -453,6 +453,7 @@ dependencies = [
  "largeint",
  "luid",
  "mem",
+ "network",
  "prefix",
  "random",
  "rtl-strings",

@@ -179,10 +179,13 @@ def _strfam_shim(name: str, m: dict, params, rt: str) -> str:
         ]
     elif sp == "strncat_like":
         d, src, n = pn
+        cstr_b = "wcstr_slice_bounded" if wide else "cstr_slice_bounded"
         b += [
             f"    if {n} == 0 {{ return {d}; }}",
             f"    let dl = {cstr}({d} as *const {el}).len();",
-            f"    let sc = {cstr}({src});",
+            # src bounded to n — strncat appends min(strlen(src),n); an
+            # unbounded scan over-reads a non-terminated src past n.
+            f"    let sc = {cstr_b}({src}, {n});",
             f"    let m = if sc.len() < {n} {{ sc.len() }} else {{ {n} }};",
             f"    let tail = {rawm}({d}.add(dl), m + 1);",
             f"    crate::core_rs::string::ncat(tail, sc, {n});",
@@ -786,6 +789,16 @@ def shim(name: str, m: dict) -> str:
     elif sp == "wnul_in":  # wide twin: NUL-terminated u16 → &[u16]
         for n in ptrs:
             body.append(f"    let {n}_s = wcstr_slice({n});")
+    elif sp == "nul_in_n":  # strncmp: compare <= n, NEVER read past n.
+        # Unlike strcmp (nul_in), strncmp's operands may be NON-terminated
+        # fixed fields of length >= n; an unbounded scan over-reads into
+        # the next page → 0x50. ncmp treats out-of-slice as ZERO, so
+        # bounding each operand to n is result-identical and crash-safe.
+        for n in ptrs:
+            body.append(f"    let {n}_s = cstr_slice_bounded({n}, {szp});")
+    elif sp == "wnul_in_n":  # wcsncmp wide twin
+        for n in ptrs:
+            body.append(f"    let {n}_s = wcstr_slice_bounded({n}, {szp});")
     elif sp == "nul_in_maxlen":
         # strnlen-shape: walk the C string but never past the count
         # param (textbook strnlen must not read beyond maxlen).
@@ -797,11 +810,16 @@ def shim(name: str, m: dict) -> str:
     elif sp == "dst_fixed_n":
         d, s, _ = pnames
         body.append(f"    let {d}_s = raw_mut_slice({d}, {szp});")
-        body.append(f"    let {s}_s = cstr_slice({s});")
+        # src MUST be bounded to n: strncpy copies min(strlen(src),n) and
+        # the classic caller passes a NON-NUL-terminated fixed field of
+        # length >= n. An unbounded cstr_slice runs off the field into the
+        # next (possibly unmapped) page → 0x50. ncpy already does
+        # min(src.len(),n) so bounding src is result-identical, just safe.
+        body.append(f"    let {s}_s = cstr_slice_bounded({s}, {szp});")
     elif sp == "wdst_fixed_n":  # wcsncpy
         d, s, _ = pnames
         body.append(f"    let {d}_s = wraw_mut_slice({d}, {szp});")
-        body.append(f"    let {s}_s = wcstr_slice({s});")
+        body.append(f"    let {s}_s = wcstr_slice_bounded({s}, {szp});")
     elif sp == "ptr_len":
         for p in ptrs:
             body.append(f"    let {p}_s = raw_slice({p} as *const u8, {szp});")
@@ -847,7 +865,23 @@ def shim(name: str, m: dict) -> str:
             body.append(f"    {d}")
         elif sp == "set_raw":
             d = ptrs[0]
-            body.append(f"    {core_call(f'{d}_s, {scal[0]}')};")
+            # memset: write_volatile fill, NOT a `core_rs::mem::set` call.
+            # memset is a #[no_mangle] C-ABI symbol whose only observable
+            # effect is storing through a pointer param — the exact
+            # captures(none)/writeonly shape LLVM's dead-store eliminator
+            # targets. Compiled from a plain `*x = b` loop it is DCE'd to a
+            # guard-only infinite spin in some cgu partitions (observed on
+            # the amd64 cmake freeldr link after the per-fn cgu-split: boot
+            # hangs at RtlZeroMemory(MachVtbl, 0xf0) right after the UEFI
+            # banner; a black_box hint only turned the spin into infinite
+            # recursion). A volatile store is guaranteed to happen and is
+            # never elided, so the fill survives every cgu partition. The
+            # `set` core stays the plain loop for the difftest + Kani model
+            # (core_rs forbids unsafe); only the shipping shim is volatile.
+            body.append(f"    let __b = {scal[0]} as u8;")
+            body.append(f"    for __x in {d}_s.iter_mut() {{")
+            body.append("        core::ptr::write_volatile(__x as *mut u8, __b);")
+            body.append("    }")
             body.append(f"    {d}")
         elif sp == "mem_raw":
             d, s, nn = pnames

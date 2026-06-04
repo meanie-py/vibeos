@@ -81,6 +81,30 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     string/ctype.c
     string/iswctype_nt.c
     string/is_wctype.c
+    # Wave CORE-OPS: string core ops — amd64/arm64 compile these .c
+    # (i386 uses *_asm.s, REMOVE_ITEM'd from the asm list above so the
+    # REMOVE_ITEM here is a no-op on i386). cnt-rust provides all 20
+    # (difftest-gated) → uniform Rust impl across the 3 arches.
+    string/strcat.c
+    string/strchr.c
+    string/strcmp.c
+    string/strcpy.c
+    string/strlen.c
+    string/strncat.c
+    string/strncmp.c
+    string/strncpy.c
+    string/strnlen.c
+    string/strrchr.c
+    string/wcscat.c
+    string/wcschr.c
+    string/wcscmp.c
+    string/wcscpy.c
+    string/wcslen.c
+    string/wcsncat.c
+    string/wcsncmp.c
+    string/wcsncpy.c
+    string/wcsnlen.c
+    string/wcsrchr.c
 )
 
 list(APPEND LIBCNTPR_ASM_SOURCE
@@ -90,6 +114,43 @@ list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_MEM_ASM_SOURCE}
     ${LIBCNTPR_STRING_ASM_SOURCE}
 )
+
+# ── Wave CORE-OPS: i386 mem+string core ops — flip hand asm → cnt-rust ─
+# libcntpr-ONLY (REMOVE_ITEM from libcntpr's asm list, NOT from the
+# shared LIBCNTPR_{MEM,STRING}_ASM_SOURCE vars which also feed
+# CRT_{MEM,STRING}_ASM_SOURCE for user-mode msvcrt). cnt-rust already
+# provides all these #[no_mangle] core ops (difftest-gated); on
+# amd64/arm64 cnt-rust is the sole provider (the matching .c are
+# REMOVE_ITEM'd from LIBCNTPR_SOURCE below). Dropping the i386 asm gives
+# every arch one Rust impl. (i386 memcpy already came from cnt-rust —
+# no memcpy_asm ever existed.)
+if(ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_ASM_SOURCE
+        mem/i386/memchr_asm.s
+        mem/i386/memmove_asm.s
+        mem/i386/memset_asm.s
+        string/i386/strcat_asm.s
+        string/i386/strchr_asm.s
+        string/i386/strcmp_asm.s
+        string/i386/strcpy_asm.s
+        string/i386/strlen_asm.s
+        string/i386/strncat_asm.s
+        string/i386/strncmp_asm.s
+        string/i386/strncpy_asm.s
+        string/i386/strnlen_asm.s
+        string/i386/strrchr_asm.s
+        string/i386/wcscat_asm.s
+        string/i386/wcschr_asm.s
+        string/i386/wcscmp_asm.s
+        string/i386/wcscpy_asm.s
+        string/i386/wcslen_asm.s
+        string/i386/wcsncat_asm.s
+        string/i386/wcsncmp_asm.s
+        string/i386/wcsncpy_asm.s
+        string/i386/wcsnlen_asm.s
+        string/i386/wcsrchr_asm.s
+    )
+endif()
 
 set_source_files_properties(${LIBCNTPR_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "NO_RTL_INLINES;_NTSYSTEM_;_NTDLLBUILD_;_LIBCNT_;__CRT__NO_INLINE;CRTDLL")
 add_asm_files(libcntpr_asm ${LIBCNTPR_ASM_SOURCE})
@@ -119,15 +180,35 @@ if(ARCH STREQUAL "i386")
     set(CNT_RUST_FEATURES "")
 elseif(ARCH STREQUAL "amd64")
     set(RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "")
+    # -C no-prepopulate-passes: match i386. The per-fn cgu-split (one tiny
+    # #[no_mangle] shim per cgu) lets LLVM's aggressive whole-pipeline
+    # optimization miscompile isolated cnt shims on amd64 — memset's stores
+    # were DCE'd into an infinite spin, _strnicmp's compare collapsed to
+    # "always equal" (made DissectArcPath match ramdisk(0) for a CD path,
+    # so freeldr couldn't open freeldr.ini → amd64 boot hang). Disabling the
+    # prepopulated pass pipeline (as i386 already does) tames it class-wide.
+    # amd64 keeps SSE (user/kernel both use it post-Phase-0).
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C no-prepopulate-passes")
     set(CNT_RUST_FEATURES "--features" "float")
 elseif(ARCH STREQUAL "arm64")
     set(RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_EXTRA_ENV "")
+    # Same class-wide miscompile guard as amd64 (see above); arm64 keeps NEON.
+    set(RUST_EXTRA_ENV "RUSTFLAGS=-C no-prepopulate-passes")
     set(CNT_RUST_FEATURES "--features" "float")
 endif()
 
 set(RUST_CNT_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcntpr_rust.a")
+# Track EVERY .rs under the three cnt-* crates, not a hand-curated list.
+# The old explicit DEPENDS named `core_rs/mod.rs` but none of its
+# submodules (mem.rs, str.rs, …), so editing e.g. the memset core never
+# re-ran cargo — a stale libcntpr_rust.a silently masked source fixes
+# (cost a debug session: a memset miscompile fix appeared to "not take").
+# CONFIGURE_DEPENDS re-globs each build so new files are picked up too.
+file(GLOB_RECURSE CNT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
+    ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
+    ${RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs
+)
 add_custom_command(
     OUTPUT ${RUST_CNT_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -139,16 +220,9 @@ add_custom_command(
         ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libcnt_rust_lib.a
         ${RUST_CNT_LIB}
     DEPENDS
-            ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/lib.rs
+            ${CNT_RUST_SOURCES}
             ${RUST_WORKSPACE_DIR}/cnt-rust-lib/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/mod.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/generated.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/manual.rs
-            ${RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/mod.rs
-            ${RUST_WORKSPACE_DIR}/cnt-ctype/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-ctype/Cargo.toml
-            ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust libcntpr umbrella (${RUST_TARGET})"
