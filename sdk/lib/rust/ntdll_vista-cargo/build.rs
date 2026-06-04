@@ -17,10 +17,10 @@ fn main() {
             "i686-kernel.json", "ntdll_vista-i386.rc.res", 0x6fc7_0000, "_DllMain@12",
         ),
         "x86_64" => (
-            "x86_64-kernel.json", "ntdll_vista-amd64.rc.res", 0x7feb_2000_0000, "DllMain",
+            "x86_64-kernel.json", "ntdll_vista-amd64.rc.res", 0x7fe_b200_0000, "DllMain",
         ),
         "aarch64" => (
-            "aarch64-kernel.json", "ntdll_vista-arm64.rc.res", 0x7feb_2000_0000, "DllMain",
+            "aarch64-kernel.json", "ntdll_vista-arm64.rc.res", 0x7fe_b200_0000, "DllMain",
         ),
         o => panic!("ntdll_vista-cargo: unsupported arch {o}"),
     };
@@ -28,14 +28,18 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("ntdll-rust")
         .rust_features(&["vista"]) // DllMain + LdrpHeap + ldrnotify
+        // Tier-B sibling Rust crates (was reuse of cmake libsmlib_rust.a /
+        // libutf8.a). smss-csrss-rust built smlib_only (--no-default-features).
+        .rust_lib("smss-csrss-rust", &["smlib_only", "ntddi_ws03"], false)
+        .rust_lib("utf8", &[], true)
         .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/nt_0600/ntdll_vista.spec", "ntdll_vista.dll")
         // imports Rtl*/Nt*/… from ntdll.dll (add_importlibs(ntdll_vista ntdll))
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         .static_libs(&[
-            "dll/ntdll/nt_0600/libsmlib_rust.a",
+            // Tier-C deep-C (deferred — follows rtl-priv flip track):
             "sdk/lib/rtl/librtl_vista.a",
-            "sdk/lib/rtl/libutf8.a",
+            // Tier-A asm/data (still cmake-built):
             "sdk/lib/pseh/libpseh.a",
             "sdk/lib/crt/libchkstk.a",
         ])
