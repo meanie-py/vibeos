@@ -110,7 +110,7 @@ list(APPEND SOURCE
     reactx/ntddraw/mocomp.c
     reactx/ntddraw/eng.c
     reactx/ntddraw/dxeng.c
-    user/ntuser/accelerator.c
+    # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
     user/ntuser/callback.c
     user/ntuser/callproc.c
     # user/ntuser/caret.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/caret.rs) — cohabitation [ntuser wave 3]
@@ -308,6 +308,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/prop.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/metric.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/caret.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/accelerator.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
