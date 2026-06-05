@@ -234,6 +234,10 @@ pub mod ldevobj;
 // [ntuser wave 1: atom-table pair — session.c (gAtomTable + init) + useratom.c]
 pub mod session;
 pub mod useratom;
+// [ntuser wave 2: easy leaves]
+pub mod guicheck;
+pub mod prop;
+pub mod metric;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

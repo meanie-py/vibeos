@@ -127,7 +127,7 @@ list(APPEND SOURCE
     user/ntuser/event.c
     user/ntuser/focus.c
     user/ntuser/ghost.c
-    user/ntuser/guicheck.c
+    # user/ntuser/guicheck.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/guicheck.rs) — cohabitation [ntuser wave 2]
     user/ntuser/hook.c
     user/ntuser/hotkey.c
     user/ntuser/input.c
@@ -137,7 +137,7 @@ list(APPEND SOURCE
     user/ntuser/layered.c
     user/ntuser/menu.c
     user/ntuser/message.c
-    user/ntuser/metric.c
+    # user/ntuser/metric.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/metric.rs) — cohabitation [ntuser wave 2]
     user/ntuser/misc.c
     user/ntuser/monitor.c
     user/ntuser/mouse.c
@@ -147,7 +147,7 @@ list(APPEND SOURCE
     user/ntuser/ntuser.c
     user/ntuser/painting.c
     user/ntuser/power.c
-    user/ntuser/prop.c
+    # user/ntuser/prop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/prop.rs) — cohabitation [ntuser wave 2]
     user/ntuser/scrollbar.c
     user/ntuser/scrollex.c
     user/ntuser/security.c
@@ -304,6 +304,9 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ldevobj.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/session.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/useratom.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/guicheck.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/prop.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/metric.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
