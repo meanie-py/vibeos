@@ -121,7 +121,7 @@ list(APPEND SOURCE
     user/ntuser/cursoricon.c
     user/ntuser/dde.c
     user/ntuser/defwnd.c
-    user/ntuser/desktop.c
+    # user/ntuser/desktop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/desktop.rs) — cohabitation [ntuser wave 13 spine]
     user/ntuser/display.c
     user/ntuser/draw.c
     # user/ntuser/event.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/event.rs) — cohabitation [ntuser wave 10]
@@ -325,6 +325,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/registry.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/security.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/class.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/desktop.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
