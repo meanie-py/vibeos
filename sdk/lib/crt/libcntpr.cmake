@@ -208,6 +208,16 @@ if(NOT ARCH STREQUAL "i386")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 3): tan = sin/cos → cnt-rust (float feature,
+# amd64/arm64; i386 keeps tan_asm.s). Uniform sin/cos quotient per the
+# "give every arch the same thing" directive — replaces amd64's
+# hand-optimized AMD-libm tan AND arm64's arm64/tan.c (already sin/cos).
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE math/libm_sse2/tan.c)
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE math/arm64/tan.c)
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

@@ -597,6 +597,10 @@ fn main() {
         ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
         ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
         ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
+        // Wave MATH-TIERC sub-wave 3: tan = sin/cos (the portable arm64/tan.c
+        // form). Compute the reference via the genuine ref_sin/ref_cos (the
+        // same algorithm cnt-rust's sin/cos use) → bit-exact vs cabi::tan.
+        ("tan", "double ref_sin(double); double ref_cos(double);\ndouble ref_tan(double x){return ref_sin(x)/ref_cos(x);}".to_string()),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which

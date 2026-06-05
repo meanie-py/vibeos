@@ -864,3 +864,26 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
     xi |= sx;
     f64::from_bits(xi)
 }
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 3 — tan (f64)
+//
+// `tan(x) = sin(x)/cos(x)` — the portable `arm64/tan.c` form, applied
+// uniformly to BOTH amd64 and arm64 per the standing directive ("give every
+// arch the same thing — we don't care about hand-optimized"). This replaces
+// amd64's hand-optimized AMD-libm `libm_sse2/tan.c` with the same simple
+// quotient arm64 already used. Bit-exact: our Rust `sin`/`cos` are proven
+// equal to the C `sin`/`cos` (sw1), so this quotient equals the C
+// `arm64/tan.c` quotient bit-for-bit (incl. the cos(x)→0 ±inf limit, where
+// both divide identical operands). amd64/arm64 only (the `float` feature);
+// i386 keeps its x87 `tan_asm.s`.
+// ===========================================================================
+
+/// `double tan(double)` — sin/cos quotient (the portable arm64 form).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn tan(x: f64) -> f64 {
+    let s = sin(x);
+    let c = cos(x);
+    s / c
+}
