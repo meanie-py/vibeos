@@ -3073,6 +3073,12 @@ extern "C" {
     fn ref_cos(x: f64) -> f64;
     fn ref_sqrt(x: f64) -> f64;
     fn ref_sqrtf(x: f32) -> f32;
+    // Wave MATH-TIERC sub-wave 2
+    fn ref_exp(x: f64) -> f64;
+    fn ref_log(x: f64) -> f64;
+    fn ref_log10(x: f64) -> f64;
+    fn ref_pow(base: f64, exponent: f64) -> f64;
+    fn ref_fmod(x: f64, y: f64) -> f64;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3450,6 +3456,177 @@ fn diff_math_nexttowardf() {
     }
 }
 
+// --- Wave MATH-TIERC sub-wave 2: exp / log / log10 / pow / fmod -------------
+
+fn diff_math_exp() {
+    // Range-reduce + degree-5 rational; bit-exact vs the genuine .c under
+    // -ffp-contract=off. Random bit images cover NaN/±inf/subnormal/
+    // overflow(>709)/underflow(<-745)/tiny(<2^-28); a dense moderate sweep
+    // exercises the polynomial + 2^k scaling path.
+    let mut rng = Rng(0xe5a1_0e7c);
+    let mut bits = f64_edge_bits();
+    for _ in 0..50_000 {
+        bits.push(rng.next());
+    }
+    for &b in &bits {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::exp(x), unsafe { ref_exp(x) }), "exp {b:#018x}");
+    }
+    for _ in 0..200_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 1500.0 - 750.0;
+        assert!(same_f64(cabi::exp(x), unsafe { ref_exp(x) }), "exp {x}");
+    }
+}
+
+fn diff_math_log() {
+    // Natural log, fdlibm-style. Random bit images cover negative→NaN,
+    // 0→-inf, inf/NaN passthrough, and the subnormal-normalize (k-=54)
+    // path; a dense positive sweep exercises the polynomial across decades.
+    let mut rng = Rng(0x10c0_9a31);
+    let mut bits = f64_edge_bits();
+    for _ in 0..50_000 {
+        bits.push(rng.next());
+    }
+    for &b in &bits {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::log(x), unsafe { ref_log(x) }), "log {b:#018x}");
+    }
+    for _ in 0..200_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 1.0e6;
+        assert!(same_f64(cabi::log(x), unsafe { ref_log(x) }), "log {x}");
+    }
+}
+
+fn diff_math_log10() {
+    // Upstream's rough stub — its `while temp>=10`/`while temp<1` loops
+    // would spin forever on inf, and the C reference has the IDENTICAL
+    // loops, so the contract (and this fuzz) is FINITE values only (the
+    // printf use). x<=0 returns the -1e308 sentinel on both sides. Every
+    // op is identical FP → bit-exact across all finite magnitudes.
+    let mut rng = Rng(0x10ad_1100);
+    let mut xs: Vec<f64> =
+        vec![0.0, -0.0, -1.0, -1.0e9, 1.0, 10.0, 100.0, 0.1, 0.5, 9.999, 1.0e-20, 1.0e20];
+    for _ in 0..100_000 {
+        let frac = (rng.next() as f64) / (u64::MAX as f64);
+        // finite positives spanning ~1e-30 .. ~1e30
+        xs.push(frac * 1.0e30 + f64::MIN_POSITIVE);
+        let frac2 = (rng.next() as f64) / (u64::MAX as f64);
+        xs.push(frac2 * 1.0e-10 + f64::MIN_POSITIVE);
+    }
+    for &x in &xs {
+        assert!(same_f64(cabi::log10(x), unsafe { ref_log10(x) }), "log10 {x}");
+    }
+}
+
+fn diff_math_pow() {
+    // Upstream's integer-exponent stub. Small integer exponents drive the
+    // multiply loop; non-integer exponents return 0.0 on both sides (the
+    // FIXME general case). Huge |exponent| is out of contract (slow loop +
+    // `(int)` cast saturation divergence) and excluded. Identical FP
+    // multiply sequence ⇒ bit-exact.
+    let mut rng = Rng(0x90e0_5103);
+    let bases = [
+        0.0f64, -0.0, 1.0, -1.0, 2.0, -2.0, 0.5, -0.5, 10.0, 3.0, -3.0, 1.5, -7.25, 123.4,
+    ];
+    let exps = [
+        0.0f64, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 10.0, -10.0, 20.0, -20.0, 0.5, -0.5, 1.5, 2.5,
+        -3.7,
+    ];
+    for &b in &bases {
+        for &e in &exps {
+            assert!(same_f64(cabi::pow(b, e), unsafe { ref_pow(b, e) }), "pow {b} {e}");
+        }
+    }
+    for _ in 0..50_000 {
+        let base = (rng.next() as f64) / (u64::MAX as f64) * 200.0 - 100.0;
+        let ue = rng.next();
+        let mut e = ((ue % 61) as i32 - 30) as f64; // integer in [-30, 30]
+        if ue & 1 == 0 {
+            e += 0.5; // non-integer half the time → 0.0 path
+        }
+        assert!(same_f64(cabi::pow(base, e), unsafe { ref_pow(base, e) }), "pow {base} {e}");
+    }
+}
+
+fn diff_math_fmod() {
+    // Pure bit-twiddling remainder, faithful to the ReactOS arm64 stub.
+    //
+    // DOMAIN NOTE: the upstream C normalizes a *subnormal* operand to a
+    // different binade than a normal one (its `ex -= 11; xi <<= (1-ex)`
+    // bookkeeping lands the leading bit at ~2^63, vs ~2^52 for normals —
+    // unlike musl's `ux <<= -ex+1`). With a normal x and a subnormal y the
+    // mismatched scales drive xi to 0 and the C's own `while(!(xi>>52))`
+    // loop spins forever. So a *subnormal operand* is outside the
+    // reference's defined domain (and the kernel's: fmod is fed only finite
+    // normals by printf float formatting). We therefore fuzz normal /
+    // signed-zero / inf / NaN operands — every case the C actually handles
+    // — and the Rust matches it bit-for-bit there. (Both sides are
+    // identical on subnormals too, including the hang; there is nothing to
+    // compare.) `compose_normal` forces the exponent field into [1, 0x7FE].
+    let mut rng = Rng(0xf3d0_b007);
+    let compose_normal = |r: u64| -> f64 {
+        let sign = r & 0x8000_0000_0000_0000;
+        let exp = 1 + (r >> 52) % 0x7FE; // 1 ..= 2046 (normal)
+        let mant = r & 0x000F_FFFF_FFFF_FFFF;
+        f64::from_bits(sign | (exp << 52) | mant)
+    };
+    // Non-subnormal specials: signed zeros, ±inf, NaN, and a few normals.
+    let specials: [f64; 11] = [
+        0.0,
+        -0.0,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+        1.0,
+        -1.0,
+        2.0,
+        -2.0,
+        0.5,
+        f64::MAX,
+    ];
+    for &x in &specials {
+        for &y in &specials {
+            assert!(
+                same_f64(cabi::fmod(x, y), unsafe { ref_fmod(x, y) }),
+                "fmod {:#018x} {:#018x}",
+                x.to_bits(),
+                y.to_bits()
+            );
+        }
+    }
+    // Random normal × normal — the reduction + result-construct paths.
+    for _ in 0..60_000 {
+        let x = compose_normal(rng.next());
+        let y = compose_normal(rng.next());
+        assert!(
+            same_f64(cabi::fmod(x, y), unsafe { ref_fmod(x, y) }),
+            "fmod {:#018x} {:#018x}",
+            x.to_bits(),
+            y.to_bits()
+        );
+    }
+    // Mixed: normal against the specials (fmod(x,0)=NaN, fmod(x,inf)=x, …).
+    for _ in 0..20_000 {
+        let x = compose_normal(rng.next());
+        for &y in &specials {
+            assert!(
+                same_f64(cabi::fmod(x, y), unsafe { ref_fmod(x, y) }),
+                "fmod {:#018x} {:#018x}",
+                x.to_bits(),
+                y.to_bits()
+            );
+            assert!(
+                same_f64(cabi::fmod(y, x), unsafe { ref_fmod(y, x) }),
+                "fmod {:#018x} {:#018x}",
+                y.to_bits(),
+                x.to_bits()
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -3536,6 +3713,11 @@ fn main() {
         diff_math_sincos,
         diff_math_sqrt,
         diff_math_nexttowardf,
+        diff_math_exp,
+        diff_math_log,
+        diff_math_log10,
+        diff_math_pow,
+        diff_math_fmod,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }
