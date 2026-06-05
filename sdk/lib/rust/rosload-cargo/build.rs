@@ -20,8 +20,9 @@
 //! Inputs are the cmake-built artifacts (run `ninja rosload` in build-<arch>/
 //! first): the prebuilt objects compiled into rosload.dir (strsafe_shim.c.obj,
 //! cmboot.c.obj, per-arch asm), `libfreeldr_rust_rosload.a` (the freeldr-rust
-//! body + the RunLoader entry, built `--features rosload`), the sibling leaf
-//! libs, and the freeldr import lib (`libfreeldr.dir/libfreeldr.a`).
+//! body + the RunLoader entry, built `--features rosload`), and the sibling
+//! leaf libs. The freeldr import lib is self-hosted by reactos-link from
+//! freeldr.spec (.import_lib()) — no cmake-built libfreeldr.a needed.
 //! reactos-link wraps them in --start-group/--end-group.
 
 use reactos_link::{Linker, ModuleKind};
@@ -57,22 +58,40 @@ fn main() {
         other => panic!("rosload-cargo: unsupported arch {other} (i386/amd64 only; arm64 is UEFI-only, no rosload)"),
     };
 
-    // Common libs, in cmake link order: the rosload Rust body, the sibling C
-    // leaf libs, the C libcntpr, the freeldr import lib, then libcntpr_rust.
+    // Common C leaf libs (cm/rtl/cntpr) + the cnt-rust cohabitation twin. The
+    // rosload Rust body is now a DIRECT cargo build (.rust_staticlib() below),
+    // not a reused cmake .a. The freeldr import lib is also self-hosted by
+    // reactos-link from freeldr.spec (.import_lib() below), so cmake's
+    // spec2def(freeldr.sys ... ADD_IMPORTLIB) is retired.
     libs.extend_from_slice(&[
-        "boot/freeldr/freeldr/libfreeldr_rust_rosload.a",
         "sdk/lib/cmlib/libblcmlib.a",
         "boot/rtl/libblrtl.a",
         "sdk/lib/crt/liblibcntpr.a",
-        // freeldr import lib (add_importlibs(rosload freeldr)); rosload's
-        // freeldr.sys imports resolve at runtime against uefildr.efi.
-        "boot/freeldr/freeldr/CMakeFiles/libfreeldr.dir/libfreeldr.a",
-        "sdk/lib/crt/libcntpr_rust.a",
+        // cnt-rust-lib is now a DIRECT cargo sibling (.rust_lib() below), not
+        // the cmake-copied libcntpr_rust.a.
     ]);
 
+    // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 no `float`,
+    // amd64 `float`. build_rust_crate's cnt-rust-lib special case supplies the
+    // per-arch RUSTFLAGS. Same path ntdll-cargo uses. (rosload is i386/amd64.)
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     let mut linker = Linker::new(target_json)
-        // No .rust_staticlib(): reuse the cmake-built libfreeldr_rust_rosload.a
-        // (identical codegen + carries the `rosload` feature).
+        // freeldr-rust body built DIRECTLY by reactos-link (was the cmake
+        // custom_command → libfreeldr_rust_rosload.a). .rust_user_target()
+        // builds the STANDARD target (stable, no build-std) as that command
+        // did — NOT the x86-softfloat kernel json. The `rosload` feature
+        // selects the 2nd-stage-loader module set + the RunLoader entry.
+        .rust_staticlib("freeldr-rust")
+        .rust_features(&["rosload"])
+        .rust_user_target()
+        // cmboot-rust is a path-dep of freeldr-rust — watch it so an edit there
+        // re-runs build.rs (freeldr-rust's own src is tracked by build_rust_crate).
+        // cmboot-rust (freeldr-rust dep) + cnt-rust/cnt-ctype (cnt-rust-lib
+        // path-deps) — watch so an edit re-runs build.rs.
+        .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)
         // strsafe_shim.c compiled directly (self-contained leaf). rosload is
         // i386/amd64 only — both x86 — so -mno-sse always applies (freeldr
@@ -80,9 +99,19 @@ fn main() {
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
         .c_shim_flags(&["-mno-sse"])
         // rosload exports RtlAssert via rosload.def (ENABLE_EXPORTS TRUE).
-        .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe");
+        .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe")
+        // freeldr import lib, self-hosted from freeldr.spec (was the cmake
+        // spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB) → libfreeldr.a).
+        // rosload's freeldr.sys imports bind at runtime against uefildr.efi,
+        // which the PE loader registers as "freeldr.sys" and which exports the
+        // same freeldr.spec symbols. Same spec → identical import names/dll.
+        .import_lib("boot/freeldr/freeldr/freeldr.spec", "freeldr.sys", "freeldr");
 
     if arch == "x86" {
+        // i386 freeldr runs in protected mode before CR4.OSFXSR — no SSE.
+        // Build freeldr-rust with -sse,-sse2 (the retired custom_command's i386
+        // RUSTFLAGS; amd64 ran empty → SSE on, as in long mode).
+        linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
         // The C halstub.c always linked the Rust HAL dispatch tables as a
         // source object; as archive members they'd be GC'd. Pull them.
         linker = linker.force_undefined(&["_HalDispatchTable", "_HalPrivateDispatchTable"]);

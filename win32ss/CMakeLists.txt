@@ -117,7 +117,7 @@ list(APPEND SOURCE
     user/ntuser/class.c
     user/ntuser/clipboard.c
     # user/ntuser/console.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/console.rs) — cohabitation [ntuser wave 7]
-    user/ntuser/csr.c
+    # user/ntuser/csr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/csr.rs) — cohabitation [ntuser wave 9]
     user/ntuser/cursoricon.c
     user/ntuser/dde.c
     user/ntuser/defwnd.c
@@ -318,6 +318,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/console.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/copy.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/rtlstr.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/csr.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

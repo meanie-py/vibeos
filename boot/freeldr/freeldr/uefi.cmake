@@ -86,24 +86,30 @@ set(UEFILDR_EXTRA_DEPENDS
     cportlib blcmlib blrtl libcntpr chkstk
     # source files reactos-link now compiles directly (file-track so `ninja
     # uefildr` re-invokes cargo when they change — reactos-link's per-input
-    # cargo:rerun-if-changed then re-runs the link). uefiasm.S is no longer here:
-    # it was flipped to Rust global_asm! (freeldr-rust/uefiasm.rs), tracked via
-    # FREELDR_RUST_SOURCES → libfreeldr_rust_uefi.a.
+    # cargo:rerun-if-changed then re-runs the link). uefiasm.S/i386trap.S/misc.S
+    # are no longer here: flipped to Rust global_asm! (freeldr-rust/uefiasm.rs +
+    # loader_asm.rs), tracked via the BODY_CRATE glob below.
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/strsafe_shim.c
-    # custom-target-produced rust .a link inputs — depend on the FILES:
-    rust_freeldr_uefi ${FREELDR_RUST_UEFI_LIB}
-    rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
+    # freeldr-rust body is now built by uefildr-cargo itself (reactos-link
+    # .rust_staticlib) — tracked via add_cargo_module's BODY_CRATE below, not a
+    # custom-target .a. cmboot-rust is a path-dep of freeldr-rust → file-track
+    # its sources so an edit re-invokes the cargo link.
+    ${FREELDR_CMBOOT_RUST_SOURCES}
+    # cnt-rust-lib is now built by uefildr-cargo itself (reactos-link .rust_lib);
+    # file-track its sources (incl. cnt-rust/cnt-ctype path-deps) so an edit
+    # re-invokes the cargo link, instead of depending on the cmake libcntpr_rust.a.
+    ${FREELDR_CNT_RUST_SOURCES}
+    # cport-rust is still reused from cmake (custom-target output) — file-track it:
     ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
 if(ARCH STREQUAL "i386")
     list(APPEND UEFILDR_EXTRA_DEPENDS
         mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a)
 endif()
-# (i386trap.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust;
-#  tracked via FREELDR_RUST_SOURCES, no longer reactos-link-assembled .S deps.)
 
 # KIND efi → post-link strips .rossym + --strip-all (matches the old
 # add_executable POST_BUILD). NO_CD → uefildr.efi is embedded into the efisys
 # boot image by boot/boot_images.cmake (which references its path directly),
-# not add_cd_file'd.
+# not add_cd_file'd. BODY_CRATE freeldr-rust → glob its sources for the rebuild
+# trigger (the body is built inside the cargo link now).
 add_cargo_module(uefildr uefildr-cargo uefildr.efi
-    KIND efi NO_CD EXTRA_DEPENDS ${UEFILDR_EXTRA_DEPENDS})
+    KIND efi NO_CD BODY_CRATE freeldr-rust EXTRA_DEPENDS ${UEFILDR_EXTRA_DEPENDS})

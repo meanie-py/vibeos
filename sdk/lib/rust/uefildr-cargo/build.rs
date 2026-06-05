@@ -85,8 +85,8 @@ fn main() {
     libs.extend_from_slice(&[
         // libuefifreeldr_common.a retired — it was asm-only (all freeldr C is
         // Rust now), and that asm is assembled directly above. The freeldr-rust
-        // body comes from libfreeldr_rust_uefi.a (already listed).
-        "boot/freeldr/freeldr/libfreeldr_rust_uefi.a",
+        // body is now a DIRECT cargo build (.rust_staticlib() below), no longer
+        // a cmake-built libfreeldr_rust_uefi.a reused here.
         "sdk/lib/cportlib/libcportlib.a",
         // cport.c is Rust now (cohabitation); libcportlib.a is just the stub,
         // the Cp* serial symbols come from libcport_rust.a.
@@ -95,16 +95,45 @@ fn main() {
         "boot/rtl/libblrtl.a",
         "sdk/lib/crt/liblibcntpr.a",
         "sdk/lib/crt/libchkstk.a",
-        "sdk/lib/crt/libcntpr_rust.a",
+        // cnt-rust-lib (the Rust cnt cohabitation twin) is now a DIRECT cargo
+        // sibling (.rust_lib() below), not the cmake-copied libcntpr_rust.a.
     ]);
 
+    // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 builds
+    // WITHOUT `float` (no-SSE pre-boot, no by-value f64 ABI); amd64/arm64 with
+    // `float`. build_rust_crate's cnt-rust-lib special case supplies the exact
+    // per-arch RUSTFLAGS (i386 -sse,-sse2 -C no-prepopulate-passes; else
+    // -C no-prepopulate-passes). Same .rust_lib() path ntdll-cargo uses.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     let mut linker = Linker::new(target_json)
-        // No .rust_staticlib(): reuse the cmake-built libfreeldr_rust_uefi.a
-        // (identical codegen + carries the uefi/uefildr-rust-entry features).
+        // freeldr-rust body built DIRECTLY by reactos-link (was the cmake
+        // custom_command → libfreeldr_rust_uefi.a). .rust_user_target() builds
+        // it on the STANDARD target (i686/x86_64-pc-windows-gnu / aarch64-
+        // gnullvm, stable, no build-std) exactly as the custom_command did —
+        // NOT the x86-softfloat kernel json, whose float ABI would diverge.
+        .rust_staticlib("freeldr-rust")
+        .rust_features(&["uefi", "uefildr-rust-entry"])
+        .rust_user_target()
+        // cmboot-rust is a path-dep of freeldr-rust — watch it so an edit there
+        // re-runs build.rs and rebuilds the body (freeldr-rust's own src is
+        // tracked by build_rust_crate).
+        // cmboot-rust (freeldr-rust dep) + cnt-rust/cnt-ctype (cnt-rust-lib
+        // path-deps) — watch so an edit re-runs build.rs (each crate's OWN src
+        // is auto-tracked by build_rust_crate; these are the path-deps).
+        .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
-    // freeldr runs pre-boot with SSE not yet enabled — an emitted movaps would
-    // #UD. Match uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).
+    // i386 freeldr runs in protected mode before CR4.OSFXSR — no SSE. Build
+    // freeldr-rust with -sse,-sse2 (the retired custom_command's i386 RUSTFLAGS;
+    // amd64/arm64 ran with empty RUSTFLAGS → SSE on, as in long mode).
+    if arch == "x86" {
+        linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
+    }
+    // strsafe_shim.c: an emitted movaps pre-boot would #UD. Match
+    // uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).
     if arch == "x86" || arch == "x86_64" {
         linker = linker.c_shim_flags(&["-mno-sse"]);
     }
