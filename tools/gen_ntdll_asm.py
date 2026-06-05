@@ -50,10 +50,18 @@ ARCHES = {
 #     cmake libsetjmp.a reuse on amd64. The C glue `longjmp` is translated to
 #     Rust in ntdll-rust (`src/setjmp.rs`); only the register save/restore asm
 #     is pre-expanded here.
+#   * ntdllsys (ntdll.S) — the Nt*/Zw* user-mode syscall stubs (all arches).
+#     A tiny checked-in .S that #includes syscalls.inc (STUB_U macro, arch-aware
+#     STUBCODE) + the checked-in sysfuncs.h (296 SVC_ entries). The syscall
+#     number is an assemble-time counter over the shared sysfuncs.h order, so
+#     pre-expansion preserves it identically. Replaces the cmake libntdllsys.a.
 JOBS = [
     ("i386",  "dll/ntdll/dispatch/i386/dispatch.S",       "dispatch-i386.s"),
     ("amd64", "dll/ntdll/dispatch/amd64/dispatch.S",      "dispatch-amd64.s"),
     ("arm64", "dll/ntdll/dispatch/arm64/dispatch.S",      "dispatch-arm64.s"),
+    ("i386",  "ntoskrnl/ntdll.S",                         "ntdllsys-i386.s"),
+    ("amd64", "ntoskrnl/ntdll.S",                         "ntdllsys-amd64.s"),
+    ("arm64", "ntoskrnl/ntdll.S",                         "ntdllsys-arm64.s"),
     ("amd64", "sdk/lib/vcruntime/amd64/_setjmp.s",          "setjmp-amd64.s"),
     ("amd64", "sdk/lib/vcruntime/amd64/__longjmp_noframe.s", "longjmp_noframe-amd64.s"),
 ]

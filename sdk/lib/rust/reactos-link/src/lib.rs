@@ -228,6 +228,13 @@ pub struct Linker {
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
+    /// Pre-expanded asm assembled into a `.a` and linked INSIDE the
+    /// `--start-group` as an on-demand archive (NOT a force-included object
+    /// like `asm`). (archive-basename, asm-rels). Use this when the cmake
+    /// equivalent was an archive (e.g. ntdllsys) and force-including it as an
+    /// object relocates the image enough to surface a latent layout-sensitive
+    /// miscompile — keeping it an in-group archive preserves the cmake layout.
+    asm_archives: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
 }
 
@@ -273,6 +280,7 @@ impl Linker {
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
+            asm_archives: Vec::new(),
             import_libs: Vec::new(),
         }
     }
@@ -325,6 +333,20 @@ impl Linker {
     pub fn asm(mut self, rels: &[&str], set: AsmDefineSet) -> Self {
         self.asm = rels.iter().map(|s| s.to_string()).collect();
         self.asm_set = set;
+        self
+    }
+
+    /// Pre-expanded asm assembled into `lib<name>.a` and linked as an
+    /// on-demand archive INSIDE the `--start-group` (vs `asm()`, which
+    /// force-includes objects before the group). Mirrors a cmake module that
+    /// shipped the asm as an archive (e.g. `ntdllsys` = the Nt*/Zw* syscall
+    /// stubs): force-including those stubs as an object relocated ~5% of the
+    /// i386 image and surfaced a latent layout-sensitive hivewrt miscompile;
+    /// the in-group archive preserves the cmake link layout. Uses the same
+    /// `asm_set` define list as `asm()`.
+    pub fn asm_archive(mut self, name: &str, rels: &[&str]) -> Self {
+        self.asm_archives
+            .push((name.to_string(), rels.iter().map(|s| s.to_string()).collect()));
         self
     }
 
@@ -522,6 +544,50 @@ impl Linker {
             // then boots the OLD code. Cost a debug session: a cargo uefildr
             // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
             println!("cargo:rerun-if-changed={}", full.display());
+        }
+        // Pre-expanded asm assembled into on-demand archives, IN the group
+        // alongside the cmake C archives (same archive semantics + layout
+        // region as the cmake equivalent — see asm_archive()).
+        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
+        for (name, rels) in &self.asm_archives {
+            let mut b = cc::Build::new();
+            apply_base(&mut b, &clang, self.asm_set, &self.arch);
+            for rel in rels {
+                let abs = self.repo_root.join(rel);
+                if !abs.exists() {
+                    panic!(
+                        "missing pre-processed asm: {} — regenerate via tools/gen_ntdll_asm.py",
+                        abs.display()
+                    );
+                }
+                b.file(&abs);
+                println!("cargo:rerun-if-changed={}", abs.display());
+            }
+            b.out_dir(self.obj_dir())
+                .define("__ASM__", None)
+                .flag("-nostdinc")
+                .flag("-isystem")
+                .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
+                .flag("-isystem")
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
+                .flag("-x")
+                .flag("assembler-with-cpp");
+            let objs = b.compile_intermediates();
+            if objs.is_empty() {
+                panic!("asm_archive {name}: cc-rs produced no objects");
+            }
+            let lib_a = self.obj_dir().join(format!("lib{name}.a"));
+            let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
+            let status = Command::new(&ar)
+                .arg("rcs")
+                .arg(&lib_a)
+                .args(&objs)
+                .status()
+                .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
+            if !status.success() {
+                panic!("ar failed for asm_archive {name}");
+            }
+            println!("cargo:rustc-link-arg={}", lib_a.display());
         }
         if let Some(a) = &rust_a {
             println!("cargo:rustc-link-arg={}", a.display());

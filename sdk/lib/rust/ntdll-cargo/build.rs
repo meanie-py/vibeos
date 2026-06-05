@@ -39,8 +39,20 @@ fn main() {
     // omits it (mirrors libcntpr.cmake).
     let cnt_feats: &[&str] = if arch == "aarch64" { &[] } else { &["float"] };
 
+    let stem = match arch.as_str() {
+        "x86" => "i386",
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        o => panic!("ntdll-cargo: unsupported arch {o}"),
+    };
     let asm_dir = "sdk/lib/rust/ntdll-cargo/data/asm";
+    // dispatch (ntdll's own kernel→user trampolines) — force-included object,
+    // exactly as cmake compiles dispatch.S into the ntdll target. ntdllsys (the
+    // Nt*/Zw* syscall stubs) is handled separately as an in-group ARCHIVE (see
+    // .asm_archive below) — force-including it as an object relocated ~5% of the
+    // i386 image and tripped a latent layout-sensitive hivewrt miscompile.
     let mut asm_paths = vec![format!("{asm_dir}/{asm}")];
+    let ntdllsys_path = format!("{asm_dir}/ntdllsys-{stem}.s");
     // amd64 ntdll.dll references setjmp/_setjmpex/longjmp (i386/arm64 don't —
     // libsetjmp.a is dead there). Provide the register save/restore asm here
     // (longjmp's RtlUnwind glue is Rust: ntdll-rust src/setjmp.rs), replacing
@@ -64,6 +76,9 @@ fn main() {
         // dead code: header-free, two globals (_SEH2_Volatile0 / *ExceptionCode).
         .c_shims(&["sdk/lib/pseh/dummy.c"])
         .asm(&asm_refs, AsmDefineSet::Kernel)
+        // ntdllsys (Nt*/Zw* syscall stubs) as an in-group archive, replacing
+        // the cmake libntdllsys.a — preserves the cmake archive link layout.
+        .asm_archive("ntdllsys", &[&ntdllsys_path])
         .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/def/ntdll.spec", "ntdll.dll")
         .spec_stubs() // 48 Etw* -stub bodies
@@ -73,7 +88,9 @@ fn main() {
             "sdk/lib/rtl/librtl_vista.a",
             "sdk/lib/crt/liblibcntpr.a",
             // Tier-A asm/data/generated (still cmake-built):
-            "ntoskrnl/libntdllsys.a",
+            // NOTE: libntdllsys.a dropped — the Nt*/Zw* syscall stubs are now
+            // pre-expanded from ntoskrnl/ntdll.S (asm above), reusing the same
+            // checked-in syscalls.inc + sysfuncs.h (numbers identical).
             "sdk/lib/apisets/libapisets.a",
             "sdk/lib/uuid/libuuid.a",
             // NOTE: libsetjmp.a dropped — amd64 now builds setjmp/longjmp from
