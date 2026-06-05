@@ -44,6 +44,7 @@ members = [
     "ntdll-cargo",
     "ntdll_vista-cargo",
     "lsass-cargo",
+    "userinit-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",

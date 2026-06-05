@@ -1,0 +1,25 @@
+# Cargo-driven `userinit.exe` link (i386 + amd64 + arm64). Second of OUR
+# translated spine binaries (after lsass) to move its link cmake→cargo, via the
+# shared reactos-link engine (ModuleKind::Win32Exe). userinit.exe is the
+# post-login shell launcher (winlogon → userinit → explorer.exe).
+#
+# Body is 100% Rust (userinit-rust, wWinMain). build.rs cargo-builds it
+# (.rust_staticlib), generates the 7 import libs in-cargo from .spec
+# (.import_lib), reuses the cmake-built libwine.a + CRT statics, and reuses the
+# cmake-built userinit.rc.res (LOAD-BEARING here: manifest + logo bitmaps +
+# localized dialogs, unlike lsass's version-only .res) compiled by a resource-
+# only OBJECT lib in the cmake.
+
+[package]
+name = "userinit-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "userinit"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

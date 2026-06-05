@@ -623,6 +623,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "userinit-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "userinit-rust"
 version = "0.1.0"
 dependencies = [
