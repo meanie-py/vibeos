@@ -285,6 +285,13 @@ pub struct Linker {
     /// object relocates the image enough to surface a latent layout-sensitive
     /// miscompile — keeping it an in-group archive preserves the cmake layout.
     asm_archives: Vec<(String, Vec<String>)>,
+    /// Deep-C residue compiled IN-cargo by replaying cmake's own clang
+    /// invocation from `build-<arch>/compile_commands.json` (flag-exact),
+    /// archived into an in-group `.a` in the C-archive position. Replaces
+    /// reuse of a cmake-built `.a` via `static_libs` (e.g. the loaders' deep-C
+    /// blcmlib / cportlib) — drops the `ninja <lib>` prerequisite.
+    /// (archive-basename, source rel-paths). See `c_from_compile_db`.
+    c_db_libs: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
 }
@@ -337,6 +344,7 @@ impl Linker {
             link_stubs: false,
             static_libs: Vec::new(),
             asm_archives: Vec::new(),
+            c_db_libs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
         }
@@ -514,6 +522,29 @@ impl Linker {
     pub fn force_undefined(mut self, syms: &[&str]) -> Self {
         self.force_undefined
             .extend(syms.iter().map(|s| s.to_string()));
+        self
+    }
+
+    /// Compile a set of C sources IN-cargo by replaying cmake's own clang
+    /// invocation for each (looked up in `build-<arch>/compile_commands.json`),
+    /// archiving the objects into `lib<name>.a` linked as an in-group archive
+    /// in the C-archive position (before the Rust archives). This replaces a
+    /// `static_libs("…/lib<name>.a")` reuse of a cmake-built archive with a
+    /// flag-exact cargo-driven compile — dropping the `ninja <name>`
+    /// prerequisite for that deep-C residue (e.g. the loaders' blcmlib /
+    /// cportlib C bodies).
+    ///
+    /// `sources` are repo-relative `.c` paths; each MUST appear in
+    /// `compile_commands.json`, so the cmake build must be configured with
+    /// `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` (a configure-time flag — no build
+    /// needed). The replay strips the ninja-built `.pch` but keeps cmake's
+    /// configure-time `cmake_pch.h` force-include, so it is self-contained.
+    /// `name` IS the cmake target name (disambiguates a source compiled into
+    /// multiple targets via its `CMakeFiles/<name>.dir` object dir). Chainable —
+    /// call once per archive, in C-first link order.
+    pub fn c_from_compile_db(mut self, name: &str, sources: &[&str]) -> Self {
+        self.c_db_libs
+            .push((name.to_string(), sources.iter().map(|s| s.to_string()).collect()));
         self
     }
 
@@ -701,10 +732,74 @@ impl Linker {
             // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
             println!("cargo:rerun-if-changed={}", full.display());
         }
+        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
+        // ---- Deep-C residue compiled in-cargo (compile_commands.json replay).
+        // In the same C-archive region as static_libs (before the Rust
+        // archives). Flag-exact: replay cmake's own clang command per source,
+        // strip the ninja-built .pch (keep the configure-time cmake_pch.h
+        // force-include), redirect -o into OUT_DIR. Drops `ninja <lib>` for the
+        // residue that static_libs() used to reuse.
+        if !self.c_db_libs.is_empty() {
+            let db_path = self.build_dir.join("compile_commands.json");
+            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
+                panic!(
+                    "c_from_compile_db needs {} — configure cmake with \
+                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
+                    db_path.display()
+                )
+            });
+            let entries = parse_ccdb(&db_text);
+            println!("cargo:rerun-if-changed={}", db_path.display());
+            for (name, sources) in &self.c_db_libs {
+                // Disambiguate sources compiled into multiple cmake targets by
+                // the target's object dir. `name` IS the cmake target name.
+                let marker = format!("CMakeFiles/{name}.dir");
+                let out_sub = self.obj_dir().join(format!("ccdb-{name}"));
+                std::fs::create_dir_all(&out_sub).ok();
+                let mut objs = Vec::new();
+                for rel in sources {
+                    let abs = self.repo_root.join(rel);
+                    let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
+                        panic!(
+                            "no compile_commands.json entry for {} in target {name} \
+                             (marker {marker}) — is it a source of that cmake target?",
+                            abs.display()
+                        )
+                    });
+                    let stem = abs
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
+                    let obj = out_sub.join(format!("{stem}.o"));
+                    let args = transform_cc(&cmd, obj.to_str().expect("utf8 obj path"));
+                    let status = Command::new(&args[0])
+                        .args(&args[1..])
+                        .current_dir(&dir)
+                        .status()
+                        .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
+                    if !status.success() {
+                        panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
+                    }
+                    objs.push(obj);
+                    println!("cargo:rerun-if-changed={}", abs.display());
+                }
+                let lib_a = self.obj_dir().join(format!("lib{name}.a"));
+                let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
+                let status = Command::new(&ar)
+                    .arg("rcs")
+                    .arg(&lib_a)
+                    .args(&objs)
+                    .status()
+                    .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
+                if !status.success() {
+                    panic!("ar failed for c_from_compile_db {name}");
+                }
+                println!("cargo:rustc-link-arg={}", lib_a.display());
+            }
+        }
         // Pre-expanded asm assembled into on-demand archives, IN the group
         // alongside the cmake C archives (same archive semantics + layout
         // region as the cmake equivalent — see asm_archive()).
-        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
         for (name, rels) in &self.asm_archives {
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, self.asm_set, &self.arch);
@@ -1199,4 +1294,157 @@ fn emit_objs(build: &cc::Build, source: &Path) {
     for obj in objs {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+}
+
+// ---- compile_commands.json replay (c_from_compile_db) --------------------
+// Minimal, dependency-free reader + command transform. cmake/Ninja emits a
+// flat JSON array of `{directory, command, file[, output]}` objects whose
+// values are all strings — we don't need a general JSON parser, only the three
+// string fields per object.
+
+/// Decode one JSON string starting at the opening quote `b[start] == '"'`.
+/// Returns (decoded, index-after-closing-quote). Handles the escapes cmake
+/// actually emits (`\"`, `\\`, `\/`, `\n`, `\t`, `\r`); paths/commands here are
+/// ASCII so bytes pass through directly.
+fn read_json_string(b: &[u8], start: usize) -> (String, usize) {
+    let mut i = start + 1;
+    let mut s = String::new();
+    while i < b.len() {
+        match b[i] {
+            b'\\' if i + 1 < b.len() => {
+                let c = match b[i + 1] {
+                    b'"' => '"',
+                    b'\\' => '\\',
+                    b'/' => '/',
+                    b'n' => '\n',
+                    b't' => '\t',
+                    b'r' => '\r',
+                    other => other as char,
+                };
+                s.push(c);
+                i += 2;
+            }
+            b'"' => return (s, i + 1),
+            c => {
+                s.push(c as char);
+                i += 1;
+            }
+        }
+    }
+    (s, i)
+}
+
+/// Parse compile_commands.json into one `(key, value)` list per object. All
+/// values are strings; alternating string tokens inside an object are
+/// key/value (cmake never nests objects or uses non-string values here).
+fn parse_ccdb(text: &str) -> Vec<Vec<(String, String)>> {
+    let b = text.as_bytes();
+    let mut i = 0;
+    let mut objects = Vec::new();
+    let mut cur: Vec<(String, String)> = Vec::new();
+    let mut pending_key: Option<String> = None;
+    let mut in_object = false;
+    while i < b.len() {
+        match b[i] {
+            b'{' => {
+                in_object = true;
+                cur = Vec::new();
+                pending_key = None;
+                i += 1;
+            }
+            b'}' => {
+                if in_object {
+                    objects.push(std::mem::take(&mut cur));
+                    in_object = false;
+                }
+                i += 1;
+            }
+            b'"' if in_object => {
+                let (s, ni) = read_json_string(b, i);
+                i = ni;
+                match pending_key.take() {
+                    None => pending_key = Some(s),
+                    Some(k) => cur.push((k, s)),
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    objects
+}
+
+/// Find the `(directory, command)` for the entry whose `file` is `abs` AND
+/// whose command targets `marker` (the `CMakeFiles/<target>.dir` object dir).
+/// The marker disambiguates a source compiled into multiple targets with
+/// different flags (e.g. `locale.c` in both `rtl` and `rtl_vista`). Matches the
+/// raw cmake-written path first, then a canonicalized fallback (symlinks /
+/// `..`), so a repo_root that differs cosmetically from cmake's still resolves.
+fn lookup_cc(
+    entries: &[Vec<(String, String)>],
+    abs: &Path,
+    marker: &str,
+) -> Option<(String, String)> {
+    let field = |o: &[(String, String)], key: &str| -> Option<String> {
+        o.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    };
+    let abs_s = abs.to_str();
+    let abs_canon = std::fs::canonicalize(abs).ok();
+    for o in entries {
+        let file = match field(o, "file") {
+            Some(f) => f,
+            None => continue,
+        };
+        let file_hit = Some(file.as_str()) == abs_s
+            || abs_canon
+                .as_ref()
+                .zip(std::fs::canonicalize(&file).ok())
+                .is_some_and(|(a, b)| *a == b);
+        if !file_hit {
+            continue;
+        }
+        let cmd = file_command(o);
+        if cmd.contains(marker) {
+            return Some((field(o, "directory").unwrap_or_default(), cmd));
+        }
+    }
+    None
+}
+
+fn file_command(o: &[(String, String)]) -> String {
+    o.iter()
+        .find(|(k, _)| k == "command")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+}
+
+/// Transform a replayed clang command: drop the ninja-built `.pch` (the
+/// `-Winvalid-pch` and the `-Xclang -include-pch -Xclang <pch>` quad) while
+/// keeping the configure-time `-Xclang -include -Xclang <cmake_pch.h>`
+/// force-include, and redirect `-o <obj>` to our output. Whitespace-split is
+/// safe: ReactOS build paths contain no spaces.
+fn transform_cc(cmd: &str, obj: &str) -> Vec<String> {
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    let mut out: Vec<String> = Vec::with_capacity(parts.len());
+    let mut j = 0;
+    while j < parts.len() {
+        let p = parts[j];
+        if p == "-Winvalid-pch" {
+            j += 1;
+            continue;
+        }
+        // -Xclang -include-pch -Xclang <pch>  (4 tokens) → drop
+        if p == "-Xclang" && j + 1 < parts.len() && parts[j + 1] == "-include-pch" {
+            j += 4;
+            continue;
+        }
+        if p == "-o" && j + 1 < parts.len() {
+            out.push("-o".to_string());
+            out.push(obj.to_string());
+            j += 2;
+            continue;
+        }
+        out.push(p.to_string());
+        j += 1;
+    }
+    out
 }
