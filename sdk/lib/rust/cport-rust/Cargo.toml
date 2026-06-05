@@ -1,0 +1,16 @@
+# cport-rust — Rust translation of sdk/lib/cportlib/cport.c (the ReactOS
+# ComPort serial library used by KDCOM/INIT/FREELDR). crate-type=staticlib
+# → libcport_rust.a, linked into the `cportlib` cmake target (cohabitation,
+# cport.c commented out) so every consumer — ntoskrnl, kdgdb, kdcom, and the
+# freeldr loaders — picks up the Rust impl. Self-contained: port I/O is
+# inline asm (x86 in/out, arm64 MMIO), no ntkrnl-sys dependency. 3-arch.
+
+[package]
+name = "cport-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]

@@ -581,6 +581,72 @@ fn main() {
         ("sqrt", "#include <math.h>\ndouble ref_sqrt(double x){return sqrt(x);}".to_string()),
         ("sqrtf", "#include <math.h>\nfloat ref_sqrtf(float x){return sqrtf(x);}".to_string()),
         ("nexttowardf", "#include <stdint.h>\nfloat ref_nexttowardf(float x,double y){union{float f;uint32_t i;}ux={x};if(x!=x||y!=y)return x+(float)y;if((double)x==y)return (float)y;if(x==0){ux.i=1;union{double f;uint64_t u;}uy={y};if(uy.u>>63)ux.i|=0x80000000u;}else if((double)x<y){if(ux.i>>31)ux.i--;else ux.i++;}else{if(ux.i>>31)ux.i++;else ux.i--;}return ux.f;}".to_string()),
+        // Wave MATH-TIERC sub-wave 2: exp/log/log10/pow/fmod = the genuine
+        // portable kernel-CRT .c (the same math/arm64/*.c used on both
+        // amd64-llvm-mingw and arm64), renamed to ref_*. exp/log/fmod are
+        // real algorithms; log10/pow are upstream's rough stubs — all are
+        // self-contained (no libm call) and bit-exact under -ffp-contract=off.
+        // The `#define X ref_X` token-renames only the public symbol (e.g.
+        // `log` does not touch `log10`/`logb`; `fmod` does not touch `fmodf`).
+        // Include <math.h> BEFORE the rename so the genuine .c's own
+        // `#include <math.h>` no-ops via its guard — otherwise `#define exp
+        // ref_exp` rewrites the token inside glibc's `__MATHCALL(exp,…)`
+        // macro and corrupts the header. log10.c has no <math.h> include.
+        ("exp", format!("#include <math.h>\n#define exp ref_exp\n{}", inc(s("math/arm64/exp.c")))),
+        ("log", format!("#include <math.h>\n#define log ref_log\n{}", inc(s("math/arm64/log.c")))),
+        ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
+        ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
+        ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
+        // Wave MATH-TIERC sub-wave 3: tan = sin/cos (the portable arm64/tan.c
+        // form). Compute the reference via the genuine ref_sin/ref_cos (the
+        // same algorithm cnt-rust's sin/cos use) → bit-exact vs cabi::tan.
+        ("tan", "double ref_sin(double); double ref_cos(double);\ndouble ref_tan(double x){return ref_sin(x)/ref_cos(x);}".to_string()),
+        // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
+        // lowers them to hardware roundsd/roundss (correctly rounded) — an
+        // INDEPENDENT reference, not cnt-rust's #[no_mangle] ceil/floor (which
+        // would otherwise hijack a plain `ceil(x)` call and make the test
+        // circular). Exact directed rounding ⇒ bit-exact vs the Rust bit-math.
+        ("ceil", "double ref_ceil(double x){return __builtin_ceil(x);}".to_string()),
+        ("floor", "double ref_floor(double x){return __builtin_floor(x);}".to_string()),
+        ("ceilf", "float ref_ceilf(float x){return __builtin_ceilf(x);}".to_string()),
+        ("floorf", "float ref_floorf(float x){return __builtin_floorf(x);}".to_string()),
+        // Wave MATH-TIERC sub-wave 5: ldexp = the portable arm64/ldexp.c
+        // (== scalbn stepping); _logb/_logbf = the genuine arm64/logb.c (both
+        // MSVC-name funcs in one TU). Renamed to ref_*; bit-exact.
+        ("ldexp", format!("#include <math.h>\n#define ldexp ref_ldexp\n{}", inc(s("math/arm64/ldexp.c")))),
+        ("logb", format!("#include <math.h>\n#include <float.h>\n#define _logb ref__logb\n#define _logbf ref__logbf\n{}", inc(s("math/arm64/logb.c")))),
+        // Wave MATH-TIERC sub-wave 6: fabs/fabsf = the genuine portable
+        // math/fabs.c + math/fabsf.c (the same C arm64 ships and that amd64's
+        // asm mirrors). math.h FIRST so the rename hits only the definition;
+        // the host is x86-64 SysV so `_M_IX86` is undefined → fabs.c's i386
+        // error-bit branch is dead, matching the amd64/arm64 NaN-unchanged
+        // path. fabsf.c sets the quiet bit unconditionally. Renamed → ref_*.
+        ("fabs", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabs ref_fabs\n{}", inc(s("math/fabs.c")))),
+        ("fabsf", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabsf ref_fabsf\n{}", inc(s("math/fabsf.c")))),
+        // Wave MATH-TIERC sub-wave 7: modf = an exact integer/fraction split
+        // (no FP rounding). Self-contained C faithful to math/libm_sse2/modf.c
+        // (the GET/PUT_BITS_DP64 union-based bit moves inlined) so it needs
+        // none of the AMD libm.h headers. Exact ⇒ bit-exact vs the Rust.
+        ("modf", "double ref_modf(double x, double *iptr){\
+            union {double d; unsigned long long i;} u; long long xexp;\
+            unsigned long long ux, ax, mask;\
+            u.d = x; ux = u.i; ax = ux & 0x7fffffffffffffffULL;\
+            if (ax >= 0x4340000000000000ULL){\
+                if (ax > 0x7ff0000000000000ULL){ *iptr = x; return x + x; }\
+                *iptr = x; u.i = ux & 0x8000000000000000ULL; return u.d;\
+            } else if (ax < 0x3ff0000000000000ULL){\
+                u.i = ux & 0x8000000000000000ULL; *iptr = u.d; return x;\
+            }\
+            xexp = ((ux & 0x7ff0000000000000ULL) >> 52) - 1023;\
+            mask = 1; mask = (mask << (52 - xexp)) - 1;\
+            u.i = ux & ~mask; *iptr = u.d; return x - u.d;\
+        }".to_string()),
+        // Wave MATH-TIERC sub-wave 7: atan/atan2 = the genuine portable
+        // fdlibm math/arm64/{atan,atan2}.c (the algorithm flipped uniformly).
+        // Both compiled in ONE TU (atan.c first so ref_atan is defined before
+        // atan2.c's call). fabs stays host (bit-exact, only hit on the finite
+        // domain). Renamed → ref_atan / ref_atan2; bit-exact vs the Rust.
+        ("atan", format!("#include <math.h>\n#define atan ref_atan\n#define atan2 ref_atan2\n{}\n{}", inc(s("math/arm64/atan.c")), inc(s("math/arm64/atan2.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which

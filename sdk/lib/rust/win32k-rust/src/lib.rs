@@ -248,6 +248,15 @@ pub mod ghost;
 // [ntuser wave 6]
 pub mod power;
 pub mod usrheap;
+// [ntuser wave 7]
+pub mod ntuser;
+pub mod callproc;
+pub mod console;
+// [ntuser wave 8]
+pub mod copy;
+pub mod rtlstr;
+// [ntuser wave 9]
+pub mod csr;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

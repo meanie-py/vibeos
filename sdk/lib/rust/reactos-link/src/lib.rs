@@ -7,7 +7,7 @@
 //! ```ignore
 //! reactos_link::Linker::new("i686-kernel.json")
 //!     .rust_staticlib("hal-rust")
-//!     .asm(&["sdk/lib/rust/hal-cargo/data/asm/hal-v86-i386.s", ..],
+//!     .asm(&["hal/halx86/generic/systimer.S", ..],
 //!          reactos_link::AsmDefineSet::Hal)
 //!     .resource("data/hal-i386.rc.res")
 //!     .spec2def("hal/hal.spec", "hal.dll")
@@ -244,6 +244,26 @@ pub struct Linker {
     arch: ArchCfg,
     rust_crate: Option<String>,
     rust_features: Vec<String>,
+    /// Force the `rust_staticlib` main body to build the STANDARD user-mode
+    /// target (`arch.rust_user_target`, stable, NO build-std) even for a
+    /// kernel-ish module kind (EfiApplication/NativeExe). FreeLDR's body
+    /// (freeldr-rust) is built exactly like cmake did it — standard target,
+    /// not the `x86-softfloat` kernel json — because the pre-boot loader has
+    /// SSE disabled and the kernel json's softfloat ABI would diverge from the
+    /// hardfloat+`-sse,-sse2` codegen the working binary ships.
+    rust_user_target: bool,
+    /// `RUSTFLAGS` for the `rust_staticlib` main-body cargo build. Mirrors a
+    /// cmake `RUSTFLAGS=…` env on the custom_command — e.g. freeldr-rust's i386
+    /// `-C target-feature=-sse,-sse2`. Only consulted in the `kernel=false`
+    /// (user-target) build path; `None` → no override.
+    rust_build_rustflags: Option<String>,
+    /// Extra source dirs (repo-relative) to `rerun-if-changed`, beyond each
+    /// rust crate's own dir (which build_rust_crate tracks). For path-DEPS of
+    /// the body crate living in OTHER workspace crates — e.g. freeldr-rust
+    /// depends on cmboot-rust, so editing cmboot-rust must also re-run build.rs
+    /// to rebuild the body. cmake's EXTRA_DEPENDS only re-invokes cargo; this
+    /// makes cargo actually re-run build.rs.
+    rust_watch_dirs: Vec<String>,
     /// Extra sibling Rust staticlib crates (crate, features, default_features)
     /// cargo-built alongside the main one — Tier-B of the ntdll cargo-drive
     /// (replaces reuse of cmake-built `librtl_rust.a`/`libutf8.a`/… with a
@@ -251,8 +271,20 @@ pub struct Linker {
     /// build-std compiles core/alloc once.
     rust_libs: Vec<(String, Vec<String>, bool)>,
     c_shims: Vec<String>,
+    /// Extra clang flags applied to every `c_shims` compile (on top of
+    /// `apply_base`). Used for module-specific codegen requirements the kernel
+    /// default doesn't carry — e.g. freeldr's `-mno-sse` (the pre-boot
+    /// environment hasn't enabled SSE, so an emitted `movaps` would #UD).
+    c_shim_flags: Vec<String>,
     asm: Vec<String>,
     asm_set: AsmDefineSet,
+    /// Extra `-I` dirs (repo-relative) for the asm compiles. Lets `asm()`
+    /// assemble RAW `.S` files with `#include`s resolved against a MINIMAL set
+    /// of source header dirs (e.g. freeldr's `sdk/include/asm` for asm.inc +
+    /// `boot/freeldr/freeldr/include` for pcbios.h) instead of pre-expanding or
+    /// reproducing the whole module compile env. Empty by default → unchanged
+    /// for pre-expanded-`.s` consumers (hal).
+    asm_include_dirs: Vec<String>,
     resource: Option<String>,
     /// Like `resource`, but the `.res` is a cmake-BUILT artifact (build-dir
     /// relative) rather than a checked-in consumer-crate file. Used by the
@@ -272,9 +304,9 @@ pub struct Linker {
     /// invocation from `build-<arch>/compile_commands.json` (flag-exact),
     /// archived into an in-group `.a` in the C-archive position. Replaces
     /// reuse of a cmake-built `.a` via `static_libs` (e.g. ntdll's Tier-C
-    /// librtl / librtl_vista / libcntpr) — drops the `ninja <lib>`
-    /// prerequisite. (archive-basename, source rel-paths). See
-    /// `c_from_compile_db`.
+    /// librtl / librtl_vista / libcntpr, or the loaders' deep-C blcmlib /
+    /// cportlib) — drops the `ninja <lib>` prerequisite.
+    /// (archive-basename, source rel-paths). See `c_from_compile_db`.
     c_db_libs: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
@@ -314,10 +346,15 @@ impl Linker {
             arch,
             rust_crate: None,
             rust_features: Vec::new(),
+            rust_user_target: false,
+            rust_build_rustflags: None,
+            rust_watch_dirs: Vec::new(),
             rust_libs: Vec::new(),
             c_shims: Vec::new(),
+            c_shim_flags: Vec::new(),
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
+            asm_include_dirs: Vec::new(),
             resource: None,
             resource_built: None,
             spec: None,
@@ -347,6 +384,34 @@ impl Linker {
         self
     }
 
+    /// Build the `rust_staticlib` main body with the STANDARD user-mode target
+    /// (stable, no build-std) instead of the kernel json — see
+    /// `rust_user_target` field. Used by the freeldr loaders so freeldr-rust is
+    /// built byte-for-byte as cmake did (the custom_command this replaces ran
+    /// `cargo build --target i686-pc-windows-gnu`, NOT the kernel json).
+    pub fn rust_user_target(mut self) -> Self {
+        self.rust_user_target = true;
+        self
+    }
+
+    /// `RUSTFLAGS` for the `rust_staticlib` main-body build (user-target path).
+    /// Mirrors the cmake custom_command's `RUSTFLAGS=…` env — e.g. freeldr-rust
+    /// i386 `-C target-feature=-sse,-sse2` (pre-boot has no SSE). Caller sets it
+    /// per-arch. Chainable.
+    pub fn rust_build_rustflags(mut self, flags: &str) -> Self {
+        self.rust_build_rustflags = Some(flags.to_string());
+        self
+    }
+
+    /// Emit `rerun-if-changed` for extra repo-relative source dirs (path-deps
+    /// of the body crate that live in other workspace crates, e.g.
+    /// `cmboot-rust/src`). See `rust_watch_dirs`. Chainable.
+    pub fn rust_watch(mut self, dirs: &[&str]) -> Self {
+        self.rust_watch_dirs
+            .extend(dirs.iter().map(|s| format!("sdk/lib/rust/{s}")));
+        self
+    }
+
     /// An additional sibling Rust staticlib crate cargo-built alongside the
     /// main `rust_staticlib` and linked into the module — the Tier-B path of
     /// the ntdll cargo-drive that replaces reuse of a cmake-built rust `.a`
@@ -372,12 +437,30 @@ impl Linker {
         self
     }
 
-    /// Pre-expanded asm `.s` blobs (repo-relative; all `#include`s
-    /// resolved out-of-band). Compiled with `set`'s define list, no
-    /// kernel `-I` chain.
+    /// Extra clang flags for the `c_shims` compiles (e.g. freeldr's `-mno-sse`).
+    /// The caller is responsible for arch-validity (don't pass `-mno-sse` on
+    /// aarch64). Chainable; applies to ALL shims in this `c_shims` set.
+    pub fn c_shim_flags(mut self, flags: &[&str]) -> Self {
+        self.c_shim_flags = flags.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Asm sources (repo-relative). Either pre-expanded `.s` blobs (all
+    /// `#include`s resolved out-of-band) OR raw `.S` files whose `#include`s
+    /// resolve against `asm_include_dirs()` — see that method. Compiled with
+    /// `set`'s define list + the arch defines + `__ASM__`.
     pub fn asm(mut self, rels: &[&str], set: AsmDefineSet) -> Self {
         self.asm = rels.iter().map(|s| s.to_string()).collect();
         self.asm_set = set;
+        self
+    }
+
+    /// Extra `-I` dirs (repo-relative) for the `asm()` compiles, so a RAW `.S`
+    /// can `#include` real source headers (asm.inc, pcbios.h, …) directly —
+    /// the MINIMAL set the file actually needs, NOT the module's whole `-I`
+    /// env. Empty by default (pre-expanded `.s` consumers need none). Chainable.
+    pub fn asm_include_dirs(mut self, dirs: &[&str]) -> Self {
+        self.asm_include_dirs = dirs.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -392,27 +475,6 @@ impl Linker {
     pub fn asm_archive(mut self, name: &str, rels: &[&str]) -> Self {
         self.asm_archives
             .push((name.to_string(), rels.iter().map(|s| s.to_string()).collect()));
-        self
-    }
-
-    /// Compile a set of C sources IN-cargo by replaying cmake's own clang
-    /// invocation for each (looked up in `build-<arch>/compile_commands.json`),
-    /// archiving the objects into `lib<name>.a` linked as an in-group archive
-    /// in the C-archive position (before the Rust archives). This replaces a
-    /// `static_libs("…/lib<name>.a")` reuse of a cmake-built archive with a
-    /// flag-exact cargo-driven compile — dropping the `ninja <name>`
-    /// prerequisite for that deep-C residue (e.g. ntdll's Tier-C librtl /
-    /// librtl_vista / libcntpr).
-    ///
-    /// `sources` are repo-relative `.c` paths; each MUST appear in
-    /// `compile_commands.json`, so the cmake build must be configured with
-    /// `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` (a configure-time flag — no build
-    /// needed). The replay strips the ninja-built `.pch` but keeps cmake's
-    /// configure-time `cmake_pch.h` force-include, so it is self-contained.
-    /// Chainable — call once per archive, in C-first link order.
-    pub fn c_from_compile_db(mut self, name: &str, sources: &[&str]) -> Self {
-        self.c_db_libs
-            .push((name.to_string(), sources.iter().map(|s| s.to_string()).collect()));
         self
     }
 
@@ -490,6 +552,42 @@ impl Linker {
         self
     }
 
+    /// Compile a set of C sources IN-cargo by replaying cmake's own clang
+    /// invocation for each (looked up in `build-<arch>/compile_commands.json`),
+    /// archiving the objects into `lib<name>.a` linked as an in-group archive
+    /// in the C-archive position (before the Rust archives). This replaces a
+    /// `static_libs("…/lib<name>.a")` reuse of a cmake-built archive with a
+    /// flag-exact cargo-driven compile — dropping the `ninja <name>`
+    /// prerequisite for that deep-C residue (e.g. the loaders' blcmlib /
+    /// cportlib C bodies).
+    ///
+    /// `sources` are repo-relative `.c` paths; each MUST appear in
+    /// `compile_commands.json`, so the cmake build must be configured with
+    /// `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` (a configure-time flag — no build
+    /// needed). The replay strips the ninja-built `.pch` but keeps cmake's
+    /// configure-time `cmake_pch.h` force-include, so it is self-contained.
+    /// `name` IS the cmake target name (disambiguates a source compiled into
+    /// multiple targets via its `CMakeFiles/<name>.dir` object dir). Chainable —
+    /// call once per archive, in C-first link order.
+    pub fn c_from_compile_db(mut self, name: &str, sources: &[&str]) -> Self {
+        self.c_db_libs
+            .push((name.to_string(), sources.iter().map(|s| s.to_string()).collect()));
+        self
+    }
+
+    /// Add the kernel asm `#include` search chain to a cc-rs asm build: asm.inc
+    /// (source tree), the generated per-arch `ks*.inc` (build dir), and
+    /// ntoskrnl/include (sysfuncs.h / asmmacro.S / syscalls.inc deps). With it a
+    /// SOURCE `.S` assembles directly via `-x assembler-with-cpp` — no offline
+    /// pre-expansion (the old tools/gen_ntdll_asm.py step). Inert for an
+    /// already-expanded `.s` (no `#include`s to resolve). The build dir is
+    /// guaranteed present (the engine requires `build-<arch>/`).
+    fn add_kernel_asm_includes(&self, b: &mut cc::Build) {
+        b.include(self.repo_root.join("sdk/include/asm"))
+            .include(self.build_dir.join("sdk/include/asm"))
+            .include(self.repo_root.join("ntoskrnl/include"));
+    }
+
     /// Run everything and emit the cargo: link directives.
     pub fn link(self, kind: ModuleKind) {
         let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
@@ -503,6 +601,11 @@ impl Linker {
             .expect("target json stem")
             .to_string();
 
+        // Extra watched dirs (body-crate path-deps in other workspace crates).
+        for dir in &self.rust_watch_dirs {
+            println!("cargo:rerun-if-changed={}", self.repo_root.join(dir).display());
+        }
+
         // ---- Rust staticlib(s) (per-crate target dir) ----------------
         // A Win32Dll is USER-mode: its main body crate AND its rust_lib
         // siblings build the STANDARD user-mode target (hardfloat, precompiled
@@ -512,18 +615,29 @@ impl Linker {
         // corrupts the by-value f64 ABI and crashes boot. Kernel modules
         // (ntoskrnl/HAL/uefildr) build the custom kernel json with `-Z
         // build-std` on nightly. The main crate goes first, then siblings.
-        let kernel_rust =
-            !matches!(kind, ModuleKind::Win32Dll { .. } | ModuleKind::Win32Exe { .. });
+        // `.rust_user_target()` (the freeldr loaders) forces the user-target
+        // path even for an EfiApplication/NativeExe — freeldr-rust is built
+        // standard-target + `-sse,-sse2` exactly as cmake's custom_command did.
+        // Win32Dll/Win32Exe (ntdll, lsass, userinit, …) are user-mode too.
+        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. } | ModuleKind::Win32Exe { .. })
+            && !self.rust_user_target;
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
             let feats: Vec<&str> = self.rust_features.iter().map(|s| s.as_str()).collect();
-            self.build_rust_crate(crate_name, &feats, true, &target_stem, kernel_rust)
+            self.build_rust_crate(
+                crate_name,
+                &feats,
+                true,
+                &target_stem,
+                kernel_rust,
+                self.rust_build_rustflags.as_deref(),
+            )
         });
         let sibling_rust_a: Vec<PathBuf> = self
             .rust_libs
             .iter()
             .map(|(crate_name, feats, default_features)| {
                 let f: Vec<&str> = feats.iter().map(|s| s.as_str()).collect();
-                self.build_rust_crate(crate_name, &f, *default_features, &target_stem, kernel_rust)
+                self.build_rust_crate(crate_name, &f, *default_features, &target_stem, kernel_rust, None)
             })
             .collect();
 
@@ -536,6 +650,9 @@ impl Linker {
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
             b.file(&abs).out_dir(self.obj_dir()).flag("-std=gnu2x");
+            for f in &self.c_shim_flags {
+                b.flag(f);
+            }
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }
@@ -558,9 +675,19 @@ impl Linker {
                 .flag("-isystem")
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
-                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
-                .flag("-x")
-                .flag("assembler-with-cpp");
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+            // Caller-configured repo-relative `-I` dirs for RAW `.S` files
+            // (asm.inc, pcbios.h, …; a pre-expanded `.s` sets none of these).
+            for dir in &self.asm_include_dirs {
+                b.flag("-I").flag(self.repo_root.join(dir).to_str().unwrap());
+            }
+            // + the fixed kernel asm `#include` chain (asm.inc + the generated
+            // build-dir ks*.inc + ntoskrnl/include) used by modules that
+            // assemble kernel source `.S` directly (ntdll dispatch.S / ntdll.S).
+            // Additive — extra `-I` is inert when unused (and the build-dir dir
+            // is not expressible via the repo-relative asm_include_dirs above).
+            self.add_kernel_asm_includes(&mut b);
+            b.flag("-x").flag("assembler-with-cpp");
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }
@@ -713,10 +840,7 @@ impl Linker {
             for rel in rels {
                 let abs = self.repo_root.join(rel);
                 if !abs.exists() {
-                    panic!(
-                        "missing pre-processed asm: {} — regenerate via tools/gen_ntdll_asm.py",
-                        abs.display()
-                    );
+                    panic!("missing asm source for archive: {}", abs.display());
                 }
                 b.file(&abs);
                 println!("cargo:rerun-if-changed={}", abs.display());
@@ -727,9 +851,9 @@ impl Linker {
                 .flag("-isystem")
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
-                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
-                .flag("-x")
-                .flag("assembler-with-cpp");
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+            self.add_kernel_asm_includes(&mut b);
+            b.flag("-x").flag("assembler-with-cpp");
             let objs = b.compile_intermediates();
             if objs.is_empty() {
                 panic!("asm_archive {name}: cc-rs produced no objects");
@@ -900,9 +1024,17 @@ impl Linker {
         default_features: bool,
         target_stem: &str,
         kernel: bool,
+        rustflags: Option<&str>,
     ) -> PathBuf {
         let lib_file = format!("lib{}.a", crate_name.replace('-', "_"));
         let workspace = self.repo_root.join("sdk/lib/rust");
+        // Track the crate's own sources so an edit re-runs THIS build.rs, which
+        // re-invokes the inner `cargo build -p <crate>` below. Without it cargo
+        // may skip build.rs after a body-crate edit and relink a STALE .a (the
+        // libcntpr.cmake staleness class). rerun-if-changed on a dir recurses.
+        let crate_dir = workspace.join(crate_name);
+        println!("cargo:rerun-if-changed={}", crate_dir.join("src").display());
+        println!("cargo:rerun-if-changed={}", crate_dir.join("Cargo.toml").display());
         let tgt_dir = workspace.join(format!(
             "target/{}-{}-rustlib",
             self.pkg_name,
@@ -947,6 +1079,66 @@ impl Linker {
         if kernel {
             // build-std needs nightly.
             cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+            // The CRT-class kernel siblings (rtl-rust + cnt-rust-lib) need the
+            // EXACT per-crate RUSTFLAGS cmake gives them, or LLVM's default
+            // pre-pass pipeline miscompiles them (the captures(none)/DCE class
+            // `-C no-prepopulate-passes` guards — e.g. memset DCE'd to a spin,
+            // captures(none) eliding output writes). Without it rtl-rust built
+            // 1.3MB instead of cmake's 6.1MB (over-optimized) and hung the kernel
+            // right after ACPI init. Mirror cmake EXACTLY:
+            //   - rtl-rust    (sdk/lib/rtl/CMakeLists.txt): i386 →
+            //       `-sse,-sse2 -C no-prepopulate-passes`; amd64/arm64 → none.
+            //   - cnt-rust-lib (sdk/lib/crt/libcntpr.cmake): i386 →
+            //       `-sse,-sse2 -C no-prepopulate-passes`; amd64/arm64 →
+            //       `-C no-prepopulate-passes`.
+            // The kernel json is x86-softfloat (ABI only); i386 codegen still
+            // needs SSE OFF, so re-state target-feature=-sse,-sse2 here. An env
+            // RUSTFLAGS OVERRIDES `.cargo/config.toml`'s `[target.i686-kernel]`
+            // copy of that flag, so it must be repeated; scrub any inherited
+            // encoded flags first so this RUSTFLAGS wins. Only these CRT-class
+            // children are affected — the main kernel-rust build (which booted
+            // fine without it) keeps the config-supplied flags.
+            // env RUSTFLAGS OVERRIDES `.cargo/config.toml`'s `[target.i686-kernel]`
+            // copy of `-sse,-sse2`, so every kernel crate built here must
+            // RE-STATE the i386 no-SSE baseline (i386 kernel runs no-SSE — Phase
+            // 0 leaves CR4.OSFXSR unset). amd64/arm64 kernel targets carry no
+            // config rustflags, so there's nothing to preserve there.
+            let sse = if self.arch.name == "i386" {
+                "-C target-feature=-sse,-sse2 "
+            } else {
+                ""
+            };
+            // The CRT-class crates additionally need `-C no-prepopulate-passes`
+            // or LLVM's default pre-passes miscompile them (captures(none)/DCE —
+            // e.g. memset DCE'd to a spin; rtl-rust over-optimized 1.3MB-vs-6.1MB
+            // and hung the kernel after ACPI). Mirrors sdk/lib/rtl/CMakeLists.txt
+            // + sdk/lib/crt/libcntpr.cmake: rtl-rust on i386 only; cnt-rust-lib
+            // on every arch.
+            let no_prepop = match (crate_name, self.arch.name) {
+                ("rtl-rust", "i386") | ("cnt-rust-lib", _) => "-C no-prepopulate-passes ",
+                _ => "",
+            };
+            // Match cmake's lint POSTURE: cmake builds the kernel rust on STABLE
+            // (standard target, no build-std), where the kernel translation's
+            // lints are warn-level and ship fine. The cargo-drive REQUIRES nightly
+            // (for the softfloat kernel json's build-std) and the current nightly
+            // ESCALATES several lints to deny on ntoskrnl-rust's (mostly amd64)
+            // code — pre-existing translation-cleanup items, NOT cargo-drive
+            // regressions (the code is exactly what cmake ships). Allow them so
+            // the nightly build keeps cmake parity; real compile errors (type/ABI
+            // mismatches) still fail. NOTE: `--cap-lints allow` is NOT usable here
+            // — it makes rustc's `--print=file-names` build-std target probe emit
+            // nothing ("output of --print=file-names missing"). Per-lint `-A` is
+            // probe-safe, so allow them individually. (A whole-kernel lint cleanup
+            // would let these be dropped.)
+            //   - clashing_extern_declarations: ABI-compatible extern fns
+            //     re-declared with divergent pointee types (DefaultQueryInfoBufferCheck).
+            //   - static_mut_refs: `&mut STATIC` (Rust 2024 deny) in WMI/driver glue.
+            let allow = "-A clashing_extern_declarations -A static_mut_refs";
+            let rustflags = format!("{sse}{no_prepop}{allow}");
+            cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
+            cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
+            cmd.env("RUSTFLAGS", rustflags);
         } else {
             // User-mode siblings build on the rustup DEFAULT (stable) via the
             // `rustup run stable cargo` above. But the outer `cargo +nightly`
@@ -980,13 +1172,30 @@ impl Linker {
             // the RUSTFLAGS scrub above dropped the inherited copy and
             // .cargo/config.toml isn't found from build_dir, so set it here.
             // See memory feedback_cnt_rust_no_prepopulate_amd64_arm64.
-            if crate_name == "cnt-rust-lib" {
+            //
+            // An explicit `rustflags` (the main body's .rust_build_rustflags(),
+            // e.g. freeldr-rust i386 `-sse,-sse2`) wins; otherwise fall back to
+            // the cnt-rust-lib keyed default.
+            if let Some(rf) = rustflags {
+                cmd.env("RUSTFLAGS", rf);
+            } else if crate_name == "cnt-rust-lib" {
                 let rf = if self.arch.name == "i386" {
                     "-C target-feature=-sse,-sse2 -C no-prepopulate-passes"
                 } else {
                     "-C no-prepopulate-passes"
                 };
                 cmd.env("RUSTFLAGS", rf);
+            } else if matches!(crate_name, "cport-rust" | "hal-rust") && self.arch.name == "i386" {
+                // cport-rust (sdk/lib/cportlib/CMakeLists.txt) + hal-rust's
+                // minihal variant (hal/halx86/CMakeLists.txt, i386-only) both
+                // run pre-boot before CR4.OSFXSR, so i386 needs SSE OFF. cmake
+                // gets it from the workspace .cargo/config.toml [i686] (cport)
+                // / an explicit RUSTFLAGS=-sse,-sse2 (hal mini) — the former
+                // isn't discovered from build_dir cwd, so re-state it here.
+                // NEITHER is CRT-class (cmake passes no -C no-prepopulate-passes
+                // for them), and amd64/arm64 cport keeps SSE (config.toml only
+                // disables it on i686) → key i386 only, no no-prepopulate.
+                cmd.env("RUSTFLAGS", "-C target-feature=-sse,-sse2");
             }
         }
         let status = cmd

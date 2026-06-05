@@ -14,4 +14,8 @@ spec2def(kdcom.dll kdrosdbg.spec ADD_IMPORTLIB)
 # import kdcom) + the boot-media registration + the kernel-dll post-link, all
 # handled by add_cargo_kernel_dll (sdk/cmake/gcc.cmake). First module whose
 # cmake link is fully retired in favour of the cargo-drive.
-add_cargo_kernel_dll(kdcom kdcom-cargo kdcom.dll BODY_CRATE kdcom-rust)
+# EXTRA_DEPENDS: cmake targets whose .a the cargo link reuses — cportlib
+# (pulls rust_cport → libcport_rust.a, cport.c now being Rust) + memcmp — so
+# `ninja kdcom` builds them before the opaque cargo link.
+add_cargo_kernel_dll(kdcom kdcom-cargo kdcom.dll BODY_CRATE kdcom-rust
+    EXTRA_DEPENDS cportlib memcmp)

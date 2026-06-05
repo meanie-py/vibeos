@@ -45,3 +45,7 @@ uefildr-rust-entry = []
 # for ntoskrnl.exe statics (NlsMb*/NlsOem*) into freeldr-rust's .a,
 # duplicating blrtl/nlsboot.c at link time (task #33).
 ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }
+# Shared CM boot-init translation, linked only into the uefi/rosload archives
+# (see lib.rs `extern crate cmboot_rust`). Compiled for every feature build but
+# its symbols are only bundled where extern-crated. Same ntkrnl-sys config.
+cmboot-rust = { path = "../cmboot-rust" }

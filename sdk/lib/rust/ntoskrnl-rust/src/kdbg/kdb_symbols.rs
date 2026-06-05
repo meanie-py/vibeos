@@ -40,7 +40,11 @@ unsafe impl Sync for SyncUnicode {}
 struct SyncWchars<const N: usize>([u16; N]);
 unsafe impl<const N: usize> Sync for SyncWchars<N> {}
 
-extern "C" {
+extern "system" {
+    // NTAPI (stdcall on i386 → `_ExInterlockedRemoveHeadList@8`). Was `extern "C"`
+    // (cdecl), which only linked while rustc happened to inline this intra-crate
+    // call; a CGU repartition routed it through the symbol and exposed the
+    // mismatch on i386. The definition (ex/interlocked.rs) is `extern "system"`.
     fn ExInterlockedRemoveHeadList(
         ListHead: PLIST_ENTRY,
         Lock: PKSPIN_LOCK,

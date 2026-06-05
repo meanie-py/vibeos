@@ -3,15 +3,16 @@
 `check --strict`'s cargo_link guard only RELINKS each cargo-driven module and
 asserts a valid PE — it never boots, so a regression that links fine but boots
 broken slips straight through. This verb closes that gap: it boot-swaps each
-cargo-built DLL into the real livecd and boots it to the smoke marker (the full
-kernel -> SMSS -> csrss -> win32k -> winlogon -> explorer chain, all of which
-depends on ntdll), proving RUNTIME equivalence rather than just PE shape.
+cargo-built module into the real livecd and boots it to the smoke marker (the
+full kernel -> SMSS -> csrss -> win32k -> winlogon -> explorer chain), proving
+RUNTIME equivalence rather than just PE shape.
 
-It wraps the per-module boot-swap-smoke.sh (which owns the careful build / swap /
-cmp-assert / restore-on-exit mechanics and already boots through
-`vibeos-cli smoke`), and aggregates one verdict + summary.json in the standard
-artifact dir so the gate is a single discoverable command instead of an orphan
-script nothing calls. x86 only — arm64 has no livecd for the swap.
+Covers the cargo-deep ntdll DLLs (x86) AND the cargo-driven ntoskrnl.exe kernel
+(i386 — its boot-swap also applies the kernel post-link: native-pefixup --kernel
++ the i386 forwarder fix). It wraps each module's boot-swap-smoke.sh (which owns
+the build / swap / cmp-assert / restore-on-exit mechanics and boots through
+`vibeos-cli smoke`), and aggregates one verdict + summary.json. x86 only — arm64
+has no livecd for the swap.
 """
 from __future__ import annotations
 
@@ -20,11 +21,17 @@ from pathlib import Path
 from .archcfg import base_arch
 from .artifacts import Run, Stage
 
-# One script handles both DLLs (it takes a [arch] [module] pair); ntoskrnl-cargo
-# has no boot-swap (reuse-19-.a relink only), so the runtime gate is the two
-# cargo-deep ntdll DLLs.
-_SCRIPT = "sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh"
-_MODULES = ("ntdll", "ntdll_vista")
+# Per-module boot-swap: module -> (script, arg_style, arches).
+#   arg_style "arch_module" → `script <arch> <module>` (ntdll DLLs share one
+#   script keyed by both); "arch" → `script <arch>` (ntoskrnl kernel boot-swap,
+#   now multi-arch on the livecd arches).
+# arm64 is excluded everywhere here — it boots a ramdisk, not a livecd.
+_SWAPS = {
+    "ntdll":       ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
+    "ntdll_vista": ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
+    "ntoskrnl":    ("sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh", "arch",        ("i386", "amd64")),
+}
+_ORDER = ("ntdll", "ntdll_vista", "ntoskrnl")
 
 
 def _salient(stdout: str, stderr: str) -> list[str]:
@@ -41,7 +48,7 @@ def _salient(stdout: str, stderr: str) -> list[str]:
 
 
 def cargo_swap(args, repo: Path) -> int:
-    # boot-swap-smoke.sh + livecd media key off the bare arch (i386/amd64); the
+    # boot-swap scripts + livecd media key off the bare arch (i386/amd64); the
     # -uefi aliases resolve to the same x86 livecd the inner `vibeos-cli smoke`
     # picks. arm64 has no livecd.
     arch = base_arch(args.arch)
@@ -52,23 +59,32 @@ def cargo_swap(args, repo: Path) -> int:
                       detail="no livecd for boot-swap (x86 only)"))
         return run.finalize(repo)
 
-    script = repo / _SCRIPT
-    if not script.is_file():
-        run.add(Stage("cargoswap", status="fail", detail=f"missing {_SCRIPT}"))
-        return run.finalize(repo)
-
-    modules = list(_MODULES) if args.module == "all" else [args.module]
-    for mod in modules:
+    sel = list(_ORDER) if args.module == "all" else [args.module]
+    for mod in sel:
+        script_rel, arg_style, arches = _SWAPS[mod]
         stage = f"boot-swap:{mod}"
-        cp = run.run(["bash", str(script), arch, mod], cwd=repo,
-                     stage=stage, timeout=1800)
+        if arch not in arches:
+            run.add(Stage(stage, status="skip",
+                          detail=f"{mod} is {'/'.join(arches)}-only"))
+            continue
+        script = repo / script_rel
+        if not script.is_file():
+            run.add(Stage(stage, status="fail", detail=f"missing {script_rel}"))
+            continue
+        if arg_style == "arch_module":
+            cmd = ["bash", str(script), arch, mod]
+        elif arg_style == "arch":
+            cmd = ["bash", str(script), arch]
+        else:
+            cmd = ["bash", str(script)]
+        cp = run.run(cmd, cwd=repo, stage=stage, timeout=1800)
         salient = _salient(cp.stdout, cp.stderr)
         if cp.returncode == 0:
             run.add(Stage(stage, exit=0, status="ok",
                           detail="booted to smoke marker", salient=salient))
         else:
             run.add(Stage(stage, exit=cp.returncode, status="fail",
-                          detail="cargo DLL relinked clean but failed RUNTIME boot",
+                          detail="relinked clean but failed RUNTIME boot",
                           salient=salient))
 
     return run.finalize(repo)

@@ -251,25 +251,17 @@ pub extern "C" fn scalbnf(x: f32, mut n: i32) -> f32 {
 }
 
 // ---- round / roundf — ReactOS portable (ceil/floor + FP add) ----------
-
-#[cfg(feature = "float")]
-extern "C" {
-    fn ceil(x: f64) -> f64;
-    fn floor(x: f64) -> f64;
-    fn ceilf(x: f32) -> f32;
-    fn floorf(x: f32) -> f32;
-}
+// ceil/floor/ceilf/floorf are defined below (sub-wave 4); round/roundf call
+// those module-local impls directly.
 
 /// `double round(double)`.
 #[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn round(arg: f64) -> f64 {
-    unsafe {
-        if arg < 0.0 {
-            ceil(arg - 0.5)
-        } else {
-            floor(arg + 0.5)
-        }
+    if arg < 0.0 {
+        ceil(arg - 0.5)
+    } else {
+        floor(arg + 0.5)
     }
 }
 
@@ -277,12 +269,10 @@ pub extern "C" fn round(arg: f64) -> f64 {
 #[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn roundf(arg: f32) -> f32 {
-    unsafe {
-        if arg < 0.0 {
-            ceilf(arg - 0.5)
-        } else {
-            floorf(arg + 0.5)
-        }
+    if arg < 0.0 {
+        ceilf(arg - 0.5)
+    } else {
+        floorf(arg + 0.5)
     }
 }
 
@@ -523,4 +513,847 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
         core::arch::asm!("fsqrt {0:s}, {1:s}", out(vreg) r, in(vreg) x, options(pure, nomem, nostack));
     }
     r
+}
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 2 — exp / log / log10 / pow / fmod (f64)
+//
+// Faithful ports of the portable kernel-CRT C used on BOTH amd64-llvm-mingw
+// and arm64 (`math/arm64/{exp,log,log10,pow,fmod}.c`). `exp`/`log`/`fmod` are
+// real fdlibm-style implementations; `log10`/`pow` are the upstream's
+// deliberate rough stubs (their `FIXME: general case`), translated verbatim
+// so the difftest stays bit-exact against the C reference. amd64/arm64 only
+// (the `float` feature) — i386 keeps its x87 `*_asm.s` (no-SSE: an `f64`
+// return is a hard ABI error). All bitwise; the variable-count shifts use
+// `wrapping_sh*` to mirror x86's count-masking (the C is technically UB on a
+// >=64 count but the host reference compiles to masked `shr`/`shl`).
+// ===========================================================================
+
+/// `double exp(double)` — range reduction + degree-5 rational approximation.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn exp(x: f64) -> f64 {
+    const LN2_HI: f64 = 6.93147180369123816490e-01;
+    const LN2_LO: f64 = 1.90821492927058500170e-10;
+    const INV_LN2: f64 = 1.44269504088896338700e+00;
+    const P1: f64 = 1.66666666666666019037e-01;
+    const P2: f64 = -2.77777777770155933842e-03;
+    const P3: f64 = 6.61375632143793436117e-05;
+    const P4: f64 = -1.65339022054652515390e-06;
+    const P5: f64 = 4.13813679705723846039e-08;
+
+    let mut bits = x.to_bits();
+    let hx = ((bits >> 32) as u32) & 0x7FFF_FFFF;
+
+    // Filter special cases: |x| >= 709.78...
+    if hx >= 0x4086_2E42 {
+        if hx >= 0x7FF0_0000 {
+            // NaN or Inf
+            let lx = (bits & 0xFFFF_FFFF) as u32;
+            if ((hx & 0xF_FFFF) | lx) != 0 {
+                return x; // NaN
+            }
+            return if (bits >> 63) != 0 { 0.0 } else { x }; // exp(-inf)=0, exp(inf)=inf
+        }
+        if x > 709.782712893383973096 {
+            return f64::from_bits(0x7FF0_0000_0000_0000); // overflow → +inf
+        }
+        if x < -745.13321910194110842 {
+            return 0.0; // underflow
+        }
+    }
+
+    // Argument reduction: r = x - k*ln2, |r| <= ln2/2
+    let r: f64;
+    let k: i32;
+    if hx > 0x3FD6_2E42 {
+        // |x| > 0.5*ln2
+        if hx < 0x3FF0_A2B2 {
+            // |x| < 1.5*ln2
+            if (bits >> 63) == 0 {
+                let hi = x - LN2_HI;
+                let lo = LN2_LO;
+                k = 1;
+                r = hi - lo;
+            } else {
+                let hi = x + LN2_HI;
+                let lo = -LN2_LO;
+                k = -1;
+                r = hi - lo;
+            }
+        } else {
+            k = (INV_LN2 * x + (if (bits >> 63) != 0 { -0.5 } else { 0.5 })) as i32;
+            let hi = x - (k as f64) * LN2_HI;
+            let lo = (k as f64) * LN2_LO;
+            r = hi - lo;
+        }
+    } else if hx < 0x3E30_0000 {
+        // |x| < 2^-28
+        return 1.0 + x;
+    } else {
+        k = 0;
+        r = x;
+    }
+
+    // exp(r) via rational approximation
+    let t = r * r;
+    let c = r - t * (P1 + t * (P2 + t * (P3 + t * (P4 + t * P5))));
+    let y = 1.0 - ((r * c) / (c - 2.0) - r);
+
+    // Scale by 2^k
+    if k == 0 {
+        return y;
+    }
+    if k > 0 && k < 1024 {
+        bits = ((0x3FF + k) as u64) << 52;
+        y * f64::from_bits(bits)
+    } else if k < 0 && k > -1023 {
+        bits = ((0x3FF + k) as u64) << 52;
+        y * f64::from_bits(bits)
+    } else {
+        // Extreme exponents
+        bits = y.to_bits().wrapping_add((k as i64 as u64) << 52);
+        f64::from_bits(bits)
+    }
+}
+
+/// `double log(double)` — natural logarithm, fdlibm-style.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn log(x: f64) -> f64 {
+    const LN2_HI: f64 = 6.93147180369123816490e-01;
+    const LN2_LO: f64 = 1.90821492927058500170e-10;
+    const LG1: f64 = 6.666666666666735130e-01;
+    const LG2: f64 = 3.999999999940941908e-01;
+    const LG3: f64 = 2.857142874366239149e-01;
+    const LG4: f64 = 2.222219843214978396e-01;
+    const LG5: f64 = 1.818357216161805012e-01;
+    const LG6: f64 = 1.531383769920937332e-01;
+    const LG7: f64 = 1.479819860511658591e-01;
+    const TWO54: f64 = f64::from_bits(0x4350_0000_0000_0000); // 0x1p54
+
+    let mut xv = x;
+    let mut bits = xv.to_bits();
+    let mut hx = (bits >> 32) as i32;
+    let lx = (bits & 0xFFFF_FFFF) as u32;
+
+    let mut k: i32 = 0;
+
+    // x < 2^-1022 (subnormal or negative)
+    if hx < 0x0010_0000 {
+        if (hx & 0x7FFF_FFFF) == 0 && lx == 0 {
+            return -1.0 / 0.0; // log(0) = -inf
+        }
+        if hx < 0 {
+            return (xv - xv) / 0.0; // log(negative) = NaN
+        }
+        // Subnormal: normalize
+        k -= 54;
+        xv *= TWO54;
+        bits = xv.to_bits();
+        hx = (bits >> 32) as i32;
+    }
+
+    // Inf or NaN
+    if hx >= 0x7FF0_0000 {
+        return xv + xv;
+    }
+
+    // log(1) = 0 exactly
+    if hx == 0x3FF0_0000 && lx == 0 {
+        return 0.0;
+    }
+
+    // Reduce x to [sqrt(2)/2, sqrt(2)]
+    k += (hx >> 20) - 1023;
+    hx &= 0x000F_FFFF;
+    if hx < 0x6A09E {
+        // < sqrt(2)/2 in high word
+        bits = ((hx as u32 as u64) << 32) | (lx as u64);
+        bits |= 0x3FF0_0000_0000_0000;
+    } else {
+        k += 1;
+        bits = ((hx as u32 as u64) << 32) | (lx as u64);
+        bits |= 0x3FE0_0000_0000_0000;
+    }
+    xv = f64::from_bits(bits);
+
+    let f = xv - 1.0;
+
+    // log(1+f) = f - f^2/2 + ... for small f (|f| < 2^-20)
+    if (0x000F_FFFF & (2 + hx)) < 3 {
+        if f == 0.0 {
+            let dk = k as f64;
+            return dk * LN2_HI + dk * LN2_LO;
+        }
+        let rr = f * f * (0.5 - 0.33333333333333333 * f);
+        let dk = k as f64;
+        return dk * LN2_HI - ((rr - dk * LN2_LO) - f);
+    }
+
+    let s = f / (2.0 + f);
+    let dk = k as f64;
+    let z = s * s;
+    let w = z * z;
+    let t1 = w * (LG2 + w * (LG4 + w * LG6));
+    let t2 = z * (LG1 + w * (LG3 + w * (LG5 + w * LG7)));
+    let rr = t2 + t1;
+    let hfsq = 0.5 * f * f;
+    dk * LN2_HI - ((hfsq - (s * (hfsq + rr) + dk * LN2_LO)) - f)
+}
+
+/// `double log10(double)` — upstream's rough stub (FIXME), verbatim.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn log10(x: f64) -> f64 {
+    if x <= 0.0 {
+        return -1.0e308; // -infinity approximation
+    }
+    let mut result = 0.0f64;
+    let mut temp = x;
+    if temp >= 1.0 {
+        while temp >= 10.0 {
+            temp /= 10.0;
+            result += 1.0;
+        }
+        result += (temp - 1.0) / 9.0;
+    } else {
+        while temp < 1.0 {
+            temp *= 10.0;
+            result -= 1.0;
+        }
+        result += (temp - 1.0) / 9.0;
+    }
+    result
+}
+
+/// `double pow(double, double)` — upstream's integer-exponent stub (FIXME),
+/// verbatim. Non-integer / general case returns 0.0 exactly as the C does.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn pow(base: f64, exponent: f64) -> f64 {
+    let mut result = 1.0f64;
+
+    if exponent == 0.0 {
+        return 1.0;
+    }
+    if base == 0.0 {
+        return 0.0;
+    }
+    if base == 1.0 {
+        return 1.0;
+    }
+
+    let iexp = exponent as i32; // truncate toward zero
+    if (iexp as f64) == exponent && iexp >= 0 {
+        for _ in 0..iexp {
+            result *= base;
+        }
+        return result;
+    }
+    if (iexp as f64) == exponent && iexp < 0 {
+        let iexp = -iexp;
+        for _ in 0..iexp {
+            result *= base;
+        }
+        return 1.0 / result;
+    }
+
+    0.0 // FIXME: general case not implemented (matches C)
+}
+
+/// `double fmod(double, double)` — fdlibm bit-twiddling remainder.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
+    let mut xi = x.to_bits();
+    let mut yi = y.to_bits();
+
+    // Sign of x
+    let sx = xi & 0x8000_0000_0000_0000;
+
+    // Clear signs
+    xi &= 0x7FFF_FFFF_FFFF_FFFF;
+    yi &= 0x7FFF_FFFF_FFFF_FFFF;
+
+    // Special cases
+    if yi == 0 || xi >= 0x7FF0_0000_0000_0000 || yi > 0x7FF0_0000_0000_0000 {
+        return (x * y) / (x * y); // NaN
+    }
+    if xi < yi {
+        return x;
+    }
+
+    // Extract exponents
+    let mut ex = (xi >> 52) as i32;
+    let mut ey = (yi >> 52) as i32;
+
+    // Normalize subnormal x
+    if ex == 0 {
+        let mut i = xi << 12;
+        ex -= 11;
+        while (i >> 63) == 0 {
+            i <<= 1;
+            ex -= 1;
+        }
+        xi = xi.wrapping_shl((1 - ex) as u32);
+        ex = 0;
+    } else {
+        xi &= 0x000F_FFFF_FFFF_FFFF;
+        xi |= 0x0010_0000_0000_0000;
+    }
+
+    // Normalize subnormal y
+    if ey == 0 {
+        let mut i = yi << 12;
+        ey -= 11;
+        while (i >> 63) == 0 {
+            i <<= 1;
+            ey -= 1;
+        }
+        yi = yi.wrapping_shl((1 - ey) as u32);
+        ey = 0;
+    } else {
+        yi &= 0x000F_FFFF_FFFF_FFFF;
+        yi |= 0x0010_0000_0000_0000;
+    }
+
+    // Modular reduction
+    while ex > ey {
+        if xi >= yi {
+            xi -= yi;
+            if xi == 0 {
+                return f64::from_bits(sx);
+            }
+        }
+        xi <<= 1;
+        ex -= 1;
+    }
+
+    if xi >= yi {
+        xi -= yi;
+        if xi == 0 {
+            return f64::from_bits(sx);
+        }
+    }
+
+    // Normalize result
+    while (xi >> 52) == 0 {
+        xi <<= 1;
+        ex -= 1;
+    }
+
+    // Construct result
+    if ex > 0 {
+        xi -= 0x0010_0000_0000_0000;
+        xi |= (ex as u64) << 52;
+    } else {
+        xi = xi.wrapping_shr((1 - ex) as u32);
+    }
+
+    xi |= sx;
+    f64::from_bits(xi)
+}
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 3 — tan (f64)
+//
+// `tan(x) = sin(x)/cos(x)` — the portable `arm64/tan.c` form, applied
+// uniformly to BOTH amd64 and arm64 per the standing directive ("give every
+// arch the same thing — we don't care about hand-optimized"). This replaces
+// amd64's hand-optimized AMD-libm `libm_sse2/tan.c` with the same simple
+// quotient arm64 already used. Bit-exact: our Rust `sin`/`cos` are proven
+// equal to the C `sin`/`cos` (sw1), so this quotient equals the C
+// `arm64/tan.c` quotient bit-for-bit (incl. the cos(x)→0 ±inf limit, where
+// both divide identical operands). amd64/arm64 only (the `float` feature);
+// i386 keeps its x87 `tan_asm.s`.
+// ===========================================================================
+
+/// `double tan(double)` — sin/cos quotient (the portable arm64 form).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn tan(x: f64) -> f64 {
+    let s = sin(x);
+    let c = cos(x);
+    s / c
+}
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 4 — ceil / floor / ceilf / floorf
+//
+// Exact IEEE directed rounding (toward +inf / -inf), pure bit-manipulation
+// (musl-style) — no FPU rounding-mode dependence, no SSE4.1 `roundsd`. One
+// uniform Rust impl for BOTH amd64 (was AMD-libm `libm_sse2/{ceil,floor}*.c`)
+// and arm64 (was `arm64/{ceil,floor}.c` + `math/{ceilf,floorf}.c`), per the
+// "give every arch the same thing" directive; i386 keeps its x87
+// `{ceil,floor}_asm.s`/`.S`. These are EXACT operations (the result is the
+// unique nearer integer in the rounding direction), so the impl is bit-exact
+// against any correct reference regardless of rounding mode. The variable
+// shift count `e` is in [0, 51]/[0, 22] here, and the carry `wrapping_add`
+// mirrors C's wraparound (also keeps debug overflow-checks happy).
+// ===========================================================================
+
+/// `double floor(double)` — round toward -inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn floor(x: f64) -> f64 {
+    let mut i = x.to_bits();
+    let e = ((i >> 52) & 0x7ff) as i32 - 0x3ff;
+    if e >= 52 {
+        return x; // already integral, or inf/NaN
+    }
+    if e < 0 {
+        // |x| < 1
+        if i << 1 == 0 {
+            return x; // ±0
+        }
+        return if i >> 63 != 0 { -1.0 } else { 0.0 };
+    }
+    let m = 0x000f_ffff_ffff_ffff_u64 >> e; // fraction-bit mask
+    if i & m == 0 {
+        return x; // no fraction → integral
+    }
+    if i >> 63 != 0 {
+        i = i.wrapping_add(m); // negative: round toward -inf (increase magnitude)
+    }
+    i &= !m;
+    f64::from_bits(i)
+}
+
+/// `double ceil(double)` — round toward +inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ceil(x: f64) -> f64 {
+    let mut i = x.to_bits();
+    let e = ((i >> 52) & 0x7ff) as i32 - 0x3ff;
+    if e >= 52 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x; // ±0
+        }
+        return if i >> 63 != 0 { -0.0 } else { 1.0 };
+    }
+    let m = 0x000f_ffff_ffff_ffff_u64 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 63 == 0 {
+        i = i.wrapping_add(m); // positive: round toward +inf
+    }
+    i &= !m;
+    f64::from_bits(i)
+}
+
+/// `float floorf(float)` — round toward -inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn floorf(x: f32) -> f32 {
+    let mut i = x.to_bits();
+    let e = ((i >> 23) & 0xff) as i32 - 0x7f;
+    if e >= 23 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x;
+        }
+        return if i >> 31 != 0 { -1.0 } else { 0.0 };
+    }
+    let m = 0x007f_ffff_u32 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 31 != 0 {
+        i = i.wrapping_add(m);
+    }
+    i &= !m;
+    f32::from_bits(i)
+}
+
+/// `float ceilf(float)` — round toward +inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ceilf(x: f32) -> f32 {
+    let mut i = x.to_bits();
+    let e = ((i >> 23) & 0xff) as i32 - 0x7f;
+    if e >= 23 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x;
+        }
+        return if i >> 31 != 0 { -0.0 } else { 1.0 };
+    }
+    let m = 0x007f_ffff_u32 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 31 == 0 {
+        i = i.wrapping_add(m);
+    }
+    i &= !m;
+    f32::from_bits(i)
+}
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 5 — ldexp / _logb / _logbf
+//
+// Faithful ports, amd64/arm64 only (the `float` feature; i386 keeps its C).
+// ldexp(x,n) = x*2^n — the portable arm64/ldexp.c (identical stepping to
+// scalbn), applied uniformly (replaces amd64's AMD-libm errno-setting ldexp)
+// per the "give every arch the same thing" directive. _logb/_logbf extract
+// the unbiased binary exponent as a float (MSVC underscore names — both
+// arches' C export `_logb`/`_logbf`). All return f64/f32 by value, so i386
+// (no-SSE, hard ABI error on float return) keeps the C.
+// ===========================================================================
+
+/// `double ldexp(double, int)` — x * 2^n (portable arm64 stepping).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ldexp(x: f64, mut n: i32) -> f64 {
+    if x == 0.0 || n == 0 {
+        return x;
+    }
+    let mut xx = x;
+    if n > 1023 {
+        xx *= f64::from_bits(0x7FE0_0000_0000_0000); // 0x1p1023
+        n -= 1023;
+        if n > 1023 {
+            xx *= f64::from_bits(0x7FE0_0000_0000_0000);
+            n -= 1023;
+            if n > 1023 {
+                n = 1023;
+            }
+        }
+    } else if n < -1022 {
+        xx *= f64::from_bits(0x0010_0000_0000_0000); // 0x1p-1022
+        n += 1022;
+        if n < -1022 {
+            xx *= f64::from_bits(0x0010_0000_0000_0000);
+            n += 1022;
+            if n < -1022 {
+                n = -1022;
+            }
+        }
+    }
+    let u = ((0x3FF + n) as u64) << 52;
+    xx * f64::from_bits(u)
+}
+
+/// `double _logb(double)` — unbiased binary exponent (MSVC name).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _logb(x: f64) -> f64 {
+    let mut u = x.to_bits() & 0x7FFF_FFFF_FFFF_FFFF; // clear sign
+    if u == 0 {
+        return f64::NEG_INFINITY; // _logb(0) = -inf
+    }
+    let mut exp = (u >> 52) as i32;
+    if exp == 0x7FF {
+        return x * x; // +inf for inf, NaN for NaN
+    }
+    if exp == 0 {
+        // subnormal: normalize by 2^64, re-read exponent
+        u = (f64::from_bits(u) * f64::from_bits(0x43F0_0000_0000_0000)).to_bits(); // 0x1p64
+        exp = (u >> 52) as i32 - 64;
+    }
+    (exp - 0x3FF) as f64
+}
+
+/// `float _logbf(float)` — unbiased binary exponent (MSVC name).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _logbf(x: f32) -> f32 {
+    let mut u = x.to_bits() & 0x7FFF_FFFF;
+    if u == 0 {
+        return f32::NEG_INFINITY;
+    }
+    let mut exp = (u >> 23) as i32;
+    if exp == 0xFF {
+        return x * x;
+    }
+    if exp == 0 {
+        u = (f32::from_bits(u) * f32::from_bits(0x4C00_0000)).to_bits(); // 0x1p25f
+        exp = (u >> 23) as i32 - 25;
+    }
+    (exp - 0x7F) as f32
+}
+
+// ── Wave MATH-TIERC (sub-wave 6): fabs / fabsf ───────────────────────────
+// Absolute value via the sign bit. Bit-exact replacements for amd64's
+// asm (amd64/fabs.S, amd64/fabsf.S) AND arm64's C (math/fabs.c, fabsf.c) —
+// both arches agree, so one Rust impl each. NaN handling differs between
+// the two functions and is preserved exactly:
+//   fabs : a NaN input is returned UNCHANGED (sign bit NOT cleared) — both
+//          the amd64 `cmova rax, rcx` and the arm64 fabs.c `return x` keep
+//          the original bits. (The C's i386-only error-bit branch never
+//          fires here; i386 keeps the C, this Rust is amd64/arm64-only.)
+//   fabsf: a NaN input is returned with the quiet bit 0x00400000 OR'd in
+//          and its sign preserved — both amd64 fabsf.S `bts ecx,22` and
+//          arm64 fabsf.c unconditionally set it.
+
+/// `double fabs(double)` — magnitude; NaN returned unchanged.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fabs(x: f64) -> f64 {
+    let bits = x.to_bits();
+    let abs = bits & 0x7FFF_FFFF_FFFF_FFFF;
+    if abs > 0x7FF0_0000_0000_0000 {
+        // NaN: return the original bits unchanged.
+        return x;
+    }
+    f64::from_bits(abs)
+}
+
+/// `float fabsf(float)` — magnitude; NaN returned with quiet bit set.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fabsf(x: f32) -> f32 {
+    let bits = x.to_bits();
+    let abs = bits & 0x7FFF_FFFF;
+    if abs > 0x7F80_0000 {
+        // NaN: original | quiet bit (sign preserved).
+        return f32::from_bits(bits | 0x0040_0000);
+    }
+    f32::from_bits(abs)
+}
+
+// ── Wave MATH-TIERC (sub-wave 7): modf ───────────────────────────────────
+// Split x into integer (*iptr) and fraction (return) parts, each with the
+// sign of x. amd64-only in libcntpr (arm64/i386 lack the f64 modf there);
+// faithful port of math/libm_sse2/modf.c (AMD libm). The whole thing is
+// exact bit-manipulation — no FP rounding — so the translation is bit-exact
+// by construction. The *iptr write uses write_volatile (the captures(none)
+// guard for #[no_mangle] output-pointer params).
+
+/// `double modf(double x, double *iptr)` — integer/fraction split.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub unsafe extern "C" fn modf(x: f64, iptr: *mut f64) -> f64 {
+    let ux = x.to_bits();
+    let ax = ux & 0x7FFF_FFFF_FFFF_FFFF; // !SIGNBIT_DP64
+    if ax >= 0x4340_0000_0000_0000 {
+        // abs(x) is NaN, infinity, or >= 2^53
+        if ax > 0x7FF0_0000_0000_0000 {
+            // x is NaN
+            core::ptr::write_volatile(iptr, x);
+            return x + x; // raise invalid for a signalling NaN
+        }
+        // x is infinity or large: integer part is x, fraction is ±0
+        core::ptr::write_volatile(iptr, x);
+        return f64::from_bits(ux & 0x8000_0000_0000_0000); // SIGNBIT_DP64
+    } else if ax < 0x3FF0_0000_0000_0000 {
+        // abs(x) < 1.0: integer part is ±0, fraction is x
+        core::ptr::write_volatile(iptr, f64::from_bits(ux & 0x8000_0000_0000_0000));
+        return x;
+    }
+    // 1.0 <= abs(x) < 2^53: mask off the fractional mantissa bits
+    let xexp = (((ux & 0x7FF0_0000_0000_0000) >> 52) as i64) - 1023;
+    let mask: u64 = (1u64 << (52 - xexp)) - 1;
+    let int_part = f64::from_bits(ux & !mask);
+    core::ptr::write_volatile(iptr, int_part);
+    x - int_part
+}
+
+// ── Wave MATH-TIERC (sub-wave 7): atan / atan2 ───────────────────────────
+// Faithful ports of the portable fdlibm math/arm64/{atan,atan2}.c — range
+// reduction + an 11-term odd polynomial. Used uniformly on amd64+arm64 (the
+// "give every arch the same thing" directive), replacing amd64's AMD-libm
+// versions; i386 keeps its x87 atan_asm.s. Both call the Rust `fabs` above;
+// atan2 calls `atan`. Bit-exact vs the genuine portable C.
+
+#[cfg(feature = "float")]
+const ATANHI: [f64; 4] = [
+    4.63647609000806093515e-01, // atan(0.5)hi
+    7.85398163397448278999e-01, // atan(1.0)hi
+    9.82793723247329054082e-01, // atan(1.5)hi
+    1.57079632679489655800e+00, // atan(inf)hi
+];
+#[cfg(feature = "float")]
+const ATANLO: [f64; 4] = [
+    2.26987774529616870924e-17, // atan(0.5)lo
+    3.06161699786838301793e-17, // atan(1.0)lo
+    1.39033110312309984516e-17, // atan(1.5)lo
+    6.12323399573676603587e-17, // atan(inf)lo
+];
+#[cfg(feature = "float")]
+const ATAN_AT: [f64; 11] = [
+    3.33333333333329318027e-01,
+    -1.99999999998764832476e-01,
+    1.42857142725034663711e-01,
+    -1.11111104054623557880e-01,
+    9.09088713343650656196e-02,
+    -7.69187620504482999495e-02,
+    6.66107313738753120669e-02,
+    -5.83357013379057348645e-02,
+    4.97687799461593236017e-02,
+    -3.65315727442169155270e-02,
+    1.62858201153657823623e-02,
+];
+
+/// `double atan(double)` — arctangent (portable fdlibm).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atan(mut x: f64) -> f64 {
+    let hx = (x.to_bits() >> 32) as u32 as i32;
+    let ix = hx & 0x7FFF_FFFF;
+    let id: i32;
+
+    if ix >= 0x4410_0000 {
+        // |x| >= 2^66
+        let lx = (x.to_bits() & 0xFFFF_FFFF) as u32;
+        if ix > 0x7FF0_0000 || (ix == 0x7FF0_0000 && lx != 0) {
+            return x; // NaN
+        }
+        return if hx > 0 {
+            ATANHI[3] + ATANLO[3]
+        } else {
+            -ATANHI[3] - ATANLO[3]
+        };
+    }
+
+    if ix < 0x3FDC_0000 {
+        // |x| < 0.4375
+        if ix < 0x3E20_0000 {
+            // |x| < 2^-29
+            return x;
+        }
+        id = -1;
+    } else {
+        x = fabs(x);
+        if ix < 0x3FF3_0000 {
+            // |x| < 1.1875
+            if ix < 0x3FE6_0000 {
+                id = 0;
+                x = (2.0 * x - 1.0) / (2.0 + x);
+            } else {
+                id = 1;
+                x = (x - 1.0) / (x + 1.0);
+            }
+        } else if ix < 0x4003_8000 {
+            // |x| < 2.4375
+            id = 2;
+            x = (x - 1.5) / (1.0 + 1.5 * x);
+        } else {
+            // 2.4375 <= |x| < 2^66
+            id = 3;
+            x = -1.0 / x;
+        }
+    }
+
+    let z = x * x;
+    let w = z * z;
+    let s1 = z
+        * (ATAN_AT[0]
+            + w * (ATAN_AT[2] + w * (ATAN_AT[4] + w * (ATAN_AT[6] + w * (ATAN_AT[8] + w * ATAN_AT[10])))));
+    let s2 = w
+        * (ATAN_AT[1] + w * (ATAN_AT[3] + w * (ATAN_AT[5] + w * (ATAN_AT[7] + w * ATAN_AT[9]))));
+
+    if id < 0 {
+        return x - x * (s1 + s2);
+    }
+    let z = ATANHI[id as usize] - ((x * (s1 + s2) - ATANLO[id as usize]) - x);
+    if hx < 0 {
+        -z
+    } else {
+        z
+    }
+}
+
+#[cfg(feature = "float")]
+const ATAN2_PI: f64 = 3.14159265358979311600e+00;
+#[cfg(feature = "float")]
+const ATAN2_PI_LO: f64 = 1.22464679914735320717e-16;
+#[cfg(feature = "float")]
+const ATAN2_PI_2: f64 = 1.57079632679489655800e+00;
+#[cfg(feature = "float")]
+const ATAN2_PI_4: f64 = 7.85398163397448278999e-01;
+
+/// `double atan2(double y, double x)` — arctangent of y/x (portable fdlibm).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
+    let xb = x.to_bits();
+    let yb = y.to_bits();
+    let hx = (xb >> 32) as u32 as i32;
+    let lx = (xb & 0xFFFF_FFFF) as u32;
+    let hy = (yb >> 32) as u32 as i32;
+    let ly = (yb & 0xFFFF_FFFF) as u32;
+
+    let ix = hx & 0x7FFF_FFFF;
+    let iy = hy & 0x7FFF_FFFF;
+
+    // x or y is NaN. (lx | -lx) >> 31 == (lx != 0), kept arithmetic-faithful.
+    let lx_nz = (lx | (0u32.wrapping_sub(lx))) >> 31;
+    let ly_nz = (ly | (0u32.wrapping_sub(ly))) >> 31;
+    if ((ix as u32 | lx_nz) > 0x7FF0_0000) || ((iy as u32 | ly_nz) > 0x7FF0_0000) {
+        return x + y;
+    }
+
+    // x == 1.0
+    if hx == 0x3FF0_0000 && lx == 0 {
+        return atan(y);
+    }
+
+    // m = 2 * sign(x) + sign(y)
+    let m = ((hy >> 31) & 1) | ((hx >> 31) & 2);
+
+    // y == 0
+    if (iy as u32 | ly) == 0 {
+        return match m {
+            0 | 1 => y,           // atan(±0, +anything) = ±0
+            2 => ATAN2_PI,        // atan(+0, -anything) = pi
+            _ => -ATAN2_PI,       // atan(-0, -anything) = -pi
+        };
+    }
+
+    // x == 0
+    if (ix as u32 | lx) == 0 {
+        return if hy < 0 { -ATAN2_PI_2 } else { ATAN2_PI_2 };
+    }
+
+    // x == inf
+    if ix == 0x7FF0_0000 {
+        if iy == 0x7FF0_0000 {
+            return match m {
+                0 => ATAN2_PI_4,
+                1 => -ATAN2_PI_4,
+                2 => 3.0 * ATAN2_PI_4,
+                _ => -3.0 * ATAN2_PI_4,
+            };
+        }
+        return match m {
+            0 => 0.0,
+            1 => -0.0,
+            2 => ATAN2_PI,
+            _ => -ATAN2_PI,
+        };
+    }
+
+    // y == inf
+    if iy == 0x7FF0_0000 {
+        return if hy < 0 { -ATAN2_PI_2 } else { ATAN2_PI_2 };
+    }
+
+    // compute y/x
+    let k = (iy - ix) >> 20;
+    let z = if k > 60 {
+        // |y/x| > 2^60
+        ATAN2_PI_2 + 0.5 * ATAN2_PI_LO
+    } else if hx < 0 && k < -60 {
+        // 0 > |y|/x > -2^-60
+        0.0
+    } else {
+        atan(fabs(y / x))
+    };
+
+    match m {
+        0 => z,                            // atan(+, +)
+        1 => -z,                           // atan(-, +)
+        2 => ATAN2_PI - (z - ATAN2_PI_LO), // atan(+, -)
+        _ => (z - ATAN2_PI_LO) - ATAN2_PI, // atan(-, -)
+    }
 }

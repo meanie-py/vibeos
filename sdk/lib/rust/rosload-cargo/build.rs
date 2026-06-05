@@ -20,8 +20,9 @@
 //! Inputs are the cmake-built artifacts (run `ninja rosload` in build-<arch>/
 //! first): the prebuilt objects compiled into rosload.dir (strsafe_shim.c.obj,
 //! cmboot.c.obj, per-arch asm), `libfreeldr_rust_rosload.a` (the freeldr-rust
-//! body + the RunLoader entry, built `--features rosload`), the sibling leaf
-//! libs, and the freeldr import lib (`libfreeldr.dir/libfreeldr.a`).
+//! body + the RunLoader entry, built `--features rosload`), and the sibling
+//! leaf libs. The freeldr import lib is self-hosted by reactos-link from
+//! freeldr.spec (.import_lib()) — no cmake-built libfreeldr.a needed.
 //! reactos-link wraps them in --start-group/--end-group.
 
 use reactos_link::{Linker, ModuleKind};
@@ -30,64 +31,162 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
-    // Per-arch prebuilt objects + leaf libs (verbatim from each
-    // build-<arch>/build.ninja's rosload.exe inputs). The objects are
-    // reused-prebuilt (header-dependent, compiled by cmake into rosload.dir),
-    // matching uefildr-cargo's strsafe_shim reuse.
+    // rosload-specific compilation is now all reactos-link's: strsafe_shim.c via
+    // .c_shims(), and ALL the asm (linux.S + amd64:misc.S) flipped to Rust
+    // global_asm! in freeldr-rust (loader_asm.rs → libfreeldr_rust_rosload.a).
+    // cmboot is Rust (cmboot-rust). The SOLE remaining cmake-built reused object
+    // is the i386 16-bit drvmap_gcc.obj (clang can't .code16); rosload_objs gone.
     let (target_json, entry, mut libs): (&str, &str, Vec<&str>) = match arch.as_str() {
-        "x86" => (
-            "i686-kernel.json",
-            "_RunLoader",
-            vec![
-                // i386 objects: drvmap is gcc-compiled (16-bit asm), the rest
-                // clang-compiled by the cmake OBJECT lib `rosload_objs`.
-                "boot/freeldr/freeldr/drvmap_gcc.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/lib/strsafe_shim.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/__/__/__/ntoskrnl/config/cmboot.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/i386/linux.S.obj",
-                // i386 mini-HAL linked BEFORE the freeldr libs (rosload.cmake
-                // `if(ARCH STREQUAL i386)`).
-                "hal/halx86/minihal/libmini_hal.a",
-                "hal/halx86/libhal_rust_mini.a",
-            ],
-        ),
-        "x86_64" => (
-            "x86_64-kernel.json",
-            "RunLoader",
-            vec![
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/lib/strsafe_shim.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/__/__/__/ntoskrnl/config/cmboot.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/amd64/misc.S.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/amd64/linux.S.obj",
-            ],
-        ),
+        "x86" => {
+            // linux.S flipped to Rust global_asm! (freeldr-rust/loader_asm.rs).
+            (
+                "i686-kernel.json",
+                "_RunLoader",
+                vec![
+                    // drvmap: 16-bit gcc asm, reused directly.
+                    "boot/freeldr/freeldr/drvmap_gcc.obj",
+                    // i386 mini-HAL's systimer.S asm (libmini_hal.a) still
+                    // reused; its Rust impl (was libhal_rust_mini.a) is now a
+                    // DIRECT cargo sibling — .rust_lib("hal-rust",["minihal"])
+                    // in the i386 block below.
+                    "hal/halx86/minihal/libmini_hal.a",
+                ],
+            )
+        }
+        "x86_64" => {
+            // misc.S + linux.S flipped to Rust global_asm! (loader_asm.rs).
+            ("x86_64-kernel.json", "RunLoader", Vec::new())
+        }
         other => panic!("rosload-cargo: unsupported arch {other} (i386/amd64 only; arm64 is UEFI-only, no rosload)"),
     };
 
-    // Common libs, in cmake link order: the rosload Rust body, the sibling C
-    // leaf libs, the C libcntpr, the freeldr import lib, then libcntpr_rust.
+    // Common C leaf libs (cm/rtl/cntpr) + the cnt-rust cohabitation twin. The
+    // rosload Rust body is now a DIRECT cargo build (.rust_staticlib() below),
+    // not a reused cmake .a. The freeldr import lib is also self-hosted by
+    // reactos-link from freeldr.spec (.import_lib() below), so cmake's
+    // spec2def(freeldr.sys ... ADD_IMPORTLIB) is retired.
     libs.extend_from_slice(&[
-        "boot/freeldr/freeldr/libfreeldr_rust_rosload.a",
-        "sdk/lib/cmlib/libblcmlib.a",
-        "boot/rtl/libblrtl.a",
+        // blcmlib (CM hive boot lib) is now compiled IN-cargo via
+        // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
+        // blrtl (boot RTL leaf) is likewise compiled IN-cargo below (C via
+        // .c_from_compile_db("blrtl", …) + asm via .asm_archive("blrtl_asm", …)),
+        // not reused boot/rtl/libblrtl.a.
         "sdk/lib/crt/liblibcntpr.a",
-        // freeldr import lib (add_importlibs(rosload freeldr)); rosload's
-        // freeldr.sys imports resolve at runtime against uefildr.efi.
-        "boot/freeldr/freeldr/CMakeFiles/libfreeldr.dir/libfreeldr.a",
-        "sdk/lib/crt/libcntpr_rust.a",
+        // cnt-rust-lib is now a DIRECT cargo sibling (.rust_lib() below), not
+        // the cmake-copied libcntpr_rust.a.
     ]);
 
+    // blcmlib's 13 C sources compiled in-cargo (compile_commands.json replay,
+    // flag-exact incl. _BLDR_ + cmlib.h PCH) — symbol-identical libblcmlib.a
+    // without `ninja blcmlib`. See sdk/lib/cmlib/CMakeLists.txt.
+    const BLCMLIB_C: &[&str] = &[
+        "sdk/lib/cmlib/cmcheck.c",
+        "sdk/lib/cmlib/cminit.c",
+        "sdk/lib/cmlib/cmheal.c",
+        "sdk/lib/cmlib/cmindex.c",
+        "sdk/lib/cmlib/cmkeydel.c",
+        "sdk/lib/cmlib/cmname.c",
+        "sdk/lib/cmlib/cmse.c",
+        "sdk/lib/cmlib/cmvalue.c",
+        "sdk/lib/cmlib/hivebin.c",
+        "sdk/lib/cmlib/hivecell.c",
+        "sdk/lib/cmlib/hiveinit.c",
+        "sdk/lib/cmlib/hivesum.c",
+        "sdk/lib/cmlib/hivewrt.c",
+    ];
+
+    // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
+    // via compile_commands.json replay (target `blrtl` disambiguates the shared
+    // sdk/lib/rtl/*.c sources), per-arch asm via .asm_archive() below. The
+    // common C set; amd64 adds bitmap64/byteswap/mem (blrtl.cmake amd64 branch).
+    let mut blrtl_c: Vec<&str> = vec![
+        "sdk/lib/rtl/bitmap.c",
+        "sdk/lib/rtl/compress.c",
+        "sdk/lib/rtl/crc32.c",
+        "sdk/lib/rtl/image.c",
+        "sdk/lib/rtl/largeint.c",
+        "boot/rtl/nlsboot.c",
+        "sdk/lib/rtl/random.c",
+        "sdk/lib/rtl/unicode.c",
+    ];
+    // blrtl's per-arch asm (asm.inc only — AsmDefineSet::Kernel). i386:
+    // debug_asm/rtlmem/rtlswap; amd64: debug_asm. (rosload is i386/amd64 only.)
+    let blrtl_asm: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "sdk/lib/rtl/i386/debug_asm.S",
+            "sdk/lib/rtl/i386/rtlmem.s",
+            "sdk/lib/rtl/i386/rtlswap.S",
+        ],
+        "x86_64" => {
+            blrtl_c.extend_from_slice(&[
+                "sdk/lib/rtl/bitmap64.c",
+                "sdk/lib/rtl/byteswap.c",
+                "sdk/lib/rtl/mem.c",
+            ]);
+            &["sdk/lib/rtl/amd64/debug_asm.S"]
+        }
+        _ => &[],
+    };
+
+    // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 no `float`,
+    // amd64 `float`. build_rust_crate's cnt-rust-lib special case supplies the
+    // per-arch RUSTFLAGS. Same path ntdll-cargo uses. (rosload is i386/amd64.)
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+
     let mut linker = Linker::new(target_json)
-        // No .rust_staticlib(): reuse the cmake-built libfreeldr_rust_rosload.a
-        // (identical codegen + carries the `rosload` feature).
+        // freeldr-rust body built DIRECTLY by reactos-link (was the cmake
+        // custom_command → libfreeldr_rust_rosload.a). .rust_user_target()
+        // builds the STANDARD target (stable, no build-std) as that command
+        // did — NOT the x86-softfloat kernel json. The `rosload` feature
+        // selects the 2nd-stage-loader module set + the RunLoader entry.
+        .rust_staticlib("freeldr-rust")
+        .rust_features(&["rosload"])
+        .rust_user_target()
+        // cmboot-rust is a path-dep of freeldr-rust — watch it so an edit there
+        // re-runs build.rs (freeldr-rust's own src is tracked by build_rust_crate).
+        // cmboot-rust (freeldr-rust dep) + cnt-rust/cnt-ctype (cnt-rust-lib
+        // path-deps) — watch so an edit re-runs build.rs.
+        .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        // blcmlib C compiled in-cargo (compile_commands.json replay) — drops the
+        // cmake libblcmlib.a reuse. C-archive position (before rust libs).
+        .c_from_compile_db("blcmlib", BLCMLIB_C)
+        // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
+        // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
+        .c_from_compile_db("blrtl", &blrtl_c)
+        // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)
+        // strsafe_shim.c compiled directly (self-contained leaf). rosload is
+        // i386/amd64 only — both x86 — so -mno-sse always applies (freeldr
+        // pre-boot has SSE disabled; an emitted movaps would #UD).
+        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
+        .c_shim_flags(&["-mno-sse"])
         // rosload exports RtlAssert via rosload.def (ENABLE_EXPORTS TRUE).
-        .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe");
+        .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe")
+        // freeldr import lib, self-hosted from freeldr.spec (was the cmake
+        // spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB) → libfreeldr.a).
+        // rosload's freeldr.sys imports bind at runtime against uefildr.efi,
+        // which the PE loader registers as "freeldr.sys" and which exports the
+        // same freeldr.spec symbols. Same spec → identical import names/dll.
+        .import_lib("boot/freeldr/freeldr/freeldr.spec", "freeldr.sys", "freeldr");
 
     if arch == "x86" {
+        // i386 freeldr runs in protected mode before CR4.OSFXSR — no SSE.
+        // Build freeldr-rust with -sse,-sse2 (the retired custom_command's i386
+        // RUSTFLAGS; amd64 ran empty → SSE on, as in long mode).
+        linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
         // The C halstub.c always linked the Rust HAL dispatch tables as a
         // source object; as archive members they'd be GC'd. Pull them.
         linker = linker.force_undefined(&["_HalDispatchTable", "_HalPrivateDispatchTable"]);
+        // hal-rust minihal variant (i386-only) built directly (was reused cmake
+        // libhal_rust_mini.a). build_rust_crate keys the i386 -sse,-sse2. The
+        // systimer.S asm half (libmini_hal.a) stays reused via the libs above.
+        linker = linker.rust_lib("hal-rust", &["minihal"], true);
+    }
+    // blrtl's per-arch asm as an in-group archive (mirrors blrtl.cmake's
+    // add_asm_files+add_library, where the asm lived in libblrtl.a).
+    if !blrtl_asm.is_empty() {
+        linker = linker.asm_archive("blrtl_asm", blrtl_asm);
     }
 
     linker.link(ModuleKind::NativeExe {

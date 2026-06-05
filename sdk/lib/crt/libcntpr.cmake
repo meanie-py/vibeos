@@ -191,6 +191,106 @@ elseif(ARCH STREQUAL "arm64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 2): exp/log/log10/pow/fmod → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its x87 *_asm.s). These are the SAME
+# portable math/arm64/*.c used on both amd64-llvm-mingw and arm64 (see
+# math.cmake: the USE_LLVM_MINGW amd64 branch and the arm64 branch both
+# pull them into LIBCNTPR_MATH_SOURCE → LIBCNTPR_SOURCE). exp/log/fmod are
+# real algorithms; log10/pow are the upstream's rough printf stubs — all
+# faithfully translated and difftest-pinned bit-exact against the C.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/exp.c
+        math/arm64/log.c
+        math/arm64/log10.c
+        math/arm64/pow.c
+        math/arm64/fmod.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 3): tan = sin/cos → cnt-rust (float feature,
+# amd64/arm64; i386 keeps tan_asm.s). Uniform sin/cos quotient per the
+# "give every arch the same thing" directive — replaces amd64's
+# hand-optimized AMD-libm tan AND arm64's arm64/tan.c (already sin/cos).
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE math/libm_sse2/tan.c)
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE math/arm64/tan.c)
+endif()
+
+# Wave MATH-TIERC (sub-wave 4): ceil/floor/ceilf/floorf → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its x87 {ceil,floor}_asm). Pure
+# bit-manipulation directed rounding, uniform across arches (exact IEEE).
+# amd64 had the AMD-libm libm_sse2 versions; arm64 had arm64/{ceil,floor}.c
+# + math/{ceilf,floorf}.c.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/ceil.c
+        math/libm_sse2/ceilf.c
+        math/libm_sse2/floor.c
+        math/libm_sse2/floorf.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/ceil.c
+        math/ceilf.c
+        math/arm64/floor.c
+        math/floorf.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 5): ldexp + _logb/_logbf → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its C). ldexp = x*2^n (portable arm64
+# stepping, replaces amd64's AMD-libm errno ldexp); _logb/_logbf = exponent
+# extract. amd64 had libm_sse2/{ldexp,logb,logbf}.c; arm64 had
+# arm64/{ldexp,logb}.c (logb.c holds both _logb and _logbf).
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/ldexp.c
+        math/libm_sse2/logb.c
+        math/libm_sse2/logbf.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/ldexp.c
+        math/arm64/logb.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 6): fabs/fabsf → cnt-rust (float feature,
+# amd64/arm64; i386 keeps the portable C math/{fabs,fabsf}.c — an f64/f32
+# RETURN is a hard no-SSE ABI error there). Pure sign-bit clear with the
+# function-specific NaN handling (fabs returns NaN unchanged; fabsf ORs in
+# the quiet bit) — bit-exact across both arches. arm64 had the C
+# math/{fabs,fabsf}.c (removed here); amd64 had asm math/amd64/{fabs,fabsf}.S
+# (removed from LIBCNTPR_ASM_SOURCE below, after it is composed).
+if(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/fabs.c
+        math/fabsf.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 7): modf + atan/atan2 → cnt-rust (float feature,
+# amd64/arm64; i386 keeps its x87 atan_asm.s / atan2_asm.s — modf is not in
+# i386 libcntpr at all). modf (the f64 version) is amd64-ONLY in libcntpr
+# (arm64/i386 ship only modff in CRT): an exact integer/fraction split,
+# faithful bit-exact port of math/libm_sse2/modf.c. atan/atan2 are the
+# portable fdlibm math/arm64/{atan,atan2}.c flipped uniformly — replacing
+# amd64's AMD-libm libm_sse2/{atan,atan2}.c with the same Rust algorithm.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/modf.c
+        math/libm_sse2/atan.c
+        math/libm_sse2/atan2.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/atan.c
+        math/arm64/atan2.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
@@ -198,6 +298,16 @@ list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_MEM_ASM_SOURCE}
     ${LIBCNTPR_STRING_ASM_SOURCE}
 )
+
+# Wave MATH-TIERC (sub-wave 6) amd64 half: cnt-rust's Rust fabs/fabsf own
+# the symbols, so drop amd64's asm versions from the composed asm list (the
+# C/arm64 half is REMOVE_ITEM'd from LIBCNTPR_SOURCE above). i386 untouched.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_ASM_SOURCE
+        math/amd64/fabs.S
+        math/amd64/fabsf.S
+    )
+endif()
 
 # ── Wave CORE-OPS: i386 mem+string core ops — flip hand asm → cnt-rust ─
 # libcntpr-ONLY (REMOVE_ITEM from libcntpr's asm list, NOT from the

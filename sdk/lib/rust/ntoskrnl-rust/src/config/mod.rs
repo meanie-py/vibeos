@@ -6,7 +6,10 @@
 
 pub mod cmalloc;
 pub mod cmapi;
-pub mod cmboot;
+// cmboot.c moved to the shared `cmboot-rust` crate (it is "shared by both the
+// kernel and the bootloader" per its own header) — linked into the kernel via
+// kernel-rust's `extern crate cmboot_rust` and into the loaders via freeldr-rust.
+// pub mod cmboot;  -> sdk/lib/rust/cmboot-rust
 pub mod cmconfig;
 pub mod cmcontrl;
 pub mod cmdata;
