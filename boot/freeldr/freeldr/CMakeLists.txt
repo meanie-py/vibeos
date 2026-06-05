@@ -183,6 +183,11 @@ file(GLOB_RECURSE FREELDR_CNT_RUST_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs)
+# blcmlib (CM hive boot lib) is now compiled in-cargo by the loaders'
+# reactos-link c_from_compile_db (compile_commands.json replay), not reused as
+# libblcmlib.a. file-track its C sources so an edit re-invokes the cargo link.
+file(GLOB FREELDR_BLCMLIB_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/sdk/lib/cmlib/*.c)
 
 # BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
 # built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. rosload

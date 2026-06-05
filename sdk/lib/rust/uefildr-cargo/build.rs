@@ -91,13 +91,34 @@ fn main() {
         // cport.c is Rust now (cohabitation); libcportlib.a is just the stub,
         // the Cp* serial symbols come from libcport_rust.a.
         "sdk/lib/cportlib/libcport_rust.a",
-        "sdk/lib/cmlib/libblcmlib.a",
+        // blcmlib (CM hive boot lib) is now compiled IN-cargo via
+        // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
         "boot/rtl/libblrtl.a",
         "sdk/lib/crt/liblibcntpr.a",
         "sdk/lib/crt/libchkstk.a",
         // cnt-rust-lib (the Rust cnt cohabitation twin) is now a DIRECT cargo
         // sibling (.rust_lib() below), not the cmake-copied libcntpr_rust.a.
     ]);
+
+    // blcmlib's 13 C sources (sdk/lib/cmlib/CMakeLists.txt) compiled in-cargo by
+    // replaying cmake's clang cmd (flag-exact incl. _BLDR_ + the cmlib.h PCH) —
+    // produces a symbol-identical libblcmlib.a without `ninja blcmlib`. C-only,
+    // no asm. cmboot-rust (in freeldr-rust) calls these Hv*/Cm* symbols.
+    const BLCMLIB_C: &[&str] = &[
+        "sdk/lib/cmlib/cmcheck.c",
+        "sdk/lib/cmlib/cminit.c",
+        "sdk/lib/cmlib/cmheal.c",
+        "sdk/lib/cmlib/cmindex.c",
+        "sdk/lib/cmlib/cmkeydel.c",
+        "sdk/lib/cmlib/cmname.c",
+        "sdk/lib/cmlib/cmse.c",
+        "sdk/lib/cmlib/cmvalue.c",
+        "sdk/lib/cmlib/hivebin.c",
+        "sdk/lib/cmlib/hivecell.c",
+        "sdk/lib/cmlib/hiveinit.c",
+        "sdk/lib/cmlib/hivesum.c",
+        "sdk/lib/cmlib/hivewrt.c",
+    ];
 
     // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 builds
     // WITHOUT `float` (no-SSE pre-boot, no by-value f64 ABI); amd64/arm64 with
@@ -122,6 +143,9 @@ fn main() {
         // path-deps) — watch so an edit re-runs build.rs (each crate's OWN src
         // is auto-tracked by build_rust_crate; these are the path-deps).
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        // blcmlib C compiled in-cargo (compile_commands.json replay) — drops the
+        // cmake libblcmlib.a reuse. In the C-archive position (before rust libs).
+        .c_from_compile_db("blcmlib", BLCMLIB_C)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)

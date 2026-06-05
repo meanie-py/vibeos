@@ -64,12 +64,32 @@ fn main() {
     // reactos-link from freeldr.spec (.import_lib() below), so cmake's
     // spec2def(freeldr.sys ... ADD_IMPORTLIB) is retired.
     libs.extend_from_slice(&[
-        "sdk/lib/cmlib/libblcmlib.a",
+        // blcmlib (CM hive boot lib) is now compiled IN-cargo via
+        // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
         "boot/rtl/libblrtl.a",
         "sdk/lib/crt/liblibcntpr.a",
         // cnt-rust-lib is now a DIRECT cargo sibling (.rust_lib() below), not
         // the cmake-copied libcntpr_rust.a.
     ]);
+
+    // blcmlib's 13 C sources compiled in-cargo (compile_commands.json replay,
+    // flag-exact incl. _BLDR_ + cmlib.h PCH) — symbol-identical libblcmlib.a
+    // without `ninja blcmlib`. See sdk/lib/cmlib/CMakeLists.txt.
+    const BLCMLIB_C: &[&str] = &[
+        "sdk/lib/cmlib/cmcheck.c",
+        "sdk/lib/cmlib/cminit.c",
+        "sdk/lib/cmlib/cmheal.c",
+        "sdk/lib/cmlib/cmindex.c",
+        "sdk/lib/cmlib/cmkeydel.c",
+        "sdk/lib/cmlib/cmname.c",
+        "sdk/lib/cmlib/cmse.c",
+        "sdk/lib/cmlib/cmvalue.c",
+        "sdk/lib/cmlib/hivebin.c",
+        "sdk/lib/cmlib/hivecell.c",
+        "sdk/lib/cmlib/hiveinit.c",
+        "sdk/lib/cmlib/hivesum.c",
+        "sdk/lib/cmlib/hivewrt.c",
+    ];
 
     // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 no `float`,
     // amd64 `float`. build_rust_crate's cnt-rust-lib special case supplies the
@@ -90,6 +110,9 @@ fn main() {
         // cmboot-rust (freeldr-rust dep) + cnt-rust/cnt-ctype (cnt-rust-lib
         // path-deps) — watch so an edit re-runs build.rs.
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        // blcmlib C compiled in-cargo (compile_commands.json replay) — drops the
+        // cmake libblcmlib.a reuse. C-archive position (before rust libs).
+        .c_from_compile_db("blcmlib", BLCMLIB_C)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)
