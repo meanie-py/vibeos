@@ -127,6 +127,9 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     math/_fdsign.c
     math/_dtest.c
     math/_fdtest.c
+    # Wave MATH-TIERB: `div` is pure integer (div_t of two ints, no float
+    # in its signature) → cnt-rust owns it on all 3 arches.
+    math/div.c
 )
 
 # Wave PRINTF (float residual): the float-formatting half of streamout
@@ -140,6 +143,27 @@ if(ARCH STREQUAL "i386")
     list(APPEND LIBCNTPR_SOURCE
         printf/format_float.c
         printf/format_floatw.c
+    )
+endif()
+
+# Wave MATH-TIERB (float residual): the float-RETURNING shims
+# (_chgsignf/scalbn/scalbnf/round/roundf/nextafter/nextafterf/nexttowardf)
+# flip to cnt-rust behind the `float` feature, owned on amd64/arm64. On
+# i386 the crate builds no-SSE where an `f32`/`f64` *return* is a hard ABI
+# error (float *args* — Tier A's predicates — only warn), so i386 keeps
+# the C exactly like format_float above. `nexttowardf` is additionally
+# i386-only-C by ABI (80-bit `long double` arg). div.c is NOT here — it's
+# pure integer and already removed all-arch above.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/_chgsignf.c
+        math/scalbn.c
+        math/scalbnf.c
+        math/round.c
+        math/roundf.c
+        math/nextafter.c
+        math/nextafterf.c
+        math/nexttowardf.c
     )
 endif()
 
