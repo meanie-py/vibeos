@@ -21,13 +21,15 @@ from pathlib import Path
 from .archcfg import base_arch
 from .artifacts import Run, Stage
 
-# Per-module boot-swap: module -> (script, passes (arch,module) args, arches).
-# ntdll/ntdll_vista share one script that takes an [arch] [module] pair (x86).
-# ntoskrnl has its own i386-only kernel boot-swap (no args; standalone PoC).
+# Per-module boot-swap: module -> (script, arg_style, arches).
+#   arg_style "arch_module" → `script <arch> <module>` (ntdll DLLs share one
+#   script keyed by both); "arch" → `script <arch>` (ntoskrnl kernel boot-swap,
+#   now multi-arch on the livecd arches).
+# arm64 is excluded everywhere here — it boots a ramdisk, not a livecd.
 _SWAPS = {
-    "ntdll":       ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    True,  ("i386", "amd64")),
-    "ntdll_vista": ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    True,  ("i386", "amd64")),
-    "ntoskrnl":    ("sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh", False, ("i386",)),
+    "ntdll":       ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
+    "ntdll_vista": ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
+    "ntoskrnl":    ("sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh", "arch",        ("i386", "amd64")),
 }
 _ORDER = ("ntdll", "ntdll_vista", "ntoskrnl")
 
@@ -59,7 +61,7 @@ def cargo_swap(args, repo: Path) -> int:
 
     sel = list(_ORDER) if args.module == "all" else [args.module]
     for mod in sel:
-        script_rel, takes_module, arches = _SWAPS[mod]
+        script_rel, arg_style, arches = _SWAPS[mod]
         stage = f"boot-swap:{mod}"
         if arch not in arches:
             run.add(Stage(stage, status="skip",
@@ -69,7 +71,12 @@ def cargo_swap(args, repo: Path) -> int:
         if not script.is_file():
             run.add(Stage(stage, status="fail", detail=f"missing {script_rel}"))
             continue
-        cmd = ["bash", str(script), arch, mod] if takes_module else ["bash", str(script)]
+        if arg_style == "arch_module":
+            cmd = ["bash", str(script), arch, mod]
+        elif arg_style == "arch":
+            cmd = ["bash", str(script), arch]
+        else:
+            cmd = ["bash", str(script)]
         cp = run.run(cmd, cwd=repo, stage=stage, timeout=1800)
         salient = _salient(cp.stdout, cp.stderr)
         if cp.returncode == 0:
