@@ -12,10 +12,16 @@ else()
 endif()
 
 if(DEFINED EFI_PLATFORM_ID)
+    # uefildr.efi is now a cargo-driven custom_target (no $<TARGET_FILE:>), so
+    # reference its known output path. boot_images.cmake is include()'d from
+    # boot/CMakeLists.txt, so CMAKE_CURRENT_BINARY_DIR == build-<arch>/boot and
+    # the loader lands at freeldr/freeldr/uefildr.efi under it. `DEPENDS uefildr`
+    # (the custom_target) keeps efisys rebuilding when the loader relinks.
     add_custom_target(efisys
         COMMAND native-fatten ${CMAKE_CURRENT_BINARY_DIR}/efisys.bin -format 2880 EFIBOOT
             -boot ${CMAKE_CURRENT_BINARY_DIR}/freeldr/bootsect/fat.bin
-            -mkdir EFI -mkdir EFI/BOOT -add $<TARGET_FILE:uefildr> EFI/BOOT/boot${EFI_PLATFORM_ID}.efi
+            -mkdir EFI -mkdir EFI/BOOT
+            -add ${CMAKE_CURRENT_BINARY_DIR}/freeldr/freeldr/uefildr.efi EFI/BOOT/boot${EFI_PLATFORM_ID}.efi
         DEPENDS native-fatten fat uefildr
         VERBATIM)
 endif()
@@ -170,8 +176,12 @@ if(DEFINED EFI_PLATFORM_ID)
     # For things like flashing USB drives, we also add the efi file into efi/boot.
     add_cd_file(TARGET efisys FILE ${CMAKE_CURRENT_BINARY_DIR}/efisys.bin DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FOR bootcd regtest livecd hybridcd)
 
+    # uefildr is a cargo-driven custom_target (no $<TARGET_FILE:>); pass TARGET
+    # for the build dependency AND FILE for the explicit path (same pattern as
+    # the efisys add_cd_file above).
     add_cd_file(
         TARGET uefildr
+        FILE ${CMAKE_CURRENT_BINARY_DIR}/freeldr/freeldr/uefildr.efi
         DESTINATION efi/boot
         NO_CAB
         NAME_ON_CD boot${EFI_PLATFORM_ID}.efi

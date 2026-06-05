@@ -60,6 +60,24 @@ pub enum ModuleKind {
     ///   explicitly as `Some(0x400000)` — identical header); arm64 cmake
     ///   passes no `--image-base`, so `None` to match its auto-hash base.
     EfiApplication { entry: String, image_base: Option<u64>, alignment: u64 },
+    /// `nativeexe` WITH exports — the rosload.exe 2nd-stage loader. Mirrors
+    /// the cmake `rosload.exe` link (`set_subsystem native` /
+    /// `set_entrypoint RunLoader` / `set_image_base 0x10000`,
+    /// `ENABLE_EXPORTS TRUE` + `rosload.def`):
+    /// - `--subsystem,native:5.01`, `--gc-sections`, NOT `-shared` (it's an
+    ///   exe), image base `0x10000`.
+    /// - exports come from the `.spec2def()`-generated `rosload.def`, so NO
+    ///   `--exclude-all-symbols` (the one tiny export is `RtlAssert`).
+    /// - DEFAULT PE alignment: cmake's rosload link passes no
+    ///   `--file-alignment`/`--section-alignment`, so neither does this kind
+    ///   (lld defaults file 0x200 / section 0x1000) — unlike KernelExe which
+    ///   forces 0x1000/0x1000.
+    /// `entry` is already arch-decorated (i386 `_RunLoader`, amd64 `RunLoader`).
+    /// The i386-only `-u _HalDispatchTable`/`-u _HalPrivateDispatchTable`
+    /// force-undefined pulls (the C halstub.c always linked the Rust HAL
+    /// dispatch tables in as a source object; as archive members they'd be
+    /// GC'd) are supplied via `.force_undefined(...)` on the builder.
+    NativeExe { entry: String, image_base: u64 },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -236,6 +254,7 @@ pub struct Linker {
     /// miscompile — keeping it an in-group archive preserves the cmake layout.
     asm_archives: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
+    force_undefined: Vec<String>,
 }
 
 impl Linker {
@@ -282,6 +301,7 @@ impl Linker {
             static_libs: Vec::new(),
             asm_archives: Vec::new(),
             import_libs: Vec::new(),
+            force_undefined: Vec::new(),
         }
     }
 
@@ -399,6 +419,18 @@ impl Linker {
             dll_name.to_string(),
             basename.to_string(),
         ));
+        self
+    }
+
+    /// Force-undefined symbols (`-Wl,-u,SYM`) — make the linker keep an
+    /// otherwise-unreferenced archive member. Mirrors cmake's
+    /// `target_link_options(... LINKER:-u,_HalDispatchTable)`: rosload's i386
+    /// HAL dispatch tables (from the Rust `halstub.rs` archive member) are
+    /// unreferenced + unexported, so without `-u` `--gc-sections` drops them.
+    /// Each symbol is already arch-decorated by the caller. Chainable.
+    pub fn force_undefined(mut self, syms: &[&str]) -> Self {
+        self.force_undefined
+            .extend(syms.iter().map(|s| s.to_string()));
         self
     }
 
@@ -675,7 +707,21 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
                 (entry, *image_base)
             }
+            ModuleKind::NativeExe { entry, image_base } => {
+                // rosload.exe: native subsystem exe that EXPORTS via its .def
+                // (so NO --exclude-all-symbols, unlike KernelExe), --gc-sections,
+                // no -shared, DEFAULT PE alignment (cmake passes no
+                // --file/-section-alignment → lld default file 0x200/section
+                // 0x1000). exports flow from .spec2def()'s rosload.def.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
+                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                (entry, Some(*image_base))
+            }
         };
+        // Force-undefined pulls (-u SYM) — keep GC'd-but-needed archive members.
+        for sym in &self.force_undefined {
+            println!("cargo:rustc-link-arg=-Wl,-u,{sym}");
+        }
         println!("cargo:rustc-link-arg=-Wl,-e,{entry}");
         // Emit an explicit base only when the module pins one; otherwise the
         // common --enable-auto-image-base resolves it (matches cmake's arm64

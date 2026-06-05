@@ -10,65 +10,24 @@ function(add_bootvid _target _configfile)
     set(REACTOS_STR_ORIGINAL_FILENAME "$<TARGET_FILE_NAME:${_target}>")
 
     # ------------------------------------------------------------------------
-    # Rust cohabitation flip (sdk/lib/rust/bootvid-rust -> libbootvid_rust.a)
+    # Rust cohabitation flip — cargo-driven final link (bootvid-cargo)
     # ------------------------------------------------------------------------
     # framebuf/bootvid.c (+ included <drivers/bootvid/framebuf.c>) and the
-    # shared common.c/console.c/fontdata.c are translated to Rust. With RUST
-    # set, the C logic sources are dropped (kept on disk per never-delete) and
-    # the 11 bootvid.spec exports come from the per-arch Rust staticlib.
+    # shared common.c/console.c/fontdata.c are translated to Rust
+    # (sdk/lib/rust/bootvid-rust, kept on disk per never-delete). The 11
+    # bootvid.spec Vid* exports come from libbootvid_rust.a. With RUST set, the
+    # final bootvid.dll link is driven by cargo (bootvid-cargo's build.rs →
+    # reactos-link, ModuleKind::KernelDll) rather than cmake's
+    # add_library(MODULE) — add_cargo_kernel_dll builds bootvid-rust + links it
+    # with memcmp + the ntoskrnl/hal import libs into the shipping PE and
+    # applies the kernel-dll post-link. The spec2def above keeps the import lib
+    # (ntoskrnl/ntkrnlmp import bootvid). cmake's link for this DLL is retired.
     if(_bviddata_RUST)
-        set(BV_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-        set(BV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-${_target}-target")
-        set(BV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/lib${_target}_rust.a")
-        if(ARCH STREQUAL "i386")
-            set(BV_RUST_TARGET "i686-pc-windows-gnu")
-        elseif(ARCH STREQUAL "amd64")
-            set(BV_RUST_TARGET "x86_64-pc-windows-gnu")
-        elseif(ARCH STREQUAL "arm64")
-            set(BV_RUST_TARGET "aarch64-pc-windows-gnullvm")
-        endif()
-        add_custom_command(
-            OUTPUT ${BV_RUST_LIB}
-            COMMAND ${CMAKE_COMMAND} -E env
-                CARGO_TARGET_DIR=${BV_RUST_TARGET_DIR}
-                cargo build --release --target ${BV_RUST_TARGET}
-                    -p bootvid-rust
-                    --manifest-path ${BV_RUST_WORKSPACE_DIR}/Cargo.toml
-            COMMAND ${CMAKE_COMMAND} -E copy
-                ${BV_RUST_TARGET_DIR}/${BV_RUST_TARGET}/release/libbootvid_rust.a
-                ${BV_RUST_LIB}
-            DEPENDS ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/Cargo.toml
-                    ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/src/lib.rs
-                    ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/src/pc.rs
-                    ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/src/fontdata.rs
-                    ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/src/common.rs
-                    ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/src/console.rs
-                    ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/src/bootvid.rs
-                    ${BV_RUST_WORKSPACE_DIR}/bootvid-rust/src/framebuf_impl.rs
-            WORKING_DIRECTORY ${BV_RUST_WORKSPACE_DIR}
-            COMMENT "Building bootvid-rust (${BV_RUST_TARGET})"
-            VERBATIM)
-        add_custom_target(rust_${_target} DEPENDS ${BV_RUST_LIB})
-
-        configure_file(bootvid.rc ${CMAKE_CURRENT_BINARY_DIR}/${_target}.rc)
-        file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_target}.rc
-                       INPUT ${CMAKE_CURRENT_BINARY_DIR}/${_target}.rc)
-
-        # framebuf/bootvid.c, common.c, console.c, fontdata.c replaced by Rust
-        # (kept on disk). rust_cohab_stub.c is the MODULE placeholder TU.
-        add_library(${_target} MODULE
-            rust_cohab_stub.c
-            ${CMAKE_CURRENT_BINARY_DIR}/${_target}.rc
-            ${CMAKE_CURRENT_BINARY_DIR}/${_target}.def)
-        set_module_type(${_target} kerneldll ENTRYPOINT 0)
-        add_importlibs(${_target} ntoskrnl hal)
-        target_link_libraries(${_target} ${BV_RUST_LIB})
-        add_dependencies(${_target} psdk rust_${_target})
-
         if(NOT _bviddata_NAME_ON_CD)
-            set(_bviddata_NAME_ON_CD "$<TARGET_FILE_NAME:${_target}>")
+            set(_bviddata_NAME_ON_CD ${_target}.dll)
         endif()
-        add_cd_file(TARGET ${_target} DESTINATION reactos/system32 NO_CAB NAME_ON_CD ${_bviddata_NAME_ON_CD} FOR all)
+        add_cargo_kernel_dll(${_target} bootvid-cargo ${_target}.dll
+            BODY_CRATE bootvid-rust NAME_ON_CD ${_bviddata_NAME_ON_CD})
         return()
     endif()
 

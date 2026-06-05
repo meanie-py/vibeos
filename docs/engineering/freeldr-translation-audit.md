@@ -112,23 +112,30 @@ multi-part "BIOS prune" series:
 
 ---
 
-## kdcom.dll — crate written, default build still C
+## kdcom.dll — Rust body + CARGO-DRIVEN LINK in the main build (2026-06-04)
 
 Lives at `drivers/base/kdcom/` (under `_WINKD_=TRUE`, the WinDbg
 default) or `drivers/base/kdrosdbg/` (under `_WINKD_=FALSE`, the ReactOS
-debugger — see memory `feedback_kdcom_is_kdrosdbg`). **Both cmake paths
-still compile C today.**
+debugger — see memory `feedback_kdcom_is_kdrosdbg`). The active
+(`_WINKD_=FALSE`) `drivers/base/kdrosdbg/` path is fully Rust.
 
-A Rust translation exists as two workspace crates:
-- `kdcom-rust` (i386 staticlib)
-- `kdcom-cargo` (cargo-driven `.dll` link PoC via the `reactos-link` engine)
+Two workspace crates:
+- `kdcom-rust` (3-arch staticlib, the kdrosdbg.c translation)
+- `kdcom-cargo` (cargo-driven `.dll` link via the `reactos-link` engine,
+  `ModuleKind::KernelDll`, 3-arch: i686/x86_64/aarch64-kernel.json)
 
-These build, but the default `add_library(kdcom MODULE kdcom.c …)`
-cmake target has **not** been flipped to consume the Rust archive. The
-remaining work is the cohabitation flip (comment the C sources, link
-`libkdcom_rust.a`, keep `kdcom.spec` as the export contract) and a
-smoke pass — failure mode is benign (debug output lost, not a boot
-break), so this is low risk.
+**The main cmake build now drives the final link from cargo, not
+`add_library(MODULE)`.** `drivers/base/kdrosdbg/CMakeLists.txt` keeps only
+`spec2def(kdcom.dll kdrosdbg.spec ADD_IMPORTLIB)` (ntoskrnl imports the 8
+Kd* exports) and calls `add_cargo_kernel_dll(kdcom kdcom-cargo kdcom.dll
+BODY_CRATE kdcom-rust)` (the reusable helper in `sdk/cmake/gcc.cmake`):
+cargo builds kdcom-rust + links it with cportlib/memcmp + the ntoskrnl
+import lib into the shipping PE, then applies the kernel-dll post-link
+(`native-pefixup --kerneldll`, + the i386 forwarder fix). The cmake link
+is **retired** — this is the first module whose cmake link is fully
+cargo-driven. Cold smoke green ×3 (PE-header/export-identical to the old
+cmake link). The cargo link uses nightly + build-std (inherent to the
+cargo-drive path).
 
 **ABI surface** (8-line spec): `KdD0Transition`, `KdD3Transition`,
 `KdSendPacket`, `KdReceivePacket`, `KdDebuggerInitialize0/1`, `KdSave`,
@@ -136,17 +143,22 @@ break), so this is low risk.
 
 ---
 
-## bootvid.dll — crate written, default build still C
+## bootvid.dll — Rust body + CARGO-DRIVEN LINK in the main build (2026-06-04)
 
 Lives at `drivers/base/bootvid/`. Post-BIOS-prune, **the only backend
 that builds is `framebuf/` (UEFI GOP linear framebuffer)** — the legacy
 VGA/`i386/pc/` path is gone, and arm/xbox/pc98 never applied. So the
 keep-set the original audit projected is exactly what's left.
 
-A Rust translation exists as `bootvid-rust` + `bootvid-cargo` (same
-cargo-link PoC shape as kdcom), but the default cmake
-(`framebuf/lfbbvid.cmake`) **still compiles C**. Remaining work is the
-cohabitation flip + smoke. Failure mode is benign (no boot logo).
+Two crates: `bootvid-rust` (3-arch staticlib) + `bootvid-cargo` (cargo
+`.dll` link, `ModuleKind::KernelDll`, 3-arch). **The main cmake build drives
+the final `bootvid.dll` link from cargo** (the `RUST` branch of `add_bootvid`
+in `drivers/base/bootvid/CMakeLists.txt` calls `add_cargo_kernel_dll(bootvid
+bootvid-cargo bootvid.dll BODY_CRATE bootvid-rust …)`); `spec2def(... 
+ADD_IMPORTLIB)` stays for the 11 Vid* exports (ntoskrnl imports them). The
+cmake `add_library(MODULE)` link is retired. The sibling `lfbbvid.dll` (a
+vestigial alias not loaded by INBV) stays a C `add_library`. Cold smoke
+green ×3.
 
 > The `bootvid-rust/Cargo.toml` carries a note that the original audit's
 > keep/prune set was "inverted" — historical confusion now moot since
@@ -183,9 +195,16 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
    import descriptor hangs freeldr's peloader; use the import lib's
    `__imp_` thunk instead. See memory feedback_freeldr_loaded_dll_no_raw_dylib.)*
 
-1. **Decide kdcom-cargo / bootvid-cargo fate.** The `-cargo` reactos-link
-   PoCs are now superseded by the cohabitation flips. Either retire them
-   or keep as a parallel CI check — pick one so they don't bit-rot.
+1. **kdcom-cargo / bootvid-cargo fate: DECIDED — wired into the main build
+   (2026-06-04).** No longer off-path PoCs: the cmake build drives both
+   `.dll` links from cargo via the reusable `add_cargo_kernel_dll` helper
+   (`sdk/cmake/gcc.cmake`); the cmake `add_library(MODULE)` links are retired.
+   Cold smoke green ×3. This is the first cmake→cargo link migration in the
+   tree — the pattern (`spec2def` importlib stays in cmake; cargo produces the
+   shipping PE + post-link) is the template for retiring the cmake links of
+   `uefildr`/`rosload`/`ntdll`/`ntoskrnl` next. (The standalone
+   `build-and-test.sh` in each crate remains an isolated i386 link+swap-smoke
+   debug helper.)
 2. **Prune alternate KD transports.** `kdgdb`, `kdvm`, and the inactive
    `_WINKD_` half (`kdcom` or `kdrosdbg`) are dead for our COM1 smoke
    config. `qemu/inspect.sh` GDB tooling covers the kdgdb use case.
@@ -242,6 +261,41 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 7. **Optional: `setupldr.c`/`inffile.c` are already translated** (they
    ship in `freeldr-rust`), so the original "prune install-mode?" open
    question is moot — they're in Rust and cheap to keep.
+8. **`rosload.exe` is now cargo-link-driven too (2026-06-04):
+   `sdk/lib/rust/rosload-cargo`.** New `ModuleKind::NativeExe` in the
+   `reactos-link` engine — native-subsystem exe WITH exports (`rosload.def`,
+   one export `RtlAssert`, so NO `--exclude-all-symbols` unlike `KernelExe`),
+   `--gc-sections`, no `-shared`, image base 0x10000, DEFAULT PE alignment
+   (cmake's rosload link passes no `--file/-section-alignment`). Plus a new
+   `.force_undefined(&[...])` builder for the i386-only
+   `-u _HalDispatchTable`/`-u _HalPrivateDispatchTable` pulls (the Rust
+   halstub dispatch tables are unreferenced+unexported → GC'd without `-u`).
+   Like `uefildr-cargo` it REUSES the cmake-built inputs (run `ninja rosload`
+   first): the prebuilt rosload.dir objects (`strsafe_shim.c.obj`,
+   `cmboot.c.obj`, per-arch asm), `libfreeldr_rust_rosload.a` (`--features
+   rosload`, carries the `RunLoader` entry), the leaf libs + i386 mini-HAL,
+   and the freeldr import lib (`libfreeldr.dir/libfreeldr.a`). i386 + amd64
+   only (arm64 is UEFI-only, no rosload). Cargo `rosload.exe` is
+   PE-header-identical to cmake's (ImageBase 0x10000, NT-native subsystem,
+   ver 5.1, exports `RtlAssert` ord 1; entry RVA differs for GC layout) and
+   **boots both livecds to desktop under smoke** (`build-and-test.sh
+   [i386|amd64]`, `RUN_SMOKE=1`; 7-pass, the lone `test_idle_cpu_not_spinning`
+   red is the pre-existing idle-spin gate, not rosload). With this, BOTH
+   freeldr link binaries (`uefildr.efi` + `rosload.exe`) are cargo-driven.
+9. **uefildr + rosload now wired into the MAIN cmake build (2026-06-04) —
+   cmake's loader link RETIRED.** The two `add_executable` links are gone;
+   `boot/freeldr/freeldr/{uefi,rosload}.cmake` call
+   `add_cargo_module(... KIND efi|native …)` (the generalized
+   `add_cargo_kernel_dll` helper in `sdk/cmake/gcc.cmake`). The
+   header-dependent objects the cargo link reuses (uefildr: `strsafe_shim`;
+   rosload: `strsafe_shim`+`cmboot`+asm) are kept compiled via OBJECT libs
+   (`uefildr_shim` / `rosload_objs`) — the `-cargo` build.rs read from
+   `<objlib>.dir/`. `boot/boot_images.cmake` was updated to embed uefildr.efi
+   into the efisys image (and the efi/boot CD copy) by PATH + a `DEPENDS
+   uefildr` (a custom_target has no `$<TARGET_FILE:>`). Cold smoke green ×3
+   (i386/amd64: cargo uefildr + cargo rosload together — the first time both
+   cargo loader binaries boot in the same image; arm64: cargo uefildr, no
+   rosload). With kdcom/bootvid, FOUR modules' cmake links are now retired.
 
 ---
 
@@ -250,15 +304,18 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 - ✅ `freeldr-rust` produces working `uefildr.efi` (+ `rosload.exe`) for
   all three arches; all three smoke tests boot through it via UEFI.
 - ✅ `arm64vid-rust` / `framebuf-rust` flipped, 3-arch, smoke green.
-- ⬜ `kdcom-rust` / `bootvid-rust` integrated into the default build (not
-  just the cargo PoC) and smoke-green.
+- ✅ `kdcom-rust` / `bootvid-rust` integrated into the default build (cargo
+  link via `add_cargo_kernel_dll`, cmake link retired) and cold-smoke-green ×3.
 - ⬜ `tools/scan_ud2.py --check` clean against each boot artifact.
 - ⬜ Dead trees deleted: `boot/freeldr/bootsect/`, unused KD transports.
-- 🚧 (Stretch) cmake C `uefildr`/`rosload` retired in favour of a cargo
-  `bin`, allowing `boot/freeldr/freeldr/` C to be removed. `uefildr-cargo`
-  now links a PE-header-identical `uefildr.efi` on **all 3 arches** (i386 +
-  amd64 + arm64) via the `reactos-link` `EfiApplication` path; `rosload` is
-  the remaining cmake-driven freeldr binary.
+- ✅ (was Stretch) cmake C `uefildr`/`rosload` link retired in favour of the
+  cargo-driven link, **wired into the main build** (2026-06-04): cmake's
+  `add_executable` for both is gone; `add_cargo_module` drives the link
+  (`uefildr-cargo` EfiApplication ×3 arch; `rosload-cargo` NativeExe i386+amd64,
+  arm64 has no rosload). Cold smoke green ×3. Remaining cleanup: the
+  `boot/freeldr/freeldr/` C source files the Rust bodies replaced are still on
+  disk (never-delete rule) — a future `git rm` pass once the cargo path is the
+  settled canonical.
 
 ## What this audit doesn't measure
 
