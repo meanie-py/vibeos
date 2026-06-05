@@ -114,13 +114,10 @@ set(ROSLOAD_EXTRA_DEPENDS
 if(ARCH STREQUAL "i386")
     list(APPEND ROSLOAD_EXTRA_DEPENDS
         mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a
-        ${CMAKE_CURRENT_BINARY_DIR}/drvmap_gcc.obj
-        ${CMAKE_CURRENT_SOURCE_DIR}/arch/i386/linux.S)
-elseif(ARCH STREQUAL "amd64")
-    list(APPEND ROSLOAD_EXTRA_DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/arch/amd64/misc.S
-        ${CMAKE_CURRENT_SOURCE_DIR}/arch/amd64/linux.S)
+        ${CMAKE_CURRENT_BINARY_DIR}/drvmap_gcc.obj)
 endif()
+# (linux.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust;
+#  tracked via FREELDR_RUST_SOURCES. Only the 16-bit drvmap.obj stays cmake.)
 
 # KIND native → no post-link (rosload's old cmake POST_BUILD was a no-op).
 add_cargo_module(rosload rosload-cargo rosload.exe

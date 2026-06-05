@@ -96,12 +96,10 @@ set(UEFILDR_EXTRA_DEPENDS
     ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
 if(ARCH STREQUAL "i386")
     list(APPEND UEFILDR_EXTRA_DEPENDS
-        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a
-        ${CMAKE_CURRENT_SOURCE_DIR}/arch/i386/i386trap.S)
-elseif(ARCH STREQUAL "amd64")
-    list(APPEND UEFILDR_EXTRA_DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/arch/amd64/misc.S)
+        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a)
 endif()
+# (i386trap.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust;
+#  tracked via FREELDR_RUST_SOURCES, no longer reactos-link-assembled .S deps.)
 
 # KIND efi → post-link strips .rossym + --strip-all (matches the old
 # add_executable POST_BUILD). NO_CD → uefildr.efi is embedded into the efisys

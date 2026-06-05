@@ -30,6 +30,9 @@ mod cmboot_shims;
 // UEFI escape-helper asm (uefiasm.S) flipped to Rust global_asm! — self-gated
 // to feature="uefi" inside the file.
 mod uefiasm;
+// Remaining loader asm (misc.S / linux.S / i386trap.S) flipped to global_asm!,
+// per-file cfg-gated inside.
+mod loader_asm;
 
 // Modules added as rustconv writes each translated file.
 pub mod ffi;

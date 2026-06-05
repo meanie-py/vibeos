@@ -30,19 +30,14 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
-    // Per-arch prebuilt objects + leaf libs (verbatim from each
-    // build-<arch>/build.ninja's rosload.exe inputs). The objects are
-    // reused-prebuilt (header-dependent, compiled by cmake into rosload.dir),
-    // matching uefildr-cargo's strsafe_shim reuse.
     // rosload-specific compilation is now all reactos-link's: strsafe_shim.c via
-    // .c_shims(), and the per-arch asm (linux.S + amd64:misc.S) via .asm() from
-    // raw .S (only asm.inc + pcbios.h needed). cmboot is Rust (cmboot-rust).
-    // The SOLE remaining cmake-built reused object is the i386 16-bit
-    // drvmap_gcc.obj (clang can't .code16). The `rosload_objs` OBJECT lib is gone.
-    let mut asm: Vec<&str> = Vec::new();
+    // .c_shims(), and ALL the asm (linux.S + amd64:misc.S) flipped to Rust
+    // global_asm! in freeldr-rust (loader_asm.rs → libfreeldr_rust_rosload.a).
+    // cmboot is Rust (cmboot-rust). The SOLE remaining cmake-built reused object
+    // is the i386 16-bit drvmap_gcc.obj (clang can't .code16); rosload_objs gone.
     let (target_json, entry, mut libs): (&str, &str, Vec<&str>) = match arch.as_str() {
         "x86" => {
-            asm.push("boot/freeldr/freeldr/arch/i386/linux.S");
+            // linux.S flipped to Rust global_asm! (freeldr-rust/loader_asm.rs).
             (
                 "i686-kernel.json",
                 "_RunLoader",
@@ -56,8 +51,7 @@ fn main() {
             )
         }
         "x86_64" => {
-            asm.push("boot/freeldr/freeldr/arch/amd64/misc.S");
-            asm.push("boot/freeldr/freeldr/arch/amd64/linux.S");
+            // misc.S + linux.S flipped to Rust global_asm! (loader_asm.rs).
             ("x86_64-kernel.json", "RunLoader", Vec::new())
         }
         other => panic!("rosload-cargo: unsupported arch {other} (i386/amd64 only; arm64 is UEFI-only, no rosload)"),
@@ -85,10 +79,6 @@ fn main() {
         // pre-boot has SSE disabled; an emitted movaps would #UD).
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
         .c_shim_flags(&["-mno-sse"])
-        // linux.S/misc.S assembled from raw .S — asm.inc (sdk/include/asm) +
-        // pcbios.h REGS_* (boot/freeldr/freeldr/include) are all they need.
-        .asm(&asm, reactos_link::AsmDefineSet::Kernel)
-        .asm_include_dirs(&["sdk/include/asm", "boot/freeldr/freeldr/include"])
         // rosload exports RtlAssert via rosload.def (ENABLE_EXPORTS TRUE).
         .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe");
 

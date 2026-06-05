@@ -54,14 +54,9 @@ fn main() {
     //              amd64 cmake pins 0x10000 (low 1GB freeldr maps); arm64
     //              cmake passes no --image-base → None (auto-hash base).
     //   alignment  x86 (i386/amd64) 0x200; arm64 0x1000.
-    // Per-arch asm assembled directly by reactos-link from the RAW .S (no cmake
-    // OBJECT lib, no pre-expansion). All of uefildr's asm needs ONLY asm.inc
-    // (uefiasm.S's x86common/pcbios includes are unused noise; i386trap.S's
-    // KTRAP_FRAME refs are comments + literal stack ops; misc.S is asm.inc-only),
-    // so a minimal 2 include-dir set resolves everything — this is the entire
-    // former `uefifreeldr_common` asm, now cargo-built. (drvmap-style 16-bit gcc
-    // asm doesn't exist for uefildr.)
-    let mut asm: Vec<&str> = Vec::new();
+    // All of uefildr's asm (uefiasm.S, i386:i386trap.S, amd64:misc.S) is now
+    // Rust global_asm! in freeldr-rust (uefiasm.rs + loader_asm.rs), so it flows
+    // through libfreeldr_rust_uefi.a — no .S, no reactos-link .asm() here.
     let (target_json, entry, image_base, alignment): (&str, &str, Option<u64>, u64) =
         match arch.as_str() {
             "x86" => {
@@ -69,13 +64,13 @@ fn main() {
                 // freeldr libs (uefi.cmake `if(ARCH STREQUAL i386 AND NOT MSVC)`).
                 libs.push("hal/halx86/minihal/libmini_hal.a");
                 libs.push("hal/halx86/libhal_rust_mini.a");
-                // uefiasm.S flipped to Rust global_asm! (freeldr-rust/uefiasm.rs).
-                asm.push("boot/freeldr/freeldr/arch/i386/i386trap.S");
+                // uefiasm.S + i386trap.S flipped to Rust global_asm!
+                // (freeldr-rust/uefiasm.rs + loader_asm.rs) — no asm left here.
                 ("i686-kernel.json", "_EfiEntry", Some(0x0040_0000), 0x200)
             }
             "x86_64" => {
-                // uefiasm.S flipped to Rust global_asm! (freeldr-rust/uefiasm.rs).
-                asm.push("boot/freeldr/freeldr/arch/amd64/misc.S");
+                // uefiasm.S + misc.S flipped to Rust global_asm!
+                // (freeldr-rust/uefiasm.rs + loader_asm.rs) — no asm left here.
                 ("x86_64-kernel.json", "EfiEntry", Some(0x1_0000), 0x200)
             }
             "aarch64" => {
@@ -107,11 +102,7 @@ fn main() {
         // No .rust_staticlib(): reuse the cmake-built libfreeldr_rust_uefi.a
         // (identical codegen + carries the uefi/uefildr-rust-entry features).
         .static_libs(&libs)
-        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
-        // uefiasm.S assembled here — only asm.inc (sdk/include/asm) is needed;
-        // the freeldr include dir covers any arch/pc header (none used today).
-        .asm(&asm, reactos_link::AsmDefineSet::Kernel)
-        .asm_include_dirs(&["sdk/include/asm", "boot/freeldr/freeldr/include"]);
+        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
     // freeldr runs pre-boot with SSE not yet enabled — an emitted movaps would
     // #UD. Match uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).
     if arch == "x86" || arch == "x86_64" {
