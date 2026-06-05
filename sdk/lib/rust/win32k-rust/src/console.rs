@@ -16,10 +16,13 @@ extern "system" {
 const INVALID_HANDLE_VALUE: isize = -1;     // (HANDLE)-1
 const UserMode: i8 = 1;                       // KPROCESSOR_MODE
 
-// ExDesktopObjectType is a DATA export from ntoskrnl (libntoskrnl_implib.def).
-// The win32k_sys glob declares it without the cross-DLL import attribute, so it
-// won't link under --disable-auto-import. Shadow it with the raw-dylib pattern
-// from engevent.rs (i386/arm64 need the __imp_ thunk; amd64 auto-resolves).
+// ExDesktopObjectType is a DATA export from ntoskrnl (ntoskrnl.spec `@ extern`).
+// Per-arch cross-DLL import (same shape as ExEventObjectType / csr.rs's
+// LpcPortObjectType — [[feedback_exeventobjecttype_amd64_ptr_to_ptr]]):
+//  - i386/arm64: raw-dylib +verbatim makes the __imp_ thunk; symbol IS POBJECT_TYPE.
+//  - amd64: bind to __imp_ explicitly (ptr-to-ptr) + deref. A plain extern here
+//    resolves to garbage → STATUS_OBJECT_TYPE_MISMATCH at runtime (latent: only
+//    NtUserConsoleControl hits it, off the critical boot path).
 #[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
@@ -27,7 +30,18 @@ extern "C" {
 }
 #[cfg(target_arch = "x86_64")]
 extern "C" {
-    static mut ExDesktopObjectType: *mut _OBJECT_TYPE;
+    #[link_name = "__imp_ExDesktopObjectType"]
+    static mut ExDesktopObjectType_imp: *mut *mut _OBJECT_TYPE;
+}
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+#[inline(always)]
+unsafe fn ex_desktop_object_type() -> PVOID {
+    ExDesktopObjectType as PVOID
+}
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn ex_desktop_object_type() -> PVOID {
+    *ExDesktopObjectType_imp as PVOID
 }
 
 // ---- file-scope preamble (translated) ----
@@ -81,7 +95,7 @@ unsafe fn NtUserConsoleControl_impl(
             Status = ObReferenceObjectByHandle(
                 DesktopConsoleThreadInfo.DesktopHandle as _,
                 0,
-                ExDesktopObjectType as _,
+                ex_desktop_object_type() as _,
                 UserMode as i8,
                 core::ptr::addr_of_mut!(Desktop) as *mut _,
                 core::ptr::null_mut(),
