@@ -75,12 +75,24 @@ unsafe fn format_control_set(buf: &mut [u16], id: u32) -> i32 {
 
 extern "C" {
     fn CMTRACE(level: u32, fmt: *const u8, ...);
-}
-extern "C" {
-    fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
     fn IS_NULL_TERMINATED(Buffer: *const u16, Length: u32) -> u8;
     fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
     fn wcslen(s: *const u16) -> usize;
+}
+
+// HvGetCell(Hive, Cell) is the `cmlib.h` macro `(Hive)->GetCellRoutine(Hive, Cell)`.
+// It is a MACRO, not a real symbol: the kernel exposes one via config/inlines.rs,
+// but the bootloader's blcmlib only provides HvGetCellSize (the C loader used the
+// macro inline). Inlining it here — identical to inlines.rs — means cmboot-rust
+// needs NO external HvGetCell on either the kernel OR the loader links, the only
+// way to satisfy both contexts from one shared crate.
+#[inline]
+unsafe fn HvGetCell(hive: PHHIVE, cell: HCELL_INDEX) -> *mut core::ffi::c_void {
+    if let Some(get) = (*hive).GetCellRoutine {
+        get(hive, cell) as *mut core::ffi::c_void
+    } else {
+        core::ptr::null_mut()
+    }
 }
 
 #[no_mangle]
@@ -280,7 +292,13 @@ unsafe fn CmpFindTagIndex(
     return 0xFFFFFFFE;
 }
 
-unsafe fn CmpIsDriverInList(
+// Exported (NTAPI / stdcall on i386 → `_CmpIsDriverInList@12`): the C cmboot.c
+// exposed this as a real symbol that the bootloader's wlregistry.c calls (now
+// freeldr-rust/src/wlregistry.rs externs it). The kernel doesn't reference it
+// externally, but exporting is harmless there. Was a private `fn` — the loader
+// link only "resolved" it via a stale cmboot.c.obj archive member.
+#[no_mangle]
+pub unsafe extern "system" fn CmpIsDriverInList(
     DriverListHead: PLIST_ENTRY,
     DriverName: PCUNICODE_STRING,
     FoundDriver: *mut PBOOT_DRIVER_NODE,

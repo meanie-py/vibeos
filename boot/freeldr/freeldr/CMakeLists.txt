@@ -180,9 +180,16 @@ endif()
 # (cost a "MachInitializeBootDevices undefined" cold-link false alarm 2026-05).
 file(GLOB_RECURSE FREELDR_RUST_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/*.rs)
+# cmboot-rust is a path-dependency of freeldr-rust (the shared CM boot-init
+# crate, linked via the uefi/rosload features) — glob it too so editing it
+# re-triggers the cargo rebuild, like FREELDR_RUST_SOURCES does for freeldr-rust.
+file(GLOB_RECURSE FREELDR_CMBOOT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/cmboot-rust/src/*.rs)
 set(FREELDR_RUST_DEPS
     ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-    ${FREELDR_RUST_SOURCES})
+    ${FREELDR_RUST_WORKSPACE_DIR}/cmboot-rust/Cargo.toml
+    ${FREELDR_RUST_SOURCES}
+    ${FREELDR_CMBOOT_RUST_SOURCES})
 
 set(FREELDR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust.a")
 add_custom_command(
