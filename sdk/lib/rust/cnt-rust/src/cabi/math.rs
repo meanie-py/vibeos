@@ -1120,3 +1120,240 @@ pub extern "C" fn fabsf(x: f32) -> f32 {
     }
     f32::from_bits(abs)
 }
+
+// ── Wave MATH-TIERC (sub-wave 7): modf ───────────────────────────────────
+// Split x into integer (*iptr) and fraction (return) parts, each with the
+// sign of x. amd64-only in libcntpr (arm64/i386 lack the f64 modf there);
+// faithful port of math/libm_sse2/modf.c (AMD libm). The whole thing is
+// exact bit-manipulation — no FP rounding — so the translation is bit-exact
+// by construction. The *iptr write uses write_volatile (the captures(none)
+// guard for #[no_mangle] output-pointer params).
+
+/// `double modf(double x, double *iptr)` — integer/fraction split.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub unsafe extern "C" fn modf(x: f64, iptr: *mut f64) -> f64 {
+    let ux = x.to_bits();
+    let ax = ux & 0x7FFF_FFFF_FFFF_FFFF; // !SIGNBIT_DP64
+    if ax >= 0x4340_0000_0000_0000 {
+        // abs(x) is NaN, infinity, or >= 2^53
+        if ax > 0x7FF0_0000_0000_0000 {
+            // x is NaN
+            core::ptr::write_volatile(iptr, x);
+            return x + x; // raise invalid for a signalling NaN
+        }
+        // x is infinity or large: integer part is x, fraction is ±0
+        core::ptr::write_volatile(iptr, x);
+        return f64::from_bits(ux & 0x8000_0000_0000_0000); // SIGNBIT_DP64
+    } else if ax < 0x3FF0_0000_0000_0000 {
+        // abs(x) < 1.0: integer part is ±0, fraction is x
+        core::ptr::write_volatile(iptr, f64::from_bits(ux & 0x8000_0000_0000_0000));
+        return x;
+    }
+    // 1.0 <= abs(x) < 2^53: mask off the fractional mantissa bits
+    let xexp = (((ux & 0x7FF0_0000_0000_0000) >> 52) as i64) - 1023;
+    let mask: u64 = (1u64 << (52 - xexp)) - 1;
+    let int_part = f64::from_bits(ux & !mask);
+    core::ptr::write_volatile(iptr, int_part);
+    x - int_part
+}
+
+// ── Wave MATH-TIERC (sub-wave 7): atan / atan2 ───────────────────────────
+// Faithful ports of the portable fdlibm math/arm64/{atan,atan2}.c — range
+// reduction + an 11-term odd polynomial. Used uniformly on amd64+arm64 (the
+// "give every arch the same thing" directive), replacing amd64's AMD-libm
+// versions; i386 keeps its x87 atan_asm.s. Both call the Rust `fabs` above;
+// atan2 calls `atan`. Bit-exact vs the genuine portable C.
+
+#[cfg(feature = "float")]
+const ATANHI: [f64; 4] = [
+    4.63647609000806093515e-01, // atan(0.5)hi
+    7.85398163397448278999e-01, // atan(1.0)hi
+    9.82793723247329054082e-01, // atan(1.5)hi
+    1.57079632679489655800e+00, // atan(inf)hi
+];
+#[cfg(feature = "float")]
+const ATANLO: [f64; 4] = [
+    2.26987774529616870924e-17, // atan(0.5)lo
+    3.06161699786838301793e-17, // atan(1.0)lo
+    1.39033110312309984516e-17, // atan(1.5)lo
+    6.12323399573676603587e-17, // atan(inf)lo
+];
+#[cfg(feature = "float")]
+const ATAN_AT: [f64; 11] = [
+    3.33333333333329318027e-01,
+    -1.99999999998764832476e-01,
+    1.42857142725034663711e-01,
+    -1.11111104054623557880e-01,
+    9.09088713343650656196e-02,
+    -7.69187620504482999495e-02,
+    6.66107313738753120669e-02,
+    -5.83357013379057348645e-02,
+    4.97687799461593236017e-02,
+    -3.65315727442169155270e-02,
+    1.62858201153657823623e-02,
+];
+
+/// `double atan(double)` — arctangent (portable fdlibm).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atan(mut x: f64) -> f64 {
+    let hx = (x.to_bits() >> 32) as u32 as i32;
+    let ix = hx & 0x7FFF_FFFF;
+    let id: i32;
+
+    if ix >= 0x4410_0000 {
+        // |x| >= 2^66
+        let lx = (x.to_bits() & 0xFFFF_FFFF) as u32;
+        if ix > 0x7FF0_0000 || (ix == 0x7FF0_0000 && lx != 0) {
+            return x; // NaN
+        }
+        return if hx > 0 {
+            ATANHI[3] + ATANLO[3]
+        } else {
+            -ATANHI[3] - ATANLO[3]
+        };
+    }
+
+    if ix < 0x3FDC_0000 {
+        // |x| < 0.4375
+        if ix < 0x3E20_0000 {
+            // |x| < 2^-29
+            return x;
+        }
+        id = -1;
+    } else {
+        x = fabs(x);
+        if ix < 0x3FF3_0000 {
+            // |x| < 1.1875
+            if ix < 0x3FE6_0000 {
+                id = 0;
+                x = (2.0 * x - 1.0) / (2.0 + x);
+            } else {
+                id = 1;
+                x = (x - 1.0) / (x + 1.0);
+            }
+        } else if ix < 0x4003_8000 {
+            // |x| < 2.4375
+            id = 2;
+            x = (x - 1.5) / (1.0 + 1.5 * x);
+        } else {
+            // 2.4375 <= |x| < 2^66
+            id = 3;
+            x = -1.0 / x;
+        }
+    }
+
+    let z = x * x;
+    let w = z * z;
+    let s1 = z
+        * (ATAN_AT[0]
+            + w * (ATAN_AT[2] + w * (ATAN_AT[4] + w * (ATAN_AT[6] + w * (ATAN_AT[8] + w * ATAN_AT[10])))));
+    let s2 = w
+        * (ATAN_AT[1] + w * (ATAN_AT[3] + w * (ATAN_AT[5] + w * (ATAN_AT[7] + w * ATAN_AT[9]))));
+
+    if id < 0 {
+        return x - x * (s1 + s2);
+    }
+    let z = ATANHI[id as usize] - ((x * (s1 + s2) - ATANLO[id as usize]) - x);
+    if hx < 0 {
+        -z
+    } else {
+        z
+    }
+}
+
+#[cfg(feature = "float")]
+const ATAN2_PI: f64 = 3.14159265358979311600e+00;
+#[cfg(feature = "float")]
+const ATAN2_PI_LO: f64 = 1.22464679914735320717e-16;
+#[cfg(feature = "float")]
+const ATAN2_PI_2: f64 = 1.57079632679489655800e+00;
+#[cfg(feature = "float")]
+const ATAN2_PI_4: f64 = 7.85398163397448278999e-01;
+
+/// `double atan2(double y, double x)` — arctangent of y/x (portable fdlibm).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
+    let xb = x.to_bits();
+    let yb = y.to_bits();
+    let hx = (xb >> 32) as u32 as i32;
+    let lx = (xb & 0xFFFF_FFFF) as u32;
+    let hy = (yb >> 32) as u32 as i32;
+    let ly = (yb & 0xFFFF_FFFF) as u32;
+
+    let ix = hx & 0x7FFF_FFFF;
+    let iy = hy & 0x7FFF_FFFF;
+
+    // x or y is NaN. (lx | -lx) >> 31 == (lx != 0), kept arithmetic-faithful.
+    let lx_nz = (lx | (0u32.wrapping_sub(lx))) >> 31;
+    let ly_nz = (ly | (0u32.wrapping_sub(ly))) >> 31;
+    if ((ix as u32 | lx_nz) > 0x7FF0_0000) || ((iy as u32 | ly_nz) > 0x7FF0_0000) {
+        return x + y;
+    }
+
+    // x == 1.0
+    if hx == 0x3FF0_0000 && lx == 0 {
+        return atan(y);
+    }
+
+    // m = 2 * sign(x) + sign(y)
+    let m = ((hy >> 31) & 1) | ((hx >> 31) & 2);
+
+    // y == 0
+    if (iy as u32 | ly) == 0 {
+        return match m {
+            0 | 1 => y,           // atan(±0, +anything) = ±0
+            2 => ATAN2_PI,        // atan(+0, -anything) = pi
+            _ => -ATAN2_PI,       // atan(-0, -anything) = -pi
+        };
+    }
+
+    // x == 0
+    if (ix as u32 | lx) == 0 {
+        return if hy < 0 { -ATAN2_PI_2 } else { ATAN2_PI_2 };
+    }
+
+    // x == inf
+    if ix == 0x7FF0_0000 {
+        if iy == 0x7FF0_0000 {
+            return match m {
+                0 => ATAN2_PI_4,
+                1 => -ATAN2_PI_4,
+                2 => 3.0 * ATAN2_PI_4,
+                _ => -3.0 * ATAN2_PI_4,
+            };
+        }
+        return match m {
+            0 => 0.0,
+            1 => -0.0,
+            2 => ATAN2_PI,
+            _ => -ATAN2_PI,
+        };
+    }
+
+    // y == inf
+    if iy == 0x7FF0_0000 {
+        return if hy < 0 { -ATAN2_PI_2 } else { ATAN2_PI_2 };
+    }
+
+    // compute y/x
+    let k = (iy - ix) >> 20;
+    let z = if k > 60 {
+        // |y/x| > 2^60
+        ATAN2_PI_2 + 0.5 * ATAN2_PI_LO
+    } else if hx < 0 && k < -60 {
+        // 0 > |y|/x > -2^-60
+        0.0
+    } else {
+        atan(fabs(y / x))
+    };
+
+    match m {
+        0 => z,                            // atan(+, +)
+        1 => -z,                           // atan(-, +)
+        2 => ATAN2_PI - (z - ATAN2_PI_LO), // atan(+, -)
+        _ => (z - ATAN2_PI_LO) - ATAN2_PI, // atan(-, -)
+    }
+}
