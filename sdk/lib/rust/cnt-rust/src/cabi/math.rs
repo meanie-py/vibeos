@@ -251,25 +251,17 @@ pub extern "C" fn scalbnf(x: f32, mut n: i32) -> f32 {
 }
 
 // ---- round / roundf — ReactOS portable (ceil/floor + FP add) ----------
-
-#[cfg(feature = "float")]
-extern "C" {
-    fn ceil(x: f64) -> f64;
-    fn floor(x: f64) -> f64;
-    fn ceilf(x: f32) -> f32;
-    fn floorf(x: f32) -> f32;
-}
+// ceil/floor/ceilf/floorf are defined below (sub-wave 4); round/roundf call
+// those module-local impls directly.
 
 /// `double round(double)`.
 #[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn round(arg: f64) -> f64 {
-    unsafe {
-        if arg < 0.0 {
-            ceil(arg - 0.5)
-        } else {
-            floor(arg + 0.5)
-        }
+    if arg < 0.0 {
+        ceil(arg - 0.5)
+    } else {
+        floor(arg + 0.5)
     }
 }
 
@@ -277,12 +269,10 @@ pub extern "C" fn round(arg: f64) -> f64 {
 #[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn roundf(arg: f32) -> f32 {
-    unsafe {
-        if arg < 0.0 {
-            ceilf(arg - 0.5)
-        } else {
-            floorf(arg + 0.5)
-        }
+    if arg < 0.0 {
+        ceilf(arg - 0.5)
+    } else {
+        floorf(arg + 0.5)
     }
 }
 
@@ -886,4 +876,124 @@ pub extern "C" fn tan(x: f64) -> f64 {
     let s = sin(x);
     let c = cos(x);
     s / c
+}
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 4 — ceil / floor / ceilf / floorf
+//
+// Exact IEEE directed rounding (toward +inf / -inf), pure bit-manipulation
+// (musl-style) — no FPU rounding-mode dependence, no SSE4.1 `roundsd`. One
+// uniform Rust impl for BOTH amd64 (was AMD-libm `libm_sse2/{ceil,floor}*.c`)
+// and arm64 (was `arm64/{ceil,floor}.c` + `math/{ceilf,floorf}.c`), per the
+// "give every arch the same thing" directive; i386 keeps its x87
+// `{ceil,floor}_asm.s`/`.S`. These are EXACT operations (the result is the
+// unique nearer integer in the rounding direction), so the impl is bit-exact
+// against any correct reference regardless of rounding mode. The variable
+// shift count `e` is in [0, 51]/[0, 22] here, and the carry `wrapping_add`
+// mirrors C's wraparound (also keeps debug overflow-checks happy).
+// ===========================================================================
+
+/// `double floor(double)` — round toward -inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn floor(x: f64) -> f64 {
+    let mut i = x.to_bits();
+    let e = ((i >> 52) & 0x7ff) as i32 - 0x3ff;
+    if e >= 52 {
+        return x; // already integral, or inf/NaN
+    }
+    if e < 0 {
+        // |x| < 1
+        if i << 1 == 0 {
+            return x; // ±0
+        }
+        return if i >> 63 != 0 { -1.0 } else { 0.0 };
+    }
+    let m = 0x000f_ffff_ffff_ffff_u64 >> e; // fraction-bit mask
+    if i & m == 0 {
+        return x; // no fraction → integral
+    }
+    if i >> 63 != 0 {
+        i = i.wrapping_add(m); // negative: round toward -inf (increase magnitude)
+    }
+    i &= !m;
+    f64::from_bits(i)
+}
+
+/// `double ceil(double)` — round toward +inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ceil(x: f64) -> f64 {
+    let mut i = x.to_bits();
+    let e = ((i >> 52) & 0x7ff) as i32 - 0x3ff;
+    if e >= 52 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x; // ±0
+        }
+        return if i >> 63 != 0 { -0.0 } else { 1.0 };
+    }
+    let m = 0x000f_ffff_ffff_ffff_u64 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 63 == 0 {
+        i = i.wrapping_add(m); // positive: round toward +inf
+    }
+    i &= !m;
+    f64::from_bits(i)
+}
+
+/// `float floorf(float)` — round toward -inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn floorf(x: f32) -> f32 {
+    let mut i = x.to_bits();
+    let e = ((i >> 23) & 0xff) as i32 - 0x7f;
+    if e >= 23 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x;
+        }
+        return if i >> 31 != 0 { -1.0 } else { 0.0 };
+    }
+    let m = 0x007f_ffff_u32 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 31 != 0 {
+        i = i.wrapping_add(m);
+    }
+    i &= !m;
+    f32::from_bits(i)
+}
+
+/// `float ceilf(float)` — round toward +inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ceilf(x: f32) -> f32 {
+    let mut i = x.to_bits();
+    let e = ((i >> 23) & 0xff) as i32 - 0x7f;
+    if e >= 23 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x;
+        }
+        return if i >> 31 != 0 { -0.0 } else { 1.0 };
+    }
+    let m = 0x007f_ffff_u32 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 31 == 0 {
+        i = i.wrapping_add(m);
+    }
+    i &= !m;
+    f32::from_bits(i)
 }
