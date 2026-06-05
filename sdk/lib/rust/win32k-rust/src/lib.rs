@@ -264,6 +264,8 @@ pub mod event;
 // [ntuser wave 11]
 pub mod registry;
 pub mod security;
+// [ntuser wave 12 — class spine]
+pub mod class;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

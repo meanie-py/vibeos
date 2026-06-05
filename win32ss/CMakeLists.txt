@@ -114,7 +114,7 @@ list(APPEND SOURCE
     user/ntuser/callback.c
     # user/ntuser/callproc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callproc.rs) — cohabitation [ntuser wave 7]
     # user/ntuser/caret.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/caret.rs) — cohabitation [ntuser wave 3]
-    user/ntuser/class.c
+    # user/ntuser/class.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/class.rs) — cohabitation [ntuser wave 12 spine]
     user/ntuser/clipboard.c
     # user/ntuser/console.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/console.rs) — cohabitation [ntuser wave 7]
     # user/ntuser/csr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/csr.rs) — cohabitation [ntuser wave 9]
@@ -324,6 +324,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/event.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/registry.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/security.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/class.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
