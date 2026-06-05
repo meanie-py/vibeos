@@ -804,6 +804,59 @@ fn main() {
     for obj in build.compile_intermediates() {
         redef(&obj);
     }
+
+    // Wave MATH-TIERC (sub-waves 8+): the amd64-only AMD-libm transcendentals
+    // (exp2/sinh/cosh/tanh/acos/asin/hypot) are compiled from their GENUINE
+    // math/libm_sse2/*.c against their own headers (real splitexp/scaleDouble
+    // + tables) — a non-circular reference for the Rust ports. Each renames
+    // its public symbol to ref_<name> (`#define <name> ref_<name>`, which the
+    // header's `FN_PROTOTYPE(name)→name` then re-expands). A tiny stubs.c
+    // supplies the value-only behavior of the externs the kernel no-ops:
+    // _handle_error returns from_bits(value); _invoke_matherr / _set_statfp
+    // are side-effect-free here. Built with -ffp-contract=off to match
+    // rustc's non-contracting codegen bit-for-bit.
+    let libm_dir = crt.join("math/libm_sse2");
+    let libm_units: Vec<(&str, String)> = vec![
+        // sub-wave 8. <math.h> FIRST so the rename hits only exp2.c's
+        // definition, not glibc's __MATHCALL_VEC(exp2,...) declaration.
+        ("exp2", format!("#include <math.h>\n#define exp2 ref_exp2\n{}", inc(libm_dir.join("exp2.c")))),
+        ("tanh", format!("#include <math.h>\n#define tanh ref_tanh\n{}", inc(libm_dir.join("tanh.c")))),
+        // sub-wave 9
+        ("sinh", format!("#include <math.h>\n#define sinh ref_sinh\n{}", inc(libm_dir.join("sinh.c")))),
+        ("cosh", format!("#include <math.h>\n#define cosh ref_cosh\n{}", inc(libm_dir.join("cosh.c")))),
+    ];
+    let libm_stubs = out.join("ref_libm_stubs.c");
+    fs::write(
+        &libm_stubs,
+        "double _handle_error(char*f,int o,unsigned long long v,int t,int fl,\
+           int e,double a,double b,int n){union{double d;unsigned long long u;}x;\
+           x.u=v;return x.d;}\n\
+         int _invoke_matherr(int t,char*nm,double a,double b,double r){return 0;}\n\
+         void _set_statfp(unsigned int f){(void)f;}\n",
+    )
+    .unwrap();
+    let refstub_libm = manifest.join("refstub_libm");
+    println!("cargo:rerun-if-changed={}", refstub_libm.display());
+    let mut libm_build = cc::Build::new();
+    libm_build
+        .include(&refstub_libm)
+        .include(&libm_dir)
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-ffp-contract=off")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&libm_stubs);
+    for (sym, body) in &libm_units {
+        let w = out.join(format!("ref_{sym}.c"));
+        fs::write(&w, body).unwrap();
+        libm_build.file(&w);
+    }
+    for obj in libm_build.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+
     // Wave MATH-TIERB: ref_round/ref_roundf (genuine ReactOS round.c)
     // and cnt-rust's own `round`/`roundf` both call host `ceil`/`floor`/
     // `ceilf`/`floorf` — link libm so they resolve in the test binary.

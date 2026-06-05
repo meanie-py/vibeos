@@ -291,6 +291,29 @@ elseif(ARCH STREQUAL "arm64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 8): exp2 + tanh → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr (arm64/i386 don't ship them). Faithful ports of the
+# AMD-libm math/libm_sse2/{exp2,tanh}.c (splitexp + scaleDouble + two_to_jby32
+# tables, all ported to cabi/math.rs) — difftest-pinned bit-exact vs the
+# genuine .c compiled against its own headers. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/exp2.c
+        math/libm_sse2/tanh.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 9): sinh + cosh → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr. Faithful ports of the AMD-libm math/libm_sse2/
+# {sinh,cosh}.c (shared sinh/cosh lead/tail tables + the splitexp exp/2 path,
+# all in cabi/math.rs) — difftest-pinned bit-exact. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/sinh.c
+        math/libm_sse2/cosh.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
