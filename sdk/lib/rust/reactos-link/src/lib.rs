@@ -1054,18 +1054,47 @@ impl Linker {
             // encoded flags first so this RUSTFLAGS wins. Only these CRT-class
             // children are affected — the main kernel-rust build (which booted
             // fine without it) keeps the config-supplied flags.
-            let crt_rustflags: Option<&str> = match (crate_name, self.arch.name) {
-                ("rtl-rust", "i386") | ("cnt-rust-lib", "i386") => {
-                    Some("-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
-                }
-                ("cnt-rust-lib", _) => Some("-C no-prepopulate-passes"),
-                _ => None,
+            // env RUSTFLAGS OVERRIDES `.cargo/config.toml`'s `[target.i686-kernel]`
+            // copy of `-sse,-sse2`, so every kernel crate built here must
+            // RE-STATE the i386 no-SSE baseline (i386 kernel runs no-SSE — Phase
+            // 0 leaves CR4.OSFXSR unset). amd64/arm64 kernel targets carry no
+            // config rustflags, so there's nothing to preserve there.
+            let sse = if self.arch.name == "i386" {
+                "-C target-feature=-sse,-sse2 "
+            } else {
+                ""
             };
-            if let Some(rf) = crt_rustflags {
-                cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
-                cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
-                cmd.env("RUSTFLAGS", rf);
-            }
+            // The CRT-class crates additionally need `-C no-prepopulate-passes`
+            // or LLVM's default pre-passes miscompile them (captures(none)/DCE —
+            // e.g. memset DCE'd to a spin; rtl-rust over-optimized 1.3MB-vs-6.1MB
+            // and hung the kernel after ACPI). Mirrors sdk/lib/rtl/CMakeLists.txt
+            // + sdk/lib/crt/libcntpr.cmake: rtl-rust on i386 only; cnt-rust-lib
+            // on every arch.
+            let no_prepop = match (crate_name, self.arch.name) {
+                ("rtl-rust", "i386") | ("cnt-rust-lib", _) => "-C no-prepopulate-passes ",
+                _ => "",
+            };
+            // Match cmake's lint POSTURE: cmake builds the kernel rust on STABLE
+            // (standard target, no build-std), where the kernel translation's
+            // lints are warn-level and ship fine. The cargo-drive REQUIRES nightly
+            // (for the softfloat kernel json's build-std) and the current nightly
+            // ESCALATES several lints to deny on ntoskrnl-rust's (mostly amd64)
+            // code — pre-existing translation-cleanup items, NOT cargo-drive
+            // regressions (the code is exactly what cmake ships). Allow them so
+            // the nightly build keeps cmake parity; real compile errors (type/ABI
+            // mismatches) still fail. NOTE: `--cap-lints allow` is NOT usable here
+            // — it makes rustc's `--print=file-names` build-std target probe emit
+            // nothing ("output of --print=file-names missing"). Per-lint `-A` is
+            // probe-safe, so allow them individually. (A whole-kernel lint cleanup
+            // would let these be dropped.)
+            //   - clashing_extern_declarations: ABI-compatible extern fns
+            //     re-declared with divergent pointee types (DefaultQueryInfoBufferCheck).
+            //   - static_mut_refs: `&mut STATIC` (Rust 2024 deny) in WMI/driver glue.
+            let allow = "-A clashing_extern_declarations -A static_mut_refs";
+            let rustflags = format!("{sse}{no_prepop}{allow}");
+            cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
+            cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
+            cmd.env("RUSTFLAGS", rustflags);
         } else {
             // User-mode siblings build on the rustup DEFAULT (stable) via the
             // `rustup run stable cargo` above. But the outer `cargo +nightly`

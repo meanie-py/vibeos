@@ -3093,6 +3093,13 @@ extern "C" {
     // Wave MATH-TIERC sub-wave 6
     fn ref_fabs(x: f64) -> f64;
     fn ref_fabsf(x: f32) -> f32;
+    // Wave MATH-TIERC sub-wave 7
+    fn ref_modf(x: f64, iptr: *mut f64) -> f64;
+    fn ref_atan(x: f64) -> f64;
+    fn ref_atan2(y: f64, x: f64) -> f64;
+    // Wave MATH-TIERC sub-wave 8
+    fn ref_exp2(x: f64) -> f64;
+    fn ref_tanh(x: f64) -> f64;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3757,6 +3764,109 @@ fn diff_math_fabs() {
     }
 }
 
+// --- Wave MATH-TIERC sub-wave 7: modf --------------------------------------
+
+fn diff_math_modf() {
+    // Integer/fraction split — exact, so bit-exact on BOTH the return value
+    // and the integer part written through *iptr. Check both against the
+    // reference across all edge bits + 200k random bit images.
+    let mut rng = Rng(0x70df_0007);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..200_000 {
+        b64.push(rng.next());
+    }
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        let mut ri = 0.0f64;
+        let mut ci = 0.0f64;
+        let cf = unsafe { cabi::modf(x, &mut ci) };
+        let rf = unsafe { ref_modf(x, &mut ri) };
+        assert!(same_f64(cf, rf), "modf frac {b:#018x}");
+        assert!(same_f64(ci, ri), "modf int {b:#018x}");
+    }
+}
+
+fn diff_math_atan() {
+    // atan: range-reduction + odd polynomial; atan2: quadrant dispatch over
+    // atan. Bit-exact vs the portable fdlibm C across edge bits + a heavy
+    // random bit image (atan), and a grid + random pairs (atan2, exercising
+    // every sign/zero/inf quadrant branch).
+    let mut rng = Rng(0xa7a2_0007);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..200_000 {
+        b64.push(rng.next());
+    }
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::atan(x), unsafe { ref_atan(x) }), "atan {b:#018x}");
+    }
+    // atan2 over all (edge × edge) pairs + random pairs.
+    let edges = f64_edge_bits();
+    for &by in &edges {
+        for &bx in &edges {
+            let y = f64::from_bits(by);
+            let x = f64::from_bits(bx);
+            assert!(
+                same_f64(cabi::atan2(y, x), unsafe { ref_atan2(y, x) }),
+                "atan2 y={by:#018x} x={bx:#018x}"
+            );
+        }
+    }
+    for _ in 0..200_000 {
+        let y = f64::from_bits(rng.next());
+        let x = f64::from_bits(rng.next());
+        assert!(
+            same_f64(cabi::atan2(y, x), unsafe { ref_atan2(y, x) }),
+            "atan2 y={:#018x} x={:#018x}",
+            y.to_bits(),
+            x.to_bits()
+        );
+    }
+}
+
+// --- Wave MATH-TIERC sub-wave 8: exp2 --------------------------------------
+
+fn diff_math_exp2() {
+    // 2**x, AMD-libm splitexp path + small-arg rational. Bit-exact vs the
+    // genuine libm_sse2/exp2.c across edge bits, a heavy random bit image,
+    // and a dense sweep over [-1100, 1100] (covers the overflow/underflow
+    // thresholds, the small-arg branch, and the splitexp main path).
+    let mut rng = Rng(0xe2b2_0008);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..200_000 {
+        b64.push(rng.next());
+    }
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::exp2(x), unsafe { ref_exp2(x) }), "exp2 {b:#018x}");
+    }
+    for _ in 0..200_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 2200.0 - 1100.0;
+        assert!(same_f64(cabi::exp2(x), unsafe { ref_exp2(x) }), "exp2 {x}");
+    }
+}
+
+fn diff_math_tanh() {
+    // tanh: small-|x| identity, two Remez sub-ranges on (0,1], splitexp path,
+    // ±1 saturation, NaN. Bit-exact vs libm_sse2/tanh.c across edge bits, a
+    // random bit image, and a dense sweep over [-25, 25].
+    let mut rng = Rng(0x7a24_0008);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..200_000 {
+        b64.push(rng.next());
+    }
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::tanh(x), unsafe { ref_tanh(x) }), "tanh {b:#018x}");
+    }
+    for _ in 0..200_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 50.0 - 25.0;
+        assert!(same_f64(cabi::tanh(x), unsafe { ref_tanh(x) }), "tanh {x}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -3852,6 +3962,10 @@ fn main() {
         diff_math_ceil_floor,
         diff_math_ldexp_logb,
         diff_math_fabs,
+        diff_math_modf,
+        diff_math_atan,
+        diff_math_exp2,
+        diff_math_tanh,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }

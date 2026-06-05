@@ -271,6 +271,38 @@ if(ARCH STREQUAL "arm64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 7): modf + atan/atan2 → cnt-rust (float feature,
+# amd64/arm64; i386 keeps its x87 atan_asm.s / atan2_asm.s — modf is not in
+# i386 libcntpr at all). modf (the f64 version) is amd64-ONLY in libcntpr
+# (arm64/i386 ship only modff in CRT): an exact integer/fraction split,
+# faithful bit-exact port of math/libm_sse2/modf.c. atan/atan2 are the
+# portable fdlibm math/arm64/{atan,atan2}.c flipped uniformly — replacing
+# amd64's AMD-libm libm_sse2/{atan,atan2}.c with the same Rust algorithm.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/modf.c
+        math/libm_sse2/atan.c
+        math/libm_sse2/atan2.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/atan.c
+        math/arm64/atan2.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 8): exp2 + tanh → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr (arm64/i386 don't ship them). Faithful ports of the
+# AMD-libm math/libm_sse2/{exp2,tanh}.c (splitexp + scaleDouble + two_to_jby32
+# tables, all ported to cabi/math.rs) — difftest-pinned bit-exact vs the
+# genuine .c compiled against its own headers. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/exp2.c
+        math/libm_sse2/tanh.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

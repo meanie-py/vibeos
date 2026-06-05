@@ -1120,3 +1120,492 @@ pub extern "C" fn fabsf(x: f32) -> f32 {
     }
     f32::from_bits(abs)
 }
+
+// ── Wave MATH-TIERC (sub-wave 7): modf ───────────────────────────────────
+// Split x into integer (*iptr) and fraction (return) parts, each with the
+// sign of x. amd64-only in libcntpr (arm64/i386 lack the f64 modf there);
+// faithful port of math/libm_sse2/modf.c (AMD libm). The whole thing is
+// exact bit-manipulation — no FP rounding — so the translation is bit-exact
+// by construction. The *iptr write uses write_volatile (the captures(none)
+// guard for #[no_mangle] output-pointer params).
+
+/// `double modf(double x, double *iptr)` — integer/fraction split.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub unsafe extern "C" fn modf(x: f64, iptr: *mut f64) -> f64 {
+    let ux = x.to_bits();
+    let ax = ux & 0x7FFF_FFFF_FFFF_FFFF; // !SIGNBIT_DP64
+    if ax >= 0x4340_0000_0000_0000 {
+        // abs(x) is NaN, infinity, or >= 2^53
+        if ax > 0x7FF0_0000_0000_0000 {
+            // x is NaN
+            core::ptr::write_volatile(iptr, x);
+            return x + x; // raise invalid for a signalling NaN
+        }
+        // x is infinity or large: integer part is x, fraction is ±0
+        core::ptr::write_volatile(iptr, x);
+        return f64::from_bits(ux & 0x8000_0000_0000_0000); // SIGNBIT_DP64
+    } else if ax < 0x3FF0_0000_0000_0000 {
+        // abs(x) < 1.0: integer part is ±0, fraction is x
+        core::ptr::write_volatile(iptr, f64::from_bits(ux & 0x8000_0000_0000_0000));
+        return x;
+    }
+    // 1.0 <= abs(x) < 2^53: mask off the fractional mantissa bits
+    let xexp = (((ux & 0x7FF0_0000_0000_0000) >> 52) as i64) - 1023;
+    let mask: u64 = (1u64 << (52 - xexp)) - 1;
+    let int_part = f64::from_bits(ux & !mask);
+    core::ptr::write_volatile(iptr, int_part);
+    x - int_part
+}
+
+// ── Wave MATH-TIERC (sub-wave 7): atan / atan2 ───────────────────────────
+// Faithful ports of the portable fdlibm math/arm64/{atan,atan2}.c — range
+// reduction + an 11-term odd polynomial. Used uniformly on amd64+arm64 (the
+// "give every arch the same thing" directive), replacing amd64's AMD-libm
+// versions; i386 keeps its x87 atan_asm.s. Both call the Rust `fabs` above;
+// atan2 calls `atan`. Bit-exact vs the genuine portable C.
+
+#[cfg(feature = "float")]
+const ATANHI: [f64; 4] = [
+    4.63647609000806093515e-01, // atan(0.5)hi
+    7.85398163397448278999e-01, // atan(1.0)hi
+    9.82793723247329054082e-01, // atan(1.5)hi
+    1.57079632679489655800e+00, // atan(inf)hi
+];
+#[cfg(feature = "float")]
+const ATANLO: [f64; 4] = [
+    2.26987774529616870924e-17, // atan(0.5)lo
+    3.06161699786838301793e-17, // atan(1.0)lo
+    1.39033110312309984516e-17, // atan(1.5)lo
+    6.12323399573676603587e-17, // atan(inf)lo
+];
+#[cfg(feature = "float")]
+const ATAN_AT: [f64; 11] = [
+    3.33333333333329318027e-01,
+    -1.99999999998764832476e-01,
+    1.42857142725034663711e-01,
+    -1.11111104054623557880e-01,
+    9.09088713343650656196e-02,
+    -7.69187620504482999495e-02,
+    6.66107313738753120669e-02,
+    -5.83357013379057348645e-02,
+    4.97687799461593236017e-02,
+    -3.65315727442169155270e-02,
+    1.62858201153657823623e-02,
+];
+
+/// `double atan(double)` — arctangent (portable fdlibm).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atan(mut x: f64) -> f64 {
+    let hx = (x.to_bits() >> 32) as u32 as i32;
+    let ix = hx & 0x7FFF_FFFF;
+    let id: i32;
+
+    if ix >= 0x4410_0000 {
+        // |x| >= 2^66
+        let lx = (x.to_bits() & 0xFFFF_FFFF) as u32;
+        if ix > 0x7FF0_0000 || (ix == 0x7FF0_0000 && lx != 0) {
+            return x; // NaN
+        }
+        return if hx > 0 {
+            ATANHI[3] + ATANLO[3]
+        } else {
+            -ATANHI[3] - ATANLO[3]
+        };
+    }
+
+    if ix < 0x3FDC_0000 {
+        // |x| < 0.4375
+        if ix < 0x3E20_0000 {
+            // |x| < 2^-29
+            return x;
+        }
+        id = -1;
+    } else {
+        x = fabs(x);
+        if ix < 0x3FF3_0000 {
+            // |x| < 1.1875
+            if ix < 0x3FE6_0000 {
+                id = 0;
+                x = (2.0 * x - 1.0) / (2.0 + x);
+            } else {
+                id = 1;
+                x = (x - 1.0) / (x + 1.0);
+            }
+        } else if ix < 0x4003_8000 {
+            // |x| < 2.4375
+            id = 2;
+            x = (x - 1.5) / (1.0 + 1.5 * x);
+        } else {
+            // 2.4375 <= |x| < 2^66
+            id = 3;
+            x = -1.0 / x;
+        }
+    }
+
+    let z = x * x;
+    let w = z * z;
+    let s1 = z
+        * (ATAN_AT[0]
+            + w * (ATAN_AT[2] + w * (ATAN_AT[4] + w * (ATAN_AT[6] + w * (ATAN_AT[8] + w * ATAN_AT[10])))));
+    let s2 = w
+        * (ATAN_AT[1] + w * (ATAN_AT[3] + w * (ATAN_AT[5] + w * (ATAN_AT[7] + w * ATAN_AT[9]))));
+
+    if id < 0 {
+        return x - x * (s1 + s2);
+    }
+    let z = ATANHI[id as usize] - ((x * (s1 + s2) - ATANLO[id as usize]) - x);
+    if hx < 0 {
+        -z
+    } else {
+        z
+    }
+}
+
+#[cfg(feature = "float")]
+const ATAN2_PI: f64 = 3.14159265358979311600e+00;
+#[cfg(feature = "float")]
+const ATAN2_PI_LO: f64 = 1.22464679914735320717e-16;
+#[cfg(feature = "float")]
+const ATAN2_PI_2: f64 = 1.57079632679489655800e+00;
+#[cfg(feature = "float")]
+const ATAN2_PI_4: f64 = 7.85398163397448278999e-01;
+
+/// `double atan2(double y, double x)` — arctangent of y/x (portable fdlibm).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
+    let xb = x.to_bits();
+    let yb = y.to_bits();
+    let hx = (xb >> 32) as u32 as i32;
+    let lx = (xb & 0xFFFF_FFFF) as u32;
+    let hy = (yb >> 32) as u32 as i32;
+    let ly = (yb & 0xFFFF_FFFF) as u32;
+
+    let ix = hx & 0x7FFF_FFFF;
+    let iy = hy & 0x7FFF_FFFF;
+
+    // x or y is NaN. (lx | -lx) >> 31 == (lx != 0), kept arithmetic-faithful.
+    let lx_nz = (lx | (0u32.wrapping_sub(lx))) >> 31;
+    let ly_nz = (ly | (0u32.wrapping_sub(ly))) >> 31;
+    if ((ix as u32 | lx_nz) > 0x7FF0_0000) || ((iy as u32 | ly_nz) > 0x7FF0_0000) {
+        return x + y;
+    }
+
+    // x == 1.0
+    if hx == 0x3FF0_0000 && lx == 0 {
+        return atan(y);
+    }
+
+    // m = 2 * sign(x) + sign(y)
+    let m = ((hy >> 31) & 1) | ((hx >> 31) & 2);
+
+    // y == 0
+    if (iy as u32 | ly) == 0 {
+        return match m {
+            0 | 1 => y,           // atan(±0, +anything) = ±0
+            2 => ATAN2_PI,        // atan(+0, -anything) = pi
+            _ => -ATAN2_PI,       // atan(-0, -anything) = -pi
+        };
+    }
+
+    // x == 0
+    if (ix as u32 | lx) == 0 {
+        return if hy < 0 { -ATAN2_PI_2 } else { ATAN2_PI_2 };
+    }
+
+    // x == inf
+    if ix == 0x7FF0_0000 {
+        if iy == 0x7FF0_0000 {
+            return match m {
+                0 => ATAN2_PI_4,
+                1 => -ATAN2_PI_4,
+                2 => 3.0 * ATAN2_PI_4,
+                _ => -3.0 * ATAN2_PI_4,
+            };
+        }
+        return match m {
+            0 => 0.0,
+            1 => -0.0,
+            2 => ATAN2_PI,
+            _ => -ATAN2_PI,
+        };
+    }
+
+    // y == inf
+    if iy == 0x7FF0_0000 {
+        return if hy < 0 { -ATAN2_PI_2 } else { ATAN2_PI_2 };
+    }
+
+    // compute y/x
+    let k = (iy - ix) >> 20;
+    let z = if k > 60 {
+        // |y/x| > 2^60
+        ATAN2_PI_2 + 0.5 * ATAN2_PI_LO
+    } else if hx < 0 && k < -60 {
+        // 0 > |y|/x > -2^-60
+        0.0
+    } else {
+        atan(fabs(y / x))
+    };
+
+    match m {
+        0 => z,                            // atan(+, +)
+        1 => -z,                           // atan(-, +)
+        2 => ATAN2_PI - (z - ATAN2_PI_LO), // atan(+, -)
+        _ => (z - ATAN2_PI_LO) - ATAN2_PI, // atan(-, -)
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// AMD-libm shared foundation (faithful ports of math/libm_sse2/*) — used by
+// the amd64-only transcendentals exp2/sinh/cosh/tanh (splitexp + scaleDouble
+// + the two_to_jby32 tables). All amd64/arm64 (float feature); i386 keeps C.
+// `_handle_error(...,value,...)` reduces to `from_bits(value)` (its only
+// value-effect; errno/FP-flags are kernel no-ops), and `val_with_flags(v,_)`
+// to `v` — so those are inlined at the call sites, not modeled here.
+// ═════════════════════════════════════════════════════════════════════════
+
+// pow(2, j/32) for j=0..31, split into leading (first 25 bits) and trailing
+// (further 53 bits) parts. Encoded by their exact stored bit patterns (the
+// `.h` comments) so no decimal-rounding drift can creep in; the difftest vs
+// the genuine decimal-literal C is the cross-check.
+#[cfg(feature = "float")]
+const TWO_TO_JBY32_LEAD: [f64; 32] = [
+    f64::from_bits(0x3ff0000000000000), f64::from_bits(0x3ff059b0d0000000),
+    f64::from_bits(0x3ff0b55860000000), f64::from_bits(0x3ff11301d0000000),
+    f64::from_bits(0x3ff172b830000000), f64::from_bits(0x3ff1d48730000000),
+    f64::from_bits(0x3ff2387a60000000), f64::from_bits(0x3ff29e9df0000000),
+    f64::from_bits(0x3ff306fe00000000), f64::from_bits(0x3ff371a730000000),
+    f64::from_bits(0x3ff3dea640000000), f64::from_bits(0x3ff44e0860000000),
+    f64::from_bits(0x3ff4bfdad0000000), f64::from_bits(0x3ff5342b50000000),
+    f64::from_bits(0x3ff5ab07d0000000), f64::from_bits(0x3ff6247eb0000000),
+    f64::from_bits(0x3ff6a09e60000000), f64::from_bits(0x3ff71f75e0000000),
+    f64::from_bits(0x3ff7a11470000000), f64::from_bits(0x3ff8258990000000),
+    f64::from_bits(0x3ff8ace540000000), f64::from_bits(0x3ff93737b0000000),
+    f64::from_bits(0x3ff9c49180000000), f64::from_bits(0x3ffa5503b0000000),
+    f64::from_bits(0x3ffae89f90000000), f64::from_bits(0x3ffb7f76f0000000),
+    f64::from_bits(0x3ffc199bd0000000), f64::from_bits(0x3ffcb720d0000000),
+    f64::from_bits(0x3ffd5818d0000000), f64::from_bits(0x3ffdfc9730000000),
+    f64::from_bits(0x3ffea4afa0000000), f64::from_bits(0x3fff507650000000),
+];
+#[cfg(feature = "float")]
+const TWO_TO_JBY32_TRAIL: [f64; 32] = [
+    f64::from_bits(0x0000000000000000), f64::from_bits(0x3e48ac2ba1d73e2a),
+    f64::from_bits(0x3e69f3121ec53172), f64::from_bits(0x3df25b50a4ebbf1b),
+    f64::from_bits(0x3e68faa2f5b9bef9), f64::from_bits(0x3e368b9aa7805b80),
+    f64::from_bits(0x3e6ceac470cd83f6), f64::from_bits(0x3e547f7b84b09745),
+    f64::from_bits(0x3e64636e2a5bd1ab), f64::from_bits(0x3e5ceaa72a9c5154),
+    f64::from_bits(0x3e682468446b6824), f64::from_bits(0x3e18624b40c4dbd0),
+    f64::from_bits(0x3e54d8a89c750e5e), f64::from_bits(0x3e5a753e077c2a0f),
+    f64::from_bits(0x3e6a90a852b19260), f64::from_bits(0x3e0d2ac258f87d03),
+    f64::from_bits(0x3e59fcef32422cbf), f64::from_bits(0x3e61d8bee7ba46e2),
+    f64::from_bits(0x3e4f580c36bea881), f64::from_bits(0x3e62999c25159f11),
+    f64::from_bits(0x3e415506dadd3e2a), f64::from_bits(0x3e29b8bc9e8a0388),
+    f64::from_bits(0x3e451f8480e3e236), f64::from_bits(0x3e41f12ae45a1224),
+    f64::from_bits(0x3e62b5a75abd0e6a), f64::from_bits(0x3e47daf237553d84),
+    f64::from_bits(0x3e6b0aa538444196), f64::from_bits(0x3e69df20d22a0798),
+    f64::from_bits(0x3e69f7490e4bb40b), f64::from_bits(0x3e4bdcdaf5cb4656),
+    f64::from_bits(0x3e452486cc2c7b9d), f64::from_bits(0x3e66dc8a80ce9f09),
+];
+
+/// Faithful port of libm_inlines.h `splitexp`: find m, z1, z2 such that
+/// base**x = 2**m * (z1 + z2). Returns (m, z1, z2).
+#[cfg(feature = "float")]
+fn splitexp(
+    x: f64,
+    logbase: f64,
+    thirtytwo_by_logbaseof2: f64,
+    logbaseof2_by_32_lead: f64,
+    logbaseof2_by_32_trail: f64,
+) -> (i32, f64, f64) {
+    let r = x * thirtytwo_by_logbaseof2;
+    let n = if r > 0.0 { (r + 0.5) as i32 } else { (r - 0.5) as i32 };
+    let mut r1 = x - (n as f64) * logbaseof2_by_32_lead;
+    let mut r2 = -(n as f64) * logbaseof2_by_32_trail;
+    let j = (n & 0x1f) as usize;
+    let f1 = TWO_TO_JBY32_LEAD[j];
+    let f2 = TWO_TO_JBY32_TRAIL[j];
+    let m = (n - j as i32) / 32;
+    r1 *= logbase;
+    r2 *= logbase;
+    let r = r1 + r2;
+    let q = r1
+        + (r2
+            + r * r
+                * (5.00000000000000008883e-01
+                    + r * (1.66666666665260878863e-01
+                        + r * (4.16666666662260795726e-02
+                            + r * (8.33336798434219616221e-03
+                                + r * (1.38889490863777199667e-03))))));
+    let z1 = f1;
+    let z2 = f2 + ((f1 + f2) * q);
+    (m, z1, z2)
+}
+
+/// libm_inlines.h `scaleDouble_1`: x * 2**n (EMIN < n < EMAX).
+#[cfg(feature = "float")]
+fn scale_double_1(x: f64, n: i32) -> f64 {
+    let t = f64::from_bits(((n as i64 + 1023) << 52) as u64);
+    x * t
+}
+
+/// libm_inlines.h `scaleDouble_2`: x * 2**n (2*EMIN <= n <= 2*EMAX).
+#[cfg(feature = "float")]
+fn scale_double_2(x: f64, n: i32) -> f64 {
+    let n1 = n / 2;
+    let n2 = n - n1;
+    let t1 = f64::from_bits(((n1 as i64 + 1023) << 52) as u64);
+    let t2 = f64::from_bits(((n2 as i64 + 1023) << 52) as u64);
+    (x * t1) * t2
+}
+
+// ── Wave MATH-TIERC (sub-wave 8): exp2 ───────────────────────────────────
+// Faithful port of math/libm_sse2/exp2.c (AMD libm). amd64-only in libcntpr;
+// flipped on amd64+arm64 behind the float feature, i386 keeps C.
+
+/// `double exp2(double)` — 2**x.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn exp2(x: f64) -> f64 {
+    const MAX_EXP2_ARG: f64 = 1024.0;
+    const MIN_EXP2_ARG: f64 = -1074.0;
+    const LOG2: f64 = 6.931471805599453094178e-01;
+    const LOG2_LEAD: f64 = 6.93147167563438415527e-01;
+    const LOG2_TAIL: f64 = 1.29965068938898869640e-08;
+    const ONE_BY_32_LEAD: f64 = 0.03125;
+
+    let ux = x.to_bits();
+    let ax = ux & 0x7FFF_FFFF_FFFF_FFFF;
+
+    if ax >= 0x4090_0000_0000_0000 {
+        // abs(x) >= 1024.0
+        if ax >= 0x7ff0_0000_0000_0000 {
+            // NaN or infinity
+            if ux & 0x000f_ffff_ffff_ffff != 0 {
+                return f64::from_bits(ux | 0x0008_0000_0000_0000); // NaN
+            } else if ux & 0x8000_0000_0000_0000 != 0 {
+                return 0.0; // -inf → +0
+            }
+            return x; // +inf
+        }
+        if x > MAX_EXP2_ARG {
+            return f64::from_bits(0x7ff0_0000_0000_0000); // overflow → +inf
+        } else if x < MIN_EXP2_ARG {
+            return 0.0; // underflow → +0
+        }
+    }
+
+    // Small arguments: abs(x) < 1/(16*log2)
+    if ax < 0x3fb7154764ee6c2f {
+        if ax < 0x3c00_0000_0000_0000 {
+            // abs(x) < 2^-63
+            return 1.0 + x;
+        }
+        // Split x into hx (head) and tx (tail).
+        let hx = f64::from_bits(ux & 0xffff_ffff_f800_0000);
+        let tx = x - hx;
+        let y1 = x * LOG2_LEAD;
+        let y2 = (((hx * LOG2_LEAD - y1) + hx * LOG2_TAIL) + tx * LOG2_LEAD) + tx * LOG2_TAIL;
+        let y = y1 + y2;
+        let z = (9.99564649780173690e-1
+            + (1.61251249355268050e-5
+                + (2.37986978239838493e-2 + 2.68724774856111190e-7 * y) * y)
+                * y)
+            / (9.99564649780173692e-1
+                + (-4.99766199765151309e-1
+                    + (1.070876894098586184e-1
+                        + (-1.189773642681502232e-2 + 5.9480622371960190616e-4 * y) * y)
+                        * y)
+                    * y);
+        return ((z * y1) + (z * y2)) + 1.0;
+    }
+
+    // Find m, z1, z2 such that exp2(x) = 2**m * (z1 + z2)
+    let (m, z1, z2) = splitexp(x, LOG2, 32.0, ONE_BY_32_LEAD, 0.0);
+    if m > -1022 && m < 1023 {
+        scale_double_1(z1 + z2, m)
+    } else {
+        scale_double_2(z1 + z2, m)
+    }
+}
+
+// ── Wave MATH-TIERC (sub-wave 8): tanh ───────────────────────────────────
+// Faithful port of math/libm_sse2/tanh.c (AMD libm). amd64-only in libcntpr.
+// Small |x| → x; |x| in (0,1] → [3,3] Remez approximations (two sub-ranges);
+// larger → 1 - 2/(exp(2y)+1) via splitexp; |x| > 20 → ±1; NaN preserved.
+// val_with_flags(x,_) reduces to x; _handle_error(...,bits,...) to
+// from_bits(bits).
+
+/// `double tanh(double)` — hyperbolic tangent.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn tanh(x: f64) -> f64 {
+    const THIRTYTWO_BY_LOG2: f64 = 4.61662413084468283841e+01;
+    const LOG2_BY_32_LEAD: f64 = 2.16608493356034159660e-02;
+    const LOG2_BY_32_TAIL: f64 = 5.68948749532545630390e-11;
+    const LARGE_THRESHOLD: f64 = 20.0;
+
+    let ux = x.to_bits();
+    let aux = ux & 0x7FFF_FFFF_FFFF_FFFF;
+    if aux < 0x3e30_0000_0000_0000 {
+        // |x| small enough that tanh(x) = x (with inexact for x != 0)
+        return x;
+    } else if aux > 0x7ff0_0000_0000_0000 {
+        // |x| is NaN
+        return f64::from_bits(ux | 0x0008_0000_0000_0000);
+    }
+
+    let xneg = aux != ux;
+    let y = if xneg { -x } else { x };
+
+    let mut z;
+    if y > LARGE_THRESHOLD {
+        // exp(-x) negligible → ±1
+        z = 1.0;
+    } else if y <= 1.0 {
+        let y2 = y * y;
+        if y < 0.9 {
+            // [3,3] Remez approximation on [0, 0.9].
+            z = y + y * y2
+                * (-0.274030424656179760118928e0
+                    + (-0.176016349003044679402273e-1
+                        + (-0.200047621071909498730453e-3
+                            - 0.142077926378834722618091e-7 * y2)
+                            * y2)
+                        * y2)
+                / (0.822091273968539282568011e0
+                    + (0.381641414288328849317962e0
+                        + (0.201562166026937652780575e-1
+                            + 0.2091140262529164482568557e-3 * y2)
+                            * y2)
+                        * y2);
+        } else {
+            // [3,3] Remez approximation on [0.9, 1].
+            z = y + y * y2
+                * (-0.227793870659088295252442e0
+                    + (-0.146173047288731678404066e-1
+                        + (-0.165597043903549960486816e-3
+                            - 0.115475878996143396378318e-7 * y2)
+                            * y2)
+                        * y2)
+                / (0.683381611977295894959554e0
+                    + (0.317204558977294374244770e0
+                        + (0.167358775461896562588695e-1
+                            + 0.173076050126225961768710e-3 * y2)
+                            * y2)
+                        * y2);
+        }
+    } else {
+        // p = exp(2*y) + 1; tanh = 1 - 2/p
+        let (m, z1, z2) = splitexp(2.0 * y, 1.0, THIRTYTWO_BY_LOG2, LOG2_BY_32_LEAD, LOG2_BY_32_TAIL);
+        let p = scale_double_2(z1 + z2, m) + 1.0;
+        z = 1.0 - 2.0 / p;
+    }
+
+    if xneg {
+        z = -z;
+    }
+    z
+}
