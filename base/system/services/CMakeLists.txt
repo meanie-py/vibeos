@@ -15,7 +15,7 @@ list(APPEND SOURCE
     config.c
     # controlset.c — replaced by Rust (services-rust/src/controlset.rs)
     database.c
-    driver.c
+    # driver.c     — replaced by Rust (services-rust/src/driver.rs)
     # groupdb.c    — replaced by Rust (services-rust/src/groupdb.rs)
     # lock.c       — replaced by Rust (services-rust/src/lock.rs)
     services_rust_stub.c
@@ -61,6 +61,7 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/services-rust/src/controlset.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/security.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/groupdb.rs
+        ${RUST_WORKSPACE_DIR}/services-rust/src/driver.rs
         ${RUST_WORKSPACE_DIR}/services-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winsrv-sys/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs

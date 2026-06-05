@@ -45,6 +45,25 @@ pub const SERVICE_INTERROGATE: u32 = 0x0080;
 pub const SERVICE_USER_DEFINED_CONTROL: u32 = 0x0100;
 pub const SERVICE_ALL_ACCESS: u32 = 0x000F01FF; // STANDARD_RIGHTS_REQUIRED | 0x1FF
 
+// winsvc.h — service current-state codes (Status.dwCurrentState).
+pub const SERVICE_STOPPED: u32 = 0x00000001;
+pub const SERVICE_START_PENDING: u32 = 0x00000002;
+pub const SERVICE_STOP_PENDING: u32 = 0x00000003;
+pub const SERVICE_RUNNING: u32 = 0x00000004;
+pub const SERVICE_CONTINUE_PENDING: u32 = 0x00000005;
+pub const SERVICE_PAUSE_PENDING: u32 = 0x00000006;
+pub const SERVICE_PAUSED: u32 = 0x00000007;
+
+// winsvc.h — controls accepted (Status.dwControlsAccepted).
+pub const SERVICE_ACCEPT_STOP: u32 = 0x00000001;
+
+// winsvc.h — control codes passed to ScmControlDriver / handlers.
+pub const SERVICE_CONTROL_STOP: u32 = 0x00000001;
+pub const SERVICE_CONTROL_PAUSE: u32 = 0x00000002;
+pub const SERVICE_CONTROL_CONTINUE: u32 = 0x00000003;
+pub const SERVICE_CONTROL_INTERROGATE: u32 = 0x00000004;
+pub const SERVICE_CONTROL_SHUTDOWN: u32 = 0x00000005;
+
 // services.h
 pub const LOCK_TAG: u32 = 0x4C697041; // 'ApiL'
 

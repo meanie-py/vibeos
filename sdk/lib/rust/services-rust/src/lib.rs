@@ -31,6 +31,9 @@ pub mod security;
 // groupdb.c — service-group database (first SERVICE-mirror consumer).
 pub mod groupdb;
 
+// driver.c — driver control interface (Nt{Load,Unload}Driver + status probe).
+pub mod driver;
+
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
 #[panic_handler]
