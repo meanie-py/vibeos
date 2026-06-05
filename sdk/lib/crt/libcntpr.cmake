@@ -303,6 +303,17 @@ if(ARCH STREQUAL "amd64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 9): sinh + cosh → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr. Faithful ports of the AMD-libm math/libm_sse2/
+# {sinh,cosh}.c (shared sinh/cosh lead/tail tables + the splitexp exp/2 path,
+# all in cabi/math.rs) — difftest-pinned bit-exact. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/sinh.c
+        math/libm_sse2/cosh.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

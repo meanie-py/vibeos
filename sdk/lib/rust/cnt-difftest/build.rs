@@ -821,6 +821,9 @@ fn main() {
         // definition, not glibc's __MATHCALL_VEC(exp2,...) declaration.
         ("exp2", format!("#include <math.h>\n#define exp2 ref_exp2\n{}", inc(libm_dir.join("exp2.c")))),
         ("tanh", format!("#include <math.h>\n#define tanh ref_tanh\n{}", inc(libm_dir.join("tanh.c")))),
+        // sub-wave 9
+        ("sinh", format!("#include <math.h>\n#define sinh ref_sinh\n{}", inc(libm_dir.join("sinh.c")))),
+        ("cosh", format!("#include <math.h>\n#define cosh ref_cosh\n{}", inc(libm_dir.join("cosh.c")))),
     ];
     let libm_stubs = out.join("ref_libm_stubs.c");
     fs::write(

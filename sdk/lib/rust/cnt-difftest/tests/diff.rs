@@ -3100,6 +3100,9 @@ extern "C" {
     // Wave MATH-TIERC sub-wave 8
     fn ref_exp2(x: f64) -> f64;
     fn ref_tanh(x: f64) -> f64;
+    // Wave MATH-TIERC sub-wave 9
+    fn ref_sinh(x: f64) -> f64;
+    fn ref_cosh(x: f64) -> f64;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3867,6 +3870,30 @@ fn diff_math_tanh() {
     }
 }
 
+fn diff_math_sinh_cosh() {
+    // sinh (odd) and cosh (even): table reconstruction for small |x|, the
+    // splitexp exp/2 path for larger, ±Inf saturation past max_*_arg, NaN.
+    // Bit-exact vs libm_sse2/{sinh,cosh}.c across edge bits, a random bit
+    // image, and a dense sweep over [-720, 720] (spans both table-branch
+    // thresholds — sinh 36.12 / cosh 20 — the splitexp range, and overflow).
+    let mut rng = Rng(0x51c8_0009);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..200_000 {
+        b64.push(rng.next());
+    }
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::sinh(x), unsafe { ref_sinh(x) }), "sinh {b:#018x}");
+        assert!(same_f64(cabi::cosh(x), unsafe { ref_cosh(x) }), "cosh {b:#018x}");
+    }
+    for _ in 0..200_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 1440.0 - 720.0;
+        assert!(same_f64(cabi::sinh(x), unsafe { ref_sinh(x) }), "sinh {x}");
+        assert!(same_f64(cabi::cosh(x), unsafe { ref_cosh(x) }), "cosh {x}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -3966,6 +3993,7 @@ fn main() {
         diff_math_atan,
         diff_math_exp2,
         diff_math_tanh,
+        diff_math_sinh_cosh,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }

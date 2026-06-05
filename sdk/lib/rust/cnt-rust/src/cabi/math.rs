@@ -1609,3 +1609,227 @@ pub extern "C" fn tanh(x: f64) -> f64 {
     }
     z
 }
+
+// ── Wave MATH-TIERC (sub-wave 9): sinh / cosh ────────────────────────────
+// Faithful ports of math/libm_sse2/{sinh,cosh}.c (AMD libm). amd64-only in
+// libcntpr. Both share four tabulated lead/tail tables of sinh(i)/cosh(i)
+// for i=0..36 (encoded via from_bits of the exact stored bits — generated
+// from the .c decimal literals, cross-checked by the difftest) and an
+// identical degree-13 odd/even pair (sdy ≈ sinh(dy)-dy, cdy ≈ cosh(dy)-1).
+// Large |x| → splitexp-based exp(|x|)/2 (sign applied for sinh; cosh even);
+// small |x| → table reconstruction. NaN/Inf/overflow preserved exactly.
+
+#[cfg(feature = "float")]
+const SINH_LEAD: [f64; 37] = [
+    f64::from_bits(0x0000000000000000), f64::from_bits(0x3ff2cd9fc0000000), f64::from_bits(0x400d03cf60000000),
+    f64::from_bits(0x40240926e0000000), f64::from_bits(0x403b4a3800000000), f64::from_bits(0x40528d0160000000),
+    f64::from_bits(0x406936d228000000), f64::from_bits(0x4081228768000000), f64::from_bits(0x409749ea50000000),
+    f64::from_bits(0x40afa71570000000), f64::from_bits(0x40c5829dc8000000), f64::from_bits(0x40dd3c4488000000),
+    f64::from_bits(0x40f3de1650000000), f64::from_bits(0x410b00b590000000), f64::from_bits(0x412259ac48000000),
+    f64::from_bits(0x4138f0cca8000000), f64::from_bits(0x4150f2ebd0000000), f64::from_bits(0x4167093488000000),
+    f64::from_bits(0x417f4f2208000000), f64::from_bits(0x419546d8f8000000), f64::from_bits(0x41aceb0888000000),
+    f64::from_bits(0x41c3a6e1f8000000), f64::from_bits(0x41dab5adb8000000), f64::from_bits(0x41f226af30000000),
+    f64::from_bits(0x4208ab7fb0000000), f64::from_bits(0x4220c3d390000000), f64::from_bits(0x4236c93268000000),
+    f64::from_bits(0x424ef822f0000000), f64::from_bits(0x42650bba30000000), f64::from_bits(0x427c9aae40000000),
+    f64::from_bits(0x4293704708000000), f64::from_bits(0x42aa6b7658000000), f64::from_bits(0x42c1f43fc8000000),
+    f64::from_bits(0x42d866f348000000), f64::from_bits(0x42f0953e28000000), f64::from_bits(0x430689e220000000),
+    f64::from_bits(0x431ea215a0000000),
+];
+#[cfg(feature = "float")]
+const SINH_TAIL: [f64; 37] = [
+    f64::from_bits(0x0000000000000000), f64::from_bits(0x3e513ae6096a0092), f64::from_bits(0x3e5db70cfb79a640),
+    f64::from_bits(0x3e8c2526b66dc067), f64::from_bits(0x3e8b81b18647f380), f64::from_bits(0x3ebbc1cdd1e1eb08),
+    f64::from_bits(0x3ecd9f201534fb09), f64::from_bits(0x3edd1c064a4e9954), f64::from_bits(0x3ed4eca65d06ea74),
+    f64::from_bits(0x3f00c259bcc0ecc5), f64::from_bits(0x3f2b5a6647cf9016), f64::from_bits(0x3f09691adefb0870),
+    f64::from_bits(0x3f53410fc29cde38), f64::from_bits(0x3f46a31a50b6fb3c), f64::from_bits(0x3f57defc71805c40),
+    f64::from_bits(0x3f9eb49fd80e0bab), f64::from_bits(0x3f84fffc7bcd5920), f64::from_bits(0x3fc03a93b6c63435),
+    f64::from_bits(0x3fb1940bb255fd1c), f64::from_bits(0x3fded26e14260b50), f64::from_bits(0x3ffb47401fc9f2a2),
+    f64::from_bits(0x40267bb3f55634f1), f64::from_bits(0x401c435ff8194ddc), f64::from_bits(0x404d8fee052ba63a),
+    f64::from_bits(0x40651d7edccde3f6), f64::from_bits(0x40704b1644557d1a), f64::from_bits(0x4076a6b5ca0a9dc4),
+    f64::from_bits(0x40afd9cc72249aba), f64::from_bits(0x40ce58de693edab5), f64::from_bits(0x40d8c70158ac6363),
+    f64::from_bits(0x40e7614764f43e20), f64::from_bits(0x4106337db36fc718), f64::from_bits(0x41212d98b1f611e2),
+    f64::from_bits(0x412392bc108b37cc), f64::from_bits(0x415ce87bdc3473dc), f64::from_bits(0x414bc8d5ae99ad14),
+    f64::from_bits(0x415d20d76744835c),
+];
+#[cfg(feature = "float")]
+const COSH_LEAD: [f64; 37] = [
+    f64::from_bits(0x3ff0000000000000), f64::from_bits(0x3ff8b07550000000), f64::from_bits(0x400e18fa08000000),
+    f64::from_bits(0x402422a490000000), f64::from_bits(0x403b4ee858000000), f64::from_bits(0x40528d6fc8000000),
+    f64::from_bits(0x406936e678000000), f64::from_bits(0x4081228948000000), f64::from_bits(0x409749eaa8000000),
+    f64::from_bits(0x40afa71580000000), f64::from_bits(0x40c5829dd0000000), f64::from_bits(0x40dd3c4488000000),
+    f64::from_bits(0x40f3de1650000000), f64::from_bits(0x410b00b590000000), f64::from_bits(0x412259ac48000000),
+    f64::from_bits(0x4138f0cca8000000), f64::from_bits(0x4150f2ebd0000000), f64::from_bits(0x4167093488000000),
+    f64::from_bits(0x417f4f2208000000), f64::from_bits(0x419546d8f8000000), f64::from_bits(0x41aceb0888000000),
+    f64::from_bits(0x41c3a6e1f8000000), f64::from_bits(0x41dab5adb8000000), f64::from_bits(0x41f226af30000000),
+    f64::from_bits(0x4208ab7fb0000000), f64::from_bits(0x4220c3d390000000), f64::from_bits(0x4236c93268000000),
+    f64::from_bits(0x424ef822f0000000), f64::from_bits(0x42650bba30000000), f64::from_bits(0x427c9aae40000000),
+    f64::from_bits(0x4293704708000000), f64::from_bits(0x42aa6b7658000000), f64::from_bits(0x42c1f43fc8000000),
+    f64::from_bits(0x42d866f348000000), f64::from_bits(0x42f0953e28000000), f64::from_bits(0x430689e220000000),
+    f64::from_bits(0x431ea215a0000000),
+];
+#[cfg(feature = "float")]
+const COSH_TAIL: [f64; 37] = [
+    f64::from_bits(0x0000000000000000), f64::from_bits(0x3e3d9f5504c2bd28), f64::from_bits(0x3e67cb66f0a4c9fd),
+    f64::from_bits(0x3e8f58617928e588), f64::from_bits(0x3e6bc7d000c38d48), f64::from_bits(0x3eaf7f9d4e329998),
+    f64::from_bits(0x3ec6e6e464885269), f64::from_bits(0x3ecba3a8b946c154), f64::from_bits(0x3ed3f4e76110d5a4),
+    f64::from_bits(0x3f017622515a3e2b), f64::from_bits(0x3ee4dc4b528af3d0), f64::from_bits(0x3f11156278615e10),
+    f64::from_bits(0x3f535ad50ed821f5), f64::from_bits(0x3f46b61055f2935c), f64::from_bits(0x3f57e2794a601240),
+    f64::from_bits(0x3f9eb4b45f6aadd3), f64::from_bits(0x3f85000b967b3698), f64::from_bits(0x3fc03a940fadc092),
+    f64::from_bits(0x3fb1940bf3bf874c), f64::from_bits(0x3fded26e1a2a2110), f64::from_bits(0x3ffb4740205796d6),
+    f64::from_bits(0x40267bb3f55cb85d), f64::from_bits(0x401c435ff81e18ac), f64::from_bits(0x404d8fee052bdea4),
+    f64::from_bits(0x40651d7edccde926), f64::from_bits(0x40704b1644557e0e), f64::from_bits(0x4076a6b5ca0a9e1c),
+    f64::from_bits(0x40afd9cc72249abe), f64::from_bits(0x40ce58de693edab5), f64::from_bits(0x40d8c70158ac6364),
+    f64::from_bits(0x40e7614764f43e20), f64::from_bits(0x4106337db36fc718), f64::from_bits(0x41212d98b1f611e2),
+    f64::from_bits(0x412392bc108b37cc), f64::from_bits(0x415ce87bdc3473dc), f64::from_bits(0x414bc8d5ae99ad14),
+    f64::from_bits(0x415d20d76744835c),
+];
+
+/// Shared degree-13 series used by sinh/cosh in the small-|x| table branch:
+/// returns (sdy ≈ sinh(dy) - dy, cdy ≈ cosh(dy) - 1), identical in both .c.
+#[cfg(feature = "float")]
+fn sinh_cosh_dy_poly(dy: f64) -> (f64, f64) {
+    let dy2 = dy * dy;
+    let sdy = dy
+        * dy2
+        * (0.166666666666666667013899e0
+            + (0.833333333333329931873097e-2
+                + (0.198412698413242405162014e-3
+                    + (0.275573191913636406057211e-5
+                        + (0.250521176994133472333666e-7
+                            + (0.160576793121939886190847e-9
+                                + 0.7746188980094184251527126e-12 * dy2)
+                                * dy2)
+                            * dy2)
+                        * dy2)
+                    * dy2)
+                * dy2);
+    let cdy = dy2
+        * (0.500000000000000005911074e0
+            + (0.416666666666660876512776e-1
+                + (0.138888888889814854814536e-2
+                    + (0.248015872460622433115785e-4
+                        + (0.275573350756016588011357e-6
+                            + (0.208744349831471353536305e-8
+                                + 0.1163921388172173692062032e-10 * dy2)
+                                * dy2)
+                            * dy2)
+                        * dy2)
+                    * dy2)
+                * dy2);
+    (sdy, cdy)
+}
+
+/// `double sinh(double)` — hyperbolic sine.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn sinh(x: f64) -> f64 {
+    const MAX_SINH_ARG: f64 = 7.10475860073943977113e+02;
+    const THIRTYTWO_BY_LOG2: f64 = 4.61662413084468283841e+01;
+    const LOG2_BY_32_LEAD: f64 = 2.16608493356034159660e-02;
+    const LOG2_BY_32_TAIL: f64 = 5.68948749532545630390e-11;
+    // 8 * BASEDIGITS_DP64(15) * log10(2)
+    let small_threshold = 120.0 * 0.30102999566398119521373889;
+
+    let ux = x.to_bits();
+    let aux = ux & 0x7FFF_FFFF_FFFF_FFFF;
+    if aux < 0x3e30_0000_0000_0000 {
+        // |x| small enough that sinh(x) = x
+        return x;
+    } else if aux >= 0x7ff0_0000_0000_0000 {
+        if aux > 0x7ff0_0000_0000_0000 {
+            return f64::from_bits(ux | 0x0008_0000_0000_0000); // NaN
+        }
+        return x + x; // ±Inf
+    }
+
+    let xneg = aux != ux;
+    let y = if xneg { -x } else { x };
+
+    let z;
+    if y >= MAX_SINH_ARG {
+        // overflow → ±Inf
+        return if xneg {
+            f64::from_bits(0xfff0_0000_0000_0000)
+        } else {
+            f64::from_bits(0x7ff0_0000_0000_0000)
+        };
+    } else if y >= small_threshold {
+        // sinh(y) ≈ exp(y)/2 via splitexp (÷2 by reducing m by 1)
+        let (mut m, z1, z2) = splitexp(y, 1.0, THIRTYTWO_BY_LOG2, LOG2_BY_32_LEAD, LOG2_BY_32_TAIL);
+        m -= 1;
+        z = if m >= -1022 && m <= 1023 {
+            scale_double_1(z1 + z2, m)
+        } else {
+            scale_double_2(z1 + z2, m)
+        };
+    } else {
+        // z = sinh(y0)cosh(dy) + cosh(y0)sinh(dy) from the tables
+        let ind = (y as i32) as usize;
+        let dy = y - ind as f64;
+        let (sdy, cdy) = sinh_cosh_dy_poly(dy);
+        // Shift some significant bits from dy to sdy.
+        let sdy1 = f64::from_bits(dy.to_bits() & 0xffff_ffff_f800_0000);
+        let sdy2 = sdy + (dy - sdy1);
+        z = ((((((COSH_TAIL[ind] * sdy2 + SINH_TAIL[ind] * cdy) + COSH_TAIL[ind] * sdy1)
+            + SINH_TAIL[ind])
+            + COSH_LEAD[ind] * sdy2)
+            + SINH_LEAD[ind] * cdy)
+            + COSH_LEAD[ind] * sdy1)
+            + SINH_LEAD[ind];
+    }
+
+    if xneg {
+        -z
+    } else {
+        z
+    }
+}
+
+/// `double cosh(double)` — hyperbolic cosine (even).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn cosh(x: f64) -> f64 {
+    const MAX_COSH_ARG: f64 = 7.10475860073943977113e+02;
+    const THIRTYTWO_BY_LOG2: f64 = 4.61662413084468283841e+01;
+    const LOG2_BY_32_LEAD: f64 = 2.16608493356034159660e-02;
+    const LOG2_BY_32_TAIL: f64 = 5.68948749532545630390e-11;
+    const SMALL_THRESHOLD: f64 = 20.0;
+
+    let ux = x.to_bits();
+    let aux = ux & 0x7FFF_FFFF_FFFF_FFFF;
+    if aux < 0x3e30_0000_0000_0000 {
+        // |x| small enough that cosh(x) = 1
+        return 1.0;
+    } else if aux >= 0x7ff0_0000_0000_0000 {
+        if aux > 0x7ff0_0000_0000_0000 {
+            return f64::from_bits(ux | 0x0008_0000_0000_0000); // NaN
+        }
+        return f64::from_bits(0x7ff0_0000_0000_0000); // Inf → +Inf
+    }
+
+    let xneg = aux != ux;
+    let y = if xneg { -x } else { x };
+
+    if y >= MAX_COSH_ARG {
+        return f64::from_bits(0x7ff0_0000_0000_0000); // overflow → +Inf
+    } else if y >= SMALL_THRESHOLD {
+        // cosh(y) ≈ exp(y)/2 via splitexp (÷2 by reducing m by 1)
+        let (mut m, z1, z2) = splitexp(y, 1.0, THIRTYTWO_BY_LOG2, LOG2_BY_32_LEAD, LOG2_BY_32_TAIL);
+        m -= 1;
+        return if m >= -1022 && m <= 1023 {
+            scale_double_1(z1 + z2, m)
+        } else {
+            scale_double_2(z1 + z2, m)
+        };
+    }
+    // z = cosh(y0)cosh(dy) + sinh(y0)sinh(dy) from the tables (#else branch:
+    // dy used directly, no sdy1/sdy2 split).
+    let ind = (y as i32) as usize;
+    let dy = y - ind as f64;
+    let (sdy, cdy) = sinh_cosh_dy_poly(dy);
+    ((((((COSH_TAIL[ind] * cdy + SINH_TAIL[ind] * sdy) + SINH_TAIL[ind] * dy) + COSH_TAIL[ind])
+        + COSH_LEAD[ind] * cdy)
+        + SINH_LEAD[ind] * sdy)
+        + SINH_LEAD[ind] * dy)
+        + COSH_LEAD[ind]
+}
