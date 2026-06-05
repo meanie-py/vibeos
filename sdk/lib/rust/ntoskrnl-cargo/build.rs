@@ -2,14 +2,10 @@
 //! `reactos-link` engine — all machinery lives there.
 //!
 //! cmake still owns the ~20 sibling static libs; run `ninja ntoskrnl`
-//! once first. Out-of-band inputs (regenerate when their sources
-//! change):
-//!   - `tools/gen_preprocessed_asm.py`  → data/asm/*-i386.s
+//! once first (also generates the asm includes: ks386.inc, sysfuncs.h).
+//! The asm is assembled from SOURCE `.S` by the engine (kernel asm -I
+//! chain), so there is no offline pre-expansion. Only out-of-band input:
 //!   - `tools/gen_ntoskrnl_res.py`      → data/ntoskrnl-i386.rc.res
-//!
-//! The vestigial xdk/bugcodes/ks386 generators from the old hand-written
-//! build.rs were dropped: the 8 C shims are header-free and the asm is
-//! pre-expanded, so their outputs were already unused.
 //!
 //! Post-link pefixup / fix_lld_forwarding.py run separately.
 
@@ -30,14 +26,18 @@ fn main() {
             "ntoskrnl/ntprintf_trampoline.c",
             "ntoskrnl/kdbg/kdbg_rust_shims.c",
         ])
+        // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
+        // kernel asm -I chain (asm.inc + the generated build-i386 ks386.inc +
+        // ntoskrnl/include's asmmacro.S / sysfuncs.h) — no offline pre-expansion
+        // (the old tools/gen_preprocessed_asm.py + checked-in data/asm/*.s).
         .asm(
             &[
-                "sdk/lib/rust/ntoskrnl-cargo/data/asm/zw-i386.s",
-                "sdk/lib/rust/ntoskrnl-cargo/data/asm/fastinterlck-i386.s",
-                "sdk/lib/rust/ntoskrnl-cargo/data/asm/ioport-i386.s",
-                "sdk/lib/rust/ntoskrnl-cargo/data/asm/ctxswitch-i386.s",
-                "sdk/lib/rust/ntoskrnl-cargo/data/asm/trap-i386.s",
-                "sdk/lib/rust/ntoskrnl-cargo/data/asm/usercall-i386.s",
+                "ntoskrnl/ex/zw.S",
+                "ntoskrnl/ex/i386/fastinterlck_asm.S",
+                "ntoskrnl/ex/i386/ioport.S",
+                "ntoskrnl/ke/i386/ctxswitch.S",
+                "ntoskrnl/ke/i386/trap.s",
+                "ntoskrnl/ke/i386/usercall_asm.S",
             ],
             AsmDefineSet::Kernel,
         )
@@ -55,7 +55,14 @@ fn main() {
             "sdk/lib/lsalib/libntlsalib.a",
             "sdk/lib/rtl/librtl.a",
             "sdk/lib/rossym/librossym.a",
+            // cnt CRT: C liblibcntpr.a then the cnt-rust archives (ctype
+            // _isupper/_isxdigit + mem/string/printf), C-first for the
+            // --allow-multiple-definition first-match — exactly what cmake's
+            // `libcntpr` target links into ntoskrnl. (libcntpr_rust.a was
+            // missing here, surfacing as `undefined _isupper` on a cold build.)
             "sdk/lib/crt/liblibcntpr.a",
+            "sdk/lib/crt/libcntpr_rust.a",
+            "sdk/lib/crt/cnt-rust-target/i686-pc-windows-gnu/release/libcnt_rust_lib.a",
             "sdk/lib/vcruntime/libsetjmp.a",
             "sdk/lib/wdmguid/libwdmguid.a",
             "sdk/lib/poguid/libpoguid.a",

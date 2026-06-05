@@ -1,0 +1,390 @@
+use win32k_sys::win32k::*;
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExDeleteResourceLite, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, KeEnterCriticalRegion, KeLeaveCriticalRegion, KeBugCheckEx, NtAddAtom, PsGetCurrentThreadWin32Thread, ZwClose};
+use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
+use ntkrnl_sys::constants::STATUS_UNSUCCESSFUL;
+use core::ffi::c_void;
+
+// win32k ERR()/TRACE() are debug-channel macros; route to a no-op fn (call sites
+// use ERR(...) call syntax — see cliprgn.rs).
+#[inline(always)] unsafe fn ERR(_msg: *const i8) {}
+
+// Bugcheck codes (bugcodes.mc) + the USER subsystem version (ntuser.h:1149).
+const USER_VERSION: u32 = 0x0005_0000;            // MAKELONG(0x0000, 0x0005)
+const WIN32K_INIT_OR_RIT_FAILURE: u32 = 0x91;
+const VIDEO_DRIVER_INIT_FAILURE: u32 = 0xB4;
+
+// win32k C functions not re-exported by the win32k_sys glob — declare with their
+// real ABI (header oracle): FASTCALL on i386, cdecl elsewhere for the FASTCALL set;
+// NTAPI (extern "system") for the Reg* helpers; plain cdecl for the gdi/init bodies.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn RegisterControlAtoms() -> BOOL;
+    fn InitSessionImpl() -> NTSTATUS;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn RegisterControlAtoms() -> BOOL;
+    fn InitSessionImpl() -> NTSTATUS;
+}
+extern "system" {
+    fn RegOpenKey(pwszKeyName: *mut u16, phkResult: *mut HKEY) -> NTSTATUS;
+    fn RegReadDWORD(hkey: HKEY, pwszValue: *mut u16, pdwData: *mut DWORD) -> BOOL;
+    fn InitVideo() -> NTSTATUS;     // display.c: NTSTATUS NTAPI InitVideo(VOID)
+}
+extern "C" {
+    fn InitSysParams() -> BOOL;
+    fn InitCsrProcess();
+    fn InitializeGreCSRSS() -> BOOL;
+}
+
+// hbrGray lives in the anonymous PERUSERSERVERINFO tail of tagSERVERINFO, which
+// bindgen made opaque (__bindgen_padding_0). Reach it via the same offset cast
+// used by metric.rs/stockobj.rs.
+#[inline(always)]
+unsafe fn peruser(psi: PSERVERINFO) -> *mut _PERUSERSERVERINFO {
+    core::ptr::addr_of_mut!((*psi).__bindgen_padding_0) as *mut _PERUSERSERVERINFO
+}
+
+// ---- file-scope preamble (translated) ----
+// These globals are extern-declared in ntuser.h / window.h / win32.h and read by
+// many still-C files, so each must export its C symbol (#[no_mangle]).
+#[no_mangle] pub static mut gptiCurrent: PTHREADINFO = core::ptr::null_mut();
+#[no_mangle] pub static mut gppiInputProvider: PPROCESSINFO = core::ptr::null_mut();
+#[no_mangle] pub static mut g_AlwaysDisplayVersion: BOOL = 0;
+// ERESOURCE: declare with the ntkrnl_sys::ddk type so addr_of_mut!(UserLock)
+// feeds the Ex*ResourceLite fns directly (win32k_sys's _ERESOURCE is the same
+// layout but a distinct cross-crate type). The exported C symbol is identical.
+#[no_mangle] pub static mut UserLock: ntkrnl_sys::ddk::_ERESOURCE = unsafe { core::mem::zeroed() };
+#[no_mangle] pub static mut AtomMessage: ATOM = 0;
+#[no_mangle] pub static mut AtomWndObj: ATOM = 0;
+#[no_mangle] pub static mut AtomLayer: ATOM = 0;
+#[no_mangle] pub static mut AtomFlashWndState: ATOM = 0;
+#[no_mangle] pub static mut AtomDDETrack: ATOM = 0;
+#[no_mangle] pub static mut AtomQOS: ATOM = 0;
+#[no_mangle] pub static mut hModClient: HINSTANCE = core::ptr::null_mut();
+#[no_mangle] pub static mut ClientPfnInit: BOOL = 0;
+#[no_mangle] pub static mut gaGuiConsoleWndClass: ATOM = 0;
+#[no_mangle] pub static mut AtomImeLevel: ATOM = 0;
+
+unsafe extern "C" fn InitUserAtoms() -> NTSTATUS {
+    RegisterControlAtoms();
+
+    (*gpsi).atomSysClass[ICLS_MENU as usize] = 32768;
+    (*gpsi).atomSysClass[ICLS_DESKTOP as usize] = 32769;
+    (*gpsi).atomSysClass[ICLS_DIALOG as usize] = 32770;
+    (*gpsi).atomSysClass[ICLS_SWITCH as usize] = 32771;
+    (*gpsi).atomSysClass[ICLS_ICONTITLE as usize] = 32772;
+    (*gpsi).atomSysClass[ICLS_TOOLTIPS as usize] = 32774;
+
+    AtomMessage = IntAddGlobalAtom(
+        b"M\0e\0s\0s\0a\0g\0e\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+    (*gpsi).atomSysClass[ICLS_HWNDMESSAGE as usize] = AtomMessage;
+
+    (*gpsi).atomContextHelpIdProp = IntAddGlobalAtom(
+        b"S\0y\0s\0C\0H\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+
+    (*gpsi).atomIconSmProp = IntAddGlobalAtom(
+        b"S\0y\0s\0I\0C\0S\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+    (*gpsi).atomIconProp = IntAddGlobalAtom(
+        b"S\0y\0s\0I\0C\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+
+    (*gpsi).atomFrostedWindowProp = IntAddGlobalAtom(
+        b"S\0y\0s\0F\0r\0o\0s\0t\0e\0d\0W\0i\0n\0d\0o\0w\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+
+    AtomDDETrack = IntAddGlobalAtom(
+        b"S\0y\0s\0D\0T\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+    AtomQOS = IntAddGlobalAtom(
+        b"S\0y\0s\0Q\0O\0S\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+    AtomImeLevel = IntAddGlobalAtom(
+        b"S\0y\0s\0I\0M\0E\0L\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+
+    NtAddAtom(
+        b"S\0y\0s\0W\0N\0D\0O\0\0\0".as_ptr() as *mut u16,
+        14,
+        core::ptr::addr_of_mut!(AtomWndObj),
+    );
+
+    AtomLayer = IntAddGlobalAtom(
+        b"S\0y\0s\0L\0a\0y\0e\0r\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+    AtomFlashWndState = IntAddGlobalAtom(
+        b"F\0l\0a\0s\0h\0W\0S\0t\0a\0t\0e\0\0\0".as_ptr() as *mut u16,
+        1,
+    );
+
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn InitUserImpl() -> NTSTATUS {
+    let mut Status: NTSTATUS;
+    let mut hKey: HKEY = core::ptr::null_mut();
+
+    if UserCreateHandleTable() == 0 {
+        ERR(b"Failed creating handle table\n\0".as_ptr() as *mut i8);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = InitSessionImpl();
+    if !NT_SUCCESS(Status) {
+        ERR(b"Error init session impl.\n\0".as_ptr() as *mut i8);
+        return Status;
+    }
+
+    InitUserAtoms();
+
+    Status = RegOpenKey(
+        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0W\0i\0n\0d\0o\0w\0s\0\0\0".as_ptr() as *mut u16,
+        core::ptr::addr_of_mut!(hKey),
+    );
+    if NT_SUCCESS(Status) {
+        let mut dwValue: DWORD = 0;
+        RegReadDWORD(
+            hKey,
+            b"D\0i\0s\0p\0l\0a\0y\0V\0e\0r\0s\0i\0o\0n\0\0\0".as_ptr() as *mut u16,
+            core::ptr::addr_of_mut!(dwValue),
+        );
+        g_AlwaysDisplayVersion = (dwValue != 0) as BOOL;
+        ZwClose(hKey as _);
+    }
+
+    InitSysParams();
+
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn UserInitialize() -> NTSTATUS {
+    static wPattern55AA: [DWORD; 8] = [
+        0x55555555, 0xaaaaaaaa, 0x55555555, 0xaaaaaaaa,
+        0x55555555, 0xaaaaaaaa, 0x55555555, 0xaaaaaaaa,
+    ];
+    let mut hPattern55AABitmap: HBITMAP = core::ptr::null_mut();
+    let mut Status: NTSTATUS;
+
+    Status = UserCreateWinstaDirectory();
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
+    Status = InitVideo();
+    if !NT_SUCCESS(Status) {
+        KeBugCheckEx(VIDEO_DRIVER_INIT_FAILURE, Status as ULONG_PTR, 0, 0, USER_VERSION as ULONG_PTR);
+    }
+
+    {
+        let mut pmdev: PMDEVOBJ = core::ptr::null_mut();
+        let lRet = PDEVOBJ_lChangeDisplaySettings(
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            &mut pmdev,
+            1,
+        );
+        if lRet == DISP_CHANGE_SUCCESSFUL as LONG {
+            gpmdev = pmdev;
+        }
+    }
+
+    NtUserUpdatePerUserSystemParameters(0, 1);
+
+    if (*peruser(gpsi)).hbrGray.is_null() {
+        hPattern55AABitmap = GreCreateBitmap(8, 8, 1, 1, wPattern55AA.as_ptr() as _);
+        if hPattern55AABitmap.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        (*peruser(gpsi)).hbrGray = IntGdiCreatePatternBrush(hPattern55AABitmap);
+
+        if (*peruser(gpsi)).hbrGray.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    STATUS_SUCCESS
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "stdcall" fn NtUserInitialize(
+    dwWinVersion: DWORD,
+    hPowerRequestEvent: HANDLE,
+    hMediaRequestEvent: HANDLE,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+
+    if !gpepCSRSS.is_null() {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if dwWinVersion != USER_VERSION {
+        KeBugCheckEx(
+            WIN32K_INIT_OR_RIT_FAILURE,
+            0,
+            0,
+            dwWinVersion as ULONG_PTR,
+            USER_VERSION as ULONG_PTR,
+        );
+    }
+
+    UserEnterExclusive();
+
+    InitCsrProcess();
+
+    Status = IntInitWin32PowerManagement(hPowerRequestEvent);
+    if !NT_SUCCESS(Status) {
+        UserLeave();
+        return Status;
+    }
+
+    if InitializeGreCSRSS() == 0 {
+        UserLeave();
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    Status = UserInitialize();
+
+    UserLeave();
+    Status
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn NtUserInitialize(
+    dwWinVersion: DWORD,
+    hPowerRequestEvent: HANDLE,
+    hMediaRequestEvent: HANDLE,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+
+    if !gpepCSRSS.is_null() {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if dwWinVersion != USER_VERSION {
+        KeBugCheckEx(
+            WIN32K_INIT_OR_RIT_FAILURE,
+            0,
+            0,
+            dwWinVersion as ULONG_PTR,
+            USER_VERSION as ULONG_PTR,
+        );
+    }
+
+    UserEnterExclusive();
+
+    InitCsrProcess();
+
+    Status = IntInitWin32PowerManagement(hPowerRequestEvent);
+    if !NT_SUCCESS(Status) {
+        UserLeave();
+        return Status;
+    }
+
+    if InitializeGreCSRSS() == 0 {
+        UserLeave();
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    Status = UserInitialize();
+
+    UserLeave();
+    Status
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn UserIsEntered() -> BOOL {
+    (ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!(UserLock)) != 0
+        || ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!(UserLock)) != 0) as BOOL
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn UserIsEntered() -> BOOL {
+    (ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!(UserLock)) != 0
+        || ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!(UserLock)) != 0) as BOOL
+}
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn UserIsEnteredExclusive() -> BOOL {
+    ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!(UserLock)) as BOOL
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn UserIsEnteredExclusive() -> BOOL {
+    ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!(UserLock)) as BOOL
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn CleanupUserImpl() {
+    ExDeleteResourceLite(core::ptr::addr_of_mut!(UserLock));
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn CleanupUserImpl() {
+    ExDeleteResourceLite(core::ptr::addr_of_mut!(UserLock));
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn UserEnterShared() {
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite(core::ptr::addr_of_mut!(UserLock), 1u8);
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn UserEnterShared() {
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite(core::ptr::addr_of_mut!(UserLock), 1u8);
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn UserEnterExclusive() {
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(UserLock), 1u8);
+    gptiCurrent = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn UserEnterExclusive() {
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(UserLock), 1u8);
+    gptiCurrent = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
+}
+
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn UserLeave() {
+    ExReleaseResourceLite(core::ptr::addr_of_mut!(UserLock));
+    KeLeaveCriticalRegion();
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn UserLeave() {
+    ExReleaseResourceLite(core::ptr::addr_of_mut!(UserLock));
+    KeLeaveCriticalRegion();
+}
