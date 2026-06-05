@@ -407,3 +407,120 @@ pub extern "C" fn div(mut num: i32, mut denom: i32) -> div_t {
     }
     r
 }
+
+// ======================================================================
+// Wave MATH-TIERC — transcendentals (amd64/arm64 only; i386 keeps its
+// x87 asm — same float-return ABI constraint as Tier B).
+//
+// Sub-wave 1: sin / cos / sqrt / sqrtf.
+//   sin/cos: faithful port of ReactOS `math/{sin,cos}.c` (Timo Kreuzer's
+//     quadrant reduction + unrolled Taylor series, PRECISION=9). Both
+//     amd64 (llvm-mingw) and arm64 used that same portable C, so one Rust
+//     impl serves both; bit-exact vs the C on the finite domain (the
+//     `(int)` quadrant cast is meaningful only for moderate |x|).
+//   sqrt/sqrtf: the hardware instruction (sqrtsd/sqrtss on amd64, fsqrt on
+//     arm64) — IEEE correctly-rounded, so it matches host libm bit-for-bit
+//     and is >= the precision of the arm64 portable `math/sqrt.c` (a
+//     fast-inverse-sqrt approximation) it replaces.
+// ======================================================================
+
+#[cfg(feature = "float")]
+const M_PI: f64 = 3.141592653589793238462643;
+
+/// Shared quadrant-reduced Taylor core for `sin`/`cos` (PRECISION=9).
+/// `q` is the already-normalized quadrant (sin: `(quad-1)&3`, cos:
+/// `quad&3`). Mirrors the `sin_off_tbl`/`sin_sign_tbl` of `math/sin.c`.
+#[cfg(feature = "float")]
+#[inline]
+fn sincos_taylor(mut x: f64, q: usize) -> f64 {
+    const OFF: [f64; 4] = [0.0, -M_PI / 2.0, 0.0, -M_PI / 2.0];
+    const SIGN: [f64; 4] = [1.0, -1.0, -1.0, 1.0];
+    x += OFF[q];
+    let x2 = -(x * x);
+    let mut result = 0.0f64;
+    // PRECISION >= 9 .. >= 5 (1/18! down to 1/10!)
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0 * 6.0 * 7.0 * 8.0 * 9.0 * 10.0 * 11.0 * 12.0 * 13.0 * 14.0 * 15.0 * 16.0 * 17.0 * 18.0);
+    result *= x2;
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0 * 6.0 * 7.0 * 8.0 * 9.0 * 10.0 * 11.0 * 12.0 * 13.0 * 14.0 * 15.0 * 16.0);
+    result *= x2;
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0 * 6.0 * 7.0 * 8.0 * 9.0 * 10.0 * 11.0 * 12.0 * 13.0 * 14.0);
+    result *= x2;
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0 * 6.0 * 7.0 * 8.0 * 9.0 * 10.0 * 11.0 * 12.0);
+    result *= x2;
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0 * 6.0 * 7.0 * 8.0 * 9.0 * 10.0);
+    result *= x2;
+    // unconditional terms 1/8! .. 1/2!
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0 * 6.0 * 7.0 * 8.0);
+    result *= x2;
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0 * 5.0 * 6.0);
+    result *= x2;
+    result += 1.0 / (1.0 * 2.0 * 3.0 * 4.0);
+    result *= x2;
+    result += 1.0 / (1.0 * 2.0);
+    result *= x2;
+    result += 1.0;
+    result * SIGN[q]
+}
+
+/// `double sin(double)`.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn sin(x: f64) -> f64 {
+    let quadrant = (x * (2.0 / M_PI)) as i32;
+    let xr = x - (quadrant as f64) * (M_PI / 2.0);
+    sincos_taylor(xr, ((quadrant - 1) & 0x3) as usize)
+}
+
+/// `double cos(double)`.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn cos(x: f64) -> f64 {
+    let quadrant = (x * (2.0 / M_PI)) as i32;
+    let xr = x - (quadrant as f64) * (M_PI / 2.0);
+    sincos_taylor(xr, (quadrant & 0x3) as usize)
+}
+
+/// `double sqrt(double)` — hardware `sqrtsd` (correctly rounded; handles
+/// ±0/±inf/NaN/negative per IEEE, so no special-case prologue needed).
+#[cfg(all(feature = "float", target_arch = "x86_64"))]
+#[no_mangle]
+pub extern "C" fn sqrt(x: f64) -> f64 {
+    let r: f64;
+    unsafe {
+        core::arch::asm!("sqrtsd {0}, {1}", out(xmm_reg) r, in(xmm_reg) x, options(pure, nomem, nostack));
+    }
+    r
+}
+
+/// `double sqrt(double)` — hardware `fsqrt`.
+#[cfg(all(feature = "float", target_arch = "aarch64"))]
+#[no_mangle]
+pub extern "C" fn sqrt(x: f64) -> f64 {
+    let r: f64;
+    unsafe {
+        core::arch::asm!("fsqrt {0:d}, {1:d}", out(vreg) r, in(vreg) x, options(pure, nomem, nostack));
+    }
+    r
+}
+
+/// `float sqrtf(float)` — hardware `sqrtss`.
+#[cfg(all(feature = "float", target_arch = "x86_64"))]
+#[no_mangle]
+pub extern "C" fn sqrtf(x: f32) -> f32 {
+    let r: f32;
+    unsafe {
+        core::arch::asm!("sqrtss {0}, {1}", out(xmm_reg) r, in(xmm_reg) x, options(pure, nomem, nostack));
+    }
+    r
+}
+
+/// `float sqrtf(float)` — hardware `fsqrt` (single).
+#[cfg(all(feature = "float", target_arch = "aarch64"))]
+#[no_mangle]
+pub extern "C" fn sqrtf(x: f32) -> f32 {
+    let r: f32;
+    unsafe {
+        core::arch::asm!("fsqrt {0:s}, {1:s}", out(vreg) r, in(vreg) x, options(pure, nomem, nostack));
+    }
+    r
+}

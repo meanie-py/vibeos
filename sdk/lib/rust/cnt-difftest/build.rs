@@ -573,6 +573,13 @@ fn main() {
         ("roundf", format!("#define roundf ref_roundf\n{}", inc(s("math/roundf.c")))),
         ("nextafter", "#include <stdint.h>\ndouble ref_nextafter(double x,double y){union{double f;uint64_t i;}ux={x},uy={y};uint64_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffffffffffULL;ay=uy.i&0x7fffffffffffffffULL;if(ax==0){if(ay==0)return y;ux.i=(uy.i&(1ULL<<63))|1;}else if(ax>ay||((ux.i^uy.i)&(1ULL<<63)))ux.i--;else ux.i++;return ux.f;}".to_string()),
         ("nextafterf", "#include <stdint.h>\nfloat ref_nextafterf(float x,float y){union{float f;uint32_t i;}ux={x},uy={y};uint32_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffu;ay=uy.i&0x7fffffffu;if(ax==0){if(ay==0)return y;ux.i=(uy.i&0x80000000u)|1;}else if(ax>ay||((ux.i^uy.i)&0x80000000u))ux.i--;else ux.i++;return ux.f;}".to_string()),
+        // Wave MATH-TIERC sub-wave 1: sin/cos = genuine portable .c
+        // (bit-exact under -ffp-contract=off). sqrt/sqrtf = libm (correctly
+        // rounded), matching cnt-rust's hardware sqrt instruction.
+        ("sin", format!("#define sin ref_sin\n{}", inc(s("math/sin.c")))),
+        ("cos", format!("#define cos ref_cos\n{}", inc(s("math/cos.c")))),
+        ("sqrt", "#include <math.h>\ndouble ref_sqrt(double x){return sqrt(x);}".to_string()),
+        ("sqrtf", "#include <math.h>\nfloat ref_sqrtf(float x){return sqrtf(x);}".to_string()),
         ("nexttowardf", "#include <stdint.h>\nfloat ref_nexttowardf(float x,double y){union{float f;uint32_t i;}ux={x};if(x!=x||y!=y)return x+(float)y;if((double)x==y)return (float)y;if(x==0){ux.i=1;union{double f;uint64_t u;}uy={y};if(uy.u>>63)ux.i|=0x80000000u;}else if((double)x<y){if(ux.i>>31)ux.i--;else ux.i++;}else{if(ux.i>>31)ux.i++;else ux.i--;}return ux.f;}".to_string()),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
@@ -686,6 +693,10 @@ fn main() {
         .include(&refstub)
         .warnings(false)
         .flag("-w")
+        // Wave MATH-TIERC: no FMA contraction, so the FP reference matches
+        // rustc's non-contracting codegen bit-for-bit (sin/cos's quadrant
+        // reduction `x - q*(PI/2)` would otherwise fuse on the host).
+        .flag("-ffp-contract=off")
         .opt_level(2)
         .cargo_metadata(false);
     for (sym, body) in &units {

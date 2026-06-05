@@ -3113,6 +3113,11 @@ extern "C" {
     fn ref_nextafter(x: f64, y: f64) -> f64;
     fn ref_nextafterf(x: f32, y: f32) -> f32;
     fn ref_nexttowardf(x: f32, y: f64) -> f32;
+    // Wave MATH-TIERC sub-wave 1
+    fn ref_sin(x: f64) -> f64;
+    fn ref_cos(x: f64) -> f64;
+    fn ref_sqrt(x: f64) -> f64;
+    fn ref_sqrtf(x: f32) -> f32;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3437,6 +3442,45 @@ fn diff_math_nextafterf() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn diff_math_sincos() {
+    // Faithful port of math/{sin,cos}.c → bit-exact on the finite domain
+    // (the `(int)` quadrant cast is meaningful only for moderate |x|).
+    let mut rng = Rng(0x713c_0d1a);
+    let edges = [
+        0.0f64, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0, 1000.0, -1000.0,
+    ];
+    for &x in &edges {
+        assert!(same_f64(cabi::sin(x), unsafe { ref_sin(x) }), "sin {x}");
+        assert!(same_f64(cabi::cos(x), unsafe { ref_cos(x) }), "cos {x}");
+    }
+    for _ in 0..200_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 4000.0 - 2000.0;
+        assert!(same_f64(cabi::sin(x), unsafe { ref_sin(x) }), "sin {x}");
+        assert!(same_f64(cabi::cos(x), unsafe { ref_cos(x) }), "cos {x}");
+    }
+}
+
+#[test]
+fn diff_math_sqrt() {
+    // Hardware sqrt = correctly rounded = libm reference, bit-for-bit.
+    let mut rng = Rng(0x5012_3a4b_c0de_f00d);
+    let mut bits = f64_edge_bits();
+    for v in [1.0f64, 2.0, 4.0, 0.25, 1e300, 1e-300] {
+        bits.push(v.to_bits());
+    }
+    for _ in 0..200_000 {
+        bits.push(rng.next());
+    }
+    for &b in &bits {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::sqrt(x), unsafe { ref_sqrt(x) }), "sqrt {b:#018x}");
+        let xf = f32::from_bits((b >> 32) as u32);
+        assert!(same_f32(cabi::sqrtf(xf), unsafe { ref_sqrtf(xf) }), "sqrtf");
     }
 }
 

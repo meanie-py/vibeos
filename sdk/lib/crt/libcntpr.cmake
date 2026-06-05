@@ -167,6 +167,30 @@ if(NOT ARCH STREQUAL "i386")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 1): sin/cos/sqrt/sqrtf → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its x87 *_asm.s). sin/cos are the same
+# portable math/{sin,cos}.c on both arches → one Rust impl, bit-exact.
+# sqrt/sqrtf paths differ per arch (amd64 = libm_sse2 hardware; arm64 =
+# the portable math/sqrt.c fast-invsqrt approximation) — cnt-rust replaces
+# both with the hardware sqrt instruction.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/sin.c
+        math/cos.c
+    )
+endif()
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/sqrt.c
+        math/libm_sse2/sqrtf.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/sqrt.c
+        math/sqrtf.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
