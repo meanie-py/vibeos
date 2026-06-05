@@ -39,7 +39,17 @@ fn main() {
     // omits it (mirrors libcntpr.cmake).
     let cnt_feats: &[&str] = if arch == "aarch64" { &[] } else { &["float"] };
 
-    let asm_path = format!("sdk/lib/rust/ntdll-cargo/data/asm/{asm}");
+    let asm_dir = "sdk/lib/rust/ntdll-cargo/data/asm";
+    let mut asm_paths = vec![format!("{asm_dir}/{asm}")];
+    // amd64 ntdll.dll references setjmp/_setjmpex/longjmp (i386/arm64 don't —
+    // libsetjmp.a is dead there). Provide the register save/restore asm here
+    // (longjmp's RtlUnwind glue is Rust: ntdll-rust src/setjmp.rs), replacing
+    // the cmake libsetjmp.a reuse. Pre-expanded by tools/gen_ntdll_asm.py.
+    if arch == "x86_64" {
+        asm_paths.push(format!("{asm_dir}/setjmp-amd64.s"));
+        asm_paths.push(format!("{asm_dir}/longjmp_noframe-amd64.s"));
+    }
+    let asm_refs: Vec<&str> = asm_paths.iter().map(String::as_str).collect();
 
     Linker::new(target_json)
         .rust_staticlib("ntdll-rust") // default features = ntdll.dll proper
@@ -53,7 +63,7 @@ fn main() {
         // Tier-A leaf C, cargo-compiled (was reuse of cmake libpseh.a). DUMMY_PSEH
         // dead code: header-free, two globals (_SEH2_Volatile0 / *ExceptionCode).
         .c_shims(&["sdk/lib/pseh/dummy.c"])
-        .asm(&[&asm_path], AsmDefineSet::Kernel)
+        .asm(&asm_refs, AsmDefineSet::Kernel)
         .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/def/ntdll.spec", "ntdll.dll")
         .spec_stubs() // 48 Etw* -stub bodies
@@ -66,7 +76,9 @@ fn main() {
             "ntoskrnl/libntdllsys.a",
             "sdk/lib/apisets/libapisets.a",
             "sdk/lib/uuid/libuuid.a",
-            "sdk/lib/vcruntime/libsetjmp.a",
+            // NOTE: libsetjmp.a dropped — amd64 now builds setjmp/longjmp from
+            // pre-expanded asm + Rust glue (above); i386/arm64 never referenced
+            // it (dead archive members).
             // NOTE: libchkstk.a dropped — __chkstk/_alloca_probe/___alloca are
             // already provided by the clang_rt.builtins the engine links (the
             // canonical stack-probe for clang-emitted code), so the cmake

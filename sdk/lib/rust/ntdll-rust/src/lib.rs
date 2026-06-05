@@ -61,6 +61,14 @@ pub mod ldr;
 #[cfg(target_arch = "aarch64")]
 pub mod dispatch;
 
+// setjmp/ — x64 `longjmp` C glue (vcruntime/amd64/longjmp.c). amd64 ntdll.dll
+// is the only consumer of setjmp/longjmp (i386/arm64 never reference it — the
+// cmake libsetjmp.a is dead there; ntdll_vista.dll doesn't link it). The
+// register save/restore stays in pre-expanded asm; this drives RtlUnwind.
+// Replaces the cmake libsetjmp.a reuse on amd64.
+#[cfg(all(target_arch = "x86_64", not(feature = "vista")))]
+pub mod setjmp;
+
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust/kdcom-rust/hal-rust).
 // USER-MODE: must NOT use privileged `hlt`/`wfe` (ntdll runs in ring 3).
