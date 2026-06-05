@@ -245,7 +245,9 @@ pub mod accelerator;
 // [ntuser wave 5]
 pub mod vis;
 pub mod ghost;
-// power.rs translated + integrated WIP (cross-crate casts pending) — parked, next wave
+// [ntuser wave 6]
+pub mod power;
+pub mod usrheap;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
