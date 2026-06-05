@@ -67,6 +67,54 @@ pub const SERVICE_CONTROL_SHUTDOWN: u32 = 0x00000005;
 // services.h
 pub const LOCK_TAG: u32 = 0x4C697041; // 'ApiL'
 
+// services.h / winsvc_undoc.h — services-private types shared across SCM modules
+// (database.c + rpcserver.c). SERVICE_STATUS_HANDLE is an opaque pointer.
+pub type SERVICE_STATUS_HANDLE = *mut core::ffi::c_void;
+/// bindgen-style alias the translated code uses in offset_of!(_SERVICE, ...).
+pub type _SERVICE = SERVICE;
+
+// services.h `_SCM_CONTROL_PACKET` / `_SCM_REPLY_PACKET` — named-pipe IPC packets.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SCM_CONTROL_PACKET {
+    pub dwSize: DWORD,
+    pub dwControl: DWORD,
+    pub dwArgumentsCount: DWORD,
+    pub dwServiceTag: DWORD,
+    pub hServiceStatus: SERVICE_STATUS_HANDLE,
+    pub dwServiceNameOffset: DWORD,
+    pub dwArgumentsOffset: DWORD,
+}
+pub type PSCM_CONTROL_PACKET = *mut SCM_CONTROL_PACKET;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SCM_REPLY_PACKET {
+    pub dwError: DWORD,
+}
+pub type PSCM_REPLY_PACKET = *mut SCM_REPLY_PACKET;
+
+// services.h — internal control codes for the start command.
+pub const SERVICE_CONTROL_START_SHARE: u32 = 80;
+pub const SERVICE_CONTROL_START_OWN: u32 = 81;
+
+// winsvc_undoc.h — I_ScGetCurrentGroupStateW / tag→name query.
+pub const TagTypeService: u32 = 1;
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TAG_INFO_NAME_FROM_TAG_IN_PARAMS {
+    pub dwPid: DWORD,
+    pub dwTag: DWORD,
+}
+pub type PTAG_INFO_NAME_FROM_TAG_IN_PARAMS = *mut TAG_INFO_NAME_FROM_TAG_IN_PARAMS;
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TAG_INFO_NAME_FROM_TAG_OUT_PARAMS {
+    pub TagType: u32,
+    pub pszName: LPWSTR,
+}
+pub type PTAG_INFO_NAME_FROM_TAG_OUT_PARAMS = *mut TAG_INFO_NAME_FROM_TAG_OUT_PARAMS;
+
 /// services.h `_START_LOCK` — the SCM's unique user start-serialization lock.
 #[repr(C)]
 pub struct START_LOCK {

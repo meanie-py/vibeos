@@ -14,7 +14,7 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/svcctl.idl)
 list(APPEND SOURCE
     # config.c     — replaced by Rust (services-rust/src/config.rs)
     # controlset.c — replaced by Rust (services-rust/src/controlset.rs)
-    database.c
+    # database.c   — replaced by Rust (services-rust/src/database.rs)
     # driver.c     — replaced by Rust (services-rust/src/driver.rs)
     # groupdb.c    — replaced by Rust (services-rust/src/groupdb.rs)
     # lock.c       — replaced by Rust (services-rust/src/lock.rs)
@@ -63,6 +63,7 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/services-rust/src/groupdb.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/driver.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/config.rs
+        ${RUST_WORKSPACE_DIR}/services-rust/src/database.rs
         ${RUST_WORKSPACE_DIR}/services-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winsrv-sys/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs

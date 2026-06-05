@@ -37,6 +37,11 @@ pub mod driver;
 // config.c — service-config registry I/O + LSA password storage + decrypt.
 pub mod config;
 
+// database.c — SCM database core (service/image lists, process spawn, named-pipe
+// IPC, control packets, autostart). Owns ServiceListHead/ImageListHead +
+// Scm{Lock,Unlock}Database. Translated by rustconv (Opus 4.8).
+pub mod database;
+
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
 #[panic_handler]
