@@ -1,0 +1,28 @@
+# Cargo-driven `services.exe` (SCM) link (i386 + amd64 + arm64). Fourth of OUR
+# translated spine binaries to move its link cmake→cargo (after lsass +
+# userinit + winlogon).
+#
+# services.exe is the winlogon twin: a PARTIAL flip whose still-C residue
+# (services.c main + services_rust_stub.c + the generated svcctl_s.c RPC server
+# stub) is compiled IN-cargo via the engine's c_from_compile_db
+# (compile_commands.json replay), while the 8 flipped SCM .c come from
+# libservices_rust.a (.rust_staticlib). Difference from winlogon: services is
+# set_module_type win32gui UNICODE → WIDE wWinMain, entry _wWinMainCRTStartup
+# (like lsass/userinit, not winlogon's ANSI WinMain).
+#
+# Success criterion: cargo's services.exe boots the livecd to `shell ready`
+# (the SCM starts every auto-start service incl the path to the logon UI).
+
+[package]
+name = "services-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "services"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

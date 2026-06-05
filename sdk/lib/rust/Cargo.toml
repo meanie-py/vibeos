@@ -48,6 +48,7 @@ members = [
     "lsass-cargo",
     "userinit-cargo",
     "winlogon-cargo",
+    "services-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",
