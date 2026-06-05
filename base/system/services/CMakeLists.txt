@@ -12,7 +12,7 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/svcctl.idl)
 # disk (never delete the C — translation philosophy). services_rust_stub.c
 # keeps a TU always compiled so the linker extracts the archive members.
 list(APPEND SOURCE
-    config.c
+    # config.c     — replaced by Rust (services-rust/src/config.rs)
     # controlset.c — replaced by Rust (services-rust/src/controlset.rs)
     database.c
     # driver.c     — replaced by Rust (services-rust/src/driver.rs)
@@ -62,6 +62,7 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/services-rust/src/security.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/groupdb.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/driver.rs
+        ${RUST_WORKSPACE_DIR}/services-rust/src/config.rs
         ${RUST_WORKSPACE_DIR}/services-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winsrv-sys/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs

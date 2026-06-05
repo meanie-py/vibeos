@@ -34,6 +34,9 @@ pub mod groupdb;
 // driver.c — driver control interface (Nt{Load,Unload}Driver + status probe).
 pub mod driver;
 
+// config.c — service-config registry I/O + LSA password storage + decrypt.
+pub mod config;
+
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
 #[panic_handler]
