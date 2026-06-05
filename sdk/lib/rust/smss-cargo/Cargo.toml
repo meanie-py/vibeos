@@ -1,0 +1,27 @@
+# Cargo-driven `smss.exe` (Session Manager) link (i386 + amd64 + arm64). Fifth
+# of OUR translated spine binaries to move its link cmake→cargo (after lsass +
+# userinit + winlogon + services); the first NATIVE-subsystem one
+# (ModuleKind::NativeExe, native:5.01 / NtProcessStartup entry — like rosload).
+#
+# smss is a FULL flip: all 9 .c → Rust (smss-csrss-rust, built `smss_exe_only`
+# on the standard user target). Body link reuses the cmake leaf statics
+# (libnt/libpseh/libsmlib/libchkstk) + the ntdll import lib (generated in-cargo
+# from ntdll.spec). smss.rc is version-only → omitted.
+#
+# Success criterion: cargo's smss.exe boots the livecd to `shell ready` — smss
+# is the FIRST user process (kernel → smss → csrss → winlogon → … → desktop),
+# and is process-critical (a crash bugchecks 0xC000021A).
+
+[package]
+name = "smss-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "smss"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
