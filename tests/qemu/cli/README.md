@@ -119,6 +119,22 @@ if its target json, `build-<arch>`, or nightly+rust-src is absent. Gated to
 `--strict` (not every `build`) because each relink re-compiles a Rust staticlib
 (~20s) and would tax the hot loop.
 
+The `cargo_link` guard is the **LINK** half of the cargo-drive gate (PE-valid,
+fast, no boot). Its **RUNTIME** half is `cargo-swap` (below) — a link can relink
+clean yet boot broken, and only a boot catches that.
+
+### `cargo-swap --arch X [--module all|ntdll|ntdll_vista]`
+**The runtime gate for the cargo-driven ntdll DLLs.** Boot-swaps each cargo-built
+DLL into the real livecd and boots it to the smoke marker via `vibeos-cli smoke`
+— proving the cargo link is runtime-equivalent to cmake's, not just the same PE
+shape. Wraps `sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh` (which owns the
+build / swap / `cmp`-assert that the iso carries the cargo bytes / restore-cmake-
+on-exit mechanics) and aggregates one verdict + `summary.json`. x86 only — arm64
+has no livecd for the swap (skips cleanly). `ntoskrnl-cargo` has no boot-swap yet
+(reuse-19-`.a` relink only), so the runtime gate covers the two cargo-deep ntdll
+DLLs. Slow (boots QEMU per module) — run it before trusting a cargo-drive
+handoff, not in the hot loop.
+
 ### `debug <verb> ...` — wraps the `qemu/` kernel-debugging toolkit
 Run-id-scoped GDB-over-the-real-boot debugging. Verbs pass through to the proven
 shell tools (`start` → `start.sh`, `inspect`/`bt`/`triage-bugcheck` →
@@ -191,7 +207,8 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 | A pass/fail verdict that won't lie about stale media | `vibeos-cli smoke` |
 | Build the right media for an arch (warm/cold, classified failures) | `vibeos-cli build` |
 | Watch a specific boot marker fast | `vibeos-cli boot` |
-| Lint gate (NEW-vs-baseline) | `vibeos-cli check` |
+| Lint gate (NEW-vs-baseline) + cargo-link rot guard | `vibeos-cli check [--strict]` |
+| Prove a cargo-driven ntdll DLL boots (runtime gate) | `vibeos-cli cargo-swap` |
 | Interactive/ad-hoc single GDB op on a live run-id | `qemu/inspect.sh` (or `vibeos-cli debug inspect`) |
 | Raw interactive launcher (serial/GUI/`--debug`) | `qemu/run.sh` |
 | What's live across worktrees | `vibeos-cli ps` (== `qemu/ps`) |
