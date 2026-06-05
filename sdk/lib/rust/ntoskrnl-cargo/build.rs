@@ -1,7 +1,9 @@
 //! Cargo-driven `ntoskrnl.exe` link (i386). Manifest for the shared
 //! `reactos-link` engine — all machinery lives there.
 //!
-//! cmake still owns the ~20 sibling static libs; run `ninja ntoskrnl`
+//! Tier-B sibling Rust crates (rtl-rust / cnt-rust-lib) are now cargo-built
+//! by the engine via `rust_lib()`; cmake still owns the deep-C / cohab static
+//! libs (librtl.a, liblibcntpr.a, libhal.a, …). Run `ninja ntoskrnl`
 //! once first (also generates the asm includes: ks386.inc, sysfuncs.h).
 //! The asm is assembled from SOURCE `.S` by the engine (kernel asm -I
 //! chain), so there is no offline pre-expansion. Only out-of-band input:
@@ -14,6 +16,18 @@ use reactos_link::{AsmDefineSet, Linker, ModuleKind};
 fn main() {
     Linker::new("i686-kernel.json")
         .rust_staticlib("kernel-rust")
+        // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was
+        // reuse of the cmake-built librtl_rust.a / libcntpr_rust.a /
+        // libcnt_rust_lib.a). Built against the kernel json (x86-softfloat) +
+        // build-std, exactly like the main kernel-rust crate. The engine emits
+        // these AFTER the cmake C archives, preserving the required C-first cohab
+        // precedence (liblibcntpr.a / librtl.a still own the shared mem/string +
+        // not-yet-flipped Rtl* symbols). cnt-rust-lib gets the i386 -sse +
+        // class-wide `-C no-prepopulate-passes` guard from the engine, and is
+        // built WITHOUT the `float` feature (no-SSE softfloat kernel) — mirroring
+        // sdk/lib/crt/libcntpr.cmake's CNT_RUST_FEATURES="" on i386.
+        .rust_lib("rtl-rust", &[], true)
+        .rust_lib("cnt-rust-lib", &[], true)
         // 8 header-free C shims (no kernel -I; clang's own
         // stdarg/stddef/stdint suffices).
         .c_shims(&[
@@ -55,14 +69,12 @@ fn main() {
             "sdk/lib/lsalib/libntlsalib.a",
             "sdk/lib/rtl/librtl.a",
             "sdk/lib/rossym/librossym.a",
-            // cnt CRT: C liblibcntpr.a then the cnt-rust archives (ctype
-            // _isupper/_isxdigit + mem/string/printf), C-first for the
-            // --allow-multiple-definition first-match — exactly what cmake's
-            // `libcntpr` target links into ntoskrnl. (libcntpr_rust.a was
-            // missing here, surfacing as `undefined _isupper` on a cold build.)
+            // cnt CRT: only the C liblibcntpr.a here now — the cnt-rust archives
+            // (ctype _isupper/_isxdigit + mem/string/printf umbrella) are built
+            // by the engine via rust_lib("cnt-rust-lib") above and emitted after
+            // this group, preserving the C-first --allow-multiple-definition
+            // first-match cmake's `libcntpr` target relies on.
             "sdk/lib/crt/liblibcntpr.a",
-            "sdk/lib/crt/libcntpr_rust.a",
-            "sdk/lib/crt/cnt-rust-target/i686-pc-windows-gnu/release/libcnt_rust_lib.a",
             "sdk/lib/vcruntime/libsetjmp.a",
             "sdk/lib/wdmguid/libwdmguid.a",
             "sdk/lib/poguid/libpoguid.a",
@@ -71,7 +83,7 @@ fn main() {
             "drivers/base/kdrosdbg/CMakeFiles/libkdcom.dir/libkdcom.a",
             "drivers/base/bootvid/CMakeFiles/libbootvid.dir/libbootvid.a",
             "sdk/lib/crt/libchkstk.a",
-            "sdk/lib/rtl/librtl_rust.a",
+            // librtl_rust.a dropped — rtl-rust is now built by rust_lib() above.
         ])
         .link(ModuleKind::KernelExe {
             entry: "_KiSystemStartup@4".into(),
