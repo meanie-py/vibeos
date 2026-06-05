@@ -310,6 +310,7 @@ pub struct Linker {
     c_db_libs: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
+    allow_stdcall_fixup: bool,
 }
 
 impl Linker {
@@ -364,7 +365,20 @@ impl Linker {
             c_db_libs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
+            allow_stdcall_fixup: false,
         }
+    }
+
+    /// Suppress the default `--disable-stdcall-fixup`, letting lld resolve a
+    /// decorated `_Sym@N` reference against an undecorated `_Sym` definition
+    /// (its default fixup-with-warning behavior). winsrv.dll needs this: its
+    /// cmake link relies on the fixup to paper over winsrv-rust's cross-module
+    /// extern "C"-def / extern "system"-call ABI mismatches (a pre-existing
+    /// translation-quality issue). Reproduces cmake's link exactly. Do NOT use
+    /// to hide a fresh ABI bug — fix the source instead.
+    pub fn allow_stdcall_fixup(mut self) -> Self {
+        self.allow_stdcall_fixup = true;
+        self
     }
 
     /// Workspace crate (`crate-type = ["staticlib"]`) that is the module
@@ -915,9 +929,19 @@ impl Linker {
             "-Wl,--major-os-version,5",
             "-Wl,--minor-os-version,01",
             "-Wl,--allow-multiple-definition",
-            "-Wl,--disable-stdcall-fixup",
         ] {
             println!("cargo:rustc-link-arg={f}");
+        }
+        // By default disable lld's stdcall-fixup (a decorated-vs-undecorated
+        // symbol mismatch is a real ABI bug, not something to paper over). But
+        // winsrv.dll's cmake link relies on the fixup to resolve winsrv-rust's
+        // cross-module extern "C"-def vs extern "system"-call mismatches
+        // (e.g. HistoryReshapeAllBuffers) — those are a pre-existing
+        // translation-quality issue; allow_stdcall_fixup() reproduces cmake's
+        // behavior (which passes neither flag → lld default = fixup-with-warning)
+        // so the cargo link is byte-equivalent to the working cmake one.
+        if !self.allow_stdcall_fixup {
+            println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup");
         }
         // ---- kind-specific subsystem / alignment / sections ----------
         let (entry, image_base): (&String, Option<u64>) = match &kind {

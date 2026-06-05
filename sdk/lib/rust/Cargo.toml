@@ -51,6 +51,7 @@ members = [
     "services-cargo",
     "smss-cargo",
     "csrsrv-cargo",
+    "winsrv-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",

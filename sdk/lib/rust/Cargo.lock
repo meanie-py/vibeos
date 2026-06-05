@@ -747,6 +747,13 @@ name = "winlogon-sys"
 version = "0.1.0"
 
 [[package]]
+name = "winsrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "winsrv-rust"
 version = "0.1.0"
 dependencies = [
