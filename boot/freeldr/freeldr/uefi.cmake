@@ -111,18 +111,11 @@ endif()
 # rosload's freeldr.sys imports bind at runtime against uefildr's internal
 # table (not PE exports), so no spec2def(uefildr.exe) / .def is needed here.
 
-# strsafe_shim.c — header-dependent variadic RtlStringCb* shim the cargo link
-# reuses (Rust stable can't host the variadic def). add_executable(uefildr)
-# used to compile it; keep it compiled via an OBJECT lib now that the link is
-# cargo-driven. UEFIBOOT + the directory-scoped include dirs above match the
-# old add_executable(uefildr) compile env; -mno-sse matches uefifreeldr_common
-# (freeldr has no SSE), which the shim formerly inherited by linking it.
-add_library(uefildr_shim OBJECT lib/strsafe_shim.c)
-target_compile_definitions(uefildr_shim PRIVATE UEFIBOOT)
-if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
-    target_compile_options(uefildr_shim PRIVATE -mno-sse)
-endif()
-add_dependencies(uefildr_shim bugcodes xdk)
+# strsafe_shim.c (the variadic RtlStringCb* shim Rust stable can't host) is now
+# compiled directly by reactos-link via uefildr-cargo's .c_shims() — it is a
+# self-contained leaf (zero #includes; it self-defines its types + externs only
+# libcntpr's _vsnprintf), so it never needed freeldr's compile env. The old
+# `uefildr_shim` OBJECT lib is retired; -mno-sse moves to the build.rs c_shim_flags.
 
 # cmake targets whose .a/.obj the cargo link reuses — DEPENDS so `ninja
 # uefildr` builds them before invoking cargo (an opaque link).
@@ -139,7 +132,7 @@ add_dependencies(uefildr_shim bugcodes xdk)
 # reactos-link already emits cargo:rerun-if-changed for each static_lib, so once
 # ninja re-invokes cargo, the link actually re-runs.
 set(UEFILDR_EXTRA_DEPENDS
-    uefifreeldr_common uefildr_shim
+    uefifreeldr_common
     cportlib blcmlib blrtl libcntpr chkstk
     # custom-target-produced rust .a link inputs — depend on the FILES:
     rust_freeldr_uefi ${FREELDR_RUST_UEFI_LIB}

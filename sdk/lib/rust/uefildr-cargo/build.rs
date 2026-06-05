@@ -39,12 +39,13 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
-    // strsafe_shim.c.obj — the C variadic shim, compiled by the cmake OBJECT
-    // lib `uefildr_shim` (header-dependent, so reused prebuilt rather than
-    // recompiled as a header-free c_shim). Was uefildr.dir/ when add_executable
-    // owned the link; now uefildr_shim.dir/ since the link is cargo-driven.
-    let mut libs: Vec<&str> =
-        vec!["boot/freeldr/freeldr/CMakeFiles/uefildr_shim.dir/lib/strsafe_shim.c.obj"];
+    // strsafe_shim.c — the variadic RtlStringCbPrintfA shim Rust stable can't
+    // host. Despite living under freeldr's 30-include compile env in cmake, it
+    // is a self-contained LEAF: zero #includes (it self-defines NTSTATUS /
+    // va_list / STATUS_* and only externs libcntpr's `_vsnprintf`). So
+    // reactos-link compiles it directly via .c_shims() below — no cmake OBJECT
+    // lib (`uefildr_shim`), no fragile reused-.obj path into the freeldr env.
+    let mut libs: Vec<&str> = Vec::new();
 
     // Per-arch link knobs (verbatim from each build-<arch>/build.ninja's
     // uefildr.efi LINK_FLAGS):
@@ -83,13 +84,19 @@ fn main() {
         "sdk/lib/crt/libcntpr_rust.a",
     ]);
 
-    Linker::new(target_json)
+    let mut linker = Linker::new(target_json)
         // No .rust_staticlib(): reuse the cmake-built libfreeldr_rust_uefi.a
         // (identical codegen + carries the uefi/uefildr-rust-entry features).
         .static_libs(&libs)
-        .link(ModuleKind::EfiApplication {
-            entry: entry.into(),
-            image_base,
-            alignment,
-        });
+        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
+    // freeldr runs pre-boot with SSE not yet enabled — an emitted movaps would
+    // #UD. Match uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).
+    if arch == "x86" || arch == "x86_64" {
+        linker = linker.c_shim_flags(&["-mno-sse"]);
+    }
+    linker.link(ModuleKind::EfiApplication {
+        entry: entry.into(),
+        image_base,
+        alignment,
+    });
 }

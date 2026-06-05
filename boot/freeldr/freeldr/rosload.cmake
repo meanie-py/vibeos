@@ -9,11 +9,10 @@ spec2def(rosload.exe rosload.spec)
 
 list(APPEND ROSLOAD_SOURCE
     include/freeldr.h
-    # strsafe_shim.c — variadic RtlStringCbPrintfA out-of-line shim;
-    # the Rust freeldr-rust crate can't host a variadic def on stable
-    # (same constraint as freeldr_pe.exe / uefildr.efi). Compiled into
-    # rosload.exe directly, matching FREELDR_BASE_SOURCE in CMakeLists.txt.
-    lib/strsafe_shim.c
+    # strsafe_shim.c (variadic RtlStringCbPrintfA shim) is now compiled directly
+    # by reactos-link via rosload-cargo's .c_shims() — a self-contained leaf, no
+    # freeldr compile env needed. rosload_objs below is now ONLY the per-arch asm.
+    # lib/strsafe_shim.c
     # Cohabitation: each .c below is replaced by its Rust translation in
     # libfreeldr_rust_rosload.a (--features rosload). .c kept on disk.
     # bootmgr.c          # replaced by Rust (freeldr-rust/src/bootmgr.rs)

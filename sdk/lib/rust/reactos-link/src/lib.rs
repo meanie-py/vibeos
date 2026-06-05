@@ -240,6 +240,11 @@ pub struct Linker {
     /// build-std compiles core/alloc once.
     rust_libs: Vec<(String, Vec<String>, bool)>,
     c_shims: Vec<String>,
+    /// Extra clang flags applied to every `c_shims` compile (on top of
+    /// `apply_base`). Used for module-specific codegen requirements the kernel
+    /// default doesn't carry — e.g. freeldr's `-mno-sse` (the pre-boot
+    /// environment hasn't enabled SSE, so an emitted `movaps` would #UD).
+    c_shim_flags: Vec<String>,
     asm: Vec<String>,
     asm_set: AsmDefineSet,
     resource: Option<String>,
@@ -293,6 +298,7 @@ impl Linker {
             rust_features: Vec::new(),
             rust_libs: Vec::new(),
             c_shims: Vec::new(),
+            c_shim_flags: Vec::new(),
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
             resource: None,
@@ -344,6 +350,14 @@ impl Linker {
     /// define set + clang's own stdarg/stddef only.
     pub fn c_shims(mut self, rels: &[&str]) -> Self {
         self.c_shims = rels.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Extra clang flags for the `c_shims` compiles (e.g. freeldr's `-mno-sse`).
+    /// The caller is responsible for arch-validity (don't pass `-mno-sse` on
+    /// aarch64). Chainable; applies to ALL shims in this `c_shims` set.
+    pub fn c_shim_flags(mut self, flags: &[&str]) -> Self {
+        self.c_shim_flags = flags.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -479,6 +493,9 @@ impl Linker {
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
             b.file(&abs).out_dir(self.obj_dir()).flag("-std=gnu2x");
+            for f in &self.c_shim_flags {
+                b.flag(f);
+            }
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }
