@@ -623,6 +623,30 @@ fn main() {
         // path. fabsf.c sets the quiet bit unconditionally. Renamed → ref_*.
         ("fabs", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabs ref_fabs\n{}", inc(s("math/fabs.c")))),
         ("fabsf", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabsf ref_fabsf\n{}", inc(s("math/fabsf.c")))),
+        // Wave MATH-TIERC sub-wave 7: modf = an exact integer/fraction split
+        // (no FP rounding). Self-contained C faithful to math/libm_sse2/modf.c
+        // (the GET/PUT_BITS_DP64 union-based bit moves inlined) so it needs
+        // none of the AMD libm.h headers. Exact ⇒ bit-exact vs the Rust.
+        ("modf", "double ref_modf(double x, double *iptr){\
+            union {double d; unsigned long long i;} u; long long xexp;\
+            unsigned long long ux, ax, mask;\
+            u.d = x; ux = u.i; ax = ux & 0x7fffffffffffffffULL;\
+            if (ax >= 0x4340000000000000ULL){\
+                if (ax > 0x7ff0000000000000ULL){ *iptr = x; return x + x; }\
+                *iptr = x; u.i = ux & 0x8000000000000000ULL; return u.d;\
+            } else if (ax < 0x3ff0000000000000ULL){\
+                u.i = ux & 0x8000000000000000ULL; *iptr = u.d; return x;\
+            }\
+            xexp = ((ux & 0x7ff0000000000000ULL) >> 52) - 1023;\
+            mask = 1; mask = (mask << (52 - xexp)) - 1;\
+            u.i = ux & ~mask; *iptr = u.d; return x - u.d;\
+        }".to_string()),
+        // Wave MATH-TIERC sub-wave 7: atan/atan2 = the genuine portable
+        // fdlibm math/arm64/{atan,atan2}.c (the algorithm flipped uniformly).
+        // Both compiled in ONE TU (atan.c first so ref_atan is defined before
+        // atan2.c's call). fabs stays host (bit-exact, only hit on the finite
+        // domain). Renamed → ref_atan / ref_atan2; bit-exact vs the Rust.
+        ("atan", format!("#include <math.h>\n#define atan ref_atan\n#define atan2 ref_atan2\n{}\n{}", inc(s("math/arm64/atan.c")), inc(s("math/arm64/atan2.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which
