@@ -25,7 +25,11 @@ NINJA_RULE='win32k.dir/user/ntuser/main.c.obj:'
 # Function allowlist covers the win32k-internal naming families; the
 # ntoskrnl APIs win32k also calls (Ex/Ke/Mm/Ob/Ps/Rtl/Zw/Nt) stay in
 # ntkrnl-sys to avoid duplicate-symbol noise across the two crates.
-FN_ALLOW='(Nt|Zw)?(User|Gdi)[A-Za-z0-9_]*|Int[A-Z][A-Za-z0-9_]*|co_[A-Za-z0-9_]*|Gre[A-Z][A-Za-z0-9_]*|Eng[A-Z][A-Za-z0-9_]*|User[A-Z][A-Za-z0-9_]*|GDIOBJ[A-Za-z0-9_]*|Hmg[A-Za-z0-9_]*|(DC|REGION|PATH|TEXTOBJ|BRUSH|SURFACE|PDEVOBJ|PALETTE|XLATEOBJ|BITMAP|LFONT|RFONT)_[A-Za-z0-9_]*'
+# FT_/TT_ added: win32k.h includes FreeType, so win32k struct layouts already
+# embed FT_* types (131 fields). freetype.c's FT functions must live in the same
+# crate as those types — a separate crate cross-crate-mismatches at every
+# struct-field -> FT-function boundary. So win32k-sys owns the FreeType surface.
+FN_ALLOW='(Nt|Zw)?(User|Gdi)[A-Za-z0-9_]*|Int[A-Z][A-Za-z0-9_]*|co_[A-Za-z0-9_]*|Gre[A-Z][A-Za-z0-9_]*|Eng[A-Z][A-Za-z0-9_]*|User[A-Z][A-Za-z0-9_]*|GDIOBJ[A-Za-z0-9_]*|Hmg[A-Za-z0-9_]*|(DC|REGION|PATH|TEXTOBJ|BRUSH|SURFACE|PDEVOBJ|PALETTE|XLATEOBJ|BITMAP|LFONT|RFONT)_[A-Za-z0-9_]*|FT_[A-Za-z0-9_]*|TT_[A-Za-z0-9_]*'
 
 run_bindgen() {
     local ARCH=$1 TARGET=$2 BUILD_DIR="${SRC}/build-$1"

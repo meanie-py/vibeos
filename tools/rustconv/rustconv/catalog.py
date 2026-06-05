@@ -289,6 +289,7 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
             if s.name not in catalog.functions:
                 catalog.functions[s.name] = s
 
+
     # Also scan bindgen_common.rs
     common_path = NTKRNL_SYS_DIR / "bindgen_common.rs"
     if common_path.exists():

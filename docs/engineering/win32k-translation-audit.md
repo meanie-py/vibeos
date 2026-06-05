@@ -1,11 +1,17 @@
 # Win32k C→Rust Translation Audit
 
-Last updated 2026-05-16. **Status: pretranslation COMPLETE; bulk
-C→Rust translation not yet started.** No Rust win32k *translation*
-code exists yet, but the substrate and the de-risking pre-work are
-done (see "Pretranslation: what actually landed" below). This audit
-defines the keep-set, the (corrected) prune-set, the translation
-order, and the rustconv configuration for the bulk translation phase.
+Last updated **2026-06-01**. **Status: Phase 1 (handle tables) DONE;
+Phase 2 (GDI half) ~80% landed and smoke-green ×3; Phase 3 (USER half)
+not started.** The "bulk translation not yet started" premise of the
+2026-05-16 draft is obsolete — **79 Rust modules (~108K LOC) are in the
+tree and 72 C files are cohabitation-flipped.** See **"Landed reality —
+2026-06-01"** immediately below; the planning sections that follow are
+kept for the parts still ahead (USER half, typestate API, cleanup) and
+annotated where superseded.
+
+This audit defines the keep-set, the (corrected) prune-set, the
+translation order, and the rustconv configuration for the bulk
+translation phase.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
@@ -50,6 +56,87 @@ design.** What actually exists:
 See [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md)
 for the full landed inventory. The rest of this document is updated to
 match that reality.
+
+## Landed reality — 2026-06-01
+
+This section is the **source of truth for what's translated**; the
+planning sections below (TL;DR, Phasing, Forward path) predate the work
+and are now annotated/superseded where they disagree.
+
+### Headline numbers
+
+| Metric | Value |
+|---|---|
+| Rust modules in `win32k-rust/src/` | **79** (`.rs`) |
+| Rust LOC | **~108,600** |
+| C files cohabitation-flipped (commented in `win32ss/CMakeLists.txt`) | **72** |
+| Smoke status | **green ×3** (i386/amd64/arm64), 0 unexpected ud2 |
+
+Flipped C by subsystem: **dib 12, eng 36, ntgdi 23, ntuser 1**.
+
+### Phase status (vs the original plan)
+
+- **Phase 1 — handle tables: ✅ DONE.** `gdiobj.rs` (GDI handle table,
+  the dependency hub) and `object.rs` (USER object/handle table,
+  `user/ntuser/object.c` flipped under "Phase 1b") are both live and
+  smoke-green. This was the planned crown jewel — GDI handle lifecycle
+  is now Rust.
+- **Phase 1.5 — typestate API (`UserLock`/`CoRef`/`CoCallout`): ⏳ NOT
+  STARTED.** Not needed for GDI; it gates Phase 3 (USER). Still owed —
+  design lives in `qemu/~temp-chat-consolidated.md` §6 (must be promoted
+  into `docs/engineering/` before Phase 3, per the header warning).
+- **Phase 2 — GDI half: 🟢 ~80% DONE.**
+  - `gdi/eng/` — **effectively complete** (36/37 flipped; only
+    `drvdbg.c` remains, and `drvdbg.rs` already exists). The Graphics
+    Engine / DDI surface is Rust.
+  - `gdi/dib/` — **effectively complete** (12/13; only `dib_new.c` left).
+    All per-bit-depth renderers (1/4/8/16/24/32bpp + alphablend /
+    floodfill / stretchblt / transblt) are Rust.
+  - `gdi/ntgdi/` — **~60% done.** Geometry/coord/DC-lifecycle/region/
+    palette/pen/clip-region/bitmap/DIB-object tiers are flipped. **16
+    standalone files remain (~16K LOC)** — see "Remaining GDI work".
+- **Phase 3 — USER half (`user/ntuser/`, ~73K LOC): 🔴 NOT STARTED**
+  beyond the `object.c` handle table. This is the hard half (callouts,
+  message queues, hooks) and the bulk of the work left.
+
+### Wave naming as it actually happened
+
+Commit tags use **Phase 2a (eng) → 2b (dib) → 2c (ntgdi)**, i.e. GDI was
+done **bottom-up**: engine + renderers first, syscall-level ntgdi last.
+The 2c ntgdi work proceeded in "geometry/object waves" (waves 1–9 to
+date): bezier/dcattr → arc/stockobj/xformobj/utils → drawing/line/
+fillshap → rect/polyfill → DC-lifecycle (dcstate/dcobjs/dclife/dcutil)
+→ region algebra → pen/coord → palette → cliprgn+bitmaps → dibobj.
+
+### Remaining GDI work (finishes Phase 2)
+
+16 standalone `gdi/ntgdi/*.c` files, ~16K LOC:
+
+| File | LOC | Notes |
+|---|---:|---|
+| `freetype.c` | 7,917 | FreeType **glue** — FFI against `win32k_sys::FT_*` (46 syms already in win32k-sys). Vendor FreeType stays C. The single biggest remaining file; not split (single TU by design). |
+| `font.c` | 1,267 | Font management |
+| `path.c` | 1,131 | Path objects (post-split parent; `path.split2/3.c` flip with it) |
+| `bitblt.c` | 929 | ntgdi-level BitBlt syscalls (distinct from the already-flipped `eng/bitblt.c`) |
+| `gdidbg.c` / `gdikdbgext.c` | 806 / 368 | GDI debug + kdbg extension (debug-only) |
+| `d3dkmt.c` | 716 | D3D kernel thunk |
+| `text.c` | 603 | Text-out syscalls |
+| `gdibatch.c` | 533 | GDI batch flush (amd64 quirk noted below) |
+| `icm.c` / `gdipool.c` / `print.c` / `wingl.c` / `metafile.c` / `init.c` / `device.c` | ≤425 each | Color mgmt, pool, print, OpenGL stub, metafile, init, device |
+
+Plus `gdi/eng/drvdbg.c` and `gdi/dib/dib_new.c` (the two near-complete
+subsystems' stragglers). Methodology is proven on all of these shapes;
+they are bulk-rustconv + cohabitation-flip + smoke-gate, same as waves
+1–9. `freetype.c` is the one that needs care (FT_* shape-matching).
+
+### Known stale annotation (cleanup owed)
+
+`win32ss/CMakeLists.txt` still tags `device.rs` as **"INTEGRATED +
+FAILING (i386 smoke hangs pre-`shell ready`)"**. That hang was **fixed**
+(`20bc456b6d0` DC_bIsBitmapCompatible flexible-array index = the
+InitializeClasses hang, plus the FillSolid/EngEraseSurface i386 dup-ABI
+ud2 fix). i386 now smokes green with `device.rs` live — the cmake
+annotation should be downgraded to plain cohabitation on the next touch.
 
 ## TL;DR
 
@@ -559,33 +646,52 @@ Mirroring the HAL/FreeLDR audits' forward-path shape:
    enforcement** (`abi_map.py`+`enforce_win32k_abi`) — calling
    convention is now deterministically *enforced*, not just
    `verify_abi`-checked post-hoc.
-3a. **REMAINING GATE: smoke-harness enhancements** (in progress per
-   user) — finish before bulk translation kicks off. This is now the
-   *only* blocker between here and Phase 1.
-4. **Phase 1 — handle tables.** Translate `gdiobj.c` (GDI handle
-   table — dependency hub by *role*, not size) + USER object table.
-   Smoke. **2–3 sessions.**
-5. **Phase 1.5 — typestate API design.** Implement `UserLock`,
-   `CoRef<T>`, `CoCalloutContext`, `CoCallout` per
-   `~temp-chat-consolidated.md` §6. Spike on `co_IntClientLoadLibrary`.
-   **2–3 sessions.**
-6. **Phase 2 — GDI half.** Bulk rustconv over `gdi/{ntgdi,eng,dib}`.
-   Per-file smoke-gated flip. **5–8 sessions.**
-7. **brush.cpp port.** One-off. **0.5 session.**
-8. **Phase 3 — USER half.** Bulk rustconv over `user/ntuser`.
-   Per-file smoke-gated flip. **5–8 sessions.**
-9. **Per-arch verification.** All 3 arches green on smoke + post-shell
-   assertions. **Continuous through 6/8.**
-10. **Cleanup.** Retire C `win32ss/` directory. Switch the cmake build
-    to consume `win32k-rust` cdylib. **1 session.**
+3a. ~~**REMAINING GATE: smoke-harness enhancements.**~~ Translation
+   proceeded; per-file smoke-gating (the cohabitation flip + `shell
+   ready` marker + screenshot) has been the working safety net across
+   waves 1–9. Further post-`shell ready` assertions remain *desirable*
+   but are no longer a hard blocker.
+4. ~~**Phase 1 — handle tables.**~~ **✅ DONE.** `gdiobj.rs` (GDI table)
+   + `object.rs` (USER table, `ntuser/object.c` flipped) live + green.
+5. **Phase 1.5 — typestate API design.** ⏳ **STILL OWED — gates Phase
+   3.** Implement `UserLock`, `CoRef<T>`, `CoCalloutContext`, `CoCallout`
+   per `~temp-chat-consolidated.md` §6 (promote that file into
+   `docs/engineering/` first). Spike on `co_IntClientLoadLibrary`.
+   **2–3 sessions.** GDI did not need this; USER does.
+6. **Phase 2 — GDI half.** 🟢 **~80% DONE** (eng + dib effectively
+   complete; ntgdi geometry/object tiers flipped). **Remaining: 16
+   `ntgdi/*.c` (~16K LOC, incl. the 7.9K `freetype.c` glue) + `drvdbg.c`
+   + `dib_new.c`** — see "Remaining GDI work". **~2–4 sessions** to
+   close, `freetype.c` being the long pole.
+7. **brush.cpp port.** ⏳ **STILL PENDING** — `gdi/ntgdi/brush.cpp` (the
+   only C++ file, ~605 LOC) is still active C in CMakeLists (line ~359);
+   `brushbody.rs` is unrelated (brush pattern/body, not the C++ class).
+   Translate to a Rust `struct BRUSH` + `impl` as a one-off. **0.5 session.**
+8. **Phase 3 — USER half (`user/ntuser`, ~73K LOC).** 🔴 **NOT STARTED.**
+   The hard half — callouts, message queues, hooks, window-create chain.
+   Needs Phase 1.5 first, then bulk rustconv sequenced by dependency
+   depth (leaf modules → message/hook/window-create last). **5–8 sessions.**
+9. **Per-arch verification.** All 3 arches green on smoke. **Continuous.**
+10. **Cleanup.** Retire the C `win32ss/` kernel-mode tree; flip the
+    `--allow-multiple-definition` cohabitation to Rust-only. Downgrade
+    the stale `device.rs` "FAILING" cmake annotation. **1 session.**
 
-**Total: ~17–25 sessions = 4–6 months of focused work** (calendar,
-not effort). User-mode DLLs (Phase N+1) are out of scope.
+**Remaining estimate: ~10–16 sessions** (Phase 2 finish ~2–4, Phase 1.5
+~2–3, Phase 3 ~5–8, cleanup ~1). The GDI half — the methodology
+bake-in — is essentially proven; **USER is the bulk of what's left.**
+User-mode DLLs (user32/gdi32/imm32/winsrv) remain out of scope (Phase N+1).
 
 ## Definition of done
 
+> **Progress (2026-06-01):** the build/smoke/ud2 criteria below already
+> hold for the **flipped subset** — `win32k-rust` builds ×3, smoke is
+> green ×3, `scan_ud2 --check` is clean. They are not yet "done" for the
+> *whole* binary because Phase 2 GDI has ~16 files left and Phase 3 USER
+> is untouched. The list is the end-state bar; treat unchecked items as
+> "true for what's flipped, pending for the rest."
+
 - `cargo build -p win32k-rust --target <arch>` produces a working
-  `win32k.sys` for all three arches.
+  `win32k.sys` for all three arches. — **✅ holds today (flipped subset).**
 - All three smoke tests pass on the cargo-driven binary, including
   the new post-`shell ready` assertions (cursor, taskbar paint,
   window-create cycle).

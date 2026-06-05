@@ -56,6 +56,8 @@ pub mod engbrush;   pub mod engmisc;  pub mod engwindow;
 pub mod mapping;    pub mod mem;     pub mod pandisp;
 pub mod pathobj;    pub mod rlecomp;  pub mod transblt;
 pub mod bitblt;     pub mod gradient;
+pub mod ntbitblt;   // [Phase 2c wave 20: ntgdi/bitblt.c TU — 20 fns (Nt* blt/rgn/pixel syscalls)]
+pub mod freetype;   // [Phase 2c wave 21: ntgdi/freetype.c — 122 fns, FreeType font engine; uses ft-sys]
 // ── Wave 2 deferred-mods sweep — try the 6 with minimal extern statics ──
 // Earlier "RED" bisects on these were under the CGU-shift confound (the
 // engevent.rs unconditional raw-dylib was the real culprit, not the wave-2
@@ -126,6 +128,12 @@ pub mod stockobj; pub mod arc; pub mod xformobj;
 // coord chain), fillshap (NtGdi{Ellipse,Rectangle,RoundRect,PolyPolyDraw,
 // GradientFill,ExtFloodFill} + IntGdiPolygon, user-POINT[] probe paths).
 pub mod drawing; pub mod line; pub mod fillshap;
+// Phase 2c geometry wave 24: GDI batch-flush processor (gdibatch.c).
+// DoDeviceSync / SynchronizeDriver / GdiFlushUserBatch (FASTCALL dual-cfg)
+// + NtGdiFlush / NtGdiFlushUserBatch (stdcall). Full switch (9 cases) translated.
+pub mod gdibatch;
+pub mod gdidbg;     // [Phase 2c wave 25: ntgdi/gdidbg.c — GDI debug machinery (DBG on)]
+pub mod gdikdbgext; // [Phase 2c wave 26: ntgdi/gdikdbgext.c — KDBG GDI debugger-ext commands]
 // Phase 2c geometry wave 4: region algebra — region.c + split2/3/4 = one TU,
 // 68 fns (REGION_* rect-set algebra, edge-table polygon scan-conversion,
 // NtGdi{CombineRgn,Create*Rgn,EqualRgn,ExtCreateRegion,GetRegionData,...}).
@@ -156,6 +164,41 @@ pub mod bitmaps;
 // (NtGdi{Set,Get,Stretch}DIBits*Internal, NtGdiCreateDIB{itmap,Section}Internal,
 // DIB_CreateDIBSection, CreateDIBPalette, DIB_* helpers). dibobj.c + split2 = one TU.
 pub mod dibobj;
+// text.rs — Phase 2c wave 10: text query tier (NtGdiGetText{ExtentExW,Extent,
+// FaceW,MetricsW,CharsetInfo}, NtGdiGetCharSet, NtGdiGetRasterizerCaps,
+// NtGdiSetTextJustification, Gre{TextOutW,GetTextExtent{,Ex}W,GetTextMetricsW}).
+pub mod text;
+// icm.rs — Phase 2c wave 11: ICM color-management tier (NtGdi{Create,Delete}ColorSpace,
+// NtGdiSet{ColorSpace,IcmMode}, NtGdi{Get,Set}DeviceGammaRamp + Int* helpers).
+pub mod icm;
+// gdipool.rs — Phase 2c wave 12: GDI pool allocator (GdiPool{Allocate,Free,Create,Destroy}
+// + section helpers) — Zw virtual-mem backed slab over a per-pool push lock.
+pub mod gdipool;
+// metafile.rs — Phase 2c wave 13: server metafile object tier (NtGdiCreateMetafileDC,
+// NtGdiCreate/GetServerMetaFile{,Bits}, NtGdiConvertMetafileRect over GDIOBJ_*).
+pub mod metafile;
+// wingl.rs — Phase 2c wave 14: WinGL/pixel-format tier (NtGdiDescribePixelFormat,
+// NtGdiSetPixelFormat, NtGdiSwapBuffers) dispatching through PDEVOBJ DriverFunctions.
+pub mod wingl;
+// init.rs — Phase 2c wave 15: GDI process/thread callouts + InitializeGreCSRSS +
+// NtGdiInit (boot-critical, exercised every process create).
+pub mod init;
+// print.rs — Phase 2c wave 16: GDI print/escape tier (NtGdiExtEscape + NtGdiEscape
+// + Doc/Page stubs) dispatching through PDEVOBJ DriverFunctions.Escape.
+pub mod print;
+// gdidev.rs — Phase 2c wave 17: ntgdi/device.c primary-surface tier
+// (IntCreatePrimarySurface/Destroy/EnumHDev + NtGdiDrawEscape + defaultDCstate).
+// Named gdidev (not device) to avoid colliding with the eng-tier device.rs below.
+pub mod gdidev;
+// path.rs — Phase 2c wave 18 WIP (NOT flipped): GDI path tier translated (61 fns;
+// PATH_* geometry + Nt*Path syscalls; FP guarded by KeSave/RestoreFloatingPointState;
+// path.c + split2/3 = one TU). Integration in progress: 262->82 compile errors driven
+// down (all mechanical POINT/POINTL + int-signedness casts remain) + a link phase
+// (TRACE/GDI_HANDLE_GET_TYPE macro-externs, FASTCALL ABIs, gef1/libm symbols). Re-enable
+// `pub mod path;` + flip path.c in CMakeLists to resume. COMPILE now clean x3
+// (262->0); remaining is the documented link phase (see header of path.rs).
+pub mod path;
+pub mod font;  // [Phase 2c wave 19: font tier — 21 fns, flip gdi/ntgdi/font.c]
 // device.rs — 3 critical stubs resurrected 2026-05-28: EngpHasVgaDriver,
 // EngpUpdateGraphicsDeviceList, EngpRegisterGraphicsDevice. Compiles all 3
 // arches; INTEGRATED + FAILING, kept in tree per AGENTS.md ("a broken Rust
@@ -182,6 +225,8 @@ pub mod dibobj;
 // Next decisive step: rebuild-bisect (stub bodies to no-ops, keep this mod) to
 // separate pure-cgu-shift from body-bug, then chase the partition.
 pub mod device;
+pub mod d3dkmt;  // [Phase 2c wave 22: ntgdi/d3dkmt.c — 56 fns, D3DKMT dxgkrnl thunk layer]
+pub mod brush;   // [Phase 2c wave 23: ntgdi/brush.cpp — BRUSH object (C++→Rust, hand-translated)]
 // ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
 // pub mod ldevobj;
 

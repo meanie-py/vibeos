@@ -48,6 +48,7 @@ WIN32K_BINDGEN_FILES = {
     "i386": WIN32K_SYS_DIR / "bindgen_i386.rs",
 }
 
+
 # SMSS→CSRSS user-mode subsystem spine + its dedicated FFI crate
 # (ntkrnl-sys analog for *user mode*). These native processes link
 # ntdll, not the kernel — ntdll-sys is their primary "ddk" surface
