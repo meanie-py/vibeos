@@ -22,6 +22,9 @@ pub mod types;
 // lock.c — ScmAcquire/Release/QueryServiceLockStatus{W,A}.
 pub mod lock;
 
+// controlset.c — Current/LKG control-set management + boot acceptance.
+pub mod controlset;
+
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
 #[panic_handler]

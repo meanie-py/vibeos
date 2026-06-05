@@ -13,7 +13,7 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/svcctl.idl)
 # keeps a TU always compiled so the linker extracts the archive members.
 list(APPEND SOURCE
     config.c
-    controlset.c
+    # controlset.c — replaced by Rust (services-rust/src/controlset.rs)
     database.c
     driver.c
     groupdb.c
@@ -58,6 +58,7 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/services-rust/src/lib.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/types.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/lock.rs
+        ${RUST_WORKSPACE_DIR}/services-rust/src/controlset.rs
         ${RUST_WORKSPACE_DIR}/services-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winsrv-sys/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs

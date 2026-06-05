@@ -4,6 +4,32 @@
 
 use winsrv_sys::winsrv::*;
 
+/// `wstr!("Foo")` → a `&'static [u16]` NUL-terminated UTF-16 literal (ASCII
+/// only — sufficient for the SCM's registry path/value names). Avoids the
+/// align-1 `b"...".as_ptr() as *mut u16` misalignment hazard and the lack of a
+/// wide-string literal in core. `.as_ptr()` on the result is a stable pointer
+/// (the inner `const` is promoted to 'static).
+#[macro_export]
+macro_rules! wstr {
+    ($s:literal) => {{
+        const BYTES: &[u8] = $s.as_bytes();
+        const N: usize = BYTES.len() + 1;
+        const ARR: [u16; N] = {
+            let mut a = [0u16; N];
+            let mut i = 0;
+            while i < BYTES.len() {
+                a[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            a
+        };
+        &ARR as &[u16]
+    }};
+}
+
+// Predefined registry root handles (winreg.h) — not in winsrv-sys bindgen.
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
+
 // services.h
 pub const LOCK_TAG: u32 = 0x4C697041; // 'ApiL'
 
