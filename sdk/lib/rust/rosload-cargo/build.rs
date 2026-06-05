@@ -40,11 +40,11 @@ fn main() {
             "_RunLoader",
             vec![
                 // i386 objects: drvmap is gcc-compiled (16-bit asm), the rest
-                // clang-compiled into rosload.dir.
+                // clang-compiled by the cmake OBJECT lib `rosload_objs`.
                 "boot/freeldr/freeldr/drvmap_gcc.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload.dir/lib/strsafe_shim.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload.dir/__/__/__/ntoskrnl/config/cmboot.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload.dir/arch/i386/linux.S.obj",
+                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/lib/strsafe_shim.c.obj",
+                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/__/__/__/ntoskrnl/config/cmboot.c.obj",
+                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/i386/linux.S.obj",
                 // i386 mini-HAL linked BEFORE the freeldr libs (rosload.cmake
                 // `if(ARCH STREQUAL i386)`).
                 "hal/halx86/minihal/libmini_hal.a",
@@ -55,10 +55,10 @@ fn main() {
             "x86_64-kernel.json",
             "RunLoader",
             vec![
-                "boot/freeldr/freeldr/CMakeFiles/rosload.dir/lib/strsafe_shim.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload.dir/__/__/__/ntoskrnl/config/cmboot.c.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload.dir/arch/amd64/misc.S.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload.dir/arch/amd64/linux.S.obj",
+                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/lib/strsafe_shim.c.obj",
+                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/__/__/__/ntoskrnl/config/cmboot.c.obj",
+                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/amd64/misc.S.obj",
+                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/amd64/linux.S.obj",
             ],
         ),
         other => panic!("rosload-cargo: unsupported arch {other} (i386/amd64 only; arm64 is UEFI-only, no rosload)"),

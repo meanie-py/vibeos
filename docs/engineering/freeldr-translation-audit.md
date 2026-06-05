@@ -282,6 +282,20 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
    [i386|amd64]`, `RUN_SMOKE=1`; 7-pass, the lone `test_idle_cpu_not_spinning`
    red is the pre-existing idle-spin gate, not rosload). With this, BOTH
    freeldr link binaries (`uefildr.efi` + `rosload.exe`) are cargo-driven.
+9. **uefildr + rosload now wired into the MAIN cmake build (2026-06-04) —
+   cmake's loader link RETIRED.** The two `add_executable` links are gone;
+   `boot/freeldr/freeldr/{uefi,rosload}.cmake` call
+   `add_cargo_module(... KIND efi|native …)` (the generalized
+   `add_cargo_kernel_dll` helper in `sdk/cmake/gcc.cmake`). The
+   header-dependent objects the cargo link reuses (uefildr: `strsafe_shim`;
+   rosload: `strsafe_shim`+`cmboot`+asm) are kept compiled via OBJECT libs
+   (`uefildr_shim` / `rosload_objs`) — the `-cargo` build.rs read from
+   `<objlib>.dir/`. `boot/boot_images.cmake` was updated to embed uefildr.efi
+   into the efisys image (and the efi/boot CD copy) by PATH + a `DEPENDS
+   uefildr` (a custom_target has no `$<TARGET_FILE:>`). Cold smoke green ×3
+   (i386/amd64: cargo uefildr + cargo rosload together — the first time both
+   cargo loader binaries boot in the same image; arm64: cargo uefildr, no
+   rosload). With kdcom/bootvid, FOUR modules' cmake links are now retired.
 
 ---
 
@@ -290,18 +304,18 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 - ✅ `freeldr-rust` produces working `uefildr.efi` (+ `rosload.exe`) for
   all three arches; all three smoke tests boot through it via UEFI.
 - ✅ `arm64vid-rust` / `framebuf-rust` flipped, 3-arch, smoke green.
-- ⬜ `kdcom-rust` / `bootvid-rust` integrated into the default build (not
-  just the cargo PoC) and smoke-green.
+- ✅ `kdcom-rust` / `bootvid-rust` integrated into the default build (cargo
+  link via `add_cargo_kernel_dll`, cmake link retired) and cold-smoke-green ×3.
 - ⬜ `tools/scan_ud2.py --check` clean against each boot artifact.
 - ⬜ Dead trees deleted: `boot/freeldr/bootsect/`, unused KD transports.
-- 🚧 (Stretch) cmake C `uefildr`/`rosload` retired in favour of a cargo
-  `bin`, allowing `boot/freeldr/freeldr/` C to be removed. BOTH freeldr link
-  binaries are now cargo-driven via `reactos-link`: `uefildr-cargo` links a
-  PE-header-identical `uefildr.efi` on **all 3 arches** (`EfiApplication`),
-  and `rosload-cargo` links a PE-header-identical `rosload.exe` on **i386 +
-  amd64** (`NativeExe`; arm64 is UEFI-only, no rosload). Both boot to desktop
-  under smoke. Remaining: drive these from the main build (not just the
-  PoC scripts) so the cmake links can actually be turned off.
+- ✅ (was Stretch) cmake C `uefildr`/`rosload` link retired in favour of the
+  cargo-driven link, **wired into the main build** (2026-06-04): cmake's
+  `add_executable` for both is gone; `add_cargo_module` drives the link
+  (`uefildr-cargo` EfiApplication ×3 arch; `rosload-cargo` NativeExe i386+amd64,
+  arm64 has no rosload). Cold smoke green ×3. Remaining cleanup: the
+  `boot/freeldr/freeldr/` C source files the Rust bodies replaced are still on
+  disk (never-delete rule) — a future `git rm` pass once the cargo path is the
+  settled canonical.
 
 ## What this audit doesn't measure
 

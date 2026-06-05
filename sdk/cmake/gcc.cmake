@@ -564,27 +564,40 @@ function(fixup_load_config _target)
         DEPENDS native-pefixup)
 endfunction()
 
-## Drive a kernel-mode PE module's FINAL LINK from cargo (the
-## sdk/lib/rust/<crate> reactos-link manifest) instead of cmake's own
-## add_library(MODULE) link. This is the first step of "turning off the
-## cmake link": cargo produces the shipping .dll; cmake keeps only what the
-## rest of the tree needs — the import lib (declare spec2def(... ADD_IMPORTLIB)
-## BEFORE calling this), boot-media registration, and the kernel-dll
-## post-link (native-pefixup --kerneldll, + the i386 forwarder fix).
+## Drive a PE module's FINAL LINK from cargo (the sdk/lib/rust/<crate>
+## reactos-link manifest) instead of cmake's own add_library/add_executable.
+## The "turn off the cmake link" step: cargo produces the shipping binary;
+## cmake keeps only what the rest of the tree needs (import lib via
+## spec2def(... ADD_IMPORTLIB), header-dependent objects via an OBJECT lib,
+## boot-media registration, and the kind-specific post-link).
 ##
-##   add_cargo_kernel_dll(<target> <crate> <dllname>
-##                        BODY_CRATE <rust-staticlib-crate>
-##                        [DESTINATION <cd-dir>] [NAME_ON_CD <name>])
+##   add_cargo_module(<target> <crate> <output>
+##                    [KIND kerneldll|efi|native]      (default kerneldll)
+##                    [BODY_CRATE <rust-staticlib-crate>]
+##                    [EXTRA_DEPENDS <targets/files…>]  (e.g. the OBJECT lib
+##                                                       whose .obj the link
+##                                                       reuses)
+##                    [NO_CD]                           (skip add_cd_file —
+##                                                       e.g. uefildr, which
+##                                                       boot_images embeds)
+##                    [DESTINATION <cd-dir>] [NAME_ON_CD <name>])
 ##
 ## <crate> is the cargo bin crate whose build.rs uses reactos-link and is
 ## arch-aware (i686/x86_64/aarch64-kernel.json under the crate dir); its
-## [[bin]] name must be <crate> minus the `-cargo` suffix. BODY_CRATE is the
-## rust staticlib crate the bin links (globbed for rebuild tracking). The
-## cargo build uses nightly + build-std (the custom kernel json), so the
-## build host needs the nightly toolchain — inherent to the cargo-drive path
-## (same as ntdll-cargo / uefildr-cargo / rosload-cargo).
-function(add_cargo_kernel_dll _target _crate _dllname)
-    cmake_parse_arguments(_ackd "" "DESTINATION;NAME_ON_CD;BODY_CRATE" "" ${ARGN})
+## [[bin]] name must be <crate> minus the `-cargo` suffix. The cargo build
+## uses nightly + build-std (the custom kernel json), so the build host needs
+## the nightly toolchain — inherent to the cargo-drive path.
+##
+## KIND selects the post-link (matching what cmake's set_module_type /
+## per-target POST_BUILD would have applied):
+##   kerneldll : native-pefixup --kerneldll  (+ i386 forwarder fix)
+##   efi       : strip --remove-section=.rossym  +  strip --strip-all
+##   native    : none
+function(add_cargo_module _target _crate _output)
+    cmake_parse_arguments(_acm "NO_CD" "KIND;DESTINATION;NAME_ON_CD;BODY_CRATE" "EXTRA_DEPENDS" ${ARGN})
+    if(NOT _acm_KIND)
+        set(_acm_KIND kerneldll)
+    endif()
 
     # ARCH → the crate's custom-target json stem (== cargo's output subdir).
     if(ARCH STREQUAL "i386")
@@ -594,48 +607,54 @@ function(add_cargo_kernel_dll _target _crate _dllname)
     elseif(ARCH STREQUAL "arm64")
         set(_stem "aarch64-kernel")
     else()
-        message(FATAL_ERROR "add_cargo_kernel_dll: unsupported ARCH ${ARCH}")
+        message(FATAL_ERROR "add_cargo_module: unsupported ARCH ${ARCH}")
     endif()
 
     set(_ws "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
     string(REGEX REPLACE "-cargo$" "" _bin "${_crate}")
     set(_cargo_exe "${_ws}/target/${_stem}/release/${_bin}.exe")
-    set(_dll "${CMAKE_CURRENT_BINARY_DIR}/${_dllname}")
-
-    if(NOT _ackd_DESTINATION)
-        set(_ackd_DESTINATION reactos/system32)
-    endif()
-    if(NOT _ackd_NAME_ON_CD)
-        set(_ackd_NAME_ON_CD ${_dllname})
-    endif()
+    set(_out "${CMAKE_CURRENT_BINARY_DIR}/${_output}")
 
     # Rebuild triggers: glob the bin crate (build.rs + target jsons + Cargo.toml
     # + any src), the shared reactos-link engine, and the rust body crate. A
-    # rustc-link-arg / cargo build is otherwise opaque to cmake; an incomplete
-    # DEPENDS lets a stale .dll mask a source fix (the libcntpr.cmake lesson).
+    # cargo build is otherwise opaque to cmake; an incomplete DEPENDS lets a
+    # stale binary mask a source fix (the libcntpr.cmake lesson).
     file(GLOB_RECURSE _srcs CONFIGURE_DEPENDS
         ${_ws}/${_crate}/*.rs ${_ws}/${_crate}/*.json ${_ws}/${_crate}/Cargo.toml
         ${_ws}/reactos-link/src/*.rs)
-    if(_ackd_BODY_CRATE)
+    if(_acm_BODY_CRATE)
         file(GLOB_RECURSE _bsrcs CONFIGURE_DEPENDS
-            ${_ws}/${_ackd_BODY_CRATE}/*.rs ${_ws}/${_ackd_BODY_CRATE}/Cargo.toml)
+            ${_ws}/${_acm_BODY_CRATE}/*.rs ${_ws}/${_acm_BODY_CRATE}/Cargo.toml)
         list(APPEND _srcs ${_bsrcs})
     endif()
 
-    # i386 forwarder fix mirrors set_module_type's i386-only POST_BUILD; on
-    # amd64/arm64 it's not applied there, so skip it here too (no-op anyway —
-    # these specs have no forwarders).
-    set(_fwd_fix COMMAND ${CMAKE_COMMAND} -E true)
-    if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
-        set(_fwd_fix COMMAND ${CMAKE_COMMAND} -E env python3
-            ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_dll})
+    # Kind-specific post-link (cmake passes these as the target's POST_BUILD).
+    set(_postlink)
+    set(_postdep)
+    if(_acm_KIND STREQUAL "kerneldll")
+        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kerneldll ${_out})
+        set(_postdep native-pefixup)
+        # i386-only forwarder fix mirrors set_module_type's i386-only POST_BUILD.
+        if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+            list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+        endif()
+    elseif(_acm_KIND STREQUAL "efi")
+        # Strip rossym + all (matches uefi.cmake's uefildr POST_BUILD).
+        set(_postlink
+            COMMAND ${CMAKE_STRIP} --remove-section=.rossym ${_out}
+            COMMAND ${CMAKE_STRIP} --strip-all ${_out})
+    elseif(_acm_KIND STREQUAL "native")
+        # No post-link (rosload's cmake POST_BUILD was a no-op).
+    else()
+        message(FATAL_ERROR "add_cargo_module: unknown KIND ${_acm_KIND}")
     endif()
 
     add_custom_command(
-        OUTPUT ${_dll}
+        OUTPUT ${_out}
         # cargo +nightly build-std drive of the reactos-link manifest: build.rs
-        # links the cmake-built leaf libs + self-built rust staticlib into the
-        # final PE, then we apply the same kernel-dll post-link cmake would.
+        # links the cmake-built leaf libs / reused objects + self-built rust
+        # staticlib into the final PE, then the kind post-link runs.
         COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=nightly
             cargo build --release
                 --target ${_ws}/${_crate}/${_stem}.json
@@ -643,25 +662,50 @@ function(add_cargo_kernel_dll _target _crate _dllname)
                 -Z build-std-features=compiler-builtins-mem
                 -p ${_crate} --bin ${_bin}
                 --manifest-path ${_ws}/Cargo.toml
-        COMMAND ${CMAKE_COMMAND} -E copy ${_cargo_exe} ${_dll}
-        COMMAND $<TARGET_FILE:native-pefixup> --kerneldll ${_dll}
-        ${_fwd_fix}
-        DEPENDS ${_srcs} native-pefixup
+        COMMAND ${CMAKE_COMMAND} -E copy ${_cargo_exe} ${_out}
+        ${_postlink}
+        DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS}
         WORKING_DIRECTORY ${_ws}
-        COMMENT "Cargo-linking ${_dllname} (${_stem}) [reactos-link]"
+        COMMENT "Cargo-linking ${_output} (${_stem}) [reactos-link]"
         VERBATIM)
-    add_custom_target(${_target} ALL DEPENDS ${_dll})
+    add_custom_target(${_target} ALL DEPENDS ${_out})
 
-    # add_cd_file's FILE form does NOT auto-wire the cd-target dependency (only
-    # the TARGET form does), so wire it by hand. boot/ is processed before
-    # drivers/, so livecd/bootcd already exist at the call site.
-    add_cd_file(FILE ${_dll} DESTINATION ${_ackd_DESTINATION}
-        NAME_ON_CD ${_ackd_NAME_ON_CD} NO_CAB FOR all)
-    foreach(_cd bootcd livecd bootcdregtest)
-        if(TARGET ${_cd})
-            add_dependencies(${_cd} ${_target})
+    if(NOT _acm_NO_CD)
+        if(NOT _acm_DESTINATION)
+            set(_acm_DESTINATION reactos/system32)
         endif()
-    endforeach()
+        if(NOT _acm_NAME_ON_CD)
+            set(_acm_NAME_ON_CD ${_output})
+        endif()
+        # add_cd_file's FILE form does NOT auto-wire the cd-target dependency
+        # (only the TARGET form does), so wire it by hand. boot/ is processed
+        # before drivers/, so livecd/bootcd already exist at the call site.
+        add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION}
+            NAME_ON_CD ${_acm_NAME_ON_CD} NO_CAB FOR all)
+        foreach(_cd bootcd livecd bootcdregtest)
+            if(TARGET ${_cd})
+                add_dependencies(${_cd} ${_target})
+            endif()
+        endforeach()
+    endif()
+endfunction()
+
+## Thin wrapper: a cargo-driven kernel-mode .dll (kdcom/bootvid). See
+## add_cargo_module. Keep spec2def(... ADD_IMPORTLIB) before calling (consumers
+## import the .dll's exports; the importlib is independent of this target).
+function(add_cargo_kernel_dll _target _crate _dllname)
+    cmake_parse_arguments(_ackd "" "DESTINATION;NAME_ON_CD;BODY_CRATE" "" ${ARGN})
+    set(_args KIND kerneldll)
+    if(_ackd_BODY_CRATE)
+        list(APPEND _args BODY_CRATE ${_ackd_BODY_CRATE})
+    endif()
+    if(_ackd_DESTINATION)
+        list(APPEND _args DESTINATION ${_ackd_DESTINATION})
+    endif()
+    if(_ackd_NAME_ON_CD)
+        list(APPEND _args NAME_ON_CD ${_ackd_NAME_ON_CD})
+    endif()
+    add_cargo_module(${_target} ${_crate} ${_dllname} ${_args})
 endfunction()
 
 function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_arg)
