@@ -34,6 +34,36 @@ def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
     return "timeout", buf
 
 
+def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
+    """Capture a PNG screenshot, pass OR fail, while the VM is still alive.
+
+    Screendumps a PPM then converts via PIL — NOT ImageMagick `convert`, which
+    writes a 1-bit colormap PNG for mostly-one-color frames (a bare desktop or a
+    solid BSOD), rendering as black and hiding the very state we want. Mirrors
+    conftest.py / test_smoke.py::test_screenshot. Also refreshes the canonical
+    repo screenshot (qemu/<vm_arch>_smoke.png) so "always check the screenshot"
+    points at the latest boot. Returns the PNG path (or the PPM if PIL is
+    unavailable, or None if even the screendump failed)."""
+    ppm = work / "screen.ppm"
+    try:
+        vm.screendump(ppm)
+    except Exception:
+        return None
+    png = work / "screen.png"
+    try:
+        from PIL import Image
+        img = Image.open(ppm)
+        img.save(png, "PNG")
+    except Exception:
+        return str(ppm) if ppm.exists() else None
+    try:
+        canon = repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke.png"
+        img.save(canon, "PNG")
+    except Exception:
+        pass
+    return str(png)
+
+
 def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | None,
               idx: int, total: int) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
@@ -54,27 +84,27 @@ def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | Non
     try:
         outcome, text = _watch(vm, marker, fail_on, config.boot_timeout)
         run.log(text[-8000:], header=f"{label} serial tail")
+        # Always capture a PNG screenshot (pass or fail), while the VM is alive.
+        shot = _screenshot(vm, work, repo, arch)
         if outcome == "reached":
-            return {"ok": True, "outcome": "reached", "classification": ""}
+            res = {"ok": True, "outcome": "reached", "classification": ""}
+            if shot:
+                res["screenshot"] = shot
+            return res
         # failure — gather evidence
         dbg = None
         try:
             dbg = vm.debugcon_report()
         except Exception:
             pass
-        shot = work / "screen.ppm"
-        try:
-            vm.screendump(shot)
-        except Exception:
-            shot = None
         tri = triage.classify(text, reached=False,
                               fail_marker=(marker if outcome == "failmarker" and fail_on else None),
                               debugcon=dbg)
         sym = triage.symbolicate_pc(repo, arch, text)
         if sym:
             tri["salient"].append(sym)
-        if shot and shot.exists():
-            tri["screenshot"] = str(shot)
+        if shot:
+            tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}
     finally:
         vm.stop()
@@ -118,6 +148,15 @@ def smoke(args, repo: Path) -> int:
                 run.extra["screenshot"] = r["screenshot"]
         # fail-fast within a single run already handled by _watch; across runs
         # we keep going to characterize a flake.
+
+    # Surface a screenshot even on a clean pass: the failure branch above already
+    # carried the first failure's; otherwise take the first boot's (every boot
+    # now captures one regardless of outcome).
+    if "screenshot" not in run.extra:
+        for r in results:
+            if r.get("screenshot"):
+                run.extra["screenshot"] = r["screenshot"]
+                break
 
     npass = sum(1 for r in results if r["ok"])
     run.extra["passes"] = npass
