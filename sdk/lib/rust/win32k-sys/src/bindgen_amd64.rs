@@ -16144,6 +16144,666 @@ pub const ST_RIT: u32 = 1;
 pub const ST_DESKTOP_THREAD: u32 = 2;
 pub const ST_GHOST_THREAD: u32 = 4;
 pub const GDI_DBG_MAX_BTS: u32 = 10;
+pub const FT_PALETTE_FOR_LIGHT_BACKGROUND: u32 = 1;
+pub const FT_PALETTE_FOR_DARK_BACKGROUND: u32 = 2;
+pub const T1_MAX_MM_DESIGNS: u32 = 16;
+pub const T1_MAX_MM_AXIS: u32 = 4;
+pub const T1_MAX_MM_MAP_POINTS: u32 = 20;
+pub const TT_PLATFORM_APPLE_UNICODE: u32 = 0;
+pub const TT_PLATFORM_MACINTOSH: u32 = 1;
+pub const TT_PLATFORM_ISO: u32 = 2;
+pub const TT_PLATFORM_MICROSOFT: u32 = 3;
+pub const TT_PLATFORM_CUSTOM: u32 = 4;
+pub const TT_PLATFORM_ADOBE: u32 = 7;
+pub const TT_APPLE_ID_DEFAULT: u32 = 0;
+pub const TT_APPLE_ID_UNICODE_1_1: u32 = 1;
+pub const TT_APPLE_ID_ISO_10646: u32 = 2;
+pub const TT_APPLE_ID_UNICODE_2_0: u32 = 3;
+pub const TT_APPLE_ID_UNICODE_32: u32 = 4;
+pub const TT_APPLE_ID_VARIANT_SELECTOR: u32 = 5;
+pub const TT_APPLE_ID_FULL_UNICODE: u32 = 6;
+pub const TT_MAC_ID_ROMAN: u32 = 0;
+pub const TT_MAC_ID_JAPANESE: u32 = 1;
+pub const TT_MAC_ID_TRADITIONAL_CHINESE: u32 = 2;
+pub const TT_MAC_ID_KOREAN: u32 = 3;
+pub const TT_MAC_ID_ARABIC: u32 = 4;
+pub const TT_MAC_ID_HEBREW: u32 = 5;
+pub const TT_MAC_ID_GREEK: u32 = 6;
+pub const TT_MAC_ID_RUSSIAN: u32 = 7;
+pub const TT_MAC_ID_RSYMBOL: u32 = 8;
+pub const TT_MAC_ID_DEVANAGARI: u32 = 9;
+pub const TT_MAC_ID_GURMUKHI: u32 = 10;
+pub const TT_MAC_ID_GUJARATI: u32 = 11;
+pub const TT_MAC_ID_ORIYA: u32 = 12;
+pub const TT_MAC_ID_BENGALI: u32 = 13;
+pub const TT_MAC_ID_TAMIL: u32 = 14;
+pub const TT_MAC_ID_TELUGU: u32 = 15;
+pub const TT_MAC_ID_KANNADA: u32 = 16;
+pub const TT_MAC_ID_MALAYALAM: u32 = 17;
+pub const TT_MAC_ID_SINHALESE: u32 = 18;
+pub const TT_MAC_ID_BURMESE: u32 = 19;
+pub const TT_MAC_ID_KHMER: u32 = 20;
+pub const TT_MAC_ID_THAI: u32 = 21;
+pub const TT_MAC_ID_LAOTIAN: u32 = 22;
+pub const TT_MAC_ID_GEORGIAN: u32 = 23;
+pub const TT_MAC_ID_ARMENIAN: u32 = 24;
+pub const TT_MAC_ID_MALDIVIAN: u32 = 25;
+pub const TT_MAC_ID_SIMPLIFIED_CHINESE: u32 = 25;
+pub const TT_MAC_ID_TIBETAN: u32 = 26;
+pub const TT_MAC_ID_MONGOLIAN: u32 = 27;
+pub const TT_MAC_ID_GEEZ: u32 = 28;
+pub const TT_MAC_ID_SLAVIC: u32 = 29;
+pub const TT_MAC_ID_VIETNAMESE: u32 = 30;
+pub const TT_MAC_ID_SINDHI: u32 = 31;
+pub const TT_MAC_ID_UNINTERP: u32 = 32;
+pub const TT_ISO_ID_7BIT_ASCII: u32 = 0;
+pub const TT_ISO_ID_10646: u32 = 1;
+pub const TT_ISO_ID_8859_1: u32 = 2;
+pub const TT_MS_ID_SYMBOL_CS: u32 = 0;
+pub const TT_MS_ID_UNICODE_CS: u32 = 1;
+pub const TT_MS_ID_SJIS: u32 = 2;
+pub const TT_MS_ID_PRC: u32 = 3;
+pub const TT_MS_ID_BIG_5: u32 = 4;
+pub const TT_MS_ID_WANSUNG: u32 = 5;
+pub const TT_MS_ID_JOHAB: u32 = 6;
+pub const TT_MS_ID_UCS_4: u32 = 10;
+pub const TT_MS_ID_GB2312: u32 = 3;
+pub const TT_ADOBE_ID_STANDARD: u32 = 0;
+pub const TT_ADOBE_ID_EXPERT: u32 = 1;
+pub const TT_ADOBE_ID_CUSTOM: u32 = 2;
+pub const TT_ADOBE_ID_LATIN_1: u32 = 3;
+pub const TT_MAC_LANGID_ENGLISH: u32 = 0;
+pub const TT_MAC_LANGID_FRENCH: u32 = 1;
+pub const TT_MAC_LANGID_GERMAN: u32 = 2;
+pub const TT_MAC_LANGID_ITALIAN: u32 = 3;
+pub const TT_MAC_LANGID_DUTCH: u32 = 4;
+pub const TT_MAC_LANGID_SWEDISH: u32 = 5;
+pub const TT_MAC_LANGID_SPANISH: u32 = 6;
+pub const TT_MAC_LANGID_DANISH: u32 = 7;
+pub const TT_MAC_LANGID_PORTUGUESE: u32 = 8;
+pub const TT_MAC_LANGID_NORWEGIAN: u32 = 9;
+pub const TT_MAC_LANGID_HEBREW: u32 = 10;
+pub const TT_MAC_LANGID_JAPANESE: u32 = 11;
+pub const TT_MAC_LANGID_ARABIC: u32 = 12;
+pub const TT_MAC_LANGID_FINNISH: u32 = 13;
+pub const TT_MAC_LANGID_GREEK: u32 = 14;
+pub const TT_MAC_LANGID_ICELANDIC: u32 = 15;
+pub const TT_MAC_LANGID_MALTESE: u32 = 16;
+pub const TT_MAC_LANGID_TURKISH: u32 = 17;
+pub const TT_MAC_LANGID_CROATIAN: u32 = 18;
+pub const TT_MAC_LANGID_CHINESE_TRADITIONAL: u32 = 19;
+pub const TT_MAC_LANGID_URDU: u32 = 20;
+pub const TT_MAC_LANGID_HINDI: u32 = 21;
+pub const TT_MAC_LANGID_THAI: u32 = 22;
+pub const TT_MAC_LANGID_KOREAN: u32 = 23;
+pub const TT_MAC_LANGID_LITHUANIAN: u32 = 24;
+pub const TT_MAC_LANGID_POLISH: u32 = 25;
+pub const TT_MAC_LANGID_HUNGARIAN: u32 = 26;
+pub const TT_MAC_LANGID_ESTONIAN: u32 = 27;
+pub const TT_MAC_LANGID_LETTISH: u32 = 28;
+pub const TT_MAC_LANGID_SAAMISK: u32 = 29;
+pub const TT_MAC_LANGID_FAEROESE: u32 = 30;
+pub const TT_MAC_LANGID_FARSI: u32 = 31;
+pub const TT_MAC_LANGID_RUSSIAN: u32 = 32;
+pub const TT_MAC_LANGID_CHINESE_SIMPLIFIED: u32 = 33;
+pub const TT_MAC_LANGID_FLEMISH: u32 = 34;
+pub const TT_MAC_LANGID_IRISH: u32 = 35;
+pub const TT_MAC_LANGID_ALBANIAN: u32 = 36;
+pub const TT_MAC_LANGID_ROMANIAN: u32 = 37;
+pub const TT_MAC_LANGID_CZECH: u32 = 38;
+pub const TT_MAC_LANGID_SLOVAK: u32 = 39;
+pub const TT_MAC_LANGID_SLOVENIAN: u32 = 40;
+pub const TT_MAC_LANGID_YIDDISH: u32 = 41;
+pub const TT_MAC_LANGID_SERBIAN: u32 = 42;
+pub const TT_MAC_LANGID_MACEDONIAN: u32 = 43;
+pub const TT_MAC_LANGID_BULGARIAN: u32 = 44;
+pub const TT_MAC_LANGID_UKRAINIAN: u32 = 45;
+pub const TT_MAC_LANGID_BYELORUSSIAN: u32 = 46;
+pub const TT_MAC_LANGID_UZBEK: u32 = 47;
+pub const TT_MAC_LANGID_KAZAKH: u32 = 48;
+pub const TT_MAC_LANGID_AZERBAIJANI: u32 = 49;
+pub const TT_MAC_LANGID_AZERBAIJANI_CYRILLIC_SCRIPT: u32 = 49;
+pub const TT_MAC_LANGID_AZERBAIJANI_ARABIC_SCRIPT: u32 = 50;
+pub const TT_MAC_LANGID_ARMENIAN: u32 = 51;
+pub const TT_MAC_LANGID_GEORGIAN: u32 = 52;
+pub const TT_MAC_LANGID_MOLDAVIAN: u32 = 53;
+pub const TT_MAC_LANGID_KIRGHIZ: u32 = 54;
+pub const TT_MAC_LANGID_TAJIKI: u32 = 55;
+pub const TT_MAC_LANGID_TURKMEN: u32 = 56;
+pub const TT_MAC_LANGID_MONGOLIAN: u32 = 57;
+pub const TT_MAC_LANGID_MONGOLIAN_MONGOLIAN_SCRIPT: u32 = 57;
+pub const TT_MAC_LANGID_MONGOLIAN_CYRILLIC_SCRIPT: u32 = 58;
+pub const TT_MAC_LANGID_PASHTO: u32 = 59;
+pub const TT_MAC_LANGID_KURDISH: u32 = 60;
+pub const TT_MAC_LANGID_KASHMIRI: u32 = 61;
+pub const TT_MAC_LANGID_SINDHI: u32 = 62;
+pub const TT_MAC_LANGID_TIBETAN: u32 = 63;
+pub const TT_MAC_LANGID_NEPALI: u32 = 64;
+pub const TT_MAC_LANGID_SANSKRIT: u32 = 65;
+pub const TT_MAC_LANGID_MARATHI: u32 = 66;
+pub const TT_MAC_LANGID_BENGALI: u32 = 67;
+pub const TT_MAC_LANGID_ASSAMESE: u32 = 68;
+pub const TT_MAC_LANGID_GUJARATI: u32 = 69;
+pub const TT_MAC_LANGID_PUNJABI: u32 = 70;
+pub const TT_MAC_LANGID_ORIYA: u32 = 71;
+pub const TT_MAC_LANGID_MALAYALAM: u32 = 72;
+pub const TT_MAC_LANGID_KANNADA: u32 = 73;
+pub const TT_MAC_LANGID_TAMIL: u32 = 74;
+pub const TT_MAC_LANGID_TELUGU: u32 = 75;
+pub const TT_MAC_LANGID_SINHALESE: u32 = 76;
+pub const TT_MAC_LANGID_BURMESE: u32 = 77;
+pub const TT_MAC_LANGID_KHMER: u32 = 78;
+pub const TT_MAC_LANGID_LAO: u32 = 79;
+pub const TT_MAC_LANGID_VIETNAMESE: u32 = 80;
+pub const TT_MAC_LANGID_INDONESIAN: u32 = 81;
+pub const TT_MAC_LANGID_TAGALOG: u32 = 82;
+pub const TT_MAC_LANGID_MALAY_ROMAN_SCRIPT: u32 = 83;
+pub const TT_MAC_LANGID_MALAY_ARABIC_SCRIPT: u32 = 84;
+pub const TT_MAC_LANGID_AMHARIC: u32 = 85;
+pub const TT_MAC_LANGID_TIGRINYA: u32 = 86;
+pub const TT_MAC_LANGID_GALLA: u32 = 87;
+pub const TT_MAC_LANGID_SOMALI: u32 = 88;
+pub const TT_MAC_LANGID_SWAHILI: u32 = 89;
+pub const TT_MAC_LANGID_RUANDA: u32 = 90;
+pub const TT_MAC_LANGID_RUNDI: u32 = 91;
+pub const TT_MAC_LANGID_CHEWA: u32 = 92;
+pub const TT_MAC_LANGID_MALAGASY: u32 = 93;
+pub const TT_MAC_LANGID_ESPERANTO: u32 = 94;
+pub const TT_MAC_LANGID_WELSH: u32 = 128;
+pub const TT_MAC_LANGID_BASQUE: u32 = 129;
+pub const TT_MAC_LANGID_CATALAN: u32 = 130;
+pub const TT_MAC_LANGID_LATIN: u32 = 131;
+pub const TT_MAC_LANGID_QUECHUA: u32 = 132;
+pub const TT_MAC_LANGID_GUARANI: u32 = 133;
+pub const TT_MAC_LANGID_AYMARA: u32 = 134;
+pub const TT_MAC_LANGID_TATAR: u32 = 135;
+pub const TT_MAC_LANGID_UIGHUR: u32 = 136;
+pub const TT_MAC_LANGID_DZONGKHA: u32 = 137;
+pub const TT_MAC_LANGID_JAVANESE: u32 = 138;
+pub const TT_MAC_LANGID_SUNDANESE: u32 = 139;
+pub const TT_MAC_LANGID_GALICIAN: u32 = 140;
+pub const TT_MAC_LANGID_AFRIKAANS: u32 = 141;
+pub const TT_MAC_LANGID_BRETON: u32 = 142;
+pub const TT_MAC_LANGID_INUKTITUT: u32 = 143;
+pub const TT_MAC_LANGID_SCOTTISH_GAELIC: u32 = 144;
+pub const TT_MAC_LANGID_MANX_GAELIC: u32 = 145;
+pub const TT_MAC_LANGID_IRISH_GAELIC: u32 = 146;
+pub const TT_MAC_LANGID_TONGAN: u32 = 147;
+pub const TT_MAC_LANGID_GREEK_POLYTONIC: u32 = 148;
+pub const TT_MAC_LANGID_GREELANDIC: u32 = 149;
+pub const TT_MAC_LANGID_AZERBAIJANI_ROMAN_SCRIPT: u32 = 150;
+pub const TT_MS_LANGID_ARABIC_SAUDI_ARABIA: u32 = 1025;
+pub const TT_MS_LANGID_ARABIC_IRAQ: u32 = 2049;
+pub const TT_MS_LANGID_ARABIC_EGYPT: u32 = 3073;
+pub const TT_MS_LANGID_ARABIC_LIBYA: u32 = 4097;
+pub const TT_MS_LANGID_ARABIC_ALGERIA: u32 = 5121;
+pub const TT_MS_LANGID_ARABIC_MOROCCO: u32 = 6145;
+pub const TT_MS_LANGID_ARABIC_TUNISIA: u32 = 7169;
+pub const TT_MS_LANGID_ARABIC_OMAN: u32 = 8193;
+pub const TT_MS_LANGID_ARABIC_YEMEN: u32 = 9217;
+pub const TT_MS_LANGID_ARABIC_SYRIA: u32 = 10241;
+pub const TT_MS_LANGID_ARABIC_JORDAN: u32 = 11265;
+pub const TT_MS_LANGID_ARABIC_LEBANON: u32 = 12289;
+pub const TT_MS_LANGID_ARABIC_KUWAIT: u32 = 13313;
+pub const TT_MS_LANGID_ARABIC_UAE: u32 = 14337;
+pub const TT_MS_LANGID_ARABIC_BAHRAIN: u32 = 15361;
+pub const TT_MS_LANGID_ARABIC_QATAR: u32 = 16385;
+pub const TT_MS_LANGID_BULGARIAN_BULGARIA: u32 = 1026;
+pub const TT_MS_LANGID_CATALAN_CATALAN: u32 = 1027;
+pub const TT_MS_LANGID_CHINESE_TAIWAN: u32 = 1028;
+pub const TT_MS_LANGID_CHINESE_PRC: u32 = 2052;
+pub const TT_MS_LANGID_CHINESE_HONG_KONG: u32 = 3076;
+pub const TT_MS_LANGID_CHINESE_SINGAPORE: u32 = 4100;
+pub const TT_MS_LANGID_CHINESE_MACAO: u32 = 5124;
+pub const TT_MS_LANGID_CZECH_CZECH_REPUBLIC: u32 = 1029;
+pub const TT_MS_LANGID_DANISH_DENMARK: u32 = 1030;
+pub const TT_MS_LANGID_GERMAN_GERMANY: u32 = 1031;
+pub const TT_MS_LANGID_GERMAN_SWITZERLAND: u32 = 2055;
+pub const TT_MS_LANGID_GERMAN_AUSTRIA: u32 = 3079;
+pub const TT_MS_LANGID_GERMAN_LUXEMBOURG: u32 = 4103;
+pub const TT_MS_LANGID_GERMAN_LIECHTENSTEIN: u32 = 5127;
+pub const TT_MS_LANGID_GREEK_GREECE: u32 = 1032;
+pub const TT_MS_LANGID_ENGLISH_UNITED_STATES: u32 = 1033;
+pub const TT_MS_LANGID_ENGLISH_UNITED_KINGDOM: u32 = 2057;
+pub const TT_MS_LANGID_ENGLISH_AUSTRALIA: u32 = 3081;
+pub const TT_MS_LANGID_ENGLISH_CANADA: u32 = 4105;
+pub const TT_MS_LANGID_ENGLISH_NEW_ZEALAND: u32 = 5129;
+pub const TT_MS_LANGID_ENGLISH_IRELAND: u32 = 6153;
+pub const TT_MS_LANGID_ENGLISH_SOUTH_AFRICA: u32 = 7177;
+pub const TT_MS_LANGID_ENGLISH_JAMAICA: u32 = 8201;
+pub const TT_MS_LANGID_ENGLISH_CARIBBEAN: u32 = 9225;
+pub const TT_MS_LANGID_ENGLISH_BELIZE: u32 = 10249;
+pub const TT_MS_LANGID_ENGLISH_TRINIDAD: u32 = 11273;
+pub const TT_MS_LANGID_ENGLISH_ZIMBABWE: u32 = 12297;
+pub const TT_MS_LANGID_ENGLISH_PHILIPPINES: u32 = 13321;
+pub const TT_MS_LANGID_ENGLISH_INDIA: u32 = 16393;
+pub const TT_MS_LANGID_ENGLISH_MALAYSIA: u32 = 17417;
+pub const TT_MS_LANGID_ENGLISH_SINGAPORE: u32 = 18441;
+pub const TT_MS_LANGID_SPANISH_SPAIN_TRADITIONAL_SORT: u32 = 1034;
+pub const TT_MS_LANGID_SPANISH_MEXICO: u32 = 2058;
+pub const TT_MS_LANGID_SPANISH_SPAIN_MODERN_SORT: u32 = 3082;
+pub const TT_MS_LANGID_SPANISH_GUATEMALA: u32 = 4106;
+pub const TT_MS_LANGID_SPANISH_COSTA_RICA: u32 = 5130;
+pub const TT_MS_LANGID_SPANISH_PANAMA: u32 = 6154;
+pub const TT_MS_LANGID_SPANISH_DOMINICAN_REPUBLIC: u32 = 7178;
+pub const TT_MS_LANGID_SPANISH_VENEZUELA: u32 = 8202;
+pub const TT_MS_LANGID_SPANISH_COLOMBIA: u32 = 9226;
+pub const TT_MS_LANGID_SPANISH_PERU: u32 = 10250;
+pub const TT_MS_LANGID_SPANISH_ARGENTINA: u32 = 11274;
+pub const TT_MS_LANGID_SPANISH_ECUADOR: u32 = 12298;
+pub const TT_MS_LANGID_SPANISH_CHILE: u32 = 13322;
+pub const TT_MS_LANGID_SPANISH_URUGUAY: u32 = 14346;
+pub const TT_MS_LANGID_SPANISH_PARAGUAY: u32 = 15370;
+pub const TT_MS_LANGID_SPANISH_BOLIVIA: u32 = 16394;
+pub const TT_MS_LANGID_SPANISH_EL_SALVADOR: u32 = 17418;
+pub const TT_MS_LANGID_SPANISH_HONDURAS: u32 = 18442;
+pub const TT_MS_LANGID_SPANISH_NICARAGUA: u32 = 19466;
+pub const TT_MS_LANGID_SPANISH_PUERTO_RICO: u32 = 20490;
+pub const TT_MS_LANGID_SPANISH_UNITED_STATES: u32 = 21514;
+pub const TT_MS_LANGID_FINNISH_FINLAND: u32 = 1035;
+pub const TT_MS_LANGID_FRENCH_FRANCE: u32 = 1036;
+pub const TT_MS_LANGID_FRENCH_BELGIUM: u32 = 2060;
+pub const TT_MS_LANGID_FRENCH_CANADA: u32 = 3084;
+pub const TT_MS_LANGID_FRENCH_SWITZERLAND: u32 = 4108;
+pub const TT_MS_LANGID_FRENCH_LUXEMBOURG: u32 = 5132;
+pub const TT_MS_LANGID_FRENCH_MONACO: u32 = 6156;
+pub const TT_MS_LANGID_HEBREW_ISRAEL: u32 = 1037;
+pub const TT_MS_LANGID_HUNGARIAN_HUNGARY: u32 = 1038;
+pub const TT_MS_LANGID_ICELANDIC_ICELAND: u32 = 1039;
+pub const TT_MS_LANGID_ITALIAN_ITALY: u32 = 1040;
+pub const TT_MS_LANGID_ITALIAN_SWITZERLAND: u32 = 2064;
+pub const TT_MS_LANGID_JAPANESE_JAPAN: u32 = 1041;
+pub const TT_MS_LANGID_KOREAN_KOREA: u32 = 1042;
+pub const TT_MS_LANGID_DUTCH_NETHERLANDS: u32 = 1043;
+pub const TT_MS_LANGID_DUTCH_BELGIUM: u32 = 2067;
+pub const TT_MS_LANGID_NORWEGIAN_NORWAY_BOKMAL: u32 = 1044;
+pub const TT_MS_LANGID_NORWEGIAN_NORWAY_NYNORSK: u32 = 2068;
+pub const TT_MS_LANGID_POLISH_POLAND: u32 = 1045;
+pub const TT_MS_LANGID_PORTUGUESE_BRAZIL: u32 = 1046;
+pub const TT_MS_LANGID_PORTUGUESE_PORTUGAL: u32 = 2070;
+pub const TT_MS_LANGID_ROMANSH_SWITZERLAND: u32 = 1047;
+pub const TT_MS_LANGID_ROMANIAN_ROMANIA: u32 = 1048;
+pub const TT_MS_LANGID_RUSSIAN_RUSSIA: u32 = 1049;
+pub const TT_MS_LANGID_CROATIAN_CROATIA: u32 = 1050;
+pub const TT_MS_LANGID_SERBIAN_SERBIA_LATIN: u32 = 2074;
+pub const TT_MS_LANGID_SERBIAN_SERBIA_CYRILLIC: u32 = 3098;
+pub const TT_MS_LANGID_CROATIAN_BOSNIA_HERZEGOVINA: u32 = 4122;
+pub const TT_MS_LANGID_BOSNIAN_BOSNIA_HERZEGOVINA: u32 = 5146;
+pub const TT_MS_LANGID_SERBIAN_BOSNIA_HERZ_LATIN: u32 = 6170;
+pub const TT_MS_LANGID_SERBIAN_BOSNIA_HERZ_CYRILLIC: u32 = 7194;
+pub const TT_MS_LANGID_BOSNIAN_BOSNIA_HERZ_CYRILLIC: u32 = 8218;
+pub const TT_MS_LANGID_SLOVAK_SLOVAKIA: u32 = 1051;
+pub const TT_MS_LANGID_ALBANIAN_ALBANIA: u32 = 1052;
+pub const TT_MS_LANGID_SWEDISH_SWEDEN: u32 = 1053;
+pub const TT_MS_LANGID_SWEDISH_FINLAND: u32 = 2077;
+pub const TT_MS_LANGID_THAI_THAILAND: u32 = 1054;
+pub const TT_MS_LANGID_TURKISH_TURKEY: u32 = 1055;
+pub const TT_MS_LANGID_URDU_PAKISTAN: u32 = 1056;
+pub const TT_MS_LANGID_INDONESIAN_INDONESIA: u32 = 1057;
+pub const TT_MS_LANGID_UKRAINIAN_UKRAINE: u32 = 1058;
+pub const TT_MS_LANGID_BELARUSIAN_BELARUS: u32 = 1059;
+pub const TT_MS_LANGID_SLOVENIAN_SLOVENIA: u32 = 1060;
+pub const TT_MS_LANGID_ESTONIAN_ESTONIA: u32 = 1061;
+pub const TT_MS_LANGID_LATVIAN_LATVIA: u32 = 1062;
+pub const TT_MS_LANGID_LITHUANIAN_LITHUANIA: u32 = 1063;
+pub const TT_MS_LANGID_TAJIK_TAJIKISTAN: u32 = 1064;
+pub const TT_MS_LANGID_VIETNAMESE_VIET_NAM: u32 = 1066;
+pub const TT_MS_LANGID_ARMENIAN_ARMENIA: u32 = 1067;
+pub const TT_MS_LANGID_AZERI_AZERBAIJAN_LATIN: u32 = 1068;
+pub const TT_MS_LANGID_AZERI_AZERBAIJAN_CYRILLIC: u32 = 2092;
+pub const TT_MS_LANGID_BASQUE_BASQUE: u32 = 1069;
+pub const TT_MS_LANGID_UPPER_SORBIAN_GERMANY: u32 = 1070;
+pub const TT_MS_LANGID_LOWER_SORBIAN_GERMANY: u32 = 2094;
+pub const TT_MS_LANGID_MACEDONIAN_MACEDONIA: u32 = 1071;
+pub const TT_MS_LANGID_SETSWANA_SOUTH_AFRICA: u32 = 1074;
+pub const TT_MS_LANGID_ISIXHOSA_SOUTH_AFRICA: u32 = 1076;
+pub const TT_MS_LANGID_ISIZULU_SOUTH_AFRICA: u32 = 1077;
+pub const TT_MS_LANGID_AFRIKAANS_SOUTH_AFRICA: u32 = 1078;
+pub const TT_MS_LANGID_GEORGIAN_GEORGIA: u32 = 1079;
+pub const TT_MS_LANGID_FAEROESE_FAEROE_ISLANDS: u32 = 1080;
+pub const TT_MS_LANGID_HINDI_INDIA: u32 = 1081;
+pub const TT_MS_LANGID_MALTESE_MALTA: u32 = 1082;
+pub const TT_MS_LANGID_SAMI_NORTHERN_NORWAY: u32 = 1083;
+pub const TT_MS_LANGID_SAMI_NORTHERN_SWEDEN: u32 = 2107;
+pub const TT_MS_LANGID_SAMI_NORTHERN_FINLAND: u32 = 3131;
+pub const TT_MS_LANGID_SAMI_LULE_NORWAY: u32 = 4155;
+pub const TT_MS_LANGID_SAMI_LULE_SWEDEN: u32 = 5179;
+pub const TT_MS_LANGID_SAMI_SOUTHERN_NORWAY: u32 = 6203;
+pub const TT_MS_LANGID_SAMI_SOUTHERN_SWEDEN: u32 = 7227;
+pub const TT_MS_LANGID_SAMI_SKOLT_FINLAND: u32 = 8251;
+pub const TT_MS_LANGID_SAMI_INARI_FINLAND: u32 = 9275;
+pub const TT_MS_LANGID_IRISH_IRELAND: u32 = 2108;
+pub const TT_MS_LANGID_MALAY_MALAYSIA: u32 = 1086;
+pub const TT_MS_LANGID_MALAY_BRUNEI_DARUSSALAM: u32 = 2110;
+pub const TT_MS_LANGID_KAZAKH_KAZAKHSTAN: u32 = 1087;
+pub const TT_MS_LANGID_KYRGYZ_KYRGYZSTAN: u32 = 1088;
+pub const TT_MS_LANGID_KISWAHILI_KENYA: u32 = 1089;
+pub const TT_MS_LANGID_TURKMEN_TURKMENISTAN: u32 = 1090;
+pub const TT_MS_LANGID_UZBEK_UZBEKISTAN_LATIN: u32 = 1091;
+pub const TT_MS_LANGID_UZBEK_UZBEKISTAN_CYRILLIC: u32 = 2115;
+pub const TT_MS_LANGID_TATAR_RUSSIA: u32 = 1092;
+pub const TT_MS_LANGID_BENGALI_INDIA: u32 = 1093;
+pub const TT_MS_LANGID_BENGALI_BANGLADESH: u32 = 2117;
+pub const TT_MS_LANGID_PUNJABI_INDIA: u32 = 1094;
+pub const TT_MS_LANGID_GUJARATI_INDIA: u32 = 1095;
+pub const TT_MS_LANGID_ODIA_INDIA: u32 = 1096;
+pub const TT_MS_LANGID_TAMIL_INDIA: u32 = 1097;
+pub const TT_MS_LANGID_TELUGU_INDIA: u32 = 1098;
+pub const TT_MS_LANGID_KANNADA_INDIA: u32 = 1099;
+pub const TT_MS_LANGID_MALAYALAM_INDIA: u32 = 1100;
+pub const TT_MS_LANGID_ASSAMESE_INDIA: u32 = 1101;
+pub const TT_MS_LANGID_MARATHI_INDIA: u32 = 1102;
+pub const TT_MS_LANGID_SANSKRIT_INDIA: u32 = 1103;
+pub const TT_MS_LANGID_MONGOLIAN_MONGOLIA: u32 = 1104;
+pub const TT_MS_LANGID_MONGOLIAN_PRC: u32 = 2128;
+pub const TT_MS_LANGID_TIBETAN_PRC: u32 = 1105;
+pub const TT_MS_LANGID_WELSH_UNITED_KINGDOM: u32 = 1106;
+pub const TT_MS_LANGID_KHMER_CAMBODIA: u32 = 1107;
+pub const TT_MS_LANGID_LAO_LAOS: u32 = 1108;
+pub const TT_MS_LANGID_GALICIAN_GALICIAN: u32 = 1110;
+pub const TT_MS_LANGID_KONKANI_INDIA: u32 = 1111;
+pub const TT_MS_LANGID_SYRIAC_SYRIA: u32 = 1114;
+pub const TT_MS_LANGID_SINHALA_SRI_LANKA: u32 = 1115;
+pub const TT_MS_LANGID_INUKTITUT_CANADA: u32 = 1117;
+pub const TT_MS_LANGID_INUKTITUT_CANADA_LATIN: u32 = 2141;
+pub const TT_MS_LANGID_AMHARIC_ETHIOPIA: u32 = 1118;
+pub const TT_MS_LANGID_TAMAZIGHT_ALGERIA: u32 = 2143;
+pub const TT_MS_LANGID_NEPALI_NEPAL: u32 = 1121;
+pub const TT_MS_LANGID_FRISIAN_NETHERLANDS: u32 = 1122;
+pub const TT_MS_LANGID_PASHTO_AFGHANISTAN: u32 = 1123;
+pub const TT_MS_LANGID_FILIPINO_PHILIPPINES: u32 = 1124;
+pub const TT_MS_LANGID_DHIVEHI_MALDIVES: u32 = 1125;
+pub const TT_MS_LANGID_HAUSA_NIGERIA: u32 = 1128;
+pub const TT_MS_LANGID_YORUBA_NIGERIA: u32 = 1130;
+pub const TT_MS_LANGID_QUECHUA_BOLIVIA: u32 = 1131;
+pub const TT_MS_LANGID_QUECHUA_ECUADOR: u32 = 2155;
+pub const TT_MS_LANGID_QUECHUA_PERU: u32 = 3179;
+pub const TT_MS_LANGID_SESOTHO_SA_LEBOA_SOUTH_AFRICA: u32 = 1132;
+pub const TT_MS_LANGID_BASHKIR_RUSSIA: u32 = 1133;
+pub const TT_MS_LANGID_LUXEMBOURGISH_LUXEMBOURG: u32 = 1134;
+pub const TT_MS_LANGID_GREENLANDIC_GREENLAND: u32 = 1135;
+pub const TT_MS_LANGID_IGBO_NIGERIA: u32 = 1136;
+pub const TT_MS_LANGID_YI_PRC: u32 = 1144;
+pub const TT_MS_LANGID_MAPUDUNGUN_CHILE: u32 = 1146;
+pub const TT_MS_LANGID_MOHAWK_MOHAWK: u32 = 1148;
+pub const TT_MS_LANGID_BRETON_FRANCE: u32 = 1150;
+pub const TT_MS_LANGID_UIGHUR_PRC: u32 = 1152;
+pub const TT_MS_LANGID_MAORI_NEW_ZEALAND: u32 = 1153;
+pub const TT_MS_LANGID_OCCITAN_FRANCE: u32 = 1154;
+pub const TT_MS_LANGID_CORSICAN_FRANCE: u32 = 1155;
+pub const TT_MS_LANGID_ALSATIAN_FRANCE: u32 = 1156;
+pub const TT_MS_LANGID_YAKUT_RUSSIA: u32 = 1157;
+pub const TT_MS_LANGID_KICHE_GUATEMALA: u32 = 1158;
+pub const TT_MS_LANGID_KINYARWANDA_RWANDA: u32 = 1159;
+pub const TT_MS_LANGID_WOLOF_SENEGAL: u32 = 1160;
+pub const TT_MS_LANGID_DARI_AFGHANISTAN: u32 = 1164;
+pub const TT_MS_LANGID_ARABIC_GENERAL: u32 = 1;
+pub const TT_MS_LANGID_CATALAN_SPAIN: u32 = 1027;
+pub const TT_MS_LANGID_CHINESE_GENERAL: u32 = 4;
+pub const TT_MS_LANGID_CHINESE_MACAU: u32 = 5124;
+pub const TT_MS_LANGID_GERMAN_LIECHTENSTEI: u32 = 5127;
+pub const TT_MS_LANGID_ENGLISH_GENERAL: u32 = 9;
+pub const TT_MS_LANGID_ENGLISH_INDONESIA: u32 = 14345;
+pub const TT_MS_LANGID_ENGLISH_HONG_KONG: u32 = 15369;
+pub const TT_MS_LANGID_SPANISH_SPAIN_INTERNATIONAL_SORT: u32 = 3082;
+pub const TT_MS_LANGID_SPANISH_LATIN_AMERICA: u32 = 58378;
+pub const TT_MS_LANGID_FRENCH_WEST_INDIES: u32 = 7180;
+pub const TT_MS_LANGID_FRENCH_REUNION: u32 = 8204;
+pub const TT_MS_LANGID_FRENCH_CONGO: u32 = 9228;
+pub const TT_MS_LANGID_FRENCH_ZAIRE: u32 = 9228;
+pub const TT_MS_LANGID_FRENCH_SENEGAL: u32 = 10252;
+pub const TT_MS_LANGID_FRENCH_CAMEROON: u32 = 11276;
+pub const TT_MS_LANGID_FRENCH_COTE_D_IVOIRE: u32 = 12300;
+pub const TT_MS_LANGID_FRENCH_MALI: u32 = 13324;
+pub const TT_MS_LANGID_FRENCH_MOROCCO: u32 = 14348;
+pub const TT_MS_LANGID_FRENCH_HAITI: u32 = 15372;
+pub const TT_MS_LANGID_FRENCH_NORTH_AFRICA: u32 = 58380;
+pub const TT_MS_LANGID_KOREAN_EXTENDED_WANSUNG_KOREA: u32 = 1042;
+pub const TT_MS_LANGID_KOREAN_JOHAB_KOREA: u32 = 2066;
+pub const TT_MS_LANGID_RHAETO_ROMANIC_SWITZERLAND: u32 = 1047;
+pub const TT_MS_LANGID_MOLDAVIAN_MOLDAVIA: u32 = 2072;
+pub const TT_MS_LANGID_RUSSIAN_MOLDAVIA: u32 = 2073;
+pub const TT_MS_LANGID_URDU_INDIA: u32 = 2080;
+pub const TT_MS_LANGID_CLASSIC_LITHUANIAN_LITHUANIA: u32 = 2087;
+pub const TT_MS_LANGID_SLOVENE_SLOVENIA: u32 = 1060;
+pub const TT_MS_LANGID_FARSI_IRAN: u32 = 1065;
+pub const TT_MS_LANGID_BASQUE_SPAIN: u32 = 1069;
+pub const TT_MS_LANGID_SORBIAN_GERMANY: u32 = 1070;
+pub const TT_MS_LANGID_SUTU_SOUTH_AFRICA: u32 = 1072;
+pub const TT_MS_LANGID_TSONGA_SOUTH_AFRICA: u32 = 1073;
+pub const TT_MS_LANGID_TSWANA_SOUTH_AFRICA: u32 = 1074;
+pub const TT_MS_LANGID_VENDA_SOUTH_AFRICA: u32 = 1075;
+pub const TT_MS_LANGID_XHOSA_SOUTH_AFRICA: u32 = 1076;
+pub const TT_MS_LANGID_ZULU_SOUTH_AFRICA: u32 = 1077;
+pub const TT_MS_LANGID_SAAMI_LAPONIA: u32 = 1083;
+pub const TT_MS_LANGID_IRISH_GAELIC_IRELAND: u32 = 1084;
+pub const TT_MS_LANGID_SCOTTISH_GAELIC_UNITED_KINGDOM: u32 = 2108;
+pub const TT_MS_LANGID_YIDDISH_GERMANY: u32 = 1085;
+pub const TT_MS_LANGID_KAZAK_KAZAKSTAN: u32 = 1087;
+pub const TT_MS_LANGID_KIRGHIZ_KIRGHIZ_REPUBLIC: u32 = 1088;
+pub const TT_MS_LANGID_KIRGHIZ_KIRGHIZSTAN: u32 = 1088;
+pub const TT_MS_LANGID_SWAHILI_KENYA: u32 = 1089;
+pub const TT_MS_LANGID_TATAR_TATARSTAN: u32 = 1092;
+pub const TT_MS_LANGID_PUNJABI_ARABIC_PAKISTAN: u32 = 2118;
+pub const TT_MS_LANGID_ORIYA_INDIA: u32 = 1096;
+pub const TT_MS_LANGID_MONGOLIAN_MONGOLIA_MONGOLIAN: u32 = 2128;
+pub const TT_MS_LANGID_TIBETAN_CHINA: u32 = 1105;
+pub const TT_MS_LANGID_DZONGHKA_BHUTAN: u32 = 2129;
+pub const TT_MS_LANGID_TIBETAN_BHUTAN: u32 = 2129;
+pub const TT_MS_LANGID_WELSH_WALES: u32 = 1106;
+pub const TT_MS_LANGID_BURMESE_MYANMAR: u32 = 1109;
+pub const TT_MS_LANGID_GALICIAN_SPAIN: u32 = 1110;
+pub const TT_MS_LANGID_MANIPURI_INDIA: u32 = 1112;
+pub const TT_MS_LANGID_SINDHI_INDIA: u32 = 1113;
+pub const TT_MS_LANGID_SINDHI_PAKISTAN: u32 = 2137;
+pub const TT_MS_LANGID_SINHALESE_SRI_LANKA: u32 = 1115;
+pub const TT_MS_LANGID_CHEROKEE_UNITED_STATES: u32 = 1116;
+pub const TT_MS_LANGID_TAMAZIGHT_MOROCCO: u32 = 1119;
+pub const TT_MS_LANGID_TAMAZIGHT_MOROCCO_LATIN: u32 = 2143;
+pub const TT_MS_LANGID_KASHMIRI_PAKISTAN: u32 = 1120;
+pub const TT_MS_LANGID_KASHMIRI_SASIA: u32 = 2144;
+pub const TT_MS_LANGID_KASHMIRI_INDIA: u32 = 2144;
+pub const TT_MS_LANGID_NEPALI_INDIA: u32 = 2145;
+pub const TT_MS_LANGID_DIVEHI_MALDIVES: u32 = 1125;
+pub const TT_MS_LANGID_EDO_NIGERIA: u32 = 1126;
+pub const TT_MS_LANGID_FULFULDE_NIGERIA: u32 = 1127;
+pub const TT_MS_LANGID_IBIBIO_NIGERIA: u32 = 1129;
+pub const TT_MS_LANGID_SEPEDI_SOUTH_AFRICA: u32 = 1132;
+pub const TT_MS_LANGID_SOTHO_SOUTHERN_SOUTH_AFRICA: u32 = 1132;
+pub const TT_MS_LANGID_KANURI_NIGERIA: u32 = 1137;
+pub const TT_MS_LANGID_OROMO_ETHIOPIA: u32 = 1138;
+pub const TT_MS_LANGID_TIGRIGNA_ETHIOPIA: u32 = 1139;
+pub const TT_MS_LANGID_TIGRIGNA_ERYTHREA: u32 = 2163;
+pub const TT_MS_LANGID_TIGRIGNA_ERYTREA: u32 = 2163;
+pub const TT_MS_LANGID_GUARANI_PARAGUAY: u32 = 1140;
+pub const TT_MS_LANGID_HAWAIIAN_UNITED_STATES: u32 = 1141;
+pub const TT_MS_LANGID_LATIN: u32 = 1142;
+pub const TT_MS_LANGID_SOMALI_SOMALIA: u32 = 1143;
+pub const TT_MS_LANGID_YI_CHINA: u32 = 1144;
+pub const TT_MS_LANGID_PAPIAMENTU_NETHERLANDS_ANTILLES: u32 = 1145;
+pub const TT_MS_LANGID_UIGHUR_CHINA: u32 = 1152;
+pub const TT_NAME_ID_COPYRIGHT: u32 = 0;
+pub const TT_NAME_ID_FONT_FAMILY: u32 = 1;
+pub const TT_NAME_ID_FONT_SUBFAMILY: u32 = 2;
+pub const TT_NAME_ID_UNIQUE_ID: u32 = 3;
+pub const TT_NAME_ID_FULL_NAME: u32 = 4;
+pub const TT_NAME_ID_VERSION_STRING: u32 = 5;
+pub const TT_NAME_ID_PS_NAME: u32 = 6;
+pub const TT_NAME_ID_TRADEMARK: u32 = 7;
+pub const TT_NAME_ID_MANUFACTURER: u32 = 8;
+pub const TT_NAME_ID_DESIGNER: u32 = 9;
+pub const TT_NAME_ID_DESCRIPTION: u32 = 10;
+pub const TT_NAME_ID_VENDOR_URL: u32 = 11;
+pub const TT_NAME_ID_DESIGNER_URL: u32 = 12;
+pub const TT_NAME_ID_LICENSE: u32 = 13;
+pub const TT_NAME_ID_LICENSE_URL: u32 = 14;
+pub const TT_NAME_ID_TYPOGRAPHIC_FAMILY: u32 = 16;
+pub const TT_NAME_ID_TYPOGRAPHIC_SUBFAMILY: u32 = 17;
+pub const TT_NAME_ID_MAC_FULL_NAME: u32 = 18;
+pub const TT_NAME_ID_SAMPLE_TEXT: u32 = 19;
+pub const TT_NAME_ID_CID_FINDFONT_NAME: u32 = 20;
+pub const TT_NAME_ID_WWS_FAMILY: u32 = 21;
+pub const TT_NAME_ID_WWS_SUBFAMILY: u32 = 22;
+pub const TT_NAME_ID_LIGHT_BACKGROUND: u32 = 23;
+pub const TT_NAME_ID_DARK_BACKGROUND: u32 = 24;
+pub const TT_NAME_ID_VARIATIONS_PREFIX: u32 = 25;
+pub const TT_NAME_ID_PREFERRED_FAMILY: u32 = 16;
+pub const TT_NAME_ID_PREFERRED_SUBFAMILY: u32 = 17;
+pub const TT_UCR_BASIC_LATIN: u32 = 1;
+pub const TT_UCR_LATIN1_SUPPLEMENT: u32 = 2;
+pub const TT_UCR_LATIN_EXTENDED_A: u32 = 4;
+pub const TT_UCR_LATIN_EXTENDED_B: u32 = 8;
+pub const TT_UCR_IPA_EXTENSIONS: u32 = 16;
+pub const TT_UCR_SPACING_MODIFIER: u32 = 32;
+pub const TT_UCR_COMBINING_DIACRITICAL_MARKS: u32 = 64;
+pub const TT_UCR_GREEK: u32 = 128;
+pub const TT_UCR_COPTIC: u32 = 256;
+pub const TT_UCR_CYRILLIC: u32 = 512;
+pub const TT_UCR_ARMENIAN: u32 = 1024;
+pub const TT_UCR_HEBREW: u32 = 2048;
+pub const TT_UCR_VAI: u32 = 4096;
+pub const TT_UCR_ARABIC: u32 = 8192;
+pub const TT_UCR_NKO: u32 = 16384;
+pub const TT_UCR_DEVANAGARI: u32 = 32768;
+pub const TT_UCR_BENGALI: u32 = 65536;
+pub const TT_UCR_GURMUKHI: u32 = 131072;
+pub const TT_UCR_GUJARATI: u32 = 262144;
+pub const TT_UCR_ORIYA: u32 = 524288;
+pub const TT_UCR_TAMIL: u32 = 1048576;
+pub const TT_UCR_TELUGU: u32 = 2097152;
+pub const TT_UCR_KANNADA: u32 = 4194304;
+pub const TT_UCR_MALAYALAM: u32 = 8388608;
+pub const TT_UCR_THAI: u32 = 16777216;
+pub const TT_UCR_LAO: u32 = 33554432;
+pub const TT_UCR_GEORGIAN: u32 = 67108864;
+pub const TT_UCR_BALINESE: u32 = 134217728;
+pub const TT_UCR_HANGUL_JAMO: u32 = 268435456;
+pub const TT_UCR_LATIN_EXTENDED_ADDITIONAL: u32 = 536870912;
+pub const TT_UCR_GREEK_EXTENDED: u32 = 1073741824;
+pub const TT_UCR_GENERAL_PUNCTUATION: u32 = 2147483648;
+pub const TT_UCR_SUPERSCRIPTS_SUBSCRIPTS: u32 = 1;
+pub const TT_UCR_CURRENCY_SYMBOLS: u32 = 2;
+pub const TT_UCR_COMBINING_DIACRITICAL_MARKS_SYMB: u32 = 4;
+pub const TT_UCR_LETTERLIKE_SYMBOLS: u32 = 8;
+pub const TT_UCR_NUMBER_FORMS: u32 = 16;
+pub const TT_UCR_ARROWS: u32 = 32;
+pub const TT_UCR_MATHEMATICAL_OPERATORS: u32 = 64;
+pub const TT_UCR_MISCELLANEOUS_TECHNICAL: u32 = 128;
+pub const TT_UCR_CONTROL_PICTURES: u32 = 256;
+pub const TT_UCR_OCR: u32 = 512;
+pub const TT_UCR_ENCLOSED_ALPHANUMERICS: u32 = 1024;
+pub const TT_UCR_BOX_DRAWING: u32 = 2048;
+pub const TT_UCR_BLOCK_ELEMENTS: u32 = 4096;
+pub const TT_UCR_GEOMETRIC_SHAPES: u32 = 8192;
+pub const TT_UCR_MISCELLANEOUS_SYMBOLS: u32 = 16384;
+pub const TT_UCR_DINGBATS: u32 = 32768;
+pub const TT_UCR_CJK_SYMBOLS: u32 = 65536;
+pub const TT_UCR_HIRAGANA: u32 = 131072;
+pub const TT_UCR_KATAKANA: u32 = 262144;
+pub const TT_UCR_BOPOMOFO: u32 = 524288;
+pub const TT_UCR_HANGUL_COMPATIBILITY_JAMO: u32 = 1048576;
+pub const TT_UCR_CJK_MISC: u32 = 2097152;
+pub const TT_UCR_KANBUN: u32 = 2097152;
+pub const TT_UCR_ENCLOSED_CJK_LETTERS_MONTHS: u32 = 4194304;
+pub const TT_UCR_CJK_COMPATIBILITY: u32 = 8388608;
+pub const TT_UCR_HANGUL: u32 = 16777216;
+pub const TT_UCR_SURROGATES: u32 = 33554432;
+pub const TT_UCR_NON_PLANE_0: u32 = 33554432;
+pub const TT_UCR_PHOENICIAN: u32 = 67108864;
+pub const TT_UCR_CJK_UNIFIED_IDEOGRAPHS: u32 = 134217728;
+pub const TT_UCR_PRIVATE_USE: u32 = 268435456;
+pub const TT_UCR_CJK_COMPATIBILITY_IDEOGRAPHS: u32 = 536870912;
+pub const TT_UCR_ALPHABETIC_PRESENTATION_FORMS: u32 = 1073741824;
+pub const TT_UCR_ARABIC_PRESENTATION_FORMS_A: u32 = 2147483648;
+pub const TT_UCR_COMBINING_HALF_MARKS: u32 = 1;
+pub const TT_UCR_CJK_COMPATIBILITY_FORMS: u32 = 2;
+pub const TT_UCR_SMALL_FORM_VARIANTS: u32 = 4;
+pub const TT_UCR_ARABIC_PRESENTATION_FORMS_B: u32 = 8;
+pub const TT_UCR_HALFWIDTH_FULLWIDTH_FORMS: u32 = 16;
+pub const TT_UCR_SPECIALS: u32 = 32;
+pub const TT_UCR_TIBETAN: u32 = 64;
+pub const TT_UCR_SYRIAC: u32 = 128;
+pub const TT_UCR_THAANA: u32 = 256;
+pub const TT_UCR_SINHALA: u32 = 512;
+pub const TT_UCR_MYANMAR: u32 = 1024;
+pub const TT_UCR_ETHIOPIC: u32 = 2048;
+pub const TT_UCR_CHEROKEE: u32 = 4096;
+pub const TT_UCR_CANADIAN_ABORIGINAL_SYLLABICS: u32 = 8192;
+pub const TT_UCR_OGHAM: u32 = 16384;
+pub const TT_UCR_RUNIC: u32 = 32768;
+pub const TT_UCR_KHMER: u32 = 65536;
+pub const TT_UCR_MONGOLIAN: u32 = 131072;
+pub const TT_UCR_BRAILLE: u32 = 262144;
+pub const TT_UCR_YI: u32 = 524288;
+pub const TT_UCR_PHILIPPINE: u32 = 1048576;
+pub const TT_UCR_OLD_ITALIC: u32 = 2097152;
+pub const TT_UCR_GOTHIC: u32 = 4194304;
+pub const TT_UCR_DESERET: u32 = 8388608;
+pub const TT_UCR_MUSICAL_SYMBOLS: u32 = 16777216;
+pub const TT_UCR_MATH_ALPHANUMERIC_SYMBOLS: u32 = 33554432;
+pub const TT_UCR_PRIVATE_USE_SUPPLEMENTARY: u32 = 67108864;
+pub const TT_UCR_VARIATION_SELECTORS: u32 = 134217728;
+pub const TT_UCR_TAGS: u32 = 268435456;
+pub const TT_UCR_LIMBU: u32 = 536870912;
+pub const TT_UCR_TAI_LE: u32 = 1073741824;
+pub const TT_UCR_NEW_TAI_LUE: u32 = 2147483648;
+pub const TT_UCR_BUGINESE: u32 = 1;
+pub const TT_UCR_GLAGOLITIC: u32 = 2;
+pub const TT_UCR_TIFINAGH: u32 = 4;
+pub const TT_UCR_YIJING: u32 = 8;
+pub const TT_UCR_SYLOTI_NAGRI: u32 = 16;
+pub const TT_UCR_LINEAR_B: u32 = 32;
+pub const TT_UCR_ANCIENT_GREEK_NUMBERS: u32 = 64;
+pub const TT_UCR_UGARITIC: u32 = 128;
+pub const TT_UCR_OLD_PERSIAN: u32 = 256;
+pub const TT_UCR_SHAVIAN: u32 = 512;
+pub const TT_UCR_OSMANYA: u32 = 1024;
+pub const TT_UCR_CYPRIOT_SYLLABARY: u32 = 2048;
+pub const TT_UCR_KHAROSHTHI: u32 = 4096;
+pub const TT_UCR_TAI_XUAN_JING: u32 = 8192;
+pub const TT_UCR_CUNEIFORM: u32 = 16384;
+pub const TT_UCR_COUNTING_ROD_NUMERALS: u32 = 32768;
+pub const TT_UCR_SUNDANESE: u32 = 65536;
+pub const TT_UCR_LEPCHA: u32 = 131072;
+pub const TT_UCR_OL_CHIKI: u32 = 262144;
+pub const TT_UCR_SAURASHTRA: u32 = 524288;
+pub const TT_UCR_KAYAH_LI: u32 = 1048576;
+pub const TT_UCR_REJANG: u32 = 2097152;
+pub const TT_UCR_CHAM: u32 = 4194304;
+pub const TT_UCR_ANCIENT_SYMBOLS: u32 = 8388608;
+pub const TT_UCR_PHAISTOS_DISC: u32 = 16777216;
+pub const TT_UCR_OLD_ANATOLIAN: u32 = 33554432;
+pub const TT_UCR_GAME_TILES: u32 = 67108864;
+pub const TT_UCR_ARABIC_PRESENTATION_A: u32 = 2147483648;
+pub const TT_UCR_ARABIC_PRESENTATION_B: u32 = 8;
+pub const TT_UCR_COMBINING_DIACRITICS: u32 = 64;
+pub const TT_UCR_COMBINING_DIACRITICS_SYMB: u32 = 4;
+pub const FT_ANGLE_PI: u32 = 11796480;
+pub const FT_ANGLE_2PI: u32 = 23592960;
+pub const FT_ANGLE_PI2: u32 = 5898240;
+pub const FT_ANGLE_PI4: u32 = 2949120;
+pub const FT_WinFNT_ID_CP1252: u32 = 0;
+pub const FT_WinFNT_ID_DEFAULT: u32 = 1;
+pub const FT_WinFNT_ID_SYMBOL: u32 = 2;
+pub const FT_WinFNT_ID_MAC: u32 = 77;
+pub const FT_WinFNT_ID_CP932: u32 = 128;
+pub const FT_WinFNT_ID_CP949: u32 = 129;
+pub const FT_WinFNT_ID_CP1361: u32 = 130;
+pub const FT_WinFNT_ID_CP936: u32 = 134;
+pub const FT_WinFNT_ID_CP950: u32 = 136;
+pub const FT_WinFNT_ID_CP1253: u32 = 161;
+pub const FT_WinFNT_ID_CP1254: u32 = 162;
+pub const FT_WinFNT_ID_CP1258: u32 = 163;
+pub const FT_WinFNT_ID_CP1255: u32 = 177;
+pub const FT_WinFNT_ID_CP1256: u32 = 178;
+pub const FT_WinFNT_ID_CP1257: u32 = 186;
+pub const FT_WinFNT_ID_CP1251: u32 = 204;
+pub const FT_WinFNT_ID_CP874: u32 = 222;
+pub const FT_WinFNT_ID_CP1250: u32 = 238;
+pub const FT_WinFNT_ID_OEM: u32 = 255;
+pub const FONTSUBST_FROM: u32 = 0;
+pub const FONTSUBST_TO: u32 = 1;
+pub const FONTSUBST_FROM_AND_TO: u32 = 2;
 pub type __gnuc_va_list = __builtin_va_list;
 pub type va_list = __gnuc_va_list;
 pub type wchar_t = ::core::ffi::c_ushort;
@@ -114874,6 +115534,9 @@ pub const FT_Err_Corrupted_Font_Header: _bindgen_ty_4 = 185;
 pub const FT_Err_Corrupted_Font_Glyphs: _bindgen_ty_4 = 186;
 pub const FT_Err_Max: _bindgen_ty_4 = 187;
 pub type _bindgen_ty_4 = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub fn FT_Error_String(error_code: FT_Error) -> *const ::core::ffi::c_char;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct FT_Glyph_Metrics_ {
@@ -115065,6 +115728,12 @@ pub struct FT_GlyphSlotRec_ {
     pub internal: FT_Slot_Internal,
 }
 pub type FT_GlyphSlotRec = FT_GlyphSlotRec_;
+unsafe extern "C" {
+    pub fn FT_Init_FreeType(alibrary: *mut FT_Library) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Done_FreeType(library: FT_Library) -> FT_Error;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct FT_Parameter_ {
@@ -115085,6 +115754,46 @@ pub struct FT_Open_Args_ {
     pub params: *mut FT_Parameter,
 }
 pub type FT_Open_Args = FT_Open_Args_;
+unsafe extern "C" {
+    pub fn FT_New_Face(
+        library: FT_Library,
+        filepathname: *const ::core::ffi::c_char,
+        face_index: FT_Long,
+        aface: *mut FT_Face,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_New_Memory_Face(
+        library: FT_Library,
+        file_base: *const FT_Byte,
+        file_size: FT_Long,
+        face_index: FT_Long,
+        aface: *mut FT_Face,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Open_Face(
+        library: FT_Library,
+        args: *const FT_Open_Args,
+        face_index: FT_Long,
+        aface: *mut FT_Face,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Attach_File(face: FT_Face, filepathname: *const ::core::ffi::c_char) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Attach_Stream(face: FT_Face, parameters: *mut FT_Open_Args) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Reference_Face(face: FT_Face) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Done_Face(face: FT_Face) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Select_Size(face: FT_Face, strike_index: FT_Int) -> FT_Error;
+}
 pub const FT_Size_Request_Type__FT_SIZE_REQUEST_TYPE_NOMINAL: FT_Size_Request_Type_ = 0;
 pub const FT_Size_Request_Type__FT_SIZE_REQUEST_TYPE_REAL_DIM: FT_Size_Request_Type_ = 1;
 pub const FT_Size_Request_Type__FT_SIZE_REQUEST_TYPE_BBOX: FT_Size_Request_Type_ = 2;
@@ -115104,6 +115813,34 @@ pub struct FT_Size_RequestRec_ {
 }
 pub type FT_Size_RequestRec = FT_Size_RequestRec_;
 pub type FT_Size_Request = *mut FT_Size_RequestRec_;
+unsafe extern "C" {
+    pub fn FT_Request_Size(face: FT_Face, req: FT_Size_Request) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Set_Char_Size(
+        face: FT_Face,
+        char_width: FT_F26Dot6,
+        char_height: FT_F26Dot6,
+        horz_resolution: FT_UInt,
+        vert_resolution: FT_UInt,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Set_Pixel_Sizes(
+        face: FT_Face,
+        pixel_width: FT_UInt,
+        pixel_height: FT_UInt,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Load_Glyph(face: FT_Face, glyph_index: FT_UInt, load_flags: FT_Int32) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Load_Char(face: FT_Face, char_code: FT_ULong, load_flags: FT_Int32) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Set_Transform(face: FT_Face, matrix: *mut FT_Matrix, delta: *mut FT_Vector);
+}
 pub const FT_Render_Mode__FT_RENDER_MODE_NORMAL: FT_Render_Mode_ = 0;
 pub const FT_Render_Mode__FT_RENDER_MODE_LIGHT: FT_Render_Mode_ = 1;
 pub const FT_Render_Mode__FT_RENDER_MODE_MONO: FT_Render_Mode_ = 2;
@@ -115112,11 +115849,81 @@ pub const FT_Render_Mode__FT_RENDER_MODE_LCD_V: FT_Render_Mode_ = 4;
 pub const FT_Render_Mode__FT_RENDER_MODE_MAX: FT_Render_Mode_ = 5;
 pub type FT_Render_Mode_ = ::core::ffi::c_uint;
 pub use self::FT_Render_Mode_ as FT_Render_Mode;
+unsafe extern "C" {
+    pub fn FT_Render_Glyph(slot: FT_GlyphSlot, render_mode: FT_Render_Mode) -> FT_Error;
+}
 pub const FT_Kerning_Mode__FT_KERNING_DEFAULT: FT_Kerning_Mode_ = 0;
 pub const FT_Kerning_Mode__FT_KERNING_UNFITTED: FT_Kerning_Mode_ = 1;
 pub const FT_Kerning_Mode__FT_KERNING_UNSCALED: FT_Kerning_Mode_ = 2;
 pub type FT_Kerning_Mode_ = ::core::ffi::c_uint;
 pub use self::FT_Kerning_Mode_ as FT_Kerning_Mode;
+unsafe extern "C" {
+    pub fn FT_Get_Kerning(
+        face: FT_Face,
+        left_glyph: FT_UInt,
+        right_glyph: FT_UInt,
+        kern_mode: FT_UInt,
+        akerning: *mut FT_Vector,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Track_Kerning(
+        face: FT_Face,
+        point_size: FT_Fixed,
+        degree: FT_Int,
+        akerning: *mut FT_Fixed,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Glyph_Name(
+        face: FT_Face,
+        glyph_index: FT_UInt,
+        buffer: FT_Pointer,
+        buffer_max: FT_UInt,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Postscript_Name(face: FT_Face) -> *const ::core::ffi::c_char;
+}
+unsafe extern "C" {
+    pub fn FT_Select_Charmap(face: FT_Face, encoding: FT_Encoding) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Set_Charmap(face: FT_Face, charmap: FT_CharMap) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Charmap_Index(charmap: FT_CharMap) -> FT_Int;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Char_Index(face: FT_Face, charcode: FT_ULong) -> FT_UInt;
+}
+unsafe extern "C" {
+    pub fn FT_Get_First_Char(face: FT_Face, agindex: *mut FT_UInt) -> FT_ULong;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Next_Char(face: FT_Face, char_code: FT_ULong, agindex: *mut FT_UInt) -> FT_ULong;
+}
+unsafe extern "C" {
+    pub fn FT_Face_Properties(
+        face: FT_Face,
+        num_properties: FT_UInt,
+        properties: *mut FT_Parameter,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Name_Index(face: FT_Face, glyph_name: *mut FT_String) -> FT_UInt;
+}
+unsafe extern "C" {
+    pub fn FT_Get_SubGlyph_Info(
+        glyph: FT_GlyphSlot,
+        sub_index: FT_UInt,
+        p_index: *mut FT_Int,
+        p_flags: *mut FT_UInt,
+        p_arg1: *mut FT_Int,
+        p_arg2: *mut FT_Int,
+        p_transform: *mut FT_Matrix,
+    ) -> FT_Error;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct FT_LayerIterator_ {
@@ -115125,6 +115932,76 @@ pub struct FT_LayerIterator_ {
     pub p: *mut FT_Byte,
 }
 pub type FT_LayerIterator = FT_LayerIterator_;
+unsafe extern "C" {
+    pub fn FT_Get_Color_Glyph_Layer(
+        face: FT_Face,
+        base_glyph: FT_UInt,
+        aglyph_index: *mut FT_UInt,
+        acolor_index: *mut FT_UInt,
+        iterator: *mut FT_LayerIterator,
+    ) -> FT_Bool;
+}
+unsafe extern "C" {
+    pub fn FT_Get_FSType_Flags(face: FT_Face) -> FT_UShort;
+}
+unsafe extern "C" {
+    pub fn FT_Face_GetCharVariantIndex(
+        face: FT_Face,
+        charcode: FT_ULong,
+        variantSelector: FT_ULong,
+    ) -> FT_UInt;
+}
+unsafe extern "C" {
+    pub fn FT_Face_GetCharVariantIsDefault(
+        face: FT_Face,
+        charcode: FT_ULong,
+        variantSelector: FT_ULong,
+    ) -> FT_Int;
+}
+unsafe extern "C" {
+    pub fn FT_Face_GetVariantSelectors(face: FT_Face) -> *mut FT_UInt32;
+}
+unsafe extern "C" {
+    pub fn FT_Face_GetVariantsOfChar(face: FT_Face, charcode: FT_ULong) -> *mut FT_UInt32;
+}
+unsafe extern "C" {
+    pub fn FT_Face_GetCharsOfVariant(face: FT_Face, variantSelector: FT_ULong) -> *mut FT_UInt32;
+}
+unsafe extern "C" {
+    pub fn FT_MulDiv(a: FT_Long, b: FT_Long, c: FT_Long) -> FT_Long;
+}
+unsafe extern "C" {
+    pub fn FT_MulFix(a: FT_Long, b: FT_Long) -> FT_Long;
+}
+unsafe extern "C" {
+    pub fn FT_DivFix(a: FT_Long, b: FT_Long) -> FT_Long;
+}
+unsafe extern "C" {
+    pub fn FT_RoundFix(a: FT_Fixed) -> FT_Fixed;
+}
+unsafe extern "C" {
+    pub fn FT_CeilFix(a: FT_Fixed) -> FT_Fixed;
+}
+unsafe extern "C" {
+    pub fn FT_FloorFix(a: FT_Fixed) -> FT_Fixed;
+}
+unsafe extern "C" {
+    pub fn FT_Vector_Transform(vector: *mut FT_Vector, matrix: *const FT_Matrix);
+}
+unsafe extern "C" {
+    pub fn FT_Library_Version(
+        library: FT_Library,
+        amajor: *mut FT_Int,
+        aminor: *mut FT_Int,
+        apatch: *mut FT_Int,
+    );
+}
+unsafe extern "C" {
+    pub fn FT_Face_CheckTrueTypePatents(face: FT_Face) -> FT_Bool;
+}
+unsafe extern "C" {
+    pub fn FT_Face_SetUnpatentedHinting(face: FT_Face, value: FT_Bool) -> FT_Bool;
+}
 pub type PDC = *mut _DC;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -122313,6 +123190,863 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static __emptyLargeString: LARGE_STRING;
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_Glyph_Class_ {
+    _unused: [u8; 0],
+}
+pub type FT_Glyph_Class = FT_Glyph_Class_;
+pub type FT_Glyph = *mut FT_GlyphRec_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_GlyphRec_ {
+    pub library: FT_Library,
+    pub clazz: *const FT_Glyph_Class,
+    pub format: FT_Glyph_Format,
+    pub advance: FT_Vector,
+}
+pub type FT_GlyphRec = FT_GlyphRec_;
+pub type FT_BitmapGlyph = *mut FT_BitmapGlyphRec_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_BitmapGlyphRec_ {
+    pub root: FT_GlyphRec,
+    pub left: FT_Int,
+    pub top: FT_Int,
+    pub bitmap: FT_Bitmap,
+}
+pub type FT_BitmapGlyphRec = FT_BitmapGlyphRec_;
+pub type FT_OutlineGlyph = *mut FT_OutlineGlyphRec_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_OutlineGlyphRec_ {
+    pub root: FT_GlyphRec,
+    pub outline: FT_Outline,
+}
+pub type FT_OutlineGlyphRec = FT_OutlineGlyphRec_;
+unsafe extern "C" {
+    pub fn FT_New_Glyph(
+        library: FT_Library,
+        format: FT_Glyph_Format,
+        aglyph: *mut FT_Glyph,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Glyph(slot: FT_GlyphSlot, aglyph: *mut FT_Glyph) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Glyph_Copy(source: FT_Glyph, target: *mut FT_Glyph) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Glyph_Transform(
+        glyph: FT_Glyph,
+        matrix: *mut FT_Matrix,
+        delta: *mut FT_Vector,
+    ) -> FT_Error;
+}
+pub const FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_UNSCALED: FT_Glyph_BBox_Mode_ = 0;
+pub const FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_SUBPIXELS: FT_Glyph_BBox_Mode_ = 0;
+pub const FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_GRIDFIT: FT_Glyph_BBox_Mode_ = 1;
+pub const FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_TRUNCATE: FT_Glyph_BBox_Mode_ = 2;
+pub const FT_Glyph_BBox_Mode__FT_GLYPH_BBOX_PIXELS: FT_Glyph_BBox_Mode_ = 3;
+pub type FT_Glyph_BBox_Mode_ = ::core::ffi::c_uint;
+pub use self::FT_Glyph_BBox_Mode_ as FT_Glyph_BBox_Mode;
+unsafe extern "C" {
+    pub fn FT_Glyph_Get_CBox(glyph: FT_Glyph, bbox_mode: FT_UInt, acbox: *mut FT_BBox);
+}
+unsafe extern "C" {
+    pub fn FT_Glyph_To_Bitmap(
+        the_glyph: *mut FT_Glyph,
+        render_mode: FT_Render_Mode,
+        origin: *mut FT_Vector,
+        destroy: FT_Bool,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Done_Glyph(glyph: FT_Glyph);
+}
+unsafe extern "C" {
+    pub fn FT_Matrix_Multiply(a: *const FT_Matrix, b: *mut FT_Matrix);
+}
+unsafe extern "C" {
+    pub fn FT_Matrix_Invert(matrix: *mut FT_Matrix) -> FT_Error;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_Color_ {
+    pub blue: FT_Byte,
+    pub green: FT_Byte,
+    pub red: FT_Byte,
+    pub alpha: FT_Byte,
+}
+pub type FT_Color = FT_Color_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_Palette_Data_ {
+    pub num_palettes: FT_UShort,
+    pub palette_name_ids: *const FT_UShort,
+    pub palette_flags: *const FT_UShort,
+    pub num_palette_entries: FT_UShort,
+    pub palette_entry_name_ids: *const FT_UShort,
+}
+pub type FT_Palette_Data = FT_Palette_Data_;
+unsafe extern "C" {
+    pub fn FT_Palette_Data_Get(face: FT_Face, apalette: *mut FT_Palette_Data) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Palette_Select(
+        face: FT_Face,
+        palette_index: FT_UShort,
+        apalette: *mut *mut FT_Color,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Palette_Set_Foreground_Color(face: FT_Face, foreground_color: FT_Color) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_Init(abitmap: *mut FT_Bitmap);
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_New(abitmap: *mut FT_Bitmap);
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_Copy(
+        library: FT_Library,
+        source: *const FT_Bitmap,
+        target: *mut FT_Bitmap,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_Embolden(
+        library: FT_Library,
+        bitmap: *mut FT_Bitmap,
+        xStrength: FT_Pos,
+        yStrength: FT_Pos,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_Convert(
+        library: FT_Library,
+        source: *const FT_Bitmap,
+        target: *mut FT_Bitmap,
+        alignment: FT_Int,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_Convert_ReactOS_Hack(
+        library: FT_Library,
+        source: *const FT_Bitmap,
+        target: *mut FT_Bitmap,
+        alignment: FT_Int,
+        hack: FT_Bool,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_Blend(
+        library: FT_Library,
+        source: *const FT_Bitmap,
+        source_offset: FT_Vector,
+        target: *mut FT_Bitmap,
+        atarget_offset: *mut FT_Vector,
+        color: FT_Color,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_GlyphSlot_Own_Bitmap(slot: FT_GlyphSlot) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Bitmap_Done(library: FT_Library, bitmap: *mut FT_Bitmap) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Decompose(
+        outline: *mut FT_Outline,
+        func_interface: *const FT_Outline_Funcs,
+        user: *mut ::core::ffi::c_void,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_New(
+        library: FT_Library,
+        numPoints: FT_UInt,
+        numContours: FT_Int,
+        anoutline: *mut FT_Outline,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Done(library: FT_Library, outline: *mut FT_Outline) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Check(outline: *mut FT_Outline) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Get_CBox(outline: *const FT_Outline, acbox: *mut FT_BBox);
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Translate(outline: *const FT_Outline, xOffset: FT_Pos, yOffset: FT_Pos);
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Copy(source: *const FT_Outline, target: *mut FT_Outline) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Transform(outline: *const FT_Outline, matrix: *const FT_Matrix);
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Embolden(outline: *mut FT_Outline, strength: FT_Pos) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_EmboldenXY(
+        outline: *mut FT_Outline,
+        xstrength: FT_Pos,
+        ystrength: FT_Pos,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Reverse(outline: *mut FT_Outline);
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Get_Bitmap(
+        library: FT_Library,
+        outline: *mut FT_Outline,
+        abitmap: *const FT_Bitmap,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Outline_Render(
+        library: FT_Library,
+        outline: *mut FT_Outline,
+        params: *mut FT_Raster_Params,
+    ) -> FT_Error;
+}
+pub const FT_Orientation__FT_ORIENTATION_TRUETYPE: FT_Orientation_ = 0;
+pub const FT_Orientation__FT_ORIENTATION_POSTSCRIPT: FT_Orientation_ = 1;
+pub const FT_Orientation__FT_ORIENTATION_FILL_RIGHT: FT_Orientation_ = 0;
+pub const FT_Orientation__FT_ORIENTATION_FILL_LEFT: FT_Orientation_ = 1;
+pub const FT_Orientation__FT_ORIENTATION_NONE: FT_Orientation_ = 2;
+pub type FT_Orientation_ = ::core::ffi::c_uint;
+pub use self::FT_Orientation_ as FT_Orientation;
+unsafe extern "C" {
+    pub fn FT_Outline_Get_Orientation(outline: *mut FT_Outline) -> FT_Orientation;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PS_FontInfoRec_ {
+    pub version: *mut FT_String,
+    pub notice: *mut FT_String,
+    pub full_name: *mut FT_String,
+    pub family_name: *mut FT_String,
+    pub weight: *mut FT_String,
+    pub italic_angle: FT_Long,
+    pub is_fixed_pitch: FT_Bool,
+    pub underline_position: FT_Short,
+    pub underline_thickness: FT_UShort,
+}
+pub type PS_FontInfoRec = PS_FontInfoRec_;
+pub type PS_FontInfo = *mut PS_FontInfoRec_;
+pub type T1_FontInfo = PS_FontInfoRec;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PS_PrivateRec_ {
+    pub unique_id: FT_Int,
+    pub lenIV: FT_Int,
+    pub num_blue_values: FT_Byte,
+    pub num_other_blues: FT_Byte,
+    pub num_family_blues: FT_Byte,
+    pub num_family_other_blues: FT_Byte,
+    pub blue_values: [FT_Short; 14usize],
+    pub other_blues: [FT_Short; 10usize],
+    pub family_blues: [FT_Short; 14usize],
+    pub family_other_blues: [FT_Short; 10usize],
+    pub blue_scale: FT_Fixed,
+    pub blue_shift: FT_Int,
+    pub blue_fuzz: FT_Int,
+    pub standard_width: [FT_UShort; 1usize],
+    pub standard_height: [FT_UShort; 1usize],
+    pub num_snap_widths: FT_Byte,
+    pub num_snap_heights: FT_Byte,
+    pub force_bold: FT_Bool,
+    pub round_stem_up: FT_Bool,
+    pub snap_widths: [FT_Short; 13usize],
+    pub snap_heights: [FT_Short; 13usize],
+    pub expansion_factor: FT_Fixed,
+    pub language_group: FT_Long,
+    pub password: FT_Long,
+    pub min_feature: [FT_Short; 2usize],
+}
+pub type PS_PrivateRec = PS_PrivateRec_;
+pub type PS_Private = *mut PS_PrivateRec_;
+pub type T1_Private = PS_PrivateRec;
+pub const T1_Blend_Flags__T1_BLEND_UNDERLINE_POSITION: T1_Blend_Flags_ = 0;
+pub const T1_Blend_Flags__T1_BLEND_UNDERLINE_THICKNESS: T1_Blend_Flags_ = 1;
+pub const T1_Blend_Flags__T1_BLEND_ITALIC_ANGLE: T1_Blend_Flags_ = 2;
+pub const T1_Blend_Flags__T1_BLEND_BLUE_VALUES: T1_Blend_Flags_ = 3;
+pub const T1_Blend_Flags__T1_BLEND_OTHER_BLUES: T1_Blend_Flags_ = 4;
+pub const T1_Blend_Flags__T1_BLEND_STANDARD_WIDTH: T1_Blend_Flags_ = 5;
+pub const T1_Blend_Flags__T1_BLEND_STANDARD_HEIGHT: T1_Blend_Flags_ = 6;
+pub const T1_Blend_Flags__T1_BLEND_STEM_SNAP_WIDTHS: T1_Blend_Flags_ = 7;
+pub const T1_Blend_Flags__T1_BLEND_STEM_SNAP_HEIGHTS: T1_Blend_Flags_ = 8;
+pub const T1_Blend_Flags__T1_BLEND_BLUE_SCALE: T1_Blend_Flags_ = 9;
+pub const T1_Blend_Flags__T1_BLEND_BLUE_SHIFT: T1_Blend_Flags_ = 10;
+pub const T1_Blend_Flags__T1_BLEND_FAMILY_BLUES: T1_Blend_Flags_ = 11;
+pub const T1_Blend_Flags__T1_BLEND_FAMILY_OTHER_BLUES: T1_Blend_Flags_ = 12;
+pub const T1_Blend_Flags__T1_BLEND_FORCE_BOLD: T1_Blend_Flags_ = 13;
+pub const T1_Blend_Flags__T1_BLEND_MAX: T1_Blend_Flags_ = 14;
+pub type T1_Blend_Flags_ = ::core::ffi::c_uint;
+pub use self::T1_Blend_Flags_ as T1_Blend_Flags;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PS_DesignMap_ {
+    pub num_points: FT_Byte,
+    pub design_points: *mut FT_Long,
+    pub blend_points: *mut FT_Fixed,
+}
+pub type PS_DesignMapRec = PS_DesignMap_;
+pub type PS_DesignMap = *mut PS_DesignMap_;
+pub type T1_DesignMap = PS_DesignMapRec;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PS_BlendRec_ {
+    pub num_designs: FT_UInt,
+    pub num_axis: FT_UInt,
+    pub axis_names: [*mut FT_String; 4usize],
+    pub design_pos: [*mut FT_Fixed; 16usize],
+    pub design_map: [PS_DesignMapRec; 4usize],
+    pub weight_vector: *mut FT_Fixed,
+    pub default_weight_vector: *mut FT_Fixed,
+    pub font_infos: [PS_FontInfo; 17usize],
+    pub privates: [PS_Private; 17usize],
+    pub blend_bitflags: FT_ULong,
+    pub bboxes: [*mut FT_BBox; 17usize],
+    pub default_design_vector: [FT_UInt; 16usize],
+    pub num_default_design_vector: FT_UInt,
+}
+pub type PS_BlendRec = PS_BlendRec_;
+pub type PS_Blend = *mut PS_BlendRec_;
+pub type T1_Blend = PS_BlendRec;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CID_FaceDictRec_ {
+    pub private_dict: PS_PrivateRec,
+    pub len_buildchar: FT_UInt,
+    pub forcebold_threshold: FT_Fixed,
+    pub stroke_width: FT_Pos,
+    pub expansion_factor: FT_Fixed,
+    pub paint_type: FT_Byte,
+    pub font_type: FT_Byte,
+    pub font_matrix: FT_Matrix,
+    pub font_offset: FT_Vector,
+    pub num_subrs: FT_UInt,
+    pub subrmap_offset: FT_ULong,
+    pub sd_bytes: FT_Int,
+}
+pub type CID_FaceDictRec = CID_FaceDictRec_;
+pub type CID_FaceDict = *mut CID_FaceDictRec_;
+pub type CID_FontDict = CID_FaceDictRec;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CID_FaceInfoRec_ {
+    pub cid_font_name: *mut FT_String,
+    pub cid_version: FT_Fixed,
+    pub cid_font_type: FT_Int,
+    pub registry: *mut FT_String,
+    pub ordering: *mut FT_String,
+    pub supplement: FT_Int,
+    pub font_info: PS_FontInfoRec,
+    pub font_bbox: FT_BBox,
+    pub uid_base: FT_ULong,
+    pub num_xuid: FT_Int,
+    pub xuid: [FT_ULong; 16usize],
+    pub cidmap_offset: FT_ULong,
+    pub fd_bytes: FT_Int,
+    pub gd_bytes: FT_Int,
+    pub cid_count: FT_ULong,
+    pub num_dicts: FT_Int,
+    pub font_dicts: CID_FaceDict,
+    pub data_offset: FT_ULong,
+}
+pub type CID_FaceInfoRec = CID_FaceInfoRec_;
+pub type CID_FaceInfo = *mut CID_FaceInfoRec_;
+pub type CID_Info = CID_FaceInfoRec;
+unsafe extern "C" {
+    pub fn FT_Has_PS_Glyph_Names(face: FT_Face) -> FT_Int;
+}
+unsafe extern "C" {
+    pub fn FT_Get_PS_Font_Info(face: FT_Face, afont_info: PS_FontInfo) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_PS_Font_Private(face: FT_Face, afont_private: PS_Private) -> FT_Error;
+}
+pub const T1_EncodingType__T1_ENCODING_TYPE_NONE: T1_EncodingType_ = 0;
+pub const T1_EncodingType__T1_ENCODING_TYPE_ARRAY: T1_EncodingType_ = 1;
+pub const T1_EncodingType__T1_ENCODING_TYPE_STANDARD: T1_EncodingType_ = 2;
+pub const T1_EncodingType__T1_ENCODING_TYPE_ISOLATIN1: T1_EncodingType_ = 3;
+pub const T1_EncodingType__T1_ENCODING_TYPE_EXPERT: T1_EncodingType_ = 4;
+pub type T1_EncodingType_ = ::core::ffi::c_uint;
+pub use self::T1_EncodingType_ as T1_EncodingType;
+pub const PS_Dict_Keys__PS_DICT_FONT_TYPE: PS_Dict_Keys_ = 0;
+pub const PS_Dict_Keys__PS_DICT_FONT_MATRIX: PS_Dict_Keys_ = 1;
+pub const PS_Dict_Keys__PS_DICT_FONT_BBOX: PS_Dict_Keys_ = 2;
+pub const PS_Dict_Keys__PS_DICT_PAINT_TYPE: PS_Dict_Keys_ = 3;
+pub const PS_Dict_Keys__PS_DICT_FONT_NAME: PS_Dict_Keys_ = 4;
+pub const PS_Dict_Keys__PS_DICT_UNIQUE_ID: PS_Dict_Keys_ = 5;
+pub const PS_Dict_Keys__PS_DICT_NUM_CHAR_STRINGS: PS_Dict_Keys_ = 6;
+pub const PS_Dict_Keys__PS_DICT_CHAR_STRING_KEY: PS_Dict_Keys_ = 7;
+pub const PS_Dict_Keys__PS_DICT_CHAR_STRING: PS_Dict_Keys_ = 8;
+pub const PS_Dict_Keys__PS_DICT_ENCODING_TYPE: PS_Dict_Keys_ = 9;
+pub const PS_Dict_Keys__PS_DICT_ENCODING_ENTRY: PS_Dict_Keys_ = 10;
+pub const PS_Dict_Keys__PS_DICT_NUM_SUBRS: PS_Dict_Keys_ = 11;
+pub const PS_Dict_Keys__PS_DICT_SUBR: PS_Dict_Keys_ = 12;
+pub const PS_Dict_Keys__PS_DICT_STD_HW: PS_Dict_Keys_ = 13;
+pub const PS_Dict_Keys__PS_DICT_STD_VW: PS_Dict_Keys_ = 14;
+pub const PS_Dict_Keys__PS_DICT_NUM_BLUE_VALUES: PS_Dict_Keys_ = 15;
+pub const PS_Dict_Keys__PS_DICT_BLUE_VALUE: PS_Dict_Keys_ = 16;
+pub const PS_Dict_Keys__PS_DICT_BLUE_FUZZ: PS_Dict_Keys_ = 17;
+pub const PS_Dict_Keys__PS_DICT_NUM_OTHER_BLUES: PS_Dict_Keys_ = 18;
+pub const PS_Dict_Keys__PS_DICT_OTHER_BLUE: PS_Dict_Keys_ = 19;
+pub const PS_Dict_Keys__PS_DICT_NUM_FAMILY_BLUES: PS_Dict_Keys_ = 20;
+pub const PS_Dict_Keys__PS_DICT_FAMILY_BLUE: PS_Dict_Keys_ = 21;
+pub const PS_Dict_Keys__PS_DICT_NUM_FAMILY_OTHER_BLUES: PS_Dict_Keys_ = 22;
+pub const PS_Dict_Keys__PS_DICT_FAMILY_OTHER_BLUE: PS_Dict_Keys_ = 23;
+pub const PS_Dict_Keys__PS_DICT_BLUE_SCALE: PS_Dict_Keys_ = 24;
+pub const PS_Dict_Keys__PS_DICT_BLUE_SHIFT: PS_Dict_Keys_ = 25;
+pub const PS_Dict_Keys__PS_DICT_NUM_STEM_SNAP_H: PS_Dict_Keys_ = 26;
+pub const PS_Dict_Keys__PS_DICT_STEM_SNAP_H: PS_Dict_Keys_ = 27;
+pub const PS_Dict_Keys__PS_DICT_NUM_STEM_SNAP_V: PS_Dict_Keys_ = 28;
+pub const PS_Dict_Keys__PS_DICT_STEM_SNAP_V: PS_Dict_Keys_ = 29;
+pub const PS_Dict_Keys__PS_DICT_FORCE_BOLD: PS_Dict_Keys_ = 30;
+pub const PS_Dict_Keys__PS_DICT_RND_STEM_UP: PS_Dict_Keys_ = 31;
+pub const PS_Dict_Keys__PS_DICT_MIN_FEATURE: PS_Dict_Keys_ = 32;
+pub const PS_Dict_Keys__PS_DICT_LEN_IV: PS_Dict_Keys_ = 33;
+pub const PS_Dict_Keys__PS_DICT_PASSWORD: PS_Dict_Keys_ = 34;
+pub const PS_Dict_Keys__PS_DICT_LANGUAGE_GROUP: PS_Dict_Keys_ = 35;
+pub const PS_Dict_Keys__PS_DICT_VERSION: PS_Dict_Keys_ = 36;
+pub const PS_Dict_Keys__PS_DICT_NOTICE: PS_Dict_Keys_ = 37;
+pub const PS_Dict_Keys__PS_DICT_FULL_NAME: PS_Dict_Keys_ = 38;
+pub const PS_Dict_Keys__PS_DICT_FAMILY_NAME: PS_Dict_Keys_ = 39;
+pub const PS_Dict_Keys__PS_DICT_WEIGHT: PS_Dict_Keys_ = 40;
+pub const PS_Dict_Keys__PS_DICT_IS_FIXED_PITCH: PS_Dict_Keys_ = 41;
+pub const PS_Dict_Keys__PS_DICT_UNDERLINE_POSITION: PS_Dict_Keys_ = 42;
+pub const PS_Dict_Keys__PS_DICT_UNDERLINE_THICKNESS: PS_Dict_Keys_ = 43;
+pub const PS_Dict_Keys__PS_DICT_FS_TYPE: PS_Dict_Keys_ = 44;
+pub const PS_Dict_Keys__PS_DICT_ITALIC_ANGLE: PS_Dict_Keys_ = 45;
+pub const PS_Dict_Keys__PS_DICT_MAX: PS_Dict_Keys_ = 45;
+pub type PS_Dict_Keys_ = ::core::ffi::c_uint;
+pub use self::PS_Dict_Keys_ as PS_Dict_Keys;
+unsafe extern "C" {
+    pub fn FT_Get_PS_Font_Value(
+        face: FT_Face,
+        key: PS_Dict_Keys,
+        idx: FT_UInt,
+        value: *mut ::core::ffi::c_void,
+        value_len: FT_Long,
+    ) -> FT_Long;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TT_Header_ {
+    pub Table_Version: FT_Fixed,
+    pub Font_Revision: FT_Fixed,
+    pub CheckSum_Adjust: FT_Long,
+    pub Magic_Number: FT_Long,
+    pub Flags: FT_UShort,
+    pub Units_Per_EM: FT_UShort,
+    pub Created: [FT_ULong; 2usize],
+    pub Modified: [FT_ULong; 2usize],
+    pub xMin: FT_Short,
+    pub yMin: FT_Short,
+    pub xMax: FT_Short,
+    pub yMax: FT_Short,
+    pub Mac_Style: FT_UShort,
+    pub Lowest_Rec_PPEM: FT_UShort,
+    pub Font_Direction: FT_Short,
+    pub Index_To_Loc_Format: FT_Short,
+    pub Glyph_Data_Format: FT_Short,
+}
+pub type TT_Header = TT_Header_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TT_HoriHeader_ {
+    pub Version: FT_Fixed,
+    pub Ascender: FT_Short,
+    pub Descender: FT_Short,
+    pub Line_Gap: FT_Short,
+    pub advance_Width_Max: FT_UShort,
+    pub min_Left_Side_Bearing: FT_Short,
+    pub min_Right_Side_Bearing: FT_Short,
+    pub xMax_Extent: FT_Short,
+    pub caret_Slope_Rise: FT_Short,
+    pub caret_Slope_Run: FT_Short,
+    pub caret_Offset: FT_Short,
+    pub Reserved: [FT_Short; 4usize],
+    pub metric_Data_Format: FT_Short,
+    pub number_Of_HMetrics: FT_UShort,
+    pub long_metrics: *mut ::core::ffi::c_void,
+    pub short_metrics: *mut ::core::ffi::c_void,
+}
+pub type TT_HoriHeader = TT_HoriHeader_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TT_VertHeader_ {
+    pub Version: FT_Fixed,
+    pub Ascender: FT_Short,
+    pub Descender: FT_Short,
+    pub Line_Gap: FT_Short,
+    pub advance_Height_Max: FT_UShort,
+    pub min_Top_Side_Bearing: FT_Short,
+    pub min_Bottom_Side_Bearing: FT_Short,
+    pub yMax_Extent: FT_Short,
+    pub caret_Slope_Rise: FT_Short,
+    pub caret_Slope_Run: FT_Short,
+    pub caret_Offset: FT_Short,
+    pub Reserved: [FT_Short; 4usize],
+    pub metric_Data_Format: FT_Short,
+    pub number_Of_VMetrics: FT_UShort,
+    pub long_metrics: *mut ::core::ffi::c_void,
+    pub short_metrics: *mut ::core::ffi::c_void,
+}
+pub type TT_VertHeader = TT_VertHeader_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TT_OS2_ {
+    pub version: FT_UShort,
+    pub xAvgCharWidth: FT_Short,
+    pub usWeightClass: FT_UShort,
+    pub usWidthClass: FT_UShort,
+    pub fsType: FT_UShort,
+    pub ySubscriptXSize: FT_Short,
+    pub ySubscriptYSize: FT_Short,
+    pub ySubscriptXOffset: FT_Short,
+    pub ySubscriptYOffset: FT_Short,
+    pub ySuperscriptXSize: FT_Short,
+    pub ySuperscriptYSize: FT_Short,
+    pub ySuperscriptXOffset: FT_Short,
+    pub ySuperscriptYOffset: FT_Short,
+    pub yStrikeoutSize: FT_Short,
+    pub yStrikeoutPosition: FT_Short,
+    pub sFamilyClass: FT_Short,
+    pub panose: [FT_Byte; 10usize],
+    pub ulUnicodeRange1: FT_ULong,
+    pub ulUnicodeRange2: FT_ULong,
+    pub ulUnicodeRange3: FT_ULong,
+    pub ulUnicodeRange4: FT_ULong,
+    pub achVendID: [FT_Char; 4usize],
+    pub fsSelection: FT_UShort,
+    pub usFirstCharIndex: FT_UShort,
+    pub usLastCharIndex: FT_UShort,
+    pub sTypoAscender: FT_Short,
+    pub sTypoDescender: FT_Short,
+    pub sTypoLineGap: FT_Short,
+    pub usWinAscent: FT_UShort,
+    pub usWinDescent: FT_UShort,
+    pub ulCodePageRange1: FT_ULong,
+    pub ulCodePageRange2: FT_ULong,
+    pub sxHeight: FT_Short,
+    pub sCapHeight: FT_Short,
+    pub usDefaultChar: FT_UShort,
+    pub usBreakChar: FT_UShort,
+    pub usMaxContext: FT_UShort,
+    pub usLowerOpticalPointSize: FT_UShort,
+    pub usUpperOpticalPointSize: FT_UShort,
+}
+pub type TT_OS2 = TT_OS2_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TT_Postscript_ {
+    pub FormatType: FT_Fixed,
+    pub italicAngle: FT_Fixed,
+    pub underlinePosition: FT_Short,
+    pub underlineThickness: FT_Short,
+    pub isFixedPitch: FT_ULong,
+    pub minMemType42: FT_ULong,
+    pub maxMemType42: FT_ULong,
+    pub minMemType1: FT_ULong,
+    pub maxMemType1: FT_ULong,
+}
+pub type TT_Postscript = TT_Postscript_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TT_PCLT_ {
+    pub Version: FT_Fixed,
+    pub FontNumber: FT_ULong,
+    pub Pitch: FT_UShort,
+    pub xHeight: FT_UShort,
+    pub Style: FT_UShort,
+    pub TypeFamily: FT_UShort,
+    pub CapHeight: FT_UShort,
+    pub SymbolSet: FT_UShort,
+    pub TypeFace: [FT_Char; 16usize],
+    pub CharacterComplement: [FT_Char; 8usize],
+    pub FileName: [FT_Char; 6usize],
+    pub StrokeWeight: FT_Char,
+    pub WidthType: FT_Char,
+    pub SerifStyle: FT_Byte,
+    pub Reserved: FT_Byte,
+}
+pub type TT_PCLT = TT_PCLT_;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TT_MaxProfile_ {
+    pub version: FT_Fixed,
+    pub numGlyphs: FT_UShort,
+    pub maxPoints: FT_UShort,
+    pub maxContours: FT_UShort,
+    pub maxCompositePoints: FT_UShort,
+    pub maxCompositeContours: FT_UShort,
+    pub maxZones: FT_UShort,
+    pub maxTwilightPoints: FT_UShort,
+    pub maxStorage: FT_UShort,
+    pub maxFunctionDefs: FT_UShort,
+    pub maxInstructionDefs: FT_UShort,
+    pub maxStackElements: FT_UShort,
+    pub maxSizeOfInstructions: FT_UShort,
+    pub maxComponentElements: FT_UShort,
+    pub maxComponentDepth: FT_UShort,
+}
+pub type TT_MaxProfile = TT_MaxProfile_;
+pub const FT_Sfnt_Tag__FT_SFNT_HEAD: FT_Sfnt_Tag_ = 0;
+pub const FT_Sfnt_Tag__FT_SFNT_MAXP: FT_Sfnt_Tag_ = 1;
+pub const FT_Sfnt_Tag__FT_SFNT_OS2: FT_Sfnt_Tag_ = 2;
+pub const FT_Sfnt_Tag__FT_SFNT_HHEA: FT_Sfnt_Tag_ = 3;
+pub const FT_Sfnt_Tag__FT_SFNT_VHEA: FT_Sfnt_Tag_ = 4;
+pub const FT_Sfnt_Tag__FT_SFNT_POST: FT_Sfnt_Tag_ = 5;
+pub const FT_Sfnt_Tag__FT_SFNT_PCLT: FT_Sfnt_Tag_ = 6;
+pub const FT_Sfnt_Tag__FT_SFNT_MAX: FT_Sfnt_Tag_ = 7;
+pub type FT_Sfnt_Tag_ = ::core::ffi::c_uint;
+pub use self::FT_Sfnt_Tag_ as FT_Sfnt_Tag;
+unsafe extern "C" {
+    pub fn FT_Get_Sfnt_Table(face: FT_Face, tag: FT_Sfnt_Tag) -> *mut ::core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn FT_Load_Sfnt_Table(
+        face: FT_Face,
+        tag: FT_ULong,
+        offset: FT_Long,
+        buffer: *mut FT_Byte,
+        length: *mut FT_ULong,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Sfnt_Table_Info(
+        face: FT_Face,
+        table_index: FT_UInt,
+        tag: *mut FT_ULong,
+        length: *mut FT_ULong,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_Get_CMap_Language_ID(charmap: FT_CharMap) -> FT_ULong;
+}
+unsafe extern "C" {
+    pub fn FT_Get_CMap_Format(charmap: FT_CharMap) -> FT_Long;
+}
+pub type FT_Angle = FT_Fixed;
+unsafe extern "C" {
+    pub fn FT_Sin(angle: FT_Angle) -> FT_Fixed;
+}
+unsafe extern "C" {
+    pub fn FT_Cos(angle: FT_Angle) -> FT_Fixed;
+}
+unsafe extern "C" {
+    pub fn FT_Tan(angle: FT_Angle) -> FT_Fixed;
+}
+unsafe extern "C" {
+    pub fn FT_Atan2(x: FT_Fixed, y: FT_Fixed) -> FT_Angle;
+}
+unsafe extern "C" {
+    pub fn FT_Angle_Diff(angle1: FT_Angle, angle2: FT_Angle) -> FT_Angle;
+}
+unsafe extern "C" {
+    pub fn FT_Vector_Unit(vec: *mut FT_Vector, angle: FT_Angle);
+}
+unsafe extern "C" {
+    pub fn FT_Vector_Rotate(vec: *mut FT_Vector, angle: FT_Angle);
+}
+unsafe extern "C" {
+    pub fn FT_Vector_Length(vec: *mut FT_Vector) -> FT_Fixed;
+}
+unsafe extern "C" {
+    pub fn FT_Vector_Polarize(vec: *mut FT_Vector, length: *mut FT_Fixed, angle: *mut FT_Angle);
+}
+unsafe extern "C" {
+    pub fn FT_Vector_From_Polar(vec: *mut FT_Vector, length: FT_Fixed, angle: FT_Angle);
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_WinFNT_HeaderRec_ {
+    pub version: FT_UShort,
+    pub file_size: FT_ULong,
+    pub copyright: [FT_Byte; 60usize],
+    pub file_type: FT_UShort,
+    pub nominal_point_size: FT_UShort,
+    pub vertical_resolution: FT_UShort,
+    pub horizontal_resolution: FT_UShort,
+    pub ascent: FT_UShort,
+    pub internal_leading: FT_UShort,
+    pub external_leading: FT_UShort,
+    pub italic: FT_Byte,
+    pub underline: FT_Byte,
+    pub strike_out: FT_Byte,
+    pub weight: FT_UShort,
+    pub charset: FT_Byte,
+    pub pixel_width: FT_UShort,
+    pub pixel_height: FT_UShort,
+    pub pitch_and_family: FT_Byte,
+    pub avg_width: FT_UShort,
+    pub max_width: FT_UShort,
+    pub first_char: FT_Byte,
+    pub last_char: FT_Byte,
+    pub default_char: FT_Byte,
+    pub break_char: FT_Byte,
+    pub bytes_per_row: FT_UShort,
+    pub device_offset: FT_ULong,
+    pub face_name_offset: FT_ULong,
+    pub bits_pointer: FT_ULong,
+    pub bits_offset: FT_ULong,
+    pub reserved: FT_Byte,
+    pub flags: FT_ULong,
+    pub A_space: FT_UShort,
+    pub B_space: FT_UShort,
+    pub C_space: FT_UShort,
+    pub color_table_offset: FT_UShort,
+    pub reserved1: [FT_ULong; 4usize],
+}
+pub type FT_WinFNT_HeaderRec = FT_WinFNT_HeaderRec_;
+pub type FT_WinFNT_Header = *mut FT_WinFNT_HeaderRec_;
+unsafe extern "C" {
+    pub fn FT_Get_WinFNT_Header(face: FT_Face, aheader: *mut FT_WinFNT_HeaderRec) -> FT_Error;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_SfntName_ {
+    pub platform_id: FT_UShort,
+    pub encoding_id: FT_UShort,
+    pub language_id: FT_UShort,
+    pub name_id: FT_UShort,
+    pub string: *mut FT_Byte,
+    pub string_len: FT_UInt,
+}
+pub type FT_SfntName = FT_SfntName_;
+unsafe extern "C" {
+    pub fn FT_Get_Sfnt_Name_Count(face: FT_Face) -> FT_UInt;
+}
+unsafe extern "C" {
+    pub fn FT_Get_Sfnt_Name(face: FT_Face, idx: FT_UInt, aname: *mut FT_SfntName) -> FT_Error;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FT_SfntLangTag_ {
+    pub string: *mut FT_Byte,
+    pub string_len: FT_UInt,
+}
+pub type FT_SfntLangTag = FT_SfntLangTag_;
+unsafe extern "C" {
+    pub fn FT_Get_Sfnt_LangTag(
+        face: FT_Face,
+        langID: FT_UInt,
+        alangTag: *mut FT_SfntLangTag,
+    ) -> FT_Error;
+}
+unsafe extern "C" {
+    pub fn FT_GlyphSlot_Embolden(slot: FT_GlyphSlot);
+}
+unsafe extern "C" {
+    pub fn FT_GlyphSlot_Oblique(slot: FT_GlyphSlot);
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FONT_ENTRY {
+    pub ListEntry: LIST_ENTRY,
+    pub Font: *mut FONTGDI,
+    pub FaceName: UNICODE_STRING,
+    pub StyleName: UNICODE_STRING,
+    pub NotEnum: BYTE,
+}
+pub type FONT_ENTRY = _FONT_ENTRY;
+pub type PFONT_ENTRY = *mut _FONT_ENTRY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FONT_ENTRY_MEM {
+    pub ListEntry: LIST_ENTRY,
+    pub Entry: *mut FONT_ENTRY,
+}
+pub type FONT_ENTRY_MEM = _FONT_ENTRY_MEM;
+pub type PFONT_ENTRY_MEM = *mut _FONT_ENTRY_MEM;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FONT_ENTRY_COLL_MEM {
+    pub ListEntry: LIST_ENTRY,
+    pub Handle: HANDLE,
+    pub Entry: *mut FONT_ENTRY_MEM,
+}
+pub type FONT_ENTRY_COLL_MEM = _FONT_ENTRY_COLL_MEM;
+pub type PFONT_ENTRY_COLL_MEM = *mut _FONT_ENTRY_COLL_MEM;
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct _FONT_ASPECT {
+    pub __bindgen_anon_1: _FONT_ASPECT__bindgen_ty_1,
+    pub RenderMode: WORD,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub union _FONT_ASPECT__bindgen_ty_1 {
+    pub EmuBoldItalic: WORD,
+    pub Emu: _FONT_ASPECT__bindgen_ty_1__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FONT_ASPECT__bindgen_ty_1__bindgen_ty_1 {
+    pub Bold: BYTE,
+    pub Italic: BYTE,
+}
+pub type FONT_ASPECT = _FONT_ASPECT;
+pub type PFONT_ASPECT = *mut _FONT_ASPECT;
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct _FONT_CACHE_HASHED {
+    pub GlyphIndex: INT,
+    pub Face: FT_Face,
+    pub lfHeight: LONG,
+    pub lfWidth: LONG,
+    pub __bindgen_anon_1: _FONT_CACHE_HASHED__bindgen_ty_1,
+    pub matTransform: FT_Matrix,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub union _FONT_CACHE_HASHED__bindgen_ty_1 {
+    pub AspectValue: DWORD,
+    pub Aspect: FONT_ASPECT,
+}
+pub type FONT_CACHE_HASHED = _FONT_CACHE_HASHED;
+pub type PFONT_CACHE_HASHED = *mut _FONT_CACHE_HASHED;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _FONT_CACHE_ENTRY {
+    pub ListEntry: LIST_ENTRY,
+    pub BitmapGlyph: FT_BitmapGlyph,
+    pub dwHash: DWORD,
+    pub Hashed: FONT_CACHE_HASHED,
+}
+pub type FONT_CACHE_ENTRY = _FONT_CACHE_ENTRY;
+pub type PFONT_CACHE_ENTRY = *mut _FONT_CACHE_ENTRY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct FONTSUBST_ENTRY {
+    pub ListEntry: LIST_ENTRY,
+    pub FontNames: [UNICODE_STRING; 2usize],
+    pub CharSets: [BYTE; 2usize],
+}
+pub type PFONTSUBST_ENTRY = *mut FONTSUBST_ENTRY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GDI_LOAD_FONT {
+    pub pFileName: PUNICODE_STRING,
+    pub Memory: PSHARED_MEM,
+    pub Characteristics: DWORD,
+    pub RegValueName: UNICODE_STRING,
+    pub IsTrueType: BOOL,
+    pub CharSet: BYTE,
+    pub PrivateEntry: PFONT_ENTRY_MEM,
+}
+pub type PGDI_LOAD_FONT = *mut GDI_LOAD_FONT;
 pub type __builtin_va_list = *mut ::core::ffi::c_char;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

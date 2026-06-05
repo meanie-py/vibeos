@@ -27,3 +27,27 @@
 /* win32k master internal header — pulls pch.h: ntifs, ntddkbd/mou/vdeo,
    wingdi, winddi, winuser, ntgdi.h, ntuser.h, win32kp.h, freetype, ... */
 #include <win32k.h>
+
+/* freetype.c reaches into FreeType headers + the ntgdi font.h that win32k.h
+   does not pull. Include them here so win32k-sys carries the complete FreeType
+   (FT and TT) surface, consistent with the FT fields already embedded in win32k
+   structs, plus the ntgdi-private FONT_ENTRY / FONT_CACHE_ENTRY / GDI_LOAD_FONT /
+   FONTSUBST_ENTRY types, so freetype.c's Rust translation resolves everything
+   from one crate. font.h must come after the FT headers (it uses FT_Face etc.).
+   FT2_BUILD_LIBRARY + internal.h match how freetype.c itself includes FreeType. */
+#ifndef FT2_BUILD_LIBRARY
+#define FT2_BUILD_LIBRARY
+#endif
+#include <freetype/internal/internal.h>
+#include FT_GLYPH_H
+#include FT_BITMAP_H
+#include FT_OUTLINE_H
+#include FT_TYPE1_TABLES_H
+#include FT_TRUETYPE_TABLES_H
+#include FT_TRUETYPE_TAGS_H
+#include FT_TRUETYPE_IDS_H
+#include FT_TRIGONOMETRY_H
+#include FT_WINFONTS_H
+#include FT_SFNT_NAMES_H
+#include FT_SYNTHESIS_H
+#include <gdi/ntgdi/font.h>
