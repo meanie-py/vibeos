@@ -112,23 +112,30 @@ multi-part "BIOS prune" series:
 
 ---
 
-## kdcom.dll — crate written, default build still C
+## kdcom.dll — Rust body + CARGO-DRIVEN LINK in the main build (2026-06-04)
 
 Lives at `drivers/base/kdcom/` (under `_WINKD_=TRUE`, the WinDbg
 default) or `drivers/base/kdrosdbg/` (under `_WINKD_=FALSE`, the ReactOS
-debugger — see memory `feedback_kdcom_is_kdrosdbg`). **Both cmake paths
-still compile C today.**
+debugger — see memory `feedback_kdcom_is_kdrosdbg`). The active
+(`_WINKD_=FALSE`) `drivers/base/kdrosdbg/` path is fully Rust.
 
-A Rust translation exists as two workspace crates:
-- `kdcom-rust` (i386 staticlib)
-- `kdcom-cargo` (cargo-driven `.dll` link PoC via the `reactos-link` engine)
+Two workspace crates:
+- `kdcom-rust` (3-arch staticlib, the kdrosdbg.c translation)
+- `kdcom-cargo` (cargo-driven `.dll` link via the `reactos-link` engine,
+  `ModuleKind::KernelDll`, 3-arch: i686/x86_64/aarch64-kernel.json)
 
-These build, but the default `add_library(kdcom MODULE kdcom.c …)`
-cmake target has **not** been flipped to consume the Rust archive. The
-remaining work is the cohabitation flip (comment the C sources, link
-`libkdcom_rust.a`, keep `kdcom.spec` as the export contract) and a
-smoke pass — failure mode is benign (debug output lost, not a boot
-break), so this is low risk.
+**The main cmake build now drives the final link from cargo, not
+`add_library(MODULE)`.** `drivers/base/kdrosdbg/CMakeLists.txt` keeps only
+`spec2def(kdcom.dll kdrosdbg.spec ADD_IMPORTLIB)` (ntoskrnl imports the 8
+Kd* exports) and calls `add_cargo_kernel_dll(kdcom kdcom-cargo kdcom.dll
+BODY_CRATE kdcom-rust)` (the reusable helper in `sdk/cmake/gcc.cmake`):
+cargo builds kdcom-rust + links it with cportlib/memcmp + the ntoskrnl
+import lib into the shipping PE, then applies the kernel-dll post-link
+(`native-pefixup --kerneldll`, + the i386 forwarder fix). The cmake link
+is **retired** — this is the first module whose cmake link is fully
+cargo-driven. Cold smoke green ×3 (PE-header/export-identical to the old
+cmake link). The cargo link uses nightly + build-std (inherent to the
+cargo-drive path).
 
 **ABI surface** (8-line spec): `KdD0Transition`, `KdD3Transition`,
 `KdSendPacket`, `KdReceivePacket`, `KdDebuggerInitialize0/1`, `KdSave`,
@@ -136,17 +143,22 @@ break), so this is low risk.
 
 ---
 
-## bootvid.dll — crate written, default build still C
+## bootvid.dll — Rust body + CARGO-DRIVEN LINK in the main build (2026-06-04)
 
 Lives at `drivers/base/bootvid/`. Post-BIOS-prune, **the only backend
 that builds is `framebuf/` (UEFI GOP linear framebuffer)** — the legacy
 VGA/`i386/pc/` path is gone, and arm/xbox/pc98 never applied. So the
 keep-set the original audit projected is exactly what's left.
 
-A Rust translation exists as `bootvid-rust` + `bootvid-cargo` (same
-cargo-link PoC shape as kdcom), but the default cmake
-(`framebuf/lfbbvid.cmake`) **still compiles C**. Remaining work is the
-cohabitation flip + smoke. Failure mode is benign (no boot logo).
+Two crates: `bootvid-rust` (3-arch staticlib) + `bootvid-cargo` (cargo
+`.dll` link, `ModuleKind::KernelDll`, 3-arch). **The main cmake build drives
+the final `bootvid.dll` link from cargo** (the `RUST` branch of `add_bootvid`
+in `drivers/base/bootvid/CMakeLists.txt` calls `add_cargo_kernel_dll(bootvid
+bootvid-cargo bootvid.dll BODY_CRATE bootvid-rust …)`); `spec2def(... 
+ADD_IMPORTLIB)` stays for the 11 Vid* exports (ntoskrnl imports them). The
+cmake `add_library(MODULE)` link is retired. The sibling `lfbbvid.dll` (a
+vestigial alias not loaded by INBV) stays a C `add_library`. Cold smoke
+green ×3.
 
 > The `bootvid-rust/Cargo.toml` carries a note that the original audit's
 > keep/prune set was "inverted" — historical confusion now moot since
@@ -183,9 +195,16 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
    import descriptor hangs freeldr's peloader; use the import lib's
    `__imp_` thunk instead. See memory feedback_freeldr_loaded_dll_no_raw_dylib.)*
 
-1. **Decide kdcom-cargo / bootvid-cargo fate.** The `-cargo` reactos-link
-   PoCs are now superseded by the cohabitation flips. Either retire them
-   or keep as a parallel CI check — pick one so they don't bit-rot.
+1. **kdcom-cargo / bootvid-cargo fate: DECIDED — wired into the main build
+   (2026-06-04).** No longer off-path PoCs: the cmake build drives both
+   `.dll` links from cargo via the reusable `add_cargo_kernel_dll` helper
+   (`sdk/cmake/gcc.cmake`); the cmake `add_library(MODULE)` links are retired.
+   Cold smoke green ×3. This is the first cmake→cargo link migration in the
+   tree — the pattern (`spec2def` importlib stays in cmake; cargo produces the
+   shipping PE + post-link) is the template for retiring the cmake links of
+   `uefildr`/`rosload`/`ntdll`/`ntoskrnl` next. (The standalone
+   `build-and-test.sh` in each crate remains an isolated i386 link+swap-smoke
+   debug helper.)
 2. **Prune alternate KD transports.** `kdgdb`, `kdvm`, and the inactive
    `_WINKD_` half (`kdcom` or `kdrosdbg`) are dead for our COM1 smoke
    config. `qemu/inspect.sh` GDB tooling covers the kdgdb use case.
