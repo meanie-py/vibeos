@@ -22,9 +22,13 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    // Subsystem (windows:5.01) is identical on all arches; only the CRT entry's
+    // decoration differs — i386 prefixes `_`, amd64/arm64 are undecorated.
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-kernel.json", "_wWinMainCRTStartup"),
-        o => panic!("lsass-cargo: unsupported arch {o} (i386 first mover)"),
+        "x86_64" => ("x86_64-kernel.json", "wWinMainCRTStartup"),
+        "aarch64" => ("aarch64-kernel.json", "wWinMainCRTStartup"),
+        o => panic!("lsass-cargo: unsupported arch {o}"),
     };
 
     Linker::new(target_json)
