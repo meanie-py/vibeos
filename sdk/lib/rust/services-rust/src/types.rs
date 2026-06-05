@@ -79,6 +79,106 @@ pub type LPQUERY_SERVICE_LOCK_STATUSA = *mut QUERY_SERVICE_LOCK_STATUSA;
 pub type SC_RPC_LOCK = PVOID;
 pub type LPSC_RPC_LOCK = *mut SC_RPC_LOCK;
 
+// ---------------------------------------------------------------------------
+// The central SCM database structs (services.h). These are SHARED across every
+// SCM .c file — database.c writes a SERVICE, groupdb.c reads ->lpGroup, etc. —
+// so the layout MUST be byte-exact with the C. Built repr(C) field-for-field in
+// C order over the same scalar/pointer types, with arch-gated size+offset
+// assertions validated against clang ground truth (see tools probe). A wrong
+// field would silently corrupt cross-file reads (cf. struct-mirror-layout-repair).
+// ---------------------------------------------------------------------------
+
+/// winsvc.h `_SERVICE_STATUS` (7 DWORDs) — embedded by value in SERVICE; not in
+/// winsrv-sys bindgen, so mirrored here.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SERVICE_STATUS {
+    pub dwServiceType: DWORD,
+    pub dwCurrentState: DWORD,
+    pub dwControlsAccepted: DWORD,
+    pub dwWin32ExitCode: DWORD,
+    pub dwServiceSpecificExitCode: DWORD,
+    pub dwCheckPoint: DWORD,
+    pub dwWaitHint: DWORD,
+}
+pub type LPSERVICE_STATUS = *mut SERVICE_STATUS;
+
+/// services.h `_SERVICE_GROUP`.
+#[repr(C)]
+pub struct SERVICE_GROUP {
+    pub GroupListEntry: LIST_ENTRY,
+    pub lpGroupName: LPWSTR,
+    pub dwRefCount: DWORD,
+    pub ServicesRunning: BOOLEAN,
+    pub TagCount: ULONG,
+    pub TagArray: PULONG,
+    pub szGroupName: [u16; 1], // WCHAR[1] flexible tail
+}
+pub type PSERVICE_GROUP = *mut SERVICE_GROUP;
+
+/// services.h `_SERVICE_IMAGE`.
+#[repr(C)]
+pub struct SERVICE_IMAGE {
+    pub ImageListEntry: LIST_ENTRY,
+    pub pszImagePath: LPWSTR,
+    pub pszAccountName: LPWSTR,
+    pub dwImageRunCount: DWORD,
+    pub hControlPipe: HANDLE,
+    pub hProcess: HANDLE,
+    pub dwProcessId: DWORD,
+    pub hToken: HANDLE,
+    pub hProfile: HANDLE,
+}
+pub type PSERVICE_IMAGE = *mut SERVICE_IMAGE;
+
+/// services.h `_SERVICE` — the SCM database record.
+#[repr(C)]
+pub struct SERVICE {
+    pub ServiceListEntry: LIST_ENTRY,
+    pub lpServiceName: LPWSTR,
+    pub lpDisplayName: LPWSTR,
+    pub lpGroup: PSERVICE_GROUP,
+    pub lpImage: PSERVICE_IMAGE,
+    pub bDeleted: BOOL,
+    pub dwResumeCount: DWORD,
+    pub RefCount: LONG,
+    pub Status: SERVICE_STATUS,
+    pub dwStartType: DWORD,
+    pub dwErrorControl: DWORD,
+    pub dwTag: DWORD,
+    pub dwServiceBits: DWORD,
+    pub dwServiceTag: DWORD,
+    pub Flags: ULONG,
+    pub pSecurityDescriptor: PSECURITY_DESCRIPTOR,
+    pub ServiceVisited: BOOLEAN,
+    pub szServiceName: [u16; 1], // WCHAR[1] flexible tail
+}
+pub type PSERVICE = *mut SERVICE;
+
+// Arch-gated layout assertions vs clang ground truth (i386 vs amd64/arm64).
+#[cfg(target_pointer_width = "32")]
+const _: () = {
+    assert!(core::mem::size_of::<SERVICE_STATUS>() == 28);
+    assert!(core::mem::size_of::<SERVICE_GROUP>() == 32);
+    assert!(core::mem::size_of::<SERVICE_IMAGE>() == 40);
+    assert!(core::mem::size_of::<SERVICE>() == 96);
+    assert!(core::mem::offset_of!(SERVICE, lpGroup) == 16);
+    assert!(core::mem::offset_of!(SERVICE, Status) == 36);
+    assert!(core::mem::offset_of!(SERVICE, pSecurityDescriptor) == 88);
+    assert!(core::mem::offset_of!(SERVICE, szServiceName) == 94);
+};
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(core::mem::size_of::<SERVICE_STATUS>() == 28);
+    assert!(core::mem::size_of::<SERVICE_GROUP>() == 56);
+    assert!(core::mem::size_of::<SERVICE_IMAGE>() == 80);
+    assert!(core::mem::size_of::<SERVICE>() == 128);
+    assert!(core::mem::offset_of!(SERVICE, lpGroup) == 32);
+    assert!(core::mem::offset_of!(SERVICE, Status) == 60);
+    assert!(core::mem::offset_of!(SERVICE, pSecurityDescriptor) == 112);
+    assert!(core::mem::offset_of!(SERVICE, szServiceName) == 122);
+};
+
 // Win32 error codes (ERROR_SUCCESS / ERROR_NOT_ENOUGH_MEMORY /
 // ERROR_INVALID_SERVICE_LOCK / ERROR_SERVICE_DATABASE_LOCKED) come from
 // winsrv-sys — don't redefine them locally (avoids shadowing the canonical
