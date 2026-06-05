@@ -3103,6 +3103,11 @@ extern "C" {
     // Wave MATH-TIERC sub-wave 9
     fn ref_sinh(x: f64) -> f64;
     fn ref_cosh(x: f64) -> f64;
+    // Wave MATH-TIERC sub-wave 10
+    fn ref_asin(x: f64) -> f64;
+    fn ref_acos(x: f64) -> f64;
+    // Wave MATH-TIERC sub-wave 11
+    fn ref__hypot(x: f64, y: f64) -> f64;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3894,6 +3899,72 @@ fn diff_math_sinh_cosh() {
     }
 }
 
+fn diff_math_asin_acos() {
+    // asin/acos: small-|x| identity, |x|<=0.5 rational, |x|>0.5 sqrt
+    // half-angle reconstruction, the ±1 / |x|>=1 domain edges, NaN. Bit-exact
+    // vs libm_sse2/{asin,acos}.c across edge bits, a random bit image, and a
+    // dense sweep over the valid domain [-1, 1] plus a little past it.
+    let mut rng = Rng(0xac5a_0010);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..200_000 {
+        b64.push(rng.next());
+    }
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::asin(x), unsafe { ref_asin(x) }), "asin {b:#018x}");
+        assert!(same_f64(cabi::acos(x), unsafe { ref_acos(x) }), "acos {b:#018x}");
+    }
+    for _ in 0..400_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 2.2 - 1.1;
+        assert!(same_f64(cabi::asin(x), unsafe { ref_asin(x) }), "asin {x}");
+        assert!(same_f64(cabi::acos(x), unsafe { ref_acos(x) }), "acos {x}");
+    }
+}
+
+fn diff_math_hypot() {
+    // _hypot: sqrt(x*x+y*y) with exponent scaling (FAST path — the .c defines
+    // FAST_BUT_GREATER_THAN_ONE_ULP, so r = x*x+y*y directly).
+    // Bit-exact vs libm_sse2/hypot.c. Exercises the NaN/Inf cases, the
+    // zero/insignificant shortcuts, the over/underflow scaling branches
+    // (incl. denormals), and the equal-exponent (dexp==0) precise path —
+    // via edge×edge pairs, random pairs, and same-exponent random pairs.
+    let mut rng = Rng(0x4970_0011);
+    let edges = f64_edge_bits();
+    for &by in &edges {
+        for &bx in &edges {
+            let y = f64::from_bits(by);
+            let x = f64::from_bits(bx);
+            assert!(
+                same_f64(cabi::_hypot(x, y), unsafe { ref__hypot(x, y) }),
+                "hypot x={bx:#018x} y={by:#018x}"
+            );
+        }
+    }
+    for _ in 0..300_000 {
+        let x = f64::from_bits(rng.next());
+        let y = f64::from_bits(rng.next());
+        assert!(
+            same_f64(cabi::_hypot(x, y), unsafe { ref__hypot(x, y) }),
+            "hypot x={:#018x} y={:#018x}",
+            x.to_bits(),
+            y.to_bits()
+        );
+    }
+    // Same-magnitude pairs to hit the dexp==0 precise branch heavily.
+    for _ in 0..200_000 {
+        let bx = rng.next();
+        // copy x's exponent field into y, randomize y's sign+mantissa.
+        let by = (bx & 0x7ff0_0000_0000_0000) | (rng.next() & 0x800f_ffff_ffff_ffff);
+        let x = f64::from_bits(bx);
+        let y = f64::from_bits(by);
+        assert!(
+            same_f64(cabi::_hypot(x, y), unsafe { ref__hypot(x, y) }),
+            "hypot eqexp x={bx:#018x} y={by:#018x}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -3994,6 +4065,8 @@ fn main() {
         diff_math_exp2,
         diff_math_tanh,
         diff_math_sinh_cosh,
+        diff_math_asin_acos,
+        diff_math_hypot,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }

@@ -1833,3 +1833,243 @@ pub extern "C" fn cosh(x: f64) -> f64 {
         + SINH_LEAD[ind] * dy)
         + COSH_LEAD[ind]
 }
+
+// ── Wave MATH-TIERC (sub-wave 10): acos / asin ───────────────────────────
+// Faithful ports of math/libm_sse2/{acos,asin}.c (AMD libm). amd64-only in
+// libcntpr. Both reduce to the same rational minimax R(r) ≈ (asin(x)-x)/x^3
+// on [0,0.5] (factored below) and, for |x|>0.5, the sqrt-based half-angle
+// identity. They use hardware sqrt (the genuine .c call `_mm_sqrt_sd`) — the
+// in-module cnt-rust `sqrt` (sqrtsd/fsqrt) is correctly rounded, so bit-exact.
+
+/// The shared [0,0.5] rational R(r) of acos/asin (`u` in the C sources).
+#[cfg(feature = "float")]
+fn asin_rational(r: f64) -> f64 {
+    r * (0.227485835556935010735943483075
+        + (-0.445017216867635649900123110649
+            + (0.275558175256937652532686256258
+                + (-0.0549989809235685841612020091328
+                    + (0.00109242697235074662306043804220
+                        + 0.0000482901920344786991880522822991 * r)
+                        * r)
+                    * r)
+                * r)
+            * r)
+        / (1.36491501334161032038194214209
+            + (-3.28431505720958658909889444194
+                + (2.76568859157270989520376345954
+                    + (-0.943639137032492685763471240072 + 0.105869422087204370341222318533 * r)
+                        * r)
+                    * r)
+                * r)
+}
+
+/// `double asin(double)` — arcsine.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn asin(x: f64) -> f64 {
+    const PIBY2_TAIL: f64 = 6.1232339957367660e-17;
+    const HPIBY2_HEAD: f64 = 7.8539816339744831e-01;
+    const PIBY2: f64 = 1.5707963267948965e+00;
+
+    let ux = x.to_bits();
+    let aux = ux & 0x7FFF_FFFF_FFFF_FFFF;
+    let xneg = ux & 0x8000_0000_0000_0000 != 0;
+    let xnan = aux > 0x7ff0_0000_0000_0000;
+    let xexp = ((ux & 0x7ff0_0000_0000_0000) >> 52) as i32 - 1023;
+
+    if xnan {
+        return f64::from_bits(ux | 0x0008_0000_0000_0000);
+    } else if xexp < -28 {
+        // arcsin(x) = x
+        return x;
+    } else if xexp >= 0 {
+        // abs(x) >= 1.0
+        if x == 1.0 {
+            return PIBY2;
+        } else if x == -1.0 {
+            return -PIBY2;
+        }
+        return f64::from_bits(0xfff8_0000_0000_0000); // INDEFBITPATT_DP64
+    }
+
+    let mut y = if xneg { -x } else { x };
+    let transform = xexp >= -1; // abs(x) >= 0.5
+    let r;
+    let mut s = 0.0;
+    if transform {
+        r = 0.5 * (1.0 - y);
+        s = sqrt(r);
+        y = s;
+    } else {
+        r = y * y;
+    }
+
+    let u = asin_rational(r);
+
+    let v;
+    if transform {
+        let s1 = f64::from_bits(0xffff_ffff_0000_0000 & s.to_bits());
+        let c = (r - s1 * s1) / (s + s1);
+        let p = 2.0 * s * u - (PIBY2_TAIL - 2.0 * c);
+        let q = HPIBY2_HEAD - 2.0 * s1;
+        v = HPIBY2_HEAD - (p - q);
+    } else {
+        // temporary prevents reassociating y + y*u into y*(1+u)
+        let tmp = y * u;
+        v = y + tmp;
+    }
+
+    if xneg {
+        -v
+    } else {
+        v
+    }
+}
+
+/// `double acos(double)` — arccosine.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn acos(x: f64) -> f64 {
+    const PI: f64 = 3.1415926535897933e+00;
+    const PIBY2: f64 = 1.5707963267948965580e+00;
+    const PIBY2_HEAD: f64 = 1.5707963267948965580e+00;
+    const PIBY2_TAIL: f64 = 6.12323399573676603587e-17;
+
+    let ux = x.to_bits();
+    let aux = ux & 0x7FFF_FFFF_FFFF_FFFF;
+    let xneg = ux & 0x8000_0000_0000_0000 != 0;
+    let xnan = aux > 0x7ff0_0000_0000_0000;
+    let xexp = ((ux & 0x7ff0_0000_0000_0000) >> 52) as i32 - 1023;
+
+    if xnan {
+        return f64::from_bits(ux | 0x0008_0000_0000_0000);
+    } else if xexp < -56 {
+        // arccos(x) = pi/2
+        return PIBY2;
+    } else if xexp >= 0 {
+        // abs(x) >= 1.0
+        if x == 1.0 {
+            return 0.0;
+        } else if x == -1.0 {
+            return PI;
+        }
+        return f64::from_bits(0xfff8_0000_0000_0000); // INDEFBITPATT_DP64
+    }
+
+    let mut y = if xneg { -x } else { x };
+    let transform = xexp >= -1; // abs(x) >= 0.5
+    let r;
+    let mut s = 0.0;
+    if transform {
+        r = 0.5 * (1.0 - y);
+        s = sqrt(r);
+        y = s;
+    } else {
+        r = y * y;
+    }
+
+    let u = asin_rational(r);
+
+    if transform {
+        if xneg {
+            return PI - 2.0 * (s + (y * u - PIBY2_TAIL));
+        }
+        let s1 = f64::from_bits(0xffff_ffff_0000_0000 & s.to_bits());
+        let c = (r - s1 * s1) / (s + s1);
+        return 2.0 * s1 + (2.0 * c + 2.0 * y * u);
+    }
+    PIBY2_HEAD - (x - (PIBY2_TAIL - x * u))
+}
+
+// ── Wave MATH-TIERC (sub-wave 11): _hypot ────────────────────────────────
+// Faithful port of math/libm_sse2/hypot.c (AMD libm, the accurate non-FAST
+// path). amd64-only in libcntpr; symbol is `_hypot` (the MS CRT name).
+// sqrt(x*x + y*y) with exponent scaling to dodge spurious over/underflow.
+// hypot.c defines FAST_BUT_GREATER_THAN_ONE_ULP, so r = x*x + y*y directly
+// (the accurate head/tail split is the dead #else branch — not replicated).
+// Uses scaleDouble_1 + the in-module hardware sqrt. NaN/Inf per C99 (Inf wins
+// over NaN); overflow→+Inf.
+
+/// `double _hypot(double x, double y)` — Euclidean distance, no spurious
+/// overflow/underflow.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
+    const LARGE: f64 = 1.79769313486231570815e+308;
+
+    let mut ux = x.to_bits() & 0x7FFF_FFFF_FFFF_FFFF;
+    let mut uy = y.to_bits() & 0x7FFF_FFFF_FFFF_FFFF;
+    let xexp = ux >> 52;
+    let yexp = uy >> 52;
+
+    if xexp == 2047 || yexp == 2047 {
+        // BIASEDEMAX_DP64 + 1: one/both args are NaN or Inf. Uses the
+        // original (signed) x, y — abs is applied only below.
+        let retval = x * x + y * y;
+        if ((xexp == 2047) && (ux & 0x000f_ffff_ffff_ffff) == 0)
+            || ((yexp == 2047) && (uy & 0x000f_ffff_ffff_ffff) == 0)
+        {
+            // x or y is Inf → +Inf even if the other is NaN (C99).
+            return f64::from_bits(0x7ff0_0000_0000_0000);
+        }
+        // NaN (neither Inf).
+        return retval;
+    }
+
+    // x = abs(x), y = abs(y)
+    let mut x = f64::from_bits(ux);
+    let mut y = f64::from_bits(uy);
+
+    let dexp = (xexp as i64 - yexp as i64) as i32;
+    let mut expadjust = 0i32;
+
+    if ux == 0 {
+        return y;
+    } else if uy == 0 {
+        return x;
+    } else if dexp > 53 + 1 || dexp < -53 - 1 {
+        // one insignificant c.f. the other
+        return x + y;
+    } else if xexp > 1023 + 500 || yexp > 1023 + 500 {
+        // danger of overflow; scale down by 2**600
+        expadjust = 600;
+        ux -= 0x2580000000000000;
+        x = f64::from_bits(ux);
+        uy -= 0x2580000000000000;
+        y = f64::from_bits(uy);
+    } else if xexp < 1023 - 500 || yexp < 1023 - 500 {
+        // danger of underflow; scale up by 2**600
+        expadjust = -600;
+        if xexp == 0 {
+            x = f64::from_bits(ux + 0x2590000000000000);
+            x -= 9.23297861778573578076e-128;
+            ux = x.to_bits();
+        } else {
+            ux += 0x2580000000000000;
+            x = f64::from_bits(ux);
+        }
+        if yexp == 0 {
+            y = f64::from_bits(uy + 0x2590000000000000);
+            y -= 9.23297861778573578076e-128;
+            uy = y.to_bits();
+        } else {
+            uy += 0x2580000000000000;
+            y = f64::from_bits(uy);
+        }
+    }
+
+    // FAST_BUT_GREATER_THAN_ONE_ULP is defined in hypot.c, so r = x*x + y*y
+    // directly (trading <1 ulp accuracy for speed; the accurate head/tail
+    // path is the dead #else). ux/uy are unused past here in this path.
+    let _ = (ux, uy);
+    let r = x * x + y * y;
+
+    let mut retval = sqrt(r);
+    retval = scale_double_1(retval, expadjust);
+
+    if retval > LARGE {
+        // overflow → +Inf
+        return f64::from_bits(0x7ff0_0000_0000_0000);
+    }
+    retval
+}
