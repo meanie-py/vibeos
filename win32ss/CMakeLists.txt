@@ -97,7 +97,7 @@ list(APPEND SOURCE
     # gdi/eng/engwindow.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/xlateobj.c  # replaced by Rust (xlateobj.rs) — cohabitation [wave 2 sweep]
     user/ntuser/main.c
-    user/ntuser/misc/file.c
+    # user/ntuser/misc/file.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/file.rs) — cohabitation [ntuser wave 10]
     # user/ntuser/misc/rtlstr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtlstr.rs) — cohabitation [ntuser wave 8]
     # user/ntuser/misc/copy.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/copy.rs) — cohabitation [ntuser wave 8]
     user/ntuser/misc/registry.c
@@ -124,7 +124,7 @@ list(APPEND SOURCE
     user/ntuser/desktop.c
     user/ntuser/display.c
     user/ntuser/draw.c
-    user/ntuser/event.c
+    # user/ntuser/event.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/event.rs) — cohabitation [ntuser wave 10]
     user/ntuser/focus.c
     # user/ntuser/ghost.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ghost.rs) — cohabitation [ntuser wave 5]
     # user/ntuser/guicheck.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/guicheck.rs) — cohabitation [ntuser wave 2]
@@ -152,7 +152,7 @@ list(APPEND SOURCE
     user/ntuser/scrollex.c
     user/ntuser/security.c
     # user/ntuser/session.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/session.rs) — cohabitation [ntuser wave 1]
-    user/ntuser/shutdown.c
+    # user/ntuser/shutdown.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/shutdown.rs) — cohabitation [ntuser wave 10]
     user/ntuser/simplecall.c
     user/ntuser/sysparams.c
     user/ntuser/timer.c
@@ -319,6 +319,9 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/copy.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/rtlstr.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/csr.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/file.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/shutdown.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/event.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

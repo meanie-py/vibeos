@@ -257,6 +257,10 @@ pub mod copy;
 pub mod rtlstr;
 // [ntuser wave 9]
 pub mod csr;
+// [ntuser wave 10]
+pub mod file;
+pub mod shutdown;
+pub mod event;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
