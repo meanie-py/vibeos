@@ -824,6 +824,11 @@ fn main() {
         // sub-wave 9
         ("sinh", format!("#include <math.h>\n#define sinh ref_sinh\n{}", inc(libm_dir.join("sinh.c")))),
         ("cosh", format!("#include <math.h>\n#define cosh ref_cosh\n{}", inc(libm_dir.join("cosh.c")))),
+        // sub-wave 10
+        ("asin", format!("#include <math.h>\n#define asin ref_asin\n{}", inc(libm_dir.join("asin.c")))),
+        ("acos", format!("#include <math.h>\n#define acos ref_acos\n{}", inc(libm_dir.join("acos.c")))),
+        // sub-wave 11 (symbol is _hypot, the MS CRT name)
+        ("_hypot", format!("#include <math.h>\n#define _hypot ref__hypot\n{}", inc(libm_dir.join("hypot.c")))),
     ];
     let libm_stubs = out.join("ref_libm_stubs.c");
     fs::write(

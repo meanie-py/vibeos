@@ -314,6 +314,27 @@ if(ARCH STREQUAL "amd64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 10): acos + asin → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr. Faithful ports of the AMD-libm math/libm_sse2/
+# {acos,asin}.c (shared rational R(r) + sqrt half-angle path, in cabi/math.rs)
+# — difftest-pinned bit-exact. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/acos.c
+        math/libm_sse2/asin.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 11): _hypot → cnt-rust (float feature). amd64-ONLY
+# in libcntpr. Faithful port of the AMD-libm math/libm_sse2/hypot.c (the
+# accurate non-FAST path: exponent scaling + head/tail split + hardware sqrt,
+# in cabi/math.rs) — difftest-pinned bit-exact. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/hypot.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
