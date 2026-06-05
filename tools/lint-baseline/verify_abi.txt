@@ -27,7 +27,6 @@
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/kd64/kdlock.rs:31: KiAcquireSpinLock: declared C (cdecl), should be fastcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/kd64/kdlock.rs:39: KiReleaseSpinLock: declared C (cdecl), should be fastcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb.rs:17: PsGetCurrentProcess: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
-  ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:44: ExInterlockedRemoveHeadList: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:55: KiSetProcessorType: declared C (cdecl), should be stdcall (per bindgen_i386.rs)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:58: KiGetFeatureBits: declared C (cdecl), should be stdcall (per bindgen_i386.rs)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/krnlinit.rs:35: KiGetCacheInformation: declared C (cdecl), should be stdcall (per bindgen_i386.rs)
@@ -63,6 +62,6 @@
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ps/thread.rs:56: InterlockedCompareExchange: declared C (cdecl), should be fastcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ps/win32.rs:11: PsGetCurrentThread: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/rtl/libsupp.rs:91: PsGetCurrentThread: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
-65 ABI mismatches found across 405 files
-Bindgen catalog: 4509 functions (+1588 win32k, +248 win32k.spec)
+64 ABI mismatches found across 405 files
+Bindgen catalog: 4617 functions (+1696 win32k, +248 win32k.spec)
 Spec catalog: 1569 exports

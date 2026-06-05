@@ -3079,6 +3079,8 @@ extern "C" {
     fn ref_log10(x: f64) -> f64;
     fn ref_pow(base: f64, exponent: f64) -> f64;
     fn ref_fmod(x: f64, y: f64) -> f64;
+    // Wave MATH-TIERC sub-wave 3
+    fn ref_tan(x: f64) -> f64;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3627,6 +3629,27 @@ fn diff_math_fmod() {
     }
 }
 
+// --- Wave MATH-TIERC sub-wave 3: tan ---------------------------------------
+
+fn diff_math_tan() {
+    // tan = sin/cos (portable arm64 form). Reference divides the genuine
+    // ref_sin/ref_cos (same algorithm as cnt-rust's sin/cos), so this is
+    // bit-exact — including the cos(x)→0 ±inf limit (identical operands
+    // divided on both sides). Edge bits + a dense moderate sweep.
+    let mut rng = Rng(0x7a17_c05c);
+    let edges = [
+        0.0f64, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0, 1000.0, -1000.0,
+    ];
+    for &x in &edges {
+        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {x}");
+    }
+    for _ in 0..200_000 {
+        let u = rng.next();
+        let x = (u as f64) / (u64::MAX as f64) * 4000.0 - 2000.0;
+        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {x}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -3718,6 +3741,7 @@ fn main() {
         diff_math_log10,
         diff_math_pow,
         diff_math_fmod,
+        diff_math_tan,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }

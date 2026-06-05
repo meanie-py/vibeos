@@ -1,8 +1,8 @@
-  ABI: 65
+  ABI: 64
   C_MACRO: 61
   FLEX_ARRAY: 4
   PARAM_COUNT: 12
-  TOTAL: 142 issues across 405 files
+  TOTAL: 141 issues across 405 files
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:928: PsGetCurrentThread: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:25: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:2204: ProbeForWrite: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
@@ -32,7 +32,6 @@
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/kd64/kdlock.rs:31: KiAcquireSpinLock: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/kd64/kdlock.rs:39: KiReleaseSpinLock: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb.rs:17: PsGetCurrentProcess: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:44: ExInterlockedRemoveHeadList: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:55: KiSetProcessorType: declared extern "C" (cdecl), should be stdcall (per bindgen_i386.rs)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:58: KiGetFeatureBits: declared extern "C" (cdecl), should be stdcall (per bindgen_i386.rs)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/krnlinit.rs:35: KiGetCacheInformation: declared extern "C" (cdecl), should be stdcall (per bindgen_i386.rs)
@@ -101,8 +100,8 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/iomgr/iofunc.rs:76: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/iomgr/iofunc.rs:78: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb.rs:333: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:51: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:52: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:55: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:56: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/cpu.rs:24: RtlFillMemory: RtlFillMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/v86vdm.rs:25: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/procobj.rs:127: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
