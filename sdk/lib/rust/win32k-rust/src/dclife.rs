@@ -112,6 +112,7 @@ pub static mut psurfDefaultBitmap: PSURFACE = core::ptr::null_mut();
 #[no_mangle]
 pub static mut pbrDefaultBrush: PBRUSH = core::ptr::null_mut();
 
+#[no_mangle]
 pub static gmxWorldToDeviceDefault: MATRIX = MATRIX {
     efM11: FLOATOBJ_16,
     efM12: FLOATOBJ_0,

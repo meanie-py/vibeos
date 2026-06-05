@@ -79,4 +79,24 @@ pub mod win32k {
     pub use super::enum_aliases_amd64::*;
     #[cfg(target_arch = "x86")]
     pub use super::enum_aliases_i386::*;
+
+    // FT_HAS_*/FT_IS_* are function-like macros (FreeType freetype.h) bindgen
+    // drops. They test `face->face_flags` bits; reimplement the 7 freetype.c
+    // uses. Return c_int (1/0) to match the C macros — call sites use them
+    // C-style (`!= 0`, int assignment), not in Rust bool context.
+    macro_rules! ft_face_flag_test {
+        ($name:ident, $flag:ident) => {
+            #[inline]
+            pub unsafe fn $name(face: FT_Face) -> core::ffi::c_int {
+                ((*face).face_flags & ($flag as FT_Long) != 0) as core::ffi::c_int
+            }
+        };
+    }
+    ft_face_flag_test!(FT_HAS_KERNING, FT_FACE_FLAG_KERNING);
+    ft_face_flag_test!(FT_HAS_VERTICAL, FT_FACE_FLAG_VERTICAL);
+    ft_face_flag_test!(FT_HAS_FIXED_SIZES, FT_FACE_FLAG_FIXED_SIZES);
+    ft_face_flag_test!(FT_HAS_MULTIPLE_MASTERS, FT_FACE_FLAG_MULTIPLE_MASTERS);
+    ft_face_flag_test!(FT_IS_SCALABLE, FT_FACE_FLAG_SCALABLE);
+    ft_face_flag_test!(FT_IS_SFNT, FT_FACE_FLAG_SFNT);
+    ft_face_flag_test!(FT_IS_FIXED_WIDTH, FT_FACE_FLAG_FIXED_WIDTH);
 }
