@@ -16,6 +16,12 @@ endif()
 
 project(REACTOS)
 
+# Emit build-<arch>/compile_commands.json. Required by the cargo-drive's
+# in-cargo C-residue compile (reactos-link c_from_compile_db replays cmake's
+# exact clang invocation per source — e.g. ntdll's rtl_vista). Configure-time
+# only; harmless otherwise.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_INCLUDE_DIRECTORIES_PROJECT_BEFORE ON)
 set(CMAKE_SHARED_LIBRARY_PREFIX "")

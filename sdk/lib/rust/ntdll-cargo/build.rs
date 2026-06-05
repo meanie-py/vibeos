@@ -85,10 +85,23 @@ fn main() {
         .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/def/ntdll.spec", "ntdll.dll")
         .spec_stubs() // 48 Etw* -stub bodies
+        // Tier-C deep-C compiled IN-cargo via compile_commands.json replay
+        // (flag-exact; drops the `ninja rtl_vista` prerequisite). First mover of
+        // the residue migration — librtl / libcntpr follow. Needs cmake
+        // configured with -DCMAKE_EXPORT_COMPILE_COMMANDS=ON.
+        .c_from_compile_db(
+            "rtl_vista",
+            &[
+                "sdk/lib/rtl/condvar.c",
+                "sdk/lib/rtl/locale.c",
+                "sdk/lib/rtl/runonce.c",
+                "sdk/lib/rtl/srw.c",
+            ],
+        )
         .static_libs(&[
             // Tier-C deep-C (deferred — follows rtl-priv / libcntpr-crt flips):
             "sdk/lib/rtl/librtl.a",
-            "sdk/lib/rtl/librtl_vista.a",
+            // librtl_vista.a — now compiled in-cargo (.c_from_compile_db above)
             "sdk/lib/crt/liblibcntpr.a",
             // Tier-A asm/data/generated (still cmake-built):
             // NOTE: libntdllsys.a dropped — the Nt*/Zw* syscall stubs are now
