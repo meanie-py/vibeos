@@ -577,6 +577,15 @@ endfunction()
 ##                    [EXTRA_DEPENDS <targets/files…>]  (e.g. the OBJECT lib
 ##                                                       whose .obj the link
 ##                                                       reuses)
+##        NOTE: the cargo link is opaque to cmake, so EXTRA_DEPENDS is the ONLY
+##        thing wiring its inputs into the ninja graph. An add_library/OBJECT
+##        TARGET here auto-tracks its output FILE (relinks on change). But a
+##        custom-TARGET (e.g. rust_freeldr_uefi, rust_cnt — the rust .a's built
+##        by add_custom_command) gives only an ORDER-ONLY edge: ninja will NOT
+##        relink when its .a content changes, silently shipping a stale module.
+##        For those, ALSO pass the .a FILE PATH (the custom_command OUTPUT) so
+##        ninja file-tracks it. reactos-link emits cargo:rerun-if-changed per
+##        static_lib, so once ninja re-invokes cargo the link actually re-runs.
 ##                    [NO_CD]                           (skip add_cd_file —
 ##                                                       e.g. uefildr, which
 ##                                                       boot_images embeds)

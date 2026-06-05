@@ -104,10 +104,20 @@ add_dependencies(rosload_objs bugcodes asm xdk)
 # rosload` builds them before invoking cargo. libfreeldr = the freeldr import
 # lib (spec2def(freeldr.sys ... ADD_IMPORTLIB) in CMakeLists.txt), which
 # rosload's freeldr.sys imports bind against.
+#
+# As in uefi.cmake: a DEPENDS on a custom-TARGET (rust_freeldr_rosload, rust_cnt)
+# is order-only and does NOT relink rosload when that .a's content changes — so
+# also DEPENDS on the .a FILE PATHS (each a custom_command OUTPUT, file-tracked
+# by ninja). reactos-link's per-static_lib cargo:rerun-if-changed then re-runs
+# the actual link. Library targets (libfreeldr, blcmlib, …) already file-track.
 set(ROSLOAD_EXTRA_DEPENDS
-    rosload_objs rust_freeldr_rosload libfreeldr blcmlib blrtl libcntpr rust_cnt)
+    rosload_objs libfreeldr blcmlib blrtl libcntpr
+    # custom-target-produced rust .a link inputs — depend on the FILES:
+    rust_freeldr_rosload ${FREELDR_RUST_ROSLOAD_LIB}
+    rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a)
 if(ARCH STREQUAL "i386")
-    list(APPEND ROSLOAD_EXTRA_DEPENDS mini_hal rust_hal_mini
+    list(APPEND ROSLOAD_EXTRA_DEPENDS
+        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a
         ${CMAKE_CURRENT_BINARY_DIR}/drvmap_gcc.obj)
 endif()
 

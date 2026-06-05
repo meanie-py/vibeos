@@ -126,11 +126,28 @@ add_dependencies(uefildr_shim bugcodes xdk)
 
 # cmake targets whose .a/.obj the cargo link reuses — DEPENDS so `ninja
 # uefildr` builds them before invoking cargo (an opaque link).
+#
+# CONTENT tracking, not just ordering: a DEPENDS on an add_library TARGET
+# (uefifreeldr_common, cportlib, blcmlib, …) auto-tracks its output FILE, so a
+# change relinks uefildr. But a DEPENDS on a custom-TARGET (rust_freeldr_uefi,
+# rust_cnt, …) is only an order-only/phony edge — ninja will NOT relink uefildr
+# when that target's .a content changes (it just ensures it built once). That
+# left a real hole: editing freeldr-rust rebuilt libfreeldr_rust_uefi.a but
+# `ninja uefildr` said "no work to do", silently booting a stale loader. Fix:
+# also DEPENDS on the .a FILE PATHS produced by those custom targets (each is a
+# custom_command OUTPUT, so ninja file-tracks it and relinks on mtime change).
+# reactos-link already emits cargo:rerun-if-changed for each static_lib, so once
+# ninja re-invokes cargo, the link actually re-runs.
 set(UEFILDR_EXTRA_DEPENDS
-    uefifreeldr_common uefildr_shim rust_freeldr_uefi
-    cportlib blcmlib blrtl libcntpr chkstk rust_cnt)
+    uefifreeldr_common uefildr_shim
+    cportlib blcmlib blrtl libcntpr chkstk
+    # custom-target-produced rust .a link inputs — depend on the FILES:
+    rust_freeldr_uefi ${FREELDR_RUST_UEFI_LIB}
+    rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
 if(ARCH STREQUAL "i386")
-    list(APPEND UEFILDR_EXTRA_DEPENDS mini_hal rust_hal_mini)
+    list(APPEND UEFILDR_EXTRA_DEPENDS
+        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a)
 endif()
 
 # KIND efi → post-link strips .rossym + --strip-all (matches the old
