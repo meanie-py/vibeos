@@ -50,6 +50,9 @@ fn main() {
         .rust_lib("rtl-rust", &[], true)
         .rust_lib("utf8", &[], true)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
+        // Tier-A leaf C, cargo-compiled (was reuse of cmake libpseh.a). DUMMY_PSEH
+        // dead code: header-free, two globals (_SEH2_Volatile0 / *ExceptionCode).
+        .c_shims(&["sdk/lib/pseh/dummy.c"])
         .asm(&[&asm_path], AsmDefineSet::Kernel)
         .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/def/ntdll.spec", "ntdll.dll")
@@ -64,7 +67,6 @@ fn main() {
             "sdk/lib/apisets/libapisets.a",
             "sdk/lib/uuid/libuuid.a",
             "sdk/lib/vcruntime/libsetjmp.a",
-            "sdk/lib/pseh/libpseh.a",
             "sdk/lib/crt/libchkstk.a",
         ])
         .link(ModuleKind::Win32Dll {
