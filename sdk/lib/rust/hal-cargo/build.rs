@@ -51,8 +51,12 @@ fn main() {
                 "hal/halx86/pic/pic.S",
             ],
             // i386 cmake link adds libchkstk.a (no transitive propagation in
-            // the cargo link, so list it explicitly).
-            &["sdk/lib/crt/libchkstk.a"],
+            // the cargo link, so list it explicitly). libcntpr_rust.a provides
+            // the Rust streamout/wstreamout engine: a cgu-partition shift in
+            // cnt-rust can make hal-rust pull a C printf wrapper (sprintf etc.)
+            // from liblibcntpr.a, whose `streamout` call would otherwise be
+            // undefined on i386 (amd64 already links it for the same reason).
+            &["sdk/lib/crt/libchkstk.a", "sdk/lib/crt/libcntpr_rust.a"],
         ),
         // amd64 acpi/apic-flavor: the only non-empty component contributions
         // are apic/apictrap.S + apic/tsccal.S (generic + acpi are empty.c).

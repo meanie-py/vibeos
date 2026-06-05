@@ -209,6 +209,7 @@ if(ARCH STREQUAL "i386")
     # cargo link), and the checked-in pic/halpic.rc resource.
     set(HAL_CARGO_EXTRA_DEPENDS
         chkstk
+        rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
         ${CMAKE_CURRENT_SOURCE_DIR}/generic/systimer.S
         ${CMAKE_CURRENT_SOURCE_DIR}/generic/trap.S
         ${CMAKE_CURRENT_SOURCE_DIR}/pic/pic.S
