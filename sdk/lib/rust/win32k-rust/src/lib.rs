@@ -261,6 +261,9 @@ pub mod csr;
 pub mod file;
 pub mod shutdown;
 pub mod event;
+// [ntuser wave 11]
+pub mod registry;
+pub mod security;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

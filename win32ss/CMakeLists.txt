@@ -100,7 +100,7 @@ list(APPEND SOURCE
     # user/ntuser/misc/file.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/file.rs) — cohabitation [ntuser wave 10]
     # user/ntuser/misc/rtlstr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtlstr.rs) — cohabitation [ntuser wave 8]
     # user/ntuser/misc/copy.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/copy.rs) — cohabitation [ntuser wave 8]
-    user/ntuser/misc/registry.c
+    # user/ntuser/misc/registry.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/registry.rs) — cohabitation [ntuser wave 11]
     reactx/ntddraw/ddraw.c
     reactx/ntddraw/dd.c
     reactx/ntddraw/ddsurf.c
@@ -150,7 +150,7 @@ list(APPEND SOURCE
     # user/ntuser/prop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/prop.rs) — cohabitation [ntuser wave 2]
     user/ntuser/scrollbar.c
     user/ntuser/scrollex.c
-    user/ntuser/security.c
+    # user/ntuser/security.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/security.rs) — cohabitation [ntuser wave 11]
     # user/ntuser/session.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/session.rs) — cohabitation [ntuser wave 1]
     # user/ntuser/shutdown.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/shutdown.rs) — cohabitation [ntuser wave 10]
     user/ntuser/simplecall.c
@@ -322,6 +322,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/file.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/shutdown.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/event.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/registry.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/security.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
