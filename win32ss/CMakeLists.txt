@@ -74,7 +74,7 @@ list(APPEND SOURCE
     # gdi/eng/float.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/float.rs) — cohabitation (EngSave still C, scanner gap)
     # gdi/eng/gradient.c   # replaced by Rust (cohabitation, bisect iter 12)
     # gdi/eng/lineto.c   # replaced by Rust (lineto.rs) — cohabitation [wave 2 sweep]
-    gdi/eng/ldevobj.c      # ldevobj.rs breaks i386 NtUserInitialize — TBD which fn
+    # gdi/eng/ldevobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ldevobj.rs) — cohabitation [Phase 2c: LDEVOBJ driver-load layer]
     # gdi/eng/mapping.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/math.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/math.rs) — cohabitation
     # gdi/eng/mdevobj.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/mdevobj.rs) — cohabitation
@@ -110,10 +110,10 @@ list(APPEND SOURCE
     reactx/ntddraw/mocomp.c
     reactx/ntddraw/eng.c
     reactx/ntddraw/dxeng.c
-    user/ntuser/accelerator.c
+    # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
     user/ntuser/callback.c
     user/ntuser/callproc.c
-    user/ntuser/caret.c
+    # user/ntuser/caret.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/caret.rs) — cohabitation [ntuser wave 3]
     user/ntuser/class.c
     user/ntuser/clipboard.c
     user/ntuser/console.c
@@ -127,7 +127,7 @@ list(APPEND SOURCE
     user/ntuser/event.c
     user/ntuser/focus.c
     user/ntuser/ghost.c
-    user/ntuser/guicheck.c
+    # user/ntuser/guicheck.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/guicheck.rs) — cohabitation [ntuser wave 2]
     user/ntuser/hook.c
     user/ntuser/hotkey.c
     user/ntuser/input.c
@@ -137,7 +137,7 @@ list(APPEND SOURCE
     user/ntuser/layered.c
     user/ntuser/menu.c
     user/ntuser/message.c
-    user/ntuser/metric.c
+    # user/ntuser/metric.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/metric.rs) — cohabitation [ntuser wave 2]
     user/ntuser/misc.c
     user/ntuser/monitor.c
     user/ntuser/mouse.c
@@ -147,16 +147,16 @@ list(APPEND SOURCE
     user/ntuser/ntuser.c
     user/ntuser/painting.c
     user/ntuser/power.c
-    user/ntuser/prop.c
+    # user/ntuser/prop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/prop.rs) — cohabitation [ntuser wave 2]
     user/ntuser/scrollbar.c
     user/ntuser/scrollex.c
     user/ntuser/security.c
-    user/ntuser/session.c
+    # user/ntuser/session.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/session.rs) — cohabitation [ntuser wave 1]
     user/ntuser/shutdown.c
     user/ntuser/simplecall.c
     user/ntuser/sysparams.c
     user/ntuser/timer.c
-    user/ntuser/useratom.c
+    # user/ntuser/useratom.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/useratom.rs) — cohabitation [ntuser wave 1]
     user/ntuser/usrheap.c
     user/ntuser/vis.c
     user/ntuser/windc.c
@@ -302,6 +302,13 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/engwindow.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gradient.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ldevobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/session.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/useratom.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/guicheck.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/prop.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/metric.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/caret.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/accelerator.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
