@@ -20,8 +20,9 @@
 //! Inputs are the cmake-built artifacts (run `ninja rosload` in build-<arch>/
 //! first): the prebuilt objects compiled into rosload.dir (strsafe_shim.c.obj,
 //! cmboot.c.obj, per-arch asm), `libfreeldr_rust_rosload.a` (the freeldr-rust
-//! body + the RunLoader entry, built `--features rosload`), the sibling leaf
-//! libs, and the freeldr import lib (`libfreeldr.dir/libfreeldr.a`).
+//! body + the RunLoader entry, built `--features rosload`), and the sibling
+//! leaf libs. The freeldr import lib is self-hosted by reactos-link from
+//! freeldr.spec (.import_lib()) — no cmake-built libfreeldr.a needed.
 //! reactos-link wraps them in --start-group/--end-group.
 
 use reactos_link::{Linker, ModuleKind};
@@ -58,15 +59,15 @@ fn main() {
     };
 
     // Common libs, in cmake link order: the rosload Rust body, the sibling C
-    // leaf libs, the C libcntpr, the freeldr import lib, then libcntpr_rust.
+    // leaf libs, the C libcntpr, then libcntpr_rust. The freeldr import lib is
+    // no longer a cmake-built reused .a — reactos-link self-hosts it from
+    // freeldr.spec (.import_lib() below), so cmake's spec2def(freeldr.sys ...
+    // ADD_IMPORTLIB) is retired.
     libs.extend_from_slice(&[
         "boot/freeldr/freeldr/libfreeldr_rust_rosload.a",
         "sdk/lib/cmlib/libblcmlib.a",
         "boot/rtl/libblrtl.a",
         "sdk/lib/crt/liblibcntpr.a",
-        // freeldr import lib (add_importlibs(rosload freeldr)); rosload's
-        // freeldr.sys imports resolve at runtime against uefildr.efi.
-        "boot/freeldr/freeldr/CMakeFiles/libfreeldr.dir/libfreeldr.a",
         "sdk/lib/crt/libcntpr_rust.a",
     ]);
 
@@ -80,7 +81,13 @@ fn main() {
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
         .c_shim_flags(&["-mno-sse"])
         // rosload exports RtlAssert via rosload.def (ENABLE_EXPORTS TRUE).
-        .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe");
+        .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe")
+        // freeldr import lib, self-hosted from freeldr.spec (was the cmake
+        // spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB) → libfreeldr.a).
+        // rosload's freeldr.sys imports bind at runtime against uefildr.efi,
+        // which the PE loader registers as "freeldr.sys" and which exports the
+        // same freeldr.spec symbols. Same spec → identical import names/dll.
+        .import_lib("boot/freeldr/freeldr/freeldr.spec", "freeldr.sys", "freeldr");
 
     if arch == "x86" {
         // The C halstub.c always linked the Rust HAL dispatch tables as a

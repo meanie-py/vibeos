@@ -258,15 +258,13 @@ add_custom_command(
 add_custom_target(rust_freeldr_rosload DEPENDS ${FREELDR_RUST_ROSLOAD_LIB})
 
 # BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
-# built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. We still
-# need the freeldr import LIBRARY that rosload links against (add_importlibs(
-# rosload freeldr)); under UEFI rosload's "freeldr.sys" imports resolve at
-# runtime against uefildr.efi, which is registered as "freeldr.sys" by the PE
-# loader and exports the same freeldr.spec symbols. So generate just the import
-# lib here (ADD_IMPORTLIB needs only the .spec, not the BIOS loader binary).
-if(NOT ARCH STREQUAL "arm64")
-    spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB)
-endif()
+# built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. rosload
+# still imports freeldr.sys services (under UEFI those resolve at runtime
+# against uefildr.efi, which the PE loader registers as "freeldr.sys" and which
+# exports the same freeldr.spec symbols). The freeldr import LIBRARY that
+# satisfies those imports is now self-hosted by reactos-link from freeldr.spec
+# (rosload-cargo's .import_lib()), so the cmake spec2def(freeldr.sys freeldr.spec
+# ADD_IMPORTLIB) is retired — nothing else referenced the libfreeldr target.
 # rosload is the 2nd stage loader (loads ntoskrnl); ARM64 uses UEFI-only boot
 if(NOT ARCH STREQUAL "arm64")
     include(rosload.cmake)
