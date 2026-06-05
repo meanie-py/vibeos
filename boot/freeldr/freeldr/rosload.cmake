@@ -117,8 +117,10 @@ set(ROSLOAD_EXTRA_DEPENDS
     # .rust_staticlib) — tracked via add_cargo_module's BODY_CRATE below.
     # cmboot-rust (path-dep of freeldr-rust) file-tracked here:
     ${FREELDR_CMBOOT_RUST_SOURCES}
-    # cnt-rust cohabitation .a (custom-target output) — depend on the FILE:
-    rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a)
+    # cnt-rust-lib is now built by rosload-cargo itself (reactos-link .rust_lib);
+    # file-track its sources (incl. cnt-rust/cnt-ctype path-deps) so an edit
+    # re-invokes the cargo link, instead of depending on the cmake libcntpr_rust.a.
+    ${FREELDR_CNT_RUST_SOURCES})
 if(ARCH STREQUAL "i386")
     list(APPEND ROSLOAD_EXTRA_DEPENDS
         mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a

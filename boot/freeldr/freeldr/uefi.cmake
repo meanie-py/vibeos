@@ -95,9 +95,11 @@ set(UEFILDR_EXTRA_DEPENDS
     # custom-target .a. cmboot-rust is a path-dep of freeldr-rust → file-track
     # its sources so an edit re-invokes the cargo link.
     ${FREELDR_CMBOOT_RUST_SOURCES}
-    # cnt-rust / cport-rust cohabitation .a's (custom-target outputs) — depend
-    # on the FILES so a rebuild relinks uefildr:
-    rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
+    # cnt-rust-lib is now built by uefildr-cargo itself (reactos-link .rust_lib);
+    # file-track its sources (incl. cnt-rust/cnt-ctype path-deps) so an edit
+    # re-invokes the cargo link, instead of depending on the cmake libcntpr_rust.a.
+    ${FREELDR_CNT_RUST_SOURCES}
+    # cport-rust is still reused from cmake (custom-target output) — file-track it:
     ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
 if(ARCH STREQUAL "i386")
     list(APPEND UEFILDR_EXTRA_DEPENDS

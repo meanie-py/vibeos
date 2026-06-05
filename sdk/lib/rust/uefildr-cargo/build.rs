@@ -95,8 +95,16 @@ fn main() {
         "boot/rtl/libblrtl.a",
         "sdk/lib/crt/liblibcntpr.a",
         "sdk/lib/crt/libchkstk.a",
-        "sdk/lib/crt/libcntpr_rust.a",
+        // cnt-rust-lib (the Rust cnt cohabitation twin) is now a DIRECT cargo
+        // sibling (.rust_lib() below), not the cmake-copied libcntpr_rust.a.
     ]);
+
+    // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 builds
+    // WITHOUT `float` (no-SSE pre-boot, no by-value f64 ABI); amd64/arm64 with
+    // `float`. build_rust_crate's cnt-rust-lib special case supplies the exact
+    // per-arch RUSTFLAGS (i386 -sse,-sse2 -C no-prepopulate-passes; else
+    // -C no-prepopulate-passes). Same .rust_lib() path ntdll-cargo uses.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
 
     let mut linker = Linker::new(target_json)
         // freeldr-rust body built DIRECTLY by reactos-link (was the cmake
@@ -110,7 +118,12 @@ fn main() {
         // cmboot-rust is a path-dep of freeldr-rust — watch it so an edit there
         // re-runs build.rs and rebuilds the body (freeldr-rust's own src is
         // tracked by build_rust_crate).
-        .rust_watch(&["cmboot-rust/src"])
+        // cmboot-rust (freeldr-rust dep) + cnt-rust/cnt-ctype (cnt-rust-lib
+        // path-deps) — watch so an edit re-runs build.rs (each crate's OWN src
+        // is auto-tracked by build_rust_crate; these are the path-deps).
+        .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
+        .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
     // i386 freeldr runs in protected mode before CR4.OSFXSR — no SSE. Build

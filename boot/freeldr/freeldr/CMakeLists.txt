@@ -175,6 +175,14 @@ endif()
 set(FREELDR_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 file(GLOB_RECURSE FREELDR_CMBOOT_RUST_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/cmboot-rust/src/*.rs)
+# cnt-rust cohabitation twin (libcntpr_rust.a) is now built by the loaders'
+# own cargo link (reactos-link .rust_lib("cnt-rust-lib")), not reused from the
+# cmake libcntpr.cmake copy. Glob its three crates (cnt-rust-lib + the
+# cnt-rust/cnt-ctype path-deps) so a `.rs` edit re-invokes the loader link.
+file(GLOB_RECURSE FREELDR_CNT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
+    ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
+    ${FREELDR_RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs)
 
 # BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
 # built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. rosload
