@@ -38,6 +38,9 @@ fn main() {
         .spec2def("drivers/base/kdrosdbg/kdrosdbg.spec", "kdcom.dll")
         .static_libs(&[
             "sdk/lib/cportlib/libcportlib.a",
+            // cport.c is Rust now (cohabitation); libcportlib.a is just the
+            // stub, the Cp* serial symbols come from libcport_rust.a.
+            "sdk/lib/cportlib/libcport_rust.a",
             "sdk/lib/crt/libmemcmp.a",
         ])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")

@@ -73,6 +73,9 @@ fn main() {
         "boot/freeldr/freeldr/libuefifreeldr_common.a",
         "boot/freeldr/freeldr/libfreeldr_rust_uefi.a",
         "sdk/lib/cportlib/libcportlib.a",
+        // cport.c is Rust now (cohabitation); libcportlib.a is just the stub,
+        // the Cp* serial symbols come from libcport_rust.a.
+        "sdk/lib/cportlib/libcport_rust.a",
         "sdk/lib/cmlib/libblcmlib.a",
         "boot/rtl/libblrtl.a",
         "sdk/lib/crt/liblibcntpr.a",
