@@ -708,6 +708,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "winlogon-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "winlogon-rust"
 version = "0.1.0"
 dependencies = [

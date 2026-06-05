@@ -1,0 +1,33 @@
+# Cargo-driven `winlogon.exe` link (i386 + amd64 + arm64). Third of OUR
+# translated spine binaries (smss/csrss/services/lsass/winlogon/userinit) to
+# move its *link* from cmake to cargo, after lsass + userinit.
+#
+# winlogon.exe is a PARTIAL flip: the GINA-independent leaf files are Rust
+# (winlogon-rust), but the GINA core (wlx.c), SAS state machine (sas.c), main
+# (winlogon.c), RPC server (rpcserver.c) + the generated winreg_s.c RPC stub
+# stay C. So unlike lsass/userinit (100%-Rust bodies), this is the first
+# cargo-drive whose C residue is compiled IN-cargo via the shared engine's
+# `c_from_compile_db` (compile_commands.json replay) — no `static_libs` reuse
+# of a cmake .a for the residue. The Rust leaves come from `.rust_staticlib`.
+#
+# Resource is LOAD-BEARING (winlogon.ico app icon) → reused from cmake via the
+# resource-only OBJECT lib `winlogon_res` (the userinit .res pattern).
+#
+# Success criterion: cargo's winlogon.exe boots the livecd to `shell ready`
+# (winlogon drives the whole logon → userinit → explorer chain, and is
+# process-critical — a crash bugchecks 0xC000021A — so smoke validates it
+# strongly).
+
+[package]
+name = "winlogon-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "winlogon"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

@@ -792,7 +792,17 @@ impl Linker {
                 std::fs::create_dir_all(&out_sub).ok();
                 let mut objs = Vec::new();
                 for rel in sources {
-                    let abs = self.repo_root.join(rel);
+                    // Normal sources are repo-relative; GENERATED sources (e.g.
+                    // the RPC `*_s.c` server stub from add_rpc_files) live under
+                    // build-<arch>/ — pass them build-dir-relative and fall back
+                    // to build_dir when the repo path doesn't exist. Keeps the
+                    // API arch-agnostic (no `build-i386/` hardcoded in rel).
+                    let repo_abs = self.repo_root.join(rel);
+                    let abs = if repo_abs.exists() {
+                        repo_abs
+                    } else {
+                        self.build_dir.join(rel)
+                    };
                     let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
                         panic!(
                             "no compile_commands.json entry for {} in target {name} \
