@@ -102,8 +102,10 @@ list(APPEND FREELDR_NTLDR_SOURCE)
 
 if(ARCH STREQUAL "i386")
 
-    list(APPEND FREELDR_COMMON_ASM_SOURCE
-        arch/i386/i386trap.S)
+    # i386trap.S now assembled by reactos-link from uefildr-cargo's .asm()
+    # (BIOS freeldr.sys was pruned, so uefildr was the only consumer).
+    list(APPEND FREELDR_COMMON_ASM_SOURCE)
+        # arch/i386/i386trap.S
         # arch/i386/linux.S
 
     # setup/legacy unit → Rust (freeldr-rust: i386bug.rs/headless.rs).
@@ -114,8 +116,9 @@ if(ARCH STREQUAL "i386")
         # ntldr/arch/i386/winldr.c  # replaced by Rust (freeldr-rust/src/winldr_i386.rs)
 
 elseif(ARCH STREQUAL "amd64")
-    list(APPEND FREELDR_COMMON_ASM_SOURCE
-        arch/amd64/misc.S)
+    # misc.S now assembled by reactos-link from uefildr-cargo's .asm().
+    list(APPEND FREELDR_COMMON_ASM_SOURCE)
+        # arch/amd64/misc.S
         # arch/amd64/linux.S
 
     # setup/legacy unit → Rust (freeldr-rust: i386bug.rs).

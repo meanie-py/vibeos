@@ -25,13 +25,13 @@
 //!   arm64: entry `EfiEntry`, NO `--image-base` (auto-hash base), 0x1000
 //!          file/section align, NO mini_hal (same lib set as amd64).
 //!
-//! Inputs are the cmake-built artifacts (run `ninja uefildr` in build-<arch>/
-//! first): the freeldr C aggregate `libuefifreeldr_common.a`, the prebuilt
-//! `strsafe_shim.c.obj` (variadic RtlStringCb* shim Rust stable can't host),
-//! and `libfreeldr_rust_uefi.a` (the freeldr-rust body + the EfiEntry entry,
-//! built `--features uefi,uefildr-rust-entry`) plus the leaf libs.
-//! reactos-link wraps them in --start-group/--end-group, so the cmake link's
-//! duplicate-listing trick to satisfy circular refs is unneeded.
+//! reactos-link builds everything uefildr-specific from source: the freeldr-rust
+//! body comes from `libfreeldr_rust_uefi.a` (the EfiEntry entry, built `--features
+//! uefi,uefildr-rust-entry`), strsafe_shim.c via `.c_shims()`, and the per-arch
+//! asm (uefiasm.S + i386:i386trap.S + amd64:misc.S) via `.asm()`. The old
+//! `uefifreeldr_common` cmake aggregate is retired (all its C is Rust, its asm
+//! moved here). Only genuinely-shared leaf libs (blcmlib/blrtl/libcntpr/cport/…)
+//! stay cmake-built. reactos-link wraps them in --start-group/--end-group.
 
 use reactos_link::{Linker, ModuleKind};
 use std::env;
@@ -54,6 +54,14 @@ fn main() {
     //              amd64 cmake pins 0x10000 (low 1GB freeldr maps); arm64
     //              cmake passes no --image-base → None (auto-hash base).
     //   alignment  x86 (i386/amd64) 0x200; arm64 0x1000.
+    // Per-arch asm assembled directly by reactos-link from the RAW .S (no cmake
+    // OBJECT lib, no pre-expansion). All of uefildr's asm needs ONLY asm.inc
+    // (uefiasm.S's x86common/pcbios includes are unused noise; i386trap.S's
+    // KTRAP_FRAME refs are comments + literal stack ops; misc.S is asm.inc-only),
+    // so a minimal 2 include-dir set resolves everything — this is the entire
+    // former `uefifreeldr_common` asm, now cargo-built. (drvmap-style 16-bit gcc
+    // asm doesn't exist for uefildr.)
+    let mut asm: Vec<&str> = Vec::new();
     let (target_json, entry, image_base, alignment): (&str, &str, Option<u64>, u64) =
         match arch.as_str() {
             "x86" => {
@@ -61,17 +69,28 @@ fn main() {
                 // freeldr libs (uefi.cmake `if(ARCH STREQUAL i386 AND NOT MSVC)`).
                 libs.push("hal/halx86/minihal/libmini_hal.a");
                 libs.push("hal/halx86/libhal_rust_mini.a");
+                asm.push("boot/freeldr/freeldr/arch/uefi/i386/uefiasm.S");
+                asm.push("boot/freeldr/freeldr/arch/i386/i386trap.S");
                 ("i686-kernel.json", "_EfiEntry", Some(0x0040_0000), 0x200)
             }
-            "x86_64" => ("x86_64-kernel.json", "EfiEntry", Some(0x1_0000), 0x200),
-            "aarch64" => ("aarch64-kernel.json", "EfiEntry", None, 0x1000),
+            "x86_64" => {
+                asm.push("boot/freeldr/freeldr/arch/uefi/amd64/uefiasm.S");
+                asm.push("boot/freeldr/freeldr/arch/amd64/misc.S");
+                ("x86_64-kernel.json", "EfiEntry", Some(0x1_0000), 0x200)
+            }
+            "aarch64" => {
+                asm.push("boot/freeldr/freeldr/arch/uefi/arm64/uefiasm.S");
+                ("aarch64-kernel.json", "EfiEntry", None, 0x1000)
+            }
             other => {
                 panic!("uefildr-cargo: unsupported arch {other} (i386/amd64/arm64 only)")
             }
         };
 
     libs.extend_from_slice(&[
-        "boot/freeldr/freeldr/libuefifreeldr_common.a",
+        // libuefifreeldr_common.a retired — it was asm-only (all freeldr C is
+        // Rust now), and that asm is assembled directly above. The freeldr-rust
+        // body comes from libfreeldr_rust_uefi.a (already listed).
         "boot/freeldr/freeldr/libfreeldr_rust_uefi.a",
         "sdk/lib/cportlib/libcportlib.a",
         // cport.c is Rust now (cohabitation); libcportlib.a is just the stub,
@@ -88,7 +107,11 @@ fn main() {
         // No .rust_staticlib(): reuse the cmake-built libfreeldr_rust_uefi.a
         // (identical codegen + carries the uefi/uefildr-rust-entry features).
         .static_libs(&libs)
-        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
+        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
+        // uefiasm.S assembled here — only asm.inc (sdk/include/asm) is needed;
+        // the freeldr include dir covers any arch/pc header (none used today).
+        .asm(&asm, reactos_link::AsmDefineSet::Kernel)
+        .asm_include_dirs(&["sdk/include/asm", "boot/freeldr/freeldr/include"]);
     // freeldr runs pre-boot with SSE not yet enabled — an emitted movaps would
     // #UD. Match uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).
     if arch == "x86" || arch == "x86_64" {

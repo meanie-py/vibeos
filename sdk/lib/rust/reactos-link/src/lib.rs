@@ -247,6 +247,13 @@ pub struct Linker {
     c_shim_flags: Vec<String>,
     asm: Vec<String>,
     asm_set: AsmDefineSet,
+    /// Extra `-I` dirs (repo-relative) for the asm compiles. Lets `asm()`
+    /// assemble RAW `.S` files with `#include`s resolved against a MINIMAL set
+    /// of source header dirs (e.g. freeldr's `sdk/include/asm` for asm.inc +
+    /// `boot/freeldr/freeldr/include` for pcbios.h) instead of pre-expanding or
+    /// reproducing the whole module compile env. Empty by default → unchanged
+    /// for pre-expanded-`.s` consumers (hal).
+    asm_include_dirs: Vec<String>,
     resource: Option<String>,
     spec: Option<(String, String)>,
     link_stubs: bool,
@@ -301,6 +308,7 @@ impl Linker {
             c_shim_flags: Vec::new(),
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
+            asm_include_dirs: Vec::new(),
             resource: None,
             spec: None,
             link_stubs: false,
@@ -361,12 +369,22 @@ impl Linker {
         self
     }
 
-    /// Pre-expanded asm `.s` blobs (repo-relative; all `#include`s
-    /// resolved out-of-band). Compiled with `set`'s define list, no
-    /// kernel `-I` chain.
+    /// Asm sources (repo-relative). Either pre-expanded `.s` blobs (all
+    /// `#include`s resolved out-of-band) OR raw `.S` files whose `#include`s
+    /// resolve against `asm_include_dirs()` — see that method. Compiled with
+    /// `set`'s define list + the arch defines + `__ASM__`.
     pub fn asm(mut self, rels: &[&str], set: AsmDefineSet) -> Self {
         self.asm = rels.iter().map(|s| s.to_string()).collect();
         self.asm_set = set;
+        self
+    }
+
+    /// Extra `-I` dirs (repo-relative) for the `asm()` compiles, so a RAW `.S`
+    /// can `#include` real source headers (asm.inc, pcbios.h, …) directly —
+    /// the MINIMAL set the file actually needs, NOT the module's whole `-I`
+    /// env. Empty by default (pre-expanded `.s` consumers need none). Chainable.
+    pub fn asm_include_dirs(mut self, dirs: &[&str]) -> Self {
+        self.asm_include_dirs = dirs.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -518,9 +536,13 @@ impl Linker {
                 .flag("-isystem")
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
-                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
-                .flag("-x")
-                .flag("assembler-with-cpp");
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+            // Minimal `-I` dirs for RAW `.S` files (asm.inc, pcbios.h, …). A
+            // pre-expanded `.s` sets none of these → unchanged.
+            for dir in &self.asm_include_dirs {
+                b.flag("-I").flag(self.repo_root.join(dir).to_str().unwrap());
+            }
+            b.flag("-x").flag("assembler-with-cpp");
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }

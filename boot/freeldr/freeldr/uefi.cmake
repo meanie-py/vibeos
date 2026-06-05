@@ -33,69 +33,19 @@ list(APPEND UEFILDR_ARC_SOURCE
     #                       # behind off-by-default `uefildr-rust-entry`
     #                       # feature pending a future cohabitation flip.
 
-if(ARCH STREQUAL "i386")
-    # arch/i386/i386idt.c  # replaced by Rust (freeldr-rust/src/i386idt.rs)
-    list(APPEND UEFILDR_COMMON_ASM_SOURCE
-        arch/uefi/i386/uefiasm.S
-        arch/i386/i386trap.S)
-elseif(ARCH STREQUAL "amd64")
-    list(APPEND UEFILDR_COMMON_ASM_SOURCE
-        arch/uefi/amd64/uefiasm.S)
-elseif(ARCH STREQUAL "arm64")
-    list(APPEND UEFILDR_ARC_SOURCE
-        # arch/arm64/debug.c   # replaced by Rust (freeldr-rust/src/arm64_debug.rs)
-    )
-    list(APPEND UEFILDR_COMMON_ASM_SOURCE
-        arch/uefi/arm64/uefiasm.S)
-else()
-    #TBD
-endif()
-
-list(APPEND UEFILDR_BOOTMGR_SOURCE
-    ${FREELDR_BOOTMGR_SOURCE}
-    # custom.c   — replaced by Rust (sdk/lib/rust/freeldr-rust/src/custom.rs)
-    # options.c — replaced by Rust (sdk/lib/rust/freeldr-rust/src/options.rs)
-    # oslist.c  — replaced by Rust (sdk/lib/rust/freeldr-rust/src/oslist.rs)
-    # NOTE: rosload.cmake keeps its own C copies of these (rosload.exe does
-    # not link libfreeldr_rust.a; cohabitation flip is a future task).
-)
-
-add_asm_files(uefifreeldr_common_asm ${FREELDR_COMMON_ASM_SOURCE} ${UEFILDR_COMMON_ASM_SOURCE})
-
-add_library(uefifreeldr_common
-    ${uefifreeldr_common_asm}
-    ${UEFILDR_ARC_SOURCE}
-    ${FREELDR_BOOTLIB_SOURCE}
-    ${UEFILDR_BOOTMGR_SOURCE}
-    ${FREELDR_NTLDR_SOURCE})
-
-target_compile_definitions(uefifreeldr_common PRIVATE _FRLDRLIB_ UEFIBOOT)
-
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    # Prevent using SSE (no support in freeldr) - x86/x64 only
-    if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
-        target_compile_options(uefifreeldr_common PUBLIC -mno-sse)
-    endif()
-endif()
-
-set(PCH_SOURCE
-    ${UEFILDR_ARC_SOURCE}
-    ${FREELDR_BOOTLIB_SOURCE}
-    ${UEFILDR_BOOTMGR_SOURCE}
-    ${FREELDR_NTLDR_SOURCE})
-
-add_pch(uefifreeldr_common include/arch/uefi/uefildr.h PCH_SOURCE)
-add_dependencies(uefifreeldr_common bugcodes asm xdk)
-
-# Rust peloader (replaces lib/peloader.c — see boot/freeldr/freeldr/CMakeLists.txt)
-target_link_libraries(uefifreeldr_common ${FREELDR_RUST_UEFI_LIB})
-add_dependencies(uefifreeldr_common rust_freeldr_uefi)
-
-## GCC builds need this extra thing for some reason...
-if(ARCH STREQUAL "i386" AND NOT MSVC)
-    target_link_libraries(uefifreeldr_common mini_hal ${HAL_RUST_MINI_LIB})
-    add_dependencies(uefifreeldr_common rust_hal_mini)
-endif()
+# ============================================================================
+# `uefifreeldr_common` is RETIRED.
+# ============================================================================
+# It was the freeldr C+asm aggregate library uefildr.efi linked. Every freeldr
+# C unit is now Rust (UEFILDR_ARC/BOOTLIB/BOOTMGR/NTLDR are all empty/Rust
+# above), and its only remaining content — the per-arch asm (uefiasm.S +
+# i386:i386trap.S + amd64:misc.S) — is now assembled DIRECTLY by reactos-link
+# from uefildr-cargo's build.rs `.asm()` (those files only ever needed asm.inc,
+# resolved via a minimal 2-dir include set, not freeldr's 30-include env). With
+# nothing left to compile, the aggregate library is gone: uefildr-cargo links
+# libfreeldr_rust_uefi.a + the shared leaf libs + (i386) mini_hal directly, and
+# the reactos-link-assembled asm objects replace libuefifreeldr_common.a.
+# (BIOS freeldr.sys was pruned, so nothing else consumed this asm.)
 
 
 # ============================================================================
@@ -103,9 +53,10 @@ endif()
 # ============================================================================
 # The final loader link is driven by cargo (uefildr-cargo's build.rs →
 # reactos-link, ModuleKind::EfiApplication) instead of cmake's add_executable.
-# The cargo build REUSES the cmake-built libuefifreeldr_common.a +
-# libfreeldr_rust_uefi.a + the leaf libs + the uefildr_shim object below;
-# cmake's own loader link is retired. uefildr exports nothing
+# reactos-link builds the uefildr-specific parts from source (freeldr-rust body
+# via libfreeldr_rust_uefi.a, strsafe_shim.c via c_shims, the per-arch asm via
+# asm) and links the shared cmake leaf libs; the old uefifreeldr_common
+# aggregate + uefildr_shim OBJECT lib are retired. uefildr exports nothing
 # (--exclude-all-symbols); the freeldr import lib rosload consumes still comes
 # from CMakeLists.txt's `spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB)`, and
 # rosload's freeldr.sys imports bind at runtime against uefildr's internal
@@ -132,15 +83,23 @@ endif()
 # reactos-link already emits cargo:rerun-if-changed for each static_lib, so once
 # ninja re-invokes cargo, the link actually re-runs.
 set(UEFILDR_EXTRA_DEPENDS
-    uefifreeldr_common
     cportlib blcmlib blrtl libcntpr chkstk
+    # source files reactos-link now compiles directly (file-track so `ninja
+    # uefildr` re-invokes cargo when they change — reactos-link's per-input
+    # cargo:rerun-if-changed then re-runs the link):
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/strsafe_shim.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/arch/uefi/${ARCH}/uefiasm.S
     # custom-target-produced rust .a link inputs — depend on the FILES:
     rust_freeldr_uefi ${FREELDR_RUST_UEFI_LIB}
     rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
     ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
 if(ARCH STREQUAL "i386")
     list(APPEND UEFILDR_EXTRA_DEPENDS
-        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a)
+        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/arch/i386/i386trap.S)
+elseif(ARCH STREQUAL "amd64")
+    list(APPEND UEFILDR_EXTRA_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/arch/amd64/misc.S)
 endif()
 
 # KIND efi → post-link strips .rossym + --strip-all (matches the old
