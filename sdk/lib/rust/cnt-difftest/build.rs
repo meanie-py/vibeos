@@ -601,6 +601,15 @@ fn main() {
         // form). Compute the reference via the genuine ref_sin/ref_cos (the
         // same algorithm cnt-rust's sin/cos use) → bit-exact vs cabi::tan.
         ("tan", "double ref_sin(double); double ref_cos(double);\ndouble ref_tan(double x){return ref_sin(x)/ref_cos(x);}".to_string()),
+        // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
+        // lowers them to hardware roundsd/roundss (correctly rounded) — an
+        // INDEPENDENT reference, not cnt-rust's #[no_mangle] ceil/floor (which
+        // would otherwise hijack a plain `ceil(x)` call and make the test
+        // circular). Exact directed rounding ⇒ bit-exact vs the Rust bit-math.
+        ("ceil", "double ref_ceil(double x){return __builtin_ceil(x);}".to_string()),
+        ("floor", "double ref_floor(double x){return __builtin_floor(x);}".to_string()),
+        ("ceilf", "float ref_ceilf(float x){return __builtin_ceilf(x);}".to_string()),
+        ("floorf", "float ref_floorf(float x){return __builtin_floorf(x);}".to_string()),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which

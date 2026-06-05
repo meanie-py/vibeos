@@ -218,6 +218,27 @@ elseif(ARCH STREQUAL "arm64")
     list(REMOVE_ITEM LIBCNTPR_SOURCE math/arm64/tan.c)
 endif()
 
+# Wave MATH-TIERC (sub-wave 4): ceil/floor/ceilf/floorf → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its x87 {ceil,floor}_asm). Pure
+# bit-manipulation directed rounding, uniform across arches (exact IEEE).
+# amd64 had the AMD-libm libm_sse2 versions; arm64 had arm64/{ceil,floor}.c
+# + math/{ceilf,floorf}.c.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/ceil.c
+        math/libm_sse2/ceilf.c
+        math/libm_sse2/floor.c
+        math/libm_sse2/floorf.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/ceil.c
+        math/ceilf.c
+        math/arm64/floor.c
+        math/floorf.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
