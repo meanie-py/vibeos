@@ -1,11 +1,12 @@
 # Win32k C→Rust Translation Audit
 
-Last updated **2026-06-01**. **Status: Phase 1 (handle tables) DONE;
-Phase 2 (GDI half) ~80% landed and smoke-green ×3; Phase 3 (USER half)
-not started.** The "bulk translation not yet started" premise of the
-2026-05-16 draft is obsolete — **79 Rust modules (~108K LOC) are in the
-tree and 72 C files are cohabitation-flipped.** See **"Landed reality —
-2026-06-01"** immediately below; the planning sections that follow are
+Last updated **2026-06-04**. **Status: Phase 1 (handle tables) DONE;
+Phase 2 (GDI half) ✅ DONE — the entire GDI half (ntgdi + eng + dib) is
+Rust and smoke-green ×3; Phase 3 (USER half) 🟡 STARTED (3 of 59 ntuser
+files flipped).** The "bulk translation not yet started" premise of the
+2026-05-16 draft is long obsolete — **98 Rust modules (~140K LOC) are in
+the tree and 91 C files are cohabitation-flipped.** See **"Landed reality
+— 2026-06-04"** immediately below; the planning sections that follow are
 kept for the parts still ahead (USER half, typestate API, cleanup) and
 annotated where superseded.
 
@@ -57,7 +58,7 @@ See [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md)
 for the full landed inventory. The rest of this document is updated to
 match that reality.
 
-## Landed reality — 2026-06-01
+## Landed reality — 2026-06-04
 
 This section is the **source of truth for what's translated**; the
 planning sections below (TL;DR, Phasing, Forward path) predate the work
@@ -67,76 +68,180 @@ and are now annotated/superseded where they disagree.
 
 | Metric | Value |
 |---|---|
-| Rust modules in `win32k-rust/src/` | **79** (`.rs`) |
-| Rust LOC | **~108,600** |
-| C files cohabitation-flipped (commented in `win32ss/CMakeLists.txt`) | **72** |
+| Rust modules in `win32k-rust/src/` | **98** (`.rs`) |
+| Rust LOC | **~140,000** |
+| C files cohabitation-flipped (commented in `win32ss/CMakeLists.txt`) | **91** |
 | Smoke status | **green ×3** (i386/amd64/arm64), 0 unexpected ud2 |
 
-Flipped C by subsystem: **dib 12, eng 36, ntgdi 23, ntuser 1**.
+Flipped by subsystem: **gdi/eng 100%, gdi/dib 100%, gdi/ntgdi 100%,
+user/ntuser 3 of 59** (object + session + useratom).
 
 ### Phase status (vs the original plan)
 
 - **Phase 1 — handle tables: ✅ DONE.** `gdiobj.rs` (GDI handle table,
   the dependency hub) and `object.rs` (USER object/handle table,
   `user/ntuser/object.c` flipped under "Phase 1b") are both live and
-  smoke-green. This was the planned crown jewel — GDI handle lifecycle
-  is now Rust.
+  smoke-green. GDI handle lifecycle is Rust.
+- **Phase 2 — GDI half: ✅ DONE.** The **entire GDI half is Rust**.
+  - `gdi/ntgdi/` — **100%.** Every NtGdi* syscall file flipped. The
+    long poles all landed: `freetype.c` (7,917 LOC glue, wave 21,
+    `bbdabf00a69` — ft-sys retired, FreeType folded into win32k-sys),
+    `font.c`, `path.c`(+splits), `bitblt.c` (→ `ntbitblt.rs`),
+    `d3dkmt.c` (56 dxgkrnl thunks), `brush.cpp` (the **only C++**,
+    wave 23 — first C++→Rust flip), and the debug residue
+    `gdibatch.c`/`gdidbg.c`/`gdikdbgext.c` (waves 24–26).
+  - `gdi/eng/` — **100%.** Graphics Engine / DDI surface is Rust;
+    `ldevobj.c` (the last straggler) flipped + fixed (`1ba3a5ffaa9`).
+  - `gdi/dib/` — **100%.** All per-bit-depth renderers (1/4/8/16/24/
+    32bpp + alphablend / floodfill / stretchblt / transblt) are Rust.
+  - **What's still C in `gdi/` — and why it's not translation work:**
+    `gdi/eng/i386/floatobj.c` (i386 fixed-point math, kernel mode lacks
+    SSE — stays C/asm **by design**); `gdi/dib/dib_new.c` +
+    `gdi/eng/bitblt_new.c` (both inside the `if(USE_DIBLIB)` branch, and
+    the tree sets `USE_DIBLIB FALSE` → **dead code, never compiled**;
+    their live equivalents are already in `bitblt.rs`/the dib renderers,
+    so a `*_new.rs` would just duplicate `#[no_mangle]` symbols). Net
+    translatable GDI C remaining = **0**.
 - **Phase 1.5 — typestate API (`UserLock`/`CoRef`/`CoCallout`): ⏳ NOT
-  STARTED.** Not needed for GDI; it gates Phase 3 (USER). Still owed —
-  design lives in `qemu/~temp-chat-consolidated.md` §6 (must be promoted
-  into `docs/engineering/` before Phase 3, per the header warning).
-- **Phase 2 — GDI half: 🟢 ~80% DONE.**
-  - `gdi/eng/` — **effectively complete** (36/37 flipped; only
-    `drvdbg.c` remains, and `drvdbg.rs` already exists). The Graphics
-    Engine / DDI surface is Rust.
-  - `gdi/dib/` — **effectively complete** (12/13; only `dib_new.c` left).
-    All per-bit-depth renderers (1/4/8/16/24/32bpp + alphablend /
-    floodfill / stretchblt / transblt) are Rust.
-  - `gdi/ntgdi/` — **~60% done.** Geometry/coord/DC-lifecycle/region/
-    palette/pen/clip-region/bitmap/DIB-object tiers are flipped. **16
-    standalone files remain (~16K LOC)** — see "Remaining GDI work".
-- **Phase 3 — USER half (`user/ntuser/`, ~73K LOC): 🔴 NOT STARTED**
-  beyond the `object.c` handle table. This is the hard half (callouts,
-  message queues, hooks) and the bulk of the work left.
+  STARTED.** Wasn't needed for GDI or the trivial USER leaves; it gates
+  the *deep* USER work (callouts/messages/hooks). Still owed — design
+  lives in `qemu/~temp-chat-consolidated.md` §6 (must be promoted into
+  `docs/engineering/` before the message/hook/window-create chain).
+- **Phase 3 — USER half (`user/ntuser/`, ~73K LOC): 🟡 STARTED, 3/59.**
+  `object.c` (handle table, Phase 1b) + the **ntuser-saga wave 1**
+  atom-table pair `session.c` + `useratom.c` (`16713361083`, cold-green
+  ×3, runtime-exercised: window-class registration drives `IntAddAtom`
+  against the Rust `gAtomTable`). **56 files remain** — see "Remaining
+  USER work". This is the hard half (callouts, message queues, hooks,
+  the window-create chain) and the bulk of all work left.
 
 ### Wave naming as it actually happened
 
-Commit tags use **Phase 2a (eng) → 2b (dib) → 2c (ntgdi)**, i.e. GDI was
+GDI commit tags used **Phase 2a (eng) → 2b (dib) → 2c (ntgdi)** —
 done **bottom-up**: engine + renderers first, syscall-level ntgdi last.
-The 2c ntgdi work proceeded in "geometry/object waves" (waves 1–9 to
-date): bezier/dcattr → arc/stockobj/xformobj/utils → drawing/line/
-fillshap → rect/polyfill → DC-lifecycle (dcstate/dcobjs/dclife/dcutil)
-→ region algebra → pen/coord → palette → cliprgn+bitmaps → dibobj.
+The 2c ntgdi work ran as ~26 "geometry/object/closeout waves": bezier/
+dcattr → arc/stockobj/xformobj → drawing/line/fillshap → rect/polyfill
+→ DC-lifecycle → region algebra → pen/coord → palette → cliprgn+bitmaps
+→ dibobj → font → ntbitblt → freetype → d3dkmt → brush.cpp → debug
+residue (gdibatch/gdidbg/gdikdbgext). The **ntuser saga** then opened
+its own wave series; wave 1 = the session/useratom atom-table pair.
 
-### Remaining GDI work (finishes Phase 2)
+### Remaining USER work (Phase 3 — the bulk of what's left)
 
-16 standalone `gdi/ntgdi/*.c` files, ~16K LOC:
+**56 active `user/ntuser/*.c` files, ~73K LOC.** Suggested leaf-first
+order (low-dependency leaves before the reentrant core), with the hard
+core last:
 
-| File | LOC | Notes |
-|---|---:|---|
-| `freetype.c` | 7,917 | FreeType **glue** — FFI against `win32k_sys::FT_*` (46 syms already in win32k-sys). Vendor FreeType stays C. The single biggest remaining file; not split (single TU by design). |
-| `font.c` | 1,267 | Font management |
-| `path.c` | 1,131 | Path objects (post-split parent; `path.split2/3.c` flip with it) |
-| `bitblt.c` | 929 | ntgdi-level BitBlt syscalls (distinct from the already-flipped `eng/bitblt.c`) |
-| `gdidbg.c` / `gdikdbgext.c` | 806 / 368 | GDI debug + kdbg extension (debug-only) |
-| `d3dkmt.c` | 716 | D3D kernel thunk |
-| `text.c` | 603 | Text-out syscalls |
-| `gdibatch.c` | 533 | GDI batch flush (amd64 quirk noted below) |
-| `icm.c` / `gdipool.c` / `print.c` / `wingl.c` / `metafile.c` / `init.c` / `device.c` | ≤425 each | Color mgmt, pool, print, OpenGL stub, metafile, init, device |
+- **Easy leaves (flip next, same playbook as GDI):** `guicheck.c`,
+  `metric.c`, `prop.c`, `caret.c`, `focus.c`, `ghost.c`, `misc.c`,
+  `windc.c`, `vis.c`, `usrheap.c`, `monitor.c`, `power.c`,
+  `accelerator.c`, `hotkey.c`, `ntstubs.c`.
+- **Mid tier:** `class.c`, `cursoricon.c` (both already consume the
+  Rust `gAtomTable`/`IntAddAtom` from wave 1), `clipboard.c`, `timer.c`,
+  `windc.c`, `display.c`, `draw.c`, `nonclient.c`, `painting.c`,
+  `scrollbar.c`/`scrollex.c`, `sysparams.c`, `keyboard.c`/`kbdlayout.c`,
+  `mouse.c`, `event.c`, `dde.c`, `ime.c`, `layered.c`, `csr.c`,
+  `console.c`, `simplecall.c`, `security.c`, `shutdown.c`, the
+  `misc/{file,rtlstr,copy,registry}.c` helpers.
+- **Hard core (needs Phase 1.5 typestate API first):** `desktop.c`
+  (boot marker `co_IntShowDesktop` lives here), `winsta.c` (the 50ms
+  HACK), `message.c`/`msgqueue.c` (SendMessage/PostMessage), `hook.c`
+  (14 hook variants, highest SEH density), `callback.c`/`callproc.c`
+  (the `co_*` callout straddle), `window.c`/`winpos.c` (window-create/
+  position chain), `menu.c` (~6,690 LOC monster), `input.c`, `defwnd.c`,
+  `ntuser.c`, `main.c`.
 
-Plus `gdi/eng/drvdbg.c` and `gdi/dib/dib_new.c` (the two near-complete
-subsystems' stragglers). Methodology is proven on all of these shapes;
-they are bulk-rustconv + cohabitation-flip + smoke-gate, same as waves
-1–9. `freetype.c` is the one that needs care (FT_* shape-matching).
+Methodology is **fully proven** on every GDI shape; the easy/mid USER
+leaves are the same bulk-rustconv + cohabitation-flip + smoke-gate loop.
+The hard core is the genuine new work (typestate API + callout safety).
 
-### Known stale annotation (cleanup owed)
+### Cleared stale annotation
 
-`win32ss/CMakeLists.txt` still tags `device.rs` as **"INTEGRATED +
-FAILING (i386 smoke hangs pre-`shell ready`)"**. That hang was **fixed**
-(`20bc456b6d0` DC_bIsBitmapCompatible flexible-array index = the
-InitializeClasses hang, plus the FillSolid/EngEraseSurface i386 dup-ABI
-ud2 fix). i386 now smokes green with `device.rs` live — the cmake
-annotation should be downgraded to plain cohabitation on the next touch.
+The old `device.rs` "INTEGRATED + FAILING (i386 smoke hangs pre-`shell
+ready`)" cmake tag is **resolved** — fixed by `20bc456b6d0`
+(DC_bIsBitmapCompatible flexible-array index = the InitializeClasses
+hang) + the FillSolid/EngEraseSurface i386 dup-ABI ud2 fix; i386 smokes
+green with `device.rs` live. (Verify the cmake comment was downgraded;
+if not, do it on the next CMakeLists touch.)
+
+## Notable learnings (banked across the GDI waves — apply to USER)
+
+These are the techniques that made the GDI half tractable. They carry
+straight into the USER half.
+
+1. **`nm` is the ABI oracle.** Run `llvm-nm` (in `.build-tools/llvm-mingw/
+   bin`) on the built `.obj`/`win32k.sys`: `@Name@N` = FASTCALL (emit a
+   dual-cfg `extern "fastcall"` on i386 / `extern "C"` else), `_Name@N` =
+   stdcall (`extern "system"`), `_Name`/`Name` = cdecl (`extern "C"`),
+   `D`/`d` = data global. rustconv frequently mislabels these; **the
+   binary is ground truth, not the LLM.** Calling-convention mismatch is
+   the #1 i386-only crash class (links clean on amd64/arm64 where
+   cdecl==system, breaks i386).
+2. **rustconv STUBS big SEH/switch bodies.** Anything with a large
+   `_SEH2_TRY` or a giant `switch` comes back as a ~10-line stub
+   (GdiFlushUserBatch: 350-line switch → 13-line stub). **Hand-translate
+   those.** Detection: the `.rs` fn body is suspiciously short vs the C.
+3. **Wide-string byte-literal misalign** (`feedback_byte_literal_wchar_
+   misalign`): `b"...".as_ptr() as *const u16` reinterprets 1-byte chars
+   as 2-byte WCHARs = garbage. Cost the ldevobj NtUserInitialize
+   0xc0000001. Fix = a `wide_str!` macro emitting a NUL-terminated
+   `[u16;N]` static. USER code is full of wide strings — watch for this.
+4. **Orphan-cfg stitcher bug**: the stitcher sometimes emits a
+   contradictory `#[cfg(target_arch="x86")]` + `#[cfg(not(...="x86"))]`
+   PAIR before a fn → it compiles on NO arch → silently absent from the
+   `.a` → `@Name@N` undefined at link. Detect: grep for the two cfg
+   attrs on consecutive lines. Fix: delete the orphan pair.
+5. **C-shim for FORCEINLINE / macro / arch-divergent helpers**: when
+   `nm` shows no symbol for a called helper (it's FORCEINLINE, a macro,
+   or arch-divergent like FLOATOBJ stdcall-asm-i386/float-macro-amd64),
+   **don't reimplement the math in Rust** — write a plain-cdecl
+   `w32r_<name>(...)` wrapper in a `*_rust_shims.c` (added to the win32k
+   SOURCE list) that `#include`s the header and calls the C original;
+   sed the `.rs` call/decl sites. Recompiles per-arch → free arch
+   divergence. (path/font/ntbitblt shims established this.)
+6. **rustc-JSON-span cast auto-fixer** (`/tmp/fix_casts.py` pattern):
+   `cargo build --message-format=json`, collect E0308 primary spans,
+   wrap each offending expr `(<bytes> as _)` — pointer/numeric/ref
+   mismatches only (skip struct-value, `as` can't cast structs → use
+   `transmute` for layout-identical POINT↔POINTL). Cleared 100+ casts in
+   seconds on the geometry waves.
+7. **arm64 cfg trap**: `#[cfg(not(target_arch="x86"))]` matches **arm64
+   too**, not just amd64. x86 inline asm (`gs:`/`fs:`) under that gate
+   breaks the arm64 build. Use portable `NtCurrentTeb()` (from
+   `ntkrnl_sys::inline::ke`) instead. **Always build all 3 arches** when
+   integrating — agents/translations that only build x86 let arm64 cfg
+   bugs survive.
+8. **arm64 build mechanics** (`feedback_arm64_cli_build_skips_usermode`):
+   `vibeos-cli build --arch arm64` does **not** relink `win32k.sys` even
+   for a kernel-mode flip (staged set is ntoskrnl+hal+uefildr). Manually
+   `cd build-arm64 && ninja win32k`, then mcopy fresh `win32k.sys` into
+   `ramdisk.img` + `boot.img` before smoke (else a fast green = booted
+   STALE media = false positive). The arm64 `ar` is out-of-tree → prefix
+   `.build-tools/llvm-mingw/bin` to PATH + `dangerouslyDisableSandbox`.
+9. **Agent worktree-isolation leak** (`feedback_agent_worktree_isolation_
+   build_leak`): `isolation:"worktree"` subagents get a fresh checkout
+   with NO `build-*` dirs, so their `cd build-i386` resolves to the REAL
+   trees and edits leak (lib.rs/CMakeLists conflicts). Have agents write
+   `.rs` to `/tmp` only and do all wiring+build+smoke centrally.
+10. **C++ "C with classes" flips cleanly** (brush.cpp, wave 23): a
+    `class X : public BASEOBJECT` with no vtable (every method a
+    non-virtual inline over a C-ABI helper) → `*mut _X` (bindgen struct,
+    per-arch-correct size for the alloc); base fields via a `as POBJ`
+    cast; only the `extern "C"` API gets `#[no_mangle]`. The C++ file
+    lives in `add_library(win32k MODULE ...)` directly, not the SOURCE
+    list.
+11. **USER groundwork is proven** (ntuser wave 1): win32k-sys already
+    carries the USER object model (`PTHREADINFO` w/ `rpdesk: *mut
+    _DESKTOP`, `_WND`/`_DESKTOP`, RTL_ATOM/ATOM); the
+    `PsGetCurrentThreadWin32Thread() → pti->rpdesk` thread-info pattern
+    works; a cross-module `#[no_mangle]` global (`gAtomTable`) shares
+    cleanly between two Rust files AND still-C consumers via the `__imp_`
+    thunk. The ntgdi→ntuser jump is the same cohab playbook.
+12. **Always `git show HEAD:<path>.rs | wc -l` before translating** an
+    ntgdi/ntuser file — a pre-existing partial `.rs` may already be
+    committed (the bitblt trap); `rustconv translate` without `-o`
+    OVERWRITES it. Use `translate <c> -o /tmp/out.rs` to dodge overwrite
+    + auto-mutation of lib.rs/CMakeLists.
 
 ## TL;DR
 
@@ -312,9 +417,9 @@ a pruning PR around the obsolete table.
 
 | Path | LOC | Why kept |
 |---|---:|---|
-| `gdi/ntgdi/freetype.c` | 7,943 | Glue to FreeType (3rd-party at `sdk/lib/3rdparty/freetype/` — 208K LOC, NOT translated). Same role as ACPICA in HAL: header-only borrow + link-time FFI. **In scope for translation as the GLUE; FreeType itself stays C.** |
-| `drivers/videoprt/` | 9,492 | Video Port — kernel framework that display drivers use. Even framebuf-only mode goes through videoprt. **KEEP, translate.** |
-| `gdi/ntgdi/brush.cpp` | 605 | The only C++ file. Class-based BRUSH implementation. Translate to a Rust struct + impl. |
+| `gdi/ntgdi/freetype.c` | 7,943 | Glue to FreeType (3rd-party at `sdk/lib/3rdparty/freetype/` — 208K LOC, NOT translated). **✅ GLUE TRANSLATED** (wave 21, `bbdabf00a69`); vendor FreeType stays C. |
+| `drivers/videoprt/` | 9,492 | Video Port — kernel framework that display drivers use. Even framebuf-only mode goes through videoprt. **KEEP, translate** (not started — out of the win32k.sys core, separate driver). |
+| `gdi/ntgdi/brush.cpp` | 605 | The only C++ file. **✅ TRANSLATED** (wave 23, `cba2a2538fd`) → `*mut _BRUSH` + Rust fns. |
 
 ## Keep-set landscape
 
@@ -653,33 +758,35 @@ Mirroring the HAL/FreeLDR audits' forward-path shape:
    but are no longer a hard blocker.
 4. ~~**Phase 1 — handle tables.**~~ **✅ DONE.** `gdiobj.rs` (GDI table)
    + `object.rs` (USER table, `ntuser/object.c` flipped) live + green.
-5. **Phase 1.5 — typestate API design.** ⏳ **STILL OWED — gates Phase
-   3.** Implement `UserLock`, `CoRef<T>`, `CoCalloutContext`, `CoCallout`
-   per `~temp-chat-consolidated.md` §6 (promote that file into
+5. ~~**Phase 2 — GDI half.**~~ **✅ DONE.** The entire GDI half (ntgdi +
+   eng + dib) is Rust and smoke-green ×3. `freetype.c` (long pole),
+   `bitblt.c`→`ntbitblt.rs`, `d3dkmt.c`, the debug residue, and `ldevobj.c`
+   all landed. Only non-translation C remains in `gdi/` (i386 `floatobj.c`
+   by design; dead `USE_DIBLIB` `*_new.c`).
+6. ~~**brush.cpp port.**~~ **✅ DONE** (wave 23, `cba2a2538fd`) — the only
+   C++ file, flipped to `*mut _BRUSH` + Rust fns. First C++→Rust flip;
+   pattern banked (learning #10).
+7. **Phase 1.5 — typestate API design.** ⏳ **STILL OWED — gates the
+   *deep* USER core** (callouts/messages/hooks), not the easy leaves.
+   Implement `UserLock`, `CoRef<T>`, `CoCalloutContext`, `CoCallout` per
+   `~temp-chat-consolidated.md` §6 (promote that file into
    `docs/engineering/` first). Spike on `co_IntClientLoadLibrary`.
-   **2–3 sessions.** GDI did not need this; USER does.
-6. **Phase 2 — GDI half.** 🟢 **~80% DONE** (eng + dib effectively
-   complete; ntgdi geometry/object tiers flipped). **Remaining: 16
-   `ntgdi/*.c` (~16K LOC, incl. the 7.9K `freetype.c` glue) + `drvdbg.c`
-   + `dib_new.c`** — see "Remaining GDI work". **~2–4 sessions** to
-   close, `freetype.c` being the long pole.
-7. **brush.cpp port.** ⏳ **STILL PENDING** — `gdi/ntgdi/brush.cpp` (the
-   only C++ file, ~605 LOC) is still active C in CMakeLists (line ~359);
-   `brushbody.rs` is unrelated (brush pattern/body, not the C++ class).
-   Translate to a Rust `struct BRUSH` + `impl` as a one-off. **0.5 session.**
-8. **Phase 3 — USER half (`user/ntuser`, ~73K LOC).** 🔴 **NOT STARTED.**
-   The hard half — callouts, message queues, hooks, window-create chain.
-   Needs Phase 1.5 first, then bulk rustconv sequenced by dependency
-   depth (leaf modules → message/hook/window-create last). **5–8 sessions.**
+   **2–3 sessions.**
+8. **Phase 3 — USER half (`user/ntuser`, ~73K LOC).** 🟡 **STARTED, 3/59**
+   (object + session + useratom). The hard half — callouts, message
+   queues, hooks, window-create chain. **Next: the easy/mid leaves**
+   (guicheck/metric/prop/caret/focus/class/cursoricon/…) on the proven
+   cohab loop; **then** Phase 1.5, **then** the message/hook/window core.
+   **~6–9 sessions.** See "Remaining USER work".
 9. **Per-arch verification.** All 3 arches green on smoke. **Continuous.**
 10. **Cleanup.** Retire the C `win32ss/` kernel-mode tree; flip the
-    `--allow-multiple-definition` cohabitation to Rust-only. Downgrade
-    the stale `device.rs` "FAILING" cmake annotation. **1 session.**
+    `--allow-multiple-definition` cohabitation to Rust-only. Confirm the
+    stale `device.rs` "FAILING" cmake annotation is downgraded. **1 session.**
 
-**Remaining estimate: ~10–16 sessions** (Phase 2 finish ~2–4, Phase 1.5
-~2–3, Phase 3 ~5–8, cleanup ~1). The GDI half — the methodology
-bake-in — is essentially proven; **USER is the bulk of what's left.**
-User-mode DLLs (user32/gdi32/imm32/winsrv) remain out of scope (Phase N+1).
+**Remaining estimate: ~9–13 sessions** (Phase 1.5 ~2–3, Phase 3 USER
+~6–9, cleanup ~1). The GDI half — the methodology bake-in — is **done**;
+**USER is the bulk of what's left.** User-mode DLLs (user32/gdi32/imm32/
+winsrv) remain out of scope (Phase N+1).
 
 ## Definition of done
 
@@ -730,14 +837,14 @@ User-mode DLLs (user32/gdi32/imm32/winsrv) remain out of scope (Phase N+1).
    with `#[cfg(target_arch)]` gates. Win32k has fewer arch differences
    (16 i386-ifdef, 5 arm64-ifdef, 0 amd64-specific in `*.c`). Can
    stay arch-agnostic. **Recommendation: same pattern as ntoskrnl.**
-3. **brush.cpp specifically — Rust struct or fold into Rust impl?**
-   The C++ class is small (605 LOC), fits cleanly into a Rust
-   `struct BRUSH` with `impl BRUSH`. **Recommendation: translate as
-   a one-off Rust struct alongside Phase 2 ntgdi work.**
-4. **GDI handle table = port-as-trait or port-as-struct?**
-   The ntoskrnl ob handle table went port-as-struct. GDI table is
-   structurally similar. **Recommendation: port-as-struct, mirror
-   `ntoskrnl-rust/src/ob/obhandle.rs` shape.**
+3. ~~**brush.cpp specifically — Rust struct or fold into Rust impl?**~~
+   **RESOLVED (wave 23).** `class BRUSH` had no vtable → modeled as
+   `*mut _BRUSH` (bindgen struct) with file-internal C++ methods as
+   private Rust fns and only the `extern "C"` API `#[no_mangle]`'d. See
+   learning #10.
+4. ~~**GDI handle table = port-as-trait or port-as-struct?**~~
+   **RESOLVED.** Went port-as-struct (`gdiobj.rs`), mirroring the
+   ntoskrnl ob handle table. Live + smoke-green.
 5. ~~**freetype-sys: full or subset?**~~ **RESOLVED — moot.** No
    separate freetype-sys crate. `win32k-sys` already contains the FT_*
    surface (46 symbols) because `pch.h` pulls `ft2build.h`/
