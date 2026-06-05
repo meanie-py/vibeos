@@ -1330,6 +1330,10 @@ def main() -> int:
         # differential lives in cnt-difftest's ref_streamout. See
         # streamout.rs.
         + "mod streamout;\npub use streamout::*;\n"
+        # hand-written math classification + integer-abs shims (Wave
+        # MATH-CLASS); pure IEEE-754 bit ops, no FP arithmetic (i386
+        # no-SSE safe). Differential lives in cnt-difftest. See math.rs.
+        + "mod math;\npub use math::*;\n"
     )
 
     spec = {

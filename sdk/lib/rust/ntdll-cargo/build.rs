@@ -35,9 +35,12 @@ fn main() {
             ),
             o => panic!("ntdll-cargo: unsupported arch {o}"),
         };
-    // cnt-rust-lib gets the `float` feature on x86 (by-value f64 ABI); arm64
-    // omits it (mirrors libcntpr.cmake).
-    let cnt_feats: &[&str] = if arch == "aarch64" { &[] } else { &["float"] };
+    // cnt-rust-lib `float` feature, mirroring libcntpr.cmake EXACTLY: amd64 +
+    // arm64 build the Rust format_float/format_floatw that streamout/wstreamout
+    // call (without it the arm64 link fails `undefined symbol: format_float`).
+    // i386 (x86) omits float — its no-SSE softfloat build takes the C residual
+    // format_float.c/format_floatw.c from liblibcntpr.a instead.
+    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
 
     let stem = match arch.as_str() {
         "x86" => "i386",

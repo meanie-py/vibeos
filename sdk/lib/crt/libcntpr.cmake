@@ -112,6 +112,24 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     # va_end` shells that call the Rust engine.
     printf/streamout.c
     printf/wstreamout.c
+    # Wave MATH-CLASS: IEEE-754 predicates + integer abs flip to cnt-rust
+    # (cabi/math.rs) — pure bit ops, no FP arithmetic, uniform on all 3
+    # arches (i386 no-SSE safe). All-arch common LIBCNTPR_MATH_SOURCE.
+    math/abs.c
+    math/labs.c
+    math/_isnan.c
+    math/_isnanf.c
+    math/_finite.c
+    math/_finitef.c
+    math/_dclass.c
+    math/_fdclass.c
+    math/_dsign.c
+    math/_fdsign.c
+    math/_dtest.c
+    math/_fdtest.c
+    # Wave MATH-TIERB: `div` is pure integer (div_t of two ints, no float
+    # in its signature) → cnt-rust owns it on all 3 arches.
+    math/div.c
 )
 
 # Wave PRINTF (float residual): the float-formatting half of streamout
@@ -125,6 +143,51 @@ if(ARCH STREQUAL "i386")
     list(APPEND LIBCNTPR_SOURCE
         printf/format_float.c
         printf/format_floatw.c
+    )
+endif()
+
+# Wave MATH-TIERB (float residual): the float-RETURNING shims
+# (_chgsignf/scalbn/scalbnf/round/roundf/nextafter/nextafterf/nexttowardf)
+# flip to cnt-rust behind the `float` feature, owned on amd64/arm64. On
+# i386 the crate builds no-SSE where an `f32`/`f64` *return* is a hard ABI
+# error (float *args* — Tier A's predicates — only warn), so i386 keeps
+# the C exactly like format_float above. `nexttowardf` is additionally
+# i386-only-C by ABI (80-bit `long double` arg). div.c is NOT here — it's
+# pure integer and already removed all-arch above.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/_chgsignf.c
+        math/scalbn.c
+        math/scalbnf.c
+        math/round.c
+        math/roundf.c
+        math/nextafter.c
+        math/nextafterf.c
+        math/nexttowardf.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 1): sin/cos/sqrt/sqrtf → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its x87 *_asm.s). sin/cos are the same
+# portable math/{sin,cos}.c on both arches → one Rust impl, bit-exact.
+# sqrt/sqrtf paths differ per arch (amd64 = libm_sse2 hardware; arm64 =
+# the portable math/sqrt.c fast-invsqrt approximation) — cnt-rust replaces
+# both with the hardware sqrt instruction.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/sin.c
+        math/cos.c
+    )
+endif()
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/sqrt.c
+        math/libm_sse2/sqrtf.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/sqrt.c
+        math/sqrtf.c
     )
 endif()
 

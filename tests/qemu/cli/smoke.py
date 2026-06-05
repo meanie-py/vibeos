@@ -34,6 +34,18 @@ def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
     return "timeout", buf
 
 
+def _settle(vm: QemuVM, seconds: float) -> None:
+    """After the boot marker, let user-mode finish drawing the desktop before
+    the screenshot. The marker (`_tWinMain entered`) fires the instant explorer
+    starts — the taskbar/Start button/tray are built ~15s later. Without this,
+    the canonical screenshot is a half-built (taskbar-less) desktop, which both
+    hides real shell regressions and looks alarmingly blank. Drains serial while
+    waiting so the chardev buffer can't stall the VM."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        vm.serial.read_available(timeout=0.5)
+
+
 def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
     """Capture a PNG screenshot, pass OR fail, while the VM is still alive.
 
@@ -84,6 +96,13 @@ def _one_boot(run: Run, repo: Path, arch: str, *, until: str, fail_on: str | Non
     try:
         outcome, text = _watch(vm, marker, fail_on, config.boot_timeout)
         run.log(text[-8000:], header=f"{label} serial tail")
+        # On success, let the desktop settle (taskbar/tray render ~15s after the
+        # marker) so the canonical screenshot shows the real shell. On failure,
+        # screenshot immediately to capture the broken state.
+        if outcome == "reached" and config.desktop_settle_seconds > 0:
+            run.log(f"settling {config.desktop_settle_seconds:.0f}s for desktop",
+                    header=label)
+            _settle(vm, config.desktop_settle_seconds)
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
         shot = _screenshot(vm, work, repo, arch)
         if outcome == "reached":
