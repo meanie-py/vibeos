@@ -28,6 +28,9 @@ pub mod controlset;
 // security.c — SCM security descriptors (SIDs/ACLs/SDs, pPipeSD).
 pub mod security;
 
+// groupdb.c — service-group database (first SERVICE-mirror consumer).
+pub mod groupdb;
+
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
 #[panic_handler]
