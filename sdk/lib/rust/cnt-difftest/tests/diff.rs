@@ -228,7 +228,6 @@ fn cstr(rng: &mut Rng, max: usize, alpha: bool) -> Vec<u8> {
     v
 }
 
-#[test]
 fn diff_strlen() {
     let mut rng = Rng(0x1234_5678);
     for _ in 0..5000 {
@@ -239,7 +238,6 @@ fn diff_strlen() {
     unsafe { assert_eq!(cabi::strlen(core::ptr::null()), ref_strlen(core::ptr::null())) }
 }
 
-#[test]
 fn diff_strcmp() {
     let mut rng = Rng(0xdead_beef);
     for _ in 0..8000 {
@@ -259,7 +257,6 @@ fn diff_strcmp() {
     }
 }
 
-#[test]
 fn diff_strstr() {
     let mut rng = Rng(0x0bad_f00d);
     for _ in 0..8000 {
@@ -283,7 +280,6 @@ fn diff_strstr() {
     }
 }
 
-#[test]
 fn diff_atoi() {
     let mut rng = Rng(0xfeed_face);
     let fixed: &[&[u8]] = &[
@@ -316,7 +312,6 @@ fn diff_atoi() {
     unsafe { assert_eq!(cabi::atoi(core::ptr::null()), ref_atoi64(core::ptr::null()) as i32) }
 }
 
-#[test]
 fn diff_strncpy() {
     let mut rng = Rng(0xc0ff_ee11);
     for _ in 0..8000 {
@@ -332,7 +327,6 @@ fn diff_strncpy() {
     }
 }
 
-#[test]
 fn diff_memcpy() {
     let mut rng = Rng(0x5151_5151);
     for _ in 0..6000 {
@@ -361,7 +355,6 @@ fn diff_memcpy() {
     }
 }
 
-#[test]
 fn diff_memset() {
     let mut rng = Rng(0x9e37_79b9);
     for _ in 0..6000 {
@@ -377,7 +370,6 @@ fn diff_memset() {
     }
 }
 
-#[test]
 fn diff_memcmp() {
     let mut rng = Rng(0x2545_f491);
     for _ in 0..8000 {
@@ -398,7 +390,6 @@ fn diff_memcmp() {
     }
 }
 
-#[test]
 fn diff_memmove() {
     let mut rng = Rng(0x1357_9bdf);
     for _ in 0..6000 {
@@ -417,7 +408,6 @@ fn diff_memmove() {
     }
 }
 
-#[test]
 fn diff_memchr() {
     let mut rng = Rng(0xa5a5_5a5a);
     for _ in 0..8000 {
@@ -437,7 +427,6 @@ fn diff_memchr() {
     }
 }
 
-#[test]
 fn diff_atoi64_atol() {
     let mut rng = Rng(0x0123_4567);
     let fixed: &[&[u8]] = &[
@@ -467,7 +456,6 @@ fn diff_atoi64_atol() {
     unsafe { assert_eq!(cabi::_atoi64(core::ptr::null()), ref_atoi64(core::ptr::null())); }
 }
 
-#[test]
 fn diff_strnlen() {
     let mut rng = Rng(0x7777_3333);
     for _ in 0..6000 {
@@ -481,7 +469,6 @@ fn diff_strnlen() {
     unsafe { assert_eq!(cabi::strnlen(core::ptr::null(), 8), ref_strnlen(core::ptr::null(), 8)); }
 }
 
-#[test]
 fn diff_strncmp() {
     let mut rng = Rng(0x3333_7777);
     for _ in 0..8000 {
@@ -497,7 +484,6 @@ fn diff_strncmp() {
     }
 }
 
-#[test]
 fn diff_strchr_rchr() {
     let mut rng = Rng(0x9999_1111);
     for _ in 0..8000 {
@@ -519,7 +505,6 @@ fn diff_strchr_rchr() {
     }
 }
 
-#[test]
 fn diff_strtoi64_strtoul() {
     let mut rng = Rng(0x57f0_1640_u64);
     let bases = [0i32, 2, 8, 10, 16, 36, 1, 37];
@@ -554,7 +539,6 @@ fn diff_strtoi64_strtoul() {
 /// /`_ui64toa` get the full domain incl. negative+radix!=10 (host
 /// `__int64`==model u64); the `long`/int-input symbols skip the
 /// width-divergent neg+radix!=10 case (host LP64 vs Win LP32).
-#[test]
 fn diff_itoa_unchecked() {
     let mut rng = Rng(0x171a_0c01_u64);
     let radices = [2i32, 8, 10, 16, 36];
@@ -623,7 +607,6 @@ fn diff_itoa_unchecked() {
 /// Wave C2 — unchecked wide int→str. Same domain split as C1; plus the
 /// wide misfeature: NULL dst is accepted and the input ptr is returned
 /// unchanged (no write, no crash).
-#[test]
 fn diff_itow_unchecked() {
     let mut rng = Rng(0x2c02_77a0_u64);
     let radices = [2i32, 8, 10, 16, 36];
@@ -686,7 +669,6 @@ fn diff_itow_unchecked() {
 /// Sizes span 0..40 (tiny→exact→over) over many iters; radix set
 /// includes invalid (1/37/0/-1) to exercise the EINVAL path. `_ltoa_s`
 /// /`_itoa_s` skip neg+valid-radix!=10 (LP64-host width divergence).
-#[test]
 fn diff_itoa_s() {
     let mut rng = Rng(0x53c0_3a11_u64);
     let radices = [2i32, 8, 10, 16, 36, 1, 37, 0, -1];
@@ -739,7 +721,6 @@ fn diff_itoa_s() {
 /// star is `_ui64tow_s`'s genuine byte-count bug (memcpy ndigits+1
 /// BYTES, not * sizeof(wchar_t)) — the diff pins that exact half-wide
 /// destination state against the real compiled itow.c.
-#[test]
 fn diff_itow_s() {
     let mut rng = Rng(0x77c0_4b22_u64);
     let radices = [2i32, 8, 10, 16, 36, 1, 37, 0, -1];
@@ -804,7 +785,6 @@ fn wcstr(rng: &mut Rng, max: usize) -> Vec<u16> {
 /// `cstr` alpha (incl. >=0x80 for the signed-char path); wide uses
 /// `wcstr` (incl. >0xFF, never folded). Pins the raw (un-clamped)
 /// difference + the n==0/NUL-break bounds against compiled _*_nt.c.
-#[test]
 fn diff_icmp() {
     let mut rng = Rng(0x1cb0_5d33_u64);
     for _ in 0..9000 {
@@ -857,7 +837,6 @@ fn diff_icmp() {
 /// never fuzzed). Pins value AND endptr offset incl. the saturate-
 /// but-still-advance + negate-after-saturate (→1) misfeatures, and
 /// the endptr=NULL path, vs compiled wcstoul.c.
-#[test]
 fn diff_wcstoul() {
     let mut rng = Rng(0x7c50_1a44_u64);
     let alpha: &[u16] = &[
@@ -895,7 +874,6 @@ fn diff_wcstoul() {
 /// diff pins the wrapper logic over the whole 0x00-0xFF byte domain
 /// (incl. the 0x80-0x9F table + undefined slots) and the wide side
 /// over ASCII/Latin-1/table-targets/unmappable.
-#[test]
 fn diff_mbcp() {
     // toupper_nt_mb — whole low-byte domain + negative / >0xFF inputs.
     for c in -4i32..=300 {
@@ -994,7 +972,6 @@ fn diff_mbcp() {
 /// narrow cores + strcpy/strcat/strncat (narrow+wide). One generic
 /// `core_rs::string` impl over `Elem`; the diff pins each variant
 /// vs the genuine tcs*.h logic header instantiated narrow/wide.
-#[test]
 fn diff_tcs_family() {
     let mut rng = Rng(0x7c5f_a311_u64);
     let off16 = |p: *mut u16, base: *const u16| {
@@ -1114,7 +1091,6 @@ fn diff_tcs_family() {
 /// strtoull u64). ASCII domain, sane bases. Pins value + endptr
 /// (incl. the any?s-1:nptr rule and the overflow→LONG_MIN/MAX /
 /// ULLONG_MAX clamps) vs genuine strtol.c/wcstol.c/strtoull.c.
-#[test]
 fn diff_strtol_family() {
     let mut rng = Rng(0x6a17_0c2d_u64);
     let bases = [0i32, 2, 8, 10, 16, 36];
@@ -1166,7 +1142,6 @@ fn diff_strtol_family() {
 
 /// Wave F — charset span/search. Small alphabets so set membership
 /// actually hits; empty set / empty needle exercised explicitly.
-#[test]
 fn diff_span() {
     let mut rng = Rng(0x5fa0_b17e_u64);
     for _ in 0..9000 {
@@ -1265,7 +1240,6 @@ fn diff_span() {
 /// `_wcstoi64{,_l}`/`_wcstoui64{,_l}` (per-digit MAX clamp + the wide
 /// endptr contract = final nptr ALWAYS, incl. invalid-base→0/no-write
 /// and NULL-nptr→0/no-write). ASCII domain, incl. bases 1/37.
-#[test]
 fn diff_wide_atoi() {
     let mut rng = Rng(0x9c2a_d175_u64);
     let bases = [0i32, 2, 8, 10, 16, 36, 1, 37];
@@ -1363,7 +1337,6 @@ fn diff_wide_atoi() {
 /// ASCII-ONLY contract (À etc. must stay untouched). Scalars
 /// (tolower signed-char-decision+full-int; towupper = Rtl/CP1252
 /// upcase) swept across the full domain incl. negatives / >0xFFFF.
-#[test]
 fn diff_casemap() {
     let mut rng = Rng(0x4ca5_e009_u64);
     for _ in 0..6000 {
@@ -1454,7 +1427,6 @@ fn diff_casemap() {
 /// high bytes, szFill truncation, and the _strnset signed-int
 /// sizeMaxFill misfeature (0, < / == / > strlen, and > INT_MAX → fills
 /// nothing). NO NULL fuzzing (the C has no guards — derefs immediately).
-#[test]
 fn diff_strmut() {
     let mut rng = Rng(0x12ed_5b07_u64);
     let pool = b"ABCabc 09.\x00\x80\xFF\x01";
@@ -1513,7 +1485,6 @@ fn diff_strmut() {
 /// per-pointer NULL, empty-component skip. NO NULL `path` for split
 /// (UB in C, WINVER<0x600). makepath NULL `path` IS pinned (no-op).
 /// 256-byte buffers (never the INT_MAX cap).
-#[test]
 fn diff_path() {
     let mut rng = Rng(0x9a17_c0de_u64);
     let pool: &[u8] = b"ab.\\/:cd.txt..\\";
@@ -1601,7 +1572,6 @@ fn diff_path() {
 /// strtok_s-vs-wcstok_s no-token-path asymmetry. Plus the bad-param
 /// guards. The hidden statics are independent per side but the
 /// identical call stream keeps them in lockstep.
-#[test]
 fn diff_strtok() {
     let mut rng = Rng(0x704b_17aa_u64);
     let pool: &[u8] = b"ab,; :.c";
@@ -1724,7 +1694,6 @@ fn diff_strtok() {
 /// va_list); each shape pins return value + every out + a trailing
 /// %n (the consumed-1 quirk). Buffers sentinel-prefilled so over/
 /// under-write and the %s/%[/%c terminator asymmetry are caught.
-#[test]
 fn diff_scanf() {
     let mut rng = Rng(0x5caf_d1f0_u64);
     let cstr0 = |v: &[u8]| {
@@ -1938,7 +1907,6 @@ fn diff_scanf() {
 /// quirk across length ∈ {0, <strlen, ==strlen, >strlen} + an
 /// embedded-NUL buffer. Float excluded (Phase 2). Fixed concrete arg
 /// shapes; return + every out + trailing %n parity, sentinel buffers.
-#[test]
 fn diff_snscanf() {
     let mut rng = Rng(0x5caf_3a30_u64);
     for _ in 0..7000 {
@@ -2044,7 +2012,6 @@ fn diff_snscanf() {
 /// value. Pins the genuine d·10^exp synthesis, the mantissa overflow
 /// guard, INT_MAX/MIN exponent saturation, ".8"→0.8, sign, the
 /// l/L→double vs default→float selection.
-#[test]
 fn diff_scanf_float() {
     let mut rng = Rng(0xf10a_5caf_u64);
     let cstr0 = |v: &[u8]| {
@@ -2147,7 +2114,6 @@ fn diff_scanf_float() {
 /// (NO dup flip); CP1252 narrow/wide sync. Both sides seed from the
 /// same wide block via the same CP1252 Win32 model — deterministic, no
 /// global NLS state.
-#[test]
 fn diff_env() {
     // double-NUL "GetEnvironmentStringsW"-format block from "K=V" list.
     fn wblock(entries: &[&str]) -> Vec<u16> {
@@ -2417,7 +2383,6 @@ fn diff_env() {
 /// `(*decpt)++` case) and the negative-`ndigits+r2` empty-string
 /// path. NaN/Inf (`snprintf(buf,ndigits,...)` size quirk) is the
 /// documented UNFUZZED edge (scanf-extreme-exponent precedent).
-#[test]
 fn diff_fcvt() {
     let mut rng = Rng(0xf0a7_c021_u64);
     let mut cd = 0i32;
@@ -2489,7 +2454,6 @@ fn diff_fcvt() {
 /// (|v| ≲ 1e-292: `pow(10, p-exp)` overflows f64 → inf → the
 /// `(u64)inf` cast is C-UB / not bit-portable, exactly scanf-P2) are
 /// the documented UNFUZZED owed domain limit (strpbrk≤2 precedent).
-#[test]
 fn diff_ecvt() {
     let mut rng = Rng(0xec_47_a1_d0_u64);
     let mut cd = 0i32;
@@ -2561,7 +2525,6 @@ fn diff_ecvt() {
 /// `digits>=size` & `len>size` ERANGE boundary (incl. the genuine
 /// `len==size` off-by-one). NaN/Inf + extreme magnitude are the same
 /// documented UNFUZZED owed edge as Phase 2 (scanf-P2 precedent).
-#[test]
 fn diff_gcvt() {
     let mut rng = Rng(0x9c_07_5a_e2_u64);
     let read = |p: *const u8| -> Vec<u8> {
@@ -2658,7 +2621,7 @@ fn diff_gcvt() {
                 let rd = |p: *const u8| -> Vec<u8> {
                     let mut v = Vec::new();
                     for i in 0..512usize {
-                        let b = unsafe { *p.add(i) };
+                        let b = *p.add(i);
                         if b == 0 {
                             break;
                         }
@@ -2684,7 +2647,6 @@ fn diff_gcvt() {
 
 // ── Wave MEM2 + RAND ────────────────────────────────────────────────
 
-#[test]
 fn diff_memccpy() {
     let mut rng = Rng(0x5eed_0cc9);
     for _ in 0..10000 {
@@ -2720,7 +2682,6 @@ fn diff_memccpy() {
     }
 }
 
-#[test]
 fn diff_memicmp() {
     let mut rng = Rng(0x1357_9bdf);
     for _ in 0..10000 {
@@ -2747,7 +2708,6 @@ fn diff_memicmp() {
     }
 }
 
-#[test]
 fn diff_rand() {
     // fresh (state 0): both statics init to 0 and step identically.
     for _ in 0..50 {
@@ -2798,7 +2758,6 @@ unsafe extern "C" fn cmp_firstbyte(a: *const c_void, b: *const c_void) -> i32 {
     (*(a as *const u8) as i32) - (*(b as *const u8) as i32)
 }
 
-#[test]
 fn diff_qsort() {
     let mut rng = Rng(0x90a0_b0c0_d0e0_f001);
     let sizes = [1usize, 2, 3, 4, 8, 12];
@@ -2825,7 +2784,6 @@ fn diff_qsort() {
 }
 
 
-#[test]
 fn diff_ctype() {
     // ctype lives in its own crate (cnt-ctype); shadow the module-level
     // `cabi` alias so the assertions below read uniformly.
@@ -3005,7 +2963,6 @@ macro_rules! so {
     };
 }
 
-#[test]
 fn diff_streamout_integers() {
     // d/i/u/x/X/o across signs, zero, extremes; flags; width; precision.
     for &cnt in &[512i32, -2, 8, 1, 0] {
@@ -3044,7 +3001,6 @@ fn diff_streamout_integers() {
     }
 }
 
-#[test]
 fn diff_streamout_chars_strings_percent() {
     let hello = b"Hello, world\0";
     let empty = b"\0";
@@ -3063,7 +3019,6 @@ fn diff_streamout_chars_strings_percent() {
     }
 }
 
-#[test]
 fn diff_streamout_float() {
     // %f/%e/%g/%E/%G — ref uses the SAME fl libm model as cnt's
     // format_float (build.rs #defines floor/log10/pow bit-identically),
@@ -3184,7 +3139,6 @@ fn f32_edge_bits() -> Vec<u32> {
     ]
 }
 
-#[test]
 fn diff_math_abs() {
     let mut rng = Rng(0x00ab_5123);
     // INT_MIN is UB for the C `int abs` (excluded for abs); for labs we
@@ -3204,7 +3158,6 @@ fn diff_math_abs() {
     }
 }
 
-#[test]
 fn diff_math_class_f64() {
     let mut rng = Rng(0xd00d_f00d);
     let mut bits = f64_edge_bits();
@@ -3223,7 +3176,6 @@ fn diff_math_class_f64() {
     }
 }
 
-#[test]
 fn diff_math_class_f32() {
     let mut rng = Rng(0xbeef_cafe);
     let mut bits = f32_edge_bits();
@@ -3242,7 +3194,6 @@ fn diff_math_class_f32() {
     }
 }
 
-#[test]
 fn diff_math_div() {
     let mut rng = Rng(0x0d1d_0d1d);
     let mut cases: Vec<(i32, i32)> = vec![
@@ -3284,7 +3235,6 @@ fn diff_math_div() {
     }
 }
 
-#[test]
 fn diff_math_chgsignf() {
     let mut rng = Rng(0xc465_1167);
     let mut bits = f32_edge_bits();
@@ -3302,7 +3252,6 @@ fn diff_math_chgsignf() {
     }
 }
 
-#[test]
 fn diff_math_scalbn() {
     let mut rng = Rng(0x5ca1_b00f);
     let mut xs = f64_edge_bits();
@@ -3334,7 +3283,6 @@ fn diff_math_scalbn() {
     }
 }
 
-#[test]
 fn diff_math_scalbnf() {
     let mut rng = Rng(0x5ca1_b0ff);
     let mut xs = f32_edge_bits();
@@ -3364,7 +3312,6 @@ fn diff_math_scalbnf() {
     }
 }
 
-#[test]
 fn diff_math_round() {
     let mut rng = Rng(0x5004_d123);
     let mut xs = f64_edge_bits();
@@ -3385,7 +3332,6 @@ fn diff_math_round() {
     }
 }
 
-#[test]
 fn diff_math_roundf() {
     let mut rng = Rng(0x5004_d1ff);
     let mut xs = f32_edge_bits();
@@ -3403,7 +3349,6 @@ fn diff_math_roundf() {
     }
 }
 
-#[test]
 fn diff_math_nextafter() {
     let mut rng = Rng(0x0ea7_a47e);
     let mut bits = f64_edge_bits();
@@ -3424,7 +3369,6 @@ fn diff_math_nextafter() {
     }
 }
 
-#[test]
 fn diff_math_nextafterf() {
     let mut rng = Rng(0x0ea7_a4ff);
     let mut bits = f32_edge_bits();
@@ -3445,7 +3389,6 @@ fn diff_math_nextafterf() {
     }
 }
 
-#[test]
 fn diff_math_sincos() {
     // Faithful port of math/{sin,cos}.c → bit-exact on the finite domain
     // (the `(int)` quadrant cast is meaningful only for moderate |x|).
@@ -3465,7 +3408,6 @@ fn diff_math_sincos() {
     }
 }
 
-#[test]
 fn diff_math_sqrt() {
     // Hardware sqrt = correctly rounded = libm reference, bit-for-bit.
     let mut rng = Rng(0x5012_3a4b_c0de_f00d);
@@ -3484,7 +3426,6 @@ fn diff_math_sqrt() {
     }
 }
 
-#[test]
 fn diff_math_nexttowardf() {
     let mut rng = Rng(0x0ea7_70a4);
     let mut xb = f32_edge_bits();
@@ -3507,4 +3448,94 @@ fn diff_math_nexttowardf() {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
+// harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
+// glibc once linked, which breaks libtest (its `getenv` for RUST_TEST_THREADS
+// hits cnt's empty env → NULL → forced multithreading → a race on cnt's
+// process-global setenv state → spurious abort). This runner never calls
+// getenv and never spawns a thread, so all of that evaporates. Every check
+// here is deterministic and order-independent; sequential execution is both
+// correct and reproducible. Each test prints its name (flushed) BEFORE it
+// runs, so even an abort under `panic = "abort"` names the culprit, and the
+// panic message itself carries the failing assertion's file:line.
+fn main() {
+    macro_rules! run {
+        ($($t:ident),* $(,)?) => {{
+            use std::io::Write;
+            let mut n = 0usize;
+            $(
+                print!("test {} ... ", stringify!($t));
+                std::io::stdout().flush().ok();
+                $t();
+                println!("ok");
+                n += 1;
+            )*
+            n
+        }};
+    }
+    let n = run!(
+        diff_strlen,
+        diff_strcmp,
+        diff_strstr,
+        diff_atoi,
+        diff_strncpy,
+        diff_memcpy,
+        diff_memset,
+        diff_memcmp,
+        diff_memmove,
+        diff_memchr,
+        diff_atoi64_atol,
+        diff_strnlen,
+        diff_strncmp,
+        diff_strchr_rchr,
+        diff_strtoi64_strtoul,
+        diff_itoa_unchecked,
+        diff_itow_unchecked,
+        diff_itoa_s,
+        diff_itow_s,
+        diff_icmp,
+        diff_wcstoul,
+        diff_mbcp,
+        diff_tcs_family,
+        diff_strtol_family,
+        diff_span,
+        diff_wide_atoi,
+        diff_casemap,
+        diff_strmut,
+        diff_path,
+        diff_strtok,
+        diff_scanf,
+        diff_snscanf,
+        diff_scanf_float,
+        diff_env,
+        diff_fcvt,
+        diff_ecvt,
+        diff_gcvt,
+        diff_memccpy,
+        diff_memicmp,
+        diff_rand,
+        diff_qsort,
+        diff_ctype,
+        diff_streamout_integers,
+        diff_streamout_chars_strings_percent,
+        diff_streamout_float,
+        diff_math_abs,
+        diff_math_class_f64,
+        diff_math_class_f32,
+        diff_math_div,
+        diff_math_chgsignf,
+        diff_math_scalbn,
+        diff_math_scalbnf,
+        diff_math_round,
+        diff_math_roundf,
+        diff_math_nextafter,
+        diff_math_nextafterf,
+        diff_math_sincos,
+        diff_math_sqrt,
+        diff_math_nexttowardf,
+    );
+    println!("\ndifftest result: ok. {n} passed; 0 failed");
 }
