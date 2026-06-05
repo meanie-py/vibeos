@@ -60,10 +60,11 @@ fn main() {
     let (target_json, entry, image_base, alignment): (&str, &str, Option<u64>, u64) =
         match arch.as_str() {
             "x86" => {
-                // i386: mini_hal + libhal_rust_mini are linked BEFORE the
-                // freeldr libs (uefi.cmake `if(ARCH STREQUAL i386 AND NOT MSVC)`).
+                // i386: mini_hal's systimer.S asm (libmini_hal.a) is still
+                // reused; its Rust HAL impl (was libhal_rust_mini.a) is now a
+                // DIRECT cargo sibling — .rust_lib("hal-rust",["minihal"]) in
+                // the i386 block below, not a reused cmake copy.
                 libs.push("hal/halx86/minihal/libmini_hal.a");
-                libs.push("hal/halx86/libhal_rust_mini.a");
                 // uefiasm.S + i386trap.S flipped to Rust global_asm!
                 // (freeldr-rust/uefiasm.rs + loader_asm.rs) — no asm left here.
                 ("i686-kernel.json", "_EfiEntry", Some(0x0040_0000), 0x200)
@@ -88,9 +89,10 @@ fn main() {
         // body is now a DIRECT cargo build (.rust_staticlib() below), no longer
         // a cmake-built libfreeldr_rust_uefi.a reused here.
         "sdk/lib/cportlib/libcportlib.a",
-        // cport.c is Rust now (cohabitation); libcportlib.a is just the stub,
-        // the Cp* serial symbols come from libcport_rust.a.
-        "sdk/lib/cportlib/libcport_rust.a",
+        // cport.c is Rust now (cohabitation); libcportlib.a is just the cohab
+        // stub. The Cp* serial symbols come from cport-rust, now a DIRECT cargo
+        // sibling (.rust_lib("cport-rust") below), not the reused cmake-built
+        // libcport_rust.a.
         // blcmlib (CM hive boot lib) is now compiled IN-cargo via
         // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
         // blrtl (boot RTL leaf) is likewise compiled IN-cargo below: its C via
@@ -186,6 +188,10 @@ fn main() {
         .c_from_compile_db("blrtl", &blrtl_c)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
+        // cport-rust (NS16550 serial) built directly (was reused cmake
+        // libcport_rust.a). Default features, all arches; build_rust_crate keys
+        // the i386 -sse,-sse2 (cmake got it from .cargo/config.toml).
+        .rust_lib("cport-rust", &[], true)
         .static_libs(&libs)
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
     // i386 freeldr runs in protected mode before CR4.OSFXSR — no SSE. Build
@@ -193,6 +199,11 @@ fn main() {
     // amd64/arm64 ran with empty RUSTFLAGS → SSE on, as in long mode).
     if arch == "x86" {
         linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
+        // hal-rust minihal variant (i386-only) built directly (was reused cmake
+        // libhal_rust_mini.a). Default features + `minihal`; build_rust_crate
+        // keys the i386 -sse,-sse2 (cmake's HAL_RUST_EXTRA_ENV). The systimer.S
+        // asm half (libmini_hal.a) is still reused via static_libs above.
+        linker = linker.rust_lib("hal-rust", &["minihal"], true);
     }
     // blrtl's per-arch asm as an in-group archive (mirrors blrtl.cmake's
     // add_asm_files+add_library, where the asm was part of libblrtl.a). arm64

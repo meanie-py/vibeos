@@ -45,9 +45,11 @@ fn main() {
                 vec![
                     // drvmap: 16-bit gcc asm, reused directly.
                     "boot/freeldr/freeldr/drvmap_gcc.obj",
-                    // i386 mini-HAL linked BEFORE the freeldr libs.
+                    // i386 mini-HAL's systimer.S asm (libmini_hal.a) still
+                    // reused; its Rust impl (was libhal_rust_mini.a) is now a
+                    // DIRECT cargo sibling — .rust_lib("hal-rust",["minihal"])
+                    // in the i386 block below.
                     "hal/halx86/minihal/libmini_hal.a",
-                    "hal/halx86/libhal_rust_mini.a",
                 ],
             )
         }
@@ -176,6 +178,10 @@ fn main() {
         // The C halstub.c always linked the Rust HAL dispatch tables as a
         // source object; as archive members they'd be GC'd. Pull them.
         linker = linker.force_undefined(&["_HalDispatchTable", "_HalPrivateDispatchTable"]);
+        // hal-rust minihal variant (i386-only) built directly (was reused cmake
+        // libhal_rust_mini.a). build_rust_crate keys the i386 -sse,-sse2. The
+        // systimer.S asm half (libmini_hal.a) stays reused via the libs above.
+        linker = linker.rust_lib("hal-rust", &["minihal"], true);
     }
     // blrtl's per-arch asm as an in-group archive (mirrors blrtl.cmake's
     // add_asm_files+add_library, where the asm lived in libblrtl.a).

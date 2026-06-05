@@ -127,8 +127,11 @@ set(ROSLOAD_EXTRA_DEPENDS
     # re-invokes the cargo link, instead of depending on the cmake libcntpr_rust.a.
     ${FREELDR_CNT_RUST_SOURCES})
 if(ARCH STREQUAL "i386")
+    # mini_hal stays a dep (systimer.S asm → libmini_hal.a, still reused). Its
+    # Rust impl (hal-rust minihal) is now built by rosload-cargo (reactos-link
+    # .rust_lib) — file-track its sources instead of the cmake libhal_rust_mini.a.
     list(APPEND ROSLOAD_EXTRA_DEPENDS
-        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a
+        mini_hal ${FREELDR_HAL_MINI_SOURCES}
         ${CMAKE_CURRENT_BINARY_DIR}/drvmap_gcc.obj)
 endif()
 # (linux.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust,

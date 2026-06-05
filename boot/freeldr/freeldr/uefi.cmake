@@ -105,11 +105,17 @@ set(UEFILDR_EXTRA_DEPENDS
     # file-track its sources (incl. cnt-rust/cnt-ctype path-deps) so an edit
     # re-invokes the cargo link, instead of depending on the cmake libcntpr_rust.a.
     ${FREELDR_CNT_RUST_SOURCES}
-    # cport-rust is still reused from cmake (custom-target output) — file-track it:
-    ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
+    # cport-rust is now built by uefildr-cargo itself (reactos-link .rust_lib);
+    # file-track its sources, not the cmake-built libcport_rust.a. The cmake
+    # `cportlib` target stays a dep (above) for the cohab stub libcportlib.a the
+    # loader still reuses.
+    ${FREELDR_CPORT_RUST_SOURCES})
 if(ARCH STREQUAL "i386")
+    # mini_hal stays a dep (systimer.S asm → libmini_hal.a, still reused). Its
+    # Rust impl (hal-rust minihal) is now built by uefildr-cargo (reactos-link
+    # .rust_lib) — file-track its sources instead of the cmake libhal_rust_mini.a.
     list(APPEND UEFILDR_EXTRA_DEPENDS
-        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a)
+        mini_hal ${FREELDR_HAL_MINI_SOURCES})
 endif()
 
 # KIND efi → post-link strips .rossym + --strip-all (matches the old

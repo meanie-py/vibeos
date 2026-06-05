@@ -212,6 +212,17 @@ set(FREELDR_BLRTL_SOURCES
     ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/rtlmem.s
     ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/rtlswap.S
     ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/amd64/debug_asm.S)
+# cport-rust (NS16550 serial, sdk/lib/cportlib/CMakeLists.txt) + hal-rust's
+# minihal variant (hal/halx86/CMakeLists.txt, i386-only) are now DIRECT cargo
+# siblings of the loader link (reactos-link .rust_lib()), not reused from the
+# cmake-built libcport_rust.a / libhal_rust_mini.a. Glob their crate sources so
+# a `.rs` edit re-invokes the (opaque) cargo link. (The cmake `cportlib` /
+# `mini_hal` targets stay deps for the C/asm leftovers — the cport cohab stub
+# and mini_hal's systimer.S asm — which the loaders still reuse.)
+file(GLOB_RECURSE FREELDR_CPORT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/cport-rust/src/*.rs)
+file(GLOB_RECURSE FREELDR_HAL_MINI_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/hal-rust/src/*.rs)
 
 # BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
 # built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. rosload
