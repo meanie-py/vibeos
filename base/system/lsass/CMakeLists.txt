@@ -18,17 +18,12 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 # it via gen_lsass_res.py or a cmake rc target (non-load-bearing: version info
 # only, no manifest/icons).
 
-# The importlib/CRT .a the cargo link reuses live in dll/ + sdk/lib/crt, which
-# cmake configures AFTER base/ — so their TARGET names aren't defined here.
-# DEPENDS on the .a FILE paths instead (order-independent; ninja edges each to
-# its producer) so a parallel `ninja livecd` builds them before the cargo link.
+# lsass's 6 import libs are now GENERATED in-cargo from each DLL's .spec
+# (lsass-cargo .import_lib) — no cmake reuse. Only the CRT statics (libmsvcrtex
+# = the _wWinMainCRTStartup entry, oldnames = _name aliases) are still reused;
+# DEPENDS on their .a FILE paths (sdk/lib/crt configures after base/, so target
+# names aren't in scope) for parallel-build ordering.
 set(LSASS_REUSED_LIBS
-    ${CMAKE_BINARY_DIR}/dll/win32/advapi32/CMakeFiles/libadvapi32.dir/libadvapi32.a
-    ${CMAKE_BINARY_DIR}/dll/win32/lsasrv/CMakeFiles/liblsasrv.dir/liblsasrv.a
-    ${CMAKE_BINARY_DIR}/dll/win32/samsrv/CMakeFiles/libsamsrv.dir/libsamsrv.a
-    ${CMAKE_BINARY_DIR}/dll/win32/msvcrt/CMakeFiles/libmsvcrt.dir/libmsvcrt.a
-    ${CMAKE_BINARY_DIR}/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a
-    ${CMAKE_BINARY_DIR}/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 

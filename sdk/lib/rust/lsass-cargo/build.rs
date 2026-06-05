@@ -34,17 +34,22 @@ fn main() {
         // manifest/icons, non-load-bearing) is omitted in this first mover:
         // retiring cmake's add_executable removes its .rc compile rule, and
         // re-hosting it (gen_lsass_res.py or a cmake rc target) is owed follow-up.
-        // Importlib group + CRT, reused from cmake (build-i386 relative). The
-        // engine wraps these + the Rust .a in one --start-group, so the circular
-        // refs (CRT entry → wWinMain → Rtl*/kernel32) resolve. libmsvcrtex.a is
-        // the "hidden" CRT startup that provides _wWinMainCRTStartup.
+        // Import libs GENERATED in-cargo from each DLL's .spec (spec2def +
+        // dlltool, self-hosted by the engine) — no cmake importlib reuse, no
+        // `ninja` prereq. These supply lsass's imports: advapi32 (LSA helpers),
+        // lsasrv (LsapInitLsa/ServiceInit), samsrv (SamIInitialize), msvcrt
+        // (CRT), kernel32, ntdll.
+        .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
+        .import_lib("dll/win32/lsasrv/lsasrv.spec", "lsasrv.dll", "lsasrv")
+        .import_lib("dll/win32/samsrv/samsrv.spec", "samsrv.dll", "samsrv")
+        .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
+        .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
+        .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
+        // CRT statics still reused from cmake (compiled C/asm): libmsvcrtex.a is
+        // the "hidden" CRT startup providing _wWinMainCRTStartup → wWinMain;
+        // oldnames.a the _name aliases. Compiling these in-cargo (c_from_compile_db)
+        // is the remaining step to a fully ninja-free lsass.
         .static_libs(&[
-            "dll/win32/advapi32/CMakeFiles/libadvapi32.dir/libadvapi32.a",
-            "dll/win32/lsasrv/CMakeFiles/liblsasrv.dir/liblsasrv.a",
-            "dll/win32/samsrv/CMakeFiles/libsamsrv.dir/libsamsrv.a",
-            "dll/win32/msvcrt/CMakeFiles/libmsvcrt.dir/libmsvcrt.a",
-            "dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a",
-            "dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a",
             "sdk/lib/crt/libmsvcrtex.a",
             "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a",
         ])
