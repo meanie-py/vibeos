@@ -89,7 +89,9 @@ extern "C" {
     fn strcmp(a: *const i8, b: *const i8) -> i32;
     fn _wtoi(s: *const u16) -> i32;
     fn _wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
-    static gmxWorldToDeviceDefault: MATRIX;
+    // freetype.c HACK: `#define gmxWorldToDeviceDefault gmxWorldToPageDefault`
+    // — use the 1:1 identity page matrix (see dclife.rs DC_vInitDc note).
+    static gmxWorldToPageDefault: MATRIX;
 }
 static mut g_PointZero: POINTL = POINTL { x: 0, y: 0 };
 
@@ -7674,7 +7676,7 @@ pub unsafe extern "system" fn IntExtTextOutW(
         if (*pdcattr).iGraphicsMode == GM_ADVANCED as i32 {
             pmxWorldToDevice = w32r_DC_pmxWorldToDevice(dc);
         } else {
-            pmxWorldToDevice = core::ptr::addr_of!(gmxWorldToDeviceDefault) as PMATRIX;
+            pmxWorldToDevice = core::ptr::addr_of!(gmxWorldToPageDefault) as PMATRIX;
         }
 
         if (*pdcattr).ulDirty_ & DIRTY_BACKGROUND != 0 {

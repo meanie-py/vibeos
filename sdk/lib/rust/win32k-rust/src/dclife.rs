@@ -315,8 +315,13 @@ pub unsafe extern "stdcall" fn DC_vInitDc(
         (*pdc).co = gxcoTrivial;
     }
 
-    (*pdc).dclevel.mxWorldToDevice = gmxWorldToDeviceDefault;
-    (*pdc).dclevel.mxDeviceToWorld = gmxDeviceToWorldDefault;
+    // dclife.c HACK (`#define gmxWorldToDeviceDefault gmxWorldToPageDefault` /
+    // `gmxDeviceToWorldDefault gmxWorldToPageDefault`): the real 16:1 / 1:16
+    // defaults are NOT used — all three init to the 1:1 identity page matrix
+    // until XFORMOBJ is fixed. (Dropping this #define left DCs with a 16x
+    // mxWorldToDevice → DPtoLP/clip box came out screen/16 → blank desktop.)
+    (*pdc).dclevel.mxWorldToDevice = gmxWorldToPageDefault;
+    (*pdc).dclevel.mxDeviceToWorld = gmxWorldToPageDefault;
     (*pdc).dclevel.mxWorldToPage = gmxWorldToPageDefault;
     (*pdc).dclevel.efM11PtoD = gef16;
     (*pdc).dclevel.efM22PtoD = gef16;
@@ -511,8 +516,13 @@ pub unsafe extern "C" fn DC_vInitDc(
         (*pdc).co = gxcoTrivial;
     }
 
-    (*pdc).dclevel.mxWorldToDevice = gmxWorldToDeviceDefault;
-    (*pdc).dclevel.mxDeviceToWorld = gmxDeviceToWorldDefault;
+    // dclife.c HACK (`#define gmxWorldToDeviceDefault gmxWorldToPageDefault` /
+    // `gmxDeviceToWorldDefault gmxWorldToPageDefault`): the real 16:1 / 1:16
+    // defaults are NOT used — all three init to the 1:1 identity page matrix
+    // until XFORMOBJ is fixed. (Dropping this #define left DCs with a 16x
+    // mxWorldToDevice → DPtoLP/clip box came out screen/16 → blank desktop.)
+    (*pdc).dclevel.mxWorldToDevice = gmxWorldToPageDefault;
+    (*pdc).dclevel.mxDeviceToWorld = gmxWorldToPageDefault;
     (*pdc).dclevel.mxWorldToPage = gmxWorldToPageDefault;
     (*pdc).dclevel.efM11PtoD = gef16;
     (*pdc).dclevel.efM22PtoD = gef16;
