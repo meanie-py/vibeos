@@ -91,8 +91,12 @@ fn main() {
             // NOTE: libntdllsys.a dropped — the Nt*/Zw* syscall stubs are now
             // pre-expanded from ntoskrnl/ntdll.S (asm above), reusing the same
             // checked-in syscalls.inc + sysfuncs.h (numbers identical).
-            "sdk/lib/apisets/libapisets.a",
-            "sdk/lib/uuid/libuuid.a",
+            // NOTE: libapisets.a dropped — ApiSetResolveToHost + the api-set
+            // table are now Rust (ntdll-rust src/apisets.rs + the generated
+            // apisets_table.rs from tools/gen_apisets_rs.py).
+            // NOTE: libuuid.a dropped — ntdll references only 3 fixed COM IIDs
+            // (IID_IUnknown/IStream/ISequentialStream), now provided by Rust
+            // (ntdll-rust src/uuid.rs); the widl-generated archive is overkill.
             // NOTE: libsetjmp.a dropped — amd64 now builds setjmp/longjmp from
             // pre-expanded asm + Rust glue (above); i386/arm64 never referenced
             // it (dead archive members).
