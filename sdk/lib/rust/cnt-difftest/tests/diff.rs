@@ -3088,3 +3088,123 @@ fn diff_streamout_float() {
         }
     }
 }
+
+// ── Wave MATH-CLASS — IEEE-754 predicates + integer abs ─────────────────
+extern "C" {
+    fn ref_abs(j: i32) -> i32;
+    fn ref_labs(j: i64) -> i64; // host C `long` is 64-bit; compare truncated to i32
+    fn ref_isnan(x: f64) -> i32;
+    fn ref_isnanf(x: f32) -> i32;
+    fn ref_finite(x: f64) -> i32;
+    fn ref_finitef(x: f32) -> i32;
+    fn ref_dsign(x: f64) -> i32;
+    fn ref_fdsign(x: f32) -> i32;
+    fn ref_dclass(x: f64) -> i16;
+    fn ref_fdclass(x: f32) -> i16;
+    fn ref_dtest(px: *const f64) -> i16;
+    fn ref_fdtest(px: *const f32) -> i16;
+}
+
+/// A spread of interesting f64 bit images: zeros, inf, the two NaN
+/// kinds, subnormals (incl. smallest), normals, and DBL_MAX.
+fn f64_edge_bits() -> Vec<u64> {
+    vec![
+        0x0000_0000_0000_0000, // +0
+        0x8000_0000_0000_0000, // -0
+        0x7FF0_0000_0000_0000, // +inf
+        0xFFF0_0000_0000_0000, // -inf
+        0x7FF8_0000_0000_0000, // qNaN
+        0xFFF8_0000_0000_0000, // -qNaN
+        0x7FF0_0000_0000_0001, // sNaN
+        0xFFF0_0000_0000_0001, // -sNaN
+        0x0000_0000_0000_0001, // smallest +subnormal
+        0x8000_0000_0000_0001, // smallest -subnormal
+        0x000F_FFFF_FFFF_FFFF, // largest +subnormal
+        0x0010_0000_0000_0000, // smallest +normal
+        0x3FF0_0000_0000_0000, // 1.0
+        0xBFF0_0000_0000_0000, // -1.0
+        0x7FEF_FFFF_FFFF_FFFF, // DBL_MAX
+        0xFFEF_FFFF_FFFF_FFFF, // -DBL_MAX
+        0x4093_4A45_6D5C_FAAD, // an arbitrary normal
+    ]
+}
+
+fn f32_edge_bits() -> Vec<u32> {
+    vec![
+        0x0000_0000, // +0
+        0x8000_0000, // -0
+        0x7F80_0000, // +inf
+        0xFF80_0000, // -inf
+        0x7FC0_0000, // qNaN
+        0xFFC0_0000, // -qNaN
+        0x7F80_0001, // sNaN
+        0xFF80_0001, // -sNaN
+        0x0000_0001, // smallest +subnormal
+        0x8000_0001, // smallest -subnormal
+        0x007F_FFFF, // largest +subnormal
+        0x0080_0000, // smallest +normal
+        0x3F80_0000, // 1.0
+        0xBF80_0000, // -1.0
+        0x7F7F_FFFF, // FLT_MAX
+        0xFF7F_FFFF, // -FLT_MAX
+        0x4048_F5C3, // arbitrary normal (~3.14)
+    ]
+}
+
+#[test]
+fn diff_math_abs() {
+    let mut rng = Rng(0x00ab_5123);
+    // INT_MIN is UB for the C `int abs` (excluded for abs); for labs we
+    // compare the host `long` result truncated to i32 — at i32::MIN both
+    // sides land on i32::MIN, so it's covered.
+    let mut cases: Vec<i32> = vec![0, 1, -1, 7, -7, i32::MAX, i32::MIN, i32::MIN + 1];
+    for _ in 0..5000 {
+        cases.push(rng.next() as i32);
+    }
+    for &v in &cases {
+        unsafe {
+            assert_eq!(cabi::labs(v), ref_labs(v as i64) as i32, "labs {v}");
+            if v != i32::MIN {
+                assert_eq!(cabi::abs(v), ref_abs(v), "abs {v}");
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_math_class_f64() {
+    let mut rng = Rng(0xd00d_f00d);
+    let mut bits = f64_edge_bits();
+    for _ in 0..20000 {
+        bits.push(rng.next());
+    }
+    for &b in &bits {
+        let x = f64::from_bits(b);
+        unsafe {
+            assert_eq!(cabi::_isnan(x), ref_isnan(x), "_isnan {b:#018x}");
+            assert_eq!(cabi::_finite(x), ref_finite(x), "_finite {b:#018x}");
+            assert_eq!(cabi::_dsign(x), ref_dsign(x), "_dsign {b:#018x}");
+            assert_eq!(cabi::_dclass(x), ref_dclass(x), "_dclass {b:#018x}");
+            assert_eq!(cabi::_dtest(&x), ref_dtest(&x), "_dtest {b:#018x}");
+        }
+    }
+}
+
+#[test]
+fn diff_math_class_f32() {
+    let mut rng = Rng(0xbeef_cafe);
+    let mut bits = f32_edge_bits();
+    for _ in 0..20000 {
+        bits.push(rng.next() as u32);
+    }
+    for &b in &bits {
+        let x = f32::from_bits(b);
+        unsafe {
+            assert_eq!(cabi::_isnanf(x), ref_isnanf(x), "_isnanf {b:#010x}");
+            assert_eq!(cabi::_finitef(x), ref_finitef(x), "_finitef {b:#010x}");
+            assert_eq!(cabi::_fdsign(x), ref_fdsign(x), "_fdsign {b:#010x}");
+            assert_eq!(cabi::_fdclass(x), ref_fdclass(x), "_fdclass {b:#010x}");
+            assert_eq!(cabi::_fdtest(&x), ref_fdtest(&x), "_fdtest {b:#010x}");
+        }
+    }
+}

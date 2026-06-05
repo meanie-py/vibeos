@@ -535,6 +535,26 @@ fn main() {
              #define fcvtbuf ref_fcvtbuf\n#define _fcvt ref__fcvt\n{}{}",
             inc(s("stdlib/fcvtbuf.c")),
             inc(s("stdlib/fcvt.c")))),
+        // ── Wave MATH-CLASS — IEEE-754 predicates + integer abs ────────
+        // Pure bit ops. abs/labs + the int/short-returning predicates
+        // compile the genuine .c (SAL no-ops + empty __cdecl shimmed in;
+        // each .c pulls its own <stdint.h>/<float.h>). _dclass/_fdclass/
+        // _dtest/_fdtest are transcribed inline because their .c pulls
+        // <math.h>, whose FP_* codes diverge host-vs-ReactOS — hardcode
+        // the genuine kernel values (sdk/include/crt/math.h: _NANCODE 2,
+        // _INFCODE 1, _FINITE -1, _DENORM -2, FP_ZERO 0).
+        ("abs", format!("#define __cdecl\n#define CDECL\n#define abs ref_abs\n{}", inc(s("math/abs.c")))),
+        ("labs", format!("#define __cdecl\n#define CDECL\n#define labs ref_labs\n{}", inc(s("math/labs.c")))),
+        ("isnan", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _isnan ref_isnan\n{}", inc(s("math/_isnan.c")))),
+        ("isnanf", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _isnanf ref_isnanf\n{}", inc(s("math/_isnanf.c")))),
+        ("finite", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _finite ref_finite\n{}", inc(s("math/_finite.c")))),
+        ("finitef", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _finitef ref_finitef\n{}", inc(s("math/_finitef.c")))),
+        ("dsign", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _dsign ref_dsign\n{}", inc(s("math/_dsign.c")))),
+        ("fdsign", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _fdsign ref_fdsign\n{}", inc(s("math/_fdsign.c")))),
+        ("dclass", "#include <stdint.h>\nshort ref_dclass(double x){union{double f;uint64_t u;}v;v.f=x;uint64_t e=v.u&0x7FF0000000000000ULL,m=v.u&0x000FFFFFFFFFFFFFULL;if(e==0x7FF0000000000000ULL)return m?2:1;if(e==0)return m?-2:0;return -1;}".to_string()),
+        ("fdclass", "#include <stdint.h>\nshort ref_fdclass(float x){union{float f;uint32_t u;}v;v.f=x;uint32_t e=v.u&0x7F800000u,m=v.u&0x007FFFFFu;if(e==0x7F800000u)return m?2:1;if(e==0)return m?-2:0;return -1;}".to_string()),
+        ("dtest", "short ref_dclass(double);\nshort ref_dtest(double*p){return ref_dclass(*p);}".to_string()),
+        ("fdtest", "short ref_fdclass(float);\nshort ref_fdtest(float*p){return ref_fdclass(*p);}".to_string()),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which

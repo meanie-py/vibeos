@@ -112,6 +112,21 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     # va_end` shells that call the Rust engine.
     printf/streamout.c
     printf/wstreamout.c
+    # Wave MATH-CLASS: IEEE-754 predicates + integer abs flip to cnt-rust
+    # (cabi/math.rs) — pure bit ops, no FP arithmetic, uniform on all 3
+    # arches (i386 no-SSE safe). All-arch common LIBCNTPR_MATH_SOURCE.
+    math/abs.c
+    math/labs.c
+    math/_isnan.c
+    math/_isnanf.c
+    math/_finite.c
+    math/_finitef.c
+    math/_dclass.c
+    math/_fdclass.c
+    math/_dsign.c
+    math/_fdsign.c
+    math/_dtest.c
+    math/_fdtest.c
 )
 
 # Wave PRINTF (float residual): the float-formatting half of streamout
