@@ -50,6 +50,7 @@ members = [
     "winlogon-cargo",
     "services-cargo",
     "smss-cargo",
+    "csrsrv-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",
