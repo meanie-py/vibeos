@@ -63,6 +63,11 @@ pub const SERVICE_CONTROL_PAUSE: u32 = 0x00000002;
 pub const SERVICE_CONTROL_CONTINUE: u32 = 0x00000003;
 pub const SERVICE_CONTROL_INTERROGATE: u32 = 0x00000004;
 pub const SERVICE_CONTROL_SHUTDOWN: u32 = 0x00000005;
+pub const SERVICE_CONTROL_PARAMCHANGE: u32 = 0x00000006;
+pub const SERVICE_CONTROL_NETBINDADD: u32 = 0x00000007;
+pub const SERVICE_CONTROL_NETBINDREMOVE: u32 = 0x00000008;
+pub const SERVICE_CONTROL_NETBINDENABLE: u32 = 0x00000009;
+pub const SERVICE_CONTROL_NETBINDDISABLE: u32 = 0x0000000A;
 
 // services.h
 pub const LOCK_TAG: u32 = 0x4C697041; // 'ApiL'
@@ -145,6 +150,12 @@ pub type LPQUERY_SERVICE_LOCK_STATUSA = *mut QUERY_SERVICE_LOCK_STATUSA;
 // `typedef SC_RPC_LOCK* LPSC_RPC_LOCK;`.
 pub type SC_RPC_LOCK = PVOID;
 pub type LPSC_RPC_LOCK = *mut SC_RPC_LOCK;
+
+// winsvc.h SC_HANDLE + rpcdce.h RPC_IF_HANDLE/handle_t (opaque pointers).
+// (SC_RPC_HANDLE / SC_NOTIFY_RPC_HANDLE live in crate::svcctl.)
+pub type SC_HANDLE = PVOID;
+pub type RPC_IF_HANDLE = PVOID;
+pub type handle_t = PVOID;
 
 // ---------------------------------------------------------------------------
 // The central SCM database structs (services.h). These are SHARED across every

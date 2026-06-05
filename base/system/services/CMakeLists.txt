@@ -19,7 +19,7 @@ list(APPEND SOURCE
     # groupdb.c    — replaced by Rust (services-rust/src/groupdb.rs)
     # lock.c       — replaced by Rust (services-rust/src/lock.rs)
     services_rust_stub.c
-    rpcserver.c
+    # rpcserver.c  — replaced by Rust (services-rust/src/rpcserver.rs)
     # security.c   — replaced by Rust (services-rust/src/security.rs)
     services.c
     services.h
@@ -64,6 +64,8 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/services-rust/src/driver.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/config.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/database.rs
+        ${RUST_WORKSPACE_DIR}/services-rust/src/rpcserver.rs
+        ${RUST_WORKSPACE_DIR}/services-rust/src/svcctl.rs
         ${RUST_WORKSPACE_DIR}/services-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winsrv-sys/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs

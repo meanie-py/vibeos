@@ -19,6 +19,9 @@
 // helpers. Shared by all flipped modules.
 pub mod types;
 
+// svcctl.idl + winsvc.h RPC marshalling types (consumed by rpcserver.rs).
+pub mod svcctl;
+
 // lock.c — ScmAcquire/Release/QueryServiceLockStatus{W,A}.
 pub mod lock;
 
@@ -41,6 +44,10 @@ pub mod config;
 // IPC, control packets, autostart). Owns ServiceListHead/ImageListHead +
 // Scm{Lock,Unlock}Database. Translated by rustconv (Opus 4.8).
 pub mod database;
+
+// rpcserver.c — the svcctl RPC server (R* interface handlers). Final SCM file.
+// Translated by rustconv (Opus 4.8).
+pub mod rpcserver;
 
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
