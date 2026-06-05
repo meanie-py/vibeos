@@ -275,6 +275,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsass-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "lsass-rust"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,32 @@
+# Cargo-driven `lsass.exe` link (i386 first mover). First of OUR translated
+# spine binaries (smss/csrss/services/lsass/winlogon/userinit) to move its
+# *link* from cmake to cargo — the user-mode-exe sibling of `ntdll-cargo`
+# (Win32Dll) / `rosload-cargo` (NativeExe).
+#
+# lsass.exe is `set_module_type(lsass win32gui UNICODE)` — a Win32 GUI exe.
+# Its body is already 100% Rust (lsass-rust, wWinMain). This crate drives the
+# final lsass.exe link via the shared `reactos-link` engine
+# (`ModuleKind::Win32Exe`): it cargo-builds lsass-rust (`.rust_staticlib`,
+# user-mode target) and links it with the CRT startup (libmsvcrtex.a provides
+# the `_wWinMainCRTStartup` entry that calls wWinMain) + the cmake-built
+# importlib group (advapi32/lsasrv/samsrv/msvcrt/kernel32/ntdll) + the
+# cmake-built lsass.rc.res. The importlibs/CRT/.res are reused from cmake for
+# this first pass (run `ninja` once first); engine-generated importlibs follow.
+#
+# Success criterion: cargo's lsass.exe boots the livecd to `shell ready`
+# exactly like cmake's (lsass is on the winlogon→LsaLogonUser auth path and is
+# process-critical — a crash bugchecks 0xF4 — so smoke validates it strongly).
+
+[package]
+name = "lsass-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "lsass"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

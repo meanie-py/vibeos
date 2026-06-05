@@ -1,60 +1,39 @@
 
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
-# FULL flip: lsass.c replaced by Rust (lsass-rust). lsass.exe is the Local
-# Security Authority Subsystem host on the security boot spine (smss/wininit →
-# lsass → lsasrv/samsrv init; winlogon → LsaLogonUser authenticates against it).
+# FULL flip + CARGO-DRIVEN LINK. lsass.c is replaced by Rust (lsass-rust), and
+# the lsass.exe LINK itself is now driven by cargo (lsass-cargo → the shared
+# reactos-link engine, ModuleKind::Win32Exe) instead of cmake add_executable —
+# the first of OUR translated spine binaries to move its link cmake→cargo.
+# lsass-cargo's build.rs cargo-builds lsass-rust (.rust_staticlib) and links it
+# with the CRT startup (libmsvcrtex.a → _wWinMainCRTStartup → wWinMain) + the
+# cmake-built importlib group (advapi32/lsasrv/samsrv/msvcrt/kernel32/ntdll).
 # Keep lsass.c on disk (never delete the C — translation philosophy).
-# lsass_rust_stub.c keeps the static-lib link anchored (CMake needs a TU it
-# always compiles so the linker extracts the wWinMain archive member).
-list(APPEND SOURCE
-    # lsass.c — replaced by Rust (lsass-rust/src/lsass.rs)
-    lsass_rust_stub.c)
+#
+# lsass.exe is the Local Security Authority Subsystem host on the security boot
+# spine (smss/wininit → lsass → lsasrv/samsrv init; winlogon → LsaLogonUser
+# authenticates against it), so `shell ready` proves the cargo-linked lsass runs.
+#
+# OWED: lsass.rc (pure version resource) is dropped by this first mover — re-host
+# it via gen_lsass_res.py or a cmake rc target (non-load-bearing: version info
+# only, no manifest/icons).
 
-# --- Rust cohabitation (lsass-rust) ---------------------------------------
-# Builds liblsass_rust.a (wWinMain) and links it into lsass.exe. FFI substrate
-# is ntdll-sys (Nt*/Rtl*); LsapInitLsa/ServiceInit (lsasrv) + SamIInitialize
-# (samsrv) resolve against the import libs below. Mirrors userinit / csrss cohab.
-set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
-if(ARCH STREQUAL "i386")
-    set(RUST_TARGET "i686-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
-elseif(ARCH STREQUAL "amd64")
-    set(RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_EXTRA_ENV "")
-endif()
-set(LSASS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/liblsass_rust.a")
-add_custom_command(
-    OUTPUT ${LSASS_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p lsass-rust
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/liblsass_rust.a
-        ${LSASS_RUST_LIB}
-    DEPENDS
-        ${RUST_WORKSPACE_DIR}/lsass-rust/src/lib.rs
-        ${RUST_WORKSPACE_DIR}/lsass-rust/src/lsass.rs
-        ${RUST_WORKSPACE_DIR}/lsass-rust/Cargo.toml
-        ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
-    COMMENT "Building lsass-rust (${RUST_TARGET}) for lsass.exe"
-    VERBATIM)
-add_custom_target(lsass_rust_lib DEPENDS ${LSASS_RUST_LIB})
-# --------------------------------------------------------------------------
+# The importlib/CRT .a the cargo link reuses live in dll/ + sdk/lib/crt, which
+# cmake configures AFTER base/ — so their TARGET names aren't defined here.
+# DEPENDS on the .a FILE paths instead (order-independent; ninja edges each to
+# its producer) so a parallel `ninja livecd` builds them before the cargo link.
+set(LSASS_REUSED_LIBS
+    ${CMAKE_BINARY_DIR}/dll/win32/advapi32/CMakeFiles/libadvapi32.dir/libadvapi32.a
+    ${CMAKE_BINARY_DIR}/dll/win32/lsasrv/CMakeFiles/liblsasrv.dir/liblsasrv.a
+    ${CMAKE_BINARY_DIR}/dll/win32/samsrv/CMakeFiles/libsamsrv.dir/libsamsrv.a
+    ${CMAKE_BINARY_DIR}/dll/win32/msvcrt/CMakeFiles/libmsvcrt.dir/libmsvcrt.a
+    ${CMAKE_BINARY_DIR}/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a
+    ${CMAKE_BINARY_DIR}/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 
-add_executable(lsass ${SOURCE} lsass.rc)
-target_link_libraries(lsass ${LSASS_RUST_LIB})
-add_dependencies(lsass lsass_rust_lib)
-# Rust .a pulls libcore/compiler-builtins objects; allow intrinsic overlap.
-target_link_options(lsass PRIVATE "-Wl,--allow-multiple-definition")
-set_module_type(lsass win32gui UNICODE)
-add_importlibs(lsass advapi32 lsasrv samsrv msvcrt kernel32 ntdll)
-# The Rust-cohab stub is self-contained.
-set_source_files_properties(lsass_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
-add_cd_file(TARGET lsass DESTINATION reactos/system32 FOR all)
+add_cargo_module(lsass lsass-cargo lsass.exe
+    KIND win32exe
+    BODY_CRATE lsass-rust
+    DESTINATION reactos/system32
+    EXTRA_DEPENDS ${LSASS_REUSED_LIBS})

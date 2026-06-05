@@ -78,6 +78,17 @@ pub enum ModuleKind {
     /// dispatch tables in as a source object; as archive members they'd be
     /// GC'd) are supplied via `.force_undefined(...)` on the builder.
     NativeExe { entry: String, image_base: u64 },
+    /// `win32gui`/`win32cui` — a user-mode Win32 exe (e.g. lsass.exe). Mirrors
+    /// the cmake `set_module_type(<m> win32gui)` link: explicit `--subsystem`
+    /// (`windows:5.01` for GUI, `console:5.01` for CUI), `--gc-sections`, NOT
+    /// `-shared` (it's an exe), NO `--exclude-all-symbols` (nothing to export),
+    /// and NO explicit `--image-base` (the common `--enable-auto-image-base`
+    /// resolves it, exactly as cmake's win32 exe link does). `entry` is the CRT
+    /// startup the C runtime provides — `_wWinMainCRTStartup` (GUI) /
+    /// `_mainCRTStartup` (CUI), force-pulled from `libmsvcrtex.a`, which calls
+    /// the Rust `wWinMain`/`main`. All the version/auto-base/allow-multiple-def/
+    /// disable-stdcall-fixup flags come from the common block.
+    Win32Exe { entry: String, subsystem: String },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -243,6 +254,10 @@ pub struct Linker {
     asm: Vec<String>,
     asm_set: AsmDefineSet,
     resource: Option<String>,
+    /// Like `resource`, but the `.res` is a cmake-BUILT artifact (build-dir
+    /// relative) rather than a checked-in consumer-crate file. Used by the
+    /// spine binaries whose `.rc` is compiled by cmake (e.g. lsass.rc.res).
+    resource_built: Option<String>,
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
@@ -304,6 +319,7 @@ impl Linker {
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
             resource: None,
+            resource_built: None,
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
@@ -407,6 +423,16 @@ impl Linker {
         self
     }
 
+    /// A cmake-BUILT `.res` (build-`<arch>`-relative), e.g.
+    /// `base/system/lsass/CMakeFiles/lsass.dir/lsass.rc.res`. For spine
+    /// binaries whose `.rc` cmake already compiles; reuses it rather than
+    /// re-hosting the resource compile in build.rs. Needs `ninja <module>`
+    /// (or a configure+rc build) to have produced it.
+    pub fn resource_built(mut self, build_rel: &str) -> Self {
+        self.resource_built = Some(build_rel.to_string());
+        self
+    }
+
     /// `.spec` (repo-relative) → `.def` via self-hosted spec2def.
     /// `dll_name` is the `-n=` arg (e.g. `hal.dll`, `ntoskrnl.exe`).
     pub fn spec2def(mut self, spec_rel: &str, dll_name: &str) -> Self {
@@ -486,7 +512,8 @@ impl Linker {
         // corrupts the by-value f64 ABI and crashes boot. Kernel modules
         // (ntoskrnl/HAL/uefildr) build the custom kernel json with `-Z
         // build-std` on nightly. The main crate goes first, then siblings.
-        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. });
+        let kernel_rust =
+            !matches!(kind, ModuleKind::Win32Dll { .. } | ModuleKind::Win32Exe { .. });
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
             let feats: Vec<&str> = self.rust_features.iter().map(|s| s.as_str()).collect();
             self.build_rust_crate(crate_name, &feats, true, &target_stem, kernel_rust)
@@ -539,11 +566,16 @@ impl Linker {
         }
 
         // ---- Resource (.res) -----------------------------------------
-        if let Some(res_rel) = &self.resource {
-            let src = self.manifest_dir.join(res_rel);
+        let res_src: Option<PathBuf> = self
+            .resource
+            .as_ref()
+            .map(|r| self.manifest_dir.join(r))
+            .or_else(|| self.resource_built.as_ref().map(|r| self.build_dir.join(r)));
+        if let Some(src) = res_src {
             if !src.exists() {
                 panic!(
-                    "missing {} — regenerate via the matching tools/gen_*_res.py",
+                    "missing {} — regenerate via tools/gen_*_res.py (checked-in) \
+                     or `ninja` the module (cmake-built .res)",
                     src.display()
                 );
             }
@@ -819,6 +851,16 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
                 (entry, Some(*image_base))
+            }
+            ModuleKind::Win32Exe { entry, subsystem } => {
+                // user-mode win32 exe (lsass.exe, set_module_type win32gui):
+                // explicit subsystem, --gc-sections, no -shared, no
+                // --exclude-all-symbols (nothing exported), no explicit
+                // --image-base (common --enable-auto-image-base resolves it,
+                // matching cmake). Entry = the CRT startup in libmsvcrtex.a.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,{subsystem}");
+                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                (entry, None)
             }
         };
         // Force-undefined pulls (-u SYM) — keep GC'd-but-needed archive members.
