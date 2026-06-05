@@ -33,69 +33,19 @@ list(APPEND UEFILDR_ARC_SOURCE
     #                       # behind off-by-default `uefildr-rust-entry`
     #                       # feature pending a future cohabitation flip.
 
-if(ARCH STREQUAL "i386")
-    # arch/i386/i386idt.c  # replaced by Rust (freeldr-rust/src/i386idt.rs)
-    list(APPEND UEFILDR_COMMON_ASM_SOURCE
-        arch/uefi/i386/uefiasm.S
-        arch/i386/i386trap.S)
-elseif(ARCH STREQUAL "amd64")
-    list(APPEND UEFILDR_COMMON_ASM_SOURCE
-        arch/uefi/amd64/uefiasm.S)
-elseif(ARCH STREQUAL "arm64")
-    list(APPEND UEFILDR_ARC_SOURCE
-        # arch/arm64/debug.c   # replaced by Rust (freeldr-rust/src/arm64_debug.rs)
-    )
-    list(APPEND UEFILDR_COMMON_ASM_SOURCE
-        arch/uefi/arm64/uefiasm.S)
-else()
-    #TBD
-endif()
-
-list(APPEND UEFILDR_BOOTMGR_SOURCE
-    ${FREELDR_BOOTMGR_SOURCE}
-    # custom.c   — replaced by Rust (sdk/lib/rust/freeldr-rust/src/custom.rs)
-    # options.c — replaced by Rust (sdk/lib/rust/freeldr-rust/src/options.rs)
-    # oslist.c  — replaced by Rust (sdk/lib/rust/freeldr-rust/src/oslist.rs)
-    # NOTE: rosload.cmake keeps its own C copies of these (rosload.exe does
-    # not link libfreeldr_rust.a; cohabitation flip is a future task).
-)
-
-add_asm_files(uefifreeldr_common_asm ${FREELDR_COMMON_ASM_SOURCE} ${UEFILDR_COMMON_ASM_SOURCE})
-
-add_library(uefifreeldr_common
-    ${uefifreeldr_common_asm}
-    ${UEFILDR_ARC_SOURCE}
-    ${FREELDR_BOOTLIB_SOURCE}
-    ${UEFILDR_BOOTMGR_SOURCE}
-    ${FREELDR_NTLDR_SOURCE})
-
-target_compile_definitions(uefifreeldr_common PRIVATE _FRLDRLIB_ UEFIBOOT)
-
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    # Prevent using SSE (no support in freeldr) - x86/x64 only
-    if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
-        target_compile_options(uefifreeldr_common PUBLIC -mno-sse)
-    endif()
-endif()
-
-set(PCH_SOURCE
-    ${UEFILDR_ARC_SOURCE}
-    ${FREELDR_BOOTLIB_SOURCE}
-    ${UEFILDR_BOOTMGR_SOURCE}
-    ${FREELDR_NTLDR_SOURCE})
-
-add_pch(uefifreeldr_common include/arch/uefi/uefildr.h PCH_SOURCE)
-add_dependencies(uefifreeldr_common bugcodes asm xdk)
-
-# Rust peloader (replaces lib/peloader.c — see boot/freeldr/freeldr/CMakeLists.txt)
-target_link_libraries(uefifreeldr_common ${FREELDR_RUST_UEFI_LIB})
-add_dependencies(uefifreeldr_common rust_freeldr_uefi)
-
-## GCC builds need this extra thing for some reason...
-if(ARCH STREQUAL "i386" AND NOT MSVC)
-    target_link_libraries(uefifreeldr_common mini_hal ${HAL_RUST_MINI_LIB})
-    add_dependencies(uefifreeldr_common rust_hal_mini)
-endif()
+# ============================================================================
+# `uefifreeldr_common` is RETIRED.
+# ============================================================================
+# It was the freeldr C+asm aggregate library uefildr.efi linked. Every freeldr
+# C unit is now Rust (UEFILDR_ARC/BOOTLIB/BOOTMGR/NTLDR are all empty/Rust
+# above), and its only remaining content — the per-arch asm (uefiasm.S +
+# i386:i386trap.S + amd64:misc.S) — is now assembled DIRECTLY by reactos-link
+# from uefildr-cargo's build.rs `.asm()` (those files only ever needed asm.inc,
+# resolved via a minimal 2-dir include set, not freeldr's 30-include env). With
+# nothing left to compile, the aggregate library is gone: uefildr-cargo links
+# libfreeldr_rust_uefi.a + the shared leaf libs + (i386) mini_hal directly, and
+# the reactos-link-assembled asm objects replace libuefifreeldr_common.a.
+# (BIOS freeldr.sys was pruned, so nothing else consumed this asm.)
 
 
 # ============================================================================
@@ -103,35 +53,53 @@ endif()
 # ============================================================================
 # The final loader link is driven by cargo (uefildr-cargo's build.rs →
 # reactos-link, ModuleKind::EfiApplication) instead of cmake's add_executable.
-# The cargo build REUSES the cmake-built libuefifreeldr_common.a +
-# libfreeldr_rust_uefi.a + the leaf libs + the uefildr_shim object below;
-# cmake's own loader link is retired. uefildr exports nothing
+# reactos-link builds the uefildr-specific parts from source (freeldr-rust body
+# via libfreeldr_rust_uefi.a, strsafe_shim.c via c_shims, the per-arch asm via
+# asm) and links the shared cmake leaf libs; the old uefifreeldr_common
+# aggregate + uefildr_shim OBJECT lib are retired. uefildr exports nothing
 # (--exclude-all-symbols); the freeldr import lib rosload consumes still comes
 # from CMakeLists.txt's `spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB)`, and
 # rosload's freeldr.sys imports bind at runtime against uefildr's internal
 # table (not PE exports), so no spec2def(uefildr.exe) / .def is needed here.
 
-# strsafe_shim.c — header-dependent variadic RtlStringCb* shim the cargo link
-# reuses (Rust stable can't host the variadic def). add_executable(uefildr)
-# used to compile it; keep it compiled via an OBJECT lib now that the link is
-# cargo-driven. UEFIBOOT + the directory-scoped include dirs above match the
-# old add_executable(uefildr) compile env; -mno-sse matches uefifreeldr_common
-# (freeldr has no SSE), which the shim formerly inherited by linking it.
-add_library(uefildr_shim OBJECT lib/strsafe_shim.c)
-target_compile_definitions(uefildr_shim PRIVATE UEFIBOOT)
-if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
-    target_compile_options(uefildr_shim PRIVATE -mno-sse)
-endif()
-add_dependencies(uefildr_shim bugcodes xdk)
+# strsafe_shim.c (the variadic RtlStringCb* shim Rust stable can't host) is now
+# compiled directly by reactos-link via uefildr-cargo's .c_shims() — it is a
+# self-contained leaf (zero #includes; it self-defines its types + externs only
+# libcntpr's _vsnprintf), so it never needed freeldr's compile env. The old
+# `uefildr_shim` OBJECT lib is retired; -mno-sse moves to the build.rs c_shim_flags.
 
 # cmake targets whose .a/.obj the cargo link reuses — DEPENDS so `ninja
 # uefildr` builds them before invoking cargo (an opaque link).
+#
+# CONTENT tracking, not just ordering: a DEPENDS on an add_library TARGET
+# (uefifreeldr_common, cportlib, blcmlib, …) auto-tracks its output FILE, so a
+# change relinks uefildr. But a DEPENDS on a custom-TARGET (rust_freeldr_uefi,
+# rust_cnt, …) is only an order-only/phony edge — ninja will NOT relink uefildr
+# when that target's .a content changes (it just ensures it built once). That
+# left a real hole: editing freeldr-rust rebuilt libfreeldr_rust_uefi.a but
+# `ninja uefildr` said "no work to do", silently booting a stale loader. Fix:
+# also DEPENDS on the .a FILE PATHS produced by those custom targets (each is a
+# custom_command OUTPUT, so ninja file-tracks it and relinks on mtime change).
+# reactos-link already emits cargo:rerun-if-changed for each static_lib, so once
+# ninja re-invokes cargo, the link actually re-runs.
 set(UEFILDR_EXTRA_DEPENDS
-    uefifreeldr_common uefildr_shim rust_freeldr_uefi
-    cportlib blcmlib blrtl libcntpr chkstk rust_cnt)
+    cportlib blcmlib blrtl libcntpr chkstk
+    # source files reactos-link now compiles directly (file-track so `ninja
+    # uefildr` re-invokes cargo when they change — reactos-link's per-input
+    # cargo:rerun-if-changed then re-runs the link). uefiasm.S is no longer here:
+    # it was flipped to Rust global_asm! (freeldr-rust/uefiasm.rs), tracked via
+    # FREELDR_RUST_SOURCES → libfreeldr_rust_uefi.a.
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/strsafe_shim.c
+    # custom-target-produced rust .a link inputs — depend on the FILES:
+    rust_freeldr_uefi ${FREELDR_RUST_UEFI_LIB}
+    rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
 if(ARCH STREQUAL "i386")
-    list(APPEND UEFILDR_EXTRA_DEPENDS mini_hal rust_hal_mini)
+    list(APPEND UEFILDR_EXTRA_DEPENDS
+        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a)
 endif()
+# (i386trap.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust;
+#  tracked via FREELDR_RUST_SOURCES, no longer reactos-link-assembled .S deps.)
 
 # KIND efi → post-link strips .rossym + --strip-all (matches the old
 # add_executable POST_BUILD). NO_CD → uefildr.efi is embedded into the efisys

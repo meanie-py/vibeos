@@ -577,6 +577,15 @@ endfunction()
 ##                    [EXTRA_DEPENDS <targets/files…>]  (e.g. the OBJECT lib
 ##                                                       whose .obj the link
 ##                                                       reuses)
+##        NOTE: the cargo link is opaque to cmake, so EXTRA_DEPENDS is the ONLY
+##        thing wiring its inputs into the ninja graph. An add_library/OBJECT
+##        TARGET here auto-tracks its output FILE (relinks on change). But a
+##        custom-TARGET (e.g. rust_freeldr_uefi, rust_cnt — the rust .a's built
+##        by add_custom_command) gives only an ORDER-ONLY edge: ninja will NOT
+##        relink when its .a content changes, silently shipping a stale module.
+##        For those, ALSO pass the .a FILE PATH (the custom_command OUTPUT) so
+##        ninja file-tracks it. reactos-link emits cargo:rerun-if-changed per
+##        static_lib, so once ninja re-invokes cargo the link actually re-runs.
 ##                    [NO_CD]                           (skip add_cd_file —
 ##                                                       e.g. uefildr, which
 ##                                                       boot_images embeds)
@@ -591,6 +600,7 @@ endfunction()
 ## KIND selects the post-link (matching what cmake's set_module_type /
 ## per-target POST_BUILD would have applied):
 ##   kerneldll : native-pefixup --kerneldll  (+ i386 forwarder fix)
+##   win32dll  : i386 lld forwarder fix only  (user DLL — no pefixup)  [ntdll]
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
 function(add_cargo_module _target _crate _output)
@@ -637,6 +647,15 @@ function(add_cargo_module _target _crate _output)
         # i386-only forwarder fix mirrors set_module_type's i386-only POST_BUILD.
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+        endif()
+    elseif(_acm_KIND STREQUAL "win32dll")
+        # User-mode DLL (ntdll): NOT a KERNEL_MODULE_TYPE, so set_module_type
+        # applies NO native-pefixup (that's gated to KERNEL_MODULE_TYPES). The
+        # ONLY post-link a win32dll gets is the i386 lld forwarder-underscore
+        # fix, which set_module_type applies to every PE module on i386/llvm-mingw.
+        if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+            set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
         endif()
     elseif(_acm_KIND STREQUAL "efi")
@@ -694,7 +713,7 @@ endfunction()
 ## add_cargo_module. Keep spec2def(... ADD_IMPORTLIB) before calling (consumers
 ## import the .dll's exports; the importlib is independent of this target).
 function(add_cargo_kernel_dll _target _crate _dllname)
-    cmake_parse_arguments(_ackd "" "DESTINATION;NAME_ON_CD;BODY_CRATE" "" ${ARGN})
+    cmake_parse_arguments(_ackd "" "DESTINATION;NAME_ON_CD;BODY_CRATE" "EXTRA_DEPENDS" ${ARGN})
     set(_args KIND kerneldll)
     if(_ackd_BODY_CRATE)
         list(APPEND _args BODY_CRATE ${_ackd_BODY_CRATE})
@@ -704,6 +723,9 @@ function(add_cargo_kernel_dll _target _crate _dllname)
     endif()
     if(_ackd_NAME_ON_CD)
         list(APPEND _args NAME_ON_CD ${_ackd_NAME_ON_CD})
+    endif()
+    if(_ackd_EXTRA_DEPENDS)
+        list(APPEND _args EXTRA_DEPENDS ${_ackd_EXTRA_DEPENDS})
     endif()
     add_cargo_module(${_target} ${_crate} ${_dllname} ${_args})
 endfunction()
