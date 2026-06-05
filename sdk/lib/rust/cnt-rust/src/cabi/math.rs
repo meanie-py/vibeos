@@ -2073,3 +2073,85 @@ pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
     }
     retval
 }
+
+// ── Wave MATH-TIERC (sub-wave 12): sincos + modff + hypotf ───────────────
+// sincos is the combined sin/cos (void return → no i386 ABI issue, but it
+// reuses the Rust sin/cos which only exist on amd64/arm64, so it stays
+// float-feature-gated like them). modff/hypotf are the f32 twins of modf/
+// hypot — amd64-only in libcntpr. modff is an exact bit-split; hypotf does
+// the whole computation in f64 (float² always fits, so no scaling needed).
+
+/// `void sincos(double x, double *s, double *c)` — sin and cos together.
+/// Bit-exact: it *is* the Rust sin/cos, which are difftest-pinned to the C.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub unsafe extern "C" fn sincos(x: f64, s: *mut f64, c: *mut f64) {
+    core::ptr::write_volatile(s, sin(x));
+    core::ptr::write_volatile(c, cos(x));
+}
+
+/// `float modff(float x, float *iptr)` — f32 integer/fraction split (exact).
+/// Faithful port of math/libm_sse2/modff.c.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub unsafe extern "C" fn modff(x: f32, iptr: *mut f32) -> f32 {
+    let ux = x.to_bits();
+    let xexp = ((ux & 0x7fff_ffff) >> 23) as i32 - 127;
+    if xexp < 0 {
+        // abs(x) < 1.0: integer part is ±0, fraction is x
+        core::ptr::write_volatile(iptr, f32::from_bits(ux & 0x8000_0000));
+        x
+    } else if xexp < 23 {
+        // 1.0 <= abs(x) < 2**24: mask off the fractional mantissa bits
+        let mask = (1u32 << (23 - xexp)) - 1;
+        let int_part = f32::from_bits(ux & !mask);
+        core::ptr::write_volatile(iptr, int_part);
+        x - int_part
+    } else if (ux & 0x7fff_ffff) > 0x7f80_0000 {
+        // x is NaN
+        core::ptr::write_volatile(iptr, x);
+        x + x
+    } else {
+        // x is infinity or large: integer part is x, fraction is ±0
+        core::ptr::write_volatile(iptr, x);
+        f32::from_bits(ux & 0x8000_0000)
+    }
+}
+
+/// `float _hypotf(float x, float y)` — f32 Euclidean distance. Faithful port
+/// of math/libm_sse2/hypotf.c: all math in f64 (float² fits, no scaling),
+/// then round to f32. NaN/Inf per C99 (Inf wins); overflow → +Inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _hypotf(x: f32, y: f32) -> f32 {
+    // The largest finite float, as a double.
+    const LARGE: f64 = 3.40282346638528859812e+38;
+
+    let dx = x as f64;
+    let dy = y as f64;
+    let avx = dx.to_bits() & 0x7FFF_FFFF_FFFF_FFFF;
+    let avy = dy.to_bits() & 0x7FFF_FFFF_FFFF_FFFF;
+    let ux = avx >> 52;
+    let uy = avy >> 52;
+
+    if ux == 2047 || uy == 2047 {
+        // BIASEDEMAX_DP64 + 1: one/both args are NaN or Inf.
+        let retval = x * x + y * y; // f32 arithmetic
+        if ((ux == 2047) && (avx & 0x000f_ffff_ffff_ffff) == 0)
+            || ((uy == 2047) && (avy & 0x000f_ffff_ffff_ffff) == 0)
+        {
+            // x or y is Inf → +Inf even if the other is NaN (C99).
+            return f32::from_bits(0x7f80_0000);
+        }
+        return retval; // NaN
+    }
+
+    let dr = dx * dx + dy * dy;
+    let retval = sqrt(dr); // f64 sqrtsd
+
+    if retval > LARGE {
+        // overflow → +Inf
+        return f32::from_bits(0x7f80_0000);
+    }
+    retval as f32
+}

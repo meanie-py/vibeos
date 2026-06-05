@@ -3108,6 +3108,9 @@ extern "C" {
     fn ref_acos(x: f64) -> f64;
     // Wave MATH-TIERC sub-wave 11
     fn ref__hypot(x: f64, y: f64) -> f64;
+    // Wave MATH-TIERC sub-wave 12
+    fn ref_modff(x: f32, iptr: *mut f32) -> f32;
+    fn ref__hypotf(x: f32, y: f32) -> f32;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3965,6 +3968,70 @@ fn diff_math_hypot() {
     }
 }
 
+fn diff_math_sincos_modff_hypotf() {
+    let mut rng = Rng(0x5c0f_0012);
+    // sincos's contract is that it IS the Rust sin/cos written through the two
+    // out-pointers — so its outputs must equal cabi::sin/cabi::cos exactly
+    // (bit-for-bit, NaN payloads included) for every input, validating the
+    // wiring + the write_volatile. (sin/cos themselves are pinned vs the
+    // genuine C on the finite domain by diff_math_sincos; sin(±inf)/sin(NaN)
+    // range-reduction is implementation-defined and not compared there.)
+    // Finite moderate domain only (matching diff_math_sincos): sin/cos's
+    // range reduction is implementation-defined for ±inf/NaN/huge and, in this
+    // debug-built harness, would arithmetic-overflow-panic on them (release/
+    // kernel wraps). That's a property of sin/cos, not sincos.
+    let mut sweep64: Vec<f64> = vec![0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0];
+    for _ in 0..400_000 {
+        let u = rng.next();
+        sweep64.push((u as f64) / (u64::MAX as f64) * 4000.0 - 2000.0);
+    }
+    for &x in &sweep64 {
+        let mut s = 0.0f64;
+        let mut c = 0.0f64;
+        unsafe { cabi::sincos(x, &mut s, &mut c) };
+        assert!(s.to_bits() == cabi::sin(x).to_bits(), "sincos.s {x}");
+        assert!(c.to_bits() == cabi::cos(x).to_bits(), "sincos.c {x}");
+    }
+
+    // modff: exact integer/fraction split — return + *iptr both bit-exact.
+    let mut b32 = f32_edge_bits();
+    for _ in 0..300_000 {
+        b32.push(rng.next() as u32);
+    }
+    for &b in &b32 {
+        let x = f32::from_bits(b);
+        let mut ci = 0.0f32;
+        let mut ri = 0.0f32;
+        let cf = unsafe { cabi::modff(x, &mut ci) };
+        let rf = unsafe { ref_modff(x, &mut ri) };
+        assert!(same_f32(cf, rf), "modff frac {b:#010x}");
+        assert!(same_f32(ci, ri), "modff int {b:#010x}");
+    }
+
+    // hypotf: f64-internal then round to f32. edge×edge + random pairs.
+    let edges = f32_edge_bits();
+    for &by in &edges {
+        for &bx in &edges {
+            let x = f32::from_bits(bx);
+            let y = f32::from_bits(by);
+            assert!(
+                same_f32(cabi::_hypotf(x, y), unsafe { ref__hypotf(x, y) }),
+                "hypotf x={bx:#010x} y={by:#010x}"
+            );
+        }
+    }
+    for _ in 0..300_000 {
+        let x = f32::from_bits(rng.next() as u32);
+        let y = f32::from_bits(rng.next() as u32);
+        assert!(
+            same_f32(cabi::_hypotf(x, y), unsafe { ref__hypotf(x, y) }),
+            "hypotf x={:#010x} y={:#010x}",
+            x.to_bits(),
+            y.to_bits()
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -4067,6 +4134,7 @@ fn main() {
         diff_math_sinh_cosh,
         diff_math_asin_acos,
         diff_math_hypot,
+        diff_math_sincos_modff_hypotf,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }

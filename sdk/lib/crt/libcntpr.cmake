@@ -335,6 +335,23 @@ if(ARCH STREQUAL "amd64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 12): sincos + modff + _hypotf → cnt-rust (float
+# feature). sincos = the combined sin/cos (math/sincos.c, all-arch common);
+# it reuses the Rust sin/cos so it's removed on non-i386 (like sin/cos), i386
+# keeps the C. modff (exact f32 split) and _hypotf (f64-internal) are
+# amd64-ONLY in libcntpr. All difftest-pinned bit-exact.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/sincos.c
+    )
+endif()
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/modff.c
+        math/libm_sse2/hypotf.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

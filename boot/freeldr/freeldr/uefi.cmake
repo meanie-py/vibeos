@@ -83,7 +83,7 @@ list(APPEND UEFILDR_ARC_SOURCE
 # reactos-link already emits cargo:rerun-if-changed for each static_lib, so once
 # ninja re-invokes cargo, the link actually re-runs.
 set(UEFILDR_EXTRA_DEPENDS
-    cportlib libcntpr chkstk
+    libcntpr chkstk
     # blcmlib compiled in-cargo (c_from_compile_db) — file-track its C sources
     # instead of depending on the cmake blcmlib target:
     ${FREELDR_BLCMLIB_SOURCES}
@@ -106,9 +106,9 @@ set(UEFILDR_EXTRA_DEPENDS
     # re-invokes the cargo link, instead of depending on the cmake libcntpr_rust.a.
     ${FREELDR_CNT_RUST_SOURCES}
     # cport-rust is now built by uefildr-cargo itself (reactos-link .rust_lib);
-    # file-track its sources, not the cmake-built libcport_rust.a. The cmake
-    # `cportlib` target stays a dep (above) for the cohab stub libcportlib.a the
-    # loader still reuses.
+    # file-track its sources. libcportlib.a is no longer linked (it bundled a
+    # redundant second copy of cport_rust), so the cmake `cportlib` target dep
+    # is dropped too.
     ${FREELDR_CPORT_RUST_SOURCES})
 if(ARCH STREQUAL "i386")
     # mini_hal stays a dep (systimer.S asm → libmini_hal.a, still reused). Its

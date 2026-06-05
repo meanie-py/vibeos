@@ -88,11 +88,13 @@ fn main() {
         // Rust now), and that asm is assembled directly above. The freeldr-rust
         // body is now a DIRECT cargo build (.rust_staticlib() below), no longer
         // a cmake-built libfreeldr_rust_uefi.a reused here.
-        "sdk/lib/cportlib/libcportlib.a",
-        // cport.c is Rust now (cohabitation); libcportlib.a is just the cohab
-        // stub. The Cp* serial symbols come from cport-rust, now a DIRECT cargo
-        // sibling (.rust_lib("cport-rust") below), not the reused cmake-built
-        // libcport_rust.a.
+        // cport: libcportlib.a is NOT linked here — cport-rust (.rust_lib below)
+        // supplies all the Cp* NTAPI serial symbols directly. The cmake
+        // libcportlib.a bundles its own copy of cport_rust (PUBLIC link), so
+        // linking it too was a redundant double-cport (masked by
+        // --allow-multiple-definition); the cohab stub symbol it also carries
+        // (__cportlib_rust_cohab_stub) and the C file-global RingIndicator are
+        // unreferenced (cport-rust folds RingIndicator into internal state).
         // blcmlib (CM hive boot lib) is now compiled IN-cargo via
         // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
         // blrtl (boot RTL leaf) is likewise compiled IN-cargo below: its C via
