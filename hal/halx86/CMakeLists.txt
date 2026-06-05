@@ -203,10 +203,52 @@ if(ARCH STREQUAL "i386")
     include(pic.cmake)
     add_subdirectory(minihal)
 
-    add_hal(hal SOURCES pic/halpic.rc COMPONENTS generic legacy pic)
+    # i386 hal.dll link inputs the cargo build reuses beyond the common leaf
+    # libs: libchkstk.a (no transitive propagation in the cargo link), the
+    # self-hosted pic-flavor asm (file-track so an edit re-invokes the opaque
+    # cargo link), and the checked-in pic/halpic.rc resource.
+    set(HAL_CARGO_EXTRA_DEPENDS
+        chkstk
+        ${CMAKE_CURRENT_SOURCE_DIR}/generic/systimer.S
+        ${CMAKE_CURRENT_SOURCE_DIR}/generic/trap.S
+        ${CMAKE_CURRENT_SOURCE_DIR}/pic/pic.S
+        ${CMAKE_SOURCE_DIR}/sdk/lib/rust/hal-cargo/data/hal-i386.rc.res)
 
 elseif(ARCH STREQUAL "amd64")
 
-    add_hal(hal SOURCES ${HAL_SOURCE} COMPONENTS generic acpi apic)
+    # amd64 hal.dll link adds the cnt-rust cohabitation twin (libcntpr_rust.a,
+    # custom target rust_cnt) and the apic-flavor asm; no chkstk, no resource.
+    set(HAL_CARGO_EXTRA_DEPENDS
+        rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/apic/apictrap.S
+        ${CMAKE_CURRENT_SOURCE_DIR}/apic/tsccal.S)
 
 endif()
+
+# ============================================================================
+# hal.dll — CARGO-DRIVEN link (sdk/lib/rust/hal-cargo)
+# ============================================================================
+# The final hal.dll link is driven by cargo (hal-cargo's build.rs → reactos-link,
+# ModuleKind::KernelDll) instead of cmake's add_hal / add_library(MODULE). The
+# cargo build reuses the cmake-built leaf libs (cntpr/setjmp/arbiter/pseh/memcmp
+# + the per-arch extras above), self-hosts the HAL asm + the ntoskrnl import lib
+# + (i386) the resource, and builds hal-rust itself (BODY_CRATE, on the
+# i686/x86_64-kernel target) — superseding the cmake `rust_hal` custom_command
+# above, which is now inert (no dependents; not built). The `add_hal` function
+# and the per-flavor lib_hal_<component> OBJECT libs are likewise inert. There is
+# exactly ONE hal.dll (the halacpi/halapic/halaacpi names are install aliases).
+# spec2def(... ADD_IMPORTLIB) stays — ntoskrnl/ntkrnlmp import hal's exports.
+spec2def(hal.dll ../hal.spec ADD_IMPORTLIB)
+
+# Common leaf-lib targets (file-tracked via the target) + the spec inputs +
+# asm/psdk/bugcodes/xdk so the generated asm includes (ks*.inc / sysfuncs.h)
+# exist before the cargo link assembles the HAL .S.
+list(APPEND HAL_CARGO_EXTRA_DEPENDS
+    libcntpr setjmp arbiter ${PSEH_LIB} memcmp
+    asm psdk bugcodes xdk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hal.spec
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ntoskrnl.spec)
+
+add_cargo_kernel_dll(hal hal-cargo hal.dll
+    BODY_CRATE hal-rust DESTINATION reactos/system32
+    EXTRA_DEPENDS ${HAL_CARGO_EXTRA_DEPENDS})
