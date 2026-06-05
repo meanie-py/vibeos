@@ -1,0 +1,44 @@
+# Cargo-driven `rosload.exe` link PoC (i386 + amd64). 2nd-stage-loader
+# sibling of `uefildr-cargo` / `ntoskrnl-cargo` / `kdcom-cargo`.
+#
+# rosload is the native-subsystem 2nd-stage loader (loads ntoskrnl). Its
+# body is already Rust (freeldr-rust `--features rosload`, cohabitation);
+# this crate drives the *final* `rosload.exe` link from cargo instead of
+# cmake. Like the other -cargo PoCs it REUSES the cmake-built artifacts
+# (run `ninja rosload` in build-<arch>/ first):
+#   - prebuilt objects compiled into rosload.dir: strsafe_shim.c.obj
+#     (variadic RtlStringCb* shim Rust stable can't host), cmboot.c.obj
+#     (ntoskrnl/config/cmboot.c), and the per-arch asm (i386 drvmap_gcc.obj
+#     + linux.S.obj; amd64 misc.S.obj + linux.S.obj);
+#   - `libfreeldr_rust_rosload.a` (cmake-built `--features rosload`, the
+#     bootmgr/oslist/options/winldr/registry/... bodies + `RunLoader` entry);
+#   - sibling C leaf libs (blcmlib/blrtl/libcntpr) + the i386 mini-HAL
+#     (libmini_hal.a + libhal_rust_mini.a) + libcntpr_rust.a;
+#   - the freeldr import lib (`libfreeldr.dir/libfreeldr.a`, from
+#     `add_importlibs(rosload freeldr)`) — rosload's Mach*/Ui*/Ini*/FrLdrHeap*
+#     imports resolve at runtime against uefildr.efi (registered as
+#     "freeldr.sys").
+# build.rs then links them with the native subsystem + the single RtlAssert
+# export via the shared `reactos-link` engine (`ModuleKind::NativeExe`).
+#
+# Reusing the cmake-built libfreeldr_rust_rosload.a (rather than rebuilding
+# the staticlib through reactos-link) guarantees byte-identical Rust codegen
+# to the shipping cmake loader and carries the `rosload` cargo feature that
+# the engine's `.rust_staticlib()` can't pass.
+#
+# Success criterion: cargo's rosload.exe boots the livecd in QEMU exactly
+# like cmake's (smoke i386 + amd64). arm64 has no rosload (UEFI-only boot).
+
+[package]
+name = "rosload-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rosload"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

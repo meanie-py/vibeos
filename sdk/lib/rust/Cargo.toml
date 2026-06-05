@@ -40,6 +40,7 @@ members = [
     "smss-csrss-rust",
     "ntoskrnl-cargo",
     "uefildr-cargo",
+    "rosload-cargo",
     "ntdll-cargo",
     "ntdll_vista-cargo",
     "ntoskrnl-rust",

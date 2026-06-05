@@ -39,11 +39,12 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
-    // strsafe_shim.c.obj — the C variadic shim, compiled into the cmake
-    // uefildr.dir (header-dependent, so reused prebuilt rather than
-    // recompiled as a header-free c_shim).
+    // strsafe_shim.c.obj — the C variadic shim, compiled by the cmake OBJECT
+    // lib `uefildr_shim` (header-dependent, so reused prebuilt rather than
+    // recompiled as a header-free c_shim). Was uefildr.dir/ when add_executable
+    // owned the link; now uefildr_shim.dir/ since the link is cargo-driven.
     let mut libs: Vec<&str> =
-        vec!["boot/freeldr/freeldr/CMakeFiles/uefildr.dir/lib/strsafe_shim.c.obj"];
+        vec!["boot/freeldr/freeldr/CMakeFiles/uefildr_shim.dir/lib/strsafe_shim.c.obj"];
 
     // Per-arch link knobs (verbatim from each build-<arch>/build.ninja's
     // uefildr.efi LINK_FLAGS):

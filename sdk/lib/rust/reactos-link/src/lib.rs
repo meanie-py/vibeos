@@ -60,6 +60,24 @@ pub enum ModuleKind {
     ///   explicitly as `Some(0x400000)` — identical header); arm64 cmake
     ///   passes no `--image-base`, so `None` to match its auto-hash base.
     EfiApplication { entry: String, image_base: Option<u64>, alignment: u64 },
+    /// `nativeexe` WITH exports — the rosload.exe 2nd-stage loader. Mirrors
+    /// the cmake `rosload.exe` link (`set_subsystem native` /
+    /// `set_entrypoint RunLoader` / `set_image_base 0x10000`,
+    /// `ENABLE_EXPORTS TRUE` + `rosload.def`):
+    /// - `--subsystem,native:5.01`, `--gc-sections`, NOT `-shared` (it's an
+    ///   exe), image base `0x10000`.
+    /// - exports come from the `.spec2def()`-generated `rosload.def`, so NO
+    ///   `--exclude-all-symbols` (the one tiny export is `RtlAssert`).
+    /// - DEFAULT PE alignment: cmake's rosload link passes no
+    ///   `--file-alignment`/`--section-alignment`, so neither does this kind
+    ///   (lld defaults file 0x200 / section 0x1000) — unlike KernelExe which
+    ///   forces 0x1000/0x1000.
+    /// `entry` is already arch-decorated (i386 `_RunLoader`, amd64 `RunLoader`).
+    /// The i386-only `-u _HalDispatchTable`/`-u _HalPrivateDispatchTable`
+    /// force-undefined pulls (the C halstub.c always linked the Rust HAL
+    /// dispatch tables in as a source object; as archive members they'd be
+    /// GC'd) are supplied via `.force_undefined(...)` on the builder.
+    NativeExe { entry: String, image_base: u64 },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -228,7 +246,15 @@ pub struct Linker {
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
+    /// Pre-expanded asm assembled into a `.a` and linked INSIDE the
+    /// `--start-group` as an on-demand archive (NOT a force-included object
+    /// like `asm`). (archive-basename, asm-rels). Use this when the cmake
+    /// equivalent was an archive (e.g. ntdllsys) and force-including it as an
+    /// object relocates the image enough to surface a latent layout-sensitive
+    /// miscompile — keeping it an in-group archive preserves the cmake layout.
+    asm_archives: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
+    force_undefined: Vec<String>,
 }
 
 impl Linker {
@@ -273,7 +299,9 @@ impl Linker {
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
+            asm_archives: Vec::new(),
             import_libs: Vec::new(),
+            force_undefined: Vec::new(),
         }
     }
 
@@ -328,6 +356,20 @@ impl Linker {
         self
     }
 
+    /// Pre-expanded asm assembled into `lib<name>.a` and linked as an
+    /// on-demand archive INSIDE the `--start-group` (vs `asm()`, which
+    /// force-includes objects before the group). Mirrors a cmake module that
+    /// shipped the asm as an archive (e.g. `ntdllsys` = the Nt*/Zw* syscall
+    /// stubs): force-including those stubs as an object relocated ~5% of the
+    /// i386 image and surfaced a latent layout-sensitive hivewrt miscompile;
+    /// the in-group archive preserves the cmake link layout. Uses the same
+    /// `asm_set` define list as `asm()`.
+    pub fn asm_archive(mut self, name: &str, rels: &[&str]) -> Self {
+        self.asm_archives
+            .push((name.to_string(), rels.iter().map(|s| s.to_string()).collect()));
+        self
+    }
+
     /// Checked-in `.res` (consumer-crate-relative), regenerated
     /// out-of-band (`tools/gen_*_res.py`).
     pub fn resource(mut self, manifest_rel: &str) -> Self {
@@ -377,6 +419,18 @@ impl Linker {
             dll_name.to_string(),
             basename.to_string(),
         ));
+        self
+    }
+
+    /// Force-undefined symbols (`-Wl,-u,SYM`) — make the linker keep an
+    /// otherwise-unreferenced archive member. Mirrors cmake's
+    /// `target_link_options(... LINKER:-u,_HalDispatchTable)`: rosload's i386
+    /// HAL dispatch tables (from the Rust `halstub.rs` archive member) are
+    /// unreferenced + unexported, so without `-u` `--gc-sections` drops them.
+    /// Each symbol is already arch-decorated by the caller. Chainable.
+    pub fn force_undefined(mut self, syms: &[&str]) -> Self {
+        self.force_undefined
+            .extend(syms.iter().map(|s| s.to_string()));
         self
     }
 
@@ -523,6 +577,50 @@ impl Linker {
             // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
             println!("cargo:rerun-if-changed={}", full.display());
         }
+        // Pre-expanded asm assembled into on-demand archives, IN the group
+        // alongside the cmake C archives (same archive semantics + layout
+        // region as the cmake equivalent — see asm_archive()).
+        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
+        for (name, rels) in &self.asm_archives {
+            let mut b = cc::Build::new();
+            apply_base(&mut b, &clang, self.asm_set, &self.arch);
+            for rel in rels {
+                let abs = self.repo_root.join(rel);
+                if !abs.exists() {
+                    panic!(
+                        "missing pre-processed asm: {} — regenerate via tools/gen_ntdll_asm.py",
+                        abs.display()
+                    );
+                }
+                b.file(&abs);
+                println!("cargo:rerun-if-changed={}", abs.display());
+            }
+            b.out_dir(self.obj_dir())
+                .define("__ASM__", None)
+                .flag("-nostdinc")
+                .flag("-isystem")
+                .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
+                .flag("-isystem")
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
+                .flag("-x")
+                .flag("assembler-with-cpp");
+            let objs = b.compile_intermediates();
+            if objs.is_empty() {
+                panic!("asm_archive {name}: cc-rs produced no objects");
+            }
+            let lib_a = self.obj_dir().join(format!("lib{name}.a"));
+            let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
+            let status = Command::new(&ar)
+                .arg("rcs")
+                .arg(&lib_a)
+                .args(&objs)
+                .status()
+                .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
+            if !status.success() {
+                panic!("ar failed for asm_archive {name}");
+            }
+            println!("cargo:rustc-link-arg={}", lib_a.display());
+        }
         if let Some(a) = &rust_a {
             println!("cargo:rustc-link-arg={}", a.display());
             println!("cargo:rerun-if-changed={}", a.display());
@@ -609,7 +707,21 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
                 (entry, *image_base)
             }
+            ModuleKind::NativeExe { entry, image_base } => {
+                // rosload.exe: native subsystem exe that EXPORTS via its .def
+                // (so NO --exclude-all-symbols, unlike KernelExe), --gc-sections,
+                // no -shared, DEFAULT PE alignment (cmake passes no
+                // --file/-section-alignment → lld default file 0x200/section
+                // 0x1000). exports flow from .spec2def()'s rosload.def.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
+                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                (entry, Some(*image_base))
+            }
         };
+        // Force-undefined pulls (-u SYM) — keep GC'd-but-needed archive members.
+        for sym in &self.force_undefined {
+            println!("cargo:rustc-link-arg=-Wl,-u,{sym}");
+        }
         println!("cargo:rustc-link-arg=-Wl,-e,{entry}");
         // Emit an explicit base only when the module pins one; otherwise the
         // common --enable-auto-image-base resolves it (matches cmake's arm64

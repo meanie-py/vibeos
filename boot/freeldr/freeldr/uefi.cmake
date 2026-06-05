@@ -98,79 +98,44 @@ if(ARCH STREQUAL "i386" AND NOT MSVC)
 endif()
 
 
-spec2def(uefildr.exe freeldr.spec)
+# ============================================================================
+# uefildr.efi — CARGO-DRIVEN final link (sdk/lib/rust/uefildr-cargo)
+# ============================================================================
+# The final loader link is driven by cargo (uefildr-cargo's build.rs →
+# reactos-link, ModuleKind::EfiApplication) instead of cmake's add_executable.
+# The cargo build REUSES the cmake-built libuefifreeldr_common.a +
+# libfreeldr_rust_uefi.a + the leaf libs + the uefildr_shim object below;
+# cmake's own loader link is retired. uefildr exports nothing
+# (--exclude-all-symbols); the freeldr import lib rosload consumes still comes
+# from CMakeLists.txt's `spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB)`, and
+# rosload's freeldr.sys imports bind at runtime against uefildr's internal
+# table (not PE exports), so no spec2def(uefildr.exe) / .def is needed here.
 
-list(APPEND UEFILDR_BASE_SOURCE
-    include/arch/uefi/uefildr.h
-    # arch/uefi/uefildr.c  # replaced by Rust (freeldr-rust/src/uefildr.rs);
-    #   EfiEntry + ExecuteLoaderCleanly + Reboot + the 4 UEFI globals now come
-    #   from libfreeldr_rust_uefi.a built with --features uefildr-rust-entry.
-    # bootmgr.c  # replaced by Rust (sdk/lib/rust/freeldr-rust/src/bootmgr.rs)
-    ${FREELDR_BASE_SOURCE})
-    # setup/legacy unit → Rust (freeldr-rust: setupldr.rs/inffile.rs).
-    # ntldr/setupldr.c  # replaced by Rust (freeldr-rust/src/setupldr.rs)
-    # ntldr/inffile.c   # replaced by Rust (freeldr-rust/src/inffile.rs)
+# strsafe_shim.c — header-dependent variadic RtlStringCb* shim the cargo link
+# reuses (Rust stable can't host the variadic def). add_executable(uefildr)
+# used to compile it; keep it compiled via an OBJECT lib now that the link is
+# cargo-driven. UEFIBOOT + the directory-scoped include dirs above match the
+# old add_executable(uefildr) compile env; -mno-sse matches uefifreeldr_common
+# (freeldr has no SSE), which the shim formerly inherited by linking it.
+add_library(uefildr_shim OBJECT lib/strsafe_shim.c)
+target_compile_definitions(uefildr_shim PRIVATE UEFIBOOT)
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+    target_compile_options(uefildr_shim PRIVATE -mno-sse)
+endif()
+add_dependencies(uefildr_shim bugcodes xdk)
 
+# cmake targets whose .a/.obj the cargo link reuses — DEPENDS so `ninja
+# uefildr` builds them before invoking cargo (an opaque link).
+set(UEFILDR_EXTRA_DEPENDS
+    uefifreeldr_common uefildr_shim rust_freeldr_uefi
+    cportlib blcmlib blrtl libcntpr chkstk rust_cnt)
 if(ARCH STREQUAL "i386")
-    # Must be included together with disk/scsiport.c
-    list(APPEND UEFILDR_BASE_SOURCE
-        ${CMAKE_CURRENT_BINARY_DIR}/uefildr.def)
+    list(APPEND UEFILDR_EXTRA_DEPENDS mini_hal rust_hal_mini)
 endif()
 
-add_executable(uefildr ${UEFILDR_BASE_SOURCE})
-set_target_properties(uefildr PROPERTIES SUFFIX ".efi")
-
-target_compile_definitions(uefildr PRIVATE UEFIBOOT)
-
-# On AMD64 we only map 1GB with freeloader, tell UEFI to keep us low!
-if(ARCH STREQUAL "amd64")
-    set_image_base(uefildr 0x10000)
-endif()
-
-if(MSVC)
-target_link_options(uefildr PRIVATE /DYNAMICBASE:NO)
-    target_link_options(uefildr PRIVATE /NXCOMPAT:NO /ignore:4078 /ignore:4254 /DRIVER)
-    # We don't need hotpatching
-    remove_target_compile_option(uefildr "/hotpatch")
-else()
-    # ARM64 requires 4KB alignment for proper ldr/str instruction offsets
-    if(ARCH STREQUAL "arm64")
-        target_link_options(uefildr PRIVATE -Wl,--exclude-all-symbols,--file-alignment,0x1000,--section-alignment,0x1000)
-    else()
-        target_link_options(uefildr PRIVATE -Wl,--exclude-all-symbols,--file-alignment,0x200,--section-alignment,0x200)
-    endif()
-    # Strip everything, including rossym data
-    add_custom_command(TARGET uefildr
-                    POST_BUILD
-                    COMMAND ${CMAKE_STRIP} --remove-section=.rossym $<TARGET_FILE:uefildr>
-                    COMMAND ${CMAKE_STRIP} --strip-all $<TARGET_FILE:uefildr>)
-endif()
-
-if(MSVC)
-    set_subsystem(uefildr EFI_APPLICATION)
-else()
-    set_subsystem(uefildr 10)
-endif()
-
-set_entrypoint(uefildr EfiEntry)
-
-if(ARCH STREQUAL "i386")
-    target_link_libraries(uefildr mini_hal ${HAL_RUST_MINI_LIB})
-    add_dependencies(uefildr rust_hal_mini)
-endif()
-
-# libfreeldr_rust_uefi.a explicitly BEFORE libcntpr so freeldr.rs's
-# FPU-free pow/log/log10/wctomb stubs satisfy refs first (same reason
-# as pcat.cmake's freeldr_pe link line).
-target_link_libraries(uefildr uefifreeldr_common ${FREELDR_RUST_UEFI_LIB} cportlib blcmlib blrtl libcntpr chkstk)
-
-# dynamic analysis switches
-if(STACK_PROTECTOR)
-    target_link_libraries(uefildr gcc_ssp_nt)
-endif()
-
-if(RUNTIME_CHECKS)
-    target_link_libraries(uefildr runtmchk)
-endif()
-
-add_dependencies(uefildr xdk)
+# KIND efi → post-link strips .rossym + --strip-all (matches the old
+# add_executable POST_BUILD). NO_CD → uefildr.efi is embedded into the efisys
+# boot image by boot/boot_images.cmake (which references its path directly),
+# not add_cd_file'd.
+add_cargo_module(uefildr uefildr-cargo uefildr.efi
+    KIND efi NO_CD EXTRA_DEPENDS ${UEFILDR_EXTRA_DEPENDS})

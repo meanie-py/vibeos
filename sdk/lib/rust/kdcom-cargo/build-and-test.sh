@@ -2,6 +2,11 @@
 # Cargo-driven kdcom.dll build PoC — i386 only. KD-COM sibling of
 # hal-cargo/build-and-test.sh.
 #
+# NOTE: as of the cmake→cargo wiring, the MAIN build already drives this
+# link (drivers/base/kdrosdbg/CMakeLists.txt → add_cargo_kernel_dll), so a
+# plain `ninja kdcom` in build-<arch>/ produces the shipping cargo-linked
+# kdcom.dll. This script remains as an isolated i386 link+swap-smoke helper.
+#
 # On the llvm-mingw (non-MSVC) build, kdcom.dll is built from the
 # 116-LOC stub drivers/base/kdrosdbg/kdrosdbg.c (NOT drivers/base/kdcom;
 # see memory feedback_kdcom_is_kdrosdbg). The cmake target is *named*
@@ -66,7 +71,7 @@ if [ "${RUN_SMOKE:-0}" = "1" ]; then
   ( cd build-i386 && ninja livecd >/dev/null )
   source .venv/bin/activate
   trap 'mv "$KDCOM_DLL.cmake-backup" "$KDCOM_DLL"; (cd build-i386 && ninja livecd >/dev/null) || true' EXIT
-  pytest tests/qemu/test_smoke.py --arch i386 --timeout 300 --skip-clean-build
+  pytest tests/qemu/test_smoke.py --arch i386-uefi --timeout 400 --skip-clean-build
 fi
 
 echo "Done."

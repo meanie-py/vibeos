@@ -1,29 +1,39 @@
-//! Cargo-driven `kdcom.dll` link (i386). Manifest for the shared
-//! `reactos-link` engine — all machinery lives there. KD-COM sibling
-//! of `hal-cargo`'s `build.rs`.
+//! Cargo-driven `kdcom.dll` link (i386 + amd64 + arm64). Manifest for the
+//! shared `reactos-link` engine — all machinery lives there. KD-COM sibling
+//! of `bootvid-cargo` / `hal-cargo` build.rs.
 //!
-//! Mirrors the cmake `kdcom.dll` link line (from build-i386/build.ninja,
+//! Mirrors the cmake `kdcom.dll` link line (from each build-<arch>/build.ninja,
 //! target `drivers/base/kdrosdbg/kdcom.dll`):
-//!   entry  `-Wl,-e,___ImageBase`  (ENTRYPOINT 0 sentinel)
-//!   base   `--image-base,0x00010000`
-//!   shared kerneldll → `-shared`, no `--gc-sections` (keeps all 8
-//!          `kdrosdbg.spec` exports without an anchor symbol)
-//!   libs   ntoskrnl import lib (self-generated from ntoskrnl.spec,
-//!          hal-cargo precedent — only `DbgPrint` is referenced) +
-//!          cportlib + memcmp leaf static libs (cmake LINK_LIBRARIES;
-//!          unreferenced by the stub but mirrored for parity).
+//!   subsystem `native:5.01`, `-shared` (kerneldll), `--exclude-all-symbols`
+//!             + 0x1000 align (the 8 kdrosdbg.spec exports come from the .def,
+//!             not auto-export), no `--gc-sections`.
+//!   entry  i386 `-Wl,-e,___ImageBase` (C `_`→triple `_` on i686 GNU);
+//!          amd64/arm64 `-Wl,-e,__ImageBase` (no cdecl `_` prefix).
+//!   base   i386/amd64 `--image-base,0x00010000`; arm64
+//!          `--image-base,0x7FFB00000000` (verbatim from build-arm64).
+//!   libs   ntoskrnl import lib (self-generated from ntoskrnl.spec —
+//!          only `DbgPrint` is referenced) + cportlib + memcmp leaf static
+//!          libs (cmake LINK_LIBRARIES).
 //!
-//! The C `kdrosdbg` target also imports `hal`, but the stub references
-//! zero hal symbols, so no hal import lib is needed (and `import_lib`
-//! is single-valued today — ntoskrnl is the only one that matters).
+//! The C `kdrosdbg` target also imports `hal`, but the stub references zero
+//! hal symbols, so no hal import lib is needed.
 //!
-//! Run `ninja` in build-i386/ first (reactos-link consumes cmake-built
-//! leaf static libs from there).
+//! Run `ninja` in build-<arch>/ first (reactos-link consumes cmake-built
+//! leaf static libs + the spec2def host tool from there).
 
 use reactos_link::{Linker, ModuleKind};
+use std::env;
 
 fn main() {
-    Linker::new("i686-kernel.json")
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
+        "x86" => ("i686-kernel.json", "___ImageBase", 0x0001_0000),
+        "x86_64" => ("x86_64-kernel.json", "__ImageBase", 0x0001_0000),
+        "aarch64" => ("aarch64-kernel.json", "__ImageBase", 0x7FFB_0000_0000),
+        other => panic!("kdcom-cargo: unsupported arch {other} (i386/amd64/arm64 only)"),
+    };
+
+    Linker::new(target_json)
         .rust_staticlib("kdcom-rust")
         .spec2def("drivers/base/kdrosdbg/kdrosdbg.spec", "kdcom.dll")
         .static_libs(&[
@@ -32,11 +42,10 @@ fn main() {
         ])
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .link(ModuleKind::KernelDll {
-            // ENTRYPOINT 0: cmake passes `-Wl,-e,___ImageBase`; the DLL
-            // has no DllMain (ntoskrnl resolves the 8 spec exports by
-            // name). `___ImageBase` is the lld-defined image-base symbol
-            // (C `_` prefix → triple underscore on i686 GNU).
-            entry: "___ImageBase".into(),
-            image_base: 0x0001_0000,
+            // ENTRYPOINT 0: the DLL has no DllMain (ntoskrnl resolves the 8
+            // spec exports by name). The entry symbol is lld's image-base
+            // symbol, arch-decorated (i386 `___ImageBase` / else `__ImageBase`).
+            entry: entry.into(),
+            image_base,
         });
 }
