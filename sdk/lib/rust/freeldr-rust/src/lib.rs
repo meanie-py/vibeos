@@ -15,6 +15,18 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(unused_imports, unused_unsafe, dead_code)]
 
+// cmboot.c (ntoskrnl/config) is the shared kernel+bootloader CM boot-init unit.
+// It now lives in the standalone `cmboot-rust` crate so the kernel and the
+// loaders link the SAME translation. Pull its #[no_mangle] CmpFind*/CmpFindDrivers
+// /CmpSortDriverList symbols into the loader archives that need them (uefildr via
+// `uefi`, rosload via `rosload`); `cmboot_shims` supplies the loader-local
+// InitSafeBootMode/CMTRACE/IS_NULL_TERMINATED that cmboot.c used to define
+// inline. The default (BIOS freeldr.sys) archive does not link cmboot.
+#[cfg(any(feature = "uefi", feature = "rosload"))]
+extern crate cmboot_rust;
+#[cfg(any(feature = "uefi", feature = "rosload"))]
+mod cmboot_shims;
+
 // Modules added as rustconv writes each translated file.
 pub mod ffi;
 pub mod frldr;

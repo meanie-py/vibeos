@@ -1,0 +1,30 @@
+# cmboot-rust — shared Rust translation of ntoskrnl/config/cmboot.c
+# ("Configuration Manager - Boot Initialization"). The C file is, by design,
+# "shared by both the kernel and the bootloader" (see its header comment): the
+# build compiles the ONE cmboot.c into ntoskrnl.exe, rosload.exe AND uefildr.efi.
+#
+# This crate is the Rust equivalent of that shared object: a plain rlib (its
+# objects bundle into a consumer's staticlib via `extern crate cmboot_rust`)
+# that BOTH the kernel (kernel-rust umbrella) and the loaders (freeldr-rust,
+# uefi + rosload features) link. The CM substrate (HvGetCell, Cmp*) resolves
+# against whatever CM library is in the link — kernel CM internals on the
+# kernel link, blcmlib on the loader links — exactly as the C did.
+#
+# The three context-local symbols cmboot needs (InitSafeBootMode, CMTRACE,
+# IS_NULL_TERMINATED) are provided by the consumer, NOT here: the kernel gets
+# them from ex/init.rs + config/inlines.rs; the loaders get them from
+# freeldr-rust's `cmboot_shims` module. cmboot-rust itself only *imports* them.
+[package]
+name = "cmboot-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# Type + extern-fn substrate (BOOT_DRIVER_NODE, PHHIVE, HCELL_INDEX, Cmp*,
+# HvGetCell, Rtl*). default-features = false: cmboot is pure CM logic, it needs
+# none of ntkrnl-sys's HAL raw-dylib import surface. Matches freeldr-rust's
+# ntkrnl-sys dep so feature unification is consistent on the loader build.
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }

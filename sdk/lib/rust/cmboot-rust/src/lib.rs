@@ -1,10 +1,26 @@
+//! cmboot-rust — Configuration Manager boot initialization, shared by the
+//! kernel (kernel-rust) and the FreeLDR loaders (freeldr-rust uefi/rosload).
+//! Translation of `ntoskrnl/config/cmboot.c`. See Cargo.toml for the
+//! shared-object rationale.
+#![no_std]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#![allow(unused_imports, unused_unsafe, dead_code, static_mut_refs)]
+
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{BOOT_DRIVER_NODE, CmpCompressedNameSize, CmpCopyCompressedName, CmpFindSubKeyByName, CmpFindSubKeyByNumber, CmpFindValueByName, CmpGetValueData, CmpValueToData, HCELL_INDEX, PBOOT_DRIVER_LIST_ENTRY, PBOOT_DRIVER_NODE, PCM_KEY_NODE, PCM_KEY_VALUE, PCUNICODE_STRING, PHHIVE, PUNICODE_STRING, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlEqualUnicodeString, RtlInitEmptyUnicodeString, RtlInitUnicodeString, _BOOT_DRIVER_LIST_ENTRY, _LIST_ENTRY, _UNICODE_STRING, SERVICE_LOAD_TYPE};
 use core::ffi::c_void;
-use crate::ex::init::InitSafeBootMode;
+
+// HACK: non-NT-compatible SafeBoot support, exactly as in cmboot.c. The C reads
+// it via `extern ULONG InitSafeBootMode;` regardless of context; the symbol is
+// defined by the consumer — ex/init.rs (`#[no_mangle]`) on the kernel link, and
+// freeldr-rust's `cmboot_shims` (the loader-local `ULONG InitSafeBootMode = 0;`
+// that used to live in cmboot.c itself) on the loader links.
+extern "C" {
+    static mut InitSafeBootMode: ULONG;
+}
 
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // Local constants — values match cmtypes.h / ntoskrnl C definitions.
@@ -20,6 +36,41 @@ unsafe fn RTL_CONSTANT_STRING(buf: *mut u16) -> _UNICODE_STRING {
     let chars = wcslen(buf);
     let len = (chars * 2) as u16;
     _UNICODE_STRING { Length: len, MaximumLength: len + 2, Buffer: buf }
+}
+
+// Self-contained `RtlStringCbPrintfW(buf, sizeof(buf), L"ControlSet%03lu", id)`.
+// cmboot.c's only formatting need. The kernel translation routed this through a
+// ntoskrnl-rust-internal printf helper (rust_rtl_string_cb_printf_w), which is
+// unreachable from a shared leaf crate without a circular dep — so we format the
+// single fixed pattern directly. Writes "ControlSet" + zero-padded (>=3-digit)
+// decimal of `id`, NUL-terminated, into `buf`. Returns STATUS_SUCCESS, or
+// STATUS_BUFFER_OVERFLOW if `buf` can't hold it (matches the macro contract).
+unsafe fn format_control_set(buf: &mut [u16], id: u32) -> i32 {
+    const PREFIX: &[u16] = &[
+        b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16,
+        b'o' as u16, b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16,
+    ];
+    // %03lu: at least 3 digits, zero-padded; full value if longer.
+    let mut digits = [0u8; 10]; // u32 max = 10 digits
+    let mut n = id;
+    let mut ndigits = 0usize;
+    loop {
+        digits[ndigits] = (n % 10) as u8;
+        ndigits += 1;
+        n /= 10;
+        if n == 0 { break; }
+    }
+    let width = if ndigits < 3 { 3 } else { ndigits };
+    let total = PREFIX.len() + width;
+    if buf.len() < total + 1 {
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    let mut i = 0usize;
+    for &c in PREFIX { buf[i] = c; i += 1; }
+    for _ in ndigits..width { buf[i] = b'0' as u16; i += 1; } // leading zeros
+    for k in (0..ndigits).rev() { buf[i] = (b'0' + digits[k]) as u16; i += 1; }
+    buf[i] = 0;
+    STATUS_SUCCESS
 }
 
 extern "C" {
@@ -112,12 +163,7 @@ pub unsafe extern "system" fn CmpFindControlSet(
         return 0xffffffff;
     }
 
-    Status = crate::rtl_string_cb_printf_w!(
-        Buffer.as_mut_ptr(),
-        core::mem::size_of_val(&Buffer),
-        crate::wstr!("ControlSet%03lu"),
-        *ControlSetId
-    );
+    Status = format_control_set(&mut Buffer, *ControlSetId);
     if !NT_SUCCESS(Status) {
         return 0xffffffff;
     }

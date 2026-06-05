@@ -85,12 +85,16 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     # ui/video.c    # replaced by Rust (freeldr-rust/src/video.rs)
     )
 
-list(APPEND FREELDR_NTLDR_SOURCE
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c)
+list(APPEND FREELDR_NTLDR_SOURCE)
+    # cmboot.c → Rust (sdk/lib/rust/cmboot-rust), linked via freeldr-rust's
+    # `uefi` feature. It is ntoskrnl/config/cmboot.c — "shared by both the
+    # kernel and the bootloader" per its own header — so the kernel and the
+    # loaders now link the SAME shared Rust crate (cmboot-rust) instead of
+    # compiling the C three times. cmboot_shims (freeldr-rust) supplies the
+    # loader-local InitSafeBootMode/CMTRACE/IS_NULL_TERMINATED.
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
     # ntldr/conversion.c  # replaced by Rust (freeldr-rust/src/conversion.rs)
-    # winldr kernel-handoff unit → Rust (freeldr-rust). cmboot.c kept (it
-    # is ntoskrnl/config/cmboot.c — shared kernel src, not a freeldr file;
-    # registry.rs externs it). Cohabitation: .c kept on disk.
+    # winldr kernel-handoff unit → Rust (freeldr-rust).
     # ntldr/registry.c    # replaced by Rust (freeldr-rust/src/registry.rs)
     # ntldr/winldr.c      # replaced by Rust (freeldr-rust/src/winldr.rs)
     # ntldr/wlmemory.c    # replaced by Rust (freeldr-rust/src/wlmemory.rs)

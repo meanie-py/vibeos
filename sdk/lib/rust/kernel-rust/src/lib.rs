@@ -8,6 +8,12 @@ extern crate ke_inlines;
 extern crate ke_macros;
 // Re-export ntoskrnl-rust (ob subsystem) so its #[no_mangle] symbols are linked in.
 extern crate ntoskrnl_rust;
+// cmboot.c is the shared kernel+bootloader CM boot-init unit, moved out of
+// ntoskrnl-rust into its own crate (cmboot-rust) so the loaders can link the
+// SAME translation. Pull its #[no_mangle] CmpFind*/CmpAddDriverToList symbols
+// into libkernel_rust.a here (extern crate is required for a staticlib umbrella;
+// a Cargo dep alone would compile the rlib but drop its symbols).
+extern crate cmboot_rust;
 // Re-export ntprintf so its FFI symbols (ntprintf_scan_arg_types,
 // ntprintf_format_a) are linked in for the C variadic trampolines.
 extern crate ntprintf;

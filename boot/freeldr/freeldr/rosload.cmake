@@ -23,7 +23,10 @@ list(APPEND ROSLOAD_SOURCE
     # options.c          # replaced by Rust (freeldr-rust/src/options.rs)
     # oslist.c           # replaced by Rust (freeldr-rust/src/oslist.rs)
     # lib/rtl/libsupp.c  # replaced by Rust (freeldr-rust/src/libsupp.rs)
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
+    # cmboot.c → Rust (sdk/lib/rust/cmboot-rust), linked via freeldr-rust's
+    # `rosload` feature (cmboot_shims supplies the loader-local globals). Same
+    # shared CM boot-init crate the kernel and uefildr link.
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
     # ntldr/conversion.c # replaced by Rust (freeldr-rust/src/conversion.rs)
     # ntldr/inffile.c    # replaced by Rust (freeldr-rust/src/inffile.rs)
     # ntldr/registry.c   # replaced by Rust (freeldr-rust/src/registry.rs)
