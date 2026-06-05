@@ -829,6 +829,9 @@ fn main() {
         ("acos", format!("#include <math.h>\n#define acos ref_acos\n{}", inc(libm_dir.join("acos.c")))),
         // sub-wave 11 (symbol is _hypot, the MS CRT name)
         ("_hypot", format!("#include <math.h>\n#define _hypot ref__hypot\n{}", inc(libm_dir.join("hypot.c")))),
+        // sub-wave 12 (f32 twins; sincos checked directly vs ref_sin/ref_cos)
+        ("modff", format!("#include <math.h>\n#define modff ref_modff\n{}", inc(libm_dir.join("modff.c")))),
+        ("_hypotf", format!("#include <math.h>\n#define _hypotf ref__hypotf\n{}", inc(libm_dir.join("hypotf.c")))),
     ];
     let libm_stubs = out.join("ref_libm_stubs.c");
     fs::write(
@@ -836,6 +839,9 @@ fn main() {
         "double _handle_error(char*f,int o,unsigned long long v,int t,int fl,\
            int e,double a,double b,int n){union{double d;unsigned long long u;}x;\
            x.u=v;return x.d;}\n\
+         float _handle_errorf(char*f,int o,unsigned long long v,int t,int fl,\
+           int e,float a,float b,int n){union{float f;unsigned int u;}x;\
+           x.u=(unsigned int)v;return x.f;}\n\
          int _invoke_matherr(int t,char*nm,double a,double b,double r){return 0;}\n\
          void _set_statfp(unsigned int f){(void)f;}\n",
     )
