@@ -65,7 +65,22 @@ pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTS
 
     let CallbackTrapFrame: PKTRAP_FRAME = (InitialStack - core::mem::size_of::<KTRAP_FRAME>()) as PKTRAP_FRAME;
 
-    *CallbackTrapFrame = *TrapFrame;
+    // Snapshot the trap frame into the callback frame. A typed struct
+    // assignment (`*dst = *src`) of this union-bearing KTRAP_FRAME was
+    // observed to NOT copy the X[18] (x18) slot on arm64 — the callback
+    // frame's x18 stayed kernel-stack garbage, so KiTrapReturn ereted into
+    // KeUserCallbackDispatcher with a bogus x18; ntdll then read TEB->PEB via
+    // [x18+0x60] == NULL → AV → recursive KiUserExceptionDispatcher stack
+    // overflow → winlogon death → BUGCHECK 0xF4. Force a full byte copy.
+    core::ptr::copy_nonoverlapping(
+        TrapFrame as *const u8,
+        CallbackTrapFrame as *mut u8,
+        core::mem::size_of::<KTRAP_FRAME>(),
+    );
+
+    // x18 is the arm64 platform (TEB) register; the dispatcher relies on it.
+    // Set it authoritatively from the thread's TEB regardless of the copy.
+    (*CallbackTrapFrame).__bindgen_anon_3.X[18] = (*CurrentThread).Teb as u64;
 
     (*CallbackTrapFrame).Pc = KeUserCallbackDispatcher as u64;
 

@@ -2,6 +2,11 @@
 # Cargo-driven bootvid.dll build PoC — i386 only. Boot-video sibling of
 # hal-cargo / kdcom-cargo build-and-test.sh.
 #
+# NOTE: as of the cmake→cargo wiring, the MAIN build already drives this
+# link (drivers/base/bootvid/CMakeLists.txt → add_cargo_kernel_dll), so a
+# plain `ninja bootvid` in build-<arch>/ produces the shipping cargo-linked
+# bootvid.dll. This script remains as an isolated i386 link+swap-smoke helper.
+#
 # On the non-MSVC i386/amd64 build, bootvid.dll is the i386/pc VGA path
 # (i386/pc/{bootvid,bootdata,vga}.c + common/console/fontdata.c); the
 # framebuf/ GOP path is the separate lfbbvid.dll. cmake target name is
@@ -63,7 +68,7 @@ if [ "${RUN_SMOKE:-0}" = "1" ]; then
   ( cd build-i386 && ninja livecd >/dev/null )
   source .venv/bin/activate
   trap 'mv "$BOOTVID_DLL.cmake-backup" "$BOOTVID_DLL"; (cd build-i386 && ninja livecd >/dev/null) || true' EXIT
-  pytest tests/qemu/test_smoke.py --arch i386 --timeout 300 --skip-clean-build
+  pytest tests/qemu/test_smoke.py --arch i386-uefi --timeout 400 --skip-clean-build
 fi
 
 echo "Done."

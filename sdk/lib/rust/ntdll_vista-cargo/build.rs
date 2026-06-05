@@ -32,6 +32,9 @@ fn main() {
         // libutf8.a). smss-csrss-rust built smlib_only (--no-default-features).
         .rust_lib("smss-csrss-rust", &["smlib_only", "ntddi_ws03"], false)
         .rust_lib("utf8", &[], true)
+        // Tier-A leaf C, cargo-compiled (was reuse of cmake libpseh.a). DUMMY_PSEH
+        // dead code: header-free, two globals (_SEH2_Volatile0 / *ExceptionCode).
+        .c_shims(&["sdk/lib/pseh/dummy.c"])
         .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/nt_0600/ntdll_vista.spec", "ntdll_vista.dll")
         // imports Rtl*/Nt*/… from ntdll.dll (add_importlibs(ntdll_vista ntdll))
@@ -39,9 +42,8 @@ fn main() {
         .static_libs(&[
             // Tier-C deep-C (deferred — follows rtl-priv flip track):
             "sdk/lib/rtl/librtl_vista.a",
-            // Tier-A asm/data (still cmake-built):
-            "sdk/lib/pseh/libpseh.a",
-            "sdk/lib/crt/libchkstk.a",
+            // NOTE: libchkstk.a dropped — __chkstk/_alloca_probe/___alloca come
+            // from the clang_rt.builtins the engine links (redundant reuse-.a).
         ])
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),

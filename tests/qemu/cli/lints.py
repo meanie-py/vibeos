@@ -210,6 +210,13 @@ def run_cargo_link_guard(run: Run, repo: Path, arch: str | None = None) -> None:
     rotting. Defaults to i386 (canonical, cheapest, the only arch all three
     PoCs share); pass an arch to guard ntdll/ntdll_vista on amd64/arm64.
 
+    This is the LINK half of the gate (PE-valid, fast, no boot). Its runtime
+    complement is `vibeos-cli cargo-swap` (tests/qemu/cli/cargoswap.py): that
+    boot-swaps the cargo-built ntdll DLLs into the livecd and boots them via
+    `vibeos-cli smoke`, catching a link that relinks clean but boots broken.
+    Kept separate because cargo-swap boots QEMU (minutes) — too slow for the
+    hot `check` loop; run it before trusting a cargo-drive handoff.
+
     Each link self-skips when its prerequisites (the crate's target json, a
     built `build-<arch>`, or nightly+rust-src) are absent, so this never blocks
     a tree without the PoCs. Gated to `--strict` (not every `build`) because

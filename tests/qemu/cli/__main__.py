@@ -13,6 +13,7 @@ from pathlib import Path
 from . import build as build_mod
 from . import smoke as smoke_mod
 from . import debugcmd
+from . import cargoswap
 from .archcfg import ACCEPTED_ARCHES
 
 # repo root = .../tests/qemu/cli/__main__.py -> up 3
@@ -79,6 +80,13 @@ def build_parser() -> argparse.ArgumentParser:
     dd.add_argument("run_a")
     dd.add_argument("run_b")
     dd.set_defaults(fn=debugcmd.debug, verb="diff")
+
+    cs = sub.add_parser("cargo-swap",
+                        help="runtime gate: boot-swap the cargo-driven ntdll DLLs (x86 only)")
+    arch_arg(cs)
+    cs.add_argument("--module", choices=["all", "ntdll", "ntdll_vista"], default="all",
+                    help="which cargo-driven DLL to boot-swap (default: all)")
+    cs.set_defaults(fn=cargoswap.cargo_swap)
 
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")

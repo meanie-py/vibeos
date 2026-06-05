@@ -41,6 +41,31 @@ ARCHES = {
     "arm64": ("aarch64-w64-mingw32", [("_M_ARM64", None), ("_ARM64_", None), ("_WIN64", None), ("__aarch64__", None)]),
 }
 
+# Pre-expansion jobs: (arch, source-rel, output-basename). The output lands at
+# `sdk/lib/rust/ntdll-cargo/data/asm/<basename>` and is wired into the matching
+# build.rs `.asm(...)` list.
+#   * dispatch.S — ntdll's own kernel→user trampolines (all arches).
+#   * amd64 setjmp/longjmp — vcruntime asm that ntdll.dll amd64 references
+#     (i386/arm64 don't pull it; libsetjmp.a is dead there). Replaces the
+#     cmake libsetjmp.a reuse on amd64. The C glue `longjmp` is translated to
+#     Rust in ntdll-rust (`src/setjmp.rs`); only the register save/restore asm
+#     is pre-expanded here.
+#   * ntdllsys (ntdll.S) — the Nt*/Zw* user-mode syscall stubs (all arches).
+#     A tiny checked-in .S that #includes syscalls.inc (STUB_U macro, arch-aware
+#     STUBCODE) + the checked-in sysfuncs.h (296 SVC_ entries). The syscall
+#     number is an assemble-time counter over the shared sysfuncs.h order, so
+#     pre-expansion preserves it identically. Replaces the cmake libntdllsys.a.
+JOBS = [
+    ("i386",  "dll/ntdll/dispatch/i386/dispatch.S",       "dispatch-i386.s"),
+    ("amd64", "dll/ntdll/dispatch/amd64/dispatch.S",      "dispatch-amd64.s"),
+    ("arm64", "dll/ntdll/dispatch/arm64/dispatch.S",      "dispatch-arm64.s"),
+    ("i386",  "ntoskrnl/ntdll.S",                         "ntdllsys-i386.s"),
+    ("amd64", "ntoskrnl/ntdll.S",                         "ntdllsys-amd64.s"),
+    ("arm64", "ntoskrnl/ntdll.S",                         "ntdllsys-arm64.s"),
+    ("amd64", "sdk/lib/vcruntime/amd64/_setjmp.s",          "setjmp-amd64.s"),
+    ("amd64", "sdk/lib/vcruntime/amd64/__longjmp_noframe.s", "longjmp_noframe-amd64.s"),
+]
+
 
 def clang() -> Path:
     return LLVM_MINGW / "bin/i686-w64-mingw32-clang"  # any triple driver works for -E
@@ -88,9 +113,11 @@ def main() -> int:
     arches = [args.arch] if args.arch else list(ARCHES)
     failures = 0
     did_any = False
-    for arch in arches:
-        src = REPO / f"dll/ntdll/dispatch/{arch}/dispatch.S"
-        dst = REPO / f"sdk/lib/rust/ntdll-cargo/data/asm/dispatch-{arch}.s"
+    for arch, src_rel, out_base in JOBS:
+        if arch not in arches:
+            continue
+        src = REPO / src_rel
+        dst = REPO / f"sdk/lib/rust/ntdll-cargo/data/asm/{out_base}"
         if not src.exists():
             print(f"skip {arch}: no {src.relative_to(REPO)}")
             continue

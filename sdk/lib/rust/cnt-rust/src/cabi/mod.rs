@@ -276,3 +276,5 @@ mod generated;
 pub use generated::*;
 mod manual;
 pub use manual::*;
+mod streamout;
+pub use streamout::*;

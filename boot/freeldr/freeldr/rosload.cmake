@@ -75,54 +75,39 @@ if(ROSLOAD_GCC_OBJECTS)
     set_source_files_properties(${ROSLOAD_GCC_OBJECTS} PROPERTIES GENERATED TRUE EXTERNAL_OBJECT TRUE)
 endif()
 
-add_executable(rosload
+# ============================================================================
+# rosload.exe — CARGO-DRIVEN final link (sdk/lib/rust/rosload-cargo)
+# ============================================================================
+# The final 2nd-stage-loader link is driven by cargo (rosload-cargo's build.rs
+# → reactos-link, ModuleKind::NativeExe) instead of add_executable. The cargo
+# build REUSES libfreeldr_rust_rosload.a + the leaf libs + the freeldr import
+# lib (add_importlibs(rosload freeldr) → libfreeldr.a) + the rosload_objs
+# objects below; cmake's own link is retired. The i386 force-undefined HAL
+# dispatch-table pulls (-u _HalDispatchTable/_HalPrivateDispatchTable) now live
+# in rosload-cargo's build.rs (Linker::force_undefined).
+
+# Header-dependent C + asm objects the cargo link reuses (strsafe_shim, cmboot,
+# the per-arch asm). add_executable(rosload) used to compile them; keep them
+# compiled via an OBJECT lib now that the link is cargo-driven. Same
+# directory-scoped compile env as the old add_executable. (The i386 16-bit
+# drvmap_gcc.obj is produced by compile_asm_with_gcc above and reused directly.)
+add_library(rosload_objs OBJECT
     ${ROSLOAD_SOURCE}
-    ${rosload_asm}
-    ${ROSLOAD_GCC_OBJECTS}
-    ${CMAKE_CURRENT_BINARY_DIR}/rosload.def
-)
+    ${rosload_asm})
+set_target_properties(rosload_objs PROPERTIES DEFINE_SYMBOL "")
+add_dependencies(rosload_objs bugcodes asm xdk)
 
-set_target_properties(rosload
-    PROPERTIES
-    ENABLE_EXPORTS TRUE
-    DEFINE_SYMBOL "")
-
-set_image_base(rosload 0x10000) # 0x200000
-set_subsystem(rosload native)
-set_entrypoint(rosload RunLoader)
-
+# cmake targets / files whose .a/.obj the cargo link reuses — DEPENDS so `ninja
+# rosload` builds them before invoking cargo. libfreeldr = the freeldr import
+# lib (spec2def(freeldr.sys ... ADD_IMPORTLIB) in CMakeLists.txt), which
+# rosload's freeldr.sys imports bind against.
+set(ROSLOAD_EXTRA_DEPENDS
+    rosload_objs rust_freeldr_rosload libfreeldr blcmlib blrtl libcntpr rust_cnt)
 if(ARCH STREQUAL "i386")
-    target_link_libraries(rosload mini_hal ${HAL_RUST_MINI_LIB})
-    add_dependencies(rosload rust_hal_mini)
-    # Force-include the Rust halstub HAL dispatch tables
-    # (freeldr-rust/src/halstub.rs). They are unreferenced + unexported — the
-    # C halstub.c was a source object that always linked them in, but as a
-    # Rust staticlib archive member they would be dropped. Pull them
-    # explicitly so rosload.exe carries the same HAL surface as the C build.
-    target_link_options(rosload PRIVATE "LINKER:-u,_HalDispatchTable" "LINKER:-u,_HalPrivateDispatchTable")
+    list(APPEND ROSLOAD_EXTRA_DEPENDS mini_hal rust_hal_mini
+        ${CMAKE_CURRENT_BINARY_DIR}/drvmap_gcc.obj)
 endif()
 
-# rosload cohabitation flip — link the rosload variant of libfreeldr_rust.a
-# (built from boot/freeldr/freeldr/CMakeLists.txt with --features rosload).
-# The Rust archive defines bootmgr/oslist/options/custom/winldr/wlmemory/
-# wlregistry/registry/setupldr/inffile/headless/conversion/libsupp/miscboot/
-# linuxboot/drivemap/ntoskrnl/winldr_<arch>. The corresponding rosload .c
-# entries below are commented out (cohabitation) so the Rust #[no_mangle]
-# exports take over. Mach* / Ui* / Ini* / FrLdrHeap* / etc. are owned by
-# freeldr.sys and reach rosload through add_importlibs(rosload freeldr).
-target_link_libraries(rosload ${FREELDR_RUST_ROSLOAD_LIB} blcmlib blrtl libcntpr)
-add_dependencies(rosload rust_freeldr_rosload)
-add_importlibs(rosload freeldr)
-
-# dynamic analysis switches
-if(STACK_PROTECTOR)
-    target_link_libraries(rosload gcc_ssp_nt)
-endif()
-
-if(RUNTIME_CHECKS)
-    target_link_libraries(rosload runtmchk)
-endif()
-
-add_dependencies(rosload bugcodes asm xdk)
-
-add_cd_file(TARGET rosload DESTINATION loader NO_CAB FOR bootcd regtest livecd hybridcd)
+# KIND native → no post-link (rosload's old cmake POST_BUILD was a no-op).
+add_cargo_module(rosload rosload-cargo rosload.exe
+    KIND native DESTINATION loader EXTRA_DEPENDS ${ROSLOAD_EXTRA_DEPENDS})

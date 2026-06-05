@@ -35,6 +35,16 @@ EXPECTED_UD2 = {
     # Only appears in `-Z build-std` cargo binaries because rustup's pre-built
     # compiler_builtins inlines this monomorphization away.
     "copy_from_slice_impl",
+    # `<NeverShortCircuit<T> as FromResidual<NeverShortCircuitResidual>>::
+    # from_residual` — its input type `NeverShortCircuitResidual` is an EMPTY
+    # enum (uninhabited), so the body is `match r {}` and ud2 is the ONLY
+    # correct codegen: the function is uncallable (no value of the input type
+    # can exist). It is the internal-iteration (`try_fold`) machinery behind
+    # iterator adapters in cnt-rust's `core_rs`. Unreachable-by-construction,
+    # NOT a miscompile — same class as `unwrap_unchecked`. Surfaced into the
+    # linked image when cnt-rust's CGU partition shifts (a new crate module
+    # relocates which CGU carries it); see feedback_workspace_member_cgu_shift.
+    "NeverShortCircuit",
 }
 
 # Functions with known ud2 from rustc CGU partitioning bug (codegen-units=16).

@@ -1,26 +1,35 @@
-//! Cargo-driven `bootvid.dll` link (i386). Manifest for the shared
-//! `reactos-link` engine. Boot-video sibling of `hal-cargo` /
-//! `kdcom-cargo` build.rs.
+//! Cargo-driven `bootvid.dll` link (i386 + amd64 + arm64). Manifest for the
+//! shared `reactos-link` engine. Boot-video sibling of `kdcom-cargo` /
+//! `hal-cargo` build.rs.
 //!
-//! Mirrors the cmake `bootvid.dll` link line (build-i386/build.ninja,
+//! Mirrors the cmake `bootvid.dll` link line (each build-<arch>/build.ninja,
 //! target `drivers/base/bootvid/bootvid.dll`):
-//!   entry  `-Wl,-e,___ImageBase`  (ENTRYPOINT 0 sentinel)
-//!   base   `--image-base,0x00010000`
-//!   shared kerneldll → `-shared`, no `--gc-sections` (keeps all 11
-//!          `bootvid.spec` `Vid*` exports without an anchor symbol)
-//!   libs   ntoskrnl + hal import libs (self-generated from their
-//!          specs; cmake `add_importlibs(bootvid ntoskrnl hal)` — the
-//!          VGA path imports MmMapIoSpace/READ_REGISTER_*/DbgPrint from
-//!          ntoskrnl and READ/WRITE_PORT_* from hal) + memcmp leaf
+//!   subsystem `native:5.01`, `-shared` (kerneldll), `--exclude-all-symbols`
+//!             + 0x1000 align (the 11 bootvid.spec `Vid*` exports come from
+//!             the .def), no `--gc-sections`.
+//!   entry  i386 `-Wl,-e,___ImageBase`; amd64/arm64 `-Wl,-e,__ImageBase`.
+//!   base   i386/amd64 `--image-base,0x00010000`; arm64
+//!          `--image-base,0x7FFB00000000`.
+//!   libs   ntoskrnl + hal import libs (self-generated from their specs;
+//!          cmake `add_importlibs(bootvid ntoskrnl hal)`) + memcmp leaf
 //!          static lib (cmake LINK_LIBRARIES).
 //!
-//! Run `ninja` in build-i386/ first (reactos-link consumes the
-//! cmake-built leaf static lib + spec2def host tool from there).
+//! Run `ninja` in build-<arch>/ first (reactos-link consumes the cmake-built
+//! leaf static lib + spec2def host tool from there).
 
 use reactos_link::{Linker, ModuleKind};
+use std::env;
 
 fn main() {
-    Linker::new("i686-kernel.json")
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
+        "x86" => ("i686-kernel.json", "___ImageBase", 0x0001_0000),
+        "x86_64" => ("x86_64-kernel.json", "__ImageBase", 0x0001_0000),
+        "aarch64" => ("aarch64-kernel.json", "__ImageBase", 0x7FFB_0000_0000),
+        other => panic!("bootvid-cargo: unsupported arch {other} (i386/amd64/arm64 only)"),
+    };
+
+    Linker::new(target_json)
         .rust_staticlib("bootvid-rust")
         .spec2def("drivers/base/bootvid/bootvid.spec", "bootvid.dll")
         .static_libs(&["sdk/lib/crt/libmemcmp.a"])
@@ -29,9 +38,9 @@ fn main() {
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {
-            // ENTRYPOINT 0: cmake passes `-Wl,-e,___ImageBase`; no
-            // DllMain (ntoskrnl resolves the Vid* exports by name).
-            entry: "___ImageBase".into(),
-            image_base: 0x0001_0000,
+            // ENTRYPOINT 0: no DllMain (ntoskrnl resolves the Vid* exports by
+            // name). Entry = lld's image-base symbol, arch-decorated.
+            entry: entry.into(),
+            image_base,
         });
 }

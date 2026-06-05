@@ -33,6 +33,26 @@ use ntkrnl_sys::base::{
 const GDITAG_LDEV: u32 = u32::from_le_bytes(*b"Ldev");
 const GDITAG_DEVMODE: u32 = u32::from_le_bytes(*b"Dmde");
 
+// The original translation built every wide-string arg as a BYTE literal cast
+// to `*const u16` (`b"...".as_ptr() as *const u16`) — 1 byte/char reinterpreted
+// as 2-byte WCHARs yields garbage (e.g. `\S` → 0x535C instead of L'\'). That
+// corrupted the driver path so the display driver never loaded → NtUserInitialize
+// 0xc0000001. This macro materializes a proper NUL-terminated UTF-16 static
+// (ASCII source) and returns its `*const u16`. (Same shape as freetype.rs.)
+macro_rules! wide_str {
+    ($s:literal) => {{
+        const N: usize = $s.len() + 1;
+        static W: [u16; N] = {
+            let b = $s.as_bytes();
+            let mut w = [0u16; N];
+            let mut i = 0;
+            while i < b.len() { w[i] = b[i] as u16; i += 1; }
+            w
+        };
+        W.as_ptr()
+    }};
+}
+
 // ntoskrnl provides __ImageBase as a linker symbol pointing at this DLL's
 // PE base. Rust sees it as an extern static — `&__ImageBase` then yields
 // the base address, mirroring the C `&__ImageBase` idiom.
@@ -226,7 +246,7 @@ pub unsafe extern "system" fn InitLDEVImpl() -> NTSTATUS {
     (*gpldevWin32k).pGdiDriverInfo = gpldevWin32k.add(1) as PSYSTEM_GDI_DRIVER_INFORMATION;
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!((*(*gpldevWin32k).pGdiDriverInfo).DriverName),
-        b"\\SystemRoot\\System32\\win32k.sys\0".as_ptr() as *const u16,
+        wide_str!("\\SystemRoot\\System32\\win32k.sys"),
     );
     (*(*gpldevWin32k).pGdiDriverInfo).ImageAddress = &__ImageBase as *const _ as PVOID;
     (*(*gpldevWin32k).pGdiDriverInfo).SectionPointer = core::ptr::null_mut();
@@ -459,13 +479,13 @@ pub unsafe extern "system" fn LDEVOBJ_pLoadDriver(
         if acw_bytes > u16::MAX as usize { u16::MAX } else { acw_bytes as u16 },
     );
 
-    RtlAppendUnicodeToString(core::ptr::addr_of_mut!(strDriverName), b"\\SystemRoot\\System32\\\0".as_ptr() as *const u16);
+    RtlAppendUnicodeToString(core::ptr::addr_of_mut!(strDriverName), wide_str!("\\SystemRoot\\System32\\"));
 
     cwcLength = wcslen(pwszDriverName);
 
     pwsz = pwszDriverName.add(cwcLength);
     while pwsz > pwszDriverName {
-        if (*pwsz == '\\' as u16) && (_wcsnicmp(pwsz, b"\\system32\\\0".as_ptr() as *const u16, 10) == 0) {
+        if (*pwsz == '\\' as u16) && (_wcsnicmp(pwsz, wide_str!("\\system32\\"), 10) == 0) {
             pwsz = pwsz.add(10);
             break;
         }
@@ -475,9 +495,9 @@ pub unsafe extern "system" fn LDEVOBJ_pLoadDriver(
     RtlAppendUnicodeToString(core::ptr::addr_of_mut!(strDriverName), pwsz);
 
     if (cwcLength < 4) ||
-       ((_wcsnicmp(pwszDriverName.add(cwcLength - 4), b".dll\0".as_ptr() as *const u16, 4) != 0) &&
-        (_wcsnicmp(pwszDriverName.add(cwcLength - 4), b".sys\0".as_ptr() as *const u16, 4) != 0)) {
-        RtlAppendUnicodeToString(core::ptr::addr_of_mut!(strDriverName), b".dll\0".as_ptr() as *const u16);
+       ((_wcsnicmp(pwszDriverName.add(cwcLength - 4), wide_str!(".dll"), 4) != 0) &&
+        (_wcsnicmp(pwszDriverName.add(cwcLength - 4), wide_str!(".sys"), 4) != 0)) {
+        RtlAppendUnicodeToString(core::ptr::addr_of_mut!(strDriverName), wide_str!(".dll"));
     }
 
     EngAcquireSemaphore(ghsemLDEVList);
