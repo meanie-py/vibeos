@@ -85,8 +85,8 @@ fn main() {
     libs.extend_from_slice(&[
         // libuefifreeldr_common.a retired — it was asm-only (all freeldr C is
         // Rust now), and that asm is assembled directly above. The freeldr-rust
-        // body comes from libfreeldr_rust_uefi.a (already listed).
-        "boot/freeldr/freeldr/libfreeldr_rust_uefi.a",
+        // body is now a DIRECT cargo build (.rust_staticlib() below), no longer
+        // a cmake-built libfreeldr_rust_uefi.a reused here.
         "sdk/lib/cportlib/libcportlib.a",
         // cport.c is Rust now (cohabitation); libcportlib.a is just the stub,
         // the Cp* serial symbols come from libcport_rust.a.
@@ -99,12 +99,28 @@ fn main() {
     ]);
 
     let mut linker = Linker::new(target_json)
-        // No .rust_staticlib(): reuse the cmake-built libfreeldr_rust_uefi.a
-        // (identical codegen + carries the uefi/uefildr-rust-entry features).
+        // freeldr-rust body built DIRECTLY by reactos-link (was the cmake
+        // custom_command → libfreeldr_rust_uefi.a). .rust_user_target() builds
+        // it on the STANDARD target (i686/x86_64-pc-windows-gnu / aarch64-
+        // gnullvm, stable, no build-std) exactly as the custom_command did —
+        // NOT the x86-softfloat kernel json, whose float ABI would diverge.
+        .rust_staticlib("freeldr-rust")
+        .rust_features(&["uefi", "uefildr-rust-entry"])
+        .rust_user_target()
+        // cmboot-rust is a path-dep of freeldr-rust — watch it so an edit there
+        // re-runs build.rs and rebuilds the body (freeldr-rust's own src is
+        // tracked by build_rust_crate).
+        .rust_watch(&["cmboot-rust/src"])
         .static_libs(&libs)
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
-    // freeldr runs pre-boot with SSE not yet enabled — an emitted movaps would
-    // #UD. Match uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).
+    // i386 freeldr runs in protected mode before CR4.OSFXSR — no SSE. Build
+    // freeldr-rust with -sse,-sse2 (the retired custom_command's i386 RUSTFLAGS;
+    // amd64/arm64 ran with empty RUSTFLAGS → SSE on, as in long mode).
+    if arch == "x86" {
+        linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
+    }
+    // strsafe_shim.c: an emitted movaps pre-boot would #UD. Match
+    // uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).
     if arch == "x86" || arch == "x86_64" {
         linker = linker.c_shim_flags(&["-mno-sse"]);
     }

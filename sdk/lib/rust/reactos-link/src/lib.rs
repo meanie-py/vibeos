@@ -233,6 +233,26 @@ pub struct Linker {
     arch: ArchCfg,
     rust_crate: Option<String>,
     rust_features: Vec<String>,
+    /// Force the `rust_staticlib` main body to build the STANDARD user-mode
+    /// target (`arch.rust_user_target`, stable, NO build-std) even for a
+    /// kernel-ish module kind (EfiApplication/NativeExe). FreeLDR's body
+    /// (freeldr-rust) is built exactly like cmake did it — standard target,
+    /// not the `x86-softfloat` kernel json — because the pre-boot loader has
+    /// SSE disabled and the kernel json's softfloat ABI would diverge from the
+    /// hardfloat+`-sse,-sse2` codegen the working binary ships.
+    rust_user_target: bool,
+    /// `RUSTFLAGS` for the `rust_staticlib` main-body cargo build. Mirrors a
+    /// cmake `RUSTFLAGS=…` env on the custom_command — e.g. freeldr-rust's i386
+    /// `-C target-feature=-sse,-sse2`. Only consulted in the `kernel=false`
+    /// (user-target) build path; `None` → no override.
+    rust_build_rustflags: Option<String>,
+    /// Extra source dirs (repo-relative) to `rerun-if-changed`, beyond each
+    /// rust crate's own dir (which build_rust_crate tracks). For path-DEPS of
+    /// the body crate living in OTHER workspace crates — e.g. freeldr-rust
+    /// depends on cmboot-rust, so editing cmboot-rust must also re-run build.rs
+    /// to rebuild the body. cmake's EXTRA_DEPENDS only re-invokes cargo; this
+    /// makes cargo actually re-run build.rs.
+    rust_watch_dirs: Vec<String>,
     /// Extra sibling Rust staticlib crates (crate, features, default_features)
     /// cargo-built alongside the main one — Tier-B of the ntdll cargo-drive
     /// (replaces reuse of cmake-built `librtl_rust.a`/`libutf8.a`/… with a
@@ -303,6 +323,9 @@ impl Linker {
             arch,
             rust_crate: None,
             rust_features: Vec::new(),
+            rust_user_target: false,
+            rust_build_rustflags: None,
+            rust_watch_dirs: Vec::new(),
             rust_libs: Vec::new(),
             c_shims: Vec::new(),
             c_shim_flags: Vec::new(),
@@ -333,6 +356,34 @@ impl Linker {
     /// builds ntdll-rust with `["vista"]` (DllMain/LdrpHeap/ldrnotify).
     pub fn rust_features(mut self, feats: &[&str]) -> Self {
         self.rust_features = feats.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Build the `rust_staticlib` main body with the STANDARD user-mode target
+    /// (stable, no build-std) instead of the kernel json — see
+    /// `rust_user_target` field. Used by the freeldr loaders so freeldr-rust is
+    /// built byte-for-byte as cmake did (the custom_command this replaces ran
+    /// `cargo build --target i686-pc-windows-gnu`, NOT the kernel json).
+    pub fn rust_user_target(mut self) -> Self {
+        self.rust_user_target = true;
+        self
+    }
+
+    /// `RUSTFLAGS` for the `rust_staticlib` main-body build (user-target path).
+    /// Mirrors the cmake custom_command's `RUSTFLAGS=…` env — e.g. freeldr-rust
+    /// i386 `-C target-feature=-sse,-sse2` (pre-boot has no SSE). Caller sets it
+    /// per-arch. Chainable.
+    pub fn rust_build_rustflags(mut self, flags: &str) -> Self {
+        self.rust_build_rustflags = Some(flags.to_string());
+        self
+    }
+
+    /// Emit `rerun-if-changed` for extra repo-relative source dirs (path-deps
+    /// of the body crate that live in other workspace crates, e.g.
+    /// `cmboot-rust/src`). See `rust_watch_dirs`. Chainable.
+    pub fn rust_watch(mut self, dirs: &[&str]) -> Self {
+        self.rust_watch_dirs
+            .extend(dirs.iter().map(|s| format!("sdk/lib/rust/{s}")));
         self
     }
 
@@ -479,6 +530,11 @@ impl Linker {
             .expect("target json stem")
             .to_string();
 
+        // Extra watched dirs (body-crate path-deps in other workspace crates).
+        for dir in &self.rust_watch_dirs {
+            println!("cargo:rerun-if-changed={}", self.repo_root.join(dir).display());
+        }
+
         // ---- Rust staticlib(s) (per-crate target dir) ----------------
         // A Win32Dll is USER-mode: its main body crate AND its rust_lib
         // siblings build the STANDARD user-mode target (hardfloat, precompiled
@@ -488,17 +544,27 @@ impl Linker {
         // corrupts the by-value f64 ABI and crashes boot. Kernel modules
         // (ntoskrnl/HAL/uefildr) build the custom kernel json with `-Z
         // build-std` on nightly. The main crate goes first, then siblings.
-        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. });
+        // `.rust_user_target()` (the freeldr loaders) forces the user-target
+        // path even for an EfiApplication/NativeExe — freeldr-rust is built
+        // standard-target + `-sse,-sse2` exactly as cmake's custom_command did.
+        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. }) && !self.rust_user_target;
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
             let feats: Vec<&str> = self.rust_features.iter().map(|s| s.as_str()).collect();
-            self.build_rust_crate(crate_name, &feats, true, &target_stem, kernel_rust)
+            self.build_rust_crate(
+                crate_name,
+                &feats,
+                true,
+                &target_stem,
+                kernel_rust,
+                self.rust_build_rustflags.as_deref(),
+            )
         });
         let sibling_rust_a: Vec<PathBuf> = self
             .rust_libs
             .iter()
             .map(|(crate_name, feats, default_features)| {
                 let f: Vec<&str> = feats.iter().map(|s| s.as_str()).collect();
-                self.build_rust_crate(crate_name, &f, *default_features, &target_stem, kernel_rust)
+                self.build_rust_crate(crate_name, &f, *default_features, &target_stem, kernel_rust, None)
             })
             .collect();
 
@@ -803,9 +869,17 @@ impl Linker {
         default_features: bool,
         target_stem: &str,
         kernel: bool,
+        rustflags: Option<&str>,
     ) -> PathBuf {
         let lib_file = format!("lib{}.a", crate_name.replace('-', "_"));
         let workspace = self.repo_root.join("sdk/lib/rust");
+        // Track the crate's own sources so an edit re-runs THIS build.rs, which
+        // re-invokes the inner `cargo build -p <crate>` below. Without it cargo
+        // may skip build.rs after a body-crate edit and relink a STALE .a (the
+        // libcntpr.cmake staleness class). rerun-if-changed on a dir recurses.
+        let crate_dir = workspace.join(crate_name);
+        println!("cargo:rerun-if-changed={}", crate_dir.join("src").display());
+        println!("cargo:rerun-if-changed={}", crate_dir.join("Cargo.toml").display());
         let tgt_dir = workspace.join(format!(
             "target/{}-{}-rustlib",
             self.pkg_name,
@@ -883,7 +957,13 @@ impl Linker {
             // the RUSTFLAGS scrub above dropped the inherited copy and
             // .cargo/config.toml isn't found from build_dir, so set it here.
             // See memory feedback_cnt_rust_no_prepopulate_amd64_arm64.
-            if crate_name == "cnt-rust-lib" {
+            //
+            // An explicit `rustflags` (the main body's .rust_build_rustflags(),
+            // e.g. freeldr-rust i386 `-sse,-sse2`) wins; otherwise fall back to
+            // the cnt-rust-lib keyed default.
+            if let Some(rf) = rustflags {
+                cmd.env("RUSTFLAGS", rf);
+            } else if crate_name == "cnt-rust-lib" {
                 let rf = if self.arch.name == "i386" {
                     "-C target-feature=-sse,-sse2 -C no-prepopulate-passes"
                 } else {
