@@ -524,3 +524,343 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
     }
     r
 }
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 2 — exp / log / log10 / pow / fmod (f64)
+//
+// Faithful ports of the portable kernel-CRT C used on BOTH amd64-llvm-mingw
+// and arm64 (`math/arm64/{exp,log,log10,pow,fmod}.c`). `exp`/`log`/`fmod` are
+// real fdlibm-style implementations; `log10`/`pow` are the upstream's
+// deliberate rough stubs (their `FIXME: general case`), translated verbatim
+// so the difftest stays bit-exact against the C reference. amd64/arm64 only
+// (the `float` feature) — i386 keeps its x87 `*_asm.s` (no-SSE: an `f64`
+// return is a hard ABI error). All bitwise; the variable-count shifts use
+// `wrapping_sh*` to mirror x86's count-masking (the C is technically UB on a
+// >=64 count but the host reference compiles to masked `shr`/`shl`).
+// ===========================================================================
+
+/// `double exp(double)` — range reduction + degree-5 rational approximation.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn exp(x: f64) -> f64 {
+    const LN2_HI: f64 = 6.93147180369123816490e-01;
+    const LN2_LO: f64 = 1.90821492927058500170e-10;
+    const INV_LN2: f64 = 1.44269504088896338700e+00;
+    const P1: f64 = 1.66666666666666019037e-01;
+    const P2: f64 = -2.77777777770155933842e-03;
+    const P3: f64 = 6.61375632143793436117e-05;
+    const P4: f64 = -1.65339022054652515390e-06;
+    const P5: f64 = 4.13813679705723846039e-08;
+
+    let mut bits = x.to_bits();
+    let hx = ((bits >> 32) as u32) & 0x7FFF_FFFF;
+
+    // Filter special cases: |x| >= 709.78...
+    if hx >= 0x4086_2E42 {
+        if hx >= 0x7FF0_0000 {
+            // NaN or Inf
+            let lx = (bits & 0xFFFF_FFFF) as u32;
+            if ((hx & 0xF_FFFF) | lx) != 0 {
+                return x; // NaN
+            }
+            return if (bits >> 63) != 0 { 0.0 } else { x }; // exp(-inf)=0, exp(inf)=inf
+        }
+        if x > 709.782712893383973096 {
+            return f64::from_bits(0x7FF0_0000_0000_0000); // overflow → +inf
+        }
+        if x < -745.13321910194110842 {
+            return 0.0; // underflow
+        }
+    }
+
+    // Argument reduction: r = x - k*ln2, |r| <= ln2/2
+    let r: f64;
+    let k: i32;
+    if hx > 0x3FD6_2E42 {
+        // |x| > 0.5*ln2
+        if hx < 0x3FF0_A2B2 {
+            // |x| < 1.5*ln2
+            if (bits >> 63) == 0 {
+                let hi = x - LN2_HI;
+                let lo = LN2_LO;
+                k = 1;
+                r = hi - lo;
+            } else {
+                let hi = x + LN2_HI;
+                let lo = -LN2_LO;
+                k = -1;
+                r = hi - lo;
+            }
+        } else {
+            k = (INV_LN2 * x + (if (bits >> 63) != 0 { -0.5 } else { 0.5 })) as i32;
+            let hi = x - (k as f64) * LN2_HI;
+            let lo = (k as f64) * LN2_LO;
+            r = hi - lo;
+        }
+    } else if hx < 0x3E30_0000 {
+        // |x| < 2^-28
+        return 1.0 + x;
+    } else {
+        k = 0;
+        r = x;
+    }
+
+    // exp(r) via rational approximation
+    let t = r * r;
+    let c = r - t * (P1 + t * (P2 + t * (P3 + t * (P4 + t * P5))));
+    let y = 1.0 - ((r * c) / (c - 2.0) - r);
+
+    // Scale by 2^k
+    if k == 0 {
+        return y;
+    }
+    if k > 0 && k < 1024 {
+        bits = ((0x3FF + k) as u64) << 52;
+        y * f64::from_bits(bits)
+    } else if k < 0 && k > -1023 {
+        bits = ((0x3FF + k) as u64) << 52;
+        y * f64::from_bits(bits)
+    } else {
+        // Extreme exponents
+        bits = y.to_bits().wrapping_add((k as i64 as u64) << 52);
+        f64::from_bits(bits)
+    }
+}
+
+/// `double log(double)` — natural logarithm, fdlibm-style.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn log(x: f64) -> f64 {
+    const LN2_HI: f64 = 6.93147180369123816490e-01;
+    const LN2_LO: f64 = 1.90821492927058500170e-10;
+    const LG1: f64 = 6.666666666666735130e-01;
+    const LG2: f64 = 3.999999999940941908e-01;
+    const LG3: f64 = 2.857142874366239149e-01;
+    const LG4: f64 = 2.222219843214978396e-01;
+    const LG5: f64 = 1.818357216161805012e-01;
+    const LG6: f64 = 1.531383769920937332e-01;
+    const LG7: f64 = 1.479819860511658591e-01;
+    const TWO54: f64 = f64::from_bits(0x4350_0000_0000_0000); // 0x1p54
+
+    let mut xv = x;
+    let mut bits = xv.to_bits();
+    let mut hx = (bits >> 32) as i32;
+    let lx = (bits & 0xFFFF_FFFF) as u32;
+
+    let mut k: i32 = 0;
+
+    // x < 2^-1022 (subnormal or negative)
+    if hx < 0x0010_0000 {
+        if (hx & 0x7FFF_FFFF) == 0 && lx == 0 {
+            return -1.0 / 0.0; // log(0) = -inf
+        }
+        if hx < 0 {
+            return (xv - xv) / 0.0; // log(negative) = NaN
+        }
+        // Subnormal: normalize
+        k -= 54;
+        xv *= TWO54;
+        bits = xv.to_bits();
+        hx = (bits >> 32) as i32;
+    }
+
+    // Inf or NaN
+    if hx >= 0x7FF0_0000 {
+        return xv + xv;
+    }
+
+    // log(1) = 0 exactly
+    if hx == 0x3FF0_0000 && lx == 0 {
+        return 0.0;
+    }
+
+    // Reduce x to [sqrt(2)/2, sqrt(2)]
+    k += (hx >> 20) - 1023;
+    hx &= 0x000F_FFFF;
+    if hx < 0x6A09E {
+        // < sqrt(2)/2 in high word
+        bits = ((hx as u32 as u64) << 32) | (lx as u64);
+        bits |= 0x3FF0_0000_0000_0000;
+    } else {
+        k += 1;
+        bits = ((hx as u32 as u64) << 32) | (lx as u64);
+        bits |= 0x3FE0_0000_0000_0000;
+    }
+    xv = f64::from_bits(bits);
+
+    let f = xv - 1.0;
+
+    // log(1+f) = f - f^2/2 + ... for small f (|f| < 2^-20)
+    if (0x000F_FFFF & (2 + hx)) < 3 {
+        if f == 0.0 {
+            let dk = k as f64;
+            return dk * LN2_HI + dk * LN2_LO;
+        }
+        let rr = f * f * (0.5 - 0.33333333333333333 * f);
+        let dk = k as f64;
+        return dk * LN2_HI - ((rr - dk * LN2_LO) - f);
+    }
+
+    let s = f / (2.0 + f);
+    let dk = k as f64;
+    let z = s * s;
+    let w = z * z;
+    let t1 = w * (LG2 + w * (LG4 + w * LG6));
+    let t2 = z * (LG1 + w * (LG3 + w * (LG5 + w * LG7)));
+    let rr = t2 + t1;
+    let hfsq = 0.5 * f * f;
+    dk * LN2_HI - ((hfsq - (s * (hfsq + rr) + dk * LN2_LO)) - f)
+}
+
+/// `double log10(double)` — upstream's rough stub (FIXME), verbatim.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn log10(x: f64) -> f64 {
+    if x <= 0.0 {
+        return -1.0e308; // -infinity approximation
+    }
+    let mut result = 0.0f64;
+    let mut temp = x;
+    if temp >= 1.0 {
+        while temp >= 10.0 {
+            temp /= 10.0;
+            result += 1.0;
+        }
+        result += (temp - 1.0) / 9.0;
+    } else {
+        while temp < 1.0 {
+            temp *= 10.0;
+            result -= 1.0;
+        }
+        result += (temp - 1.0) / 9.0;
+    }
+    result
+}
+
+/// `double pow(double, double)` — upstream's integer-exponent stub (FIXME),
+/// verbatim. Non-integer / general case returns 0.0 exactly as the C does.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn pow(base: f64, exponent: f64) -> f64 {
+    let mut result = 1.0f64;
+
+    if exponent == 0.0 {
+        return 1.0;
+    }
+    if base == 0.0 {
+        return 0.0;
+    }
+    if base == 1.0 {
+        return 1.0;
+    }
+
+    let iexp = exponent as i32; // truncate toward zero
+    if (iexp as f64) == exponent && iexp >= 0 {
+        for _ in 0..iexp {
+            result *= base;
+        }
+        return result;
+    }
+    if (iexp as f64) == exponent && iexp < 0 {
+        let iexp = -iexp;
+        for _ in 0..iexp {
+            result *= base;
+        }
+        return 1.0 / result;
+    }
+
+    0.0 // FIXME: general case not implemented (matches C)
+}
+
+/// `double fmod(double, double)` — fdlibm bit-twiddling remainder.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
+    let mut xi = x.to_bits();
+    let mut yi = y.to_bits();
+
+    // Sign of x
+    let sx = xi & 0x8000_0000_0000_0000;
+
+    // Clear signs
+    xi &= 0x7FFF_FFFF_FFFF_FFFF;
+    yi &= 0x7FFF_FFFF_FFFF_FFFF;
+
+    // Special cases
+    if yi == 0 || xi >= 0x7FF0_0000_0000_0000 || yi > 0x7FF0_0000_0000_0000 {
+        return (x * y) / (x * y); // NaN
+    }
+    if xi < yi {
+        return x;
+    }
+
+    // Extract exponents
+    let mut ex = (xi >> 52) as i32;
+    let mut ey = (yi >> 52) as i32;
+
+    // Normalize subnormal x
+    if ex == 0 {
+        let mut i = xi << 12;
+        ex -= 11;
+        while (i >> 63) == 0 {
+            i <<= 1;
+            ex -= 1;
+        }
+        xi = xi.wrapping_shl((1 - ex) as u32);
+        ex = 0;
+    } else {
+        xi &= 0x000F_FFFF_FFFF_FFFF;
+        xi |= 0x0010_0000_0000_0000;
+    }
+
+    // Normalize subnormal y
+    if ey == 0 {
+        let mut i = yi << 12;
+        ey -= 11;
+        while (i >> 63) == 0 {
+            i <<= 1;
+            ey -= 1;
+        }
+        yi = yi.wrapping_shl((1 - ey) as u32);
+        ey = 0;
+    } else {
+        yi &= 0x000F_FFFF_FFFF_FFFF;
+        yi |= 0x0010_0000_0000_0000;
+    }
+
+    // Modular reduction
+    while ex > ey {
+        if xi >= yi {
+            xi -= yi;
+            if xi == 0 {
+                return f64::from_bits(sx);
+            }
+        }
+        xi <<= 1;
+        ex -= 1;
+    }
+
+    if xi >= yi {
+        xi -= yi;
+        if xi == 0 {
+            return f64::from_bits(sx);
+        }
+    }
+
+    // Normalize result
+    while (xi >> 52) == 0 {
+        xi <<= 1;
+        ex -= 1;
+    }
+
+    // Construct result
+    if ex > 0 {
+        xi -= 0x0010_0000_0000_0000;
+        xi |= (ex as u64) << 52;
+    } else {
+        xi = xi.wrapping_shr((1 - ex) as u32);
+    }
+
+    xi |= sx;
+    f64::from_bits(xi)
+}

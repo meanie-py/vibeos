@@ -240,8 +240,20 @@ pub struct Linker {
     /// build-std compiles core/alloc once.
     rust_libs: Vec<(String, Vec<String>, bool)>,
     c_shims: Vec<String>,
+    /// Extra clang flags applied to every `c_shims` compile (on top of
+    /// `apply_base`). Used for module-specific codegen requirements the kernel
+    /// default doesn't carry — e.g. freeldr's `-mno-sse` (the pre-boot
+    /// environment hasn't enabled SSE, so an emitted `movaps` would #UD).
+    c_shim_flags: Vec<String>,
     asm: Vec<String>,
     asm_set: AsmDefineSet,
+    /// Extra `-I` dirs (repo-relative) for the asm compiles. Lets `asm()`
+    /// assemble RAW `.S` files with `#include`s resolved against a MINIMAL set
+    /// of source header dirs (e.g. freeldr's `sdk/include/asm` for asm.inc +
+    /// `boot/freeldr/freeldr/include` for pcbios.h) instead of pre-expanding or
+    /// reproducing the whole module compile env. Empty by default → unchanged
+    /// for pre-expanded-`.s` consumers (hal).
+    asm_include_dirs: Vec<String>,
     resource: Option<String>,
     spec: Option<(String, String)>,
     link_stubs: bool,
@@ -293,8 +305,10 @@ impl Linker {
             rust_features: Vec::new(),
             rust_libs: Vec::new(),
             c_shims: Vec::new(),
+            c_shim_flags: Vec::new(),
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
+            asm_include_dirs: Vec::new(),
             resource: None,
             spec: None,
             link_stubs: false,
@@ -347,12 +361,30 @@ impl Linker {
         self
     }
 
-    /// Pre-expanded asm `.s` blobs (repo-relative; all `#include`s
-    /// resolved out-of-band). Compiled with `set`'s define list, no
-    /// kernel `-I` chain.
+    /// Extra clang flags for the `c_shims` compiles (e.g. freeldr's `-mno-sse`).
+    /// The caller is responsible for arch-validity (don't pass `-mno-sse` on
+    /// aarch64). Chainable; applies to ALL shims in this `c_shims` set.
+    pub fn c_shim_flags(mut self, flags: &[&str]) -> Self {
+        self.c_shim_flags = flags.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Asm sources (repo-relative). Either pre-expanded `.s` blobs (all
+    /// `#include`s resolved out-of-band) OR raw `.S` files whose `#include`s
+    /// resolve against `asm_include_dirs()` — see that method. Compiled with
+    /// `set`'s define list + the arch defines + `__ASM__`.
     pub fn asm(mut self, rels: &[&str], set: AsmDefineSet) -> Self {
         self.asm = rels.iter().map(|s| s.to_string()).collect();
         self.asm_set = set;
+        self
+    }
+
+    /// Extra `-I` dirs (repo-relative) for the `asm()` compiles, so a RAW `.S`
+    /// can `#include` real source headers (asm.inc, pcbios.h, …) directly —
+    /// the MINIMAL set the file actually needs, NOT the module's whole `-I`
+    /// env. Empty by default (pre-expanded `.s` consumers need none). Chainable.
+    pub fn asm_include_dirs(mut self, dirs: &[&str]) -> Self {
+        self.asm_include_dirs = dirs.iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -434,6 +466,19 @@ impl Linker {
         self
     }
 
+    /// Add the kernel asm `#include` search chain to a cc-rs asm build: asm.inc
+    /// (source tree), the generated per-arch `ks*.inc` (build dir), and
+    /// ntoskrnl/include (sysfuncs.h / asmmacro.S / syscalls.inc deps). With it a
+    /// SOURCE `.S` assembles directly via `-x assembler-with-cpp` — no offline
+    /// pre-expansion (the old tools/gen_ntdll_asm.py step). Inert for an
+    /// already-expanded `.s` (no `#include`s to resolve). The build dir is
+    /// guaranteed present (the engine requires `build-<arch>/`).
+    fn add_kernel_asm_includes(&self, b: &mut cc::Build) {
+        b.include(self.repo_root.join("sdk/include/asm"))
+            .include(self.build_dir.join("sdk/include/asm"))
+            .include(self.repo_root.join("ntoskrnl/include"));
+    }
+
     /// Run everything and emit the cargo: link directives.
     pub fn link(self, kind: ModuleKind) {
         let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
@@ -479,6 +524,9 @@ impl Linker {
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
             b.file(&abs).out_dir(self.obj_dir()).flag("-std=gnu2x");
+            for f in &self.c_shim_flags {
+                b.flag(f);
+            }
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }
@@ -501,9 +549,19 @@ impl Linker {
                 .flag("-isystem")
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
-                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
-                .flag("-x")
-                .flag("assembler-with-cpp");
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+            // Caller-configured repo-relative `-I` dirs for RAW `.S` files
+            // (asm.inc, pcbios.h, …; a pre-expanded `.s` sets none of these).
+            for dir in &self.asm_include_dirs {
+                b.flag("-I").flag(self.repo_root.join(dir).to_str().unwrap());
+            }
+            // + the fixed kernel asm `#include` chain (asm.inc + the generated
+            // build-dir ks*.inc + ntoskrnl/include) used by modules that
+            // assemble kernel source `.S` directly (ntdll dispatch.S / ntdll.S).
+            // Additive — extra `-I` is inert when unused (and the build-dir dir
+            // is not expressible via the repo-relative asm_include_dirs above).
+            self.add_kernel_asm_includes(&mut b);
+            b.flag("-x").flag("assembler-with-cpp");
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
         }
@@ -587,10 +645,7 @@ impl Linker {
             for rel in rels {
                 let abs = self.repo_root.join(rel);
                 if !abs.exists() {
-                    panic!(
-                        "missing pre-processed asm: {} — regenerate via tools/gen_ntdll_asm.py",
-                        abs.display()
-                    );
+                    panic!("missing asm source for archive: {}", abs.display());
                 }
                 b.file(&abs);
                 println!("cargo:rerun-if-changed={}", abs.display());
@@ -601,9 +656,9 @@ impl Linker {
                 .flag("-isystem")
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
-                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
-                .flag("-x")
-                .flag("assembler-with-cpp");
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+            self.add_kernel_asm_includes(&mut b);
+            b.flag("-x").flag("assembler-with-cpp");
             let objs = b.compile_intermediates();
             if objs.is_empty() {
                 panic!("asm_archive {name}: cc-rs produced no objects");
@@ -686,6 +741,15 @@ impl Linker {
                     println!("cargo:rustc-link-arg=-Wl,--subsystem,{s}");
                 }
                 println!("cargo:rustc-link-arg=-shared");
+                // KEEP ALL SECTIONS — match cmake's user-mode DLL link, which
+                // does NOT gc-sections ntdll. rustc adds `--gc-sections` by
+                // default for bin targets; without this override it strips
+                // ~196KB of arm64 ntdll code (incl. the CsrPortHeap init path),
+                // leaving CsrAllocateCaptureBuffer reading a null heap →
+                // BUGCHECK 0x6A in smss init. i386/amd64 tolerated the strip;
+                // arm64 did not. --no-gc-sections must come AFTER rustc's own
+                // --gc-sections so it wins (last flag wins in lld).
+                println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
                 (entry, Some(*image_base))
             }
             ModuleKind::EfiApplication { entry, image_base, alignment } => {
@@ -825,6 +889,24 @@ impl Linker {
             // don't apply — cnt-rust's `float` feature needs SSE, and cmake
             // builds it with SSE for this exact reason.
             cmd.current_dir(&self.build_dir);
+            // cnt-rust REQUIRES `-C no-prepopulate-passes` on EVERY arch: its
+            // per-fn cgu-split CRT shims miscompile under LLVM's default
+            // pre-passes (corrupted printf/streamout + mem/string ops). On
+            // arm64 that corrupted ntdll's own DbgPrint (status 0xc000003a
+            // printed as 0xc) + the heap path → smss BUGCHECK 0x6A. i386
+            // additionally disables SSE (cnt is built no-float there). This
+            // mirrors sdk/lib/crt/libcntpr.cmake's per-arch RUSTFLAGS exactly;
+            // the RUSTFLAGS scrub above dropped the inherited copy and
+            // .cargo/config.toml isn't found from build_dir, so set it here.
+            // See memory feedback_cnt_rust_no_prepopulate_amd64_arm64.
+            if crate_name == "cnt-rust-lib" {
+                let rf = if self.arch.name == "i386" {
+                    "-C target-feature=-sse,-sse2 -C no-prepopulate-passes"
+                } else {
+                    "-C no-prepopulate-passes"
+                };
+                cmd.env("RUSTFLAGS", rf);
+            }
         }
         let status = cmd
             .status()

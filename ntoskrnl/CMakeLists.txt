@@ -89,6 +89,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/kernel-rust/Cargo.toml            ${RUST_WORKSPACE_DIR}/ke-macros/src/lib.rs
             ${RUST_WORKSPACE_DIR}/ke-macros/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntoskrnl-rust/src/shim_exports.rs
+            ${RUST_WORKSPACE_DIR}/cmboot-rust/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/cmboot-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/mod.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/se.rs
             ${RUST_WORKSPACE_DIR}/ntkrnl-sys/src/inline/common.rs

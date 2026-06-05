@@ -191,6 +191,23 @@ elseif(ARCH STREQUAL "arm64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 2): exp/log/log10/pow/fmod → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its x87 *_asm.s). These are the SAME
+# portable math/arm64/*.c used on both amd64-llvm-mingw and arm64 (see
+# math.cmake: the USE_LLVM_MINGW amd64 branch and the arm64 branch both
+# pull them into LIBCNTPR_MATH_SOURCE → LIBCNTPR_SOURCE). exp/log/fmod are
+# real algorithms; log10/pow are the upstream's rough printf stubs — all
+# faithfully translated and difftest-pinned bit-exact against the C.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/exp.c
+        math/arm64/log.c
+        math/arm64/log10.c
+        math/arm64/pow.c
+        math/arm64/fmod.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

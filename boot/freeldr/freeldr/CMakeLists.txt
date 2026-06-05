@@ -85,12 +85,16 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     # ui/video.c    # replaced by Rust (freeldr-rust/src/video.rs)
     )
 
-list(APPEND FREELDR_NTLDR_SOURCE
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c)
+list(APPEND FREELDR_NTLDR_SOURCE)
+    # cmboot.c → Rust (sdk/lib/rust/cmboot-rust), linked via freeldr-rust's
+    # `uefi` feature. It is ntoskrnl/config/cmboot.c — "shared by both the
+    # kernel and the bootloader" per its own header — so the kernel and the
+    # loaders now link the SAME shared Rust crate (cmboot-rust) instead of
+    # compiling the C three times. cmboot_shims (freeldr-rust) supplies the
+    # loader-local InitSafeBootMode/CMTRACE/IS_NULL_TERMINATED.
+    # ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
     # ntldr/conversion.c  # replaced by Rust (freeldr-rust/src/conversion.rs)
-    # winldr kernel-handoff unit → Rust (freeldr-rust). cmboot.c kept (it
-    # is ntoskrnl/config/cmboot.c — shared kernel src, not a freeldr file;
-    # registry.rs externs it). Cohabitation: .c kept on disk.
+    # winldr kernel-handoff unit → Rust (freeldr-rust).
     # ntldr/registry.c    # replaced by Rust (freeldr-rust/src/registry.rs)
     # ntldr/winldr.c      # replaced by Rust (freeldr-rust/src/winldr.rs)
     # ntldr/wlmemory.c    # replaced by Rust (freeldr-rust/src/wlmemory.rs)
@@ -98,8 +102,10 @@ list(APPEND FREELDR_NTLDR_SOURCE
 
 if(ARCH STREQUAL "i386")
 
-    list(APPEND FREELDR_COMMON_ASM_SOURCE
-        arch/i386/i386trap.S)
+    # i386trap.S now assembled by reactos-link from uefildr-cargo's .asm()
+    # (BIOS freeldr.sys was pruned, so uefildr was the only consumer).
+    list(APPEND FREELDR_COMMON_ASM_SOURCE)
+        # arch/i386/i386trap.S
         # arch/i386/linux.S
 
     # setup/legacy unit → Rust (freeldr-rust: i386bug.rs/headless.rs).
@@ -110,8 +116,9 @@ if(ARCH STREQUAL "i386")
         # ntldr/arch/i386/winldr.c  # replaced by Rust (freeldr-rust/src/winldr_i386.rs)
 
 elseif(ARCH STREQUAL "amd64")
-    list(APPEND FREELDR_COMMON_ASM_SOURCE
-        arch/amd64/misc.S)
+    # misc.S now assembled by reactos-link from uefildr-cargo's .asm().
+    list(APPEND FREELDR_COMMON_ASM_SOURCE)
+        # arch/amd64/misc.S
         # arch/amd64/linux.S
 
     # setup/legacy unit → Rust (freeldr-rust: i386bug.rs).
@@ -176,9 +183,16 @@ endif()
 # (cost a "MachInitializeBootDevices undefined" cold-link false alarm 2026-05).
 file(GLOB_RECURSE FREELDR_RUST_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/*.rs)
+# cmboot-rust is a path-dependency of freeldr-rust (the shared CM boot-init
+# crate, linked via the uefi/rosload features) — glob it too so editing it
+# re-triggers the cargo rebuild, like FREELDR_RUST_SOURCES does for freeldr-rust.
+file(GLOB_RECURSE FREELDR_CMBOOT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/cmboot-rust/src/*.rs)
 set(FREELDR_RUST_DEPS
     ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-    ${FREELDR_RUST_SOURCES})
+    ${FREELDR_RUST_WORKSPACE_DIR}/cmboot-rust/Cargo.toml
+    ${FREELDR_RUST_SOURCES}
+    ${FREELDR_CMBOOT_RUST_SOURCES})
 
 set(FREELDR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust.a")
 add_custom_command(

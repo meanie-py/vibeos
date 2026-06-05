@@ -33,105 +33,17 @@ add_library(rtl_um OBJECT
 target_link_libraries(rtl_um apisets ${PSEH_LIB})
 add_dependencies(rtl_um psdk)
 
-# --- Rust cohabitation (ntdll-rust, ntdll.dll proper) ---------------
-# Builds ntdll-rust with DEFAULT features (NO `vista` — excludes nt_0600's
-# DllMain/LdrpHeap, which belong to ntdll_vista.dll). Provides the rtl_um
-# translations (rtl/uilist.rs, …). Its own rust-target dir, distinct from
-# nt_0600's vista build → a separate libntdll_rust.a. Mirrors the csrss/
-# csrsrv dual-archive + sdk/lib/rtl cargo→.a pattern. The .c stay on disk.
-# See docs/engineering/ntdll-translation-audit.md (Phase 2).
-set(NTDLL_RUST_WS "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(NTDLL_RUST_TGTDIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
-if(ARCH STREQUAL "i386")
-    set(NTDLL_RUST_TGT "i686-pc-windows-gnu")
-    set(NTDLL_RUST_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
-elseif(ARCH STREQUAL "amd64")
-    set(NTDLL_RUST_TGT "x86_64-pc-windows-gnu")
-    set(NTDLL_RUST_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(NTDLL_RUST_TGT "aarch64-pc-windows-gnullvm")
-    set(NTDLL_RUST_ENV "")
-endif()
-set(NTDLL_RUST_MAIN_LIB "${CMAKE_CURRENT_BINARY_DIR}/libntdll_rust.a")
-add_custom_command(
-    OUTPUT ${NTDLL_RUST_MAIN_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${NTDLL_RUST_TGTDIR} ${NTDLL_RUST_ENV}
-        cargo build --release --target ${NTDLL_RUST_TGT}
-            -p ntdll-rust
-            --manifest-path ${NTDLL_RUST_WS}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${NTDLL_RUST_TGTDIR}/${NTDLL_RUST_TGT}/release/libntdll_rust.a
-        ${NTDLL_RUST_MAIN_LIB}
-    DEPENDS
-        ${NTDLL_RUST_WS}/ntdll-rust/src/lib.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/mod.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/uilist.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/version.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/rtl/libsupp.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/etw/mod.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/etw/trace.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/mod.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/dbg/dbgui.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/mod.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrpe.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrutils.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrinit.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/ldrapi.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/ldr/verifier.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/dispatch/mod.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/mod.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/mod.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/src/nt_0600/ldr/ldrnotify.rs
-        ${NTDLL_RUST_WS}/ntdll-rust/Cargo.toml
-        ${NTDLL_RUST_WS}/ntdll-sys/src/lib.rs
-    COMMENT "Building ntdll-rust (${NTDLL_RUST_TGT}, default features) for ntdll.dll"
-    VERBATIM)
-add_custom_target(ntdll_rust_main_lib DEPENDS ${NTDLL_RUST_MAIN_LIB})
-# --------------------------------------------------------------------
+# NOTE: the cmake custom_commands that used to build libntdll_rust.a (ntdll-rust,
+# default features) and libcsrlib_rust.a (smss-csrss-rust csrlib_only) for the
+# old cmake ntdll link were REMOVED when ntdll.dll graduated to the cargo-driven
+# link (add_cargo_module below) — ntdll-cargo/build.rs now compiles those crates
+# itself via reactos-link. rtl_um (above) + etwtrace (below) stay: they're stub
+# OBJECT/static libs still referenced OUTSIDE ntdll (rtl_unittest links rtl_um;
+# advapi32 links etwtrace at DLL_EXPORT_VERSION>=0x600).
 
-# --- Rust cohabitation (smss-csrss-rust, csrlib_only) ---------------
-# csrlib's 16 client CSR exports (api.c/capture.c/connect.c, commented
-# out in subsystems/csr/csrlib/CMakeLists.txt) now come from a LEAN
-# `csrlib_only` build of smss-csrss-rust — ONLY the csrlib module, NO
-# csrsrv server runtime and NO csrsrv data globals (csrlib supplies its
-# own client-side `CsrApiPort`, mirroring the C connect.c). Its own
-# target dir (separate from ntdll-rust above) → a distinct
-# libcsrlib_rust.a. Mirrors csrsrv.dll's cargo→.a cohab. The .c stay on
-# disk. See project_smlib_csrlib_client_flip_deferred (landed 2026-06-02)
-# + docs/engineering/ntdll-translation-audit.md.
-set(NTDLL_CSRLIB_RUST_TGTDIR "${CMAKE_CURRENT_BINARY_DIR}/csrlib-rust-target")
-set(NTDLL_CSRLIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcsrlib_rust.a")
-add_custom_command(
-    OUTPUT ${NTDLL_CSRLIB_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${NTDLL_CSRLIB_RUST_TGTDIR} ${NTDLL_RUST_ENV}
-        cargo build --release --target ${NTDLL_RUST_TGT}
-            -p smss-csrss-rust
-            --no-default-features --features csrlib_only,ntddi_ws03
-            --manifest-path ${NTDLL_RUST_WS}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${NTDLL_CSRLIB_RUST_TGTDIR}/${NTDLL_RUST_TGT}/release/libsmss_csrss_rust.a
-        ${NTDLL_CSRLIB_RUST_LIB}
-    DEPENDS
-        ${NTDLL_RUST_WS}/smss-csrss-rust/src/lib.rs
-        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/mod.rs
-        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/api.rs
-        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/capture.rs
-        ${NTDLL_RUST_WS}/smss-csrss-rust/src/csrlib/connect.rs
-        ${NTDLL_RUST_WS}/smss-csrss-rust/Cargo.toml
-        ${NTDLL_RUST_WS}/ntdll-sys/src/lib.rs
-    COMMENT "Building smss-csrss-rust (csrlib_only, ${NTDLL_RUST_TGT}) for ntdll.dll"
-    VERBATIM)
-add_custom_target(ntdll_csrlib_rust_lib DEPENDS ${NTDLL_CSRLIB_RUST_LIB})
-# --------------------------------------------------------------------
-
-# On NT6+ this is used by advapi32 (only linked at DLL_EXPORT_VERSION>=0x600;
-# at 0x502 — our whole build matrix — etwtrace is linked ONLY into ntdll).
-# etw/trace.c replaced by Rust (ntdll-rust/src/etw/trace.rs); the Etw* exports
-# now come from libntdll_rust.a (linked into ntdll below). The stub keeps the
-# library target valid. The .c stays on disk. See etw/etwtrace_rust_stub.c.
+# etwtrace: stub kept for advapi32 (links it at DLL_EXPORT_VERSION>=0x600). The
+# real Etw* exports live in ntdll (etw/trace.c → ntdll-rust/src/etw/trace.rs).
+# etw/trace.c stays on disk. See etw/etwtrace_rust_stub.c.
 add_library(etwtrace etw/etwtrace_rust_stub.c)
 target_link_libraries(etwtrace ${PSEH_LIB})
 add_dependencies(etwtrace psdk)
@@ -179,40 +91,27 @@ add_asm_files(ntdll_asm ${ASM_SOURCE})
 list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/ntdll_stubs.c)
 
-add_library(ntdll MODULE
-    ${SOURCE}
-    ${ntdll_asm}
-    ${PCH_SKIP_SOURCE}
-    def/ntdll.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/ntdll.def)
-
-set_module_type(ntdll win32dll ENTRYPOINT 0)
-set_target_properties(ntdll PROPERTIES C_STANDARD 23)
-#############################################
-## HACK FOR MSVC COMPILATION WITH win32dll ##
-set_subsystem(ntdll console)
-################# END  HACK #################
-
-target_link_libraries(ntdll ntdll_vista_static etwtrace csrlib rtl rtl_um rtl_vista ntdllsys libcntpr setjmp uuid ${PSEH_LIB} ${NTDLL_RUST_MAIN_LIB} ${NTDLL_CSRLIB_RUST_LIB})
-# Rust .a provides the rtl_um symbols whose .c are commented out
-# (RtlConvertUiListToApiList, …); --allow-multiple-definition covers the
-# panic_handler/eh_personality overlap with librtl's Rust and the cohab
-# swap-in window (lld first-match). libcsrlib_rust.a likewise provides the
-# 16 Csr* client exports (csrlib's .c commented out). add_dependencies
-# forces both cargo builds.
-add_dependencies(ntdll ntdll_rust_main_lib ntdll_csrlib_rust_lib)
-target_link_options(ntdll PRIVATE "-Wl,--allow-multiple-definition")
-if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
-    target_link_libraries(ntdll cryptlib)
-endif()
-
-if (STACK_PROTECTOR)
-    target_link_libraries(ntdll gcc_ssp_nt)
-endif()
-
-add_pch(ntdll include/ntdll.h "${PCH_SKIP_SOURCE}")
-add_dependencies(ntdll ntstatus asm)
-add_cd_file(TARGET ntdll DESTINATION reactos/system32 NO_CAB FOR all)
+# --- ntdll.dll: link driven by cargo (graduated from cmake add_library) ------
+# ntdll-cargo/build.rs (reactos-link) produces the shipping ntdll.dll:
+#   rust_staticlib(ntdll-rust) + csrlib_only smss-csrss-rust + rtl-rust + utf8
+#   + cnt-rust-lib (Tier-B, cargo-compiled) + the pseh dummy shim + dispatch &
+#   ntdllsys asm (pre-expanded) + spec2def/-stubs + the ntdll .res,
+# reusing only the Tier-C deep-C librtl/librtl_vista/libcntpr.a
+# (rtl/rtl_vista/libcntpr — deferred to the rtl-priv + libcntpr-crt flips).
+# Replaces add_library(ntdll MODULE …) + set_module_type(win32dll ENTRYPOINT 0)
+# + set_subsystem(console) + the target_link_libraries closure + add_pch +
+# add_cd_file. KIND win32dll → i386 lld forwarder fix only (ntdll is user-mode;
+# no native-pefixup). image base / entry (___ImageBase) / console:5.01 subsystem
+# are baked into the build.rs. spec2def(ntdll.dll … ADD_IMPORTLIB) above STAYS —
+# the whole tree imports libntdll. (The old cmake Rust custom_commands that built
+# libntdll_rust.a / libcsrlib_rust.a for this link were removed — the cargo build
+# compiles those crates itself; rtl_um + etwtrace stubs are kept above because
+# rtl_unittest / advapi32 still link them.)
+add_cargo_module(ntdll ntdll-cargo ntdll.dll
+    KIND win32dll
+    # asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
+    # engine needs to assemble dispatch.S + ntoskrnl/ntdll.S from source.
+    EXTRA_DEPENDS rtl rtl_vista libcntpr ntstatus asm)
 
 # Newer VS versions link to _ftol2 / _ftoul2_legacy
 if(MSVC AND ARCH STREQUAL "i386")
