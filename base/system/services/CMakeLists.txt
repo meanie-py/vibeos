@@ -20,7 +20,7 @@ list(APPEND SOURCE
     # lock.c       — replaced by Rust (services-rust/src/lock.rs)
     services_rust_stub.c
     rpcserver.c
-    security.c
+    # security.c   — replaced by Rust (services-rust/src/security.rs)
     services.c
     services.h
     ${CMAKE_CURRENT_BINARY_DIR}/svcctl_s.c)
@@ -59,6 +59,7 @@ add_custom_command(
         ${RUST_WORKSPACE_DIR}/services-rust/src/types.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/lock.rs
         ${RUST_WORKSPACE_DIR}/services-rust/src/controlset.rs
+        ${RUST_WORKSPACE_DIR}/services-rust/src/security.rs
         ${RUST_WORKSPACE_DIR}/services-rust/Cargo.toml
         ${RUST_WORKSPACE_DIR}/winsrv-sys/src/lib.rs
         ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs

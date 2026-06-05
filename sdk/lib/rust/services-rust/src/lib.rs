@@ -25,6 +25,9 @@ pub mod lock;
 // controlset.c — Current/LKG control-set management + boot acceptance.
 pub mod controlset;
 
+// security.c — SCM security descriptors (SIDs/ACLs/SDs, pPipeSD).
+pub mod security;
+
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
 #[panic_handler]

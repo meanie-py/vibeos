@@ -30,6 +30,21 @@ macro_rules! wstr {
 // Predefined registry root handles (winreg.h) — not in winsrv-sys bindgen.
 pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
 
+// winsvc.h service-object access rights (not in winsrv-sys bindgen). The
+// SECURITY_*_RID / DOMAIN_ALIAS_RID_ADMINS / READ_CONTROL / GENERIC_ALL /
+// ACL_REVISION etc. DO come from winsrv-sys — only these SERVICE_* masks are
+// missing.
+pub const SERVICE_QUERY_CONFIG: u32 = 0x0001;
+pub const SERVICE_CHANGE_CONFIG: u32 = 0x0002;
+pub const SERVICE_QUERY_STATUS: u32 = 0x0004;
+pub const SERVICE_ENUMERATE_DEPENDENTS: u32 = 0x0008;
+pub const SERVICE_START: u32 = 0x0010;
+pub const SERVICE_STOP: u32 = 0x0020;
+pub const SERVICE_PAUSE_CONTINUE: u32 = 0x0040;
+pub const SERVICE_INTERROGATE: u32 = 0x0080;
+pub const SERVICE_USER_DEFINED_CONTROL: u32 = 0x0100;
+pub const SERVICE_ALL_ACCESS: u32 = 0x000F01FF; // STANDARD_RIGHTS_REQUIRED | 0x1FF
+
 // services.h
 pub const LOCK_TAG: u32 = 0x4C697041; // 'ApiL'
 
