@@ -93,7 +93,9 @@ fn main() {
         "sdk/lib/cportlib/libcport_rust.a",
         // blcmlib (CM hive boot lib) is now compiled IN-cargo via
         // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
-        "boot/rtl/libblrtl.a",
+        // blrtl (boot RTL leaf) is likewise compiled IN-cargo below: its C via
+        // .c_from_compile_db("blrtl", …) + its per-arch asm via
+        // .asm_archive("blrtl_asm", …), not reused boot/rtl/libblrtl.a.
         "sdk/lib/crt/liblibcntpr.a",
         "sdk/lib/crt/libchkstk.a",
         // cnt-rust-lib (the Rust cnt cohabitation twin) is now a DIRECT cargo
@@ -119,6 +121,39 @@ fn main() {
         "sdk/lib/cmlib/hivesum.c",
         "sdk/lib/cmlib/hivewrt.c",
     ];
+
+    // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
+    // via compile_commands.json replay (target `blrtl` disambiguates the shared
+    // sdk/lib/rtl/*.c sources), per-arch asm via .asm_archive() below. The
+    // common C set; amd64 adds bitmap64/byteswap/mem (blrtl.cmake amd64 branch).
+    let mut blrtl_c: Vec<&str> = vec![
+        "sdk/lib/rtl/bitmap.c",
+        "sdk/lib/rtl/compress.c",
+        "sdk/lib/rtl/crc32.c",
+        "sdk/lib/rtl/image.c",
+        "sdk/lib/rtl/largeint.c",
+        "boot/rtl/nlsboot.c",
+        "sdk/lib/rtl/random.c",
+        "sdk/lib/rtl/unicode.c",
+    ];
+    // blrtl's per-arch asm (asm.inc only — AsmDefineSet::Kernel). i386:
+    // debug_asm/rtlmem/rtlswap; amd64: debug_asm; arm64: none (no ASM_SOURCE).
+    let blrtl_asm: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "sdk/lib/rtl/i386/debug_asm.S",
+            "sdk/lib/rtl/i386/rtlmem.s",
+            "sdk/lib/rtl/i386/rtlswap.S",
+        ],
+        "x86_64" => {
+            blrtl_c.extend_from_slice(&[
+                "sdk/lib/rtl/bitmap64.c",
+                "sdk/lib/rtl/byteswap.c",
+                "sdk/lib/rtl/mem.c",
+            ]);
+            &["sdk/lib/rtl/amd64/debug_asm.S"]
+        }
+        _ => &[],
+    };
 
     // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 builds
     // WITHOUT `float` (no-SSE pre-boot, no by-value f64 ABI); amd64/arm64 with
@@ -146,6 +181,9 @@ fn main() {
         // blcmlib C compiled in-cargo (compile_commands.json replay) — drops the
         // cmake libblcmlib.a reuse. In the C-archive position (before rust libs).
         .c_from_compile_db("blcmlib", BLCMLIB_C)
+        // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
+        // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
+        .c_from_compile_db("blrtl", &blrtl_c)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)
@@ -155,6 +193,12 @@ fn main() {
     // amd64/arm64 ran with empty RUSTFLAGS → SSE on, as in long mode).
     if arch == "x86" {
         linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
+    }
+    // blrtl's per-arch asm as an in-group archive (mirrors blrtl.cmake's
+    // add_asm_files+add_library, where the asm was part of libblrtl.a). arm64
+    // has no blrtl asm — skip (an empty asm_archive would panic).
+    if !blrtl_asm.is_empty() {
+        linker = linker.asm_archive("blrtl_asm", blrtl_asm);
     }
     // strsafe_shim.c: an emitted movaps pre-boot would #UD. Match
     // uefifreeldr_common's -mno-sse (x86 only; invalid on aarch64).

@@ -66,7 +66,9 @@ fn main() {
     libs.extend_from_slice(&[
         // blcmlib (CM hive boot lib) is now compiled IN-cargo via
         // .c_from_compile_db() below (13 C sources, no asm), not reused .a.
-        "boot/rtl/libblrtl.a",
+        // blrtl (boot RTL leaf) is likewise compiled IN-cargo below (C via
+        // .c_from_compile_db("blrtl", …) + asm via .asm_archive("blrtl_asm", …)),
+        // not reused boot/rtl/libblrtl.a.
         "sdk/lib/crt/liblibcntpr.a",
         // cnt-rust-lib is now a DIRECT cargo sibling (.rust_lib() below), not
         // the cmake-copied libcntpr_rust.a.
@@ -91,6 +93,39 @@ fn main() {
         "sdk/lib/cmlib/hivewrt.c",
     ];
 
+    // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
+    // via compile_commands.json replay (target `blrtl` disambiguates the shared
+    // sdk/lib/rtl/*.c sources), per-arch asm via .asm_archive() below. The
+    // common C set; amd64 adds bitmap64/byteswap/mem (blrtl.cmake amd64 branch).
+    let mut blrtl_c: Vec<&str> = vec![
+        "sdk/lib/rtl/bitmap.c",
+        "sdk/lib/rtl/compress.c",
+        "sdk/lib/rtl/crc32.c",
+        "sdk/lib/rtl/image.c",
+        "sdk/lib/rtl/largeint.c",
+        "boot/rtl/nlsboot.c",
+        "sdk/lib/rtl/random.c",
+        "sdk/lib/rtl/unicode.c",
+    ];
+    // blrtl's per-arch asm (asm.inc only — AsmDefineSet::Kernel). i386:
+    // debug_asm/rtlmem/rtlswap; amd64: debug_asm. (rosload is i386/amd64 only.)
+    let blrtl_asm: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "sdk/lib/rtl/i386/debug_asm.S",
+            "sdk/lib/rtl/i386/rtlmem.s",
+            "sdk/lib/rtl/i386/rtlswap.S",
+        ],
+        "x86_64" => {
+            blrtl_c.extend_from_slice(&[
+                "sdk/lib/rtl/bitmap64.c",
+                "sdk/lib/rtl/byteswap.c",
+                "sdk/lib/rtl/mem.c",
+            ]);
+            &["sdk/lib/rtl/amd64/debug_asm.S"]
+        }
+        _ => &[],
+    };
+
     // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 no `float`,
     // amd64 `float`. build_rust_crate's cnt-rust-lib special case supplies the
     // per-arch RUSTFLAGS. Same path ntdll-cargo uses. (rosload is i386/amd64.)
@@ -113,6 +148,9 @@ fn main() {
         // blcmlib C compiled in-cargo (compile_commands.json replay) — drops the
         // cmake libblcmlib.a reuse. C-archive position (before rust libs).
         .c_from_compile_db("blcmlib", BLCMLIB_C)
+        // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
+        // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
+        .c_from_compile_db("blrtl", &blrtl_c)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         .static_libs(&libs)
@@ -138,6 +176,11 @@ fn main() {
         // The C halstub.c always linked the Rust HAL dispatch tables as a
         // source object; as archive members they'd be GC'd. Pull them.
         linker = linker.force_undefined(&["_HalDispatchTable", "_HalPrivateDispatchTable"]);
+    }
+    // blrtl's per-arch asm as an in-group archive (mirrors blrtl.cmake's
+    // add_asm_files+add_library, where the asm lived in libblrtl.a).
+    if !blrtl_asm.is_empty() {
+        linker = linker.asm_archive("blrtl_asm", blrtl_asm);
     }
 
     linker.link(ModuleKind::NativeExe {

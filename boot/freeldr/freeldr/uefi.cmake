@@ -83,10 +83,13 @@ list(APPEND UEFILDR_ARC_SOURCE
 # reactos-link already emits cargo:rerun-if-changed for each static_lib, so once
 # ninja re-invokes cargo, the link actually re-runs.
 set(UEFILDR_EXTRA_DEPENDS
-    cportlib blrtl libcntpr chkstk
+    cportlib libcntpr chkstk
     # blcmlib compiled in-cargo (c_from_compile_db) — file-track its C sources
     # instead of depending on the cmake blcmlib target:
     ${FREELDR_BLCMLIB_SOURCES}
+    # blrtl likewise compiled in-cargo (c_from_compile_db C + asm_archive asm) —
+    # file-track its sources instead of depending on the cmake blrtl target:
+    ${FREELDR_BLRTL_SOURCES}
     # source files reactos-link now compiles directly (file-track so `ninja
     # uefildr` re-invokes cargo when they change — reactos-link's per-input
     # cargo:rerun-if-changed then re-runs the link). uefiasm.S/i386trap.S/misc.S

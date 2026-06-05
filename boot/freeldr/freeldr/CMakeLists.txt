@@ -188,6 +188,30 @@ file(GLOB_RECURSE FREELDR_CNT_RUST_SOURCES CONFIGURE_DEPENDS
 # libblcmlib.a. file-track its C sources so an edit re-invokes the cargo link.
 file(GLOB FREELDR_BLCMLIB_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/sdk/lib/cmlib/*.c)
+# blrtl (boot-loader RTL leaf) is likewise compiled in-cargo: its C via
+# reactos-link c_from_compile_db("blrtl", …) + its per-arch asm via
+# .asm_archive("blrtl_asm", …) — no reused libblrtl.a. The exact source set is
+# boot/rtl/blrtl.cmake (NOT a glob — the rtl dir holds far more than blrtl
+# compiles). All files are listed regardless of arch (the build.rs selects the
+# right ones per arch); file-tracking the unused-on-this-arch ones is harmless.
+set(FREELDR_BLRTL_SOURCES
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/bitmap.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/compress.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/crc32.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/image.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/largeint.c
+    ${CMAKE_SOURCE_DIR}/boot/rtl/nlsboot.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/random.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/unicode.c
+    # amd64-only C (blrtl.cmake amd64 branch):
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/bitmap64.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/byteswap.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/mem.c
+    # per-arch asm (.asm_archive): i386 debug_asm/rtlmem/rtlswap, amd64 debug_asm.
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/debug_asm.S
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/rtlmem.s
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/rtlswap.S
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/amd64/debug_asm.S)
 
 # BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
 # built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. rosload
