@@ -7,7 +7,7 @@
 //! ```ignore
 //! reactos_link::Linker::new("i686-kernel.json")
 //!     .rust_staticlib("hal-rust")
-//!     .asm(&["sdk/lib/rust/hal-cargo/data/asm/hal-v86-i386.s", ..],
+//!     .asm(&["hal/halx86/generic/systimer.S", ..],
 //!          reactos_link::AsmDefineSet::Hal)
 //!     .resource("data/hal-i386.rc.res")
 //!     .spec2def("hal/hal.spec", "hal.dll")
