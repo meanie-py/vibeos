@@ -866,6 +866,37 @@ impl Linker {
         if kernel {
             // build-std needs nightly.
             cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+            // The CRT-class kernel siblings (rtl-rust + cnt-rust-lib) need the
+            // EXACT per-crate RUSTFLAGS cmake gives them, or LLVM's default
+            // pre-pass pipeline miscompiles them (the captures(none)/DCE class
+            // `-C no-prepopulate-passes` guards — e.g. memset DCE'd to a spin,
+            // captures(none) eliding output writes). Without it rtl-rust built
+            // 1.3MB instead of cmake's 6.1MB (over-optimized) and hung the kernel
+            // right after ACPI init. Mirror cmake EXACTLY:
+            //   - rtl-rust    (sdk/lib/rtl/CMakeLists.txt): i386 →
+            //       `-sse,-sse2 -C no-prepopulate-passes`; amd64/arm64 → none.
+            //   - cnt-rust-lib (sdk/lib/crt/libcntpr.cmake): i386 →
+            //       `-sse,-sse2 -C no-prepopulate-passes`; amd64/arm64 →
+            //       `-C no-prepopulate-passes`.
+            // The kernel json is x86-softfloat (ABI only); i386 codegen still
+            // needs SSE OFF, so re-state target-feature=-sse,-sse2 here. An env
+            // RUSTFLAGS OVERRIDES `.cargo/config.toml`'s `[target.i686-kernel]`
+            // copy of that flag, so it must be repeated; scrub any inherited
+            // encoded flags first so this RUSTFLAGS wins. Only these CRT-class
+            // children are affected — the main kernel-rust build (which booted
+            // fine without it) keeps the config-supplied flags.
+            let crt_rustflags: Option<&str> = match (crate_name, self.arch.name) {
+                ("rtl-rust", "i386") | ("cnt-rust-lib", "i386") => {
+                    Some("-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
+                }
+                ("cnt-rust-lib", _) => Some("-C no-prepopulate-passes"),
+                _ => None,
+            };
+            if let Some(rf) = crt_rustflags {
+                cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
+                cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
+                cmd.env("RUSTFLAGS", rf);
+            }
         } else {
             // User-mode siblings build on the rustup DEFAULT (stable) via the
             // `rustup run stable cargo` above. But the outer `cargo +nightly`
