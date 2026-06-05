@@ -3086,6 +3086,10 @@ extern "C" {
     fn ref_floor(x: f64) -> f64;
     fn ref_ceilf(x: f32) -> f32;
     fn ref_floorf(x: f32) -> f32;
+    // Wave MATH-TIERC sub-wave 5
+    fn ref_ldexp(x: f64, n: i32) -> f64;
+    fn ref__logb(x: f64) -> f64;
+    fn ref__logbf(x: f32) -> f32;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3689,6 +3693,41 @@ fn diff_math_ceil_floor() {
     }
 }
 
+// --- Wave MATH-TIERC sub-wave 5: ldexp / _logb / _logbf --------------------
+
+fn diff_math_ldexp_logb() {
+    // ldexp(x,n) = x*2^n (portable stepping); _logb/_logbf extract the
+    // unbiased exponent. Bit-exact vs the genuine .c. Edge bits + random
+    // bit images + (for ldexp) a spread of exponents incl. the clamping
+    // extremes (>1023 / <-1022) and 0/±1.
+    let mut rng = Rng(0x1de4_106b);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..40_000 {
+        b64.push(rng.next());
+    }
+    let ns = [
+        0i32, 1, -1, 52, -52, 1023, -1022, 1024, -1023, 2048, -2048, 3000, -3000, 100, -100,
+    ];
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        for &n in &ns {
+            assert!(
+                same_f64(cabi::ldexp(x, n), unsafe { ref_ldexp(x, n) }),
+                "ldexp {b:#018x} n={n}"
+            );
+        }
+        assert!(same_f64(cabi::_logb(x), unsafe { ref__logb(x) }), "_logb {b:#018x}");
+    }
+    let mut b32 = f32_edge_bits();
+    for _ in 0..100_000 {
+        b32.push(rng.next() as u32);
+    }
+    for &b in &b32 {
+        let x = f32::from_bits(b);
+        assert!(same_f32(cabi::_logbf(x), unsafe { ref__logbf(x) }), "_logbf {b:#010x}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -3782,6 +3821,7 @@ fn main() {
         diff_math_fmod,
         diff_math_tan,
         diff_math_ceil_floor,
+        diff_math_ldexp_logb,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }

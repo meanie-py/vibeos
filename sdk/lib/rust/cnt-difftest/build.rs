@@ -610,6 +610,11 @@ fn main() {
         ("floor", "double ref_floor(double x){return __builtin_floor(x);}".to_string()),
         ("ceilf", "float ref_ceilf(float x){return __builtin_ceilf(x);}".to_string()),
         ("floorf", "float ref_floorf(float x){return __builtin_floorf(x);}".to_string()),
+        // Wave MATH-TIERC sub-wave 5: ldexp = the portable arm64/ldexp.c
+        // (== scalbn stepping); _logb/_logbf = the genuine arm64/logb.c (both
+        // MSVC-name funcs in one TU). Renamed to ref_*; bit-exact.
+        ("ldexp", format!("#include <math.h>\n#define ldexp ref_ldexp\n{}", inc(s("math/arm64/ldexp.c")))),
+        ("logb", format!("#include <math.h>\n#include <float.h>\n#define _logb ref__logb\n#define _logbf ref__logbf\n{}", inc(s("math/arm64/logb.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which

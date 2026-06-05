@@ -997,3 +997,87 @@ pub extern "C" fn ceilf(x: f32) -> f32 {
     i &= !m;
     f32::from_bits(i)
 }
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 5 — ldexp / _logb / _logbf
+//
+// Faithful ports, amd64/arm64 only (the `float` feature; i386 keeps its C).
+// ldexp(x,n) = x*2^n — the portable arm64/ldexp.c (identical stepping to
+// scalbn), applied uniformly (replaces amd64's AMD-libm errno-setting ldexp)
+// per the "give every arch the same thing" directive. _logb/_logbf extract
+// the unbiased binary exponent as a float (MSVC underscore names — both
+// arches' C export `_logb`/`_logbf`). All return f64/f32 by value, so i386
+// (no-SSE, hard ABI error on float return) keeps the C.
+// ===========================================================================
+
+/// `double ldexp(double, int)` — x * 2^n (portable arm64 stepping).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ldexp(x: f64, mut n: i32) -> f64 {
+    if x == 0.0 || n == 0 {
+        return x;
+    }
+    let mut xx = x;
+    if n > 1023 {
+        xx *= f64::from_bits(0x7FE0_0000_0000_0000); // 0x1p1023
+        n -= 1023;
+        if n > 1023 {
+            xx *= f64::from_bits(0x7FE0_0000_0000_0000);
+            n -= 1023;
+            if n > 1023 {
+                n = 1023;
+            }
+        }
+    } else if n < -1022 {
+        xx *= f64::from_bits(0x0010_0000_0000_0000); // 0x1p-1022
+        n += 1022;
+        if n < -1022 {
+            xx *= f64::from_bits(0x0010_0000_0000_0000);
+            n += 1022;
+            if n < -1022 {
+                n = -1022;
+            }
+        }
+    }
+    let u = ((0x3FF + n) as u64) << 52;
+    xx * f64::from_bits(u)
+}
+
+/// `double _logb(double)` — unbiased binary exponent (MSVC name).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _logb(x: f64) -> f64 {
+    let mut u = x.to_bits() & 0x7FFF_FFFF_FFFF_FFFF; // clear sign
+    if u == 0 {
+        return f64::NEG_INFINITY; // _logb(0) = -inf
+    }
+    let mut exp = (u >> 52) as i32;
+    if exp == 0x7FF {
+        return x * x; // +inf for inf, NaN for NaN
+    }
+    if exp == 0 {
+        // subnormal: normalize by 2^64, re-read exponent
+        u = (f64::from_bits(u) * f64::from_bits(0x43F0_0000_0000_0000)).to_bits(); // 0x1p64
+        exp = (u >> 52) as i32 - 64;
+    }
+    (exp - 0x3FF) as f64
+}
+
+/// `float _logbf(float)` — unbiased binary exponent (MSVC name).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _logbf(x: f32) -> f32 {
+    let mut u = x.to_bits() & 0x7FFF_FFFF;
+    if u == 0 {
+        return f32::NEG_INFINITY;
+    }
+    let mut exp = (u >> 23) as i32;
+    if exp == 0xFF {
+        return x * x;
+    }
+    if exp == 0 {
+        u = (f32::from_bits(u) * f32::from_bits(0x4C00_0000)).to_bits(); // 0x1p25f
+        exp = (u >> 23) as i32 - 25;
+    }
+    (exp - 0x7F) as f32
+}

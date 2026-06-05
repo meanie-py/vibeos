@@ -239,6 +239,24 @@ elseif(ARCH STREQUAL "arm64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 5): ldexp + _logb/_logbf → cnt-rust (float
+# feature, amd64/arm64; i386 keeps its C). ldexp = x*2^n (portable arm64
+# stepping, replaces amd64's AMD-libm errno ldexp); _logb/_logbf = exponent
+# extract. amd64 had libm_sse2/{ldexp,logb,logbf}.c; arm64 had
+# arm64/{ldexp,logb}.c (logb.c holds both _logb and _logbf).
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/ldexp.c
+        math/libm_sse2/logb.c
+        math/libm_sse2/logbf.c
+    )
+elseif(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/arm64/ldexp.c
+        math/arm64/logb.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
