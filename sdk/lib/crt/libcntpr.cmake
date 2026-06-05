@@ -257,6 +257,20 @@ elseif(ARCH STREQUAL "arm64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 6): fabs/fabsf → cnt-rust (float feature,
+# amd64/arm64; i386 keeps the portable C math/{fabs,fabsf}.c — an f64/f32
+# RETURN is a hard no-SSE ABI error there). Pure sign-bit clear with the
+# function-specific NaN handling (fabs returns NaN unchanged; fabsf ORs in
+# the quiet bit) — bit-exact across both arches. arm64 had the C
+# math/{fabs,fabsf}.c (removed here); amd64 had asm math/amd64/{fabs,fabsf}.S
+# (removed from LIBCNTPR_ASM_SOURCE below, after it is composed).
+if(ARCH STREQUAL "arm64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/fabs.c
+        math/fabsf.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}
@@ -264,6 +278,16 @@ list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_MEM_ASM_SOURCE}
     ${LIBCNTPR_STRING_ASM_SOURCE}
 )
+
+# Wave MATH-TIERC (sub-wave 6) amd64 half: cnt-rust's Rust fabs/fabsf own
+# the symbols, so drop amd64's asm versions from the composed asm list (the
+# C/arm64 half is REMOVE_ITEM'd from LIBCNTPR_SOURCE above). i386 untouched.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_ASM_SOURCE
+        math/amd64/fabs.S
+        math/amd64/fabsf.S
+    )
+endif()
 
 # ── Wave CORE-OPS: i386 mem+string core ops — flip hand asm → cnt-rust ─
 # libcntpr-ONLY (REMOVE_ITEM from libcntpr's asm list, NOT from the

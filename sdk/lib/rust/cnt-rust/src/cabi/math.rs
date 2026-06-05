@@ -1081,3 +1081,42 @@ pub extern "C" fn _logbf(x: f32) -> f32 {
     }
     (exp - 0x7F) as f32
 }
+
+// ── Wave MATH-TIERC (sub-wave 6): fabs / fabsf ───────────────────────────
+// Absolute value via the sign bit. Bit-exact replacements for amd64's
+// asm (amd64/fabs.S, amd64/fabsf.S) AND arm64's C (math/fabs.c, fabsf.c) —
+// both arches agree, so one Rust impl each. NaN handling differs between
+// the two functions and is preserved exactly:
+//   fabs : a NaN input is returned UNCHANGED (sign bit NOT cleared) — both
+//          the amd64 `cmova rax, rcx` and the arm64 fabs.c `return x` keep
+//          the original bits. (The C's i386-only error-bit branch never
+//          fires here; i386 keeps the C, this Rust is amd64/arm64-only.)
+//   fabsf: a NaN input is returned with the quiet bit 0x00400000 OR'd in
+//          and its sign preserved — both amd64 fabsf.S `bts ecx,22` and
+//          arm64 fabsf.c unconditionally set it.
+
+/// `double fabs(double)` — magnitude; NaN returned unchanged.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fabs(x: f64) -> f64 {
+    let bits = x.to_bits();
+    let abs = bits & 0x7FFF_FFFF_FFFF_FFFF;
+    if abs > 0x7FF0_0000_0000_0000 {
+        // NaN: return the original bits unchanged.
+        return x;
+    }
+    f64::from_bits(abs)
+}
+
+/// `float fabsf(float)` — magnitude; NaN returned with quiet bit set.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fabsf(x: f32) -> f32 {
+    let bits = x.to_bits();
+    let abs = bits & 0x7FFF_FFFF;
+    if abs > 0x7F80_0000 {
+        // NaN: original | quiet bit (sign preserved).
+        return f32::from_bits(bits | 0x0040_0000);
+    }
+    f32::from_bits(abs)
+}
