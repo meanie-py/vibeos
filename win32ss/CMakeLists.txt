@@ -74,7 +74,7 @@ list(APPEND SOURCE
     # gdi/eng/float.c       # replaced by Rust (sdk/lib/rust/win32k-rust/src/float.rs) — cohabitation (EngSave still C, scanner gap)
     # gdi/eng/gradient.c   # replaced by Rust (cohabitation, bisect iter 12)
     # gdi/eng/lineto.c   # replaced by Rust (lineto.rs) — cohabitation [wave 2 sweep]
-    gdi/eng/ldevobj.c      # ldevobj.rs breaks i386 NtUserInitialize — TBD which fn
+    # gdi/eng/ldevobj.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ldevobj.rs) — cohabitation [Phase 2c: LDEVOBJ driver-load layer]
     # gdi/eng/mapping.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/math.c        # replaced by Rust (sdk/lib/rust/win32k-rust/src/math.rs) — cohabitation
     # gdi/eng/mdevobj.c     # replaced by Rust (sdk/lib/rust/win32k-rust/src/mdevobj.rs) — cohabitation

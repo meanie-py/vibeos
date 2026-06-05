@@ -228,7 +228,7 @@ pub mod device;
 pub mod d3dkmt;  // [Phase 2c wave 22: ntgdi/d3dkmt.c — 56 fns, D3DKMT dxgkrnl thunk layer]
 pub mod brush;   // [Phase 2c wave 23: ntgdi/brush.cpp — BRUSH object (C++→Rust, hand-translated)]
 // ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
-// pub mod ldevobj;
+pub mod ldevobj;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
