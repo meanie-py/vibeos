@@ -3090,6 +3090,9 @@ extern "C" {
     fn ref_ldexp(x: f64, n: i32) -> f64;
     fn ref__logb(x: f64) -> f64;
     fn ref__logbf(x: f32) -> f32;
+    // Wave MATH-TIERC sub-wave 6
+    fn ref_fabs(x: f64) -> f64;
+    fn ref_fabsf(x: f32) -> f32;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -3728,6 +3731,32 @@ fn diff_math_ldexp_logb() {
     }
 }
 
+// --- Wave MATH-TIERC sub-wave 6: fabs / fabsf -----------------------------
+
+fn diff_math_fabs() {
+    // Magnitude via sign-bit clear, with the function-specific NaN handling
+    // (fabs returns NaN unchanged; fabsf ORs in the quiet bit). Bit-exact vs
+    // the genuine reference across all edge bits + a heavy random bit image,
+    // so every NaN/±0/±inf/subnormal pattern is exercised.
+    let mut rng = Rng(0xfab5_0006);
+    let mut b64 = f64_edge_bits();
+    for _ in 0..200_000 {
+        b64.push(rng.next());
+    }
+    for &b in &b64 {
+        let x = f64::from_bits(b);
+        assert!(same_f64(cabi::fabs(x), unsafe { ref_fabs(x) }), "fabs {b:#018x}");
+    }
+    let mut b32 = f32_edge_bits();
+    for _ in 0..200_000 {
+        b32.push(rng.next() as u32);
+    }
+    for &b in &b32 {
+        let x = f32::from_bits(b);
+        assert!(same_f32(cabi::fabsf(x), unsafe { ref_fabsf(x) }), "fabsf {b:#010x}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -3822,6 +3851,7 @@ fn main() {
         diff_math_tan,
         diff_math_ceil_floor,
         diff_math_ldexp_logb,
+        diff_math_fabs,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }
