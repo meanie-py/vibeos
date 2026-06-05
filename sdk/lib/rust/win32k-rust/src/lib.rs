@@ -242,6 +242,9 @@ pub mod metric;
 pub mod caret;
 // [ntuser wave 4]
 pub mod accelerator;
+// [ntuser wave 5]
+pub mod vis;
+pub mod ghost;
 // power.rs translated + integrated WIP (cross-crate casts pending) — parked, next wave
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
