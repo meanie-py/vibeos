@@ -3088,3 +3088,379 @@ fn diff_streamout_float() {
         }
     }
 }
+
+// ── Wave MATH-CLASS — IEEE-754 predicates + integer abs ─────────────────
+extern "C" {
+    fn ref_abs(j: i32) -> i32;
+    fn ref_labs(j: i64) -> i64; // host C `long` is 64-bit; compare truncated to i32
+    fn ref_isnan(x: f64) -> i32;
+    fn ref_isnanf(x: f32) -> i32;
+    fn ref_finite(x: f64) -> i32;
+    fn ref_finitef(x: f32) -> i32;
+    fn ref_dsign(x: f64) -> i32;
+    fn ref_fdsign(x: f32) -> i32;
+    fn ref_dclass(x: f64) -> i16;
+    fn ref_fdclass(x: f32) -> i16;
+    fn ref_dtest(px: *const f64) -> i16;
+    fn ref_fdtest(px: *const f32) -> i16;
+    // Wave MATH-TIERB
+    fn ref_div(num: i32, denom: i32) -> RDivT;
+    fn ref_chgsignf(x: f32) -> f32;
+    fn ref_scalbn(x: f64, n: i32) -> f64;
+    fn ref_scalbnf(x: f32, n: i32) -> f32;
+    fn ref_round(x: f64) -> f64;
+    fn ref_roundf(x: f32) -> f32;
+    fn ref_nextafter(x: f64, y: f64) -> f64;
+    fn ref_nextafterf(x: f32, y: f32) -> f32;
+    fn ref_nexttowardf(x: f32, y: f64) -> f32;
+}
+
+/// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
+/// in a single register — same on the Rust side via `#[repr(C)]`).
+#[repr(C)]
+struct RDivT {
+    quot: i32,
+    rem: i32,
+}
+
+/// NaN-tolerant bit equality: two results match if their bit images are
+/// identical, or both are NaN (any NaN payload). Non-NaN results from
+/// identical algorithms on the same host FPU are bit-for-bit equal.
+fn same_f64(a: f64, b: f64) -> bool {
+    a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+}
+fn same_f32(a: f32, b: f32) -> bool {
+    a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+}
+
+/// A spread of interesting f64 bit images: zeros, inf, the two NaN
+/// kinds, subnormals (incl. smallest), normals, and DBL_MAX.
+fn f64_edge_bits() -> Vec<u64> {
+    vec![
+        0x0000_0000_0000_0000, // +0
+        0x8000_0000_0000_0000, // -0
+        0x7FF0_0000_0000_0000, // +inf
+        0xFFF0_0000_0000_0000, // -inf
+        0x7FF8_0000_0000_0000, // qNaN
+        0xFFF8_0000_0000_0000, // -qNaN
+        0x7FF0_0000_0000_0001, // sNaN
+        0xFFF0_0000_0000_0001, // -sNaN
+        0x0000_0000_0000_0001, // smallest +subnormal
+        0x8000_0000_0000_0001, // smallest -subnormal
+        0x000F_FFFF_FFFF_FFFF, // largest +subnormal
+        0x0010_0000_0000_0000, // smallest +normal
+        0x3FF0_0000_0000_0000, // 1.0
+        0xBFF0_0000_0000_0000, // -1.0
+        0x7FEF_FFFF_FFFF_FFFF, // DBL_MAX
+        0xFFEF_FFFF_FFFF_FFFF, // -DBL_MAX
+        0x4093_4A45_6D5C_FAAD, // an arbitrary normal
+    ]
+}
+
+fn f32_edge_bits() -> Vec<u32> {
+    vec![
+        0x0000_0000, // +0
+        0x8000_0000, // -0
+        0x7F80_0000, // +inf
+        0xFF80_0000, // -inf
+        0x7FC0_0000, // qNaN
+        0xFFC0_0000, // -qNaN
+        0x7F80_0001, // sNaN
+        0xFF80_0001, // -sNaN
+        0x0000_0001, // smallest +subnormal
+        0x8000_0001, // smallest -subnormal
+        0x007F_FFFF, // largest +subnormal
+        0x0080_0000, // smallest +normal
+        0x3F80_0000, // 1.0
+        0xBF80_0000, // -1.0
+        0x7F7F_FFFF, // FLT_MAX
+        0xFF7F_FFFF, // -FLT_MAX
+        0x4048_F5C3, // arbitrary normal (~3.14)
+    ]
+}
+
+#[test]
+fn diff_math_abs() {
+    let mut rng = Rng(0x00ab_5123);
+    // INT_MIN is UB for the C `int abs` (excluded for abs); for labs we
+    // compare the host `long` result truncated to i32 — at i32::MIN both
+    // sides land on i32::MIN, so it's covered.
+    let mut cases: Vec<i32> = vec![0, 1, -1, 7, -7, i32::MAX, i32::MIN, i32::MIN + 1];
+    for _ in 0..5000 {
+        cases.push(rng.next() as i32);
+    }
+    for &v in &cases {
+        unsafe {
+            assert_eq!(cabi::labs(v), ref_labs(v as i64) as i32, "labs {v}");
+            if v != i32::MIN {
+                assert_eq!(cabi::abs(v), ref_abs(v), "abs {v}");
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_math_class_f64() {
+    let mut rng = Rng(0xd00d_f00d);
+    let mut bits = f64_edge_bits();
+    for _ in 0..20000 {
+        bits.push(rng.next());
+    }
+    for &b in &bits {
+        let x = f64::from_bits(b);
+        unsafe {
+            assert_eq!(cabi::_isnan(x), ref_isnan(x), "_isnan {b:#018x}");
+            assert_eq!(cabi::_finite(x), ref_finite(x), "_finite {b:#018x}");
+            assert_eq!(cabi::_dsign(x), ref_dsign(x), "_dsign {b:#018x}");
+            assert_eq!(cabi::_dclass(x), ref_dclass(x), "_dclass {b:#018x}");
+            assert_eq!(cabi::_dtest(&x), ref_dtest(&x), "_dtest {b:#018x}");
+        }
+    }
+}
+
+#[test]
+fn diff_math_class_f32() {
+    let mut rng = Rng(0xbeef_cafe);
+    let mut bits = f32_edge_bits();
+    for _ in 0..20000 {
+        bits.push(rng.next() as u32);
+    }
+    for &b in &bits {
+        let x = f32::from_bits(b);
+        unsafe {
+            assert_eq!(cabi::_isnanf(x), ref_isnanf(x), "_isnanf {b:#010x}");
+            assert_eq!(cabi::_finitef(x), ref_finitef(x), "_finitef {b:#010x}");
+            assert_eq!(cabi::_fdsign(x), ref_fdsign(x), "_fdsign {b:#010x}");
+            assert_eq!(cabi::_fdclass(x), ref_fdclass(x), "_fdclass {b:#010x}");
+            assert_eq!(cabi::_fdtest(&x), ref_fdtest(&x), "_fdtest {b:#010x}");
+        }
+    }
+}
+
+#[test]
+fn diff_math_div() {
+    let mut rng = Rng(0x0d1d_0d1d);
+    let mut cases: Vec<(i32, i32)> = vec![
+        (7, 3),
+        (-7, 3),
+        (7, -3),
+        (-7, -3),
+        (6, 3),
+        (-6, 3),
+        (0, 5),
+        (0, -5),
+        (i32::MAX, 7),
+        (i32::MIN + 1, 7), // avoid INT_MIN / -1 overflow
+        (i32::MAX, -7),
+        (1, i32::MAX),
+    ];
+    for _ in 0..5000 {
+        let num = rng.next() as i32;
+        let mut denom = rng.next() as i32;
+        if denom == 0 {
+            denom = 1;
+        }
+        // Skip INT_MIN / -1 (the one C division-overflow UB case).
+        if num == i32::MIN && denom == -1 {
+            continue;
+        }
+        cases.push((num, denom));
+    }
+    for &(n, d) in &cases {
+        if n == i32::MIN && d == -1 {
+            continue;
+        }
+        unsafe {
+            let r = cabi::div(n, d);
+            let e = ref_div(n, d);
+            assert_eq!(r.quot, e.quot, "div quot {n}/{d}");
+            assert_eq!(r.rem, e.rem, "div rem {n}/{d}");
+        }
+    }
+}
+
+#[test]
+fn diff_math_chgsignf() {
+    let mut rng = Rng(0xc465_1167);
+    let mut bits = f32_edge_bits();
+    for _ in 0..20000 {
+        bits.push(rng.next() as u32);
+    }
+    for &b in &bits {
+        let x = f32::from_bits(b);
+        unsafe {
+            assert!(
+                same_f32(cabi::_chgsignf(x), ref_chgsignf(x)),
+                "_chgsignf {b:#010x}"
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_math_scalbn() {
+    let mut rng = Rng(0x5ca1_b00f);
+    let mut xs = f64_edge_bits();
+    for _ in 0..4000 {
+        xs.push(rng.next());
+    }
+    // n spans the clamp/overflow/underflow paths (musl branches at
+    // ±1023/±1022 and clamps after two iterations).
+    let ns: Vec<i32> = vec![
+        0, 1, -1, 52, 53, -53, 1023, 1024, 2046, 2100, 5000, -1022, -1023, -1074, -2100, -5000,
+    ];
+    for &b in &xs {
+        let x = f64::from_bits(b);
+        for &n in &ns {
+            unsafe {
+                assert!(
+                    same_f64(cabi::scalbn(x, n), ref_scalbn(x, n)),
+                    "scalbn {b:#018x} n={n}"
+                );
+            }
+        }
+        let n = (rng.next() as i32) % 4200 - 2100;
+        unsafe {
+            assert!(
+                same_f64(cabi::scalbn(x, n), ref_scalbn(x, n)),
+                "scalbn {b:#018x} n={n}"
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_math_scalbnf() {
+    let mut rng = Rng(0x5ca1_b0ff);
+    let mut xs = f32_edge_bits();
+    for _ in 0..4000 {
+        xs.push(rng.next() as u32);
+    }
+    let ns: Vec<i32> = vec![
+        0, 1, -1, 23, 24, -24, 127, 128, 254, 300, 700, -126, -127, -149, -300, -700,
+    ];
+    for &b in &xs {
+        let x = f32::from_bits(b);
+        for &n in &ns {
+            unsafe {
+                assert!(
+                    same_f32(cabi::scalbnf(x, n), ref_scalbnf(x, n)),
+                    "scalbnf {b:#010x} n={n}"
+                );
+            }
+        }
+        let n = (rng.next() as i32) % 600 - 300;
+        unsafe {
+            assert!(
+                same_f32(cabi::scalbnf(x, n), ref_scalbnf(x, n)),
+                "scalbnf {b:#010x} n={n}"
+            );
+        }
+    }
+}
+
+#[test]
+fn diff_math_round() {
+    let mut rng = Rng(0x5004_d123);
+    let mut xs = f64_edge_bits();
+    // Half-integer / near-boundary cases where round's ±0.5 matters.
+    for v in [
+        0.5f64, -0.5, 1.5, -1.5, 2.5, -2.5, 0.4999, -0.4999, 0.5001, 1e16, -1e16,
+    ] {
+        xs.push(v.to_bits());
+    }
+    for _ in 0..20000 {
+        xs.push(rng.next());
+    }
+    for &b in &xs {
+        let x = f64::from_bits(b);
+        unsafe {
+            assert!(same_f64(cabi::round(x), ref_round(x)), "round {b:#018x}");
+        }
+    }
+}
+
+#[test]
+fn diff_math_roundf() {
+    let mut rng = Rng(0x5004_d1ff);
+    let mut xs = f32_edge_bits();
+    for v in [0.5f32, -0.5, 1.5, -1.5, 2.5, -2.5, 0.4999, -0.4999, 0.5001] {
+        xs.push(v.to_bits());
+    }
+    for _ in 0..20000 {
+        xs.push(rng.next() as u32);
+    }
+    for &b in &xs {
+        let x = f32::from_bits(b);
+        unsafe {
+            assert!(same_f32(cabi::roundf(x), ref_roundf(x)), "roundf {b:#010x}");
+        }
+    }
+}
+
+#[test]
+fn diff_math_nextafter() {
+    let mut rng = Rng(0x0ea7_a47e);
+    let mut bits = f64_edge_bits();
+    for _ in 0..2000 {
+        bits.push(rng.next());
+    }
+    for &bx in &bits {
+        let x = f64::from_bits(bx);
+        for &by in &bits {
+            let y = f64::from_bits(by);
+            unsafe {
+                assert!(
+                    same_f64(cabi::nextafter(x, y), ref_nextafter(x, y)),
+                    "nextafter {bx:#018x} {by:#018x}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_math_nextafterf() {
+    let mut rng = Rng(0x0ea7_a4ff);
+    let mut bits = f32_edge_bits();
+    for _ in 0..2000 {
+        bits.push(rng.next() as u32);
+    }
+    for &bx in &bits {
+        let x = f32::from_bits(bx);
+        for &by in &bits {
+            let y = f32::from_bits(by);
+            unsafe {
+                assert!(
+                    same_f32(cabi::nextafterf(x, y), ref_nextafterf(x, y)),
+                    "nextafterf {bx:#010x} {by:#010x}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn diff_math_nexttowardf() {
+    let mut rng = Rng(0x0ea7_70a4);
+    let mut xb = f32_edge_bits();
+    for _ in 0..1500 {
+        xb.push(rng.next() as u32);
+    }
+    let mut yb = f64_edge_bits();
+    for _ in 0..1500 {
+        yb.push(rng.next());
+    }
+    for &bx in &xb {
+        let x = f32::from_bits(bx);
+        for &by in &yb {
+            let y = f64::from_bits(by);
+            unsafe {
+                assert!(
+                    same_f32(cabi::nexttowardf(x, y), ref_nexttowardf(x, y)),
+                    "nexttowardf {bx:#010x} {by:#018x}"
+                );
+            }
+        }
+    }
+}

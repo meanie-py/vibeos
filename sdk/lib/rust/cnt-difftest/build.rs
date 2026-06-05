@@ -535,6 +535,45 @@ fn main() {
              #define fcvtbuf ref_fcvtbuf\n#define _fcvt ref__fcvt\n{}{}",
             inc(s("stdlib/fcvtbuf.c")),
             inc(s("stdlib/fcvt.c")))),
+        // ── Wave MATH-CLASS — IEEE-754 predicates + integer abs ────────
+        // Pure bit ops. abs/labs + the int/short-returning predicates
+        // compile the genuine .c (SAL no-ops + empty __cdecl shimmed in;
+        // each .c pulls its own <stdint.h>/<float.h>). _dclass/_fdclass/
+        // _dtest/_fdtest are transcribed inline because their .c pulls
+        // <math.h>, whose FP_* codes diverge host-vs-ReactOS — hardcode
+        // the genuine kernel values (sdk/include/crt/math.h: _NANCODE 2,
+        // _INFCODE 1, _FINITE -1, _DENORM -2, FP_ZERO 0).
+        ("abs", format!("#define __cdecl\n#define CDECL\n#define abs ref_abs\n{}", inc(s("math/abs.c")))),
+        ("labs", format!("#define __cdecl\n#define CDECL\n#define labs ref_labs\n{}", inc(s("math/labs.c")))),
+        ("isnan", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _isnan ref_isnan\n{}", inc(s("math/_isnan.c")))),
+        ("isnanf", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _isnanf ref_isnanf\n{}", inc(s("math/_isnanf.c")))),
+        ("finite", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _finite ref_finite\n{}", inc(s("math/_finite.c")))),
+        ("finitef", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _finitef ref_finitef\n{}", inc(s("math/_finitef.c")))),
+        ("dsign", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _dsign ref_dsign\n{}", inc(s("math/_dsign.c")))),
+        ("fdsign", format!("#define _In_\n#define _Check_return_\n#define __cdecl\n#define _fdsign ref_fdsign\n{}", inc(s("math/_fdsign.c")))),
+        ("dclass", "#include <stdint.h>\nshort ref_dclass(double x){union{double f;uint64_t u;}v;v.f=x;uint64_t e=v.u&0x7FF0000000000000ULL,m=v.u&0x000FFFFFFFFFFFFFULL;if(e==0x7FF0000000000000ULL)return m?2:1;if(e==0)return m?-2:0;return -1;}".to_string()),
+        ("fdclass", "#include <stdint.h>\nshort ref_fdclass(float x){union{float f;uint32_t u;}v;v.f=x;uint32_t e=v.u&0x7F800000u,m=v.u&0x007FFFFFu;if(e==0x7F800000u)return m?2:1;if(e==0)return m?-2:0;return -1;}".to_string()),
+        ("dtest", "short ref_dclass(double);\nshort ref_dtest(double*p){return ref_dclass(*p);}".to_string()),
+        ("fdtest", "short ref_fdclass(float);\nshort ref_fdtest(float*p){return ref_fdclass(*p);}".to_string()),
+        // ── Wave MATH-TIERB — float-returning bit-ops + integer div ────
+        // `div` (pure int, struct return) is transcribed inline (its .c
+        // pulls <precomp.h>). `_chgsignf` is a sign-bit flip. scalbn/
+        // scalbnf are the genuine musl .c (self-contained FP, no libm).
+        // round/roundf are the genuine ReactOS .c (call host ceil/floor
+        // — libm is linked below). nextafter/nextafterf/nexttowardf are
+        // transcribed (their .c pull reactos "libm.h"); the FORCE_EVAL
+        // fenv side-effects are dropped (they do not change the return).
+        // nexttowardf's reference takes a `double` y, matching the
+        // amd64/arm64 ABI the Rust serves (long double == double there).
+        ("div", "typedef struct{int quot;int rem;}rdiv_t;\nrdiv_t ref_div(int num,int denom){if(num>0&&denom<0){num=-num;denom=-denom;}rdiv_t r;r.quot=num/denom;r.rem=num%denom;if(num<0&&denom>0){if(r.rem>0){r.quot++;r.rem-=denom;}}return r;}".to_string()),
+        ("chgsignf", "#include <stdint.h>\nfloat ref_chgsignf(float x){union{float f;uint32_t u;}v;v.f=x;v.u^=0x80000000u;return v.f;}".to_string()),
+        ("scalbn", format!("#define scalbn ref_scalbn\n{}", inc(s("math/scalbn.c")))),
+        ("scalbnf", format!("#define scalbnf ref_scalbnf\n{}", inc(s("math/scalbnf.c")))),
+        ("round", format!("#define round ref_round\n{}", inc(s("math/round.c")))),
+        ("roundf", format!("#define roundf ref_roundf\n{}", inc(s("math/roundf.c")))),
+        ("nextafter", "#include <stdint.h>\ndouble ref_nextafter(double x,double y){union{double f;uint64_t i;}ux={x},uy={y};uint64_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffffffffffULL;ay=uy.i&0x7fffffffffffffffULL;if(ax==0){if(ay==0)return y;ux.i=(uy.i&(1ULL<<63))|1;}else if(ax>ay||((ux.i^uy.i)&(1ULL<<63)))ux.i--;else ux.i++;return ux.f;}".to_string()),
+        ("nextafterf", "#include <stdint.h>\nfloat ref_nextafterf(float x,float y){union{float f;uint32_t i;}ux={x},uy={y};uint32_t ax,ay;if(x!=x||y!=y)return x+y;if(ux.i==uy.i)return y;ax=ux.i&0x7fffffffu;ay=uy.i&0x7fffffffu;if(ax==0){if(ay==0)return y;ux.i=(uy.i&0x80000000u)|1;}else if(ax>ay||((ux.i^uy.i)&0x80000000u))ux.i--;else ux.i++;return ux.f;}".to_string()),
+        ("nexttowardf", "#include <stdint.h>\nfloat ref_nexttowardf(float x,double y){union{float f;uint32_t i;}ux={x};if(x!=x||y!=y)return x+(float)y;if((double)x==y)return (float)y;if(x==0){ux.i=1;union{double f;uint64_t u;}uy={y};if(uy.u>>63)ux.i|=0x80000000u;}else if((double)x<y){if(ux.i>>31)ux.i--;else ux.i++;}else{if(ux.i>>31)ux.i++;else ux.i--;}return ux.f;}".to_string()),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which
@@ -688,6 +727,10 @@ fn main() {
     for obj in build.compile_intermediates() {
         redef(&obj);
     }
+    // Wave MATH-TIERB: ref_round/ref_roundf (genuine ReactOS round.c)
+    // and cnt-rust's own `round`/`roundf` both call host `ceil`/`floor`/
+    // `ceilf`/`floorf` — link libm so they resolve in the test binary.
+    println!("cargo:rustc-link-lib=dylib=m");
     // float-cvt Phase 2 — _ecvt. `sprintf("%-+.*E")` → the genuine
     // `printf/streamout.c::format_float`. We compile the GENUINE
     // streamout.c (for `format_float`, the float→digits algorithm cnt
