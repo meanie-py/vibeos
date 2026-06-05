@@ -98,8 +98,8 @@ list(APPEND SOURCE
     # gdi/eng/xlateobj.c  # replaced by Rust (xlateobj.rs) — cohabitation [wave 2 sweep]
     user/ntuser/main.c
     user/ntuser/misc/file.c
-    user/ntuser/misc/rtlstr.c
-    user/ntuser/misc/copy.c
+    # user/ntuser/misc/rtlstr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtlstr.rs) — cohabitation [ntuser wave 8]
+    # user/ntuser/misc/copy.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/copy.rs) — cohabitation [ntuser wave 8]
     user/ntuser/misc/registry.c
     reactx/ntddraw/ddraw.c
     reactx/ntddraw/dd.c
@@ -316,6 +316,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntuser.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/callproc.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/console.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/copy.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/rtlstr.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

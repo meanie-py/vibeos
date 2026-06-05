@@ -252,6 +252,11 @@ pub mod usrheap;
 pub mod ntuser;
 pub mod callproc;
 pub mod console;
+// [ntuser wave 8]
+pub mod copy;
+pub mod rtlstr;
+// csr.rs is translated + parked (not yet wired) — CsrClientCallServer needs a
+// hand-written PORT_MESSAGE body; finishing it is its own focused wave.
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
