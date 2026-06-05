@@ -82,10 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
     dd.set_defaults(fn=debugcmd.debug, verb="diff")
 
     cs = sub.add_parser("cargo-swap",
-                        help="runtime gate: boot-swap the cargo-driven ntdll DLLs (x86 only)")
+                        help="runtime gate: boot-swap cargo-driven ntdll DLLs + ntoskrnl (x86)")
     arch_arg(cs)
-    cs.add_argument("--module", choices=["all", "ntdll", "ntdll_vista"], default="all",
-                    help="which cargo-driven DLL to boot-swap (default: all)")
+    cs.add_argument("--module", choices=["all", "ntdll", "ntdll_vista", "ntoskrnl"],
+                    default="all",
+                    help="which cargo-driven module to boot-swap (ntoskrnl is i386-only)")
     cs.set_defaults(fn=cargoswap.cargo_swap)
 
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
