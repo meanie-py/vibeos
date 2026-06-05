@@ -238,6 +238,8 @@ pub mod useratom;
 pub mod guicheck;
 pub mod prop;
 pub mod metric;
+// [ntuser wave 3]
+pub mod caret;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
