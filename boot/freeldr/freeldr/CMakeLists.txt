@@ -156,117 +156,42 @@ if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
 endif()
 
 # ============================================================================
-# Rust FreeLDR static archive (sdk/lib/rust/freeldr-rust → libfreeldr_rust.a)
+# Rust FreeLDR body (sdk/lib/rust/freeldr-rust) — built by the loaders' cargo
 # ============================================================================
-# Crown jewel: peloader.c is translated to Rust. Its #[no_mangle] cdecl
-# exports (PeLdr*, FrLdrModuleList, PeLdrImportDllLoadCallback) replace
-# the C lib/peloader.c (commented out of FREELDR_BOOTLIB_SOURCE above).
-# Mirrors the hal-rust integration (hal/halx86/CMakeLists.txt): a single
-# staticlib linked into the freeldr common libs; rosload imports PeLdr*
-# from freeldr.sys via freeldr.spec (ABI unchanged — still cdecl).
+# Crown jewel: peloader.c (and the rest of freeldr) is translated to Rust. The
+# freeldr-rust body is no longer built here by cmake custom_commands: the loader
+# cargo links (uefildr-cargo / rosload-cargo, below in uefi.cmake / rosload.cmake)
+# build it DIRECTLY via reactos-link `.rust_staticlib("freeldr-rust")` with the
+# per-loader feature set (uefi,uefildr-rust-entry / rosload) and `.rust_user_target()`
+# (standard target + i386 -sse,-sse2, exactly as the retired custom_commands did).
+# This kept only ONE source of the freeldr-rust .a per loader and removed three
+# `cargo build -p freeldr-rust` custom_commands (default/uefi/rosload variants;
+# the default `libfreeldr_rust.a` had no consumers since the BIOS prune).
+#
+# We still glob the sources for the loaders' EXTRA_DEPENDS so a `.rs` edit
+# re-invokes the (otherwise opaque) cargo link. freeldr-rust's own src is
+# tracked by add_cargo_module's `BODY_CRATE freeldr-rust`; cmboot-rust (a
+# path-dep) is tracked via FREELDR_CMBOOT_RUST_SOURCES below.
 set(FREELDR_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(FREELDR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-freeldr-target")
-if(ARCH STREQUAL "i386")
-    set(FREELDR_RUST_TARGET "i686-pc-windows-gnu")
-    # FreeLDR runs before CR4.OSFXSR — no SSE (same as hal-rust/mini_hal).
-    set(FREELDR_RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
-elseif(ARCH STREQUAL "amd64")
-    set(FREELDR_RUST_TARGET "x86_64-pc-windows-gnu")
-    set(FREELDR_RUST_EXTRA_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(FREELDR_RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(FREELDR_RUST_EXTRA_ENV "")
-endif()
-# Track ALL freeldr-rust sources so editing any .rs (e.g. frldr.rs/uefildr.rs,
-# not just lib/ffi/peloader) re-triggers the cargo rebuild. Without this, a
-# changed .rs leaves the copied .a stale and the link silently uses old objects
-# (cost a "MachInitializeBootDevices undefined" cold-link false alarm 2026-05).
-file(GLOB_RECURSE FREELDR_RUST_SOURCES CONFIGURE_DEPENDS
-    ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/src/*.rs)
-# cmboot-rust is a path-dependency of freeldr-rust (the shared CM boot-init
-# crate, linked via the uefi/rosload features) — glob it too so editing it
-# re-triggers the cargo rebuild, like FREELDR_RUST_SOURCES does for freeldr-rust.
 file(GLOB_RECURSE FREELDR_CMBOOT_RUST_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/cmboot-rust/src/*.rs)
-set(FREELDR_RUST_DEPS
-    ${FREELDR_RUST_WORKSPACE_DIR}/freeldr-rust/Cargo.toml
-    ${FREELDR_RUST_WORKSPACE_DIR}/cmboot-rust/Cargo.toml
-    ${FREELDR_RUST_SOURCES}
-    ${FREELDR_CMBOOT_RUST_SOURCES})
-
-set(FREELDR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust.a")
-add_custom_command(
-    OUTPUT ${FREELDR_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${FREELDR_RUST_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
-        cargo build --release --target ${FREELDR_RUST_TARGET}
-            -p freeldr-rust
-            --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${FREELDR_RUST_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
-        ${FREELDR_RUST_LIB}
-    DEPENDS ${FREELDR_RUST_DEPS}
-    COMMENT "Building freeldr-rust (libfreeldr_rust.a)"
-    VERBATIM)
-add_custom_target(rust_freeldr DEPENDS ${FREELDR_RUST_LIB})
-
-# Second archive for the UEFI link (uefildr.efi). Mirrors hal-rust's
-# libhal_rust_mini.a: same crate, `--features uefi`, separate
-# CARGO_TARGET_DIR (cargo can't share a target dir across feature sets).
-# Gates out the BIOS-only PC-AT machine entry (machpc MachInit, pchw
-# StallExecutionProcessor, vidfb_pc_fallback) so they don't dup the
-# UEFI-active C (uefisetup.c/vidfb.c/uefildr.c).
-set(FREELDR_RUST_UEFI_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-freeldr-uefi-target")
-set(FREELDR_RUST_UEFI_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust_uefi.a")
-add_custom_command(
-    OUTPUT ${FREELDR_RUST_UEFI_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${FREELDR_RUST_UEFI_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
-        cargo build --release --target ${FREELDR_RUST_TARGET}
-            -p freeldr-rust --features uefi,uefildr-rust-entry
-            --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${FREELDR_RUST_UEFI_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
-        ${FREELDR_RUST_UEFI_LIB}
-    DEPENDS ${FREELDR_RUST_DEPS}
-    COMMENT "Building freeldr-rust UEFI variant (libfreeldr_rust_uefi.a, --features uefi)"
-    VERBATIM)
-add_custom_target(rust_freeldr_uefi DEPENDS ${FREELDR_RUST_UEFI_LIB})
-
-# Third archive for the rosload.exe link (2nd-stage loader). Same crate,
-# --features rosload, separate CARGO_TARGET_DIR. Selects bootmgr/custom/
-# options/oslist/winldr/wlmemory/wlregistry/registry/setupldr/inffile/
-# headless/conversion/libsupp/miscboot/linuxboot/drivemap/ntoskrnl/winldr_arch
-# and gates out the BIOS/UEFI hardware code (machpc/pchw/tui/ueficon/etc).
-# rosload imports those services from freeldr.sys via add_importlibs(rosload
-# freeldr). See lib.rs `feature = "rosload"` cfg gates for the module split.
-set(FREELDR_RUST_ROSLOAD_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-freeldr-rosload-target")
-set(FREELDR_RUST_ROSLOAD_LIB "${CMAKE_CURRENT_BINARY_DIR}/libfreeldr_rust_rosload.a")
-add_custom_command(
-    OUTPUT ${FREELDR_RUST_ROSLOAD_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${FREELDR_RUST_ROSLOAD_TARGET_DIR} ${FREELDR_RUST_EXTRA_ENV}
-        cargo build --release --target ${FREELDR_RUST_TARGET}
-            -p freeldr-rust --features rosload
-            --manifest-path ${FREELDR_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${FREELDR_RUST_ROSLOAD_TARGET_DIR}/${FREELDR_RUST_TARGET}/release/libfreeldr_rust.a
-        ${FREELDR_RUST_ROSLOAD_LIB}
-    DEPENDS ${FREELDR_RUST_DEPS}
-    COMMENT "Building freeldr-rust rosload variant (libfreeldr_rust_rosload.a, --features rosload)"
-    VERBATIM)
-add_custom_target(rust_freeldr_rosload DEPENDS ${FREELDR_RUST_ROSLOAD_LIB})
+# cnt-rust cohabitation twin (libcntpr_rust.a) is now built by the loaders'
+# own cargo link (reactos-link .rust_lib("cnt-rust-lib")), not reused from the
+# cmake libcntpr.cmake copy. Glob its three crates (cnt-rust-lib + the
+# cnt-rust/cnt-ctype path-deps) so a `.rs` edit re-invokes the loader link.
+file(GLOB_RECURSE FREELDR_CNT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
+    ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
+    ${FREELDR_RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs)
 
 # BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
-# built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. We still
-# need the freeldr import LIBRARY that rosload links against (add_importlibs(
-# rosload freeldr)); under UEFI rosload's "freeldr.sys" imports resolve at
-# runtime against uefildr.efi, which is registered as "freeldr.sys" by the PE
-# loader and exports the same freeldr.spec symbols. So generate just the import
-# lib here (ADD_IMPORTLIB needs only the .spec, not the BIOS loader binary).
-if(NOT ARCH STREQUAL "arm64")
-    spec2def(freeldr.sys freeldr.spec ADD_IMPORTLIB)
-endif()
+# built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. rosload
+# still imports freeldr.sys services (under UEFI those resolve at runtime
+# against uefildr.efi, which the PE loader registers as "freeldr.sys" and which
+# exports the same freeldr.spec symbols). The freeldr import LIBRARY that
+# satisfies those imports is now self-hosted by reactos-link from freeldr.spec
+# (rosload-cargo's .import_lib()), so the cmake spec2def(freeldr.sys freeldr.spec
+# ADD_IMPORTLIB) is retired — nothing else referenced the libfreeldr target.
 # rosload is the 2nd stage loader (loads ntoskrnl); ARM64 uses UEFI-only boot
 if(NOT ARCH STREQUAL "arm64")
     include(rosload.cmake)
