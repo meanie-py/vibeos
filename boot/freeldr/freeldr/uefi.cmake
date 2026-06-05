@@ -83,7 +83,13 @@ list(APPEND UEFILDR_ARC_SOURCE
 # reactos-link already emits cargo:rerun-if-changed for each static_lib, so once
 # ninja re-invokes cargo, the link actually re-runs.
 set(UEFILDR_EXTRA_DEPENDS
-    cportlib blcmlib blrtl libcntpr chkstk
+    cportlib libcntpr chkstk
+    # blcmlib compiled in-cargo (c_from_compile_db) — file-track its C sources
+    # instead of depending on the cmake blcmlib target:
+    ${FREELDR_BLCMLIB_SOURCES}
+    # blrtl likewise compiled in-cargo (c_from_compile_db C + asm_archive asm) —
+    # file-track its sources instead of depending on the cmake blrtl target:
+    ${FREELDR_BLRTL_SOURCES}
     # source files reactos-link now compiles directly (file-track so `ninja
     # uefildr` re-invokes cargo when they change — reactos-link's per-input
     # cargo:rerun-if-changed then re-runs the link). uefiasm.S/i386trap.S/misc.S
@@ -99,11 +105,17 @@ set(UEFILDR_EXTRA_DEPENDS
     # file-track its sources (incl. cnt-rust/cnt-ctype path-deps) so an edit
     # re-invokes the cargo link, instead of depending on the cmake libcntpr_rust.a.
     ${FREELDR_CNT_RUST_SOURCES}
-    # cport-rust is still reused from cmake (custom-target output) — file-track it:
-    ${CMAKE_BINARY_DIR}/sdk/lib/cportlib/libcport_rust.a)
+    # cport-rust is now built by uefildr-cargo itself (reactos-link .rust_lib);
+    # file-track its sources, not the cmake-built libcport_rust.a. The cmake
+    # `cportlib` target stays a dep (above) for the cohab stub libcportlib.a the
+    # loader still reuses.
+    ${FREELDR_CPORT_RUST_SOURCES})
 if(ARCH STREQUAL "i386")
+    # mini_hal stays a dep (systimer.S asm → libmini_hal.a, still reused). Its
+    # Rust impl (hal-rust minihal) is now built by uefildr-cargo (reactos-link
+    # .rust_lib) — file-track its sources instead of the cmake libhal_rust_mini.a.
     list(APPEND UEFILDR_EXTRA_DEPENDS
-        mini_hal rust_hal_mini ${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a)
+        mini_hal ${FREELDR_HAL_MINI_SOURCES})
 endif()
 
 # KIND efi → post-link strips .rossym + --strip-all (matches the old

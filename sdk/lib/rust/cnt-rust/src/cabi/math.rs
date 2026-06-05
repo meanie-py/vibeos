@@ -251,25 +251,17 @@ pub extern "C" fn scalbnf(x: f32, mut n: i32) -> f32 {
 }
 
 // ---- round / roundf — ReactOS portable (ceil/floor + FP add) ----------
-
-#[cfg(feature = "float")]
-extern "C" {
-    fn ceil(x: f64) -> f64;
-    fn floor(x: f64) -> f64;
-    fn ceilf(x: f32) -> f32;
-    fn floorf(x: f32) -> f32;
-}
+// ceil/floor/ceilf/floorf are defined below (sub-wave 4); round/roundf call
+// those module-local impls directly.
 
 /// `double round(double)`.
 #[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn round(arg: f64) -> f64 {
-    unsafe {
-        if arg < 0.0 {
-            ceil(arg - 0.5)
-        } else {
-            floor(arg + 0.5)
-        }
+    if arg < 0.0 {
+        ceil(arg - 0.5)
+    } else {
+        floor(arg + 0.5)
     }
 }
 
@@ -277,12 +269,10 @@ pub extern "C" fn round(arg: f64) -> f64 {
 #[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn roundf(arg: f32) -> f32 {
-    unsafe {
-        if arg < 0.0 {
-            ceilf(arg - 0.5)
-        } else {
-            floorf(arg + 0.5)
-        }
+    if arg < 0.0 {
+        ceilf(arg - 0.5)
+    } else {
+        floorf(arg + 0.5)
     }
 }
 
@@ -886,4 +876,247 @@ pub extern "C" fn tan(x: f64) -> f64 {
     let s = sin(x);
     let c = cos(x);
     s / c
+}
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 4 — ceil / floor / ceilf / floorf
+//
+// Exact IEEE directed rounding (toward +inf / -inf), pure bit-manipulation
+// (musl-style) — no FPU rounding-mode dependence, no SSE4.1 `roundsd`. One
+// uniform Rust impl for BOTH amd64 (was AMD-libm `libm_sse2/{ceil,floor}*.c`)
+// and arm64 (was `arm64/{ceil,floor}.c` + `math/{ceilf,floorf}.c`), per the
+// "give every arch the same thing" directive; i386 keeps its x87
+// `{ceil,floor}_asm.s`/`.S`. These are EXACT operations (the result is the
+// unique nearer integer in the rounding direction), so the impl is bit-exact
+// against any correct reference regardless of rounding mode. The variable
+// shift count `e` is in [0, 51]/[0, 22] here, and the carry `wrapping_add`
+// mirrors C's wraparound (also keeps debug overflow-checks happy).
+// ===========================================================================
+
+/// `double floor(double)` — round toward -inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn floor(x: f64) -> f64 {
+    let mut i = x.to_bits();
+    let e = ((i >> 52) & 0x7ff) as i32 - 0x3ff;
+    if e >= 52 {
+        return x; // already integral, or inf/NaN
+    }
+    if e < 0 {
+        // |x| < 1
+        if i << 1 == 0 {
+            return x; // ±0
+        }
+        return if i >> 63 != 0 { -1.0 } else { 0.0 };
+    }
+    let m = 0x000f_ffff_ffff_ffff_u64 >> e; // fraction-bit mask
+    if i & m == 0 {
+        return x; // no fraction → integral
+    }
+    if i >> 63 != 0 {
+        i = i.wrapping_add(m); // negative: round toward -inf (increase magnitude)
+    }
+    i &= !m;
+    f64::from_bits(i)
+}
+
+/// `double ceil(double)` — round toward +inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ceil(x: f64) -> f64 {
+    let mut i = x.to_bits();
+    let e = ((i >> 52) & 0x7ff) as i32 - 0x3ff;
+    if e >= 52 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x; // ±0
+        }
+        return if i >> 63 != 0 { -0.0 } else { 1.0 };
+    }
+    let m = 0x000f_ffff_ffff_ffff_u64 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 63 == 0 {
+        i = i.wrapping_add(m); // positive: round toward +inf
+    }
+    i &= !m;
+    f64::from_bits(i)
+}
+
+/// `float floorf(float)` — round toward -inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn floorf(x: f32) -> f32 {
+    let mut i = x.to_bits();
+    let e = ((i >> 23) & 0xff) as i32 - 0x7f;
+    if e >= 23 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x;
+        }
+        return if i >> 31 != 0 { -1.0 } else { 0.0 };
+    }
+    let m = 0x007f_ffff_u32 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 31 != 0 {
+        i = i.wrapping_add(m);
+    }
+    i &= !m;
+    f32::from_bits(i)
+}
+
+/// `float ceilf(float)` — round toward +inf.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ceilf(x: f32) -> f32 {
+    let mut i = x.to_bits();
+    let e = ((i >> 23) & 0xff) as i32 - 0x7f;
+    if e >= 23 {
+        return x;
+    }
+    if e < 0 {
+        if i << 1 == 0 {
+            return x;
+        }
+        return if i >> 31 != 0 { -0.0 } else { 1.0 };
+    }
+    let m = 0x007f_ffff_u32 >> e;
+    if i & m == 0 {
+        return x;
+    }
+    if i >> 31 == 0 {
+        i = i.wrapping_add(m);
+    }
+    i &= !m;
+    f32::from_bits(i)
+}
+
+// ===========================================================================
+// Wave MATH-TIERC sub-wave 5 — ldexp / _logb / _logbf
+//
+// Faithful ports, amd64/arm64 only (the `float` feature; i386 keeps its C).
+// ldexp(x,n) = x*2^n — the portable arm64/ldexp.c (identical stepping to
+// scalbn), applied uniformly (replaces amd64's AMD-libm errno-setting ldexp)
+// per the "give every arch the same thing" directive. _logb/_logbf extract
+// the unbiased binary exponent as a float (MSVC underscore names — both
+// arches' C export `_logb`/`_logbf`). All return f64/f32 by value, so i386
+// (no-SSE, hard ABI error on float return) keeps the C.
+// ===========================================================================
+
+/// `double ldexp(double, int)` — x * 2^n (portable arm64 stepping).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn ldexp(x: f64, mut n: i32) -> f64 {
+    if x == 0.0 || n == 0 {
+        return x;
+    }
+    let mut xx = x;
+    if n > 1023 {
+        xx *= f64::from_bits(0x7FE0_0000_0000_0000); // 0x1p1023
+        n -= 1023;
+        if n > 1023 {
+            xx *= f64::from_bits(0x7FE0_0000_0000_0000);
+            n -= 1023;
+            if n > 1023 {
+                n = 1023;
+            }
+        }
+    } else if n < -1022 {
+        xx *= f64::from_bits(0x0010_0000_0000_0000); // 0x1p-1022
+        n += 1022;
+        if n < -1022 {
+            xx *= f64::from_bits(0x0010_0000_0000_0000);
+            n += 1022;
+            if n < -1022 {
+                n = -1022;
+            }
+        }
+    }
+    let u = ((0x3FF + n) as u64) << 52;
+    xx * f64::from_bits(u)
+}
+
+/// `double _logb(double)` — unbiased binary exponent (MSVC name).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _logb(x: f64) -> f64 {
+    let mut u = x.to_bits() & 0x7FFF_FFFF_FFFF_FFFF; // clear sign
+    if u == 0 {
+        return f64::NEG_INFINITY; // _logb(0) = -inf
+    }
+    let mut exp = (u >> 52) as i32;
+    if exp == 0x7FF {
+        return x * x; // +inf for inf, NaN for NaN
+    }
+    if exp == 0 {
+        // subnormal: normalize by 2^64, re-read exponent
+        u = (f64::from_bits(u) * f64::from_bits(0x43F0_0000_0000_0000)).to_bits(); // 0x1p64
+        exp = (u >> 52) as i32 - 64;
+    }
+    (exp - 0x3FF) as f64
+}
+
+/// `float _logbf(float)` — unbiased binary exponent (MSVC name).
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn _logbf(x: f32) -> f32 {
+    let mut u = x.to_bits() & 0x7FFF_FFFF;
+    if u == 0 {
+        return f32::NEG_INFINITY;
+    }
+    let mut exp = (u >> 23) as i32;
+    if exp == 0xFF {
+        return x * x;
+    }
+    if exp == 0 {
+        u = (f32::from_bits(u) * f32::from_bits(0x4C00_0000)).to_bits(); // 0x1p25f
+        exp = (u >> 23) as i32 - 25;
+    }
+    (exp - 0x7F) as f32
+}
+
+// ── Wave MATH-TIERC (sub-wave 6): fabs / fabsf ───────────────────────────
+// Absolute value via the sign bit. Bit-exact replacements for amd64's
+// asm (amd64/fabs.S, amd64/fabsf.S) AND arm64's C (math/fabs.c, fabsf.c) —
+// both arches agree, so one Rust impl each. NaN handling differs between
+// the two functions and is preserved exactly:
+//   fabs : a NaN input is returned UNCHANGED (sign bit NOT cleared) — both
+//          the amd64 `cmova rax, rcx` and the arm64 fabs.c `return x` keep
+//          the original bits. (The C's i386-only error-bit branch never
+//          fires here; i386 keeps the C, this Rust is amd64/arm64-only.)
+//   fabsf: a NaN input is returned with the quiet bit 0x00400000 OR'd in
+//          and its sign preserved — both amd64 fabsf.S `bts ecx,22` and
+//          arm64 fabsf.c unconditionally set it.
+
+/// `double fabs(double)` — magnitude; NaN returned unchanged.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fabs(x: f64) -> f64 {
+    let bits = x.to_bits();
+    let abs = bits & 0x7FFF_FFFF_FFFF_FFFF;
+    if abs > 0x7FF0_0000_0000_0000 {
+        // NaN: return the original bits unchanged.
+        return x;
+    }
+    f64::from_bits(abs)
+}
+
+/// `float fabsf(float)` — magnitude; NaN returned with quiet bit set.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn fabsf(x: f32) -> f32 {
+    let bits = x.to_bits();
+    let abs = bits & 0x7FFF_FFFF;
+    if abs > 0x7F80_0000 {
+        // NaN: original | quiet bit (sign preserved).
+        return f32::from_bits(bits | 0x0040_0000);
+    }
+    f32::from_bits(abs)
 }

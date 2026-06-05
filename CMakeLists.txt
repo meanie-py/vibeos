@@ -14,6 +14,12 @@ message(WARNING "Setting policy CMP0091 to OLD behaviour")
 cmake_policy(SET CMP0091 OLD)
 endif()
 
+# Emit build-<arch>/compile_commands.json. Required by the cargo-drive's
+# in-cargo C-residue compile (reactos-link c_from_compile_db replays cmake's
+# exact clang invocation per source — e.g. the loaders' blcmlib/cportlib C).
+# Configure-time only; harmless otherwise.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 project(REACTOS)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)

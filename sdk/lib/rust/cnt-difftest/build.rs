@@ -601,6 +601,28 @@ fn main() {
         // form). Compute the reference via the genuine ref_sin/ref_cos (the
         // same algorithm cnt-rust's sin/cos use) → bit-exact vs cabi::tan.
         ("tan", "double ref_sin(double); double ref_cos(double);\ndouble ref_tan(double x){return ref_sin(x)/ref_cos(x);}".to_string()),
+        // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
+        // lowers them to hardware roundsd/roundss (correctly rounded) — an
+        // INDEPENDENT reference, not cnt-rust's #[no_mangle] ceil/floor (which
+        // would otherwise hijack a plain `ceil(x)` call and make the test
+        // circular). Exact directed rounding ⇒ bit-exact vs the Rust bit-math.
+        ("ceil", "double ref_ceil(double x){return __builtin_ceil(x);}".to_string()),
+        ("floor", "double ref_floor(double x){return __builtin_floor(x);}".to_string()),
+        ("ceilf", "float ref_ceilf(float x){return __builtin_ceilf(x);}".to_string()),
+        ("floorf", "float ref_floorf(float x){return __builtin_floorf(x);}".to_string()),
+        // Wave MATH-TIERC sub-wave 5: ldexp = the portable arm64/ldexp.c
+        // (== scalbn stepping); _logb/_logbf = the genuine arm64/logb.c (both
+        // MSVC-name funcs in one TU). Renamed to ref_*; bit-exact.
+        ("ldexp", format!("#include <math.h>\n#define ldexp ref_ldexp\n{}", inc(s("math/arm64/ldexp.c")))),
+        ("logb", format!("#include <math.h>\n#include <float.h>\n#define _logb ref__logb\n#define _logbf ref__logbf\n{}", inc(s("math/arm64/logb.c")))),
+        // Wave MATH-TIERC sub-wave 6: fabs/fabsf = the genuine portable
+        // math/fabs.c + math/fabsf.c (the same C arm64 ships and that amd64's
+        // asm mirrors). math.h FIRST so the rename hits only the definition;
+        // the host is x86-64 SysV so `_M_IX86` is undefined → fabs.c's i386
+        // error-bit branch is dead, matching the amd64/arm64 NaN-unchanged
+        // path. fabsf.c sets the quiet bit unconditionally. Renamed → ref_*.
+        ("fabs", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabs ref_fabs\n{}", inc(s("math/fabs.c")))),
+        ("fabsf", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabsf ref_fabsf\n{}", inc(s("math/fabsf.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which
