@@ -550,15 +550,17 @@ impl Linker {
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
                 .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
-<<<<<<< Updated upstream
-            // Minimal `-I` dirs for RAW `.S` files (asm.inc, pcbios.h, …). A
-            // pre-expanded `.s` sets none of these → unchanged.
+            // Caller-configured repo-relative `-I` dirs for RAW `.S` files
+            // (asm.inc, pcbios.h, …; a pre-expanded `.s` sets none of these).
             for dir in &self.asm_include_dirs {
                 b.flag("-I").flag(self.repo_root.join(dir).to_str().unwrap());
             }
-=======
+            // + the fixed kernel asm `#include` chain (asm.inc + the generated
+            // build-dir ks*.inc + ntoskrnl/include) used by modules that
+            // assemble kernel source `.S` directly (ntdll dispatch.S / ntdll.S).
+            // Additive — extra `-I` is inert when unused (and the build-dir dir
+            // is not expressible via the repo-relative asm_include_dirs above).
             self.add_kernel_asm_includes(&mut b);
->>>>>>> Stashed changes
             b.flag("-x").flag("assembler-with-cpp");
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
