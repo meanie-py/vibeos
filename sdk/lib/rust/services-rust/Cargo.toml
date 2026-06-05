@@ -1,0 +1,20 @@
+[package]
+name = "services-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# staticlib → libservices_rust.a, linked into the cmake-built services.exe via
+# per-binary cohabitation cmake (mirrors winsrv-rust / smss-csrss-rust). The
+# Service Control Manager (SCM) is the next boot-spine subsystem after lsass:
+# winlogon/smss → services.exe → drivers + autostart services, so it is on the
+# path to `shell ready` and smoke-validated. Flipped file-by-file (wave 1 =
+# lock.c); the `.c` stay in tree (translation philosophy: never delete the C).
+crate-type = ["staticlib"]
+
+[dependencies]
+# winsrv-sys is the user-mode FFI substrate (kernel32 Heap + error constants +
+# Win32 base types, over ntdll-sys). The services-private structs (START_LOCK)
+# and the svcctl RPC lock-status structs live in crate::types; the internal
+# Scm* helpers (database.c, cdecl) are declared there as `extern "C"`.
+winsrv-sys = { path = "../winsrv-sys" }
