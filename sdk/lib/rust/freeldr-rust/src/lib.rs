@@ -27,6 +27,10 @@ extern crate cmboot_rust;
 #[cfg(any(feature = "uefi", feature = "rosload"))]
 mod cmboot_shims;
 
+// UEFI escape-helper asm (uefiasm.S) flipped to Rust global_asm! — self-gated
+// to feature="uefi" inside the file.
+mod uefiasm;
+
 // Modules added as rustconv writes each translated file.
 pub mod ffi;
 pub mod frldr;

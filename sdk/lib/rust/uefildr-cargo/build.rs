@@ -69,17 +69,17 @@ fn main() {
                 // freeldr libs (uefi.cmake `if(ARCH STREQUAL i386 AND NOT MSVC)`).
                 libs.push("hal/halx86/minihal/libmini_hal.a");
                 libs.push("hal/halx86/libhal_rust_mini.a");
-                asm.push("boot/freeldr/freeldr/arch/uefi/i386/uefiasm.S");
+                // uefiasm.S flipped to Rust global_asm! (freeldr-rust/uefiasm.rs).
                 asm.push("boot/freeldr/freeldr/arch/i386/i386trap.S");
                 ("i686-kernel.json", "_EfiEntry", Some(0x0040_0000), 0x200)
             }
             "x86_64" => {
-                asm.push("boot/freeldr/freeldr/arch/uefi/amd64/uefiasm.S");
+                // uefiasm.S flipped to Rust global_asm! (freeldr-rust/uefiasm.rs).
                 asm.push("boot/freeldr/freeldr/arch/amd64/misc.S");
                 ("x86_64-kernel.json", "EfiEntry", Some(0x1_0000), 0x200)
             }
             "aarch64" => {
-                asm.push("boot/freeldr/freeldr/arch/uefi/arm64/uefiasm.S");
+                // uefiasm.S flipped to Rust global_asm! — arm64 has no other asm.
                 ("aarch64-kernel.json", "EfiEntry", None, 0x1000)
             }
             other => {

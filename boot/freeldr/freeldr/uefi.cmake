@@ -86,9 +86,10 @@ set(UEFILDR_EXTRA_DEPENDS
     cportlib blcmlib blrtl libcntpr chkstk
     # source files reactos-link now compiles directly (file-track so `ninja
     # uefildr` re-invokes cargo when they change — reactos-link's per-input
-    # cargo:rerun-if-changed then re-runs the link):
+    # cargo:rerun-if-changed then re-runs the link). uefiasm.S is no longer here:
+    # it was flipped to Rust global_asm! (freeldr-rust/uefiasm.rs), tracked via
+    # FREELDR_RUST_SOURCES → libfreeldr_rust_uefi.a.
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/strsafe_shim.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/arch/uefi/${ARCH}/uefiasm.S
     # custom-target-produced rust .a link inputs — depend on the FILES:
     rust_freeldr_uefi ${FREELDR_RUST_UEFI_LIB}
     rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
