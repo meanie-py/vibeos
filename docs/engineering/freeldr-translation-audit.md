@@ -242,6 +242,27 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 7. **Optional: `setupldr.c`/`inffile.c` are already translated** (they
    ship in `freeldr-rust`), so the original "prune install-mode?" open
    question is moot — they're in Rust and cheap to keep.
+8. **`rosload.exe` is now cargo-link-driven too (2026-06-04):
+   `sdk/lib/rust/rosload-cargo`.** New `ModuleKind::NativeExe` in the
+   `reactos-link` engine — native-subsystem exe WITH exports (`rosload.def`,
+   one export `RtlAssert`, so NO `--exclude-all-symbols` unlike `KernelExe`),
+   `--gc-sections`, no `-shared`, image base 0x10000, DEFAULT PE alignment
+   (cmake's rosload link passes no `--file/-section-alignment`). Plus a new
+   `.force_undefined(&[...])` builder for the i386-only
+   `-u _HalDispatchTable`/`-u _HalPrivateDispatchTable` pulls (the Rust
+   halstub dispatch tables are unreferenced+unexported → GC'd without `-u`).
+   Like `uefildr-cargo` it REUSES the cmake-built inputs (run `ninja rosload`
+   first): the prebuilt rosload.dir objects (`strsafe_shim.c.obj`,
+   `cmboot.c.obj`, per-arch asm), `libfreeldr_rust_rosload.a` (`--features
+   rosload`, carries the `RunLoader` entry), the leaf libs + i386 mini-HAL,
+   and the freeldr import lib (`libfreeldr.dir/libfreeldr.a`). i386 + amd64
+   only (arm64 is UEFI-only, no rosload). Cargo `rosload.exe` is
+   PE-header-identical to cmake's (ImageBase 0x10000, NT-native subsystem,
+   ver 5.1, exports `RtlAssert` ord 1; entry RVA differs for GC layout) and
+   **boots both livecds to desktop under smoke** (`build-and-test.sh
+   [i386|amd64]`, `RUN_SMOKE=1`; 7-pass, the lone `test_idle_cpu_not_spinning`
+   red is the pre-existing idle-spin gate, not rosload). With this, BOTH
+   freeldr link binaries (`uefildr.efi` + `rosload.exe`) are cargo-driven.
 
 ---
 
@@ -255,10 +276,13 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 - ⬜ `tools/scan_ud2.py --check` clean against each boot artifact.
 - ⬜ Dead trees deleted: `boot/freeldr/bootsect/`, unused KD transports.
 - 🚧 (Stretch) cmake C `uefildr`/`rosload` retired in favour of a cargo
-  `bin`, allowing `boot/freeldr/freeldr/` C to be removed. `uefildr-cargo`
-  now links a PE-header-identical `uefildr.efi` on **all 3 arches** (i386 +
-  amd64 + arm64) via the `reactos-link` `EfiApplication` path; `rosload` is
-  the remaining cmake-driven freeldr binary.
+  `bin`, allowing `boot/freeldr/freeldr/` C to be removed. BOTH freeldr link
+  binaries are now cargo-driven via `reactos-link`: `uefildr-cargo` links a
+  PE-header-identical `uefildr.efi` on **all 3 arches** (`EfiApplication`),
+  and `rosload-cargo` links a PE-header-identical `rosload.exe` on **i386 +
+  amd64** (`NativeExe`; arm64 is UEFI-only, no rosload). Both boot to desktop
+  under smoke. Remaining: drive these from the main build (not just the
+  PoC scripts) so the cmake links can actually be turned off.
 
 ## What this audit doesn't measure
 
