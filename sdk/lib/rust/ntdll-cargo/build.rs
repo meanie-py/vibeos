@@ -3,12 +3,13 @@
 //!
 //! Phase-2 of the cargo-drive: cargo now also BUILDS the sibling Rust crates
 //! (Tier-B: rtl-rust / utf8 / cnt-rust-lib / smss-csrss-rust csrlib) directly
-//! via `rust_lib()`, instead of reusing their cmake-built `.a`. cmake still
-//! owns only the deep-C bodies (Tier-C: librtl / librtl_vista / libcntpr —
-//! deferred to the rtl-priv + libcntpr-crt flip tracks) and the asm/data libs
-//! (Tier-A: ntdllsys / apisets / uuid / setjmp / pseh / chkstk). Run `ninja`
-//! in build-<arch> once first for those. Out-of-band inputs:
-//!   - `tools/gen_ntdll_asm.py`  → data/asm/dispatch-<arch>.s
+//! via `rust_lib()`, and ASSEMBLES the asm from SOURCE `.S` (dispatch.S +
+//! ntoskrnl/ntdll.S syscall stubs + amd64 setjmp) via the engine's kernel asm
+//! -I chain — no offline pre-expansion. cmake still owns only the deep-C bodies
+//! (Tier-C: librtl / librtl_vista / libcntpr — deferred to the rtl-priv +
+//! libcntpr-crt flip tracks). Run `ninja` in build-<arch> once first so the
+//! reused Tier-C `.a` + the generated asm includes (ks*.inc / sysfuncs.h) exist.
+//! Out-of-band input still checked in:
 //!   - `tools/gen_ntdll_res.py`  → data/ntdll-<arch>.rc.res
 
 use std::env;
@@ -16,22 +17,19 @@ use reactos_link::{AsmDefineSet, Linker, ModuleKind};
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
-    // Per-arch: (target json, asm basename, res basename, image base, entry).
+    // Per-arch: (target json, res basename, image base, entry).
     // ntdll.dll is console:5.01 on all arches; AddressOfEntryPoint 0 via the
     // lld __ImageBase symbol (i386 decorates it ___ImageBase).
-    let (target_json, asm, res, image_base, entry): (&str, &str, &str, u64, &str) =
+    let (target_json, res, image_base, entry): (&str, &str, u64, &str) =
         match arch.as_str() {
             "x86" => (
-                "i686-kernel.json", "dispatch-i386.s", "ntdll-i386.rc.res",
-                0x7c92_0000, "___ImageBase",
+                "i686-kernel.json", "ntdll-i386.rc.res", 0x7c92_0000, "___ImageBase",
             ),
             "x86_64" => (
-                "x86_64-kernel.json", "dispatch-amd64.s", "ntdll-amd64.rc.res",
-                0x7ff_b700_0000, "__ImageBase",
+                "x86_64-kernel.json", "ntdll-amd64.rc.res", 0x7ff_b700_0000, "__ImageBase",
             ),
             "aarch64" => (
-                "aarch64-kernel.json", "dispatch-arm64.s", "ntdll-arm64.rc.res",
-                0x7ff_b700_0000, "__ImageBase",
+                "aarch64-kernel.json", "ntdll-arm64.rc.res", 0x7ff_b700_0000, "__ImageBase",
             ),
             o => panic!("ntdll-cargo: unsupported arch {o}"),
         };
@@ -48,21 +46,25 @@ fn main() {
         "aarch64" => "arm64",
         o => panic!("ntdll-cargo: unsupported arch {o}"),
     };
-    let asm_dir = "sdk/lib/rust/ntdll-cargo/data/asm";
-    // dispatch (ntdll's own kernel→user trampolines) — force-included object,
-    // exactly as cmake compiles dispatch.S into the ntdll target. ntdllsys (the
-    // Nt*/Zw* syscall stubs) is handled separately as an in-group ARCHIVE (see
-    // .asm_archive below) — force-including it as an object relocated ~5% of the
-    // i386 image and tripped a latent layout-sensitive hivewrt miscompile.
-    let mut asm_paths = vec![format!("{asm_dir}/{asm}")];
-    let ntdllsys_path = format!("{asm_dir}/ntdllsys-{stem}.s");
+    // Self-hosted asm: the engine assembles the SOURCE `.S` directly (kernel asm
+    // -I chain: asm.inc + the generated ks*.inc + ntoskrnl/include), so there is
+    // no offline pre-expansion / checked-in `.s` (the old tools/gen_ntdll_asm.py).
+    // dispatch.S = ntdll's kernel→user trampolines (force-included object, like
+    // cmake compiles it into the ntdll target).
+    let mut asm_paths = vec![format!("dll/ntdll/dispatch/{stem}/dispatch.S")];
+    // ntdllsys = ntoskrnl/ntdll.S (Nt*/Zw* syscall stubs; #includes syscalls.inc
+    // + the generated sysfuncs.h). In-group ARCHIVE (see .asm_archive below) —
+    // force-including these stubs as an object relocated ~5% of the i386 image
+    // and tripped a latent layout-sensitive hivewrt miscompile; the archive
+    // preserves the cmake link layout.
+    let ntdllsys_path = "ntoskrnl/ntdll.S".to_string();
     // amd64 ntdll.dll references setjmp/_setjmpex/longjmp (i386/arm64 don't —
-    // libsetjmp.a is dead there). Provide the register save/restore asm here
+    // libsetjmp.a is dead there). Assemble the register save/restore asm here
     // (longjmp's RtlUnwind glue is Rust: ntdll-rust src/setjmp.rs), replacing
-    // the cmake libsetjmp.a reuse. Pre-expanded by tools/gen_ntdll_asm.py.
+    // the cmake libsetjmp.a reuse.
     if arch == "x86_64" {
-        asm_paths.push(format!("{asm_dir}/setjmp-amd64.s"));
-        asm_paths.push(format!("{asm_dir}/longjmp_noframe-amd64.s"));
+        asm_paths.push("sdk/lib/vcruntime/amd64/_setjmp.s".to_string());
+        asm_paths.push("sdk/lib/vcruntime/amd64/__longjmp_noframe.s".to_string());
     }
     let asm_refs: Vec<&str> = asm_paths.iter().map(String::as_str).collect();
 
@@ -90,13 +92,12 @@ fn main() {
             "sdk/lib/rtl/librtl.a",
             "sdk/lib/rtl/librtl_vista.a",
             "sdk/lib/crt/liblibcntpr.a",
-            // Tier-A asm/data/generated (still cmake-built):
             // NOTE: libntdllsys.a dropped — the Nt*/Zw* syscall stubs are now
-            // pre-expanded from ntoskrnl/ntdll.S (asm above), reusing the same
-            // checked-in syscalls.inc + sysfuncs.h (numbers identical).
+            // assembled from the SOURCE ntoskrnl/ntdll.S (asm_archive above; the
+            // engine resolves syscalls.inc + the generated sysfuncs.h directly).
             // NOTE: libapisets.a dropped — ApiSetResolveToHost + the api-set
-            // table are now Rust (ntdll-rust src/apisets.rs + the generated
-            // apisets_table.rs from tools/gen_apisets_rs.py).
+            // table are now Rust (ntdll-rust src/apisets.rs + apisets_table.rs
+            // generated at build time by ntdll-rust/build.rs from apisets.table.c).
             // NOTE: libuuid.a dropped — ntdll references only 3 fixed COM IIDs
             // (IID_IUnknown/IStream/ISequentialStream), now provided by Rust
             // (ntdll-rust src/uuid.rs); the widl-generated archive is overkill.

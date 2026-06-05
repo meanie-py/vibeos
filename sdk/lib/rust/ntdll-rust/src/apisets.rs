@@ -1,8 +1,9 @@
 //! Rust translation of `sdk/lib/apisets/apisets.c` — `ApiSetResolveToHost`,
 //! the api-set → host-DLL resolver. Replaces reuse of the cmake `libapisets.a`
 //! (whose resolver pulled deep NDK headers). The ~624-entry data table is
-//! mechanically generated from the checked-in C table into `apisets_table.rs`
-//! by `tools/gen_apisets_rs.py`; this is the hand-translated logic.
+//! mechanically generated from the checked-in C table at BUILD TIME by this
+//! crate's `build.rs` (into `$OUT_DIR/apisets_table.rs`, `include!`d below — no
+//! committed table); this is the hand-translated logic.
 //!
 //! ntdll.dll-proper only (vista doesn't link apisets). `g_Apisets` /
 //! `g_ApisetsCount` stay PRIVATE Rust (the only consumer is this resolver), so
@@ -10,6 +11,8 @@
 //! `ApiSetResolveToHost` is `#[no_mangle]` (cdecl; `_ApiSetResolveToHost` on i386).
 
 use ntdll_sys::nt::{NTSTATUS, STATUS_SUCCESS};
+// G_APISETS lives in the crate-level `apisets_table` module, which build.rs
+// generates into $OUT_DIR and lib.rs include!s (no committed table).
 use crate::apisets_table::G_APISETS;
 
 /// `UNICODE_STRING` (identical C layout). Buffer is `*const u16` — the table's
