@@ -278,3 +278,5 @@ mod manual;
 pub use manual::*;
 mod streamout;
 pub use streamout::*;
+mod math;
+pub use math::*;

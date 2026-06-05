@@ -600,6 +600,7 @@ endfunction()
 ## KIND selects the post-link (matching what cmake's set_module_type /
 ## per-target POST_BUILD would have applied):
 ##   kerneldll : native-pefixup --kerneldll  (+ i386 forwarder fix)
+##   win32dll  : i386 lld forwarder fix only  (user DLL — no pefixup)  [ntdll]
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
 function(add_cargo_module _target _crate _output)
@@ -646,6 +647,15 @@ function(add_cargo_module _target _crate _output)
         # i386-only forwarder fix mirrors set_module_type's i386-only POST_BUILD.
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+        endif()
+    elseif(_acm_KIND STREQUAL "win32dll")
+        # User-mode DLL (ntdll): NOT a KERNEL_MODULE_TYPE, so set_module_type
+        # applies NO native-pefixup (that's gated to KERNEL_MODULE_TYPES). The
+        # ONLY post-link a win32dll gets is the i386 lld forwarder-underscore
+        # fix, which set_module_type applies to every PE module on i386/llvm-mingw.
+        if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+            set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
         endif()
     elseif(_acm_KIND STREQUAL "efi")

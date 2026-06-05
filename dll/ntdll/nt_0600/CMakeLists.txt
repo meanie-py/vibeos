@@ -10,112 +10,23 @@ include_directories(
     BEFORE include
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
-list(APPEND SOURCE
-    # ldr/ldrinit.c — replaced by Rust (ntdll-rust/src/nt_0600/ldr/ldrinit.rs)
-    #   (whole file is `PVOID LdrpHeap;`; provided by libntdll_rust.a)
-    # ldr/ldrnotify.c — replaced by Rust (ntdll-rust/src/nt_0600/ldr/ldrnotify.rs);
-    #   LdrRegisterDllNotification / LdrUnregisterDllNotification /
-    #   LdrpSendDllNotifications now provided by libntdll_rust.a (UNGATED — both
-    #   the ntdll.dll and ntdll_vista.dll builds, as the C lib was linked into
-    #   both DLLs). The stub keeps the now-empty OBJECT lib valid.
-    ldr/ldrnotify_rust_stub.c)
+# NOTE: ntdll_vista_static (an empty ldrnotify_rust_stub.c holder) + the cmake
+# custom_commands that built libntdll_rust.a (vista) and libsmlib_rust.a for the
+# old cmake ntdll_vista link were REMOVED when ntdll_vista.dll graduated to the
+# cargo-driven link (add_cargo_module below) — ntdll_vista-cargo/build.rs now
+# compiles ntdll-rust(+vista) + smss-csrss-rust(smlib_only) itself via
+# reactos-link. ldrnotify_rust_stub.c / DllMain.c / the .c bodies stay on disk.
 
-add_library(ntdll_vista_static ${SOURCE})
-target_link_libraries(ntdll_vista_static)
-add_dependencies(ntdll_vista_static psdk)
-
-# --- Rust cohabitation (ntdll-rust) ---------------------------------
-# DllMain.c (the module ENTRYPOINT) is commented out of add_library()
-# below; the #[no_mangle] DllMain in libntdll_rust.a
-# (sdk/lib/rust/ntdll-rust/src/nt_0600/dllmain.rs) takes over. The .c
-# stays on disk (never delete the C). ntdll_vista_rust_stub.c keeps the
-# MODULE target valid. Mirrors the csrsrv / sdk/lib/rtl cargo→.a flip.
-# First ntdll cohabitation proof — see
-# docs/engineering/ntdll-translation-audit.md Phase 2 step 1.
-set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
-if(ARCH STREQUAL "i386")
-    set(RUST_TARGET "i686-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
-elseif(ARCH STREQUAL "amd64")
-    set(RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_EXTRA_ENV "")
-endif()
-set(NTDLL_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libntdll_rust.a")
-add_custom_command(
-    OUTPUT ${NTDLL_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p ntdll-rust --features vista
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libntdll_rust.a
-        ${NTDLL_RUST_LIB}
-    DEPENDS
-        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/lib.rs
-        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/mod.rs
-        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/dllmain.rs
-        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/mod.rs
-        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/ldrinit.rs
-        ${RUST_WORKSPACE_DIR}/ntdll-rust/src/nt_0600/ldr/ldrnotify.rs
-        ${RUST_WORKSPACE_DIR}/ntdll-rust/Cargo.toml
-        ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
-    COMMENT "Building ntdll-rust (${RUST_TARGET}) for ntdll_vista.dll"
-    VERBATIM)
-add_custom_target(ntdll_vista_rust_lib DEPENDS ${NTDLL_RUST_LIB})
-# --------------------------------------------------------------------
-
-# --- Rust cohabitation (smss-csrss-rust, smlib_only) ----------------
-# smlib's 7 SM-client exports (smclient.c, commented out in
-# sdk/lib/smlib/CMakeLists.txt) now come from a LEAN `smlib_only` build
-# of smss-csrss-rust — ONLY the smlib module, NO csrsrv/csrlib/smss code.
-# ntdll_vista.dll's RtlConnectToSm/RtlSendMsgToSm forwarders (vista spec)
-# alias SmConnectToSm/SmSendMsgToSm, pulled from this archive. csrsrv.dll +
-# smss.exe already get Rust smlib from their own archives — only
-# ntdll_vista was still on the C smlib (the companion-DLL cascade,
-# feedback_cohab_flip_companion_dll_cascade). Own target dir → distinct
-# libsmlib_rust.a. The .c stay on disk. See
-# project_smlib_csrlib_client_flip_deferred (landed 2026-06-02).
-set(NTDLL_SMLIB_RUST_TGTDIR "${CMAKE_CURRENT_BINARY_DIR}/smlib-rust-target")
-set(NTDLL_SMLIB_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsmlib_rust.a")
-add_custom_command(
-    OUTPUT ${NTDLL_SMLIB_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${NTDLL_SMLIB_RUST_TGTDIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p smss-csrss-rust
-            --no-default-features --features smlib_only,ntddi_ws03
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${NTDLL_SMLIB_RUST_TGTDIR}/${RUST_TARGET}/release/libsmss_csrss_rust.a
-        ${NTDLL_SMLIB_RUST_LIB}
-    DEPENDS
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/lib.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smlib/mod.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/smlib/smclient.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/Cargo.toml
-        ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
-    COMMENT "Building smss-csrss-rust (smlib_only, ${RUST_TARGET}) for ntdll_vista.dll"
-    VERBATIM)
-add_custom_target(ntdll_vista_smlib_rust_lib DEPENDS ${NTDLL_SMLIB_RUST_LIB})
-# --------------------------------------------------------------------
-
-add_library(ntdll_vista MODULE
-    ntdll_vista_rust_stub.c
-    # DllMain.c — replaced by Rust (ntdll-rust/src/nt_0600/dllmain.rs)
-    ${CMAKE_CURRENT_BINARY_DIR}/ntdll_vista.def
-    ntdll_vista.rc)
-set_module_type(ntdll_vista win32dll ENTRYPOINT DllMain 12)
-target_link_libraries(ntdll_vista ntdll_vista_static smlib rtl_vista ${PSEH_LIB} ${NTDLL_RUST_LIB} ${NTDLL_SMLIB_RUST_LIB})
-add_dependencies(ntdll_vista ntdll_vista_rust_lib ntdll_vista_smlib_rust_lib)
-target_link_options(ntdll_vista PRIVATE "-Wl,--allow-multiple-definition")
-if(FALSE)
-    target_link_libraries(ntdll_vista chkstk)
-endif()
-add_importlibs(ntdll_vista ntdll)
-add_dependencies(ntdll_vista psdk)
-add_cd_file(TARGET ntdll_vista DESTINATION reactos/system32 FOR all)
+# --- ntdll_vista.dll: link driven by cargo (graduated from cmake add_library) -
+# ntdll_vista-cargo/build.rs (reactos-link) produces the shipping DLL:
+# rust_staticlib(ntdll-rust, +vista = DllMain/LdrpHeap/ldrnotify) + smlib_only
+# smss-csrss-rust + utf8 + the pseh dummy shim, reusing only the Tier-C
+# librtl_vista.a (rtl_vista) and importing ntdll's exports (from ntdll.spec).
+# Replaces add_library(ntdll_vista MODULE …) + set_module_type(win32dll DllMain
+# 12) + add_importlibs(ntdll_vista ntdll) + add_cd_file. KIND win32dll →
+# i386 lld forwarder fix only (win32dll user DLL — no native-pefixup). entry
+# (_DllMain@12) / image base / GUI subsystem are baked into the build.rs.
+# spec2def(… ADD_IMPORTLIB) above STAYS (kernel32_vista imports libntdll_vista).
+add_cargo_module(ntdll_vista ntdll_vista-cargo ntdll_vista.dll
+    KIND win32dll
+    EXTRA_DEPENDS rtl_vista)

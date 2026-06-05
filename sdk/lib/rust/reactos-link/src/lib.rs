@@ -703,6 +703,15 @@ impl Linker {
                     println!("cargo:rustc-link-arg=-Wl,--subsystem,{s}");
                 }
                 println!("cargo:rustc-link-arg=-shared");
+                // KEEP ALL SECTIONS — match cmake's user-mode DLL link, which
+                // does NOT gc-sections ntdll. rustc adds `--gc-sections` by
+                // default for bin targets; without this override it strips
+                // ~196KB of arm64 ntdll code (incl. the CsrPortHeap init path),
+                // leaving CsrAllocateCaptureBuffer reading a null heap →
+                // BUGCHECK 0x6A in smss init. i386/amd64 tolerated the strip;
+                // arm64 did not. --no-gc-sections must come AFTER rustc's own
+                // --gc-sections so it wins (last flag wins in lld).
+                println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
                 (entry, Some(*image_base))
             }
             ModuleKind::EfiApplication { entry, image_base, alignment } => {
@@ -842,6 +851,24 @@ impl Linker {
             // don't apply — cnt-rust's `float` feature needs SSE, and cmake
             // builds it with SSE for this exact reason.
             cmd.current_dir(&self.build_dir);
+            // cnt-rust REQUIRES `-C no-prepopulate-passes` on EVERY arch: its
+            // per-fn cgu-split CRT shims miscompile under LLVM's default
+            // pre-passes (corrupted printf/streamout + mem/string ops). On
+            // arm64 that corrupted ntdll's own DbgPrint (status 0xc000003a
+            // printed as 0xc) + the heap path → smss BUGCHECK 0x6A. i386
+            // additionally disables SSE (cnt is built no-float there). This
+            // mirrors sdk/lib/crt/libcntpr.cmake's per-arch RUSTFLAGS exactly;
+            // the RUSTFLAGS scrub above dropped the inherited copy and
+            // .cargo/config.toml isn't found from build_dir, so set it here.
+            // See memory feedback_cnt_rust_no_prepopulate_amd64_arm64.
+            if crate_name == "cnt-rust-lib" {
+                let rf = if self.arch.name == "i386" {
+                    "-C target-feature=-sse,-sse2 -C no-prepopulate-passes"
+                } else {
+                    "-C no-prepopulate-passes"
+                };
+                cmd.env("RUSTFLAGS", rf);
+            }
         }
         let status = cmd
             .status()
