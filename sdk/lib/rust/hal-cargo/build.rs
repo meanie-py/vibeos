@@ -51,8 +51,12 @@ fn main() {
                 "hal/halx86/pic/pic.S",
             ],
             // i386 cmake link adds libchkstk.a (no transitive propagation in
-            // the cargo link, so list it explicitly).
-            &["sdk/lib/crt/libchkstk.a"],
+            // the cargo link, so list it explicitly). libcntpr_rust.a (the
+            // cnt-rust cohabitation twin) is also needed: the cnt-rust
+            // MATH-TIERC flip moved strnlen/wcsnlen into the Rust twin, so the C
+            // liblibcntpr.a now references them undefined — same as amd64, which
+            // already links libcntpr_rust.a.
+            &["sdk/lib/crt/libchkstk.a", "sdk/lib/crt/libcntpr_rust.a"],
         ),
         // amd64 acpi/apic-flavor: the only non-empty component contributions
         // are apic/apictrap.S + apic/tsccal.S (generic + acpi are empty.c).
