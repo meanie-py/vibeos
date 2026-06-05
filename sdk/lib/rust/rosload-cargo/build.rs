@@ -34,36 +34,32 @@ fn main() {
     // build-<arch>/build.ninja's rosload.exe inputs). The objects are
     // reused-prebuilt (header-dependent, compiled by cmake into rosload.dir),
     // matching uefildr-cargo's strsafe_shim reuse.
+    // rosload-specific compilation is now all reactos-link's: strsafe_shim.c via
+    // .c_shims(), and the per-arch asm (linux.S + amd64:misc.S) via .asm() from
+    // raw .S (only asm.inc + pcbios.h needed). cmboot is Rust (cmboot-rust).
+    // The SOLE remaining cmake-built reused object is the i386 16-bit
+    // drvmap_gcc.obj (clang can't .code16). The `rosload_objs` OBJECT lib is gone.
+    let mut asm: Vec<&str> = Vec::new();
     let (target_json, entry, mut libs): (&str, &str, Vec<&str>) = match arch.as_str() {
-        "x86" => (
-            "i686-kernel.json",
-            "_RunLoader",
-            vec![
-                // i386 objects: drvmap is gcc-compiled (16-bit asm), the rest
-                // clang-compiled by the cmake OBJECT lib `rosload_objs`.
-                // drvmap is 16-bit gcc asm (clang can't do .code16) — stays a
-                // cmake-built reused .obj. strsafe_shim.c is compiled directly
-                // by reactos-link via .c_shims() below (self-contained leaf, no
-                // freeldr env needed); cmboot is Rust (cmboot-rust in the
-                // rosload-feature archive). Neither is a reused .obj anymore.
-                "boot/freeldr/freeldr/drvmap_gcc.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/i386/linux.S.obj",
-                // i386 mini-HAL linked BEFORE the freeldr libs (rosload.cmake
-                // `if(ARCH STREQUAL i386)`).
-                "hal/halx86/minihal/libmini_hal.a",
-                "hal/halx86/libhal_rust_mini.a",
-            ],
-        ),
-        "x86_64" => (
-            "x86_64-kernel.json",
-            "RunLoader",
-            vec![
-                // strsafe_shim.c → reactos-link .c_shims() (see i386 note);
-                // cmboot is Rust. Only the per-arch asm remains a reused .obj.
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/amd64/misc.S.obj",
-                "boot/freeldr/freeldr/CMakeFiles/rosload_objs.dir/arch/amd64/linux.S.obj",
-            ],
-        ),
+        "x86" => {
+            asm.push("boot/freeldr/freeldr/arch/i386/linux.S");
+            (
+                "i686-kernel.json",
+                "_RunLoader",
+                vec![
+                    // drvmap: 16-bit gcc asm, reused directly.
+                    "boot/freeldr/freeldr/drvmap_gcc.obj",
+                    // i386 mini-HAL linked BEFORE the freeldr libs.
+                    "hal/halx86/minihal/libmini_hal.a",
+                    "hal/halx86/libhal_rust_mini.a",
+                ],
+            )
+        }
+        "x86_64" => {
+            asm.push("boot/freeldr/freeldr/arch/amd64/misc.S");
+            asm.push("boot/freeldr/freeldr/arch/amd64/linux.S");
+            ("x86_64-kernel.json", "RunLoader", Vec::new())
+        }
         other => panic!("rosload-cargo: unsupported arch {other} (i386/amd64 only; arm64 is UEFI-only, no rosload)"),
     };
 
@@ -89,6 +85,10 @@ fn main() {
         // pre-boot has SSE disabled; an emitted movaps would #UD).
         .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
         .c_shim_flags(&["-mno-sse"])
+        // linux.S/misc.S assembled from raw .S — asm.inc (sdk/include/asm) +
+        // pcbios.h REGS_* (boot/freeldr/freeldr/include) are all they need.
+        .asm(&asm, reactos_link::AsmDefineSet::Kernel)
+        .asm_include_dirs(&["sdk/include/asm", "boot/freeldr/freeldr/include"])
         // rosload exports RtlAssert via rosload.def (ENABLE_EXPORTS TRUE).
         .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe");
 
