@@ -42,8 +42,8 @@ fn main() {
         .static_libs(&[
             // Tier-C deep-C (deferred — follows rtl-priv flip track):
             "sdk/lib/rtl/librtl_vista.a",
-            // Tier-A asm/data (still cmake-built):
-            "sdk/lib/crt/libchkstk.a",
+            // NOTE: libchkstk.a dropped — __chkstk/_alloca_probe/___alloca come
+            // from the clang_rt.builtins the engine links (redundant reuse-.a).
         ])
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),

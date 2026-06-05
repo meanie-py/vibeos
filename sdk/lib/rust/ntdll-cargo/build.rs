@@ -67,7 +67,10 @@ fn main() {
             "sdk/lib/apisets/libapisets.a",
             "sdk/lib/uuid/libuuid.a",
             "sdk/lib/vcruntime/libsetjmp.a",
-            "sdk/lib/crt/libchkstk.a",
+            // NOTE: libchkstk.a dropped — __chkstk/_alloca_probe/___alloca are
+            // already provided by the clang_rt.builtins the engine links (the
+            // canonical stack-probe for clang-emitted code), so the cmake
+            // ReactOS chkstk_asm.s reuse-.a is redundant here.
         ])
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
