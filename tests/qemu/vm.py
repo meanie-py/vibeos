@@ -259,7 +259,11 @@ class I386Config(ArchConfig):
     boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
     min_boot_bytes: int = 500
-    desktop_settle_seconds: float = 5.0
+    # See Amd64Config: marker fires before the taskbar paints. i386 is at least
+    # as fast as amd64 (taskbar measured up by +15.5s on amd64), so 30s of margin
+    # captures the rendered shell. 5s was too short — it screenshotted the bare
+    # blue desktop before explorer built the tray.
+    desktop_settle_seconds: float = 30.0
     required_milestones: list[str] = field(default_factory=lambda: [
         "[SMSS] _main entered",
         "[CSRSS] _main entered",
@@ -330,13 +334,15 @@ class Amd64Config(ArchConfig):
     boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
     min_boot_bytes: int = 1000
-    # amd64 explorer paints the taskbar 90+ seconds after the kernel-side
-    # "shell ready" marker — slower than i386 because of a known KiUnwaitThread
-    # CPU storm that competes with explorer's user-mode paint thread (the storm
-    # doesn't gate the taskbar but does delay it). Without enough settle the
-    # smoke screenshot saves a bare blue desktop; with 120s we capture the
-    # rendered Start button + clock.
-    desktop_settle_seconds: float = 120.0
+    # The boot marker (`_tWinMain entered`) fires the instant explorer starts;
+    # the taskbar/Start button/tray paint a few seconds later. Measured 2026-06-05
+    # (post gmxWorldToDeviceDefault GDI fix): the taskbar is up and stable by
+    # +15.5s after the marker. 30s gives ~2x margin so the canonical screenshot
+    # always captures the rendered shell, not a bare blue desktop. (A known
+    # intermittent KiUnwaitThread CPU storm can delay it further on some boots;
+    # the storm never gates the taskbar, and the smoke verdict is the serial
+    # marker, not the screenshot, so an occasional early shot is only cosmetic.)
+    desktop_settle_seconds: float = 30.0
     required_milestones: list[str] = field(default_factory=lambda: [
         "[SMSS] _main entered",
         "[CSRSS] _main entered",
