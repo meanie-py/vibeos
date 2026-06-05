@@ -151,12 +151,12 @@ list(APPEND SOURCE
     user/ntuser/scrollbar.c
     user/ntuser/scrollex.c
     user/ntuser/security.c
-    user/ntuser/session.c
+    # user/ntuser/session.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/session.rs) — cohabitation [ntuser wave 1]
     user/ntuser/shutdown.c
     user/ntuser/simplecall.c
     user/ntuser/sysparams.c
     user/ntuser/timer.c
-    user/ntuser/useratom.c
+    # user/ntuser/useratom.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/useratom.rs) — cohabitation [ntuser wave 1]
     user/ntuser/usrheap.c
     user/ntuser/vis.c
     user/ntuser/windc.c
@@ -302,6 +302,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/engwindow.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/gradient.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ldevobj.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/session.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/useratom.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

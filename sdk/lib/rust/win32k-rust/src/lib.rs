@@ -230,6 +230,11 @@ pub mod brush;   // [Phase 2c wave 23: ntgdi/brush.cpp — BRUSH object (C++→R
 // ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
 pub mod ldevobj;
 
+// ── user/ntuser — the USER subsystem (window manager) ──────────────
+// [ntuser wave 1: atom-table pair — session.c (gAtomTable + init) + useratom.c]
+pub mod session;
+pub mod useratom;
+
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
 // drvdbg.rs and bitblt_new.rs are the last 2 of 39 gdi/eng leaves; both
