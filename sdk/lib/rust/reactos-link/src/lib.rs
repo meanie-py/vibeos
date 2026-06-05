@@ -517,6 +517,19 @@ impl Linker {
         self
     }
 
+    /// Add the kernel asm `#include` search chain to a cc-rs asm build: asm.inc
+    /// (source tree), the generated per-arch `ks*.inc` (build dir), and
+    /// ntoskrnl/include (sysfuncs.h / asmmacro.S / syscalls.inc deps). With it a
+    /// SOURCE `.S` assembles directly via `-x assembler-with-cpp` — no offline
+    /// pre-expansion (the old tools/gen_ntdll_asm.py step). Inert for an
+    /// already-expanded `.s` (no `#include`s to resolve). The build dir is
+    /// guaranteed present (the engine requires `build-<arch>/`).
+    fn add_kernel_asm_includes(&self, b: &mut cc::Build) {
+        b.include(self.repo_root.join("sdk/include/asm"))
+            .include(self.build_dir.join("sdk/include/asm"))
+            .include(self.repo_root.join("ntoskrnl/include"));
+    }
+
     /// Run everything and emit the cargo: link directives.
     pub fn link(self, kind: ModuleKind) {
         let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
@@ -603,11 +616,17 @@ impl Linker {
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
                 .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
-            // Minimal `-I` dirs for RAW `.S` files (asm.inc, pcbios.h, …). A
-            // pre-expanded `.s` sets none of these → unchanged.
+            // Caller-configured repo-relative `-I` dirs for RAW `.S` files
+            // (asm.inc, pcbios.h, …; a pre-expanded `.s` sets none of these).
             for dir in &self.asm_include_dirs {
                 b.flag("-I").flag(self.repo_root.join(dir).to_str().unwrap());
             }
+            // + the fixed kernel asm `#include` chain (asm.inc + the generated
+            // build-dir ks*.inc + ntoskrnl/include) used by modules that
+            // assemble kernel source `.S` directly (ntdll dispatch.S / ntdll.S).
+            // Additive — extra `-I` is inert when unused (and the build-dir dir
+            // is not expressible via the repo-relative asm_include_dirs above).
+            self.add_kernel_asm_includes(&mut b);
             b.flag("-x").flag("assembler-with-cpp");
             emit_objs(&b, &abs);
             println!("cargo:rerun-if-changed={}", abs.display());
@@ -692,10 +711,7 @@ impl Linker {
             for rel in rels {
                 let abs = self.repo_root.join(rel);
                 if !abs.exists() {
-                    panic!(
-                        "missing pre-processed asm: {} — regenerate via tools/gen_ntdll_asm.py",
-                        abs.display()
-                    );
+                    panic!("missing asm source for archive: {}", abs.display());
                 }
                 b.file(&abs);
                 println!("cargo:rerun-if-changed={}", abs.display());
@@ -706,9 +722,9 @@ impl Linker {
                 .flag("-isystem")
                 .flag(self.repo_root.join("sdk/include/crt").to_str().unwrap())
                 .flag("-isystem")
-                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap())
-                .flag("-x")
-                .flag("assembler-with-cpp");
+                .flag(llvm_mingw.join("lib/clang/19/include").to_str().unwrap());
+            self.add_kernel_asm_includes(&mut b);
+            b.flag("-x").flag("assembler-with-cpp");
             let objs = b.compile_intermediates();
             if objs.is_empty() {
                 panic!("asm_archive {name}: cc-rs produced no objects");

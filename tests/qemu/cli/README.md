@@ -123,17 +123,21 @@ The `cargo_link` guard is the **LINK** half of the cargo-drive gate (PE-valid,
 fast, no boot). Its **RUNTIME** half is `cargo-swap` (below) — a link can relink
 clean yet boot broken, and only a boot catches that.
 
-### `cargo-swap --arch X [--module all|ntdll|ntdll_vista]`
-**The runtime gate for the cargo-driven ntdll DLLs.** Boot-swaps each cargo-built
-DLL into the real livecd and boots it to the smoke marker via `vibeos-cli smoke`
-— proving the cargo link is runtime-equivalent to cmake's, not just the same PE
-shape. Wraps `sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh` (which owns the
-build / swap / `cmp`-assert that the iso carries the cargo bytes / restore-cmake-
-on-exit mechanics) and aggregates one verdict + `summary.json`. x86 only — arm64
-has no livecd for the swap (skips cleanly). `ntoskrnl-cargo` has no boot-swap yet
-(reuse-19-`.a` relink only), so the runtime gate covers the two cargo-deep ntdll
-DLLs. Slow (boots QEMU per module) — run it before trusting a cargo-drive
-handoff, not in the hot loop.
+### `cargo-swap --arch X [--module all|ntdll|ntdll_vista|ntoskrnl]`
+**The runtime gate for the cargo-driven modules.** Boot-swaps each cargo-built
+module into the real livecd and boots it to the smoke marker via `vibeos-cli
+smoke` — proving the cargo link is runtime-equivalent to cmake's, not just the
+same PE shape. Wraps each module's `boot-swap-smoke.sh` (which owns the build /
+swap / cmp-or-sha-assert that the iso carries the cargo bytes / restore-cmake-on-
+exit mechanics) and aggregates one verdict + `summary.json`. Covers:
+- **ntdll / ntdll_vista** (x86) — `sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh`.
+- **ntoskrnl** (i386 only) — `sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh`,
+  which also applies the kernel post-link (`native-pefixup --kernel` + the i386
+  forwarder fix) the standalone cargo link doesn't.
+
+x86 only — arm64 has no livecd for the swap (skips cleanly); ntoskrnl skips on
+amd64 (i386-only PoC). Slow (boots QEMU per module) — run it before trusting a
+cargo-drive handoff, not in the hot loop.
 
 ### `debug <verb> ...` — wraps the `qemu/` kernel-debugging toolkit
 Run-id-scoped GDB-over-the-real-boot debugging. Verbs pass through to the proven
@@ -208,7 +212,7 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 | Build the right media for an arch (warm/cold, classified failures) | `vibeos-cli build` |
 | Watch a specific boot marker fast | `vibeos-cli boot` |
 | Lint gate (NEW-vs-baseline) + cargo-link rot guard | `vibeos-cli check [--strict]` |
-| Prove a cargo-driven ntdll DLL boots (runtime gate) | `vibeos-cli cargo-swap` |
+| Prove a cargo-driven module boots (ntdll DLLs / ntoskrnl) | `vibeos-cli cargo-swap` |
 | Interactive/ad-hoc single GDB op on a live run-id | `qemu/inspect.sh` (or `vibeos-cli debug inspect`) |
 | Raw interactive launcher (serial/GUI/`--debug`) | `qemu/run.sh` |
 | What's live across worktrees | `vibeos-cli ps` (== `qemu/ps`) |

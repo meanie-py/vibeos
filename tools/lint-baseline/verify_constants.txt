@@ -1,5 +1,4 @@
-  MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:1056: STATUS_IMAGE_ALREADY_LOADED: Rust=0x40000003 → C=0xC000010E
-  MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:1062: STATUS_INVALID_IMAGE_PROTECT: Rust=0xC0000226 → C=0xC0000130
   MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ps/i386/psldt.rs:9: TAG_KERNEL: Rust=0x6E72654B → C=0x2020654B
-3 mismatches found across 405 files
+  MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/rtl/path.rs:597: TAG_USTR: Rust=0x53545255 → C=0x52545355
+2 mismatches found across 405 files
 C catalog: 4633 constants from headers
