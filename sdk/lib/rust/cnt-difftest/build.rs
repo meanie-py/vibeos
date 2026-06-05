@@ -581,6 +581,22 @@ fn main() {
         ("sqrt", "#include <math.h>\ndouble ref_sqrt(double x){return sqrt(x);}".to_string()),
         ("sqrtf", "#include <math.h>\nfloat ref_sqrtf(float x){return sqrtf(x);}".to_string()),
         ("nexttowardf", "#include <stdint.h>\nfloat ref_nexttowardf(float x,double y){union{float f;uint32_t i;}ux={x};if(x!=x||y!=y)return x+(float)y;if((double)x==y)return (float)y;if(x==0){ux.i=1;union{double f;uint64_t u;}uy={y};if(uy.u>>63)ux.i|=0x80000000u;}else if((double)x<y){if(ux.i>>31)ux.i--;else ux.i++;}else{if(ux.i>>31)ux.i++;else ux.i--;}return ux.f;}".to_string()),
+        // Wave MATH-TIERC sub-wave 2: exp/log/log10/pow/fmod = the genuine
+        // portable kernel-CRT .c (the same math/arm64/*.c used on both
+        // amd64-llvm-mingw and arm64), renamed to ref_*. exp/log/fmod are
+        // real algorithms; log10/pow are upstream's rough stubs — all are
+        // self-contained (no libm call) and bit-exact under -ffp-contract=off.
+        // The `#define X ref_X` token-renames only the public symbol (e.g.
+        // `log` does not touch `log10`/`logb`; `fmod` does not touch `fmodf`).
+        // Include <math.h> BEFORE the rename so the genuine .c's own
+        // `#include <math.h>` no-ops via its guard — otherwise `#define exp
+        // ref_exp` rewrites the token inside glibc's `__MATHCALL(exp,…)`
+        // macro and corrupts the header. log10.c has no <math.h> include.
+        ("exp", format!("#include <math.h>\n#define exp ref_exp\n{}", inc(s("math/arm64/exp.c")))),
+        ("log", format!("#include <math.h>\n#define log ref_log\n{}", inc(s("math/arm64/log.c")))),
+        ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
+        ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
+        ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which

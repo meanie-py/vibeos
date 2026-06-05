@@ -98,8 +98,8 @@ list(APPEND SOURCE
     # gdi/eng/xlateobj.c  # replaced by Rust (xlateobj.rs) — cohabitation [wave 2 sweep]
     user/ntuser/main.c
     user/ntuser/misc/file.c
-    user/ntuser/misc/rtlstr.c
-    user/ntuser/misc/copy.c
+    # user/ntuser/misc/rtlstr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtlstr.rs) — cohabitation [ntuser wave 8]
+    # user/ntuser/misc/copy.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/copy.rs) — cohabitation [ntuser wave 8]
     user/ntuser/misc/registry.c
     reactx/ntddraw/ddraw.c
     reactx/ntddraw/dd.c
@@ -112,11 +112,11 @@ list(APPEND SOURCE
     reactx/ntddraw/dxeng.c
     # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
     user/ntuser/callback.c
-    user/ntuser/callproc.c
+    # user/ntuser/callproc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callproc.rs) — cohabitation [ntuser wave 7]
     # user/ntuser/caret.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/caret.rs) — cohabitation [ntuser wave 3]
     user/ntuser/class.c
     user/ntuser/clipboard.c
-    user/ntuser/console.c
+    # user/ntuser/console.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/console.rs) — cohabitation [ntuser wave 7]
     user/ntuser/csr.c
     user/ntuser/cursoricon.c
     user/ntuser/dde.c
@@ -144,7 +144,7 @@ list(APPEND SOURCE
     user/ntuser/msgqueue.c
     user/ntuser/nonclient.c
     user/ntuser/ntstubs.c
-    user/ntuser/ntuser.c
+    # user/ntuser/ntuser.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntuser.rs) — cohabitation [ntuser wave 7]
     user/ntuser/painting.c
     # user/ntuser/power.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/power.rs) — cohabitation [ntuser wave 6]
     # user/ntuser/prop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/prop.rs) — cohabitation [ntuser wave 2]
@@ -313,6 +313,11 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ghost.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/power.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/usrheap.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntuser.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/callproc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/console.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/copy.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/rtlstr.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

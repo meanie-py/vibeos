@@ -16,3 +16,20 @@ cnt-ctype = { path = "../cnt-ctype" }
 
 [build-dependencies]
 cc = "1"
+
+# The differential suite runs WITHOUT libtest. cnt-rust/cnt-ctype export
+# `#[no_mangle]` shims (`getenv`, `str*`/`mem*`, ctype, `qsort`) that
+# override host glibc once linked. Under rustc 1.92 / current glibc that
+# breaks libtest specifically: its `getenv` for `RUST_TEST_THREADS` hits
+# cnt's empty env block → NULL → forced multithreading → a race on
+# cnt's process-global state (the `diff_env` setenv block) → a spurious
+# abort; argv parsing is also defeated. A `harness = false` single-
+# threaded `fn main()` runner sidesteps all of it: it never calls
+# getenv, never spawns threads, and reports each test by name before
+# running it (so an abort under `panic = "abort"` still pinpoints the
+# culprit). The translations themselves were always correct — this is a
+# host-toolchain interaction, not a contract bug.
+[[test]]
+name = "diff"
+path = "tests/diff.rs"
+harness = false
