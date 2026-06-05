@@ -228,7 +228,24 @@ pub mod device;
 pub mod d3dkmt;  // [Phase 2c wave 22: ntgdi/d3dkmt.c — 56 fns, D3DKMT dxgkrnl thunk layer]
 pub mod brush;   // [Phase 2c wave 23: ntgdi/brush.cpp — BRUSH object (C++→Rust, hand-translated)]
 // ldevobj.rs: subtler runtime regression (TBD which fn) breaks i386 boot
-// pub mod ldevobj;
+pub mod ldevobj;
+
+// ── user/ntuser — the USER subsystem (window manager) ──────────────
+// [ntuser wave 1: atom-table pair — session.c (gAtomTable + init) + useratom.c]
+pub mod session;
+pub mod useratom;
+// [ntuser wave 2: easy leaves]
+pub mod guicheck;
+pub mod prop;
+pub mod metric;
+// [ntuser wave 3]
+pub mod caret;
+// [ntuser wave 4]
+pub mod accelerator;
+// [ntuser wave 5]
+pub mod vis;
+pub mod ghost;
+// power.rs translated + integrated WIP (cross-crate casts pending) — parked, next wave
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
