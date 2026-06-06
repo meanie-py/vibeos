@@ -14,7 +14,7 @@ if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
 endif()
 
 list(APPEND RTL_WINE_SOURCE
-    actctx.c
+    # actctx.c — replaced by Rust implementation (sdk/lib/rust/rtl-actctx/ cabi)
     # timerqueue.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
     # threadpool.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
 )
@@ -235,6 +235,12 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-actctx/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-actctx/src/types.rs
+            ${RUST_WORKSPACE_DIR}/rtl-actctx/src/shim.rs
+            ${RUST_WORKSPACE_DIR}/rtl-actctx/src/strings.rs
+            ${RUST_WORKSPACE_DIR}/rtl-actctx/src/actctx.rs
+            ${RUST_WORKSPACE_DIR}/rtl-actctx/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/types.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/wine_list.rs
