@@ -44,9 +44,10 @@ fn main() {
                 "base/system/services/svcctl_s.c",
             ],
         )
-        // Load-bearing resource (localized STRINGTABLEs + version), compiled by
-        // the resource-only OBJECT lib `services_res`.
-        .resource_built("base/system/services/CMakeFiles/services_res.dir/services.rc.res")
+        // Load-bearing resource (localized STRINGTABLEs + version), compiled
+        // IN-cargo by replaying the services_res windres command from
+        // compile_commands.json.
+        .resource_from_rc("base/system/services/services.rc", "services_res")
         // 8 import libs generated in-cargo from each .spec.
         .import_lib("dll/win32/userenv/userenv.spec", "userenv.dll", "userenv")
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")

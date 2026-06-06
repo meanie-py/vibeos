@@ -290,6 +290,11 @@ pub struct Linker {
     /// relative) rather than a checked-in consumer-crate file. Used by the
     /// spine binaries whose `.rc` is compiled by cmake (e.g. lsass.rc.res).
     resource_built: Option<String>,
+    /// Compile the `.rc` IN-cargo by replaying cmake's flag-exact `windres`
+    /// invocation from `compile_commands.json` (vs `resource_built`, which
+    /// reuses a cmake-built `.res`). (rc-rel-path, cmake `_res` target name).
+    /// Drops the `ninja <m>_res` prereq — see `resource_from_rc`.
+    resource_from_rc: Option<(String, String)>,
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
@@ -358,6 +363,7 @@ impl Linker {
             asm_include_dirs: Vec::new(),
             resource: None,
             resource_built: None,
+            resource_from_rc: None,
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
@@ -506,6 +512,20 @@ impl Linker {
     /// (or a configure+rc build) to have produced it.
     pub fn resource_built(mut self, build_rel: &str) -> Self {
         self.resource_built = Some(build_rel.to_string());
+        self
+    }
+
+    /// Compile the `.rc` IN-cargo by replaying cmake's exact `windres`
+    /// invocation from `build-<arch>/compile_commands.json` (flag-exact: the
+    /// full RC_INVOKED / LANGUAGE_* / per-arch define set + `-I` chain), instead
+    /// of reusing a cmake-built `.res` (`resource_built`). Drops the
+    /// `ninja <m>_res` prereq. `rc_rel` is the repo-relative `.rc`; `res_target`
+    /// is the cmake `_res` OBJECT-lib target name (its `CMakeFiles/<res_target>.dir`
+    /// is the disambiguating marker, like `c_from_compile_db`). The `_res` cmake
+    /// target must still exist (to populate compile_commands.json) but its `.res`
+    /// is no longer linked. Mutually exclusive with `resource`/`resource_built`.
+    pub fn resource_from_rc(mut self, rc_rel: &str, res_target: &str) -> Self {
+        self.resource_from_rc = Some((rc_rel.to_string(), res_target.to_string()));
         self
     }
 
@@ -706,7 +726,49 @@ impl Linker {
             println!("cargo:rerun-if-changed={}", abs.display());
         }
 
-        // ---- Resource (.res) -----------------------------------------
+        // ---- Resource (.res) compiled IN-cargo from the .rc -----------
+        // Replay cmake's flag-exact `windres` command (positional in/out, no
+        // `-o`) with the output redirected into OUT_DIR, then link the COFF
+        // `.res` object. Drops the `ninja <m>_res` prereq.
+        if let Some((rc_rel, res_target)) = &self.resource_from_rc {
+            let db_path = self.build_dir.join("compile_commands.json");
+            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
+                panic!(
+                    "resource_from_rc needs {} — configure cmake with \
+                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
+                    db_path.display()
+                )
+            });
+            let entries = parse_ccdb(&db_text);
+            let abs = self.repo_root.join(rc_rel);
+            let marker = format!("CMakeFiles/{res_target}.dir");
+            let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
+                panic!(
+                    "no compile_commands.json windres entry for {} in target {res_target} \
+                     (marker {marker}) — is {res_target} a cmake OBJECT lib over that .rc?",
+                    abs.display()
+                )
+            });
+            let dst = self.obj_dir().join("module.rc.res");
+            // windres: `... <input.rc> <output.res>` — the output is the LAST
+            // positional token; replace it with our OUT_DIR path, keep all else.
+            let mut args: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
+            *args.last_mut().expect("empty windres command") =
+                dst.to_str().expect("utf8 res path").to_string();
+            let status = Command::new(&args[0])
+                .args(&args[1..])
+                .current_dir(&dir)
+                .status()
+                .unwrap_or_else(|e| panic!("replay windres for {rc_rel}: {e}"));
+            if !status.success() {
+                panic!("resource_from_rc: windres failed for {rc_rel} (target {res_target})");
+            }
+            println!("cargo:rustc-link-arg={}", dst.display());
+            println!("cargo:rerun-if-changed={}", abs.display());
+            println!("cargo:rerun-if-changed={}", db_path.display());
+        }
+
+        // ---- Resource (.res) — checked-in or cmake-built -------------
         let res_src: Option<PathBuf> = self
             .resource
             .as_ref()
