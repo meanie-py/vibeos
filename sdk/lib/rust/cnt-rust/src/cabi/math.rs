@@ -2155,3 +2155,887 @@ pub extern "C" fn _hypotf(x: f32, y: f32) -> f32 {
     }
     retval as f32
 }
+
+#[cfg(feature = "float")]
+const TWO_TO_JBY32_LEAD_F32: [f32; 32] = [
+    f32::from_bits(0x3F800000), f32::from_bits(0x3F82C000), f32::from_bits(0x3F858000), f32::from_bits(0x3F888000),
+    f32::from_bits(0x3F8B8000), f32::from_bits(0x3F8E8000), f32::from_bits(0x3F91C000), f32::from_bits(0x3F94C000),
+    f32::from_bits(0x3F980000), f32::from_bits(0x3F9B8000), f32::from_bits(0x3F9EC000), f32::from_bits(0x3FA24000),
+    f32::from_bits(0x3FA5C000), f32::from_bits(0x3FA98000), f32::from_bits(0x3FAD4000), f32::from_bits(0x3FB10000),
+    f32::from_bits(0x3FB50000), f32::from_bits(0x3FB8C000), f32::from_bits(0x3FBD0000), f32::from_bits(0x3FC10000),
+    f32::from_bits(0x3FC54000), f32::from_bits(0x3FC98000), f32::from_bits(0x3FCE0000), f32::from_bits(0x3FD28000),
+    f32::from_bits(0x3FD74000), f32::from_bits(0x3FDBC000), f32::from_bits(0x3FE0C000), f32::from_bits(0x3FE58000),
+    f32::from_bits(0x3FEAC000), f32::from_bits(0x3FEFC000), f32::from_bits(0x3FF50000), f32::from_bits(0x3FFA8000),
+];
+
+#[cfg(feature = "float")]
+const TWO_TO_JBY32_TRAIL_F32: [f32; 32] = [
+    f32::from_bits(0x00000000), f32::from_bits(0x39D86988), f32::from_bits(0x3AAB0D9F), f32::from_bits(0x3A407404),
+    f32::from_bits(0x3A2E0F1E), f32::from_bits(0x3A90E62D), f32::from_bits(0x38F4DCE0), f32::from_bits(0x3AD3BEA3),
+    f32::from_bits(0x3ADFC146), f32::from_bits(0x39D39B9C), f32::from_bits(0x3AD4C982), f32::from_bits(0x3AC10C0C),
+    f32::from_bits(0x3AFB5AA6), f32::from_bits(0x3A856AD3), f32::from_bits(0x3A41F752), f32::from_bits(0x3A8FD607),
+    f32::from_bits(0x391E6678), f32::from_bits(0x3AEEBD1D), f32::from_bits(0x398A39F4), f32::from_bits(0x3AB13329),
+    f32::from_bits(0x3A9CA845), f32::from_bits(0x3AE6F619), f32::from_bits(0x3A923054), f32::from_bits(0x3AA07647),
+    f32::from_bits(0x391F9958), f32::from_bits(0x3AEEDE5F), f32::from_bits(0x39CDEEC0), f32::from_bits(0x3AE41B9D),
+    f32::from_bits(0x37C6E7C0), f32::from_bits(0x3A92E66F), f32::from_bits(0x3A95F454), f32::from_bits(0x38ECB6D0),
+];
+
+#[cfg(feature = "float")]
+const ATAN_JBY256: [f64; 241] = [
+    f64::from_bits(0x3faff55bb72cfde9), f64::from_bits(0x3fb0f99ea71d52a6), f64::from_bits(0x3fb1f86dbf082d58),
+    f64::from_bits(0x3fb2f719318a4a9a), f64::from_bits(0x3fb3f59f0e7c559d), f64::from_bits(0x3fb4f3fd677292fb),
+    f64::from_bits(0x3fb5f2324fd2d7b2), f64::from_bits(0x3fb6f03bdcea4b0c), f64::from_bits(0x3fb7ee182602f10e),
+    f64::from_bits(0x3fb8ebc54478fb28), f64::from_bits(0x3fb9e94153cfdcf1), f64::from_bits(0x3fbae68a71c722b8),
+    f64::from_bits(0x3fbbe39ebe6f07c3), f64::from_bits(0x3fbce07c5c3cca32), f64::from_bits(0x3fbddd21701eba6e),
+    f64::from_bits(0x3fbed98c2190043a), f64::from_bits(0x3fbfd5ba9aac2f6d), f64::from_bits(0x3fc068d584212b3d),
+    f64::from_bits(0x3fc0e6adccf40881), f64::from_bits(0x3fc1646541060850), f64::from_bits(0x3fc1e1fafb043726),
+    f64::from_bits(0x3fc25f6e171a535c), f64::from_bits(0x3fc2dcbdb2fba1ff), f64::from_bits(0x3fc359e8edeb99a3),
+    f64::from_bits(0x3fc3d6eee8c6626c), f64::from_bits(0x3fc453cec6092a9e), f64::from_bits(0x3fc4d087a9da4f17),
+    f64::from_bits(0x3fc54d18ba11570a), f64::from_bits(0x3fc5c9811e3ec269), f64::from_bits(0x3fc645bfffb3aa73),
+    f64::from_bits(0x3fc6c1d4898933d8), f64::from_bits(0x3fc73dbde8a7d201), f64::from_bits(0x3fc7b97b4bce5b02),
+    f64::from_bits(0x3fc8350be398ebc7), f64::from_bits(0x3fc8b06ee2879c28), f64::from_bits(0x3fc92ba37d050271),
+    f64::from_bits(0x3fc9a6a8e96c8626), f64::from_bits(0x3fca217e601081a5), f64::from_bits(0x3fca9c231b403279),
+    f64::from_bits(0x3fcb1696574d780b), f64::from_bits(0x3fcb90d7529260a2), f64::from_bits(0x3fcc0ae54d768466),
+    f64::from_bits(0x3fcc84bf8a742e6d), f64::from_bits(0x3fccfe654e1d5395), f64::from_bits(0x3fcd77d5df205736),
+    f64::from_bits(0x3fcdf110864c9d9d), f64::from_bits(0x3fce6a148e96ec4d), f64::from_bits(0x3fcee2e1451d980c),
+    f64::from_bits(0x3fcf5b75f92c80dd), f64::from_bits(0x3fcfd3d1fc40dbe4), f64::from_bits(0x3fd025fa510665b5),
+    f64::from_bits(0x3fd061eea03d6290), f64::from_bits(0x3fd09dc597d86362), f64::from_bits(0x3fd0d97ee509acb3),
+    f64::from_bits(0x3fd1151a362431c9), f64::from_bits(0x3fd150973a9ce546), f64::from_bits(0x3fd18bf5a30bf178),
+    f64::from_bits(0x3fd1c735212dd883), f64::from_bits(0x3fd2025567e47c95), f64::from_bits(0x3fd23d562b381041),
+    f64::from_bits(0x3fd278372057ef45), f64::from_bits(0x3fd2b2f7fd9b5fe2), f64::from_bits(0x3fd2ed987a823cfe),
+    f64::from_bits(0x3fd328184fb58951), f64::from_bits(0x3fd362773707ebcb), f64::from_bits(0x3fd39cb4eb76157b),
+    f64::from_bits(0x3fd3d6d129271134), f64::from_bits(0x3fd410cbad6c7d32), f64::from_bits(0x3fd44aa436c2af09),
+    f64::from_bits(0x3fd4845a84d0c21b), f64::from_bits(0x3fd4bdee586890e6), f64::from_bits(0x3fd4f75f73869978),
+    f64::from_bits(0x3fd530ad9951cd49), f64::from_bits(0x3fd569d88e1b4cd7), f64::from_bits(0x3fd5a2e0175e0f4e),
+    f64::from_bits(0x3fd5dbc3fbbe768d), f64::from_bits(0x3fd614840309cfe1), f64::from_bits(0x3fd64d1ff635c1c5),
+    f64::from_bits(0x3fd685979f5fa6fd), f64::from_bits(0x3fd6bdeac9cbd76c), f64::from_bits(0x3fd6f61941e4def0),
+    f64::from_bits(0x3fd72e22d53aa2a9), f64::from_bits(0x3fd7660752817501), f64::from_bits(0x3fd79dc6899118d1),
+    f64::from_bits(0x3fd7d5604b63b3f7), f64::from_bits(0x3fd80cd46a14b1d0), f64::from_bits(0x3fd84422b8df95d7),
+    f64::from_bits(0x3fd87b4b0c1ebedb), f64::from_bits(0x3fd8b24d394a1b25), f64::from_bits(0x3fd8e92916f5cde8),
+    f64::from_bits(0x3fd91fde7cd0c662), f64::from_bits(0x3fd9566d43a34907), f64::from_bits(0x3fd98cd5454d6b18),
+    f64::from_bits(0x3fd9c3165cc58107), f64::from_bits(0x3fd9f93066168001), f64::from_bits(0x3fda2f233e5e530b),
+    f64::from_bits(0x3fda64eec3cc23fc), f64::from_bits(0x3fda9a92d59e98cf), f64::from_bits(0x3fdad00f5422058b),
+    f64::from_bits(0x3fdb056420ae9343), f64::from_bits(0x3fdb3a911da65c6c), f64::from_bits(0x3fdb6f962e737efb),
+    f64::from_bits(0x3fdba473378624a5), f64::from_bits(0x3fdbd9281e528191), f64::from_bits(0x3fdc0db4c94ec9ef),
+    f64::from_bits(0x3fdc42191ff11eb6), f64::from_bits(0x3fdc76550aad71f8), f64::from_bits(0x3fdcaa6872f3631b),
+    f64::from_bits(0x3fdcde53432c1350), f64::from_bits(0x3fdd121566b7f2ad), f64::from_bits(0x3fdd45aec9ec862b),
+    f64::from_bits(0x3fdd791f5a1226f4), f64::from_bits(0x3fddac670561bb4f), f64::from_bits(0x3fdddf85bb026974),
+    f64::from_bits(0x3fde127b6b0744af), f64::from_bits(0x3fde4548066cf51a), f64::from_bits(0x3fde77eb7f175a34),
+    f64::from_bits(0x3fdeaa65c7cf28c4), f64::from_bits(0x3fdedcb6d43f8434), f64::from_bits(0x3fdf0ede98f393cf),
+    f64::from_bits(0x3fdf40dd0b541417), f64::from_bits(0x3fdf72b221a4e495), f64::from_bits(0x3fdfa45dd3029258),
+    f64::from_bits(0x3fdfd5e0175fdf83), f64::from_bits(0x3fe0039c73c1a40b), f64::from_bits(0x3fe01c341e82422d),
+    f64::from_bits(0x3fe034b709250488), f64::from_bits(0x3fe04d25314342e5), f64::from_bits(0x3fe0657e94db30cf),
+    f64::from_bits(0x3fe07dc3324e9b38), f64::from_bits(0x3fe095f30861a58f), f64::from_bits(0x3fe0ae0e1639866c),
+    f64::from_bits(0x3fe0c6145b5b43da), f64::from_bits(0x3fe0de05d7aa6f7c), f64::from_bits(0x3fe0f5e28b67e295),
+    f64::from_bits(0x3fe10daa77307a0d), f64::from_bits(0x3fe1255d9bfbd2a8), f64::from_bits(0x3fe13cfbfb1b056e),
+    f64::from_bits(0x3fe1548596376469), f64::from_bits(0x3fe16bfa6f5137e1), f64::from_bits(0x3fe1835a88be7c13),
+    f64::from_bits(0x3fe19aa5e5299f99), f64::from_bits(0x3fe1b1dc87904284), f64::from_bits(0x3fe1c8fe7341f64f),
+    f64::from_bits(0x3fe1e00babdefeb3), f64::from_bits(0x3fe1f7043557138a), f64::from_bits(0x3fe20de813e823b1),
+    f64::from_bits(0x3fe224b74c1d192a), f64::from_bits(0x3fe23b71e2cc9e6a), f64::from_bits(0x3fe25217dd17e501),
+    f64::from_bits(0x3fe268a940696da6), f64::from_bits(0x3fe27f261273d1b3), f64::from_bits(0x3fe2958e59308e30),
+    f64::from_bits(0x3fe2abe21aded073), f64::from_bits(0x3fe2c2215e024465), f64::from_bits(0x3fe2d84c2961e48b),
+    f64::from_bits(0x3fe2ee628406cbca), f64::from_bits(0x3fe30464753b090a), f64::from_bits(0x3fe31a52048874be),
+    f64::from_bits(0x3fe3302b39b78856), f64::from_bits(0x3fe345f01cce37bb), f64::from_bits(0x3fe35ba0b60eccce),
+    f64::from_bits(0x3fe3713d0df6c503), f64::from_bits(0x3fe386c52d3db11e), f64::from_bits(0x3fe39c391cd41719),
+    f64::from_bits(0x3fe3b198e5e2564a), f64::from_bits(0x3fe3c6e491c78dc4), f64::from_bits(0x3fe3dc1c2a188504),
+    f64::from_bits(0x3fe3f13fb89e96f4), f64::from_bits(0x3fe4064f47569f48), f64::from_bits(0x3fe41b4ae06fea41),
+    f64::from_bits(0x3fe430328e4b26d5), f64::from_bits(0x3fe445065b795b55), f64::from_bits(0x3fe459c652badc7f),
+    f64::from_bits(0x3fe46e727efe4715), f64::from_bits(0x3fe4830aeb5f7bfd), f64::from_bits(0x3fe4978fa3269ee1),
+    f64::from_bits(0x3fe4ac00b1c71762), f64::from_bits(0x3fe4c05e22de94e4), f64::from_bits(0x3fe4d4a8023414e8),
+    f64::from_bits(0x3fe4e8de5bb6ec04), f64::from_bits(0x3fe4fd013b7dd17e), f64::from_bits(0x3fe51110adc5ed81),
+    f64::from_bits(0x3fe5250cbef1e9fa), f64::from_bits(0x3fe538f57b89061e), f64::from_bits(0x3fe54ccaf0362c8f),
+    f64::from_bits(0x3fe5608d29c70c34), f64::from_bits(0x3fe5743c352b33b9), f64::from_bits(0x3fe587d81f732fba),
+    f64::from_bits(0x3fe59b60f5cfab9d), f64::from_bits(0x3fe5aed6c5909517), f64::from_bits(0x3fe5c2399c244260),
+    f64::from_bits(0x3fe5d58987169b18), f64::from_bits(0x3fe5e8c6941043cf), f64::from_bits(0x3fe5fbf0d0d5cc49),
+    f64::from_bits(0x3fe60f084b46e05e), f64::from_bits(0x3fe6220d115d7b8d), f64::from_bits(0x3fe634ff312d1f3b),
+    f64::from_bits(0x3fe647deb8e20b8f), f64::from_bits(0x3fe65aabb6c07b02), f64::from_bits(0x3fe66d663923e086),
+    f64::from_bits(0x3fe6800e4e7e2857), f64::from_bits(0x3fe692a40556fb6a), f64::from_bits(0x3fe6a5276c4b0575),
+    f64::from_bits(0x3fe6b798920b3d98), f64::from_bits(0x3fe6c9f7855c3198), f64::from_bits(0x3fe6dc44551553ae),
+    f64::from_bits(0x3fe6ee7f10204aef), f64::from_bits(0x3fe700a7c5784633), f64::from_bits(0x3fe712be84295198),
+    f64::from_bits(0x3fe724c35b4fae7b), f64::from_bits(0x3fe736b65a172dff), f64::from_bits(0x3fe748978fba8e0f),
+    f64::from_bits(0x3fe75a670b82d8d8), f64::from_bits(0x3fe76c24dcc6c6c0), f64::from_bits(0x3fe77dd112ea22c7),
+    f64::from_bits(0x3fe78f6bbd5d315e), f64::from_bits(0x3fe7a0f4eb9c19a2), f64::from_bits(0x3fe7b26cad2e50fd),
+    f64::from_bits(0x3fe7c3d311a6092b), f64::from_bits(0x3fe7d528289fa093), f64::from_bits(0x3fe7e66c01c114fd),
+    f64::from_bits(0x3fe7f79eacb97898), f64::from_bits(0x3fe808c03940694a), f64::from_bits(0x3fe819d0b7158a4c),
+    f64::from_bits(0x3fe82ad036000005), f64::from_bits(0x3fe83bbec5cdee22), f64::from_bits(0x3fe84c9c7653f7ea),
+    f64::from_bits(0x3fe85d69576cc2c5), f64::from_bits(0x3fe86e2578f87ae5), f64::from_bits(0x3fe87ed0eadc5a2a),
+    f64::from_bits(0x3fe88f6bbd023118), f64::from_bits(0x3fe89ff5ff57f1f7), f64::from_bits(0x3fe8b06fc1cf3dfe),
+    f64::from_bits(0x3fe8c0d9145cf49d), f64::from_bits(0x3fe8d13206f8c4ca), f64::from_bits(0x3fe8e17aa99cc05d),
+    f64::from_bits(0x3fe8f1b30c44f167), f64::from_bits(0x3fe901db3eeef187), f64::from_bits(0x3fe911f35199833b),
+    f64::from_bits(0x3fe921fb54442d18),
+];
+
+// ════════════════════════════════════════════════════════════════════════
+// Wave MATH-TIERC (sub-wave 13): the f32 transcendental twins
+//   acosf asinf atanf sinhf coshf tanhf tanf atan2f
+// Faithful ports of the AMD-libm math/libm_sse2/*f.c. amd64-only in libcntpr
+// (the libm_sse2 set); flipped behind the `float` feature (amd64+arm64),
+// i386 keeps C. The f64 foundation (splitexp, scale_double_1/2, SINH_LEAD/
+// COSH_LEAD, sinh_cosh_dy_poly) is reused; the new f32 foundation is
+// splitexpf + scale_float_2 + the two_to_jby32 f32 tables, plus the atan2f
+// look-up table, the tanf Payne-Hanek reducer, and scale_down_double.
+// _handle_errorf reduces to from_bits(value); valf_with_flags(v,_) → v.
+// ════════════════════════════════════════════════════════════════════════
+
+// Full-precision cosh(i)/sinh(i) tables (the f32 .c `cosh_lead`/`sinh_lead`,
+// FULL values — distinct from sw9's lead/tail-split SINH_LEAD/COSH_LEAD).
+#[cfg(feature = "float")]
+const SINH_LEAD_F32: [f64; 37] = [
+    f64::from_bits(0x0000000000000000), f64::from_bits(0x3ff2cd9fc44eb982), f64::from_bits(0x400d03cf63b6e19f),
+    f64::from_bits(0x40240926e70949ad), f64::from_bits(0x403b4a3803703630), f64::from_bits(0x40528d0166f07374),
+    f64::from_bits(0x406936d22f67c805), f64::from_bits(0x408122876ba380c9), f64::from_bits(0x409749ea514eca65),
+    f64::from_bits(0x40afa7157430966f), f64::from_bits(0x40c5829dced69991), f64::from_bits(0x40dd3c4488cb48d6),
+    f64::from_bits(0x40f3de1654d043f0), f64::from_bits(0x410b00b5916a31a5), f64::from_bits(0x412259ac48bef7e3),
+    f64::from_bits(0x4138f0ccafad27f6), f64::from_bits(0x4150f2ebd0a7ffe3), f64::from_bits(0x416709348c0ea4ed),
+    f64::from_bits(0x417f4f22091940bb), f64::from_bits(0x419546d8f9ed26e1), f64::from_bits(0x41aceb088b68e803),
+    f64::from_bits(0x41c3a6e1fd9eecfd), f64::from_bits(0x41dab5adb9c435ff), f64::from_bits(0x41f226af33b1fdc0),
+    f64::from_bits(0x4208ab7fb5475fb7), f64::from_bits(0x4220c3d3920962c8), f64::from_bits(0x4236c932696a6b5c),
+    f64::from_bits(0x424ef822f7f6731c), f64::from_bits(0x42650bba3796379a), f64::from_bits(0x427c9aae4631c056),
+    f64::from_bits(0x429370470aec28ec), f64::from_bits(0x42aa6b765d8cdf6c), f64::from_bits(0x42c1f43fcc4b662c),
+    f64::from_bits(0x42d866f34a725782), f64::from_bits(0x42f0953e2f3a1ef7), f64::from_bits(0x430689e221bc8d5a),
+    f64::from_bits(0x431ea215a1d20d76),
+];
+
+#[cfg(feature = "float")]
+const COSH_LEAD_F32: [f64; 37] = [
+    f64::from_bits(0x3ff0000000000000), f64::from_bits(0x3ff8b07551d9f550), f64::from_bits(0x400e18fa0df2d9bc),
+    f64::from_bits(0x402422a497d6185e), f64::from_bits(0x403b4ee858de3e80), f64::from_bits(0x40528d6fcbeff3a9),
+    f64::from_bits(0x406936e67db9b919), f64::from_bits(0x4081228949ba3a8b), f64::from_bits(0x409749eaa93f4e76),
+    f64::from_bits(0x40afa715845d8894), f64::from_bits(0x40c5829dd053712d), f64::from_bits(0x40dd3c4489115627),
+    f64::from_bits(0x40f3de1654d6b543), f64::from_bits(0x410b00b5916b6105), f64::from_bits(0x412259ac48bf13ca),
+    f64::from_bits(0x4138f0ccafad2d17), f64::from_bits(0x4150f2ebd0a8005c), f64::from_bits(0x416709348c0ea503),
+    f64::from_bits(0x417f4f22091940bf), f64::from_bits(0x419546d8f9ed26e1), f64::from_bits(0x41aceb088b68e804),
+    f64::from_bits(0x41c3a6e1fd9eecfd), f64::from_bits(0x41dab5adb9c435ff), f64::from_bits(0x41f226af33b1fdc0),
+    f64::from_bits(0x4208ab7fb5475fb7), f64::from_bits(0x4220c3d3920962c8), f64::from_bits(0x4236c932696a6b5c),
+    f64::from_bits(0x424ef822f7f6731c), f64::from_bits(0x42650bba3796379a), f64::from_bits(0x427c9aae4631c056),
+    f64::from_bits(0x429370470aec28ec), f64::from_bits(0x42aa6b765d8cdf6c), f64::from_bits(0x42c1f43fcc4b662c),
+    f64::from_bits(0x42d866f34a725782), f64::from_bits(0x42f0953e2f3a1ef7), f64::from_bits(0x430689e221bc8d5a),
+    f64::from_bits(0x431ea215a1d20d76),
+];
+
+/// libm_inlines.h `scaleFloat_2`: x * 2**n (2*EMIN <= n <= 2*EMAX).
+#[cfg(feature = "float")]
+fn scale_float_2(x: f32, n: i32) -> f32 {
+    let n1 = n / 2;
+    let n2 = n - n1;
+    let t1 = f32::from_bits(((n1 + 127) << 23) as u32);
+    let t2 = f32::from_bits(((n2 + 127) << 23) as u32);
+    (x * t1) * t2
+}
+
+/// libm_inlines.h `splitexpf`: base**x = 2**m * (z1 + z2), single precision.
+#[cfg(feature = "float")]
+fn splitexpf(
+    x: f32,
+    logbase: f32,
+    thirtytwo_by_logbaseof2: f32,
+    logbaseof2_by_32_lead: f32,
+    logbaseof2_by_32_trail: f32,
+) -> (i32, f32, f32) {
+    let r = x * thirtytwo_by_logbaseof2;
+    let n = if r > 0.0 { (r + 0.5) as i32 } else { (r - 0.5) as i32 };
+    let mut r1 = x - (n as f32) * logbaseof2_by_32_lead;
+    let mut r2 = -(n as f32) * logbaseof2_by_32_trail;
+    let j = (n & 0x1f) as usize;
+    let f1 = TWO_TO_JBY32_LEAD_F32[j];
+    let f2 = TWO_TO_JBY32_TRAIL_F32[j];
+    let m = (n - j as i32) / 32;
+    r1 *= logbase;
+    r2 *= logbase;
+    let r = r1 + r2;
+    let q = r1 + (r2 + r * r * (5.00000000000000008883e-01_f32 + r * (1.66666666665260878863e-01_f32)));
+    let z1 = f1;
+    let z2 = f2 + ((f1 + f2) * q);
+    (m, z1, z2)
+}
+
+/// libm_inlines.h `scaleDownDouble`: scale ux (bit pattern) down by 2**k,
+/// returning the result bit pattern (handles denormal underflow + rounding).
+#[cfg(feature = "float")]
+fn scale_down_double(ux: u64, k: i32) -> u64 {
+    let xsign = ux & 0x8000_0000_0000_0000;
+    let ax = ux & 0x7fff_ffff_ffff_ffff;
+    let n = ((ax & 0x7ff0_0000_0000_0000) >> 52) as i32 - k;
+    let uy;
+    if n > 0 {
+        let uk = (n as u64) << 52;
+        uy = (ax & !0x7ff0_0000_0000_0000) | uk;
+    } else {
+        let mut t = (ax & !0x7ff0_0000_0000_0000) | 0x0010_0000_0000_0000;
+        let shift = 1 - n;
+        if shift > 52 + 1 {
+            t = 0;
+        } else {
+            t >>= shift - 1;
+            t = (t >> 1) + (t & 1);
+        }
+        uy = t;
+    }
+    uy | xsign
+}
+
+/// The shared [0,0.5] float rational R(r) of acosf/asinf (`u` in the C).
+#[cfg(feature = "float")]
+fn asinf_rational(r: f32) -> f32 {
+    r * (0.184161606965100694821398249421_f32
+        + (-0.0565298683201845211985026327361_f32
+            + (-0.0133819288943925804214011424456_f32
+                - 0.00396137437848476485201154797087_f32 * r)
+                * r)
+            * r)
+        / (1.10496961524520294485512696706_f32 - 0.836411276854206731913362287293_f32 * r)
+}
+
+/// `float asinf(float)` — arcsine.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn asinf(x: f32) -> f32 {
+    const PIBY2_TAIL: f32 = 7.5497894159e-08;
+    const HPIBY2_HEAD: f32 = 7.8539812565e-01;
+    const PIBY2: f32 = 1.5707963705e+00;
+
+    let ux = x.to_bits();
+    let aux = ux & !0x8000_0000;
+    let xneg = ux & 0x8000_0000;
+    let xnan = aux > 0x7f80_0000;
+    let xexp = ((ux & 0x7f80_0000) >> 23) as i32 - 127;
+
+    if xnan {
+        return f32::from_bits(ux | 0x0040_0000);
+    } else if xexp < -14 {
+        return x;
+    } else if xexp >= 0 {
+        if x == 1.0 {
+            return PIBY2;
+        } else if x == -1.0 {
+            return -PIBY2;
+        }
+        return f32::from_bits(0xffc0_0000); // INDEFBITPATT_SP32
+    }
+
+    let mut y = if xneg != 0 { -x } else { x };
+    let transform = xexp >= -1;
+    let r;
+    let mut s = 0.0f32;
+    if transform {
+        r = 0.5 * (1.0 - y);
+        s = sqrtf(r);
+        y = s;
+    } else {
+        r = y * y;
+    }
+
+    let u = asinf_rational(r);
+
+    let v;
+    if transform {
+        let s1 = f32::from_bits(0xffff_0000 & s.to_bits());
+        let c = (r - s1 * s1) / (s + s1);
+        let p = 2.0 * s * u - (PIBY2_TAIL - 2.0 * c);
+        let q = HPIBY2_HEAD - 2.0 * s1;
+        v = HPIBY2_HEAD - (p - q);
+    } else {
+        let tmp = y * u;
+        v = y + tmp;
+    }
+
+    if xneg != 0 {
+        -v
+    } else {
+        v
+    }
+}
+
+/// `float acosf(float)` — arccosine.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn acosf(x: f32) -> f32 {
+    const PIBY2_F: f32 = 1.5707963705e+00;
+    const PI: f64 = 3.1415926535897933e+00;
+    const PIBY2_HEAD: f64 = 1.5707963267948965580e+00;
+    const PIBY2_TAIL: f64 = 6.12323399573676603587e-17;
+
+    let ux = x.to_bits();
+    let aux = ux & !0x8000_0000;
+    let xneg = ux & 0x8000_0000;
+    let xnan = aux > 0x7f80_0000;
+    let xexp = ((ux & 0x7f80_0000) >> 23) as i32 - 127;
+
+    if xnan {
+        return f32::from_bits(ux | 0x0040_0000);
+    } else if xexp < -26 {
+        return PIBY2_F;
+    } else if xexp >= 0 {
+        if x == 1.0 {
+            return 0.0;
+        } else if x == -1.0 {
+            return PI as f32;
+        }
+        return f32::from_bits(0xffc0_0000);
+    }
+
+    let mut y = if xneg != 0 { -x } else { x };
+    let transform = xexp >= -1;
+    let r;
+    let mut s = 0.0f32;
+    if transform {
+        r = 0.5 * (1.0 - y);
+        s = sqrtf(r);
+        y = s;
+    } else {
+        r = y * y;
+    }
+
+    let u = asinf_rational(r);
+
+    if transform {
+        if xneg != 0 {
+            (PI - 2.0 * (s as f64 + ((y * u) as f64 - PIBY2_TAIL))) as f32
+        } else {
+            let s1 = f32::from_bits(0xffff_0000 & s.to_bits());
+            let c = (r - s1 * s1) / (s + s1);
+            2.0 * s1 + (2.0 * c + 2.0 * y * u)
+        }
+    } else {
+        (PIBY2_HEAD - (x as f64 - (PIBY2_TAIL - (x * u) as f64))) as f32
+    }
+}
+
+/// `float atanf(float)` — arctangent. Computed in f64, returned as f32.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atanf(fx: f32) -> f32 {
+    const PIBY2: f64 = 1.5707963267948966e+00;
+
+    let x0 = fx as f64;
+    let ux = x0.to_bits();
+    let aux = ux & 0x7fff_ffff_ffff_ffff;
+    let xneg = ux & 0x8000_0000_0000_0000;
+
+    let v = if xneg != 0 { -x0 } else { x0 };
+
+    let x;
+    let c;
+    if aux < 0x3fdc_0000_0000_0000 {
+        x = v;
+        c = 0.0;
+    } else if aux < 0x3fe6_0000_0000_0000 {
+        x = (2.0 * v - 1.0) / (2.0 + v);
+        c = 4.63647609000806093515e-01;
+    } else if aux < 0x3ff3_0000_0000_0000 {
+        x = (v - 1.0) / (1.0 + v);
+        c = 7.85398163397448278999e-01;
+    } else if aux < 0x4003_8000_0000_0000 {
+        x = (v - 1.5) / (1.0 + 1.5 * v);
+        c = 9.82793723247329054082e-01;
+    } else {
+        let xnan = aux > 0x7ff0_0000_0000_0000;
+        if xnan {
+            let uhx = fx.to_bits();
+            return f32::from_bits(uhx | 0x0040_0000);
+        } else if v > 0x4c80_0000_0000_0000_u64 as f64 {
+            if xneg != 0 {
+                return (-PIBY2) as f32;
+            } else {
+                return PIBY2 as f32;
+            }
+        }
+        x = -1.0 / v;
+        c = 1.57079632679489655800e+00;
+    }
+
+    let s = x * x;
+    let q = x * s
+        * (0.296528598819239217902158651186e0
+            + (0.192324546402108583211697690500e0 + 0.470677934286149214138357545549e-2 * s) * s)
+        / (0.889585796862432286486651434570e0
+            + (0.111072499995399550138837673349e1 + 0.299309699959659728404442796915e0 * s) * s);
+
+    let mut z = c - (q - x);
+    if xneg != 0 {
+        z = -z;
+    }
+    z as f32
+}
+
+/// `float sinhf(float)` — hyperbolic sine.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn sinhf(fx: f32) -> f32 {
+    const MAX_SINH_ARG: f64 = 8.94159862922329438106e+01;
+    const T32: f64 = 4.61662413084468283841e+01;
+    const L2_LEAD: f64 = 2.16608493356034159660e-02;
+    const L2_TAIL: f64 = 5.68948749532545630390e-11;
+    let small_threshold = 8.0 * 15.0 * 0.30102999566398119521373889;
+
+    let x = fx as f64;
+    let ux = x.to_bits();
+    let aux = ux & 0x7fff_ffff_ffff_ffff;
+    if aux < 0x3f10_0000_0000_0000 {
+        return fx; // |x| tiny: sinh(x) = x (with/without inexact)
+    } else if aux >= 0x7ff0_0000_0000_0000 {
+        if aux > 0x7ff0_0000_0000_0000 {
+            let uhx = fx.to_bits();
+            return f32::from_bits(uhx | 0x0040_0000);
+        }
+        return fx + fx; // ±Inf
+    }
+
+    let xneg = aux != ux;
+    let y = if xneg { -x } else { x };
+
+    let mut z;
+    if y >= MAX_SINH_ARG {
+        return if xneg {
+            f32::from_bits(0xff80_0000)
+        } else {
+            f32::from_bits(0x7f80_0000)
+        };
+    } else if y >= small_threshold {
+        let (mut m, z1, z2) = splitexp(y, 1.0, T32, L2_LEAD, L2_TAIL);
+        m -= 1;
+        z = scale_double_1(z1 + z2, m);
+    } else {
+        let ind = (y as i32) as usize;
+        let dy = y - ind as f64;
+        let (sdy_p, cdy_p) = sinh_cosh_dy_poly(dy);
+        let sdy = dy + sdy_p;
+        let cdy = 1.0 + cdy_p;
+        z = SINH_LEAD_F32[ind] * cdy + COSH_LEAD_F32[ind] * sdy;
+    }
+
+    if xneg {
+        z = -z;
+    }
+    z as f32
+}
+
+/// `float coshf(float)` — hyperbolic cosine.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn coshf(fx: f32) -> f32 {
+    const MAX_COSH_ARG: f64 = 8.94159862922329438106e+01;
+    const T32: f64 = 4.61662413084468283841e+01;
+    const L2_LEAD: f64 = 2.16608493356034159660e-02;
+    const L2_TAIL: f64 = 5.68948749532545630390e-11;
+    const LAMBDA: f64 = 1.0e300; // LAMBDA_DP64 (inexact-raising sentinel)
+    let small_threshold = 8.0 * 15.0 * 0.30102999566398119521373889;
+
+    let x = fx as f64;
+    let ux = x.to_bits();
+    let aux = ux & 0x7fff_ffff_ffff_ffff;
+    if aux < 0x3f10_0000_0000_0000 {
+        if aux == 0 {
+            return 1.0;
+        }
+        if LAMBDA + x > 1.0 {
+            return 1.0;
+        }
+        // (unreachable for finite x; falls through faithfully otherwise)
+    } else if aux >= 0x7ff0_0000_0000_0000 {
+        if aux > 0x7ff0_0000_0000_0000 {
+            let uhx = fx.to_bits();
+            return f32::from_bits(uhx | 0x0040_0000);
+        }
+        return f32::from_bits(0x7f80_0000); // +Inf
+    }
+
+    let xneg = aux != ux;
+    let y = if xneg { -x } else { x };
+
+    let z;
+    if y >= MAX_COSH_ARG {
+        return f32::from_bits(0x7f80_0000); // overflow → +Inf
+    } else if y >= small_threshold {
+        let (mut m, z1, z2) = splitexp(y, 1.0, T32, L2_LEAD, L2_TAIL);
+        m -= 1;
+        z = scale_double_1(z1 + z2, m);
+    } else {
+        let ind = (y as i32) as usize;
+        let dy = y - ind as f64;
+        let (sdy_p, cdy_p) = sinh_cosh_dy_poly(dy);
+        let sdy = dy + sdy_p;
+        let cdy = 1.0 + cdy_p;
+        z = COSH_LEAD_F32[ind] * cdy + SINH_LEAD_F32[ind] * sdy;
+    }
+
+    z as f32 // cosh is even (the C `if(xneg) z=-z` is commented out)
+}
+
+/// `float tanhf(float)` — hyperbolic tangent. All single precision.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn tanhf(x: f32) -> f32 {
+    const T32: f32 = 4.6166240692e+01;
+    const L2_LEAD: f32 = 2.1659851074e-02;
+    const L2_TAIL: f32 = 9.9831822808e-07;
+    const LARGE_THRESHOLD: f32 = 10.0;
+
+    let ux = x.to_bits();
+    let aux = ux & 0x7fff_ffff;
+    if aux < 0x3900_0000 {
+        return x; // |x| tiny: tanh(x) = x
+    } else if aux > 0x7f80_0000 {
+        return f32::from_bits(ux | 0x0040_0000); // NaN
+    }
+
+    let xneg = 1.0f32 - 2.0f32 * ((aux != ux) as i32 as f32);
+    let y = xneg * x;
+
+    let z;
+    if y > LARGE_THRESHOLD {
+        z = 1.0;
+    } else if y <= 1.0 {
+        let y2 = y * y;
+        if y < 0.9 {
+            z = y + y * y2
+                * (-0.28192806108402678e0_f32
+                    + (-0.14628356048797849e-2_f32 + 0.4891631088530669873e-4_f32 * y2) * y2)
+                / (0.845784192581041099e0_f32 + 0.3427017942262751343e0_f32 * y2);
+        } else {
+            z = y + y * y2
+                * (-0.24069858695196524e0_f32
+                    + (-0.12325644183611929e-2_f32 + 0.3827534993599483396e-4_f32 * y2) * y2)
+                / (0.72209738473684982e0_f32 + 0.292529068698052819e0_f32 * y2);
+        }
+    } else {
+        let (m, z1, z2) = splitexpf(2.0 * y, 1.0, T32, L2_LEAD, L2_TAIL);
+        let p = scale_float_2(z1 + z2, m) + 1.0;
+        z = 1.0 - 2.0 / p;
+    }
+
+    xneg * z
+}
+
+/// tan(x) on [-pi/4,pi/4]; if `recip` return -1/tan(x). C `tanf_piby4`.
+#[cfg(feature = "float")]
+fn tanf_piby4(x: f64, recip: i32) -> f64 {
+    let r = x * x;
+    let t = x + x * r * (0.385296071263995406715129e0 - 0.172032480471481694693109e-1 * r)
+        / (0.115588821434688393452299e+1
+            + (-0.51396505478854532132342e0 + 0.1844239256901656082986661e-1 * r) * r);
+    if recip != 0 {
+        -1.0 / t
+    } else {
+        t
+    }
+}
+
+/// libm_inlines.h `__remainder_piby2f_inline`: reduce |x| (bits in `ux`) to
+/// [-pi/4,pi/4]; returns (r, region) where region = #pi/2 subtracted mod 4.
+#[cfg(feature = "float")]
+fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
+    const BITSPER: i32 = 36;
+    const PIBY2: f64 = 1.57079632679489655800e+00;
+    const PIBITS: [u64; 13] = [
+        0,
+        5215,
+        13000023176,
+        11362338026,
+        67174558139,
+        34819822259,
+        10612056195,
+        67816420731,
+        57840157550,
+        19558516809,
+        50025467026,
+        25186875954,
+        18152700886,
+    ];
+
+    let xexp = (((ux_in & 0x7ff0_0000_0000_0000) >> 52) as i64 - 1023) as i32;
+    let ux = ((ux_in & 0x000f_ffff_ffff_ffff) | 0x0010_0000_0000_0000) >> 29;
+    let mask: u64 = (1u64 << BITSPER) - 1;
+    let first = xexp / BITSPER;
+    let resexp = xexp - first * BITSPER;
+    let last = first + 120 / BITSPER;
+
+    let mut res = [0u64; 10];
+    res[4] = 0;
+    let mut u = PIBITS[last as usize] * ux;
+    res[3] = u & mask;
+    let mut carry = u >> BITSPER;
+    u = PIBITS[(last - 1) as usize] * ux + carry;
+    res[2] = u & mask;
+    carry = u >> BITSPER;
+    u = PIBITS[(last - 2) as usize] * ux + carry;
+    res[1] = u & mask;
+    carry = u >> BITSPER;
+    u = PIBITS[first as usize] * ux + carry;
+    res[0] = u & mask;
+
+    let ltb = (((res[0] << BITSPER) | res[1]) >> (BITSPER - 1 - resexp)) & 7;
+    let determ = ltb & 1;
+
+    let mut i = 1usize;
+    let region;
+    let mut mant: u64;
+    let nextbits: u64;
+    if determ != 0 {
+        region = (((ltb >> 1) + 1) & 3) as i32;
+        mant = !res[1] & ((1u64 << (BITSPER - resexp)) - 1);
+        while mant < 0x0000_0000_0001_0000 {
+            i += 1;
+            mant = (mant << BITSPER) | (!res[i] & mask);
+        }
+        nextbits = !res[i + 1] & mask;
+    } else {
+        region = (ltb >> 1) as i32;
+        mant = res[1] & ((1u64 << (BITSPER - resexp)) - 1);
+        while mant < 0x0000_0000_0001_0000 {
+            i += 1;
+            mant = (mant << BITSPER) | res[i];
+        }
+        nextbits = res[i + 1];
+    }
+
+    let mut bc = 0i32;
+    while mant < 0x0000_4000_0000_0000 {
+        bc += 6;
+        mant <<= 6;
+    }
+    while mant < 0x0010_0000_0000_0000 {
+        bc += 1;
+        mant <<= 1;
+    }
+    mant |= nextbits >> (BITSPER - bc);
+
+    let rexp = 52 + resexp - bc - (i as i32) * BITSPER;
+    let mut uxr = ((rexp as i64 + 1023) as u64) << 52;
+    uxr = (mant & 0x000f_ffff_ffff_ffff) | uxr;
+    if determ != 0 {
+        uxr |= 0x8000_0000_0000_0000;
+    }
+    let dx = f64::from_bits(uxr);
+    (dx * PIBY2, region)
+}
+
+/// `float tanf(float)` — tangent. Reduction in f64, core via tanf_piby4.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn tanf(x: f32) -> f32 {
+    let dx = x as f64;
+    let ux = dx.to_bits();
+    let ax = ux & 0x7fff_ffff_ffff_ffff;
+
+    if ax <= 0x3fe9_21fb_5444_2d18 {
+        if ax < 0x3f80_0000_0000_0000 {
+            if ax < 0x3f20_0000_0000_0000 {
+                return x;
+            }
+            return (dx + dx * dx * dx * 0.333333333333333333) as f32;
+        }
+        return tanf_piby4(dx, 0) as f32;
+    } else if (ux & 0x7ff0_0000_0000_0000) == 0x7ff0_0000_0000_0000 {
+        if ux & 0x000f_ffff_ffff_ffff != 0 {
+            let ufx = x.to_bits();
+            return f32::from_bits(ufx | 0x0040_0000); // NaN
+        }
+        return f32::from_bits(0xffc0_0000); // Inf → NaN (INDEFBITPATT_SP32)
+    }
+
+    let xneg = (ux >> 63) as i32;
+    let dx = if xneg != 0 { -dx } else { dx };
+
+    let r;
+    let region;
+    if dx < 5.0e5 {
+        const TWOBYPI: f64 = 6.36619772367581382433e-01;
+        const PIBY2_1: f64 = 1.57079632673412561417e+00;
+        const PIBY2_1TAIL: f64 = 6.07710050650619224932e-11;
+        const PIBY2_2: f64 = 6.07710050630396597660e-11;
+        const PIBY2_2TAIL: f64 = 2.02226624879595063154e-21;
+        const PIBY2_3: f64 = 2.02226624871116645580e-21;
+        const PIBY2_3TAIL: f64 = 8.47842766036889956997e-32;
+        let xexp = ax >> 52;
+        let npi2: i32;
+        if ax <= 0x400f_6a7a_2955_385e {
+            if ax <= 0x4002_d97c_7f33_21d2 {
+                npi2 = 1;
+            } else {
+                npi2 = 2;
+            }
+        } else if ax <= 0x401c_463a_becc_b2bb {
+            if ax <= 0x4015_fdbb_e9bb_a775 {
+                npi2 = 3;
+            } else {
+                npi2 = 4;
+            }
+        } else {
+            npi2 = (dx * TWOBYPI + 0.5) as i32;
+        }
+        let mut rhead = dx - npi2 as f64 * PIBY2_1;
+        let mut rtail = npi2 as f64 * PIBY2_1TAIL;
+        let uy = rhead.to_bits();
+        let expdiff = xexp.wrapping_sub((uy & 0x7ff0_0000_0000_0000) >> 52);
+        if expdiff > 15 {
+            let t = rhead;
+            rtail = npi2 as f64 * PIBY2_2;
+            rhead = t - rtail;
+            rtail = npi2 as f64 * PIBY2_2TAIL - ((t - rhead) - rtail);
+            if expdiff > 48 {
+                let t = rhead;
+                rtail = npi2 as f64 * PIBY2_3;
+                rhead = t - rtail;
+                rtail = npi2 as f64 * PIBY2_3TAIL - ((t - rhead) - rtail);
+            }
+        }
+        r = rhead - rtail;
+        region = npi2 & 3;
+    } else {
+        let (rr, reg) = remainder_piby2f_inline(ax);
+        r = rr;
+        region = reg;
+    }
+
+    if xneg != 0 {
+        (-tanf_piby4(r, region & 1)) as f32
+    } else {
+        tanf_piby4(r, region & 1) as f32
+    }
+}
+
+/// `float atan2f(float y, float x)` — full-quadrant arctangent. f64 core +
+/// the atan(j/256) look-up table; returned as f32.
+#[cfg(feature = "float")]
+#[no_mangle]
+pub extern "C" fn atan2f(fy: f32, fx: f32) -> f32 {
+    const PI: f64 = 3.1415926535897932e+00;
+    const PIBY2: f64 = 1.5707963267948966e+00;
+    const PIBY4: f64 = 7.8539816339744831e-01;
+    const THREE_PIBY4: f64 = 2.3561944901923449e+00;
+
+    let x = fx as f64;
+    let y = fy as f64;
+
+    let ux = x.to_bits();
+    let uy = y.to_bits();
+    let aux = ux & 0x7fff_ffff_ffff_ffff;
+    let auy = uy & 0x7fff_ffff_ffff_ffff;
+    let xexp = ((ux & 0x7ff0_0000_0000_0000) >> 52) as i32;
+    let yexp = ((uy & 0x7ff0_0000_0000_0000) >> 52) as i32;
+    let xneg = ux & 0x8000_0000_0000_0000;
+    let yneg = uy & 0x8000_0000_0000_0000;
+    let xzero = aux == 0;
+    let yzero = auy == 0;
+    let xnan = aux > 0x7ff0_0000_0000_0000;
+    let ynan = auy > 0x7ff0_0000_0000_0000;
+    let xinf = aux == 0x7ff0_0000_0000_0000;
+    let yinf = auy == 0x7ff0_0000_0000_0000;
+
+    let diffexp = yexp - xexp;
+
+    if xnan {
+        let ufx = fx.to_bits();
+        return f32::from_bits(ufx | 0x0040_0000);
+    } else if ynan {
+        let ufy = fy.to_bits();
+        return f32::from_bits(ufy | 0x0040_0000);
+    } else if yzero {
+        if xneg != 0 {
+            if yneg != 0 {
+                return (-PI) as f32;
+            } else {
+                return PI as f32;
+            }
+        } else {
+            return y as f32;
+        }
+    } else if xzero {
+        if yneg != 0 {
+            return (-PIBY2) as f32;
+        }
+        // BUG-COMPATIBLE: the C has no `return` for the y>0 case here; it
+        // falls through to the diffexp/general path (which yields +pi/2).
+    }
+
+    if diffexp > 26 {
+        if yneg != 0 {
+            return (-PIBY2) as f32;
+        } else {
+            return PIBY2 as f32;
+        }
+    } else if diffexp < -13 && xneg == 0 {
+        if diffexp < -150 {
+            if yneg != 0 {
+                return -0.0f32;
+            } else {
+                return 0.0f32;
+            }
+        } else if diffexp < -126 {
+            let ys = scale_double_1(y, 100);
+            let yq = ys / x;
+            let uyq = scale_down_double(yq.to_bits(), 100);
+            let yr = f64::from_bits(uyq);
+            if (uyq & 0x7ff0_0000_0000_0000) == 0 {
+                return yr as f32;
+            } else {
+                return yr as f32;
+            }
+        } else {
+            return (y / x) as f32;
+        }
+    } else if diffexp < -26 && xneg != 0 {
+        if yneg != 0 {
+            return (-PI) as f32;
+        } else {
+            return PI as f32;
+        }
+    } else if yinf && xinf {
+        if xneg != 0 {
+            if yneg != 0 {
+                return (-THREE_PIBY4) as f32;
+            } else {
+                return THREE_PIBY4 as f32;
+            }
+        } else if yneg != 0 {
+            return (-PIBY4) as f32;
+        } else {
+            return PIBY4 as f32;
+        }
+    }
+
+    let mut u = x;
+    let mut v = y;
+    if xneg != 0 {
+        u = -x;
+    }
+    if yneg != 0 {
+        v = -y;
+    }
+
+    let swap_vu = u < v;
+    if swap_vu {
+        let uu = u;
+        u = v;
+        v = uu;
+    }
+    let vbyu = v / u;
+
+    let mut q;
+    if vbyu > 0.0625 {
+        let index = (256.0 * vbyu + 0.5) as i32;
+        let r = (256.0 * v - index as f64 * u) / (256.0 * u + index as f64 * v);
+        let s = r * r;
+        q = ATAN_JBY256[(index - 16) as usize] + r - r * s * 0.33333333333224095522;
+    } else if vbyu < 1.0e-4 {
+        q = vbyu;
+    } else {
+        let s = vbyu * vbyu;
+        q = vbyu
+            - vbyu * s
+                * (0.33333333333333170500
+                    - s * (0.19999999999393223405 - s * 0.14285713561807169030));
+    }
+
+    if swap_vu {
+        q = PIBY2 - q;
+    }
+    if xneg != 0 {
+        q = PI - q;
+    }
+    if yneg != 0 {
+        q = -q;
+    }
+    q as f32
+}

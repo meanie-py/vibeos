@@ -3111,6 +3111,15 @@ extern "C" {
     // Wave MATH-TIERC sub-wave 12
     fn ref_modff(x: f32, iptr: *mut f32) -> f32;
     fn ref__hypotf(x: f32, y: f32) -> f32;
+    // Wave MATH-TIERC sub-wave 13 (f32 transcendental twins)
+    fn ref_acosf(x: f32) -> f32;
+    fn ref_asinf(x: f32) -> f32;
+    fn ref_atanf(x: f32) -> f32;
+    fn ref_sinhf(x: f32) -> f32;
+    fn ref_coshf(x: f32) -> f32;
+    fn ref_tanhf(x: f32) -> f32;
+    fn ref_tanf(x: f32) -> f32;
+    fn ref_atan2f(y: f32, x: f32) -> f32;
 }
 
 /// Mirror of the C `div_t` for the struct-return ABI (SysV: {i32,i32}
@@ -4032,6 +4041,80 @@ fn diff_math_sincos_modff_hypotf() {
     }
 }
 
+fn diff_math_f32_trig() {
+    // The f32 transcendental twins: acosf/asinf (rational + sqrt half-angle),
+    // atanf (f64 core, 5-region reduction), sinhf/coshf (table + splitexp/2),
+    // tanhf (Remez sub-ranges + splitexpf), tanf (pi/2 reduction incl. the
+    // Payne-Hanek __remainder_piby2f path for |x|>=5e5), atan2f (atan(j/256)
+    // table + quadrant dispatch). Bit-exact vs the genuine libm_sse2/*f.c.
+    //
+    // A full-domain random u32 bit image (every exponent → hits all branches,
+    // incl. tanf's >5e5 reducer and the sinh/cosh overflow) + the edge bits,
+    // plus dense sweeps over the domain-sensitive ranges.
+    let mut rng = Rng(0xf327_0013);
+    let mut b32 = f32_edge_bits();
+    for _ in 0..1_500_000 {
+        b32.push(rng.next() as u32);
+    }
+    for &b in &b32 {
+        let x = f32::from_bits(b);
+        assert!(same_f32(cabi::acosf(x), unsafe { ref_acosf(x) }), "acosf {b:#010x}");
+        assert!(same_f32(cabi::asinf(x), unsafe { ref_asinf(x) }), "asinf {b:#010x}");
+        assert!(same_f32(cabi::atanf(x), unsafe { ref_atanf(x) }), "atanf {b:#010x}");
+        assert!(same_f32(cabi::sinhf(x), unsafe { ref_sinhf(x) }), "sinhf {b:#010x}");
+        assert!(same_f32(cabi::coshf(x), unsafe { ref_coshf(x) }), "coshf {b:#010x}");
+        assert!(same_f32(cabi::tanhf(x), unsafe { ref_tanhf(x) }), "tanhf {b:#010x}");
+        assert!(same_f32(cabi::tanf(x), unsafe { ref_tanf(x) }), "tanf {b:#010x}");
+    }
+    // asin/acos: dense over the valid domain [-1,1] + a little past.
+    for _ in 0..400_000 {
+        let u = rng.next();
+        let x = ((u as f64) / (u64::MAX as f64) * 2.2 - 1.1) as f32;
+        assert!(same_f32(cabi::asinf(x), unsafe { ref_asinf(x) }), "asinf {x}");
+        assert!(same_f32(cabi::acosf(x), unsafe { ref_acosf(x) }), "acosf {x}");
+    }
+    // tanf: dense near pi/2 multiples (small + large), and big magnitudes that
+    // drive the __remainder_piby2f Payne-Hanek path (|x| >= 5e5).
+    for _ in 0..400_000 {
+        let u = rng.next();
+        let x = ((u as f64) / (u64::MAX as f64) * 200.0 - 100.0) as f32;
+        assert!(same_f32(cabi::tanf(x), unsafe { ref_tanf(x) }), "tanf small {x}");
+        let big = ((rng.next() as f64) / (u64::MAX as f64) * 2.0e8 - 1.0e8) as f32;
+        assert!(same_f32(cabi::tanf(big), unsafe { ref_tanf(big) }), "tanf big {big}");
+    }
+    // sinh/cosh/tanh/atan: dense over their active ranges.
+    for _ in 0..400_000 {
+        let u = rng.next();
+        let x = ((u as f64) / (u64::MAX as f64) * 200.0 - 100.0) as f32;
+        assert!(same_f32(cabi::sinhf(x), unsafe { ref_sinhf(x) }), "sinhf {x}");
+        assert!(same_f32(cabi::coshf(x), unsafe { ref_coshf(x) }), "coshf {x}");
+        assert!(same_f32(cabi::tanhf(x), unsafe { ref_tanhf(x) }), "tanhf {x}");
+        assert!(same_f32(cabi::atanf(x), unsafe { ref_atanf(x) }), "atanf {x}");
+    }
+    // atan2f: all edge×edge pairs + random pairs (every sign/zero/inf quadrant).
+    let edges = f32_edge_bits();
+    for &by in &edges {
+        for &bx in &edges {
+            let y = f32::from_bits(by);
+            let x = f32::from_bits(bx);
+            assert!(
+                same_f32(cabi::atan2f(y, x), unsafe { ref_atan2f(y, x) }),
+                "atan2f y={by:#010x} x={bx:#010x}"
+            );
+        }
+    }
+    for _ in 0..600_000 {
+        let y = f32::from_bits(rng.next() as u32);
+        let x = f32::from_bits(rng.next() as u32);
+        assert!(
+            same_f32(cabi::atan2f(y, x), unsafe { ref_atan2f(y, x) }),
+            "atan2f y={:#010x} x={:#010x}",
+            y.to_bits(),
+            x.to_bits()
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -4135,6 +4218,7 @@ fn main() {
         diff_math_asin_acos,
         diff_math_hypot,
         diff_math_sincos_modff_hypotf,
+        diff_math_f32_trig,
     );
     println!("\ndifftest result: ok. {n} passed; 0 failed");
 }

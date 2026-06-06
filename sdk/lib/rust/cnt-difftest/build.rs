@@ -832,6 +832,17 @@ fn main() {
         // sub-wave 12 (f32 twins; sincos checked directly vs ref_sin/ref_cos)
         ("modff", format!("#include <math.h>\n#define modff ref_modff\n{}", inc(libm_dir.join("modff.c")))),
         ("_hypotf", format!("#include <math.h>\n#define _hypotf ref__hypotf\n{}", inc(libm_dir.join("hypotf.c")))),
+        // sub-wave 13 (the f32 transcendental twins). Each pulls libm_inlines.h
+        // (real splitexpf/scaleFloat_2/__remainder_piby2f_inline + the f32 +
+        // atan(j/256) tables) via its own USE_* set — a non-circular reference.
+        ("acosf", format!("#include <math.h>\n#define acosf ref_acosf\n{}", inc(libm_dir.join("acosf.c")))),
+        ("asinf", format!("#include <math.h>\n#define asinf ref_asinf\n{}", inc(libm_dir.join("asinf.c")))),
+        ("atanf", format!("#include <math.h>\n#define atanf ref_atanf\n{}", inc(libm_dir.join("atanf.c")))),
+        ("sinhf", format!("#include <math.h>\n#define sinhf ref_sinhf\n{}", inc(libm_dir.join("sinhf.c")))),
+        ("coshf", format!("#include <math.h>\n#define coshf ref_coshf\n{}", inc(libm_dir.join("coshf.c")))),
+        ("tanhf", format!("#include <math.h>\n#define tanhf ref_tanhf\n{}", inc(libm_dir.join("tanhf.c")))),
+        ("tanf", format!("#include <math.h>\n#define tanf ref_tanf\n{}", inc(libm_dir.join("tanf.c")))),
+        ("atan2f", format!("#include <math.h>\n#define atan2f ref_atan2f\n{}", inc(libm_dir.join("atan2f.c")))),
     ];
     let libm_stubs = out.join("ref_libm_stubs.c");
     fs::write(
