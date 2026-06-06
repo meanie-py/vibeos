@@ -6104,3 +6104,419 @@ unsafe fn RtlDeactivateActivationContextUnsafeFast_impl(
     (*Frame).Frame.Flags |= RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_DEACTIVATED;
     (*NewFrame).Previous
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  Hand-translated functions — the 5 that rustconv dropped when the API
+//  credit balance ran out mid-run (faithful ports of actctx.c).
+// ════════════════════════════════════════════════════════════════════
+
+unsafe fn lookup_assembly(acl: *mut actctx_loader, ai: *mut assembly_identity) -> NTSTATUS {
+    static dotDllW: [WCHAR; 5] = [b'.' as WCHAR, b'd' as WCHAR, b'l' as WCHAR, b'l' as WCHAR, 0];
+    let mut i: u32;
+    let mut buffer: *mut WCHAR;
+    let mut p: *mut WCHAR;
+    let directory: *mut WCHAR;
+    let mut status: NTSTATUS;
+    let mut nameW: UNICODE_STRING = core::mem::zeroed();
+    let mut file: HANDLE = core::ptr::null_mut();
+    let len: u32;
+
+    status = lookup_winsxs(acl, ai);
+    if status != STATUS_NO_SUCH_FILE {
+        return status;
+    }
+
+    /* FIXME: add support for language specific lookup */
+
+    len = core::cmp::max(
+        RtlGetFullPathName_U(
+            (*(*(*acl).actctx).assemblies).manifest.info,
+            0,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ) / core::mem::size_of::<WCHAR>() as u32,
+        wcslen((*(*acl).actctx).appdir.info) as u32,
+    );
+
+    nameW.Buffer = core::ptr::null_mut();
+    buffer = RtlAllocateHeap(
+        GetProcessHeap(),
+        0,
+        (len as usize + 2 * wcslen((*ai).name) + 2) * core::mem::size_of::<WCHAR>()
+            + core::mem::size_of_val(&dotManifestW),
+    ) as *mut WCHAR;
+    if buffer.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    directory = build_assembly_dir(ai);
+    if directory.is_null() {
+        RtlFreeHeap(GetProcessHeap(), 0, buffer as PVOID);
+        return STATUS_NO_MEMORY;
+    }
+
+    /* Lookup in <dir>\name.dll, <dir>\name.manifest, <dir>\name\name.dll,
+       <dir>\name\name.manifest — first appdir, then app manifest path. */
+    wcscpy(buffer, (*(*acl).actctx).appdir.info);
+    p = buffer.add(wcslen(buffer));
+    i = 0;
+    while i < 4 {
+        if i == 2 {
+            let assembly = (*(*acl).actctx).assemblies;
+            if RtlGetFullPathName_U(
+                (*assembly).manifest.info,
+                len * core::mem::size_of::<WCHAR>() as u32,
+                buffer,
+                &mut p,
+            ) == 0
+            {
+                break;
+            }
+        } else {
+            *p = b'\\' as WCHAR;
+            p = p.add(1);
+        }
+
+        wcscpy(p, (*ai).name);
+        p = p.add(wcslen(p));
+
+        wcscpy(p, dotDllW.as_ptr());
+        if RtlDosPathNameToNtPathName_U(buffer, &mut nameW, core::ptr::null_mut(), core::ptr::null_mut()) != 0 {
+            status = open_nt_file(&mut file, &mut nameW);
+            if status == 0 {
+                status = get_manifest_in_pe_file(
+                    acl,
+                    ai,
+                    nameW.Buffer,
+                    directory as LPCWSTR,
+                    0,
+                    file,
+                    CREATEPROCESS_MANIFEST_RESOURCE_ID as LPCWSTR,
+                    0,
+                );
+                NtClose(file);
+                if status == STATUS_SUCCESS {
+                    break;
+                }
+            }
+            RtlFreeUnicodeString(&mut nameW);
+        }
+
+        wcscpy(p, dotManifestW.as_ptr());
+        if RtlDosPathNameToNtPathName_U(buffer, &mut nameW, core::ptr::null_mut(), core::ptr::null_mut()) != 0 {
+            status = open_nt_file(&mut file, &mut nameW);
+            if status == 0 {
+                status = get_manifest_in_manifest_file(acl, ai, nameW.Buffer, directory as LPCWSTR, 0, file);
+                NtClose(file);
+                break;
+            }
+            RtlFreeUnicodeString(&mut nameW);
+        }
+        status = STATUS_SXS_ASSEMBLY_NOT_FOUND;
+        i += 1;
+    }
+    RtlFreeUnicodeString(&mut nameW);
+    RtlFreeHeap(GetProcessHeap(), 0, directory as PVOID);
+    RtlFreeHeap(GetProcessHeap(), 0, buffer as PVOID);
+    status
+}
+
+unsafe fn parse_depend_manifests(acl: *mut actctx_loader) -> NTSTATUS {
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut i: u32 = 0;
+    while i < (*acl).num_dependencies {
+        let dep = (*acl).dependencies.add(i as usize);
+        if lookup_assembly(acl, dep) != STATUS_SUCCESS {
+            if (*dep).optional == 0 && (*dep).delayed == 0 {
+                status = STATUS_SXS_CANT_GEN_ACTCTX;
+                break;
+            }
+        }
+        i += 1;
+    }
+    /* FIXME should now iterate through all refs */
+    status
+}
+
+/// RtlCreateActivationContext (NTDLL.@) — create an activation context.
+#[no_mangle]
+pub unsafe extern "system" fn RtlCreateActivationContext(
+    _Flags: ULONG,
+    ActivationContextData: PVOID,
+    _ExtraBytes: ULONG,
+    _NotificationRoutine: PVOID,
+    _NotificationContext: PVOID,
+    ActCtx: *mut PACTIVATION_CONTEXT,
+) -> NTSTATUS {
+    let pActCtx = ActivationContextData as *const ACTCTXW;
+    let mut directory: *const WCHAR = core::ptr::null();
+    let actctx: *mut ACTIVATION_CONTEXT;
+    let mut nameW: UNICODE_STRING = core::mem::zeroed();
+    let mut lang: ULONG = 0;
+    let mut status: NTSTATUS;
+    let mut file: HANDLE = core::ptr::null_mut();
+    let mut acl: actctx_loader = core::mem::zeroed();
+
+    if pActCtx.is_null()
+        || (*pActCtx).cbSize < core::mem::size_of::<ACTCTXW>() as ULONG
+        || ((*pActCtx).dwFlags & !ACTCTX_FLAGS_ALL) != 0
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    actctx = RtlAllocateHeap(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<ACTIVATION_CONTEXT>(),
+    ) as *mut ACTIVATION_CONTEXT;
+    if actctx.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    // goto-error replacement: cleanup + return (matches the C `error:` label).
+    macro_rules! goto_error {
+        ($s:expr) => {{
+            if !file.is_null() {
+                NtClose(file);
+            }
+            actctx_release(actctx);
+            return $s;
+        }};
+    }
+
+    (*actctx).magic = ACTCTX_MAGIC;
+    (*actctx).ref_count = 1;
+    (*actctx).config.type_ = ACTIVATION_CONTEXT_PATH_TYPE_NONE;
+    (*actctx).config.info = core::ptr::null_mut();
+    (*actctx).appdir.type_ = ACTIVATION_CONTEXT_PATH_TYPE_WIN32_FILE;
+
+    if (*pActCtx).dwFlags & ACTCTX_FLAG_APPLICATION_NAME_VALID != 0 {
+        (*actctx).appdir.info = strdupW((*pActCtx).lpApplicationName);
+        if (*actctx).appdir.info.is_null() {
+            goto_error!(status_no_mem());
+        }
+    } else {
+        let mut dir: UNICODE_STRING = core::mem::zeroed();
+        let module: HMODULE = if (*pActCtx).dwFlags & ACTCTX_FLAG_HMODULE_VALID != 0 {
+            (*pActCtx).hModule
+        } else {
+            (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ImageBaseAddress
+        };
+
+        status = get_module_filename(module, &mut dir, 0);
+        if !NT_SUCCESS(status) {
+            goto_error!(status);
+        }
+        let p = wcsrchr(dir.Buffer, b'\\' as core::ffi::c_int);
+        if !p.is_null() {
+            *p.add(1) = 0;
+        }
+        (*actctx).appdir.info = dir.Buffer;
+    }
+
+    nameW.Buffer = core::ptr::null_mut();
+
+    /* open file only if it's going to be used */
+    if !(*pActCtx).lpSource.is_null()
+        && !((*pActCtx).dwFlags & ACTCTX_FLAG_RESOURCE_NAME_VALID != 0
+            && (*pActCtx).dwFlags & ACTCTX_FLAG_HMODULE_VALID != 0)
+    {
+        let mut source: *mut WCHAR = core::ptr::null_mut();
+
+        if (*pActCtx).dwFlags & ACTCTX_FLAG_ASSEMBLY_DIRECTORY_VALID != 0
+            && RtlDetermineDosPathNameType_U((*pActCtx).lpSource) == RtlPathTypeRelative
+        {
+            let dir_len = wcslen((*pActCtx).lpAssemblyDirectory);
+            let source_len = wcslen((*pActCtx).lpSource);
+            source = RtlAllocateHeap(
+                GetProcessHeap(),
+                0,
+                (dir_len + source_len + 2) * core::mem::size_of::<WCHAR>(),
+            ) as *mut WCHAR;
+            if source.is_null() {
+                goto_error!(status_no_mem());
+            }
+            memcpy(
+                source as PVOID,
+                (*pActCtx).lpAssemblyDirectory as PVOID,
+                dir_len * core::mem::size_of::<WCHAR>(),
+            );
+            *source.add(dir_len) = b'\\' as WCHAR;
+            memcpy(
+                source.add(dir_len + 1) as PVOID,
+                (*pActCtx).lpSource as PVOID,
+                (source_len + 1) * core::mem::size_of::<WCHAR>(),
+            );
+        }
+
+        let ret = RtlDosPathNameToNtPathName_U(
+            if !source.is_null() { source } else { (*pActCtx).lpSource },
+            &mut nameW,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        RtlFreeHeap(GetProcessHeap(), 0, source as PVOID);
+        if ret == 0 {
+            goto_error!(STATUS_NO_SUCH_FILE);
+        }
+        status = open_nt_file(&mut file, &mut nameW);
+        if !NT_SUCCESS(status) {
+            RtlFreeUnicodeString(&mut nameW);
+            goto_error!(status);
+        }
+    }
+
+    acl.actctx = actctx;
+    acl.dependencies = core::ptr::null_mut();
+    acl.num_dependencies = 0;
+    acl.allocated_dependencies = 0;
+
+    if (*pActCtx).dwFlags & ACTCTX_FLAG_LANGID_VALID != 0 {
+        lang = (*pActCtx).wLangId as ULONG;
+    }
+    if (*pActCtx).dwFlags & ACTCTX_FLAG_ASSEMBLY_DIRECTORY_VALID != 0 {
+        directory = (*pActCtx).lpAssemblyDirectory;
+    }
+
+    if (*pActCtx).dwFlags & ACTCTX_FLAG_RESOURCE_NAME_VALID != 0 {
+        /* if we have a resource it's a PE file */
+        if (*pActCtx).dwFlags & ACTCTX_FLAG_HMODULE_VALID != 0 {
+            status = get_manifest_in_module(
+                &mut acl,
+                core::ptr::null_mut(),
+                core::ptr::null(),
+                directory,
+                0,
+                (*pActCtx).hModule,
+                (*pActCtx).lpResourceName,
+                lang,
+            );
+            if status != 0 && status != STATUS_SXS_CANT_GEN_ACTCTX {
+                status = get_manifest_in_associated_manifest(
+                    &mut acl,
+                    core::ptr::null_mut(),
+                    core::ptr::null(),
+                    directory,
+                    (*pActCtx).hModule,
+                    (*pActCtx).lpResourceName,
+                );
+            }
+        } else if !(*pActCtx).lpSource.is_null() && !(*pActCtx).lpResourceName.is_null() {
+            status = get_manifest_in_pe_file(
+                &mut acl,
+                core::ptr::null_mut(),
+                nameW.Buffer,
+                directory,
+                0,
+                file,
+                (*pActCtx).lpResourceName,
+                lang,
+            );
+            if status != 0 && status != STATUS_SXS_CANT_GEN_ACTCTX {
+                status = get_manifest_in_associated_manifest(
+                    &mut acl,
+                    core::ptr::null_mut(),
+                    nameW.Buffer,
+                    directory,
+                    core::ptr::null_mut(),
+                    (*pActCtx).lpResourceName,
+                );
+            }
+        } else {
+            status = STATUS_INVALID_PARAMETER;
+        }
+    } else {
+        status = get_manifest_in_manifest_file(&mut acl, core::ptr::null_mut(), nameW.Buffer, directory, 0, file);
+    }
+
+    if !file.is_null() {
+        NtClose(file);
+        file = core::ptr::null_mut();
+    }
+    RtlFreeUnicodeString(&mut nameW);
+
+    if NT_SUCCESS(status) {
+        status = parse_depend_manifests(&mut acl);
+    }
+    free_depend_manifests(&mut acl);
+
+    if NT_SUCCESS(status) {
+        // output pointer write — volatile to defeat captures(none) elision.
+        core::ptr::write_volatile(ActCtx, actctx);
+    } else {
+        actctx_release(actctx);
+    }
+    status
+}
+
+// STATUS_NO_MEMORY helper (the value the C `error:` paths set before goto).
+#[inline(always)]
+fn status_no_mem() -> NTSTATUS {
+    STATUS_NO_MEMORY
+}
+
+pub unsafe fn actctx_init() {
+    let mut ctx: ACTCTXW = core::mem::zeroed();
+    let mut handle: HANDLE = core::ptr::null_mut();
+
+    ctx.cbSize = core::mem::size_of::<ACTCTXW>() as ULONG;
+    ctx.lpSource = core::ptr::null();
+    ctx.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID | ACTCTX_FLAG_HMODULE_VALID;
+    ctx.hModule = (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ImageBaseAddress;
+    ctx.lpResourceName = CREATEPROCESS_MANIFEST_RESOURCE_ID as LPCWSTR;
+
+    if NT_SUCCESS(RtlCreateActivationContext(
+        0,
+        core::ptr::addr_of_mut!(ctx) as PVOID,
+        0,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        &mut handle as *mut HANDLE as *mut PACTIVATION_CONTEXT,
+    )) {
+        process_actctx = check_actctx(handle);
+    }
+
+    (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ActivationContextData =
+        (*process_actctx).ActivationContextData as *mut _;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlpInitializeActCtx(pOldShimData: *mut PVOID) -> NTSTATUS {
+    static systemcompatW: [WCHAR; 44] = [
+        0x005c, 0x0077, 0x0069, 0x006e, 0x0073, 0x0078, 0x0073, 0x005c, 0x006d, 0x0061, 0x006e,
+        0x0069, 0x0066, 0x0065, 0x0073, 0x0074, 0x0073, 0x005c, 0x0073, 0x0079, 0x0073, 0x0074,
+        0x0065, 0x006d, 0x0063, 0x006f, 0x006d, 0x0070, 0x0061, 0x0074, 0x0069, 0x0062, 0x006c,
+        0x0065, 0x002e, 0x006d, 0x0061, 0x006e, 0x0069, 0x0066, 0x0065, 0x0073, 0x0074, 0x0000,
+    ];
+    let mut ctx: ACTCTXW = core::mem::zeroed();
+    let mut handle: HANDLE = core::ptr::null_mut();
+    let mut buffer: [WCHAR; 1024] = [0; 1024];
+    let status: NTSTATUS;
+
+    actctx_init();
+
+    /* ReactOS specific: now that we have process_actctx, init process compat */
+    LdrpInitializeProcessCompat(process_actctx as PVOID, pOldShimData);
+
+    ctx.cbSize = core::mem::size_of::<ACTCTXW>() as ULONG;
+    ctx.dwFlags = 0;
+    ctx.hModule = core::ptr::null_mut();
+    ctx.lpResourceName = core::ptr::null();
+    ctx.lpSource = buffer.as_ptr();
+    RtlStringCchCopyW(buffer.as_mut_ptr(), buffer.len(), windows_dir());
+    RtlStringCchCatW(buffer.as_mut_ptr(), buffer.len(), systemcompatW.as_ptr());
+
+    status = RtlCreateActivationContext(
+        0,
+        core::ptr::addr_of_mut!(ctx) as PVOID,
+        0,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        &mut handle as *mut HANDLE as *mut PACTIVATION_CONTEXT,
+    );
+    if NT_SUCCESS(status) {
+        implicit_actctx = check_actctx(handle);
+    }
+
+    status
+}

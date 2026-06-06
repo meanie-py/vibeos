@@ -29,6 +29,11 @@ extern "system" {
         addr: PVOID,
         entry: *mut *mut LDR_DATA_TABLE_ENTRY,
     ) -> NTSTATUS;
+    // ReactOS ntdll process-compat init (actctx.c __REACTOS__ path).
+    pub fn LdrpInitializeProcessCompat(process_actctx: PVOID, old_shim_data: *mut PVOID);
+    // ntstrsafe (count-of-chars variants).
+    pub fn RtlStringCchCopyW(dst: *mut WCHAR, cch: usize, src: *const WCHAR) -> NTSTATUS;
+    pub fn RtlStringCchCatW(dst: *mut WCHAR, cch: usize, src: *const WCHAR) -> NTSTATUS;
 }
 
 // ── PE resource directory walkers (external rtl, stay C — image.c) ────
@@ -141,6 +146,7 @@ macro_rules! FIELD_OFFSET {
 
 // ── SxS / resource NTSTATUS (ntstatus.h) ────────────────────────────
 pub const STATUS_SXS_SECTION_NOT_FOUND: i32 = 0xC0150001u32 as i32;
+pub const STATUS_SXS_ASSEMBLY_NOT_FOUND: i32 = 0xC0150004u32 as i32;
 pub const STATUS_SXS_CANT_GEN_ACTCTX: i32 = 0xC0150002u32 as i32;
 pub const STATUS_SXS_INVALID_ACTCTXDATA_FORMAT: i32 = 0xC0150003u32 as i32;
 pub const STATUS_SXS_KEY_NOT_FOUND: i32 = 0xC0150008u32 as i32;
@@ -154,6 +160,8 @@ pub const STATUS_INVALID_IMAGE_FORMAT: i32 = 0xC000007Bu32 as i32;
 
 // ── flags / misc constants ──────────────────────────────────────────
 pub const HEAP_ZERO_MEMORY: u32 = 0x0000_0008;
+// RTL_PATH_TYPE::RtlPathTypeRelative (actctx.c `#define RELATIVE_PATH`).
+pub const RtlPathTypeRelative: u32 = 5;
 pub const HASH_STRING_ALGORITHM_X65599: u32 = 1;
 
 pub const FIND_ACTCTX_SECTION_KEY_RETURN_HACTCTX: u32 = 0x0000_0001;
