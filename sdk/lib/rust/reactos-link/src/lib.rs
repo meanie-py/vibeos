@@ -316,6 +316,11 @@ pub struct Linker {
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
     allow_stdcall_fixup: bool,
+    /// `Some(n)` emits `-Wl,--stack,<n>` (reserve, in bytes). For native exes
+    /// with deep recursive import chains — e.g. arm64 csrss.exe, where
+    /// llvm-dlltool converts delay-imports to regular ones so every dependency
+    /// loads at once and LdrpLoadDll recursion overflows the default 1MB stack.
+    stack_reserve: Option<u64>,
 }
 
 impl Linker {
@@ -372,6 +377,7 @@ impl Linker {
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
             allow_stdcall_fixup: false,
+            stack_reserve: None,
         }
     }
 
@@ -384,6 +390,15 @@ impl Linker {
     /// to hide a fresh ABI bug — fix the source instead.
     pub fn allow_stdcall_fixup(mut self) -> Self {
         self.allow_stdcall_fixup = true;
+        self
+    }
+
+    /// Reserve `bytes` of stack (`-Wl,--stack,<bytes>`) instead of the default
+    /// 1MB. Needed where a native exe's import graph forces a deep recursive
+    /// LdrpLoadDll chain (arm64 csrss.exe — delay-imports collapse to regular
+    /// on llvm-dlltool, loading every dependency at once). Chainable.
+    pub fn stack_reserve(mut self, bytes: u64) -> Self {
+        self.stack_reserve = Some(bytes);
         self
     }
 
@@ -1004,6 +1019,11 @@ impl Linker {
         // so the cargo link is byte-equivalent to the working cmake one.
         if !self.allow_stdcall_fixup {
             println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup");
+        }
+        // Custom stack reserve (default 1MB otherwise) — e.g. arm64 csrss.exe's
+        // deep LdrpLoadDll chain.
+        if let Some(bytes) = self.stack_reserve {
+            println!("cargo:rustc-link-arg=-Wl,--stack,{bytes}");
         }
         // ---- kind-specific subsystem / alignment / sections ----------
         let (entry, image_base): (&String, Option<u64>) = match &kind {

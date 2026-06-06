@@ -1,0 +1,31 @@
+# Cargo-driven `csrss.exe` link (i386 + amd64 + arm64). The LAST csrss-spine
+# binary to move its link cmake→cargo — after smss (NativeExe) and the
+# csrsrv/winsrv/basesrv server DLLs. Like basesrv, it was still on the pre-Axis-A
+# pattern (`add_executable(csrss)` + a standalone `add_custom_command` cargo
+# build the link reused), not `add_cargo_module`.
+#
+# csrss.exe (the Client/Server Runtime SubSystem process) is a FULL flip:
+# csrss.c → Rust (smss-csrss-rust/src/csrss.rs). It builds smss-csrss-rust with
+# the LEAN `csrss_main_only` feature — only `_main` +
+# `CsrpSetDefaultProcessHardErrorMode`, NOT the csrsrv/csrlib/smlib/smss/basesrv
+# modules — so csrss.exe does not get its own #[no_mangle] copies of csrsrv.dll's
+# data exports (_CsrApiPort etc.) that would shadow the cross-DLL imports.
+# ModuleKind::NativeExe (nativecui, subsystem native:5.01, entry _NtProcessStartup@4).
+#
+# Success criterion: cargo's csrss.exe boots the livecd to `shell ready` — smss
+# launches csrss.exe, which loads csrsrv.dll/basesrv.dll/winsrv.dll; csrss is
+# process-critical (its death bugchecks).
+
+[package]
+name = "csrss-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "csrss"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

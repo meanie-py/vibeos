@@ -53,6 +53,7 @@ members = [
     "csrsrv-cargo",
     "winsrv-cargo",
     "basesrv-cargo",
+    "csrss-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",

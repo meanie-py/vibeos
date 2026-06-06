@@ -138,6 +138,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "csrss-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "encode"
 version = "0.1.0"
 
