@@ -30,14 +30,20 @@ default = ["float"]
 # Does NOT imply `float`: the i386 kernel links cabi WITHOUT float
 # (no-SSE — see below). cnt-difftest gets float via `default`.
 cabi = []
-# The float-bearing surface: `core_rs::{floatcvt,scanf}` + the
-# matching `cabi/manual.rs` shims (_fcvt/_ecvt/_gcvt/_gcvt_s +
-# cnt_vs*scanf). Default-on so cnt-difftest / standalone are
-# unchanged. A consumer that only needs the integer model (rtl-strings
-# `mbcp`; the i386 libcntpr swap) sets `default-features = false` —
-# REQUIRED for the i386 kernel, which builds Rust no-SSE (CR4.OSFXSR
-# not set in Phase 0) so by-value `f64` ABI signatures won't compile.
-# Modules untouched + still fully built+tested by cnt-difftest.
+# The `core_rs` forbid-unsafe float surface: `core_rs::{floatcvt,scanf}`
+# + the matching `cabi/manual.rs` shims (_fcvt/_ecvt/_gcvt/_gcvt_s +
+# cnt_vs*scanf). Default-on so cnt-difftest / standalone are unchanged.
+# i386 (the no-SSE kernel, CR4.OSFXSR unset in Phase 0) sets
+# `default-features = false`: floatcvt/scanf live in `core_rs`, which is
+# `#[forbid(unsafe_code)]`, so their by-value `f64` returns CANNOT be
+# routed around no-SSE (the fb64/fb32 `transmute` trick needs `unsafe`)
+# → they stay C on i386.
+#
+# NOTE: `cabi::math` (the whole transcendental surface) is NOT gated by
+# this — it compiles unconditionally and is no-SSE-safe via `extern "C"`
+# x87 returns + the fb64/fb32 transmute shims (it lives in `cabi`, where
+# `unsafe` is allowed). So `float` no longer means "all floating point";
+# it means specifically the core_rs forbid-unsafe part.
 float = []
 
 [dependencies]

@@ -1,19 +1,47 @@
-//! Hand-written cnt-rust math shims — Wave MATH-CLASS.
+//! Hand-written cnt-rust math shims — Waves MATH-CLASS / MATH-TIERB / TIERC.
 //!
-//! The IEEE-754 classification / sign predicates and the integer
-//! `abs`/`labs`. Every one is *pure bit manipulation* (reinterpret the
-//! float as its integer image, mask, compare) or pure integer — there
-//! is **no floating-point arithmetic**, so they compile and run on the
-//! i386 no-SSE kernel build with the crate's `float` feature OFF (the
-//! `f64`/`f32` arguments arrive on the stack and are read as their bit
-//! image; `to_bits()` is a bitcast, never an FP op). Uniform Rust on
-//! all three arches, replacing the C in
-//! `math/{abs,labs,_isnan,_isnanf,_finite,_finitef,_dclass,_fdclass,
-//! _dsign,_fdsign,_dtest,_fdtest}.c` (REMOVE_ITEM'd from libcntpr only;
-//! msvcrt keeps the C). Differential-pinned in cnt-difftest.
+//! The IEEE-754 classification/sign predicates, integer `abs`/`labs`,
+//! and the full transcendental surface (sin/cos/exp/log/pow/fmod/tan/
+//! floor/ceil/atan/sqrt/… + the f32 twins). Uniform Rust on all three
+//! arches, replacing the per-arch C/asm in `math/`.
+//!
+//! **Why this whole module compiles on the i386 no-SSE kernel build**
+//! (CR4.OSFXSR unset in Phase 0): the exported symbols are all
+//! `extern "C"`, whose `f64`/`f32` RETURN goes through the x87 stack
+//! (ST(0)), not an xmm register — byte-compatible with the clang C
+//! kernel and never requiring the `sse` target feature. (A *Rust*-ABI
+//! `-> f64` would route the return through xmm0 and rustc hard-errors
+//! under `-sse,-sse2`; that is why every helper here, public or
+//! private, is `extern "C"`.) The one std primitive that still has a
+//! Rust-ABI `-> f64` is `f64::from_bits` / `f32::from_bits` — so the
+//! bit→float reinterpret is routed through the two tiny `fb64`/`fb32`
+//! shims below instead. `transmute` is a compiler intrinsic (no emitted
+//! function, no ABI), so it is the one no-SSE-safe way to do the
+//! reinterpret; it is the module's only `unsafe`, and it is a pure
+//! bitcast (identical to `from_bits`, which difftest pins bit-exact).
+//! Net: math needs no `float` feature gate at all — it is compiled
+//! unconditionally and `float` now gates only the `core_rs`
+//! forbid-unsafe surface (floatcvt/scanf/float-printf) that genuinely
+//! can't be bitcast.
 //!
 //! Not a gen_cnt family (float signatures + bespoke bodies); this
 //! module is stitched into `cabi` like `streamout.rs`.
+
+/// Bits → `f64` with no SSE: `transmute` is an intrinsic (no f64-return
+/// Rust-ABI function is emitted), unlike `f64::from_bits` whose Rust-ABI
+/// `-> f64` hard-errors under `-sse,-sse2`. The `extern "C"` return is
+/// the x87 ST(0). Pure bitcast — bit-identical to `from_bits`.
+///
+/// `unnecessary_transmutes` fires here suggesting `f64::from_bits` —
+/// that is exactly the no-SSE-illegal form we are routing around, so
+/// the lint is suppressed deliberately.
+#[allow(unnecessary_transmutes)]
+#[inline]
+extern "C" fn fb64(b: u64) -> f64 { unsafe { core::mem::transmute(b) } }
+/// Bits → `f32`, no-SSE twin of [`fb64`].
+#[allow(unnecessary_transmutes)]
+#[inline]
+extern "C" fn fb32(b: u32) -> f32 { unsafe { core::mem::transmute(b) } }
 
 // ReactOS <math.h> classification codes (sdk/include/crt/math.h):
 //   _NANCODE 2, _INFCODE 1, _FINITE -1, _DENORM -2, FP_ZERO 0.
@@ -91,7 +119,6 @@ pub extern "C" fn _fdsign(x: f32) -> i32 {
 // never have to pass an `f64`/`f32` by value (which on i386-no-SSE could
 // route a double through x87) — they read the bits and classify directly.
 
-#[inline]
 fn dclass_bits(u: u64) -> i16 {
     let e = u & 0x7FF0_0000_0000_0000;
     let m = u & 0x000F_FFFF_FFFF_FFFF;
@@ -112,7 +139,6 @@ fn dclass_bits(u: u64) -> i16 {
     }
 }
 
-#[inline]
 fn fdclass_bits(u: u32) -> i16 {
     let e = u & 0x7F80_0000;
     let m = u & 0x007F_FFFF;
@@ -178,10 +204,9 @@ pub unsafe extern "C" fn _fdtest(px: *const f32) -> i16 {
 /// `float _chgsignf(float)` — C does `(float)_chgsign((double)x)`, i.e.
 /// flip the sign. Sign flip commutes with the float↔double round-trip
 /// exactly, so it is just `bits ^ sign`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn _chgsignf(x: f32) -> f32 {
-    f32::from_bits(x.to_bits() ^ 0x8000_0000)
+    fb32(x.to_bits() ^ 0x8000_0000)
 }
 
 // ---- scalbn / scalbnf — musl (FP multiply by power-of-two) ------------
@@ -191,25 +216,24 @@ pub extern "C" fn _chgsignf(x: f32) -> f32 {
 //   0x1p127f  = 0x7F00_0000             0x1p-126f*0x1p24f = 2^-102 = 0x0C80_0000
 
 /// `double scalbn(double, int)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn scalbn(x: f64, mut n: i32) -> f64 {
     let mut y = x;
     if n > 1023 {
-        y *= f64::from_bits(0x7FE0_0000_0000_0000);
+        y *= fb64(0x7FE0_0000_0000_0000);
         n -= 1023;
         if n > 1023 {
-            y *= f64::from_bits(0x7FE0_0000_0000_0000);
+            y *= fb64(0x7FE0_0000_0000_0000);
             n -= 1023;
             if n > 1023 {
                 n = 1023;
             }
         }
     } else if n < -1022 {
-        y *= f64::from_bits(0x0360_0000_0000_0000);
+        y *= fb64(0x0360_0000_0000_0000);
         n += 1022 - 53;
         if n < -1022 {
-            y *= f64::from_bits(0x0360_0000_0000_0000);
+            y *= fb64(0x0360_0000_0000_0000);
             n += 1022 - 53;
             if n < -1022 {
                 n = -1022;
@@ -217,29 +241,28 @@ pub extern "C" fn scalbn(x: f64, mut n: i32) -> f64 {
         }
     }
     let u = ((0x3ff + n) as u64) << 52;
-    y * f64::from_bits(u)
+    y * fb64(u)
 }
 
 /// `float scalbnf(float, int)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn scalbnf(x: f32, mut n: i32) -> f32 {
     let mut y = x;
     if n > 127 {
-        y *= f32::from_bits(0x7F00_0000);
+        y *= fb32(0x7F00_0000);
         n -= 127;
         if n > 127 {
-            y *= f32::from_bits(0x7F00_0000);
+            y *= fb32(0x7F00_0000);
             n -= 127;
             if n > 127 {
                 n = 127;
             }
         }
     } else if n < -126 {
-        y *= f32::from_bits(0x0C80_0000);
+        y *= fb32(0x0C80_0000);
         n += 126 - 24;
         if n < -126 {
-            y *= f32::from_bits(0x0C80_0000);
+            y *= fb32(0x0C80_0000);
             n += 126 - 24;
             if n < -126 {
                 n = -126;
@@ -247,7 +270,7 @@ pub extern "C" fn scalbnf(x: f32, mut n: i32) -> f32 {
         }
     }
     let u = ((0x7f + n) as u32) << 23;
-    y * f32::from_bits(u)
+    y * fb32(u)
 }
 
 // ---- round / roundf — ReactOS portable (ceil/floor + FP add) ----------
@@ -255,7 +278,6 @@ pub extern "C" fn scalbnf(x: f32, mut n: i32) -> f32 {
 // those module-local impls directly.
 
 /// `double round(double)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn round(arg: f64) -> f64 {
     if arg < 0.0 {
@@ -266,7 +288,6 @@ pub extern "C" fn round(arg: f64) -> f64 {
 }
 
 /// `float roundf(float)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn roundf(arg: f32) -> f32 {
     if arg < 0.0 {
@@ -282,7 +303,6 @@ pub extern "C" fn roundf(arg: f32) -> f32 {
 // consumer and they do not affect the return value, so they are omitted.
 
 /// `double nextafter(double, double)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn nextafter(x: f64, y: f64) -> f64 {
     let mut uxi = x.to_bits();
@@ -305,11 +325,10 @@ pub extern "C" fn nextafter(x: f64, y: f64) -> f64 {
     } else {
         uxi += 1;
     }
-    f64::from_bits(uxi)
+    fb64(uxi)
 }
 
 /// `float nextafterf(float, float)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn nextafterf(x: f32, y: f32) -> f32 {
     let mut uxi = x.to_bits();
@@ -332,7 +351,7 @@ pub extern "C" fn nextafterf(x: f32, y: f32) -> f32 {
     } else {
         uxi += 1;
     }
-    f32::from_bits(uxi)
+    fb32(uxi)
 }
 
 // ---- nexttowardf — musl; amd64/arm64 only (i386 long double is 80-bit) -
@@ -341,7 +360,7 @@ pub extern "C" fn nextafterf(x: f32, y: f32) -> f32 {
 // so i386 keeps the C implementation (not REMOVE_ITEM'd there).
 
 /// `float nexttowardf(float, long double)`.
-#[cfg(all(feature = "float", not(target_arch = "x86")))]
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub extern "C" fn nexttowardf(x: f32, y: f64) -> f32 {
     let mut uxi = x.to_bits();
@@ -367,7 +386,7 @@ pub extern "C" fn nexttowardf(x: f32, y: f64) -> f32 {
     } else {
         uxi -= 1;
     }
-    f32::from_bits(uxi)
+    fb32(uxi)
 }
 
 // ---- div — pure integer, struct-return ABI ----------------------------
@@ -414,15 +433,12 @@ pub extern "C" fn div(mut num: i32, mut denom: i32) -> div_t {
 //     fast-inverse-sqrt approximation) it replaces.
 // ======================================================================
 
-#[cfg(feature = "float")]
 const M_PI: f64 = 3.141592653589793238462643;
 
 /// Shared quadrant-reduced Taylor core for `sin`/`cos` (PRECISION=9).
 /// `q` is the already-normalized quadrant (sin: `(quad-1)&3`, cos:
 /// `quad&3`). Mirrors the `sin_off_tbl`/`sin_sign_tbl` of `math/sin.c`.
-#[cfg(feature = "float")]
-#[inline]
-fn sincos_taylor(mut x: f64, q: usize) -> f64 {
+extern "C" fn sincos_taylor(mut x: f64, q: usize) -> f64 {
     const OFF: [f64; 4] = [0.0, -M_PI / 2.0, 0.0, -M_PI / 2.0];
     const SIGN: [f64; 4] = [1.0, -1.0, -1.0, 1.0];
     x += OFF[q];
@@ -453,7 +469,6 @@ fn sincos_taylor(mut x: f64, q: usize) -> f64 {
 }
 
 /// `double sin(double)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn sin(x: f64) -> f64 {
     let quadrant = (x * (2.0 / M_PI)) as i32;
@@ -462,7 +477,6 @@ pub extern "C" fn sin(x: f64) -> f64 {
 }
 
 /// `double cos(double)`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn cos(x: f64) -> f64 {
     let quadrant = (x * (2.0 / M_PI)) as i32;
@@ -472,7 +486,7 @@ pub extern "C" fn cos(x: f64) -> f64 {
 
 /// `double sqrt(double)` — hardware `sqrtsd` (correctly rounded; handles
 /// ±0/±inf/NaN/negative per IEEE, so no special-case prologue needed).
-#[cfg(all(feature = "float", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn sqrt(x: f64) -> f64 {
     let r: f64;
@@ -483,7 +497,7 @@ pub extern "C" fn sqrt(x: f64) -> f64 {
 }
 
 /// `double sqrt(double)` — hardware `fsqrt`.
-#[cfg(all(feature = "float", target_arch = "aarch64"))]
+#[cfg(target_arch = "aarch64")]
 #[no_mangle]
 pub extern "C" fn sqrt(x: f64) -> f64 {
     let r: f64;
@@ -494,7 +508,7 @@ pub extern "C" fn sqrt(x: f64) -> f64 {
 }
 
 /// `float sqrtf(float)` — hardware `sqrtss`.
-#[cfg(all(feature = "float", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn sqrtf(x: f32) -> f32 {
     let r: f32;
@@ -505,12 +519,48 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
 }
 
 /// `float sqrtf(float)` — hardware `fsqrt` (single).
-#[cfg(all(feature = "float", target_arch = "aarch64"))]
+#[cfg(target_arch = "aarch64")]
 #[no_mangle]
 pub extern "C" fn sqrtf(x: f32) -> f32 {
     let r: f32;
     unsafe {
         core::arch::asm!("fsqrt {0:s}, {1:s}", out(vreg) r, in(vreg) x, options(pure, nomem, nostack));
+    }
+    r
+}
+
+/// `double sqrt(double)` — i386 x87 `fsqrt` (no SSE on the kernel's i386).
+/// Memory in/out (f64 can't live in one GP reg); fld pushes / fstp pops, so
+/// the x87 stack is balanced. No `nomem` — the asm reads/writes `r`.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub extern "C" fn sqrt(x: f64) -> f64 {
+    let mut r = x;
+    unsafe {
+        core::arch::asm!(
+            "fld qword ptr [{p}]",
+            "fsqrt",
+            "fstp qword ptr [{p}]",
+            p = in(reg) core::ptr::addr_of_mut!(r),
+            options(nostack),
+        );
+    }
+    r
+}
+
+/// `float sqrtf(float)` — i386 x87 `fsqrt` (single), no SSE.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub extern "C" fn sqrtf(x: f32) -> f32 {
+    let mut r = x;
+    unsafe {
+        core::arch::asm!(
+            "fld dword ptr [{p}]",
+            "fsqrt",
+            "fstp dword ptr [{p}]",
+            p = in(reg) core::ptr::addr_of_mut!(r),
+            options(nostack),
+        );
     }
     r
 }
@@ -530,7 +580,6 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
 // ===========================================================================
 
 /// `double exp(double)` — range reduction + degree-5 rational approximation.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn exp(x: f64) -> f64 {
     const LN2_HI: f64 = 6.93147180369123816490e-01;
@@ -556,7 +605,7 @@ pub extern "C" fn exp(x: f64) -> f64 {
             return if (bits >> 63) != 0 { 0.0 } else { x }; // exp(-inf)=0, exp(inf)=inf
         }
         if x > 709.782712893383973096 {
-            return f64::from_bits(0x7FF0_0000_0000_0000); // overflow → +inf
+            return fb64(0x7FF0_0000_0000_0000); // overflow → +inf
         }
         if x < -745.13321910194110842 {
             return 0.0; // underflow
@@ -606,19 +655,18 @@ pub extern "C" fn exp(x: f64) -> f64 {
     }
     if k > 0 && k < 1024 {
         bits = ((0x3FF + k) as u64) << 52;
-        y * f64::from_bits(bits)
+        y * fb64(bits)
     } else if k < 0 && k > -1023 {
         bits = ((0x3FF + k) as u64) << 52;
-        y * f64::from_bits(bits)
+        y * fb64(bits)
     } else {
         // Extreme exponents
         bits = y.to_bits().wrapping_add((k as i64 as u64) << 52);
-        f64::from_bits(bits)
+        fb64(bits)
     }
 }
 
 /// `double log(double)` — natural logarithm, fdlibm-style.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn log(x: f64) -> f64 {
     const LN2_HI: f64 = 6.93147180369123816490e-01;
@@ -676,7 +724,7 @@ pub extern "C" fn log(x: f64) -> f64 {
         bits = ((hx as u32 as u64) << 32) | (lx as u64);
         bits |= 0x3FE0_0000_0000_0000;
     }
-    xv = f64::from_bits(bits);
+    xv = fb64(bits);
 
     let f = xv - 1.0;
 
@@ -703,7 +751,6 @@ pub extern "C" fn log(x: f64) -> f64 {
 }
 
 /// `double log10(double)` — upstream's rough stub (FIXME), verbatim.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn log10(x: f64) -> f64 {
     if x <= 0.0 {
@@ -729,7 +776,6 @@ pub extern "C" fn log10(x: f64) -> f64 {
 
 /// `double pow(double, double)` — upstream's integer-exponent stub (FIXME),
 /// verbatim. Non-integer / general case returns 0.0 exactly as the C does.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn pow(base: f64, exponent: f64) -> f64 {
     let mut result = 1.0f64;
@@ -745,16 +791,25 @@ pub extern "C" fn pow(base: f64, exponent: f64) -> f64 {
     }
 
     let iexp = exponent as i32; // truncate toward zero
+    // NB: explicit `while` (not `for _ in 0..iexp`) — a `Range<i32>`
+    // iterator pulls in `<i32 as Step>::forward_unchecked`, whose
+    // out-of-line copy LLVM emits as `ud2` under the i386 no-SSE
+    // `-C no-prepopulate-passes` build (flagged unexpected by scan_ud2).
+    // The `while` form iterates identically without touching `Step`.
     if (iexp as f64) == exponent && iexp >= 0 {
-        for _ in 0..iexp {
+        let mut k = 0i32;
+        while k < iexp {
             result *= base;
+            k += 1;
         }
         return result;
     }
     if (iexp as f64) == exponent && iexp < 0 {
         let iexp = -iexp;
-        for _ in 0..iexp {
+        let mut k = 0i32;
+        while k < iexp {
             result *= base;
+            k += 1;
         }
         return 1.0 / result;
     }
@@ -763,7 +818,6 @@ pub extern "C" fn pow(base: f64, exponent: f64) -> f64 {
 }
 
 /// `double fmod(double, double)` — fdlibm bit-twiddling remainder.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
     let mut xi = x.to_bits();
@@ -823,7 +877,7 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
         if xi >= yi {
             xi -= yi;
             if xi == 0 {
-                return f64::from_bits(sx);
+                return fb64(sx);
             }
         }
         xi <<= 1;
@@ -833,7 +887,7 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
     if xi >= yi {
         xi -= yi;
         if xi == 0 {
-            return f64::from_bits(sx);
+            return fb64(sx);
         }
     }
 
@@ -852,7 +906,7 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
     }
 
     xi |= sx;
-    f64::from_bits(xi)
+    fb64(xi)
 }
 
 // ===========================================================================
@@ -870,7 +924,6 @@ pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
 // ===========================================================================
 
 /// `double tan(double)` — sin/cos quotient (the portable arm64 form).
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn tan(x: f64) -> f64 {
     let s = sin(x);
@@ -894,7 +947,6 @@ pub extern "C" fn tan(x: f64) -> f64 {
 // ===========================================================================
 
 /// `double floor(double)` — round toward -inf.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn floor(x: f64) -> f64 {
     let mut i = x.to_bits();
@@ -917,11 +969,10 @@ pub extern "C" fn floor(x: f64) -> f64 {
         i = i.wrapping_add(m); // negative: round toward -inf (increase magnitude)
     }
     i &= !m;
-    f64::from_bits(i)
+    fb64(i)
 }
 
 /// `double ceil(double)` — round toward +inf.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn ceil(x: f64) -> f64 {
     let mut i = x.to_bits();
@@ -943,11 +994,10 @@ pub extern "C" fn ceil(x: f64) -> f64 {
         i = i.wrapping_add(m); // positive: round toward +inf
     }
     i &= !m;
-    f64::from_bits(i)
+    fb64(i)
 }
 
 /// `float floorf(float)` — round toward -inf.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn floorf(x: f32) -> f32 {
     let mut i = x.to_bits();
@@ -969,11 +1019,10 @@ pub extern "C" fn floorf(x: f32) -> f32 {
         i = i.wrapping_add(m);
     }
     i &= !m;
-    f32::from_bits(i)
+    fb32(i)
 }
 
 /// `float ceilf(float)` — round toward +inf.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn ceilf(x: f32) -> f32 {
     let mut i = x.to_bits();
@@ -995,7 +1044,7 @@ pub extern "C" fn ceilf(x: f32) -> f32 {
         i = i.wrapping_add(m);
     }
     i &= !m;
-    f32::from_bits(i)
+    fb32(i)
 }
 
 // ===========================================================================
@@ -1011,7 +1060,6 @@ pub extern "C" fn ceilf(x: f32) -> f32 {
 // ===========================================================================
 
 /// `double ldexp(double, int)` — x * 2^n (portable arm64 stepping).
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn ldexp(x: f64, mut n: i32) -> f64 {
     if x == 0.0 || n == 0 {
@@ -1019,20 +1067,20 @@ pub extern "C" fn ldexp(x: f64, mut n: i32) -> f64 {
     }
     let mut xx = x;
     if n > 1023 {
-        xx *= f64::from_bits(0x7FE0_0000_0000_0000); // 0x1p1023
+        xx *= fb64(0x7FE0_0000_0000_0000); // 0x1p1023
         n -= 1023;
         if n > 1023 {
-            xx *= f64::from_bits(0x7FE0_0000_0000_0000);
+            xx *= fb64(0x7FE0_0000_0000_0000);
             n -= 1023;
             if n > 1023 {
                 n = 1023;
             }
         }
     } else if n < -1022 {
-        xx *= f64::from_bits(0x0010_0000_0000_0000); // 0x1p-1022
+        xx *= fb64(0x0010_0000_0000_0000); // 0x1p-1022
         n += 1022;
         if n < -1022 {
-            xx *= f64::from_bits(0x0010_0000_0000_0000);
+            xx *= fb64(0x0010_0000_0000_0000);
             n += 1022;
             if n < -1022 {
                 n = -1022;
@@ -1040,11 +1088,10 @@ pub extern "C" fn ldexp(x: f64, mut n: i32) -> f64 {
         }
     }
     let u = ((0x3FF + n) as u64) << 52;
-    xx * f64::from_bits(u)
+    xx * fb64(u)
 }
 
 /// `double _logb(double)` — unbiased binary exponent (MSVC name).
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn _logb(x: f64) -> f64 {
     let mut u = x.to_bits() & 0x7FFF_FFFF_FFFF_FFFF; // clear sign
@@ -1057,14 +1104,13 @@ pub extern "C" fn _logb(x: f64) -> f64 {
     }
     if exp == 0 {
         // subnormal: normalize by 2^64, re-read exponent
-        u = (f64::from_bits(u) * f64::from_bits(0x43F0_0000_0000_0000)).to_bits(); // 0x1p64
+        u = (fb64(u) * fb64(0x43F0_0000_0000_0000)).to_bits(); // 0x1p64
         exp = (u >> 52) as i32 - 64;
     }
     (exp - 0x3FF) as f64
 }
 
 /// `float _logbf(float)` — unbiased binary exponent (MSVC name).
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn _logbf(x: f32) -> f32 {
     let mut u = x.to_bits() & 0x7FFF_FFFF;
@@ -1076,7 +1122,7 @@ pub extern "C" fn _logbf(x: f32) -> f32 {
         return x * x;
     }
     if exp == 0 {
-        u = (f32::from_bits(u) * f32::from_bits(0x4C00_0000)).to_bits(); // 0x1p25f
+        u = (fb32(u) * fb32(0x4C00_0000)).to_bits(); // 0x1p25f
         exp = (u >> 23) as i32 - 25;
     }
     (exp - 0x7F) as f32
@@ -1096,7 +1142,6 @@ pub extern "C" fn _logbf(x: f32) -> f32 {
 //          arm64 fabsf.c unconditionally set it.
 
 /// `double fabs(double)` — magnitude; NaN returned unchanged.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn fabs(x: f64) -> f64 {
     let bits = x.to_bits();
@@ -1105,20 +1150,19 @@ pub extern "C" fn fabs(x: f64) -> f64 {
         // NaN: return the original bits unchanged.
         return x;
     }
-    f64::from_bits(abs)
+    fb64(abs)
 }
 
 /// `float fabsf(float)` — magnitude; NaN returned with quiet bit set.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn fabsf(x: f32) -> f32 {
     let bits = x.to_bits();
     let abs = bits & 0x7FFF_FFFF;
     if abs > 0x7F80_0000 {
         // NaN: original | quiet bit (sign preserved).
-        return f32::from_bits(bits | 0x0040_0000);
+        return fb32(bits | 0x0040_0000);
     }
-    f32::from_bits(abs)
+    fb32(abs)
 }
 
 // ── Wave MATH-TIERC (sub-wave 7): modf ───────────────────────────────────
@@ -1130,7 +1174,6 @@ pub extern "C" fn fabsf(x: f32) -> f32 {
 // guard for #[no_mangle] output-pointer params).
 
 /// `double modf(double x, double *iptr)` — integer/fraction split.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn modf(x: f64, iptr: *mut f64) -> f64 {
     let ux = x.to_bits();
@@ -1138,23 +1181,25 @@ pub unsafe extern "C" fn modf(x: f64, iptr: *mut f64) -> f64 {
     if ax >= 0x4340_0000_0000_0000 {
         // abs(x) is NaN, infinity, or >= 2^53
         if ax > 0x7FF0_0000_0000_0000 {
-            // x is NaN
-            core::ptr::write_volatile(iptr, x);
+            // x is NaN. Write the bits via *mut u64 (not write_volatile::<f64>,
+            // whose by-value-f64 Rust ABI needs SSE → hard error on the no-SSE
+            // i386 kernel; the volatile-store captures(none) guard is preserved).
+            core::ptr::write_volatile(iptr as *mut u64, x.to_bits());
             return x + x; // raise invalid for a signalling NaN
         }
         // x is infinity or large: integer part is x, fraction is ±0
-        core::ptr::write_volatile(iptr, x);
-        return f64::from_bits(ux & 0x8000_0000_0000_0000); // SIGNBIT_DP64
+        core::ptr::write_volatile(iptr as *mut u64, x.to_bits());
+        return fb64(ux & 0x8000_0000_0000_0000); // SIGNBIT_DP64
     } else if ax < 0x3FF0_0000_0000_0000 {
         // abs(x) < 1.0: integer part is ±0, fraction is x
-        core::ptr::write_volatile(iptr, f64::from_bits(ux & 0x8000_0000_0000_0000));
+        core::ptr::write_volatile(iptr as *mut u64, ux & 0x8000_0000_0000_0000);
         return x;
     }
     // 1.0 <= abs(x) < 2^53: mask off the fractional mantissa bits
     let xexp = (((ux & 0x7FF0_0000_0000_0000) >> 52) as i64) - 1023;
     let mask: u64 = (1u64 << (52 - xexp)) - 1;
-    let int_part = f64::from_bits(ux & !mask);
-    core::ptr::write_volatile(iptr, int_part);
+    let int_part = fb64(ux & !mask);
+    core::ptr::write_volatile(iptr as *mut u64, int_part.to_bits());
     x - int_part
 }
 
@@ -1165,21 +1210,18 @@ pub unsafe extern "C" fn modf(x: f64, iptr: *mut f64) -> f64 {
 // versions; i386 keeps its x87 atan_asm.s. Both call the Rust `fabs` above;
 // atan2 calls `atan`. Bit-exact vs the genuine portable C.
 
-#[cfg(feature = "float")]
 const ATANHI: [f64; 4] = [
     4.63647609000806093515e-01, // atan(0.5)hi
     7.85398163397448278999e-01, // atan(1.0)hi
     9.82793723247329054082e-01, // atan(1.5)hi
     1.57079632679489655800e+00, // atan(inf)hi
 ];
-#[cfg(feature = "float")]
 const ATANLO: [f64; 4] = [
     2.26987774529616870924e-17, // atan(0.5)lo
     3.06161699786838301793e-17, // atan(1.0)lo
     1.39033110312309984516e-17, // atan(1.5)lo
     6.12323399573676603587e-17, // atan(inf)lo
 ];
-#[cfg(feature = "float")]
 const ATAN_AT: [f64; 11] = [
     3.33333333333329318027e-01,
     -1.99999999998764832476e-01,
@@ -1195,7 +1237,6 @@ const ATAN_AT: [f64; 11] = [
 ];
 
 /// `double atan(double)` — arctangent (portable fdlibm).
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn atan(mut x: f64) -> f64 {
     let hx = (x.to_bits() >> 32) as u32 as i32;
@@ -1263,17 +1304,12 @@ pub extern "C" fn atan(mut x: f64) -> f64 {
     }
 }
 
-#[cfg(feature = "float")]
 const ATAN2_PI: f64 = 3.14159265358979311600e+00;
-#[cfg(feature = "float")]
 const ATAN2_PI_LO: f64 = 1.22464679914735320717e-16;
-#[cfg(feature = "float")]
 const ATAN2_PI_2: f64 = 1.57079632679489655800e+00;
-#[cfg(feature = "float")]
 const ATAN2_PI_4: f64 = 7.85398163397448278999e-01;
 
 /// `double atan2(double y, double x)` — arctangent of y/x (portable fdlibm).
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
     let xb = x.to_bits();
@@ -1371,7 +1407,6 @@ pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
 // (further 53 bits) parts. Encoded by their exact stored bit patterns (the
 // `.h` comments) so no decimal-rounding drift can creep in; the difftest vs
 // the genuine decimal-literal C is the cross-check.
-#[cfg(feature = "float")]
 const TWO_TO_JBY32_LEAD: [f64; 32] = [
     f64::from_bits(0x3ff0000000000000), f64::from_bits(0x3ff059b0d0000000),
     f64::from_bits(0x3ff0b55860000000), f64::from_bits(0x3ff11301d0000000),
@@ -1390,7 +1425,6 @@ const TWO_TO_JBY32_LEAD: [f64; 32] = [
     f64::from_bits(0x3ffd5818d0000000), f64::from_bits(0x3ffdfc9730000000),
     f64::from_bits(0x3ffea4afa0000000), f64::from_bits(0x3fff507650000000),
 ];
-#[cfg(feature = "float")]
 const TWO_TO_JBY32_TRAIL: [f64; 32] = [
     f64::from_bits(0x0000000000000000), f64::from_bits(0x3e48ac2ba1d73e2a),
     f64::from_bits(0x3e69f3121ec53172), f64::from_bits(0x3df25b50a4ebbf1b),
@@ -1412,7 +1446,6 @@ const TWO_TO_JBY32_TRAIL: [f64; 32] = [
 
 /// Faithful port of libm_inlines.h `splitexp`: find m, z1, z2 such that
 /// base**x = 2**m * (z1 + z2). Returns (m, z1, z2).
-#[cfg(feature = "float")]
 fn splitexp(
     x: f64,
     logbase: f64,
@@ -1445,19 +1478,17 @@ fn splitexp(
 }
 
 /// libm_inlines.h `scaleDouble_1`: x * 2**n (EMIN < n < EMAX).
-#[cfg(feature = "float")]
-fn scale_double_1(x: f64, n: i32) -> f64 {
-    let t = f64::from_bits(((n as i64 + 1023) << 52) as u64);
+extern "C" fn scale_double_1(x: f64, n: i32) -> f64 {
+    let t = fb64(((n as i64 + 1023) << 52) as u64);
     x * t
 }
 
 /// libm_inlines.h `scaleDouble_2`: x * 2**n (2*EMIN <= n <= 2*EMAX).
-#[cfg(feature = "float")]
-fn scale_double_2(x: f64, n: i32) -> f64 {
+extern "C" fn scale_double_2(x: f64, n: i32) -> f64 {
     let n1 = n / 2;
     let n2 = n - n1;
-    let t1 = f64::from_bits(((n1 as i64 + 1023) << 52) as u64);
-    let t2 = f64::from_bits(((n2 as i64 + 1023) << 52) as u64);
+    let t1 = fb64(((n1 as i64 + 1023) << 52) as u64);
+    let t2 = fb64(((n2 as i64 + 1023) << 52) as u64);
     (x * t1) * t2
 }
 
@@ -1466,7 +1497,6 @@ fn scale_double_2(x: f64, n: i32) -> f64 {
 // flipped on amd64+arm64 behind the float feature, i386 keeps C.
 
 /// `double exp2(double)` — 2**x.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn exp2(x: f64) -> f64 {
     const MAX_EXP2_ARG: f64 = 1024.0;
@@ -1484,14 +1514,14 @@ pub extern "C" fn exp2(x: f64) -> f64 {
         if ax >= 0x7ff0_0000_0000_0000 {
             // NaN or infinity
             if ux & 0x000f_ffff_ffff_ffff != 0 {
-                return f64::from_bits(ux | 0x0008_0000_0000_0000); // NaN
+                return fb64(ux | 0x0008_0000_0000_0000); // NaN
             } else if ux & 0x8000_0000_0000_0000 != 0 {
                 return 0.0; // -inf → +0
             }
             return x; // +inf
         }
         if x > MAX_EXP2_ARG {
-            return f64::from_bits(0x7ff0_0000_0000_0000); // overflow → +inf
+            return fb64(0x7ff0_0000_0000_0000); // overflow → +inf
         } else if x < MIN_EXP2_ARG {
             return 0.0; // underflow → +0
         }
@@ -1504,7 +1534,7 @@ pub extern "C" fn exp2(x: f64) -> f64 {
             return 1.0 + x;
         }
         // Split x into hx (head) and tx (tail).
-        let hx = f64::from_bits(ux & 0xffff_ffff_f800_0000);
+        let hx = fb64(ux & 0xffff_ffff_f800_0000);
         let tx = x - hx;
         let y1 = x * LOG2_LEAD;
         let y2 = (((hx * LOG2_LEAD - y1) + hx * LOG2_TAIL) + tx * LOG2_LEAD) + tx * LOG2_TAIL;
@@ -1539,7 +1569,6 @@ pub extern "C" fn exp2(x: f64) -> f64 {
 // from_bits(bits).
 
 /// `double tanh(double)` — hyperbolic tangent.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn tanh(x: f64) -> f64 {
     const THIRTYTWO_BY_LOG2: f64 = 4.61662413084468283841e+01;
@@ -1554,7 +1583,7 @@ pub extern "C" fn tanh(x: f64) -> f64 {
         return x;
     } else if aux > 0x7ff0_0000_0000_0000 {
         // |x| is NaN
-        return f64::from_bits(ux | 0x0008_0000_0000_0000);
+        return fb64(ux | 0x0008_0000_0000_0000);
     }
 
     let xneg = aux != ux;
@@ -1619,7 +1648,6 @@ pub extern "C" fn tanh(x: f64) -> f64 {
 // Large |x| → splitexp-based exp(|x|)/2 (sign applied for sinh; cosh even);
 // small |x| → table reconstruction. NaN/Inf/overflow preserved exactly.
 
-#[cfg(feature = "float")]
 const SINH_LEAD: [f64; 37] = [
     f64::from_bits(0x0000000000000000), f64::from_bits(0x3ff2cd9fc0000000), f64::from_bits(0x400d03cf60000000),
     f64::from_bits(0x40240926e0000000), f64::from_bits(0x403b4a3800000000), f64::from_bits(0x40528d0160000000),
@@ -1635,7 +1663,6 @@ const SINH_LEAD: [f64; 37] = [
     f64::from_bits(0x42d866f348000000), f64::from_bits(0x42f0953e28000000), f64::from_bits(0x430689e220000000),
     f64::from_bits(0x431ea215a0000000),
 ];
-#[cfg(feature = "float")]
 const SINH_TAIL: [f64; 37] = [
     f64::from_bits(0x0000000000000000), f64::from_bits(0x3e513ae6096a0092), f64::from_bits(0x3e5db70cfb79a640),
     f64::from_bits(0x3e8c2526b66dc067), f64::from_bits(0x3e8b81b18647f380), f64::from_bits(0x3ebbc1cdd1e1eb08),
@@ -1651,7 +1678,6 @@ const SINH_TAIL: [f64; 37] = [
     f64::from_bits(0x412392bc108b37cc), f64::from_bits(0x415ce87bdc3473dc), f64::from_bits(0x414bc8d5ae99ad14),
     f64::from_bits(0x415d20d76744835c),
 ];
-#[cfg(feature = "float")]
 const COSH_LEAD: [f64; 37] = [
     f64::from_bits(0x3ff0000000000000), f64::from_bits(0x3ff8b07550000000), f64::from_bits(0x400e18fa08000000),
     f64::from_bits(0x402422a490000000), f64::from_bits(0x403b4ee858000000), f64::from_bits(0x40528d6fc8000000),
@@ -1667,7 +1693,6 @@ const COSH_LEAD: [f64; 37] = [
     f64::from_bits(0x42d866f348000000), f64::from_bits(0x42f0953e28000000), f64::from_bits(0x430689e220000000),
     f64::from_bits(0x431ea215a0000000),
 ];
-#[cfg(feature = "float")]
 const COSH_TAIL: [f64; 37] = [
     f64::from_bits(0x0000000000000000), f64::from_bits(0x3e3d9f5504c2bd28), f64::from_bits(0x3e67cb66f0a4c9fd),
     f64::from_bits(0x3e8f58617928e588), f64::from_bits(0x3e6bc7d000c38d48), f64::from_bits(0x3eaf7f9d4e329998),
@@ -1686,7 +1711,6 @@ const COSH_TAIL: [f64; 37] = [
 
 /// Shared degree-13 series used by sinh/cosh in the small-|x| table branch:
 /// returns (sdy ≈ sinh(dy) - dy, cdy ≈ cosh(dy) - 1), identical in both .c.
-#[cfg(feature = "float")]
 fn sinh_cosh_dy_poly(dy: f64) -> (f64, f64) {
     let dy2 = dy * dy;
     let sdy = dy
@@ -1720,7 +1744,6 @@ fn sinh_cosh_dy_poly(dy: f64) -> (f64, f64) {
 }
 
 /// `double sinh(double)` — hyperbolic sine.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn sinh(x: f64) -> f64 {
     const MAX_SINH_ARG: f64 = 7.10475860073943977113e+02;
@@ -1737,7 +1760,7 @@ pub extern "C" fn sinh(x: f64) -> f64 {
         return x;
     } else if aux >= 0x7ff0_0000_0000_0000 {
         if aux > 0x7ff0_0000_0000_0000 {
-            return f64::from_bits(ux | 0x0008_0000_0000_0000); // NaN
+            return fb64(ux | 0x0008_0000_0000_0000); // NaN
         }
         return x + x; // ±Inf
     }
@@ -1749,9 +1772,9 @@ pub extern "C" fn sinh(x: f64) -> f64 {
     if y >= MAX_SINH_ARG {
         // overflow → ±Inf
         return if xneg {
-            f64::from_bits(0xfff0_0000_0000_0000)
+            fb64(0xfff0_0000_0000_0000)
         } else {
-            f64::from_bits(0x7ff0_0000_0000_0000)
+            fb64(0x7ff0_0000_0000_0000)
         };
     } else if y >= small_threshold {
         // sinh(y) ≈ exp(y)/2 via splitexp (÷2 by reducing m by 1)
@@ -1768,7 +1791,7 @@ pub extern "C" fn sinh(x: f64) -> f64 {
         let dy = y - ind as f64;
         let (sdy, cdy) = sinh_cosh_dy_poly(dy);
         // Shift some significant bits from dy to sdy.
-        let sdy1 = f64::from_bits(dy.to_bits() & 0xffff_ffff_f800_0000);
+        let sdy1 = fb64(dy.to_bits() & 0xffff_ffff_f800_0000);
         let sdy2 = sdy + (dy - sdy1);
         z = ((((((COSH_TAIL[ind] * sdy2 + SINH_TAIL[ind] * cdy) + COSH_TAIL[ind] * sdy1)
             + SINH_TAIL[ind])
@@ -1786,7 +1809,6 @@ pub extern "C" fn sinh(x: f64) -> f64 {
 }
 
 /// `double cosh(double)` — hyperbolic cosine (even).
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn cosh(x: f64) -> f64 {
     const MAX_COSH_ARG: f64 = 7.10475860073943977113e+02;
@@ -1802,16 +1824,16 @@ pub extern "C" fn cosh(x: f64) -> f64 {
         return 1.0;
     } else if aux >= 0x7ff0_0000_0000_0000 {
         if aux > 0x7ff0_0000_0000_0000 {
-            return f64::from_bits(ux | 0x0008_0000_0000_0000); // NaN
+            return fb64(ux | 0x0008_0000_0000_0000); // NaN
         }
-        return f64::from_bits(0x7ff0_0000_0000_0000); // Inf → +Inf
+        return fb64(0x7ff0_0000_0000_0000); // Inf → +Inf
     }
 
     let xneg = aux != ux;
     let y = if xneg { -x } else { x };
 
     if y >= MAX_COSH_ARG {
-        return f64::from_bits(0x7ff0_0000_0000_0000); // overflow → +Inf
+        return fb64(0x7ff0_0000_0000_0000); // overflow → +Inf
     } else if y >= SMALL_THRESHOLD {
         // cosh(y) ≈ exp(y)/2 via splitexp (÷2 by reducing m by 1)
         let (mut m, z1, z2) = splitexp(y, 1.0, THIRTYTWO_BY_LOG2, LOG2_BY_32_LEAD, LOG2_BY_32_TAIL);
@@ -1842,8 +1864,7 @@ pub extern "C" fn cosh(x: f64) -> f64 {
 // in-module cnt-rust `sqrt` (sqrtsd/fsqrt) is correctly rounded, so bit-exact.
 
 /// The shared [0,0.5] rational R(r) of acos/asin (`u` in the C sources).
-#[cfg(feature = "float")]
-fn asin_rational(r: f64) -> f64 {
+extern "C" fn asin_rational(r: f64) -> f64 {
     r * (0.227485835556935010735943483075
         + (-0.445017216867635649900123110649
             + (0.275558175256937652532686256258
@@ -1864,7 +1885,6 @@ fn asin_rational(r: f64) -> f64 {
 }
 
 /// `double asin(double)` — arcsine.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn asin(x: f64) -> f64 {
     const PIBY2_TAIL: f64 = 6.1232339957367660e-17;
@@ -1878,7 +1898,7 @@ pub extern "C" fn asin(x: f64) -> f64 {
     let xexp = ((ux & 0x7ff0_0000_0000_0000) >> 52) as i32 - 1023;
 
     if xnan {
-        return f64::from_bits(ux | 0x0008_0000_0000_0000);
+        return fb64(ux | 0x0008_0000_0000_0000);
     } else if xexp < -28 {
         // arcsin(x) = x
         return x;
@@ -1889,7 +1909,7 @@ pub extern "C" fn asin(x: f64) -> f64 {
         } else if x == -1.0 {
             return -PIBY2;
         }
-        return f64::from_bits(0xfff8_0000_0000_0000); // INDEFBITPATT_DP64
+        return fb64(0xfff8_0000_0000_0000); // INDEFBITPATT_DP64
     }
 
     let mut y = if xneg { -x } else { x };
@@ -1908,7 +1928,7 @@ pub extern "C" fn asin(x: f64) -> f64 {
 
     let v;
     if transform {
-        let s1 = f64::from_bits(0xffff_ffff_0000_0000 & s.to_bits());
+        let s1 = fb64(0xffff_ffff_0000_0000 & s.to_bits());
         let c = (r - s1 * s1) / (s + s1);
         let p = 2.0 * s * u - (PIBY2_TAIL - 2.0 * c);
         let q = HPIBY2_HEAD - 2.0 * s1;
@@ -1927,7 +1947,6 @@ pub extern "C" fn asin(x: f64) -> f64 {
 }
 
 /// `double acos(double)` — arccosine.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn acos(x: f64) -> f64 {
     const PI: f64 = 3.1415926535897933e+00;
@@ -1942,7 +1961,7 @@ pub extern "C" fn acos(x: f64) -> f64 {
     let xexp = ((ux & 0x7ff0_0000_0000_0000) >> 52) as i32 - 1023;
 
     if xnan {
-        return f64::from_bits(ux | 0x0008_0000_0000_0000);
+        return fb64(ux | 0x0008_0000_0000_0000);
     } else if xexp < -56 {
         // arccos(x) = pi/2
         return PIBY2;
@@ -1953,7 +1972,7 @@ pub extern "C" fn acos(x: f64) -> f64 {
         } else if x == -1.0 {
             return PI;
         }
-        return f64::from_bits(0xfff8_0000_0000_0000); // INDEFBITPATT_DP64
+        return fb64(0xfff8_0000_0000_0000); // INDEFBITPATT_DP64
     }
 
     let mut y = if xneg { -x } else { x };
@@ -1974,7 +1993,7 @@ pub extern "C" fn acos(x: f64) -> f64 {
         if xneg {
             return PI - 2.0 * (s + (y * u - PIBY2_TAIL));
         }
-        let s1 = f64::from_bits(0xffff_ffff_0000_0000 & s.to_bits());
+        let s1 = fb64(0xffff_ffff_0000_0000 & s.to_bits());
         let c = (r - s1 * s1) / (s + s1);
         return 2.0 * s1 + (2.0 * c + 2.0 * y * u);
     }
@@ -1992,7 +2011,6 @@ pub extern "C" fn acos(x: f64) -> f64 {
 
 /// `double _hypot(double x, double y)` — Euclidean distance, no spurious
 /// overflow/underflow.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
     const LARGE: f64 = 1.79769313486231570815e+308;
@@ -2010,15 +2028,15 @@ pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
             || ((yexp == 2047) && (uy & 0x000f_ffff_ffff_ffff) == 0)
         {
             // x or y is Inf → +Inf even if the other is NaN (C99).
-            return f64::from_bits(0x7ff0_0000_0000_0000);
+            return fb64(0x7ff0_0000_0000_0000);
         }
         // NaN (neither Inf).
         return retval;
     }
 
     // x = abs(x), y = abs(y)
-    let mut x = f64::from_bits(ux);
-    let mut y = f64::from_bits(uy);
+    let mut x = fb64(ux);
+    let mut y = fb64(uy);
 
     let dexp = (xexp as i64 - yexp as i64) as i32;
     let mut expadjust = 0i32;
@@ -2034,27 +2052,27 @@ pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
         // danger of overflow; scale down by 2**600
         expadjust = 600;
         ux -= 0x2580000000000000;
-        x = f64::from_bits(ux);
+        x = fb64(ux);
         uy -= 0x2580000000000000;
-        y = f64::from_bits(uy);
+        y = fb64(uy);
     } else if xexp < 1023 - 500 || yexp < 1023 - 500 {
         // danger of underflow; scale up by 2**600
         expadjust = -600;
         if xexp == 0 {
-            x = f64::from_bits(ux + 0x2590000000000000);
+            x = fb64(ux + 0x2590000000000000);
             x -= 9.23297861778573578076e-128;
             ux = x.to_bits();
         } else {
             ux += 0x2580000000000000;
-            x = f64::from_bits(ux);
+            x = fb64(ux);
         }
         if yexp == 0 {
-            y = f64::from_bits(uy + 0x2590000000000000);
+            y = fb64(uy + 0x2590000000000000);
             y -= 9.23297861778573578076e-128;
             uy = y.to_bits();
         } else {
             uy += 0x2580000000000000;
-            y = f64::from_bits(uy);
+            y = fb64(uy);
         }
     }
 
@@ -2069,7 +2087,7 @@ pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
 
     if retval > LARGE {
         // overflow → +Inf
-        return f64::from_bits(0x7ff0_0000_0000_0000);
+        return fb64(0x7ff0_0000_0000_0000);
     }
     retval
 }
@@ -2083,45 +2101,44 @@ pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
 
 /// `void sincos(double x, double *s, double *c)` — sin and cos together.
 /// Bit-exact: it *is* the Rust sin/cos, which are difftest-pinned to the C.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn sincos(x: f64, s: *mut f64, c: *mut f64) {
-    core::ptr::write_volatile(s, sin(x));
-    core::ptr::write_volatile(c, cos(x));
+    // bits via *mut u64 — see modf: avoids write_volatile::<f64> (SSE-ABI on i386)
+    core::ptr::write_volatile(s as *mut u64, sin(x).to_bits());
+    core::ptr::write_volatile(c as *mut u64, cos(x).to_bits());
 }
 
 /// `float modff(float x, float *iptr)` — f32 integer/fraction split (exact).
 /// Faithful port of math/libm_sse2/modff.c.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn modff(x: f32, iptr: *mut f32) -> f32 {
     let ux = x.to_bits();
     let xexp = ((ux & 0x7fff_ffff) >> 23) as i32 - 127;
     if xexp < 0 {
-        // abs(x) < 1.0: integer part is ±0, fraction is x
-        core::ptr::write_volatile(iptr, f32::from_bits(ux & 0x8000_0000));
+        // abs(x) < 1.0: integer part is ±0, fraction is x. bits via *mut u32 —
+        // see modf: avoids write_volatile::<f32> (SSE-ABI on the no-SSE i386).
+        core::ptr::write_volatile(iptr as *mut u32, ux & 0x8000_0000);
         x
     } else if xexp < 23 {
         // 1.0 <= abs(x) < 2**24: mask off the fractional mantissa bits
         let mask = (1u32 << (23 - xexp)) - 1;
-        let int_part = f32::from_bits(ux & !mask);
-        core::ptr::write_volatile(iptr, int_part);
+        let int_part = fb32(ux & !mask);
+        core::ptr::write_volatile(iptr as *mut u32, int_part.to_bits());
         x - int_part
     } else if (ux & 0x7fff_ffff) > 0x7f80_0000 {
         // x is NaN
-        core::ptr::write_volatile(iptr, x);
+        core::ptr::write_volatile(iptr as *mut u32, x.to_bits());
         x + x
     } else {
         // x is infinity or large: integer part is x, fraction is ±0
-        core::ptr::write_volatile(iptr, x);
-        f32::from_bits(ux & 0x8000_0000)
+        core::ptr::write_volatile(iptr as *mut u32, x.to_bits());
+        fb32(ux & 0x8000_0000)
     }
 }
 
 /// `float _hypotf(float x, float y)` — f32 Euclidean distance. Faithful port
 /// of math/libm_sse2/hypotf.c: all math in f64 (float² fits, no scaling),
 /// then round to f32. NaN/Inf per C99 (Inf wins); overflow → +Inf.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn _hypotf(x: f32, y: f32) -> f32 {
     // The largest finite float, as a double.
@@ -2141,7 +2158,7 @@ pub extern "C" fn _hypotf(x: f32, y: f32) -> f32 {
             || ((uy == 2047) && (avy & 0x000f_ffff_ffff_ffff) == 0)
         {
             // x or y is Inf → +Inf even if the other is NaN (C99).
-            return f32::from_bits(0x7f80_0000);
+            return fb32(0x7f80_0000);
         }
         return retval; // NaN
     }
@@ -2151,12 +2168,11 @@ pub extern "C" fn _hypotf(x: f32, y: f32) -> f32 {
 
     if retval > LARGE {
         // overflow → +Inf
-        return f32::from_bits(0x7f80_0000);
+        return fb32(0x7f80_0000);
     }
     retval as f32
 }
 
-#[cfg(feature = "float")]
 const TWO_TO_JBY32_LEAD_F32: [f32; 32] = [
     f32::from_bits(0x3F800000), f32::from_bits(0x3F82C000), f32::from_bits(0x3F858000), f32::from_bits(0x3F888000),
     f32::from_bits(0x3F8B8000), f32::from_bits(0x3F8E8000), f32::from_bits(0x3F91C000), f32::from_bits(0x3F94C000),
@@ -2168,7 +2184,6 @@ const TWO_TO_JBY32_LEAD_F32: [f32; 32] = [
     f32::from_bits(0x3FEAC000), f32::from_bits(0x3FEFC000), f32::from_bits(0x3FF50000), f32::from_bits(0x3FFA8000),
 ];
 
-#[cfg(feature = "float")]
 const TWO_TO_JBY32_TRAIL_F32: [f32; 32] = [
     f32::from_bits(0x00000000), f32::from_bits(0x39D86988), f32::from_bits(0x3AAB0D9F), f32::from_bits(0x3A407404),
     f32::from_bits(0x3A2E0F1E), f32::from_bits(0x3A90E62D), f32::from_bits(0x38F4DCE0), f32::from_bits(0x3AD3BEA3),
@@ -2180,7 +2195,6 @@ const TWO_TO_JBY32_TRAIL_F32: [f32; 32] = [
     f32::from_bits(0x37C6E7C0), f32::from_bits(0x3A92E66F), f32::from_bits(0x3A95F454), f32::from_bits(0x38ECB6D0),
 ];
 
-#[cfg(feature = "float")]
 const ATAN_JBY256: [f64; 241] = [
     f64::from_bits(0x3faff55bb72cfde9), f64::from_bits(0x3fb0f99ea71d52a6), f64::from_bits(0x3fb1f86dbf082d58),
     f64::from_bits(0x3fb2f719318a4a9a), f64::from_bits(0x3fb3f59f0e7c559d), f64::from_bits(0x3fb4f3fd677292fb),
@@ -2279,7 +2293,6 @@ const ATAN_JBY256: [f64; 241] = [
 
 // Full-precision cosh(i)/sinh(i) tables (the f32 .c `cosh_lead`/`sinh_lead`,
 // FULL values — distinct from sw9's lead/tail-split SINH_LEAD/COSH_LEAD).
-#[cfg(feature = "float")]
 const SINH_LEAD_F32: [f64; 37] = [
     f64::from_bits(0x0000000000000000), f64::from_bits(0x3ff2cd9fc44eb982), f64::from_bits(0x400d03cf63b6e19f),
     f64::from_bits(0x40240926e70949ad), f64::from_bits(0x403b4a3803703630), f64::from_bits(0x40528d0166f07374),
@@ -2296,7 +2309,6 @@ const SINH_LEAD_F32: [f64; 37] = [
     f64::from_bits(0x431ea215a1d20d76),
 ];
 
-#[cfg(feature = "float")]
 const COSH_LEAD_F32: [f64; 37] = [
     f64::from_bits(0x3ff0000000000000), f64::from_bits(0x3ff8b07551d9f550), f64::from_bits(0x400e18fa0df2d9bc),
     f64::from_bits(0x402422a497d6185e), f64::from_bits(0x403b4ee858de3e80), f64::from_bits(0x40528d6fcbeff3a9),
@@ -2314,17 +2326,15 @@ const COSH_LEAD_F32: [f64; 37] = [
 ];
 
 /// libm_inlines.h `scaleFloat_2`: x * 2**n (2*EMIN <= n <= 2*EMAX).
-#[cfg(feature = "float")]
-fn scale_float_2(x: f32, n: i32) -> f32 {
+extern "C" fn scale_float_2(x: f32, n: i32) -> f32 {
     let n1 = n / 2;
     let n2 = n - n1;
-    let t1 = f32::from_bits(((n1 + 127) << 23) as u32);
-    let t2 = f32::from_bits(((n2 + 127) << 23) as u32);
+    let t1 = fb32(((n1 + 127) << 23) as u32);
+    let t2 = fb32(((n2 + 127) << 23) as u32);
     (x * t1) * t2
 }
 
 /// libm_inlines.h `splitexpf`: base**x = 2**m * (z1 + z2), single precision.
-#[cfg(feature = "float")]
 fn splitexpf(
     x: f32,
     logbase: f32,
@@ -2351,7 +2361,6 @@ fn splitexpf(
 
 /// libm_inlines.h `scaleDownDouble`: scale ux (bit pattern) down by 2**k,
 /// returning the result bit pattern (handles denormal underflow + rounding).
-#[cfg(feature = "float")]
 fn scale_down_double(ux: u64, k: i32) -> u64 {
     let xsign = ux & 0x8000_0000_0000_0000;
     let ax = ux & 0x7fff_ffff_ffff_ffff;
@@ -2375,8 +2384,7 @@ fn scale_down_double(ux: u64, k: i32) -> u64 {
 }
 
 /// The shared [0,0.5] float rational R(r) of acosf/asinf (`u` in the C).
-#[cfg(feature = "float")]
-fn asinf_rational(r: f32) -> f32 {
+extern "C" fn asinf_rational(r: f32) -> f32 {
     r * (0.184161606965100694821398249421_f32
         + (-0.0565298683201845211985026327361_f32
             + (-0.0133819288943925804214011424456_f32
@@ -2387,7 +2395,6 @@ fn asinf_rational(r: f32) -> f32 {
 }
 
 /// `float asinf(float)` — arcsine.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn asinf(x: f32) -> f32 {
     const PIBY2_TAIL: f32 = 7.5497894159e-08;
@@ -2401,7 +2408,7 @@ pub extern "C" fn asinf(x: f32) -> f32 {
     let xexp = ((ux & 0x7f80_0000) >> 23) as i32 - 127;
 
     if xnan {
-        return f32::from_bits(ux | 0x0040_0000);
+        return fb32(ux | 0x0040_0000);
     } else if xexp < -14 {
         return x;
     } else if xexp >= 0 {
@@ -2410,7 +2417,7 @@ pub extern "C" fn asinf(x: f32) -> f32 {
         } else if x == -1.0 {
             return -PIBY2;
         }
-        return f32::from_bits(0xffc0_0000); // INDEFBITPATT_SP32
+        return fb32(0xffc0_0000); // INDEFBITPATT_SP32
     }
 
     let mut y = if xneg != 0 { -x } else { x };
@@ -2429,7 +2436,7 @@ pub extern "C" fn asinf(x: f32) -> f32 {
 
     let v;
     if transform {
-        let s1 = f32::from_bits(0xffff_0000 & s.to_bits());
+        let s1 = fb32(0xffff_0000 & s.to_bits());
         let c = (r - s1 * s1) / (s + s1);
         let p = 2.0 * s * u - (PIBY2_TAIL - 2.0 * c);
         let q = HPIBY2_HEAD - 2.0 * s1;
@@ -2447,7 +2454,6 @@ pub extern "C" fn asinf(x: f32) -> f32 {
 }
 
 /// `float acosf(float)` — arccosine.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn acosf(x: f32) -> f32 {
     const PIBY2_F: f32 = 1.5707963705e+00;
@@ -2462,7 +2468,7 @@ pub extern "C" fn acosf(x: f32) -> f32 {
     let xexp = ((ux & 0x7f80_0000) >> 23) as i32 - 127;
 
     if xnan {
-        return f32::from_bits(ux | 0x0040_0000);
+        return fb32(ux | 0x0040_0000);
     } else if xexp < -26 {
         return PIBY2_F;
     } else if xexp >= 0 {
@@ -2471,7 +2477,7 @@ pub extern "C" fn acosf(x: f32) -> f32 {
         } else if x == -1.0 {
             return PI as f32;
         }
-        return f32::from_bits(0xffc0_0000);
+        return fb32(0xffc0_0000);
     }
 
     let mut y = if xneg != 0 { -x } else { x };
@@ -2492,7 +2498,7 @@ pub extern "C" fn acosf(x: f32) -> f32 {
         if xneg != 0 {
             (PI - 2.0 * (s as f64 + ((y * u) as f64 - PIBY2_TAIL))) as f32
         } else {
-            let s1 = f32::from_bits(0xffff_0000 & s.to_bits());
+            let s1 = fb32(0xffff_0000 & s.to_bits());
             let c = (r - s1 * s1) / (s + s1);
             2.0 * s1 + (2.0 * c + 2.0 * y * u)
         }
@@ -2502,7 +2508,6 @@ pub extern "C" fn acosf(x: f32) -> f32 {
 }
 
 /// `float atanf(float)` — arctangent. Computed in f64, returned as f32.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn atanf(fx: f32) -> f32 {
     const PIBY2: f64 = 1.5707963267948966e+00;
@@ -2532,7 +2537,7 @@ pub extern "C" fn atanf(fx: f32) -> f32 {
         let xnan = aux > 0x7ff0_0000_0000_0000;
         if xnan {
             let uhx = fx.to_bits();
-            return f32::from_bits(uhx | 0x0040_0000);
+            return fb32(uhx | 0x0040_0000);
         } else if v > 0x4c80_0000_0000_0000_u64 as f64 {
             if xneg != 0 {
                 return (-PIBY2) as f32;
@@ -2559,7 +2564,6 @@ pub extern "C" fn atanf(fx: f32) -> f32 {
 }
 
 /// `float sinhf(float)` — hyperbolic sine.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn sinhf(fx: f32) -> f32 {
     const MAX_SINH_ARG: f64 = 8.94159862922329438106e+01;
@@ -2576,7 +2580,7 @@ pub extern "C" fn sinhf(fx: f32) -> f32 {
     } else if aux >= 0x7ff0_0000_0000_0000 {
         if aux > 0x7ff0_0000_0000_0000 {
             let uhx = fx.to_bits();
-            return f32::from_bits(uhx | 0x0040_0000);
+            return fb32(uhx | 0x0040_0000);
         }
         return fx + fx; // ±Inf
     }
@@ -2587,9 +2591,9 @@ pub extern "C" fn sinhf(fx: f32) -> f32 {
     let mut z;
     if y >= MAX_SINH_ARG {
         return if xneg {
-            f32::from_bits(0xff80_0000)
+            fb32(0xff80_0000)
         } else {
-            f32::from_bits(0x7f80_0000)
+            fb32(0x7f80_0000)
         };
     } else if y >= small_threshold {
         let (mut m, z1, z2) = splitexp(y, 1.0, T32, L2_LEAD, L2_TAIL);
@@ -2611,7 +2615,6 @@ pub extern "C" fn sinhf(fx: f32) -> f32 {
 }
 
 /// `float coshf(float)` — hyperbolic cosine.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn coshf(fx: f32) -> f32 {
     const MAX_COSH_ARG: f64 = 8.94159862922329438106e+01;
@@ -2635,9 +2638,9 @@ pub extern "C" fn coshf(fx: f32) -> f32 {
     } else if aux >= 0x7ff0_0000_0000_0000 {
         if aux > 0x7ff0_0000_0000_0000 {
             let uhx = fx.to_bits();
-            return f32::from_bits(uhx | 0x0040_0000);
+            return fb32(uhx | 0x0040_0000);
         }
-        return f32::from_bits(0x7f80_0000); // +Inf
+        return fb32(0x7f80_0000); // +Inf
     }
 
     let xneg = aux != ux;
@@ -2645,7 +2648,7 @@ pub extern "C" fn coshf(fx: f32) -> f32 {
 
     let z;
     if y >= MAX_COSH_ARG {
-        return f32::from_bits(0x7f80_0000); // overflow → +Inf
+        return fb32(0x7f80_0000); // overflow → +Inf
     } else if y >= small_threshold {
         let (mut m, z1, z2) = splitexp(y, 1.0, T32, L2_LEAD, L2_TAIL);
         m -= 1;
@@ -2663,7 +2666,6 @@ pub extern "C" fn coshf(fx: f32) -> f32 {
 }
 
 /// `float tanhf(float)` — hyperbolic tangent. All single precision.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn tanhf(x: f32) -> f32 {
     const T32: f32 = 4.6166240692e+01;
@@ -2676,7 +2678,7 @@ pub extern "C" fn tanhf(x: f32) -> f32 {
     if aux < 0x3900_0000 {
         return x; // |x| tiny: tanh(x) = x
     } else if aux > 0x7f80_0000 {
-        return f32::from_bits(ux | 0x0040_0000); // NaN
+        return fb32(ux | 0x0040_0000); // NaN
     }
 
     let xneg = 1.0f32 - 2.0f32 * ((aux != ux) as i32 as f32);
@@ -2708,8 +2710,7 @@ pub extern "C" fn tanhf(x: f32) -> f32 {
 }
 
 /// tan(x) on [-pi/4,pi/4]; if `recip` return -1/tan(x). C `tanf_piby4`.
-#[cfg(feature = "float")]
-fn tanf_piby4(x: f64, recip: i32) -> f64 {
+extern "C" fn tanf_piby4(x: f64, recip: i32) -> f64 {
     let r = x * x;
     let t = x + x * r * (0.385296071263995406715129e0 - 0.172032480471481694693109e-1 * r)
         / (0.115588821434688393452299e+1
@@ -2723,7 +2724,6 @@ fn tanf_piby4(x: f64, recip: i32) -> f64 {
 
 /// libm_inlines.h `__remainder_piby2f_inline`: reduce |x| (bits in `ux`) to
 /// [-pi/4,pi/4]; returns (r, region) where region = #pi/2 subtracted mod 4.
-#[cfg(feature = "float")]
 fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
     const BITSPER: i32 = 36;
     const PIBY2: f64 = 1.57079632679489655800e+00;
@@ -2806,12 +2806,11 @@ fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
     if determ != 0 {
         uxr |= 0x8000_0000_0000_0000;
     }
-    let dx = f64::from_bits(uxr);
+    let dx = fb64(uxr);
     (dx * PIBY2, region)
 }
 
 /// `float tanf(float)` — tangent. Reduction in f64, core via tanf_piby4.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn tanf(x: f32) -> f32 {
     let dx = x as f64;
@@ -2829,9 +2828,9 @@ pub extern "C" fn tanf(x: f32) -> f32 {
     } else if (ux & 0x7ff0_0000_0000_0000) == 0x7ff0_0000_0000_0000 {
         if ux & 0x000f_ffff_ffff_ffff != 0 {
             let ufx = x.to_bits();
-            return f32::from_bits(ufx | 0x0040_0000); // NaN
+            return fb32(ufx | 0x0040_0000); // NaN
         }
-        return f32::from_bits(0xffc0_0000); // Inf → NaN (INDEFBITPATT_SP32)
+        return fb32(0xffc0_0000); // Inf → NaN (INDEFBITPATT_SP32)
     }
 
     let xneg = (ux >> 63) as i32;
@@ -2897,7 +2896,6 @@ pub extern "C" fn tanf(x: f32) -> f32 {
 
 /// `float atan2f(float y, float x)` — full-quadrant arctangent. f64 core +
 /// the atan(j/256) look-up table; returned as f32.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub extern "C" fn atan2f(fy: f32, fx: f32) -> f32 {
     const PI: f64 = 3.1415926535897932e+00;
@@ -2927,10 +2925,10 @@ pub extern "C" fn atan2f(fy: f32, fx: f32) -> f32 {
 
     if xnan {
         let ufx = fx.to_bits();
-        return f32::from_bits(ufx | 0x0040_0000);
+        return fb32(ufx | 0x0040_0000);
     } else if ynan {
         let ufy = fy.to_bits();
-        return f32::from_bits(ufy | 0x0040_0000);
+        return fb32(ufy | 0x0040_0000);
     } else if yzero {
         if xneg != 0 {
             if yneg != 0 {
@@ -2966,7 +2964,7 @@ pub extern "C" fn atan2f(fy: f32, fx: f32) -> f32 {
             let ys = scale_double_1(y, 100);
             let yq = ys / x;
             let uyq = scale_down_double(yq.to_bits(), 100);
-            let yr = f64::from_bits(uyq);
+            let yr = fb64(uyq);
             if (uyq & 0x7ff0_0000_0000_0000) == 0 {
                 return yr as f32;
             } else {
