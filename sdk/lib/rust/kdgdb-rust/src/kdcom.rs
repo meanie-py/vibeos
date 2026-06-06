@@ -6,10 +6,13 @@ use core::ffi::c_void;
 
 use crate::KDDBGPRINT;
 
-// Kernel-exported global (ntoskrnl). Resolves at final link.
-extern "C" {
-    static mut KdComPortInUse: PUCHAR;
-}
+// KdComPortInUse: the shared KD global the transport sets so the kernel knows
+// which COM port is in use. In a real _WINKD_ kernel this is the kernel's
+// global (kd/kdio); it is NOT in the (non-_WINKD_) ntoskrnl.spec, so for the
+// standalone link spike it is defined here. --allow-multiple-definition lets
+// the kernel's definition win if both are ever linked together.
+#[no_mangle]
+pub static mut KdComPortInUse: PUCHAR = core::ptr::null_mut();
 
 // cportlib CpGetByte return codes (cportlib.h). Not in ntkrnl-sys.
 pub const CP_GET_SUCCESS: USHORT = 0;
@@ -22,21 +25,22 @@ unsafe fn UlongToPtr(Value: ULONG) -> PVOID {
     Value as usize as PVOID
 }
 
+// CRT (cdecl) — link from libcntpr / cnt-rust at final link.
 extern "C" {
     fn _vsnprintf(buffer: *mut i8, count: usize, format: *const i8, argptr: va_list) -> i32;
-    fn CpPutByte(port: *mut CPPORT, byte: u8);
-}
-extern "system" {
-    // cportlib (links from libcportlib / cport-rust at final link).
-    fn CpInitialize(Port: *mut CPPORT, Address: PVOID, BaudRate: ULONG) -> NTSTATUS;
-    fn CpDoesPortExist(Address: PVOID) -> BOOLEAN;
-    fn CpGetByte(Port: *mut CPPORT, Byte: PUCHAR, Wait: BOOLEAN, Poll: BOOLEAN) -> USHORT;
-    // CRT (link from libcntpr at final link).
     fn _strupr(s: PCHAR) -> PCHAR;
     fn atol(s: PCHAR) -> i32;
     fn strlen(s: PCHAR) -> usize;
     fn strncmp(s1: PCHAR, s2: PCHAR, n: usize) -> i32;
     fn strstr(haystack: PCHAR, needle: PCHAR) -> PCHAR;
+}
+// cportlib — NTAPI = stdcall on i386 (_CpPutByte@8 / _CpGetByte@16). Link
+// from libcportlib / cport-rust at final link.
+extern "system" {
+    fn CpPutByte(port: *mut CPPORT, byte: u8);
+    fn CpInitialize(Port: *mut CPPORT, Address: PVOID, BaudRate: ULONG) -> NTSTATUS;
+    fn CpDoesPortExist(Address: PVOID) -> BOOLEAN;
+    fn CpGetByte(Port: *mut CPPORT, Byte: PUCHAR, Wait: BOOLEAN, Poll: BOOLEAN) -> USHORT;
 }
 
 // ---- file-scope preamble (translated) ----

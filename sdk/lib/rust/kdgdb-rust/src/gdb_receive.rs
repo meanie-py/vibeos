@@ -6,7 +6,8 @@ use core::ffi::c_void;
 
 use crate::KDDBGPRINT;
 
-extern "C" {
+// kdgdb-internal byte I/O — NTAPI (stdcall on i386), defined in kdcom.rs.
+extern "system" {
     fn KdpPollByte(byte: *mut UCHAR) -> KDSTATUS;
     fn KdpReceiveByte(byte: *mut UCHAR) -> KDSTATUS;
     fn KdpSendByte(byte: UCHAR) -> KDSTATUS;

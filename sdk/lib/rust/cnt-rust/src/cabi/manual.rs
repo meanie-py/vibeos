@@ -594,14 +594,13 @@ pub unsafe extern "C" fn __p___winitenv() -> *mut *mut *mut u16 {
 // precedent). The decimal arithmetic is core_rs::floatcvt.
 // ===================================================================
 
-// Float-cvt cabi (_fcvt/_ecvt/_gcvt/_gcvt_s) rides the `float`
-// feature: core_rs::floatcvt is float-gated and these signatures take
-// by-value `f64` (uncompilable on the no-SSE i386 kernel). Wrapped in
-// a feature-gated module — the inner `#[no_mangle]` symbols still
-// export normally; `pub use` re-exports for cabi/mod.rs `pub use
-// manual::*`. The libcntpr swap keeps C ecvt/fcvt/gcvt anyway (CRT-
-// only, no libcntpr .c), so the kernel link needs none of these.
-#[cfg(feature = "float")]
+// Float-cvt cabi (_fcvt/_ecvt/_gcvt/_gcvt_s). These take a by-value
+// `f64` ARG (fine no-SSE — it arrives on the stack) and RETURN a
+// `char*`, so they compile on the i386 no-SSE kernel now that
+// core_rs::floatcvt is unconditional (no `float` gate). `pub use`
+// re-exports for cabi/mod.rs `pub use manual::*`. _ecvt/_fcvt/_gcvt are
+// CRT-only (no libcntpr .c), so the kernel link doesn't pull them —
+// they ride along harmlessly + stay difftest-pinned on every config.
 mod floatcvt_cabi {
 use crate::core_rs::floatcvt as fcvt;
 
@@ -777,5 +776,4 @@ pub unsafe extern "C" fn _gcvt_s(
 }
 } // mod floatcvt_cabi
 
-#[cfg(feature = "float")]
 pub use floatcvt_cabi::*;

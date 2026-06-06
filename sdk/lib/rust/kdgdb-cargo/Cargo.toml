@@ -1,0 +1,22 @@
+# Cargo-driven `kdcom.dll` link for the GDB-stub KD transport (kdgdb).
+# Sibling of kdcom-cargo: builds the kdgdb-rust staticlib into the kernel
+# DLL `kdcom.dll` (kdgdb is the alternate transport, built under
+# _WINKD_+GDB). i386 + amd64 only (kdgdb has no arm64 path).
+#
+# SPIKE STATUS: the default llvm-mingw build forces _WINKD_=FALSE, so this
+# link is NOT wired into the cmake build; it's an isolated link to prove
+# kdgdb-rust resolves into a real PE kernel DLL with the 8 kddll exports.
+
+[package]
+name = "kdgdb-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kdgdb"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
