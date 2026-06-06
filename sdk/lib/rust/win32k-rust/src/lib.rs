@@ -272,6 +272,8 @@ pub mod desktop;
 pub mod winsta;
 // [ntuser wave 15 — clipboard spine]
 pub mod clipboard;
+// [ntuser wave 16 — layered windows]
+pub mod layered;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
