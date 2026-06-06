@@ -304,6 +304,8 @@ pub mod ntmouse;
 pub mod input;
 // [ntuser wave 31 — display]
 pub mod display;
+// [ntuser wave 32 — draw]
+pub mod draw;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
