@@ -18,7 +18,10 @@ pub mod mem;
 pub mod path;
 pub mod radix;
 pub mod rng;
-#[cfg(feature = "float")]
+// scanf engine — no-SSE-safe (passes floats DECOMPOSED via
+// store_float(exp, d:u64); no by-value f64), no_std, no unsafe → built
+// unconditionally on all 3 arches (no longer behind `float`). The float
+// SYNTHESIS (cabi VaSink) is also no-SSE-safe (pure f64 arithmetic).
 pub mod scanf;
 pub mod string;
 pub mod strmut;
