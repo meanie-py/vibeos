@@ -34,15 +34,22 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("services-rust")
         // Still-C residue of the partial flip, compiled in-cargo by replaying
-        // cmake's clang (the `services_c` OBJECT lib). svcctl_s.c is GENERATED
-        // by add_rpc_files into build-<arch>/ — the engine resolves it there.
+        // cmake's clang (the `services_c` OBJECT lib).
         .c_from_compile_db(
             "services_c",
             &[
                 "base/system/services/services.c",
                 "base/system/services/services_rust_stub.c",
-                "base/system/services/svcctl_s.c",
             ],
+        )
+        // The svcctl RPC server stub is GENERATED (widl/MIDL) AND compiled
+        // IN-cargo: rpc_server_stub replays cmake's recorded widl codegen into
+        // OUT_DIR and compiles it (input swapped to our copy). Self-hosts the
+        // MIDL codegen instead of c_from_compile_db'ing the cmake-generated .c.
+        .rpc_server_stub(
+            "sdk/include/reactos/idl/svcctl.idl",
+            "svcctl_s",
+            "services_c",
         )
         // Load-bearing resource (localized STRINGTABLEs + version), compiled
         // IN-cargo by replaying the services_res windres command from

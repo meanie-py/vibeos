@@ -47,3 +47,4 @@ smlib_only  = []
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }
+ntprintf = { path = "../ntprintf" }

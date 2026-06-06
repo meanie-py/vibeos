@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 
 // RtlCopyMemory is a memmove macro (C). Re-translate as memcpy.
@@ -32,8 +31,18 @@ unsafe fn NtCurrentProcess() -> HANDLE {
 
 extern "system" {
     fn RtlFillMemory(Destination: PVOID, Length: SIZE_T, Fill: UCHAR);
-    fn LdrLoadDll( SearchPath: ULONG, LoadFlags: ULONG, DllName: *mut _UNICODE_STRING, DllHandle: *mut HANDLE, ) -> NTSTATUS;
-    fn CsrValidateMessageBuffer( ApiMessage: PVOID, Buffer: *mut PVOID, Count: ULONG, ElementSize: ULONG, ) -> BOOLEAN;
+    fn LdrLoadDll(
+        SearchPath: ULONG,
+        LoadFlags: ULONG,
+        DllName: *mut _UNICODE_STRING,
+        DllHandle: *mut HANDLE,
+    ) -> NTSTATUS;
+    fn CsrValidateMessageBuffer(
+        ApiMessage: PVOID,
+        Buffer: *mut PVOID,
+        Count: ULONG,
+        ElementSize: ULONG,
+    ) -> BOOLEAN;
 }
 
 const NLS_SECTION_SECURITY_DESCRIPTOR_SIZE: usize = 256;
@@ -96,9 +105,13 @@ pub struct BASE_NLS_GET_USER_INFO {
 
 type POPEN_DATA_FILE = Option<unsafe extern "system" fn(*mut HANDLE, *const WCHAR) -> NTSTATUS>;
 type PVALIDATE_LOCALE = Option<unsafe extern "system" fn(ULONG) -> BOOLEAN>;
-type PGET_NLS_SECTION_NAME = Option<unsafe extern "system" fn(ULONG, ULONG, ULONG, *const WCHAR, *mut WCHAR, ULONG) -> NTSTATUS>;
-type PGET_CP_FILE_NAME_FROM_REGISTRY = Option<unsafe extern "system" fn(ULONG, *mut WCHAR, ULONG) -> BOOLEAN>;
-type PCREATE_NLS_SECURITY_DESCRIPTOR = Option<unsafe extern "system" fn(PSECURITY_DESCRIPTOR, SIZE_T, ULONG) -> NTSTATUS>;
+type PGET_NLS_SECTION_NAME = Option<
+    unsafe extern "system" fn(ULONG, ULONG, ULONG, *const WCHAR, *mut WCHAR, ULONG) -> NTSTATUS,
+>;
+type PGET_CP_FILE_NAME_FROM_REGISTRY =
+    Option<unsafe extern "system" fn(ULONG, *mut WCHAR, ULONG) -> BOOLEAN>;
+type PCREATE_NLS_SECURITY_DESCRIPTOR =
+    Option<unsafe extern "system" fn(PSECURITY_DESCRIPTOR, SIZE_T, ULONG) -> NTSTATUS>;
 
 #[repr(C)]
 struct BASESRV_KERNEL_IMPORTS {
@@ -160,11 +173,15 @@ static mut BaseSrvKernel32Imports: [BASESRV_KERNEL_IMPORTS; 10] = [
     },
     BASESRV_KERNEL_IMPORTS {
         FunctionName: b"GetCPFileNameFromRegistry\0".as_ptr() as *const i8,
-        FunctionPointer: unsafe { core::ptr::addr_of_mut!(pGetCPFileNameFromRegistry) as *mut PVOID },
+        FunctionPointer: unsafe {
+            core::ptr::addr_of_mut!(pGetCPFileNameFromRegistry) as *mut PVOID
+        },
     },
     BASESRV_KERNEL_IMPORTS {
         FunctionName: b"CreateNlsSecurityDescriptor\0".as_ptr() as *const i8,
-        FunctionPointer: unsafe { core::ptr::addr_of_mut!(pCreateNlsSecurityDescriptor) as *mut PVOID },
+        FunctionPointer: unsafe {
+            core::ptr::addr_of_mut!(pCreateNlsSecurityDescriptor) as *mut PVOID
+        },
     },
 ];
 
@@ -243,10 +260,7 @@ pub unsafe extern "system" fn BaseSrvNLSInit(pNlsUserInfo: *mut NLS_USER_INFO) {
     (*pNlsRegUserInfo).ulCacheUpdateCount = 0;
     RtlLeaveCriticalSection(core::ptr::addr_of_mut!(NlsCacheCriticalSection));
 
-    NtQueryDefaultLocale(
-        0,
-        core::ptr::addr_of_mut!((*pNlsRegUserInfo).UserLocaleId),
-    );
+    NtQueryDefaultLocale(0, core::ptr::addr_of_mut!((*pNlsRegUserInfo).UserLocaleId));
 }
 
 #[no_mangle]
@@ -286,13 +300,15 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
     let LocaleId: ULONG;
     let mut NlsSectionName: _UNICODE_STRING = core::mem::zeroed();
     let mut NlsFileName: *const WCHAR;
-    let mut SecurityDescriptor: [u8; NLS_SECTION_SECURITY_DESCRIPTOR_SIZE] = [0; NLS_SECTION_SECURITY_DESCRIPTOR_SIZE];
+    let mut SecurityDescriptor: [u8; NLS_SECTION_SECURITY_DESCRIPTOR_SIZE] =
+        [0; NLS_SECTION_SECURITY_DESCRIPTOR_SIZE];
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut FileNameBuffer: [WCHAR; 32] = [0; 32];
     let mut NlsSectionNameBuffer: [WCHAR; 32] = [0; 32];
     let NlsMsg: *mut BASE_NLS_CREATE_SECTION =
         core::ptr::addr_of_mut!((*ApiMessage).Data.NlsCreateSection)
-            as *mut core::mem::ManuallyDrop<BASE_NLS_CREATE_SECTION> as *mut BASE_NLS_CREATE_SECTION;
+            as *mut core::mem::ManuallyDrop<BASE_NLS_CREATE_SECTION>
+            as *mut BASE_NLS_CREATE_SECTION;
 
     Status = BaseSrvDelayLoadKernel32();
     if Status < 0 {
@@ -309,118 +325,363 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
     }
 
     static NLS_UNICODE: [u16; 22] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'U' as u16, b'n' as u16, b'i' as u16, b'c' as u16, b'o' as u16,
-        b'd' as u16, b'e' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'U' as u16,
+        b'n' as u16,
+        b'i' as u16,
+        b'c' as u16,
+        b'o' as u16,
+        b'd' as u16,
+        b'e' as u16,
     ];
     static UNICODE_NLS: [u16; 12] = [
-        b'u' as u16, b'n' as u16, b'i' as u16, b'c' as u16, b'o' as u16,
-        b'd' as u16, b'e' as u16, b'.' as u16, b'n' as u16, b'l' as u16,
-        b's' as u16, 0,
+        b'u' as u16,
+        b'n' as u16,
+        b'i' as u16,
+        b'c' as u16,
+        b'o' as u16,
+        b'd' as u16,
+        b'e' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
+        0,
     ];
     static NLS_LOCALE: [u16; 21] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'L' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b'l' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'L' as u16,
+        b'o' as u16,
+        b'c' as u16,
+        b'a' as u16,
+        b'l' as u16,
         b'e' as u16,
     ];
     static LOCALE_NLS: [u16; 11] = [
-        b'l' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b'l' as u16,
-        b'e' as u16, b'.' as u16, b'n' as u16, b'l' as u16, b's' as u16,
+        b'l' as u16,
+        b'o' as u16,
+        b'c' as u16,
+        b'a' as u16,
+        b'l' as u16,
+        b'e' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
         0,
     ];
     static NLS_CTYPE: [u16; 20] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'C' as u16, b'T' as u16, b'y' as u16, b'p' as u16, b'e' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'C' as u16,
+        b'T' as u16,
+        b'y' as u16,
+        b'p' as u16,
+        b'e' as u16,
     ];
     static CTYPE_NLS: [u16; 10] = [
-        b'c' as u16, b't' as u16, b'y' as u16, b'p' as u16, b'e' as u16,
-        b'.' as u16, b'n' as u16, b'l' as u16, b's' as u16, 0,
+        b'c' as u16,
+        b't' as u16,
+        b'y' as u16,
+        b'p' as u16,
+        b'e' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
+        0,
     ];
     static NLS_SORTKEY: [u16; 22] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'S' as u16, b'o' as u16, b'r' as u16, b't' as u16, b'k' as u16,
-        b'e' as u16, b'y' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'S' as u16,
+        b'o' as u16,
+        b'r' as u16,
+        b't' as u16,
+        b'k' as u16,
+        b'e' as u16,
+        b'y' as u16,
     ];
     static SORTKEY_NLS: [u16; 12] = [
-        b's' as u16, b'o' as u16, b'r' as u16, b't' as u16, b'k' as u16,
-        b'e' as u16, b'y' as u16, b'.' as u16, b'n' as u16, b'l' as u16,
-        b's' as u16, 0,
+        b's' as u16,
+        b'o' as u16,
+        b'r' as u16,
+        b't' as u16,
+        b'k' as u16,
+        b'e' as u16,
+        b'y' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
+        0,
     ];
     static NLS_SORTTBLS: [u16; 23] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'S' as u16, b'o' as u16, b'r' as u16, b't' as u16, b'T' as u16,
-        b'b' as u16, b'l' as u16, b's' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'S' as u16,
+        b'o' as u16,
+        b'r' as u16,
+        b't' as u16,
+        b'T' as u16,
+        b'b' as u16,
+        b'l' as u16,
+        b's' as u16,
     ];
     static SORTTBLS_NLS: [u16; 13] = [
-        b's' as u16, b'o' as u16, b'r' as u16, b't' as u16, b't' as u16,
-        b'b' as u16, b'l' as u16, b's' as u16, b'.' as u16, b'n' as u16,
-        b'l' as u16, b's' as u16, 0,
+        b's' as u16,
+        b'o' as u16,
+        b'r' as u16,
+        b't' as u16,
+        b't' as u16,
+        b'b' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
+        0,
     ];
     static NLS_CP437: [u16; 20] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'C' as u16, b'P' as u16, b'4' as u16, b'3' as u16, b'7' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'C' as u16,
+        b'P' as u16,
+        b'4' as u16,
+        b'3' as u16,
+        b'7' as u16,
     ];
     static C_437_NLS: [u16; 10] = [
-        b'c' as u16, b'_' as u16, b'4' as u16, b'3' as u16, b'7' as u16,
-        b'.' as u16, b'n' as u16, b'l' as u16, b's' as u16, 0,
+        b'c' as u16,
+        b'_' as u16,
+        b'4' as u16,
+        b'3' as u16,
+        b'7' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
+        0,
     ];
     static NLS_CP1252: [u16; 21] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'C' as u16, b'P' as u16, b'1' as u16, b'2' as u16, b'5' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'C' as u16,
+        b'P' as u16,
+        b'1' as u16,
+        b'2' as u16,
+        b'5' as u16,
         b'2' as u16,
     ];
     static C_1252_NLS: [u16; 11] = [
-        b'c' as u16, b'_' as u16, b'1' as u16, b'2' as u16, b'5' as u16,
-        b'2' as u16, b'.' as u16, b'n' as u16, b'l' as u16, b's' as u16,
+        b'c' as u16,
+        b'_' as u16,
+        b'1' as u16,
+        b'2' as u16,
+        b'5' as u16,
+        b'2' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
         0,
     ];
     static NLS_LANG_EXCEPT: [u16; 27] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'L' as u16, b'A' as u16, b'N' as u16, b'G' as u16, b'_' as u16,
-        b'E' as u16, b'X' as u16, b'C' as u16, b'E' as u16, b'P' as u16,
-        b'T' as u16, 0,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'L' as u16,
+        b'A' as u16,
+        b'N' as u16,
+        b'G' as u16,
+        b'_' as u16,
+        b'E' as u16,
+        b'X' as u16,
+        b'C' as u16,
+        b'E' as u16,
+        b'P' as u16,
+        b'T' as u16,
+        0,
     ];
     static L_EXCEPT_NLS: [u16; 12] = [
-        b'l' as u16, b'_' as u16, b'e' as u16, b'x' as u16, b'c' as u16,
-        b'e' as u16, b'p' as u16, b't' as u16, b'.' as u16, b'n' as u16,
-        b'l' as u16, b's' as u16,
+        b'l' as u16,
+        b'_' as u16,
+        b'e' as u16,
+        b'x' as u16,
+        b'c' as u16,
+        b'e' as u16,
+        b'p' as u16,
+        b't' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
     ];
     static NLS_CP_PREFIX: [u16; 20] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'C' as u16, b'P' as u16, 0, 0, 0,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'C' as u16,
+        b'P' as u16,
+        0,
+        0,
+        0,
     ];
     static NLS_GEO: [u16; 18] = [
-        b'\\' as u16, b'N' as u16, b'L' as u16, b'S' as u16, b'\\' as u16,
-        b'N' as u16, b'l' as u16, b's' as u16, b'S' as u16, b'e' as u16,
-        b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b'G' as u16, b'e' as u16, b'o' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'L' as u16,
+        b'S' as u16,
+        b'\\' as u16,
+        b'N' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'G' as u16,
+        b'e' as u16,
+        b'o' as u16,
     ];
     static GEO_NLS: [u16; 8] = [
-        b'g' as u16, b'e' as u16, b'o' as u16, b'.' as u16, b'n' as u16,
-        b'l' as u16, b's' as u16, 0,
+        b'g' as u16,
+        b'e' as u16,
+        b'o' as u16,
+        b'.' as u16,
+        b'n' as u16,
+        b'l' as u16,
+        b's' as u16,
+        0,
     ];
 
     match (*NlsMsg).Type {
         1 => {
-            RtlInitUnicodeString(core::ptr::addr_of_mut!(NlsSectionName), NLS_UNICODE.as_ptr());
+            RtlInitUnicodeString(
+                core::ptr::addr_of_mut!(NlsSectionName),
+                NLS_UNICODE.as_ptr(),
+            );
             NlsFileName = UNICODE_NLS.as_ptr();
         }
         2 => {
@@ -432,11 +693,17 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
             NlsFileName = CTYPE_NLS.as_ptr();
         }
         4 => {
-            RtlInitUnicodeString(core::ptr::addr_of_mut!(NlsSectionName), NLS_SORTKEY.as_ptr());
+            RtlInitUnicodeString(
+                core::ptr::addr_of_mut!(NlsSectionName),
+                NLS_SORTKEY.as_ptr(),
+            );
             NlsFileName = SORTKEY_NLS.as_ptr();
         }
         5 => {
-            RtlInitUnicodeString(core::ptr::addr_of_mut!(NlsSectionName), NLS_SORTTBLS.as_ptr());
+            RtlInitUnicodeString(
+                core::ptr::addr_of_mut!(NlsSectionName),
+                NLS_SORTTBLS.as_ptr(),
+            );
             NlsFileName = SORTTBLS_NLS.as_ptr();
         }
         6 => {
@@ -448,7 +715,10 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
             NlsFileName = C_1252_NLS.as_ptr();
         }
         8 => {
-            RtlInitUnicodeString(core::ptr::addr_of_mut!(NlsSectionName), NLS_LANG_EXCEPT.as_ptr());
+            RtlInitUnicodeString(
+                core::ptr::addr_of_mut!(NlsSectionName),
+                NLS_LANG_EXCEPT.as_ptr(),
+            );
             NlsFileName = L_EXCEPT_NLS.as_ptr();
         }
         9 => {
@@ -480,7 +750,10 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
             }
 
             NlsFileName = FileNameBuffer.as_ptr();
-            RtlInitUnicodeString(core::ptr::addr_of_mut!(NlsSectionName), NlsSectionNameBuffer.as_ptr());
+            RtlInitUnicodeString(
+                core::ptr::addr_of_mut!(NlsSectionName),
+                NlsSectionNameBuffer.as_ptr(),
+            );
         }
         12 => {
             RtlInitUnicodeString(core::ptr::addr_of_mut!(NlsSectionName), NLS_GEO.as_ptr());
@@ -574,7 +847,8 @@ pub unsafe extern "system" fn BaseSrvNlsGetUserInfo(
     let mut Status: NTSTATUS;
     let NlsMsg: *mut BASE_NLS_GET_USER_INFO =
         core::ptr::addr_of_mut!((*ApiMessage).Data.NlsGetUserInfo)
-            as *mut core::mem::ManuallyDrop<BASE_NLS_GET_USER_INFO> as *mut BASE_NLS_GET_USER_INFO;
+            as *mut core::mem::ManuallyDrop<BASE_NLS_GET_USER_INFO>
+            as *mut BASE_NLS_GET_USER_INFO;
 
     if CsrValidateMessageBuffer(
         ApiMessage as PVOID,
@@ -612,7 +886,6 @@ pub unsafe extern "system" fn BaseSrvNlsUpdateRegistryCache(
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE
