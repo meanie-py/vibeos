@@ -1,66 +1,21 @@
 # ============================================================================
-# Rust framebuffer GDI display driver
-# (sdk/lib/rust/framebuf-rust -> libframebuf_rust.a)
+# framebuf.dll — cargo-driven final link (sdk/lib/rust/framebuf-cargo via reactos-link)
 # ============================================================================
-# enable.c, palette.c, pointer.c, screen.c, surface.c are translated to Rust.
-# Their #[no_mangle] DrvEnableDriver (and all DDI/Int* functions) replace the
-# C sources (commented out of the SOURCE list below; the .c files are kept on
-# disk per the never-delete-a-translation rule). Mirrors the arm64vid-rust
-# cohabitation (drivers/video/arm64vid/CMakeLists.txt): one staticlib linked
-# into the cmake-built kerneldll.
+# enable.c/palette.c/pointer.c/screen.c/surface.c (+ dd/ddenable) are translated
+# to Rust (sdk/lib/rust/framebuf-rust, kept on disk per the never-delete rule);
+# the Rust #[no_mangle] DrvEnableDriver is the PE entry point. The final
+# framebuf.dll link is no longer cmake's add_library(MODULE) + rust_cohab_stub.c
+# + the per-arch custom_command — it is driven by cargo (framebuf-cargo's
+# build.rs → reactos-link, ModuleKind::KernelDll, entry=DrvEnableDriver@12, no
+# exports — win32k's GDI loader calls the PE entry point).
 #
-# framebuf is the display driver for every UEFI GOP/linear-framebuffer boot on
-# all three arches, so the Rust target is selected per-arch (like
-# hal/halx86/CMakeLists.txt). The Rust crate links win32k (the GDI engine
-# exports Eng*/PALOBJ_*/DDI types via win32k-sys) rather than ntoskrnl.
-
-set(FRAMEBUF_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(FRAMEBUF_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-framebuf-target")
-if(ARCH STREQUAL "i386")
-    set(FRAMEBUF_RUST_TARGET "i686-pc-windows-gnu")
-    # i386: disable SSE — same constraint as kernel-rust / hal-rust.
-    set(FRAMEBUF_RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
-elseif(ARCH STREQUAL "amd64")
-    set(FRAMEBUF_RUST_TARGET "x86_64-pc-windows-gnu")
-    set(FRAMEBUF_RUST_EXTRA_ENV "")
-else()
-    set(FRAMEBUF_RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(FRAMEBUF_RUST_EXTRA_ENV "")
-endif()
-set(FRAMEBUF_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libframebuf_rust.a")
-
-add_custom_command(
-    OUTPUT ${FRAMEBUF_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${FRAMEBUF_RUST_TARGET_DIR} ${FRAMEBUF_RUST_EXTRA_ENV}
-        cargo build --release --target ${FRAMEBUF_RUST_TARGET}
-            -p framebuf-rust
-            --manifest-path ${FRAMEBUF_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${FRAMEBUF_RUST_TARGET_DIR}/${FRAMEBUF_RUST_TARGET}/release/libframebuf_rust.a
-        ${FRAMEBUF_RUST_LIB}
-    DEPENDS ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/Cargo.toml
-            ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/src/lib.rs
-            ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/src/framebuf.rs
-            ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/src/enable.rs
-            ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/src/palette.rs
-            ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/src/pointer.rs
-            ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/src/screen.rs
-            ${FRAMEBUF_RUST_WORKSPACE_DIR}/framebuf-rust/src/surface.rs
-    WORKING_DIRECTORY ${FRAMEBUF_RUST_WORKSPACE_DIR}
-    COMMENT "Building framebuf-rust (${FRAMEBUF_RUST_TARGET})"
-    VERBATIM
-)
-add_custom_target(rust_framebuf DEPENDS ${FRAMEBUF_RUST_LIB})
-
-# enable.c palette.c pointer.c screen.c surface.c -- replaced by Rust
-# (sdk/lib/rust/framebuf-rust/src/*.rs). framebuf.h kept for reference.
-add_library(framebuf MODULE
-    rust_cohab_stub.c
-    framebuf.rc)
-
-set_module_type(framebuf kerneldll ENTRYPOINT DrvEnableDriver 12)
-target_link_libraries(framebuf ${FRAMEBUF_RUST_LIB} libcntpr)
-add_importlibs(framebuf win32k)
-add_dependencies(framebuf psdk rust_framebuf)
-add_cd_file(TARGET framebuf DESTINATION reactos/system32 FOR all)
+# framebuf is the GDI display driver for every UEFI GOP/linear-framebuffer boot
+# on all three arches. add_cargo_module builds framebuf-rust, links it with
+# libcntpr (C/asm liblibcntpr.a + Rust libcntpr_rust.a) + the win32k import lib
+# (the Eng*/PALOBJ_*/DDI surface) into the shipping PE, applies the kernel-dll
+# post-link and registers it on the boot media. Unlike the kernelmodedrivers it
+# imports win32k, NOT ntoskrnl/hal. The version resource (framebuf.rc) is
+# dropped, as in the other cargo cuts.
+add_cargo_module(framebuf framebuf-cargo framebuf.dll KIND kerneldll
+    BODY_CRATE framebuf-rust DESTINATION reactos/system32
+    EXTRA_DEPENDS libcntpr)
