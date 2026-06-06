@@ -372,6 +372,43 @@ if(ARCH STREQUAL "amd64")
     )
 endif()
 
+# Wave MATH-TIERC (cohab cleanup): with every amd64 libm_sse2 transcendental
+# now Rust (sw1–sw13), the remaining libm_sse2 C are ORPHANED support files —
+# the AMD-libm *_special / lead-tail+inverse TABLES / sincos arrays /
+# remainder_piby2 / two_to_jby64 tables / _handle_error / _set_statfp / the
+# fma3 dispatch flag. Their only consumers were (a) the per-op *.asm
+# implementations, which llvm-mingw never builds (it uses the portable
+# math/{sin,cos}.c + math/arm64/*.c — themselves now Rust), and (b) the
+# transcendental .c that are now REMOVE_ITEM'd above. So they form a closed
+# cluster referencing only each other; nothing the kernel links pulls any of
+# them (dead archive members). cnt-rust inlines _handle_error→from_bits and
+# _set_statfp→no-op, so the Rust side references none of them either. Drop the
+# dead weight → amd64 libcntpr math is 100% Rust. (amd64-only: i386 keeps its
+# x87 C/asm math; arm64 never compiled libm_sse2.) The cold-link is the oracle.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/amd64/_set_statfp.c
+        math/libm_sse2/_handle_error.c
+        math/libm_sse2/exp_special.c
+        math/libm_sse2/fma3_available.c
+        math/libm_sse2/L2_by_pi_bits.c
+        math/libm_sse2/log_128_lead_tail_table.c
+        math/libm_sse2/log_256_lead_tail_table.c
+        math/libm_sse2/log_F_inv_dword_table.c
+        math/libm_sse2/log_F_inv_qword_table.c
+        math/libm_sse2/log_special.c
+        math/libm_sse2/log10_128_lead_tail_table.c
+        math/libm_sse2/log10_256_lead_tail_table.c
+        math/libm_sse2/Lsincos_array.c
+        math/libm_sse2/Lsincosf_array.c
+        math/libm_sse2/pow_special.c
+        math/libm_sse2/remainder_piby2.c
+        math/libm_sse2/sincos_special.c
+        math/libm_sse2/two_to_jby64_head_tail_table.c
+        math/libm_sse2/two_to_jby64_table.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

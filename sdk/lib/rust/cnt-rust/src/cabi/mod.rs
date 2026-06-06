@@ -20,6 +20,16 @@ pub(crate) unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
     let mut n = 0usize;
     while *p.add(n) != 0 {
         n += 1;
+        // rustc-1.92 host (linux) loop-idiom recognizes this NUL-scan as
+        // `strlen`; inlined into the #[no_mangle] `strlen` shim it rewrites
+        // to a self-call that folds to `return 0` (cnt-difftest diff_strlen
+        // under --release). black_box breaks the match. cfg'd to the host so
+        // the windows-gnu KERNEL codegen (idiom never fires there) is
+        // byte-for-byte unchanged.
+        #[cfg(target_os = "linux")]
+        {
+            n = core::hint::black_box(n);
+        }
     }
     core::slice::from_raw_parts(p, n)
 }
@@ -35,6 +45,11 @@ pub(crate) unsafe fn cstr_slice_bounded<'a>(p: *const u8, cap: usize) -> &'a [u8
     let mut n = 0usize;
     while n < cap && *p.add(n) != 0 {
         n += 1;
+        // see cstr_slice: defeat the host loop-idiom strlen miscompile.
+        #[cfg(target_os = "linux")]
+        {
+            n = core::hint::black_box(n);
+        }
     }
     core::slice::from_raw_parts(p, n)
 }
