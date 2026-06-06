@@ -148,7 +148,7 @@ list(APPEND SOURCE
     user/ntuser/painting.c
     # user/ntuser/power.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/power.rs) — cohabitation [ntuser wave 6]
     # user/ntuser/prop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/prop.rs) — cohabitation [ntuser wave 2]
-    user/ntuser/scrollbar.c
+    # user/ntuser/scrollbar.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/scrollbar.rs) — cohabitation [ntuser wave 34]
     # user/ntuser/scrollex.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/scrollex.rs) — cohabitation [ntuser wave 19]
     # user/ntuser/security.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/security.rs) — cohabitation [ntuser wave 11]
     # user/ntuser/session.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/session.rs) — cohabitation [ntuser wave 1]
@@ -346,6 +346,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/display.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/draw.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/hook.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollbar.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

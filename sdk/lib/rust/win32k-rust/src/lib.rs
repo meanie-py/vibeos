@@ -308,6 +308,8 @@ pub mod display;
 pub mod draw;
 // [ntuser wave 33 — hook]
 pub mod hook;
+// [ntuser wave 34 — scrollbar]
+pub mod scrollbar;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
