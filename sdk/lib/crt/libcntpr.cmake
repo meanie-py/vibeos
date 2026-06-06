@@ -132,19 +132,15 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     math/div.c
 )
 
-# Wave PRINTF (float residual): the float-formatting half of streamout
-# (format_float/format_floatw) is irreducibly floating-point. On i386
-# the kernel builds Rust no-SSE (no by-value f64 ABI), so it stays C —
-# the extracted printf/format_float.c + format_floatw.c, which the Rust
-# `streamout` calls as externs. On amd64/arm64 cnt-rust's Rust
-# `format_float`/`format_floatw` (behind the `float` feature) own those
-# symbols, so these .c are NOT compiled there.
-if(ARCH STREQUAL "i386")
-    list(APPEND LIBCNTPR_SOURCE
-        printf/format_float.c
-        printf/format_floatw.c
-    )
-endif()
+# Wave FLOATCVT-i386 (float printf): the float-formatting half of
+# streamout (format_float/format_floatw) is now cnt-rust on ALL 3 arches.
+# It used to stay C on i386 (no-SSE: by-value f64 RETURN was a hard ABI
+# error), but the float engine is now no-SSE-safe — `cabi/streamout.rs`
+# `mod ff` + `core_rs::floatcvt` use `extern "C"` x87 returns + the
+# fb64/fb32 transmute shims (see core_rs/floatbits.rs). So i386 no longer
+# appends printf/format_float.c + format_floatw.c — the Rust
+# format_float/format_floatw own those symbols. (amd64/arm64 never
+# compiled them; the C streamout.c/wstreamout.c are already Rust above.)
 
 # Wave MATH-TIERB (float residual): the float-RETURNING shims
 # (_chgsignf/scalbn/scalbnf/round/roundf/nextafter/nextafterf/nexttowardf)

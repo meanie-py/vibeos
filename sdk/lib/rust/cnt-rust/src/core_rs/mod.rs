@@ -7,7 +7,11 @@
 
 pub mod casemap;
 pub mod env;
-#[cfg(feature = "float")]
+// fb64/fb32 bit→float shims — the one audited unsafe carve-out, used by
+// floatcvt to compile no-SSE on i386 (see floatbits.rs).
+pub mod floatbits;
+// floatcvt is no-SSE-safe (extern "C" returns + floatbits shims) → built
+// unconditionally on all 3 arches, no longer behind `float`.
 pub mod floatcvt;
 pub mod mbcp;
 pub mod mem;

@@ -20,6 +20,12 @@
 
 #![allow(clippy::needless_range_loop)]
 
+// Bit→float reinterpret routed through the audited floatbits shims so
+// this module compiles on the no-SSE i386 kernel (f64::from_bits has a
+// Rust-ABI f64 return that needs SSE; transmute does not). See
+// floatbits.rs. fabs64 = no-SSE `f64::abs` (sign-bit clear).
+use super::floatbits::{fabs64, fb64};
+
 /// `fcvt_buf[2 * DBL_MAX_10_EXP + 10]` and `CVTBUFSIZE`
 /// (DBL_MAX_10_EXP == 308).
 pub const FCVT_BUF: usize = 2 * 308 + 10; // 626
@@ -46,29 +52,29 @@ fn modf(x: f64) -> (f64, f64) {
     if j0 < 20 {
         if j0 < 0 {
             // |x| < 1 → ipart = ±0
-            let ip = f64::from_bits(((i0 & 0x8000_0000) as u64) << 32);
+            let ip = fb64(((i0 & 0x8000_0000) as u64) << 32);
             return (x - ip, ip);
         }
         let i = (0x000f_ffff_u32) >> j0;
         if ((i0 & i) | i1) == 0 {
             let ip = x;
-            let ret = f64::from_bits(((i0 & 0x8000_0000) as u64) << 32);
+            let ret = fb64(((i0 & 0x8000_0000) as u64) << 32);
             return (ret, ip);
         }
-        let ip = f64::from_bits(((i0 & !i) as u64) << 32);
+        let ip = fb64(((i0 & !i) as u64) << 32);
         (x - ip, ip)
     } else if j0 > 51 {
         let ip = x;
-        let ret = f64::from_bits(((i0 & 0x8000_0000) as u64) << 32);
+        let ret = fb64(((i0 & 0x8000_0000) as u64) << 32);
         (ret, ip)
     } else {
         let i = (0xffff_ffff_u32) >> (j0 - 20);
         if (i1 & i) == 0 {
             let ip = x;
-            let ret = f64::from_bits(((i0 & 0x8000_0000) as u64) << 32);
+            let ret = fb64(((i0 & 0x8000_0000) as u64) << 32);
             return (ret, ip);
         }
-        let ip = f64::from_bits(((i0 as u64) << 32) | ((i1 & !i) as u64));
+        let ip = fb64(((i0 as u64) << 32) | ((i1 & !i) as u64));
         (x - ip, ip)
     }
 }
@@ -233,9 +239,14 @@ pub mod fl {
     /// `floor` for finite f64 (genuine host `floor`; the harness uses
     /// the identical `(double)(long long)x` form). Inputs reaching
     /// here are bounded (|.|<10^18 < 2^63) so the i64 cast is exact.
+    // `extern "C"` (x87 ST(0) return, not xmm) so the f64 return compiles
+    // on the no-SSE i386 kernel; calling a Rust-defined `extern "C"` fn is
+    // safe. (A plain `-> f64` Rust-ABI return hard-errors there.)
     #[inline]
-    pub fn floor(x: f64) -> f64 {
-        if !x.is_finite() {
+    pub extern "C" fn floor(x: f64) -> f64 {
+        // `super::is_finite` is the bit-based local (the std `is_finite`
+        // pulls `f64::abs`, whose Rust-ABI f64 return needs SSE).
+        if !super::is_finite(x) {
             return x;
         }
         let i = x as i64 as f64;
@@ -248,7 +259,7 @@ pub mod fl {
 
     /// `round(x) = floor(x + 0.5)` — the genuine macro verbatim.
     #[inline]
-    pub fn round(x: f64) -> f64 {
+    pub extern "C" fn round(x: f64) -> f64 {
         floor(x + 0.5)
     }
 
@@ -256,7 +267,7 @@ pub mod fl {
     /// square-and-multiply; the harness reference uses the identical
     /// scheme so `pow` is modeled the same on both sides.
     #[inline]
-    pub fn pow10(n: i32) -> f64 {
+    pub extern "C" fn pow10(n: i32) -> f64 {
         let mut r = 1.0_f64;
         let mut k = n.unsigned_abs();
         let mut b = 10.0_f64;
@@ -341,7 +352,7 @@ pub fn format_e(value: f64, mut precision: i32) -> FloatText {
     let mut exponent = if value == 0.0 {
         0
     } else {
-        fl::floor(fl::exp10_floor(value.abs()) as f64) as i32
+        fl::floor(fl::exp10_floor(fabs64(value)) as f64) as i32
     };
     let sign = if value < 0.0 { -1.0 } else { 1.0 };
     let mut fpval2 = fl::round(sign * value * fl::pow10(precision - exponent));
@@ -498,7 +509,7 @@ pub fn format_g(value: f64, precision: i32) -> GcvtText {
     let exponent0 = if value == 0.0 {
         0
     } else {
-        fl::floor(fl::exp10_floor(value.abs()) as f64) as i32
+        fl::floor(fl::exp10_floor(fabs64(value)) as f64) as i32
     };
     let sign = if value < 0.0 { -1.0 } else { 1.0 };
     let mut exponent = exponent0;
