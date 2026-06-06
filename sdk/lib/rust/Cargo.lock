@@ -55,6 +55,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "beep-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "beep-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "bitmap"
 version = "0.1.0"
 

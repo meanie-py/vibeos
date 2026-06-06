@@ -1,0 +1,19 @@
+# Cargo-driven `beep.sys` link (i386 + amd64 + arm64). The Beep device driver.
+# Sibling of `kbdclass-cargo`: build.rs is a manifest for the shared
+# `reactos-link` engine. The Rust body is the `beep-rust` staticlib; its
+# `DriverEntry` is the PE entry point (kernelmodedriver = kerneldll link with
+# entry=DriverEntry, no exports).
+
+[package]
+name = "beep-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "beep"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

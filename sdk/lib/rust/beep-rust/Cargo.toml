@@ -1,0 +1,16 @@
+# beep-rust — Rust translation of the Beep device driver
+# (drivers/base/beep/beep.c). crate-type=staticlib → libbeep_rust.a, linked
+# into beep.sys via beep-cargo (reactos-link, ModuleKind::KernelDll). The C
+# source is kept on disk (never-delete rule). Standalone kernel-mode driver
+# depending only on ntkrnl-sys. Built for all 3 arches.
+
+[package]
+name = "beep-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
