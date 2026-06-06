@@ -8,6 +8,27 @@
 
 use winlogon_sys::nt::*;
 
+/// `wstr!("Foo")` → a `&'static [u16]` NUL-terminated UTF-16 literal (ASCII
+/// source). Mirrors services-rust's macro; used by the flipped GINA/SAS/RPC
+/// cores for the many registry-path / pipe-name / window-name wide literals.
+#[macro_export]
+macro_rules! wstr {
+    ($s:literal) => {{
+        const BYTES: &[u8] = $s.as_bytes();
+        const N: usize = BYTES.len() + 1;
+        const ARR: [u16; N] = {
+            let mut a = [0u16; N];
+            let mut i = 0;
+            while i < BYTES.len() {
+                a[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            a
+        };
+        &ARR
+    }};
+}
+
 // Predefined registry roots (winreg.h #defines — not bindgen-visible).
 pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
 pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY;
