@@ -118,7 +118,7 @@ list(APPEND SOURCE
     # user/ntuser/clipboard.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/clipboard.rs) — cohabitation [ntuser wave 15 spine]
     # user/ntuser/console.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/console.rs) — cohabitation [ntuser wave 7]
     # user/ntuser/csr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/csr.rs) — cohabitation [ntuser wave 9]
-    user/ntuser/cursoricon.c
+    # user/ntuser/cursoricon.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/cursoricon.rs) — cohabitation [ntuser wave 35]
     # user/ntuser/dde.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dde.rs) — cohabitation [ntuser wave 21]
     user/ntuser/defwnd.c
     # user/ntuser/desktop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/desktop.rs) — cohabitation [ntuser wave 13 spine]
@@ -347,6 +347,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/draw.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/hook.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollbar.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/cursoricon.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
