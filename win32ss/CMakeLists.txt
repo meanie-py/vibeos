@@ -162,7 +162,7 @@ list(APPEND SOURCE
     user/ntuser/windc.c
     user/ntuser/window.c
     user/ntuser/winpos.c
-    user/ntuser/winsta.c
+    # user/ntuser/winsta.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winsta.rs) — cohabitation [ntuser wave 14 spine]
     # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
     user/rtl/image.c
     user/rtl/text.c
@@ -326,6 +326,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/security.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/class.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/desktop.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/winsta.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

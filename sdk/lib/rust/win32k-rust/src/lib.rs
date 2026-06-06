@@ -268,6 +268,8 @@ pub mod security;
 pub mod class;
 // [ntuser wave 13 — desktop spine]
 pub mod desktop;
+// [ntuser wave 14 — winsta spine]
+pub mod winsta;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
