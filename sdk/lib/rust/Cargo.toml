@@ -28,6 +28,8 @@ members = [
     "arm64vid-cargo",
     "arm64input-cargo",
     "i8042prt-cargo",
+    "kbdclass-cargo",
+    "mouclass-cargo",
     "framebuf-cargo",
     "bootvid-rust",
     "bootvid-cargo",

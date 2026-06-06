@@ -255,6 +255,13 @@ name = "interlck"
 version = "0.1.0"
 
 [[package]]
+name = "kbdclass-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "kbdclass-rust"
 version = "0.1.0"
 dependencies = [
@@ -418,6 +425,13 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "midl-rt"
 version = "0.1.0"
+
+[[package]]
+name = "mouclass-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "mouclass-rust"
