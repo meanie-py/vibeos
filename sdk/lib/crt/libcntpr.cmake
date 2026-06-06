@@ -20,8 +20,10 @@ list(APPEND LIBCNTPR_SOURCE
 # ${LIBCNTPR_*_SOURCE} vars; the swap must touch libcntpr alone.
 # Files kept on disk (never-delete rule). Kept C (NOT removed):
 # wctype/winesup/bsearch/lfind/mbstrlen/fltused (UNCOVERED) +
-# atol (_atoldbl) + scanf (variadic) — PARTIAL. wctype.c is only the
-# dead wine_wctype_table data (no funcs; unused by the linked iswctype).
+# atol (_atoldbl). wctype.c is only the dead wine_wctype_table data
+# (no funcs; unused by the linked iswctype). winesup.c stays C but its
+# _internal_handle_float is now dead (the Rust scanf engine does its own
+# f64 synth — see the Wave SCANF block below).
 # Wave WCS flips the kernel (_LIBCNT_) slice of wcs.c — the 8 pure wide
 # leaves (_wcsnset/_wcsrev/wcscoll/wcspbrk/wcs{cpy,ncpy,cat,ncat}_s) →
 # cabi/wcs.rs. The rest of wcs.c is #ifndef _LIBCNT_ (msvcrt-only:
@@ -44,6 +46,7 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     string/strpbrk.c
     string/strspn.c
     string/wcs.c
+    string/scanf.c
 
     string/atoi64.c
     string/atoi.c
@@ -521,6 +524,16 @@ endif()
 
 set_source_files_properties(${LIBCNTPR_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "NO_RTL_INLINES;_NTSYSTEM_;_NTDLLBUILD_;_LIBCNT_;__CRT__NO_INLINE;CRTDLL")
 add_asm_files(libcntpr_asm ${LIBCNTPR_ASM_SOURCE})
+
+# Wave SCANF: the kernel's variadic scanf shell. scanf.c (full C engine)
+# is REMOVE_ITEM'd above; cnt-rust owns the engine (cnt_v*scanf in
+# cabi/manual.rs, no-SSE-safe). The irreducible C-variadic public
+# wrappers (sscanf/swscanf/_snscanf/_snwscanf + cnt_va_next_ptr) are the
+# tiny scanf_trampoline.c — Rust can't DEFINE variadics on stable. It
+# gets libcntpr's _LIBCNT_ compile defs (below) and links against the
+# cnt_v*scanf in libcntpr_rust.a. (CRT/msvcrt keeps the full C scanf.c.)
+list(APPEND LIBCNTPR_SOURCE
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rust/cnt-rust/src/cabi/scanf_trampoline.c)
 
 add_library(libcntpr STATIC ${LIBCNTPR_SOURCE} ${libcntpr_asm})
 target_compile_definitions(libcntpr
