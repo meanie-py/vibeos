@@ -5,8 +5,9 @@
 //! Unlike rtl-strings there is no pure `core_rs` split: the heap is
 //! inherently pointer-walking over the in-band `HEAP_ENTRY` headers, so
 //! the whole body is `unsafe` cabi. `types.rs` is the byte-exact mirror
-//! of `heap.h`; heappage.c / heapdbg.c remain C and share that layout
-//! across the cohab boundary (hence the compile-time size assertions).
+//! of `heap.h`; the debug-heap wrappers (heapdbg.c) are translated in
+//! `heapdbg.rs`; heappage.c remains C and shares that layout across the
+//! cohab boundary (hence the compile-time size assertions).
 //!
 //! Semantics track ReactOS rtl, not textbook.
 #![cfg_attr(not(test), no_std)]
@@ -16,3 +17,6 @@ pub mod types;
 
 #[cfg(feature = "cabi")]
 pub mod heap;
+
+#[cfg(feature = "cabi")]
+pub mod heapdbg;
