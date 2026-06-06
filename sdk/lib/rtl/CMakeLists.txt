@@ -49,7 +49,7 @@ list(APPEND SOURCE
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
     # heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
-    heapdbg.c
+    # heapdbg.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/heapdbg.rs)
     heappage.c
     heapuser.c
     image.c
@@ -211,6 +211,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-heap/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-heap/src/types.rs
             ${RUST_WORKSPACE_DIR}/rtl-heap/src/heap.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heap/src/heapdbg.rs
             ${RUST_WORKSPACE_DIR}/rtl-heap/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
