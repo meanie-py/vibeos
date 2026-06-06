@@ -306,6 +306,8 @@ pub mod input;
 pub mod display;
 // [ntuser wave 32 — draw]
 pub mod draw;
+// [ntuser wave 33 — hook]
+pub mod hook;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

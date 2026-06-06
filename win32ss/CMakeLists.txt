@@ -128,7 +128,7 @@ list(APPEND SOURCE
     # user/ntuser/focus.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/focus.rs) — cohabitation [ntuser wave 25]
     # user/ntuser/ghost.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ghost.rs) — cohabitation [ntuser wave 5]
     # user/ntuser/guicheck.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/guicheck.rs) — cohabitation [ntuser wave 2]
-    user/ntuser/hook.c
+    # user/ntuser/hook.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hook.rs) — cohabitation [ntuser wave 33]
     # user/ntuser/hotkey.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hotkey.rs) — cohabitation [ntuser wave 18]
     # user/ntuser/input.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/input.rs) — cohabitation [ntuser wave 30]
     user/ntuser/ime.c
@@ -345,6 +345,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/input.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/display.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/draw.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/hook.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
