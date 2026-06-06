@@ -270,6 +270,8 @@ pub mod class;
 pub mod desktop;
 // [ntuser wave 14 — winsta spine]
 pub mod winsta;
+// [ntuser wave 15 — clipboard spine]
+pub mod clipboard;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
