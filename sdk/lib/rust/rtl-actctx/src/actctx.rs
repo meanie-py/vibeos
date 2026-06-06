@@ -5298,7 +5298,7 @@ pub unsafe extern "system" fn RtlActivateActivationContextEx(
     (*(*teb).ActivationContextStackPointer).ActiveFrame = frame as *mut _;
     RtlAddRefActivationContext(handle);
 
-    *cookie = frame as ULONG_PTR;
+    core::ptr::write_volatile(cookie, frame as ULONG_PTR);
     STATUS_SUCCESS
 }
 
@@ -5368,12 +5368,12 @@ pub unsafe extern "system" fn RtlFreeThreadActivationContextStack() {
 #[no_mangle]
 pub unsafe extern "system" fn RtlGetActiveActivationContext(handle: *mut HANDLE) -> NTSTATUS {
     if !(*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame.is_null() {
-        *handle = (*((*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame
+        core::ptr::write_volatile(handle, (*((*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame
             as PRTL_ACTIVATION_CONTEXT_STACK_FRAME))
-            .ActivationContext as HANDLE;
+            .ActivationContext as HANDLE);
         RtlAddRefActivationContext(*handle);
     } else {
-        *handle = core::ptr::null_mut();
+        core::ptr::write_volatile(handle, core::ptr::null_mut());
     }
 
     STATUS_SUCCESS
@@ -5406,7 +5406,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
     let mut status: NTSTATUS;
 
     if !retlen.is_null() {
-        *retlen = 0;
+        core::ptr::write_volatile(retlen, 0);
     }
 
     status = find_query_actctx(&mut handle, flags, class);
@@ -5419,7 +5419,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
             let info = buffer as *mut ACTIVATION_CONTEXT_BASIC_INFORMATION;
 
             if !retlen.is_null() {
-                *retlen = core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>() as SIZE_T;
+                core::ptr::write_volatile(retlen, core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>() as SIZE_T);
             }
             if info.is_null()
                 || (bufsize as usize) < core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>()
@@ -5466,7 +5466,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
                     * core::mem::size_of::<WCHAR>() as SIZE_T;
 
             if !retlen.is_null() {
-                *retlen = len;
+                core::ptr::write_volatile(retlen, len);
             }
             if buffer.is_null() || bufsize < len {
                 return STATUS_BUFFER_TOO_SMALL;
@@ -5580,7 +5580,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
                 + (id_len + ad_len + path_len) * core::mem::size_of::<WCHAR>() as SIZE_T;
 
             if !retlen.is_null() {
-                *retlen = len;
+                core::ptr::write_volatile(retlen, len);
             }
             if buffer.is_null() || bufsize < len {
                 RtlFreeHeap(GetProcessHeap(), 0, assembly_id as PVOID);
@@ -5676,12 +5676,12 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
 
             if buffer.is_null() || bufsize < len {
                 if !retlen.is_null() {
-                    *retlen = len;
+                    core::ptr::write_volatile(retlen, len);
                 }
                 return STATUS_BUFFER_TOO_SMALL;
             }
             if !retlen.is_null() {
-                *retlen = 0;
+                core::ptr::write_volatile(retlen, 0);
             }
             (*afdi).ulFlags = ACTIVATION_CONTEXT_SECTION_DLL_REDIRECTION;
             (*afdi).ulFilenameLength = if dll_len != 0 {
@@ -5729,7 +5729,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
                     * core::mem::size_of::<COMPATIBILITY_CONTEXT_ELEMENT>() as SIZE_T;
 
             if !retlen.is_null() {
-                *retlen = len;
+                core::ptr::write_volatile(retlen, len);
             }
             if buffer.is_null() || bufsize < len {
                 return STATUS_BUFFER_TOO_SMALL;
@@ -5756,7 +5756,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
 
             len = core::mem::size_of::<ACTIVATION_CONTEXT_RUN_LEVEL_INFORMATION>() as SIZE_T;
             if !retlen.is_null() {
-                *retlen = len;
+                core::ptr::write_volatile(retlen, len);
             }
             if buffer.is_null() || bufsize < len {
                 return STATUS_BUFFER_TOO_SMALL;
@@ -5977,7 +5977,7 @@ pub unsafe extern "system" fn RtlQueryActivationContextApplicationSettings(
     }
 
     if !written.is_null() {
-        *written = (wcslen(res) + 1) as SIZE_T;
+        core::ptr::write_volatile(written, (wcslen(res) + 1) as SIZE_T);
     }
     if size < wcslen(res) as SIZE_T {
         return STATUS_BUFFER_TOO_SMALL;
@@ -6005,7 +6005,7 @@ pub unsafe extern "system" fn RtlAllocateActivationContextStack(Stack: *mut PACT
     (*ContextStack).NextCookieSequenceNumber = 1;
     (*ContextStack).StackId = 1;
 
-    *Stack = ContextStack;
+    core::ptr::write_volatile(Stack, ContextStack);
 
     STATUS_SUCCESS
 }
