@@ -23,6 +23,7 @@ use ntdll_sys::nt::*;
 /// `USER_CALL` (dispatch.c): a kernel-callback-table entry —
 /// `NTSTATUS (NTAPI *)(PVOID Argument, ULONG ArgumentLength)`.
 type USER_CALL = unsafe extern "system" fn(Argument: *mut c_void, ArgumentLength: ULONG) -> NTSTATUS;
+const USER32_CALLBACK_COUNT: ULONG = 20;
 
 /// `KiRaiseUserExceptionDispatcher` — re-raises the pending exception code the
 /// kernel stashed in `TEB->ExceptionCode` as a user-mode exception.
@@ -51,6 +52,10 @@ pub unsafe extern "system" fn KiUserCallbackDispatcher(
     Argument: *mut c_void,
     ArgumentLength: ULONG,
 ) {
+    if Index >= USER32_CALLBACK_COUNT {
+        ZwCallbackReturn(null_mut(), 0, STATUS_INVALID_PARAMETER);
+    }
+
     // PEB->KernelCallbackTable is an array of USER_CALL function pointers.
     let peb = (*NtCurrentTeb()).ProcessEnvironmentBlock as *const PEB;
     let KernelCallbackTable = (*peb).KernelCallbackTable as *const USER_CALL;

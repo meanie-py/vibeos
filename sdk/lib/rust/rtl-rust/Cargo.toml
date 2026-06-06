@@ -10,6 +10,11 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+default = ["kernel"]
+kernel = ["rtl-strings/kernel"]
+user-atom-table = ["rtl-strings/user-atom-table"]
+
 [dependencies]
 access       = { path = "../access" }
 avltable     = { path = "../avltable" }
@@ -30,5 +35,5 @@ random       = { path = "../random" }
 slist        = { path = "../slist" }
 splaytree    = { path = "../splaytree" }
 uniprefix    = { path = "../uniprefix" }
-rtl-strings  = { path = "../rtl-strings", features = ["cabi", "kernel"] }
+rtl-strings  = { path = "../rtl-strings", features = ["cabi"] }
 time         = { path = "../time" }

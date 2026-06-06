@@ -142,9 +142,7 @@ def write_baselines(repo: Path) -> dict:
 #        .s, self-hosted spec2def, the static-lib list, the reactos-link engine
 #        itself, or the checked-in .res) drifts out of sync with the tree.
 _CARGO_LINK_POCS = [
-    # ntoskrnl-cargo is i386-only (its build.rs predates the engine's arch
-    # generalization); ntdll/ntdll_vista are arch-aware on all three.
-    ("ntoskrnl", "ntoskrnl-cargo", "ntoskrnl", ("i386",), 1_000_000),
+    ("ntoskrnl", "ntoskrnl-cargo", "ntoskrnl", ("i386", "amd64", "arm64"), 1_000_000),
     ("ntdll", "ntdll-cargo", "ntdll", ("i386", "amd64", "arm64"), 1_000_000),
     ("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista",
      ("i386", "amd64", "arm64"), 200_000),

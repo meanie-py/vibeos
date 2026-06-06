@@ -16,7 +16,6 @@
 #![no_std]
 #![no_main]
 #![allow(internal_features)]
-#![feature(linkage)]
 
 // `--gc-sections` drops every section that nothing references. There's
 // nothing in `main.rs` that references kernel symbols (cargo can't see

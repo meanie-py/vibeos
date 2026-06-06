@@ -11,15 +11,16 @@
 //!
 //! Post-link pefixup / fix_lld_forwarding.py run separately.
 
-use std::env;
 use reactos_link::{AsmDefineSet, Linker, ModuleKind};
+use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
     // Per-arch facts, all verbatim from each build-<arch>/build.ninja's
     // `ntoskrnl/ntoskrnl.exe` link line:
-    //   - target json (the custom kernel target; x86-softfloat on x86)
+    //   - Rust target spec (i386 custom kernel target for x86-softfloat;
+    //     amd64/arm64 builtin triples for cmake's precompiled-std path)
     //   - res basename (gen_ntoskrnl_res.py output)
     //   - entry: i386 stdcall-decorated `_KiSystemStartup@4`; amd64/arm64 cdecl
     //     `KiSystemStartup`. image-base is 0x00400000 on every arch.
@@ -29,10 +30,19 @@ fn main() {
     //   - hal_dir: hal/halx86 (i386+amd64) vs hal/halarm64 (arm64).
     //   - chkstk: cmake links the ReactOS libchkstk.a on i386+arm64 (amd64 takes
     //     __chkstk from the clang_rt.builtins the engine already links).
-    let (target_json, res, entry, asm, cnt_float, hal_dir, chkstk):
-        (&str, &str, &str, Vec<&str>, bool, &str, bool) = match arch.as_str() {
+    let (rust_target, res, entry, asm, cnt_float, hal_dir, chkstk): (
+        &str,
+        &str,
+        &str,
+        Vec<&str>,
+        bool,
+        &str,
+        bool,
+    ) = match arch.as_str() {
         "x86" => (
-            "i686-kernel.json", "ntoskrnl-i386.rc.res", "_KiSystemStartup@4",
+            "i686-kernel.json",
+            "ntoskrnl-i386.rc.res",
+            "_KiSystemStartup@4",
             vec![
                 "ntoskrnl/ex/zw.S",
                 "ntoskrnl/ex/i386/fastinterlck_asm.S",
@@ -41,10 +51,14 @@ fn main() {
                 "ntoskrnl/ke/i386/trap.s",
                 "ntoskrnl/ke/i386/usercall_asm.S",
             ],
-            false, "halx86", true,
+            false,
+            "halx86",
+            true,
         ),
         "x86_64" => (
-            "x86_64-kernel.json", "ntoskrnl-amd64.rc.res", "KiSystemStartup",
+            "x86_64-kernel.json",
+            "ntoskrnl-amd64.rc.res",
+            "KiSystemStartup",
             vec![
                 "ntoskrnl/ex/zw.S",
                 "ntoskrnl/ke/amd64/boot.S",
@@ -53,10 +67,14 @@ fn main() {
                 "ntoskrnl/ke/amd64/usercall_asm.S",
                 "ntoskrnl/ke/amd64/zeropage.S",
             ],
-            true, "halx86", false,
+            true,
+            "halx86",
+            false,
         ),
         "aarch64" => (
-            "aarch64-kernel.json", "ntoskrnl-arm64.rc.res", "KiSystemStartup",
+            "aarch64-pc-windows-gnullvm",
+            "ntoskrnl-arm64.rc.res",
+            "KiSystemStartup",
             vec![
                 "ntoskrnl/ex/zw.S",
                 "ntoskrnl/ke/arm64/ctxswitch.S",
@@ -64,7 +82,9 @@ fn main() {
                 "ntoskrnl/ke/arm64/usercall_asm.S",
                 "ntoskrnl/ke/arm64/zwdispatch.S",
             ],
-            true, "halarm64", true,
+            true,
+            "halarm64",
+            true,
         ),
         o => panic!("ntoskrnl-cargo: unsupported arch {o}"),
     };
@@ -86,6 +106,9 @@ fn main() {
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
+        "sdk/lib/crt/mem/memcpy.c",
+        "sdk/lib/crt/mem/memmove.c",
+        "sdk/lib/crt/mem/memset.c",
     ];
     if arch != "aarch64" {
         c_shims.push("ntoskrnl/kdbg/kdbg_rust_shims.c");
@@ -120,13 +143,14 @@ fn main() {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
 
-    Linker::new(target_json)
+    Linker::new(rust_target)
         .rust_staticlib("kernel-rust")
         // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was
         // reuse of the cmake-built librtl_rust.a / libcntpr_rust.a). Built
-        // against the kernel json (x86-softfloat on x86) + build-std, exactly
-        // like the main kernel-rust crate. The engine emits these AFTER the cmake
-        // C archives (C-first cohab precedence) and applies the per-crate RUSTFLAGS
+        // against the same target mode as the main kernel-rust crate: i386 uses
+        // the softfloat kernel json + build-std; amd64/arm64 use cmake's builtin
+        // precompiled-std targets. The engine emits these AFTER the cmake C
+        // archives (C-first cohab precedence) and applies the per-crate RUSTFLAGS
         // cmake gives them (i386 -sse + the class-wide -C no-prepopulate-passes;
         // see reactos-link build_rust_crate). cnt-rust-lib `float` is per-arch.
         .rust_lib("rtl-rust", &[], true)
