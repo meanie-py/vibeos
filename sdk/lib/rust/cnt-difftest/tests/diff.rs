@@ -1,3 +1,4 @@
+#![no_builtins] // host-harness only: cnt's #[no_mangle] libc-named shims (isdigit/strlen/...) must be CALLED, not folded to LLVM builtins (rustc-1.92 release UB-exploits out-of-range args). No effect on cnt-rust/cnt-ctype/kernel (separate crates/targets).
 //! Differential parity: cnt-rust `cabi` shims vs the genuine compiled
 //! ReactOS libcntpr reference (build.rs), across each symbol's
 //! fuzz_domain. A mismatch fails loudly — this is the net that makes
