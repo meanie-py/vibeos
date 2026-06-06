@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACTIVATION_CONTEXT_STACK, FILE_BOTH_DIR_INFORMATION, FILE_END_OF_FILE_INFORMATION, GUID, IMAGE_RESOURCE_DATA_ENTRY, IMAGE_RESOURCE_DIRECTORY, IMAGE_RESOURCE_DIRECTORY_ENTRY, _IO_STATUS_BLOCK, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LDR_RESOURCE_INFO, LdrAccessResource, LdrFindResource_U, LdrLockLoaderLock, LdrUnlockLoaderLock, NtClose, NtCurrentTeb, NtGetTickCount, NtOpenFile, NtQueryDirectoryFile, NtQueryInformationFile, NtReadFile, _OBJECT_ATTRIBUTES, PACTIVATION_CONTEXT_STACK, RtlCompareUnicodeStrings, RtlCreateUnicodeString, RtlDetermineDosPathNameType_U, RtlDosPathNameToNtPathName_U, RtlEqualUnicodeString, RtlFreeHeap, RtlFreeUnicodeString, RtlGUIDFromString, RtlGetFullPathName_U, RtlHashUnicodeString, RtlImageDirectoryEntryToData, RtlImageNtHeader, RtlInitUnicodeString, RtlIsTextUnicode, RtlUnicodeStringToInteger, RtlUniform, RtlUpcaseUnicodeString, RtlUshortByteSwap, TEB};
+use ntkrnl_sys::ddk::{ACTIVATION_CONTEXT_STACK, FILE_BOTH_DIR_INFORMATION, FILE_END_OF_FILE_INFORMATION, GUID, IMAGE_RESOURCE_DATA_ENTRY, IMAGE_RESOURCE_DIRECTORY, IMAGE_RESOURCE_DIRECTORY_ENTRY, _IO_STATUS_BLOCK, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LDR_RESOURCE_INFO, LdrAccessResource, LdrFindResource_U, LdrLockLoaderLock, LdrUnlockLoaderLock, NtClose, NtOpenFile, NtQueryDirectoryFile, NtQueryInformationFile, NtReadFile, _OBJECT_ATTRIBUTES, PACTIVATION_CONTEXT_STACK, RtlCompareUnicodeStrings, RtlCreateUnicodeString, RtlDetermineDosPathNameType_U, RtlDosPathNameToNtPathName_U, RtlEqualUnicodeString, RtlFreeHeap, RtlFreeUnicodeString, RtlGUIDFromString, RtlGetFullPathName_U, RtlHashUnicodeString, RtlImageDirectoryEntryToData, RtlImageNtHeader, RtlInitUnicodeString, RtlIsTextUnicode, RtlUnicodeStringToInteger, RtlUniform, RtlUpcaseUnicodeString, RtlUshortByteSwap, TEB};
 use core::ffi::c_void;
 
 // The byte-exact private/public type substrate + the file-static string
@@ -4315,7 +4315,7 @@ unsafe fn build_comserver_section(
     data_offset = (*header).index_offset
         + 2 * class_count * core::mem::size_of::<guid_index>() as ULONG;
 
-    seed = NtGetTickCount();
+    seed = RtlGetTickCount();
     i = 0;
     while i < (*actctx).num_assemblies {
         let assembly = (*actctx).assemblies.offset(i as isize);

@@ -31,9 +31,66 @@ extern "system" {
     ) -> NTSTATUS;
     // ReactOS ntdll process-compat init (actctx.c __REACTOS__ path).
     pub fn LdrpInitializeProcessCompat(process_actctx: PVOID, old_shim_data: *mut PVOID);
-    // ntstrsafe (count-of-chars variants).
-    pub fn RtlStringCchCopyW(dst: *mut WCHAR, cch: usize, src: *const WCHAR) -> NTSTATUS;
-    pub fn RtlStringCchCatW(dst: *mut WCHAR, cch: usize, src: *const WCHAR) -> NTSTATUS;
+    // NtGetTickCount is a spec-forwarder to RtlGetTickCount; call the real
+    // impl directly (the forwarder isn't a callable internal symbol).
+    pub fn RtlGetTickCount() -> u32;
+}
+
+// NtCurrentTeb() — FORCEINLINE macro in C (reads the TEB self-pointer);
+// no out-of-line symbol exists, so provide it via per-arch inline asm.
+#[inline(always)]
+pub unsafe fn NtCurrentTeb() -> *mut ntkrnl_sys::ddk::TEB {
+    let teb: *mut ntkrnl_sys::ddk::TEB;
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("mov {}, fs:[0x18]", out(reg) teb, options(nostack, nomem, pure));
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb, options(nostack, nomem, pure));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("mov {}, x18", out(reg) teb, options(nostack, nomem, pure));
+    teb
+}
+
+// ntstrsafe RtlStringCch{Copy,Cat}W — FORCEINLINE in ntstrsafe.h (no
+// symbol); faithful bounded copy/append, null-terminating, returning
+// STATUS_SUCCESS / STATUS_BUFFER_OVERFLOW / STATUS_INVALID_PARAMETER.
+#[inline]
+pub unsafe fn RtlStringCchCopyW(dst: *mut WCHAR, cch: usize, src: *const WCHAR) -> NTSTATUS {
+    if cch == 0 {
+        return 0xC000_000Du32 as i32; // STATUS_INVALID_PARAMETER
+    }
+    let mut i = 0usize;
+    while i + 1 < cch && *src.add(i) != 0 {
+        *dst.add(i) = *src.add(i);
+        i += 1;
+    }
+    *dst.add(i) = 0;
+    if *src.add(i) != 0 {
+        0x8000_0005u32 as i32 // STATUS_BUFFER_OVERFLOW
+    } else {
+        0 // STATUS_SUCCESS
+    }
+}
+
+#[inline]
+pub unsafe fn RtlStringCchCatW(dst: *mut WCHAR, cch: usize, src: *const WCHAR) -> NTSTATUS {
+    let mut d = 0usize;
+    while d < cch && *dst.add(d) != 0 {
+        d += 1;
+    }
+    if d >= cch {
+        return 0xC000_000Du32 as i32; // STATUS_INVALID_PARAMETER (not terminated)
+    }
+    let mut i = 0usize;
+    while d + i + 1 < cch && *src.add(i) != 0 {
+        *dst.add(d + i) = *src.add(i);
+        i += 1;
+    }
+    *dst.add(d + i) = 0;
+    if *src.add(i) != 0 {
+        0x8000_0005u32 as i32 // STATUS_BUFFER_OVERFLOW
+    } else {
+        0 // STATUS_SUCCESS
+    }
 }
 
 // ── PE resource directory walkers (external rtl, stay C — image.c) ────
