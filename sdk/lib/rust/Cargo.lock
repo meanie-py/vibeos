@@ -221,6 +221,13 @@ name = "handle"
 version = "0.1.0"
 
 [[package]]
+name = "i8042prt-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "i8042prt-rust"
 version = "0.1.0"
 dependencies = [

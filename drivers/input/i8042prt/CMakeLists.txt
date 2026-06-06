@@ -1,72 +1,24 @@
 
-include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/lib/dmilib)
-
 # ============================================================================
-# Rust i8042prt PS/2 port driver
-# (sdk/lib/rust/i8042prt-rust -> libi8042prt_rust.a)
+# i8042prt.sys — cargo-driven final link (sdk/lib/rust/i8042prt-cargo via reactos-link)
 # ============================================================================
-# All 10 C sources are translated to Rust. Their #[no_mangle] DriverEntry and
-# internal functions replace the C (commented out of SOURCE below; the .c files
-# are kept on disk per the never-delete-a-translation rule). guid.c stays C
-# (poclass GUID definitions only). Mirrors arm64input-rust / hal-rust
-# cohabitation: one staticlib linked into the cmake-built kernelmodedriver,
-# per-arch RUST_TARGET.
+# All 10 functional C sources are translated to Rust (sdk/lib/rust/i8042prt-rust,
+# kept on disk per the never-delete rule); the Rust #[no_mangle] DriverEntry is
+# the PE entry point. The final i8042prt.sys link is no longer cmake's
+# add_library(MODULE) + rust_cohab_stub.c + the per-arch custom_command — it is
+# driven by cargo (i8042prt-cargo's build.rs → reactos-link,
+# ModuleKind::KernelDll, entry=DriverEntry, no exports). add_cargo_module builds
+# i8042prt-rust, links it with dmilib (ParseSMBiosTables) + the ntoskrnl/hal
+# import libs (strcmp is an ntoskrnl export) into the shipping PE, applies the
+# kernel-dll post-link and registers it on the boot media.
+#
+# guid.c is NOT linked: i8042prt-rust defines its sole poclass GUID
+# (GUID_DEVICE_SYS_BUTTON) as a Rust-internal static used via addr_of!, so the
+# C guid.c symbol is unreferenced dead residue (kept on disk). The version
+# resource (i8042prt.rc) is dropped, as in the other cargo cuts.
+add_cargo_module(i8042prt i8042prt-cargo i8042prt.sys KIND kerneldll
+    BODY_CRATE i8042prt-rust DESTINATION reactos/system32/drivers
+    EXTRA_DEPENDS dmilib)
 
-set(I8042PRT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(I8042PRT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-i8042prt-target")
-set(I8042PRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libi8042prt_rust.a")
-
-if(ARCH STREQUAL "i386")
-    set(I8042PRT_RUST_TARGET "i686-pc-windows-gnu")
-elseif(ARCH STREQUAL "amd64")
-    set(I8042PRT_RUST_TARGET "x86_64-pc-windows-gnu")
-elseif(ARCH STREQUAL "arm64")
-    set(I8042PRT_RUST_TARGET "aarch64-pc-windows-gnullvm")
-endif()
-
-add_custom_command(
-    OUTPUT ${I8042PRT_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${I8042PRT_RUST_TARGET_DIR}
-        cargo build --release --target ${I8042PRT_RUST_TARGET}
-            -p i8042prt-rust
-            --manifest-path ${I8042PRT_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${I8042PRT_RUST_TARGET_DIR}/${I8042PRT_RUST_TARGET}/release/libi8042prt_rust.a
-        ${I8042PRT_RUST_LIB}
-    DEPENDS ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/Cargo.toml
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/lib.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/i8042prt_h.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/createclose.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/hwhacks.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/i8042prt.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/keyboard.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/misc.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/mouse.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/pnp.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/ps2pp.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/readwrite.rs
-            ${I8042PRT_RUST_WORKSPACE_DIR}/i8042prt-rust/src/registry.rs
-    WORKING_DIRECTORY ${I8042PRT_RUST_WORKSPACE_DIR}
-    COMMENT "Building i8042prt-rust (${I8042PRT_RUST_TARGET})"
-    VERBATIM
-)
-add_custom_target(rust_i8042prt DEPENDS ${I8042PRT_RUST_LIB})
-
-# C sources replaced by Rust (sdk/lib/rust/i8042prt-rust/src/*.rs):
-#   createclose.c hwhacks.c i8042prt.c keyboard.c misc.c
-#   mouse.c pnp.c ps2pp.c readwrite.c registry.c
-# (kept on disk per the never-delete-a-translation rule).
-# guid.c stays C — it only emits the poclass GUIDs via initguid.h.
-add_library(i8042prt MODULE
-    rust_cohab_stub.c
-    guid.c
-    i8042prt.rc)
-
-set_module_type(i8042prt kernelmodedriver)
-target_link_libraries(i8042prt dmilib ${I8042PRT_RUST_LIB})
-add_importlibs(i8042prt ntoskrnl hal)
-add_dependencies(i8042prt rust_i8042prt)
-add_cd_file(TARGET i8042prt DESTINATION reactos/system32/drivers NO_CAB FOR all)
+# Registry setup is independent of the link and stays in cmake.
 add_registry_inf(i8042prt_reg.inf)
