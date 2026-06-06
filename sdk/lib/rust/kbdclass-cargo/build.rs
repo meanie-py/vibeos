@@ -1,5 +1,5 @@
 //! Cargo-driven `kbdclass.sys` link (i386 + amd64 + arm64). Manifest for the
-//! shared `reactos-link` engine. Sibling of `i8042prt-cargo` / `null-cargo`.
+//! shared `reactos-link` engine. Sibling of `i8042prt-cargo`.
 //!
 //! Mirrors the cmake `kbdclass.sys` link (set_module_type kernelmodedriver):
 //!   subsystem `native:5.01`, `-shared` (kerneldll), `--exclude-all-symbols`
@@ -8,20 +8,15 @@
 //!   base   i386/amd64 `0x00010000`; arm64 `0x7FFB00000000`.
 //!   libs   ntoskrnl + hal import libs (`add_importlibs(kbdclass ntoskrnl hal)`).
 //!
-//! This is the first cargo cut of a driver that was TRANSLATED but never
-//! integrated (kbdclass.c/misc.c stayed live C until now) — the Rust body
-//! (kbdclass-rust) was a workspace member but unreferenced. Cutting here both
-//! activates the Rust keyboard class driver and moves the link off cmake.
+//! No guid.c / c_from_compile_db: kbdclass-rust defines its device-interface
+//! GUID (GUID_DEVINTERFACE_KEYBOARD) as a Rust-internal `static` used via
+//! addr_of!, so the C guid.c GUID symbol is unreferenced (dead residue, kept on
+//! disk). The version resource (kbdclass.rc) is dropped, as in the other cargo
+//! cuts; the registry inf (kbdclass_reg.inf) is independent of the link and
+//! stays in cmake. The kernel softfloat json is correct for a kernel driver.
 //!
-//! No guid.c / c_from_compile_db: kbdclass-rust defines its sole interface GUID
-//! (GUID_DEVINTERFACE_KEYBOARD) as a Rust-internal `static` used via addr_of!,
-//! so the C guid.c symbol is unreferenced dead residue (kept on disk). No
-//! PSEH_LIB: the translation's _SEH2 handlers are dead code (DUMMY_PSEH) and
-//! survive only as comments, so nothing references libpseh. The version
-//! resource (kbdclass.rc) is dropped, as in the other cargo cuts; the registry
-//! inf (kbdclass_reg.inf) is independent of the link and stays in cmake.
-//! The kernel softfloat json is correct for a kernel driver (no float crosses
-//! the integer/pointer ntoskrnl FFI boundary).
+//! Run `ninja` in build-<arch>/ first (the cargo link reuses the spec2def host
+//! tool + ntoskrnl/hal spec files).
 
 use reactos_link::{Linker, ModuleKind};
 use std::env;

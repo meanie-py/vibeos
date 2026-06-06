@@ -427,6 +427,13 @@ name = "midl-rt"
 version = "0.1.0"
 
 [[package]]
+name = "mouclass-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "mouclass-rust"
 version = "0.1.0"
 dependencies = [
