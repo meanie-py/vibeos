@@ -19,6 +19,13 @@ KDCOM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdrosdbg"
 # staticlib validates standalone via `cargo build -p kdgdb-rust` (i386+amd64;
 # kdgdb has no arm64 path). i386_sup.c/amd64_sup.c are arch-gated.
 KDGDB_DIR = REACTOS_ROOT / "drivers" / "base" / "kdgdb"
+# Serial kdcom: the classic NS16550 serial KD transport (drivers/base/kdcom,
+# distinct from the default kdrosdbg-as-kdcom.dll above). _WINKD_-only, never
+# built on llvm-mingw. Uses cportlib (= cport-rust). → kdcom-serial-rust.
+KDCOM_SERIAL_DIR = REACTOS_ROOT / "drivers" / "base" / "kdcom"
+# kdvm: the VirtualBox KD transport (builds kdvbox.dll, not kdcom.dll).
+# _WINKD_-only. Has a tiny KdVmExchange asm (VBox backdoor port I/O). → kdvm-rust.
+KDVM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdvm"
 BOOTVID_DIR = REACTOS_ROOT / "drivers" / "base" / "bootvid"
 FREELDR_DIR = REACTOS_ROOT / "boot" / "freeldr" / "freeldr"
 ARM64INPUT_DIR = REACTOS_ROOT / "drivers" / "input" / "arm64input"
@@ -236,6 +243,36 @@ TARGETS = {
         bindgen_files=BINDGEN_FILES,
         hal_bindgen_files={},
         spec_file=KDGDB_DIR / "kdgdb.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64"),
+    ),
+    # serial kdcom — classic NS16550 serial KD transport (sibling of kdgdb).
+    # Same 8-export kddll spec, cportlib serial substrate (= cport-rust).
+    "kdcom-serial": Target(
+        name="kdcom-serial",
+        source_dir=KDCOM_SERIAL_DIR,
+        output_crate=RUST_DIR / "kdcom-serial-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KDCOM_SERIAL_DIR / "kdcom.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64"),
+    ),
+    # kdvm — VirtualBox KD transport (builds kdvbox.dll). KdVmExchange asm
+    # handled in-crate as global_asm!.
+    "kdvm": Target(
+        name="kdvm",
+        source_dir=KDVM_DIR,
+        output_crate=RUST_DIR / "kdvm-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KDVM_DIR / "kdvm.spec",
         system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
         src_subdir=Path("src"),
         cmake_deps_file=None,
@@ -492,6 +529,10 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["kdcom"]
     if "/drivers/base/kdgdb" in posix:
         return TARGETS["kdgdb"]
+    if "/drivers/base/kdvm" in posix:
+        return TARGETS["kdvm"]
+    if "/drivers/base/kdcom" in posix:
+        return TARGETS["kdcom-serial"]
     if "/drivers/base/bootvid" in posix:
         return TARGETS["bootvid"]
     if "/boot/freeldr/" in posix:

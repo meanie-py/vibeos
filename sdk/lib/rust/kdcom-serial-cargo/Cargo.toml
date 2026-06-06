@@ -1,0 +1,18 @@
+# Cargo-driven kdcom.dll link for the CLASSIC serial KD transport
+# (kdcom-serial-rust). Sibling of kdgdb-cargo. i386 + amd64. SPIKE: not wired
+# into cmake (serial kdcom is _WINKD_-gated); standalone link to prove
+# kdcom-serial-rust resolves into a real kdcom.dll with the 8 kddll exports.
+
+[package]
+name = "kdcom-serial-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kdcom-serial"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
