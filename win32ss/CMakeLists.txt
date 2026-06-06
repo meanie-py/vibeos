@@ -132,7 +132,7 @@ list(APPEND SOURCE
     # user/ntuser/hotkey.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hotkey.rs) — cohabitation [ntuser wave 18]
     # user/ntuser/input.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/input.rs) — cohabitation [ntuser wave 30]
     # user/ntuser/ime.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ime.rs) — cohabitation [ntuser wave 36]
-    user/ntuser/keyboard.c
+    # user/ntuser/keyboard.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/keyboard.rs) — cohabitation [ntuser wave 38]
     user/ntuser/kbdlayout.c
     # user/ntuser/layered.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/layered.rs) — cohabitation [ntuser wave 16]
     user/ntuser/menu.c
@@ -350,6 +350,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/cursoricon.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ime.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/msgqueue.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/keyboard.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

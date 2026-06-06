@@ -316,6 +316,8 @@ pub mod cursoricon;
 pub mod ime;
 // [ntuser wave 37 — msgqueue]
 pub mod msgqueue;
+// [ntuser wave 38 — keyboard]
+pub mod keyboard;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
