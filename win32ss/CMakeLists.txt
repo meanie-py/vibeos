@@ -143,7 +143,7 @@ list(APPEND SOURCE
     user/ntuser/mouse.c
     user/ntuser/msgqueue.c
     user/ntuser/nonclient.c
-    user/ntuser/ntstubs.c
+    # user/ntuser/ntstubs.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntstubs.rs) — cohabitation [ntuser wave 22]
     # user/ntuser/ntuser.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntuser.rs) — cohabitation [ntuser wave 7]
     user/ntuser/painting.c
     # user/ntuser/power.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/power.rs) — cohabitation [ntuser wave 6]
@@ -334,6 +334,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollex.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/monitor.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dde.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntstubs.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
