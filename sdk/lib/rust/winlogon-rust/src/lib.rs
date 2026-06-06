@@ -47,6 +47,12 @@ pub mod security;
 // CallNotificationDlls that the other leaves call via the preamble.
 pub mod notify;
 
+// rpcserver.c — the winreg RPC server (StartRpcServer + 36 BaseReg*/Open*
+// manager stubs + MIDL allocator glue + 2 shutdown forwarders). First of the
+// 4 GINA/SAS/RPC cores flipped; the stub handlers feed the winreg-stub crate's
+// SERVER_ROUTINES dispatch table.
+pub mod rpcserver;
+
 // USER-MODE no_std staticlib → needs its own panic handler + eh_personality
 // (same role as userinit-rust / smss-csrss-rust). Must NOT use privileged
 // instructions.

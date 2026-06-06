@@ -22,8 +22,9 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 # purely to (a) populate compile_commands.json under CMakeFiles/winlogon_c.dir
 # and (b) generate cmake_pch.h. winlogon-cargo's build.rs points
 # c_from_compile_db("winlogon_c", …) at it.
+# rpcserver.c flipped → winlogon-rust/src/rpcserver.rs (dropped from the cargo
+# c_from_compile_db); no longer compiled here. The C stays on disk.
 list(APPEND WINLOGON_C_RESIDUE
-    rpcserver.c
     sas.c
     winlogon.c
     wlx.c
