@@ -52,8 +52,19 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int,
             + cache_read_tokens * pread + cache_write_tokens * pwrite) / 1_000_000
 
 
-def _submit_claude(prompt: str, model: str, system_prompt: str = "") -> TranslationResult:
-    """Submit via Anthropic Python SDK."""
+def _submit_claude(prompt: str, model: str, system_prompt: str = "",
+                   file_context: str = "") -> TranslationResult:
+    """Submit via Anthropic Python SDK.
+
+    Two cached system blocks form the stable prefix:
+      1. system_prompt   — file-independent translation rules (cached across the
+                            whole run)
+      2. file_context    — per-file shared context (import superset, gap fns,
+                            globals); byte-identical across all functions of one
+                            file, so functions 2..N read it from cache (~0.1x)
+                            instead of re-sending it uncached (1x).
+    Only the function-specific `prompt` (the user turn) is full price each call.
+    """
     import anthropic
 
     try:
@@ -65,13 +76,24 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "") -> Translat
             "messages": [{"role": "user", "content": prompt}],
         }
 
-        # Use system prompt with caching if provided
+        # Build cached system blocks. Each gets its own cache_control breakpoint
+        # (max 4 allowed); the prefix system_prompt → file_context is what the
+        # cache matches on.
+        system_blocks = []
         if system_prompt:
-            kwargs["system"] = [{
+            system_blocks.append({
                 "type": "text",
                 "text": system_prompt,
                 "cache_control": {"type": "ephemeral"},
-            }]
+            })
+        if file_context:
+            system_blocks.append({
+                "type": "text",
+                "text": file_context,
+                "cache_control": {"type": "ephemeral"},
+            })
+        if system_blocks:
+            kwargs["system"] = system_blocks
 
         # Use streaming to avoid 10-minute timeout on large outputs
         response_text = ""
@@ -210,10 +232,13 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
         )
 
 
-def submit_single(prompt: str, model: str = "", system_prompt: str = "") -> TranslationResult:
+def submit_single(prompt: str, model: str = "", system_prompt: str = "",
+                  file_context: str = "") -> TranslationResult:
     """Submit a single translation request.
 
     Auto-detects backend from model name or ANTHROPIC_API_KEY env var.
+    ``file_context`` is the per-file shared context; on Claude it becomes a
+    second cached system block, on Gemini (no caching) it's prepended inline.
     """
     backend = get_backend()
 
@@ -227,11 +252,12 @@ def submit_single(prompt: str, model: str = "", system_prompt: str = "") -> Tran
         backend = "gemini"
 
     if backend == "claude":
-        return _submit_claude(prompt, model, system_prompt)
+        return _submit_claude(prompt, model, system_prompt, file_context)
     else:
-        # Gemini doesn't support separate system prompt via this path,
-        # so we prepend it to the prompt
-        full_prompt = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
+        # Gemini doesn't support separate system prompt / caching via this path,
+        # so we prepend both the rules and the file context to the prompt.
+        prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
+        full_prompt = (prefix + "\n\n---\n\n" + prompt) if prefix else prompt
         return _submit_gemini(full_prompt, model)
 
 

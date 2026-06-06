@@ -760,7 +760,7 @@ def cmd_translate(args):
     from .resolver import resolve as file_resolve
     from .callgraph import extract_call_graph, topological_sort, print_call_graph
     from .function_resolver import resolve_function
-    from .function_prompt import build_function_prompt, build_preamble_prompt, load_function_system_prompt
+    from .function_prompt import build_function_prompt, build_file_context, build_preamble_prompt, load_function_system_prompt
     from .stitcher import stitch_file
     from .batch_runner import submit_single, TranslationResult, estimate_cost
     from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
@@ -885,6 +885,13 @@ def cmd_translate(args):
 
         # Translate function by function
         all_deps_for_context = extract_call_graph(scan, spec_exports=file_res.exports)
+
+        # Per-file SHARED context (import superset + gap fns + globals), built
+        # ONCE and sent as a cached system block on every function call. This is
+        # byte-identical across the file's N functions, so functions 2..N read
+        # it from cache (~0.1x) instead of re-sending it uncached every call.
+        file_context = build_file_context(file_res, scan, subsystem, target=rustconv_target)
+
         translated: dict[str, str] = {}
         total_in = 0          # uncached input (full price)
         total_out = 0
@@ -900,18 +907,21 @@ def cmd_translate(args):
             # Per-function resolve
             func_res = resolve_function(dep, catalog, file_res.exports, scan.defines)
 
-            # Build prompt
+            # Build the function-specific prompt only — the shared import/gap/
+            # globals context is sent separately as a cached system block
+            # (file_context), so include_shared=False keeps it out of the
+            # full-price per-function user message.
             user_prompt = build_function_prompt(
                 dep, func_res, translated, all_deps_for_context,
                 scan, catalog_fn_names, file_res.exports,
-                target=rustconv_target,
+                target=rustconv_target, include_shared=False,
             )
 
-            if use_claude:
-                result = submit_single(user_prompt, model=model, system_prompt=system_prompt)
-            else:
-                full_prompt = (system_prompt + "\n\n---\n\n" + user_prompt) if system_prompt else user_prompt
-                result = submit_single(full_prompt, model=model)
+            # submit_single handles both backends: Claude gets system_prompt +
+            # file_context as two cached system blocks; Gemini gets them
+            # prepended inline (no caching there).
+            result = submit_single(user_prompt, model=model,
+                                   system_prompt=system_prompt, file_context=file_context)
 
             # Account for EVERY call's tokens — success or failure.
             call_cost = estimate_cost(model, result.input_tokens, result.output_tokens,

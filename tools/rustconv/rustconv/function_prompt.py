@@ -338,6 +338,39 @@ def build_preamble_prompt(
     return "\n".join(parts)
 
 
+def build_file_context(
+    file_res: ResolveResult,
+    scan: "ScanResult",
+    subsystem: str,
+    target: Target | None = None,
+) -> str:
+    """Per-file shared context — byte-stable across every function in the file.
+
+    Contains the import SUPERSET (file-level resolve), gap functions, and the
+    file globals/preamble. It names no specific function, so it is identical
+    for all N function calls of a file and belongs in a *cached* system block:
+    written once on function 1 (~1.25x), read by functions 2..N (~0.1x), versus
+    the old path that re-sent this whole block uncached (1x) on every call.
+    The function-specific bit (export info, translated callees, the C body)
+    stays in the per-call user message — build_function_prompt(include_shared=False).
+    """
+    parts = [
+        "## File Translation Context",
+        "(Shared by every function in this file. The specific function to "
+        "translate is in the user message that follows.)\n",
+    ]
+    parts.append(_format_import_context(file_res, target=target))
+    gap_info = _format_gap_functions(file_res.gap_functions, subsystem)
+    if gap_info:
+        parts.append(gap_info)
+    globals_info = _format_globals_context(
+        scan.globals, scan.globals_text or scan.preamble_text
+    )
+    if globals_info:
+        parts.append(globals_info)
+    return "\n".join(parts)
+
+
 def build_function_prompt(
     func: FunctionDep,
     resolve: ResolveResult,
@@ -347,8 +380,16 @@ def build_function_prompt(
     catalog_fn_names: set[str],
     spec_exports: dict | None = None,
     target: Target | None = None,
+    include_shared: bool = True,
 ) -> str:
     """Build a complete prompt for translating a single C function.
+
+    When ``include_shared`` is False, the file-shared context (import list, gap
+    functions, globals) is OMITTED — the caller is sending it once in a cached
+    system block via build_file_context() instead of re-paying for it on every
+    function. Only the function-specific parts (export info, already-translated
+    callees, the C body) are emitted. Default True keeps the self-contained
+    prompt for the dry-run/preview and any non-cached caller.
 
     Args:
         func: The function to translate
@@ -376,20 +417,18 @@ def build_function_prompt(
     if export_info:
         parts.append(export_info)
 
-    # Imports
-    parts.append(_format_import_context(resolve, target=target))
-
-    # Gap functions
-    gap_info = _format_gap_functions(resolve.gap_functions, subsystem)
-    if gap_info:
-        parts.append(gap_info)
-
-    # Globals
-    globals_info = _format_globals_context(
-        scan.globals, scan.globals_text or scan.preamble_text
-    )
-    if globals_info:
-        parts.append(globals_info)
+    # File-shared context (imports / gap / globals). Omitted when the caller
+    # supplies it once via build_file_context() in a cached system block.
+    if include_shared:
+        parts.append(_format_import_context(resolve, target=target))
+        gap_info = _format_gap_functions(resolve.gap_functions, subsystem)
+        if gap_info:
+            parts.append(gap_info)
+        globals_info = _format_globals_context(
+            scan.globals, scan.globals_text or scan.preamble_text
+        )
+        if globals_info:
+            parts.append(globals_info)
 
     # Callee context
     callee_info = _format_callee_context(func, translated, all_deps, catalog_fn_names)
