@@ -145,6 +145,10 @@ extern "C" {
     // _gcvt/_gcvt_s — genuine gcvt.c + streamout.c sprintf("%.*g").
     fn ref__gcvt(number: f64, ndigit: i32, buff: *mut u8) -> *mut u8;
     fn ref__gcvt_s(buff: *mut u8, size: usize, number: f64, digits: i32) -> i32;
+    // strtod — genuine string/strtod.c, -mlong-double-64 (f64 semantics,
+    // == the cnt-rust f64 core; the documented i386 f80 deviation is the
+    // gap vs the OLD i386 C, not vs this reference).
+    fn ref_strtod(s: *const u8, sret: *mut *mut u8) -> f64;
     // Wave CTYPE — ctype.c. Tables + narrow classification + wide
     // forwarders (the genuine compiled C, build.rs TU-A). The C names
     // with leading underscores map to suffixed ref names (build.rs).
@@ -4116,6 +4120,78 @@ fn diff_math_f32_trig() {
     }
 }
 
+/// strtod / atof — genuine DJ Delorie `strtod.c` (build.rs ref,
+/// -mlong-double-64 → f64 semantics) vs the cnt-rust f64 port. Fuzzes
+/// float-shaped strings (sign, int/frac digits, exponent, the e-no-digit
+/// and no-digit quirks) over the same NUL-terminated buffer; compares
+/// value bit-exact (same_f64) AND the endptr offset, plus the NULL-sret
+/// and atof paths. Pins the documented "f64 on every arch" contract.
+fn diff_strtod() {
+    let mut rng = Rng(0x57c0_d00d_u64);
+    // Structured float strings. The exponent is bounded to <=3 digits:
+    // the genuine C accumulates the exponent into a signed `int` and a
+    // >10-digit exponent overflows it (signed-overflow UB — gcc -O2 then
+    // diverges from any well-defined wrap), so multi-billion exponents
+    // are OUTSIDE strtod's defined domain (the kernel never feeds them;
+    // same documented-limit precedent as fmod-subnormal / scanf-extreme-
+    // exponent). Everything else — sign, int/frac digit runs, the no-digit
+    // and e-without-digit quirks, leading ws, trailing junk — is fuzzed.
+    let dig = |rng: &mut Rng, v: &mut Vec<u8>, max: usize| {
+        for _ in 0..rng.upto(max + 1) {
+            v.push(b"0123456789"[rng.upto(10)]);
+        }
+    };
+    for _ in 0..40000 {
+        let mut s: Vec<u8> = Vec::new();
+        // leading whitespace
+        for _ in 0..rng.upto(3) {
+            s.push(if rng.next() & 1 == 0 { b' ' } else { b'\t' });
+        }
+        match rng.upto(3) {
+            0 => s.push(b'+'),
+            1 => s.push(b'-'),
+            _ => {}
+        }
+        dig(&mut rng, &mut s, 16); // integer digits (may be 0)
+        if rng.next() & 1 == 0 {
+            s.push(b'.');
+            dig(&mut rng, &mut s, 16); // fraction digits (may be 0)
+        }
+        if rng.upto(3) != 0 {
+            s.push(if rng.next() & 1 == 0 { b'e' } else { b'E' });
+            match rng.upto(3) {
+                0 => s.push(b'+'),
+                1 => s.push(b'-'),
+                _ => {}
+            }
+            dig(&mut rng, &mut s, 3); // <=3 exponent digits (may be 0 → quirk)
+        }
+        // occasional trailing junk to exercise the endptr stop point
+        if rng.next() & 3 == 0 {
+            s.push(b"xyz.+- "[rng.upto(7)]);
+        }
+        s.push(0);
+        let off = |p: *mut u8| {
+            if p == 1 as *mut u8 {
+                None
+            } else {
+                Some(p as usize - s.as_ptr() as usize)
+            }
+        };
+        let (mut ec, mut er): (*mut u8, *mut u8) = (1 as *mut u8, 1 as *mut u8);
+        let cv = unsafe { cabi::strtod(s.as_ptr(), &mut ec) };
+        let rv = unsafe { ref_strtod(s.as_ptr(), &mut er) };
+        assert!(same_f64(cv, rv), "strtod v s={s:?} cnt={cv} ref={rv}");
+        assert_eq!(off(ec), off(er), "strtod endptr s={s:?}");
+        // NULL-sret path (value unchanged, no write).
+        let cv2 = unsafe { cabi::strtod(s.as_ptr(), core::ptr::null_mut()) };
+        assert!(same_f64(cv2, rv), "strtod NULL-sret s={s:?}");
+        // atof == strtod(s, 0).
+        let av = unsafe { cabi::atof(s.as_ptr()) };
+        assert!(same_f64(av, rv), "atof s={s:?} cnt={av} ref={rv}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -4167,6 +4243,7 @@ fn main() {
         diff_mbcp,
         diff_tcs_family,
         diff_strtol_family,
+        diff_strtod,
         diff_span,
         diff_wide_atoi,
         diff_casemap,
