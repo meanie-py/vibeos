@@ -19,9 +19,13 @@ list(APPEND LIBCNTPR_SOURCE
 # cmakes — because CRT_*_SOURCE (user-mode msvcrt) embeds the same
 # ${LIBCNTPR_*_SOURCE} vars; the swap must touch libcntpr alone.
 # Files kept on disk (never-delete rule). Kept C (NOT removed):
-# wctype/winesup/wcs/bsearch/lfind/mbstrlen/fltused (UNCOVERED) +
+# wctype/winesup/bsearch/lfind/mbstrlen/fltused (UNCOVERED) +
 # atol (_atoldbl) + scanf (variadic) — PARTIAL. wctype.c is only the
 # dead wine_wctype_table data (no funcs; unused by the linked iswctype).
+# Wave WCS flips the kernel (_LIBCNT_) slice of wcs.c — the 8 pure wide
+# leaves (_wcsnset/_wcsrev/wcscoll/wcspbrk/wcs{cpy,ncpy,cat,ncat}_s) →
+# cabi/wcs.rs. The rest of wcs.c is #ifndef _LIBCNT_ (msvcrt-only:
+# _wcsdup/wcstod/wcstombs/…) so CRT keeps the full .c; libcntpr drops it.
 # The mem/mem{chr,cpy,move,set}.c entries are amd64/arm64-only (i386
 # uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
 # + mem/memicmp.c + stdlib/rand_nt.c + string/ctype.c + iswctype_nt.c +
@@ -39,6 +43,8 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     string/strstr.c
     string/strpbrk.c
     string/strspn.c
+    string/wcs.c
+
     string/atoi64.c
     string/atoi.c
     string/itoa.c
