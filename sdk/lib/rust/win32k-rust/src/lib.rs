@@ -276,6 +276,8 @@ pub mod clipboard;
 pub mod layered;
 // [ntuser wave 17 — timer]
 pub mod timer;
+// [ntuser wave 18 — hotkey]
+pub mod hotkey;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
