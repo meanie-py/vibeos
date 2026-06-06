@@ -1,0 +1,14 @@
+[package]
+name = "svcctl-stub"
+version = "0.1.0"
+edition = "2021"
+description = "Generated Rust RPC server stub for the svcctl (SCM) interface — replaces cmake's widl-generated svcctl_s.c. Linked into services.exe alongside services-rust."
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+midl-rt = { path = "../midl-rt" }
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

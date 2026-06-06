@@ -15,6 +15,12 @@ members = [
     "hal-rust",
     "kdcom-rust",
     "kdcom-cargo",
+    "kdgdb-rust",
+    "kdgdb-cargo",
+    "kdcom-serial-rust",
+    "kdvm-rust",
+    "kdcom-serial-cargo",
+    "kdvm-cargo",
     "bootvid-rust",
     "bootvid-cargo",
     "cport-rust",
@@ -53,6 +59,7 @@ members = [
     "csrsrv-cargo",
     "winsrv-cargo",
     "basesrv-cargo",
+    "csrss-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",
@@ -79,6 +86,9 @@ members = [
     "winlogon-rust",
     "lsass-rust",
     "services-rust",
+    "midl-rt",
+    "svcctl-stub",
+    "winreg-stub",
 ]
 resolver = "2"
 

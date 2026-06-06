@@ -1,0 +1,18 @@
+# Cargo-driven kdvbox.dll link for the VirtualBox KD transport (kdvm-rust).
+# Sibling of kdgdb-cargo. i386 + amd64. SPIKE: not wired into cmake (kdvm is
+# _WINKD_-gated); standalone link to prove kdvm-rust resolves into a real
+# kdvbox.dll with the 8 kddll exports.
+
+[package]
+name = "kdvm-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kdvm"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

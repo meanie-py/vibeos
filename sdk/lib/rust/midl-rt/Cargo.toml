@@ -1,0 +1,10 @@
+[package]
+name = "midl-rt"
+version = "0.1.0"
+edition = "2021"
+description = "Rust type substrate for widl/MIDL-generated RPC server stubs (replaces the rpcndr.h/rpcdcep.h C structs the stub instantiates)."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

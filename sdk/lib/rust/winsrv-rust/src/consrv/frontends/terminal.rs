@@ -15,8 +15,14 @@ use core::ffi::c_void;
 
 extern "C" {
     pub fn LineInputKeyDown(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, KeyEvent: *mut KEY_EVENT_RECORD);
-    pub fn _InterlockedDecrement(Target: *mut LONG) -> LONG;
     pub fn memcpy(dest: PVOID, src: PVOID, count: SIZE_T) -> PVOID;
+}
+// _InterlockedDecrement is the stdcall MSVC intrinsic — consrv/shim.rs provides
+// a single `_InterlockedDecrement` (i386 `__InterlockedDecrement@4`); declare it
+// `extern "system"` to match (coninput.rs declares it the same way), rather than
+// the cdecl twin the old C shim carried just for this call site.
+extern "system" {
+    pub fn _InterlockedDecrement(Target: *mut LONG) -> LONG;
 }
 
 // GUI frontend (Phase 5.6 — not yet translated). Stub extern so the

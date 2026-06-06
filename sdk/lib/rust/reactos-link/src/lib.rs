@@ -388,6 +388,11 @@ pub struct Linker {
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
     allow_stdcall_fixup: bool,
+    /// `Some(n)` emits `-Wl,--stack,<n>` (reserve, in bytes). For native exes
+    /// with deep recursive import chains — e.g. arm64 csrss.exe, where
+    /// llvm-dlltool converts delay-imports to regular ones so every dependency
+    /// loads at once and LdrpLoadDll recursion overflows the default 1MB stack.
+    stack_reserve: Option<u64>,
 }
 
 impl Linker {
@@ -448,6 +453,7 @@ impl Linker {
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
             allow_stdcall_fixup: false,
+            stack_reserve: None,
         }
     }
 
@@ -460,6 +466,15 @@ impl Linker {
     /// to hide a fresh ABI bug — fix the source instead.
     pub fn allow_stdcall_fixup(mut self) -> Self {
         self.allow_stdcall_fixup = true;
+        self
+    }
+
+    /// Reserve `bytes` of stack (`-Wl,--stack,<bytes>`) instead of the default
+    /// 1MB. Needed where a native exe's import graph forces a deep recursive
+    /// LdrpLoadDll chain (arm64 csrss.exe — delay-imports collapse to regular
+    /// on llvm-dlltool, loading every dependency at once). Chainable.
+    pub fn stack_reserve(mut self, bytes: u64) -> Self {
+        self.stack_reserve = Some(bytes);
         self
     }
 
@@ -1098,6 +1113,11 @@ impl Linker {
         if !self.allow_stdcall_fixup {
             println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup");
         }
+        // Custom stack reserve (default 1MB otherwise) — e.g. arm64 csrss.exe's
+        // deep LdrpLoadDll chain.
+        if let Some(bytes) = self.stack_reserve {
+            println!("cargo:rustc-link-arg=-Wl,--stack,{bytes}");
+        }
         // ---- kind-specific subsystem / alignment / sections ----------
         let (entry, image_base): (&String, Option<u64>) = match &kind {
             ModuleKind::KernelExe { entry, image_base } => {
@@ -1658,6 +1678,100 @@ fn read_json_string(b: &[u8], start: usize) -> (String, usize) {
     (s, i)
 }
 
+/// Generate a Rust RPC **server** stub for `idl_rel` and return the path to the
+/// emitted `.rs` (for a stub crate's `build.rs` to hand to `include!`). This is
+/// the Rust-output counterpart of the `rpc_server_stub` link method: instead of
+/// compiling widl's generated C and linking it, we transliterate it to Rust
+/// (via `tools/widl_to_rust.py`, against the `midl-rt` crate) so the stub is
+/// pure Rust with no C in the tree.
+///
+/// Steps (all in `OUT_DIR/rpc-<name>/`):
+///   1. Replay cmake's recorded `widl` command (from `build.ninja`) → `<name>.c`
+///      + `<name>.h`.
+///   2. Compile `<name>.c` → `<name>.o` (compile_commands.json replay) PURELY to
+///      read the exact per-arch external symbol decorations (i386 stdcall `@N`,
+///      incl. by-value struct params) — the `.o` is never linked.
+///   3. Run `widl_to_rust.py` (`--symobj <name>.o --arch <a> --nm <llvm-nm>`)
+///      → `<name>.rs`.
+///
+/// `name` is the stub base (e.g. `svcctl_s`); `c_marker` the cmake target whose
+/// compile_commands entry compiles `<name>.c` (e.g. `services_c`). Designed to
+/// be called from a `build.rs`; reads `CARGO_CFG_TARGET_ARCH` / `CARGO_MANIFEST_DIR`
+/// / `OUT_DIR` from the environment exactly like `Linker::new`.
+pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> PathBuf {
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    let arch = arch_cfg(&target_arch);
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let repo_root = manifest_dir.ancestors().nth(4).expect("repo root").to_path_buf();
+    let build_dir = repo_root.join(format!("build-{}", arch.name));
+    let out_sub = PathBuf::from(env::var("OUT_DIR").unwrap()).join(format!("rpc-{name}"));
+    std::fs::create_dir_all(&out_sub).ok();
+
+    let widl = build_dir.join("host-tools/bin/widl");
+    if !widl.exists() {
+        panic!(
+            "generate_rpc_stub_rust needs {} — run a cmake build first (host-tools widl)",
+            widl.display()
+        );
+    }
+    let ninja_path = build_dir.join("build.ninja");
+    let ninja = std::fs::read_to_string(&ninja_path)
+        .unwrap_or_else(|e| panic!("need {}: {e}", ninja_path.display()));
+    let db_path = build_dir.join("compile_commands.json");
+    let db_text = std::fs::read_to_string(&db_path)
+        .unwrap_or_else(|e| panic!("need {} (CMAKE_EXPORT_COMPILE_COMMANDS): {e}", db_path.display()));
+    let entries = parse_ccdb(&db_text);
+
+    let gen_c = out_sub.join(format!("{name}.c"));
+    let gen_h = out_sub.join(format!("{name}.h"));
+    let gen_o = out_sub.join(format!("{name}.o"));
+    let gen_rs = out_sub.join(format!("{name}.rs"));
+
+    // 1. widl replay → .c + .h
+    let raw = widl_command_from_ninja(&ninja, name)
+        .unwrap_or_else(|| panic!("no widl CUSTOM_COMMAND for {name}.c in build.ninja"));
+    let cmd = rewrite_widl_outputs(
+        &raw, name, gen_c.to_str().unwrap(), gen_h.to_str().unwrap(),
+    );
+    let st = Command::new("sh").arg("-c").arg(&cmd).status()
+        .unwrap_or_else(|e| panic!("run widl for {name}: {e}"));
+    assert!(st.success(), "widl codegen failed for {name}");
+
+    // 2. compile .c → .o for symbol decorations (replay; never linked)
+    let marker = format!("CMakeFiles/{c_marker}.dir");
+    let suffix = format!("/{name}.c");
+    let (dir, ccmd, cmake_file) = lookup_cc_suffix(&entries, &suffix, &marker)
+        .unwrap_or_else(|| panic!("no compile_commands entry for *{suffix} in {c_marker}"));
+    let mut args = transform_cc(&ccmd, gen_o.to_str().unwrap());
+    for a in args.iter_mut() {
+        if *a == cmake_file {
+            *a = gen_c.to_str().unwrap().to_string();
+        }
+    }
+    let st = Command::new(&args[0]).args(&args[1..]).current_dir(&dir).status()
+        .unwrap_or_else(|e| panic!("compile {name}.c for decorations: {e}"));
+    assert!(st.success(), "decoration compile failed for {name}");
+
+    // 3. transliterate to Rust
+    let nm = repo_root.join(".build-tools/llvm-mingw/bin/llvm-nm");
+    let script = repo_root.join("tools/widl_to_rust.py");
+    let st = Command::new("python3")
+        .arg(&script)
+        .arg(&gen_c)
+        .arg("--symobj").arg(&gen_o)
+        .arg("--arch").arg(arch.name)
+        .arg("--nm").arg(&nm)
+        .arg("-o").arg(&gen_rs)
+        .status()
+        .unwrap_or_else(|e| panic!("run widl_to_rust.py for {name}: {e}"));
+    assert!(st.success(), "widl_to_rust.py failed for {name}");
+
+    println!("cargo:rerun-if-changed={}", repo_root.join(idl_rel).display());
+    println!("cargo:rerun-if-changed={}", script.display());
+    println!("cargo:rerun-if-changed={}", ninja_path.display());
+    gen_rs
+}
+
 /// Parse compile_commands.json into one `(key, value)` list per object. All
 /// values are strings; alternating string tokens inside an object are
 /// key/value (cmake never nests objects or uses non-string values here).
@@ -1739,6 +1853,85 @@ fn file_command(o: &[(String, String)]) -> String {
         .find(|(k, _)| k == "command")
         .map(|(_, v)| v.clone())
         .unwrap_or_default()
+}
+
+/// Like `lookup_cc` but matches the compile_commands entry by file-path SUFFIX
+/// (for generated sources whose abs path the caller doesn't reconstruct).
+/// Returns (directory, command, matched-file-path).
+fn lookup_cc_suffix(
+    entries: &[Vec<(String, String)>],
+    suffix: &str,
+    marker: &str,
+) -> Option<(String, String, String)> {
+    let field = |o: &[(String, String)], key: &str| -> Option<String> {
+        o.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    };
+    for o in entries {
+        let file = match field(o, "file") {
+            Some(f) => f,
+            None => continue,
+        };
+        if !file.ends_with(suffix) {
+            continue;
+        }
+        let cmd = file_command(o);
+        if cmd.contains(marker) {
+            return Some((field(o, "directory").unwrap_or_default(), cmd, file));
+        }
+    }
+    None
+}
+
+/// Extract cmake's recorded `widl` CUSTOM_COMMAND for `<name>.c` from build.ninja
+/// (the `build … <name>.c <name>.h … : CUSTOM_COMMAND` statement's `COMMAND =`).
+/// Returns the raw shell command (`cd <dir> && widl … && widl …`).
+fn widl_command_from_ninja(ninja: &str, name: &str) -> Option<String> {
+    let out_c = format!("/{name}.c ");
+    let lines: Vec<&str> = ninja.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let l = lines[i];
+        if l.starts_with("build ") && l.contains(": CUSTOM_COMMAND") && l.contains(&out_c) {
+            let mut j = i + 1;
+            while j < lines.len() && !lines[j].starts_with("build ") {
+                if let Some(cmd) = lines[j].trim_start().strip_prefix("COMMAND = ") {
+                    return Some(cmd.to_string());
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Rewrite the two `-o <path>.{c,h}` outputs of a replayed `widl` command to our
+/// OUT_DIR paths (leaving the `-H <name>.h` include-name hint + all `-I`/`-D`/
+/// flags untouched). Whitespace-split is safe: ReactOS build paths have no spaces.
+fn rewrite_widl_outputs(cmd: &str, name: &str, gen_c: &str, gen_h: &str) -> String {
+    let dot_c = format!("/{name}.c");
+    let dot_h = format!("/{name}.h");
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    let mut out: Vec<String> = Vec::with_capacity(parts.len());
+    let mut i = 0;
+    while i < parts.len() {
+        if parts[i] == "-o" && i + 1 < parts.len() {
+            let t = parts[i + 1];
+            out.push("-o".to_string());
+            if t.ends_with(&dot_c) {
+                out.push(gen_c.to_string());
+            } else if t.ends_with(&dot_h) {
+                out.push(gen_h.to_string());
+            } else {
+                out.push(t.to_string());
+            }
+            i += 2;
+            continue;
+        }
+        out.push(parts[i].to_string());
+        i += 1;
+    }
+    out.join(" ")
 }
 
 /// Transform a replayed clang command: drop the ninja-built `.pch` (the

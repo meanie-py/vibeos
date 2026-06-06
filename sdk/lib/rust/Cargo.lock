@@ -138,6 +138,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "csrss-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "encode"
 version = "0.1.0"
 
@@ -241,6 +248,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdcom-serial-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "kdcom-serial-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kdgdb-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "kdgdb-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kdvm-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "kdvm-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "ke-inlines"
 version = "0.1.0"
 dependencies = [
@@ -337,6 +386,10 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+
+[[package]]
+name = "midl-rt"
+version = "0.1.0"
 
 [[package]]
 name = "mouclass-rust"
@@ -589,6 +642,14 @@ name = "splaytree"
 version = "0.1.0"
 
 [[package]]
+name = "svcctl-stub"
+version = "0.1.0"
+dependencies = [
+ "midl-rt",
+ "reactos-link",
+]
+
+[[package]]
 name = "thread_local"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -753,6 +814,14 @@ dependencies = [
 [[package]]
 name = "winlogon-sys"
 version = "0.1.0"
+
+[[package]]
+name = "winreg-stub"
+version = "0.1.0"
+dependencies = [
+ "midl-rt",
+ "reactos-link",
+]
 
 [[package]]
 name = "winsrv-cargo"

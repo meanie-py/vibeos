@@ -1,0 +1,22 @@
+# kdcom-serial-rust — Rust translation of the CLASSIC serial KD transport
+# (drivers/base/kdcom: kdcom.c + kddll.c + kdserial.c), distinct from the
+# default kdrosdbg-as-kdcom.dll (= kdcom-rust). _WINKD_-only, never built on
+# the default llvm-mingw build; validated standalone via
+# `cargo build -p kdcom-serial-rust`. i386 + amd64 (no arm64 in the C).
+
+[package]
+name = "kdcom-serial-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+# KDDEBUG mirrors the C `#ifdef KDDEBUG` debug-only path (KdpDbgPrint over a
+# second COM port). Off by default, matching kddll.h's `#ifndef KDDEBUG`.
+[features]
+default = []
+KDDEBUG = []
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
