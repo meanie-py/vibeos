@@ -294,6 +294,8 @@ pub mod simplecall;
 pub mod focus;
 // [ntuser wave 26 — misc]
 pub mod misc;
+// [ntuser wave 27 — nonclient]
+pub mod nonclient;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

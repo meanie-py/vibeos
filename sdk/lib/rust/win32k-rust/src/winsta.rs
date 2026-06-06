@@ -72,7 +72,11 @@ unsafe fn NtCurrentTeb() -> *mut TEB {
     #[cfg(target_arch = "x86_64")]
     core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb, options(nostack, pure, readonly));
     #[cfg(target_arch = "aarch64")]
-    { teb = ntkrnl_sys::ddk::NtCurrentTeb() as *mut TEB; }
+    // Windows ARM64 carries the current TEB pointer in x18 (the platform
+    // register); TPIDR_EL0 is not the kernel's source of truth. Matches
+    // ntkrnl_sys::inline::ke::NtCurrentTeb. NtCurrentTeb is a FORCEINLINE
+    // intrinsic with no exported symbol, so an extern call won't link.
+    core::arch::asm!("mov {}, x18", out(reg) teb, options(nomem, nostack, preserves_flags));
     teb
 }
 #[inline(always)]
