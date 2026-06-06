@@ -352,6 +352,26 @@ if(ARCH STREQUAL "amd64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 13): the f32 transcendental twins → cnt-rust
+# (float feature). These are the AMD-libm math/libm_sse2/*f.c — amd64-ONLY
+# in libcntpr (arm64's libcntpr has none of them; its CRT uses portable
+# math/*f.c in a different archive). The Rust reuses the f64 foundation
+# (splitexp/scale_double + full-precision sinh/cosh tables) plus the new
+# splitexpf/scaleFloat_2 + atan(j/256)/Payne-Hanek tables. difftest-pinned
+# bit-exact vs the genuine C.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/acosf.c
+        math/libm_sse2/asinf.c
+        math/libm_sse2/atanf.c
+        math/libm_sse2/atan2f.c
+        math/libm_sse2/coshf.c
+        math/libm_sse2/sinhf.c
+        math/libm_sse2/tanf.c
+        math/libm_sse2/tanhf.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

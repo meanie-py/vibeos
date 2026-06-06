@@ -16,6 +16,10 @@
 #define OP_ASIN  0
 #define OP_ACOS  0
 #define OP_ATAN  0
+#define OP_ATAN2 0
+#define OP_TAN   0
+#define OP_SIN   0
+#define OP_COS   0
 #define OP_HYPOT 0
 #define OP_POW   0
 
