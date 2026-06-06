@@ -40,12 +40,6 @@ fn main() {
         // pulling concfg-rust as a Cargo dep).
         .rust_staticlib("winsrv-rust")
         .rust_features(&["winsrv_dll_only"])
-        // winsrv-rust has cross-module extern "C"-def / extern "system"-call
-        // ABI mismatches (e.g. HistoryReshapeAllBuffers: history.rs defines it
-        // extern "C", settings.rs calls it extern "system"). The cmake link
-        // resolves these via lld's stdcall-fixup (it passes no
-        // --disable-stdcall-fixup); match that so the cargo link is equivalent.
-        .allow_stdcall_fixup()
         // Exports via spec2def-generated winsrv.def (ConServerDllInitialization
         // / UserServerDllInitialization / _UserSoundSentry / …).
         .spec2def("win32ss/user/winsrv/winsrv.spec", "winsrv.dll")
