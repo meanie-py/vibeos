@@ -39,14 +39,14 @@ fn main() {
         // Still-C residue of the partial flip, compiled in-cargo by replaying
         // cmake's clang (the `winlogon_c` OBJECT lib).
         // winlogon_rust_stub.c dropped — cmake-era empty cohabitation stub
-        // (archive-extraction hack), vestigial in the cargo link. The 4 real
-        // partial-flip .c (GINA/SAS/RPC core) stay until translated.
+        // (archive-extraction hack), vestigial in the cargo link. rpcserver.c +
+        // winlogon.c flipped → winlogon-rust/src/{rpcserver,winlogon}.rs (the
+        // latter owns WLSession/hAppInstance/WlStrDup, which the still-C sas.c/
+        // wlx.c resolve by symbol). The 2 remaining GINA/SAS cores stay C.
         .c_from_compile_db(
             "winlogon_c",
             &[
-                "base/system/winlogon/rpcserver.c",
                 "base/system/winlogon/sas.c",
-                "base/system/winlogon/winlogon.c",
                 "base/system/winlogon/wlx.c",
             ],
         )

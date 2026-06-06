@@ -1,58 +1,14 @@
 # ============================================================================
-# Rust framebuffer video driver
-# (sdk/lib/rust/arm64vid-rust -> libarm64vid_rust.a)
+# arm64vid.sys — cargo-driven final link (sdk/lib/rust/arm64vid-cargo via reactos-link)
 # ============================================================================
-# arm64vid.c is translated to Rust. Its #[no_mangle] DriverEntry (and all
-# internal functions) replace the C arm64vid.c (commented out of the
-# add_library SOURCES below; the .c is kept on disk per the
-# never-delete-a-translation rule). Mirrors the arm64input-rust cohabitation
-# (drivers/input/arm64input/CMakeLists.txt): one staticlib linked into the
-# cmake-built kernelmodedriver.
-#
-# Unlike arm64input (arm64-only), this driver is the live GOP/linear
-# framebuffer video device on ALL THREE UEFI arches, so the Rust target is
-# selected per-arch (mirroring hal/halx86/CMakeLists.txt).
-
-set(ARM64VID_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(ARM64VID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-arm64vid-target")
-if(ARCH STREQUAL "i386")
-    set(ARM64VID_RUST_TARGET "i686-pc-windows-gnu")
-    # i386: disable SSE — same constraint as kernel-rust / hal-rust (no SSE
-    # in early kernel-mode paths).
-    set(ARM64VID_RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
-elseif(ARCH STREQUAL "amd64")
-    set(ARM64VID_RUST_TARGET "x86_64-pc-windows-gnu")
-    set(ARM64VID_RUST_EXTRA_ENV "")
-else()
-    set(ARM64VID_RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(ARM64VID_RUST_EXTRA_ENV "")
-endif()
-set(ARM64VID_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libarm64vid_rust.a")
-
-add_custom_command(
-    OUTPUT ${ARM64VID_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${ARM64VID_RUST_TARGET_DIR} ${ARM64VID_RUST_EXTRA_ENV}
-        cargo build --release --target ${ARM64VID_RUST_TARGET}
-            -p arm64vid-rust
-            --manifest-path ${ARM64VID_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${ARM64VID_RUST_TARGET_DIR}/${ARM64VID_RUST_TARGET}/release/libarm64vid_rust.a
-        ${ARM64VID_RUST_LIB}
-    DEPENDS ${ARM64VID_RUST_WORKSPACE_DIR}/arm64vid-rust/Cargo.toml
-            ${ARM64VID_RUST_WORKSPACE_DIR}/arm64vid-rust/src/lib.rs
-            ${ARM64VID_RUST_WORKSPACE_DIR}/arm64vid-rust/src/arm64vid.rs
-    WORKING_DIRECTORY ${ARM64VID_RUST_WORKSPACE_DIR}
-    COMMENT "Building arm64vid-rust (${ARM64VID_RUST_TARGET})"
-    VERBATIM
-)
-add_custom_target(rust_arm64vid DEPENDS ${ARM64VID_RUST_LIB})
-
-# arm64vid.c -- replaced by Rust (sdk/lib/rust/arm64vid-rust/src/arm64vid.rs)
-add_library(arm64vid MODULE rust_cohab_stub.c)
-set_module_type(arm64vid kernelmodedriver)
-set_target_properties(arm64vid PROPERTIES LINKER_LANGUAGE C)
-target_link_libraries(arm64vid ${ARM64VID_RUST_LIB})
-add_importlibs(arm64vid ntoskrnl hal)
-add_dependencies(arm64vid rust_arm64vid)
-add_cd_file(TARGET arm64vid DESTINATION reactos/system32/drivers FOR all)
+# Despite the name, arm64vid is the LIVE GOP/linear-framebuffer video driver on
+# all three UEFI arches (it renders the desktop). arm64vid.c is fully translated
+# to Rust (sdk/lib/rust/arm64vid-rust, kept on disk per the never-delete rule);
+# its DriverEntry is the PE entry point. The final arm64vid.sys link is no longer
+# cmake's add_library(MODULE) + the rust_cohab_stub.c + per-arch custom_command
+# scaffolding — it is driven by cargo (arm64vid-cargo's build.rs → reactos-link,
+# ModuleKind::KernelDll, entry=DriverEntry, no exports). add_cargo_module builds
+# arm64vid-rust, links it with the ntoskrnl/hal import libs into the shipping PE,
+# applies the kernel-dll post-link and registers it on the boot media.
+add_cargo_module(arm64vid arm64vid-cargo arm64vid.sys KIND kerneldll
+    BODY_CRATE arm64vid-rust DESTINATION reactos/system32/drivers)

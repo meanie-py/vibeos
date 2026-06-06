@@ -16,10 +16,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "arm64input-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "arm64input-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "arm64vid-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
 ]
 
 [[package]]
@@ -205,6 +219,13 @@ dependencies = [
 [[package]]
 name = "handle"
 version = "0.1.0"
+
+[[package]]
+name = "i8042prt-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "i8042prt-rust"
@@ -403,6 +424,20 @@ name = "network"
 version = "0.1.0"
 
 [[package]]
+name = "nmidebug-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "nmidebug-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "ntdll-cargo"
 version = "0.1.0"
 dependencies = [
@@ -469,6 +504,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys",
+]
+
+[[package]]
+name = "null-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "null-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

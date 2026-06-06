@@ -1,0 +1,17 @@
+# nmidebug-rust — Rust translation of drivers/base/nmidebug/nmidebug.c, the
+# NMI Debug Driver. Compiles to a staticlib whose DriverEntry becomes the
+# nmidebug.sys PE entry point; the final link is driven by nmidebug-cargo
+# (reactos-link ModuleKind::KernelDll, entry=DriverEntry, no exports).
+# Builds for all 3 arches like the C (the NMI-clear Easter egg is x86/amd64
+# only; arm64 registers a no-op callback).
+
+[package]
+name = "nmidebug-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

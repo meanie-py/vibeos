@@ -49,6 +49,10 @@ pub mod database;
 // Translated by rustconv (Opus 4.8).
 pub mod rpcserver;
 
+// services.c — the SCM main controller (wWinMain entry + bootstrap). Owns the
+// 4 cross-module SCM state flags. The 8th and final services.exe file flipped.
+pub mod services;
+
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role
 // as winsrv-rust / smss-csrss-rust). No privileged instructions; spin.
 #[panic_handler]
