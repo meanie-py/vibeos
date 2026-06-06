@@ -1,0 +1,19 @@
+# Cargo-driven `i8042prt.sys` link (i386 + amd64 + arm64). The PS/2 port
+# driver. Sibling of `null-cargo`: build.rs is a manifest for the shared
+# `reactos-link` engine. The Rust body is the `i8042prt-rust` staticlib; its
+# `DriverEntry` is the PE entry point (kernelmodedriver = kerneldll link with
+# entry=DriverEntry, no exports).
+
+[package]
+name = "i8042prt-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "i8042prt"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
