@@ -16,6 +16,7 @@ members = [
     "kdcom-rust",
     "kdcom-cargo",
     "kdgdb-rust",
+    "kdgdb-cargo",
     "bootvid-rust",
     "bootvid-cargo",
     "cport-rust",

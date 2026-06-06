@@ -248,6 +248,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdgdb-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "kdgdb-rust"
 version = "0.1.0"
 dependencies = [
