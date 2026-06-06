@@ -19,8 +19,11 @@ list(APPEND LIBCNTPR_SOURCE
 # cmakes — because CRT_*_SOURCE (user-mode msvcrt) embeds the same
 # ${LIBCNTPR_*_SOURCE} vars; the swap must touch libcntpr alone.
 # Files kept on disk (never-delete rule). Kept C (NOT removed):
-# wctype/winesup/bsearch/lfind/mbstrlen/fltused (UNCOVERED) +
-# atol (_atoldbl). wctype.c is only the dead wine_wctype_table data
+# wctype/winesup/mbstrlen/exp2f/_invoke_matherr/fltused (UNCOVERED) +
+# atol (_atoldbl). bsearch/lfind are now Rust (Wave SEARCH below).
+# mbstrlen/exp2f/_invoke_matherr are kernel-dead (no callers) and each
+# carries a wrinkle (NlsLeadByteInfo global / no powf / static-mut+struct)
+# so they stay C. wctype.c is only the dead wine_wctype_table data
 # (no funcs; unused by the linked iswctype). winesup.c stays C but its
 # _internal_handle_float is now dead (the Rust scanf engine does its own
 # f64 synth — see the Wave SCANF block below).
@@ -139,6 +142,12 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
     # Wave MATH-TIERB: `div` is pure integer (div_t of two ints, no float
     # in its signature) → cnt-rust owns it on all 3 arches.
     math/div.c
+    # Wave SEARCH: bsearch + _lfind are pure pointer-walk leaves over an
+    # opaque comparator (like qsort) → cnt-rust (cabi/search.rs), uniform
+    # on all 3 arches. _lsearch stays C — it is #ifndef _LIBCNT_
+    # (msvcrt-only) so the kernel never linked it.
+    search/bsearch.c
+    search/lfind.c
 )
 
 # Wave FLOATCVT-i386 (float printf): the float-formatting half of

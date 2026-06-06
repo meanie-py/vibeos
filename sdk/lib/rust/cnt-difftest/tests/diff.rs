@@ -25,6 +25,8 @@ extern "C" {
     fn ref_rand() -> i32;
     fn ref_srand(seed: u32);
     fn ref_qsort(base: *mut c_void, n: usize, es: usize, cmp: QCmp);
+    fn ref_bsearch(key: *const c_void, base: *const c_void, nelem: usize, size: usize, cmp: QCmp) -> *mut c_void;
+    fn ref_lfind(key: *const c_void, base: *const c_void, nelp: *const u32, width: u32, cmp: QCmp) -> *mut c_void;
     fn ref_strnlen(s: *const u8, cap: usize) -> usize;
     fn ref_strncmp(a: *const u8, b: *const u8, n: usize) -> i32;
     fn ref_strchr(s: *const u8, c: i32) -> *mut u8;
@@ -2797,6 +2799,80 @@ fn diff_qsort() {
     }
 }
 
+// ── Wave SEARCH: bsearch / _lfind ──────────────────────────────────
+// Compare the returned element pointer as an *index* into the buffer
+// (raw pointers differ between the two builds; the offset must match).
+fn ptr_index(ret: *mut c_void, base: *const u8, es: usize) -> isize {
+    if ret.is_null() {
+        -1
+    } else {
+        ((ret as usize - base as usize) / es) as isize
+    }
+}
+
+fn diff_bsearch() {
+    let mut rng = Rng(0x51a9_7c3e_0d62_b105);
+    let sizes = [1usize, 2, 3, 4, 8];
+    for _ in 0..6000 {
+        let es = sizes[rng.upto(sizes.len())];
+        let n = rng.upto(40);
+        // Build a SORTED buffer (bsearch's precondition). Small alphabet
+        // → duplicate keys exercise the tie path (the C returns whichever
+        // probe lands first; the port replicates the exact probe order).
+        let mut elems: Vec<Vec<u8>> = (0..n)
+            .map(|_| (0..es).map(|_| (rng.next() % 6) as u8).collect())
+            .collect();
+        QSORT_ES.store(es, core::sync::atomic::Ordering::Relaxed);
+        elems.sort();
+        let buf: Vec<u8> = elems.into_iter().flatten().collect();
+        // key: half the time an element drawn from the array, half random.
+        let key: Vec<u8> = if n > 0 && rng.next() & 1 == 0 {
+            let i = rng.upto(n);
+            buf[i * es..i * es + es].to_vec()
+        } else {
+            (0..es).map(|_| (rng.next() % 6) as u8).collect()
+        };
+        let cmp: QCmp = if rng.next() & 1 == 0 { cmp_memcmp_es } else { cmp_firstbyte };
+        unsafe {
+            let r1 = cabi::bsearch(key.as_ptr() as *const c_void, buf.as_ptr() as *const c_void, n, es, cmp);
+            let r2 = ref_bsearch(key.as_ptr() as *const c_void, buf.as_ptr() as *const c_void, n, es, cmp);
+            assert_eq!(
+                ptr_index(r1, buf.as_ptr(), es),
+                ptr_index(r2, buf.as_ptr(), es),
+                "bsearch es={es} n={n}"
+            );
+        }
+    }
+}
+
+fn diff_lfind() {
+    let mut rng = Rng(0x7b32_19fe_c4a0_d886);
+    let sizes = [1u32, 2, 3, 4, 8];
+    for _ in 0..6000 {
+        let es = sizes[rng.upto(sizes.len())];
+        let n = rng.upto(40) as u32;
+        let total = (n as usize * es as usize).max(1);
+        let buf: Vec<u8> = (0..total).map(|_| (rng.next() % 6) as u8).collect();
+        let key: Vec<u8> = if n > 0 && rng.next() & 1 == 0 {
+            let i = rng.upto(n as usize);
+            buf[i * es as usize..(i + 1) * es as usize].to_vec()
+        } else {
+            (0..es).map(|_| (rng.next() % 6) as u8).collect()
+        };
+        QSORT_ES.store(es as usize, core::sync::atomic::Ordering::Relaxed);
+        let cmp: QCmp = if rng.next() & 1 == 0 { cmp_memcmp_es } else { cmp_firstbyte };
+        unsafe {
+            let r1 = cabi::_lfind(key.as_ptr() as *const c_void, buf.as_ptr() as *const c_void, &n, es, cmp);
+            let r2 = ref_lfind(key.as_ptr() as *const c_void, buf.as_ptr() as *const c_void, &n, es, cmp);
+            assert_eq!(
+                ptr_index(r1, buf.as_ptr(), es as usize),
+                ptr_index(r2, buf.as_ptr(), es as usize),
+                "lfind es={es} n={n}"
+            );
+        }
+    }
+}
+
 
 fn diff_ctype() {
     // ctype lives in its own crate (cnt-ctype); shadow the module-level
@@ -4372,6 +4448,8 @@ fn main() {
         diff_memicmp,
         diff_rand,
         diff_qsort,
+        diff_bsearch,
+        diff_lfind,
         diff_ctype,
         diff_streamout_integers,
         diff_streamout_chars_strings_percent,

@@ -108,6 +108,16 @@ fn main() {
             "#define __cdecl\n#include <stdint.h>\n\
              #define qsort ref_qsort\n{}",
             inc(s("stdlib/qsort.c")))),
+        // Wave SEARCH — bsearch.c + lfind.c. Both pull <stdlib.h>; lfind
+        // additionally pulls <search.h>. Rename the public symbol so the
+        // host decl, the definition, and any internal call all become
+        // ref_<name> in this TU.
+        ("bsearch", format!(
+            "#define __cdecl\n#define bsearch ref_bsearch\n{}",
+            inc(s("search/bsearch.c")))),
+        ("lfind", format!(
+            "#define __cdecl\n#define _lfind ref_lfind\n{}",
+            inc(s("search/lfind.c")))),
         // atol = (long)_atoi64; skip atol.c's _atoldbl (needs _LDOUBLE).
         // Rename the helper so it doesn't collide with cnt-rust's own
         // #[no_mangle] `_atoi64` shim linked into this test binary.
