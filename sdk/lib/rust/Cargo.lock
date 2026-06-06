@@ -657,6 +657,7 @@ dependencies = [
  "random",
  "rtl-heap",
  "rtl-strings",
+ "rtl-threadpool",
  "slist",
  "splaytree",
  "time",
@@ -668,6 +669,13 @@ name = "rtl-strings"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+]
+
+[[package]]
+name = "rtl-threadpool"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

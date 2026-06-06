@@ -82,6 +82,7 @@ members = [
     "reactos-link",
     "rtl-rust",
     "rtl-strings",
+    "rtl-threadpool",
     "rtl-heap",
     "rtl-difftest",
     "slist",

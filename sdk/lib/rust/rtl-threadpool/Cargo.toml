@@ -1,0 +1,25 @@
+# rtl-threadpool — Rust translation of ReactOS RTL thread-pool cluster:
+#   sdk/lib/rtl/threadpool.c   (Wine object-oriented TpAlloc* / RtlQueueWorkItem / timer-queue)
+#   sdk/lib/rtl/workitem.c     (old RtlQueueWorkItem worker-thread pool)
+#   sdk/lib/rtl/timerqueue.c   (RtlCreateTimerQueue / RtlCreateTimer)
+#
+# These compile into librtl.a (the `rtl` cmake target, which already links
+# librtl_rust.a). The internal threadpool/timer/worker structs are file-private
+# (allocated via RtlAllocateHeap, cast from the opaque TP_* handles) so their
+# layout only needs to be self-consistent within Rust; the PUBLIC winnt TP_*
+# types in types.rs are mirrored byte-exact (callers pass them in).
+[package]
+name = "rtl-threadpool"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The #[no_mangle] extern "system" shim layer (the kernel/ntdll link surface).
+cabi = []
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
