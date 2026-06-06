@@ -64,3 +64,41 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_eh_personality() {}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn memcpy(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    n: usize,
+) -> *mut core::ffi::c_void {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, n);
+    dst
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn memset(
+    dst: *mut core::ffi::c_void,
+    val: i32,
+    n: usize,
+) -> *mut core::ffi::c_void {
+    core::ptr::write_bytes(dst as *mut u8, val as u8, n);
+    dst
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn memcmp(
+    left: *const core::ffi::c_void,
+    right: *const core::ffi::c_void,
+    n: usize,
+) -> i32 {
+    let mut i = 0usize;
+    while i < n {
+        let a = *(left as *const u8).add(i);
+        let b = *(right as *const u8).add(i);
+        if a != b {
+            return a as i32 - b as i32;
+        }
+        i += 1;
+    }
+    0
+}

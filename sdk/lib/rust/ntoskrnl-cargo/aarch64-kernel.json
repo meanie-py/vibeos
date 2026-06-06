@@ -1,4 +1,6 @@
 {
+  "abi": "llvm",
+  "abi-return-struct-as-int": true,
   "allows-weak-linkage": false,
   "arch": "aarch64",
   "binary-format": "coff",
@@ -11,6 +13,7 @@
   "emit-debug-gdb-scripts": false,
   "env": "gnu",
   "exe-suffix": ".exe",
+  "features": "+v8a,+neon,+outline-atomics",
   "frame-pointer": "always",
   "function-sections": false,
   "is-like-windows": true,
@@ -18,7 +21,7 @@
   "llvm-target": "aarch64-pc-windows-gnu",
   "max-atomic-width": 128,
   "metadata": {
-    "description": "ReactOS aarch64 cargo-link target (minimal, -nostdlib)",
+    "description": "ReactOS aarch64 cargo-link target (gnullvm codegen, -nostdlib kernel)",
     "host_tools": false,
     "std": false,
     "tier": 3

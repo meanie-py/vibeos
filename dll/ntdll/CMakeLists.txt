@@ -109,6 +109,7 @@ list(APPEND PCH_SKIP_SOURCE
 # rtl_unittest / advapi32 still link them.)
 add_cargo_module(ntdll ntdll-cargo ntdll.dll
     KIND win32dll
+    BODY_CRATES ntdll-rust smss-csrss-rust
     # asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
     # engine needs to assemble dispatch.S + ntoskrnl/ntdll.S from source.
     EXTRA_DEPENDS rtl rtl_vista libcntpr ntstatus asm)

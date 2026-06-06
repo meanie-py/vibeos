@@ -30,6 +30,7 @@ members = [
     "i8042prt-cargo",
     "kbdclass-cargo",
     "mouclass-cargo",
+    "framebuf-cargo",
     "bootvid-rust",
     "bootvid-cargo",
     "cport-rust",
