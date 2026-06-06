@@ -48,14 +48,10 @@ fn main() {
                 "base/system/winlogon/wlx.c",
             ],
         )
-        // The winreg RPC server stub is GENERATED (widl/MIDL) AND compiled
-        // IN-cargo (rpc_server_stub replays cmake's widl codegen into OUT_DIR +
-        // compiles it) — self-hosting the MIDL codegen.
-        .rpc_server_stub(
-            "sdk/include/reactos/idl/winreg.idl",
-            "winreg_s",
-            "winlogon_c",
-        )
+        // The winreg RPC server stub is now pure RUST: the winreg-stub crate
+        // transliterates widl's generated `winreg_s.c` to Rust (against midl-rt)
+        // at build time and exports `winreg_v1_0_s_ifspec`. No C stub linked.
+        .rust_lib("winreg-stub", &[], true)
         // Load-bearing resource (winlogon.ico app icon), compiled IN-cargo by
         // replaying the winlogon_res windres command from compile_commands.json.
         .resource_from_rc("base/system/winlogon/winlogon.rc", "winlogon_res")
