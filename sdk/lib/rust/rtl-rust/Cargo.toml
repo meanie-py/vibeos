@@ -31,4 +31,5 @@ slist        = { path = "../slist" }
 splaytree    = { path = "../splaytree" }
 uniprefix    = { path = "../uniprefix" }
 rtl-strings  = { path = "../rtl-strings", features = ["cabi", "kernel"] }
+rtl-heap     = { path = "../rtl-heap", features = ["cabi", "kernel"] }
 time         = { path = "../time" }

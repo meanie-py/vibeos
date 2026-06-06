@@ -1,0 +1,26 @@
+# rtl-heap — Rust translation of ReactOS `sdk/lib/rtl/heap.c`
+# (the NT Rtl* process-heap allocator: RtlCreateHeap / RtlAllocateHeap /
+# RtlFreeHeap / RtlReAllocateHeap / RtlSizeHeap + the Rtlp* internals).
+#
+# librtl is shared by ntoskrnl AND ntdll, so this heap feeds both. The
+# HEAP/HEAP_ENTRY/HEAP_SEGMENT type family (src/types.rs) is byte-exact
+# with sdk/lib/rtl/heap.h — heappage.c / heapdbg.c stay C and share the
+# same `HEAP` layout across the cohab boundary, so the size assertions
+# in types.rs are load-bearing.
+[package]
+name = "rtl-heap"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The #[no_mangle] extern "system" NTAPI shim layer (the heap symbols).
+cabi = []
+# Kernel-link parity flag (kept for symmetry with rtl-strings; no extra
+# surface yet).
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

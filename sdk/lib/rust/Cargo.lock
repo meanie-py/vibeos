@@ -580,6 +580,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-heap"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-rust"
 version = "0.1.0"
 dependencies = [
@@ -599,6 +606,7 @@ dependencies = [
  "network",
  "prefix",
  "random",
+ "rtl-heap",
  "rtl-strings",
  "slist",
  "splaytree",
