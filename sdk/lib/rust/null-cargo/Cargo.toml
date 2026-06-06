@@ -1,0 +1,19 @@
+# Cargo-driven `null.sys` link (i386 + amd64 + arm64). Sibling of
+# `bootvid-cargo` / `kdcom-cargo`: build.rs is a manifest for the shared
+# `reactos-link` engine. The Rust body is the `null-rust` staticlib; its
+# `DriverEntry` is the PE entry point (kernelmodedriver = kerneldll link with
+# entry=DriverEntry, no exports).
+
+[package]
+name = "null-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "null"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
