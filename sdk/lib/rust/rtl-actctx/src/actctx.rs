@@ -13,7 +13,7 @@ use core::ffi::c_void;
 use crate::types::*;
 use crate::strings::*;
 use crate::shim::*;
-use crate::{FIELD_OFFSET, wine_dbg_sprintf, TRACE, FIXME, WARN, ERR};
+use crate::{FIELD_OFFSET, wine_dbg_sprintf, TRACE, FIXME, WARN, ERR, HIWORD};
 // The draft uses the bindgen underscore name; unify both spellings on
 // ddk's _UNICODE_STRING (layout-identical to base's UNICODE_STRING) so
 // the ddk Rtl*/Nt* signatures line up.
@@ -193,7 +193,7 @@ unsafe fn get_module_filename( module: HMODULE, str: *mut _UNICODE_STRING, extra
     let mut magic: ULONG_PTR = 0;
     let mut pldr: *mut LDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
 
-    LdrLockLoaderLock(0, core::ptr::null_mut(), &mut magic);
+    LdrLockLoaderLock(0, core::ptr::null_mut(), core::ptr::addr_of_mut!(magic) as *mut _);
     status = LdrFindEntryForAddress(module, &mut pldr);
     if status == STATUS_SUCCESS {
         (*str).Buffer = RtlAllocateHeap(
@@ -213,7 +213,7 @@ unsafe fn get_module_filename( module: HMODULE, str: *mut _UNICODE_STRING, extra
             status = STATUS_NO_MEMORY;
         }
     }
-    LdrUnlockLoaderLock(0, magic);
+    LdrUnlockLoaderLock(0, magic as _);
     status
 }
 
@@ -235,7 +235,7 @@ unsafe fn add_assembly(actctx: *mut ACTIVATION_CONTEXT, at: assembly_type) -> *m
             new_count = 4;
             ptr = RtlAllocateHeap(
                 GetProcessHeap(),
-                HEAP_ZERO_MEMORY as usize,
+                HEAP_ZERO_MEMORY,
                 new_count as usize * core::mem::size_of::<self::assembly>(),
             );
         }
@@ -407,7 +407,7 @@ unsafe fn is_matching_string(str1: *const WCHAR, str2: *const WCHAR) -> BOOL {
         return if str2.is_null() { 1 } else { 0 };
     }
     if !str2.is_null()
-        && RtlCompareUnicodeStrings(str1, wcslen(str1), str2, wcslen(str2), 1u8) == 0
+        && RtlCompareUnicodeStrings(str1, wcslen(str1) as _, str2, wcslen(str2) as _, 1u8) == 0
     {
         1
     } else {
@@ -555,7 +555,7 @@ unsafe fn append_string(buffer: *mut WCHAR, prefix: *const WCHAR, str: *const WC
 }
 
 unsafe fn build_assembly_id(ai: *const assembly_identity) -> *mut WCHAR {
-    static archW: [WCHAR; 23] = [
+    static archW: [WCHAR; 24] = [
         b',' as WCHAR, b'p' as WCHAR, b'r' as WCHAR, b'o' as WCHAR, b'c' as WCHAR,
         b'e' as WCHAR, b's' as WCHAR, b's' as WCHAR, b'o' as WCHAR, b'r' as WCHAR,
         b'A' as WCHAR, b'r' as WCHAR, b'c' as WCHAR, b'h' as WCHAR, b'i' as WCHAR,
@@ -625,7 +625,7 @@ unsafe fn check_actctx(h: HANDLE) -> *mut ACTIVATION_CONTEXT {
     let mut ret: *mut ACTIVATION_CONTEXT = core::ptr::null_mut();
     let actctx: *mut ACTIVATION_CONTEXT = h as *mut ACTIVATION_CONTEXT;
 
-    if h.is_null() || h == INVALID_HANDLE_VALUE {
+    if h.is_null() || h == INVALID_HANDLE_VALUE as HANDLE {
         return core::ptr::null_mut();
     }
 
@@ -1002,11 +1002,11 @@ unsafe fn parse_version(str: *const xmlstr_t, version: *mut assembly_version) ->
         (*version).minor = ver[1] as USHORT;
         (*version).build = ver[2] as USHORT;
         (*version).revision = ver[3] as USHORT;
-        return 1u8;
+        return 1;
     };
 
     FIXME!(b"Wrong version definition in manifest file (%s)\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(str));
-    result
+    result as BOOL
 }
 
 unsafe fn parse_expect_no_attr(xmlbuf: *mut xmlbuf_t, end: *mut BOOL) {
@@ -2166,7 +2166,7 @@ unsafe fn parse_supportedos_elem(
             str.Length = (attr.value.len as USHORT)
                 .wrapping_mul(core::mem::size_of::<WCHAR>() as USHORT);
             str.MaximumLength = str.Length;
-            if RtlGUIDFromString(&str, &mut compat_id) == STATUS_SUCCESS as NTSTATUS {
+            if RtlGUIDFromString(&mut str, &mut compat_id) == STATUS_SUCCESS as NTSTATUS {
                 compat = add_compat_context(assembly);
                 if compat.is_null() {
                     set_error(xmlbuf);
@@ -2701,7 +2701,7 @@ unsafe fn parse_manifest(
     } as ULONG;
 
     unicode_tests = (IS_TEXT_UNICODE_SIGNATURE | IS_TEXT_UNICODE_REVERSE_SIGNATURE) as core::ffi::c_int;
-    if RtlIsTextUnicode(buffer as *mut core::ffi::c_void, size as ULONG, &mut unicode_tests) != 0 {
+    if RtlIsTextUnicode(buffer as *mut core::ffi::c_void, size as core::ffi::c_int, &mut unicode_tests) != 0 {
         xmlbuf.ptr = buffer as *const WCHAR;
         xmlbuf.end = xmlbuf.ptr.add(size as usize / core::mem::size_of::<WCHAR>());
         status = parse_manifest_buffer(acl, assembly, ai, &mut xmlbuf);
@@ -2727,7 +2727,7 @@ unsafe fn parse_manifest(
         let mut len: DWORD = 0;
         let new_buff: *mut WCHAR;
 
-        status = RtlUTF8ToUnicodeN(core::ptr::null_mut(), 0, &mut len, buffer, size);
+        status = RtlUTF8ToUnicodeN(core::ptr::null_mut(), 0, &mut len, buffer, size as u32);
         if !NT_SUCCESS(status) {
             return STATUS_SXS_CANT_GEN_ACTCTX;
         }
@@ -2736,7 +2736,7 @@ unsafe fn parse_manifest(
         if new_buff.is_null() {
             return STATUS_NO_MEMORY;
         }
-        status = RtlUTF8ToUnicodeN(new_buff as *mut core::ffi::c_void, len, &mut len, buffer, size);
+        status = RtlUTF8ToUnicodeN(new_buff as *mut core::ffi::c_void, len, &mut len, buffer, size as u32);
         if !NT_SUCCESS(status) {
             return STATUS_SXS_CANT_GEN_ACTCTX;
         }
@@ -2789,26 +2789,26 @@ unsafe fn get_manifest_in_module(
         return STATUS_INVALID_PARAMETER;
     }
 
-    info.Type = RT_MANIFEST as ULONG_PTR;
-    info.Language = lang as ULONG_PTR;
+    info.Type = RT_MANIFEST as _;
+    info.Language = lang as _;
 
     if (resname as ULONG_PTR) >> 16 == 0 {
-        info.Name = resname as ULONG_PTR;
+        info.Name = resname as _;
         status = LdrFindResource_U(hModule, &mut info, 3, &mut entry);
     } else if *resname == ('#' as u16) {
         let mut value: ULONG = 0;
         RtlInitUnicodeString(&mut nameW, resname.add(1));
         if RtlUnicodeStringToInteger(&mut nameW, 10, &mut value) != STATUS_SUCCESS
-            || HIWORD(value) != 0
+            || HIWORD!(value) != 0
         {
             return STATUS_INVALID_PARAMETER;
         }
-        info.Name = value as ULONG_PTR;
+        info.Name = value as _;
         status = LdrFindResource_U(hModule, &mut info, 3, &mut entry);
     } else {
         RtlCreateUnicodeString(&mut nameW, resname);
         RtlUpcaseUnicodeString(&mut nameW, &mut nameW, 0u8);
-        info.Name = nameW.Buffer as ULONG_PTR;
+        info.Name = nameW.Buffer as _;
         status = LdrFindResource_U(hModule, &mut info, 3, &mut entry);
         RtlFreeUnicodeString(&mut nameW);
     }
@@ -3342,7 +3342,7 @@ unsafe fn lookup_winsxs(acl: *mut actctx_loader, ai: *mut assembly_identity) -> 
         file,
     );
     RtlInitUnicodeString(&mut path_us, path);
-    *wcsrchr(file, b'.' as WCHAR) = 0;
+    *wcsrchr(file, b'.' as core::ffi::c_int) = 0;
 
     if open_nt_file(&mut handle, &mut path_us) == 0 {
         io.__bindgen_anon_1.Status = get_manifest_in_manifest_file(
@@ -3371,7 +3371,9 @@ unsafe fn find_query_actctx( handle: *mut HANDLE, flags: DWORD, class: ULONG ) -
 
         if !(*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame.is_null()
         {
-            *handle = (*(*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame).ActivationContext;
+            *handle = (*((*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame
+                as PRTL_ACTIVATION_CONTEXT_STACK_FRAME))
+                .ActivationContext as HANDLE;
         }
     }
     else if (flags & (RTL_QUERY_ACTIVATION_CONTEXT_FLAG_IS_ADDRESS | RTL_QUERY_ACTIVATION_CONTEXT_FLAG_IS_HMODULE)) != 0
@@ -3381,7 +3383,7 @@ unsafe fn find_query_actctx( handle: *mut HANDLE, flags: DWORD, class: ULONG ) -
 
         if (*handle).is_null() { return STATUS_INVALID_PARAMETER; }
 
-        LdrLockLoaderLock( 0, core::ptr::null_mut(), core::ptr::addr_of_mut!(magic) );
+        LdrLockLoaderLock( 0, core::ptr::null_mut(), core::ptr::addr_of_mut!(magic) as *mut _ );
         if LdrFindEntryForAddress( *handle, core::ptr::addr_of_mut!(pldr) ) == 0
         {
             if (flags & RTL_QUERY_ACTIVATION_CONTEXT_FLAG_IS_HMODULE) != 0 && *handle != (*pldr).DllBase
@@ -3397,9 +3399,9 @@ unsafe fn find_query_actctx( handle: *mut HANDLE, flags: DWORD, class: ULONG ) -
         {
             status = STATUS_DLL_NOT_FOUND;
         }
-        LdrUnlockLoaderLock( 0, magic );
+        LdrUnlockLoaderLock( 0, magic as _ );
     }
-    else if (*handle).is_null() && (class != ActivationContextBasicInformation)
+    else if (*handle).is_null() && (class != ActivationContextBasicInformation as ULONG)
     {
         *handle = process_actctx as HANDLE;
     }
@@ -3883,7 +3885,7 @@ unsafe fn build_tlib_section(actctx: *mut ACTIVATION_CONTEXT, section: *mut *mut
                     module_len = (wcslen(dll.name) * core::mem::size_of::<WCHAR>()) as ULONG;
 
                     RtlInitUnicodeString(&mut str, entity.u.typelib.tlbid);
-                    Status = RtlGUIDFromString(&str, &mut (*index).guid);
+                    Status = RtlGUIDFromString(&mut str, &mut (*index).guid);
                     if !NT_SUCCESS(Status) {
                         RtlFreeHeap(GetProcessHeap(), 0, header as *mut _);
                         return Status;
@@ -4733,7 +4735,7 @@ unsafe fn build_clr_surrogate_section(actctx: *mut ACTIVATION_CONTEXT, section: 
 
                 /* setup new index entry */
                 RtlInitUnicodeString(&mut str, (*entity).u.clrsurrogate.clsid);
-                Status = RtlGUIDFromString(&str, core::ptr::addr_of_mut!((*index).guid));
+                Status = RtlGUIDFromString(&mut str, core::ptr::addr_of_mut!((*index).guid));
                 if !NT_SUCCESS(Status) {
                     RtlFreeHeap(GetProcessHeap(), 0, header as *mut _);
                     return Status;
@@ -4945,7 +4947,7 @@ unsafe fn add_progid_record(
             let mut clsid: GUID = core::mem::zeroed();
 
             RtlInitUnicodeString(&mut str, (*entity).u.comclass.clsid);
-            Status = RtlGUIDFromString(&str, &mut clsid);
+            Status = RtlGUIDFromString(&mut str, &mut clsid);
             if !NT_SUCCESS(Status) {
                 return Status;
             }
@@ -5293,7 +5295,7 @@ pub unsafe extern "system" fn RtlActivateActivationContextEx(
     (*frame).ActivationContext = handle as PACTIVATION_CONTEXT;
     (*frame).Flags = 0;
 
-    (*(*teb).ActivationContextStackPointer).ActiveFrame = frame as *mut _RTL_ACTIVATION_CONTEXT_STACK_FRAME;
+    (*(*teb).ActivationContextStackPointer).ActiveFrame = frame as *mut _;
     RtlAddRefActivationContext(handle);
 
     *cookie = frame as ULONG_PTR;
@@ -5305,7 +5307,7 @@ pub unsafe extern "system" fn RtlDeactivateActivationContext(flags: ULONG, cooki
     let mut frame: *mut RTL_ACTIVATION_CONTEXT_STACK_FRAME;
     let mut top: *mut RTL_ACTIVATION_CONTEXT_STACK_FRAME;
 
-    top = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame;
+    top = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame as PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
     frame = top;
     while !frame.is_null() {
         if frame as ULONG_PTR == cookie {
@@ -5324,11 +5326,12 @@ pub unsafe extern "system" fn RtlDeactivateActivationContext(flags: ULONG, cooki
         RtlRaiseStatus(STATUS_SXS_EARLY_DEACTIVATION);
     }
 
-    (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame = (*frame).Previous;
+    (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame =
+        (*frame).Previous as *mut _;
 
-    while top != (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame {
+    while top != (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame as PRTL_ACTIVATION_CONTEXT_STACK_FRAME {
         frame = (*top).Previous;
-        RtlReleaseActivationContext((*top).ActivationContext);
+        RtlReleaseActivationContext((*top).ActivationContext as HANDLE);
         RtlFreeHeap(GetProcessHeap(), 0, top as PVOID);
         top = frame;
     }
@@ -5342,11 +5345,11 @@ pub unsafe extern "system" fn RtlFreeActivationContextStack(Stack: PACTIVATION_C
         return;
     }
 
-    let mut ActiveFrame = (*Stack).ActiveFrame;
+    let mut ActiveFrame = (*Stack).ActiveFrame as PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
 
     while !ActiveFrame.is_null() {
         let PrevFrame = (*ActiveFrame).Previous;
-        RtlReleaseActivationContext((*ActiveFrame).ActivationContext);
+        RtlReleaseActivationContext((*ActiveFrame).ActivationContext as HANDLE);
         RtlFreeHeap(GetProcessHeap(), 0, ActiveFrame as *mut _);
         ActiveFrame = PrevFrame;
     }
@@ -5365,7 +5368,9 @@ pub unsafe extern "system" fn RtlFreeThreadActivationContextStack() {
 #[no_mangle]
 pub unsafe extern "system" fn RtlGetActiveActivationContext(handle: *mut HANDLE) -> NTSTATUS {
     if !(*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame.is_null() {
-        *handle = (*(*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame).ActivationContext;
+        *handle = (*((*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame
+            as PRTL_ACTIVATION_CONTEXT_STACK_FRAME))
+            .ActivationContext as HANDLE;
         RtlAddRefActivationContext(*handle);
     } else {
         *handle = core::ptr::null_mut();
@@ -5376,9 +5381,10 @@ pub unsafe extern "system" fn RtlGetActiveActivationContext(handle: *mut HANDLE)
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlIsActivationContextActive(handle: HANDLE) -> BOOLEAN {
-    let mut frame = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame;
+    let mut frame = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame
+        as PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
     while !frame.is_null() {
-        if (*frame).ActivationContext == handle {
+        if (*frame).ActivationContext == handle as PACTIVATION_CONTEXT {
             return 1u8;
         }
         frame = (*frame).Previous;
@@ -5855,9 +5861,10 @@ pub unsafe extern "system" fn RtlFindActivationContextSectionString(
     }
 
     let teb = NtCurrentTeb();
-    let active_frame = (*(*teb).ActivationContextStackPointer).ActiveFrame;
+    let active_frame = (*(*teb).ActivationContextStackPointer).ActiveFrame
+        as PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
     if !active_frame.is_null() {
-        let actctx = check_actctx((*active_frame).ActivationContext);
+        let actctx = check_actctx((*active_frame).ActivationContext as HANDLE);
         if !actctx.is_null() {
             status = find_string(actctx, section_kind, section_name, flags, data);
         }
@@ -5906,7 +5913,9 @@ pub unsafe extern "system" fn RtlFindActivationContextSectionGuid(
         .is_null()
     {
         let actctx: *mut ACTIVATION_CONTEXT = check_actctx(
-            (*(*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame).ActivationContext,
+            (*((*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame
+                as PRTL_ACTIVATION_CONTEXT_STACK_FRAME))
+                .ActivationContext as HANDLE,
         );
         if !actctx.is_null() {
             status = find_guid(actctx, section_kind, guid, flags, data);
@@ -5985,7 +5994,7 @@ pub unsafe extern "system" fn RtlAllocateActivationContextStack(Stack: *mut PACT
         return STATUS_SUCCESS;
     }
 
-    ContextStack = RtlAllocateHeap(GetProcessHeap(), 0x00000008, core::mem::size_of::<ACTIVATION_CONTEXT_STACK>() as u64) as PACTIVATION_CONTEXT_STACK;
+    ContextStack = RtlAllocateHeap(GetProcessHeap(), 0x00000008, core::mem::size_of::<ACTIVATION_CONTEXT_STACK>() as usize) as PACTIVATION_CONTEXT_STACK;
     if ContextStack.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -6026,7 +6035,7 @@ unsafe fn RtlActivateActivationContextUnsafeFast_impl(
     let NewFrame: *mut RTL_ACTIVATION_CONTEXT_STACK_FRAME;
     let ActiveFrame: *mut RTL_ACTIVATION_CONTEXT_STACK_FRAME;
 
-    ActiveFrame = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame;
+    ActiveFrame = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame as PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
 
     if (*Frame).Size as usize
         >= core::mem::size_of::<RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED>()
@@ -6050,11 +6059,11 @@ unsafe fn RtlActivateActivationContextUnsafeFast_impl(
     if (!ActiveFrame.is_null() && ((*ActiveFrame).ActivationContext as PVOID != Context))
         || !Context.is_null()
     {
-        (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame = NewFrame;
+        (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame = NewFrame as *mut _;
         return NewFrame;
     }
 
-    (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame = NewFrame;
+    (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame = NewFrame as *mut _;
 
     NewFrame
 }
@@ -6080,7 +6089,7 @@ unsafe fn RtlDeactivateActivationContextUnsafeFast_impl(
     let ActiveFrame: PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
     let NewFrame: PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
 
-    ActiveFrame = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame;
+    ActiveFrame = (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame as PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
 
     if (*Frame).Frame.Flags & RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_NOT_REALLY_ACTIVATED != 0 {
         (*Frame).Frame.Flags |= RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_DEACTIVATED;
@@ -6090,7 +6099,7 @@ unsafe fn RtlDeactivateActivationContextUnsafeFast_impl(
     NewFrame = core::ptr::addr_of_mut!((*Frame).Frame);
     let _ = ActiveFrame;
 
-    (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame = (*NewFrame).Previous;
+    (*(*NtCurrentTeb()).ActivationContextStackPointer).ActiveFrame = (*NewFrame).Previous as *mut _;
 
     (*Frame).Frame.Flags |= RTL_ACTIVATION_CONTEXT_STACK_FRAME_FLAG_DEACTIVATED;
     (*NewFrame).Previous

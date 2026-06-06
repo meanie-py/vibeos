@@ -22,7 +22,7 @@ extern "system" {
         dst: PVOID,
         dst_max: u32,
         written: *mut u32,
-        src: PVOID,
+        src: *const c_void,
         src_len: u32,
     ) -> NTSTATUS;
     pub fn LdrFindEntryForAddress(
@@ -57,9 +57,12 @@ pub unsafe fn GetProcessHeap() -> PVOID {
 pub fn PtrToUlong(p: PVOID) -> u32 {
     p as usize as u32
 }
-#[inline(always)]
-pub fn HIWORD(l: PVOID) -> u32 {
-    ((l as usize as u32) >> 16) & 0xffff
+// HIWORD(l) — winnt macro; polymorphic (accepts pointers or integers).
+#[macro_export]
+macro_rules! HIWORD {
+    ($l:expr) => {
+        ((($l) as usize as u32) >> 16) & 0xffff
+    };
 }
 
 // windows_dir = SharedUserData->NtSystemRoot. KUSER_SHARED_DATA is at the
@@ -87,8 +90,8 @@ extern "C" {
     pub fn wcscat(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
     pub fn wcscmp(a: *const WCHAR, b: *const WCHAR) -> c_int;
     pub fn wcsncmp(a: *const WCHAR, b: *const WCHAR, n: usize) -> c_int;
-    pub fn wcschr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
-    pub fn wcsrchr(s: *const WCHAR, c: WCHAR) -> *mut WCHAR;
+    pub fn wcschr(s: *const WCHAR, c: c_int) -> *mut WCHAR;
+    pub fn wcsrchr(s: *const WCHAR, c: c_int) -> *mut WCHAR;
     pub fn wcstoul(s: *const WCHAR, end: *mut *mut WCHAR, base: c_int) -> core::ffi::c_ulong;
     pub fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
     pub fn memset(dst: *mut c_void, c: c_int, n: usize) -> *mut c_void;
@@ -179,9 +182,9 @@ pub const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x0000_0020;
 // FILE_INFORMATION_CLASS values (ddk bindgen doesn't export the bare
 // variant names). FileEndOfFileInformation is `#define`d to
 // FileStandardInformation (=5) in actctx.c.
-pub const FileBothDirectoryInformation: i32 = 3;
-pub const FileStandardInformation: i32 = 5;
-pub const FileEndOfFileInformation: i32 = 5;
+pub const FileBothDirectoryInformation: u32 = 3;
+pub const FileStandardInformation: u32 = 5;
+pub const FileEndOfFileInformation: u32 = 5;
 
 // ── comclass_threadingmodel — bindgen-style enum-variant names the
 //    draft uses. ───────────────────────────────────────────────────

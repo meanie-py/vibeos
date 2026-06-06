@@ -94,14 +94,14 @@ pub const ACTIVATION_CONTEXT_SECTION_APPLICATION_SETTINGS: ULONG = 16;
 pub const ACTIVATION_CONTEXT_SECTION_KEYED_DATA: ULONG = 0;
 
 // ── ACTIVATION_CONTEXT_INFO_CLASS (winnt_old.h) ─────────────────────
-pub const ActivationContextBasicInformation: i32 = 1;
-pub const ActivationContextDetailedInformation: i32 = 2;
-pub const AssemblyDetailedInformationInActivationContext: i32 = 3;
-pub const FileInformationInAssemblyOfAssemblyInActivationContext: i32 = 4;
-pub const RunlevelInformationInActivationContext: i32 = 5;
-pub const CompatibilityInformationInActivationContext: i32 = 6;
-pub const ActivationContextManifestResourceName: i32 = 7;
-pub const MaxActivationContextInfoClass: i32 = 8;
+pub const ActivationContextBasicInformation: u32 = 1;
+pub const ActivationContextDetailedInformation: u32 = 2;
+pub const AssemblyDetailedInformationInActivationContext: u32 = 3;
+pub const FileInformationInAssemblyOfAssemblyInActivationContext: u32 = 4;
+pub const RunlevelInformationInActivationContext: u32 = 5;
+pub const CompatibilityInformationInActivationContext: u32 = 6;
+pub const ActivationContextManifestResourceName: u32 = 7;
+pub const MaxActivationContextInfoClass: u32 = 8;
 
 // ── ACTCTX_REQUESTED_RUN_LEVEL (winnt_old.h) ────────────────────────
 pub type ACTCTX_REQUESTED_RUN_LEVEL = DWORD;
@@ -324,6 +324,7 @@ pub struct xml_attr {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct xmlbuf_t {
     pub ptr: *const WCHAR,
     pub end: *const WCHAR,
@@ -352,6 +353,7 @@ pub struct assembly_version {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct assembly_identity {
     pub name: *mut WCHAR,
     pub arch: *mut WCHAR,
