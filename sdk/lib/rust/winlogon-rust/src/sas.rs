@@ -1,29 +1,260 @@
-use winlogon_sys::nt::*;
-use core::ffi::c_void;
+//! sas.c — the Secure Attention Sequence state machine (logon/logoff/shutdown,
+//! the SAS window proc, hotkeys, sound). Fourth/last GINA/SAS/RPC core (rustconv
+//! Opus 4.8, integrated). LINK-CHECKED: the live (DUMMY_PSEH) boot path never
+//! enters the SAS loop, so only LuidNone (read by wlx.rs) is runtime-live.
 
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+
+use crate::preamble::{
+    hAppInstance, wcslen, RtlGetProcessHeap, SetWindowStationUser, WLSession, HKEY_LOCAL_MACHINE,
+};
+use crate::{wstr, wstr_arr};
+use core::ffi::c_void;
+use core::ptr::{addr_of, addr_of_mut, null, null_mut};
+use winlogon_sys::nt::*;
+
+// Debug macros dropped (as in the other flipped files; call-sites already `!`).
+macro_rules! ERR {
+    ($($t:tt)*) => {{}};
+}
+macro_rules! WARN {
+    ($($t:tt)*) => {{}};
+}
+macro_rules! TRACE {
+    ($($t:tt)*) => {{}};
+}
+
+// C macros → helper fns.
+#[inline]
+fn NT_SUCCESS(s: NTSTATUS) -> bool {
+    s >= 0
+}
+#[inline]
+fn WLX_LOGGINGOFF(a: DWORD) -> bool {
+    a == WLX_SAS_ACTION_LOGOFF || a == WLX_SAS_ACTION_FORCE_LOGOFF
+}
+#[inline]
+fn WLX_SHUTTINGDOWN(a: DWORD) -> bool {
+    a == WLX_SAS_ACTION_SHUTDOWN
+        || a == WLX_SAS_ACTION_SHUTDOWN_POWER_OFF
+        || a == WLX_SAS_ACTION_SHUTDOWN_REBOOT
+}
+#[inline]
+fn WLX_SUSPENDING(a: DWORD) -> bool {
+    a == WLX_SAS_ACTION_SHUTDOWN_SLEEP
+        || a == WLX_SAS_ACTION_SHUTDOWN_SLEEP2
+        || a == WLX_SAS_ACTION_SHUTDOWN_HIBERNATE
+}
+
+// FORCEINLINE helpers (no exported symbol).
+#[inline]
+unsafe fn SetLogonTimestamp(Session: PWLSESSION) {
+    NtQuerySystemTime(addr_of_mut!((*Session).LastLogon));
+}
+#[inline]
+unsafe fn SecureZeroMemory(ptr: *mut c_void, cnt: usize) -> *mut c_void {
+    let p = ptr as *mut u8;
+    let mut i = 0usize;
+    while i < cnt {
+        core::ptr::write_volatile(p.add(i), 0u8);
+        i += 1;
+    }
+    ptr
+}
+
+// GetWindowLongPtrW/SetWindowLongPtrW don't exist on i386 (macros onto the
+// non-Ptr variants; LONG_PTR == LONG there) — cfg shims, like shutdown.rs.
+#[cfg(target_arch = "x86")]
+unsafe fn GetWindowLongPtr(hWnd: HWND, nIndex: i32) -> LONG_PTR {
+    GetWindowLongW(hWnd, nIndex) as LONG_PTR
+}
+#[cfg(not(target_arch = "x86"))]
+unsafe fn GetWindowLongPtr(hWnd: HWND, nIndex: i32) -> LONG_PTR {
+    GetWindowLongPtrW(hWnd, nIndex)
+}
+#[cfg(target_arch = "x86")]
+unsafe fn SetWindowLongPtrW(hWnd: HWND, nIndex: i32, dwNewLong: LONG_PTR) -> LONG_PTR {
+    SetWindowLongW(hWnd, nIndex, dwNewLong as LONG) as LONG_PTR
+}
+
+// ---- substrate: types/consts/APIs winlogon-sys bindgen didn't cover ---------
+type SC_HANDLE = *mut c_void;
+
+#[repr(C)]
+struct PROFILEINFOW {
+    dwSize: DWORD,
+    dwFlags: DWORD,
+    lpUserName: LPWSTR,
+    lpProfilePath: LPWSTR,
+    lpDefaultPath: LPWSTR,
+    lpServerName: LPWSTR,
+    lpPolicyPath: LPWSTR,
+    hProfile: HANDLE,
+}
+
+#[repr(C)]
+struct NETRESOURCEW {
+    dwScope: DWORD,
+    dwType: DWORD,
+    dwDisplayType: DWORD,
+    dwUsage: DWORD,
+    lpLocalName: LPWSTR,
+    lpRemoteName: LPWSTR,
+    lpComment: LPWSTR,
+    lpProvider: LPWSTR,
+}
+type LPNETRESOURCE = *mut NETRESOURCEW;
+
+#[repr(C)]
+struct SERVICE_STATUS_PROCESS {
+    dwServiceType: DWORD,
+    dwCurrentState: DWORD,
+    dwControlsAccepted: DWORD,
+    dwWin32ExitCode: DWORD,
+    dwServiceSpecificExitCode: DWORD,
+    dwCheckPoint: DWORD,
+    dwWaitHint: DWORD,
+    dwProcessId: DWORD,
+    dwServiceFlags: DWORD,
+}
+
+#[repr(C)]
+struct TRUSTEE_W {
+    pMultipleTrustee: *mut TRUSTEE_W,
+    MultipleTrusteeOperation: i32,
+    TrusteeForm: i32,
+    TrusteeType: i32,
+    ptstrName: LPWSTR,
+}
+#[repr(C)]
+struct EXPLICIT_ACCESS_W {
+    grfAccessPermissions: DWORD,
+    grfAccessMode: i32,
+    grfInheritance: DWORD,
+    Trustee: TRUSTEE_W,
+}
+type EXPLICIT_ACCESS = EXPLICIT_ACCESS_W;
+
+const STATUS_SUCCESS: NTSTATUS = 0;
+const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC000_0001u32 as NTSTATUS;
+const STATUS_NO_MEMORY: NTSTATUS = 0xC000_0017u32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000_000Du32 as NTSTATUS;
+const SND_ASYNC: DWORD = 0x0001;
+const SND_NODEFAULT: DWORD = 0x0002;
+const SND_ALIAS: DWORD = 0x0001_0000;
+const SE_SHUTDOWN_PRIVILEGE: DWORD = 19;
+const SE_ASSIGNPRIMARYTOKEN_PRIVILEGE: DWORD = 3;
+const SERVICE_RUNNING: DWORD = 0x4;
+const SC_MANAGER_CONNECT: DWORD = 0x0001;
+const SC_STATUS_PROCESS_INFO: i32 = 0;
+const WN_SUCCESS: DWORD = 0;
+const WN_NO_MORE_ENTRIES: DWORD = 259;
+const WN_MORE_DATA: DWORD = 234;
+const TRUSTEE_IS_SID: i32 = 0;
+const TRUSTEE_IS_WELL_KNOWN_GROUP: i32 = 5;
+const SET_ACCESS: i32 = 2;
+// bindgen TRUE/FALSE are u32; BOOL is i32 → shadow as BOOL for the many
+// `BOOL = FALSE` / `return TRUE` sites (the security.rs pattern).
+const TRUE: BOOL = 1;
+const FALSE: BOOL = 0;
+const NO_INHERITANCE: DWORD = 0;
+const RESOURCE_REMEMBERED: DWORD = 3;
+const RESOURCETYPE_DISK: DWORD = 1;
+const PI_NOUI: DWORD = 1;
+const SECURITY_DESCRIPTOR_MIN_LENGTH: DWORD = core::mem::size_of::<SECURITY_DESCRIPTOR>() as DWORD;
+
+// resource.h string/dialog IDs.
+const IDD_SHUTDOWNCOMPUTER: UINT = 300;
+const IDS_APPLYINGYOURPERSONALSETTINGS: UINT = 1679;
+const IDS_LOADINGYOURPERSONALSETTINGS: UINT = 1682;
+const IDS_CLOSINGNETWORKCONNECTIONS: UINT = 1683;
+const IDS_REACTOSISSHUTTINGDOWN: UINT = 1684;
+const IDS_SAVEYOURSETTINGS: UINT = 1687;
+const IDS_LOGGINGOFF: UINT = 1691;
+const IDS_REACTOSISRESTARTING: UINT = 1697;
+
+#[repr(C)]
+struct SERVICE_STATUS {
+    dwServiceType: DWORD,
+    dwCurrentState: DWORD,
+    dwControlsAccepted: DWORD,
+    dwWin32ExitCode: DWORD,
+    dwServiceSpecificExitCode: DWORD,
+    dwCheckPoint: DWORD,
+    dwWaitHint: DWORD,
+}
+
+// WINAPI (stdcall) APIs not in the winlogon-sys glob (userenv/advapi32/mpr/winsvc).
+extern "system" {
+    fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID, hToken: HANDLE, bInherit: BOOL) -> BOOL;
+    fn DestroyEnvironmentBlock(lpEnvironment: LPVOID) -> BOOL;
+    fn LoadUserProfileW(hToken: HANDLE, lpProfileInfo: *mut PROFILEINFOW) -> BOOL;
+    fn UnloadUserProfile(hToken: HANDLE, hProfile: HANDLE) -> BOOL;
+    fn SetEntriesInAclW(
+        cCountOfExplicitEntries: ULONG,
+        pListOfExplicitEntries: *mut EXPLICIT_ACCESS_W,
+        OldAcl: PACL,
+        NewAcl: *mut PACL,
+    ) -> DWORD;
+    fn OpenSCManagerW(
+        lpMachineName: LPCWSTR,
+        lpDatabaseName: LPCWSTR,
+        dwDesiredAccess: DWORD,
+    ) -> SC_HANDLE;
+    fn OpenServiceW(hSCManager: SC_HANDLE, lpServiceName: LPCWSTR, dwDesiredAccess: DWORD)
+        -> SC_HANDLE;
+    fn QueryServiceStatusEx(
+        hService: SC_HANDLE,
+        InfoLevel: i32,
+        lpBuffer: *mut u8,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: *mut DWORD,
+    ) -> BOOL;
+    fn ControlService(
+        hService: SC_HANDLE,
+        dwControl: DWORD,
+        lpServiceStatus: *mut SERVICE_STATUS,
+    ) -> BOOL;
+    fn CloseServiceHandle(hSCObject: SC_HANDLE) -> BOOL;
+    fn WNetOpenEnumW(
+        dwScope: DWORD,
+        dwType: DWORD,
+        dwUsage: DWORD,
+        lpNetResource: LPNETRESOURCE,
+        lphEnum: *mut HANDLE,
+    ) -> DWORD;
+    fn WNetEnumResourceW(
+        hEnum: HANDLE,
+        lpcCount: *mut DWORD,
+        lpBuffer: LPVOID,
+        lpBufferSize: *mut DWORD,
+    ) -> DWORD;
+    fn WNetCloseEnum(hEnum: HANDLE) -> DWORD;
+    fn WNetAddConnectionW(
+        lpRemoteName: LPCWSTR,
+        lpPassword: LPCWSTR,
+        lpLocalName: LPCWSTR,
+    ) -> DWORD;
+    fn WNetClearConnections(hwndOwner: HWND) -> DWORD;
+    fn Beep(dwFreq: DWORD, dwDuration: DWORD) -> BOOL;
+    // user32: SetLogonNotifyWindow(long) → NtUserSetLogonNotifyWindow.
+    fn SetLogonNotifyWindow(hwnd: HWND) -> BOOL;
+    #[link_name = "DefWindowProcW"]
+    fn DefWindowProc(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+}
+
+// Cross-file Rust symbols (cdecl, #[no_mangle] in sibling modules).
 extern "C" {
-    fn SecureZeroMemory(ptr: *mut core::ffi::c_void, cnt: usize) -> *mut core::ffi::c_void;
-    fn wcslen(s: *const u16) -> usize;
     fn DisplayStatusMessage(Session: PWLSESSION, hDesktop: HDESK, ResourceId: DWORD) -> BOOL;
     fn CreateUserEnvironment(Session: PWLSESSION) -> BOOL;
     fn AllowAccessOnSession(Session: PWLSESSION) -> BOOL;
     fn CallNotificationDlls(Session: PWLSESSION, Function: NOTIFICATION_TYPE) -> BOOL;
     fn InitializeScreenSaver(Session: PWLSESSION) -> BOOL;
-    fn SetLogonTimestamp(Session: PWLSESSION);
-    fn RemoveStatusMessage(Session: PWLSESSION) -> BOOL;
-    fn UnloadUserProfile(hToken: HANDLE, hProfile: HANDLE) -> BOOL;
-    fn SetWindowStationUser(hWinStation: HWINSTA, pLuid: *mut LUID, pSid: PVOID, dwSidSize: DWORD) -> BOOL;
-    fn LoadUserProfileW(hToken: HANDLE, lpProfileInfo: *mut PROFILEINFOW) -> BOOL;
-    fn WlStrDup(str_: LPCWSTR) -> LPWSTR;
-}
-extern "system" {
-    fn WNetClearConnections(hwndOwner: HWND) -> DWORD;
-    unsafe fn KillComProcesses(lpParameter: PVOID) -> DWORD;
-    fn CloseAllDialogWindows() -> BOOL;
     fn StartScreenSaver(Session: PWLSESSION);
-    fn DefWindowProc(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    fn RemoveStatusMessage(Session: PWLSESSION) -> BOOL;
+    fn CloseAllDialogWindows() -> BOOL;
+    fn WlStrDup(str_: LPCWSTR) -> LPWSTR;
     fn GetSetupType() -> DWORD;
-    fn GetWindowLongPtr(hWnd: HWND, nIndex: i32) -> LONG_PTR;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -48,6 +279,7 @@ pub type PLOGOFF_SHUTDOWN_DATA = *mut tagLOGOFF_SHUTDOWN_DATA;
 
 pub static mut ExitReactOSInProgress: BOOL = 0;
 
+#[no_mangle]
 pub static mut LuidNone: LUID = LUID { LowPart: 0, HighPart: 0 };
 
 #[repr(C)]
@@ -76,9 +308,9 @@ unsafe fn StartTaskManager(Session: PWLSESSION) -> BOOL {
 
     let ret = ((*Session).Gina.Functions.WlxStartApplication.unwrap())(
         (*Session).Gina.Context,
-        widestring!("Default"),
+        wstr!("Default").as_ptr() as LPWSTR,
         lpEnvironment,
-        widestring!("taskmgr.exe"),
+        wstr!("taskmgr.exe").as_ptr() as LPWSTR,
     );
 
     DestroyEnvironmentBlock(lpEnvironment);
@@ -146,15 +378,10 @@ pub unsafe extern "C" fn SetDefaultLanguage(Session: PWLSESSION) -> BOOL {
                 break 'cleanup;
             }
 
-            SubKey = "Control Panel\\International\0".encode_utf16().collect::<Vec<u16>>().as_ptr();
-            ValueName = "Locale\0".encode_utf16().collect::<Vec<u16>>().as_ptr();
+            SubKey = wstr!("Control Panel\\International").as_ptr();
+            ValueName = wstr!("Locale").as_ptr();
 
-            let SubKeyVec: Vec<u16> = "Control Panel\\International\0".encode_utf16().collect();
-            let ValueNameVec: Vec<u16> = "Locale\0".encode_utf16().collect();
-            let SubKey = SubKeyVec.as_ptr();
-            let ValueName = ValueNameVec.as_ptr();
-
-            rc = RegOpenKeyExW(if !UserKey.is_null() { UserKey } else { 0x80000002u32 as usize as HKEY },
+            rc = RegOpenKeyExW(if !UserKey.is_null() { UserKey } else { HKEY_LOCAL_MACHINE },
                                SubKey,
                                0,
                                KEY_READ,
@@ -175,7 +402,7 @@ pub unsafe extern "C" fn SetDefaultLanguage(Session: PWLSESSION) -> BOOL {
                 break 'cleanup;
             }
 
-            Value = HeapAlloc(GetProcessHeap(), 0, dwSize as usize) as LPWSTR;
+            Value = HeapAlloc(GetProcessHeap(), 0, dwSize as SIZE_T) as LPWSTR;
             if Value.is_null() {
                 break 'cleanup;
             }
@@ -200,12 +427,10 @@ pub unsafe extern "C" fn SetDefaultLanguage(Session: PWLSESSION) -> BOOL {
             ret = 1;
         } else {
             UserKey = core::ptr::null_mut();
-            let SubKeyVec: Vec<u16> = "System\\CurrentControlSet\\Control\\Nls\\Language\0".encode_utf16().collect();
-            let ValueNameVec: Vec<u16> = "Default\0".encode_utf16().collect();
-            let SubKey = SubKeyVec.as_ptr();
-            let ValueName = ValueNameVec.as_ptr();
+            SubKey = wstr!("System\\CurrentControlSet\\Control\\Nls\\Language").as_ptr();
+            ValueName = wstr!("Default").as_ptr();
 
-            rc = RegOpenKeyExW(if !UserKey.is_null() { UserKey } else { 0x80000002u32 as usize as HKEY },
+            rc = RegOpenKeyExW(if !UserKey.is_null() { UserKey } else { HKEY_LOCAL_MACHINE },
                                SubKey,
                                0,
                                KEY_READ,
@@ -226,7 +451,7 @@ pub unsafe extern "C" fn SetDefaultLanguage(Session: PWLSESSION) -> BOOL {
                 break 'cleanup;
             }
 
-            Value = HeapAlloc(GetProcessHeap(), 0, dwSize as usize) as LPWSTR;
+            Value = HeapAlloc(GetProcessHeap(), 0, dwSize as SIZE_T) as LPWSTR;
             if Value.is_null() {
                 break 'cleanup;
             }
@@ -312,7 +537,7 @@ pub unsafe extern "C" fn PlaySoundRoutine(
 
     Ret
 }
-unsafe fn PlayLogonSoundThread(lpParameter: LPVOID) -> DWORD {
+unsafe extern "system" fn PlayLogonSoundThread(lpParameter: LPVOID) -> DWORD {
     let SoundData: PLOGON_SOUND_DATA = lpParameter as PLOGON_SOUND_DATA;
     let mut Info: SERVICE_STATUS_PROCESS = core::mem::zeroed();
     let mut dwSize: DWORD = 0;
@@ -322,7 +547,7 @@ unsafe fn PlayLogonSoundThread(lpParameter: LPVOID) -> DWORD {
 
     'cleanup: loop {
         /* Open the service manager */
-        hSCManager = OpenSCManager(core::ptr::null_mut(), core::ptr::null_mut(), SC_MANAGER_CONNECT);
+        hSCManager = OpenSCManagerW(core::ptr::null_mut(), core::ptr::null_mut(), SC_MANAGER_CONNECT);
         if hSCManager.is_null() {
             break 'cleanup;
         }
@@ -397,7 +622,7 @@ unsafe fn PlayLogonSoundThread(lpParameter: LPVOID) -> DWORD {
 }
 
 unsafe fn PlayLogonSound(Session: PWLSESSION) {
-    let SoundData = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<LOGON_SOUND_DATA>() as u32) as PLOGON_SOUND_DATA;
+    let SoundData = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<LOGON_SOUND_DATA>() as SIZE_T) as PLOGON_SOUND_DATA;
     if SoundData.is_null() {
         return;
     }
@@ -408,7 +633,7 @@ unsafe fn PlayLogonSound(Session: PWLSESSION) {
     let hThread = CreateThread(
         core::ptr::null_mut(),
         0,
-        Some(PlayLogonSoundThread),
+        core::mem::transmute(PlayLogonSoundThread as *const ()),
         SoundData as *mut core::ffi::c_void,
         0,
         core::ptr::null_mut(),
@@ -478,13 +703,13 @@ unsafe fn RestoreAllConnections(Session: PWLSESSION) {
     }
 
     'quit: {
-        dRet = WNetOpenEnum(RESOURCE_REMEMBERED, RESOURCETYPE_DISK, 0, core::ptr::null_mut(), &mut hEnum);
+        dRet = WNetOpenEnumW(RESOURCE_REMEMBERED, RESOURCETYPE_DISK, 0, core::ptr::null_mut(), &mut hEnum);
         if dRet != WN_SUCCESS {
             ERR!(b"Failed to open enumeration: %lu\n\0".as_ptr() as *const i8, dRet);
             break 'quit;
         }
 
-        lpRes = HeapAlloc(GetProcessHeap(), 0, dSize as usize) as LPNETRESOURCE;
+        lpRes = HeapAlloc(GetProcessHeap(), 0, dSize as SIZE_T) as LPNETRESOURCE;
         if lpRes.is_null() {
             ERR!(b"Failed to allocate memory\n\0".as_ptr() as *const i8);
             WNetCloseEnum(hEnum);
@@ -496,11 +721,11 @@ unsafe fn RestoreAllConnections(Session: PWLSESSION) {
             dCount = -1i32 as DWORD;
 
             core::ptr::write_bytes(lpRes as *mut u8, 0, dSize as usize);
-            dRet = WNetEnumResource(hEnum, &mut dCount, lpRes as *mut _, &mut dSize);
+            dRet = WNetEnumResourceW(hEnum, &mut dCount, lpRes as *mut _, &mut dSize);
             if dRet == WN_SUCCESS || dRet == WN_MORE_DATA {
                 lpCur = lpRes;
                 while dCount != 0 {
-                    WNetAddConnection((*lpCur).lpRemoteName, core::ptr::null_mut(), (*lpCur).lpLocalName);
+                    WNetAddConnectionW((*lpCur).lpRemoteName, core::ptr::null_mut(), (*lpCur).lpLocalName);
                     lpCur = lpCur.add(1);
                     dCount -= 1;
                 }
@@ -599,7 +824,7 @@ unsafe fn HandleLogon(Session: PWLSESSION) -> BOOL {
 
             lError = RegOpenKeyExW(
                 HKEY_LOCAL_MACHINE,
-                w!("System\\CurrentControlSet\\Control\\Windows").as_ptr(),
+                wstr!("System\\CurrentControlSet\\Control\\Windows").as_ptr(),
                 0,
                 KEY_QUERY_VALUE,
                 core::ptr::addr_of_mut!(hKey),
@@ -610,7 +835,7 @@ unsafe fn HandleLogon(Session: PWLSESSION) -> BOOL {
                 let mut cbData: DWORD = core::mem::size_of::<DWORD>() as DWORD;
                 lError = RegQueryValueExW(
                     hKey,
-                    w!("NoPopupsOnBoot").as_ptr(),
+                    wstr!("NoPopupsOnBoot").as_ptr(),
                     core::ptr::null_mut(),
                     core::ptr::addr_of_mut!(dwType),
                     core::ptr::addr_of_mut!(dwValue) as PBYTE,
@@ -735,7 +960,7 @@ unsafe fn HandleLogon(Session: PWLSESSION) -> BOOL {
     }
     ret
 }
-unsafe fn LogoffShutdownThread(Parameter: LPVOID) -> DWORD {
+unsafe extern "system" fn LogoffShutdownThread(Parameter: LPVOID) -> DWORD {
     let LSData = Parameter as PLOGOFF_SHUTDOWN_DATA;
     let UserToken = (*(*LSData).Session).UserToken;
     let mut ret: DWORD = 1;
@@ -781,7 +1006,7 @@ unsafe fn RunLogoffShutdownThread(
     LSData = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<LOGOFF_SHUTDOWN_DATA>(),
+        core::mem::size_of::<LOGOFF_SHUTDOWN_DATA>() as SIZE_T,
     ) as PLOGOFF_SHUTDOWN_DATA;
     if LSData.is_null() {
         return STATUS_NO_MEMORY;
@@ -806,7 +1031,7 @@ unsafe fn RunLogoffShutdownThread(
     hThread = CreateThread(
         psa,
         0,
-        Some(LogoffShutdownThread),
+        core::mem::transmute(LogoffShutdownThread as *const ()),
         LSData as *mut core::ffi::c_void,
         0,
         core::ptr::null_mut(),
@@ -858,9 +1083,9 @@ unsafe fn CreateLogoffSecurityAttributes(
     pMem = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<SECURITY_ATTRIBUTES>()
+        (core::mem::size_of::<SECURITY_ATTRIBUTES>()
             + SECURITY_DESCRIPTOR_MIN_LENGTH as usize
-            + core::mem::size_of::<ACL>(),
+            + core::mem::size_of::<ACL>()) as SIZE_T,
     ) as *mut BYTE;
     if pMem.is_null() {
         ERR!(b"Failed to allocate memory for logoff security descriptor!\n\0".as_ptr() as *const i8);
@@ -884,7 +1109,7 @@ unsafe fn CreateLogoffSecurityAttributes(
     Access.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
     Access.Trustee.ptstrName = pEveryoneSID as _;
 
-    if SetEntriesInAcl(1, &mut Access, core::ptr::null_mut(), &mut pACL) != ERROR_SUCCESS {
+    if SetEntriesInAclW(1, &mut Access, core::ptr::null_mut(), &mut pACL) != ERROR_SUCCESS {
         ERR!(b"Failed to set Access Rights for logoff thread. Logging out will most likely fail.\n\0".as_ptr() as *const i8);
         HeapFree(GetProcessHeap(), 0, pMem as _);
         return STATUS_UNSUCCESSFUL;
@@ -915,6 +1140,39 @@ unsafe fn DestroyLogoffSecurityAttributes(psa: PSECURITY_ATTRIBUTES) {
     if !psa.is_null() {
         HeapFree(GetProcessHeap(), 0, psa as *mut _);
     }
+}
+
+// IsFirstLogon (FORCEINLINE in winlogon.h) — no symbol.
+#[inline]
+unsafe fn IsFirstLogon(Session: PWLSESSION) -> BOOL {
+    ((*Session).LastLogon.QuadPart == 0) as BOOL
+}
+
+// KillComProcesses — WINAPI thread routine (rustconv left only the C in
+// comments; hand-translated). extern "system" for the correct machine ABI;
+// the CreateThread call site transmutes it into the LPTHREAD_START_ROUTINE slot.
+unsafe extern "system" fn KillComProcesses(Parameter: LPVOID) -> DWORD {
+    let UserToken = Parameter as HANDLE;
+    let mut ret: DWORD = TRUE as DWORD;
+
+    if !UserToken.is_null() && ImpersonateLoggedOnUser(UserToken) == 0 {
+        return FALSE as DWORD;
+    }
+
+    /* Attempt to kill remaining processes. No notifications needed. */
+    if ExitWindowsEx(
+        EWX_CALLER_WINLOGON | EWX_NONOTIFY | EWX_FORCE | EWX_LOGOFF,
+        0,
+    ) == 0
+    {
+        ret = FALSE as DWORD;
+    }
+
+    if !UserToken.is_null() {
+        RevertToSelf();
+    }
+
+    ret
 }
 
 unsafe fn HandleLogoff(
@@ -967,7 +1225,7 @@ unsafe fn HandleLogoff(
     hThread = CreateThread(
         psa,
         0,
-        Some(KillComProcesses),
+        core::mem::transmute(KillComProcesses as *const ()),
         (*Session).UserToken as PVOID,
         0,
         core::ptr::null_mut(),
@@ -1037,7 +1295,7 @@ unsafe fn UninitializeSAS(Session: PWLSESSION) {
         SetEvent((*Session).hEndOfScreenSaverThread);
     }
     UnregisterClassW(
-        "SAS Window class\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+        wstr!("SAS Window class").as_ptr(),
         hAppInstance,
     );
 }
@@ -1073,12 +1331,10 @@ pub unsafe extern "C" fn HandleShutdown(Session: PWLSESSION, wlxAction: DWORD) -
         NtShutdownSystem(ShutdownReboot);
     } else {
         if false {
-            DialogBox(
-                hAppInstance,
-                MAKEINTRESOURCE(IDD_SHUTDOWNCOMPUTER),
-                GetDesktopWindow(),
-                ShutdownComputerWindowProc,
-            );
+            // DialogBox(hAppInstance, IDD_SHUTDOWNCOMPUTER, …, ShutdownComputerWindowProc)
+            // — dead (`if false`) in the C too; ShutdownComputerWindowProc stays as
+            // dead_code (MAKEINTRESOURCE/DialogBox not needed).
+            let _ = IDD_SHUTDOWNCOMPUTER;
         }
         if wlxAction == WLX_SAS_ACTION_SHUTDOWN_POWER_OFF {
             NtShutdownSystem(ShutdownPowerOff);
@@ -1305,28 +1561,28 @@ unsafe fn HandleMessageBeep(
             EventName = core::ptr::null_mut();
         }
         MB_OK => {
-            EventName = "SystemDefault\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR;
+            EventName = wstr!("SystemDefault").as_ptr() as LPWSTR;
         }
         MB_ICONASTERISK => {
-            EventName = "SystemAsterisk\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR;
+            EventName = wstr!("SystemAsterisk").as_ptr() as LPWSTR;
         }
         MB_ICONEXCLAMATION => {
-            EventName = "SystemExclamation\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR;
+            EventName = wstr!("SystemExclamation").as_ptr() as LPWSTR;
         }
         MB_ICONHAND => {
-            EventName = "SystemHand\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR;
+            EventName = wstr!("SystemHand").as_ptr() as LPWSTR;
         }
         MB_ICONQUESTION => {
-            EventName = "SystemQuestion\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR;
+            EventName = wstr!("SystemQuestion").as_ptr() as LPWSTR;
         }
         _ => {
-            EventName = "SystemDefault\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr() as LPWSTR;
+            EventName = wstr!("SystemDefault").as_ptr() as LPWSTR;
         }
     }
 
     PlayEventSound(Session, EventName)
 }
-unsafe fn SASWindowProc(
+unsafe extern "system" fn SASWindowProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1465,7 +1721,7 @@ pub unsafe extern "C" fn InitializeSAS(Session: PWLSESSION) -> BOOL {
 
         swc.cbSize = core::mem::size_of::<WNDCLASSEXW>() as u32;
         swc.style = CS_SAVEBITS;
-        swc.lpfnWndProc = Some(SASWindowProc);
+        swc.lpfnWndProc = core::mem::transmute(SASWindowProc as *const ());
         swc.cbClsExtra = 0;
         swc.cbWndExtra = 0;
         swc.hInstance = hAppInstance;
@@ -1473,7 +1729,7 @@ pub unsafe extern "C" fn InitializeSAS(Session: PWLSESSION) -> BOOL {
         swc.hCursor = core::ptr::null_mut();
         swc.hbrBackground = core::ptr::null_mut();
         swc.lpszMenuName = core::ptr::null_mut();
-        swc.lpszClassName = "SAS Window class\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr();
+        swc.lpszClassName = wstr!("SAS Window class").as_ptr();
         swc.hIconSm = core::ptr::null_mut();
         if RegisterClassExW(&mut swc) == 0 {
             break 'cleanup;
@@ -1481,8 +1737,8 @@ pub unsafe extern "C" fn InitializeSAS(Session: PWLSESSION) -> BOOL {
 
         (*Session).SASWindow = CreateWindowExW(
             0,
-            "SAS Window class\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
-            "SAS window\0".encode_utf16().collect::<alloc::vec::Vec<u16>>().as_ptr(),
+            wstr!("SAS Window class").as_ptr(),
+            wstr!("SAS window").as_ptr(),
             WS_POPUP,
             0, 0, 0, 0,
             core::ptr::null_mut(),
@@ -1824,7 +2080,7 @@ pub unsafe extern "C" fn InitializeSAS(Session: PWLSESSION) -> BOOL {
 //     SC_HANDLE hSCManager, hService;
 //
 //     /* Open the service manager */
-//     hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
+//     hSCManager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT);
 //     if (!hSCManager)
 //     {
 //         ERR!("OpenSCManager failed (%x)\n", GetLastError());
@@ -1968,7 +2224,7 @@ pub unsafe extern "C" fn InitializeSAS(Session: PWLSESSION) -> BOOL {
 //         return;
 //     }
 //
-//     dRet = WNetOpenEnum(RESOURCE_REMEMBERED, RESOURCETYPE_DISK, 0, NULL, &hEnum);
+//     dRet = WNetOpenEnumW(RESOURCE_REMEMBERED, RESOURCETYPE_DISK, 0, NULL, &hEnum);
 //     if (dRet != WN_SUCCESS)
 //     {
 //         ERR!("Failed to open enumeration: %lu\n", dRet);
@@ -1989,13 +2245,13 @@ pub unsafe extern "C" fn InitializeSAS(Session: PWLSESSION) -> BOOL {
 //         dCount = -1;
 //
 //         ZeroMemory(lpRes, dSize);
-//         dRet = WNetEnumResource(hEnum, &dCount, lpRes, &dSize);
+//         dRet = WNetEnumResourceW(hEnum, &dCount, lpRes, &dSize);
 //         if (dRet == WN_SUCCESS || dRet == WN_MORE_DATA)
 //         {
 //             lpCur = lpRes;
 //             for (; dCount; dCount--)
 //             {
-//                 WNetAddConnection(lpCur->lpRemoteName, NULL, lpCur->lpLocalName);
+//                 WNetAddConnection2W(lpCur->lpRemoteName, NULL, lpCur->lpLocalName);
 //                 lpCur++;
 //             }
 //         }
@@ -2482,7 +2738,7 @@ pub unsafe extern "C" fn InitializeSAS(Session: PWLSESSION) -> BOOL {
 //     Access.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
 //     Access.Trustee.ptstrName = pEveryoneSID;
 //
-//     if (SetEntriesInAcl(1, &Access, NULL, &pACL) != ERROR_SUCCESS)
+//     if (SetEntriesInAclW(1, &Access, NULL, &pACL) != ERROR_SUCCESS)
 //     {
 //         ERR!("Failed to set Access Rights for logoff thread. Logging out will most likely fail.\n");
 //
