@@ -93,6 +93,32 @@ void __stdcall shim_init_obja(struct shim_obja *p, PVOID n, ULONG a, PVOID r, PV
 void __stdcall shim_init_obja(struct shim_obja *p, PVOID n, ULONG a, PVOID r, PVOID s)
 { p->Length = sizeof(struct shim_obja); p->RootDirectory = r; p->ObjectName = n;
   p->Attributes = a; p->SecurityDescriptor = s; p->SecurityQualityOfService = (PVOID)0; }
+#else /* !__i386__ : amd64 / arm64 */
+/*
+ * On amd64/arm64 there is no stdcall decoration and no i386 leading-underscore:
+ * the Rust consrv condrv/coninput.rs + conoutput.rs `extern "system"` decls
+ * resolve to the UNDECORATED names below. The macro/intrinsic providers were
+ * previously i386-only; a stale C consrv archive (ar never prunes) masked their
+ * absence on amd64/arm64 until the archive was rebuilt. Same logic as the i386
+ * block, minus decoration; CONTAINING_RECORD takes a pointer-sized offset
+ * (Rust `usize`, 64-bit here) rather than i386's ULONG.
+ */
+LONG shim_ili(LONG volatile *p) __asm__("_InterlockedIncrement");
+LONG shim_ild(LONG volatile *p) __asm__("_InterlockedDecrement");
+LONG shim_ixchg(LONG volatile *p, LONG v) __asm__("_InterlockedExchange");
+LONG shim_ili(LONG volatile *p)   { return __atomic_add_fetch(p, 1, __ATOMIC_SEQ_CST); }
+LONG shim_ild(LONG volatile *p)   { return __atomic_sub_fetch(p, 1, __ATOMIC_SEQ_CST); }
+LONG shim_ixchg(LONG volatile *p, LONG v) { return __atomic_exchange_n(p, v, __ATOMIC_SEQ_CST); }
+
+PVOID shim_containing_record(const void *addr, PVOID type, unsigned long long field_off) __asm__("CONTAINING_RECORD");
+PVOID shim_containing_record(const void *addr, PVOID type, unsigned long long field_off)
+{ (void)type; return (PVOID)((const char *)addr - field_off); }
+
+struct shim_obja { ULONG Length; PVOID RootDirectory; PVOID ObjectName; ULONG Attributes; PVOID SecurityDescriptor; PVOID SecurityQualityOfService; };
+void shim_init_obja(struct shim_obja *p, PVOID n, ULONG a, PVOID r, PVOID s) __asm__("InitializeObjectAttributes");
+void shim_init_obja(struct shim_obja *p, PVOID n, ULONG a, PVOID r, PVOID s)
+{ p->Length = sizeof(struct shim_obja); p->RootDirectory = r; p->ObjectName = n;
+  p->Attributes = a; p->SecurityDescriptor = s; p->SecurityQualityOfService = (PVOID)0; }
 #endif /* __i386__ */
 
 /*

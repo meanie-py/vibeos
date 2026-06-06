@@ -9,16 +9,25 @@
 //!   winsrv.def ; image base 0x78860000 (i386) / 0x7ff86000000 (amd64/arm64).
 //!
 //! winsrv is a PARTIAL flip: init.c is Rust (winsrv-rust, `winsrv_dll_only`)
-//! but the consrv + usersrv + concfg C component libraries stay C. Rather than
-//! c_from_compile_db every consrv/usersrv source (Axis B), this reuses the
-//! whole cmake-built component .a (libconsrv/libusersrv/libconcfg/
-//! libconcfg_rust/libwin32ksys) + the import libs via static_libs — moving
-//! just the LINK. winsrv-rust pulls concfg-rust as a Cargo dep, so
-//! libconcfg_rust.a overlaps (kept for link parity; --allow-multiple-definition
-//! covers it). winsrv-rust's only default feature ntddi_ws03 stays on
-//! (additive) → exactly cmake's `--no-default-features --features
-//! winsrv_dll_only,ntddi_ws03`. winsrv.rc/.res is consumed by the cmake link
-//! today via the .def path; the resource is reused below.
+//! but consrv + usersrv + concfg stay C. Those component libs are now almost
+//! entirely Rust-flipped — each cmake `.a` carries only a tiny shim/stub TU:
+//!   libconsrv.a  = consrv/consrv_rust_shim.c        (1 TU)
+//!   libusersrv.a = usersrv/{usersrv_rust_stub,usersrv_rust_strsafe_shim}.c (2)
+//!   libconcfg.a  = concfg/concfg_rust_stub.c        (1 TU)
+//! Axis B: rather than reuse those whole cmake `.a`, compile the shims IN-cargo
+//! via `c_from_compile_db` (replaying cmake's flag-exact clang command per the
+//! existing consrv/usersrv/concfg cmake targets — all SKIP_PRECOMPILE_HEADERS,
+//! no PCH). Likewise the 8 import libs (ntdll/kernel32/user32/gdi32/advapi32/
+//! ole32/psapi/shell32) are self-hosted from each `.spec` via `.import_lib()`
+//! (like the other 6 spine binaries), not reused as cmake `lib<dll>.a`. Only
+//! the genuine shared leaf/runtime statics (uuid/win32ksys/libcntpr/pseh/
+//! basesrv/csrsrv/chkstk/concfg_rust/cntpr_rust) remain reused — the same tier
+//! every spine binary reuses. This brings winsrv to parity with the other six.
+//!
+//! winsrv-rust pulls concfg-rust as a Cargo dep, so libconcfg_rust.a overlaps
+//! (kept for link parity; --allow-multiple-definition covers it). winsrv-rust's
+//! only default feature ntddi_ws03 stays on (additive) → exactly cmake's
+//! `--no-default-features --features winsrv_dll_only,ntddi_ws03`.
 
 use reactos_link::{Linker, ModuleKind};
 use std::env;
@@ -43,32 +52,46 @@ fn main() {
         // Exports via spec2def-generated winsrv.def (ConServerDllInitialization
         // / UserServerDllInitialization / _UserSoundSentry / …).
         .spec2def("win32ss/user/winsrv/winsrv.spec", "winsrv.dll")
-        // The C component libs + leaf statics + import libs, reused from cmake
-        // in the cmake link order (libwinsrv_rust.a is emitted first by the
-        // engine, so it is omitted here). --allow-multiple-definition (added by
-        // the engine) covers the concfg-rust / cntpr overlaps.
+        // Axis B: the consrv/usersrv/concfg C residue compiled IN-cargo (replays
+        // cmake's flag-exact clang command via the existing cmake targets as the
+        // CMakeFiles/<name>.dir markers) — drops the libconsrv/libusersrv/
+        // libconcfg.a reuse. Each lands in the --start-group with libwinsrv_rust.a.
+        .c_from_compile_db("consrv", &["win32ss/user/winsrv/consrv/consrv_rust_shim.c"])
+        .c_from_compile_db(
+            "usersrv",
+            &[
+                "win32ss/user/winsrv/usersrv/usersrv_rust_stub.c",
+                "win32ss/user/winsrv/usersrv/usersrv_rust_strsafe_shim.c",
+            ],
+        )
+        .c_from_compile_db("concfg", &["win32ss/user/winsrv/concfg/concfg_rust_stub.c"])
+        // The genuine shared leaf/runtime statics, reused from cmake (the same
+        // tier every spine binary reuses). libwinsrv_rust.a is emitted first by
+        // the engine (rust_staticlib). --allow-multiple-definition (engine)
+        // covers the concfg-rust / cntpr overlaps.
         .static_libs(&[
-            "win32ss/user/winsrv/libconsrv.a",
-            "win32ss/user/winsrv/libusersrv.a",
-            "win32ss/user/winsrv/concfg/libconcfg.a",
             "sdk/lib/uuid/libuuid.a",
             "win32ss/libwin32ksys.a",
             "sdk/lib/crt/liblibcntpr.a",
             "sdk/lib/pseh/libpseh.a",
-            "dll/win32/shell32/CMakeFiles/libshell32.dir/libshell32.a",
-            "dll/win32/ole32/CMakeFiles/libole32.dir/libole32.a",
-            "dll/win32/psapi/CMakeFiles/libpsapi.dir/libpsapi.a",
-            "dll/win32/advapi32/CMakeFiles/libadvapi32.dir/libadvapi32.a",
             "subsystems/win/basesrv/CMakeFiles/libbasesrv.dir/libbasesrv.a",
             "subsystems/csr/csrsrv/CMakeFiles/libcsrsrv.dir/libcsrsrv.a",
-            "win32ss/gdi/gdi32/CMakeFiles/libgdi32.dir/libgdi32.a",
-            "win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a",
-            "dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a",
-            "dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a",
             "sdk/lib/crt/libchkstk.a",
             "win32ss/user/winsrv/concfg/libconcfg_rust.a",
             "sdk/lib/crt/libcntpr_rust.a",
         ])
+        // The 8 import libs self-hosted from each `.spec` (spec2def + dlltool),
+        // not reused as cmake lib<dll>.a — same as the other 6 spine binaries.
+        // (shell32/ole32/psapi were cmake DELAY imports; delay-imports collapse
+        // to regular imports on llvm-mingw, so plain import_lib is equivalent.)
+        .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
+        .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
+        .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
+        .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
+        .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
+        .import_lib("dll/win32/ole32/ole32.spec", "ole32.dll", "ole32")
+        .import_lib("dll/win32/psapi/psapi.spec", "psapi.dll", "psapi")
+        .import_lib("dll/win32/shell32/shell32.spec", "shell32.dll", "shell32")
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,
