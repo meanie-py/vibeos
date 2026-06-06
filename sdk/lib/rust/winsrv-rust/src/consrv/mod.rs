@@ -22,6 +22,7 @@ pub mod init;
 pub mod lineinput;
 pub mod popup;
 pub mod settings;
+pub mod shim;
 pub mod shutdown;
 pub mod subsysreg;
 pub mod term;

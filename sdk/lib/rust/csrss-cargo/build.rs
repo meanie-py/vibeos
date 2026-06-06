@@ -37,9 +37,6 @@ fn main() {
         .rust_staticlib("smss-csrss-rust")
         .rust_features(&["csrss_main_only"])
         .rust_user_target()
-        // csrss_rust_stub.c macro/intrinsic shim compiled IN-cargo (replays the
-        // csrss_c cmake compile command; SKIP_PRECOMPILE_HEADERS, self-contained).
-        .c_from_compile_db("csrss_c", &["subsystems/csr/csrss/csrss_rust_stub.c"])
         // csrsrv + ntdll import libs self-hosted from each .spec.
         .import_lib("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll", "csrsrv")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")

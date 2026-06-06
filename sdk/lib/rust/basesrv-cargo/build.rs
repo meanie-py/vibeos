@@ -39,13 +39,10 @@ fn main() {
         // Notify / BaseSrvNlsLogon / BaseSrvNlsUpdateRegistryCache) via a
         // spec2def-generated .def. No -stub entries.
         .spec2def("subsystems/win/basesrv/basesrv.spec", "basesrv.dll")
-        // The basesrv_rust_stub.c macro/intrinsic shim compiled IN-cargo
-        // (replays the basesrv_c cmake compile command). SKIP_PRECOMPILE_HEADERS,
-        // lands in the --start-group with libsmss_csrss_rust.a.
-        .c_from_compile_db(
-            "basesrv_c",
-            &["subsystems/win/basesrv/basesrv_rust_stub.c"],
-        )
+        // basesrv_rust_stub.c was a cmake-era cohabitation stub (an empty TU to
+        // force archive extraction under add_executable); the cargo link pulls
+        // the Rust body archive directly via the CRT's symbol references, so it
+        // is vestigial and dropped — the basesrv link now compiles ZERO C.
         // basesrv.rc compiled IN-cargo by replaying the basesrv_res windres
         // command (drops the cmake-built .res reuse).
         .resource_from_rc("subsystems/win/basesrv/basesrv.rc", "basesrv_res")
