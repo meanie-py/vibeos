@@ -122,7 +122,7 @@ list(APPEND SOURCE
     # user/ntuser/dde.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dde.rs) — cohabitation [ntuser wave 21]
     user/ntuser/defwnd.c
     # user/ntuser/desktop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/desktop.rs) — cohabitation [ntuser wave 13 spine]
-    user/ntuser/display.c
+    # user/ntuser/display.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/display.rs) — cohabitation [ntuser wave 31]
     user/ntuser/draw.c
     # user/ntuser/event.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/event.rs) — cohabitation [ntuser wave 10]
     # user/ntuser/focus.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/focus.rs) — cohabitation [ntuser wave 25]
@@ -343,6 +343,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/callback.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntmouse.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/input.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/display.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

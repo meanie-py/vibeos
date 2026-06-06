@@ -302,6 +302,8 @@ pub mod callback;
 pub mod ntmouse;
 // [ntuser wave 30 — input]
 pub mod input;
+// [ntuser wave 31 — display]
+pub mod display;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
