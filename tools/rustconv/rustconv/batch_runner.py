@@ -18,10 +18,38 @@ class TranslationResult:
     source_file: str
     rust_code: str
     model: str
-    input_tokens: int
+    input_tokens: int            # UNCACHED input tokens only (full price)
     output_tokens: int
     success: bool
     error: Optional[str] = None
+    cache_read_tokens: int = 0   # served from cache (~0.1x price)
+    cache_write_tokens: int = 0  # written to cache (~1.25x price)
+
+
+# Per-1M-token USD pricing (input, output, cache_read, cache_write).
+# Cache read = 0.1x input; cache write (5-min ephemeral) = 1.25x input.
+PRICING = {
+    "claude-opus-4-8":   (5.00, 25.00, 0.50, 6.25),
+    "claude-opus-4-7":   (5.00, 25.00, 0.50, 6.25),
+    "claude-opus-4-6":   (5.00, 25.00, 0.50, 6.25),
+    "claude-sonnet-4-5": (3.00, 15.00, 0.30, 3.75),
+    "claude-sonnet-4-6": (3.00, 15.00, 0.30, 3.75),
+    "claude-haiku-4-5":  (1.00,  5.00, 0.10, 1.25),
+}
+
+
+def estimate_cost(model: str, input_tokens: int, output_tokens: int,
+                  cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> Optional[float]:
+    """USD cost for one (or accumulated) call. None if the model isn't priced here."""
+    rates = PRICING.get(model)
+    if rates is None:
+        # tolerate dated/full IDs by prefix match
+        rates = next((v for k, v in PRICING.items() if model.startswith(k)), None)
+    if rates is None:
+        return None
+    pin, pout, pread, pwrite = rates
+    return (input_tokens * pin + output_tokens * pout
+            + cache_read_tokens * pread + cache_write_tokens * pwrite) / 1_000_000
 
 
 def _submit_claude(prompt: str, model: str, system_prompt: str = "") -> TranslationResult:
@@ -49,19 +77,35 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "") -> Translat
         response_text = ""
         input_tokens = 0
         output_tokens = 0
+        cache_read_tokens = 0
+        cache_write_tokens = 0
         stop_reason = None
 
-        with client.messages.stream(**kwargs) as stream:
-            for event in stream:
-                if hasattr(event, 'type'):
-                    if event.type == 'content_block_delta' and hasattr(event, 'delta'):
-                        if hasattr(event.delta, 'text'):
-                            response_text += event.delta.text
-                    elif event.type == 'message_delta' and hasattr(event, 'usage'):
-                        output_tokens = event.usage.output_tokens
-                        stop_reason = event.delta.stop_reason if hasattr(event, 'delta') else None
-                    elif event.type == 'message_start' and hasattr(event, 'message'):
-                        input_tokens = event.message.usage.input_tokens
+        try:
+            with client.messages.stream(**kwargs) as stream:
+                for event in stream:
+                    if hasattr(event, 'type'):
+                        if event.type == 'content_block_delta' and hasattr(event, 'delta'):
+                            if hasattr(event.delta, 'text'):
+                                response_text += event.delta.text
+                        elif event.type == 'message_delta' and hasattr(event, 'usage'):
+                            output_tokens = event.usage.output_tokens
+                            stop_reason = event.delta.stop_reason if hasattr(event, 'delta') else None
+                        elif event.type == 'message_start' and hasattr(event, 'message'):
+                            u = event.message.usage
+                            input_tokens = u.input_tokens
+                            # cache_*_input_tokens are billed separately from input_tokens
+                            cache_read_tokens = getattr(u, 'cache_read_input_tokens', 0) or 0
+                            cache_write_tokens = getattr(u, 'cache_creation_input_tokens', 0) or 0
+        except Exception as stream_err:
+            # A mid-stream failure (overload, timeout, truncation) still burned
+            # whatever tokens we saw before the break — surface them, don't drop them.
+            return TranslationResult(
+                source_file="", rust_code=_extract_rust_code(response_text), model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens, cache_write_tokens=cache_write_tokens,
+                success=False, error=f"stream interrupted: {stream_err}",
+            )
 
         rust_code = _extract_rust_code(response_text)
 
@@ -74,6 +118,8 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "") -> Translat
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
             success=True,
         )
 

@@ -762,10 +762,15 @@ def cmd_translate(args):
     from .function_resolver import resolve_function
     from .function_prompt import build_function_prompt, build_preamble_prompt, load_function_system_prompt
     from .stitcher import stitch_file
-    from .batch_runner import submit_single, TranslationResult
+    from .batch_runner import submit_single, TranslationResult, estimate_cost
     from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
     from .postprocess import postprocess
     from .prompt_builder import estimate_tokens
+
+    # Hard safety cap: abort a file (and the whole run) once cumulative spend
+    # crosses this. Prevents the rtl-style runaway. None = no cap.
+    cost_cap = getattr(args, "cost_cap", None)
+    run_cost = 0.0  # accumulates across all files in this invocation
 
     # Resolve target: single file or directory
     target_path = Path(args.path)
@@ -881,8 +886,13 @@ def cmd_translate(args):
         # Translate function by function
         all_deps_for_context = extract_call_graph(scan, spec_exports=file_res.exports)
         translated: dict[str, str] = {}
-        total_in = 0
+        total_in = 0          # uncached input (full price)
         total_out = 0
+        total_cache_read = 0  # cache hits (~0.1x)
+        total_cache_write = 0 # cache writes (~1.25x)
+        failed_in = 0         # tokens burned on FAILED calls (off-the-books until now)
+        failed_out = 0
+        capped = False
 
         for func_idx, dep in enumerate(sorted_deps, 1):
             print(f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...", file=sys.stderr, end=" ", flush=True)
@@ -903,13 +913,36 @@ def cmd_translate(args):
                 full_prompt = (system_prompt + "\n\n---\n\n" + user_prompt) if system_prompt else user_prompt
                 result = submit_single(full_prompt, model=model)
 
+            # Account for EVERY call's tokens — success or failure.
+            call_cost = estimate_cost(model, result.input_tokens, result.output_tokens,
+                                      result.cache_read_tokens, result.cache_write_tokens) or 0.0
+            run_cost += call_cost
+
             if result.success:
                 translated[dep.name] = result.rust_code
                 total_in += result.input_tokens
                 total_out += result.output_tokens
-                print(f"OK ({result.input_tokens} in / {result.output_tokens} out)", file=sys.stderr)
+                total_cache_read += result.cache_read_tokens
+                total_cache_write += result.cache_write_tokens
+                cr = f" / {result.cache_read_tokens} cache-rd" if result.cache_read_tokens else ""
+                cw = f" / {result.cache_write_tokens} cache-wr" if result.cache_write_tokens else ""
+                print(f"OK ({result.input_tokens} in / {result.output_tokens} out{cr}{cw})", file=sys.stderr)
             else:
-                print(f"FAIL: {result.error}", file=sys.stderr)
+                failed_in += result.input_tokens
+                failed_out += result.output_tokens
+                total_cache_read += result.cache_read_tokens
+                total_cache_write += result.cache_write_tokens
+                burned = ""
+                if result.input_tokens or result.output_tokens:
+                    burned = f" [burned {result.input_tokens} in / {result.output_tokens} out]"
+                print(f"FAIL: {result.error}{burned}", file=sys.stderr)
+
+            # Hard cost cap — stop before the next (paid) call if we've crossed it.
+            if cost_cap is not None and run_cost >= cost_cap:
+                print(f"  ⛔ COST CAP HIT: ${run_cost:.2f} ≥ ${cost_cap:.2f} after "
+                      f"{func_idx}/{len(sorted_deps)} functions — stopping.", file=sys.stderr)
+                capped = True
+                break
 
         if not translated:
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
@@ -921,7 +954,7 @@ def cmd_translate(args):
         # non-trivial preamble (most drivers) would not compile.
         preamble_rust = ""
         preamble_src = (scan.preamble_text or scan.globals_text or "").strip()
-        if preamble_src:
+        if preamble_src and not capped:
             print(f"  [preamble] {len(preamble_src)} C chars...",
                   file=sys.stderr, end=" ", flush=True)
             pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
@@ -931,18 +964,45 @@ def cmd_translate(args):
             else:
                 pre_full = (system_prompt + "\n\n---\n\n" + pre_prompt) if system_prompt else pre_prompt
                 pre_res = submit_single(pre_full, model=model)
+            run_cost += estimate_cost(model, pre_res.input_tokens, pre_res.output_tokens,
+                                      pre_res.cache_read_tokens, pre_res.cache_write_tokens) or 0.0
             if pre_res.success:
                 preamble_rust = pre_res.rust_code
                 total_in += pre_res.input_tokens
                 total_out += pre_res.output_tokens
+                total_cache_read += pre_res.cache_read_tokens
+                total_cache_write += pre_res.cache_write_tokens
                 print(f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)",
                       file=sys.stderr)
             else:
+                failed_in += pre_res.input_tokens
+                failed_out += pre_res.output_tokens
                 print(f"FAIL: {pre_res.error} (stitching without preamble)",
                       file=sys.stderr)
 
+        # ── Per-file usage + cost breakdown (the real billed split) ──
+        file_cost = estimate_cost(model, total_in + failed_in, total_out + failed_out,
+                                  total_cache_read, total_cache_write)
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
-        print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
+        print(f"  Tokens  uncached-in={total_in:,}  out={total_out:,}  "
+              f"cache-read={total_cache_read:,}  cache-write={total_cache_write:,}",
+              file=sys.stderr)
+        if failed_in or failed_out:
+            print(f"  WASTED on failed calls: {failed_in:,} in / {failed_out:,} out",
+                  file=sys.stderr)
+        if file_cost is not None:
+            # Show what caching saved vs. a hypothetical no-cache run (cache reads
+            # would have been full-price uncached input).
+            rates = None
+            try:
+                from .batch_runner import PRICING
+                rates = PRICING.get(model) or next((v for k, v in PRICING.items() if model.startswith(k)), None)
+            except Exception:
+                pass
+            saved = (total_cache_read * (rates[0] - rates[2]) / 1_000_000) if rates else 0.0
+            cache_note = f"  (caching saved ~${saved:.2f})" if total_cache_read else "  (NO cache hits — caching not working!)"
+            print(f"  Cost ≈ ${file_cost:.3f}{cache_note}   run total ≈ ${run_cost:.2f}",
+                  file=sys.stderr)
 
         # Stitch functions into a single file
         stitched = stitch_file(translated, sorted_deps, scan, file_res,
@@ -972,6 +1032,13 @@ def cmd_translate(args):
                                      exports=file_res.exports, scan=scan,
                                      target=rustconv_target, c_source_path=c_file)
             print(f"  Assembled to {out_path}", file=sys.stderr)
+
+        # Respect the cost cap across files too, not just within one file.
+        if capped:
+            print(f"\n⛔ Stopping run: cost cap ${cost_cap:.2f} reached "
+                  f"(run total ≈ ${run_cost:.2f}). Remaining files NOT translated.",
+                  file=sys.stderr)
+            break
 
     # Generate mod.rs and lib.rs for batch runs (ntoskrnl only — HAL handles
     # mod.rs incrementally via _hal_register_mod and has a single src/x86 dir).
@@ -1339,6 +1406,9 @@ def main():
     p.add_argument("--prompt", action="store_true", help="Print prompt for first function (implies --dry-run)")
     p.add_argument("--exclude", nargs="*", default=[],
                    help="File stems to skip (batch mode)")
+    p.add_argument("--cost-cap", dest="cost_cap", type=float, default=None,
+                   help="Hard USD spend cap for this invocation; stops before the next "
+                        "call once cumulative estimated cost reaches it (safety brake).")
 
     # probe-migrate
     p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
