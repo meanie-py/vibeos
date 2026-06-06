@@ -17,10 +17,14 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code)]
 
-// Win32 predefined consts, macros, and the extern `WLSession` global the
-// per-file translation can't resolve (not in winlogon-sys: they're macros
-// / a C-core-owned global). Shared by the flipped leaf modules.
+// Win32 predefined consts, macros, and the WLSession/hAppInstance globals
+// (owned by winlogon.rs, re-exported here) the leaf modules share.
 pub mod preamble;
+
+// winlogon.c — the main: WinMain bootstrap (winsta/desktop, services+lsass
+// spawn, GINA init, explorer spawn) + the WLSession/hAppInstance globals +
+// WlStrDup/DisplayStatusMessage/RemoveStatusMessage. Second GINA/SAS/RPC core.
+pub mod winlogon;
 
 // setup.c — GetSetupType / RunSetup (setup-mode shell launch). The spike.
 pub mod setup;
