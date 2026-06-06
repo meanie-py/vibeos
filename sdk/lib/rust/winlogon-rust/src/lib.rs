@@ -62,6 +62,16 @@ pub mod rpcserver;
 // and CreateWindowStationAndDesktops. Third GINA/SAS/RPC core.
 pub mod wlx;
 
+// sas.c — the Secure Attention Sequence state machine (logon/logoff/shutdown,
+// the SAS window proc, hotkeys, sound). Fourth/last GINA/SAS/RPC core.
+// WIP: src/sas.rs holds the rustconv (Opus 4.8) translation, PARKED (not yet
+// wired in) — its integration needs ~5 hand-defined Win32 structs (PROFILEINFOW
+// / NETRESOURCEW / SERVICE_STATUS_PROCESS / EXPLICIT_ACCESS_W / SC_HANDLE) +
+// ~25 consts + ~15 API externs that winlogon-sys's bindgen never covered, plus
+// the usual rustconv fixups (Vec→wstr!, ABIs, callback splits). sas.c stays C
+// (cohab) until then. Re-enable `pub mod sas;` once it compiles + links.
+// pub mod sas;
+
 // USER-MODE no_std staticlib → needs its own panic handler + eh_personality
 // (same role as userinit-rust / smss-csrss-rust). Must NOT use privileged
 // instructions.
