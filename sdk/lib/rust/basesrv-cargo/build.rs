@@ -1,0 +1,62 @@
+//! Cargo-driven `basesrv.dll` link (i386 + amd64 + arm64). Manifest for the
+//! shared reactos-link engine. The LAST csrss-spine server moved cmake→cargo,
+//! and the one still on the pre-Axis-A pattern (cmake `add_library(basesrv
+//! MODULE)` + a standalone `add_custom_command` cargo build whose `.a` the link
+//! reused). Now driven end-to-end by reactos-link, like csrsrv/winsrv.
+//!
+//! Mirrors the cmake basesrv.dll link (build-<arch>/build.ninja):
+//!   subsystem console:5.01 ; entry _DllMain@12 (i386) / DllMain (amd64/arm64) ;
+//!   -shared ; keep all sections ; exports via the spec2def-generated
+//!   basesrv.def ; image base 0x78960000 (i386) / 0x7ff87000000 (amd64/arm64).
+//!
+//! basesrv is a FULL Rust flip (smss-csrss-rust/src/basesrv/*, basesrv_dll_only
+//! feature — all 7 .c gone). The only C residue is basesrv_rust_stub.c (the
+//! macro/intrinsic shim) and basesrv.rc, both compiled IN-cargo here
+//! (c_from_compile_db + resource_from_rc). basesrv_dll_only is additive over the
+//! sole default ntddi_ws03 → exactly cmake's `--no-default-features --features
+//! basesrv_dll_only,ntddi_ws03`. csrsrv + ntdll import libs self-hosted from
+//! each .spec; chkstk + pseh leaf statics reused.
+
+use reactos_link::{Linker, ModuleKind};
+use std::env;
+
+fn main() {
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
+        "x86" => ("i686-kernel.json", "_DllMain@12", 0x7896_0000),
+        "x86_64" => ("x86_64-kernel.json", "DllMain", 0x7ff_8700_0000),
+        "aarch64" => ("aarch64-kernel.json", "DllMain", 0x7ff_8700_0000),
+        o => panic!("basesrv-cargo: unsupported arch {o}"),
+    };
+
+    Linker::new(target_json)
+        // basesrv_dll_only gates the basesrv DllMain/ServerDllInitialization
+        // entry surface; ntddi_ws03 stays on (additive) → matches cmake's
+        // `--no-default-features --features basesrv_dll_only,ntddi_ws03`.
+        .rust_staticlib("smss-csrss-rust")
+        .rust_features(&["basesrv_dll_only"])
+        // 4 basesrv.spec exports (ServerDllInitialization / BaseSetProcessCreate
+        // Notify / BaseSrvNlsLogon / BaseSrvNlsUpdateRegistryCache) via a
+        // spec2def-generated .def. No -stub entries.
+        .spec2def("subsystems/win/basesrv/basesrv.spec", "basesrv.dll")
+        // The basesrv_rust_stub.c macro/intrinsic shim compiled IN-cargo
+        // (replays the basesrv_c cmake compile command). SKIP_PRECOMPILE_HEADERS,
+        // lands in the --start-group with libsmss_csrss_rust.a.
+        .c_from_compile_db(
+            "basesrv_c",
+            &["subsystems/win/basesrv/basesrv_rust_stub.c"],
+        )
+        // basesrv.rc compiled IN-cargo by replaying the basesrv_res windres
+        // command (drops the cmake-built .res reuse).
+        .resource_from_rc("subsystems/win/basesrv/basesrv.rc", "basesrv_res")
+        // csrsrv + ntdll import libs self-hosted from each .spec.
+        .import_lib("subsystems/csr/csrsrv/csrsrv.spec", "csrsrv.dll", "csrsrv")
+        .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
+        // Leaf statics reused from cmake (the shared floor).
+        .static_libs(&["sdk/lib/crt/libchkstk.a", "sdk/lib/pseh/libpseh.a"])
+        .link(ModuleKind::Win32Dll {
+            entry: entry.into(),
+            image_base,
+            subsystem: Some("console:5.01".into()),
+        });
+}

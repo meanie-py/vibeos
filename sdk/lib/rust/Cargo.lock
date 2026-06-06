@@ -34,6 +34,13 @@ name = "avltable"
 version = "0.1.0"
 
 [[package]]
+name = "basesrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "bitmap"
 version = "0.1.0"
 

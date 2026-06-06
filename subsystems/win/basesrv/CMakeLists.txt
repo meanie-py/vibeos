@@ -3,89 +3,47 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
 spec2def(basesrv.dll basesrv.spec ADD_IMPORTLIB)
 
-# --- Rust cohabitation (smss-csrss-rust, basesrv_dll_only) — task #18/#41 --
-# FULL flip: ALL 7 basesrv .c → Rust (appcompat/dosdev/init/nls/proc/sndsntry/
-# vdm). dosdev.rs + vdm.rs were translated by Opus 4.8 (task #41) after the
-# rustconv scanner learned the CSR_API() macro. Mirrors the csrss.exe cohab
-# pattern (own cargo target dir; every flipped .c removed from SOURCE so lld
-# pulls its symbols from the archive; basesrv_rust_stub.c keeps add_library
-# valid). The basesrv-private VDM types/constants (not in ntdll-sys) live in
-# the shared smss-csrss-rust/src/basesrv/vdm_types.rs.
-set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
-if(ARCH STREQUAL "i386")
-    set(RUST_TARGET "i686-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
-elseif(ARCH STREQUAL "amd64")
-    set(RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_EXTRA_ENV "")
-endif()
-set(BASESRV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsmss_csrss_rust.a")
-add_custom_command(
-    OUTPUT ${BASESRV_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p smss-csrss-rust
-            --no-default-features
-            --features basesrv_dll_only,ntddi_ws03
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libsmss_csrss_rust.a
-        ${BASESRV_RUST_LIB}
-    DEPENDS
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/lib.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/mod.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/appcompat.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/dosdev.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/init.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/nls.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/proc.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/sndsntry.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/vdm.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/src/basesrv/vdm_types.rs
-        ${RUST_WORKSPACE_DIR}/smss-csrss-rust/Cargo.toml
-        ${RUST_WORKSPACE_DIR}/ntdll-sys/src/lib.rs
-    COMMENT "Building smss-csrss-rust basesrv_dll_only (${RUST_TARGET})"
-    VERBATIM)
-add_custom_target(basesrv_rust_lib DEPENDS ${BASESRV_RUST_LIB})
-# -------------------------------------------------------------------------
+# --- CARGO-DRIVEN LINK + FULL Rust flip (smss-csrss-rust, basesrv_dll_only) ---
+# basesrv.dll is a FULL flip: ALL 7 .c → Rust (appcompat/dosdev/init/nls/proc/
+# sndsntry/vdm; dosdev.rs + vdm.rs by Opus 4.8, task #41). Its LINK is now driven
+# by cargo (basesrv-cargo → reactos-link ModuleKind::Win32Dll, subsystem
+# console:5.01, entry _DllMain@12) — the LAST csrss-spine server moved cmake→cargo
+# (after csrsrv + winsrv), and the one that was still on the legacy pattern
+# (`add_library(basesrv MODULE)` + a standalone `add_custom_command` cargo build
+# the link reused). That custom-command + RUST_* machinery is retired; the engine
+# self-hosts the csrsrv/ntdll import libs and compiles the basesrv_rust_stub.c
+# residue + basesrv.rc IN-cargo (c_from_compile_db + resource_from_rc). Keep all
+# .c on disk (never delete the C). The basesrv-private VDM types live in the
+# shared smss-csrss-rust/src/basesrv/vdm_types.rs.
 
-list(APPEND SOURCE
-    # appcompat.c — replaced by Rust (smss-csrss-rust/src/basesrv/appcompat.rs)
-    # dosdev.c    — replaced by Rust (smss-csrss-rust/src/basesrv/dosdev.rs)
-    # init.c      — replaced by Rust (smss-csrss-rust/src/basesrv/init.rs)
-    # proc.c      — replaced by Rust (smss-csrss-rust/src/basesrv/proc.rs)
-    # sndsntry.c  — replaced by Rust (smss-csrss-rust/src/basesrv/sndsntry.rs)
-    # vdm.c       — replaced by Rust (smss-csrss-rust/src/basesrv/vdm.rs)
-    # nls.c       — replaced by Rust (smss-csrss-rust/src/basesrv/nls.rs)
-    basesrv_rust_stub.c
-    basesrv.h)
-
-add_library(basesrv MODULE
-    ${SOURCE}
-    basesrv.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/basesrv.def)
-
-set_module_type(basesrv win32dll UNICODE ENTRYPOINT DllMain 12)
-#############################################
-## HACK FOR MSVC COMPILATION WITH win32dll ##
-set_subsystem(basesrv console)
-################# END  HACK #################
-
-target_link_libraries(basesrv ${PSEH_LIB} ${BASESRV_RUST_LIB})
-add_dependencies(basesrv basesrv_rust_lib)
-# Rust .a pulls libcore/compiler-builtins objects; allow intrinsic overlap.
-target_link_options(basesrv PRIVATE "-Wl,--allow-multiple-definition")
-add_importlibs(basesrv csrsrv ntdll)
-add_pch(basesrv basesrv.h SOURCE)
-# The Rust-cohab stub is self-contained — keep the PCH out of it.
+# basesrv_rust_stub.c (macro/intrinsic shim) is compiled IN-cargo by the cargo
+# link (c_from_compile_db, CMakeFiles/basesrv_c.dir marker). This OBJECT lib's
+# objects are NOT linked here — it exists only to populate compile_commands.json.
+# UNICODE/_UNICODE replicate set_module_type(... UNICODE); SKIP_PRECOMPILE_HEADERS
+# matches the original (the stub is self-contained — no SDK headers).
+add_library(basesrv_c OBJECT basesrv_rust_stub.c)
+target_compile_definitions(basesrv_c PRIVATE UNICODE _UNICODE)
 set_source_files_properties(basesrv_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
-add_dependencies(basesrv bugcodes xdk)
-add_cd_file(TARGET basesrv DESTINATION reactos/system32 FOR all)
+
+# basesrv.rc is compiled IN-cargo (resource_from_rc replays the basesrv_res
+# windres command). This resource-only OBJECT lib stays only to populate
+# compile_commands.json; its .res is not linked.
+add_library(basesrv_res OBJECT basesrv.rc)
+target_compile_definitions(basesrv_res PRIVATE UNICODE _UNICODE)
+target_include_directories(basesrv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# The shared leaf statics the cargo link reuses, as FILE paths for parallel-build
+# ordering. csrsrv/ntdll import libs are self-hosted in-cargo from each .spec.
+# basesrv.def (exports) is generated by the cargo link's spec2def.
+set(BASESRV_REUSED
+    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a)
+
+add_cargo_module(basesrv basesrv-cargo basesrv.dll
+    KIND win32dll
+    BODY_CRATE smss-csrss-rust
+    DESTINATION reactos/system32
+    EXTRA_DEPENDS basesrv_c basesrv_res ${BASESRV_REUSED})
 
 # Cohabitation flip deferred (task #18). 2026-05-26 debug session
 # uncovered:
