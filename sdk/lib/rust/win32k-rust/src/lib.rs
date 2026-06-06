@@ -296,6 +296,8 @@ pub mod focus;
 pub mod misc;
 // [ntuser wave 27 — nonclient]
 pub mod nonclient;
+// [ntuser wave 28 — callback]
+pub mod callback;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

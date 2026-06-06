@@ -111,7 +111,7 @@ list(APPEND SOURCE
     reactx/ntddraw/eng.c
     reactx/ntddraw/dxeng.c
     # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
-    user/ntuser/callback.c
+    # user/ntuser/callback.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callback.rs) — cohabitation [ntuser wave 28]
     # user/ntuser/callproc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callproc.rs) — cohabitation [ntuser wave 7]
     # user/ntuser/caret.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/caret.rs) — cohabitation [ntuser wave 3]
     # user/ntuser/class.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/class.rs) — cohabitation [ntuser wave 12 spine]
@@ -340,6 +340,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/focus.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/misc.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/nonclient.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/callback.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
