@@ -262,11 +262,14 @@ unsafe fn ppi_w32pf_flags(ppi: PPROCESSINFO) -> *mut ULONG {
     (ppi as *mut u8).add(off) as *mut ULONG
 }
 
-// THRDESKHEAD.pti: bindgen flattens HEAD{h, cLockObj} + pti into __bindgen_padding_0;
-// pti sits at byte offset size_of::<HANDLE>() + size_of::<DWORD>().
+// THROBJHEAD.pti: bindgen flattens HEAD{h, cLockObj} + pti into __bindgen_padding_0.
+// pti is a pointer following HEAD{HANDLE, DWORD}; on 64-bit there are 4 bytes of
+// tail padding so pti is at offset 16 (amd64/arm64) / 8 (i386). HANDLE+DWORD (=12 on
+// 64-bit) MISSES the padding → garbage pti → AV. Use 2*usize = 16/8 correctly per
+// arch (matches event.rs/timer.rs). [latent amd64/arm64 offset bug fix]
 #[inline(always)]
 unsafe fn head_pti(head: *const _THRDESKHEAD) -> PTHREADINFO {
-    let off = core::mem::size_of::<HANDLE>() + core::mem::size_of::<DWORD>();
+    let off = 2 * core::mem::size_of::<usize>();
     *((head as *const u8).add(off) as *const PTHREADINFO)
 }
 

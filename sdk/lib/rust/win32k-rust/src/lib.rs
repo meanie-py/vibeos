@@ -274,6 +274,8 @@ pub mod winsta;
 pub mod clipboard;
 // [ntuser wave 16 — layered windows]
 pub mod layered;
+// [ntuser wave 17 — timer]
+pub mod timer;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
