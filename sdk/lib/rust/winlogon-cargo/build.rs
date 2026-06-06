@@ -50,9 +50,9 @@ fn main() {
                 "base/system/winlogon/winreg_s.c",
             ],
         )
-        // Load-bearing resource (winlogon.ico app icon), compiled by the
-        // resource-only OBJECT lib `winlogon_res`.
-        .resource_built("base/system/winlogon/CMakeFiles/winlogon_res.dir/winlogon.rc.res")
+        // Load-bearing resource (winlogon.ico app icon), compiled IN-cargo by
+        // replaying the winlogon_res windres command from compile_commands.json.
+        .resource_from_rc("base/system/winlogon/winlogon.rc", "winlogon_res")
         // 10 import libs generated in-cargo from .spec.
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")

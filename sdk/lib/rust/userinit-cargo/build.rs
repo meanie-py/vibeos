@@ -29,8 +29,9 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("userinit-rust")
         // Load-bearing resource (manifest + IDB_ROSLOGO bitmaps + localized
-        // dialogs), compiled by the resource-only OBJECT lib `userinit_res`.
-        .resource_built("base/system/userinit/CMakeFiles/userinit_res.dir/userinit.rc.res")
+        // dialogs), compiled IN-cargo by replaying the userinit_res windres
+        // command from compile_commands.json (drops the cmake-built .res reuse).
+        .resource_from_rc("base/system/userinit/userinit.rc", "userinit_res")
         // 7 import libs generated in-cargo from .spec.
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
