@@ -482,6 +482,12 @@ python -m rustconv trace-catalog                        # Generate debugcon trac
 python -m rustconv check                                # cargo check ×3 targets
 ```
 
+> **⚠️ `translate`/`submit` SPEND REAL MONEY — read this before running them.** Multiple agents have wasted >$100 by killing translations mid-run and losing the output. The rules:
+> - **NEVER Ctrl-C / kill a `translate` or `submit` mid-call to "adjust something."** Let it finish. `translate` makes one paid call **per function** — kill it at function 35/40 and you re-pay for all 35 on the retry. If you must change something, wait for it to finish, *then* re-run.
+> - **Output is now saved as it streams** to `tools/rustconv/.responses/<ts>-<file>/` (gitignored, in-repo, survives kills/reboots). Each function's Rust lands there the instant it returns; the in-flight one is preserved as a `.partial`. That dir is the **canonical copy** — never write translations to `/tmp` (`-o /tmp/...` is flagged; the durable copy in `.responses/` exists regardless). Do not delete a `.responses/` run dir that holds unintegrated work.
+> - **Cost estimates are a FLOOR, not a quote.** `estimate` shows the single-prompt cost; `translate` re-sends context per function, so the real bill is routinely **2–5×** higher, and `-m opus` is **full sync price ($5/$25 per 1M), not the batch Sonnet price** in the table below. Watch the live `[running $X.XX]` counter the command prints — that's the truth. Budget with the "sync @5x" column from `estimate`.
+> - **Don't re-translate a file that already has output** (in `.responses/` or already integrated) without explicit user approval — you're re-paying for work that exists.
+
 Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, or full model ID.
 
 `rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating (memory `feedback_rustconv_hal_target.md`).
@@ -564,9 +570,15 @@ The shape per function: an idiomatic `<snake_name>_rs(...) -> Result<T, NTSTATUS
 
 Stage 3 will operate **function-by-function** (not file-by-file) using paired C+Rust function context, a dependency graph (SQLite cache), and Rust-native API surface for RAII guards, safe user-mode copies, and Result patterns. The LLM sees the original C alongside the current Rust translation, plus callees and type context.
 
-### Cost (Sonnet Batch API)
+### Cost (Sonnet **Batch** API — the cheapest path, NOT what you pay synchronously)
 
-| Scope | Est. Cost |
+These are **batch Sonnet** figures (50% off, async). The synchronous `translate`/`submit`
+path you actually use pays **full list price**, and `-m opus` is **~3.3× the Sonnet rate**
+($5/$25 vs $3/$15 per 1M) on top of losing the batch discount — so a "Full ntoskrnl"
+Opus-synchronous run with per-function fan-out is an order of magnitude past the bottom row.
+Always sanity-check against `rustconv estimate`'s "sync @5x" column and the live cost counter.
+
+| Scope | Est. Cost (batch Sonnet, floor) |
 |-------|-----------|
 | Single file | ~$0.03 |
 | Subsystem (11 files) | ~$0.30 |
