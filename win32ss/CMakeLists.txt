@@ -159,7 +159,7 @@ list(APPEND SOURCE
     # user/ntuser/useratom.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/useratom.rs) — cohabitation [ntuser wave 1]
     # user/ntuser/usrheap.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/usrheap.rs) — cohabitation [ntuser wave 6]
     # user/ntuser/vis.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/vis.rs) — cohabitation [ntuser wave 5]
-    user/ntuser/windc.c
+    # user/ntuser/windc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/windc.rs) — cohabitation [ntuser wave 23]
     user/ntuser/window.c
     user/ntuser/winpos.c
     # user/ntuser/winsta.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winsta.rs) — cohabitation [ntuser wave 14 spine]
@@ -335,6 +335,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/monitor.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dde.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntstubs.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/windc.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

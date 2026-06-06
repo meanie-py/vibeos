@@ -286,6 +286,8 @@ pub mod monitor;
 pub mod dde;
 // [ntuser wave 22 — ntstubs]
 pub mod ntstubs;
+// [ntuser wave 23 — windc]
+pub mod windc;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
