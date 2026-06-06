@@ -292,6 +292,8 @@ pub mod windc;
 pub mod simplecall;
 // [ntuser wave 25 — focus]
 pub mod focus;
+// [ntuser wave 26 — misc]
+pub mod misc;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
