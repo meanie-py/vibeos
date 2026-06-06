@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 
 type PUSER_SOUND_SENTRY = Option<unsafe extern "system" fn() -> BOOLEAN>;
@@ -11,8 +10,13 @@ unsafe extern "system" fn FailSoundSentry() -> BOOLEAN {
 
 unsafe extern "system" fn FirstSoundSentry() -> BOOLEAN {
     static DLL_NAME: [u16; 7] = [
-        b'w' as u16, b'i' as u16, b'n' as u16, b's' as u16,
-        b'r' as u16, b'v' as u16, 0,
+        b'w' as u16,
+        b'i' as u16,
+        b'n' as u16,
+        b's' as u16,
+        b'r' as u16,
+        b'v' as u16,
+        0,
     ];
     let mut DllString = _UNICODE_STRING {
         Length: 12,
@@ -21,8 +25,8 @@ unsafe extern "system" fn FirstSoundSentry() -> BOOLEAN {
     };
 
     static FUNC_NAME: [u8; 17] = [
-        b'_', b'U', b's', b'e', b'r', b'S', b'o', b'u', b'n', b'd',
-        b'S', b'e', b'n', b't', b'r', b'y', 0,
+        b'_', b'U', b's', b'e', b'r', b'S', b'o', b'u', b'n', b'd', b'S', b'e', b'n', b't', b'r',
+        b'y', 0,
     ];
     let mut FuncString = STRING {
         Length: 16,
@@ -42,12 +46,7 @@ unsafe extern "system" fn FirstSoundSentry() -> BOOLEAN {
 
     if Status >= 0 {
         let mut ProcAddr: PVOID = core::ptr::null_mut();
-        let Status = LdrGetProcedureAddress(
-            DllHandle,
-            &mut FuncString,
-            0,
-            &mut ProcAddr,
-        );
+        let Status = LdrGetProcedureAddress(DllHandle, &mut FuncString, 0, &mut ProcAddr);
         if Status >= 0 {
             NewSoundSentry = Some(core::mem::transmute(ProcAddr));
         }
@@ -68,7 +67,6 @@ pub unsafe extern "system" fn BaseSrvSoundSentryNotification(
         STATUS_ACCESS_DENIED
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

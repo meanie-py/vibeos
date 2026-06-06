@@ -69,13 +69,27 @@ KNOWN_CGU_UD2 = {
 
 
 def find_objdump(arch: str) -> str:
-    """Find a working objdump for the given architecture."""
-    candidates = {
+    """Find a working objdump for the given architecture.
+
+    Tries the per-arch mingw objdump and llvm-objdump on PATH first, then
+    falls back to the repo's bundled llvm-mingw toolchain
+    (.build-tools/llvm-mingw/bin). The fallback matters for arm64: a stock
+    Linux box has the x86_64/i686 mingw objdumps in /usr/bin (so i386/amd64
+    lint fine) but neither aarch64-w64-mingw32-objdump nor llvm-objdump, and
+    the bundled toolchain isn't necessarily on PATH — without this the arm64
+    ud2 scan silently no-ops with "No objdump found".
+    """
+    names = {
         "arm64": ["aarch64-w64-mingw32-objdump", "llvm-objdump"],
         "amd64": ["x86_64-w64-mingw32-objdump", "llvm-objdump"],
         "i386": ["i686-w64-mingw32-objdump", "llvm-objdump"],
-    }
-    for c in candidates.get(arch, ["llvm-objdump"]):
+    }.get(arch, ["llvm-objdump"])
+
+    # PATH candidates, then the same names under the bundled toolchain.
+    bundled = Path(__file__).resolve().parent.parent / ".build-tools" / "llvm-mingw" / "bin"
+    candidates = list(names) + [str(bundled / n) for n in names]
+
+    for c in candidates:
         try:
             subprocess.run([c, "--version"], capture_output=True, check=True)
             return c

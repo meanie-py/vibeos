@@ -34,6 +34,13 @@ name = "avltable"
 version = "0.1.0"
 
 [[package]]
+name = "basesrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "bitmap"
 version = "0.1.0"
 
@@ -125,6 +132,13 @@ version = "0.1.0"
 
 [[package]]
 name = "csrsrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "csrss-cargo"
 version = "0.1.0"
 dependencies = [
  "reactos-link",
@@ -228,6 +242,13 @@ dependencies = [
 
 [[package]]
 name = "kdcom-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kdgdb-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -574,6 +595,7 @@ name = "smss-csrss-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+ "ntprintf",
 ]
 
 [[package]]

@@ -1,7 +1,5 @@
-
-use ntdll_sys::nt::*;
 use super::srv_inlines::*;
-
+use ntdll_sys::nt::*;
 
 #[no_mangle]
 pub static mut CsrProcessLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
@@ -33,13 +31,7 @@ pub unsafe extern "system" fn CsrSetToNormalPriority() {
 pub unsafe extern "system" fn CsrSetToShutdownPriority() {
     let BasePriority: i8 = PROCESS_PRIORITY_NORMAL_FOREGROUND + 6;
     let mut Old: u8 = 0;
-    if RtlAdjustPrivilege(
-        19,
-        1u8,
-        0u8,
-        &mut Old,
-    ) >= 0
-    {
+    if RtlAdjustPrivilege(19, 1u8, 0u8, &mut Old) >= 0 {
         NtSetInformationProcess(
             NtCurrentProcess(),
             _PROCESSINFOCLASS_ProcessBasePriority,
@@ -193,7 +185,8 @@ pub unsafe extern "system" fn CsrCreateProcess(
     for i in 0..CSR_SERVER_DLL_MAX {
         let ServerDll = *(CsrLoadedServerDll.as_mut_ptr().add(i as usize));
         if !ServerDll.is_null() && (*ServerDll).SizeOfProcessData != 0 {
-            *((*CsrProcess).ServerData.as_mut_ptr().add(i as usize)) = ProcessData as *mut core::ffi::c_void;
+            *((*CsrProcess).ServerData.as_mut_ptr().add(i as usize)) =
+                ProcessData as *mut core::ffi::c_void;
             core::ptr::copy_nonoverlapping(
                 *((*CurrentProcess).ServerData.as_ptr().add(i as usize)) as *const u8,
                 ProcessData,
@@ -328,7 +321,8 @@ pub unsafe extern "system" fn CsrDestroyProcess(Cid: *mut _CLIENT_ID, _ExitStatu
     (*CsrProcess).Flags |= CsrProcessTerminating;
     let mut NextEntry = (*CsrProcess).ThreadList.Flink;
     while NextEntry != core::ptr::addr_of_mut!((*CsrProcess).ThreadList) as PLIST_ENTRY {
-        let CsrThread = ((NextEntry as usize) - core::mem::offset_of!(CSR_THREAD, Link)) as PCSR_THREAD;
+        let CsrThread =
+            ((NextEntry as usize) - core::mem::offset_of!(CSR_THREAD, Link)) as PCSR_THREAD;
         NextEntry = (*NextEntry).Flink;
         if ((*CsrThread).Flags & CsrThreadTerminated) != 0 {
             continue;
@@ -353,10 +347,7 @@ pub unsafe extern "system" fn CsrDestroyProcess(Cid: *mut _CLIENT_ID, _ExitStatu
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrGetProcessLuid(
-    hProcess: HANDLE,
-    Luid: *mut LUID,
-) -> i32 {
+pub unsafe extern "system" fn CsrGetProcessLuid(hProcess: HANDLE, Luid: *mut LUID) -> i32 {
     let mut hToken: HANDLE = core::ptr::null_mut();
     let mut Status: i32;
     let mut hProcess = hProcess;
@@ -388,7 +379,8 @@ pub unsafe extern "system" fn CsrGetProcessLuid(
         NtClose(hToken);
         return Status;
     }
-    let TokenStats = RtlAllocateHeap(CsrHeap, 0, (Length as usize).try_into().unwrap()) as *mut TOKEN_STATISTICS;
+    let TokenStats =
+        RtlAllocateHeap(CsrHeap, 0, (Length as usize).try_into().unwrap()) as *mut TOKEN_STATISTICS;
     if TokenStats.is_null() {
         NtClose(hToken);
         return STATUS_NO_MEMORY;
@@ -411,7 +403,11 @@ pub unsafe extern "system" fn CsrGetProcessLuid(
 #[no_mangle]
 pub unsafe extern "system" fn CsrImpersonateClient(CsrThread: PCSR_THREAD) -> u8 {
     let CurrentThread = CsrGetClientThread();
-    let CsrThread = if CsrThread.is_null() { CurrentThread } else { CsrThread };
+    let CsrThread = if CsrThread.is_null() {
+        CurrentThread
+    } else {
+        CsrThread
+    };
     if CsrThread.is_null() {
         return 0u8;
     }
@@ -440,7 +436,8 @@ pub unsafe extern "system" fn CsrLockProcessByClientId(
     let mut CurrentProcess: PCSR_PROCESS;
     let mut Status = STATUS_UNSUCCESSFUL;
     loop {
-        CurrentProcess = ((NextEntry as usize) - core::mem::offset_of!(CSR_PROCESS, ListLink)) as PCSR_PROCESS;
+        CurrentProcess =
+            ((NextEntry as usize) - core::mem::offset_of!(CSR_PROCESS, ListLink)) as PCSR_PROCESS;
         if (*CurrentProcess).ClientId.UniqueProcess == Pid {
             Status = STATUS_SUCCESS;
             break;
@@ -479,7 +476,11 @@ pub unsafe extern "system" fn CsrRevertToSelf() -> u8 {
         &ImpersonationToken as *const _ as *mut core::ffi::c_void,
         core::mem::size_of::<HANDLE>() as u32,
     );
-    if Status >= 0 { 1u8 } else { 0u8 }
+    if Status >= 0 {
+        1u8
+    } else {
+        0u8
+    }
 }
 
 #[no_mangle]
@@ -510,10 +511,14 @@ pub unsafe extern "system" fn CsrSetForegroundPriority(CsrProcess: PCSR_PROCESS)
 pub unsafe extern "system" fn FindProcessForShutdown(CallerLuid: *mut LUID) -> PCSR_PROCESS {
     let mut ReturnCsrProcess: PCSR_PROCESS = core::ptr::null_mut();
     let mut Level: u32 = 0;
-    let SystemLuid = LUID { LowPart: 0x3e7, HighPart: 0 };
+    let SystemLuid = LUID {
+        LowPart: 0x3e7,
+        HighPart: 0,
+    };
     let mut NextEntry = (*CsrRootProcess).ListLink.Flink;
     while NextEntry != core::ptr::addr_of_mut!((*CsrRootProcess).ListLink) as PLIST_ENTRY {
-        let CsrProcess = ((NextEntry as usize) - core::mem::offset_of!(CSR_PROCESS, ListLink)) as PCSR_PROCESS;
+        let CsrProcess =
+            ((NextEntry as usize) - core::mem::offset_of!(CSR_PROCESS, ListLink)) as PCSR_PROCESS;
         NextEntry = (*NextEntry).Flink;
         if ((*CsrProcess).Flags & CsrProcessSkipShutdown) != 0 {
             continue;
@@ -522,7 +527,9 @@ pub unsafe extern "system" fn FindProcessForShutdown(CallerLuid: *mut LUID) -> P
         let mut Status = CsrGetProcessLuid((*CsrProcess).ProcessHandle, &mut ProcessLuid);
         if Status == STATUS_ACCESS_DENIED {
             if (*CsrProcess).ThreadCount != 0 {
-                let CsrThread = (((*CsrProcess).ThreadList.Flink as usize) - core::mem::offset_of!(CSR_THREAD, Link)) as PCSR_THREAD;
+                let CsrThread = (((*CsrProcess).ThreadList.Flink as usize)
+                    - core::mem::offset_of!(CSR_THREAD, Link))
+                    as PCSR_THREAD;
                 if CsrImpersonateClient(CsrThread) != 0 {
                     Status = CsrGetProcessLuid(core::ptr::null_mut(), &mut ProcessLuid);
                     CsrRevertToSelf();
@@ -535,9 +542,13 @@ pub unsafe extern "system" fn FindProcessForShutdown(CallerLuid: *mut LUID) -> P
             (*CsrProcess).Flags |= CsrProcessSkipShutdown;
             continue;
         }
-        if (ProcessLuid.LowPart == SystemLuid.LowPart) && (ProcessLuid.HighPart == SystemLuid.HighPart) {
+        if (ProcessLuid.LowPart == SystemLuid.LowPart)
+            && (ProcessLuid.HighPart == SystemLuid.HighPart)
+        {
             (*CsrProcess).ShutdownFlags |= CsrShutdownSystem;
-        } else if (ProcessLuid.LowPart != (*CallerLuid).LowPart) || (ProcessLuid.HighPart != (*CallerLuid).HighPart) {
+        } else if (ProcessLuid.LowPart != (*CallerLuid).LowPart)
+            || (ProcessLuid.HighPart != (*CallerLuid).HighPart)
+        {
             (*CsrProcess).ShutdownFlags |= CsrShutdownOther;
         }
         if ((*CsrProcess).ShutdownLevel > Level) || ReturnCsrProcess.is_null() {
@@ -557,7 +568,8 @@ pub unsafe extern "system" fn CsrShutdownProcesses(CallerLuid: *mut LUID, Flags:
     (*CsrRootProcess).ShutdownFlags |= CsrShutdownSystem;
     let mut NextEntry = (*CsrRootProcess).ListLink.Flink;
     while NextEntry != core::ptr::addr_of_mut!((*CsrRootProcess).ListLink) as PLIST_ENTRY {
-        let CsrProcess = ((NextEntry as usize) - core::mem::offset_of!(CSR_PROCESS, ListLink)) as PCSR_PROCESS;
+        let CsrProcess =
+            ((NextEntry as usize) - core::mem::offset_of!(CSR_PROCESS, ListLink)) as PCSR_PROCESS;
         NextEntry = (*NextEntry).Flink;
         (*CsrProcess).Flags &= !CsrProcessSkipShutdown;
         (*CsrProcess).ShutdownFlags = 0;
@@ -617,7 +629,6 @@ pub unsafe extern "system" fn CsrUnlockProcess(CsrProcess: PCSR_PROCESS) -> i32 
     CsrReleaseProcessLock();
     STATUS_SUCCESS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

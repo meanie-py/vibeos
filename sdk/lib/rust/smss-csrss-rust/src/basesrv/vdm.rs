@@ -1,6 +1,6 @@
-use ntdll_sys::nt::*;
-use core::ffi::c_void;
 use super::vdm_types::*;
+use core::ffi::c_void;
+use ntdll_sys::nt::*;
 
 // CsrGetClientThread is a CSR macro (csrsrv.h: TEB->CsrClientThread), inlined
 // in C — NOT a real symbol. Re-translate as an inline (same as proc.rs).
@@ -39,7 +39,10 @@ unsafe fn BaseSrvCreateConsoleRecord() -> PVDM_CONSOLE_RECORD {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn BaseSrvGetConsoleRecord(ConsoleHandle: HANDLE, Record: *mut PVDM_CONSOLE_RECORD) -> NTSTATUS {
+pub unsafe extern "C" fn BaseSrvGetConsoleRecord(
+    ConsoleHandle: HANDLE,
+    Record: *mut PVDM_CONSOLE_RECORD,
+) -> NTSTATUS {
     let mut CurrentRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
 
     if ConsoleHandle.is_null() {
@@ -48,9 +51,9 @@ pub unsafe extern "C" fn BaseSrvGetConsoleRecord(ConsoleHandle: HANDLE, Record: 
 
     let mut i: PLIST_ENTRY = VDMConsoleListHead.Flink;
     while i != core::ptr::addr_of_mut!(VDMConsoleListHead) {
-        CurrentRecord = (i as *mut u8).offset(
-            -(core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry) as isize),
-        ) as PVDM_CONSOLE_RECORD;
+        CurrentRecord = (i as *mut u8)
+            .offset(-(core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry) as isize))
+            as PVDM_CONSOLE_RECORD;
         if (*CurrentRecord).ConsoleHandle == ConsoleHandle {
             break;
         }
@@ -88,13 +91,18 @@ unsafe fn BaseSrvDestroyConsoleRecord(ConsoleRecord: PVDM_CONSOLE_RECORD) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn GetConsoleRecordBySessionId(TaskId: ULONG, Record: *mut PVDM_CONSOLE_RECORD) -> NTSTATUS {
+pub unsafe extern "C" fn GetConsoleRecordBySessionId(
+    TaskId: ULONG,
+    Record: *mut PVDM_CONSOLE_RECORD,
+) -> NTSTATUS {
     let mut i: PLIST_ENTRY;
     let mut CurrentRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
 
     i = VDMConsoleListHead.Flink;
     while i != core::ptr::addr_of_mut!(VDMConsoleListHead) {
-        CurrentRecord = (i as *mut u8).offset(-(core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry) as isize)) as PVDM_CONSOLE_RECORD;
+        CurrentRecord = (i as *mut u8)
+            .offset(-(core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry) as isize))
+            as PVDM_CONSOLE_RECORD;
         if (*CurrentRecord).SessionId == TaskId {
             break;
         }
@@ -127,8 +135,7 @@ unsafe fn GetNextDosSesId() -> ULONG {
 
         i = VDMConsoleListHead.Flink;
         while i != core::ptr::addr_of_mut!(VDMConsoleListHead) {
-            CurrentRecord = (i as *mut u8)
-                .sub(core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry))
+            CurrentRecord = (i as *mut u8).sub(core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry))
                 as PVDM_CONSOLE_RECORD;
             if (*CurrentRecord).SessionId == SessionIdLocal {
                 Found = 1u8;
@@ -155,8 +162,8 @@ unsafe fn BaseSrvIsVdmAllowed() -> BOOLEAN {
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
     let mut MachineKeyName: _UNICODE_STRING = core::mem::zeroed();
     let mut Attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut ValueBuffer: [UCHAR; core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>()
-        + core::mem::size_of::<ULONG>()] =
+    let mut ValueBuffer: [UCHAR;
+        core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>() + core::mem::size_of::<ULONG>()] =
         [0; core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>() + core::mem::size_of::<ULONG>()];
     let ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION =
         ValueBuffer.as_mut_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
@@ -288,7 +295,6 @@ unsafe fn BaseSrvCreatePairWaitHandles(ServerEvent: PHANDLE, ClientEvent: PHANDL
 }
 
 unsafe extern "system" fn BaseSrvDestroyPairWaitHandles(ServerEvent: HANDLE, ClientEvent: HANDLE) {
-
     if !ServerEvent.is_null() {
         NtClose(ServerEvent);
     }
@@ -345,7 +351,8 @@ pub unsafe extern "C" fn BaseSrvCleanupVDMResources(CsrProcess: PCSR_PROCESS) {
 
     i = VDMConsoleListHead.Flink;
     while i != core::ptr::addr_of_mut!(VDMConsoleListHead) {
-        ConsoleRecord = (i as usize - core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry)) as PVDM_CONSOLE_RECORD;
+        ConsoleRecord =
+            (i as usize - core::mem::offset_of!(_VDM_CONSOLE_RECORD, Entry)) as PVDM_CONSOLE_RECORD;
         i = (*i).Flink;
 
         if (*ConsoleRecord).ProcessId == ProcessId {
@@ -355,7 +362,9 @@ pub unsafe extern "C" fn BaseSrvCleanupVDMResources(CsrProcess: PCSR_PROCESS) {
             }
 
             while !IsListEmpty(core::ptr::addr_of_mut!((*ConsoleRecord).DosListHead)) {
-                DosRecord = ((*ConsoleRecord).DosListHead.Flink as usize - core::mem::offset_of!(_VDM_DOS_RECORD, Entry)) as PVDM_DOS_RECORD;
+                DosRecord = ((*ConsoleRecord).DosListHead.Flink as usize
+                    - core::mem::offset_of!(_VDM_DOS_RECORD, Entry))
+                    as PVDM_DOS_RECORD;
 
                 if !(*DosRecord).ServerEvent.is_null() {
                     NtSetEvent((*DosRecord).ServerEvent, core::ptr::null_mut());
@@ -378,11 +387,18 @@ pub unsafe extern "C" fn BaseSrvCleanupVDMResources(CsrProcess: PCSR_PROCESS) {
     RtlLeaveCriticalSection(core::ptr::addr_of_mut!(DosCriticalSection));
 }
 
-unsafe fn BaseSrvCopyCommand(CheckVdmRequest: PBASE_CHECK_VDM, DosRecord: PVDM_DOS_RECORD) -> BOOLEAN {
+unsafe fn BaseSrvCopyCommand(
+    CheckVdmRequest: PBASE_CHECK_VDM,
+    DosRecord: PVDM_DOS_RECORD,
+) -> BOOLEAN {
     let mut Success: BOOLEAN = 0u8;
     let CommandInfo: PVDM_COMMAND_INFO;
 
-    CommandInfo = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, core::mem::size_of::<VDM_COMMAND_INFO>() as _) as PVDM_COMMAND_INFO;
+    CommandInfo = RtlAllocateHeap(
+        BaseSrvHeap,
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<VDM_COMMAND_INFO>() as _,
+    ) as PVDM_COMMAND_INFO;
     if CommandInfo.is_null() {
         return 0u8;
     }
@@ -395,53 +411,105 @@ unsafe fn BaseSrvCopyCommand(CheckVdmRequest: PBASE_CHECK_VDM, DosRecord: PVDM_D
     (*CommandInfo).StdErr = (*CheckVdmRequest).StdErr;
 
     'cleanup: {
-        (*CommandInfo).CmdLine = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).CmdLen as _) as _;
+        (*CommandInfo).CmdLine = RtlAllocateHeap(
+            BaseSrvHeap,
+            HEAP_ZERO_MEMORY,
+            (*CheckVdmRequest).CmdLen as _,
+        ) as _;
         if (*CommandInfo).CmdLine.is_null() {
             break 'cleanup;
         }
-        core::ptr::copy((*CheckVdmRequest).CmdLine as *const u8, (*CommandInfo).CmdLine as *mut u8, (*CheckVdmRequest).CmdLen as usize);
+        core::ptr::copy(
+            (*CheckVdmRequest).CmdLine as *const u8,
+            (*CommandInfo).CmdLine as *mut u8,
+            (*CheckVdmRequest).CmdLen as usize,
+        );
 
-        (*CommandInfo).AppName = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).AppLen as _) as _;
+        (*CommandInfo).AppName = RtlAllocateHeap(
+            BaseSrvHeap,
+            HEAP_ZERO_MEMORY,
+            (*CheckVdmRequest).AppLen as _,
+        ) as _;
         if (*CommandInfo).AppName.is_null() {
             break 'cleanup;
         }
-        core::ptr::copy((*CheckVdmRequest).AppName as *const u8, (*CommandInfo).AppName as *mut u8, (*CheckVdmRequest).AppLen as usize);
+        core::ptr::copy(
+            (*CheckVdmRequest).AppName as *const u8,
+            (*CommandInfo).AppName as *mut u8,
+            (*CheckVdmRequest).AppLen as usize,
+        );
 
         if (*CheckVdmRequest).PifLen != 0 {
-            (*CommandInfo).PifFile = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).PifLen as _) as _;
+            (*CommandInfo).PifFile = RtlAllocateHeap(
+                BaseSrvHeap,
+                HEAP_ZERO_MEMORY,
+                (*CheckVdmRequest).PifLen as _,
+            ) as _;
             if (*CommandInfo).PifFile.is_null() {
                 break 'cleanup;
             }
-            core::ptr::copy((*CheckVdmRequest).PifFile as *const u8, (*CommandInfo).PifFile as *mut u8, (*CheckVdmRequest).PifLen as usize);
+            core::ptr::copy(
+                (*CheckVdmRequest).PifFile as *const u8,
+                (*CommandInfo).PifFile as *mut u8,
+                (*CheckVdmRequest).PifLen as usize,
+            );
         } else {
             (*CommandInfo).PifFile = core::ptr::null_mut();
         }
 
         if (*CheckVdmRequest).CurDirectoryLen != 0 {
-            (*CommandInfo).CurDirectory = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).CurDirectoryLen as _) as _;
+            (*CommandInfo).CurDirectory = RtlAllocateHeap(
+                BaseSrvHeap,
+                HEAP_ZERO_MEMORY,
+                (*CheckVdmRequest).CurDirectoryLen as _,
+            ) as _;
             if (*CommandInfo).CurDirectory.is_null() {
                 break 'cleanup;
             }
-            core::ptr::copy((*CheckVdmRequest).CurDirectory as *const u8, (*CommandInfo).CurDirectory as *mut u8, (*CheckVdmRequest).CurDirectoryLen as usize);
+            core::ptr::copy(
+                (*CheckVdmRequest).CurDirectory as *const u8,
+                (*CommandInfo).CurDirectory as *mut u8,
+                (*CheckVdmRequest).CurDirectoryLen as usize,
+            );
         } else {
             (*CommandInfo).CurDirectory = core::ptr::null_mut();
         }
 
-        (*CommandInfo).Env = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).EnvLen as _) as _;
+        (*CommandInfo).Env = RtlAllocateHeap(
+            BaseSrvHeap,
+            HEAP_ZERO_MEMORY,
+            (*CheckVdmRequest).EnvLen as _,
+        ) as _;
         if (*CommandInfo).Env.is_null() {
             break 'cleanup;
         }
-        core::ptr::copy((*CheckVdmRequest).Env as *const u8, (*CommandInfo).Env as *mut u8, (*CheckVdmRequest).EnvLen as usize);
+        core::ptr::copy(
+            (*CheckVdmRequest).Env as *const u8,
+            (*CommandInfo).Env as *mut u8,
+            (*CheckVdmRequest).EnvLen as usize,
+        );
 
         (*CommandInfo).EnvLen = (*CheckVdmRequest).EnvLen;
-        core::ptr::copy((*CheckVdmRequest).StartupInfo as *const u8, core::ptr::addr_of_mut!((*CommandInfo).StartupInfo) as *mut u8, core::mem::size_of::<STARTUPINFOA>());
+        core::ptr::copy(
+            (*CheckVdmRequest).StartupInfo as *const u8,
+            core::ptr::addr_of_mut!((*CommandInfo).StartupInfo) as *mut u8,
+            core::mem::size_of::<STARTUPINFOA>(),
+        );
 
         if (*CheckVdmRequest).DesktopLen != 0 {
-            (*CommandInfo).Desktop = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).DesktopLen as _) as _;
+            (*CommandInfo).Desktop = RtlAllocateHeap(
+                BaseSrvHeap,
+                HEAP_ZERO_MEMORY,
+                (*CheckVdmRequest).DesktopLen as _,
+            ) as _;
             if (*CommandInfo).Desktop.is_null() {
                 break 'cleanup;
             }
-            core::ptr::copy((*CheckVdmRequest).Desktop as *const u8, (*CommandInfo).Desktop as *mut u8, (*CheckVdmRequest).DesktopLen as usize);
+            core::ptr::copy(
+                (*CheckVdmRequest).Desktop as *const u8,
+                (*CommandInfo).Desktop as *mut u8,
+                (*CheckVdmRequest).DesktopLen as usize,
+            );
         } else {
             (*CommandInfo).Desktop = core::ptr::null_mut();
         }
@@ -449,11 +517,19 @@ unsafe fn BaseSrvCopyCommand(CheckVdmRequest: PBASE_CHECK_VDM, DosRecord: PVDM_D
         (*CommandInfo).DesktopLen = (*CheckVdmRequest).DesktopLen;
 
         if (*CheckVdmRequest).TitleLen != 0 {
-            (*CommandInfo).Title = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).TitleLen as _) as _;
+            (*CommandInfo).Title = RtlAllocateHeap(
+                BaseSrvHeap,
+                HEAP_ZERO_MEMORY,
+                (*CheckVdmRequest).TitleLen as _,
+            ) as _;
             if (*CommandInfo).Title.is_null() {
                 break 'cleanup;
             }
-            core::ptr::copy((*CheckVdmRequest).Title as *const u8, (*CommandInfo).Title as *mut u8, (*CheckVdmRequest).TitleLen as usize);
+            core::ptr::copy(
+                (*CheckVdmRequest).Title as *const u8,
+                (*CommandInfo).Title as *mut u8,
+                (*CheckVdmRequest).TitleLen as usize,
+            );
         } else {
             (*CommandInfo).Title = core::ptr::null_mut();
         }
@@ -461,11 +537,19 @@ unsafe fn BaseSrvCopyCommand(CheckVdmRequest: PBASE_CHECK_VDM, DosRecord: PVDM_D
         (*CommandInfo).TitleLen = (*CheckVdmRequest).TitleLen;
 
         if (*CheckVdmRequest).ReservedLen != 0 {
-            (*CommandInfo).Reserved = RtlAllocateHeap(BaseSrvHeap, HEAP_ZERO_MEMORY, (*CheckVdmRequest).ReservedLen as _) as _;
+            (*CommandInfo).Reserved = RtlAllocateHeap(
+                BaseSrvHeap,
+                HEAP_ZERO_MEMORY,
+                (*CheckVdmRequest).ReservedLen as _,
+            ) as _;
             if (*CommandInfo).Reserved.is_null() {
                 break 'cleanup;
             }
-            core::ptr::copy((*CheckVdmRequest).Reserved as *const u8, (*CommandInfo).Reserved as *mut u8, (*CheckVdmRequest).ReservedLen as usize);
+            core::ptr::copy(
+                (*CheckVdmRequest).Reserved as *const u8,
+                (*CommandInfo).Reserved as *mut u8,
+                (*CheckVdmRequest).ReservedLen as usize,
+            );
         } else {
             (*CommandInfo).Reserved = core::ptr::null_mut();
         }
@@ -809,9 +893,16 @@ pub unsafe extern "system" fn BaseSrvCheckVDM(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(ApiMessage: PCSR_API_MESSAGE, _ReplyCode: PCSR_REPLY_CODE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(
+    ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let UpdateVdmEntryRequest: PBASE_UPDATE_VDM_ENTRY = core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.UpdateVDMEntryRequest);
+    let UpdateVdmEntryRequest: PBASE_UPDATE_VDM_ENTRY = core::ptr::addr_of_mut!(
+        (*(ApiMessage as PBASE_API_MESSAGE))
+            .Data
+            .UpdateVDMEntryRequest
+    );
     let CriticalSection: PRTL_CRITICAL_SECTION;
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
     let mut DosRecord: PVDM_DOS_RECORD;
@@ -827,9 +918,15 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(ApiMessage: PCSR_API_MESSAGE
     'cleanup: {
         if (*UpdateVdmEntryRequest).BinaryType != BINARY_TYPE_SEPARATE_WOW {
             if (*UpdateVdmEntryRequest).iTask != 0 {
-                Status = GetConsoleRecordBySessionId((*UpdateVdmEntryRequest).iTask, core::ptr::addr_of_mut!(ConsoleRecord));
+                Status = GetConsoleRecordBySessionId(
+                    (*UpdateVdmEntryRequest).iTask,
+                    core::ptr::addr_of_mut!(ConsoleRecord),
+                );
             } else {
-                Status = BaseSrvGetConsoleRecord((*UpdateVdmEntryRequest).ConsoleHandle, core::ptr::addr_of_mut!(ConsoleRecord));
+                Status = BaseSrvGetConsoleRecord(
+                    (*UpdateVdmEntryRequest).ConsoleHandle,
+                    core::ptr::addr_of_mut!(ConsoleRecord),
+                );
             }
 
             if !NT_SUCCESS(Status) {
@@ -837,7 +934,8 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(ApiMessage: PCSR_API_MESSAGE
             }
 
             DosRecord = ((*ConsoleRecord).DosListHead.Flink as *mut u8)
-                .offset(-(core::mem::offset_of!(_VDM_DOS_RECORD, Entry) as isize)) as PVDM_DOS_RECORD;
+                .offset(-(core::mem::offset_of!(_VDM_DOS_RECORD, Entry) as isize))
+                as PVDM_DOS_RECORD;
 
             match (*UpdateVdmEntryRequest).EntryIndex {
                 VdmEntryUndo => {
@@ -845,14 +943,19 @@ pub unsafe extern "system" fn BaseSrvUpdateVDMEntry(ApiMessage: PCSR_API_MESSAGE
                     (*DosRecord).ClientEvent = core::ptr::null_mut();
                     (*DosRecord).ServerEvent = core::ptr::null_mut();
 
-                    if ((*UpdateVdmEntryRequest).VDMCreationState as ULONG & (VDM_UNDO_PARTIAL | VDM_UNDO_FULL)) != 0 {
+                    if ((*UpdateVdmEntryRequest).VDMCreationState as ULONG
+                        & (VDM_UNDO_PARTIAL | VDM_UNDO_FULL))
+                        != 0
+                    {
                         if !(*DosRecord).CommandInfo.is_null() {
                             BaseSrvFreeVDMInfo((*DosRecord).CommandInfo);
                         }
                         RemoveEntryList(core::ptr::addr_of_mut!((*DosRecord).Entry));
                         RtlFreeHeap(BaseSrvHeap, 0, DosRecord as _);
 
-                        if (*ConsoleRecord).DosListHead.Flink == core::ptr::addr_of_mut!((*ConsoleRecord).DosListHead) {
+                        if (*ConsoleRecord).DosListHead.Flink
+                            == core::ptr::addr_of_mut!((*ConsoleRecord).DosListHead)
+                        {
                             RemoveEntryList(core::ptr::addr_of_mut!((*ConsoleRecord).Entry));
                             BaseSrvDestroyConsoleRecord(ConsoleRecord);
                         }
@@ -910,8 +1013,11 @@ pub unsafe extern "system" fn BaseSrvGetNextVDMCommand(
     _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let GetNextVdmCommandRequest: PBASE_GET_NEXT_VDM_COMMAND =
-        core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.GetNextVDMCommandRequest);
+    let GetNextVdmCommandRequest: PBASE_GET_NEXT_VDM_COMMAND = core::ptr::addr_of_mut!(
+        (*(ApiMessage as PBASE_API_MESSAGE))
+            .Data
+            .GetNextVDMCommandRequest
+    );
     let CriticalSection: PRTL_CRITICAL_SECTION;
     let mut i: PLIST_ENTRY;
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
@@ -1090,8 +1196,7 @@ pub unsafe extern "system" fn BaseSrvGetNextVDMCommand(
 
                 (*GetNextVdmCommandRequest).EnvLen = (*(*DosRecord).CommandInfo).EnvLen;
             } else {
-                Status =
-                    BaseSrvFillCommandInfo((*DosRecord).CommandInfo, GetNextVdmCommandRequest);
+                Status = BaseSrvFillCommandInfo((*DosRecord).CommandInfo, GetNextVdmCommandRequest);
                 if !NT_SUCCESS(Status) {
                     break 'cleanup;
                 }
@@ -1132,9 +1237,13 @@ pub unsafe extern "system" fn BaseSrvGetNextVDMCommand(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvExitVDM(ApiMessage: PCSR_API_MESSAGE, _ReplyCode: PCSR_REPLY_CODE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvExitVDM(
+    ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let ExitVdmRequest: PBASE_EXIT_VDM = core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.ExitVDMRequest);
+    let ExitVdmRequest: PBASE_EXIT_VDM =
+        core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.ExitVDMRequest);
     let CriticalSection: PRTL_CRITICAL_SECTION;
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
     let mut DosRecord: PVDM_DOS_RECORD;
@@ -1149,7 +1258,10 @@ pub unsafe extern "system" fn BaseSrvExitVDM(ApiMessage: PCSR_API_MESSAGE, _Repl
 
     'cleanup: {
         if (*ExitVdmRequest).iWowTask == 0 {
-            Status = BaseSrvGetConsoleRecord((*ExitVdmRequest).ConsoleHandle, core::ptr::addr_of_mut!(ConsoleRecord));
+            Status = BaseSrvGetConsoleRecord(
+                (*ExitVdmRequest).ConsoleHandle,
+                core::ptr::addr_of_mut!(ConsoleRecord),
+            );
             if !NT_SUCCESS(Status) {
                 break 'cleanup;
             }
@@ -1164,9 +1276,9 @@ pub unsafe extern "system" fn BaseSrvExitVDM(ApiMessage: PCSR_API_MESSAGE, _Repl
             }
 
             while !IsListEmpty(core::ptr::addr_of_mut!((*ConsoleRecord).DosListHead)) {
-                DosRecord = ((*ConsoleRecord).DosListHead.Flink as *mut u8).offset(
-                    -(core::mem::offset_of!(_VDM_DOS_RECORD, Entry) as isize),
-                ) as PVDM_DOS_RECORD;
+                DosRecord = ((*ConsoleRecord).DosListHead.Flink as *mut u8)
+                    .offset(-(core::mem::offset_of!(_VDM_DOS_RECORD, Entry) as isize))
+                    as PVDM_DOS_RECORD;
 
                 if !(*DosRecord).ServerEvent.is_null() {
                     NtSetEvent((*DosRecord).ServerEvent, core::ptr::null_mut());
@@ -1209,10 +1321,16 @@ pub unsafe extern "system" fn BaseSrvIsFirstVDM(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvGetVDMExitCode(ApiMessage: PCSR_API_MESSAGE, _ReplyCode: PCSR_REPLY_CODE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvGetVDMExitCode(
+    ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let GetVDMExitCodeRequest: PBASE_GET_VDM_EXIT_CODE =
-        core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.GetVDMExitCodeRequest);
+    let GetVDMExitCodeRequest: PBASE_GET_VDM_EXIT_CODE = core::ptr::addr_of_mut!(
+        (*(ApiMessage as PBASE_API_MESSAGE))
+            .Data
+            .GetVDMExitCodeRequest
+    );
     let mut i: PLIST_ENTRY;
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
     let mut DosRecord: PVDM_DOS_RECORD = core::ptr::null_mut();
@@ -1220,16 +1338,17 @@ pub unsafe extern "system" fn BaseSrvGetVDMExitCode(ApiMessage: PCSR_API_MESSAGE
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(DosCriticalSection));
 
     'cleanup: {
-        Status = BaseSrvGetConsoleRecord((*GetVDMExitCodeRequest).ConsoleHandle, &mut ConsoleRecord);
+        Status =
+            BaseSrvGetConsoleRecord((*GetVDMExitCodeRequest).ConsoleHandle, &mut ConsoleRecord);
         if !NT_SUCCESS(Status) {
             break 'cleanup;
         }
 
         i = (*ConsoleRecord).DosListHead.Flink;
         while i != core::ptr::addr_of_mut!((*ConsoleRecord).DosListHead) {
-            DosRecord = (i as *mut u8).offset(
-                -(core::mem::offset_of!(_VDM_DOS_RECORD, Entry) as isize),
-            ) as PVDM_DOS_RECORD;
+            DosRecord = (i as *mut u8)
+                .offset(-(core::mem::offset_of!(_VDM_DOS_RECORD, Entry) as isize))
+                as PVDM_DOS_RECORD;
             if (*DosRecord).ClientEvent == (*GetVDMExitCodeRequest).hParent {
                 break;
             }
@@ -1267,7 +1386,9 @@ pub unsafe extern "system" fn BaseSrvSetReenterCount(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let SetReenterCountRequest: PBASE_SET_REENTER_COUNT = core::ptr::addr_of_mut!(
-        (*(ApiMessage as PBASE_API_MESSAGE)).Data.SetReenterCountRequest
+        (*(ApiMessage as PBASE_API_MESSAGE))
+            .Data
+            .SetReenterCountRequest
     );
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
 
@@ -1300,10 +1421,16 @@ pub unsafe extern "system" fn BaseSrvSetReenterCount(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvSetVDMCurDirs(ApiMessage: PCSR_API_MESSAGE, _ReplyCode: PCSR_REPLY_CODE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvSetVDMCurDirs(
+    ApiMessage: PCSR_API_MESSAGE,
+    _ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let VDMCurrentDirsRequest: PBASE_GETSET_VDM_CURDIRS =
-        core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.VDMCurrentDirsRequest);
+    let VDMCurrentDirsRequest: PBASE_GETSET_VDM_CURDIRS = core::ptr::addr_of_mut!(
+        (*(ApiMessage as PBASE_API_MESSAGE))
+            .Data
+            .VDMCurrentDirsRequest
+    );
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
     let mut Buffer: PCHAR;
 
@@ -1364,10 +1491,16 @@ pub unsafe extern "system" fn BaseSrvSetVDMCurDirs(ApiMessage: PCSR_API_MESSAGE,
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BaseSrvGetVDMCurDirs(ApiMessage: PCSR_API_MESSAGE, ReplyCode: PCSR_REPLY_CODE) -> NTSTATUS {
+pub unsafe extern "system" fn BaseSrvGetVDMCurDirs(
+    ApiMessage: PCSR_API_MESSAGE,
+    ReplyCode: PCSR_REPLY_CODE,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let VDMCurrentDirsRequest: PBASE_GETSET_VDM_CURDIRS =
-        core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.VDMCurrentDirsRequest);
+    let VDMCurrentDirsRequest: PBASE_GETSET_VDM_CURDIRS = core::ptr::addr_of_mut!(
+        (*(ApiMessage as PBASE_API_MESSAGE))
+            .Data
+            .VDMCurrentDirsRequest
+    );
     let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
 
     if CsrValidateMessageBuffer(
@@ -1433,7 +1566,6 @@ pub unsafe extern "system" fn BaseSrvRefreshIniFileMapping(
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

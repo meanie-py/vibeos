@@ -13,6 +13,12 @@ HAL_DIR = REACTOS_ROOT / "hal"
 # NOT kdcom/. The Target points here so it validates on the unchanged
 # green smoke baseline. See memory feedback_kdcom_is_kdrosdbg.
 KDCOM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdrosdbg"
+# kdgdb: the GDB-stub KD transport (also builds kdcom.dll, but only under
+# _WINKD_=TRUE + GDB=TRUE — never on the default llvm-mingw build, which
+# forces _WINKD_=FALSE). Translated for completeness; the kdgdb-rust
+# staticlib validates standalone via `cargo build -p kdgdb-rust` (i386+amd64;
+# kdgdb has no arm64 path). i386_sup.c/amd64_sup.c are arch-gated.
+KDGDB_DIR = REACTOS_ROOT / "drivers" / "base" / "kdgdb"
 BOOTVID_DIR = REACTOS_ROOT / "drivers" / "base" / "bootvid"
 FREELDR_DIR = REACTOS_ROOT / "boot" / "freeldr" / "freeldr"
 ARM64INPUT_DIR = REACTOS_ROOT / "drivers" / "input" / "arm64input"
@@ -217,6 +223,24 @@ TARGETS = {
         cmake_deps_file=None,
         cmake_source_files=[],
         arches=("i386",),
+    ),
+    # kdgdb — the GDB-stub KD transport (sibling of kdcom). Kernel-mode
+    # driver: walks EPROCESS/ETHREAD lists, reads CONTEXT/KTRAP_FRAME, speaks
+    # the windbgkd packet protocol — all kernel types from BINDGEN_FILES, so
+    # the kernel/freeldr prompt + ntkrnl_sys substrate (same as kdcom). Same
+    # 8-export kddll ABI. i386+amd64 only (i386_sup.c/amd64_sup.c; no arm64).
+    "kdgdb": Target(
+        name="kdgdb",
+        source_dir=KDGDB_DIR,
+        output_crate=RUST_DIR / "kdgdb-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KDGDB_DIR / "kdgdb.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64"),
     ),
     "bootvid": Target(
         name="bootvid",
@@ -466,6 +490,8 @@ def detect_target(c_path: Path) -> Target:
     posix = p.as_posix()
     if "/drivers/base/kdrosdbg" in posix:
         return TARGETS["kdcom"]
+    if "/drivers/base/kdgdb" in posix:
+        return TARGETS["kdgdb"]
     if "/drivers/base/bootvid" in posix:
         return TARGETS["bootvid"]
     if "/boot/freeldr/" in posix:

@@ -1,6 +1,5 @@
-
-use ntdll_sys::nt::*;
 use core::ffi::c_void;
+use ntdll_sys::nt::*;
 
 // RtlCopyMemory is a memmove macro (C). Re-translate as memcpy.
 #[inline]
@@ -28,11 +27,7 @@ unsafe fn InitializeObjectAttributes(
 
 // RtlInitEmptyUnicodeString is a C macro — inline equivalent.
 #[inline(always)]
-unsafe fn RtlInitEmptyUnicodeString(
-    s: *mut _UNICODE_STRING,
-    buf: *mut u16,
-    len: USHORT,
-) {
+unsafe fn RtlInitEmptyUnicodeString(s: *mut _UNICODE_STRING, buf: *mut u16, len: USHORT) {
     (*s).Length = 0;
     (*s).MaximumLength = len;
     (*s).Buffer = buf;
@@ -77,22 +72,44 @@ extern "system" {
     fn BaseSrvIsFirstVDM(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvGetVDMExitCode(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvSetReenterCount(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvSetProcessShutdownParam(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvGetProcessShutdownParam(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
+    fn BaseSrvSetProcessShutdownParam(
+        ApiMessage: *mut c_void,
+        ReplyMessage: *mut c_void,
+    ) -> NTSTATUS;
+    fn BaseSrvGetProcessShutdownParam(
+        ApiMessage: *mut c_void,
+        ReplyMessage: *mut c_void,
+    ) -> NTSTATUS;
     fn BaseSrvNlsSetUserInfo(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvNlsSetMultipleUserInfo(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
+    fn BaseSrvNlsSetMultipleUserInfo(
+        ApiMessage: *mut c_void,
+        ReplyMessage: *mut c_void,
+    ) -> NTSTATUS;
     fn BaseSrvNlsCreateSection(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvSetVDMCurDirs(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvGetVDMCurDirs(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvBatNotification(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvRegisterWowExec(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvSoundSentryNotification(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvRefreshIniFileMapping(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
+    fn BaseSrvSoundSentryNotification(
+        ApiMessage: *mut c_void,
+        ReplyMessage: *mut c_void,
+    ) -> NTSTATUS;
+    fn BaseSrvRefreshIniFileMapping(ApiMessage: *mut c_void, ReplyMessage: *mut c_void)
+        -> NTSTATUS;
     fn BaseSrvDefineDosDevice(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvSetTermsrvAppInstallMode(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
+    fn BaseSrvSetTermsrvAppInstallMode(
+        ApiMessage: *mut c_void,
+        ReplyMessage: *mut c_void,
+    ) -> NTSTATUS;
     fn BaseSrvNlsUpdateCacheCount(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvSetTermsrvClientTimeZone(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
-    fn BaseSrvSxsCreateActivationContext(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
+    fn BaseSrvSetTermsrvClientTimeZone(
+        ApiMessage: *mut c_void,
+        ReplyMessage: *mut c_void,
+    ) -> NTSTATUS;
+    fn BaseSrvSxsCreateActivationContext(
+        ApiMessage: *mut c_void,
+        ReplyMessage: *mut c_void,
+    ) -> NTSTATUS;
     fn BaseSrvRegisterThread(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
     fn BaseSrvNlsGetUserInfo(ApiMessage: *mut c_void, ReplyMessage: *mut c_void) -> NTSTATUS;
 }
@@ -136,8 +153,7 @@ pub static mut BaseServerApiDispatchTable: [PCSR_API_ROUTINE; 31] = [
 
 #[no_mangle]
 pub static BaseServerApiServerValidTable: [BOOLEAN; 31] = [
-    1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
+    1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
 ];
 
 // Always defined — project's -DDBG=1 build enables CSR_DBG, so the
@@ -244,7 +260,11 @@ extern "system" {
     // task #18: pass the correctly-offset NlsUserInfo pointer, not the whole
     // struct — nls.rs's BASE_STATIC_SERVER_DATA mirror had NlsUserInfo @0.
     fn BaseSrvNLSInit(pNlsUserInfo: PVOID);
-    fn BaseSrvNlsConnect(CsrProcess: PCSR_PROCESS, ConnectionInfo: PVOID, ConnectionInfoLength: *mut ULONG) -> NTSTATUS;
+    fn BaseSrvNlsConnect(
+        CsrProcess: PCSR_PROCESS,
+        ConnectionInfo: PVOID,
+        ConnectionInfoLength: *mut ULONG,
+    ) -> NTSTATUS;
 }
 extern "C" {
     fn BaseSrvCleanupVDMResources(CsrProcess: PCSR_PROCESS);
@@ -254,23 +274,62 @@ extern "C" {
 }
 
 static SM_REG_KEY: [u16; 44] = [
-    b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16,
-    b's' as u16, b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16,
-    b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16,
-    b'n' as u16, b'e' as u16, b'\\' as u16, b'S' as u16, b'y' as u16,
-    b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'\\' as u16,
-    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
-    b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16,
-    b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16,
-    b'e' as u16, b't' as u16, b'\\' as u16, 0,
+    b'\\' as u16,
+    b'R' as u16,
+    b'e' as u16,
+    b'g' as u16,
+    b'i' as u16,
+    b's' as u16,
+    b't' as u16,
+    b'r' as u16,
+    b'y' as u16,
+    b'\\' as u16,
+    b'M' as u16,
+    b'a' as u16,
+    b'c' as u16,
+    b'h' as u16,
+    b'i' as u16,
+    b'n' as u16,
+    b'e' as u16,
+    b'\\' as u16,
+    b'S' as u16,
+    b'y' as u16,
+    b's' as u16,
+    b't' as u16,
+    b'e' as u16,
+    b'm' as u16,
+    b'\\' as u16,
+    b'C' as u16,
+    b'u' as u16,
+    b'r' as u16,
+    b'r' as u16,
+    b'e' as u16,
+    b'n' as u16,
+    b't' as u16,
+    b'C' as u16,
+    b'o' as u16,
+    b'n' as u16,
+    b't' as u16,
+    b'r' as u16,
+    b'o' as u16,
+    b'l' as u16,
+    b'S' as u16,
+    b'e' as u16,
+    b't' as u16,
+    b'\\' as u16,
+    0,
 ];
 
 const HEAP_ZERO_MEMORY: ULONG = 0x00000008;
 const TIME_ZONE_ID_INVALID: ULONG = 0xFFFFFFFF;
 const MAX_PATH: usize = 260;
 const UNICODE_NULL: u16 = 0;
-const SECURITY_NT_AUTHORITY: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
-const SECURITY_WORLD_SID_AUTHORITY: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 1] };
+const SECURITY_NT_AUTHORITY: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
+    Value: [0, 0, 0, 0, 0, 5],
+};
+const SECURITY_WORLD_SID_AUTHORITY: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
+    Value: [0, 0, 0, 0, 0, 1],
+};
 const SECURITY_LOCAL_SYSTEM_RID: ULONG = 0x00000012;
 const SECURITY_WORLD_RID: ULONG = 0x00000000;
 const SECURITY_RESTRICTED_CODE_RID: ULONG = 0x0000000C;
@@ -341,9 +400,21 @@ pub unsafe extern "system" fn CreateBaseAcls(
     Status = NtOpenKey(&mut hKey, KEY_READ, &mut ObjectAttributes);
     if Status >= 0 {
         static PROTECTION_MODE: [u16; 15] = [
-            b'P' as u16, b'r' as u16, b'o' as u16, b't' as u16, b'e' as u16,
-            b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-            b'M' as u16, b'o' as u16, b'd' as u16, b'e' as u16, 0,
+            b'P' as u16,
+            b'r' as u16,
+            b'o' as u16,
+            b't' as u16,
+            b'e' as u16,
+            b'c' as u16,
+            b't' as u16,
+            b'i' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            b'M' as u16,
+            b'o' as u16,
+            b'd' as u16,
+            b'e' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut KeyName, PROTECTION_MODE.as_ptr());
         Status = NtQueryValueKey(
@@ -381,7 +452,13 @@ pub unsafe extern "system" fn CreateBaseAcls(
         &NtAuthority as *const _ as *mut _,
         1,
         SECURITY_LOCAL_SYSTEM_RID,
-        0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut SystemSid,
     );
     if Status < 0 {
@@ -392,7 +469,13 @@ pub unsafe extern "system" fn CreateBaseAcls(
         &WorldAuthority as *const _ as *mut _,
         1,
         SECURITY_WORLD_RID,
-        0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut WorldSid,
     );
     if Status < 0 {
@@ -404,7 +487,13 @@ pub unsafe extern "system" fn CreateBaseAcls(
         &NtAuthority as *const _ as *mut _,
         1,
         SECURITY_RESTRICTED_CODE_RID,
-        0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut RestrictedSid,
     );
     if Status < 0 {
@@ -439,8 +528,11 @@ pub unsafe extern "system" fn CreateBaseAcls(
     if ObjectSecurityMode != 0 {
         WorldAccess = DIRECTORY_QUERY | DIRECTORY_TRAVERSE;
     } else {
-        WorldAccess = READ_CONTROL | DIRECTORY_QUERY | DIRECTORY_TRAVERSE
-            | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY;
+        WorldAccess = READ_CONTROL
+            | DIRECTORY_QUERY
+            | DIRECTORY_TRAVERSE
+            | DIRECTORY_CREATE_OBJECT
+            | DIRECTORY_CREATE_SUBDIRECTORY;
     }
 
     if RtlAddAccessAllowedAce(*Dacl, ACL_REVISION2, WorldAccess, WorldSid) >= 0
@@ -449,7 +541,8 @@ pub unsafe extern "system" fn CreateBaseAcls(
         RtlAddAccessAllowedAce(*Dacl, ACL_REVISION2, DIRECTORY_TRAVERSE, RestrictedSid);
     }
 
-    *RestrictedDacl = RtlAllocateHeap(BaseSrvHeap, 0, (AclLength as usize).try_into().unwrap()) as PACL;
+    *RestrictedDacl =
+        RtlAllocateHeap(BaseSrvHeap, 0, (AclLength as usize).try_into().unwrap()) as PACL;
     if (*RestrictedDacl).is_null() {
         Status = STATUS_NO_MEMORY;
         RtlFreeHeap(BaseSrvHeap, 0, *Dacl as PVOID);
@@ -470,17 +563,30 @@ pub unsafe extern "system" fn CreateBaseAcls(
     }
 
     if SessionId == 0 || (ProtectionMode & 3) == 0 {
-        RestrictedAccess = READ_CONTROL | DIRECTORY_QUERY | DIRECTORY_TRAVERSE
-            | DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY;
+        RestrictedAccess = READ_CONTROL
+            | DIRECTORY_QUERY
+            | DIRECTORY_TRAVERSE
+            | DIRECTORY_CREATE_OBJECT
+            | DIRECTORY_CREATE_SUBDIRECTORY;
     } else {
         RestrictedAccess = READ_CONTROL | DIRECTORY_QUERY | DIRECTORY_TRAVERSE;
     }
 
     Status = RtlAddAccessAllowedAce(*RestrictedDacl, ACL_REVISION2, WorldAccess, WorldSid);
     if Status >= 0 {
-        Status = RtlAddAccessAllowedAce(*RestrictedDacl, ACL_REVISION2, DIRECTORY_ALL_ACCESS, SystemSid);
+        Status = RtlAddAccessAllowedAce(
+            *RestrictedDacl,
+            ACL_REVISION2,
+            DIRECTORY_ALL_ACCESS,
+            SystemSid,
+        );
         if Status >= 0 {
-            Status = RtlAddAccessAllowedAce(*RestrictedDacl, ACL_REVISION2, RestrictedAccess, RestrictedSid);
+            Status = RtlAddAccessAllowedAce(
+                *RestrictedDacl,
+                ACL_REVISION2,
+                RestrictedAccess,
+                RestrictedSid,
+            );
         }
     }
 
@@ -500,9 +606,19 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     let mut HeapBuffer: *mut WCHAR;
     let mut SystemRootString: _UNICODE_STRING = core::mem::zeroed();
     static UNEXPANDED_SYSTEM_ROOT: [u16; 13] = [
-        b'%' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16,
-        b'e' as u16, b'm' as u16, b'R' as u16, b'o' as u16, b'o' as u16,
-        b't' as u16, b'%' as u16, 0,
+        b'%' as u16,
+        b'S' as u16,
+        b'y' as u16,
+        b's' as u16,
+        b't' as u16,
+        b'e' as u16,
+        b'm' as u16,
+        b'R' as u16,
+        b'o' as u16,
+        b'o' as u16,
+        b't' as u16,
+        b'%' as u16,
+        0,
     ];
     let UnexpandedSystemRootString = _UNICODE_STRING {
         Length: 24,
@@ -531,8 +647,17 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     // The old `b"CSDVersion\0".as_ptr() as *mut u16` landed at an odd offset in
     // basesrv.dll on amd64 → BUGCHECK 0x1E. (i386/arm64 only got lucky.)
     static CSDVERSION_NAME: [u16; 11] = [
-        b'C' as u16, b'S' as u16, b'D' as u16, b'V' as u16, b'e' as u16,
-        b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+        b'C' as u16,
+        b'S' as u16,
+        b'D' as u16,
+        b'V' as u16,
+        b'e' as u16,
+        b'r' as u16,
+        b's' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        0,
     ];
     let mut BaseServerRegistryConfigurationTable: [RTL_QUERY_REGISTRY_TABLE; 2] = [
         RTL_QUERY_REGISTRY_TABLE {
@@ -547,7 +672,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         core::mem::zeroed(),
     ];
 
-    DbgPrint(b"[BISD] enter\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[BISD] enter\n\0");
     // C: BaseSrvHeap = RtlGetProcessHeap()           (TEB inline)
     // C: BaseSrvSharedHeap = LoadedServerDll->SharedSection
     // The earlier rustconv translation invented a fake CSR_SERVER_DLL_STRUCT
@@ -556,17 +681,21 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     // feedback_cohab_flip_runtime_traps.
     BaseSrvHeap = (*(*NtCurrentTeb()).ProcessEnvironmentBlock).ProcessHeap;
     BaseSrvSharedHeap = (*(LoadedServerDll as *const CSR_SERVER_DLL_FULL)).SharedSection;
-    DbgPrint(b"[BISD] heap=%p shared=%p\n\0".as_ptr() as *const i8, BaseSrvHeap, BaseSrvSharedHeap);
+    crate::dbg_print!(
+        b"[BISD] heap=%p shared=%p\n\0",
+        BaseSrvHeap,
+        BaseSrvSharedHeap
+    );
 
     SessionId = (*(NtCurrentPeb())).SessionId;
-    DbgPrint(b"[BISD] SessionId=%u\n\0".as_ptr() as *const i8, SessionId);
+    crate::dbg_print!(b"[BISD] SessionId=%u\n\0", SessionId);
 
     RtlInitEmptyUnicodeString(
         &mut SystemRootString,
         Buffer.as_mut_ptr(),
         (core::mem::size_of_val(&Buffer)) as USHORT,
     );
-    DbgPrint(b"[BISD] before RtlExpandEnvironmentStrings_U\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[BISD] before RtlExpandEnvironmentStrings_U\n\0");
     Status = RtlExpandEnvironmentStrings_U(
         core::ptr::null_mut(),
         &UnexpandedSystemRootString as *const _ as *mut _,
@@ -574,40 +703,76 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         core::ptr::null_mut(),
     );
 
-    DbgPrint(b"[BISD] after Expand status=%lx len=%u\n\0".as_ptr() as *const i8, Status, SystemRootString.Length as ULONG);
+    crate::dbg_print!(
+        b"[BISD] after Expand status=%lx len=%u\n\0",
+        Status,
+        SystemRootString.Length as ULONG
+    );
     Buffer[SystemRootString.Length as usize / 2] = UNICODE_NULL;
     Success = RtlCreateUnicodeString(&mut BaseSrvWindowsDirectory, SystemRootString.Buffer);
-    DbgPrint(b"[BISD] after WinDir create=%u\n\0".as_ptr() as *const i8, Success as ULONG);
+    crate::dbg_print!(b"[BISD] after WinDir create=%u\n\0", Success as ULONG);
 
     let system32 = [
-        b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16,
-        b'e' as u16, b'm' as u16, b'3' as u16, b'2' as u16, 0,
+        b'\\' as u16,
+        b'S' as u16,
+        b'y' as u16,
+        b's' as u16,
+        b't' as u16,
+        b'e' as u16,
+        b'm' as u16,
+        b'3' as u16,
+        b'2' as u16,
+        0,
     ];
     let mut i = (SystemRootString.Length / 2) as usize;
     for &ch in &system32 {
         Buffer[i] = ch;
         i += 1;
-        if ch == 0 { break; }
+        if ch == 0 {
+            break;
+        }
     }
     Success = RtlCreateUnicodeString(&mut BaseSrvWindowsSystemDirectory, Buffer.as_ptr());
 
     let kernel32_dll = [
-        b'\\' as u16, b'k' as u16, b'e' as u16, b'r' as u16, b'n' as u16,
-        b'e' as u16, b'l' as u16, b'3' as u16, b'2' as u16, b'.' as u16,
-        b'd' as u16, b'l' as u16, b'l' as u16, 0,
+        b'\\' as u16,
+        b'k' as u16,
+        b'e' as u16,
+        b'r' as u16,
+        b'n' as u16,
+        b'e' as u16,
+        b'l' as u16,
+        b'3' as u16,
+        b'2' as u16,
+        b'.' as u16,
+        b'd' as u16,
+        b'l' as u16,
+        b'l' as u16,
+        0,
     ];
     i = (SystemRootString.Length / 2) as usize + 9;
     for &ch in &kernel32_dll {
         Buffer[i] = ch;
         i += 1;
-        if ch == 0 { break; }
+        if ch == 0 {
+            break;
+        }
     }
     Success = RtlCreateUnicodeString(&mut BaseSrvKernel32DllPath, Buffer.as_ptr());
 
     if SessionId != 0 {
         let sessions = [
-            b'\\' as u16, b'S' as u16, b'e' as u16, b's' as u16, b's' as u16,
-            b'i' as u16, b'o' as u16, b'n' as u16, b's' as u16, b'\\' as u16, 0,
+            b'\\' as u16,
+            b'S' as u16,
+            b'e' as u16,
+            b's' as u16,
+            b's' as u16,
+            b'i' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            b's' as u16,
+            b'\\' as u16,
+            0,
         ];
         for (i, &ch) in sessions.iter().enumerate() {
             BnoBuffer[i] = ch;
@@ -631,22 +796,52 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
             }
         }
         let bno = [
-            b'\\' as u16, b'B' as u16, b'a' as u16, b's' as u16, b'e' as u16,
-            b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b'd' as u16,
-            b'O' as u16, b'b' as u16, b'j' as u16, b'e' as u16, b'c' as u16,
-            b't' as u16, b's' as u16, 0,
+            b'\\' as u16,
+            b'B' as u16,
+            b'a' as u16,
+            b's' as u16,
+            b'e' as u16,
+            b'N' as u16,
+            b'a' as u16,
+            b'm' as u16,
+            b'e' as u16,
+            b'd' as u16,
+            b'O' as u16,
+            b'b' as u16,
+            b'j' as u16,
+            b'e' as u16,
+            b'c' as u16,
+            b't' as u16,
+            b's' as u16,
+            0,
         ];
         for &ch in &bno {
             BnoBuffer[idx] = ch;
             idx += 1;
-            if ch == 0 { break; }
+            if ch == 0 {
+                break;
+            }
         }
     } else {
         let bno = [
-            b'\\' as u16, b'B' as u16, b'a' as u16, b's' as u16, b'e' as u16,
-            b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b'd' as u16,
-            b'O' as u16, b'b' as u16, b'j' as u16, b'e' as u16, b'c' as u16,
-            b't' as u16, b's' as u16, 0,
+            b'\\' as u16,
+            b'B' as u16,
+            b'a' as u16,
+            b's' as u16,
+            b'e' as u16,
+            b'N' as u16,
+            b'a' as u16,
+            b'm' as u16,
+            b'e' as u16,
+            b'd' as u16,
+            b'O' as u16,
+            b'b' as u16,
+            b'j' as u16,
+            b'e' as u16,
+            b'c' as u16,
+            b't' as u16,
+            b's' as u16,
+            0,
         ];
         for (i, &ch) in bno.iter().enumerate() {
             BnoBuffer[i] = ch;
@@ -657,7 +852,9 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     BaseStaticServerData = RtlAllocateHeap(
         BaseSrvSharedHeap,
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<BASE_STATIC_SERVER_DATA>().try_into().unwrap(),
+        core::mem::size_of::<BASE_STATIC_SERVER_DATA>()
+            .try_into()
+            .unwrap(),
     ) as PBASE_STATIC_SERVER_DATA;
 
     (*BaseStaticServerData).TermsrvClientTimeZoneId = TIME_ZONE_ID_INVALID;
@@ -673,7 +870,9 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     HeapBuffer = RtlAllocateHeap(
         BaseSrvSharedHeap,
         0,
-        (BaseSrvWindowsDirectory.MaximumLength as usize).try_into().unwrap(),
+        (BaseSrvWindowsDirectory.MaximumLength as usize)
+            .try_into()
+            .unwrap(),
     ) as *mut WCHAR;
     RtlCopyMemory(
         HeapBuffer as PVOID,
@@ -686,7 +885,9 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     HeapBuffer = RtlAllocateHeap(
         BaseSrvSharedHeap,
         0,
-        (BaseSrvWindowsSystemDirectory.MaximumLength as usize).try_into().unwrap(),
+        (BaseSrvWindowsSystemDirectory.MaximumLength as usize)
+            .try_into()
+            .unwrap(),
     ) as *mut WCHAR;
     RtlCopyMemory(
         HeapBuffer as PVOID,
@@ -707,7 +908,9 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     HeapBuffer = RtlAllocateHeap(
         BaseSrvSharedHeap,
         0,
-        ((*BaseStaticServerData).NamedObjectDirectory.MaximumLength as usize).try_into().unwrap(),
+        ((*BaseStaticServerData).NamedObjectDirectory.MaximumLength as usize)
+            .try_into()
+            .unwrap(),
     ) as *mut WCHAR;
     RtlCopyMemory(
         HeapBuffer as PVOID,
@@ -799,14 +1002,34 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         ) >= 0
     {
         static GLOBAL: [u16; 7] = [
-            b'G' as u16, b'l' as u16, b'o' as u16, b'b' as u16, b'a' as u16, b'l' as u16, 0,
+            b'G' as u16,
+            b'l' as u16,
+            b'o' as u16,
+            b'b' as u16,
+            b'a' as u16,
+            b'l' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut DirectoryName, GLOBAL.as_ptr());
         static BNO_SYMLINK: [u16; 18] = [
-            b'\\' as u16, b'B' as u16, b'a' as u16, b's' as u16, b'e' as u16,
-            b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b'd' as u16,
-            b'O' as u16, b'b' as u16, b'j' as u16, b'e' as u16, b'c' as u16,
-            b't' as u16, b's' as u16, 0,
+            b'\\' as u16,
+            b'B' as u16,
+            b'a' as u16,
+            b's' as u16,
+            b'e' as u16,
+            b'N' as u16,
+            b'a' as u16,
+            b'm' as u16,
+            b'e' as u16,
+            b'd' as u16,
+            b'O' as u16,
+            b'b' as u16,
+            b'j' as u16,
+            b'e' as u16,
+            b'c' as u16,
+            b't' as u16,
+            b's' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut SymlinkName, BNO_SYMLINK.as_ptr());
         InitializeObjectAttributes(
@@ -827,7 +1050,12 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         }
 
         static LOCAL: [u16; 6] = [
-            b'L' as u16, b'o' as u16, b'c' as u16, b'a' as u16, b'l' as u16, 0,
+            b'L' as u16,
+            b'o' as u16,
+            b'c' as u16,
+            b'a' as u16,
+            b'l' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut DirectoryName, LOCAL.as_ptr());
         InitializeObjectAttributes(
@@ -848,15 +1076,36 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         }
 
         static SESSION: [u16; 8] = [
-            b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16,
-            b'o' as u16, b'n' as u16, 0,
+            b'S' as u16,
+            b'e' as u16,
+            b's' as u16,
+            b's' as u16,
+            b'i' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut DirectoryName, SESSION.as_ptr());
         static BNOLINKS: [u16; 19] = [
-            b'\\' as u16, b'S' as u16, b'e' as u16, b's' as u16, b's' as u16,
-            b'i' as u16, b'o' as u16, b'n' as u16, b's' as u16, b'\\' as u16,
-            b'B' as u16, b'N' as u16, b'O' as u16, b'L' as u16, b'I' as u16,
-            b'N' as u16, b'K' as u16, b'S' as u16, 0,
+            b'\\' as u16,
+            b'S' as u16,
+            b'e' as u16,
+            b's' as u16,
+            b's' as u16,
+            b'i' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            b's' as u16,
+            b'\\' as u16,
+            b'B' as u16,
+            b'N' as u16,
+            b'O' as u16,
+            b'L' as u16,
+            b'I' as u16,
+            b'N' as u16,
+            b'K' as u16,
+            b'S' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut SymlinkName, BNOLINKS.as_ptr());
         InitializeObjectAttributes(
@@ -877,8 +1126,17 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
         }
 
         static RESTRICTED: [u16; 11] = [
-            b'R' as u16, b'e' as u16, b's' as u16, b't' as u16, b'r' as u16,
-            b'i' as u16, b'c' as u16, b't' as u16, b'e' as u16, b'd' as u16, 0,
+            b'R' as u16,
+            b'e' as u16,
+            b's' as u16,
+            b't' as u16,
+            b'r' as u16,
+            b'i' as u16,
+            b'c' as u16,
+            b't' as u16,
+            b'e' as u16,
+            b'd' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut DirectoryName, RESTRICTED.as_ptr());
         Status = RtlSetDaclSecurityDescriptor(BnoSd, 1u8, BnoRestrictedDacl, 0u8);
@@ -990,11 +1248,16 @@ extern "C" {
 
 #[cfg_attr(feature = "basesrv_dll_only", no_mangle)]
 #[allow(dead_code)]
-pub unsafe extern "system" fn ServerDllInitialization(LoadedServerDll: PCSR_SERVER_DLL) -> NTSTATUS {
+pub unsafe extern "system" fn ServerDllInitialization(
+    LoadedServerDll: PCSR_SERVER_DLL,
+) -> NTSTATUS {
     const BASESRV_FIRST_API_NUMBER: ULONG = 0;
     const BasepMaxApiNumber: ULONG = 31;
 
-    DbgPrint(b"[BASESRV] ServerDllInitialization entered LoadedServerDll=%p\n\0".as_ptr() as *const i8, LoadedServerDll);
+    crate::dbg_print!(
+        b"[BASESRV] ServerDllInitialization entered LoadedServerDll=%p\n\0",
+        LoadedServerDll
+    );
 
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ApiBase = BASESRV_FIRST_API_NUMBER;
     (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).HighestApiSupported = BasepMaxApiNumber;
@@ -1016,17 +1279,20 @@ pub unsafe extern "system" fn ServerDllInitialization(LoadedServerDll: PCSR_SERV
 
     BaseSrvDllInstance = (*(LoadedServerDll as *mut CSR_SERVER_DLL_FULL)).ServerHandle;
 
-    DbgPrint(b"[BASESRV] before BaseInitializeStaticServerData\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[BASESRV] before BaseInitializeStaticServerData\n\0");
     BaseInitializeStaticServerData(LoadedServerDll);
-    DbgPrint(b"[BASESRV] after BaseInitializeStaticServerData, BaseStaticServerData=%p\n\0".as_ptr() as *const i8, BaseStaticServerData);
+    crate::dbg_print!(
+        b"[BASESRV] after BaseInitializeStaticServerData, BaseStaticServerData=%p\n\0",
+        BaseStaticServerData
+    );
 
-    DbgPrint(b"[BASESRV] before BaseInitDefineDosDevice\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[BASESRV] before BaseInitDefineDosDevice\n\0");
     BaseInitDefineDosDevice();
-    DbgPrint(b"[BASESRV] after BaseInitDefineDosDevice\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[BASESRV] after BaseInitDefineDosDevice\n\0");
 
-    DbgPrint(b"[BASESRV] before BaseInitializeVDM\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[BASESRV] before BaseInitializeVDM\n\0");
     BaseInitializeVDM();
-    DbgPrint(b"[BASESRV] after BaseInitializeVDM, returning SUCCESS\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[BASESRV] after BaseInitializeVDM, returning SUCCESS\n\0");
 
     STATUS_SUCCESS
 }
@@ -1046,28 +1312,29 @@ struct ANSI_STRING_REPR {
 
 #[repr(C)]
 struct CSR_SERVER_DLL_FULL {
-    Length: ULONG,                  // +0x00
-    Name: ANSI_STRING_REPR,         // +0x04 (8 bytes on i386)
-    ServerHandle: HANDLE,           // +0x0C
-    ServerId: ULONG,                // +0x10
-    Unknown: ULONG,                 // +0x14
-    ApiBase: ULONG,                 // +0x18
-    HighestApiSupported: ULONG,     // +0x1C
-    DispatchTable: *const c_void,   // +0x20
-    ValidTable: *const BOOLEAN,     // +0x24
+    Length: ULONG,                // +0x00
+    Name: ANSI_STRING_REPR,       // +0x04 (8 bytes on i386)
+    ServerHandle: HANDLE,         // +0x0C
+    ServerId: ULONG,              // +0x10
+    Unknown: ULONG,               // +0x14
+    ApiBase: ULONG,               // +0x18
+    HighestApiSupported: ULONG,   // +0x1C
+    DispatchTable: *const c_void, // +0x20
+    ValidTable: *const BOOLEAN,   // +0x24
     // NameTable is `#ifdef CSR_DBG` in csrsrv.h, which is set when
     // the project builds with -DDBG=1 (the default debug build).
     // The C_ASSERT at the bottom of csrsrv.h confirms SharedSection
     // is at 0x3C when CSR_DBG is on (0x38 without). bindgen i386 also
     // includes NameTable unconditionally, matching the DBG=1 layout.
-    NameTable: *const *const i8,    // +0x28 (CSR_DBG branch)
-    SizeOfProcessData: ULONG,       // +0x2C
+    NameTable: *const *const i8, // +0x28 (CSR_DBG branch)
+    SizeOfProcessData: ULONG,    // +0x2C
     ConnectCallback: Option<unsafe extern "system" fn(PCSR_PROCESS, PVOID, *mut ULONG) -> NTSTATUS>, // +0x30
-    DisconnectCallback: Option<unsafe extern "system" fn(PCSR_PROCESS)>,                              // +0x34
-    HardErrorCallback: PVOID,        // +0x38
-    SharedSection: PVOID,            // +0x3C  ← C_ASSERT (CSR_DBG) verifies this
-    NewProcessCallback: PVOID,       // +0x40
-    ShutdownProcessCallback: Option<unsafe extern "system" fn(PCSR_PROCESS, ULONG, BOOLEAN) -> NTSTATUS>, // +0x44
+    DisconnectCallback: Option<unsafe extern "system" fn(PCSR_PROCESS)>, // +0x34
+    HardErrorCallback: PVOID,                                            // +0x38
+    SharedSection: PVOID,      // +0x3C  ← C_ASSERT (CSR_DBG) verifies this
+    NewProcessCallback: PVOID, // +0x40
+    ShutdownProcessCallback:
+        Option<unsafe extern "system" fn(PCSR_PROCESS, ULONG, BOOLEAN) -> NTSTATUS>, // +0x44
     Unknown2: [ULONG; 3],
 }
 
@@ -1094,7 +1361,6 @@ pub unsafe extern "system" fn DllMain(
 }
 
 type HINSTANCE = HANDLE;
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

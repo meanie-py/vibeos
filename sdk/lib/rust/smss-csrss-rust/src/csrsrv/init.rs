@@ -1,10 +1,11 @@
-
 use ntdll_sys::nt::*;
 // RtlGetProcessHeap is a C macro (ndk/rtlfuncs.h:1127:
 // `#define RtlGetProcessHeap() (NtCurrentPeb()->ProcessHeap)`), NOT an
 // ntdll export — declaring it `extern` produces undefined `_RtlGetProcessHeap@0`.
 #[inline]
-unsafe fn RtlGetProcessHeap() -> HANDLE { (*NtCurrentPeb()).ProcessHeap as HANDLE }
+unsafe fn RtlGetProcessHeap() -> HANDLE {
+    (*NtCurrentPeb()).ProcessHeap as HANDLE
+}
 #[no_mangle]
 pub static mut CsrDebug: ULONG = 0;
 #[no_mangle]
@@ -59,7 +60,11 @@ unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {
         return Status;
     }
 
-    TokenInfo = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Length as usize).try_into().unwrap()) as PTOKEN_USER;
+    TokenInfo = RtlAllocateHeap(
+        CsrHeap,
+        HEAP_ZERO_MEMORY,
+        (Length as usize).try_into().unwrap(),
+    ) as PTOKEN_USER;
     if TokenInfo.is_null() {
         NtClose(hToken);
         Status = STATUS_NO_MEMORY;
@@ -74,9 +79,17 @@ unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {
     }
 
     UserSid = (*TokenInfo).User.Sid;
-    Length = RtlLengthSid(UserSid) + core::mem::size_of::<ACL>() as u32 + core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32;
+    Length = RtlLengthSid(UserSid)
+        + core::mem::size_of::<ACL>() as u32
+        + core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32;
 
-    ProcSd = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, ((SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize).try_into().unwrap()) as PSECURITY_DESCRIPTOR;
+    ProcSd = RtlAllocateHeap(
+        CsrHeap,
+        HEAP_ZERO_MEMORY,
+        ((SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize)
+            .try_into()
+            .unwrap(),
+    ) as PSECURITY_DESCRIPTOR;
     if ProcSd.is_null() {
         Status = STATUS_NO_MEMORY;
         RtlFreeHeap(CsrHeap, 0, TokenInfo as PVOID);
@@ -102,8 +115,14 @@ unsafe extern "system" fn CsrSetProcessSecurity() -> NTSTATUS {
     Status = RtlAddAccessAllowedAce(
         Dacl,
         ACL_REVISION,
-        PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_DUP_HANDLE |
-        PROCESS_TERMINATE | PROCESS_SUSPEND_RESUME | PROCESS_QUERY_INFORMATION | READ_CONTROL,
+        PROCESS_VM_READ
+            | PROCESS_VM_WRITE
+            | PROCESS_VM_OPERATION
+            | PROCESS_DUP_HANDLE
+            | PROCESS_TERMINATE
+            | PROCESS_SUSPEND_RESUME
+            | PROCESS_QUERY_INFORMATION
+            | READ_CONTROL,
         UserSid,
     );
     if Status < 0 {
@@ -131,9 +150,15 @@ pub unsafe extern "system" fn CsrSetDirectorySecurity(_ObjectDirectory: HANDLE) 
 }
 
 unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRIPTOR) -> NTSTATUS {
-    let WorldAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 1] };
-    let CreatorAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 3] };
-    let NtSidAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
+    let WorldAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 1],
+    };
+    let CreatorAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 3],
+    };
+    let NtSidAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 5],
+    };
     let mut WorldSid: PSID = core::ptr::null_mut();
     let mut CreatorSid: PSID = core::ptr::null_mut();
     let mut AdminSid: PSID = core::ptr::null_mut();
@@ -152,16 +177,58 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
     let AclLength: ULONG;
 
     static SM_REG_KEY: [u16; 34] = [
-        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16,
-        b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16,
-        b'e' as u16, b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
-        b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
-        b'C' as u16, 0,
+        b'\\' as u16,
+        b'R' as u16,
+        b'e' as u16,
+        b'g' as u16,
+        b'i' as u16,
+        b's' as u16,
+        b't' as u16,
+        b'r' as u16,
+        b'y' as u16,
+        b'\\' as u16,
+        b'M' as u16,
+        b'a' as u16,
+        b'c' as u16,
+        b'h' as u16,
+        b'i' as u16,
+        b'n' as u16,
+        b'e' as u16,
+        b'\\' as u16,
+        b'S' as u16,
+        b'y' as u16,
+        b's' as u16,
+        b't' as u16,
+        b'e' as u16,
+        b'm' as u16,
+        b'\\' as u16,
+        b'C' as u16,
+        b'u' as u16,
+        b'r' as u16,
+        b'r' as u16,
+        b'e' as u16,
+        b'n' as u16,
+        b't' as u16,
+        b'C' as u16,
+        0,
     ];
 
     static PROTECTION_MODE_KEY: [u16; 15] = [
-        b'P' as u16, b'r' as u16, b'o' as u16, b't' as u16, b'e' as u16, b'c' as u16, b't' as u16, b'i' as u16,
-        b'o' as u16, b'n' as u16, b'M' as u16, b'o' as u16, b'd' as u16, b'e' as u16, 0,
+        b'P' as u16,
+        b'r' as u16,
+        b'o' as u16,
+        b't' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'M' as u16,
+        b'o' as u16,
+        b'd' as u16,
+        b'e' as u16,
+        0,
     ];
 
     Status = RtlCreateSecurityDescriptor(DosDevicesSd, SECURITY_DESCRIPTOR_REVISION);
@@ -170,7 +237,13 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         &NtSidAuthority as *const _ as *mut _,
         1,
         SECURITY_LOCAL_SYSTEM_RID,
-        0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut SystemSid,
     );
 
@@ -178,7 +251,13 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         &WorldAuthority as *const _ as *mut _,
         1,
         SECURITY_WORLD_RID,
-        0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut WorldSid,
     );
 
@@ -187,7 +266,12 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         2,
         SECURITY_BUILTIN_DOMAIN_RID,
         DOMAIN_ALIAS_RID_ADMINS,
-        0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut AdminSid,
     );
 
@@ -195,12 +279,22 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         &CreatorAuthority as *const _ as *mut _,
         1,
         SECURITY_CREATOR_OWNER_RID,
-        0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut CreatorSid,
     );
 
     RtlInitUnicodeString(&mut KeyName, SM_REG_KEY.as_ptr());
-    core::ptr::write_bytes(&mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8, 0, core::mem::size_of::<_OBJECT_ATTRIBUTES>());
+    core::ptr::write_bytes(
+        &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8,
+        0,
+        core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+    );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut KeyName;
@@ -221,8 +315,10 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         );
 
         KeyValuePartialInfoLocal = KeyValueBuffer.as_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
-        if Status >= 0 && (*KeyValuePartialInfoLocal).Type == REG_DWORD &&
-            *((*KeyValuePartialInfoLocal).Data.as_ptr() as *const ULONG) != 0 {
+        if Status >= 0
+            && (*KeyValuePartialInfoLocal).Type == REG_DWORD
+            && *((*KeyValuePartialInfoLocal).Data.as_ptr() as *const ULONG) != 0
+        {
             ProtectionModeLocal = *((*KeyValuePartialInfoLocal).Data.as_ptr() as *const ULONG);
         }
 
@@ -231,9 +327,15 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
 
     if (ProtectionModeLocal & 3) != 0 {
         SidLength = RtlLengthSid(CreatorSid) + RtlLengthSid(SystemSid) + RtlLengthSid(AdminSid);
-        AclLength = core::mem::size_of::<ACL>() as u32 + 3 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32 + SidLength;
+        AclLength = core::mem::size_of::<ACL>() as u32
+            + 3 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32
+            + SidLength;
 
-        Dacl = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (AclLength as usize).try_into().unwrap()) as PACL;
+        Dacl = RtlAllocateHeap(
+            CsrHeap,
+            HEAP_ZERO_MEMORY,
+            (AclLength as usize).try_into().unwrap(),
+        ) as PACL;
 
         Status = RtlCreateAcl(Dacl, AclLength, ACL_REVISION2);
         Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_ALL, SystemSid);
@@ -245,22 +347,35 @@ unsafe extern "system" fn GetDosDevicesProtection(DosDevicesSd: PSECURITY_DESCRI
         Status = RtlGetAce(Dacl, 1, &mut Ace as *mut _ as *mut PVOID);
         (*Ace).Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8;
         Status = RtlGetAce(Dacl, 2, &mut Ace as *mut _ as *mut PVOID);
-        (*Ace).Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
+        (*Ace).Header.AceFlags |=
+            (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
 
         Status = RtlSetDaclSecurityDescriptor(DosDevicesSd, 1, Dacl, 0);
     } else {
         SidLength = RtlLengthSid(WorldSid) + RtlLengthSid(SystemSid);
-        AclLength = core::mem::size_of::<ACL>() as u32 + 3 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32 + SidLength;
+        AclLength = core::mem::size_of::<ACL>() as u32
+            + 3 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32
+            + SidLength;
 
-        Dacl = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (AclLength as usize).try_into().unwrap()) as PACL;
+        Dacl = RtlAllocateHeap(
+            CsrHeap,
+            HEAP_ZERO_MEMORY,
+            (AclLength as usize).try_into().unwrap(),
+        ) as PACL;
 
         Status = RtlCreateAcl(Dacl, AclLength, ACL_REVISION2);
-        Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE, WorldSid);
+        Status = RtlAddAccessAllowedAce(
+            Dacl,
+            ACL_REVISION,
+            GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE,
+            WorldSid,
+        );
         Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_ALL, SystemSid);
         Status = RtlAddAccessAllowedAce(Dacl, ACL_REVISION, GENERIC_ALL, WorldSid);
 
         Status = RtlGetAce(Dacl, 2, &mut Ace as *mut _ as *mut PVOID);
-        (*Ace).Header.AceFlags |= (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
+        (*Ace).Header.AceFlags |=
+            (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERIT_ONLY_ACE) as u8;
 
         Status = RtlSetDaclSecurityDescriptor(DosDevicesSd, 1, Dacl, 0);
     }
@@ -296,39 +411,96 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     let mut Status: NTSTATUS;
 
     static SESSION_ROOT: [u16; 9] = [
-        b'\\' as u16, b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+        b'\\' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b's' as u16,
+        b's' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        0,
     ];
     static BNOLINKS: [u16; 9] = [
-        b'\\' as u16, b'B' as u16, b'N' as u16, b'O' as u16, b'L' as u16, b'I' as u16, b'N' as u16, b'K' as u16, b'S' as u16,
+        b'\\' as u16,
+        b'B' as u16,
+        b'N' as u16,
+        b'O' as u16,
+        b'L' as u16,
+        b'I' as u16,
+        b'N' as u16,
+        b'K' as u16,
+        b'S' as u16,
     ];
     static SESSION_ROOT_SLASH: [u16; 10] = [
-        b'\\' as u16, b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16, 0,
+        b'\\' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b's' as u16,
+        b's' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b'\\' as u16,
+        0,
     ];
     static BASE_NAMED_OBJECTS: [u16; 18] = [
-        b'\\' as u16, b'B' as u16, b'a' as u16, b's' as u16, b'e' as u16, b'N' as u16, b'a' as u16, b'm' as u16,
-        b'e' as u16, b'd' as u16, b'O' as u16, b'b' as u16, b'j' as u16, b'e' as u16, b'c' as u16, b't' as u16,
-        b's' as u16, 0,
+        b'\\' as u16,
+        b'B' as u16,
+        b'a' as u16,
+        b's' as u16,
+        b'e' as u16,
+        b'N' as u16,
+        b'a' as u16,
+        b'm' as u16,
+        b'e' as u16,
+        b'd' as u16,
+        b'O' as u16,
+        b'b' as u16,
+        b'j' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b't' as u16,
+        b's' as u16,
+        0,
     ];
     static DOS_DEVICES: [u16; 11] = [
-        b'D' as u16, b'o' as u16, b's' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16,
-        b'e' as u16, b's' as u16, 0,
+        b'D' as u16,
+        b'o' as u16,
+        b's' as u16,
+        b'D' as u16,
+        b'e' as u16,
+        b'v' as u16,
+        b'i' as u16,
+        b'c' as u16,
+        b'e' as u16,
+        b's' as u16,
+        0,
     ];
 
     let mut idx = 0;
     for &c in SESSION_ROOT.iter() {
         SessionBuffer[idx] = c;
         idx += 1;
-        if c == 0 { break; }
+        if c == 0 {
+            break;
+        }
     }
     for &c in BNOLINKS.iter() {
-        if c == 0 { break; }
+        if c == 0 {
+            break;
+        }
         SessionBuffer[idx] = c;
         idx += 1;
     }
     SessionBuffer[idx] = 0;
     RtlInitUnicodeString(&mut SessionString, SessionBuffer.as_ptr());
 
-    core::ptr::write_bytes(&mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8, 0, core::mem::size_of::<_OBJECT_ATTRIBUTES>());
+    core::ptr::write_bytes(
+        &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8,
+        0,
+        core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+    );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut SessionString;
@@ -336,7 +508,11 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = NtCreateDirectoryObject(&mut BNOLinksDirectory, DIRECTORY_ALL_ACCESS, &mut ObjectAttributes);
+    Status = NtCreateDirectoryObject(
+        &mut BNOLinksDirectory,
+        DIRECTORY_ALL_ACCESS,
+        &mut ObjectAttributes,
+    );
     if Status < 0 {
         return Status;
     }
@@ -350,7 +526,9 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
         for &c in SESSION_ROOT_SLASH.iter() {
             BnoBuffer[idx] = c;
             idx += 1;
-            if c == 0 { break; }
+            if c == 0 {
+                break;
+            }
         }
         for i in 0..session_len {
             BnoBuffer[idx] = session_str[i];
@@ -359,14 +537,20 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
         for &c in BASE_NAMED_OBJECTS[17..].iter() {
             BnoBuffer[idx] = c;
             idx += 1;
-            if c == 0 { break; }
+            if c == 0 {
+                break;
+            }
         }
         RtlInitUnicodeString(&mut BnoString, BnoBuffer.as_ptr());
     } else {
         RtlInitUnicodeString(&mut BnoString, BASE_NAMED_OBJECTS.as_ptr());
     }
 
-    core::ptr::write_bytes(&mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8, 0, core::mem::size_of::<_OBJECT_ATTRIBUTES>());
+    core::ptr::write_bytes(
+        &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8,
+        0,
+        core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+    );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = BNOLinksDirectory;
     ObjectAttributes.ObjectName = &mut SessionString;
@@ -374,7 +558,12 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = NtCreateSymbolicLinkObject(&mut BnoHandle, SYMBOLIC_LINK_ALL_ACCESS, &mut ObjectAttributes, &mut BnoString);
+    Status = NtCreateSymbolicLinkObject(
+        &mut BnoHandle,
+        SYMBOLIC_LINK_ALL_ACCESS,
+        &mut ObjectAttributes,
+        &mut BnoString,
+    );
     if Status < 0 {
         return Status;
     }
@@ -388,7 +577,9 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     for &c in SESSION_ROOT_SLASH.iter() {
         SessionBuffer[idx] = c;
         idx += 1;
-        if c == 0 { break; }
+        if c == 0 {
+            break;
+        }
     }
     for i in 0..session_len {
         SessionBuffer[idx] = session_str[i];
@@ -397,7 +588,11 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     SessionBuffer[idx] = 0;
     RtlInitUnicodeString(&mut SessionString, SessionBuffer.as_ptr());
 
-    core::ptr::write_bytes(&mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8, 0, core::mem::size_of::<_OBJECT_ATTRIBUTES>());
+    core::ptr::write_bytes(
+        &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8,
+        0,
+        core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+    );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut SessionString;
@@ -405,14 +600,22 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityDescriptor = &mut DosDevicesSd as *mut _ as PSECURITY_DESCRIPTOR;
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = NtCreateDirectoryObject(&mut SessionObjectDirectory, DIRECTORY_ALL_ACCESS, &mut ObjectAttributes);
+    Status = NtCreateDirectoryObject(
+        &mut SessionObjectDirectory,
+        DIRECTORY_ALL_ACCESS,
+        &mut ObjectAttributes,
+    );
     if Status < 0 {
         FreeDosDevicesProtection(&mut DosDevicesSd as *mut _ as PVOID);
         return Status;
     }
 
     RtlInitUnicodeString(&mut SessionString, DOS_DEVICES.as_ptr());
-    core::ptr::write_bytes(&mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8, 0, core::mem::size_of::<_OBJECT_ATTRIBUTES>());
+    core::ptr::write_bytes(
+        &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8,
+        0,
+        core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+    );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = SessionObjectDirectory;
     ObjectAttributes.ObjectName = &mut SessionString;
@@ -420,7 +623,11 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     ObjectAttributes.SecurityDescriptor = &mut DosDevicesSd as *mut _ as PSECURITY_DESCRIPTOR;
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    Status = NtCreateDirectoryObject(&mut DosDevicesDirectory, DIRECTORY_ALL_ACCESS, &mut ObjectAttributes);
+    Status = NtCreateDirectoryObject(
+        &mut DosDevicesDirectory,
+        DIRECTORY_ALL_ACCESS,
+        &mut ObjectAttributes,
+    );
     FreeDosDevicesProtection(&mut DosDevicesSd as *mut _ as PVOID);
     Status
 }
@@ -445,7 +652,10 @@ unsafe fn format_number(mut n: ULONG, buf: &mut [u16]) -> usize {
     idx
 }
 
-unsafe extern "system" fn CsrParseServerCommandLine(ArgumentCount: ULONG, Arguments: *mut PCHAR) -> NTSTATUS {
+unsafe extern "system" fn CsrParseServerCommandLine(
+    ArgumentCount: ULONG,
+    Arguments: *mut PCHAR,
+) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut ParameterName: PCHAR;
     let mut ParameterValue: PCHAR;
@@ -497,7 +707,11 @@ unsafe extern "system" fn CsrParseServerCommandLine(ArgumentCount: ULONG, Argume
                 return Status;
             }
 
-            core::ptr::write_bytes(&mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8, 0, core::mem::size_of::<_OBJECT_ATTRIBUTES>());
+            core::ptr::write_bytes(
+                &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8,
+                0,
+                core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+            );
             ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
             ObjectAttributes.RootDirectory = core::ptr::null_mut();
             ObjectAttributes.ObjectName = &mut CsrDirectoryName;
@@ -505,7 +719,11 @@ unsafe extern "system" fn CsrParseServerCommandLine(ArgumentCount: ULONG, Argume
             ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
             ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-            Status = NtCreateDirectoryObject(&mut CsrObjectDirectory, DIRECTORY_ALL_ACCESS, &mut ObjectAttributes);
+            Status = NtCreateDirectoryObject(
+                &mut CsrObjectDirectory,
+                DIRECTORY_ALL_ACCESS,
+                &mut ObjectAttributes,
+            );
             if Status < 0 {
                 return Status;
             }
@@ -544,7 +762,11 @@ unsafe extern "system" fn CsrParseServerCommandLine(ArgumentCount: ULONG, Argume
                 return Status;
             }
 
-            Status = CsrLoadServerDll(b"CSRSS\0".as_ptr() as PCHAR, core::ptr::null_mut(), CSRSRV_SERVERDLL_INDEX);
+            Status = CsrLoadServerDll(
+                b"CSRSS\0".as_ptr() as PCHAR,
+                core::ptr::null_mut(),
+                CSRSRV_SERVERDLL_INDEX,
+            );
         } else if stricmp(ParameterName, b"ServerDll\0".as_ptr() as PCHAR) == 0 {
             EntryPoint = core::ptr::null_mut();
             Status = STATUS_INVALID_PARAMETER;
@@ -579,7 +801,11 @@ unsafe extern "system" fn CsrParseServerCommandLine(ArgumentCount: ULONG, Argume
         } else if stricmp(ParameterName, b"Windows\0".as_ptr() as PCHAR) == 0 {
             #[cfg(target_os = "windows")]
             {
-                CsrWindowsControl = if stricmp(ParameterValue, b"On\0".as_ptr() as PCHAR) == 0 { 1 } else { 0 };
+                CsrWindowsControl = if stricmp(ParameterValue, b"On\0".as_ptr() as PCHAR) == 0 {
+                    1
+                } else {
+                    0
+                };
             }
         } else {
             Status = STATUS_INVALID_PARAMETER;
@@ -607,14 +833,22 @@ unsafe fn stricmp(a: PCHAR, b: PCHAR) -> i32 {
 }
 
 unsafe fn to_lower(c: u8) -> u8 {
-    if c >= b'A' && c <= b'Z' { c + 32 } else { c }
+    if c >= b'A' && c <= b'Z' {
+        c + 32
+    } else {
+        c
+    }
 }
 
 unsafe extern "system" fn CsrInitCsrRootProcess() -> NTSTATUS {
     let mut ProcessData: PVOID;
     let mut ServerDll: PCSR_SERVER_DLL;
 
-    ProcessData = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (CsrTotalPerProcessDataLength as usize).try_into().unwrap());
+    ProcessData = RtlAllocateHeap(
+        CsrHeap,
+        HEAP_ZERO_MEMORY,
+        (CsrTotalPerProcessDataLength as usize).try_into().unwrap(),
+    );
     if ProcessData.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -645,8 +879,12 @@ unsafe extern "system" fn CsrInitCsrRootProcess() -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrCreateLocalSystemSD(LocalSystemSd: *mut PSECURITY_DESCRIPTOR) -> NTSTATUS {
-    let NtSidAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
+pub unsafe extern "system" fn CsrCreateLocalSystemSD(
+    LocalSystemSd: *mut PSECURITY_DESCRIPTOR,
+) -> NTSTATUS {
+    let NtSidAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 5],
+    };
     let mut SystemSid: PSID = core::ptr::null_mut();
     let Length: ULONG;
     let SystemSd: PSECURITY_DESCRIPTOR;
@@ -657,13 +895,27 @@ pub unsafe extern "system" fn CsrCreateLocalSystemSD(LocalSystemSd: *mut PSECURI
         &NtSidAuthority as *const _ as *mut _,
         1,
         SECURITY_LOCAL_SYSTEM_RID,
-        0, 0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         &mut SystemSid,
     );
 
-    Length = RtlLengthSid(SystemSid) + core::mem::size_of::<ACL>() as u32 + core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32;
+    Length = RtlLengthSid(SystemSid)
+        + core::mem::size_of::<ACL>() as u32
+        + core::mem::size_of::<ACCESS_ALLOWED_ACE>() as u32;
 
-    SystemSd = RtlAllocateHeap(CsrHeap, 0, ((SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize).try_into().unwrap()) as PSECURITY_DESCRIPTOR;
+    SystemSd = RtlAllocateHeap(
+        CsrHeap,
+        0,
+        ((SECURITY_DESCRIPTOR_MIN_LENGTH + Length) as usize)
+            .try_into()
+            .unwrap(),
+    ) as PSECURITY_DESCRIPTOR;
 
     Dacl = (SystemSd as usize + SECURITY_DESCRIPTOR_MIN_LENGTH as usize) as PACL;
 
@@ -708,13 +960,25 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
     let mut ClientId: _CLIENT_ID = core::mem::zeroed();
 
     static SB_PORT_NAME: [u16; 11] = [
-        b'S' as u16, b'b' as u16, b'A' as u16, b'p' as u16, b'i' as u16, b'P' as u16, b'o' as u16,
-        b'r' as u16, b't' as u16, 0, 0,
+        b'S' as u16,
+        b'b' as u16,
+        b'A' as u16,
+        b'p' as u16,
+        b'i' as u16,
+        b'P' as u16,
+        b'o' as u16,
+        b'r' as u16,
+        b't' as u16,
+        0,
+        0,
     ];
 
-    Size = CsrDirectoryName.Length as u32 + core::mem::size_of_val(&SB_PORT_NAME) as u32 + core::mem::size_of::<u16>() as u32;
+    Size = CsrDirectoryName.Length as u32
+        + core::mem::size_of_val(&SB_PORT_NAME) as u32
+        + core::mem::size_of::<u16>() as u32;
 
-    CsrSbApiPortName.Buffer = RtlAllocateHeap(CsrHeap, 0, (Size as usize).try_into().unwrap()) as *mut u16;
+    CsrSbApiPortName.Buffer =
+        RtlAllocateHeap(CsrHeap, 0, (Size as usize).try_into().unwrap()) as *mut u16;
     if CsrSbApiPortName.Buffer.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -742,7 +1006,11 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
         return Status;
     }
 
-    core::ptr::write_bytes(&mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8, 0, core::mem::size_of::<_OBJECT_ATTRIBUTES>());
+    core::ptr::write_bytes(
+        &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES as *mut u8,
+        0,
+        core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+    );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
     ObjectAttributes.ObjectName = &mut CsrSbApiPortName;
@@ -784,8 +1052,11 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrServerInitialization(ArgumentCount: ULONG, Arguments: *mut PCHAR) -> NTSTATUS {
-    DbgPrint(b"[CSRSRV] CSI: ENTRY argc=%u\n\0".as_ptr() as *const i8, ArgumentCount);
+pub unsafe extern "system" fn CsrServerInitialization(
+    ArgumentCount: ULONG,
+    Arguments: *mut PCHAR,
+) -> NTSTATUS {
+    crate::dbg_print!(b"[CSRSRV] CSI: ENTRY argc=%u\n\0", ArgumentCount);
     let mut Status = STATUS_SUCCESS;
 
     Status = NtQuerySystemInformation(
@@ -820,16 +1091,22 @@ pub unsafe extern "system" fn CsrServerInitialization(ArgumentCount: ULONG, Argu
         return Status;
     }
 
-    DbgPrint(b"[CSRSRV] CSI: before CsrInitCsrRootProcess\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[CSRSRV] CSI: before CsrInitCsrRootProcess\n\0");
     Status = CsrInitCsrRootProcess();
-    DbgPrint(b"[CSRSRV] CSI: after CsrInitCsrRootProcess st=0x%lx\n\0".as_ptr() as *const i8, Status);
+    crate::dbg_print!(
+        b"[CSRSRV] CSI: after CsrInitCsrRootProcess st=0x%lx\n\0",
+        Status
+    );
     if Status < 0 {
         return Status;
     }
 
-    DbgPrint(b"[CSRSRV] CSI: before CsrApiPortInitialize\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[CSRSRV] CSI: before CsrApiPortInitialize\n\0");
     Status = CsrApiPortInitialize();
-    DbgPrint(b"[CSRSRV] CSI: after CsrApiPortInitialize st=0x%lx\n\0".as_ptr() as *const i8, Status);
+    crate::dbg_print!(
+        b"[CSRSRV] CSI: after CsrApiPortInitialize st=0x%lx\n\0",
+        Status
+    );
     if Status < 0 {
         return Status;
     }
@@ -900,14 +1177,16 @@ pub unsafe extern "system" fn CsrServerInitialization(ArgumentCount: ULONG, Argu
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrPopulateDosDevices() {
-}
+pub unsafe extern "system" fn CsrPopulateDosDevices() {}
 
 #[no_mangle]
-pub unsafe extern "system" fn DllMain(_hInstanceDll: HINSTANCE, _dwReason: DWORD, _lpReserved: LPVOID) -> BOOL {
+pub unsafe extern "system" fn DllMain(
+    _hInstanceDll: HINSTANCE,
+    _dwReason: DWORD,
+    _lpReserved: LPVOID,
+) -> BOOL {
     1
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

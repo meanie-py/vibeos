@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 #[no_mangle]
 pub unsafe extern "system" fn CsrNewThread() -> NTSTATUS {
@@ -10,7 +9,11 @@ pub unsafe extern "system" fn CsrIdentifyAlertableThread() -> NTSTATUS {
     #[cfg(not(feature = "ntddi_ws03"))]
     {
         let mut ApiMessage: CSR_API_MESSAGE = core::mem::zeroed();
-        let IdentifyAlertableThread = &mut ApiMessage.__bindgen_anon_1.__bindgen_anon_1.Data.IdentifyAlertableThread;
+        let IdentifyAlertableThread = &mut ApiMessage
+            .__bindgen_anon_1
+            .__bindgen_anon_1
+            .Data
+            .IdentifyAlertableThread;
 
         IdentifyAlertableThread.Cid = (*NtCurrentTeb()).ClientId;
 
@@ -38,7 +41,11 @@ pub unsafe extern "system" fn CsrSetPriorityClass(
     #[cfg(not(feature = "ntddi_ws03"))]
     {
         let mut ApiMessage: CSR_API_MESSAGE = core::mem::zeroed();
-        let SetPriorityClass = &mut ApiMessage.__bindgen_anon_1.__bindgen_anon_1.Data.SetPriorityClass;
+        let SetPriorityClass = &mut ApiMessage
+            .__bindgen_anon_1
+            .__bindgen_anon_1
+            .Data
+            .SetPriorityClass;
 
         SetPriorityClass.hProcess = Process;
         SetPriorityClass.PriorityClass = *PriorityClass;
@@ -64,7 +71,6 @@ pub unsafe extern "system" fn CsrSetPriorityClass(
         0xC000000Du32 as NTSTATUS // STATUS_INVALID_PARAMETER
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -27,13 +27,24 @@ case "$BUILD_DIR" in
     *)       echo "Cannot determine arch from $BUILD_DIR"; exit 1 ;;
 esac
 
-# Check objdump is available, fall back to llvm-objdump
-if ! command -v "$OBJDUMP" &>/dev/null; then
-    OBJDUMP="llvm-objdump"
-    if ! command -v "$OBJDUMP" &>/dev/null; then
-        echo "ERROR: Neither $OBJDUMP nor llvm-objdump found"
-        exit 1
-    fi
+# Resolve a working objdump: the per-arch mingw objdump or llvm-objdump on
+# PATH, else the same from the repo's bundled llvm-mingw toolchain. The
+# bundled fallback matters for arm64 — a stock box has the x86_64/i686 mingw
+# objdumps in /usr/bin but neither aarch64-w64-mingw32-objdump nor
+# llvm-objdump, and .build-tools/llvm-mingw/bin isn't necessarily on PATH.
+BUNDLED_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.build-tools/llvm-mingw/bin"
+resolve_objdump() {
+    for c in "$OBJDUMP" "llvm-objdump" "$BUNDLED_BIN/$OBJDUMP" "$BUNDLED_BIN/llvm-objdump"; do
+        if command -v "$c" &>/dev/null; then
+            OBJDUMP="$c"
+            return 0
+        fi
+    done
+    return 1
+}
+if ! resolve_objdump; then
+    echo "ERROR: no objdump found (tried $OBJDUMP, llvm-objdump, and $BUNDLED_BIN)"
+    exit 1
 fi
 
 echo "Checking $NTOSKRNL ($ARCH) with $OBJDUMP..."

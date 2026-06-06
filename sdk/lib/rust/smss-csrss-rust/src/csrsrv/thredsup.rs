@@ -1,7 +1,5 @@
-
-use ntdll_sys::nt::*;
 use super::srv_inlines::*;
-
+use ntdll_sys::nt::*;
 
 fn CONTAINING_RECORD<T>(address: *const u8, offset: usize) -> *mut T {
     ((address as usize) - offset) as *mut T
@@ -14,7 +12,10 @@ fn CsrHashThread(t: HANDLE) -> usize {
 #[no_mangle]
 #[used]
 pub static mut CsrThreadHashTable: [LIST_ENTRY; NUMBER_THREAD_HASH_BUCKETS as usize] =
-    [LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() }; NUMBER_THREAD_HASH_BUCKETS as usize];
+    [LIST_ENTRY {
+        Flink: core::ptr::null_mut(),
+        Blink: core::ptr::null_mut(),
+    }; NUMBER_THREAD_HASH_BUCKETS as usize];
 
 #[no_mangle]
 pub unsafe extern "system" fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
@@ -459,10 +460,7 @@ pub unsafe extern "system" fn CsrDestroyThread(Cid: PCLIENT_ID) -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrExecServerThread(
-    ThreadHandler: PVOID,
-    Flags: ULONG,
-) -> NTSTATUS {
+pub unsafe extern "system" fn CsrExecServerThread(ThreadHandler: PVOID, Flags: ULONG) -> NTSTATUS {
     CsrAcquireProcessLock();
 
     let CsrThread = CsrAllocateThread(CsrRootProcess);
@@ -571,7 +569,6 @@ pub unsafe extern "system" fn CsrUnlockThread(CsrThread: PCSR_THREAD) -> NTSTATU
     CsrReleaseProcessLock();
     STATUS_SUCCESS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE
