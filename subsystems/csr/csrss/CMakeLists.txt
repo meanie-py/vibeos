@@ -10,10 +10,13 @@ include_directories(
 # cmake→cargo (after smss + the csrsrv/winsrv/basesrv DLLs), and (like basesrv)
 # the one still on the legacy pattern: cmake `add_executable(csrss)` + a
 # standalone `add_custom_command` cargo build the link reused. That machinery is
-# retired; the engine self-hosts the csrsrv/ntdll import libs, compiles the
-# csrss_rust_stub.c residue IN-cargo (c_from_compile_db), and reserves the arm64
-# 2MB stack (.stack_reserve — llvm-dlltool collapses delay-imports so all deps
-# load at once and LdrpLoadDll recursion overflows the default 1MB stack).
+# retired; the engine self-hosts the csrsrv/ntdll import libs and reserves the
+# arm64 2MB stack (.stack_reserve — llvm-dlltool collapses delay-imports so all
+# deps load at once and LdrpLoadDll recursion overflows the default 1MB stack).
+# The csrss link compiles ZERO C: csrss_rust_stub.c was a cmake-era cohabitation
+# stub (an empty TU to force Rust-archive extraction under add_executable),
+# vestigial under add_cargo_module — dropped from the cargo link (3199e96cca8),
+# so its csrss_c OBJECT lib is gone too. The .c stays on disk (never delete C).
 #
 # The LEAN csrss_main_only feature ships ONLY `_main` +
 # CsrpSetDefaultProcessHardErrorMode (NOT the csrsrv/csrlib/smlib/smss/basesrv
@@ -22,13 +25,6 @@ include_directories(
 # break data sharing (winsrv → CsrQueryApiPort → csrsrv.dll's _CsrApiPort reads 0
 # because csrss.exe wrote its OWN copy at NtCreatePort time). csrss.rc is
 # version-only (non-load-bearing) → not linked. Keep all .c on disk.
-
-# csrss_rust_stub.c (macro/intrinsic shim) is compiled IN-cargo by the cargo link
-# (c_from_compile_db, CMakeFiles/csrss_c.dir marker). This OBJECT lib's objects
-# are NOT linked here — it exists only to populate compile_commands.json.
-# nativecui adds no UNICODE; the stub is self-contained (no SDK headers, no PCH).
-add_library(csrss_c OBJECT csrss_rust_stub.c)
-set_source_files_properties(csrss_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # libnt.a (native CRT startup, _NtProcessStartup@4) reused, as a FILE path for
 # parallel-build ordering. csrsrv/ntdll import libs are self-hosted in-cargo.
@@ -39,4 +35,4 @@ add_cargo_module(csrss csrss-cargo csrss.exe
     KIND native
     BODY_CRATE smss-csrss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS csrss_c ${CSRSS_REUSED})
+    EXTRA_DEPENDS ${CSRSS_REUSED})
