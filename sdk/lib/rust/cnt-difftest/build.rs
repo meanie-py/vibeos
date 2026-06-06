@@ -964,6 +964,30 @@ fn main() {
     for obj in ecvt_build.compile_intermediates() {
         redef(&obj);
     }
+    // Wave STRTOD — strtod.c accumulates r/d in `long double` (80-bit
+    // x87 on the SysV host) → built `-mlong-double-64` so the reference
+    // uses 64-bit long double == the Windows ABI (amd64/arm64) == the
+    // cnt-rust f64 core. That pins the f64 SEMANTICS bit-exact; the
+    // documented i386 f80→f64 deviation is precisely the gap between
+    // this 64-bit reference and the OLD i386 f80 C (see strtod.rs).
+    // strtod.c pulls <precomp.h> via refstub; rename strtod→ref_strtod.
+    let strtod_body = format!(
+        "#define strtod ref_strtod\n#include <stddef.h>\n{}",
+        inc(s("string/strtod.c")));
+    let strtod_c = out.join("ref_strtod.c");
+    fs::write(&strtod_c, &strtod_body).unwrap();
+    let mut strtod_build = cc::Build::new();
+    strtod_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&strtod_c);
+    for obj in strtod_build.compile_intermediates() {
+        redef(&obj);
+    }
     // float-cvt Phase 3 — _gcvt/_gcvt_s. Pure `sprintf("%.*g")` →
     // the same genuine format_float (chr='g'). Same direct-drive
     // harness as ecvt (streamout.c for format_float; SysV-safe

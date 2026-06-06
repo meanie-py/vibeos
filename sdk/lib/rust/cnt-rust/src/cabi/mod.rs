@@ -295,3 +295,5 @@ mod streamout;
 pub use streamout::*;
 mod math;
 pub use math::*;
+mod strtod;
+pub use strtod::*;
