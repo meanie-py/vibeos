@@ -312,6 +312,8 @@ pub mod hook;
 pub mod scrollbar;
 // [ntuser wave 35 — cursoricon]
 pub mod cursoricon;
+// [ntuser wave 36 — ime]
+pub mod ime;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
