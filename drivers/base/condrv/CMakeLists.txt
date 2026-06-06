@@ -1,18 +1,11 @@
-
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
-
-list(APPEND SOURCE
-    condrv.c
-    control.c
-    dispatch.c
-    condrv.h)
-
-add_library(condrv MODULE
-    ${SOURCE}
-    condrv.rc)
-
-set_module_type(condrv kernelmodedriver)
-target_link_libraries(condrv ${PSEH_LIB})
-add_importlibs(condrv ntoskrnl hal)
-add_pch(condrv condrv.h SOURCE)
-add_cd_file(TARGET condrv DESTINATION reactos/system32/drivers NO_CAB FOR all)
+# ============================================================================
+# condrv.sys — cargo-driven final link (sdk/lib/rust/condrv-cargo via reactos-link)
+# ============================================================================
+# condrv.c/control.c/dispatch.c are translated to Rust (sdk/lib/rust/condrv-rust,
+# kept on disk per the never-delete rule); the Rust #[no_mangle] DriverEntry is
+# the PE entry point. The final condrv.sys link is no longer cmake's
+# add_library(MODULE) — it is driven by cargo (condrv-cargo's build.rs →
+# reactos-link, ModuleKind::KernelDll, entry=DriverEntry@8, no exports). The
+# version resource (condrv.rc) is dropped as in the other cargo cuts.
+add_cargo_module(condrv condrv-cargo condrv.sys KIND kerneldll
+    BODY_CRATE condrv-rust DESTINATION reactos/system32/drivers)

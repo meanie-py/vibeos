@@ -32,6 +32,8 @@ members = [
     "mouclass-cargo",
     "beep-rust",
     "beep-cargo",
+    "condrv-rust",
+    "condrv-cargo",
     "framebuf-cargo",
     "bootvid-rust",
     "bootvid-cargo",

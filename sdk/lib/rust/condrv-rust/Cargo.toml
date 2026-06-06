@@ -1,0 +1,18 @@
+# condrv-rust — Rust translation of the Console Driver
+# (drivers/base/condrv/{condrv,control,dispatch}.c). crate-type=staticlib →
+# libcondrv_rust.a, linked into condrv.sys via condrv-cargo (reactos-link,
+# ModuleKind::KernelDll). The C sources are kept on disk (never-delete rule).
+# Standalone kernel-mode driver depending only on ntkrnl-sys. Built for all 3
+# arches. condrv.sys is a non-boot legacy/skeleton console driver (the live
+# console server is winsrv.dll).
+
+[package]
+name = "condrv-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

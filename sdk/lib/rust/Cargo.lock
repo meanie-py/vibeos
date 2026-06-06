@@ -151,6 +151,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "condrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "condrv-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "cport-rust"
 version = "0.1.0"
 
