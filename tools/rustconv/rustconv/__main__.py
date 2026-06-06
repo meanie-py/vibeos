@@ -1045,7 +1045,14 @@ def cmd_translate(args):
             except Exception:
                 pass
             saved = (total_cache_read * (rates[0] - rates[2]) / 1_000_000) if rates else 0.0
-            cache_note = f"  (caching saved ~${saved:.2f})" if total_cache_read else "  (NO cache hits — caching not working!)"
+            if total_cache_read:
+                cache_note = f"  (caching saved ~${saved:.2f})"
+            elif total_in == 0 and resumed:
+                # Every unit came from the resume cache — no API call was made,
+                # so cache_read is legitimately 0. Not a caching failure.
+                cache_note = "  (all units resumed from disk — no API calls)"
+            else:
+                cache_note = "  (NO cache hits — caching not working!)"
             print(f"  Cost ≈ ${file_cost:.3f}{cache_note}   run total ≈ ${run_cost:.2f}",
                   file=sys.stderr)
 
