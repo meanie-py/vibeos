@@ -7935,13 +7935,10 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_U(path: *const u16) -> u32 {
 
 // =====================================================================
 // Wave ATM — straight translation of `sdk/lib/rtl/atom.c` (11 NTAPI
-// fns). FULL swap (atom.c removed from cmake). `RTL_ATOM_TABLE` has
-// different union arms in kernel and user mode, so the mirror below
-// switches on `user-atom-table`: default/kernel builds keep FAST_MUTEX +
-// PHANDLE_TABLE, while ntdll uses RTL_CRITICAL_SECTION + RTL_HANDLE_TABLE.
-// atom.c never touches the union members directly — only the cdecl
-// `Rtlp*` helpers in libsupp do. Smoke is the net (no byte-diff:
-// concurrency + handle FFI).
+// fns). FULL swap (atom.c removed from cmake). atom.c never touches the
+// union members directly — only the cdecl `Rtlp*` helpers in libsupp do
+// (concurrency + handle FFI). See the RTL_ATOM_TABLE mirror below for why
+// it uses the larger (user) union arm unconditionally.
 // =====================================================================
 
 use crate::core_rs::atom as atom_;
@@ -7961,44 +7958,35 @@ fn atm_nt_success(s: i32) -> bool {
     s >= 0
 }
 
-// --- `RTL_ATOM_TABLE` layout mirror. Built from the nested NDK
-//     types so the compiler lays out NumberOfBuckets/Buckets at the
-//     correct per-arch offset. Only NumberOfBuckets + Buckets are read
-//     by atom.c; the union members are opaque padding to us. ---
+// --- `RTL_ATOM_TABLE` layout mirror. ---
+//
+// librtl_rust.a is built ONCE and shared by BOTH atom consumers:
+//   * ntoskrnl — the kernel atom path. `ex/atom.rs` defines only the Nt*
+//                syscalls; they call the Rtl* atom fns HERE, paired with
+//                ntoskrnl-rust's libsupp (FAST_MUTEX + PHANDLE_TABLE arm).
+//   * ntdll    — local atom tables, paired with ntdll-rust's libsupp
+//                (RTL_CRITICAL_SECTION + RTL_HANDLE_TABLE arm).
+//
+// A single staticlib can't carry two layouts — but it doesn't need to.
+// Only NumberOfBuckets + Buckets are read HERE; the union members are
+// written/read exclusively by the per-mode libsupp through ITS OWN struct
+// view. The sole requirement is that NumberOfBuckets/Buckets sit PAST
+// whatever the libsupp union write covers in either mode. So we always lay
+// the union region out as the LARGER (user) arm — a safe superset:
+//   64-bit: kernel union ends @72, user (RtlHandleTable) ends @96 →
+//           NumberOfBuckets @96, clear of both.
+//   32-bit: kernel ends @40, user ends @60 → NumberOfBuckets @60.
+// The kernel's FAST_MUTEX(+PHANDLE_TABLE) write fits entirely inside the
+// user-arm region and never reaches NumberOfBuckets.
+//
+// Using the SMALLER (kernel) arm here was the bug: in ntdll it put
+// NumberOfBuckets INSIDE RtlHandleTable's footprint (on CommittedHandles,
+// which RtlCreateHandleTable leaves NULL) → bucket_index read 0 →
+// divide-by-zero. It manifested arm64-only, post-desktop (idle-smoke
+// masked it). See feedback_rtl_atom_arm64_boot_regression.
 
-#[cfg(not(feature = "user-atom-table"))]
-#[repr(C)]
-struct AtmListEntry {
-    flink: *mut core::ffi::c_void,
-    blink: *mut core::ffi::c_void,
-}
-
-#[cfg(not(feature = "user-atom-table"))]
-#[repr(C)]
-struct AtmDispatcherHeader {
-    lock: i32,
-    signal_state: i32,
-    wait_list_head: AtmListEntry,
-}
-
-#[cfg(not(feature = "user-atom-table"))]
-#[repr(C)]
-struct AtmKevent {
-    header: AtmDispatcherHeader,
-}
-
-#[cfg(not(feature = "user-atom-table"))]
-#[repr(C)]
-struct AtmSync {
-    count: i32,
-    owner: *mut core::ffi::c_void,
-    contention: u32,
-    event: AtmKevent,
-    old_irql: u32,
-}
-
-/// `RTL_CRITICAL_SECTION` (rtltypes.h), user-mode union arm.
-#[cfg(feature = "user-atom-table")]
+/// `RTL_CRITICAL_SECTION` (rtltypes.h) — the larger (user) union arm; also
+/// a safe superset for the kernel (FAST_MUTEX) consumer.
 #[repr(C)]
 struct AtmSync {
     debug_info: *mut core::ffi::c_void,
@@ -8010,20 +7998,12 @@ struct AtmSync {
 }
 
 /// `RTL_HANDLE_TABLE_ENTRY` only matters as a pointer target here.
-#[cfg(feature = "user-atom-table")]
 #[repr(C)]
 struct AtmHandleTableEntry {
     next_free_or_flags: usize,
 }
 
-#[cfg(not(feature = "user-atom-table"))]
-#[repr(C)]
-struct AtmHandleStorage {
-    ex_handle_table: *mut core::ffi::c_void,
-}
-
-/// `RTL_HANDLE_TABLE` (rtltypes.h), user-mode union arm.
-#[cfg(feature = "user-atom-table")]
+/// `RTL_HANDLE_TABLE` (rtltypes.h) — the larger (user) union arm.
 #[repr(C)]
 struct AtmHandleStorage {
     maximum_number_of_handles: u32,
@@ -8048,7 +8028,8 @@ pub struct RTL_ATOM_TABLE_ENTRY {
     name: [u16; 1],
 }
 
-/// `RTL_ATOM_TABLE` — KERNEL union arm (FAST_MUTEX + PHANDLE_TABLE).
+/// `RTL_ATOM_TABLE` — union region laid out as the larger (user) arm so
+/// NumberOfBuckets/Buckets sit past any per-mode libsupp union write.
 #[repr(C)]
 pub struct RTL_ATOM_TABLE {
     signature: u32,
@@ -8057,6 +8038,14 @@ pub struct RTL_ATOM_TABLE {
     number_of_buckets: u32,
     buckets: [*mut RTL_ATOM_TABLE_ENTRY; 1], // flexible tail
 }
+
+// Guard the superset invariant: NumberOfBuckets MUST sit past the kernel
+// union arm's end (FAST_MUTEX + PHANDLE_TABLE = 72 on 64-bit, 40 on
+// 32-bit), so the kernel-mode libsupp's union write can never clobber it.
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(RTL_ATOM_TABLE, number_of_buckets) >= 72);
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(RTL_ATOM_TABLE, number_of_buckets) >= 40);
 
 // --- libsupp.c helpers. C declares these WITHOUT NTAPI ⇒ __cdecl on
 //     all arches ⇒ `extern "C"`. (Mismatching this with extern "system"
