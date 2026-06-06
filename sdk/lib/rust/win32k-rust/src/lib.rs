@@ -278,6 +278,8 @@ pub mod layered;
 pub mod timer;
 // [ntuser wave 18 — hotkey]
 pub mod hotkey;
+// [ntuser wave 19 — scrollex]
+pub mod scrollex;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
