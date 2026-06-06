@@ -280,6 +280,8 @@ pub mod timer;
 pub mod hotkey;
 // [ntuser wave 19 — scrollex]
 pub mod scrollex;
+// [ntuser wave 20 — monitor]
+pub mod monitor;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

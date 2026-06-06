@@ -139,7 +139,7 @@ list(APPEND SOURCE
     user/ntuser/message.c
     # user/ntuser/metric.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/metric.rs) — cohabitation [ntuser wave 2]
     user/ntuser/misc.c
-    user/ntuser/monitor.c
+    # user/ntuser/monitor.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/monitor.rs) — cohabitation [ntuser wave 20]
     user/ntuser/mouse.c
     user/ntuser/msgqueue.c
     user/ntuser/nonclient.c
@@ -332,6 +332,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/timer.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/hotkey.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollex.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/monitor.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
