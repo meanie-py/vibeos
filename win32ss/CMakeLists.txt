@@ -140,7 +140,7 @@ list(APPEND SOURCE
     # user/ntuser/metric.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/metric.rs) — cohabitation [ntuser wave 2]
     # user/ntuser/misc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/misc.rs) — cohabitation [ntuser wave 26]
     # user/ntuser/monitor.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/monitor.rs) — cohabitation [ntuser wave 20]
-    user/ntuser/mouse.c
+    # user/ntuser/mouse.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntmouse.rs) — cohabitation [ntuser wave 29]
     user/ntuser/msgqueue.c
     # user/ntuser/nonclient.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/nonclient.rs) — cohabitation [ntuser wave 27]
     # user/ntuser/ntstubs.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntstubs.rs) — cohabitation [ntuser wave 22]
@@ -341,6 +341,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/misc.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/nonclient.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/callback.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntmouse.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

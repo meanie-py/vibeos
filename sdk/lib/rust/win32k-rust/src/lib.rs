@@ -298,6 +298,8 @@ pub mod misc;
 pub mod nonclient;
 // [ntuser wave 28 — callback]
 pub mod callback;
+// [ntuser wave 29 — ntuser/mouse]
+pub mod ntmouse;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
