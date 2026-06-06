@@ -22,5 +22,8 @@ pub mod rng;
 pub mod scanf;
 pub mod string;
 pub mod strmut;
+// strtod/atof — pure f64 parser, no-SSE-safe (returns (f64,usize) via
+// tuple sret, no by-value f64 register return), no unsafe.
+pub mod strtod;
 pub mod strtok;
 pub mod wstring;
