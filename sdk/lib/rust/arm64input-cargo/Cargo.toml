@@ -1,0 +1,18 @@
+# Cargo-driven `arm64input.sys` link (arm64-only — the ARM64 virtio-input
+# driver, which bypasses ACPI/PnP/GIC). Sibling of `null-cargo`. The Rust body
+# is the `arm64input-rust` staticlib; its `DriverEntry` is the PE entry point
+# (kernelmodedriver = kerneldll link with entry=DriverEntry, no exports).
+
+[package]
+name = "arm64input-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "arm64input"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

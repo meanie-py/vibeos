@@ -16,10 +16,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "arm64input-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "arm64input-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "arm64vid-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
 ]
 
 [[package]]
