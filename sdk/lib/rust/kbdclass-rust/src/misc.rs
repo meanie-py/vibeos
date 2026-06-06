@@ -8,8 +8,9 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{IoSkipCurrentIrpStackLocation, PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, PUNICODE_STRING, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, PUNICODE_STRING, _UNICODE_STRING};
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
+use ntkrnl_sys::inline::tier1::IoSkipCurrentIrpStackLocation;
 use core::ffi::c_void;
 
 #[no_mangle]

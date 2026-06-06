@@ -261,7 +261,7 @@ DispatchCall:
      * in a tight loop (e.g. WaitForSingleObject on a signaled object) can
      * starve higher-priority threads indefinitely.  Check if a higher-priority
      * thread is waiting in the ready queue and yield before returning. */
-    if ((TrapFrame->Spsr & 0xF) == 0)  /* User-mode syscall */
+    if (TableIndex == 0 && (TrapFrame->Spsr & 0xF) == 0)  /* User-mode native syscall */
     {
         PKPRCB Prcb = KeGetCurrentPrcb();
         if (Prcb->ReadySummary)

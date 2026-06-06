@@ -38,6 +38,15 @@ TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
 TEMPLATES_DIR = TOOLS_DIR / "templates"
 DATA_DIR = TOOLS_DIR / "data"
 
+# Durable archive for EVERY paid API response. Output is streamed here as it
+# arrives (see sink.py) so killing a translate mid-run never discards work you
+# already paid for. NEVER /tmp — this lives in-repo (gitignored) so the copy
+# survives reboots, tmp-reaping, and process kills. RUSTCONV_RESPONSES_DIR can
+# be overridden via env for tests.
+RUSTCONV_RESPONSES_DIR = Path(
+    os.environ.get("RUSTCONV_RESPONSES_DIR", str(TOOLS_DIR / ".responses"))
+)
+
 # ntkrnl-sys source files
 BINDGEN_FILES = {
     "arm64": NTKRNL_SYS_DIR / "bindgen_arm64.rs",
@@ -636,6 +645,43 @@ DEFAULT_MODELS = {
     "claude": CLAUDE_MODEL_SONNET,
     "gemini": GEMINI_MODEL,
 }
+
+# FULL (synchronous) list price per 1M tokens, USD: (input, output).
+# rustconv's `translate` / `submit` / `probe-migrate` are SYNCHRONOUS calls and
+# pay THESE prices — NOT the 50%-off batch price. The old estimator quoted only
+# batch Sonnet ($1.50/$7.50); when you run `translate -m opus` you actually pay
+# the Opus row below, per call, once per function. That mismatch is why a "$1"
+# estimate turned into $15. Keep these current via the claude-api skill.
+# Verified 2026-06-06 against the claude-api skill model table.
+MODEL_PRICING = {
+    "claude-opus-4-8":             (5.00, 25.00),
+    "claude-opus-4-7":             (5.00, 25.00),
+    "claude-opus-4-6":             (5.00, 25.00),
+    "claude-opus-4-5-20251101":    (5.00, 25.00),
+    "claude-sonnet-4-6":           (3.00, 15.00),
+    "claude-sonnet-4-5-20250929":  (3.00, 15.00),
+    "claude-haiku-4-5-20251001":   (1.00,  5.00),
+    "gemini-2.5-pro":              (1.25, 10.00),
+    "gemini-2.5-flash":            (0.30,  2.50),
+}
+# Anthropic Message Batches API runs at 50% of the list prices above. The
+# synchronous `translate`/`submit` path does NOT get this discount.
+BATCH_DISCOUNT = 0.5
+
+
+def model_pricing(model: str) -> tuple[float, float]:
+    """(input, output) $/1M for a model id. Falls back to Opus (the most
+    expensive tier) when unknown — so an unrecognized model OVER-estimates
+    rather than lulling you with a lowball."""
+    return MODEL_PRICING.get(model, MODEL_PRICING["claude-opus-4-8"])
+
+
+def cost_usd(model: str, input_tokens: int, output_tokens: int,
+             batch: bool = False) -> float:
+    """USD cost for a single call. batch=True applies the 50% batch discount."""
+    pin, pout = model_pricing(model)
+    cost = input_tokens * pin / 1_000_000 + output_tokens * pout / 1_000_000
+    return cost * (BATCH_DISCOUNT if batch else 1.0)
 
 # Arch mappings
 ARCH_MAP = {

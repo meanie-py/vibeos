@@ -11,8 +11,7 @@ Covers the cargo-deep ntdll DLLs (x86) AND the cargo-driven ntoskrnl.exe kernel
 (i386 — its boot-swap also applies the kernel post-link: native-pefixup --kernel
 + the i386 forwarder fix). It wraps each module's boot-swap-smoke.sh (which owns
 the build / swap / cmp-assert / restore-on-exit mechanics and boots through
-`vibeos-cli smoke`), and aggregates one verdict + summary.json. x86 only — arm64
-has no livecd for the swap.
+`vibeos-cli smoke`), and aggregates one verdict + summary.json.
 """
 from __future__ import annotations
 
@@ -23,13 +22,11 @@ from .artifacts import Run, Stage
 
 # Per-module boot-swap: module -> (script, arg_style, arches).
 #   arg_style "arch_module" → `script <arch> <module>` (ntdll DLLs share one
-#   script keyed by both); "arch" → `script <arch>` (ntoskrnl kernel boot-swap,
-#   now multi-arch on the livecd arches).
-# arm64 is excluded everywhere here — it boots a ramdisk, not a livecd.
+#   script keyed by both); "arch" → `script <arch>` (ntoskrnl kernel boot-swap).
 _SWAPS = {
     "ntdll":       ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
     "ntdll_vista": ("sdk/lib/rust/ntdll-cargo/boot-swap-smoke.sh",    "arch_module", ("i386", "amd64")),
-    "ntoskrnl":    ("sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh", "arch",        ("i386", "amd64")),
+    "ntoskrnl":    ("sdk/lib/rust/ntoskrnl-cargo/boot-swap-smoke.sh", "arch",        ("i386", "amd64", "arm64")),
 }
 _ORDER = ("ntdll", "ntdll_vista", "ntoskrnl")
 
@@ -48,16 +45,10 @@ def _salient(stdout: str, stderr: str) -> list[str]:
 
 
 def cargo_swap(args, repo: Path) -> int:
-    # boot-swap scripts + livecd media key off the bare arch (i386/amd64); the
-    # -uefi aliases resolve to the same x86 livecd the inner `vibeos-cli smoke`
-    # picks. arm64 has no livecd.
+    # boot-swap scripts key off the bare arch; the -uefi aliases resolve to the
+    # same x86 livecd the inner `vibeos-cli smoke` picks.
     arch = base_arch(args.arch)
     run = Run("cargoswap", arch)
-
-    if arch not in ("i386", "amd64"):
-        run.add(Stage(f"cargoswap:{arch}", status="skip",
-                      detail="no livecd for boot-swap (x86 only)"))
-        return run.finalize(repo)
 
     sel = list(_ORDER) if args.module == "all" else [args.module]
     for mod in sel:

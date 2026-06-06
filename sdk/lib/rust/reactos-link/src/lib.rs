@@ -41,7 +41,11 @@ pub enum ModuleKind {
     /// for ntdll.dll (the win32dll set_subsystem hack); `None` lets lld
     /// default (GUI 6.0) — matches ntdll_vista.dll, which passes no
     /// `--subsystem`.
-    Win32Dll { entry: String, image_base: u64, subsystem: Option<String> },
+    Win32Dll {
+        entry: String,
+        image_base: u64,
+        subsystem: Option<String>,
+    },
     /// `efi_application` — a UEFI app (uefildr.efi). Mirrors the cmake
     /// `uefildr.efi` link (set_subsystem 10 / `set_entrypoint EfiEntry`):
     /// `--subsystem,efi_application:5.01`, `--gc-sections` + no `-shared`
@@ -59,7 +63,11 @@ pub enum ModuleKind {
     ///   i386 cmake auto-resolves to the exe default 0x00400000 (passed
     ///   explicitly as `Some(0x400000)` — identical header); arm64 cmake
     ///   passes no `--image-base`, so `None` to match its auto-hash base.
-    EfiApplication { entry: String, image_base: Option<u64>, alignment: u64 },
+    EfiApplication {
+        entry: String,
+        image_base: Option<u64>,
+        alignment: u64,
+    },
     /// `nativeexe` WITH exports — the rosload.exe 2nd-stage loader. Mirrors
     /// the cmake `rosload.exe` link (`set_subsystem native` /
     /// `set_entrypoint RunLoader` / `set_image_base 0x10000`,
@@ -132,35 +140,62 @@ struct ArchCfg {
     is_i386: bool,
 }
 
-const I386_ARCH_DEFINES: &[(&str, Option<&str>)] =
-    &[("_M_IX86", None), ("_X86_", None), ("__i386__", None), ("i386", None)];
-const AMD64_ARCH_DEFINES: &[(&str, Option<&str>)] =
-    &[("_M_AMD64", None), ("_AMD64_", None), ("_WIN64", None), ("__x86_64__", None)];
-const ARM64_ARCH_DEFINES: &[(&str, Option<&str>)] =
-    &[("_M_ARM64", None), ("_ARM64_", None), ("_WIN64", None), ("__aarch64__", None)];
+const I386_ARCH_DEFINES: &[(&str, Option<&str>)] = &[
+    ("_M_IX86", None),
+    ("_X86_", None),
+    ("__i386__", None),
+    ("i386", None),
+];
+const AMD64_ARCH_DEFINES: &[(&str, Option<&str>)] = &[
+    ("_M_AMD64", None),
+    ("_AMD64_", None),
+    ("_WIN64", None),
+    ("__x86_64__", None),
+];
+const ARM64_ARCH_DEFINES: &[(&str, Option<&str>)] = &[
+    ("_M_ARM64", None),
+    ("_ARM64_", None),
+    ("_WIN64", None),
+    ("__aarch64__", None),
+];
 
 fn arch_cfg(target_arch: &str) -> ArchCfg {
     match target_arch {
         "x86" => ArchCfg {
-            name: "i386", triple: "i686-w64-mingw32",
-            rust_user_target: "i686-pc-windows-gnu", spec2def: "i386",
-            dlltool_machine: "i386", clang_rt: "i386",
-            arch_defines: I386_ARCH_DEFINES, is_x86: true, is_i386: true,
+            name: "i386",
+            triple: "i686-w64-mingw32",
+            rust_user_target: "i686-pc-windows-gnu",
+            spec2def: "i386",
+            dlltool_machine: "i386",
+            clang_rt: "i386",
+            arch_defines: I386_ARCH_DEFINES,
+            is_x86: true,
+            is_i386: true,
         },
         "x86_64" => ArchCfg {
             // spec2def's arch token is `x86_64`, NOT `amd64` (an unknown
             // token silently falls back to i386 → @N stdcall decoration on
             // a 64-bit .def → undefined-symbol link errors).
-            name: "amd64", triple: "x86_64-w64-mingw32",
-            rust_user_target: "x86_64-pc-windows-gnu", spec2def: "x86_64",
-            dlltool_machine: "i386:x86-64", clang_rt: "x86_64",
-            arch_defines: AMD64_ARCH_DEFINES, is_x86: true, is_i386: false,
+            name: "amd64",
+            triple: "x86_64-w64-mingw32",
+            rust_user_target: "x86_64-pc-windows-gnu",
+            spec2def: "x86_64",
+            dlltool_machine: "i386:x86-64",
+            clang_rt: "x86_64",
+            arch_defines: AMD64_ARCH_DEFINES,
+            is_x86: true,
+            is_i386: false,
         },
         "aarch64" => ArchCfg {
-            name: "arm64", triple: "aarch64-w64-mingw32",
-            rust_user_target: "aarch64-pc-windows-gnullvm", spec2def: "arm64",
-            dlltool_machine: "arm64", clang_rt: "aarch64",
-            arch_defines: ARM64_ARCH_DEFINES, is_x86: false, is_i386: false,
+            name: "arm64",
+            triple: "aarch64-w64-mingw32",
+            rust_user_target: "aarch64-pc-windows-gnullvm",
+            spec2def: "arm64",
+            dlltool_machine: "arm64",
+            clang_rt: "aarch64",
+            arch_defines: ARM64_ARCH_DEFINES,
+            is_x86: false,
+            is_i386: false,
         },
         other => panic!("reactos-link: unsupported target arch {other}"),
     }
@@ -234,13 +269,50 @@ fn defines(set: AsmDefineSet, arch: &ArchCfg) -> Vec<(&'static str, Option<&'sta
     v
 }
 
+#[derive(Clone)]
+enum RustTarget {
+    Json(PathBuf),
+    Builtin(String),
+}
+
+impl RustTarget {
+    fn new(manifest_dir: &Path, target_spec: &str) -> Self {
+        if target_spec.ends_with(".json") {
+            Self::Json(manifest_dir.join(target_spec))
+        } else {
+            Self::Builtin(target_spec.to_string())
+        }
+    }
+
+    fn arg(&self) -> String {
+        match self {
+            Self::Json(path) => path.display().to_string(),
+            Self::Builtin(triple) => triple.clone(),
+        }
+    }
+
+    fn stem(&self) -> &str {
+        match self {
+            Self::Json(path) => path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("target json stem"),
+            Self::Builtin(triple) => triple.as_str(),
+        }
+    }
+
+    fn is_json(&self) -> bool {
+        matches!(self, Self::Json(_))
+    }
+}
+
 /// Builder for one cargo-driven module link.
 pub struct Linker {
     repo_root: PathBuf,
     manifest_dir: PathBuf,
     build_dir: PathBuf,
     pkg_name: String,
-    target_json: PathBuf,
+    target: RustTarget,
     arch: ArchCfg,
     rust_crate: Option<String>,
     rust_features: Vec<String>,
@@ -324,10 +396,12 @@ pub struct Linker {
 }
 
 impl Linker {
-    /// `target_json_rel` is relative to the consumer crate dir
-    /// (e.g. `"i686-kernel.json"`). Arch is taken from
+    /// `target_spec` is either a target json path relative to the consumer crate
+    /// dir (e.g. `"i686-kernel.json"`) or a builtin Rust target triple (e.g.
+    /// `"aarch64-pc-windows-gnullvm"`). Json kernel targets use nightly
+    /// build-std; builtin targets use stable/precompiled std. Arch is taken from
     /// `CARGO_CFG_TARGET_ARCH` (x86 / x86_64 / aarch64).
-    pub fn new(target_json_rel: &str) -> Linker {
+    pub fn new(target_spec: &str) -> Linker {
         let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
         let arch = arch_cfg(&target_arch);
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -345,15 +419,17 @@ impl Linker {
             );
         }
         let pkg_name = env::var("CARGO_PKG_NAME").expect("CARGO_PKG_NAME");
-        let target_json = manifest_dir.join(target_json_rel);
+        let target = RustTarget::new(&manifest_dir, target_spec);
         println!("cargo:rerun-if-changed=build.rs");
-        println!("cargo:rerun-if-changed={}", target_json.display());
+        if let RustTarget::Json(path) = &target {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
         Linker {
             repo_root,
             manifest_dir,
             build_dir,
             pkg_name,
-            target_json,
+            target,
             arch,
             rust_crate: None,
             rust_features: Vec::new(),
@@ -508,8 +584,10 @@ impl Linker {
     /// the in-group archive preserves the cmake link layout. Uses the same
     /// `asm_set` define list as `asm()`.
     pub fn asm_archive(mut self, name: &str, rels: &[&str]) -> Self {
-        self.asm_archives
-            .push((name.to_string(), rels.iter().map(|s| s.to_string()).collect()));
+        self.asm_archives.push((
+            name.to_string(),
+            rels.iter().map(|s| s.to_string()).collect(),
+        ));
         self
     }
 
@@ -619,8 +697,10 @@ impl Linker {
     /// multiple targets via its `CMakeFiles/<name>.dir` object dir). Chainable —
     /// call once per archive, in C-first link order.
     pub fn c_from_compile_db(mut self, name: &str, sources: &[&str]) -> Self {
-        self.c_db_libs
-            .push((name.to_string(), sources.iter().map(|s| s.to_string()).collect()));
+        self.c_db_libs.push((
+            name.to_string(),
+            sources.iter().map(|s| s.to_string()).collect(),
+        ));
         self
     }
 
@@ -641,18 +721,16 @@ impl Linker {
     pub fn link(self, kind: ModuleKind) {
         let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
         let clang = llvm_mingw.join(format!("bin/{}-clang", self.arch.triple));
-        // Output dir stem = the target json's file stem (e.g. i686-kernel /
-        // x86_64-kernel / aarch64-kernel) — keyed by cargo's target name.
-        let target_stem = self
-            .target_json
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .expect("target json stem")
-            .to_string();
+        // Output dir stem = cargo's target-name subdir: json file stem for a
+        // custom target, or the full triple for a builtin target.
+        let target_stem = self.target.stem().to_string();
 
         // Extra watched dirs (body-crate path-deps in other workspace crates).
         for dir in &self.rust_watch_dirs {
-            println!("cargo:rerun-if-changed={}", self.repo_root.join(dir).display());
+            println!(
+                "cargo:rerun-if-changed={}",
+                self.repo_root.join(dir).display()
+            );
         }
 
         // ---- Rust staticlib(s) (per-crate target dir) ----------------
@@ -662,8 +740,10 @@ impl Linker {
         // (`ntdll-rust` builds `i686-pc-windows-gnu`, NOT the kernel json).
         // Building a user-mode crate against the `x86-softfloat` kernel json
         // corrupts the by-value f64 ABI and crashes boot. Kernel modules
-        // (ntoskrnl/HAL/uefildr) build the custom kernel json with `-Z
-        // build-std` on nightly. The main crate goes first, then siblings.
+        // (ntoskrnl/HAL/uefildr) normally build the custom kernel json with `-Z
+        // build-std` on nightly. A kernel-ish module may also opt into a builtin
+        // target triple; that path uses stable/precompiled std like cmake. The
+        // main crate goes first, then siblings.
         // `.rust_user_target()` (the freeldr loaders) forces the user-target
         // path even for an EfiApplication/NativeExe — freeldr-rust is built
         // standard-target + `-sse,-sse2` exactly as cmake's custom_command did.
@@ -686,7 +766,14 @@ impl Linker {
             .iter()
             .map(|(crate_name, feats, default_features)| {
                 let f: Vec<&str> = feats.iter().map(|s| s.as_str()).collect();
-                self.build_rust_crate(crate_name, &f, *default_features, &target_stem, kernel_rust, None)
+                self.build_rust_crate(
+                    crate_name,
+                    &f,
+                    *default_features,
+                    &target_stem,
+                    kernel_rust,
+                    None,
+                )
             })
             .collect();
 
@@ -728,7 +815,8 @@ impl Linker {
             // Caller-configured repo-relative `-I` dirs for RAW `.S` files
             // (asm.inc, pcbios.h, …; a pre-expanded `.s` sets none of these).
             for dir in &self.asm_include_dirs {
-                b.flag("-I").flag(self.repo_root.join(dir).to_str().unwrap());
+                b.flag("-I")
+                    .flag(self.repo_root.join(dir).to_str().unwrap());
             }
             // + the fixed kernel asm `#include` chain (asm.inc + the generated
             // build-dir ks*.inc + ntoskrnl/include) used by modules that
@@ -813,11 +901,16 @@ impl Linker {
             );
             println!(
                 "cargo:rerun-if-changed={}",
-                self.repo_root.join("sdk/tools/spec2def/spec2def.c").display()
+                self.repo_root
+                    .join("sdk/tools/spec2def/spec2def.c")
+                    .display()
             );
             if self.link_stubs {
                 if !stubs.exists() {
-                    panic!("spec_stubs() set but spec2def produced no stubs at {}", stubs.display());
+                    panic!(
+                        "spec_stubs() set but spec2def produced no stubs at {}",
+                        stubs.display()
+                    );
                 }
                 let mut b = cc::Build::new();
                 apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
@@ -1042,7 +1135,11 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-shared");
                 (entry, Some(*image_base))
             }
-            ModuleKind::Win32Dll { entry, image_base, subsystem } => {
+            ModuleKind::Win32Dll {
+                entry,
+                image_base,
+                subsystem,
+            } => {
                 // user-mode PE DLL: exports come from the .def so NO
                 // --exclude-all-symbols, default PE alignment (file 0x200),
                 // -shared, keep all sections. Subsystem is explicit for
@@ -1063,7 +1160,11 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
                 (entry, Some(*image_base))
             }
-            ModuleKind::EfiApplication { entry, image_base, alignment } => {
+            ModuleKind::EfiApplication {
+                entry,
+                image_base,
+                alignment,
+            } => {
                 // UEFI app (uefildr.efi): efi_application subsystem,
                 // per-arch file/section alignment (x86 0x200, arm64 0x1000),
                 // --gc-sections, no -shared (exe), --exclude-all-symbols
@@ -1150,18 +1251,21 @@ impl Linker {
         // libcntpr.cmake staleness class). rerun-if-changed on a dir recurses.
         let crate_dir = workspace.join(crate_name);
         println!("cargo:rerun-if-changed={}", crate_dir.join("src").display());
-        println!("cargo:rerun-if-changed={}", crate_dir.join("Cargo.toml").display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            crate_dir.join("Cargo.toml").display()
+        );
         let tgt_dir = workspace.join(format!(
             "target/{}-{}-rustlib",
             self.pkg_name,
             crate_name.replace('-', "_")
         ));
-        // Kernel: the env CARGO (nightly, set by the outer `cargo +nightly`)
-        // drives build-std. User-mode siblings: that nightly binary lacks the
-        // standard target's precompiled std (E0463), so invoke the rustup
-        // DEFAULT (stable) cargo via `rustup run stable cargo` — exactly the
-        // toolchain cmake uses for these crates.
-        let mut cmd = if kernel {
+        // Kernel json targets: the env CARGO (nightly, set by the outer
+        // `cargo +nightly`) drives build-std. Builtin kernel targets and
+        // user-mode siblings use `rustup run stable cargo`, matching cmake's
+        // precompiled-std path.
+        let kernel_build_std = kernel && self.target.is_json();
+        let mut cmd = if kernel_build_std {
             Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
         } else {
             let mut c = Command::new("rustup");
@@ -1169,14 +1273,15 @@ impl Linker {
             c
         };
         cmd.arg("build").arg("--release").arg("--target");
-        // out_stem = the subdir cargo writes under (json file stem for a custom
-        // target path; the triple for a builtin target name).
+        // out_stem = the subdir cargo writes under.
         let out_stem: String = if kernel {
-            cmd.arg(&self.target_json)
-                .arg("-Z")
-                .arg("build-std=core,alloc,compiler_builtins")
-                .arg("-Z")
-                .arg("build-std-features=compiler-builtins-mem");
+            cmd.arg(self.target.arg());
+            if kernel_build_std {
+                cmd.arg("-Z")
+                    .arg("build-std=core,alloc,compiler_builtins")
+                    .arg("-Z")
+                    .arg("build-std-features=compiler-builtins-mem");
+            }
             target_stem.to_string()
         } else {
             cmd.arg(self.arch.rust_user_target);
@@ -1193,8 +1298,31 @@ impl Linker {
             .arg(workspace.join("Cargo.toml"))
             .env("CARGO_TARGET_DIR", &tgt_dir);
         if kernel {
-            // build-std needs nightly.
-            cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+            if kernel_build_std {
+                // build-std needs nightly.
+                cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+            } else {
+                // The outer cargo may still be nightly/build-std. Scrub its env
+                // so the stable builtin-target cargo behaves like cmake's fresh
+                // cargo process.
+                for v in [
+                    "RUSTC",
+                    "RUSTC_WRAPPER",
+                    "RUSTC_WORKSPACE_WRAPPER",
+                    "RUSTDOC",
+                    "RUSTUP_TOOLCHAIN",
+                    "CARGO",
+                    "RUSTFLAGS",
+                    "CARGO_ENCODED_RUSTFLAGS",
+                    "CARGO_BUILD_TARGET",
+                    "CARGO_BUILD_RUSTFLAGS",
+                    "CARGO_BUILD_RUSTC",
+                    "CARGO_UNSTABLE_BUILD_STD",
+                    "CARGO_UNSTABLE_BUILD_STD_FEATURES",
+                ] {
+                    cmd.env_remove(v);
+                }
+            }
             // The CRT-class kernel siblings (rtl-rust + cnt-rust-lib) need the
             // EXACT per-crate RUSTFLAGS cmake gives them, or LLVM's default
             // pre-pass pipeline miscompiles them (the captures(none)/DCE class
@@ -1250,11 +1378,17 @@ impl Linker {
             //   - clashing_extern_declarations: ABI-compatible extern fns
             //     re-declared with divergent pointee types (DefaultQueryInfoBufferCheck).
             //   - static_mut_refs: `&mut STATIC` (Rust 2024 deny) in WMI/driver glue.
-            let allow = "-A clashing_extern_declarations -A static_mut_refs";
+            let allow = if kernel_build_std {
+                "-A clashing_extern_declarations -A static_mut_refs"
+            } else {
+                ""
+            };
             let rustflags = format!("{sse}{no_prepop}{allow}");
             cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
             cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
-            cmd.env("RUSTFLAGS", rustflags);
+            if !rustflags.is_empty() {
+                cmd.env("RUSTFLAGS", rustflags);
+            }
         } else {
             // User-mode siblings build on the rustup DEFAULT (stable) via the
             // `rustup run stable cargo` above. But the outer `cargo +nightly`
@@ -1264,10 +1398,19 @@ impl Linker {
             // toolchain and reintroduce the missing-std E0463. Scrub them so
             // the child cargo starts clean, exactly like cmake's fresh process.
             for v in [
-                "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTDOC",
-                "RUSTUP_TOOLCHAIN", "CARGO", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS",
-                "CARGO_BUILD_TARGET", "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_RUSTC",
-                "CARGO_UNSTABLE_BUILD_STD", "CARGO_UNSTABLE_BUILD_STD_FEATURES",
+                "RUSTC",
+                "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+                "RUSTDOC",
+                "RUSTUP_TOOLCHAIN",
+                "CARGO",
+                "RUSTFLAGS",
+                "CARGO_ENCODED_RUSTFLAGS",
+                "CARGO_BUILD_TARGET",
+                "CARGO_BUILD_RUSTFLAGS",
+                "CARGO_BUILD_RUSTC",
+                "CARGO_UNSTABLE_BUILD_STD",
+                "CARGO_UNSTABLE_BUILD_STD_FEATURES",
             ] {
                 cmd.env_remove(v);
             }
@@ -1392,9 +1535,10 @@ impl Linker {
         if !status.success() {
             panic!("spec2def --implib failed for {spec_rel}");
         }
-        let dlltool = self
-            .repo_root
-            .join(format!(".build-tools/llvm-mingw/bin/{}-dlltool", self.arch.triple));
+        let dlltool = self.repo_root.join(format!(
+            ".build-tools/llvm-mingw/bin/{}-dlltool",
+            self.arch.triple
+        ));
         let lib_a = out.join(format!("lib{basename}.a"));
         let status = Command::new(&dlltool)
             .arg("-m")

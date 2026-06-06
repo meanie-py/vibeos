@@ -24,8 +24,14 @@ class TranslationResult:
     error: Optional[str] = None
 
 
-def _submit_claude(prompt: str, model: str, system_prompt: str = "") -> TranslationResult:
-    """Submit via Anthropic Python SDK."""
+def _submit_claude(prompt: str, model: str, system_prompt: str = "",
+                   sink=None) -> TranslationResult:
+    """Submit via Anthropic Python SDK.
+
+    sink: optional ResponseSink. When given, every streamed delta is written to
+    disk and flushed AS IT ARRIVES, so a process kill mid-stream never discards
+    output you were already billed for.
+    """
     import anthropic
 
     try:
@@ -57,6 +63,8 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "") -> Translat
                     if event.type == 'content_block_delta' and hasattr(event, 'delta'):
                         if hasattr(event.delta, 'text'):
                             response_text += event.delta.text
+                            if sink is not None:
+                                sink.write(event.delta.text)  # flush to disk now
                     elif event.type == 'message_delta' and hasattr(event, 'usage'):
                         output_tokens = event.usage.output_tokens
                         stop_reason = event.delta.stop_reason if hasattr(event, 'delta') else None
@@ -164,10 +172,13 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
         )
 
 
-def submit_single(prompt: str, model: str = "", system_prompt: str = "") -> TranslationResult:
+def submit_single(prompt: str, model: str = "", system_prompt: str = "",
+                  sink=None) -> TranslationResult:
     """Submit a single translation request.
 
     Auto-detects backend from model name or ANTHROPIC_API_KEY env var.
+
+    sink: optional ResponseSink for durable stream-to-disk (Claude backend).
     """
     backend = get_backend()
 
@@ -181,12 +192,16 @@ def submit_single(prompt: str, model: str = "", system_prompt: str = "") -> Tran
         backend = "gemini"
 
     if backend == "claude":
-        return _submit_claude(prompt, model, system_prompt)
+        return _submit_claude(prompt, model, system_prompt, sink=sink)
     else:
         # Gemini doesn't support separate system prompt via this path,
         # so we prepend it to the prompt
         full_prompt = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
-        return _submit_gemini(full_prompt, model)
+        result = _submit_gemini(full_prompt, model)
+        # Gemini isn't streamed here, but still persist the result durably.
+        if sink is not None and result.rust_code:
+            sink.write(result.rust_code)
+        return result
 
 
 def submit_batch(prompts: dict[str, str], model: str = "", system_prompt: str = "") -> dict[str, TranslationResult]:

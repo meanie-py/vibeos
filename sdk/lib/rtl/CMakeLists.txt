@@ -15,10 +15,10 @@ endif()
 
 list(APPEND RTL_WINE_SOURCE
     # actctx.c — replaced by Rust implementation (sdk/lib/rust/rtl-actctx/ cabi)
-    timerqueue.c
-    threadpool.c
+    # timerqueue.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
+    # threadpool.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
 )
-set_source_files_properties(threadpool.c PROPERTIES COMPILE_DEFINITIONS __WINESRC__)
+# threadpool.c was the only __WINESRC__ source; it is now Rust (rtl-threadpool)
 
 if(MSVC)
     # Silence warning C4267: 'initializing': conversion from 'size_t' to 'const int', possible loss of data
@@ -48,7 +48,7 @@ list(APPEND SOURCE
     exception.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
-    heap.c
+    # heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
     heapdbg.c
     heappage.c
     heapuser.c
@@ -88,7 +88,7 @@ list(APPEND SOURCE
     vectoreh.c
     version.c
     wait.c
-    workitem.c
+    # workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
     rtl.h)
 
 if(ARCH STREQUAL "i386")
@@ -208,6 +208,10 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/splaytree/Cargo.toml
             ${RUST_WORKSPACE_DIR}/uniprefix/src/lib.rs
             ${RUST_WORKSPACE_DIR}/uniprefix/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-heap/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heap/src/types.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heap/src/heap.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heap/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs
@@ -236,6 +240,13 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-actctx/src/strings.rs
             ${RUST_WORKSPACE_DIR}/rtl-actctx/src/actctx.rs
             ${RUST_WORKSPACE_DIR}/rtl-actctx/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/types.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/wine_list.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/threadpool.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/workitem.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/timerqueue.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/time/src/lib.rs

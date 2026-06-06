@@ -15,6 +15,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
 use ntkrnl_sys::inline::tier1::{
     IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine,
+    IoSkipCurrentIrpStackLocation,
 };
 // ddk-ONLY names (pointer aliases, bindgen `_`-structs, Io/Zw/Rtl fns, enum variants).
 use ntkrnl_sys::ddk::{
@@ -28,7 +29,7 @@ use ntkrnl_sys::ddk::{
     IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoGetDeviceObjectPointer,
     IoGetDriverObjectExtension, IoRegisterDeviceInterface, IoRegisterDriverReinitialization,
     IoReleaseCancelSpinLock, IoSetDeviceInterfaceState, IoSetStartIoAttributes,
-    IoSkipCurrentIrpStackLocation, KeInitializeEvent, KeWaitForSingleObject,
+    KeInitializeEvent, KeWaitForSingleObject,
     ZwClose, ZwOpenKey, ZwQueryValueKey, ZwOpenFile, ZwEnumerateValueKey,
     RtlCopyUnicodeString, RtlAppendUnicodeToString, RtlAppendUnicodeStringToString,
     RtlCreateUnicodeString, RtlQueryRegistryValues, RtlWriteRegistryValue,
@@ -778,44 +779,60 @@ unsafe fn HandleReadIrp(
 ) -> NTSTATUS {
 	let DeviceExtension: PCLASS_DEVICE_EXTENSION =
 		(*DeviceObject).DeviceExtension as PCLASS_DEVICE_EXTENSION;
-	let Status: NTSTATUS = STATUS_SUCCESS;
+	let mut Status: NTSTATUS;
+	let mut OldIrql: KIRQL = 0;
 	let _ = IsInStartIo;
 
 	if (*DeviceExtension).InputCount > 0 {
 		let NumberOfEntries: usize = core::cmp::min(
 			(*DeviceExtension).InputCount,
-			(*IoGetCurrentIrpStackLocation(Irp))
-				.Parameters
-				
-				.Read
-				.Length as usize
+			(*IoGetCurrentIrpStackLocation(Irp)).Parameters.Read.Length as usize
 				/ core::mem::size_of::<MOUSE_INPUT_DATA>(),
 		);
 
-		RtlCopyMemory(
-			(*Irp).AssociatedIrp.SystemBuffer,
-			(*DeviceExtension).PortData as *const core::ffi::c_void,
-			NumberOfEntries * core::mem::size_of::<MOUSE_INPUT_DATA>(),
+		Status = FillEntries(
+			DeviceObject,
+			Irp,
+			(*DeviceExtension).PortData,
+			NumberOfEntries,
 		);
 
-		if (*DeviceExtension).InputCount > NumberOfEntries {
-			// RtlMoveMemory (overlapping-safe) → core::ptr::copy; count is the
-			// ELEMENT count for the typed PortData pointer, not bytes.
-			core::ptr::copy(
-				(*DeviceExtension).PortData.add(NumberOfEntries),
-				(*DeviceExtension).PortData,
-				(*DeviceExtension).InputCount - NumberOfEntries,
-			);
+		if NT_SUCCESS(Status) {
+			if (*DeviceExtension).InputCount > NumberOfEntries {
+				// RtlMoveMemory (overlapping-safe) → core::ptr::copy; count is the
+				// ELEMENT count for the typed PortData pointer, not bytes.
+				core::ptr::copy(
+					(*DeviceExtension).PortData.add(NumberOfEntries),
+					(*DeviceExtension).PortData,
+					(*DeviceExtension).InputCount - NumberOfEntries,
+				);
+			}
+
+			(*DeviceExtension).InputCount -= NumberOfEntries;
+
+			(*Irp).IoStatus.Information =
+				(NumberOfEntries * core::mem::size_of::<MOUSE_INPUT_DATA>()) as _;
 		}
 
-		(*DeviceExtension).InputCount -= NumberOfEntries;
-		(*Irp).IoStatus.Information =
-			(NumberOfEntries * core::mem::size_of::<MOUSE_INPUT_DATA>()) as _;
-	} else {
-		(*Irp).IoStatus.Information = 0;
-	}
+		/* Go to next packet and complete this request */
+		(*Irp).IoStatus.__bindgen_anon_1.Status = Status;
 
-	(*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+		IoSetCancelRoutine(Irp, None);
+		IoCompleteRequest(Irp, IO_MOUSE_INCREMENT as i8);
+		(*DeviceExtension).PendingIrp = core::ptr::null_mut();
+	} else {
+		IoAcquireCancelSpinLock(&mut OldIrql);
+		if (*Irp).Cancel != 0 {
+			(*DeviceExtension).PendingIrp = core::ptr::null_mut();
+			Status = STATUS_CANCELLED;
+		} else {
+			IoMarkIrpPending(Irp);
+			(*DeviceExtension).PendingIrp = Irp;
+			IoSetCancelRoutine(Irp, Some(core::mem::transmute(ClassCancelRoutine as *const ())));
+			Status = STATUS_PENDING;
+		}
+		IoReleaseCancelSpinLock(OldIrql);
+	}
 
 	Status
 }

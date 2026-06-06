@@ -5,12 +5,12 @@
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
 
+#[cfg(not(feature = "kernel"))]
+use crate::core_rs::utf8;
 use crate::core_rs::{
     acl, conv, dos8dot3, env, misc, nls, path as path_, priv_, process as prc, resource as res,
     sd as sd_, sec, sid, thread as thr, timezone as tz, ustr,
 };
-#[cfg(not(feature = "kernel"))]
-use crate::core_rs::utf8;
 
 /// NLS code-page-table machinery (structural sub-bucket of nls.c).
 /// Kernel-only: the byte-diff harness supplies its own modelled `Nls*`
@@ -99,21 +99,40 @@ extern "system" {
 #[inline]
 unsafe fn rtl_alloc(bytes: usize, tag: u32) -> *mut u8 {
     #[cfg(feature = "kernel")]
-    { RtlpAllocateMemory(bytes as u32, tag) }
+    {
+        RtlpAllocateMemory(bytes as u32, tag)
+    }
     #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
-    { let _ = tag; RtlAllocateHeap(RtlGetProcessHeap(), 0, bytes) }
+    {
+        let _ = tag;
+        RtlAllocateHeap(RtlGetProcessHeap(), 0, bytes)
+    }
     #[cfg(all(not(feature = "kernel"), not(target_os = "windows")))]
-    { let _ = (bytes, tag); core::ptr::null_mut() }
+    {
+        let _ = (bytes, tag);
+        core::ptr::null_mut()
+    }
 }
 #[inline]
 #[allow(dead_code)]
 unsafe fn rtl_free(p: *mut u8, tag: u32) {
     #[cfg(feature = "kernel")]
-    { if !p.is_null() { RtlpFreeMemory(p, tag); } }
+    {
+        if !p.is_null() {
+            RtlpFreeMemory(p, tag);
+        }
+    }
     #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
-    { let _ = tag; if !p.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, p); } }
+    {
+        let _ = tag;
+        if !p.is_null() {
+            RtlFreeHeap(RtlGetProcessHeap(), 0, p);
+        }
+    }
     #[cfg(all(not(feature = "kernel"), not(target_os = "windows")))]
-    { let _ = (p, tag); }
+    {
+        let _ = (p, tag);
+    }
 }
 
 /// `RTL_BUFFER` (ndk/rtltypes.h) — host layout (SIZE_T = 8).
@@ -222,10 +241,7 @@ unsafe fn uunits<'a>(s: *const UNICODE_STRING) -> &'a [u16] {
 
 /// `VOID NTAPI RtlInitAnsiString(PANSI_STRING, PCSZ)`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlInitAnsiString(
-    dest: *mut STRING,
-    src: *const u8,
-) {
+pub unsafe extern "system" fn RtlInitAnsiString(dest: *mut STRING, src: *const u8) {
     if src.is_null() {
         (*dest).Length = 0;
         (*dest).MaximumLength = 0;
@@ -248,10 +264,7 @@ pub unsafe extern "system" fn RtlInitString(dest: *mut STRING, src: *const u8) {
 
 /// `NTSTATUS NTAPI RtlInitAnsiStringEx(PANSI_STRING, PCSZ)`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlInitAnsiStringEx(
-    dest: *mut STRING,
-    src: *const u8,
-) -> i32 {
+pub unsafe extern "system" fn RtlInitAnsiStringEx(dest: *mut STRING, src: *const u8) -> i32 {
     if src.is_null() {
         (*dest).Length = 0;
         (*dest).MaximumLength = 0;
@@ -270,10 +283,7 @@ pub unsafe extern "system" fn RtlInitAnsiStringEx(
 
 /// `VOID NTAPI RtlInitUnicodeString(PUNICODE_STRING, PCWSTR)`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlInitUnicodeString(
-    dest: *mut UNICODE_STRING,
-    src: *const u16,
-) {
+pub unsafe extern "system" fn RtlInitUnicodeString(dest: *mut UNICODE_STRING, src: *const u16) {
     if src.is_null() {
         (*dest).Length = 0;
         (*dest).MaximumLength = 0;
@@ -446,10 +456,7 @@ pub unsafe extern "system" fn RtlPrefixUnicodeString(
 /// `Length = min(Src->Length, Dest->MaximumLength)`; writes that many
 /// upcased bytes (NO NUL), sets `Dest->Length`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlUpperString(
-    dest: *mut STRING,
-    src: *const STRING,
-) {
+pub unsafe extern "system" fn RtlUpperString(dest: *mut STRING, src: *const STRING) {
     let n = ((*src).Length).min((*dest).MaximumLength) as usize;
     let s = sbytes(src);
     let d = (*dest).Buffer;
@@ -624,14 +631,11 @@ pub unsafe extern "system" fn RtlUnicodeToMultiByteSize(
 // caller-buffer path is what the diff actually exercises; the
 // allocate path's NULL/NO_MEMORY contract is the pinned edge).
 
-
 /// `WCHAR NTAPI RtlAnsiCharToUnicodeChar(IN OUT PUCHAR *AnsiChar)` —
 /// NlsLeadByteInfo is NULL in the model ⇒ Size=1; converts one byte,
 /// advances `*AnsiChar` by 1.
 #[no_mangle]
-pub unsafe extern "system" fn RtlAnsiCharToUnicodeChar(
-    ansi_char: *mut *mut u8,
-) -> u16 {
+pub unsafe extern "system" fn RtlAnsiCharToUnicodeChar(ansi_char: *mut *mut u8) -> u16 {
     let p = *ansi_char;
     let uc = nls::dec_byte(*p);
     *ansi_char = p.add(1);
@@ -673,9 +677,7 @@ pub unsafe extern "system" fn RtlAnsiStringToUnicodeString(
 
 /// `ULONG NTAPI RtlxAnsiStringToUnicodeSize` = `Ansi.Length*2 + 2`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlxAnsiStringToUnicodeSize(
-    s: *const STRING,
-) -> u32 {
+pub unsafe extern "system" fn RtlxAnsiStringToUnicodeSize(s: *const STRING) -> u32 {
     (*s).Length as u32 * 2 + 2
 }
 
@@ -718,25 +720,19 @@ pub unsafe extern "system" fn RtlUnicodeStringToAnsiString(
 
 /// `ULONG NTAPI RtlxUnicodeStringToAnsiSize` = `Uni.Length/2 + 1`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlxUnicodeStringToAnsiSize(
-    s: *const UNICODE_STRING,
-) -> u32 {
+pub unsafe extern "system" fn RtlxUnicodeStringToAnsiSize(s: *const UNICODE_STRING) -> u32 {
     (*s).Length as u32 / 2 + 1
 }
 
 /// `ULONG NTAPI RtlxUnicodeStringToOemSize` = `Uni.Length/2 + 1`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlxUnicodeStringToOemSize(
-    s: *const UNICODE_STRING,
-) -> u32 {
+pub unsafe extern "system" fn RtlxUnicodeStringToOemSize(s: *const UNICODE_STRING) -> u32 {
     (*s).Length as u32 / 2 + 1
 }
 
 /// `ULONG NTAPI RtlxOemStringToUnicodeSize` = `Oem.Length*2 + 2`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlxOemStringToUnicodeSize(
-    s: *const STRING,
-) -> u32 {
+pub unsafe extern "system" fn RtlxOemStringToUnicodeSize(s: *const STRING) -> u32 {
     (*s).Length as u32 * 2 + 2
 }
 
@@ -886,9 +882,7 @@ pub unsafe extern "system" fn RtlUnicodeStringToCountedOemString(
     } else {
         STATUS_SUCCESS
     };
-    if nt_success(status)
-        && !nls::did_oem_work(s, rslice((*dest).Buffer, n))
-    {
+    if nt_success(status) && !nls::did_oem_work(s, rslice((*dest).Buffer, n)) {
         status = STATUS_UNMAPPABLE_CHARACTER;
     }
     status
@@ -991,9 +985,7 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToCountedOemString(
     let buf = wslice((*dest).Buffer, dlen as usize);
     let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
     let mut status = STATUS_SUCCESS;
-    if nt_success(status)
-        && !nls::did_oem_work(s, rslice((*dest).Buffer, n))
-    {
+    if nt_success(status) && !nls::did_oem_work(s, rslice((*dest).Buffer, n)) {
         status = STATUS_UNMAPPABLE_CHARACTER;
     }
     status
@@ -1028,9 +1020,7 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToOemString(
     let buf = wslice((*dest).Buffer, dlen as usize);
     let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
     let mut status = STATUS_SUCCESS;
-    if nt_success(status)
-        && !nls::did_oem_work(s, rslice((*dest).Buffer, n))
-    {
+    if nt_success(status) && !nls::did_oem_work(s, rslice((*dest).Buffer, n)) {
         status = STATUS_UNMAPPABLE_CHARACTER;
     }
     core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
@@ -1078,10 +1068,7 @@ pub unsafe extern "system" fn RtlDowncaseUnicodeString(
 /// `VOID NTAPI RtlGetDefaultCodePage(PUSHORT Ansi, PUSHORT Oem)` —
 /// shared model is single-byte CP1252 (1252) for both.
 #[no_mangle]
-pub unsafe extern "system" fn RtlGetDefaultCodePage(
-    ansi_cp: *mut u16,
-    oem_cp: *mut u16,
-) {
+pub unsafe extern "system" fn RtlGetDefaultCodePage(ansi_cp: *mut u16, oem_cp: *mut u16) {
     if !ansi_cp.is_null() {
         core::ptr::write_volatile(ansi_cp, 1252);
     }
@@ -1096,11 +1083,7 @@ pub unsafe extern "system" fn RtlGetDefaultCodePage(
 /// validation out-ranks the `value == NULL` ⇒ ACCESS_VIOLATION check
 /// (faithful ordering); `*value` written volatile.
 #[no_mangle]
-pub unsafe extern "system" fn RtlCharToInteger(
-    str: *const u8,
-    base: u32,
-    value: *mut u32,
-) -> i32 {
+pub unsafe extern "system" fn RtlCharToInteger(str: *const u8, base: u32, value: *mut u32) -> i32 {
     let s = core::slice::from_raw_parts(str, strlen(str));
     match conv::char_to_integer(s, base) {
         conv::IntParse::InvalidBase => STATUS_INVALID_PARAMETER,
@@ -1165,10 +1148,7 @@ pub unsafe extern "system" fn RtlIntegerToUnicode(
 /// `Length = min(Dest->MaximumLength, Src->Length)`; NULL src ⇒
 /// `Dest->Length = 0` only. No NUL.
 #[no_mangle]
-pub unsafe extern "system" fn RtlCopyString(
-    dest: *mut STRING,
-    src: *const STRING,
-) {
+pub unsafe extern "system" fn RtlCopyString(dest: *mut STRING, src: *const STRING) {
     if src.is_null() {
         (*dest).Length = 0;
         return;
@@ -1251,10 +1231,7 @@ pub unsafe extern "system" fn RtlAppendUnicodeStringToString(
         }
         (*dest).Length += sl;
         if (*dest).MaximumLength > (*dest).Length {
-            core::ptr::write_volatile(
-                (*dest).Buffer.add(unit_off + sl as usize / 2),
-                0u16,
-            );
+            core::ptr::write_volatile((*dest).Buffer.add(unit_off + sl as usize / 2), 0u16);
         }
     }
     STATUS_SUCCESS
@@ -1282,10 +1259,7 @@ pub unsafe extern "system" fn RtlAppendUnicodeToString(
         }
         (*dest).Length += length;
         if (*dest).MaximumLength > (*dest).Length {
-            core::ptr::write_volatile(
-                (*dest).Buffer.add(unit_off + length as usize / 2),
-                0u16,
-            );
+            core::ptr::write_volatile((*dest).Buffer.add(unit_off + length as usize / 2), 0u16);
         }
     }
     STATUS_SUCCESS
@@ -1294,10 +1268,7 @@ pub unsafe extern "system" fn RtlAppendUnicodeToString(
 /// `NTSTATUS NTAPI RtlAppendAsciizToString(PSTRING, PCSZ)`. NULL src ⇒
 /// unchanged ⇒ SUCCESS. No NUL.
 #[no_mangle]
-pub unsafe extern "system" fn RtlAppendAsciizToString(
-    dest: *mut STRING,
-    src: *const u8,
-) -> i32 {
+pub unsafe extern "system" fn RtlAppendAsciizToString(dest: *mut STRING, src: *const u8) -> i32 {
     if !src.is_null() {
         let size = strlen(src);
         if (*dest).Length as usize + size > (*dest).MaximumLength as usize {
@@ -1399,11 +1370,7 @@ pub unsafe extern "system" fn RtlDnsHostNameToComputerName(
             // DnsHostName->Buffer[i] / oemn[i] for i < oemn_len.
             let uni_src = rslice((*dns_host_name).Buffer, oemn_len as usize);
             if nls::did_oem_work(uni_src, &oemn[..oemn_len as usize]) {
-                status = RtlOemStringToUnicodeString(
-                    computer_name,
-                    &cn_oem,
-                    allocate,
-                );
+                status = RtlOemStringToUnicodeString(computer_name, &cn_oem, allocate);
             }
         }
     }
@@ -1478,17 +1445,13 @@ pub unsafe extern "system" fn RtlDuplicateUnicodeString(
     if source.is_null()
         || destination.is_null()
         || (*source).Length > (*source).MaximumLength
-        || ((*source).Length == 0
-            && (*source).MaximumLength > 0
-            && (*source).Buffer.is_null())
+        || ((*source).Length == 0 && (*source).MaximumLength > 0 && (*source).Buffer.is_null())
         || flags == RTL_DUP_ALLOCATE_NULL_STRING
         || flags >= 4
     {
         return STATUS_INVALID_PARAMETER;
     }
-    if (*source).Length == 0
-        && flags != (RTL_DUP_NULL_TERMINATE | RTL_DUP_ALLOCATE_NULL_STRING)
-    {
+    if (*source).Length == 0 && flags != (RTL_DUP_NULL_TERMINATE | RTL_DUP_ALLOCATE_NULL_STRING) {
         (*destination).Length = 0;
         (*destination).MaximumLength = 0;
         (*destination).Buffer = core::ptr::null_mut();
@@ -1506,11 +1469,7 @@ pub unsafe extern "system" fn RtlDuplicateUnicodeString(
             (*destination).Buffer = core::ptr::null_mut();
             return STATUS_NO_MEMORY;
         }
-        core::ptr::copy_nonoverlapping(
-            (*source).Buffer,
-            buf,
-            (*source).Length as usize / 2,
-        );
+        core::ptr::copy_nonoverlapping((*source).Buffer, buf, (*source).Length as usize / 2);
         if (flags & RTL_DUP_NULL_TERMINATE) != 0 {
             *buf.add((*source).Length as usize / 2) = 0;
         }
@@ -1609,9 +1568,7 @@ pub unsafe extern "system" fn RtlpEnsureBufferSize(
     if (*buffer).Size >= required_size {
         return STATUS_SUCCESS;
     }
-    if (*buffer).Buffer == (*buffer).StaticBuffer
-        && (*buffer).StaticSize >= required_size
-    {
+    if (*buffer).Buffer == (*buffer).StaticBuffer && (*buffer).StaticSize >= required_size {
         (*buffer).Size = required_size;
         return STATUS_SUCCESS;
     }
@@ -1632,11 +1589,7 @@ pub unsafe extern "system" fn RtlMultiAppendUnicodeStringBuffer(
 
 /// `BOOLEAN NTAPI RtlIsTextUnicode(CONST VOID*, INT, INT*)`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlIsTextUnicode(
-    buf: *const u8,
-    len: i32,
-    pf: *mut i32,
-) -> u8 {
+pub unsafe extern "system" fn RtlIsTextUnicode(buf: *const u8, len: i32, pf: *mut i32) -> u8 {
     let pf_in = if pf.is_null() { None } else { Some(*pf) };
     let blen = if len >= 2 { len as usize } else { 0 };
     let bytes: &[u8] = if blen == 0 || buf.is_null() {
@@ -1691,9 +1644,7 @@ pub unsafe extern "system" fn RtlFindCharInUnicodeString(
     }
     core::ptr::write_volatile(position, 0);
     if flags
-        & !(RTL_FIND_CHAR_START_AT_END
-            | RTL_FIND_CHAR_COMPLEMENT
-            | RTL_FIND_CHAR_CASE_INSENSITIVE)
+        & !(RTL_FIND_CHAR_START_AT_END | RTL_FIND_CHAR_COMPLEMENT | RTL_FIND_CHAR_CASE_INSENSITIVE)
         != 0
     {
         return STATUS_INVALID_PARAMETER;
@@ -1718,9 +1669,7 @@ pub unsafe extern "system" fn RtlFindCharInUnicodeString(
 /// `VOID NTAPI RtlEraseUnicodeString(PUNICODE_STRING)`. Zeroes
 /// `MaximumLength` **bytes** of Buffer (if both non-zero), `Length=0`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlEraseUnicodeString(
-    string: *mut UNICODE_STRING,
-) {
+pub unsafe extern "system" fn RtlEraseUnicodeString(string: *mut UNICODE_STRING) {
     if !(*string).Buffer.is_null() && (*string).MaximumLength != 0 {
         let d = (*string).Buffer as *mut u8;
         for i in 0..(*string).MaximumLength as usize {
@@ -1755,9 +1704,7 @@ pub unsafe extern "system" fn RtlFreeOemString(oem_string: *mut STRING) {
 /// `VOID NTAPI RtlFreeUnicodeString(PUNICODE_STRING)`. Buffer
 /// non-NULL ⇒ free (stub) + zero the whole struct.
 #[no_mangle]
-pub unsafe extern "system" fn RtlFreeUnicodeString(
-    unicode_string: *mut UNICODE_STRING,
-) {
+pub unsafe extern "system" fn RtlFreeUnicodeString(unicode_string: *mut UNICODE_STRING) {
     if !(*unicode_string).Buffer.is_null() {
         rtl_free((*unicode_string).Buffer as *mut u8, TAG_USTR);
         (*unicode_string).Length = 0;
@@ -2071,8 +2018,7 @@ pub unsafe extern "system" fn RtlGenerate8dot3Name(
         }
 
         if c.name_length <= 2 {
-            let mut checksum =
-                dos8dot3::get_checksum(rslice(nbuf, length), (*name).Length);
+            let mut checksum = dos8dot3::get_checksum(rslice(nbuf, length), (*name).Length);
             c.checksum = checksum;
             for index in 0..4 {
                 let nib = checksum & 0xF;
@@ -2091,8 +2037,7 @@ pub unsafe extern "system" fn RtlGenerate8dot3Name(
     c.last_index_value += 1;
 
     if c.last_index_value > 4 && c.checksum_inserted == 0 {
-        let mut checksum =
-            dos8dot3::get_checksum(rslice(nbuf, length), (*name).Length);
+        let mut checksum = dos8dot3::get_checksum(rslice(nbuf, length), (*name).Length);
         c.checksum = checksum;
         for index in 2..6 {
             let nib = checksum & 0xF;
@@ -2217,10 +2162,7 @@ pub unsafe extern "system" fn RtlIsNameLegalDOS8Dot3(
         if olen > 8 {
             return 0;
         }
-    } else if dot > 8
-        || (olen as i32 - dot > 4)
-        || dot == olen as i32 - 1
-    {
+    } else if dot > 8 || (olen as i32 - dot > 4) || dot == olen as i32 - 1 {
         return 0;
     }
 
@@ -2286,10 +2228,7 @@ pub unsafe extern "system" fn RtlInitializeSid(
 /// `PULONG NTAPI RtlSubAuthoritySid(PSID, ULONG)` —
 /// `&Sid->SubAuthority[n]`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlSubAuthoritySid(
-    sid_: *mut u8,
-    sub_authority: u32,
-) -> *mut u32 {
+pub unsafe extern "system" fn RtlSubAuthoritySid(sid_: *mut u8, sub_authority: u32) -> *mut u32 {
     sid_.add(8 + 4 * sub_authority as usize) as *mut u32
 }
 
@@ -2328,11 +2267,7 @@ pub unsafe extern "system" fn RtlLengthSid(sid_: *const u8) -> u32 {
 /// `NTSTATUS NTAPI RtlCopySid(ULONG BufferLength, PSID Dest,
 /// PSID Src)`. `RtlMoveMemory` (overlap-safe).
 #[no_mangle]
-pub unsafe extern "system" fn RtlCopySid(
-    buffer_length: u32,
-    dest: *mut u8,
-    src: *const u8,
-) -> i32 {
+pub unsafe extern "system" fn RtlCopySid(buffer_length: u32, dest: *mut u8, src: *const u8) -> i32 {
     let sid_length = sid::length(*src.add(1));
     if sid_length > buffer_length {
         return STATUS_BUFFER_TOO_SMALL;
@@ -2522,11 +2457,7 @@ unsafe fn ace_size(p: *const u8) -> u16 {
 
 /// `NTSTATUS NTAPI RtlCreateAcl(PACL, ULONG AclSize, ULONG Revision)`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlCreateAcl(
-    acl_: *mut u8,
-    acl_sz: u32,
-    acl_revision: u32,
-) -> i32 {
+pub unsafe extern "system" fn RtlCreateAcl(acl_: *mut u8, acl_sz: u32, acl_revision: u32) -> i32 {
     if (acl_sz as usize) < acl::ACL_HDR {
         return STATUS_BUFFER_TOO_SMALL;
     }
@@ -2555,10 +2486,7 @@ pub unsafe extern "system" fn RtlValidAcl(acl_: *const u8) -> u8 {
 
 /// `BOOLEAN NTAPI RtlFirstFreeAce(PACL, PACE *FirstFreeAce)`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlFirstFreeAce(
-    acl_: *mut u8,
-    first_free_ace: *mut *mut u8,
-) -> u8 {
+pub unsafe extern "system" fn RtlFirstFreeAce(acl_: *mut u8, first_free_ace: *mut *mut u8) -> u8 {
     *first_free_ace = core::ptr::null_mut();
     let acl_end = acl_.add(acl_size(acl_) as usize);
     let mut current = acl_.add(acl::ACL_HDR);
@@ -2708,11 +2636,7 @@ pub unsafe extern "system" fn RtlpAddData(
 
 /// `VOID NTAPI RtlpDeleteData(PVOID Ace, ULONG AceSize, ULONG Offset)`.
 #[no_mangle]
-pub unsafe extern "system" fn RtlpDeleteData(
-    ace: *mut u8,
-    ace_size: u32,
-    offset: u32,
-) {
+pub unsafe extern "system" fn RtlpDeleteData(ace: *mut u8, ace_size: u32, offset: u32) {
     if ace_size < offset {
         core::ptr::copy(
             ace.add(ace_size as usize),
@@ -2721,11 +2645,7 @@ pub unsafe extern "system" fn RtlpDeleteData(
         );
     }
     if offset.wrapping_sub(ace_size) < offset {
-        core::ptr::write_bytes(
-            ace.add((offset - ace_size) as usize),
-            0,
-            ace_size as usize,
-        );
+        core::ptr::write_bytes(ace.add((offset - ace_size) as usize), 0, ace_size as usize);
     }
 }
 
@@ -2747,7 +2667,11 @@ pub unsafe extern "system" fn RtlpAddKnownAce(
     if acl_revb > acl::ACL_REVISION4 || revision > acl::ACL_REVISION4 {
         return STATUS_REVISION_MISMATCH;
     }
-    let revision = if revision < acl_revb { acl_revb } else { revision };
+    let revision = if revision < acl_revb {
+        acl_revb
+    } else {
+        revision
+    };
     let invalid = if type_ == acl::SYSTEM_AUDIT_ACE_TYPE {
         flags
             & !(acl::VALID_INHERIT_FLAGS
@@ -2768,9 +2692,7 @@ pub unsafe extern "system" fn RtlpAddKnownAce(
     }
     let sidlen = RtlLengthSid(sid_);
     let ace_sz = sidlen + acl::SIZEOF_ACE as u32;
-    if ace.is_null()
-        || ace as usize + ace_sz as usize > acl_ as usize + acl_size(acl_) as usize
-    {
+    if ace.is_null() || ace as usize + ace_sz as usize > acl_ as usize + acl_size(acl_) as usize {
         return STATUS_ALLOTTED_SPACE_EXCEEDED;
     }
     *ace.add(1) = flags as u8; // AceFlags
@@ -2804,7 +2726,11 @@ pub unsafe extern "system" fn RtlpAddKnownObjectAce(
     if acl_revb > acl::ACL_REVISION4 || revision != acl::ACL_REVISION4 {
         return STATUS_REVISION_MISMATCH;
     }
-    let revision = if revision < acl_revb { acl_revb } else { revision };
+    let revision = if revision < acl_revb {
+        acl_revb
+    } else {
+        revision
+    };
     let invalid = if type_ == acl::SYSTEM_AUDIT_OBJECT_ACE_TYPE
         || type_ == acl::SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE
     {
@@ -2836,9 +2762,7 @@ pub unsafe extern "system" fn RtlpAddKnownObjectAce(
         object_flags |= acl::ACE_INHERITED_OBJECT_TYPE_PRESENT;
         ace_sz += acl::GUID_SZ as u32;
     }
-    if ace.is_null()
-        || ace as usize + ace_sz as usize > acl_ as usize + acl_size(acl_) as usize
-    {
+    if ace.is_null() || ace as usize + ace_sz as usize > acl_ as usize + acl_size(acl_) as usize {
         return STATUS_ALLOTTED_SPACE_EXCEEDED;
     }
     *ace.add(1) = flags as u8;
@@ -2852,11 +2776,7 @@ pub unsafe extern "system" fn RtlpAddKnownObjectAce(
         sid_start = sid_start.add(acl::GUID_SZ);
     }
     if !inherited_object_type_guid.is_null() {
-        core::ptr::copy_nonoverlapping(
-            inherited_object_type_guid,
-            sid_start,
-            acl::GUID_SZ,
-        );
+        core::ptr::copy_nonoverlapping(inherited_object_type_guid, sid_start, acl::GUID_SZ);
         sid_start = sid_start.add(acl::GUID_SZ);
     }
     RtlCopySid(sidlen, sid_start, sid_);
@@ -2892,9 +2812,7 @@ pub unsafe extern "system" fn RtlAddAce(
                 if acl_revision < acl::ACL_REVISION4 {
                     return STATUS_INVALID_PARAMETER;
                 }
-            } else if at > acl::ACCESS_MAX_MS_V2_ACE_TYPE
-                && acl_revision < acl::ACL_REVISION3
-            {
+            } else if at > acl::ACCESS_MAX_MS_V2_ACE_TYPE && acl_revision < acl::ACL_REVISION3 {
                 return STATUS_INVALID_PARAMETER;
             }
         }
@@ -2905,8 +2823,7 @@ pub unsafe extern "system" fn RtlAddAce(
         return STATUS_INVALID_PARAMETER;
     }
     if free_ace.is_null()
-        || free_ace as usize + ace_list_length as usize
-            > acl_ as usize + acl_size(acl_) as usize
+        || free_ace as usize + ace_list_length as usize > acl_ as usize + acl_size(acl_) as usize
     {
         return STATUS_BUFFER_TOO_SMALL;
     }
@@ -2923,8 +2840,7 @@ pub unsafe extern "system" fn RtlAddAce(
         at_ace,
         (free_ace as usize - at_ace as usize) as u32,
     );
-    (acl_.add(4) as *mut u16)
-        .write_unaligned(acl_ace_count(acl_) + new_ace_count);
+    (acl_.add(4) as *mut u16).write_unaligned(acl_ace_count(acl_) + new_ace_count);
     let cur = acl_rev(acl_) as u32;
     *acl_ = cur.min(acl_revision) as u8;
     STATUS_SUCCESS
@@ -2937,9 +2853,7 @@ pub unsafe extern "system" fn RtlDeleteAce(acl_: *mut u8, ace_index: u32) -> i32
         return STATUS_INVALID_PARAMETER;
     }
     let mut free_ace: *mut u8 = core::ptr::null_mut();
-    if acl_ace_count(acl_) as u32 <= ace_index
-        || RtlFirstFreeAce(acl_, &mut free_ace) == 0
-    {
+    if acl_ace_count(acl_) as u32 <= ace_index || RtlFirstFreeAce(acl_, &mut free_ace) == 0 {
         return STATUS_INVALID_PARAMETER;
     }
     let mut ace = acl_.add(acl::ACL_HDR);
@@ -2962,7 +2876,14 @@ pub unsafe extern "system" fn RtlAddAccessAllowedAce(
     access_mask: u32,
     sid_: *const u8,
 ) -> i32 {
-    RtlpAddKnownAce(acl_, revision, 0, access_mask, sid_, acl::ACCESS_ALLOWED_ACE_TYPE)
+    RtlpAddKnownAce(
+        acl_,
+        revision,
+        0,
+        access_mask,
+        sid_,
+        acl::ACCESS_ALLOWED_ACE_TYPE,
+    )
 }
 
 #[no_mangle]
@@ -3022,7 +2943,14 @@ pub unsafe extern "system" fn RtlAddAccessDeniedAce(
     access_mask: u32,
     sid_: *const u8,
 ) -> i32 {
-    RtlpAddKnownAce(acl_, revision, 0, access_mask, sid_, acl::ACCESS_DENIED_ACE_TYPE)
+    RtlpAddKnownAce(
+        acl_,
+        revision,
+        0,
+        access_mask,
+        sid_,
+        acl::ACCESS_DENIED_ACE_TYPE,
+    )
 }
 
 #[no_mangle]
@@ -3323,7 +3251,9 @@ unsafe fn rtlp_query_sd(
     } else {
         round_up_ulong(acl_size(sacl) as u32)
     };
-    (owner, owner_size, group, group_size, dacl, dacl_size, sacl, sacl_size)
+    (
+        owner, owner_size, group, group_size, dacl, dacl_size, sacl, sacl_size,
+    )
 }
 
 // --- SD-1 cabi exports.
@@ -3338,7 +3268,11 @@ pub unsafe extern "system" fn RtlCreateSecurityDescriptor(
         return STATUS_UNKNOWN_REVISION;
     }
     // Zero the whole struct, then stamp Revision.
-    core::ptr::write_bytes(sd_p as *mut u8, 0, core::mem::size_of::<SECURITY_DESCRIPTOR>());
+    core::ptr::write_bytes(
+        sd_p as *mut u8,
+        0,
+        core::mem::size_of::<SECURITY_DESCRIPTOR>(),
+    );
     (*sd_p).Revision = sd_::SECURITY_DESCRIPTOR_REVISION as u8;
     STATUS_SUCCESS
 }
@@ -3406,7 +3340,8 @@ pub unsafe extern "system" fn RtlGetDaclSecurityDescriptor(
     *dacl_present = present as u8;
     if present {
         *dacl_out = sep_get_dacl(sd_p);
-        *dacl_defaulted = (((*sd_p).Control & sd_::SE_DACL_DEFAULTED) == sd_::SE_DACL_DEFAULTED) as u8;
+        *dacl_defaulted =
+            (((*sd_p).Control & sd_::SE_DACL_DEFAULTED) == sd_::SE_DACL_DEFAULTED) as u8;
     }
     STATUS_SUCCESS
 }
@@ -3426,7 +3361,8 @@ pub unsafe extern "system" fn RtlGetSaclSecurityDescriptor(
     *sacl_present = present as u8;
     if present {
         *sacl_out = sep_get_sacl(sd_p);
-        *sacl_defaulted = (((*sd_p).Control & sd_::SE_SACL_DEFAULTED) == sd_::SE_SACL_DEFAULTED) as u8;
+        *sacl_defaulted =
+            (((*sd_p).Control & sd_::SE_SACL_DEFAULTED) == sd_::SE_SACL_DEFAULTED) as u8;
     }
     STATUS_SUCCESS
 }
@@ -3442,7 +3378,8 @@ pub unsafe extern "system" fn RtlGetOwnerSecurityDescriptor(
         return STATUS_UNKNOWN_REVISION;
     }
     *owner_out = sep_get_owner(sd_p);
-    *owner_defaulted = (((*sd_p).Control & sd_::SE_OWNER_DEFAULTED) == sd_::SE_OWNER_DEFAULTED) as u8;
+    *owner_defaulted =
+        (((*sd_p).Control & sd_::SE_OWNER_DEFAULTED) == sd_::SE_OWNER_DEFAULTED) as u8;
     STATUS_SUCCESS
 }
 
@@ -3457,7 +3394,8 @@ pub unsafe extern "system" fn RtlGetGroupSecurityDescriptor(
         return STATUS_UNKNOWN_REVISION;
     }
     *group_out = sep_get_group(sd_p);
-    *group_defaulted = (((*sd_p).Control & sd_::SE_GROUP_DEFAULTED) == sd_::SE_GROUP_DEFAULTED) as u8;
+    *group_defaulted =
+        (((*sd_p).Control & sd_::SE_GROUP_DEFAULTED) == sd_::SE_GROUP_DEFAULTED) as u8;
     STATUS_SUCCESS
 }
 
@@ -3689,8 +3627,7 @@ pub unsafe extern "system" fn RtlMakeSelfRelativeSD(
     rel_p: *mut SECURITY_DESCRIPTOR_RELATIVE,
     buffer_length: *mut u32,
 ) -> i32 {
-    let (owner, owner_len, group, group_len, dacl, dacl_len, sacl, sacl_len) =
-        rtlp_query_sd(src_p);
+    let (owner, owner_len, group, group_len, dacl, dacl_len, sacl, sacl_len) = rtlp_query_sd(src_p);
     let header_size = core::mem::size_of::<SECURITY_DESCRIPTOR_RELATIVE>() as u32;
     let total = header_size + owner_len + group_len + sacl_len + dacl_len;
     if *buffer_length < total {
@@ -3705,38 +3642,22 @@ pub unsafe extern "system" fn RtlMakeSelfRelativeSD(
 
     let mut current = header_size as usize;
     if sacl_len > 0 {
-        core::ptr::copy_nonoverlapping(
-            sacl,
-            (rel_p as *mut u8).add(current),
-            sacl_len as usize,
-        );
+        core::ptr::copy_nonoverlapping(sacl, (rel_p as *mut u8).add(current), sacl_len as usize);
         (*rel_p).Sacl = current as u32;
         current += sacl_len as usize;
     }
     if dacl_len > 0 {
-        core::ptr::copy_nonoverlapping(
-            dacl,
-            (rel_p as *mut u8).add(current),
-            dacl_len as usize,
-        );
+        core::ptr::copy_nonoverlapping(dacl, (rel_p as *mut u8).add(current), dacl_len as usize);
         (*rel_p).Dacl = current as u32;
         current += dacl_len as usize;
     }
     if owner_len > 0 {
-        core::ptr::copy_nonoverlapping(
-            owner,
-            (rel_p as *mut u8).add(current),
-            owner_len as usize,
-        );
+        core::ptr::copy_nonoverlapping(owner, (rel_p as *mut u8).add(current), owner_len as usize);
         (*rel_p).Owner = current as u32;
         current += owner_len as usize;
     }
     if group_len > 0 {
-        core::ptr::copy_nonoverlapping(
-            group,
-            (rel_p as *mut u8).add(current),
-            group_len as usize,
-        );
+        core::ptr::copy_nonoverlapping(group, (rel_p as *mut u8).add(current), group_len as usize);
         (*rel_p).Group = current as u32;
     }
     (*rel_p).Control |= sd_::SE_SELF_RELATIVE;
@@ -4159,7 +4080,11 @@ pub unsafe extern "system" fn RtlImpersonateSelf(impersonation_level: u32) -> i3
     let mut process_token: *mut u8 = core::ptr::null_mut();
     let mut impersonation_token: *mut u8 = core::ptr::null_mut();
 
-    let mut status = ZwOpenProcessToken(priv_::nt_current_process(), priv_::TOKEN_DUPLICATE, &mut process_token);
+    let mut status = ZwOpenProcessToken(
+        priv_::nt_current_process(),
+        priv_::TOKEN_DUPLICATE,
+        &mut process_token,
+    );
     if !nt_success(status) {
         return status;
     }
@@ -4215,7 +4140,8 @@ pub unsafe extern "system" fn RtlAcquirePrivilege(
     flags: u32,
     returned_state: *mut *mut u8,
 ) -> i32 {
-    if flags & !(priv_::RTL_ACQUIRE_PRIVILEGE_PROCESS | priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE) != 0
+    if flags & !(priv_::RTL_ACQUIRE_PRIVILEGE_PROCESS | priv_::RTL_ACQUIRE_PRIVILEGE_IMPERSONATE)
+        != 0
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -4227,8 +4153,7 @@ pub unsafe extern "system" fn RtlAcquirePrivilege(
     // alloc state + new-privileges trailing area
     let alloc_size = core::mem::size_of::<RTL_ACQUIRE_STATE_FFI>()
         + core::mem::size_of::<TOKEN_PRIVILEGES_HDR>()
-        + (num_priv as usize).saturating_sub(1)
-            * core::mem::size_of::<LUID_AND_ATTRIBUTES>();
+        + (num_priv as usize).saturating_sub(1) * core::mem::size_of::<LUID_AND_ATTRIBUTES>();
     let state_p = RtlAllocateHeap(RtlGetProcessHeap(), 0, alloc_size) as *mut RTL_ACQUIRE_STATE_FFI;
     if state_p.is_null() {
         return STATUS_NO_MEMORY;
@@ -4252,7 +4177,10 @@ pub unsafe extern "system" fn RtlAcquirePrivilege(
                 return status;
             }
         } else {
-            status = RtlpOpenThreadToken(priv_::TOKEN_IMPERSONATE, &mut (*state_p).OldImpersonationToken);
+            status = RtlpOpenThreadToken(
+                priv_::TOKEN_IMPERSONATE,
+                &mut (*state_p).OldImpersonationToken,
+            );
             if !nt_success(status) {
                 let _ = RtlFreeHeap(RtlGetProcessHeap(), 0, state_p as *mut u8);
                 return status;
@@ -4283,7 +4211,11 @@ pub unsafe extern "system" fn RtlAcquirePrivilege(
             // (C calls ZwOpenProcessToken without checking the status here
             // and relies on ZwDuplicateToken to fail if the token is bad —
             // verbatim port of that exact misdesign.)
-            let _ignored = ZwOpenProcessToken(priv_::nt_current_process(), priv_::TOKEN_DUPLICATE, &mut process_token);
+            let _ignored = ZwOpenProcessToken(
+                priv_::nt_current_process(),
+                priv_::TOKEN_DUPLICATE,
+                &mut process_token,
+            );
             let mut sqos = SECURITY_QUALITY_OF_SERVICE_FFI {
                 Length: core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE_FFI>() as u32,
                 ImpersonationLevel: priv_::SECURITY_DELEGATION,
@@ -4334,7 +4266,8 @@ pub unsafe extern "system" fn RtlAcquirePrivilege(
 
     let new_p = (*state_p).NewPrivileges as *mut TOKEN_PRIVILEGES_HDR;
     (*new_p).PrivilegeCount = num_priv;
-    let privs_arr = &mut (*new_p).Privileges as *mut [LUID_AND_ATTRIBUTES; 1] as *mut LUID_AND_ATTRIBUTES;
+    let privs_arr =
+        &mut (*new_p).Privileges as *mut [LUID_AND_ATTRIBUTES; 1] as *mut LUID_AND_ATTRIBUTES;
     for i in 0..num_priv {
         let priv_id = *privilege.add(i as usize);
         let entry = privs_arr.add(i as usize);
@@ -4356,8 +4289,7 @@ pub unsafe extern "system" fn RtlAcquirePrivilege(
         );
 
         if status == STATUS_BUFFER_TOO_SMALL_2 {
-            let new_old =
-                RtlAllocateHeap(RtlGetProcessHeap(), 0, return_length as usize);
+            let new_old = RtlAllocateHeap(RtlGetProcessHeap(), 0, return_length as usize);
             if !new_old.is_null() {
                 (*state_p).OldPrivileges = new_old;
                 old_size = return_length;
@@ -4471,14 +4403,24 @@ pub unsafe extern "system" fn RtlAdjustPrivilege(
     let mut new_state = TOKEN_PRIVILEGES_HDR {
         PrivilegeCount: 1,
         Privileges: [LUID_AND_ATTRIBUTES {
-            Luid: LUID { LowPart: privilege, HighPart: 0 },
-            Attributes: if enable != 0 { priv_::SE_PRIVILEGE_ENABLED } else { 0 },
+            Luid: LUID {
+                LowPart: privilege,
+                HighPart: 0,
+            },
+            Attributes: if enable != 0 {
+                priv_::SE_PRIVILEGE_ENABLED
+            } else {
+                0
+            },
         }],
     };
     let mut old_state = TOKEN_PRIVILEGES_HDR {
         PrivilegeCount: 1,
         Privileges: [LUID_AND_ATTRIBUTES {
-            Luid: LUID { LowPart: 0, HighPart: 0 },
+            Luid: LUID {
+                LowPart: 0,
+                HighPart: 0,
+            },
             Attributes: 0,
         }],
     };
@@ -4539,8 +4481,7 @@ pub unsafe extern "system" fn RtlRemovePrivileges(
     //   sizeof(LUID_AND_ATTRIBUTES) *
     //       (SE_MAX_WELL_KNOWN_PRIVILEGE - SE_MIN_WELL_KNOWN_PRIVILEGE)
     const BUF_SIZE: usize = core::mem::size_of::<TOKEN_PRIVILEGES_HDR>()
-        + core::mem::size_of::<LUID_AND_ATTRIBUTES>()
-            * priv_::SE_MAX_OLD_PRIV_BUFFER_ENTRIES;
+        + core::mem::size_of::<LUID_AND_ATTRIBUTES>() * priv_::SE_MAX_OLD_PRIV_BUFFER_ENTRIES;
     let mut buffer = [0u8; BUF_SIZE];
     let mut return_length: u32 = 0;
 
@@ -4560,7 +4501,8 @@ pub unsafe extern "system" fn RtlRemovePrivileges(
     let arr = &mut (*hdr).Privileges as *mut [LUID_AND_ATTRIBUTES; 1] as *mut LUID_AND_ATTRIBUTES;
     for i in 0..priv_count {
         let entry = arr.add(i as usize);
-        let luid_q = ((*entry).Luid.LowPart as u64) | (((*entry).Luid.HighPart as u32 as u64) << 32);
+        let luid_q =
+            ((*entry).Luid.LowPart as u64) | (((*entry).Luid.HighPart as u32 as u64) << 32);
         if keep_bitmap & (1u64 << luid_q) != 0 {
             keep_bitmap &= !(1u64 << luid_q);
         } else {
@@ -4656,14 +4598,14 @@ const fn wsz<const N: usize>(s: &[u8; N]) -> [u16; N] {
     }
     out
 }
-static TZ_PATH:       [u16; 20] = wsz(b"TimeZoneInformation\0");
-static TZ_BIAS:       [u16; 5]  = wsz(b"Bias\0");
-static TZ_STD_NAME:   [u16; 13] = wsz(b"StandardName\0");
-static TZ_STD_BIAS:   [u16; 13] = wsz(b"StandardBias\0");
-static TZ_STD_START:  [u16; 14] = wsz(b"StandardStart\0");
-static TZ_DAY_NAME:   [u16; 13] = wsz(b"DaylightName\0");
-static TZ_DAY_BIAS:   [u16; 13] = wsz(b"DaylightBias\0");
-static TZ_DAY_START:  [u16; 14] = wsz(b"DaylightStart\0");
+static TZ_PATH: [u16; 20] = wsz(b"TimeZoneInformation\0");
+static TZ_BIAS: [u16; 5] = wsz(b"Bias\0");
+static TZ_STD_NAME: [u16; 13] = wsz(b"StandardName\0");
+static TZ_STD_BIAS: [u16; 13] = wsz(b"StandardBias\0");
+static TZ_STD_START: [u16; 14] = wsz(b"StandardStart\0");
+static TZ_DAY_NAME: [u16; 13] = wsz(b"DaylightName\0");
+static TZ_DAY_BIAS: [u16; 13] = wsz(b"DaylightBias\0");
+static TZ_DAY_START: [u16; 14] = wsz(b"DaylightStart\0");
 
 /// `RtlQueryTimeZoneInformation(PRTL_TIME_ZONE_INFORMATION)`.
 ///
@@ -5018,7 +4960,10 @@ pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
 
     let status = match result {
         env::EnvQuery::NotFound => env::STATUS_VARIABLE_NOT_FOUND,
-        env::EnvQuery::Found { value_start, value_len } => {
+        env::EnvQuery::Found {
+            value_start,
+            value_len,
+        } => {
             // Faithful: Value->Length = (USHORT)(wcs - val) * sizeof(WCHAR)
             (*value).Length = (value_len * 2) as u16;
             if (*value).Length <= (*value).MaximumLength {
@@ -5166,11 +5111,7 @@ pub unsafe extern "system" fn RtlCreateEnvironment(
                 return status;
             }
 
-            core::ptr::copy_nonoverlapping(
-                current_env as *const u8,
-                new_env,
-                mem_info.RegionSize,
-            );
+            core::ptr::copy_nonoverlapping(current_env as *const u8, new_env, mem_info.RegionSize);
         }
         RtlReleasePebLock();
     }
@@ -5200,12 +5141,7 @@ pub unsafe extern "system" fn RtlCreateEnvironment(
 pub unsafe extern "system" fn RtlDestroyEnvironment(environment: *mut u16) {
     let mut env_ptr = environment as *mut u8;
     let mut size: usize = 0;
-    NtFreeVirtualMemory(
-        nt_current_process(),
-        &mut env_ptr,
-        &mut size,
-        MEM_RELEASE,
-    );
+    NtFreeVirtualMemory(nt_current_process(), &mut env_ptr, &mut size, MEM_RELEASE);
 }
 
 /// `VOID RtlSetCurrentEnvironment(NewEnvironment, PWSTR* OldEnvironment)`.
@@ -5424,31 +5360,18 @@ pub unsafe extern "system" fn RtlSetEnvironmentVariable(
             if !env.is_null() {
                 let mut env_p = env as *mut u8;
                 let mut sz: usize = 0;
-                NtFreeVirtualMemory(
-                    nt_current_process(),
-                    &mut env_p,
-                    &mut sz,
-                    MEM_RELEASE,
-                );
+                NtFreeVirtualMemory(nt_current_process(), &mut env_p, &mut sz, MEM_RELEASE);
             }
         }
 
         // Copy in the name (if inserting) and the value.
         if f != 0 {
-            core::ptr::copy_nonoverlapping(
-                (*name).Buffer,
-                hole,
-                ((*name).Length / 2) as usize,
-            );
+            core::ptr::copy_nonoverlapping((*name).Buffer, hole, ((*name).Length / 2) as usize);
             hole = hole.add(((*name).Length / 2) as usize);
             *hole = b'=' as u16;
             hole = hole.add(1);
         }
-        core::ptr::copy_nonoverlapping(
-            (*value).Buffer,
-            hole,
-            ((*value).Length / 2) as usize,
-        );
+        core::ptr::copy_nonoverlapping((*value).Buffer, hole, ((*value).Length / 2) as usize);
         hole = hole.add(((*value).Length / 2) as usize);
         *hole = 0;
     } else {
@@ -5568,7 +5491,8 @@ extern "system" {
         open_as_self: u8,
         token_handle: *mut *mut u8,
     ) -> i32;
-    fn NtOpenProcessToken(process: *mut u8, desired_access: u32, token_handle: *mut *mut u8) -> i32;
+    fn NtOpenProcessToken(process: *mut u8, desired_access: u32, token_handle: *mut *mut u8)
+        -> i32;
     fn NtQueryInformationToken(
         token: *mut u8,
         info_class: u32,
@@ -5844,9 +5768,7 @@ pub unsafe extern "system" fn RtlFlushSecureMemoryCache(
 // ---------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "system" fn RtlDeleteSecurityObject(
-    object_descriptor: *mut *mut u8,
-) -> i32 {
+pub unsafe extern "system" fn RtlDeleteSecurityObject(object_descriptor: *mut *mut u8) -> i32 {
     RtlFreeHeap(RtlGetProcessHeap(), 0, *object_descriptor);
     0
 }
@@ -6419,11 +6341,7 @@ extern "system" {
         ReleaseCount: i32,
         PreviousCount: *mut i32,
     ) -> i32;
-    fn NtWaitForSingleObject(
-        Handle: *mut u8,
-        Alertable: u8,
-        Timeout: *mut i64,
-    ) -> i32;
+    fn NtWaitForSingleObject(Handle: *mut u8, Alertable: u8, Timeout: *mut i64) -> i32;
 }
 
 /// Read `NtCurrentTeb()->ClientId.UniqueThread` via per-arch inline asm.
@@ -6566,11 +6484,7 @@ pub unsafe extern "system" fn RtlAcquireResourceExclusive(
             if wait != 0 {
                 r.ExclusiveWaiters += 1;
                 let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
-                let status = NtWaitForSingleObject(
-                    r.ExclusiveSemaphore,
-                    0,
-                    core::ptr::null_mut(),
-                );
+                let status = NtWaitForSingleObject(r.ExclusiveSemaphore, 0, core::ptr::null_mut());
                 if status < 0 {
                     // C: goto done — but Lock is released and we
                     // haven't re-entered yet. Falls into the bare
@@ -6589,11 +6503,7 @@ pub unsafe extern "system" fn RtlAcquireResourceExclusive(
                 // C: goto wait — same shape as the wait above.
                 r.ExclusiveWaiters += 1;
                 let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
-                let status = NtWaitForSingleObject(
-                    r.ExclusiveSemaphore,
-                    0,
-                    core::ptr::null_mut(),
-                );
+                let status = NtWaitForSingleObject(r.ExclusiveSemaphore, 0, core::ptr::null_mut());
                 if status < 0 {
                     let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
                     return ret_val;
@@ -6635,11 +6545,7 @@ pub unsafe extern "system" fn RtlAcquireResourceShared(
             if wait != 0 {
                 r.SharedWaiters += 1;
                 let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
-                status = NtWaitForSingleObject(
-                    r.SharedSemaphore,
-                    0,
-                    core::ptr::null_mut(),
-                );
+                status = NtWaitForSingleObject(r.SharedSemaphore, 0, core::ptr::null_mut());
                 if status < 0 {
                     let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
                     return ret_val;
@@ -6675,11 +6581,7 @@ pub unsafe extern "system" fn RtlConvertExclusiveToShared(resource: *mut res::RT
             let n = r.SharedWaiters;
             r.NumberActive = (r.SharedWaiters + 1) as i32;
             r.SharedWaiters = 0;
-            let _ = NtReleaseSemaphore(
-                r.SharedSemaphore,
-                n as i32,
-                core::ptr::null_mut(),
-            );
+            let _ = NtReleaseSemaphore(r.SharedSemaphore, n as i32, core::ptr::null_mut());
         } else {
             r.NumberActive = 1;
         }
@@ -6700,11 +6602,7 @@ pub unsafe extern "system" fn RtlConvertSharedToExclusive(resource: *mut res::RT
     } else {
         r.ExclusiveWaiters += 1;
         let _ = RtlLeaveCriticalSection(&mut r.Lock as *mut _ as *mut u8);
-        let status = NtWaitForSingleObject(
-            r.ExclusiveSemaphore,
-            0,
-            core::ptr::null_mut(),
-        );
+        let status = NtWaitForSingleObject(r.ExclusiveSemaphore, 0, core::ptr::null_mut());
         if status < 0 {
             return;
         }
@@ -6727,11 +6625,7 @@ pub unsafe extern "system" fn RtlReleaseResource(resource: *mut res::RTL_RESOURC
         if r.NumberActive == 0 && r.ExclusiveWaiters > 0 {
             // wake_exclusive label
             r.ExclusiveWaiters -= 1;
-            let _ = NtReleaseSemaphore(
-                r.ExclusiveSemaphore,
-                1,
-                core::ptr::null_mut(),
-            );
+            let _ = NtReleaseSemaphore(r.ExclusiveSemaphore, 1, core::ptr::null_mut());
         }
     } else if r.NumberActive < 0 {
         // writer, possibly recursive
@@ -6741,22 +6635,14 @@ pub unsafe extern "system" fn RtlReleaseResource(resource: *mut res::RTL_RESOURC
             if r.ExclusiveWaiters > 0 {
                 // wake_exclusive
                 r.ExclusiveWaiters -= 1;
-                let _ = NtReleaseSemaphore(
-                    r.ExclusiveSemaphore,
-                    1,
-                    core::ptr::null_mut(),
-                );
+                let _ = NtReleaseSemaphore(r.ExclusiveSemaphore, 1, core::ptr::null_mut());
             } else if r.SharedWaiters > 0 {
                 // Prevent new writers from joining until all queued
                 // readers have done their thing.
                 let n = r.SharedWaiters;
                 r.NumberActive = r.SharedWaiters as i32;
                 r.SharedWaiters = 0;
-                let _ = NtReleaseSemaphore(
-                    r.SharedSemaphore,
-                    n as i32,
-                    core::ptr::null_mut(),
-                );
+                let _ = NtReleaseSemaphore(r.SharedSemaphore, n as i32, core::ptr::null_mut());
             }
         }
     }
@@ -7063,9 +6949,7 @@ pub unsafe extern "C" fn RtlSetThreadIsCritical(
     }
 
     // Fail, if the critical breaks flag is required but is not set.
-    if need_breaks != 0
-        && (RtlpThrGetPebNtGlobalFlag() & thr::FLG_ENABLE_SYSTEM_CRIT_BREAKS) == 0
-    {
+    if need_breaks != 0 && (RtlpThrGetPebNtGlobalFlag() & thr::FLG_ENABLE_SYSTEM_CRIT_BREAKS) == 0 {
         return thr::STATUS_UNSUCCESSFUL;
     }
 
@@ -7552,8 +7436,17 @@ pub unsafe extern "system" fn RtlCreateUserProcess(
 
     // CSRSS-under-WindowsSS check.
     let debug_string: [u16; 11] = [
-        '\\' as u16, 'W' as u16, 'i' as u16, 'n' as u16, 'd' as u16, 'o' as u16,
-        'w' as u16, 's' as u16, 'S' as u16, 'S' as u16, 0,
+        '\\' as u16,
+        'W' as u16,
+        'i' as u16,
+        'n' as u16,
+        'd' as u16,
+        'o' as u16,
+        'w' as u16,
+        's' as u16,
+        'S' as u16,
+        'S' as u16,
+        0,
     ];
     let csrss_pat: [u16; 6] = [
         'c' as u16, 's' as u16, 'r' as u16, 's' as u16, 's' as u16, 0,
@@ -7749,9 +7642,7 @@ pub unsafe extern "C" fn RtlSetProcessIsCritical(
         *old_value = 0;
     }
 
-    if need_breaks != 0
-        && (RtlpThrGetPebNtGlobalFlag() & prc::FLG_ENABLE_SYSTEM_CRIT_BREAKS) == 0
-    {
+    if need_breaks != 0 && (RtlpThrGetPebNtGlobalFlag() & prc::FLG_ENABLE_SYSTEM_CRIT_BREAKS) == 0 {
         return prc::STATUS_UNSUCCESSFUL;
     }
 
@@ -7796,7 +7687,6 @@ pub unsafe extern "system" fn RtlRosGetAppcompatVersion() -> u32 {
 // PARTIAL swap (path.c stays in cmake; per-fn `#if 0` blocks
 // remove the C body). Smoke is the net.
 // =====================================================================
-
 
 /// `RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_Ustr(PCUNICODE_STRING)`.
 /// Note: `RTL_PATH_TYPE` is an enum — `extern "system" fn -> u32`.
@@ -7869,9 +7759,7 @@ unsafe fn us_view(buf: *mut u16, len_chars: u16) -> UNICODE_STRING {
 /// a DOS device name, or `MAKELONG(length_bytes, offset_bytes)` if
 /// it is.
 #[no_mangle]
-pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(
-    path_string: *const UNICODE_STRING,
-) -> u32 {
+pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(path_string: *const UNICODE_STRING) -> u32 {
     if path_string.is_null() {
         return 0;
     }
@@ -7885,8 +7773,7 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(
             // Make special check for the CON device.
             if RtlEqualUnicodeString(path_string, &RtlpDosSlashCONDevice, 1) != 0 {
                 // MAKELONG(RtlpDosCONDevice.Length, DeviceRootString.Length)
-                return ((DeviceRootString.Length as u32) << 16)
-                    | (RtlpDosCONDevice.Length as u32);
+                return ((DeviceRootString.Length as u32) << 16) | (RtlpDosCONDevice.Length as u32);
             }
             return 0;
         }
@@ -7932,8 +7819,7 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(
         let mut end_idx: isize = (path_chars - 1) as isize;
         while end_idx >= 0 {
             let c = *path_copy_buf.add(end_idx as usize);
-            let is_drive_colon =
-                c == b':' as u16 && end_idx == 1; // End == Buffer+1
+            let is_drive_colon = c == b':' as u16 && end_idx == 1; // End == Buffer+1
             if path_::is_path_separator(c) || is_drive_colon {
                 // Get next-lowercase character at End+1.
                 end_idx += 1;
@@ -7950,8 +7836,7 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(
                     // Calculate the offset (in bytes from start of buffer).
                     return_offset = ((end_idx as usize) * 2) as u16;
                     // Build the final string.
-                    path_copy_len =
-                        original_length - return_offset - colon_count.saturating_mul(2);
+                    path_copy_len = original_length - return_offset - colon_count.saturating_mul(2);
                     path_copy_buf = path_copy_buf.add(end_idx as usize);
                     path_chars = (path_copy_len / 2) as u16;
                     found = true;
@@ -8050,14 +7935,10 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_U(path: *const u16) -> u32 {
 
 // =====================================================================
 // Wave ATM — straight translation of `sdk/lib/rtl/atom.c` (11 NTAPI
-// fns). FULL swap (atom.c removed from cmake). atom.c is compiled ONCE
-// with -D_NTOSKRNL_ into the single `rtl` lib that links into BOTH
-// ntoskrnl and ntdll, so the KERNEL `RTL_ATOM_TABLE` union layout
-// (FAST_MUTEX + PHANDLE_TABLE) is the one atom.c always sees. We mirror
-// it with nested #[repr(C)] types so rustc computes per-arch offsets
-// (no hardcoded numbers). atom.c never touches the union members
-// directly — only the cdecl `Rtlp*` helpers in libsupp.c do, and those
-// stay C. Smoke is the net (no byte-diff: concurrency + handle FFI).
+// fns). FULL swap (atom.c removed from cmake). atom.c never touches the
+// union members directly — only the cdecl `Rtlp*` helpers in libsupp do
+// (concurrency + handle FFI). See the RTL_ATOM_TABLE mirror below for why
+// it uses the larger (user) union arm unconditionally.
 // =====================================================================
 
 use crate::core_rs::atom as atom_;
@@ -8077,42 +7958,61 @@ fn atm_nt_success(s: i32) -> bool {
     s >= 0
 }
 
-// --- KERNEL `RTL_ATOM_TABLE` layout mirror. Built from the nested NDK
-//     types so the compiler lays out NumberOfBuckets/Buckets at the
-//     correct per-arch offset (FAST_MUTEX size differs by pointer
-//     width). Only NumberOfBuckets + Buckets are read by atom.c; the
-//     FastMutex/ExHandleTable members are opaque padding to us. ---
+// --- `RTL_ATOM_TABLE` layout mirror. ---
+//
+// librtl_rust.a is built ONCE and shared by BOTH atom consumers:
+//   * ntoskrnl — the kernel atom path. `ex/atom.rs` defines only the Nt*
+//                syscalls; they call the Rtl* atom fns HERE, paired with
+//                ntoskrnl-rust's libsupp (FAST_MUTEX + PHANDLE_TABLE arm).
+//   * ntdll    — local atom tables, paired with ntdll-rust's libsupp
+//                (RTL_CRITICAL_SECTION + RTL_HANDLE_TABLE arm).
+//
+// A single staticlib can't carry two layouts — but it doesn't need to.
+// Only NumberOfBuckets + Buckets are read HERE; the union members are
+// written/read exclusively by the per-mode libsupp through ITS OWN struct
+// view. The sole requirement is that NumberOfBuckets/Buckets sit PAST
+// whatever the libsupp union write covers in either mode. So we always lay
+// the union region out as the LARGER (user) arm — a safe superset:
+//   64-bit: kernel union ends @72, user (RtlHandleTable) ends @96 →
+//           NumberOfBuckets @96, clear of both.
+//   32-bit: kernel ends @40, user ends @60 → NumberOfBuckets @60.
+// The kernel's FAST_MUTEX(+PHANDLE_TABLE) write fits entirely inside the
+// user-arm region and never reaches NumberOfBuckets.
+//
+// Using the SMALLER (kernel) arm here was the bug: in ntdll it put
+// NumberOfBuckets INSIDE RtlHandleTable's footprint (on CommittedHandles,
+// which RtlCreateHandleTable leaves NULL) → bucket_index read 0 →
+// divide-by-zero. It manifested arm64-only, post-desktop (idle-smoke
+// masked it). See feedback_rtl_atom_arm64_boot_regression.
 
+/// `RTL_CRITICAL_SECTION` (rtltypes.h) — the larger (user) union arm; also
+/// a safe superset for the kernel (FAST_MUTEX) consumer.
 #[repr(C)]
-struct AtmListEntry {
-    flink: *mut core::ffi::c_void,
-    blink: *mut core::ffi::c_void,
+struct AtmSync {
+    debug_info: *mut core::ffi::c_void,
+    lock_count: i32,
+    recursion_count: i32,
+    owning_thread: *mut core::ffi::c_void,
+    lock_semaphore: *mut core::ffi::c_void,
+    spin_count: usize,
 }
 
-/// `DISPATCHER_HEADER` — the leading union is 4 bytes (UCHAR Type + 3
-/// one-byte sub-unions, == `volatile LONG Lock`), then `LONG SignalState`
-/// and `LIST_ENTRY WaitListHead`.
+/// `RTL_HANDLE_TABLE_ENTRY` only matters as a pointer target here.
 #[repr(C)]
-struct AtmDispatcherHeader {
-    lock: i32,
-    signal_state: i32,
-    wait_list_head: AtmListEntry,
+struct AtmHandleTableEntry {
+    next_free_or_flags: usize,
 }
 
-/// `KEVENT` == one `DISPATCHER_HEADER`.
+/// `RTL_HANDLE_TABLE` (rtltypes.h) — the larger (user) union arm.
 #[repr(C)]
-struct AtmKevent {
-    header: AtmDispatcherHeader,
-}
-
-/// `FAST_MUTEX` (extypes.h).
-#[repr(C)]
-struct AtmFastMutex {
-    count: i32,
-    owner: *mut core::ffi::c_void, // PKTHREAD
-    contention: u32,
-    event: AtmKevent,
-    old_irql: u32,
+struct AtmHandleStorage {
+    maximum_number_of_handles: u32,
+    size_of_handle_table_entry: u32,
+    reserved: [u32; 2],
+    free_handles: *mut AtmHandleTableEntry,
+    committed_handles: *mut AtmHandleTableEntry,
+    uncommitted_handles: *mut AtmHandleTableEntry,
+    max_reserved_handles: *mut AtmHandleTableEntry,
 }
 
 /// `RTL_ATOM_TABLE_ENTRY` (rtltypes.h) — no union, flat layout, identical
@@ -8128,15 +8028,24 @@ pub struct RTL_ATOM_TABLE_ENTRY {
     name: [u16; 1],
 }
 
-/// `RTL_ATOM_TABLE` — KERNEL union arm (FAST_MUTEX + PHANDLE_TABLE).
+/// `RTL_ATOM_TABLE` — union region laid out as the larger (user) arm so
+/// NumberOfBuckets/Buckets sit past any per-mode libsupp union write.
 #[repr(C)]
 pub struct RTL_ATOM_TABLE {
     signature: u32,
-    fast_mutex: AtmFastMutex,         // union arm: kernel FAST_MUTEX
-    ex_handle_table: *mut core::ffi::c_void, // union arm: kernel PHANDLE_TABLE
+    sync: AtmSync,
+    handle_storage: AtmHandleStorage,
     number_of_buckets: u32,
     buckets: [*mut RTL_ATOM_TABLE_ENTRY; 1], // flexible tail
 }
+
+// Guard the superset invariant: NumberOfBuckets MUST sit past the kernel
+// union arm's end (FAST_MUTEX + PHANDLE_TABLE = 72 on 64-bit, 40 on
+// 32-bit), so the kernel-mode libsupp's union write can never clobber it.
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::offset_of!(RTL_ATOM_TABLE, number_of_buckets) >= 72);
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::offset_of!(RTL_ATOM_TABLE, number_of_buckets) >= 40);
 
 // --- libsupp.c helpers. C declares these WITHOUT NTAPI ⇒ __cdecl on
 //     all arches ⇒ `extern "C"`. (Mismatching this with extern "system"
@@ -8157,10 +8066,7 @@ extern "C" {
         entry: *mut RTL_ATOM_TABLE_ENTRY,
     ) -> u8;
     fn RtlpFreeAtomHandle(atom_table: *mut RTL_ATOM_TABLE, entry: *mut RTL_ATOM_TABLE_ENTRY);
-    fn RtlpGetAtomEntry(
-        atom_table: *mut RTL_ATOM_TABLE,
-        index: u32,
-    ) -> *mut RTL_ATOM_TABLE_ENTRY;
+    fn RtlpGetAtomEntry(atom_table: *mut RTL_ATOM_TABLE, index: u32) -> *mut RTL_ATOM_TABLE_ENTRY;
     // CRT wide compare (cdecl). Same fn atom.c calls; matches its fold.
     fn _wcsicmp(a: *const u16, b: *const u16) -> i32;
 }
@@ -8286,8 +8192,7 @@ pub unsafe extern "system" fn RtlCreateAtomTable(
     }
     let table_size = atom_::clamp_table_size(table_size);
 
-    let size = ((table_size - 1) as usize
-        * core::mem::size_of::<*mut RTL_ATOM_TABLE_ENTRY>()
+    let size = ((table_size - 1) as usize * core::mem::size_of::<*mut RTL_ATOM_TABLE_ENTRY>()
         + core::mem::size_of::<RTL_ATOM_TABLE>()) as u32;
     let table = RtlpAllocAtomTable(size);
     if table.is_null() {
@@ -8562,8 +8467,7 @@ pub unsafe extern "system" fn RtlQueryAtomInAtomTable(
     let mut unlock = false;
 
     // union { RTL_ATOM_TABLE_ENTRY; WCHAR[sizeof(entry)/2 + 12] }
-    const NUMBER_ENTRY_WORDS: usize =
-        core::mem::size_of::<RTL_ATOM_TABLE_ENTRY>() / 2 + 12;
+    const NUMBER_ENTRY_WORDS: usize = core::mem::size_of::<RTL_ATOM_TABLE_ENTRY>() / 2 + 12;
     let mut number_entry: [u16; NUMBER_ENTRY_WORDS] = [0; NUMBER_ENTRY_WORDS];
     let synth = number_entry.as_mut_ptr() as *mut RTL_ATOM_TABLE_ENTRY;
 
@@ -8658,7 +8562,6 @@ pub unsafe extern "system" fn RtlQueryAtomListInAtomTable(
     status
 }
 
-
 // ===== path.c wave (Opus 4.8) — translated, integrated into rtl-strings =====
 // The 27 non-lexical path functions from
 // `ntoskrnl-rust/src/rtl/path.rs`, remapped from the kernel `ntkrnl_sys`
@@ -8671,15 +8574,22 @@ pub unsafe extern "system" fn RtlQueryAtomListInAtomTable(
 // RtlIsDosDeviceName_{Ustr,U}, RtlGetLengthWithoutTrailingPathSeparators)
 // stay in their existing cabi versions above; the device/prefix statics they
 // reference are DEFINED here (real UTF-16 buffers) and re-exported below.
-#[allow(non_snake_case, non_upper_case_globals, non_camel_case_types, dead_code, unused_assignments, unused_variables)]
+#[allow(
+    non_snake_case,
+    non_upper_case_globals,
+    non_camel_case_types,
+    dead_code,
+    unused_assignments,
+    unused_variables
+)]
 mod path_wave {
-    use super::{UNICODE_STRING, RTL_BUFFER, rtl_alloc, rtl_free,
-        RtlUpcaseUnicodeChar, RtlEqualUnicodeString, RtlInitUnicodeStringEx,
-        RtlAppendUnicodeStringToString, RtlFindCharInUnicodeString,
-        RtlPrefixUnicodeString, RtlQueryEnvironmentVariable_U,
-        RtlInitUnicodeString, wcslen,
-        RtlDetermineDosPathNameType_Ustr, RtlDetermineDosPathNameType_U,
-        RtlIsDosDeviceName_Ustr, RtlCopyUnicodeString, RtlFreeUnicodeString};
+    use super::{
+        rtl_alloc, rtl_free, wcslen, RtlAppendUnicodeStringToString, RtlCopyUnicodeString,
+        RtlDetermineDosPathNameType_U, RtlDetermineDosPathNameType_Ustr, RtlEqualUnicodeString,
+        RtlFindCharInUnicodeString, RtlFreeUnicodeString, RtlInitUnicodeString,
+        RtlInitUnicodeStringEx, RtlIsDosDeviceName_Ustr, RtlPrefixUnicodeString,
+        RtlQueryEnvironmentVariable_U, RtlUpcaseUnicodeChar, RTL_BUFFER, UNICODE_STRING,
+    };
 
     type ULONG = u32;
     type USHORT = u16;
@@ -8748,16 +8658,25 @@ mod path_wave {
     const FILE_REMOVABLE_MEDIA: u32 = 0x0000_0001;
     const TAG_USTR: u32 = u32::from_le_bytes(*b"RTSU");
 
-    #[inline] fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
+    #[inline]
+    fn NT_SUCCESS(s: NTSTATUS) -> bool {
+        s >= 0
+    }
 
     #[repr(C)]
     #[derive(Clone, Copy)]
-    pub struct CURDIR { pub DosPath: UNICODE_STRING, pub Handle: HANDLE }
+    pub struct CURDIR {
+        pub DosPath: UNICODE_STRING,
+        pub Handle: HANDLE,
+    }
     type PCURDIR = *mut CURDIR;
 
     #[repr(C)]
     #[derive(Clone, Copy)]
-    pub struct RTLP_CURDIR_REF { pub RefCount: i32, pub Handle: HANDLE }
+    pub struct RTLP_CURDIR_REF {
+        pub RefCount: i32,
+        pub Handle: HANDLE,
+    }
     type PRTLP_CURDIR_REF = *mut RTLP_CURDIR_REF;
 
     #[repr(C)]
@@ -8799,18 +8718,26 @@ mod path_wave {
 
     #[repr(C)]
     pub struct PEB {
-        #[cfg(target_pointer_width = "64")] _pad: [u8; 0x20],
-        #[cfg(target_pointer_width = "32")] _pad: [u8; 0x10],
+        #[cfg(target_pointer_width = "64")]
+        _pad: [u8; 0x20],
+        #[cfg(target_pointer_width = "32")]
+        _pad: [u8; 0x10],
         pub ProcessParameters: PRTL_USER_PROCESS_PARAMETERS,
     }
     type PPEB = *mut PEB;
 
     #[cfg(target_pointer_width = "64")]
     #[repr(C)]
-    pub struct NT_TEB { _pad: [u8; 0x60], pub ProcessEnvironmentBlock: PPEB }
+    pub struct NT_TEB {
+        _pad: [u8; 0x60],
+        pub ProcessEnvironmentBlock: PPEB,
+    }
     #[cfg(target_pointer_width = "32")]
     #[repr(C)]
-    pub struct NT_TEB { _pad: [u8; 0x30], pub ProcessEnvironmentBlock: PPEB }
+    pub struct NT_TEB {
+        _pad: [u8; 0x30],
+        pub ProcessEnvironmentBlock: PPEB,
+    }
 
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -8824,45 +8751,77 @@ mod path_wave {
     }
     #[repr(C)]
     #[derive(Clone, Copy)]
-    pub struct IO_STATUS_BLOCK { pub Status: NTSTATUS, pub Information: usize }
+    pub struct IO_STATUS_BLOCK {
+        pub Status: NTSTATUS,
+        pub Information: usize,
+    }
     #[repr(C)]
     #[derive(Clone, Copy)]
     pub struct FILE_BASIC_INFORMATION {
-        pub CreationTime: i64, pub LastAccessTime: i64, pub LastWriteTime: i64,
-        pub ChangeTime: i64, pub FileAttributes: u32,
+        pub CreationTime: i64,
+        pub LastAccessTime: i64,
+        pub LastWriteTime: i64,
+        pub ChangeTime: i64,
+        pub FileAttributes: u32,
     }
     #[repr(C)]
     #[derive(Clone, Copy)]
-    pub struct FILE_FS_DEVICE_INFORMATION { pub DeviceType: u32, pub Characteristics: u32 }
+    pub struct FILE_FS_DEVICE_INFORMATION {
+        pub DeviceType: u32,
+        pub Characteristics: u32,
+    }
     const FileFsDeviceInformation: u32 = 4;
 
-    #[inline] unsafe fn RtlCopyMemory(d: PVOID, s: *const core::ffi::c_void, len: usize) {
+    #[inline]
+    unsafe fn RtlCopyMemory(d: PVOID, s: *const core::ffi::c_void, len: usize) {
         core::ptr::copy_nonoverlapping(s as *const u8, d as *mut u8, len);
     }
-    #[inline] unsafe fn RtlZeroMemory(d: PVOID, len: usize) {
+    #[inline]
+    unsafe fn RtlZeroMemory(d: PVOID, len: usize) {
         core::ptr::write_bytes(d as *mut u8, 0, len);
     }
-    #[inline] unsafe fn memcpy(d: *mut u8, s: *const u8, len: usize) {
+    #[inline]
+    unsafe fn memcpy(d: *mut u8, s: *const u8, len: usize) {
         core::ptr::copy_nonoverlapping(s, d, len);
     }
-    #[inline] unsafe fn memmove(d: *mut u8, s: *const u8, len: usize) {
+    #[inline]
+    unsafe fn memmove(d: *mut u8, s: *const u8, len: usize) {
         core::ptr::copy(s, d, len);
     }
-    #[inline] unsafe fn wcsrchr(mut s: *const u16, c: u16) -> *mut u16 {
+    #[inline]
+    unsafe fn wcsrchr(mut s: *const u16, c: u16) -> *mut u16 {
         let mut last: *mut u16 = core::ptr::null_mut();
-        while *s != 0 { if *s == c { last = s as *mut u16; } s = s.add(1); }
+        while *s != 0 {
+            if *s == c {
+                last = s as *mut u16;
+            }
+            s = s.add(1);
+        }
         last
     }
-    #[inline] unsafe fn RtlpUpcaseUnicodeChar(c: u16) -> u16 { RtlUpcaseUnicodeChar(c) }
-    #[inline] unsafe fn InterlockedDecrement(p: *mut i32) -> i32 {
-        (&*(p as *const core::sync::atomic::AtomicI32)).fetch_sub(1, core::sync::atomic::Ordering::SeqCst) - 1
+    #[inline]
+    unsafe fn RtlpUpcaseUnicodeChar(c: u16) -> u16 {
+        RtlUpcaseUnicodeChar(c)
     }
-    #[inline] unsafe fn InterlockedIncrement(p: *mut i32) -> i32 {
-        (&*(p as *const core::sync::atomic::AtomicI32)).fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1
+    #[inline]
+    unsafe fn InterlockedDecrement(p: *mut i32) -> i32 {
+        (&*(p as *const core::sync::atomic::AtomicI32))
+            .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+            - 1
     }
-    #[inline] unsafe fn DbgPrint(_fmt: *const i8) {}
-    #[inline] unsafe fn RtlInitEmptyUnicodeString(dest: *mut UNICODE_STRING, buf: PWSTR, max: u16) {
-        (*dest).Length = 0; (*dest).MaximumLength = max; (*dest).Buffer = buf;
+    #[inline]
+    unsafe fn InterlockedIncrement(p: *mut i32) -> i32 {
+        (&*(p as *const core::sync::atomic::AtomicI32))
+            .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+            + 1
+    }
+    #[inline]
+    unsafe fn DbgPrint(_fmt: *const i8) {}
+    #[inline]
+    unsafe fn RtlInitEmptyUnicodeString(dest: *mut UNICODE_STRING, buf: PWSTR, max: u16) {
+        (*dest).Length = 0;
+        (*dest).MaximumLength = max;
+        (*dest).Buffer = buf;
     }
 
     // rtl-internal helpers (ntdll + ntoskrnl). Plain externs — they resolve on
@@ -8878,16 +8837,32 @@ mod path_wave {
         fn RtlAcquirePebLock();
         fn RtlReleasePebLock();
         fn NtClose(Handle: HANDLE) -> NTSTATUS;
-        fn NtOpenFile(FileHandle: *mut HANDLE, DesiredAccess: u32,
-            ObjectAttributes: *mut OBJECT_ATTRIBUTES, IoStatusBlock: *mut IO_STATUS_BLOCK,
-            ShareAccess: u32, OpenOptions: u32) -> NTSTATUS;
-        fn NtQueryVolumeInformationFile(FileHandle: HANDLE, IoStatusBlock: *mut IO_STATUS_BLOCK,
-            FsInformation: PVOID, Length: u32, FsInformationClass: u32) -> NTSTATUS;
-        fn ZwQueryAttributesFile(ObjectAttributes: *mut OBJECT_ATTRIBUTES,
-            FileInformation: *mut FILE_BASIC_INFORMATION) -> NTSTATUS;
+        fn NtOpenFile(
+            FileHandle: *mut HANDLE,
+            DesiredAccess: u32,
+            ObjectAttributes: *mut OBJECT_ATTRIBUTES,
+            IoStatusBlock: *mut IO_STATUS_BLOCK,
+            ShareAccess: u32,
+            OpenOptions: u32,
+        ) -> NTSTATUS;
+        fn NtQueryVolumeInformationFile(
+            FileHandle: HANDLE,
+            IoStatusBlock: *mut IO_STATUS_BLOCK,
+            FsInformation: PVOID,
+            Length: u32,
+            FsInformationClass: u32,
+        ) -> NTSTATUS;
+        fn ZwQueryAttributesFile(
+            ObjectAttributes: *mut OBJECT_ATTRIBUTES,
+            FileInformation: *mut FILE_BASIC_INFORMATION,
+        ) -> NTSTATUS;
         // rtlfuncs.h: RtlEnsureBufferSize is FORCEINLINE → real work is
         // RtlpEnsureBufferSize. Bind the real symbol; the inline is replicated below.
-        fn RtlpEnsureBufferSize(Flags: ULONG, Buffer: *mut RTL_BUFFER, RequiredSize: ULONG) -> NTSTATUS;
+        fn RtlpEnsureBufferSize(
+            Flags: ULONG,
+            Buffer: *mut RTL_BUFFER,
+            RequiredSize: ULONG,
+        ) -> NTSTATUS;
         // ntdll-only SxS redirection hub (path.c guards it under #ifndef
         // _NTOSKRNL_). Declared unconditionally — only referenced from the
         // cfg(not(feature="kernel")) branch of RtlDosSearchPath_Ustr, so the
@@ -8905,14 +8880,21 @@ mod path_wave {
         ) -> NTSTATUS;
     }
     // RtlpAllocateStringMemory/RtlpFreeStringMemory: rtlp.h macros → Rtlp{Allocate,Free}Memory.
-    #[inline] unsafe fn RtlpAllocateStringMemory(Length: ULONG, Tag: ULONG) -> PWSTR {
+    #[inline]
+    unsafe fn RtlpAllocateStringMemory(Length: ULONG, Tag: ULONG) -> PWSTR {
         RtlpAllocateMemory(Length, Tag)
     }
-    #[inline] unsafe fn RtlpFreeStringMemory(Buffer: *mut core::ffi::c_void, Tag: ULONG) {
+    #[inline]
+    unsafe fn RtlpFreeStringMemory(Buffer: *mut core::ffi::c_void, Tag: ULONG) {
         RtlpFreeMemory(Buffer, Tag)
     }
     // RtlEnsureBufferSize: FORCEINLINE in rtlfuncs.h (fast-path + RtlpEnsureBufferSize).
-    #[inline] unsafe fn RtlEnsureBufferSize(Flags: ULONG, Buffer: *mut RTL_BUFFER, RequiredSize: ULONG) -> NTSTATUS {
+    #[inline]
+    unsafe fn RtlEnsureBufferSize(
+        Flags: ULONG,
+        Buffer: *mut RTL_BUFFER,
+        RequiredSize: ULONG,
+    ) -> NTSTATUS {
         if !Buffer.is_null() && (RequiredSize as usize) <= (*Buffer).Size {
             return STATUS_SUCCESS;
         }
@@ -8920,64 +8902,141 @@ mod path_wave {
     }
     // NtCurrentTeb() is a FORCEINLINE macro (no out-of-line symbol); route the
     // PEB fetch through RtlGetCurrentPeb (a real exported symbol on both targets).
-    #[inline] unsafe fn NtCurrentPeb() -> PPEB { RtlGetCurrentPeb() }
+    #[inline]
+    unsafe fn NtCurrentPeb() -> PPEB {
+        RtlGetCurrentPeb()
+    }
 
     // Heap shims — route the C-translated RtlAllocateHeap/RtlFreeHeap through
     // cabi's 3-way allocator (rtl_alloc/rtl_free). `heap_handle()` is a dummy.
-    #[inline] unsafe fn heap_handle() -> PVOID { core::ptr::null_mut() }
-    #[inline] unsafe fn rtl_heap_alloc(_heap: PVOID, _flags: u32, size: usize) -> PVOID {
+    #[inline]
+    unsafe fn heap_handle() -> PVOID {
+        core::ptr::null_mut()
+    }
+    #[inline]
+    unsafe fn rtl_heap_alloc(_heap: PVOID, _flags: u32, size: usize) -> PVOID {
         rtl_alloc(size, TAG_USTR) as PVOID
     }
-    #[inline] unsafe fn rtl_heap_free(_heap: PVOID, _flags: u32, p: PVOID) -> u8 {
-        if !p.is_null() { rtl_free(p as *mut u8, TAG_USTR); } 1
+    #[inline]
+    unsafe fn rtl_heap_free(_heap: PVOID, _flags: u32, p: PVOID) -> u8 {
+        if !p.is_null() {
+            rtl_free(p as *mut u8, TAG_USTR);
+        }
+        1
     }
 
     // --- device / prefix statics (real UTF-16 buffers) ---
     static DEVICEROOTSTRING_BUF: [u16; 5] = [0x005C, 0x005C, 0x002E, 0x005C, 0x0000];
     #[no_mangle]
-    pub static DeviceRootString: UNICODE_STRING = UNICODE_STRING { Length: 8, MaximumLength: 10, Buffer: DEVICEROOTSTRING_BUF.as_ptr() as *mut u16 };
-    static RTLPDOSDEVICESUNCPREFIX_BUF: [u16; 9] = [0x005C, 0x003F, 0x003F, 0x005C, 0x0055, 0x004E, 0x0043, 0x005C, 0x0000];
+    pub static DeviceRootString: UNICODE_STRING = UNICODE_STRING {
+        Length: 8,
+        MaximumLength: 10,
+        Buffer: DEVICEROOTSTRING_BUF.as_ptr() as *mut u16,
+    };
+    static RTLPDOSDEVICESUNCPREFIX_BUF: [u16; 9] = [
+        0x005C, 0x003F, 0x003F, 0x005C, 0x0055, 0x004E, 0x0043, 0x005C, 0x0000,
+    ];
     #[no_mangle]
-    pub static RtlpDosDevicesUncPrefix: UNICODE_STRING = UNICODE_STRING { Length: 16, MaximumLength: 18, Buffer: RTLPDOSDEVICESUNCPREFIX_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosDevicesUncPrefix: UNICODE_STRING = UNICODE_STRING {
+        Length: 16,
+        MaximumLength: 18,
+        Buffer: RTLPDOSDEVICESUNCPREFIX_BUF.as_ptr() as *mut u16,
+    };
     static RTLPWIN32NTROOTSLASH_BUF: [u16; 5] = [0x005C, 0x005C, 0x003F, 0x005C, 0x0000];
     #[no_mangle]
-    pub static RtlpWin32NtRootSlash: UNICODE_STRING = UNICODE_STRING { Length: 8, MaximumLength: 10, Buffer: RTLPWIN32NTROOTSLASH_BUF.as_ptr() as *mut u16 };
-    static RTLPDOSSLASHCONDEVICE_BUF: [u16; 8] = [0x005C, 0x005C, 0x002E, 0x005C, 0x0043, 0x004F, 0x004E, 0x0000];
+    pub static RtlpWin32NtRootSlash: UNICODE_STRING = UNICODE_STRING {
+        Length: 8,
+        MaximumLength: 10,
+        Buffer: RTLPWIN32NTROOTSLASH_BUF.as_ptr() as *mut u16,
+    };
+    static RTLPDOSSLASHCONDEVICE_BUF: [u16; 8] = [
+        0x005C, 0x005C, 0x002E, 0x005C, 0x0043, 0x004F, 0x004E, 0x0000,
+    ];
     #[no_mangle]
-    pub static RtlpDosSlashCONDevice: UNICODE_STRING = UNICODE_STRING { Length: 14, MaximumLength: 16, Buffer: RTLPDOSSLASHCONDEVICE_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosSlashCONDevice: UNICODE_STRING = UNICODE_STRING {
+        Length: 14,
+        MaximumLength: 16,
+        Buffer: RTLPDOSSLASHCONDEVICE_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOSDEVICESPREFIX_BUF: [u16; 5] = [0x005C, 0x003F, 0x003F, 0x005C, 0x0000];
     #[no_mangle]
-    pub static RtlpDosDevicesPrefix: UNICODE_STRING = UNICODE_STRING { Length: 8, MaximumLength: 10, Buffer: RTLPDOSDEVICESPREFIX_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosDevicesPrefix: UNICODE_STRING = UNICODE_STRING {
+        Length: 8,
+        MaximumLength: 10,
+        Buffer: RTLPDOSDEVICESPREFIX_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOSLPTDEVICE_BUF: [u16; 4] = [0x004C, 0x0050, 0x0054, 0x0000];
     #[no_mangle]
-    pub static RtlpDosLPTDevice: UNICODE_STRING = UNICODE_STRING { Length: 6, MaximumLength: 8, Buffer: RTLPDOSLPTDEVICE_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosLPTDevice: UNICODE_STRING = UNICODE_STRING {
+        Length: 6,
+        MaximumLength: 8,
+        Buffer: RTLPDOSLPTDEVICE_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOSCOMDEVICE_BUF: [u16; 4] = [0x0043, 0x004F, 0x004D, 0x0000];
     #[no_mangle]
-    pub static RtlpDosCOMDevice: UNICODE_STRING = UNICODE_STRING { Length: 6, MaximumLength: 8, Buffer: RTLPDOSCOMDEVICE_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosCOMDevice: UNICODE_STRING = UNICODE_STRING {
+        Length: 6,
+        MaximumLength: 8,
+        Buffer: RTLPDOSCOMDEVICE_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOSPRNDEVICE_BUF: [u16; 4] = [0x0050, 0x0052, 0x004E, 0x0000];
     #[no_mangle]
-    pub static RtlpDosPRNDevice: UNICODE_STRING = UNICODE_STRING { Length: 6, MaximumLength: 8, Buffer: RTLPDOSPRNDEVICE_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosPRNDevice: UNICODE_STRING = UNICODE_STRING {
+        Length: 6,
+        MaximumLength: 8,
+        Buffer: RTLPDOSPRNDEVICE_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOSAUXDEVICE_BUF: [u16; 4] = [0x0041, 0x0055, 0x0058, 0x0000];
     #[no_mangle]
-    pub static RtlpDosAUXDevice: UNICODE_STRING = UNICODE_STRING { Length: 6, MaximumLength: 8, Buffer: RTLPDOSAUXDEVICE_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosAUXDevice: UNICODE_STRING = UNICODE_STRING {
+        Length: 6,
+        MaximumLength: 8,
+        Buffer: RTLPDOSAUXDEVICE_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOSCONDEVICE_BUF: [u16; 4] = [0x0043, 0x004F, 0x004E, 0x0000];
     #[no_mangle]
-    pub static RtlpDosCONDevice: UNICODE_STRING = UNICODE_STRING { Length: 6, MaximumLength: 8, Buffer: RTLPDOSCONDEVICE_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosCONDevice: UNICODE_STRING = UNICODE_STRING {
+        Length: 6,
+        MaximumLength: 8,
+        Buffer: RTLPDOSCONDEVICE_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOSNULDEVICE_BUF: [u16; 4] = [0x004E, 0x0055, 0x004C, 0x0000];
     #[no_mangle]
-    pub static RtlpDosNULDevice: UNICODE_STRING = UNICODE_STRING { Length: 6, MaximumLength: 8, Buffer: RTLPDOSNULDEVICE_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDosNULDevice: UNICODE_STRING = UNICODE_STRING {
+        Length: 6,
+        MaximumLength: 8,
+        Buffer: RTLPDOSNULDEVICE_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDOUBLESLASHPREFIX_BUF: [u16; 3] = [0x005C, 0x005C, 0x0000];
     #[no_mangle]
-    pub static RtlpDoubleSlashPrefix: UNICODE_STRING = UNICODE_STRING { Length: 4, MaximumLength: 6, Buffer: RTLPDOUBLESLASHPREFIX_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDoubleSlashPrefix: UNICODE_STRING = UNICODE_STRING {
+        Length: 4,
+        MaximumLength: 6,
+        Buffer: RTLPDOUBLESLASHPREFIX_BUF.as_ptr() as *mut u16,
+    };
     static RTLPDEFAULTEXTENSION_BUF: [u16; 5] = [0x002E, 0x0044, 0x004C, 0x004C, 0x0000];
     #[no_mangle]
-    pub static RtlpDefaultExtension: UNICODE_STRING = UNICODE_STRING { Length: 8, MaximumLength: 10, Buffer: RTLPDEFAULTEXTENSION_BUF.as_ptr() as *mut u16 };
-    static RTLPDOTLOCAL_BUF: [u16; 8] = [0x002E, 0x004C, 0x006F, 0x0063, 0x0061, 0x006C, 0x005C, 0x0000];
+    pub static RtlpDefaultExtension: UNICODE_STRING = UNICODE_STRING {
+        Length: 8,
+        MaximumLength: 10,
+        Buffer: RTLPDEFAULTEXTENSION_BUF.as_ptr() as *mut u16,
+    };
+    static RTLPDOTLOCAL_BUF: [u16; 8] = [
+        0x002E, 0x004C, 0x006F, 0x0063, 0x0061, 0x006C, 0x005C, 0x0000,
+    ];
     #[no_mangle]
-    pub static RtlpDotLocal: UNICODE_STRING = UNICODE_STRING { Length: 14, MaximumLength: 16, Buffer: RTLPDOTLOCAL_BUF.as_ptr() as *mut u16 };
+    pub static RtlpDotLocal: UNICODE_STRING = UNICODE_STRING {
+        Length: 14,
+        MaximumLength: 16,
+        Buffer: RTLPDOTLOCAL_BUF.as_ptr() as *mut u16,
+    };
     static RTLPPATHDIVIDERS_BUF: [u16; 3] = [0x005C, 0x002F, 0x0000];
     #[no_mangle]
-    pub static RtlpPathDividers: UNICODE_STRING = UNICODE_STRING { Length: 4, MaximumLength: 6, Buffer: RTLPPATHDIVIDERS_BUF.as_ptr() as *mut u16 };
+    pub static RtlpPathDividers: UNICODE_STRING = UNICODE_STRING {
+        Length: 4,
+        MaximumLength: 6,
+        Buffer: RTLPPATHDIVIDERS_BUF.as_ptr() as *mut u16,
+    };
 
     #[no_mangle]
     pub static mut RtlpCurDirRef: PRTLP_CURDIR_REF = core::ptr::null_mut();
@@ -8988,11 +9047,8 @@ mod path_wave {
         Length: ULONG,
         NameInvalid: PBOOLEAN,
     ) -> NTSTATUS {
-        let Buffer: PWCHAR = rtl_heap_alloc(
-            heap_handle(),
-            0,
-            (*FileName).Length as usize,
-        ) as PWCHAR;
+        let Buffer: PWCHAR =
+            rtl_heap_alloc(heap_handle(), 0, (*FileName).Length as usize) as PWCHAR;
         let Status: NTSTATUS;
 
         if !Buffer.is_null() {
@@ -9007,7 +9063,11 @@ mod path_wave {
             *Buffer.offset((Length as usize / core::mem::size_of::<u16>()) as isize) = '.' as u16;
             *Buffer.offset((Length as usize / core::mem::size_of::<u16>() + 1) as isize) = 0u16;
 
-            *NameInvalid = if RtlDoesFileExists_U(Buffer) != 0 { 0u8 } else { 1u8 };
+            *NameInvalid = if RtlDoesFileExists_U(Buffer) != 0 {
+                0u8
+            } else {
+                1u8
+            };
 
             Status = rtl_heap_free(heap_handle(), 0, Buffer as *mut core::ffi::c_void) as NTSTATUS;
         } else {
@@ -9018,7 +9078,11 @@ mod path_wave {
         Status
     }
 
-    unsafe fn RtlpCollapsePath(Path: PWSTR, mark: ULONG, SkipTrailingPathSeparators: BOOLEAN) -> ULONG {
+    unsafe fn RtlpCollapsePath(
+        Path: PWSTR,
+        mark: ULONG,
+        SkipTrailingPathSeparators: BOOLEAN,
+    ) -> ULONG {
         let mut p: PWSTR;
         let mut next: PWSTR;
 
@@ -9128,7 +9192,10 @@ mod path_wave {
             p = p.offset(-1);
         }
 
-        RtlZeroMemory(p as *mut _, ((EndBuffer.offset_from(p) + 1) as usize) * core::mem::size_of::<u16>());
+        RtlZeroMemory(
+            p as *mut _,
+            ((EndBuffer.offset_from(p) + 1) as usize) * core::mem::size_of::<u16>(),
+        );
 
         PathLength = p.offset_from(Path) as usize;
         (PathLength * core::mem::size_of::<u16>()) as ULONG
@@ -9155,7 +9222,9 @@ mod path_wave {
         Flags: ULONG,
         Type: ULONG,
         UnicodeStringOrUnicodeStringBuffer: PVOID,
-        LengthFunction: Option<unsafe extern "system" fn(ULONG, PUNICODE_STRING, PULONG) -> NTSTATUS>,
+        LengthFunction: Option<
+            unsafe extern "system" fn(ULONG, PUNICODE_STRING, PULONG) -> NTSTATUS,
+        >,
     ) -> NTSTATUS {
         let String: PUNICODE_STRING;
         let mut Length: ULONG;
@@ -9167,7 +9236,9 @@ mod path_wave {
         if Type as usize == core::mem::size_of::<UNICODE_STRING>() {
             String = UnicodeStringOrUnicodeStringBuffer as PUNICODE_STRING;
         } else if Type as usize == core::mem::size_of::<RTL_UNICODE_STRING_BUFFER>() {
-            String = core::ptr::addr_of_mut!((*(UnicodeStringOrUnicodeStringBuffer as PRTL_UNICODE_STRING_BUFFER)).String);
+            String = core::ptr::addr_of_mut!(
+                (*(UnicodeStringOrUnicodeStringBuffer as PRTL_UNICODE_STRING_BUFFER)).String
+            );
         } else {
             return STATUS_INVALID_PARAMETER;
         }
@@ -9192,7 +9263,11 @@ mod path_wave {
     }
 
     #[no_mangle]
-    pub unsafe extern "system" fn RtlGetLengthWithoutLastFullDosOrNtPathElement(Flags: ULONG, Path: PCUNICODE_STRING, LengthOut: *mut ULONG) -> NTSTATUS {
+    pub unsafe extern "system" fn RtlGetLengthWithoutLastFullDosOrNtPathElement(
+        Flags: ULONG,
+        Path: PCUNICODE_STRING,
+        LengthOut: *mut ULONG,
+    ) -> NTSTATUS {
         let is_path_separator = |x: u16| x == b'\\' as u16 || x == b'/' as u16;
 
         let mut PathDividersBuffer: [u16; 2] = [b'\\' as u16, b'/' as u16];
@@ -9240,12 +9315,17 @@ mod path_wave {
             Position = 0;
         }
 
-        if Position != 0 && (Position as usize + core::mem::size_of::<u16>()) == (*Path).Length as usize {
+        if Position != 0
+            && (Position as usize + core::mem::size_of::<u16>()) == (*Path).Length as usize
+        {
             let mut Tmp: UNICODE_STRING = *Path;
             Tmp.Length = Position;
 
             while (Tmp.Length as usize) > core::mem::size_of::<u16>()
-                && is_path_separator(*Tmp.Buffer.offset((Tmp.Length as usize / core::mem::size_of::<u16>()) as isize))
+                && is_path_separator(
+                    *Tmp.Buffer
+                        .offset((Tmp.Length as usize / core::mem::size_of::<u16>()) as isize),
+                )
             {
                 Tmp.Length -= core::mem::size_of::<u16>() as u16;
             }
@@ -9265,7 +9345,8 @@ mod path_wave {
         }
 
         if Position != 0 {
-            while Position > 1 && is_path_separator(*(*Path).Buffer.offset((Position - 1) as isize)) {
+            while Position > 1 && is_path_separator(*(*Path).Buffer.offset((Position - 1) as isize))
+            {
                 Position -= 1;
             }
         }
@@ -9329,7 +9410,9 @@ mod path_wave {
             DllNameOnly = *DllName;
         } else {
             Pos += core::mem::size_of::<u16>() as u16;
-            DllNameOnly.Buffer = (*DllName).Buffer.add(Pos as usize / core::mem::size_of::<u16>());
+            DllNameOnly.Buffer = (*DllName)
+                .Buffer
+                .add(Pos as usize / core::mem::size_of::<u16>());
             DllNameOnly.Length = (*DllName).Length - Pos;
             DllNameOnly.MaximumLength = (*DllName).MaximumLength - Pos;
         }
@@ -9349,7 +9432,11 @@ mod path_wave {
         RequiredSize = ImagePathName.Length as ULONG
             + RtlpDotLocal.Length as ULONG
             + DllNameOnly.Length as ULONG
-            + (if HasExtension != 0 { 0 } else { RtlpDefaultExtension.Length as ULONG })
+            + (if HasExtension != 0 {
+                0
+            } else {
+                RtlpDefaultExtension.Length as ULONG
+            })
             + core::mem::size_of::<u16>() as ULONG;
 
         if RequiredSize > UNICODE_STRING_MAX_BYTES {
@@ -9395,7 +9482,11 @@ mod path_wave {
 
             RequiredSize = ImagePathName.Length as ULONG
                 + DllNameOnly.Length as ULONG
-                + (if HasExtension != 0 { 0 } else { RtlpDefaultExtension.Length as ULONG })
+                + (if HasExtension != 0 {
+                    0
+                } else {
+                    RtlpDefaultExtension.Length as ULONG
+                })
                 + core::mem::size_of::<u16>() as ULONG;
 
             if RequiredSize >= UNICODE_STRING_MAX_BYTES {
@@ -9493,9 +9584,8 @@ mod path_wave {
         while FileNameLength != 0 && c == b' ' as u16 {
             FileNameLength -= core::mem::size_of::<WCHAR>() as ULONG;
             if FileNameLength != 0 {
-                c = *FileNameBuffer.offset(
-                    (FileNameLength / core::mem::size_of::<WCHAR>() as ULONG - 1) as isize,
-                );
+                c = *FileNameBuffer
+                    .offset((FileNameLength / core::mem::size_of::<WCHAR>() as ULONG - 1) as isize);
             }
         }
 
@@ -9565,8 +9655,8 @@ mod path_wave {
         RtlAcquirePebLock();
 
         let peb = RtlGetCurrentPeb();
-        CurDirName =
-            core::ptr::addr_of!((*(*peb).ProcessParameters).CurrentDirectory.DosPath) as PCUNICODE_STRING;
+        CurDirName = core::ptr::addr_of!((*(*peb).ProcessParameters).CurrentDirectory.DosPath)
+            as PCUNICODE_STRING;
 
         'quit: {
             loop {
@@ -9622,8 +9712,7 @@ mod path_wave {
                             );
                             if qStatus == STATUS_SUCCESS {
                                 *EnvVarValue.Buffer.offset(
-                                    (EnvVarValue.Length as usize
-                                        / core::mem::size_of::<WCHAR>())
+                                    (EnvVarValue.Length as usize / core::mem::size_of::<WCHAR>())
                                         as isize,
                                 ) = b'\\' as u16;
                                 Prefix = EnvVarValue.Buffer;
@@ -9701,12 +9790,17 @@ mod path_wave {
             }
 
             if PrefixLength != 0 {
-                core::ptr::copy(Prefix, Buffer, PrefixLength as usize / core::mem::size_of::<WCHAR>());
+                core::ptr::copy(
+                    Prefix,
+                    Buffer,
+                    PrefixLength as usize / core::mem::size_of::<WCHAR>(),
+                );
             }
             core::ptr::copy(
                 Source,
                 Buffer.offset((PrefixLength / core::mem::size_of::<WCHAR>() as ULONG) as isize),
-                (SourceLength as usize + core::mem::size_of::<WCHAR>()) / core::mem::size_of::<WCHAR>(),
+                (SourceLength as usize + core::mem::size_of::<WCHAR>())
+                    / core::mem::size_of::<WCHAR>(),
             );
 
             Prefix = core::ptr::null_mut();
@@ -9783,7 +9877,8 @@ mod path_wave {
             (NewBuffer as PCHAR).add(RtlpDosDevicesPrefix.Length as usize) as PVOID,
             (*DosPath)
                 .Buffer
-                .add(RtlpDosDevicesPrefix.Length as usize / core::mem::size_of::<WCHAR>()) as PVOID,
+                .add(RtlpDosDevicesPrefix.Length as usize / core::mem::size_of::<WCHAR>())
+                as PVOID,
             ((*DosPath).Length - RtlpDosDevicesPrefix.Length) as usize,
         );
         *NewBuffer.add(DosLength as usize / core::mem::size_of::<WCHAR>()) = 0;
@@ -9901,7 +9996,10 @@ mod path_wave {
             core::ptr::addr_of_mut!(NameInvalid),
             core::ptr::addr_of_mut!(InputPathType),
         );
-        if (NameInvalid != 0) || (PathLength == 0) || (PathLength > MAX_PATH * core::mem::size_of::<u16>() as ULONG) {
+        if (NameInvalid != 0)
+            || (PathLength == 0)
+            || (PathLength > MAX_PATH * core::mem::size_of::<u16>() as ULONG)
+        {
             rtl_heap_free(heap_handle(), 0, NewBuffer as PVOID);
             RtlReleasePebLock();
             return STATUS_OBJECT_NAME_INVALID;
@@ -9923,8 +10021,13 @@ mod path_wave {
             _ => (PrefixLength, PrefixBuffer, PrefixCut),
         };
 
-        core::ptr::copy_nonoverlapping::<u8>(PrefixBuffer as *const u8, NewBuffer as *mut u8, PrefixLength as usize);
-        core::ptr::copy_nonoverlapping::<u8>(Buffer.offset(PrefixCut as isize) as *const u8,
+        core::ptr::copy_nonoverlapping::<u8>(
+            PrefixBuffer as *const u8,
+            NewBuffer as *mut u8,
+            PrefixLength as usize,
+        );
+        core::ptr::copy_nonoverlapping::<u8>(
+            Buffer.offset(PrefixCut as isize) as *const u8,
             (NewBuffer as *mut u8).offset(PrefixLength as isize),
             (PathLength - PrefixCut * core::mem::size_of::<u16>() as ULONG) as usize,
         );
@@ -9940,7 +10043,11 @@ mod path_wave {
         if !PartName.is_null() && !(*PartName).is_null() {
             Status = RtlInitUnicodeStringEx(core::ptr::addr_of_mut!(PartNameString), *PartName);
             if NT_SUCCESS(Status) {
-                *PartName = NewBuffer.offset((LengthChars - (PartNameString.Length / core::mem::size_of::<u16>() as u16) as ULONG) as isize) as PCWSTR;
+                *PartName = NewBuffer.offset(
+                    (LengthChars
+                        - (PartNameString.Length / core::mem::size_of::<u16>() as u16) as ULONG)
+                        as isize,
+                ) as PCWSTR;
             } else {
                 rtl_heap_free(heap_handle(), 0, NewBuffer as PVOID);
                 RtlReleasePebLock();
@@ -9987,12 +10094,16 @@ mod path_wave {
                             + FullPath.Length as usize
                             - PrefixCut as usize * core::mem::size_of::<u16>())
                             as PWSTR;
-                        (*RelativeName).RelativeName.Length = (PathLength - FullPath.Length as ULONG) as u16;
+                        (*RelativeName).RelativeName.Length =
+                            (PathLength - FullPath.Length as ULONG) as u16;
                         if *(*RelativeName).RelativeName.Buffer.offset(0) == b'\\' as u16 {
-                            (*RelativeName).RelativeName.Buffer = (*RelativeName).RelativeName.Buffer.offset(1);
-                            (*RelativeName).RelativeName.Length -= core::mem::size_of::<u16>() as u16;
+                            (*RelativeName).RelativeName.Buffer =
+                                (*RelativeName).RelativeName.Buffer.offset(1);
+                            (*RelativeName).RelativeName.Length -=
+                                core::mem::size_of::<u16>() as u16;
                         }
-                        (*RelativeName).RelativeName.MaximumLength = (*RelativeName).RelativeName.Length;
+                        (*RelativeName).RelativeName.MaximumLength =
+                            (*RelativeName).RelativeName.Length;
 
                         if HaveRelative == 0 {
                             (*RelativeName).ContainingDirectory = (*CurrentDirectory).Handle;
@@ -10001,7 +10112,9 @@ mod path_wave {
 
                         (*RelativeName).CurDirRef = RtlpCurDirRef;
                         if !(*RelativeName).CurDirRef.is_null() {
-                            InterlockedIncrement(core::ptr::addr_of_mut!((*RtlpCurDirRef).RefCount));
+                            InterlockedIncrement(core::ptr::addr_of_mut!(
+                                (*RtlpCurDirRef).RefCount
+                            ));
                         }
 
                         (*RelativeName).ContainingDirectory = (*CurrentDirectory).Handle;
@@ -10151,7 +10264,10 @@ mod path_wave {
     #[no_mangle]
     pub unsafe extern "system" fn RtlReleaseRelativeName(RelativeName: PRTL_RELATIVE_NAME_U) {
         if !(*RelativeName).CurDirRef.is_null() {
-            if InterlockedDecrement(core::ptr::addr_of_mut!((*(*RelativeName).CurDirRef).RefCount)) == 0 {
+            if InterlockedDecrement(core::ptr::addr_of_mut!(
+                (*(*RelativeName).CurDirRef).RefCount
+            )) == 0
+            {
                 NtClose((*(*RelativeName).CurDirRef).Handle);
                 rtl_heap_free(heap_handle(), 0, (*RelativeName).CurDirRef as PVOID);
             }
@@ -10245,11 +10361,9 @@ mod path_wave {
                 (*CurDir).Handle = core::ptr::null_mut();
             }
 
-            FullPath.Buffer = rtl_heap_alloc(
-                heap_handle(),
-                0,
-                (*CurDir).DosPath.MaximumLength as SIZE_T,
-            ) as PWSTR;
+            FullPath.Buffer =
+                rtl_heap_alloc(heap_handle(), 0, (*CurDir).DosPath.MaximumLength as SIZE_T)
+                    as PWSTR;
             if FullPath.Buffer.is_null() {
                 Status = STATUS_NO_MEMORY;
                 break 'leave_block;
@@ -10300,8 +10414,9 @@ mod path_wave {
             if ((*CurDir).Handle as ULONG_PTR) & (RTL_CURDIR_ALL_FLAGS as ULONG_PTR)
                 == RTL_CURDIR_ALL_FLAGS as ULONG_PTR
             {
-                CurDirHandle =
-                    (((*CurDir).Handle as ULONG_PTR) & !(RTL_CURDIR_ALL_FLAGS as ULONG_PTR)) as HANDLE;
+                CurDirHandle = (((*CurDir).Handle as ULONG_PTR)
+                    & !(RTL_CURDIR_ALL_FLAGS as ULONG_PTR))
+                    as HANDLE;
                 (*CurDir).Handle = core::ptr::null_mut();
 
                 Status = NtQueryVolumeInformationFile(
@@ -10341,13 +10456,15 @@ mod path_wave {
             }
 
             if FileFsDeviceInfo.Characteristics & FILE_REMOVABLE_MEDIA != 0 {
-                CurDirHandle =
-                    ((CurDirHandle as ULONG_PTR) | (RTL_CURDIR_IS_REMOVABLE as ULONG_PTR)) as HANDLE;
+                CurDirHandle = ((CurDirHandle as ULONG_PTR)
+                    | (RTL_CURDIR_IS_REMOVABLE as ULONG_PTR))
+                    as HANDLE;
             }
 
             FullPath.Length = FullPathLength as USHORT;
 
-            if *FullPath.Buffer.offset((CharLength - 1) as isize) != OBJ_NAME_PATH_SEPARATOR as u16 {
+            if *FullPath.Buffer.offset((CharLength - 1) as isize) != OBJ_NAME_PATH_SEPARATOR as u16
+            {
                 if (CharLength + 1) * core::mem::size_of::<u16>() as ULONG > SavedLength {
                     Status = STATUS_NAME_TOO_LONG;
                     break 'leave_block;
@@ -10384,7 +10501,8 @@ mod path_wave {
             core::ptr::copy_nonoverlapping(
                 FullPath.Buffer,
                 (*CurDir).DosPath.Buffer,
-                (FullPath.Length as usize + core::mem::size_of::<u16>()) / core::mem::size_of::<u16>(),
+                (FullPath.Length as usize + core::mem::size_of::<u16>())
+                    / core::mem::size_of::<u16>(),
             );
             (*CurDir).DosPath.Length = FullPath.Length;
 
@@ -10462,13 +10580,7 @@ mod path_wave {
     ) -> ULONG {
         let mut PathType: RTL_PATH_TYPE = 0;
 
-        RtlGetFullPathName_UEx(
-            FileName as PWSTR,
-            Size,
-            Buffer,
-            ShortName,
-            &mut PathType,
-        )
+        RtlGetFullPathName_UEx(FileName as PWSTR, Size, Buffer, ShortName, &mut PathType)
     }
 
     #[no_mangle]
@@ -10578,12 +10690,15 @@ mod path_wave {
                 Len += (*AlternatePrefix).Length;
             }
 
-            let Status = RtlEnsureBufferSize(0, core::ptr::addr_of_mut!((*Path).ByteBuffer), Len as ULONG);
+            let Status =
+                RtlEnsureBufferSize(0, core::ptr::addr_of_mut!((*Path).ByteBuffer), Len as ULONG);
             if !NT_SUCCESS(Status) {
                 return Status;
             }
 
-            if (Len as ULONG) + (core::mem::size_of::<u16>() as ULONG) <= ((*Path).ByteBuffer.Size as ULONG) {
+            if (Len as ULONG) + (core::mem::size_of::<u16>() as ULONG)
+                <= ((*Path).ByteBuffer.Size as ULONG)
+            {
                 if !AlternatePrefix.is_null() {
                     memcpy(
                         (*Path).ByteBuffer.Buffer as *mut _,
@@ -10591,21 +10706,36 @@ mod path_wave {
                         (*AlternatePrefix).Length as usize,
                     );
                     memmove(
-                        (*Path).ByteBuffer.Buffer.offset((*AlternatePrefix).Length as isize) as *mut _,
-                        (*Path).ByteBuffer.Buffer.offset((*UsePrefix).Length as isize) as *const _,
+                        (*Path)
+                            .ByteBuffer
+                            .Buffer
+                            .offset((*AlternatePrefix).Length as isize)
+                            as *mut _,
+                        (*Path)
+                            .ByteBuffer
+                            .Buffer
+                            .offset((*UsePrefix).Length as isize)
+                            as *const _,
                         (Len - (*AlternatePrefix).Length) as usize,
                     );
                 } else {
                     memmove(
                         (*Path).ByteBuffer.Buffer as *mut _,
-                        (*Path).ByteBuffer.Buffer.offset((*UsePrefix).Length as isize) as *const _,
+                        (*Path)
+                            .ByteBuffer
+                            .Buffer
+                            .offset((*UsePrefix).Length as isize)
+                            as *const _,
                         Len as usize,
                     );
                 }
                 (*Path).String.Buffer = (*Path).ByteBuffer.Buffer as PWSTR;
                 (*Path).String.Length = Len;
                 (*Path).String.MaximumLength = ((*Path).ByteBuffer.Size as ULONG) as USHORT;
-                *(*Path).String.Buffer.offset((Len / core::mem::size_of::<u16>() as USHORT) as isize) = 0;
+                *(*Path)
+                    .String
+                    .Buffer
+                    .offset((Len / core::mem::size_of::<u16>() as USHORT) as isize) = 0;
             }
             return STATUS_SUCCESS;
         }
@@ -10754,13 +10884,15 @@ mod path_wave {
             }
 
             /* Copy the file name and check if an extension is needed */
-            core::ptr::copy_nonoverlapping::<u8>(FileName as *const u8,
+            core::ptr::copy_nonoverlapping::<u8>(
+                FileName as *const u8,
                 BufferStart as *mut u8,
                 FileNameLength as usize,
             );
             if ExtensionLength != 0 {
                 /* Copy the extension too */
-                core::ptr::copy_nonoverlapping::<u8>(Extension as *const u8,
+                core::ptr::copy_nonoverlapping::<u8>(
+                    Extension as *const u8,
                     (BufferStart as *mut u8).add(FileNameLength as usize),
                     (ExtensionLength + core::mem::size_of::<u16>() as ULONG) as usize,
                 );
@@ -10824,7 +10956,8 @@ mod path_wave {
 
         if StaticString.is_null() {
             StaticLength = (260 * core::mem::size_of::<u16>()) as USHORT;
-            StaticBuffer = RtlpAllocateStringMemory(260 * core::mem::size_of::<u16>() as u32, TAG_USTR);
+            StaticBuffer =
+                RtlpAllocateStringMemory(260 * core::mem::size_of::<u16>() as u32, TAG_USTR);
             if StaticBuffer.is_null() {
                 return STATUS_NO_MEMORY;
             }
@@ -10844,7 +10977,9 @@ mod path_wave {
 
         'quickie: {
             if Length == 0 {
-                DbgPrint(b"%s(%d) - RtlGetFullPathName_Ustr() returned 0\n\0".as_ptr() as *const i8);
+                DbgPrint(
+                    b"%s(%d) - RtlGetFullPathName_Ustr() returned 0\n\0".as_ptr() as *const i8,
+                );
                 Status = STATUS_OBJECT_NAME_INVALID;
                 break 'quickie;
             }
@@ -10906,7 +11041,10 @@ mod path_wave {
                     PathType,
                 );
                 if Length == 0 {
-                    DbgPrint(b"%s line %d: RtlGetFullPathName_Ustr() returned 0\n\0".as_ptr() as *const i8);
+                    DbgPrint(
+                        b"%s line %d: RtlGetFullPathName_Ustr() returned 0\n\0".as_ptr()
+                            as *const i8,
+                    );
                     Status = STATUS_OBJECT_NAME_INVALID;
                     break 'release;
                 }
@@ -10933,16 +11071,15 @@ mod path_wave {
                     break 'release;
                 }
 
-                TempDynamicString.Buffer = RtlpAllocateStringMemory(
-                    Length + core::mem::size_of::<u16>() as u32,
-                    TAG_USTR,
-                );
+                TempDynamicString.Buffer =
+                    RtlpAllocateStringMemory(Length + core::mem::size_of::<u16>() as u32, TAG_USTR);
                 if TempDynamicString.Buffer.is_null() {
                     Status = STATUS_NO_MEMORY;
                     break 'release;
                 }
 
-                TempDynamicString.MaximumLength = Length as USHORT + core::mem::size_of::<u16>() as USHORT;
+                TempDynamicString.MaximumLength =
+                    Length as USHORT + core::mem::size_of::<u16>() as USHORT;
                 Length = RtlGetFullPathName_Ustr(
                     FileName,
                     Length,
@@ -10952,7 +11089,10 @@ mod path_wave {
                     PathType,
                 );
                 if Length == 0 {
-                    DbgPrint(b"%s line %d: RtlGetFullPathName_Ustr() returned 0\n\0".as_ptr() as *const i8);
+                    DbgPrint(
+                        b"%s line %d: RtlGetFullPathName_Ustr() returned 0\n\0".as_ptr()
+                            as *const i8,
+                    );
                     Status = STATUS_OBJECT_NAME_INVALID;
                     break 'release;
                 }
@@ -11003,7 +11143,9 @@ mod path_wave {
             && Status != STATUS_NO_SUCH_FILE
             && Status != STATUS_BUFFER_TOO_SMALL
         {
-            DbgPrint(b"RTL: %s - failing on filename %wZ with status %08lx\n\0".as_ptr() as *const i8);
+            DbgPrint(
+                b"RTL: %s - failing on filename %wZ with status %08lx\n\0".as_ptr() as *const i8,
+            );
         }
 
         Status
@@ -11044,9 +11186,15 @@ mod path_wave {
         );
 
         /* Initialize optional arguments */
-        if !FullNameOut.is_null() { *FullNameOut = core::ptr::null_mut(); }
-        if !FilePartSize.is_null() { *FilePartSize = 0; }
-        if !LengthNeeded.is_null() { *LengthNeeded = 0; }
+        if !FullNameOut.is_null() {
+            *FullNameOut = core::ptr::null_mut();
+        }
+        if !FilePartSize.is_null() {
+            *FilePartSize = 0;
+        }
+        if !LengthNeeded.is_null() {
+            *LengthNeeded = 0;
+        }
         if !DynamicString.is_null() {
             (*DynamicString).Length = 0;
             (*DynamicString).MaximumLength = 0;
@@ -11102,7 +11250,9 @@ mod path_wave {
                         );
                         if NT_SUCCESS(Status) {
                             /* We found the SxS path, return it */
-                            if !FullNameOut.is_null() { *FullNameOut = FullIsolatedPath; }
+                            if !FullNameOut.is_null() {
+                                *FullNameOut = FullIsolatedPath;
+                            }
                             break 'quickie;
                         } else if Status != STATUS_SXS_KEY_NOT_FOUND {
                             /* Critical SxS error, fail */
@@ -11123,7 +11273,9 @@ mod path_wave {
                         while End > (*FileNameString).Buffer {
                             /* If we find a path separator, there's no extension */
                             End = End.sub(1);
-                            if is_path_separator(*End) { break; }
+                            if is_path_separator(*End) {
+                                break;
+                            }
 
                             /* Otherwise, did we find an extension dot? */
                             if *End == b'.' as u16 {
@@ -11148,10 +11300,14 @@ mod path_wave {
                         if *p == b';' as u16 {
                             /* This is the size of the path -- handle a trailing slash */
                             let mut PathSize = End.offset_from(p) as usize - 1;
-                            if PathSize != 0 && !is_path_separator(*End.sub(1)) { PathSize += 1; }
+                            if PathSize != 0 && !is_path_separator(*End.sub(1)) {
+                                PathSize += 1;
+                            }
 
                             /* Check if we found a bigger path than before */
-                            if PathSize > MaxPathSize { MaxPathSize = PathSize; }
+                            if PathSize > MaxPathSize {
+                                MaxPathSize = PathSize;
+                            }
 
                             /* Keep going with the path after this path separator */
                             End = p;
@@ -11160,8 +11316,12 @@ mod path_wave {
 
                     /* This is the trailing path, run the same code as above */
                     let mut PathSize = End.offset_from(p) as usize;
-                    if PathSize != 0 && !is_path_separator(*End.sub(1)) { PathSize += 1; }
-                    if PathSize > MaxPathSize { MaxPathSize = PathSize; }
+                    if PathSize != 0 && !is_path_separator(*End.sub(1)) {
+                        PathSize += 1;
+                    }
+                    if PathSize > MaxPathSize {
+                        MaxPathSize = PathSize;
+                    }
 
                     /* Finally, convert the largest path size into WCHAR */
                     MaxPathSize *= core::mem::size_of::<u16>();
@@ -11213,7 +11373,9 @@ mod path_wave {
                             break 'quickie;
                         }
 
-                        if (SegmentSize + ExtensionLength as usize + (*FileNameString).Length as usize)
+                        if (SegmentSize
+                            + ExtensionLength as usize
+                            + (*FileNameString).Length as usize)
                             > (UNICODE_STRING_MAX_BYTES as usize - core::mem::size_of::<u16>())
                         {
                             Status = STATUS_INTERNAL_ERROR;
@@ -11238,8 +11400,9 @@ mod path_wave {
                     );
 
                     /* Get to the end of the string, and add the trailing slash if missing */
-                    let mut CandidateEnd =
-                        StaticCandidateString.Buffer.add(ByteCount / core::mem::size_of::<u16>());
+                    let mut CandidateEnd = StaticCandidateString
+                        .Buffer
+                        .add(ByteCount / core::mem::size_of::<u16>());
                     if SegmentSize != 0 && SegmentSize != ByteCount {
                         *CandidateEnd = OBJ_NAME_PATH_SEPARATOR;
                         CandidateEnd = CandidateEnd.add(1);
@@ -11251,8 +11414,8 @@ mod path_wave {
                         (*FileNameString).Buffer as *const core::ffi::c_void,
                         (*FileNameString).Length as usize,
                     );
-                    CandidateEnd =
-                        CandidateEnd.add((*FileNameString).Length as usize / core::mem::size_of::<u16>());
+                    CandidateEnd = CandidateEnd
+                        .add((*FileNameString).Length as usize / core::mem::size_of::<u16>());
 
                     /* Check if there was an extension */
                     if !ExtensionString.is_null() {
@@ -11320,7 +11483,9 @@ mod path_wave {
                         while End > p {
                             /* If there's a path separator, there's no extension */
                             End = End.sub(1);
-                            if is_path_separator(*End) { break; }
+                            if is_path_separator(*End) {
+                                break;
+                            }
 
                             /* Otherwise, did we find an extension dot? */
                             if *End == b'.' as u16 {
@@ -11361,10 +11526,8 @@ mod path_wave {
                     RtlAppendUnicodeStringToString(&mut StaticCandidateString, ExtensionString);
 
                     /* And check if this file now exists */
-                    if RtlDoesFileExists_UstrEx(
-                        core::ptr::addr_of!(StaticCandidateString),
-                        1u8,
-                    ) == 0
+                    if RtlDoesFileExists_UstrEx(core::ptr::addr_of!(StaticCandidateString), 1u8)
+                        == 0
                     {
                         /* Still no joy, fail out */
                         Status = STATUS_NO_SUCH_FILE;
@@ -11399,7 +11562,9 @@ mod path_wave {
         }
 
         /* Quickie: anything that was not an error, turn into STATUS_SUCCESS */
-        if NT_SUCCESS(Status) { Status = STATUS_SUCCESS; }
+        if NT_SUCCESS(Status) {
+            Status = STATUS_SUCCESS;
+        }
 
         /* Check if we had a dynamic string */
         if !StaticCandidateString.Buffer.is_null()
@@ -11417,12 +11582,12 @@ mod path_wave {
         RtlDoesFileExists_UEx(FileName, 1u8)
     }
 
-
     // ============================================================================
 }
 
 // Re-export the device-name statics into the cabi top-level namespace so the
 // 6 lexical fns above (RtlIsDosDeviceName_Ustr etc.) resolve them by bare name.
-use path_wave::{RtlpDosSlashCONDevice, DeviceRootString, RtlpDosCONDevice,
-    RtlpDosLPTDevice, RtlpDosCOMDevice, RtlpDosPRNDevice, RtlpDosAUXDevice,
-    RtlpDosNULDevice};
+use path_wave::{
+    DeviceRootString, RtlpDosAUXDevice, RtlpDosCOMDevice, RtlpDosCONDevice, RtlpDosLPTDevice,
+    RtlpDosNULDevice, RtlpDosPRNDevice, RtlpDosSlashCONDevice,
+};
