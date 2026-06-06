@@ -238,9 +238,31 @@ pub const CM_RESOURCE_MEMORY_WRITEABILITY_MASK: u32 = 0x0003;
 pub const STATUS_DEVICE_DOES_NOT_EXIST: NTSTATUS = 0xC00000C0u32 as NTSTATUS;
 pub const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC0000182u32 as NTSTATUS;
 
-// CRT `_stricmp` — provided by the kernel CRT at link time; just declare it.
-extern "C" {
-    pub fn _stricmp(a: *const CHAR, b: *const CHAR) -> i32;
+#[inline]
+fn ascii_lower(ch: u8) -> u8 {
+    if ch >= b'A' && ch <= b'Z' {
+        ch + (b'a' - b'A')
+    } else {
+        ch
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn _stricmp(a: *const CHAR, b: *const CHAR) -> i32 {
+    let mut pa = a;
+    let mut pb = b;
+
+    loop {
+        let ca = ascii_lower(*pa as u8);
+        let cb = ascii_lower(*pb as u8);
+
+        if ca != cb || ca == 0 {
+            return ca as i32 - cb as i32;
+        }
+
+        pa = pa.add(1);
+        pb = pb.add(1);
+    }
 }
 
 /// `#define HalFindBusAddressTranslation HALPRIVATEDISPATCH->HalFindBusAddressTranslation`

@@ -459,7 +459,7 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
             _ => {
                 if ClientContext.is_null() {
                     ReplyMsg = core::ptr::null_mut();
-                    break;
+                    continue;
                 }
 
                 RequestMsg.ReturnValue = STATUS_PENDING;

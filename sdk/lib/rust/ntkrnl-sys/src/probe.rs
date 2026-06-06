@@ -18,7 +18,7 @@ use crate::base::*;
 type KPROCESSOR_MODE = i8;
 
 // NTSTATUS codes for probe failures.
-pub const STATUS_DATATYPE_MISALIGNMENT: NTSTATUS = 0xC0000082_u32 as i32;
+pub const STATUS_DATATYPE_MISALIGNMENT: NTSTATUS = 0x80000002_u32 as i32;
 pub const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as i32;
 
 extern "C" {
