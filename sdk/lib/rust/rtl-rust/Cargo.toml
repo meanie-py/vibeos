@@ -12,7 +12,7 @@ crate-type = ["staticlib"]
 
 [features]
 default = ["kernel"]
-kernel = ["rtl-strings/kernel", "rtl-heap/kernel"]
+kernel = ["rtl-strings/kernel", "rtl-heap/kernel", "rtl-threadpool/kernel"]
 user-atom-table = ["rtl-strings/user-atom-table"]
 
 [dependencies]
@@ -37,4 +37,5 @@ splaytree    = { path = "../splaytree" }
 uniprefix    = { path = "../uniprefix" }
 rtl-strings  = { path = "../rtl-strings", features = ["cabi"] }
 rtl-heap     = { path = "../rtl-heap", features = ["cabi"] }
+rtl-threadpool = { path = "../rtl-threadpool", features = ["cabi"] }
 time         = { path = "../time" }
