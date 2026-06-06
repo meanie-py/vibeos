@@ -82,6 +82,9 @@ members = [
     "winlogon-rust",
     "lsass-rust",
     "services-rust",
+    "midl-rt",
+    "svcctl-stub",
+    "winreg-stub",
 ]
 resolver = "2"
 

@@ -427,6 +427,59 @@ if(ARCH STREQUAL "amd64")
     )
 endif()
 
+# Wave MATH-i386: the i386 no-SSE math flip — the last arch to keep C/asm
+# math now joins amd64/arm64. cnt-rust compiles its WHOLE transcendental
+# surface on the no-SSE i386 kernel build (CR4.OSFXSR unset in Phase 0):
+# every exported symbol is `extern "C"`, whose `f64`/`f32` RETURN goes
+# through the x87 stack (ST(0)), not an xmm register, so it never needs the
+# `sse` target feature; the lone bit→float reinterpret routes through the
+# fb64/fb32 `transmute` shims because `f64::from_bits` has a Rust-ABI f64
+# return that WOULD need SSE (see the header in cabi/math.rs). So drop the
+# x87 asm + portable C that owned these symbols on i386, exactly as
+# amd64/arm64 did — cnt-rust (libcntpr_rust.a, now built unconditionally,
+# no `float` feature) is the sole provider.
+#
+# KEEP (cnt-rust does NOT provide these): the _CIxxx MSVC intrinsic
+# wrappers (ci*.c — they CALL the now-Rust libm fns: e.g. _CIsqrt→sqrt),
+# the i386 libm_sse2.c SSE-register wrappers, nexttowardf.c (80-bit
+# `long double` arg — cnt-rust gates nexttowardf out on x86), exp2f.c (f32
+# exp2 — cnt-rust has only the f64 exp2), _invoke_matherr.c, and the
+# integer/conversion asm (alldiv/allmul/…/ftol/ftol2/ftoul2 — not math
+# symbols). The cold-link is the oracle.
+if(ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        # all-arch-common float shims now Rust on i386 too
+        math/_chgsignf.c
+        math/scalbn.c
+        math/scalbnf.c
+        math/round.c
+        math/roundf.c
+        math/nextafter.c
+        math/nextafterf.c
+        math/sincos.c
+        # i386-specific C providers now Rust
+        math/fabs.c
+        math/fabsf.c
+        math/i386/ldexp.c
+    )
+    list(REMOVE_ITEM LIBCNTPR_ASM_SOURCE
+        # the 11 x87 libm asm (_sin/_cos/_tan/_atan/_atan2/_log/_log10/
+        # _pow/_sqrt/_ceil/_floor) — now cnt-rust. The integer 64-bit and
+        # float→int conversion asm stay (alldiv/allmul/ftol/… are kept).
+        math/i386/atan_asm.s
+        math/i386/atan2_asm.s
+        math/i386/ceil_asm.s
+        math/i386/cos_asm.s
+        math/i386/floor_asm.s
+        math/i386/log_asm.s
+        math/i386/log10_asm.s
+        math/i386/pow_asm.s
+        math/i386/sin_asm.s
+        math/i386/sqrt_asm.s
+        math/i386/tan_asm.s
+    )
+endif()
+
 # ── Wave CORE-OPS: i386 mem+string core ops — flip hand asm → cnt-rust ─
 # libcntpr-ONLY (REMOVE_ITEM from libcntpr's asm list, NOT from the
 # shared LIBCNTPR_{MEM,STRING}_ASM_SOURCE vars which also feed
@@ -486,8 +539,14 @@ set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/cnt-rust-target")
 if(ARCH STREQUAL "i386")
     set(RUST_TARGET "i686-pc-windows-gnu")
-    # i386 kernel runs no-SSE (CR4.OSFXSR unset in Phase 0); cnt-rust
-    # built WITHOUT the `float` feature (no by-value f64 ABI).
+    # i386 kernel runs no-SSE (CR4.OSFXSR unset in Phase 0). cnt-rust is
+    # built WITHOUT the `float` feature — but that now gates ONLY the
+    # core_rs forbid-unsafe surface (floatcvt/scanf/float-printf) which
+    # genuinely can't be bitcast no-SSE. The whole math surface
+    # (sin/cos/exp/… + f32 twins) is compiled unconditionally: it is
+    # no-SSE-safe via `extern "C"` x87 returns + the fb64/fb32 transmute
+    # shims (see cabi/math.rs), and the Wave MATH-i386 block above
+    # REMOVE_ITEMs the C/asm it replaces.
     set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
     set(CNT_RUST_FEATURES "")
 elseif(ARCH STREQUAL "amd64")

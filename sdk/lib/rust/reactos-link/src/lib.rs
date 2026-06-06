@@ -313,12 +313,6 @@ pub struct Linker {
     /// cportlib) — drops the `ninja <lib>` prerequisite.
     /// (archive-basename, source rel-paths). See `c_from_compile_db`.
     c_db_libs: Vec<(String, Vec<String>)>,
-    /// RPC server stubs generated AND compiled in-cargo: run cmake's recorded
-    /// `widl` codegen (from build.ninja) to emit `<name>.c`/`<name>.h` into
-    /// OUT_DIR, then compile the stub. Self-hosts the MIDL/widl codegen the
-    /// cargo link used to lean on cmake's `add_rpc_files` for. (idl-rel, name,
-    /// c-compile marker target). See `rpc_server_stub`.
-    rpc_stubs: Vec<(String, String, String)>,
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
     allow_stdcall_fixup: bool,
@@ -380,7 +374,6 @@ impl Linker {
             static_libs: Vec::new(),
             asm_archives: Vec::new(),
             c_db_libs: Vec::new(),
-            rpc_stubs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
             allow_stdcall_fixup: false,
@@ -628,28 +621,6 @@ impl Linker {
     pub fn c_from_compile_db(mut self, name: &str, sources: &[&str]) -> Self {
         self.c_db_libs
             .push((name.to_string(), sources.iter().map(|s| s.to_string()).collect()));
-        self
-    }
-
-    /// Generate AND compile an RPC server stub IN-cargo — self-hosting the
-    /// MIDL/`widl` codegen the cargo link otherwise leans on cmake's
-    /// `add_rpc_files` for. Replays cmake's recorded `widl` invocation (from
-    /// `build-<arch>/build.ninja`'s CUSTOM_COMMAND for `<name>.c`) with its
-    /// outputs redirected into OUT_DIR, then compiles the generated `<name>.c`
-    /// by replaying the cmake compile command (from compile_commands.json, marker
-    /// `CMakeFiles/<c_marker>.dir`) with the input swapped to our regenerated
-    /// copy. The generated `<name>.h` lands next to `<name>.c` so the stub's
-    /// `#include "<name>.h"` resolves to ours (no extra `-I`).
-    ///
-    /// `idl_rel` is the repo-relative `.idl`; `name` the output base (e.g.
-    /// `svcctl_s`); `c_marker` the cmake target whose compile_commands entry
-    /// compiles `<name>.c` (e.g. `services_c`). The cmake `add_rpc_files` +
-    /// `<c_marker>` target stay (they populate build.ninja + compile_commands.json
-    /// the replay reads); their generated `.c` is no longer the one linked. Needs
-    /// the cmake-built `host-tools/bin/widl`.
-    pub fn rpc_server_stub(mut self, idl_rel: &str, name: &str, c_marker: &str) -> Self {
-        self.rpc_stubs
-            .push((idl_rel.to_string(), name.to_string(), c_marker.to_string()));
         self
     }
 
@@ -959,107 +930,6 @@ impl Linker {
                     panic!("ar failed for c_from_compile_db {name}");
                 }
                 println!("cargo:rustc-link-arg={}", lib_a.display());
-            }
-        }
-        // ---- RPC server stubs generated + compiled in-cargo ----------
-        // Self-host the widl/MIDL codegen the cargo link used to lean on cmake's
-        // add_rpc_files for: replay cmake's recorded `widl` command (from
-        // build.ninja) with its -o outputs redirected into OUT_DIR, then compile
-        // the generated stub (compile_commands.json replay, input swapped to our
-        // regenerated copy). Same C-archive region as static_libs / c_db_libs.
-        if !self.rpc_stubs.is_empty() {
-            let widl = self.build_dir.join("host-tools/bin/widl");
-            if !widl.exists() {
-                panic!(
-                    "rpc_server_stub needs {} — run a cmake build first (the host-tools \
-                     widl is built by the host-tools ExternalProject)",
-                    widl.display()
-                );
-            }
-            let ninja_path = self.build_dir.join("build.ninja");
-            let ninja = std::fs::read_to_string(&ninja_path)
-                .unwrap_or_else(|e| panic!("rpc_server_stub needs {}: {e}", ninja_path.display()));
-            let db_path = self.build_dir.join("compile_commands.json");
-            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
-                panic!(
-                    "rpc_server_stub needs {} (-DCMAKE_EXPORT_COMPILE_COMMANDS=ON): {e}",
-                    db_path.display()
-                )
-            });
-            let entries = parse_ccdb(&db_text);
-            for (idl_rel, name, c_marker) in &self.rpc_stubs {
-                let out_sub = self.obj_dir().join(format!("rpc-{name}"));
-                std::fs::create_dir_all(&out_sub).ok();
-                let gen_c = out_sub.join(format!("{name}.c"));
-                let gen_h = out_sub.join(format!("{name}.h"));
-                // 1. Replay cmake's widl command (stub .c + .h invocations),
-                //    redirecting the two `-o <...>.{c,h}` to OUR OUT_DIR paths.
-                let raw = widl_command_from_ninja(&ninja, name).unwrap_or_else(|| {
-                    panic!(
-                        "no widl CUSTOM_COMMAND for {name}.c in build.ninja — is \
-                         add_rpc_files(server) wired for {name}?"
-                    )
-                });
-                let cmd = rewrite_widl_outputs(
-                    &raw,
-                    name,
-                    gen_c.to_str().expect("utf8 gen .c path"),
-                    gen_h.to_str().expect("utf8 gen .h path"),
-                );
-                let status = Command::new("sh")
-                    .arg("-c")
-                    .arg(&cmd)
-                    .status()
-                    .unwrap_or_else(|e| panic!("run widl for {name}: {e}"));
-                if !status.success() {
-                    panic!("rpc_server_stub: widl codegen failed for {name}");
-                }
-                // 2. Compile the generated stub — replay the cmake compile command
-                //    for <name>.c (input swapped to our regenerated copy). The
-                //    generated <name>.h sits next to <name>.c so the stub's
-                //    `#include "<name>.h"` resolves to ours.
-                let marker = format!("CMakeFiles/{c_marker}.dir");
-                let suffix = format!("/{name}.c");
-                let (dir, ccmd, cmake_file) = lookup_cc_suffix(&entries, &suffix, &marker)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "no compile_commands.json entry for *{suffix} in target {c_marker} \
-                             (marker {marker})"
-                        )
-                    });
-                let obj = out_sub.join(format!("{name}.o"));
-                let mut args = transform_cc(&ccmd, obj.to_str().expect("utf8 obj path"));
-                for a in args.iter_mut() {
-                    if *a == cmake_file {
-                        *a = gen_c.to_str().expect("utf8").to_string();
-                    }
-                }
-                let status = Command::new(&args[0])
-                    .args(&args[1..])
-                    .current_dir(&dir)
-                    .status()
-                    .unwrap_or_else(|e| panic!("compile rpc stub {name}: {e}"));
-                if !status.success() {
-                    panic!("rpc_server_stub: compile failed for {name}");
-                }
-                // 3. Archive + link.
-                let lib_a = self.obj_dir().join(format!("lib{name}.a"));
-                let _ = std::fs::remove_file(&lib_a);
-                let status = Command::new(&ar)
-                    .arg("rcs")
-                    .arg(&lib_a)
-                    .arg(&obj)
-                    .status()
-                    .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
-                if !status.success() {
-                    panic!("ar failed for rpc_server_stub {name}");
-                }
-                println!("cargo:rustc-link-arg={}", lib_a.display());
-                println!(
-                    "cargo:rerun-if-changed={}",
-                    self.repo_root.join(idl_rel).display()
-                );
-                println!("cargo:rerun-if-changed={}", ninja_path.display());
             }
         }
         // Pre-expanded asm assembled into on-demand archives, IN the group
@@ -1662,6 +1532,100 @@ fn read_json_string(b: &[u8], start: usize) -> (String, usize) {
         }
     }
     (s, i)
+}
+
+/// Generate a Rust RPC **server** stub for `idl_rel` and return the path to the
+/// emitted `.rs` (for a stub crate's `build.rs` to hand to `include!`). This is
+/// the Rust-output counterpart of the `rpc_server_stub` link method: instead of
+/// compiling widl's generated C and linking it, we transliterate it to Rust
+/// (via `tools/widl_to_rust.py`, against the `midl-rt` crate) so the stub is
+/// pure Rust with no C in the tree.
+///
+/// Steps (all in `OUT_DIR/rpc-<name>/`):
+///   1. Replay cmake's recorded `widl` command (from `build.ninja`) → `<name>.c`
+///      + `<name>.h`.
+///   2. Compile `<name>.c` → `<name>.o` (compile_commands.json replay) PURELY to
+///      read the exact per-arch external symbol decorations (i386 stdcall `@N`,
+///      incl. by-value struct params) — the `.o` is never linked.
+///   3. Run `widl_to_rust.py` (`--symobj <name>.o --arch <a> --nm <llvm-nm>`)
+///      → `<name>.rs`.
+///
+/// `name` is the stub base (e.g. `svcctl_s`); `c_marker` the cmake target whose
+/// compile_commands entry compiles `<name>.c` (e.g. `services_c`). Designed to
+/// be called from a `build.rs`; reads `CARGO_CFG_TARGET_ARCH` / `CARGO_MANIFEST_DIR`
+/// / `OUT_DIR` from the environment exactly like `Linker::new`.
+pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> PathBuf {
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    let arch = arch_cfg(&target_arch);
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let repo_root = manifest_dir.ancestors().nth(4).expect("repo root").to_path_buf();
+    let build_dir = repo_root.join(format!("build-{}", arch.name));
+    let out_sub = PathBuf::from(env::var("OUT_DIR").unwrap()).join(format!("rpc-{name}"));
+    std::fs::create_dir_all(&out_sub).ok();
+
+    let widl = build_dir.join("host-tools/bin/widl");
+    if !widl.exists() {
+        panic!(
+            "generate_rpc_stub_rust needs {} — run a cmake build first (host-tools widl)",
+            widl.display()
+        );
+    }
+    let ninja_path = build_dir.join("build.ninja");
+    let ninja = std::fs::read_to_string(&ninja_path)
+        .unwrap_or_else(|e| panic!("need {}: {e}", ninja_path.display()));
+    let db_path = build_dir.join("compile_commands.json");
+    let db_text = std::fs::read_to_string(&db_path)
+        .unwrap_or_else(|e| panic!("need {} (CMAKE_EXPORT_COMPILE_COMMANDS): {e}", db_path.display()));
+    let entries = parse_ccdb(&db_text);
+
+    let gen_c = out_sub.join(format!("{name}.c"));
+    let gen_h = out_sub.join(format!("{name}.h"));
+    let gen_o = out_sub.join(format!("{name}.o"));
+    let gen_rs = out_sub.join(format!("{name}.rs"));
+
+    // 1. widl replay → .c + .h
+    let raw = widl_command_from_ninja(&ninja, name)
+        .unwrap_or_else(|| panic!("no widl CUSTOM_COMMAND for {name}.c in build.ninja"));
+    let cmd = rewrite_widl_outputs(
+        &raw, name, gen_c.to_str().unwrap(), gen_h.to_str().unwrap(),
+    );
+    let st = Command::new("sh").arg("-c").arg(&cmd).status()
+        .unwrap_or_else(|e| panic!("run widl for {name}: {e}"));
+    assert!(st.success(), "widl codegen failed for {name}");
+
+    // 2. compile .c → .o for symbol decorations (replay; never linked)
+    let marker = format!("CMakeFiles/{c_marker}.dir");
+    let suffix = format!("/{name}.c");
+    let (dir, ccmd, cmake_file) = lookup_cc_suffix(&entries, &suffix, &marker)
+        .unwrap_or_else(|| panic!("no compile_commands entry for *{suffix} in {c_marker}"));
+    let mut args = transform_cc(&ccmd, gen_o.to_str().unwrap());
+    for a in args.iter_mut() {
+        if *a == cmake_file {
+            *a = gen_c.to_str().unwrap().to_string();
+        }
+    }
+    let st = Command::new(&args[0]).args(&args[1..]).current_dir(&dir).status()
+        .unwrap_or_else(|e| panic!("compile {name}.c for decorations: {e}"));
+    assert!(st.success(), "decoration compile failed for {name}");
+
+    // 3. transliterate to Rust
+    let nm = repo_root.join(".build-tools/llvm-mingw/bin/llvm-nm");
+    let script = repo_root.join("tools/widl_to_rust.py");
+    let st = Command::new("python3")
+        .arg(&script)
+        .arg(&gen_c)
+        .arg("--symobj").arg(&gen_o)
+        .arg("--arch").arg(arch.name)
+        .arg("--nm").arg(&nm)
+        .arg("-o").arg(&gen_rs)
+        .status()
+        .unwrap_or_else(|e| panic!("run widl_to_rust.py for {name}: {e}"));
+    assert!(st.success(), "widl_to_rust.py failed for {name}");
+
+    println!("cargo:rerun-if-changed={}", repo_root.join(idl_rel).display());
+    println!("cargo:rerun-if-changed={}", script.display());
+    println!("cargo:rerun-if-changed={}", ninja_path.display());
+    gen_rs
 }
 
 /// Parse compile_commands.json into one `(key, value)` list per object. All

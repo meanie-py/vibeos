@@ -42,15 +42,10 @@ fn main() {
                 "base/system/services/services_rust_stub.c",
             ],
         )
-        // The svcctl RPC server stub is GENERATED (widl/MIDL) AND compiled
-        // IN-cargo: rpc_server_stub replays cmake's recorded widl codegen into
-        // OUT_DIR and compiles it (input swapped to our copy). Self-hosts the
-        // MIDL codegen instead of c_from_compile_db'ing the cmake-generated .c.
-        .rpc_server_stub(
-            "sdk/include/reactos/idl/svcctl.idl",
-            "svcctl_s",
-            "services_c",
-        )
+        // The svcctl RPC server stub is now pure RUST: the svcctl-stub crate
+        // transliterates widl's generated `svcctl_s.c` to Rust (against midl-rt)
+        // at build time and exports `svcctl_v2_0_s_ifspec`. No C stub linked.
+        .rust_lib("svcctl-stub", &[], true)
         // Load-bearing resource (localized STRINGTABLEs + version), compiled
         // IN-cargo by replaying the services_res windres command from
         // compile_commands.json.
