@@ -27,6 +27,7 @@ extern crate slist;
 extern crate splaytree;
 extern crate uniprefix;
 extern crate rtl_strings;
+extern crate rtl_threadpool;
 extern crate time;
 
 // Single shared #[panic_handler] for the umbrella. Each sub-crate previously

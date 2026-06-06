@@ -15,10 +15,10 @@ endif()
 
 list(APPEND RTL_WINE_SOURCE
     actctx.c
-    timerqueue.c
-    threadpool.c
+    # timerqueue.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
+    # threadpool.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
 )
-set_source_files_properties(threadpool.c PROPERTIES COMPILE_DEFINITIONS __WINESRC__)
+# threadpool.c was the only __WINESRC__ source; it is now Rust (rtl-threadpool)
 
 if(MSVC)
     # Silence warning C4267: 'initializing': conversion from 'size_t' to 'const int', possible loss of data
@@ -88,7 +88,7 @@ list(APPEND SOURCE
     vectoreh.c
     version.c
     wait.c
-    workitem.c
+    # workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
     rtl.h)
 
 if(ARCH STREQUAL "i386")
@@ -230,6 +230,13 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/ustr.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/core_rs/utf8.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/types.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/wine_list.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/threadpool.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/workitem.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/timerqueue.rs
+            ${RUST_WORKSPACE_DIR}/rtl-threadpool/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/time/src/lib.rs
