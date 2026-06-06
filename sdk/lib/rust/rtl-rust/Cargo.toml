@@ -13,7 +13,6 @@ crate-type = ["staticlib"]
 [features]
 default = ["kernel"]
 kernel = ["rtl-strings/kernel", "rtl-heap/kernel", "rtl-threadpool/kernel"]
-user-atom-table = ["rtl-strings/user-atom-table"]
 
 [dependencies]
 access       = { path = "../access" }

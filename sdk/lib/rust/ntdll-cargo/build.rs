@@ -82,7 +82,7 @@ fn main() {
         // libutf8.a / libcnt_rust_lib.a / libcsrlib_rust.a). smss-csrss-rust
         // is built csrlib_only (--no-default-features) like cmake's cohab.
         .rust_lib("smss-csrss-rust", &["csrlib_only", "ntddi_ws03"], false)
-        .rust_lib("rtl-rust", &["user-atom-table"], true)
+        .rust_lib("rtl-rust", &[], true)
         .rust_lib("utf8", &[], true)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         // Tier-A leaf C, cargo-compiled (was reuse of cmake libpseh.a). DUMMY_PSEH
