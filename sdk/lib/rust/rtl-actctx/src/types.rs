@@ -19,21 +19,23 @@
 //!    `sdk/include/psdk/winbase.h` + `sdk/include/xdk/winnt_old.h` — the
 //!    kernel `ntkrnl-sys` bindgen does not carry these user-mode types.
 
-use ntkrnl_sys::base::{BOOLEAN, LIST_ENTRY, PVOID, UNICODE_STRING, WCHAR};
+// Scalars `base` already provides are imported (NOT redefined) so a
+// `use crate::types::*` alongside `use ntkrnl_sys::base::*` in actctx.rs
+// doesn't create a double-glob ambiguity.
+use ntkrnl_sys::base::{LIST_ENTRY, LONG, PCWSTR, PVOID, SIZE_T, ULONG, UNICODE_STRING, USHORT, WCHAR};
 use ntkrnl_sys::ddk::{GUID, LANGID, LARGE_INTEGER};
 
-// ── primitive aliases the C uses that aren't in base/ddk ────────────
+// ── primitive aliases the C uses that base/ddk lack ─────────────────
 pub type DWORD = u32;
 pub type WORD = u16;
+pub type BYTE = u8;
 pub type BOOL = i32;
-pub type ULONG = u32;
-pub type USHORT = u16;
-pub type LONG = i32;
 pub type HANDLE = PVOID;
 pub type HMODULE = PVOID;
 pub type LPWSTR = *mut WCHAR;
 pub type LPCWSTR = *const WCHAR;
-pub type PCWSTR = *const WCHAR;
+// `enum comclass_threadingmodel` used as a type in one draft signature.
+pub type comclass_threadingmodel = u32;
 
 // ── file-level magic / flag constants (actctx.c top) ────────────────
 pub const ACTCTX_MAGIC: ULONG = 0xC07E_3E11;
@@ -336,7 +338,7 @@ pub struct xmlbuf_t {
 
 #[repr(C)]
 pub struct file_info {
-    pub r#type: ULONG,
+    pub type_: ULONG,
     pub info: *mut WCHAR,
 }
 
@@ -355,7 +357,7 @@ pub struct assembly_identity {
     pub arch: *mut WCHAR,
     pub public_key: *mut WCHAR,
     pub language: *mut WCHAR,
-    pub r#type: *mut WCHAR,
+    pub type_: *mut WCHAR,
     pub version: assembly_version,
     pub optional: BOOL,
     pub delayed: BOOL,
@@ -610,7 +612,7 @@ pub const ASSEMBLY_SHARED_MANIFEST: assembly_type = 2;
 
 #[repr(C)]
 pub struct assembly {
-    pub r#type: assembly_type,
+    pub type_: assembly_type,
     pub id: assembly_identity,
     pub manifest: file_info,
     pub directory: *mut WCHAR,
@@ -685,6 +687,32 @@ pub struct ACTIVATION_CONTEXT {
     pub clrsurrogate_section: *mut guidsection_header,
 }
 pub type PACTIVATION_CONTEXT = *mut ACTIVATION_CONTEXT;
+// rustconv draft uses the bindgen-style underscore name in some sigs.
+pub type _ACTIVATION_CONTEXT = ACTIVATION_CONTEXT;
+pub type _ACTCTX_SECTION_KEYED_DATA = ACTCTX_SECTION_KEYED_DATA;
+
+// ── activation-context stack frame (ndk/rtltypes.h; ddk bindgen only
+//    has an opaque stub for these). ──────────────────────────────────
+#[repr(C)]
+pub struct RTL_ACTIVATION_CONTEXT_STACK_FRAME {
+    pub Previous: *mut RTL_ACTIVATION_CONTEXT_STACK_FRAME,
+    pub ActivationContext: PACTIVATION_CONTEXT,
+    pub Flags: ULONG,
+}
+pub type PRTL_ACTIVATION_CONTEXT_STACK_FRAME = *mut RTL_ACTIVATION_CONTEXT_STACK_FRAME;
+
+#[repr(C)]
+pub struct RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED {
+    pub Size: SIZE_T,
+    pub Format: ULONG,
+    pub Frame: RTL_ACTIVATION_CONTEXT_STACK_FRAME,
+    pub Extra1: PVOID,
+    pub Extra2: PVOID,
+    pub Extra3: PVOID,
+    pub Extra4: PVOID,
+}
+pub type PRTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED =
+    *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED;
 
 #[repr(C)]
 pub struct actctx_loader {
@@ -700,10 +728,10 @@ pub struct olemisc_entry {
     pub value: OLEMISC,
 }
 
-// silence unused-import lints if a type ends up referenced only via alias
-const _: () = {
-    let _ = core::mem::size_of::<BOOLEAN>();
-};
+// These hold raw pointers into read-only static string data; they back
+// `static` tables (empty_xmlstr, olemisc_values) so they must be Sync.
+unsafe impl Sync for olemisc_entry {}
+unsafe impl Sync for xmlstr_t {}
 
 // ════════════════════════════════════════════════════════════════════
 //  Compile-time size assertions for the ON-DISK section structs.

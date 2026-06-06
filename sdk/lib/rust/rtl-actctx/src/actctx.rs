@@ -3,8 +3,86 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACTIVATION_CONTEXT_STACK, FILE_BOTH_DIR_INFORMATION, FILE_END_OF_FILE_INFORMATION, FileBothDirectoryInformation, FileEndOfFileInformation, GUID, IMAGE_RESOURCE_DATA_ENTRY, IMAGE_RESOURCE_DIRECTORY, IMAGE_RESOURCE_DIRECTORY_ENTRY, _IO_STATUS_BLOCK, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LDR_RESOURCE_INFO, LPCWSTR, LPWSTR, LdrAccessResource, LdrFindResource_U, LdrLockLoaderLock, LdrUnlockLoaderLock, NtClose, NtCurrentTeb, NtGetTickCount, NtOpenFile, NtQueryDirectoryFile, NtQueryInformationFile, NtReadFile, _OBJECT_ATTRIBUTES, PACTIVATION_CONTEXT, PACTIVATION_CONTEXT_STACK, RtlAllocateHeap, RtlCompareUnicodeStrings, RtlCreateUnicodeString, RtlDetermineDosPathNameType_U, RtlDosPathNameToNtPathName_U, RtlEqualUnicodeString, RtlFreeHeap, RtlFreeUnicodeString, RtlGUIDFromString, RtlGetFullPathName_U, RtlHashUnicodeString, RtlImageDirectoryEntryToData, RtlImageNtHeader, RtlInitUnicodeString, RtlIsTextUnicode, RtlSizeHeap, RtlUnicodeStringToInteger, RtlUniform, RtlUpcaseUnicodeString, RtlUshortByteSwap, TEB};
+use ntkrnl_sys::ddk::{ACTIVATION_CONTEXT_STACK, FILE_BOTH_DIR_INFORMATION, FILE_END_OF_FILE_INFORMATION, GUID, IMAGE_RESOURCE_DATA_ENTRY, IMAGE_RESOURCE_DIRECTORY, IMAGE_RESOURCE_DIRECTORY_ENTRY, _IO_STATUS_BLOCK, LARGE_INTEGER, LDR_DATA_TABLE_ENTRY, LDR_RESOURCE_INFO, LdrAccessResource, LdrFindResource_U, LdrLockLoaderLock, LdrUnlockLoaderLock, NtClose, NtCurrentTeb, NtGetTickCount, NtOpenFile, NtQueryDirectoryFile, NtQueryInformationFile, NtReadFile, _OBJECT_ATTRIBUTES, PACTIVATION_CONTEXT_STACK, RtlCompareUnicodeStrings, RtlCreateUnicodeString, RtlDetermineDosPathNameType_U, RtlDosPathNameToNtPathName_U, RtlEqualUnicodeString, RtlFreeHeap, RtlFreeUnicodeString, RtlGUIDFromString, RtlGetFullPathName_U, RtlHashUnicodeString, RtlImageDirectoryEntryToData, RtlImageNtHeader, RtlInitUnicodeString, RtlIsTextUnicode, RtlUnicodeStringToInteger, RtlUniform, RtlUpcaseUnicodeString, RtlUshortByteSwap, TEB};
 use core::ffi::c_void;
+
+// The byte-exact private/public type substrate + the file-static string
+// constants (machine-extracted). LPCWSTR/LPWSTR/PACTIVATION_CONTEXT and
+// the ActCtx structs come from crate::types (the kernel bindgen lacks
+// the user-mode ActCtx surface).
+use crate::types::*;
+use crate::strings::*;
+use crate::shim::*;
+use crate::{FIELD_OFFSET, wine_dbg_sprintf, TRACE, FIXME, WARN, ERR};
+// The draft uses the bindgen underscore name; unify both spellings on
+// ddk's _UNICODE_STRING (layout-identical to base's UNICODE_STRING) so
+// the ddk Rtl*/Nt* signatures line up.
+use ntkrnl_sys::ddk::{_UNICODE_STRING, _UNICODE_STRING as UNICODE_STRING};
+
+// ── file-static globals (actctx.c; the "preamble" rustconv couldn't
+//    emit — hand-written here). ───────────────────────────────────────
+static empty_xmlstr: xmlstr_t = xmlstr_t { ptr: core::ptr::null(), len: 0 };
+
+static mut system_actctx: ACTIVATION_CONTEXT = ACTIVATION_CONTEXT {
+    magic: ACTCTX_MAGIC,
+    ref_count: 1,
+    Flags: 0,
+    Links: LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() },
+    ActivationContextData: core::ptr::null_mut(),
+    NotificationRoutine: core::ptr::null_mut(),
+    NotificationContext: core::ptr::null_mut(),
+    SentNotifications: [0; 8],
+    DisabledNotifications: [0; 8],
+    StorageMap: ASSEMBLY_STORAGE_MAP { Flags: 0, AssemblyCount: 0, AssemblyArray: core::ptr::null_mut() },
+    InlineStorageMapEntries: core::ptr::null_mut(),
+    StackTraceIndex: 0,
+    StackTraces: [[core::ptr::null_mut(); 4]; 4],
+    config: file_info { type_: 0, info: core::ptr::null_mut() },
+    appdir: file_info { type_: 0, info: core::ptr::null_mut() },
+    assemblies: core::ptr::null_mut(),
+    num_assemblies: 0,
+    allocated_assemblies: 0,
+    sections: 0,
+    wndclass_section: core::ptr::null_mut(),
+    dllredirect_section: core::ptr::null_mut(),
+    progid_section: core::ptr::null_mut(),
+    tlib_section: core::ptr::null_mut(),
+    comserver_section: core::ptr::null_mut(),
+    ifaceps_section: core::ptr::null_mut(),
+    clrsurrogate_section: core::ptr::null_mut(),
+};
+static mut process_actctx: *mut ACTIVATION_CONTEXT = core::ptr::addr_of_mut!(system_actctx);
+static mut implicit_actctx: *mut ACTIVATION_CONTEXT = core::ptr::addr_of_mut!(system_actctx);
+
+// RtlpNotAllowingMultipleActivation (actctx.c file global, __REACTOS__).
+#[no_mangle]
+pub static mut RtlpNotAllowingMultipleActivation: BOOLEAN = 0;
+
+// olemisc_values — sorted name->OLEMISC table (get_olemisc_value bsearch).
+static olemisc_values: [olemisc_entry; 22] = [
+    olemisc_entry { name: activatewhenvisibleW.as_ptr(), value: OLEMISC_ACTIVATEWHENVISIBLE },
+    olemisc_entry { name: actslikebuttonW.as_ptr(), value: OLEMISC_ACTSLIKEBUTTON },
+    olemisc_entry { name: actslikelabelW.as_ptr(), value: OLEMISC_ACTSLIKELABEL },
+    olemisc_entry { name: alignableW.as_ptr(), value: OLEMISC_ALIGNABLE },
+    olemisc_entry { name: alwaysrunW.as_ptr(), value: OLEMISC_ALWAYSRUN },
+    olemisc_entry { name: canlinkbyole1W.as_ptr(), value: OLEMISC_CANLINKBYOLE1 },
+    olemisc_entry { name: cantlinkinsideW.as_ptr(), value: OLEMISC_CANTLINKINSIDE },
+    olemisc_entry { name: ignoreactivatewhenvisibleW.as_ptr(), value: OLEMISC_IGNOREACTIVATEWHENVISIBLE },
+    olemisc_entry { name: imemodeW.as_ptr(), value: OLEMISC_IMEMODE },
+    olemisc_entry { name: insertnotreplaceW.as_ptr(), value: OLEMISC_INSERTNOTREPLACE },
+    olemisc_entry { name: insideoutW.as_ptr(), value: OLEMISC_INSIDEOUT },
+    olemisc_entry { name: invisibleatruntimeW.as_ptr(), value: OLEMISC_INVISIBLEATRUNTIME },
+    olemisc_entry { name: islinkobjectW.as_ptr(), value: OLEMISC_ISLINKOBJECT },
+    olemisc_entry { name: nouiactivateW.as_ptr(), value: OLEMISC_NOUIACTIVATE },
+    olemisc_entry { name: onlyiconicW.as_ptr(), value: OLEMISC_ONLYICONIC },
+    olemisc_entry { name: recomposeonresizeW.as_ptr(), value: OLEMISC_RECOMPOSEONRESIZE },
+    olemisc_entry { name: renderingisdeviceindependentW.as_ptr(), value: OLEMISC_RENDERINGISDEVICEINDEPENDENT },
+    olemisc_entry { name: setclientsitefirstW.as_ptr(), value: OLEMISC_SETCLIENTSITEFIRST },
+    olemisc_entry { name: simpleframeW.as_ptr(), value: OLEMISC_SIMPLEFRAME },
+    olemisc_entry { name: staticW.as_ptr(), value: OLEMISC_STATIC },
+    olemisc_entry { name: supportsmultilevelundoW.as_ptr(), value: OLEMISC_SUPPORTSMULTILEVELUNDO },
+    olemisc_entry { name: wantstomenumergeW.as_ptr(), value: OLEMISC_WANTSTOMENUMERGE },
+];
 
 unsafe fn strdupW(str: *const WCHAR) -> *mut WCHAR {
     let ptr: *mut WCHAR = RtlAllocateHeap(GetProcessHeap(), 0, (wcslen(str) + 1) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
@@ -85,7 +163,7 @@ unsafe fn debugstr_xmlstr(str: *const xmlstr_t) -> *const core::ffi::c_char {
 }
 
 unsafe fn debugstr_xml_elem(elem: *const xml_elem) -> *const core::ffi::c_char {
-    wine_dbg_sprintf(
+    wine_dbg_sprintf!(
         b"%s ns %s\0".as_ptr() as *const core::ffi::c_char,
         debugstr_wn((*elem).name.ptr, (*elem).name.len),
         debugstr_wn((*elem).ns.ptr, (*elem).ns.len),
@@ -93,7 +171,7 @@ unsafe fn debugstr_xml_elem(elem: *const xml_elem) -> *const core::ffi::c_char {
 }
 
 unsafe fn debugstr_xml_attr(attr: *const xml_attr) -> *const core::ffi::c_char {
-    wine_dbg_sprintf(
+    wine_dbg_sprintf!(
         b"%s=%s\0".as_ptr() as *const core::ffi::c_char,
         debugstr_wn((*attr).name.ptr, (*attr).name.len),
         debugstr_wn((*attr).value.ptr, (*attr).value.len),
@@ -101,7 +179,7 @@ unsafe fn debugstr_xml_attr(attr: *const xml_attr) -> *const core::ffi::c_char {
 }
 
 unsafe fn debugstr_version(ver: *const assembly_version) -> *const core::ffi::c_char {
-    wine_dbg_sprintf(
+    wine_dbg_sprintf!(
         b"%u.%u.%u.%u\0".as_ptr() as *const core::ffi::c_char,
         (*ver).major as core::ffi::c_uint,
         (*ver).minor as core::ffi::c_uint,
@@ -316,7 +394,7 @@ unsafe fn free_entity_array(array: *mut entity_array) {
                 RtlFreeHeap(GetProcessHeap(), 0, (*entity).u.settings.ns as *mut _);
             }
             _ => {
-                FIXME(b"Unknown entity kind %d\n\0".as_ptr() as PCHAR, (*entity).kind);
+                FIXME!(b"Unknown entity kind %d\n\0".as_ptr() as PCHAR, (*entity).kind);
             }
         }
         i += 1;
@@ -521,8 +599,8 @@ unsafe fn build_assembly_id(ai: *const assembly_identity) -> *mut WCHAR {
     if !(*ai).public_key.is_null() {
         size += wcslen(public_keyW.as_ptr()) as SIZE_T + wcslen((*ai).public_key) as SIZE_T + 2;
     }
-    if !(*ai).type.is_null() {
-        size += wcslen(typeW2.as_ptr()) as SIZE_T + wcslen((*ai).type) as SIZE_T + 2;
+    if !(*ai).type_.is_null() {
+        size += wcslen(typeW2.as_ptr()) as SIZE_T + wcslen((*ai).type_) as SIZE_T + 2;
     }
     size += wcslen(versionW2.as_ptr()) as SIZE_T + wcslen(version.as_ptr()) as SIZE_T + 2;
 
@@ -538,7 +616,7 @@ unsafe fn build_assembly_id(ai: *const assembly_identity) -> *mut WCHAR {
     }
     append_string(ret, archW.as_ptr(), (*ai).arch);
     append_string(ret, public_keyW.as_ptr(), (*ai).public_key);
-    append_string(ret, typeW2.as_ptr(), (*ai).type);
+    append_string(ret, typeW2.as_ptr(), (*ai).type_);
     append_string(ret, versionW2.as_ptr(), version.as_ptr());
     ret
 }
@@ -625,7 +703,7 @@ unsafe fn push_xmlns(xmlbuf: *mut xmlbuf_t, attr: *const xml_attr) {
     let ns: *mut xml_attr;
 
     if (*xmlbuf).ns_pos == MAX_NAMESPACES as core::ffi::c_int - 1 {
-        FIXME(b"too many namespaces in manifest\n\0".as_ptr() as *const core::ffi::c_char);
+        FIXME!(b"too many namespaces in manifest\n\0".as_ptr() as *const core::ffi::c_char);
         set_error(xmlbuf);
         return;
     }
@@ -820,7 +898,7 @@ unsafe fn next_xml_elem(xmlbuf: *mut xmlbuf_t, elem: *mut xml_elem, parent: *con
         read_xml_elem(xmlbuf, elem);
         (*elem).ns = find_xmlns(xmlbuf, core::ptr::addr_of_mut!((*elem).ns));
         if xml_name_cmp(elem, parent) == 0 {
-            ERR(
+            ERR!(
                 b"wrong closing element %s for %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xmlstr(core::ptr::addr_of!((*elem).name)),
                 debugstr_xmlstr(core::ptr::addr_of!((*parent).name)),
@@ -927,7 +1005,7 @@ unsafe fn parse_version(str: *const xmlstr_t, version: *mut assembly_version) ->
         return 1u8;
     };
 
-    FIXME(b"Wrong version definition in manifest file (%s)\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(str));
+    FIXME!(b"Wrong version definition in manifest file (%s)\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(str));
     result
 }
 
@@ -936,7 +1014,7 @@ unsafe fn parse_expect_no_attr(xmlbuf: *mut xmlbuf_t, end: *mut BOOL) {
 
     while next_xml_attr(xmlbuf, &mut attr, end) != 0 {
         if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unexpected attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -948,7 +1026,7 @@ unsafe fn parse_expect_end_elem(xmlbuf: *mut xmlbuf_t, parent: *const xml_elem) 
     let mut elem: xml_elem = core::mem::zeroed();
 
     if next_xml_elem(xmlbuf, &mut elem, parent) != 0 {
-        FIXME(
+        FIXME!(
             b"unexpected element %s\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_xml_elem(&elem),
         );
@@ -1011,14 +1089,14 @@ unsafe fn parse_assembly_identity_elem(
                 set_error(xmlbuf);
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
         }
     }
 
-    TRACE(
+    TRACE!(
         b"name=%s version=%s arch=%s\n\0".as_ptr() as *const core::ffi::c_char,
         debugstr_w((*ai).name),
         debugstr_version(core::ptr::addr_of!((*ai).version)),
@@ -1081,7 +1159,7 @@ unsafe fn get_olemisc_value(str: *const WCHAR, len: core::ffi::c_int) -> OLEMISC
         }
     }
 
-    WARN(b"unknown flag %s\n\0".as_ptr() as *const core::ffi::c_char, debugstr_wn(str, len));
+    WARN!(b"unknown flag %s\n\0".as_ptr() as *const core::ffi::c_char, debugstr_wn(str, len));
     0
 }
 
@@ -1223,7 +1301,7 @@ unsafe fn parse_com_class_elem(
         } else if xml_attr_cmp(&attr, descriptionW.as_ptr()) != 0 {
             /* not stored */
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1243,7 +1321,7 @@ unsafe fn parse_com_class_elem(
         if xml_elem_cmp(&elem, progidW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_com_class_progid(xmlbuf, entity, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -1346,7 +1424,7 @@ unsafe fn parse_cominterface_proxy_stub_elem(xmlbuf: *mut xmlbuf_t, dll: *mut dl
             }
         } else if xml_attr_cmp(&attr, threadingmodelW.as_ptr()) != 0 {
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1394,7 +1472,7 @@ unsafe fn parse_typelib_flags(value: *const xmlstr_t, entity: *mut entity) -> BO
         } else if wcsnicmp(start, hasdiskimageW.as_ptr(), len as _) == 0 {
             *flags |= LIBFLAG_FHASDISKIMAGE as WORD;
         } else {
-            WARN(b"unknown flags value %s\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(value));
+            WARN!(b"unknown flags value %s\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(value));
             return 0;
         }
 
@@ -1435,7 +1513,7 @@ unsafe fn parse_typelib_version(str: *const xmlstr_t, entity: *mut entity) -> BO
         return 1u8 as BOOL;
     }
 
-    FIXME(b"wrong typelib version value (%s)\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(str));
+    FIXME!(b"wrong typelib version value (%s)\n\0".as_ptr() as *const core::ffi::c_char, debugstr_xmlstr(str));
     0u8 as BOOL
 }
 
@@ -1478,7 +1556,7 @@ unsafe fn parse_typelib_elem(
                 set_error(xmlbuf);
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1559,7 +1637,7 @@ unsafe fn parse_window_class_elem(
                 set_error(xmlbuf);
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1581,7 +1659,7 @@ unsafe fn parse_window_class_elem(
     (*(*acl).actctx).sections |= WINDOWCLASS_SECTION as DWORD;
 
     while next_xml_elem(xmlbuf, &mut elem, parent) != 0 {
-        WARN(
+        WARN!(
             b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_xml_elem(&elem),
         );
@@ -1595,17 +1673,17 @@ unsafe fn parse_binding_redirect_elem(xmlbuf: *mut xmlbuf_t, parent: *const xml_
 
     while next_xml_attr(xmlbuf, &mut attr, &mut end) != 0 {
         if xml_attr_cmp(&attr, oldVersionW.as_ptr()) != 0 {
-            FIXME(
+            FIXME!(
                 b"Not stored yet %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
         } else if xml_attr_cmp(&attr, newVersionW.as_ptr()) != 0 {
-            FIXME(
+            FIXME!(
                 b"Not stored yet %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1625,7 +1703,7 @@ unsafe fn parse_description_elem(xmlbuf: *mut xmlbuf_t, parent: *const xml_elem)
 
     while next_xml_attr(xmlbuf, &mut attr, &mut end) != 0 {
         if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1639,13 +1717,13 @@ unsafe fn parse_description_elem(xmlbuf: *mut xmlbuf_t, parent: *const xml_elem)
         return;
     }
 
-    TRACE(
+    TRACE!(
         b"Got description %s\n\0".as_ptr() as *const core::ffi::c_char,
         debugstr_xmlstr(&content),
     );
 
     while next_xml_elem(xmlbuf, &mut elem, parent) != 0 {
-        WARN(
+        WARN!(
             b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_xml_elem(&elem),
         );
@@ -1705,7 +1783,7 @@ unsafe fn parse_com_interface_external_proxy_stub_elem(
                 set_error(xmlbuf);
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1759,7 +1837,7 @@ unsafe fn parse_clr_class_elem(xmlbuf: *mut xmlbuf_t, assembly: *mut assembly, a
                 set_error(xmlbuf);
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1778,7 +1856,7 @@ unsafe fn parse_clr_class_elem(xmlbuf: *mut xmlbuf_t, assembly: *mut assembly, a
         if xml_elem_cmp(&elem, progidW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_com_class_progid(xmlbuf, entity, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -1827,7 +1905,7 @@ unsafe fn parse_clr_surrogate_elem(
                 set_error(xmlbuf);
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1888,7 +1966,7 @@ unsafe fn parse_dependent_assembly_elem(
         if xml_attr_cmp(&attr, allowDelayedBindingW0.as_ptr()) != 0 {
             ai.delayed = xmlstr_cmp(core::ptr::addr_of!(attr.value), trueW0.as_ptr());
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1906,7 +1984,7 @@ unsafe fn parse_dependent_assembly_elem(
                 RtlFreeHeap(GetProcessHeap(), 0, ai.arch as *mut core::ffi::c_void);
                 ai.arch = strdupW(current_archW.as_ptr());
             }
-            TRACE(
+            TRACE!(
                 b"adding name=%s version=%s arch=%s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_w(ai.name),
                 debugstr_version(core::ptr::addr_of!(ai.version)),
@@ -1918,7 +1996,7 @@ unsafe fn parse_dependent_assembly_elem(
         } else if xml_elem_cmp(&elem, bindingRedirectW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_binding_redirect_elem(xmlbuf, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -1940,12 +2018,12 @@ unsafe fn parse_dependency_elem(
     while next_xml_attr(xmlbuf, &mut attr, &mut end) != 0 {
         if xml_attr_cmp(&attr, optionalW.as_ptr()) != 0 {
             optional = xmlstr_cmpi(core::ptr::addr_of!(attr.value), yesW.as_ptr());
-            TRACE(
+            TRACE!(
                 b"optional=%s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
             );
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -1956,7 +2034,7 @@ unsafe fn parse_dependency_elem(
         if xml_elem_cmp(&elem, dependentAssemblyW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_dependent_assembly_elem(xmlbuf, acl, &elem, optional);
         } else {
-            WARN(
+            WARN!(
                 b"unknown element %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2006,7 +2084,7 @@ unsafe fn parse_file_elem(
             if (*dll).name.is_null() {
                 set_error(xmlbuf);
             }
-            TRACE(
+            TRACE!(
                 b"name=%s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
             );
@@ -2024,13 +2102,13 @@ unsafe fn parse_file_elem(
                 0,
             ];
             if xmlstr_cmpi(core::ptr::addr_of!(attr.value), sha1W.as_ptr()) == 0 {
-                FIXME(
+                FIXME!(
                     b"hashalg should be SHA1, got %s\n\0".as_ptr() as *const core::ffi::c_char,
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -2053,14 +2131,14 @@ unsafe fn parse_file_elem(
         } else if xml_elem_cmp(&elem, comInterfaceProxyStubW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_cominterface_proxy_stub_elem(xmlbuf, dll, acl, &elem);
         } else if xml_elem_cmp(&elem, hashW.as_ptr(), asmv2W.as_ptr()) != 0 {
-            WARN(b"asmv2:hash (undocumented) not supported\n\0".as_ptr() as *const core::ffi::c_char);
+            WARN!(b"asmv2:hash (undocumented) not supported\n\0".as_ptr() as *const core::ffi::c_char);
             parse_unknown_elem(xmlbuf, &elem);
         } else if xml_elem_cmp(&elem, typelibW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_typelib_elem(xmlbuf, dll, acl, &elem);
         } else if xml_elem_cmp(&elem, windowClassW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_window_class_elem(xmlbuf, dll, acl, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2097,13 +2175,13 @@ unsafe fn parse_supportedos_elem(
                 (*compat).Type = ACTCTX_COMPATIBILITY_ELEMENT_TYPE_OS;
                 (*compat).Id = compat_id;
             } else {
-                WARN(
+                WARN!(
                     b"Invalid guid %s\n\0".as_ptr() as *const core::ffi::c_char,
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -2127,7 +2205,7 @@ unsafe fn parse_compatibility_application_elem(
         if xml_elem_cmp(&elem, supportedOSW.as_ptr(), compatibilityNSW.as_ptr()) != 0 {
             parse_supportedos_elem(xmlbuf, assembly, acl, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2148,7 +2226,7 @@ unsafe fn parse_compatibility_elem(
         if xml_elem_cmp(&elem, applicationW.as_ptr(), compatibilityNSW.as_ptr()) != 0 {
             parse_compatibility_application_elem(xmlbuf, assembly, acl, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2171,7 +2249,7 @@ unsafe fn parse_settings_elem(
 
     while next_xml_attr(xmlbuf, &mut attr, &mut end) != 0 {
         if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -2185,7 +2263,7 @@ unsafe fn parse_settings_elem(
     if parse_text_content(xmlbuf, &mut content) == 0 {
         return;
     }
-    TRACE(
+    TRACE!(
         b"got %s %s\n\0".as_ptr() as *const core::ffi::c_char,
         debugstr_xmlstr(&(*parent).name),
         debugstr_xmlstr(&content),
@@ -2204,7 +2282,7 @@ unsafe fn parse_settings_elem(
     (*entity).u.settings.ns = xmlstrdupW(&(*parent).ns);
 
     while next_xml_elem(xmlbuf, &mut elem, parent) != 0 {
-        WARN(
+        WARN!(
             b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_xml_elem(&elem),
         );
@@ -2235,7 +2313,7 @@ unsafe fn parse_windows_settings_elem(
         {
             parse_settings_elem(xmlbuf, assembly, acl, &mut elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2295,7 +2373,7 @@ unsafe fn parse_requested_execution_level_elem(
             } else if xmlstr_cmpi(core::ptr::addr_of!(attr.value), requireAdministratorWfull.as_ptr()) != 0 {
                 (*assembly).run_level = ACTCTX_RUN_LEVEL_REQUIRE_ADMIN;
             } else {
-                FIXME(
+                FIXME!(
                     b"unknown execution level: %s\n\0".as_ptr() as *const core::ffi::c_char,
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
@@ -2306,13 +2384,13 @@ unsafe fn parse_requested_execution_level_elem(
             } else if xmlstr_cmpi(core::ptr::addr_of!(attr.value), trueW.as_ptr()) != 0 {
                 (*assembly).ui_access = 1;
             } else {
-                FIXME(
+                FIXME!(
                     b"unknown uiAccess value: %s\n\0".as_ptr() as *const core::ffi::c_char,
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
             }
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -2324,7 +2402,7 @@ unsafe fn parse_requested_execution_level_elem(
     }
 
     while next_xml_elem(xmlbuf, &mut elem, parent) != 0 {
-        WARN(
+        WARN!(
             b"unknown element %s\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_xml_elem(&elem),
         );
@@ -2344,7 +2422,7 @@ unsafe fn parse_requested_privileges_elem(
         if xml_elem_cmp(&elem, requestedExecutionLevelW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_requested_execution_level_elem(xmlbuf, assembly, acl, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2365,7 +2443,7 @@ unsafe fn parse_security_elem(
         if xml_elem_cmp(&elem, requestedPrivilegesW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_requested_privileges_elem(xmlbuf, assembly, acl, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2386,7 +2464,7 @@ unsafe fn parse_trust_info_elem(
         if xml_elem_cmp(&elem, securityW.as_ptr(), asmv1W.as_ptr()) != 0 {
             parse_security_elem(xmlbuf, assembly, acl, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown elem %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2407,13 +2485,13 @@ unsafe fn parse_assembly_elem(
     let mut end: BOOL = 0;
     let mut version: BOOL = 0;
 
-    TRACE(b"(%p)\n\0".as_ptr() as *const core::ffi::c_char, xmlbuf);
+    TRACE!(b"(%p)\n\0".as_ptr() as *const core::ffi::c_char, xmlbuf);
 
     while next_xml_attr(xmlbuf, &mut attr, &mut end) != 0 {
         if xml_attr_cmp(&attr, manifestVersionW.as_ptr()) != 0 {
             static v10W: [WCHAR; 4] = [b'1' as WCHAR, b'.' as WCHAR, b'0' as WCHAR, 0];
             if xmlstr_cmp(core::ptr::addr_of!(attr.value), v10W.as_ptr()) == 0 {
-                FIXME(
+                FIXME!(
                     b"wrong version %s\n\0".as_ptr() as *const core::ffi::c_char,
                     debugstr_xmlstr(core::ptr::addr_of!(attr.value)),
                 );
@@ -2421,7 +2499,7 @@ unsafe fn parse_assembly_elem(
             }
             version = 1;
         } else if is_xmlns_attr(&attr) == 0 {
-            WARN(
+            WARN!(
                 b"unknown attr %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_attr(&attr),
             );
@@ -2471,7 +2549,7 @@ unsafe fn parse_assembly_elem(
                         core::mem::size_of_val(&(*assembly).id.version),
                     ) != 0
                 {
-                    FIXME(
+                    FIXME!(
                         b"wrong version for assembly manifest: %u.%u.%u.%u / %u.%u.%u.%u\n\0".as_ptr()
                             as *const core::ffi::c_char,
                         (*expected_ai).version.major as core::ffi::c_uint,
@@ -2491,7 +2569,7 @@ unsafe fn parse_assembly_elem(
                         || ((*assembly).id.version.build == (*expected_ai).version.build
                             && (*assembly).id.version.revision < (*expected_ai).version.revision))
                 {
-                    FIXME(b"wrong version for shared assembly manifest\n\0".as_ptr() as *const core::ffi::c_char);
+                    FIXME!(b"wrong version for shared assembly manifest\n\0".as_ptr() as *const core::ffi::c_char);
                     set_error(xmlbuf);
                 }
             }
@@ -2500,7 +2578,7 @@ unsafe fn parse_assembly_elem(
         } else if xml_elem_cmp(&elem, applicationW.as_ptr(), asmv3W.as_ptr()) != 0 {
             parse_application_elem(xmlbuf, assembly, acl, &elem);
         } else {
-            WARN(
+            WARN!(
                 b"unknown element %s\n\0".as_ptr() as *const core::ffi::c_char,
                 debugstr_xml_elem(&elem),
             );
@@ -2538,7 +2616,7 @@ unsafe fn parse_manifest_buffer(
     }
 
     if xml_elem_cmp(&elem, assemblyW.as_ptr(), asmv1W.as_ptr()) == 0 {
-        FIXME(
+        FIXME!(
             b"root element is %s, not <assembly>\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_xml_elem(&elem),
         );
@@ -2547,7 +2625,7 @@ unsafe fn parse_manifest_buffer(
 
     parse_assembly_elem(xmlbuf, assembly, acl, &elem, ai);
     if (*xmlbuf).error != 0 {
-        FIXME(
+        FIXME!(
             b"failed to parse manifest %s\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_w((*assembly).manifest.info),
         );
@@ -2555,7 +2633,7 @@ unsafe fn parse_manifest_buffer(
     }
 
     if next_xml_elem(xmlbuf, &mut elem, &parent) != 0 {
-        FIXME(
+        FIXME!(
             b"unexpected element %s\n\0".as_ptr() as *const core::ffi::c_char,
             debugstr_xml_elem(&elem),
         );
@@ -2563,7 +2641,7 @@ unsafe fn parse_manifest_buffer(
     }
 
     if (*xmlbuf).ptr != (*xmlbuf).end {
-        FIXME(b"parse error\n\0".as_ptr() as *const core::ffi::c_char);
+        FIXME!(b"parse error\n\0".as_ptr() as *const core::ffi::c_char);
         return STATUS_SXS_CANT_GEN_ACTCTX;
     }
     STATUS_SUCCESS
@@ -2584,7 +2662,7 @@ unsafe fn parse_manifest(
     let assembly: *mut assembly;
     let mut unicode_tests: core::ffi::c_int;
 
-    TRACE(b"parsing manifest loaded from %s base dir %s\n\0".as_ptr() as *const i8,
+    TRACE!(b"parsing manifest loaded from %s base dir %s\n\0".as_ptr() as *const i8,
           debugstr_w(filename), debugstr_w(directory));
 
     assembly = add_assembly(
@@ -2938,7 +3016,7 @@ unsafe fn get_manifest_in_manifest_file(
     let count: SIZE_T;
     let base: *mut core::ffi::c_void;
 
-    TRACE(b"loading manifest file %s\n\0".as_ptr() as *const i8, debugstr_w(filename));
+    TRACE!(b"loading manifest file %s\n\0".as_ptr() as *const i8, debugstr_w(filename));
 
     status = NtQueryInformationFile(
         file,
@@ -3008,7 +3086,7 @@ unsafe fn get_manifest_in_associated_manifest(
         resid = (resname as ULONG_PTR) & 0xffff;
     }
 
-    TRACE(b"looking for manifest associated with %s id %lu\n\0".as_ptr() as *const i8, debugstr_w(filename), resid);
+    TRACE!(b"looking for manifest associated with %s id %lu\n\0".as_ptr() as *const i8, debugstr_w(filename), resid);
 
     if !module.is_null() {
         let mut name: _UNICODE_STRING = core::mem::zeroed();
@@ -3170,7 +3248,7 @@ unsafe fn lookup_manifest_file(dir: HANDLE, ai: *mut assembly_identity) -> *mut 
             }
         }
     } else {
-        WARN(b"no matching file for %s\n\0".as_ptr(), debugstr_w(lookup));
+        WARN!(b"no matching file for %s\n\0".as_ptr(), debugstr_w(lookup));
     }
     RtlFreeHeap(GetProcessHeap(), 0, lookup as *mut core::ffi::c_void);
     ret
@@ -3200,13 +3278,13 @@ unsafe fn lookup_winsxs(acl: *mut actctx_loader, ai: *mut assembly_identity) -> 
         GetProcessHeap(),
         0,
         core::mem::size_of_val(&manifest_dirW)
-            + wcslen(windows_dir) * core::mem::size_of::<WCHAR>(),
+            + wcslen(windows_dir()) * core::mem::size_of::<WCHAR>(),
     ) as *mut WCHAR;
     if path.is_null() {
         return STATUS_NO_MEMORY;
     }
 
-    wcscpy(path, windows_dir);
+    wcscpy(path, windows_dir());
     wcscat(path, manifest_dirW.as_ptr());
 
     if RtlDosPathNameToNtPathName_U(
@@ -4338,7 +4416,7 @@ unsafe fn find_comserver_redirection(
     (*data).hActCtx = core::ptr::null_mut();
 
     if (*data).cbSize as usize
-        >= FIELD_OFFSET(ACTCTX_SECTION_KEYED_DATA, ulAssemblyRosterIndex)
+        >= FIELD_OFFSET!(ACTCTX_SECTION_KEYED_DATA, ulAssemblyRosterIndex)
             + core::mem::size_of::<ULONG>()
     {
         (*data).ulAssemblyRosterIndex = (*index).rosterindex;
@@ -5176,7 +5254,7 @@ pub unsafe extern "system" fn RtlReleaseActivationContext(handle: HANDLE) {
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlZombifyActivationContext(handle: HANDLE) -> NTSTATUS {
-    FIXME(b"%p: stub\n\0".as_ptr() as *const _, handle);
+    FIXME!(b"%p: stub\n\0".as_ptr() as *const _, handle);
 
     if handle == ACTCTX_FAKE_HANDLE {
         return STATUS_SUCCESS;
@@ -5211,11 +5289,11 @@ pub unsafe extern "system" fn RtlActivateActivationContextEx(
         return STATUS_NO_MEMORY;
     }
 
-    (*frame).Previous = (*(*teb).ActivationContextStackPointer).ActiveFrame;
+    (*frame).Previous = (*(*teb).ActivationContextStackPointer).ActiveFrame as PRTL_ACTIVATION_CONTEXT_STACK_FRAME;
     (*frame).ActivationContext = handle as PACTIVATION_CONTEXT;
     (*frame).Flags = 0;
 
-    (*(*teb).ActivationContextStackPointer).ActiveFrame = frame;
+    (*(*teb).ActivationContextStackPointer).ActiveFrame = frame as *mut _RTL_ACTIVATION_CONTEXT_STACK_FRAME;
     RtlAddRefActivationContext(handle);
 
     *cookie = frame as ULONG_PTR;
@@ -5694,7 +5772,7 @@ pub unsafe extern "system" fn RtlQueryInformationActivationContext(
         }
 
         _ => {
-            FIXME(b"class %u not implemented\n\0".as_ptr() as PCHAR, class);
+            FIXME!(b"class %u not implemented\n\0".as_ptr() as PCHAR, class);
             return STATUS_NOT_IMPLEMENTED;
         }
     }
@@ -5860,7 +5938,7 @@ pub unsafe extern "system" fn RtlQueryActivationContextApplicationSettings(
     let res: *const WCHAR;
 
     if flags != 0 {
-        WARN(b"unknown flags %08x\n\0".as_ptr() as *const i8, flags);
+        WARN!(b"unknown flags %08x\n\0".as_ptr() as *const i8, flags);
         return STATUS_INVALID_PARAMETER;
     }
 
