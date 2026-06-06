@@ -149,6 +149,15 @@ extern "C" {
     // == the cnt-rust f64 core; the documented i386 f80 deviation is the
     // gap vs the OLD i386 C, not vs this reference).
     fn ref_strtod(s: *const u8, sret: *mut *mut u8) -> f64;
+    // Wave WCS — kernel (_LIBCNT_) slice of string/wcs.c (8 wide leaves).
+    fn ref__wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16;
+    fn ref__wcsrev(s: *mut u16) -> *mut u16;
+    fn ref_wcscoll(a: *const u16, b: *const u16) -> i32;
+    fn ref_wcspbrk(s: *const u16, accept: *const u16) -> *mut u16;
+    fn ref_wcscpy_s(d: *mut u16, num: usize, s: *const u16) -> i32;
+    fn ref_wcsncpy_s(d: *mut u16, num: usize, s: *const u16, count: usize) -> i32;
+    fn ref_wcscat_s(d: *mut u16, elem: usize, s: *const u16) -> i32;
+    fn ref_wcsncat_s(d: *mut u16, elem: usize, s: *const u16, count: usize) -> i32;
     // Wave CTYPE — ctype.c. Tables + narrow classification + wide
     // forwarders (the genuine compiled C, build.rs TU-A). The C names
     // with leading underscores map to suffixed ref names (build.rs).
@@ -4192,6 +4201,107 @@ fn diff_strtod() {
     }
 }
 
+/// Wave WCS — the 8 kernel wide leaves from wcs.c vs the transcribed
+/// genuine refs (build.rs). Runs cnt and ref on SEPARATE copies of the
+/// same buffer and compares both the buffer contents and the
+/// return value / returned-pointer offset.
+fn diff_wcs() {
+    let mut rng = Rng(0x5c5_4ee7_d00d_u64);
+    // wide string from a no-NUL alphabet (collisions for pbrk/coll).
+    let wstr = |rng: &mut Rng, max: usize| -> Vec<u16> {
+        let a = b"abABcC xy.+-12";
+        let n = rng.upto(max + 1);
+        let mut v: Vec<u16> = (0..n).map(|_| a[rng.upto(a.len())] as u16).collect();
+        v.push(0);
+        v
+    };
+    let off = |p: *mut u16, base: *const u16| {
+        if p.is_null() {
+            None
+        } else {
+            Some((p as usize - base as usize) / 2)
+        }
+    };
+    for _ in 0..30000 {
+        // _wcsnset
+        {
+            let s = wstr(&mut rng, 12);
+            let (mut a, mut b) = (s.clone(), s.clone());
+            let c = b"AZ*0 "[rng.upto(5)] as u16;
+            let n = rng.upto(14);
+            let ra = unsafe { cabi::_wcsnset(a.as_mut_ptr(), c, n) };
+            let rb = unsafe { ref__wcsnset(b.as_mut_ptr(), c, n) };
+            assert_eq!(off(ra, a.as_ptr()), off(rb, b.as_ptr()), "_wcsnset ret");
+            assert_eq!(a, b, "_wcsnset buf s={s:?} c={c} n={n}");
+        }
+        // _wcsrev
+        {
+            let s = wstr(&mut rng, 14);
+            let (mut a, mut b) = (s.clone(), s.clone());
+            unsafe {
+                cabi::_wcsrev(a.as_mut_ptr());
+                ref__wcsrev(b.as_mut_ptr());
+            }
+            assert_eq!(a, b, "_wcsrev s={s:?}");
+        }
+        // wcscoll / wcspbrk
+        {
+            let x = wstr(&mut rng, 10);
+            let y = wstr(&mut rng, 10);
+            let cc = unsafe { cabi::wcscoll(x.as_ptr(), y.as_ptr()) };
+            let rc = unsafe { ref_wcscoll(x.as_ptr(), y.as_ptr()) };
+            assert_eq!(cc.signum(), rc.signum(), "wcscoll x={x:?} y={y:?}");
+            let acc = wstr(&mut rng, 5);
+            let cp = unsafe { cabi::wcspbrk(x.as_ptr(), acc.as_ptr()) };
+            let rp = unsafe { ref_wcspbrk(x.as_ptr(), acc.as_ptr()) };
+            assert_eq!(off(cp, x.as_ptr()), off(rp, x.as_ptr()), "wcspbrk x={x:?} acc={acc:?}");
+        }
+        // wcscpy_s / wcsncpy_s
+        {
+            let src = wstr(&mut rng, 12);
+            let num = rng.upto(16);
+            let cnt = rng.upto(16);
+            let (mut a, mut b) = (vec![0xAAu16; 18], vec![0xAAu16; 18]);
+            let rca = unsafe { cabi::wcscpy_s(a.as_mut_ptr(), num, src.as_ptr()) };
+            let rcb = unsafe { ref_wcscpy_s(b.as_mut_ptr(), num, src.as_ptr()) };
+            assert_eq!(rca, rcb, "wcscpy_s ret src={src:?} num={num}");
+            assert_eq!(a, b, "wcscpy_s buf src={src:?} num={num}");
+            let (mut a, mut b) = (vec![0xAAu16; 18], vec![0xAAu16; 18]);
+            let rna = unsafe { cabi::wcsncpy_s(a.as_mut_ptr(), num, src.as_ptr(), cnt) };
+            let rnb = unsafe { ref_wcsncpy_s(b.as_mut_ptr(), num, src.as_ptr(), cnt) };
+            assert_eq!(rna, rnb, "wcsncpy_s ret src={src:?} num={num} cnt={cnt}");
+            assert_eq!(a, b, "wcsncpy_s buf");
+        }
+        // wcscat_s / wcsncat_s — dst prefilled with a NUL-terminated prefix
+        {
+            let elem = 4 + rng.upto(12);
+            let src = wstr(&mut rng, 10);
+            let cnt = if rng.next() & 7 == 0 { usize::MAX } else { rng.upto(14) };
+            // dst prefilled with a random NUL-terminated prefix (plen may
+            // == elem → the not-NUL-terminated branch). Build once, clone
+            // the Vec so cnt and ref get byte-identical input.
+            let mut dst0 = vec![0xAAu16; elem + 6];
+            let plen = rng.upto(elem);
+            for i in 0..plen {
+                dst0[i] = b"pq"[i % 2] as u16;
+            }
+            if plen < dst0.len() {
+                dst0[plen] = 0;
+            }
+            let (mut a, mut b) = (dst0.clone(), dst0.clone());
+            let rca = unsafe { cabi::wcscat_s(a.as_mut_ptr(), elem, src.as_ptr()) };
+            let rcb = unsafe { ref_wcscat_s(b.as_mut_ptr(), elem, src.as_ptr()) };
+            assert_eq!(rca, rcb, "wcscat_s ret elem={elem} src={src:?}");
+            assert_eq!(a, b, "wcscat_s buf elem={elem} src={src:?}");
+            let (mut a, mut b) = (dst0.clone(), dst0.clone());
+            let rna = unsafe { cabi::wcsncat_s(a.as_mut_ptr(), elem, src.as_ptr(), cnt) };
+            let rnb = unsafe { ref_wcsncat_s(b.as_mut_ptr(), elem, src.as_ptr(), cnt) };
+            assert_eq!(rna, rnb, "wcsncat_s ret elem={elem} src={src:?} cnt={cnt}");
+            assert_eq!(a, b, "wcsncat_s buf elem={elem} src={src:?} cnt={cnt}");
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Custom single-threaded runner (replaces libtest — see Cargo.toml `[[test]]
 // harness = false`). cnt-rust/cnt-ctype `#[no_mangle]` shims override host
@@ -4244,6 +4354,7 @@ fn main() {
         diff_tcs_family,
         diff_strtol_family,
         diff_strtod,
+        diff_wcs,
         diff_span,
         diff_wide_atoi,
         diff_casemap,
