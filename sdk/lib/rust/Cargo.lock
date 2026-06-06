@@ -248,6 +248,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdcom-serial-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "kdcom-serial-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "kdgdb-cargo"
 version = "0.1.0"
 dependencies = [
@@ -256,6 +270,20 @@ dependencies = [
 
 [[package]]
 name = "kdgdb-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kdvm-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "kdvm-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
