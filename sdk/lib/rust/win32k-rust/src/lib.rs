@@ -282,6 +282,8 @@ pub mod hotkey;
 pub mod scrollex;
 // [ntuser wave 20 — monitor]
 pub mod monitor;
+// [ntuser wave 21 — dde]
+pub mod dde;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
