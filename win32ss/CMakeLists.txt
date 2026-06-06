@@ -130,7 +130,7 @@ list(APPEND SOURCE
     # user/ntuser/guicheck.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/guicheck.rs) — cohabitation [ntuser wave 2]
     user/ntuser/hook.c
     # user/ntuser/hotkey.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hotkey.rs) — cohabitation [ntuser wave 18]
-    user/ntuser/input.c
+    # user/ntuser/input.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/input.rs) — cohabitation [ntuser wave 30]
     user/ntuser/ime.c
     user/ntuser/keyboard.c
     user/ntuser/kbdlayout.c
@@ -342,6 +342,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/nonclient.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/callback.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntmouse.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/input.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs
