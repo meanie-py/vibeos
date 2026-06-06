@@ -28,6 +28,7 @@ cabi = []
 # shim suppression (the dedicated `utf8` crate owns those in the
 # kernel). OFF for rtl-difftest (it models Nls* itself + fuzzes utf8).
 kernel = ["cabi"]
+user-atom-table = []
 
 [dependencies]
 # Only the integer CP1252 `mbcp` model is reused (ONE NLS truth).

@@ -2,7 +2,6 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{MmAllocateContiguousMemorySpecifyCache, MmMapIoSpace, MmUnmapIoSpace, PHYSICAL_ADDRESS, INTERFACE_TYPE};
 use core::ffi::c_void;
 // precomp.h / display.h / framebuf.h substrate (RGBQUAD, BV_*, SCREEN_*,
@@ -63,9 +62,9 @@ unsafe fn ApplyPalette() {
         let mut i = VidpYScale as ULONG - 1;
         while i > 0 {
             Pixel = ((Pixel as ULONG_PTR) + BytesPerScanLine as ULONG_PTR) as PULONG;
-            RtlCopyMemory(
-                Pixel as *mut core::ffi::c_void,
-                Frame as *const core::ffi::c_void,
+            core::ptr::copy_nonoverlapping(
+                Frame as *const u8,
+                Pixel as *mut u8,
                 (VidpXScale as ULONG * SCREEN_WIDTH * BytesPerPixel as ULONG) as usize,
             );
             i -= 1;
@@ -213,8 +212,8 @@ pub unsafe extern "system" fn VidCleanUp() {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ResetDisplay(SetMode: BOOLEAN) {
-    RtlZeroMemory(BackBuffer as PVOID, BackBufferSize);
-    RtlZeroMemory(FrameBufferStart as PVOID, FrameBufferSize as SIZE_T);
+    core::ptr::write_bytes(BackBuffer as *mut u8, 0, BackBufferSize as usize);
+    core::ptr::write_bytes(FrameBufferStart as *mut u8, 0, FrameBufferSize as usize);
 
     /* Re-initialize the palette and fill the screen black */
     InitializePalette();
@@ -278,7 +277,7 @@ pub unsafe extern "C" fn PreserveRow(CurrentTop: ULONG, TopDelta: ULONG, Restore
     }
 
     let mut Count: ULONG = TopDelta * SCREEN_WIDTH;
-    RtlCopyMemory(NewPosition as *mut _, OldPosition as *const _, Count as usize);
+    core::ptr::copy_nonoverlapping(OldPosition as *const u8, NewPosition as *mut u8, Count as usize);
 
     if Restore != 0 {
         NewPosition = (BackBuffer as PUCHAR).add((CurrentTop as usize) * (SCREEN_WIDTH as usize));
@@ -304,9 +303,9 @@ pub unsafe extern "C" fn PreserveRow(CurrentTop: ULONG, TopDelta: ULONG, Restore
             let mut i: ULONG = (VidpYScale as ULONG).wrapping_sub(1);
             while i > 0 {
                 Pixel = ((Pixel as ULONG_PTR) + (BytesPerScanLine as ULONG_PTR)) as PULONG;
-                RtlCopyMemory(
-                    Pixel as *mut _,
-                    Frame as *const _,
+                core::ptr::copy_nonoverlapping(
+                    Frame as *const u8,
+                    Pixel as *mut u8,
                     ((VidpXScale as ULONG) * SCREEN_WIDTH * (BytesPerPixel as ULONG)) as usize,
                 );
                 i -= 1;
@@ -328,7 +327,7 @@ pub unsafe extern "C" fn DoScroll(Scroll: ULONG) {
 
     let mut Top: ULONG = VidpScrollRegion.Top as ULONG;
     while Top <= VidpScrollRegion.Bottom as ULONG {
-        RtlCopyMemory(NewPosition as _, OldPosition as _, RowSize as usize);
+        core::ptr::copy_nonoverlapping(OldPosition as *const u8, NewPosition as *mut u8, RowSize as usize);
 
         let Frame: PULONG = (FrameBufferStart
             + (PanV + VidpYScale as ULONG * Top) as ULONG_PTR * BytesPerScanLine as ULONG_PTR
@@ -349,9 +348,9 @@ pub unsafe extern "C" fn DoScroll(Scroll: ULONG) {
         let mut i: ULONG = VidpYScale as ULONG - 1;
         while i > 0 {
             Pixel = (Pixel as ULONG_PTR + BytesPerScanLine as ULONG_PTR) as PULONG;
-            RtlCopyMemory(
-                Pixel as _,
-                Frame as _,
+            core::ptr::copy_nonoverlapping(
+                Frame as *const u8,
+                Pixel as *mut u8,
                 (VidpXScale as ULONG * RowSize * BytesPerPixel as ULONG) as usize,
             );
             i -= 1;
@@ -423,9 +422,9 @@ pub unsafe extern "system" fn VidSolidColorFill(
         let mut i = VidpYScale - 1;
         while i > 0 {
             Pixel = ((Pixel as ULONG_PTR) + BytesPerScanLine as ULONG_PTR) as PULONG;
-            RtlCopyMemory(
-                Pixel as *mut _,
-                Frame as *const _,
+            core::ptr::copy_nonoverlapping(
+                Frame as *const u8,
+                Pixel as *mut u8,
                 (VidpXScale as ULONG * (Right - Left + 1) * BytesPerPixel as ULONG) as usize,
             );
             i -= 1;
@@ -447,7 +446,7 @@ pub unsafe extern "system" fn VidScreenToBufferBlt(
     let mut y: ULONG;
 
     /* Clear the destination buffer */
-    RtlZeroMemory(Buffer as *mut core::ffi::c_void, (Delta * Height) as usize);
+    core::ptr::write_bytes(Buffer as *mut u8, 0, (Delta * Height) as usize);
 
     /* Start the outer Y height loop */
     y = 0;

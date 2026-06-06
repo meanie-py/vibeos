@@ -169,6 +169,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
+name = "framebuf-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "framebuf-rust"
 version = "0.1.0"
 dependencies = [
@@ -246,6 +253,13 @@ dependencies = [
 [[package]]
 name = "interlck"
 version = "0.1.0"
+
+[[package]]
+name = "kbdclass-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "kbdclass-rust"
@@ -411,6 +425,13 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "midl-rt"
 version = "0.1.0"
+
+[[package]]
+name = "mouclass-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "mouclass-rust"
@@ -580,6 +601,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-heap"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-rust"
 version = "0.1.0"
 dependencies = [
@@ -599,6 +627,7 @@ dependencies = [
  "network",
  "prefix",
  "random",
+ "rtl-heap",
  "rtl-strings",
  "slist",
  "splaytree",

@@ -14,6 +14,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
 use ntkrnl_sys::inline::tier1::{
     IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine,
+    IoSkipCurrentIrpStackLocation,
 };
 // ddk-ONLY names (pointer aliases, bindgen `_`-structs, Io/Zw/Rtl funcs, enum variants).
 use ntkrnl_sys::ddk::{
@@ -27,7 +28,7 @@ use ntkrnl_sys::ddk::{
     IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoGetDeviceObjectPointer,
     IoGetDriverObjectExtension, IoRegisterDeviceInterface, IoRegisterDriverReinitialization,
     IoReleaseCancelSpinLock, IoSetDeviceInterfaceState, IoSetStartIoAttributes,
-    IoSkipCurrentIrpStackLocation, KeInitializeEvent, KeWaitForSingleObject,
+    KeInitializeEvent, KeWaitForSingleObject,
     ZwClose, ZwEnumerateValueKey, ZwOpenFile, ZwOpenKey,
     RtlCopyUnicodeString, RtlAppendUnicodeToString, RtlAppendUnicodeStringToString,
     RtlCreateUnicodeString, RtlQueryRegistryValues, RtlWriteRegistryValue,

@@ -1,0 +1,5 @@
+# Durable archive of paid API responses (rustconv/sink.py). Streamed here as
+# translations generate so a kill never loses paid work. Local-only, never
+# committed — but DO NOT delete a run dir while its translation is in progress
+# or unintegrated; it is the only copy of work you paid for.
+.responses/

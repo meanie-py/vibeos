@@ -175,39 +175,7 @@ bash qemu/sym.sh 0xC804 0x50FC    # Look up offsets from UEFI bootloader (uefild
 
 ## Kernel Debugging Infrastructure (qemu/start.sh, inspect.sh, run-until.sh)
 
-**For triaging kernel bugs (BUGCHECKs, hangs, regressions), prefer this toolkit over `qemu/run.sh` + ad-hoc DbgPrint instrumentation.** Design doc: `docs/engineering/kernel-debugging-infra.md`.
-
-The toolkit is agent-driven: every operation is a single batch command in, structured result out. No interactive GDB sessions to babysit.
-
-```bash
-# Boot a kernel with gdbstub enabled (preflight runs automatically)
-RUN=$(qemu/start.sh amd64 --gdb)        # prints run-id
-
-# Wait for boot markers (sanitized output, rich timeout response)
-qemu/wait-for.sh $RUN --pattern "ACPI Timer" --timeout 60
-qemu/tail.sh $RUN --lines 50            # sanitized read of serial.log
-qemu/status.sh $RUN --json              # JSON: alive, gdb_reachable, serial_bytes
-
-# Single-shot inspection (auto-relocates symbols; [Rust]/[C]/[ASM]/[???] tags)
-qemu/inspect.sh $RUN --command bt 30
-qemu/inspect.sh $RUN --command symbolicate-pc 0xfffff8000047e8d3
-qemu/inspect.sh $RUN --command dump-thread 0xfffffa80015c92f0
-qemu/inspect.sh $RUN --command dump-trapframe 0xfffff8000060f940
-qemu/inspect.sh $RUN --command pool-tag 0xfffffa80015bdc20
-qemu/inspect.sh $RUN --command identify-object 0xfffffa80015bdc20
-qemu/inspect.sh $RUN --command triage-bugcheck       # only valid AT a KeBugCheckEx halt
-
-# Bounded execution: break + continue + chained inspect, all in one batch.
-# Always cleans up breakpoints on hit AND on timeout.
-qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 120 --then triage-bugcheck
-
-qemu/stop.sh $RUN                       # idempotent; preserves artifacts under qemu/runs/$RUN/
-
-# Offline sym lookup (no QEMU needed, after build-index.sh once per build)
-qemu/build-index.sh amd64               # writes qemu/symbols-amd64.tsv
-qemu/sym2addr.sh amd64 KiUnwaitThread   # handles i386 PE decoration too
-qemu/addr2sym.sh amd64 --reloc 0xfffff80000000000 0xfffff8000047e8d3
-```
+**For triaging kernel bugs (BUGCHECKs, hangs, regressions), prefer this toolkit over `qemu/run.sh` + ad-hoc DbgPrint instrumentation.** It is agent-driven: every operation is a single batch command in, structured result out, no interactive GDB sessions to babysit. The scripts are `start.sh` / `stop.sh` / `wait-for.sh` / `tail.sh` / `status.sh` / `inspect.sh` (bt, symbolicate-pc, dump-thread, dump-trapframe, pool-tag, identify-object, triage-bugcheck) / `run-until.sh` / `ps` / `build-index.sh` / `sym2addr.sh` / `addr2sym.sh` / `preflight.sh`.
 
 **Standard recipe (validated end-to-end):**
 ```
@@ -215,18 +183,9 @@ RUN=$(qemu/start.sh amd64 --gdb)
 qemu/wait-for.sh $RUN --pattern "ACPI Timer" --timeout 60
 qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
-On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exception
-code, faulting PC + symbol, full KTRAP_FRAME, and `identify-object` on the bogus
-pointer (e.g. "ProcessObject named csrss.exe") — all in one tool call,
-replacing the ~2-min/iter "DbgPrint instrument and rebuild" loop.
+On the amd64 KiUnwaitThread BUGCHECK flake, this returns the stop code, exception code, faulting PC + symbol, full KTRAP_FRAME, and `identify-object` on the bogus pointer — all in one tool call.
 
-**Rules:**
-- `qemu/ps` shows every QEMU running across ALL worktrees + slot usage — run it first when unsure what's live or why KVM is contended. `qemu/README.md` indexes every script in `qemu/`.
-- QEMUs are capped: at most `VIBEOS_QEMU_MAX_CONCURRENT` (default 10) run at once (over the cap, launchers queue on an flock slot pool), and none outlives `VIBEOS_QEMU_MAX_LIFETIME` (default 30 min). `qemu/reap.sh` (auto-run by `start.sh` + smoke) culls orphans whose owning session died and any VM past its deadline.
-- Run `qemu/build-index.sh <arch>` after each kernel build (or before relying on offline sym lookup).
-- Per-run artifacts live at `qemu/runs/<run-id>/` — manifest.json, serial.log (raw bytes), gdb.log. Cleaned up only by explicit `rm`; the dir is gitignored.
-- `qemu/preflight.sh [arch]` runs automatically inside `start.sh`; on failure it prints the exact apt/cmake/cargo command to fix the issue (gdb-multiarch, llvm-dwarfdump, DWARF richness per axis, KdDebuggerDataBlock symbol presence).
-- The kernel takes ~15–20s of cold-cache boot before producing any serial output. `wait-for.sh --timeout 60` is the right starting budget; bump higher for deep markers like "shell ready".
+Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
 
 ## Test Suite
 
@@ -279,37 +238,7 @@ pytest tests/qemu/test_smoke.py -v --arch i386 -k "sacred_primitives or no_unexp
 
 **IMPORTANT:** Cargo's incremental cache can mask regressions. Always run WITHOUT `--skip-clean-build` for final verification before committing. The clean build nukes `rust-kernel-target/` to ensure deterministic results.
 
-### Smoke Test Infrastructure
-
-The smoke test framework lives in `tests/qemu/` and provides automated boot verification:
-
-**Architecture:**
-- `vm.py` — VM lifecycle manager with per-arch configs (ArchConfig subclasses). Handles QEMU process, QMP, serial, debugcon.
-- `conftest.py` — pytest fixtures: session-scoped VM boot + per-test snapshot restore via QMP savevm/loadvm. Nukes `rust-kernel-target/` before each session unless `--skip-clean-build` is passed.
-- `test_smoke.py` — 7 tests per arch: boot_and_serial, qmp_status, snapshot_restore, screenshot, sacred_primitives, no_unexpected_ud2, plus the milestone marker check.
-- `serial_client.py` — Unix socket serial client. Creates server socket BEFORE starting QEMU (prevents race). Supports `read_until(marker)` (string match) and `read_until_idle()` (silence detection). Auto-continues past `kdb:>` prompts. Tees every serial byte (flushed live) to `qemu/<arch>_smoke_live.log` — `tail -f` it to watch a boot in progress instead of guessing whether it's hung (the path is also printed at session start).
-- `qmp_client.py` — QEMU Machine Protocol over Unix socket for screendump, savevm/loadvm, query-status.
-- `debugcon.py` — Decodes bochs debug port (0xE9) output against JSON trace catalogs for boot failure triage.
-
-**Boot media:**
-- ARM64: UEFI ramdisk (`boot.img` + `ramdisk.img`)
-- i386: LiveCD ISO (`build-i386/livecd.iso`)
-- amd64: LiveCD ISO (`build-amd64/livecd.iso`)
-
-**KVM acceleration:** i386 and amd64 use `-accel kvm -cpu host` when `/dev/kvm` is available (WSL2 supports this).
-
-**Resource caps (shared with the debug toolkit via `/tmp/vibeos-qemu-locks/`):** every smoke VM takes one of `VIBEOS_QEMU_MAX_CONCURRENT` (default 10) global concurrency slots — parallel runs across worktrees queue instead of thrashing KVM — and is killed at the `VIBEOS_QEMU_MAX_LIFETIME` (default 30 min) hard cap (in-process watchdog + reaper-enforced deadline). Queue time doesn't count against the cap. `qemu/ps` shows live VMs + slot usage.
-
-**Debugcon (boot tracing):**
-Kernel Rust code emits single-byte markers via `out 0xe9, al` at boot milestones. QEMU captures these with `-debugcon file:debugcon.bin` (i386/amd64 only). On boot failure, the test framework decodes the raw bytes against a JSON trace catalog (`tools/rustconv/data/trace_catalog_{arch}.json`) to produce a triage report showing how far the kernel got. Trace catalogs are generated by `rustconv trace-catalog` from inline asm in Rust source (e.g., `ke/i386/kiinit.rs`). i386 has 48 trace points covering KiSystemStartup through KiInitializeKernel.
-
-**Test lifecycle:**
-1. Boot QEMU once per session (session fixture)
-2. Wait for boot marker (`shell ready` for i386/amd64 — proves the full kernel → SMSS → csrss → win32k → winlogon → explorer → desktop chain) or idle detection (ARM64)
-3. Wait for desktop settle time (user-mode processes need time after kernel boot)
-4. Save "ready" snapshot
-5. Each test restores to "ready" snapshot before running
-6. On boot failure: capture screenshot + debugcon triage report for diagnosis. BSOD crashes auto-symbolicated with function names from objdump.
+Smoke/CLI harness internals (`vm.py`/`conftest.py`/`serial_client.py`/`qmp_client.py`/`debugcon.py`, boot media, KVM acceleration, resource caps, debugcon boot tracing, test lifecycle): `tests/qemu/cli/README.md`.
 
 ## Rust in the Kernel
 
@@ -368,101 +297,23 @@ Principles:
 - **NTAPI vs cdecl ABI** matters per arch: i386 NTAPI = stdcall (`_Name@N`), amd64/arm64 NTAPI = cdecl (just `Name`). `extern "system"` resolves to the right thing per arch. Mismatched `extern "C"` vs `extern "system"` declarations across rlibs link silently on amd64/arm64 but break i386. Use `tools/rustconv/rustconv/verify_abi.py` to detect.
 - **Cross-DLL data imports** (HAL referencing kernel-data exports like `KdDebuggerNotPresent`, `KeServiceDescriptorTable`): need `#[link(name = "ntoskrnl", kind = "raw-dylib")]` on the extern static block. `postprocess_bindgen.py --hal` adds this automatically for the 41 affected externs.
 
-### ntkrnl-sys — Kernel FFI Declarations Crate
+### ntkrnl-sys — Kernel FFI Declarations Crate (overview)
 
-Dual-layer FFI crate providing kernel type and function declarations for Rust kernel components:
+Dual-layer FFI crate at `sdk/lib/rust/ntkrnl-sys/` providing kernel type and function declarations:
+- **Layer 1 — hand-written modules** (`ntkrnl_sys::base`, `::ke`, `::mm`, `::ex`, `::ps`, `::ob`, `::rtl`, `::interlocked`): curated declarations, inline functions, macros, and convenience wrappers bindgen can't generate.
+- **Layer 2 — bindgen kernel module** (`ntkrnl_sys::ddk::*`): auto-generated from `ntoskrnl.h` + `mm/ARM3/miarm.h`, covering all internal subsystems (~3,300 extern fns, ~1,850 structs, ~4,400 type aliases per arch, with correct i386 fastcall/stdcall conventions). ~1,500 compile-time `size_of` assertions per arch verify C layout.
 
-```
-sdk/lib/rust/ntkrnl-sys/
-├── Cargo.toml
-├── generate_bindings.sh       # Runs bindgen for all 3 architectures
-├── postprocess_bindgen.py     # Post-processes raw bindgen output
-├── verify_sizes.py            # Generates compile-time struct size assertions
-└── src/
-    ├── lib.rs                 # Re-exports both layers
-    ├── base.rs                # Hand-written: NTSTATUS, PVOID, LIST_ENTRY, etc.
-    ├── ke.rs                  # Hand-written: KSPIN_LOCK, KeAcquireSpinLock, etc.
-    ├── mm.rs                  # Hand-written: POOL_HEADER, POOL_DESCRIPTOR, etc.
-    ├── ex.rs, ps.rs, ob.rs    # Hand-written: pool constants, process, object
-    ├── rtl.rs, interlocked.rs # Hand-written: RTL functions, interlocked ops
-    ├── bindgen_common.rs      # Generated: shared helper types
-    ├── bindgen_arm64.rs       # Generated: ~82K lines, ~3,300 extern functions
-    ├── bindgen_amd64.rs       # Generated: ~83K lines, ~3,350 extern functions
-    ├── bindgen_i386.rs        # Generated: ~81K lines, ~3,360 extern functions
-    ├── size_check_arm64.rs    # Generated: 1,522 compile-time size assertions
-    ├── size_check_amd64.rs    # Generated: 1,542 compile-time size assertions
-    └── size_check_i386.rs     # Generated: 1,525 compile-time size assertions
-```
-
-**Layer 1 — Hand-written modules** (`ntkrnl_sys::base`, `ntkrnl_sys::ke`, etc.): Curated declarations for the pool allocator and existing Rust kernel components. Includes inline functions, macros, and convenience wrappers that bindgen can't generate.
-
-**Layer 2 — Bindgen kernel module** (`ntkrnl_sys::ddk::*`): Auto-generated from the full `ntoskrnl.h` master header + `mm/ARM3/miarm.h` via bindgen. Covers ALL internal kernel subsystems — MM (Mi*), OB (Ob*/Obp*), SE (Se*/Sep*), PS (Ps*/Psp*), KE (Ke*/Ki*), IO (Io*/Iop*), EX (Ex*), CC (Cc*), CM (Cm*/Cmp*), LPC, plus ~300 Nt* and ~190 Zw* syscalls. Provides ~3,300 extern functions, ~1,850 structs (including EPROCESS, ETHREAD, OBJECT_HEADER, MMPTE, MMPFN, MMVAD, TOKEN, HANDLE_TABLE, POOL_HEADER), and ~4,400 type aliases with correct calling conventions (including i386 fastcall/stdcall).
-
-#### Size Verification
-
-~1,500 compile-time `const _: () = assert!(size_of::<T>() == N)` assertions per arch verify every bindgen struct matches C layout. Generated by `verify_sizes.py` which cross-compiles `sizeof()` expressions to LLVM IR via clang and extracts values.
-
-```bash
-# Regenerate size assertions (after bindgen regeneration)
-cd sdk/lib/rust/ntkrnl-sys
-python3 verify_sizes.py
-
-# Verify assertions are up to date
-python3 verify_sizes.py --check
-```
-
-#### Regenerating Bindings
-
-```bash
-# Prerequisites: cargo install bindgen-cli
-cd sdk/lib/rust/ntkrnl-sys
-bash generate_bindings.sh    # Regenerate bindgen output
-python3 verify_sizes.py      # Regenerate size assertions
-```
-
-The script runs bindgen against `ntoskrnl.h` + `miarm.h` for all 3 targets (`aarch64-pc-windows-gnu`, `x86_64-pc-windows-gnu`, `i686-pc-windows-gnu`), then post-processes the output to extract shared helpers and add module headers. Key wrapper header defines:
-- `#define FORCEINLINE` — prevents inline function body expansion
-- `#define _INTRIN_H_` — skips compiler intrinsics (not available in libclang)
-- `#define __int64 long long` — type alias needed by various headers
-- `#define __wfi()/__yield() ((void)0)` — ARM64 intrinsic stubs
-
-#### Limitations
-
-- **FORCEINLINE functions** (e.g., `KeGetCurrentIrql` on amd64) appear as extern declarations but have no exported symbol — must be hand-written or provided via overlay
-- **Bindgen type naming** uses `_LIST_ENTRY` (with underscore prefix) vs hand-written `LIST_ENTRY` — the DDK module includes both via type aliases
-- **Two skip types** in verify_sizes.py: `_GENERAL_LOOKASIDE_POOL` (complex union, bindgen disagrees with C) and `_LONGDOUBLE` (x87 long double, platform-specific padding)
-
-### CMake Integration
-
-The cmake-driven kernel build invokes `cargo build --release` for each Rust crate that becomes a static lib, then links the resulting `.a` files into the appropriate kernel-mode targets:
-
-- `sdk/lib/rust/ntoskrnl-rust/` → `libkernel_rust.a` → linked into `ntoskrnl.exe`
-- `sdk/lib/rust/hal-rust/` → `libhal_rust.a` (default) + `libhal_rust_mini.a` (`--features minihal`) → linked into HAL flavors and freeldr/mini_hal consumers
-- `sdk/lib/rtl/` → invokes `cargo build` for `rtl-rust` and links into librtl
-
-The cargo PoC (`sdk/lib/rust/ntoskrnl-cargo/`) is the long-term replacement for the cmake-driven `ntoskrnl.exe` link. Today it reuses cmake-built `.obj` and `.a` artifacts and just drives the final link from cargo; eventually it replaces the cmake link entirely.
+Full reference (directory tree + line counts, size-verification `verify_sizes.py`, bindgen regeneration via `generate_bindings.sh`, limitations), plus the CMake build-integration mechanics and the "Adding New Crates" steps: `docs/engineering/rust-in-kernel.md`.
 
 ### Cohabitation pattern (HAL)
 
 For HAL Rust translation, each .c → .rs swap is independently revertible: the C file gets commented out in the per-flavor cmake (`hal/halx86/{generic,legacy,pic,acpi,apic}.cmake`) with a `# replaced by Rust (path)` line, and the Rust file's `#[no_mangle]` symbol takes over. `--allow-multiple-definition` allows side-by-side C+Rust during the swap-in phase; lld first-match wins. See `docs/engineering/hal-translation-audit.md` for status and per-file mapping.
 
-### Adding New Crates
-1. Create directory under `sdk/lib/rust/`
-2. Add to workspace `members` in `sdk/lib/rust/Cargo.toml`
-3. Add `extern crate <name>;` in the appropriate umbrella crate's `lib.rs` (usually `kernel-rust/src/lib.rs`) — without this, cargo compiles the rlib but its `#[no_mangle]` symbols don't end up in `libkernel_rust.a` (memory `feedback_extern_crate_for_staticlib.md`)
-4. Wire up `add_custom_command` + `target_link_libraries` in the appropriate cmake (typically `sdk/lib/rtl/CMakeLists.txt` for rtl-flavor crates, or the consumer module's CMakeLists)
-
 ## rustconv — C-to-Rust Translation Pipeline
 
 API-driven pipeline that translates ntoskrnl and HAL C files to Rust using LLM (Sonnet batch API by default; also supports Haiku, Opus, Gemini Pro/Flash). Located at `tools/rustconv/`.
 
-### Pipeline
-
-```
-C source → [scanner] tree-sitter parse → [resolver] match vs ntkrnl-sys catalog
-→ [prompt_builder] system prompt + C + imports + exports → [batch_runner] LLM API
-→ [postprocess] safe mechanical fixes → [assembler] write crate → [checker] cargo check ×3
-```
+Full pipeline internals, post-processor rules, probe/Stage-3 design, and the Codex cross-model path: `docs/engineering/rustconv-pipeline.md`.
 
 ### CLI
 
@@ -482,129 +333,32 @@ python -m rustconv trace-catalog                        # Generate debugcon trac
 python -m rustconv check                                # cargo check ×3 targets
 ```
 
+> **⚠️ `translate`/`submit` SPEND REAL MONEY — read this before running them.** Multiple agents have wasted >$100 by killing translations mid-run and losing the output. The rules:
+> - **NEVER Ctrl-C / kill a `translate` or `submit` mid-call to "adjust something."** Let it finish. `translate` makes one paid call **per function** — kill it at function 35/40 and you re-pay for all 35 on the retry. If you must change something, wait for it to finish, *then* re-run.
+> - **Output is now saved as it streams** to `tools/rustconv/.responses/<ts>-<file>/` (gitignored, in-repo, survives kills/reboots). Each function's Rust lands there the instant it returns; the in-flight one is preserved as a `.partial`. That dir is the **canonical copy** — never write translations to `/tmp` (`-o /tmp/...` is flagged; the durable copy in `.responses/` exists regardless). Do not delete a `.responses/` run dir that holds unintegrated work.
+> - **Cost estimates are a FLOOR, not a quote.** `estimate` shows the single-prompt cost; `translate` re-sends context per function, so the real bill is routinely **2–5×** higher, and `-m opus` is **full sync price ($5/$25 per 1M), not the batch Sonnet price** in the table below. Watch the live `[running $X.XX]` counter the command prints — that's the truth. Budget with the "sync @5x" column from `estimate`.
+> - **Don't re-translate a file that already has output** (in `.responses/` or already integrated) without explicit user approval — you're re-paying for work that exists.
+
 Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, or full model ID.
 
 `rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating (memory `feedback_rustconv_hal_target.md`).
 
-### Key Files
+The pipeline has multiple stages: Stage 1 (C → Rust, `submit`/`batch`), Stage 2 (probe migration, `probe-migrate` — `ProbeForRead`/`Write` → `Result<T>`; SE+OB done), Stage 3 (Result+Drop-RAII idiomation, planned). See `docs/engineering/rustconv-pipeline.md` for the per-stage design.
 
-```
-tools/rustconv/
-├── rustconv/
-│   ├── scanner.py         # tree-sitter C parser (functions, globals, SEH, arch ifdefs)
-│   ├── catalog.py         # Index ntkrnl-sys symbols (~9,700 per arch)
-│   ├── resolver.py        # Match identifiers → imports + gap warnings
-│   ├── spec_parser.py     # Parse ntoskrnl.spec / hal.spec
-│   ├── prompt_builder.py  # Assemble system + per-file prompts
-│   ├── batch_runner.py    # Anthropic + Gemini API client
-│   ├── postprocess.py     # Safe mechanical fixes (type names, imports, enums)
-│   ├── assembler.py       # Write to ntoskrnl-rust/src/{subsys}/{file}.rs
-│   ├── checker.py         # cargo check ×3 targets → structured errors
-│   ├── probe_migrate.py   # Stage 2: ProbeFor{Read,Write} → Result<T>
-│   ├── verify_constants.py / verify_abi.py / verify_ffi.py  # Static-analysis verifiers
-│   └── config.py          # Paths, model config, token budgets, Target dataclass (kernel/hal)
-├── templates/
-│   ├── system_prompt.md       # Kernel translation rules (~5K tokens, prompt-cached)
-│   ├── system_prompt_hal.md   # HAL-flavor translation rules
-│   ├── function_prompt.md     # Per-function prompt template
-│   └── probe_migrate_prompt.md  # Stage 2 migration rules
-└── data/
-    ├── gap_functions.toml         # FORCEINLINE/macro functions not in bindgen
-    └── trace_catalog_{arch}.json  # debugcon byte-marker decoder catalogs
-```
+### Cost (Sonnet **Batch** API — the cheapest path, NOT what you pay synchronously)
 
-### Post-Processor Safety
+These are **batch Sonnet** figures (50% off, async). The synchronous `translate`/`submit`
+path you actually use pays **full list price**, and `-m opus` is **~3.3× the Sonnet rate**
+($5/$25 vs $3/$15 per 1M) on top of losing the batch discount — so a "Full ntoskrnl"
+Opus-synchronous run with per-function fan-out is an order of magnitude past the bottom row.
+Always sanity-check against `rustconv estimate`'s "sync @5x" column and the live cost counter.
 
-`postprocess.py` only does context-free transforms that are always correct:
-- Type name underscore-prefixing (`OBJECT_HEADER` → `_OBJECT_HEADER`)
-- Import fixes (`ddk::*` warning, pool type dedup)
-- Enum variant name prefixing (`ObCreateHandle` → `_OB_OPEN_REASON_ObCreateHandle`)
-
-Union field access (`__bindgen_anon_N`) is NOT done by the post-processor — it's context-dependent and handled by the system prompt teaching the LLM to generate correct accessors directly.
-
-### Probe Migration Stage (`probe-migrate`)
-
-Second pipeline stage that migrates bare `ProbeForRead`/`ProbeForWrite` calls in already-translated Rust code to use the Rust-native probe API (`ntkrnl-sys/src/probe.rs`). Operates file-by-file with preprocess→LLM→postprocess pattern.
-
-```bash
-python -m rustconv probe-migrate se/sqos.rs           # Single file
-python -m rustconv probe-migrate se/ -m haiku          # Batch subsystem
-python -m rustconv probe-migrate se/sqos.rs --scan-only  # Show probe sites
-python -m rustconv probe-migrate se/sqos.rs --dry-run    # Preview without writing
-```
-
-Key files:
-- `rustconv/probe_migrate.py` — scanner, preprocessor, postprocessor, runner
-- `templates/probe_migrate_prompt.md` — 10 migration rules for LLM
-- `sdk/lib/rust/ntkrnl-sys/src/probe.rs` — Rust-native probe API
-
-The probe API returns `Result<T, NTSTATUS>` instead of raising exceptions:
-```rust
-probe_read_user::<T>(ptr, mode) -> Result<T, NTSTATUS>
-probe_write_user::<T>(ptr, value, mode) -> Result<(), NTSTATUS>
-probe_user_buffer(buf, len, align, mode) -> Result<(), NTSTATUS>
-probe_capture_unicode_string_header(ptr, mode) -> Result<UNICODE_STRING, NTSTATUS>
-```
-
-**Status:** SE and OB subsystems fully migrated to Rust-native probe API. All 3 arches build + smoke tests pass. Other subsystems still use bare `ProbeForRead`/`ProbeForWrite` calls — see memory `feedback_translation_philosophy.md` for staging.
-
-### Multi-Stage Pipeline Architecture
-
-The translation pipeline has multiple stages, each refining the previous output:
-
-```
-Stage 1: C → Rust        (rustconv submit/batch)   — bulk transliteration
-Stage 2: Probe migration (rustconv probe-migrate)  — ProbeForRead/Write → Result<T>
-Stage 3: Result+Drop-RAII idiomation (planned)     — de-transliterate to idiomatic Rust
-```
-
-**Stage 3 is NOT "SEH idiomation."** There is no SEH to convert: `USE_DUMMY_PSEH` makes `_SEH2_EXCEPT` handlers dead code on all 3 arches (see DUMMY_PSEH section above), and the kernel is `panic=abort` with no unwinding. Stage 1 already produced Rust where the exception path doesn't execute. Stage 3's job is to de-transliterate the *normal* path: replace the C goto-cleanup cascades and manual lock/unlock pairs with `Drop`-based RAII (`Drop` *is* the `finally`, and it is sound here precisely because every scope exit is an explicit `return` — no unwind), bare `NTSTATUS` i32 with `Result<T, NTSTATUS>`, and magic integer constants with `enum`/newtype/`bitflags!`.
-
-The shape per function: an idiomatic `<snake_name>_rs(...) -> Result<T, NTSTATUS>` core (suffix `_rs`; distinct from the existing `_rs_<CName>` inline-shim *prefix*), with the existing `#[no_mangle] extern "system"` C symbol collapsed to a thin trampoline (`Ok(v)` → `write_volatile` outparams + `STATUS_SUCCESS`, `Err(s)` → `s`). The trampoline MUST keep `write_volatile` on every output-pointer write (a naive `*out = v` reintroduces the captures(none)/ud2 miscompile) and keep the `extern "system"` ABI. Adoptable one function at a time so smoke stays green throughout.
-
-Stage 3 will operate **function-by-function** (not file-by-file) using paired C+Rust function context, a dependency graph (SQLite cache), and Rust-native API surface for RAII guards, safe user-mode copies, and Result patterns. The LLM sees the original C alongside the current Rust translation, plus callees and type context.
-
-### Cost (Sonnet Batch API)
-
-| Scope | Est. Cost |
+| Scope | Est. Cost (batch Sonnet, floor) |
 |-------|-----------|
 | Single file | ~$0.03 |
 | Subsystem (11 files) | ~$0.30 |
 | Full ntoskrnl (393 files) | ~$8.70 |
 | 5 iterations | ~$43.50 |
-
-### Codex CLI (Cross-Model Translation)
-
-OpenAI Codex CLI (`codex`) can be used as an alternative to rustconv for C-to-Rust translations. Cross-model translation catches different blind spots than same-model review.
-
-```bash
-# Non-interactive translation
-codex exec --full-auto "Translate these C functions to Rust: ..."
-
-# Default model works (o3 requires paid OpenAI API, not ChatGPT account)
-codex exec --full-auto "$(cat prompt.md)"
-```
-
-**Key prompt rules to include:**
-- `#[no_mangle] pub unsafe extern "system" fn` for all exported functions
-- Pool tags: `u32::from_le_bytes(*b"XXXX")` (C multi-char literals are big-endian)
-- `NT_ERROR(x)` = `((x as u32) >> 30) == 3`, NOT `x < 0`
-- `extern "system"` for FFI (stdcall on i386)
-- DUMMY_PSEH: skip `_SEH2_EXCEPT` handlers entirely
-- `core::ptr::addr_of_mut!` for KeWaitForSingleObject event pointers
-- `IO_STATUS_BLOCK.Information`: use `as _` for cross-arch portability
-
-**Post-integration checklist:**
-1. Run `verify_constants.py` on the output to catch wrong constant values
-2. Run `verify_ffi.py` to check ABI mismatches and C macro usage
-3. Use RAII guards (`PfnLockGuard`, `SpinLockGuard`, `IrqlGuard`) instead of manual lock pairs
-4. Use `drop(guard)` at the exact original release point — do NOT let guards drop at function end
-5. Prefer `Result<(T, NTSTATUS), NTSTATUS>` returns over output pointers for internal Nt* functions — preserve exact NTSTATUS, don't hardcode STATUS_SUCCESS
-6. Use `core::ptr::write_volatile` for ALL writes to output pointer parameters — prevents LLVM captures(none) elimination
-7. Run `python3 tools/scan_ud2.py --check build-i386` after building — catches LLVM miscompilation (ud2 in named functions)
-8. Run `python3 tools/lint_kernel.py` to find unprotected output pointer writes
-9. Fix type casts (`PVOID`, `as _` for arch-dependent sizes)
-10. Build all 3 arches + run smoke tests (use `--skip-clean-build` for fast iteration, omit for final verification)
 
 ### Static Analysis Tools
 
@@ -629,11 +383,7 @@ bash tools/verify_sacred_primitives.sh build-i386
 .venv/bin/python tools/rustconv/rustconv/verify_ffi.py
 ```
 
-**`scan_ud2.py`** — Scans ntoskrnl.exe binary for `ud2` (0f 0b) instructions in named functions. ud2 in a named function means LLVM proved the function body has UB and replaced it — almost always a captures(none) or ABI mismatch bug. Expected ud2 in `unwrap_unchecked` panic stubs are excluded. Integrated into smoke tests as `test_no_unexpected_ud2`.
-
-**`lint_kernel.py`** — Static source-level scanner that finds `*OutputParam = value` writes in `#[no_mangle]` functions that don't use `write_volatile`. Every such write is a potential captures(none) target. Catches the bug BEFORE compilation.
-
-**Smoke test infrastructure** — `conftest.py` nukes `rust-kernel-target/` before each test session (unless `--skip-clean-build`). This prevents cargo's incremental cache from masking regressions. Post-build checks (ud2 scan) run automatically before QEMU boot. BSOD crashes are auto-symbolicated with function names from objdump.
+`scan_ud2.py` finds `ud2` (0f 0b) in named functions — LLVM proved the body has UB (almost always captures(none) or an ABI mismatch); it's wired into smoke as `test_no_unexpected_ud2`. `lint_kernel.py` finds `*OutputParam = value` writes in `#[no_mangle]` functions that skip `write_volatile` (a captures(none) target) before compilation. (The smoke harness also nukes `rust-kernel-target/` per session unless `--skip-clean-build`, runs the ud2 scan pre-boot, and auto-symbolicates BSODs — see `tests/qemu/cli/README.md`.)
 
 ## ARM64 Specifics
 

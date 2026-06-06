@@ -1446,12 +1446,13 @@ pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut GlobalName: _UNICODE_STRING = core::mem::zeroed();
     let mut DirHandle: HANDLE = core::ptr::null_mut();
+    let mut DosDevicesDirectory: HANDLE = core::ptr::null_mut();
     let mut NextEntry: PLIST_ENTRY;
     let Head: PLIST_ENTRY;
 
     let mut RegEntryVar: PSMP_REGISTRY_VALUE;
 
-    RtlInitUnicodeString(&mut GlobalName, b"\\\0?\0?\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut GlobalName, wstr!("\\??\0"));
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -1461,13 +1462,14 @@ pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
     Status = NtOpenDirectoryObject(
-        core::ptr::addr_of_mut!(SmpDosDevicesObjectDirectory),
+        core::ptr::addr_of_mut!(DosDevicesDirectory),
         DIRECTORY_ALL_ACCESS,
         &mut ObjectAttributes,
     );
     if !NT_SUCCESS(Status) {
         return Status;
     }
+    SmpDosDevicesObjectDirectory = DosDevicesDirectory;
 
     Head = core::ptr::addr_of_mut!(SmpDosDevicesList);
     while !IsListEmpty(Head) {
@@ -2619,7 +2621,7 @@ pub unsafe extern "system" fn SmpInit(
     /* Create the SM API Port */
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(PortName),
-        b"\\\0S\0m\0A\0p\0i\0P\0o\0r\0t\0\0\0".as_ptr() as PWCHAR,
+        wstr!("\\SmApiPort\0"),
     );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -2634,6 +2636,9 @@ pub unsafe extern "system" fn SmpInit(
         core::mem::size_of::<SM_API_MSG>() as ULONG,
         (core::mem::size_of::<SB_API_MSG>() * 32) as ULONG,
     );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
     SmpDebugPort = PortHandle;
 
     /* Create two SM API threads */
@@ -2649,6 +2654,9 @@ pub unsafe extern "system" fn SmpInit(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
     Status = RtlCreateUserThread(
         NtCurrentProcess(),
         core::ptr::null_mut(),
@@ -2661,6 +2669,9 @@ pub unsafe extern "system" fn SmpInit(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
 
     /* Create the write event that autochk can set after running */
     RtlInitUnicodeString(

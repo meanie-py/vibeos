@@ -113,6 +113,10 @@ def cmd_submit(args):
     from .batch_runner import submit_single
     from .assembler import assemble_file
     from .postprocess import postprocess
+    from .sink import (RunArchive, ResponseSink, install_kill_guard,
+                       paid_invocation_banner, warn_if_tmp_output)
+    from .prompt_builder import estimate_tokens
+    from .config import cost_usd
 
     path = resolve_c_path(args.file)
     target = detect_target(path)
@@ -134,9 +138,27 @@ def cmd_submit(args):
         system_prompt = ""
         file_prompt = build_full_prompt(scan, res)
 
+    # Durable archive + cost banner + kill guard for this one paid call.
+    warn_if_tmp_output(getattr(args, "output", None))
+    archive = RunArchive(label=path.name, model=model, target=target.name)
+    install_kill_guard(archive)
+    paid_invocation_banner(model, 1,
+                           estimate_tokens(file_prompt) + estimate_tokens(system_prompt),
+                           archive)
+    sink = ResponseSink(archive.stream_path(0, path.stem))
+
     print(f"Submitting to {model}...", file=sys.stderr)
-    result = submit_single(file_prompt, model=model, system_prompt=system_prompt)
+    try:
+        result = submit_single(file_prompt, model=model,
+                               system_prompt=system_prompt, sink=sink)
+    finally:
+        sink.close()
     result.source_file = path.name
+    if result.success:
+        archive.commit(0, path.stem, result.rust_code,
+                       result.input_tokens, result.output_tokens)
+        print(f"Cost: ${cost_usd(model, result.input_tokens, result.output_tokens):.2f}  "
+              f"| archived: {archive.dir}", file=sys.stderr)
 
     if not result.success:
         print(f"Error: {result.error}", file=sys.stderr)
@@ -766,6 +788,9 @@ def cmd_translate(args):
     from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
     from .postprocess import postprocess
     from .prompt_builder import estimate_tokens
+    from .sink import (RunArchive, ResponseSink, install_kill_guard,
+                       paid_invocation_banner, warn_if_tmp_output)
+    from .config import cost_usd
 
     # Resolve target: single file or directory
     target_path = Path(args.path)
@@ -815,6 +840,17 @@ def cmd_translate(args):
     model = resolve_model(args.model)
     use_claude = model.startswith("claude-")
     system_prompt = load_function_system_prompt(rustconv_target) if use_claude else ""
+
+    # Durable archive + kill guard for this paid invocation. Every streamed
+    # response lands here as it generates, and a Ctrl-C points back at the
+    # preserved work instead of feeling like it threw away what you paid for.
+    archive = None
+    running_cost = 0.0
+    if not args.dry_run:
+        warn_if_tmp_output(getattr(args, "output", None))
+        archive = RunArchive(label=target_path.name, model=model,
+                             target=rustconv_target.name)
+        install_kill_guard(archive)
 
     total_files = len(c_files)
     for file_idx, c_file in enumerate(c_files, 1):
@@ -884,6 +920,17 @@ def cmd_translate(args):
         total_in = 0
         total_out = 0
 
+        # One paid banner per file: n calls = functions + preamble. Rough input
+        # estimate = first-function prompt × function count (each call re-sends
+        # context, so this is a floor, not a ceiling).
+        if archive is not None and sorted_deps:
+            _fr0 = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
+            _p0 = build_function_prompt(sorted_deps[0], _fr0, {}, all_deps_for_context,
+                                        scan, catalog_fn_names, file_res.exports,
+                                        target=rustconv_target)
+            _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(sorted_deps)
+            paid_invocation_banner(model, len(sorted_deps) + 1, _est_in, archive)
+
         for func_idx, dep in enumerate(sorted_deps, 1):
             print(f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...", file=sys.stderr, end=" ", flush=True)
 
@@ -897,17 +944,33 @@ def cmd_translate(args):
                 target=rustconv_target,
             )
 
-            if use_claude:
-                result = submit_single(user_prompt, model=model, system_prompt=system_prompt)
-            else:
-                full_prompt = (system_prompt + "\n\n---\n\n" + user_prompt) if system_prompt else user_prompt
-                result = submit_single(full_prompt, model=model)
+            # Stream this function's output straight to the durable archive.
+            sink = None
+            if archive is not None:
+                sink = ResponseSink(archive.stream_path(func_idx, dep.name))
+            try:
+                if use_claude:
+                    result = submit_single(user_prompt, model=model,
+                                           system_prompt=system_prompt, sink=sink)
+                else:
+                    full_prompt = (system_prompt + "\n\n---\n\n" + user_prompt) if system_prompt else user_prompt
+                    result = submit_single(full_prompt, model=model, sink=sink)
+            finally:
+                if sink is not None:
+                    sink.close()
 
             if result.success:
                 translated[dep.name] = result.rust_code
                 total_in += result.input_tokens
                 total_out += result.output_tokens
-                print(f"OK ({result.input_tokens} in / {result.output_tokens} out)", file=sys.stderr)
+                if archive is not None:
+                    archive.commit(func_idx, dep.name, result.rust_code,
+                                   result.input_tokens, result.output_tokens)
+                    running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
+                    print(f"OK ({result.input_tokens} in / {result.output_tokens} out)"
+                          f"  [running ${running_cost:.2f}]", file=sys.stderr)
+                else:
+                    print(f"OK ({result.input_tokens} in / {result.output_tokens} out)", file=sys.stderr)
             else:
                 print(f"FAIL: {result.error}", file=sys.stderr)
 
@@ -925,16 +988,27 @@ def cmd_translate(args):
             print(f"  [preamble] {len(preamble_src)} C chars...",
                   file=sys.stderr, end=" ", flush=True)
             pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
-            if use_claude:
-                pre_res = submit_single(pre_prompt, model=model,
-                                        system_prompt=system_prompt)
-            else:
-                pre_full = (system_prompt + "\n\n---\n\n" + pre_prompt) if system_prompt else pre_prompt
-                pre_res = submit_single(pre_full, model=model)
+            pre_sink = None
+            if archive is not None:
+                pre_sink = ResponseSink(archive.stream_path(0, "preamble"))
+            try:
+                if use_claude:
+                    pre_res = submit_single(pre_prompt, model=model,
+                                            system_prompt=system_prompt, sink=pre_sink)
+                else:
+                    pre_full = (system_prompt + "\n\n---\n\n" + pre_prompt) if system_prompt else pre_prompt
+                    pre_res = submit_single(pre_full, model=model, sink=pre_sink)
+            finally:
+                if pre_sink is not None:
+                    pre_sink.close()
             if pre_res.success:
                 preamble_rust = pre_res.rust_code
                 total_in += pre_res.input_tokens
                 total_out += pre_res.output_tokens
+                if archive is not None:
+                    archive.commit(0, "preamble", pre_res.rust_code,
+                                   pre_res.input_tokens, pre_res.output_tokens)
+                    running_cost += cost_usd(model, pre_res.input_tokens, pre_res.output_tokens)
                 print(f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)",
                       file=sys.stderr)
             else:
@@ -982,6 +1056,11 @@ def cmd_translate(args):
         generate_lib_rs([subsystem])
         print(f"\nUpdated mod.rs and lib.rs for {subsystem}/", file=sys.stderr)
 
+    if archive is not None:
+        print(f"\n  Total spent this run: ${running_cost:.2f}  "
+              f"({len(archive.committed)} unit(s) archived)", file=sys.stderr)
+        print(f"  Durable archive: {archive.dir}", file=sys.stderr)
+
     if not args.dry_run:
         print(f"\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
@@ -1027,22 +1106,33 @@ def cmd_estimate(args):
         total_lines += lines
         print(f"  {cf.name}: {lines} lines, ~{tokens:,} tokens")
 
-    total_output = int(total_input * 0.35)
+    # Output runs ~0.6x of input for C→Rust (Rust expands the source).
+    total_output = int(total_input * 0.6)
 
     print(f"\nTotal: {len(c_files)} files, {total_lines:,} lines")
-    print(f"Estimated tokens: ~{total_input:,} input, ~{total_output:,} output")
+    print(f"Estimated tokens (single full-file prompt): "
+          f"~{total_input:,} input, ~{total_output:,} output")
+    print("\n  ⚠️  NOTE: `submit`/`batch` send ONE prompt per file. But `translate`")
+    print("     (the path used for big files) sends one paid call PER FUNCTION,")
+    print("     each RE-SENDING the system prompt + growing context — real input")
+    print("     is commonly 2–5× the figure above. These estimates are a FLOOR.")
 
-    # Show costs for multiple models
-    costs = [
-        ("Claude Sonnet (batch)", 1.50, 7.50),
-        ("Claude Haiku (batch)", 0.40, 2.00),
-        ("Gemini 2.5 Pro", 1.25, 10.00),
-        ("Gemini 2.5 Flash", 0.15, 0.60),
+    from .config import MODEL_PRICING, BATCH_DISCOUNT
+    rows = [
+        ("Opus   (claude-opus-4-8)",   "claude-opus-4-8"),
+        ("Sonnet (claude-sonnet-4-5)", "claude-sonnet-4-5-20250929"),
+        ("Haiku  (claude-haiku-4-5)",  "claude-haiku-4-5-20251001"),
+        ("Gemini 2.5 Pro",             "gemini-2.5-pro"),
+        ("Gemini 2.5 Flash",           "gemini-2.5-flash"),
     ]
-    print("\nEstimated costs:")
-    for name, in_price, out_price in costs:
-        cost = total_input * in_price / 1_000_000 + total_output * out_price / 1_000_000
-        print(f"  {name}: ${cost:.2f}")
+    print("\nEstimated cost (sync = translate/submit; batch = `batch` cmd, 50% off):")
+    print(f"  {'model':<28} {'sync':>10}  {'batch':>10}   sync @5x")
+    for label, mid in rows:
+        pin, pout = MODEL_PRICING[mid]
+        sync = total_input * pin / 1_000_000 + total_output * pout / 1_000_000
+        batch = sync * BATCH_DISCOUNT
+        print(f"  {label:<28} {'$' + format(sync, '.2f'):>10}  "
+              f"{'$' + format(batch, '.2f'):>10}   ${sync * 5:.2f}")
 
 
 def cmd_objdiff(args):
