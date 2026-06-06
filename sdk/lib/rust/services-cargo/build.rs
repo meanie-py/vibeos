@@ -33,13 +33,10 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("services-rust")
-        // Still-C residue of the partial flip, compiled in-cargo by replaying
-        // cmake's clang (the `services_c` OBJECT lib).
-        // services.c (the SCM entry/main, still C) compiled in-cargo by replaying
-        // cmake's clang. services_rust_stub.c dropped — it was a cmake-era empty
-        // cohabitation stub (archive-extraction hack), vestigial in the cargo link.
-        .c_from_compile_db("services_c", &["base/system/services/services.c"])
-        // The svcctl RPC server stub is now pure RUST: the svcctl-stub crate
+        // services.exe (SCM) is now a FULL Rust flip — services.c (the wWinMain
+        // SCM bootstrap, the last C file) is translated to services-rust/src/
+        // services.rs, so the link compiles ZERO C residue. No c_from_compile_db.
+        // The svcctl RPC server stub is pure RUST: the svcctl-stub crate
         // transliterates widl's generated `svcctl_s.c` to Rust (against midl-rt)
         // at build time and exports `svcctl_v2_0_s_ifspec`. No C stub linked.
         .rust_lib("svcctl-stub", &[], true)

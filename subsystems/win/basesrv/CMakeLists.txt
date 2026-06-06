@@ -11,19 +11,14 @@ spec2def(basesrv.dll basesrv.spec ADD_IMPORTLIB)
 # (after csrsrv + winsrv), and the one that was still on the legacy pattern
 # (`add_library(basesrv MODULE)` + a standalone `add_custom_command` cargo build
 # the link reused). That custom-command + RUST_* machinery is retired; the engine
-# self-hosts the csrsrv/ntdll import libs and compiles the basesrv_rust_stub.c
-# residue + basesrv.rc IN-cargo (c_from_compile_db + resource_from_rc). Keep all
-# .c on disk (never delete the C). The basesrv-private VDM types live in the
-# shared smss-csrss-rust/src/basesrv/vdm_types.rs.
-
-# basesrv_rust_stub.c (macro/intrinsic shim) is compiled IN-cargo by the cargo
-# link (c_from_compile_db, CMakeFiles/basesrv_c.dir marker). This OBJECT lib's
-# objects are NOT linked here — it exists only to populate compile_commands.json.
-# UNICODE/_UNICODE replicate set_module_type(... UNICODE); SKIP_PRECOMPILE_HEADERS
-# matches the original (the stub is self-contained — no SDK headers).
-add_library(basesrv_c OBJECT basesrv_rust_stub.c)
-target_compile_definitions(basesrv_c PRIVATE UNICODE _UNICODE)
-set_source_files_properties(basesrv_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+# self-hosts the csrsrv/ntdll import libs and compiles basesrv.rc IN-cargo
+# (resource_from_rc). Keep all .c on disk (never delete the C). The basesrv-private
+# VDM types live in the shared smss-csrss-rust/src/basesrv/vdm_types.rs.
+#
+# The basesrv link compiles ZERO C: basesrv_rust_stub.c was a cmake-era
+# cohabitation stub (an empty TU to force Rust-archive extraction under
+# add_executable), vestigial under add_cargo_module — dropped from the cargo link
+# (3199e96cca8), so its basesrv_c OBJECT lib is gone too.
 
 # basesrv.rc is compiled IN-cargo (resource_from_rc replays the basesrv_res
 # windres command). This resource-only OBJECT lib stays only to populate
@@ -43,7 +38,7 @@ add_cargo_module(basesrv basesrv-cargo basesrv.dll
     KIND win32dll
     BODY_CRATE smss-csrss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS basesrv_c basesrv_res ${BASESRV_REUSED})
+    EXTRA_DEPENDS basesrv_res ${BASESRV_REUSED})
 
 # Cohabitation flip deferred (task #18). 2026-05-26 debug session
 # uncovered:

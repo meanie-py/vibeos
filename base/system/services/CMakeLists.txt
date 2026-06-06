@@ -6,25 +6,21 @@ include_directories(
 
 add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/svcctl.idl)
 
-# CARGO-DRIVEN LINK + PARTIAL Rust flip (services-rust). services.exe (SCM)'s
+# CARGO-DRIVEN LINK + FULL Rust flip (services-rust). services.exe (SCM)'s
 # link is now driven by cargo (services-cargo → reactos-link
 # ModuleKind::Win32Exe) instead of cmake add_executable — the fourth of OUR
 # translated spine binaries moved cmake→cargo (after lsass + userinit +
-# winlogon). The 8 flipped SCM .c come from libservices_rust.a; the still-C
-# residue (services.c main + services_rust_stub.c + the generated svcctl_s.c
-# RPC server stub) is compiled IN-cargo via the engine's c_from_compile_db
-# (the winlogon partial-flip pattern). Flipped .c stay on disk (never delete
-# the C — translation philosophy).
+# winlogon). ALL 9 SCM .c are now Rust (services.c flipped → services-rust/
+# src/services.rs: the wWinMain bootstrap + the 4 cross-module SCM state flags);
+# the svcctl RPC server stub is Rust too (svcctl-stub crate). So the services
+# link compiles ZERO C — services.c was the last C residue, now gone from the
+# cargo c_from_compile_db. Flipped .c stay on disk (never delete the C).
 #
-# c_from_compile_db needs the residue's flag-exact compile entries in
-# compile_commands.json (and the PCH generated), so cmake still COMPILES the
-# residue via an OBJECT library `services_c`. Its objects are not linked
-# directly (cargo recompiles from the replayed command) — the library exists
-# purely to (a) populate CMakeFiles/services_c.dir entries and (b) generate
-# cmake_pch.h. services-cargo's build.rs points c_from_compile_db("services_c",
-# …) at it. The UNICODE compile define matches the old win32gui-UNICODE module.
+# The `services_c` OBJECT lib survives only to compile the remaining vestigial
+# sources (services_rust_stub.c + the generated svcctl_s.c) into
+# compile_commands.json + generate cmake_pch.h; cargo no longer replays any of
+# it. The UNICODE compile define matches the old win32gui-UNICODE module.
 list(APPEND SERVICES_C_RESIDUE
-    services.c
     services_rust_stub.c
     ${CMAKE_CURRENT_BINARY_DIR}/svcctl_s.c)
 add_library(services_c OBJECT ${SERVICES_C_RESIDUE} services.h)

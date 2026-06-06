@@ -1,0 +1,18 @@
+# Cargo-driven `nmidebug.sys` link (i386 + amd64 + arm64). Sibling of
+# `null-cargo` / `kdcom-cargo`. The Rust body is the `nmidebug-rust` staticlib;
+# its `DriverEntry` is the PE entry point (kernelmodedriver = kerneldll link
+# with entry=DriverEntry, no exports).
+
+[package]
+name = "nmidebug-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nmidebug"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
