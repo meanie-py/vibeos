@@ -146,6 +146,23 @@ def _load_shim_signatures(subsystem: str) -> dict[str, str]:
     return sigs
 
 
+def _rust_signature(rust_src: str) -> str:
+    """Extract just the attributes + `fn` signature (no body) from generated Rust.
+
+    The caller of a function needs its *signature* (name, params, return type,
+    calling convention) to emit a correct call — never its body. The body open
+    brace is the first `{` in generated translations (attributes use parens, and
+    signature return types here don't contain braces), so everything before it
+    is the attribute stack + signature. We append `;` so it reads as a decl.
+    """
+    src = rust_src.strip()
+    brace = src.find("{")
+    if brace < 0:
+        # No body brace (already a forward decl / fn-pointer type) — first lines.
+        return "\n".join(src.splitlines()[:6])
+    return src[:brace].rstrip() + ";"
+
+
 def _format_callee_context(
     func: FunctionDep,
     translated: dict[str, str],
@@ -154,10 +171,13 @@ def _format_callee_context(
 ) -> str:
     """Build callee context section.
 
-    For each callee of the function being translated:
-    - If already translated to Rust: show the full Rust function
+    For each callee of the function being translated we emit only its SIGNATURE
+    (the calling contract) — never its body. Bodies are uncached per-function
+    bulk that adds no translation value and tempts the model to copy callee
+    internals into the caller.
+    - If already translated to Rust: show the Rust signature
     - If extern (in catalog): show extern declaration
-    - If local but not yet translated: show C signature + first lines
+    - If local but not yet translated: show C signature
     - If gap function: skip (handled by gap section)
     """
     if not func.callees:
@@ -177,28 +197,18 @@ def _format_callee_context(
             continue  # Self-recursion, skip
 
         if callee_name in translated:
-            # Already translated — show Rust source
-            rust_src = translated[callee_name]
-            # Show just the signature + first ~10 lines for context
-            lines = rust_src.strip().splitlines()
-            preview = "\n".join(lines[:15])
-            if len(lines) > 15:
-                preview += "\n    // ... (truncated)"
+            # Already translated — show only the Rust signature (the contract).
+            sig = _rust_signature(translated[callee_name])
             parts.append(f"### `{callee_name}` (already translated to Rust)")
-            parts.append(f"```rust\n{preview}\n```\n")
+            parts.append(f"```rust\n{sig}\n```\n")
 
         elif callee_name in local_names:
-            # Local function not yet translated — show C signature
+            # Local function not yet translated — show only the C signature.
             dep = by_name[callee_name]
             params_str = ", ".join(f"{t} {n}" for t, n in dep.params)
             sig = f"{dep.return_type} {dep.calling_convention or ''} {dep.name}({params_str})".strip()
-            # Show first ~5 lines of body
-            body_lines = dep.body_text.strip().splitlines()
-            preview = "\n".join(body_lines[:8])
-            if len(body_lines) > 8:
-                preview += "\n    // ... (truncated)"
             parts.append(f"### `{callee_name}` (local C function, not yet translated)")
-            parts.append(f"```c\n{preview}\n```\n")
+            parts.append(f"```c\n{sig};\n```\n")
 
         elif callee_name in catalog_fns:
             # Extern function from catalog
