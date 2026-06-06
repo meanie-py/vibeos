@@ -29,7 +29,10 @@ members = [
     "arm64input-cargo",
     "i8042prt-cargo",
     "kbdclass-cargo",
-    "mouclass-cargo",
+    # mouclass-cargo: SHELVED — mouclass-rust deterministically hangs amd64 boot
+    # (win32k suspended-thread livelock; suspected pool corruption). kbdclass
+    # landed; mouclass.sys stays C until the amd64 bug is root-caused. Crate +
+    # mouclass-rust translation preserved on disk (never-delete rule).
     "framebuf-cargo",
     "bootvid-rust",
     "bootvid-cargo",
