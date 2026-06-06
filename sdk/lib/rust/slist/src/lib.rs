@@ -28,6 +28,18 @@ pub extern "C" fn rust_eh_personality() {}
 #[cfg(not(any(test, kani)))]
 mod atomics;
 
+// `RtlpUse16ByteSLists` (64-bit only): the kernel (ke/amd64/krnlinit) and ntdll
+// (ldr/ldrinit) WRITE this global to record CPU CMPXCHG16B support. slist.c used
+// to define it (`BOOLEAN RtlpUse16ByteSLists = -1;`); now that the C file is
+// replaced, this crate owns the definition so those external writers still link.
+// The crate itself always uses Header16 / 16-byte CAS (see the AMD64 note below),
+// matching the existing always-16-byte choice for Push/Pop/Flush — so the value is
+// informational for our implementation. Each module linking librtl gets its own
+// copy, exactly as the C definition did (per-consumer static-lib semantics).
+#[cfg(all(not(any(test, kani)), target_pointer_width = "64"))]
+#[no_mangle]
+pub static mut RtlpUse16ByteSLists: u8 = 0xFF;
+
 // ============================================================================
 // ARM64 FFI
 // ============================================================================
@@ -117,6 +129,59 @@ mod ffi {
                 return result.old_head as *mut u8;
             }
         }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedPushListSList(
+        list_head: *mut u8,
+        list: *mut u8,
+        list_end: *mut u8,
+        count: u32,
+    ) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+            let result =
+                algorithm::push_list_transition(alignment, region, list as u64, count as u16);
+
+            // Splice the chain tail onto the previous head.
+            unsafe { ptr::write(list_end as *mut u64, result.old_head) };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInitializeSListHead(list_head: *mut u8) {
+        // Zero both 64-bit halves (Alignment @0, Region @8). The C version also
+        // raises STATUS_DATATYPE_MISALIGNMENT on a non-16-byte-aligned header;
+        // that is a debug guard the kernel never trips (headers are always
+        // 16-byte aligned), so we omit the RtlRaiseStatus dependency.
+        unsafe {
+            ptr::write_volatile(list_head as *mut u64, 0);
+            ptr::write_volatile((list_head as *mut u64).add(1), 0);
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlFirstEntrySList(list_head: *const u8) -> *mut u8 {
+        // Query (inherently racy, like the C `return SListHead->Region & ~0xF`).
+        // We always use Header16, so the first entry is the masked region pointer.
+        let (_alignment, region) = unsafe { atomics::load(list_head) };
+        header::region_to_ptr(region) as *mut u8
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlQueryDepthSList(list_head: *mut u8) -> u16 {
+        let (alignment, region) = unsafe { atomics::load(list_head) };
+        header::unpack(alignment, region).depth
     }
 
     // Exp* aliases: zero-overhead branch trampolines for ntoskrnl internal use.
@@ -221,6 +286,57 @@ mod ffi {
                 return result.old_head as *mut u8;
             }
         }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInterlockedPushListSList(
+        list_head: *mut u8,
+        list: *mut u8,
+        list_end: *mut u8,
+        count: u32,
+    ) -> *mut u8 {
+        loop {
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+            let result =
+                algorithm::push_list_transition(alignment, region, list as u64, count as u16);
+
+            // Splice the chain tail onto the previous head (ListEnd->Next = FirstEntry).
+            unsafe { ptr::write(list_end as *mut u64, result.old_head) };
+
+            if unsafe {
+                atomics::try_store(
+                    list_head,
+                    (alignment, region),
+                    (result.new_alignment, result.new_region),
+                )
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlInitializeSListHead(list_head: *mut u8) {
+        // Zero both 64-bit halves (Alignment @0, Region @8). The C version also
+        // raises STATUS_DATATYPE_MISALIGNMENT on a misaligned header — a debug
+        // guard the kernel never trips, so we omit the RtlRaiseStatus dependency.
+        unsafe {
+            ptr::write_volatile(list_head as *mut u64, 0);
+            ptr::write_volatile((list_head as *mut u64).add(1), 0);
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlFirstEntrySList(list_head: *const u8) -> *mut u8 {
+        // Always Header16: first entry is the masked region pointer (NULL if empty).
+        let (_alignment, region) = unsafe { atomics::load(list_head) };
+        header::region_to_ptr(region) as *mut u8
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn RtlQueryDepthSList(list_head: *mut u8) -> u16 {
+        let (alignment, region) = unsafe { atomics::load(list_head) };
+        header::unpack(alignment, region).depth
     }
 
     // Exp* aliases + fault label symbols for amd64.
@@ -361,6 +477,51 @@ mod ffi {
                 return old_head as *mut u8;
             }
         }
+    }
+
+    // PushList — FASTCALL on i386 (slist.c declares it `FASTCALL`, not `NTAPI`);
+    // the decoration is `@RtlInterlockedPushListSList@16`. Matches the i386 `#else`
+    // branch of slist.c (InterlockedCompareExchange64 on the 8-byte header).
+    #[no_mangle]
+    pub unsafe extern "fastcall" fn RtlInterlockedPushListSList(
+        list_head: *mut u8,
+        list: *mut u8,
+        list_end: *mut u8,
+        count: u32,
+    ) -> *mut u8 {
+        loop {
+            let (alignment, _region) = unsafe { atomics::load(list_head) };
+            let result = algorithm::push_list_transition(alignment, 0, list as u64, count as u16);
+
+            // Splice the chain tail onto the previous head (32-bit pointer).
+            unsafe { ptr::write(list_end as *mut u32, result.old_head as u32) };
+
+            if unsafe {
+                atomics::try_store(list_head, (alignment, 0), (result.new_alignment, 0))
+            } {
+                return result.old_head as *mut u8;
+            }
+        }
+    }
+
+    // Init — stdcall. On i386 the header is 8 bytes; just zero it.
+    #[no_mangle]
+    pub unsafe extern "stdcall" fn RtlInitializeSListHead(list_head: *mut u8) {
+        unsafe { ptr::write_volatile(list_head as *mut u64, 0) };
+    }
+
+    // FirstEntry — stdcall. C returns `SListHead->Next.Next` (low 32 bits).
+    #[no_mangle]
+    pub unsafe extern "stdcall" fn RtlFirstEntrySList(list_head: *const u8) -> *mut u8 {
+        let (alignment, _region) = unsafe { atomics::load(list_head) };
+        header::region_to_ptr(header::unpack(alignment, 0).next_entry) as *mut u8
+    }
+
+    // QueryDepth — stdcall. C returns `SListHead->Depth` (bits 47:32).
+    #[no_mangle]
+    pub unsafe extern "stdcall" fn RtlQueryDepthSList(list_head: *mut u8) -> u16 {
+        let (alignment, _region) = unsafe { atomics::load(list_head) };
+        header::unpack(alignment, 0).depth
     }
 
     // Exp* aliases for i386: Pop aliases are defined inline in the global_asm above

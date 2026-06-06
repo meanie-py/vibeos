@@ -78,6 +78,46 @@ pub fn push_transition(old_alignment: u64, old_region: u64, new_entry: u64) -> P
     }
 }
 
+/// Result of a push-list (bulk push) transition.
+pub struct PushListResult {
+    /// New (alignment, region) to store back.
+    pub new_alignment: u64,
+    pub new_region: u64,
+    /// The old head pointer — the caller writes it into `ListEnd->Next` AND
+    /// returns it (RtlInterlockedPushListSList returns the previous first entry).
+    pub old_head: u64,
+}
+
+/// Compute the push-list transition (RtlInterlockedPushListSList).
+///
+/// Pushes a pre-linked chain whose head is `list` and whose tail is `ListEnd`
+/// (caller-owned) onto the front of the list. `list` becomes the new head; the
+/// caller must write `old_head` into `ListEnd->Next` before the store. `count`
+/// is the number of entries in the chain (added to Depth, truncated to 16 bits
+/// exactly as the C `Header.Depth += Count`).
+pub fn push_list_transition(
+    old_alignment: u64,
+    old_region: u64,
+    list: u64,
+    count: u16,
+) -> PushListResult {
+    let old = header::unpack(old_alignment, old_region);
+    let old_head = header::region_to_ptr(old.next_entry);
+
+    let new = SListFields {
+        depth: old.depth.wrapping_add(count),
+        sequence: old.sequence.wrapping_add(1) & 0xFFFF_FFFF_FFFF,
+        next_entry: list, // New head is the chain head
+    };
+    let (new_a, new_r) = header::pack(&new);
+
+    PushListResult {
+        new_alignment: new_a,
+        new_region: new_r,
+        old_head,
+    }
+}
+
 /// Result of a flush transition.
 pub struct FlushResult {
     /// New (alignment, region) — always zeroed.
@@ -186,6 +226,44 @@ mod tests {
         // Pop should return A next
         let pop2 = pop_transition(pop1.new_alignment, pop1.new_region, 0).unwrap();
         assert_eq!(pop2.popped, entry_a);
+    }
+
+    #[test]
+    fn push_list_onto_empty() {
+        let (a, r) = make_header(0, 0, 0);
+        let list: u64 = 0x2000; // chain head, 16-byte aligned
+        let result = push_list_transition(a, r, list, 3);
+        assert_eq!(result.old_head, 0); // ListEnd->Next becomes NULL
+        let new = header::unpack(result.new_alignment, result.new_region);
+        assert_eq!(new.depth, 3); // count added
+        assert_eq!(new.sequence, 1);
+        assert_eq!(header::region_to_ptr(new.next_entry), list);
+    }
+
+    #[test]
+    fn push_list_onto_nonempty_links_tail() {
+        // Existing single element at 0x1000, depth 1
+        let (a, r) = make_header(1, 5, 0x1000);
+        let list: u64 = 0x4000; // new chain of 2
+        let result = push_list_transition(a, r, list, 2);
+        // Old head returned so caller can splice ListEnd->Next = 0x1000
+        assert_eq!(result.old_head, 0x1000);
+        let new = header::unpack(result.new_alignment, result.new_region);
+        assert_eq!(new.depth, 3); // 1 + 2
+        assert_eq!(new.sequence, 6);
+        assert_eq!(header::region_to_ptr(new.next_entry), list);
+    }
+
+    #[test]
+    fn push_list_then_pop_returns_chain_head() {
+        let (a, r) = make_header(0, 0, 0);
+        let list: u64 = 0x5000;
+        let push = push_list_transition(a, r, list, 4);
+        // Pop: chain head's ->Next was set to old_head (0) by the caller
+        let pop = pop_transition(push.new_alignment, push.new_region, push.old_head).unwrap();
+        assert_eq!(pop.popped, list);
+        let after = header::unpack(pop.new_alignment, pop.new_region);
+        assert_eq!(after.depth, 3); // 4 - 1
     }
 
     #[test]
@@ -325,6 +403,28 @@ mod proofs {
         // Depth back to 0
         let final_h = header::unpack(pop.new_alignment, pop.new_region);
         assert_eq!(final_h.depth, 0);
+    }
+
+    #[kani::proof]
+    fn push_list_adds_count_to_depth() {
+        let depth: u16 = kani::any();
+        let count: u16 = kani::any();
+        let seq: u64 = kani::any::<u64>() & 0xFFFF_FFFF_FFFF;
+        let next: u64 = kani::any::<u64>() & !0xF;
+        let (a, r) = header::pack(&SListFields { depth, sequence: seq, next_entry: next });
+
+        let list: u64 = kani::any::<u64>() & !0xF;
+        let result = push_list_transition(a, r, list, count);
+        let new = header::unpack(result.new_alignment, result.new_region);
+
+        // Depth wraps at 16 bits exactly like the C `Header.Depth += Count`.
+        assert_eq!(new.depth, depth.wrapping_add(count));
+        // Sequence advances by one.
+        assert_eq!(new.sequence, (seq + 1) & 0xFFFF_FFFF_FFFF);
+        // Old head is returned for the caller to splice into ListEnd->Next.
+        assert_eq!(result.old_head, header::region_to_ptr(next));
+        // New head is the chain head.
+        assert_eq!(header::region_to_ptr(new.next_entry), list);
     }
 
     #[kani::proof]

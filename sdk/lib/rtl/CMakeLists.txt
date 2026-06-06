@@ -76,7 +76,7 @@ list(APPEND SOURCE
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
     # security.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SEC)
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
-    slist.c
+    # slist.c — replaced by Rust implementation (sdk/lib/rust/slist/, Wave SLIST: Init/First/QueryDepth/PushList + RtlpUse16ByteSLists; Push/Pop/Flush already Rust)
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
     sysvol.c
     # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
