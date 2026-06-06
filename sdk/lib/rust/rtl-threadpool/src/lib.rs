@@ -15,6 +15,8 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 pub mod types;
+#[macro_use]
+pub mod wine_list;
 
 #[cfg(feature = "cabi")]
 pub mod threadpool;

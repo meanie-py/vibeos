@@ -9,7 +9,7 @@
 
 use ntkrnl_sys::base::*;          // NTSTATUS, PVOID, ULONG, LONG, BOOLEAN, ULONG_PTR, SIZE_T …
 use ntkrnl_sys::ddk::HANDLE;
-use ntkrnl_sys::ddk::{PTEB, _TEB};
+use ntkrnl_sys::ddk::{PTEB, _TEB, PTHREAD_START_ROUTINE, PHANDLE, RTL_CRITICAL_SECTION};
 
 // ---- win32 scalar aliases not present in ntkrnl-sys ----
 pub type BOOL = i32;
@@ -24,9 +24,32 @@ pub type HMODULE = PVOID;
 pub const IO_COMPLETION_ALL_ACCESS: ULONG = 0x001F_0003;
 pub const EVENT_ALL_ACCESS: ULONG = 0x001F_0003;
 pub const INFINITE: ULONG = 0xFFFF_FFFF;
-pub const STATUS_WAIT_0: NTSTATUS = 0;
+pub const HEAP_ZERO_MEMORY: ULONG = 0x0000_0008;
 pub const MAXIMUM_WAIT_OBJECTS: LONG = 64;
-pub const INVALID_HANDLE_VALUE: HANDLE = !0usize as HANDLE; // (HANDLE)-1
+pub const MAXLONGLONG: i64 = 0x7FFF_FFFF_FFFF_FFFF;
+pub const WAIT_OBJECT_0: ULONG = 0;
+pub const WAIT_TIMEOUT: ULONG = 0x0000_0102;
+pub const STATUS_TOO_MANY_THREADS: NTSTATUS = 0xC000_0129u32 as i32;
+
+// C `#define CRITICAL_SECTION RTL_CRITICAL_SECTION`
+pub type CRITICAL_SECTION = RTL_CRITICAL_SECTION;
+
+// InterlockedExchange (returns OLD value) — not in ntkrnl-sys interlocked.
+#[inline(always)]
+#[allow(non_snake_case)]
+pub unsafe fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG {
+    (*(target as *const core::sync::atomic::AtomicI32))
+        .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+// ntdll loader refcount hooks for the callback environment's RaceDll
+// (NTAPI; absent from the ntkrnl-sys bindgen surface).
+extern "system" {
+    pub fn LdrAddRefDll(Flags: ULONG, BaseAddress: PVOID) -> NTSTATUS;
+    pub fn LdrUnloadDll(BaseAddress: PVOID) -> NTSTATUS;
+}
+// STATUS_WAIT_0 and INVALID_HANDLE_VALUE come from ntkrnl_sys (constants/
+// globals) — do not redefine here (would be ambiguous with the globs).
 
 // ---- WT_* thread-pool flags (winnt) ----
 pub const WT_EXECUTEDEFAULT: ULONG = 0x0000_0000;
@@ -71,6 +94,7 @@ pub const TP_CALLBACK_PRIORITY_INVALID: TP_CALLBACK_PRIORITY = 3;
 pub const TP_CALLBACK_PRIORITY_COUNT: TP_CALLBACK_PRIORITY = 3;
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct TP_POOL_STACK_INFORMATION {
     pub StackReserve: SIZE_T,
     pub StackCommit: SIZE_T,
@@ -109,6 +133,31 @@ pub type PTP_IO_CALLBACK = Option<
 pub type PRTL_OVERLAPPED_COMPLETION_ROUTINE =
     Option<unsafe extern "system" fn(DWORD, DWORD, LPVOID)>;
 
+// The old-API worker / wait-or-timer callbacks. These cross the C↔Rust
+// boundary (RtlQueueWorkItem is called from C; RtlCreateTimer's Callback
+// comes from C callers), so they MUST be NTAPI = `extern "system"`
+// (stdcall on i386). ntkrnl-sys/ddk's bindgen types are `extern "C"`,
+// which is wrong for i386 — define the faithful versions here and use
+// these instead of the ddk imports across the cluster.
+//   VOID (NTAPI *WORKERCALLBACKFUNC)(PVOID)
+pub type WORKERCALLBACKFUNC = Option<unsafe extern "system" fn(Context: PVOID)>;
+//   #define PRTL_WORK_ITEM_ROUTINE WORKERCALLBACKFUNC (threadpool.c)
+pub type PRTL_WORK_ITEM_ROUTINE = WORKERCALLBACKFUNC;
+//   VOID (NTAPI *RTL_WAITORTIMERCALLBACKFUNC)(PVOID, BOOLEAN)
+pub type WAITORTIMERCALLBACKFUNC = Option<unsafe extern "system" fn(PVOID, BOOLEAN)>;
+pub type RTL_WAITORTIMERCALLBACKFUNC = WAITORTIMERCALLBACKFUNC;
+
+// The pluggable pool-thread start/exit hooks (set via RtlSetThreadPoolStartFunc
+// by SMSS/CSRSS). NTAPI = extern "system" (ddk's bindgen makes them extern "C",
+// wrong for i386). The first arg keeps ddk's PTHREAD_START_ROUTINE for ABI
+// consistency with RtlCreateUserThread.
+//   NTSTATUS (NTAPI *PRTL_START_POOL_THREAD)(PTHREAD_START_ROUTINE, PVOID, PHANDLE)
+pub type PRTL_START_POOL_THREAD = Option<
+    unsafe extern "system" fn(PTHREAD_START_ROUTINE, PVOID, PHANDLE) -> NTSTATUS,
+>;
+//   NTSTATUS (NTAPI *PRTL_EXIT_POOL_THREAD)(NTSTATUS)
+pub type PRTL_EXIT_POOL_THREAD = Option<unsafe extern "system" fn(NTSTATUS) -> NTSTATUS>;
+
 // struct _TP_CALLBACK_ENVIRON_V3 (winnt_old.h). The bitfield union is
 // flattened to its `Flags` word (the LongFunction/Persistent/Private
 // bits are read via masks, matching bindgen's anon-union treatment).
@@ -126,9 +175,32 @@ pub struct TP_CALLBACK_ENVIRON_V3 {
     pub Size: DWORD,
 }
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TP_CALLBACK_ENVIRON_V3_u_s(pub DWORD);
+impl TP_CALLBACK_ENVIRON_V3_u_s {
+    // bitfield { DWORD LongFunction:1; Persistent:1; Private:30; } (LE)
+    #[inline]
+    pub fn LongFunction(&self) -> ULONG {
+        self.0 & 0x1
+    }
+    #[inline]
+    pub fn set_LongFunction(&mut self, v: ULONG) {
+        self.0 = (self.0 & !0x1) | (v & 0x1);
+    }
+    #[inline]
+    pub fn Persistent(&self) -> ULONG {
+        (self.0 >> 1) & 0x1
+    }
+    #[inline]
+    pub fn set_Persistent(&mut self, v: ULONG) {
+        self.0 = (self.0 & !0x2) | ((v & 0x1) << 1);
+    }
+}
+
+#[repr(C)]
 pub union TP_CALLBACK_ENVIRON_V3_u {
     pub Flags: DWORD,
-    pub s: DWORD, // bitfield { LongFunction:1; Persistent:1; Private:30; }
+    pub s: TP_CALLBACK_ENVIRON_V3_u_s,
 }
 pub type TP_CALLBACK_ENVIRON = TP_CALLBACK_ENVIRON_V3;
 pub type PTP_CALLBACK_ENVIRON = *mut TP_CALLBACK_ENVIRON_V3;
@@ -159,6 +231,17 @@ pub unsafe fn NtCurrentTeb() -> PTEB {
     teb
 }
 
+// RtlReAllocateHeap is a real exported RTL symbol but absent from the
+// ntkrnl-sys bindgen surface — declare it (NTAPI = extern "system").
+extern "system" {
+    pub fn RtlReAllocateHeap(
+        HeapHandle: PVOID,
+        Flags: ULONG,
+        BaseAddress: PVOID,
+        Size: SIZE_T,
+    ) -> PVOID;
+}
+
 #[inline(always)]
 #[allow(non_snake_case)]
 pub unsafe fn RtlGetProcessHeap() -> PVOID {
@@ -169,6 +252,26 @@ pub unsafe fn RtlGetProcessHeap() -> PVOID {
 #[allow(non_snake_case)]
 pub unsafe fn GetProcessHeap() -> PVOID {
     RtlGetProcessHeap()
+}
+
+// threadpool.c win32 #defines:
+//   GetCurrentProcess() => NtCurrentProcess()
+//   GetCurrentThread()  => NtCurrentThread()
+//   GetCurrentThreadId()=> HandleToULong(NtCurrentTeb()->ClientId.UniqueThread)
+#[inline(always)]
+#[allow(non_snake_case)]
+pub unsafe fn GetCurrentProcess() -> HANDLE {
+    ntkrnl_sys::macros::NtCurrentProcess()
+}
+#[inline(always)]
+#[allow(non_snake_case)]
+pub unsafe fn GetCurrentThread() -> HANDLE {
+    ntkrnl_sys::macros::NtCurrentThread()
+}
+#[inline(always)]
+#[allow(non_snake_case)]
+pub unsafe fn GetCurrentThreadId() -> DWORD {
+    (*NtCurrentTeb()).ClientId.UniqueThread as usize as DWORD
 }
 
 // keep the import live across arches that don't read _TEB by name

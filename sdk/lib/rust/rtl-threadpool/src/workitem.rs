@@ -2,16 +2,22 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
-use ntkrnl_sys::ddk::{FILE_COMPLETION_INFORMATION, FileCompletionInformation, _IO_STATUS_BLOCK, LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateIoCompletion, NtDelayExecution, NtDuplicateObject, NtOpenThreadToken, NtQueryInformationThread, NtQueueApcThread, NtRemoveIoCompletion, NtResumeThread, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtTerminateThread, PHANDLE, PIO_APC_ROUTINE, PKNORMAL_ROUTINE, PRTL_EXIT_POOL_THREAD, PRTL_START_POOL_THREAD, PTHREAD_START_ROUTINE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection, ThreadImpersonationToken, ThreadIsIoPending, WORKERCALLBACKFUNC};
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::macros::*;
+use ntkrnl_sys::ddk::{FILE_COMPLETION_INFORMATION, _FILE_INFORMATION_CLASS_FileCompletionInformation as FileCompletionInformation, _IO_STATUS_BLOCK, LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateIoCompletion, NtDelayExecution, NtDuplicateObject, NtOpenThreadToken, NtQueryInformationThread, NtQueueApcThread, NtRemoveIoCompletion, NtResumeThread, NtSetInformationFile, NtSetInformationThread, NtSetIoCompletion, NtTerminateThread, PHANDLE, PIO_APC_ROUTINE, PKNORMAL_ROUTINE,  PTHREAD_START_ROUTINE, RTL_CRITICAL_SECTION, RtlAllocateHeap, RtlCreateUserThread, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection, _THREADINFOCLASS_ThreadImpersonationToken as ThreadImpersonationToken, _THREADINFOCLASS_ThreadIsIoPending as ThreadIsIoPending};
 use core::ffi::c_void;
+use crate::types::*;
+// TimerThreadHandle + RtlpInitializeTimerThread live in the timerqueue
+// module (same C cohab set: workitem queues persistent items onto it).
+use crate::timerqueue::{RtlpInitializeTimerThread, TimerThreadHandle};
 
 // ---- file-scope preamble (translated) ----
 pub static mut RtlpStartThreadFunc: PRTL_START_POOL_THREAD = Some(RtlpStartThread);
 pub static mut RtlpExitThreadFunc: PRTL_EXIT_POOL_THREAD = Some(RtlpExitThread);
 
-pub const MAX_WORKERTHREADS: ULONG = 0x100;
+pub const MAX_WORKERTHREADS: LONG = 0x100;
 
-pub const WORKERTHREAD_CREATION_THRESHOLD: ULONG = 0x5;
+pub const WORKERTHREAD_CREATION_THRESHOLD: LONG = 0x5;
 
 #[repr(C)]
 pub struct _RTLP_IOWORKERTHREAD {
@@ -68,20 +74,17 @@ unsafe fn RtlpInitializeThreadPool() -> NTSTATUS {
     let mut InitStatus: LONG;
 
     loop {
-        InitStatus = {
-            let dest = core::ptr::addr_of_mut!(ThreadPoolInitialized);
-            let old: LONG = 0;
-            let new: LONG = 2;
-            let mut current = old;
-            core::arch::asm!(
-                "lock cmpxchg [{dest}], {new:e}",
-                dest = in(reg) dest,
-                new = in(reg) new,
-                inout("eax") current,
-                options(nostack),
-            );
-            current
-        };
+        // InterlockedCompareExchange(&ThreadPoolInitialized, 2, 0) — returns
+        // the ORIGINAL value (portable; replaces rustconv's x86-only asm).
+        InitStatus = (*(core::ptr::addr_of!(ThreadPoolInitialized)
+            as *const core::sync::atomic::AtomicI32))
+            .compare_exchange(
+                0,
+                2,
+                core::sync::atomic::Ordering::SeqCst,
+                core::sync::atomic::Ordering::SeqCst,
+            )
+            .unwrap_or_else(|x| x);
 
         if InitStatus == 0 {
             /* We're the first thread to initialize the thread pool */
@@ -118,16 +121,10 @@ unsafe fn RtlpInitializeThreadPool() -> NTSTATUS {
             }
 
             /* Initialization done */
-            {
-                let dest = core::ptr::addr_of_mut!(ThreadPoolInitialized);
-                let new: LONG = 1;
-                core::arch::asm!(
-                    "lock xchg [{dest}], {new:e}",
-                    dest = in(reg) dest,
-                    new = in(reg) new,
-                    options(nostack),
-                );
-            }
+            // InterlockedExchange(&ThreadPoolInitialized, 1) (portable).
+            (*(core::ptr::addr_of!(ThreadPoolInitialized)
+                as *const core::sync::atomic::AtomicI32))
+                .swap(1, core::sync::atomic::Ordering::SeqCst);
             break;
         } else if InitStatus == 2 {
             let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
@@ -171,7 +168,7 @@ unsafe fn RtlpStartWorkerThread(StartRoutine: PTHREAD_START_ROUTINE) -> NTSTATUS
 
     Timeout.QuadPart = -10000i64;
 
-    Status = RtlpStartThreadFunc(
+    Status = (RtlpStartThreadFunc.unwrap())(
         StartRoutine,
         core::ptr::addr_of!(WorkerInitialized) as PVOID,
         core::ptr::addr_of_mut!(ThreadHandle),
@@ -188,7 +185,7 @@ unsafe fn RtlpStartWorkerThread(StartRoutine: PTHREAD_START_ROUTINE) -> NTSTATUS
 
     Status
 }
-unsafe fn RtlpExecuteWorkItem(
+unsafe extern "system" fn RtlpExecuteWorkItem(
     NormalContext: PVOID,
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
@@ -251,7 +248,7 @@ unsafe fn RtlpQueueWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
         if NT_SUCCESS(Status) {
             Status = NtQueueApcThread(
                 TimerThreadHandle,
-                Some(RtlpExecuteWorkItem),
+                core::mem::transmute::<_, PKNORMAL_ROUTINE>(RtlpExecuteWorkItem as usize),
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
                 WorkItem as PVOID,
@@ -260,7 +257,7 @@ unsafe fn RtlpQueueWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
     } else {
         Status = NtSetIoCompletion(
             ThreadPoolCompletionPort,
-            RtlpExecuteWorkItem as PVOID,
+            RtlpExecuteWorkItem as usize as PVOID,
             WorkItem as PVOID,
             STATUS_SUCCESS,
             0,
@@ -277,7 +274,7 @@ unsafe fn RtlpQueueWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
 
     Status
 }
-unsafe fn RtlpExecuteIoWorkItem(
+unsafe extern "system" fn RtlpExecuteIoWorkItem(
     NormalContext: PVOID,
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
@@ -411,7 +408,7 @@ unsafe fn RtlpQueueIoWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
 
     Status = NtQueueApcThread(
         (*IoThread).ThreadHandle,
-        Some(RtlpExecuteIoWorkItem),
+        core::mem::transmute::<_, PKNORMAL_ROUTINE>(RtlpExecuteIoWorkItem as usize),
         IoThread as PVOID,
         core::ptr::null_mut(),
         WorkItem as PVOID,
@@ -467,7 +464,7 @@ unsafe fn RtlpIsIoPending(mut ThreadHandle: HANDLE) -> BOOLEAN {
 
     IsIoPending
 }
-unsafe fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
+unsafe extern "system" fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
     let mut ThreadInfo: RTLP_IOWORKERTHREAD = core::mem::zeroed();
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
     let mut Terminate: BOOLEAN;
@@ -554,12 +551,12 @@ unsafe fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
                         /* Break the infinite loop and terminate */
                         Status = STATUS_SUCCESS;
                         NtClose(ThreadInfo.ThreadHandle);
-                        RtlpExitThreadFunc(Status);
+                        (RtlpExitThreadFunc.unwrap())(Status);
                         return 0;
                     }
                 } else {
                     NtClose(ThreadInfo.ThreadHandle);
-                    RtlpExitThreadFunc(Status);
+                    (RtlpExitThreadFunc.unwrap())(Status);
                     return 0;
                 }
 
@@ -573,10 +570,10 @@ unsafe fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
     /* Signal initialization completion */
     InterlockedExchange(Parameter as *mut LONG, 1);
 
-    RtlpExitThreadFunc(Status);
+    (RtlpExitThreadFunc.unwrap())(Status);
     0
 }
-unsafe fn RtlpWorkerThreadProc(Parameter: PVOID) -> ULONG {
+unsafe extern "system" fn RtlpWorkerThreadProc(Parameter: PVOID) -> ULONG {
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
     let mut Terminate: BOOLEAN;
     let mut SystemArgument2: PVOID = core::ptr::null_mut();
@@ -591,7 +588,7 @@ unsafe fn RtlpWorkerThreadProc(Parameter: PVOID) -> ULONG {
         let _ = core::ptr::replace(p, 1);
 
         /* Oops, too many worker threads... */
-        RtlpExitThreadFunc(Status);
+        (RtlpExitThreadFunc.unwrap())(Status);
         return 0;
     }
 
@@ -657,7 +654,7 @@ unsafe fn RtlpWorkerThreadProc(Parameter: PVOID) -> ULONG {
         }
     }
 
-    RtlpExitThreadFunc(Status);
+    (RtlpExitThreadFunc.unwrap())(Status);
     0
 }
 
@@ -682,7 +679,7 @@ pub unsafe extern "system" fn RtlQueueWorkItem(
     WorkItem = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<RTLP_WORKITEM>() as SIZE_T,
+        core::mem::size_of::<RTLP_WORKITEM>() as _,
     ) as PRTLP_WORKITEM;
     if WorkItem.is_null() {
         return STATUS_NO_MEMORY;
@@ -725,7 +722,7 @@ pub unsafe extern "system" fn RtlQueueWorkItem(
                         || ThreadPoolIOWorkerThreads - ThreadPoolIOWorkerThreadsRequests
                             < WORKERTHREAD_CREATION_THRESHOLD)
                 {
-                    Status = RtlpStartWorkerThread(Some(RtlpIoWorkerThreadProc));
+                    Status = RtlpStartWorkerThread(core::mem::transmute::<_, PTHREAD_START_ROUTINE>(RtlpIoWorkerThreadProc as usize));
 
                     if !NT_SUCCESS(Status)
                         && core::ptr::read_volatile(core::ptr::addr_of!(ThreadPoolIOWorkerThreads))
@@ -746,7 +743,7 @@ pub unsafe extern "system" fn RtlQueueWorkItem(
                         || ThreadPoolWorkerThreads - ThreadPoolWorkerThreadsRequests
                             < WORKERTHREAD_CREATION_THRESHOLD)
                 {
-                    Status = RtlpStartWorkerThread(Some(RtlpWorkerThreadProc));
+                    Status = RtlpStartWorkerThread(core::mem::transmute::<_, PTHREAD_START_ROUTINE>(RtlpWorkerThreadProc as usize));
 
                     if !NT_SUCCESS(Status)
                         && core::ptr::read_volatile(core::ptr::addr_of!(ThreadPoolWorkerThreads))
@@ -802,7 +799,7 @@ pub unsafe extern "system" fn RtlSetIoCompletionCallback(
     }
 
     FileCompletionInfo.Port = ThreadPoolCompletionPort;
-    FileCompletionInfo.Key = Callback as PVOID;
+    FileCompletionInfo.Key = core::mem::transmute::<_, PVOID>(Callback);
 
     Status = NtSetInformationFile(
         FileHandle,

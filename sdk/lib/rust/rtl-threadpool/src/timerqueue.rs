@@ -3,8 +3,13 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{LARGE_INTEGER, LIST_ENTRY, NtClose, NtCreateEvent, NtQueryPerformanceCounter, NtResumeThread, NtSetEvent, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER, PRTL_EXIT_POOL_THREAD, PRTL_START_POOL_THREAD, RtlAllocateHeap, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection, RtlQueueWorkItem, _EVENT_TYPE_SynchronizationEvent, WAITORTIMERCALLBACKFUNC};
+use ntkrnl_sys::ddk::{LARGE_INTEGER, LIST_ENTRY, RTL_CRITICAL_SECTION, PTHREAD_START_ROUTINE, NtClose, NtCreateEvent, NtQueryPerformanceCounter, NtResumeThread, NtSetEvent, NtWaitForSingleObject, PHANDLE, PLARGE_INTEGER,  RtlAllocateHeap, RtlDeleteCriticalSection, RtlEnterCriticalSection, RtlFreeHeap, RtlInitializeCriticalSection, RtlLeaveCriticalSection, _EVENT_TYPE_SynchronizationEvent};
 use core::ffi::c_void;
+use crate::types::*;
+use crate::wine_list::*;
+// RtlpStartThreadFunc / RtlpExitThreadFunc (globals) + RtlQueueWorkItem
+// are provided by the workitem module (same crate, same C cohab set).
+use crate::workitem::{RtlpStartThreadFunc, RtlpExitThreadFunc, RtlQueueWorkItem};
 
 // ---- file-scope preamble (translated) ----
 pub static mut TimerThreadHandle: HANDLE = core::ptr::null_mut();
@@ -75,7 +80,7 @@ unsafe fn timer_cleanup_callback(t: *mut queue_timer) {
 
     RtlLeaveCriticalSection(core::ptr::addr_of_mut!((*q).cs));
 }
-unsafe fn timer_callback_wrapper(p: LPVOID) {
+unsafe extern "system" fn timer_callback_wrapper(p: LPVOID) {
     let t: *mut queue_timer = p as *mut queue_timer;
     ((*t).callback.unwrap())((*t).param, 1);
     timer_cleanup_callback(t);
@@ -174,7 +179,7 @@ unsafe fn queue_get_timeout(q: *mut timer_queue) -> ULONG {
     RtlEnterCriticalSection(core::ptr::addr_of_mut!((*q).cs));
     let head = list_head(core::ptr::addr_of_mut!((*q).timers));
     if !head.is_null() {
-        t = LIST_ENTRY(head, queue_timer, entry);
+        t = LIST_ENTRY!(head, queue_timer, entry);
         if (*t).expire != EXPIRE_NEVER {
             let time = queue_current_time();
             timeout = if (*t).expire < time { 0 } else { ((*t).expire - time) as ULONG };
@@ -184,7 +189,7 @@ unsafe fn queue_get_timeout(q: *mut timer_queue) -> ULONG {
 
     timeout
 }
-unsafe fn timer_queue_thread_proc(p: LPVOID) -> DWORD {
+unsafe extern "system" fn timer_queue_thread_proc(p: LPVOID) -> DWORD {
     let q: *mut timer_queue = p as *mut timer_queue;
     let mut timeout_ms: ULONG;
 
@@ -221,7 +226,7 @@ unsafe fn timer_queue_thread_proc(p: LPVOID) -> DWORD {
     RtlDeleteCriticalSection(core::ptr::addr_of_mut!((*q).cs));
     (*q).magic = 0;
     RtlFreeHeap(RtlGetProcessHeap(), 0, q as PVOID);
-    RtlpExitThreadFunc(STATUS_SUCCESS);
+    (RtlpExitThreadFunc.unwrap())(STATUS_SUCCESS);
     0
 }
 
@@ -240,7 +245,7 @@ pub unsafe extern "system" fn RtlCreateTimerQueue(NewTimerQueue: PHANDLE) -> NTS
     let q = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<timer_queue>(),
+        core::mem::size_of::<timer_queue>() as _,
     ) as *mut timer_queue;
     if q.is_null() {
         return STATUS_NO_MEMORY;
@@ -261,8 +266,8 @@ pub unsafe extern "system" fn RtlCreateTimerQueue(NewTimerQueue: PHANDLE) -> NTS
         RtlFreeHeap(RtlGetProcessHeap(), 0, q as PVOID);
         return status;
     }
-    status = RtlpStartThreadFunc(
-        timer_queue_thread_proc,
+    status = (RtlpStartThreadFunc.unwrap())(
+        core::mem::transmute::<_, PTHREAD_START_ROUTINE>(timer_queue_thread_proc as usize),
         q as PVOID,
         core::ptr::addr_of_mut!((*q).thread),
     );
@@ -372,7 +377,7 @@ pub unsafe extern "system" fn RtlCreateTimer(
     let t: *mut queue_timer = RtlAllocateHeap(
         RtlGetProcessHeap(),
         0,
-        core::mem::size_of::<queue_timer>(),
+        core::mem::size_of::<queue_timer>() as _,
     ) as *mut queue_timer;
     if t.is_null() {
         return STATUS_NO_MEMORY;

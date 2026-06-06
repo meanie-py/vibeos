@@ -9,6 +9,7 @@
 use ntkrnl_sys::base::*;
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct list {
     pub next: *mut list,
     pub prev: *mut list,
@@ -85,8 +86,8 @@ pub unsafe fn list_tail(list: *const list) -> *mut list {
 
 /// check if a list is empty
 #[inline]
-pub unsafe fn list_empty(list: *const list) -> INT {
-    ((*list).next == list as *mut list) as INT
+pub unsafe fn list_empty(list: *const list) -> i32 {
+    ((*list).next == list as *mut list) as i32
 }
 
 /// initialize a list
@@ -98,8 +99,8 @@ pub unsafe fn list_init(list: *mut list) {
 
 /// count the elements of a list
 #[inline]
-pub unsafe fn list_count(list: *const list) -> UINT {
-    let mut count: UINT = 0;
+pub unsafe fn list_count(list: *const list) -> u32 {
+    let mut count: u32 = 0;
     let mut ptr = (*list).next;
     while ptr != list as *mut list {
         count += 1;
@@ -135,12 +136,12 @@ pub unsafe fn list_move_head(dst: *mut list, src: *mut list) {
 }
 
 /// `LIST_ENTRY(elem, type, field)` — pointer to the object containing
-/// the list element. `let obj: *mut T = list_entry!(elem, T, field);`
+/// the list element. `let obj: *mut T = LIST_ENTRY!(elem, T, field);`
 #[macro_export]
-macro_rules! list_entry {
-    ($elem:expr, $ty:ty, $field:ident) => {
+macro_rules! LIST_ENTRY {
+    ($elem:expr, $ty:ty, $($field:tt)+) => {
         (($elem as *mut u8).wrapping_sub(
-            ::core::mem::offset_of!($ty, $field),
+            ::core::mem::offset_of!($ty, $($field)+),
         ) as *mut $ty)
     };
 }
