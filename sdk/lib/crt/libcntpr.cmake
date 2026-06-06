@@ -291,6 +291,124 @@ elseif(ARCH STREQUAL "arm64")
     )
 endif()
 
+# Wave MATH-TIERC (sub-wave 8): exp2 + tanh → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr (arm64/i386 don't ship them). Faithful ports of the
+# AMD-libm math/libm_sse2/{exp2,tanh}.c (splitexp + scaleDouble + two_to_jby32
+# tables, all ported to cabi/math.rs) — difftest-pinned bit-exact vs the
+# genuine .c compiled against its own headers. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/exp2.c
+        math/libm_sse2/tanh.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 9): sinh + cosh → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr. Faithful ports of the AMD-libm math/libm_sse2/
+# {sinh,cosh}.c (shared sinh/cosh lead/tail tables + the splitexp exp/2 path,
+# all in cabi/math.rs) — difftest-pinned bit-exact. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/sinh.c
+        math/libm_sse2/cosh.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 10): acos + asin → cnt-rust (float feature). Both
+# amd64-ONLY in libcntpr. Faithful ports of the AMD-libm math/libm_sse2/
+# {acos,asin}.c (shared rational R(r) + sqrt half-angle path, in cabi/math.rs)
+# — difftest-pinned bit-exact. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/acos.c
+        math/libm_sse2/asin.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 11): _hypot → cnt-rust (float feature). amd64-ONLY
+# in libcntpr. Faithful port of the AMD-libm math/libm_sse2/hypot.c (the
+# accurate non-FAST path: exponent scaling + head/tail split + hardware sqrt,
+# in cabi/math.rs) — difftest-pinned bit-exact. amd64-only removal.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/hypot.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 12): sincos + modff + _hypotf → cnt-rust (float
+# feature). sincos = the combined sin/cos (math/sincos.c, all-arch common);
+# it reuses the Rust sin/cos so it's removed on non-i386 (like sin/cos), i386
+# keeps the C. modff (exact f32 split) and _hypotf (f64-internal) are
+# amd64-ONLY in libcntpr. All difftest-pinned bit-exact.
+if(NOT ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/sincos.c
+    )
+endif()
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/modff.c
+        math/libm_sse2/hypotf.c
+    )
+endif()
+
+# Wave MATH-TIERC (sub-wave 13): the f32 transcendental twins → cnt-rust
+# (float feature). These are the AMD-libm math/libm_sse2/*f.c — amd64-ONLY
+# in libcntpr (arm64's libcntpr has none of them; its CRT uses portable
+# math/*f.c in a different archive). The Rust reuses the f64 foundation
+# (splitexp/scale_double + full-precision sinh/cosh tables) plus the new
+# splitexpf/scaleFloat_2 + atan(j/256)/Payne-Hanek tables. difftest-pinned
+# bit-exact vs the genuine C.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/libm_sse2/acosf.c
+        math/libm_sse2/asinf.c
+        math/libm_sse2/atanf.c
+        math/libm_sse2/atan2f.c
+        math/libm_sse2/coshf.c
+        math/libm_sse2/sinhf.c
+        math/libm_sse2/tanf.c
+        math/libm_sse2/tanhf.c
+    )
+endif()
+
+# Wave MATH-TIERC (cohab cleanup): with every amd64 libm_sse2 transcendental
+# now Rust (sw1–sw13), the remaining libm_sse2 C are ORPHANED support files —
+# the AMD-libm *_special / lead-tail+inverse TABLES / sincos arrays /
+# remainder_piby2 / two_to_jby64 tables / _handle_error / _set_statfp / the
+# fma3 dispatch flag. Their only consumers were (a) the per-op *.asm
+# implementations, which llvm-mingw never builds (it uses the portable
+# math/{sin,cos}.c + math/arm64/*.c — themselves now Rust), and (b) the
+# transcendental .c that are now REMOVE_ITEM'd above. So they form a closed
+# cluster referencing only each other; nothing the kernel links pulls any of
+# them (dead archive members). cnt-rust inlines _handle_error→from_bits and
+# _set_statfp→no-op, so the Rust side references none of them either. Drop the
+# dead weight → amd64 libcntpr math is 100% Rust. (amd64-only: i386 keeps its
+# x87 C/asm math; arm64 never compiled libm_sse2.) The cold-link is the oracle.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/amd64/_set_statfp.c
+        math/libm_sse2/_handle_error.c
+        math/libm_sse2/exp_special.c
+        math/libm_sse2/fma3_available.c
+        math/libm_sse2/L2_by_pi_bits.c
+        math/libm_sse2/log_128_lead_tail_table.c
+        math/libm_sse2/log_256_lead_tail_table.c
+        math/libm_sse2/log_F_inv_dword_table.c
+        math/libm_sse2/log_F_inv_qword_table.c
+        math/libm_sse2/log_special.c
+        math/libm_sse2/log10_128_lead_tail_table.c
+        math/libm_sse2/log10_256_lead_tail_table.c
+        math/libm_sse2/Lsincos_array.c
+        math/libm_sse2/Lsincosf_array.c
+        math/libm_sse2/pow_special.c
+        math/libm_sse2/remainder_piby2.c
+        math/libm_sse2/sincos_special.c
+        math/libm_sse2/two_to_jby64_head_tail_table.c
+        math/libm_sse2/two_to_jby64_table.c
+    )
+endif()
+
 list(APPEND LIBCNTPR_ASM_SOURCE
     ${LIBCNTPR_EXCEPT_ASM_SOURCE}
     ${LIBCNTPR_FLOAT_ASM_SOURCE}

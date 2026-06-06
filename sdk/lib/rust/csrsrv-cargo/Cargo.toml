@@ -1,0 +1,27 @@
+# Cargo-driven `csrsrv.dll` link (i386 + amd64 + arm64). Sixth of OUR translated
+# spine binaries to move its link cmake→cargo (after lsass + userinit +
+# winlogon + services + smss); the first native DLL.
+#
+# csrsrv.dll (CSR server) is a FULL flip: all 7 .c → Rust (smss-csrss-rust,
+# kitchen-sink default features). It exports the 35 csrsrv.spec symbols via a
+# spec2def-generated .def. ModuleKind::Win32Dll with subsystem native:5.01 +
+# entry _DllMain@12 reproduces the cmake nativedll link exactly (native
+# subsystem, -shared, keep-all-sections, .def exports).
+#
+# Success criterion: cargo's csrsrv.dll boots the livecd to `shell ready` —
+# csrss.exe loads csrsrv.dll at session-manager init (smss → csrss → csrsrv),
+# and csrsrv is process-critical.
+
+[package]
+name = "csrsrv-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "csrsrv"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

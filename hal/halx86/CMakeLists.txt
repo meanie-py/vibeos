@@ -8,205 +8,71 @@ include_directories(
     ${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 
 # ============================================================================
-# Rust HAL static archive (sdk/lib/rust/hal-rust → libhal_rust.a)
+# hal.dll is CARGO-DRIVEN (sdk/lib/rust/hal-cargo) — see the link block below.
 # ============================================================================
-# The hal-rust crate is a single staticlib that contains all translated
-# HAL files (per file, see hal-rust/src/{x86,i386,amd64,irql,...}/).  Its
-# #[no_mangle] exports replace the corresponding C functions which are
-# removed from generic.cmake / legacy.cmake / etc. as files are translated.
+# The HAL is fully translated to Rust (sdk/lib/rust/hal-rust). The runtime
+# hal.dll link, and hal-rust itself, are now built by the cargo link
+# (add_cargo_kernel_dll → reactos-link, ModuleKind::KernelDll); FreeLDR's
+# loader-time mini-HAL Rust is built by the loaders' own cargo links
+# (.rust_lib("hal-rust", ["minihal"])). So the former cmake scaffolding —
+# the `rust_hal` / `rust_hal_mini` custom_commands (built hal-rust on the
+# standard user target), the `add_hal` function, and the per-flavor
+# lib_hal_<component> OBJECT libs (generic/acpi/apic/legacy/pic.cmake) — is
+# all retired: nothing consumed it after the cutover + the hal-mini flip.
+# (Those component .cmake files remain on disk as cohabitation history.)
 #
-# Mirrors the ntoskrnl integration pattern in ntoskrnl/CMakeLists.txt.
-
-set(HAL_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(HAL_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-hal-target")
-if(ARCH STREQUAL "i386")
-    set(HAL_RUST_TARGET "i686-pc-windows-gnu")
-    # i386: disable SSE — same constraint as kernel-rust (CR4.OSFXSR not
-    # set in the early HAL init path; play it safe and avoid SSE entirely
-    # in HAL since some HAL paths run extremely early).
-    set(HAL_RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
-elseif(ARCH STREQUAL "amd64")
-    set(HAL_RUST_TARGET "x86_64-pc-windows-gnu")
-    set(HAL_RUST_EXTRA_ENV "")
-endif()
-
-set(HAL_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libhal_rust.a")
-add_custom_command(
-    OUTPUT ${HAL_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${HAL_RUST_TARGET_DIR} ${HAL_RUST_EXTRA_ENV}
-        cargo build --release --target ${HAL_RUST_TARGET}
-            -p hal-rust
-            --manifest-path ${HAL_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${HAL_RUST_TARGET_DIR}/${HAL_RUST_TARGET}/release/libhal_rust.a
-        ${HAL_RUST_LIB}
-    DEPENDS ${HAL_RUST_WORKSPACE_DIR}/hal-rust/Cargo.toml
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/lib.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apic.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apic_halinit.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/apictimer.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/buildtype.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/busemul.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bushndlr.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bussupp.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/clock.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmos.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmosbus.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/display.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/dma.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halacpi.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halpnpdd.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halinit.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/halpcat.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/irql.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/isabus.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/kdpci.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/legacy_halpnpdd.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/madt.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/memory.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/minihal_stubs.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcibus.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcidata.rs
-            ${CMAKE_CURRENT_SOURCE_DIR}/legacy/bus/pci_classes.ids
-            ${CMAKE_CURRENT_SOURCE_DIR}/legacy/bus/pci_vendors.ids
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcr.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic_halinit.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pic_pic.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/portio.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/processor.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/profil.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/reboot.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/rtctimer.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/spinlock.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysbus.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/sysinfo.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/timer.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/tsc.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/up.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/usage.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/irql/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/arbiter/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/acpi/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/kdpci/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/bus/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/pnpdd/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/i386/mod.rs
-            ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/amd64/mod.rs
-    WORKING_DIRECTORY ${HAL_RUST_WORKSPACE_DIR}
-    COMMENT "Building hal-rust (${HAL_RUST_TARGET})"
-    VERBATIM
-)
-add_custom_target(rust_hal DEPENDS ${HAL_RUST_LIB})
-
-# ============================================================================
-# hal-rust (minihal variant) — i386 only
-# ============================================================================
-# Built with `--features minihal` so `#[cfg(not(feature = "minihal"))]`
-# strips runtime-only paths.  Linked into FreeLDR's mini_hal in place of
-# the i386 HAL .c files (which still live in legacy.cmake / pic.cmake for
-# hal.dll's runtime build).  Uses a separate CARGO_TARGET_DIR so cargo
-# doesn't ping-pong fingerprints between the two builds.
-if(ARCH STREQUAL "i386")
-    set(HAL_RUST_MINI_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-hal-mini-target")
-    set(HAL_RUST_MINI_LIB "${CMAKE_CURRENT_BINARY_DIR}/libhal_rust_mini.a")
-    add_custom_command(
-        OUTPUT ${HAL_RUST_MINI_LIB}
-        COMMAND ${CMAKE_COMMAND} -E env
-            CARGO_TARGET_DIR=${HAL_RUST_MINI_TARGET_DIR} ${HAL_RUST_EXTRA_ENV}
-            cargo build --release --target ${HAL_RUST_TARGET}
-                -p hal-rust --features minihal
-                --manifest-path ${HAL_RUST_WORKSPACE_DIR}/Cargo.toml
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${HAL_RUST_MINI_TARGET_DIR}/${HAL_RUST_TARGET}/release/libhal_rust.a
-            ${HAL_RUST_MINI_LIB}
-        DEPENDS ${HAL_RUST_WORKSPACE_DIR}/hal-rust/Cargo.toml
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/lib.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/mod.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bushndlr.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/bussupp.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/clock.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmos.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/cmosbus.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/drive.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/isabus.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/minihal_stubs.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/misc.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/nmi.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/pcibus.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/reboot.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/spinlock.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/timer.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/usage.rs
-                ${HAL_RUST_WORKSPACE_DIR}/hal-rust/src/x86/beep.rs
-        WORKING_DIRECTORY ${HAL_RUST_WORKSPACE_DIR}
-        COMMENT "Building hal-rust (minihal, ${HAL_RUST_TARGET})"
-        VERBATIM
-    )
-    add_custom_target(rust_hal_mini DEPENDS ${HAL_RUST_MINI_LIB})
-endif()
-
-function(add_hal _halname)
-    cmake_parse_arguments(_haldata "" "" "SOURCES;COMPONENTS" ${ARGN})
-
-    # Handle the spec file for the dll name
-    spec2def(${_halname}.dll ../hal.spec ADD_IMPORTLIB)
-
-    # Create the actual target
-    foreach(_component ${_haldata_COMPONENTS})
-        list(APPEND _haldata_SOURCES "$<TARGET_OBJECTS:lib_hal_${_component}>")
-    endforeach()
-    add_library(${_halname} MODULE
-        ${_haldata_SOURCES}
-        ${CMAKE_CURRENT_BINARY_DIR}/hal.def)
-
-    if(${_halname} STREQUAL "hal")
-        target_link_libraries(${_halname} libcntpr setjmp arbiter ${PSEH_LIB} ${HAL_RUST_LIB})
-    else()
-        target_link_libraries(${_halname} libcntpr setjmp ${PSEH_LIB})
-    endif()
-
-    add_importlibs(${_halname} ntoskrnl)
-    #add_pch(${_halname} include/hal.h)
-    add_dependencies(${_halname} psdk asm)
-    if(${_halname} STREQUAL "hal")
-        add_dependencies(${_halname} rust_hal)
-    endif()
-    set_module_type(${_halname} kerneldll ENTRYPOINT HalInitSystem 8)
-    add_cd_file(TARGET ${_halname} DESTINATION reactos/system32 NO_CAB FOR all)
-    if(MSVC)
-        target_link_options(${_halname} PRIVATE /ignore:4216 /SECTION:INIT,ERWD)
-    elseif(USE_LLVM_MINGW AND TARGET libclang_rt_builtins)
-        target_link_libraries(${_halname} libclang_rt_builtins)
-    else()
-        target_link_libraries(${_halname} -lgcc)
-    endif()
-endfunction()
-
-# The components
-include(generic.cmake)
-include(acpi.cmake)
-include(apic.cmake)
-# up.cmake removed — all UP-only HAL surface (buildtype, spinlock, up.c) is
-# now in hal-rust.
+# `mini_hal` (minihal/, the systimer.S asm half of FreeLDR's mini-HAL) stays —
+# the freeldr loaders still reuse libmini_hal.a.
 
 if(ARCH STREQUAL "i386")
-    # pcidata.cmake (native-bin2c → pci_classes.c/pci_vendors.c) removed:
-    # the .ids files are now embedded directly by hal-rust/src/x86/pcidata.rs.
-    include(legacy.cmake)
-    include(pic.cmake)
     add_subdirectory(minihal)
 
-    add_hal(hal SOURCES pic/halpic.rc COMPONENTS generic legacy pic)
+    # i386 hal.dll link inputs the cargo build reuses beyond the common leaf
+    # libs: libchkstk.a + the cnt-rust cohabitation twin libcntpr_rust.a (the
+    # cnt-rust MATH-TIERC flip moved strnlen/wcsnlen into the Rust twin, so the
+    # C liblibcntpr.a references them undefined — same as amd64); the self-hosted
+    # pic-flavor asm (file-track so an edit re-invokes the opaque cargo link);
+    # and the checked-in pic/halpic.rc resource.
+    set(HAL_CARGO_EXTRA_DEPENDS
+        chkstk
+        rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/generic/systimer.S
+        ${CMAKE_CURRENT_SOURCE_DIR}/generic/trap.S
+        ${CMAKE_CURRENT_SOURCE_DIR}/pic/pic.S
+        ${CMAKE_SOURCE_DIR}/sdk/lib/rust/hal-cargo/data/hal-i386.rc.res)
 
 elseif(ARCH STREQUAL "amd64")
 
-    add_hal(hal SOURCES ${HAL_SOURCE} COMPONENTS generic acpi apic)
+    # amd64 hal.dll link adds the cnt-rust cohabitation twin (libcntpr_rust.a,
+    # custom target rust_cnt) and the apic-flavor asm; no chkstk, no resource.
+    set(HAL_CARGO_EXTRA_DEPENDS
+        rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/apic/apictrap.S
+        ${CMAKE_CURRENT_SOURCE_DIR}/apic/tsccal.S)
 
 endif()
+
+# ============================================================================
+# hal.dll — CARGO-DRIVEN link (sdk/lib/rust/hal-cargo)
+# ============================================================================
+# The final hal.dll link is driven by cargo (hal-cargo's build.rs → reactos-link,
+# ModuleKind::KernelDll). The cargo build reuses the cmake-built leaf libs
+# (cntpr/setjmp/arbiter/pseh/memcmp + the per-arch extras above), self-hosts the
+# HAL asm + the ntoskrnl import lib + (i386) the resource, and builds hal-rust
+# itself (BODY_CRATE, on the i686/x86_64-kernel target). There is exactly ONE
+# hal.dll (the halacpi/halapic/halaacpi names are install aliases).
+# spec2def(... ADD_IMPORTLIB) stays — ntoskrnl/ntkrnlmp import hal's exports.
+spec2def(hal.dll ../hal.spec ADD_IMPORTLIB)
+
+# Common leaf-lib targets (file-tracked via the target) + the spec inputs +
+# asm/psdk/bugcodes/xdk so the generated asm includes (ks*.inc / sysfuncs.h)
+# exist before the cargo link assembles the HAL .S.
+list(APPEND HAL_CARGO_EXTRA_DEPENDS
+    libcntpr setjmp arbiter ${PSEH_LIB} memcmp
+    asm psdk bugcodes xdk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../hal.spec
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ntoskrnl.spec)
+
+add_cargo_kernel_dll(hal hal-cargo hal.dll
+    BODY_CRATE hal-rust DESTINATION reactos/system32
+    EXTRA_DEPENDS ${HAL_CARGO_EXTRA_DEPENDS})

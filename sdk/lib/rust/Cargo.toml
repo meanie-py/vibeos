@@ -45,6 +45,14 @@ members = [
     "rosload-cargo",
     "ntdll-cargo",
     "ntdll_vista-cargo",
+    "lsass-cargo",
+    "userinit-cargo",
+    "winlogon-cargo",
+    "services-cargo",
+    "smss-cargo",
+    "csrsrv-cargo",
+    "winsrv-cargo",
+    "basesrv-cargo",
     "ntoskrnl-rust",
     "ntprintf",
     "ntprintf_w",
@@ -69,6 +77,8 @@ members = [
     "userinit-rust",
     "winlogon-sys",
     "winlogon-rust",
+    "lsass-rust",
+    "services-rust",
 ]
 resolver = "2"
 

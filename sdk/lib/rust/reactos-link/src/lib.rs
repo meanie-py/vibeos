@@ -86,6 +86,17 @@ pub enum ModuleKind {
     /// dispatch tables in as a source object; as archive members they'd be
     /// GC'd) are supplied via `.force_undefined(...)` on the builder.
     NativeExe { entry: String, image_base: u64 },
+    /// `win32gui`/`win32cui` — a user-mode Win32 exe (e.g. lsass.exe). Mirrors
+    /// the cmake `set_module_type(<m> win32gui)` link: explicit `--subsystem`
+    /// (`windows:5.01` for GUI, `console:5.01` for CUI), `--gc-sections`, NOT
+    /// `-shared` (it's an exe), NO `--exclude-all-symbols` (nothing to export),
+    /// and NO explicit `--image-base` (the common `--enable-auto-image-base`
+    /// resolves it, exactly as cmake's win32 exe link does). `entry` is the CRT
+    /// startup the C runtime provides — `_wWinMainCRTStartup` (GUI) /
+    /// `_mainCRTStartup` (CUI), force-pulled from `libmsvcrtex.a`, which calls
+    /// the Rust `wWinMain`/`main`. All the version/auto-base/allow-multiple-def/
+    /// disable-stdcall-fixup flags come from the common block.
+    Win32Exe { entry: String, subsystem: String },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -347,6 +358,15 @@ pub struct Linker {
     /// for pre-expanded-`.s` consumers (hal).
     asm_include_dirs: Vec<String>,
     resource: Option<String>,
+    /// Like `resource`, but the `.res` is a cmake-BUILT artifact (build-dir
+    /// relative) rather than a checked-in consumer-crate file. Used by the
+    /// spine binaries whose `.rc` is compiled by cmake (e.g. lsass.rc.res).
+    resource_built: Option<String>,
+    /// Compile the `.rc` IN-cargo by replaying cmake's flag-exact `windres`
+    /// invocation from `compile_commands.json` (vs `resource_built`, which
+    /// reuses a cmake-built `.res`). (rc-rel-path, cmake `_res` target name).
+    /// Drops the `ninja <m>_res` prereq — see `resource_from_rc`.
+    resource_from_rc: Option<(String, String)>,
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
@@ -360,12 +380,14 @@ pub struct Linker {
     /// Deep-C residue compiled IN-cargo by replaying cmake's own clang
     /// invocation from `build-<arch>/compile_commands.json` (flag-exact),
     /// archived into an in-group `.a` in the C-archive position. Replaces
-    /// reuse of a cmake-built `.a` via `static_libs` (e.g. the loaders' deep-C
-    /// blcmlib / cportlib) — drops the `ninja <lib>` prerequisite.
+    /// reuse of a cmake-built `.a` via `static_libs` (e.g. ntdll's Tier-C
+    /// librtl / librtl_vista / libcntpr, or the loaders' deep-C blcmlib /
+    /// cportlib) — drops the `ninja <lib>` prerequisite.
     /// (archive-basename, source rel-paths). See `c_from_compile_db`.
     c_db_libs: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
+    allow_stdcall_fixup: bool,
 }
 
 impl Linker {
@@ -416,6 +438,8 @@ impl Linker {
             asm_set: AsmDefineSet::Kernel,
             asm_include_dirs: Vec::new(),
             resource: None,
+            resource_built: None,
+            resource_from_rc: None,
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
@@ -423,7 +447,20 @@ impl Linker {
             c_db_libs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
+            allow_stdcall_fixup: false,
         }
+    }
+
+    /// Suppress the default `--disable-stdcall-fixup`, letting lld resolve a
+    /// decorated `_Sym@N` reference against an undecorated `_Sym` definition
+    /// (its default fixup-with-warning behavior). winsrv.dll needs this: its
+    /// cmake link relies on the fixup to paper over winsrv-rust's cross-module
+    /// extern "C"-def / extern "system"-call ABI mismatches (a pre-existing
+    /// translation-quality issue). Reproduces cmake's link exactly. Do NOT use
+    /// to hide a fresh ABI bug — fix the source instead.
+    pub fn allow_stdcall_fixup(mut self) -> Self {
+        self.allow_stdcall_fixup = true;
+        self
     }
 
     /// Workspace crate (`crate-type = ["staticlib"]`) that is the module
@@ -543,6 +580,30 @@ impl Linker {
     /// out-of-band (`tools/gen_*_res.py`).
     pub fn resource(mut self, manifest_rel: &str) -> Self {
         self.resource = Some(manifest_rel.to_string());
+        self
+    }
+
+    /// A cmake-BUILT `.res` (build-`<arch>`-relative), e.g.
+    /// `base/system/lsass/CMakeFiles/lsass.dir/lsass.rc.res`. For spine
+    /// binaries whose `.rc` cmake already compiles; reuses it rather than
+    /// re-hosting the resource compile in build.rs. Needs `ninja <module>`
+    /// (or a configure+rc build) to have produced it.
+    pub fn resource_built(mut self, build_rel: &str) -> Self {
+        self.resource_built = Some(build_rel.to_string());
+        self
+    }
+
+    /// Compile the `.rc` IN-cargo by replaying cmake's exact `windres`
+    /// invocation from `build-<arch>/compile_commands.json` (flag-exact: the
+    /// full RC_INVOKED / LANGUAGE_* / per-arch define set + `-I` chain), instead
+    /// of reusing a cmake-built `.res` (`resource_built`). Drops the
+    /// `ninja <m>_res` prereq. `rc_rel` is the repo-relative `.rc`; `res_target`
+    /// is the cmake `_res` OBJECT-lib target name (its `CMakeFiles/<res_target>.dir`
+    /// is the disambiguating marker, like `c_from_compile_db`). The `_res` cmake
+    /// target must still exist (to populate compile_commands.json) but its `.res`
+    /// is no longer linked. Mutually exclusive with `resource`/`resource_built`.
+    pub fn resource_from_rc(mut self, rc_rel: &str, res_target: &str) -> Self {
+        self.resource_from_rc = Some((rc_rel.to_string(), res_target.to_string()));
         self
     }
 
@@ -671,7 +732,9 @@ impl Linker {
         // `.rust_user_target()` (the freeldr loaders) forces the user-target
         // path even for an EfiApplication/NativeExe — freeldr-rust is built
         // standard-target + `-sse,-sse2` exactly as cmake's custom_command did.
-        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. }) && !self.rust_user_target;
+        // Win32Dll/Win32Exe (ntdll, lsass, userinit, …) are user-mode too.
+        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. } | ModuleKind::Win32Exe { .. })
+            && !self.rust_user_target;
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
             let feats: Vec<&str> = self.rust_features.iter().map(|s| s.as_str()).collect();
             self.build_rust_crate(
@@ -751,12 +814,59 @@ impl Linker {
             println!("cargo:rerun-if-changed={}", abs.display());
         }
 
-        // ---- Resource (.res) -----------------------------------------
-        if let Some(res_rel) = &self.resource {
-            let src = self.manifest_dir.join(res_rel);
+        // ---- Resource (.res) compiled IN-cargo from the .rc -----------
+        // Replay cmake's flag-exact `windres` command (positional in/out, no
+        // `-o`) with the output redirected into OUT_DIR, then link the COFF
+        // `.res` object. Drops the `ninja <m>_res` prereq.
+        if let Some((rc_rel, res_target)) = &self.resource_from_rc {
+            let db_path = self.build_dir.join("compile_commands.json");
+            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
+                panic!(
+                    "resource_from_rc needs {} — configure cmake with \
+                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
+                    db_path.display()
+                )
+            });
+            let entries = parse_ccdb(&db_text);
+            let abs = self.repo_root.join(rc_rel);
+            let marker = format!("CMakeFiles/{res_target}.dir");
+            let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
+                panic!(
+                    "no compile_commands.json windres entry for {} in target {res_target} \
+                     (marker {marker}) — is {res_target} a cmake OBJECT lib over that .rc?",
+                    abs.display()
+                )
+            });
+            let dst = self.obj_dir().join("module.rc.res");
+            // windres: `... <input.rc> <output.res>` — the output is the LAST
+            // positional token; replace it with our OUT_DIR path, keep all else.
+            let mut args: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
+            *args.last_mut().expect("empty windres command") =
+                dst.to_str().expect("utf8 res path").to_string();
+            let status = Command::new(&args[0])
+                .args(&args[1..])
+                .current_dir(&dir)
+                .status()
+                .unwrap_or_else(|e| panic!("replay windres for {rc_rel}: {e}"));
+            if !status.success() {
+                panic!("resource_from_rc: windres failed for {rc_rel} (target {res_target})");
+            }
+            println!("cargo:rustc-link-arg={}", dst.display());
+            println!("cargo:rerun-if-changed={}", abs.display());
+            println!("cargo:rerun-if-changed={}", db_path.display());
+        }
+
+        // ---- Resource (.res) — checked-in or cmake-built -------------
+        let res_src: Option<PathBuf> = self
+            .resource
+            .as_ref()
+            .map(|r| self.manifest_dir.join(r))
+            .or_else(|| self.resource_built.as_ref().map(|r| self.build_dir.join(r)));
+        if let Some(src) = res_src {
             if !src.exists() {
                 panic!(
-                    "missing {} — regenerate via the matching tools/gen_*_res.py",
+                    "missing {} — regenerate via tools/gen_*_res.py (checked-in) \
+                     or `ninja` the module (cmake-built .res)",
                     src.display()
                 );
             }
@@ -851,7 +961,17 @@ impl Linker {
                 std::fs::create_dir_all(&out_sub).ok();
                 let mut objs = Vec::new();
                 for rel in sources {
-                    let abs = self.repo_root.join(rel);
+                    // Normal sources are repo-relative; GENERATED sources (e.g.
+                    // the RPC `*_s.c` server stub from add_rpc_files) live under
+                    // build-<arch>/ — pass them build-dir-relative and fall back
+                    // to build_dir when the repo path doesn't exist. Keeps the
+                    // API arch-agnostic (no `build-i386/` hardcoded in rel).
+                    let repo_abs = self.repo_root.join(rel);
+                    let abs = if repo_abs.exists() {
+                        repo_abs
+                    } else {
+                        self.build_dir.join(rel)
+                    };
                     let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
                         panic!(
                             "no compile_commands.json entry for {} in target {name} \
@@ -964,9 +1084,19 @@ impl Linker {
             "-Wl,--major-os-version,5",
             "-Wl,--minor-os-version,01",
             "-Wl,--allow-multiple-definition",
-            "-Wl,--disable-stdcall-fixup",
         ] {
             println!("cargo:rustc-link-arg={f}");
+        }
+        // By default disable lld's stdcall-fixup (a decorated-vs-undecorated
+        // symbol mismatch is a real ABI bug, not something to paper over). But
+        // winsrv.dll's cmake link relies on the fixup to resolve winsrv-rust's
+        // cross-module extern "C"-def vs extern "system"-call mismatches
+        // (e.g. HistoryReshapeAllBuffers) — those are a pre-existing
+        // translation-quality issue; allow_stdcall_fixup() reproduces cmake's
+        // behavior (which passes neither flag → lld default = fixup-with-warning)
+        // so the cargo link is byte-equivalent to the working cmake one.
+        if !self.allow_stdcall_fixup {
+            println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup");
         }
         // ---- kind-specific subsystem / alignment / sections ----------
         let (entry, image_base): (&String, Option<u64>) = match &kind {
@@ -1042,6 +1172,16 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
                 (entry, Some(*image_base))
+            }
+            ModuleKind::Win32Exe { entry, subsystem } => {
+                // user-mode win32 exe (lsass.exe, set_module_type win32gui):
+                // explicit subsystem, --gc-sections, no -shared, no
+                // --exclude-all-symbols (nothing exported), no explicit
+                // --image-base (common --enable-auto-image-base resolves it,
+                // matching cmake). Entry = the CRT startup in libmsvcrtex.a.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,{subsystem}");
+                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                (entry, None)
             }
         };
         // Force-undefined pulls (-u SYM) — keep GC'd-but-needed archive members.

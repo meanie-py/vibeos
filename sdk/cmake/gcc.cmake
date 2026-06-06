@@ -662,6 +662,15 @@ function(add_cargo_module _target _crate _output)
             set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
         endif()
+    elseif(_acm_KIND STREQUAL "win32exe")
+        # User-mode win32 exe (lsass.exe): like win32dll, NOT a KERNEL_MODULE_TYPE
+        # so NO native-pefixup; the only post-link set_module_type applies on
+        # i386/llvm-mingw is the lld forwarder-underscore fix (a no-op for an
+        # export-less exe, kept for parity with every PE module).
+        if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+            set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+        endif()
     elseif(_acm_KIND STREQUAL "efi")
         # Strip rossym + all (matches uefi.cmake's uefildr POST_BUILD).
         set(_postlink

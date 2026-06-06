@@ -34,6 +34,13 @@ name = "avltable"
 version = "0.1.0"
 
 [[package]]
+name = "basesrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "bitmap"
 version = "0.1.0"
 
@@ -122,6 +129,13 @@ version = "0.1.0"
 [[package]]
 name = "crc32"
 version = "0.1.0"
+
+[[package]]
+name = "csrsrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "encode"
@@ -285,6 +299,20 @@ dependencies = [
  "scoped-tls",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lsass-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "lsass-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
 ]
 
 [[package]]
@@ -496,6 +524,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 
 [[package]]
+name = "services-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "services-rust"
+version = "0.1.0"
+dependencies = [
+ "winsrv-sys",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -526,6 +568,13 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "smss-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "smss-csrss-rust"
@@ -616,6 +665,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "userinit-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "userinit-rust"
 version = "0.1.0"
 dependencies = [
@@ -681,6 +737,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "winlogon-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "winlogon-rust"
 version = "0.1.0"
 dependencies = [
@@ -690,6 +753,13 @@ dependencies = [
 [[package]]
 name = "winlogon-sys"
 version = "0.1.0"
+
+[[package]]
+name = "winsrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
 
 [[package]]
 name = "winsrv-rust"

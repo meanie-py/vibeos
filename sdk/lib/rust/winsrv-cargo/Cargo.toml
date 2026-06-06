@@ -1,0 +1,29 @@
+# Cargo-driven `winsrv.dll` link (i386 + amd64 + arm64). Seventh (and last of
+# the SMSS/CSRSS spine) of OUR translated spine binaries to move its link
+# cmake→cargo (after lsass + userinit + winlogon + services + smss + csrsrv).
+#
+# winsrv.dll (console + user server) is a PARTIAL flip: init.c is Rust
+# (winsrv-rust, `winsrv_dll_only` — ShutdownSettings + GetTimeouts + DllMain),
+# but the big consrv + usersrv + concfg C component libraries stay C. Unlike
+# winlogon/services (small residue via c_from_compile_db), winsrv reuses those
+# whole cmake-built component .a (libconsrv/libusersrv/libconcfg) + the import
+# libs via static_libs — moving just the LINK. ModuleKind::Win32Dll with
+# subsystem console:5.01 + entry _DllMain@12.
+#
+# Success criterion: cargo's winsrv.dll boots the livecd to `shell ready` —
+# csrss loads winsrv at init (ConServerDllInitialization / UserServerDll-
+# Initialization), and it owns the console + user server.
+
+[package]
+name = "winsrv-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "winsrv"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }
