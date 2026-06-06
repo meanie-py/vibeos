@@ -1,10 +1,12 @@
-
 use ntdll_sys::nt::*;
 
 // RtlConvertUlongToLuid is FORCEINLINE in ndk/rtlfuncs.h.
 #[inline(always)]
 unsafe fn RtlConvertUlongToLuid(u: ULONG) -> LUID {
-    LUID { LowPart: u, HighPart: 0 }
+    LUID {
+        LowPart: u,
+        HighPart: 0,
+    }
 }
 
 // InitializeObjectAttributes is a C macro — inline.
@@ -44,7 +46,9 @@ pub static mut SmpAutoChkKeyword: _UNICODE_STRING = unsafe { core::mem::zeroed()
 
 // NtCurrentProcess is a macro: pseudo-handle `(HANDLE)-1`.
 #[inline(always)]
-unsafe fn NtCurrentProcess() -> HANDLE { -1isize as HANDLE }
+unsafe fn NtCurrentProcess() -> HANDLE {
+    -1isize as HANDLE
+}
 
 // KUSER_SHARED_DATA lives at a fixed user-mode VA on Windows / ReactOS.
 // Expose as a const pointer so call sites that did `(*SharedUserData).Field`
@@ -100,9 +104,11 @@ pub unsafe extern "system" fn SmpAcquirePrivilege(
     State = RtlAllocateHeap(
         SmpHeap,
         0,
-        (core::mem::size_of::<SMP_PRIVILEGE_STATE>() +
-        core::mem::size_of::<TOKEN_PRIVILEGES>() +
-        core::mem::size_of::<LUID_AND_ATTRIBUTES>()).try_into().unwrap(),
+        (core::mem::size_of::<SMP_PRIVILEGE_STATE>()
+            + core::mem::size_of::<TOKEN_PRIVILEGES>()
+            + core::mem::size_of::<LUID_AND_ATTRIBUTES>())
+        .try_into()
+        .unwrap(),
     ) as *mut SMP_PRIVILEGE_STATE;
     if State.is_null() {
         return STATUS_NO_MEMORY;
@@ -134,7 +140,8 @@ pub unsafe extern "system" fn SmpAcquirePrivilege(
         core::ptr::addr_of_mut!(Size),
     );
     if Status == STATUS_BUFFER_TOO_SMALL {
-        (*State).OldPrivileges = RtlAllocateHeap(SmpHeap, 0, (Size as usize).try_into().unwrap()) as PTOKEN_PRIVILEGES;
+        (*State).OldPrivileges =
+            RtlAllocateHeap(SmpHeap, 0, (Size as usize).try_into().unwrap()) as PTOKEN_PRIVILEGES;
         if (*State).OldPrivileges.is_null() {
             Status = STATUS_NO_MEMORY;
         } else {
@@ -252,7 +259,9 @@ pub unsafe extern "system" fn SmpParseToken(
         (*Token).Buffer = RtlAllocateHeap(
             SmpHeap,
             SmBaseTag,
-            ((TokenLength as usize + core::mem::size_of::<u16>()) as usize).try_into().unwrap(),
+            ((TokenLength as usize + core::mem::size_of::<u16>()) as usize)
+                .try_into()
+                .unwrap(),
         ) as PWSTR;
         if (*Token).Buffer.is_null() {
             return STATUS_NO_MEMORY;
@@ -265,7 +274,9 @@ pub unsafe extern "system" fn SmpParseToken(
             (*Token).Buffer as *mut u8,
             TokenLength as usize,
         );
-        *(*Token).Buffer.add(TokenLength as usize / core::mem::size_of::<u16>()) = UNICODE_NULL;
+        *(*Token)
+            .Buffer
+            .add(TokenLength as usize / core::mem::size_of::<u16>()) = UNICODE_NULL;
     }
 
     (*Input).Length = ((*Input).Length as usize - (pp as usize - (*Input).Buffer as usize)) as u16;
@@ -306,27 +317,34 @@ pub unsafe extern "system" fn SmpParseCommandLine(
         Length = SmpDefaultLibPath.MaximumLength as ULONG
             + SmpSystemRoot.MaximumLength as ULONG
             + (core::mem::size_of::<u16>() * 11) as ULONG;
-        
+
         FullPathString = _UNICODE_STRING {
             Length: 0,
             MaximumLength: Length as u16,
-            Buffer: RtlAllocateHeap(SmpHeap, SmBaseTag, (Length as usize).try_into().unwrap()) as PWSTR,
+            Buffer: RtlAllocateHeap(SmpHeap, SmBaseTag, (Length as usize).try_into().unwrap())
+                as PWSTR,
         };
 
         if !FullPathString.Buffer.is_null() {
             static SYSTEM32: [u16; 11] = [
-                b'\\' as u16, b's' as u16, b'y' as u16, b's' as u16, b't' as u16,
-                b'e' as u16, b'm' as u16, b'3' as u16, b'2' as u16, b';' as u16, 0,
+                b'\\' as u16,
+                b's' as u16,
+                b'y' as u16,
+                b's' as u16,
+                b't' as u16,
+                b'e' as u16,
+                b'm' as u16,
+                b'3' as u16,
+                b'2' as u16,
+                b';' as u16,
+                0,
             ];
 
             RtlAppendUnicodeStringToString(
                 core::ptr::addr_of_mut!(FullPathString),
                 core::ptr::addr_of_mut!(SmpSystemRoot),
             );
-            RtlAppendUnicodeToString(
-                core::ptr::addr_of_mut!(FullPathString),
-                SYSTEM32.as_ptr(),
-            );
+            RtlAppendUnicodeToString(core::ptr::addr_of_mut!(FullPathString), SYSTEM32.as_ptr());
             RtlAppendUnicodeStringToString(
                 core::ptr::addr_of_mut!(FullPathString),
                 core::ptr::addr_of_mut!(SmpDefaultLibPath),
@@ -403,7 +421,8 @@ pub unsafe extern "system" fn SmpParseCommandLine(
         PathString = _UNICODE_STRING {
             Length: 0,
             MaximumLength: Length as u16,
-            Buffer: RtlAllocateHeap(SmpHeap, SmBaseTag, (Length as usize).try_into().unwrap()) as PWSTR,
+            Buffer: RtlAllocateHeap(SmpHeap, SmBaseTag, (Length as usize).try_into().unwrap())
+                as PWSTR,
         };
         if PathString.Buffer.is_null() {
             RtlFreeHeap(SmpHeap, 0, Token.Buffer as PVOID);
@@ -447,11 +466,7 @@ pub unsafe extern "system" fn SmpParseCommandLine(
         } else {
             let len = Token.Length as usize / core::mem::size_of::<u16>();
             let copy_len = len.min(PathBuffer.len() - 1);
-            core::ptr::copy_nonoverlapping(
-                Token.Buffer,
-                PathBuffer.as_mut_ptr(),
-                copy_len,
-            );
+            core::ptr::copy_nonoverlapping(Token.Buffer, PathBuffer.as_mut_ptr(), copy_len);
             PathBuffer[copy_len] = 0;
         }
     }
@@ -500,13 +515,71 @@ pub unsafe extern "system" fn SmpQueryRegistrySosOption() -> BOOLEAN {
     let PartialInfo = ValueBuffer.as_mut_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
 
     static KEY_PATH: [u16; 65] = [
-        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16,
-        b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16,
-        b'e' as u16, b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
-        b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
-        b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16,
-        b'e' as u16, b't' as u16, b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16,
-        b'o' as u16, b'l' as u16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'\\' as u16,
+        b'R' as u16,
+        b'e' as u16,
+        b'g' as u16,
+        b'i' as u16,
+        b's' as u16,
+        b't' as u16,
+        b'r' as u16,
+        b'y' as u16,
+        b'\\' as u16,
+        b'M' as u16,
+        b'a' as u16,
+        b'c' as u16,
+        b'h' as u16,
+        b'i' as u16,
+        b'n' as u16,
+        b'e' as u16,
+        b'\\' as u16,
+        b'S' as u16,
+        b'y' as u16,
+        b's' as u16,
+        b't' as u16,
+        b'e' as u16,
+        b'm' as u16,
+        b'\\' as u16,
+        b'C' as u16,
+        b'u' as u16,
+        b'r' as u16,
+        b'r' as u16,
+        b'e' as u16,
+        b'n' as u16,
+        b't' as u16,
+        b'C' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b't' as u16,
+        b'r' as u16,
+        b'o' as u16,
+        b'l' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b't' as u16,
+        b'\\' as u16,
+        b'C' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b't' as u16,
+        b'r' as u16,
+        b'o' as u16,
+        b'l' as u16,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     ];
     RtlInitUnicodeString(core::ptr::addr_of_mut!(KeyName), KEY_PATH.as_ptr());
     InitializeObjectAttributes(
@@ -526,9 +599,25 @@ pub unsafe extern "system" fn SmpQueryRegistrySosOption() -> BOOLEAN {
     }
 
     static VALUE_NAME: [u16; 19] = [
-        b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'S' as u16, b't' as u16,
-        b'a' as u16, b'r' as u16, b't' as u16, b'O' as u16, b'p' as u16, b't' as u16, b'i' as u16, b'o' as u16,
-        b'n' as u16, b's' as u16, 0,
+        b'S' as u16,
+        b'y' as u16,
+        b's' as u16,
+        b't' as u16,
+        b'e' as u16,
+        b'm' as u16,
+        b'S' as u16,
+        b't' as u16,
+        b'a' as u16,
+        b'r' as u16,
+        b't' as u16,
+        b'O' as u16,
+        b'p' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b's' as u16,
+        0,
     ];
     RtlInitUnicodeString(core::ptr::addr_of_mut!(ValueName), VALUE_NAME.as_ptr());
     Status = NtQueryValueKey(
@@ -546,22 +635,22 @@ pub unsafe extern "system" fn SmpQueryRegistrySosOption() -> BOOLEAN {
 
     let data_ptr = (*PartialInfo).Data.as_ptr() as *const u16;
     let data_len = ((*PartialInfo).DataLength as usize) / core::mem::size_of::<u16>();
-    
+
     static SOS_UPPER: [u16; 3] = [b'S' as u16, b'O' as u16, b'S' as u16];
     static SOS_LOWER: [u16; 3] = [b's' as u16, b'o' as u16, b's' as u16];
-    
+
     let mut found = false;
     for i in 0..data_len.saturating_sub(2) {
-        if *data_ptr.add(i) == SOS_UPPER[0] &&
-           *data_ptr.add(i + 1) == SOS_UPPER[1] &&
-           *data_ptr.add(i + 2) == SOS_UPPER[2]
+        if *data_ptr.add(i) == SOS_UPPER[0]
+            && *data_ptr.add(i + 1) == SOS_UPPER[1]
+            && *data_ptr.add(i + 2) == SOS_UPPER[2]
         {
             found = true;
             break;
         }
-        if *data_ptr.add(i) == SOS_LOWER[0] &&
-           *data_ptr.add(i + 1) == SOS_LOWER[1] &&
-           *data_ptr.add(i + 2) == SOS_LOWER[2]
+        if *data_ptr.add(i) == SOS_LOWER[0]
+            && *data_ptr.add(i + 1) == SOS_LOWER[1]
+            && *data_ptr.add(i + 2) == SOS_LOWER[2]
         {
             found = true;
             break;
@@ -631,10 +720,7 @@ pub unsafe extern "system" fn SmpSaveAndClearBootStatusData(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmpRestoreBootStatusData(
-    BootOkay: BOOLEAN,
-    ShutdownOkay: BOOLEAN,
-) {
+pub unsafe extern "system" fn SmpRestoreBootStatusData(BootOkay: BOOLEAN, ShutdownOkay: BOOLEAN) {
     let Status: NTSTATUS;
     let mut BootState: PVOID = core::ptr::null_mut();
 
@@ -660,7 +746,6 @@ pub unsafe extern "system" fn SmpRestoreBootStatusData(
         RtlUnlockBootStatusData(BootState);
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -8,8 +8,8 @@
 //! `VDM_CONSOLE_RECORD` (ProcessId at offset 0 instead of the real offset 24)
 //! — the same truncated-mirror footgun as SMP_SUBSYSTEM. Both now use these.
 
-use ntdll_sys::nt::*;
 use core::ffi::c_void;
+use ntdll_sys::nt::*;
 
 // --- VDM task state (win/vdm.h) ---
 pub const VDM_NOT_LOADED: USHORT = 0x01;
@@ -68,9 +68,9 @@ pub const STATUS_VDM_DISALLOWED: NTSTATUS = 0xC0000414u32 as NTSTATUS;
 // --- VDM policy registry strings (vdm.h, L"...") — [u16] statics (align 2),
 //     consumed by RtlInitUnicodeString via `.as_ptr()`. ---
 pub static VDM_POLICY_KEY_NAME_BUF: [u16; 46] = [
-    83, 111, 102, 116, 119, 97, 114, 101, 92, 80, 111, 108, 105, 99, 105, 101,
-    115, 92, 77, 105, 99, 114, 111, 115, 111, 102, 116, 92, 87, 105, 110, 100,
-    111, 119, 115, 92, 65, 112, 112, 67, 111, 109, 112, 97, 116, 0,
+    83, 111, 102, 116, 119, 97, 114, 101, 92, 80, 111, 108, 105, 99, 105, 101, 115, 92, 77, 105,
+    99, 114, 111, 115, 111, 102, 116, 92, 87, 105, 110, 100, 111, 119, 115, 92, 65, 112, 112, 67,
+    111, 109, 112, 97, 116, 0,
 ];
 pub static VDM_DISALLOWED_VALUE_NAME_BUF: [u16; 14] = [
     86, 68, 77, 68, 105, 115, 97, 108, 108, 111, 119, 101, 100, 0,

@@ -1,5 +1,5 @@
-use ntdll_sys::nt::*;
 use core::ffi::c_void;
+use ntdll_sys::nt::*;
 
 extern "C" {
     fn wcscpy(dest: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
@@ -12,7 +12,10 @@ unsafe fn RtlGetProcessHeap() -> *mut core::ffi::c_void {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const STANDARD_PAGING_FILE_NAME: &[u16] = &[0x005C, 0x003F, 0x003F, 0x005C, 0x003F, 0x003A, 0x005C, 0x0070, 0x0061, 0x0067, 0x0065, 0x0066, 0x0069, 0x006C, 0x0065, 0x002E, 0x0073, 0x0079, 0x0073, 0x0000];
+pub const STANDARD_PAGING_FILE_NAME: &[u16] = &[
+    0x005C, 0x003F, 0x003F, 0x005C, 0x003F, 0x003A, 0x005C, 0x0070, 0x0061, 0x0067, 0x0065, 0x0066,
+    0x0069, 0x006C, 0x0065, 0x002E, 0x0073, 0x0079, 0x0073, 0x0000,
+];
 
 pub const STANDARD_DRIVE_LETTER_OFFSET: ULONG = 4;
 
@@ -99,7 +102,9 @@ const STATUS_DISK_FULL: NTSTATUS = 0xC000007Fu32 as NTSTATUS;
 const STATUS_UNEXPECTED_IO_ERROR: NTSTATUS = 0xC00000E9u32 as NTSTATUS;
 
 #[inline]
-unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
+unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool {
+    s >= 0
+}
 
 // PC-98 detection global — always FALSE on our targets (C `extern BOOLEAN IsNEC_98`).
 #[allow(non_upper_case_globals)]
@@ -129,18 +134,21 @@ pub static mut SmpVolumeDescriptorList: LIST_ENTRY = unsafe { core::mem::zeroed(
 pub static mut SmpRegistrySpecifierPresent: BOOLEAN = 0;
 pub static mut SmpNumberOfPagingFiles: ULONG = 0;
 
-unsafe extern "system" fn SmpValidatePagingFileSizes(Descriptor: PSMP_PAGEFILE_DESCRIPTOR) -> NTSTATUS {
+unsafe extern "system" fn SmpValidatePagingFileSizes(
+    Descriptor: PSMP_PAGEFILE_DESCRIPTOR,
+) -> NTSTATUS {
     let Status: NTSTATUS = STATUS_SUCCESS;
     let mut WasTooBig: BOOLEAN = 0u8;
     let mut MinSize: ULONGLONG;
     let mut MaxSize: ULONGLONG;
 
     #[cfg(target_arch = "x86")]
-    let MaxPageFileSize: ULONGLONG = if (*SharedUserData).ProcessorFeatures[PF_PAE_ENABLED as usize] != 0 {
-        MAXIMUM_PAGEFILE_SIZE_PAE
-    } else {
-        MAXIMUM_PAGEFILE_SIZE
-    };
+    let MaxPageFileSize: ULONGLONG =
+        if (*SharedUserData).ProcessorFeatures[PF_PAE_ENABLED as usize] != 0 {
+            MAXIMUM_PAGEFILE_SIZE_PAE
+        } else {
+            MAXIMUM_PAGEFILE_SIZE
+        };
     #[cfg(not(target_arch = "x86"))]
     let MaxPageFileSize: ULONGLONG = MAXIMUM_PAGEFILE_SIZE;
 
@@ -241,10 +249,12 @@ pub unsafe extern "system" fn SmpCreatePagingFileDescriptor(
         while i < (Arguments.Length as ULONG) / (core::mem::size_of::<WCHAR>() as ULONG) {
             if *Arguments.Buffer.add(i as usize) == b' ' as WCHAR {
                 SecondArgument.Buffer = Arguments.Buffer.add(i as usize);
-                SecondArgument.Length =
-                    (Arguments.Length as ULONG - i * core::mem::size_of::<WCHAR>() as ULONG) as USHORT;
-                SecondArgument.MaximumLength =
-                    (Arguments.MaximumLength as ULONG - i * core::mem::size_of::<WCHAR>() as ULONG) as USHORT;
+                SecondArgument.Length = (Arguments.Length as ULONG
+                    - i * core::mem::size_of::<WCHAR>() as ULONG)
+                    as USHORT;
+                SecondArgument.MaximumLength = (Arguments.MaximumLength as ULONG
+                    - i * core::mem::size_of::<WCHAR>() as ULONG)
+                    as USHORT;
                 Status = RtlUnicodeStringToInteger(&SecondArgument, 0, &mut MaxSize);
                 if !NT_SUCCESS(Status) {
                     RtlFreeUnicodeString(&mut PageFileName);
@@ -279,9 +289,21 @@ pub unsafe extern "system" fn SmpCreatePagingFileDescriptor(
     if SystemManaged != 0 {
         (*Descriptor).Flags |= SMP_PAGEFILE_SYSTEM_MANAGED;
     }
-    *(*Descriptor).Name.Buffer.add(STANDARD_DRIVE_LETTER_OFFSET as usize) =
-        RtlUpcaseUnicodeChar(*(*Descriptor).Name.Buffer.add(STANDARD_DRIVE_LETTER_OFFSET as usize));
-    if *(*Descriptor).Name.Buffer.add(STANDARD_DRIVE_LETTER_OFFSET as usize) == b'?' as WCHAR {
+    *(*Descriptor)
+        .Name
+        .Buffer
+        .add(STANDARD_DRIVE_LETTER_OFFSET as usize) = RtlUpcaseUnicodeChar(
+        *(*Descriptor)
+            .Name
+            .Buffer
+            .add(STANDARD_DRIVE_LETTER_OFFSET as usize),
+    );
+    if *(*Descriptor)
+        .Name
+        .Buffer
+        .add(STANDARD_DRIVE_LETTER_OFFSET as usize)
+        == b'?' as WCHAR
+    {
         (*Descriptor).Flags |= SMP_PAGEFILE_ON_ANY_DRIVE;
     }
 
@@ -456,8 +478,8 @@ pub unsafe extern "system" fn SmpGetVolumeFreeSpace(Volume: PSMP_VOLUME_DESCRIPT
     NtClose(VolumeHandle);
 
     /* Compute how much free space we have */
-    FreeSpace.QuadPart = SizeInfo.AvailableAllocationUnits.QuadPart
-        * SizeInfo.SectorsPerAllocationUnit as i64;
+    FreeSpace.QuadPart =
+        SizeInfo.AvailableAllocationUnits.QuadPart * SizeInfo.SectorsPerAllocationUnit as i64;
     FinalFreeSpace.QuadPart = FreeSpace.QuadPart * SizeInfo.BytesPerSector as i64;
 
     /* Check if there is less than 32 MB free so we don't starve the disk */
@@ -473,7 +495,9 @@ pub unsafe extern "system" fn SmpGetVolumeFreeSpace(Volume: PSMP_VOLUME_DESCRIPT
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmpSearchVolumeDescriptor(DriveLetter: WCHAR) -> PSMP_VOLUME_DESCRIPTOR {
+pub unsafe extern "system" fn SmpSearchVolumeDescriptor(
+    DriveLetter: WCHAR,
+) -> PSMP_VOLUME_DESCRIPTOR {
     let UpLetter: WCHAR;
     let mut Volume: PSMP_VOLUME_DESCRIPTOR = core::ptr::null_mut();
     let mut NextEntry: PLIST_ENTRY;
@@ -482,7 +506,8 @@ pub unsafe extern "system" fn SmpSearchVolumeDescriptor(DriveLetter: WCHAR) -> P
 
     NextEntry = SmpVolumeDescriptorList.Flink;
     while NextEntry != core::ptr::addr_of_mut!(SmpVolumeDescriptorList) {
-        Volume = (NextEntry as usize - core::mem::offset_of!(_SMP_VOLUME_DESCRIPTOR, Entry)) as PSMP_VOLUME_DESCRIPTOR;
+        Volume = (NextEntry as usize - core::mem::offset_of!(_SMP_VOLUME_DESCRIPTOR, Entry))
+            as PSMP_VOLUME_DESCRIPTOR;
 
         if (*Volume).DriveLetter == UpLetter {
             break;
@@ -521,7 +546,10 @@ pub unsafe extern "system" fn SmpCreatePagingFileOnFixedDrive(
     /* Try to find the volume descriptor for this drive letter */
     ShouldDelete = 0u8;
     Volume = SmpSearchVolumeDescriptor(
-        *(*Descriptor).Name.Buffer.offset(STANDARD_DRIVE_LETTER_OFFSET as isize),
+        *(*Descriptor)
+            .Name
+            .Buffer
+            .offset(STANDARD_DRIVE_LETTER_OFFSET as isize),
     );
     if Volume.is_null() {
         /* Couldn't find it, fail */
@@ -642,14 +670,18 @@ pub unsafe extern "system" fn SmpCreatePagingFileOnAnyDrive(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmpMakeDefaultPagingFileDescriptor(Descriptor: PSMP_PAGEFILE_DESCRIPTOR) {
+pub unsafe extern "system" fn SmpMakeDefaultPagingFileDescriptor(
+    Descriptor: PSMP_PAGEFILE_DESCRIPTOR,
+) {
     (*Descriptor).Flags |= SMP_PAGEFILE_DEFAULT;
     (*Descriptor).MinSize.QuadPart = (128 * MEGABYTE) as i64;
     (*Descriptor).MaxSize.QuadPart = (128 * MEGABYTE) as i64;
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmpMakeSystemManagedPagingFileDescriptor(Descriptor: PSMP_PAGEFILE_DESCRIPTOR) {
+pub unsafe extern "system" fn SmpMakeSystemManagedPagingFileDescriptor(
+    Descriptor: PSMP_PAGEFILE_DESCRIPTOR,
+) {
     let mut BasicInfo: SYSTEM_BASIC_INFORMATION = core::mem::zeroed();
 
     let Status = NtQuerySystemInformation(
@@ -700,7 +732,12 @@ pub unsafe extern "system" fn SmpCreateSystemManagedPagingFile(
     };
 
     /* Check if this should be a fixed pagefile or an any pagefile */
-    if *(*Descriptor).Name.Buffer.offset(STANDARD_DRIVE_LETTER_OFFSET as isize) == b'?' as u16 {
+    if *(*Descriptor)
+        .Name
+        .Buffer
+        .offset(STANDARD_DRIVE_LETTER_OFFSET as isize)
+        == b'?' as u16
+    {
         /* Find a disk for it */
         return SmpCreatePagingFileOnAnyDrive(
             Descriptor,
@@ -732,17 +769,22 @@ pub unsafe extern "system" fn SmpCreateEmergencyPagingFile() -> NTSTATUS {
     }
 
     /* Initialize it */
-    RtlInitUnicodeString(core::ptr::addr_of_mut!((*Descriptor).Token), core::ptr::null_mut());
+    RtlInitUnicodeString(
+        core::ptr::addr_of_mut!((*Descriptor).Token),
+        core::ptr::null_mut(),
+    );
 
     /* Copy the default pagefile name */
     wcscpy(Buffer.as_mut_ptr(), STANDARD_PAGING_FILE_NAME.as_ptr());
 
     /* Fill the rest of the descriptor out */
     RtlInitUnicodeString(core::ptr::addr_of_mut!((*Descriptor).Name), Buffer.as_ptr());
-    *(*Descriptor).Name.Buffer.add(STANDARD_DRIVE_LETTER_OFFSET as usize) = b'?' as WCHAR;
-    (*Descriptor).Flags |= SMP_PAGEFILE_SYSTEM_MANAGED
-        | SMP_PAGEFILE_EMERGENCY
-        | SMP_PAGEFILE_ON_ANY_DRIVE;
+    *(*Descriptor)
+        .Name
+        .Buffer
+        .add(STANDARD_DRIVE_LETTER_OFFSET as usize) = b'?' as WCHAR;
+    (*Descriptor).Flags |=
+        SMP_PAGEFILE_SYSTEM_MANAGED | SMP_PAGEFILE_EMERGENCY | SMP_PAGEFILE_ON_ANY_DRIVE;
 
     /* Insert it into the descriptor list */
     InsertHeadList(
@@ -787,10 +829,7 @@ pub unsafe extern "system" fn SmpCreateVolumeDescriptors() -> NTSTATUS {
     }
 
     /* Build the volume string, starting with A: (we'll edit this in place) */
-    wcscpy(
-        Buffer.as_mut_ptr(),
-        widestr!("\\??\\A:\\").as_ptr(),
-    );
+    wcscpy(Buffer.as_mut_ptr(), widestr!("\\??\\A:\\").as_ptr());
     RtlInitUnicodeString(&mut VolumePath, Buffer.as_ptr());
 
     /* Start with the C drive, except on NEC PC-98 */
@@ -892,9 +931,8 @@ pub unsafe extern "system" fn SmpCreateVolumeDescriptors() -> NTSTATUS {
             NtClose(VolumeHandle);
 
             /* Compute how much free space we have */
-            FreeSpace.QuadPart =
-                SizeInfo.AvailableAllocationUnits.QuadPart
-                    * SizeInfo.SectorsPerAllocationUnit as i64;
+            FreeSpace.QuadPart = SizeInfo.AvailableAllocationUnits.QuadPart
+                * SizeInfo.SectorsPerAllocationUnit as i64;
             FinalFreeSpace.QuadPart = FreeSpace.QuadPart * SizeInfo.BytesPerSector as i64;
 
             /* Check if there is less than 32 MB free so we don't starve the disk */
@@ -971,7 +1009,10 @@ pub unsafe extern "system" fn SmpCreatePagingFiles() -> NTSTATUS {
             SmpValidatePagingFileSizes(Descriptor);
 
             /* Check if this is an ANY pagefile or a FIXED pagefile */
-            if *(*Descriptor).Name.Buffer.offset(STANDARD_DRIVE_LETTER_OFFSET as isize)
+            if *(*Descriptor)
+                .Name
+                .Buffer
+                .offset(STANDARD_DRIVE_LETTER_OFFSET as isize)
                 == b'?' as WCHAR
             {
                 /* It's an any pagefile, try to create it wherever possible */
@@ -1017,7 +1058,6 @@ pub unsafe extern "system" fn SmpCreatePagingFiles() -> NTSTATUS {
     /* All done */
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

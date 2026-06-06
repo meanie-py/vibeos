@@ -1,6 +1,5 @@
-
-use ntdll_sys::nt::*;
 use super::srv_inlines::*;
+use ntdll_sys::nt::*;
 pub static mut CsrClientThreadSetup: Option<unsafe extern "system" fn() -> BOOLEAN> = None;
 #[no_mangle]
 pub static mut CsrApiPortName: _UNICODE_STRING = unsafe { core::mem::zeroed() };
@@ -40,8 +39,7 @@ pub unsafe extern "system" fn CsrCallServerFromServer(
 
     let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
     if let Some(func) = *dispatch_fn {
-        (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status =
-            func(ReceiveMsg, &raw mut ReplyCode);
+        (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = func(ReceiveMsg, &raw mut ReplyCode);
     } else {
         (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_ACCESS_VIOLATION;
     }
@@ -142,7 +140,8 @@ pub unsafe extern "system" fn CsrpCheckRequestThreads() -> NTSTATUS {
                 InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
                 InterlockedIncrementUL(&raw mut CsrpDynamicThreadTotal);
 
-                if CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread) != core::ptr::null_mut()
+                if CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread)
+                    != core::ptr::null_mut()
                 {
                     NtResumeThread(hThread, core::ptr::null_mut());
                 } else {
@@ -180,7 +179,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
     let mut i: ULONG;
     let mut ReplyPort: HANDLE;
 
-    DbgPrint(b"[CSRSRV] ApiRequestThread: enter param=%p\n\0".as_ptr() as *const i8, Parameter);
+    crate::dbg_print!(b"[CSRSRV] ApiRequestThread: enter param=%p\n\0", Parameter);
 
     ReplyMsg = core::ptr::null_mut();
     ReplyPort = CsrApiPort;
@@ -194,13 +193,16 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         let mut connect_attempts: u32 = 0;
         while CsrConnectToUser().is_null() {
             connect_attempts += 1;
-            DbgPrint(b"[CSRSRV] ApiRequestThread: CsrConnectToUser null, attempt %u\n\0".as_ptr() as *const i8, connect_attempts);
+            crate::dbg_print!(
+                b"[CSRSRV] ApiRequestThread: CsrConnectToUser null, attempt %u\n\0",
+                connect_attempts
+            );
             let mut TimeOut: LARGE_INTEGER = core::mem::zeroed();
             TimeOut.QuadPart = -30 * 1000 * 1000 * 10;
             (*Teb).Win32ClientInfo[0] = 0;
             NtDelayExecution(0u8, &raw mut TimeOut);
         }
-        DbgPrint(b"[CSRSRV] ApiRequestThread: CsrConnectToUser OK\n\0".as_ptr() as *const i8);
+        crate::dbg_print!(b"[CSRSRV] ApiRequestThread: CsrConnectToUser OK\n\0");
     }
 
     CurrentThread = (*Teb).CsrClientThread as PCSR_THREAD;
@@ -209,14 +211,21 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         Status = NtSetEvent(Parameter as HANDLE, core::ptr::null_mut());
         InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
         InterlockedIncrementUL(&raw mut CsrpDynamicThreadTotal);
-        DbgPrint(b"[CSRSRV] ApiRequestThread: NtSetEvent st=0x%lx, entering loop\n\0".as_ptr() as *const i8, Status);
+        crate::dbg_print!(
+            b"[CSRSRV] ApiRequestThread: NtSetEvent st=0x%lx, entering loop\n\0",
+            Status
+        );
     }
 
     let mut loop_iter: u32 = 0;
     loop {
         loop_iter += 1;
         if loop_iter <= 5 {
-            DbgPrint(b"[CSRSRV] ApiReqThr: iter %u, calling NtReplyWaitReceivePort port=%p\n\0".as_ptr() as *const i8, loop_iter, ReplyPort);
+            crate::dbg_print!(
+                b"[CSRSRV] ApiReqThr: iter %u, calling NtReplyWaitReceivePort port=%p\n\0",
+                loop_iter,
+                ReplyPort
+            );
         }
         (*Teb).RealClientId = (*Teb).ClientId;
 
@@ -232,7 +241,11 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         );
 
         if loop_iter <= 5 {
-            DbgPrint(b"[CSRSRV] ApiReqThr: iter %u, NtReplyWaitReceivePort st=0x%lx\n\0".as_ptr() as *const i8, loop_iter, Status);
+            crate::dbg_print!(
+                b"[CSRSRV] ApiReqThr: iter %u, NtReplyWaitReceivePort st=0x%lx\n\0",
+                loop_iter,
+                Status
+            );
         }
         if Status != STATUS_SUCCESS {
             if Status < 0 {
@@ -307,8 +320,8 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
                 ReplyPort = CsrApiPort;
                 (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_ILLEGAL_FUNCTION;
             } else if MessageType == LPC_DATAGRAM {
-                ServerId = ((ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber) >> 16)
-                    & 0xFFFF;
+                ServerId =
+                    ((ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber) >> 16) & 0xFFFF;
                 ServerDll = core::ptr::null_mut();
 
                 if (ServerId >= CSR_SERVER_DLL_MAX) || {
@@ -358,10 +371,7 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
                     CsrDestroyThread(&raw mut ReceiveMsg.Header.__bindgen_anon_1.ClientId);
 
                     if (*CsrProcess).ThreadCount == 1 {
-                        CsrDestroyProcess(
-                            &raw mut (*CsrThread).ClientId,
-                            0,
-                        );
+                        CsrDestroyProcess(&raw mut (*CsrThread).ClientId, 0);
                     }
 
                     CsrLockedDereferenceThread(CsrThread);
@@ -431,13 +441,23 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         ServerId = ((raw_api_number) >> 16) & 0xFFFF;
         ServerDll = core::ptr::null_mut();
 
-        DbgPrint(b"[CSRSRV] LPC_REQ: ApiNumber=0x%lx ServerId=%lu MsgType=%lu\n\0".as_ptr() as *const i8, raw_api_number, ServerId, MessageType);
+        crate::dbg_print!(
+            b"[CSRSRV] LPC_REQ: ApiNumber=0x%lx ServerId=%lu MsgType=%lu\n\0",
+            raw_api_number,
+            ServerId,
+            MessageType
+        );
 
         if (ServerId >= CSR_SERVER_DLL_MAX) || {
             ServerDll = *CsrLoadedServerDll.as_ptr().add(ServerId as usize);
             ServerDll.is_null()
         } {
-            DbgPrint(b"[CSRSRV] LPC_REQ: BAD ServerId=%lu (MAX=%lu) ServerDll=%p\n\0".as_ptr() as *const i8, ServerId, CSR_SERVER_DLL_MAX, ServerDll);
+            crate::dbg_print!(
+                b"[CSRSRV] LPC_REQ: BAD ServerId=%lu (MAX=%lu) ServerDll=%p\n\0",
+                ServerId,
+                CSR_SERVER_DLL_MAX,
+                ServerDll
+            );
             ReplyPort = CsrApiPort;
             ReplyMsg = &raw mut ReceiveMsg;
             (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_ILLEGAL_FUNCTION;
@@ -445,13 +465,23 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
             continue;
         }
 
-        ApiId = ((raw_api_number) & 0xFFFF)
-            .wrapping_sub((*ServerDll).ApiBase);
+        ApiId = ((raw_api_number) & 0xFFFF).wrapping_sub((*ServerDll).ApiBase);
 
-        DbgPrint(b"[CSRSRV] LPC_REQ: ServerDll=%p ApiBase=%lu HiApi=%lu ApiId=%lu DispatchTable=%p\n\0".as_ptr() as *const i8, ServerDll, (*ServerDll).ApiBase, (*ServerDll).HighestApiSupported, ApiId, (*ServerDll).DispatchTable);
+        crate::dbg_print!(
+            b"[CSRSRV] LPC_REQ: ServerDll=%p ApiBase=%lu HiApi=%lu ApiId=%lu DispatchTable=%p\n\0",
+            ServerDll,
+            (*ServerDll).ApiBase,
+            (*ServerDll).HighestApiSupported,
+            ApiId,
+            (*ServerDll).DispatchTable
+        );
 
         if ApiId >= (*ServerDll).HighestApiSupported {
-            DbgPrint(b"[CSRSRV] LPC_REQ: ApiId %lu >= HiApi %lu, ILLEGAL_FUNCTION\n\0".as_ptr() as *const i8, ApiId, (*ServerDll).HighestApiSupported);
+            crate::dbg_print!(
+                b"[CSRSRV] LPC_REQ: ApiId %lu >= HiApi %lu, ILLEGAL_FUNCTION\n\0",
+                ApiId,
+                (*ServerDll).HighestApiSupported
+            );
             ReplyPort = CsrApiPort;
             ReplyMsg = &raw mut ReceiveMsg;
             (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_ILLEGAL_FUNCTION;
@@ -463,7 +493,12 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
         ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_SUCCESS;
         ReplyPort = (*(*CsrThread).Process).ClientPort;
 
-        if !ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData.is_null() {
+        if !ReceiveMsg
+            .__bindgen_anon_1
+            .__bindgen_anon_1
+            .CsrCaptureData
+            .is_null()
+        {
             if CsrCaptureArguments(CsrThread, &raw mut ReceiveMsg) == 0 {
                 CsrDereferenceThread(CsrThread);
                 continue;
@@ -476,20 +511,33 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
 
         let dispatch_fn = (*ServerDll).DispatchTable.add(ApiId as usize);
         let dispatch_target: *mut core::ffi::c_void = *(dispatch_fn as *mut *mut core::ffi::c_void);
-        DbgPrint(b"[CSRSRV] LPC_REQ: dispatch_fn_slot=%p target=%p\n\0".as_ptr() as *const i8, dispatch_fn, dispatch_target);
+        crate::dbg_print!(
+            b"[CSRSRV] LPC_REQ: dispatch_fn_slot=%p target=%p\n\0",
+            dispatch_fn,
+            dispatch_target
+        );
         if let Some(func) = *dispatch_fn {
             let st = func(&raw mut ReceiveMsg, &raw mut ReplyCode);
-            DbgPrint(b"[CSRSRV] LPC_REQ: dispatch returned st=0x%lx ReplyCode=%lu\n\0".as_ptr() as *const i8, st, ReplyCode);
+            crate::dbg_print!(
+                b"[CSRSRV] LPC_REQ: dispatch returned st=0x%lx ReplyCode=%lu\n\0",
+                st,
+                ReplyCode
+            );
             (*ReplyMsg).__bindgen_anon_1.__bindgen_anon_1.Status = st;
         } else {
-            DbgPrint(b"[CSRSRV] LPC_REQ: dispatch fn is None (NULL slot)\n\0".as_ptr() as *const i8);
+            crate::dbg_print!(b"[CSRSRV] LPC_REQ: dispatch fn is None (NULL slot)\n\0");
         }
 
         InterlockedIncrementUL(&raw mut CsrpStaticThreadCount);
         (*Teb).CsrClientThread = CurrentThread as PVOID;
 
         if ReplyCode == CsrReplyAlreadySent {
-            if !ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData.is_null() {
+            if !ReceiveMsg
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .CsrCaptureData
+                .is_null()
+            {
                 CsrReleaseCapturedArguments(&raw mut ReceiveMsg);
             }
             ReplyMsg = core::ptr::null_mut();
@@ -504,7 +552,12 @@ pub unsafe extern "system" fn CsrApiRequestThread(Parameter: PVOID) -> NTSTATUS 
             ReplyMsg = core::ptr::null_mut();
             ReplyPort = CsrApiPort;
         } else {
-            if !ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData.is_null() {
+            if !ReceiveMsg
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .CsrCaptureData
+                .is_null()
+            {
                 CsrReleaseCapturedArguments(&raw mut ReceiveMsg);
             }
             CsrDereferenceThread(CsrThread);
@@ -523,11 +576,12 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
     let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut ServerThread: PCSR_THREAD;
-    DbgPrint(b"[CSRSRV] ApiPortInit: enter\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[CSRSRV] ApiPortInit: enter\n\0");
 
     Size = CsrDirectoryName.Length as ULONG + core::mem::size_of::<[u16; 10]>() as ULONG;
 
-    CsrApiPortName.Buffer = RtlAllocateHeap(CsrHeap, 0, (Size as usize).try_into().unwrap()) as PWSTR;
+    CsrApiPortName.Buffer =
+        RtlAllocateHeap(CsrHeap, 0, (Size as usize).try_into().unwrap()) as PWSTR;
     if CsrApiPortName.Buffer.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -565,7 +619,7 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
         16 * PAGE_SIZE as ULONG,
     );
 
-    DbgPrint(b"[CSRSRV] ApiPortInit: NtCreatePort st=0x%lx\n\0".as_ptr() as *const i8, Status);
+    crate::dbg_print!(b"[CSRSRV] ApiPortInit: NtCreatePort st=0x%lx\n\0", Status);
     if Status >= 0 {
         Status = NtCreateEvent(
             &raw mut hRequestEvent,
@@ -574,7 +628,11 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
             _EVENT_TYPE_SynchronizationEvent,
             0u8,
         );
-        DbgPrint(b"[CSRSRV] ApiPortInit: NtCreateEvent st=0x%lx h=%p\n\0".as_ptr() as *const i8, Status, hRequestEvent);
+        crate::dbg_print!(
+            b"[CSRSRV] ApiPortInit: NtCreateEvent st=0x%lx h=%p\n\0",
+            Status,
+            hRequestEvent
+        );
 
         if Status >= 0 {
             Status = RtlCreateUserThread(
@@ -589,43 +647,66 @@ pub unsafe extern "system" fn CsrApiPortInitialize() -> NTSTATUS {
                 &raw mut hThread,
                 &raw mut ClientId,
             );
-            DbgPrint(b"[CSRSRV] ApiPortInit: RtlCreateUserThread st=0x%lx h=%p\n\0".as_ptr() as *const i8, Status, hThread);
+            crate::dbg_print!(
+                b"[CSRSRV] ApiPortInit: RtlCreateUserThread st=0x%lx h=%p\n\0",
+                Status,
+                hThread
+            );
 
             if Status >= 0 {
-                let added = CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread);
-                DbgPrint(b"[CSRSRV] ApiPortInit: CsrAddStaticServerThread -> %p (CsrRootProcess=%p)\n\0".as_ptr() as *const i8, added, CsrRootProcess);
+                let added =
+                    CsrAddStaticServerThread(hThread, &raw mut ClientId, CsrThreadIsServerThread);
+                crate::dbg_print!(
+                    b"[CSRSRV] ApiPortInit: CsrAddStaticServerThread -> %p (CsrRootProcess=%p)\n\0",
+                    added,
+                    CsrRootProcess
+                );
 
                 ListHead = &raw mut (*CsrRootProcess).ThreadList;
                 NextEntry = (*ListHead).Flink;
-                DbgPrint(b"[CSRSRV] ApiPortInit: resume loop start ListHead=%p Flink=%p\n\0".as_ptr() as *const i8, ListHead, NextEntry);
+                crate::dbg_print!(
+                    b"[CSRSRV] ApiPortInit: resume loop start ListHead=%p Flink=%p\n\0",
+                    ListHead,
+                    NextEntry
+                );
 
                 let mut iter_n: u32 = 0;
                 while NextEntry != ListHead {
-                    ServerThread = ((NextEntry as usize)
-                        - core::mem::offset_of!(_CSR_THREAD, Link))
+                    ServerThread = ((NextEntry as usize) - core::mem::offset_of!(_CSR_THREAD, Link))
                         as PCSR_THREAD;
-                    DbgPrint(b"[CSRSRV] ApiPortInit: iter %u ServerThread=%p Flags=0x%x hT=%p\n\0".as_ptr() as *const i8, iter_n, ServerThread, (*ServerThread).Flags, (*ServerThread).ThreadHandle);
+                    crate::dbg_print!(
+                        b"[CSRSRV] ApiPortInit: iter %u ServerThread=%p Flags=0x%x hT=%p\n\0",
+                        iter_n,
+                        ServerThread,
+                        (*ServerThread).Flags,
+                        (*ServerThread).ThreadHandle
+                    );
 
                     Status = NtResumeThread((*ServerThread).ThreadHandle, core::ptr::null_mut());
-                    DbgPrint(b"[CSRSRV] ApiPortInit: NtResumeThread st=0x%lx\n\0".as_ptr() as *const i8, Status);
+                    crate::dbg_print!(b"[CSRSRV] ApiPortInit: NtResumeThread st=0x%lx\n\0", Status);
 
                     if (*ServerThread).Flags & CsrThreadIsServerThread != 0 {
-                        Status =
-                            NtWaitForSingleObject(hRequestEvent, 0u8, core::ptr::null_mut());
-                        DbgPrint(b"[CSRSRV] ApiPortInit: NtWaitForSingleObject st=0x%lx\n\0".as_ptr() as *const i8, Status);
+                        Status = NtWaitForSingleObject(hRequestEvent, 0u8, core::ptr::null_mut());
+                        crate::dbg_print!(
+                            b"[CSRSRV] ApiPortInit: NtWaitForSingleObject st=0x%lx\n\0",
+                            Status
+                        );
                     }
 
                     NextEntry = (*NextEntry).Flink;
                     iter_n += 1;
                 }
 
-                DbgPrint(b"[CSRSRV] ApiPortInit: resume loop done iters=%u\n\0".as_ptr() as *const i8, iter_n);
+                crate::dbg_print!(
+                    b"[CSRSRV] ApiPortInit: resume loop done iters=%u\n\0",
+                    iter_n
+                );
                 NtClose(hRequestEvent);
             }
         }
     }
 
-    DbgPrint(b"[CSRSRV] ApiPortInit: exit st=0x%lx\n\0".as_ptr() as *const i8, Status);
+    crate::dbg_print!(b"[CSRSRV] ApiPortInit: exit st=0x%lx\n\0", Status);
     Status
 }
 
@@ -682,10 +763,7 @@ pub unsafe extern "system" fn CsrConnectToUser() -> PCSR_THREAD {
     }
 
     CsrAcquireProcessLock();
-    CsrThread = CsrLocateThreadInProcess(
-        core::ptr::null_mut(),
-        &raw mut (*Teb).ClientId,
-    );
+    CsrThread = CsrLocateThreadInProcess(core::ptr::null_mut(), &raw mut (*Teb).ClientId);
     CsrReleaseProcessLock();
     if !CsrThread.is_null() {
         (*Teb).CsrClientThread = CsrThread as PVOID;
@@ -696,7 +774,7 @@ pub unsafe extern "system" fn CsrConnectToUser() -> PCSR_THREAD {
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrQueryApiPort() -> HANDLE {
-    DbgPrint(b"[CSRSRV] CsrQueryApiPort -> %p\n\0".as_ptr() as *const i8, CsrApiPort);
+    crate::dbg_print!(b"[CSRSRV] CsrQueryApiPort -> %p\n\0", CsrApiPort);
     CsrApiPort
 }
 
@@ -716,7 +794,10 @@ pub unsafe extern "system" fn CsrCaptureArguments(
     let mut OffsetPointer: PULONG_PTR;
     let _CurrentOffset: ULONG_PTR;
 
-    ClientCaptureBuffer = (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData;
+    ClientCaptureBuffer = (*ApiMessage)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .CsrCaptureData;
 
     if ((ClientCaptureBuffer as ULONG_PTR) < (*CsrProcess).ClientViewBase)
         || (((ClientCaptureBuffer as ULONG_PTR)
@@ -747,8 +828,11 @@ pub unsafe extern "system" fn CsrCaptureArguments(
         return 0u8;
     }
 
-    ServerCaptureBuffer = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Length as usize).try_into().unwrap())
-        as PCSR_CAPTURE_BUFFER;
+    ServerCaptureBuffer = RtlAllocateHeap(
+        CsrHeap,
+        HEAP_ZERO_MEMORY,
+        (Length as usize).try_into().unwrap(),
+    ) as PCSR_CAPTURE_BUFFER;
 
     if ServerCaptureBuffer.is_null() {
         (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
@@ -764,8 +848,7 @@ pub unsafe extern "system" fn CsrCaptureArguments(
     (*ServerCaptureBuffer).Size = Length;
     (*ServerCaptureBuffer).PointerCount = PointerCount;
 
-    BufferDistance =
-        (ServerCaptureBuffer as usize).wrapping_sub(ClientCaptureBuffer as usize);
+    BufferDistance = (ServerCaptureBuffer as usize).wrapping_sub(ClientCaptureBuffer as usize);
 
     OffsetPointer = (*ServerCaptureBuffer).PointerOffsetsArray.as_mut_ptr();
     let mut count = PointerCount;
@@ -775,26 +858,30 @@ pub unsafe extern "system" fn CsrCaptureArguments(
         if CurrentOffset != 0 {
             if ((CurrentOffset & (core::mem::size_of::<PVOID>() as ULONG_PTR - 1)) != 0)
                 || (CurrentOffset
-                    < core::mem::offset_of!(_CSR_API_MESSAGE, __bindgen_anon_1.__bindgen_anon_1.Data.ApiMessageData) as ULONG_PTR)
+                    < core::mem::offset_of!(
+                        _CSR_API_MESSAGE,
+                        __bindgen_anon_1.__bindgen_anon_1.Data.ApiMessageData
+                    ) as ULONG_PTR)
                 || (CurrentOffset >= core::mem::size_of::<_CSR_API_MESSAGE>().try_into().unwrap())
             {
-                (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status =
-                    STATUS_INVALID_PARAMETER;
+                (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
                 break;
             }
 
             let ptr_location = (CurrentOffset as usize) + (ApiMessage as usize);
             let pointed_value = *(ptr_location as *const ULONG_PTR);
 
-            if (pointed_value >= ((ClientCaptureBuffer as ULONG_PTR)
-                + SizeOfBufferThroughOffsetsArray as ULONG_PTR))
+            if (pointed_value
+                >= ((ClientCaptureBuffer as ULONG_PTR)
+                    + SizeOfBufferThroughOffsetsArray as ULONG_PTR))
                 && (pointed_value
-                    <= (EndOfClientBuffer.wrapping_sub(core::mem::size_of::<PVOID>().try_into().unwrap())))
+                    <= (EndOfClientBuffer
+                        .wrapping_sub(core::mem::size_of::<PVOID>().try_into().unwrap())))
             {
-                *(ptr_location as *mut ULONG_PTR) = pointed_value.wrapping_add(BufferDistance.try_into().unwrap());
+                *(ptr_location as *mut ULONG_PTR) =
+                    pointed_value.wrapping_add(BufferDistance.try_into().unwrap());
             } else {
-                (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status =
-                    STATUS_INVALID_PARAMETER;
+                (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
                 break;
             }
         }
@@ -808,7 +895,10 @@ pub unsafe extern "system" fn CsrCaptureArguments(
         return 0u8;
     } else {
         (*ServerCaptureBuffer).PreviousCaptureBuffer = ClientCaptureBuffer;
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData = ServerCaptureBuffer;
+        (*ApiMessage)
+            .__bindgen_anon_1
+            .__bindgen_anon_1
+            .CsrCaptureData = ServerCaptureBuffer;
     }
 
     1u8
@@ -823,7 +913,10 @@ pub unsafe extern "system" fn CsrReleaseCapturedArguments(ApiMessage: PCSR_API_M
     let mut OffsetPointer: PULONG_PTR;
     let _CurrentOffset: ULONG_PTR;
 
-    ServerCaptureBuffer = (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData;
+    ServerCaptureBuffer = (*ApiMessage)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .CsrCaptureData;
 
     if ServerCaptureBuffer.is_null() {
         return;
@@ -831,10 +924,12 @@ pub unsafe extern "system" fn CsrReleaseCapturedArguments(ApiMessage: PCSR_API_M
 
     ClientCaptureBuffer = (*ServerCaptureBuffer).PreviousCaptureBuffer;
     (*ServerCaptureBuffer).PreviousCaptureBuffer = core::ptr::null_mut();
-    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData = ClientCaptureBuffer;
+    (*ApiMessage)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .CsrCaptureData = ClientCaptureBuffer;
 
-    BufferDistance =
-        (ServerCaptureBuffer as usize).wrapping_sub(ClientCaptureBuffer as usize);
+    BufferDistance = (ServerCaptureBuffer as usize).wrapping_sub(ClientCaptureBuffer as usize);
 
     PointerCount = (*ServerCaptureBuffer).PointerCount;
     OffsetPointer = (*ServerCaptureBuffer).PointerOffsetsArray.as_mut_ptr();
@@ -845,8 +940,8 @@ pub unsafe extern "system" fn CsrReleaseCapturedArguments(ApiMessage: PCSR_API_M
 
         if CurrentOffset != 0 {
             let ptr_location = (CurrentOffset as usize) + (ApiMessage as usize);
-            *(ptr_location as *mut ULONG_PTR) =
-                (*(ptr_location as *const ULONG_PTR)).wrapping_sub(BufferDistance.try_into().unwrap());
+            *(ptr_location as *mut ULONG_PTR) = (*(ptr_location as *const ULONG_PTR))
+                .wrapping_sub(BufferDistance.try_into().unwrap());
         }
 
         OffsetPointer = OffsetPointer.add(1);
@@ -869,13 +964,17 @@ pub unsafe extern "system" fn CsrValidateMessageBuffer(
     ElementCount: ULONG,
     ElementSize: ULONG,
 ) -> BOOLEAN {
-    let CaptureBuffer: PCSR_CAPTURE_BUFFER =
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData;
+    let CaptureBuffer: PCSR_CAPTURE_BUFFER = (*ApiMessage)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .CsrCaptureData;
     let BufferDistance: usize = (Buffer as usize).wrapping_sub(ApiMessage as usize);
     let PointerCount: ULONG;
     let mut OffsetPointer: PULONG_PTR;
 
-    if Buffer.is_null() || ElementSize == 0 || (ElementCount as u64) * (ElementSize as u64) > 0xFFFFFFFF
+    if Buffer.is_null()
+        || ElementSize == 0
+        || (ElementCount as u64) * (ElementSize as u64) > 0xFFFFFFFF
     {
         return 0u8;
     }
@@ -939,7 +1038,6 @@ pub unsafe extern "system" fn CsrValidateMessageString(
         core::mem::size_of::<WCHAR>() as ULONG,
     )
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE
