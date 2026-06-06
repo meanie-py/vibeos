@@ -16,6 +16,7 @@ members = [
     "kdcom-rust",
     "kdcom-cargo",
     "kdgdb-rust",
+    "kdgdb-cargo",
     "bootvid-rust",
     "bootvid-cargo",
     "cport-rust",
@@ -81,6 +82,9 @@ members = [
     "winlogon-rust",
     "lsass-rust",
     "services-rust",
+    "midl-rt",
+    "svcctl-stub",
+    "winreg-stub",
 ]
 resolver = "2"
 

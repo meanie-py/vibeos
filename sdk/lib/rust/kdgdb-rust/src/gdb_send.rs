@@ -7,7 +7,15 @@ use core::ffi::c_void;
 use crate::KDDBGPRINT;
 use crate::kdgdb_h::{handle_to_gdb_pid, handle_to_gdb_tid};
 use crate::kdpacket::CurrentStateChange;
-use ntkrnl_sys::globals::KdDebuggerNotPresent;
+// KdDebuggerNotPresent is an ntoskrnl DATA export (`@ extern` in
+// ntoskrnl.spec). Cross-DLL data imports on i386/PE must go through the
+// __imp_ indirection; ntkrnl_sys::globals declares it as a plain `extern
+// static` (a direct ref that won't link from another module). raw-dylib
+// makes rustc emit the import thunk — same pattern as the HAL bindgen.
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    static mut KdDebuggerNotPresent: BOOLEAN;
+}
 // Disambiguate: DbgKdExceptionStateChange lives in both globals and constants;
 // DbgKdLoadSymbolsStateChange lives only in constants.
 use ntkrnl_sys::constants::{DbgKdExceptionStateChange, DbgKdLoadSymbolsStateChange};
@@ -20,10 +28,13 @@ const STATUS_INTEGER_DIVIDE_BY_ZERO: NTSTATUS = 0xC0000094u32 as NTSTATUS;
 const STATUS_INTEGER_OVERFLOW: NTSTATUS = 0xC0000095u32 as NTSTATUS;
 const STATUS_STACK_OVERFLOW: NTSTATUS = 0xC00000FDu32 as NTSTATUS;
 
-extern "C" {
+// kdgdb-internal byte I/O — NTAPI (stdcall on i386), defined in kdcom.rs.
+extern "system" {
     fn KdpReceiveByte(byte: *mut u8) -> KDSTATUS;
     fn KdpSendByte(byte: u8);
-    // CRT formatting (links from libcntpr at final link).
+}
+// CRT formatting (cdecl) — links from libcntpr at final link.
+extern "C" {
     fn sprintf(buffer: *mut CHAR, format: *const CHAR, ...) -> i32;
 }
 
