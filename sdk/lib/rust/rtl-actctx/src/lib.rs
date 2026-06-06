@@ -1,0 +1,20 @@
+//! rtl-actctx: Rust translation of ReactOS `sdk/lib/rtl/actctx.c` — the
+//! side-by-side (SxS) activation-context engine: the Wine-derived XML
+//! manifest parser, the section-data builders, and the exported
+//! `Rtl*ActivationContext*` NTAPI surface.
+//!
+//! `types.rs` holds the byte-exact mirrors of the private structs the
+//! engine walks — both the in-memory bookkeeping (`struct assembly`,
+//! `ACTIVATION_CONTEXT`, …) and the on-disk section-data layouts
+//! (`strsection_header`, `string_index`, `*redirect_data`, …) that get
+//! serialized into the activation-context blob. The size assertions in
+//! `types.rs` are load-bearing: the blob layout is an ABI contract.
+//!
+//! Semantics track ReactOS rtl, not textbook.
+#![cfg_attr(not(test), no_std)]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+
+pub mod types;
+
+#[cfg(feature = "cabi")]
+pub mod actctx;
