@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 pub type PSB_API_ROUTINE = Option<unsafe extern "system" fn(PSB_API_MSG) -> BOOLEAN>;
 
@@ -101,7 +100,11 @@ pub unsafe extern "system" fn CsrDereferenceNtSession(
 #[no_mangle]
 pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOOLEAN {
     let CreateSession = core::ptr::addr_of_mut!(
-        (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.u.CreateSession
+        (*ApiMessage)
+            .__bindgen_anon_1
+            .__bindgen_anon_1
+            .u
+            .CreateSession
     ) as PSB_CREATE_SESSION_MSG;
     let hProcess = (*CreateSession).ProcessInfo.ProcessHandle;
     let hThread = (*CreateSession).ProcessInfo.ThreadHandle;
@@ -183,7 +186,8 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
 
         if !ServerDll.is_null() && (*ServerDll).SizeOfProcessData != 0 {
             *server_data_ptr.add(i as usize) = ProcessData;
-            ProcessData = (ProcessData as ULONG_PTR + (*ServerDll).SizeOfProcessData as ULONG_PTR) as PVOID;
+            ProcessData =
+                (ProcessData as ULONG_PTR + (*ServerDll).SizeOfProcessData as ULONG_PTR) as PVOID;
         } else {
             *server_data_ptr.add(i as usize) = core::ptr::null_mut();
         }
@@ -191,7 +195,8 @@ pub unsafe extern "system" fn CsrSbCreateSession(ApiMessage: PSB_API_MSG) -> BOO
 
     CsrInsertProcess(core::ptr::null_mut(), CsrProcess);
 
-    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue = NtResumeThread(hThread, core::ptr::null_mut());
+    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ReturnValue =
+        NtResumeThread(hThread, core::ptr::null_mut());
 
     CsrReleaseProcessLock();
     1u8
@@ -236,8 +241,7 @@ pub unsafe extern "system" fn CsrSbApiHandleConnectionRequest(Message: PSB_API_M
     }
 
     Status = NtCompleteConnectPort(hPort);
-    if Status < 0 {
-    }
+    if Status < 0 {}
 
     Status
 }
@@ -294,7 +298,8 @@ pub unsafe extern "system" fn CsrSbApiRequestThread(_Parameter: PVOID) {
         ReplyMsg = core::ptr::addr_of_mut!(ReceiveMsg);
 
         if ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber < SbpMaxApiNumber {
-            let dispatch_fn = CsrServerSbApiDispatch[ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber as usize];
+            let dispatch_fn = CsrServerSbApiDispatch
+                [ReceiveMsg.__bindgen_anon_1.__bindgen_anon_1.ApiNumber as usize];
             if let Some(func) = dispatch_fn {
                 if func(core::ptr::addr_of_mut!(ReceiveMsg)) == 0u8 {
                     ReplyMsg = core::ptr::null_mut();
@@ -305,7 +310,6 @@ pub unsafe extern "system" fn CsrSbApiRequestThread(_Parameter: PVOID) {
         }
     }
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

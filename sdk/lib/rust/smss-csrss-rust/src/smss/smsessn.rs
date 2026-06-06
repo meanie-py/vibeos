@@ -1,9 +1,12 @@
-
 use ntdll_sys::nt::*;
 
 // CONTAINING_RECORD is a C macro. Inline as `*mut u8` (call sites cast).
 #[inline(always)]
-unsafe fn CONTAINING_RECORD(address: PLIST_ENTRY, _type_: *const u8, field_offset: usize) -> *mut u8 {
+unsafe fn CONTAINING_RECORD(
+    address: PLIST_ENTRY,
+    _type_: *const u8,
+    field_offset: usize,
+) -> *mut u8 {
     (address as *mut u8).wrapping_sub(field_offset)
 }
 
@@ -102,7 +105,7 @@ unsafe fn SmpSessionIdToSession(SessionIdParam: ULONG) -> PSMP_SESSION {
 pub unsafe extern "system" fn SmpDeleteSession(SessionIdParam: ULONG) {
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(SmpSessionListLock));
     let Session = SmpSessionIdToSession(SessionIdParam);
-    
+
     if !Session.is_null() {
         RemoveEntryList(core::ptr::addr_of_mut!((*Session).Entry));
         RtlLeaveCriticalSection(core::ptr::addr_of_mut!(SmpSessionListLock));
@@ -189,7 +192,6 @@ pub unsafe extern "system" fn SmpSetProcessMuSessionId(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

@@ -1,11 +1,9 @@
-
 use ntdll_sys::nt::*;
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpCheckForCrashDump(_FileName: PUNICODE_STRING) -> BOOLEAN {
     0u8
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

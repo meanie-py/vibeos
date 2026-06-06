@@ -14,7 +14,6 @@
 
 use ntdll_sys::nt::*;
 
-
 unsafe fn CsrpSetDefaultProcessHardErrorMode() {
     let mut DefaultHardErrorMode: u32 = 0;
 
@@ -38,7 +37,7 @@ pub unsafe extern "C" fn _main(
     #[cfg(target_arch = "x86")]
     let mut Response: u32 = 0;
 
-    DbgPrint(b"[CSRSS] _main entered (argc=%d)\n\0".as_ptr() as *const i8, argc);
+    crate::dbg_print!(b"[CSRSS] _main entered (argc=%d)\n\0", argc);
 
     NtSetInformationProcess(
         NtCurrentProcess(),
@@ -56,10 +55,7 @@ pub unsafe extern "C" fn _main(
             0,
         );
         if Status < 0 {
-            DbgPrint(
-                b"CSRSS: Could not raise IOPL, Status: 0x%08lx\n\0".as_ptr() as *const i8,
-                Status,
-            );
+            crate::dbg_print!(b"CSRSS: Could not raise IOPL, Status: 0x%08lx\n\0", Status,);
             Status = NtRaiseHardError(
                 0xC0000137u32 as i32,
                 0,
@@ -71,15 +67,12 @@ pub unsafe extern "C" fn _main(
         }
     }
 
-    DbgPrint(b"CSRSS: Calling CsrServerInitialization\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"CSRSS: Calling CsrServerInitialization\n\0");
     Status = CsrServerInitialization(argc as u32, argv);
-    DbgPrint(
-        b"CSRSS: CsrServerInitialization returned 0x%lx\n\0".as_ptr() as *const i8,
-        Status,
-    );
+    crate::dbg_print!(b"CSRSS: CsrServerInitialization returned 0x%lx\n\0", Status,);
     if Status < 0 {
-        DbgPrint(
-            b"CSRSS: Unable to initialize server, Status: 0x%08lx\n\0".as_ptr() as *const i8,
+        crate::dbg_print!(
+            b"CSRSS: Unable to initialize server, Status: 0x%08lx\n\0",
             Status,
         );
         NtTerminateProcess(NtCurrentProcess(), Status);

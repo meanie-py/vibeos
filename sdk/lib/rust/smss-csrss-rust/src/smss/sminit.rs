@@ -1,5 +1,5 @@
-use ntdll_sys::nt::*;
 use core::ffi::c_void;
+use ntdll_sys::nt::*;
 
 // CRT helpers — cdecl exports from ntdll. extern "C", NOT "system": on i386
 // extern "system" = stdcall, which would mis-decorate these cdecl symbols.
@@ -21,7 +21,9 @@ unsafe fn RtlGetProcessHeap() -> *mut c_void {
 }
 
 #[inline]
-unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
+unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool {
+    s >= 0
+}
 
 const STATUS_INVALID_IMPORT_OF_NON_DLL: NTSTATUS = 0xC000036Fu32 as NTSTATUS;
 
@@ -52,18 +54,29 @@ unsafe fn RtlInitEmptyAnsiString(s: PANSI_STRING, buffer: PCHAR, buffer_size: US
 unsafe fn RtlStringCbLengthW(psz: *const u16, cb_max: usize, pcb: *mut usize) -> NTSTATUS {
     let max_chars = cb_max / core::mem::size_of::<u16>();
     let mut n = 0usize;
-    while n < max_chars && *psz.add(n) != 0 { n += 1; }
-    if n >= max_chars { return 0xC0000023u32 as NTSTATUS; }
-    if !pcb.is_null() { *pcb = n * core::mem::size_of::<u16>(); }
+    while n < max_chars && *psz.add(n) != 0 {
+        n += 1;
+    }
+    if n >= max_chars {
+        return 0xC0000023u32 as NTSTATUS;
+    }
+    if !pcb.is_null() {
+        *pcb = n * core::mem::size_of::<u16>();
+    }
     0
 }
 
 #[inline]
 unsafe fn RtlStringCbCopyNW(
-    dest: *mut u16, cb_dest: usize, src: *const u16, cb_to_copy: usize,
+    dest: *mut u16,
+    cb_dest: usize,
+    src: *const u16,
+    cb_to_copy: usize,
 ) -> NTSTATUS {
     let dest_chars = cb_dest / core::mem::size_of::<u16>();
-    if dest_chars == 0 { return 0xC0000023u32 as NTSTATUS; }
+    if dest_chars == 0 {
+        return 0xC0000023u32 as NTSTATUS;
+    }
     let copy_chars = (cb_to_copy / core::mem::size_of::<u16>()).min(dest_chars - 1);
     let mut i = 0usize;
     while i < copy_chars && *src.add(i) != 0 {
@@ -77,7 +90,11 @@ unsafe fn RtlStringCbCopyNW(
 // InitializeObjectAttributes macro → inline.
 #[inline]
 unsafe fn InitializeObjectAttributes_inline(
-    p: POBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID,
+    p: POBJECT_ATTRIBUTES,
+    n: PUNICODE_STRING,
+    a: ULONG,
+    r: HANDLE,
+    s: PVOID,
 ) {
     (*p).Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     (*p).RootDirectory = r;
@@ -116,8 +133,7 @@ type CfgRoutineSys =
 type CfgRoutineApi =
     unsafe extern "stdcall" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS;
 #[cfg(not(target_arch = "x86"))]
-type CfgRoutineApi =
-    unsafe extern "C" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS;
+type CfgRoutineApi = unsafe extern "C" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS;
 
 const fn qr(f: CfgRoutineSys) -> PRTL_QUERY_REGISTRY_ROUTINE {
     Some(unsafe { core::mem::transmute::<CfgRoutineSys, CfgRoutineApi>(f) })
@@ -487,7 +503,10 @@ pub unsafe extern "system" fn SmpSaveRegistryValue(
     STATUS_SUCCESS
 }
 
-unsafe extern "system" fn SmpFindRegistryValue(List: PLIST_ENTRY, ValueName: PWSTR) -> PSMP_REGISTRY_VALUE {
+unsafe extern "system" fn SmpFindRegistryValue(
+    List: PLIST_ENTRY,
+    ValueName: PWSTR,
+) -> PSMP_REGISTRY_VALUE {
     let mut RegEntry: PSMP_REGISTRY_VALUE = core::ptr::null_mut();
     let mut ValueString: _UNICODE_STRING = core::mem::zeroed();
 
@@ -558,7 +577,6 @@ pub unsafe extern "system" fn SmpConfigureObjectDirectories(
     Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
-
     let mut SecDescriptor: PISECURITY_DESCRIPTOR;
     let mut Status: i32;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -568,14 +586,8 @@ pub unsafe extern "system" fn SmpConfigureObjectDirectories(
     let mut SearchString: _UNICODE_STRING = core::mem::zeroed();
     let mut SourceString: PWSTR = ValueData as PWSTR;
 
-    RtlInitUnicodeString(
-        &mut RpcString,
-        wstr!("\\RPC Control\0"),
-    );
-    RtlInitUnicodeString(
-        &mut WindowsString,
-        wstr!("\\Windows\0"),
-    );
+    RtlInitUnicodeString(&mut RpcString, wstr!("\\RPC Control\0"));
+    RtlInitUnicodeString(&mut WindowsString, wstr!("\\Windows\0"));
 
     while *SourceString != 0 {
         RtlInitUnicodeString(&mut SearchString, SourceString);
@@ -589,17 +601,13 @@ pub unsafe extern "system" fn SmpConfigureObjectDirectories(
 
         ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
         ObjectAttributes.RootDirectory = core::ptr::null_mut();
-        ObjectAttributes.Attributes =
-            (OBJ_CASE_INSENSITIVE | OBJ_OPENIF | OBJ_PERMANENT) as u32;
+        ObjectAttributes.Attributes = (OBJ_CASE_INSENSITIVE | OBJ_OPENIF | OBJ_PERMANENT) as u32;
         ObjectAttributes.ObjectName = &mut SearchString;
         ObjectAttributes.SecurityDescriptor = SecDescriptor as *mut core::ffi::c_void;
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-        Status = NtCreateDirectoryObject(
-            &mut DirHandle,
-            DIRECTORY_ALL_ACCESS,
-            &mut ObjectAttributes,
-        );
+        Status =
+            NtCreateDirectoryObject(&mut DirHandle, DIRECTORY_ALL_ACCESS, &mut ObjectAttributes);
         if !NT_SUCCESS(Status) {
         } else {
             NtClose(DirHandle);
@@ -741,8 +749,11 @@ pub unsafe extern "system" fn SmpConfigureKnownDlls(
     Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
-
-    if _wcsicmp(ValueName, b"D\0l\0l\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0".as_ptr() as *const u16) == 0 {
+    if _wcsicmp(
+        ValueName,
+        b"D\0l\0l\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0".as_ptr() as *const u16,
+    ) == 0
+    {
         SmpInitializeKnownDllPath(
             core::ptr::addr_of_mut!(SmpKnownDllPath),
             ValueData as *mut u16,
@@ -772,7 +783,8 @@ pub unsafe extern "system" fn SmpConfigureEnvironment(
 
     RtlInitUnicodeString(&mut ValueString, ValueName);
     RtlInitUnicodeString(&mut DataString, ValueData as PWSTR);
-    let Status = RtlSetEnvironmentVariable(core::ptr::null_mut(), &mut ValueString, &mut DataString);
+    let Status =
+        RtlSetEnvironmentVariable(core::ptr::null_mut(), &mut ValueString, &mut DataString);
     if !NT_SUCCESS(Status) {
         return Status;
     }
@@ -780,11 +792,8 @@ pub unsafe extern "system" fn SmpConfigureEnvironment(
     if _wcsicmp(ValueName, b"P\0a\0t\0h\0\0\0".as_ptr() as PWSTR) == 0 {
         SmpCalledConfigEnv += 1;
         if SmpCalledConfigEnv == 2 {
-            SmpDefaultLibPathBuffer = RtlAllocateHeap(
-                RtlGetProcessHeap(),
-                SmBaseTag,
-                ValueLength as _,
-            ) as PWCHAR;
+            SmpDefaultLibPathBuffer =
+                RtlAllocateHeap(RtlGetProcessHeap(), SmBaseTag, ValueLength as _) as PWCHAR;
             if SmpDefaultLibPathBuffer.is_null() {
                 return STATUS_NO_MEMORY;
             }
@@ -813,8 +822,14 @@ pub unsafe extern "system" fn SmpConfigureSubSystems(
     let mut RegEntry: PSMP_REGISTRY_VALUE;
     let mut SubsystemName: PWCHAR;
 
-    if (_wcsicmp(ValueName, b"R\0e\0q\0u\0i\0r\0e\0d\0\0\0".as_ptr() as *const u16) != 0)
-        && (_wcsicmp(ValueName, b"O\0p\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as *const u16) != 0)
+    if (_wcsicmp(
+        ValueName,
+        b"R\0e\0q\0u\0i\0r\0e\0d\0\0\0".as_ptr() as *const u16,
+    ) != 0)
+        && (_wcsicmp(
+            ValueName,
+            b"O\0p\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as *const u16,
+        ) != 0)
     {
         if (_wcsicmp(
             ValueName,
@@ -843,7 +858,11 @@ pub unsafe extern "system" fn SmpConfigureSubSystems(
             } else {
                 RemoveEntryList(core::ptr::addr_of_mut!((*RegEntry).Entry));
 
-                if _wcsicmp(ValueName, b"R\0e\0q\0u\0i\0r\0e\0d\0\0\0".as_ptr() as *const u16) == 0 {
+                if _wcsicmp(
+                    ValueName,
+                    b"R\0e\0q\0u\0i\0r\0e\0d\0\0\0".as_ptr() as *const u16,
+                ) == 0
+                {
                     InsertTailList(
                         core::ptr::addr_of_mut!(SmpSubSystemsToLoad),
                         core::ptr::addr_of_mut!((*RegEntry).Entry),
@@ -974,21 +993,17 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
                 &mut ObjectAttributes,
             );
             if NT_SUCCESS(Status) {
-                Status = NtQuerySymbolicLinkObject(
-                    LinkHandle,
-                    &mut LinkTarget,
-                    core::ptr::null_mut(),
-                );
+                Status =
+                    NtQuerySymbolicLinkObject(LinkHandle, &mut LinkTarget, core::ptr::null_mut());
                 NtClose(LinkHandle);
 
                 if NT_SUCCESS(Status)
                     && (RtlEqualUnicodeString(&mut SystemPartition, &mut LinkTarget, 1u8) != 0
                         || (RtlPrefixUnicodeString(&mut SystemPartition, &mut LinkTarget, 1u8)
                             != 0
-                            && *LinkTarget
-                                .Buffer
-                                .add(SystemPartition.Length as usize / core::mem::size_of::<u16>())
-                                == b'\\' as u16))
+                            && *LinkTarget.Buffer.add(
+                                SystemPartition.Length as usize / core::mem::size_of::<u16>(),
+                            ) == b'\\' as u16))
                 {
                     break;
                 }
@@ -1052,16 +1067,21 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> NTSTATUS {
-
     let mut Status: NTSTATUS;
     let mut WorldSid: PSID = core::ptr::null_mut();
     let mut AdminSid: PSID = core::ptr::null_mut();
     let mut SystemSid: PSID = core::ptr::null_mut();
     let mut RestrictedSid: PSID = core::ptr::null_mut();
     let mut OwnerSid: PSID = core::ptr::null_mut();
-    let mut WorldAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 1] };
-    let mut NtAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 5] };
-    let mut CreatorAuthority = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 3] };
+    let mut WorldAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 1],
+    };
+    let mut NtAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 5],
+    };
+    let mut CreatorAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 3],
+    };
     let mut AclLength: ULONG;
     let mut SidLength: ULONG;
     let mut Acl: PACL;
@@ -1071,20 +1091,53 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
     'quickie: loop {
         if InitialCall != 0 {
             SmpPrimarySecurityDescriptor = &mut SmpPrimarySDBody as *mut _ as PISECURITY_DESCRIPTOR;
-            RtlCreateSecurityDescriptor(SmpPrimarySecurityDescriptor as *mut _, SECURITY_DESCRIPTOR_REVISION as ULONG);
-            RtlSetDaclSecurityDescriptor(SmpPrimarySecurityDescriptor as *mut _, 1u8, core::ptr::null_mut(), 0u8);
+            RtlCreateSecurityDescriptor(
+                SmpPrimarySecurityDescriptor as *mut _,
+                SECURITY_DESCRIPTOR_REVISION as ULONG,
+            );
+            RtlSetDaclSecurityDescriptor(
+                SmpPrimarySecurityDescriptor as *mut _,
+                1u8,
+                core::ptr::null_mut(),
+                0u8,
+            );
 
             SmpLiberalSecurityDescriptor = &mut SmpLiberalSDBody as *mut _ as PISECURITY_DESCRIPTOR;
-            RtlCreateSecurityDescriptor(SmpLiberalSecurityDescriptor as *mut _, SECURITY_DESCRIPTOR_REVISION as ULONG);
-            RtlSetDaclSecurityDescriptor(SmpLiberalSecurityDescriptor as *mut _, 1u8, core::ptr::null_mut(), 0u8);
+            RtlCreateSecurityDescriptor(
+                SmpLiberalSecurityDescriptor as *mut _,
+                SECURITY_DESCRIPTOR_REVISION as ULONG,
+            );
+            RtlSetDaclSecurityDescriptor(
+                SmpLiberalSecurityDescriptor as *mut _,
+                1u8,
+                core::ptr::null_mut(),
+                0u8,
+            );
 
-            SmpKnownDllsSecurityDescriptor = &mut SmpKnownDllsSDBody as *mut _ as PISECURITY_DESCRIPTOR;
-            RtlCreateSecurityDescriptor(SmpKnownDllsSecurityDescriptor as *mut _, SECURITY_DESCRIPTOR_REVISION as ULONG);
-            RtlSetDaclSecurityDescriptor(SmpKnownDllsSecurityDescriptor as *mut _, 1u8, core::ptr::null_mut(), 0u8);
+            SmpKnownDllsSecurityDescriptor =
+                &mut SmpKnownDllsSDBody as *mut _ as PISECURITY_DESCRIPTOR;
+            RtlCreateSecurityDescriptor(
+                SmpKnownDllsSecurityDescriptor as *mut _,
+                SECURITY_DESCRIPTOR_REVISION as ULONG,
+            );
+            RtlSetDaclSecurityDescriptor(
+                SmpKnownDllsSecurityDescriptor as *mut _,
+                1u8,
+                core::ptr::null_mut(),
+                0u8,
+            );
 
             SmpApiPortSecurityDescriptor = &mut SmpApiPortSDBody as *mut _ as PISECURITY_DESCRIPTOR;
-            RtlCreateSecurityDescriptor(SmpApiPortSecurityDescriptor as *mut _, SECURITY_DESCRIPTOR_REVISION as ULONG);
-            RtlSetDaclSecurityDescriptor(SmpApiPortSecurityDescriptor as *mut _, 1u8, core::ptr::null_mut(), 0u8);
+            RtlCreateSecurityDescriptor(
+                SmpApiPortSecurityDescriptor as *mut _,
+                SECURITY_DESCRIPTOR_REVISION as ULONG,
+            );
+            RtlSetDaclSecurityDescriptor(
+                SmpApiPortSecurityDescriptor as *mut _,
+                1u8,
+                core::ptr::null_mut(),
+                0u8,
+            );
         }
 
         if SmpProtectionMode & 1 != 0 {
@@ -1095,31 +1148,91 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
             return STATUS_SUCCESS;
         }
 
-        Status = RtlAllocateAndInitializeSid(&mut WorldAuthority, 1, SECURITY_WORLD_RID as ULONG, 0, 0, 0, 0, 0, 0, 0, &mut WorldSid);
+        Status = RtlAllocateAndInitializeSid(
+            &mut WorldAuthority,
+            1,
+            SECURITY_WORLD_RID as ULONG,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut WorldSid,
+        );
         if !NT_SUCCESS(Status) {
             WorldSid = core::ptr::null_mut();
             break 'quickie;
         }
 
-        Status = RtlAllocateAndInitializeSid(&mut NtAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID as ULONG, DOMAIN_ALIAS_RID_ADMINS as ULONG, 0, 0, 0, 0, 0, 0, &mut AdminSid);
+        Status = RtlAllocateAndInitializeSid(
+            &mut NtAuthority,
+            2,
+            SECURITY_BUILTIN_DOMAIN_RID as ULONG,
+            DOMAIN_ALIAS_RID_ADMINS as ULONG,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut AdminSid,
+        );
         if !NT_SUCCESS(Status) {
             AdminSid = core::ptr::null_mut();
             break 'quickie;
         }
 
-        Status = RtlAllocateAndInitializeSid(&mut CreatorAuthority, 1, SECURITY_CREATOR_OWNER_RID as ULONG, 0, 0, 0, 0, 0, 0, 0, &mut OwnerSid);
+        Status = RtlAllocateAndInitializeSid(
+            &mut CreatorAuthority,
+            1,
+            SECURITY_CREATOR_OWNER_RID as ULONG,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut OwnerSid,
+        );
         if !NT_SUCCESS(Status) {
             OwnerSid = core::ptr::null_mut();
             break 'quickie;
         }
 
-        Status = RtlAllocateAndInitializeSid(&mut NtAuthority, 1, SECURITY_RESTRICTED_CODE_RID as ULONG, 0, 0, 0, 0, 0, 0, 0, &mut RestrictedSid);
+        Status = RtlAllocateAndInitializeSid(
+            &mut NtAuthority,
+            1,
+            SECURITY_RESTRICTED_CODE_RID as ULONG,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut RestrictedSid,
+        );
         if !NT_SUCCESS(Status) {
             RestrictedSid = core::ptr::null_mut();
             break 'quickie;
         }
 
-        Status = RtlAllocateAndInitializeSid(&mut NtAuthority, 1, SECURITY_LOCAL_SYSTEM_RID as ULONG, 0, 0, 0, 0, 0, 0, 0, &mut SystemSid);
+        Status = RtlAllocateAndInitializeSid(
+            &mut NtAuthority,
+            1,
+            SECURITY_LOCAL_SYSTEM_RID as ULONG,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            &mut SystemSid,
+        );
         if !NT_SUCCESS(Status) {
             SystemSid = core::ptr::null_mut();
             break 'quickie;
@@ -1127,13 +1240,16 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
 
         'not_initial: loop {
             if InitialCall == 0 {
-                SidLength = RtlLengthSid(WorldSid) + RtlLengthSid(RestrictedSid) + RtlLengthSid(AdminSid);
+                SidLength =
+                    RtlLengthSid(WorldSid) + RtlLengthSid(RestrictedSid) + RtlLengthSid(AdminSid);
                 SidLength *= 2;
                 break 'not_initial;
             }
 
             SidLength = RtlLengthSid(SystemSid) + RtlLengthSid(AdminSid);
-            AclLength = core::mem::size_of::<ACL>() as ULONG + 2 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG + SidLength;
+            AclLength = core::mem::size_of::<ACL>() as ULONG
+                + 2 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG
+                + SidLength;
 
             'next_acl: loop {
                 Acl = RtlAllocateHeap(RtlGetProcessHeap(), 0, AclLength as _) as PACL;
@@ -1152,9 +1268,12 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
                 break 'next_acl;
             }
 
-            SidLength = RtlLengthSid(WorldSid) + RtlLengthSid(RestrictedSid) + RtlLengthSid(AdminSid);
+            SidLength =
+                RtlLengthSid(WorldSid) + RtlLengthSid(RestrictedSid) + RtlLengthSid(AdminSid);
             SidLength *= 2;
-            AclLength = core::mem::size_of::<ACL>() as ULONG + 6 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG + SidLength;
+            AclLength = core::mem::size_of::<ACL>() as ULONG
+                + 6 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG
+                + SidLength;
             Acl = RtlAllocateHeap(RtlGetProcessHeap(), 0, AclLength as _) as PACL;
             if Acl.is_null() {
                 Status = STATUS_NO_MEMORY;
@@ -1167,8 +1286,18 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
             RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE, WorldSid);
             RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE, RestrictedSid);
             RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, AdminSid);
-            RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE, WorldSid);
-            RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE, RestrictedSid);
+            RtlAddAccessAllowedAce(
+                Acl,
+                ACL_REVISION2 as ULONG,
+                GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE,
+                WorldSid,
+            );
+            RtlAddAccessAllowedAce(
+                Acl,
+                ACL_REVISION2 as ULONG,
+                GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE,
+                RestrictedSid,
+            );
             RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, AdminSid);
 
             RtlGetAce(Acl, 3, &mut Ace as *mut _ as *mut *mut core::ffi::c_void);
@@ -1187,7 +1316,9 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
         }
 
         SidLength += RtlLengthSid(OwnerSid);
-        AclLength = core::mem::size_of::<ACL>() as ULONG + 7 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG + 2 * SidLength;
+        AclLength = core::mem::size_of::<ACL>() as ULONG
+            + 7 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG
+            + 2 * SidLength;
         Acl = RtlAllocateHeap(RtlGetProcessHeap(), 0, AclLength as _) as PACL;
         if Acl.is_null() {
             Status = STATUS_NO_MEMORY;
@@ -1197,11 +1328,31 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
         }
 
         RtlCreateAcl(Acl, AclLength, ACL_REVISION2 as ULONG);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ, WorldSid);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ, RestrictedSid);
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ,
+            WorldSid,
+        );
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ,
+            RestrictedSid,
+        );
         RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, AdminSid);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ, WorldSid);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ, RestrictedSid);
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ,
+            WorldSid,
+        );
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ,
+            RestrictedSid,
+        );
         RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, AdminSid);
         RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, OwnerSid);
 
@@ -1216,7 +1367,9 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
 
         RtlSetDaclSecurityDescriptor(SmpPrimarySecurityDescriptor as *mut _, 1u8, Acl, 0u8);
 
-        AclLength = core::mem::size_of::<ACL>() as ULONG + 7 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG + 2 * SidLength;
+        AclLength = core::mem::size_of::<ACL>() as ULONG
+            + 7 * core::mem::size_of::<ACCESS_ALLOWED_ACE>() as ULONG
+            + 2 * SidLength;
         Acl = RtlAllocateHeap(RtlGetProcessHeap(), 0, AclLength as _) as PACL;
         if Acl.is_null() {
             Status = STATUS_NO_MEMORY;
@@ -1226,11 +1379,31 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
         }
 
         RtlCreateAcl(Acl, AclLength, ACL_REVISION2 as ULONG);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE, WorldSid);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE, RestrictedSid);
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE,
+            WorldSid,
+        );
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE,
+            RestrictedSid,
+        );
         RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, AdminSid);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE, WorldSid);
-        RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE, RestrictedSid);
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE,
+            WorldSid,
+        );
+        RtlAddAccessAllowedAce(
+            Acl,
+            ACL_REVISION2 as ULONG,
+            GENERIC_EXECUTE | GENERIC_READ | GENERIC_WRITE,
+            RestrictedSid,
+        );
         RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, AdminSid);
         RtlAddAccessAllowedAce(Acl, ACL_REVISION2 as ULONG, GENERIC_ALL, OwnerSid);
 
@@ -1247,17 +1420,26 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
         break 'quickie;
     }
 
-    if !OwnerSid.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, OwnerSid); }
-    if !AdminSid.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, AdminSid); }
-    if !WorldSid.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, WorldSid); }
-    if !SystemSid.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, SystemSid); }
-    if !RestrictedSid.is_null() { RtlFreeHeap(RtlGetProcessHeap(), 0, RestrictedSid); }
+    if !OwnerSid.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, OwnerSid);
+    }
+    if !AdminSid.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminSid);
+    }
+    if !WorldSid.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, WorldSid);
+    }
+    if !SystemSid.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, SystemSid);
+    }
+    if !RestrictedSid.is_null() {
+        RtlFreeHeap(RtlGetProcessHeap(), 0, RestrictedSid);
+    }
     Status
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
-
     let mut Status: NTSTATUS;
     let mut RegEntry: PSMP_REGISTRY_VALUE;
     let mut OldFlag: SECURITY_DESCRIPTOR_CONTROL = 0;
@@ -1269,10 +1451,7 @@ pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
 
     let mut RegEntryVar: PSMP_REGISTRY_VALUE;
 
-    RtlInitUnicodeString(
-        &mut GlobalName,
-        b"\\\0?\0?\0\0\0".as_ptr() as *const u16,
-    );
+    RtlInitUnicodeString(&mut GlobalName, b"\\\0?\0?\0\0\0".as_ptr() as *const u16);
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -1293,8 +1472,7 @@ pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
     Head = core::ptr::addr_of_mut!(SmpDosDevicesList);
     while !IsListEmpty(Head) {
         NextEntry = RemoveHeadList(Head);
-        RegEntryVar = ((NextEntry as usize)
-            - (core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry)))
+        RegEntryVar = ((NextEntry as usize) - (core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry)))
             as PSMP_REGISTRY_VALUE;
         RegEntry = RegEntryVar;
 
@@ -1302,12 +1480,14 @@ pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
         ObjectAttributes.RootDirectory = SmpDosDevicesObjectDirectory;
         ObjectAttributes.Attributes = (OBJ_CASE_INSENSITIVE | OBJ_OPENIF | OBJ_PERMANENT) as u32;
         ObjectAttributes.ObjectName = core::ptr::addr_of_mut!((*RegEntry).Name);
-        ObjectAttributes.SecurityDescriptor = SmpPrimarySecurityDescriptor as *mut core::ffi::c_void;
+        ObjectAttributes.SecurityDescriptor =
+            SmpPrimarySecurityDescriptor as *mut core::ffi::c_void;
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
         if !SmpPrimarySecurityDescriptor.is_null() {
             OldFlag = (*SmpPrimarySecurityDescriptor).Control;
-            (*SmpPrimarySecurityDescriptor).Control |= SE_DACL_DEFAULTED as SECURITY_DESCRIPTOR_CONTROL;
+            (*SmpPrimarySecurityDescriptor).Control |=
+                SE_DACL_DEFAULTED as SECURITY_DESCRIPTOR_CONTROL;
         }
 
         Status = NtCreateSymbolicLinkObject(
@@ -1343,10 +1523,18 @@ pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
         NtClose(DirHandle);
 
         if !(*RegEntry).AnsiValue.is_null() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, (*RegEntry).AnsiValue as *mut core::ffi::c_void);
+            RtlFreeHeap(
+                RtlGetProcessHeap(),
+                0,
+                (*RegEntry).AnsiValue as *mut core::ffi::c_void,
+            );
         }
         if !(*RegEntry).Value.Buffer.is_null() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, (*RegEntry).Value.Buffer as *mut core::ffi::c_void);
+            RtlFreeHeap(
+                RtlGetProcessHeap(),
+                0,
+                (*RegEntry).Value.Buffer as *mut core::ffi::c_void,
+            );
         }
         RtlFreeHeap(RtlGetProcessHeap(), 0, RegEntry as *mut core::ffi::c_void);
     }
@@ -1422,7 +1610,10 @@ pub unsafe extern "system" fn SmpProcessModuleImports(
     );
 }
 
-unsafe extern "system" fn SmpInitializeKnownDllsInternal(Directory: PUNICODE_STRING, Path: PUNICODE_STRING) -> NTSTATUS {
+unsafe extern "system" fn SmpInitializeKnownDllsInternal(
+    Directory: PUNICODE_STRING,
+    Path: PUNICODE_STRING,
+) -> NTSTATUS {
     let mut DirFileHandle: HANDLE;
     let mut DirHandle: HANDLE;
     let mut SectionHandle: HANDLE = core::ptr::null_mut();
@@ -1458,7 +1649,13 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(Directory: PUNICODE_STR
     }
 
     Status = 'quickie: {
-        if RtlDosPathNameToNtPathName_U((*Path).Buffer, &mut NtPath, core::ptr::null_mut(), core::ptr::null_mut()) == 0 {
+        if RtlDosPathNameToNtPathName_U(
+            (*Path).Buffer,
+            &mut NtPath,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ) == 0
+        {
             break 'quickie STATUS_OBJECT_NAME_INVALID;
         }
 
@@ -1469,22 +1666,28 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(Directory: PUNICODE_STR
         ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-        Status = NtOpenFile(&mut DirFileHandle,
-                            FILE_LIST_DIRECTORY | SYNCHRONIZE,
-                            &mut ObjectAttributes,
-                            &mut IoStatusBlock,
-                            FILE_SHARE_READ | FILE_SHARE_WRITE,
-                            FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+        Status = NtOpenFile(
+            &mut DirFileHandle,
+            FILE_LIST_DIRECTORY | SYNCHRONIZE,
+            &mut ObjectAttributes,
+            &mut IoStatusBlock,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+        );
         if !NT_SUCCESS(Status) {
             break 'quickie Status;
         }
 
         if !SmpPrimarySecurityDescriptor.is_null() {
             OldFlag = (*SmpPrimarySecurityDescriptor).Control;
-            (*SmpPrimarySecurityDescriptor).Control |= SE_DACL_DEFAULTED as SECURITY_DESCRIPTOR_CONTROL;
+            (*SmpPrimarySecurityDescriptor).Control |=
+                SE_DACL_DEFAULTED as SECURITY_DESCRIPTOR_CONTROL;
         }
 
-        RtlInitUnicodeString(&mut SymLinkName, b"K\0n\0o\0w\0n\0D\0l\0l\0P\0a\0t\0h\0\0\0".as_ptr() as PWSTR);
+        RtlInitUnicodeString(
+            &mut SymLinkName,
+            b"K\0n\0o\0w\0n\0D\0l\0l\0P\0a\0t\0h\0\0\0".as_ptr() as PWSTR,
+        );
 
         ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
         ObjectAttributes.RootDirectory = DirHandle;
@@ -1493,10 +1696,12 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(Directory: PUNICODE_STR
         ObjectAttributes.SecurityDescriptor = SmpPrimarySecurityDescriptor as PVOID;
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-        Status = NtCreateSymbolicLinkObject(&mut LinkHandle,
-                                            SYMBOLIC_LINK_ALL_ACCESS,
-                                            &mut ObjectAttributes,
-                                            Path);
+        Status = NtCreateSymbolicLinkObject(
+            &mut LinkHandle,
+            SYMBOLIC_LINK_ALL_ACCESS,
+            &mut ObjectAttributes,
+            Path,
+        );
 
         if !SmpPrimarySecurityDescriptor.is_null() {
             (*SmpPrimarySecurityDescriptor).Control = OldFlag;
@@ -1516,8 +1721,10 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(Directory: PUNICODE_STR
                 as PSMP_REGISTRY_VALUE;
             NextEntry = (*NextEntry).Flink;
 
-            if !SmpFindRegistryValue(&mut SmpExcludeKnownDllsList, (*RegEntry).Name.Buffer).is_null()
-                || !SmpFindRegistryValue(&mut SmpExcludeKnownDllsList, (*RegEntry).Value.Buffer).is_null()
+            if !SmpFindRegistryValue(&mut SmpExcludeKnownDllsList, (*RegEntry).Name.Buffer)
+                .is_null()
+                || !SmpFindRegistryValue(&mut SmpExcludeKnownDllsList, (*RegEntry).Value.Buffer)
+                    .is_null()
             {
                 continue;
             }
@@ -1530,37 +1737,50 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(Directory: PUNICODE_STR
             ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
             FileHandle = core::ptr::null_mut();
-            Status1 = NtOpenFile(&mut FileHandle,
-                                 SYNCHRONIZE | FILE_EXECUTE,
-                                 &mut ObjectAttributes,
-                                 &mut IoStatusBlock,
-                                 FILE_SHARE_READ | FILE_SHARE_DELETE,
-                                 FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+            Status1 = NtOpenFile(
+                &mut FileHandle,
+                SYNCHRONIZE | FILE_EXECUTE,
+                &mut ObjectAttributes,
+                &mut IoStatusBlock,
+                FILE_SHARE_READ | FILE_SHARE_DELETE,
+                FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+            );
             if !NT_SUCCESS(Status1) {
                 continue;
             }
 
-            Status = LdrVerifyImageMatchesChecksum(((FileHandle as ULONG_PTR) | 1) as HANDLE,
-                                                   core::mem::transmute(SmpProcessModuleImports as usize),
-                                                   RegEntry as PVOID,
-                                                   &mut ImageCharacteristics);
+            Status = LdrVerifyImageMatchesChecksum(
+                ((FileHandle as ULONG_PTR) | 1) as HANDLE,
+                core::mem::transmute(SmpProcessModuleImports as usize),
+                RegEntry as PVOID,
+                &mut ImageCharacteristics,
+            );
             if !NT_SUCCESS(Status) {
                 RtlInitUnicodeString(&mut ErrorResponse, b"V\0e\0r\0i\0f\0i\0c\0a\0t\0i\0o\0n\0 \0o\0f\0 \0a\0 \0K\0n\0o\0w\0n\0D\0L\0L\0 \0f\0a\0i\0l\0e\0d\0.\0\0\0".as_ptr() as PWSTR);
                 ErrorParameters[0] = &mut ErrorResponse as *mut _ as ULONG_PTR;
                 ErrorParameters[1] = Status as ULONG_PTR;
                 ErrorParameters[2] = &mut (*RegEntry).Value as *mut _ as ULONG_PTR;
-                SmpTerminate(ErrorParameters.as_mut_ptr(), 5, ErrorParameters.len() as ULONG);
+                SmpTerminate(
+                    ErrorParameters.as_mut_ptr(),
+                    5,
+                    ErrorParameters.len() as ULONG,
+                );
             } else if (ImageCharacteristics & IMAGE_FILE_DLL as USHORT) == 0 {
                 RtlInitUnicodeString(&mut ErrorResponse, b"N\0o\0n\0-\0D\0L\0L\0 \0f\0i\0l\0e\0 \0i\0n\0c\0l\0u\0d\0e\0d\0 \0i\0n\0 \0K\0n\0o\0w\0n\0D\0L\0L\0 \0l\0i\0s\0t\0.\0\0\0".as_ptr() as PWSTR);
                 ErrorParameters[0] = &mut ErrorResponse as *mut _ as ULONG_PTR;
                 ErrorParameters[1] = STATUS_INVALID_IMPORT_OF_NON_DLL as ULONG_PTR;
                 ErrorParameters[2] = &mut (*RegEntry).Value as *mut _ as ULONG_PTR;
-                SmpTerminate(ErrorParameters.as_mut_ptr(), 5, ErrorParameters.len() as ULONG);
+                SmpTerminate(
+                    ErrorParameters.as_mut_ptr(),
+                    5,
+                    ErrorParameters.len() as ULONG,
+                );
             }
 
             if !SmpLiberalSecurityDescriptor.is_null() {
                 OldFlag = (*SmpLiberalSecurityDescriptor).Control;
-                (*SmpLiberalSecurityDescriptor).Control |= SE_DACL_DEFAULTED as SECURITY_DESCRIPTOR_CONTROL;
+                (*SmpLiberalSecurityDescriptor).Control |=
+                    SE_DACL_DEFAULTED as SECURITY_DESCRIPTOR_CONTROL;
             }
 
             ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -1570,13 +1790,15 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(Directory: PUNICODE_STR
             ObjectAttributes.SecurityDescriptor = SmpLiberalSecurityDescriptor as PVOID;
             ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-            Status = NtCreateSection(&mut SectionHandle,
-                                     SECTION_ALL_ACCESS,
-                                     &mut ObjectAttributes,
-                                     core::ptr::null_mut(),
-                                     PAGE_EXECUTE,
-                                     SEC_IMAGE,
-                                     FileHandle);
+            Status = NtCreateSection(
+                &mut SectionHandle,
+                SECTION_ALL_ACCESS,
+                &mut ObjectAttributes,
+                core::ptr::null_mut(),
+                PAGE_EXECUTE,
+                SEC_IMAGE,
+                FileHandle,
+            );
 
             if !SmpLiberalSecurityDescriptor.is_null() {
                 (*SmpLiberalSecurityDescriptor).Control = OldFlag;
@@ -1623,7 +1845,8 @@ pub unsafe extern "system" fn SmpInitializeKnownDlls() -> NTSTATUS {
     while !IsListEmpty(Head) {
         NextEntry = RemoveHeadList(Head);
 
-        RegEntry = ((NextEntry as usize) - core::mem::offset_of!(_SMP_REGISTRY_VALUE, Entry)) as PSMP_REGISTRY_VALUE;
+        RegEntry = ((NextEntry as usize) - core::mem::offset_of!(_SMP_REGISTRY_VALUE, Entry))
+            as PSMP_REGISTRY_VALUE;
         RtlFreeHeap(RtlGetProcessHeap(), 0, (*RegEntry).AnsiValue as PVOID);
         RtlFreeHeap(RtlGetProcessHeap(), 0, (*RegEntry).Value.Buffer as PVOID);
         RtlFreeHeap(RtlGetProcessHeap(), 0, RegEntry as PVOID);
@@ -2007,8 +2230,7 @@ pub unsafe extern "system" fn SmpProcessFileRenames() -> NTSTATUS {
     Head = core::ptr::addr_of_mut!(SmpFileRenameList);
     while !IsListEmpty(Head) {
         NextEntry = RemoveHeadList(Head);
-        RegEntry = (NextEntry as usize
-            - core::mem::offset_of!(_SMP_REGISTRY_VALUE, Entry))
+        RegEntry = (NextEntry as usize - core::mem::offset_of!(_SMP_REGISTRY_VALUE, Entry))
             as PSMP_REGISTRY_VALUE;
 
         if (*RegEntry).Value.Length == 0 && *(*RegEntry).Name.Buffer == ('@' as u16) {
@@ -2060,8 +2282,11 @@ pub unsafe extern "system" fn SmpProcessFileRenames() -> NTSTATUS {
                     (*Buffer).RootDirectory = core::ptr::null_mut();
                     (*Buffer).FileNameLength =
                         Length - core::mem::size_of::<FILE_RENAME_INFORMATION>() as ULONG;
-                    (*Buffer).ReplaceIfExists =
-                        if FileName != (*RegEntry).Value.Buffer { 1u8 } else { 0u8 };
+                    (*Buffer).ReplaceIfExists = if FileName != (*RegEntry).Value.Buffer {
+                        1u8
+                    } else {
+                        0u8
+                    };
                     core::ptr::copy_nonoverlapping(
                         FileName as *const u8,
                         (*Buffer).FileName.as_mut_ptr() as *mut u8,
@@ -2152,10 +2377,7 @@ pub unsafe extern "system" fn SmpProcessFileRenames() -> NTSTATUS {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmpLoadDataFromRegistry(
-    InitialCommand: PUNICODE_STRING,
-) -> NTSTATUS {
-
+pub unsafe extern "system" fn SmpLoadDataFromRegistry(InitialCommand: PUNICODE_STRING) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut Head: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
@@ -2219,10 +2441,7 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(
     );
     Status = NtOpenKey(&mut KeyHandle, KEY_ALL_ACCESS, &mut ObjectAttributes);
     if NT_SUCCESS(Status) {
-        RtlInitUnicodeString(
-            &mut DestinationString,
-            wstr!("SAFEBOOT_OPTION\0"),
-        );
+        RtlInitUnicodeString(&mut DestinationString, wstr!("SAFEBOOT_OPTION\0"));
         NtDeleteValueKey(KeyHandle, &mut DestinationString);
         NtClose(KeyHandle);
     }
@@ -2248,10 +2467,7 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(
         return Status;
     }
 
-    RtlInitUnicodeString(
-        &mut DestinationString,
-        wstr!("\\Sessions\0"),
-    );
+    RtlInitUnicodeString(&mut DestinationString, wstr!("\\Sessions\0"));
     InitializeObjectAttributes_inline(
         &mut ObjectAttributes,
         &mut DestinationString,
@@ -2272,15 +2488,9 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(
     while !IsListEmpty(Head) {
         NextEntry = RemoveHeadList(Head);
 
-        RegEntry = (NextEntry as usize
-            - core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry))
+        RegEntry = (NextEntry as usize - core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry))
             as PSMP_REGISTRY_VALUE;
-        SmpExecuteCommand(
-            &mut (*RegEntry).Name,
-            0,
-            core::ptr::null_mut(),
-            0,
-        );
+        SmpExecuteCommand(&mut (*RegEntry).Name, 0, core::ptr::null_mut(), 0);
 
         if !(*RegEntry).AnsiValue.is_null() {
             RtlFreeHeap(RtlGetProcessHeap(), 0, (*RegEntry).AnsiValue as PVOID);
@@ -2305,8 +2515,7 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(
         while !IsListEmpty(Head) {
             NextEntry = RemoveHeadList(Head);
 
-            RegEntry = (NextEntry as usize
-                - core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry))
+            RegEntry = (NextEntry as usize - core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry))
                 as PSMP_REGISTRY_VALUE;
             SmpCreatePagingFileDescriptor(&mut (*RegEntry).Name);
 
@@ -2342,7 +2551,6 @@ pub unsafe extern "system" fn SmpInit(
     InitialCommand: PUNICODE_STRING,
     ProcessHandle: PHANDLE,
 ) -> NTSTATUS {
-
     let mut Status: NTSTATUS;
     let Status2: NTSTATUS;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -2472,9 +2680,7 @@ pub unsafe extern "system" fn SmpInit(
         0,
         0,
     );
-    if !NT_SUCCESS(Status2) {
-        /* Should never really fail */
-    }
+    if !NT_SUCCESS(Status2) { /* Should never really fail */ }
 
     /* Now initialize everything else based on the registry parameters */
     Status = SmpLoadDataFromRegistry(InitialCommand);
@@ -2499,7 +2705,6 @@ pub unsafe extern "system" fn SmpInit(
     /* All done */
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

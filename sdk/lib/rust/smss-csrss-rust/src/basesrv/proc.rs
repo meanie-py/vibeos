@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 
 // Helper: HandleToUlong (C macro from handleapi.h) — handle truncated to ULONG.
@@ -32,7 +31,7 @@ extern "C" {
 static mut UserNotifyProcessCreate: Option<BASE_PROCESS_CREATE_NOTIFY_ROUTINE> = None;
 
 // Type aliases for CSR API function signature
-type BASE_PROCESS_CREATE_NOTIFY_ROUTINE = 
+type BASE_PROCESS_CREATE_NOTIFY_ROUTINE =
     unsafe extern "system" fn(HANDLE, HANDLE, ULONG, ULONG) -> ();
 
 #[no_mangle]
@@ -82,13 +81,15 @@ pub unsafe extern "system" fn BaseSrvGetTempFile(
     _ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
     static mut BaseGetTempFileUnique: UINT = 0;
-    
-    let GetTempFile = &mut (*(ApiMessage as *mut BASE_API_MESSAGE)).Data.GetTempFileRequest;
-    
+
+    let GetTempFile = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
+        .Data
+        .GetTempFileRequest;
+
     // Return 16-bits ID
     BaseGetTempFileUnique = BaseGetTempFileUnique.wrapping_add(1);
     GetTempFile.UniqueID = BaseGetTempFileUnique & 0xFFFF;
-    
+
     GetTempFile.UniqueID as NTSTATUS
 }
 
@@ -97,28 +98,31 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let CreateProcessRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE)).Data.CreateProcessRequest;
+    let CreateProcessRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
+        .Data
+        .CreateProcessRequest;
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
     let mut ThreadHandle: HANDLE = core::ptr::null_mut();
     let mut Flags: ULONG = 0;
     let mut DebugFlags: ULONG = 0;
     let mut VdmPower: ULONG = 0;
-    
+
     // Get the current client thread
     let CsrThread = CsrGetClientThread();
-    
+
     let Process = (*CsrThread).Process;
-    
+
     // Extract the flags out of the process handle
     Flags = (CreateProcessRequest.ProcessHandle as ULONG_PTR & 3) as ULONG;
-    CreateProcessRequest.ProcessHandle = (CreateProcessRequest.ProcessHandle as ULONG_PTR & !3) as HANDLE;
-    
+    CreateProcessRequest.ProcessHandle =
+        (CreateProcessRequest.ProcessHandle as ULONG_PTR & !3) as HANDLE;
+
     // Some things should be done if this is a VDM process
     if CreateProcessRequest.VdmBinaryType != 0 {
         // We need to set the VDM power later on
         VdmPower = 1;
     }
-    
+
     // Duplicate the process handle
     let mut Status = NtDuplicateObject(
         (*Process).ProcessHandle,
@@ -132,7 +136,7 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
     if Status < 0 {
         return Status;
     }
-    
+
     // Duplicate the thread handle
     Status = NtDuplicateObject(
         (*Process).ProcessHandle,
@@ -147,7 +151,7 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
         NtClose(ProcessHandle);
         return Status;
     }
-    
+
     // If this is a VDM process, request VDM power
     if VdmPower != 0 {
         Status = NtSetInformationProcess(
@@ -162,7 +166,7 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
             return Status;
         }
     }
-    
+
     // Flags conversion
     if (CreateProcessRequest.CreationFlags & CREATE_NEW_PROCESS_GROUP) != 0 {
         DebugFlags |= CsrProcessCreateNewGroup;
@@ -171,7 +175,7 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
         // We are launching a console process
         DebugFlags |= CsrProcessIsConsoleApp;
     }
-    
+
     // Call CSRSRV to create the CSR_PROCESS structure and the first CSR_THREAD
     Status = CsrCreateProcess(
         ProcessHandle,
@@ -186,12 +190,12 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
         *ReplyCode = CsrReplyDeadClient;
         return Status;
     }
-    
+
     // Check for other failures
     if Status < 0 {
         return Status;
     }
-    
+
     // Call the user notification procedure
     if let Some(notify) = UserNotifyProcessCreate {
         notify(
@@ -201,34 +205,28 @@ pub unsafe extern "system" fn BaseSrvCreateProcess(
             Flags,
         );
     }
-    
+
     // Check if this is a VDM process
     if CreateProcessRequest.VdmBinaryType != 0 {
         let mut ConsoleRecord: PVDM_CONSOLE_RECORD = core::ptr::null_mut();
-        
+
         if CreateProcessRequest.VdmTask != 0 {
             // Get the console record using the task ID
-            Status = GetConsoleRecordBySessionId(
-                CreateProcessRequest.VdmTask,
-                &mut ConsoleRecord,
-            );
+            Status = GetConsoleRecordBySessionId(CreateProcessRequest.VdmTask, &mut ConsoleRecord);
         } else {
             // Get the console record using the console handle
-            Status = BaseSrvGetConsoleRecord(
-                CreateProcessRequest.hVDM,
-                &mut ConsoleRecord,
-            );
+            Status = BaseSrvGetConsoleRecord(CreateProcessRequest.hVDM, &mut ConsoleRecord);
         }
-        
+
         // Check if it failed
         if Status < 0 {
             return Status;
         }
-        
+
         // Store the process ID of the VDM in the console record
         (*ConsoleRecord).ProcessId = HandleToUlong(CreateProcessRequest.ClientId.UniqueProcess);
     }
-    
+
     // Return the result of this operation
     Status
 }
@@ -238,15 +236,17 @@ pub unsafe extern "system" fn BaseSrvCreateThread(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let CreateThreadRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE)).Data.CreateThreadRequest;
+    let CreateThreadRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
+        .Data
+        .CreateThreadRequest;
     let mut ThreadHandle: HANDLE = core::ptr::null_mut();
-    
+
     // Get the current CSR thread
     let CurrentThread = CsrGetClientThread();
     if CurrentThread.is_null() {
         return STATUS_SUCCESS; // server-to-server
     }
-    
+
     // Get the CSR Process for this request
     let mut CsrProcess = (*CurrentThread).Process;
     if (*CsrProcess).ClientId.UniqueProcess != CreateThreadRequest.ClientId.UniqueProcess {
@@ -255,17 +255,15 @@ pub unsafe extern "system" fn BaseSrvCreateThread(
             // Accept this without any further work
             return STATUS_SUCCESS;
         }
-        
+
         // Get the real CSR Process for the remote thread's process
-        let Status = CsrLockProcessByClientId(
-            CreateThreadRequest.ClientId.UniqueProcess,
-            &mut CsrProcess,
-        );
+        let Status =
+            CsrLockProcessByClientId(CreateThreadRequest.ClientId.UniqueProcess, &mut CsrProcess);
         if Status < 0 {
             return Status;
         }
     }
-    
+
     // Duplicate the thread handle so we can own it
     let mut Status = NtDuplicateObject(
         (*(*CurrentThread).Process).ProcessHandle,
@@ -285,7 +283,7 @@ pub unsafe extern "system" fn BaseSrvCreateThread(
             1u8,
         );
     }
-    
+
     // Unlock the process and return
     if CsrProcess != (*CurrentThread).Process {
         CsrUnlockProcess(CsrProcess);
@@ -299,14 +297,17 @@ pub unsafe extern "system" fn BaseSrvExitProcess(
     ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
     let CsrThread = CsrGetClientThread();
-    
+
     // Set the special reply value so we don't reply this message back
     *ReplyCode = CsrReplyDeadClient;
-    
+
     // Remove the CSR_THREADs and CSR_PROCESS
     CsrDestroyProcess(
         core::ptr::addr_of_mut!((*CsrThread).ClientId),
-        (*(ApiMessage as *mut BASE_API_MESSAGE)).Data.ExitProcessRequest.uExitCode as NTSTATUS,
+        (*(ApiMessage as *mut BASE_API_MESSAGE))
+            .Data
+            .ExitProcessRequest
+            .uExitCode as NTSTATUS,
     )
 }
 
@@ -315,13 +316,16 @@ pub unsafe extern "system" fn BaseSrvGetProcessShutdownParam(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let ShutdownParametersRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE)).Data.ShutdownParametersRequest;
+    let ShutdownParametersRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
+        .Data
+        .ShutdownParametersRequest;
     let CsrThread = CsrGetClientThread();
-    
+
     ShutdownParametersRequest.ShutdownLevel = (*(*CsrThread).Process).ShutdownLevel;
     // Only SHUTDOWN_NORETRY flag is valid for this API
-    ShutdownParametersRequest.ShutdownFlags = (*(*CsrThread).Process).ShutdownFlags & SHUTDOWN_NORETRY;
-    
+    ShutdownParametersRequest.ShutdownFlags =
+        (*(*CsrThread).Process).ShutdownFlags & SHUTDOWN_NORETRY;
+
     STATUS_SUCCESS
 }
 
@@ -330,19 +334,21 @@ pub unsafe extern "system" fn BaseSrvSetProcessShutdownParam(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let ShutdownParametersRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE)).Data.ShutdownParametersRequest;
+    let ShutdownParametersRequest = &mut (*(ApiMessage as *mut BASE_API_MESSAGE))
+        .Data
+        .ShutdownParametersRequest;
     let CsrThread = CsrGetClientThread();
-    
+
     // Only SHUTDOWN_NORETRY flag is valid for this API
     if (ShutdownParametersRequest.ShutdownFlags & !SHUTDOWN_NORETRY) != 0 {
         // If there were other flags specified, fail the call
         return STATUS_INVALID_PARAMETER;
     }
-    
+
     (*(*CsrThread).Process).ShutdownLevel = ShutdownParametersRequest.ShutdownLevel;
     // Notice that all the possible other private flags are reinitialized here
     (*(*CsrThread).Process).ShutdownFlags = ShutdownParametersRequest.ShutdownFlags;
-    
+
     STATUS_SUCCESS
 }
 
@@ -353,7 +359,6 @@ pub unsafe extern "system" fn BaseSetProcessCreateNotify(
     // Set the user notification procedure to be called when a process is created
     UserNotifyProcessCreate = Some(ProcessCreateNotifyProc);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

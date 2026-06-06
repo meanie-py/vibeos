@@ -581,6 +581,7 @@ name = "smss-csrss-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+ "ntprintf",
 ]
 
 [[package]]

@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 
 const STATUS_WAIT_0: NTSTATUS = 0x00000000;
@@ -12,7 +11,9 @@ unsafe fn RtlGetProcessHeap() -> PVOID {
 
 // NtCurrentProcess is a pseudo-handle macro `(HANDLE)-1`.
 #[inline(always)]
-unsafe fn NtCurrentProcess() -> HANDLE { -1isize as HANDLE }
+unsafe fn NtCurrentProcess() -> HANDLE {
+    -1isize as HANDLE
+}
 
 // Sm* functions in sminit.c are NTAPI (stdcall on i386). The data
 // globals are convention-free.
@@ -23,12 +24,35 @@ extern "C" {
 extern "system" {
     fn SmpSetProcessMuSessionId(ProcessHandle: HANDLE, MuSessionId: ULONG) -> NTSTATUS;
     fn SmpQueryRegistrySosOption() -> BOOLEAN;
-    fn SmpSaveAndClearBootStatusData(BootOkay: *mut BOOLEAN, ShutdownOkay: *mut BOOLEAN) -> BOOLEAN;
+    fn SmpSaveAndClearBootStatusData(BootOkay: *mut BOOLEAN, ShutdownOkay: *mut BOOLEAN)
+        -> BOOLEAN;
     fn SmpRestoreBootStatusData(BootOkay: BOOLEAN, ShutdownOkay: BOOLEAN);
-    fn SmpParseCommandLine( CommandLine: PUNICODE_STRING, Flags: *mut ULONG, FileName: *mut _UNICODE_STRING, Directory: *mut _UNICODE_STRING, Arguments: *mut _UNICODE_STRING, ) -> NTSTATUS;
-    fn SmpLoadSubSystem( FileName: PUNICODE_STRING, Directory: PUNICODE_STRING, CommandLine: PUNICODE_STRING, MuSessionId: ULONG, ProcessId: PHANDLE, Flags: ULONG, ) -> NTSTATUS;
-    fn SmConnectToSm( SbApiPortName: PUNICODE_STRING, SbApiPort: PHANDLE, ImageType: ULONG, SmApiPort: PHANDLE, ) -> NTSTATUS;
-    fn SmExecPgm( SmApiPort: HANDLE, ProcessInfo: PRTL_USER_PROCESS_INFORMATION, DebugFlag: BOOLEAN, ) -> NTSTATUS;
+    fn SmpParseCommandLine(
+        CommandLine: PUNICODE_STRING,
+        Flags: *mut ULONG,
+        FileName: *mut _UNICODE_STRING,
+        Directory: *mut _UNICODE_STRING,
+        Arguments: *mut _UNICODE_STRING,
+    ) -> NTSTATUS;
+    fn SmpLoadSubSystem(
+        FileName: PUNICODE_STRING,
+        Directory: PUNICODE_STRING,
+        CommandLine: PUNICODE_STRING,
+        MuSessionId: ULONG,
+        ProcessId: PHANDLE,
+        Flags: ULONG,
+    ) -> NTSTATUS;
+    fn SmConnectToSm(
+        SbApiPortName: PUNICODE_STRING,
+        SbApiPort: PHANDLE,
+        ImageType: ULONG,
+        SmApiPort: PHANDLE,
+    ) -> NTSTATUS;
+    fn SmExecPgm(
+        SmApiPort: HANDLE,
+        ProcessInfo: PRTL_USER_PROCESS_INFORMATION,
+        DebugFlag: BOOLEAN,
+    ) -> NTSTATUS;
     fn SmpInit(InitialCommand: *mut _UNICODE_STRING, Handles: PHANDLE) -> NTSTATUS;
     fn SmpAcquirePrivilege(Privilege: ULONG, State: *mut PVOID) -> NTSTATUS;
     fn SmpReleasePrivilege(State: PVOID);
@@ -445,26 +469,61 @@ pub unsafe extern "C" fn SmpUnhandledExceptionFilter(ExceptionInfo: PEXCEPTION_P
     let mut Parameters: [ULONG_PTR; 4] = [0; 4];
     let mut ErrorString: _UNICODE_STRING = core::mem::zeroed();
 
-    DbgPrint(
-        b"SMSS: Unhandled exception - Status == %x  IP == %p\n\0".as_ptr() as *const i8,
+    crate::dbg_print!(
+        b"SMSS: Unhandled exception - Status == %x  IP == %p\n\0",
         (*(*ExceptionInfo).ExceptionRecord).ExceptionCode,
         (*(*ExceptionInfo).ExceptionRecord).ExceptionAddress,
     );
-    DbgPrint(
-        b"      Memory Address: %x  Read/Write: %x\n\0".as_ptr() as *const i8,
+    crate::dbg_print!(
+        b"      Memory Address: %x  Read/Write: %x\n\0",
         (*(*ExceptionInfo).ExceptionRecord).ExceptionInformation[0],
         (*(*ExceptionInfo).ExceptionRecord).ExceptionInformation[1],
     );
     DbgBreakPoint();
 
     static ERROR_MSG: [u16; 42] = [
-        b'U' as u16, b'n' as u16, b'h' as u16, b'a' as u16, b'n' as u16, b'd' as u16,
-        b'l' as u16, b'e' as u16, b'd' as u16, b' ' as u16, b'E' as u16, b'x' as u16,
-        b'c' as u16, b'e' as u16, b'p' as u16, b't' as u16, b'i' as u16, b'o' as u16,
-        b'n' as u16, b' ' as u16, b'i' as u16, b'n' as u16, b' ' as u16, b'S' as u16,
-        b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
-        b' ' as u16, b'M' as u16, b'a' as u16, b'n' as u16, b'a' as u16, b'g' as u16,
-        b'e' as u16, b'r' as u16, 0, 0, 0, 0,
+        b'U' as u16,
+        b'n' as u16,
+        b'h' as u16,
+        b'a' as u16,
+        b'n' as u16,
+        b'd' as u16,
+        b'l' as u16,
+        b'e' as u16,
+        b'd' as u16,
+        b' ' as u16,
+        b'E' as u16,
+        b'x' as u16,
+        b'c' as u16,
+        b'e' as u16,
+        b'p' as u16,
+        b't' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b' ' as u16,
+        b'i' as u16,
+        b'n' as u16,
+        b' ' as u16,
+        b'S' as u16,
+        b'e' as u16,
+        b's' as u16,
+        b's' as u16,
+        b'i' as u16,
+        b'o' as u16,
+        b'n' as u16,
+        b' ' as u16,
+        b'M' as u16,
+        b'a' as u16,
+        b'n' as u16,
+        b'a' as u16,
+        b'g' as u16,
+        b'e' as u16,
+        b'r' as u16,
+        0,
+        0,
+        0,
+        0,
     ];
     RtlInitUnicodeString(&mut ErrorString, ERROR_MSG.as_ptr());
     Parameters[0] = core::ptr::addr_of!(ErrorString) as ULONG_PTR;
@@ -497,7 +556,7 @@ pub unsafe extern "C" fn _main(
     let mut DbgString: _UNICODE_STRING = core::mem::zeroed();
     let mut InitialCommand: _UNICODE_STRING = core::mem::zeroed();
 
-    DbgPrint(b"[SMSS] _main entered\n\0".as_ptr() as *const i8);
+    crate::dbg_print!(b"[SMSS] _main entered\n\0");
 
     RtlSetProcessIsCritical(1u8, core::ptr::null_mut(), 0u8);
     RtlSetThreadIsCritical(1u8, core::ptr::null_mut(), 0u8);
@@ -521,11 +580,36 @@ pub unsafe extern "C" fn _main(
     Status = SmpInit(&mut InitialCommand, Handles.as_mut_ptr());
     if Status < 0 {
         static INIT_MSG: [u16; 30] = [
-            b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16,
-            b'n' as u16, b' ' as u16, b'M' as u16, b'a' as u16, b'n' as u16, b'a' as u16,
-            b'g' as u16, b'e' as u16, b'r' as u16, b' ' as u16, b'I' as u16, b'n' as u16,
-            b'i' as u16, b't' as u16, b'i' as u16, b'a' as u16, b'l' as u16, b'i' as u16,
-            b'z' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
+            b'S' as u16,
+            b'e' as u16,
+            b's' as u16,
+            b's' as u16,
+            b'i' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            b' ' as u16,
+            b'M' as u16,
+            b'a' as u16,
+            b'n' as u16,
+            b'a' as u16,
+            b'g' as u16,
+            b'e' as u16,
+            b'r' as u16,
+            b' ' as u16,
+            b'I' as u16,
+            b'n' as u16,
+            b'i' as u16,
+            b't' as u16,
+            b'i' as u16,
+            b'a' as u16,
+            b'l' as u16,
+            b'i' as u16,
+            b'z' as u16,
+            b'a' as u16,
+            b't' as u16,
+            b'i' as u16,
+            b'o' as u16,
+            b'n' as u16,
         ];
         RtlInitUnicodeString(&mut DbgString, INIT_MSG.as_ptr());
         Parameters[1] = Status as ULONG_PTR;
@@ -540,19 +624,57 @@ pub unsafe extern "C" fn _main(
     );
 
     if Flags & (FLG_DEBUG_INITIAL_COMMAND | FLG_DEBUG_INITIAL_COMMAND_EX) != 0 {
-        DbgPrint(b"Global Flags Set to SMSS Debugging: Not yet supported\n\0".as_ptr() as *const i8);
+        crate::dbg_print!(b"Global Flags Set to SMSS Debugging: Not yet supported\n\0");
     }
 
-    Status = SmpExecuteInitialCommand(0, &mut InitialCommand, &mut Handles[1] as *mut HANDLE as HANDLE, core::ptr::null_mut());
+    Status = SmpExecuteInitialCommand(
+        0,
+        &mut InitialCommand,
+        &mut Handles[1] as *mut HANDLE as HANDLE,
+        core::ptr::null_mut(),
+    );
     if Status < 0 {
         static EXEC_MSG: [u16; 40] = [
-            b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16,
-            b'n' as u16, b' ' as u16, b'M' as u16, b'a' as u16, b'n' as u16, b'a' as u16,
-            b'g' as u16, b'e' as u16, b'r' as u16, b' ' as u16, b'E' as u16, b'x' as u16,
-            b'e' as u16, b'c' as u16, b'u' as u16, b't' as u16, b'e' as u16, b'I' as u16,
-            b'n' as u16, b'i' as u16, b't' as u16, b'i' as u16, b'a' as u16, b'l' as u16,
-            b'C' as u16, b'o' as u16, b'm' as u16, b'm' as u16, b'a' as u16, b'n' as u16,
-            b'd' as u16, 0, 0, 0,
+            b'S' as u16,
+            b'e' as u16,
+            b's' as u16,
+            b's' as u16,
+            b'i' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            b' ' as u16,
+            b'M' as u16,
+            b'a' as u16,
+            b'n' as u16,
+            b'a' as u16,
+            b'g' as u16,
+            b'e' as u16,
+            b'r' as u16,
+            b' ' as u16,
+            b'E' as u16,
+            b'x' as u16,
+            b'e' as u16,
+            b'c' as u16,
+            b'u' as u16,
+            b't' as u16,
+            b'e' as u16,
+            b'I' as u16,
+            b'n' as u16,
+            b'i' as u16,
+            b't' as u16,
+            b'i' as u16,
+            b'a' as u16,
+            b'l' as u16,
+            b'C' as u16,
+            b'o' as u16,
+            b'm' as u16,
+            b'm' as u16,
+            b'a' as u16,
+            b'n' as u16,
+            b'd' as u16,
+            0,
+            0,
+            0,
         ];
         RtlInitUnicodeString(&mut DbgString, EXEC_MSG.as_ptr());
         Parameters[1] = Status as ULONG_PTR;
@@ -574,9 +696,23 @@ pub unsafe extern "C" fn _main(
 
     if Status == STATUS_WAIT_0 {
         static WIN_SUBSYS: [u16; 17] = [
-            b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16,
-            b's' as u16, b' ' as u16, b'S' as u16, b'u' as u16, b'b' as u16, b'S' as u16,
-            b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
+            b'W' as u16,
+            b'i' as u16,
+            b'n' as u16,
+            b'd' as u16,
+            b'o' as u16,
+            b'w' as u16,
+            b's' as u16,
+            b' ' as u16,
+            b'S' as u16,
+            b'u' as u16,
+            b'b' as u16,
+            b'S' as u16,
+            b'y' as u16,
+            b's' as u16,
+            b't' as u16,
+            b'e' as u16,
+            b'm' as u16,
         ];
         RtlInitUnicodeString(&mut DbgString, WIN_SUBSYS.as_ptr());
         Status = NtQueryInformationProcess(
@@ -588,10 +724,27 @@ pub unsafe extern "C" fn _main(
         );
     } else {
         static WIN_LOGON: [u16; 21] = [
-            b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16,
-            b's' as u16, b' ' as u16, b'L' as u16, b'o' as u16, b'g' as u16, b'o' as u16,
-            b'n' as u16, b' ' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'c' as u16,
-            b'e' as u16, b's' as u16, b's' as u16,
+            b'W' as u16,
+            b'i' as u16,
+            b'n' as u16,
+            b'd' as u16,
+            b'o' as u16,
+            b'w' as u16,
+            b's' as u16,
+            b' ' as u16,
+            b'L' as u16,
+            b'o' as u16,
+            b'g' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            b' ' as u16,
+            b'P' as u16,
+            b'r' as u16,
+            b'o' as u16,
+            b'c' as u16,
+            b'e' as u16,
+            b's' as u16,
+            b's' as u16,
         ];
         RtlInitUnicodeString(&mut DbgString, WIN_LOGON.as_ptr());
         if Status == STATUS_WAIT_1 {
@@ -616,7 +769,6 @@ pub unsafe extern "C" fn _main(
 
     SmpTerminate(Parameters.as_mut_ptr(), 1, 4)
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

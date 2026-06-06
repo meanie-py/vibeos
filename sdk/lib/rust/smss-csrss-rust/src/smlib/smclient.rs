@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 static RTLP_SM_MESSAGE_INFO: [ULONG; 7] = [
     0, // sizeof(SM_CREATE_FOREIGN_SESSION_MSG)
@@ -26,8 +25,17 @@ pub unsafe extern "system" fn SmConnectToSm(
 
     let mut PortName = core::mem::zeroed::<_UNICODE_STRING>();
     static SM_API_PORT_NAME: [u16; 11] = [
-        b'\\' as u16, b'S' as u16, b'm' as u16, b'A' as u16, b'p' as u16,
-        b'i' as u16, b'P' as u16, b'o' as u16, b'r' as u16, b't' as u16, 0,
+        b'\\' as u16,
+        b'S' as u16,
+        b'm' as u16,
+        b'A' as u16,
+        b'p' as u16,
+        b'i' as u16,
+        b'P' as u16,
+        b'o' as u16,
+        b'r' as u16,
+        b't' as u16,
+        0,
     ];
     RtlInitUnicodeString(&mut PortName, SM_API_PORT_NAME.as_ptr());
 
@@ -82,10 +90,7 @@ pub unsafe extern "system" fn SmConnectToSm(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmSendMsgToSm(
-    SmApiPort: HANDLE,
-    SmApiMsg: PSM_API_MSG,
-) -> NTSTATUS {
+pub unsafe extern "system" fn SmSendMsgToSm(SmApiPort: HANDLE, SmApiMsg: PSM_API_MSG) -> NTSTATUS {
     if (*SmApiMsg).ApiNumber as usize >= 7 {
         return 0xC00000BBu32 as NTSTATUS; // STATUS_NOT_IMPLEMENTED
     }
@@ -94,17 +99,12 @@ pub unsafe extern "system" fn SmSendMsgToSm(
 
     (*SmApiMsg).h.u2.ZeroInit = 0;
     // DataLength/TotalLength are CSHORT (i16) in PORT_MESSAGE.
-    (*SmApiMsg).h.u1.s1.DataLength = (DataLength as usize
-        + core::mem::offset_of!(SM_API_MSG, u)
+    (*SmApiMsg).h.u1.s1.DataLength = (DataLength as usize + core::mem::offset_of!(SM_API_MSG, u)
         - core::mem::size_of_val(&(*SmApiMsg).h)) as i16;
     (*SmApiMsg).h.u1.s1.TotalLength =
         (*SmApiMsg).h.u1.s1.DataLength + core::mem::size_of_val(&(*SmApiMsg).h) as i16;
 
-    let Status = NtRequestWaitReplyPort(
-        SmApiPort,
-        &mut (*SmApiMsg).h,
-        &mut (*SmApiMsg).h,
-    );
+    let Status = NtRequestWaitReplyPort(SmApiPort, &mut (*SmApiMsg).h, &mut (*SmApiMsg).h);
 
     if Status < 0 {
         Status
@@ -156,7 +156,8 @@ pub unsafe extern "system" fn SmLoadDeferedSubsystem(
 ) -> NTSTATUS {
     let mut SmApiMsg = core::mem::zeroed::<SM_API_MSG>();
 
-    if (*DeferedSubsystem).Length as usize > core::mem::size_of_val(&SmApiMsg.u.LoadDefered.Buffer) {
+    if (*DeferedSubsystem).Length as usize > core::mem::size_of_val(&SmApiMsg.u.LoadDefered.Buffer)
+    {
         return 0xC000000Du32 as NTSTATUS; // STATUS_INVALID_PARAMETER
     }
 
@@ -207,10 +208,7 @@ pub unsafe extern "system" fn SmStartCsr(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SmStopCsr(
-    SmApiPort: HANDLE,
-    MuSessionId: ULONG,
-) -> NTSTATUS {
+pub unsafe extern "system" fn SmStopCsr(SmApiPort: HANDLE, MuSessionId: ULONG) -> NTSTATUS {
     let mut SmApiMsg = core::mem::zeroed::<SM_API_MSG>();
 
     SmApiMsg.u.StopCsr.MuSessionId = MuSessionId;
@@ -218,7 +216,6 @@ pub unsafe extern "system" fn SmStopCsr(
     SmApiMsg.ApiNumber = 6; // SmpStopCsrApi
     SmSendMsgToSm(SmApiPort, &mut SmApiMsg)
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

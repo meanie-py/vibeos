@@ -9,6 +9,6 @@ pub mod init;
 pub mod procsup;
 pub mod server;
 pub mod session;
-pub mod thredsup;
 pub mod srv_inlines;
+pub mod thredsup;
 pub mod wait;
