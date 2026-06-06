@@ -81,6 +81,39 @@ extern "system" {
     ) -> BOOL;
 }
 
+// LIST_ENTRY ops are FORCEINLINE in the C headers — bindgen emits extern decls
+// but there's NO exported symbol (link fails as `undefined _InitializeListHead`).
+// Provide them inline (they shadow the glob's extern decls — local wins). The
+// GINA/SAS cores use them for the dialog tracking list etc.
+#[inline]
+pub unsafe fn InitializeListHead(head: PLIST_ENTRY) {
+    (*head).Flink = head;
+    (*head).Blink = head;
+}
+#[inline]
+pub unsafe fn InsertHeadList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
+    let first = (*head).Flink;
+    (*entry).Flink = first;
+    (*entry).Blink = head;
+    (*first).Blink = entry;
+    (*head).Flink = entry;
+}
+#[inline]
+pub unsafe fn InsertTailList(head: PLIST_ENTRY, entry: PLIST_ENTRY) {
+    let last = (*head).Blink;
+    (*entry).Flink = head;
+    (*entry).Blink = last;
+    (*last).Flink = entry;
+    (*head).Blink = entry;
+}
+#[inline]
+pub unsafe fn RemoveEntryList(entry: PLIST_ENTRY) {
+    let flink = (*entry).Flink;
+    let blink = (*entry).Blink;
+    (*blink).Flink = flink;
+    (*flink).Blink = blink;
+}
+
 // RtlGetProcessHeap() is a macro (`NtCurrentPeb()->ProcessHeap`) — not a
 // bindgen symbol. GetProcessHeap() returns the same PEB->ProcessHeap
 // handle, without the arch-specific NtCurrentPeb() segment read.
