@@ -56,15 +56,16 @@ fn main() {
         // cmake's flag-exact clang command via the existing cmake targets as the
         // CMakeFiles/<name>.dir markers) — drops the libconsrv/libusersrv/
         // libconcfg.a reuse. Each lands in the --start-group with libwinsrv_rust.a.
-        .c_from_compile_db("consrv", &["win32ss/user/winsrv/consrv/consrv_rust_shim.c"])
+        // consrv_rust_shim.c (interlocked intrinsics / NT macros / COM-vtbl
+        // dispatchers) is now pure Rust: winsrv-rust/src/consrv/shim.rs provides
+        // the same per-arch symbols. No C compiled for consrv.
+        // usersrv_rust_stub.c + concfg_rust_stub.c dropped — cmake-era empty
+        // cohabitation stubs (archive-extraction hacks), vestigial in the cargo
+        // link. usersrv_rust_strsafe_shim.c is a real provider (strsafe) → kept.
         .c_from_compile_db(
             "usersrv",
-            &[
-                "win32ss/user/winsrv/usersrv/usersrv_rust_stub.c",
-                "win32ss/user/winsrv/usersrv/usersrv_rust_strsafe_shim.c",
-            ],
+            &["win32ss/user/winsrv/usersrv/usersrv_rust_strsafe_shim.c"],
         )
-        .c_from_compile_db("concfg", &["win32ss/user/winsrv/concfg/concfg_rust_stub.c"])
         // The genuine shared leaf/runtime statics, reused from cmake (the same
         // tier every spine binary reuses). libwinsrv_rust.a is emitted first by
         // the engine (rust_staticlib). --allow-multiple-definition (engine)

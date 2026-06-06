@@ -35,13 +35,10 @@ fn main() {
         .rust_staticlib("services-rust")
         // Still-C residue of the partial flip, compiled in-cargo by replaying
         // cmake's clang (the `services_c` OBJECT lib).
-        .c_from_compile_db(
-            "services_c",
-            &[
-                "base/system/services/services.c",
-                "base/system/services/services_rust_stub.c",
-            ],
-        )
+        // services.c (the SCM entry/main, still C) compiled in-cargo by replaying
+        // cmake's clang. services_rust_stub.c dropped — it was a cmake-era empty
+        // cohabitation stub (archive-extraction hack), vestigial in the cargo link.
+        .c_from_compile_db("services_c", &["base/system/services/services.c"])
         // The svcctl RPC server stub is now pure RUST: the svcctl-stub crate
         // transliterates widl's generated `svcctl_s.c` to Rust (against midl-rt)
         // at build time and exports `svcctl_v2_0_s_ifspec`. No C stub linked.

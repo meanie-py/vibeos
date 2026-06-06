@@ -19,6 +19,17 @@
 //!   kdpacket.c    → kdpacket      utils.c       → utils
 //!   i386_sup.c    → i386_sup (cfg x86)   amd64_sup.c → amd64_sup (cfg x86_64)
 
+// TODO(kdgdb full GDB-protocol debugging): kdgdb-rust links into a real
+// kdcom.dll and its KdDebuggerInitialize0/1 run at boot (proven by swapping it
+// in as kdcom.dll — see kdgdb-cargo). But the GDB-remote-protocol core
+// (KdSendPacket/KdReceivePacket → gdb_input/gdb_send) only runs when the kernel
+// is in _WINKD_ KD-protocol mode. On llvm-mingw, config.cmake forces
+// _WINKD_=FALSE, and -D_WINKD_ is a C define that never reaches Rust — so
+// ntoskrnl-rust's kd64/kd/kdinit were translated frozen to the KDBG (non-WINKD)
+// path. Exercising kdgdb end-to-end (gdb-multiarch over qemu/serial.sock, NOT
+// QEMU's host gdbstub) requires teaching ntoskrnl-rust the _WINKD_ cfg path —
+// a separate, larger effort. See memory project_kdgdb_translation (SPIKE).
+
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(unused_imports, unused_unsafe, dead_code)]
