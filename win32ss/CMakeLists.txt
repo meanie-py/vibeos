@@ -153,7 +153,7 @@ list(APPEND SOURCE
     # user/ntuser/security.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/security.rs) — cohabitation [ntuser wave 11]
     # user/ntuser/session.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/session.rs) — cohabitation [ntuser wave 1]
     # user/ntuser/shutdown.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/shutdown.rs) — cohabitation [ntuser wave 10]
-    user/ntuser/simplecall.c
+    # user/ntuser/simplecall.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/simplecall.rs) — cohabitation [ntuser wave 24]
     user/ntuser/sysparams.c
     # user/ntuser/timer.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/timer.rs) — cohabitation [ntuser wave 17]
     # user/ntuser/useratom.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/useratom.rs) — cohabitation [ntuser wave 1]
@@ -336,6 +336,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/dde.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntstubs.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/windc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/simplecall.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

@@ -288,6 +288,8 @@ pub mod dde;
 pub mod ntstubs;
 // [ntuser wave 23 — windc]
 pub mod windc;
+// [ntuser wave 24 — simplecall]
+pub mod simplecall;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
