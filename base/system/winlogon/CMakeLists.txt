@@ -22,12 +22,11 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 # purely to (a) populate compile_commands.json under CMakeFiles/winlogon_c.dir
 # and (b) generate cmake_pch.h. winlogon-cargo's build.rs points
 # c_from_compile_db("winlogon_c", …) at it.
-# rpcserver.c + winlogon.c flipped → winlogon-rust/src/{rpcserver,winlogon}.rs
-# (dropped from the cargo c_from_compile_db); no longer compiled here. The C
-# stays on disk.
+# rpcserver.c + winlogon.c + wlx.c flipped → winlogon-rust/src/{rpcserver,
+# winlogon,wlx}.rs (dropped from the cargo c_from_compile_db); no longer compiled
+# here. Only sas.c (the SAS state machine) remains C. The C stays on disk.
 list(APPEND WINLOGON_C_RESIDUE
     sas.c
-    wlx.c
     winlogon_rust_stub.c
     ${CMAKE_CURRENT_BINARY_DIR}/winreg_s.c)
 add_library(winlogon_c OBJECT ${WINLOGON_C_RESIDUE} winlogon.h)

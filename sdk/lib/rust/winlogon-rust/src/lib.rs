@@ -57,6 +57,11 @@ pub mod notify;
 // SERVER_ROUTINES dispatch table.
 pub mod rpcserver;
 
+// wlx.c — the GINA interface: the WLX_DISPATCH_VERSION_1_4 function table given
+// to msgina.dll, the GINA loader (GinaInit/LoadGina), the dialog tracking list,
+// and CreateWindowStationAndDesktops. Third GINA/SAS/RPC core.
+pub mod wlx;
+
 // USER-MODE no_std staticlib → needs its own panic handler + eh_personality
 // (same role as userinit-rust / smss-csrss-rust). Must NOT use privileged
 // instructions.

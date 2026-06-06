@@ -40,16 +40,12 @@ fn main() {
         // cmake's clang (the `winlogon_c` OBJECT lib).
         // winlogon_rust_stub.c dropped — cmake-era empty cohabitation stub
         // (archive-extraction hack), vestigial in the cargo link. rpcserver.c +
-        // winlogon.c flipped → winlogon-rust/src/{rpcserver,winlogon}.rs (the
-        // latter owns WLSession/hAppInstance/WlStrDup, which the still-C sas.c/
-        // wlx.c resolve by symbol). The 2 remaining GINA/SAS cores stay C.
-        .c_from_compile_db(
-            "winlogon_c",
-            &[
-                "base/system/winlogon/sas.c",
-                "base/system/winlogon/wlx.c",
-            ],
-        )
+        // winlogon.c + wlx.c flipped → winlogon-rust/src/{rpcserver,winlogon,
+        // wlx}.rs. wlx.rs owns GinaInit/CreateWindowStationAndDesktops/
+        // InitDialogListHead/CloseAllDialogWindows (called by the still-C sas.c +
+        // the Rust winlogon.rs); sas.c owns LuidNone (wlx.rs externs it). Only
+        // sas.c (the SAS state machine) remains C.
+        .c_from_compile_db("winlogon_c", &["base/system/winlogon/sas.c"])
         // The winreg RPC server stub is now pure RUST: the winreg-stub crate
         // transliterates widl's generated `winreg_s.c` to Rust (against midl-rt)
         // at build time and exports `winreg_v1_0_s_ifspec`. No C stub linked.
