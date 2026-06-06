@@ -22,12 +22,12 @@ add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 # purely to (a) populate compile_commands.json under CMakeFiles/winlogon_c.dir
 # and (b) generate cmake_pch.h. winlogon-cargo's build.rs points
 # c_from_compile_db("winlogon_c", …) at it.
-# rpcserver.c flipped → winlogon-rust/src/rpcserver.rs (dropped from the cargo
-# c_from_compile_db); no longer compiled here. The C stays on disk.
+# ALL 4 GINA/SAS/RPC cores (rpcserver/winlogon/wlx/sas) flipped → winlogon-rust/
+# src/*.rs; winlogon.exe is now a FULL Rust flip (zero C in the cargo link). The
+# winlogon_c OBJECT lib survives only to compile the remaining vestigial sources
+# (winlogon_rust_stub.c + the generated winreg_s.c) into compile_commands.json
+# for the winreg-stub crate's decoration probe. The C stays on disk.
 list(APPEND WINLOGON_C_RESIDUE
-    sas.c
-    winlogon.c
-    wlx.c
     winlogon_rust_stub.c
     ${CMAKE_CURRENT_BINARY_DIR}/winreg_s.c)
 add_library(winlogon_c OBJECT ${WINLOGON_C_RESIDUE} winlogon.h)

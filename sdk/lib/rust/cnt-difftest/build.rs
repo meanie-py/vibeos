@@ -54,6 +54,21 @@ fn main() {
             "#define _strtoi64 ru_si\n#define _strtoi64_l ru_si_l\n{}#undef ULONG_MAX\n#define ULONG_MAX 0xFFFFFFFFLL\n#define strtoul ru_strtoul_real\n#define _strtoul_l ru_strtoul_l_real\n{}unsigned int ref_strtoul(const char*n,char**e,int b){{return (unsigned int)ru_strtoul_real(n,e,b);}}\n",
             inc(s("string/strtoi64.c")), inc(s("string/strtoul.c")))),
         ("strstr", format!("#define strstr ref_strstr\n{}", inc(s("string/strstr.c")))),
+        // Wave WCS — the kernel (_LIBCNT_) slice of string/wcs.c: 8 pure
+        // wide leaves. Transcribed VERBATIM from wcs.c with the _LIBCNT_
+        // macro reductions (CHECK_PMT→cond, INVALID_PMT→no-op, no errno)
+        // and wchar_t→unsigned short (host wchar is 32-bit). Faithful to
+        // the genuine bodies; EINVAL/ERANGE/STRUNCATE/_TRUNCATE inlined.
+        ("wcs", "#include <string.h>\ntypedef unsigned short WCH;\n\
+            static unsigned long wl(const WCH*s){unsigned long n=0;while(s[n])n++;return n;}\n\
+            WCH* ref__wcsnset(WCH*str,WCH c,unsigned long n){WCH*ret=str;while((n-->0)&&*str)*str++=c;return ret;}\n\
+            WCH* ref__wcsrev(WCH*str){WCH*ret=str;WCH*end=str+wl(str)-1;while(end>str){WCH t=*end;*end--=*str;*str++=t;}return ret;}\n\
+            int ref_wcscoll(const WCH*a,const WCH*b){while(*a&&(*a==*b)){a++;b++;}return (int)*a-(int)*b;}\n\
+            WCH* ref_wcspbrk(const WCH*str,const WCH*acc){const WCH*p;while(*str){for(p=acc;*p;p++)if(*p==*str)return (WCH*)str;str++;}return 0;}\n\
+            int ref_wcscpy_s(WCH*d,unsigned long num,const WCH*sr){unsigned long sz;if(!d||!num)return 22;d[0]=0;if(!sr)return 22;sz=wl(sr)+1;if(sz>num)return 34;memcpy(d,sr,sz*sizeof(WCH));return 0;}\n\
+            int ref_wcsncpy_s(WCH*d,unsigned long num,const WCH*sr,unsigned long cnt){unsigned long sz;if(!d||!num)return 22;d[0]=0;if(!sr)return 22;sz=wl(sr)<cnt?wl(sr):cnt;if(sz>=num)return 34;memcpy(d,sr,sz*sizeof(WCH));d[sz]=0;return 0;}\n\
+            int ref_wcscat_s(WCH*d,unsigned long elem,const WCH*sr){WCH*ptr=d;if(!d||elem==0)return 22;if(!sr){d[0]=0;return 22;}while(ptr<d+elem&&*ptr)ptr++;while(ptr<d+elem){if((*ptr++=*sr++)==0)return 0;}d[0]=0;return 34;}\n\
+            int ref_wcsncat_s(WCH*d,unsigned long elem,const WCH*sr,unsigned long cnt){unsigned long srclen,dststart;int ret=0;if(!(d!=0)||!(elem>0))return 22;if(!(sr!=0||cnt==0))return 22;if(cnt==0)return 0;for(dststart=0;dststart<elem;dststart++){if(d[dststart]==0)break;}if(dststart==elem)return 22;if(cnt==(unsigned long)-1){srclen=wl(sr);if(srclen>=(elem-dststart)){srclen=elem-dststart-1;ret=80;}}else srclen=wl(sr)<cnt?wl(sr):cnt;if(srclen<(elem-dststart)){memcpy(&d[dststart],sr,srclen*sizeof(WCH));d[dststart+srclen]=0;return ret;}d[0]=0;return 34;}\n".to_string()),
         ("atoi64", format!("#define _atoi64 ref_atoi64\n{}", inc(s("string/atoi64.c")))),
         ("memcpy", format!("#define __cdecl\n#define memcpy ref_memcpy\n{}", inc(s("mem/memcpy.c")))),
         ("memchr", format!("#define __cdecl\n#define memchr ref_memchr\n{}", inc(s("mem/memchr.c")))),
@@ -93,6 +108,16 @@ fn main() {
             "#define __cdecl\n#include <stdint.h>\n\
              #define qsort ref_qsort\n{}",
             inc(s("stdlib/qsort.c")))),
+        // Wave SEARCH — bsearch.c + lfind.c. Both pull <stdlib.h>; lfind
+        // additionally pulls <search.h>. Rename the public symbol so the
+        // host decl, the definition, and any internal call all become
+        // ref_<name> in this TU.
+        ("bsearch", format!(
+            "#define __cdecl\n#define bsearch ref_bsearch\n{}",
+            inc(s("search/bsearch.c")))),
+        ("lfind", format!(
+            "#define __cdecl\n#define _lfind ref_lfind\n{}",
+            inc(s("search/lfind.c")))),
         // atol = (long)_atoi64; skip atol.c's _atoldbl (needs _LDOUBLE).
         // Rename the helper so it doesn't collide with cnt-rust's own
         // #[no_mangle] `_atoi64` shim linked into this test binary.

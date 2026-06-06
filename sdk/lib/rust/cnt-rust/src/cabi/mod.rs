@@ -297,3 +297,7 @@ mod math;
 pub use math::*;
 mod strtod;
 pub use strtod::*;
+mod wcs;
+pub use wcs::*;
+mod search;
+pub use search::*;
