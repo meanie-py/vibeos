@@ -643,6 +643,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-ppb"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-rust"
 version = "0.1.0"
 dependencies = [
@@ -664,6 +671,7 @@ dependencies = [
  "random",
  "rtl-actctx",
  "rtl-heap",
+ "rtl-ppb",
  "rtl-strings",
  "rtl-threadpool",
  "rtl-version",

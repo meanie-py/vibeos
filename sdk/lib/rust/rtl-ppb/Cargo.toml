@@ -1,0 +1,16 @@
+[package]
+name = "rtl-ppb"
+version = "0.1.0"
+edition = "2021"
+
+# Rust translation of sdk/lib/rtl/ppb.c — RTL_USER_PROCESS_PARAMETERS
+# creation / destruction / normalize / denormalize. Uses ntkrnl-sys for the
+# exact (size-asserted) RTL_USER_PROCESS_PARAMETERS / CURDIR / PEB layout
+# (the block is normalized via pointer↔offset arithmetic, so layout must be
+# byte-exact). Shared by ntoskrnl + ntdll via librtl_rust.a.
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

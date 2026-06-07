@@ -62,7 +62,7 @@ list(APPEND SOURCE
     # network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
     # nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
     # path.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PATH)
-    ppb.c
+    # ppb.c — replaced by Rust implementation (sdk/lib/rust/rtl-ppb/)
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
     # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
     # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
@@ -215,6 +215,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-heap/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-version/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-version/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-ppb/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-ppb/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs
