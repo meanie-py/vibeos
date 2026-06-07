@@ -165,6 +165,31 @@ Validated on the version-rust integration (deepseek-v4-pro, effort high):
 Session/tmux naming: `deepdrive-<sha1(abs dir)[:12]>` so it's deterministic per dir.
 `projectCode` for the storage path is computed as `<abs dir>` with `/`→`-` (matches DeepCode).
 
+## 5b. Trial results & economics (measured)
+
+Two end-to-end trials, deepseek-v4-pro:
+
+| Trial | C LOC | Rust LOC | Translate (DeepSeek actual) | vs Opus API | Grind to cargo-green |
+|---|---|---|---|---|---|
+| version.dll (1 file) | 1688 | ~2700 | (bundled in early tests) | — | 62→0 errors, 2 deepdrive turns, ~$0.2 |
+| mscms.dll (6 files) | 2681 | 4764 | **~$0.31** | $1.34 floor / **$6.69 realistic (~21×)** | (pending) |
+
+Headline: the **translate step** (vs Opus API) runs **~5–28× cheaper** for faithful multi-file
+output; the **grind step** (vs an Opus Max subscription agent) converges in a few bounded turns at
+cents. Both are parked pre-integration (banked .rs, like the version-rust trial).
+
+**Quality (honest):** the mechanical output post-grind is **correct, compiling, and faithful, but
+deliberately un-idiomatic** — raw pointers + `as` casts throughout, declare-then-assign locals,
+PascalCase names (→ hundreds of naming warnings), occasional transliteration warts (e.g. an inline
+`// comment` swallowing the next `extern` decl) that the `--verify` grind must catch. It reads like
+c2rust output. Opus's idiomatic translation lands *closer to integration-ready* (snake_case, some
+Result/Option, fewer warnings) for ~20× the cost. The gap is exactly a **pass-2 idiomation** job:
+mechanical renames via `cargo fix`, Result/RAII via a judgment-bulk deepdrive pass — so we reach
+Opus-level quality without paying Opus for the bulk transliteration. Caveat: the cheap model
+produces more warts, so the verify gate matters more than with Opus. (No c2rust is used anywhere —
+the c2rust-*style* is purely the mechanical prompt instructing the LLM; verified absent from all
+rustconv prompts/code.)
+
 ## 6. Safety model
 
 - DeepCode edits the caller's **live working tree** (D3). The contract: `deepdrive run` is like
@@ -188,8 +213,17 @@ Session/tmux naming: `deepdrive-<sha1(abs dir)[:12]>` so it's deterministic per 
 
 ## 8. Future / open
 
-- **Parallel fan-out:** multiple DeepCode sessions across *different* dirs (cost allows it).
-  Would need throwaway dirs → reopens the build-dir-sharing question, hence it's only parked.
+- **Parallel fan-out — ALREADY POSSIBLE (no code change).** deepdrive isolates *everything* by
+  `--dir`: the tmux session (`sha(dir)`), DeepCode's project storage (`projects/<dir>`), and the
+  flock are all per-dir. So translating + grinding two DLLs (e.g. mlang + cabinet) concurrently is
+  just: `git worktree add` one **lightweight** worktree each → `rustconv translate` (DeepSeek API,
+  trivially parallel, separate output crates) → `deepdrive run --dir <wt>` per worktree, in
+  parallel. **The translate+grind loop only uses `cargo check`, which needs NO `build-<arch>` dirs**
+  — so these worktrees are cheap (`git worktree add`, ~0 extra disk), and the build-dir-sharing
+  quest does NOT block parallel fan-out. (Build dirs are only needed later, for the per-DLL
+  cohab + smoke, which can run serially in a build-equipped worktree.) Same-`--dir` parallelism is
+  NOT safe (shared session + shared `Cargo.toml` workspace-members → collisions); use separate
+  worktrees.
 - **MCP wrapper** around the CLI for typed/discoverable tool use.
 - **Escalation ladder:** v4-flash (bulk) → v4-pro (stuck) → frontier driver (systemic/design).
   `deepdrive run --model` already enables the model tiers; the ladder is a driver-side policy.
