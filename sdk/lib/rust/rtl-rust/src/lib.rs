@@ -28,6 +28,7 @@ extern crate splaytree;
 extern crate uniprefix;
 extern crate rtl_strings;
 extern crate rtl_actctx;
+extern crate rtl_diag;
 extern crate rtl_heap;
 extern crate rtl_threadpool;
 extern crate rtl_version;

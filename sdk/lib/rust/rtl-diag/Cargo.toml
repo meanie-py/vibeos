@@ -1,0 +1,25 @@
+# rtl-diag — Rust translation of the ReactOS `sdk/lib/rtl/` diagnostics,
+# image (PE), and exception/VEH cluster:
+#   appverifier.c assert.c trace.c debug.c dbgbuffer.c wine_debug.c
+#   message.c image.c exception.c vectoreh.c
+#
+# librtl is shared by ntoskrnl AND ntdll, so this feeds both. image.c is
+# the PE header / relocation walker (RtlImageNtHeader, LdrRelocateImage…);
+# exception.c / vectoreh.c are the RtlRaiseException / vectored-exception
+# surface (SEH/VEH belt is load-bearing under DUMMY_PSEH — see lib.rs).
+[package]
+name = "rtl-diag"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The #[no_mangle] extern "system"/"C" NTAPI shim layer (the rtl symbols).
+cabi = []
+# Kernel-link parity flag (kept for symmetry with rtl-strings/heap/actctx).
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

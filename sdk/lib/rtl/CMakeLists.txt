@@ -27,11 +27,12 @@ endif()
 
 list(APPEND SOURCE
     ${RTL_WINE_SOURCE}
-    wine_debug.c
+    dbgprint_variadic.c  # C-variadic trampolines for rtl-diag (DbgPrint/DbgPrintEx/DbgPrintReturnControlC + wine_dbg_*)
+    # wine_debug.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # access.c — replaced by Rust implementation (sdk/lib/rust/access/)
     # acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)
-    appverifier.c
-    assert.c
+    # appverifier.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
+    # assert.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # atom.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ATM)
     # avltable.c — replaced by Rust implementation (sdk/lib/rust/avltable/)
     # bitmap.c — replaced by Rust implementation (sdk/lib/rust/bitmap/)
@@ -39,26 +40,26 @@ list(APPEND SOURCE
     # compress.c — replaced by Rust implementation (sdk/lib/rust/compress/)
     # crc32.c — replaced by Rust implementation (sdk/lib/rust/crc32/)
     critical.c
-    dbgbuffer.c
-    debug.c
+    # dbgbuffer.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
+    # debug.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # encode.c — replaced by Rust implementation (sdk/lib/rust/encode/)
     # env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
     error.c
-    exception.c
+    # exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
     # heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
     # heapdbg.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/heapdbg.rs)
     heappage.c
     heapuser.c
-    image.c
+    # image.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # interlck.c — replaced by Rust implementation (sdk/lib/rust/interlck/)
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
     locale.c
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
     memstream.c
-    message.c
+    # message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
     # nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
     # path.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PATH)
@@ -82,10 +83,10 @@ list(APPEND SOURCE
     # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
     # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
-    trace.c
+    # trace.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # unicode.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
-    vectoreh.c
+    # vectoreh.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # version.c — replaced by Rust implementation (sdk/lib/rust/rtl-version/)
     wait.c
     # workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
@@ -245,6 +246,19 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-actctx/src/strings.rs
             ${RUST_WORKSPACE_DIR}/rtl-actctx/src/actctx.rs
             ${RUST_WORKSPACE_DIR}/rtl-actctx/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/shim.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/image.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/assert.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/appverifier.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/trace.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/message.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/debug.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/dbgbuffer.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/wine_debug.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/exception.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/vectoreh.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/types.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/wine_list.rs

@@ -85,6 +85,7 @@ members = [
     "rtl-rust",
     "rtl-strings",
     "rtl-actctx",
+    "rtl-diag",
     "rtl-threadpool",
     "rtl-heap",
     "rtl-version",

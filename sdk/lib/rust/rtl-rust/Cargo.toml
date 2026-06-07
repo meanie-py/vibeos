@@ -36,6 +36,7 @@ splaytree    = { path = "../splaytree" }
 uniprefix    = { path = "../uniprefix" }
 rtl-strings  = { path = "../rtl-strings", features = ["cabi"] }
 rtl-actctx   = { path = "../rtl-actctx", features = ["cabi", "kernel"] }
+rtl-diag     = { path = "../rtl-diag", features = ["cabi"] }
 rtl-heap     = { path = "../rtl-heap", features = ["cabi"] }
 rtl-threadpool = { path = "../rtl-threadpool", features = ["cabi"] }
 rtl-version  = { path = "../rtl-version" }

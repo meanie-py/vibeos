@@ -642,6 +642,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-diag"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-difftest"
 version = "0.1.0"
 dependencies = [
@@ -684,6 +691,7 @@ dependencies = [
  "prefix",
  "random",
  "rtl-actctx",
+ "rtl-diag",
  "rtl-heap",
  "rtl-ppb",
  "rtl-strings",
