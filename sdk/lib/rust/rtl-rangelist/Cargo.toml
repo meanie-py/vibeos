@@ -1,0 +1,15 @@
+[package]
+name = "rtl-rangelist"
+version = "0.1.0"
+edition = "2021"
+
+# Rust translation of sdk/lib/rtl/rangelist.c — RTL_RANGE_LIST algorithm
+# (add/delete/find/copy/invert/merge/iterate address ranges). Uses the
+# ntkrnl-sys RTL_RANGE* layout + the shared RtlpAllocateMemory/RtlpFreeMemory
+# helpers. Shared kernel+user via librtl_rust.a.
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

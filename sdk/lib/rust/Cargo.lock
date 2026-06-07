@@ -642,6 +642,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-bootdata"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-diag"
 version = "0.1.0"
 dependencies = [
@@ -657,6 +664,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-error"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-heap"
 version = "0.1.0"
 dependencies = [
@@ -665,6 +679,20 @@ dependencies = [
 
 [[package]]
 name = "rtl-ppb"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "rtl-propvar"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "rtl-rangelist"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -691,10 +719,17 @@ dependencies = [
  "prefix",
  "random",
  "rtl-actctx",
+ "rtl-bootdata",
  "rtl-diag",
+ "rtl-error",
  "rtl-heap",
  "rtl-ppb",
+ "rtl-propvar",
+ "rtl-rangelist",
+ "rtl-rxact",
  "rtl-strings",
+ "rtl-sync",
+ "rtl-sysvol",
  "rtl-threadpool",
  "rtl-version",
  "slist",
@@ -704,10 +739,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-rxact"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-strings"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+]
+
+[[package]]
+name = "rtl-sync"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "rtl-sysvol"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

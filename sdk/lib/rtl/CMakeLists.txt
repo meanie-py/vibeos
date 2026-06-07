@@ -36,16 +36,16 @@ list(APPEND SOURCE
     # atom.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ATM)
     # avltable.c — replaced by Rust implementation (sdk/lib/rust/avltable/)
     # bitmap.c — replaced by Rust implementation (sdk/lib/rust/bitmap/)
-    bootdata.c
+    # bootdata.c — replaced by Rust implementation (sdk/lib/rust/rtl-bootdata/)
     # compress.c — replaced by Rust implementation (sdk/lib/rust/compress/)
     # crc32.c — replaced by Rust implementation (sdk/lib/rust/crc32/)
-    critical.c
+    # critical.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
     # dbgbuffer.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # debug.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # encode.c — replaced by Rust implementation (sdk/lib/rust/encode/)
     # env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
-    error.c
+    # error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
     # exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
@@ -56,7 +56,7 @@ list(APPEND SOURCE
     # image.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # interlck.c — replaced by Rust implementation (sdk/lib/rust/interlck/)
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
-    locale.c
+    # locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
     memstream.c
     # message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
@@ -67,19 +67,19 @@ list(APPEND SOURCE
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
     # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
     # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
-    propvar.c
+    # propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
-    rangelist.c
+    # rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
     registry.c
     res.c
     # resource.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave RES)
-    rxact.c
+    # rxact.c — replaced by Rust implementation (sdk/lib/rust/rtl-rxact/)
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
     # security.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SEC)
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
     # slist.c — replaced by Rust implementation (sdk/lib/rust/slist/, Wave SLIST: Init/First/QueryDepth/PushList + RtlpUse16ByteSLists; Push/Pop/Flush already Rust)
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
-    sysvol.c
+    # sysvol.c — replaced by Rust implementation (sdk/lib/rust/rtl-sysvol/)
     # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
     # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
@@ -88,7 +88,7 @@ list(APPEND SOURCE
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
     # vectoreh.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # version.c — replaced by Rust implementation (sdk/lib/rust/rtl-version/)
-    wait.c
+    # wait.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
     # workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
     rtl.h)
 
@@ -218,6 +218,20 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-version/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-ppb/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-ppb/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-propvar/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-propvar/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-bootdata/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-bootdata/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-rangelist/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-rangelist/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-sysvol/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sysvol/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-rxact/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-rxact/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/winerr.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/tables.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs
@@ -266,6 +280,16 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/workitem.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/timerqueue.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/shared.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/critical.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/wait.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/atomics.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/srw.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/condvar.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/runonce.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/locale.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/time/src/lib.rs
@@ -280,11 +304,13 @@ add_dependencies(rtl rust_rtl)
 target_link_libraries(rtl PRIVATE ${RUST_RTL_RUST_LIB})
 
 list(APPEND SOURCE_VISTA
-    condvar.c
+    # condvar.c, runonce.c, srw.c, utf8.c — replaced by Rust (rtl-sync / utf8).
+    # locale.c — the real flip is at main SOURCE (above) + ntdll-cargo c_from_compile_db
+    #   (so ntoskrnl + ntdll-main use the Rust rtl-sync::locale). Kept HERE only so the
+    #   librtl_vista.a archive / rtl_vista cmake target stays non-empty; it is consumed
+    #   solely by the standalone ntdll_vista forwarder, never alongside librtl_rust.a,
+    #   so there is no duplicate-symbol. TODO: make rtl_vista Rust-only (INTERFACE lib).
     locale.c
-    runonce.c
-    srw.c
-    # utf8.c — replaced by Rust implementation (sdk/lib/rust/utf8/)
     )
 
 add_library(rtl_vista ${SOURCE_VISTA})
