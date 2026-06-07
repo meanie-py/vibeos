@@ -7,7 +7,7 @@
 //!   - HvAllocateCell@16 / HvFreeCell@8 / HvMarkCellDirty@12 are **stdcall**.
 //! HvpHiveHeaderChecksum lives in our hivesum.rs (call it directly, not here).
 
-use ntkrnl_sys::ddk::{HCELL_INDEX, PHHIVE};
+use ntkrnl_sys::ddk::{HCELL_INDEX, PHHIVE, HBIN, HCELL, CM_KEY_INDEX};
 
 // cmlib.h constants.
 pub const HCELL_NIL: HCELL_INDEX = 0xFFFF_FFFF; // MAXULONG
@@ -50,6 +50,18 @@ pub const STATUS_REGISTRY_CORRUPT: i32 = 0xC000_014Cu32 as i32;
 pub const STATUS_REGISTRY_IO_FAILED: i32 = 0xC000_014Du32 as i32;
 pub const STATUS_NOT_REGISTRY_FILE: i32 = 0xC000_015Cu32 as i32;
 pub const STATUS_REGISTRY_RECOVERED: i32 = 0x4000_0009;
+
+// cmindex.c:23 macro — max CM_KEY_INDEX entries that fit in one hblock. Kept as
+// a layout-DERIVED const expression (not a guessed literal): a wrong value
+// breaks leaf-split capacity logic → registry corruption on large keys.
+// C: ((HBLOCK_SIZE - (sizeof(HBIN)+sizeof(HCELL)+FIELD_OFFSET(CM_KEY_INDEX,List)))
+//      / sizeof(HCELL_INDEX) - 1)
+pub const CmpMaxIndexPerHblock: u32 = ((HBLOCK_SIZE as usize
+    - (core::mem::size_of::<HBIN>()
+        + core::mem::size_of::<HCELL>()
+        + core::mem::offset_of!(CM_KEY_INDEX, List)))
+    / core::mem::size_of::<HCELL_INDEX>()
+    - 1) as u32;
 
 /// `ROUND_UP(a,b) = ((((a)+(b)-1)/(b))*(b))` from cmlib.h.
 #[inline]

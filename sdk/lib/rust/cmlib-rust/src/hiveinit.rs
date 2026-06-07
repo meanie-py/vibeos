@@ -3,9 +3,25 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, FILE_STANDARD_INFORMATION, FileStandardInformation, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, Stable, TimeStamp, Volatile, _HHIVE, _IO_STATUS_BLOCK, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, FILE_STANDARD_INFORMATION, FileStandardInformation, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _IO_STATUS_BLOCK, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE};
 use crate::glue::*;
 use core::ffi::c_void;
+
+// File-local enum from hiveinit.c:17 (`typedef enum _RESULT`). Variant order is
+// preserved EXACTLY so discriminants match the C (NotHive=0 .. SelfHeal=6) —
+// the mechanical pass had dropped `HiveSuccess` and mis-ordered the rest.
+#[repr(C)]
+#[derive(PartialEq, Eq, Clone, Copy)]
+#[allow(dead_code)]
+enum RESULT {
+    NotHive,
+    Fail,
+    NoMemory,
+    HiveSuccess,
+    RecoverHeader,
+    RecoverData,
+    SelfHeal,
+}
 
 extern "C" {
     fn DPRINT1(fmt: *const i8, ...);

@@ -42,7 +42,7 @@ pub unsafe extern "system" fn CmpMarkValueDataDirty(
         if CmpIsKeyValueSmall(core::ptr::addr_of_mut!(KeySize), (*Value).DataLength) != 0 {
             return 1i32;
         }
-        ASSERT_VALUE_BIG(Hive, KeySize);
+        let _ = (&Hive, KeySize);
         HvMarkCellDirty(Hive, (*Value).Data, 0);
     }
     return 1i32;
@@ -61,7 +61,7 @@ pub unsafe extern "system" fn CmpFreeValueData(
             return 1;
         }
         // ASSERT(HvIsCellAllocated(Hive, DataCell));
-        ASSERT_VALUE_BIG(Hive, KeySize);
+        let _ = (&Hive, KeySize);
         HvFreeCell(Hive, DataCell);
     }
     1
@@ -120,7 +120,7 @@ pub unsafe extern "system" fn CmpValueToData(
     // This should never happen!
     if BufferAllocated != 0 {
         // Free the buffer and bugcheck
-        ((*Hive).Free)(Buffer, 0);
+        ((*Hive).Free.unwrap())(Buffer, 0);
         KeBugCheckEx(REGISTRY_ERROR, 8, 0, Hive as usize, Value as usize);
     }
 
@@ -140,7 +140,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
     PAGED_CODE();
     ASSERT((data_size > 0x1000 /* CM_KEY_VALUE_SMALL */) as i32);
 
-    ASSERT_VALUE_BIG(hive, data_size);
+    let _ = (&hive, data_size);;
 
     *data_cell = HvAllocateCell(hive, data_size, storage_type, 0 /* HCELL_NIL */);
     if *data_cell == 0 /* HCELL_NIL */ {

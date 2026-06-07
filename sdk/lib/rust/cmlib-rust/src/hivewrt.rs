@@ -3,7 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, HBASE_BLOCK, HBIN, HCELL, HCELL_INDEX, HHIVE, IoSetThreadHardErrorMode, PCELL_DATA, PHBASE_BLOCK, PHBIN, PHHIVE, RtlFindSetBits, Stable, UINT32, _HHIVE, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, HBASE_BLOCK, HBIN, HCELL, HCELL_INDEX, HHIVE, IoSetThreadHardErrorMode, PCELL_DATA, PHBASE_BLOCK, PHBIN, PHHIVE, RtlFindSetBits, HSTORAGE_TYPE_Stable as Stable, UINT32, _HHIVE, _UNICODE_STRING};
 use crate::glue::{HCELL_NIL, HBLOCK_SIZE, TAG_CM, HV_HHIVE_SIGNATURE, HFILE_TYPE_ALTERNATE, HFILE_TYPE_LOG, HFILE_TYPE_PRIMARY, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, STATUS_REGISTRY_IO_FAILED, STATUS_NOT_REGISTRY_FILE, STATUS_REGISTRY_RECOVERED, HIVE_VOLATILE};
 use core::ffi::c_void;
 use core::ptr::addr_of_mut;
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
 
     KeQuerySystemTime(core::ptr::addr_of_mut!((*(*RegistryHive).BaseBlock).TimeStamp));
 
-    if !(*RegistryHive).Log.is_null() {
+    if (*RegistryHive).Log != 0 {
         if HvpWriteLog(RegistryHive) == 0 {
             DbgPrint(
                 b"Failed to write a log whilst syncing the hive\n\0".as_ptr() as *const i8,
@@ -213,7 +213,7 @@ pub unsafe extern "C" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
         return 0u8;
     }
 
-    if !(*RegistryHive).Alternate.is_null() {
+    if (*RegistryHive).Alternate != 0 {
         if HvpWriteHive(RegistryHive, 1u8, HFILE_TYPE_ALTERNATE) == 0 {
             DbgPrint(
                 b"Failed to write the alternate hive\n\0".as_ptr() as *const i8,
