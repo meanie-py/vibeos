@@ -31,7 +31,9 @@ pub static mut DummyBsd: PRTL_BSD_DATA = core::ptr::null_mut();
 pub static BsdItemTable: [RTL_BSD_ITEM_TABLE_ENTRY; RtlBsdItemMax as usize] = [
     RTL_BSD_ITEM_TABLE_ENTRY {
         Offset: core::mem::offset_of!(RTL_BSD_DATA, Version) as UCHAR,
-        Size: core::mem::size_of::<ULONG>() as UCHAR,
+        // Faithful to C: sizeof(&DummyBsd->Version) == sizeof(pointer), like
+        // every other entry (8 on 64-bit, not size_of::<ULONG>()==4).
+        Size: core::mem::size_of::<*mut u32>() as UCHAR,
     },
     RTL_BSD_ITEM_TABLE_ENTRY {
         Offset: core::mem::offset_of!(RTL_BSD_DATA, ProductType) as UCHAR,
