@@ -180,6 +180,7 @@ members = [
     "services-rust",
     "midl-rt",
     "svcctl-stub",
+    "version-rust",
     "winreg-stub",
     "mlang-rust",
     "cabinet-rust",
