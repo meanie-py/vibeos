@@ -209,13 +209,13 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
         fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
         fn HRESULT_FROM_WIN32(error: u32) -> i32;
         // callback functions used by FDICreate
-        fn mem_alloc(u32) -> *mut core::ffi::c_void;
-        fn mem_free(*mut core::ffi::c_void);
-        fn fdi_open(*const i8, i32) -> *mut core::ffi::c_void;
-        fn fdi_read(*mut core::ffi::c_void, *mut u8, u32) -> u32;
-        fn fdi_write(*mut core::ffi::c_void, *const u8, u32) -> u32;
-        fn fdi_close(*mut core::ffi::c_void) -> i32;
-        fn fdi_seek(*mut core::ffi::c_void, i32, i32) -> i32;
+        fn mem_alloc(cb: u32) -> *mut core::ffi::c_void;
+        fn mem_free(memory: *mut core::ffi::c_void);
+        fn fdi_open(pszFile: *const i8, oflag: i32, pmode: i32) -> *mut core::ffi::c_void;
+        fn fdi_read(hf: *mut core::ffi::c_void, pv: *mut u8, cb: u32) -> u32;
+        fn fdi_write(hf: *mut core::ffi::c_void, pv: *const u8, cb: u32) -> u32;
+        fn fdi_close(hf: *mut core::ffi::c_void) -> i32;
+        fn fdi_seek(hf: *mut core::ffi::c_void, dist: i32, seektype: i32) -> i32;
         fn fdi_notify_extract() -> i32; // dummy signature, used as *const ()
     }
 

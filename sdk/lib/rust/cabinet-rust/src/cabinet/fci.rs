@@ -1322,26 +1322,44 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
         return 0;
     }
 
-    if ((*fci).write)(handle, cfheader as *const core::ffi::c_void, header_size, core::ptr::addr_of_mut!(err), (*fci).pv) != header_size {
-        set_error(fci, FCIERR_CAB_FILE, err);
-        goto failed;
-    }
+    let result: i32 = 'failed: {
+        if ((*fci).write)(handle, cfheader as *const core::ffi::c_void, header_size, core::ptr::addr_of_mut!(err), (*fci).pv) != header_size {
+            set_error(fci, FCIERR_CAB_FILE, err);
+            break 'failed 0;
+        }
 
-    let mut header_size = header_size + (*fci).placed_files_size + (*fci).folders_size;
-    if !write_folders(fci, handle, header_size, status_callback) { goto failed; }
-    if !write_files(fci, handle, status_callback) { goto failed; }
-    if !write_data_blocks(fci, handle, status_callback) { goto failed; }
+        let mut header_size = header_size + (*fci).placed_files_size + (*fci).folders_size;
+        if !write_folders(fci, handle, header_size, status_callback) { break 'failed 0; }
+        if !write_files(fci, handle, status_callback) { break 'failed 0; }
+        if !write_data_blocks(fci, handle, status_callback) { break 'failed 0; }
 
-    if ((*fci).seek)(handle, 0, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) != 0 {
-        set_error(fci, FCIERR_CAB_FILE, err);
-        goto failed;
+        if ((*fci).seek)(handle, 0, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) != 0 {
+            set_error(fci, FCIERR_CAB_FILE, err);
+            break 'failed 0;
+        }
+        memcpy(
+            (*cfheader).signature.as_mut_ptr() as *mut core::ffi::c_void,
+            "MSCF\0".as_ptr() as *const core::ffi::c_void,
+            4,
+        );
+        if ((*fci).write)(handle, (*cfheader).signature.as_ptr() as *const core::ffi::c_void, 4, core::ptr::addr_of_mut!(err), (*fci).pv) != 4
+        {
+            set_error(fci, FCIERR_CAB_FILE, err);
+            break 'failed 0;
+        }
+
+        // success path
+        break 'failed 1;
+    };
+    ((*fci).close)(handle, core::ptr::addr_of_mut!(err), (*fci).pv);
+    if result != 0 {
+        reset_cabinet(fci);
+        status_callback(statusCabinet, (*fci).estimatedCabinetSize, total_size, (*fci).pv);
+    } else {
+        ((*fci).delete)(filename.as_mut_ptr(), core::ptr::addr_of_mut!(err), (*fci).pv);
     }
-    memcpy(
-        (*cfheader).signature.as_mut_ptr() as *mut core::ffi::c_void,
-        "MSCF\0".as_ptr() as *const core::ffi::c_void,
-        4,
-    );
-    if ((*fci
+    result
+}
 
 unsafe fn fci_flush_folder(
     p_fci_internal: *mut FCI_Int,
@@ -1568,7 +1586,80 @@ unsafe fn fci_flush_cabinet(
             + (*p_fci_internal).folders_data_size
             + (*p_fci_internal).placed_files_size
             + (*p_fci_internal).folders_size
-            + core::mem::size_of::<CFFOLDER>() as u
+            + core::mem::size_of::<CFFOLDER>() as u32;
+
+        /* too much data for the maximum size of a cabinet */
+        if (*p_fci_internal).fGetNextCabInVain == 0
+            && (*p_fci_internal).ccab.cb < read_result
+        {
+            return fci_flush_cabinet(p_fci_internal, 0, pfnfcignc, pfnfcis);
+        }
+
+        /* Might be too much data for the maximum size of a cabinet.*/
+        /* When any further data will be added later, it might not */
+        /* be possible to flush the cabinet, because there might */
+        /* not be enough space to store the name of the following */
+        /* cabinet and name of the corresponding disk. */
+        /* So take care of this and get the name of the next cabinet */
+        if (*p_fci_internal).fGetNextCabInVain == 0
+            && ((*p_fci_internal).ccab.cb
+                < read_result + CB_MAX_CABINET_NAME as u32 + CB_MAX_DISK_NAME as u32)
+        {
+            /* increment cabinet index */
+            (*(*p_fci_internal).pccab).iCab += 1;
+            /* get name of next cabinet */
+            (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
+            if pfnfcignc(
+                (*p_fci_internal).pccab,
+                (*p_fci_internal).estimatedCabinetSize, /* estimated size of cab */
+                (*p_fci_internal).pv,
+            ) == 0
+            {
+                /* error handling */
+                set_error(p_fci_internal, FCIERR_NONE, ERROR_FUNCTION_FAILED);
+                return 0;
+            }
+            /* Skip a few lines of code. This is caught by the next if. */
+            (*p_fci_internal).fGetNextCabInVain = 1;
+        }
+
+        /* too much data for cabinet */
+        if (*p_fci_internal).fGetNextCabInVain != 0
+            && ((*p_fci_internal).ccab.cb
+                < read_result
+                    + strlen((*p_fci_internal).ccab.szCab.as_ptr() as *const i8) as u32
+                    + 1
+                    + strlen((*p_fci_internal).ccab.szDisk.as_ptr() as *const i8) as u32
+                    + 1)
+        {
+            (*p_fci_internal).fGetNextCabInVain = 0;
+            (*p_fci_internal).fNextCab = 1;
+            return fci_flush_cabinet(p_fci_internal, 0, pfnfcignc, pfnfcis);
+        }
+
+        /* if the FolderThreshold has been reached flush the folder automatically */
+        if (*p_fci_internal).cCompressedBytesInFolder >= (*p_fci_internal).ccab.cbFolderThresh {
+            return fci_flush_folder(p_fci_internal, 0, pfnfcignc, pfnfcis);
+        }
+
+        if (*p_fci_internal).files_size > 0 {
+            if fci_flush_folder(p_fci_internal, 0, pfnfcignc, pfnfcis) == 0 {
+                return 0;
+            }
+            (*p_fci_internal).fNewPrevious = 1;
+        }
+    } else {
+        (*p_fci_internal).fNewPrevious = 0;
+        if (*p_fci_internal).files_size > 0 || (*p_fci_internal).pending_data_size != 0 {
+            /* THIS MAY NEVER HAPPEN */
+            /* set error structures */
+            set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+            return 0;
+        }
+    }
+
+    return 1;
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn FCIFlushFolder(
@@ -1703,7 +1794,116 @@ pub unsafe extern "C" fn FCIAddFile(
     if (*p_fci_internal).fGetNextCabInVain != 0 && (*p_fci_internal).fNextCab != 0 {
         /* THIS CAN NEVER HAPPEN */
         /* set error code */
-        set_error(
-            p_fci_internal,
-            FCIERR_NONE
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        return 0;
+    }
 
+    /* too much data for cabinet */
+    if (*p_fci_internal).fGetNextCabInVain != 0
+        && ((*p_fci_internal).ccab.cb
+            < read_result
+                + strlen(((*p_fci_internal).pccab).szCab.as_ptr() as *const i8) as u32
+                + 1
+                + strlen(((*p_fci_internal).pccab).szDisk.as_ptr() as *const i8) as u32
+                + 1)
+    {
+        (*p_fci_internal).fGetNextCabInVain = 0;
+        (*p_fci_internal).fNextCab = 1;
+        if fci_flush_cabinet(p_fci_internal, 0, pfnfcignc, pfnfcis) == 0 {
+            return 0;
+        }
+    }
+
+    if (*p_fci_internal).fNextCab != 0 {
+        /* THIS MAY NEVER HAPPEN */
+        /* set error code */
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        return 0;
+    }
+
+    if add_file_data(p_fci_internal, pszSourceFile, pszFileName, fExecute, pfnfcigoi, pfnfcis) == 0 {
+        return 0;
+    }
+
+    /* REUSE the variable read_result */
+    read_result = get_header_size(p_fci_internal) + (*p_fci_internal).ccab.cbReserveCFFolder;
+    read_result += (*p_fci_internal).pending_data_size
+        + (*p_fci_internal).files_size
+        + (*p_fci_internal).folders_data_size
+        + (*p_fci_internal).placed_files_size
+        + (*p_fci_internal).folders_size
+        + core::mem::size_of::<CFFOLDER>() as u32; /* set size of new CFFolder entry */
+
+    /* too much data for the maximum size of a cabinet */
+    /* (ignoring the unflushed data block) */
+    if (*p_fci_internal).fGetNextCabInVain == 0
+        && (*p_fci_internal).fNextCab == 0
+        && (*p_fci_internal).ccab.cb < read_result
+    {
+        return fci_flush_cabinet(p_fci_internal, 0, pfnfcignc, pfnfcis);
+    }
+
+    /* Might be too much data for the maximum size of a cabinet.*/
+    /* When any further data will be added later, it might not */
+    /* be possible to flush the cabinet, because there might */
+    /* not be enough space to store the name of the following */
+    /* cabinet and name of the corresponding disk. */
+    /* So take care of this and get the name of the next cabinet */
+    /* (ignoring the unflushed data block) */
+    if (*p_fci_internal).fGetNextCabInVain == 0
+        && (*p_fci_internal).fNextCab == 0
+        && ((*p_fci_internal).ccab.cb
+            < read_result + CB_MAX_CABINET_NAME as u32 + CB_MAX_DISK_NAME as u32)
+    {
+        /* increment cabinet index */
+        (*(*p_fci_internal).pccab).iCab += 1;
+        /* get name of next cabinet */
+        (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
+        if pfnfcignc(
+            (*p_fci_internal).pccab,
+            (*p_fci_internal).estimatedCabinetSize, /* estimated size of cab */
+            (*p_fci_internal).pv,
+        ) == 0
+        {
+            /* error handling */
+            set_error(p_fci_internal, FCIERR_NONE, ERROR_FUNCTION_FAILED);
+            return 0;
+        }
+        /* Skip a few lines of code. This is caught by the next if. */
+        (*p_fci_internal).fGetNextCabInVain = 1;
+    }
+
+    if (*p_fci_internal).fGetNextCabInVain != 0 && (*p_fci_internal).fNextCab != 0 {
+        /* THIS CAN NEVER HAPPEN */
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        return 0;
+    }
+
+    /* too much data for cabinet */
+    if ((*p_fci_internal).fGetNextCabInVain != 0 || (*p_fci_internal).fNextCab != 0)
+        && ((*p_fci_internal).ccab.cb
+            < read_result
+                + strlen(((*p_fci_internal).pccab).szCab.as_ptr() as *const i8) as u32
+                + 1
+                + strlen(((*p_fci_internal).pccab).szDisk.as_ptr() as *const i8) as u32
+                + 1)
+    {
+        (*p_fci_internal).fGetNextCabInVain = 0;
+        (*p_fci_internal).fNextCab = 1;
+        return fci_flush_cabinet(p_fci_internal, 0, pfnfcignc, pfnfcis);
+    }
+
+    if (*p_fci_internal).fNextCab != 0 {
+        /* THIS MAY NEVER HAPPEN */
+        /* set error code */
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        return 0;
+    }
+
+    /* if the FolderThreshold has been reached flush the folder automatically */
+    if (*p_fci_internal).cCompressedBytesInFolder >= (*p_fci_internal).ccab.cbFolderThresh {
+        return FCIFlushFolder(hfci, pfnfcignc, pfnfcis);
+    }
+
+    return 1;
+}

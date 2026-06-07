@@ -607,7 +607,97 @@ unsafe fn fdi_Zipinflate_codes(tl: *const Ziphuft, td: *const Ziphuft, bl: i32, 
         k -= (*t).b;
 
         if e == 16 {
-            (*decomp_state).outbuf
+            (*decomp_state).outbuf[w as usize] = (*t).v.n as u8;
+            w += 1;
+        } else {
+            /* it's an EOB or a length */
+            if e == 15 {
+                break 'main;
+            }
+
+            /* get length of block to copy */
+            while k < e {
+                let c = core::ptr::read((*decomp_state).methods.zip.inpos);
+                (*decomp_state).methods.zip.inpos = (*decomp_state).methods.zip.inpos.add(1);
+                b |= (c as u32) << k;
+                k += 8;
+            }
+            n = (*t).v.n + (b & Zipmask[e as usize]);
+            b >>= e;
+            k -= e;
+
+            /* decode distance of block to copy */
+            while k < (bd as u32) {
+                let c = core::ptr::read((*decomp_state).methods.zip.inpos);
+                (*decomp_state).methods.zip.inpos = (*decomp_state).methods.zip.inpos.add(1);
+                b |= (c as u32) << k;
+                k += 8;
+            }
+            t = td.add((b & md) as usize);
+            e = (*t).e;
+            if e > 16 {
+                loop {
+                    if e == 99 {
+                        return 1;
+                    }
+                    b >>= (*t).b;
+                    k -= (*t).b;
+                    e -= 16;
+                    while k < e {
+                        let c = core::ptr::read((*decomp_state).methods.zip.inpos);
+                        (*decomp_state).methods.zip.inpos = (*decomp_state).methods.zip.inpos.add(1);
+                        b |= (c as u32) << k;
+                        k += 8;
+                    }
+                    t = (*t).v.t;
+                    t = t.add((b & Zipmask[e as usize]) as usize);
+                    e = (*t).e;
+                    if e <= 16 {
+                        break;
+                    }
+                }
+            }
+            b >>= (*t).b;
+            k -= (*t).b;
+            while k < e {
+                let c = core::ptr::read((*decomp_state).methods.zip.inpos);
+                (*decomp_state).methods.zip.inpos = (*decomp_state).methods.zip.inpos.add(1);
+                b |= (c as u32) << k;
+                k += 8;
+            }
+            d = w - (*t).v.n - (b & Zipmask[e as usize]);
+            b >>= e;
+            k -= e;
+
+            loop {
+                d &= ZIPWSIZE - 1;
+                e = ZIPWSIZE - max(d, w);
+                e = min(e, n);
+                n -= e;
+                loop {
+                    (*decomp_state).outbuf[w as usize] = (*decomp_state).outbuf[d as usize];
+                    w += 1;
+                    d += 1;
+                    e -= 1;
+                    if e == 0 {
+                        break;
+                    }
+                }
+                if n == 0 {
+                    break;
+                }
+            }
+        }
+    }
+
+    /* restore the globals from the locals */
+    (*decomp_state).methods.zip.window_posn = w;
+    (*decomp_state).methods.zip.bb = b;
+    (*decomp_state).methods.zip.bk = k;
+
+    /* done */
+    return 0;
+}
 
 unsafe fn fdi_Zipinflate_stored(decomp_state: *mut fdi_decomp_state) -> i32 {
     let mut b: u32; // bit buffer
