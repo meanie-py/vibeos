@@ -1,0 +1,23 @@
+# rtl-diag — Rust translation of small SEH-free RTL diagnostic / misc leaves:
+#   sdk/lib/rtl/assert.c       (RtlAssert)
+#   sdk/lib/rtl/appverifier.c  (RtlApplicationVerifierStop)
+#   sdk/lib/rtl/trace.c        (RtlGetUnloadEventTrace / heap-trace database)
+#   sdk/lib/rtl/wine_debug.c   (wine debug-channel + leak tracking helpers)
+#
+# All compile into librtl.a (the `rtl` cmake target, links librtl_rust.a),
+# so they run in both ntoskrnl and ntdll.
+[package]
+name = "rtl-diag"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The #[no_mangle] extern "system" shim layer (the kernel/ntdll link surface).
+cabi = []
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

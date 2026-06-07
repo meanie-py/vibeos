@@ -30,8 +30,8 @@ list(APPEND SOURCE
     wine_debug.c
     # access.c — replaced by Rust implementation (sdk/lib/rust/access/)
     # acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)
-    appverifier.c
-    assert.c
+    # appverifier.c — replaced by Rust implementation (sdk/lib/rust/rtl-diag/, Wave DIAG)
+    # assert.c — replaced by Rust implementation (sdk/lib/rust/rtl-diag/, Wave DIAG)
     # atom.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ATM)
     # avltable.c — replaced by Rust implementation (sdk/lib/rust/avltable/)
     # bitmap.c — replaced by Rust implementation (sdk/lib/rust/bitmap/)
@@ -82,7 +82,7 @@ list(APPEND SOURCE
     # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
     # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
-    trace.c
+    # trace.c — replaced by Rust implementation (sdk/lib/rust/rtl-diag/, Wave DIAG)
     # unicode.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
     vectoreh.c
@@ -262,6 +262,12 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/runonce.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/locale.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/shared.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/assert.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/appverifier.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/src/trace.rs
+            ${RUST_WORKSPACE_DIR}/rtl-diag/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/time/src/lib.rs
