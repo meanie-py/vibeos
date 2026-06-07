@@ -1,0 +1,13 @@
+# conutils-rust — Rust translation of sdk/lib/conutils (console stream/output/pager
+# utilities used by console apps). DeepSeek mechanical translate, deepdrive-ground.
+[package]
+name = "conutils-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "conutils_rust"
+path = "src/lib.rs"
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }
