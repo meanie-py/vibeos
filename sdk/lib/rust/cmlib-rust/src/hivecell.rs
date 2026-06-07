@@ -7,6 +7,12 @@ use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpAllocate, CmpFree, CmpLazyFlush
 use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE};
 use core::ffi::c_void;
 
+// Pointer-width integer matching ULONG_PTR/SIZE_T on all arches
+#[cfg(target_pointer_width = "32")]
+type PtrInt = u32;
+#[cfg(target_pointer_width = "64")]
+type PtrInt = u64;
+
 unsafe extern "C" {
     fn CMLTRACE(level: u32, format: *const i8, ...);
     fn HvGetCellBlock(cell: HCELL_INDEX) -> u32;
@@ -241,7 +247,7 @@ pub unsafe extern "C" fn HvTrackCellRef(
 
     if (*CellRef).Count == (*CellRef).Max {
         let size = ((*CellRef).Max as usize + CELL_REF_INCREMENT as usize) * core::mem::size_of::<HV_HIVE_CELL_PAIR>();
-        let new_cell_array = CmpAllocate(size as u32, 1u8, TAG_CM) as *mut HV_HIVE_CELL_PAIR;
+        let new_cell_array = CmpAllocate(size as PtrInt, 1u8, TAG_CM) as *mut HV_HIVE_CELL_PAIR;
         if new_cell_array.is_null() {
             // DPRINT1("HvTrackCellRef: Cannot reallocate the reference table.\n");
             DbgPrint(b"HvTrackCellRef: Cannot reallocate the reference table.\n\0".as_ptr() as *const u8);

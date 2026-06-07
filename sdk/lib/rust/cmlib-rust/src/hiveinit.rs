@@ -8,6 +8,12 @@ use crate::glue::*;
 use crate::hivewrt::HvSyncHiveFromRecover;
 use core::ffi::c_void;
 
+// Pointer-width integer matching ULONG_PTR/SIZE_T on all arches
+#[cfg(target_pointer_width = "32")]
+type PtrInt = u32;
+#[cfg(target_pointer_width = "64")]
+type PtrInt = u64;
+
 // File-local enum from hiveinit.c:17 (`typedef enum _RESULT`). Variant order is
 // preserved EXACTLY so discriminants match the C (NotHive=0 .. SelfHeal=6) —
 // the mechanical pass had dropped `HiveSuccess` and mis-ordered the rest.
@@ -71,7 +77,7 @@ pub unsafe extern "C" fn HvpCreateHive(
     (*Hive).Version = (*ChunkBase).Minor;
     // Build a block list from the in-memory chunk and copy the data as we go
     (*Hive).Storage[Stable as usize].Length = (ChunkSize / HBLOCK_SIZE as usize) as u32;
-    (*Hive).Storage[Stable as usize].BlockList = ((*Hive).Allocate.unwrap())( ((*Hive).Storage[Stable as usize].Length as u32) * core::mem::size_of::<HMAP_ENTRY>() as u32, 0u8, TAG_CM ) as *mut HMAP_ENTRY;
+    (*Hive).Storage[Stable as usize].BlockList = ((*Hive).Allocate.unwrap())( ((*Hive).Storage[Stable as usize].Length as PtrInt) * core::mem::size_of::<HMAP_ENTRY>() as PtrInt, 0u8, TAG_CM ) as *mut HMAP_ENTRY;
     if (*Hive).Storage[Stable as usize].BlockList.is_null() { DPRINT1(b"Allocating block list failed\n\0".as_ptr() as *const i8);
     ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
     return STATUS_NO_MEMORY;
@@ -86,17 +92,17 @@ pub unsafe extern "C" fn HvpCreateHive(
     (*Bin).FileOffset = (BlockIndex as u32 * HBLOCK_SIZE);
     (*ChunkBase).BootType |= HBOOT_TYPE_SELF_HEAL;
     DPRINT1(b"Bin at index %lu is corrupt and it has been repaired!\n\0".as_ptr() as *const i8, BlockIndex);
-    } NewBin = ((*Hive).Allocate.unwrap())((*Bin).Size as u32, 1u8, TAG_CM) as *mut HBIN;
+    } NewBin = ((*Hive).Allocate.unwrap())((*Bin).Size as PtrInt, 1u8, TAG_CM) as *mut HBIN;
     if NewBin.is_null() { ((*Hive).Free.unwrap())((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
     ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
     return STATUS_NO_MEMORY;
-    } (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BinAddress = NewBin as u32;
-    (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BlockAddress = NewBin as u32;
+    } (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BinAddress = NewBin as PtrInt;
+    (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BlockAddress = NewBin as PtrInt;
     core::ptr::copy_nonoverlapping( Bin as *const u8, NewBin as *mut u8, (*Bin).Size as usize, );
     if (*Bin).Size > (HBLOCK_SIZE as u32) { let bin_count = (*Bin).Size / (HBLOCK_SIZE as u32);
     for i in 1..bin_count as usize {
-        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BinAddress = NewBin as u32;
-        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BlockAddress = (NewBin as u32 + (i * HBLOCK_SIZE as usize) as u32);
+        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BinAddress = NewBin as PtrInt;
+        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BlockAddress = (NewBin as PtrInt + (i as PtrInt * HBLOCK_SIZE as PtrInt) as PtrInt);
     } } BlockIndex += ((*Bin).Size as usize) / HBLOCK_SIZE as usize;
     }
     if !NT_SUCCESS(HvpCreateHiveFreeCellList(Hive)) {
@@ -156,14 +162,14 @@ pub unsafe extern "system" fn HvLoadHive(
     /* Setup hive data */ (*Hive).BaseBlock = BaseBlock;
     (*Hive).Version = (*BaseBlock).Minor;
     /* Allocate a buffer large enough to hold the hive */ FileSize = HBLOCK_SIZE + (*BaseBlock).Length; // == sizeof(HBASE_BLOCK) + BaseBlock->Length;
-    HiveData = ((*Hive).Allocate.unwrap())(FileSize, 1, TAG_CM); // TRUE -> 1
+    HiveData = ((*Hive).Allocate.unwrap())(FileSize as PtrInt, 1u8, TAG_CM); // TRUE -> 1
     if HiveData.is_null() {
         ((*Hive).Free.unwrap())(BaseBlock as *mut core::ffi::c_void, (*Hive).BaseBlockAlloc);
         // DPRINT removed
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     // HACK: Now read the whole hive
-    Success = ((*Hive).FileRead.unwrap())(Hive, HFILE_TYPE_PRIMARY, &mut Offset, HiveData, FileSize);
+    Success = ((*Hive).FileRead.unwrap())(Hive, HFILE_TYPE_PRIMARY, &mut Offset, HiveData, FileSize as PtrInt);
     if Success == 0 {
         // FALSE // DPRINT removed
         ((*Hive).Free.unwrap())(HiveData, FileSize);
