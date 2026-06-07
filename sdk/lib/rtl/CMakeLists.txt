@@ -303,13 +303,21 @@ add_custom_target(rust_rtl DEPENDS ${RUST_RTL_RUST_LIB})
 add_dependencies(rtl rust_rtl)
 target_link_libraries(rtl PRIVATE ${RUST_RTL_RUST_LIB})
 
+    # utf8.c — replaced by Rust (utf8 crate, linked below).
+    # condvar.c / runonce.c / srw.c / locale.c — the REAL flip is at main SOURCE
+    #   (above) + ntdll-cargo c_from_compile_db, so ntoskrnl + ntdll-main use the
+    #   Rust rtl-sync. These C files are kept HERE (and ONLY here) because the
+    #   standalone ntdll_vista.dll forwarder links librtl_vista.a alone — never
+    #   alongside librtl_rust.a — and its .spec exports RtlInitializeConditionVariable
+    #   / RtlInitializeSRWLock / RtlRunOnce* as REAL symbols, plus its DllMain pulls
+    #   RtlpInitializeKeyedEvent / RtlpCloseKeyedEvent (both from condvar.c).
+    #   Dropping them broke the COLD ntdll_vista link (warm builds masked it via a
+    #   stale librtl_vista.a). No duplicate-symbol risk: rtl_vista is consumed solely
+    #   by ntdll_vista. TODO: make rtl_vista Rust-only (INTERFACE over rtl-sync).
 list(APPEND SOURCE_VISTA
-    # condvar.c, runonce.c, srw.c, utf8.c — replaced by Rust (rtl-sync / utf8).
-    # locale.c — the real flip is at main SOURCE (above) + ntdll-cargo c_from_compile_db
-    #   (so ntoskrnl + ntdll-main use the Rust rtl-sync::locale). Kept HERE only so the
-    #   librtl_vista.a archive / rtl_vista cmake target stays non-empty; it is consumed
-    #   solely by the standalone ntdll_vista forwarder, never alongside librtl_rust.a,
-    #   so there is no duplicate-symbol. TODO: make rtl_vista Rust-only (INTERFACE lib).
+    condvar.c
+    runonce.c
+    srw.c
     locale.c
     )
 
