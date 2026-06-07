@@ -44,7 +44,7 @@ list(APPEND SOURCE
     # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # encode.c — replaced by Rust implementation (sdk/lib/rust/encode/)
     # env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
-    error.c
+    # error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
     exception.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
@@ -227,6 +227,10 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-sysvol/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-rxact/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-rxact/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/winerr.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/tables.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs

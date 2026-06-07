@@ -46,4 +46,5 @@ rtl-bootdata = { path = "../rtl-bootdata" }
 rtl-rangelist = { path = "../rtl-rangelist" }
 rtl-sysvol   = { path = "../rtl-sysvol" }
 rtl-rxact    = { path = "../rtl-rxact" }
+rtl-error    = { path = "../rtl-error" }
 time         = { path = "../time" }

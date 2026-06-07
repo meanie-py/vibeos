@@ -95,6 +95,7 @@ members = [
     "rtl-rangelist",
     "rtl-sysvol",
     "rtl-rxact",
+    "rtl-error",
     "rtl-difftest",
     "slist",
     "slist-loom",
