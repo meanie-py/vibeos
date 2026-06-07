@@ -2,6 +2,12 @@ use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 
 // ---- file-scope type preamble (translated) ----
+type cab_UBYTE = u8;
+type cab_UWORD = u16;
+type cab_ULONG = u32;
+type cab_LONG = i32;
+type cab_off_t = u32;
+
 #[repr(C)]
 pub struct fdi_file {
     pub next: *mut fdi_file,
@@ -106,9 +112,6 @@ const ERROR_BAD_ARGUMENTS: u32 = 160;
 const FDIERROR_NONE: i32 = 0;
 const FDIERROR_ALLOC_FAIL: i32 = 2;
 const TRUE: i32 = 1;
-const DECR_OK: i32 = 0;
-const DECR_DATAFORMAT: i32 = 1;
-const DECR_ILLEGALDATA: i32 = 2;
 const CAB_BLOCKMAX: i32 = 32768; // typical value
 
 extern "C" {
@@ -123,7 +126,6 @@ extern "C" {
 
 extern "system" {
     fn SetLastError(dwErrCode: u32);
-    fn TRACE(format: *const i8, ...);
     fn FIXME(format: *const i8, ...);
     fn debugstr_a(s: *const i8) -> *const i8;
 }
@@ -1104,7 +1106,7 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: i32, cabsize: i32) -> *mut i8 {
                 ERR(b"cabinet is truncated\n\0".as_ptr() as *const i8);
                 break;
             }
-            ((*fdi).seek)(hf, base, ntkrnl_sys::ddk::SEEK_SET);
+            ((*fdi).seek)(hf, base, SEEK_SET);
             ((*fdi).free)(buf as *mut core::ffi::c_void);
             buf = core::ptr::null_mut();
             len *= 2;
@@ -1125,7 +1127,7 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: i32, cabsize: i32) -> *mut i8 {
     }
 
     let seek_pos = (base as i32).wrapping_add((strlen(buf as *const i8) + 1) as i32);
-    ((*fdi).seek)(hf, seek_pos, ntkrnl_sys::ddk::SEEK_SET);
+    ((*fdi).seek)(hf, seek_pos, SEEK_SET);
 
     return buf as *mut i8;
 }

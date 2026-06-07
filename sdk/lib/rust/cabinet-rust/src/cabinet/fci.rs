@@ -2,6 +2,18 @@ use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 
 // ---- file-scope type preamble (translated) ----
+type cab_UBYTE = u8;
+type cab_UWORD = u16;
+type cab_ULONG = u32;
+type cab_LONG = i32;
+type cab_off_t = u32;
+
+#[repr(C)]
+struct list {
+    next: *mut list,
+    prev: *mut list,
+}
+
 pub const FCI_INT_MAGIC: u32 = 0xfcfcfc05;
 
 #[repr(C)]
@@ -132,12 +144,9 @@ pub struct FCI_Int {
 // ---- consts / statics / type aliases (deduped) ----
 const FCIERR_NONE: i32 = 0;
 const FCIERR_ALLOC_FAIL: i32 = 5;
-const FCI_INT_MAGIC: u32 = 0xfcfcfc05;
 const CB_MAX_CABINET_NAME: usize = 256;
 const CB_MAX_DISK_NAME: usize = 256;
-const FCIERR_ALLOC_FAIL: u32 = 1;
 const FCIERR_CAB_FILE: u32 = 8; // Wine
-const FCIERR_CAB_FILE: i32 = 4;
 const FCIERR_USER_ABORT: i32 = 5;
 const statusFolder: u32 = 1;
 const CB_MAX_FILENAME: i32 = 256;
@@ -146,7 +155,6 @@ const Z_DEFLATED: i32 = 8;
 const Z_DEFAULT_STRATEGY: i32 = 0;
 const Z_FINISH: i32 = 4;
 const Z_OK: i32 = 0;
-const FCIERR_ALLOC_FAIL: u32 = 1; // placeholder
 // Declarations for unknown external symbols used in this function
 // Declare callback type for status (best-effort signature matching the call)
 type PFNFCISTATUS = unsafe extern "system" fn(
@@ -158,13 +166,10 @@ type PFNFCISTATUS = unsafe extern "system" fn(
 // Constants not provided in context
 const SEEK_SET: i32 = 0;
 const statusFile: i32 = 0;
-const FCIERR_ALLOC_FAIL: i32 = 0x100;
 const FCIERR_TEMP_FILE: i32 = 0x104;
-const FCIERR_USER_ABORT: i32 = 0x10A;
 const cffileCONTINUED_FROM_PREV: u16 = 0xFFFD;
 const cffileCONTINUED_TO_NEXT: u16 = 0xFFFE;
 const cffileCONTINUED_PREV_AND_NEXT: u16 = 0xFFFF;
-const statusFolder: u32 = 2;
 const CB_MAX_CAB_PATH: usize = 256;
 const cfheadPREV_CABINET: u32 = 0x0001;
 const cfheadNEXT_CABINET: u32 = 0x0002;
@@ -175,14 +180,7 @@ const _O_TRUNC: i32 = 0x0200;
 const _O_BINARY: i32 = 0x8000;
 const _S_IREAD: i32 = 0x0100;
 const _S_IWRITE: i32 = 0x0080;
-const SEEK_SET: i32 = 2;
 const statusCabinet: u32 = 0x0003;
-type PFNFCISTATUS = unsafe extern "system" fn(u32, u32, u32, *mut core::ffi::c_void) -> i32;
-// Unknown constants
-const CB_MAX_CABINET_NAME: u32 = 256;
-const CB_MAX_DISK_NAME: u32 = 256;
-const CB_MAX_FILENAME: u32 = 256;
-const FCIERR_NONE: u32 = 0;
 const tcompTYPE_MSZIP: u32 = 0x00000001;
 const tcompTYPE_NONE: u32 = 0x00000000;
 // Unknown externs
@@ -206,13 +204,7 @@ extern "C" {
 
 extern "system" {
     fn SetLastError(code: u32);
-    fn list_remove(entry: *mut core::ffi::c_void);
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
-    fn strlen(s: *const i8) -> usize;
-    fn fci_endian_ulong(x: cab_ULONG) -> cab_ULONG;
-    fn fci_endian_uword(x: cab_UWORD) -> cab_UWORD;
     fn lstrcpynA(dst: *mut i8, src: *const i8, max_len: i32) -> *mut i8;
-    fn list_add_tail(list: *mut list, entry: *mut list);
     fn list_empty(head: *const list) -> BOOL;
     fn FIXME(format: *const i8, ...);
 }
@@ -511,7 +503,7 @@ unsafe fn add_folder(fci: *mut FCI_Int) -> *mut folder {
 
     if folder.is_null() {
         const FCIERR_ALLOC_FAIL: u32 = 1;
-        set_error(fci, FCIERR_ALLOC_FAIL, ntkrnl_sys::ddk::ERROR_NOT_ENOUGH_MEMORY);
+        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY);
         return core::ptr::null_mut();
     }
 
@@ -581,10 +573,10 @@ unsafe fn write_files(
     status_callback: PFNFCISTATUS,
 ) -> BOOL {
     let cffile = (*fci).data_out.as_mut_ptr() as *mut CFFILE;
-    let mut folder_entry_ptr: *mut list = (*fci).folders_list.Flink;
+    let mut folder_entry_ptr: *mut list = (*fci).folders_list.next;
     while folder_entry_ptr != &raw mut (*fci).folders_list as *mut list {
         let folder = folder_entry_ptr.byte_sub(core::mem::offset_of!(folder, entry)) as *mut folder;
-        let mut file_entry_ptr: *mut list = (*folder).files_list.Flink;
+        let mut file_entry_ptr: *mut list = (*folder).files_list.next;
         while file_entry_ptr != &raw mut (*folder).files_list as *mut list {
             let file = file_entry_ptr.byte_sub(core::mem::offset_of!(file, entry)) as *mut file;
             // cffile fields
@@ -631,9 +623,9 @@ unsafe fn write_files(
                 set_error(fci, FCIERR_USER_ABORT, 0);
                 return 0;
             }
-            file_entry_ptr = (*file_entry_ptr).Flink;
+            file_entry_ptr = (*file_entry_ptr).next;
         }
-        folder_entry_ptr = (*folder_entry_ptr).Flink;
+        folder_entry_ptr = (*folder_entry_ptr).next;
     }
     return 1;
 }
@@ -671,7 +663,7 @@ unsafe fn write_data_blocks(
     let data = (cfdata as *mut u8).add(header_size as usize) as *mut core::ffi::c_void;
 
     // Outer loop: LIST_FOR_EACH_ENTRY(folder, &fci->folders_list, struct folder, entry)
-    let mut current = (*(*fci).folders_list).Flink;
+    let mut current = (*(*fci).folders_list).next;
     while current != core::ptr::addr_of!((*fci).folders_list) {
         let folder = (current as *const u8).sub(core::mem::offset_of!(folder, entry)) as *mut folder;
 
@@ -682,7 +674,7 @@ unsafe fn write_data_blocks(
         }
 
         // Inner loop: LIST_FOR_EACH_ENTRY(block, &folder->blocks_list, struct data_block, entry)
-        let mut inner_current = (*(*folder).blocks_list).Flink;
+        let mut inner_current = (*(*folder).blocks_list).next;
         while inner_current != core::ptr::addr_of!((*folder).blocks_list) {
             let block = (inner_current as *const u8).sub(core::mem::offset_of!(data_block, entry)) as *mut data_block;
 
@@ -733,10 +725,10 @@ unsafe fn write_data_blocks(
                 return 0;
             }
 
-            inner_current = (*inner_current).Flink;
+            inner_current = (*inner_current).next;
         }
 
-        current = (*current).Flink;
+        current = (*current).next;
     }
 
     return 1;
@@ -836,7 +828,7 @@ unsafe extern "C" fn copy_data_blocks(
     }
 
     let head: *mut list = core::ptr::addr_of_mut!((*fci).blocks_list);
-    let mut entry: *mut list = (*head).Flink;
+    let mut entry: *mut list = (*head).next;
     while entry != head {
         let block: *mut data_block = (entry as *mut u8)
             .sub(core::mem::offset_of!(data_block, entry))
@@ -885,7 +877,7 @@ unsafe extern "C" fn copy_data_blocks(
             return 0;
         }
 
-        entry = (*entry).Flink;
+        entry = (*entry).next;
     }
     return 1; // TRUE
 }
@@ -902,9 +894,9 @@ unsafe fn add_files_to_folder(
     let mut next: *mut file;
 
     // LIST_FOR_EACH_ENTRY_SAFE simulation
-    file = ((*fci).files_list.Flink as *const u8)
+    file = ((*fci).files_list.next as *const u8)
         .sub(core::mem::offset_of!(file, entry)) as *mut file;
-    next = (((*file).entry).Flink as *const u8)
+    next = (((*file).entry).next as *const u8)
         .sub(core::mem::offset_of!(file, entry)) as *mut file;
     while core::ptr::addr_of!((*file).entry) as *const list
         != &raw const (*fci).files_list
@@ -980,7 +972,7 @@ unsafe fn add_files_to_folder(
 
         // Advance pointers (LIST_FOR_EACH_ENTRY_SAFE remainder)
         file = next;
-        next = (((*next).entry).Flink as *const u8)
+        next = (((*next).entry).next as *const u8)
             .sub(core::mem::offset_of!(file, entry)) as *mut file;
     }
 

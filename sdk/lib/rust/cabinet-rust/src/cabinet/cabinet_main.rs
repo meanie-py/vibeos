@@ -70,31 +70,31 @@ unsafe extern "C" fn fdi_open(pszFile: *mut i8, oflag: i32, pmode: i32) -> isize
 
     match oflag & _O_ACCMODE {
         _O_RDONLY => {
-            dwAccess = ntkrnl_sys::constants::GENERIC_READ;
-            dwShareMode = ntkrnl_sys::constants::FILE_SHARE_READ | ntkrnl_sys::constants::FILE_SHARE_DELETE;
+            dwAccess = GENERIC_READ;
+            dwShareMode = FILE_SHARE_READ | FILE_SHARE_DELETE;
         }
         _O_WRONLY => {
-            dwAccess = ntkrnl_sys::constants::GENERIC_WRITE;
-            dwShareMode = ntkrnl_sys::constants::FILE_SHARE_READ | ntkrnl_sys::constants::FILE_SHARE_WRITE | ntkrnl_sys::constants::FILE_SHARE_DELETE;
+            dwAccess = GENERIC_WRITE;
+            dwShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
         }
         _O_RDWR => {
-            dwAccess = ntkrnl_sys::constants::GENERIC_READ | ntkrnl_sys::constants::GENERIC_WRITE;
-            dwShareMode = ntkrnl_sys::constants::FILE_SHARE_READ | ntkrnl_sys::constants::FILE_SHARE_WRITE | ntkrnl_sys::constants::FILE_SHARE_DELETE;
+            dwAccess = GENERIC_READ | GENERIC_WRITE;
+            dwShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
         }
         _ => {}
     }
 
     if (oflag & _O_CREAT) != 0 {
-        dwCreateDisposition = ntkrnl_sys::ddk::OPEN_ALWAYS;
+        dwCreateDisposition = OPEN_ALWAYS;
         if (oflag & _O_EXCL) != 0 {
-            dwCreateDisposition = ntkrnl_sys::ddk::CREATE_NEW;
+            dwCreateDisposition = CREATE_NEW;
         } else if (oflag & _O_TRUNC) != 0 {
-            dwCreateDisposition = ntkrnl_sys::ddk::CREATE_ALWAYS;
+            dwCreateDisposition = CREATE_ALWAYS;
         }
     } else {
-        dwCreateDisposition = ntkrnl_sys::ddk::OPEN_EXISTING;
+        dwCreateDisposition = OPEN_EXISTING;
         if (oflag & _O_TRUNC) != 0 {
-            dwCreateDisposition = ntkrnl_sys::ddk::TRUNCATE_EXISTING;
+            dwCreateDisposition = TRUNCATE_EXISTING;
         }
     }
 
