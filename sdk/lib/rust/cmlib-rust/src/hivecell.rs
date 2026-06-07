@@ -42,7 +42,7 @@ unsafe extern "C" fn HvpRemoveFree(
     assert!((*RegistryHive).ReadOnly == 0);
 
     Storage = HvGetCellType(CellIndex);
-    Index = HvpComputeFreeListIndex((*CellBlock).Size);
+    Index = HvpComputeFreeListIndex((*(CellBlock as *mut HCELL)).Size as u32);
 
     pFreeCellOffset = core::ptr::addr_of_mut!((*RegistryHive).Storage[Storage as usize].FreeDisplay[Index as usize]);
 
@@ -76,7 +76,7 @@ unsafe extern "C" fn HvpRemoveFree(
 #[no_mangle]
 pub unsafe extern "C" fn HvAllocateCell(
     RegistryHive: *mut _HHIVE,
-    Size: u32,
+    mut Size: u32,
     Storage: u32,
     Vicinity: u32,
 ) -> u32 {
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn HvAllocateCell(
     static __FUNCTION__: &[u8] = b"HvAllocateCell\0";
 
     let mut FreeCell: *mut HCELL;
-    let FreeCellOffset: u32;
+    let mut FreeCellOffset: u32;
     let NewCell: *mut HCELL;
     let Bin: *mut HBIN;
 
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn HvAllocateCell(
     );
 
     // Size = ROUND_UP(Size + sizeof(HCELL), 16);
-    Size = ROUND_UP(Size + core::mem::size_of::<HCELL>() as u32, 16);
+    Size = ROUND_UP(Size as usize + core::mem::size_of::<HCELL>(), 16) as u32;
 
     // First search in free blocks.
     FreeCellOffset = HvpFindFree(RegistryHive, Size, Storage);
@@ -221,7 +221,7 @@ pub unsafe extern "C" fn HvTrackCellRef(
     assert!(!Hive.is_null());
     assert!(Cell != HCELL_NIL);
 
-    if (*CellRef).StaticCount < STATIC_CELL_PAIR_COUNT {
+    if ((*CellRef).StaticCount as u32) < (STATIC_CELL_PAIR_COUNT as u32) {
         (*CellRef).StaticArray[(*CellRef).StaticCount as usize].Hive = Hive;
         (*CellRef).StaticArray[(*CellRef).StaticCount as usize].Cell = Cell;
         (*CellRef).StaticCount += 1;
@@ -241,7 +241,7 @@ pub unsafe extern "C" fn HvTrackCellRef(
 
     if (*CellRef).Count == (*CellRef).Max {
         let size = ((*CellRef).Max as usize + CELL_REF_INCREMENT as usize) * core::mem::size_of::<HV_HIVE_CELL_PAIR>();
-        let new_cell_array = CmpAllocate(size, 1u8, TAG_CM) as *mut HV_HIVE_CELL_PAIR;
+        let new_cell_array = CmpAllocate(size as u32, 1u8, TAG_CM) as *mut HV_HIVE_CELL_PAIR;
         if new_cell_array.is_null() {
             // DPRINT1("HvTrackCellRef: Cannot reallocate the reference table.\n");
             DbgPrint(b"HvTrackCellRef: Cannot reallocate the reference table.\n\0".as_ptr() as *const u8);
@@ -255,16 +255,16 @@ pub unsafe extern "C" fn HvTrackCellRef(
                 new_cell_array,
                 (*CellRef).Max as usize,
             );
-            CmpFree((*CellRef).CellArray, TAG_CM);
+            CmpFree((*CellRef).CellArray as *mut c_void, TAG_CM);
         }
         (*CellRef).CellArray = new_cell_array;
-        (*CellRef).Max += CELL_REF_INCREMENT;
+        (*CellRef).Max += CELL_REF_INCREMENT as u16;
     }
 
     // ASSERT(CellRef->Count < CellRef->Max);
 
-    (*CellRef).CellArray[(*CellRef).Count as usize].Hive = Hive;
-    (*CellRef).CellArray[(*CellRef).Count as usize].Cell = Cell;
+    (*(*CellRef).CellArray.add((*CellRef).Count as usize)).Hive = Hive;
+    (*(*CellRef).CellArray.add((*CellRef).Count as usize)).Cell = Cell;
     (*CellRef).Count += 1;
     return 1;
 }
@@ -284,7 +284,7 @@ pub unsafe extern "C" fn HvReleaseFreeCellRefArray(
 
         /* Loop over them and release them */
         i = 0;
-        while i < (*CellRef).StaticCount {
+        while i < (*CellRef).StaticCount as u32 {
             let pair_ptr = core::ptr::addr_of!((*CellRef).StaticArray[i as usize]);
             HvReleaseCell((*pair_ptr).Hive, (*pair_ptr).Cell);
             i += 1;
@@ -304,7 +304,7 @@ pub unsafe extern "C" fn HvReleaseFreeCellRefArray(
 
         /* Loop over them and release them */
         i = 0;
-        while i < (*CellRef).Count {
+        while i < (*CellRef).Count as u32 {
             let pair_ptr = cell_array.add(i as usize);
             HvReleaseCell((*pair_ptr).Hive, (*pair_ptr).Cell);
             i += 1;

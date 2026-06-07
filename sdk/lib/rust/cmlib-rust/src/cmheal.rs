@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, HSTORAGE_TYPE_Stable as Stable, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBOOT_TYPE_SELF_HEAL, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF};
+use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBOOT_TYPE_SELF_HEAL, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE};
 use core::ffi::c_void;
 
 unsafe extern "C" {
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn CmpRepairKeyNodeSignature(
     }
 
     HvMarkCellDirty(Hive, CurrentCell, 0);
-    (*CellData).u.KeyNode.Signature = 0x6e4b6e48; // CM_KEY_NODE_SIGNATURE
+    (*CellData).u.KeyNode.Signature = CM_KEY_NODE_SIGNATURE; // CM_KEY_NODE_SIGNATURE
 
     let base = (*Hive).BaseBlock;
     (*base).BootType |= 0x200; // HBOOT_TYPE_SELF_HEAL

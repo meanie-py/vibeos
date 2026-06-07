@@ -237,8 +237,7 @@ pub unsafe extern "system" fn CmpAddToLeaf(
 
     old_size = HvGetCellSize(hive, leaf as *mut CM_KEY_INDEX);
     size = old_size;
-    size -= entry_size * (*leaf).Count as usize
-        + (core::mem::offset_of!(CM_KEY_INDEX, List) as u32);
+    size -= (entry_size * (*leaf).Count as usize + core::mem::offset_of!(CM_KEY_INDEX, List)) as u32;
 
     new_cell = leaf_cell;
 
@@ -269,7 +268,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
         let mut IndexKey: *mut CM_KEY_INDEX;
         let mut LeafKey: *mut CM_KEY_INDEX;
         let mut FastLeaf: *mut CM_KEY_FAST_INDEX;
-        let mut LeafCell: HCELL_INDEX;
+        let mut LeafCell: HCELL_INDEX = 0;
         let mut CurrentCell: HCELL_INDEX;
         let mut SubKeyIndex: u32;
         let mut Result: i32;
@@ -315,7 +314,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                 }
 
                 // Check if it fits into this leaf and break
-                if (*LeafKey).Count < CmpMaxIndexPerHblock {
+                if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
                     // Fill in the result and return it
                     *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]);
                     return LeafCell;
@@ -367,7 +366,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                     }
 
                     // Check if it fits into this leaf
-                    if (*LeafKey).Count < CmpMaxIndexPerHblock {
+                    if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
                         // Fill in the result and return the cell
                         *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]);
                         return LeafCell;

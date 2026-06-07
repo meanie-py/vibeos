@@ -100,9 +100,9 @@ pub unsafe extern "system" fn CmpValueToData(
     // Sanity check
     // ASSERT(Hive->ReleaseCellRoutine == NULL);
 
-    let mut Buffer: *mut CELL_DATA;
-    let mut BufferAllocated: u8;
-    let mut CellToRelease: HCELL_INDEX;
+    let mut Buffer: *mut CELL_DATA = core::ptr::null_mut();
+    let mut BufferAllocated: u8 = 0;
+    let mut CellToRelease: HCELL_INDEX = 0;
 
     // Get the actual data
     if CmpGetValueData(
@@ -123,7 +123,7 @@ pub unsafe extern "system" fn CmpValueToData(
     // This should never happen!
     if BufferAllocated != 0 {
         // Free the buffer and bugcheck
-        ((*Hive).Free.unwrap())(Buffer, 0);
+        ((*Hive).Free.unwrap())(Buffer as *mut c_void, 0);
         KeBugCheckEx(REGISTRY_ERROR, 8, 0, Hive as usize, Value as usize);
     }
 
@@ -185,7 +185,7 @@ pub unsafe extern "system" fn CmpRemoveValueFromList(
     if Count > 0 {
         CellData = HvGetCell(Hive, (*ChildList).List) as *mut CELL_DATA;
         if CellData.is_null() {
-            return 0xC000009A; // STATUS_INSUFFICIENT_RESOURCES
+            return 0xC000009Au32 as i32; // STATUS_INSUFFICIENT_RESOURCES
         }
 
         // ASSERT(HvIsCellDirty(Hive, ChildList->List));
