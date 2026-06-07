@@ -318,6 +318,16 @@ pub mod ime;
 pub mod msgqueue;
 // [ntuser wave 38 — keyboard]
 pub mod keyboard;
+// [ntuser frontier — translated 2026-06-06, Phase A crate-compile (NOT yet CMake-flipped)]
+pub mod main;
+pub mod defwnd;
+pub mod kbdlayout;
+pub mod menu;
+pub mod sysparams;
+pub mod window;
+pub mod message;
+pub mod painting;
+pub mod winpos;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
