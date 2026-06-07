@@ -846,6 +846,9 @@ def cmd_translate(args):
     # preserved work instead of feeling like it threw away what you paid for.
     archive = None
     running_cost = 0.0
+    # Hard safety brake: stop before the next paid call once cumulative spend
+    # crosses this. None = no cap. Prevents a runaway bill.
+    cost_cap = getattr(args, "cost_cap", None)
     if not args.dry_run:
         warn_if_tmp_output(getattr(args, "output", None))
         archive = RunArchive(label=target_path.name, model=model,
@@ -858,6 +861,7 @@ def cmd_translate(args):
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
         print(f"{'='*60}", file=sys.stderr)
 
+        capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
         file_res = file_resolve(scan, catalog, spec)
         subsystem = c_file.parent.name
@@ -985,6 +989,13 @@ def cmd_translate(args):
             else:
                 print(f"FAIL: {result.error}", file=sys.stderr)
 
+            # Hard cost cap — stop before the next (paid) call if we've crossed it.
+            if cost_cap is not None and running_cost >= cost_cap:
+                print(f"  ⛔ COST CAP HIT: ${running_cost:.2f} ≥ ${cost_cap:.2f} after "
+                      f"{func_idx}/{len(sorted_deps)} functions — stopping.", file=sys.stderr)
+                capped = True
+                break
+
         if not translated:
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
             continue
@@ -995,7 +1006,7 @@ def cmd_translate(args):
         # non-trivial preamble (most drivers) would not compile.
         preamble_rust = ""
         preamble_src = (scan.preamble_text or scan.globals_text or "").strip()
-        if preamble_src:
+        if preamble_src and not capped:
             print(f"  [preamble] {len(preamble_src)} C chars...",
                   file=sys.stderr, end=" ", flush=True)
             pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
@@ -1057,6 +1068,13 @@ def cmd_translate(args):
                                      exports=file_res.exports, scan=scan,
                                      target=rustconv_target, c_source_path=c_file)
             print(f"  Assembled to {out_path}", file=sys.stderr)
+
+        # Respect the cost cap across files too, not just within one file.
+        if capped:
+            print(f"\n⛔ Stopping run: cost cap ${cost_cap:.2f} reached "
+                  f"(run total ≈ ${running_cost:.2f}). Remaining files NOT translated.",
+                  file=sys.stderr)
+            break
 
     # Generate mod.rs and lib.rs for batch runs (ntoskrnl only — HAL handles
     # mod.rs incrementally via _hal_register_mod and has a single src/x86 dir).
@@ -1440,6 +1458,9 @@ def main():
     p.add_argument("--prompt", action="store_true", help="Print prompt for first function (implies --dry-run)")
     p.add_argument("--exclude", nargs="*", default=[],
                    help="File stems to skip (batch mode)")
+    p.add_argument("--cost-cap", dest="cost_cap", type=float, default=None,
+                   help="Hard USD spend cap for this invocation; stops before the next "
+                        "call once cumulative cost reaches it (safety brake).")
 
     # probe-migrate
     p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
