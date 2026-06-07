@@ -1,0 +1,23 @@
+# rtl-data — deepdrive batch #3. Banked Opus translations of rtl/ data-structure
+# leaves, driven to compilation by DeepSeek then integrated + smoked by the
+# frontier driver:
+#   sdk/lib/rtl/rangelist.c  (RtlAddRange / range-list ADT)
+#   sdk/lib/rtl/rxact.c      (registry transaction — RXACT)
+#   sdk/lib/rtl/bootdata.c   (boot-data create/check helpers)
+#
+# All compile into librtl.a (the `rtl` cmake target) → run in both ntoskrnl and ntdll.
+# UNWIRED from rtl-rust until each module is driven green + reviewed + smoked.
+[package]
+name = "rtl-data"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+cabi = []
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
