@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, Stable, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell};
+use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBOOT_TYPE_SELF_HEAL, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF};
 use core::ffi::c_void;
 
 extern "C" {
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn CmpRepairParentKey(
         return ParentRepaired;
     }
 
-    KeyIndex = HvGetCell(Hive, (*KeyNode).SubKeyLists[Stable as usize]) as PCM_KEY_INDEX;
+    KeyIndex = HvGetCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable as usize]) as PCM_KEY_INDEX;
     if KeyIndex.is_null() {
         DPRINT1(b"Couldn't get the key index from parent node\n\0".as_ptr() as *const i8);
         HvReleaseCell(Hive, ParentKey);
@@ -75,7 +75,7 @@ pub unsafe extern "C" fn CmpRepairParentKey(
             // DPRINT removed
         }
 
-        HvReleaseCell(Hive, (*KeyNode).SubKeyLists[Stable as usize]);
+        HvReleaseCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable as usize]);
         HvReleaseCell(Hive, ParentKey);
         ParentRepaired
 }
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn CmpRepairValueListCount(
      * as we will be making changes onto them.
      */
     HvMarkCellDirty(hive, current_cell, 0);
-    HvMarkCellDirty(hive, (*value_list_node).ValueList.List, 0);
+    HvMarkCellDirty(hive, (*value_list_node).__bindgen_anon_1.__bindgen_anon_1.ValueList.List, 0);
 
     /*
      * Now remove the value from the list and mark the
@@ -203,8 +203,8 @@ pub unsafe extern "C" fn CmpRepairValueList(
     }
 
     HvMarkCellDirty(Hive, CurrentCell, 0);
-    (*value_list_node).ValueList.List = HCELL_NIL;
-    (*value_list_node).ValueList.Count = 0;
+    (*value_list_node).__bindgen_anon_1.__bindgen_anon_1.ValueList.List = HCELL_NIL;
+    (*value_list_node).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count = 0;
 
     (*(*Hive).BaseBlock).BootType |= HBOOT_TYPE_SELF_HEAL;
     HvReleaseCell(Hive, CurrentCell);
@@ -251,7 +251,7 @@ pub unsafe extern "C" fn CmpRepairSubKeyList(
      * list.
      */
     HvMarkCellDirty(Hive, CurrentCell, 0);
-    (*CellData).u.KeyNode.SubKeyLists[Stable] = HCELL_NIL;
+    (*CellData).u.KeyNode.__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable] = HCELL_NIL;
     (*CellData).u.KeyNode.SubKeyCounts[Stable] = 0;
 
     /* Mark the hive as in self healing mode since we repaired it */

@@ -3,8 +3,8 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PCELL_DATA, PHBIN, PHCELL, PHCELL_INDEX, PHHIVE, PHV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, RtlSetBits, Stable, Type, Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PCELL_DATA, PHBIN, PHCELL, PHCELL_INDEX, PHHIVE, PHV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, HV_TRACK_CELL_REF, RtlSetBits, Stable, Type, Volatile, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE};
 use core::ffi::c_void;
 
 extern "C" {
@@ -21,13 +21,12 @@ extern "C" {
     fn RtlCheckBit(BitMapHeader: *mut core::ffi::c_void, BitNumber: u32) -> i32;
     fn PAGED_CODE();
     fn DbgPrint(format: *const u8, ...);
-    fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> *mut CELL;
+    fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> *mut HCELL;
     fn HvMarkCellDirty(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX, HoldingLock: i32) -> i32;
     fn HvpAddFree(RegistryHive: *mut HHIVE, FreeBlock: *mut HCELL, FreeIndex: HCELL_INDEX) -> i32;
 }
 
 const CMLIB_HCELL_DEBUG: u32 = 0;
-const HCELL_NIL: u32 = 0xFFFFFFFF_u32;
 
 unsafe extern "C" fn HvpRemoveFree(
     RegistryHive: *mut HHIVE,

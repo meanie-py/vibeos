@@ -21,6 +21,36 @@ pub const KEY_HIVE_ENTRY: u16 = 0x0004;
 pub const KEY_NO_DELETE: u16 = 0x0008;
 pub const KEY_COMP_NAME: u16 = 0x0020;
 
+// ── Phase-2 authoritative constants (harvested from sdk/lib/cmlib/hivedata.h,
+//    cmlib.h, ndk/ntstatus) — canonical home so the deepseek-mechanical modules
+//    import REAL values instead of fabricating them. Never redefine these
+//    locally with a guess (the mechanical pass produced wrong HCELL_NIL=0 etc.).
+pub const HV_HHIVE_SIGNATURE: u32 = 0xbee0_bee0;
+pub const HCELL_TYPE_MASK: u32 = 0x8000_0000;
+pub const INVALID_INDEX: u32 = 0x8000_0000;
+// hive file types (hivedata.h)
+pub const HFILE_TYPE_PRIMARY: u32 = 0;
+pub const HFILE_TYPE_LOG: u32 = 1;
+pub const HFILE_TYPE_ALTERNATE: u32 = 3;
+// hive storage / boot types
+pub const HIVE_VOLATILE: u32 = 1;
+pub const HSYS_MINOR: u32 = 3;
+pub const HTYPE_COUNT: u32 = 2;
+pub const HBOOT_TYPE_REGULAR: u32 = 0;
+pub const HBOOT_TYPE_SELF_HEAL: u32 = 4;
+// CM_KEY_INDEX cell signatures (u16, compared against the Signature field)
+pub const CM_KEY_INDEX_ROOT: u16 = 0x6972; // "ri"
+pub const CM_KEY_INDEX_LEAF: u16 = 0x696C; // "li"
+pub const CM_KEY_FAST_LEAF: u16 = 0x666C; // "lf"
+pub const CM_KEY_HASH_LEAF: u16 = 0x686C; // "lh"
+// versioning (sdkddkver.h): NTDDI_VISTA = NTDDI_WIN6
+pub const NTDDI_VISTA: u32 = 0x0600_0000;
+// registry NTSTATUS codes (ndk/ntstatus.h)
+pub const STATUS_REGISTRY_CORRUPT: i32 = 0xC000_014Cu32 as i32;
+pub const STATUS_REGISTRY_IO_FAILED: i32 = 0xC000_014Du32 as i32;
+pub const STATUS_NOT_REGISTRY_FILE: i32 = 0xC000_015Cu32 as i32;
+pub const STATUS_REGISTRY_RECOVERED: i32 = 0x4000_0009;
+
 /// `ROUND_UP(a,b) = ((((a)+(b)-1)/(b))*(b))` from cmlib.h.
 #[inline]
 pub fn round_up(a: u32, b: u32) -> u32 {

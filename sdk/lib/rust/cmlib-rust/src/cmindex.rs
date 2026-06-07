@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpAddSubKey, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, CmpMarkIndexDirty, CmpRemoveSubKey, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, LPWSTR, PCELL_DATA, PCM_INDEX, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, Root, RtlCompareUnicodeString, Stable, Type, Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell};
+use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, HCELL_TYPE_MASK};
 use core::ffi::c_void;
 
 extern "C" {
@@ -88,7 +88,7 @@ pub unsafe extern "system" fn CmpFindSubKeyByNumber(
     // Check if it's in the stable list
     if Number < (*Node).SubKeyCounts[Stable as usize] {
         // Get the actual key index
-        Index = HvGetCell(Hive, (*Node).SubKeyLists[Stable as usize]) as *mut CM_KEY_INDEX;
+        Index = HvGetCell(Hive, (*Node).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable as usize]) as *mut CM_KEY_INDEX;
         if Index.is_null() {
             return HCELL_NIL;
         }
@@ -97,14 +97,14 @@ pub unsafe extern "system" fn CmpFindSubKeyByNumber(
         Result = CmpDoFindSubKeyByNumber(Hive, Index, Number);
 
         // Release the cell and return the result
-        HvReleaseCell(Hive, (*Node).SubKeyLists[Stable as usize]);
+        HvReleaseCell(Hive, (*Node).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable as usize]);
         return Result;
     } else if (*Hive).StorageTypeCount > Volatile {
         // It's in the volatile list
         let Number = Number - (*Node).SubKeyCounts[Stable as usize];
         if Number < (*Node).SubKeyCounts[Volatile as usize] {
             // Get the actual key index
-            Index = HvGetCell(Hive, (*Node).SubKeyLists[Volatile as usize]) as *mut CM_KEY_INDEX;
+            Index = HvGetCell(Hive, (*Node).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Volatile as usize]) as *mut CM_KEY_INDEX;
             if Index.is_null() {
                 return HCELL_NIL;
             }
@@ -113,7 +113,7 @@ pub unsafe extern "system" fn CmpFindSubKeyByNumber(
             Result = CmpDoFindSubKeyByNumber(Hive, Index, Number);
 
             // Release the cell and return the result
-            HvReleaseCell(Hive, (*Node).SubKeyLists[Volatile as usize]);
+            HvReleaseCell(Hive, (*Node).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Volatile as usize]);
             return Result;
         }
     }
@@ -138,11 +138,11 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
 
     for i in 0..(*hive).StorageTypeCount {
         if (*parent).SubKeyCounts[i as usize] != 0 {
-            index_root = HvGetCell(hive, (*parent).SubKeyLists[i as usize]) as *mut CM_KEY_INDEX;
+            index_root = HvGetCell(hive, (*parent).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[i as usize]) as *mut CM_KEY_INDEX;
             if index_root.is_null() {
                 return HCELL_NIL;
             }
-            cell_to_release = (*parent).SubKeyLists[i as usize];
+            cell_to_release = (*parent).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[i as usize];
 
             if (*index_root).Signature == CM_KEY_INDEX_ROOT {
                 found = CmpFindSubKeyInRoot(hive, index_root, search_name, &mut sub_key);
@@ -272,10 +272,10 @@ pub unsafe extern "system" fn CmpSelectLeaf(
         let mut Result: i32;
 
         // Mark it as dirty
-        HvMarkCellDirty(Hive, (*KeyNode).SubKeyLists[Type as usize], 0);
+        HvMarkCellDirty(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize], 0);
 
         // Get the cell
-        IndexKey = HvGetCell(Hive, (*KeyNode).SubKeyLists[Type as usize]) as *mut CM_KEY_INDEX;
+        IndexKey = HvGetCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize]) as *mut CM_KEY_INDEX;
 
         // Check if we've got a valid key
         if IndexKey.is_null() {

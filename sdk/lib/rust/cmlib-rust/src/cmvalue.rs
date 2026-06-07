@@ -4,8 +4,8 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpFindNameInList, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCELL_DATA, PCHILD_LIST, PCM_KEY_NODE, PCM_KEY_VALUE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell};
+use ntkrnl_sys::ddk::{CELL_DATA, CHILD_LIST, CM_KEY_NODE, CM_KEY_VALUE, CmpFindNameInList, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCELL_DATA, PCHILD_LIST, PCM_KEY_NODE, PCM_KEY_VALUE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, TAG_CM};
 use core::ffi::c_void;
 
 extern "C" {
@@ -28,9 +28,6 @@ extern "system" {
 
 // ---- file-scope preamble (translated) ----
 // #define NDEBUG not converted (preprocessor macro without constant value)
-
-const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
-const HBLOCK_SIZE: u32 = 4096;
 
 const REGISTRY_ERROR: u32 = 0x51;
 

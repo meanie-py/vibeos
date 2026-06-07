@@ -4,6 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, HBASE_BLOCK, HBIN, HCELL, HCELL_INDEX, HHIVE, IoSetThreadHardErrorMode, PCELL_DATA, PHBASE_BLOCK, PHBIN, PHHIVE, RtlFindSetBits, Stable, UINT32, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HCELL_NIL, HBLOCK_SIZE, TAG_CM, HV_HHIVE_SIGNATURE, HFILE_TYPE_ALTERNATE, HFILE_TYPE_LOG, HFILE_TYPE_PRIMARY, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, STATUS_REGISTRY_IO_FAILED, STATUS_NOT_REGISTRY_FILE, STATUS_REGISTRY_RECOVERED, HIVE_VOLATILE};
 use core::ffi::c_void;
 use core::ptr::addr_of_mut;
 
@@ -25,17 +26,11 @@ const HV_HBLOCK_SIGNATURE: u32 = 0xbee0bee0;
 const HBASE_FORMAT_MEMORY: u32 = 1;
 const HSYS_MAJOR: u32 = 1;
 
-const HV_HHIVE_SIGNATURE: u32 = 0x00000000; // HV_HHIVE_SIGNATURE
-const HFILE_TYPE_ALTERNATE: u32 = 3; // HFILE_TYPE_ALTERNATE
-
 const HV_LOG_HEADER_SIZE: u32 = 4096;
-const HBLOCK_SIZE: u32 = 4096;
 const HSECTOR_SIZE: u32 = 512;
-const HV_LOG_DIRTY_SIGNATURE: u32 = 0x4c445646; // placeholder, exact value not known
+const HV_LOG_DIRTY_SIGNATURE: u32 = 0x4c445646;
 const HV_LOG_DIRTY_BLOCK: u32 = 1;
 const HV_CLEAN_BLOCK: u32 = 0;
-const TAG_CM: u32 = 0x20204D43; // ' CM' pool tag
-const HFILE_TYPE_LOG: u32 = 2;
 
 unsafe extern "C" fn HvpWriteLog(RegistryHive: *mut HHIVE) -> i32 {
     let mut Success: i32;
@@ -245,7 +240,6 @@ pub unsafe extern "C" fn HvHiveWillShrink(
 
 #[cfg(not(bldr))]
 
-const HFILE_TYPE_PRIMARY: u32 = 0;
 #[no_mangle]
 pub unsafe extern "C" fn HvWriteHive(RegistryHive: *mut HHIVE) -> i32 {
     debug_assert!((*RegistryHive).ReadOnly == 0);
@@ -266,7 +260,7 @@ pub unsafe extern "C" fn HvWriteHive(RegistryHive: *mut HHIVE) -> i32 {
     return 1;
 }
 #[no_mangle]
-pub unsafe extern "C" fn HvWriteAlternateHive(RegistryHive: *mut Hive) -> i32 {
+pub unsafe extern "C" fn HvWriteAlternateHive(RegistryHive: *mut HHIVE) -> i32 {
     core::assert!((*RegistryHive).ReadOnly == 0);
     core::assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
     core::assert!((*RegistryHive).Alternate != 0);
