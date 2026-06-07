@@ -44,4 +44,5 @@ rtl-ppb      = { path = "../rtl-ppb" }
 rtl-propvar  = { path = "../rtl-propvar" }
 rtl-bootdata = { path = "../rtl-bootdata" }
 rtl-rangelist = { path = "../rtl-rangelist" }
+rtl-sysvol   = { path = "../rtl-sysvol" }
 time         = { path = "../time" }

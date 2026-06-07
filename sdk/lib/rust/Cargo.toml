@@ -93,6 +93,7 @@ members = [
     "rtl-propvar",
     "rtl-bootdata",
     "rtl-rangelist",
+    "rtl-sysvol",
     "rtl-difftest",
     "slist",
     "slist-loom",

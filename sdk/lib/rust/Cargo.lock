@@ -712,6 +712,7 @@ dependencies = [
  "rtl-rangelist",
  "rtl-strings",
  "rtl-sync",
+ "rtl-sysvol",
  "rtl-threadpool",
  "rtl-version",
  "slist",
@@ -729,6 +730,13 @@ dependencies = [
 
 [[package]]
 name = "rtl-sync"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "rtl-sysvol"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",

@@ -78,7 +78,7 @@ list(APPEND SOURCE
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
     # slist.c — replaced by Rust implementation (sdk/lib/rust/slist/, Wave SLIST: Init/First/QueryDepth/PushList + RtlpUse16ByteSLists; Push/Pop/Flush already Rust)
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
-    sysvol.c
+    # sysvol.c — replaced by Rust implementation (sdk/lib/rust/rtl-sysvol/)
     # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
     # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
@@ -223,6 +223,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-bootdata/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-rangelist/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-rangelist/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-sysvol/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sysvol/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs
