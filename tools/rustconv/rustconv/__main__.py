@@ -783,6 +783,7 @@ def cmd_translate(args):
     from .callgraph import extract_call_graph, topological_sort, print_call_graph
     from .function_resolver import resolve_function
     from .function_prompt import build_function_prompt, build_file_context, build_preamble_prompt, load_function_system_prompt
+    from .response_cache import ResponseCache, PREAMBLE_KEY
     from .stitcher import stitch_file
     from .batch_runner import submit_single, TranslationResult
     from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
@@ -849,6 +850,7 @@ def cmd_translate(args):
     # Hard safety brake: stop before the next paid call once cumulative spend
     # crosses this. None = no cap. Prevents a runaway bill.
     cost_cap = getattr(args, "cost_cap", None)
+    no_resume = getattr(args, "no_resume", False)
     if not args.dry_run:
         warn_if_tmp_output(getattr(args, "output", None))
         archive = RunArchive(label=target_path.name, model=model,
@@ -930,6 +932,16 @@ def cmd_translate(args):
         # read it from cache (~0.1x) instead of re-sending it uncached each call.
         file_context = build_file_context(file_res, scan, subsystem, target=rustconv_target)
 
+        # Durable per-function resume cache → re-run the same command to resume a
+        # killed/capped run for $0 (skip functions whose C body is unchanged).
+        # Coexists with the sink archive (which is per-run, kill-safe streaming);
+        # this one is the stable, cross-run skip layer. --no-resume forces fresh.
+        cache = ResponseCache(f"{subsystem}__{c_file.stem}")
+        resumed = 0
+        if cache.count() and not no_resume:
+            print(f"  Resume cache: {cache.count()} prior unit(s) on disk "
+                  f"(unchanged → $0)", file=sys.stderr)
+
         # One paid banner per file: n calls = functions + preamble. Rough input
         # estimate = first-function prompt × function count (each call re-sends
         # context, so this is a floor, not a ceiling).
@@ -943,6 +955,16 @@ def cmd_translate(args):
 
         for func_idx, dep in enumerate(sorted_deps, 1):
             print(f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...", file=sys.stderr, end=" ", flush=True)
+
+            # Resume: reuse a prior unchanged-body translation for free. It still
+            # feeds `translated` (callee context for later functions).
+            if not no_resume:
+                hit = cache.get(dep.name, dep.body_text)
+                if hit is not None:
+                    translated[dep.name] = hit
+                    resumed += 1
+                    print("CACHED ($0)", file=sys.stderr)
+                    continue
 
             # Per-function resolve
             func_res = resolve_function(dep, catalog, file_res.exports, scan.defines)
@@ -976,6 +998,8 @@ def cmd_translate(args):
 
             if result.success:
                 translated[dep.name] = result.rust_code
+                # Persist for cross-run resume the instant it returns.
+                cache.put(dep.name, dep.body_text, result.rust_code)
                 total_in += result.input_tokens
                 total_out += result.output_tokens
                 if archive is not None:
@@ -1006,7 +1030,12 @@ def cmd_translate(args):
         # non-trivial preamble (most drivers) would not compile.
         preamble_rust = ""
         preamble_src = (scan.preamble_text or scan.globals_text or "").strip()
-        if preamble_src and not capped:
+        pre_hit = None if (no_resume or not preamble_src) else cache.get(PREAMBLE_KEY, preamble_src)
+        if pre_hit is not None:
+            preamble_rust = pre_hit
+            resumed += 1
+            print(f"  [preamble] CACHED ($0)", file=sys.stderr)
+        elif preamble_src and not capped:
             print(f"  [preamble] {len(preamble_src)} C chars...",
                   file=sys.stderr, end=" ", flush=True)
             pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
@@ -1025,6 +1054,7 @@ def cmd_translate(args):
                     pre_sink.close()
             if pre_res.success:
                 preamble_rust = pre_res.rust_code
+                cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
                 total_in += pre_res.input_tokens
                 total_out += pre_res.output_tokens
                 if archive is not None:
@@ -1038,6 +1068,9 @@ def cmd_translate(args):
                       file=sys.stderr)
 
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
+        if resumed:
+            print(f"  Resumed {resumed} unit(s) from cache this run (re-translation skipped, $0)",
+                  file=sys.stderr)
         print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
 
         # Stitch functions into a single file
@@ -1461,6 +1494,10 @@ def main():
     p.add_argument("--cost-cap", dest="cost_cap", type=float, default=None,
                    help="Hard USD spend cap for this invocation; stops before the next "
                         "call once cumulative cost reaches it (safety brake).")
+    p.add_argument("--no-resume", dest="no_resume", action="store_true",
+                   help="Ignore the .responses/ resume cache and re-translate every "
+                        "function fresh (cache still refreshed). Default resumes "
+                        "unchanged-body functions for $0.")
 
     # probe-migrate
     p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
