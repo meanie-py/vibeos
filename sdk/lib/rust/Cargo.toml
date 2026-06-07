@@ -119,6 +119,7 @@ members = [
     "midl-rt",
     "svcctl-stub",
     "winreg-stub",
+    "cabinet-rust",
 ]
 resolver = "2"
 
