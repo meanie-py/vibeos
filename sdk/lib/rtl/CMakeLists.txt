@@ -72,7 +72,7 @@ list(APPEND SOURCE
     registry.c
     res.c
     # resource.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave RES)
-    rxact.c
+    # rxact.c — replaced by Rust implementation (sdk/lib/rust/rtl-rxact/)
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
     # security.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SEC)
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
@@ -225,6 +225,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-rangelist/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-sysvol/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-sysvol/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-rxact/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-rxact/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs

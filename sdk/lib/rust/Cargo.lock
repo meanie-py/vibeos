@@ -710,6 +710,7 @@ dependencies = [
  "rtl-ppb",
  "rtl-propvar",
  "rtl-rangelist",
+ "rtl-rxact",
  "rtl-strings",
  "rtl-sync",
  "rtl-sysvol",
@@ -719,6 +720,13 @@ dependencies = [
  "splaytree",
  "time",
  "uniprefix",
+]
+
+[[package]]
+name = "rtl-rxact"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

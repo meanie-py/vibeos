@@ -94,6 +94,7 @@ members = [
     "rtl-bootdata",
     "rtl-rangelist",
     "rtl-sysvol",
+    "rtl-rxact",
     "rtl-difftest",
     "slist",
     "slist-loom",

@@ -1,0 +1,17 @@
+[package]
+name = "rtl-rxact"
+version = "0.1.0"
+edition = "2021"
+
+# Rust translation of sdk/lib/rtl/rxact.c — the RXACT registry-transaction
+# engine (Rtl{Initialize,Start,AddAction,AddAttributeAction,Apply,ApplyNoFlush,
+# Abort}RXact). Batches registry delete/set-value actions into a log buffer
+# under an "RXACT" key and replays them atomically. Uses ntkrnl-sys registry
+# types + Zw/Nt registry I/O + RtlAllocateHeap/RtlFreeHeap + the C
+# RtlpNtQueryValueKey helper. Shared kernel+user via librtl_rust.a.
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
