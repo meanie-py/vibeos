@@ -6,10 +6,14 @@
 //! kernel build. The bootloader (`blcmlib`) and host (`cmlibhost`) cmlib
 //! variants keep the C until those links are flipped too.
 //!
-//! Each cmlib `.c` becomes a module here; symbols match the C ABI exactly
-//! (CMAPI is `#define CMAPI` empty → cdecl; the ntoskrnl/config callers
-//! already declare them `extern "C"`). Hive/cell types come from
-//! `ntkrnl_sys::ddk` (bindgen of cmlib's own headers).
+//! Each cmlib `.c` becomes a module here; symbols match the C ABI exactly.
+//! For the KERNEL cmlib, `CMAPI` is `#define CMAPI NTAPI` (cmlib.h:218) →
+//! stdcall on i386, so every `#[no_mangle]` fn here is `extern "system"`
+//! (emits `_Name@N`, matching the C objects' `_CmCreateRootNode@8` etc. —
+//! verified via nm). Do NOT use `extern "C"`: that would emit an undecorated
+//! `Name` symbol and break the i386 cohab link. (The empty `#define CMAPI` in
+//! psdk/cfgmgr32.h is the unrelated USER-MODE cfgmgr32 API — different ABI.)
+//! Hive/cell types come from `ntkrnl_sys::ddk` (bindgen of cmlib's own headers).
 
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
