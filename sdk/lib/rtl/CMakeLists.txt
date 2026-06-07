@@ -55,7 +55,7 @@ list(APPEND SOURCE
     image.c
     # interlck.c — replaced by Rust implementation (sdk/lib/rust/interlck/)
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
-    locale.c
+    # locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
     memstream.c
     message.c
@@ -260,6 +260,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/srw.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/condvar.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/runonce.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/locale.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
@@ -275,11 +276,13 @@ add_dependencies(rtl rust_rtl)
 target_link_libraries(rtl PRIVATE ${RUST_RTL_RUST_LIB})
 
 list(APPEND SOURCE_VISTA
-    # condvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-vista)
+    # condvar.c, runonce.c, srw.c, utf8.c — replaced by Rust (rtl-sync / utf8).
+    # locale.c — the real flip is at main SOURCE (above) + ntdll-cargo c_from_compile_db
+    #   (so ntoskrnl + ntdll-main use the Rust rtl-sync::locale). Kept HERE only so the
+    #   librtl_vista.a archive / rtl_vista cmake target stays non-empty; it is consumed
+    #   solely by the standalone ntdll_vista forwarder, never alongside librtl_rust.a,
+    #   so there is no duplicate-symbol. TODO: make rtl_vista Rust-only (INTERFACE lib).
     locale.c
-    # runonce.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-vista)
-    # srw.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-vista)
-    # utf8.c — replaced by Rust implementation (sdk/lib/rust/utf8/)
     )
 
 add_library(rtl_vista ${SOURCE_VISTA})

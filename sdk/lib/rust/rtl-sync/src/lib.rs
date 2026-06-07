@@ -26,3 +26,5 @@ pub mod srw;
 pub mod condvar;
 #[cfg(feature = "cabi")]
 pub mod runonce;
+#[cfg(feature = "cabi")]
+pub mod locale;

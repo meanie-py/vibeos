@@ -99,13 +99,8 @@ fn main() {
         // (flag-exact; drops the `ninja rtl_vista` prerequisite). First mover of
         // the residue migration — librtl / libcntpr follow. Needs cmake
         // configured with -DCMAKE_EXPORT_COMPILE_COMMANDS=ON.
-        .c_from_compile_db(
-            "rtl_vista",
-            &[
-                // condvar.c, srw.c, runonce.c — now Rust (rtl-sync, via .rust_lib("rtl-rust"))
-                "sdk/lib/rtl/locale.c",
-            ],
-        )
+        // rtl_vista is now 100% Rust (condvar/srw/runonce/locale → rtl-sync, via
+        // .rust_lib("rtl-rust")); no rtl_vista C files remain to compile in-cargo.
         .static_libs(&[
             // Tier-C deep-C (deferred — follows rtl-priv / libcntpr-crt flips):
             "sdk/lib/rtl/librtl.a",
