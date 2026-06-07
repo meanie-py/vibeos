@@ -35,7 +35,7 @@ list(APPEND SOURCE
     # atom.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ATM)
     # avltable.c — replaced by Rust implementation (sdk/lib/rust/avltable/)
     # bitmap.c — replaced by Rust implementation (sdk/lib/rust/bitmap/)
-    bootdata.c
+    # bootdata.c — replaced by Rust implementation (sdk/lib/rust/rtl-bootdata/)
     # compress.c — replaced by Rust implementation (sdk/lib/rust/compress/)
     # crc32.c — replaced by Rust implementation (sdk/lib/rust/crc32/)
     critical.c
@@ -66,9 +66,9 @@ list(APPEND SOURCE
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
     # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
     # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
-    propvar.c
+    # propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
-    rangelist.c
+    # rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
     registry.c
     res.c
     # resource.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave RES)
@@ -217,6 +217,12 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-version/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-ppb/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-ppb/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-propvar/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-propvar/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-bootdata/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-bootdata/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-rangelist/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-rangelist/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs

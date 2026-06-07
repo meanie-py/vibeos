@@ -1,0 +1,15 @@
+[package]
+name = "rtl-bootdata"
+version = "0.1.0"
+edition = "2021"
+
+# Rust translation of sdk/lib/rtl/bootdata.c — Boot Status Data
+# (\SystemRoot\bootstat.dat) create / get-set / lock / unlock. Uses the
+# ntkrnl-sys ddk RTL_BSD_DATA layout (offset_of! into it) + Zw* file I/O.
+# Shared kernel+user via librtl_rust.a.
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

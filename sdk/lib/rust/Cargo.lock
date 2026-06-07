@@ -642,6 +642,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-bootdata"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-difftest"
 version = "0.1.0"
 dependencies = [
@@ -658,6 +665,20 @@ dependencies = [
 
 [[package]]
 name = "rtl-ppb"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "rtl-propvar"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "rtl-rangelist"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
@@ -684,8 +705,11 @@ dependencies = [
  "prefix",
  "random",
  "rtl-actctx",
+ "rtl-bootdata",
  "rtl-heap",
  "rtl-ppb",
+ "rtl-propvar",
+ "rtl-rangelist",
  "rtl-strings",
  "rtl-threadpool",
  "rtl-version",
