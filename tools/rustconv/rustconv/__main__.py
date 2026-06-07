@@ -782,7 +782,7 @@ def cmd_translate(args):
     from .resolver import resolve as file_resolve
     from .callgraph import extract_call_graph, topological_sort, print_call_graph
     from .function_resolver import resolve_function
-    from .function_prompt import build_function_prompt, build_preamble_prompt, load_function_system_prompt
+    from .function_prompt import build_function_prompt, build_file_context, build_preamble_prompt, load_function_system_prompt
     from .stitcher import stitch_file
     from .batch_runner import submit_single, TranslationResult
     from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
@@ -920,6 +920,12 @@ def cmd_translate(args):
         total_in = 0
         total_out = 0
 
+        # Per-file SHARED context (import superset + gap fns + globals), built
+        # ONCE and sent as a second cached system block on every function call.
+        # It's byte-identical across the file's N functions, so functions 2..N
+        # read it from cache (~0.1x) instead of re-sending it uncached each call.
+        file_context = build_file_context(file_res, scan, subsystem, target=rustconv_target)
+
         # One paid banner per file: n calls = functions + preamble. Rough input
         # estimate = first-function prompt × function count (each call re-sends
         # context, so this is a floor, not a ceiling).
@@ -937,11 +943,14 @@ def cmd_translate(args):
             # Per-function resolve
             func_res = resolve_function(dep, catalog, file_res.exports, scan.defines)
 
-            # Build prompt
+            # Build the function-specific prompt only — the shared import/gap/
+            # globals context is sent separately as a cached system block
+            # (file_context), so include_shared=False keeps it out of the
+            # full-price per-function user message.
             user_prompt = build_function_prompt(
                 dep, func_res, translated, all_deps_for_context,
                 scan, catalog_fn_names, file_res.exports,
-                target=rustconv_target,
+                target=rustconv_target, include_shared=False,
             )
 
             # Stream this function's output straight to the durable archive.
@@ -951,9 +960,11 @@ def cmd_translate(args):
             try:
                 if use_claude:
                     result = submit_single(user_prompt, model=model,
-                                           system_prompt=system_prompt, sink=sink)
+                                           system_prompt=system_prompt,
+                                           file_context=file_context, sink=sink)
                 else:
-                    full_prompt = (system_prompt + "\n\n---\n\n" + user_prompt) if system_prompt else user_prompt
+                    prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
+                    full_prompt = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
                     result = submit_single(full_prompt, model=model, sink=sink)
             finally:
                 if sink is not None:

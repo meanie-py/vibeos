@@ -146,6 +146,23 @@ def _load_shim_signatures(subsystem: str) -> dict[str, str]:
     return sigs
 
 
+def _rust_signature(rust_src: str) -> str:
+    """Extract just the attributes + `fn` signature (no body) from generated Rust.
+
+    The caller of a function needs its *signature* (name, params, return type,
+    calling convention) to emit a correct call — never its body. The body open
+    brace is the first `{` in generated translations (attributes use parens, and
+    signature return types here don't contain braces), so everything before it
+    is the attribute stack + signature. We append `;` so it reads as a decl.
+    """
+    src = rust_src.strip()
+    brace = src.find("{")
+    if brace < 0:
+        # No body brace (already a forward decl / fn-pointer type) — first lines.
+        return "\n".join(src.splitlines()[:6])
+    return src[:brace].rstrip() + ";"
+
+
 def _format_callee_context(
     func: FunctionDep,
     translated: dict[str, str],
@@ -154,10 +171,13 @@ def _format_callee_context(
 ) -> str:
     """Build callee context section.
 
-    For each callee of the function being translated:
-    - If already translated to Rust: show the full Rust function
+    For each callee of the function being translated we emit only its SIGNATURE
+    (the calling contract) — never its body. Bodies are uncached per-function
+    bulk that adds no translation value and tempts the model to copy callee
+    internals into the caller.
+    - If already translated to Rust: show the Rust signature
     - If extern (in catalog): show extern declaration
-    - If local but not yet translated: show C signature + first lines
+    - If local but not yet translated: show C signature
     - If gap function: skip (handled by gap section)
     """
     if not func.callees:
@@ -177,28 +197,18 @@ def _format_callee_context(
             continue  # Self-recursion, skip
 
         if callee_name in translated:
-            # Already translated — show Rust source
-            rust_src = translated[callee_name]
-            # Show just the signature + first ~10 lines for context
-            lines = rust_src.strip().splitlines()
-            preview = "\n".join(lines[:15])
-            if len(lines) > 15:
-                preview += "\n    // ... (truncated)"
+            # Already translated — show only the Rust signature (the contract).
+            sig = _rust_signature(translated[callee_name])
             parts.append(f"### `{callee_name}` (already translated to Rust)")
-            parts.append(f"```rust\n{preview}\n```\n")
+            parts.append(f"```rust\n{sig}\n```\n")
 
         elif callee_name in local_names:
-            # Local function not yet translated — show C signature
+            # Local function not yet translated — show only the C signature.
             dep = by_name[callee_name]
             params_str = ", ".join(f"{t} {n}" for t, n in dep.params)
             sig = f"{dep.return_type} {dep.calling_convention or ''} {dep.name}({params_str})".strip()
-            # Show first ~5 lines of body
-            body_lines = dep.body_text.strip().splitlines()
-            preview = "\n".join(body_lines[:8])
-            if len(body_lines) > 8:
-                preview += "\n    // ... (truncated)"
             parts.append(f"### `{callee_name}` (local C function, not yet translated)")
-            parts.append(f"```c\n{preview}\n```\n")
+            parts.append(f"```c\n{sig};\n```\n")
 
         elif callee_name in catalog_fns:
             # Extern function from catalog
@@ -338,6 +348,39 @@ def build_preamble_prompt(
     return "\n".join(parts)
 
 
+def build_file_context(
+    file_res: ResolveResult,
+    scan: "ScanResult",
+    subsystem: str,
+    target: Target | None = None,
+) -> str:
+    """Per-file shared context — byte-stable across every function in the file.
+
+    Contains the import SUPERSET (file-level resolve), gap functions, and the
+    file globals/preamble. It names no specific function, so it is identical
+    for all N function calls of a file and belongs in a *cached* system block:
+    written once on function 1 (~1.25x), read by functions 2..N (~0.1x), versus
+    the old path that re-sent this whole block uncached (1x) on every call.
+    The function-specific bit (export info, translated callees, the C body)
+    stays in the per-call user message — build_function_prompt(include_shared=False).
+    """
+    parts = [
+        "## File Translation Context",
+        "(Shared by every function in this file. The specific function to "
+        "translate is in the user message that follows.)\n",
+    ]
+    parts.append(_format_import_context(file_res, target=target))
+    gap_info = _format_gap_functions(file_res.gap_functions, subsystem)
+    if gap_info:
+        parts.append(gap_info)
+    globals_info = _format_globals_context(
+        scan.globals, scan.globals_text or scan.preamble_text
+    )
+    if globals_info:
+        parts.append(globals_info)
+    return "\n".join(parts)
+
+
 def build_function_prompt(
     func: FunctionDep,
     resolve: ResolveResult,
@@ -347,8 +390,16 @@ def build_function_prompt(
     catalog_fn_names: set[str],
     spec_exports: dict | None = None,
     target: Target | None = None,
+    include_shared: bool = True,
 ) -> str:
     """Build a complete prompt for translating a single C function.
+
+    When ``include_shared`` is False, the file-shared context (import list, gap
+    functions, globals) is OMITTED — the caller is sending it once in a cached
+    system block via build_file_context() instead of re-paying for it on every
+    function. Only the function-specific parts (export info, already-translated
+    callees, the C body) are emitted. Default True keeps the self-contained
+    prompt for the dry-run/preview and any non-cached caller.
 
     Args:
         func: The function to translate
@@ -376,20 +427,18 @@ def build_function_prompt(
     if export_info:
         parts.append(export_info)
 
-    # Imports
-    parts.append(_format_import_context(resolve, target=target))
-
-    # Gap functions
-    gap_info = _format_gap_functions(resolve.gap_functions, subsystem)
-    if gap_info:
-        parts.append(gap_info)
-
-    # Globals
-    globals_info = _format_globals_context(
-        scan.globals, scan.globals_text or scan.preamble_text
-    )
-    if globals_info:
-        parts.append(globals_info)
+    # File-shared context (imports / gap / globals). Omitted when the caller
+    # supplies it once via build_file_context() in a cached system block.
+    if include_shared:
+        parts.append(_format_import_context(resolve, target=target))
+        gap_info = _format_gap_functions(resolve.gap_functions, subsystem)
+        if gap_info:
+            parts.append(gap_info)
+        globals_info = _format_globals_context(
+            scan.globals, scan.globals_text or scan.preamble_text
+        )
+        if globals_info:
+            parts.append(globals_info)
 
     # Callee context
     callee_info = _format_callee_context(func, translated, all_deps, catalog_fn_names)

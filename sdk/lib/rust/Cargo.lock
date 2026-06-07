@@ -55,6 +55,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "beep-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "beep-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "bitmap"
 version = "0.1.0"
 
@@ -134,6 +148,20 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "winsrv-sys",
+]
+
+[[package]]
+name = "condrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "condrv-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

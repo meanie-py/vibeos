@@ -25,7 +25,7 @@ class TranslationResult:
 
 
 def _submit_claude(prompt: str, model: str, system_prompt: str = "",
-                   sink=None) -> TranslationResult:
+                   file_context: str = "", sink=None) -> TranslationResult:
     """Submit via Anthropic Python SDK.
 
     sink: optional ResponseSink. When given, every streamed delta is written to
@@ -43,13 +43,27 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
             "messages": [{"role": "user", "content": prompt}],
         }
 
-        # Use system prompt with caching if provided
+        # Up to TWO cached system blocks form the stable prefix:
+        #   1. system_prompt — file-independent translation rules
+        #   2. file_context  — per-file shared context (import superset, gap fns,
+        #      globals); byte-identical across all functions of one file, so
+        #      functions 2..N read it from cache (~0.1x) instead of re-sending it
+        #      uncached (1x). Only the per-function `prompt` is full price.
+        system_blocks = []
         if system_prompt:
-            kwargs["system"] = [{
+            system_blocks.append({
                 "type": "text",
                 "text": system_prompt,
                 "cache_control": {"type": "ephemeral"},
-            }]
+            })
+        if file_context:
+            system_blocks.append({
+                "type": "text",
+                "text": file_context,
+                "cache_control": {"type": "ephemeral"},
+            })
+        if system_blocks:
+            kwargs["system"] = system_blocks
 
         # Use streaming to avoid 10-minute timeout on large outputs
         response_text = ""
@@ -173,11 +187,14 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
 
 
 def submit_single(prompt: str, model: str = "", system_prompt: str = "",
-                  sink=None) -> TranslationResult:
+                  file_context: str = "", sink=None) -> TranslationResult:
     """Submit a single translation request.
 
     Auto-detects backend from model name or ANTHROPIC_API_KEY env var.
 
+    file_context: optional per-file shared context; on Claude it becomes a
+        second cached system block (read at ~0.1x across a file's functions),
+        on Gemini (no caching) it's prepended inline.
     sink: optional ResponseSink for durable stream-to-disk (Claude backend).
     """
     backend = get_backend()
@@ -192,11 +209,12 @@ def submit_single(prompt: str, model: str = "", system_prompt: str = "",
         backend = "gemini"
 
     if backend == "claude":
-        return _submit_claude(prompt, model, system_prompt, sink=sink)
+        return _submit_claude(prompt, model, system_prompt, file_context, sink=sink)
     else:
-        # Gemini doesn't support separate system prompt via this path,
-        # so we prepend it to the prompt
-        full_prompt = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
+        # Gemini has no separate system prompt / caching here, so prepend both
+        # the rules and the per-file context to the prompt.
+        prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
+        full_prompt = (prefix + "\n\n---\n\n" + prompt) if prefix else prompt
         result = _submit_gemini(full_prompt, model)
         # Gemini isn't streamed here, but still persist the result durably.
         if sink is not None and result.rust_code:
