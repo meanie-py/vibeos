@@ -190,6 +190,18 @@ produces more warts, so the verify gate matters more than with Opus. (No c2rust 
 the c2rust-*style* is purely the mechanical prompt instructing the LLM; verified absent from all
 rustconv prompts/code.)
 
+## 5c. Onboarding (for other Claudes)
+
+`tools/deepdrive/README.md` is the usage contract any Claude reads to use the tool — the `run`
+contract + result schema, the bounded-turn / steer-on-plateau operating model, parallel fan-out
+(one lightweight worktree per task), cost reality, and the safety/checkpoint discipline.
+`tools/deepdrive/grind_prompt.md` is a fill-in-the-blanks **grind preset** for the headline use
+case — driving a **banked translation** (Opus or DeepSeek) to `cargo check` green **grind-only**,
+with the hard rule **never rewrite a function** (the agent will otherwise sometimes "fix" an error
+by discarding paid translation work). The grind-on-Opus regime is harder than grind-on-mechanical
+(ABI/FFI/layout/captures errors vs `let mut`/casts), so expect a higher steer-to-grind ratio — that
+ratio is where the subsystem Claude's domain knowledge earns its keep.
+
 ## 6. Safety model
 
 - DeepCode edits the caller's **live working tree** (D3). The contract: `deepdrive run` is like
