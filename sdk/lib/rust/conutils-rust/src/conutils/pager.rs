@@ -216,7 +216,15 @@ unsafe fn ConPagerWorker(
     }
 
     let mut goto_expand_tab: bool = false;
-    loop {
+    'process: loop {
+        // ProcessLine: the C label's first action is the stop-check, BEFORE the
+        // ExpandTab block below (which C reaches via `goto ExpandTab` only AFTER
+        // this check). Each `continue` here maps to C's `goto ProcessLine`, so the
+        // page-limit must be re-tested before any further tab expansion.
+        if b_finite_paging != 0 && (*pager).iLine >= scroll_rows {
+            break;
+        }
+
         // ExpandTab
         if (*pager).nSpacePending > 0 || goto_expand_tab {
             goto_expand_tab = false;
@@ -232,13 +240,9 @@ unsafe fn ConPagerWorker(
                         ConStreamWrite((*(*pager).Screen).Stream, newline.as_ptr() as *const u16, 1);
                     }
                     (*pager).iLine += 1;
-                    continue;
+                    continue 'process; // C: goto ProcessLine — re-check stop before more expansion
                 }
             }
-        }
-
-        if b_finite_paging != 0 && (*pager).iLine >= scroll_rows {
-            break;
         }
 
         if line.is_null() || (ich_start >= i_end_line) {
@@ -330,16 +334,20 @@ unsafe fn ConPagerWorker(
             if b_finite_paging != 0 {
                 while (*pager).iLine < scroll_rows {
                     (*pager).iColumn = i_column;
-                    let pager_line_fn = (*pager).PagerLine;
-                    if let Some(f) = pager_line_fn {
-                        let nl: u16 = 0x000A;
-                        if f(pager, &nl as *const u16, 1) != 0 {
-                            (*pager).iLine += 1;
-                            break;
-                        }
+                    // C: `if (PagerLine && PagerLine(Pager,"\n",1)) { iLine++; break; }
+                    //     else { CON_STREAM_WRITE("\n",1); iLine++; }`
+                    // The else covers BOTH PagerLine==NULL and PagerLine returning 0
+                    // — in both cases write a newline + advance (or the loop spins forever).
+                    let nl: u16 = 0x000A;
+                    let paused = match (*pager).PagerLine {
+                        Some(f) => f(pager, &nl as *const u16, 1) != 0,
+                        None => false,
+                    };
+                    if paused {
+                        (*pager).iLine += 1;
+                        break;
                     } else {
-                        let nl2: u16 = 0x000A;
-                        ConStreamWrite((*(*pager).Screen).Stream, &nl2 as *const u16, 1);
+                        ConStreamWrite((*(*pager).Screen).Stream, &nl as *const u16, 1);
                         (*pager).iLine += 1;
                     }
                 }

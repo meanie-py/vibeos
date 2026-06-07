@@ -558,14 +558,18 @@ pub unsafe extern "C" fn ConResMsgPrintfExV(
         return Len;
     }
 
-    dwFlags &= !FORMAT_MESSAGE_ARGUMENT_ARRAY;
+    // Sanitize dwFlags (faithful to outstream.c ConResMsgPrintfExV): always
+    // allocate, and since the string was already manually loaded, clear
+    // FROM_HMODULE/FROM_SYSTEM and force FROM_STRING.
+    dwFlags |= FORMAT_MESSAGE_ALLOCATE_BUFFER;
+    dwFlags &= !(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM);
     dwFlags |= FORMAT_MESSAGE_FROM_STRING;
 
     dwLength = FormatMessageSafeW(
         dwFlags,
         bufSrc.as_ptr() as *const c_void,
         0,
-        LanguageId as u32,
+        0,
         core::ptr::addr_of_mut!(lpMsgBuf) as *mut u16,
         0,
         Arguments,
@@ -624,6 +628,9 @@ pub unsafe extern "C" fn ConClearLine(Stream: *mut CON_STREAM) {
 
         GetConsoleScreenBufferInfo(hOutput, &mut csbi);
 
+        // C zeroes csbi.dwCursorPosition.X in place, then uses that (0, Y) coord
+        // for BOTH the fill start and the cursor reposition — so the whole line
+        // (including the part before the cursor) is erased.
         let new_pos = COORD { X: 0, Y: csbi.dwCursorPosition.Y };
         let clear_len = csbi.dwSize.X as u32;
 
@@ -631,7 +638,7 @@ pub unsafe extern "C" fn ConClearLine(Stream: *mut CON_STREAM) {
             hOutput,
             ' ' as u16,
             clear_len,
-            csbi.dwCursorPosition,
+            new_pos,
             &mut dwWritten,
         );
         SetConsoleCursorPosition(hOutput, new_pos);
