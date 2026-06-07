@@ -77,26 +77,26 @@ pub unsafe extern "C" fn HvpCreateHive(
     return STATUS_NO_MEMORY;
     } BlockIndex = 0;
     while BlockIndex < ((*Hive).Storage[Stable as usize].Length as usize) { Bin = (ChunkBase as usize + (BlockIndex + 1) * HBLOCK_SIZE as usize) as *mut HBIN;
-    if (*Bin).Signature != HV_HBIN_SIGNATURE || ((*Bin).Size as usize % HBLOCK_SIZE) != 0 || ((*Bin).FileOffset / (HBLOCK_SIZE as u32)) != (BlockIndex as u32) { if CmIsSelfHealEnabled(0) == 0 { DPRINT1(b"Invalid bin at BlockIndex %lu, Signature 0x%x, Size 0x%x. Self-heal not possible!\n\0".as_ptr() as *const i8, BlockIndex, (*Bin).Signature, (*Bin).Size);
+    if (*Bin).Signature != HV_HBIN_SIGNATURE || ((*Bin).Size as usize % HBLOCK_SIZE as usize) != 0 || ((*Bin).FileOffset / (HBLOCK_SIZE as u32)) != (BlockIndex as u32) { if CmIsSelfHealEnabled(0) == 0 { DPRINT1(b"Invalid bin at BlockIndex %lu, Signature 0x%x, Size 0x%x. Self-heal not possible!\n\0".as_ptr() as *const i8, BlockIndex, (*Bin).Signature, (*Bin).Size);
     ((*Hive).Free.unwrap())((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
     ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
     return STATUS_REGISTRY_CORRUPT;
     } // Fix this bin (*Bin).Signature = HV_HBIN_SIGNATURE;
     (*Bin).Size = HBLOCK_SIZE as u32;
-    (*Bin).FileOffset = (BlockIndex * HBLOCK_SIZE) as u32;
+    (*Bin).FileOffset = (BlockIndex as u32 * HBLOCK_SIZE);
     (*ChunkBase).BootType |= HBOOT_TYPE_SELF_HEAL;
     DPRINT1(b"Bin at index %lu is corrupt and it has been repaired!\n\0".as_ptr() as *const i8, BlockIndex);
     } NewBin = ((*Hive).Allocate.unwrap())((*Bin).Size as usize, 1, TAG_CM) as *mut HBIN;
     if NewBin.is_null() { ((*Hive).Free.unwrap())((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
     ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
     return STATUS_NO_MEMORY;
-    } (*Hive).Storage[Stable as usize].BlockList[BlockIndex].BinAddress = NewBin as usize;
-    (*Hive).Storage[Stable as usize].BlockList[BlockIndex].BlockAddress = NewBin as usize;
+    } (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BinAddress = NewBin as usize;
+    (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BlockAddress = NewBin as usize;
     core::ptr::copy_nonoverlapping( Bin as *const u8, NewBin as *mut u8, (*Bin).Size as usize, );
     if (*Bin).Size > (HBLOCK_SIZE as u32) { let bin_count = (*Bin).Size / (HBLOCK_SIZE as u32);
     for i in 1..bin_count as usize {
-        (*Hive).Storage[Stable as usize].BlockList[BlockIndex + i].BinAddress = NewBin as usize;
-        (*Hive).Storage[Stable as usize].BlockList[BlockIndex + i].BlockAddress = NewBin as usize + (i * HBLOCK_SIZE as usize);
+        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BinAddress = NewBin as usize;
+        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BlockAddress = NewBin as usize + (i * HBLOCK_SIZE as usize);
     } } BlockIndex += ((*Bin).Size as usize) / HBLOCK_SIZE as usize;
     }
     if !NT_SUCCESS(HvpCreateHiveFreeCellList(Hive)) {
@@ -189,12 +189,12 @@ pub unsafe extern "system" fn HvInitialize(
     HiveFlags: u32,
     FileType: u32,
     HiveData: *mut core::ffi::c_void,
-    Allocate: Option<unsafe extern "system" fn(*mut core::ffi::c_void, u32) -> *mut core::ffi::c_void>,
-    Free: Option<unsafe extern "system" fn(*mut core::ffi::c_void)>,
-    FileSetSize: Option<unsafe extern "system" fn(*mut HHIVE, i32, *mut i64) -> i32>,
-    FileWrite: Option<unsafe extern "system" fn(*mut HHIVE, u32, *mut u32, *mut u8, u32) -> bool>,
-    FileRead: Option<unsafe extern "system" fn(*mut HHIVE, u32, *mut u32, *mut u8, u32) -> bool>,
-    FileFlush: Option<unsafe extern "system" fn(*mut HHIVE, u32) -> bool>,
+    Allocate: PALLOCATE_ROUTINE,
+    Free: PFREE_ROUTINE,
+    FileSetSize: PFILE_SET_SIZE_ROUTINE,
+    FileWrite: PFILE_WRITE_ROUTINE,
+    FileRead: PFILE_READ_ROUTINE,
+    FileFlush: PFILE_FLUSH_ROUTINE,
     Cluster: u32,
     FileName: *const _UNICODE_STRING,
 ) -> NTSTATUS {

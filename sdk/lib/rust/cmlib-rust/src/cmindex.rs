@@ -55,7 +55,7 @@ pub unsafe extern "system" fn CmpComputeHashKey(
             // if (*Cp < L'z')
             if *Cp <= 0x7Au16 {
                 // Value = *Cp - L'a' + L'A';
-                Value = ((*Cp - 0x61u16 + 0x41u16) as u32);
+                Value = *Cp as u32 - 0x61u32 + 0x41u32;
             } else {
                 // Value = RtlUpcaseUnicodeChar(*Cp);
                 Value = RtlUpcaseUnicodeChar(*Cp) as u32;
@@ -235,9 +235,9 @@ pub unsafe extern "system" fn CmpAddToLeaf(
         entry_size = core::mem::size_of::<CM_INDEX>();
     }
 
-    old_size = HvGetCellSize(hive, leaf as *mut core::ffi::c_void);
+    old_size = HvGetCellSize(hive, leaf as *mut CM_KEY_INDEX);
     size = old_size;
-    size -= (entry_size as u32) * (*leaf).Count
+    size -= entry_size * (*leaf).Count as usize
         + (core::mem::offset_of!(CM_KEY_INDEX, List) as u32);
 
     new_cell = leaf_cell;

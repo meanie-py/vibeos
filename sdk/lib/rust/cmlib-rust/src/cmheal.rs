@@ -38,7 +38,7 @@ pub unsafe extern "C" fn CmpRepairParentKey(
 
     ParentRepaired = 0;
 
-    if CmIsSelfHealEnabled(FixHive) == 0 {
+    if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         DPRINT1(b"Self healing not possible\n\0".as_ptr() as *const i8);
         return ParentRepaired;
     }
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn CmpRepairParentNode(
     FixHive: i32,
 ) -> i32 {
     PAGED_CODE();
-    if CmIsSelfHealEnabled(FixHive) == 0 {
+    if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         // DPRINT removed
         return 0;
     }
@@ -106,12 +106,12 @@ pub unsafe extern "C" fn CmpRepairKeyNodeSignature(
 ) -> u8 {
     // PAGED_CODE();
 
-    if CmIsSelfHealEnabled(FixHive) == 0 {
+    if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         // DPRINT removed
         return 0u8;
     }
 
-    HvMarkCellDirty(Hive, CurrentCell, 0u8);
+    HvMarkCellDirty(Hive, CurrentCell, 0);
     (*CellData).u.KeyNode.Signature = 0x6e4b6e48; // CM_KEY_NODE_SIGNATURE
 
     let base = (*Hive).BaseBlock;
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn CmpRepairKeyNodeSignature(
 #[no_mangle] #[no_mangle]
 #[no_mangle] pub unsafe extern "C" fn CmpRepairClassOfNodeKey(Hive: *mut HHIVE, CurrentCell: u32, CellData: *mut CELL_DATA, FixHive: i32) -> i32 {
     // PAGED_CODE();
-    if CmIsSelfHealEnabled(FixHive) == 0 {
+    if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         // DPRINT1("Self healing not possible\n");
         return 0;
     }
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn CmpRepairValueListCount(
     // PAGED_CODE();
 
     /* Is self healing possible? */
-    if CmIsSelfHealEnabled(fix_hive) == 0 {
+    if CmIsSelfHealEnabled(fix_hive as u8) == 0 {
         // DPRINT1("Self healing not possible\n");
         return 0;
     }
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn CmpRepairValueList(
 
     // PAGED_CODE();
 
-    if CmIsSelfHealEnabled(FixHive) == 0 {
+    if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         DbgPrint(b"Self healing not possible\n\0".as_ptr() as *const i8);
         return 0;
     }
@@ -219,12 +219,12 @@ pub unsafe extern "C" fn CmpRepairSubKeyCounts(
     FixHive: u8,
 ) -> u8 {
     // PAGED_CODE();
-    if CmIsSelfHealEnabled(FixHive) == 0 {
+    if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         // DPRINT1("Self healing not possible\n");
         return 0u8;
     }
 
-    HvMarkCellDirty(Hive, CurrentCell, 0u8);
+    HvMarkCellDirty(Hive, CurrentCell, 0);
     const Stable: usize = 1; // Stable index
     (*CellData).u.KeyNode.SubKeyCounts[Stable] = Count;
     (*(*Hive).BaseBlock).BootType |= 0x00000002u32; // HBOOT_TYPE_SELF_HEAL
@@ -240,7 +240,7 @@ pub unsafe extern "C" fn CmpRepairSubKeyList(
     // PAGED_CODE();
 
     /* Is self healing possible? */
-    if CmIsSelfHealEnabled(FixHive) == 0 {
+    if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         // DPRINT removed
         return 0;
     }
@@ -251,8 +251,8 @@ pub unsafe extern "C" fn CmpRepairSubKeyList(
      * list.
      */
     HvMarkCellDirty(Hive, CurrentCell, 0);
-    (*CellData).u.KeyNode.__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable] = HCELL_NIL;
-    (*CellData).u.KeyNode.SubKeyCounts[Stable] = 0;
+    (*CellData).u.KeyNode.__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable as usize] = HCELL_NIL;
+    (*CellData).u.KeyNode.SubKeyCounts[Stable as usize] = 0;
 
     /* Mark the hive as in self healing mode since we repaired it */
     let base_block = (*Hive).BaseBlock;

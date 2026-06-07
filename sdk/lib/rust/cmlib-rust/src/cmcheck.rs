@@ -88,8 +88,8 @@ unsafe fn CmpValidateLexicalOrder(
     const KEY_COMP_NAME: u16 = 0x0020;
 
     let mut Result: i32;
-    let mut ChildString: _UNICODE_STRING;
-    let mut SiblingString: _UNICODE_STRING;
+    let mut ChildString: _UNICODE_STRING = core::mem::zeroed();
+    let mut SiblingString: _UNICODE_STRING = core::mem::zeroed();
     let mut ChildNode: *mut CM_KEY_NODE;
     let mut SiblingNode: *mut CM_KEY_NODE;
 
@@ -113,18 +113,18 @@ unsafe fn CmpValidateLexicalOrder(
         }
 
         /* CASE 1: Two distinct non-compressed Unicode names */
-        if ((*ChildNode).Flags & KEY_COMP_NAME) == 0
-            && ((*SiblingNode).Flags & KEY_COMP_NAME) == 0
+        if (core::ptr::addr_of!((*ChildNode).Flags).read_unaligned() & KEY_COMP_NAME) == 0
+            && (core::ptr::addr_of!((*SiblingNode).Flags).read_unaligned() & KEY_COMP_NAME) == 0
         {
             /* Build the sibling string */
-            SiblingString.Buffer = (*SiblingNode).Name.as_mut_ptr();
-            SiblingString.Length = (*SiblingNode).NameLength;
-            SiblingString.MaximumLength = (*SiblingNode).NameLength;
+            SiblingString.Buffer = core::ptr::addr_of!((*SiblingNode).Name) as *mut u16;
+            SiblingString.Length = core::ptr::addr_of!((*SiblingNode).NameLength).read_unaligned();
+            SiblingString.MaximumLength = core::ptr::addr_of!((*SiblingNode).NameLength).read_unaligned();
 
             /* Build the child string */
-            ChildString.Buffer = (*ChildNode).Name.as_mut_ptr();
-            ChildString.Length = (*ChildNode).NameLength;
-            ChildString.MaximumLength = (*ChildNode).NameLength;
+            ChildString.Buffer = core::ptr::addr_of!((*ChildNode).Name) as *mut u16;
+            ChildString.Length = core::ptr::addr_of!((*ChildNode).NameLength).read_unaligned();
+            ChildString.MaximumLength = core::ptr::addr_of!((*ChildNode).NameLength).read_unaligned();
 
             Result = RtlCompareUnicodeString(
                 core::ptr::addr_of!(SiblingString),
@@ -138,8 +138,8 @@ unsafe fn CmpValidateLexicalOrder(
         }
 
         /* CASE 2: Both compressed Unicode names */
-        if ((*ChildNode).Flags & KEY_COMP_NAME) != 0
-            && ((*SiblingNode).Flags & KEY_COMP_NAME) != 0
+        if (core::ptr::addr_of!((*ChildNode).Flags).read_unaligned() & KEY_COMP_NAME) != 0
+            && (core::ptr::addr_of!((*SiblingNode).Flags).read_unaligned() & KEY_COMP_NAME) != 0
         {
             /* FIXME: Checks for two compressed names not implemented yet */
             // DPRINT!("Lexicographical order checks for two compressed names is UNIMPLEMENTED, assume the key is healthy...\n");
@@ -147,16 +147,16 @@ unsafe fn CmpValidateLexicalOrder(
         }
 
         /* CASE 3: The child name is compressed but the sibling is not */
-        if ((*ChildNode).Flags & KEY_COMP_NAME) != 0
-            && ((*SiblingNode).Flags & KEY_COMP_NAME) == 0
+        if (core::ptr::addr_of!((*ChildNode).Flags).read_unaligned() & KEY_COMP_NAME) != 0
+            && (core::ptr::addr_of!((*SiblingNode).Flags).read_unaligned() & KEY_COMP_NAME) == 0
         {
-            SiblingString.Buffer = (*SiblingNode).Name.as_mut_ptr();
-            SiblingString.Length = (*SiblingNode).NameLength;
-            SiblingString.MaximumLength = (*SiblingNode).NameLength;
+            SiblingString.Buffer = core::ptr::addr_of!((*SiblingNode).Name) as *mut u16;
+            SiblingString.Length = core::ptr::addr_of!((*SiblingNode).NameLength).read_unaligned();
+            SiblingString.MaximumLength = core::ptr::addr_of!((*SiblingNode).NameLength).read_unaligned();
             Result = CmpCompareCompressedName(
                 core::ptr::addr_of!(SiblingString),
-                (*ChildNode).Name.as_ptr(),
-                (*ChildNode).NameLength,
+                core::ptr::addr_of!((*ChildNode).Name) as *const u16,
+                core::ptr::addr_of!((*ChildNode).NameLength).read_unaligned(),
             );
             if Result >= 0 {
                 // DPRINT1!("The sibling node name is greater or equal to that of the compressed child\n");
@@ -165,16 +165,16 @@ unsafe fn CmpValidateLexicalOrder(
         }
 
         /* CASE 4: The sibling name is compressed but the child is not */
-        if ((*SiblingNode).Flags & KEY_COMP_NAME) != 0
-            && ((*ChildNode).Flags & KEY_COMP_NAME) == 0
+        if (core::ptr::addr_of!((*SiblingNode).Flags).read_unaligned() & KEY_COMP_NAME) != 0
+            && (core::ptr::addr_of!((*ChildNode).Flags).read_unaligned() & KEY_COMP_NAME) == 0
         {
-            ChildString.Buffer = (*ChildNode).Name.as_mut_ptr();
-            ChildString.Length = (*ChildNode).NameLength;
-            ChildString.MaximumLength = (*ChildNode).NameLength;
+            ChildString.Buffer = core::ptr::addr_of!((*ChildNode).Name) as *mut u16;
+            ChildString.Length = core::ptr::addr_of!((*ChildNode).NameLength).read_unaligned();
+            ChildString.MaximumLength = core::ptr::addr_of!((*ChildNode).NameLength).read_unaligned();
             Result = CmpCompareCompressedName(
                 core::ptr::addr_of!(ChildString),
-                (*SiblingNode).Name.as_ptr(),
-                (*SiblingNode).NameLength,
+                core::ptr::addr_of!((*SiblingNode).Name) as *const u16,
+                core::ptr::addr_of!((*SiblingNode).NameLength).read_unaligned(),
             );
             if Result <= 0 {
                 // DPRINT1!("The compressed sibling node name is lesser or equal to that of the child\n");
@@ -225,13 +225,13 @@ unsafe fn CmpValidateKey(
         return CM_CHECK_REGISTRY_CELL_DATA_NOT_FOUND;
     }
 
-    cell_size = HvGetCellSize(Hive, cell_data);
+    cell_size = HvGetCellSize(Hive, cell_data as *mut c_void);
     if cell_size > CMP_KEY_SIZE_THRESHOLD {
         // DPRINT removed
         return CM_CHECK_REGISTRY_CELL_SIZE_NOT_SANE;
     }
 
-    name_length = (*cell_data).u.KeyNode.NameLength;
+    name_length = (*cell_data).u.KeyNode.NameLength as u32;
     if name_length == 0 {
         // DPRINT removed
         return CM_CHECK_REGISTRY_KEY_NAME_LENGTH_ZERO;
@@ -302,16 +302,16 @@ pub unsafe extern "system" fn HvValidateBin(Hive: *mut HHIVE, Bin: *mut HBIN) ->
         // DPRINT removed
         return 1; // CM_CHECK_REGISTRY_BIN_SIGNATURE_HEADER_CORRUPT
     }
-    let Basket = (Bin as *mut u8).add((*Bin).Size) as *mut HCELL;
+    let Basket = (Bin as *mut u8).add((*Bin).Size as usize) as *mut HCELL;
     let mut Cell = GET_CELL_BIN(Bin);
     while Cell < Basket {
         if IsFreeCell(Cell) != 0 {
-            if (*Cell).Size > (*Bin).Size || (*Cell).Size == 0 {
+            if (*Cell).Size as u32 > (*Bin).Size || (*Cell).Size == 0 {
                 // DPRINT removed
                 return 2; // CM_CHECK_REGISTRY_BAD_FREE_CELL
             }
         } else {
-            if abs((*Cell).Size) > (*Bin).Size {
+            if abs((*Cell).Size) as u32 > (*Bin).Size {
                 // DPRINT removed
                 return 3; // CM_CHECK_REGISTRY_BAD_ALLOC_CELL
             }
@@ -339,7 +339,7 @@ pub unsafe extern "system" fn CmCheckRegistry(
 
     if RegistryHive == CmiVolatileHive {
         // DPRINT removed
-        return CM_CHECK_REGISTRY_GOOD;
+        return CM_CHECK_REGISTRY_GOOD as i32;
     }
 
     if Flags & !(CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES |
@@ -355,7 +355,7 @@ pub unsafe extern "system" fn CmCheckRegistry(
 
     if Flags & CM_CHECK_REGISTRY_VALIDATE_HIVE != 0 {
         CmStatusCode = HvValidateHive(Hive);
-        if CM_CHECK_REGISTRY_SUCCESS(CmStatusCode) == 0 {
+        if CM_CHECK_REGISTRY_SUCCESS(CmStatusCode as CM_CHECK_REGISTRY_STATUS) == 0 {
             // DPRINT removed
             return CmStatusCode;
         }
@@ -366,7 +366,7 @@ pub unsafe extern "system" fn CmCheckRegistry(
     }
 
     CmStatusCode = CmpValidateRegistryInternal(Hive, Flags, 0, ShouldFixHive);
-    if CM_CHECK_REGISTRY_SUCCESS(CmStatusCode) == 0 {
+    if CM_CHECK_REGISTRY_SUCCESS(CmStatusCode as CM_CHECK_REGISTRY_STATUS) == 0 {
         // DPRINT removed
         return CmStatusCode;
     }

@@ -150,7 +150,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    let cell_data: PCELL_DATA = HvGetCell(hive, *data_cell);
+    let cell_data = HvGetCell(hive, *data_cell) as PCELL_DATA;
     if cell_data.is_null() {
         ASSERT(0);
     }
@@ -190,7 +190,7 @@ pub unsafe extern "system" fn CmpRemoveValueFromList(
 
         // ASSERT(HvIsCellDirty(Hive, ChildList->List));
         // (omitted due to NDEBUG)
-        // ASSERT(HvIsCellDirty(Hive, CellData->u.KeyList[Index]));
+        // ASSERT(HvIsCellDirty(Hive, CellData->u.KeyList[Index as usize]));
         // (omitted due to NDEBUG)
 
         while Index < Count {
@@ -247,7 +247,7 @@ pub unsafe extern "system" fn CmpCopyKeyValueList(
     while Index < (*SrcValueList).Count {
         NewValue = CmpCopyValue(
             SourceHive,
-            (*SrcListData).u.KeyList[Index],
+            (*SrcListData).u.KeyList[Index as usize],
             DestinationHive,
             StorageType,
         );
@@ -272,7 +272,7 @@ pub unsafe extern "system" fn CmpCopyKeyValueList(
 
         while Index > 0 {
             Index -= 1;
-            NewValue = (*DestListData).u.KeyList[Index];
+            NewValue = (*DestListData).u.KeyList[Index as usize];
             if CmpFreeValue(DestinationHive, NewValue) == 0 {
                 HvFreeCell(DestinationHive, NewValue);
             }
