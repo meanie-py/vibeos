@@ -15,6 +15,14 @@
 pub mod shared;
 
 #[cfg(feature = "cabi")]
+pub mod atomics;
+#[cfg(feature = "cabi")]
 pub mod critical;
 #[cfg(feature = "cabi")]
 pub mod wait;
+#[cfg(feature = "cabi")]
+pub mod srw;
+#[cfg(feature = "cabi")]
+pub mod condvar;
+#[cfg(feature = "cabi")]
+pub mod runonce;

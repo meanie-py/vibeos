@@ -31,6 +31,11 @@ pub unsafe fn NtCurrentTeb() -> PTEB {
 }
 
 pub type LPVOID = *mut c_void;
+pub type DWORD = u32;
+
+// The banked translations refer to InterlockedCompareExchangePointer by this
+// lowercase helper name; re-export the real intrinsic under it.
+pub use ntkrnl_sys::interlocked::InterlockedCompareExchangePointer as interlocked_cmpxchg_ptr;
 
 // winbase.h / ntstatus.h / winnt.h
 pub const INFINITE: u32 = 0xFFFF_FFFF;

@@ -102,10 +102,8 @@ fn main() {
         .c_from_compile_db(
             "rtl_vista",
             &[
-                "sdk/lib/rtl/condvar.c",
+                // condvar.c, srw.c, runonce.c — now Rust (rtl-sync, via .rust_lib("rtl-rust"))
                 "sdk/lib/rtl/locale.c",
-                "sdk/lib/rtl/runonce.c",
-                "sdk/lib/rtl/srw.c",
             ],
         )
         .static_libs(&[

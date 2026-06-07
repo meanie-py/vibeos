@@ -256,6 +256,10 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/shared.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/critical.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/src/wait.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/atomics.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/srw.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/condvar.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/runonce.rs
             ${RUST_WORKSPACE_DIR}/rtl-sync/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
@@ -271,10 +275,10 @@ add_dependencies(rtl rust_rtl)
 target_link_libraries(rtl PRIVATE ${RUST_RTL_RUST_LIB})
 
 list(APPEND SOURCE_VISTA
-    condvar.c
+    # condvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-vista)
     locale.c
-    runonce.c
-    srw.c
+    # runonce.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-vista)
+    # srw.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-vista)
     # utf8.c — replaced by Rust implementation (sdk/lib/rust/utf8/)
     )
 
