@@ -10,6 +10,7 @@ from typing import Optional
 from .config import (
     get_backend, DEFAULT_MODELS,
     CLAUDE_MAX_TOKENS, GEMINI_MAX_TOKENS,
+    DEEPSEEK_BASE_URL, DEEPSEEK_MAX_TOKENS,
 )
 
 
@@ -186,6 +187,86 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
         )
 
 
+def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
+                     file_context: str = "", sink=None) -> TranslationResult:
+    """Submit via the DeepSeek API (OpenAI-compatible).
+
+    deepseek-chat = V3, deepseek-reasoner = R1. Uses the openai SDK pointed at
+    DeepSeek's base URL. system_prompt + file_context become system messages
+    (DeepSeek does automatic server-side prefix caching, so re-sending the
+    stable prefix per function is cheap — no explicit cache_control needed).
+    Streams deltas to `sink` so a kill mid-stream never discards paid output.
+    """
+    from openai import OpenAI
+
+    try:
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise RuntimeError("DEEPSEEK_API_KEY not set (add it to .env)")
+
+        client = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if file_context:
+            messages.append({"role": "system", "content": file_context})
+        messages.append({"role": "user", "content": prompt})
+
+        response_text = ""
+        input_tokens = 0
+        output_tokens = 0
+        finish_reason = None
+
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=DEEPSEEK_MAX_TOKENS,
+            temperature=0.0,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        for chunk in stream:
+            if chunk.choices:
+                choice = chunk.choices[0]
+                delta = choice.delta
+                if delta is not None and getattr(delta, "content", None):
+                    response_text += delta.content
+                    if sink is not None:
+                        sink.write(delta.content)  # flush to disk now
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+            # Usage arrives on the final chunk (choices empty) with include_usage.
+            if getattr(chunk, "usage", None):
+                input_tokens = chunk.usage.prompt_tokens
+                output_tokens = chunk.usage.completion_tokens
+
+        rust_code = _extract_rust_code(response_text)
+
+        if finish_reason == "length":
+            print(f"  WARNING: output truncated at {output_tokens} tokens (finish_reason=length)", file=sys.stderr)
+
+        return TranslationResult(
+            source_file="",
+            rust_code=rust_code,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            success=True,
+        )
+
+    except Exception as e:
+        return TranslationResult(
+            source_file="",
+            rust_code="",
+            model=model,
+            input_tokens=0,
+            output_tokens=0,
+            success=False,
+            error=str(e),
+        )
+
+
 def submit_single(prompt: str, model: str = "", system_prompt: str = "",
                   file_context: str = "", sink=None) -> TranslationResult:
     """Submit a single translation request.
@@ -194,8 +275,9 @@ def submit_single(prompt: str, model: str = "", system_prompt: str = "",
 
     file_context: optional per-file shared context; on Claude it becomes a
         second cached system block (read at ~0.1x across a file's functions),
+        on DeepSeek it's a second system message (server-side prefix caching),
         on Gemini (no caching) it's prepended inline.
-    sink: optional ResponseSink for durable stream-to-disk (Claude backend).
+    sink: optional ResponseSink for durable stream-to-disk (Claude/DeepSeek).
     """
     backend = get_backend()
 
@@ -205,11 +287,15 @@ def submit_single(prompt: str, model: str = "", system_prompt: str = "",
     # Override backend based on model name
     if model.startswith("claude-"):
         backend = "claude"
+    elif model.startswith("deepseek-"):
+        backend = "deepseek"
     elif model.startswith("gemini-"):
         backend = "gemini"
 
     if backend == "claude":
         return _submit_claude(prompt, model, system_prompt, file_context, sink=sink)
+    elif backend == "deepseek":
+        return _submit_deepseek(prompt, model, system_prompt, file_context, sink=sink)
     else:
         # Gemini has no separate system prompt / caching here, so prepend both
         # the rules and the per-file context to the prompt.

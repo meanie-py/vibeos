@@ -6,7 +6,13 @@ requires-python = ">=3.10"
 dependencies = [
     "tree-sitter>=0.24",
     "tree-sitter-c>=0.24",
+    "anthropic>=0.97",
+    "openai>=2.0",
+    "python-dotenv>=1.0",
 ]
+
+[project.optional-dependencies]
+gemini = ["google-genai>=0.3"]
 
 [tool.setuptools.packages.find]
 include = ["rustconv*"]

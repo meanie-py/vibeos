@@ -4,7 +4,23 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import NTOSKRNL_DIR, get_backend, DEFAULT_MODELS, detect_target, TARGETS
+from .config import (NTOSKRNL_DIR, REACTOS_ROOT, get_backend, DEFAULT_MODELS,
+                     detect_target, make_user_dll_target, TARGETS)
+
+
+def resolve_target(args, path):
+    """Pick the rustconv Target: an explicit --target wins (a known TARGETS key, or a
+    standalone dll/win32/<name> crate name), else auto-detect from the path. Auto-detect
+    now RAISES for unrecognized paths instead of silently using ntoskrnl."""
+    name = getattr(args, "target", None)
+    if name:
+        if name in TARGETS:
+            return TARGETS[name]
+        src = REACTOS_ROOT / "dll" / "win32" / name
+        if not src.exists():
+            src = REACTOS_ROOT / "dll" / name
+        return make_user_dll_target(name, src)
+    return detect_target(path)
 
 # Model shortcuts for CLI convenience
 MODEL_ALIASES = {
@@ -14,6 +30,15 @@ MODEL_ALIASES = {
     "opus-4-7": "claude-opus-4-7",
     "gemini-pro": "gemini-2.5-pro",
     "gemini-flash": "gemini-2.5-flash",
+    # The provisioned key serves the v4 tier (deepseek-v4-pro / deepseek-v4-flash).
+    "deepseek": "deepseek-v4-pro",        # default to pro for translation quality
+    "deepseek-pro": "deepseek-v4-pro",
+    "deepseek-flash": "deepseek-v4-flash",
+    "deepseek-v4-pro": "deepseek-v4-pro",
+    "deepseek-v4-flash": "deepseek-v4-flash",
+    "deepseek-chat": "deepseek-chat",     # legacy aliases (route server-side)
+    "deepseek-r1": "deepseek-reasoner",
+    "deepseek-reasoner": "deepseek-reasoner",
 }
 
 
@@ -64,7 +89,7 @@ def cmd_resolve(args):
     from .resolver import resolve, print_resolve_result
 
     path = resolve_c_path(args.file)
-    target = detect_target(path)
+    target = resolve_target(args,path)
 
     print(f"Building catalog... (target={target.name})", file=sys.stderr)
     catalog = build_catalog(arch=args.arch, target=target)
@@ -87,7 +112,7 @@ def cmd_prompt(args):
     from .prompt_builder import build_full_prompt, build_file_prompt, load_system_prompt, estimate_tokens
 
     path = resolve_c_path(args.file)
-    target = detect_target(path)
+    target = resolve_target(args,path)
     catalog = build_catalog(arch=args.arch, target=target)
     spec = (parse_spec(target.spec_file)
             if target.spec_file and target.spec_file.exists()
@@ -119,7 +144,7 @@ def cmd_submit(args):
     from .config import cost_usd
 
     path = resolve_c_path(args.file)
-    target = detect_target(path)
+    target = resolve_target(args,path)
     catalog = build_catalog(arch=args.arch, target=target)
     spec = (parse_spec(target.spec_file)
             if target.spec_file and target.spec_file.exists()
@@ -806,7 +831,7 @@ def cmd_translate(args):
         target_path = next((c for c in candidates if c.exists()), candidates[0])
 
     # Detect target (ntoskrnl vs hal) from the path
-    rustconv_target = detect_target(target_path)
+    rustconv_target = resolve_target(args,target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
 
     if target_path.is_file():
@@ -839,8 +864,12 @@ def cmd_translate(args):
     catalog_fn_names = set(catalog.functions.keys())
 
     model = resolve_model(args.model)
-    use_claude = model.startswith("claude-")
-    system_prompt = load_function_system_prompt(rustconv_target) if use_claude else ""
+    mode = getattr(args, "mode", "idiomatic")
+    # `use_claude` here means "this backend takes a separate system prompt"
+    # (Claude cached block / DeepSeek system message). Gemini gets the rules
+    # prepended inline (unchanged path).
+    use_claude = model.startswith("claude-") or model.startswith("deepseek-")
+    system_prompt = load_function_system_prompt(rustconv_target, mode=mode) if use_claude else ""
 
     # Durable archive + kill guard for this paid invocation. Every streamed
     # response lands here as it generates, and a Ctrl-C points back at the
@@ -1152,7 +1181,7 @@ def cmd_estimate(args):
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
-    rustconv_target = detect_target(target)
+    rustconv_target = resolve_target(args,target)
     catalog = build_catalog(arch=args.arch, target=rustconv_target)
     spec = parse_spec(rustconv_target.spec_file) if rustconv_target.spec_file else {}
 
@@ -1324,6 +1353,7 @@ def main():
     p.add_argument("file", help="C source file")
     p.add_argument("-o", "--output", help="Write Rust output to file")
     p.add_argument("--assemble", action="store_true", help="Assemble into crate structure")
+    p.add_argument("--target", help="Override target: a known target name or a dll/win32/<name> crate name")
     p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
 
     # batch
@@ -1484,7 +1514,13 @@ def main():
     # translate (function-by-function)
     p = sub.add_parser("translate", help="Function-by-function translation (improved pipeline)")
     p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
-    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
+    p.add_argument("--target", help="Override target: a known target name or a dll/win32/<name> crate name")
+    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, deepseek, deepseek-r1, or full ID")
+    p.add_argument("--mode", default="idiomatic", choices=["idiomatic", "mechanical"],
+                   help="idiomatic (default): translate + idiomize in one pass. "
+                        "mechanical: faithful transliteration only — compiles, "
+                        "preserves C control flow/pointers, no idiom, no stubs "
+                        "(pass 1 of a two-pass cheap-model pipeline).")
     p.add_argument("-o", "--output", help="Write Rust output to file (single file only)")
     p.add_argument("--fn", dest="fn", help="Translate only this function")
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
@@ -1564,7 +1600,13 @@ def main():
         "trace-catalog": cmd_trace_catalog,
     }
 
-    commands[args.command](args)
+    try:
+        commands[args.command](args)
+    except ValueError as e:
+        # target auto-detect failure (unrecognized path) surfaces here as a clean
+        # message instead of a traceback — tells the user to pass --target.
+        print(str(e), file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

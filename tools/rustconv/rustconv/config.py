@@ -1,11 +1,23 @@
 """Shared paths, model config, token budgets."""
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # Root paths
 REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
+
+# Load API keys from the repo-root .env (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY).
+# rustconv historically relied on these being exported in the shell; load them
+# here so `python -m rustconv ...` Just Works from a clean shell. Existing
+# environment values win (override=False) so an explicit export still takes
+# precedence.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(REACTOS_ROOT / ".env", override=False)
+except Exception:
+    pass
 NTOSKRNL_DIR = REACTOS_ROOT / "ntoskrnl"
 HAL_DIR = REACTOS_ROOT / "hal"
 # On the llvm-mingw (non-MSVC) build, _WINKD_=FALSE+KDBG=TRUE makes
@@ -583,7 +595,64 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["win32k"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:
         return TARGETS["hal"]
-    return TARGETS["ntoskrnl"]
+    # ntoskrnl was previously the silent catch-all; make it an EXPLICIT match so
+    # the fallback below can be a hard error instead of misrouting to ntoskrnl.
+    if "/ntoskrnl/" in posix or posix.endswith("/ntoskrnl"):
+        return TARGETS["ntoskrnl"]
+    # Standalone user-mode DLLs (dll/win32/<name>/, dll/<name>/) → <name>-rust,
+    # auto-derived from the path. (ntdll is matched earlier.) This is what keeps
+    # e.g. dll/win32/mscms from silently landing in ntoskrnl-rust.
+    dll = _dll_crate_from_path(posix)
+    if dll:
+        return make_user_dll_target(*dll)
+    # No more silent ntoskrnl fallback: an unrecognized path is an ERROR — pass
+    # --target <known> or place the file under a known root. (Misrouting paid
+    # translations into the wrong crate is the bug this prevents.)
+    raise ValueError(
+        f"rustconv: cannot auto-detect a target for {p}. Pass --target <name> "
+        f"(known: {', '.join(sorted(TARGETS))}) or move the file under a known root."
+    )
+
+
+def _dll_crate_from_path(posix: str):
+    """For a path under dll/, return (crate_name, source_dir) using the convention
+    dll/win32/<name>/ → <name>-rust (or dll/<name>/ → <name>-rust). Else None."""
+    parts = posix.split("/")
+    if "dll" not in parts:
+        return None
+    rest = parts[parts.index("dll") + 1:]
+    if not rest:
+        return None
+    if rest[0] == "win32" and len(rest) >= 2:
+        name, sub = rest[1], ("dll", "win32", rest[1])
+    else:
+        name, sub = rest[0], ("dll", rest[0])
+    if not re.fullmatch(r"[A-Za-z0-9_]+", name):
+        return None
+    return name, REACTOS_ROOT.joinpath(*sub)
+
+
+def make_user_dll_target(name: str, source_dir: Path) -> "Target":
+    """A self-contained user-mode-DLL target (modeled on userinit/winlogon):
+    output to sdk/lib/rust/<name>-rust, ntdll_sys substrate (provides the NT/Rtl
+    types Wine code uses via winternl; Win32 APIs get forward-declared by the
+    mechanical prompt). Used for standalone dll/win32/* DLLs not in TARGETS."""
+    return Target(
+        name=name,
+        source_dir=source_dir,
+        output_crate=RUST_DIR / f"{name}-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    )
 
 
 def hal_cmake_for_c(c_path: Path) -> Path | None:
@@ -640,6 +709,12 @@ GEMINI_CMD = "gemini"
 GEMINI_MODEL = "gemini-2.5-pro"
 GEMINI_MAX_TOKENS = 65536
 
+# DeepSeek (OpenAI-compatible API). deepseek-chat = V3, deepseek-reasoner = R1.
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODEL_CHAT = "deepseek-chat"
+DEEPSEEK_MODEL_REASONER = "deepseek-reasoner"
+DEEPSEEK_MAX_TOKENS = 8192
+
 # Default model per backend
 DEFAULT_MODELS = {
     "claude": CLAUDE_MODEL_SONNET,
@@ -663,6 +738,15 @@ MODEL_PRICING = {
     "claude-haiku-4-5-20251001":   (1.00,  5.00),
     "gemini-2.5-pro":              (1.25, 10.00),
     "gemini-2.5-flash":            (0.30,  2.50),
+    # DeepSeek list prices (USD/1M, cache-miss). Server-side context caching
+    # makes repeated prefixes far cheaper (cache-hit input ~$0.07/1M), so these
+    # are a ceiling for the per-function re-send cost, not the typical bill.
+    "deepseek-chat":               (0.27,  1.10),
+    "deepseek-reasoner":           (0.55,  2.19),
+    # v4 tier (cache-miss list prices; server-side caching makes the real bill far
+    # lower on agentic re-sends — ~99% cache hit). Approximate; dashboard is truth.
+    "deepseek-v4-pro":             (0.28,  1.10),
+    "deepseek-v4-flash":           (0.14,  0.55),
 }
 # Anthropic Message Batches API runs at 50% of the list prices above. The
 # synchronous `translate`/`submit` path does NOT get this discount.

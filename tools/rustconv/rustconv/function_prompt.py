@@ -44,14 +44,26 @@ as if they were already in scope. Don't put `ntkrnl_sys::ddk::` or
 """
 
 
-def load_function_system_prompt(target: Target | None = None) -> str:
+def load_function_system_prompt(target: Target | None = None,
+                                mode: str = "idiomatic") -> str:
     """Load the system prompt for per-function translation.
+
+    mode="mechanical" loads function_prompt_mechanical.md instead — a faithful-
+    transliteration contract (compiles, preserves C control flow/pointers, no
+    idiom, no stubs). It's pass 1 of the two-pass cheap-model pipeline; pass 2
+    idiomizes the compiling output separately.
 
     For HAL targets, we use the full system_prompt_hal.md plus a coda telling
     the LLM not to emit imports/globals (function-by-function pipeline mode).
     """
     if target is None:
         target = TARGETS["ntoskrnl"]
+    if mode == "mechanical":
+        mech = TEMPLATES_DIR / "function_prompt_mechanical.md"
+        base = mech.read_text()
+        if target.name == "hal":
+            base += _FUNCTION_MODE_HAL_CODA
+        return base
     if target.name == "hal":
         return target.system_prompt.read_text() + _FUNCTION_MODE_HAL_CODA
     path = TEMPLATES_DIR / "function_prompt.md"
