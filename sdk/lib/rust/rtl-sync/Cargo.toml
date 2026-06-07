@@ -1,0 +1,25 @@
+# rtl-sync — Rust translation of the ReactOS RTL synchronization cluster:
+#   sdk/lib/rtl/critical.c   (RTL critical sections — RtlEnter/LeaveCriticalSection, keyed events)
+#   sdk/lib/rtl/wait.c       (RtlRegisterWait / RtlDeregisterWait thread-pool waits)
+#   sdk/lib/rtl/srw.c        (slim reader/writer locks — RtlAcquireSRWLock*)        [rtl_vista]
+#   sdk/lib/rtl/condvar.c    (condition variables — RtlSleep/WakeConditionVariable) [rtl_vista]
+#   sdk/lib/rtl/runonce.c    (RtlRunOnce* one-time init)                            [rtl_vista]
+#
+# critical.c + wait.c compile into librtl.a (the `rtl` cmake target, links
+# librtl_rust.a already). srw/condvar/runonce are in librtl_vista.a which needs
+# the librtl_rust link path added (one-time plumbing owned by this lane).
+[package]
+name = "rtl-sync"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The #[no_mangle] extern "system" shim layer (the kernel/ntdll link surface).
+cabi = []
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
