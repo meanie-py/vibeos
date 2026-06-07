@@ -51,3 +51,12 @@ mod cminit;
 mod hivebin;
 mod cmkeydel;
 mod cmname;
+// Phase 2 (deepseek-v4-pro mechanical, banked 2026-06-07): being driven to
+// cargo-check green via deepdrive before correctness review.
+mod cmvalue;
+mod hivecell;
+mod hivewrt;
+mod cmheal;
+mod hiveinit;
+mod cmcheck;
+mod cmindex;
