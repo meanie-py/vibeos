@@ -123,38 +123,35 @@ def main():
     archive_dir = pathlib.Path(sys.argv[2])
     out = pathlib.Path(sys.argv[3])
 
-    # ordering + names from the numeric archive prefixes
-    ordered = []  # (idx, name)
-    for f in sorted(archive_dir.glob("*.rs")):
-        m = re.match(r'(\d+)_(.+)\.(?:rs|partial)$', f.name)
-        if not m:
+    # The RESUME dir is the per-file source of truth (one .rs per function for
+    # THIS .c file). The archive (which may mix several files' functions in one
+    # dir, e.g. cabinet) is used ONLY to recover the original source order — never
+    # for content, so we don't pull sibling-file functions into this module.
+    resume_names = []
+    for f in sorted(resume_dir.glob("*.rs")):
+        if f.stem in ("__preamble__", "manifest"):
             continue
-        ordered.append((int(m.group(1)), m.group(2)))
-    ordered.sort()
+        resume_names.append(f.stem)
 
-    defined_fns = set()
-    loaded = {}  # name -> text (from complete resume dir, fallback archive)
-    for _, name in ordered:
-        if name == "preamble" or name == "__preamble__":
-            continue
-        rp = resume_dir / f"{name}.rs"
-        text = rp.read_text() if rp.exists() else ""
-        if not text:
-            # fall back to whatever the archive has
-            cand = list(archive_dir.glob(f"*_{name}.rs")) + list(archive_dir.glob(f"*_{name}.partial"))
-            if cand:
-                text = cand[0].read_text()
-        loaded[name] = text
-        defined_fns.add(name)
+    order_idx = {}
+    if archive_dir.exists():
+        for f in archive_dir.glob("*.rs"):
+            m = re.match(r'(\d+)_(.+)\.rs$', f.name)
+            if m and m.group(2) in resume_names:
+                order_idx.setdefault(m.group(2), int(m.group(1)))
+    ordered_names = sorted(resume_names, key=lambda n: (order_idx.get(n, 10**6), n))
+
+    # defined_fns = ONLY this file's functions, so cross-module forward-decls
+    # (a cabinet fci.rs calling an fdi.rs fn) are kept, not dropped.
+    defined_fns = set(resume_names)
+    loaded = {name: (resume_dir / f"{name}.rs").read_text() for name in ordered_names}
 
     all_preamble, seen_pre = [], set()
     extern_by_link = {}   # linkage -> list[decl]
     extern_seen = {}      # linkage -> set[name]
     bodies = []
 
-    for _, name in ordered:
-        if name in ("preamble", "__preamble__"):
-            continue
+    for name in ordered_names:
         text = loaded.get(name, "")
         if not text:
             print(f"  WARN: no content for {name}", file=sys.stderr)
