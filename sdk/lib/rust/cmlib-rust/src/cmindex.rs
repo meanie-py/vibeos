@@ -1,16 +1,12 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpAddSubKey, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, CmpMarkIndexDirty, CmpRemoveSubKey, HCELL_INDEX, HSTORAGE_TYPE, LPWSTR, PCM_INDEX, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, Root, RtlCompareUnicodeString, Stable, Type, Volatile};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpAddSubKey, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, CmpMarkIndexDirty, CmpRemoveSubKey, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, LPWSTR, PCELL_DATA, PCM_INDEX, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, Root, RtlCompareUnicodeString, Stable, Type, Volatile, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell};
 use core::ffi::c_void;
 
 extern "C" {
-    #[no_mangle] pub unsafe extern "system" fn CmpDoCompareKeyName(hive: *mut HHIVE, name: *const _UNICODE_STRING, cell: HCELL_INDEX) -> i32;
-    #[no_mangle] pub unsafe extern "system" fn CmpFindSubKeyInRoot( hive: *mut _HHIVE, index: *const CM_KEY_INDEX, name: *const _UNICODE_STRING, subkey: *mut u32, ) -> u32;
-    #[no_mangle] pub unsafe extern "system" fn CmpFindSubKeyInLeaf( hive: *mut _HHIVE, index: *const CM_KEY_INDEX, name: *const _UNICODE_STRING, subkey: *mut u32, ) -> u32;
     unsafe fn CmpFindSubKeyByHash( hive: *mut _HHIVE, index: *const CM_KEY_FAST_INDEX, name: *const _UNICODE_STRING, ) -> u32;
-    fn HvGetCell(hive: *mut _HHIVE, cell: u32) -> *mut core::ffi::c_void;
-    fn HvReleaseCell(hive: *mut _HHIVE, cell: u32);
 }
 extern "system" {
     fn HvAllocateCell(Hive: PHHIVE, Size: u32, Type: HSTORAGE_TYPE, SourceCell: HCELL_INDEX) -> HCELL_INDEX;
@@ -19,14 +15,17 @@ extern "system" {
     fn HvGetCellSize(Hive: PHHIVE, Cell: *mut CM_KEY_INDEX) -> u32;
     fn HvReallocateCell(Hive: PHHIVE, Cell: HCELL_INDEX, NewSize: u32) -> HCELL_INDEX;
     fn RtlUpcaseUnicodeChar(ch: u16) -> u16;
-    #[no_mangle] pub unsafe extern "system" fn CmpComputeHashKey(arg1: u32, arg2: *const _UNICODE_STRING, arg3: u8) -> u32;
     fn CmpDoCompareKeyName(hive: *mut HHIVE, name: *const _UNICODE_STRING, cell: HCELL_INDEX) -> i32;
-    #[no_mangle] pub unsafe extern "system" fn CmpDoFindSubKeyByNumber( Hive: *mut HHIVE, Index: *mut CM_KEY_INDEX, Number: u32, ) -> u32;
-    #[no_mangle] pub unsafe extern "system" fn CmpCompareInIndex( Hive: *mut HHIVE, SearchName: *const _UNICODE_STRING, Index: u32, KeyIndex: *const CM_KEY_INDEX, SubKey: *mut HCELL_INDEX, ) -> i32;
+    fn CmpCompareInIndex( Hive: *mut HHIVE, SearchName: *const _UNICODE_STRING, Index: u32, KeyIndex: *const CM_KEY_INDEX, SubKey: *mut HCELL_INDEX, ) -> i32;
     fn CmpFindSubKeyInRoot( hive: *mut HHIVE, index_key: *mut CM_KEY_INDEX, name: *const _UNICODE_STRING, leaf_cell: *mut HCELL_INDEX, ) -> u32;
-    #[no_mangle] pub unsafe extern "system" fn CmpSplitLeaf( hive: *mut HHIVE, cell: HCELL_INDEX, root_select: u32, storage_type: HSTORAGE_TYPE, ) -> HCELL_INDEX;
+    fn CmpSplitLeaf( hive: *mut HHIVE, cell: HCELL_INDEX, root_select: u32, storage_type: HSTORAGE_TYPE, ) -> HCELL_INDEX;
     fn CmpFindSubKeyInLeaf( hive: *mut _HHIVE, leaf: *mut CM_KEY_INDEX, name: *const _UNICODE_STRING, child: *mut HCELL_INDEX ) -> u32;
 }
+#[no_mangle]
+pub unsafe extern "system" fn CmpComputeHashKey(
+    Hash: u32,
+    Name: *const _UNICODE_STRING,
+    AllowSeparators: u8,
 ) -> u32 {
     // ASSERT((Name->Length == 0) || (AllowSeparators) || (Name->Buffer[0] != OBJ_NAME_PATH_SEPARATOR));
     debug_assert!(
@@ -248,6 +247,11 @@ pub unsafe extern "system" fn CmpAddToLeaf(
 
         new_cell = HvReallocateCell(hive, leaf_cell, size);
         if new_cell == HCELL_NIL {
+            return HCELL_NIL;
+        }
+    }
+    return new_cell;
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpSelectLeaf(
@@ -367,5 +371,15 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                     }
 
                     // No, it doesn't fit, check the next adjacent leaf
-                    if (SubKeyIndex + 1) <
-
+                    if (SubKeyIndex + 1) < (*IndexKey).Count as u32 {
+                        // Try the next leaf
+                        SubKeyIndex += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        // Can't insert: no leaf fits
+        return 0;
+    }
+}

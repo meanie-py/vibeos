@@ -1,7 +1,8 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{CM_INDEX, CmpRepairClassOfNodeKey, CmpRepairParentKey, HCELL_INDEX, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, Stable};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, Stable, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell};
 use core::ffi::c_void;
 
 extern "C" {
@@ -11,7 +12,6 @@ extern "C" {
     fn PAGED_CODE();
     fn HvMarkCellDirty(hive: PHHIVE, cell: HCELL_INDEX, dirty: i32);
     fn DPRINT1(format: *const i8, ...);
-    #[no_mangle] pub unsafe extern "C" fn CmIsSelfHealEnabled(fix_hive: i32) -> i32;
     unsafe fn CmpRemoveValueFromValueList(value_list_node: *mut CM_KEY_NODE, value_list_data: *mut CELL_DATA, index: u32) ;
 }
 extern "C" {
@@ -21,7 +21,39 @@ extern "C" {
     unsafe fn CmpRemoveSubkeyInRoot( Hive: PHHIVE, RootIndex: PCM_KEY_INDEX, TargetKey: HCELL_INDEX, ) -> BOOLEAN;
     fn ASSERT(cond: i32);
 }
-            return ParentRepaired;
+#[no_mangle]
+pub unsafe extern "C" fn CmpRepairParentKey(
+    Hive: PHHIVE,
+    TargetKey: HCELL_INDEX,
+    ParentKey: HCELL_INDEX,
+    FixHive: BOOLEAN,
+) -> BOOLEAN {
+    let mut KeyIndex: PCM_KEY_INDEX;
+    let mut KeyNode: PCM_KEY_NODE;
+    let mut ParentRepaired: BOOLEAN;
+
+    PAGED_CODE();
+
+    // ASSERT(TargetKey != HCELL_NIL);
+
+    ParentRepaired = 0;
+
+    if CmIsSelfHealEnabled(FixHive) == 0 {
+        DPRINT1(b"Self healing not possible\n\0".as_ptr() as *const i8);
+        return ParentRepaired;
+    }
+
+    KeyNode = HvGetCell(Hive, ParentKey) as PCM_KEY_NODE;
+    if KeyNode.is_null() {
+        DPRINT1(b"Couldn't get the parent key node\n\0".as_ptr() as *const i8);
+        return ParentRepaired;
+    }
+
+    KeyIndex = HvGetCell(Hive, (*KeyNode).SubKeyLists[Stable as usize]) as PCM_KEY_INDEX;
+    if KeyIndex.is_null() {
+        DPRINT1(b"Couldn't get the key index from parent node\n\0".as_ptr() as *const i8);
+        HvReleaseCell(Hive, ParentKey);
+        return ParentRepaired;
         }
 
         if (*KeyIndex).Signature == CM_KEY_INDEX_ROOT {
@@ -46,7 +78,6 @@ extern "C" {
         HvReleaseCell(Hive, (*KeyNode).SubKeyLists[Stable as usize]);
         HvReleaseCell(Hive, ParentKey);
         ParentRepaired
-    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn CmpRepairParentNode(

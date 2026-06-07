@@ -1,7 +1,8 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{CM_CHECK_REGISTRY_STATUS, CM_KEY_NODE, CM_KEY_VALUE, CmpAllocate, CmpFindSubKeyByNumber, CmpFree, CmpRepairClassOfNodeKey, CmpRepairKeyNodeSignature, CmpRepairParentKey, CmpRepairParentNode, CmpRepairSubKeyCounts, CmpRepairSubKeyList, CmpRepairValueList, CmpRepairValueListCount, HCELL_INDEX, PCELL_DATA, PCMHIVE, PCM_KEY_INDEX, PCM_KEY_NODE, PHBIN, PHCELL, PHHIVE, RtlCompareUnicodeString, Stable, Volatile};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_CHECK_REGISTRY_STATUS, CM_KEY_FAST_INDEX, CM_KEY_NODE, CM_KEY_VALUE, CmpAllocate, CmpFindSubKeyByNumber, CmpFree, CmpRepairClassOfNodeKey, CmpRepairKeyNodeSignature, CmpRepairParentKey, CmpRepairParentNode, CmpRepairSubKeyCounts, CmpRepairSubKeyList, CmpRepairValueList, CmpRepairValueListCount, HBIN, HCELL, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCMHIVE, PHBIN, PHCELL, PHHIVE, RtlCompareUnicodeString, Stable, Volatile, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell};
 use core::ffi::c_void;
 
 extern "C" {

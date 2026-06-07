@@ -3,7 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{HBASE_BLOCK, IoSetThreadHardErrorMode, PHBASE_BLOCK, PHHIVE, RtlFindSetBits, Stable, UINT32};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, HBASE_BLOCK, HBIN, HCELL, HCELL_INDEX, HHIVE, IoSetThreadHardErrorMode, PCELL_DATA, PHBASE_BLOCK, PHBIN, PHHIVE, RtlFindSetBits, Stable, UINT32, _HHIVE, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::ptr::addr_of_mut;
 
@@ -169,10 +169,11 @@ unsafe extern "C" fn HvpWriteLog(RegistryHive: *mut HHIVE) -> i32 {
     }
 
     Success = ((*RegistryHive).FileFlush as unsafe extern "C" fn(
-        *mut HHIVE
+        *mut HHIVE,
+    ) -> i32)(RegistryHive);
+    return 1;
+}
 
-const HV_CLEAN_BLOCK: u32 = !0;
-const HBLOCK_SIZE: usize = 0x1000; // typical hive block size; adjust if needed
 #[no_mangle]
 pub unsafe extern "C" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
     let HardErrors: u8;
@@ -244,7 +245,6 @@ pub unsafe extern "C" fn HvHiveWillShrink(
 
 #[cfg(not(bldr))]
 
-const HV_HHIVE_SIGNATURE: u32 = 0xbee0bee0;
 const HFILE_TYPE_PRIMARY: u32 = 0;
 #[no_mangle]
 pub unsafe extern "C" fn HvWriteHive(RegistryHive: *mut HHIVE) -> i32 {
@@ -286,6 +286,6 @@ pub unsafe extern "C" fn HvSyncHiveFromRecover(RegistryHive: *mut HHIVE) -> i32 
         debug_assert!((*RegistryHive).ReadOnly == 0);
         debug_assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
 
-        HvpWriteHive(RegistryHive, 1, HFILE_TYPE_PRIMARY)
+        HvpWriteHive(RegistryHive, 1, HFILE_TYPE_PRIMARY);
     }
 }

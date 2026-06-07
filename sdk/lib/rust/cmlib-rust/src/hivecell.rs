@@ -3,7 +3,8 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PCELL_DATA, PHBIN, PHCELL, PHCELL_INDEX, PHHIVE, PHV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, RtlSetBits, Stable, Type, Volatile};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PCELL_DATA, PHBIN, PHCELL, PHCELL_INDEX, PHHIVE, PHV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, RtlSetBits, Stable, Type, Volatile, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell};
 use core::ffi::c_void;
 
 extern "C" {
@@ -11,14 +12,10 @@ extern "C" {
     fn HvGetCellBlock(cell: HCELL_INDEX) -> u32;
     fn HvGetCellType(cell: HCELL_INDEX) -> u32;
     unsafe fn HvpComputeFreeListIndex(Size: u32) -> u32;
-    #[no_mangle] pub unsafe extern "C" fn HvMarkCellDirty(RegistryHive: *mut HHIVE, CellIndex: u32, HoldingLock: i32) -> i32;
     fn HvpAddBin(RegistryHive: *mut HHIVE, Size: u32, Storage: HSTORAGE_TYPE) -> *mut HBIN;
-    unsafe fn HvpAddFree(RegistryHive: *mut HHIVE, FreeBlock: *mut HCELL, FreeIndex: u32) -> i32;
     unsafe fn HvpFindFree(RegistryHive: *mut HHIVE, Size: u32, Storage: HSTORAGE_TYPE) -> u32;
-    unsafe fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: u32) -> *mut HCELL;
-    #[no_mangle] pub unsafe extern "C" fn HvAllocateCell(RegistryHive: *mut _HHIVE, Size: u32, Storage: u32, Vicinity: u32) -> u32;
-    #[no_mangle] pub unsafe extern "C" fn HvFreeCell(RegistryHive: *mut _HHIVE, CellIndex: u32) ;
-    #[no_mangle] pub unsafe extern "C" fn HvGetCellSize(RegistryHive: *mut _HHIVE, Address: *mut core::ffi::c_void) -> i32;
+    fn HvFreeCell(RegistryHive: *mut _HHIVE, CellIndex: u32);
+    fn HvGetCellSize(RegistryHive: *mut _HHIVE, Address: *mut core::ffi::c_void) -> i32;
 }
 extern "C" {
     fn RtlCheckBit(BitMapHeader: *mut core::ffi::c_void, BitNumber: u32) -> i32;
@@ -27,9 +24,6 @@ extern "C" {
     fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> *mut CELL;
     fn HvMarkCellDirty(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX, HoldingLock: i32) -> i32;
     fn HvpAddFree(RegistryHive: *mut HHIVE, FreeBlock: *mut HCELL, FreeIndex: HCELL_INDEX) -> i32;
-    fn HvpComputeFreeListIndex(Size: u32) -> u32;
-    unsafe fn HvpRemoveFree(RegistryHive: *mut HHIVE, CellBlock: *mut HCELL, CellIndex: HCELL_INDEX) ;
-}
 }
 
 const CMLIB_HCELL_DEBUG: u32 = 0;
@@ -79,7 +73,14 @@ unsafe extern "C" fn HvpRemoveFree(
     CMLTRACE(CMLIB_HCELL_DEBUG, b"-- end of HvpRemoveFree trace --\n\0".as_ptr() as *const i8);
 
     assert!(false);
-}essed / typical)
+}
+#[no_mangle]
+pub unsafe extern "C" fn HvAllocateCell(
+    RegistryHive: *mut _HHIVE,
+    Size: u32,
+    Storage: u32,
+    Vicinity: u32,
+) -> u32 {
     const HCELL_NIL: u32 = 0;
     const HCELL_TYPE_SHIFT: u32 = 30;
     const CMLIB_HCELL_DEBUG: u32 = 1;

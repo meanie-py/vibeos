@@ -4,13 +4,14 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CmpFindNameInList, HCELL_INDEX, HSTORAGE_TYPE, PCELL_DATA, PCHILD_LIST, PCM_KEY_NODE, PCM_KEY_VALUE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpFindNameInList, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCELL_DATA, PCHILD_LIST, PCM_KEY_NODE, PCM_KEY_VALUE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, _HHIVE, _UNICODE_STRING};
+use crate::glue::{HvGetCell, HvReleaseCell};
 use core::ffi::c_void;
 
 extern "C" {
-    #[no_mangle] pub unsafe extern "system" fn CmpCopyCell( SourceHive: *mut _HHIVE, SourceCell: HCELL_INDEX, DestinationHive: *mut _HHIVE, StorageType: HSTORAGE_TYPE, ) -> HCELL_INDEX;
 }
 extern "system" {
+    fn CmpCopyCell( SourceHive: *mut _HHIVE, SourceCell: HCELL_INDEX, DestinationHive: *mut _HHIVE, StorageType: HSTORAGE_TYPE, ) -> HCELL_INDEX;
     fn PAGED_CODE();
     fn HvMarkCellDirty(Hive: *mut HHIVE, Cell: u32, Write: i32);
     fn HvFreeCell(hive: *mut HHIVE, cell: u32);
@@ -28,18 +29,10 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 // #define NDEBUG not converted (preprocessor macro without constant value)
 
-const HCELL_NIL: u32 = !0u32;
-
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 const HBLOCK_SIZE: u32 = 4096;
 
-const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
-
-const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF as HCELL_INDEX;
-
 const REGISTRY_ERROR: u32 = 0x51;
-
-const HCELL_NIL: HCELL_INDEX = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpMarkValueDataDirty(
@@ -76,8 +69,6 @@ pub unsafe extern "system" fn CmpFreeValueData(
     }
     1
 }
-
-const HCELL_NIL: u32 = 0xFFFFFFFF;
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpFindValueByName(
