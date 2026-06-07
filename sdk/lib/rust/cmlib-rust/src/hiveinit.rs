@@ -1,3 +1,50 @@
+//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/cmlib/hiveinit.c. Risk: HIGH.
+//! Behavior: 5 real bugs found, code is largely non-functional for HINIT_CREATE.
+//!
+//! Findings:
+//!   BUG-1 (CRITICAL) HvInitialize match @ line 237: HINIT_CREATE/HINIT_MEMORY/HINIT_FLAT/
+//!     HINIT_FILE are not defined in any imported namespace (ntkrnl_sys::constants, glue::*).
+//!     Rust silently treats each as a catch-all binding pattern; the first arm (HINIT_CREATE)
+//!     swallows every OperationType value and calls HvpCreateHive(Hive, HiveData, FileName).
+//!     HINIT_MEMORY_INPLACE, HINIT_MAPFILE, and the default→STATUS_INVALID_PARAMETER arms from
+//!     the C switch are entirely absent. Fix: add HINIT_* constants to glue.rs (values 0–5 from
+//!     hivedata.h) and add the missing arms; or use numeric literals. See memory
+//!     feedback_undefined_const_in_match_silent_binding.md.
+//!
+//!   BUG-2 (HIGH) HvpCreateHive @ line 55: body is C's HvpInitializeMemoryHive, not C's
+//!     HvpCreateHive. C's HvpCreateHive (2 params: RegistryHive, FileName) allocates a fresh
+//!     zeroed BaseBlock, fills in Signature/Major/Minor/Type/Format/Cluster/RootCell/Length/
+//!     Sequence[12]/TimeStamp/CheckSum/BootType, loops FreeDisplay[24]=HCELL_NIL for both
+//!     storage types, and calls HvpInitFileName. That entire body is absent. What is here
+//!     (3-param signature taking ChunkBase, validating header, iterating existing bins) is the
+//!     body of C's HvpInitializeMemoryHive. Fix: implement the correct fresh-hive creation body;
+//!     separately, the extern "system" declaration of HvpInitializeMemoryHive (which calls into
+//!     C) can remain for the HINIT_MEMORY and HvLoadHive paths.
+//!
+//!   BUG-3 (HIGH) HIVE_NOLAZYFLUSH @ line 211: `const HIVE_NOLAZYFLUSH: u32 = 0x10000`.
+//!     C hivedata.h defines this as 2. The Rust value (0x10000 = 65536) masks a completely
+//!     wrong bit in HiveFlags (line 232), so the lazy-flush flag is never stripped and callers
+//!     that set HIVE_NOLAZYFLUSH=2 will find the flag preserved in hive->HiveFlags. Fix:
+//!     move the correct value (2) to glue.rs and import it.
+//!
+//!   BUG-4 (MED) HvInitialize HINIT_FILE recovery path @ line 264 (non-amd64 only): two
+//!     statements from C are missing after RtlClearAllBits: (a) `Hive->DirtyCount = 0` and
+//!     (b) `Status = STATUS_SUCCESS` (the "masquerade" the C comment documents). Without (b),
+//!     STATUS_REGISTRY_RECOVERED leaks out as the return value of HvInitialize, which the
+//!     C code notes is not a failure but not STATUS_SUCCESS either and can confuse callers.
+//!
+//!   BUG-5 (MED) ABI: HvpCreateHive (line 55), HvpInitializeFlatHive (line 116), and HvFree
+//!     (line 273) are `extern "C"` but must be `extern "system"` to match CMAPI=NTAPI=stdcall
+//!     on i386. HvFree is a public API called by external code. On amd64/arm64 there is no
+//!     observable difference; on i386 the wrong decoration (_HvFree vs _HvFree@4) breaks the
+//!     cohab link. lib.rs already documents this rule. Fix: change all three to extern "system".
+//!
+//! Unverified: HvpGetHiveHeader/HvpRecoverDataFromLog/HvpFreeHiveBins/HvpAllocBaseBlockAligned/
+//!   HvpInitFileName are declared extern and not translated here — those call into C unchanged.
+//!   HvLoadHive control flow (RecoverData/RecoverHeader) looks structurally correct (RESULT enum
+//!   is local and properly ordered). ChunkSize source in HvpCreateHive (ChunkBase->Length not
+//!   ChunkBase->Length+HBASE_BLOCK) is inherited from the body-confusion bug and not reviewed
+//!   independently.
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -17,6 +64,20 @@ type PtrInt = u64;
 // File-local enum from hiveinit.c:17 (`typedef enum _RESULT`). Variant order is
 // preserved EXACTLY so discriminants match the C (NotHive=0 .. SelfHeal=6) —
 // the mechanical pass had dropped `HiveSuccess` and mis-ordered the rest.
+
+// hivedata.h constants needed by HvpCreateHive
+const HV_HBLOCK_SIGNATURE: u32 = 0x6667_6572; // "regf"
+const HBASE_FORMAT_MEMORY: u32 = 1;
+const HSYS_MAJOR: u32 = 1;
+
+// HINIT operation types from hivedata.h — must match C exactly
+const HINIT_CREATE: u32 = 0;
+const HINIT_MEMORY: u32 = 1;
+const HINIT_FILE: u32 = 2;
+const HINIT_MEMORY_INPLACE: u32 = 3;
+const HINIT_FLAT: u32 = 4;
+const HINIT_MAPFILE: u32 = 5;
+
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy)]
 #[allow(dead_code)]
@@ -52,68 +113,60 @@ extern "system" {
     fn HvpRecoverDataFromLog(Hive: PHHIVE, BaseBlock: PHBASE_BLOCK) -> RESULT;
 }
 #[no_mangle]
-pub unsafe extern "C" fn HvpCreateHive(
-    Hive: *mut HHIVE,
-    ChunkBase: *mut HBASE_BLOCK,
+pub unsafe extern "system" fn HvpCreateHive(
+    RegistryHive: PHHIVE,
     FileName: PCUNICODE_STRING,
-) -> i32 { let mut BlockIndex: usize;
-    let mut Bin: *mut HBIN;
-    let mut NewBin: *mut HBIN;
-    let mut i: u32;
-    let BitmapSize: u32;
-    let BitmapBuffer: *mut u32;
-    let ChunkSize: usize;
-    ChunkSize = (*ChunkBase).Length as usize;
-    // DPRINT("ChunkSize: %zx\n", ChunkSize);
-    if ChunkSize < core::mem::size_of::<HBASE_BLOCK>() || HvpVerifyHiveHeader(ChunkBase, HFILE_TYPE_PRIMARY) == 0 {
-        // DPRINT1("Registry is corrupt: ChunkSize 0x%zx < sizeof(HBASE_BLOCK) 0x%zx, or HvpVerifyHiveHeader() failed\n", ChunkSize, core::mem::size_of::<HBASE_BLOCK>());
-        return STATUS_REGISTRY_CORRUPT;
-    }
-    // Allocate the base block
-    (*Hive).BaseBlock = HvpAllocBaseBlockAligned(Hive, 0, TAG_CM);
-    if (*Hive).BaseBlock.is_null() { return STATUS_NO_MEMORY;
-    } core::ptr::copy_nonoverlapping( ChunkBase as *const u8, (*Hive).BaseBlock as *mut u8, core::mem::size_of::<HBASE_BLOCK>(), );
-    // Setup hive data
-    (*Hive).Version = (*ChunkBase).Minor;
-    // Build a block list from the in-memory chunk and copy the data as we go
-    (*Hive).Storage[Stable as usize].Length = (ChunkSize / HBLOCK_SIZE as usize) as u32;
-    (*Hive).Storage[Stable as usize].BlockList = ((*Hive).Allocate.unwrap())( ((*Hive).Storage[Stable as usize].Length as PtrInt) * core::mem::size_of::<HMAP_ENTRY>() as PtrInt, 0u8, TAG_CM ) as *mut HMAP_ENTRY;
-    if (*Hive).Storage[Stable as usize].BlockList.is_null() { DPRINT1(b"Allocating block list failed\n\0".as_ptr() as *const i8);
-    ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
-    return STATUS_NO_MEMORY;
-    } BlockIndex = 0;
-    while BlockIndex < ((*Hive).Storage[Stable as usize].Length as usize) { Bin = (ChunkBase as usize + (BlockIndex + 1) * HBLOCK_SIZE as usize) as *mut HBIN;
-    if (*Bin).Signature != HV_HBIN_SIGNATURE || ((*Bin).Size as usize % HBLOCK_SIZE as usize) != 0 || ((*Bin).FileOffset / (HBLOCK_SIZE as u32)) != (BlockIndex as u32) { if CmIsSelfHealEnabled(0) == 0 { DPRINT1(b"Invalid bin at BlockIndex %lu, Signature 0x%x, Size 0x%x. Self-heal not possible!\n\0".as_ptr() as *const i8, BlockIndex, (*Bin).Signature, (*Bin).Size);
-    ((*Hive).Free.unwrap())((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
-    ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
-    return STATUS_REGISTRY_CORRUPT;
-    } // Fix this bin (*Bin).Signature = HV_HBIN_SIGNATURE;
-    (*Bin).Size = HBLOCK_SIZE as u32;
-    (*Bin).FileOffset = (BlockIndex as u32 * HBLOCK_SIZE);
-    (*ChunkBase).BootType |= HBOOT_TYPE_SELF_HEAL;
-    DPRINT1(b"Bin at index %lu is corrupt and it has been repaired!\n\0".as_ptr() as *const i8, BlockIndex);
-    } NewBin = ((*Hive).Allocate.unwrap())((*Bin).Size as PtrInt, 1u8, TAG_CM) as *mut HBIN;
-    if NewBin.is_null() { ((*Hive).Free.unwrap())((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
-    ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
-    return STATUS_NO_MEMORY;
-    } (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BinAddress = NewBin as PtrInt;
-    (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex)).BlockAddress = NewBin as PtrInt;
-    core::ptr::copy_nonoverlapping( Bin as *const u8, NewBin as *mut u8, (*Bin).Size as usize, );
-    if (*Bin).Size > (HBLOCK_SIZE as u32) { let bin_count = (*Bin).Size / (HBLOCK_SIZE as u32);
-    for i in 1..bin_count as usize {
-        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BinAddress = NewBin as PtrInt;
-        (*(*Hive).Storage[Stable as usize].BlockList.add(BlockIndex + i)).BlockAddress = (NewBin as PtrInt + (i as PtrInt * HBLOCK_SIZE as PtrInt) as PtrInt);
-    } } BlockIndex += ((*Bin).Size as usize) / HBLOCK_SIZE as usize;
-    }
-    if !NT_SUCCESS(HvpCreateHiveFreeCellList(Hive)) {
-        HvpFreeHiveBins(Hive);
-        ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+) -> NTSTATUS {
+    let BaseBlock: PHBASE_BLOCK;
+    let mut Index: u32;
+
+    /* Allocate the base block */
+    BaseBlock = HvpAllocBaseBlockAligned(RegistryHive, 0i32, TAG_CM);
+    if BaseBlock.is_null() {
         return STATUS_NO_MEMORY;
     }
-    return STATUS_SUCCESS;
+
+    /* Clear it */
+    RtlZeroMemory(BaseBlock as *mut _, (*RegistryHive).BaseBlockAlloc as usize);
+
+    (*BaseBlock).Signature = HV_HBLOCK_SIGNATURE;
+    (*BaseBlock).Major = HSYS_MAJOR;
+    (*BaseBlock).Minor = HSYS_MINOR;
+    (*BaseBlock).Type = HFILE_TYPE_PRIMARY;
+    (*BaseBlock).Format = HBASE_FORMAT_MEMORY;
+    (*BaseBlock).Cluster = 1;
+    (*BaseBlock).RootCell = HCELL_NIL;
+    (*BaseBlock).Length = 0;
+    (*BaseBlock).Sequence1 = 1;
+    (*BaseBlock).Sequence2 = 1;
+    (*BaseBlock).TimeStamp.QuadPart = 0u64 as i64;
+
+    /*
+     * No need to compute the checksum since
+     * the hive resides only in memory so far.
+     */
+    (*BaseBlock).CheckSum = 0;
+
+    /* Set default boot type */
+    (*BaseBlock).BootType = HBOOT_TYPE_REGULAR;
+
+    /* Setup hive data */
+    (*RegistryHive).BaseBlock = BaseBlock;
+    (*RegistryHive).Version = (*BaseBlock).Minor; // == HSYS_MINOR
+
+    Index = 0;
+    while Index < 24 {
+        (*RegistryHive).Storage[Stable as usize].FreeDisplay[Index as usize] = HCELL_NIL;
+        (*RegistryHive).Storage[Volatile as usize].FreeDisplay[Index as usize] = HCELL_NIL;
+        Index += 1;
+    }
+
+    HvpInitFileName(BaseBlock, FileName);
+
+    STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "C" fn HvpInitializeFlatHive(
+pub unsafe extern "system" fn HvpInitializeFlatHive(
     Hive: *mut HHIVE,
     ChunkBase: *mut HBASE_BLOCK,
 ) -> i32 {
@@ -208,7 +261,7 @@ pub unsafe extern "system" fn HvInitialize(
     FileName: *const _UNICODE_STRING,
 ) -> NTSTATUS {
     // Local constants
-    const HIVE_NOLAZYFLUSH: u32 = 0x10000;
+    const HIVE_NOLAZYFLUSH: u32 = 2;
     const NTDDI_VERSION: u32 = 0x05010000; // assumed XP
     let Hive: *mut HHIVE = RegistryHive;
     let mut Status: NTSTATUS;
@@ -235,7 +288,7 @@ pub unsafe extern "system" fn HvInitialize(
     (*Hive).ReleaseCellRoutine = None; // NULL
     Status = match OperationType {
         HINIT_CREATE => {
-            Status = HvpCreateHive(Hive, HiveData as *mut HBASE_BLOCK, FileName);
+            Status = HvpCreateHive(Hive, FileName);
             Status
         }
         HINIT_MEMORY => {
@@ -262,15 +315,20 @@ pub unsafe extern "system" fn HvInitialize(
             }
             // FIXME: clear log and reset size to 0
             RtlClearAllBits(core::ptr::addr_of_mut!((*Hive).DirtyVector) as *mut RTL_BITMAP);
+            (*Hive).DirtyCount = 0;
+            Status = STATUS_SUCCESS;
         }
     }
             Status
         }
+        HINIT_MEMORY_INPLACE => STATUS_NOT_IMPLEMENTED,
+        HINIT_MAPFILE => STATUS_NOT_IMPLEMENTED,
+        _ => STATUS_INVALID_PARAMETER,
     };
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn HvFree(RegistryHive: *mut HHIVE) {
+pub unsafe extern "system" fn HvFree(RegistryHive: *mut HHIVE) {
     // if (!RegistryHive->ReadOnly)
     if (*RegistryHive).ReadOnly == 0 {
         // Release hive bitmap

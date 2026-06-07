@@ -1,3 +1,17 @@
+//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/cmlib/cmvalue.c.
+//! Risk: HIGH. Behavior: 3 bugs found.
+//! Findings:
+//!   BUG1 CmpSetValueDataNew@144 — ASSERT uses 0x1000 as CM_KEY_VALUE_SMALL; correct value is 0x4 (cmdata.h).
+//!     0x1000 is HBLOCK_SIZE. ASSERT fires incorrectly for DataSize in [5..4096]; passes DataSize==4 which
+//!     violates the precondition DataSize > CM_KEY_VALUE_SMALL.
+//!   BUG2 CmpRemoveValueFromList@197 — (*CellData).u.KeyList[Index as usize] direct-index on [HCELL_INDEX; 1]
+//!     flex-array stub. Panics in debug / UB in release for Index >= 1. Must use pointer arithmetic
+//!     (addr_of!(...).add(n)) as done correctly in cmname.rs.
+//!   BUG3 CmpCopyKeyValueList@250,275 — same flex-array [Index as usize] direct-index bug on KeyList;
+//!     any list with more than 1 entry is affected.
+//! Unverified: HvMarkCellDirty local redecl uses Write:i32 vs glue.rs u8 — harmless on all 3 arches.
+//!   CmpFindValueByName CellIndex init=0 (not HCELL_NIL) only matters if CmpFindNameInList skips the
+//!   out-param write entirely on failure; functionally fine since caller checks HCELL_NIL on success path.
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -141,7 +155,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
     data_cell: *mut HCELL_INDEX,
 ) -> NTSTATUS {
     PAGED_CODE();
-    ASSERT((data_size > 0x1000 /* CM_KEY_VALUE_SMALL */) as i32);
+    ASSERT((data_size > 0x4 /* CM_KEY_VALUE_SMALL */) as i32);
 
     let _ = (&hive, data_size);;
 
@@ -194,7 +208,7 @@ pub unsafe extern "system" fn CmpRemoveValueFromList(
         // (omitted due to NDEBUG)
 
         while Index < Count {
-            (*CellData).u.KeyList[Index as usize] = (*CellData).u.KeyList[(Index + 1) as usize];
+            *(core::ptr::addr_of_mut!((*CellData).u.KeyList) as *mut HCELL_INDEX).add(Index as usize) = *(core::ptr::addr_of!((*CellData).u.KeyList) as *const HCELL_INDEX).add((Index + 1) as usize);
             Index += 1;
         }
 
@@ -247,7 +261,7 @@ pub unsafe extern "system" fn CmpCopyKeyValueList(
     while Index < (*SrcValueList).Count {
         NewValue = CmpCopyValue(
             SourceHive,
-            (*SrcListData).u.KeyList[Index as usize],
+            *(core::ptr::addr_of!((*SrcListData).u.KeyList) as *const HCELL_INDEX).add(Index as usize),
             DestinationHive,
             StorageType,
         );
@@ -272,7 +286,7 @@ pub unsafe extern "system" fn CmpCopyKeyValueList(
 
         while Index > 0 {
             Index -= 1;
-            NewValue = (*DestListData).u.KeyList[Index as usize];
+            NewValue = *(core::ptr::addr_of!((*DestListData).u.KeyList) as *const HCELL_INDEX).add(Index as usize);
             if CmpFreeValue(DestinationHive, NewValue) == 0 {
                 HvFreeCell(DestinationHive, NewValue);
             }

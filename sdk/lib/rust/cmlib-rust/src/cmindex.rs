@@ -1,3 +1,46 @@
+//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/cmlib/cmindex.c. Risk: HIGH.
+//! Behavior: 4 real bugs. Unverified: CmpDoFindSubKeyByNumber (extern, not translated here).
+//!
+//! REAL BUGS:
+//!
+//! 1. `CmpAddToLeaf` @ cmindex.rs:202 — STUBBED BODY.
+//!    The Rust implementation performs only the resize/realloc guard (steps 1-6) then returns
+//!    `new_cell` without doing ANY of: HvGetCell on the reallocated cell, updating the FastLeaf
+//!    pointer, finding the insertion point via CmpFindSubKeyInLeaf, comparing via
+//!    CmpCompareInIndex, shifting existing entries via RtlMoveMemory, writing the new
+//!    Cell/HashKey/NameHint entry, or incrementing `Leaf->Count`. Every call to CmpAddToLeaf
+//!    returns a cell handle without actually inserting the key — registry key creation is silently
+//!    broken. C lines 987-1099 are entirely absent.
+//!
+//! 2. `CmpSelectLeaf` @ cmindex.rs:258 — HEAVILY TRUNCATED (missing ~100 C lines).
+//!    The `else` branch (Result < 0 — new key sorts below the first entry of the current leaf)
+//!    is completely absent: C tries `List[SubKeyIndex - 1]` (or `List[0]`) before splitting.
+//!    The CmpSplitLeaf call + SubKeyLists update + IndexKey refresh loop are also missing.
+//!    The `continue` at Rust line 379 re-enters the outer `loop {}` without having done a split,
+//!    producing an infinite loop whenever a leaf is full and Result >= 0.
+//!    C lines 1391-1457 are entirely absent.
+//!
+//! 3. i386 ABI mismatch on all `unsafe extern "C"` NTAPI callees @ cmindex.rs:11-26.
+//!    `CmpDoCompareKeyName`, `CmpCompareInIndex`, `CmpFindSubKeyInRoot`, `CmpSplitLeaf`,
+//!    `CmpFindSubKeyInLeaf` are all `NTAPI` (stdcall on i386) in C, but are declared
+//!    `extern "C"` (cdecl) in Rust. Every call to these functions on i386 causes a stack
+//!    imbalance (callee pops args, caller also adjusts). amd64/arm64 are unaffected (cdecl==system).
+//!    Fix: change their block to `unsafe extern "system"`.
+//!
+//! 4. `CmpFindSubKeyByHash` @ cmindex.rs:12 — declared `extern "C"` but `static` in C.
+//!    `CmpFindSubKeyByHash` has C-internal linkage (`static`). If cmindex.c is excluded from
+//!    the build (as happens when this Rust file replaces it), the symbol does not exist and
+//!    the link will fail with an unresolved reference. The function must either be translated
+//!    into Rust or the static restriction must be lifted on the C side.
+//!
+//! VERIFIED OK:
+//!    CmpComputeHashKey — correct (the <= vs < on 'z' is semantically equivalent: both yield 'Z').
+//!    CmpFindSubKeyByNumber — correct logic and ABI (extern "system", matches NTAPI).
+//!    CmpFindSubKeyByName — correct logic and ABI; `sub_key = 0` init is a minor style gap
+//!      (C leaves it uninitialized; both are fine in practice since it is always written first).
+//!    CmpMaxIndexPerHblock in glue.rs — layout-derived const expression matches C macro exactly.
+//!    Constants (INVALID_INDEX, HCELL_NIL, CM_KEY_*) — all correct vs cmdata.h/hivedata.h.
+
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -201,187 +244,304 @@ pub unsafe extern "system" fn CmpFindSubKeyByName(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpAddToLeaf(
-    hive: *mut _HHIVE,
-    leaf_cell: HCELL_INDEX,
-    new_key: HCELL_INDEX,
-    name: *const _UNICODE_STRING,
+    Hive: PHHIVE,
+    LeafCell: HCELL_INDEX,
+    NewKey: HCELL_INDEX,
+    Name: PCUNICODE_STRING,
 ) -> HCELL_INDEX {
-    let leaf: *mut CM_KEY_INDEX;
-    let fast_leaf: *mut CM_KEY_FAST_INDEX;
-    let mut size: u32;
-    let old_size: u32;
-    let entry_size: usize;
+    let mut Leaf: PCM_KEY_INDEX;
+    let mut FastLeaf: PCM_KEY_FAST_INDEX;
+    let mut Size: u32;
+    let OldSize: u32;
+    let EntrySize: u32;
     let mut i: u32;
     let mut j: u32;
-    let mut new_cell: HCELL_INDEX;
-    let mut child: HCELL_INDEX = 0;
-    let result: i32;
+    let mut NewCell: HCELL_INDEX;
+    let mut Child: HCELL_INDEX = 0;
+    let Result: i32;
 
-    HvMarkCellDirty(hive, leaf_cell, 0);
+    /* Mark the leaf dirty */
+    HvMarkCellDirty(Hive, LeafCell, 0u8);
 
-    leaf = HvGetCell(hive, leaf_cell) as *mut CM_KEY_INDEX;
-    if leaf.is_null() {
+    /* Get the leaf cell */
+    Leaf = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
+    if Leaf.is_null() {
         return HCELL_NIL;
     }
 
-    HvReleaseCell(hive, leaf_cell);
+    /* Release it */
+    HvReleaseCell(Hive, LeafCell);
 
-    if (*leaf).Signature == CM_KEY_INDEX_LEAF {
-        fast_leaf = core::ptr::null_mut();
-        entry_size = core::mem::size_of::<HCELL_INDEX>();
+    /* Check if this is an index leaf */
+    if (*Leaf).Signature == CM_KEY_INDEX_LEAF as u16 {
+        FastLeaf = core::ptr::null_mut();
+        EntrySize = core::mem::size_of::<HCELL_INDEX>() as u32;
     } else {
-        // Sanity check: CM_KEY_FAST_LEAF or CM_KEY_HASH_LEAF assumed
-        fast_leaf = leaf as *mut CM_KEY_FAST_INDEX;
-        entry_size = core::mem::size_of::<CM_INDEX>();
+        FastLeaf = Leaf as PCM_KEY_FAST_INDEX;
+        EntrySize = core::mem::size_of::<CM_INDEX>() as u32;
     }
 
-    old_size = HvGetCellSize(hive, leaf as *mut CM_KEY_INDEX);
-    size = old_size;
-    size -= (entry_size * (*leaf).Count as usize + core::mem::offset_of!(CM_KEY_INDEX, List)) as u32;
+    /* Get the current size of the leaf */
+    OldSize = HvGetCellSize(Hive, Leaf as *mut CM_KEY_INDEX);
 
-    new_cell = leaf_cell;
+    /* Calculate the size of the free entries */
+    Size = OldSize;
+    Size -= EntrySize * (*Leaf).Count as u32
+        + (core::ptr::addr_of!((*Leaf).List) as usize - Leaf as usize) as u32;
 
-    if (size / entry_size as u32) < 1 {
-        size = old_size + old_size / 2;
-        if size < (old_size + entry_size as u32) {
-            size = old_size + entry_size as u32;
+    /* Assume we'll re-use the same leaf */
+    NewCell = LeafCell;
+
+    /* Check if we're out of space */
+    if (Size / EntrySize) < 1 {
+        Size = OldSize + OldSize / 2;
+        if Size < (OldSize + EntrySize) {
+            Size = OldSize + EntrySize;
         }
 
-        new_cell = HvReallocateCell(hive, leaf_cell, size);
-        if new_cell == HCELL_NIL {
+        NewCell = HvReallocateCell(Hive, LeafCell, Size);
+        if NewCell == HCELL_NIL {
             return HCELL_NIL;
         }
+
+        Leaf = HvGetCell(Hive, NewCell) as PCM_KEY_INDEX;
+        if Leaf.is_null() {
+            return HCELL_NIL;
+        }
+
+        HvReleaseCell(Hive, NewCell);
+
+        if !FastLeaf.is_null() {
+            FastLeaf = Leaf as PCM_KEY_FAST_INDEX;
+        }
     }
-    return new_cell;
+
+    /* Find the insertion point for our entry */
+    i = CmpFindSubKeyInLeaf(Hive, Leaf, Name, &mut Child);
+    if (i & INVALID_INDEX) != 0 {
+        return HCELL_NIL;
+    }
+
+    /* Check if we're not last */
+    if i != (*Leaf).Count as u32 {
+        Result = CmpCompareInIndex(Hive, Name, i, Leaf, &mut Child);
+        if Result == 2 {
+            return HCELL_NIL;
+        }
+
+        if Result > 0 {
+            i += 1;
+        }
+
+        if i != (*Leaf).Count as u32 {
+            if !FastLeaf.is_null() {
+                core::ptr::copy(
+                    core::ptr::addr_of!((*FastLeaf).List[i as usize]),
+                    core::ptr::addr_of_mut!((*FastLeaf).List[(i + 1) as usize]),
+                    ((*FastLeaf).Count as u32 - i) as usize,
+                );
+            } else {
+                core::ptr::copy(
+                    core::ptr::addr_of!((*Leaf).List[i as usize]),
+                    core::ptr::addr_of_mut!((*Leaf).List[(i + 1) as usize]),
+                    ((*Leaf).Count as u32 - i) as usize,
+                );
+            }
+        }
+    }
+
+    /* Check if this is a new-style leaf */
+    if !FastLeaf.is_null() {
+        (*FastLeaf).List[i as usize].Cell = NewKey;
+
+        if (*FastLeaf).Signature == CM_KEY_HASH_LEAF as u16 {
+            (*FastLeaf).List[i as usize].__bindgen_anon_1.HashKey = CmpComputeHashKey(0, Name, 0u8);
+        } else {
+            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[0] = 0;
+            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[1] = 0;
+            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[2] = 0;
+            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[3] = 0;
+
+            if ((*Name).Length as usize / core::mem::size_of::<u16>()) < 4 {
+                j = (*Name).Length as u32 / core::mem::size_of::<u16>() as u32;
+            } else {
+                j = 4;
+            }
+
+            loop {
+                if (*(*Name).Buffer.offset((j - 1) as isize) as u16) > (u8::MAX as u16) {
+                    break;
+                }
+
+                (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[(j - 1) as usize] =
+                    *(*Name).Buffer.offset((j - 1) as isize) as u8;
+
+                j -= 1;
+                if j == 0 {
+                    break;
+                }
+            }
+        }
+    } else {
+        (*Leaf).List[i as usize] = NewKey;
+    }
+
+    /* Update the leaf count and return the new cell */
+    (*Leaf).Count += 1;
+    NewCell
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpSelectLeaf(
-    Hive: *mut HHIVE,
-    KeyNode: *mut CM_KEY_NODE,
-    Name: *const _UNICODE_STRING,
+    Hive: PHHIVE,
+    KeyNode: PCM_KEY_NODE,
+    Name: PCUNICODE_STRING,
     Type: HSTORAGE_TYPE,
-    RootCell: *mut *mut HCELL_INDEX,
+    RootCell: *mut PHCELL_INDEX,
 ) -> HCELL_INDEX {
+    let mut IndexKey: PCM_KEY_INDEX;
+    let mut LeafKey: PCM_KEY_INDEX;
+    let mut FastLeaf: PCM_KEY_FAST_INDEX;
+    let mut LeafCell: HCELL_INDEX = HCELL_NIL;
+    let mut CurrentCell: HCELL_INDEX;
+    let mut SubKeyIndex: u32;
+    let mut Result: i32;
 
-    unsafe {
-        let mut IndexKey: *mut CM_KEY_INDEX;
-        let mut LeafKey: *mut CM_KEY_INDEX;
-        let mut FastLeaf: *mut CM_KEY_FAST_INDEX;
-        let mut LeafCell: HCELL_INDEX = 0;
-        let mut CurrentCell: HCELL_INDEX;
-        let mut SubKeyIndex: u32;
-        let mut Result: i32;
+    HvMarkCellDirty(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize], 0u8);
 
-        // Mark it as dirty
-        HvMarkCellDirty(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize], 0);
+    IndexKey = HvGetCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize]) as PCM_KEY_INDEX;
 
-        // Get the cell
-        IndexKey = HvGetCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize]) as *mut CM_KEY_INDEX;
+    if IndexKey.is_null() {
+        debug_assert!(!IndexKey.is_null());
+        return HCELL_NIL;
+    }
 
-        // Check if we've got a valid key
-        if IndexKey.is_null() {
-            // Should not happen!
-            debug_assert!(!IndexKey.is_null());
-            return 0; // HCELL_NIL
+    debug_assert!((*IndexKey).Signature == CM_KEY_INDEX_ROOT);
+
+    loop {
+        SubKeyIndex = CmpFindSubKeyInRoot(Hive, IndexKey, Name, &mut LeafCell);
+
+        if (SubKeyIndex & INVALID_INDEX) != 0 {
+            return HCELL_NIL;
         }
 
-        // Sanity check
-        debug_assert!((*IndexKey).Signature == CM_KEY_INDEX_ROOT);
+        if LeafCell != HCELL_NIL {
+            LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
 
-        loop {
-            // Find subkey
-            SubKeyIndex = CmpFindSubKeyInRoot(
-                Hive,
-                IndexKey,
-                Name,
-                core::ptr::addr_of_mut!(LeafCell),
-            );
+            if LeafKey.is_null() {
+                return HCELL_NIL;
+            }
 
-            // Make sure we found something valid
-            if SubKeyIndex & 0x80000000 != 0 {
-                return 0; // HCELL_NIL
-            } // INVALID_INDEX
+            if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
+                *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]) as PHCELL_INDEX;
+                return LeafCell;
+            }
 
-            // Try to fit it into the LeafCell, if it was found
-            if LeafCell != 0 {
-                // Get the leaf key
-                LeafKey = HvGetCell(Hive, LeafCell) as *mut CM_KEY_INDEX;
+            /* It didn't fit, so proceed to splitting */
+        } else {
+            LeafCell = (*IndexKey).List[SubKeyIndex as usize];
+            LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
 
-                // Check for failure
+            if LeafKey.is_null() {
+                return HCELL_NIL;
+            }
+
+            if ((*LeafKey).Signature == CM_KEY_FAST_LEAF as u16)
+                || ((*LeafKey).Signature == CM_KEY_HASH_LEAF as u16)
+            {
+                FastLeaf = LeafKey as PCM_KEY_FAST_INDEX;
+                CurrentCell = (*FastLeaf).List[0].Cell;
+            } else {
+                debug_assert!((*LeafKey).Signature == CM_KEY_INDEX_LEAF as u16);
+                CurrentCell = (*LeafKey).List[0];
+            }
+
+            Result = CmpDoCompareKeyName(Hive, Name, CurrentCell);
+
+            if Result == 2 {
+                return HCELL_NIL;
+            }
+
+            debug_assert!(Result != 0);
+
+            if Result >= 0 {
+                LeafCell = (*IndexKey).List[SubKeyIndex as usize];
+                LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
+
                 if LeafKey.is_null() {
-                    return 0; // HCELL_NIL
+                    return HCELL_NIL;
                 }
 
-                // Check if it fits into this leaf and break
                 if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
-                    // Fill in the result and return it
-                    *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]);
+                    *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]) as PHCELL_INDEX;
                     return LeafCell;
                 }
 
-                // It didn't fit, so proceed to splitting
-            } else {
-                // Get the leaf cell at the very end
-                LeafCell = (*IndexKey).List[SubKeyIndex as usize];
-                LeafKey = HvGetCell(Hive, LeafCell) as *mut CM_KEY_INDEX;
+                if (SubKeyIndex + 1) < (*IndexKey).Count as u32 {
+                    LeafCell = (*IndexKey).List[(SubKeyIndex + 1) as usize];
+                    LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
 
-                // Return an error in case of problems
-                if LeafKey.is_null() {
-                    return 0; // HCELL_NIL
-                }
-
-                // Choose the cell to search from depending on the key type
-                if ((*LeafKey).Signature == CM_KEY_FAST_LEAF)
-                    || ((*LeafKey).Signature == CM_KEY_HASH_LEAF)
-                {
-                    FastLeaf = LeafKey as *mut CM_KEY_FAST_INDEX;
-                    CurrentCell = (*FastLeaf).List[0].Cell;
-                } else {
-                    // Make sure it's an index leaf
-                    debug_assert!((*LeafKey).Signature == CM_KEY_INDEX_LEAF);
-                    CurrentCell = (*LeafKey).List[0];
-                }
-
-                // Do a name compare
-                Result = CmpDoCompareKeyName(Hive, Name, CurrentCell);
-
-                // Check for failure
-                if Result == 2 {
-                    return 0; // HCELL_NIL
-                }
-
-                // Names can't be equal, ensure that
-                debug_assert!(Result != 0);
-
-                // Check if it's above
-                if Result >= 0 {
-                    // Get the cell in the index
-                    LeafCell = (*IndexKey).List[SubKeyIndex as usize];
-                    LeafKey = HvGetCell(Hive, LeafCell) as *mut CM_KEY_INDEX;
-
-                    // Return an error in case of problems
                     if LeafKey.is_null() {
-                        return 0; // HCELL_NIL
+                        return HCELL_NIL;
                     }
 
-                    // Check if it fits into this leaf
                     if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
-                        // Fill in the result and return the cell
-                        *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[SubKeyIndex as usize]);
+                        *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[(SubKeyIndex + 1) as usize]) as PHCELL_INDEX;
                         return LeafCell;
                     }
+                }
 
-                    // No, it doesn't fit, check the next adjacent leaf
-                    if (SubKeyIndex + 1) < (*IndexKey).Count as u32 {
-                        // Try the next leaf
-                        SubKeyIndex += 1;
-                        continue;
+                /* It didn't fit, so proceed to splitting */
+            } else {
+                /* No, it's below, check the subkey index */
+                if SubKeyIndex > 0 {
+                    LeafCell = (*IndexKey).List[(SubKeyIndex - 1) as usize];
+                    LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
+
+                    if LeafKey.is_null() {
+                        return HCELL_NIL;
+                    }
+
+                    if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
+                        *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[(SubKeyIndex - 1) as usize]) as PHCELL_INDEX;
+                        return LeafCell;
+                    }
+                } else {
+                    LeafCell = (*IndexKey).List[0];
+                    LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
+
+                    if LeafKey.is_null() {
+                        return HCELL_NIL;
+                    }
+
+                    if ((*LeafKey).Count as u32) < CmpMaxIndexPerHblock {
+                        *RootCell = core::ptr::addr_of_mut!((*IndexKey).List[0]) as PHCELL_INDEX;
+                        return LeafCell;
                     }
                 }
+
+                /* It didn't fit into either, so proceed to splitting */
             }
         }
-        // Can't insert: no leaf fits
-        return 0;
+
+        /* We need to split */
+        CurrentCell = CmpSplitLeaf(
+            Hive,
+            (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize],
+            SubKeyIndex,
+            Type,
+        );
+
+        if CurrentCell == HCELL_NIL {
+            return CurrentCell;
+        }
+
+        (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize] = CurrentCell;
+
+        IndexKey = HvGetCell(Hive, (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Type as usize]) as PCM_KEY_INDEX;
+
+        if IndexKey.is_null() {
+            return HCELL_NIL;
+        }
     }
 }

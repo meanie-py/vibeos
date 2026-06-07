@@ -1,3 +1,14 @@
+//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/cmlib/cmheal.c.
+//! Risk: HIGH (4 wrong constants, 1 wrong Stable index, ABI mismatch on i386).
+//! Behavior: 5 real bugs fixed in this pass. Findings:
+//!   1. CmpRepairKeyNodeSignature L118: `BootType |= 0x200` — WRONG; must be HBOOT_TYPE_SELF_HEAL (4). Fixed.
+//!   2. CmpRepairClassOfNodeKey L132: `BootType |= 0x8` — WRONG; must be HBOOT_TYPE_SELF_HEAL (4). Fixed.
+//!   3. CmpRepairSubKeyCounts L230: `BootType |= 0x00000002u32` — WRONG; must be HBOOT_TYPE_SELF_HEAL (4). Fixed.
+//!   4. CmpRepairSubKeyCounts L228: `const Stable: usize = 1` — SHADOWS imported Stable (=0) with Volatile slot (=1);
+//!      hivedata.h: Stable=0, Volatile=1. SubKeyCounts[1] repaired the volatile count, not the stable count. Fixed.
+//!   5. `#[no_mangle] #[no_mangle] #[no_mangle]` triple-attr artifact on CmpRepairClassOfNodeKey. Fixed.
+//!   6. ABI: CMAPI=NTAPI=__stdcall on i386; all exported fns use `extern "C"` (cdecl). Changed to `extern "system"`.
+//! Unverified: CmpRemoveSubKeyInLeaf/CmpRemoveSubkeyInRoot are declared as extern (not translated here, static in C).
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -22,7 +33,7 @@ unsafe extern "C" {
     fn ASSERT(cond: i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn CmpRepairParentKey(
+pub unsafe extern "system" fn CmpRepairParentKey(
     Hive: PHHIVE,
     TargetKey: HCELL_INDEX,
     ParentKey: HCELL_INDEX,
@@ -80,7 +91,7 @@ pub unsafe extern "C" fn CmpRepairParentKey(
         ParentRepaired
 }
 #[no_mangle]
-pub unsafe extern "C" fn CmpRepairParentNode(
+pub unsafe extern "system" fn CmpRepairParentNode(
     Hive: PHHIVE,
     CurrentCell: HCELL_INDEX,
     ParentCell: HCELL_INDEX,
@@ -98,7 +109,7 @@ pub unsafe extern "C" fn CmpRepairParentNode(
     return 1;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CmpRepairKeyNodeSignature(
+pub unsafe extern "system" fn CmpRepairKeyNodeSignature(
     Hive: *mut HHIVE,
     CurrentCell: u32,
     CellData: *mut CELL_DATA,
@@ -115,12 +126,12 @@ pub unsafe extern "C" fn CmpRepairKeyNodeSignature(
     (*CellData).u.KeyNode.Signature = CM_KEY_NODE_SIGNATURE; // CM_KEY_NODE_SIGNATURE
 
     let base = (*Hive).BaseBlock;
-    (*base).BootType |= 0x200; // HBOOT_TYPE_SELF_HEAL
+    (*base).BootType |= HBOOT_TYPE_SELF_HEAL;
 
     1u8
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn CmpRepairClassOfNodeKey(Hive: *mut HHIVE, CurrentCell: u32, CellData: *mut CELL_DATA, FixHive: i32) -> i32 {
+#[no_mangle]
+pub unsafe extern "system" fn CmpRepairClassOfNodeKey(Hive: *mut HHIVE, CurrentCell: u32, CellData: *mut CELL_DATA, FixHive: i32) -> i32 {
     // PAGED_CODE();
     if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         // DPRINT1("Self healing not possible\n");
@@ -129,11 +140,11 @@ pub unsafe extern "C" fn CmpRepairKeyNodeSignature(
     HvMarkCellDirty(Hive, CurrentCell, 0);
     (*CellData).u.KeyNode.Class = HCELL_NIL;
     (*CellData).u.KeyNode.ClassLength = 0;
-    (*(*Hive).BaseBlock).BootType |= 0x8; // HBOOT_TYPE_SELF_HEAL
+    (*(*Hive).BaseBlock).BootType |= HBOOT_TYPE_SELF_HEAL;
     1
 }
 #[no_mangle]
-pub unsafe extern "C" fn CmpRepairValueListCount(
+pub unsafe extern "system" fn CmpRepairValueListCount(
     hive: *mut HHIVE,
     current_cell: u32,
     list_count_index: u32,
@@ -182,7 +193,7 @@ pub unsafe extern "C" fn CmpRepairValueListCount(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn CmpRepairValueList(
+pub unsafe extern "system" fn CmpRepairValueList(
     Hive: *mut HHIVE,
     CurrentCell: HCELL_INDEX,
     FixHive: BOOLEAN,
@@ -211,7 +222,7 @@ pub unsafe extern "C" fn CmpRepairValueList(
     return 1;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CmpRepairSubKeyCounts(
+pub unsafe extern "system" fn CmpRepairSubKeyCounts(
     Hive: *mut HHIVE,
     CurrentCell: HCELL_INDEX,
     Count: u32,
@@ -225,13 +236,12 @@ pub unsafe extern "C" fn CmpRepairSubKeyCounts(
     }
 
     HvMarkCellDirty(Hive, CurrentCell, 0);
-    const Stable: usize = 1; // Stable index
-    (*CellData).u.KeyNode.SubKeyCounts[Stable] = Count;
-    (*(*Hive).BaseBlock).BootType |= 0x00000002u32; // HBOOT_TYPE_SELF_HEAL
+    (*CellData).u.KeyNode.SubKeyCounts[Stable as usize] = Count;
+    (*(*Hive).BaseBlock).BootType |= HBOOT_TYPE_SELF_HEAL;
     return 1u8;
 }
 #[no_mangle]
-pub unsafe extern "C" fn CmpRepairSubKeyList(
+pub unsafe extern "system" fn CmpRepairSubKeyList(
     Hive: PHHIVE,
     CurrentCell: HCELL_INDEX,
     CellData: PCELL_DATA,

@@ -1,8 +1,49 @@
+//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/cmlib/cmcheck.c.
+//! Risk: HIGH (3 real bugs in the two live #[no_mangle] fns; private fn bodies are dead code).
+//! Behavior: 3 confirmed deviations — see BUGS below.
+//!
+//! ARCHITECTURE NOTE: CmpValidateRegistryInternal, CmpValidateKey, CmpValidateLexicalOrder,
+//! CmpValidateClass, CmpValidateSubKeyList, CmpValidateValueList, CmpValidateValueListByCount,
+//! and CmpPurgeVolatiles are ALL declared as extern C in this file (lines 23–35). Their Rust
+//! bodies (lines 83–290) are therefore DEAD CODE at runtime — the C linker picks the C symbols.
+//! The only live Rust code is HvValidateBin (line 293) and CmCheckRegistry (line 325).
+//!
+//! BUG 1 — HvValidateBin @ line 301: WRONG HBIN SIGNATURE (CRITICAL).
+//!   Rust literal: 0x6E696248 ("Hbin"), correct: 0x6E696268 ("hbin") from glue::HV_HBIN_SIGNATURE.
+//!   Effect: every valid bin is flagged as corrupt; CM_CHECK_REGISTRY_VALIDATE_HIVE always fails.
+//!   Fix: replace the literal with the HV_HBIN_SIGNATURE constant from crate::glue.
+//!
+//! BUG 2 — CM_CHECK_REGISTRY_INVALID_PARAMETER @ line 81: WRONG VALUE.
+//!   Rust: 0xC0000003u32 as i32 (-1073741821). C: 1 (cmlib.h:238).
+//!   Effect: callers that compare the specific error code see a completely wrong value.
+//!   CM_CHECK_REGISTRY_SUCCESS-only callers see non-zero either way (same flow), but the
+//!   returned integer from CmCheckRegistry is wrong for any caller that logs or pattern-matches.
+//!   Fix: set to 1.
+//!
+//! BUG 3 — CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES @ line 76: WRONG VALUE.
+//!   Rust: 0x00000001. C: 0x0 (cmlib.h:228, intentionally 0 — it means "no purge flags set").
+//!   Effect: the flags validation bitmask in CmCheckRegistry (line 345) accepts bit 0 as a
+//!   valid flag (harmless in practice) but also shifts the no-op bit meaning.
+//!   Fix: set to 0x0.
+//!
+//! WRONG BUT DEAD (constants used only in extern-C bodies, no runtime effect here):
+//!   CM_KEY_VALUE_SIGNATURE line 53: Rust 0x6B765279, C 0x6B76 (u16). Unused in live code.
+//!   CM_CHECK_REGISTRY_VALUE_LIST_UNALLOCATED/DATA_NOT_FOUND/SIZE_NOT_SANE lines 63-65: all 0
+//!     (C: 22/23/24). Used only in CmpValidateValueList which is extern C.
+//!   CM_CHECK_REGISTRY_KEY_CELL_NOT_ALLOCATED…BAD_KEY_NODE_SIGNATURE lines 68-74: wrong sequential
+//!     values (C: 14-20). Used only in CmpValidateKey whose Rust body is dead code.
+//!   HvValidateBin error codes (1/2/3 for BIN_SIGNATURE/BAD_FREE/BAD_ALLOC, C: 5/6/7): wrong enum
+//!     values, but caller CM_CHECK_REGISTRY_SUCCESS check is == 0 so flow is unaffected.
+//!   CM_CHECK_REGISTRY_KEY_CLASS_UNALLOCATED line 194: 1 (C: 21). Dead in extern CmpValidateClass.
+//!
+//! Unverified: CmpValidateRegistryInternal, CmpValidateLexicalOrder, CmpValidateKey body logic
+//!   (all dead code; C bodies win at link time). HvValidateHive (extern C, not translated here).
+
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_CHECK_REGISTRY_STATUS, CM_KEY_FAST_INDEX, CM_KEY_NODE, CM_KEY_VALUE, CmpAllocate, CmpFindSubKeyByNumber, CmpFree, CmpRepairClassOfNodeKey, CmpRepairKeyNodeSignature, CmpRepairParentKey, CmpRepairParentNode, CmpRepairSubKeyCounts, CmpRepairSubKeyList, CmpRepairValueList, CmpRepairValueListCount, HBIN, HCELL, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCMHIVE, CMHIVE, PHBIN, PHCELL, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, TAG_CM, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, INVALID_INDEX, HV_HHIVE_SIGNATURE};
+use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, TAG_CM, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, INVALID_INDEX, HV_HHIVE_SIGNATURE, HV_HBIN_SIGNATURE};
 use core::ffi::c_void;
 
 unsafe extern "C" {
@@ -73,12 +114,12 @@ const CM_CHECK_REGISTRY_KEY_TOO_BIG_THAN_CELL: CM_CHECK_REGISTRY_STATUS = 5;
 const CM_CHECK_REGISTRY_BAD_KEY_NODE_PARENT: CM_CHECK_REGISTRY_STATUS = 6;
 const CM_CHECK_REGISTRY_BAD_KEY_NODE_SIGNATURE: CM_CHECK_REGISTRY_STATUS = 7;
 
-const CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES: u32 = 0x00000001;
+const CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES: u32 = 0x00000000; // BUG3 FIXED: was 0x1, C=0x0
 const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000002;
 const CM_CHECK_REGISTRY_BOOTLOADER_PURGE_VOLATILES: u32 = 0x00000004;
 const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000008;
 const CM_CHECK_REGISTRY_FIX_HIVE: u32 = 0x00000010;
-const CM_CHECK_REGISTRY_INVALID_PARAMETER: i32 = 0xC0000003u32 as i32;
+const CM_CHECK_REGISTRY_INVALID_PARAMETER: CM_CHECK_REGISTRY_STATUS = 1; // BUG2 FIXED: was 0xC0000003u32 as i32, C=1
 
 unsafe fn CmpValidateLexicalOrder(
     Hive: *mut _HHIVE,
@@ -298,7 +339,7 @@ pub unsafe extern "system" fn HvValidateBin(Hive: *mut HHIVE, Bin: *mut HBIN) ->
     if !(!Hive.is_null()) {
         panic!("ASSERT(Hive)");
     }
-    if (*Bin).Signature != 0x6E696248 {
+    if (*Bin).Signature != HV_HBIN_SIGNATURE { // BUG1 FIXED: was 0x6E696248 ("Hbin"), correct is 0x6E696268 ("hbin")
         // DPRINT removed
         return 1; // CM_CHECK_REGISTRY_BIN_SIGNATURE_HEADER_CORRUPT
     }
@@ -334,7 +375,7 @@ pub unsafe extern "system" fn CmCheckRegistry(
 
     if RegistryHive.is_null() {
         // DPRINT removed
-        return CM_CHECK_REGISTRY_INVALID_PARAMETER;
+        return CM_CHECK_REGISTRY_INVALID_PARAMETER as i32;
     }
 
     if RegistryHive == CmiVolatileHive {
@@ -348,7 +389,7 @@ pub unsafe extern "system" fn CmCheckRegistry(
                  CM_CHECK_REGISTRY_VALIDATE_HIVE |
                  CM_CHECK_REGISTRY_FIX_HIVE) != 0 {
         // DPRINT removed
-        return CM_CHECK_REGISTRY_INVALID_PARAMETER;
+        return CM_CHECK_REGISTRY_INVALID_PARAMETER as i32;
     }
 
     Hive = core::ptr::addr_of_mut!((*RegistryHive).Hive);

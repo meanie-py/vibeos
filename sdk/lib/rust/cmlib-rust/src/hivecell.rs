@@ -1,3 +1,24 @@
+//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/cmlib/hivecell.c.
+//! Risk: HIGH. Behavior: 4 real bugs found.
+//! Findings:
+//!   BUG1 (CRITICAL) HvAllocateCell:131 — HCELL_TYPE_SHIFT=30 but hivedata.h defines it as 31;
+//!     `FreeCellOffset |= Storage << 30` sets bit 30 (0x40000000) instead of bit 31 (0x80000000),
+//!     misencoding every newly-added volatile cell's type bit → corrupt HCELL_INDEX on hive extension.
+//!   BUG2 (HIGH) HvAllocateCell/HvReallocateCell/HvTrackCellRef/HvReleaseFreeCellRefArray:
+//!     exported as `extern "C"` (cdecl) but CMAPI=NTAPI=__stdcall; on i386 callers use stdcall
+//!     calling convention → stack corruption / mismatched argument pop on every call from C.
+//!     Must be `pub unsafe extern "system"`.
+//!   BUG3 (LOW) HvTrackCellRef:264 — CmpFree(ptr, TAG_CM) passes TAG_CM=0x434D as Quota arg;
+//!     C passes 0 (both CmpFree call sites in hivecell.c use 0). TAG_CM value itself is also
+//!     wrong (0x434D vs correct 0x2020_4D43 in glue.rs); import from glue::TAG_CM instead.
+//!   BUG4 (cosmetic) HvAllocateCell:91 — local const CMLIB_HCELL_DEBUG=1 shadows module-level
+//!     CMLIB_HCELL_DEBUG=0; C has a single #define CMLIB_HCELL_DEBUG 0x01; net effect is that
+//!     trace calls inside HvAllocateCell fire (level=1) while HvpRemoveFree traces use level=0
+//!     (suppressed). Inconsistent but non-crashing.
+//! Unverified: HvpRemoveFree is Rust-dead (only called by C HvFreeCell which is not translated);
+//!   7 of 9 CMAPI functions in hivecell.c remain C (HvIsCellAllocated, HvpGetCellData,
+//!   HvGetCellSize, HvMarkCellDirty, HvIsCellDirty, HvpCreateHiveFreeCellList, HvFreeCell).
+
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -80,14 +101,14 @@ unsafe extern "C" fn HvpRemoveFree(
     assert!(false);
 }
 #[no_mangle]
-pub unsafe extern "C" fn HvAllocateCell(
+pub unsafe extern "system" fn HvAllocateCell(
     RegistryHive: *mut _HHIVE,
     mut Size: u32,
     Storage: u32,
     Vicinity: u32,
 ) -> u32 {
     const HCELL_NIL: u32 = 0;
-    const HCELL_TYPE_SHIFT: u32 = 30;
+    const HCELL_TYPE_SHIFT: u32 = 31;
     const CMLIB_HCELL_DEBUG: u32 = 1;
     static __FUNCTION__: &[u8] = b"HvAllocateCell\0";
 
@@ -170,7 +191,7 @@ pub unsafe extern "C" fn HvAllocateCell(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIndex: u32, Size: u32) -> u32 {
+pub unsafe extern "system" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIndex: u32, Size: u32) -> u32 {
     let OldCell: *mut core::ffi::c_void;
     let NewCell: *mut core::ffi::c_void;
     let OldCellSize: i32;
@@ -211,7 +232,7 @@ pub unsafe extern "C" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIndex: 
     return CellIndex;
 }
 #[no_mangle]
-pub unsafe extern "C" fn HvTrackCellRef(
+pub unsafe extern "system" fn HvTrackCellRef(
     CellRef: *mut HV_TRACK_CELL_REF,
     Hive: *mut HHIVE,
     Cell: HCELL_INDEX,
@@ -275,7 +296,7 @@ pub unsafe extern "C" fn HvTrackCellRef(
     return 1;
 }
 #[no_mangle]
-pub unsafe extern "C" fn HvReleaseFreeCellRefArray(
+pub unsafe extern "system" fn HvReleaseFreeCellRefArray(
     CellRef: PHV_TRACK_CELL_REF,
 ) {
     // PAGED_CODE();
