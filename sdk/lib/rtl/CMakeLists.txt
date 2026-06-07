@@ -35,7 +35,7 @@ list(APPEND SOURCE
     # atom.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ATM)
     # avltable.c — replaced by Rust implementation (sdk/lib/rust/avltable/)
     # bitmap.c — replaced by Rust implementation (sdk/lib/rust/bitmap/)
-    bootdata.c
+    # bootdata.c — replaced by Rust implementation (sdk/lib/rust/rtl-bootdata/)
     # compress.c — replaced by Rust implementation (sdk/lib/rust/compress/)
     # crc32.c — replaced by Rust implementation (sdk/lib/rust/crc32/)
     # critical.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
@@ -44,7 +44,7 @@ list(APPEND SOURCE
     # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # encode.c — replaced by Rust implementation (sdk/lib/rust/encode/)
     # env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
-    error.c
+    # error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
     exception.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
@@ -66,19 +66,19 @@ list(APPEND SOURCE
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
     # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
     # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
-    propvar.c
+    # propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
-    rangelist.c
+    # rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
     registry.c
     res.c
     # resource.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave RES)
-    rxact.c
+    # rxact.c — replaced by Rust implementation (sdk/lib/rust/rtl-rxact/)
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
     # security.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SEC)
     # sid.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SID)
     # slist.c — replaced by Rust implementation (sdk/lib/rust/slist/, Wave SLIST: Init/First/QueryDepth/PushList + RtlpUse16ByteSLists; Push/Pop/Flush already Rust)
     # splaytree.c — replaced by Rust implementation (sdk/lib/rust/splaytree/)
-    sysvol.c
+    # sysvol.c — replaced by Rust implementation (sdk/lib/rust/rtl-sysvol/)
     # thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave THR)
     # time.c — replaced by Rust implementation (sdk/lib/rust/time/)
     # timezone.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave TZ)
@@ -217,6 +217,20 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-version/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-ppb/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-ppb/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-propvar/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-propvar/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-bootdata/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-bootdata/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-rangelist/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-rangelist/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-sysvol/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sysvol/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-rxact/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-rxact/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/winerr.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/src/tables.rs
+            ${RUST_WORKSPACE_DIR}/rtl-error/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs

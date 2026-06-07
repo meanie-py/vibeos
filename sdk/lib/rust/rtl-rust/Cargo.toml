@@ -42,4 +42,10 @@ rtl-sync     = { path = "../rtl-sync", features = ["cabi"] }
 rtl-diag     = { path = "../rtl-diag", features = ["cabi"] }
 rtl-version  = { path = "../rtl-version" }
 rtl-ppb      = { path = "../rtl-ppb" }
+rtl-propvar  = { path = "../rtl-propvar" }
+rtl-bootdata = { path = "../rtl-bootdata" }
+rtl-rangelist = { path = "../rtl-rangelist" }
+rtl-sysvol   = { path = "../rtl-sysvol" }
+rtl-rxact    = { path = "../rtl-rxact" }
+rtl-error    = { path = "../rtl-error" }
 time         = { path = "../time" }

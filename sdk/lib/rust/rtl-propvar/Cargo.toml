@@ -1,0 +1,15 @@
+[package]
+name = "rtl-propvar"
+version = "0.1.0"
+edition = "2021"
+
+# Rust translation of sdk/lib/rtl/propvar.c — native property/variant API.
+# These are thin thunks that LdrLoadDll("ole32.dll") and forward to the
+# Stg* exports; rtl itself only passes PROPVARIANT/serialized blobs by
+# pointer (opaque). Shared kernel+user via librtl_rust.a.
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
