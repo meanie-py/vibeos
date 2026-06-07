@@ -765,420 +765,148 @@ unsafe fn fdi_Zipinflate_stored(decomp_state: *mut fdi_decomp_state) -> i32 {
     return 0;
 }
 
-unsafe fn QTMfdi_decomp(
-    inlen: i32,
-    outlen: i32,
-    decomp_state: *mut fdi_decomp_state,
-) -> i32 {
-    let inpos: *const u8 = (*decomp_state).inbuf.as_ptr();
-    let window: *mut u8 = (*decomp_state).methods.qtm.window.as_mut_ptr();
-    let mut window_posn: u32 = (*decomp_state).methods.qtm.window_posn;
-    let window_size: u32 = (*decomp_state).methods.qtm.window_size;
-    let mut runsrc: *mut u8;
-    let mut rundest: *mut u8;
-    let mut bitsleft: i32;
-    let mut bitrun: i32;
-    let mut bitsneed: i32;
-    let mut bitbuf: u32;
+extern "C" {
+    fn Q_INIT_BITSTREAM();
+    fn Q_READ_BITS(val: *mut i32, n: u32);
+    fn GET_SYMBOL(model: i32, sym: *mut u8);
+    fn TRACE(format: *const i8, ...);
+    static model7: i32;
+    static model00: i32;
+    static model40: i32;
+    static model80: i32;
+    static modelC0: i32;
+    static model4: i32;
+    static model5: i32;
+    static model6len: i32;
+    static model6pos: i32;
+    }
+
+
+unsafe extern "C" fn QTMfdi_decomp(mut inlen: i32, mut outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
+    let mut inpos = (*decomp_state).inbuf.as_mut_ptr();
+    let mut window = (*decomp_state).methods.qtm.window.as_mut_ptr();
+    let mut window_posn = (*decomp_state).methods.qtm.window_posn;
+    let window_size = (*decomp_state).methods.qtm.window_size;
+    let mut bitsleft: i32 = 0;
+    let mut bitrun: i32 = 0;
+    let mut bitsneed: i32 = 0;
+    let mut bitbuf: u32 = 0;
     let mut range: u32;
     let mut symf: u16;
     let mut i: i32;
     let mut extra: i32;
-    let mut togo: i32 = outlen;
-    let mut match_length: i32 = 0;
+    let mut togo = outlen;
+    let mut match_length = 0;
     let mut copy_length: i32;
     let mut selector: u8;
     let mut sym: u8;
     let mut match_offset: u32 = 0;
-    let mut C: u16;
     let mut H: u16 = 0xFFFF;
     let mut L: u16 = 0;
-    // TRACE (if needed, call unknown function here)
-    // Q_INIT_BITSTREAM
-    bitsleft = 0;
-    bitbuf = 0;
-    // Q_READ_BITS(C, 16)
-    while bitsleft < 16 {
-        bitbuf |= (*inpos as u32) << bitsleft;
-        inpos = inpos.add(1);
-        bitsleft += 8;
-    }
-    C = (bitbuf & 0xFFFF) as u16;
-    bitbuf >>= 16;
-    bitsleft -= 16;
-    window_posn &= window_size.wrapping_sub(1);
-    if (window_posn.wrapping_add(togo as u32)) > window_size {
-        // TRACE
-        return 1; // DECR_DATAFORMAT
+    let mut C: i32;
+    TRACE(b"(inlen == %d, outlen == %d)\n\0".as_ptr() as *const i8, inlen, outlen);
+    Q_INIT_BITSTREAM();
+    Q_READ_BITS(&raw mut C, 16);
+    window_posn &= window_size - 1;
+    if (window_posn + togo) > window_size {
+        TRACE(b"straddled run\n\0".as_ptr() as *const i8);
+        return 1;
     }
     while togo > 0 {
-        // GET_SYMBOL(model7, selector)
-        {
-            let model = &(*decomp_state).methods.qtm.model7;
-            symf = 0;
-            range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-            i = 0;
-            loop {
-                symf = symf.wrapping_add(model[i as usize] as u16);
-                if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).wrapping_mul(65536) {
-                    i += 1;
-                    break;
-                }
-                i += 1;
-            }
-            selector = i as u8;
-            // update L and H
-            let mut low: u16 = 0;
-            for j in 0..i {
-                low = low.wrapping_add(model[j as usize] as u16);
-            }
-            let code_range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-            let new_low = (L as u32).wrapping_add(
-                ((low as u32).wrapping_mul(code_range)).wrapping_shr(16)
-            );
-            L = new_low as u16;
-            H = (L as u32).wrapping_add(
-                ((symf as u32).wrapping_mul(code_range)).wrapping_shr(16)
-            ).wrapping_sub(1) as u16;
-            // renormalize
-            loop {
-                if L & 0x8000 == H & 0x8000 {
-                    // shift out highest bit
-                    L = (L as u16) << 1;
-                    H = (H as u16) << 1;
-                    H |= 1;
-                    C = ((C as u16) << 1) | ((bitbuf & 1) as u16);
-                    bitbuf >>= 1;
-                    bitsleft -= 1;
-                    if bitsleft < 0 {
-                        bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                        bitsleft += 8;
-                        inpos = inpos.add(1);
-                    }
-                } else if L & 0x4000 == 0 && H & 0x4000 != 0 {
-                    // underflow
-                    break;
-                } else if L & 0x4000 != 0 && H & 0x4000 == 0 {
-                    // maybe underflow? This is part of the arithmetic coder.
-                    // Original Wine code has a more complex renormalization loop,
-                    // but we'll approximate with a simple version that matches typical QTM.
-                    // Actually, standard QTM decoder would do the following:
-                    let mut count = 0;
-                    while (L & 0xC000) == 0x0000 && (H & 0xC000) == 0xC000 {
-                        L = (L << 1) & 0xFFFE;
-                        H = ((H << 1) | 1) & 0xFFFF;
-                        C = ((C << 1) | ((bitbuf & 1) as u16)) & 0xFFFF;
-                        bitbuf >>= 1;
-                        bitsleft -= 1;
-                        if bitsleft < 0 {
-                            bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                            bitsleft += 8;
-                            inpos = inpos.add(1);
-                        }
-                        count += 1;
-                    }
-                    // We'll break after handling typical case
-                    break;
-                } else {
-                    break;
-                }
-            }
-        }
+        GET_SYMBOL(model7, &raw mut selector);
         match selector {
             0 => {
-                // GET_SYMBOL(model00, sym)
-                let model = &(*decomp_state).methods.qtm.model00;
-                symf = 0;
-                range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                i = 0;
-                loop {
-                    symf = symf.wrapping_add(model[i as usize] as u16);
-                    if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).wrapping_mul(65536) {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-                sym = i as u8;
-                let mut low: u16 = 0;
-                for j in 0..i {
-                    low = low.wrapping_add(model[j as usize] as u16);
-                }
-                let code_range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                L = (L as u32).wrapping_add(((low as u32).wrapping_mul(code_range)).wrapping_shr(16)) as u16;
-                H = (L as u32).wrapping_add(((symf as u32).wrapping_mul(code_range)).wrapping_shr(16)).wrapping_sub(1) as u16;
-                *window.add(window_posn as usize) = sym;
+                GET_SYMBOL(model00, &raw mut sym);
+                *window.offset(window_posn as isize) = sym;
                 window_posn = window_posn.wrapping_add(1);
                 togo -= 1;
-                // renormalize
-                loop {
-                    if L & 0x8000 == H & 0x8000 {
-                        L = (L as u16) << 1;
-                        H = (H as u16) << 1;
-                        H |= 1;
-                        C = ((C as u16) << 1) | ((bitbuf & 1) as u16);
-                        bitbuf >>= 1;
-                        bitsleft -= 1;
-                        if bitsleft < 0 {
-                            bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                            bitsleft += 8;
-                            inpos = inpos.add(1);
-                        }
-                    } else if (L & 0x4000 == 0 && H & 0x4000 != 0) || (L & 0x4000 != 0 && H & 0x4000 == 0) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
             }
             1 => {
-                let model = &(*decomp_state).methods.qtm.model40;
-                symf = 0;
-                range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                i = 0;
-                loop {
-                    symf = symf.wrapping_add(model[i as usize] as u16);
-                    if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).wrapping_mul(65536) {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-                sym = i as u8;
-                let mut low: u16 = 0;
-                for j in 0..i {
-                    low = low.wrapping_add(model[j as usize] as u16);
-                }
-                let code_range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                L = (L as u32).wrapping_add(((low as u32).wrapping_mul(code_range)).wrapping_shr(16)) as u16;
-                H = (L as u32).wrapping_add(((symf as u32).wrapping_mul(code_range)).wrapping_shr(16)).wrapping_sub(1) as u16;
-                *window.add(window_posn as usize) = sym;
+                GET_SYMBOL(model40, &raw mut sym);
+                *window.offset(window_posn as isize) = sym;
                 window_posn = window_posn.wrapping_add(1);
                 togo -= 1;
-                loop {
-                    if L & 0x8000 == H & 0x8000 {
-                        L = (L as u16) << 1;
-                        H = (H as u16) << 1;
-                        H |= 1;
-                        C = ((C as u16) << 1) | ((bitbuf & 1) as u16);
-                        bitbuf >>= 1;
-                        bitsleft -= 1;
-                        if bitsleft < 0 {
-                            bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                            bitsleft += 8;
-                            inpos = inpos.add(1);
-                        }
-                    } else if (L & 0x4000 == 0 && H & 0x4000 != 0) || (L & 0x4000 != 0 && H & 0x4000 == 0) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
             }
             2 => {
-                let model = &(*decomp_state).methods.qtm.model80;
-                symf = 0;
-                range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                i = 0;
-                loop {
-                    symf = symf.wrapping_add(model[i as usize] as u16);
-                    if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).wrapping_mul(65536) {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-                sym = i as u8;
-                let mut low: u16 = 0;
-                for j in 0..i {
-                    low = low.wrapping_add(model[j as usize] as u16);
-                }
-                let code_range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                L = (L as u32).wrapping_add(((low as u32).wrapping_mul(code_range)).wrapping_shr(16)) as u16;
-                H = (L as u32).wrapping_add(((symf as u32).wrapping_mul(code_range)).wrapping_shr(16)).wrapping_sub(1) as u16;
-                *window.add(window_posn as usize) = sym;
+                GET_SYMBOL(model80, &raw mut sym);
+                *window.offset(window_posn as isize) = sym;
                 window_posn = window_posn.wrapping_add(1);
                 togo -= 1;
-                loop {
-                    if L & 0x8000 == H & 0x8000 {
-                        L = (L as u16) << 1;
-                        H = (H as u16) << 1;
-                        H |= 1;
-                        C = ((C as u16) << 1) | ((bitbuf & 1) as u16);
-                        bitbuf >>= 1;
-                        bitsleft -= 1;
-                        if bitsleft < 0 {
-                            bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                            bitsleft += 8;
-                            inpos = inpos.add(1);
-                        }
-                    } else if (L & 0x4000 == 0 && H & 0x4000 != 0) || (L & 0x4000 != 0 && H & 0x4000 == 0) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
             }
             3 => {
-                let model = &(*decomp_state).methods.qtm.modelC0;
-                symf = 0;
-                range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                i = 0;
-                loop {
-                    symf = symf.wrapping_add(model[i as usize] as u16);
-                    if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).wrapping_mul(65536) {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-                sym = i as u8;
-                let mut low: u16 = 0;
-                for j in 0..i {
-                    low = low.wrapping_add(model[j as usize] as u16);
-                }
-                let code_range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                L = (L as u32).wrapping_add(((low as u32).wrapping_mul(code_range)).wrapping_shr(16)) as u16;
-                H = (L as u32).wrapping_add(((symf as u32).wrapping_mul(code_range)).wrapping_shr(16)).wrapping_sub(1) as u16;
-                *window.add(window_posn as usize) = sym;
+                GET_SYMBOL(modelC0, &raw mut sym);
+                *window.offset(window_posn as isize) = sym;
                 window_posn = window_posn.wrapping_add(1);
                 togo -= 1;
-                loop {
-                    if L & 0x8000 == H & 0x8000 {
-                        L = (L as u16) << 1;
-                        H = (H as u16) << 1;
-                        H |= 1;
-                        C = ((C as u16) << 1) | ((bitbuf & 1) as u16);
-                        bitbuf >>= 1;
-                        bitsleft -= 1;
-                        if bitsleft < 0 {
-                            bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                            bitsleft += 8;
-                            inpos = inpos.add(1);
-                        }
-                    } else if (L & 0x4000 == 0 && H & 0x4000 != 0) || (L & 0x4000 != 0 && H & 0x4000 == 0) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
             }
             4 => {
-                // GET_SYMBOL(model4, sym)
-                let model = &(*decomp_state).methods.qtm.model4;
-                symf = 0;
-                range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                i = 0;
-                loop {
-                    symf = symf.wrapping_add(model[i as usize] as u16);
-                    if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).wrapping_mul(65536) {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-                sym = i as u8;
-                let mut low: u16 = 0;
-                for j in 0..i {
-                    low = low.wrapping_add(model[j as usize] as u16);
-                }
-                let code_range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                L = (L as u32).wrapping_add(((low as u32).wrapping_mul(code_range)).wrapping_shr(16)) as u16;
-                H = (L as u32).wrapping_add(((symf as u32).wrapping_mul(code_range)).wrapping_shr(16)).wrapping_sub(1) as u16;
-                // renormalize
-                loop {
-                    if L & 0x8000 == H & 0x8000 {
-                        L = (L as u16) << 1;
-                        H = (H as u16) << 1;
-                        H |= 1;
-                        C = ((C as u16) << 1) | ((bitbuf & 1) as u16);
-                        bitbuf >>= 1;
-                        bitsleft -= 1;
-                        if bitsleft < 0 {
-                            bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                            bitsleft += 8;
-                            inpos = inpos.add(1);
-                        }
-                    } else if (L & 0x4000 == 0 && H & 0x4000 != 0) || (L & 0x4000 != 0 && H & 0x4000 == 0) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
-                // Q_READ_BITS(extra, CAB(q_extra_bits)[sym])
-                let bits_needed = (*decomp_state).q_extra_bits[sym as usize] as i32;
-                while bitsleft < bits_needed {
-                    bitbuf |= (*inpos as u32) << bitsleft;
-                    inpos = inpos.add(1);
-                    bitsleft += 8;
-                }
-                extra = (bitbuf & ((1u32 << bits_needed) - 1)) as i32;
-                bitbuf >>= bits_needed;
-                bitsleft -= bits_needed;
-                match_offset = (*decomp_state).q_position_base[sym as usize] as u32 + extra as u32 + 1;
+                GET_SYMBOL(model4, &raw mut sym);
+                Q_READ_BITS(&raw mut extra, (*decomp_state).q_extra_bits[sym as usize] as u32);
+                match_offset = (*decomp_state).q_position_base[sym as usize] + extra as u32 + 1;
                 match_length = 3;
             }
             5 => {
-                let model = &(*decomp_state).methods.qtm.model5;
-                symf = 0;
-                range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                i = 0;
-                loop {
-                    symf = symf.wrapping_add(model[i as usize] as u16);
-                    if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).wrapping_mul(65536) {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-                sym = i as u8;
-                let mut low: u16 = 0;
-                for j in 0..i {
-                    low = low.wrapping_add(model[j as usize] as u16);
-                }
-                let code_range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                L = (L as u32).wrapping_add(((low as u32).wrapping_mul(code_range)).wrapping_shr(16)) as u16;
-                H = (L as u32).wrapping_add(((symf as u32).wrapping_mul(code_range)).wrapping_shr(16)).wrapping_sub(1) as u16;
-                loop {
-                    if L & 0x8000 == H & 0x8000 {
-                        L = (L as u16) << 1;
-                        H = (H as u16) << 1;
-                        H |= 1;
-                        C = ((C as u16) << 1) | ((bitbuf & 1) as u16);
-                        bitbuf >>= 1;
-                        bitsleft -= 1;
-                        if bitsleft < 0 {
-                            bitbuf |= (*inpos as u32) << (bitsleft + 8);
-                            bitsleft += 8;
-                            inpos = inpos.add(1);
-                        }
-                    } else if (L & 0x4000 == 0 && H & 0x4000 != 0) || (L & 0x4000 != 0 && H & 0x4000 == 0) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
-                let bits_needed = (*decomp_state).q_extra_bits[sym as usize] as i32;
-                while bitsleft < bits_needed {
-                    bitbuf |= (*inpos as u32) << bitsleft;
-                    inpos = inpos.add(1);
-                    bitsleft += 8;
-                }
-                extra = (bitbuf & ((1u32 << bits_needed) - 1)) as i32;
-                bitbuf >>= bits_needed;
-                bitsleft -= bits_needed;
-                match_offset = (*decomp_state).q_position_base[sym as usize] as u32 + extra as u32 + 1;
+                GET_SYMBOL(model5, &raw mut sym);
+                Q_READ_BITS(&raw mut extra, (*decomp_state).q_extra_bits[sym as usize] as u32);
+                match_offset = (*decomp_state).q_position_base[sym as usize] + extra as u32 + 1;
                 match_length = 4;
             }
             6 => {
-                // GET_SYMBOL(model6len, sym)
-                let model = &(*decomp_state).methods.qtm.model6len;
-                symf = 0;
-                range = (H as u32).wrapping_sub(L as u32).wrapping_add(1);
-                i = 0;
-                loop {
-                    symf = symf.wrapping_add(model[i as usize] as u16);
-                    if (symf as u32) * range > ((C as u32).wrapping_sub(L as u32).wrapping_add(1)).w
+                GET_SYMBOL(model6len, &raw mut sym);
+                Q_READ_BITS(&raw mut extra, (*decomp_state).q_length_extra[sym as usize] as u32);
+                match_length = (*decomp_state).q_length_base[sym as usize] + extra + 5;
+                GET_SYMBOL(model6pos, &raw mut sym);
+                Q_READ_BITS(&raw mut extra, (*decomp_state).q_extra_bits[sym as usize] as u32);
+                match_offset = (*decomp_state).q_position_base[sym as usize] + extra as u32 + 1;
+            }
+            _ => {
+                TRACE(b"Selector is bogus\n\0".as_ptr() as *const i8);
+                return 2;
+            }
+        }
+        if selector >= 4 {
+            let mut rundest = window.offset(window_posn as isize);
+            togo -= match_length;
+            let mut runsrc;
+            if window_posn >= match_offset {
+                runsrc = rundest.offset(-(match_offset as isize));
+            } else {
+                runsrc = rundest.offset((window_size - match_offset) as isize);
+                copy_length = (match_offset - window_posn) as i32;
+                if copy_length < match_length {
+                    match_length -= copy_length;
+                    window_posn += copy_length as u32;
+                    while copy_length > 0 {
+                        *rundest = *runsrc;
+                        rundest = rundest.offset(1);
+                        runsrc = runsrc.offset(1);
+                        copy_length -= 1;
+                    }
+                    runsrc = window;
+                }
+            }
+            window_posn += match_length as u32;
+            while match_length > 0 {
+                *rundest = *runsrc;
+                rundest = rundest.offset(1);
+                runsrc = runsrc.offset(1);
+                match_length -= 1;
+            }
+        }
+    }
+    if togo != 0 {
+        TRACE(b"Frame overflow, this_run = %d\n\0".as_ptr() as *const i8, togo);
+        return 2;
+    }
+    let src_offset = (if window_posn == 0 { window_size } else { window_posn }) - outlen as u32;
+    core::ptr::copy_nonoverlapping(
+        window.offset(src_offset as isize),
+        (*decomp_state).outbuf.as_mut_ptr(),
+        outlen as usize,
+    );
+    (*decomp_state).methods.qtm.window_posn = window_posn;
+    return 0;
+}
 
 unsafe fn fdi_lzx_read_lens(lens: *mut u8, first: u32, last: u32, lb: *mut lzx_bits, decomp_state: *mut fdi_decomp_state) -> i32 {
     let mut bitbuf = (*lb).bb;
