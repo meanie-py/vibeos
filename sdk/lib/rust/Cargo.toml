@@ -34,6 +34,8 @@ members = [
     "beep-cargo",
     "condrv-rust",
     "condrv-cargo",
+    "pciide-rust",
+    "pciide-cargo",
     "framebuf-cargo",
     "bootvid-rust",
     "bootvid-cargo",
