@@ -329,6 +329,19 @@ pub mod message;
 pub mod painting;
 pub mod winpos;
 
+// ── DirectDraw / reactx/ntddraw frontier: banked Opus translation ──
+// 9 files from win32ss/reactx/ntddraw/. Wired INERT (no cmake flip yet);
+// being driven to cargo-check green via deepdrive before correctness review.
+pub mod ntddraw_d3d;
+pub mod ntddraw_d3dkmt;
+pub mod ntddraw_dd;
+pub mod ntddraw_ddraw;
+pub mod ntddraw_ddsurf;
+pub mod ntddraw_dvp;
+pub mod ntddraw_dxeng;
+pub mod ntddraw_eng;
+pub mod ntddraw_mocomp;
+
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //
 // drvdbg.rs and bitblt_new.rs are the last 2 of 39 gdi/eng leaves; both
