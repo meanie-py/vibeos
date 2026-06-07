@@ -871,6 +871,16 @@ def cmd_translate(args):
     use_claude = model.startswith("claude-") or model.startswith("deepseek-")
     system_prompt = load_function_system_prompt(rustconv_target, mode=mode) if use_claude else ""
 
+    # Concurrency: fan out per-function calls. ONLY for mechanical mode on DeepSeek —
+    # mechanical functions are independent (each forward-declares its callees), and
+    # DeepSeek is cheap enough that a bounded fan-out won't black-hole the budget the
+    # way Claude could. Claude/Gemini/idiomatic stay strictly sequential by policy.
+    conc = max(1, getattr(args, "concurrency", 1) or 1)
+    if conc > 1 and not (mode == "mechanical" and model.startswith("deepseek-")):
+        print(f"  (--concurrency {conc} ignored: only for --mode mechanical on DeepSeek)",
+              file=sys.stderr)
+        conc = 1
+
     # Durable archive + kill guard for this paid invocation. Every streamed
     # response lands here as it generates, and a Ctrl-C points back at the
     # preserved work instead of feeling like it threw away what you paid for.
@@ -982,7 +992,72 @@ def cmd_translate(args):
             _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(sorted_deps)
             paid_invocation_banner(model, len(sorted_deps) + 1, _est_in, archive)
 
+        # PARALLEL translate (mechanical + DeepSeek): fan out the paid per-function
+        # calls. Workers do ONLY the submit (pure — they read shared state, write only
+        # their own durable sink); ALL bookkeeping runs serially on the main thread as
+        # futures complete, so no shared-state locking is needed. Resume-cached fns are
+        # collected first (free). Cost-cap sets a stop Event that blocks new submits
+        # (in-flight calls — at most `conc` — may still land).
+        if conc > 1:
+            import threading
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            todo = []
+            for func_idx, dep in enumerate(sorted_deps, 1):
+                if not no_resume:
+                    hit = cache.get(dep.name, dep.body_text)
+                    if hit is not None:
+                        translated[dep.name] = hit
+                        resumed += 1
+                        continue
+                todo.append((func_idx, dep))
+            ctx = dict(translated)   # static callee context (mechanical fns are independent)
+            stop = threading.Event()
+
+            def _work(item):
+                fi, dp = item
+                if stop.is_set():
+                    return (fi, dp, None)
+                fres = resolve_function(dp, catalog, file_res.exports, scan.defines)
+                up = build_function_prompt(dp, fres, ctx, all_deps_for_context, scan,
+                                           catalog_fn_names, file_res.exports,
+                                           target=rustconv_target, include_shared=False)
+                sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
+                try:
+                    r = submit_single(up, model=model, system_prompt=system_prompt,
+                                      file_context=file_context, sink=sk)
+                finally:
+                    if sk is not None:
+                        sk.close()
+                return (fi, dp, r)
+
+            print(f"  ⚡ parallel: {len(todo)} fn(s) @ concurrency={conc} "
+                  f"({resumed} cached)", file=sys.stderr)
+            with ThreadPoolExecutor(max_workers=conc) as ex:
+                for fut in as_completed([ex.submit(_work, it) for it in todo]):
+                    fi, dp, r = fut.result()
+                    if r is None:
+                        continue   # skipped after cost cap
+                    if r.success:
+                        translated[dp.name] = r.rust_code
+                        cache.put(dp.name, dp.body_text, r.rust_code)
+                        total_in += r.input_tokens
+                        total_out += r.output_tokens
+                        if archive is not None:
+                            archive.commit(fi, dp.name, r.rust_code, r.input_tokens, r.output_tokens)
+                            running_cost += cost_usd(model, r.input_tokens, r.output_tokens)
+                        print(f"  [{fi}] {dp.name} OK ({r.input_tokens}/{r.output_tokens})"
+                              f"  [running ${running_cost:.2f}]", file=sys.stderr)
+                        if cost_cap is not None and running_cost >= cost_cap:
+                            stop.set()
+                            capped = True
+                            print(f"  ⛔ COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} "
+                                  f"— halting new calls", file=sys.stderr)
+                    else:
+                        print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
+
         for func_idx, dep in enumerate(sorted_deps, 1):
+            if conc > 1:
+                break   # already handled by the parallel path above
             print(f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...", file=sys.stderr, end=" ", flush=True)
 
             # Resume: reuse a prior unchanged-body translation for free. It still
@@ -1530,6 +1605,10 @@ def main():
     p.add_argument("--cost-cap", dest="cost_cap", type=float, default=None,
                    help="Hard USD spend cap for this invocation; stops before the next "
                         "call once cumulative cost reaches it (safety brake).")
+    p.add_argument("--concurrency", type=int, default=1,
+                   help="Fan out per-function calls N-at-a-time (DeepSeek + --mode "
+                        "mechanical ONLY; ignored otherwise). Default 1 (sequential). "
+                        "Try 5; pair with --cost-cap as the runaway brake.")
     p.add_argument("--no-resume", dest="no_resume", action="store_true",
                    help="Ignore the .responses/ resume cache and re-translate every "
                         "function fresh (cache still refreshed). Default resumes "
