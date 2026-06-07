@@ -1,3 +1,4 @@
+use crate::types::*;
 use core::ffi::c_void;
 
 extern "system" {

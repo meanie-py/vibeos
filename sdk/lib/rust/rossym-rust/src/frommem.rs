@@ -1,7 +1,8 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, PIMAGE_DOS_HEADER, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER};
+use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER, PIMAGE_DOS_HEADER, PIMAGE_NT_HEADERS, PIMAGE_SECTION_HEADER};
 use core::ffi::c_void;
 
 extern "C" {
@@ -26,7 +27,7 @@ pub unsafe extern "C" fn RosSymCreateFromMem(
     unsafe {
         let DosHeader: *mut IMAGE_DOS_HEADER;
         let NtHeaders: *mut IMAGE_NT_HEADERS;
-        let SectionHeader: *mut IMAGE_SECTION_HEADER;
+        let mut SectionHeader: *mut IMAGE_SECTION_HEADER;
         let mut SectionIndex: u32;
         let mut RosSymSectionFound: i32 = 0;
         let mut SectionName: [u8; IMAGE_SIZEOF_SHORT_NAME] = [0u8; IMAGE_SIZEOF_SHORT_NAME];

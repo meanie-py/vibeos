@@ -1,3 +1,4 @@
+use crate::types::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----

@@ -1,3 +1,4 @@
+use crate::types::*;
 use core::ffi::c_void;
 
 extern "system" {
@@ -14,11 +15,11 @@ pub unsafe extern "C" fn RosSymCreateFromRaw(
     RosSymInfo: *mut *mut ROSSYM_INFO,
 ) -> i32 {
     let RosSymHeader: *mut ROSSYM_HEADER = RawData as *mut ROSSYM_HEADER;
-    if (*RosSymHeader).SymbolsOffset as usize < core::mem::size_of::<ROSSYM_HEADER>()
-        || (*RosSymHeader).StringsOffset as usize
-            < ((*RosSymHeader).SymbolsOffset + (*RosSymHeader).SymbolsLength) as usize
+    if ((*RosSymHeader).SymbolsOffset as usize) < (core::mem::size_of::<ROSSYM_HEADER>())
+        || ((*RosSymHeader).StringsOffset as usize)
+            < (((*RosSymHeader).SymbolsOffset + (*RosSymHeader).SymbolsLength) as usize)
         || DataSize
-            < ((*RosSymHeader).StringsOffset + (*RosSymHeader).StringsLength) as usize
+            < (((*RosSymHeader).StringsOffset + (*RosSymHeader).StringsLength) as usize)
         || ((*RosSymHeader).SymbolsLength as usize % core::mem::size_of::<ROSSYM_ENTRY>()) != 0
     {
         // DPRINT removed
@@ -41,7 +42,7 @@ pub unsafe extern "C" fn RosSymCreateFromRaw(
         / core::mem::size_of::<ROSSYM_ENTRY>() as u32;
     (*info).Strings = (info as *mut u8)
         .add(core::mem::size_of::<ROSSYM_INFO>() + (*RosSymHeader).SymbolsLength as usize)
-        as *mut u8;
+        as *mut i8;
     (*info).StringsLength = (*RosSymHeader).StringsLength;
     core::ptr::copy_nonoverlapping(
         (RosSymHeader as *mut u8).add((*RosSymHeader).SymbolsOffset as usize) as *const u8,
@@ -53,6 +54,6 @@ pub unsafe extern "C" fn RosSymCreateFromRaw(
         (*info).Strings as *mut u8,
         (*RosSymHeader).StringsLength as usize,
     );
-    (*info).Strings.add((*info).StringsLength as usize).write(0u8);
+    (*info).Strings.add((*info).StringsLength as usize).write(0i8);
     return 1;
 }

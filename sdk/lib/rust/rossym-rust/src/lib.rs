@@ -33,6 +33,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_eh_personality() {}
 
+mod types;
 mod delete;
 mod find;
 mod fromfile;

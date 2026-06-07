@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -11,8 +12,8 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: bool = true;
 
-unsafe fn FindEntry(RosSymInfo: *mut PROSSYM_INFO, RelativeAddress: usize) -> *mut ROSSYM_ENTRY {
-    let Base: *mut ROSSYM_ENTRY;
+unsafe fn FindEntry(RosSymInfo: PROSSYM_INFO, RelativeAddress: usize) -> *mut ROSSYM_ENTRY {
+    let mut Base: *mut ROSSYM_ENTRY;
     let mut Lim: u32;
     let mut Mid: *mut ROSSYM_ENTRY;
     let mut Low: *mut ROSSYM_ENTRY;
