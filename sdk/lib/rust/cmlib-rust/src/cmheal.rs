@@ -1,11 +1,11 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, HSTORAGE_TYPE_Stable as Stable, _HHIVE, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CM_INDEX, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PHHIVE, HSTORAGE_TYPE_Stable as Stable, _HHIVE, _UNICODE_STRING};
 use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBOOT_TYPE_SELF_HEAL, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF};
 use core::ffi::c_void;
 
-extern "C" {
+unsafe extern "C" {
     // conditionally compiled in original (#if !defined(CMLIB_HOST) && !defined(_BLDR_)) pub static mut CmpSelfHeal: u8;   // BOOLEAN pub static mut CmpBootType: u32;  // ULONG
     unsafe fn CmpRemoveFastIndexKeyCell(FastIndex: *mut CM_KEY_FAST_INDEX, Index: u32, UpdateCount: u8) ;
     unsafe fn CmpRemoveIndexKeyCell(KeyIndex: *mut CM_KEY_INDEX, Index: u32) ;
@@ -14,7 +14,7 @@ extern "C" {
     fn DPRINT1(format: *const i8, ...);
     unsafe fn CmpRemoveValueFromValueList(value_list_node: *mut CM_KEY_NODE, value_list_data: *mut CELL_DATA, index: u32) ;
 }
-extern "C" {
+unsafe extern "C" {
     fn CmIsSelfHealEnabled(FixHive: u8) -> u8;
     fn DbgPrint(format: *const i8, ...);
     unsafe fn CmpRemoveSubKeyInLeaf( Hive: PHHIVE, KeyNode: PCM_KEY_NODE, Leaf: PCM_KEY_INDEX, TargetKey: HCELL_INDEX, ) -> BOOLEAN;

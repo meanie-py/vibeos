@@ -8,13 +8,10 @@ use crate::glue::{HCELL_NIL, HBLOCK_SIZE, TAG_CM, HV_HHIVE_SIGNATURE, HFILE_TYPE
 use core::ffi::c_void;
 use core::ptr::addr_of_mut;
 
-extern "C" {
+unsafe extern "C" {
     unsafe fn HvpValidateBaseHeader(RegistryHive: *mut HHIVE) ;
     fn HvpHiveHeaderChecksum(BaseBlock: PHBASE_BLOCK) -> u32;
     fn DbgPrint(format: *const i8, ...);
-    unsafe fn HvpWriteHive(RegistryHive: *mut HHIVE, OnlyDirty: i32, FileType: u32) -> i32;
-}
-extern "C" {
     fn KeQuerySystemTime(SystemTime: *mut i64);
     fn HvpWriteHive(RegistryHive: *mut HHIVE, OnlyDirty: u8, FileType: u32) -> u8;
 }
@@ -87,10 +84,10 @@ unsafe extern "C" fn HvpWriteLog(RegistryHive: *mut HHIVE) -> i32 {
     Ptr = Ptr.add(core::mem::size_of::<u32>());
 
     BlockIndex = 0;
-    while BlockIndex < (*(*RegistryHive).Storage[Stable as usize]).Length {
+    while BlockIndex < (*RegistryHive).Storage[Stable as usize].Length {
         LastIndex = BlockIndex;
         BlockIndex = RtlFindSetBits(
-            &((*RegistryHive).DirtyVector as *const RTL_BITMAP),
+            &((*RegistryHive).DirtyVector as *const _ as *const RTL_BITMAP),
             1,
             BlockIndex,
         );
@@ -103,20 +100,14 @@ unsafe extern "C" fn HvpWriteLog(RegistryHive: *mut HHIVE) -> i32 {
     }
 
     FileOffset = 0;
-    Success = ((*RegistryHive).FileWrite as unsafe extern "C" fn(
-        *mut HHIVE,
-        u32,
-        *mut u32,
-        *mut u8,
-        u32,
-    ) -> i32)(
+    Success = core::mem::transmute::<_, unsafe extern "C" fn(*mut HHIVE, u32, *mut u32, *mut u8, u32) -> i32>((*RegistryHive).FileWrite.unwrap())(
         RegistryHive,
         HFILE_TYPE_LOG,
         &mut FileOffset as *mut u32,
         HeaderBuffer,
         BufferSize,
     );
-    ((*RegistryHive).Free as unsafe extern "C" fn(*mut u8, u32))(HeaderBuffer, 0);
+    core::mem::transmute::<_, unsafe extern "C" fn(*mut u8, u32)>((*RegistryHive).Free.unwrap())(HeaderBuffer, 0);
     if Success == 0 {
         DbgPrint(b"Failed to write the hive header block to log (primary sequence)\n\0".as_ptr() as *const i8);
         return 0;
@@ -124,10 +115,10 @@ unsafe extern "C" fn HvpWriteLog(RegistryHive: *mut HHIVE) -> i32 {
 
     FileOffset = BufferSize;
     BlockIndex = 0;
-    while BlockIndex < (*(*RegistryHive).Storage[Stable as usize]).Length {
+    while BlockIndex < (*RegistryHive).Storage[Stable as usize].Length {
         LastIndex = BlockIndex;
         BlockIndex = RtlFindSetBits(
-            &((*RegistryHive).DirtyVector as *const RTL_BITMAP),
+            &((*RegistryHive).DirtyVector as *const _ as *const RTL_BITMAP),
             1,
             BlockIndex,
         );
@@ -135,15 +126,9 @@ unsafe extern "C" fn HvpWriteLog(RegistryHive: *mut HHIVE) -> i32 {
             break;
         }
 
-        Block = (*(*RegistryHive).Storage[Stable as usize]).BlockList[BlockIndex as usize].BlockAddress as *mut u8;
+        Block = (*RegistryHive).Storage[Stable as usize].BlockList[BlockIndex as usize].BlockAddress as *mut u8;
 
-        Success = ((*RegistryHive).FileWrite as unsafe extern "C" fn(
-            *mut HHIVE,
-            u32,
-            *mut u32,
-            *mut u8,
-            u32,
-        ) -> i32)(
+        Success = core::mem::transmute::<_, unsafe extern "C" fn(*mut HHIVE, u32, *mut u32, *mut u8, u32) -> i32>((*RegistryHive).FileWrite.unwrap())(
             RegistryHive,
             HFILE_TYPE_LOG,
             &mut FileOffset as *mut u32,
@@ -163,9 +148,7 @@ unsafe extern "C" fn HvpWriteLog(RegistryHive: *mut HHIVE) -> i32 {
         FileOffset = FileOffset.wrapping_add(HBLOCK_SIZE);
     }
 
-    Success = ((*RegistryHive).FileFlush as unsafe extern "C" fn(
-        *mut HHIVE,
-    ) -> i32)(RegistryHive);
+    Success = core::mem::transmute::<_, unsafe extern "C" fn(*mut HHIVE) -> i32>((*RegistryHive).FileFlush.unwrap())(RegistryHive);
     return 1;
 }
 

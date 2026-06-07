@@ -5,10 +5,10 @@ use ntkrnl_sys::ddk::{CELL_DATA, CM_CHECK_REGISTRY_STATUS, CM_KEY_FAST_INDEX, CM
 use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, TAG_CM, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, INVALID_INDEX, HV_HHIVE_SIGNATURE};
 use core::ffi::c_void;
 
-extern "C" {
+unsafe extern "C" {
     fn abs(x: i32) -> i32;
 }
-extern "C" {
+unsafe extern "C" {
     fn CmpCompareCompressedName( String: *const _UNICODE_STRING, Name: *const u16, NameLength: u16, ) -> i32;
     fn PAGED_CODE();
     fn DPRINT1(format: *const i8, ...);
@@ -22,15 +22,17 @@ extern "C" {
     fn CM_CHECK_REGISTRY_SUCCESS(status: CM_CHECK_REGISTRY_STATUS) -> i32;
     unsafe fn CmpValidateValueListByCount( Hive: *mut HHIVE, CurrentCell: HCELL_INDEX, ListCount: u32, ValueListData: *mut CELL_DATA, ValuesRemoved: *mut u32, FixHive: i32, ) -> CM_CHECK_REGISTRY_STATUS;
     fn UNREFERENCED_PARAMETER(param: u8);
-    fn FIELD_OFFSET(ty: CM_KEY_NODE, field: *const i8) -> u32;
     unsafe fn CmpPurgeVolatiles(Hive: *mut HHIVE, CurrentCell: HCELL_INDEX, CellData: *mut CELL_DATA, Flags: u32) ;
     unsafe fn CmpValidateClass(Hive: *mut HHIVE, CurrentCell: HCELL_INDEX, CellData: *mut CELL_DATA) -> CM_CHECK_REGISTRY_STATUS;
     unsafe fn CmpValidateSubKeyList(Hive: *mut HHIVE, CurrentCell: HCELL_INDEX, CellData: *mut CELL_DATA, FixHive: u8, DoRepair: *mut u8) -> CM_CHECK_REGISTRY_STATUS;
     unsafe fn CmpValidateValueList(Hive: *mut HHIVE, CurrentCell: HCELL_INDEX, CellData: *mut CELL_DATA, FixHive: u8) -> CM_CHECK_REGISTRY_STATUS;
     fn DPRINT(format: *const u8, ...);
-    #[no_mangle] pub unsafe extern "system" fn HvValidateHive(Hive: *mut HHIVE) -> i32;
-    unsafe fn CmpValidateRegistryInternal(Hive: *mut HHIVE, Flags: u32, SecurityDefaulted: i32, FixHive: i32) -> i32;
     static mut CmiVolatileHive: *mut CMHIVE;
+}
+
+unsafe extern "C" {
+    fn HvValidateHive(Hive: *mut HHIVE) -> i32;
+    fn CmpValidateRegistryInternal(Hive: *mut HHIVE, Flags: u32, SecurityDefaulted: i32, FixHive: i32) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -62,8 +64,6 @@ const CM_CHECK_REGISTRY_VALUE_LIST_UNALLOCATED: CM_CHECK_REGISTRY_STATUS = 0;
 const CM_CHECK_REGISTRY_VALUE_LIST_DATA_NOT_FOUND: CM_CHECK_REGISTRY_STATUS = 0;
 const CM_CHECK_REGISTRY_VALUE_LIST_SIZE_NOT_SANE: CM_CHECK_REGISTRY_STATUS = 0;
 
-const CMP_KEY_SIZE_THRESHOLD: u32 = 0x45C;
-
 // FIXME: The constants below require correct values from cmcheck.h
 const CM_CHECK_REGISTRY_KEY_CELL_NOT_ALLOCATED: CM_CHECK_REGISTRY_STATUS = 1;
 const CM_CHECK_REGISTRY_CELL_DATA_NOT_FOUND: CM_CHECK_REGISTRY_STATUS = 2;
@@ -85,7 +85,7 @@ unsafe fn CmpValidateLexicalOrder(
     Child: HCELL_INDEX,
     Sibling: HCELL_INDEX,
 ) -> i32 {
-    const KEY_COMP_NAME: u32 = 0x0020;
+    const KEY_COMP_NAME: u16 = 0x0020;
 
     let mut Result: i32;
     let mut ChildString: _UNICODE_STRING;
@@ -237,7 +237,7 @@ unsafe fn CmpValidateKey(
         return CM_CHECK_REGISTRY_KEY_NAME_LENGTH_ZERO;
     }
 
-    total_key_name_length = name_length + FIELD_OFFSET(CM_KEY_NODE, b"Name\0".as_ptr() as *const i8);
+    total_key_name_length = name_length + core::mem::offset_of!(CM_KEY_NODE, Name) as u32;
     if total_key_name_length > cell_size {
         // DPRINT removed
         return CM_CHECK_REGISTRY_KEY_TOO_BIG_THAN_CELL;

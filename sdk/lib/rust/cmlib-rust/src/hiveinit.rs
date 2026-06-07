@@ -3,8 +3,9 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, FILE_STANDARD_INFORMATION, FileStandardInformation, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _IO_STATUS_BLOCK, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, FILE_STANDARD_INFORMATION, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _IO_STATUS_BLOCK, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE, _FILE_INFORMATION_CLASS};
 use crate::glue::*;
+use crate::hivewrt::HvSyncHiveFromRecover;
 use core::ffi::c_void;
 
 // File-local enum from hiveinit.c:17 (`typedef enum _RESULT`). Variant order is
@@ -23,7 +24,10 @@ enum RESULT {
     SelfHeal,
 }
 
-extern "C" {
+extern "system" {
+    fn HvpInitializeMemoryHive(Hive: PHHIVE, ChunkBase: PHBASE_BLOCK, FileName: PCUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
     fn DPRINT1(fmt: *const i8, ...);
     unsafe fn HvpAllocBaseBlockAligned(Hive: *mut HHIVE, Paged: i32, Tag: u32) -> *mut HBASE_BLOCK;
     unsafe fn HvpInitFileName(BaseBlock: *mut HBASE_BLOCK, FileName: *const _UNICODE_STRING) ;
@@ -31,11 +35,15 @@ extern "C" {
     fn HvpCreateHiveFreeCellList(Hive: *mut HHIVE) -> i32;
     fn HvpFreeHiveBins(Hive: *mut HHIVE);
 }
-extern "C" {
-    fn ZwQueryInformationFile( FileHandle: HANDLE, IoStatusBlock: *mut _IO_STATUS_BLOCK, FileInformation: *mut core::ffi::c_void, Length: u32, FileInformationClass: FILE_INFORMATION_CLASS, ) -> NTSTATUS;
+unsafe extern "C" {
+    fn ZwQueryInformationFile( FileHandle: HANDLE, IoStatusBlock: *mut _IO_STATUS_BLOCK, FileInformation: *mut core::ffi::c_void, Length: u32, FileInformationClass: _FILE_INFORMATION_CLASS, ) -> NTSTATUS;
     fn HvpVerifyHiveHeader(BaseBlock: *mut HBASE_BLOCK, FileType: u32) -> u8;
-    fn HvpAllocBaseBlockAligned(Hive: *mut HHIVE, Paged: i32, Tag: u32) -> *mut HBASE_BLOCK;
-    fn HvpInitFileName(BaseBlock: *mut HBASE_BLOCK, FileName: *const _UNICODE_STRING);
+}
+
+extern "system" {
+    fn HvpGetCellData(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
+    fn HvpGetHiveHeader(Hive: PHHIVE, BaseBlock: *mut PHBASE_BLOCK, TimeStamp: *mut LARGE_INTEGER) -> RESULT;
+    fn HvpRecoverDataFromLog(Hive: PHHIVE, BaseBlock: PHBASE_BLOCK) -> RESULT;
 }
 #[no_mangle]
 pub unsafe extern "C" fn HvpCreateHive(
@@ -62,34 +70,34 @@ pub unsafe extern "C" fn HvpCreateHive(
     // Setup hive data
     (*Hive).Version = (*ChunkBase).Minor;
     // Build a block list from the in-memory chunk and copy the data as we go
-    (*Hive).Storage[Stable].Length = (ChunkSize / HBLOCK_SIZE) as u32;
-    (*Hive).Storage[Stable].BlockList = ((*Hive).Allocate.unwrap())( ((*Hive).Storage[Stable].Length as usize) * core::mem::size_of::<HMAP_ENTRY>(), 0, TAG_CM, ) as *mut HMAP_ENTRY;
-    if (*Hive).Storage[Stable].BlockList.is_null() { println!("Allocating block list failed");
+    (*Hive).Storage[Stable as usize].Length = (ChunkSize / HBLOCK_SIZE as usize) as u32;
+    (*Hive).Storage[Stable as usize].BlockList = ((*Hive).Allocate.unwrap())( ((*Hive).Storage[Stable as usize].Length as usize) * core::mem::size_of::<HMAP_ENTRY>(), 0, TAG_CM, ) as *mut HMAP_ENTRY;
+    if (*Hive).Storage[Stable as usize].BlockList.is_null() { DPRINT1(b"Allocating block list failed\n\0".as_ptr() as *const i8);
     ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
     return STATUS_NO_MEMORY;
     } BlockIndex = 0;
-    while BlockIndex < ((*Hive).Storage[Stable].Length as usize) { Bin = (ChunkBase as usize + (BlockIndex + 1) * HBLOCK_SIZE) as *mut HBIN;
-    if (*Bin).Signature != HV_HBIN_SIGNATURE || ((*Bin).Size as usize % HBLOCK_SIZE) != 0 || ((*Bin).FileOffset / (HBLOCK_SIZE as u32)) != (BlockIndex as u32) { if CmIsSelfHealEnabled(0) == 0 { println!( "Invalid bin at BlockIndex {}, Signature 0x{:x}, Size 0x{:x}. Self-heal not possible!", BlockIndex, (*Bin).Signature, (*Bin).Size );
-    ((*Hive).Free.unwrap())((*Hive).Storage[Stable].BlockList as *mut c_void, 0);
+    while BlockIndex < ((*Hive).Storage[Stable as usize].Length as usize) { Bin = (ChunkBase as usize + (BlockIndex + 1) * HBLOCK_SIZE as usize) as *mut HBIN;
+    if (*Bin).Signature != HV_HBIN_SIGNATURE || ((*Bin).Size as usize % HBLOCK_SIZE) != 0 || ((*Bin).FileOffset / (HBLOCK_SIZE as u32)) != (BlockIndex as u32) { if CmIsSelfHealEnabled(0) == 0 { DPRINT1(b"Invalid bin at BlockIndex %lu, Signature 0x%x, Size 0x%x. Self-heal not possible!\n\0".as_ptr() as *const i8, BlockIndex, (*Bin).Signature, (*Bin).Size);
+    ((*Hive).Free.unwrap())((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
     ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
     return STATUS_REGISTRY_CORRUPT;
     } // Fix this bin (*Bin).Signature = HV_HBIN_SIGNATURE;
     (*Bin).Size = HBLOCK_SIZE as u32;
     (*Bin).FileOffset = (BlockIndex * HBLOCK_SIZE) as u32;
     (*ChunkBase).BootType |= HBOOT_TYPE_SELF_HEAL;
-    println!( "Bin at index {} is corrupt and it has been repaired!", BlockIndex );
+    DPRINT1(b"Bin at index %lu is corrupt and it has been repaired!\n\0".as_ptr() as *const i8, BlockIndex);
     } NewBin = ((*Hive).Allocate.unwrap())((*Bin).Size as usize, 1, TAG_CM) as *mut HBIN;
-    if NewBin.is_null() { ((*Hive).Free.unwrap())((*Hive).Storage[Stable].BlockList as *mut c_void, 0);
+    if NewBin.is_null() { ((*Hive).Free.unwrap())((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
     ((*Hive).Free.unwrap())((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
     return STATUS_NO_MEMORY;
-    } (*Hive).Storage[Stable].BlockList[BlockIndex].BinAddress = NewBin as usize;
-    (*Hive).Storage[Stable].BlockList[BlockIndex].BlockAddress = NewBin as usize;
+    } (*Hive).Storage[Stable as usize].BlockList[BlockIndex].BinAddress = NewBin as usize;
+    (*Hive).Storage[Stable as usize].BlockList[BlockIndex].BlockAddress = NewBin as usize;
     core::ptr::copy_nonoverlapping( Bin as *const u8, NewBin as *mut u8, (*Bin).Size as usize, );
     if (*Bin).Size > (HBLOCK_SIZE as u32) { let bin_count = (*Bin).Size / (HBLOCK_SIZE as u32);
     for i in 1..bin_count as usize {
-        (*Hive).Storage[Stable].BlockList[BlockIndex + i].BinAddress = NewBin as usize;
-        (*Hive).Storage[Stable].BlockList[BlockIndex + i].BlockAddress = NewBin as usize + (i * HBLOCK_SIZE);
-    } } BlockIndex += ((*Bin).Size as usize) / HBLOCK_SIZE;
+        (*Hive).Storage[Stable as usize].BlockList[BlockIndex + i].BinAddress = NewBin as usize;
+        (*Hive).Storage[Stable as usize].BlockList[BlockIndex + i].BlockAddress = NewBin as usize + (i * HBLOCK_SIZE as usize);
+    } } BlockIndex += ((*Bin).Size as usize) / HBLOCK_SIZE as usize;
     }
     if !NT_SUCCESS(HvpCreateHiveFreeCellList(Hive)) {
         HvpFreeHiveBins(Hive);
@@ -122,9 +130,9 @@ pub unsafe extern "system" fn HvLoadHive(
     let mut Status: NTSTATUS;
     let mut Success: BOOLEAN;
     let mut BaseBlock: PHBASE_BLOCK = core::ptr::null_mut();
-    let mut Result: u32 = 0; // ULONG
+    let mut Result: RESULT = RESULT::NotHive;
     #[cfg(not(target_arch = "x86_64"))]
-    let mut Result2: u32 = 0;
+    let mut Result2: RESULT = RESULT::NotHive;
     let mut TimeStamp: LARGE_INTEGER = core::mem::zeroed();
     let mut Offset: u32 = 0;
     let mut HiveData: *mut core::ffi::c_void;
@@ -218,7 +226,7 @@ pub unsafe extern "system" fn HvInitialize(
     (*Hive).ReleaseCellRoutine = 0 as *mut (); // NULL
     Status = match OperationType {
         HINIT_CREATE => {
-            Status = HvpCreateHive(Hive, FileName);
+            Status = HvpCreateHive(Hive, HiveData as *mut HBASE_BLOCK, FileName);
             Status
         }
         HINIT_MEMORY => {

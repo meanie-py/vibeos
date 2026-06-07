@@ -7,7 +7,7 @@ use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpAllocate, CmpFree, CmpLazyFlush
 use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE};
 use core::ffi::c_void;
 
-extern "C" {
+unsafe extern "C" {
     fn CMLTRACE(level: u32, format: *const i8, ...);
     fn HvGetCellBlock(cell: HCELL_INDEX) -> u32;
     fn HvGetCellType(cell: HCELL_INDEX) -> u32;
@@ -17,7 +17,7 @@ extern "C" {
     fn HvFreeCell(RegistryHive: *mut _HHIVE, CellIndex: u32);
     fn HvGetCellSize(RegistryHive: *mut _HHIVE, Address: *mut core::ffi::c_void) -> i32;
 }
-extern "C" {
+unsafe extern "C" {
     fn RtlCheckBit(BitMapHeader: *mut core::ffi::c_void, BitNumber: u32) -> i32;
     fn PAGED_CODE();
     fn DbgPrint(format: *const u8, ...);

@@ -8,6 +8,9 @@ use ntkrnl_sys::ddk::{CELL_DATA, CHILD_LIST, CM_KEY_NODE, CM_KEY_VALUE, CmpFindN
 use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, TAG_CM};
 use core::ffi::c_void;
 
+extern "system" {
+    fn CmpIsKeyValueSmall(RealSize: *mut u32, DataLength: u32) -> u8;
+}
 extern "C" {
 }
 extern "system" {
@@ -20,10 +23,10 @@ extern "system" {
     fn HvReallocateCell(hive: *mut HHIVE, cell: HCELL_INDEX, size: u32) -> HCELL_INDEX;
     fn ASSERT(condition: i32);
     fn HvGetCellSize( Hive: *mut _HHIVE, Data: *mut CELL_DATA, ) -> i32;
-    #[no_mangle] pub unsafe extern "system" fn CmpGetValueData( Hive: *mut HHIVE, Value: *mut CM_KEY_VALUE, Length: *mut u32, Buffer: *mut *mut core::ffi::c_void, BufferAllocated: *mut u8, CellToRelease: *mut HCELL_INDEX, ) -> u8;
-    #[no_mangle] pub unsafe extern "system" fn CmpCopyValue( SourceHive: *mut _HHIVE, SourceValueCell: HCELL_INDEX, DestinationHive: *mut _HHIVE, StorageType: HSTORAGE_TYPE, ) -> HCELL_INDEX;
-    #[no_mangle] pub unsafe extern "system" fn CmpAddValueToList( Hive: *mut _HHIVE, Cell: HCELL_INDEX, Index: u32, StorageType: HSTORAGE_TYPE, ChildList: *mut CHILD_LIST, ) -> NTSTATUS;
-    #[no_mangle] pub unsafe extern "system" fn CmpFreeValue(Hive: *mut _HHIVE, Cell: HCELL_INDEX) -> BOOLEAN;
+    fn CmpGetValueData( Hive: *mut HHIVE, Value: *mut CM_KEY_VALUE, Length: *mut u32, Buffer: *mut *mut core::ffi::c_void, BufferAllocated: *mut u8, CellToRelease: *mut HCELL_INDEX, ) -> u8;
+    fn CmpCopyValue( SourceHive: *mut _HHIVE, SourceValueCell: HCELL_INDEX, DestinationHive: *mut _HHIVE, StorageType: HSTORAGE_TYPE, ) -> HCELL_INDEX;
+    fn CmpAddValueToList( Hive: *mut _HHIVE, Cell: HCELL_INDEX, Index: u32, StorageType: HSTORAGE_TYPE, ChildList: *mut CHILD_LIST, ) -> NTSTATUS;
+    fn CmpFreeValue(Hive: *mut _HHIVE, Cell: HCELL_INDEX) -> BOOLEAN;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -76,7 +79,7 @@ pub unsafe extern "system" fn CmpFindValueByName(
     let mut CellIndex: HCELL_INDEX = 0;
     if CmpFindNameInList(
         Hive,
-        core::ptr::addr_of_mut!((*KeyNode).ValueList),
+        core::ptr::addr_of_mut!((*KeyNode).__bindgen_anon_1.__bindgen_anon_1.ValueList),
         Name,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(CellIndex),
@@ -165,7 +168,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
 pub unsafe extern "system" fn CmpRemoveValueFromList(
     Hive: *mut _HHIVE,
     mut Index: u32,
-    ChildList: *mut _CHILD_LIST
+    ChildList: *mut CHILD_LIST
 ) -> i32 {
     let mut Count: u32 = 0;
     let mut CellData: *mut CELL_DATA = core::ptr::null_mut();

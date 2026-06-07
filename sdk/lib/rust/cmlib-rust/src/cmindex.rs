@@ -2,16 +2,19 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpAddSubKey, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, CmpMarkIndexDirty, CmpRemoveSubKey, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, LPWSTR, PCELL_DATA, PCM_INDEX, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, HCELL_TYPE_MASK};
+use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, HCELL_TYPE_MASK, CmpMaxIndexPerHblock};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
+    fn CmpDoFindSubKeyByNumber(Hive: PHHIVE, Index: *const CM_KEY_INDEX, Number: u32) -> HCELL_INDEX;
+}
+unsafe extern "C" {
     unsafe fn CmpFindSubKeyByHash( hive: *mut _HHIVE, index: *const CM_KEY_FAST_INDEX, name: *const _UNICODE_STRING, ) -> u32;
 }
 extern "system" {
     fn HvAllocateCell(Hive: PHHIVE, Size: u32, Type: HSTORAGE_TYPE, SourceCell: HCELL_INDEX) -> HCELL_INDEX;
     fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
-    fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Unk: BOOL);
+    fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, Unk: u8);
     fn HvGetCellSize(Hive: PHHIVE, Cell: *mut CM_KEY_INDEX) -> u32;
     fn HvReallocateCell(Hive: PHHIVE, Cell: HCELL_INDEX, NewSize: u32) -> HCELL_INDEX;
     fn RtlUpcaseUnicodeChar(ch: u16) -> u16;
