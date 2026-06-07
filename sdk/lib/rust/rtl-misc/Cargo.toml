@@ -1,0 +1,23 @@
+# rtl-misc — the genuinely-open rtl/ leaves not covered by lane-C's rtl-diag /
+# rtl-bootdata / rtl-rangelist / rtl-rxact sweep. Banked Opus translations
+# driven to compilation by DeepSeek, reviewed against the C, and smoked by the
+# frontier driver:
+#   sdk/lib/rtl/res.c        (RtlPcToFileHeader / image-resource enumeration, SEH-walked)
+#   sdk/lib/rtl/memstream.c  (RtlMemoryStream COM in-memory stream)
+#   sdk/lib/rtl/registry.c   (RtlQueryRegistryValues / RtlCheckRegistryKey & friends)
+#
+# All compile into librtl.a (the `rtl` cmake target) → run in both ntoskrnl and ntdll.
+[package]
+name = "rtl-misc"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+cabi = []
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

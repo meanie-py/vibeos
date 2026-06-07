@@ -58,7 +58,7 @@ list(APPEND SOURCE
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
     # locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
-    memstream.c
+    # memstream.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
     # message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
     # nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
@@ -70,8 +70,8 @@ list(APPEND SOURCE
     # propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
     # rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
-    registry.c
-    res.c
+    # registry.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
+    # res.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
     # resource.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave RES)
     # rxact.c — replaced by Rust implementation (sdk/lib/rust/rtl-rxact/)
     # sd.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave SD)
@@ -273,6 +273,12 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-diag/src/exception.rs
             ${RUST_WORKSPACE_DIR}/rtl-diag/src/vectoreh.rs
             ${RUST_WORKSPACE_DIR}/rtl-diag/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-misc/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-misc/src/shared.rs
+            ${RUST_WORKSPACE_DIR}/rtl-misc/src/res.rs
+            ${RUST_WORKSPACE_DIR}/rtl-misc/src/memstream.rs
+            ${RUST_WORKSPACE_DIR}/rtl-misc/src/registry.rs
+            ${RUST_WORKSPACE_DIR}/rtl-misc/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/types.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/wine_list.rs

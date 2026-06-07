@@ -12,7 +12,7 @@ crate-type = ["staticlib"]
 
 [features]
 default = ["kernel"]
-kernel = ["rtl-strings/kernel", "rtl-heap/kernel", "rtl-threadpool/kernel", "rtl-sync/kernel", "rtl-diag/kernel"]
+kernel = ["rtl-strings/kernel", "rtl-heap/kernel", "rtl-threadpool/kernel", "rtl-sync/kernel", "rtl-diag/kernel", "rtl-misc/kernel"]
 
 [dependencies]
 access       = { path = "../access" }
@@ -37,6 +37,7 @@ uniprefix    = { path = "../uniprefix" }
 rtl-strings  = { path = "../rtl-strings", features = ["cabi"] }
 rtl-actctx   = { path = "../rtl-actctx", features = ["cabi", "kernel"] }
 rtl-diag     = { path = "../rtl-diag", features = ["cabi"] }
+rtl-misc     = { path = "../rtl-misc", features = ["cabi"] }
 rtl-heap     = { path = "../rtl-heap", features = ["cabi"] }
 rtl-threadpool = { path = "../rtl-threadpool", features = ["cabi"] }
 rtl-sync     = { path = "../rtl-sync", features = ["cabi"] }
