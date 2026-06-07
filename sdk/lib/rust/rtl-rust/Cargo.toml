@@ -38,4 +38,5 @@ rtl-strings  = { path = "../rtl-strings", features = ["cabi"] }
 rtl-actctx   = { path = "../rtl-actctx", features = ["cabi", "kernel"] }
 rtl-heap     = { path = "../rtl-heap", features = ["cabi"] }
 rtl-threadpool = { path = "../rtl-threadpool", features = ["cabi"] }
+rtl-version  = { path = "../rtl-version" }
 time         = { path = "../time" }

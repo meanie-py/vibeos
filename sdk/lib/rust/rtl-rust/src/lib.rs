@@ -30,6 +30,7 @@ extern crate rtl_strings;
 extern crate rtl_actctx;
 extern crate rtl_heap;
 extern crate rtl_threadpool;
+extern crate rtl_version;
 extern crate time;
 
 // Single shared #[panic_handler] for the umbrella. Each sub-crate previously
