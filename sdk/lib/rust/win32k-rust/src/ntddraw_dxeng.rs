@@ -1,13 +1,20 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExReleaseResourceLite, KeEnterCriticalRegion, KeLeaveCriticalRegion, PsGetCurrentThread, Type};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExReleaseResourceLite, KeEnterCriticalRegion, KeLeaveCriticalRegion, PsGetCurrentThread};
+use ntkrnl_sys::interlocked::InterlockedIncrement;
 use core::ffi::c_void;
+
+// Extern declarations — functions still in C (not yet translated)
+extern "system" {
+    fn DxEngEnumerateHdev(hdev: *mut HDEV) -> *mut HDEV;
+    fn DxEngAltLockSurface(hsurf: HSURF) -> BOOL;
+}
 
 // ---- file-scope preamble (translated) ----
 pub static mut ghsemShareDevLock: HSEMAPHORE = core::ptr::null_mut();
 
 pub static mut gcEngFuncs: ULONG = DXENG_INDEX_DxEngLoadImage + 1;
 
-pub static gaEngFuncs: [DRVFN; 42] = [
+pub static gaEngFuncs: [DRVFN; 43] = [
     DRVFN { iFunc: 0, pfn: None },
     DRVFN { iFunc: DXENG_INDEX_DxEngNUIsTermSrv, pfn: Some(unsafe { core::mem::transmute(DxEngNUIsTermSrv as *const ()) }) },
     DRVFN { iFunc: DXENG_INDEX_DxEngScreenAccessCheck, pfn: Some(unsafe { core::mem::transmute(DxEngScreenAccessCheck as *const ()) }) },
@@ -87,7 +94,7 @@ unsafe extern "system" fn DxEngUnlockShareSem() -> u8 {
 }
 
 unsafe extern "system" fn DxEngSetDeviceGammaRamp(hPDev: HDEV, Ramp: PGAMMARAMP, Test: BOOL) -> BOOLEAN {
-    IntSetDeviceGammaRamp(hPDev, Ramp, Test)
+    IntSetDeviceGammaRamp(hPDev, Ramp, Test) as u8
 }
 
 #[no_mangle]
@@ -112,7 +119,7 @@ pub unsafe extern "system" fn DxEngGetHdevData(hDev: HDEV, Type: DXEGSHDEVDATA) 
             retVal = (*PDev).devinfo.flGraphicsCaps2 as DWORD_PTR;
         }
         DxEGShDevData_DrvFuncs => {
-            retVal = core::ptr::addr_of_mut!((*PDev).DriverFunctions) as DWORD_PTR;
+            retVal = core::ptr::addr_of_mut!((*PDev).__bindgen_anon_1.DriverFunctions) as DWORD_PTR;
         }
         DxEGShDevData_dhpdev => {
             retVal = (*PDev).dhpdev as DWORD_PTR;
@@ -159,11 +166,11 @@ pub unsafe extern "system" fn DxEngGetHdevData(hDev: HDEV, Type: DXEGSHDEVDATA) 
     retVal
 }
 
-extern "system" fn DxEngSetHdevData(hDev: HDEV, Type: Type, Data: DWORD_PTR) -> BOOLEAN {
+extern "system" fn DxEngSetHdevData(hDev: HDEV, Type: DXEGSHDEVDATA, Data: DWORD_PTR) -> BOOLEAN {
     let mut retVal: BOOLEAN = 0u8;
 
     if Type == DxEGShDevData_dd_locks {
-        (*(hDev as PPDEVOBJ)).cDirectDrawDisableLocks = Data;
+        unsafe { (*(hDev as PPDEVOBJ)).cDirectDrawDisableLocks = Data; }
         retVal = 1u8;
     }
     retVal
@@ -177,7 +184,7 @@ pub unsafe extern "system" fn DxEngGetDCState(hDC: HDC, type_: DWORD) -> DWORD_P
     if !pDC.is_null() {
         match type_ {
             1 => {
-                retVal = ((*pDC).fs & DC_FULLSCREEN) as DWORD_PTR;
+                retVal = ((*pDC).fs & DC_FULLSCREEN as i32) as DWORD_PTR;
             }
             2 => {
                 retVal = REGION_Complexity((*pDC).prgnVis) as DWORD_PTR;
@@ -205,7 +212,7 @@ unsafe extern "system" fn DxEngLockHdev(hDev: HDEV) -> u8 {
 
     if !Resource.is_null() {
         KeEnterCriticalRegion();
-        ExAcquireResourceExclusiveLite(Resource, 1u8);
+        ExAcquireResourceExclusiveLite(Resource as ntkrnl_sys::ddk::PERESOURCE, 1u8);
     }
     1u8
 }
@@ -216,7 +223,7 @@ pub unsafe extern "system" fn DxEngUnlockHdev(hDev: HDEV) -> u8 {
     let Resource = (*ppdev).hsemDevLock as PERESOURCE;
 
     if !Resource.is_null() {
-        ExReleaseResourceLite(Resource);
+        ExReleaseResourceLite(Resource as ntkrnl_sys::ddk::PERESOURCE);
         KeLeaveCriticalRegion();
     }
     1u8
@@ -243,7 +250,7 @@ pub unsafe extern "system" fn DxEngVisRgnUniq() -> ULONG {
 }
 
 unsafe extern "system" fn DxEngCreateMemoryDC(hDev: HDEV) -> HDC {
-    IntGdiCreateDisplayDC(hDev, DCTYPE_MEMORY, 0u8)
+    IntGdiCreateDisplayDC(hDev, DCTYPE_MEMORY, 0i32)
 }
 
 #[no_mangle]
@@ -267,15 +274,15 @@ unsafe extern "system" fn DxEngGetDesktopDC(DcType: ULONG, EmptyDC: BOOL, Valida
 }
 
 unsafe extern "system" fn DxEngDeleteDC(hdc: HDC, Force: BOOL) -> BOOLEAN {
-    IntGdiDeleteDC(hdc, Force)
+    IntGdiDeleteDC(hdc, Force) as u8
 }
 
 unsafe extern "system" fn DxEngCleanDC(hdc: HDC) -> BOOLEAN {
-    IntGdiCleanDC(hdc)
+    IntGdiCleanDC(hdc) as u8
 }
 
 unsafe extern "system" fn DxEngSetDCOwner(hObject: HGDIOBJ, OwnerMask: u32) -> i32 {
-    GreSetDCOwner(hObject, OwnerMask)
+    GreSetDCOwner(hObject as HDC, OwnerMask)
 }
 
 #[no_mangle]
@@ -286,9 +293,9 @@ pub unsafe extern "system" fn DxEngSetDCState(hDC: HDC, SetType: DWORD, Set: DWO
     if !pDC.is_null() {
         if SetType == 1 {
             if Set != 0 {
-                (*pDC).fs |= DC_FULLSCREEN;
+                (*pDC).fs |= DC_FULLSCREEN as i32;
             } else {
-                (*pDC).fs &= !DC_FULLSCREEN;
+                (*pDC).fs &= !(DC_FULLSCREEN as i32);
             }
             Ret = 1u8;
         }
@@ -304,11 +311,11 @@ unsafe extern "system" fn DxEngSelectBitmap(hdc: HDC, hbmp: HBITMAP) -> HBITMAP 
 
 #[no_mangle]
 pub unsafe extern "system" fn DxEngSetBitmapOwner(hbmp: HBITMAP, ulOwner: ULONG) -> BOOLEAN {
-    GreSetBitmapOwner(hbmp, ulOwner)
+    GreSetBitmapOwner(hbmp, ulOwner) as u8
 }
 
 unsafe extern "system" fn DxEngDeleteSurface(hsurf: HSURF) -> BOOLEAN {
-    EngDeleteSurface(hsurf)
+    EngDeleteSurface(hsurf) as u8
 }
 
 unsafe extern "system" fn DxEngGetSurfaceData(x1: DWORD, x2: DWORD) -> DWORD {

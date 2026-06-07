@@ -1,5 +1,21 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
+use ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
+use ntkrnl_sys::base::STATUS_SUCCESS;
+
+#[cfg(target_arch = "x86")]
+extern "fastcall" { fn BitmapFormat(cBits: u32, iCompression: u32) -> u32; }
+#[cfg(not(target_arch = "x86"))]
+extern "C" { fn BitmapFormat(cBits: u32, iCompression: u32) -> u32; }
+
+#[inline(always)]
+unsafe fn GDI_HANDLE_GET_TYPE(h: HGDIOBJ) -> u32 { ((h as usize) & 0x007f0000) as u32 }
+
+#[inline(always)]
+unsafe fn PALETTE_ShareUnlockPalette(p: PPALETTE) { GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*p).BaseObject)); }
+
+#[inline(always)]
+unsafe fn SURFACE_UnlockSurface(p: PSURFACE) { GDIOBJ_vUnlockObject(p as POBJ); }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CREATEDCFROMMEMORY) -> u32 {
@@ -58,19 +74,19 @@ pub unsafe extern "stdcall" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CR
     }
 
     let hDC: HDC;
-    if (*desc).hDeviceDc == 0 {
+    if (*desc).hDeviceDc.is_null() {
         return STATUS_INVALID_PARAMETER as u32;
     }
     hDC = NtGdiCreateCompatibleDC((*desc).hDeviceDc);
-    if hDC == 0 {
+    if hDC.is_null() {
         return STATUS_INVALID_PARAMETER as u32;
     }
 
     let psurf: PSURFACE = SURFACE_AllocSurface(
-        STYPE_BITMAP,
+        STYPE_BITMAP as u16,
         (*desc).Width,
         (*desc).Height,
-        BitmapFormat((*format).bit_count as i32, (*format).compression as i32),
+        BitmapFormat((*format).bit_count, (*format).compression),
         (BMF_TOPDOWN | BMF_NOZEROINIT) as u32,
         (*desc).Pitch,
         0,
@@ -80,7 +96,7 @@ pub unsafe extern "stdcall" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CR
     (*psurf).flags |= (DDB_SURFACE | API_BITMAP) as u32;
 
     (*desc).hDc = hDC;
-    (*desc).hBitmap = (*psurf).SurfObj.hsurf as HBITMAP;
+    (*desc).hBitmap = (*psurf).SurfObj.hsurf as HANDLE;
 
     if (*format).bit_count <= 8 {
         let palette: PPALETTE = PALETTE_AllocPalette(
@@ -99,7 +115,7 @@ pub unsafe extern "stdcall" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CR
 
     SURFACE_UnlockSurface(psurf);
 
-    NtGdiSelectBitmap((*desc).hDc, (*desc).hBitmap);
+    NtGdiSelectBitmap((*desc).hDc, (*desc).hBitmap as HBITMAP);
 
     STATUS_SUCCESS as u32
 }
@@ -162,19 +178,19 @@ pub unsafe extern "C" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CREATEDC
     }
 
     let hDC: HDC;
-    if (*desc).hDeviceDc == 0 {
+    if (*desc).hDeviceDc.is_null() {
         return STATUS_INVALID_PARAMETER as u32;
     }
     hDC = NtGdiCreateCompatibleDC((*desc).hDeviceDc);
-    if hDC == 0 {
+    if hDC.is_null() {
         return STATUS_INVALID_PARAMETER as u32;
     }
 
     let psurf: PSURFACE = SURFACE_AllocSurface(
-        STYPE_BITMAP,
+        STYPE_BITMAP as u16,
         (*desc).Width,
         (*desc).Height,
-        BitmapFormat((*format).bit_count as i32, (*format).compression as i32),
+        BitmapFormat((*format).bit_count, (*format).compression),
         (BMF_TOPDOWN | BMF_NOZEROINIT) as u32,
         (*desc).Pitch,
         0,
@@ -184,7 +200,7 @@ pub unsafe extern "C" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CREATEDC
     (*psurf).flags |= (DDB_SURFACE | API_BITMAP) as u32;
 
     (*desc).hDc = hDC;
-    (*desc).hBitmap = (*psurf).SurfObj.hsurf as HBITMAP;
+    (*desc).hBitmap = (*psurf).SurfObj.hsurf as HANDLE;
 
     if (*format).bit_count <= 8 {
         let palette: PPALETTE = PALETTE_AllocPalette(
@@ -203,7 +219,7 @@ pub unsafe extern "C" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CREATEDC
 
     SURFACE_UnlockSurface(psurf);
 
-    NtGdiSelectBitmap((*desc).hDc, (*desc).hBitmap);
+    NtGdiSelectBitmap((*desc).hDc, (*desc).hBitmap as HBITMAP);
 
     STATUS_SUCCESS as u32
 }
@@ -213,19 +229,19 @@ pub unsafe extern "stdcall" fn NtGdiDdDDIDestroyDCFromMemory(
     desc: *const D3DKMT_DESTROYDCFROMMEMORY,
 ) -> DWORD {
     if desc.is_null() {
-        return STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER as u32;
     }
 
-    if GDI_HANDLE_GET_TYPE((*desc).hDc) != GDI_OBJECT_TYPE_DC as _
+    if GDI_HANDLE_GET_TYPE((*desc).hDc as HGDIOBJ) != GDI_OBJECT_TYPE_DC as _
         || GDI_HANDLE_GET_TYPE((*desc).hBitmap) != GDI_OBJECT_TYPE_BITMAP as _
     {
-        return STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER as u32;
     }
 
     NtGdiDeleteObjectApp((*desc).hBitmap as _);
     NtGdiDeleteObjectApp((*desc).hDc as _);
 
-    STATUS_SUCCESS
+    STATUS_SUCCESS as u32
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -234,17 +250,17 @@ pub unsafe extern "C" fn NtGdiDdDDIDestroyDCFromMemory(
     desc: *const D3DKMT_DESTROYDCFROMMEMORY,
 ) -> DWORD {
     if desc.is_null() {
-        return STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER as u32;
     }
 
-    if GDI_HANDLE_GET_TYPE((*desc).hDc) != GDI_OBJECT_TYPE_DC as _
+    if GDI_HANDLE_GET_TYPE((*desc).hDc as HGDIOBJ) != GDI_OBJECT_TYPE_DC as _
         || GDI_HANDLE_GET_TYPE((*desc).hBitmap) != GDI_OBJECT_TYPE_BITMAP as _
     {
-        return STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER as u32;
     }
 
     NtGdiDeleteObjectApp((*desc).hBitmap as _);
     NtGdiDeleteObjectApp((*desc).hDc as _);
 
-    STATUS_SUCCESS
+    STATUS_SUCCESS as u32
 }

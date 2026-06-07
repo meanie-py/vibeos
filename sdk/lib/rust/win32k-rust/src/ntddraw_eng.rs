@@ -1,6 +1,8 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
 
+const DDERR_UNSUPPORTED: u32 = 0x80004001u32;
+
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to translate.
 #[cfg(target_arch = "x86")]
@@ -13,7 +15,7 @@ pub unsafe extern "stdcall" fn HeapVidMemAllocAligned(
     lpNewPitch: LPLONG,
 ) -> FLATPTR {
     let pfnHeapVidMemAllocAligned: PGD_HEAPVIDMEMALLOCALIGNED =
-        gpDxFuncs[DXG_INDEX_DxDdHeapVidMemAllocAligned as usize].pfn as PGD_HEAPVIDMEMALLOCALIGNED;
+        core::mem::transmute::<_, PGD_HEAPVIDMEMALLOCALIGNED>(gpDxFuncs[DXG_INDEX_DxDdHeapVidMemAllocAligned as usize].pfn);
 
     if pfnHeapVidMemAllocAligned.is_none() {
         return 0;
@@ -32,7 +34,7 @@ pub unsafe extern "C" fn HeapVidMemAllocAligned(
     lpNewPitch: LPLONG,
 ) -> FLATPTR {
     let pfnHeapVidMemAllocAligned: PGD_HEAPVIDMEMALLOCALIGNED =
-        gpDxFuncs[DXG_INDEX_DxDdHeapVidMemAllocAligned as usize].pfn as PGD_HEAPVIDMEMALLOCALIGNED;
+        core::mem::transmute::<_, PGD_HEAPVIDMEMALLOCALIGNED>(gpDxFuncs[DXG_INDEX_DxDdHeapVidMemAllocAligned as usize].pfn);
 
     if pfnHeapVidMemAllocAligned.is_none() {
         return 0;
@@ -44,11 +46,7 @@ pub unsafe extern "C" fn HeapVidMemAllocAligned(
 #[no_mangle]
 pub unsafe extern "stdcall" fn VidMemFree(pvmh: LPVMEMHEAP, ptr: FLATPTR) {
     let pfnVidMemFree: PGD_VIDMEMFREE = core::mem::transmute(
-        gpDxFuncs
-            .add(DXG_INDEX_DxDdHeapVidMemFree as usize)
-            .as_ref()
-            .unwrap()
-            .pfn,
+        gpDxFuncs[DXG_INDEX_DxDdHeapVidMemFree as usize].pfn,
     );
 
     if pfnVidMemFree.is_none() {
@@ -61,11 +59,7 @@ pub unsafe extern "stdcall" fn VidMemFree(pvmh: LPVMEMHEAP, ptr: FLATPTR) {
 #[no_mangle]
 pub unsafe extern "C" fn VidMemFree(pvmh: LPVMEMHEAP, ptr: FLATPTR) {
     let pfnVidMemFree: PGD_VIDMEMFREE = core::mem::transmute(
-        gpDxFuncs
-            .add(DXG_INDEX_DxDdHeapVidMemFree as usize)
-            .as_ref()
-            .unwrap()
-            .pfn,
+        gpDxFuncs[DXG_INDEX_DxDdHeapVidMemFree as usize].pfn,
     );
 
     if pfnVidMemFree.is_none() {
@@ -168,7 +162,7 @@ pub unsafe extern "C" fn EngDxIoctl(
 #[no_mangle]
 pub unsafe extern "stdcall" fn EngLockDirectDrawSurface(hSurface: HANDLE) -> PDD_SURFACE_LOCAL {
     let pfnEngLockDirectDrawSurface: PGD_ENGLOCKDIRECTDRAWSURFACE =
-        gpDxFuncs[DXG_INDEX_DxDdLockDirectDrawSurface as usize].pfn as PGD_ENGLOCKDIRECTDRAWSURFACE;
+        core::mem::transmute::<_, PGD_ENGLOCKDIRECTDRAWSURFACE>(gpDxFuncs[DXG_INDEX_DxDdLockDirectDrawSurface as usize].pfn);
     let mut retVal: PDD_SURFACE_LOCAL = core::ptr::null_mut();
 
     if let Some(pfn) = pfnEngLockDirectDrawSurface {
@@ -182,7 +176,7 @@ pub unsafe extern "stdcall" fn EngLockDirectDrawSurface(hSurface: HANDLE) -> PDD
 #[no_mangle]
 pub unsafe extern "C" fn EngLockDirectDrawSurface(hSurface: HANDLE) -> PDD_SURFACE_LOCAL {
     let pfnEngLockDirectDrawSurface: PGD_ENGLOCKDIRECTDRAWSURFACE =
-        gpDxFuncs[DXG_INDEX_DxDdLockDirectDrawSurface as usize].pfn as PGD_ENGLOCKDIRECTDRAWSURFACE;
+        core::mem::transmute::<_, PGD_ENGLOCKDIRECTDRAWSURFACE>(gpDxFuncs[DXG_INDEX_DxDdLockDirectDrawSurface as usize].pfn);
     let mut retVal: PDD_SURFACE_LOCAL = core::ptr::null_mut();
 
     if let Some(pfn) = pfnEngLockDirectDrawSurface {

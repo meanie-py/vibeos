@@ -40,7 +40,7 @@ pub unsafe extern "stdcall" fn NtGdiD3dContextCreate(
     pdcci: LPD3DNTHAL_CONTEXTCREATEDATA,
 ) -> BOOL {
     let pfnD3dContextCreate: PGD_D3DCONTEXTCREATE =
-        gpDxFuncs[DXG_INDEX_DxD3dContextCreate as usize].pfn as PGD_D3DCONTEXTCREATE;
+        core::mem::transmute::<_, PGD_D3DCONTEXTCREATE>(gpDxFuncs[DXG_INDEX_DxD3dContextCreate as usize].pfn);
 
     if pfnD3dContextCreate.is_none() {
         return 0;
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn NtGdiD3dContextCreate(
     pdcci: LPD3DNTHAL_CONTEXTCREATEDATA,
 ) -> BOOL {
     let pfnD3dContextCreate: PGD_D3DCONTEXTCREATE =
-        gpDxFuncs[DXG_INDEX_DxD3dContextCreate as usize].pfn as PGD_D3DCONTEXTCREATE;
+        core::mem::transmute::<_, PGD_D3DCONTEXTCREATE>(gpDxFuncs[DXG_INDEX_DxD3dContextCreate as usize].pfn);
 
     if pfnD3dContextCreate.is_none() {
         return 0;
@@ -131,7 +131,7 @@ pub unsafe extern "stdcall" fn NtGdiDdCreateD3DBuffer(
     puhSurface: *mut HANDLE,
 ) -> DWORD {
     let pfnDdCreateD3DBuffer: PGD_DDCREATED3DBUFFER =
-        gpDxFuncs[DXG_INDEX_DxDdCreateD3DBuffer as usize].pfn as PGD_DDCREATED3DBUFFER;
+        core::mem::transmute::<_, PGD_DDCREATED3DBUFFER>(gpDxFuncs[DXG_INDEX_DxDdCreateD3DBuffer as usize].pfn);
 
     if pfnDdCreateD3DBuffer.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn NtGdiDdCreateD3DBuffer(
     puhSurface: *mut HANDLE,
 ) -> DWORD {
     let pfnDdCreateD3DBuffer: PGD_DDCREATED3DBUFFER =
-        gpDxFuncs[DXG_INDEX_DxDdCreateD3DBuffer as usize].pfn as PGD_DDCREATED3DBUFFER;
+        core::mem::transmute::<_, PGD_DDCREATED3DBUFFER>(gpDxFuncs[DXG_INDEX_DxDdCreateD3DBuffer as usize].pfn);
 
     if pfnDdCreateD3DBuffer.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;

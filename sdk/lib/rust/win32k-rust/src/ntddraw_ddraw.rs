@@ -1,5 +1,10 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
+use ntkrnl_sys::base::NT_SUCCESS;
+use ntkrnl_sys::constants::STATUS_PROCEDURE_NOT_FOUND;
+use crate::ntddraw_dxeng::{gaEngFuncs, gcEngFuncs};
+
+const STATUS_DLL_NOT_FOUND: i32 = 0xC0000135_u32 as i32;
 
 // ---- file-scope preamble (translated) ----
 pub static mut gpfnStartupDxGraphics: PGD_DXDDSTARTUPDXGRAPHICS = None;
@@ -23,13 +28,14 @@ pub unsafe extern "system" fn DxDdStartupDxGraphics(
 
     let mut Status: NTSTATUS = STATUS_PROCEDURE_NOT_FOUND;
 
-    ghDxGraphics = EngLoadImage(
-        b"\\SystemRoot\\System32\\drivers\\dxg.sys\0"
-            .iter()
-            .map(|&c| c as u16)
-            .collect::<alloc::vec::Vec<u16>>()
-            .as_ptr() as *mut _,
-    );
+    let path_bytes = b"\\SystemRoot\\System32\\drivers\\dxg.sys\0";
+    let mut wide_buf: [u16; 64] = [0; 64];
+    let mut i = 0;
+    while i < path_bytes.len() && i < 64 {
+        wide_buf[i] = path_bytes[i] as u16;
+        i += 1;
+    }
+    ghDxGraphics = EngLoadImage(wide_buf.as_mut_ptr());
 
     if ghDxGraphics.is_null() {
         Status = STATUS_DLL_NOT_FOUND;
@@ -45,7 +51,7 @@ pub unsafe extern "system" fn DxDdStartupDxGraphics(
 
         if gpfnStartupDxGraphics.is_some() && gpfnCleanupDxGraphics.is_some() {
             DxEngDrv.iDriverVersion = DDI_DRIVER_VERSION_NT5_01 as _;
-            DxEngDrv.pdrvfn = gaEngFuncs.as_mut_ptr();
+            DxEngDrv.pdrvfn = (core::ptr::addr_of!(gaEngFuncs) as *mut DRVFN);
             DxEngDrv.c = gcEngFuncs;
 
             Status = (gpfnStartupDxGraphics.unwrap())(
@@ -319,7 +325,7 @@ pub unsafe extern "C" fn NtGdiDdDeleteDirectDrawObject(hDirectDrawLocal: HANDLE)
 #[no_mangle]
 pub unsafe extern "stdcall" fn NtGdiDdDeleteSurfaceObject(hSurface: HANDLE) -> BOOL {
     let pfnDdDeleteSurfaceObject: PGD_DXDDDELETESURFACEOBJECT =
-        gpDxFuncs[DXG_INDEX_DxDdDeleteSurfaceObject as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdDeleteSurfaceObject as usize].pfn);
 
     if pfnDdDeleteSurfaceObject.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as BOOL;
@@ -332,7 +338,7 @@ pub unsafe extern "stdcall" fn NtGdiDdDeleteSurfaceObject(hSurface: HANDLE) -> B
 #[no_mangle]
 pub unsafe extern "C" fn NtGdiDdDeleteSurfaceObject(hSurface: HANDLE) -> BOOL {
     let pfnDdDeleteSurfaceObject: PGD_DXDDDELETESURFACEOBJECT =
-        gpDxFuncs[DXG_INDEX_DxDdDeleteSurfaceObject as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdDeleteSurfaceObject as usize].pfn);
 
     if pfnDdDeleteSurfaceObject.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as BOOL;
@@ -427,7 +433,7 @@ pub unsafe extern "stdcall" fn NtGdiDdReenableDirectDrawObject(
     }
 
     let status = (pfnDdReenableDirectDrawObject.unwrap())(hDirectDrawLocal, pubNewMode);
-    status
+    status as i32
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -444,7 +450,7 @@ pub unsafe extern "C" fn NtGdiDdReenableDirectDrawObject(
     }
 
     let status = (pfnDdReenableDirectDrawObject.unwrap())(hDirectDrawLocal, pubNewMode);
-    status
+    status as i32
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -667,7 +673,7 @@ pub unsafe extern "C" fn NtGdiDdReleaseDC(hSurface: HANDLE) -> BOOL {
 #[no_mangle]
 pub unsafe extern "stdcall" fn NtGdiDdResetVisrgn(hSurface: HANDLE, hwnd: HWND) -> BOOL {
     let pfnDdResetVisrgn: PGD_DDRESTVISRGN =
-        gpDxFuncs[DXG_INDEX_DxDdResetVisrgn as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdResetVisrgn as usize].pfn);
 
     if pfnDdResetVisrgn.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as BOOL;
@@ -680,7 +686,7 @@ pub unsafe extern "stdcall" fn NtGdiDdResetVisrgn(hSurface: HANDLE, hwnd: HWND) 
 #[no_mangle]
 pub unsafe extern "C" fn NtGdiDdResetVisrgn(hSurface: HANDLE, hwnd: HWND) -> BOOL {
     let pfnDdResetVisrgn: PGD_DDRESTVISRGN =
-        gpDxFuncs[DXG_INDEX_DxDdResetVisrgn as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdResetVisrgn as usize].pfn);
 
     if pfnDdResetVisrgn.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as BOOL;
@@ -696,7 +702,7 @@ pub unsafe extern "stdcall" fn NtGdiDdSetGammaRamp(
     lpGammaRamp: LPVOID,
 ) -> BOOL {
     let pfnDdSetGammaRamp: PGD_DDSETGAMMARAMP =
-        gpDxFuncs[DXG_INDEX_DxDdSetGammaRamp as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdSetGammaRamp as usize].pfn);
 
     if pfnDdSetGammaRamp.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as BOOL;
@@ -713,7 +719,7 @@ pub unsafe extern "C" fn NtGdiDdSetGammaRamp(
     lpGammaRamp: LPVOID,
 ) -> BOOL {
     let pfnDdSetGammaRamp: PGD_DDSETGAMMARAMP =
-        gpDxFuncs[DXG_INDEX_DxDdSetGammaRamp as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdSetGammaRamp as usize].pfn);
 
     if pfnDdSetGammaRamp.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as BOOL;

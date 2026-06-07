@@ -7,7 +7,7 @@ pub unsafe extern "stdcall" fn NtGdiDvpCanCreateVideoPort(
     puCanCreateVPortData: PDD_CANCREATEVPORTDATA,
 ) -> DWORD {
     let pfnDvpCanCreateVideoPort: PGD_DVPCANCREATEVIDEOPORT =
-        core::mem::transmute((*gpDxFuncs.offset(DXG_INDEX_DxDvpCanCreateVideoPort as isize)).pfn);
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDvpCanCreateVideoPort as usize].pfn);
 
     if pfnDvpCanCreateVideoPort.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -23,7 +23,7 @@ pub unsafe extern "C" fn NtGdiDvpCanCreateVideoPort(
     puCanCreateVPortData: PDD_CANCREATEVPORTDATA,
 ) -> DWORD {
     let pfnDvpCanCreateVideoPort: PGD_DVPCANCREATEVIDEOPORT =
-        core::mem::transmute((*gpDxFuncs.offset(DXG_INDEX_DxDvpCanCreateVideoPort as isize)).pfn);
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDvpCanCreateVideoPort as usize].pfn);
 
     if pfnDvpCanCreateVideoPort.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -38,7 +38,7 @@ pub unsafe extern "stdcall" fn NtGdiDvpColorControl(
     puVPortColorData: PDD_VPORTCOLORDATA,
 ) -> DWORD {
     let pfnDvpColorControl: PGD_DVPCOLORCONTROL =
-        (*gpDxFuncs.offset(DXG_INDEX_DxDvpColorControl as isize)).pfn as PGD_DVPCOLORCONTROL;
+        core::mem::transmute::<_, PGD_DVPCOLORCONTROL>(gpDxFuncs[DXG_INDEX_DxDvpColorControl as usize].pfn);
 
     if pfnDvpColorControl.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as DWORD;
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn NtGdiDvpColorControl(
     puVPortColorData: PDD_VPORTCOLORDATA,
 ) -> DWORD {
     let pfnDvpColorControl: PGD_DVPCOLORCONTROL =
-        (*gpDxFuncs.offset(DXG_INDEX_DxDvpColorControl as isize)).pfn as PGD_DVPCOLORCONTROL;
+        core::mem::transmute::<_, PGD_DVPCOLORCONTROL>(gpDxFuncs[DXG_INDEX_DxDvpColorControl as usize].pfn);
 
     if pfnDvpColorControl.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as DWORD;
@@ -263,7 +263,7 @@ pub unsafe extern "stdcall" fn NtGdiDvpGetVideoPortLine(
     puGetVPortLineData: PDD_GETVPORTLINEDATA,
 ) -> DWORD {
     let pfnDvpGetVideoPortLine: PGD_DXDVPGETVIDEOPORTLINE =
-        gpDxFuncs[DXG_INDEX_DxDvpGetVideoPortLine as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDvpGetVideoPortLine as usize].pfn);
 
     if pfnDvpGetVideoPortLine.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn NtGdiDvpGetVideoPortLine(
     puGetVPortLineData: PDD_GETVPORTLINEDATA,
 ) -> DWORD {
     let pfnDvpGetVideoPortLine: PGD_DXDVPGETVIDEOPORTLINE =
-        gpDxFuncs[DXG_INDEX_DxDvpGetVideoPortLine as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDvpGetVideoPortLine as usize].pfn);
 
     if pfnDvpGetVideoPortLine.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;

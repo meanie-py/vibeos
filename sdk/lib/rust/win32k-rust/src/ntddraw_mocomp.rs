@@ -7,7 +7,7 @@ pub unsafe extern "stdcall" fn NtGdiDdBeginMoCompFrame(
     puBeginFrameData: PDD_BEGINMOCOMPFRAMEDATA,
 ) -> DWORD {
     let pfnDdBeginMoCompFrame: PGD_DDBEGINMOCOMPFRAME =
-        gpDxFuncs[DXG_INDEX_DxDdBeginMoCompFrame as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdBeginMoCompFrame as usize].pfn);
 
     if pfnDdBeginMoCompFrame.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -23,7 +23,7 @@ pub unsafe extern "C" fn NtGdiDdBeginMoCompFrame(
     puBeginFrameData: PDD_BEGINMOCOMPFRAMEDATA,
 ) -> DWORD {
     let pfnDdBeginMoCompFrame: PGD_DDBEGINMOCOMPFRAME =
-        gpDxFuncs[DXG_INDEX_DxDdBeginMoCompFrame as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdBeginMoCompFrame as usize].pfn);
 
     if pfnDdBeginMoCompFrame.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -131,7 +131,7 @@ pub unsafe extern "stdcall" fn NtGdiDdGetInternalMoCompInfo(
     puGetInternalData: PDD_GETINTERNALMOCOMPDATA,
 ) -> DWORD {
     let pfnDdGetInternalMoCompInfo: PGD_DXDDGETINTERNALMOCOMPINFO =
-        gpDxFuncs[DXG_INDEX_DxDdGetInternalMoCompInfo as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdGetInternalMoCompInfo as usize].pfn);
 
     if pfnDdGetInternalMoCompInfo.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -147,7 +147,7 @@ pub unsafe extern "C" fn NtGdiDdGetInternalMoCompInfo(
     puGetInternalData: PDD_GETINTERNALMOCOMPDATA,
 ) -> DWORD {
     let pfnDdGetInternalMoCompInfo: PGD_DXDDGETINTERNALMOCOMPINFO =
-        gpDxFuncs[DXG_INDEX_DxDdGetInternalMoCompInfo as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdGetInternalMoCompInfo as usize].pfn);
 
     if pfnDdGetInternalMoCompInfo.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -255,7 +255,7 @@ pub unsafe extern "stdcall" fn NtGdiDdQueryMoCompStatus(
     puQueryMoCompStatusData: PDD_QUERYMOCOMPSTATUSDATA,
 ) -> DWORD {
     let pfnDdQueryMoCompStatus: PGD_DXDDQUERYMOCOMPSTATUS =
-        gpDxFuncs[DXG_INDEX_DxDdQueryMoCompStatus as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdQueryMoCompStatus as usize].pfn);
 
     if pfnDdQueryMoCompStatus.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;
@@ -271,7 +271,7 @@ pub unsafe extern "C" fn NtGdiDdQueryMoCompStatus(
     puQueryMoCompStatusData: PDD_QUERYMOCOMPSTATUSDATA,
 ) -> DWORD {
     let pfnDdQueryMoCompStatus: PGD_DXDDQUERYMOCOMPSTATUS =
-        gpDxFuncs[DXG_INDEX_DxDdQueryMoCompStatus as usize].pfn;
+        core::mem::transmute(gpDxFuncs[DXG_INDEX_DxDdQueryMoCompStatus as usize].pfn);
 
     if pfnDdQueryMoCompStatus.is_none() {
         return DDHAL_DRIVER_NOTHANDLED;

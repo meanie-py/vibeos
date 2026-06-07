@@ -1,5 +1,6 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
+use ntkrnl_sys::base::STATUS_NOT_IMPLEMENTED;
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "stdcall" fn NtGdiDdDestroySurface(hSurface: HANDLE, bRealDestroy: BOOL) -> DWORD {
@@ -35,7 +36,7 @@ pub unsafe extern "stdcall" fn NtGdiDdFlip(
     puFlipData: PDD_FLIPDATA,
 ) -> DWORD {
     let pfnDdDdFlip: PGD_DXDDFLIP =
-        gpDxFuncs[DXG_INDEX_DxDdFlip as usize].pfn as PGD_DXDDFLIP;
+        core::mem::transmute::<_, PGD_DXDDFLIP>(gpDxFuncs[DXG_INDEX_DxDdFlip as usize].pfn);
 
     match pfnDdDdFlip {
         None => DDHAL_DRIVER_NOTHANDLED,
@@ -59,7 +60,7 @@ pub unsafe extern "C" fn NtGdiDdFlip(
     puFlipData: PDD_FLIPDATA,
 ) -> DWORD {
     let pfnDdDdFlip: PGD_DXDDFLIP =
-        gpDxFuncs[DXG_INDEX_DxDdFlip as usize].pfn as PGD_DXDDFLIP;
+        core::mem::transmute::<_, PGD_DXDDFLIP>(gpDxFuncs[DXG_INDEX_DxDdFlip as usize].pfn);
 
     match pfnDdDdFlip {
         None => DDHAL_DRIVER_NOTHANDLED,
@@ -143,7 +144,7 @@ pub unsafe extern "stdcall" fn NtGdiDdBlt(
     hSurfaceSrc: HANDLE,
     puBltData: PDD_BLTDATA,
 ) -> DWORD {
-    let pfnDdBlt: PGD_DDBLT = gpDxFuncs[DXG_INDEX_DxDdBlt as usize].pfn as PGD_DDBLT;
+    let pfnDdBlt: PGD_DDBLT = core::mem::transmute::<_, PGD_DDBLT>(gpDxFuncs[DXG_INDEX_DxDdBlt as usize].pfn);
 
     if pfnDdBlt.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as DWORD;
@@ -159,7 +160,7 @@ pub unsafe extern "C" fn NtGdiDdBlt(
     hSurfaceSrc: HANDLE,
     puBltData: PDD_BLTDATA,
 ) -> DWORD {
-    let pfnDdBlt: PGD_DDBLT = gpDxFuncs[DXG_INDEX_DxDdBlt as usize].pfn as PGD_DDBLT;
+    let pfnDdBlt: PGD_DDBLT = core::mem::transmute::<_, PGD_DDBLT>(gpDxFuncs[DXG_INDEX_DxDdBlt as usize].pfn);
 
     if pfnDdBlt.is_none() {
         return DDHAL_DRIVER_NOTHANDLED as DWORD;
@@ -436,7 +437,7 @@ pub unsafe extern "stdcall" fn NtGdiDdUnattachSurface(
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    (pfnDdUnattachSurface.unwrap())(hSurface, hSurfaceAttached)
+    (pfnDdUnattachSurface.unwrap())(hSurface, hSurfaceAttached) as i32
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -452,5 +453,5 @@ pub unsafe extern "C" fn NtGdiDdUnattachSurface(
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    (pfnDdUnattachSurface.unwrap())(hSurface, hSurfaceAttached)
+    (pfnDdUnattachSurface.unwrap())(hSurface, hSurfaceAttached) as i32
 }
