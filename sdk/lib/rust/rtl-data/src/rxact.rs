@@ -2,11 +2,12 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{Commit, KEY_VALUE_BASIC_INFORMATION, KeyValueBasicInformation, KeyValueFullInformation, NtClose, NtDeleteValueKey, NtFlushKey, _OBJECT_ATTRIBUTES, PHANDLE, PKEY_VALUE_FULL_INFORMATION, PUNICODE_STRING, RtlAllocateHeap, RtlFreeHeap, RtlInitUnicodeString, ZwCreateKey, ZwDeleteKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey};
+use ntkrnl_sys::ddk::{_KEY_VALUE_INFORMATION_CLASS_KeyValueBasicInformation, _KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation, BOOLEAN, HANDLE, KEY_VALUE_BASIC_INFORMATION, NtClose, NtDeleteValueKey, NtFlushKey, _OBJECT_ATTRIBUTES, _UNICODE_STRING, PBOOLEAN, PHANDLE, PKEY_VALUE_FULL_INFORMATION, PUCHAR, PUNICODE_STRING, PWSTR, RtlAllocateHeap, RtlFreeHeap, RtlInitUnicodeString, ZwClose, ZwCreateKey, ZwDeleteKey, ZwFlushBuffersFile, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey};
 use core::ffi::c_void;
+use crate::shared::RtlGetProcessHeap;
 
 // ---- file-scope preamble (translated) ----
-pub const RXACT_DEFAULT_BUFFER_SIZE: ULONG = 4 * PAGE_SIZE;
+pub const RXACT_DEFAULT_BUFFER_SIZE: ULONG = (4 * PAGE_SIZE) as ULONG;
 
 #[repr(C)]
 pub struct _RXACT_INFO {
@@ -52,6 +53,38 @@ pub type PRXACT_ACTION = *mut _RXACT_ACTION;
 
 pub const RXactDeleteKey: u32 = 1;
 pub const RXactSetValueKey: u32 = 2;
+
+// ---- constants from sdk/include/psdk/ntstatus.h ----
+pub const STATUS_RXACT_INVALID_STATE: NTSTATUS = 0xC000011C_u32 as i32;
+pub const STATUS_RXACT_STATE_CREATED: NTSTATUS = 0x40000004_u32 as i32;
+pub const STATUS_RXACT_COMMIT_NECESSARY: NTSTATUS = 0x80000018_u32 as i32;
+// ---- from sdk/include/psdk/winreg.h / sdk/include/xdk/cmtypes.h ----
+pub const REG_CREATED_NEW_KEY: ULONG = 0x00000001;
+// ---- from sdk/include/xdk/winnt_old.h ----
+pub const KEY_WRITE: ULONG = 0x20006;
+
+// ---- extern helpers from sdk/lib/rtl/registry.c ----
+extern "system" {
+    fn RtlpNtQueryValueKey(
+        KeyHandle: HANDLE,
+        Type: *mut ULONG,
+        Data: PVOID,
+        DataLength: *mut ULONG,
+        Unused: ULONG,
+    ) -> NTSTATUS;
+}
+
+// ---- UlongToPtr (C macro → Rust inline) ----
+#[inline]
+unsafe fn UlongToPtr(ul: ULONG) -> PVOID {
+    ul as usize as *mut core::ffi::c_void
+}
+
+// ---- AlignUpByUlong for ULONG (the ntkrnl-sys version takes ULONG_PTR) ----
+#[inline]
+unsafe fn AlignUpByUlong(val: ULONG, align: ULONG) -> ULONG {
+    (val + align - 1) & !(align - 1)
+}
 unsafe fn RXactInitializeContext(
     Context: PRXACT_CONTEXT,
     RootDirectory: HANDLE,
@@ -205,7 +238,7 @@ pub unsafe extern "system" fn RtlStartRXact(Context: PRXACT_CONTEXT) -> NTSTATUS
         return STATUS_RXACT_INVALID_STATE;
     }
 
-    let Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, (4 * 4096) as usize) as PRXACT_DATA;
+    let Buffer = RtlAllocateHeap(RtlGetProcessHeap(), 0, (4 * 4096) as _) as PRXACT_DATA;
     if Buffer.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -252,7 +285,8 @@ pub unsafe extern "system" fn RtlInitializeRXact(
     let mut Length: ULONG = 0;
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
 
-    RtlInitUnicodeString(&mut KeyName, "RXACT\0".encode_utf16().collect::<Vec<u16>>().as_ptr());
+    static RXACT_WSTR: [u16; 6] = [0x0052, 0x0058, 0x0041, 0x0043, 0x0054, 0x0000]; // L"RXACT"
+    RtlInitUnicodeString(&mut KeyName, RXACT_WSTR.as_ptr());
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = RootDirectory;
@@ -274,8 +308,8 @@ pub unsafe extern "system" fn RtlInitializeRXact(
         return Status;
     }
 
-    Context = RtlAllocateHeap(RtlGetProcessHeap(), 0, core::mem::size_of::<RXACT_CONTEXT>()) as PRXACT_CONTEXT;
-    *OutContext = Context;
+    Context = RtlAllocateHeap(RtlGetProcessHeap(), 0, core::mem::size_of::<RXACT_CONTEXT>() as _) as PRXACT_CONTEXT;
+    core::ptr::write_volatile(OutContext, Context);
     if Context.is_null() {
         let _ = ZwDeleteKey(KeyHandle);
         let _ = NtClose(KeyHandle);
@@ -326,11 +360,12 @@ pub unsafe extern "system" fn RtlInitializeRXact(
             return STATUS_UNKNOWN_REVISION;
         }
 
-        RtlInitUnicodeString(&mut ValueName, "Log\0".encode_utf16().collect::<Vec<u16>>().as_ptr());
+        static LOG_WSTR: [u16; 4] = [0x004C, 0x006F, 0x0067, 0x0000]; // L"Log"
+        RtlInitUnicodeString(&mut ValueName, LOG_WSTR.as_ptr());
         Status = ZwQueryValueKey(
             KeyHandle,
             &mut ValueName,
-            KeyValueBasicInformation,
+            _KEY_VALUE_INFORMATION_CLASS_KeyValueBasicInformation,
             &mut KeyValueBasicInfo as *mut _ as PVOID,
             core::mem::size_of::<KEY_VALUE_BASIC_INFORMATION>() as ULONG,
             &mut Length,
@@ -346,7 +381,7 @@ pub unsafe extern "system" fn RtlInitializeRXact(
         Status = ZwQueryValueKey(
             KeyHandle,
             &mut ValueName,
-            KeyValueFullInformation,
+            _KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation,
             core::ptr::null_mut(),
             0,
             &mut Length,
@@ -355,7 +390,7 @@ pub unsafe extern "system" fn RtlInitializeRXact(
             return Status;
         }
 
-        KeyValueInformation = RtlAllocateHeap(RtlGetProcessHeap(), 0, Length as usize) as PKEY_VALUE_FULL_INFORMATION;
+        KeyValueInformation = RtlAllocateHeap(RtlGetProcessHeap(), 0, Length as _) as PKEY_VALUE_FULL_INFORMATION;
         if KeyValueInformation.is_null() {
             return STATUS_NO_MEMORY;
         }
@@ -363,7 +398,7 @@ pub unsafe extern "system" fn RtlInitializeRXact(
         Status = ZwQueryValueKey(
             KeyHandle,
             &mut ValueName,
-            KeyValueFullInformation,
+            _KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation,
             KeyValueInformation as PVOID,
             Length,
             &mut Length,
@@ -420,10 +455,10 @@ pub unsafe extern "system" fn RtlAddAttributeActionToRXact(
     }
 
     /* Calculate the size of the new action record */
-    ActionSize = ALIGN_UP_BY((*ValueName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG)
-        + ALIGN_UP_BY(ValueDataSize, core::mem::size_of::<ULONG>() as ULONG)
-        + ALIGN_UP_BY((*KeyName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG)
-        + ALIGN_UP_BY(
+    ActionSize = AlignUpByUlong((*ValueName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG)
+        + AlignUpByUlong(ValueDataSize, core::mem::size_of::<ULONG>() as ULONG)
+        + AlignUpByUlong((*KeyName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG)
+        + AlignUpByUlong(
             core::mem::size_of::<RXACT_ACTION>() as ULONG,
             core::mem::size_of::<ULONG>() as ULONG,
         );
@@ -445,7 +480,7 @@ pub unsafe extern "system" fn RtlAddAttributeActionToRXact(
         }
 
         /* Allocate a new buffer from the heap */
-        NewData = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferSize as usize) as PRXACT_DATA;
+        NewData = RtlAllocateHeap(RtlGetProcessHeap(), 0, BufferSize as _) as PRXACT_DATA;
         if NewData.is_null() {
             return STATUS_NO_MEMORY;
         }
@@ -486,7 +521,7 @@ pub unsafe extern "system" fn RtlAddAttributeActionToRXact(
     );
 
     /* Copy the value name (and convert the pointer to a buffer offset) */
-    CurrentOffset += ALIGN_UP_BY((*KeyName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG);
+    CurrentOffset += AlignUpByUlong((*KeyName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG);
     (*Action).ValueName.Buffer = UlongToPtr(CurrentOffset) as PWSTR;
     RtlCopyMemory(
         ((*Context).Data as PUCHAR).add(CurrentOffset as usize) as PVOID,
@@ -495,7 +530,7 @@ pub unsafe extern "system" fn RtlAddAttributeActionToRXact(
     );
 
     /* Update the offset */
-    CurrentOffset += ALIGN_UP_BY((*ValueName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG);
+    CurrentOffset += AlignUpByUlong((*ValueName).Length as ULONG, core::mem::size_of::<ULONG>() as ULONG);
 
     /* Is this a set action? */
     if ActionType == RXactSetValueKey as ULONG {
@@ -506,7 +541,7 @@ pub unsafe extern "system" fn RtlAddAttributeActionToRXact(
             ValueData,
             ValueDataSize as usize,
         );
-        CurrentOffset += ALIGN_UP_BY(ValueDataSize, core::mem::size_of::<ULONG>() as ULONG);
+        CurrentOffset += AlignUpByUlong(ValueDataSize, core::mem::size_of::<ULONG>() as ULONG);
     }
 
     /* Update data site and action count */
@@ -561,7 +596,8 @@ pub unsafe extern "system" fn RtlApplyRXact(Context: PRXACT_CONTEXT) -> NTSTATUS
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    RtlInitUnicodeString(&mut ValueName, "L\0o\0g\0\0\0".as_ptr() as PWSTR);
+    static LOG_WSTR2: [u16; 4] = [0x004C, 0x006F, 0x0067, 0x0000]; // L"Log"
+    RtlInitUnicodeString(&mut ValueName, LOG_WSTR2.as_ptr());
     Status = ZwSetValueKey(
         (*Context).KeyHandle,
         &mut ValueName,

@@ -2,8 +2,21 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, LARGE_INTEGER, NtProductWinNt, _OBJECT_ATTRIBUTES, PHANDLE, PRTL_BSD_DATA, RTL_BSD_DATA, RtlBsdItemMax, SleepInProgress, ZwClose, ZwCreateFile, ZwFlushBuffersFile, ZwOpenFile, ZwReadFile, ZwWriteFile};
+use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, _NT_PRODUCT_TYPE_NtProductWinNt, _OBJECT_ATTRIBUTES, _RTL_BSD_ITEM_TYPE_RtlBsdItemMax, _UNICODE_STRING, BOOLEAN, HANDLE, LARGE_INTEGER, PBOOLEAN, PHANDLE, PRTL_BSD_DATA, PULONG, RTL_BSD_DATA, RTL_BSD_ITEM_TYPE, ZwClose, ZwCreateFile, ZwFlushBuffersFile, ZwOpenFile, ZwReadFile, ZwWriteFile};
 use core::ffi::c_void;
+
+// ---- constants from sdk/include/xdk/winnt_old.h ----
+// FILE_GENERIC_READ = STANDARD_RIGHTS_READ | FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE
+pub const FILE_GENERIC_READ: ULONG = STANDARD_RIGHTS_READ | FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE;
+// FILE_GENERIC_WRITE = STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | FILE_APPEND_DATA | SYNCHRONIZE
+pub const FILE_GENERIC_WRITE: ULONG = STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | FILE_APPEND_DATA | SYNCHRONIZE;
+pub const FILE_ATTRIBUTE_SYSTEM: ULONG = 0x00000004;
+pub const FILE_CREATE: ULONG = 0x00000002;
+pub const FILE_SYNCHRONOUS_IO_NONALERT: ULONG = 0x00000020;
+
+// Convenience re-exports with the short names used in the original C
+pub const NtProductWinNt: ULONG = _NT_PRODUCT_TYPE_NtProductWinNt as ULONG;
+pub const RtlBsdItemMax: ULONG = _RTL_BSD_ITEM_TYPE_RtlBsdItemMax as ULONG;
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -18,7 +31,7 @@ pub static mut DummyBsd: PRTL_BSD_DATA = core::ptr::null_mut();
 pub static BsdItemTable: [RTL_BSD_ITEM_TABLE_ENTRY; RtlBsdItemMax as usize] = [
     RTL_BSD_ITEM_TABLE_ENTRY {
         Offset: core::mem::offset_of!(RTL_BSD_DATA, Version) as UCHAR,
-        Size: core::mem::size_of::<*mut Version>() as UCHAR,
+        Size: core::mem::size_of::<ULONG>() as UCHAR,
     },
     RTL_BSD_ITEM_TABLE_ENTRY {
         Offset: core::mem::offset_of!(RTL_BSD_DATA, ProductType) as UCHAR,
@@ -125,7 +138,7 @@ pub unsafe extern "system" fn RtlCreateBootStatusDataFile() -> NTSTATUS {
     if NT_SUCCESS(Status) {
         RtlZeroMemory(
             &mut InitialBsd as *mut _ as *mut core::ffi::c_void,
-            core::mem::size_of::<RTL_BSD_DATA>() as u32,
+            core::mem::size_of::<RTL_BSD_DATA>() as usize,
         );
         InitialBsd.Version = core::mem::size_of::<RTL_BSD_DATA>() as u32;
         InitialBsd.ProductType = NtProductWinNt;
@@ -204,7 +217,7 @@ pub unsafe extern "system" fn RtlGetSetBootStatusData(
 
     if NT_SUCCESS(Status) {
         if !ReturnLength.is_null() {
-            *ReturnLength = BsdItemTable[DataClass as usize].Size as ULONG;
+            core::ptr::write_volatile(ReturnLength, BsdItemTable[DataClass as usize].Size as ULONG);
         }
     }
 
@@ -236,7 +249,7 @@ pub unsafe extern "system" fn RtlLockBootStatusData(
     let mut LocalFileHandle: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
-    *FileHandle = core::ptr::null_mut();
+    core::ptr::write_volatile(FileHandle, core::ptr::null_mut());
 
     let Status = ZwOpenFile(
         &mut LocalFileHandle,
@@ -248,7 +261,7 @@ pub unsafe extern "system" fn RtlLockBootStatusData(
     );
 
     if NT_SUCCESS(Status) {
-        *FileHandle = LocalFileHandle;
+        core::ptr::write_volatile(FileHandle, LocalFileHandle);
     }
 
     Status

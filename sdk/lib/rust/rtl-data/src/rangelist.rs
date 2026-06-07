@@ -3,8 +3,9 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{Available, Next, PRTL_CONFLICT_RANGE_CALLBACK, PRTL_RANGE, PRTL_RANGE_LIST, PRTL_RANGE_LIST_ITERATOR, PULONGLONG, RTL_RANGE, RTL_RANGE_LIST, RTL_RANGE_LIST_ITERATOR};
+use ntkrnl_sys::ddk::{_LIST_ENTRY, _RTL_RANGE_LIST, PBOOLEAN, PRTL_CONFLICT_RANGE_CALLBACK, PRTL_RANGE, PRTL_RANGE_LIST, PRTL_RANGE_LIST_ITERATOR, PULONGLONG, RTL_RANGE, RTL_RANGE_LIST, RTL_RANGE_LIST_ITERATOR};
 use core::ffi::c_void;
+use ntkrnl_sys::CONTAINING_RECORD;
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -13,6 +14,25 @@ pub struct _RTL_RANGE_ENTRY {
     pub Range: RTL_RANGE,
 }
 pub type PRTL_RANGE_ENTRY = *mut _RTL_RANGE_ENTRY;
+pub type RTL_RANGE_ENTRY = _RTL_RANGE_ENTRY;
+
+// ---- constants from sdk/include/ndk/rtltypes.h ----
+pub const RTL_RANGE_LIST_ADD_SHARED: ULONG = 0x00000002;
+pub const RTL_RANGE_SHARED: UCHAR = 0x01;
+// ---- from sdk/include/psdk/ntstatus.h ----
+pub const STATUS_RANGE_NOT_FOUND: NTSTATUS = 0xC000028C_u32 as i32;
+
+// ---- extern helpers from sdk/lib/rtl/rtlp.h (RTL private layer) ----
+extern "system" {
+    fn RtlpAllocateMemory(Bytes: SIZE_T, Tag: ULONG) -> PVOID;
+    fn RtlpFreeMemory(Mem: PVOID, Tag: ULONG);
+}
+
+// ---- ROUND_DOWN for ULONGLONG (the existing ntkrnl_sys::mm::ROUND_DOWN takes ULONG_PTR) ----
+#[inline]
+unsafe fn RtlpRoundDownUlonglong(val: ULONGLONG, align: ULONGLONG) -> ULONGLONG {
+    val & !(align - 1_u64)
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlAddRange(
@@ -33,7 +53,7 @@ pub unsafe extern "system" fn RtlAddRange(
     }
 
     RangeEntry = RtlpAllocateMemory(
-        core::mem::size_of::<RTL_RANGE_ENTRY>() as ULONG,
+        core::mem::size_of::<RTL_RANGE_ENTRY>() as usize,
         u32::from_le_bytes(*b"RRle"),
     ) as PRTL_RANGE_ENTRY;
     if RangeEntry.is_null() {
@@ -105,7 +125,7 @@ pub unsafe extern "system" fn RtlCopyRangeList(
             as *mut _RTL_RANGE_ENTRY;
 
         let NewEntry = RtlpAllocateMemory(
-            core::mem::size_of::<_RTL_RANGE_ENTRY>() as ULONG,
+            core::mem::size_of::<_RTL_RANGE_ENTRY>() as usize,
             u32::from_le_bytes(*b"RRle"),
         ) as *mut _RTL_RANGE_ENTRY;
         if NewEntry.is_null() {
@@ -214,8 +234,8 @@ pub unsafe extern "system" fn RtlFindRange(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) != 0 {
-        *Start = ROUND_DOWN(Maximum - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
+    if IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) {
+        core::ptr::write_volatile(Start, RtlpRoundDownUlonglong(Maximum - (Length as ULONGLONG - 1), Alignment as ULONGLONG));
         return STATUS_SUCCESS;
     }
 
@@ -234,13 +254,13 @@ pub unsafe extern "system" fn RtlFindRange(
             return STATUS_RANGE_NOT_FOUND;
         }
 
-        RangeMin = ROUND_DOWN(RangeMax - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
+        RangeMin = RtlpRoundDownUlonglong(RangeMax - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
         if RangeMin < Minimum || (RangeMax - RangeMin) < (Length as ULONGLONG - 1) {
             return STATUS_RANGE_NOT_FOUND;
         }
 
         if RangeMin > (*CurrentEntry).Range.End {
-            *Start = RangeMin;
+            core::ptr::write_volatile(Start, RangeMin);
             return STATUS_SUCCESS;
         }
 
@@ -257,19 +277,19 @@ pub unsafe extern "system" fn RtlFindRange(
         return STATUS_RANGE_NOT_FOUND;
     }
 
-    RangeMin = ROUND_DOWN(RangeMax - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
+    RangeMin = RtlpRoundDownUlonglong(RangeMax - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
     if RangeMin < Minimum || (RangeMax - RangeMin) < (Length as ULONGLONG - 1) {
         return STATUS_RANGE_NOT_FOUND;
     }
 
-    *Start = RangeMin;
+    core::ptr::write_volatile(Start, RangeMin);
 
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlFreeRangeList(RangeList: PRTL_RANGE_LIST) {
-    while IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) {
         let Entry = RemoveHeadList(core::ptr::addr_of_mut!((*RangeList).ListHead));
         let Current = (Entry as *mut u8)
             .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
@@ -292,9 +312,9 @@ pub unsafe extern "system" fn RtlGetFirstRange(
     (*Iterator).MergedHead = core::ptr::null_mut();
     (*Iterator).Stamp = (*RangeList).Stamp;
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) {
         (*Iterator).Current = core::ptr::null_mut();
-        *Range = core::ptr::null_mut();
+        core::ptr::write_volatile(Range, core::ptr::null_mut());
         return STATUS_NO_MORE_ENTRIES;
     }
 
@@ -303,7 +323,7 @@ pub unsafe extern "system" fn RtlGetFirstRange(
             .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
             as *mut _RTL_RANGE_ENTRY;
         (*Iterator).Current = core::ptr::addr_of_mut!((*RangeEntry).Range) as *mut core::ffi::c_void;
-        *Range = core::ptr::addr_of_mut!((*RangeEntry).Range);
+        core::ptr::write_volatile(Range, core::ptr::addr_of_mut!((*RangeEntry).Range));
     }
 
     STATUS_SUCCESS
@@ -323,7 +343,7 @@ pub unsafe extern "system" fn RtlGetNextRange(
     }
 
     if (*Iterator).Current.is_null() {
-        *Range = core::ptr::null_mut();
+        core::ptr::write_volatile(Range, core::ptr::null_mut());
         return STATUS_NO_MORE_ENTRIES;
     }
 
@@ -338,14 +358,14 @@ pub unsafe extern "system" fn RtlGetNextRange(
 
     if Next == (*Iterator).RangeListHead {
         (*Iterator).Current = core::ptr::null_mut();
-        *Range = core::ptr::null_mut();
+        core::ptr::write_volatile(Range, core::ptr::null_mut());
         return STATUS_NO_MORE_ENTRIES;
     }
 
     let NextEntry: PRTL_RANGE_ENTRY = (Next as *mut u8)
         .sub(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry)) as PRTL_RANGE_ENTRY;
-    (*Iterator).Current = core::ptr::addr_of_mut!((*NextEntry).Range);
-    *Range = core::ptr::addr_of_mut!((*NextEntry).Range);
+    (*Iterator).Current = core::ptr::addr_of_mut!((*NextEntry).Range) as PVOID;
+    core::ptr::write_volatile(Range, core::ptr::addr_of_mut!((*NextEntry).Range));
 
     STATUS_SUCCESS
 }
@@ -371,7 +391,7 @@ pub unsafe extern "system" fn RtlInvertRangeList(
     Entry = (*RangeList).ListHead.Flink;
     while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
         Current = (Entry as *mut u8)
-            .offset(-(core::mem::offset_of!(RTL_RANGE_ENTRY, Entry) as isize))
+            .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
             as PRTL_RANGE_ENTRY;
 
         if Previous.is_null() {
@@ -446,7 +466,7 @@ pub unsafe extern "system" fn RtlIsRangeAvailable(
     let mut Current: PRTL_RANGE_ENTRY;
     let mut Entry: PLIST_ENTRY;
 
-    *Available = 1u8;
+    core::ptr::write_volatile(Available, 1u8);
 
     Entry = (*RangeList).ListHead.Flink;
     while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
@@ -460,15 +480,15 @@ pub unsafe extern "system" fn RtlIsRangeAvailable(
             && ((*Current).Range.Attributes & AttributeAvailableMask) != 0
         {
             /* Attributes match */
-        } else if (Flags & RTL_RANGE_SHARED) != 0
-            && ((*Current).Range.Flags & RTL_RANGE_SHARED as UCHAR) != 0
+        } else if (Flags & RTL_RANGE_SHARED as ULONG) != 0
+            && ((*Current).Range.Flags & RTL_RANGE_SHARED) != 0
         {
             /* Both shared */
         } else {
             if let Some(cb) = Callback {
-                *Available = cb(Context, core::ptr::addr_of_mut!((*Current).Range));
+                core::ptr::write_volatile(Available, cb(Context, core::ptr::addr_of_mut!((*Current).Range)));
             } else {
-                *Available = 0u8;
+                core::ptr::write_volatile(Available, 0u8);
             }
         }
 
@@ -509,7 +529,7 @@ pub unsafe extern "system" fn RtlMergeRangeLists(
             (*Range).Start,
             (*Range).End,
             (*Range).Attributes,
-            (*Range).Flags | Flags,
+            (*Range).Flags as ULONG | Flags,
             (*Range).UserData,
             (*Range).Owner,
         );
