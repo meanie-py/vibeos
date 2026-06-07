@@ -1,0 +1,14 @@
+[package]
+name = "rtl-version"
+version = "0.1.0"
+edition = "2021"
+
+# Rust translation of sdk/lib/rtl/version.c — RtlVerifyVersionInfo +
+# VerSetConditionMask (version-comparison logic). Self-contained leaf:
+# fixed-layout OSVERSIONINFO* structs + VER_* constants are defined
+# locally (winnt.h values, identical on all arches), so no ntkrnl-sys
+# dependency. RtlGetVersion is the sole extern (provided per-module:
+# ntoskrnl/rtl/misc.c kernel-side, ntdll user-side).
+
+[lib]
+crate-type = ["rlib"]

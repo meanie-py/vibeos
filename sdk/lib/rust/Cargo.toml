@@ -81,6 +81,7 @@ members = [
     "rtl-actctx",
     "rtl-threadpool",
     "rtl-heap",
+    "rtl-version",
     "rtl-difftest",
     "slist",
     "slist-loom",

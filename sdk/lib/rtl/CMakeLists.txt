@@ -86,7 +86,7 @@ list(APPEND SOURCE
     # unicode.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
     vectoreh.c
-    version.c
+    # version.c — replaced by Rust implementation (sdk/lib/rust/rtl-version/)
     wait.c
     # workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
     rtl.h)
@@ -213,6 +213,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-heap/src/heap.rs
             ${RUST_WORKSPACE_DIR}/rtl-heap/src/heapdbg.rs
             ${RUST_WORKSPACE_DIR}/rtl-heap/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-version/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-version/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs
