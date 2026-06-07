@@ -56,7 +56,13 @@ class ResponseCache:
                 self._manifest = {}
 
     def get(self, name: str, body_text: str) -> Optional[str]:
-        """Cached Rust for ``name`` IFF the C body hash still matches, else None."""
+        """Cached Rust for ``name`` IFF the C body hash still matches, else None.
+
+        An EMPTY (or whitespace-only) cached file is treated as a MISS so that a
+        previously-poisoned entry (an empty/truncated translation that an older
+        pipeline wrongly cached as success) self-heals: the next run re-translates
+        it instead of silently reusing nothing. See `put`.
+        """
         entry = self._manifest.get(name)
         if not entry or entry.get("hash") != _hash(body_text):
             return None
@@ -64,12 +70,26 @@ class ResponseCache:
         if not f.exists():
             return None
         try:
-            return f.read_text()
+            text = f.read_text()
         except OSError:
             return None
+        if not text.strip():
+            return None
+        return text
 
     def put(self, name: str, body_text: str, rust: str) -> None:
-        """Persist one function's Rust + record its body hash. Atomic-ish."""
+        """Persist one function's Rust + record its body hash. Atomic-ish.
+
+        Refuses to cache EMPTY/whitespace-only output: an empty translation is a
+        failure, and caching it as a valid entry would make resume skip the unit
+        forever (silently dropping it from the assembled file). Callers should
+        only reach here on success, but this is the durable last line of defence.
+        """
+        if not rust.strip():
+            raise ValueError(
+                f"refusing to cache empty translation for {name!r} "
+                f"(empty output is a failure, not a result)"
+            )
         self.dir.mkdir(parents=True, exist_ok=True)
         fname = _safe_filename(name) + ".rs"
         (self.dir / fname).write_text(rust)

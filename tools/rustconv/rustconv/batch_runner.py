@@ -88,8 +88,23 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
 
         rust_code = _extract_rust_code(response_text)
 
+        # Empty/truncated output is a FAILURE, not a cacheable success — see the
+        # detailed note in _submit_deepseek. Same hazard applies to any backend.
+        if not rust_code.strip():
+            return TranslationResult(
+                source_file="", rust_code="", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=f"empty output (stop_reason={stop_reason}, {output_tokens} output tokens)",
+            )
         if stop_reason == "max_tokens":
-            print(f"  WARNING: output truncated at {output_tokens} tokens (stop_reason=max_tokens)", file=sys.stderr)
+            return TranslationResult(
+                source_file="", rust_code=rust_code, model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=(f"truncated output at {output_tokens} tokens "
+                       f"(stop_reason=max_tokens) — incomplete, not cached. Raise CLAUDE_MAX_TOKENS."),
+            )
 
         return TranslationResult(
             source_file="",
@@ -165,6 +180,16 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
         usage = response.usage_metadata
         input_tokens = usage.prompt_token_count if usage else 0
         output_tokens = usage.candidates_token_count if usage else 0
+
+        # Empty output is a FAILURE, not a cacheable success — see the detailed
+        # note in _submit_deepseek.
+        if not rust_code.strip():
+            return TranslationResult(
+                source_file="", rust_code="", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=f"empty output ({output_tokens} output tokens)",
+            )
 
         return TranslationResult(
             source_file="",
@@ -243,8 +268,34 @@ def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
 
         rust_code = _extract_rust_code(response_text)
 
+        # An EMPTY or TRUNCATED translation is a FAILURE, never a cacheable
+        # result. DeepSeek v4 reasoning models can spend the entire max_tokens
+        # budget on reasoning (which streams as `reasoning_content`, not the
+        # `content` we capture) and emit NO code at all — or get cut off
+        # mid-output. Returning success here caches the empty/partial string as
+        # a valid $0 entry and SILENTLY drops the unit forever (this is exactly
+        # what wiped the mlang/cabinet_main type preambles + map_font). Make it
+        # loud and retriable instead.
+        if not rust_code.strip():
+            return TranslationResult(
+                source_file="", rust_code="", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=(f"empty output (finish_reason={finish_reason}, "
+                       f"{output_tokens} output tokens). For a reasoning model this "
+                       f"usually means reasoning consumed the {DEEPSEEK_MAX_TOKENS}-token "
+                       f"budget before any code was emitted — raise DEEPSEEK_MAX_TOKENS "
+                       f"or split the unit."),
+            )
         if finish_reason == "length":
-            print(f"  WARNING: output truncated at {output_tokens} tokens (finish_reason=length)", file=sys.stderr)
+            return TranslationResult(
+                source_file="", rust_code=rust_code, model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=(f"truncated output at {output_tokens} tokens "
+                       f"(finish_reason=length) — incomplete; raise DEEPSEEK_MAX_TOKENS "
+                       f"or split the unit. Not cached."),
+            )
 
         return TranslationResult(
             source_file="",

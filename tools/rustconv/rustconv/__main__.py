@@ -1177,6 +1177,27 @@ def cmd_translate(args):
                   file=sys.stderr)
         print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
 
+        # COMPLETENESS GATE — a partial run must NOT bank silently. Surface every
+        # function that failed/never landed and a failed preamble loudly, so the
+        # assembled file is never mistaken for a complete translation (this is the
+        # diagnostic that was missing when the mlang/cabinet_main preambles +
+        # map_font vanished without a trace). Re-run to fill the gaps.
+        missing_fns = [d.name for d in sorted_deps if d.name not in translated]
+        preamble_failed = bool(preamble_src) and not preamble_rust.strip()
+        if missing_fns or preamble_failed:
+            print(f"\n  ⚠️  INCOMPLETE TRANSLATION for {c_file.name} — the assembled "
+                  f"file is PARTIAL:", file=sys.stderr)
+            if preamble_failed:
+                print(f"       • type/struct PREAMBLE failed (empty) — file-scope "
+                      f"structs/typedefs are MISSING", file=sys.stderr)
+            if missing_fns:
+                preview = ", ".join(missing_fns[:12]) + (" …" if len(missing_fns) > 12 else "")
+                print(f"       • {len(missing_fns)}/{len(sorted_deps)} function(s) "
+                      f"missing: {preview}", file=sys.stderr)
+            print(f"       Re-run `python -m rustconv translate {c_file} ...` to fill "
+                  f"the gaps (cached units stay $0; only the failures re-translate).",
+                  file=sys.stderr)
+
         # Stitch functions into a single file
         stitched = stitch_file(translated, sorted_deps, scan, file_res,
                                target=rustconv_target, preamble=preamble_rust)

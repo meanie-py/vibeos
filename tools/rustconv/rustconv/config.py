@@ -713,7 +713,16 @@ GEMINI_MAX_TOKENS = 65536
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL_CHAT = "deepseek-chat"
 DEEPSEEK_MODEL_REASONER = "deepseek-reasoner"
-DEEPSEEK_MAX_TOKENS = 8192
+# Output-token budget. v4 models are REASONING models: reasoning tokens are
+# drawn from this same budget before any code `content` is emitted. At 8192 a
+# large unit (e.g. a file-scope type preamble with many structs/COM vtables)
+# could have its entire budget consumed by reasoning, yielding EMPTY content —
+# which silently wiped the mlang/cabinet_main preambles. A large type preamble
+# (mlang's is ~30K C chars of structs/COM vtables) needs reasoning + a big code
+# body in one call; 16384 still truncated it. 32768 fits both (DeepSeek reasoner
+# allows up to 64K output). The empty/truncation guards in batch_runner turn any
+# remaining overflow into a loud, retriable failure (never a silent drop).
+DEEPSEEK_MAX_TOKENS = 32768
 
 # Default model per backend
 DEFAULT_MODELS = {
