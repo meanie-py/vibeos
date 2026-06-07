@@ -170,7 +170,7 @@ extern "system" fn DxEngSetHdevData(hDev: HDEV, Type: DXEGSHDEVDATA, Data: DWORD
     let mut retVal: BOOLEAN = 0u8;
 
     if Type == DxEGShDevData_dd_locks {
-        unsafe { (*(hDev as PPDEVOBJ)).cDirectDrawDisableLocks = Data; }
+        unsafe { (*(hDev as PPDEVOBJ)).cDirectDrawDisableLocks = Data as u32; }  // C narrows DWORD_PTR->ULONG implicitly
         retVal = 1u8;
     }
     retVal
