@@ -30,6 +30,7 @@ extern crate rtl_strings;
 extern crate rtl_actctx;
 extern crate rtl_heap;
 extern crate rtl_threadpool;
+extern crate rtl_sync;
 extern crate rtl_version;
 extern crate rtl_ppb;
 extern crate rtl_propvar;

@@ -711,6 +711,7 @@ dependencies = [
  "rtl-propvar",
  "rtl-rangelist",
  "rtl-strings",
+ "rtl-sync",
  "rtl-threadpool",
  "rtl-version",
  "slist",
@@ -724,6 +725,13 @@ name = "rtl-strings"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+]
+
+[[package]]
+name = "rtl-sync"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

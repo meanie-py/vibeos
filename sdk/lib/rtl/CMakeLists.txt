@@ -38,7 +38,7 @@ list(APPEND SOURCE
     # bootdata.c — replaced by Rust implementation (sdk/lib/rust/rtl-bootdata/)
     # compress.c — replaced by Rust implementation (sdk/lib/rust/compress/)
     # crc32.c — replaced by Rust implementation (sdk/lib/rust/crc32/)
-    critical.c
+    # critical.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
     dbgbuffer.c
     debug.c
     # dos8dot3.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi)
@@ -87,7 +87,7 @@ list(APPEND SOURCE
     # unicodeprefix.c — replaced by Rust implementation (sdk/lib/rust/uniprefix/)
     vectoreh.c
     # version.c — replaced by Rust implementation (sdk/lib/rust/rtl-version/)
-    wait.c
+    # wait.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
     # workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
     rtl.h)
 
@@ -258,6 +258,11 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/workitem.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/timerqueue.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/shared.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/critical.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/src/wait.rs
+            ${RUST_WORKSPACE_DIR}/rtl-sync/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/src/lib.rs
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${RUST_WORKSPACE_DIR}/time/src/lib.rs
