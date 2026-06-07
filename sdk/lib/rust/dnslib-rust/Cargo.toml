@@ -1,0 +1,13 @@
+# dnslib-rust — Rust translation of sdk/lib/dnslib (DNS message/address helper lib
+# consumed by dnsapi.dll). DeepSeek mechanical translate, deepdrive-ground.
+[package]
+name = "dnslib-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "dnslib_rust"
+path = "src/lib.rs"
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }
