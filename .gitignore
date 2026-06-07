@@ -40,6 +40,12 @@ build-i386/
 qemu/*.img
 qemu/*.qcow2
 qemu/*.fd
+# ...but DO track the canonical UEFI firmware blobs so every worktree boots
+# without manual provisioning (OVMF32 = i386/amd64 UEFI; QEMU_EFI/efivars = arm64).
+!qemu/OVMF32_CODE.fd
+!qemu/OVMF32_VARS.fd
+!qemu/QEMU_EFI.fd
+!qemu/efivars.fd
 qemu/*.efi
 qemu/*.map
 qemu/*.png
