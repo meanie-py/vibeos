@@ -1,5 +1,6 @@
 use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
+use crate::types::*;
 
 // ---- file-scope type preamble (translated) ----
 pub type PSESSION = *mut core::ffi::c_void;

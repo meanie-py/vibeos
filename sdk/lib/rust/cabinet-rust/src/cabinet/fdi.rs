@@ -1,5 +1,6 @@
 use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
+use crate::types::*;
 
 // ---- file-scope type preamble (translated) ----
 type cab_UBYTE = u8;
@@ -96,6 +97,7 @@ pub struct fdi_cds_fwd {
 }
 
 pub static mut fdi_decomp_state: fdi_cds_fwd = unsafe { core::mem::zeroed() };
+pub type fdi_decomp_state = fdi_cds_fwd;
 
 pub const DECR_OK: i32 = 0;
 pub const DECR_DATAFORMAT: i32 = 1;
@@ -107,6 +109,8 @@ pub const DECR_OUTPUT: i32 = 6;
 pub const DECR_USERABORT: i32 = 7;
 
 // ---- consts / statics / type aliases (deduped) ----
+const SEEK_SET: i32 = 0;
+const SEEK_CUR: i32 = 1;
 const ERROR_INVALID_HANDLE: u32 = 6;
 const ERROR_BAD_ARGUMENTS: u32 = 160;
 const FDIERROR_NONE: i32 = 0;
@@ -350,7 +354,7 @@ pub unsafe extern "C" fn FDICreate(
     pfnclose: PFNCLOSE,
     pfnseek: PFNSEEK,
     cpuType: i32,
-    perf: *mut PERF,
+    perf: PERF,
 ) -> *mut FDI_Int {
     TRACE(
         b"(pfnalloc == ^%p, pfnfree == ^%p, pfnopen == ^%p, pfnread == ^%p, pfnwrite == ^%p, pfnclose == ^%p, pfnseek == ^%p, cpuType == %d, perf == ^%p)\n\0"

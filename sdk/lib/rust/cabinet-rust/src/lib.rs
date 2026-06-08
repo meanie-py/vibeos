@@ -9,6 +9,8 @@
 #![allow(dead_code, unused_assignments, unused_variables, unused_mut)]
 #![allow(unused_parens, unused_unsafe, unused_imports)]
 
+#[path = "cabinet/types.rs"]
+mod types;
 #[path = "cabinet/cabinet_main.rs"]
 mod cabinet_main;
 #[path = "cabinet/fci.rs"]

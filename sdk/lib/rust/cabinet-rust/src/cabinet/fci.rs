@@ -1,5 +1,6 @@
 use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
+use crate::types::*;
 
 // ---- file-scope type preamble (translated) ----
 type cab_UBYTE = u8;
@@ -167,6 +168,7 @@ type PFNFCISTATUS = unsafe extern "system" fn(
 ) -> i32;
 // Constants not provided in context
 const SEEK_SET: i32 = 0;
+const SEEK_CUR: i32 = 1;
 const statusFile: i32 = 0;
 const FCIERR_TEMP_FILE: i32 = 0x104;
 const cffileCONTINUED_FROM_PREV: u16 = 0xFFFD;
@@ -1437,7 +1439,7 @@ unsafe fn fci_flush_folder(
                 + 256 /* CB_MAX_DISK_NAME */)
             || fGetNextCab != 0)
     {
-        (*p_fci_internal).pccab.iCab += 1;
+        (*(*p_fci_internal).pccab).iCab += 1;
         (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
         if !(pfnfcignc.unwrap())(
             (*p_fci_internal).pccab,
@@ -1455,9 +1457,9 @@ unsafe fn fci_flush_folder(
             < read_result
                 + (*p_fci_internal).pending_data_size
                 + (*p_fci_internal).files_size
-                + strlen((*p_fci_internal).pccab.szCab.as_ptr()) as u32
+                + strlen((*(*p_fci_internal).pccab).szCab.as_ptr()) as u32
                 + 1
-                + strlen((*p_fci_internal).pccab.szDisk.as_ptr()) as u32
+                + strlen((*(*p_fci_internal).pccab).szDisk.as_ptr()) as u32
                 + 1)
             || fGetNextCab != 0)
     {
@@ -1467,9 +1469,9 @@ unsafe fn fci_flush_folder(
         if (*p_fci_internal).ccab.cb
             <= (*p_fci_internal).files_size
                 + read_result
-                + strlen((*p_fci_internal).pccab.szCab.as_ptr()) as u32
+                + strlen((*(*p_fci_internal).pccab).szCab.as_ptr()) as u32
                 + 1
-                + strlen((*p_fci_internal).pccab.szDisk.as_ptr()) as u32
+                + strlen((*(*p_fci_internal).pccab).szDisk.as_ptr()) as u32
                 + 1
         {
             return 0;
@@ -1796,9 +1798,9 @@ pub unsafe extern "C" fn FCIAddFile(
     if (*p_fci_internal).fGetNextCabInVain != 0
         && ((*p_fci_internal).ccab.cb
             < read_result
-                + strlen(((*p_fci_internal).pccab).szCab.as_ptr() as *const i8) as u32
+                + strlen((*(*p_fci_internal).pccab).szCab.as_ptr() as *const i8) as u32
                 + 1
-                + strlen(((*p_fci_internal).pccab).szDisk.as_ptr() as *const i8) as u32
+                + strlen((*(*p_fci_internal).pccab).szDisk.as_ptr() as *const i8) as u32
                 + 1)
     {
         (*p_fci_internal).fGetNextCabInVain = 0;
@@ -1877,9 +1879,9 @@ pub unsafe extern "C" fn FCIAddFile(
     if ((*p_fci_internal).fGetNextCabInVain != 0 || (*p_fci_internal).fNextCab != 0)
         && ((*p_fci_internal).ccab.cb
             < read_result
-                + strlen(((*p_fci_internal).pccab).szCab.as_ptr() as *const i8) as u32
+                + strlen((*(*p_fci_internal).pccab).szCab.as_ptr() as *const i8) as u32
                 + 1
-                + strlen(((*p_fci_internal).pccab).szDisk.as_ptr() as *const i8) as u32
+                + strlen((*(*p_fci_internal).pccab).szDisk.as_ptr() as *const i8) as u32
                 + 1)
     {
         (*p_fci_internal).fGetNextCabInVain = 0;

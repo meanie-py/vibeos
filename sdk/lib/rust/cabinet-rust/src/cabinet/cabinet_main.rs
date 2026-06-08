@@ -1,10 +1,9 @@
 use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
+use crate::types::*;
 
 // ---- consts / statics / type aliases (deduped) ----
 const E_INVALIDARG: i32 = 0x80070057u32 as i32;
-const EXTRACT_FILLFILELIST: u32 = 0x00000001;
-const EXTRACT_EXTRACTFILES: u32 = 0x00000002;
 const EXTRACT_FILLFILELIST: u32 = 0x00000001;
 const EXTRACT_EXTRACTFILES: u32 = 0x00000002;
 const S_OK: i32 = 0;
