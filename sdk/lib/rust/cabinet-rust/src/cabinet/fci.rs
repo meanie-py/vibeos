@@ -519,8 +519,8 @@ unsafe fn add_folder(fci: *mut FCI_Int) -> *mut folder {
     list_init(core::ptr::addr_of_mut!((*folder).files_list));
     list_init(core::ptr::addr_of_mut!((*folder).blocks_list));
     list_add_tail(
-        core::ptr::addr_of_mut!((*fci).folders_list),
-        core::ptr::addr_of_mut!((*folder).entry),
+        core::ptr::addr_of_mut!((*fci).folders_list) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!((*folder).entry) as *mut core::ffi::c_void,
     );
 
     (*fci).folders_size = (*fci).folders_size.wrapping_add(
@@ -555,7 +555,7 @@ unsafe fn write_folders(
 
         let mut err: i32 = 0;
         let written = ((*fci).write)(
-            handle,
+            handle as isize,
             cffolder as *const core::ffi::c_void,
             folder_size as u32,
             &mut err as *mut i32,
@@ -601,14 +601,14 @@ unsafe fn write_files(
             let file_size = core::mem::size_of::<CFFILE>() as u32 + name_len + 1;
             let mut err: i32 = 0;
             let bytes_written = ((*fci).write)(
-                handle,
+                handle as isize,
                 cffile as *mut core::ffi::c_void,
                 file_size,
                 &raw mut err,
                 (*fci).pv,
             );
             if bytes_written as u32 != file_size {
-                set_error(fci, FCIERR_CAB_FILE, err);
+                set_error(fci, FCIERR_CAB_FILE as i32, err);
                 return 0;
             }
             if (*fci).fSplitFolder == 0 {
@@ -618,7 +618,7 @@ unsafe fn write_files(
             }
             (*fci).statusFolderCopied += file_size;
             let cb_status = (status_callback)(
-                statusFolder,
+                statusFolder as i32,
                 (*fci).statusFolderCopied,
                 (*fci).statusFolderTotal,
                 (*fci).pv,
@@ -672,8 +672,8 @@ unsafe fn write_data_blocks(
         let folder = (current as *const u8).sub(core::mem::offset_of!(folder, entry)) as *mut folder;
 
         // Seek in folder's temp data file
-        if ((*fci).seek)((*folder).data.handle, 0, SEEK_SET, core::ptr::addr_of_mut!((*fci).pv), (*fci).pv) != 0 {
-            set_error(fci, FCIERR_CAB_FILE, (*fci).pv); // FCIERR_CAB_FILE usage; assume value exists
+        if ((*fci).seek)((*folder).data.handle as isize, 0, SEEK_SET, core::ptr::addr_of_mut!((*fci).pv), (*fci).pv) != 0 {
+            set_error(fci, FCIERR_CAB_FILE as i32, (*fci).pv as i32); // FCIERR_CAB_FILE usage; assume value exists
             return 0;
         }
 
@@ -683,7 +683,7 @@ unsafe fn write_data_blocks(
             let block = (inner_current as *const u8).sub(core::mem::offset_of!(data_block, entry)) as *mut data_block;
 
             let len: i32 = ((*fci).read)(
-                (*folder).data.handle,
+                (*folder).data.handle as isize,
                 data,
                 (*block).compressed,
                 core::ptr::addr_of_mut!((*fci).pv),
@@ -706,7 +706,7 @@ unsafe fn write_data_blocks(
             (*fci).statusFolderCopied += len as u32;
             let len_plus_header = len + header_size as i32;
             if ((*fci).write)(
-                handle,
+                handle as isize,
                 (*fci).data_out.as_ptr() as *mut core::ffi::c_void,
                 len_plus_header,
                 core::ptr::addr_of_mut!((*fci).pv),
