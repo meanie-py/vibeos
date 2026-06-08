@@ -618,7 +618,7 @@ unsafe fn write_files(
             }
             (*fci).statusFolderCopied += file_size;
             let cb_status = (status_callback)(
-                statusFolder as i32,
+                statusFolder,
                 (*fci).statusFolderCopied,
                 (*fci).statusFolderTotal,
                 (*fci).pv,
