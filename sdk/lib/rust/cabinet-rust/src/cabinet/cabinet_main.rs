@@ -214,7 +214,7 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
         // callback functions used by FDICreate
         fn mem_alloc(cb: u32) -> *mut core::ffi::c_void;
         fn mem_free(memory: *mut core::ffi::c_void);
-        fn fdi_open(pszFile: *const i8, oflag: i32, pmode: i32) -> *mut core::ffi::c_void;
+        fn fdi_open(pszFile: *mut i8, oflag: i32, pmode: i32) -> isize;
         fn fdi_read(hf: *mut core::ffi::c_void, pv: *mut u8, cb: u32) -> u32;
         fn fdi_write(hf: *mut core::ffi::c_void, pv: *const u8, cb: u32) -> u32;
         fn fdi_close(hf: *mut core::ffi::c_void) -> i32;
@@ -388,7 +388,7 @@ unsafe extern "C" fn fdi_notify_extract(
                 if GetFileAttributesA(szDirectory) == INVALID_FILE_ATTRIBUTES {
                     let ptr: *mut i8;
                     ptr = szDirectory
-                        .wrapping_add(strlen((*pDestination).Destination) + 1);
+                        .wrapping_add(strlen((*pDestination).Destination.as_ptr()) + 1);
                     while *ptr != 0 {
                         if *ptr as u8 == b'\\' {
                             *ptr = 0;
