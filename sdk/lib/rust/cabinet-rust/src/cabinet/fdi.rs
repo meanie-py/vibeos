@@ -1187,58 +1187,58 @@ unsafe fn QTMfdi_init(window: i32, level: i32, decomp_state: *mut fdi_decomp_sta
     /* initialize arithmetic coding models */
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model7),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m7sym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m7sym) as *mut QTMmodelsym,
         7,
         0,
     );
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model00),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m00sym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m00sym) as *mut QTMmodelsym,
         0x40,
         0x00,
     );
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model40),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m40sym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m40sym) as *mut QTMmodelsym,
         0x40,
         0x40,
     );
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model80),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m80sym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m80sym) as *mut QTMmodelsym,
         0x40,
         0x80,
     );
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.modelC0),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.mC0sym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.mC0sym) as *mut QTMmodelsym,
         0x40,
         0xC0,
     );
     /* model 4 depends on table size, ranges from 20 to 24 */
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model4),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m4sym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m4sym) as *mut QTMmodelsym,
         if msz < 24 { msz } else { 24 },
         0,
     );
     /* model 5 depends on table size, ranges from 20 to 36 */
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model5),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m5sym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m5sym) as *mut QTMmodelsym,
         if msz < 36 { msz } else { 36 },
         0,
     );
     /* model 6pos depends on table size, ranges from 20 to 42 */
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model6pos),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m6psym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m6psym) as *mut QTMmodelsym,
         msz,
         0,
     );
     QTMfdi_initmodel(
         core::ptr::addr_of_mut!((*decomp_state).methods.qtm.model6len),
-        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m6lsym),
+        core::ptr::addr_of_mut!((*decomp_state).methods.qtm.m6lsym) as *mut QTMmodelsym,
         27,
         0,
     );
