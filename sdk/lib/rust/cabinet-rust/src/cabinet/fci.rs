@@ -1177,12 +1177,12 @@ unsafe fn add_data_to_folder(
                     + (core::mem::size_of::<CFFOLDER>() as cab_ULONG)
                     + (*fci).ccab.cbReserveCFFolder)
         {
-            (*new).compressed = (*fci).ccab.cb
+            (*new).compressed = ((*fci).ccab.cb
                 - (core::mem::size_of::<CFDATA>() as cab_ULONG
                     + (*fci).ccab.cbReserveCFData
                     + current_size
                     + (core::mem::size_of::<CFFOLDER>() as cab_ULONG)
-                    + (*fci).ccab.cbReserveCFFolder);
+                    + (*fci).ccab.cbReserveCFFolder)) as u16;
             (*new).uncompressed = 0;
             (*block).compressed -= (*new).compressed;
             split_block = 1;
@@ -1191,15 +1191,15 @@ unsafe fn add_data_to_folder(
             (*new).uncompressed = (*block).uncompressed;
         }
 
-        start_pos += (*new).compressed;
+        start_pos += (*new).compressed as u32;
         current_size += (core::mem::size_of::<CFDATA>() as cab_ULONG)
             + (*fci).ccab.cbReserveCFData
-            + (*new).compressed;
+            + (*new).compressed as u32;
         (*fci).folders_data_size += (core::mem::size_of::<CFDATA>() as cab_ULONG)
             + (*fci).ccab.cbReserveCFData
-            + (*new).compressed;
-        (*fci).statusFolderCopied += (*new).compressed;
-        *payload += (*new).uncompressed;
+            + (*new).compressed as u32;
+        (*fci).statusFolderCopied += (*new).compressed as u32;
+        *payload += (*new).uncompressed as u32;
 
         list_add_tail(
             core::ptr::addr_of_mut!((*folder).blocks_list) as *mut core::ffi::c_void,
