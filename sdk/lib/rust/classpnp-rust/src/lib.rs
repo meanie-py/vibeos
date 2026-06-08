@@ -1,0 +1,20 @@
+//! classpnp-rust — drivers/storage/class/classpnp → Rust (DeepSeek+deepdrive).
+#![cfg_attr(not(test), no_std)]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
+
+pub mod autorun;
+pub mod class;
+pub mod classwmi;
+pub mod clntirp;
+pub mod create;
+pub mod debug;
+pub mod dictlib;
+pub mod dispatch;
+pub mod history;
+pub mod lock;
+pub mod obsolete;
+pub mod power;
+pub mod retry;
+pub mod srblib;
+pub mod utils;
+pub mod xferpkt;

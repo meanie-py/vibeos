@@ -107,6 +107,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "classpnp-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "cmboot-rust"
 version = "0.1.0"
 dependencies = [
@@ -253,6 +260,10 @@ dependencies = [
 
 [[package]]
 name = "handle"
+version = "0.1.0"
+
+[[package]]
+name = "hidparse-rust"
 version = "0.1.0"
 
 [[package]]
@@ -947,6 +958,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "usbdex-rust"
+version = "0.1.0"
+
+[[package]]
 name = "userinit-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1066,3 +1081,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
 ]
+
+[[package]]
+name = "wmilib-rust"
+version = "0.1.0"
