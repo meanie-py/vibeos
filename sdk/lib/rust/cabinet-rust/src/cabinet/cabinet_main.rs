@@ -5,6 +5,8 @@ use core::ffi::{c_void, c_char};
 const E_INVALIDARG: i32 = 0x80070057u32 as i32;
 const EXTRACT_FILLFILELIST: u32 = 0x00000001;
 const EXTRACT_EXTRACTFILES: u32 = 0x00000002;
+const EXTRACT_FILLFILELIST: u32 = 0x00000001;
+const EXTRACT_EXTRACTFILES: u32 = 0x00000002;
 const S_OK: i32 = 0;
 const _O_RDONLY: i32 = 0;
 const _O_WRONLY: i32 = 1;

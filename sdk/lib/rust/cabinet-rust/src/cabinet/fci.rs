@@ -3,6 +3,8 @@ use core::ffi::{c_void, c_char};
 
 // ---- file-scope type preamble (translated) ----
 type cab_UBYTE = u8;
+const CAB_BLOCKMAX: u32 = 32768;
+const CAB_INPUTMAX: u32 = 32768 + 6144;
 type cab_UWORD = u16;
 type cab_ULONG = u32;
 type cab_LONG = i32;
