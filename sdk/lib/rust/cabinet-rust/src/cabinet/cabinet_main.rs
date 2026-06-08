@@ -187,13 +187,13 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
         fn FDICreate(
             pfnalloc: unsafe extern "C" fn(u32) -> *mut core::ffi::c_void,
             pfnfree: unsafe extern "C" fn(*mut core::ffi::c_void),
-            pfnopen: unsafe extern "C" fn(*const i8, i32) -> *mut core::ffi::c_void,
+            pfnopen: unsafe extern "C" fn(*mut i8, i32, i32) -> isize,
             pfnread: unsafe extern "C" fn(*mut core::ffi::c_void, *mut u8, u32) -> u32,
             pfnwrite: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, u32) -> u32,
             pfnclose: unsafe extern "C" fn(*mut core::ffi::c_void) -> i32,
             pfnseek: unsafe extern "C" fn(*mut core::ffi::c_void, i32, i32) -> i32,
             cpuType: u32,
-            perf: *mut i32,
+            perf: *mut ERF,
         ) -> *mut core::ffi::c_void;
         fn FDICopy(
             hfdi: *mut core::ffi::c_void,
@@ -352,11 +352,11 @@ unsafe extern "C" fn fdi_notify_extract(
                 (*fileList).DoExtract = 1;
                 (*fileList).next = (*pDestination).FileList;
                 (*pDestination).FileList = fileList;
-                lstrcpyA((*pDestination).CurrentFile, szFullPath);
+                lstrcpyA((*pDestination).CurrentFile.as_mut_ptr(), szFullPath);
                 (*pDestination).FileCount += 1;
             }
 
-            if ((*pDestination).Operation & EXTRACT_EXTRACTFILES) != 0
+            if ((*pDestination).Operation & EXTRACT_EXTRACTFILES as i32) != 0
                 || file_in_list(
                     (*pDestination).FilterList,
                     (*pfdin).psz1,
