@@ -1347,7 +1347,7 @@ pub unsafe extern "system" fn RtlpDphIsPageHeapBlock(
     let Start: PUCHAR;
     let End: PUCHAR;
 
-    *ValidationInformation = 0;
+    core::ptr::write_volatile(ValidationInformation, 0);
 
     BlockInfo = (Block as PDPH_BLOCK_INFORMATION).offset(-1);
 
@@ -1358,7 +1358,7 @@ pub unsafe extern "system" fn RtlpDphIsPageHeapBlock(
 
         /* Check if it has an alloc/free mismatch */
         if (*BlockInfo).StartStamp == DPH_FILL_START_STAMP_2 {
-            *ValidationInformation = 0x101;
+            core::ptr::write_volatile(ValidationInformation, 0x101);
         }
     }
 
@@ -1396,7 +1396,7 @@ pub unsafe extern "system" fn RtlpDphIsNormalFreeHeapBlock(
     ValidationInformation: PULONG,
     CheckFillers: BOOLEAN,
 ) -> BOOLEAN {
-    *ValidationInformation = 0;
+    core::ptr::write_volatile(ValidationInformation, 0);
     1u8
 }
 
@@ -2132,10 +2132,10 @@ pub unsafe extern "system" fn RtlpPageHeapGetUserInfo(
     }
 
     if !UserValue.is_null() {
-        *UserValue = (*Node).UserValue;
+        core::ptr::write_volatile(UserValue, (*Node).UserValue);
     }
     if !UserFlags.is_null() {
-        *UserFlags = (*Node).UserFlags;
+        core::ptr::write_volatile(UserFlags, (*Node).UserFlags);
     }
 
     RtlpDphPostProcessing(DphRoot);
