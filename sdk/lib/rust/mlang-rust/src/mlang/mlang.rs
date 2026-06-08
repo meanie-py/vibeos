@@ -1940,7 +1940,7 @@ unsafe extern "C" fn sjis2jis(p1: *mut u8, p2: *mut u8) {
 unsafe extern "C" fn han2zen(p1: *mut u8, p2: *mut u8) -> i32 {
     let mut maru: i32 = 0;
     let mut nigori: i32 = 0;
-    const CHAR1: [u8; 63] = [
+    const CHAR1: [u8; 62] = [
         129, 129, 129, 129, 129, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 129, 131, 131,
         131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131,
         131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131, 131,
@@ -2230,7 +2230,7 @@ unsafe extern "C" fn release_font(font: HFONT) -> HRESULT {
     }
 
     // Constants
-    const E_FAIL: HRESULT = 0x80004005;
+    const E_FAIL: HRESULT = 0x80004005u32 as i32;
     const S_OK: HRESULT = 0;
 
     let mut hr: HRESULT = E_FAIL;
@@ -2401,7 +2401,7 @@ unsafe extern "C" fn EnumScript_create(
     LangId: LANGID,
     ppEnumScript: *mut *mut IEnumScript,
 ) -> HRESULT {
-    TRACE!("%p, %08x, %04x, %p\n\0".as_ptr() as *const i8, mlang, dwFlags, LangId, ppEnumScript);
+    TRACE("%p, %08x, %04x, %p\n\0".as_ptr() as *const i8, mlang, dwFlags, LangId as u32, ppEnumScript);
 
     if dwFlags == 0 {
         dwFlags = SCRIPTCONTF_SCRIPT_USER | SCRIPTCONTF_SCRIPT_HIDE | SCRIPTCONTF_SCRIPT_SYSTEM;
@@ -2454,7 +2454,7 @@ unsafe extern "C" fn EnumScript_create(
         );
     }
 
-    TRACE!("enumerated %d scripts with flags %08x\n\0".as_ptr() as *const i8, (*es_ptr).total, dwFlags);
+    TRACE("enumerated %d scripts with flags %08x\n\0".as_ptr() as *const i8, (*es_ptr).total, dwFlags);
 
     *ppEnumScript = core::ptr::addr_of_mut!((*es_ptr).IEnumScript_iface) as *mut IEnumScript;
 
@@ -2767,7 +2767,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontUnicodeRanges(
 unsafe extern "C" fn fnIMLangFontLink2_GetScriptFontInfo(
     This: *mut IMLangFontLink2,
     sid: SCRIPT_ID,
-    dwFlags: DWORD,
+    mut dwFlags: DWORD,
     puiFonts: *mut UINT,
     pScriptFont: *mut SCRIPTFONTINFO,
 ) -> HRESULT {
@@ -5098,7 +5098,7 @@ unsafe extern "C" fn fnIMLangLineBreakConsole_QueryInterface(
     let This = impl_from_IMLangLineBreakConsole(iface);
     return IMultiLanguage3_QueryInterface(
         core::ptr::addr_of_mut!((*This).IMultiLanguage3_iface),
-        riid,
+        riid as *const GUID,
         ppvObject,
     );
 }
@@ -5535,10 +5535,10 @@ pub unsafe extern "C" fn ConvertINetUnicodeToMultiByte(
         } else if dwEncoding == 50220 || dwEncoding == 50221 || dwEncoding == 50222 {
             size = ConvertJapaneseUnicodeToJIS(
                 pSrcStr,
-                *pcSrcSize_actual,
+                *pcSrcSize_actual as u32,
                 core::ptr::null_mut(),
                 0,
-            );
+            ) as i32;
             if size == 0 {
                 *pcSrcSize_actual = 0;
                 *pcDstSize = 0;
@@ -5549,10 +5549,10 @@ pub unsafe extern "C" fn ConvertINetUnicodeToMultiByte(
             if !pDstStr.is_null() {
                 size = ConvertJapaneseUnicodeToJIS(
                     pSrcStr,
-                    *pcSrcSize_actual,
-                    pDstStr,
-                    destsz,
-                );
+                    *pcSrcSize_actual as u32,
+                    pDstStr as *mut i8,
+                    destsz as u32,
+                ) as i32;
                 if size == 0 {
                     *pcSrcSize_actual = 0;
                     *pcDstSize = 0;
@@ -5584,7 +5584,7 @@ pub unsafe extern "C" fn ConvertINetUnicodeToMultiByte(
                     0,
                     pSrcStr,
                     *pcSrcSize_actual,
-                    pDstStr,
+                    pDstStr as *mut i8,
                     destsz,
                     core::ptr::null(),
                     core::ptr::null_mut(),
