@@ -1800,3 +1800,272 @@ unsafe fn ZIPfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_s
     return 0; /* DECR_OK */
 }
 
+// ---- spliced: fdi_Ziphuft_build (dropped during reassembly) ----
+unsafe fn fdi_Ziphuft_build(
+    b: *mut u32,
+    n: u32,
+    s: u32,
+    d: *const u16,
+    e: *const u16,
+    t: *mut *mut Ziphuft,
+    m: *mut i32,
+    decomp_state: *mut fdi_decomp_state,
+) -> i32 {
+    let mut a: u32;
+    let mut el: u32;
+    let mut f: u32;
+    let mut g: i32;
+    let mut h: i32;
+    let mut i: u32;
+    let mut j: u32;
+    let mut k: i32;
+    let mut l: *mut i32;
+    let mut p: *mut u32;
+    let mut q: *mut Ziphuft;
+    let mut r: Ziphuft;
+    let mut w: i32;
+    let mut xp: *mut u32;
+    let mut y: i32;
+    let mut z: u32;
+
+    l = core::ptr::addr_of_mut!((*decomp_state).methods.zip.lx) as *mut i32;
+    l = l.add(1);
+
+    /* Generate counts for each bit length */
+    el = if n > 256 { *b.add(256) } else { ZIPBMAX };
+
+    for i in 0..(ZIPBMAX + 1) {
+        (*decomp_state).methods.zip.c[i as usize] = 0;
+    }
+    p = b;
+    i = n;
+    loop {
+        let idx = *p;
+        (*decomp_state).methods.zip.c[idx as usize] += 1;
+        p = p.add(1);
+        i -= 1;
+        if i == 0 {
+            break;
+        }
+    }
+    if (*decomp_state).methods.zip.c[0] == n {
+        *t = core::ptr::null_mut();
+        *m = 0;
+        return 0;
+    }
+
+    /* Find minimum and maximum length, bound *m by those */
+    j = 1;
+    while j <= ZIPBMAX {
+        if (*decomp_state).methods.zip.c[j as usize] != 0 {
+            break;
+        }
+        j += 1;
+    }
+    k = j as i32; /* minimum code length */
+    if (*m as u32) < j {
+        *m = j as i32;
+    }
+    i = ZIPBMAX;
+    while i != 0 {
+        if (*decomp_state).methods.zip.c[i as usize] != 0 {
+            break;
+        }
+        i -= 1;
+    }
+    g = i as i32; /* maximum code length */
+    if (*m as u32) > i {
+        *m = i as i32;
+    }
+
+    /* Adjust last length count to fill out codes, if needed */
+    y = (1i32 << j) as i32;
+    let max_len: u32 = i;
+    let mut j_adj: u32 = j;
+    while j_adj < max_len {
+        y -= (*decomp_state).methods.zip.c[j_adj as usize] as i32;
+        if y < 0 {
+            return 2;
+        }
+        j_adj += 1;
+        y <<= 1;
+    }
+    y -= (*decomp_state).methods.zip.c[max_len as usize] as i32;
+    if y < 0 {
+        return 2;
+    }
+    (*decomp_state).methods.zip.c[max_len as usize] += y as u32;
+
+    /* Generate starting offsets LONGo the value table for each length */
+    (*decomp_state).methods.zip.x[1] = {
+        j = 0;
+        j
+    };
+    p = core::ptr::addr_of_mut!((*decomp_state).methods.zip.c[0]).add(1);
+    xp = core::ptr::addr_of_mut!((*decomp_state).methods.zip.x[0]).add(2);
+    i = max_len;
+    loop {
+        i -= 1;
+        if i == 0 {
+            break;
+        }
+        *xp = {
+            j += *p;
+            j
+        };
+        xp = xp.add(1);
+        p = p.add(1);
+    }
+
+    /* Make a table of values in order of bit lengths */
+    p = b;
+    i = 0;
+    loop {
+        j = *p;
+        p = p.add(1);
+        if j != 0 {
+            let x_idx = j as usize;
+            let v_idx = (*decomp_state).methods.zip.x[x_idx];
+            (*decomp_state).methods.zip.v[v_idx as usize] = i;
+            (*decomp_state).methods.zip.x[x_idx] = v_idx + 1;
+        }
+        i += 1;
+        if i >= n {
+            break;
+        }
+    }
+
+    /* Generate the Huffman codes and for each, make the table entries */
+    (*decomp_state).methods.zip.x[0] = {
+        i = 0;
+        i
+    };
+    p = core::ptr::addr_of_mut!((*decomp_state).methods.zip.v[0]);
+    h = -1;
+    w = {
+        l.sub(1).write(0);
+        0
+    };
+    // No bits decoded yet
+    (*decomp_state).methods.zip.u[0] = core::ptr::null_mut();
+    q = core::ptr::null_mut();
+    z = 0;
+
+    /* go through the bit lengths (k already is bits in shortest code) */
+    for k_val in k..=g {
+        a = (*decomp_state).methods.zip.c[k_val as usize];
+        while a > 0 {
+            a -= 1;
+
+            /* here i is the Huffman code of length k_val bits for value *p */
+            /* make tables up to required level */
+            while k_val as i32 > w + *l.offset(h as isize) {
+                w += *l.offset(h as isize);
+                h += 1; /* add bits already decoded */
+
+                /* compute minimum size table less than or equal to *m bits */
+                z = g as u32 - w as u32;
+                if z > (*m as u32) {
+                    z = (*m as u32);
+                }
+                j = (k_val as i32 - w) as u32;
+                f = 1u32 << j;
+                if f > a + 1 {
+                    /* too few codes for k-w bit table */
+                    f -= a + 1;           /* deduct codes from patterns left */
+                    xp = (*decomp_state).methods.zip.c.as_mut_ptr().add(k_val as usize);
+                    loop {
+                        j += 1;
+                        if j >= z {
+                            break;
+                        }
+                        f <<= 1;
+                        xp = xp.add(1);
+                        if f <= *xp {
+                            break;      /* enough codes to use up j bits */
+                        }
+                        f -= *xp;       /* else deduct codes from patterns */
+                    }
+                }
+                if (w as u32 + j) > el && (w as u32) < el {
+                    j = el - w as u32;   /* make EOB code end at table */
+                }
+                z = 1u32 << j;           /* table entries for j-bit table */
+                *(l.add(h as usize)) = j as i32; /* set table size in stack */
+
+                /* allocate and link in new table */
+                let alloc_size = (z + 1) as usize * core::mem::size_of::<Ziphuft>();
+                let alloc_ptr = ((*(*decomp_state).fdi).alloc)(alloc_size as u32);
+                if alloc_ptr.is_null() {
+                    if h != 0 {
+                        fdi_Ziphuft_free((*decomp_state).fdi, (*decomp_state).methods.zip.u[0]);
+                    }
+                    return 3;             /* not enough memory */
+                }
+                q = alloc_ptr as *mut Ziphuft;
+                *t = q.add(1);           /* link to list for Ziphuft_free() */
+                t = core::ptr::addr_of_mut!((*q).v.t);
+                *t = core::ptr::null_mut();
+                q = q.add(1);
+                (*decomp_state).methods.zip.u[h as usize] = q; /* table starts after link */
+
+                /* connect to last table, if there is one */
+                if h != 0 {
+                    (*decomp_state).methods.zip.x[h as usize] = i;
+                    r.b = (*l.add(h as usize - 1)) as u8;    /* bits to dump before this table */
+                    r.e = (16 + j) as u8;                    /* bits in this table */
+                    r.v.t = q;                               /* pointer to this table */
+                    let tmp_w = w as u32;
+                    j = (i & ((1u32 << tmp_w) - 1)) >> (tmp_w - (*l.add(h as usize - 1) as u32));
+                    let tbl_ptr = (*decomp_state).methods.zip.u[h as usize - 1];
+                    if !tbl_ptr.is_null() {
+                        *tbl_ptr.add(j as usize) = r;        /* connect to last table */
+                    }
+                }
+            }
+
+            /* set up table entry in r */
+            r.b = (k_val as i32 - w) as u8;
+            let v_start = core::ptr::addr_of!((*decomp_state).methods.zip.v[0]) as *mut u32;
+            if p >= v_start.add(n as usize) {
+                r.e = 99;               /* out of values--invalid code */
+            } else if *p < s {
+                r.e = if *p < 256 { 16 } else { 15 };
+                r.v.n = *p;
+                p = p.add(1);
+            } else {
+                let idx = (*p - s) as usize;
+                r.e = *e.add(idx) as u8;   /* non-simple--look up in lists */
+                r.v.n = *d.add(idx);
+                p = p.add(1);
+            }
+
+            /* fill code-like entries with r */
+            f = 1u32 << (k_val as i32 - w);
+            j = i >> w;
+            while j < z {
+                *q.add(j as usize) = r;
+                j += f;
+            }
+
+            /* backwards increment the k-bit code i */
+            let mut mask: u32 = 1 << (k_val as i32 - 1);
+            while (i & mask) != 0 {
+                i ^= mask;
+                mask >>= 1;
+            }
+            i ^= mask;
+
+            /* backup over finished tables */
+            while (i & ((1 << w) - 1)) != (*decomp_state).methods.zip.x[h as usize] {
+                h -= 1;
+                w -= *l.add(h as usize);
+            }
+        }
+    }
+
+    /* return actual size of base table */
+    *m = *l;
+    return if y != 0 && g != 1 { 1 } else { 0 };
+}
+
