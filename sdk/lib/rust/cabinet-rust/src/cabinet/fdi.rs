@@ -1420,8 +1420,8 @@ unsafe fn FDI_read_entries(
     }
 
     (*pfdici).cbCabinet = cabsize;
-    (*(*pfdici).cFolders = num_folders as u16;
-    (*(*pfdici).cFiles = num_files as u16;
+    (*pfdici).cFolders = num_folders as u16;
+    (*pfdici).cFiles = num_files as u16;
     (*pfdici).setID = setid;
     (*pfdici).iCabinet = cabidx;
     (*pfdici).fReserve = if (flags & cfheadRESERVE_PRESENT as u16) != 0 { 1 } else { 0 };
