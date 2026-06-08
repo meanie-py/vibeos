@@ -256,6 +256,22 @@ name = "handle"
 version = "0.1.0"
 
 [[package]]
+name = "hid-sys"
+version = "0.1.0"
+
+[[package]]
+name = "hidparse-rust"
+version = "0.1.0"
+
+[[package]]
+name = "hidparser-rust"
+version = "0.1.0"
+dependencies = [
+ "hid-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "i8042prt-cargo"
 version = "0.1.0"
 dependencies = [
@@ -871,6 +887,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "swenum-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "thread_local"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -945,6 +968,22 @@ version = "0.1.0"
 dependencies = [
  "splaytree",
 ]
+
+[[package]]
+name = "usb-sys"
+version = "0.1.0"
+
+[[package]]
+name = "usbd-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "usb-sys",
+]
+
+[[package]]
+name = "usbdex-rust"
+version = "0.1.0"
 
 [[package]]
 name = "userinit-cargo"
@@ -1066,3 +1105,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
 ]
+
+[[package]]
+name = "wmilib-rust"
+version = "0.1.0"

@@ -1,0 +1,18 @@
+# usbd-rust — Rust translation of drivers/usb/usbd/usbd.c (the USBD library
+# driver, usbd.sys — an export driver: USBD_* descriptor parsers, bandwidth
+# math, registry helpers). crate-type=staticlib → libusbd_rust.a, linked into
+# the cmake-built usbd.sys with usbd.c commented out; the usbd.spec exports
+# come from the Rust #[no_mangle] symbols. Depends on ntkrnl-sys. Built for all
+# 3 arches. DeepSeek+c2rust translation (Batch 2). C kept on disk (never-delete).
+
+[package]
+name = "usbd-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+usb-sys = { path = "../usb-sys" }

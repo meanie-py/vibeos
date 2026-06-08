@@ -1,0 +1,20 @@
+# swenum-rust — Rust translation of drivers/ksfilter/swenum/swenum.c (the KS
+# software bus enumerator driver, swenum.sys). crate-type=staticlib →
+# libswenum_rust.a, linked into the cmake-built swenum.sys with swenum.c
+# commented out (i8042prt-rust style cohabitation). Standalone kernel-mode
+# driver depending on ntkrnl-sys; the Ks* bus-enum entry points are kernel-
+# streaming (ks.sys) imports declared in-module. Built for all 3 arches.
+#
+# DeepSeek+c2rust translation (Batch 2 of the driver residue). C kept on disk
+# per the never-delete rule.
+
+[package]
+name = "swenum-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
