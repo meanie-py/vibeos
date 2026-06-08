@@ -586,14 +586,14 @@ unsafe fn fdi_Zipinflate_codes(tl: *const Ziphuft, td: *const Ziphuft, bl: i32, 
             k += 8;
         }
         t = tl.add((b & ml) as usize);
-        e = (*t).e;
+        e = (*t).e as u32;
         if e > 16 {
             loop {
                 if e == 99 {
                     return 1;
                 }
-                b >>= (*t).b;
-                k -= (*t).b;
+                b >>= (*t).b as u32;
+                k -= (*t).b as u32;
                 e -= 16;
                 while k < e {
                     let c = core::ptr::read((*decomp_state).methods.zip.inpos);
@@ -603,14 +603,14 @@ unsafe fn fdi_Zipinflate_codes(tl: *const Ziphuft, td: *const Ziphuft, bl: i32, 
                 }
                 t = (*t).v.t;
                 t = t.add((b & Zipmask[e as usize]) as usize);
-                e = (*t).e;
+                e = (*t).e as u32;
                 if e <= 16 {
                     break;
                 }
             }
         }
-        b >>= (*t).b;
-        k -= (*t).b;
+        b >>= (*t).b as u32;
+        k -= (*t).b as u32;
 
         if e == 16 {
             (*decomp_state).outbuf[w as usize] = (*t).v.n as u8;
@@ -628,7 +628,7 @@ unsafe fn fdi_Zipinflate_codes(tl: *const Ziphuft, td: *const Ziphuft, bl: i32, 
                 b |= (c as u32) << k;
                 k += 8;
             }
-            n = (*t).v.n + (b & Zipmask[e as usize]);
+            n = (*t).v.n as u32 + (b & Zipmask[e as usize]);
             b >>= e;
             k -= e;
 
@@ -640,14 +640,14 @@ unsafe fn fdi_Zipinflate_codes(tl: *const Ziphuft, td: *const Ziphuft, bl: i32, 
                 k += 8;
             }
             t = td.add((b & md) as usize);
-            e = (*t).e;
+            e = (*t).e as u32;
             if e > 16 {
                 loop {
                     if e == 99 {
                         return 1;
                     }
-                    b >>= (*t).b;
-                    k -= (*t).b;
+                    b >>= (*t).b as u32;
+                    k -= (*t).b as u32;
                     e -= 16;
                     while k < e {
                         let c = core::ptr::read((*decomp_state).methods.zip.inpos);
@@ -657,21 +657,21 @@ unsafe fn fdi_Zipinflate_codes(tl: *const Ziphuft, td: *const Ziphuft, bl: i32, 
                     }
                     t = (*t).v.t;
                     t = t.add((b & Zipmask[e as usize]) as usize);
-                    e = (*t).e;
+                    e = (*t).e as u32;
                     if e <= 16 {
                         break;
                     }
                 }
             }
-            b >>= (*t).b;
-            k -= (*t).b;
+            b >>= (*t).b as u32;
+            k -= (*t).b as u32;
             while k < e {
                 let c = core::ptr::read((*decomp_state).methods.zip.inpos);
                 (*decomp_state).methods.zip.inpos = (*decomp_state).methods.zip.inpos.add(1);
                 b |= (c as u32) << k;
                 k += 8;
             }
-            d = w - (*t).v.n - (b & Zipmask[e as usize]);
+            d = w - (*t).v.n as u32 - (b & Zipmask[e as usize]);
             b >>= e;
             k -= e;
 
