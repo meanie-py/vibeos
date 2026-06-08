@@ -2879,7 +2879,6 @@ unsafe extern "C" fn fnIMLangLineBreakConsole_BreakLineW(
     pcchSkip: *mut i32,
 ) -> i32 {
     extern "system" {
-        fn FIXME(format: *const i8, ...);
         fn debugstr_wn(pszSrc: *const u16, cchSrc: i32) -> *const i8;
     }
 
@@ -3448,8 +3447,6 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
         const MAX_RFC1766_NAME: usize = 65;
 
         extern "system" {
-            fn TRACE(format: *const i8, ...);
-            fn FIXME(format: *const i8, ...);
             fn GetLocaleInfoW(Locale: LCID, LCType: LCTYPE, lpLCData: LPWSTR, cchData: i32) -> i32;
         }
 
@@ -4996,7 +4993,6 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
     codepage: *mut u32,
 ) -> i32 {
     extern "system" {
-        fn TRACE(format: *const i8, ...);
         fn TranslateCharsetInfo(arg1: *const u32, arg2: *mut CHARSETINFO, arg3: u32) -> i32;
     }
     const TCI_SRCCODEPAGE: u32 = 0x00000001;
@@ -5171,10 +5167,6 @@ unsafe extern "C" fn MLangConvertCharset_Initialize(
     dst_cp: u32,
     prop: u32,
 ) -> HRESULT {
-    extern "system" {
-        fn TRACE(format: *const i8, ...);
-        fn FIXME(format: *const i8, ...);
-    }
     const MLCONVCHARF_USEDEFCHAR: u32 = 0x20000000;
     const S_OK: HRESULT = 0;
 
@@ -5376,7 +5368,6 @@ unsafe extern "C" fn fnIMultiLanguage3_CreateConvertCharset(
     convert_charset: *mut *mut IMLangConvertCharset,
 ) -> HRESULT {
     extern "system" {
-        fn TRACE(format: *const i8, ...);
         fn MLangConvertCharset_create(outer: *const IUnknown, obj: *mut *mut core::ffi::c_void) -> HRESULT;
     }
     let hr: HRESULT;
@@ -5720,7 +5711,6 @@ pub unsafe extern "C" fn ConvertINetString(
             dwFlags: u32,
             lpMem: *mut core::ffi::c_void,
         ) -> i32;
-        fn TRACE(fmt: *const i8, ...);
         fn debugstr_a(s: *const i8) -> *const i8;
     }
 
