@@ -1245,7 +1245,7 @@ unsafe fn fci_endian_uword(x: u16) -> u16 { x }
 
 unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32 {
     let mut filename: [i8; CB_MAX_CAB_PATH + CB_MAX_CABINET_NAME] = [0; CB_MAX_CAB_PATH + CB_MAX_CABINET_NAME];
-    let mut err: i32;
+    let mut err: i32 = 0;
     let mut ptr: *mut i8;
     let mut handle: isize;
     let cfheader: *mut CFHEADER = (*fci).data_out.as_mut_ptr() as *mut CFHEADER;
