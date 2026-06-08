@@ -309,7 +309,7 @@ unsafe fn fci_get_checksum(pv: *const core::ffi::c_void, cb: u32, seed: u32) -> 
     return csum;
 }
 
-unsafe fn compress_NONE(fci: *mut FCI_Int) -> cab_UWORD {
+unsafe extern "C" fn compress_NONE(fci: *mut FCI_Int) -> cab_UWORD {
     memcpy(
         core::ptr::addr_of_mut!((*fci).data_out) as *mut core::ffi::c_void,
         core::ptr::addr_of!((*fci).data_in) as *const core::ffi::c_void,
@@ -318,7 +318,7 @@ unsafe fn compress_NONE(fci: *mut FCI_Int) -> cab_UWORD {
     (*fci).cdata_in
 }
 
-unsafe fn zalloc(opaque: *mut core::ffi::c_void, items: u32, size: u32) -> *mut core::ffi::c_void {
+unsafe extern "C" fn zalloc(opaque: *mut core::ffi::c_void, items: u32, size: u32) -> *mut core::ffi::c_void {
     let fci = opaque as *mut FCI_Int;
     ((*fci).alloc)(items.wrapping_mul(size) as u32)
 }
