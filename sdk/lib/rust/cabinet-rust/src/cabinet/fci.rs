@@ -1275,14 +1275,14 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
     (*cfheader).cFiles = fci_endian_uword((*fci).cFiles);
     (*cfheader).flags = fci_endian_uword(flags);
     (*cfheader).setID = fci_endian_uword((*fci).ccab.setID);
-    (*cfheader).iCabinet = fci_endian_uword((*fci).ccab.iCab);
+    (*cfheader).iCabinet = fci_endian_uword((*fci).ccab.iCab as u16);
     ptr = cfheader.add(1) as *mut i8;
 
     if (flags & cfheadRESERVE_PRESENT as u16) != 0 {
         let reserve: *mut Reserve = ptr as *mut Reserve;
-        (*reserve).cbCFHeader = fci_endian_uword((*fci).ccab.cbReserveCFHeader);
-        (*reserve).cbCFFolder = (*fci).ccab.cbReserveCFFolder;
-        (*reserve).cbCFData = (*fci).ccab.cbReserveCFData;
+        (*reserve).cbCFHeader = fci_endian_uword((*fci).ccab.cbReserveCFHeader as u16);
+        (*reserve).cbCFFolder = (*fci).ccab.cbReserveCFFolder as u8;
+        (*reserve).cbCFData = (*fci).ccab.cbReserveCFData as u8;
         ptr = reserve.add(1) as *mut i8;
     }
     ptr = ptr.offset((*fci).ccab.cbReserveCFHeader as isize);
@@ -1307,7 +1307,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
     strcat(filename.as_mut_ptr(), (*fci).ccab.szCab.as_ptr() as *const i8);
 
     handle = ((*fci).open)(
-        filename.as_ptr(),
+        filename.as_mut_ptr(),
         _O_RDWR | _O_CREAT | _O_TRUNC | _O_BINARY,
         _S_IREAD | _S_IWRITE,
         core::ptr::addr_of_mut!(err),
@@ -1325,9 +1325,9 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
         }
 
         let mut header_size = header_size + (*fci).placed_files_size + (*fci).folders_size;
-        if !write_folders(fci, handle as INT_PTR, header_size, status_callback) { break 'failed 0; }
-        if !write_files(fci, handle as INT_PTR, status_callback) { break 'failed 0; }
-        if !write_data_blocks(fci, handle as INT_PTR, status_callback) { break 'failed 0; }
+        if write_folders(fci, handle as INT_PTR, header_size, status_callback) == 0 { break 'failed 0; }
+        if write_files(fci, handle as INT_PTR, status_callback) == 0 { break 'failed 0; }
+        if write_data_blocks(fci, handle as INT_PTR, status_callback) == 0 { break 'failed 0; }
 
         if ((*fci).seek)(handle, 0, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) != 0 {
             set_error(fci, FCIERR_CAB_FILE as i32, err);
