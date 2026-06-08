@@ -1007,7 +1007,7 @@ unsafe fn free_decompression_mem(fdi: *mut FDI_Int, decomp_state: *mut fdi_decom
     let mut fol: *mut fdi_folder;
     while !decomp_state.is_null() {
         let prev_fds: *mut fdi_decomp_state;
-        ((*fdi).close)((*decomp_state).cabhf);
+        ((*fdi).close)((*decomp_state).cabhf as isize);
         if !(*decomp_state).mii.nextname.is_null() {
             ((*fdi).free)((*decomp_state).mii.nextname as *mut core::ffi::c_void);
         }
@@ -1041,7 +1041,7 @@ unsafe fn free_decompression_mem(fdi: *mut FDI_Int, decomp_state: *mut fdi_decom
 
 #[no_mangle]
 pub unsafe extern "C" fn FDIDestroy(hfdi: isize) -> i32 {
-    let fdi: *mut FDI_Int = get_fdi_ptr(hfdi);
+    let fdi: *mut FDI_Int = get_fdi_ptr(hfdi as HFDI);
     let format = b"(hfdi == ^%p)\n\0".as_ptr() as *const i8;
     TRACE(format, hfdi);
     if fdi.is_null() {
@@ -1058,7 +1058,7 @@ pub unsafe extern "C" fn FDITruncateCabinet(
     pszCabinetName: *mut i8,
     iFolderToDelete: u16,
 ) -> i32 {
-    let fdi = get_fdi_ptr(hfdi);
+    let fdi = get_fdi_ptr(hfdi as *mut FDI_Int);
     FIXME(
         b"(hfdi == ^%p, pszCabinetName == %s, iFolderToDelete == %hu): stub\n\0".as_ptr() as *const i8,
         hfdi as *const core::ffi::c_void,
@@ -1074,7 +1074,7 @@ pub unsafe extern "C" fn FDITruncateCabinet(
 
 unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: i32, cabsize: i32) -> *mut i8 {
     let mut len: usize = 256;
-    let base: i32 = FDI_getoffset(fdi, hf);
+    let base: i32 = FDI_getoffset(fdi, hf as INT_PTR);
     let maxlen: i32 = cabsize - base;
     let mut ok: i32 = 0;
     let mut buf: *mut u8 = core::ptr::null_mut();
@@ -1090,11 +1090,11 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: i32, cabsize: i32) -> *mut i8 {
         if len > (maxlen as usize) {
             len = maxlen as usize;
         }
-        buf = ((*fdi).alloc)(len as usize) as *mut u8;
+        buf = ((*fdi).alloc)(len as u32) as *mut u8;
         if buf.is_null() {
             break;
         }
-        if ((*fdi).read)(hf, buf as *mut core::ffi::c_void, len as u32) == 0 {
+        if ((*fdi).read)(hf as isize, buf as *mut core::ffi::c_void, len as u32) == 0 {
             break;
         }
 
@@ -1110,7 +1110,7 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: i32, cabsize: i32) -> *mut i8 {
                 ERR(b"cabinet is truncated\n\0".as_ptr() as *const i8);
                 break;
             }
-            ((*fdi).seek)(hf, base, SEEK_SET);
+            ((*fdi).seek)(hf as isize, base, SEEK_SET);
             ((*fdi).free)(buf as *mut core::ffi::c_void);
             buf = core::ptr::null_mut();
             len *= 2;
@@ -1131,7 +1131,7 @@ unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: i32, cabsize: i32) -> *mut i8 {
     }
 
     let seek_pos = (base as i32).wrapping_add((strlen(buf as *const i8) + 1) as i32);
-    ((*fdi).seek)(hf, seek_pos, SEEK_SET);
+    ((*fdi).seek)(hf as isize, seek_pos, SEEK_SET);
 
     return buf as *mut i8;
 }
