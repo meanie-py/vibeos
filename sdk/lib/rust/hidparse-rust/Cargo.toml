@@ -1,0 +1,21 @@
+# hidparse-rust — Rust translation of drivers/hid/hidparse/hidparse.c (the
+# HID parser .sys wrapper). crate-type=staticlib → libhidparse_rust.a, linked
+# into the `hidparse` cmake MODULE (cohabitation, hidparse.c commented out).
+# Provides the Rust DriverEntry + the 5 allocator/util callbacks the
+# hidparser_km C library (sdk/lib/drivers/hidparser, kept C in Batch 1) calls
+# by name: AllocFunction/FreeFunction/ZeroFunction/CopyFunction (NTAPI) and
+# DebugFunction (cdecl variadic). Only DDK substrate: ExAllocatePoolWithTag /
+# ExFreePoolWithTag (ntoskrnl exports), declared locally → self-contained
+# (no ntkrnl-sys dependency).
+#
+# ABI: NTAPI callbacks → `extern "system"`; DebugFunction → `extern "C"`. 3-arch.
+
+[package]
+name = "hidparse-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
