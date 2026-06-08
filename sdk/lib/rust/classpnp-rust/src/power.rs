@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -124,7 +125,6 @@ const PowerUpDeviceInitial: u32 = 0;
 const PowerDownDeviceInitial3: u32 = 0;
 
 const VPB_MOUNTED: u32 = 0x00000008;
-const DO_VERIFY_VOLUME: u32 = 0x00000002;
 
 // External forward declarations for unknown symbols
 
@@ -132,8 +132,6 @@ const DO_VERIFY_VOLUME: u32 = 0x00000002;
 const TRACE_LEVEL_INFORMATION: u32 = 4;
 const TRACE_FLAG_POWER: u32 = 0x0001;
 const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 0;
-const SRB_FLAGS_FREE_SENSE_BUFFER: u32 = 0x0002;
-const SRB_FLAGS_PORT_DRIVER_ALLOCSENSE: u32 = 0x0004;
 const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
 const IRP_MJ_SCSI: u8 = 0x0f; // typical value
 
@@ -152,22 +150,14 @@ const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016i32;
 const STATUS_NOT_SUPPORTED: i32 = 0xC00000BBi32;  // standard value
 const STATUS_DELETE_PENDING: i32 = 0xC0000056i32;
 const STATUS_DEVICE_DOES_NOT_EXIST: i32 = 0xC0000354i32;
-const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 0;
-const SRB_FLAGS_FREE_SENSE_BUFFER: u32 = 0x10;
-const SRB_FLAGS_PORT_DRIVER_ALLOCSENSE: u32 = 0x20;
 const SRB_FLAGS_NO_DATA_TRANSFER: u32 = 0x1000;
 const SRB_FLAGS_DISABLE_AUTOSENSE: u32 = 0x2000;
 const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x4000;
-const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x10000;
-const SRB_FLAGS_BYPASS_LOCKED_QUEUE: u32 = 0x20000;
-const SRB_FUNCTION_EXECUTE_SCSI: u8 = 0x00;
 const SRB_FUNCTION_UNLOCK_QUEUE: u8 = 0x16;
 const SCSIOP_START_STOP_UNIT: u8 = 0x1B;
 const STORAGE_ADDRESS_TYPE_BTL8: u32 = 0;
 const CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE: u32 = 0x20;            // assumption
-const CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE: u32 = 0;
 const SRB_EX_DATA_TYPE_SCSI_CDB16: u32 = 1;
-const MAXIMUM_RETRIES: u32 = 3;
 const START_UNIT_TIMEOUT: u32 = 60;
 const DEFAULT_POWER_IRP_TIMEOUT_VALUE: u32 = 600;
 const TIME_LEFT_FOR_UPPER_DRIVERS: u32 = 5;
@@ -178,8 +168,6 @@ const PowerUpDeviceLocked: u32 = 1;
 const PowerUpDeviceOn: u32 = 2;
 const PowerUpDeviceStarted: u32 = 3;
 const PowerUpDeviceUnlocked: u32 = 4;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_POWER: u32 = 0x2000;
 const SRB_STATUS_SUCCESS: u8 = 0;
 const SRB_STATUS_QUEUE_FROZEN: u8 = 0x08;
 const FailurePredictionNone: u32 = 0;
@@ -201,7 +189,6 @@ pub unsafe extern "system" fn ClassDispatchPower(
     DeviceObject: *mut DEVICE_OBJECT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
-    const STATUS_DEVICE_DOES_NOT_EXIST: i32 = 0xC000035A;
 
     unsafe {
         let commonExtension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
@@ -335,7 +322,6 @@ pub unsafe extern "system" fn ClassStopUnitPowerHandler(
 ) -> NTSTATUS {
 
     const TRACE_LEVEL_ERROR: u32 = 2;
-    const TRACE_FLAG_POWER: u32 = 0x8;
     const CLASS_SPECIAL_DISABLE_SPIN_UP: u32 = 0x00000004;
     const CLASS_SPECIAL_NO_QUEUE_LOCK: u32 = 0x00000002;
 

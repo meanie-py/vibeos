@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -117,8 +118,6 @@ const NonPagedPoolNx: u32 = 0x200;
 // The caller dedups these declarations.
 
 // Constants
-const TRACE_LEVEL_WARNING: u32 = 3;
-const TRACE_FLAG_MCN: u32 = 0x00001000;
 const REMOVE_COMPLETE: i32 = 0xC0000200u32 as i32;
 const REMOVE_PENDING: i32 = 0xC0000056u32 as i32; // STATUS_DELETE_PENDING
 const NO_REMOVE: i32 = 0x00000000;               // STATUS_SUCCESS
@@ -155,7 +154,6 @@ const NonPagedPoolNx: u32 = 2; // assumed value
 const CLASS_TAG_AUTORUN_DISABLE: u32 = 0x5244414C; // arbitrary tag, keep consistent with allocation
 
 const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_MCN: u32 = 0x10;
 const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 24;
 const KEY_READ: u32 = 0x20019;
 const OBJ_CASE_INSENSITIVE: u32 = 0x00000040;
@@ -207,16 +205,9 @@ const MEDIA_CHANGE_TIMEOUT_TIME: i32 = 300; // five minutes in seconds
 const IOCTL_STORAGE_PREDICT_FAILURE: u32 = 0; // placeholder
 const IOCTL_SCSI_GET_ADDRESS: u32 = 1; // placeholder
 const SynchronizationEvent: u32 = 1; // placeholder
-const TRACE_LEVEL_INFORMATION: u32 = 4;
 const TRACE_FLAG_WMI: u32 = 0x0010;
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_MCN: u32 = 0x00000010;
 
-const REMOVE_COMPLETE: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_LEVEL_WARNING: u32 = 5;
-const TRACE_FLAG_MCN: u32 = 0x1;
 const FailurePredictionNone: u32 = 0;
 
 // Placeholder constant values – use actual NT definitions when available
@@ -229,9 +220,6 @@ const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x80000000; // placeholder
 const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x00010000; // placeholder
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x00008000; // placeholder
 const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x00004000; // placeholder
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_MCN: u32 = 0x00000080;
-const FILE_DEVICE_CD_ROM: u32 = 0x00000002;
 
 unsafe fn ClasspCanSendPollingIrp(fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION) -> BOOLEAN {
     ((*fdo_extension).DevicePowerState == PowerDeviceD0 &&
@@ -744,9 +732,6 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
 
     // Constants that would normally be defined in headers
     const TRACE_LEVEL_VERBOSE: u32 = 5;
-    const TRACE_LEVEL_WARNING: u32 = 2;
-    const TRACE_LEVEL_INFORMATION: u32 = 3;
-    const TRACE_FLAG_MCN: u32 = 0x200;
     const SRB_STATUS_QUEUE_FROZEN: u8 = 0x02;
     const SRB_STATUS_SUCCESS: u8 = 0x01;
     const CLASS_SPECIAL_CAUSE_NOT_REPORTABLE_HACK: u32 = 0x0400;
@@ -1490,11 +1475,9 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
     // Forward declarations for unknown externs
 
     // Constants guessed from Windows headers for compilation; comment placeholders
-    const IRP_MJ_SCSI: u32 = 0x1;
     const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u32 = 0x0;
     const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x100;
     const SRB_STATUS_BUS_RESET: u8 = 0x8;
-    const SRB_STATUS_SUCCESS: u8 = 0x0;
     const NOTIFICATION_MEDIA_STATUS_CLASS_MASK: u32 = 0x1;
     const NOTIFICATION_DEVICE_BUSY_CLASS_MASK: u32 = 0x2;
     const NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK: u32 = 0x4;
@@ -2087,7 +2070,7 @@ pub unsafe extern "C" fn ClasspMediaChangeDeviceInstanceOverride(
             break 'fin; // LEAVE
         }
 
-        for i = 0; i < 2; i += 1 {
+        for i in 0..2 {
             // Zero the whole query table buffer
             core::ptr::write_bytes(
                 &mut queryTable as *mut _ as *mut u8,
@@ -2476,7 +2459,6 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(FdoExtension: *mut
     const TRACE_LEVEL_INFORMATION: u32 = 0;
     const TRACE_FLAG_MCN: u32 = 0;
     const UserRequest: i32 = 0;
-    const 0i32: i32 = 0;
     const MediaUnknown: MEDIA_CHANGE_DETECTION_STATE = 0;
     const FALSE: i32 = 0;
 

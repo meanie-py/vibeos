@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -122,7 +123,6 @@ pub unsafe extern "system" fn ClassSystemControl(
     const STATUS_WMI_INSTANCE_NOT_FOUND: i32 = 0xC0000291;
     const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010;
     const STATUS_INVALID_BUFFER_SIZE: i32 = 0xC0000006;
-    const WNODE_FLAG_STATIC_INSTANCE_NAMES: u32 = 0x1;
     const WMIREG_FLAG_INSTANCE_PDO: u32 = 0x1;
     const WMIREG_FLAG_INSTANCE_LIST: u32 = 0x2;
     const EventGeneration: u32 = 0;
@@ -235,11 +235,9 @@ pub unsafe extern "system" fn ClassSystemControl(
     let driverExtension = (*commonExtension).DriverExtension;
 
     classWmiInfo = if (*commonExtension).IsFdo != 0 {
-        &mut (*(*driverExtension).InitData.FdoData.ClassWmiInfo) as *mut CLASS_WMI_INFO
-        // Actually the C takes address of the field; it's a struct, we can get ptr directly
-        &mut (*(*driverExtension).InitData.FdoData.ClassWmiInfo)
+        &raw mut (*(*driverExtension).InitData.FdoData.ClassWmiInfo) as *mut CLASS_WMI_INFO
     } else {
-        &mut (*(*driverExtension).InitData.PdoData.ClassWmiInfo)
+        &raw mut (*(*driverExtension).InitData.PdoData.ClassWmiInfo)
     };
 
     // Irp_MN_REGINFO

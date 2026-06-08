@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -134,9 +135,7 @@ const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0;       // TODO: correct value
 const SCSIOP_MEDIUM_REMOVAL: u8 = 0;            // TODO: correct value
 const NUM_LOCKMEDIAREMOVAL_RETRIES: u32 = 0;    // TODO: correct value
 
-const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 0x0008;
 const SRB_SIMPLE_TAG_REQUEST: u32 = 0x01;
-const SRB_FLAGS_DATA_IN: u32 = 0x0001;
 const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x0100;
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x0400;
 const SCSIOP_MODE_SENSE: u8 = 0x1A;
@@ -1391,10 +1390,6 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
 
 // Placeholder constants (actual values must be provided by caller)
 const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 0; // placeholder
-const SRB_SIMPLE_TAG_REQUEST: u32 = 0;
-const SRB_FLAGS_DATA_IN: u32 = 0;
-const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0;
-const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0;
 const SCSIOP_READ_CAPACITY16: u8 = 0;
 const SCSIOP_READ_CAPACITY: u8 = 0;
 const NUM_DRIVECAPACITY_RETRIES: u32 = 0;
@@ -1579,10 +1574,6 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 ) {
 
     const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 0x00; // actual value unknown
-    const SRB_SIMPLE_TAG_REQUEST: u32 = 0x00;
-    const SRB_FLAGS_DATA_IN: u32 = 0x00;
-    const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x00;
-    const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x00;
     const SCSIOP_RECEIVE_ROD_TOKEN_INFORMATION: u8 = 0x00;
     const SERVICE_ACTION_RECEIVE_TOKEN_INFORMATION: u8 = 0x00;
     const NUM_WRITE_USING_TOKEN_RETRIES: u32 = 3; // example

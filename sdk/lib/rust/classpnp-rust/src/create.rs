@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -221,7 +222,7 @@ pub unsafe extern "C" fn ClasspCreateClose(
             ntkrnl_sys::ddk::KeWaitForSingleObject(
                 &mut event as *mut ntkrnl_sys::ddk::KEVENT,
                 ntkrnl_sys::ddk::_KWAIT_REASON_Executive,
-                ntkrnl_sys::constants::0i32,
+                ntkrnl_sys::ddk::_KWAIT_REASON_Executive as i32,
                 0,
                 core::ptr::null(),
             );

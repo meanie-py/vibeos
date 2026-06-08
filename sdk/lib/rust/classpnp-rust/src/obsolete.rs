@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -40,7 +41,6 @@ const TRACE_FLAG_RW: u32 = 2;
 // External declarations for unknown functions
 
 // Function constants
-const TRACE_LEVEL_WARNING: u32 = 4;
 const TRACE_LEVEL_INFORMATION: u32 = 4; // Adjust as needed, often 4.
 const TRACE_FLAG_GENERAL: u32 = 0x00000001;
 const SRB_STATUS_QUEUE_FROZEN: u8 = 0x80;

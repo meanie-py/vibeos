@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 

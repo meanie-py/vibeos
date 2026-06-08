@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -165,7 +166,7 @@ const CLASS_SRB_STORAGE_REQUEST_BLOCK: u32 = 0x02;
 const TRACE_LEVEL_INFORMATION: u32 = 0; // unknown value
 const TRACE_FLAG_INIT: u32 = 0;        // unknown value
 
-#![allow(non_snake_case)]
+#[allow(non_snake_case)]
 
 // Constants (defined as needed)
 const NON_PAGED_POOL_NX: u32 = 0x200;
@@ -351,7 +352,7 @@ pub unsafe extern "system" fn ClassInitialize(
         (*driverExtension).RegistryPath.Buffer = ExAllocatePoolWithTag(
             PagedPool,
             (*RegistryPath).MaximumLength as u64,
-            '1CcS' as u32,
+            0x53634331u32, // '1CcS'
         ) as *mut u16;
 
         if (*driverExtension).RegistryPath.Buffer.is_null() {
@@ -753,112 +754,37 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                             status = ClassPnpQueryFdoRelations(DeviceObject, Irp);
                             if !(status >= 0) {
                                 completeRequest = 1;
-                                // break out of match to end processing for this minor
-                                // but need to break from the match; we'll use a nested block
-                                // Actually we break from the match arm, but the arms are separate; we'll return from the arm.
-                                // Instead we can use a label. The match arm is enclosed in a block, so break from that block.
-                                // I'll restructure: we'll put the arm body in a block and use `break 'outer`? Not allowed in match.
-                                // The original C uses break to exit the switch. In Rust match, we can't break out of match from a nested loop.
-                                // To simulate, we'll set a flag and break from the arm, then after match check flag. However, the C code breaks from the switch, so it would continue after the switch. In Rust, we can break the match by just ending the arm, but that's exactly what we want. The problem is we want to skip the IoCallDriver etc. after this arm.
-                                // The C code is inside a larger if-else block: the IoCallDriver is after the if-else. The break exits the switch. So we need to skip that later part. The easiest is to use a boolean to indicate forward and do the forward outside the match. But that would restructure the code. Given mechanical transliteration, we can emulate with a flag. I'll declare a variable `forwardIrp` and then after the match for this minor, check it. However, the match arm is atomic. We can replicate the structure by moving the forwarding code outside the match for this minor? That changes control flow.
-                                // To stay faithful, we can wrap the whole arm in a block and use a label and break from the block. For example:
-                                // 'arm: {
-                                //    ...
-                                //    if condition { break 'arm; }
-                                // }
-                                // And after the block, the forwarding code only executes if not broken.
-                                // I'll do that.
-                                // So in the arm, wrap everything in a labeled block, and after the block put the forwarding.
-                                // So I'll rewrite the arm using that pattern.
-                                // But for simplicity, I'll use a dummy loop to break out. Actually we can just use an if-else to conditionally execute the forwarding.
-                                // Given the complexity, I'll restructure the arm using a flag skip.
-                                // But the directive is to preserve control flow exactly. Using a block with break is similar to goto.
-                                // I'll choose to use a block with break.
+                                // break from switch — skip the forwarding below.
+                                // In C, a break inside the FDO BusRelations failure path
+                                // exits the switch; the IoCopy/IoCallDriver below is not reached.
                             }
                         }
                     }
 
-                    // Forwarding (only if not broken out early)
-                    // We will not execute this if the arm was exited via break from a block.
-                    // So we'll wrap the later part in `if !skip`. To be precise, I'll use a block with label.
-                    // Simpler: after the match arm, the code falls through. But we want to skip the forwarding if break occurred. So we can use a flag.
-                    // I'll use a local flag: let mut skip_forward = false; in the arm set it true when break; then after the block if !skip_forward execute forward.
-                    // This is a minor structural change but preserves behavior.
-                    // I'll do it.
-                    let mut skip_forward = false;
-                    let _ = {
-                        //...
-                        if !NT_SUCCESS(status) {
-                            completeRequest = 1;
-                            skip_forward = true;
-                            break;
+                    // Forward IRP to lower driver (only for FDO BusRelations success path).
+                    // PDO path always breaks before reaching here; BusRelations failure also breaks.
+                    {
+                        let mut _fwd = false;
+                        if type_ == BusRelations {
+                            if (*initData).ClassEnumerateDevice.is_null() {
+                                _fwd = true;
+                            } else if status >= 0 {
+                                _fwd = true;
+                            }
                         }
-                        //...
-                    };
-                    if !skip_forward {
-                        // IoCallDriver
+                        if _fwd {
+                            ntkrnl_sys::driver_ddk::IoCopyCurrentIrpStackLocationToNext(
+                                Irp,
+                            );
+                            ClassReleaseRemoveLock(DeviceObject, Irp);
+                            status = ntkrnl_sys::driver_ddk::IoCallDriver(
+                                (*commonExtension).LowerDeviceObject,
+                                Irp,
+                            );
+                            completeRequest = 0;
+                        }
                     }
                 }
-
-                // I'll rewrite the entire arm with the block pattern to keep fidelity.
-
-                // Actually the pattern: 
-                //   case IRP_MN_QUERY_DEVICE_RELATIONS: {
-                //       ... 
-                //       if (condition) { break; }
-                //   }
-                //   IoCopyCurrentIrpStackLocationToNext(Irp);
-                //   ...
-                // So the break inside the switch exits the switch, skipping the code after the break but still within the switch case? No, the break exits the switch entirely. The code after the closing brace of the case is not part of the case; it's at the switch level? The code:
-                //   switch(minor) {
-                //       case X: {
-                //           ...
-                //           if (...) break;
-                //       }
-                //       IoCopyCurrent... // This is not inside the case, it's after the case block?
-                //   }
-                // This is not valid C. Actually looking at the original:
-                //   case IRP_MN_QUERY_DEVICE_RELATIONS: {
-                //       ...
-                //       if (type == BusRelations) {
-                //           ...
-                //           if (initData->ClassEnumerateDevice == NULL) {
-                //               // just send down
-                //           } else {
-                //               status = ClassPnpQueryFdoRelations(...);
-                //               if(!NT_SUCCESS(status)) {
-                //                   completeRequest = TRUE;
-                //                   break;
-                //               }
-                //           }
-                //       }
-                //       IoCopyCurrentIrpStackLocationToNext(Irp);
-                //       ...
-                //       break;
-                //   }
-                // So the `break` inside the if is inside the `case` block, so it exits the switch, and the code after it (IoCopy...) is NOT executed. That's correct. But in the C code, the `IoCopy...` lines are inside the case block, after the if-else. So they are executed if the break is not taken. That's fine. In Rust, we can put the entire case body in a block, and use `break` to exit the match arm. That's exactly what `break` does in a match arm: it exits the match. So we can just use `break` to exit the match (i.e., stop processing this arm and continue after the match). So no special block needed. But in Rust, a `break` without a label exits the innermost loop, not a match. So we can't break out of match with `break`. We can use `return` from function? Not appropriate. We can use `break 'outer` from a loop. So we need to wrap the match in a loop to use break. Alternatively, we can use a flag. For mechanical translation, we can wrap the entire switch in a `'switch: loop { ... break; }` and then within cases use `break 'switch;`. That's fine. I'll wrap the match in an `'switch: loop` and use `break 'switch;` for breaks. That will perfectly emulate C's `break` from switch. I'll do:
-
-                // ... inside function
-                'switch: loop {
-                    match (*irpStack).MinorFunction {
-                        ntkrnl_sys::ddk::IRP_MN_QUERY_DEVICE_RELATIONS => {
-                            // ... and when need to break out of switch, do `break 'switch;`
-                        }
-                        // other cases
-                    }
-                    break; // exit the loop after match (like switch end)
-                }
-
-                That works.
-
-                So I'll restructure the whole switch with that loop. That's mechanical.
-
-                // I'll implement that.
-
-                // For brevity, I'll present the code as a single function. Use the loop.
-
-                // For the final answer, I'll produce the full function with that wrapping loop.
-
             }
         } else {
             NT_ASSERT(0);
@@ -1022,7 +948,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                 );
                 KeInitializeSpinLock(&raw mut (*(*fdoExtension).PrivateFdoData).Retry.Lock);
                 (*(*fdoExtension).PrivateFdoData).Retry.Granularity = KeQueryTimeIncrement();
-                (*commonExtension).Reserved4 = (' GPH' as u64) as usize;
+                (*commonExtension).Reserved4 = 0x48504720u32 as usize; // ' GPH'
                 InitializeListHead(&raw mut (*(*fdoExtension).PrivateFdoData).DeferredClientIrpList);
 
                 KeInitializeSpinLock(&raw mut (*(*fdoExtension).PrivateFdoData).SpinLock);
@@ -1598,13 +1524,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: *mut DEVICE_OBJECT) ->
             break 'SafeExit;
         }
 
-        // Our engine needs an "original irp" ...
         (*((&mut pseudoIrp.Tail.Overlay.DriverContext) as *mut _ as *mut [usize; 4])).get_unchecked_mut(0) = 1usize;
-        // The C cast LongToPtr(1) is equivalent to 1 cast to pointer-sized.
-        // We'll store 1 directly into the DriverContext array element 0.
-        // Actually DriverContext is likely an array of PVOID (usize). So:
-        (*(&mut pseudoIrp.Tail.Overlay.DriverContext as *mut u32)).as_mut_ptr()... Not trivial.
-        // Better to emulate with transmute: pseudoIrp is uninitialized, we assign to a field.
         // We'll just do raw pointer write:
         let ctx_ptr = &mut pseudoIrp.Tail.Overlay.DriverContext[0] as *mut usize;
         *ctx_ptr = 1; // LongToPtr(1) -> 1 cast to isize
@@ -1812,7 +1732,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut DEVICE_OBJECT) {
     context = ExAllocatePoolWithTag(
         NonPagedPoolNx,
         core::mem::size_of::<COMPLETION_CONTEXT>() as u32,
-        '6CcS' as u32,
+        0x53634336u32, // '6CcS'
     ) as *mut COMPLETION_CONTEXT;
 
     if context.is_null() {
@@ -1894,7 +1814,6 @@ pub unsafe extern "system" fn ClassAsynchronousCompletion(
     Irp: *mut IRP,
     Context: *mut c_void,
 ) -> i32 {
-    const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u32 = 0x1B;
     const SRB_STATUS_QUEUE_FROZEN: u32 = 0x40;
     const SRB_FLAGS_FREE_SENSE_BUFFER: u32 = 0x08;

@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -150,7 +151,6 @@ const STATUS_INVALID_LEVEL: i32 = 0xC000_014B_i32;
 const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC000_0010_i32;
 const STATUS_INVALID_PARAMETER_1: i32 = 0xC000_00EF_i32;
 
-const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
 const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 1; // kernel define
 const SrbExDataTypeScsiCdb16: u32 = 0x0001; // guessed
 const CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE: u32 = 16; // guessed
@@ -158,7 +158,6 @@ const SCSIOP_LOG_SENSE: u8 = 0x4D;
 const LOG_PAGE_CODE_LOGICAL_BLOCK_PROVISIONING: u8 = 0x0A;
 const MAXUSHORT: u32 = 0xFFFF;
 const SP_UNTAGGED: u32 = 0;
-const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
 const TRACE_LEVEL_ERROR: u32 = 0x02;
 const TRACE_FLAG_GENERAL: u32 = 0x01;
 const TRACE_LEVEL_INFORMATION: u32 = 0x04;
@@ -172,13 +171,7 @@ const STATUS_SUCCESS: i32 = 0;
 const ERROR_LOG_MAXIMUM_SIZE: u32 = 0x100;
 const MAXUCHAR: u32 = 0xFF;
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_LEVEL_ERROR: u32 = 2;
-const TRACE_FLAG_GENERAL: u32 = 0xFFFF;
 
-const TRACE_LEVEL_ERROR: u32 = 1;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_GENERAL: u32 = 1;
 
 unsafe extern "system" {
     fn NT_ASSERT(condition: i32);
@@ -197,7 +190,6 @@ unsafe extern "system" {
 
 const IO_ERROR_IO_HARDWARE_ERROR: u32 = 0xC000000E;
 const IO_WARNING_IO_OPERATION_RETRIED: u32 = 0x80030003;
-const ERROR_LOG_MAXIMUM_SIZE: u32 = 0x100;
 const IRP_MJ_SCSI: u8 = 0;
 
 // Forward declarations for unknown externs
@@ -215,8 +207,6 @@ const RTL_QUERY_REGISTRY_TYPECHECK: u32 = 0x00000100;
 const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 28;
 
 const TRACE_LEVEL_VERBOSE: u32 = 5;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_IOCTL: u32 = 0x10;
 const MAX_NUMBER_BLOCKS_PER_BLOCK_DEVICE_RANGE_DESCRIPTOR: u64 = 256;
 
 const IOCTL_STORAGE_POWER_ACTIVE: u32 = 0x2D1400;
@@ -224,15 +214,11 @@ const SynchronizationEvent: u32 = 1;
 const Executive: u32 = 0;
 
 const IOCTL_STORAGE_POWER_IDLE: u32 = 0x002D1000;
-const SynchronizationEvent: i32 = 0;
 const STATUS_UNSUCCESSFUL: i32 = 0xC0000001_i32;
 
 const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016;
 const IO_DISK_INCREMENT: i32 = 0x00000008;
 
-const RTL_QUERY_REGISTRY_TYPECHECK: u32 = 0x00000004;
-const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 24;
-const REG_DWORD: u32 = 4;
 const REG_NONE: u32 = 0;
 const OBJ_CASE_INSENSITIVE: u32 = 0x00000040;
 const OBJ_KERNEL_HANDLE: u32 = 0x00000200;
@@ -241,21 +227,13 @@ const PLUGPLAY_REGKEY_DRIVER: u32 = 2;
 
 // Constants (definitions follow the C code patterns; actual values may need to be set correctly)
 const CLASS_TAG_LB_PROVISIONING: u32 = 0;
-const MAXUSHORT: u32 = 0xFFFF;
 const MAXULONG: u32 = 0xFFFFFFFF;
-const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 0;
 const CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE: u32 = 0;
-const SRB_FUNCTION_EXECUTE_SCSI: u8 = 0;
 const SRB_FLAGS_DATA_IN: u32 = 0;
 const SRB_FLAGS_DATA_OUT: u32 = 0;
-const SP_UNTAGGED: u8 = 0;
-const SRB_SIMPLE_TAG_REQUEST: u8 = 0;
 const SCSIOP_UNMAP: u8 = 0;
 const NonPagedPoolNx: u32 = 0x200; // typical value, not critical
 const NonPagedPoolNxCacheAligned: u32 = 0x204; // ditto
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_IOCTL: u32 = 0x00000020;
-const TRACE_LEVEL_ERROR: u32 = 1;
 const TRACE_FLAG_INIT: u32 = 0x00000004;
 
 // Forward declarations for unknown functions/types
@@ -298,23 +276,12 @@ pub struct STORAGE_HW_FIRMWARE_DOWNLOAD {
 }
 
 const FALSE: u8 = 0;
-const NonPagedPoolNx: u32 = 0x200;
-const NonPagedPoolNxCacheAligned: u32 = 0x400;
 const POOL_TAG_4CcS: u32 = 0x34634353;
 const SCSIOP_READ_CAPACITY16: u8 = 0x9E;
 const SERVICE_ACTION_READ_CAPACITY16: u8 = 0x10;
-const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0;
-const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 0;
-const STORAGE_ADDRESS_TYPE_BTL8: u32 = 0;
-const CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE: u32 = 16;
-const SrbExDataTypeScsiCdb16: u32 = 0;
-const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
-const SP_UNTAGGED: u32 = 0;
 const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC0000004u32 as i32;
 const STATUS_DATA_OVERRUN: i32 = 0xC000003Cu32 as i32;
-const STATUS_INSUFFICIENT_RESOURCES: i32 = 0xC000009Au32 as i32;
 const STATUS_NOT_IMPLEMENTED: i32 = 0xC0000002u32 as i32;
-const STATUS_SUCCESS: i32 = 0;
 
 const IO_NO_INCREMENT: i8 = 0;
 #[no_mangle]
@@ -498,12 +465,8 @@ pub unsafe extern "system" fn ClassSetDeviceParameter(
         KeBugCheckEx(0xE2u32, 0, 0, 0, 0);
     }
 
-    const PLUGPLAY_REGKEY_DEVICE: u32 = 1;
     const KEY_READ: u32 = 0x20019;
     const KEY_WRITE: u32 = 0x20006;
-    const REG_DWORD: u32 = 4;
-    const OBJ_CASE_INSENSITIVE: u32 = 0x40;
-    const OBJ_KERNEL_HANDLE: u32 = 0x200;
 
     let mut status: NTSTATUS;
     let mut deviceParameterHandle: HANDLE = core::ptr::null_mut();
@@ -947,13 +910,11 @@ pub unsafe extern "C" fn ClasspDuidGetDeviceProperty(
     status
 }
 
-const FILE_DEVICE_DISK: u32 = 7;
 const PARTITION_STYLE_MBR: u32 = 0;
 const PARTITION_STYLE_GPT: u32 = 1;
 const DUID_VERSION_1: u32 = 1;
 const STATUS_NOT_FOUND: i32 = 0xC0000225_u32 as i32;
 const STATUS_BUFFER_OVERFLOW: i32 = 0x80000005_u32 as i32;
-const STATUS_SUCCESS: i32 = 0;
 #[no_mangle]
 pub unsafe extern "C" fn ClasspDuidGetDriveLayout(
     DeviceObject: *mut DEVICE_OBJECT,
@@ -1616,14 +1577,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
 // Forward declaration for local C function not yet translated
 
 // Constants not in imports
-const PropertyExistsQuery: u32 = 0;
-const PropertyStandardQuery: u32 = 1;
-const SupportUnknown: u32 = 0;
-const Supported: u32 = 1;
-const NotSupported: u32 = 2;
-const STATUS_INVALID_LEVEL: i32 = 0xC0000148;
 const STATUS_INTERNAL_ERROR: i32 = 0xC0000002;
-const FILE_FLOPPY_DISKETTE: u32 = 0x0004;
 #[no_mangle]
 pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     DeviceObject: *mut DEVICE_OBJECT,
@@ -1974,15 +1928,8 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
     Irp: *mut IRP,
     Srb: *mut SCSI_REQUEST_BLOCK,
 ) -> NTSTATUS {
-    const FILE_DEVICE_DISK: u32 = 0x00000007;
-    const FILE_FLOPPY_DISKETTE: u32 = 0x04;
     const DISPATCH_LEVEL: KIRQL = 2;
     const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148u32 as i32;
-    const Supported: i32 = 1;
-    const NotSupported: i32 = 0;
-    const SupportUnknown: i32 = 2;
-    const PropertyExistsQuery: u32 = 0;
-    const PropertyStandardQuery: u32 = 1;
 
     let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
     let commonExtension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
@@ -2141,7 +2088,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
             dataBuffer = ExAllocatePoolWithTag(
                 NonPagedPoolNxCacheAligned,
                 allocationBufferLength,
-                '0CcS' as u32,
+                0x53634330u32, // '0CcS'
             );
         }
         #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
@@ -2149,7 +2096,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
             dataBuffer = ExAllocatePoolWithTag(
                 NonPagedPoolNx,
                 bufferLength as u32,
-                '0CcS' as u32,
+                0x53634330u32, // '0CcS'
             );
         }
 
@@ -2562,10 +2509,6 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
 
     let _ = Srb;
 
-    const PropertyExistsQuery: u32 = 1;
-    const PropertyStandardQuery: u32 = 0;
-    const STATUS_INVALID_LEVEL: i32 = 0xC000014B;
-    const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010;
     const DEVICE_LB_PROVISIONING_DESCRIPTOR_V1_SIZE: u32 = 0x2C;
 
     'exit: loop {
@@ -2656,8 +2599,6 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
     return status;
 }
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_IOCTL: u32 = 0x1;
 #[no_mangle]
 pub unsafe extern "C" fn ConvertDataSetRangeToUnmapBlockDescr(
     FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION,
@@ -2991,22 +2932,11 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
     ActivityId: *mut GUID,
     Srb: *mut SCSI_REQUEST_BLOCK,
 ) -> i32 {
-    const FILE_DEVICE_DISK: u32 = 0x00000007;
-    const FILE_FLOPPY_DISKETTE: u32 = 0x0004;
     const DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE: u32 = 0x00000001;
     const DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED: u32 = 0x00000002;
     const DISPATCH_LEVEL: u8 = 2;
-    const Supported: i32 = 1;
-    const NotSupported: i32 = 2;
-    const SupportUnknown: i32 = 0;
     const STATUS_TRIM_READ_ZERO_NOT_SUPPORTED: i32 = 0xC00000E3; // STATUS_TRIM_READ_ZERO_NOT_SUPPORTED
     const STATUS_INVALID_LEVEL: i32 = 0xC000014B; // STATUS_INVALID_LEVEL
-    const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010;
-    const IO_NO_INCREMENT: u8 = 0;
-    const TRACE_LEVEL_INFORMATION: u32 = 4;
-    const TRACE_LEVEL_ERROR: u32 = 2;
-    const TRACE_FLAG_GENERAL: u32 = 0x00000040;
-    const TRACE_FLAG_IOCTL: u32 = 0x00000080;
 
     let mut status;
     unsafe {
@@ -3134,7 +3064,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
                                 for i in 0..dataSetRangesCount {
                                     let range = &*dataSetRanges.add(i as usize);
-                                    if (range.StartingOffset % (*(*fdoExtension).DiskGeometry.BytesPerSector as i64 != 0)
+                                    if (range.StartingOffset % (*(*fdoExtension).DiskGeometry.BytesPerSector as i64) != 0)
                                         || (range.LengthInBytes % (*(*fdoExtension).DiskGeometry.BytesPerSector as u64) != 0)
                                         || (range.StartingOffset < granularityAlignmentInBytes as i64)
                                         || (range.LengthInBytes == 0)
@@ -3255,7 +3185,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
                             for i in 0..dataSetRangesCount {
                                 let range = &*dataSetRanges.add(i as usize);
-                                if (range.StartingOffset % (*(*fdoExtension).DiskGeometry.BytesPerSector as i64 != 0)
+                                if (range.StartingOffset % (*(*fdoExtension).DiskGeometry.BytesPerSector as i64) != 0)
                                     || (range.LengthInBytes % (*(*fdoExtension).DiskGeometry.BytesPerSector as u64) != 0)
                                     || (range.StartingOffset < granularityAlignmentInBytes as i64)
                                     || (range.LengthInBytes == 0)
@@ -4526,9 +4456,6 @@ pub unsafe extern "C" fn ClassQueueProvisioningTypeChangedEventWorker(
     DeviceObject: *mut core::ffi::c_void, // PDEVICE_OBJECT
 ) {
     // Forward declarations for unknown types/functions
-    const TRACE_LEVEL_INFORMATION: u32 = 4;
-    const TRACE_FLAG_GENERAL: u32 = 1;
-    const TRACE_LEVEL_ERROR: u32 = 1;
 
     // PCOMMON_DEVICE_EXTENSION commonExtension = (PCOMMON_DEVICE_EXTENSION)(DeviceObject->DeviceExtension);
     let common_extension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
@@ -4733,11 +4660,6 @@ pub unsafe extern "system" fn ClasspLogIOEventWithContext(
 
 const NonPagedPoolNx: u32 = 512; // placeholder
 const CLASSPNP_POOL_TAG_LOG_MESSAGE: u32 = 0x6c674c6d; // placeholder
-const IO_ERROR_IO_HARDWARE_ERROR: u32 = 0x2004;
-const IO_WARNING_IO_OPERATION_RETRIED: u32 = 0x200a;
-const TRACE_LEVEL_ERROR: u32 = 2;
-const TRACE_FLAG_GENERAL: u32 = 1;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
 const DelayedWorkQueue: *mut core::ffi::c_void = core::ptr::null_mut(); // placeholder
 #[no_mangle]
 pub unsafe extern "C" fn ClasspQueueLogIOEventWithContextWorker(
@@ -5391,7 +5313,6 @@ pub unsafe extern "C" fn ClasspGetCopyOffloadMaxDuration(
 ) -> NTSTATUS {
 
     // TRACE_LEVEL_VERBOSE and TRACE_FLAG_PNP values
-    const TRACE_LEVEL_VERBOSE: u32 = 5;
     const TRACE_FLAG_PNP: u32 = 0x00000008;
 
     // CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION wide string
@@ -5993,14 +5914,10 @@ pub unsafe extern "C" fn ClasspStorageEventNotification(
 ) -> NTSTATUS {
     // Forward declarations for external symbols not provided by imports
 
-    const TRACE_LEVEL_VERBOSE: u32 = 0x5;
-    const TRACE_FLAG_IOCTL: u32 = 0x100;
-    const TRACE_LEVEL_ERROR: u32 = 0x1;
     const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000D;
     const STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = 0xC0000004;
     const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1;
     const STORAGE_EVENT_MEDIA_STATUS: u32 = 0x1;
-    const IO_NO_INCREMENT: i32 = 0;
     const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BB;
 
     let fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION;
@@ -6314,14 +6231,8 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
 
     // Constants not in the available imports – estimated or known values
     const IOCTL_STORAGE_FIRMWARE_GET_INFO: u32 = 0x2D1400;
-    const TRACE_LEVEL_ERROR: u32 = 0;
-    const TRACE_FLAG_INIT: u32 = 0;
     const CLASSPNP_POOL_TAG_FIRMWARE: u32 = u32::from_le_bytes(*b"FwIn");
-    const NonPagedPoolNx: u32 = 0x00000200;
 
-    const SupportUnknown: i32 = 0;
-    const Supported: i32 = 1;
-    const NotSupported: i32 = 2;
 
     let commonExtension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
     let fdoExtension = (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
@@ -6856,8 +6767,6 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
     const SCSI_WRITE_BUFFER_MODE_ACTIVATE_DEFERRED_MICROCODE: u8 = 0x0F; // example
     const STORAGE_HW_FIRMWARE_REQUEST_FLAG_CONTROLLER: u32 = 1;          // flag value
     const NotSupported: i32 = 0;                       // assume enum values
-    const Supported: i32 = 1;
-    const SupportUnknown: i32 = 2;
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
 

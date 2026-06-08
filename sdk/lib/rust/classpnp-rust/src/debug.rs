@@ -1,3 +1,4 @@
+use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -120,7 +121,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
         );
     } else if srb_status_masked == SRB_STATUS_SUCCESS as u32 {
-        if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status as i32 < 0 {
+        if ((*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status as i32) < 0 {
             TracePrint(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_RW,
