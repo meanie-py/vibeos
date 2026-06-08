@@ -403,8 +403,15 @@ def build_function_prompt(
     spec_exports: dict | None = None,
     target: Target | None = None,
     include_shared: bool = True,
+    c2rust_anchor: str | None = None,
 ) -> str:
     """Build a complete prompt for translating a single C function.
+
+    c2rust_anchor: optional c2rust transpilation of THIS function (raw/unsafe but
+    behavior-correct by construction). When given it is appended as a "Behavior
+    Anchor" section — the mechanical-mode system prompt instructs the model to
+    preserve every operation it contains, defeating the silent-stub/drop-logic
+    failure mode of pure LLM translation.
 
     When ``include_shared`` is False, the file-shared context (import list, gap
     functions, globals) is OMITTED — the caller is sending it once in a cached
@@ -462,5 +469,21 @@ def build_function_prompt(
     parts.append("```c")
     parts.append(func.body_text)
     parts.append("```")
+
+    # Behavior anchor: c2rust's mechanical (behavior-correct-by-construction)
+    # transpilation of THIS function. The mechanical-mode system prompt tells the
+    # model to preserve every operation it contains — the structural defense
+    # against silently stubbing/truncating hard functions.
+    if c2rust_anchor:
+        parts.append(
+            "\n## Behavior Anchor (c2rust transpilation)\n"
+            "This is c2rust's exact transpilation of the function above — raw/unsafe/ugly but it\n"
+            "contains ALL the logic (c2rust is a compiler, it cannot drop or stub anything). Your\n"
+            "Rust MUST preserve every statement/loop/branch/call it has; clean up its surface\n"
+            "(types, imports, names) but NEVER omit logic it contains.\n"
+        )
+        parts.append("```rust")
+        parts.append(c2rust_anchor.strip())
+        parts.append("```")
 
     return "\n".join(parts)

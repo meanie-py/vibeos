@@ -1,0 +1,19 @@
+# wmilib-rust — Rust translation of drivers/wmi/wmilib.c (the ReactOS WMI
+# library, wmilib.sys: the WmiCompleteRequest / WmiFireEvent / WmiSystemControl
+# helpers). crate-type=staticlib → libwmilib_rust.a; the 3 Wmi* exports come
+# from this lib (wmilib.sys is an export-only kernel DLL, ENTRYPOINT 0). The C
+# bodies are stubs (DPRINT1 "unimplemented" + return STATUS_SUCCESS), so the
+# crate is self-contained (no ntkrnl-sys dependency).
+#
+# ABI: wmilib.h declares the Wmi* fns NTAPI → stdcall on i386 (`_Name@N`),
+# cdecl on amd64/arm64 → `#[no_mangle] extern "system"`. 3-arch.
+
+[package]
+name = "wmilib-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]

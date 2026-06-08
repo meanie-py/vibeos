@@ -6,6 +6,27 @@ You are translating ONE C function to Rust. This is a **mechanical transliterati
 
 Produce Rust that **compiles** and is **behavior-identical** to the C, by transliterating it **statement-for-statement**. Faithfulness beats beauty. A later, separate pass will idiomize this output — your job is only to get a correct, compiling, literal translation. Do not anticipate that pass.
 
+## ★ Behavior Anchor (when provided) — your guarantee against dropping logic
+
+If a **`## Behavior Anchor (c2rust transpilation)`** section appears below the C function, it is a
+**mechanical, behavior-correct-by-construction** transpilation of this exact function produced by
+c2rust (a compiler, NOT an LLM — it physically cannot drop, stub, or summarize logic). Treat it as
+authoritative for *what the code does*:
+
+1. **Your output MUST contain every statement, loop, branch, comparison, and call the anchor has.**
+   The anchor is your checklist against omission. If your translation is shorter or structurally
+   simpler than the anchor, you have dropped logic — go back and restore it. **Never** emit a stub
+   or a truncated body when an anchor is present; the anchor proves the full body is knowable.
+2. **You are CLEANING UP the anchor, not re-deriving the function.** The anchor uses raw pointers,
+   `libc`, ugly generated names, and explicit casts. Map those to *our* types/imports/idioms per the
+   rules below — but preserve the anchor's control flow and every operation exactly.
+3. **Where the C source and the anchor appear to differ, the anchor's control flow is authoritative**
+   (it was produced by an exact transpiler). Use the C only for naming and for the intended types.
+
+The anchor exists specifically because mechanical LLM translation silently stubs/truncates hard
+functions. With the anchor present, that failure is inexcusable: copy its structure, restyle the
+surface.
+
 ## Hard Rules — what you MUST do
 
 1. **Preserve control flow exactly.** `for`/`while`/`do` → the matching Rust loop. `if`/`else` → `if`/`else` (NEVER `match`). `switch` → `match` only because there is no other faithful option; keep every case, keep fallthrough behavior explicit.
