@@ -1248,6 +1248,8 @@ pub struct mlang_data {
     pub sid: SCRIPT_ID,
 }
 
+unsafe impl Sync for mlang_data {}
+
 pub static mlang_data: [mlang_data; 15] = [
     mlang_data {
         description: b"Arabic\0".as_ptr() as *const i8,
@@ -1440,6 +1442,8 @@ pub struct object_creation_info {
     pub szClassName: LPCSTR,
     pub pfnCreateInstance: unsafe extern "C" fn(*mut IUnknown, *mut *mut c_void) -> HRESULT,
 }
+
+unsafe impl Sync for object_creation_info {}
 
 pub static object_creation: [object_creation_info; 2] = [
     object_creation_info {
@@ -2786,13 +2790,13 @@ unsafe extern "C" fn fnIMLangFontLink2_GetScriptFontInfo(
     i = 0;
     j = 0;
     while i < mlang_data.len() as UINT {
-        if sid == mlang_data[i as usize].sid {
+        if sid == u32::from_ne_bytes(mlang_data[i as usize].sid) {
             if !pScriptFont.is_null() {
                 if j >= *puiFonts {
                     break;
                 }
 
-                (*pScriptFont.add(j as usize)).scripts = (1u32 << mlang_data[i as usize].sid) as u32; // SCRIPT_IDS cast
+                (*pScriptFont.add(j as usize)).scripts = (1u32 << u32::from_ne_bytes(mlang_data[i as usize].sid)) as u32; // SCRIPT_IDS cast
 
                 if dwFlags == SCRIPTCONTF_FIXED_FONT {
                     MultiByteToWideChar(
@@ -3137,7 +3141,7 @@ unsafe extern "C" fn ConvertSJIS2JIS(input: *const i8, count: u32, output: *mut 
                         return 0;
                     }
                     p2 = (*input.add(i as usize + 1)) as u8 & 0xff;
-                    i += han2zen((&mut p) as *mut u8, (&mut p2) as *mut u8);
+                    i = (i as i32 + han2zen((&mut p) as *mut u8, (&mut p2) as *mut u8)) as u32;
                     sjis2jis((&mut p) as *mut u8, (&mut p2) as *mut u8);
                     if shifted == 0 {
                         shifted = 1;
