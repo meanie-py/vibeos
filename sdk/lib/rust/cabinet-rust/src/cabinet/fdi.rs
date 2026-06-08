@@ -224,7 +224,7 @@ unsafe fn make_decode_table(nsyms: u32, nbits: u32, length: *const u8, table: *m
     let mut bit_mask: u32 = table_mask >> 1;
     let mut next_symbol: u32 = bit_mask;
 
-    while bit_num <= nbits {
+    while (bit_num as u32) <= nbits {
         sym = 0;
         while (sym as u32) < nsyms {
             if *length.add(sym as usize) == bit_num {
@@ -379,7 +379,7 @@ pub unsafe extern "C" fn FDICreate(
         return core::ptr::null_mut();
     }
 
-    let fdi = pfnalloc(core::mem::size_of::<FDI_Int>()) as *mut FDI_Int;
+    let fdi = pfnalloc(core::mem::size_of::<FDI_Int>() as u32) as *mut FDI_Int;
     if fdi.is_null() {
         (*perf).erfOper = FDIERROR_ALLOC_FAIL;
         (*perf).erfType = 0;
@@ -401,7 +401,7 @@ pub unsafe extern "C" fn FDICreate(
 }
 
 unsafe fn FDI_getoffset(fdi: *mut FDI_Int, hf: INT_PTR) -> i32 {
-    ((*fdi).seek)(hf, 0, SEEK_CUR)
+    ((*fdi).seek)(hf as isize, 0, SEEK_CUR)
 }
 
 unsafe fn QTMfdi_initmodel(m: *mut QTMmodel, sym: *mut QTMmodelsym, n: i32, s: i32) {
@@ -455,13 +455,13 @@ unsafe extern "C" fn LZXfdi_init(window: i32, decomp_state: *mut fdi_decomp_stat
 
         if (*decomp_state).methods.lzx.actual_size < wndsize {
             if !(*decomp_state).methods.lzx.window.is_null() {
-                ((*(*decomp_state).fdi).free)((*decomp_state).methods.lzx.window);
+                ((*(*decomp_state).fdi).free)((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
             }
             (*decomp_state).methods.lzx.window = core::ptr::null_mut();
         }
 
         if (*decomp_state).methods.lzx.window.is_null() {
-            let mem = ((*(*decomp_state).fdi).alloc)(wndsize as usize) as *mut u8;
+            let mem = ((*(*decomp_state).fdi).alloc)(wndsize as u32) as *mut u8;
             if mem.is_null() {
                 return DECR_NOMEMORY;
             }
