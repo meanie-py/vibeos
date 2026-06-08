@@ -263,6 +263,10 @@ name = "handle"
 version = "0.1.0"
 
 [[package]]
+name = "hidparse-rust"
+version = "0.1.0"
+
+[[package]]
 name = "i8042prt-cargo"
 version = "0.1.0"
 dependencies = [
@@ -961,6 +965,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "usbdex-rust"
+version = "0.1.0"
+
+[[package]]
 name = "userinit-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1080,3 +1088,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
 ]
+
+[[package]]
+name = "wmilib-rust"
+version = "0.1.0"
