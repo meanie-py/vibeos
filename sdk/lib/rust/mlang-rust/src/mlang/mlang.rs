@@ -3913,8 +3913,8 @@ pub unsafe extern "C" fn fnIEnumScript_Next(
     *pceltFetched = 0;
 
     let mut celt = celt;
-    if (This.pos as usize).wrapping_add(celt as usize) > This.total as usize {
-        celt = This.total - This.pos;
+    if ((*This).pos as usize).wrapping_add(celt as usize) > (*This).total as usize {
+        celt = (*This).total - (*This).pos;
     }
 
     if celt == 0 {
@@ -3922,7 +3922,7 @@ pub unsafe extern "C" fn fnIEnumScript_Next(
     }
 
     core::ptr::copy_nonoverlapping(
-        (*This).script_info.add(This.pos),
+        (*This).script_info.add((*This).pos),
         rgelt,
         celt as usize,
     );
