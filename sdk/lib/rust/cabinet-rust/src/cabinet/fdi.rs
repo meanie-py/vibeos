@@ -1147,12 +1147,12 @@ unsafe fn QTMfdi_init(window: i32, level: i32, decomp_state: *mut fdi_decomp_sta
     }
     if (*decomp_state).methods.qtm.actual_size < wndsize {
         if !(*decomp_state).methods.qtm.window.is_null() {
-            ((*(*decomp_state).fdi).free)((*decomp_state).methods.qtm.window);
+            ((*(*decomp_state).fdi).free)((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
         }
         (*decomp_state).methods.qtm.window = core::ptr::null_mut();
     }
     if (*decomp_state).methods.qtm.window.is_null() {
-        let ptr = ((*(*decomp_state).fdi).alloc)(wndsize);
+        let ptr = ((*(*decomp_state).fdi).alloc)(wndsize) as *mut u8;
         (*decomp_state).methods.qtm.window = ptr;
         if ptr.is_null() {
             return 3; /* DECR_NOMEMORY */
@@ -1173,7 +1173,7 @@ unsafe fn QTMfdi_init(window: i32, level: i32, decomp_state: *mut fdi_decomp_sta
             (i - 2) >> 2
         };
         (*decomp_state).q_length_extra[i as usize] = extra_val as u8;
-        (*decomp_state).q_length_base[i as usize] = j;
+        (*decomp_state).q_length_base[i as usize] = j as u8;
         j += 1u32 << if i == 26 { 5 } else { extra_val };
     }
     j = 0;
