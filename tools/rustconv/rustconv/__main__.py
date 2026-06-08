@@ -922,6 +922,14 @@ def cmd_translate(args):
 
         print(f"  Functions: {len(sorted_deps)} (topo-sorted)", file=sys.stderr)
 
+        # c2rust behavior anchors (best-effort): a compiler-exact transpilation per
+        # function, handed to the model so it can't silently stub/drop logic. Built
+        # once per file; empty map when --c2rust is off or c2rust/db is unavailable.
+        c2rust_anchors: dict[str, str] = {}
+        if getattr(args, "c2rust", False):
+            from .c2rust_anchor import build_anchor_map
+            c2rust_anchors = build_anchor_map(c_file)
+
         if args.dry_run:
             # Just show the plan
             print(f"\n  Translation order:", file=sys.stderr)
@@ -952,7 +960,7 @@ def cmd_translate(args):
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
                     sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports,
-                    target=rustconv_target,
+                    target=rustconv_target, c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -1020,7 +1028,8 @@ def cmd_translate(args):
                 fres = resolve_function(dp, catalog, file_res.exports, scan.defines)
                 up = build_function_prompt(dp, fres, ctx, all_deps_for_context, scan,
                                            catalog_fn_names, file_res.exports,
-                                           target=rustconv_target, include_shared=False)
+                                           target=rustconv_target, include_shared=False,
+                                           c2rust_anchor=c2rust_anchors.get(dp.name))
                 sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
                 try:
                     r = submit_single(up, model=model, system_prompt=system_prompt,
@@ -1081,6 +1090,7 @@ def cmd_translate(args):
                 dep, func_res, translated, all_deps_for_context,
                 scan, catalog_fn_names, file_res.exports,
                 target=rustconv_target, include_shared=False,
+                c2rust_anchor=c2rust_anchors.get(dep.name),
             )
 
             # Stream this function's output straight to the durable archive.
@@ -1634,6 +1644,12 @@ def main():
                    help="Ignore the .responses/ resume cache and re-translate every "
                         "function fresh (cache still refreshed). Default resumes "
                         "unchanged-body functions for $0.")
+    p.add_argument("--c2rust", action="store_true",
+                   help="Anchor each function on its c2rust transpilation (compiler-exact, "
+                        "behavior-preserving) so the model can't silently stub/drop logic. "
+                        "Best-effort: needs the c2rust binary + a build-*/compile_commands.json; "
+                        "falls back to anchor-less translation if unavailable. Pairs with "
+                        "--mode mechanical.")
 
     # probe-migrate
     p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
