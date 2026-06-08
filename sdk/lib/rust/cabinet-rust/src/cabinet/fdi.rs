@@ -416,8 +416,8 @@ unsafe fn QTMfdi_initmodel(m: *mut QTMmodel, sym: *mut QTMmodelsym, n: i32, s: i
     for i in 0..n {
         (*m).tabloc[(i + s) as usize] = i as u8;
         let sym_ptr = (*m).syms.offset(i as isize);
-        (*sym_ptr).sym = (i + s) as i32;
-        (*sym_ptr).cumfreq = (n - i) as i32;
+        (*sym_ptr).sym = (i + s) as u16;
+        (*sym_ptr).cumfreq = (n - i) as u16;
     }
     let sym_n = (*m).syms.offset(n as isize);
     (*sym_n).cumfreq = 0;
