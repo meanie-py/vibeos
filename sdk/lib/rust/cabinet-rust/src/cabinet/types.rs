@@ -201,6 +201,7 @@ pub static Zipmask: [u16; 17] = [
 ];
 
 // ---- Ziphuft (MSZIP huffman tree node) ----
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Ziphuft {
     pub e: u8,
@@ -218,6 +219,7 @@ pub union Ziphuft_u {
 // ---- ZIPstate ---- (cabinet.h: ZIPBMAX=16, ZIPN_MAX=288)
 pub const ZIPBMAX: u32 = 16;
 pub const ZIPN_MAX: u32 = 288;
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct ZIPstate {
     pub window_posn: u32,                 // cab_ULONG
@@ -241,6 +243,7 @@ pub struct QTMmodelsym {
 }
 
 // ---- QTMmodel ----
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct QTMmodel {
     pub shiftsleft: i32,
@@ -250,6 +253,7 @@ pub struct QTMmodel {
 }
 
 // ---- QTMstate ----
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct QTMstate {
     pub window: *mut u8,
@@ -277,6 +281,7 @@ pub struct QTMstate {
 }
 
 // ---- LZXstate ----
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct LZXstate {
     pub window: *mut u8,

@@ -1007,6 +1007,7 @@ unsafe extern "C" fn free_decompression_temps(fdi: *mut FDI_Int, fol: *const fdi
 }
 
 unsafe fn free_decompression_mem(fdi: *mut FDI_Int, decomp_state: *mut fdi_decomp_state) {
+    let mut decomp_state = decomp_state;
     let mut fol: *mut fdi_folder;
     while !decomp_state.is_null() {
         let prev_fds: *mut fdi_decomp_state;

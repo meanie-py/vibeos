@@ -393,7 +393,7 @@ pub unsafe extern "C" fn FCICreate(
     (*p_fci_internal).seek = pfnseek;
     (*p_fci_internal).delete = pfndelete;
     (*p_fci_internal).gettemp = pfnfcigtf;
-    (*p_fci_internal).ccab = *pccab;
+    (*p_fci_internal).ccab = core::ptr::read(pccab);
     (*p_fci_internal).pccab = pccab;
     (*p_fci_internal).pv = pv;
     (*p_fci_internal).data.handle = -1;
@@ -670,7 +670,7 @@ unsafe fn write_data_blocks(
     let data = (cfdata as *mut u8).add(header_size as usize) as *mut core::ffi::c_void;
 
     // Outer loop: LIST_FOR_EACH_ENTRY(folder, &fci->folders_list, struct folder, entry)
-    let mut current = (*(*fci).folders_list).next;
+    let mut current = (*fci).folders_list.next;
     while current != core::ptr::addr_of!((*fci).folders_list) {
         let folder = (current as *const u8).sub(core::mem::offset_of!(folder, entry)) as *mut folder;
 
@@ -1363,17 +1363,15 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
 unsafe fn fci_flush_folder(
     p_fci_internal: *mut FCI_Int,
     fGetNextCab: i32,
-    pfnfcignc: Option<unsafe extern "system" fn(*mut CCAB, u32, *mut core::ffi::c_void) -> i32>,
-    pfnfcis: Option<unsafe extern "system" fn(u32, u32, u32, *mut core::ffi::c_void) -> isize>,
+    pfnfcignc: PFNFCIGETNEXTCABINET,
+    pfnfcis: PFNFCISTATUS,
 ) -> i32 {
     let mut payload: u32;
     let mut read_result: u32;
     let folder: *mut folder;
 
-    if pfnfcignc.is_none() || pfnfcis.is_none() {
-        set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_BAD_ARGUMENTS as i32);
-        return 0;
-    }
+    // pfnfcignc/pfnfcis are non-nullable fn pointers (canonical FCI callback
+    // typedefs); the C null-check is statically impossible here.
 
     if (*p_fci_internal).fGetNextCabInVain != 0 && (*p_fci_internal).fNextCab != 0 {
         set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE as i32);
@@ -1410,7 +1408,7 @@ unsafe fn fci_flush_folder(
         + (*p_fci_internal).folders_size;
     (*p_fci_internal).statusFolderCopied = 0;
 
-    let callback = pfnfcis.unwrap();
+    let callback = pfnfcis;
     if callback(
         0x00000002, /* statusFolder */
         (*p_fci_internal).statusFolderCopied,
@@ -1442,13 +1440,13 @@ unsafe fn fci_flush_folder(
                 + 256 /* CB_MAX_DISK_NAME */)
             || fGetNextCab != 0)
     {
-        (*(*p_fci_internal).pccab).iCab += 1;
+        (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
         (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
-        if !(pfnfcignc.unwrap())(
+        if (pfnfcignc)(
             (*p_fci_internal).pccab,
             (*p_fci_internal).estimatedCabinetSize,
             (*p_fci_internal).pv,
-        ) {
+        ) == 0 {
             set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_FUNCTION_FAILED as i32);
             return 0;
         }
@@ -1605,7 +1603,7 @@ unsafe fn fci_flush_cabinet(
                 < read_result + CB_MAX_CABINET_NAME as u32 + CB_MAX_DISK_NAME as u32)
         {
             /* increment cabinet index */
-            (*(*p_fci_internal).pccab).iCab += 1;
+            (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
             /* get name of next cabinet */
             (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
             if pfnfcignc(
@@ -1718,7 +1716,7 @@ pub unsafe extern "C" fn FCIAddFile(
             }
             _ => {
                 let fmt = b"compression %x not supported, defaulting to none\n\0".as_ptr() as *const i8;
-                FIXME(fmt, typeCompress);
+                FIXME(fmt, typeCompress as u32);
                 (*p_fci_internal).compression = tcompTYPE_NONE as TCOMP;
                 (*p_fci_internal).compress = Some(compress_NONE);
             }
@@ -1769,7 +1767,7 @@ pub unsafe extern "C" fn FCIAddFile(
         && (*p_fci_internal).ccab.cb < read_result + CB_MAX_CABINET_NAME as u32 + CB_MAX_DISK_NAME as u32
     {
         /* increment cabinet index */
-        (*(*p_fci_internal).pccab).iCab += 1;
+        (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
         /* get name of next cabinet */
         (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
         if pfnfcignc(
@@ -1855,7 +1853,7 @@ pub unsafe extern "C" fn FCIAddFile(
             < read_result + CB_MAX_CABINET_NAME as u32 + CB_MAX_DISK_NAME as u32)
     {
         /* increment cabinet index */
-        (*(*p_fci_internal).pccab).iCab += 1;
+        (*((*p_fci_internal).pccab as *mut CCAB)).iCab += 1;
         /* get name of next cabinet */
         (*p_fci_internal).estimatedCabinetSize = (*p_fci_internal).statusFolderTotal;
         if pfnfcignc(

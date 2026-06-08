@@ -323,7 +323,7 @@ unsafe extern "C" fn fdi_notify_extract(
             let szFullPath: LPSTR;
             let szDirectory: LPSTR;
             let mut hFile: HANDLE = core::ptr::null_mut();
-            let dwSize: DWORD;
+            let mut dwSize: DWORD;
 
             dwSize = (lstrlenA((*pDestination).Destination.as_ptr())
                 + lstrlenA(b"\\\0".as_ptr() as LPCSTR)
@@ -389,7 +389,7 @@ unsafe extern "C" fn fdi_notify_extract(
 
                 /* create the destination directory if it doesn't exist */
                 if GetFileAttributesA(szDirectory) == INVALID_FILE_ATTRIBUTES {
-                    let ptr: *mut i8;
+                    let mut ptr: *mut i8;
                     ptr = szDirectory
                         .wrapping_add(strlen((*pDestination).Destination.as_ptr()) + 1);
                     while *ptr != 0 {
