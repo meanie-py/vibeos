@@ -256,6 +256,10 @@ name = "handle"
 version = "0.1.0"
 
 [[package]]
+name = "hidparse-rust"
+version = "0.1.0"
+
+[[package]]
 name = "i8042prt-cargo"
 version = "0.1.0"
 dependencies = [
@@ -453,6 +457,13 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "midl-rt"
 version = "0.1.0"
+
+[[package]]
+name = "mlang-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
 
 [[package]]
 name = "mouclass-cargo"
@@ -947,6 +958,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "usbdex-rust"
+version = "0.1.0"
+
+[[package]]
 name = "userinit-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1066,3 +1081,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
 ]
+
+[[package]]
+name = "wmilib-rust"
+version = "0.1.0"
