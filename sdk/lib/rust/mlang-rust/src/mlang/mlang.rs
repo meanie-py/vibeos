@@ -2237,11 +2237,11 @@ unsafe extern "C" fn release_font(font: HFONT) -> HRESULT {
     let font_cache_ptr = core::ptr::addr_of_mut!(font_cache);
     EnterCriticalSection(core::ptr::addr_of_mut!(font_cache_critical));
 
-    let mut entry: *mut list = (*font_cache_ptr).Flink;
-    while entry != font_cache_ptr {
+    let mut entry: *mut list = (*font_cache_ptr).Flink as *mut list;
+    while entry as *mut core::ffi::c_void != font_cache_ptr as *mut core::ffi::c_void {
         let font_list_entry: *mut font_list = (entry as usize - core::mem::offset_of!(font_list, list_entry)) as *mut font_list;
         if (*font_list_entry).font == font {
-            list_remove(core::ptr::addr_of_mut!((*font_list_entry).list_entry));
+            list_remove(core::ptr::addr_of_mut!((*font_list_entry).list_entry) as *mut list);
             DeleteObject(font as HGDIOBJ);
             HeapFree(GetProcessHeap(), 0, font_list_entry as *mut core::ffi::c_void);
             hr = S_OK;
@@ -2270,7 +2270,7 @@ unsafe extern "C" fn clear_font_cache() -> HRESULT {
         let font_list_entry: *mut font_list = entry as *mut font_list;
         let font_list_entry2: *mut font_list = next as *mut font_list;
 
-        list_remove(&raw mut (*font_list_entry).list_entry);
+        list_remove(&raw mut (*font_list_entry).list_entry as *mut list);
         DeleteObject((*font_list_entry).font as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, font_list_entry as *mut core::ffi::c_void);
 
@@ -3474,9 +3474,9 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
         let primary_locale = (Locale & 0x3FF) as LANGID;
         let sub_locale = ((Locale >> 10) & 0x3F) as LANGID;
 
-        if primary_locale == LANG_ENGLISH
-            || primary_locale == LANG_CHINESE
-            || primary_locale == LANG_ARABIC
+        if primary_locale == LANG_ENGLISH as u16
+            || primary_locale == LANG_CHINESE as u16
+            || primary_locale == LANG_ARABIC as u16
         {
             if sub_locale == 0 {
                 type_ = LOCALE_SENGLANGUAGE;
@@ -3496,7 +3496,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
         (*pRfc1766Info).wszLocaleName[0] = 0;
 
         let primary_langid = (LangId & 0x3FF) as LANGID;
-        if primary_langid != LANG_ENGLISH && last_lang != LangId {
+        if primary_langid != LANG_ENGLISH as u16 && last_lang != LangId {
             FIXME(
                 b"Only English names supported (requested: 0x%04x)\n\0".as_ptr() as *const i8,
                 LangId as u32,
