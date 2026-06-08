@@ -215,14 +215,21 @@ pub union Ziphuft_u {
     pub t: *mut Ziphuft,
 }
 
-// ---- ZIPstate ----
+// ---- ZIPstate ---- (cabinet.h: ZIPBMAX=16, ZIPN_MAX=288)
+pub const ZIPBMAX: u32 = 16;
+pub const ZIPN_MAX: u32 = 288;
 #[repr(C)]
 pub struct ZIPstate {
-    pub window_posn: u32,
-    pub bb: u32,
-    pub bk: u32,
-    pub ll: [u32; 288 + 32],
-    pub inpos: *mut u8,
+    pub window_posn: u32,                 // cab_ULONG
+    pub bb: u32,                          // cab_ULONG
+    pub bk: u32,                          // cab_ULONG
+    pub ll: [u32; 288 + 32],              // cab_ULONG ll[288+32]
+    pub c: [u32; 16 + 1],                 // cab_ULONG c[ZIPBMAX+1]
+    pub lx: [i32; 16 + 1],                // cab_LONG  lx[ZIPBMAX+1]
+    pub u: [*mut Ziphuft; 16],            // struct Ziphuft *u[ZIPBMAX]
+    pub v: [u32; 288],                    // cab_ULONG v[ZIPN_MAX]
+    pub x: [u32; 16 + 1],                 // cab_ULONG x[ZIPBMAX+1]
+    pub inpos: *mut u8,                   // cab_UBYTE *inpos
 }
 
 // ---- QTMmodelsym ----

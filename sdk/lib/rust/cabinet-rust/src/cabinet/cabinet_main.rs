@@ -2,6 +2,11 @@ use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 use crate::types::*;
 
+extern "C" {
+    fn TRACE(format: *const i8, ...);
+    fn WARN(format: *const i8, ...);
+}
+
 // ---- consts / statics / type aliases (deduped) ----
 const E_INVALIDARG: i32 = 0x80070057u32 as i32;
 const EXTRACT_FILLFILELIST: u32 = 0x00000001;
@@ -18,7 +23,6 @@ const INVALID_FILE_ATTRIBUTES: DWORD = (-1i32) as DWORD;
 const INVALID_HANDLE_VALUE: HANDLE = (-1isize) as HANDLE;
 
 extern "C" {
-    fn WARN(format: *const i8, ...);
 }
 
 extern "system" {
@@ -205,7 +209,6 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
             pvUser: *mut core::ffi::c_void,
         ) -> i32;
         fn FDIDestroy(hfdi: *mut core::ffi::c_void) -> i32;
-        fn TRACE(format: *const i8, ...);
         fn debugstr_a(s: *const i8) -> *const i8;
         fn strrchr(s: *const i8, c: i32) -> *mut i8;
         fn strlen(s: *const i8) -> u32;

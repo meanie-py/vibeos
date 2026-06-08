@@ -2,6 +2,13 @@ use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 use crate::types::*;
 
+extern "C" {
+    fn ERR(format: *const i8, ...);
+    fn FIXME(format: *const i8, ...);
+    fn TRACE(format: *const i8, ...);
+    fn WARN(format: *const i8, ...);
+}
+
 // ---- file-scope type preamble (translated) ----
 type cab_UBYTE = u8;
 type cab_UWORD = u16;
@@ -123,14 +130,11 @@ extern "C" {
     fn LENTABLE(decomp_state: *mut fdi_decomp_state, table: u32) -> *mut u8;
     fn BUILD_TABLE(decomp_state: *mut fdi_decomp_state, table: u32);
     fn READ_HUFFSYM(decomp_state: *mut fdi_decomp_state, table: u32, bitbuf: *mut u32, bitsleft: *mut i32, inpos: *mut *mut u8) -> i32;
-    fn TRACE(format: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn strlen(s: *const i8) -> usize;
 }
 
 extern "system" {
     fn SetLastError(dwErrCode: u32);
-    fn FIXME(format: *const i8, ...);
     fn debugstr_a(s: *const i8) -> *const i8;
 }
 
@@ -775,7 +779,6 @@ extern "C" {
     fn Q_INIT_BITSTREAM();
     fn Q_READ_BITS(val: *mut i32, n: u32);
     fn GET_SYMBOL(model: i32, sym: *mut u8);
-    fn TRACE(format: *const i8, ...);
     static model7: i32;
     static model00: i32;
     static model40: i32;
@@ -1253,9 +1256,6 @@ unsafe fn FDI_read_entries(
     pmii: *mut MORE_ISCAB_INFO,
 ) -> i32 {
     extern "system" {
-        fn TRACE(format: *const i8, ...);
-        fn ERR(format: *const i8, ...);
-        fn WARN(format: *const i8, ...);
         fn set_error(fdi: *mut FDI_Int, error: i32, param: i32);
         fn EndGetI32(ptr: *const u8) -> i32;
         fn EndGetI16(ptr: *const u8) -> i16;

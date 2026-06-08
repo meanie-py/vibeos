@@ -2,6 +2,10 @@ use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 use crate::types::*;
 
+extern "C" {
+    fn FIXME(format: *const i8, ...);
+}
+
 // ---- file-scope type preamble (translated) ----
 type cab_UBYTE = u8;
 const CAB_BLOCKMAX: u32 = 32768;
@@ -210,7 +214,6 @@ extern "system" {
     fn SetLastError(code: u32);
     fn lstrcpynA(dst: *mut i8, src: *const i8, max_len: i32) -> *mut i8;
     fn list_empty(head: *const list) -> BOOL;
-    fn FIXME(format: *const i8, ...);
 }
 
 unsafe fn set_error(fci: *mut FCI_Int, oper: i32, err: i32) {
