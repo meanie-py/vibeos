@@ -414,7 +414,7 @@ unsafe fn QTMfdi_initmodel(m: *mut QTMmodel, sym: *mut QTMmodelsym, n: i32, s: i
         core::mem::size_of_val(&(*m).tabloc),
     );
     for i in 0..n {
-        (*m).tabloc[(i + s) as usize] = i as u8;
+        (*m).tabloc[(i + s) as usize] = i as u16;
         let sym_ptr = (*m).syms.offset(i as isize);
         (*sym_ptr).sym = (i + s) as u16;
         (*sym_ptr).cumfreq = (n - i) as u16;
@@ -497,11 +497,11 @@ unsafe extern "C" fn LZXfdi_init(window: i32, decomp_state: *mut fdi_decomp_stat
         (*decomp_state).methods.lzx.R1 = 1;
         (*decomp_state).methods.lzx.R0 = 1;
 
-        (*decomp_state).methods.lzx.main_elements = LZX_NUM_CHARS + ((posn_slots as u32) << 3);
+        (*decomp_state).methods.lzx.main_elements = (LZX_NUM_CHARS + ((posn_slots as u32) << 3)) as u16;
         (*decomp_state).methods.lzx.header_read = 0;
         (*decomp_state).methods.lzx.frames_read = 0;
         (*decomp_state).methods.lzx.block_remaining = 0;
-        (*decomp_state).methods.lzx.block_type = LZX_BLOCKTYPE_INVALID;
+        (*decomp_state).methods.lzx.block_type = LZX_BLOCKTYPE_INVALID as u16;
         (*decomp_state).methods.lzx.intel_curpos = 0;
         (*decomp_state).methods.lzx.intel_started = 0;
         (*decomp_state).methods.lzx.window_posn = 0;
@@ -802,7 +802,7 @@ unsafe extern "C" fn QTMfdi_decomp(mut inlen: i32, mut outlen: i32, decomp_state
     let mut i: i32;
     let mut extra: i32;
     let mut togo = outlen;
-    let mut match_length = 0;
+    let mut match_length: i32 = 0;
     let mut copy_length: i32;
     let mut selector: u8;
     let mut sym: u8;
@@ -814,7 +814,7 @@ unsafe extern "C" fn QTMfdi_decomp(mut inlen: i32, mut outlen: i32, decomp_state
     Q_INIT_BITSTREAM();
     Q_READ_BITS(&raw mut C, 16);
     window_posn &= window_size - 1;
-    if (window_posn + togo) > window_size {
+    if (window_posn + togo as u32) > window_size {
         TRACE(b"straddled run\n\0".as_ptr() as *const i8);
         return 1;
     }
@@ -860,7 +860,7 @@ unsafe extern "C" fn QTMfdi_decomp(mut inlen: i32, mut outlen: i32, decomp_state
             6 => {
                 GET_SYMBOL(model6len, &raw mut sym);
                 Q_READ_BITS(&raw mut extra, (*decomp_state).q_length_extra[sym as usize] as u32);
-                match_length = (*decomp_state).q_length_base[sym as usize] + extra + 5;
+                match_length = (*decomp_state).q_length_base[sym as usize] as i32 + extra + 5;
                 GET_SYMBOL(model6pos, &raw mut sym);
                 Q_READ_BITS(&raw mut extra, (*decomp_state).q_extra_bits[sym as usize] as u32);
                 match_offset = (*decomp_state).q_position_base[sym as usize] + extra as u32 + 1;
