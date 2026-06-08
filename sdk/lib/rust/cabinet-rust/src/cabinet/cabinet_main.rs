@@ -254,13 +254,13 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
     }
 
     'end: loop {
-        if GetFileAttributesA((*dest).Destination) == INVALID_FILE_ATTRIBUTES {
+        if GetFileAttributesA((*dest).Destination.as_ptr()) == INVALID_FILE_ATTRIBUTES {
             res = S_OK;
             break 'end;
         }
 
         // split the cabinet name into path + name
-        str = HeapAlloc(GetProcessHeap(), 0, (lstrlenA(szCabName) + 1) as u32);
+        str = HeapAlloc(GetProcessHeap(), 0, (lstrlenA(szCabName) + 1) as u32) as *mut i8;
         if str.is_null() {
             res = E_OUTOFMEMORY;
             break 'end;
@@ -272,7 +272,7 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
             path = str;
             end = end.add(1); // end++
             let len = strlen(end as *const i8) + 1;
-            name = HeapAlloc(GetProcessHeap(), 0, len);
+            name = HeapAlloc(GetProcessHeap(), 0, len) as *mut i8;
             if name.is_null() {
                 res = E_OUTOFMEMORY;
                 break 'end;
@@ -319,16 +319,16 @@ unsafe extern "C" fn fdi_notify_extract(
             let pDestination: *mut SESSION = (*pfdin).pv as *mut SESSION;
             let szFullPath: LPSTR;
             let szDirectory: LPSTR;
-            let mut hFile: HANDLE = 0;
+            let mut hFile: HANDLE = core::ptr::null_mut();
             let dwSize: DWORD;
 
-            dwSize = lstrlenA((*pDestination).Destination)
+            dwSize = (lstrlenA((*pDestination).Destination.as_ptr())
                 + lstrlenA(b"\\\0".as_ptr() as LPCSTR)
                 + lstrlenA((*pfdin).psz1)
-                + 1;
-            szFullPath = HeapAlloc(GetProcessHeap(), 0, dwSize) as LPSTR;
+                + 1) as u32;
+            szFullPath = HeapAlloc(GetProcessHeap(), 0, dwSize as usize) as LPSTR;
 
-            lstrcpyA(szFullPath, (*pDestination).Destination);
+            lstrcpyA(szFullPath, (*pDestination).Destination.as_ptr());
             lstrcatA(szFullPath, b"\\\0".as_ptr() as LPCSTR);
             lstrcatA(szFullPath, (*pfdin).psz1);
 
@@ -336,12 +336,12 @@ unsafe extern "C" fn fdi_notify_extract(
             let diff = (strrchr(szFullPath, '\\' as i32) as usize)
                 .wrapping_sub(szFullPath as usize);
             dwSize = (diff + 1) as DWORD;
-            szDirectory = HeapAlloc(GetProcessHeap(), 0, dwSize) as LPSTR;
-            lstrcpynA(szDirectory, szFullPath, dwSize);
+            szDirectory = HeapAlloc(GetProcessHeap(), 0, dwSize as usize) as LPSTR;
+            lstrcpynA(szDirectory, szFullPath, dwSize as i32);
 
             (*pDestination).FileSize += (*pfdin).cb;
 
-            if ((*pDestination).Operation & EXTRACT_FILLFILELIST) != 0 {
+            if ((*pDestination).Operation & EXTRACT_FILLFILELIST as i32) != 0 {
                 fileList = HeapAlloc(
                     GetProcessHeap(),
                     0,
