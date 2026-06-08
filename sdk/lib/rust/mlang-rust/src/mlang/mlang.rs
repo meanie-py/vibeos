@@ -280,6 +280,11 @@ pub struct IMLangConvertCharset {
     pub lpVtbl: *const IMLangConvertCharsetVtbl,
 }
 
+#[repr(C)]
+pub struct IMLangString {
+    pub lpVtbl: *const c_void,
+}
+
 // ---- data structs ----
 #[repr(C)]
 pub struct MIMECPINFO {
@@ -4729,7 +4734,7 @@ pub unsafe extern "C" fn EnumCodePage_create(
     while i < mlang_data.len() as u32 {
         n = 0;
         while n < mlang_data[i as usize].number_of_cp {
-            let info = &*((*mlang_data[i as usize].mime_cp_info).add(n as usize));
+            let info = &*mlang_data[i as usize].mime_cp_info.add(n as usize);
             if info.flags & grfFlags != 0 {
                 (*ecp).total += 1;
             }
@@ -4749,7 +4754,7 @@ pub unsafe extern "C" fn EnumCodePage_create(
     while i < mlang_data.len() as u32 {
         n = 0;
         while n < mlang_data[i as usize].number_of_cp {
-            let info = &*((*mlang_data[i as usize].mime_cp_info).add(n as usize));
+            let info = &*mlang_data[i as usize].mime_cp_info.add(n as usize);
             if info.flags & grfFlags != 0 {
                 fill_cp_info(
                     &raw const mlang_data[i as usize],
@@ -4790,7 +4795,7 @@ unsafe extern "C" fn fnIMultiLanguage_GetCodePageInfo(
 
     let mut i: u32 = 0;
     while (i as usize) < mlang_data.len() {
-        let mlang: &mlang_data_struct = &mlang_data[i as usize];
+        let mlang: &mlang_data = &mlang_data[i as usize];
         let mut n: u32 = 0;
         while (n as u32) < mlang.number_of_cp {
             if (*mlang.mime_cp_info.add(n as usize)).cp == uiCodePage {
@@ -5056,7 +5061,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontCodePages(
     codepages: *mut DWORD,
 ) -> HRESULT {
     let This: *mut MLang_impl = impl_from_IMLangFontLink2(iface);
-    let fontsig: core::mem::MaybeUninit<FONTSIGNATURE> = core::mem::MaybeUninit::uninit();
+    let mut fontsig: core::mem::MaybeUninit<FONTSIGNATURE> = core::mem::MaybeUninit::uninit();
     let old_font: HFONT;
 
     TRACE(
@@ -5134,7 +5139,7 @@ unsafe extern "C" fn MLangConvertCharset_QueryInterface(
 
 unsafe extern "C" fn MLangConvertCharset_AddRef(iface: *mut IMLangConvertCharset) -> u32 {
     let This = impl_from_IMLangConvertCharset(iface);
-    let ref_val = ::InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
+    let ref_val = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
     TRACE(b"(%p)->(%u)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val);
     ref_val
 }
