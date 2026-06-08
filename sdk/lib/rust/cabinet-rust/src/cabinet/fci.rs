@@ -63,7 +63,7 @@ pub struct CFDATA {
 #[repr(C)]
 pub struct temp_file {
     pub handle: INT_PTR,
-    pub name: [i8; CB_MAX_FILENAME],
+    pub name: [i8; CB_MAX_FILENAME as usize],
 }
 
 #[repr(C)]
@@ -121,8 +121,8 @@ pub struct FCI_Int {
     pub pv: *mut core::ffi::c_void,
     pub szPrevCab: [i8; CB_MAX_CABINET_NAME],
     pub szPrevDisk: [i8; CB_MAX_DISK_NAME],
-    pub data_in: [u8; CAB_BLOCKMAX],
-    pub data_out: [u8; 2 * CAB_BLOCKMAX],
+    pub data_in: [u8; CAB_BLOCKMAX as usize],
+    pub data_out: [u8; 2 * CAB_BLOCKMAX as usize],
     pub cdata_in: cab_UWORD,
     pub cCompressedBytesInFolder: ULONG,
     pub cFolders: cab_UWORD,
