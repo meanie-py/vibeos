@@ -1,0 +1,13 @@
+# rtl-heapuser — Rust translation of sdk/lib/rtl/heapuser.c (heap process-list
+# libsupp; kernel/user split). DeepSeek-banked Opus translation, deepdrive-ground.
+[package]
+name = "rtl-heapuser"
+version = "0.1.0"
+edition = "2021"
+[lib]
+path = "src/lib.rs"
+[features]
+cabi = []
+kernel = ["cabi"]
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

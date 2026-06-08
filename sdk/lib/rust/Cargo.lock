@@ -678,6 +678,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-heapuser"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-misc"
 version = "0.1.0"
 dependencies = [
