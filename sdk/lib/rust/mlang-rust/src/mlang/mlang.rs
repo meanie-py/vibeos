@@ -1407,10 +1407,7 @@ pub static mut font_cache_critical_debug: CRITICAL_SECTION_DEBUG = unsafe {
         },
         EntryCount: 0,
         ContentionCount: 0,
-        Spare: [
-            b"mlang.c: font_cache_critical\0".as_ptr() as usize as DWORD_PTR,
-            0,
-        ],
+        __bindgen_anon_1: unsafe { core::mem::zeroed() },
     }
 };
 
@@ -2526,7 +2523,7 @@ unsafe extern "C" fn fill_cp_info(ml_data: *const mlang_data, index: u32, mime_c
         (*mime_cp_info).bGDICharset = DEFAULT_CHARSET;
     }
 
-    let src = &*((*ml_data).mime_cp_info).add(index as usize);
+    let src = &*ml_data.mime_cp_info.add(index as usize);
 
     (*mime_cp_info).dwFlags = src.flags;
     (*mime_cp_info).uiCodePage = src.cp;
@@ -4381,7 +4378,7 @@ unsafe extern "C" fn fnIEnumRfc1766_Skip(iface: *mut IEnumRfc1766, celt: u32) ->
 
 #[no_mangle]
 pub unsafe extern "C" fn Rfc1766ToLcidW(pLocale: *mut u32, pszRfc1766: *const u16) -> i32 {
-    let mut enumrfc1766: *mut IEnumRfc1766;
+    let mut enumrfc1766: *mut IEnumRfc1766 = core::ptr::null_mut();
     let mut hr: i32;
 
     unsafe {
@@ -4937,7 +4934,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetStrCodePages(
 
     i = 0;
     while i < src_len {
-        let mut cp: DWORD;
+        let mut cp: DWORD = 0;
         let ret: HRESULT;
 
         ret = IMLangFontLink2_GetCharCodePages(iface, *src.offset(i as isize), core::ptr::addr_of_mut!(cp));
@@ -5031,7 +5028,7 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
         for i in 0..32 {
             mask = 1u32.wrapping_shl(i);
             if (codepages & mask) != 0 {
-                let mut Csb: [u32; 2];
+                let mut Csb: [u32; 2] = [0u32; 2];
                 Csb[0] = mask;
                 Csb[1] = 0x0;
                 rc = TranslateCharsetInfo(Csb.as_mut_ptr(), &mut cs, TCI_SRCFONTSIG);
@@ -5921,11 +5918,11 @@ pub unsafe extern "C" fn fnIMultiLanguage3_ConvertStringInIStream(
         return hr;
     }
 
-    if stat.cbSize.QuadPart > MAXLONG {
+    if stat.cbSize > MAXLONG {
         return E_INVALIDARG;
     }
 
-    src = HeapAlloc(GetProcessHeap(), 0, stat.cbSize.QuadPart as usize) as *mut i8;
+    src = HeapAlloc(GetProcessHeap(), 0, stat.cbSize as usize) as *mut i8;
     if src.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -5936,7 +5933,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_ConvertStringInIStream(
         tmp_hr = IStream_Read(
             pstmIn,
             src as *mut core::ffi::c_void,
-            stat.cbSize.QuadPart as u32,
+            stat.cbSize as u32,
             &mut srclen as *mut i32 as *mut u32,
         );
         if tmp_hr < 0 {
