@@ -4301,7 +4301,7 @@ unsafe extern "C" fn fnIEnumRfc1766_Clone(
 #[no_mangle]
 pub unsafe extern "C" fn fnIEnumRfc1766_Next(
     iface: *mut IEnumRfc1766,
-    celt: u32,
+    mut celt: u32,
     rgelt: *mut RFC1766INFO,
     pceltFetched: *mut u32,
 ) -> i32 {
@@ -4382,7 +4382,7 @@ unsafe extern "C" fn fnIEnumRfc1766_Skip(iface: *mut IEnumRfc1766, celt: u32) ->
 #[no_mangle]
 pub unsafe extern "C" fn Rfc1766ToLcidW(pLocale: *mut u32, pszRfc1766: *const u16) -> i32 {
     let mut enumrfc1766: *mut IEnumRfc1766;
-    let hr: i32;
+    let mut hr: i32;
 
     unsafe {
         TRACE(b"(%p, %s)\n\0".as_ptr() as *const i8, pLocale as *const core::ffi::c_void, debugstr_w(pszRfc1766));
@@ -5757,7 +5757,7 @@ pub unsafe extern "C" fn ConvertINetString(
         } else {
             let mut cDstSizeW: i32 = 0;
             let pDstStrW: *mut u16;
-            let hr: HRESULT;
+            let mut hr: HRESULT;
 
             let ds2 = debugstr_a(pSrcStr);
             TRACE(
