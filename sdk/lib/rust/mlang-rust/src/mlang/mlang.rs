@@ -2523,7 +2523,7 @@ unsafe extern "C" fn fill_cp_info(ml_data: *const mlang_data, index: u32, mime_c
         (*mime_cp_info).bGDICharset = DEFAULT_CHARSET;
     }
 
-    let src = &*ml_data.mime_cp_info.add(index as usize);
+    let src = &*(*ml_data).mime_cp_info.add(index as usize);
 
     (*mime_cp_info).dwFlags = src.flags;
     (*mime_cp_info).uiCodePage = src.cp;
@@ -3711,7 +3711,7 @@ unsafe extern "C" fn fnIEnumCodePage_AddRef(iface: *mut IEnumCodePage) -> u32 {
 
 unsafe extern "C" fn fnIEnumCodePage_Release(iface: *mut IEnumCodePage) -> u32 {
     let This = impl_from_IEnumCodePage(iface);
-    let ref_val = ntkrnl_sys::interlocked::InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_));
+    let ref_val = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_));
     TRACE(
         b"%p ref = %d\n\0".as_ptr() as *const i8,
         This as *const core::ffi::c_void,
@@ -4268,14 +4268,14 @@ unsafe extern "C" fn fnIEnumRfc1766_QueryInterface(
 
 unsafe extern "C" fn fnIEnumRfc1766_AddRef(iface: *mut IEnumRfc1766) -> u32 {
     let this = impl_from_IEnumRfc1766(iface);
-    ntkrnl_sys::interlocked::InterlockedIncrement(core::ptr::addr_of_mut!((*this).ref_)) as u32
+    InterlockedIncrement(core::ptr::addr_of_mut!((*this).ref_)) as u32
 }
 
 unsafe extern "C" fn fnIEnumRfc1766_Release(
     iface: *mut IEnumRfc1766,
 ) -> u32 {
     let this = impl_from_IEnumRfc1766(iface);
-    let ref_count = ntkrnl_sys::interlocked::InterlockedDecrement(core::ptr::addr_of_mut!((*this).ref_)) as u32;
+    let ref_count = InterlockedDecrement(core::ptr::addr_of_mut!((*this).ref_)) as u32;
 
     TRACE(b"%p ref = %d\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, ref_count as i32);
     if ref_count == 0 {
@@ -4846,7 +4846,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCodePageInfo(
 
 unsafe extern "C" fn fnIMLangFontLink2_QueryInterface(
     iface: *mut IMLangFontLink2,
-    riid: *const win32::core::GUID,
+    riid: *const GUID,
     ppvObject: *mut *mut core::ffi::c_void,
 ) -> i32 {
     let This = impl_from_IMLangFontLink2(iface);
@@ -5134,7 +5134,7 @@ unsafe extern "C" fn MLangConvertCharset_QueryInterface(
 
 unsafe extern "C" fn MLangConvertCharset_AddRef(iface: *mut IMLangConvertCharset) -> u32 {
     let This = impl_from_IMLangConvertCharset(iface);
-    let ref_val = ::ntkrnl_sys::interlocked::InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
+    let ref_val = ::InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
     TRACE(b"(%p)->(%u)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val);
     ref_val
 }
