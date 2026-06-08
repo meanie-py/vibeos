@@ -465,14 +465,14 @@ unsafe fn add_file(fci: *mut FCI_Int, filename: *const i8) -> *mut file {
 
     let size = core::mem::offset_of!(file, name) + (strlen(filename) as usize) + 1;
     let alloc_fn = (*fci).alloc;
-    let file_ptr: *mut file = alloc_fn(size as usize) as *mut file;
+    let file_ptr: *mut file = alloc_fn(size as u32) as *mut file;
 
     if file_ptr.is_null() {
-        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY);
+        set_error(fci, FCIERR_ALLOC_FAIL as u32, ERROR_NOT_ENOUGH_MEMORY);
         return core::ptr::null_mut();
     }
     (*file_ptr).size = 0;
-    (*file_ptr).offset = (*fci).cDataBlocks * CAB_BLOCKMAX + (*fci).cdata_in;
+    (*file_ptr).offset = (*fci).cDataBlocks * CAB_BLOCKMAX + (*fci).cdata_in as u32;
     (*file_ptr).folder = (*fci).cFolders;
     (*file_ptr).date = 0;
     (*file_ptr).time = 0;
@@ -495,19 +495,19 @@ unsafe fn copy_file(fci: *mut FCI_Int, orig: *const file) -> *mut file
     let file = ((*fci).alloc)(size as u32) as *mut file;
     if file.is_null()
     {
-        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY);
+        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
         return core::ptr::null_mut();
     }
-    memcpy(file as *mut u8, orig as *const u8, size as usize);
+    memcpy(file as *mut core::ffi::c_void, orig as *const core::ffi::c_void, size as usize);
     return file;
 }
 
 unsafe fn add_folder(fci: *mut FCI_Int) -> *mut folder {
-    let folder: *mut folder = ((*fci).alloc)(core::mem::size_of::<folder>()) as *mut folder;
+    let folder: *mut folder = ((*fci).alloc)(core::mem::size_of::<folder>() as u32) as *mut folder;
 
     if folder.is_null() {
         const FCIERR_ALLOC_FAIL: u32 = 1;
-        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY);
+        set_error(fci, FCIERR_ALLOC_FAIL as i32, ERROR_NOT_ENOUGH_MEMORY as i32);
         return core::ptr::null_mut();
     }
 
@@ -516,11 +516,11 @@ unsafe fn add_folder(fci: *mut FCI_Int) -> *mut folder {
     (*folder).data_count = 0;
     (*folder).compression = (*fci).compression;
 
-    list_init(core::ptr::addr_of_mut!((*folder).files_list) as *mut core::ffi::c_void);
-    list_init(core::ptr::addr_of_mut!((*folder).blocks_list) as *mut core::ffi::c_void);
+    list_init(core::ptr::addr_of_mut!((*folder).files_list));
+    list_init(core::ptr::addr_of_mut!((*folder).blocks_list));
     list_add_tail(
-        core::ptr::addr_of_mut!((*fci).folders_list) as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!((*folder).entry) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!((*fci).folders_list),
+        core::ptr::addr_of_mut!((*folder).entry),
     );
 
     (*fci).folders_size = (*fci).folders_size.wrapping_add(
@@ -640,7 +640,7 @@ unsafe extern "C" fn compress_MSZIP(fci: *mut FCI_Int) -> u16 {
     stream.zfree = Some(zfree);
     stream.opaque = fci as *mut core::ffi::c_void;
     if deflateInit2(&raw mut stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY) != Z_OK {
-        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY);
+        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
         return 0;
     }
     stream.next_in = (*fci).data_in.as_ptr() as *const u8;
