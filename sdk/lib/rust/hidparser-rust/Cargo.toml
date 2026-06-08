@@ -1,0 +1,18 @@
+# hidparser-rust — Rust translation of sdk/lib/drivers/hidparser/*.c (the HID
+# report-descriptor parser static lib, libhidparser_km). crate-type=staticlib →
+# libhidparser_rust.a, linked into hidparse.sys (whose wrapper is already Rust)
+# in place of the C libhidparser_km. Depends on ntkrnl-sys + hid-sys (HIDP_*
+# public types). Built for all 3 arches. DeepSeek+c2rust translation (Batch 2).
+# C kept on disk (never-delete).
+
+[package]
+name = "hidparser-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+hid-sys = { path = "../hid-sys" }

@@ -1,0 +1,14 @@
+# hid-sys — focused HID parser DDK FFI substrate (HIDP_* caps/report/data types),
+# bindgen-generated from hidpi.h/hidpddi.h/hidusage.h via generate_bindings.sh.
+# Absent from ntkrnl-sys (ntoskrnl.h only); hidparser-rust (the libhidparser_km
+# translation) needs them. Per-arch bindgen. rlib, no_std.
+
+[package]
+name = "hid-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
