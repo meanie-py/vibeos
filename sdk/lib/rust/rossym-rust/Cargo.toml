@@ -1,0 +1,17 @@
+# rossym-rust — Rust translation of sdk/lib/rossym (the ROS symbol / DWARF
+# parser used by the kernel debugger + freeldr). Cohabitation staticlib
+# (librossym_rust.a): the kernel `rossym` cmake target REMOVE_ITEMs each flipped
+# `.c` and links this archive so the Rust `#[no_mangle] extern "C"` symbols
+# (RosSym* = cdecl, verified via nm: `_RosSymDelete` no @N) take over.
+# Mirrors cmlib-rust / cnt-rust-lib: one #[panic_handler] + eh_personality here.
+
+[package]
+name = "rossym-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

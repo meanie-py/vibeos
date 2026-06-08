@@ -49,6 +49,8 @@ members = [
     "hid-sys",
     "hidparser-rust",
     "cmboot-rust",
+    "cmlib-rust",
+    "rossym-rust",
     "freeldr-rust",
     "arm64input-rust",
     "arm64vid-rust",
