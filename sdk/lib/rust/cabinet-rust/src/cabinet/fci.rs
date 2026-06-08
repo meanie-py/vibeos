@@ -600,7 +600,7 @@ unsafe fn write_files(
             let name_len = strlen(cffile.add(1) as *const i8) as u32;
             let file_size = core::mem::size_of::<CFFILE>() as u32 + name_len + 1;
             let mut err: i32 = 0;
-            let bytes_written = (*fci).write(
+            let bytes_written = ((*fci).write)(
                 handle,
                 cffile as *mut core::ffi::c_void,
                 file_size,
@@ -1690,9 +1690,9 @@ pub unsafe extern "C" fn FCIAddFile(
 
     if pszSourceFile.is_null()
         || pszFileName.is_null()
-        || pfnfcignc.is_null()
-        || pfnfcis.is_null()
-        || pfnfcigoi.is_null()
+        || (pfnfcignc as *const ()).is_null()
+        || (pfnfcis as *const ()).is_null()
+        || (pfnfcigoi as *const ()).is_null()
         || strlen(pszFileName) >= CB_MAX_FILENAME as usize
     {
         set_error(

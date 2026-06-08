@@ -209,6 +209,7 @@ pub struct Ziphuft {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub union Ziphuft_u {
     pub n: u16,
     pub t: *mut Ziphuft,
@@ -226,6 +227,7 @@ pub struct ZIPstate {
 
 // ---- QTMmodelsym ----
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct QTMmodelsym {
     pub sym: u16,
     pub cumfreq: u16,

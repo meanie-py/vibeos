@@ -207,7 +207,7 @@ unsafe fn QTMupdatemodel(model: *mut QTMmodel, sym: i32) {
             i = 0;
             while i < (*model).entries {
                 let sym_val = (*(*model).syms.add(i as usize)).sym;
-                *((*model).tabloc.add(sym_val as usize)) = i as i32;
+                *((*model).tabloc.as_mut_ptr().add(sym_val as usize)) = i as u16;
                 i += 1;
             }
         }
@@ -401,7 +401,7 @@ pub unsafe extern "C" fn FDICreate(
 }
 
 unsafe fn FDI_getoffset(fdi: *mut FDI_Int, hf: INT_PTR) -> i32 {
-    (*fdi).seek(hf, 0, SEEK_CUR)
+    ((*fdi).seek)(hf, 0, SEEK_CUR)
 }
 
 unsafe fn QTMfdi_initmodel(m: *mut QTMmodel, sym: *mut QTMmodelsym, n: i32, s: i32) {
@@ -455,13 +455,13 @@ unsafe extern "C" fn LZXfdi_init(window: i32, decomp_state: *mut fdi_decomp_stat
 
         if (*decomp_state).methods.lzx.actual_size < wndsize {
             if !(*decomp_state).methods.lzx.window.is_null() {
-                (*(*decomp_state).fdi).free((*decomp_state).methods.lzx.window);
+                ((*(*decomp_state).fdi).free)((*decomp_state).methods.lzx.window);
             }
             (*decomp_state).methods.lzx.window = core::ptr::null_mut();
         }
 
         if (*decomp_state).methods.lzx.window.is_null() {
-            let mem = (*(*decomp_state).fdi).alloc(wndsize as usize) as *mut u8;
+            let mem = ((*(*decomp_state).fdi).alloc)(wndsize as usize) as *mut u8;
             if mem.is_null() {
                 return DECR_NOMEMORY;
             }
@@ -790,7 +790,7 @@ extern "C" {
 
 unsafe extern "C" fn QTMfdi_decomp(mut inlen: i32, mut outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
     let mut inpos = (*decomp_state).inbuf.as_mut_ptr();
-    let mut window = (*decomp_state).methods.qtm.window.as_mut_ptr();
+    let mut window = (*decomp_state).methods.qtm.window;
     let mut window_posn = (*decomp_state).methods.qtm.window_posn;
     let window_size = (*decomp_state).methods.qtm.window_size;
     let mut bitsleft: i32 = 0;
@@ -1147,12 +1147,12 @@ unsafe fn QTMfdi_init(window: i32, level: i32, decomp_state: *mut fdi_decomp_sta
     }
     if (*decomp_state).methods.qtm.actual_size < wndsize {
         if !(*decomp_state).methods.qtm.window.is_null() {
-            ((*decomp_state).fdi).free((*decomp_state).methods.qtm.window);
+            ((*(*decomp_state).fdi).free)((*decomp_state).methods.qtm.window);
         }
         (*decomp_state).methods.qtm.window = core::ptr::null_mut();
     }
     if (*decomp_state).methods.qtm.window.is_null() {
-        let ptr = ((*decomp_state).fdi).alloc(wndsize);
+        let ptr = ((*(*decomp_state).fdi).alloc)(wndsize);
         (*decomp_state).methods.qtm.window = ptr;
         if ptr.is_null() {
             return 3; /* DECR_NOMEMORY */
@@ -1284,7 +1284,7 @@ unsafe fn FDI_read_entries(
         pfdici as *const core::ffi::c_void,
     );
 
-    if (*fdi).read(hf, buf.as_mut_ptr() as *mut core::ffi::c_void, cfhead_SIZEOF as _)
+    if ((*fdi).read)(hf, buf.as_mut_ptr() as *mut core::ffi::c_void, cfhead_SIZEOF as _)
         != cfhead_SIZEOF as _
     {
         if !pmii.is_null() {
@@ -1323,7 +1323,7 @@ unsafe fn FDI_read_entries(
     flags = EndGetI16(buf.as_ptr().add(cfhead_Flags)) as u16;
 
     if (flags & cfheadRESERVE_PRESENT) != 0 {
-        if (*fdi).read(
+        if ((*fdi).read)(
             hf,
             buf.as_mut_ptr() as *mut core::ffi::c_void,
             cfheadext_SIZEOF as _,
@@ -1353,7 +1353,7 @@ unsafe fn FDI_read_entries(
             WARN(b"WARNING; header reserved space > 60000\n\0".as_ptr() as *const i8);
         }
 
-        if (header_resv != 0) && ((*fdi).seek(hf, header_resv, SEEK_CUR) == -1) {
+        if (header_resv != 0) && (((*fdi).seek)(hf, header_resv, SEEK_CUR) == -1) {
             ERR(b"seek failure: header_resv\n\0".as_ptr() as *const i8);
             if !pmii.is_null() {
                 set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
@@ -1373,7 +1373,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).prevname = prevname;
             } else {
-                (*fdi).free(prevname as *mut core::ffi::c_void);
+                ((*fdi).free)(prevname as *mut core::ffi::c_void);
             }
         }
         previnfo = FDI_read_string(fdi, hf, cabsize);
@@ -1381,7 +1381,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).previnfo = previnfo;
             } else {
-                (*fdi).free(previnfo as *mut core::ffi::c_void);
+                ((*fdi).free)(previnfo as *mut core::ffi::c_void);
             }
         }
     }
@@ -1394,10 +1394,10 @@ unsafe fn FDI_read_entries(
         if nextname.is_null() {
             if ((flags & cfheadPREV_CABINET) != 0) && !pmii.is_null() {
                 if !(*pmii).prevname.is_null() {
-                    (*fdi).free((*pmii).prevname as *mut core::ffi::c_void);
+                    ((*fdi).free)((*pmii).prevname as *mut core::ffi::c_void);
                 }
                 if !(*pmii).previnfo.is_null() {
-                    (*fdi).free((*pmii).previnfo as *mut core::ffi::c_void);
+                    ((*fdi).free)((*pmii).previnfo as *mut core::ffi::c_void);
                 }
             }
             set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
@@ -1406,7 +1406,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).nextname = nextname;
             } else {
-                (*fdi).free(nextname as *mut core::ffi::c_void);
+                ((*fdi).free)(nextname as *mut core::ffi::c_void);
             }
         }
         nextinfo = FDI_read_string(fdi, hf, cabsize);
@@ -1414,7 +1414,7 @@ unsafe fn FDI_read_entries(
             if !pmii.is_null() {
                 (*pmii).nextinfo = nextinfo;
             } else {
-                (*fdi).free(nextinfo as *mut core::ffi::c_void);
+                ((*fdi).free)(nextinfo as *mut core::ffi::c_void);
             }
         }
     }
