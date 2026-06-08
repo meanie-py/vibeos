@@ -2601,7 +2601,7 @@ unsafe extern "C" fn fill_cp_info(ml_data: *const mlang_data, index: u32, mime_c
         wine_dbgstr_w((*mime_cp_info).wszBodyCharset.as_ptr()),
         wine_dbgstr_w((*mime_cp_info).wszFixedWidthFont.as_ptr()),
         wine_dbgstr_w((*mime_cp_info).wszProportionalFont.as_ptr()),
-        (*mime_cp_info).bGDICharset,
+        (*mime_cp_info).bGDICharset as i32,
     );
 }
 
@@ -3459,7 +3459,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
             b"(%p, 0x%04x, 0x%04x, %p)\n\0".as_ptr() as *const i8,
             iface,
             Locale,
-            LangId,
+            LangId as u32,
             pRfc1766Info,
         );
 
@@ -3495,7 +3495,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
         if primary_langid != LANG_ENGLISH && last_lang != LangId {
             FIXME(
                 b"Only English names supported (requested: 0x%04x)\n\0".as_ptr() as *const i8,
-                LangId,
+                LangId as u32,
             );
             last_lang = LangId;
         }
@@ -4826,7 +4826,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCodePageInfo(
         b"%p, %u, %04x, %p\n\0".as_ptr() as *const i8,
         this,
         uiCodePage,
-        LangId,
+        LangId as u32,
         pCodePageInfo,
     );
 
