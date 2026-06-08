@@ -1766,7 +1766,6 @@ extern "system" {
     fn DisableThreadLibraryCalls(hLibModule: HINSTANCE) -> BOOL;
     fn TlsAlloc() -> DWORD;
     fn TlsFree(dwTlsIndex: DWORD) -> BOOL;
-    fn TRACE(format: *const i8, ...);
     fn GetLocaleInfoA(lcid: u32, lctype: u32, lcdata: *mut i8, cchdata: i32) -> i32;
     fn LCMapStringA(locale: u32, dwmapflags: u32, lpsrc: *const i8, cchsrc: i32, lpdest: *mut i8, cchdest: i32) -> i32;
     fn GetLocaleInfoW(locale: u32, lctype: u32, lplcdata: *mut u16, cchdata: i32) -> i32;
@@ -1791,12 +1790,10 @@ extern "system" {
     fn IsEqualGUID(rguid1: *const GUID, rguid2: *const GUID) -> BOOL;
     fn InterlockedIncrement(Addend: *mut i32) -> i32;
     fn InterlockedDecrement(Addend: *mut i32) -> i32;
-    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn strlen(s: *const i8) -> usize;
     fn __wine_unregister_resources(hInstance: HINSTANCE) -> HRESULT;
     fn IClassFactory_AddRef(iface: *mut IClassFactory) -> u32;
     fn debugstr_guid(guid: *const GUID) -> *const core::ffi::c_char;
-    fn FIXME(format: *const core::ffi::c_char, ...);
     fn MultiByteToWideChar( CodePage: u32, dwFlags: u32, lpMultiByteStr: *const i8, cbMultiByte: i32, lpWideCharStr: *mut u16, cchWideChar: i32, ) -> i32;
     fn TlsSetValue(dwTlsIndex: u32, lpTlsValue: *mut core::ffi::c_void) -> i32;
     fn IMultiLanguage3_IsConvertible(iface: *mut IMultiLanguage3, src_enc: u32, dst_enc: u32) -> HRESULT;
@@ -1821,7 +1818,7 @@ extern "system" {
     fn IUnknown_QueryInterface(punk: *mut IUnknown, riid: *const GUID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
     fn IUnknown_Release(punk: *mut IUnknown) -> u32;
     fn IEnumCodePage_AddRef(iface: *mut IEnumCodePage);
-    fn WARN(fmt: *const core::ffi::c_char, ...);
+
     fn IEnumScript_AddRef(iface: *mut IEnumScript) -> u32;
     fn IMultiLanguage3_QueryInterface( iface: *mut IMultiLanguage3, riid: *const IID, ppvObject: *mut *mut core::ffi::c_void, ) -> HRESULT;
     fn IMultiLanguage3_AddRef(iface: *mut IMultiLanguage3) -> u32;
@@ -1855,6 +1852,13 @@ extern "system" {
     fn debugstr_a(s: *const i8) -> *const i8;
     fn lstrlenA(lpString: *const i8) -> i32;
     fn IMultiLanguage3_GetCharsetInfo( iface: *mut IMultiLanguage3, Charset: *mut u16, pCharsetInfo: *mut MIMECSETINFO, ) -> i32;
+}
+
+extern "C" {
+    fn TRACE(format: *const i8, ...);
+    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
+    fn FIXME(format: *const core::ffi::c_char, ...);
+    fn WARN(fmt: *const core::ffi::c_char, ...);
 }
 
 unsafe extern "C" fn DetectJapaneseCode(input: *const u8, count: u32) -> u32 {
@@ -3273,10 +3277,6 @@ pub unsafe extern "C" fn LcidToRfc1766A(
     pszRfc1766: *mut i8,
     nChar: i32,
 ) -> i32 {
-    extern "system" {
-        fn TRACE(format: *const i8, ...);
-    }
-
     TRACE(b"%04x %p %u\n\0".as_ptr() as *const i8, lcid, pszRfc1766 as *const core::ffi::c_void, nChar as u32);
 
     if pszRfc1766.is_null() {
