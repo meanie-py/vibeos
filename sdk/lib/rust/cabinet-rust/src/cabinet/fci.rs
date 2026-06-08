@@ -660,7 +660,7 @@ unsafe fn write_data_blocks(
     handle: INT_PTR,
     status_callback: PFNFCISTATUS,
 ) -> i32 {
-    let header_size: u16 = (core::mem::size_of::<CFDATA>() as u16) + (*fci).ccab.cbReserveCFData;
+    let header_size: u16 = (core::mem::size_of::<CFDATA>() as u16) + (*fci).ccab.cbReserveCFData as u16;
     let cfdata = (*fci).data_out.as_mut_ptr() as *mut CFDATA;
     // memset(cfdata, 0, header_size)
     core::ptr::write_bytes(cfdata as *mut u8, 0, header_size as usize);
@@ -672,7 +672,7 @@ unsafe fn write_data_blocks(
         let folder = (current as *const u8).sub(core::mem::offset_of!(folder, entry)) as *mut folder;
 
         // Seek in folder's temp data file
-        if ((*fci).seek)((*folder).data.handle as isize, 0, SEEK_SET, core::ptr::addr_of_mut!((*fci).pv), (*fci).pv) != 0 {
+        if ((*fci).seek)((*folder).data.handle as isize, 0, SEEK_SET, core::ptr::addr_of_mut!((*fci).pv) as *mut i32, (*fci).pv) != 0 {
             set_error(fci, FCIERR_CAB_FILE as i32, (*fci).pv as i32); // FCIERR_CAB_FILE usage; assume value exists
             return 0;
         }
@@ -685,10 +685,10 @@ unsafe fn write_data_blocks(
             let len: i32 = ((*fci).read)(
                 (*folder).data.handle as isize,
                 data,
-                (*block).compressed,
-                core::ptr::addr_of_mut!((*fci).pv),
+                (*block).compressed as u32,
+                core::ptr::addr_of_mut!((*fci).pv) as *mut i32,
                 (*fci).pv,
-            );
+            ) as i32;
             if len != (*block).compressed as i32 {
                 return 0;
             }
@@ -708,8 +708,8 @@ unsafe fn write_data_blocks(
             if ((*fci).write)(
                 handle as isize,
                 (*fci).data_out.as_ptr() as *mut core::ffi::c_void,
-                len_plus_header,
-                core::ptr::addr_of_mut!((*fci).pv),
+                len_plus_header as u32,
+                core::ptr::addr_of_mut!((*fci).pv) as *mut i32,
                 (*fci).pv,
             ) != len_plus_header as u32
             {
@@ -870,7 +870,7 @@ unsafe extern "C" fn copy_data_blocks(
         (*fci).statusFolderCopied += (*block).compressed as cab_ULONG;
 
         let ret = status_callback(
-            statusFolder as i32,
+            statusFolder,
             (*fci).statusFolderCopied,
             (*fci).statusFolderTotal,
             (*fci).pv,
@@ -1172,7 +1172,7 @@ unsafe fn add_data_to_folder(
             && ((*fci).ccab.cb
                 < (core::mem::size_of::<CFDATA>() as cab_ULONG)
                     + (*fci).ccab.cbReserveCFData
-                    + (*block).compressed
+                    + (*block).compressed as u32
                     + current_size
                     + (core::mem::size_of::<CFFOLDER>() as cab_ULONG)
                     + (*fci).ccab.cbReserveCFFolder)
@@ -1209,7 +1209,7 @@ unsafe fn add_data_to_folder(
 
         /* report status with pfnfcis about copied size of folder */
         let ret = status_callback(
-            statusFolder as i32,
+            statusFolder,
             (*fci).statusFolderCopied,
             (*fci).statusFolderTotal,
             (*fci).pv,
