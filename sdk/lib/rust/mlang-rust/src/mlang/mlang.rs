@@ -141,17 +141,17 @@ pub struct IMultiLanguageVtbl {
     pub AddRef: unsafe extern "C" fn(*mut IMultiLanguage) -> u32,
     pub Release: unsafe extern "C" fn(*mut IMultiLanguage) -> u32,
     pub GetNumberOfCodePageInfo: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32) -> HRESULT,
-    pub GetCodePageInfo: unsafe extern "C" fn(*mut IMultiLanguage, u32, u16, *mut MIMECPINFO) -> HRESULT,
+    pub GetCodePageInfo: unsafe extern "C" fn(*mut IMultiLanguage, u32, *mut MIMECPINFO) -> i32,
     pub GetFamilyCodePage: unsafe extern "C" fn(*mut IMultiLanguage, u32, *mut u32) -> HRESULT,
-    pub EnumCodePages: unsafe extern "C" fn(*mut IMultiLanguage, u32, u16, *mut *mut IEnumCodePage) -> HRESULT,
-    pub GetCharsetInfo: unsafe extern "C" fn(*mut IMultiLanguage, *const u16, *mut CHARSETINFO) -> HRESULT,
+    pub EnumCodePages: unsafe extern "C" fn(*mut IMultiLanguage, DWORD, *mut *mut IEnumCodePage) -> HRESULT,
+    pub GetCharsetInfo: unsafe extern "C" fn(*mut IMultiLanguage, *mut u16, *mut MIMECSETINFO) -> i32,
     pub IsConvertible: unsafe extern "C" fn(*mut IMultiLanguage, u32, u32) -> HRESULT,
-    pub ConvertString: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, u32, *mut u8, *mut u32) -> HRESULT,
+    pub ConvertString: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, u32, *mut u8, *mut u32, *mut u8, *mut u32) -> HRESULT,
     pub ConvertStringToUnicode: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, *const i8, *mut u32, *mut u16, *mut u32) -> HRESULT,
     pub ConvertStringFromUnicode: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, *const u16, *mut u32, *mut i8, *mut u32) -> HRESULT,
     pub ConvertStringReset: unsafe extern "C" fn(*mut IMultiLanguage) -> HRESULT,
-    pub GetRfc1766FromLcid: unsafe extern "C" fn(*mut IMultiLanguage, LCID, *mut LPCWSTR) -> HRESULT,
-    pub GetLcidFromRfc1766: unsafe extern "C" fn(*mut IMultiLanguage, *mut LCID, *const u16) -> HRESULT,
+    pub GetRfc1766FromLcid: unsafe extern "C" fn(*mut IMultiLanguage, LCID, *mut BSTR) -> HRESULT,
+    pub GetLcidFromRfc1766: unsafe extern "C" fn(*mut IMultiLanguage, *mut LCID, BSTR) -> HRESULT,
     pub EnumRfc1766: unsafe extern "C" fn(*mut IMultiLanguage, LANGID, *mut *mut IEnumRfc1766) -> HRESULT,
     pub GetRfc1766Info: unsafe extern "C" fn(*mut IMultiLanguage, LCID, u16, *mut RFC1766INFO) -> HRESULT,
     pub CreateConvertCharset: unsafe extern "C" fn(*mut IMultiLanguage, u32, u32, *mut *mut IMLangConvertCharset) -> HRESULT,
@@ -168,7 +168,7 @@ pub struct IMultiLanguage3Vtbl {
     pub EnumCodePages: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u16, *mut *mut IEnumCodePage) -> HRESULT,
     pub GetCharsetInfo: unsafe extern "C" fn(*mut IMultiLanguage3, *const u16, *mut CHARSETINFO) -> HRESULT,
     pub IsConvertible: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u32) -> HRESULT,
-    pub ConvertString: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, u32, *mut u8, *mut u32) -> HRESULT,
+    pub ConvertString: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, u32, *mut u8, *mut u32, *mut u8, *mut u32) -> HRESULT,
     pub ConvertStringToUnicode: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, *const i8, *mut u32, *mut u16, *mut u32) -> HRESULT,
     pub ConvertStringFromUnicode: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, *const u16, *mut u32, *mut i8, *mut u32) -> HRESULT,
     pub ConvertStringReset: unsafe extern "C" fn(*mut IMultiLanguage3) -> HRESULT,
@@ -1417,8 +1417,8 @@ pub static mut font_cache_critical: CRITICAL_SECTION = CRITICAL_SECTION {
     DebugInfo: unsafe { &raw mut font_cache_critical_debug },
     LockCount: -1,
     RecursionCount: 0,
-    OwningThread: 0,
-    LockSemaphore: 0,
+    OwningThread: core::ptr::null_mut(),
+    LockSemaphore: core::ptr::null_mut(),
     SpinCount: 0,
 };
 
@@ -1428,14 +1428,14 @@ pub static mut dll_count: i32 = 0;
 pub struct IClassFactoryImpl {
     pub IClassFactory_iface: IClassFactory,
     pub ref_: i32,
-    pub pfnCreateInstance: unsafe extern "C" fn(IUnknown, *mut *mut c_void) -> HRESULT,
+    pub pfnCreateInstance: unsafe extern "C" fn(*mut IUnknown, *mut *mut c_void) -> HRESULT,
 }
 
 #[repr(C)]
 pub struct object_creation_info {
     pub clsid: *const CLSID,
     pub szClassName: LPCSTR,
-    pub pfnCreateInstance: unsafe extern "C" fn(IUnknown, *mut *mut c_void) -> HRESULT,
+    pub pfnCreateInstance: unsafe extern "C" fn(*mut IUnknown, *mut *mut c_void) -> HRESULT,
 }
 
 pub static object_creation: [object_creation_info; 2] = [
@@ -1747,6 +1747,20 @@ pub static mut instance: HINSTANCE = 0 as *mut c_void;
 pub static mut MLANG_tls_index: DWORD = 0;
 
 
+// IID statics
+pub static IID_IUnknown: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IEnumCodePage: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IClassFactory: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMultiLanguage: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMultiLanguage3: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IEnumScript: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IEnumRfc1766: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMLangCodePages: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMLangFontLink: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMLangFontLink2: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMultiLanguage2: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMLangLineBreakConsole: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+pub static IID_IMLangConvertCharset: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
 extern "system" {
     fn DisableThreadLibraryCalls(hLibModule: HINSTANCE) -> BOOL;
     fn TlsAlloc() -> DWORD;
@@ -1807,19 +1821,6 @@ extern "system" {
     fn IUnknown_Release(punk: *mut IUnknown) -> u32;
     fn IEnumCodePage_AddRef(iface: *mut IEnumCodePage);
     fn WARN(fmt: *const core::ffi::c_char, ...);
-    static IID_IUnknown: GUID;
-    static IID_IEnumCodePage: GUID;
-    static IID_IClassFactory: GUID;
-    static IID_IMultiLanguage: GUID;
-    static IID_IMultiLanguage3: GUID;
-    static IID_IEnumScript: GUID;
-    static IID_IEnumRfc1766: GUID;
-    static IID_IMLangCodePages: GUID;
-    static IID_IMLangFontLink: GUID;
-    static IID_IMLangFontLink2: GUID;
-    static IID_IMultiLanguage2: GUID;
-    static IID_IMLangLineBreakConsole: GUID;
-    static IID_IMLangConvertCharset: GUID;
     fn IEnumScript_AddRef(iface: *mut IEnumScript) -> u32;
     fn IMultiLanguage3_QueryInterface( iface: *mut IMultiLanguage3, riid: *const IID, ppvObject: *mut *mut core::ffi::c_void, ) -> HRESULT;
     fn IMultiLanguage3_AddRef(iface: *mut IMultiLanguage3) -> u32;
@@ -2358,7 +2359,7 @@ pub unsafe extern "C" fn DllGetClassObject(
     }
 
     (*factory).IClassFactory_iface.lpVtbl = &raw const MLANGCF_Vtbl;
-    (*factory).r#ref = 1;
+    (*factory).ref_ = 1;
     (*factory).pfnCreateInstance = object_creation[i].pfnCreateInstance;
 
     *ppv = core::ptr::addr_of_mut!((*factory).IClassFactory_iface) as *mut core::ffi::c_void;
@@ -2402,7 +2403,7 @@ unsafe extern "C" fn EnumScript_create(
     ) as *mut EnumScript_impl;
 
     (*es_ptr).IEnumScript_iface.lpVtbl = core::ptr::addr_of!(IEnumScript_vtbl);
-    (*es_ptr).r#ref = 1;
+    (*es_ptr).ref_ = 1;
     (*es_ptr).pos = 0;
     (*es_ptr).total = (core::mem::size_of_val(&mlang_data) / core::mem::size_of::<mlang_data>()) as u32 - 1;
     (*es_ptr).script_info = HeapAlloc(
@@ -2471,7 +2472,7 @@ unsafe extern "C" fn EnumRfc1766_create(LangId: u16, ppEnum: *mut *mut IEnumRfc1
 
     rfc = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<EnumRfc1766_impl>()) as *mut EnumRfc1766_impl;
     (*rfc).IEnumRfc1766_iface.lpVtbl = &IEnumRfc1766_vtbl;
-    (*rfc).r#ref = 1;
+    (*rfc).ref_ = 1;
     (*rfc).pos = 0;
     (*rfc).total = 0;
 
@@ -3187,7 +3188,7 @@ unsafe extern "C" fn MultiLanguage_create(pUnkOuter: *mut IUnknown, ppObj: *mut 
 
     (*mlang).total_scripts = (mlang_data.len() - 1) as u32;
 
-    (*mlang).r#ref = 1;
+    (*mlang).ref_ = 1;
     *ppObj = core::ptr::addr_of!((*mlang).IMultiLanguage_iface) as *mut core::ffi::c_void;
     TRACE(b"returning %p\n\0".as_ptr().cast(), mlang as *mut core::ffi::c_void);
 
@@ -3211,7 +3212,7 @@ unsafe extern "C" fn MLangConvertCharset_create(outer: *mut IUnknown, obj: *mut 
     }
 
     (*convert).IMLangConvertCharset_iface.lpVtbl = core::ptr::addr_of!(MLangConvertCharsetVtbl);
-    (*convert).r#ref = 1;
+    (*convert).ref_ = 1;
 
     *obj = core::ptr::addr_of_mut!((*convert).IMLangConvertCharset_iface) as *mut core::ffi::c_void;
 
@@ -3632,12 +3633,12 @@ unsafe extern "C" fn fnIMLangFontLink2_ResetFontMapping(
 
 unsafe extern "C" fn MLANGCF_AddRef(iface: *mut IClassFactory) -> u32 {
     let this = impl_from_IClassFactory(iface);
-    InterlockedIncrement(&raw mut (*this).r#ref) as u32
+    InterlockedIncrement(&raw mut (*this).ref_) as u32
 }
 
 unsafe extern "C" fn MLANGCF_Release(iface: *mut IClassFactory) -> u32 {
     let This = impl_from_IClassFactory(iface);
-    let ref_val = InterlockedDecrement(&raw mut (*This).r#ref) as u32;
+    let ref_val = InterlockedDecrement(&raw mut (*This).ref_) as u32;
 
     if ref_val == 0 {
         TRACE(b"Destroying %p\n\0".as_ptr() as *const i8, This);
@@ -3691,7 +3692,7 @@ unsafe extern "C" fn fnIEnumCodePage_QueryInterface(
         TRACE(
             b"Returning IID_IEnumCodePage %p ref = %d\n\0".as_ptr() as *const core::ffi::c_char,
             This as *mut core::ffi::c_void,
-            (*This).r#ref,
+            (*This).ref_,
         );
         *ppvObject = core::ptr::addr_of_mut!((*This).IEnumCodePage_iface) as *mut core::ffi::c_void;
         return 0; // S_OK
@@ -3709,13 +3710,13 @@ unsafe extern "C" fn fnIEnumCodePage_QueryInterface(
 unsafe extern "C" fn fnIEnumCodePage_AddRef(iface: *mut IEnumCodePage) -> u32 {
     unsafe {
         let This = impl_from_IEnumCodePage(iface);
-        return InterlockedIncrement(core::ptr::addr_of_mut!((*This).r#ref)) as u32;
+        return InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
     }
 }
 
 unsafe extern "C" fn fnIEnumCodePage_Release(iface: *mut IEnumCodePage) -> u32 {
     let This = impl_from_IEnumCodePage(iface);
-    let ref_val = ntkrnl_sys::interlocked::InterlockedDecrement(core::ptr::addr_of_mut!((*This).r#ref));
+    let ref_val = ntkrnl_sys::interlocked::InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_));
     TRACE(
         b"%p ref = %d\n\0".as_ptr() as *const i8,
         This as *const core::ffi::c_void,
@@ -3846,7 +3847,7 @@ unsafe extern "C" fn fnIEnumScript_QueryInterface(
         TRACE(
             b"Returning IID_IEnumScript %p ref = %d\n\0".as_ptr() as *const i8,
             This as *mut core::ffi::c_void,
-            (*This).r#ref,
+            (*This).ref_,
         );
         *ppvObject = core::ptr::addr_of_mut!((*This).IEnumScript_iface) as *mut core::ffi::c_void;
         return S_OK;
@@ -3863,19 +3864,19 @@ unsafe extern "C" fn fnIEnumScript_QueryInterface(
 
 unsafe extern "C" fn fnIEnumScript_AddRef(iface: *mut IEnumScript) -> u32 {
     let This = impl_from_IEnumScript(iface);
-    InterlockedIncrement(&raw mut (*This).r#ref) as u32
+    InterlockedIncrement(&raw mut (*This).ref_) as u32
 }
 
 unsafe extern "C" fn fnIEnumScript_Release(iface: *mut IEnumScript) -> u32 {
     let This: *mut EnumScript_impl = impl_from_IEnumScript(iface);
-    let r#ref: u32 = InterlockedDecrement(core::ptr::addr_of_mut!((*This).r#ref)) as u32;
+    let ref_: u32 = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
 
     TRACE(
         b"%p ref = %d\n\0".as_ptr() as *const i8,
         This as *mut core::ffi::c_void,
-        r#ref as i32,
+        ref_ as i32,
     );
-    if r#ref == 0 {
+    if ref_ == 0 {
         TRACE(
             b"Destroying %p\n\0".as_ptr() as *const i8,
             This as *mut core::ffi::c_void,
@@ -3884,7 +3885,7 @@ unsafe extern "C" fn fnIEnumScript_Release(iface: *mut IEnumScript) -> u32 {
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
     }
 
-    r#ref
+    ref_
 }
 
 unsafe extern "C" fn fnIEnumScript_Clone(
@@ -4255,7 +4256,7 @@ unsafe extern "C" fn fnIEnumRfc1766_QueryInterface(
             TRACE(
                 b"Returning IID_IEnumRfc1766 %p ref = %d\n\0".as_ptr() as *const i8,
                 this as *const core::ffi::c_void,
-                (*this).r#ref,
+                (*this).ref_,
             );
             *ppvObject = core::ptr::addr_of_mut!((*this).IEnumRfc1766_iface) as *mut core::ffi::c_void;
             return S_OK;
@@ -4272,14 +4273,14 @@ unsafe extern "C" fn fnIEnumRfc1766_QueryInterface(
 
 unsafe extern "C" fn fnIEnumRfc1766_AddRef(iface: *mut IEnumRfc1766) -> u32 {
     let this = impl_from_IEnumRfc1766(iface);
-    ntkrnl_sys::interlocked::InterlockedIncrement(core::ptr::addr_of_mut!((*this).r#ref)) as u32
+    ntkrnl_sys::interlocked::InterlockedIncrement(core::ptr::addr_of_mut!((*this).ref_)) as u32
 }
 
 unsafe extern "C" fn fnIEnumRfc1766_Release(
     iface: *mut IEnumRfc1766,
 ) -> u32 {
     let this = impl_from_IEnumRfc1766(iface);
-    let ref_count = ntkrnl_sys::interlocked::InterlockedDecrement(core::ptr::addr_of_mut!((*this).r#ref)) as u32;
+    let ref_count = ntkrnl_sys::interlocked::InterlockedDecrement(core::ptr::addr_of_mut!((*this).ref_)) as u32;
 
     TRACE(b"%p ref = %d\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, ref_count as i32);
     if ref_count == 0 {
@@ -4460,12 +4461,12 @@ unsafe extern "C" fn fnIMultiLanguage3_QueryInterface(
 
 unsafe extern "C" fn fnIMultiLanguage3_AddRef(iface: *mut IMultiLanguage3) -> u32 {
     let This = impl_from_IMultiLanguage3(iface);
-    return InterlockedIncrement(core::ptr::addr_of_mut!((*This).r#ref)) as u32;
+    return InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
 }
 
 unsafe extern "C" fn fnIMultiLanguage3_Release(iface: *mut IMultiLanguage3) -> u32 {
     let This = impl_from_IMultiLanguage3(iface);
-    let ref_val = InterlockedDecrement(core::ptr::addr_of_mut!((*This).r#ref)) as u32;
+    let ref_val = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
     TRACE(b"(%p)->(%d)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val as i32);
     if ref_val == 0 {
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
@@ -4725,7 +4726,7 @@ pub unsafe extern "C" fn EnumCodePage_create(
         core::mem::size_of::<EnumCodePage_impl>(),
     ) as *mut EnumCodePage_impl;
     (*ecp).IEnumCodePage_iface.lpVtbl = &IEnumCodePage_vtbl;
-    (*ecp).r#ref = 1;
+    (*ecp).ref_ = 1;
     (*ecp).pos = 0;
     (*ecp).total = 0;
 
@@ -5139,7 +5140,7 @@ unsafe extern "C" fn MLangConvertCharset_QueryInterface(
 
 unsafe extern "C" fn MLangConvertCharset_AddRef(iface: *mut IMLangConvertCharset) -> u32 {
     let This = impl_from_IMLangConvertCharset(iface);
-    let ref_val = ::ntkrnl_sys::interlocked::InterlockedIncrement(core::ptr::addr_of_mut!((*This).r#ref)) as u32;
+    let ref_val = ::ntkrnl_sys::interlocked::InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
     TRACE(b"(%p)->(%u)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val);
     ref_val
 }
@@ -5153,7 +5154,7 @@ unsafe extern "C" fn MLangConvertCharset_Release(iface: *mut IMLangConvertCharse
         fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
     }
     let This: *mut convert_charset = impl_from_IMLangConvertCharset(iface);
-    let ref_: u32 = InterlockedDecrement(core::ptr::addr_of_mut!((*This).r#ref)) as u32;
+    let ref_: u32 = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
     TRACE(b"(%p)->(%u)\n\0".as_ptr() as *const core::ffi::c_char, This, ref_);
     if ref_ == 0 {
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
