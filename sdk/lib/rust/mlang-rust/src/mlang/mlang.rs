@@ -2845,7 +2845,7 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePageToScriptID(
         if uiCodePage == mlang_data[i as usize].family_codepage {
             if !pSid.is_null() {
                 unsafe {
-                    *pSid = mlang_data[i as usize].sid;
+                    *pSid = u32::from_ne_bytes(mlang_data[i as usize].sid);
                 }
             }
             return 0; /* S_OK */
@@ -5326,7 +5326,7 @@ unsafe extern "C" fn ConvertUnknownJapaneseToUnicode(input: *const i8, count: u3
             sjis_string = HeapAlloc(GetProcessHeap(), 0, count as usize) as *mut i8;
             rc = ConvertJIS2SJIS(input, count, sjis_string);
             if rc != 0 {
-                TRACE(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string, rc));
+                TRACE(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string, rc as i32));
                 if !output.is_null() {
                     rc = MultiByteToWideChar(932, 0, sjis_string, rc as i32, output, out_count as i32) as u32;
                 } else {
@@ -5820,7 +5820,7 @@ unsafe extern "C" fn fnIMultiLanguage3_ConvertStringFromUnicode(
     pDstStr: *mut i8,
     pcDstSize: *mut u32,
 ) -> i32 {
-    ConvertINetUnicodeToMultiByte(pdwMode, dwEncoding, pSrcStr, pcSrcSize as *mut i32, pDstStr, pcDstSize as *mut i32)
+    ConvertINetUnicodeToMultiByte(pdwMode, dwEncoding, pSrcStr, pcSrcSize as *mut i32, pDstStr as *mut u8, pcDstSize as *mut i32)
 }
 
 unsafe extern "C" fn fnIMultiLanguage3_ConvertStringFromUnicodeEx(
@@ -5835,7 +5835,7 @@ unsafe extern "C" fn fnIMultiLanguage3_ConvertStringFromUnicodeEx(
     lpFallBack: *mut u16,
 ) -> HRESULT {
     FIXME(b"\n\0".as_ptr() as *const i8);
-    ConvertINetUnicodeToMultiByte(pdwMode, dwEncoding, pSrcStr, pcSrcSize as *mut i32, pDstStr, pcDstSize as *mut i32)
+    ConvertINetUnicodeToMultiByte(pdwMode, dwEncoding, pSrcStr, pcSrcSize as *mut i32, pDstStr as *mut u8, pcDstSize as *mut i32)
 }
 
 unsafe extern "C" fn MLangConvertCharset_DoConversionFromUnicode(
@@ -5927,7 +5927,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_ConvertStringInIStream(
         return hr;
     }
 
-    if stat.cbSize > MAXLONG {
+    if (stat.cbSize as i64) > MAXLONG {
         return E_INVALIDARG;
     }
 
