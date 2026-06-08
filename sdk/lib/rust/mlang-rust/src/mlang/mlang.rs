@@ -147,14 +147,14 @@ pub struct IMultiLanguageVtbl {
     pub GetCharsetInfo: unsafe extern "C" fn(*mut IMultiLanguage, *mut u16, *mut MIMECSETINFO) -> i32,
     pub IsConvertible: unsafe extern "C" fn(*mut IMultiLanguage, u32, u32) -> HRESULT,
     pub ConvertString: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, u32, *mut u8, *mut u32, *mut u8, *mut u32) -> HRESULT,
-    pub ConvertStringToUnicode: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, *const i8, *mut u32, *mut u16, *mut u32) -> HRESULT,
-    pub ConvertStringFromUnicode: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, *const u16, *mut u32, *mut i8, *mut u32) -> HRESULT,
+    pub ConvertStringToUnicode: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, *mut i8, *mut u32, *mut u16, *mut u32) -> HRESULT,
+    pub ConvertStringFromUnicode: unsafe extern "C" fn(*mut IMultiLanguage, *mut u32, u32, *mut u16, *mut u32, *mut i8, *mut u32) -> HRESULT,
     pub ConvertStringReset: unsafe extern "C" fn(*mut IMultiLanguage) -> HRESULT,
     pub GetRfc1766FromLcid: unsafe extern "C" fn(*mut IMultiLanguage, LCID, *mut BSTR) -> HRESULT,
     pub GetLcidFromRfc1766: unsafe extern "C" fn(*mut IMultiLanguage, *mut LCID, BSTR) -> HRESULT,
-    pub EnumRfc1766: unsafe extern "C" fn(*mut IMultiLanguage, LANGID, *mut *mut IEnumRfc1766) -> HRESULT,
-    pub GetRfc1766Info: unsafe extern "C" fn(*mut IMultiLanguage, LCID, u16, *mut RFC1766INFO) -> HRESULT,
-    pub CreateConvertCharset: unsafe extern "C" fn(*mut IMultiLanguage, u32, u32, *mut *mut IMLangConvertCharset) -> HRESULT,
+    pub EnumRfc1766: unsafe extern "C" fn(*mut IMultiLanguage, *mut *mut IEnumRfc1766) -> HRESULT,
+    pub GetRfc1766Info: unsafe extern "C" fn(*mut IMultiLanguage, LCID, *mut RFC1766INFO) -> HRESULT,
+    pub CreateConvertCharset: unsafe extern "C" fn(*mut IMultiLanguage, u32, u32, u32, *mut *mut IMLangConvertCharset) -> HRESULT,
 }
 
 #[repr(C)]
