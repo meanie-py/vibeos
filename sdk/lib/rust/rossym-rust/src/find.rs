@@ -1,3 +1,24 @@
+//! [correctness-review 2026-06-07 · sonnet] Reviewed vs sdk/lib/rossym/find.c.
+//! Risk: LOW. Behavior: preserved. Functions reviewed: FindEntry, RosSymGetAddressInformation (2/2).
+//! Findings:
+//!   - Binary search (FindEntry): CORRECT. The while-loop correctly mirrors the BSD for-loop:
+//!     `Lim >>= 1` runs unconditionally at the end of each iteration; the "move right" branch
+//!     additionally does `Lim -= 1` before it — semantically identical to `Lim--` inside the
+//!     for-body followed by the for-increment `Lim >>= 1`. Low/Base/Mid pointer arithmetic is
+//!     correct; `.add((Lim >> 1) as usize)` is safe (u32 → usize widening, no truncation).
+//!   - RelativeAddress parameter type: `usize` — matches C's `ULONG_PTR`. No truncation risk.
+//!   - SourceLine: C reads `RosSymEntry->SourceLine` (ULONG=u32) directly into `*LineNumber`
+//!     (ULONG*). Rust casts `(*RosSymEntry).SourceLine as u32` — the field is already u32
+//!     so this is a no-op cast, correct.
+//!   - String pointer arithmetic: `Strings as *const i8 + FileOffset/FunctionOffset` (usize
+//!     offsets) — correct; C does the same via `(PCHAR) RosSymInfo->Strings + offset`.
+//!   - Empty-string fallback (`b"\0".as_ptr()`) correctly mirrors C's `Name = ""`.
+//!   - BOOLEAN return: C returns BOOLEAN (u8 typedef). Rust returns `u8` (0/1). Matches.
+//!   - ABI: `extern "C"` — correct for cdecl rossym API.
+//!   - Minor: unused imports (ntkrnl_sys::globals, ntkrnl_sys::constants, PCSTR from ddk)
+//!     — benign, no semantic impact.
+//! Unverified: ASSERT(LineNumber || FileName || FunctionName) is commented out (matching C NDEBUG
+//!   behaviour since #define NDEBUG is set). No functional issue.
 use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;

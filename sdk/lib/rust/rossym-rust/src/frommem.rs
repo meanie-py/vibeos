@@ -1,3 +1,37 @@
+//! [correctness-review 2026-06-07 · sonnet; FIXED 2026-06-07 · opus] Reviewed vs sdk/lib/rossym/frommem.c.
+//! Risk: MED → RESOLVED. FIXED: IMAGE_FIRST_SECTION + ROSSYM_IS_VALID_* are now local wrapper fns
+//! (the macro expansions); RosSymCreateFromRaw is called directly as the sibling crate fn (correct
+//! usize width); return type i32 → u8 (BOOLEAN).
+//! Behavior: logic correct; two linkage bugs will surface at integration. [original finding]
+//! Functions reviewed: RosSymCreateFromMem (1/1).
+//! Findings:
+//!   BUG LINKAGE — `extern "C" fn IMAGE_FIRST_SECTION(...)` (line 11). `IMAGE_FIRST_SECTION`
+//!     is a C preprocessor macro in ntimage.h, not an exported function. No object symbol
+//!     with this name exists. Link error at integration. Fix: compute inline as
+//!     `(NtHeaders as *const u8).add(FIELD_OFFSET(OptionalHeader) + SizeOfOptionalHeader)`,
+//!     matching the pattern fromfile.rs already uses correctly (lines 65-67 of fromfile.rs).
+//!   BUG LINKAGE — `extern "C" fn ROSSYM_IS_VALID_DOS_HEADER` and `ROSSYM_IS_VALID_NT_HEADERS`
+//!     (lines 9-10). Both are C preprocessor macros in rossympriv.h, not exported functions.
+//!     Link error at integration. Fix: inline the checks (e_magic == IMAGE_DOS_SIGNATURE &&
+//!     e_lfanew != 0; Signature == IMAGE_NT_SIGNATURE && OptionalHeader.Magic == arch magic).
+//!   BUG RETURN TYPE — Return type `i32` (line 26). C declares `BOOLEAN` (unsigned char, 1 byte).
+//!     On all supported ABIs the return register (AL/EAX) means the value is observable, but
+//!     callers expecting BOOLEAN and receiving i32 see wrong type in the ABI contract.
+//!     Fix: change to `-> u8` to match fromfile.rs (which correctly uses u8 for BOOLEAN).
+//!   BUG LINKAGE (minor) — `extern "C" fn RosSymCreateFromRaw(..., Size: u32, ...)` (line 12).
+//!     C declares `ULONG_PTR DataSize`. fromraw.rs exports `DataSize: usize`. On amd64/arm64 the
+//!     zero-extended u32 matches the register-wide usize, so the passed value is correct in
+//!     practice. On i386 both are 4 bytes, also fine. Benign in practice but wrong declaration.
+//!   NOTE — `ROSSYM_SECTION_NAME = b".rossym\0"` (line 20) is CORRECT (contrast: fromfile.rs
+//!     uses the wrong `b"rossym\0"` missing the dot). The strncpy + memcmp section-search
+//!     logic faithfully reproduces the C behavior.
+//!   NOTE — All bounds checks (ImageSize vs DOS/NT header sizes, section header end address,
+//!     PointerToRawData+SizeOfRawData, VirtualAddress+VirtualSize) match frommem.c exactly.
+//!   NOTE — `RosSymSectionFound` as i32 flag (vs C BOOLEAN) is an internal-only variable
+//!     with no ABI impact; semantics are identical.
+//! Unverified: IMAGE_NT_OPTIONAL_HDR_MAGIC value used by the inlined IS_VALID check
+//!   (arch-conditional 32/64 bit magic) — the fix must use the correct arch-specific constant.
+
 use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
@@ -6,14 +40,33 @@ use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER, 
 use core::ffi::c_void;
 
 extern "C" {
-    fn ROSSYM_IS_VALID_DOS_HEADER(DosHeader: *const IMAGE_DOS_HEADER) -> i32;
-    fn ROSSYM_IS_VALID_NT_HEADERS(NtHeaders: *const IMAGE_NT_HEADERS) -> i32;
-    fn IMAGE_FIRST_SECTION(NtHeaders: *const IMAGE_NT_HEADERS) -> *mut IMAGE_SECTION_HEADER;
-    fn RosSymCreateFromRaw(RawData: *const u8, Size: u32, RosSymInfo: *mut PROSSYM_INFO) -> i32;
     fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32;
     fn strncpy(dest: *mut u8, src: *const u8, count: usize) -> *mut u8;
-    fn DPRINT1(message: *const i8);
-    fn DPRINT(format: *const i8, ...) -> i32;
+}
+
+// PE signature constants (defined locally; see fromfile.rs).
+const IMAGE_DOS_SIGNATURE: u16 = 0x5A4D;
+const IMAGE_NT_SIGNATURE: u32 = 0x0000_4550;
+#[cfg(target_arch = "x86")]
+const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x010B;
+#[cfg(not(target_arch = "x86"))]
+const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x020B;
+
+// rossympriv.h / ntimage.h function-like macros → local wrappers (call sites unchanged).
+#[inline]
+unsafe fn ROSSYM_IS_VALID_DOS_HEADER(DosHeader: *const IMAGE_DOS_HEADER) -> i32 {
+    ((*DosHeader).e_magic == IMAGE_DOS_SIGNATURE && (*DosHeader).e_lfanew != 0) as i32
+}
+#[inline]
+unsafe fn ROSSYM_IS_VALID_NT_HEADERS(NtHeaders: *const IMAGE_NT_HEADERS) -> i32 {
+    ((*NtHeaders).Signature == IMAGE_NT_SIGNATURE
+        && (*NtHeaders).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR_MAGIC) as i32
+}
+#[inline]
+unsafe fn IMAGE_FIRST_SECTION(NtHeaders: *const IMAGE_NT_HEADERS) -> *mut IMAGE_SECTION_HEADER {
+    ((NtHeaders as usize)
+        + core::mem::offset_of!(IMAGE_NT_HEADERS, OptionalHeader)
+        + (*NtHeaders).FileHeader.SizeOfOptionalHeader as usize) as *mut IMAGE_SECTION_HEADER
 }
 
 const IMAGE_SIZEOF_SHORT_NAME: usize = 8;
@@ -23,7 +76,7 @@ pub unsafe extern "C" fn RosSymCreateFromMem(
     ImageStart: *mut core::ffi::c_void,
     ImageSize: usize,
     RosSymInfo: *mut PROSSYM_INFO,
-) -> i32 {
+) -> u8 {
     unsafe {
         let DosHeader: *mut IMAGE_DOS_HEADER;
         let NtHeaders: *mut IMAGE_NT_HEADERS;
@@ -90,9 +143,9 @@ pub unsafe extern "C" fn RosSymCreateFromMem(
             return 0;
         }
 
-        RosSymCreateFromRaw(
-            (ImageStart as *mut u8).add((*SectionHeader).VirtualAddress as usize) as *const u8,
-            (*SectionHeader).SizeOfRawData,
+        crate::fromraw::RosSymCreateFromRaw(
+            (ImageStart as *mut u8).add((*SectionHeader).VirtualAddress as usize) as *mut core::ffi::c_void,
+            (*SectionHeader).SizeOfRawData as usize,
             RosSymInfo,
         )
     }

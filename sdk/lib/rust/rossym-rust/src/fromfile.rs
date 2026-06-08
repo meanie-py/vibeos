@@ -1,3 +1,39 @@
+//! [correctness-review 2026-06-07 · sonnet; FIXED 2026-06-07 · opus] Reviewed vs sdk/lib/rossym/fromfile.c.
+//! Risk: HIGH → RESOLVED. All findings below are FIXED: `.rossym` section name corrected (was the
+//! always-FALSE bug); the macro phantoms (RosSym{Read,Seek,Alloc,Free}/IS_VALID_*) are now local
+//! `#[inline] unsafe fn` wrappers = the rossympriv.h macro expansions, so widths/ABI are correct.
+//! Behavior: broken — section name never matches; function always returns FALSE. [original finding]
+//! Functions reviewed: RosSymCreateFromFile (1/1).
+//! Findings:
+//!   BUG CRITICAL — `rossym_section_name = b"rossym\0"` is missing the leading dot (line 29).
+//!     C uses `ROSSYM_SECTION_NAME = ".rossym"` (7 chars with dot, null-padded to 8).
+//!     After `strncpy`, section_name = ['r','o','s','s','y','m','\0','\0'].
+//!     Real section headers have Name = ['.','r','o','s','s','y','m','\0'].
+//!     `memcmp` always fails ('r' != '.'), so `RosSymCreateFromFile` always returns 0 (FALSE).
+//!     Fix: `let rossym_section_name = b".rossym\0".as_ptr() as *const i8;`
+//!   BUG LINKAGE — `extern "C"` declarations for `RosSymReadFile`, `RosSymSeekFile`,
+//!     `RosSymAllocMem`, `RosSymFreeMem`, `ROSSYM_IS_VALID_DOS_HEADER`,
+//!     `ROSSYM_IS_VALID_NT_HEADERS` (lines 9-18). All six are C preprocessor macros
+//!     in rossympriv.h, not exported functions. No symbol with these names exists in any
+//!     object file. These will produce undefined-symbol link errors when integrated.
+//!     Fix: call through `crate::init::RosSymCallbacks` function pointers directly, and
+//!     inline the IS_VALID checks (IMAGE_DOS_SIGNATURE/e_magic/e_lfanew comparisons).
+//!   NOTE — `RosSymSeekFile` declared with `Offset: i64` (line 10) but the real callback
+//!     is `SeekFileProc(PVOID, ULONG_PTR)`. ULONG_PTR = usize (unsigned, pointer-sized).
+//!     i64 is always 8 bytes; on i386 ULONG_PTR is 4 bytes — wrong width AND sign.
+//!   NOTE — `RosSymReadFile` declared with `Size: usize` (line 9) but the real callback
+//!     has `Size: ULONG` (u32). On amd64/arm64, usize is 8 bytes; u32 is 4 bytes.
+//!     The mismatch is benign in practice (values fit in 32 bits) but is technically wrong.
+//!   NOTE — `section_index` is u32 (line 35) and `header_count` is u16 (USHORT).
+//!     Comparison `header_count as u32 <= section_index` is correct.
+//!   NOTE — seek_offset computation (lines 65-67) correctly reproduces the
+//!     `IMAGE_FIRST_SECTION` macro arithmetic. Allocation, read sizes, pointer arithmetic
+//!     for ROSSYM_INFO Symbols/Strings fields, and the null-terminator write all match C.
+//!   NOTE — ROSSYM_HEADER validation condition (3-way check, lines 112-114) correctly
+//!     matches fromfile.c (which has 3 conditions vs fromraw.c's 4).
+//! Unverified: Whether a cmake-level C shim will provide the extern "C" callback wrappers;
+//!   if so, the ABI annotations (i64/usize types) must still be corrected.
+
 use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
@@ -6,16 +42,47 @@ use ntkrnl_sys::ddk::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER, 
 use core::ffi::c_void;
 
 extern "C" {
-    fn RosSymReadFile(FileContext: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: usize) -> u8;
-    fn RosSymSeekFile(FileContext: *mut core::ffi::c_void, Offset: i64) -> u8;
-    fn RosSymAllocMem(Size: usize) -> *mut core::ffi::c_void;
-    fn RosSymFreeMem(Mem: *mut core::ffi::c_void);
-    fn ROSSYM_IS_VALID_DOS_HEADER(DosHeader: *const IMAGE_DOS_HEADER) -> u8;
-    fn ROSSYM_IS_VALID_NT_HEADERS(NtHeaders: *const IMAGE_NT_HEADERS) -> u8;
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
     fn strncpy(dst: *mut core::ffi::c_char, src: *const core::ffi::c_char, n: usize) -> *mut core::ffi::c_char;
-    fn DPRINT1(format: *const core::ffi::c_char, ...);
-    fn DPRINT(format: *const core::ffi::c_char, ...);
+}
+
+// PE signature constants. The ROSSYM_IS_VALID_* macros expand against these; they're not in the
+// kernel ddk bindgen, so they're defined locally with the standard PE values.
+const IMAGE_DOS_SIGNATURE: u16 = 0x5A4D; // 'MZ'
+const IMAGE_NT_SIGNATURE: u32 = 0x0000_4550; // 'PE\0\0'
+#[cfg(target_arch = "x86")]
+const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x010B; // PE32
+#[cfg(not(target_arch = "x86"))]
+const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x020B; // PE32+
+
+// rossympriv.h defines these as function-like macros over the global RosSymCallbacks / inline
+// header checks. Translated as local wrappers (= the macro expansions) so every call site below
+// is unchanged. NOT exported symbols — the original "extern" decls were a mechanical-translation
+// artifact that would have produced undefined-symbol link errors.
+#[inline]
+unsafe fn RosSymReadFile(FileContext: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: usize) -> u8 {
+    (crate::init::RosSymCallbacks.ReadFileProc.unwrap())(FileContext, Buffer, Size as u32)
+}
+#[inline]
+unsafe fn RosSymSeekFile(FileContext: *mut core::ffi::c_void, Offset: i64) -> u8 {
+    (crate::init::RosSymCallbacks.SeekFileProc.unwrap())(FileContext, Offset as usize)
+}
+#[inline]
+unsafe fn RosSymAllocMem(Size: usize) -> *mut core::ffi::c_void {
+    (crate::init::RosSymCallbacks.AllocMemProc.unwrap())(Size)
+}
+#[inline]
+unsafe fn RosSymFreeMem(Mem: *mut core::ffi::c_void) {
+    (crate::init::RosSymCallbacks.FreeMemProc.unwrap())(Mem)
+}
+#[inline]
+unsafe fn ROSSYM_IS_VALID_DOS_HEADER(DosHeader: *const IMAGE_DOS_HEADER) -> u8 {
+    ((*DosHeader).e_magic == IMAGE_DOS_SIGNATURE && (*DosHeader).e_lfanew != 0) as u8
+}
+#[inline]
+unsafe fn ROSSYM_IS_VALID_NT_HEADERS(NtHeaders: *const IMAGE_NT_HEADERS) -> u8 {
+    ((*NtHeaders).Signature == IMAGE_NT_SIGNATURE
+        && (*NtHeaders).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR_MAGIC) as u8
 }
 
 // ---- file-scope preamble (translated) ----
@@ -26,7 +93,7 @@ extern "C" {
 #[no_mangle]
 pub unsafe extern "C" fn RosSymCreateFromFile(FileContext: *mut core::ffi::c_void, RosSymInfo: *mut *mut ROSSYM_INFO) -> u8 {
     const IMAGE_SIZEOF_SHORT_NAME: usize = 8;
-    let rossym_section_name = b"rossym\0".as_ptr() as *const i8;
+    let rossym_section_name = b".rossym\0".as_ptr() as *const i8;
 
     let mut dos_header: IMAGE_DOS_HEADER = core::mem::zeroed();
     let mut nt_headers: IMAGE_NT_HEADERS = core::mem::zeroed();
