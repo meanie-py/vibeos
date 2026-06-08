@@ -711,9 +711,9 @@ unsafe fn write_data_blocks(
                 len_plus_header,
                 core::ptr::addr_of_mut!((*fci).pv),
                 (*fci).pv,
-            ) != len_plus_header
+            ) != len_plus_header as u32
             {
-                set_error(fci, FCIERR_CAB_FILE, (*fci).pv);
+                set_error(fci, FCIERR_CAB_FILE as i32, (*fci).pv as i32);
                 return 0;
             }
 
@@ -751,16 +751,16 @@ unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: unsafe extern "syst
     }
 
     let alloc_size = core::mem::size_of::<data_block>();
-    block = ((*fci).alloc)(alloc_size) as *mut data_block;
+    block = ((*fci).alloc)(alloc_size as u32) as *mut data_block;
     if block.is_null() {
-        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY);
+        set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
         return 0;
     }
 
     (*block).uncompressed = (*fci).cdata_in;
-    (*block).compressed = ((*fci).compress)(fci);
+    (*block).compressed = ((*fci).compress.unwrap())(fci);
 
-    let write_result = ((*fci).write)((*fci).data.handle, ((*fci).data_out).as_mut_ptr(), (*block).compressed as u32, core::ptr::addr_of_mut!(err), (*fci).pv);
+    let write_result = ((*fci).write)((*fci).data.handle as isize, ((*fci).data_out).as_mut_ptr() as *const core::ffi::c_void, (*block).compressed as u32, core::ptr::addr_of_mut!(err), (*fci).pv);
     if write_result != (*block).compressed as u32 {
         set_error(fci, FCIERR_TEMP_FILE, err);
         ((*fci).free)(block as *mut core::ffi::c_void);
@@ -771,7 +771,7 @@ unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: unsafe extern "syst
     (*fci).pending_data_size += core::mem::size_of::<CFDATA>() as u32 + (*fci).ccab.cbReserveCFData as u32 + (*block).compressed as u32;
     (*fci).cCompressedBytesInFolder += (*block).compressed as u32;
     (*fci).cDataBlocks += 1;
-    list_add_tail(core::ptr::addr_of_mut!((*fci).blocks_list), core::ptr::addr_of_mut!((*block).entry));
+    list_add_tail(core::ptr::addr_of_mut!((*fci).blocks_list) as *mut core::ffi::c_void, core::ptr::addr_of_mut!((*block).entry) as *mut core::ffi::c_void);
 
     let callback_result = status_callback(statusFile, (*block).compressed as u32, (*block).uncompressed as u32, (*fci).pv);
     if callback_result == -1 {
