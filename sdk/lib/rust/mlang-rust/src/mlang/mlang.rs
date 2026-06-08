@@ -2055,10 +2055,10 @@ unsafe extern "C" fn lcid_to_rfc1766A(lcid: u32, rfc1766: *mut i8, len: i32) -> 
     let mut i: i32;
 
     if n != 0 {
-        let primary_lang = (lcid & 0x3FF) as i32;         // PRIMARYLANGID
-        let sub_lang = ((lcid >> 10) & 0x3F) as i32;      // SUBLANGID
-        i = primary_lang;
-        if ((i == LANG_ENGLISH || i == LANG_CHINESE || i == LANG_ARABIC) &&
+        let primary_lang = (lcid & 0x3FF) as u32;         // PRIMARYLANGID
+        let sub_lang = ((lcid >> 10) & 0x3F) as u32;      // SUBLANGID
+        i = primary_lang as i32;
+        if ((primary_lang == LANG_ENGLISH || primary_lang == LANG_CHINESE || primary_lang == LANG_ARABIC) &&
             sub_lang == SUBLANG_DEFAULT) ||
             sub_lang > SUBLANG_DEFAULT
         {
@@ -2191,7 +2191,7 @@ unsafe extern "C" fn map_font(hdc: HDC, codepages: u32, src_font: HFONT, dst_fon
             old_font = SelectObject(hdc, new_font);
             charset = GetTextCharset(hdc);
             SelectObject(hdc, old_font);
-            if charset == charset_info.ciCharset {
+            if charset as u32 == charset_info.ciCharset {
                 font_list_entry = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<font_list>())
                     as *mut font_list;
                 if font_list_entry.is_null() {
@@ -2301,7 +2301,7 @@ pub unsafe extern "C" fn MLANGCF_QueryInterface(
         debugstr_guid(riid),
     );
 
-    if IsEqualGUID(riid, &IID_IUnknown) || IsEqualGUID(riid, &IID_IClassFactory) {
+    if IsEqualGUID(riid, &IID_IUnknown) != 0 || IsEqualGUID(riid, &IID_IClassFactory) != 0 {
         IClassFactory_AddRef(iface);
         *ppobj = iface as *mut core::ffi::c_void;
         return 0; // S_OK
@@ -2333,14 +2333,14 @@ pub unsafe extern "C" fn DllGetClassObject(
         ppv as *const core::ffi::c_void,
     );
 
-    if !IsEqualGUID(core::ptr::addr_of!(IID_IClassFactory), iid)
-        && !IsEqualGUID(core::ptr::addr_of!(IID_IUnknown), iid)
+    if IsEqualGUID(core::ptr::addr_of!(IID_IClassFactory), iid) == 0
+        && IsEqualGUID(core::ptr::addr_of!(IID_IUnknown), iid) == 0
     {
         return E_NOINTERFACE;
     }
 
     while i < object_creation.len() {
-        if IsEqualGUID(core::ptr::addr_of!(object_creation[i].clsid), rclsid) {
+        if IsEqualGUID(object_creation[i].clsid, rclsid) != 0 {
             break;
         }
         i += 1;
@@ -3689,8 +3689,8 @@ unsafe extern "C" fn fnIEnumCodePage_QueryInterface(
         debugstr_guid(riid),
     );
 
-    if IsEqualGUID(riid, &IID_IUnknown as *const GUID)
-        || IsEqualGUID(riid, &IID_IEnumCodePage as *const GUID)
+    if IsEqualGUID(riid, &IID_IUnknown as *const GUID) != 0
+        || IsEqualGUID(riid, &IID_IEnumCodePage as *const GUID) != 0
     {
         IEnumCodePage_AddRef(iface);
         TRACE(
@@ -3844,8 +3844,8 @@ unsafe extern "C" fn fnIEnumScript_QueryInterface(
         debugstr_guid(riid),
     );
 
-    if IsEqualGUID(riid, core::ptr::addr_of!(IID_IUnknown))
-        || IsEqualGUID(riid, core::ptr::addr_of!(IID_IEnumScript))
+    if IsEqualGUID(riid, core::ptr::addr_of!(IID_IUnknown)) != 0
+        || IsEqualGUID(riid, core::ptr::addr_of!(IID_IEnumScript)) != 0
     {
         IEnumScript_AddRef(iface);
         TRACE(
@@ -4253,8 +4253,8 @@ unsafe extern "C" fn fnIEnumRfc1766_QueryInterface(
             this as *const core::ffi::c_void,
             debugstr_guid(riid),
         );
-        if IsEqualGUID(riid, core::ptr::addr_of!(IID_IUnknown))
-            || IsEqualGUID(riid, core::ptr::addr_of!(IID_IEnumRfc1766))
+        if IsEqualGUID(riid, core::ptr::addr_of!(IID_IUnknown)) != 0
+            || IsEqualGUID(riid, core::ptr::addr_of!(IID_IEnumRfc1766)) != 0
         {
             IEnumRfc1766_AddRef(iface);
             TRACE(
