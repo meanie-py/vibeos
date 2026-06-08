@@ -177,7 +177,7 @@ pub struct IMultiLanguage3Vtbl {
     pub EnumRfc1766: unsafe extern "C" fn(*mut IMultiLanguage3, LANGID, *mut *mut IEnumRfc1766) -> HRESULT,
     pub GetRfc1766Info: unsafe extern "C" fn(*mut IMultiLanguage3, LCID, u16, *mut RFC1766INFO) -> HRESULT,
     pub CreateConvertCharset: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u32, u32, *mut *mut IMLangConvertCharset) -> HRESULT,
-    pub ConvertStringInIStream: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, u32, *mut c_void, *mut c_void) -> HRESULT,
+    pub ConvertStringInIStream: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, *const u16, u32, u32, *mut IStream, *mut IStream) -> HRESULT,
     pub ConvertStringToUnicodeEx: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, *mut i8, *mut u32, *mut u16, *mut u32, u32, *mut u16) -> HRESULT,
     pub ConvertStringFromUnicodeEx: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32, u32, *mut u16, *mut u32, *mut i8, *mut u32, u32, *mut u16) -> HRESULT,
     pub DetectCodepageInIStream: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u32, *mut IStream, *mut DetectEncodingInfo, *mut i32) -> HRESULT,
@@ -188,9 +188,9 @@ pub struct IMultiLanguage3Vtbl {
     pub SetMimeDBSource: unsafe extern "C" fn(*mut IMultiLanguage3, u32) -> HRESULT,
     pub GetNumberOfScripts: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32) -> HRESULT,
     pub EnumScripts: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u16, *mut *mut IEnumScript) -> HRESULT,
-    pub ValidateCodePageEx: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u32, *mut i32) -> HRESULT,
-    pub DetectOutboundCodePage: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u32, *const u16, *mut i32, *mut DetectEncodingInfo, *mut i32) -> HRESULT,
-    pub DetectOutboundCodePageInIStream: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u32, *mut c_void, *mut DetectEncodingInfo, *mut i32) -> HRESULT,
+    pub ValidateCodePageEx: unsafe extern "C" fn(*mut IMultiLanguage3, u32, *mut c_void, u32) -> HRESULT,
+    pub DetectOutboundCodePage: unsafe extern "C" fn(*mut IMultiLanguage3, u32, *const u16, u32, *mut u32, u32, *mut u32, *mut u32, *mut u16) -> HRESULT,
+    pub DetectOutboundCodePageInIStream: unsafe extern "C" fn(*mut IMultiLanguage3, u32, *mut IStream, *mut u32, u32, *mut u32, *mut u32, *mut u16) -> HRESULT,
 }
 
 #[repr(C)]
