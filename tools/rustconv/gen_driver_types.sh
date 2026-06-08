@@ -29,6 +29,7 @@ NTKRNL_SYS="${SRC}/sdk/lib/rust/ntkrnl-sys/src"
 # ALLOW_FILES : --allowlist-file regexes (types DEFINED here become local)
 # DRIVER_INC  : extra -I for the driver's own dir
 # VER_DEFS    : version macros matching the driver's CMakeLists.txt
+EXTRA_INC=()
 case "$DRIVER" in
   classpnp)
     DRIVER_DIR="${SRC}/drivers/storage/class/classpnp"
@@ -37,10 +38,13 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
   cdrom)
+    # KMDF driver (set_module_type cdrom kmdfdriver) — needs the WDF 1.17 headers.
     DRIVER_DIR="${SRC}/drivers/storage/class/cdrom"
-    WRAPPER_INC=$'#include <ntddk.h>\n#include <classpnp.h>\n#include "cdrom.h"\n#include "cdromp.h"'
+    WRAPPER_INC=$'#include <ntddk.h>\n#include "cdrom.h"'
     ALLOW_FILES=( --allowlist-file '.*cdrom\.h' --allowlist-file '.*cdromp\.h' --allowlist-file '.*ioctl\.h' --allowlist-file '.*mmc\.h' --allowlist-file '.*scratch\.h' )
-    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000 )
+    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
+               -DWDF_DEVICE_NO_WDMSEC_H -DDEBUG_USE_KDPRINT -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
+    EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
     ;;
   cdfs)
     DRIVER_DIR="${SRC}/drivers/filesystems/cdfs"
@@ -87,8 +91,9 @@ run_arch() {
     --raw-line 'use ntkrnl_sys::ddk::*;' \
     -o "$RAW" \
     -- -ferror-limit=0 -Wno-everything \
+    -fms-extensions \
     $ARCHDEF -D__REACTOS__ -D_USE_DUMMY_PSEH=1 -DDBG=1 "${VER_DEFS[@]}" \
-    -I"${DRIVER_DIR}" \
+    -I"${DRIVER_DIR}" "${EXTRA_INC[@]}" \
     -I"${SRC}/sdk/include" -I"${SRC}/sdk/include/ddk" -I"${SRC}/sdk/include/ndk" \
     -I"${SRC}/sdk/include/psdk" -I"${SRC}/sdk/include/xdk" -I"${SRC}/sdk/include/reactos" \
     -I"${SRC}/sdk/include/reactos/libs" -I"${SRC}/sdk/include/reactos/drivers" \
