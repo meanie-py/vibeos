@@ -1322,7 +1322,7 @@ unsafe fn FDI_read_entries(
 
     flags = EndGetI16(buf.as_ptr().add(cfhead_Flags)) as u16;
 
-    if (flags & cfheadRESERVE_PRESENT) != 0 {
+    if (flags & cfheadRESERVE_PRESENT as u16) != 0 {
         if ((*fdi).read)(
             hf,
             buf.as_mut_ptr() as *mut core::ffi::c_void,
@@ -1353,7 +1353,7 @@ unsafe fn FDI_read_entries(
             WARN(b"WARNING; header reserved space > 60000\n\0".as_ptr() as *const i8);
         }
 
-        if (header_resv != 0) && (((*fdi).seek)(hf, header_resv, SEEK_CUR) == -1) {
+        if (header_resv != 0) && (((*fdi).seek)(hf as isize, header_resv, SEEK_CUR) == -1) {
             ERR(b"seek failure: header_resv\n\0".as_ptr() as *const i8);
             if !pmii.is_null() {
                 set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
@@ -1362,7 +1362,7 @@ unsafe fn FDI_read_entries(
         }
     }
 
-    if (flags & cfheadPREV_CABINET) != 0 {
+    if (flags & cfheadPREV_CABINET as u16) != 0 {
         prevname = FDI_read_string(fdi, hf, cabsize);
         if prevname.is_null() {
             if !pmii.is_null() {
@@ -1386,7 +1386,7 @@ unsafe fn FDI_read_entries(
         }
     }
 
-    if (flags & cfheadNEXT_CABINET) != 0 {
+    if (flags & cfheadNEXT_CABINET as u16) != 0 {
         if !pmii.is_null() {
             (*pmii).hasnext = 1;
         }
@@ -1424,9 +1424,9 @@ unsafe fn FDI_read_entries(
     (*pfdici).cFiles = num_files;
     (*pfdici).setID = setid;
     (*pfdici).iCabinet = cabidx;
-    (*pfdici).fReserve = if (flags & cfheadRESERVE_PRESENT) != 0 { 1 } else { 0 };
-    (*pfdici).hasprev = if (flags & cfheadPREV_CABINET) != 0 { 1 } else { 0 };
-    (*pfdici).hasnext = if (flags & cfheadNEXT_CABINET) != 0 { 1 } else { 0 };
+    (*pfdici).fReserve = if (flags & cfheadRESERVE_PRESENT as u16) != 0 { 1 } else { 0 };
+    (*pfdici).hasprev = if (flags & cfheadPREV_CABINET as u16) != 0 { 1 } else { 0 };
+    (*pfdici).hasnext = if (flags & cfheadNEXT_CABINET as u16) != 0 { 1 } else { 0 };
 
     1
 }
