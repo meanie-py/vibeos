@@ -123,6 +123,7 @@ members = [
     "svcctl-stub",
     "winreg-stub",
     "mlang-rust",
+    "cabinet-rust",
 ]
 resolver = "2"
 
