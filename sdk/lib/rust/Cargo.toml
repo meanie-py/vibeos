@@ -122,6 +122,7 @@ members = [
     "midl-rt",
     "svcctl-stub",
     "winreg-stub",
+    "mlang-rust",
 ]
 resolver = "2"
 
