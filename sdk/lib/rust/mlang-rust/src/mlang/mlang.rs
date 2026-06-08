@@ -188,7 +188,7 @@ pub struct IMultiLanguage3Vtbl {
     pub SetMimeDBSource: unsafe extern "C" fn(*mut IMultiLanguage3, u32) -> HRESULT,
     pub GetNumberOfScripts: unsafe extern "C" fn(*mut IMultiLanguage3, *mut u32) -> HRESULT,
     pub EnumScripts: unsafe extern "C" fn(*mut IMultiLanguage3, u32, u16, *mut *mut IEnumScript) -> HRESULT,
-    pub ValidateCodePageEx: unsafe extern "C" fn(*mut IMultiLanguage3, u32, *mut c_void, u32) -> HRESULT,
+    pub ValidateCodePageEx: unsafe extern "C" fn(*mut IMultiLanguage3, u32, HWND, u32) -> HRESULT,
     pub DetectOutboundCodePage: unsafe extern "C" fn(*mut IMultiLanguage3, u32, *const u16, u32, *mut u32, u32, *mut u32, *mut u32, *mut u16) -> HRESULT,
     pub DetectOutboundCodePageInIStream: unsafe extern "C" fn(*mut IMultiLanguage3, u32, *mut IStream, *mut u32, u32, *mut u32, *mut u32, *mut u16) -> HRESULT,
 }
