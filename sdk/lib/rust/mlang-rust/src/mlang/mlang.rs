@@ -2740,7 +2740,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontUnicodeRanges(
     if size == 0 {
         return E_FAIL;
     }
-    gs = HeapAlloc(GetProcessHeap(), 0, size) as *mut GLYPHSET;
+    gs = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut GLYPHSET;
     if gs.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -3330,13 +3330,13 @@ unsafe extern "C" fn enum_locales_proc(locale: LPWSTR) -> i32 {
 
         info = (*data).info.add((*data).total as usize);
 
-        (*info).lcid = wcstol(locale as *const u16, &raw mut end, 16i32);
+        (*info).lcid = wcstol(locale as *const u16, &raw mut end, 16i32) as u32;
         if *end != 0u16 {
             return 0i32;
         }
 
         (*info).wszRfc1766[0] = 0u16;
-        lcid_to_rfc1766W((*info).lcid, (*info).wszRfc1766.as_mut_ptr(), MAX_RFC1766_NAME);
+        lcid_to_rfc1766W((*info).lcid, (*info).wszRfc1766.as_mut_ptr(), MAX_RFC1766_NAME as i32);
 
         (*info).wszLocaleName[0] = 0u16;
         GetLocaleInfoW((*info).lcid, LOCALE_SLANGUAGE, (*info).wszLocaleName.as_mut_ptr(), MAX_LOCALE_NAME as i32);
@@ -3392,7 +3392,7 @@ pub unsafe extern "C" fn fnIMultiLanguage_GetRfc1766Info(
     let rfc1766w_ptr = core::ptr::addr_of_mut!((*pRfc1766Info).wszRfc1766[0]);
     let localename_ptr = core::ptr::addr_of_mut!((*pRfc1766Info).wszLocaleName[0]);
 
-    if lcid_to_rfc1766W(Locale, rfc1766w_ptr, MAX_RFC1766_NAME as u32) == 0
+    if lcid_to_rfc1766W(Locale, rfc1766w_ptr, MAX_RFC1766_NAME as i32) == 0
         && GetLocaleInfoW(Locale, type_, localename_ptr, MAX_LOCALE_NAME as i32) > 0
     {
         return S_OK;
@@ -3429,7 +3429,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766FromLcid(
         return E_INVALIDARG;
     }
 
-    if lcid_to_rfc1766W(lcid, buf.as_mut_ptr(), MAX_RFC1766_NAME as u32) == 0 {
+    if lcid_to_rfc1766W(lcid, buf.as_mut_ptr(), MAX_RFC1766_NAME as i32) == 0 {
         let bstr = unsafe { SysAllocString(buf.as_ptr()) };
         unsafe { *pbstrRfc1766 = bstr; }
         return S_OK;
@@ -3662,7 +3662,7 @@ unsafe extern "C" fn MLANGCF_CreateInstance(
     let hres: HRESULT;
     let mut punk: *mut IUnknown = core::ptr::null_mut();
 
-    TRACE(b"(%p)->(%p,%s,%p)\n\0".as_ptr() as *const core::ffi::c_char, This as *const core::ffi::c_void, pOuter as *const core::ffi::c_void, debugstr_guid(riid as *const core::ffi::c_void), ppobj as *const core::ffi::c_void);
+    TRACE(b"(%p)->(%p,%s,%p)\n\0".as_ptr() as *const core::ffi::c_char, This as *const core::ffi::c_void, pOuter as *const core::ffi::c_void, debugstr_guid(riid), ppobj as *const core::ffi::c_void);
 
     *ppobj = core::ptr::null_mut();
     hres = ((*This).pfnCreateInstance)(pOuter, &mut punk as *mut *mut IUnknown as *mut *mut core::ffi::c_void);
@@ -3928,7 +3928,7 @@ pub unsafe extern "C" fn fnIEnumScript_Next(
     }
 
     core::ptr::copy_nonoverlapping(
-        (*This).script_info.add((*This).pos),
+        (*This).script_info.add((*This).pos as usize),
         rgelt,
         celt as usize,
     );
@@ -5263,12 +5263,12 @@ unsafe extern "C" fn ConvertJISJapaneseToUnicode(
     output: *mut u16,
     out_count: u32,
 ) -> u32 {
-    let sjis_string = HeapAlloc(GetProcessHeap(), 0, count);
+    let sjis_string = HeapAlloc(GetProcessHeap(), 0, count as usize);
     let mut rc: u32 = ConvertJIS2SJIS(input, count, sjis_string as *mut i8);
     if rc != 0 {
         TRACE(
             b"%s\n\0".as_ptr() as *const i8,
-            debugstr_an(sjis_string as *const i8, rc),
+            debugstr_an(sjis_string as *const i8, rc as i32),
         );
         if !output.is_null() {
             rc = MultiByteToWideChar(
@@ -5297,7 +5297,7 @@ unsafe extern "C" fn ConvertJISJapaneseToUnicode(
 unsafe extern "C" fn ConvertUnknownJapaneseToUnicode(input: *const i8, count: u32, output: *mut u16, out_count: u32) -> u32 {
     let mut sjis_string: *mut i8;
     let mut rc: u32 = 0;
-    let code: u32 = DetectJapaneseCode(input, count);
+    let code: u32 = DetectJapaneseCode(input as *const u8, count);
     TRACE(b"Japanese code %i\n\0".as_ptr() as *const i8, code);
 
     match code {
@@ -5323,7 +5323,7 @@ unsafe extern "C" fn ConvertUnknownJapaneseToUnicode(input: *const i8, count: u3
             }
         }
         50220 => {
-            sjis_string = HeapAlloc(GetProcessHeap(), 0, count) as *mut i8;
+            sjis_string = HeapAlloc(GetProcessHeap(), 0, count as usize) as *mut i8;
             rc = ConvertJIS2SJIS(input, count, sjis_string);
             if rc != 0 {
                 TRACE(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string, rc));
@@ -5387,7 +5387,7 @@ unsafe extern "C" fn fnIMultiLanguage3_CreateConvertCharset(
     // IMLangConvertCharset_Initialize(*convert_charset, src_cp, dst_cp, prop)
     // This is a COM vtable call; expand the macro faithfully
     let this: *mut IMLangConvertCharset = *convert_charset;
-    let vtbl: *mut IMLangConvertCharsetVtbl = (*this).lpVtbl;
+    let vtbl: *mut IMLangConvertCharsetVtbl = (*this).lpVtbl as *mut IMLangConvertCharsetVtbl;
     return ((*vtbl).Initialize)(this, src_cp, dst_cp, prop);
 }
 
@@ -5449,7 +5449,7 @@ unsafe extern "C" fn fnIMultiLanguage3_EnumCodePages(
         LangId as u32,
         ppEnumCodePage as *mut *mut IEnumCodePage,
     );
-    EnumCodePage_create(This, grfFlags, LangId, ppEnumCodePage)
+    EnumCodePage_create(This, grfFlags, LangId as u32, ppEnumCodePage)
 }
 
 #[no_mangle]
