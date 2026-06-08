@@ -2420,7 +2420,7 @@ unsafe extern "C" fn EnumScript_create(
     (*es_ptr).script_info = HeapAlloc(
         GetProcessHeap(),
         0,
-        (core::mem::size_of::<SCRIPTINFO>() * (*es_ptr).total as usize) as u32,
+        core::mem::size_of::<SCRIPTINFO>() * (*es_ptr).total as usize,
     ) as *mut SCRIPTINFO;
 
     for i in 0..(*es_ptr).total {
@@ -2522,7 +2522,7 @@ unsafe extern "C" fn fill_cp_info(ml_data: *const mlang_data, index: u32, mime_c
     let mut csi: CHARSETINFO = core::mem::zeroed();
 
     if TranslateCharsetInfo(
-        ((*ml_data).family_codepage as DWORD_PTR) as *const core::ffi::c_void,
+        ((*ml_data).family_codepage as DWORD_PTR) as *mut u32,
         &raw mut csi,
         TCI_SRCCODEPAGE,
     ) != 0
@@ -2805,7 +2805,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetScriptFontInfo(
                         mlang_data[i as usize].fixed_font,
                         -1i32,
                         (*pScriptFont.add(j as usize)).wszFont.as_mut_ptr() as *mut u16,
-                        MAX_MIMEFACE_NAME,
+                        MAX_MIMEFACE_NAME as i32,
                     );
                 } else if dwFlags == SCRIPTCONTF_PROPORTIONAL_FONT {
                     MultiByteToWideChar(
@@ -2814,7 +2814,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetScriptFontInfo(
                         mlang_data[i as usize].proportional_font,
                         -1i32,
                         (*pScriptFont.add(j as usize)).wszFont.as_mut_ptr() as *mut u16,
-                        MAX_MIMEFACE_NAME,
+                        MAX_MIMEFACE_NAME as i32,
                     );
                 }
             }
@@ -3034,7 +3034,7 @@ pub unsafe extern "C" fn GetGlobalFontLinkObject(
     }
 
     FIXME(
-        b"%p: stub\n\0".as_ptr() as *const u8,
+        b"%p: stub\n\0".as_ptr() as *const i8,
         unknown as *const core::ffi::c_void,
     );
 
@@ -3307,7 +3307,7 @@ pub unsafe extern "C" fn LcidToRfc1766W(
     lcid_to_rfc1766W(lcid, pszRfc1766, nChar)
 }
 
-unsafe extern "C" fn enum_locales_proc(locale: LPWSTR) -> i32 {
+unsafe extern "C" fn enum_locales_proc(locale: LPCWSTR) -> i32 {
     unsafe {
         let mut end: *mut u16 = core::ptr::null_mut();
         let data = TlsGetValue(MLANG_tls_index) as *mut enum_locales_data;
@@ -3734,7 +3734,7 @@ unsafe extern "C" fn fnIEnumCodePage_Release(iface: *mut IEnumCodePage) -> u32 {
         HeapFree(GetProcessHeap(), 0, (*This).cpinfo as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
     }
-    ref_val
+    ref_val as u32
 }
 
 unsafe extern "C" fn fnIEnumCodePage_Clone(
@@ -4518,7 +4518,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCharsetInfo(
             MultiByteToWideChar(
                 CP_ACP,
                 0,
-                (*mlang_data[i].mime_cp_info.add(n as usize)).web_charset as *const u8,
+                (*mlang_data[i].mime_cp_info.add(n as usize)).web_charset as *const i8,
                 -1i32,
                 csetW.as_mut_ptr(),
                 MAX_MIMECSET_NAME as i32,
@@ -4554,7 +4554,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCharsetInfo(
             MultiByteToWideChar(
                 CP_ACP,
                 0,
-                (*mlang_data[i].mime_cp_info.add(n as usize)).header_charset as *const u8,
+                (*mlang_data[i].mime_cp_info.add(n as usize)).header_charset as *const i8,
                 -1i32,
                 csetW.as_mut_ptr(),
                 MAX_MIMECSET_NAME as i32,
