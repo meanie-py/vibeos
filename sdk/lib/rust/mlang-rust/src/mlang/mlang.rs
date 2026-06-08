@@ -4512,21 +4512,21 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCharsetInfo(
             MultiByteToWideChar(
                 CP_ACP,
                 0,
-                mlang_data[i].mime_cp_info[n].web_charset as *const u8,
+                (*mlang_data[i].mime_cp_info.add(n as usize)).web_charset as *const u8,
                 -1i32,
                 csetW.as_mut_ptr(),
                 MAX_MIMECSET_NAME as i32,
             );
             if lstrcmpiW(Charset, csetW.as_ptr()) == 0 {
                 (*pCharsetInfo).uiCodePage = mlang_data[i].family_codepage;
-                (*pCharsetInfo).uiInternetEncoding = mlang_data[i].mime_cp_info[n].cp;
+                (*pCharsetInfo).uiInternetEncoding = (*mlang_data[i].mime_cp_info.add(n as usize)).cp;
                 lstrcpyW((*pCharsetInfo).wszCharset.as_mut_ptr(), csetW.as_ptr());
                 return S_OK;
             }
-            let alias = mlang_data[i].mime_cp_info[n].alias;
+            let alias = (*mlang_data[i].mime_cp_info.add(n as usize)).alias;
             if !alias.is_null() && lstrcmpiW(Charset, alias) == 0 {
                 (*pCharsetInfo).uiCodePage = mlang_data[i].family_codepage;
-                (*pCharsetInfo).uiInternetEncoding = mlang_data[i].mime_cp_info[n].cp;
+                (*pCharsetInfo).uiInternetEncoding = (*mlang_data[i].mime_cp_info.add(n as usize)).cp;
                 lstrcpyW((*pCharsetInfo).wszCharset.as_mut_ptr(), alias);
                 return S_OK;
             }
@@ -4548,14 +4548,14 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCharsetInfo(
             MultiByteToWideChar(
                 CP_ACP,
                 0,
-                mlang_data[i].mime_cp_info[n].header_charset as *const u8,
+                (*mlang_data[i].mime_cp_info.add(n as usize)).header_charset as *const u8,
                 -1i32,
                 csetW.as_mut_ptr(),
                 MAX_MIMECSET_NAME as i32,
             );
             if lstrcmpiW(Charset, csetW.as_ptr()) == 0 {
                 (*pCharsetInfo).uiCodePage = mlang_data[i].family_codepage;
-                (*pCharsetInfo).uiInternetEncoding = mlang_data[i].mime_cp_info[n].cp;
+                (*pCharsetInfo).uiInternetEncoding = (*mlang_data[i].mime_cp_info.add(n as usize)).cp;
                 lstrcpyW((*pCharsetInfo).wszCharset.as_mut_ptr(), csetW.as_ptr());
                 return S_OK;
             }
@@ -4621,7 +4621,7 @@ unsafe extern "C" fn fnIMultiLanguage3_ValidateCodePageEx(
     while i < mlang_data.len() as u32 {
         let mut n = 0u32;
         while n < mlang_data[i as usize].number_of_cp {
-            if mlang_data[i as usize].mime_cp_info[n as usize].cp == uiCodePage {
+            if (*mlang_data[i as usize].mime_cp_info.add(n as usize)).cp == uiCodePage {
                 return S_OK;
             }
             n += 1;
@@ -4796,7 +4796,7 @@ unsafe extern "C" fn fnIMultiLanguage_GetCodePageInfo(
         let mlang: &mlang_data_struct = &mlang_data[i as usize];
         let mut n: u32 = 0;
         while (n as u32) < mlang.number_of_cp {
-            if mlang.mime_cp_info[n as usize].cp == uiCodePage {
+            if (*mlang.mime_cp_info.add(n as usize)).cp == uiCodePage {
                 fill_cp_info(
                     &raw const mlang_data[i as usize],
                     n,
@@ -4833,7 +4833,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCodePageInfo(
     for i in 0..array_len {
         let n_loop = mlang_data[i].number_of_cp;
         for n in 0..n_loop {
-            if mlang_data[i].mime_cp_info[n].cp == uiCodePage {
+            if (*mlang_data[i].mime_cp_info.add(n as usize)).cp == uiCodePage {
                 fill_cp_info(
                     core::ptr::addr_of!(mlang_data[i]) as *const mlang_data,
                     n as u32,
