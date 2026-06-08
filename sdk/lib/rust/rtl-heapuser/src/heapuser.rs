@@ -1,8 +1,24 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{Next, PPEB, RTL_CRITICAL_SECTION, RtlEnterCriticalSection, RtlGetCurrentPeb, RtlInitializeCriticalSection, RtlLeaveCriticalSection};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{HANDLE, PPEB, RTL_CRITICAL_SECTION, RtlEnterCriticalSection, RtlGetCurrentPeb, RtlInitializeCriticalSection, RtlLeaveCriticalSection};
+
+// ---- local type: minimal _HEAP with ProcessHeapsListIndex at the correct offset ----
+// sdk/lib/rtl/heap.h line 222-269: struct _HEAP { HEAP_SEGMENT_MEMBERS; ... USHORT ProcessHeapsListIndex; ... }
+// HEAP_SEGMENT_MEMBERS spans HEAP_ENTRY(8/16) + 15 fields; the total offset varies by pointer width:
+//   i386: 128 bytes   amd64/arm64: 216 bytes
+// Verified layout matches rtl-heap/src/types.rs field ordering; only ProcessHeapsListIndex is accessed.
+#[cfg(target_pointer_width = "32")]
+const _HEAP_PHLI_OFFSET: usize = 128;
+#[cfg(target_pointer_width = "64")]
+const _HEAP_PHLI_OFFSET: usize = 216;
+
+#[repr(C)]
+pub struct _HEAP {
+    _pad: [u8; _HEAP_PHLI_OFFSET],
+    pub ProcessHeapsListIndex: USHORT,
+}
+pub type PHEAP = *mut _HEAP;
 
 // ---- file-scope preamble (translated) ----
 pub static mut RtlpProcessHeapsListLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
@@ -110,7 +126,7 @@ pub unsafe extern "system" fn RtlGetProcessHeaps(HeapCount: ULONG, HeapArray: *m
         let limit = if nHeaps < HeapCount { nHeaps } else { HeapCount };
         let mut n: ULONG = 0;
         while n < limit {
-            *HeapArray.offset(n as isize) = *(*Peb).ProcessHeaps.as_ptr().offset(n as isize);
+            *HeapArray.offset(n as isize) = *(*Peb).ProcessHeaps.offset(n as isize);
             n += 1;
         }
     }
