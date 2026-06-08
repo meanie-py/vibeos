@@ -1284,7 +1284,7 @@ unsafe fn FDI_read_entries(
         pfdici as *const core::ffi::c_void,
     );
 
-    if ((*fdi).read)(hf, buf.as_mut_ptr() as *mut core::ffi::c_void, cfhead_SIZEOF as _)
+    if ((*fdi).read)(hf as isize, buf.as_mut_ptr() as *mut core::ffi::c_void, cfhead_SIZEOF as _)
         != cfhead_SIZEOF as _
     {
         if !pmii.is_null() {
@@ -1392,7 +1392,7 @@ unsafe fn FDI_read_entries(
         }
         nextname = FDI_read_string(fdi, hf, cabsize);
         if nextname.is_null() {
-            if ((flags & cfheadPREV_CABINET) != 0) && !pmii.is_null() {
+            if ((flags & cfheadPREV_CABINET as u16) != 0) && !pmii.is_null() {
                 if !(*pmii).prevname.is_null() {
                     ((*fdi).free)((*pmii).prevname as *mut core::ffi::c_void);
                 }
@@ -1420,8 +1420,8 @@ unsafe fn FDI_read_entries(
     }
 
     (*pfdici).cbCabinet = cabsize;
-    (*pfdici).cFolders = num_folders;
-    (*pfdici).cFiles = num_files;
+    (*(*pfdici).cFolders = num_folders as u16;
+    (*(*pfdici).cFiles = num_files as u16;
     (*pfdici).setID = setid;
     (*pfdici).iCabinet = cabidx;
     (*pfdici).fReserve = if (flags & cfheadRESERVE_PRESENT as u16) != 0 { 1 } else { 0 };
