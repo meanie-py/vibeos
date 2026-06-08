@@ -250,7 +250,7 @@ unsafe fn get_header_size(fci: *mut FCI_Int) -> u32 {
 }
 
 unsafe fn free_file(fci: *mut FCI_Int, file: *mut file) {
-    list_remove(core::ptr::addr_of_mut!((*file).entry) as *mut core::ffi::c_void);
+    list_remove(core::ptr::addr_of_mut!((*file).entry));
     ((*fci).free)(file as *mut core::ffi::c_void);
 }
 
@@ -368,10 +368,10 @@ pub unsafe extern "C" fn FCICreate(
         return core::ptr::null_mut();
     }
 
-    p_fci_internal = pfnalloc(core::mem::size_of::<FCI_Int>()) as *mut FCI_Int;
+    p_fci_internal = pfnalloc(core::mem::size_of::<FCI_Int>() as u32) as *mut FCI_Int;
     if p_fci_internal.is_null() {
         (*perf).erfOper = FCIERR_ALLOC_FAIL;
-        (*perf).erfType = ERROR_NOT_ENOUGH_MEMORY;
+        (*perf).erfType = ERROR_NOT_ENOUGH_MEMORY as i32;
         (*perf).fError = 1;
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return core::ptr::null_mut();
@@ -394,20 +394,20 @@ pub unsafe extern "C" fn FCICreate(
     (*p_fci_internal).pccab = pccab;
     (*p_fci_internal).pv = pv;
     (*p_fci_internal).data.handle = -1;
-    (*p_fci_internal).compress = compress_NONE;
+    (*p_fci_internal).compress = Some(compress_NONE);
 
     list_init(core::ptr::addr_of_mut!((*p_fci_internal).folders_list));
     list_init(core::ptr::addr_of_mut!((*p_fci_internal).files_list));
     list_init(core::ptr::addr_of_mut!((*p_fci_internal).blocks_list));
 
     core::ptr::copy_nonoverlapping(
-        &(*pccab).szCab as *const u8,
-        (*p_fci_internal).szPrevCab.as_mut_ptr(),
+        (*pccab).szCab.as_ptr() as *const u8,
+        (*p_fci_internal).szPrevCab.as_mut_ptr() as *mut u8,
         CB_MAX_CABINET_NAME,
     );
     core::ptr::copy_nonoverlapping(
-        &(*pccab).szDisk as *const u8,
-        (*p_fci_internal).szPrevDisk.as_mut_ptr(),
+        (*pccab).szDisk.as_ptr() as *const u8,
+        (*p_fci_internal).szPrevDisk.as_mut_ptr() as *mut u8,
         CB_MAX_DISK_NAME,
     );
 
@@ -417,11 +417,11 @@ pub unsafe extern "C" fn FCICreate(
 unsafe extern "C" fn create_temp_file(fci: *mut FCI_Int, file: *mut temp_file) -> i32 {
     let mut err: i32 = 0;
     if ((*fci).gettemp)((*file).name.as_mut_ptr(), CB_MAX_FILENAME, (*fci).pv) == 0 {
-        set_error(fci, FCIERR_TEMP_FILE, ERROR_FUNCTION_FAILED);
+        set_error(fci, FCIERR_TEMP_FILE, ERROR_FUNCTION_FAILED as i32);
         return 0;
     }
     let handle = ((*fci).open)(
-        (*file).name.as_ptr() as *const i8,
+        (*file).name.as_mut_ptr(),
         0x8502, // _O_RDWR | _O_CREAT | _O_EXCL | _O_BINARY
         0x0180, // _S_IREAD | _S_IWRITE
         &raw mut err,
@@ -431,7 +431,7 @@ unsafe extern "C" fn create_temp_file(fci: *mut FCI_Int, file: *mut temp_file) -
         set_error(fci, FCIERR_TEMP_FILE, err);
         return 0;
     }
-    (*file).handle = handle;
+    (*file).handle = handle as INT_PTR;
     1
 }
 
@@ -441,7 +441,7 @@ unsafe fn close_temp_file(fci: *mut FCI_Int, file: *mut temp_file) -> i32 {
     if (*file).handle == -1 {
         return 1;
     }
-    if ((*fci).close)((*file).handle, &raw mut err, (*fci).pv) == -1 {
+    if ((*fci).close)((*file).handle as isize, &raw mut err, (*fci).pv) == -1 {
         set_error(fci, FCIERR_TEMP_FILE, err);
         return 0;
     }
