@@ -1,0 +1,896 @@
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::base::NT_SUCCESS;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::constants::{STATUS_SUCCESS, STATUS_END_OF_FILE, STATUS_FILE_LOCK_CONFLICT, STATUS_INVALID_DEVICE_REQUEST, STATUS_PENDING, STATUS_CANT_WAIT, STATUS_UNEXPECTED_IO_ERROR};
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ddk::{CcCopyRead, CcInitializeCacheMap, CcMdlRead, CcSetReadAheadGranularity, IoGetCurrentIrpStackLocation, KeInitializeEvent, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
+use core::ffi::c_void;
+
+extern "C" {
+    static mut CdData: CD_DATA;
+}
+extern "system" {
+    fn Add2Ptr(Base: *mut c_void, Offset: u32, CastType: usize) -> *mut c_void; // approximation fn BlockAlign(Vcb: *mut VCB, ByteCount: u32) -> u32;
+    fn BooleanFlagOn(Flags: u32, Mask: u32) -> i32; // BOOLEAN fn CdAcquireFileShared(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn CdAcquireFileSharedStarveExclusive(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn CdAllocateIoContext() -> *mut CD_IO_CONTEXT;
+    fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
+    fn CdDecodeFileObject( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB, ) -> TYPE_OF_OPEN;
+    fn CdFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
+    fn CdGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
+    fn CdMapUserBuffer(IrpContext: *mut IRP_CONTEXT, Buffer: *mut *mut c_void);
+    fn CdNonCachedRead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
+    fn CdNonCachedXARead( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, StartingOffset: i64, ReadByteCount: u32, ) -> NTSTATUS;
+    fn CdNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
+    fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
+    fn CdReleaseFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn CdVerifyFcbOperation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
+    fn ClearFlag(Flags: *mut u32, Mask: u32);
+    fn ExGetCurrentResourceThread() -> *mut c_void;
+    fn FlagOn(Flags: u32, Mask: u32) -> u32;
+    fn IoIsErrorUserInduced(Status: NTSTATUS) -> i32;
+    fn SectorOffset(Value: i64) -> u32; // assumes returns non-zero if unaligned fn SetFlag(Flags: *mut u32, Mask: u32);
+}
+
+// ---- file-scope preamble (translated) ----
+pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_READ;
+pub const READ_AHEAD_GRANULARITY: u32 = 0x10000;
+#[no_mangle]
+pub unsafe extern "C" fn CdCommonRead(
+    mut IrpContext: *mut IRP_CONTEXT,
+    mut Irp: *mut IRP,
+) -> NTSTATUS {
+    // External functions used:
+    // Constants from ntkrnl_sys
+
+    // Global CdData reference (provided by caller)
+
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
+
+    // Early zero-length check
+    if (*IrpSp).Parameters.Read.Length == 0 {
+        CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+        return STATUS_SUCCESS;
+    }
+
+    let mut TypeOfOpen: TYPE_OF_OPEN;
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Ccb: *mut CCB = core::ptr::null_mut();
+    TypeOfOpen = CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb);
+
+    // _Analysis_suppress_lock_checking_(Fcb->Resource);  // pragma, ignored
+
+    if (TypeOfOpen == UnopenedFileObject) || (TypeOfOpen == UserDirectoryOpen) {
+        CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST);
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    let Wait: bool;
+    Wait = BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) != 0;
+    let PagingIo: bool;
+    PagingIo = FlagOn((*Irp).Flags, IRP_PAGING_IO) != 0;
+    let NonCachedIo: bool;
+    NonCachedIo = FlagOn((*Irp).Flags, IRP_NOCACHE) != 0;
+    let SynchronousIo: bool;
+    SynchronousIo = FlagOn((*(*IrpSp).FileObject).Flags, FO_SYNCHRONOUS_IO) != 0;
+
+    let StartingOffset: i64 = (*IrpSp).Parameters.Read.ByteOffset.QuadPart;
+    let OriginalByteCount: u32 = (*IrpSp).Parameters.Read.Length;
+    let mut ByteCount: u32 = OriginalByteCount;
+    let mut ByteRange: i64 = StartingOffset + ByteCount as i64;
+
+    if TypeOfOpen == UserVolumeOpen {
+        NonCachedIo = true;
+    }
+
+    if PagingIo {
+        CdAcquireFileSharedStarveExclusive(IrpContext, Fcb);
+    } else {
+        CdAcquireFileShared(IrpContext, Fcb);
+    }
+
+    // SEH simulate: try-finally
+    let mut _se_status: NTSTATUS = Status;
+    let mut _se_irp: *mut IRP = Irp;
+    let mut _se_irp_context: *mut IRP_CONTEXT = IrpContext;
+    let mut _se_release_file: i32 = 1; // ReleaseFile = TRUE
+
+    {
+        // try body inside a loop that we break out of for try_exit/try_return
+        loop {
+            // ---- begin of C _SEH2_TRY block ----
+
+            if (TypeOfOpen != UserVolumeOpen) || (Ccb.is_null()) ||
+                !FlagOn((*Ccb).Flags, CCB_FLAG_DISMOUNT_ON_CLOSE)
+            {
+                CdVerifyFcbOperation(IrpContext, Fcb);
+            }
+
+            if !Wait && NonCachedIo {
+                if FlagOn((*Fcb).FcbState, FCB_STATE_RAWSECTOR_MASK) != 0 {
+                    SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_FORCE_POST);
+                    // try_return( Status = STATUS_CANT_WAIT );
+                    _se_status = STATUS_CANT_WAIT;
+                    break;
+                }
+            }
+
+            if TypeOfOpen == UserFileOpen {
+                // Check oplock
+                Status = FsRtlCheckOplock(
+                    CdGetFcbOplock(Fcb),
+                    Irp,
+                    IrpContext as *mut c_void,
+                    CdOplockComplete as *mut c_void,
+                    CdPrePostIrp as *mut c_void,
+                );
+                if Status != STATUS_SUCCESS {
+                    Irp = core::ptr::null_mut();
+                    IrpContext = core::ptr::null_mut();
+                    // try_return( NOTHING );
+                    break;
+                }
+                if !PagingIo && ((*Fcb).FileLock).is_null() == false &&
+                    !FsRtlCheckLockForReadAccess((*Fcb).FileLock, Irp)
+                {
+                    _se_status = STATUS_FILE_LOCK_CONFLICT;
+                    break;
+                }
+            }
+
+            if (TypeOfOpen != UserVolumeOpen) ||
+                (!FlagOn((*Ccb).Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO) != 0)
+            {
+                if StartingOffset >= (*Fcb).FileSize.QuadPart {
+                    _se_status = STATUS_END_OF_FILE;
+                    break;
+                }
+                if ByteRange > (*Fcb).FileSize.QuadPart {
+                    ByteCount = ((*Fcb).FileSize.QuadPart - StartingOffset) as u32;
+                    ByteRange = (*Fcb).FileSize.QuadPart;
+                }
+            }
+
+            // Non-cached path
+            if NonCachedIo {
+                let ReadByteCount = BlockAlign((*Fcb).Vcb, ByteCount);
+                if SectorOffset(StartingOffset) != 0 ||
+                    SectorOffset(ReadByteCount as i64) != 0 ||
+                    (ReadByteCount > OriginalByteCount)
+                {
+                    if !Wait {
+                        CdRaiseStatus(IrpContext, STATUS_CANT_WAIT);
+                    }
+                    // ReadByteCount unchanged, but we set to ByteCount later
+                }
+
+                if (*IrpContext).IoContext.is_null() ||
+                    FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO) == 0
+                {
+                    if Wait {
+                        (*IrpContext).IoContext = &mut LocalIoContext as *mut CD_IO_CONTEXT;
+                        ClearFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO);
+                    } else {
+                        (*IrpContext).IoContext = CdAllocateIoContext();
+                        SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO);
+                    }
+                }
+
+                RtlZeroMemory(
+                    (*IrpContext).IoContext as *mut c_void,
+                    core::mem::size_of::<CD_IO_CONTEXT>(),
+                );
+
+                (*(*IrpContext).IoContext).AllocatedContext =
+                    BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_ALLOC_IO);
+
+                if Wait {
+                    KeInitializeEvent(
+                        &mut (*(*IrpContext).IoContext).SyncEvent,
+                        _EVENT_TYPE_NotificationEvent,
+                        0, // FALSE
+                    );
+                } else {
+                    (*(*IrpContext).IoContext).ResourceThreadId = ExGetCurrentResourceThread();
+                    (*(*IrpContext).IoContext).Resource = (*Fcb).Resource;
+                    (*(*IrpContext).IoContext).RequestedByteCount = ByteCount;
+                }
+
+                (*Irp).IoStatus.Information = ReadByteCount as usize;
+
+                let read_status: NTSTATUS;
+                if FlagOn((*Fcb).FcbState, FCB_STATE_RAWSECTOR_MASK) != 0 {
+                    read_status = CdNonCachedXARead(IrpContext, Fcb, StartingOffset, ReadByteCount);
+                } else {
+                    read_status = CdNonCachedRead(IrpContext, Fcb, StartingOffset, ReadByteCount);
+                }
+                Status = read_status;
+
+                if Status == STATUS_PENDING {
+                    Irp = core::ptr::null_mut();
+                    _se_release_file = 0;
+                } else {
+                    if !NT_SUCCESS(Status) {
+                        (*Irp).IoStatus.Information = 0;
+                        if IoIsErrorUserInduced(Status) != 0 {
+                            CdRaiseStatus(IrpContext, Status);
+                        }
+                        Status = FsRtlNormalizeNtstatus(Status, STATUS_UNEXPECTED_IO_ERROR);
+                    } else if ReadByteCount != ByteCount {
+                        let mut UserBuffer: *mut c_void = core::ptr::null_mut();
+                        CdMapUserBuffer(IrpContext, &mut UserBuffer);
+                        // Expand SafeZeroMemory
+                        {
+                            // target = (UserBuffer as *mut u8).add(ByteCount) cast to PVOID
+                            let target = (UserBuffer as *mut u8).add(ByteCount as usize) as *mut c_void;
+                            let len = (ReadByteCount - ByteCount) as usize;
+                            RtlZeroMemory(target, len);
+                        }
+                        (*Irp).IoStatus.Information = ByteCount as usize;
+                    }
+                    if SynchronousIo && !PagingIo && NT_SUCCESS(Status) {
+                        (*(*IrpSp).FileObject).CurrentByteOffset.QuadPart = ByteRange;
+                    }
+                }
+                // try_return( NOTHING );
+                break;
+            }
+
+            // Cached path
+            if (*IrpSp).FileObject.is_null() == false && (*(*IrpSp).FileObject).PrivateCacheMap.is_null() {
+                CcInitializeCacheMap(
+                    (*IrpSp).FileObject,
+                    &mut (*Fcb).AllocationSize as *mut _ as *mut PCC_FILE_SIZES,
+                    0, // FALSE
+                    &mut CdData.CacheManagerCallbacks as *mut _,
+                    Fcb as *mut c_void,
+                );
+                CcSetReadAheadGranularity(
+                    (*IrpSp).FileObject,
+                    READ_AHEAD_GRANULARITY,
+                );
+            }
+
+            if FlagOn((*IrpContext).MinorFunction, IRP_MN_MDL) == 0 {
+                let mut SystemBuffer: *mut c_void = core::ptr::null_mut();
+                CdMapUserBuffer(IrpContext, &mut SystemBuffer);
+                if !CcCopyRead(
+                    (*IrpSp).FileObject,
+                    &mut StartingOffset as *mut i64 as *mut LARGE_INTEGER,
+                    ByteCount,
+                    if Wait { 1 } else { 0 },
+                    SystemBuffer,
+                    &mut (*Irp).IoStatus,
+                ) {
+                    _se_status = STATUS_CANT_WAIT;
+                    break;
+                }
+                if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
+                    CdNormalizeAndRaiseStatus(IrpContext, (*Irp).IoStatus.__bindgen_anon_1.Status);
+                }
+            } else {
+                CcMdlRead(
+                    (*IrpSp).FileObject,
+                    &mut StartingOffset as *mut i64 as *mut LARGE_INTEGER,
+                    ByteCount,
+                    &mut (*Irp).MdlAddress,
+                    &mut (*Irp).IoStatus,
+                );
+                Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+            }
+
+            if SynchronousIo && !PagingIo && NT_SUCCESS(Status) {
+                (*(*IrpSp).FileObject).CurrentByteOffset.QuadPart = ByteRange;
+            }
+
+            // try_exit: NOTHING;
+            break;
+        }; // end of try-body loop
+
+        // _SEH2_FINALLY
+        if _se_release_file != 0 {
+            CdReleaseFile(IrpContext, Fcb);
+        }
+    } // end SEH simulate block
+
+    // Restore variables
+    Status = _se_status;
+    Irp = _se_irp;
+    IrpContext = _se_irp_context;
+
+    if Status == STATUS_CANT_WAIT {
+        Status = CdFsdPostRequest(IrpContext, Irp);
+    } else {
+        CdCompleteRequest(IrpContext, Irp, Status);
+    }
+
+    Status
+}
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*++
+//
+// Copyright (c) 1989-2000 Microsoft Corporation
+//
+// Module Name:
+//
+//     Read.c
+//
+// Abstract:
+//
+//     This module implements the File Read routine for Read called by the
+//     Fsd/Fsp dispatch drivers.
+//
+//
+// --*/
+//
+// #include "cdprocs.h"
+//
+// //
+// //  The Bug check file id for this module
+// //
+//
+// #define BugCheckFileId                   (CDFS_BUG_CHECK_READ)
+//
+// //
+// //  VOID
+// //  SafeZeroMemory (
+// //       PUCHAR At,
+// //       ULONG ByteCount
+// //      );
+// //
+//
+// //
+// //  This macro just puts a nice little try-except around RtlZeroMemory
+// //
+//
+// #ifndef __REACTOS__
+// #define SafeZeroMemory(IC,AT,BYTE_COUNT) {                  \
+//     _SEH2_TRY {                                             \
+//         RtlZeroMemory( (AT), (BYTE_COUNT) );                \
+// __pragma(warning(suppress: 6320))                           \
+//     } _SEH2_EXCEPT( EXCEPTION_EXECUTE_HANDLER ) {           \
+//          CdRaiseStatus( IC, STATUS_INVALID_USER_BUFFER );   \
+//     } _SEH2_END;                                            \
+// }
+// #else
+// #define SafeZeroMemory(IC,AT,BYTE_COUNT) {                  \
+//     _SEH2_TRY {                                             \
+//         RtlZeroMemory( (AT), (BYTE_COUNT) );                \
+//     } _SEH2_EXCEPT( EXCEPTION_EXECUTE_HANDLER ) {           \
+//          CdRaiseStatus( IC, STATUS_INVALID_USER_BUFFER );   \
+//     } _SEH2_END;                                            \
+// }
+// #endif
+//
+// //
+// // Read ahead amount used for normal data files
+// //
+//
+// #define READ_AHEAD_GRANULARITY           (0x10000)
+//
+// #ifdef ALLOC_PRAGMA
+// #pragma alloc_text(PAGE, CdCommonRead)
+// #endif
+//
+//
+//
+// _Requires_lock_held_(_Global_critical_region_)
+// NTSTATUS
+// CdCommonRead (
+//      PIRP_CONTEXT IrpContext,
+//      PIRP Irp
+//     )
+//
+// /*++
+//
+// Routine Description:
+//
+//     This is the common entry point for NtReadFile calls.  For synchronous requests,
+//     CommonRead will complete the request in the current thread.  If not
+//     synchronous the request will be passed to the Fsp if there is a need to
+//     block.
+//
+// Arguments:
+//
+//     Irp - Supplies the Irp to process
+//
+// Return Value:
+//
+//     NTSTATUS - The result of this operation.
+//
+// --*/
+//
+// {
+//     NTSTATUS Status = STATUS_SUCCESS;
+//     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation( Irp );
+//
+//     TYPE_OF_OPEN TypeOfOpen;
+//     PFCB Fcb;
+//     PCCB Ccb;
+//
+//     BOOLEAN Wait;
+//     ULONG PagingIo;
+//     ULONG SynchronousIo;
+//     ULONG NonCachedIo;
+//     PVOID UserBuffer;
+//
+//     LONGLONG StartingOffset;
+//     LONGLONG ByteRange;
+//     ULONG ByteCount;
+//     ULONG ReadByteCount;
+//     ULONG OriginalByteCount;
+//
+//     PVOID SystemBuffer;
+//
+//     BOOLEAN ReleaseFile = TRUE;
+//
+//     CD_IO_CONTEXT LocalIoContext;
+//
+//     PAGED_CODE();
+//
+//     //
+//     //  If this is a zero length read then return SUCCESS immediately.
+//     //
+//
+//     if (IrpSp->Parameters.Read.Length == 0) {
+//
+//         CdCompleteRequest( IrpContext, Irp, STATUS_SUCCESS );
+//         return STATUS_SUCCESS;
+//     }
+//
+//     //
+//     //  Decode the file object and verify we support read on this.  It
+//     //  must be a user file, stream file or volume file (for a data disk).
+//     //
+//
+//     TypeOfOpen = CdDecodeFileObject( IrpContext, IrpSp->FileObject, &Fcb, &Ccb );
+//
+//     // Internal lock object is acquired if return status is STATUS_PENDING
+//     _Analysis_suppress_lock_checking_(Fcb->Resource);
+//
+//     if ((TypeOfOpen == UnopenedFileObject) ||
+//         (TypeOfOpen == UserDirectoryOpen)) {
+//
+//         CdCompleteRequest( IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST );
+//         return STATUS_INVALID_DEVICE_REQUEST;
+//     }
+//
+//     //
+//     //  Examine our input parameters to determine if this is noncached and/or
+//     //  a paging io operation.
+//     //
+//
+//     Wait = BooleanFlagOn( IrpContext->Flags, IRP_CONTEXT_FLAG_WAIT );
+//     PagingIo = FlagOn( Irp->Flags, IRP_PAGING_IO );
+//     NonCachedIo = FlagOn( Irp->Flags, IRP_NOCACHE );
+//     SynchronousIo = FlagOn( IrpSp->FileObject->Flags, FO_SYNCHRONOUS_IO );
+//
+//
+//     //
+//     //  Extract the range of the Io.
+//     //
+//
+//     StartingOffset = IrpSp->Parameters.Read.ByteOffset.QuadPart;
+//     OriginalByteCount = ByteCount = IrpSp->Parameters.Read.Length;
+//
+//     ByteRange = StartingOffset + ByteCount;
+//
+//     //
+//     //  Make sure that Dasd access is always non-cached.
+//     //
+//
+//     if (TypeOfOpen == UserVolumeOpen) {
+//
+//         NonCachedIo = TRUE;
+//     }
+//
+//     //
+//     //  Acquire the file shared to perform the read.  If we are doing paging IO,
+//     //  it may be the case that we would have a deadlock imminent because we may
+//     //  block on shared access, so starve out any exclusive waiters.  This requires
+//     //  a degree of caution - we believe that any paging IO bursts will recede and
+//     //  allow the exclusive waiter in.
+//     //
+//
+//     if (PagingIo) {
+//
+//         CdAcquireFileSharedStarveExclusive( IrpContext, Fcb );
+//
+//     } else {
+//
+//         CdAcquireFileShared( IrpContext, Fcb );
+//     }
+//
+//     //
+//     //  Use a try-finally to facilitate cleanup.
+//     //
+//
+//     _SEH2_TRY {
+//
+//         //
+//         //  Verify the Fcb.  Allow reads if this is a DASD handle that is
+//         //  dismounting the volume.
+//         //
+//
+//         if ((TypeOfOpen != UserVolumeOpen) || (NULL == Ccb) ||
+//             !FlagOn( Ccb->Flags, CCB_FLAG_DISMOUNT_ON_CLOSE))  {
+//
+//             CdVerifyFcbOperation( IrpContext, Fcb );
+//         }
+//
+//         //
+//         //  If this is a non-cached then check whether we need to post this
+//         //  request if this thread can't block.
+//         //
+//
+//         if (!Wait && NonCachedIo) {
+//
+//             //
+//             //  XA requests must always be waitable.
+//             //
+//
+//             if (FlagOn( Fcb->FcbState, FCB_STATE_RAWSECTOR_MASK )) {
+//
+//                 SetFlag( IrpContext->Flags, IRP_CONTEXT_FLAG_FORCE_POST );
+//                 try_return( Status = STATUS_CANT_WAIT );
+//             }
+//         }
+//
+//         //
+//         //  If this is a user request then verify the oplock and filelock state.
+//         //
+//
+//         if (TypeOfOpen == UserFileOpen) {
+//
+//             //
+//             //  We check whether we can proceed
+//             //  based on the state of the file oplocks.
+//             //
+//
+//             Status = FsRtlCheckOplock( CdGetFcbOplock(Fcb),
+//                                        Irp,
+//                                        IrpContext,
+//                                        (PVOID)CdOplockComplete,/* ReactOS Change: GCC "assignment from incompatible pointer type" */
+//                                        (PVOID)CdPrePostIrp );/* ReactOS Change: GCC "assignment from incompatible pointer type" */
+//
+//             //
+//             //  If the result is not STATUS_SUCCESS then the Irp was completed
+//             //  elsewhere.
+//             //
+//
+//             if (Status != STATUS_SUCCESS) {
+//
+//                 Irp = NULL;
+//                 IrpContext = NULL;
+//
+//                 try_return( NOTHING );
+//             }
+//
+//             if (!PagingIo &&
+//                 (Fcb->FileLock != NULL) &&
+//                 !FsRtlCheckLockForReadAccess( Fcb->FileLock, Irp )) {
+//
+//                 try_return( Status = STATUS_FILE_LOCK_CONFLICT );
+//             }
+//         }
+//
+//         //
+//         //  Check request beyond end of file if this is not a read on a volume
+//         //  handle marked for extended DASD IO.
+//         //
+//
+//         if ((TypeOfOpen != UserVolumeOpen) ||
+//             (!FlagOn( Ccb->Flags, CCB_FLAG_ALLOW_EXTENDED_DASD_IO ))) {
+//
+//             //
+//             //  Complete the request if it begins beyond the end of file.
+//             //
+//
+//             if (StartingOffset >= Fcb->FileSize.QuadPart) {
+//
+//                 try_return( Status = STATUS_END_OF_FILE );
+//             }
+//
+//             //
+//             //  Truncate the read if it extends beyond the end of the file.
+//             //
+//
+//             if (ByteRange > Fcb->FileSize.QuadPart) {
+//
+//                 ByteCount = (ULONG) (Fcb->FileSize.QuadPart - StartingOffset);
+//                 ByteRange = Fcb->FileSize.QuadPart;
+//             }
+//         }
+//
+//         //
+//         //  Handle the non-cached read first.
+//         //
+//
+//         if (NonCachedIo) {
+//
+//             //
+//             //  If we have an unaligned transfer then post this request if
+//             //  we can't wait.  Unaligned means that the starting offset
+//             //  is not on a sector boundary or the read is not integral
+//             //  sectors.
+//             //
+//
+//             ReadByteCount = BlockAlign( Fcb->Vcb, ByteCount );
+//
+//             if (SectorOffset( StartingOffset ) ||
+//                 SectorOffset( ReadByteCount ) ||
+//                 (ReadByteCount > OriginalByteCount)) {
+//
+//                 if (!Wait) {
+//
+//                     CdRaiseStatus( IrpContext, STATUS_CANT_WAIT );
+//                 }
+//
+//                 //
+//                 //  Make sure we don't overwrite the buffer.
+//                 //
+//
+//                 ReadByteCount = ByteCount;
+//             }
+//
+//             //
+//             //  Initialize the IoContext for the read.
+//             //  If there is a context pointer, we need to make sure it was
+//             //  allocated and not a stale stack pointer.
+//             //
+//
+//             if (IrpContext->IoContext == NULL ||
+//                 !FlagOn( IrpContext->Flags, IRP_CONTEXT_FLAG_ALLOC_IO )) {
+//
+//                 //
+//                 //  If we can wait, use the context on the stack.  Otherwise
+//                 //  we need to allocate one.
+//                 //
+//
+//                 if (Wait) {
+//
+//                     IrpContext->IoContext = &LocalIoContext;
+//                     ClearFlag( IrpContext->Flags, IRP_CONTEXT_FLAG_ALLOC_IO );
+//
+//                 } else {
+//
+//                     IrpContext->IoContext = CdAllocateIoContext();
+//                     SetFlag( IrpContext->Flags, IRP_CONTEXT_FLAG_ALLOC_IO );
+//                 }
+//             }
+//
+//             RtlZeroMemory( IrpContext->IoContext, sizeof( CD_IO_CONTEXT ));
+//
+//             //
+//             //  Store whether we allocated this context structure in the structure
+//             //  itself.
+//             //
+//
+//             IrpContext->IoContext->AllocatedContext =
+//                 BooleanFlagOn( IrpContext->Flags, IRP_CONTEXT_FLAG_ALLOC_IO );
+//
+//             if (Wait) {
+//
+//                 KeInitializeEvent( &IrpContext->IoContext->SyncEvent,
+//                                    NotificationEvent,
+//                                    FALSE );
+//
+//             } else {
+//
+//                 IrpContext->IoContext->ResourceThreadId = ExGetCurrentResourceThread();
+//                 IrpContext->IoContext->Resource = Fcb->Resource;
+//                 IrpContext->IoContext->RequestedByteCount = ByteCount;
+//             }
+//
+//             Irp->IoStatus.Information = ReadByteCount;
+//
+//             //
+//             //  Call one of the NonCacheIo routines to perform the actual
+//             //  read.
+//             //
+//
+//             if (FlagOn( Fcb->FcbState, FCB_STATE_RAWSECTOR_MASK )) {
+//
+//                 Status = CdNonCachedXARead( IrpContext, Fcb, StartingOffset, ReadByteCount );
+//
+//             } else {
+//
+//                 Status = CdNonCachedRead( IrpContext, Fcb, StartingOffset, ReadByteCount );
+//             }
+//
+//             //
+//             //  Don't complete this request now if STATUS_PENDING was returned.
+//             //
+//
+//             if (Status == STATUS_PENDING) {
+//
+//                 Irp = NULL;
+//                 ReleaseFile = FALSE;
+//
+//             //
+//             //  Test is we should zero part of the buffer or update the
+//             //  synchronous file position.
+//             //
+//
+//             } else {
+//
+//                 //
+//                 //  Convert any unknown error code to IO_ERROR.
+//                 //
+//
+//                 if (!NT_SUCCESS( Status )) {
+//
+//                     //
+//                     //  Set the information field to zero.
+//                     //
+//
+//                     Irp->IoStatus.Information = 0;
+//
+//                     //
+//                     //  Raise if this is a user induced error.
+//                     //
+//
+//                     if (IoIsErrorUserInduced( Status )) {
+//
+//                         CdRaiseStatus( IrpContext, Status );
+//                     }
+//
+//                     Status = FsRtlNormalizeNtstatus( Status, STATUS_UNEXPECTED_IO_ERROR );
+//
+//                 //
+//                 //  Check if there is any portion of the user's buffer to zero.
+//                 //
+//
+//                 } else if (ReadByteCount != ByteCount) {
+//
+//                     CdMapUserBuffer( IrpContext, &UserBuffer);
+//
+//                     SafeZeroMemory( IrpContext,
+//                                     Add2Ptr( UserBuffer,
+//                                              ByteCount,
+//                                              PVOID ),
+//                                     ReadByteCount - ByteCount );
+//
+//                     Irp->IoStatus.Information = ByteCount;
+//                 }
+//
+//                 //
+//                 //  Update the file position if this is a synchronous request.
+//                 //
+//
+//                 if (SynchronousIo && !PagingIo && NT_SUCCESS( Status )) {
+//
+//                     IrpSp->FileObject->CurrentByteOffset.QuadPart = ByteRange;
+//                 }
+//             }
+//
+//             try_return( NOTHING );
+//         }
+//
+//         //
+//         //  Handle the cached case.  Start by initializing the private
+//         //  cache map.
+//         //
+//
+//         if (IrpSp->FileObject->PrivateCacheMap == NULL) {
+//
+//             //
+//             //  Now initialize the cache map.
+//             //
+//
+//             CcInitializeCacheMap( IrpSp->FileObject,
+//                                   (PCC_FILE_SIZES) &Fcb->AllocationSize,
+//                                   FALSE,
+//                                   &CdData.CacheManagerCallbacks,
+//                                   Fcb );
+//
+//             CcSetReadAheadGranularity( IrpSp->FileObject, READ_AHEAD_GRANULARITY );
+//         }
+//
+//         //
+//         //  Read from the cache if this is not an Mdl read.
+//         //
+//
+//         if (!FlagOn( IrpContext->MinorFunction, IRP_MN_MDL )) {
+//
+//             //
+//             // If we are in the Fsp now because we had to wait earlier,
+//             // we must map the user buffer, otherwise we can use the
+//             // user's buffer directly.
+//             //
+//
+//             CdMapUserBuffer( IrpContext, &SystemBuffer );
+//
+//             //
+//             // Now try to do the copy.
+//             //
+//
+//             if (!CcCopyRead( IrpSp->FileObject,
+//                              (PLARGE_INTEGER) &StartingOffset,
+//                              ByteCount,
+//                              Wait,
+//                              SystemBuffer,
+//                              &Irp->IoStatus )) {
+//
+//                 try_return( Status = STATUS_CANT_WAIT );
+//             }
+//
+//             //
+//             //  If the call didn't succeed, raise the error status
+//             //
+//
+//             if (!NT_SUCCESS( Irp->IoStatus.Status )) {
+//
+//                 CdNormalizeAndRaiseStatus( IrpContext, Irp->IoStatus.Status );
+//             }
+//
+//         //
+//         //  Otherwise perform the MdlRead operation.
+//         //
+//
+//         } else {
+//
+//             CcMdlRead( IrpSp->FileObject,
+//                        (PLARGE_INTEGER) &StartingOffset,
+//                        ByteCount,
+//                        &Irp->MdlAddress,
+//                        &Irp->IoStatus );
+//
+//             Status = Irp->IoStatus.Status;
+//         }
+//
+//         //
+//         //  Update the current file position in the user file object.
+//         //
+//
+//         if (SynchronousIo && !PagingIo && NT_SUCCESS( Status )) {
+//
+//             IrpSp->FileObject->CurrentByteOffset.QuadPart = ByteRange;
+//         }
+//
+//     try_exit:  NOTHING;
+//     } _SEH2_FINALLY {
+//
+//         //
+//         //  Release the Fcb.
+//         //
+//
+//         if (ReleaseFile) {
+//
+//             CdReleaseFile( IrpContext, Fcb );
+//         }
+//     } _SEH2_END;
+//
+//     //
+//     //  Post the request if we got CANT_WAIT.
+//     //
+//
+//     if (Status == STATUS_CANT_WAIT) {
+//
+//         Status = CdFsdPostRequest( IrpContext, Irp );
+//
+//     //
+//     //  Otherwise complete the request.
+//     //
+//
+//     } else {
+//
+//         CdCompleteRequest( IrpContext, Irp, Status );
+//     }
+//
+//     return Status;
+// }
+//
+//
+//
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================

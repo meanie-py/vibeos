@@ -1,0 +1,11 @@
+# cdfs-rust — Rust translation of drivers/filesystems/cdfs (ISO9660 filesystem .sys).
+# DeepSeek mechanical translate, deepdrive-ground. ntkrnl-sys + driver_ddk substrate.
+[package]
+name = "cdfs-rust"
+version = "0.1.0"
+edition = "2021"
+[lib]
+name = "cdfs_rust"
+path = "src/lib.rs"
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
