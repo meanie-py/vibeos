@@ -4,12 +4,133 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CLONG, EXCEPTION_RECORD, GenericEqual, GenericGreaterThan, GenericLessThan, HEAP_LOCK, LARGE_INTEGER, LIST_ENTRY, MEMORY_BASIC_INFORMATION, MemoryBasicInformation, Next, NtCurrentTeb, PHEAP_LOCK, PRTL_AVL_TABLE, PRTL_BALANCED_LINKS, PRTL_HEAP_PARAMETERS, PTEB, Protection, RtlCreateHeap, RtlDeleteElementGenericTableAvl, RtlDestroyHeap, RtlEnumerateGenericTableAvl, RtlFillMemoryUlong, RtlFreeHeap, RtlInitUnicodeString, RtlInitializeGenericTableAvl, RtlInsertElementGenericTableAvl, RtlLookupElementGenericTableAvl, RtlRaiseException, Type, Valid, ZwAllocateVirtualMemory, ZwFreeVirtualMemory, ZwProtectVirtualMemory, ZwQueryPerformanceCounter, ZwQueryVirtualMemory};
+use ntkrnl_sys::interlocked::InterlockedIncrement;
+use ntkrnl_sys::ddk::{
+    CLONG, EXCEPTION_RECORD, HEAP_LOCK, LARGE_INTEGER, LIST_ENTRY,
+    MEMORY_BASIC_INFORMATION, NtCurrentTeb, PHEAP_LOCK, PRTL_AVL_TABLE,
+    PRTL_BALANCED_LINKS, PRTL_HEAP_PARAMETERS, PTEB, RtlCreateHeap,
+    RtlDeleteElementGenericTableAvl, RtlDestroyHeap,
+    RtlEnumerateGenericTableAvl, RtlFreeHeap,
+    RtlInitUnicodeString, RtlInitializeGenericTableAvl,
+    RtlInsertElementGenericTableAvl, RtlLookupElementGenericTableAvl,
+    RtlRaiseException, RTL_AVL_TABLE, RTL_BALANCED_LINKS,
+    _RTL_GENERIC_COMPARE_RESULTS, _UNICODE_STRING, WORD,
+    PRTL_TRACE_BLOCK, SINGLE_LIST_ENTRY, SLIST_HEADER,
+    _MEMORY_INFORMATION_CLASS_MemoryBasicInformation,
+    ZwAllocateVirtualMemory, ZwFreeVirtualMemory,
+    ZwProtectVirtualMemory, ZwQueryPerformanceCounter,
+    ZwQueryVirtualMemory,
+};
 use core::ffi::c_void;
 
+// ---- missing type aliases ----
+pub type RTL_GENERIC_COMPARE_RESULTS = _RTL_GENERIC_COMPARE_RESULTS;
+pub type DPH_HEAP_BLOCK = _DPH_HEAP_BLOCK;
+pub type DPH_BLOCK_INFORMATION = _DPH_BLOCK_INFORMATION;
+pub type DPH_HEAP_ROOT = _DPH_HEAP_ROOT;
+// PHEAP: opaque heap pointer (used to access Flags/ForceFlags via offset).
+// The _HEAP struct is private to librtl; page-heap only needs the first-page
+// Flags + ForceFlags fields which are past HEAP_SEGMENT_MEMBERS.
+// i386: sizeof(HEAP_SEGMENT_MEMBERS) = 64; amd64/arm64: = 96.
+#[cfg(target_arch = "x86")]
+const HEAP_FLAGS_OFFSET: usize = 64;
+#[cfg(not(target_arch = "x86"))]
+const HEAP_FLAGS_OFFSET: usize = 96;
+
+#[repr(C)]
+pub struct _HEAP_METADATA {
+    _pad: [u8; HEAP_FLAGS_OFFSET],
+    pub Flags: ULONG,
+    pub ForceFlags: ULONG,
+}
+pub type PHEAP = *mut _HEAP_METADATA;
+
+// ---- Generic compare results (Enum values not directly in ddk) ----
+pub const GenericLessThan: RTL_GENERIC_COMPARE_RESULTS = 0;
+pub const GenericGreaterThan: RTL_GENERIC_COMPARE_RESULTS = 1;
+pub const GenericEqual: RTL_GENERIC_COMPARE_RESULTS = 2;
+
+// MemoryBasicInformation enum alias (use the bindgen constant directly via import)
+
+// ---- Missing heap constants (from sdk/include/ndk/rtltypes.h) ----
+pub const HEAP_NO_SERIALIZE: ULONG = 0x00000001;
+pub const HEAP_GENERATE_EXCEPTIONS: ULONG = 0x00000004;
+pub const HEAP_ZERO_MEMORY: ULONG = 0x00000008;
+pub const HEAP_REALLOC_IN_PLACE_ONLY: ULONG = 0x00000010;
+pub const HEAP_SETTABLE_USER_FLAGS: ULONG = 0x00000E00;
+pub const HEAP_FLAG_PAGE_ALLOCS: ULONG = 0x01000000;
+pub const HEAP_NO_ALIGNMENT: ULONG = 0x08000000;
+
+// ---- Missing page protection constants (from sdk/include/xdk/mmtypes.h) ----
+pub const PAGE_NOACCESS: ULONG = 0x01;
+pub const PAGE_READONLY: ULONG = 0x02;
+
+// ---- Missing APPLICATION_VERIFIER constants (from sdk/include/reactos/verifier.h) ----
+pub const APPLICATION_VERIFIER_CORRUPTED_HEAP_BLOCK_HEADER: ULONG = 0x000D;
+pub const APPLICATION_VERIFIER_DOUBLE_FREE: ULONG = 0x0007;
+pub const APPLICATION_VERIFIER_CORRUPTED_FREED_HEAP_BLOCK: ULONG = 0x000E;
+pub const APPLICATION_VERIFIER_SWITCHED_HEAP_HANDLE: ULONG = 0x0006;
+pub const APPLICATION_VERIFIER_CORRUPTED_HEAP_BLOCK_SUFFIX: ULONG = 0x000F;
+pub const APPLICATION_VERIFIER_CORRUPTED_HEAP_BLOCK_PREFIX: ULONG = 0x0012;
+pub const APPLICATION_VERIFIER_CORRUPTED_HEAP_BLOCK_START_STAMP: ULONG = 0x0010;
+pub const APPLICATION_VERIFIER_CORRUPTED_HEAP_BLOCK_END_STAMP: ULONG = 0x0011;
+pub const APPLICATION_VERIFIER_CORRUPTED_HEAP_BLOCK_EXCEPTION_RAISED_FOR_HEADER: ULONG = 0x000B;
+pub const APPLICATION_VERIFIER_DESTROY_PROCESS_HEAP: ULONG = 0x0009;
+
+// ---- Missing extern declarations ----
 extern "system" {
     fn RtlInitializeSListHead(ListHead: *mut SLIST_HEADER);
     fn RtlValidateHeap(HeapHandle: PVOID, Flags: ULONG, BaseAddress: PVOID) -> BOOLEAN;
+    fn RtlTryEnterHeapLock(Lock: PHEAP_LOCK, Exclusive: BOOLEAN) -> BOOLEAN;
+    fn RtlEnterHeapLock(Lock: PHEAP_LOCK, Exclusive: BOOLEAN);
+    fn RtlLeaveHeapLock(Lock: PHEAP_LOCK);
+    fn RtlInitializeHeapLock(Lock: *mut PHEAP_LOCK) -> NTSTATUS;
+    fn RtlDeleteHeapLock(Lock: PHEAP_LOCK) -> NTSTATUS;
+    fn RtlGetProcessHeap() -> HANDLE;
+    fn RtlApplicationVerifierStop(
+        Code: ULONG_PTR,
+        Message: *const u8,
+        Value1: PVOID,
+        Description1: *const u8,
+        Value2: PVOID,
+        Description2: *const u8,
+        Value3: PVOID,
+        Description3: *const u8,
+        Value4: PVOID,
+        Description4: *const u8,
+    );
+    fn AVrfInternalHeapFreeNotification(
+        AllocationBase: PVOID,
+        AllocationSize: SIZE_T,
+    );
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+}
+
+// VERIFIER_STOP helper — translates the C variadic macro into a direct call.
+unsafe fn VERIFIER_STOP(
+    code: ULONG,
+    msg: PCHAR,
+    val1: PVOID,
+    desc1: PCHAR,
+    val2: PVOID,
+    desc2: PCHAR,
+    val3: PVOID,
+    desc3: PCHAR,
+    val4: PVOID,
+    desc4: PCHAR,
+) {
+    RtlApplicationVerifierStop(
+        code as ULONG_PTR,
+        msg as *const u8,
+        val1,
+        desc1 as *const u8,
+        val2,
+        desc2 as *const u8,
+        val3,
+        desc3 as *const u8,
+        val4,
+        desc4 as *const u8,
+    );
 }
 
 // ---- file-scope preamble (translated) ----
@@ -248,7 +369,7 @@ pub unsafe extern "system" fn RtlpSecMemFreeVirtualMemory(
     Size: PSIZE_T,
     Type: ULONG,
 ) -> NTSTATUS {
-    let Status: NTSTATUS = ZwFreeVirtualMemory(Process, Base, Size, Type);
+    let Status: NTSTATUS = ZwFreeVirtualMemory(Process, Base, Size.cast(), Type);
     Status
 }
 #[no_mangle]
@@ -262,20 +383,20 @@ pub unsafe extern "system" fn RtlpDphAllocateVm(
         (-1isize) as HANDLE,
         Base,
         0,
-        &mut Size,
+        core::ptr::addr_of_mut!(Size).cast(),
         Type,
         Protection,
     );
 
     if !NT_SUCCESS(Status) {
         if Type == MEM_RESERVE {
-            _InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphCounter));
+            InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphCounter));
             if (RtlpDphBreakOptions & DPH_BREAK_ON_RESERVE_FAIL) != 0 {
                 DbgBreakPoint();
                 return Status;
             }
         } else {
-            _InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphAllocFails));
+            InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphAllocFails));
             if (RtlpDphBreakOptions & DPH_BREAK_ON_COMMIT_FAIL) != 0 {
                 DbgBreakPoint();
                 return Status;
@@ -301,13 +422,13 @@ pub unsafe extern "system" fn RtlpDphFreeVm(
 
     if !NT_SUCCESS(Status) {
         if Type == MEM_RELEASE {
-            _InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphReleaseFails));
+            InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphReleaseFails));
             if RtlpDphBreakOptions & DPH_BREAK_ON_RELEASE_FAIL != 0 {
                 DbgBreakPoint();
                 return Status;
             }
         } else {
-            _InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphFreeFails));
+            InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphFreeFails));
             if RtlpDphBreakOptions & DPH_BREAK_ON_FREE_FAIL != 0 {
                 DbgBreakPoint();
                 return Status;
@@ -330,13 +451,13 @@ pub unsafe extern "system" fn RtlpDphProtectVm(
     Status = ZwProtectVirtualMemory(
         -1isize as HANDLE,
         &mut Base,
-        &mut Size,
+        core::ptr::addr_of_mut!(Size).cast(),
         Protection,
         &mut OldProtection,
     );
 
     if !NT_SUCCESS(Status) {
-        _InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphProtectFails));
+        InterlockedIncrement(core::ptr::addr_of_mut!(RtlpDphProtectFails));
         if RtlpDphBreakOptions & DPH_BREAK_ON_PROTECT_FAIL != 0 {
             DbgBreakPoint();
             return Status;
@@ -464,7 +585,7 @@ pub unsafe extern "system" fn RtlpDphRemoveFromAvailableList(
     DphRoot: PDPH_HEAP_ROOT,
     Node: PDPH_HEAP_BLOCK,
 ) {
-    RemoveEntryList(core::ptr::addr_of_mut!((*Node).AvailableEntry) as PLIST_ENTRY);
+    RemoveEntryList(core::ptr::addr_of_mut!((*Node).__bindgen_anon_1.AvailableEntry) as PLIST_ENTRY);
 
     (*DphRoot).nAvailableAllocations -= 1;
     (*DphRoot).nAvailableAllocationBytesCommitted -= (*Node).nVirtualBlockSize;
@@ -550,9 +671,9 @@ pub unsafe extern "system" fn RtlpDphCoalesceNodeIntoAvailable(
             let _Status = ZwQueryVirtualMemory(
                 -1isize as *mut core::ffi::c_void,
                 (*Node).pVirtualBlock as *mut core::ffi::c_void,
-                MemoryBasicInformation,
+                _MEMORY_INFORMATION_CLASS_MemoryBasicInformation,
                 core::ptr::addr_of_mut!(MemoryBasicInfo) as *mut core::ffi::c_void,
-                core::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+                core::mem::size_of::<MEMORY_BASIC_INFORMATION>() as _,
                 core::ptr::null_mut(),
             );
 
@@ -590,9 +711,9 @@ pub unsafe extern "system" fn RtlpDphCoalesceNodeIntoAvailable(
                 let _Status = ZwQueryVirtualMemory(
                     -1isize as *mut core::ffi::c_void,
                     (*NextNode).pVirtualBlock as *mut core::ffi::c_void,
-                    MemoryBasicInformation,
+                    _MEMORY_INFORMATION_CLASS_MemoryBasicInformation,
                     core::ptr::addr_of_mut!(MemoryBasicInfo) as *mut core::ffi::c_void,
-                    core::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+                    core::mem::size_of::<MEMORY_BASIC_INFORMATION>() as _,
                     core::ptr::null_mut(),
                 );
 
@@ -1350,7 +1471,7 @@ pub unsafe extern "system" fn RtlpPageHeapCreate(
     /* Set protection */
     Status = RtlpDphProtectVm(
         Base,
-        (2 * PAGE_SIZE + DPH_POOL_SIZE) as SIZE_T,
+        (2 * PAGE_SIZE + DPH_POOL_SIZE as usize) as SIZE_T,
         PAGE_READWRITE,
     );
     if !NT_SUCCESS(Status) {
@@ -1358,7 +1479,7 @@ pub unsafe extern "system" fn RtlpPageHeapCreate(
     }
 
     /* Start preparing the 1st page. Fill it with the default filler */
-    RtlFillMemoryUlong(Base, PAGE_SIZE as SIZE_T, DPH_FILL);
+    RtlFillMemoryUlong(Base, PAGE_SIZE as _, DPH_FILL);
 
     /* Set flags in the "HEAP" structure */
     HeapPtr = Base as PHEAP;
@@ -1390,10 +1511,10 @@ pub unsafe extern "system" fn RtlpPageHeapCreate(
     (*DphRoot).NormalHeap = RtlCreateHeap(
         Flags,
         core::ptr::null_mut(),
-        TotalSize,
-        CommitSize,
+        TotalSize as _,
+        CommitSize as _,
         core::ptr::null_mut(),
-        ULONG_PTR::MAX as PRTL_HEAP_PARAMETERS,
+        (usize::MAX as *mut core::ffi::c_void) as PRTL_HEAP_PARAMETERS,
     );
     if (*DphRoot).NormalHeap.is_null() {
         return core::ptr::null_mut();
@@ -1422,16 +1543,16 @@ pub unsafe extern "system" fn RtlpPageHeapCreate(
 
     /* For the remaining part */
     DphNode = RtlpDphAllocateNode(DphRoot);
-    (*DphNode).pVirtualBlock = (Base as PUCHAR).add((2 * PAGE_SIZE + DPH_POOL_SIZE) as usize);
-    (*DphNode).nVirtualBlockSize = (MemSize - (2 * PAGE_SIZE + DPH_POOL_SIZE)) as SIZE_T;
+    (*DphNode).pVirtualBlock = (Base as PUCHAR).add(2 * PAGE_SIZE + DPH_POOL_SIZE as usize);
+    (*DphNode).nVirtualBlockSize = (MemSize as usize - (2 * PAGE_SIZE + DPH_POOL_SIZE as usize)) as SIZE_T;
     RtlpDphCoalesceNodeIntoAvailable(DphRoot, DphNode);
 
     /* Initialize AVL-based busy nodes table */
     RtlInitializeGenericTableAvl(
         core::ptr::addr_of_mut!((*DphRoot).BusyNodesTable),
-        Some(RtlpDphCompareNodeForTable),
-        Some(RtlpDphAllocateNodeForTable),
-        Some(RtlpDphFreeNodeForTable),
+        Some(unsafe { core::mem::transmute(RtlpDphCompareNodeForTable as *const ()) }),
+        Some(unsafe { core::mem::transmute(RtlpDphAllocateNodeForTable as *const ()) }),
+        Some(unsafe { core::mem::transmute(RtlpDphFreeNodeForTable as *const ()) }),
         core::ptr::null_mut(),
     );
 
@@ -1479,11 +1600,11 @@ pub unsafe extern "system" fn RtlpPageHeapDestroy(HeapPtr: HANDLE) -> PVOID {
             b"attempt to destroy process heap\0".as_ptr() as PCHAR,
             HeapPtr,
             b"Heap handle\0".as_ptr() as PCHAR,
-            0,
+            core::ptr::null_mut(),
             b"\0".as_ptr() as PCHAR,
-            0,
+            core::ptr::null_mut(),
             b"\0".as_ptr() as PCHAR,
-            0,
+            core::ptr::null_mut(),
             b"\0".as_ptr() as PCHAR,
         );
         return core::ptr::null_mut();
@@ -1626,7 +1747,7 @@ pub unsafe extern "system" fn RtlpPageHeapAllocate(
         Size + core::mem::size_of::<DPH_BLOCK_INFORMATION>(),
         PAGE_SIZE as SIZE_T,
     ) as ULONG;
-    AllocateSize = AccessSize + PAGE_SIZE;
+    AllocateSize = (AccessSize as usize + PAGE_SIZE) as ULONG;
 
     AvailableNode = RtlpDphFindAvailableMemory(DphRoot, AllocateSize as SIZE_T, 1u8);
     if AvailableNode.is_null() {
