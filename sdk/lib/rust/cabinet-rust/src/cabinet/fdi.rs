@@ -1324,7 +1324,7 @@ unsafe fn FDI_read_entries(
 
     if (flags & cfheadRESERVE_PRESENT as u16) != 0 {
         if ((*fdi).read)(
-            hf,
+            hf as isize,
             buf.as_mut_ptr() as *mut core::ffi::c_void,
             cfheadext_SIZEOF as _,
         ) != cfheadext_SIZEOF as _
@@ -1520,7 +1520,7 @@ unsafe fn fdi_Zipinflate_dynamic(decomp_state: *mut fdi_decomp_state) -> i32 {
 
     b = (*decomp_state).methods.zip.bb;
     k = (*decomp_state).methods.zip.bk;
-    ll = (*decomp_state).methods.zip.ll;
+    ll = (*decomp_state).methods.zip.ll.as_mut_ptr();
 
     /* ZIPNEEDBITS(5) */
     while k < 5 {
@@ -1592,7 +1592,7 @@ unsafe fn fdi_Zipinflate_dynamic(decomp_state: *mut fdi_decomp_state) -> i32 {
     }
 
     n = nl + nd;
-    m = Zipmask[bl as usize];
+    m = Zipmask[bl as usize] as u32;
     i = 0;
     l = 0;
     while (i as u32) < n {
@@ -1604,11 +1604,11 @@ unsafe fn fdi_Zipinflate_dynamic(decomp_state: *mut fdi_decomp_state) -> i32 {
             k += 8;
         }
         td = tl.offset((b & m) as isize);
-        j = (*td).b;
+        j = (*td).b as u32;
         /* ZIPDUMPBITS(j) */
         b >>= j;
         k -= j;
-        j = (*td).v.n;
+        j = (*td).v.n as u32;
         if j < 16 {
             *ll.offset(i as isize) = j;
             l = j;
@@ -1779,7 +1779,7 @@ unsafe fn ZIPfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_s
     (*decomp_state).methods.zip.bk = 0;
     (*decomp_state).methods.zip.bb = 0;
 
-    if outlen > ZIPWSIZE {
+    if outlen as u32 > ZIPWSIZE {
         return 1; /* DECR_DATAFORMAT */
     }
 
