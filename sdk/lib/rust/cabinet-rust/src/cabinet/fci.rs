@@ -362,7 +362,7 @@ pub unsafe extern "C" fn FCICreate(
         || pccab.is_null()
     {
         (*perf).erfOper = FCIERR_NONE;
-        (*perf).erfType = ERROR_BAD_ARGUMENTS;
+        (*perf).erfType = ERROR_BAD_ARGUMENTS as i32;
         (*perf).fError = 1;
         SetLastError(ERROR_BAD_ARGUMENTS);
         return core::ptr::null_mut();
@@ -562,7 +562,7 @@ unsafe fn write_folders(
             (*fci).pv,
         );
         if written != folder_size as u32 {
-            set_error(fci, FCIERR_CAB_FILE, err);
+            set_error(fci, FCIERR_CAB_FILE as i32, err);
             return 0;
         }
 
@@ -1314,23 +1314,23 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
         (*fci).pv,
     );
     if handle == -1 {
-        set_error(fci, FCIERR_CAB_FILE, err);
+        set_error(fci, FCIERR_CAB_FILE as i32, err);
         return 0;
     }
 
     let result: i32 = 'failed: {
         if ((*fci).write)(handle, cfheader as *const core::ffi::c_void, header_size, core::ptr::addr_of_mut!(err), (*fci).pv) != header_size {
-            set_error(fci, FCIERR_CAB_FILE, err);
+            set_error(fci, FCIERR_CAB_FILE as i32, err);
             break 'failed 0;
         }
 
         let mut header_size = header_size + (*fci).placed_files_size + (*fci).folders_size;
-        if !write_folders(fci, handle, header_size, status_callback) { break 'failed 0; }
-        if !write_files(fci, handle, status_callback) { break 'failed 0; }
-        if !write_data_blocks(fci, handle, status_callback) { break 'failed 0; }
+        if !write_folders(fci, handle as INT_PTR, header_size, status_callback) { break 'failed 0; }
+        if !write_files(fci, handle as INT_PTR, status_callback) { break 'failed 0; }
+        if !write_data_blocks(fci, handle as INT_PTR, status_callback) { break 'failed 0; }
 
         if ((*fci).seek)(handle, 0, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) != 0 {
-            set_error(fci, FCIERR_CAB_FILE, err);
+            set_error(fci, FCIERR_CAB_FILE as i32, err);
             break 'failed 0;
         }
         memcpy(
@@ -1340,7 +1340,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
         );
         if ((*fci).write)(handle, (*cfheader).signature.as_ptr() as *const core::ffi::c_void, 4, core::ptr::addr_of_mut!(err), (*fci).pv) != 4
         {
-            set_error(fci, FCIERR_CAB_FILE, err);
+            set_error(fci, FCIERR_CAB_FILE as i32, err);
             break 'failed 0;
         }
 
