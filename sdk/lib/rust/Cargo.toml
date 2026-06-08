@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "rtl-heappage",
     "access",
     "avltable",
     "bitmap",
