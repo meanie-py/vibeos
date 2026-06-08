@@ -389,6 +389,7 @@ pub struct MIME_CP_INFO {
     pub body_charset: *const i8,
     pub alias: *const u16,
 }
+unsafe impl Sync for MIME_CP_INFO {}
 
 pub static arabic_cp: [MIME_CP_INFO; 4] = [
     MIME_CP_INFO {
