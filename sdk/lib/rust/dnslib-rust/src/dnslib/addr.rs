@@ -4,7 +4,7 @@ pub use crate::dnslib::types::*;
 // Address family constants from winsock
 pub const AF_INET: u16 = 2;
 pub const AF_INET6: u16 = 23;
-pub const AF_ATM: u16 = 16;
+pub const AF_ATM: u16 = 22;
 
 // DNS type constants from windns.h
 pub const DNS_TYPE_A: u16 = 0x0001;
@@ -35,8 +35,11 @@ pub static AddrFamilyTable: [DNS_FAMILY_INFO; 3] = [
         AddrType: AF_ATM,
         DnsType: DNS_TYPE_ATMA,
         AddressSize: core::mem::size_of::<ATM_ADDRESS>() as u32,
-        SockaddrSize: 0, // ATM has no SOCKADDR analog we use
-        AddressOffset: 0,
+        // sizeof(SOCKADDR_ATM) = 76 (with pshpack4 alignment):
+        //   u_short satm_family(2) + pad(2) + ATM_ADDRESS(28) + ATM_BLLI(28) + ATM_BHLI(16)
+        SockaddrSize: 76,
+        // FIELD_OFFSET(SOCKADDR_ATM, satm_number) = 4 (after u_short + 2 bytes padding)
+        AddressOffset: 4,
     },
 ];
 

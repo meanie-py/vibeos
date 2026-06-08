@@ -48,13 +48,16 @@ pub unsafe extern "system" fn Hostent_Init(
 
 #[no_mangle]
 pub unsafe extern "system" fn Dns_PtrArrayToOffsetArray(mut List: *mut *mut i8, Base: usize) {
+    // C: do { *List = (PCHAR)((ULONG_PTR)*List - Base); } while(*List++);
+    // Terminate on the converted value being zero, then advance.
     loop {
         let v = *List;
         *List = ((v as usize).wrapping_sub(Base)) as *mut i8;
-        if v.is_null() {
+        let converted = *List;
+        List = List.add(1);
+        if converted.is_null() {
             break;
         }
-        List = List.add(1);
     }
 }
 

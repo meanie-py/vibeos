@@ -51,7 +51,7 @@ const DNS_TYPE_ATMA: u16 = 0x0022;
 const DNS_TYPE_CNAME: u16 = 0x0005;
 const DNS_TYPE_PTR: u16 = 0x000c;
 const IpV4Address: u32 = 3;
-const DnsConfigFullHostName_W: u32 = 1;
+const DnsConfigFullHostName_W: u32 = 15;
 const DnsFreeRecordList: u32 = 0;
 
 const LOCALHOST: [u16; 10] = [
@@ -158,7 +158,7 @@ pub unsafe extern "system" fn SaBlob_CreateHostent(
 ) -> *mut HOSTENT {
     let DnsAddrArray: *mut DNS_ARRAY = (*Blob).DnsAddrArray;
     let AliasCount: u32 = (*Blob).AliasCount;
-    let mut AddressFamily: u16 = AF_INET; // AF_UNSPEC is 0, AF_INET is 2
+    let mut AddressFamily: u16 = 0; // AF_UNSPEC = 0 (matches C: WORD AddressFamily = AF_UNSPEC)
     let mut AddressCount: u32 = 0;
     let mut AddressSize: u32 = 0;
     let mut TotalSize: u32;
@@ -233,8 +233,9 @@ pub unsafe extern "system" fn SaBlob_CreateHostent(
     }
 
     if HostentPtr != 0 {
+        // C passes (PVOID)&HostentPtr — address of the local variable so Hostent_Init advances it.
         Hostent = Hostent_Init(
-            &raw mut (*(HostentPtr as *mut usize)) as *mut *mut c_void,
+            &mut HostentPtr as *mut usize as *mut *mut c_void,
             AddressFamily,
             AddressSize,
             AddressCount,
@@ -292,7 +293,8 @@ pub unsafe extern "system" fn SaBlob_CreateHostent(
     }
 
     if BufferAllocated == 0 {
-        core::ptr::write_volatile(HostEntrySize, (*HostEntrySize).wrapping_sub(HostentPtr));
+        // C: *HostEntrySize = *BufferPosition - (ULONG_PTR)HostentPtr
+        core::ptr::write_volatile(HostEntrySize, (*BufferPosition).wrapping_sub(HostentPtr));
     }
 
     if Relative != 0 {

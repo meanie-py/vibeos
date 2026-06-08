@@ -13,8 +13,8 @@ extern "system" {
 }
 
 pub const UnicodeString: u32 = 1;
-pub const AnsiString: u32 = 2;
-pub const Utf8String: u32 = 3;
+pub const Utf8String: u32 = 2;
+pub const AnsiString: u32 = 3;
 const CP_ACP: u32 = 0;
 const ERROR_MORE_DATA: u32 = 234;
 const ERROR_INVALID_DATA: u32 = 13;

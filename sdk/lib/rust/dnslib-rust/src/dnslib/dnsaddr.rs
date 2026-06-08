@@ -73,7 +73,6 @@ pub unsafe extern "system" fn DnsAddrArray_AddAddr(
     let dest = (&raw mut (*DnsAddrArray).Addresses as *mut DNS_ADDRESS)
         .add((*DnsAddrArray).UsedAddresses as usize);
     core::ptr::copy_nonoverlapping(DnsAddress, dest, 1);
-    (*DnsAddrArray).UsedAddresses += 1;
 
     1
 }
@@ -128,8 +127,9 @@ pub unsafe extern "system" fn DnsAddr_BuildFromAtm(
     };
 
     core::ptr::write_bytes(dns_address as *mut u8, 0, core::mem::size_of::<DNS_ADDRESS>());
-    // Write ATM_ADDRESS at offset 0 (overlapping Ip4Address)
-    let atm_dst = dns_address as *mut ATM_ADDRESS;
+    // Write ATM_ADDRESS at offset 4 (after WORD AddressFamily + WORD Port in the union).
+    // The anonymous struct in DNS_ADDRESS is: { WORD AddressFamily; WORD Port; ATM_ADDRESS AtmAddress; }
+    let atm_dst = (dns_address as *mut u8).add(4) as *mut ATM_ADDRESS;
     *atm_dst = address;
     (*dns_address).AddressLength = core::mem::size_of::<ATM_ADDRESS>() as u32;
 }
