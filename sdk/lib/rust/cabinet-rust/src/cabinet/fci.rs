@@ -1716,7 +1716,7 @@ pub unsafe extern "C" fn FCIAddFile(
             _ => {
                 let fmt = b"compression %x not supported, defaulting to none\n\0".as_ptr() as *const i8;
                 FIXME(fmt, typeCompress);
-                (*p_fci_internal).compression = tcompTYPE_NONE;
+                (*p_fci_internal).compression = tcompTYPE_NONE as TCOMP;
                 (*p_fci_internal).compress = Some(compress_NONE);
             }
         }
@@ -1763,7 +1763,7 @@ pub unsafe extern "C" fn FCIAddFile(
     /* So take care of this and get the name of the next cabinet */
     if (*p_fci_internal).fGetNextCabInVain == 0
         && (*p_fci_internal).fNextCab == 0
-        && (*p_fci_internal).ccab.cb < read_result + CB_MAX_CABINET_NAME + CB_MAX_DISK_NAME
+        && (*p_fci_internal).ccab.cb < read_result + CB_MAX_CABINET_NAME as u32 + CB_MAX_DISK_NAME as u32
     {
         /* increment cabinet index */
         (*(*p_fci_internal).pccab).iCab += 1;
