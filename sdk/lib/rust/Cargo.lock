@@ -91,6 +91,13 @@ name = "byteswap"
 version = "0.1.0"
 
 [[package]]
+name = "cabinet-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -253,6 +260,10 @@ dependencies = [
 
 [[package]]
 name = "handle"
+version = "0.1.0"
+
+[[package]]
+name = "hidparse-rust"
 version = "0.1.0"
 
 [[package]]
@@ -947,6 +958,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "usbdex-rust"
+version = "0.1.0"
+
+[[package]]
 name = "userinit-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1066,3 +1081,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
 ]
+
+[[package]]
+name = "wmilib-rust"
+version = "0.1.0"
