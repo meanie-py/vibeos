@@ -132,7 +132,7 @@ pub struct IMLangFontLink2Vtbl {
     pub MapFont: unsafe extern "C" fn(*mut IMLangFontLink2, HDC, u32, u16, *mut HFONT) -> HRESULT,
     pub GetFontUnicodeRanges: unsafe extern "C" fn(*mut IMLangFontLink2, HDC, *mut u32, *mut UNICODERANGE) -> HRESULT,
     pub GetScriptFontInfo: unsafe extern "C" fn(*mut IMLangFontLink2, SCRIPT_ID, u32, *mut u32, *mut SCRIPTFONTINFO) -> HRESULT,
-    pub CodePageToScriptID: unsafe extern "C" fn(*mut IMLangFontLink2, u32, *mut SCRIPT_ID) -> HRESULT,
+    pub CodePageToScriptID: unsafe extern "C" fn(*mut IMLangFontLink2, u32, *mut u32) -> HRESULT,
 }
 
 #[repr(C)]
@@ -195,12 +195,12 @@ pub struct IMultiLanguage3Vtbl {
 
 #[repr(C)]
 pub struct IMLangLineBreakConsoleVtbl {
-    pub QueryInterface: unsafe extern "C" fn(*mut IMLangLineBreakConsole, *const GUID, *mut *mut c_void) -> HRESULT,
+    pub QueryInterface: unsafe extern "C" fn(*mut IMLangLineBreakConsole, *const c_void, *mut *mut c_void) -> HRESULT,
     pub AddRef: unsafe extern "C" fn(*mut IMLangLineBreakConsole) -> u32,
     pub Release: unsafe extern "C" fn(*mut IMLangLineBreakConsole) -> u32,
-    pub BreakLineML: unsafe extern "C" fn(*mut IMLangLineBreakConsole, *const u16, i32, i32, *mut i32) -> HRESULT,
-    pub BreakLineW: unsafe extern "C" fn(*mut IMLangLineBreakConsole, *const u16, i32, i32, *mut i32) -> HRESULT,
-    pub BreakLineA: unsafe extern "C" fn(*mut IMLangLineBreakConsole, *const i8, i32, i32, *mut i32) -> HRESULT,
+    pub BreakLineML: unsafe extern "C" fn(*mut IMLangLineBreakConsole, *mut IMLangString, i32, i32, i32, i32, *mut i32, *mut i32) -> HRESULT,
+    pub BreakLineW: unsafe extern "C" fn(*mut IMLangLineBreakConsole, u32, *const u16, i32, i32, *mut i32, *mut i32) -> HRESULT,
+    pub BreakLineA: unsafe extern "C" fn(*mut IMLangLineBreakConsole, u32, u32, *const i8, i32, i32, *mut i32, *mut i32) -> HRESULT,
 }
 
 #[repr(C)]
@@ -212,9 +212,9 @@ pub struct IMLangConvertCharsetVtbl {
     pub GetSourceCodePage: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut u32) -> HRESULT,
     pub GetDestinationCodePage: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut u32) -> HRESULT,
     pub GetProperty: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut u32) -> HRESULT,
-    pub DoConversion: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut u8, *mut u32, *const u8, *mut u32) -> HRESULT,
-    pub DoConversionToUnicode: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut u16, *mut u32, *const i8, *mut u32) -> HRESULT,
-    pub DoConversionFromUnicode: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut i8, *mut u32, *const u16, *mut u32) -> HRESULT,
+    pub DoConversion: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut u8, *mut u32, *mut u8, *mut u32) -> HRESULT,
+    pub DoConversionToUnicode: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut i8, *mut u32, *mut u16, *mut u32) -> HRESULT,
+    pub DoConversionFromUnicode: unsafe extern "C" fn(*mut IMLangConvertCharset, *mut u16, *mut u32, *mut i8, *mut u32) -> HRESULT,
 }
 
 // ---- COM interface types (struct with lpVtbl) ----
