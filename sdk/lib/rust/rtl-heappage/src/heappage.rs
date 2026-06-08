@@ -31,11 +31,14 @@ pub type DPH_HEAP_ROOT = _DPH_HEAP_ROOT;
 // PHEAP: opaque heap pointer (used to access Flags/ForceFlags via offset).
 // The _HEAP struct is private to librtl; page-heap only needs the first-page
 // Flags + ForceFlags fields which are past HEAP_SEGMENT_MEMBERS.
-// i386: sizeof(HEAP_SEGMENT_MEMBERS) = 64; amd64/arm64: = 96.
+// Offset of _HEAP.Flags (= sizeof the HEAP_SEGMENT_MEMBERS prefix). Verified vs
+// heap.h cross-checked against _HEAP.ProcessHeapsListIndex (128 i386 / 216 amd64):
+// i386 = 64 (0x40); amd64/arm64 = 112 (0x70), NOT 96 — a wrong 64-bit offset reads
+// ForceFlags from inside UCRSegmentList and breaks page-heap recognition on 64-bit.
 #[cfg(target_arch = "x86")]
 const HEAP_FLAGS_OFFSET: usize = 64;
 #[cfg(not(target_arch = "x86"))]
-const HEAP_FLAGS_OFFSET: usize = 96;
+const HEAP_FLAGS_OFFSET: usize = 112;
 
 #[repr(C)]
 pub struct _HEAP_METADATA {
@@ -2253,7 +2256,7 @@ pub unsafe extern "system" fn RtlpDebugPageHeapValidate(
 
     DphRoot = RtlpDphPointerFromHandle(HeapHandle) as PDPH_HEAP_ROOT;
     if DphRoot.is_null() {
-        return 0xffu8.wrapping_neg().wrapping_add(0xff) as BOOLEAN; // placeholder, replaced below
+        return 0xFFu8 as BOOLEAN; // C: `return -1;` — BOOLEAN(UCHAR) sentinel 0xFF (truthy)
     }
 
     Flags |= (*DphRoot).HeapFlags;
