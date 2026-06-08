@@ -347,7 +347,7 @@ pub unsafe extern "C" fn FCICreate(
     let p_fci_internal: *mut FCI_Int;
 
     if perf.is_null() {
-        SetLastError(ERROR_BAD_ARGUMENTS);
+        SetLastError(ERROR_BAD_ARGUMENTS as u32);
         return core::ptr::null_mut();
     }
     if (pfnalloc as *const core::ffi::c_void).is_null()
@@ -364,7 +364,7 @@ pub unsafe extern "C" fn FCICreate(
         (*perf).erfOper = FCIERR_NONE;
         (*perf).erfType = ERROR_BAD_ARGUMENTS as i32;
         (*perf).fError = 1;
-        SetLastError(ERROR_BAD_ARGUMENTS);
+        SetLastError(ERROR_BAD_ARGUMENTS as u32);
         return core::ptr::null_mut();
     }
 
@@ -1368,18 +1368,18 @@ unsafe fn fci_flush_folder(
     let folder: *mut folder;
 
     if pfnfcignc.is_none() || pfnfcis.is_none() {
-        set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_BAD_ARGUMENTS);
+        set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_BAD_ARGUMENTS as i32);
         return 0;
     }
 
     if (*p_fci_internal).fGetNextCabInVain != 0 && (*p_fci_internal).fNextCab != 0 {
-        set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE);
+        set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE as i32);
         return 0;
     }
 
     if (*p_fci_internal).files_size == 0 {
         if (*p_fci_internal).pending_data_size != 0 {
-            set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE);
+            set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE as i32);
             return 0;
         }
         return 1;
@@ -1446,7 +1446,7 @@ unsafe fn fci_flush_folder(
             (*p_fci_internal).estimatedCabinetSize,
             (*p_fci_internal).pv,
         ) {
-            set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_FUNCTION_FAILED);
+            set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_FUNCTION_FAILED as i32);
             return 0;
         }
         (*p_fci_internal).fGetNextCabInVain = 1;
@@ -1480,7 +1480,7 @@ unsafe fn fci_flush_folder(
         (*p_fci_internal).fSplitFolder = 1;
     } else {
         if (*p_fci_internal).fNextCab != 0 {
-            set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE);
+            set_error(p_fci_internal, 0 /* FCIERR_NONE */, ERROR_GEN_FAILURE as i32);
             return 0;
         }
     }
@@ -1533,7 +1533,7 @@ unsafe fn fci_flush_cabinet(
                 || (*p_fci_internal).placed_files_size != 0))
     {
         /* error */
-        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE as i32);
         return 0;
     }
 
@@ -1552,7 +1552,7 @@ unsafe fn fci_flush_cabinet(
         if (*p_fci_internal).files_size == 0 && (*p_fci_internal).pending_data_size != 0 {
             /* THIS CAN NEVER HAPPEN */
             /* set error code */
-            set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+            set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE as i32);
             return 0;
         }
 
@@ -1612,7 +1612,7 @@ unsafe fn fci_flush_cabinet(
             ) == 0
             {
                 /* error handling */
-                set_error(p_fci_internal, FCIERR_NONE, ERROR_FUNCTION_FAILED);
+                set_error(p_fci_internal, FCIERR_NONE, ERROR_FUNCTION_FAILED as i32);
                 return 0;
             }
             /* Skip a few lines of code. This is caught by the next if. */
@@ -1649,7 +1649,7 @@ unsafe fn fci_flush_cabinet(
         if (*p_fci_internal).files_size > 0 || (*p_fci_internal).pending_data_size != 0 {
             /* THIS MAY NEVER HAPPEN */
             /* set error structures */
-            set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+            set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE as i32);
             return 0;
         }
     }
@@ -1698,7 +1698,7 @@ pub unsafe extern "C" fn FCIAddFile(
         set_error(
             p_fci_internal,
             FCIERR_NONE,
-            ERROR_BAD_ARGUMENTS,
+            ERROR_BAD_ARGUMENTS as i32,
         );
         return 0;
     }
@@ -1729,7 +1729,7 @@ pub unsafe extern "C" fn FCIAddFile(
         set_error(
             p_fci_internal,
             FCIERR_NONE,
-            ERROR_GEN_FAILURE,
+            ERROR_GEN_FAILURE as i32,
         );
         return 0;
     }
@@ -1739,7 +1739,7 @@ pub unsafe extern "C" fn FCIAddFile(
         set_error(
             p_fci_internal,
             FCIERR_NONE,
-            ERROR_GEN_FAILURE,
+            ERROR_GEN_FAILURE as i32,
         );
         return 0;
     }
@@ -1779,7 +1779,7 @@ pub unsafe extern "C" fn FCIAddFile(
             set_error(
                 p_fci_internal,
                 FCIERR_NONE,
-                ERROR_FUNCTION_FAILED,
+                ERROR_FUNCTION_FAILED as i32,
             );
             return 0;
         }
@@ -1790,7 +1790,7 @@ pub unsafe extern "C" fn FCIAddFile(
     if (*p_fci_internal).fGetNextCabInVain != 0 && (*p_fci_internal).fNextCab != 0 {
         /* THIS CAN NEVER HAPPEN */
         /* set error code */
-        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE as i32);
         return 0;
     }
 
@@ -1813,7 +1813,7 @@ pub unsafe extern "C" fn FCIAddFile(
     if (*p_fci_internal).fNextCab != 0 {
         /* THIS MAY NEVER HAPPEN */
         /* set error code */
-        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE as i32);
         return 0;
     }
 
@@ -1862,7 +1862,7 @@ pub unsafe extern "C" fn FCIAddFile(
         ) == 0
         {
             /* error handling */
-            set_error(p_fci_internal, FCIERR_NONE, ERROR_FUNCTION_FAILED);
+            set_error(p_fci_internal, FCIERR_NONE, ERROR_FUNCTION_FAILED as i32);
             return 0;
         }
         /* Skip a few lines of code. This is caught by the next if. */
@@ -1871,7 +1871,7 @@ pub unsafe extern "C" fn FCIAddFile(
 
     if (*p_fci_internal).fGetNextCabInVain != 0 && (*p_fci_internal).fNextCab != 0 {
         /* THIS CAN NEVER HAPPEN */
-        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE as i32);
         return 0;
     }
 
@@ -1892,7 +1892,7 @@ pub unsafe extern "C" fn FCIAddFile(
     if (*p_fci_internal).fNextCab != 0 {
         /* THIS MAY NEVER HAPPEN */
         /* set error code */
-        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE);
+        set_error(p_fci_internal, FCIERR_NONE, ERROR_GEN_FAILURE as i32);
         return 0;
     }
 
