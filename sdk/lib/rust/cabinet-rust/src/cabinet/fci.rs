@@ -821,7 +821,7 @@ unsafe extern "C" fn copy_data_blocks(
     const FCIERR_TEMP_FILE: i32 = 4;
     const FCIERR_USER_ABORT: i32 = 7;
 
-    if ((*fci).seek)(handle, start_pos, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) as isize
+    if ((*fci).seek)(handle as isize, start_pos as i32, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) as isize
         != start_pos as isize
     {
         set_error(fci, FCIERR_TEMP_FILE, err);
@@ -839,8 +839,8 @@ unsafe extern "C" fn copy_data_blocks(
             as *mut data_block;
 
         if ((*fci).read)(
-            handle,
-            &raw mut (*fci).data_out as *mut u8,
+            handle as isize,
+            &raw mut (*fci).data_out as *mut u8 as *mut core::ffi::c_void,
             (*block).compressed as u32,
             core::ptr::addr_of_mut!(err),
             (*fci).pv,
@@ -852,8 +852,8 @@ unsafe extern "C" fn copy_data_blocks(
             return 0;
         }
         if ((*fci).write)(
-            (*temp).handle,
-            &raw mut (*fci).data_out as *mut u8,
+            (*temp).handle as isize,
+            &raw mut (*fci).data_out as *mut u8 as *const core::ffi::c_void,
             (*block).compressed as u32,
             core::ptr::addr_of_mut!(err),
             (*fci).pv,
@@ -870,7 +870,7 @@ unsafe extern "C" fn copy_data_blocks(
         (*fci).statusFolderCopied += (*block).compressed as cab_ULONG;
 
         let ret = status_callback(
-            statusFolder,
+            statusFolder as i32,
             (*fci).statusFolderCopied,
             (*fci).statusFolderTotal,
             (*fci).pv,
@@ -912,7 +912,7 @@ unsafe fn add_files_to_folder(
         // fnfilfnfildest: placed file on cabinet
         ((*fci).fileplaced)(
             core::ptr::addr_of_mut!((*fci).ccab),
-            (*file).name.as_ptr() as *const core::ffi::c_char,
+            (*file).name.as_mut_ptr(),
             (*file).size as i32,
             if (*file).folder == cffileCONTINUED_FROM_PREV { 1 } else { 0 },
             (*fci).pv,
@@ -938,8 +938,8 @@ unsafe fn add_files_to_folder(
 
         list_remove(core::ptr::addr_of_mut!((*file).entry));
         list_add_tail(
-            core::ptr::addr_of_mut!((*folder).files_list),
-            core::ptr::addr_of_mut!((*file).entry),
+            core::ptr::addr_of_mut!((*folder).files_list) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*file).entry) as *mut core::ffi::c_void,
         );
         (*fci).placed_files_size += size;
         (*fci).cFiles += 1;
@@ -953,8 +953,8 @@ unsafe fn add_files_to_folder(
                 return 0;
             }
             list_add_before(
-                core::ptr::addr_of_mut!((*next).entry),
-                core::ptr::addr_of_mut!((*file).entry),
+                core::ptr::addr_of_mut!((*next).entry) as *mut list,
+                core::ptr::addr_of_mut!((*file).entry) as *mut list,
             );
 
             // Files which data will be partially written into the current cabinet
