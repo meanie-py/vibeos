@@ -1663,7 +1663,7 @@ pub unsafe extern "C" fn FCIFlushFolder(
     pfnfcignc: PFNFCIGETNEXTCABINET,
     pfnfcis: PFNFCISTATUS,
 ) -> BOOL {
-    let p_fci_internal = get_fci_ptr(hfci);
+    let p_fci_internal = get_fci_ptr(hfci as *mut FCI_Int);
     if p_fci_internal.is_null() {
         return 0;
     }
@@ -1682,7 +1682,7 @@ pub unsafe extern "C" fn FCIAddFile(
     typeCompress: TCOMP,
 ) -> BOOL {
     let mut read_result: u32;
-    let p_fci_internal = get_fci_ptr(hfci);
+    let p_fci_internal = get_fci_ptr(hfci as *mut FCI_Int);
 
     if p_fci_internal.is_null() {
         return 0;
@@ -1711,13 +1711,13 @@ pub unsafe extern "C" fn FCIAddFile(
             #[cfg(HAVE_ZLIB)]
             tcompTYPE_MSZIP => {
                 (*p_fci_internal).compression = tcompTYPE_MSZIP;
-                (*p_fci_internal).compress = compress_MSZIP;
+                (*p_fci_internal).compress = Some(compress_MSZIP);
             }
             _ => {
                 let fmt = b"compression %x not supported, defaulting to none\n\0".as_ptr() as *const i8;
                 FIXME(fmt, typeCompress);
                 (*p_fci_internal).compression = tcompTYPE_NONE;
-                (*p_fci_internal).compress = compress_NONE;
+                (*p_fci_internal).compress = Some(compress_NONE);
             }
         }
     }
