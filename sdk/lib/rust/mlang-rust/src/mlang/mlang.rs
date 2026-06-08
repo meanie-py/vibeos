@@ -2425,7 +2425,7 @@ unsafe extern "C" fn EnumScript_create(
 
     for i in 0..(*es_ptr).total {
         let elem = (*es_ptr).script_info.add(i as usize);
-        (*elem).ScriptId = i;
+        (*elem).ScriptId = i.to_ne_bytes();
         (*elem).uiCodePage = mlang_data[i as usize].family_codepage;
 
         MultiByteToWideChar(
@@ -2527,7 +2527,7 @@ unsafe extern "C" fn fill_cp_info(ml_data: *const mlang_data, index: u32, mime_c
         TCI_SRCCODEPAGE,
     ) != 0
     {
-        (*mime_cp_info).bGDICharset = csi.ciCharset;
+        (*mime_cp_info).bGDICharset = csi.ciCharset as u8;
     } else {
         (*mime_cp_info).bGDICharset = DEFAULT_CHARSET;
     }
