@@ -41,6 +41,7 @@ members = [
     "bootvid-cargo",
     "cport-rust",
     "cmboot-rust",
+    "cmlib-rust",
     "freeldr-rust",
     "arm64input-rust",
     "arm64vid-rust",

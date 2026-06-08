@@ -114,6 +114,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmlib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "cnt-ctype"
 version = "0.1.0"
 
