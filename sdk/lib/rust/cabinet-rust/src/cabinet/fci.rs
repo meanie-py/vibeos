@@ -1025,9 +1025,9 @@ unsafe fn add_file_data(
 
     loop {
         len = ((*fci).read)(
-            handle,
-            (*fci).data_in.as_mut_ptr().add((*fci).cdata_in as usize),
-            CAB_BLOCKMAX - (*fci).cdata_in as usize,
+            handle as isize,
+            (*fci).data_in.as_mut_ptr().add((*fci).cdata_in as usize) as *mut core::ffi::c_void,
+            (CAB_BLOCKMAX - (*fci).cdata_in as usize) as u32,
             &mut err,
             (*fci).pv,
         );
@@ -1040,7 +1040,7 @@ unsafe fn add_file_data(
         }
         (*file).size += len as u32;
         (*fci).cdata_in += len as u16;
-        if (*fci).cdata_in as usize == CAB_BLOCKMAX && add_data_block(fci, status_callback) == 0 {
+        if (*fci).cdata_in as usize == CAB_BLOCKMAX && add_data_block(fci, status_callback as PFNFCISTATUS) == 0 {
             return 0;
         }
     }
@@ -1072,7 +1072,7 @@ unsafe fn reset_cabinet(fci: *mut FCI_Int) {
 
 #[no_mangle]
 pub unsafe extern "C" fn FCIDestroy(hfci: HFCI) -> i32 {
-    let p_fci_internal = get_fci_ptr(hfci);
+    let p_fci_internal = get_fci_ptr(hfci as *mut FCI_Int);
     if p_fci_internal.is_null() {
         return 0;
     }
@@ -1161,9 +1161,9 @@ unsafe fn add_data_to_folder(
             break;
         }
 
-        let new = ((*fci).alloc)(core::mem::size_of::<data_block>()) as *mut data_block;
+        let new = ((*fci).alloc)(core::mem::size_of::<data_block>() as u32) as *mut data_block;
         if new.is_null() {
-            set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY);
+            set_error(fci, FCIERR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
             return 0;
         }
 
@@ -1202,14 +1202,14 @@ unsafe fn add_data_to_folder(
         *payload += (*new).uncompressed;
 
         list_add_tail(
-            core::ptr::addr_of_mut!((*folder).blocks_list),
-            core::ptr::addr_of_mut!((*new).entry),
+            core::ptr::addr_of_mut!((*folder).blocks_list) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*new).entry) as *mut core::ffi::c_void,
         );
         (*folder).data_count += 1;
 
         /* report status with pfnfcis about copied size of folder */
         let ret = status_callback(
-            statusFolder,
+            statusFolder as i32,
             (*fci).statusFolderCopied,
             (*fci).statusFolderTotal,
             (*fci).pv,
