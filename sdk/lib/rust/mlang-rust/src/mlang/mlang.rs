@@ -2697,7 +2697,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCodePageDescription(
 unsafe extern "C" fn fnIMultiLanguage3_IsCodePageInstallable(iface: *mut IMultiLanguage3, uiCodePage: u32) -> HRESULT {
     TRACE(b"%u\n\0".as_ptr() as *const i8, uiCodePage);
     // FIXME: the installable set is usually larger than the set of valid codepages
-    return IMultiLanguage3_ValidateCodePageEx(iface, uiCodePage, core::ptr::null(), CPIOD_PEEK);
+    return IMultiLanguage3_ValidateCodePageEx(iface, uiCodePage, 0isize, CPIOD_PEEK);
 }
 
 unsafe extern "C" fn fnIMultiLanguage3_SetMimeDBSource(
@@ -2790,13 +2790,13 @@ unsafe extern "C" fn fnIMLangFontLink2_GetScriptFontInfo(
     i = 0;
     j = 0;
     while i < mlang_data.len() as UINT {
-        if sid == u32::from_ne_bytes(mlang_data[i as usize].sid) {
+        if sid == mlang_data[i as usize].sid {
             if !pScriptFont.is_null() {
                 if j >= *puiFonts {
                     break;
                 }
 
-                (*pScriptFont.add(j as usize)).scripts = (1u32 << u32::from_ne_bytes(mlang_data[i as usize].sid)) as u32; // SCRIPT_IDS cast
+                (*pScriptFont.add(j as usize)).scripts = (1i64 << u32::from_ne_bytes(mlang_data[i as usize].sid)); // SCRIPT_IDS cast
 
                 if dwFlags == SCRIPTCONTF_FIXED_FONT {
                     MultiByteToWideChar(
@@ -3504,16 +3504,16 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
             last_lang = LangId;
         }
 
-        if !lcid_to_rfc1766W(
+        if lcid_to_rfc1766W(
             Locale,
             (*pRfc1766Info).wszRfc1766.as_mut_ptr(),
-            MAX_RFC1766_NAME,
-        ) && GetLocaleInfoW(
+            MAX_RFC1766_NAME as i32,
+        ) == 0 && GetLocaleInfoW(
             Locale,
             type_,
             (*pRfc1766Info).wszLocaleName.as_mut_ptr(),
-            MAX_LOCALE_NAME,
-        ) > 0
+            MAX_LOCALE_NAME as i32,
+        ) != 0
         {
             return 0;
         }
@@ -3659,7 +3659,7 @@ unsafe extern "C" fn MLANGCF_CreateInstance(
     ppobj: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
     let This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface);
-    let hres: HRESULT;
+    let mut hres: HRESULT;
     let mut punk: *mut IUnknown = core::ptr::null_mut();
 
     TRACE(b"(%p)->(%p,%s,%p)\n\0".as_ptr() as *const core::ffi::c_char, This as *const core::ffi::c_void, pOuter as *const core::ffi::c_void, debugstr_guid(riid), ppobj as *const core::ffi::c_void);
