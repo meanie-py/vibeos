@@ -671,7 +671,7 @@ unsafe fn write_data_blocks(
 
     // Outer loop: LIST_FOR_EACH_ENTRY(folder, &fci->folders_list, struct folder, entry)
     let mut current = (*fci).folders_list.next;
-    while current != core::ptr::addr_of!((*fci).folders_list) {
+    while current != core::ptr::addr_of!((*fci).folders_list) as *mut list {
         let folder = (current as *const u8).sub(core::mem::offset_of!(folder, entry)) as *mut folder;
 
         // Seek in folder's temp data file
@@ -681,8 +681,8 @@ unsafe fn write_data_blocks(
         }
 
         // Inner loop: LIST_FOR_EACH_ENTRY(block, &folder->blocks_list, struct data_block, entry)
-        let mut inner_current = (*(*folder).blocks_list).next;
-        while inner_current != core::ptr::addr_of!((*folder).blocks_list) {
+        let mut inner_current = (*folder).blocks_list.next;
+        while inner_current != core::ptr::addr_of!((*folder).blocks_list) as *mut list {
             let block = (inner_current as *const u8).sub(core::mem::offset_of!(data_block, entry)) as *mut data_block;
 
             let len: i32 = ((*fci).read)(
@@ -741,7 +741,7 @@ unsafe fn write_data_blocks(
     return 1;
 }
 
-unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: unsafe extern "system" fn(i32, u32, u32, *mut core::ffi::c_void) -> i32) -> i32 {
+unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32 {
     let mut err: i32 = 0;
     let block: *mut data_block;
 
@@ -776,7 +776,7 @@ unsafe fn add_data_block(fci: *mut FCI_Int, status_callback: unsafe extern "syst
     (*fci).cDataBlocks += 1;
     list_add_tail(core::ptr::addr_of_mut!((*fci).blocks_list) as *mut core::ffi::c_void, core::ptr::addr_of_mut!((*block).entry) as *mut core::ffi::c_void);
 
-    let callback_result = status_callback(statusFile, (*block).compressed as u32, (*block).uncompressed as u32, (*fci).pv);
+    let callback_result = status_callback(statusFile as u32, (*block).compressed as u32, (*block).uncompressed as u32, (*fci).pv);
     if callback_result == -1 {
         set_error(fci, FCIERR_USER_ABORT, 0);
         return 0;
@@ -995,8 +995,8 @@ unsafe fn add_file_data(
     get_open_info: PFNFCIGETOPENINFO,
     status_callback: PFNFCISTATUS,
 ) -> i32 {
-    let mut err: i32;
-    let len: u32;
+    let mut err: i32 = 0;
+    let mut len: u32 = 0;
     let handle: isize;
     let file: *mut file;
 
@@ -1366,7 +1366,7 @@ unsafe fn fci_flush_folder(
     pfnfcignc: PFNFCIGETNEXTCABINET,
     pfnfcis: PFNFCISTATUS,
 ) -> i32 {
-    let mut payload: u32;
+    let mut payload: u32 = 0;
     let mut read_result: u32;
     let folder: *mut folder;
 

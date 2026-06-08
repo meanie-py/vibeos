@@ -1062,12 +1062,12 @@ pub unsafe extern "C" fn FDITruncateCabinet(
     pszCabinetName: *mut i8,
     iFolderToDelete: u16,
 ) -> i32 {
-    let fdi = get_fdi_ptr(hfdi as *mut FDI_Int);
+    let fdi = get_fdi_ptr(hfdi as *mut core::ffi::c_void);
     FIXME(
         b"(hfdi == ^%p, pszCabinetName == %s, iFolderToDelete == %hu): stub\n\0".as_ptr() as *const i8,
         hfdi as *const core::ffi::c_void,
         debugstr_a(pszCabinetName),
-        iFolderToDelete,
+        iFolderToDelete as u32,
     );
     if fdi.is_null() {
         return 0;
@@ -1343,7 +1343,7 @@ unsafe fn FDI_read_entries(
         }
         folder_resv = buf[cfheadext_FolderReserved];
         if !pmii.is_null() {
-            (*pmii).folder_resv = folder_resv;
+            (*pmii).folder_resv = folder_resv as i32;
         }
         block_resv = buf[cfheadext_DataReserved];
         if !pmii.is_null() {
@@ -1509,8 +1509,8 @@ unsafe fn fdi_Zipinflate_dynamic(decomp_state: *mut fdi_decomp_state) -> i32 {
     let mut l: u32;
     let mut m: u32;
     let mut n: u32;
-    let mut tl: *mut Ziphuft;
-    let mut td: *mut Ziphuft;
+    let mut tl: *mut Ziphuft = core::ptr::null_mut();
+    let mut td: *mut Ziphuft = core::ptr::null_mut();
     let mut bl: i32;
     let mut bd: i32;
     let mut nb: u32;
@@ -1584,7 +1584,7 @@ unsafe fn fdi_Zipinflate_dynamic(decomp_state: *mut fdi_decomp_state) -> i32 {
     }
 
     bl = 7;
-    i = fdi_Ziphuft_build(ll, 19, 19, core::ptr::null_mut(), core::ptr::null_mut(), &mut tl, &mut bl, decomp_state);
+    i = fdi_Ziphuft_build(ll, 19, 19, core::ptr::null(), core::ptr::null(), &mut tl, &mut bl, decomp_state);
     if i != 0 {
         if i == 1 {
             fdi_Ziphuft_free((*decomp_state).fdi, tl);
@@ -1685,7 +1685,7 @@ unsafe fn fdi_Zipinflate_dynamic(decomp_state: *mut fdi_decomp_state) -> i32 {
     (*decomp_state).methods.zip.bk = k;
 
     bl = ZIPLBITS;
-    i = fdi_Ziphuft_build(ll, nl, 257, Zipcplens.as_ptr() as *mut u32, Zipcplext.as_ptr() as *mut u32, &mut tl, &mut bl, decomp_state);
+    i = fdi_Ziphuft_build(ll, nl, 257, Zipcplens.as_ptr() as *const u16, Zipcplext.as_ptr() as *const u16, &mut tl, &mut bl, decomp_state);
     if i != 0 {
         if i == 1 {
             fdi_Ziphuft_free((*decomp_state).fdi, tl);
@@ -1694,7 +1694,7 @@ unsafe fn fdi_Zipinflate_dynamic(decomp_state: *mut fdi_decomp_state) -> i32 {
     }
 
     bd = ZIPDBITS;
-    let _ = fdi_Ziphuft_build(ll.offset(nl as isize), nd, 0, Zipcpdist.as_ptr() as *mut u32, Zipcpdext.as_ptr() as *mut u32, &mut td, &mut bd, decomp_state);
+    let _ = fdi_Ziphuft_build(ll.offset(nl as isize), nd, 0, Zipcpdist.as_ptr() as *const u16, Zipcpdext.as_ptr() as *const u16, &mut td, &mut bd, decomp_state);
 
     if fdi_Zipinflate_codes(tl, td, bl, bd, decomp_state) != 0 {
         return 1;
@@ -1812,6 +1812,7 @@ unsafe fn fdi_Ziphuft_build(
     m: *mut i32,
     decomp_state: *mut fdi_decomp_state,
 ) -> i32 {
+    let mut t = t;
     let mut a: u32;
     let mut el: u32;
     let mut f: u32;
@@ -1823,7 +1824,7 @@ unsafe fn fdi_Ziphuft_build(
     let mut l: *mut i32;
     let mut p: *mut u32;
     let mut q: *mut Ziphuft;
-    let mut r: Ziphuft;
+    let mut r: Ziphuft = core::mem::zeroed();
     let mut w: i32;
     let mut xp: *mut u32;
     let mut y: i32;
@@ -2032,7 +2033,7 @@ unsafe fn fdi_Ziphuft_build(
                 r.e = 99;               /* out of values--invalid code */
             } else if *p < s {
                 r.e = if *p < 256 { 16 } else { 15 };
-                r.v.n = *p;
+                r.v.n = *p as u16;
                 p = p.add(1);
             } else {
                 let idx = (*p - s) as usize;
