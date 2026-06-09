@@ -8,6 +8,8 @@ use ntkrnl_sys::ddk::{CLONG, File, GenericEqual, GenericGreaterThan, GenericLess
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, RTL_GENERIC_COMPARE_RESULTS};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{TRACE_LEVEL_ERROR};
 
 extern "C" {
     fn NT_ASSERT(condition: i32);

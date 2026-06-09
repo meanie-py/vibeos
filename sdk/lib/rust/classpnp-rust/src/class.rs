@@ -17,6 +17,9 @@ use ntkrnl_sys::ddk::{DRIVER_OBJECT, IO_PAGING_PRIORITY, IO_WORKITEM, MDL, _DEVI
 use ntkrnl_sys::driver_ddk::{FILE_REMOVABLE_MEDIA, IRP_MJ_DEVICE_CONTROL, IRP_MJ_PNP, IRP_MJ_POWER, IRP_MJ_SHUTDOWN, IRP_MJ_SYSTEM_CONTROL};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_DEVICE_RELATION_TYPE_BusRelations as BusRelations};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DO_VERIFY_VOLUME, FILE_DEVICE_DISK, FILE_PORTABLE_DEVICE, SL_OVERRIDE_VERIFY_VOLUME, SL_WRITE_THROUGH, STATUS_DEVICE_BUSY, STATUS_DEVICE_DOES_NOT_EXIST, STATUS_VERIFY_REQUIRED, TRACE_LEVEL_ERROR};
+use ntkrnl_sys::ddk::{_DEVICE_RELATION_TYPE_BusRelations as BusRelations};
 
 extern "C" {
     static ClassGuidQueryRegInfoEx: GUID;

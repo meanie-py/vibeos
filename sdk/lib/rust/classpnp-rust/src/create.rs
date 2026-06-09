@@ -11,6 +11,8 @@ use core::ffi::c_void;
 use crate::types::{_CDB as CDB};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IRP};
 use ntkrnl_sys::driver_ddk::{FILE_REMOVABLE_MEDIA};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{STATUS_INVALID_DEVICE_STATE};
 
 extern "C" {
     fn PAGED_CODE();

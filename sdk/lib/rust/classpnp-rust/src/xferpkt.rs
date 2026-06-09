@@ -11,6 +11,8 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_CDB as CDB};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, IO_PAGING_PRIORITY, IO_STACK_LOCATION, IRP, KEVENT, OSVERSIONINFOW, PMDL, STORAGE_DEVICE_IO_CAPABILITY_DESCRIPTOR, STORAGE_PROPERTY_ID};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{TRACE_LEVEL_INFORMATION};
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, msg: *const i8, ...);

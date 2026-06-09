@@ -4,6 +4,7 @@
 #![allow(unused_imports, unused_variables, unused_assignments, unused_mut)]
 
 pub mod types;
+pub mod glue;
 
 pub mod autorun;
 pub mod class;
