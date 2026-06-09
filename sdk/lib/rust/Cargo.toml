@@ -51,6 +51,7 @@ members = [
     "cmboot-rust",
     "cmlib-rust",
     "rossym-rust",
+    "evtlib-rust",
     "freeldr-rust",
     "arm64input-rust",
     "arm64vid-rust",
