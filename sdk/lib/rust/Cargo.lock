@@ -180,6 +180,10 @@ name = "crc32"
 version = "0.1.0"
 
 [[package]]
+name = "cryptlib-rust"
+version = "0.1.0"
+
+[[package]]
 name = "csrsrv-cargo"
 version = "0.1.0"
 dependencies = [
@@ -196,6 +200,13 @@ dependencies = [
 [[package]]
 name = "encode"
 version = "0.1.0"
+
+[[package]]
+name = "evtlib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "find-msvc-tools"
@@ -299,6 +310,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "inflib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]
