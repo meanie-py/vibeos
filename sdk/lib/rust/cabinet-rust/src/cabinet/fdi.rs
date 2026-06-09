@@ -126,12 +126,196 @@ const TRUE: i32 = 1;
 const CAB_BLOCKMAX: i32 = 32768; // typical value
 
 extern "C" {
-    fn READ_BITS(bitbuf: *mut u32, bitsleft: *mut i32, inpos: *mut *mut u8, n: u32) -> u32;
-    fn LENTABLE(decomp_state: *mut fdi_decomp_state, table: u32) -> *mut u8;
-    fn BUILD_TABLE(decomp_state: *mut fdi_decomp_state, table: u32);
-    fn READ_HUFFSYM(decomp_state: *mut fdi_decomp_state, table: u32, bitbuf: *mut u32, bitsleft: *mut i32, inpos: *mut *mut u8) -> i32;
     fn strlen(s: *const i8) -> usize;
 }
+
+// ============================================================================
+// Bitstream / Huffman engine — faithful port of the cabinet.h bit-reader macros
+// (Q_*/READ_BITS/READ_HUFFSYM/BUILD_TABLE/GET_SYMBOL/READ_LENGTHS).
+//
+// The C macros mutate the enclosing function's `bitbuf` / `bitsleft` / `inpos`
+// locals in place, and the table macros `return DECR_ILLEGALDATA` from the
+// enclosing function on error. Rust `macro_rules!` are hygienic, so the
+// bit-state is threaded explicitly as place-expression arguments; the early
+// `return` is preserved because the macro body expands into the caller.
+//
+// Runtime shift counts use wrapping_shl / wrapping_shr, which mask the count to
+// 5 bits exactly as x86 SHL/SHR do — and exactly as the original C lowered to.
+// ============================================================================
+
+const CAB_ULONG_BITS: i32 = 32;
+
+// LZX bitstream (Intel little-endian byte order): (inpos[1]<<8)|inpos[0]
+macro_rules! ENSURE_BITS {
+    ($bb:expr, $bl:expr, $ip:expr, $n:expr) => {
+        while $bl < ($n as i32) {
+            $bb |= (((*$ip.add(1) as u32) << 8) | (*$ip.add(0) as u32))
+                       .wrapping_shl((CAB_ULONG_BITS - 16 - $bl) as u32);
+            $bl += 16;
+            $ip = $ip.add(2);
+        }
+    };
+}
+
+// READ_BITS(var, n): take n bits (n may be 0)
+macro_rules! READ_BITS {
+    ($v:expr, $n:expr, $bb:expr, $bl:expr, $ip:expr) => {{
+        let __n: i32 = $n as i32;
+        if __n != 0 {
+            ENSURE_BITS!($bb, $bl, $ip, __n);
+            $v = ($bb.wrapping_shr((CAB_ULONG_BITS - __n) as u32)) as _; // PEEK_BITS
+            $bb = $bb.wrapping_shl(__n as u32);                          // REMOVE_BITS
+            $bl -= __n;
+        } else {
+            $v = 0 as _;
+        }
+    }};
+}
+
+// Quantum bitstream (normal byte order): (inpos[0]<<8)|inpos[1]
+macro_rules! Q_FILL_BUFFER {
+    ($bb:expr, $bl:expr, $ip:expr) => {
+        if $bl <= (CAB_ULONG_BITS - 16) {
+            $bb |= (((*$ip.add(0) as u32) << 8) | (*$ip.add(1) as u32))
+                       .wrapping_shl((CAB_ULONG_BITS - 16 - $bl) as u32);
+            $bl += 16;
+            $ip = $ip.add(2);
+        }
+    };
+}
+
+// Q_READ_BITS(var, n): accumulate in u32 then store (avoids debug shift panics)
+macro_rules! Q_READ_BITS {
+    ($v:expr, $n:expr, $bb:expr, $bl:expr, $ip:expr) => {{
+        let mut __acc: u32 = 0;
+        let mut __need: i32 = $n as i32;
+        while __need != 0 {
+            Q_FILL_BUFFER!($bb, $bl, $ip);
+            let __run: i32 = if __need > $bl { $bl } else { __need };
+            __acc = __acc.wrapping_shl(__run as u32)
+                    | $bb.wrapping_shr((CAB_ULONG_BITS - __run) as u32); // Q_PEEK_BITS
+            $bb = $bb.wrapping_shl(__run as u32);                        // Q_REMOVE_BITS
+            $bl -= __run;
+            __need -= __run;
+        }
+        $v = __acc as _;
+    }};
+}
+
+// GET_SYMBOL(model, var): Quantum arithmetic-coder symbol fetch. C/H/L persist.
+macro_rules! GET_SYMBOL {
+    ($model:expr, $var:expr, $bb:expr, $bl:expr, $ip:expr, $cc:expr, $hh:expr, $ll:expr) => {{
+        let __m: *mut QTMmodel = $model;
+        let __freq0: u32 = (*(*__m).syms.add(0)).cumfreq as u32;
+        let mut __range: u32 = ((($hh as i32 - $ll as i32) & 0xFFFF) + 1) as u32;
+        let __cl1: u32 = ($cc as u32).wrapping_sub($ll as u32).wrapping_add(1);
+        let __symf: u32 = ((__cl1.wrapping_mul(__freq0)).wrapping_sub(1) / __range) & 0xFFFF;
+        let mut __i: i32 = 1;
+        while __i < (*__m).entries {
+            if (*(*__m).syms.add(__i as usize)).cumfreq as u32 <= __symf { break; }
+            __i += 1;
+        }
+        $var = (*(*__m).syms.add((__i - 1) as usize)).sym as _;
+        __range = ($hh as i32 - $ll as i32 + 1) as u32;
+        let __freq_im1: u32 = (*(*__m).syms.add((__i - 1) as usize)).cumfreq as u32;
+        let __freq_i: u32 = (*(*__m).syms.add(__i as usize)).cumfreq as u32;
+        let __oldl: u32 = $ll as u32;
+        $hh = __oldl.wrapping_add(__freq_im1.wrapping_mul(__range) / __freq0).wrapping_sub(1) as u16;
+        $ll = __oldl.wrapping_add(__freq_i.wrapping_mul(__range) / __freq0) as u16;
+        loop {
+            if ($ll & 0x8000) != ($hh & 0x8000) {
+                if ($ll & 0x4000) != 0 && ($hh & 0x4000) == 0 {
+                    // underflow case
+                    $cc ^= 0x4000;
+                    $ll &= 0x3FFF;
+                    $hh |= 0x4000;
+                } else {
+                    break;
+                }
+            }
+            $ll = ($ll as u32).wrapping_shl(1) as u16;
+            $hh = (($hh as u32).wrapping_shl(1) | 1) as u16;
+            Q_FILL_BUFFER!($bb, $bl, $ip);
+            $cc = (($cc as u32).wrapping_shl(1) | $bb.wrapping_shr(31)) as u16; // Q_PEEK_BITS(1)
+            $bb = $bb.wrapping_shl(1);
+            $bl -= 1;
+        }
+        QTMupdatemodel(__m, __i);
+    }};
+}
+
+// BUILD_TABLE: make_decode_table(maxsymbols, tablebits, lentable, symtable)
+macro_rules! BUILD_TABLE {
+    ($maxsym:expr, $tablebits:expr, $lentable:expr, $symtable:expr) => {
+        if make_decode_table($maxsym as u32, $tablebits as u32,
+                              $lentable as *const u8, $symtable as *mut u16) != 0 {
+            return DECR_ILLEGALDATA;
+        }
+    };
+}
+
+// READ_HUFFSYM(maxsymbols, tablebits, symtable, lentable, var): decode one symbol
+macro_rules! READ_HUFFSYM {
+    ($maxsym:expr, $tablebits:expr, $symtable:expr, $lentable:expr,
+     $var:expr, $bb:expr, $bl:expr, $ip:expr) => {{
+        ENSURE_BITS!($bb, $bl, $ip, 16);
+        let __huff: *const u16 = $symtable as *const u16;
+        let __tb: i32 = $tablebits as i32;
+        let __maxs: u32 = $maxsym as u32;
+        let mut __i: u32 = *__huff.add($bb.wrapping_shr((CAB_ULONG_BITS - __tb) as u32) as usize) as u32;
+        if __i >= __maxs {
+            let mut __j: u32 = 1u32.wrapping_shl((CAB_ULONG_BITS - __tb) as u32);
+            loop {
+                __j >>= 1;
+                __i <<= 1;
+                __i |= if ($bb & __j) != 0 { 1 } else { 0 };
+                if __j == 0 { return DECR_ILLEGALDATA; }
+                __i = *__huff.add(__i as usize) as u32;
+                if __i < __maxs { break; }
+            }
+        }
+        let __len: u32 = *($lentable as *const u8).add(__i as usize) as u32;
+        $var = __i as _;
+        $bb = $bb.wrapping_shl(__len);  // REMOVE_BITS(len)
+        $bl -= __len as i32;
+    }};
+}
+
+// READ_LENGTHS(lentable, first, last): save bit-state, call read_lens, restore
+macro_rules! READ_LENGTHS {
+    ($lentable:expr, $first:expr, $last:expr, $lb:expr, $bb:expr, $bl:expr, $ip:expr, $ds:expr) => {{
+        $lb.bb = $bb;
+        $lb.bl = $bl;
+        $lb.ip = $ip;
+        if fdi_lzx_read_lens($lentable as *mut u8, $first as u32, $last as u32, &mut $lb, $ds) != 0 {
+            return DECR_ILLEGALDATA;
+        }
+        $bb = $lb.bb;
+        $bl = $lb.bl;
+        $ip = $lb.ip;
+    }};
+}
+
+// ---- LZX constants (cabinet.h) ----
+const LZX_MIN_MATCH: i32 = 2;
+const LZX_NUM_CHARS: u32 = 256;
+const LZX_BLOCKTYPE_VERBATIM: u16 = 1;
+const LZX_BLOCKTYPE_ALIGNED: u16 = 2;
+const LZX_BLOCKTYPE_UNCOMPRESSED: u16 = 3;
+const LZX_NUM_PRIMARY_LENGTHS: i32 = 7;
+const LZX_NUM_SECONDARY_LENGTHS: u32 = 249;
+const LZX_PRETREE_MAXSYMBOLS: u32 = 20;
+const LZX_PRETREE_TABLEBITS: u32 = 6;
+const LZX_MAINTREE_MAXSYMBOLS: u32 = LZX_NUM_CHARS + 50 * 8;
+const LZX_MAINTREE_TABLEBITS: u32 = 12;
+const LZX_LENGTH_MAXSYMBOLS: u32 = LZX_NUM_SECONDARY_LENGTHS + 1;
+const LZX_LENGTH_TABLEBITS: u32 = 12;
+const LZX_ALIGNED_MAXSYMBOLS: u32 = 8;
+const LZX_ALIGNED_TABLEBITS: u32 = 7;
+
+// PFNFDINOTIFY — the FDICopy progress/extract callback ABI (non-null in practice)
+pub type PFNFDINOTIFY =
+    unsafe extern "C" fn(fdint: FDINOTIFICATIONTYPE, pfdin: *mut FDINOTIFICATION) -> isize;
 
 extern "system" {
     fn SetLastError(dwErrCode: u32);
@@ -532,7 +716,7 @@ unsafe extern "C" fn LZXfdi_init(window: i32, decomp_state: *mut fdi_decomp_stat
     }
 }
 
-unsafe fn NONEfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
+unsafe extern "C" fn NONEfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
     if inlen != outlen {
         return DECR_ILLEGALDATA;
     }
@@ -560,13 +744,14 @@ unsafe fn fdi_Ziphuft_free(fdi: *mut FDI_Int, t: *mut Ziphuft) {
 }
 
 unsafe fn fdi_Zipinflate_codes(tl: *const Ziphuft, td: *const Ziphuft, bl: i32, bd: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
-    extern "C" {
-        static Zipmask: [u32; 100]; // approximate size, caller defines
-    }
-    extern "C" {
-        fn max(a: u32, b: u32) -> u32;
-        fn min(a: u32, b: u32) -> u32;
-    }
+    // wine min()/max() are macros and Zipmask is a cabinet.h static table — the
+    // mechanical translation left them as undefined externs. Provide locally.
+    const Zipmask: [u32; 17] = [
+        0x0000, 0x0001, 0x0003, 0x0007, 0x000f, 0x001f, 0x003f, 0x007f,
+        0x00ff, 0x01ff, 0x03ff, 0x07ff, 0x0fff, 0x1fff, 0x3fff, 0x7fff, 0xffff,
+    ];
+    fn max(a: u32, b: u32) -> u32 { if a > b { a } else { b } }
+    fn min(a: u32, b: u32) -> u32 { if a < b { a } else { b } }
     const ZIPWSIZE: u32 = 0x8000;
 
     let mut e: u32;
@@ -779,208 +964,171 @@ unsafe fn fdi_Zipinflate_stored(decomp_state: *mut fdi_decomp_state) -> i32 {
     return 0;
 }
 
-extern "C" {
-    fn Q_INIT_BITSTREAM();
-    fn Q_READ_BITS(val: *mut i32, n: u32);
-    fn GET_SYMBOL(model: i32, sym: *mut u8);
-    static model7: i32;
-    static model00: i32;
-    static model40: i32;
-    static model80: i32;
-    static modelC0: i32;
-    static model4: i32;
-    static model5: i32;
-    static model6len: i32;
-    static model6pos: i32;
-    }
-
-
-unsafe extern "C" fn QTMfdi_decomp(mut inlen: i32, mut outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
+unsafe extern "C" fn QTMfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
     let mut inpos = (*decomp_state).inbuf.as_mut_ptr();
-    let mut window = (*decomp_state).methods.qtm.window;
+    let window = (*decomp_state).methods.qtm.window;
     let mut window_posn = (*decomp_state).methods.qtm.window_posn;
     let window_size = (*decomp_state).methods.qtm.window_size;
-    let mut bitsleft: i32 = 0;
-    let mut bitrun: i32 = 0;
-    let mut bitsneed: i32 = 0;
+
+    // used by bitstream macros
+    let mut bitsleft: i32 = 0; // Q_INIT_BITSTREAM
     let mut bitbuf: u32 = 0;
-    let mut range: u32;
-    let mut symf: u16;
-    let mut i: i32;
-    let mut extra: i32 = 0;
-    let mut togo = outlen;
+
+    let mut togo: i32 = outlen;
     let mut match_length: i32 = 0;
-    let mut copy_length: i32 = 0;
+    let mut copy_length: i32;
     let mut selector: u8 = 0;
     let mut sym: u8 = 0;
     let mut match_offset: u32 = 0;
-    let mut H: u16 = 0xFFFF;
-    let mut L: u16 = 0;
-    let mut C: i32 = 0;
+    let mut extra: i32;
+
+    // arithmetic-coder state (C/H/L persist across GET_SYMBOL)
+    let mut h: u16 = 0xFFFF;
+    let mut l: u16 = 0;
+    let mut c: u16 = 0;
+
     TRACE(b"(inlen == %d, outlen == %d)\n\0".as_ptr() as *const i8, inlen, outlen);
-    Q_INIT_BITSTREAM();
-    Q_READ_BITS(&raw mut C, 16);
+
+    // read initial value of C
+    Q_READ_BITS!(c, 16, bitbuf, bitsleft, inpos);
+
+    // apply 2^x-1 mask
     window_posn &= window_size - 1;
+    // runs can't straddle the window wraparound
     if (window_posn + togo as u32) > window_size {
         TRACE(b"straddled run\n\0".as_ptr() as *const i8);
-        return 1;
+        return DECR_DATAFORMAT;
     }
+
+    let qtm = core::ptr::addr_of_mut!((*decomp_state).methods.qtm);
+
     while togo > 0 {
-        GET_SYMBOL(model7, &raw mut selector);
+        GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model7), selector, bitbuf, bitsleft, inpos, c, h, l);
         match selector {
             0 => {
-                GET_SYMBOL(model00, &raw mut sym);
-                *window.offset(window_posn as isize) = sym;
-                window_posn = window_posn.wrapping_add(1);
-                togo -= 1;
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model00), sym, bitbuf, bitsleft, inpos, c, h, l);
+                *window.add(window_posn as usize) = sym; window_posn += 1; togo -= 1;
             }
             1 => {
-                GET_SYMBOL(model40, &raw mut sym);
-                *window.offset(window_posn as isize) = sym;
-                window_posn = window_posn.wrapping_add(1);
-                togo -= 1;
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model40), sym, bitbuf, bitsleft, inpos, c, h, l);
+                *window.add(window_posn as usize) = sym; window_posn += 1; togo -= 1;
             }
             2 => {
-                GET_SYMBOL(model80, &raw mut sym);
-                *window.offset(window_posn as isize) = sym;
-                window_posn = window_posn.wrapping_add(1);
-                togo -= 1;
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model80), sym, bitbuf, bitsleft, inpos, c, h, l);
+                *window.add(window_posn as usize) = sym; window_posn += 1; togo -= 1;
             }
             3 => {
-                GET_SYMBOL(modelC0, &raw mut sym);
-                *window.offset(window_posn as isize) = sym;
-                window_posn = window_posn.wrapping_add(1);
-                togo -= 1;
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).modelC0), sym, bitbuf, bitsleft, inpos, c, h, l);
+                *window.add(window_posn as usize) = sym; window_posn += 1; togo -= 1;
             }
             4 => {
-                GET_SYMBOL(model4, &raw mut sym);
-                Q_READ_BITS(&raw mut extra, (*decomp_state).q_extra_bits[sym as usize] as u32);
+                // selector 4 = fixed length of 3
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model4), sym, bitbuf, bitsleft, inpos, c, h, l);
+                Q_READ_BITS!(extra, (*decomp_state).q_extra_bits[sym as usize] as u32, bitbuf, bitsleft, inpos);
                 match_offset = (*decomp_state).q_position_base[sym as usize] + extra as u32 + 1;
                 match_length = 3;
             }
             5 => {
-                GET_SYMBOL(model5, &raw mut sym);
-                Q_READ_BITS(&raw mut extra, (*decomp_state).q_extra_bits[sym as usize] as u32);
+                // selector 5 = fixed length of 4
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model5), sym, bitbuf, bitsleft, inpos, c, h, l);
+                Q_READ_BITS!(extra, (*decomp_state).q_extra_bits[sym as usize] as u32, bitbuf, bitsleft, inpos);
                 match_offset = (*decomp_state).q_position_base[sym as usize] + extra as u32 + 1;
                 match_length = 4;
             }
             6 => {
-                GET_SYMBOL(model6len, &raw mut sym);
-                Q_READ_BITS(&raw mut extra, (*decomp_state).q_length_extra[sym as usize] as u32);
+                // selector 6 = variable length
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model6len), sym, bitbuf, bitsleft, inpos, c, h, l);
+                Q_READ_BITS!(extra, (*decomp_state).q_length_extra[sym as usize] as u32, bitbuf, bitsleft, inpos);
                 match_length = (*decomp_state).q_length_base[sym as usize] as i32 + extra + 5;
-                GET_SYMBOL(model6pos, &raw mut sym);
-                Q_READ_BITS(&raw mut extra, (*decomp_state).q_extra_bits[sym as usize] as u32);
+                GET_SYMBOL!(core::ptr::addr_of_mut!((*qtm).model6pos), sym, bitbuf, bitsleft, inpos, c, h, l);
+                Q_READ_BITS!(extra, (*decomp_state).q_extra_bits[sym as usize] as u32, bitbuf, bitsleft, inpos);
                 match_offset = (*decomp_state).q_position_base[sym as usize] + extra as u32 + 1;
             }
             _ => {
                 TRACE(b"Selector is bogus\n\0".as_ptr() as *const i8);
-                return 2;
+                return DECR_ILLEGALDATA;
             }
         }
+
+        // if this is a match
         if selector >= 4 {
-            let mut rundest = window.offset(window_posn as isize);
+            let mut rundest = window.add(window_posn as usize);
             togo -= match_length;
             let mut runsrc;
+            // copy any wrapped around source data
             if window_posn >= match_offset {
                 runsrc = rundest.offset(-(match_offset as isize));
             } else {
-                runsrc = rundest.offset((window_size - match_offset) as isize);
+                runsrc = rundest.add((window_size - match_offset) as usize);
                 copy_length = (match_offset - window_posn) as i32;
                 if copy_length < match_length {
                     match_length -= copy_length;
                     window_posn += copy_length as u32;
                     while copy_length > 0 {
-                        *rundest = *runsrc;
-                        rundest = rundest.offset(1);
-                        runsrc = runsrc.offset(1);
+                        *rundest = *runsrc; rundest = rundest.add(1); runsrc = runsrc.add(1);
                         copy_length -= 1;
                     }
                     runsrc = window;
                 }
             }
             window_posn += match_length as u32;
+            // copy match data - no worries about destination wraps
             while match_length > 0 {
-                *rundest = *runsrc;
-                rundest = rundest.offset(1);
-                runsrc = runsrc.offset(1);
+                *rundest = *runsrc; rundest = rundest.add(1); runsrc = runsrc.add(1);
                 match_length -= 1;
             }
         }
-    }
+    } // while (togo > 0)
+
     if togo != 0 {
         TRACE(b"Frame overflow, this_run = %d\n\0".as_ptr() as *const i8, togo);
-        return 2;
+        return DECR_ILLEGALDATA;
     }
-    let src_offset = (if window_posn == 0 { window_size } else { window_posn }) - outlen as u32;
-    core::ptr::copy_nonoverlapping(
-        window.offset(src_offset as isize),
-        (*decomp_state).outbuf.as_mut_ptr(),
-        outlen as usize,
-    );
+
+    let src = (if window_posn == 0 { window_size } else { window_posn }) - outlen as u32;
+    core::ptr::copy_nonoverlapping(window.add(src as usize), (*decomp_state).outbuf.as_mut_ptr(), outlen as usize);
+
     (*decomp_state).methods.qtm.window_posn = window_posn;
-    return 0;
+    DECR_OK
 }
 
 unsafe fn fdi_lzx_read_lens(lens: *mut u8, first: u32, last: u32, lb: *mut lzx_bits, decomp_state: *mut fdi_decomp_state) -> i32 {
-    let mut bitbuf = (*lb).bb;
-    let mut bitsleft = (*lb).bl;
-    let mut inpos = (*lb).ip;
-    let mut x;
-    let mut y;
-    let mut z;
+    let mut bitbuf: u32 = (*lb).bb;
+    let mut bitsleft: i32 = (*lb).bl;
+    let mut inpos: *mut u8 = (*lb).ip;
 
-    for x in 0..20 {
-        y = READ_BITS(&mut bitbuf, &mut bitsleft, &mut inpos, 4);
-        let table_ptr = LENTABLE(decomp_state, PRETREE);
-        *((table_ptr as *mut u8).add(x as usize)) = y as u8;
+    let lzx = core::ptr::addr_of_mut!((*decomp_state).methods.lzx);
+    let pretree_len = (*lzx).PRETREE_len.as_mut_ptr();
+    let pretree_tab = (*lzx).PRETREE_table.as_mut_ptr();
+
+    let mut y: u32;
+    let mut z: i32;
+
+    for x in 0..20usize {
+        READ_BITS!(y, 4, bitbuf, bitsleft, inpos);
+        *pretree_len.add(x) = y as u8;
     }
-    BUILD_TABLE(decomp_state, PRETREE);
+    BUILD_TABLE!(LZX_PRETREE_MAXSYMBOLS, LZX_PRETREE_TABLEBITS, pretree_len, pretree_tab);
 
-    x = first;
+    let mut x: u32 = first;
     while x < last {
-        z = READ_HUFFSYM(decomp_state, PRETREE, &mut bitbuf, &mut bitsleft, &mut inpos);
+        READ_HUFFSYM!(LZX_PRETREE_MAXSYMBOLS, LZX_PRETREE_TABLEBITS, pretree_tab, pretree_len,
+                      z, bitbuf, bitsleft, inpos);
         if z == 17 {
-            y = READ_BITS(&mut bitbuf, &mut bitsleft, &mut inpos, 4);
-            y += 4;
-            while y > 0 {
-                *lens.add(x as usize) = 0;
-                x += 1;
-                y -= 1;
-            }
+            READ_BITS!(y, 4, bitbuf, bitsleft, inpos); y += 4;
+            while y > 0 { *lens.add(x as usize) = 0; x += 1; y -= 1; }
         } else if z == 18 {
-            y = READ_BITS(&mut bitbuf, &mut bitsleft, &mut inpos, 5);
-            y += 20;
-            while y > 0 {
-                *lens.add(x as usize) = 0;
-                x += 1;
-                y -= 1;
-            }
+            READ_BITS!(y, 5, bitbuf, bitsleft, inpos); y += 20;
+            while y > 0 { *lens.add(x as usize) = 0; x += 1; y -= 1; }
         } else if z == 19 {
-            y = READ_BITS(&mut bitbuf, &mut bitsleft, &mut inpos, 1);
-            y += 4;
-            z = READ_HUFFSYM(decomp_state, PRETREE, &mut bitbuf, &mut bitsleft, &mut inpos);
-            {
-                let cur = *lens.add(x as usize);
-                z = cur as i32 - z;
-                if z < 0 {
-                    z += 17;
-                }
-            }
-            while y > 0 {
-                *lens.add(x as usize) = z as u8;
-                x += 1;
-                y -= 1;
-            }
+            READ_BITS!(y, 1, bitbuf, bitsleft, inpos); y += 4;
+            READ_HUFFSYM!(LZX_PRETREE_MAXSYMBOLS, LZX_PRETREE_TABLEBITS, pretree_tab, pretree_len,
+                          z, bitbuf, bitsleft, inpos);
+            z = *lens.add(x as usize) as i32 - z; if z < 0 { z += 17; }
+            while y > 0 { *lens.add(x as usize) = z as u8; x += 1; y -= 1; }
         } else {
-            {
-                let cur = *lens.add(x as usize);
-                z = cur as i32 - z;
-                if z < 0 {
-                    z += 17;
-                }
-            }
-            *lens.add(x as usize) = z as u8;
-            x += 1;
+            z = *lens.add(x as usize) as i32 - z; if z < 0 { z += 17; }
+            *lens.add(x as usize) = z as u8; x += 1;
         }
     }
 
@@ -988,6 +1136,307 @@ unsafe fn fdi_lzx_read_lens(lens: *mut u8, first: u32, last: u32, lb: *mut lzx_b
     (*lb).bl = bitsleft;
     (*lb).ip = inpos;
     0
+}
+
+unsafe extern "C" fn LZXfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
+    let mut inpos: *mut u8 = (*decomp_state).inbuf.as_mut_ptr();
+    let endinp: *const u8 = inpos.add(inlen as usize) as *const u8;
+    let window: *mut u8 = (*decomp_state).methods.lzx.window;
+    let mut runsrc: *mut u8;
+    let mut rundest: *mut u8;
+
+    let mut window_posn: u32 = (*decomp_state).methods.lzx.window_posn;
+    let window_size: u32 = (*decomp_state).methods.lzx.window_size;
+    let mut r0: u32 = (*decomp_state).methods.lzx.R0;
+    let mut r1: u32 = (*decomp_state).methods.lzx.R1;
+    let mut r2: u32 = (*decomp_state).methods.lzx.R2;
+
+    let mut bitbuf: u32 = 0; // INIT_BITSTREAM
+    let mut bitsleft: i32 = 0;
+    let mut match_offset: u32;
+    let mut i: u32;
+    let mut j: u32;
+    let mut k: u32;
+    let mut lb: lzx_bits = core::mem::zeroed();
+
+    let mut togo: i32 = outlen;
+    let mut this_run: i32;
+    let mut main_element: i32;
+    let mut aligned_bits: i32;
+    let mut match_length: i32;
+    let mut copy_length: i32;
+    let mut length_footer: i32;
+    let mut extra: i32;
+    let mut verbatim_bits: i32;
+
+    TRACE(b"(inlen == %d, outlen == %d)\n\0".as_ptr() as *const i8, inlen, outlen);
+
+    let lzx = core::ptr::addr_of_mut!((*decomp_state).methods.lzx);
+
+    // read header if necessary
+    if (*lzx).header_read == 0 {
+        i = 0; j = 0;
+        READ_BITS!(k, 1, bitbuf, bitsleft, inpos);
+        if k != 0 {
+            READ_BITS!(i, 16, bitbuf, bitsleft, inpos);
+            READ_BITS!(j, 16, bitbuf, bitsleft, inpos);
+        }
+        (*lzx).intel_filesize = ((i << 16) | j) as i32; // or 0 if not encoded
+        (*lzx).header_read = 1;
+    }
+
+    // main decoding loop
+    while togo > 0 {
+        // last block finished, new block expected
+        if (*lzx).block_remaining == 0 {
+            if (*lzx).block_type == LZX_BLOCKTYPE_UNCOMPRESSED {
+                if ((*lzx).block_length & 1) != 0 { inpos = inpos.add(1); } // realign to word
+                bitsleft = 0; bitbuf = 0; // INIT_BITSTREAM
+            }
+
+            READ_BITS!((*lzx).block_type, 3, bitbuf, bitsleft, inpos);
+            READ_BITS!(i, 16, bitbuf, bitsleft, inpos);
+            READ_BITS!(j, 8, bitbuf, bitsleft, inpos);
+            (*lzx).block_length = (i << 8) | j;
+            (*lzx).block_remaining = (*lzx).block_length;
+
+            let bt = (*lzx).block_type;
+            if bt == LZX_BLOCKTYPE_ALIGNED {
+                let aligned_len = (*lzx).ALIGNED_len.as_mut_ptr();
+                let aligned_tab = (*lzx).ALIGNED_table.as_mut_ptr();
+                i = 0;
+                while i < 8 {
+                    READ_BITS!(j, 3, bitbuf, bitsleft, inpos);
+                    *aligned_len.add(i as usize) = j as u8;
+                    i += 1;
+                }
+                BUILD_TABLE!(LZX_ALIGNED_MAXSYMBOLS, LZX_ALIGNED_TABLEBITS, aligned_len, aligned_tab);
+                // rest of aligned header is same as verbatim
+            }
+            if bt == LZX_BLOCKTYPE_ALIGNED || bt == LZX_BLOCKTYPE_VERBATIM {
+                let maintree_len = (*lzx).MAINTREE_len.as_mut_ptr();
+                let maintree_tab = (*lzx).MAINTREE_table.as_mut_ptr();
+                let length_len = (*lzx).LENGTH_len.as_mut_ptr();
+                let length_tab = (*lzx).LENGTH_table.as_mut_ptr();
+                READ_LENGTHS!(maintree_len, 0, 256, lb, bitbuf, bitsleft, inpos, decomp_state);
+                READ_LENGTHS!(maintree_len, 256, (*lzx).main_elements as u32, lb, bitbuf, bitsleft, inpos, decomp_state);
+                BUILD_TABLE!(LZX_MAINTREE_MAXSYMBOLS, LZX_MAINTREE_TABLEBITS, maintree_len, maintree_tab);
+                if *maintree_len.add(0xE8) != 0 { (*lzx).intel_started = 1; }
+                READ_LENGTHS!(length_len, 0, LZX_NUM_SECONDARY_LENGTHS, lb, bitbuf, bitsleft, inpos, decomp_state);
+                BUILD_TABLE!(LZX_LENGTH_MAXSYMBOLS, LZX_LENGTH_TABLEBITS, length_len, length_tab);
+            } else if bt == LZX_BLOCKTYPE_UNCOMPRESSED {
+                (*lzx).intel_started = 1; // because we can't assume otherwise
+                ENSURE_BITS!(bitbuf, bitsleft, inpos, 16); // get up to 16 pad bits
+                if bitsleft > 16 { inpos = inpos.offset(-2); } // align the bitstream
+                r0 = (*inpos.add(0) as u32) | ((*inpos.add(1) as u32) << 8) | ((*inpos.add(2) as u32) << 16) | ((*inpos.add(3) as u32) << 24); inpos = inpos.add(4);
+                r1 = (*inpos.add(0) as u32) | ((*inpos.add(1) as u32) << 8) | ((*inpos.add(2) as u32) << 16) | ((*inpos.add(3) as u32) << 24); inpos = inpos.add(4);
+                r2 = (*inpos.add(0) as u32) | ((*inpos.add(1) as u32) << 8) | ((*inpos.add(2) as u32) << 16) | ((*inpos.add(3) as u32) << 24); inpos = inpos.add(4);
+            } else {
+                return DECR_ILLEGALDATA;
+            }
+        }
+
+        // buffer exhaustion check
+        if (inpos as *const u8) > endinp {
+            if (inpos as *const u8) > endinp.add(2) || bitsleft < 16 { return DECR_ILLEGALDATA; }
+        }
+
+        while {
+            this_run = (*lzx).block_remaining as i32;
+            this_run > 0 && togo > 0
+        } {
+            if this_run > togo { this_run = togo; }
+            togo -= this_run;
+            (*lzx).block_remaining -= this_run as u32;
+
+            // apply 2^x-1 mask
+            window_posn &= window_size - 1;
+            // runs can't straddle the window wraparound
+            if (window_posn + this_run as u32) > window_size { return DECR_DATAFORMAT; }
+
+            let bt = (*lzx).block_type;
+            if bt == LZX_BLOCKTYPE_VERBATIM {
+                let maintree_len = (*lzx).MAINTREE_len.as_mut_ptr();
+                let maintree_tab = (*lzx).MAINTREE_table.as_mut_ptr();
+                let length_len = (*lzx).LENGTH_len.as_mut_ptr();
+                let length_tab = (*lzx).LENGTH_table.as_mut_ptr();
+                while this_run > 0 {
+                    READ_HUFFSYM!(LZX_MAINTREE_MAXSYMBOLS, LZX_MAINTREE_TABLEBITS, maintree_tab, maintree_len, main_element, bitbuf, bitsleft, inpos);
+                    if (main_element as u32) < LZX_NUM_CHARS {
+                        // literal: 0 to LZX_NUM_CHARS-1
+                        *window.add(window_posn as usize) = main_element as u8;
+                        window_posn += 1;
+                        this_run -= 1;
+                    } else {
+                        // match: LZX_NUM_CHARS + ((slot<<3) | length_header (3 bits))
+                        main_element -= LZX_NUM_CHARS as i32;
+                        match_length = main_element & LZX_NUM_PRIMARY_LENGTHS;
+                        if match_length == LZX_NUM_PRIMARY_LENGTHS {
+                            READ_HUFFSYM!(LZX_LENGTH_MAXSYMBOLS, LZX_LENGTH_TABLEBITS, length_tab, length_len, length_footer, bitbuf, bitsleft, inpos);
+                            match_length += length_footer;
+                        }
+                        match_length += LZX_MIN_MATCH;
+                        match_offset = (main_element >> 3) as u32;
+                        if match_offset > 2 {
+                            // not repeated offset
+                            if match_offset != 3 {
+                                extra = (*decomp_state).extra_bits[match_offset as usize] as i32;
+                                READ_BITS!(verbatim_bits, extra, bitbuf, bitsleft, inpos);
+                                match_offset = (*decomp_state).lzx_position_base[match_offset as usize].wrapping_sub(2).wrapping_add(verbatim_bits as u32);
+                            } else {
+                                match_offset = 1;
+                            }
+                            // update repeated offset LRU queue
+                            r2 = r1; r1 = r0; r0 = match_offset;
+                        } else if match_offset == 0 {
+                            match_offset = r0;
+                        } else if match_offset == 1 {
+                            match_offset = r1; r1 = r0; r0 = match_offset;
+                        } else {
+                            match_offset = r2; r2 = r0; r0 = match_offset;
+                        }
+                        rundest = window.add(window_posn as usize);
+                        this_run -= match_length;
+                        if window_posn >= match_offset {
+                            runsrc = rundest.offset(-(match_offset as isize));
+                        } else {
+                            runsrc = rundest.add((window_size - match_offset) as usize);
+                            copy_length = (match_offset - window_posn) as i32;
+                            if copy_length < match_length {
+                                match_length -= copy_length;
+                                window_posn += copy_length as u32;
+                                while copy_length > 0 { *rundest = *runsrc; rundest = rundest.add(1); runsrc = runsrc.add(1); copy_length -= 1; }
+                                runsrc = window;
+                            }
+                        }
+                        window_posn += match_length as u32;
+                        while match_length > 0 { *rundest = *runsrc; rundest = rundest.add(1); runsrc = runsrc.add(1); match_length -= 1; }
+                    }
+                }
+            } else if bt == LZX_BLOCKTYPE_ALIGNED {
+                let maintree_len = (*lzx).MAINTREE_len.as_mut_ptr();
+                let maintree_tab = (*lzx).MAINTREE_table.as_mut_ptr();
+                let length_len = (*lzx).LENGTH_len.as_mut_ptr();
+                let length_tab = (*lzx).LENGTH_table.as_mut_ptr();
+                let aligned_len = (*lzx).ALIGNED_len.as_mut_ptr();
+                let aligned_tab = (*lzx).ALIGNED_table.as_mut_ptr();
+                while this_run > 0 {
+                    READ_HUFFSYM!(LZX_MAINTREE_MAXSYMBOLS, LZX_MAINTREE_TABLEBITS, maintree_tab, maintree_len, main_element, bitbuf, bitsleft, inpos);
+                    if (main_element as u32) < LZX_NUM_CHARS {
+                        // literal: 0 to LZX_NUM_CHARS-1
+                        *window.add(window_posn as usize) = main_element as u8;
+                        window_posn += 1;
+                        this_run -= 1;
+                    } else {
+                        // match: LZX_NUM_CHARS + ((slot<<3) | length_header (3 bits))
+                        main_element -= LZX_NUM_CHARS as i32;
+                        match_length = main_element & LZX_NUM_PRIMARY_LENGTHS;
+                        if match_length == LZX_NUM_PRIMARY_LENGTHS {
+                            READ_HUFFSYM!(LZX_LENGTH_MAXSYMBOLS, LZX_LENGTH_TABLEBITS, length_tab, length_len, length_footer, bitbuf, bitsleft, inpos);
+                            match_length += length_footer;
+                        }
+                        match_length += LZX_MIN_MATCH;
+                        match_offset = (main_element >> 3) as u32;
+                        if match_offset > 2 {
+                            // not repeated offset
+                            extra = (*decomp_state).extra_bits[match_offset as usize] as i32;
+                            match_offset = (*decomp_state).lzx_position_base[match_offset as usize].wrapping_sub(2);
+                            if extra > 3 {
+                                // verbatim and aligned bits
+                                extra -= 3;
+                                READ_BITS!(verbatim_bits, extra, bitbuf, bitsleft, inpos);
+                                match_offset = match_offset.wrapping_add((verbatim_bits as u32) << 3);
+                                READ_HUFFSYM!(LZX_ALIGNED_MAXSYMBOLS, LZX_ALIGNED_TABLEBITS, aligned_tab, aligned_len, aligned_bits, bitbuf, bitsleft, inpos);
+                                match_offset = match_offset.wrapping_add(aligned_bits as u32);
+                            } else if extra == 3 {
+                                // aligned bits only
+                                READ_HUFFSYM!(LZX_ALIGNED_MAXSYMBOLS, LZX_ALIGNED_TABLEBITS, aligned_tab, aligned_len, aligned_bits, bitbuf, bitsleft, inpos);
+                                match_offset = match_offset.wrapping_add(aligned_bits as u32);
+                            } else if extra > 0 {
+                                // verbatim bits only
+                                READ_BITS!(verbatim_bits, extra, bitbuf, bitsleft, inpos);
+                                match_offset = match_offset.wrapping_add(verbatim_bits as u32);
+                            } else {
+                                // extra == 0
+                                match_offset = 1;
+                            }
+                            // update repeated offset LRU queue
+                            r2 = r1; r1 = r0; r0 = match_offset;
+                        } else if match_offset == 0 {
+                            match_offset = r0;
+                        } else if match_offset == 1 {
+                            match_offset = r1; r1 = r0; r0 = match_offset;
+                        } else {
+                            match_offset = r2; r2 = r0; r0 = match_offset;
+                        }
+                        rundest = window.add(window_posn as usize);
+                        this_run -= match_length;
+                        if window_posn >= match_offset {
+                            runsrc = rundest.offset(-(match_offset as isize));
+                        } else {
+                            runsrc = rundest.add((window_size - match_offset) as usize);
+                            copy_length = (match_offset - window_posn) as i32;
+                            if copy_length < match_length {
+                                match_length -= copy_length;
+                                window_posn += copy_length as u32;
+                                while copy_length > 0 { *rundest = *runsrc; rundest = rundest.add(1); runsrc = runsrc.add(1); copy_length -= 1; }
+                                runsrc = window;
+                            }
+                        }
+                        window_posn += match_length as u32;
+                        while match_length > 0 { *rundest = *runsrc; rundest = rundest.add(1); runsrc = runsrc.add(1); match_length -= 1; }
+                    }
+                }
+            } else if bt == LZX_BLOCKTYPE_UNCOMPRESSED {
+                if (inpos.add(this_run as usize) as *const u8) > endinp { return DECR_ILLEGALDATA; }
+                core::ptr::copy_nonoverlapping(inpos, window.add(window_posn as usize), this_run as usize);
+                inpos = inpos.add(this_run as usize);
+                window_posn += this_run as u32;
+            } else {
+                return DECR_ILLEGALDATA; // might as well
+            }
+        }
+    }
+
+    if togo != 0 { return DECR_ILLEGALDATA; }
+    let src = (if window_posn == 0 { window_size } else { window_posn }) - outlen as u32;
+    core::ptr::copy_nonoverlapping(window.add(src as usize), (*decomp_state).outbuf.as_mut_ptr(), outlen as usize);
+
+    (*lzx).window_posn = window_posn;
+    (*lzx).R0 = r0;
+    (*lzx).R1 = r1;
+    (*lzx).R2 = r2;
+
+    // intel E8 decoding (frames_read always increments; body gated on old value)
+    let old_frames = (*lzx).frames_read;
+    (*lzx).frames_read = old_frames.wrapping_add(1);
+    if (old_frames < 32768) && (*lzx).intel_filesize != 0 {
+        if outlen <= 6 || (*lzx).intel_started == 0 {
+            (*lzx).intel_curpos += outlen;
+        } else {
+            let data0 = (*decomp_state).outbuf.as_mut_ptr();
+            let mut data = data0;
+            let dataend = data0.wrapping_offset((outlen - 10) as isize);
+            let mut curpos: i32 = (*lzx).intel_curpos;
+            let filesize: i32 = (*lzx).intel_filesize;
+            (*lzx).intel_curpos = curpos + outlen;
+            while (data as *const u8) < (dataend as *const u8) {
+                if *data != 0xE8 { data = data.add(1); curpos += 1; continue; }
+                data = data.add(1);
+                let abs_off: i32 = (*data.add(0) as i32) | ((*data.add(1) as i32) << 8) | ((*data.add(2) as i32) << 16) | ((*data.add(3) as i32) << 24);
+                if (abs_off >= -curpos) && (abs_off < filesize) {
+                    let rel_off: i32 = if abs_off >= 0 { abs_off - curpos } else { abs_off + filesize };
+                    *data.add(0) = rel_off as u8;
+                    *data.add(1) = (rel_off >> 8) as u8;
+                    *data.add(2) = (rel_off >> 16) as u8;
+                    *data.add(3) = (rel_off >> 24) as u8;
+                }
+                data = data.add(4);
+                curpos += 5;
+            }
+        }
+    }
+    DECR_OK
 }
 
 unsafe extern "C" fn free_decompression_temps(fdi: *mut FDI_Int, fol: *const fdi_folder, decomp_state: *mut fdi_decomp_state) {
@@ -1080,7 +1529,7 @@ pub unsafe extern "C" fn FDITruncateCabinet(
     return 0;
 }
 
-unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: i32, cabsize: i32) -> *mut i8 {
+unsafe fn FDI_read_string(fdi: *mut FDI_Int, hf: INT_PTR, cabsize: i32) -> *mut i8 {
     let mut len: usize = 256;
     let base: i32 = FDI_getoffset(fdi, hf as INT_PTR);
     let maxlen: i32 = cabsize - base;
@@ -1781,7 +2230,7 @@ unsafe fn fdi_Zipinflate_block(e: *mut i32, decomp_state: *mut fdi_decomp_state)
     return 2;
 }
 
-unsafe fn ZIPfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
+unsafe extern "C" fn ZIPfdi_decomp(inlen: i32, outlen: i32, decomp_state: *mut fdi_decomp_state) -> i32 {
     let mut e: i32 = 0; /* cab_LONG e */
 
     TRACE(b"(inlen == %d, outlen == %d)\n\0".as_ptr() as *const i8, inlen as i32, outlen as i32);
@@ -2296,7 +2745,7 @@ unsafe fn fdi_decomp(
                                 }
                                 continue;
                             }
-                            if FDI_read_entries(fdi, h as i32, &mut fdici, &mut (*(*cab).next).mii) == 0 {
+                            if FDI_read_entries(fdi, h as INT_PTR, &mut fdici, &mut (*(*cab).next).mii) == 0 {
                                 WARN(b"FDIIsCabinet failed.\n\0".as_ptr() as *const i8);
                                 close(h as isize);
                                 fdin.fdie = FDIERROR_NOT_A_CABINET;
@@ -2333,7 +2782,7 @@ unsafe fn fdi_decomp(
                         (*(*cab).next).iCabinet = fdici.iCabinet;
                         (*(*cab).next).fdi = fdi;
                         (*(*cab).next).filehf = (*decomp_state).filehf;
-                        (*(*cab).next).cabhf = cabhf as i32;
+                        (*(*cab).next).cabhf = cabhf as INT_PTR;
                         (*(*cab).next).decompress = (*decomp_state).decompress;
 
                         cab = (*cab).next;
@@ -2439,3 +2888,392 @@ unsafe fn fdi_decomp(
     DECR_OK
 }
 
+
+/***********************************************************************
+ *		FDICopy (CABINET.22)
+ *
+ * Iterates over the files in a cabinet, notifying the caller and (when
+ * the callback asks for extraction) decompressing each into the handle
+ * the callback returns. Faithful port of dll/win32/cabinet/fdi.c; the C
+ * `goto bail_and_fail` cleanup is modeled with a labeled `'main` block
+ * plus a `bail` flag so both exits run the same free path.
+ */
+#[no_mangle]
+pub unsafe extern "C" fn FDICopy(
+    hfdi: HFDI,
+    pszCabinet: *mut i8,
+    pszCabPath: *mut i8,
+    _flags: i32,
+    pfnfdin: PFNFDINOTIFY,
+    _pfnfdid: *const core::ffi::c_void, // PFNFDIDECRYPT — unused (as in wine)
+    pvUser: *mut core::ffi::c_void,
+) -> i32 {
+    use core::mem::size_of;
+    use core::ptr::addr_of_mut;
+
+    const FALSE: i32 = 0;
+    const TRUE: i32 = 1;
+    // fdierror.h enum values
+    const FDIERROR_CABINET_NOT_FOUND: i32 = 1;
+    const FDIERROR_CORRUPT_CABINET: i32 = 4;
+    const FDIERROR_ALLOC_FAIL: i32 = 5;
+    const FDIERROR_USER_ABORT: i32 = 11;
+    // winerror.h / dderror.h
+    const ERROR_FILE_NOT_FOUND: u32 = 2;
+    const ERROR_NOT_ENOUGH_MEMORY: u32 = 8;
+    // crt open flags (cabinet.h)
+    const _O_RDONLY: i32 = 0;
+    const _O_BINARY: i32 = 0x8000;
+    const _S_IREAD: i32 = 0x0100;
+    const _S_IWRITE: i32 = 0x0080;
+    // cffolder / cffile field offsets (cabinet.h)
+    const cffold_SIZEOF: u32 = 8;
+    const cffold_DataOffset: usize = 0;
+    const cffold_NumBlocks: usize = 4;
+    const cffold_CompType: usize = 6;
+    const cffile_SIZEOF: u32 = 16;
+    const cffile_UncompressedSize: usize = 0;
+    const cffile_FolderOffset: usize = 4;
+    const cffile_FolderIndex: usize = 8;
+    const cffile_Date: usize = 10;
+    const cffile_Time: usize = 12;
+    const cffile_Attribs: usize = 14;
+    const cffileCONTINUED_FROM_PREV: u16 = 0xFFFD;
+    const cffileCONTINUED_TO_NEXT: u16 = 0xFFFE;
+    const cffoldCOMPTYPE_MASK: u16 = 0x000F;
+    const cffoldCOMPTYPE_NONE: i32 = 0x0000;
+    const cffoldCOMPTYPE_MSZIP: i32 = 0x0001;
+    const cffoldCOMPTYPE_QUANTUM: i32 = 0x0002;
+    const cffoldCOMPTYPE_LZX: i32 = 0x0003;
+    const cffile_A_EXEC: u16 = 0x40;
+    const SEEK_SET: i32 = 0;
+    const SEEK_CUR: i32 = 1;
+    const MAX_PATH: usize = 260; // local: types::* and ntdll_sys::* both glob-export it
+
+    let fdi: *mut FDI_Int = get_fdi_ptr(hfdi);
+
+    TRACE(b"FDICopy(hfdi == ^%p, pszCabinet == %s, pszCabPath == %s)\n\0".as_ptr() as *const i8,
+          hfdi, debugstr_a(pszCabinet), debugstr_a(pszCabPath));
+
+    if fdi.is_null() { return FALSE; }
+
+    let alloc = (*fdi).alloc;
+    let free = (*fdi).free;
+
+    let decomp_state: *mut fdi_decomp_state =
+        alloc(size_of::<fdi_decomp_state>() as u32) as *mut fdi_decomp_state;
+    if decomp_state.is_null() {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return FALSE;
+    }
+    core::ptr::write_bytes(decomp_state as *mut u8, 0, size_of::<fdi_decomp_state>());
+
+    let pathlen: usize = if pszCabPath.is_null() { 0 } else { strlen(pszCabPath) };
+    let filenamelen: usize = if pszCabinet.is_null() { 0 } else { strlen(pszCabinet) };
+
+    // slight overestimation here to save CPU cycles in the developer's brain
+    if (pathlen + filenamelen + 3) > MAX_PATH {
+        ERR(b"MAX_PATH exceeded.\n\0".as_ptr() as *const i8);
+        free(decomp_state as *mut core::ffi::c_void);
+        set_error(fdi, FDIERROR_CABINET_NOT_FOUND, ERROR_FILE_NOT_FOUND as i32);
+        return FALSE;
+    }
+
+    // paste the path and filename together
+    let mut fullpath: [i8; MAX_PATH] = [0; MAX_PATH];
+    fullpath[0] = 0;
+    if pathlen != 0 { strcpy(fullpath.as_mut_ptr(), pszCabPath); }
+    if filenamelen != 0 { strcat(fullpath.as_mut_ptr(), pszCabinet); }
+
+    // get a handle to the cabfile
+    let cabhf: isize = ((*fdi).open)(fullpath.as_mut_ptr(), _O_RDONLY | _O_BINARY, _S_IREAD | _S_IWRITE);
+    if cabhf == -1 {
+        free(decomp_state as *mut core::ffi::c_void);
+        set_error(fdi, FDIERROR_CABINET_NOT_FOUND, 0);
+        SetLastError(ERROR_FILE_NOT_FOUND);
+        return FALSE;
+    }
+
+    let mut fdici: FDICABINETINFO = core::mem::zeroed();
+
+    // check if it's really a cabfile
+    if FDI_read_entries(fdi, cabhf as INT_PTR, &mut fdici, addr_of_mut!((*decomp_state).mii)) == 0 {
+        WARN(b"FDI_read_entries failed\n\0".as_ptr() as *const i8);
+        free(decomp_state as *mut core::ffi::c_void);
+        ((*fdi).close)(cabhf);
+        return FALSE;
+    }
+
+    // fdi_decomp wants the callback typed with an i32 (vs INT_PTR) return; it is
+    // the same C function pointer — re-type it (identical ABI on i386).
+    let pfn_for_decomp: Option<unsafe extern "C" fn(i32, *mut FDINOTIFICATION) -> i32> =
+        Some(core::mem::transmute::<PFNFDINOTIFY, unsafe extern "C" fn(i32, *mut FDINOTIFICATION) -> i32>(pfnfdin));
+
+    let mut fdin: FDINOTIFICATION = core::mem::zeroed();
+    let mut emptystring: i8 = 0;
+    let mut buf: [u8; 64] = [0; 64];
+    let mut fol: *mut fdi_folder = core::ptr::null_mut();
+    let mut linkfol: *mut fdi_folder = core::ptr::null_mut();
+    let mut file: *mut fdi_file = core::ptr::null_mut();
+    let mut linkfile: *mut fdi_file = core::ptr::null_mut();
+    let mut filehf: isize = 0;
+    let mut i: u32;
+
+    let mut bail = false;
+    'main: loop {
+        // cabinet notification
+        core::ptr::write_bytes(addr_of_mut!(fdin) as *mut u8, 0, size_of::<FDINOTIFICATION>());
+        fdin.setID = fdici.setID;
+        fdin.iCabinet = fdici.iCabinet;
+        fdin.pv = pvUser;
+        fdin.psz1 = if (*decomp_state).mii.nextname.is_null() { addr_of_mut!(emptystring) } else { (*decomp_state).mii.nextname };
+        fdin.psz2 = if (*decomp_state).mii.nextinfo.is_null() { addr_of_mut!(emptystring) } else { (*decomp_state).mii.nextinfo };
+        fdin.psz3 = pszCabPath;
+
+        if pfnfdin(fdintCABINET_INFO, &mut fdin) == -1 {
+            set_error(fdi, FDIERROR_USER_ABORT, 0);
+            bail = true; break 'main;
+        }
+
+        (*decomp_state).setID = fdici.setID;
+        (*decomp_state).iCabinet = fdici.iCabinet;
+        (*decomp_state).cabhf = cabhf as INT_PTR;
+
+        // read folders
+        i = 0;
+        while i < fdici.cFolders as u32 {
+            if ((*fdi).read)(cabhf, buf.as_mut_ptr() as *mut core::ffi::c_void, cffold_SIZEOF) != cffold_SIZEOF {
+                set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
+                bail = true; break 'main;
+            }
+            if (*decomp_state).mii.folder_resv > 0 {
+                ((*fdi).seek)(cabhf, (*decomp_state).mii.folder_resv, SEEK_CUR);
+            }
+            fol = alloc(size_of::<fdi_folder>() as u32) as *mut fdi_folder;
+            if fol.is_null() {
+                ERR(b"out of memory!\n\0".as_ptr() as *const i8);
+                set_error(fdi, FDIERROR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
+                bail = true; break 'main;
+            }
+            core::ptr::write_bytes(fol as *mut u8, 0, size_of::<fdi_folder>());
+            if (*decomp_state).firstfol.is_null() { (*decomp_state).firstfol = fol; }
+
+            (*fol).offset = end_get_i32(buf.as_ptr().add(cffold_DataOffset)) as cab_off_t;
+            (*fol).num_blocks = end_get_i16(buf.as_ptr().add(cffold_NumBlocks)) as u16;
+            (*fol).comp_type = end_get_i16(buf.as_ptr().add(cffold_CompType)) as u16;
+
+            if !linkfol.is_null() { (*linkfol).next = fol; }
+            linkfol = fol;
+            i += 1;
+        }
+
+        // read files
+        i = 0;
+        while i < fdici.cFiles as u32 {
+            if ((*fdi).read)(cabhf, buf.as_mut_ptr() as *mut core::ffi::c_void, cffile_SIZEOF) != cffile_SIZEOF {
+                set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
+                bail = true; break 'main;
+            }
+            file = alloc(size_of::<fdi_file>() as u32) as *mut fdi_file;
+            if file.is_null() {
+                ERR(b"out of memory!\n\0".as_ptr() as *const i8);
+                set_error(fdi, FDIERROR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
+                bail = true; break 'main;
+            }
+            core::ptr::write_bytes(file as *mut u8, 0, size_of::<fdi_file>());
+            if (*decomp_state).firstfile.is_null() { (*decomp_state).firstfile = file; }
+
+            (*file).length = end_get_i32(buf.as_ptr().add(cffile_UncompressedSize)) as cab_ULONG;
+            (*file).offset = end_get_i32(buf.as_ptr().add(cffile_FolderOffset)) as cab_ULONG;
+            (*file).index = end_get_i16(buf.as_ptr().add(cffile_FolderIndex)) as u16;
+            (*file).time = end_get_i16(buf.as_ptr().add(cffile_Time)) as u16;
+            (*file).date = end_get_i16(buf.as_ptr().add(cffile_Date)) as u16;
+            (*file).attribs = end_get_i16(buf.as_ptr().add(cffile_Attribs)) as u16;
+            (*file).filename = FDI_read_string(fdi, cabhf as INT_PTR, fdici.cbCabinet);
+
+            if (*file).filename.is_null() {
+                set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
+                bail = true; break 'main;
+            }
+            if !linkfile.is_null() { (*linkfile).next = file; }
+            linkfile = file;
+            i += 1;
+        }
+
+        // extract loop
+        file = (*decomp_state).firstfile;
+        while !file.is_null() {
+            // partial-file notification
+            if ((*file).index & cffileCONTINUED_FROM_PREV) == cffileCONTINUED_FROM_PREV {
+                core::ptr::write_bytes(addr_of_mut!(fdin) as *mut u8, 0, size_of::<FDINOTIFICATION>());
+                fdin.pv = pvUser;
+                fdin.psz1 = (*file).filename;
+                fdin.psz2 = if (*decomp_state).mii.prevname.is_null() { addr_of_mut!(emptystring) } else { (*decomp_state).mii.prevname };
+                fdin.psz3 = if (*decomp_state).mii.previnfo.is_null() { addr_of_mut!(emptystring) } else { (*decomp_state).mii.previnfo };
+                if pfnfdin(fdintPARTIAL_FILE, &mut fdin) == -1 {
+                    set_error(fdi, FDIERROR_USER_ABORT, 0);
+                    bail = true; break 'main;
+                }
+                // don't decompress partial files
+                (*file).oppressed = TRUE;
+            }
+            if (*file).oppressed != 0 {
+                filehf = 0;
+            } else {
+                core::ptr::write_bytes(addr_of_mut!(fdin) as *mut u8, 0, size_of::<FDINOTIFICATION>());
+                fdin.pv = pvUser;
+                fdin.psz1 = (*file).filename;
+                fdin.cb = (*file).length as i32;
+                fdin.date = (*file).date;
+                fdin.time = (*file).time;
+                fdin.attribs = (*file).attribs;
+                fdin.iFolder = (*file).index;
+                filehf = pfnfdin(fdintCOPY_FILE, &mut fdin);
+                if filehf == -1 {
+                    set_error(fdi, FDIERROR_USER_ABORT, 0);
+                    filehf = 0;
+                    bail = true; break 'main;
+                }
+            }
+
+            // find the folder for this file if necessary
+            if filehf != 0 {
+                fol = (*decomp_state).firstfol;
+                if ((*file).index & cffileCONTINUED_TO_NEXT) == cffileCONTINUED_TO_NEXT {
+                    // pick the last folder
+                    while !(*fol).next.is_null() { fol = (*fol).next; }
+                } else {
+                    let mut i2: u32 = 0;
+                    while i2 < (*file).index as u32 {
+                        if !(*fol).next.is_null() { fol = (*fol).next; } // bug resistance
+                        i2 += 1;
+                    }
+                }
+            }
+
+            if filehf != 0 {
+                let comptype: u16 = (*fol).comp_type;
+                let ct1: i32 = (comptype & cffoldCOMPTYPE_MASK) as i32;
+                let ct2: i32 = if !(*decomp_state).current.is_null() {
+                    ((*(*decomp_state).current).comp_type & cffoldCOMPTYPE_MASK) as i32
+                } else { 0 };
+                let mut err: i32 = 0;
+
+                TRACE(b"Extracting file %s as requested by callee.\n\0".as_ptr() as *const i8,
+                      debugstr_a((*file).filename));
+
+                // set up decomp_state
+                (*decomp_state).fdi = fdi;
+                (*decomp_state).filehf = filehf as INT_PTR;
+
+                // change of folder / compression / went backwards?
+                if (ct1 != ct2) || ((*decomp_state).current != fol) || ((*file).offset < (*decomp_state).offset) {
+                    // free stuff for the old decompressor
+                    if ct2 == cffoldCOMPTYPE_LZX {
+                        if !(*decomp_state).methods.lzx.window.is_null() {
+                            free((*decomp_state).methods.lzx.window as *mut core::ffi::c_void);
+                            (*decomp_state).methods.lzx.window = core::ptr::null_mut();
+                        }
+                    } else if ct2 == cffoldCOMPTYPE_QUANTUM {
+                        if !(*decomp_state).methods.qtm.window.is_null() {
+                            free((*decomp_state).methods.qtm.window as *mut core::ffi::c_void);
+                            (*decomp_state).methods.qtm.window = core::ptr::null_mut();
+                        }
+                    }
+
+                    (*decomp_state).decomp_cab = core::ptr::null_mut();
+                    ((*fdi).seek)(cabhf, (*fol).offset as i32, SEEK_SET);
+                    (*decomp_state).offset = 0;
+                    (*decomp_state).outlen = 0;
+
+                    // initialize the new decompressor
+                    if ct1 == cffoldCOMPTYPE_NONE {
+                        (*decomp_state).decompress = Some(NONEfdi_decomp);
+                    } else if ct1 == cffoldCOMPTYPE_MSZIP {
+                        (*decomp_state).decompress = Some(ZIPfdi_decomp);
+                    } else if ct1 == cffoldCOMPTYPE_QUANTUM {
+                        (*decomp_state).decompress = Some(QTMfdi_decomp);
+                        err = QTMfdi_init(((comptype >> 8) & 0x1f) as i32, ((comptype >> 4) & 0xF) as i32, decomp_state);
+                    } else if ct1 == cffoldCOMPTYPE_LZX {
+                        (*decomp_state).decompress = Some(LZXfdi_decomp);
+                        err = LZXfdi_init(((comptype >> 8) & 0x1f) as i32, decomp_state);
+                    } else {
+                        err = DECR_DATAFORMAT;
+                    }
+                }
+
+                (*decomp_state).current = fol;
+
+                if err == DECR_OK {
+                    // ok
+                } else if err == DECR_NOMEMORY {
+                    set_error(fdi, FDIERROR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
+                    bail = true; break 'main;
+                } else {
+                    set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
+                    bail = true; break 'main;
+                }
+
+                if (*file).offset > (*decomp_state).offset {
+                    // decode bytes and send them to /dev/null
+                    let r = fdi_decomp(file, 0, decomp_state, pszCabPath, pfn_for_decomp, pvUser);
+                    if r == DECR_OK {
+                        // ok
+                    } else if r == DECR_USERABORT {
+                        set_error(fdi, FDIERROR_USER_ABORT, 0);
+                        bail = true; break 'main;
+                    } else if r == DECR_NOMEMORY {
+                        set_error(fdi, FDIERROR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
+                        bail = true; break 'main;
+                    } else {
+                        set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
+                        bail = true; break 'main;
+                    }
+                    (*decomp_state).offset = (*file).offset;
+                }
+
+                // now do the actual decompression
+                let err2 = fdi_decomp(file, 1, decomp_state, pszCabPath, pfn_for_decomp, pvUser);
+                if err2 != 0 { (*decomp_state).current = core::ptr::null_mut(); }
+                else { (*decomp_state).offset += (*file).length; }
+
+                // fdintCLOSE_FILE_INFO notification
+                core::ptr::write_bytes(addr_of_mut!(fdin) as *mut u8, 0, size_of::<FDINOTIFICATION>());
+                fdin.pv = pvUser;
+                fdin.psz1 = (*file).filename;
+                fdin.hf = filehf;
+                fdin.cb = if ((*file).attribs & cffile_A_EXEC) != 0 { 1 } else { 0 };
+                fdin.date = (*file).date;
+                fdin.time = (*file).time;
+                fdin.attribs = (*file).attribs;
+                fdin.iFolder = (*file).index;
+                pfnfdin(fdintCLOSE_FILE_INFO, &mut fdin);
+                filehf = 0;
+
+                if err2 == DECR_OK {
+                    // ok
+                } else if err2 == DECR_USERABORT {
+                    set_error(fdi, FDIERROR_USER_ABORT, 0);
+                    bail = true; break 'main;
+                } else if err2 == DECR_NOMEMORY {
+                    set_error(fdi, FDIERROR_ALLOC_FAIL, ERROR_NOT_ENOUGH_MEMORY as i32);
+                    bail = true; break 'main;
+                } else {
+                    set_error(fdi, FDIERROR_CORRUPT_CABINET, 0);
+                    bail = true; break 'main;
+                }
+            }
+
+            file = (*file).next;
+        }
+
+        break 'main; // success
+    }
+
+    // cleanup (shared by success + bail, matching C bail_and_fail/return TRUE)
+    if !fol.is_null() { free_decompression_temps(fdi, fol, decomp_state); }
+    if bail && filehf != 0 { ((*fdi).close)(filehf); }
+    free_decompression_mem(fdi, decomp_state);
+
+    if bail { FALSE } else { TRUE }
+}
