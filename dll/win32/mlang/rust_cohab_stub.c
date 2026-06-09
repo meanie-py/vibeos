@@ -60,6 +60,13 @@ void __stdcall list_add_tail(struct cohab_list *l, struct cohab_list *e)
 long __stdcall __wine_register_resources(void *hinst) { (void)hinst; return 0; }
 long __stdcall __wine_unregister_resources(void *hinst) { (void)hinst; return 0; }
 
+/* InterlockedIncrement/Decrement: on i386 these come from kernel32 as _X@4, but
+ * on amd64/arm64 they are compiler intrinsics the import lib does not export as
+ * functions. Provide them as atomic shims (undecorated symbol on amd64/arm64;
+ * on i386 the cdecl _InterlockedIncrement is simply unused, kernel32's @4 wins). */
+long InterlockedIncrement(long volatile *addend) { return __atomic_add_fetch(addend, 1, __ATOMIC_SEQ_CST); }
+long InterlockedDecrement(long volatile *addend) { return __atomic_sub_fetch(addend, 1, __ATOMIC_SEQ_CST); }
+
 /* IStream_* are wine ICOM_CALL helpers (IStream is opaque in ntdll-sys bindgen,
  * so the Rust side can't dispatch by field). Call through the COM vtable by
  * fixed index: IStream vtable = IUnknown(0..2) + Read(3) Write(4) Seek(5)
