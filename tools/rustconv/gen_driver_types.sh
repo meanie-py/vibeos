@@ -85,6 +85,14 @@ run_arch() {
   # from `ntkrnl_sys::{ddk,driver_ddk,...}`.
   local TYPELIST="/tmp/${DRIVER}_ntktypes_${ARCH}.txt"
   grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$NTK" | awk '{print $3}' | sort -u > "$TYPELIST"
+  # UNBLOCK: types the shared ntkrnl-sys bindgen leaves OPAQUE (e.g. `_SCSI_REQUEST_BLOCK
+  # { _address: u8 }`) — keeping them blocklisted resolves the driver's field accesses to the
+  # useless opaque version. Re-allow them so THIS driver's bindgen (which includes scsi.h/srb.h)
+  # emits the FULL struct locally; the driver then uses crate::types::<T> with real fields.
+  if [ -n "${UNBLOCK:-}" ]; then
+    local KEEP="/tmp/${DRIVER}_unblock_${ARCH}.txt"; printf '%s\n' $UNBLOCK > "$KEEP"
+    grep -vxF -f "$KEEP" "$TYPELIST" > "${TYPELIST}.f" && mv "${TYPELIST}.f" "$TYPELIST"
+  fi
   local BL=()
   while IFS= read -r t; do BL+=( --blocklist-type "$t" ); done < "$TYPELIST"
 
