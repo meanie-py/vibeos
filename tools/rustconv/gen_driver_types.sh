@@ -51,7 +51,11 @@ case "$DRIVER" in
     ;;
   classpnp)
     DRIVER_DIR="${SRC}/drivers/storage/class/classpnp"
-    WRAPPER_INC='#include <classp.h>'
+    # classp.h does NOT transitively reach wmistr.h / ntddstor.h / ntddscsi.h, so the WNODE_*,
+    # STORAGE_HW_FIRMWARE_*, BLOCK_DEVICE_RANGE_DESCRIPTOR, POPULATE_TOKEN_HEADER, DEVICE_DATA_SET_*
+    # types never get PARSED (allowlist can only filter parsed types, not emit unreached ones).
+    # Pull them explicitly so bindgen emits the full local layouts the modules reference.
+    WRAPPER_INC=$'#include <classp.h>\n#include <wmistr.h>\n#include <ntddstor.h>\n#include <ntddscsi.h>'
     # classp.h pulls scsi.h/srb.h/ntddstor.h — the storage structs (SRBEX_DATA, STOR_ADDRESS,
     # UNMAP_LIST_HEADER, WNODE_*, MODE_PARAMETER_HEADER, READ_CAPACITY_DATA, ...) the modules
     # use are defined there and are NOT in the ntkrnl-sys kernel bindgen, so allowlist them too.
