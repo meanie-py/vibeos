@@ -1,16 +1,18 @@
 
 spec2def(kdvbox.dll kdvm.spec)
-add_asm_files(kdvbox_asm kdvbox_asm.S)
 
-add_library(kdvbox MODULE
-    kdvm.c
-    kdvbox.c
-    kdvm.rc
-    ${kdvbox_asm}
-    ${CMAKE_CURRENT_BINARY_DIR}/kdvbox.def)
-
-set_module_type(kdvbox kerneldll ENTRYPOINT 0)
-set_subsystem(kdvbox native)
-add_importlibs(kdvbox ntoskrnl hal)
-add_dependencies(kdvbox psdk bugcodes)
-add_cd_file(TARGET kdvbox DESTINATION reactos/system32 NO_CAB FOR all)
+# ============================================================================
+# kdvbox.dll (VirtualBox KD transport) — cargo-driven final link
+# ============================================================================
+# kdvm.c / kdvbox.c (+ kdvbox_asm.S) are translated to Rust
+# (sdk/lib/rust/kdvm-rust, kept on disk per the never-delete rule). The VBox
+# backdoor port-I/O `KdVmExchange` (kdvbox_asm.S) is rendered as a cfg-gated
+# in-crate inline-asm fn — no asm archive needed. The 8 kdvm.spec exports come
+# from libkdvm_rust.a; the kdvbox.dll link is driven by cargo (kdvm-cargo's
+# build.rs -> reactos-link) linking kdvm-rust + libcntpr (CRT) + memcmp + the
+# ntoskrnl/hal import libs. Mirrors the kdrosdbg cohab. Only added under
+# _WINKD_ && !GDB (see drivers/base/CMakeLists.txt). i386 + amd64.
+#
+#   kdvm.c kdvbox.c kdvbox_asm.S  -- replaced by Rust (kdvm-rust); kept on disk.
+add_cargo_kernel_dll(kdvbox kdvm-cargo kdvbox.dll BODY_CRATE kdvm-rust
+    EXTRA_DEPENDS libcntpr memcmp)
