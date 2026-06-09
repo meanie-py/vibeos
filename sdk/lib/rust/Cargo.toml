@@ -51,6 +51,7 @@ members = [
     "cmboot-rust",
     "cmlib-rust",
     "rossym-rust",
+    "cryptlib-rust",
     "evtlib-rust",
     "inflib-rust",
     "freeldr-rust",

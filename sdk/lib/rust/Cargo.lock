@@ -180,6 +180,10 @@ name = "crc32"
 version = "0.1.0"
 
 [[package]]
+name = "cryptlib-rust"
+version = "0.1.0"
+
+[[package]]
 name = "csrsrv-cargo"
 version = "0.1.0"
 dependencies = [
