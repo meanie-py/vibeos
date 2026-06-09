@@ -503,7 +503,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             b"ClassDispatchPnp (%p,%p): minor code %#x for %s %p\n\0".as_ptr() as *const i8,
             DeviceObject,
             Irp,
-            (*irp_stack).MinorFunction,
+            ((*irp_stack).MinorFunction) as i32,
             if is_fdo != 0 { b"fdo\0".as_ptr() } else { b"pdo\0".as_ptr() },
             DeviceObject,
         );
@@ -513,8 +513,8 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             b"ClassDispatchPnp (%p,%p): previous %#x, current %#x\n\0".as_ptr() as *const i8,
             DeviceObject,
             Irp,
-            (*common_extension).PreviousState,
-            (*common_extension).CurrentState,
+            ((*common_extension).PreviousState) as i32,
+            ((*common_extension).CurrentState) as i32,
         );
 
         match (*irp_stack).MinorFunction {
@@ -811,7 +811,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                             }
 
                             if !NT_SUCCESS(status) {
-                                (KeSetEvent).cast()(
+                                ((((KeSetEvent)))).cast()(
                                     core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as *mut KEVENT,
                                     IO_NO_INCREMENT,
                                     0u8,
@@ -886,7 +886,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                                     }
                                 }
 
-                                (KeSetEvent).cast()(
+                                ((((KeSetEvent)))).cast()(
                                     core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as *mut KEVENT,
                                     IO_NO_INCREMENT,
                                     0u8,
@@ -1065,14 +1065,14 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                         if !fdo_data.is_null()
                             && (*fdo_data).HotplugInfo.WriteCacheEnableOverride != 0
                         {
-                            if (*device_capabilities).SurpriseRemovalOK != 0 {
+                            if (*device_capabilities).SurpriseRemovalOK() != 0 {
                                 TracePrint(
                                     TRACE_LEVEL_INFORMATION,
                                     TRACE_FLAG_PNP,
                                     b"Classpnp: Clearing SR-OK bit in device capabilities due to hotplug device or media\n\0".as_ptr() as *const i8,
                                 );
                             }
-                            (*device_capabilities).SurpriseRemovalOK = 0u8;
+                            (*device_capabilities).set_SurpriseRemovalOK((0u8) as u32);
                         }
                     }
                 }
@@ -1104,8 +1104,8 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             b"ClassDispatchPnp (%p,%p): leaving with previous %#x, current %#x.\n\0".as_ptr() as *const i8,
             DeviceObject,
             Irp,
-            if !driver_extension.is_null() { (*common_extension).PreviousState } else { 0 },
-            if !driver_extension.is_null() { (*common_extension).CurrentState } else { 0 },
+            (if !driver_extension.is_null() { (*common_extension).PreviousState } else { 0 }) as i32,
+            (if !driver_extension.is_null() { (*common_extension).CurrentState } else { 0 }) as i32,
         );
     } else {
         TracePrint(
@@ -1227,7 +1227,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             (*(*fdo_extension).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus = -1;
 
             KeInitializeTimer(&raw mut (*(*fdo_extension).PrivateFdoData).Retry.Timer);
-            (KeInitializeDpc).cast()(
+            ((((KeInitializeDpc)))).cast()(
                 &raw mut (*(*fdo_extension).PrivateFdoData).Retry.Dpc,
                 ClasspRetryRequestDpc,
                 device_object,
@@ -1241,7 +1241,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             (*(*fdo_extension).PrivateFdoData).InterpretSenseInfo = (*driver_extension).InterpretSenseInfo;
             (*(*fdo_extension).PrivateFdoData).MaxNumberOfIoRetries = (NUM_IO_RETRIES) as u8;
 
-            status = (InitializeStorageRequestBlock).cast()(
+            status = ((((InitializeStorageRequestBlock)))).cast()(
                 &raw mut (*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.SrbEx,
                 STORAGE_ADDRESS_TYPE_BTL8,
                 size_of_val(&(*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.ReleaseQueueSrbBuffer) as u32,
@@ -1350,8 +1350,8 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 );
                 if NT_SUCCESS(status) && !power_descriptor.is_null() {
                     (*(*fdo_extension).FunctionSupportInfo).AsynchronousNotificationSupported = (*power_descriptor).AsynchronousNotificationSupported;
-                    (*(*fdo_extension).FunctionSupportInfo).IdlePower.D3ColdSupported = (*power_descriptor).D3ColdSupported;
-                    (*(*fdo_extension).FunctionSupportInfo).IdlePower.NoVerifyDuringIdlePower = (*power_descriptor).NoVerifyDuringIdlePower;
+                    (*(*fdo_extension).FunctionSupportInfo).IdlePower.set_D3ColdSupported(((*power_descriptor).D3ColdSupported) as u32);
+                    (*(*fdo_extension).FunctionSupportInfo).IdlePower.set_NoVerifyDuringIdlePower(((*power_descriptor).NoVerifyDuringIdlePower) as u32);
                     ExFreePool(power_descriptor as *mut c_void);
                 } else {
                     TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP, b"ClassPnpStartDevice: ClassGetDescriptor [DevicePower] failed %lx\n\0".as_ptr() as PCHAR, status);
@@ -1382,7 +1382,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                     ClasspGetInquiryVpdSupportInfo(fdo_extension);
                     ClasspGetLBProvisioningInfo(fdo_extension);
 
-                    if (*(*fdo_extension).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits != 0 {
+                    if (*(*fdo_extension).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits() != 0 {
                         ClassDetermineTokenOperationCommandSupport(device_object);
                     }
 
@@ -1475,7 +1475,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
         if (*common_extension).IsFdo != 0 {
             IoWMIRegistrationControl(device_object, WMIREG_ACTION_REGISTER);
             if (*fdo_extension).FunctionSupportInfo != core::ptr::null_mut() &&
-                (*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled == FALSE &&
+                (*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() == (FALSE) as u32 &&
                 (*fdo_extension).MiniportDescriptor != core::ptr::null_mut() &&
                 ((*(*fdo_extension).MiniportDescriptor).Portdriver == StoragePortCodeSetStorport ||
                  (*(*fdo_extension).MiniportDescriptor).Portdriver == StoragePortCodeSetSDport ||
@@ -1913,7 +1913,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
             let srbEx = core::ptr::addr_of_mut!((*context).Srb.SrbEx);
             let srbExBufSize = core::mem::size_of_val(&(*context).Srb.SrbExBuffer);
 
-            let status = (InitializeStorageRequestBlock).cast()(
+            let status = ((((InitializeStorageRequestBlock)))).cast()(
                 srbEx,
                 STORAGE_ADDRESS_TYPE_BTL8,
                 srbExBufSize,

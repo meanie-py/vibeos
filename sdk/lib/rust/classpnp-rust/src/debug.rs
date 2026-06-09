@@ -22,6 +22,8 @@ use ntkrnl_sys::ddk::{_LARGE_INTEGER};
 use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::driver_ddk::{DbgPrint};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::srblib::{SrbGetDataBuffer, SrbGetDataTransferLength, SrbGetOriginalRequest, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSystemStatus};
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -178,7 +180,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             );
         }
         if (*(*Pkt).Irp).IoStatus.Information
-            != SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64
+            != (SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,
@@ -224,7 +226,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         // If SRB failed with underrun/overrun, check transferred length
         if srb_status == (SRB_STATUS_DATA_OVERRUN) as i32
             && (*(*Pkt).Irp).IoStatus.Information
-                != SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64
+                != (SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,
@@ -444,13 +446,13 @@ pub unsafe extern "C" fn ClassDebugPrint(
 pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR {
     let mut ad_sense_code_qual_str: PCHAR = b"?\0".as_ptr() as PCHAR;
     if ((*srb).SrbStatus & (SRB_STATUS_AUTOSENSE_VALID) as u8) != 0 {
-        let sense_data: PVOID = SrbGetSenseInfoBuffer(srb);
+        let sense_data: PVOID = SrbGetSenseInfoBuffer((srb).cast());
         core::assert!(!sense_data.is_null());
         let mut ad_sense_code: u8 = 0;
         let mut ad_sense_code_qual: u8 = 0;
         let valid_sense = ScsiGetSenseKeyAndCodes(
             sense_data,
-            SrbGetSenseInfoBufferLength(srb),
+            SrbGetSenseInfoBufferLength((srb).cast()),
             SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(ad_sense_code),

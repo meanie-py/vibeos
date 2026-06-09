@@ -20,6 +20,8 @@ use crate::shims::*;
 use crate::types::{ClassInterpretSenseInfo, ClasspConvertToScsiRequestBlock, SetupReadWriteTransferPacket, SubmitTransferPacket};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_SCSI_REQUEST_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength};
 
 extern "C" {
     fn NT_ASSERT(cond: u8);
@@ -254,7 +256,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                             let mut startBufferLength: u8 = 0;
                             if ScsiGetSenseDescriptor(
                                 senseInfoBuffer,
-                                SrbGetSenseInfoBufferLength((*Pkt).Srb),
+                                SrbGetSenseInfoBufferLength(((*Pkt).Srb).cast()),
                                 &mut startBuffer,
                                 &mut startBufferLength,
                             ) != 0

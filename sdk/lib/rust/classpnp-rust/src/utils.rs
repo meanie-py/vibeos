@@ -30,6 +30,8 @@ use crate::types::{ClassCheckMediaState, ClassFindModePage, ClassForwardIrpSynch
 use ntkrnl_sys::mm::{ALIGN_UP_BY};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_SCSI_REQUEST_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::srblib::{SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength};
 
 extern "C" {
     fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
@@ -859,9 +861,9 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
 
         core::ptr::write_bytes(modeData as *mut u8, 0, MODE_PAGE_DATA_SIZE as usize);
 
-        let mut length: u32 = (ClassModeSense).cast()(DeviceObject, modeData as *mut u8, MODE_PAGE_DATA_SIZE, MODE_PAGE_CACHING);
+        let mut length: u32 = ((((ClassModeSense)))).cast()(DeviceObject, modeData as *mut u8, MODE_PAGE_DATA_SIZE, MODE_PAGE_CACHING);
         if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() as u32 {
-            length = (ClassModeSense).cast()(DeviceObject, modeData as *mut u8, MODE_PAGE_DATA_SIZE, MODE_PAGE_CACHING);
+            length = ((((ClassModeSense)))).cast()(DeviceObject, modeData as *mut u8, MODE_PAGE_DATA_SIZE, MODE_PAGE_CACHING);
             if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() as u32 {
                 TracePrint(
                     TRACE_LEVEL_WARNING,
@@ -877,7 +879,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
             length = (*modeData).ModeDataLength as u32 + 1;
         }
 
-        pageData = ((ClassFindModePage).cast()(modeData as *mut u8, length, MODE_PAGE_CACH).cast()ING, 1u8);
+        pageData = ((ClassFindModePage)(modeData as *mut u8, length, MODE_PAGE_CACH).cast()ING, 1u8);
         if pageData.is_null() {
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
@@ -887,12 +889,12 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
             (*writeCache).WriteCacheEnabled = WriteCacheEnableUnknown;
             (*writeCache).WriteCacheType = WriteCacheTypeUnknown;
         } else {
-            (*writeCache).WriteCacheEnabled = if (*pageData).WriteCacheEnable != 0 {
+            (*writeCache).WriteCacheEnabled = if (*pageData).WriteCacheEnable() != 0 {
                 WriteCacheEnabled
             } else {
                 WriteCacheDisabled
             };
-            (*writeCache).WriteCacheType = if (*pageData).WriteCacheEnable != 0 {
+            (*writeCache).WriteCacheType = if (*pageData).WriteCacheEnable() != 0 {
                 WriteCacheTypeWriteBack
             } else {
                 WriteCacheTypeUnknown
@@ -909,7 +911,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
 
         core::ptr::write_bytes(modeData as *mut u8, 0, MODE_PAGE_DATA_SIZE as usize);
 
-        length = (ClasspModeSense).cast()(
+        length = ((((ClasspModeSense)))).cast()(
             DeviceObject,
             modeData as *mut u8,
             MODE_PAGE_DATA_SIZE,
@@ -918,7 +920,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
         );
 
         if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() as u32 {
-            length = (ClasspModeSense).cast()(
+            length = ((((ClasspModeSense)))).cast()(
                 DeviceObject,
                 modeData as *mut u8,
                 MODE_PAGE_DATA_SIZE,
@@ -941,7 +943,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
             length = (*modeData).ModeDataLength as u32 + 1;
         }
 
-        pageData = ((ClassFindModePage).cast()(modeData as *mut u8, length, MODE_PAGE_CACH).cast()ING, 1u8);
+        pageData = ((ClassFindModePage)(modeData as *mut u8, length, MODE_PAGE_CACH).cast()ING, 1u8);
         if pageData.is_null() {
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
@@ -950,7 +952,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
             );
             (*writeCache).WriteCacheChangeable = WriteCacheChangeUnknown;
         } else {
-            (*writeCache).WriteCacheChangeable = if (*pageData).WriteCacheEnable != 0 {
+            (*writeCache).WriteCacheChangeable = if (*pageData).WriteCacheEnable() != 0 {
                 WriteCacheChangeable
             } else {
                 WriteCacheNotChangeable
@@ -1011,8 +1013,8 @@ pub unsafe extern "C" fn InterpretReadCapacity16Data(
     // NT_ASSERT omitted for translation.
 
     let logical_blocks_per_physical_block: u16 =
-        1u16 << (*ReadCapacity16Data).LogicalPerPhysicalExponent;
-    let mut lowest_aligned_block: u16 = ((*ReadCapacity16Data).LowestAlignedBlock_MSB as u16) << 8
+        1u16 << (*ReadCapacity16Data).LogicalPerPhysicalExponent();
+    let mut lowest_aligned_block: u16 = ((*ReadCapacity16Data).LowestAlignedBlock_MSB() as u16) << 8
         | (*ReadCapacity16Data).LowestAlignedBlock_LSB as u16;
 
     if lowest_aligned_block > logical_blocks_per_physical_block {
@@ -1028,8 +1030,8 @@ pub unsafe extern "C" fn InterpretReadCapacity16Data(
         (*cached_data).BytesOffsetForSectorAlignment =
             (*cached_data).BytesPerLogicalSector * lowest_aligned_block as u32;
 
-        (*cached_data).LBProvisioningEnabled = (*ReadCapacity16Data).LBPME;
-        (*cached_data).LBProvisioningReadZeros = (*ReadCapacity16Data).LBPRZ;
+        (*cached_data).LBProvisioningEnabled = (*ReadCapacity16Data).LBPME();
+        (*cached_data).LBProvisioningReadZeros = (*ReadCapacity16Data).LBPRZ();
 
         TracePrint(
             TRACE_LEVEL_INFORMATION,
@@ -1117,7 +1119,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
         SrbSetCdbLength((Srb).cast(), 16);
         let cdb: PCDB = SrbGetCdb((Srb).cast());
         (*(cdb)).READ_CAPACITY16.as_ref().OperationCode = SCSIOP_READ_CAPACITY16 as u8;
-        (*(cdb)).READ_CAPACITY16.as_ref().ServiceAction = SERVICE_ACTION_READ_CAPACITY16 as u8;
+        (*(cdb)).READ_CAPACITY16.as_ref().set_ServiceAction(SERVICE_ACTION_READ_CAPACITY16 as u8);
         (*(cdb)).READ_CAPACITY16.as_ref().AllocationLength[3] = buffer_length;
 
         status = ClassSendSrbSynchronous(
@@ -1128,7 +1130,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
             0u8, // FALSE
         );
 
-        data_transfer_length = SrbGetDataTransferLength(Srb);
+        data_transfer_length = SrbGetDataTransferLength((Srb).cast());
     }
 
     if NT_SUCCESS(status) && data_transfer_length < 16 {
@@ -1385,7 +1387,7 @@ pub unsafe extern "C" fn ClasspDeviceMediaTypeProperty(
             break 'exit;
         }
 
-        if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockDeviceCharacteristics == 1u8 {
+        if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockDeviceCharacteristics() == (1u8) as u32 {
             status = ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(fdoExtension, Srb);
         } else {
             status = STATUS_INVALID_DEVICE_REQUEST;
@@ -1485,7 +1487,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(
         );
 
         if NT_SUCCESS(status) {
-            if SrbGetDataTransferLength(srb) < 8i32 {
+            if SrbGetDataTransferLength((srb).cast()) < (8i32) as u32 {
                 status = STATUS_UNSUCCESSFUL;
             } else if (*data_buffer).PageLength != 0x3Cu8 || (*data_buffer).PageCode != (VPD_BLOCK_DEVICE_CHARACTERISTICS) as u8 {
                 status = STATUS_UNSUCCESSFUL;
@@ -1499,7 +1501,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(
                     .MediumProductType = ((*data_buffer).MediumProductType) as u32;
                 (*(*fdo_extension)
                     .FunctionSupportInfo).DeviceCharacteristicsData
-                    .NominalFormFactor = (*data_buffer).NominalFormFactor;
+                    .NominalFormFactor = (*data_buffer).NominalFormFactor();
             }
         }
     }
@@ -1563,7 +1565,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
             SupportUnknown => {
                 let mut status = ClassForwardIrpSynchronous(commonExtension, Irp);
                 if ClasspLowerLayerNotSupport(status) != 0 {
-                    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockDeviceCharacteristics == 1 {
+                    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockDeviceCharacteristics() == 1 {
                         status = ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(fdoExtension, Srb);
                     } else {
                         status = STATUS_INVALID_DEVICE_REQUEST;
@@ -1630,10 +1632,10 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
     }
 
     // Initialize defaults
-    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.ProvisioningType = PROVISIONING_TYPE_UNKNOWN;
-    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.LBPRZ = 0u8;
-    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.LBPU = 0u8;
-    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.ANC_SUP = 0u8;
+    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.set_ProvisioningType((PROVISIONING_TYPE_UNKNOWN) as u8);
+    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.set_LBPRZ(0u8);
+    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.set_LBPU(0u8);
+    (*fdo_extension.FunctionSupportInfo).LBProvisioningData.set_ANC_SUP(0u8);
     (*fdo_extension.FunctionSupportInfo).LBProvisioningData.ThresholdExponent = 0u8;
 
     let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
@@ -1657,7 +1659,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
     let mut data_transfer_length: u32 = 0;
 
     'exit: loop {
-        if (*fdo_extension.FunctionSupportInfo).ValidInquiryPages.LBProvisioning == 1u8 && !Srb.is_null() {
+        if (*fdo_extension.FunctionSupportInfo).ValidInquiryPages.LBProvisioning() == (1u8) as u32 && !Srb.is_null() {
             data_buffer = ExAllocatePoolWithTag(pool_type, (allocation_buffer_length) as usize, tag);
             if data_buffer.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1698,7 +1700,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
 
                 cdb = SrbGetCdb((Srb).cast());
                 (*cdb).CDB6INQUIRY3.as_ref().OperationCode = (SCSIOP_INQUIRY) as u8;
-                (*cdb).CDB6INQUIRY3.as_ref().EnableVitalProductData = 1;
+                (*cdb).CDB6INQUIRY3.as_ref().set_EnableVitalProductData(1);
                 (*cdb).CDB6INQUIRY3.as_ref().PageCode = (VPD_LOGICAL_BLOCK_PROVISIONING) as u8;
                 (*cdb).CDB6INQUIRY3.as_ref().AllocationLength = buffer_length;
 
@@ -1709,7 +1711,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
                     allocation_buffer_length,
                     0u8,
                 );
-                data_transfer_length = SrbGetDataTransferLength(Srb);
+                data_transfer_length = SrbGetDataTransferLength((Srb).cast());
             }
 
             // Handle STATUS_DATA_OVERRUN
@@ -1743,13 +1745,13 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
             if NT_SUCCESS(status) {
                 (*fdo_extension
                     .FunctionSupportInfo).LBProvisioningData
-                    .ProvisioningType = (*lb_provisioning_page).ProvisioningType;
-                (*fdo_extension.FunctionSupportInfo).LBProvisioningData.LBPRZ =
-                    (*lb_provisioning_page).LBPRZ;
-                (*fdo_extension.FunctionSupportInfo).LBProvisioningData.LBPU =
-                    (*lb_provisioning_page).LBPU;
-                (*fdo_extension.FunctionSupportInfo).LBProvisioningData.ANC_SUP =
-                    (*lb_provisioning_page).ANC_SUP;
+                    .set_ProvisioningType((*lb_provisioning_page).ProvisioningType());
+                (*fdo_extension.FunctionSupportInfo).LBProvisioningData.LBPRZ() =
+                    (*lb_provisioning_page).LBPRZ();
+                (*fdo_extension.FunctionSupportInfo).LBProvisioningData.LBPU() =
+                    (*lb_provisioning_page).LBPU();
+                (*fdo_extension.FunctionSupportInfo).LBProvisioningData.ANC_SUP() =
+                    (*lb_provisioning_page).ANC_SUP();
                 (*fdo_extension
                     .FunctionSupportInfo).LBProvisioningData
                     .ThresholdExponent = (*lb_provisioning_page).ThresholdExponent;
@@ -1774,11 +1776,11 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
                     ((fdo_extension.DeviceDescriptor as *const u8)
                         .add((*fdo_extension.DeviceDescriptor).ProductRevisionOffset as usize))
                         as PCSZ,
-                    (*lb_provisioning_page).ProvisioningType,
-                    (*lb_provisioning_page).LBPRZ,
-                    (*lb_provisioning_page).LBPU,
-                    (*lb_provisioning_page).ANC_SUP,
-                    (*lb_provisioning_page).ThresholdExponent,
+                    ((*lb_provisioning_page).ProvisioningType()) as i32,
+                    ((*lb_provisioning_page).LBPRZ()) as i32,
+                    ((*lb_provisioning_page).LBPU()) as i32,
+                    ((*lb_provisioning_page).ANC_SUP()) as i32,
+                    ((*lb_provisioning_page).ThresholdExponent) as i32,
                 );
             }
         } else {
@@ -1899,7 +1901,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
                     allocation_buffer_length,
                     FALSE,
                 );
-                data_transfer_length = SrbGetDataTransferLength(srb);
+                data_transfer_length = SrbGetDataTransferLength((srb).cast());
             }
 
             if status == STATUS_DATA_OVERRUN && data_transfer_length < buffer_length as u32 {
@@ -1978,13 +1980,13 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
                     ((*(*fdo_extension).DeviceDescriptor).VendorIdOffset as *const u8).add(0) as PCSZ,
                     ((*(*fdo_extension).DeviceDescriptor).ProductIdOffset as *const u8).add(0) as PCSZ,
                     ((*(*fdo_extension).DeviceDescriptor).ProductRevisionOffset as *const u8).add(0) as PCSZ,
-                    (*block_limits_data).OptimalTransferLengthGranularity,
+                    ((*block_limits_data).OptimalTransferLengthGranularity) as i32,
                     (*block_limits_data).MaximumTransferLength,
                     (*block_limits_data).OptimalTransferLength,
                     (*block_limits_data).MaxUnmapLbaCount,
                     (*block_limits_data).MaxUnmapBlockDescrCount,
                     (*block_limits_data).OptimalUnmapGranularity,
-                    (*block_limits_data).UGAVALID,
+                    ((*block_limits_data).UGAVALID) as i32,
                     (*block_limits_data).UnmapGranularityAlignment,
                 );
             }
@@ -2189,7 +2191,7 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
             &mut generationCount as *mut u32,
         );
 
-        (*lbpDescr).ThinProvisioningEnabled = ClasspIsThinProvisioned((*fdoExtension).FunctionSupportInfo);
+        (*lbpDescr).set_ThinProvisioningEnabled(ClasspIsThinProvisioned((*fdoExtension).FunctionSupportInfo));
 
         if (*fdoExtension).DiskGeometry.BytesPerSector == 0 {
             status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
@@ -2200,11 +2202,11 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
             }
         }
 
-        (*lbpDescr).ThinProvisioningReadZeros = (*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.LBPRZ;
-        (*lbpDescr).AnchorSupported = (*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.ANC_SUP;
+        (*lbpDescr).set_ThinProvisioningReadZeros((*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.LBPRZ());
+        (*lbpDescr).set_AnchorSupported((*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.ANC_SUP());
 
         if blockLimitsStatus >= 0 {
-            (*lbpDescr).UnmapGranularityAlignmentValid = blockLimitsData.UGAVALID;
+            (*lbpDescr).set_UnmapGranularityAlignmentValid(blockLimitsData.UGAVALID);
             (*lbpDescr).OptimalUnmapGranularity = (blockLimitsData.OptimalUnmapGranularity as u64) * ((*fdoExtension).DiskGeometry.BytesPerSector as u64);
             (*lbpDescr).UnmapGranularityAlignment = (blockLimitsData.UnmapGranularityAlignment as u64) * ((*fdoExtension).DiskGeometry.BytesPerSector as u64);
 
@@ -2596,10 +2598,10 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                            status);
 
                 if ClasspLowerLayerNotSupport(status) {
-                    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.LBProvisioning == 1u8 {
+                    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.LBProvisioning() == (1u8) as u32 {
                         NT_ASSERT((*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.CommandStatus != -1);
                     }
-                    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockLimits == 1u8 {
+                    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockLimits() == (1u8) as u32 {
                         NT_ASSERT((*(*fdoExtension).FunctionSupportInfo).BlockLimitsData.CommandStatus != -1);
                     }
                 } else {
@@ -2685,8 +2687,8 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                     }
 
                     if ((*dsmAttributes).Flags & DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED) == 0 {
-                        if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.LBProvisioning != 0
-                            && (*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.LBPRZ == 0
+                        if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.LBProvisioning() != 0
+                            && (*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.LBPRZ() == 0
                         {
                             TracePrint(TRACE_LEVEL_ERROR,
                                        TRACE_FLAG_IOCTL,
@@ -2760,7 +2762,7 @@ pub unsafe extern "C" fn GetLBAStatus(
 
     let cdb = SrbGetCdb((Srb).cast());
     (*cdb).GET_LBA_STATUS.as_ref().OperationCode = (SCSIOP_GET_LBA_STATUS) as u8;
-    (*cdb).GET_LBA_STATUS.as_ref().ServiceAction = SERVICE_ACTION_GET_LBA_STATUS;
+    (*cdb).GET_LBA_STATUS.as_ref().set_ServiceAction((SERVICE_ACTION_GET_LBA_STATUS) as u8);
 
     // REVERSE_BYTES_QUAD(&(cdb->GET_LBA_STATUS.StartingLBA), &StartingLBA);
     let start_be = StartingLBA.to_be_bytes();
@@ -2798,7 +2800,7 @@ pub unsafe extern "C" fn GetLBAStatus(
     );
 
     if status == STATUS_DATA_OVERRUN
-        && SrbGetDataTransferLength(Srb) < LBAStatusSize
+        && SrbGetDataTransferLength((Srb).cast()) < LBAStatusSize
     {
         status = STATUS_SUCCESS;
     }
@@ -3400,7 +3402,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningLogPage(
     SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
     SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
     SrbAssignSrbFlags((Srb).cast(), (*fdo_extension).SrbFlags);
-    (SrbSetCdbLength).cast()(Srb, core::mem::size_of::<CDB>() as u32); // matches sizeof(cdb->LOGSENSE) as CDB union defines it
+    ((((SrbSetCdbLength)))).cast()(Srb, core::mem::size_of::<CDB>() as u32); // matches sizeof(cdb->LOGSENSE) as CDB union defines it
 
     let cdb = SrbGetCdb((Srb).cast()) as *mut CDB;
     let logsense = &mut (*cdb).__bindgen_anon_3.LOGSENSE;
@@ -3419,7 +3421,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningLogPage(
         0u8,
     );
 
-    if status == STATUS_DATA_OVERRUN && SrbGetDataTransferLength(Srb) < LogPageSize {
+    if status == STATUS_DATA_OVERRUN && SrbGetDataTransferLength((Srb).cast()) < LogPageSize {
         status = STATUS_SUCCESS;
     }
 
@@ -3522,15 +3524,15 @@ pub unsafe extern "C" fn ClassInterpretLBProvisioningLogPage(
                     (*Resources).AvailableMappingResources =
                         resource_count as u64 * threshold_set_size
                             * fdo_extension.DiskGeometry.BytesPerSector as u64;
-                    (*Resources).AvailableMappingResourcesValid = 1u8; // TRUE
+                    (*Resources).set_AvailableMappingResourcesValid(1u8); // TRUE
 
                     let offset_rescount3 = core::mem::offset_of!(
                         LOG_PARAMETER_THRESHOLD_RESOURCE_COUNT,
                         ResourceCount
                     ) + 3 * core::mem::size_of::<u32>();
                     if param_length > offset_rescount3 {
-                        (*Resources).AvailableMappingResourcesScope =
-                            (*threshold_param).Scope;
+                        (*Resources).AvailableMappingResourcesScope() =
+                            (*threshold_param).Scope();
                     }
                 }
                 LOG_PAGE_LBP_PARAMETER_CODE_USED => {
@@ -3543,15 +3545,15 @@ pub unsafe extern "C" fn ClassInterpretLBProvisioningLogPage(
                     (*Resources).UsedMappingResources =
                         resource_count as u64 * threshold_set_size
                             * fdo_extension.DiskGeometry.BytesPerSector as u64;
-                    (*Resources).UsedMappingResourcesValid = 1u8; // TRUE
+                    (*Resources).set_UsedMappingResourcesValid(1u8); // TRUE
 
                     let offset_rescount3 = core::mem::offset_of!(
                         LOG_PARAMETER_THRESHOLD_RESOURCE_COUNT,
                         ResourceCount
                     ) + 3 * core::mem::size_of::<u32>();
                     if param_length > offset_rescount3 {
-                        (*Resources).UsedMappingResourcesScope =
-                            (*threshold_param).Scope;
+                        (*Resources).UsedMappingResourcesScope() =
+                            (*threshold_param).Scope();
                     }
                 }
                 _ => {}
@@ -3577,7 +3579,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningResources(
     let logPage: *mut _LOG_PAGE_LOGICAL_BLOCK_PROVISIONING;
     let status: NTSTATUS;
 
-    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.LBProvisioning == 0u8 {
+    if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.LBProvisioning() == (0u8) as u32 {
         TracePrint(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
@@ -4265,7 +4267,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
             return status;
         }
         (*cdb).PERSISTENT_RESERVE_IN.as_ref().OperationCode = (SCSIOP_PERSISTENT_RESERVE_IN) as u8;
-        (*cdb).PERSISTENT_RESERVE_IN.as_ref().ServiceAction = (*prCommand).PR_IN.ServiceAction;
+        (*cdb).PERSISTENT_RESERVE_IN.as_ref().set_ServiceAction((*prCommand).PR_IN.ServiceAction);
         REVERSE_BYTES_SHORT(
             core::ptr::addr_of_mut!((*cdb).PERSISTENT_RESERVE_IN.as_ref().AllocationLength),
             core::ptr::addr_of_mut!((*prCommand).PR_IN.AllocationLength),
@@ -4306,9 +4308,9 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
             return status;
         }
         (*cdb).PERSISTENT_RESERVE_OUT.as_ref().OperationCode = (SCSIOP_PERSISTENT_RESERVE_OUT) as u8;
-        (*cdb).PERSISTENT_RESERVE_OUT.as_ref().ServiceAction = (*prCommand).PR_OUT.ServiceAction;
-        (*cdb).PERSISTENT_RESERVE_OUT.as_ref().Scope = (*prCommand).PR_OUT.Scope;
-        (*cdb).PERSISTENT_RESERVE_OUT.as_ref().Type = (*prCommand).PR_OUT.Type;
+        (*cdb).PERSISTENT_RESERVE_OUT.as_ref().set_ServiceAction((*prCommand).PR_OUT.ServiceAction);
+        (*cdb).PERSISTENT_RESERVE_OUT.as_ref().set_Scope((*prCommand).PR_OUT.Scope);
+        (*cdb).PERSISTENT_RESERVE_OUT.as_ref().set_Type((*prCommand).PR_OUT.Type);
         (*cdb).PERSISTENT_RESERVE_OUT.as_ref().ParameterListLength[1] = core::mem::size_of::<PRO_PARAMETER_LIST>() as UCHAR;
         core::ptr::copy_nonoverlapping(
             (*prCommand).PR_OUT.ParameterList as *const _,
@@ -4890,7 +4892,7 @@ pub unsafe extern "C" fn ClasspGetTokenOperationDescriptorLimits(
     );
 
     NT_ASSERT(
-        ((*(*fdoExt).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits != 0
+        ((*(*fdoExt).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits() != 0
             && ((*(*fdoExt).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus as i32) >= 0) as u8 != 0,
     );
 
@@ -5194,16 +5196,16 @@ pub unsafe extern "C" fn ClasspZeroQERR(DeviceObject: PDEVICE_OBJECT) {
                 TRACE_FLAG_SCSI,
                 b"ClasspZeroQERR (%p): Current settings: QERR = %u, TST = %u, TAS = %u.\n\0".as_ptr() as PCHAR,
                 DeviceObject,
-                (*pageData).QERR,
-                (*pageData).TST,
-                (*pageData).TAS,
+                ((*pageData).QERR()) as i32,
+                ((*pageData).TST()) as i32,
+                ((*pageData).TAS()) as i32,
             );
 
-            if (*pageData).QERR != 0 {
+            if (*pageData).QERR() != 0 {
                 let status: NTSTATUS;
                 let pageSavable: u8 = 0;
-                (*pageData).QERR = 0;
-                let pageSavable = (*pageData).PageSavable;
+                (*pageData).set_QERR(0);
+                let pageSavable = (*pageData).PageSavable();
                 status = ClasspModeSelect(
                     DeviceObject,
                     modeData as PCHAR,
@@ -5235,7 +5237,7 @@ pub unsafe extern "C" fn ClasspPowerActivateDevice(DeviceObject: *mut _DEVICE_OB
     let fdoExtension = (*DeviceObject).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
 
     NT_ASSERT((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0u8);
-    NT_ASSERT((*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled != 0u8);
+    NT_ASSERT((*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != (0u8) as u32);
 
     let mut event: KEVENT = core::mem::zeroed();
     let mut ioStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -5282,7 +5284,7 @@ pub unsafe extern "C" fn ClasspPowerIdleDevice(DeviceObject: PDEVICE_OBJECT) -> 
     let fdo_extension = (*DeviceObject).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
 
     assert!((*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0);
-    assert!((*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled != 0);
+    assert!((*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0);
 
     KeInitializeEvent(core::ptr::addr_of_mut!(event), 1, 0u8);
 
@@ -5301,7 +5303,7 @@ pub unsafe extern "C" fn ClasspPowerIdleDevice(DeviceObject: PDEVICE_OBJECT) -> 
     if !irp.is_null() {
         status = IoCallDriver((*fdo_extension).LowerPdo, irp);
         if status == STATUS_PENDING {
-            (KeWaitForSingleObject).cast()(
+            ((((KeWaitForSingleObject)))).cast()(
                 core::ptr::addr_of_mut!(event),
                 _KWAIT_REASON_Executive,
                 0i32,
@@ -5774,7 +5776,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
 
         IoMarkIrpPending(Irp);
 
-        (SrbSetCdbLength).cast()(Srb, CDB10GENERIC_LENGTH);
+        ((((SrbSetCdbLength)))).cast()(Srb, CDB10GENERIC_LENGTH);
         cdb = SrbGetCdb((Srb).cast());
         let cdb_anon = &mut (*cdb).__bindgen_anon_1;
         cdb_anon.WRITE_BUFFER.OperationCode = SCSIOP_WRITE_DATA_BUFF;
@@ -5946,7 +5948,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
         KeReleaseInStackQueuedSpinLock(core::ptr::addr_of_mut!(lock_handle));
         lock_held = 0;
 
-        (SrbSetCdbLength).cast()(srb, CDB10GENERIC_LENGTH);
+        ((((SrbSetCdbLength)))).cast()(srb, CDB10GENERIC_LENGTH);
         let cdb = SrbGetCdb((srb).cast());
         (*cdb).WRITE_BUFFER.OperationCode = SCSIOP_WRITE_DATA_BUFF;
         (*cdb).WRITE_BUFFER.Mode = SCSI_WRITE_BUFFER_MODE_ACTIVATE_DEFERRED_MICROCODE;
@@ -5983,14 +5985,14 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
 #[no_mangle]
 pub unsafe extern "C" fn ClasspIsThinProvisioningError(Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN {
     if ((*Srb).SrbStatus & (SRB_STATUS_AUTOSENSE_VALID) as u8) != 0 {
-        let senseBuffer = SrbGetSenseInfoBuffer(Srb);
+        let senseBuffer = SrbGetSenseInfoBuffer((Srb).cast());
         if !senseBuffer.is_null() {
             let mut senseKey: UCHAR = 0;
             let mut addlSenseCode: UCHAR = 0;
             let mut addlSenseCodeQual: UCHAR = 0;
             let validSense = ScsiGetSenseKeyAndCodes(
                 senseBuffer,
-                SrbGetSenseInfoBufferLength(Srb),
+                SrbGetSenseInfoBufferLength((Srb).cast()),
                 SCSI_SENSE_OPTIONS_NONE,
                 &mut senseKey,
                 &mut addlSenseCode,

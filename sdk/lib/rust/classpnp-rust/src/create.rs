@@ -298,7 +298,7 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(FsContext: PFILE_OBJECT_EXT
             }
 
             (*cdb).MEDIA_REMOVAL.as_ref().OperationCode = (SCSIOP_MEDIUM_REMOVAL) as u8;
-            (*cdb).MEDIA_REMOVAL.as_ref().Prevent = 0u8;
+            (*cdb).MEDIA_REMOVAL.as_ref().set_Prevent(0u8);
 
             let status = ClassSendSrbSynchronous(
                 (*fdoExtension).DeviceObject,
@@ -347,7 +347,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
     let mut countChanged: BOOLEAN = 0u8;
 
     KeEnterCriticalRegion();
-    status = (KeWaitForSingleObject).cast()(
+    status = ((((KeWaitForSingleObject)))).cast()(
         core::ptr::addr_of_mut!((*FdoExtension).EjectSynchronizationEvent),
         _KWAIT_REASON_UserRequest,
         0i32,
@@ -463,7 +463,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
             cdb = SrbGetCdb((srb).cast());
             // NT_ASSERT(cdb != NULL);
             (*cdb).MEDIA_REMOVAL.as_ref().OperationCode = (SCSIOP_MEDIUM_REMOVAL) as u8;
-            (*cdb).MEDIA_REMOVAL.as_ref().Prevent = Lock;
+            (*cdb).MEDIA_REMOVAL.as_ref().set_Prevent(Lock);
             SrbSetTimeOutValue((srb).cast(), (*FdoExtension).TimeOutValue);
 
             status = ClassSendSrbSynchronous(
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
         (*FdoExtension).LockCount,
     );
 
-    (KeSetEvent).cast()(
+    ((((KeSetEvent)))).cast()(
         core::ptr::addr_of_mut!((*FdoExtension).EjectSynchronizationEvent),
         IO_NO_INCREMENT,
         0u8,

@@ -33,6 +33,8 @@ use ntkrnl_sys::ddk::{ExFreePool};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::guid::{GUID_CONSOLE_DISPLAY_STATE, GUID_IO_DEVICE_BECOMING_READY, GUID_IO_DEVICE_EXTERNAL_REQUEST, GUID_IO_MEDIA_ARRIVAL, GUID_IO_MEDIA_EJECT_REQUEST, GUID_IO_MEDIA_REMOVAL};
 use crate::types::{ScreenStateNotificationHandle};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbSetScsiStatus};
 
 extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
@@ -1065,7 +1067,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
             (*cdb).CDB6GENERIC.as_ref().OperationCode = SCSIOP_TEST_UNIT_READY as UCHAR;
         } else {
             (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().OperationCode = SCSIOP_GET_EVENT_STATUS as UCHAR;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().Immediate = 1;
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().set_Immediate(1);
             (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().EventListLength[0] =
                 ((*Info).Gesn.BufferSize >> 8) as UCHAR;
             (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().EventListLength[1] =
@@ -1571,7 +1573,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                         // SRB_STATUS macro
                         let srbStatus = (*Info).MediaChangeSrb.Srb.as_ref().SrbStatus as i32;
                         if (srbStatus & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as i32) != (SRB_STATUS_SUCCESS) as i32 {
-                            (InterpretSenseInfoWithoutHistory).cast()(
+                            ((((InterpretSenseInfoWithoutHistory)))).cast()(
                                 (*FdoExtension).DeviceObject,
                                 irp,
                                 &raw mut (*Info).MediaChangeSrb.Srb,
@@ -1949,7 +1951,7 @@ pub unsafe extern "C" fn ClasspMediaChangeDeviceInstanceOverride(
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
-            KeGetCurrentIrql(),
+            (KeGetCurrentIrql()) as i32,
         );
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
@@ -2446,7 +2448,7 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSZ,
-            KeGetCurrentIrql(),
+            (KeGetCurrentIrql()) as i32,
         );
         // NT_ASSERT(FALSE)
         DbgPrint(
@@ -2626,7 +2628,7 @@ pub unsafe extern "C" fn ClasspMcnControl(
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
-            KeGetCurrentIrql(),
+            (KeGetCurrentIrql()) as i32,
         );
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
@@ -2826,7 +2828,7 @@ pub unsafe extern "C" fn ClasspInitializeTimer(
 #[no_mangle]
 pub unsafe extern "C" fn ClasspDeleteTimer(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) {
     let mut fdoData: PCLASS_PRIVATE_FDO_DATA = core::ptr::null_mut();
-    if (*FdoExtension).__bindgen_anon_1.CommonExtension.IsFdo() != 0u8 {
+    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo() != 0u8 {
         fdoData = (*FdoExtension).PrivateFdoData;
         if !fdoData.is_null() {
             if (*fdoData).TickTimer != core::ptr::null_mut() {
@@ -3235,7 +3237,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 
     status = STATUS_SUCCESS;
 
-    (KeSetEvent).cast()(
+    ((((KeSetEvent)))).cast()(
         core::ptr::addr_of_mut!((*info).Event),
         IO_NO_INCREMENT,
         0u8,

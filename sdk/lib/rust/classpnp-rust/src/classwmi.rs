@@ -23,6 +23,8 @@ use ntkrnl_sys::ddk::{_GUID};
 use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{ExFreePool, KeGetCurrentIrql, KeQuerySystemTime};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PWMIREGINFO, PWMIREGINFOW, PWNODE_ALL_DATA, PWNODE_HEADER, PWNODE_METHOD_ITEM, PWNODE_SINGLE_INSTANCE, PWNODE_SINGLE_ITEM, WMIREGGUIDW, WMIREGINFO, WNODE_ALL_DATA, WNODE_METHOD_ITEM, WNODE_SINGLE_INSTANCE, WNODE_TOO_SMALL};
 
 extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
@@ -152,7 +154,7 @@ pub unsafe extern "system" fn ClassSystemControl(
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
-            KeGetCurrentIrql(),
+            (KeGetCurrentIrql()) as i32,
         );
         DbgPrint(
             b"Assertion failed at %s(%d): %s\n\0" as *const u8 as *const i8,
@@ -740,7 +742,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
             if Status >= 0 {
                 retSize = bufferNeeded;
                 (*wnode).WnodeHeader.BufferSize = bufferNeeded;
-                KeQuerySystemTime(&raw mut (*wnode).WnodeHeader.TimeStamp);
+                KeQuerySystemTime((&raw mut (*wnode).WnodeHeader.__bindgen_anon_2.TimeStamp).cast());
                 (*wnode).WnodeHeader.Flags |= WNODE_FLAG_FIXED_INSTANCE_SIZE as ULONG;
                 (*wnode).__bindgen_anon_1.FixedInstanceSize = BufferUsed;
                 (*wnode).InstanceCount = 1;
@@ -764,7 +766,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
             if Status >= 0 {
                 retSize = bufferNeeded;
                 (*wnode).WnodeHeader.BufferSize = bufferNeeded;
-                KeQuerySystemTime(&raw mut (*wnode).WnodeHeader.TimeStamp);
+                KeQuerySystemTime((&raw mut (*wnode).WnodeHeader.__bindgen_anon_2.TimeStamp).cast());
                 (*wnode).SizeDataBlock = BufferUsed;
             } else if Status == STATUS_BUFFER_TOO_SMALL {
                 let wnodeTooSmall = wnode as *mut WNODE_TOO_SMALL;
@@ -785,7 +787,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
             if Status >= 0 {
                 retSize = bufferNeeded;
                 (*wnode).WnodeHeader.BufferSize = bufferNeeded;
-                KeQuerySystemTime(&raw mut (*wnode).WnodeHeader.TimeStamp);
+                KeQuerySystemTime((&raw mut (*wnode).WnodeHeader.__bindgen_anon_2.TimeStamp).cast());
                 (*wnode).SizeDataBlock = BufferUsed;
             } else if Status == STATUS_BUFFER_TOO_SMALL {
                 let wnodeTooSmall = wnode as *mut WNODE_TOO_SMALL;

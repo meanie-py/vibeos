@@ -1354,6 +1354,51 @@ pub const FIFTY_MS_IN_100NS_UNITS: u32 = 5000;
 pub const TRACKING_FORWARD_PROGRESS_PATH1: u32 = 1;
 pub const TRACKING_FORWARD_PROGRESS_PATH2: u32 = 2;
 pub const TRACKING_FORWARD_PROGRESS_PATH3: u32 = 4;
+pub const WNODE_FLAG_ALL_DATA: u32 = 1;
+pub const WNODE_FLAG_SINGLE_INSTANCE: u32 = 2;
+pub const WNODE_FLAG_SINGLE_ITEM: u32 = 4;
+pub const WNODE_FLAG_EVENT_ITEM: u32 = 8;
+pub const WNODE_FLAG_FIXED_INSTANCE_SIZE: u32 = 16;
+pub const WNODE_FLAG_TOO_SMALL: u32 = 32;
+pub const WNODE_FLAG_INSTANCES_SAME: u32 = 64;
+pub const WNODE_FLAG_STATIC_INSTANCE_NAMES: u32 = 128;
+pub const WNODE_FLAG_INTERNAL: u32 = 256;
+pub const WNODE_FLAG_USE_TIMESTAMP: u32 = 512;
+pub const WNODE_FLAG_PERSIST_EVENT: u32 = 1024;
+pub const WNODE_FLAG_EVENT_REFERENCE: u32 = 8192;
+pub const WNODE_FLAG_ANSI_INSTANCENAMES: u32 = 16384;
+pub const WNODE_FLAG_METHOD_ITEM: u32 = 32768;
+pub const WNODE_FLAG_PDO_INSTANCE_NAMES: u32 = 65536;
+pub const WNODE_FLAG_TRACED_GUID: u32 = 131072;
+pub const WNODE_FLAG_LOG_WNODE: u32 = 262144;
+pub const WNODE_FLAG_USE_GUID_PTR: u32 = 524288;
+pub const WNODE_FLAG_USE_MOF_PTR: u32 = 1048576;
+pub const WNODE_FLAG_NO_HEADER: u32 = 2097152;
+pub const WNODE_FLAG_SEVERITY_MASK: u32 = 4278190080;
+pub const WMIREG_FLAG_EXPENSIVE: u32 = 1;
+pub const WMIREG_FLAG_INSTANCE_LIST: u32 = 4;
+pub const WMIREG_FLAG_INSTANCE_BASENAME: u32 = 8;
+pub const WMIREG_FLAG_INSTANCE_PDO: u32 = 32;
+pub const WMIREG_FLAG_REMOVE_GUID: u32 = 65536;
+pub const WMIREG_FLAG_RESERVED1: u32 = 131072;
+pub const WMIREG_FLAG_RESERVED2: u32 = 262144;
+pub const WMIREG_FLAG_TRACED_GUID: u32 = 524288;
+pub const WMIREG_FLAG_TRACE_CONTROL_GUID: u32 = 4096;
+pub const WMIREG_FLAG_EVENT_ONLY_GUID: u32 = 64;
+pub const WMIGUID_QUERY: u32 = 1;
+pub const WMIGUID_SET: u32 = 2;
+pub const WMIGUID_NOTIFICATION: u32 = 4;
+pub const WMIGUID_READ_DESCRIPTION: u32 = 8;
+pub const WMIGUID_EXECUTE: u32 = 16;
+pub const TRACELOG_CREATE_REALTIME: u32 = 32;
+pub const TRACELOG_CREATE_ONDISK: u32 = 64;
+pub const TRACELOG_GUID_ENABLE: u32 = 128;
+pub const TRACELOG_ACCESS_KERNEL_LOGGER: u32 = 256;
+pub const TRACELOG_LOG_EVENT: u32 = 512;
+pub const TRACELOG_CREATE_INPROC: u32 = 512;
+pub const TRACELOG_ACCESS_REALTIME: u32 = 1024;
+pub const TRACELOG_REGISTER_GUIDS: u32 = 2048;
+pub const WMIGUID_ALL_ACCESS: u32 = 1183743;
 #[repr(C)]
 pub struct _DISPATCHER_HEADER__bindgen_ty_1__bindgen_ty_1__bindgen_ty_3__bindgen_ty_2 {
     pub DebugActive: __BindgenUnionField<BOOLEAN>,
@@ -42969,3 +43014,136 @@ unsafe extern "C" {
         Srb: PSCSI_REQUEST_BLOCK,
     ) -> NTSTATUS;
 }
+#[repr(C)]
+pub struct _WNODE_HEADER {
+    pub BufferSize: ULONG,
+    pub ProviderId: ULONG,
+    pub __bindgen_anon_1: _WNODE_HEADER__bindgen_ty_1,
+    pub __bindgen_anon_2: _WNODE_HEADER__bindgen_ty_2,
+    pub Guid: GUID,
+    pub ClientContext: ULONG,
+    pub Flags: ULONG,
+}
+#[repr(C)]
+pub struct _WNODE_HEADER__bindgen_ty_1 {
+    pub HistoricalContext: __BindgenUnionField<ULONG64>,
+    pub __bindgen_anon_1: __BindgenUnionField<_WNODE_HEADER__bindgen_ty_1__bindgen_ty_1>,
+    pub bindgen_union_field: u64,
+}
+#[repr(C)]
+pub struct _WNODE_HEADER__bindgen_ty_1__bindgen_ty_1 {
+    pub Version: ULONG,
+    pub Linkage: ULONG,
+}
+#[repr(C)]
+pub struct _WNODE_HEADER__bindgen_ty_2 {
+    pub CountLost: __BindgenUnionField<ULONG>,
+    pub KernelHandle: __BindgenUnionField<HANDLE>,
+    pub TimeStamp: __BindgenUnionField<LARGE_INTEGER>,
+    pub bindgen_union_field: u64,
+}
+pub type WNODE_HEADER = _WNODE_HEADER;
+pub type PWNODE_HEADER = *mut _WNODE_HEADER;
+#[repr(C)]
+pub struct tagWNODE_TOO_SMALL {
+    pub WnodeHeader: _WNODE_HEADER,
+    pub SizeNeeded: ULONG,
+}
+pub type WNODE_TOO_SMALL = tagWNODE_TOO_SMALL;
+pub type PWNODE_TOO_SMALL = *mut tagWNODE_TOO_SMALL;
+#[repr(C)]
+pub struct tagWNODE_SINGLE_INSTANCE {
+    pub WnodeHeader: _WNODE_HEADER,
+    pub OffsetInstanceName: ULONG,
+    pub InstanceIndex: ULONG,
+    pub DataBlockOffset: ULONG,
+    pub SizeDataBlock: ULONG,
+    pub VariableData: __IncompleteArrayField<UCHAR>,
+}
+pub type WNODE_SINGLE_INSTANCE = tagWNODE_SINGLE_INSTANCE;
+pub type PWNODE_SINGLE_INSTANCE = *mut tagWNODE_SINGLE_INSTANCE;
+#[repr(C)]
+pub struct WMIREGGUIDW {
+    pub Guid: GUID,
+    pub Flags: ULONG,
+    pub InstanceCount: ULONG,
+    pub __bindgen_anon_1: WMIREGGUIDW__bindgen_ty_1,
+}
+#[repr(C)]
+pub struct WMIREGGUIDW__bindgen_ty_1 {
+    pub InstanceNameList: __BindgenUnionField<ULONG>,
+    pub BaseNameOffset: __BindgenUnionField<ULONG>,
+    pub Pdo: __BindgenUnionField<ULONG_PTR>,
+    pub InstanceInfo: __BindgenUnionField<ULONG_PTR>,
+    pub bindgen_union_field: u64,
+}
+pub type PWMIREGGUIDW = *mut WMIREGGUIDW;
+#[repr(C)]
+pub struct WMIREGINFOW {
+    pub BufferSize: ULONG,
+    pub NextWmiRegInfo: ULONG,
+    pub RegistryPath: ULONG,
+    pub MofResourceName: ULONG,
+    pub GuidCount: ULONG,
+    pub WmiRegGuid: __IncompleteArrayField<WMIREGGUIDW>,
+}
+pub type PWMIREGINFOW = *mut WMIREGINFOW;
+pub type WMIREGINFO = WMIREGINFOW;
+pub type PWMIREGINFO = PWMIREGINFOW;
+#[repr(C)]
+pub struct OFFSETINSTANCEDATAANDLENGTH {
+    pub OffsetInstanceData: ULONG,
+    pub LengthInstanceData: ULONG,
+}
+pub type POFFSETINSTANCEDATAANDLENGTH = *mut OFFSETINSTANCEDATAANDLENGTH;
+#[repr(C)]
+pub struct tagWNODE_ALL_DATA {
+    pub WnodeHeader: _WNODE_HEADER,
+    pub DataBlockOffset: ULONG,
+    pub InstanceCount: ULONG,
+    pub OffsetInstanceNameOffsets: ULONG,
+    pub __bindgen_anon_1: tagWNODE_ALL_DATA__bindgen_ty_1,
+}
+#[repr(C)]
+pub struct tagWNODE_ALL_DATA__bindgen_ty_1 {
+    pub FixedInstanceSize: __BindgenUnionField<ULONG>,
+    pub OffsetInstanceDataAndLength: __BindgenUnionField<[OFFSETINSTANCEDATAANDLENGTH; 0usize]>,
+    pub bindgen_union_field: u32,
+}
+pub type WNODE_ALL_DATA = tagWNODE_ALL_DATA;
+pub type PWNODE_ALL_DATA = *mut tagWNODE_ALL_DATA;
+#[repr(C)]
+pub struct tagWNODE_SINGLE_ITEM {
+    pub WnodeHeader: _WNODE_HEADER,
+    pub OffsetInstanceName: ULONG,
+    pub InstanceIndex: ULONG,
+    pub ItemId: ULONG,
+    pub DataBlockOffset: ULONG,
+    pub SizeDataItem: ULONG,
+    pub VariableData: __IncompleteArrayField<UCHAR>,
+}
+pub type WNODE_SINGLE_ITEM = tagWNODE_SINGLE_ITEM;
+pub type PWNODE_SINGLE_ITEM = *mut tagWNODE_SINGLE_ITEM;
+#[repr(C)]
+pub struct tagWNODE_METHOD_ITEM {
+    pub WnodeHeader: _WNODE_HEADER,
+    pub OffsetInstanceName: ULONG,
+    pub InstanceIndex: ULONG,
+    pub MethodId: ULONG,
+    pub DataBlockOffset: ULONG,
+    pub SizeDataBlock: ULONG,
+    pub VariableData: __IncompleteArrayField<UCHAR>,
+}
+pub type WNODE_METHOD_ITEM = tagWNODE_METHOD_ITEM;
+pub type PWNODE_METHOD_ITEM = *mut tagWNODE_METHOD_ITEM;
+pub const WMIDPREQUESTCODE_WMI_GET_ALL_DATA: WMIDPREQUESTCODE = 0;
+pub const WMIDPREQUESTCODE_WMI_GET_SINGLE_INSTANCE: WMIDPREQUESTCODE = 1;
+pub const WMIDPREQUESTCODE_WMI_SET_SINGLE_INSTANCE: WMIDPREQUESTCODE = 2;
+pub const WMIDPREQUESTCODE_WMI_SET_SINGLE_ITEM: WMIDPREQUESTCODE = 3;
+pub const WMIDPREQUESTCODE_WMI_ENABLE_EVENTS: WMIDPREQUESTCODE = 4;
+pub const WMIDPREQUESTCODE_WMI_DISABLE_EVENTS: WMIDPREQUESTCODE = 5;
+pub const WMIDPREQUESTCODE_WMI_ENABLE_COLLECTION: WMIDPREQUESTCODE = 6;
+pub const WMIDPREQUESTCODE_WMI_DISABLE_COLLECTION: WMIDPREQUESTCODE = 7;
+pub const WMIDPREQUESTCODE_WMI_REGINFO: WMIDPREQUESTCODE = 8;
+pub const WMIDPREQUESTCODE_WMI_EXECUTE_METHOD: WMIDPREQUESTCODE = 9;
+pub type WMIDPREQUESTCODE = ::core::ffi::c_uint;

@@ -29,6 +29,8 @@ use ntkrnl_sys::ddk::{ExFreePool};
 use crate::types::{ClassMaxInterleavePerCriticalIo};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_SCSI_REQUEST_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::srblib::{SrbGetDataBuffer, SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbSetQueueSortKey, SrbSetScsiStatus};
 
 extern "C" {
     fn KeGetCurrentIrql() -> KIRQL;
@@ -959,7 +961,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     {
         (*pCdb)
             .CDB10
-            .set_ForceUnitAccess((*fdoExt).CdbForceUnitAccess as UCHAR);
+            .as_mut().set_ForceUnitAccess((*fdoExt).CdbForceUnitAccess as UCHAR);
     } else {
         SrbSetSrbFlags(
             (*Pkt).Srb as PVOID,
@@ -979,7 +981,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
         DbgLogFlushInfo(
             fdoData,
             TRUE as BOOLEAN,
-            (*pCdb).CDB10.ForceUnitAccess() as BOOLEAN,
+            (*pCdb).CDB10.as_ref().ForceUnitAccess() as BOOLEAN,
             FALSE as BOOLEAN,
         );
     } else {
@@ -1427,7 +1429,7 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
         (*pCdb).MEDIA_REMOVAL.as_ref().OperationCode = SCSIOP_MEDIUM_REMOVAL as UCHAR;
         (*pCdb)
             .MEDIA_REMOVAL
-            .set_Prevent(PreventMediaRemoval as UCHAR as UCHAR);
+            .as_mut().set_Prevent(PreventMediaRemoval as UCHAR as UCHAR);
     }
     (*Pkt).BufPtrCopy = ::core::ptr::null_mut::<::core::ffi::c_uchar>();
     (*Pkt).BufLenCopy = 0 as ULONG;
@@ -1484,9 +1486,9 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
     pCdb = SrbGetCdb(((*Pkt).Srb).cast());
     if !pCdb.is_null() {
         (*pCdb).MODE_SENSE.as_ref().OperationCode = SCSIOP_MODE_SENSE;
-        (*pCdb).MODE_SENSE.as_ref().PageCode = PageMode;
+        (*pCdb).MODE_SENSE.as_ref().set_PageCode(PageMode);
         (*pCdb).MODE_SENSE.as_ref().SubPageCode = SubPage;
-        (*pCdb).MODE_SENSE.as_ref().Pc = PageControl;
+        (*pCdb).MODE_SENSE.as_ref().set_Pc(PageControl);
         (*pCdb).MODE_SENSE.as_ref().AllocationLength = ModeSenseBufferLen;
     }
 
@@ -1553,8 +1555,8 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
     pCdb = SrbGetCdb((*Pkt).Srb as PVOID);
     if !pCdb.is_null() {
         (*pCdb).MODE_SELECT.as_ref().OperationCode = SCSIOP_MODE_SELECT as u8;
-        (*pCdb).MODE_SELECT.set_SPBit(SavePages as u8);
-        (*pCdb).MODE_SELECT.set_PFBit(1u8);
+        (*pCdb).MODE_SELECT.as_mut().set_SPBit(SavePages as u8);
+        (*pCdb).MODE_SELECT.as_mut().set_PFBit(1u8);
         (*pCdb).MODE_SELECT.as_ref().ParameterListLength = ModeSelectBufferLen;
     }
     (*Pkt).BufPtrCopy = ModeSelectBuffer as PUCHAR;
@@ -1672,7 +1674,7 @@ pub unsafe extern "system" fn CleanupTransferPacketToWorkingSetSizeWorker(
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const u8,
-            KeGetCurrentIrql(),
+            (KeGetCurrentIrql()) as i32,
         );
         // ASSERT always fires (c2rust pattern: if (0 == 0) which is always true)
         __int2c();
@@ -1806,7 +1808,7 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     SrbSetRequestAttribute(((*Pkt).Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
     SrbSetCdbLength(((*Pkt).Srb).cast(), 16);
     SrbSetOriginalRequest(((*Pkt).Srb).cast(), (*Pkt).Irp);
-    (SrbSetSenseInfoBuffer).cast()(
+    ((((SrbSetSenseInfoBuffer)))).cast()(
         (*Pkt).Srb,
         core::ptr::addr_of_mut!((*Pkt).SrbErrorSenseData) as *mut u8,
     );
@@ -1830,7 +1832,7 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
         let mut list_identifier = ListIdentifier;
 
         (*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().OperationCode = (SCSIOP_RECEIVE_ROD_TOKEN_INFORMATION) as u8;
-        (*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().ServiceAction = SERVICE_ACTION_RECEIVE_TOKEN_INFORMATION;
+        (*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().set_ServiceAction((SERVICE_ACTION_RECEIVE_TOKEN_INFORMATION) as u8);
 
         REVERSE_BYTES(
             core::ptr::addr_of_mut!((*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().AllocationLength) as *mut core::ffi::c_void,

@@ -29,6 +29,8 @@ use crate::guid::{GUID_CONSOLE_DISPLAY_STATE, GUID_DISK_IDLE_TIMEOUT};
 use crate::types::{ClasspScreenOff, DiskIdleTimeoutInMS, IdlePowerFDOList, IdlePowerFDOListMutex, PowerSettingNotificationHandle};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_SCSI_REQUEST_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbSetScsiStatus};
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -136,11 +138,11 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
         DbgPrint(b"Assertion: !(srbFlags & SRB_FLAGS_PORT_DRIVER_ALLOCSENSE)\n\0".as_ptr() as PCSTR);
         __int2c();
     }
-    if (*PowerContext).Options.PowerDown != FALSE {
+    if (*PowerContext).Options.PowerDown() != (FALSE) as u32 {
         DbgPrint(b"Assertion: PowerContext->Options.PowerDown == FALSE\n\0".as_ptr() as PCSTR);
         __int2c();
     }
-    if (*PowerContext).Options.HandleSpinUp == FALSE {
+    if (*PowerContext).Options.HandleSpinUp() == (FALSE) as u32 {
         DbgPrint(b"Assertion: PowerContext->Options.HandleSpinUp == TRUE\n\0".as_ptr() as PCSTR);
         __int2c();
     }
@@ -158,7 +160,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
             PowerUpDeviceLocked => {
                 TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tPreviously sent power lock\n\0".as_ptr() as PCCHAR, Irp);
                 IoCopyCurrentIrpStackLocationToNext(OriginalIrp);
-                if (*PowerContext).Options.LockQueue == TRUE && !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
+                if (*PowerContext).Options.LockQueue() == (TRUE) as u32 && !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tIrp status was %lx\n\0".as_ptr() as PCCHAR, Irp, (*Irp).IoStatus.__bindgen_anon_1.Status);
                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tSrb status was %lx\n\0".as_ptr() as PCCHAR, Irp, (*srbHeader).SrbStatus as i32);
                     IoSetCompletionRoutine(
@@ -172,7 +174,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     PoCallDriver((*commonExtension).LowerDeviceObject, OriginalIrp);
                     return STATUS_MORE_PROCESSING_REQUIRED;
                 } else {
-                    (*PowerContext).QueueLocked = (*PowerContext).Options.LockQueue;
+                    (*PowerContext).QueueLocked = ((*PowerContext).Options.LockQueue()) as u8;
                 }
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_SUPPORTED;
                 (*PowerContext).PowerChangeState.PowerUp = PowerUpDeviceLocked;
@@ -263,14 +265,14 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(srbHeader as PVOID,
                         (SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_AUTOSENSE | SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE));
-                    if (*PowerContext).Options.LockQueue != 0 {
+                    if (*PowerContext).Options.LockQueue() != 0 {
                         SrbSetSrbFlags(srbHeader as PVOID, SRB_FLAGS_BYPASS_LOCKED_QUEUE);
                     }
                     SrbSetCdbLength(srbHeader as PVOID, 6);
                     cdb = SrbGetCdb(srbHeader as PVOID);
                     core::ptr::write_bytes(cdb as *mut u8, 0, core::mem::size_of::<_CDB>());
                     (*cdb).START_STOP.as_ref().OperationCode = SCSIOP_START_STOP_UNIT as u8;
-                    (*cdb).START_STOP.as_ref().Start = 1;
+                    (*cdb).START_STOP.as_ref().set_Start(1);
 
                     (*PowerContext).PowerChangeState.PowerUp = PowerUpDeviceOn;
                     IoSetCompletionRoutine(
@@ -478,8 +480,8 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
         srbFlags & SRB_FLAGS_PORT_DRIVER_ALLOCSENSE == 0,
         "!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE)"
     );
-    assert!((*PowerContext).Options.PowerDown == TRUE, "PowerContext->Options.PowerDown == TRUE");
-    assert!((*PowerContext).Options.HandleSpinDown != 0, "PowerContext->Options.HandleSpinDown");
+    assert!((*PowerContext).Options.PowerDown() == (TRUE) as u32, "PowerContext->Options.PowerDown == TRUE");
+    assert!((*PowerContext).Options.HandleSpinDown() != 0, "PowerContext->Options.HandleSpinDown");
 
     if Irp == OriginalIrp && (*Irp).PendingReturned != 0 {
         IoMarkIrpPending(Irp);
@@ -498,7 +500,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     Irp,
                 );
 
-                if (*PowerContext).Options.LockQueue == TRUE && !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
+                if (*PowerContext).Options.LockQueue() == (TRUE) as u32 && !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
@@ -535,7 +537,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     PoCallDriver(commonExtension.LowerDeviceObject, OriginalIrp);
                     return STATUS_MORE_PROCESSING_REQUIRED;
                 } else {
-                    (*PowerContext).QueueLocked = (*PowerContext).Options.LockQueue as BOOLEAN;
+                    (*PowerContext).QueueLocked = (*PowerContext).Options.LockQueue() as BOOLEAN;
                     fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = 0;
                     (*PowerContext).RetryCount = 0;
 
@@ -847,8 +849,8 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     let cdb: PCDB = SrbGetCdb(srbHeader as PVOID);
                     core::ptr::write_bytes(cdb as *mut u8, 0, core::mem::size_of::<CDB>());
                     (*cdb).START_STOP.as_ref().OperationCode = (SCSIOP_START_STOP_UNIT) as u8;
-                    (*cdb).START_STOP.as_ref().Start = 0;
-                    (*cdb).START_STOP.as_ref().Immediate = 1;
+                    (*cdb).START_STOP.as_ref().set_Start(0);
+                    (*cdb).START_STOP.as_ref().set_Immediate(1);
 
                     IoSetCompletionRoutine(
                         fdoExtension.PrivateFdoData.PowerProcessIrp,
@@ -1544,13 +1546,13 @@ pub unsafe extern "system" fn ClassMinimalPowerHandler(
                 _ => {}
             }
             // Fall through to IRP_MN_QUERY_POWER handling
-            if (*commonExtension).__bindgen_anon_1.IsFdo == 0 {
+            if (*commonExtension).__bindgen_anon_1.IsFdo() == 0 {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 (*Irp).IoStatus.Information = 0;
             }
         }
         (IRP_MN_QUERY_POWER) as u32 => {
-            if (*commonExtension).__bindgen_anon_1.IsFdo == 0 {
+            if (*commonExtension).__bindgen_anon_1.IsFdo() == 0 {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 (*Irp).IoStatus.Information = 0;
             }
@@ -1558,7 +1560,7 @@ pub unsafe extern "system" fn ClassMinimalPowerHandler(
         _ => {}
     }
 
-    if (*commonExtension).__bindgen_anon_1.IsFdo != 0 {
+    if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
         IoCopyCurrentIrpStackLocationToNext(Irp);
         status = PoCallDriver((*commonExtension).LowerDeviceObject, Irp);
     } else {
@@ -1894,7 +1896,7 @@ pub unsafe extern "C" fn ClasspPowerSettingCallback(
                 let fdoExtension =
                     (*(*fdoEntry).Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
                 let support_info = (*fdoExtension).FunctionSupportInfo;
-                if (*support_info).IdlePower.D3IdleTimeoutOverridden as u8 == 0 {
+                if (*support_info).IdlePower.D3IdleTimeoutOverridden() as u8 == 0 {
                     (*support_info).IdlePower.D3IdleTimeout = DiskIdleTimeoutInMS;
                     ClasspSendEnableIdlePowerIoctl((*fdoEntry).Fdo);
                 }
