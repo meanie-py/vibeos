@@ -148,3 +148,19 @@ pub const NUMBER_OF_DISK_SPINUP_TRACES: u32 = 0x10;
 // surface as E0308 (a real translation cast the LLM owes), but the name resolves.
 #[inline] pub fn min<T: PartialOrd>(a: T, b: T) -> T { if a < b { a } else { b } }
 #[inline] pub fn max<T: PartialOrd>(a: T, b: T) -> T { if a > b { a } else { b } }
+
+// c2rust-named enum consts (the anchor emitted <ENUMTAG>_<Variant>; bindgen names differ).
+// Aliases keep the LLM's reference site unchanged while pointing at the real bindgen const.
+pub use crate::types::CLASS_FUNCTION_SUPPORT_NotSupported as _CLASS_FUNCTION_SUPPORT_STATE_NotSupported;
+pub use crate::types::CLASS_FUNCTION_SUPPORT_Supported as _CLASS_FUNCTION_SUPPORT_STATE_Supported;
+pub use crate::types::MEDIA_LOCK_TYPE_SecureMediaLock as _MEDIA_LOCK_TYPE_SecureMediaLock;
+pub use crate::types::FAILURE_PREDICTION_METHOD_FailurePredictionNone as _PREDICT_FAILURE_METHOD_FailurePredictionNone;
+pub use crate::types::_SRBEXDATATYPE_SrbExDataTypePnP as _SRBEX_DATA_TYPE_SrbExDataTypePnP;
+pub use crate::types::_SRBEXDATATYPE_SrbExDataTypePower as _SRBEX_DATA_TYPE_SrbExDataTypePower;
+pub use crate::types::_SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as _SRBEX_DATA_TYPE_SrbExDataTypeScsiCdb16;
+pub use crate::types::_SRBEXDATATYPE_SrbExDataTypeScsiCdb32 as _SRBEX_DATA_TYPE_SrbExDataTypeScsiCdb32;
+pub use crate::types::_SRBEXDATATYPE_SrbExDataTypeScsiCdbVar as _SRBEX_DATA_TYPE_SrbExDataTypeScsiCdbVar;
+pub use crate::types::_SRBEXDATATYPE_SrbExDataTypeWmi as _SRBEX_DATA_TYPE_SrbExDataTypeWmi;
+// STORAGE_QUERY_TYPE enum (ntddstor.h) not emitted by bindgen here; faithful literal values.
+pub const _STORAGE_PROPERTY_ID_PropertyStandardQuery: u32 = 0;
+pub const _STORAGE_PROPERTY_ID_PropertyExistsQuery: u32 = 1;
