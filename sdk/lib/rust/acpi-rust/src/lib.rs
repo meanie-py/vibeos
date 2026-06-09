@@ -16,7 +16,12 @@
 //! `AcpiOsPrintf` (C-variadic) stays a tiny C shim (acpi_printf_shim.c); under
 //! the driver's NDEBUG build `AcpiOsVprintf` is a no-op anyway.
 
+pub mod shared;
 pub mod osl;
+// buspdo.rs / bus.rs — rustconv --c2rust output (banked, Phase 3a). NOT yet in
+// the module tree: the c2rust fn bodies are sound but the LLM type-preamble is
+// broken (dropped struct fields, reserved-keyword `Self`), so they need the
+// shared.rs substrate swap + audit before wiring. Inert until then.
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
