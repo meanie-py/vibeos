@@ -16,7 +16,7 @@ use crate::glue::{STATUS_INVALID_DEVICE_STATE};
 
 extern "C" {
     fn PAGED_CODE();
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
     fn InitializeStorageRequestBlock( srb: *mut STORAGE_REQUEST_BLOCK, address_type: u32, size: u32, count: u32, data_type: u32, ) -> i32; // NTSTATUS fn SrbSetCdbLength(srb: *mut STORAGE_REQUEST_BLOCK, length: u8);
     fn SrbGetCdb(srb: *mut STORAGE_REQUEST_BLOCK) -> *mut CDB;
@@ -352,7 +352,7 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(
                     srbPtr = srbEx as *mut SCSI_REQUEST_BLOCK;
                 } else {
                     // Should not happen – assert and fallback
-                    NT_ASSERT(0 as i32) // FALSE = 0
+                    NT_ASSERT(0 as i32); // FALSE = 0
                     srb.TimeOutValue = (*fdoExtension).TimeOutValue;
                     srb.CdbLength = 6;
                     cdb = core::ptr::addr_of_mut!(srb.Cdb) as *mut CDB;
@@ -426,7 +426,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
         0u8, // FALSE
         core::ptr::null_mut(),
     );
-    NT_ASSERT(status == STATUS_SUCCESS as i32)
+    NT_ASSERT(status == STATUS_SUCCESS as i32);
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -520,7 +520,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
                     SrbExDataTypeScsiCdb16,
                 );
                 if !NT_SUCCESS(status) {
-                    NT_ASSERT(false as i32)
+                    NT_ASSERT(false as i32);
                     break 'seh2_try;
                 }
             } else {

@@ -27,7 +27,7 @@ extern "C" {
     fn IoAllocateMdl( VirtualAddress: *mut core::ffi::c_void, Length: u32, SecondaryBuffer: i32, ChargeQuota: i32, Irp: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
     fn MmProbeAndLockPages( MemoryDescriptorList: *mut core::ffi::c_void, AccessMode: u32, Operation: u32, ) -> ();
     fn IoFreeMdl(Mdl: *mut core::ffi::c_void) -> ();
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn REVERSE_BYTES_QUAD(dest: *mut u64, src: *const u64);
     fn REVERSE_BYTES(dest: *mut u32, src: *const u32);
 }
@@ -176,7 +176,7 @@ const MAXUCHAR: u32 = 0xFF;
 
 
 unsafe extern "system" {
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn wcslen(s: *const u16) -> usize;
     fn RtlStringCbPrintfW(
         buffer: *mut u16,
@@ -697,7 +697,7 @@ pub unsafe extern "C" fn ClasspPerfIncrementSuccessfulIo(
         {
             (*fdoData).Perf.SuccessfulIO = 0; // implicit interlock
 
-            NT_ASSERT((*FdoExtension).ErrorCount > 0 as i32)
+            NT_ASSERT((*FdoExtension).ErrorCount > 0 as i32);
             errors = InterlockedDecrement(
                 core::ptr::addr_of_mut!((*FdoExtension).ErrorCount) as *mut i32,
             ) as u32;
@@ -841,7 +841,7 @@ pub unsafe extern "C" fn ClasspDuidGetDeviceIdProperty(
         RtlCopyMemory(
             dest as *mut core::ffi::c_void,
             deviceIdDescriptor as *const core::ffi::c_void,
-            (*deviceIdDescriptor).Size as u32,
+            ((*deviceIdDescriptor).Size as u32).try_into().unwrap(),
         );
 
         (*(Irp)).IoStatus.Information = (*storageDuid).Size as usize;
@@ -1023,9 +1023,9 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
             break STATUS_NOT_SUPPORTED;
         }
 
-        if (*query).AdditionalParameters[0] == DUID_INCLUDE_SOFTWARE_IDS {
+        if u32::from((*query).AdditionalParameters[0]) == DUID_INCLUDE_SOFTWARE_IDS {
             includeOptionalIds = 1;
-        } else if (*query).AdditionalParameters[0] == DUID_HARDWARE_IDS_ONLY {
+        } else if u32::from((*query).AdditionalParameters[0]) == DUID_HARDWARE_IDS_ONLY {
             includeOptionalIds = 0;
         } else {
             break STATUS_INVALID_PARAMETER;
@@ -1037,7 +1037,7 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
 
         useStatus = 0;
         descHeader = (*Irp).AssociatedIrp.SystemBuffer as *mut STORAGE_DESCRIPTOR_HEADER;
-        RtlZeroMemory(descHeader as *mut core::ffi::c_void, outLength as usize);
+        RtlZeroMemory(descHeader as *mut core::ffi::c_void, (outLength as usize).try_into().unwrap());
         (*descHeader).Version = DUID_VERSION_1;
         (*descHeader).Size = core::mem::size_of::<STORAGE_DEVICE_UNIQUE_IDENTIFIER>() as u32;
 
@@ -1621,7 +1621,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     }
 
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-        NT_ASSERT(0 as i32)
+        NT_ASSERT(0 as i32);
         status = STATUS_INVALID_LEVEL;
     }
 
@@ -1684,7 +1684,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
                 break 'Exit;
             }
             Supported => {
-                NT_ASSERT(0 as i32)
+                NT_ASSERT(0 as i32);
                 status = STATUS_INTERNAL_ERROR;
             }
             _ => {}
@@ -2876,7 +2876,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
                 if NT_SUCCESS(status) {
                     (*(Srb as PSTORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
                 } else {
-                    NT_ASSERT(0 as i32)
+                    NT_ASSERT(0 as i32);
                     break;
                 }
             } else {
@@ -2973,7 +2973,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
             }
 
             if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-                NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
+                NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32);
                 status = STATUS_INVALID_LEVEL;
                 break 'exit;
             }
@@ -3713,7 +3713,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                 DeviceObject,
                 lbaStatusSize,
             );
-            NT_ASSERT(0 as i32)
+            NT_ASSERT(0 as i32);
             status = STATUS_INSUFFICIENT_RESOURCES;
             break 'exit_loop;
         }
@@ -3895,7 +3895,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                                     .as_ptr() as *const i8,
                                 DeviceObject,
                             );
-                            NT_ASSERT(0 as i32)
+                            NT_ASSERT(0 as i32);
                             doneProcessing = 1;
                             status = STATUS_UNSUCCESSFUL;
                         }
@@ -4097,7 +4097,7 @@ pub unsafe extern "C" fn ClassInterpretLBProvisioningLogPage(
             b"ClassInterpretLBProvisioningLogPage: DO (%p), Threshold Exponent (%u) is invalid.\n\0"
                 .as_ptr(),
             DeviceObject,
-            thresholdExponent,
+            thresholdExponent as c_uint,
         );
         return STATUS_NOT_SUPPORTED;
     }
@@ -5141,7 +5141,7 @@ pub unsafe extern "C" fn ClasspConvertToScsiRequestBlock(
                 .offset(i as isize)
                 .read();
             if offset == 0 || offset < core::mem::size_of::<STORAGE_REQUEST_BLOCK>() as u32 {
-                NT_ASSERT(0 as i32)
+                NT_ASSERT(0 as i32);
                 continue;
             }
             srbExData = (SrbEx as *mut u8).add(offset as usize) as *mut SRBEX_DATA;
@@ -5674,7 +5674,7 @@ pub unsafe extern "C" fn ClasspGetTokenOperationDescriptorLimits(
                     .BlockDeviceRODLimitsData
                     .CommandStatus,
             ) != 0,
-     as i32)
+     as i32);
 
     *MaxBlockDescriptorsCount = (MaxParameterBufferLength - tokenOperationHeaderSize)
         / core::mem::size_of::<BLOCK_DEVICE_RANGE_DESCRIPTOR>() as u32;
@@ -5783,7 +5783,7 @@ pub unsafe extern "system" fn ClasspConvertDataSetRangeToBlockDescr(
             }
         }
 
-        NT_ASSERT(if sectorCount <= MAX_NUMBER_BLOCKS_PER_BLOCK_DEVICE_RANGE_DESCRIPTOR { 1 } else { 0 } as i32)
+        NT_ASSERT(if sectorCount <= MAX_NUMBER_BLOCKS_PER_BLOCK_DEVICE_RANGE_DESCRIPTOR { 1 } else { 0 } as i32);
 
         let idx = *CurrentBlockDescrIndex as isize;
         REVERSE_BYTES_QUAD(
@@ -6646,23 +6646,23 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
 
         if ((*firmwareDownload).ImageBuffer as usize % (*fdoExtension).FunctionSupportInfo.as_ref().unwrap().HwFirmwareInfo.as_ref().unwrap().ImagePayloadAlignment as usize) != 0 {
             bufferSize = ALIGN_UP_BY((*firmwareDownload).BufferSize as u32, (*fdoExtension).FunctionSupportInfo.as_ref().unwrap().HwFirmwareInfo.as_ref().unwrap().ImagePayloadAlignment);
-            NT_ASSERT(lockHeld as i32)
+            NT_ASSERT(lockHeld as i32);
             KeReleaseInStackQueuedSpinLock(&mut lockHandle);
             lockHeld = 0;
 
-            firmwareImageBuffer = ExAllocatePoolWithTag(NonPagedPoolNx, bufferSize as u32, CLASSPNP_POOL_TAG_FIRMWARE);
+            firmwareImageBuffer = ExAllocatePoolWithTag(NonPagedPoolNx, (bufferSize as u32).try_into().unwrap(), CLASSPNP_POOL_TAG_FIRMWARE);
             if firmwareImageBuffer.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
                 break 'cleanup;
             }
-            RtlZeroMemory(firmwareImageBuffer, bufferSize as usize);
+            RtlZeroMemory(firmwareImageBuffer, (bufferSize as usize).try_into().unwrap());
             RtlCopyMemory(
                 firmwareImageBuffer as *mut u8,
                 (*firmwareDownload).ImageBuffer,
                 (*firmwareDownload).BufferSize as usize,
             );
         } else {
-            NT_ASSERT(lockHeld as i32)
+            NT_ASSERT(lockHeld as i32);
             KeReleaseInStackQueuedSpinLock(&mut lockHandle);
             lockHeld = 0;
 
@@ -6680,7 +6680,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
         }
 
         ClassAcquireRemoveLock(DeviceObject, irp2);
-        (*(*irp2).Tail.Overlay.Thread) = (*(*Irp).Tail.Overlay.Thread);
+        (*(*irp2).Tail.Overlay.Thread) = *(*Irp).Tail.Overlay.Thread ;
         IoSetNextIrpStackLocation(irp2);
 
         newStack = IoGetCurrentIrpStackLocation(irp2);
@@ -6709,7 +6709,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
 
         IoMarkIrpPending(Irp);
 
-        SrbSetCdbLength(Srb, CDB10GENERIC_LENGTH);
+        SrbSetCdbLength(Srb, CDB10GENERIC_LENGTH.into());
         cdb = SrbGetCdb(Srb);
         (*cdb).WRITE_BUFFER.OperationCode = SCSIOP_WRITE_DATA_BUFF;
         (*cdb).WRITE_BUFFER.Mode = SCSI_WRITE_BUFFER_MODE_DOWNLOAD_MICROCODE_WITH_OFFSETS_SAVE_DEFER_ACTIVATE;
@@ -6895,7 +6895,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
             }
 
             // Done accessing HwFirmwareInfo; release lock
-            NT_ASSERT(lock_held as i32)
+            NT_ASSERT(lock_held as i32);
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             lock_held = 0;
 

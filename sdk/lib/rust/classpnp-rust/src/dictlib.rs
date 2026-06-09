@@ -9,7 +9,7 @@ use core::ffi::c_void;
 
 extern "system" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
-    fn NT_ASSERT(expr: i32)
+    fn NT_ASSERT(expr: i32);
 }
 
 // ---- file-scope preamble (translated) ----

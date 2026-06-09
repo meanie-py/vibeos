@@ -23,7 +23,7 @@ extern "C" {
     fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: i32);
     fn ClasspDisableTimer(fdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION);
     fn InitializeStorageRequestBlock( srb: *mut STORAGE_REQUEST_BLOCK, addressType: u32, dataBufferSize: u32, flags: u32 ) -> NTSTATUS;
-    fn NT_ASSERT(cond: i32)
+    fn NT_ASSERT(cond: i32);
     fn SrbGetSrbFlags(srb: *mut STORAGE_REQUEST_BLOCK_HEADER) -> u32;
     fn SrbSetOriginalRequest(srb: *mut STORAGE_REQUEST_BLOCK_HEADER, irp: *mut IRP);
     fn SrbSetSrbFlags(srb: *mut STORAGE_REQUEST_BLOCK_HEADER, flags: u32);

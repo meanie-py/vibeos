@@ -30,7 +30,7 @@ extern "C" {
     static ClassGuidSrbSupport: GUID;
     static CLASS_DRIVER_EXTENSION_KEY: GUID;
     fn PAGED_CODE();
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn TracePrint(level: u32, flag: u32, fmt: *const i8, s: *const _UNICODE_STRING);
     fn EtwUnregister(handle: usize);
@@ -328,7 +328,7 @@ pub unsafe extern "system" fn ClassInitialize(
             && (*InitializationData).PdoData.ClassStopDevice.is_null())
     {
         // TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, "ClassInitialize: Class device-specific missing required PDO entry\n"));
-        NT_ASSERT(0 as i32)
+        NT_ASSERT(0 as i32);
         return STATUS_REVISION_MISMATCH as u32;
     }
 
@@ -362,7 +362,7 @@ pub unsafe extern "system" fn ClassInitialize(
 
         (*driverExtension).RegistryPath.Buffer = ExAllocatePoolWithTag(
             PagedPool,
-            (*RegistryPath).MaximumLength as u64,
+            ((*RegistryPath).MaximumLength as u64).try_into().unwrap(),
             0x53634331u32, // '1CcS'
         ) as *mut u16;
 
@@ -467,7 +467,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
         as *mut CLASS_DRIVER_EXTENSION;
 
     if driverExtension.is_null() {
-        NT_ASSERT(0 as i32)
+        NT_ASSERT(0 as i32);
         return STATUS_UNSUCCESSFUL as i32;
     }
 
@@ -601,7 +601,7 @@ pub unsafe extern "system" fn ClassUnload(
 ) {
     PAGED_CODE();
 
-    NT_ASSERT(if (*DriverObject).DeviceObject.is_null() { 1 } else { 0 } as i32)
+    NT_ASSERT(if (*DriverObject).DeviceObject.is_null() { 1 } else { 0 } as i32);
 
     let driverExtension = IoGetDriverObjectExtension(
         DriverObject,
@@ -609,12 +609,12 @@ pub unsafe extern "system" fn ClassUnload(
     ) as *mut CLASS_DRIVER_EXTENSION;
 
     if driverExtension.is_null() {
-        NT_ASSERT(0 as i32) // FALSE
+        NT_ASSERT(0 as i32); // FALSE
         return;
     }
 
-    NT_ASSERT(if !(*driverExtension).RegistryPath.Buffer.is_null() { 1 } else { 0 } as i32)
-    NT_ASSERT(if !(*driverExtension).InitData.ClassUnload.is_null() { 1 } else { 0 } as i32)
+    NT_ASSERT(if !(*driverExtension).RegistryPath.Buffer.is_null() { 1 } else { 0 } as i32);
+    NT_ASSERT(if !(*driverExtension).InitData.ClassUnload.is_null() { 1 } else { 0 } as i32);
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -798,7 +798,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                 }
             }
         } else {
-            NT_ASSERT(0 as i32)
+            NT_ASSERT(0 as i32);
             status = STATUS_INTERNAL_ERROR;
         }
 
@@ -974,7 +974,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                     0,
                 );
                 if NT_SUCCESS(status) == 0 {
-                    NT_ASSERT(0 as i32)
+                    NT_ASSERT(0 as i32);
                     TracePrint(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_PNP,
@@ -1314,7 +1314,7 @@ pub unsafe extern "system" fn ClassReadWrite(
             status = STATUS_DEVICE_DOES_NOT_EXIST;
             break 'out;
         } else if ((*DeviceObject).Flags & DO_VERIFY_VOLUME) != 0 &&
-                   (*currentIrpStack).MinorFunction != CLASSP_VOLUME_VERIFY_CHECKED &&
+                   u32::from((*currentIrpStack).MinorFunction) != CLASSP_VOLUME_VERIFY_CHECKED &&
                    ((*currentIrpStack).Flags & SL_OVERRIDE_VERIFY_VOLUME) == 0
         {
             if !(*Irp).Tail.Overlay.Thread.is_null() {
@@ -1642,7 +1642,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: *mut DEVICE_OBJECT) ->
             (*fdoData).IsCachedDriveCapDataValid = 1;
 
             if r#match == 0 {
-                if (*commonExtension).CurrentState != IRP_MN_START_DEVICE {
+                if u32::from((*commonExtension).CurrentState) != IRP_MN_START_DEVICE {
                     // This can happen if a disk reports Parameters Changed / Capacity Data Changed sense data.
                     // NT_ASSERT(...)
                 } else {
@@ -1766,7 +1766,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut DEVICE_OBJECT) {
         );
         if !NT_SUCCESS(status) {
             FREE_POOL(context as *mut core::ffi::c_void);
-            NT_ASSERT(0 as i32)
+            NT_ASSERT(0 as i32);
             return;
         }
 
@@ -1985,7 +1985,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(
         let mut i: u32;
 
         // Precomputed fdoData->HwMaxXferLen, adjust for page alignment
-        if ((buf_ptr as usize) & (PAGE_SIZE - 1)) != 0 || (*fdo_data).HwMaxXferLen > 0xffffffff - PAGE_SIZE {
+        if ((buf_ptr as usize) & (PAGE_SIZE - 1)) != 0 || (*fdo_data).HwMaxXferLen > (0xffffffff - PAGE_SIZE).try_into().unwrap() {
             hw_max_xfer_len = (*fdo_data).HwMaxXferLen;
         } else {
             NT_ASSERT(((PAGE_SIZE as u32) % (*(*fdo_ext).DiskGeometry).BytesPerSector) == 0);
@@ -2050,7 +2050,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(
                 let this_piece_len = core::cmp::min(hw_max_xfer_len, entire_xfer_len);
 
                 slist_entry = SimplePopSlist(&mut pkt_list);
-                NT_ASSERT(!slist_entry.is_null() as i32)
+                NT_ASSERT(!slist_entry.is_null() as i32);
                 pkt = ((slist_entry as *const u8).offset(-(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize))) as *mut TRANSFER_PACKET;
 
                 SetupReadWriteTransferPacket(
@@ -2090,15 +2090,15 @@ pub unsafe extern "C" fn ServiceTransferRequest(
             while i > 1 {
                 i -= 1;
                 slist_entry = SimplePopSlist(&mut pkt_list);
-                NT_ASSERT(!slist_entry.is_null() as i32)
+                NT_ASSERT(!slist_entry.is_null() as i32);
                 pkt = ((slist_entry as *const u8).offset(-(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize))) as *mut TRANSFER_PACKET;
                 EnqueueFreeTransferPacket(Fdo, pkt);
             }
 
             // Get the single TRANSFER_PACKET that we'll be using.
             slist_entry = SimplePopSlist(&mut pkt_list);
-            NT_ASSERT(!slist_entry.is_null() as i32)
-            NT_ASSERT(SimpleIsSlistEmpty(&pkt_list) as i32)
+            NT_ASSERT(!slist_entry.is_null() as i32);
+            NT_ASSERT(SimpleIsSlistEmpty(&pkt_list) as i32);
             pkt = ((slist_entry as *const u8).offset(-(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize))) as *mut TRANSFER_PACKET;
 
             if !driver_uses_start_io {
@@ -2165,7 +2165,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(
         status = STATUS_PENDING;
     }
 
-    NT_ASSERT(status != STATUS_UNSUCCESSFUL as i32)
+    NT_ASSERT(status != STATUS_UNSUCCESSFUL as i32);
 
     status
 }

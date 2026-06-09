@@ -3,7 +3,7 @@ use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
 extern "system" {
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn ClasspTransferPacketGetSenseInfoBuffer(Pkt: *mut TRANSFER_PACKET) -> *mut core::ffi::c_void;
     fn ClasspTransferPacketGetSenseInfoBufferLength(Pkt: *mut TRANSFER_PACKET) -> u8;
     fn IsDescriptorSenseDataFormat(buffer: *mut core::ffi::c_void) -> u8;

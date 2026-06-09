@@ -14,7 +14,7 @@ extern "C" {
     fn ClasspGetCurrentTime() -> LARGE_INTEGER;
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn ClassGetDeviceParameter( FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> u32;
     fn Int32x32To64(a: i32, b: i32) -> i64;
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
@@ -321,7 +321,7 @@ pub unsafe extern "C" fn ClasspEnqueueIdleRequest(
         }
 
         // If there are already max active idle requests, queue this idle request.
-        if (*fdoData).ActiveIdleIoCount >= (*fdoData).IdleActiveIoMax {
+        if (*fdoData).ActiveIdleIoCount >= (*fdoData).IdleActiveIoMax.into() {
             issueRequest = 0; // FALSE
         }
 

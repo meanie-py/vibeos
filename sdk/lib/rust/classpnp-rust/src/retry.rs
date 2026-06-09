@@ -10,7 +10,7 @@ use core::ffi::c_void;
 use crate::types::{_CDB as CDB};
 
 extern "C" {
-    fn NT_ASSERT(cond: i32)
+    fn NT_ASSERT(cond: i32);
 }
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const u8, ...);
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
         let mut tempSrb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
         let mut srbPtr = (*Pkt).Srb as *mut SCSI_REQUEST_BLOCK;
 
-        NT_ASSERT(!((*(*(*fdoData).InterpretSenseInfo)).Interpret).is_null() as i32)
+        NT_ASSERT(!((*(*(*fdoData).InterpretSenseInfo)).Interpret).is_null() as i32);
 
         if (u32::from((*(*Pkt).Srb).Function) == SRB_FUNCTION_STORAGE_REQUEST_BLOCK)
             && ((*(*(*fdoExtension).CommonExtension.DriverExtension)).SrbSupport & CLASS_SRB_STORAGE_REQUEST_BLOCK) == 0
@@ -541,7 +541,7 @@ pub unsafe extern "C" fn TransferPacketQueueRetryDpc(Pkt: *mut TRANSFER_PACKET) 
         );
     } else {
         let mut timerPeriod: LARGE_INTEGER;
-        NT_ASSERT((*Pkt).RetryIn100nsUnits < 100 * 1000 * 1000 * 10 as i32)
+        NT_ASSERT((*Pkt).RetryIn100nsUnits < 100 * 1000 * 1000 * 10 as i32);
         timerPeriod.QuadPart = -((*Pkt).RetryIn100nsUnits as i64);
         KeInitializeTimer(core::ptr::addr_of_mut!((*Pkt).RetryTimer));
         KeSetTimer(
@@ -619,7 +619,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
     } else {
         let thisChunkLen: u32;
         if (*Pkt).DriverUsesStartIO != 0 {
-            NT_ASSERT(if (*Pkt).InLowMemRetry == 0 { 1 } else { 0 } as i32)
+            NT_ASSERT(if (*Pkt).InLowMemRetry == 0 { 1 } else { 0 } as i32);
             let fdoExt = (*(*Pkt).Fdo).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
             let fdoData = (*fdoExt).PrivateFdoData;
             let commonExtension = (*(*Pkt).Fdo).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
@@ -631,7 +631,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
             if not_aligned || overflow_check {
                 hwMaxXferLen = (*fdoData).HwMaxXferLen;
             } else {
-                NT_ASSERT(if (PAGE_SIZE % (*fdoExt).DiskGeometry.BytesPerSector) == 0 { 1 } else { 0 } as i32)
+                NT_ASSERT(if (PAGE_SIZE % (*fdoExt).DiskGeometry.BytesPerSector) == 0 { 1 } else { 0 } as i32);
                 hwMaxXferLen = min((*fdoData).HwMaxXferLen + PAGE_SIZE, (*adapterDesc).MaximumTransferLength);
             }
             thisChunkLen = MIN((*Pkt).LowMemRetry_remainingBufLen, hwMaxXferLen);

@@ -19,7 +19,7 @@ extern "C" {
     fn max(a: i32, b: i32) -> i32;
 }
 extern "C" {
-    fn NT_ASSERT(expr: i32)
+    fn NT_ASSERT(expr: i32);
     fn RtlULongAdd(a: u32, b: u32, result: *mut u32) -> i32;
     fn KeGetCurrentNodeNumber() -> u32;
     fn CreateStorageRequestBlock( srb_ptr: *mut *mut STORAGE_REQUEST_BLOCK, addr_type: u32, alloc_routine: Option<extern "system" fn(*mut c_void, u32, u32, u32) -> *mut STORAGE_REQUEST_BLOCK>, context: *mut c_void, count: u32, ... ) -> i32;
@@ -204,12 +204,12 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: *mut DEVICE_OBJECT) -> i
     let mut maxWorkingSetTransferPackets: u32;
     let mut status: i32 = STATUS_SUCCESS;
 
-    NT_ASSERT((*adapterDesc).MaximumTransferLength != 0 as i32)
+    NT_ASSERT((*adapterDesc).MaximumTransferLength != 0 as i32);
 
     hwMaxPages = if (*adapterDesc).MaximumPhysicalPages != 0 { (*adapterDesc).MaximumPhysicalPages - 1 } else { 0 };
 
     (*fdoData).HwMaxXferLen = core::cmp::min((*adapterDesc).MaximumTransferLength, hwMaxPages << PAGE_SHIFT);
-    (*fdoData).HwMaxXferLen = core::cmp::max((*fdoData).HwMaxXferLen, PAGE_SIZE);
+    (*fdoData).HwMaxXferLen = core::cmp::max((*fdoData).HwMaxXferLen, PAGE_SIZE.try_into().unwrap());
 
     arraySize = KeQueryHighestNodeNumber() + 1;
 
@@ -235,7 +235,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: *mut DEVICE_OBJECT) -> i
     osVersionInfo.dwOSVersionInfoSize = core::mem::size_of::<OSVERSIONINFOEXW>() as u32;
     status = RtlGetVersion(&raw mut osVersionInfo as *mut OSVERSIONINFOW);
 
-    NT_ASSERT(NT_SUCCESS(status) != 0 as i32)
+    NT_ASSERT(NT_SUCCESS(status) != 0 as i32);
 
     propertyId = StorageDeviceIoCapabilityProperty;
     status = ClassGetDescriptor((*(*fdoExt).CommonExtension).LowerDeviceObject,
@@ -402,7 +402,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
                 pkt = DequeueFreeTransferPacketEx(Fdo, 0, index);
             }
 
-            NT_ASSERT(if (*fdoData).FreeTransferPacketsLists[index].NumTotalTransferPackets == 0  { 1 } else { 0 } as i32)
+            NT_ASSERT(if (*fdoData).FreeTransferPacketsLists[index].NumTotalTransferPackets == 0  { 1 } else { 0 } as i32);
 
             index += 1;
         }
@@ -451,8 +451,8 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: *mut DEVICE_OBJECT) -> *mut TRAN
                 // NTDDI_VERSION >= NTDDI_WINBLUE assumed for this block
                 if ((*fdoExt).MiniportDescriptor != core::ptr::null_mut())
                     && ((*(*fdoExt).MiniportDescriptor).Size
-                        >= (core::mem::offset_of!(STORAGE_MINIPORT_DESCRIPTOR, ExtraIoInfoSupported)
-                            + core::mem::size_of::<u8>()))
+                        >= ((core::mem::offset_of!(STORAGE_MINIPORT_DESCRIPTOR, ExtraIoInfoSupported)
+                            + core::mem::size_of::<u8>())).try_into().unwrap())
                     && ((*(*fdoExt).MiniportDescriptor).ExtraIoInfoSupported == 1)
                 {
                     status = CreateStorageRequestBlock(
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: *mut DEVICE_OBJECT) -> *mut TRAN
             NT_ASSERT(
                 ((*(*newPkt).PartialMdl).Size
                     >= (core::mem::size_of::<MDL>()
-                        + BYTES_TO_PAGES((*fdoData).HwMaxXferLen) as u16
+                        + BYTES_TO_PAGES((*fdoData).HwMaxXferLen.try_into().unwrap()) as u16
                             * core::mem::size_of::<PFN_NUMBER>() as u16) as i16)
                     .into(),
             );
@@ -536,7 +536,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: *mut DEVICE_OBJECT) -> *mut TRAN
     {
         let mut historyByteCount: u32 = 0;
 
-        NT_ASSERT((*(*fdoData).InterpretSenseInfo).HistoryCount != 0 as i32)
+        NT_ASSERT((*(*fdoData).InterpretSenseInfo).HistoryCount != 0 as i32);
         // _Analysis_assume_((*fdoData).InterpretSenseInfo->HistoryCount != 0);
 
         historyByteCount = core::mem::size_of::<SRB_HISTORY_ITEM>() as u32
@@ -615,8 +615,8 @@ pub unsafe extern "C" fn DestroyTransferPacket(Pkt: *mut TRANSFER_PACKET) {
     /*
      *  Delete the packet from our all-packets queue.
      */
-    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*Pkt).AllPktsListEntry)) as i32)
-    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*fdoData).AllTransferPacketsList)) as i32)
+    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*Pkt).AllPktsListEntry)) as i32);
+    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*fdoData).AllTransferPacketsList)) as i32);
     RemoveEntryList(core::ptr::addr_of_mut!((*Pkt).AllPktsListEntry));
     InitializeListHead(core::ptr::addr_of_mut!((*Pkt).AllPktsListEntry));
 
@@ -768,7 +768,7 @@ pub unsafe extern "C" fn DequeueFreeTransferPacketEx(
                 InterlockedIncrement(&raw mut (*list_slot).NumTotalTransferPackets as *mut i32);
                 let current_peak = (*list_slot).DbgPeakNumTransferPackets;
                 let total = (*list_slot).NumTotalTransferPackets;
-                (*list_slot).DbgPeakNumTransferPackets = max(current_peak, total);
+                (*list_slot).DbgPeakNumTransferPackets = max(current_peak.try_into().unwrap(), total.try_into().unwrap());
             } else {
                 TracePrint(
                     TRACE_LEVEL_WARNING,
@@ -884,7 +884,7 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: *mut TRANSFER_PACKET) -> NTST
 
     let irp = (*Pkt).Irp;
     let cond = ((*irp).CurrentLocation as u32 == (*irp).StackCount as u32 + 1) as u8;
-    NT_ASSERT(cond.into() as i32)
+    NT_ASSERT(cond.into() as i32);
 
     IoReuseIrp(irp, STATUS_NOT_SUPPORTED);
 
@@ -1282,7 +1282,7 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
         let srb_template_cast = (*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK;
         srbLength = (*srb_template_cast).SrbLength;
         let srb_cast = (*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK;
-        NT_ASSERT((*srb_cast).SrbLength >= srbLength as i32)
+        NT_ASSERT((*srb_cast).SrbLength >= (srbLength as i32).try_into().unwrap())
     } else {
         srbLength = (*(*fdoData).SrbTemplate).Length;
     }
@@ -1349,7 +1349,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
         let srb_template_block = &*(*fdoData).SrbTemplate as *const STORAGE_REQUEST_BLOCK;
         srb_length = (*srb_template_block).SrbLength;
         let pkt_srb_block = &*((*Pkt).Srb as *const STORAGE_REQUEST_BLOCK);
-        NT_ASSERT((*pkt_srb_block).SrbLength >= srb_length as i32)
+        NT_ASSERT((*pkt_srb_block).SrbLength >= (srb_length as i32).try_into().unwrap())
     } else {
         srb_length = (*(*fdoData).SrbTemplate).Length;
     }

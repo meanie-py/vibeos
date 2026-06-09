@@ -30,7 +30,7 @@ extern "C" {
     fn DBGGETSENSECODESTR(Srb: *mut SCSI_REQUEST_BLOCK) -> *const i8;
     fn DBGGETADSENSECODESTR(Srb: *mut SCSI_REQUEST_BLOCK) -> *const i8;
     fn DBGGETADSENSEQUALIFIERSTR(Srb: *mut SCSI_REQUEST_BLOCK) -> *const i8;
-    fn NT_ASSERT(truth: i32)
+    fn NT_ASSERT(truth: i32);
     fn RtlULongAdd(a: u32, b: u32, result: *mut u32) -> i32;
 }
 

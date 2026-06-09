@@ -12,7 +12,7 @@ use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, RTL_GENERIC_COMPARE_RESULTS};
 use crate::glue::{TRACE_LEVEL_ERROR};
 
 extern "C" {
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn ExAllocatePoolWithTag( PoolType: u32, NumberOfBytes: usize, Tag: u32, ) -> *mut core::ffi::c_void;
     fn FREE_POOL(Buffer: *mut core::ffi::c_void);

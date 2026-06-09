@@ -10,7 +10,7 @@ use core::ffi::c_void;
 use crate::types::{_SRBEXDATATYPE as SRBEXDATATYPE};
 
 extern "C" {
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     // va_start/va_end live in the C trampoline (rust_variadic_shim.c); these workers
     // receive the va_list already-started and pull args via the C va_arg helpers
     // (va_arg, like va_start, is a macro and cannot be expressed in stable Rust).
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
     }
     (*Srb).AddressOffset = offset;
 
-    if AddressType == STORAGE_ADDRESS_TYPE_BTL8 {
+    if u32::from(AddressType) == STORAGE_ADDRESS_TYPE_BTL8 {
         if ByteSize < offset || ByteSize < offset + core::mem::size_of::<STOR_ADDR_BTL8>() as u32 {
             return STATUS_BUFFER_OVERFLOW;
         }
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn classpnp_CreateStorageRequestBlockWorker(
         }
     }
 
-    if AddressType == STORAGE_ADDRESS_TYPE_BTL8 {
+    if u32::from(AddressType) == STORAGE_ADDRESS_TYPE_BTL8 {
         sizeNeeded += core::mem::size_of::<STOR_ADDR_BTL8>() as ULONG;
     } else {
         status = STATUS_INVALID_PARAMETER;

@@ -29,7 +29,7 @@ extern "C" {
     fn TracePrint(level: u32, flags: u32, format: *const i8);
     fn ClasspUpdateDiskProperties(device_object: *mut DEVICE_OBJECT, context: *mut core::ffi::c_void);
     fn KeWaitForMutexObject(mutex: *mut core::ffi::c_void, wait_reason: i32, wait_mode: i32, alertable: i32, timeout: *mut LARGE_INTEGER) -> NTSTATUS;
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn PAGED_CODE();
     static GUID_CONSOLE_DISPLAY_STATE: GUID;
 }
@@ -175,7 +175,7 @@ unsafe extern "system" {
         context: *mut c_void,
         attributes: u32,
     ) -> *mut EX_TIMER;
-    fn NT_ASSERT(condition: i32)
+    fn NT_ASSERT(condition: i32);
     fn ClasspTimerTickEx(timer: *mut EX_TIMER, context: *mut c_void);
 }
 
@@ -846,7 +846,7 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
             TracePrint(TRACE_LEVEL_INFORMATION,
                        TRACE_FLAG_MCN,
                        b"ClasspMediaChangeDetectionCompletion - succeeded and GESN NOT supported, setting MediaPresent.\0".as_ptr() as *const i8);
-            ClassSetMediaChangeState(fdoExtension, MediaPresent, 0);
+            ClassSetMediaChangeState(fdoExtension, MediaPresent.try_into().unwrap(), 0);
         } else {
             TracePrint(TRACE_LEVEL_INFORMATION,
                        TRACE_FLAG_MCN,
@@ -983,14 +983,14 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
 
     if irp.is_null() {
         // NT_ASSERT(irp)
-        assert!(!irp.is_null() as i32)
+        assert!(!irp.is_null() as i32);
         return core::ptr::null_mut();
     }
 
     status = ClassAcquireRemoveLock((*FdoExtension).DeviceObject, irp);
     if status == REMOVE_COMPLETE {
         // NT_ASSERT(status != REMOVE_COMPLETE)
-        assert!(status != REMOVE_COMPLETE as i32)
+        assert!(status != REMOVE_COMPLETE as i32);
         return core::ptr::null_mut();
     } else if status == REMOVE_PENDING {
         ClassReleaseRemoveLock((*FdoExtension).DeviceObject, irp);
@@ -1091,7 +1091,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         // NT_SUCCESS(status) macro expansion
         if !(status >= 0) {
             // NT_ASSERT(FALSE)
-            assert!(false as i32)
+            assert!(false as i32);
             return core::ptr::null_mut();
         }
 
@@ -1431,10 +1431,10 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                             (*FdoExtension).DeviceObject as *const core::ffi::c_void,
                         );
 
-                        NT_ASSERT(((*info).Gesn.Supported.into() as i32));
-                        NT_ASSERT(((((*info).Gesn.Buffer).is_null() == false) as i32));
-                        NT_ASSERT((((*info).Gesn.BufferSize != 0) as i32));
-                        NT_ASSERT((((*info).Gesn.EventMask != 0) as i32));
+                        NT_ASSERT((*info).Gesn.Supported.into() as i32 );
+                        NT_ASSERT((((*info).Gesn.Buffer).is_null() == false) as i32 );
+                        NT_ASSERT(((*info).Gesn.BufferSize != 0) as i32 );
+                        NT_ASSERT(((*info).Gesn.EventMask != 0) as i32 );
                         GesnSupported = 1; // TRUE
                     } else {
                         let fmt3: &[u8] = b"ClasspInitializePolling: GESN *NOT* available for %p\n\0";
@@ -1448,10 +1448,10 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                 }
 
                 if GesnSupported == 0 {
-                    NT_ASSERT((((*info).Gesn.Supported == 0) as i32));
-                    NT_ASSERT((((*info).Gesn.Buffer).is_null() as i32));
-                    NT_ASSERT((((*info).Gesn.BufferSize == 0) as i32));
-                    NT_ASSERT((((*info).Gesn.EventMask == 0) as i32));
+                    NT_ASSERT(((*info).Gesn.Supported == 0) as i32 );
+                    NT_ASSERT(((*info).Gesn.Buffer).is_null() as i32 );
+                    NT_ASSERT(((*info).Gesn.BufferSize == 0) as i32 );
+                    NT_ASSERT(((*info).Gesn.EventMask == 0) as i32 );
                     (*info).Gesn.Supported = 0;
                 }
 
@@ -1652,7 +1652,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
         }
         ClassReleaseRemoveLock((*FdoExtension).DeviceObject, irp);
 
-        if SRB_STATUS((*(*Info).MediaChangeSrb.Srb).SrbStatus) != SRB_STATUS_SUCCESS {
+        if u32::from(SRB_STATUS((*(*Info).MediaChangeSrb.Srb).SrbStatus)) != SRB_STATUS_SUCCESS {
             InterpretSenseInfoWithoutHistory(
                 (*FdoExtension).DeviceObject,
                 irp,
@@ -2662,7 +2662,7 @@ pub unsafe extern "system" fn ClasspTimerTick(
     NT_ASSERT(isFdo as i32);
 
     let isRemoved = ClassAcquireRemoveLock(DeviceObject, ClasspTimerTick as isize as *mut IRP);
-    NT_ASSERT(isRemoved != REMOVE_COMPLETE as i32)
+    NT_ASSERT(isRemoved != REMOVE_COMPLETE as i32);
 
     if isRemoved == 0 {
         let info = (*fdoExtension).FailurePredictionInfo;
@@ -2963,7 +2963,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
     let mut status: NTSTATUS;
 
     if Info.is_null() {
-        NT_ASSERT(1 as i32)
+        NT_ASSERT(1 as i32);
         return;
     }
 
