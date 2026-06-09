@@ -15,6 +15,8 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, IO_PAGING_PRIORITY, IO_WORKITEM, MDL, _DEVICE_RELATION_TYPE_BusRelations as BusRelations};
 use ntkrnl_sys::driver_ddk::{FILE_REMOVABLE_MEDIA, IRP_MJ_DEVICE_CONTROL, IRP_MJ_PNP, IRP_MJ_POWER, IRP_MJ_SHUTDOWN, IRP_MJ_SYSTEM_CONTROL};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{_DEVICE_RELATION_TYPE_BusRelations as BusRelations};
 
 extern "C" {
     static ClassGuidQueryRegInfoEx: GUID;

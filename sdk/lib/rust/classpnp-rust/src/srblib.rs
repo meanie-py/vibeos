@@ -6,6 +6,8 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CLONG, va_list};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_SRBEXDATATYPE as SRBEXDATATYPE};
 
 extern "C" {
     fn NT_ASSERT(condition: i32);
