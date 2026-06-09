@@ -50,6 +50,8 @@ members = [
     "hidparser-rust",
     "pl011-rust",
     "processr-rust",
+    "csq-rust",
+    "arbiter-rust",
     "cmboot-rust",
     "cmlib-rust",
     "rossym-rust",

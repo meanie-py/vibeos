@@ -16,6 +16,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbiter-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "arm64input-cargo"
 version = "0.1.0"
 dependencies = [
@@ -182,6 +189,13 @@ version = "0.1.0"
 [[package]]
 name = "cryptlib-rust"
 version = "0.1.0"
+
+[[package]]
+name = "csq-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "csrsrv-cargo"
