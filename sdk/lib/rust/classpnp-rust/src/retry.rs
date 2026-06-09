@@ -8,7 +8,7 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{IRP_MJ_SCSI, SL_OVERRIDE_VERIFY_VOLUME, STATUS_IO_DEVICE_ERROR, STATUS_VERIFY_REQUIRED, TRACE_LEVEL_INFORMATION};
 use crate::types::{CLASS_SRB_STORAGE_REQUEST_BLOCK, PCDB, PCLASS_PRIVATE_FDO_DATA, PCOMMON_DEVICE_EXTENSION, PFIXED_SENSE_DATA, PFUNCTIONAL_DEVICE_EXTENSION, PSCSI_REQUEST_BLOCK, PSCSI_SENSE_DESCRIPTOR_INFORMATION, PSTORAGE_REQUEST_BLOCK, PTRANSFER_PACKET, SCSIOP_MEDIUM_REMOVAL, SCSIOP_MODE_SENSE, SCSIOP_MODE_SENSE10, SCSIOP_READ, SCSIOP_READ12, SCSIOP_READ16, SCSIOP_READ6, SCSIOP_READ_CAPACITY, SCSIOP_READ_CAPACITY16, SCSIOP_WRITE, SCSIOP_WRITE12, SCSIOP_WRITE16, SCSIOP_WRITE6, SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR, SCSI_ADSENSE_LUN_NOT_READY, SCSI_SENSEQ_DATA_UNDERRUN, SCSI_SENSE_ABORTED_COMMAND, SCSI_SENSE_COPY_ABORTED, SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION, SENSE_DATA_EX, SRB_FLAGS_DISABLE_DISCONNECT, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_HISTORY, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SELECTION_TIMEOUT, _CLASS_PRIVATE_FDO_DATA, _FUNCTIONAL_DEVICE_EXTENSION, _TRANSFER_PACKET};
-use ntkrnl_sys::ddk::{PCCHAR, PCSTR, _SCSI_REQUEST_BLOCK};
+use ntkrnl_sys::ddk::{PCCHAR, PCSTR};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED, STATUS_DEVICE_NOT_READY};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -18,6 +18,8 @@ use crate::glue::{SP_UNTAGGED};
 use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{ClassInterpretSenseInfo, ClasspConvertToScsiRequestBlock, SetupReadWriteTransferPacket, SubmitTransferPacket};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_SCSI_REQUEST_BLOCK};
 
 extern "C" {
     fn NT_ASSERT(cond: u8);
@@ -55,8 +57,8 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
         let mut tempSrb: _SCSI_REQUEST_BLOCK = ::core::mem::zeroed();
         let mut srbPtr: PSCSI_REQUEST_BLOCK = (*Pkt).Srb as PSCSI_REQUEST_BLOCK;
         debug_assert!(!(*(*fdoData).InterpretSenseInfo).Interpret.is_none());
-        if (*(*Pkt).Srb as PSCSI_REQUEST_BLOCK).Function as i32 == SRB_FUNCTION_STORAGE_REQUEST_BLOCK
-            && ((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension.SrbSupport
+        if (*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).Function as i32 == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as i32
+            && ((*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension).SrbSupport
                 & CLASS_SRB_STORAGE_REQUEST_BLOCK as u32)
                 == 0
         {
@@ -111,9 +113,9 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                     }
                 }
                 if setRetryIntervalSeconds == 0
-                    && ((*(*Pkt).Srb as PSCSI_REQUEST_BLOCK).SrbStatus
-                        & !(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN))
-                        == SRB_STATUS_SELECTION_TIMEOUT
+                    && ((*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).SrbStatus
+                        & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8)
+                        == (SRB_STATUS_SELECTION_TIMEOUT) as u8
                 {
                     setRetryIntervalSeconds = 1;
                 }
@@ -148,9 +150,9 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                     }
                 }
                 if setRetryIntervalSeconds_0 == 0
-                    && ((*(*Pkt).Srb as PSCSI_REQUEST_BLOCK).SrbStatus
-                        & !(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN))
-                        == SRB_STATUS_SELECTION_TIMEOUT
+                    && ((*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).SrbStatus
+                        & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8)
+                        == (SRB_STATUS_SELECTION_TIMEOUT) as u8
                 {
                     setRetryIntervalSeconds_0 = 1;
                 }
@@ -160,9 +162,9 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
             }
             if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status == STATUS_VERIFY_REQUIRED {
                 shouldRetry = 1;
-            } else if ((*(*Pkt).Srb as PSCSI_REQUEST_BLOCK).SrbStatus
-                & !(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN))
-                == SRB_STATUS_DATA_OVERRUN
+            } else if ((*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).SrbStatus
+                & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8)
+                == (SRB_STATUS_DATA_OVERRUN) as u8
             {
                 (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 shouldRetry = 0;

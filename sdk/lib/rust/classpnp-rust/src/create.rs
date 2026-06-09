@@ -105,7 +105,7 @@ pub unsafe extern "C" fn ClasspCreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PI
             status = AllocateDictionaryEntry(
                 core::ptr::addr_of_mut!((*commonExtension).FileObjectDictionary),
                 fileObject as u64,
-                core::mem::size_of::<FILE_OBJECT_EXTENSION>(),
+                (core::mem::size_of::<FILE_OBJECT_EXTENSION>()) as u32,
                 CLASS_TAG_FILE_OBJECT_EXTENSION,
                 &mut fsContext as *mut _ as *mut *mut core::ffi::c_void,
             );
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn ClasspCreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PI
 
                 FreeDictionaryEntry(
                     core::ptr::addr_of_mut!((*commonExtension).FileObjectDictionary),
-                    fsContext,
+                    (fsContext).cast(),
                 );
             }
         }
@@ -439,7 +439,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
                 break 'sehtry;
             }
 
-            if (*FdoExtension).AdapterDescriptor.SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+            if (*(*FdoExtension).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                 status = InitializeStorageRequestBlock(
                     srb as *mut _STORAGE_REQUEST_BLOCK,
                     STORAGE_ADDRESS_TYPE_BTL8,
@@ -553,8 +553,8 @@ pub unsafe extern "system" fn ClassGetFsContext(
     CommonExtension: *mut _COMMON_DEVICE_EXTENSION,
     FileObject: PFILE_OBJECT
 ) -> PFILE_OBJECT_EXTENSION {
-    GetDictionaryEntry(
+    (GetDictionaryEntry(
         core::ptr::addr_of_mut!((*CommonExtension).FileObjectDictionary),
         FileObject as u64
-    )
+    )).cast()
 }

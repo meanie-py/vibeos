@@ -2000,6 +2000,31 @@ pub struct _SCSI_SUPPORTED_CONTROL_TYPE_LIST {
 pub type SCSI_SUPPORTED_CONTROL_TYPE_LIST = _SCSI_SUPPORTED_CONTROL_TYPE_LIST;
 pub type PSCSI_SUPPORTED_CONTROL_TYPE_LIST = *mut _SCSI_SUPPORTED_CONTROL_TYPE_LIST;
 #[repr(C)]
+pub struct _SCSI_REQUEST_BLOCK {
+    pub Length: USHORT,
+    pub Function: UCHAR,
+    pub SrbStatus: UCHAR,
+    pub ScsiStatus: UCHAR,
+    pub PathId: UCHAR,
+    pub TargetId: UCHAR,
+    pub Lun: UCHAR,
+    pub QueueTag: UCHAR,
+    pub QueueAction: UCHAR,
+    pub CdbLength: UCHAR,
+    pub SenseInfoBufferLength: UCHAR,
+    pub SrbFlags: ULONG,
+    pub DataTransferLength: ULONG,
+    pub TimeOutValue: ULONG,
+    pub DataBuffer: PVOID,
+    pub SenseInfoBuffer: PVOID,
+    pub NextSrb: *mut _SCSI_REQUEST_BLOCK,
+    pub OriginalRequest: PVOID,
+    pub SrbExtension: PVOID,
+    pub __bindgen_anon_1: _SCSI_REQUEST_BLOCK__bindgen_ty_1,
+    pub Reserved: ULONG,
+    pub Cdb: [UCHAR; 16usize],
+}
+#[repr(C)]
 pub struct _SCSI_REQUEST_BLOCK__bindgen_ty_1 {
     pub InternalStatus: __BindgenUnionField<ULONG>,
     pub QueueSortKey: __BindgenUnionField<ULONG>,
@@ -38995,6 +39020,23 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub static DEVPKEY_Storage_Gpt_Name: DEVPROPKEY;
+}
+#[repr(C)]
+pub struct _STORAGE_ADAPTER_DESCRIPTOR {
+    pub Version: ULONG,
+    pub Size: ULONG,
+    pub MaximumTransferLength: ULONG,
+    pub MaximumPhysicalPages: ULONG,
+    pub AlignmentMask: ULONG,
+    pub AdapterUsesPio: BOOLEAN,
+    pub AdapterScansDown: BOOLEAN,
+    pub CommandQueueing: BOOLEAN,
+    pub AcceleratedTransfer: BOOLEAN,
+    pub BusType: UCHAR,
+    pub BusMajorVersion: USHORT,
+    pub BusMinorVersion: USHORT,
+    pub SrbType: UCHAR,
+    pub AddressType: UCHAR,
 }
 unsafe extern "C" {
     pub static ScsiRawInterfaceGuid: GUID;

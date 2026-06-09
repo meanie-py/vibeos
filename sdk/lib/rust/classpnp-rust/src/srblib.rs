@@ -127,7 +127,7 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
         if status == STATUS_SUCCESS {
             if length == !0u32 {
                 DbgPrint(
-                    b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                    (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
                     b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/srblib.c\0".as_ptr() as *const i8,
                     186i32,
                     b"length != (ULONG)-1\0".as_ptr() as *const i8,
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
 
             if srbExDataLength == !0u32 {
                 DbgPrint(
-                    b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                    (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
                     b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/srblib.c\0".as_ptr() as *const i8,
                     193i32,
                     b"srbExDataLength != (ULONG)-1\0".as_ptr() as *const i8,

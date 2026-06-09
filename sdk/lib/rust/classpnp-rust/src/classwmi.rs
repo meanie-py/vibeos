@@ -79,7 +79,7 @@ pub unsafe extern "C" fn ClassFindGuid(
     Guid: *const GUID,
     GuidIndex: *mut u32,
 ) -> u8 {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,

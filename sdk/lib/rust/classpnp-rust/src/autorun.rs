@@ -30,6 +30,9 @@ use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{ClassGetDeviceParameter, ClassGetDriverExtension, ClassGetFsContext, ClassGetVpb, ClassSetDeviceParameter, ClassWmiFireEvent, ClasspPowerActivateDevice, ClasspPowerIdleDevice, InitializeStorageRequestBlock};
 use ntkrnl_sys::ddk::{ExFreePool};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::guid::{GUID_CONSOLE_DISPLAY_STATE, GUID_IO_DEVICE_BECOMING_READY, GUID_IO_DEVICE_EXTERNAL_REQUEST, GUID_IO_MEDIA_ARRIVAL, GUID_IO_MEDIA_EJECT_REQUEST, GUID_IO_MEDIA_REMOVAL};
+use crate::types::{ScreenStateNotificationHandle};
 
 extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
@@ -296,7 +299,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                         && (*ClassGetVpb(
                             (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                         ))
-                        .Flags as i32 & VPB_MOUNTED != 0
+                        .Flags as i32 & (VPB_MOUNTED) as i32 != 0
                     {
                         (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject).Flags |=
                             0x2u32;
@@ -448,7 +451,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                     && (*ClassGetVpb(
                         (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                     ))
-                    .Flags as i32 & VPB_MOUNTED != 0
+                    .Flags as i32 & (VPB_MOUNTED) as i32 != 0
                 {
                     (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject).Flags |=
                         0x2u32;
@@ -1040,7 +1043,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         cdb = SrbGetCdb(srbEx as PVOID);
     } else {
         core::ptr::write_bytes(srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
-        (*srb).QueueTag = SP_UNTAGGED;
+        (*srb).QueueTag = (SP_UNTAGGED) as u8;
         (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST as UCHAR;
         (*srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as USHORT;
         (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI as UCHAR;
@@ -1510,7 +1513,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                             break;
                         }
 
-                        if (*Info).MediaChangeSrb.Srb.as_ref().Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
+                        if (*Info).MediaChangeSrb.Srb.as_ref().Function == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8 {
                             srbFlags = (*Info).MediaChangeSrb.SrbEx.as_ref().SrbFlags;
                         } else {
                             srbFlags = (*Info).MediaChangeSrb.Srb.as_ref().SrbFlags;
@@ -1567,7 +1570,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
 
                         // SRB_STATUS macro
                         let srbStatus = (*Info).MediaChangeSrb.Srb.as_ref().SrbStatus as i32;
-                        if (srbStatus & !(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) != SRB_STATUS_SUCCESS {
+                        if (srbStatus & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as i32) != (SRB_STATUS_SUCCESS) as i32 {
                             (InterpretSenseInfoWithoutHistory).cast()(
                                 (*FdoExtension).DeviceObject,
                                 irp,
@@ -1581,7 +1584,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                         }
 
                         if (*deviceDescriptor).BusType as u32 == BusTypeAtapi as u32
-                            && srbStatus == SRB_STATUS_BUS_RESET
+                            && srbStatus == (SRB_STATUS_BUS_RESET) as i32
                         {
                             atapiResets += 1;
                             if atapiResets >= 4 {

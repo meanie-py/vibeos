@@ -11,7 +11,7 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{IRP_MJ_SCSI, SL_WRITE_THROUGH, TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING};
 use crate::types::{CDB, CLASS_PRIVATE_FDO_DATA, ClasspReceiveWriteUsingTokenInformationTransferPacketDone, DEV_USE_16BYTE_CDB, DefaultStorageRequestBlockAllocateRoutine, FOUR_BYTE, FUNCTIONAL_DEVICE_EXTENSION, MAX_OUTSTANDING_IO_PER_LUN_DEFAULT, MAX_WORKINGSET_TRANSFER_PACKETS_Client, MAX_WORKINGSET_TRANSFER_PACKETS_Server, MIN_INITIAL_TRANSFER_PACKETS, MIN_WORKINGSET_TRANSFER_PACKETS_Client, MIN_WORKINGSET_TRANSFER_PACKETS_Server_LowerBound, MIN_WORKINGSET_TRANSFER_PACKETS_Server_UpperBound, NUM_DRIVECAPACITY_RETRIES, NUM_LOCKMEDIAREMOVAL_RETRIES, NUM_MODESELECT_RETRIES, NUM_WRITE_USING_TOKEN_RETRIES, PCDB, PCLASS_PRIVATE_FDO_DATA, PCLASS_WORKING_SET, PCOMMON_DEVICE_EXTENSION, PEIGHT_BYTE, PFOUR_BYTE, PFUNCTIONAL_DEVICE_EXTENSION, PNL_SLIST_HEADER, PPNL_SLIST_HEADER, PSCSI_REQUEST_BLOCK, PSRB_HISTORY, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, PTRANSFER_PACKET, READ_CAPACITY_DATA_EX, REMOVE_COMPLETE, SCSIOP_MEDIUM_REMOVAL, SCSIOP_MODE_SELECT, SCSIOP_READ, SCSIOP_READ16, SCSIOP_READ_CAPACITY, SCSIOP_READ_CAPACITY16, SCSIOP_RECEIVE_ROD_TOKEN_INFORMATION, SCSIOP_WRITE, SCSIOP_WRITE16, SCSI_REQUEST_BLOCK, SENSE_DATA_EX, SERVICE_ACTION_RECEIVE_TOKEN_INFORMATION, SRB_CLASS_FLAGS_PAGING, SRB_FLAGS_ADAPTER_CACHE_ENABLE, SRB_FLAGS_DATA_OUT, SRB_FLAGS_DONT_START_NEXT_PACKET, SRB_FUNCTION_EXECUTE_SCSI, SRB_HISTORY, SRB_HISTORY_ITEM, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SUCCESS, STORAGE_REQUEST_BLOCK, TRANSFER_PACKET, _CDB, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16, _STORAGE_REQUEST_BLOCK_HEADER};
-use ntkrnl_sys::ddk::{CCHAR, CLONG, CSHORT, IO_PAGING_PRIORITY, IRP, KEVENT, PCCHAR, PCSTR, PMDL, PRTL_OSVERSIONINFOW, STORAGE_PROPERTY_ID, ULONG64, _MDL, _SCSI_REQUEST_BLOCK, _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty};
+use ntkrnl_sys::ddk::{CCHAR, CLONG, CSHORT, IO_PAGING_PRIORITY, IRP, KEVENT, PCCHAR, PCSTR, PMDL, PRTL_OSVERSIONINFOW, STORAGE_PROPERTY_ID, ULONG64, _MDL, _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{IRP_PAGING_IO, IRP_SYNCHRONOUS_PAGING_IO, STATUS_INTEGER_OVERFLOW, STATUS_MORE_PROCESSING_REQUIRED, TRACE_LEVEL_VERBOSE, VER_NT_DOMAIN_CONTROLLER, VER_NT_SERVER};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -25,6 +25,10 @@ use crate::shims::*;
 use crate::debug::{DbgLogFlushInfo, DbgLogSendPacket};
 use crate::types::{ClassGetDescriptor, ClasspCompleteIdleRequest, CreateStorageRequestBlock, DequeueDeferredClientIrp, HistoryInitializeRetryLogs, HistoryLogSendPacket, InterpretTransferPacketError, RetryTransferPacket, ServiceTransferRequest, StepLowMemRetry};
 use ntkrnl_sys::ddk::{ExFreePool};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{ClassMaxInterleavePerCriticalIo};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_SCSI_REQUEST_BLOCK};
 
 extern "C" {
     fn KeGetCurrentIrql() -> KIRQL;
@@ -585,14 +589,14 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
 }
 #[no_mangle]
 pub unsafe extern "C" fn DestroyTransferPacket(pkt: PTRANSFER_PACKET) {
-    let fdo_ext = (*pkt).Fdo.DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
+    let fdo_ext = (*(*pkt).Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdo_data = (*fdo_ext).PrivateFdoData;
     let mut old_irql: KIRQL = 0;
 
     debug_assert!((*pkt).SlistEntry.Next.is_null());
 
     KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*fdo_data).SpinLock),
+        (core::ptr::addr_of_mut!((*fdo_data).SpinLock)).cast(),
         core::ptr::addr_of_mut!(old_irql),
     );
 
@@ -602,7 +606,7 @@ pub unsafe extern "C" fn DestroyTransferPacket(pkt: PTRANSFER_PACKET) {
     RemoveEntryList(core::ptr::addr_of_mut!((*pkt).AllPktsListEntry));
     InitializeListHead(core::ptr::addr_of_mut!((*pkt).AllPktsListEntry));
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*fdo_data).SpinLock), old_irql);
+    KeReleaseSpinLock((core::ptr::addr_of_mut!((*fdo_data).SpinLock)).cast(), old_irql);
 
     IoFreeMdl((*pkt).PartialMdl);
     IoFreeIrp((*pkt).Irp);
@@ -767,7 +771,7 @@ pub unsafe extern "C" fn DequeueFreeTransferPacketEx(
     let mut pkt: PTRANSFER_PACKET = core::ptr::null_mut();
 
     let slistEntry = InterlockedPopEntrySList(
-        core::ptr::addr_of_mut!((*fdoData).FreeTransferPacketsLists.offset(Node as isize).SListHeader),
+        (core::ptr::addr_of_mut!((*(*fdoData).FreeTransferPacketsLists.offset(Node as isize)).SListHeader)).cast(),
     );
 
     if !slistEntry.is_null() {
@@ -848,10 +852,9 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
 
     let srbLength: ULONG;
     if (*(*fdoExt).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
-        srbLength = (*(*fdoData).SrbTemplate as PSTORAGE_REQUEST_BLOCK)
-            .0
+        srbLength = (*(*(*fdoData).SrbTemplate as PSTORAGE_REQUEST_BLOCK)).0
             .SrbLength;
-        if !((*(*Pkt).Srb as PSTORAGE_REQUEST_BLOCK).SrbLength >= srbLength) {
+        if !((*(*(*Pkt).Srb as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8).cast(),
                 b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
@@ -1503,7 +1506,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
     SavePages: u8,
     OriginalIrp: PIRP,
 ) {
-    let fdoExt: PFUNCTIONAL_DEVICE_EXTENSION = (*Pkt).Fdo.DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
+    let fdoExt: PFUNCTIONAL_DEVICE_EXTENSION = (*(*Pkt).Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdoData: PCLASS_PRIVATE_FDO_DATA = (*fdoExt).PrivateFdoData;
     let mut pCdb: PCDB = ::core::ptr::null_mut::<_CDB>();
     let srbLength: u32;
@@ -1786,9 +1789,9 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     let srb_length: u32;
 
     if (*adapter_desc).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
-        srb_length = (*(*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK).SrbLength;
+        srb_length = (*(*(*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK)).SrbLength;
         NT_ASSERT(
-            (*(*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK).SrbLength >= srb_length,
+            (*(*(*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srb_length,
         );
     } else {
         srb_length = ((*(*fdoData).SrbTemplate).Length) as u32;

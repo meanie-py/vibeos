@@ -16,7 +16,7 @@ use ntkrnl_sys::ddk::{KeGetCurrentIrql};
 pub static mut ClassDispatchUnimplemented: DRIVER_DISPATCH = None;
 #[no_mangle]
 pub unsafe extern "C" fn ClassInitializeDispatchTables(DriverExtension: *mut _CLASS_DRIVER_EXTENSION) {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
             KeGetCurrentIrql() as i32,

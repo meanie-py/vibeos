@@ -21,7 +21,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
     // assert Pkt->RetryHistory != NULL
     if (*Pkt).RetryHistory.is_null() {
         DbgPrint(
-            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+            (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
             b"history.c\0".as_ptr() as *const core::ffi::c_char,
             50i32,
             b"Pkt->RetryHistory != NULL\0".as_ptr() as *const core::ffi::c_char,
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
     // assert UsedHistoryCount <= TotalHistoryCount
     if !((*history).UsedHistoryCount <= (*history).TotalHistoryCount) {
         DbgPrint(
-            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+            (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
             b"history.c\0".as_ptr() as *const core::ffi::c_char,
             53i32,
             b"history->UsedHistoryCount <= history->TotalHistoryCount\0".as_ptr() as *const core::ffi::c_char,
@@ -48,7 +48,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
         let fdoData = (*fdoExtension).PrivateFdoData as *mut _CLASS_PRIVATE_FDO_DATA;
         if (*fdoData).InterpretSenseInfo.is_null() {
             DbgPrint(
-                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
                 b"history.c\0".as_ptr() as *const core::ffi::c_char,
                 60i32,
                 b"fdoData->InterpretSenseInfo != NULL\0".as_ptr() as *const core::ffi::c_char,
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
         }
         if (*(*fdoData).InterpretSenseInfo).Compress.is_none() {
             DbgPrint(
-                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
                 b"history.c\0".as_ptr() as *const core::ffi::c_char,
                 61i32,
                 b"fdoData->InterpretSenseInfo->Compress != NULL\0".as_ptr() as *const core::ffi::c_char,
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
         // assert UsedHistoryCount < TotalHistoryCount after compression
         if !((*history).UsedHistoryCount < (*history).TotalHistoryCount) {
             DbgPrint(
-                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
                 b"history.c\0".as_ptr() as *const core::ffi::c_char,
                 63i32,
                 b"history->UsedHistoryCount < history->TotalHistoryCount\0".as_ptr() as *const core::ffi::c_char,
@@ -83,7 +83,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
     // final ensure room
     if !((*history).UsedHistoryCount < (*history).TotalHistoryCount) {
         DbgPrint(
-            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+            (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
             b"history.c\0".as_ptr() as *const core::ffi::c_char,
             67i32,
             b"history->UsedHistoryCount < history->TotalHistoryCount\0".as_ptr() as *const core::ffi::c_char,
