@@ -98,8 +98,10 @@ if(ARCH STREQUAL "i386")
         i386/except_asm.s
         # i386/interlck.S — replaced by Rust SList (sdk/lib/rust/slist/)
         i386/rtlmem.s
-        i386/rtlswap.S
-        i386/res_asm.s)
+        i386/rtlswap.S)
+        # i386/res_asm.s — replaced by Rust (sdk/lib/rust/rtl-misc/src/res.rs: LdrAccessResource@16).
+        # The asm stub's _LdrpAccessResource@16 callee lived in res.c.obj (now Rust); keeping
+        # the asm caused an undefined symbol once the stale fat librtl.a was regenerated lean.
     list(APPEND SOURCE
         i386/except.c
         i386/thread.c)
