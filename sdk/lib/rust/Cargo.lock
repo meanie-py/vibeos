@@ -309,6 +309,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "inflib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "interlck"
 version = "0.1.0"
 
