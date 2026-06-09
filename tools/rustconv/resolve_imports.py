@@ -30,14 +30,31 @@ arch = {"i686-pc-windows-gnu": "i386", "x86_64-pc-windows-gnu": "amd64",
 
 SOURCES = [("crate::types", os.path.join(CRATE_SRC, f"types_{arch}.rs")),
            ("crate::glue", os.path.join(CRATE_SRC, "glue.rs")),
+           # crate-local pure-data modules (file-scope statics/GUID tables) some drivers
+           # carry — module bodies reference these globals but don't import them.
+           ("crate::data", os.path.join(CRATE_SRC, "data.rs")),
+           ("crate::guid", os.path.join(CRATE_SRC, "guid.rs")),
+           ("crate::globals", os.path.join(CRATE_SRC, "globals.rs")),
            ("ntkrnl_sys::ddk", os.path.join(NTK, f"bindgen_{arch}.rs"))]
 for m in ("base", "ke", "ex", "rtl", "constants", "globals", "driver_ddk",
           "interlocked", "ob", "mm", "ps"):
     SOURCES.append((f"ntkrnl_sys::{m}", os.path.join(NTK, f"{m}.rs")))
 SRC_TEXT = {p: open(p).read() for _, p in SOURCES if os.path.exists(p)}
 
-DECL = r"\bpub (?:type|struct|enum|union|const|static|fn) "
-def resolve(name):
+# Crate-own MODULE files (sibling .rs) — for cross-module FUNCTION resolution: a `#[no_mangle]
+# pub fn NAME` defined in module M is callable from module B only via `use crate::M::NAME`. We
+# match only COLUMN-0 definitions (`^pub ... fn`) so indented extern-block decls (non-exportable)
+# don't masquerade as the home of a symbol.
+import glob as _glob
+_SKIP = {"lib.rs", "types.rs", "glue.rs", "data.rs", "guid.rs", "globals.rs", "shims.rs"}
+FN_SOURCES = [(f"crate::{os.path.basename(p)[:-3]}", p)
+              for p in sorted(_glob.glob(os.path.join(CRATE_SRC, "*.rs")))
+              if os.path.basename(p) not in _SKIP and not os.path.basename(p).startswith("types_")]
+FN_TEXT = {p: open(p).read() for _, p in FN_SOURCES if os.path.exists(p)}
+FN_DEF = r"(?m)^(?:#\[no_mangle\]\s*)?pub (?:unsafe )?(?:extern \"[A-Za-z]+\" )?fn "
+
+DECL = r"\bpub (?:type|struct|enum|union|const|static(?: mut)?|fn) "
+def resolve(name, cur_file=None):
     """Return (module, import_clause) or None. import_clause is what goes in use {...}."""
     for mod, p in SOURCES:
         s = SRC_TEXT.get(p, "")
@@ -51,6 +68,11 @@ def resolve(name):
         m = re.search(r"\b(_[A-Z][A-Za-z0-9_]*_" + re.escape(name) + r")\b", SRC_TEXT.get(p, ""))
         if m:
             return mod, f"{m.group(1)} as {name}"
+    for mod, p in FN_SOURCES:                    # cross-module pub fn definition
+        if os.path.basename(p) == cur_file:      # don't self-import
+            continue
+        if re.search(FN_DEF + re.escape(name) + r"\b", FN_TEXT.get(p, "")):
+            return mod, name
     return None
 
 def check_errors():
@@ -63,7 +85,13 @@ def collect_missing(stderr):
     out = defaultdict(set)
     cur = None
     for ln in stderr.splitlines():
-        m = re.search(r"cannot find (?:type|value) `([A-Za-z0-9_]+)`", ln)
+        # E0412/E0425 (type/value), E0422 (struct/variant/union literal), and the
+        # E0408 "variable `X` is not bound in all patterns" — all are missing-import symptoms
+        # (an unimported uppercase const in a match arm silently becomes a binding).
+        m = (re.search(r"cannot find (?:type|value) `([A-Za-z0-9_]+)`", ln)
+             or re.search(r"cannot find struct, variant or union type `([A-Za-z0-9_]+)`", ln)
+             or re.search(r"cannot find function(?:, tuple struct or tuple variant)? `([A-Za-z0-9_]+)`", ln)
+             or re.search(r"variable `([A-Za-z0-9_]+)` is not bound in all patterns", ln))
         if m: cur = m.group(1); continue
         m = re.search(r"-->\s+\S*?/src/([A-Za-z0-9_]+\.rs):", ln)
         if m and cur: out[m.group(1)].add(cur); cur = None
@@ -75,7 +103,7 @@ def main():
     unresolved = set()
     for fname, names in missing.items():
         for n in sorted(names):
-            r = resolve(n)
+            r = resolve(n, cur_file=fname)
             if r: per_file_adds[fname][r[0]].append(r[1])
             else: unresolved.add(n)
     added = 0
