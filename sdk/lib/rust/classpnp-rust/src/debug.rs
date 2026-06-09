@@ -358,10 +358,26 @@ pub unsafe extern "C" fn SnapDiskStartup() {
         core::ptr::addr_of_mut!(Index),
     );
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn ClassDebugPrint(DebugPrintLevel: CLASS_DEBUG_LEVEL, DebugMessage: PCCHAR, ...) {
-    let _ = DebugPrintLevel;
-    let _ = DebugMessage;
+// The public variadic `ClassDebugPrint(level, msg, ...)` lives in the C trampoline
+// (rust_variadic_shim.c): it does va_start and calls this worker with the va_list.
+// Faithful to the unbuffered path of classpnp/debug.c (ClasspnpGlobals.UseBufferedDebugPrint
+// defaults FALSE, so vDbgPrintEx is the live path).
+// OWED: the buffered ring-buffer branch (UseBufferedDebugPrint) is not yet ported.
+extern "C" {
+    fn vDbgPrintEx(ComponentId: u32, Level: u32, Format: PCCHAR, arglist: va_list) -> u32;
+}
+#[no_mangle]
+pub unsafe extern "C" fn classpnp_ClassDebugPrintWorker(
+    DebugPrintLevel: u32,
+    DebugMessage: PCCHAR,
+    ap: va_list,
+) {
+    if (DebugPrintLevel as i32) <= (ClassDebug & 0x0000ffff)
+        || (1i32.wrapping_shl(DebugPrintLevel.wrapping_add(15)) & ClassDebug) != 0
+    {
+        // DPFLTR_CLASSPNP_ID, DPFLTR_INFO_LEVEL (= 3)
+        vDbgPrintEx(DPFLTR_CLASSPNP_ID as u32, 3, DebugMessage, ap);
+    }
 }
 
 #[no_mangle]

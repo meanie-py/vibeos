@@ -9,9 +9,12 @@ use core::ffi::c_void;
 
 extern "C" {
     fn NT_ASSERT(condition: i32);
-    fn va_start(ap: *mut va_list, ...);
-    fn va_end(ap: *mut va_list);
+    // va_start/va_end live in the C trampoline (rust_variadic_shim.c); these workers
+    // receive the va_list already-started and pull args via the C va_arg helpers
+    // (va_arg, like va_start, is a macro and cannot be expressed in stable Rust).
+    #[link_name = "classpnp_va_arg_srbexdatatype"]
     fn va_arg_srbexdatatype(ap: *mut va_list) -> SRBEXDATATYPE;
+    #[link_name = "classpnp_va_arg_ulong"]
     fn va_arg_ulong(ap: *mut va_list) -> ULONG;
 }
 #[no_mangle]
@@ -157,31 +160,22 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
 
     status
 }
+// The public variadic entry `InitializeStorageRequestBlock(..., ...)` lives in the C
+// trampoline (rust_variadic_shim.c); it does va_start and calls the worker
+// `pInitializeStorageRequestBlock` above. Nothing to define here.
+
+// Worker for the public variadic `CreateStorageRequestBlock(..., ...)`, whose va_start
+// trampoline is in rust_variadic_shim.c. Receives the already-started `ap`.
 #[no_mangle]
-pub unsafe extern "C" fn InitializeStorageRequestBlock(
-    Srb: *mut STORAGE_REQUEST_BLOCK,
-    AddressType: u16,
-    ByteSize: u32,
-    NumSrbExData: u32,
-    ...
-) -> NTSTATUS {
-    let mut ap: va_list;
-    va_start(&mut ap, NumSrbExData);
-    let status = pInitializeStorageRequestBlock(Srb, AddressType, ByteSize, NumSrbExData, ap);
-    va_end(&mut ap);
-    status
-}
-#[no_mangle]
-pub unsafe extern "C" fn CreateStorageRequestBlock(
+pub unsafe extern "C" fn classpnp_CreateStorageRequestBlockWorker(
     Srb: *mut *mut STORAGE_REQUEST_BLOCK,
     AddressType: USHORT,
     AllocateRoutine: PSRB_ALLOCATE_ROUTINE,
     ByteSize: *mut ULONG,
     NumSrbExData: ULONG,
-    ...
+    mut ap: va_list,
 ) -> NTSTATUS {
     let mut sizeNeeded: ULONG = 0;
-    let mut ap: va_list;
     let mut i: ULONG;
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
@@ -200,8 +194,10 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
         status = STATUS_INVALID_PARAMETER;
     }
 
-    va_start(&mut ap, NumSrbExData);
-
+    // ap is already va_start'd by the C trampoline. The C original va_start's twice
+    // (once to size, once to fill); on all 3 Windows targets va_list is a plain pointer,
+    // so we snapshot it and restore to re-traverse instead of a second va_start.
+    let ap_start = ap;
     i = 0;
     while i < NumSrbExData && status == STATUS_SUCCESS {
         match va_arg_srbexdatatype(&mut ap) {
@@ -236,7 +232,6 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
         }
         i += 1;
     }
-    va_end(&mut ap);
 
     if status == STATUS_SUCCESS {
         if !AllocateRoutine.is_null() {
@@ -251,10 +246,9 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
         }
 
         if !(*Srb).is_null() {
-            va_start(&mut ap, NumSrbExData);
+            ap = ap_start; // re-traverse the same args (see snapshot above)
             // pInitializeStorageRequestBlock will set the SrbLength field
             status = pInitializeStorageRequestBlock(*Srb, AddressType, sizeNeeded, NumSrbExData, ap);
-            va_end(&mut ap);
         }
     }
 
