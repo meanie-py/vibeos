@@ -13,6 +13,8 @@
 mod types;
 #[path = "cabinet/cabinet_main.rs"]
 mod cabinet_main;
+#[path = "cabinet/wine_list.rs"]
+mod wine_list;
 #[path = "cabinet/fci.rs"]
 mod fci;
 #[path = "cabinet/fdi.rs"]

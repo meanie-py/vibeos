@@ -461,9 +461,11 @@ unsafe fn add_file(fci: *mut FCI_Int, filename: *const i8) -> *mut file {
         fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
         fn strlen(s: *const i8) -> usize;
     }
-    extern "system" {
+    // list_add_tail is the cdecl wine_list shim (_list_add_tail); set_error is
+    // the module-local `unsafe fn` below — declaring it extern "system" here
+    // produced the undefined _set_error@12, so it is dropped.
+    extern "C" {
         fn list_add_tail(list: *mut list, entry: *mut list);
-        fn set_error(fci: *mut FCI_Int, err: u32, code: u32);
     }
 
     let size = core::mem::offset_of!(file, name) + (strlen(filename) as usize) + 1;
@@ -471,7 +473,7 @@ unsafe fn add_file(fci: *mut FCI_Int, filename: *const i8) -> *mut file {
     let file_ptr: *mut file = alloc_fn(size as u32) as *mut file;
 
     if file_ptr.is_null() {
-        set_error(fci, FCIERR_ALLOC_FAIL as u32, ERROR_NOT_ENOUGH_MEMORY);
+        set_error(fci, FCIERR_ALLOC_FAIL as i32, ERROR_NOT_ENOUGH_MEMORY as i32);
         return core::ptr::null_mut();
     }
     (*file_ptr).size = 0;
@@ -1669,6 +1671,31 @@ pub unsafe extern "C" fn FCIFlushFolder(
         return 0;
     }
     fci_flush_folder(p_fci_internal, 0, pfnfcignc, pfnfcis)
+}
+
+/* FCIFlushCabinet (CABINET.13) — public export wrapper (dropped in the
+ * DeepSeek translation; the internal fci_flush_cabinet helper was kept but the
+ * exported wrapper was not). Faithful hand-port of fci.c:1675. */
+#[no_mangle]
+pub unsafe extern "C" fn FCIFlushCabinet(
+    hfci: HFCI,
+    fGetNextCab: BOOL,
+    pfnfcignc: PFNFCIGETNEXTCABINET,
+    pfnfcis: PFNFCISTATUS,
+) -> BOOL {
+    let p_fci_internal = get_fci_ptr(hfci as *mut FCI_Int);
+    if p_fci_internal.is_null() {
+        return 0;
+    }
+    if fci_flush_cabinet(p_fci_internal, fGetNextCab, pfnfcignc, pfnfcis) == 0 {
+        return 0;
+    }
+    while (*p_fci_internal).files_size > 0 || (*p_fci_internal).placed_files_size > 0 {
+        if fci_flush_cabinet(p_fci_internal, fGetNextCab, pfnfcignc, pfnfcis) == 0 {
+            return 0;
+        }
+    }
+    1
 }
 
 #[no_mangle]

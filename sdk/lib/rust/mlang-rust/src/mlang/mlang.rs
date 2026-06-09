@@ -2010,7 +2010,7 @@ unsafe extern "C" fn UnlockModule() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DllMain(hInstDLL: HINSTANCE, fdwReason: DWORD, lpv: LPVOID) -> BOOL {
+pub unsafe extern "system" fn DllMain(hInstDLL: HINSTANCE, fdwReason: DWORD, lpv: LPVOID) -> BOOL {
     unsafe {
         match fdwReason {
             DLL_PROCESS_ATTACH => {
@@ -2318,7 +2318,7 @@ pub unsafe extern "C" fn MLANGCF_QueryInterface(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DllGetClassObject(
+pub unsafe extern "system" fn DllGetClassObject(
     rclsid: *const GUID,
     iid: *const GUID,
     ppv: *mut *mut core::ffi::c_void,
@@ -2955,7 +2955,7 @@ unsafe extern "C" fn impl_from_IMLangConvertCharset(iface: *mut IMLangConvertCha
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DllCanUnloadNow() -> HRESULT {
+pub unsafe extern "system" fn DllCanUnloadNow() -> HRESULT {
     if dll_count == 0 { 0 /* S_OK */ } else { 1 /* S_FALSE */ }
 }
 
@@ -3019,14 +3019,14 @@ unsafe extern "C" fn register_codepages() -> i32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DllUnregisterServer() -> HRESULT {
+pub unsafe extern "system" fn DllUnregisterServer() -> HRESULT {
     unsafe {
         __wine_unregister_resources(instance)
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn GetGlobalFontLinkObject(
+pub unsafe extern "system" fn GetGlobalFontLinkObject(
     unknown: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
     if unknown.is_null() {
@@ -3241,7 +3241,7 @@ unsafe extern "C" fn MLANGCF_LockServer(iface: *mut IClassFactory, dolock: i32) 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IsConvertINetStringAvailable(
+pub unsafe extern "system" fn IsConvertINetStringAvailable(
     dwSrcEncoding: u32,
     dwDstEncoding: u32,
 ) -> i32 {
@@ -3277,7 +3277,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetFamilyCodePage(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn LcidToRfc1766A(
+pub unsafe extern "system" fn LcidToRfc1766A(
     lcid: u32,
     pszRfc1766: *mut i8,
     nChar: i32,
@@ -3292,7 +3292,7 @@ pub unsafe extern "C" fn LcidToRfc1766A(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn LcidToRfc1766W(
+pub unsafe extern "system" fn LcidToRfc1766W(
     lcid: u32,
     pszRfc1766: *mut u16,
     nChar: i32,
@@ -4386,7 +4386,7 @@ unsafe extern "C" fn fnIEnumRfc1766_Skip(iface: *mut IEnumRfc1766, celt: u32) ->
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Rfc1766ToLcidW(pLocale: *mut u32, pszRfc1766: *const u16) -> i32 {
+pub unsafe extern "system" fn Rfc1766ToLcidW(pLocale: *mut u32, pszRfc1766: *const u16) -> i32 {
     let mut enumrfc1766: *mut IEnumRfc1766 = core::ptr::null_mut();
     let mut hr: i32;
 
@@ -5250,7 +5250,7 @@ unsafe extern "C" fn MLangConvertCharset_DoConversion(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DllRegisterServer() -> HRESULT {
+pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
     if register_codepages() == 0 {
         return E_FAIL;
     }
@@ -5400,7 +5400,7 @@ unsafe extern "C" fn fnIMultiLanguage3_IsConvertible(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Rfc1766ToLcidA(lcid: *mut LCID, rfc1766A: LPCSTR) -> HRESULT {
+pub unsafe extern "system" fn Rfc1766ToLcidA(lcid: *mut LCID, rfc1766A: LPCSTR) -> HRESULT {
     // WCHAR rfc1766W[MAX_RFC1766_NAME + 1];
     let mut rfc1766W: [u16; MAX_RFC1766_NAME + 1] = [0; MAX_RFC1766_NAME + 1];
 
@@ -5453,7 +5453,7 @@ unsafe extern "C" fn fnIMultiLanguage3_EnumCodePages(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ConvertINetUnicodeToMultiByte(
+pub unsafe extern "system" fn ConvertINetUnicodeToMultiByte(
     pdwMode: *mut u32,
     dwEncoding: u32,
     pSrcStr: *const u16,
@@ -5677,7 +5677,7 @@ unsafe extern "C" fn MLangConvertCharset_DoConversionToUnicode(
     }
 }
 
-pub unsafe extern "C" fn ConvertINetString(
+pub unsafe extern "system" fn ConvertINetString(
     pdwMode: *mut u32,
     dwSrcEncoding: u32,
     dwDstEncoding: u32,
@@ -5996,7 +5996,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_ConvertStringInIStream(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ConvertINetMultiByteToUnicode(
+pub unsafe extern "system" fn ConvertINetMultiByteToUnicode(
     pdwMode: LPDWORD,
     dwEncoding: DWORD,
     pSrcStr: LPCSTR,

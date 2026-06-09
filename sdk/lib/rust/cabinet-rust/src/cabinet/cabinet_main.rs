@@ -61,7 +61,7 @@ pub unsafe extern "system" fn DllGetVersion(pdvi: *mut DLLVERSIONINFO) -> i32 {
     return S_OK;
 }
 
-unsafe fn mem_alloc(cb: u32) -> *mut core::ffi::c_void {
+unsafe extern "C" fn mem_alloc(cb: u32) -> *mut core::ffi::c_void {
     HeapAlloc(GetProcessHeap(), 0, cb as usize)
 }
 
@@ -146,7 +146,7 @@ unsafe extern "C" fn fdi_close(hf: isize) -> i32 {
     if CloseHandle(handle) != 0 { 0 } else { -1 }
 }
 
-unsafe extern "C" fn fdi_seek(hf: INT_PTR, dist: i32, seektype: i32) -> i32 {
+unsafe extern "C" fn fdi_seek(hf: isize, dist: i32, seektype: i32) -> i32 {
     let handle = hf as *mut core::ffi::c_void;
     return SetFilePointer(handle, dist, core::ptr::null_mut(), seektype as u32) as i32;
 }
@@ -192,10 +192,10 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
             pfnalloc: unsafe extern "C" fn(u32) -> *mut core::ffi::c_void,
             pfnfree: unsafe extern "C" fn(*mut core::ffi::c_void),
             pfnopen: unsafe extern "C" fn(*mut i8, i32, i32) -> isize,
-            pfnread: unsafe extern "C" fn(*mut core::ffi::c_void, *mut u8, u32) -> u32,
-            pfnwrite: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, u32) -> u32,
-            pfnclose: unsafe extern "C" fn(*mut core::ffi::c_void) -> i32,
-            pfnseek: unsafe extern "C" fn(*mut core::ffi::c_void, i32, i32) -> i32,
+            pfnread: unsafe extern "C" fn(isize, *mut core::ffi::c_void, u32) -> u32,
+            pfnwrite: unsafe extern "C" fn(isize, *mut core::ffi::c_void, u32) -> u32,
+            pfnclose: unsafe extern "C" fn(isize) -> i32,
+            pfnseek: unsafe extern "C" fn(isize, i32, i32) -> i32,
             cpuType: u32,
             perf: *mut ERF,
         ) -> *mut core::ffi::c_void;
@@ -214,15 +214,10 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
         fn strlen(s: *const i8) -> u32;
         fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
         fn HRESULT_FROM_WIN32(error: u32) -> i32;
-        // callback functions used by FDICreate
-        fn mem_alloc(cb: u32) -> *mut core::ffi::c_void;
-        fn mem_free(memory: *mut core::ffi::c_void);
-        fn fdi_open(pszFile: *mut i8, oflag: i32, pmode: i32) -> isize;
-        fn fdi_read(hf: *mut core::ffi::c_void, pv: *mut u8, cb: u32) -> u32;
-        fn fdi_write(hf: *mut core::ffi::c_void, pv: *const u8, cb: u32) -> u32;
-        fn fdi_close(hf: *mut core::ffi::c_void) -> i32;
-        fn fdi_seek(hf: *mut core::ffi::c_void, dist: i32, seektype: i32) -> i32;
-        fn fdi_notify_extract() -> i32; // dummy signature, used as *const ()
+        // mem_alloc/mem_free/fdi_* and fdi_notify_extract are defined locally in
+        // this file; re-declaring them extern here shadowed the local defs and
+        // produced undefined _mem_alloc / _fdi_read / ... symbols. Removed so the
+        // FDICreate(...) call binds to the real local fns.
     }
 
     const S_OK: i32 = 0x00000000;

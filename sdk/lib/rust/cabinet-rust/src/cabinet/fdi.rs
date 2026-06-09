@@ -135,6 +135,10 @@ extern "C" {
 
 extern "system" {
     fn SetLastError(dwErrCode: u32);
+}
+extern "C" {
+    // debugstr_a is a cdecl shim provided by rust_cohab_stub.c (_debugstr_a);
+    // must NOT be extern "system" or it resolves to the missing _debugstr_a@4.
     fn debugstr_a(s: *const i8) -> *const i8;
 }
 
@@ -1256,11 +1260,18 @@ unsafe fn FDI_read_entries(
     pfdici: *mut FDICABINETINFO,
     pmii: *mut MORE_ISCAB_INFO,
 ) -> i32 {
-    extern "system" {
-        fn set_error(fdi: *mut FDI_Int, error: i32, param: i32);
-        fn EndGetI32(ptr: *const u8) -> i32;
-        fn EndGetI16(ptr: *const u8) -> i16;
-        fn FDI_read_string(fdi: *mut FDI_Int, hf: INT_PTR, cabsize: i32) -> *mut i8;
+    // set_error and FDI_read_string are defined at module scope (fdi.rs); the
+    // DeepSeek output wrongly re-declared them `extern` here (→ undefined
+    // _set_error@12). EndGetI32/EndGetI16 are wine little-endian read macros,
+    // not real functions — define them locally. (Faithful to wine/cabinet.h.)
+    unsafe fn EndGetI32(a: *const u8) -> i32 {
+        ((*a.add(0) as u32)
+            | ((*a.add(1) as u32) << 8)
+            | ((*a.add(2) as u32) << 16)
+            | ((*a.add(3) as u32) << 24)) as i32
+    }
+    unsafe fn EndGetI16(a: *const u8) -> i16 {
+        ((*a.add(0) as u16) | ((*a.add(1) as u16) << 8)) as i16
     }
 
     let mut num_folders: i32;
@@ -2069,5 +2080,362 @@ unsafe fn fdi_Ziphuft_build(
     /* return actual size of base table */
     *m = *l;
     return if y != 0 && g != 1 { 1 } else { 0 };
+}
+
+// EndGetIxx: wine little-endian read helpers (macros in C), module-level so both
+// FDIIsCabinet and fdi_decomp use them.
+#[inline]
+unsafe fn end_get_i32(a: *const u8) -> i32 {
+    ((*a.add(0) as u32)
+        | ((*a.add(1) as u32) << 8)
+        | ((*a.add(2) as u32) << 16)
+        | ((*a.add(3) as u32) << 24)) as i32
+}
+#[inline]
+unsafe fn end_get_i16(a: *const u8) -> i16 {
+    ((*a.add(0) as u16) | ((*a.add(1) as u16) << 8)) as i16
+}
+
+extern "C" {
+    fn strcpy(dst: *mut i8, src: *const i8) -> *mut i8;
+    fn strcat(dst: *mut i8, src: *const i8) -> *mut i8;
+}
+extern "system" {
+    fn lstrcmpiA(s1: *const i8, s2: *const i8) -> i32;
+}
+
+// ===========================================================================
+// fdi_decomp (fdi.c:1938) — DROPPED by the rustconv tree-sitter parser
+// (multi-line static sig at L1938 was skipped), hand-ported faithfully.
+//
+// Decompress `bytes` worth of output; on savemode, write it out via the user
+// callback. Handles split cabinets: when a data block's uncompressed size is 0
+// the file continues in the NEXT cabinet, which we open (with NEXT_CABINET
+// notifications), parse its folders/files, and resume from.
+// ===========================================================================
+unsafe fn fdi_decomp(
+    fi: *const fdi_file,
+    savemode: i32,
+    decomp_state: *mut fdi_decomp_state,
+    pszCabPath: *mut i8,
+    pfnfdin: Option<unsafe extern "C" fn(i32, *mut FDINOTIFICATION) -> i32>,
+    pvUser: *mut core::ffi::c_void,
+) -> i32 {
+    const cfdata_SIZEOF: u32 = 8;
+    const cfdata_CheckSum: usize = 0;
+    const cfdata_CompressedSize: usize = 4;
+    const cfdata_UncompressedSize: usize = 6;
+    const cffold_SIZEOF: u32 = 8;
+    const cffold_DataOffset: usize = 0;
+    const cffold_NumBlocks: usize = 4;
+    const cffold_CompType: usize = 6;
+    const cffile_SIZEOF: u32 = 16;
+    const cffile_UncompressedSize: usize = 0;
+    const cffile_FolderOffset: usize = 4;
+    const cffile_FolderIndex: usize = 8;
+    const cffile_Date: usize = 10;
+    const cffile_Time: usize = 12;
+    const cffile_Attribs: usize = 14;
+    const cffileCONTINUED_FROM_PREV: u16 = 0xFFFD;
+    const FDIERROR_NOT_A_CABINET: i32 = 5;
+    const FDIERROR_WRONG_CABINET: i32 = 7;
+    const FDIERROR_CABINET_NOT_FOUND: i32 = 1;
+    const MAX_PATH: usize = 260;
+    const SEEK_SET: i32 = 0;
+    const SEEK_CUR: i32 = 1;
+    // _O_RDONLY|_O_BINARY ; _S_IREAD|_S_IWRITE (msvcrt fcntl/stat flags)
+    const OPEN_FLAGS: i32 = 0x0000 | 0x8000;
+    const OPEN_MODE: i32 = 0x0100 | 0x0080;
+
+    let fdi: *mut FDI_Int = (*decomp_state).fdi;
+    let read = (*fdi).read;
+    let seek = (*fdi).seek;
+    let open = (*fdi).open;
+    let close = (*fdi).close;
+    let write = (*fdi).write;
+    let alloc = (*fdi).alloc;
+
+    let mut bytes: u32 = if savemode != 0 {
+        (*fi).length
+    } else {
+        (*fi).offset - (*decomp_state).offset
+    };
+    let mut buf: [u8; 8] = [0; 8];
+    let mut cab: *mut fdi_decomp_state =
+        if savemode != 0 && !(*decomp_state).decomp_cab.is_null() {
+            (*decomp_state).decomp_cab
+        } else {
+            decomp_state
+        };
+
+    while bytes > 0 {
+        // cando = max bytes we can emit from the current output buffer
+        let mut cando: u32 = (*decomp_state).outlen as u32;
+        if cando > bytes {
+            cando = bytes;
+        }
+        if cando != 0 && savemode != 0 {
+            write((*decomp_state).filehf as isize, (*decomp_state).outpos as *const core::ffi::c_void, cando);
+        }
+        (*decomp_state).outpos = (*decomp_state).outpos.add(cando as usize);
+        (*decomp_state).outlen -= cando as u16;
+        bytes -= cando;
+        if bytes == 0 {
+            break;
+        }
+
+        // emptied the output buffer: read the next data block header + data
+        let mut inlen: u16 = 0;
+        let mut outlen: u16 = 0;
+        while outlen == 0 {
+            if read((*cab).cabhf as isize, buf.as_mut_ptr() as *mut core::ffi::c_void, cfdata_SIZEOF) != cfdata_SIZEOF {
+                return DECR_INPUT;
+            }
+            if seek((*cab).cabhf as isize, (*cab).mii.block_resv as i32, SEEK_CUR) == -1 {
+                return DECR_INPUT;
+            }
+            let data: *mut u8 = (*decomp_state).inbuf.as_mut_ptr().add(inlen as usize);
+            let len: u16 = end_get_i16(buf.as_ptr().add(cfdata_CompressedSize)) as u16;
+            inlen += len;
+            if inlen as u32 > CAB_INPUTMAX {
+                return DECR_INPUT;
+            }
+            if read((*cab).cabhf as isize, data as *mut core::ffi::c_void, len as u32) != len as u32 {
+                return DECR_INPUT;
+            }
+            // clear two bytes after read-in data
+            *data.add(len as usize + 1) = 0;
+            *data.add(len as usize + 2) = 0;
+
+            let cksum: u32 = end_get_i32(buf.as_ptr().add(cfdata_CheckSum)) as u32;
+            if cksum != 0
+                && cksum != checksum(buf.as_mut_ptr().add(4), 4, checksum(data, len, 0))
+            {
+                return DECR_CHECKSUM;
+            }
+            outlen = end_get_i16(buf.as_ptr().add(cfdata_UncompressedSize)) as u16;
+
+            if outlen == 0 {
+                // split block: the file continues in the next cabinet
+                let mut fullpath: [i8; MAX_PATH] = [0; MAX_PATH];
+                let mut userpath: [i8; 256] = [0; 256];
+                let mut buf2: [u8; 64] = [0; 64];
+                let mut fdin: FDINOTIFICATION = core::mem::zeroed();
+                let mut fdici: FDICABINETINFO = core::mem::zeroed();
+                let emptystring: i8 = 0;
+
+                'tryanothercab: loop {
+                    if (*cab).next.is_null() {
+                        if (*cab).mii.hasnext == 0 {
+                            return DECR_INPUT;
+                        }
+                        (*cab).next = alloc(core::mem::size_of::<fdi_decomp_state>() as u32)
+                            as *mut fdi_decomp_state;
+                        if (*cab).next.is_null() {
+                            return DECR_NOMEMORY;
+                        }
+                        core::ptr::write_bytes((*cab).next as *mut u8, 0, core::mem::size_of::<fdi_decomp_state>());
+
+                        // copy pszCabPath to userpath
+                        core::ptr::write_bytes(userpath.as_mut_ptr() as *mut u8, 0, 256);
+                        let pathlen0: i32 = if !pszCabPath.is_null() { strlen(pszCabPath) as i32 } else { 0 };
+                        if pathlen0 != 0 && pathlen0 < 256 {
+                            strcpy(userpath.as_mut_ptr(), pszCabPath);
+                        }
+
+                        // initial fdintNEXT_CABINET notification
+                        core::ptr::write_bytes(&mut fdin as *mut FDINOTIFICATION as *mut u8, 0, core::mem::size_of::<FDINOTIFICATION>());
+                        fdin.psz1 = if !(*cab).mii.nextname.is_null() { (*cab).mii.nextname } else { &emptystring as *const i8 as *mut i8 };
+                        fdin.psz2 = if !(*cab).mii.nextinfo.is_null() { (*cab).mii.nextinfo } else { &emptystring as *const i8 as *mut i8 };
+                        fdin.psz3 = userpath.as_mut_ptr();
+                        fdin.fdie = 0; // FDIERROR_NONE
+                        fdin.pv = pvUser;
+
+                        if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
+                            return DECR_USERABORT;
+                        }
+
+                        let cabhf: isize = loop {
+                            let pathlen: i32 = strlen(userpath.as_ptr()) as i32;
+                            let filenamelen: i32 = if !(*cab).mii.nextname.is_null() {
+                                strlen((*cab).mii.nextname) as i32
+                            } else {
+                                0
+                            };
+                            if (pathlen + filenamelen + 3) as usize > MAX_PATH {
+                                ERR(b"MAX_PATH exceeded.\n\0".as_ptr() as *const i8);
+                                return DECR_ILLEGALDATA;
+                            }
+                            // paste path + filename (ReactOS always uses '\\' separators)
+                            fullpath[0] = 0;
+                            if pathlen != 0 {
+                                strcpy(fullpath.as_mut_ptr(), userpath.as_ptr());
+                                if fullpath[pathlen as usize - 1] == b'\\' as i8 {
+                                    fullpath[pathlen as usize - 1] = 0;
+                                }
+                            }
+                            if filenamelen != 0 {
+                                strcat(fullpath.as_mut_ptr(), b"\\\0".as_ptr() as *const i8);
+                                strcat(fullpath.as_mut_ptr(), (*cab).mii.nextname);
+                            }
+
+                            TRACE(b"full cab path/file name: %s\n\0".as_ptr() as *const i8, debugstr_a(fullpath.as_ptr()));
+
+                            let h: isize = open(fullpath.as_mut_ptr(), OPEN_FLAGS, OPEN_MODE);
+                            if h == -1 {
+                                fdin.fdie = FDIERROR_CABINET_NOT_FOUND;
+                                if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
+                                    return DECR_USERABORT;
+                                }
+                                continue;
+                            }
+                            if h == 0 {
+                                fdin.fdie = FDIERROR_CABINET_NOT_FOUND;
+                                if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
+                                    return DECR_USERABORT;
+                                }
+                                continue;
+                            }
+                            if FDI_read_entries(fdi, h as i32, &mut fdici, &mut (*(*cab).next).mii) == 0 {
+                                WARN(b"FDIIsCabinet failed.\n\0".as_ptr() as *const i8);
+                                close(h as isize);
+                                fdin.fdie = FDIERROR_NOT_A_CABINET;
+                                if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
+                                    return DECR_USERABORT;
+                                }
+                                continue;
+                            }
+                            if fdici.setID != (*cab).setID || fdici.iCabinet != (*cab).iCabinet + 1 {
+                                WARN(b"Wrong Cabinet.\n\0".as_ptr() as *const i8);
+                                close(h as isize);
+                                fdin.fdie = FDIERROR_WRONG_CABINET;
+                                if (pfnfdin.unwrap())(fdintNEXT_CABINET, &mut fdin) != 0 {
+                                    return DECR_USERABORT;
+                                }
+                                continue;
+                            }
+                            break h;
+                        };
+
+                        // cabinet notification
+                        core::ptr::write_bytes(&mut fdin as *mut FDINOTIFICATION as *mut u8, 0, core::mem::size_of::<FDINOTIFICATION>());
+                        fdin.setID = fdici.setID;
+                        fdin.iCabinet = fdici.iCabinet;
+                        fdin.pv = pvUser;
+                        fdin.psz1 = if !(*(*cab).next).mii.nextname.is_null() { (*(*cab).next).mii.nextname } else { &emptystring as *const i8 as *mut i8 };
+                        fdin.psz2 = if !(*(*cab).next).mii.nextinfo.is_null() { (*(*cab).next).mii.nextinfo } else { &emptystring as *const i8 as *mut i8 };
+                        fdin.psz3 = pszCabPath;
+                        if (pfnfdin.unwrap())(fdintCABINET_INFO, &mut fdin) != 0 {
+                            return DECR_USERABORT;
+                        }
+
+                        (*(*cab).next).setID = fdici.setID;
+                        (*(*cab).next).iCabinet = fdici.iCabinet;
+                        (*(*cab).next).fdi = fdi;
+                        (*(*cab).next).filehf = (*decomp_state).filehf;
+                        (*(*cab).next).cabhf = cabhf as i32;
+                        (*(*cab).next).decompress = (*decomp_state).decompress;
+
+                        cab = (*cab).next;
+
+                        // read folders
+                        let mut linkfol: *mut fdi_folder = core::ptr::null_mut();
+                        let mut i: u32 = 0;
+                        while i < fdici.cFolders as u32 {
+                            if read((*cab).cabhf as isize, buf2.as_mut_ptr() as *mut core::ffi::c_void, cffold_SIZEOF) != cffold_SIZEOF {
+                                return DECR_INPUT;
+                            }
+                            if (*cab).mii.folder_resv > 0 {
+                                seek((*cab).cabhf as isize, (*cab).mii.folder_resv, SEEK_CUR);
+                            }
+                            let fol: *mut fdi_folder = alloc(core::mem::size_of::<fdi_folder>() as u32) as *mut fdi_folder;
+                            if fol.is_null() {
+                                ERR(b"out of memory!\n\0".as_ptr() as *const i8);
+                                return DECR_NOMEMORY;
+                            }
+                            core::ptr::write_bytes(fol as *mut u8, 0, core::mem::size_of::<fdi_folder>());
+                            if (*cab).firstfol.is_null() {
+                                (*cab).firstfol = fol;
+                            }
+                            (*fol).offset = end_get_i32(buf2.as_ptr().add(cffold_DataOffset)) as cab_off_t;
+                            (*fol).num_blocks = end_get_i16(buf2.as_ptr().add(cffold_NumBlocks)) as cab_UWORD;
+                            (*fol).comp_type = end_get_i16(buf2.as_ptr().add(cffold_CompType)) as cab_UWORD;
+                            if !linkfol.is_null() {
+                                (*linkfol).next = fol;
+                            }
+                            linkfol = fol;
+                            i += 1;
+                        }
+
+                        // read files
+                        let mut linkfile: *mut fdi_file = core::ptr::null_mut();
+                        let mut i2: u32 = 0;
+                        while i2 < fdici.cFiles as u32 {
+                            if read((*cab).cabhf as isize, buf2.as_mut_ptr() as *mut core::ffi::c_void, cffile_SIZEOF) != cffile_SIZEOF {
+                                return DECR_INPUT;
+                            }
+                            let file: *mut fdi_file = alloc(core::mem::size_of::<fdi_file>() as u32) as *mut fdi_file;
+                            if file.is_null() {
+                                ERR(b"out of memory!\n\0".as_ptr() as *const i8);
+                                return DECR_NOMEMORY;
+                            }
+                            core::ptr::write_bytes(file as *mut u8, 0, core::mem::size_of::<fdi_file>());
+                            if (*cab).firstfile.is_null() {
+                                (*cab).firstfile = file;
+                            }
+                            (*file).length = end_get_i32(buf2.as_ptr().add(cffile_UncompressedSize)) as cab_ULONG;
+                            (*file).offset = end_get_i32(buf2.as_ptr().add(cffile_FolderOffset)) as cab_ULONG;
+                            (*file).index = end_get_i16(buf2.as_ptr().add(cffile_FolderIndex)) as cab_UWORD;
+                            (*file).time = end_get_i16(buf2.as_ptr().add(cffile_Time)) as cab_UWORD;
+                            (*file).date = end_get_i16(buf2.as_ptr().add(cffile_Date)) as cab_UWORD;
+                            (*file).attribs = end_get_i16(buf2.as_ptr().add(cffile_Attribs)) as cab_UWORD;
+                            (*file).filename = FDI_read_string(fdi, (*cab).cabhf, fdici.cbCabinet);
+                            if (*file).filename.is_null() {
+                                return DECR_INPUT;
+                            }
+                            if !linkfile.is_null() {
+                                (*linkfile).next = file;
+                            }
+                            linkfile = file;
+                            i2 += 1;
+                        }
+                    } else {
+                        cab = (*cab).next;
+                    }
+
+                    // iterate files: find the continued file and resume from it
+                    let mut success = false;
+                    let mut file: *mut fdi_file = (*cab).firstfile;
+                    while !file.is_null() {
+                        if ((*file).index & cffileCONTINUED_FROM_PREV) == cffileCONTINUED_FROM_PREV
+                            && lstrcmpiA((*fi).filename, (*file).filename) == 0
+                        {
+                            success = true;
+                            if seek((*cab).cabhf as isize, (*(*cab).firstfol).offset as i32, SEEK_SET) == -1 {
+                                return DECR_INPUT;
+                            }
+                            break;
+                        }
+                        file = (*file).next;
+                    }
+                    if !success {
+                        continue 'tryanothercab;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // decompress block
+        let err = ((*decomp_state).decompress.unwrap())(inlen as i32, outlen as i32, decomp_state);
+        if err != 0 {
+            return err;
+        }
+        (*decomp_state).outlen = outlen;
+        (*decomp_state).outpos = (*decomp_state).outbuf.as_mut_ptr();
+    }
+
+    (*decomp_state).decomp_cab = cab;
+    DECR_OK
 }
 
