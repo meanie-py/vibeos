@@ -5,6 +5,8 @@
 // kernel field types resolved via private ddk glob (NOT re-exported: modules get
 // common kernel types from driver_ddk, private structs from this crate::types).
 use ntkrnl_sys::ddk::*;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CLASS_DEBUG_LEVEL as CLASS_DEBUG_LEVEL, _MEDIA_CHANGE_DETECTION_STATE as MEDIA_CHANGE_DETECTION_STATE};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]

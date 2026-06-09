@@ -8,6 +8,9 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DPFLTR_CLASSPNP_ID, KeInitializeSpinLock, KeQueryTimeIncrement, LARGE_INTEGER, NTSTRSAFE_PSTR, PCCHAR, RtlCaptureStackBackTrace, va_list};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CDB as CDB};
+use ntkrnl_sys::ddk::{IRP};
 
 extern "C" {
     fn min(a: u32, b: u32) -> u32;

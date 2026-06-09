@@ -6,6 +6,8 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{CLONG, File, GenericEqual, GenericGreaterThan, GenericLessThan, KeInitializeSpinLock, PCSTR, PDEVICE_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIRP, PRTL_GENERIC_TABLE, RTL_GENERIC_TABLE, RtlInitializeGenericTable, RtlLookupElementGenericTable, RtlNumberGenericTableElements};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, RTL_GENERIC_COMPARE_RESULTS};
 
 extern "C" {
     fn NT_ASSERT(condition: i32);

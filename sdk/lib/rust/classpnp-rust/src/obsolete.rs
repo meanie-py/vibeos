@@ -6,6 +6,9 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExDeleteNPagedLookasideList, ExInitializeNPagedLookasideList, IRP, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoSetCompletionRoutine, IoSetHardErrorOrVerifyDevice, IoStartNextPacket, LARGE_INTEGER, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, IO_STACK_LOCATION};
+use ntkrnl_sys::driver_ddk::{IRP_MJ_DEVICE_CONTROL};
 
 extern "system" {
     fn TracePrint(level: u32, flags: u32, format: *const i8);

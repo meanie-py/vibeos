@@ -8,6 +8,8 @@ use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocatio
 use core::ffi::c_void;
 use core::ptr;
 use core::ptr::{addr_of, addr_of_mut};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, GUID, IRP, _UNICODE_STRING};
 
 extern "C" {
     fn PAGED_CODE();

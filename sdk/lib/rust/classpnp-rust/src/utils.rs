@@ -13,6 +13,10 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, IO_STACK_LOCATION, _UNICODE_STRING, DE
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicI32, Ordering};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CLASS_FUNCTION_SUPPORT_INFO as FUNCTION_SUPPORT_INFO, _READ_CAPACITY16_DATA as READ_CAPACITY16_DATA};
+use ntkrnl_sys::ddk::{DEVICE_DATA_SET_LBP_STATE_PARAMETERS, DRIVE_LAYOUT_INFORMATION_EX, GUID, HANDLE, IO_WORKITEM, MDL, STORAGE_ADAPTER_DESCRIPTOR, STORAGE_DEVICE_DESCRIPTOR, STORAGE_DEVICE_ID_DESCRIPTOR, STORAGE_PROPERTY_QUERY};
+use ntkrnl_sys::driver_ddk::{RTL_QUERY_REGISTRY_DIRECT, RTL_QUERY_REGISTRY_REQUIRED, RTL_REGISTRY_ABSOLUTE, RTL_REGISTRY_HANDLE};
 
 extern "C" {
     fn strlen(s: *const i8) -> usize;

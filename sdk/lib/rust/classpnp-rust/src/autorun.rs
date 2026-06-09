@@ -11,6 +11,11 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, IO_STACK_LOCATION, _UNICODE_STRING};
 use crate::types::{_CDB as CDB, _STORAGE_REQUEST_BLOCK_HEADER as STORAGE_REQUEST_BLOCK_HEADER};
 use ntkrnl_sys::ddk::{ANSI_STRING, BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, DelayedWorkQueue, EVENT_DESCRIPTOR, Enabled, _KWAIT_REASON_Executive, GUID, IO_COMPLETION_ROUTINE, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IO_WORKITEM_ROUTINE, IoAllocateErrorLogEntry, IoAllocateIrp, IoBuildDeviceIoControlRequest, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDriverObjectExtension, IoOpenDeviceRegistryKey, IoReportTargetDeviceChangeAsynchronous, IoReuseIrp, IoSetNextIrpStackLocation, IoWriteErrorLogEntry, KEVENT, KeCancelTimer, KeEnterCriticalRegion, KeInitializeDpc, KeInitializeMutex, KeInitializeTimer, KeLeaveCriticalRegion, KeQueryTimeIncrement, KeReleaseMutex, LARGE_INTEGER, LPGUID, _OBJECT_ATTRIBUTES, PCSZ, PDEVICE_OBJECT, PFILE_OBJECT, PFILE_OBJECT_EXTENSION, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PPREVENT_MEDIA_REMOVAL, PSECURITY_DESCRIPTOR, PSTORAGE_DEVICE_DESCRIPTOR, PTARGET_DEVICE_CUSTOM_NOTIFICATION, PUNICODE_STRING, PowerDeviceD0, RTL_QUERY_REGISTRY_ROUTINE, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, STORAGE_PREDICT_FAILURE, _EVENT_TYPE_SynchronizationEvent, TARGET_DEVICE_CUSTOM_NOTIFICATION, _KWAIT_REASON_UserRequest};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CLASS_DETECTION_STATE as CLASS_DETECTION_STATE, _CLASS_DETECTION_STATE_ClassDetectionSupported as ClassDetectionSupported, _CLASS_DETECTION_STATE_ClassDetectionUnknown as ClassDetectionUnknown, _CLASS_DETECTION_STATE_ClassDetectionUnsupported as ClassDetectionUnsupported, _MEDIA_CHANGE_DETECTION_STATE as MEDIA_CHANGE_DETECTION_STATE};
+use ntkrnl_sys::constants::{STATUS_UNSUCCESSFUL};
+use ntkrnl_sys::ddk::{DRIVER_OBJECT, FILE_OBJECT, FILE_OBJECT_EXTENSION, HANDLE, IO_WORKITEM, MDL, PREVENT_MEDIA_REMOVAL, STORAGE_DEVICE_DESCRIPTOR, VPB};
+use ntkrnl_sys::driver_ddk::{FILE_REMOVABLE_MEDIA, IRP_MJ_DEVICE_CONTROL, IRP_MN_START_DEVICE, RTL_QUERY_REGISTRY_DIRECT, RTL_QUERY_REGISTRY_REQUIRED, RTL_REGISTRY_HANDLE, RTL_REGISTRY_OPTIONAL};
 
 extern "C" {
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;

@@ -4,6 +4,8 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::driver_ddk::{IRP_MJ_DEVICE_CONTROL, IRP_MJ_PNP, IRP_MJ_SHUTDOWN, IRP_MJ_SYSTEM_CONTROL};
 
 extern "system" {
     fn ClassCreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;

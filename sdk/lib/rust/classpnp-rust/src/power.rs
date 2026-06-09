@@ -8,6 +8,10 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DevicePowerState, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoReuseIrp, IoSetNextIrpStackLocation, IoSkipCurrentIrpStackLocation, LPCGUID, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, POWER_SETTING_CALLBACK, PowerActionHibernate, PowerActionNone, PowerActionSleep, PowerDeviceD0, PowerDeviceD3, PowerMonitorOff, STORAGE_IDLE_POWER, SystemPowerState};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CDB as CDB, _CLASS_FUNCTION_SUPPORT_INFO as FUNCTION_SUPPORT_INFO, _STORAGE_REQUEST_BLOCK_HEADER as STORAGE_REQUEST_BLOCK_HEADER};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, GUID, IRP, POWER_STATE, POWER_STATE_TYPE, VPB};
+use ntkrnl_sys::driver_ddk::{FILE_REMOVABLE_MEDIA};
 
 extern "C" {
     fn TracePrint(level: u32, flags: u32, format: *const u8, ...);

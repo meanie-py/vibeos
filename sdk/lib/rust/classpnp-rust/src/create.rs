@@ -7,6 +7,10 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, FILE_OBJECT_EXTENSION, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSetCompletionRoutine, KEVENT, KeEnterCriticalRegion, KeInitializeEvent, KeLeaveCriticalRegion, KeWaitForSingleObject, PCSZ, PDEVICE_OBJECT, PFILE_OBJECT, PFILE_OBJECT_EXTENSION, PIO_SECURITY_CONTEXT, PIO_STACK_LOCATION, PIRP, _EVENT_TYPE_SynchronizationEvent, _KWAIT_REASON_UserRequest};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CDB as CDB};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IRP};
+use ntkrnl_sys::driver_ddk::{FILE_REMOVABLE_MEDIA};
 
 extern "C" {
     fn PAGED_CODE();

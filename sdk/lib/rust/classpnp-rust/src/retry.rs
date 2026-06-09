@@ -6,6 +6,8 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, KeInitializeDpc, KeInitializeTimer, KeInsertQueueDpc, KeSetTimer, LARGE_INTEGER, PDEVICE_OBJECT, PIO_STACK_LOCATION, PSTORAGE_ADAPTER_DESCRIPTOR};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CDB as CDB};
 
 extern "C" {
     fn NT_ASSERT(cond: i32);

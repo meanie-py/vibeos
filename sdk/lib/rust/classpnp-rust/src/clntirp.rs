@@ -6,6 +6,8 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{IRP, IoMarkIrpPending, KeInitializeDpc, KeInitializeSpinLock, KeInitializeTimer, KeSetTimerEx, LARGE_INTEGER, LOGICAL, PDEVICE_OBJECT, PIRP};
 use core::ffi::c_void;
 use core::ptr::{addr_of, addr_of_mut};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, KTIMER};
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);

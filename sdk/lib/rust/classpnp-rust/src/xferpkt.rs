@@ -8,6 +8,9 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DelayedWorkQueue, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildPartialMdl, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoGetPagingIoPriority, IoMarkIrpPending, IoPagingPriorityHigh, IoPagingPriorityInvalid, IoReuseIrp, IoSetCompletionRoutine, IoSetHardErrorOrVerifyDevice, IoStartNextPacket, LARGE_INTEGER, MDL, OSVERSIONINFOEXW, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEVENT, POSVERSIONINFOW, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DEVICE_IO_CAPABILITY_DESCRIPTOR, RtlGetVersion, STORAGE_MINIPORT_DESCRIPTOR, StorageDeviceIoCapabilityProperty};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_CDB as CDB};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, IO_PAGING_PRIORITY, IO_STACK_LOCATION, IRP, KEVENT, OSVERSIONINFOW, PMDL, STORAGE_DEVICE_IO_CAPABILITY_DESCRIPTOR, STORAGE_PROPERTY_ID};
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, msg: *const i8, ...);
