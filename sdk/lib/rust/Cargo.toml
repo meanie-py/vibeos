@@ -110,6 +110,7 @@ members = [
     "rtl-sync",
     "rtl-vista-rust",
     "acpica-sys",
+    "acpi-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",

@@ -1,0 +1,27 @@
+#![no_std]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#![allow(clippy::missing_safety_doc)]
+
+//! acpi-rust — Rust translation of the ReactOS ACPI driver glue
+//! (drivers/bus/acpi). Phase 2 of the ACPICA FFI-to-blob plan: Intel's ACPICA
+//! reference impl stays a C static lib (libacpica.a); only the OS-services glue
+//! becomes Rust. This crate begins with the OS Services Layer (osl.c) — the 46
+//! `AcpiOs*` callbacks ACPICA calls into.
+//!
+//! crate-type=staticlib → libacpi_rust.a, linked into the cmake-built acpi.sys
+//! with osl.c commented out of ACPI_SOURCE (processr/pl011-style cohab; the C is
+//! kept on disk per the never-delete rule). ACPI types/exports come from
+//! acpica-sys; kernel calls from ntkrnl-sys.
+//!
+//! `AcpiOsPrintf` (C-variadic) stays a tiny C shim (acpi_printf_shim.c); under
+//! the driver's NDEBUG build `AcpiOsVprintf` is a no-op anyway.
+
+pub mod osl;
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}

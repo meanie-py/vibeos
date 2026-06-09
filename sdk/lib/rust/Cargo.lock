@@ -7,6 +7,14 @@ name = "access"
 version = "0.1.0"
 
 [[package]]
+name = "acpi-rust"
+version = "0.1.0"
+dependencies = [
+ "acpica-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "acpica-sys"
 version = "0.1.0"
 
