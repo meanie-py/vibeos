@@ -93,12 +93,12 @@ extern "C" {
     fn TransferPacketQueueRetryDpc(Pkt: *mut TRANSFER_PACKET);
     fn KeQuerySystemTime(Time: *mut LARGE_INTEGER);
     fn ClassCompleteRequest(DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT, Irp: *mut ntkrnl_sys::ddk::IRP, PriorityBoost: i32);
-    fn ClassForwardIrpSynchronous(commonExtension: *mut ntkrnl_sys::ddk::COMMON_DEVICE_EXTENSION, Irp: *mut ntkrnl_sys::ddk::IRP) -> i32;
+    fn ClassForwardIrpSynchronous(commonExtension: *mut crate::types::COMMON_DEVICE_EXTENSION, Irp: *mut ntkrnl_sys::ddk::IRP) -> i32;
     fn ClassGetPdoId(DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT, idType: u32, unicodeString: *mut ntkrnl_sys::ddk::_UNICODE_STRING) -> i32;
     fn ClassPnpQueryFdoRelations(DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT, Irp: *mut ntkrnl_sys::ddk::IRP) -> i32;
     fn ClassQueryPnpCapabilities(DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT, capabilities: *mut ntkrnl_sys::ddk::DEVICE_CAPABILITIES) -> i32;
     fn ClassRemoveDevice(DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT, removeType: u8);
-    fn ClassSetDeviceParameter(ext: *mut ntkrnl_sys::ddk::FUNCTIONAL_DEVICE_EXTENSION, subkey: *const u16, valueName: *const u16, policy: u32);
+    fn ClassSetDeviceParameter(ext: *mut crate::types::FUNCTIONAL_DEVICE_EXTENSION, subkey: *const u16, valueName: *const u16, policy: u32);
     fn ClasspEjectionControl(DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT, Irp: *mut ntkrnl_sys::ddk::IRP, lockType: u32, lock: i32) -> i32;
     fn ClasspLogSystemEventWithDeviceNumber(DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT, eventID: u32);
     fn NT_ASSERTMSG(msg: *const i8, expr: i32);
@@ -657,12 +657,12 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             ntkrnl_sys::ke::KeBugCheckEx(0, 0, 0, 0, 0);
         }
 
-        let commonExtension = (*DeviceObject).DeviceExtension as *mut ntkrnl_sys::ddk::COMMON_DEVICE_EXTENSION;
+        let commonExtension = (*DeviceObject).DeviceExtension as *mut crate::types::COMMON_DEVICE_EXTENSION;
         let isFdo = (*commonExtension).IsFdo;
 
-        let driverExtension: *mut ntkrnl_sys::ddk::CLASS_DRIVER_EXTENSION;
-        let initData: *mut ntkrnl_sys::ddk::CLASS_INIT_DATA;
-        let devInfo: *mut ntkrnl_sys::ddk::CLASS_DEV_INFO;
+        let driverExtension: *mut crate::types::CLASS_DRIVER_EXTENSION;
+        let initData: *mut crate::types::CLASS_INIT_DATA;
+        let devInfo: *mut crate::types::CLASS_DEV_INFO;
 
         let irpStack = ntkrnl_sys::ddk::IoGetCurrentIrpStackLocation(Irp);
 
@@ -673,15 +673,15 @@ pub unsafe extern "system" fn ClassDispatchPnp(
         driverExtension = ntkrnl_sys::ddk::IoGetDriverObjectExtension(
             (*DeviceObject).DriverObject,
             CLASS_DRIVER_EXTENSION_KEY, // CLASS_DRIVER_EXTENSION_KEY is a global but not imported; assume defined
-        ) as *mut ntkrnl_sys::ddk::CLASS_DRIVER_EXTENSION;
+        ) as *mut crate::types::CLASS_DRIVER_EXTENSION;
 
         if !driverExtension.is_null() {
-            initData = &mut (*driverExtension).InitData as *mut ntkrnl_sys::ddk::CLASS_INIT_DATA;
+            initData = &mut (*driverExtension).InitData as *mut crate::types::CLASS_INIT_DATA;
 
             if isFdo != 0 {
-                devInfo = &mut (*initData).FdoData as *mut ntkrnl_sys::ddk::CLASS_DEV_INFO;
+                devInfo = &mut (*initData).FdoData as *mut crate::types::CLASS_DEV_INFO;
             } else {
-                devInfo = &mut (*initData).PdoData as *mut ntkrnl_sys::ddk::CLASS_DEV_INFO;
+                devInfo = &mut (*initData).PdoData as *mut crate::types::CLASS_DEV_INFO;
             }
 
             ClassAcquireRemoveLock(DeviceObject, Irp);
