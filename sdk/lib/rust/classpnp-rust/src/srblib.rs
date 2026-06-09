@@ -10,7 +10,7 @@ use core::ffi::c_void;
 use crate::types::{_SRBEXDATATYPE as SRBEXDATATYPE};
 
 extern "C" {
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     // va_start/va_end live in the C trampoline (rust_variadic_shim.c); these workers
     // receive the va_list already-started and pull args via the C va_arg helpers
     // (va_arg, like va_start, is a macro and cannot be expressed in stable Rust).
@@ -447,14 +447,14 @@ pub unsafe extern "C" fn classpnp_CreateStorageRequestBlockWorker(
 //
 //         if (status == STATUS_SUCCESS)
 //         {
-//             NT_ASSERT(length != (ULONG)-1);
+//             NT_ASSERT(length != (ULONG)-1 as i32)
 //
 //             if (ByteSize < (offset + length)) {
 //                 status = STATUS_BUFFER_OVERFLOW;
 //                 break;
 //             }
 //
-//             NT_ASSERT(srbExDataLength != (ULONG)-1);
+//             NT_ASSERT(srbExDataLength != (ULONG)-1 as i32)
 //
 //             srbExData->Type = type;
 //             srbExData->Length = srbExDataLength;

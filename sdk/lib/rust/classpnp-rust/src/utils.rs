@@ -27,7 +27,7 @@ extern "C" {
     fn IoAllocateMdl( VirtualAddress: *mut core::ffi::c_void, Length: u32, SecondaryBuffer: i32, ChargeQuota: i32, Irp: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
     fn MmProbeAndLockPages( MemoryDescriptorList: *mut core::ffi::c_void, AccessMode: u32, Operation: u32, ) -> ();
     fn IoFreeMdl(Mdl: *mut core::ffi::c_void) -> ();
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn REVERSE_BYTES_QUAD(dest: *mut u64, src: *const u64);
     fn REVERSE_BYTES(dest: *mut u32, src: *const u32);
 }
@@ -176,7 +176,7 @@ const MAXUCHAR: u32 = 0xFF;
 
 
 unsafe extern "system" {
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn wcslen(s: *const u16) -> usize;
     fn RtlStringCbPrintfW(
         buffer: *mut u16,
@@ -293,7 +293,7 @@ pub unsafe extern "C" fn ClasspMyStringMatches(
 ) -> i32 {
 
     PAGED_CODE();
-    // NT_ASSERT(TargetString);  -- guarantee pointer is valid for debug
+    // NT_ASSERT(TargetString as i32)  -- guarantee pointer is valid for debug
     if TargetString.is_null() {
         panic!("NT_ASSERT");
     }
@@ -697,7 +697,7 @@ pub unsafe extern "C" fn ClasspPerfIncrementSuccessfulIo(
         {
             (*fdoData).Perf.SuccessfulIO = 0; // implicit interlock
 
-            NT_ASSERT((*FdoExtension).ErrorCount > 0);
+            NT_ASSERT((*FdoExtension).ErrorCount > 0 as i32)
             errors = InterlockedDecrement(
                 core::ptr::addr_of_mut!((*FdoExtension).ErrorCount) as *mut i32,
             ) as u32;
@@ -1512,7 +1512,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
             //
             // Should not occur.
             //
-            NT_ASSERT(FALSE.into());
+            NT_ASSERT(FALSE.into() as i32)
         }
     } else {
         core::ptr::write_bytes(
@@ -1621,7 +1621,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     }
 
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-        NT_ASSERT(0);
+        NT_ASSERT(0 as i32)
         status = STATUS_INVALID_LEVEL;
     }
 
@@ -1684,7 +1684,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
                 break 'Exit;
             }
             Supported => {
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
                 status = STATUS_INTERNAL_ERROR;
             }
             _ => {}
@@ -2205,7 +2205,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
             if NT_SUCCESS(status) {
                 (*(Srb as *mut STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
             } else {
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
             }
         } else {
             core::ptr::write_bytes(Srb, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
@@ -2527,7 +2527,7 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
         }
 
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            // NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+            // NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
             status = STATUS_INVALID_LEVEL;
             break 'exit;
         }
@@ -2876,7 +2876,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
                 if NT_SUCCESS(status) {
                     (*(Srb as PSTORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
                 } else {
-                    NT_ASSERT(0);
+                    NT_ASSERT(0 as i32)
                     break;
                 }
             } else {
@@ -2973,7 +2973,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
             }
 
             if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-                NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+                NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
                 status = STATUS_INVALID_LEVEL;
                 break 'exit;
             }
@@ -2994,7 +2994,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
             let trim_process = (*(*(*fdoExtension).FunctionSupportInfo)).LowerLayerSupport.TrimProcess as i32;
             match trim_process {
                 Supported => {
-                    NT_ASSERT(false);
+                    NT_ASSERT(false as i32)
                 }
                 SupportUnknown => {
                     status = ClassForwardIrpSynchronous(commonExtension, Irp);
@@ -3713,7 +3713,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                 DeviceObject,
                 lbaStatusSize,
             );
-            NT_ASSERT(0);
+            NT_ASSERT(0 as i32)
             status = STATUS_INSUFFICIENT_RESOURCES;
             break 'exit_loop;
         }
@@ -3895,7 +3895,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                                     .as_ptr() as *const i8,
                                 DeviceObject,
                             );
-                            NT_ASSERT(0);
+                            NT_ASSERT(0 as i32)
                             doneProcessing = 1;
                             status = STATUS_UNSUCCESSFUL;
                         }
@@ -4028,7 +4028,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningLogPage(
         if NT_SUCCESS(status) != 0 {
             (*(Srb as *mut STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
         } else {
-            NT_ASSERT(0);
+            NT_ASSERT(0 as i32)
         }
     } else {
         core::ptr::write_bytes(Srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
@@ -5130,7 +5130,7 @@ pub unsafe extern "C" fn ClasspConvertToScsiRequestBlock(
             (*Srb).TargetId = (*storAddrBtl8).Target;
             (*Srb).Lun = (*storAddrBtl8).Lun;
         } else {
-            NT_ASSERT(0);
+            NT_ASSERT(0 as i32)
         }
     }
 
@@ -5141,7 +5141,7 @@ pub unsafe extern "C" fn ClasspConvertToScsiRequestBlock(
                 .offset(i as isize)
                 .read();
             if offset == 0 || offset < core::mem::size_of::<STORAGE_REQUEST_BLOCK>() as u32 {
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
                 continue;
             }
             srbExData = (SrbEx as *mut u8).add(offset as usize) as *mut SRBEX_DATA;
@@ -5674,7 +5674,7 @@ pub unsafe extern "C" fn ClasspGetTokenOperationDescriptorLimits(
                     .BlockDeviceRODLimitsData
                     .CommandStatus,
             ) != 0,
-    );
+     as i32)
 
     *MaxBlockDescriptorsCount = (MaxParameterBufferLength - tokenOperationHeaderSize)
         / core::mem::size_of::<BLOCK_DEVICE_RANGE_DESCRIPTOR>() as u32;
@@ -5738,7 +5738,7 @@ pub unsafe extern "system" fn ClasspConvertDataSetRangeToBlockDescr(
     );
 
     if optimalLbaPerDescr != 0 && maxLbaPerDescr != 0 {
-        NT_ASSERT(if optimalLbaPerDescr <= maxLbaPerDescr  { 1 } else { 0 });
+        NT_ASSERT(if optimalLbaPerDescr <= maxLbaPerDescr  { 1 } else { 0 } as i32)
     }
 
     while (*DataSetRange).LengthInBytes > 0
@@ -5783,7 +5783,7 @@ pub unsafe extern "system" fn ClasspConvertDataSetRangeToBlockDescr(
             }
         }
 
-        NT_ASSERT(if sectorCount <= MAX_NUMBER_BLOCKS_PER_BLOCK_DEVICE_RANGE_DESCRIPTOR { 1 } else { 0 });
+        NT_ASSERT(if sectorCount <= MAX_NUMBER_BLOCKS_PER_BLOCK_DEVICE_RANGE_DESCRIPTOR { 1 } else { 0 } as i32)
 
         let idx = *CurrentBlockDescrIndex as isize;
         REVERSE_BYTES_QUAD(
@@ -6646,7 +6646,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
 
         if ((*firmwareDownload).ImageBuffer as usize % (*fdoExtension).FunctionSupportInfo.as_ref().unwrap().HwFirmwareInfo.as_ref().unwrap().ImagePayloadAlignment as usize) != 0 {
             bufferSize = ALIGN_UP_BY((*firmwareDownload).BufferSize as u32, (*fdoExtension).FunctionSupportInfo.as_ref().unwrap().HwFirmwareInfo.as_ref().unwrap().ImagePayloadAlignment);
-            NT_ASSERT(lockHeld);
+            NT_ASSERT(lockHeld as i32)
             KeReleaseInStackQueuedSpinLock(&mut lockHandle);
             lockHeld = 0;
 
@@ -6662,7 +6662,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
                 (*firmwareDownload).BufferSize as usize,
             );
         } else {
-            NT_ASSERT(lockHeld);
+            NT_ASSERT(lockHeld as i32)
             KeReleaseInStackQueuedSpinLock(&mut lockHandle);
             lockHeld = 0;
 
@@ -6895,7 +6895,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
             }
 
             // Done accessing HwFirmwareInfo; release lock
-            NT_ASSERT(lock_held);
+            NT_ASSERT(lock_held as i32)
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             lock_held = 0;
 
@@ -6933,7 +6933,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
             lock_held = 0;
         }
 
-        NT_ASSERT(!NT_SUCCESS(status));
+        NT_ASSERT(!NT_SUCCESS(status) as i32)
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
         ClassReleaseRemoveLock(DeviceObject, Irp);
@@ -7047,7 +7047,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 // {
 //     ULONG length;  // strlen returns an int, not size_t (!)
 //     PAGED_CODE();
-//     NT_ASSERT(TargetString);
+//     NT_ASSERT(TargetString as i32)
 //     // if no match requested, return TRUE
 //     if (StringToMatch == NULL) {
 //         return TRUE;
@@ -7317,8 +7317,8 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     UCHAR nullString[] = "";
 //
 //     PAGED_CODE();
-//     NT_ASSERT(DeviceList);
-//     NT_ASSERT(Function);
+//     NT_ASSERT(DeviceList as i32)
+//     NT_ASSERT(Function as i32)
 //
 //     deviceDescriptor = FdoExtension->DeviceDescriptor;
 //
@@ -7527,7 +7527,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //         fdoData->Perf.SuccessfulIO = 0; // implicit interlock
 //
-//         NT_ASSERT(FdoExtension->ErrorCount > 0);
+//         NT_ASSERT(FdoExtension->ErrorCount > 0 as i32)
 //         errors = InterlockedDecrement((volatile LONG *)&FdoExtension->ErrorCount);
 //
 //         //
@@ -7974,7 +7974,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
 //
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto FnExit;
 //     }
@@ -8116,7 +8116,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //             //
 //
 //             NT_ASSERT(DuidExactMatch == CompareStorageDuids(Irp->AssociatedIrp.SystemBuffer,
-//                                                          Irp->AssociatedIrp.SystemBuffer));
+//                                                          Irp->AssociatedIrp.SystemBuffer) as i32)
 //
 //         } else {
 //             status = STATUS_NOT_FOUND;
@@ -8174,7 +8174,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
 //
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto WriteCacheExit;
 //     }
@@ -8485,7 +8485,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     // FdoExtension->DiskGeometry.BytesPerSector might be 0 for class drivers that don't get READ CAPACITY info yet.
 //     NT_ASSERT( (FdoExtension->DiskGeometry.BytesPerSector == 0) ||
-//                (FdoExtension->DiskGeometry.BytesPerSector == FdoExtension->FunctionSupportInfo->ReadCapacity16Data.BytesPerLogicalSector) );
+//                (FdoExtension->DiskGeometry.BytesPerSector == FdoExtension->FunctionSupportInfo->ReadCapacity16Data.BytesPerLogicalSector)  as i32)
 //
 //     logicalBlocksPerPhysicalBlock = 1 << ReadCapacity16Data->LogicalPerPhysicalExponent;
 //     lowestAlignedBlock = (ReadCapacity16Data->LowestAlignedBlock_MSB << 8) | ReadCapacity16Data->LowestAlignedBlock_LSB;
@@ -8591,7 +8591,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //             //
 //             // Should not occur.
 //             //
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //         }
 //     } else {
 //         RtlZeroMemory(Srb, sizeof(SCSI_REQUEST_BLOCK));
@@ -8713,7 +8713,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto Exit;
 //     }
@@ -8818,7 +8818,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     }
 //
 //     case Supported: {
-//         NT_ASSERT(FALSE); // this case is handled at the beginning of the function.
+//         NT_ASSERT(FALSE as i32) // this case is handled at the beginning of the function.
 //         status = STATUS_INTERNAL_ERROR;
 //         break;
 //     }
@@ -8941,7 +8941,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
 //
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //
 //         TracePrint((TRACE_LEVEL_ERROR,
 //                     TRACE_FLAG_IOCTL,
@@ -9176,7 +9176,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto Exit;
 //     }
@@ -9283,7 +9283,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     }
 //
 //     case Supported: {
-//         NT_ASSERT(FALSE); // this case is handled at the begining of the function.
+//         NT_ASSERT(FALSE as i32) // this case is handled at the begining of the function.
 //         break;
 //     }
 //
@@ -9376,7 +9376,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                 //
 //                 // Should not occur.
 //                 //
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //             }
 //         } else {
 //             RtlZeroMemory(Srb, sizeof(SCSI_REQUEST_BLOCK));
@@ -9556,7 +9556,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                 //
 //                 // Should not occur.
 //                 //
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //             }
 //         } else {
 //             RtlZeroMemory(Srb, sizeof(SCSI_REQUEST_BLOCK));
@@ -9736,7 +9736,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto Exit;
 //     }
@@ -9776,7 +9776,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //             // case 1: the request is not supported by lower layer, sends down command
 //             // some port drivers (or filter drivers) return STATUS_INVALID_DEVICE_REQUEST if a request is not supported.
 //             status = fdoExtension->FunctionSupportInfo->LBProvisioningData.CommandStatus;
-//             NT_ASSERT(status != -1);
+//             NT_ASSERT(status != -1 as i32)
 //
 //             // data is ready in fdoExtension
 //             // set the support status after the SCSI command is executed to avoid racing condition between multiple same type of requests.
@@ -9809,7 +9809,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     case NotSupported: {
 //         status = fdoExtension->FunctionSupportInfo->LBProvisioningData.CommandStatus;
-//         NT_ASSERT(status != -1);
+//         NT_ASSERT(status != -1 as i32)
 //
 //         if (NT_SUCCESS(status)) {
 //             RtlZeroMemory(trimDescr, length);
@@ -9827,7 +9827,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     }
 //
 //     case Supported: {
-//         NT_ASSERT(FALSE); // this case is handled at the begining of the function.
+//         NT_ASSERT(FALSE as i32) // this case is handled at the begining of the function.
 //         break;
 //     }
 //
@@ -9884,7 +9884,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto Exit;
 //     }
@@ -10238,7 +10238,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                                 "DeviceProcessDsmTrimRequest (%p): Max Block Descriptor count is Zero\n",
 //                                 FdoExtension->DeviceObject));
 //
-//         NT_ASSERT(maxBlockDescrCount != 0);
+//         NT_ASSERT(maxBlockDescrCount != 0 as i32)
 //         status = STATUS_DATA_ERROR;
 //         goto Exit;
 //     }
@@ -10256,7 +10256,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                                 "DeviceProcessDsmTrimRequest (%p): Max LBA count is Zero\n",
 //                                 FdoExtension->DeviceObject));
 //
-//         NT_ASSERT(maxLbaCount != 0);
+//         NT_ASSERT(maxLbaCount != 0 as i32)
 //         status = STATUS_DATA_ERROR;
 //         goto Exit;
 //     }
@@ -10340,7 +10340,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                 //
 //                 // This should never happen.
 //                 //
-//                 NT_ASSERT(transferSize <= bufferLength);
+//                 NT_ASSERT(transferSize <= bufferLength as i32)
 //                 status = STATUS_BUFFER_TOO_SMALL;
 //                 break;
 //             }
@@ -10365,7 +10365,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                     //
 //                     // Should not occur.
 //                     //
-//                     NT_ASSERT(FALSE);
+//                     NT_ASSERT(FALSE as i32)
 //                     break;
 //                 }
 //
@@ -10483,7 +10483,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto Exit;
 //     }
@@ -10530,11 +10530,11 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                 // 0xB0 page: fdoExtension->FunctionSupportInfo->BlockLimitsData
 //                 //
 //                 if (fdoExtension->FunctionSupportInfo->ValidInquiryPages.LBProvisioning == TRUE) {
-//                     NT_ASSERT(fdoExtension->FunctionSupportInfo->LBProvisioningData.CommandStatus != -1);
+//                     NT_ASSERT(fdoExtension->FunctionSupportInfo->LBProvisioningData.CommandStatus != -1 as i32)
 //                 }
 //
 //                 if (fdoExtension->FunctionSupportInfo->ValidInquiryPages.BlockLimits == TRUE) {
-//                     NT_ASSERT(fdoExtension->FunctionSupportInfo->BlockLimitsData.CommandStatus != -1);
+//                     NT_ASSERT(fdoExtension->FunctionSupportInfo->BlockLimitsData.CommandStatus != -1 as i32)
 //                 }
 //
 //             } else {
@@ -10702,7 +10702,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //         }
 //
 //         case Supported: {
-//             NT_ASSERT(FALSE); // this case is handled at the begining of the function.
+//             NT_ASSERT(FALSE as i32) // this case is handled at the begining of the function.
 //             break;
 //         }
 //
@@ -11137,7 +11137,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL)
 //     {
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         status = STATUS_INVALID_LEVEL;
 //         goto Exit;
 //     }
@@ -11352,7 +11352,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                     DeviceObject,
 //                     lbaStatusSize));
 //
-//         NT_ASSERT(lbaStatusListHeader != NULL);
+//         NT_ASSERT(lbaStatusListHeader != NULL as i32)
 //         status = STATUS_INSUFFICIENT_RESOURCES;
 //         goto Exit;
 //     }
@@ -11539,7 +11539,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                                     "ClasspDeviceGetLBAStatusWorker (%p): The slab allocation bitmap has zero length.\n",
 //                                     DeviceObject));
 //
-//                         NT_ASSERT(commandProcessedSlabs != 0);
+//                         NT_ASSERT(commandProcessedSlabs != 0 as i32)
 //                         doneProcessing = TRUE;
 //                         status = STATUS_UNSUCCESSFUL;
 //                     }
@@ -11699,7 +11699,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //             //
 //             // Should not occur.
 //             //
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //         }
 //     } else {
 //         RtlZeroMemory(Srb, sizeof(SCSI_REQUEST_BLOCK));
@@ -12759,7 +12759,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     ULONG stringsBufferLength = 0;
 //     ULONG pdoNameLength = 0;
 //
-//     NT_ASSERT(ioLogMessageContextHeader != NULL);
+//     NT_ASSERT(ioLogMessageContextHeader != NULL as i32)
 //     _Analysis_assume_(ioLogMessageContextHeader != NULL);
 //
 //     switch (ioLogMessageContextHeader->ErrorCode) {
@@ -13553,7 +13553,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //             Srb->Lun = storAddrBtl8->Lun;
 //         } else {
 //             // Catch unsupported address types
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //         }
 //     }
 //
@@ -13567,7 +13567,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //             if ((SrbEx->SrbExDataOffset[i] == 0) ||
 //                 (SrbEx->SrbExDataOffset[i] < sizeof(STORAGE_REQUEST_BLOCK))) {
 //                 // Catch invalid offsets
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //                 continue;
 //             }
 //
@@ -13932,7 +13932,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
 //
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //
 //         TracePrint((TRACE_LEVEL_ERROR,
 //                     TRACE_FLAG_IOCTL,
@@ -14356,7 +14356,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                 Fdo));
 //
 //     NT_ASSERT(fdoExt->FunctionSupportInfo->ValidInquiryPages.BlockDeviceRODLimits &&
-//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus));
+//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus) as i32)
 //
 //     if (ServiceAction == SERVICE_ACTION_POPULATE_TOKEN) {
 //         tokenOperationHeaderSize = FIELD_OFFSET(POPULATE_TOKEN_HEADER, BlockDeviceRangeDescriptor);
@@ -14466,7 +14466,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //                 Fdo));
 //
 //     NT_ASSERT(fdoExt->FunctionSupportInfo->ValidInquiryPages.BlockDeviceRODLimits &&
-//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus));
+//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus) as i32)
 //
 //     *MaxBlockDescriptorsCount = (MaxParameterBufferLength - tokenOperationHeaderSize) / sizeof(BLOCK_DEVICE_RANGE_DESCRIPTOR);
 //     *MaxBlockDescriptorsLength = (fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.MaximumTokenTransferSize == 0) ?
@@ -14574,7 +14574,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     if (optimalLbaPerDescr && maxLbaPerDescr) {
 //
-//         NT_ASSERT(optimalLbaPerDescr <= maxLbaPerDescr);
+//         NT_ASSERT(optimalLbaPerDescr <= maxLbaPerDescr as i32)
 //     }
 //
 //     while ((DataSetRange->LengthInBytes > 0) &&
@@ -14633,7 +14633,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //             }
 //         }
 //
-//         NT_ASSERT(sectorCount <= MAX_NUMBER_BLOCKS_PER_BLOCK_DEVICE_RANGE_DESCRIPTOR);
+//         NT_ASSERT(sectorCount <= MAX_NUMBER_BLOCKS_PER_BLOCK_DEVICE_RANGE_DESCRIPTOR as i32)
 //
 //         REVERSE_BYTES_QUAD(blockDescr[*CurrentBlockDescrIndex].LogicalBlockAddress, &startingSector);
 //         REVERSE_BYTES(blockDescr[*CurrentBlockDescrIndex].TransferLength, &sectorCount);
@@ -15049,8 +15049,8 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     IO_STATUS_BLOCK ioStatus;
 //     PFUNCTIONAL_DEVICE_EXTENSION fdoExtension = (PFUNCTIONAL_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 //
-//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo);
-//     NT_ASSERT(fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled);
+//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo as i32)
+//     NT_ASSERT(fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled as i32)
 //
 //     KeInitializeEvent(&event, SynchronizationEvent, FALSE);
 //
@@ -15111,8 +15111,8 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     IO_STATUS_BLOCK ioStatus;
 //     PFUNCTIONAL_DEVICE_EXTENSION fdoExtension = (PFUNCTIONAL_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 //
-//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo);
-//     NT_ASSERT(fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled);
+//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo as i32)
+//     NT_ASSERT(fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled as i32)
 //
 //     KeInitializeEvent(&event, SynchronizationEvent, FALSE);
 //
@@ -15477,7 +15477,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //
 //     originalIrp = irpStack->Parameters.Others.Argument1;
 //
-//     NT_ASSERT(originalIrp != NULL);
+//     NT_ASSERT(originalIrp != NULL as i32)
 //
 //     originalIrp->IoStatus.Status = Irp->IoStatus.Status;
 //     originalIrp->IoStatus.Information = Irp->IoStatus.Information;
@@ -15676,7 +15676,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //         // We're done accessing HwFirmwareInfo at this point so we can release
 //         // the SyncLock.
 //         //
-//         NT_ASSERT(lockHeld);
+//         NT_ASSERT(lockHeld as i32)
 //         KeReleaseInStackQueuedSpinLock(&lockHandle);
 //         lockHeld = FALSE;
 //
@@ -15695,7 +15695,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //         RtlCopyMemory(firmwareImageBuffer, firmwareDownload->ImageBuffer, (ULONG)firmwareDownload->BufferSize);
 //
 //     } else {
-//         NT_ASSERT(lockHeld);
+//         NT_ASSERT(lockHeld as i32)
 //         KeReleaseInStackQueuedSpinLock(&lockHandle);
 //         lockHeld = FALSE;
 //
@@ -15837,7 +15837,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //     // Firmware Download request will be failed.
 //     //
-//     NT_ASSERT(!NT_SUCCESS(status));
+//     NT_ASSERT(!NT_SUCCESS(status) as i32)
 //
 //     Irp->IoStatus.Status = status;
 //
@@ -16004,7 +16004,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     // We're done accessing HwFirmwareInfo at this point so we can release
 //     // the SyncLock.
 //     //
-//     NT_ASSERT(lockHeld);
+//     NT_ASSERT(lockHeld as i32)
 //     KeReleaseInStackQueuedSpinLock(&lockHandle);
 //     lockHeld = FALSE;
 //
@@ -16062,7 +16062,7 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(
 //     //
 //     // Firmware Activate request will be failed.
 //     //
-//     NT_ASSERT(!NT_SUCCESS(status));
+//     NT_ASSERT(!NT_SUCCESS(status) as i32)
 //
 //     Irp->IoStatus.Status = status;
 //

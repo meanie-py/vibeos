@@ -21,7 +21,7 @@ extern "system" {
     fn RetryRequest( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, srb: *mut SCSI_REQUEST_BLOCK, associated: u8, time_delta_100ns: i64, );
     fn ClassFreeOrReuseSrb( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
     fn InterlockedDecrement(addend: *mut i32) -> i32;
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn IoIsErrorUserInduced(status: i32) -> u8;
     fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
     fn ClassReleaseRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
@@ -486,7 +486,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //     // splitting the request.
 //     //
 //
-//     NT_ASSERT(irpCount >= 0);
+//     NT_ASSERT(irpCount >= 0 as i32)
 //
 //     if (irpCount == 0) {
 //
@@ -610,7 +610,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //         // likely incorrect.
 //         //
 //
-//         NT_ASSERT(SrbGetDataBuffer(srbHeader) == MmGetMdlVirtualAddress(Irp->MdlAddress));
+//         NT_ASSERT(SrbGetDataBuffer(srbHeader) == MmGetMdlVirtualAddress(Irp->MdlAddress) as i32)
 //     _Analysis_assume_(Irp->MdlAddress->ByteCount <= dataTransferLength);
 //         transferByteCount = Irp->MdlAddress->ByteCount;
 //
@@ -624,7 +624,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //     // not guaranteed to be an fdoExtension
 //     //
 //
-//     NT_ASSERT(!TEST_FLAG(SrbGetSrbFlags(srbHeader), SRB_FLAGS_FREE_SENSE_BUFFER));
+//     NT_ASSERT(!TEST_FLAG(SrbGetSrbFlags(srbHeader), SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
 //
 //     //
 //     // Reset byte count of transfer in SRB Extension.
@@ -802,7 +802,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //     // TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, "ClasspBuildRequestEx is OBSOLETE !"));
 //
 //     if (Srb == NULL) {
-//         NT_ASSERT(FALSE);
+//         NT_ASSERT(FALSE as i32)
 //         return;
 //     }
 //
@@ -826,7 +826,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //                                                1,
 //                                                SrbExDataTypeScsiCdb16);
 //         if (!NT_SUCCESS(status)) {
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //             return;
 //         }
 //
@@ -902,7 +902,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //     //
 //
 //     cdb = SrbGetCdb(srbHeader);
-//     NT_ASSERT(cdb != NULL);
+//     NT_ASSERT(cdb != NULL as i32)
 //
 //     transferBlocks = (USHORT)(currentIrpStack->Parameters.Read.Length >>
 //                               FdoExtension->SectorShift);
@@ -1126,7 +1126,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //     // safety net.  this should never occur.  if it does, it's a potential
 //     // memory leak.
 //     //
-//     NT_ASSERT(!TEST_FLAG(SrbGetSrbFlags(Srb), SRB_FLAGS_FREE_SENSE_BUFFER));
+//     NT_ASSERT(!TEST_FLAG(SrbGetSrbFlags(Srb), SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
 //
 //     if (commonExt->IsSrbLookasideListInitialized){
 //         /*
@@ -1227,7 +1227,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //     // This function is obsolete, but still called by DISK.SYS .
 //     // TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, "ClassInitializeSrbLookasideList is OBSOLETE !"));
 //
-//     NT_ASSERT(!CommonExtension->IsSrbLookasideListInitialized);
+//     NT_ASSERT(!CommonExtension->IsSrbLookasideListInitialized as i32)
 //     if (!CommonExtension->IsSrbLookasideListInitialized){
 //
 //         if (CommonExtension->IsFdo == TRUE) {
@@ -1285,7 +1285,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 //
 // VOID ClasspStartNextSweep(PCSCAN_LIST List)
 // {
-//     NT_ASSERT(IsListEmpty(&(List->CurrentSweep)) == TRUE);
+//     NT_ASSERT(IsListEmpty(&(List->CurrentSweep)) == TRUE as i32)
 //
 //     //
 //     // If the next sweep is empty then there's nothing to do.

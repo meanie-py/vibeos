@@ -16,7 +16,7 @@ use crate::glue::{STATUS_INVALID_DEVICE_STATE};
 
 extern "C" {
     fn PAGED_CODE();
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
     fn InitializeStorageRequestBlock( srb: *mut STORAGE_REQUEST_BLOCK, address_type: u32, size: u32, count: u32, data_type: u32, ) -> i32; // NTSTATUS fn SrbSetCdbLength(srb: *mut STORAGE_REQUEST_BLOCK, length: u8);
     fn SrbGetCdb(srb: *mut STORAGE_REQUEST_BLOCK) -> *mut CDB;
@@ -352,7 +352,7 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(
                     srbPtr = srbEx as *mut SCSI_REQUEST_BLOCK;
                 } else {
                     // Should not happen – assert and fallback
-                    NT_ASSERT(0); // FALSE = 0
+                    NT_ASSERT(0 as i32) // FALSE = 0
                     srb.TimeOutValue = (*fdoExtension).TimeOutValue;
                     srb.CdbLength = 6;
                     cdb = core::ptr::addr_of_mut!(srb.Cdb) as *mut CDB;
@@ -426,7 +426,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
         0u8, // FALSE
         core::ptr::null_mut(),
     );
-    NT_ASSERT(status == STATUS_SUCCESS);
+    NT_ASSERT(status == STATUS_SUCCESS as i32)
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -487,7 +487,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
                     countChanged = 1;
                 }
                 InternalMediaLock => {
-                    NT_ASSERT((*FdoExtension).InternalLockCount != 0);
+                    NT_ASSERT((*FdoExtension).InternalLockCount != 0 as i32)
                     (*FdoExtension).InternalLockCount -= 1;
                     countChanged = 1;
                 }
@@ -520,7 +520,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
                     SrbExDataTypeScsiCdb16,
                 );
                 if !NT_SUCCESS(status) {
-                    NT_ASSERT(false);
+                    NT_ASSERT(false as i32)
                     break 'seh2_try;
                 }
             } else {
@@ -529,7 +529,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
 
             SrbSetCdbLength(srb, 6);
             cdb = SrbGetCdb(srb);
-            NT_ASSERT(!cdb.is_null());
+            NT_ASSERT(!cdb.is_null() as i32)
 
             (*cdb).MEDIA_REMOVAL.OperationCode = SCSIOP_MEDIUM_REMOVAL as u8;
             (*cdb).MEDIA_REMOVAL.Prevent = Lock;
@@ -824,7 +824,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //                     "ClasspCREATEClose: file object %p\n",
 //                     irpStack->FileObject));
 //
-//         NT_ASSERT(BreakOnClose == FALSE);
+//         NT_ASSERT(BreakOnClose == FALSE as i32)
 //
 //         if(irpStack->FileObject != NULL) {
 //
@@ -876,7 +876,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                             "ClasspCreateCLOSE: extension is ours - "
 //                             "freeing\n"));
-//                 NT_ASSERT(BreakOnClose == FALSE);
+//                 NT_ASSERT(BreakOnClose == FALSE as i32)
 //
 //                 ClasspCleanupProtectedLocks(fsContext);
 //
@@ -960,7 +960,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //                 "ClasspCleanupProtectedLocks - FsContext %p is locked "
 //                 "%d times\n", FsContext, FsContext->LockCount));
 //
-//     NT_ASSERT(BreakOnClose == FALSE);
+//     NT_ASSERT(BreakOnClose == FALSE as i32)
 //
 //     //
 //     // Synchronize with ejection and ejection control requests.
@@ -1031,7 +1031,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //                     //
 //                     // Should not happen. Revert to legacy SRB.
 //                     //
-//                     NT_ASSERT(FALSE);
+//                     NT_ASSERT(FALSE as i32)
 //                     srb.TimeOutValue = fdoExtension->TimeOutValue;
 //                     srb.CdbLength = 6;
 //                     cdb = (PCDB) &(srb.Cdb);
@@ -1146,7 +1146,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //                 FALSE,
 //                 NULL);
 //
-//     NT_ASSERT(status == STATUS_SUCCESS);
+//     NT_ASSERT(status == STATUS_SUCCESS as i32)
 //
 //     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                 "ClasspEjectionControl: "
@@ -1249,7 +1249,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //                 }
 //
 //                 case InternalMediaLock: {
-//                     NT_ASSERT(FdoExtension->InternalLockCount != 0);
+//                     NT_ASSERT(FdoExtension->InternalLockCount != 0 as i32)
 //                     FdoExtension->InternalLockCount--;
 //                     countChanged = TRUE;
 //                     break;
@@ -1292,7 +1292,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //                                                        1,
 //                                                        SrbExDataTypeScsiCdb16);
 //                 if (!NT_SUCCESS(status)) {
-//                     NT_ASSERT(FALSE);
+//                     NT_ASSERT(FALSE as i32)
 //                     _SEH2_LEAVE;
 //                 }
 //
@@ -1302,7 +1302,7 @@ pub unsafe extern "system" fn ClassGetFsContext(
 //
 //             SrbSetCdbLength(srb, 6);
 //             cdb = SrbGetCdb(srb);
-//             NT_ASSERT(cdb != NULL);
+//             NT_ASSERT(cdb != NULL as i32)
 //
 //             cdb->MEDIA_REMOVAL.OperationCode = SCSIOP_MEDIUM_REMOVAL;
 //

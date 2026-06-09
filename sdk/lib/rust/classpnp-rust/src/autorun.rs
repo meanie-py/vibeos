@@ -27,7 +27,7 @@ extern "C" {
     fn TracePrint(level: u32, flags: u32, format: *const i8);
     fn ClasspUpdateDiskProperties(device_object: *mut DEVICE_OBJECT, context: *mut core::ffi::c_void);
     fn KeWaitForMutexObject(mutex: *mut core::ffi::c_void, wait_reason: i32, wait_mode: i32, alertable: i32, timeout: *mut LARGE_INTEGER) -> NTSTATUS;
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn PAGED_CODE();
     static GUID_CONSOLE_DISPLAY_STATE: GUID;
 }
@@ -173,7 +173,7 @@ unsafe extern "system" {
         context: *mut c_void,
         attributes: u32,
     ) -> *mut EX_TIMER;
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn ClasspTimerTickEx(timer: *mut EX_TIMER, context: *mut c_void);
 }
 
@@ -981,21 +981,21 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
 
     if irp.is_null() {
         // NT_ASSERT(irp)
-        assert!(!irp.is_null());
+        assert!(!irp.is_null() as i32)
         return core::ptr::null_mut();
     }
 
     status = ClassAcquireRemoveLock((*FdoExtension).DeviceObject, irp);
     if status == REMOVE_COMPLETE {
         // NT_ASSERT(status != REMOVE_COMPLETE)
-        assert!(status != REMOVE_COMPLETE);
+        assert!(status != REMOVE_COMPLETE as i32)
         return core::ptr::null_mut();
     } else if status == REMOVE_PENDING {
         ClassReleaseRemoveLock((*FdoExtension).DeviceObject, irp);
         return core::ptr::null_mut();
     } else {
         // NT_ASSERT(status == NO_REMOVE)
-        assert!(status == NO_REMOVE);
+        assert!(status == NO_REMOVE as i32)
     }
 
     IoReuseIrp(irp, STATUS_NOT_SUPPORTED);
@@ -1062,7 +1062,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         dataTransferLength = 0;
     } else {
         // NT_ASSERT(Info->Gesn.Buffer)
-        assert!(!(*Info).Gesn.Buffer.is_null());
+        assert!(!(*Info).Gesn.Buffer.is_null() as i32)
 
         (*nextIrpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_IN;
         (*irp).MdlAddress = (*Info).Gesn.Mdl;
@@ -1089,7 +1089,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         // NT_SUCCESS(status) macro expansion
         if !(status >= 0) {
             // NT_ASSERT(FALSE)
-            assert!(false);
+            assert!(false as i32)
             return core::ptr::null_mut();
         }
 
@@ -1429,10 +1429,10 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                             (*FdoExtension).DeviceObject as *const core::ffi::c_void,
                         );
 
-                        NT_ASSERT((*info).Gesn.Supported.into());
-                        NT_ASSERT(((*info).Gesn.Buffer).is_null() == false);
-                        NT_ASSERT((*info).Gesn.BufferSize != 0);
-                        NT_ASSERT((*info).Gesn.EventMask != 0);
+                        NT_ASSERT(((*info).Gesn.Supported.into() as i32));
+                        NT_ASSERT(((((*info).Gesn.Buffer).is_null() == false) as i32));
+                        NT_ASSERT((((*info).Gesn.BufferSize != 0) as i32));
+                        NT_ASSERT((((*info).Gesn.EventMask != 0) as i32));
                         GesnSupported = 1; // TRUE
                     } else {
                         let fmt3: &[u8] = b"ClasspInitializePolling: GESN *NOT* available for %p\n\0";
@@ -1446,10 +1446,10 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                 }
 
                 if GesnSupported == 0 {
-                    NT_ASSERT((*info).Gesn.Supported == 0);
-                    NT_ASSERT(((*info).Gesn.Buffer).is_null());
-                    NT_ASSERT((*info).Gesn.BufferSize == 0);
-                    NT_ASSERT((*info).Gesn.EventMask == 0);
+                    NT_ASSERT((((*info).Gesn.Supported == 0) as i32));
+                    NT_ASSERT((((*info).Gesn.Buffer).is_null() as i32));
+                    NT_ASSERT((((*info).Gesn.BufferSize == 0) as i32));
+                    NT_ASSERT((((*info).Gesn.EventMask == 0) as i32));
                     (*info).Gesn.Supported = 0;
                 }
 
@@ -1523,7 +1523,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
     PAGED_CODE();
     // NT_ASSERT(Info == FdoExtension->MediaChangeDetectionInfo)
     if Info != (*FdoExtension).MediaChangeDetectionInfo {
-        panic!("NT_ASSERT failed: Info == FdoExtension->MediaChangeDetectionInfo");
+        panic!("NT_ASSERT failed: Info == FdoExtension->MediaChangeDetectionInfo" as i32)
     }
 
     // read if we already know the abilities of the device
@@ -1622,7 +1622,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
         }
         // NT_ASSERT(TEST_FLAG(srbFlags, SRB_FLAGS_NO_QUEUE_FREEZE))
         if (srbFlags & SRB_FLAGS_NO_QUEUE_FREEZE) == 0 {
-            panic!("NT_ASSERT failed");
+            panic!("NT_ASSERT failed" as i32)
         }
 
         KeInitializeEvent(&mut event as *mut KEVENT, 0, 0); // SynchronizationEvent, FALSE
@@ -1645,7 +1645,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
             );
             // NT_ASSERT(NT_SUCCESS(status))
             if status < 0 {
-                panic!("NT_ASSERT failed");
+                panic!("NT_ASSERT failed" as i32)
             }
         }
         ClassReleaseRemoveLock((*FdoExtension).DeviceObject, irp);
@@ -2660,7 +2660,7 @@ pub unsafe extern "system" fn ClasspTimerTick(
     NT_ASSERT(isFdo as i32);
 
     let isRemoved = ClassAcquireRemoveLock(DeviceObject, ClasspTimerTick as isize as *mut IRP);
-    NT_ASSERT(isRemoved != REMOVE_COMPLETE);
+    NT_ASSERT(isRemoved != REMOVE_COMPLETE as i32)
 
     if isRemoved == 0 {
         let info = (*fdoExtension).FailurePredictionInfo;
@@ -2961,7 +2961,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
     let mut status: NTSTATUS;
 
     if Info.is_null() {
-        NT_ASSERT(1);
+        NT_ASSERT(1 as i32)
         return;
     }
 
@@ -3703,7 +3703,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         // dataLength = 4;
 //     }
 //
-//     NT_ASSERT(dataLength == 4);
+//     NT_ASSERT(dataLength == 4 as i32)
 //
 //     if ((Header->ClassEventData[0] & 0xf) == 0)
 //     {
@@ -3772,7 +3772,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //
 //
 //             // OpChange is not the only bit set -- Media class is required....
-//             NT_ASSERT(CountOfSetBitsUChar(info->Gesn.EventMask) != 1);
+//             NT_ASSERT(CountOfSetBitsUChar(info->Gesn.EventMask) != 1 as i32)
 //
 //             //
 //             // Force the use of the hackhack (ref #0001) to workaround the
@@ -3867,7 +3867,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //                         srbPtr = (PSCSI_REQUEST_BLOCK)srbEx;
 //                     } else {
 //                         // should not happen. Revert to legacy SRB.
-//                         NT_ASSERT(FALSE);
+//                         NT_ASSERT(FALSE as i32)
 //                         srb.CdbLength = 6;
 //                         srb.Length    = sizeof(SCSI_REQUEST_BLOCK);
 //                         srb.SrbStatus = SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_ERROR;
@@ -4340,8 +4340,8 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     fdoData = fdoExtension->PrivateFdoData;
 //     info         = fdoExtension->MediaChangeDetectionInfo;
 //
-//     NT_ASSERT(info->MediaChangeIrp != NULL);
-//     NT_ASSERT(!TEST_FLAG(Srb->SrbStatus, SRB_STATUS_QUEUE_FROZEN));
+//     NT_ASSERT(info->MediaChangeIrp != NULL as i32)
+//     NT_ASSERT(!TEST_FLAG(Srb->SrbStatus, SRB_STATUS_QUEUE_FROZEN) as i32)
 //     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN, "> ClasspMediaChangeDetectionCompletion: Device %p completed MCN irp %p.", DeviceObject, Irp));
 //
 //     /*
@@ -4461,7 +4461,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     // Remember the IRP and SRB for use the next time.
 //     //
 //
-//     NT_ASSERT(IoGetNextIrpStackLocation(Irp));
+//     NT_ASSERT(IoGetNextIrpStackLocation(Irp) as i32)
 //     IoGetNextIrpStackLocation(Irp)->Parameters.Scsi.Srb = (PSCSI_REQUEST_BLOCK)Srb;
 //
 //     //
@@ -4527,7 +4527,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         volatile LONG irpWasInUse;
 //         irpWasInUse = InterlockedCompareExchange(&info->MediaChangeIrpInUse, 0, 1);
 //             #if _MSC_FULL_VER != 13009111        // This compiler always takes the wrong path here.
-//                 NT_ASSERT(irpWasInUse);
+//                 NT_ASSERT(irpWasInUse as i32)
 //             #endif
 // #else
 //             InterlockedCompareExchange(&info->MediaChangeIrpInUse, 0, 1);
@@ -4603,7 +4603,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     irp = Info->MediaChangeIrp;
 //
 //     if (irp == NULL) {
-//         NT_ASSERT(irp);
+//         NT_ASSERT(irp as i32)
 //         return NULL;
 //     }
 //
@@ -4613,7 +4613,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //
 //     status = ClassAcquireRemoveLock(FdoExtension->DeviceObject, irp);
 //     if (status == REMOVE_COMPLETE) {
-//         NT_ASSERT(status != REMOVE_COMPLETE);
+//         NT_ASSERT(status != REMOVE_COMPLETE as i32)
 //         return NULL;
 //     }
 //     else if (status == REMOVE_PENDING) {
@@ -4621,7 +4621,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         return NULL;
 //     }
 //     else {
-//         NT_ASSERT(status == NO_REMOVE);
+//         NT_ASSERT(status == NO_REMOVE as i32)
 //     }
 //
 //     IoReuseIrp(irp, STATUS_NOT_SUPPORTED);
@@ -4661,7 +4661,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     buffer = Info->SenseBuffer;
 //     bufferLength = Info->SenseBufferLength;
 //
-//     NT_ASSERT(bufferLength > 0);
+//     NT_ASSERT(bufferLength > 0 as i32)
 //     RtlZeroMemory(buffer, bufferLength);
 //
 //     srbFlags = FdoExtension->SrbFlags;
@@ -4709,7 +4709,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         dataTransferLength = 0;
 //
 //     } else {
-//         NT_ASSERT(Info->Gesn.Buffer);
+//         NT_ASSERT(Info->Gesn.Buffer as i32)
 //
 //         nextIrpStack->Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_IN;
 //         irp->MdlAddress = Info->Gesn.Mdl;
@@ -4736,7 +4736,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //                                                SrbExDataTypeScsiCdb16);
 //         if (!NT_SUCCESS(status)) {
 //             // should not happen
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //             return NULL;
 //         }
 //
@@ -4982,7 +4982,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 // #if DBG
 //             irpInUse = InterlockedCompareExchange(&Info->MediaChangeIrpInUse, 0, 1);
 //             #if _MSC_FULL_VER != 13009111        // This compiler always takes the wrong path here.
-//                 NT_ASSERT(irpInUse);
+//                 NT_ASSERT(irpInUse as i32)
 //             #endif
 // #else
 //             InterlockedCompareExchange(&Info->MediaChangeIrpInUse, 0, 1);
@@ -5206,10 +5206,10 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //                         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                    "ClasspInitializePolling: GESN available "
 //                                    "for %p\n", FdoExtension->DeviceObject));
-//                         NT_ASSERT(info->Gesn.Supported );
-//                         NT_ASSERT(info->Gesn.Buffer     != NULL);
-//                         NT_ASSERT(info->Gesn.BufferSize != 0);
-//                         NT_ASSERT(info->Gesn.EventMask  != 0);
+//                         NT_ASSERT(info->Gesn.Supported  as i32)
+//                         NT_ASSERT(info->Gesn.Buffer     != NULL as i32)
+//                         NT_ASSERT(info->Gesn.BufferSize != 0 as i32)
+//                         NT_ASSERT(info->Gesn.EventMask  != 0 as i32)
 //                         GesnSupported = TRUE;
 //                     } else {
 //                         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
@@ -5219,10 +5219,10 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //                 }
 //
 //                 if (GesnSupported == FALSE) {
-//                     NT_ASSERT(info->Gesn.Supported == 0);
-//                     NT_ASSERT(info->Gesn.Buffer == NULL);
-//                     NT_ASSERT(info->Gesn.BufferSize == 0);
-//                     NT_ASSERT(info->Gesn.EventMask  == 0);
+//                     NT_ASSERT(info->Gesn.Supported == 0 as i32)
+//                     NT_ASSERT(info->Gesn.Buffer == NULL as i32)
+//                     NT_ASSERT(info->Gesn.BufferSize == 0 as i32)
+//                     NT_ASSERT(info->Gesn.EventMask  == 0 as i32)
 //                     info->Gesn.Supported = 0; // just in case....
 //                 }
 //
@@ -5272,7 +5272,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     ULONG srbFlags;
 //
 //     PAGED_CODE();
-//     NT_ASSERT(Info == FdoExtension->MediaChangeDetectionInfo);
+//     NT_ASSERT(Info == FdoExtension->MediaChangeDetectionInfo as i32)
 //
 //     //
 //     // read if we already know the abilities of the device
@@ -5359,7 +5359,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         } else {
 //             srbFlags = Info->MediaChangeSrb.Srb.SrbFlags;
 //         }
-//         NT_ASSERT(TEST_FLAG(srbFlags, SRB_FLAGS_NO_QUEUE_FREEZE));
+//         NT_ASSERT(TEST_FLAG(srbFlags, SRB_FLAGS_NO_QUEUE_FREEZE) as i32)
 //
 //         //
 //         // replace the completion routine with a different one this time...
@@ -5379,7 +5379,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //                                            KernelMode,
 //                                            FALSE,
 //                                            NULL);
-//             NT_ASSERT(NT_SUCCESS(status));
+//             NT_ASSERT(NT_SUCCESS(status) as i32)
 //         }
 //         ClassReleaseRemoveLock(FdoExtension->DeviceObject, irp);
 //
@@ -5932,7 +5932,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "ClassMediaChangeDeviceInstanceDisabled: %s selected\n",
 //                     "Both Enable and Disable set -- DISABLE"));
-//         NT_ASSERT(NT_SUCCESS(status));
+//         NT_ASSERT(NT_SUCCESS(status) as i32)
 //         status = STATUS_SUCCESS;
 //         *Enabled = FALSE;
 //
@@ -5941,7 +5941,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "ClassMediaChangeDeviceInstanceDisabled: %s selected\n",
 //                     "DISABLE"));
-//         NT_ASSERT(NT_SUCCESS(status));
+//         NT_ASSERT(NT_SUCCESS(status) as i32)
 //         status = STATUS_SUCCESS;
 //         *Enabled = FALSE;
 //
@@ -5950,7 +5950,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "ClassMediaChangeDeviceInstanceDisabled: %s selected\n",
 //                     "ENABLE"));
-//         NT_ASSERT(NT_SUCCESS(status));
+//         NT_ASSERT(NT_SUCCESS(status) as i32)
 //         status = STATUS_SUCCESS;
 //         *Enabled = TRUE;
 //
@@ -6025,7 +6025,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //                        KEY_READ,
 //                        &objectAttributes);
 //
-//     NT_ASSERT(NT_SUCCESS(status));
+//     NT_ASSERT(NT_SUCCESS(status) as i32)
 //
 //
 //     if(!NT_SUCCESS(status)) {
@@ -6132,7 +6132,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //             offset += (ULONG)strlen((PCSZ)revisionId);
 //         }
 //
-//         NT_ASSERT(offset == deviceString.Length);
+//         NT_ASSERT(offset == deviceString.Length as i32)
 //
 // #ifdef _MSC_VER
 //         #pragma warning(suppress:6386) // Not an issue as deviceString.Buffer is of size deviceString.MaximumLength, which is equal to (deviceString.Length + 1)
@@ -6258,7 +6258,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //                        KEY_READ,
 //                        &objectAttributes);
 //
-//     NT_ASSERT(NT_SUCCESS(status));
+//     NT_ASSERT(NT_SUCCESS(status) as i32)
 //
 //     if(!NT_SUCCESS(status)) {
 //
@@ -6390,7 +6390,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //
 //     oldCount = --info->MediaChangeDetectionDisableCount;
 //
-//     NT_ASSERT(oldCount >= 0);
+//     NT_ASSERT(oldCount >= 0 as i32)
 //
 //     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "ClassEnableMediaChangeDetection: Disable count "
 //                 "reduced to %d - ",
@@ -6784,12 +6784,12 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     UNREFERENCED_PARAMETER(SystemArgument1);
 //     UNREFERENCED_PARAMETER(SystemArgument2);
 //
-//     NT_ASSERT(fdoExtension != NULL);
+//     NT_ASSERT(fdoExtension != NULL as i32)
 //     _Analysis_assume_(fdoExtension != NULL);
 //
 //     commonExtension = &fdoExtension->CommonExtension;
 //     DeviceObject = fdoExtension->DeviceObject;
-//     NT_ASSERT(commonExtension->IsFdo);
+//     NT_ASSERT(commonExtension->IsFdo as i32)
 //
 //     //
 //     // Do any media change work
@@ -6805,7 +6805,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     // blocked trying to stop the timer.
 //     //
 //
-//     NT_ASSERT(isRemoved != REMOVE_COMPLETE);
+//     NT_ASSERT(isRemoved != REMOVE_COMPLETE as i32)
 //
 //     //
 //     // This routine is reasonably safe even if the device object has a pending
@@ -7042,7 +7042,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //
 //     if (fdoData->TimerInitialized == FALSE) {
 // #if (NTDDI_VERSION >= NTDDI_WINBLUE)
-//         NT_ASSERT(fdoData->TickTimer == NULL);
+//         NT_ASSERT(fdoData->TickTimer == NULL as i32)
 //         //
 //         // The tick timer is a no-wake timer, which means it will not wake
 //         // the processor while the processor is in a low power state until
@@ -7138,7 +7138,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         // the case it's not the end of the world.  We can attempt to
 //         // initialize it now.
 //         //
-//         NT_ASSERT(fdoData->TimerInitialized);
+//         NT_ASSERT(fdoData->TimerInitialized as i32)
 //         if (fdoData->TimerInitialized == FALSE) {
 //             NTSTATUS status;
 //             status = ClasspInitializeTimer(FdoExtension);
@@ -7182,7 +7182,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //
 //             fdoData->TickTimerEnabled = TRUE;
 //         } else {
-//             NT_ASSERT(fdoData->TickTimer != NULL);
+//             NT_ASSERT(fdoData->TickTimer != NULL as i32)
 //         }
 // #else
 //         //
@@ -7244,7 +7244,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //         // this keeps the code clean and prevents lots of bugs.
 //         //
 // #if (NTDDI_VERSION >= NTDDI_WINBLUE)
-//         NT_ASSERT(fdoData->TickTimer != NULL);
+//         NT_ASSERT(fdoData->TickTimer != NULL as i32)
 //         ExCancelTimer(fdoData->TickTimer, NULL);
 // #else
 //         KeCancelTimer(&fdoData->TickTimer);
@@ -7296,7 +7296,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     NTSTATUS status;
 //
 //     if (Info == NULL) {
-//         NT_ASSERT(Info != NULL);
+//         NT_ASSERT(Info != NULL as i32)
 //         return;
 //     }
 //
@@ -7682,9 +7682,9 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 //     LARGE_INTEGER timeDifference;
 //     BOOLEAN missedPeriod = FALSE;
 //
-//     NT_ASSERT(FdoExtension);
-//     NT_ASSERT(FdoExtension->FailurePredictionInfo);
-//     NT_ASSERT(FdoExtension->FailurePredictionInfo->Method != FailurePredictionNone);
+//     NT_ASSERT(FdoExtension as i32)
+//     NT_ASSERT(FdoExtension->FailurePredictionInfo as i32)
+//     NT_ASSERT(FdoExtension->FailurePredictionInfo->Method != FailurePredictionNone as i32)
 //
 //     //
 //     // Find the difference between the last failure prediction

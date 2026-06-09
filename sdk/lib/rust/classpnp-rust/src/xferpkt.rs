@@ -19,7 +19,7 @@ extern "C" {
     fn max(a: i32, b: i32) -> i32;
 }
 extern "C" {
-    fn NT_ASSERT(expr: i32);
+    fn NT_ASSERT(expr: i32)
     fn RtlULongAdd(a: u32, b: u32, result: *mut u32) -> i32;
     fn KeGetCurrentNodeNumber() -> u32;
     fn CreateStorageRequestBlock( srb_ptr: *mut *mut STORAGE_REQUEST_BLOCK, addr_type: u32, alloc_routine: Option<extern "system" fn(*mut c_void, u32, u32, u32) -> *mut STORAGE_REQUEST_BLOCK>, context: *mut c_void, count: u32, ... ) -> i32;
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: *mut DEVICE_OBJECT) -> i
     let mut maxWorkingSetTransferPackets: u32;
     let mut status: i32 = STATUS_SUCCESS;
 
-    NT_ASSERT((*adapterDesc).MaximumTransferLength != 0);
+    NT_ASSERT((*adapterDesc).MaximumTransferLength != 0 as i32)
 
     hwMaxPages = if (*adapterDesc).MaximumPhysicalPages != 0 { (*adapterDesc).MaximumPhysicalPages - 1 } else { 0 };
 
@@ -235,7 +235,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: *mut DEVICE_OBJECT) -> i
     osVersionInfo.dwOSVersionInfoSize = core::mem::size_of::<OSVERSIONINFOEXW>() as u32;
     status = RtlGetVersion(&raw mut osVersionInfo as *mut OSVERSIONINFOW);
 
-    NT_ASSERT(NT_SUCCESS(status) != 0);
+    NT_ASSERT(NT_SUCCESS(status) != 0 as i32)
 
     propertyId = StorageDeviceIoCapabilityProperty;
     status = ClassGetDescriptor((*(*fdoExt).CommonExtension).LowerDeviceObject,
@@ -353,7 +353,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: *mut DEVICE_OBJECT) -> i
             if NT_SUCCESS(status) != 0 {
                 (*(*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
             } else {
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
             }
         } else {
             (*fdoData).SrbTemplate = ExAllocatePoolWithTag(
@@ -402,7 +402,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
                 pkt = DequeueFreeTransferPacketEx(Fdo, 0, index);
             }
 
-            NT_ASSERT(if (*fdoData).FreeTransferPacketsLists[index].NumTotalTransferPackets == 0  { 1 } else { 0 });
+            NT_ASSERT(if (*fdoData).FreeTransferPacketsLists[index].NumTotalTransferPackets == 0  { 1 } else { 0 } as i32)
 
             index += 1;
         }
@@ -536,7 +536,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: *mut DEVICE_OBJECT) -> *mut TRAN
     {
         let mut historyByteCount: u32 = 0;
 
-        NT_ASSERT((*(*fdoData).InterpretSenseInfo).HistoryCount != 0);
+        NT_ASSERT((*(*fdoData).InterpretSenseInfo).HistoryCount != 0 as i32)
         // _Analysis_assume_((*fdoData).InterpretSenseInfo->HistoryCount != 0);
 
         historyByteCount = core::mem::size_of::<SRB_HISTORY_ITEM>() as u32
@@ -608,15 +608,15 @@ pub unsafe extern "C" fn DestroyTransferPacket(Pkt: *mut TRANSFER_PACKET) {
     let mut oldIrql: KIRQL;
 
     NT_ASSERT((*Pkt).SlistEntry.Next.is_null() as i32);
-    //    NT_ASSERT(!Pkt->OriginalIrp);
+    //    NT_ASSERT(!Pkt->OriginalIrp as i32)
 
     KeAcquireSpinLock(core::ptr::addr_of_mut!((*fdoData).SpinLock), core::ptr::addr_of_mut!(oldIrql));
 
     /*
      *  Delete the packet from our all-packets queue.
      */
-    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*Pkt).AllPktsListEntry)));
-    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*fdoData).AllTransferPacketsList)));
+    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*Pkt).AllPktsListEntry)) as i32)
+    NT_ASSERT(!IsListEmpty(core::ptr::addr_of!((*fdoData).AllTransferPacketsList)) as i32)
     RemoveEntryList(core::ptr::addr_of_mut!((*Pkt).AllPktsListEntry));
     InitializeListHead(core::ptr::addr_of_mut!((*Pkt).AllPktsListEntry));
 
@@ -884,7 +884,7 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: *mut TRANSFER_PACKET) -> NTST
 
     let irp = (*Pkt).Irp;
     let cond = ((*irp).CurrentLocation as u32 == (*irp).StackCount as u32 + 1) as u8;
-    NT_ASSERT(cond.into());
+    NT_ASSERT(cond.into() as i32)
 
     IoReuseIrp(irp, STATUS_NOT_SUPPORTED);
 
@@ -1282,7 +1282,7 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
         let srb_template_cast = (*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK;
         srbLength = (*srb_template_cast).SrbLength;
         let srb_cast = (*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK;
-        NT_ASSERT((*srb_cast).SrbLength >= srbLength);
+        NT_ASSERT((*srb_cast).SrbLength >= srbLength as i32)
     } else {
         srbLength = (*(*fdoData).SrbTemplate).Length;
     }
@@ -1349,7 +1349,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
         let srb_template_block = &*(*fdoData).SrbTemplate as *const STORAGE_REQUEST_BLOCK;
         srb_length = (*srb_template_block).SrbLength;
         let pkt_srb_block = &*((*Pkt).Srb as *const STORAGE_REQUEST_BLOCK);
-        NT_ASSERT((*pkt_srb_block).SrbLength >= srb_length);
+        NT_ASSERT((*pkt_srb_block).SrbLength >= srb_length as i32)
     } else {
         srb_length = (*(*fdoData).SrbTemplate).Length;
     }
@@ -1743,7 +1743,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //     //
 //     //  Precompute the maximum transfer length
 //     //
-//     NT_ASSERT(adapterDesc->MaximumTransferLength);
+//     NT_ASSERT(adapterDesc->MaximumTransferLength as i32)
 //
 //     hwMaxPages = adapterDesc->MaximumPhysicalPages ? adapterDesc->MaximumPhysicalPages-1 : 0;
 //
@@ -1779,7 +1779,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //     osVersionInfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEXW);
 //     status = RtlGetVersion((POSVERSIONINFOW) &osVersionInfo);
 //
-//     NT_ASSERT( NT_SUCCESS(status));
+//     NT_ASSERT( NT_SUCCESS(status) as i32)
 //
 //     //
 //     // Retrieve info on IO capability supported by port drivers
@@ -1939,7 +1939,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //             if (NT_SUCCESS(status)) {
 //                 ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
 //             } else {
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //             }
 //         } else {
 //             fdoData->SrbTemplate = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(SCSI_REQUEST_BLOCK), '-brs');
@@ -1979,7 +1979,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //     //
 //     if (fdoData->FreeTransferPacketsLists != NULL) {
 //
-//         NT_ASSERT(IsListEmpty(&fdoData->DeferredClientIrpList));
+//         NT_ASSERT(IsListEmpty(&fdoData->DeferredClientIrpList) as i32)
 //
 //         arraySize = KeQueryHighestNodeNumber() + 1;
 //         for (index = 0; index < arraySize; index++) {
@@ -1990,7 +1990,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //                 pkt = DequeueFreeTransferPacketEx(Fdo, FALSE, index);
 //             }
 //
-//             NT_ASSERT(fdoData->FreeTransferPacketsLists[index].NumTotalTransferPackets == 0);
+//             NT_ASSERT(fdoData->FreeTransferPacketsLists[index].NumTotalTransferPackets == 0 as i32)
 //         }
 //     }
 //
@@ -2096,7 +2096,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //      */
 //     if (NT_SUCCESS(status) && newPkt != NULL) {
 //
-//         NT_ASSERT(transferLength != (ULONG)-1);
+//         NT_ASSERT(transferLength != (ULONG)-1 as i32)
 //
 //         newPkt->PartialMdl = IoAllocateMdl(NULL,
 //                                            transferLength,
@@ -2107,7 +2107,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_RW, "Failed to allocate MDL for transfer packet."));
 //             status = STATUS_INSUFFICIENT_RESOURCES;
 //         } else {
-//             NT_ASSERT(newPkt->PartialMdl->Size >= (CSHORT)(sizeof(MDL) + BYTES_TO_PAGES(fdoData->HwMaxXferLen) * sizeof(PFN_NUMBER)));
+//             NT_ASSERT(newPkt->PartialMdl->Size >= (CSHORT)(sizeof(MDL) + BYTES_TO_PAGES(fdoData->HwMaxXferLen) * sizeof(PFN_NUMBER)) as i32)
 //         }
 //
 //     }
@@ -2123,7 +2123,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //         ULONG historyByteCount = 0;
 //
 //         // SAL annotation and ClassInitializeEx() should both catch this case
-//         NT_ASSERT(fdoData->InterpretSenseInfo->HistoryCount != 0);
+//         NT_ASSERT(fdoData->InterpretSenseInfo->HistoryCount != 0 as i32)
 //         _Analysis_assume_(fdoData->InterpretSenseInfo->HistoryCount != 0);
 //
 //         historyByteCount = sizeof(SRB_HISTORY_ITEM) * fdoData->InterpretSenseInfo->HistoryCount;
@@ -2181,16 +2181,16 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //     PCLASS_PRIVATE_FDO_DATA fdoData = fdoExt->PrivateFdoData;
 //     KIRQL oldIrql;
 //
-//     NT_ASSERT(!Pkt->SlistEntry.Next);
-// //    NT_ASSERT(!Pkt->OriginalIrp);
+//     NT_ASSERT(!Pkt->SlistEntry.Next as i32)
+// //    NT_ASSERT(!Pkt->OriginalIrp as i32)
 //
 //     KeAcquireSpinLock(&fdoData->SpinLock, &oldIrql);
 //
 //     /*
 //      *  Delete the packet from our all-packets queue.
 //      */
-//     NT_ASSERT(!IsListEmpty(&Pkt->AllPktsListEntry));
-//     NT_ASSERT(!IsListEmpty(&fdoData->AllTransferPacketsList));
+//     NT_ASSERT(!IsListEmpty(&Pkt->AllPktsListEntry) as i32)
+//     NT_ASSERT(!IsListEmpty(&fdoData->AllTransferPacketsList) as i32)
 //     RemoveEntryList(&Pkt->AllPktsListEntry);
 //     InitializeListHead(&Pkt->AllPktsListEntry);
 //
@@ -2211,7 +2211,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //     ULONG allocateNode;
 //     KIRQL oldIrql;
 //
-//     NT_ASSERT(!Pkt->SlistEntry.Next);
+//     NT_ASSERT(!Pkt->SlistEntry.Next as i32)
 //
 //     allocateNode = Pkt->AllocateNode;
 //     InterlockedPushEntrySList(&(fdoData->FreeTransferPacketsLists[allocateNode].SListHeader), &Pkt->SlistEntry);
@@ -2427,7 +2427,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //      */
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -2534,7 +2534,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //     BOOLEAN idleRequest = FALSE;
 //     PIO_STACK_LOCATION nextSp;
 //
-//     NT_ASSERT(Pkt->Irp->CurrentLocation == Pkt->Irp->StackCount+1);
+//     NT_ASSERT(Pkt->Irp->CurrentLocation == Pkt->Irp->StackCount+1 as i32)
 //
 //     /*
 //      *  Attach the SRB to the IRP.
@@ -2655,11 +2655,11 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //         idleRequest = ClasspIsIdleRequest(pkt->OriginalIrp);
 //         if (idleRequest) {
 //             InterlockedDecrement(&fdoData->ActiveIdleIoCount);
-//             NT_ASSERT(fdoData->ActiveIdleIoCount >= 0);
+//             NT_ASSERT(fdoData->ActiveIdleIoCount >= 0 as i32)
 //         } else {
 //             fdoData->LastNonIdleIoTime = completionTime;
 //             InterlockedDecrement(&fdoData->ActiveIoCount);
-//             NT_ASSERT(fdoData->ActiveIoCount >= 0);
+//             NT_ASSERT(fdoData->ActiveIoCount >= 0 as i32)
 //         }
 //     }
 //
@@ -2673,7 +2673,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (SRB_STATUS(pkt->Srb->SrbStatus) == SRB_STATUS_SUCCESS) {
 //
-//         NT_ASSERT(NT_SUCCESS(Irp->IoStatus.Status));
+//         NT_ASSERT(NT_SUCCESS(Irp->IoStatus.Status) as i32)
 //
 //         transferLength = SrbGetDataTransferLength(pkt->Srb);
 //
@@ -2683,7 +2683,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //          *  The port driver should not have allocated a sense buffer
 //          *  if the SRB succeeded.
 //          */
-//         NT_ASSERT(!PORT_ALLOCATED_SENSE_EX(fdoExt, pkt->Srb));
+//         NT_ASSERT(!PORT_ALLOCATED_SENSE_EX(fdoExt, pkt->Srb) as i32)
 //
 //         /*
 //          *  Add this packet's transferred length to the original IRP's.
@@ -2747,7 +2747,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //              *  The error was recovered above in the InterpretTransferPacketError() call.
 //              */
 //
-//             NT_ASSERT(!shouldRetry);
+//             NT_ASSERT(!shouldRetry as i32)
 //
 //             /*
 //              *  In the case of a recovered error,
@@ -2804,8 +2804,8 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //             SrbSetSenseInfoBuffer(pkt->Srb, &pkt->SrbErrorSenseData);
 //             SrbSetSenseInfoBufferLength(pkt->Srb, sizeof(pkt->SrbErrorSenseData));
 //         } else {
-//             NT_ASSERT(SrbGetSenseInfoBuffer(pkt->Srb) == &pkt->SrbErrorSenseData);
-//             NT_ASSERT(SrbGetSenseInfoBufferLength(pkt->Srb) <= sizeof(pkt->SrbErrorSenseData));
+//             NT_ASSERT(SrbGetSenseInfoBuffer(pkt->Srb) == &pkt->SrbErrorSenseData as i32)
+//             NT_ASSERT(SrbGetSenseInfoBufferLength(pkt->Srb) <= sizeof(pkt->SrbErrorSenseData) as i32)
 //         }
 //
 //         RtlZeroMemory(&pkt->SrbErrorSenseData, sizeof(pkt->SrbErrorSenseData));
@@ -2851,14 +2851,14 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //              *  All the transfer pieces are done.
 //              *  Complete the original irp if appropriate.
 //              */
-//             NT_ASSERT(numPacketsRemaining == 0);
+//             NT_ASSERT(numPacketsRemaining == 0 as i32)
 //             if (pkt->CompleteOriginalIrpWhenLastPacketCompletes){
 //
 //                 IO_PAGING_PRIORITY priority = (TEST_FLAG(pkt->OriginalIrp->Flags, IRP_PAGING_IO)) ? IoGetPagingIoPriority(pkt->OriginalIrp) : IoPagingPriorityInvalid;
 //                 KIRQL oldIrql;
 //
 //                 if (NT_SUCCESS(pkt->OriginalIrp->IoStatus.Status)){
-//                     NT_ASSERT((ULONG)pkt->OriginalIrp->IoStatus.Information ==  IoGetCurrentIrpStackLocation(pkt->OriginalIrp)->Parameters.Read.Length);
+//                     NT_ASSERT((ULONG)pkt->OriginalIrp->IoStatus.Information ==  IoGetCurrentIrpStackLocation(pkt->OriginalIrp)->Parameters.Read.Length as i32)
 //                     ClasspPerfIncrementSuccessfulIo(fdoExt);
 //                 }
 //                 ClassReleaseRemoveLock(Fdo, pkt->OriginalIrp);
@@ -3004,7 +3004,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -3059,7 +3059,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -3115,7 +3115,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -3170,7 +3170,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -3191,7 +3191,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //     pCdb = SrbGetCdb(Pkt->Srb);
 //     if (pCdb) {
 //         if (Use16ByteCdb == TRUE) {
-//             NT_ASSERT(ReadCapacityBufferLen >= sizeof(READ_CAPACITY_DATA_EX));
+//             NT_ASSERT(ReadCapacityBufferLen >= sizeof(READ_CAPACITY_DATA_EX) as i32)
 //             SrbSetCdbLength(Pkt->Srb, 16);
 //             pCdb->CDB16.OperationCode = SCSIOP_READ_CAPACITY16;
 //             REVERSE_BYTES(&pCdb->CDB16.TransferLength, &ReadCapacityBufferLen);
@@ -3376,7 +3376,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -3473,7 +3473,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -3574,7 +3574,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }
@@ -3672,7 +3672,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
 //
 //     if (fdoExt->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srbLength = ((PSTORAGE_REQUEST_BLOCK) fdoData->SrbTemplate)->SrbLength;
-//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength);
+//         NT_ASSERT(((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength as i32)
 //     } else {
 //         srbLength = fdoData->SrbTemplate->Length;
 //     }

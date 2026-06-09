@@ -30,7 +30,7 @@ extern "C" {
     fn DBGGETSENSECODESTR(Srb: *mut SCSI_REQUEST_BLOCK) -> *const i8;
     fn DBGGETADSENSECODESTR(Srb: *mut SCSI_REQUEST_BLOCK) -> *const i8;
     fn DBGGETADSENSEQUALIFIERSTR(Srb: *mut SCSI_REQUEST_BLOCK) -> *const i8;
-    fn NT_ASSERT(truth: i32);
+    fn NT_ASSERT(truth: i32)
     fn RtlULongAdd(a: u32, b: u32, result: *mut u32) -> i32;
 }
 
@@ -694,10 +694,10 @@ pub unsafe extern "system" fn translate_make_case_snippet(
 //     {
 //         PCDB pCdb = ClasspTransferPacketGetCdb(Pkt);
 //
-//         NT_ASSERT(SrbGetOriginalRequest(Pkt->Srb) == Pkt->Irp);
-//         NT_ASSERT(SrbGetDataBuffer(Pkt->Srb) == Pkt->BufPtrCopy);
-//         NT_ASSERT(SrbGetDataTransferLength(Pkt->Srb) <= Pkt->BufLenCopy);
-//         NT_ASSERT(!Pkt->Irp->CancelRoutine);
+//         NT_ASSERT(SrbGetOriginalRequest(Pkt->Srb) == Pkt->Irp as i32)
+//         NT_ASSERT(SrbGetDataBuffer(Pkt->Srb) == Pkt->BufPtrCopy as i32)
+//         NT_ASSERT(SrbGetDataTransferLength(Pkt->Srb) <= Pkt->BufLenCopy as i32)
+//         NT_ASSERT(!Pkt->Irp->CancelRoutine as i32)
 //
 //         if (SRB_STATUS(Pkt->Srb->SrbStatus) == SRB_STATUS_PENDING){
 //             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW, "SRB completed with status PENDING in packet %ph: (op=%s srbstat=%s(%xh), irpstat=%xh)",
@@ -769,8 +769,8 @@ pub unsafe extern "system" fn translate_make_case_snippet(
 //          *  make sure this is also the InternalStatus in the SRB so that we process it correctly.
 //          */
 //         if (Pkt->Irp->IoStatus.Status == STATUS_INSUFFICIENT_RESOURCES){
-//             NT_ASSERT(SRB_STATUS(Pkt->Srb->SrbStatus) == SRB_STATUS_INTERNAL_ERROR);
-//             NT_ASSERT(SrbGetSystemStatus(Pkt->Srb) == STATUS_INSUFFICIENT_RESOURCES);
+//             NT_ASSERT(SRB_STATUS(Pkt->Srb->SrbStatus) == SRB_STATUS_INTERNAL_ERROR as i32)
+//             NT_ASSERT(SrbGetSystemStatus(Pkt->Srb) == STATUS_INSUFFICIENT_RESOURCES as i32)
 //         }
 //
 //         /*
@@ -1221,7 +1221,7 @@ pub unsafe extern "system" fn translate_make_case_snippet(
 //             BOOLEAN validSense;
 //
 //             senseData = SrbGetSenseInfoBuffer(Srb);
-//             NT_ASSERT(senseData);
+//             NT_ASSERT(senseData as i32)
 //
 //             validSense = ScsiGetSenseKeyAndCodes(senseData,
 //                                                  SrbGetSenseInfoBufferLength(Srb),
@@ -1269,7 +1269,7 @@ pub unsafe extern "system" fn translate_make_case_snippet(
 //             BOOLEAN validSense;
 //
 //             senseData = SrbGetSenseInfoBuffer(Srb);
-//             NT_ASSERT(senseData);
+//             NT_ASSERT(senseData as i32)
 //
 //             validSense = ScsiGetSenseKeyAndCodes(senseData,
 //                                                  SrbGetSenseInfoBufferLength(Srb),
@@ -1326,7 +1326,7 @@ pub unsafe extern "system" fn translate_make_case_snippet(
 //             BOOLEAN validSense;
 //
 //             senseData = SrbGetSenseInfoBuffer(Srb);
-//             NT_ASSERT(senseData);
+//             NT_ASSERT(senseData as i32)
 //
 //             validSense = ScsiGetSenseKeyAndCodes(senseData,
 //                                                  SrbGetSenseInfoBufferLength(Srb),

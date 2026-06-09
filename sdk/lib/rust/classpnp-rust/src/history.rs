@@ -3,7 +3,7 @@ use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
 extern "system" {
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn ClasspTransferPacketGetSenseInfoBuffer(Pkt: *mut TRANSFER_PACKET) -> *mut core::ffi::c_void;
     fn ClasspTransferPacketGetSenseInfoBufferLength(Pkt: *mut TRANSFER_PACKET) -> u8;
     fn IsDescriptorSenseDataFormat(buffer: *mut core::ffi::c_void) -> u8;
@@ -180,24 +180,24 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut TRANSFER_PACKET) {
 //     PSRB_HISTORY history;
 //     PSRB_HISTORY_ITEM item;
 //
-//     NT_ASSERT( Pkt->RetryHistory != NULL );
+//     NT_ASSERT( Pkt->RetryHistory != NULL  as i32)
 //     history = Pkt->RetryHistory;
 //     // sending a packet implies a new history unit is to be used.
-//     NT_ASSERT( history->UsedHistoryCount <= history->TotalHistoryCount );
+//     NT_ASSERT( history->UsedHistoryCount <= history->TotalHistoryCount  as i32)
 //
 //     // if already all used up, request class driver to remove at least one history unit
 //     if (history->UsedHistoryCount == history->TotalHistoryCount )
 //     {
 //         PFUNCTIONAL_DEVICE_EXTENSION fdoExtension = Pkt->Fdo->DeviceExtension;
 //         PCLASS_PRIVATE_FDO_DATA fdoData = fdoExtension->PrivateFdoData;
-//         NT_ASSERT( fdoData->InterpretSenseInfo != NULL );
-//         NT_ASSERT( fdoData->InterpretSenseInfo->Compress != NULL );
+//         NT_ASSERT( fdoData->InterpretSenseInfo != NULL  as i32)
+//         NT_ASSERT( fdoData->InterpretSenseInfo->Compress != NULL  as i32)
 //         fdoData->InterpretSenseInfo->Compress( fdoExtension->DeviceObject, history );
-//         NT_ASSERT( history->UsedHistoryCount < history->TotalHistoryCount );
+//         NT_ASSERT( history->UsedHistoryCount < history->TotalHistoryCount  as i32)
 //     }
 //
 //     // thus, since we are about to increment the count, it must now be less...
-//     NT_ASSERT( history->UsedHistoryCount < history->TotalHistoryCount );
+//     NT_ASSERT( history->UsedHistoryCount < history->TotalHistoryCount  as i32)
 //
 //     // increment the number of history units in use
 //     history->UsedHistoryCount++;
@@ -223,9 +223,9 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut TRANSFER_PACKET) {
 //     SENSE_DATA convertedSenseBuffer = {0};
 //     BOOLEAN validSense = TRUE;
 //
-//     NT_ASSERT( Pkt->RetryHistory != NULL );
+//     NT_ASSERT( Pkt->RetryHistory != NULL  as i32)
 //     history = Pkt->RetryHistory;
-//     NT_ASSERT( history->UsedHistoryCount <= history->TotalHistoryCount );
+//     NT_ASSERT( history->UsedHistoryCount <= history->TotalHistoryCount  as i32)
 //     item = &( history->History[ history->UsedHistoryCount-1 ] );
 //
 //     // Query the tick count and store in the history

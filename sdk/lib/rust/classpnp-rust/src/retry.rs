@@ -10,7 +10,7 @@ use core::ffi::c_void;
 use crate::types::{_CDB as CDB};
 
 extern "C" {
-    fn NT_ASSERT(cond: i32);
+    fn NT_ASSERT(cond: i32)
 }
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const u8, ...);
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
         let mut tempSrb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
         let mut srbPtr = (*Pkt).Srb as *mut SCSI_REQUEST_BLOCK;
 
-        NT_ASSERT(!((*(*(*fdoData).InterpretSenseInfo)).Interpret).is_null());
+        NT_ASSERT(!((*(*(*fdoData).InterpretSenseInfo)).Interpret).is_null() as i32)
 
         if (u32::from((*(*Pkt).Srb).Function) == SRB_FUNCTION_STORAGE_REQUEST_BLOCK)
             && ((*(*(*fdoExtension).CommonExtension.DriverExtension)).SrbSupport & CLASS_SRB_STORAGE_REQUEST_BLOCK) == 0
@@ -384,7 +384,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
                                                 isInformationValid = 1;
                                             }
                                         } else {
-                                            NT_ASSERT(0);
+                                            NT_ASSERT(0 as i32)
                                         }
                                     }
                                 }
@@ -541,7 +541,7 @@ pub unsafe extern "C" fn TransferPacketQueueRetryDpc(Pkt: *mut TRANSFER_PACKET) 
         );
     } else {
         let mut timerPeriod: LARGE_INTEGER;
-        NT_ASSERT((*Pkt).RetryIn100nsUnits < 100 * 1000 * 1000 * 10);
+        NT_ASSERT((*Pkt).RetryIn100nsUnits < 100 * 1000 * 1000 * 10 as i32)
         timerPeriod.QuadPart = -((*Pkt).RetryIn100nsUnits as i64);
         KeInitializeTimer(core::ptr::addr_of_mut!((*Pkt).RetryTimer));
         KeSetTimer(
@@ -619,7 +619,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
     } else {
         let thisChunkLen: u32;
         if (*Pkt).DriverUsesStartIO != 0 {
-            NT_ASSERT(if (*Pkt).InLowMemRetry == 0 { 1 } else { 0 });
+            NT_ASSERT(if (*Pkt).InLowMemRetry == 0 { 1 } else { 0 } as i32)
             let fdoExt = (*(*Pkt).Fdo).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
             let fdoData = (*fdoExt).PrivateFdoData;
             let commonExtension = (*(*Pkt).Fdo).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
@@ -631,7 +631,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
             if not_aligned || overflow_check {
                 hwMaxXferLen = (*fdoData).HwMaxXferLen;
             } else {
-                NT_ASSERT(if (PAGE_SIZE % (*fdoExt).DiskGeometry.BytesPerSector) == 0 { 1 } else { 0 });
+                NT_ASSERT(if (PAGE_SIZE % (*fdoExt).DiskGeometry.BytesPerSector) == 0 { 1 } else { 0 } as i32)
                 hwMaxXferLen = min((*fdoData).HwMaxXferLen + PAGE_SIZE, (*adapterDesc).MaximumTransferLength);
             }
             thisChunkLen = MIN((*Pkt).LowMemRetry_remainingBufLen, hwMaxXferLen);
@@ -641,7 +641,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
             let offset = (addr % PAGE_SIZE as usize) as u32;
             bytesToNextPageBoundary = PAGE_SIZE - offset;
             thisChunkLen = MIN((*Pkt).LowMemRetry_remainingBufLen, bytesToNextPageBoundary);
-            NT_ASSERT(if (*Pkt).InLowMemRetry != 0 { 1 } else { 0 });
+            NT_ASSERT(if (*Pkt).InLowMemRetry != 0 { 1 } else { 0 } as i32)
         }
         SetupReadWriteTransferPacket(
             Pkt,
@@ -733,7 +733,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //         PSCSI_REQUEST_BLOCK srbPtr = (PSCSI_REQUEST_BLOCK)Pkt->Srb;
 //
 //         // SAL annotation and ClassInitializeEx() both validate this
-//         NT_ASSERT(fdoData->InterpretSenseInfo->Interpret != NULL);
+//         NT_ASSERT(fdoData->InterpretSenseInfo->Interpret != NULL as i32)
 //
 //         //
 //         // If class driver does not support extended SRB and this is
@@ -772,7 +772,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //         UCHAR additionalSenseCode = 0;
 //         UCHAR additionalSenseQual = 0;
 //
-//         NT_ASSERT(senseInfoBuffer);
+//         NT_ASSERT(senseInfoBuffer as i32)
 //
 //         validSense = ScsiGetSenseKeyAndCodes(senseInfoBuffer,
 //                                              senseInfoBufferLength,
@@ -1078,7 +1078,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //                                             //
 //                                             // ScsiGetNextDescriptorByType should only return a type that is specified by us.
 //                                             //
-//                                             NT_ASSERT(FALSE);
+//                                             NT_ASSERT(FALSE as i32)
 //                                         }
 //                                     }
 //                                 }
@@ -1136,11 +1136,11 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //         Pkt->NumThinProvisioningRetries++;
 //     }
 //     else {
-//         NT_ASSERT(Pkt->NumRetries > 0 || Pkt->RetryHistory);
+//         NT_ASSERT(Pkt->NumRetries > 0 || Pkt->RetryHistory as i32)
 //         Pkt->NumRetries--;
 //     }
 // #else
-//     NT_ASSERT(Pkt->NumRetries > 0 || Pkt->RetryHistory);
+//     NT_ASSERT(Pkt->NumRetries > 0 || Pkt->RetryHistory as i32)
 //     Pkt->NumRetries--;
 // #endif
 //
@@ -1278,7 +1278,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //     else {
 //         LARGE_INTEGER timerPeriod;
 //
-//         NT_ASSERT(Pkt->RetryIn100nsUnits < 100 * 1000 * 1000 * 10); // sanity check -- 100 seconds is normally too long
+//         NT_ASSERT(Pkt->RetryIn100nsUnits < 100 * 1000 * 1000 * 10 as i32) // sanity check -- 100 seconds is normally too long
 //         timerPeriod.QuadPart = -(Pkt->RetryIn100nsUnits);
 //         KeInitializeTimer(&Pkt->RetryTimer);
 //         KeSetTimer(&Pkt->RetryTimer, timerPeriod, &Pkt->RetryTimerDPC);
@@ -1323,8 +1323,8 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //         SrbSetSenseInfoBufferLength(pkt->Srb, sizeof(pkt->SrbErrorSenseData));
 //     }
 //     else {
-//         NT_ASSERT(SrbGetSenseInfoBuffer(pkt->Srb) == &pkt->SrbErrorSenseData);
-//         NT_ASSERT(SrbGetSenseInfoBufferLength(pkt->Srb) <= sizeof(pkt->SrbErrorSenseData));
+//         NT_ASSERT(SrbGetSenseInfoBuffer(pkt->Srb) == &pkt->SrbErrorSenseData as i32)
+//         NT_ASSERT(SrbGetSenseInfoBufferLength(pkt->Srb) <= sizeof(pkt->SrbErrorSenseData) as i32)
 //     }
 //
 //     RtlZeroMemory(&pkt->SrbErrorSenseData, sizeof(pkt->SrbErrorSenseData));
@@ -1336,8 +1336,8 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //
 // VOID InitLowMemRetry(PTRANSFER_PACKET Pkt, PVOID BufPtr, ULONG Len, LARGE_INTEGER TargetLocation)
 // {
-//     NT_ASSERT(Len > 0);
-//     NT_ASSERT(!Pkt->InLowMemRetry);
+//     NT_ASSERT(Len > 0 as i32)
+//     NT_ASSERT(!Pkt->InLowMemRetry as i32)
 //
 //     if (Pkt->DriverUsesStartIO)
 //     {
@@ -1404,7 +1404,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //              * cannot be used directly because some write methods do not work if the
 //              * writes are only PAGE_SIZE (i.e. packet writing may corrupt data).
 //              */
-//             NT_ASSERT(!Pkt->InLowMemRetry);
+//             NT_ASSERT(!Pkt->InLowMemRetry as i32)
 //
 //             /*
 //              *  We precomputed fdoData->HwMaxXferLen using (MaximumPhysicalPages-1).
@@ -1418,7 +1418,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //                 hwMaxXferLen = fdoData->HwMaxXferLen;
 //             }
 //             else {
-//                 NT_ASSERT((PAGE_SIZE%fdoExt->DiskGeometry.BytesPerSector) == 0);
+//                 NT_ASSERT((PAGE_SIZE%fdoExt->DiskGeometry.BytesPerSector) == 0 as i32)
 //                 hwMaxXferLen = min(fdoData->HwMaxXferLen+PAGE_SIZE, adapterDesc->MaximumTransferLength);
 //             }
 //             thisChunkLen = MIN(Pkt->LowMemRetry_remainingBufLen, hwMaxXferLen);
@@ -1431,7 +1431,7 @@ pub unsafe extern "C" fn InitLowMemRetry(
 //             ULONG bytesToNextPageBoundary;
 //             bytesToNextPageBoundary = PAGE_SIZE-(ULONG)((ULONG_PTR)Pkt->LowMemRetry_remainingBufPtr%PAGE_SIZE);
 //             thisChunkLen = MIN(Pkt->LowMemRetry_remainingBufLen, bytesToNextPageBoundary);
-//             NT_ASSERT(Pkt->InLowMemRetry);
+//             NT_ASSERT(Pkt->InLowMemRetry as i32)
 //         }
 //
 //

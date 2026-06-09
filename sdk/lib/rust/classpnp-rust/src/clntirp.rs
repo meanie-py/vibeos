@@ -14,7 +14,7 @@ extern "C" {
     fn ClasspGetCurrentTime() -> LARGE_INTEGER;
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn ClassGetDeviceParameter( FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> u32;
     fn Int32x32To64(a: i32, b: i32) -> i64;
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn ClasspCompleteIdleRequest(
 //         }
 //         else {
 //             irp = CONTAINING_RECORD(listEntry, IRP, Tail.Overlay.ListEntry);
-//             NT_ASSERT(irp->Type == IO_TYPE_IRP);
+//             NT_ASSERT(irp->Type == IO_TYPE_IRP as i32)
 //
 //
 //             InitializeListHead(&irp->Tail.Overlay.ListEntry);
@@ -875,7 +875,7 @@ pub unsafe extern "C" fn ClasspCompleteIdleRequest(
 //     UNREFERENCED_PARAMETER(SystemArgument2);
 //
 //     if (fdoExtension == NULL) {
-//         NT_ASSERT(fdoExtension != NULL);
+//         NT_ASSERT(fdoExtension != NULL as i32)
 //         return;
 //     }
 //
@@ -903,7 +903,7 @@ pub unsafe extern "C" fn ClasspCompleteIdleRequest(
 //             // If we are here (Idle duration is sufficient), pCurrentTime is
 //             // expected to be set.
 //             //
-//             NT_ASSERT(pCurrentTime != NULL);
+//             NT_ASSERT(pCurrentTime != NULL as i32)
 //             fdoData->AntiStarvationStartTime = *pCurrentTime;
 //             ClasspServiceIdleRequest(fdoExtension, FALSE);
 //         }
@@ -999,7 +999,7 @@ pub unsafe extern "C" fn ClasspCompleteIdleRequest(
 //
 //     KeAcquireSpinLock(&fdoData->IdleListLock, &oldIrql);
 //     if (IsListEmpty(&fdoData->IdleIrpList)) {
-//         NT_ASSERT(fdoData->IdleIoCount == 0);
+//         NT_ASSERT(fdoData->IdleIoCount == 0 as i32)
 //     }
 //     InsertTailList(&fdoData->IdleIrpList, &Irp->Tail.Overlay.ListEntry);
 //
@@ -1058,7 +1058,7 @@ pub unsafe extern "C" fn ClasspCompleteIdleRequest(
 //         //
 //         // Make sure we actaully removed a request from the list
 //         //
-//         NT_ASSERT(listEntry != &fdoData->IdleIrpList);
+//         NT_ASSERT(listEntry != &fdoData->IdleIrpList as i32)
 //         //
 //         // Decrement the idle I/O count.
 //         //
@@ -1070,7 +1070,7 @@ pub unsafe extern "C" fn ClasspCompleteIdleRequest(
 //             ClasspStopIdleTimer(fdoData);
 //         }
 //         irp = CONTAINING_RECORD(listEntry, IRP, Tail.Overlay.ListEntry);
-//         NT_ASSERT(irp->Type == IO_TYPE_IRP);
+//         NT_ASSERT(irp->Type == IO_TYPE_IRP as i32)
 //
 //
 //         InitializeListHead(&irp->Tail.Overlay.ListEntry);

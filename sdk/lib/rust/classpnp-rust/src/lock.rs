@@ -12,7 +12,7 @@ use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, RTL_GENERIC_COMPARE_RESULTS};
 use crate::glue::{TRACE_LEVEL_ERROR};
 
 extern "C" {
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn ExAllocatePoolWithTag( PoolType: u32, NumberOfBytes: usize, Tag: u32, ) -> *mut core::ffi::c_void;
     fn FREE_POOL(Buffer: *mut core::ffi::c_void);
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn ClasspInitializeRemoveTracking(DeviceObject: PDEVICE_OB
                     (*foundTrackingBlock).File,
                     (*foundTrackingBlock).Line,
                 );
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
             }
         }
 
@@ -378,7 +378,7 @@ pub unsafe extern "system" fn RemoveTrackingFreeRoutine(
 //                     TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_LOCK, ">>>>>ClassAcquireRemoveLock: "
 //                                 "acquired in file %s on line %d\n",
 //                                 insertedTrackingBlock->File, insertedTrackingBlock->Line));
-// //                  NT_ASSERT(FALSE);
+// //                  NT_ASSERT(FALSE as i32)
 //
 //                 }
 //             } else {
@@ -491,7 +491,7 @@ pub unsafe extern "system" fn RemoveTrackingFreeRoutine(
 //                 // This might happen if the device is being removed and the tracking list
 //                 // has already been freed. Don't assert if that is the case.
 //                 //
-//                 NT_ASSERT((removeTrackingList == NULL) && (commonExtension->IsRemoved != NO_REMOVE));
+//                 NT_ASSERT((removeTrackingList == NULL) && (commonExtension->IsRemoved != NO_REMOVE) as i32)
 //             } else {
 //                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_LOCK, ">>>>>ClassReleaseRemoveLock: "
 //                             "Couldn't find Tag %p in the lock tracking list - "
@@ -499,7 +499,7 @@ pub unsafe extern "system" fn RemoveTrackingFreeRoutine(
 //                             Tag, commonExtension->RemoveTrackingUntrackedCount));
 //
 //                 commonExtension->RemoveTrackingUntrackedCount--;
-//                 NT_ASSERT(commonExtension->RemoveTrackingUntrackedCount >= 0);
+//                 NT_ASSERT(commonExtension->RemoveTrackingUntrackedCount >= 0 as i32)
 //             }
 //         }
 //
@@ -512,14 +512,14 @@ pub unsafe extern "system" fn RemoveTrackingFreeRoutine(
 //                     "Released for Object %p & irp %p - count is %d\n",
 //                     DeviceObject, Tag, lockValue));
 //
-//         NT_ASSERT(lockValue >= 0);
+//         NT_ASSERT(lockValue >= 0 as i32)
 //
 //         NT_ASSERTMSG("RemoveLock decreased to meet LockLowWatermark",
 //                   ((LockLowWatermark == 0) || !(lockValue == LockLowWatermark)));
 //
 //         if (lockValue == 0) {
 //
-//             NT_ASSERT(commonExtension->IsRemoved);
+//             NT_ASSERT(commonExtension->IsRemoved as i32)
 //
 //             //
 //             // The device needs to be removed.  Signal the remove event
@@ -625,7 +625,7 @@ pub unsafe extern "system" fn RemoveTrackingFreeRoutine(
 //                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_LOCK, ">>>>>ClassCompleteRequest: "
 //                             "Lock acquired in file %s on line %d\n",
 //                             foundTrackingBlock->File, foundTrackingBlock->Line));
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //             }
 //         }
 //

@@ -20,7 +20,7 @@ extern "C" {
     fn ClassAcquireRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> u32;
     fn TracePrint(level: u32, flags: u32, fmt: *const i8, ...);
     fn _Analysis_assume_(condition: i32);
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
 }
 
 // ---- file-scope preamble (translated) ----
@@ -391,7 +391,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                             stringPtr = stringPtr.offset(1);
                             core::ptr::copy_nonoverlapping(name.Buffer, stringPtr, (name.Length / 2) as usize);
                         } else {
-                            NT_ASSERT(if bufferSize >= bufferNeeded { 1 } else { 0 });
+                            NT_ASSERT(if bufferSize >= bufferNeeded { 1 } else { 0 } as i32)
                             status = STATUS_INVALID_BUFFER_SIZE;
                         }
                     }
@@ -406,7 +406,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                         stringPtr = stringPtr.offset(1);
                         core::ptr::copy_nonoverlapping(mofName.Buffer, stringPtr, (mofName.Length / 2) as usize);
                     } else {
-                        NT_ASSERT(if bufferSize >= bufferNeeded { 1 } else { 0 });
+                        NT_ASSERT(if bufferSize >= bufferNeeded { 1 } else { 0 } as i32)
                         status = STATUS_INVALID_BUFFER_SIZE;
                     }
 
@@ -424,7 +424,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                             ((*regPath).Length / 2) as usize,
                         );
                     } else {
-                        NT_ASSERT(if bufferSize >= bufferNeeded { 1 } else { 0 });
+                        NT_ASSERT(if bufferSize >= bufferNeeded { 1 } else { 0 } as i32)
                         TracePrint(
                             TRACE_LEVEL_WARNING,
                             TRACE_FLAG_WMI,
@@ -514,7 +514,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     IO_NO_INCREMENT,
                 );
             } else {
-                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 });
+                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 } as i32)
                 status = ((*classWmiInfo).ClassSetWmiDataBlock)(
                     DeviceObject,
                     Irp,
@@ -537,7 +537,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     IO_NO_INCREMENT,
                 );
             } else {
-                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 });
+                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 } as i32)
                 status = ((*classWmiInfo).ClassSetWmiDataItem)(
                     DeviceObject,
                     Irp,
@@ -561,7 +561,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     IO_NO_INCREMENT,
                 );
             } else {
-                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 });
+                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 } as i32)
                 status = ((*classWmiInfo).ClassExecuteWmiMethod)(
                     DeviceObject,
                     Irp,
@@ -585,7 +585,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     IO_NO_INCREMENT,
                 );
             } else {
-                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 });
+                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 } as i32)
                 status = ((*classWmiInfo).ClassWmiFunctionControl)(
                     DeviceObject,
                     Irp,
@@ -607,7 +607,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     IO_NO_INCREMENT,
                 );
             } else {
-                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 });
+                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 } as i32)
                 status = ((*classWmiInfo).ClassWmiFunctionControl)(
                     DeviceObject,
                     Irp,
@@ -629,7 +629,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     IO_NO_INCREMENT,
                 );
             } else {
-                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 });
+                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 } as i32)
                 status = ((*classWmiInfo).ClassWmiFunctionControl)(
                     DeviceObject,
                     Irp,
@@ -651,7 +651,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     IO_NO_INCREMENT,
                 );
             } else {
-                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 });
+                NT_ASSERT(if guidIndex != u32::MAX { 1 } else { 0 } as i32)
                 status = ((*classWmiInfo).ClassWmiFunctionControl)(
                     DeviceObject,
                     Irp,
@@ -1520,7 +1520,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                             RtlCopyMemory(stringPtr, name.Buffer, name.Length);
 //                         }
 //                         else {
-//                             NT_ASSERT(bufferSize >= bufferNeeded);
+//                             NT_ASSERT(bufferSize >= bufferNeeded as i32)
 //                             status = STATUS_INVALID_BUFFER_SIZE;
 //                         }
 //                     }
@@ -1534,7 +1534,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                         RtlCopyMemory(stringPtr, mofName.Buffer, mofName.Length);
 //                     }
 //                     else {
-//                         NT_ASSERT(bufferSize >= bufferNeeded);
+//                         NT_ASSERT(bufferSize >= bufferNeeded as i32)
 //                         status = STATUS_INVALID_BUFFER_SIZE;
 //                     }
 //
@@ -1550,7 +1550,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                     }
 //                     else {
 //
-//                         NT_ASSERT(bufferSize >= bufferNeeded);
+//                         NT_ASSERT(bufferSize >= bufferNeeded as i32)
 //                         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_WMI, "Invalid Buffer Size!"));
 //                         status = STATUS_INVALID_BUFFER_SIZE;
 //                     }
@@ -1588,7 +1588,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //
 //             wnode->DataBlockOffset = sizeof(WNODE_ALL_DATA);
 //
-//             NT_ASSERT(guidIndex != (ULONG)-1);
+//             NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //             _Analysis_assume_(isInternalGuid);
 //             if (isInternalGuid)
 //             {
@@ -1618,7 +1618,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //
 //             dataBlockOffset = wnode->DataBlockOffset;
 //
-//             NT_ASSERT(guidIndex != (ULONG)-1);
+//             NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //             _Analysis_assume_(isInternalGuid);
 //             if (isInternalGuid)
 //             {
@@ -1654,7 +1654,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                                                 IO_NO_INCREMENT);
 //             } else {
 //
-//                 NT_ASSERT(guidIndex != (ULONG)-1);
+//                 NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //
 //                 status = classWmiInfo->ClassSetWmiDataBlock(
 //                                          DeviceObject,
@@ -1673,7 +1673,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //
 //             wnode = (PWNODE_SINGLE_ITEM)buffer;
 //
-//             NT_ASSERT(guidIndex != (ULONG)-1);
+//             NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //             _Analysis_assume_(isInternalGuid);
 //             if (isInternalGuid)
 //             {
@@ -1684,7 +1684,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                                                 IO_NO_INCREMENT);
 //             } else {
 //
-//                 NT_ASSERT(guidIndex != (ULONG)-1);
+//                 NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //
 //                 status = classWmiInfo->ClassSetWmiDataItem(
 //                                          DeviceObject,
@@ -1714,7 +1714,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                                                 IO_NO_INCREMENT);
 //             } else {
 //
-//                 NT_ASSERT(guidIndex != (ULONG)-1);
+//                 NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //
 //                 status = classWmiInfo->ClassExecuteWmiMethod(
 //                                              DeviceObject,
@@ -1741,7 +1741,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                                                 IO_NO_INCREMENT);
 //             } else {
 //
-//                 NT_ASSERT(guidIndex != (ULONG)-1);
+//                 NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //
 //                 status = classWmiInfo->ClassWmiFunctionControl(
 //                                                                DeviceObject,
@@ -1765,7 +1765,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                                                 IO_NO_INCREMENT);
 //             } else {
 //
-//                 NT_ASSERT(guidIndex != (ULONG)-1);
+//                 NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //
 //                 status = classWmiInfo->ClassWmiFunctionControl(
 //                                                                DeviceObject,
@@ -1789,7 +1789,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                                                 IO_NO_INCREMENT);
 //             } else {
 //
-//                 NT_ASSERT(guidIndex != (ULONG)-1);
+//                 NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //
 //                 status = classWmiInfo->ClassWmiFunctionControl(
 //                                                              DeviceObject,
@@ -1813,7 +1813,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 //                                                 IO_NO_INCREMENT);
 //             } else {
 //
-//                 NT_ASSERT(guidIndex != (ULONG)-1);
+//                 NT_ASSERT(guidIndex != (ULONG)-1 as i32)
 //
 //                 status = classWmiInfo->ClassWmiFunctionControl(
 //                                                              DeviceObject,

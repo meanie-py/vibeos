@@ -28,7 +28,7 @@ extern "C" {
     static ClassGuidSrbSupport: GUID;
     static CLASS_DRIVER_EXTENSION_KEY: GUID;
     fn PAGED_CODE();
-    fn NT_ASSERT(condition: i32);
+    fn NT_ASSERT(condition: i32)
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn TracePrint(level: u32, flag: u32, fmt: *const i8, s: *const _UNICODE_STRING);
     fn EtwUnregister(handle: usize);
@@ -326,7 +326,7 @@ pub unsafe extern "system" fn ClassInitialize(
             && (*InitializationData).PdoData.ClassStopDevice.is_null())
     {
         // TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, "ClassInitialize: Class device-specific missing required PDO entry\n"));
-        NT_ASSERT(0);
+        NT_ASSERT(0 as i32)
         return STATUS_REVISION_MISMATCH as u32;
     }
 
@@ -391,7 +391,7 @@ pub unsafe extern "system" fn ClassInitialize(
             CLASS_DRIVER_EXTENSION_KEY,
         ) as *mut CLASS_DRIVER_EXTENSION;
 
-        NT_ASSERT(!driverExtension.is_null());
+        NT_ASSERT(!driverExtension.is_null() as i32)
     } else {
         // TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, "ClassInitialize: Class driver extension could not be allocated %lx\n", status));
         return status as u32;
@@ -465,7 +465,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
         as *mut CLASS_DRIVER_EXTENSION;
 
     if driverExtension.is_null() {
-        NT_ASSERT(0);
+        NT_ASSERT(0 as i32)
         return STATUS_UNSUCCESSFUL as i32;
     }
 
@@ -514,7 +514,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else if !(*driverExtension).WorkingSet.is_null() {
                 status = STATUS_INVALID_PARAMETER;
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
             }
         }
 
@@ -563,7 +563,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else if !(*driverExtension).InterpretSenseInfo.is_null() {
                 status = STATUS_INVALID_PARAMETER;
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
             }
         }
 
@@ -581,7 +581,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
             status = STATUS_SUCCESS;
 
             if ((*driverExtension).SrbSupport & CLASS_SRB_SCSI_REQUEST_BLOCK) == 0 {
-                NT_ASSERT(0);
+                NT_ASSERT(0 as i32)
             }
         } else {
             status = STATUS_INVALID_PARAMETER;
@@ -599,7 +599,7 @@ pub unsafe extern "system" fn ClassUnload(
 ) {
     PAGED_CODE();
 
-    NT_ASSERT(if (*DriverObject).DeviceObject.is_null() { 1 } else { 0 });
+    NT_ASSERT(if (*DriverObject).DeviceObject.is_null() { 1 } else { 0 } as i32)
 
     let driverExtension = IoGetDriverObjectExtension(
         DriverObject,
@@ -607,12 +607,12 @@ pub unsafe extern "system" fn ClassUnload(
     ) as *mut CLASS_DRIVER_EXTENSION;
 
     if driverExtension.is_null() {
-        NT_ASSERT(0); // FALSE
+        NT_ASSERT(0 as i32) // FALSE
         return;
     }
 
-    NT_ASSERT(if !(*driverExtension).RegistryPath.Buffer.is_null() { 1 } else { 0 });
-    NT_ASSERT(if !(*driverExtension).InitData.ClassUnload.is_null() { 1 } else { 0 });
+    NT_ASSERT(if !(*driverExtension).RegistryPath.Buffer.is_null() { 1 } else { 0 } as i32)
+    NT_ASSERT(if !(*driverExtension).InitData.ClassUnload.is_null() { 1 } else { 0 } as i32)
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -755,7 +755,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                         }
                     } else if type_ == ntkrnl_sys::ddk::BusRelations {
                         if (*commonExtension).IsInitialized == 0 {
-                            NT_ASSERT(0);
+                            NT_ASSERT(0 as i32)
                         }
                         if (*initData).ClassEnumerateDevice.is_null() {
                             // Just send down; fall through to IoCallDriver
@@ -796,7 +796,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                 }
             }
         } else {
-            NT_ASSERT(0);
+            NT_ASSERT(0 as i32)
             status = STATUS_INTERNAL_ERROR;
         }
 
@@ -972,7 +972,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                     0,
                 );
                 if NT_SUCCESS(status) == 0 {
-                    NT_ASSERT(0);
+                    NT_ASSERT(0 as i32)
                     TracePrint(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_PNP,
@@ -1764,7 +1764,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut DEVICE_OBJECT) {
         );
         if !NT_SUCCESS(status) {
             FREE_POOL(context as *mut core::ffi::c_void);
-            NT_ASSERT(0);
+            NT_ASSERT(0 as i32)
             return;
         }
 
@@ -2048,7 +2048,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(
                 let this_piece_len = core::cmp::min(hw_max_xfer_len, entire_xfer_len);
 
                 slist_entry = SimplePopSlist(&mut pkt_list);
-                NT_ASSERT(!slist_entry.is_null());
+                NT_ASSERT(!slist_entry.is_null() as i32)
                 pkt = ((slist_entry as *const u8).offset(-(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize))) as *mut TRANSFER_PACKET;
 
                 SetupReadWriteTransferPacket(
@@ -2080,7 +2080,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(
                 buf_ptr = buf_ptr.add(this_piece_len as usize);
                 target_location.QuadPart += this_piece_len as i64;
             }
-            NT_ASSERT(SimpleIsSlistEmpty(&pkt_list));
+            NT_ASSERT(SimpleIsSlistEmpty(&pkt_list) as i32)
         } else if i >= 1 {
             // We were unable to get all the TRANSFER_PACKETs we need,
             // but we did get at least one.
@@ -2088,15 +2088,15 @@ pub unsafe extern "C" fn ServiceTransferRequest(
             while i > 1 {
                 i -= 1;
                 slist_entry = SimplePopSlist(&mut pkt_list);
-                NT_ASSERT(!slist_entry.is_null());
+                NT_ASSERT(!slist_entry.is_null() as i32)
                 pkt = ((slist_entry as *const u8).offset(-(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize))) as *mut TRANSFER_PACKET;
                 EnqueueFreeTransferPacket(Fdo, pkt);
             }
 
             // Get the single TRANSFER_PACKET that we'll be using.
             slist_entry = SimplePopSlist(&mut pkt_list);
-            NT_ASSERT(!slist_entry.is_null());
-            NT_ASSERT(SimpleIsSlistEmpty(&pkt_list));
+            NT_ASSERT(!slist_entry.is_null() as i32)
+            NT_ASSERT(SimpleIsSlistEmpty(&pkt_list) as i32)
             pkt = ((slist_entry as *const u8).offset(-(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize))) as *mut TRANSFER_PACKET;
 
             if !driver_uses_start_io {
@@ -2163,7 +2163,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(
         status = STATUS_PENDING;
     }
 
-    NT_ASSERT(status != STATUS_UNSUCCESSFUL);
+    NT_ASSERT(status != STATUS_UNSUCCESSFUL as i32)
 
     status
 }
@@ -2692,7 +2692,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "ClassInitialize: Class device-specific missing "
 //                        "required PDO entry\n"));
-//         NT_ASSERT(FALSE);
+//         NT_ASSERT(FALSE as i32)
 //         return (ULONG) STATUS_REVISION_MISMATCH;
 //     }
 //
@@ -2783,7 +2783,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 // #endif
 //         driverExtension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY);
 //
-//         NT_ASSERT(driverExtension != NULL);
+//         NT_ASSERT(driverExtension != NULL as i32)
 //
 //     } else {
 //
@@ -2926,7 +2926,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     if (driverExtension == NULL)
 //     {
-//         NT_ASSERT(FALSE);
+//         NT_ASSERT(FALSE as i32)
 //         return (ULONG)STATUS_UNSUCCESSFUL;
 //     }
 //
@@ -3005,7 +3005,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             {
 //                 // not allowed to change it once it is set for a driver
 //                 status = STATUS_INVALID_PARAMETER;
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //             }
 //         }
 //         // save results or cleanup
@@ -3085,7 +3085,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             {
 //                 // not allowed to change it once it is set for a driver
 //                 status = STATUS_INVALID_PARAMETER;
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //             }
 //         }
 //
@@ -3117,7 +3117,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             // Catch cases of a class driver reporting only extended SRB support
 //             //
 //             if ((driverExtension->SrbSupport & CLASS_SRB_SCSI_REQUEST_BLOCK) == 0) {
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //             }
 //         } else {
 //             status = STATUS_INVALID_PARAMETER;
@@ -3158,7 +3158,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     PAGED_CODE();
 //
-//     NT_ASSERT( DriverObject->DeviceObject == NULL );
+//     NT_ASSERT( DriverObject->DeviceObject == NULL  as i32)
 //
 // #ifdef _MSC_VER
 // #pragma warning(suppress:4054) // okay to type cast function pointer as data pointer for this use case
@@ -3168,12 +3168,12 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     if (driverExtension == NULL)
 //     {
-//         NT_ASSERT(FALSE);
+//         NT_ASSERT(FALSE as i32)
 //         return;
 //     }
 //
-//     NT_ASSERT(driverExtension->RegistryPath.Buffer != NULL);
-//     NT_ASSERT(driverExtension->InitData.ClassUnload != NULL);
+//     NT_ASSERT(driverExtension->RegistryPath.Buffer != NULL as i32)
+//     NT_ASSERT(driverExtension->InitData.ClassUnload != NULL as i32)
 //
 //     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,  "ClassUnload: driver unloading %wZ\n",
 //                 &driverExtension->RegistryPath));
@@ -3407,7 +3407,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //                 } else if (type == BusRelations) {
 //
-//                     NT_ASSERT(commonExtension->IsInitialized);
+//                     NT_ASSERT(commonExtension->IsInitialized as i32)
 //
 //                     //
 //                     // Make sure we support enumeration
@@ -3536,7 +3536,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                     // ASSERT that we never get two queries in a row, as
 //                     // this will severly mess up the state machine
 //                     //
-//                     NT_ASSERT(commonExtension->CurrentState != irpStack->MinorFunction);
+//                     NT_ASSERT(commonExtension->CurrentState != irpStack->MinorFunction as i32)
 //                     commonExtension->PreviousState = commonExtension->CurrentState;
 //                     commonExtension->CurrentState = irpStack->MinorFunction;
 //
@@ -3624,7 +3624,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                             (isFdo ? "fdo" : "pdo")
 //                             ));
 //
-//                 NT_ASSERT(commonExtension->PagingPathCount == 0);
+//                 NT_ASSERT(commonExtension->PagingPathCount == 0 as i32)
 //
 //                 //
 //                 // ISSUE-2000/02/03-peterwie
@@ -3729,7 +3729,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //                     IoCopyCurrentIrpStackLocationToNext(Irp);
 //                     status = IoCallDriver(commonExtension->LowerDeviceObject, Irp);
-//                     NT_ASSERT(NT_SUCCESS(status));
+//                     NT_ASSERT(NT_SUCCESS(status) as i32)
 //                     completeRequest = FALSE;
 //                 }
 //                 else {
@@ -3771,7 +3771,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                             break;
 //                         }
 //
-//                         NT_ASSERT(commonExtension->IsInitialized);
+//                         NT_ASSERT(commonExtension->IsInitialized as i32)
 //
 //                         /*
 //                          *  Ensure that this user thread is not suspended while we are holding the PathCountEvent.
@@ -4158,7 +4158,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         }
 //     }
 //     else {
-//         NT_ASSERT(driverExtension);
+//         NT_ASSERT(driverExtension as i32)
 //         status = STATUS_INTERNAL_ERROR;
 //     }
 //
@@ -4237,8 +4237,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         devInfo = &(initData->PdoData);
 //     }
 //
-//     NT_ASSERT(devInfo->ClassInitDevice != NULL);
-//     NT_ASSERT(devInfo->ClassStartDevice != NULL);
+//     NT_ASSERT(devInfo->ClassInitDevice != NULL as i32)
+//     NT_ASSERT(devInfo->ClassStartDevice != NULL as i32)
 //
 //     if (!commonExtension->IsInitialized){
 //
@@ -4366,7 +4366,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                                                    sizeof(fdoExtension->PrivateFdoData->ReleaseQueueSrb.ReleaseQueueSrbBuffer),
 //                                                    0);
 //             if (!NT_SUCCESS(status)) {
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,
 //                             "ClassPnpStartDevice: fail to initialize release queue extended SRB 0x%x\n", status));
 //                 return status;
@@ -4869,12 +4869,12 @@ pub unsafe extern "system" fn ClassIoComplete(
 //          *  Call the miniport driver's pre-pass filter to check if we
 //          *  should continue with this transfer.
 //          */
-//         NT_ASSERT(commonExtension->DevInfo->ClassReadWriteVerification);
+//         NT_ASSERT(commonExtension->DevInfo->ClassReadWriteVerification as i32)
 //         status = commonExtension->DevInfo->ClassReadWriteVerification(DeviceObject, Irp);
 //         // Code Analysis cannot analyze the code paths specific to clients.
 //         _Analysis_assume_(status != STATUS_PENDING);
 //         if (!NT_SUCCESS(status)){
-//             NT_ASSERT(Irp->IoStatus.Status == status);
+//             NT_ASSERT(Irp->IoStatus.Status == status as i32)
 //             Irp->IoStatus.Information = 0;
 //             ClassReleaseRemoveLock(DeviceObject, Irp);
 //             ClassCompleteRequest (DeviceObject, Irp, IO_NO_INCREMENT);
@@ -5310,7 +5310,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             {
 //                 //
 //                 // This can happen if a disk reports Parameters Changed / Capacity Data Changed sense data.
-//                 // NT_ASSERT(!"Drive capacity has changed while the device wasn't started!");
+//                 // NT_ASSERT(!"Drive capacity has changed while the device wasn't started!" as i32)
 //                 //
 //             } else {
 //                 //
@@ -5506,7 +5506,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                                                SrbExDataTypeScsiCdb16);
 //         if (!NT_SUCCESS(status)) {
 //             FREE_POOL(context);
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //             return;
 //         }
 //
@@ -5694,7 +5694,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //         } else {
 //
-//             NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER));
+//             NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
 //
 //         }
 //     }
@@ -5869,7 +5869,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             hwMaxXferLen = fdoData->HwMaxXferLen;
 //         }
 //         else {
-//             NT_ASSERT((PAGE_SIZE%fdoExt->DiskGeometry.BytesPerSector) == 0);
+//             NT_ASSERT((PAGE_SIZE%fdoExt->DiskGeometry.BytesPerSector) == 0 as i32)
 //             hwMaxXferLen = min(fdoData->HwMaxXferLen+PAGE_SIZE, adapterDesc->MaximumTransferLength);
 //         }
 //
@@ -5877,7 +5877,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //          *  Compute the number of hw xfers we'll have to do.
 //          *  Calculate this without allowing for an overflow condition.
 //          */
-//         NT_ASSERT(hwMaxXferLen >= PAGE_SIZE);
+//         NT_ASSERT(hwMaxXferLen >= PAGE_SIZE as i32)
 //         numPackets = entireXferLen/hwMaxXferLen;
 //         if (entireXferLen % hwMaxXferLen){
 //             numPackets++;
@@ -5959,7 +5959,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                  *  Set up a TRANSFER_PACKET for this piece and send it.
 //                  */
 //                 slistEntry = SimplePopSlist(&pktList);
-//                 NT_ASSERT(slistEntry);
+//                 NT_ASSERT(slistEntry as i32)
 //                 pkt = CONTAINING_RECORD(slistEntry, TRANSFER_PACKET, SlistEntry);
 //                 SetupReadWriteTransferPacket(   pkt,
 //                                             bufPtr,
@@ -6012,7 +6012,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                 bufPtr += thisPieceLen;
 //                 targetLocation.QuadPart += thisPieceLen;
 //             }
-//             NT_ASSERT(SimpleIsSlistEmpty(&pktList));
+//             NT_ASSERT(SimpleIsSlistEmpty(&pktList) as i32)
 //         }
 //         else if (i >= 1){
 //             /*
@@ -6029,7 +6029,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //              */
 //             while (i-- > 1){
 //                 slistEntry = SimplePopSlist(&pktList);
-//                 NT_ASSERT(slistEntry);
+//                 NT_ASSERT(slistEntry as i32)
 //                 pkt = CONTAINING_RECORD(slistEntry, TRANSFER_PACKET, SlistEntry);
 //                 EnqueueFreeTransferPacket(Fdo, pkt);
 //             }
@@ -6038,8 +6038,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //              *  Get the single TRANSFER_PACKET that we'll be using.
 //              */
 //             slistEntry = SimplePopSlist(&pktList);
-//             NT_ASSERT(slistEntry);
-//             NT_ASSERT(SimpleIsSlistEmpty(&pktList));
+//             NT_ASSERT(slistEntry as i32)
+//             NT_ASSERT(SimpleIsSlistEmpty(&pktList) as i32)
 //             pkt = CONTAINING_RECORD(slistEntry, TRANSFER_PACKET, SlistEntry);
 //
 //             if (!driverUsesStartIO) {
@@ -6117,7 +6117,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         status = STATUS_PENDING;
 //     }
 //
-//     NT_ASSERT(status != STATUS_UNSUCCESSFUL);
+//     NT_ASSERT(status != STATUS_UNSUCCESSFUL as i32)
 //
 //     return status;
 // }
@@ -6170,7 +6170,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     ULONG srbFlags;
 //     ULONG srbFunction;
 //
-//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo);
+//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo as i32)
 //
 //     if (srb->Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK) {
 //         srbFlags = ((PSTORAGE_REQUEST_BLOCK)srb)->SrbFlags;
@@ -6279,8 +6279,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //
 //
 //     if ((NT_SUCCESS(status)) && TEST_FLAG(Irp->Flags, IRP_PAGING_IO)) {
-//         NT_ASSERT(Irp->IoStatus.Information != 0);
-//         NT_ASSERT(irpStack->Parameters.Read.Length == Irp->IoStatus.Information);
+//         NT_ASSERT(Irp->IoStatus.Information != 0 as i32)
+//         NT_ASSERT(irpStack->Parameters.Read.Length == Irp->IoStatus.Information as i32)
 //     }
 //
 //     //
@@ -6460,8 +6460,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //       flag in the SRB.
 //     //
 //
-//     NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
-//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo);
+//     NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
+//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo as i32)
 //
 //     if (Srb->Function != SRB_FUNCTION_STORAGE_REQUEST_BLOCK) {
 //         //
@@ -6482,7 +6482,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //
 //
 //     NT_ASSERT( ((fdoExtension->AdapterDescriptor->SrbType == SRB_TYPE_SCSI_REQUEST_BLOCK) && (Srb->Function == SRB_FUNCTION_EXECUTE_SCSI)) ||
-//                ((fdoExtension->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) && (Srb->Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK)) );
+//                ((fdoExtension->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) && (Srb->Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK))  as i32)
 //
 //
 //     //
@@ -6682,9 +6682,9 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         status = ioStatus.Status;
 //     }
 //
-// //    NT_ASSERT(SRB_STATUS(Srb->SrbStatus) != SRB_STATUS_PENDING);
-//     NT_ASSERT(status != STATUS_PENDING);
-//     NT_ASSERT(!(Srb->SrbStatus & SRB_STATUS_QUEUE_FROZEN));
+// //    NT_ASSERT(SRB_STATUS(Srb->SrbStatus) != SRB_STATUS_PENDING as i32)
+//     NT_ASSERT(status != STATUS_PENDING as i32)
+//     NT_ASSERT(!(Srb->SrbStatus & SRB_STATUS_QUEUE_FROZEN) as i32)
 //
 //     //
 //     // Clear the IRP address in SRB as IRP has been freed at this time
@@ -6712,7 +6712,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         // assert that the queue is not frozen
 //         //
 //
-//         NT_ASSERT(!TEST_FLAG(Srb->SrbStatus, SRB_STATUS_QUEUE_FROZEN));
+//         NT_ASSERT(!TEST_FLAG(Srb->SrbStatus, SRB_STATUS_QUEUE_FROZEN) as i32)
 //
 //         //
 //         // Update status and determine if request should be retried.
@@ -6908,7 +6908,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // Check that request sense buffer is valid.
 //     //
 //
-//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo);
+//     NT_ASSERT(fdoExtension->CommonExtension.IsFdo as i32)
 //
 //
 //     //
@@ -6965,7 +6965,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //             if (!validSense && !IsSenseDataFormatValueValid(senseBuffer)) {
 //
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //
 //                 validSense = ScsiGetFixedSenseKeyAndCodes(senseBuffer,
 //                                                           SrbGetSenseInfoBufferLength(Srb),
@@ -7049,7 +7049,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                                 // T10 SPC specification only allows one descriptor for Block Command Descriptor type.
 //                                 // Assert here to catch devices that violate this rule. Ignore this descriptor.
 //                                 //
-//                                 NT_ASSERT(FALSE);
+//                                 NT_ASSERT(FALSE as i32)
 //                             }
 //
 //                         } else if (outType == SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION) {
@@ -7074,7 +7074,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                                 // T10 SPC specification only allows one descriptor for Information Descriptor type.
 //                                 // Assert here to catch devices that violate this rule. Ignore this descriptor.
 //                                 //
-//                                 NT_ASSERT(FALSE);
+//                                 NT_ASSERT(FALSE as i32)
 //                             }
 //
 //                         } else {
@@ -7082,7 +7082,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                             //
 //                             // ScsiGetNextDescriptorByType should only return a type that is specified by us.
 //                             //
-//                             NT_ASSERT(FALSE);
+//                             NT_ASSERT(FALSE as i32)
 //                             break;
 //                         }
 //
@@ -8662,7 +8662,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // reservation conflict.
 //     //
 //     if (IS_SCSIOP_READWRITE(cdbOpcode) && (*Status == STATUS_DEVICE_BUSY)) {
-//         NT_ASSERT(isReservationConflict == TRUE);
+//         NT_ASSERT(isReservationConflict == TRUE as i32)
 //     }
 //
 // #endif
@@ -8943,7 +8943,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //             if (logRetryableError) {
 //
-//                 NT_ASSERT(IS_SCSIOP_READWRITE(cdbOpcode));
+//                 NT_ASSERT(IS_SCSIOP_READWRITE(cdbOpcode) as i32)
 //
 //                 //
 //                 // A large Disk TimeOutValue (like 60 seconds) results in giving a command a
@@ -9133,7 +9133,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //              *  and wait for the packet to complete.  The result
 //              *  status will be written to the original irp.
 //              */
-//             NT_ASSERT(Length <= 0x0ff);
+//             NT_ASSERT(Length <= 0x0ff as i32)
 //             KeInitializeEvent(&event, SynchronizationEvent, FALSE);
 //             SetupModeSenseTransferPacket(pkt, &event, ModeSenseBuffer, (UCHAR)Length, PageMode, 0, &pseudoIrp, PageControl);
 //             SubmitTransferPacket(pkt);
@@ -9341,7 +9341,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //              *  and wait for the packet to complete.  The result
 //              *  status will be written to the original irp.
 //              */
-//             NT_ASSERT(Length <= 0x0ff);
+//             NT_ASSERT(Length <= 0x0ff as i32)
 //             KeInitializeEvent(&event, SynchronizationEvent, FALSE);
 //             SetupModeSelectTransferPacket(pkt, &event, ModeSelectBuffer, (UCHAR)Length, SavePages, &pseudoIrp);
 //             SubmitTransferPacket(pkt);
@@ -9531,7 +9531,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             // Make sure the buffer requested matches the MDL.
 //             //
 //
-//             NT_ASSERT(BufferAddress == MmGetMdlVirtualAddress(Irp->MdlAddress));
+//             NT_ASSERT(BufferAddress == MmGetMdlVirtualAddress(Irp->MdlAddress) as i32)
 //         }
 //
 //         //
@@ -9669,7 +9669,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // If it doesn't handle it, it will call back into ClassDeviceControl.
 //     //
 //
-//     NT_ASSERT(commonExtension->DevInfo->ClassDeviceControl);
+//     NT_ASSERT(commonExtension->DevInfo->ClassDeviceControl as i32)
 //
 //     return commonExtension->DevInfo->ClassDeviceControl(DeviceObject,Irp);
 // } // end ClassDeviceControlDispatch()
@@ -9839,7 +9839,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //             PMOUNTDEV_NAME name;
 //
-//             NT_ASSERT(commonExtension->DeviceName.Buffer);
+//             NT_ASSERT(commonExtension->DeviceName.Buffer as i32)
 //
 //             if (irpStack->Parameters.DeviceIoControl.OutputBufferLength <
 //                 sizeof(MOUNTDEV_NAME)) {
@@ -10031,7 +10031,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                 //
 //                 // Should not occur.
 //                 //
-//                 NT_ASSERT(FALSE);
+//                 NT_ASSERT(FALSE as i32)
 //                 goto SetStatusAndReturn;
 //             }
 //         } else {
@@ -10264,7 +10264,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                 //
 //                 // If this is a PDO then we should just forward the request down
 //                 //
-//                 NT_ASSERT(!srb);
+//                 NT_ASSERT(!srb as i32)
 //
 //                 IoCopyCurrentIrpStackLocationToNext(Irp);
 //
@@ -10446,7 +10446,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                 // i don't believe this assertion is valid.  this is a request
 //                 // from user-mode, so they could request this for any device
 //                 // they want?  also, we handle it properly.
-//                 // NT_ASSERT(TEST_FLAG(DeviceObject->Characteristics, FILE_REMOVABLE_MEDIA));
+//                 // NT_ASSERT(TEST_FLAG(DeviceObject->Characteristics, FILE_REMOVABLE_MEDIA) as i32)
 //                 status = ClasspEjectionControl(
 //                             DeviceObject,
 //                             Irp,
@@ -11256,8 +11256,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         goto cleanup;
 //     }
 //
-//     NT_ASSERT(size == sizeof(isInternal));
-//     NT_ASSERT(type == DEVPROP_TYPE_BOOLEAN);
+//     NT_ASSERT(size == sizeof(isInternal) as i32)
+//     NT_ASSERT(type == DEVPROP_TYPE_BOOLEAN as i32)
 //
 //     //
 //     // Volume is hot-pluggable if the disk pdo
@@ -11360,7 +11360,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,  "ClassCreateFdo: Create device object\n"));
 //
-//     NT_ASSERT(LowerDevice);
+//     NT_ASSERT(LowerDevice as i32)
 //
 //     //
 //     // Make sure that if we're making PDO's we have an enumeration routine
@@ -11368,7 +11368,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     isPartitionable = (driverExtension->InitData.ClassEnumerateDevice != NULL);
 //
-//     NT_ASSERT(IsFdo || isPartitionable);
+//     NT_ASSERT(IsFdo || isPartitionable as i32)
 //
 //     //
 //     // Grab the correct dev-info structure out of the init data
@@ -11427,7 +11427,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "ClassCreateFdo: Can not create device object %lx\n",
 //                     status));
-//         NT_ASSERT(deviceObject == NULL);
+//         NT_ASSERT(deviceObject == NULL as i32)
 //
 //         //
 //         // buffer is not used any longer here.
@@ -11743,8 +11743,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         return status;
 //     }
 //
-//     NT_ASSERT(srb.DataBuffer != NULL);
-//     NT_ASSERT(!TEST_FLAG(srb.SrbFlags, SRB_FLAGS_FREE_SENSE_BUFFER));
+//     NT_ASSERT(srb.DataBuffer != NULL as i32)
+//     NT_ASSERT(!TEST_FLAG(srb.SrbFlags, SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
 //
 //     return status;
 // } // end ClassClaimDevice()
@@ -12064,7 +12064,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     descriptor = (PVOID)&query;
 //
-//     NT_ASSERT(sizeof(STORAGE_PROPERTY_QUERY) >= (sizeof(ULONG)*2));
+//     NT_ASSERT(sizeof(STORAGE_PROPERTY_QUERY) >= (sizeof(ULONG)*2) as i32)
 //
 //     ClassSendDeviceIoControlSynchronous(
 //         IOCTL_STORAGE_QUERY_PROPERTY,
@@ -12101,7 +12101,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //
 //
 //     length = descriptor->Size;
-//     NT_ASSERT(length >= sizeof(STORAGE_PROPERTY_QUERY));
+//     NT_ASSERT(length >= sizeof(STORAGE_PROPERTY_QUERY) as i32)
 //     length = max(length, sizeof(STORAGE_PROPERTY_QUERY));
 //
 //     descriptor = ExAllocatePoolWithTag(NonPagedPoolNx, length, '4BcS');
@@ -12197,7 +12197,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     UNREFERENCED_PARAMETER(Irp);
 //
 //     if (Context == NULL) {
-//         NT_ASSERT(Context != NULL);
+//         NT_ASSERT(Context != NULL as i32)
 //         return STATUS_INVALID_PARAMETER;
 //     }
 //
@@ -12494,7 +12494,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                     NULL,
 //                     KernelMode);
 //         if (!NT_SUCCESS(status)) {
-//             NT_ASSERT(!"Error referencing child device by pointer");
+//             NT_ASSERT(!"Error referencing child device by pointer" as i32)
 //             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_ENUM,
 //                         "ClassRetrieveDeviceRelations: Error referencing child "
 //                         "device %p by pointer\n", nextChild->DeviceObject));
@@ -12551,7 +12551,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     _Analysis_assume_(driverExtension != NULL);
 //
 //     ASSERT_PDO(Pdo);
-//     NT_ASSERT(driverExtension->InitData.ClassQueryId);
+//     NT_ASSERT(driverExtension->InitData.ClassQueryId as i32)
 //
 //     PAGED_CODE();
 //
@@ -12591,8 +12591,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     PAGED_CODE();
 //
-//     NT_ASSERT(DeviceObject);
-//     NT_ASSERT(Capabilities);
+//     NT_ASSERT(DeviceObject as i32)
+//     NT_ASSERT(Capabilities as i32)
 //
 //     if(commonExtension->IsFdo) {
 //         queryRoutine = driverExtension->InitData.FdoData.ClassQueryPnpCapabilities;
@@ -12648,7 +12648,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     _Analysis_assume_(driverExtension != NULL);
 //
 //     ASSERT_FDO(Fdo);
-//     NT_ASSERT(driverExtension->InitData.ClassEnumerateDevice != NULL);
+//     NT_ASSERT(driverExtension->InitData.ClassEnumerateDevice != NULL as i32)
 //
 //     if(InterlockedIncrement((volatile LONG *)&(fdoExtension->EnumerationInterlock)) == 1) {
 //         status = driverExtension->InitData.ClassEnumerateDevice(Fdo);
@@ -12818,9 +12818,9 @@ pub unsafe extern "system" fn ClassIoComplete(
 //          *  Call the class driver's remove handler.
 //          *  All this is supposed to do is clean up its data and device interfaces.
 //          */
-//         NT_ASSERT(commonExtension->DevInfo->ClassRemoveDevice);
+//         NT_ASSERT(commonExtension->DevInfo->ClassRemoveDevice as i32)
 //         status = commonExtension->DevInfo->ClassRemoveDevice(DeviceObject, RemoveType);
-//         NT_ASSERT(NT_SUCCESS(status));
+//         NT_ASSERT(NT_SUCCESS(status) as i32)
 //         status = STATUS_SUCCESS;
 //         UNREFERENCED_PARAMETER(status); // disables prefast warning; defensive coding...
 //
@@ -13140,7 +13140,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     PAGED_CODE();
 //
-//     NT_ASSERT(DeviceName);
+//     NT_ASSERT(DeviceName as i32)
 //     targetKey = NULL;
 //
 //     _SEH2_TRY {
@@ -13251,7 +13251,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //         if (NT_SUCCESS(status) && InquiryDataLength) {
 //
-//             NT_ASSERT(InquiryData);
+//             NT_ASSERT(InquiryData as i32)
 //
 //             RtlInitUnicodeString(&unicodeName, L"InquiryData");
 //             status = ZwSetValueKey(targetKey,
@@ -13472,13 +13472,13 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     #if DBG // Begin Argument Checking (nop in fre version)
 //
-//     NT_ASSERT(ARGUMENT_PRESENT(IoStatus));
+//     NT_ASSERT(ARGUMENT_PRESENT(IoStatus) as i32)
 //
 //     if ((InputBufferLength != 0) || (OutputBufferLength != 0)) {
-//         NT_ASSERT(ARGUMENT_PRESENT(Buffer));
+//         NT_ASSERT(ARGUMENT_PRESENT(Buffer) as i32)
 //     }
 //     else {
-//         NT_ASSERT(!ARGUMENT_PRESENT(Buffer));
+//         NT_ASSERT(!ARGUMENT_PRESENT(Buffer) as i32)
 //     }
 //     #endif
 //
@@ -13613,7 +13613,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         //
 //         case METHOD_NEITHER:
 //         {
-//             NT_ASSERT(!"ClassSendDeviceIoControlSynchronous does not support METHOD_NEITHER Ioctls");
+//             NT_ASSERT(!"ClassSendDeviceIoControlSynchronous does not support METHOD_NEITHER Ioctls" as i32)
 //
 //             IoFreeIrp(irp);
 //
@@ -13644,7 +13644,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     switch (method) {
 //         case METHOD_BUFFERED: {
 //
-//             NT_ASSERT(irp->UserBuffer == Buffer);
+//             NT_ASSERT(irp->UserBuffer == Buffer as i32)
 //
 //             //
 //             // first copy the buffered result, if any
@@ -13682,7 +13682,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             //
 //
 //             if (OutputBufferLength != 0) {
-//                 NT_ASSERT(irp->MdlAddress != NULL);
+//                 NT_ASSERT(irp->MdlAddress != NULL as i32)
 //                 MmUnlockPages(irp->MdlAddress);
 //                 IoFreeMdl(irp->MdlAddress);
 //                 irp->MdlAddress = (PMDL) NULL;
@@ -13691,7 +13691,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         }
 //
 //         case METHOD_NEITHER: {
-//             NT_ASSERT(!"Code is out of date");
+//             NT_ASSERT(!"Code is out of date" as i32)
 //             break;
 //         }
 //     }
@@ -13767,10 +13767,10 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     KEVENT event;
 //     NTSTATUS status;
 //
-//     NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
-//     NT_ASSERT(TargetDeviceObject != NULL);
-//     NT_ASSERT(Irp != NULL);
-//     NT_ASSERT(Irp->StackCount >= TargetDeviceObject->StackSize);
+//     NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
+//     NT_ASSERT(TargetDeviceObject != NULL as i32)
+//     NT_ASSERT(Irp != NULL as i32)
+//     NT_ASSERT(Irp->StackCount >= TargetDeviceObject->StackSize as i32)
 //
 //     //
 //     // ISSUE-2000/02/20-henrygab   What if APCs are disabled?
@@ -13817,7 +13817,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                                 ));
 //
 //                     if (ClasspnpGlobals.BreakOnLostIrps != 0) {
-//                         NT_ASSERT(!" - Irp failed to complete within 30 seconds - ");
+//                         NT_ASSERT(!" - Irp failed to complete within 30 seconds - " as i32)
 //                     }
 //                 }
 //
@@ -13921,7 +13921,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     //KIRQL oldIrql;
 //
-//     NT_ASSERT(fdoExtension->CommonExtension.IsRemoved != NO_REMOVE);
+//     NT_ASSERT(fdoExtension->CommonExtension.IsRemoved != NO_REMOVE as i32)
 //
 //     //
 //     // free anything the driver allocated
@@ -14029,7 +14029,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // this routine didn't check if one was in progress.
 //     //
 //
-//     NT_ASSERT(!(FdoExtension->ReleaseQueueInProgress));
+//     NT_ASSERT(!(FdoExtension->ReleaseQueueInProgress) as i32)
 //
 //     FdoExtension->PrivateFdoData->ReleaseQueueIrp =
 //         ExAllocatePoolWithTag(NonPagedPoolNx,
@@ -14075,7 +14075,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 // {
 //     UCHAR stackSize;
 //
-//     NT_ASSERT(FdoExtension->PrivateFdoData != NULL);
+//     NT_ASSERT(FdoExtension->PrivateFdoData != NULL as i32)
 //
 //     stackSize = FdoExtension->CommonExtension.LowerDeviceObject->StackSize + 1;
 //
@@ -14159,7 +14159,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //
 //
 //     NT_ASSERT((ReleaseQueueIrp == NULL) ||
-//            (ReleaseQueueIrp == fdoExtension->PrivateFdoData->ReleaseQueueIrp));
+//            (ReleaseQueueIrp == fdoExtension->PrivateFdoData->ReleaseQueueIrp) as i32)
 //
 //     //
 //     // ASSERT that we've already allocated this. (should not occur)
@@ -14167,7 +14167,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // there's still no memory...
 //     //
 //
-//     NT_ASSERT(fdoExtension->PrivateFdoData->ReleaseQueueIrpAllocated);
+//     NT_ASSERT(fdoExtension->PrivateFdoData->ReleaseQueueIrpAllocated as i32)
 //     if (!fdoExtension->PrivateFdoData->ReleaseQueueIrpAllocated) {
 //         ClasspAllocateReleaseQueueIrp(fdoExtension);
 //     }
@@ -14208,7 +14208,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     KeReleaseSpinLockFromDpcLevel(&(fdoExtension->ReleaseQueueSpinLock));
 //
-//     NT_ASSERT(irp != NULL);
+//     NT_ASSERT(irp != NULL as i32)
 //
 //     irpStack = IoGetNextIrpStackLocation(irp);
 //
@@ -14296,7 +14296,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     BOOLEAN releaseQueueNeeded;
 //
 //     if (Context == NULL) {
-//         NT_ASSERT(Context != NULL);
+//         NT_ASSERT(Context != NULL as i32)
 //         return STATUS_INVALID_PARAMETER;
 //     }
 //
@@ -14373,12 +14373,12 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                                     Executive, KernelMode,
 //                                     FALSE, NULL);
 //
-//         NT_ASSERT(FdoExtension->ChildLockOwner == NULL);
-//         NT_ASSERT(FdoExtension->ChildLockAcquisitionCount == 0);
+//         NT_ASSERT(FdoExtension->ChildLockOwner == NULL as i32)
+//         NT_ASSERT(FdoExtension->ChildLockAcquisitionCount == 0 as i32)
 //
 //         FdoExtension->ChildLockOwner = KeGetCurrentThread();
 //     } else {
-//         NT_ASSERT(FdoExtension->ChildLockAcquisitionCount != 0);
+//         NT_ASSERT(FdoExtension->ChildLockAcquisitionCount != 0 as i32)
 //     }
 //
 //     FdoExtension->ChildLockAcquisitionCount++;
@@ -14409,8 +14409,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //      PFUNCTIONAL_DEVICE_EXTENSION FdoExtension
 //     )
 // {
-//     NT_ASSERT(FdoExtension->ChildLockOwner == KeGetCurrentThread());
-//     NT_ASSERT(FdoExtension->ChildLockAcquisitionCount != 0);
+//     NT_ASSERT(FdoExtension->ChildLockOwner == KeGetCurrentThread() as i32)
+//     NT_ASSERT(FdoExtension->ChildLockAcquisitionCount != 0 as i32)
 //
 //     FdoExtension->ChildLockAcquisitionCount -= 1;
 //
@@ -14465,7 +14465,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                  testChild != NULL;
 //                  testChild = testChild->CommonExtension.ChildList) {
 //
-//                 NT_ASSERT(testChild != Child);
+//                 NT_ASSERT(testChild != Child as i32)
 //             }
 //         }
 //     #endif
@@ -14541,7 +14541,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             //
 //
 //             do {
-//                 NT_ASSERT(previousChild != &Child->CommonExtension);
+//                 NT_ASSERT(previousChild != &Child->CommonExtension as i32)
 //
 //                 if(previousChild->ChildList == Child) {
 //                     break;
@@ -14599,12 +14599,12 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     UNREFERENCED_PARAMETER(Arg2);
 //
 //     if (DeferredContext == NULL) {
-//         NT_ASSERT(DeferredContext != NULL);
+//         NT_ASSERT(DeferredContext != NULL as i32)
 //         return;
 //     }
 //
 //     commonExtension = DeviceObject->DeviceExtension;
-//     NT_ASSERT(commonExtension->IsFdo);
+//     NT_ASSERT(commonExtension->IsFdo as i32)
 //     fdoExtension = DeviceObject->DeviceExtension;
 //     fdoData = fdoExtension->PrivateFdoData;
 //
@@ -14719,7 +14719,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //
 //     // this checks we aren't destroying irps
 //     //
-//     NT_ASSERT(sizeof(CLASS_RETRY_INFO) <= (4*sizeof(PVOID)));
+//     NT_ASSERT(sizeof(CLASS_RETRY_INFO) <= (4*sizeof(PVOID)) as i32)
 //
 //     fdoExtension = SelfDeviceObject->DeviceExtension;
 //
@@ -14731,7 +14731,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         //
 //
 //         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, "ClassRetryRequestEx: LOST IRP %p\n", Irp));
-//         NT_ASSERT(!"ClassRetryRequestEx Called From PDO? LOST IRP");
+//         NT_ASSERT(!"ClassRetryRequestEx Called From PDO? LOST IRP" as i32)
 //         return;
 //
 //     }
@@ -14739,7 +14739,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     fdoData = fdoExtension->PrivateFdoData;
 //
 //     if (TimeDelta100ns < 0) {
-//         NT_ASSERT(!"ClassRetryRequest - must use positive delay");
+//         NT_ASSERT(!"ClassRetryRequest - must use positive delay" as i32)
 //         TimeDelta100ns *= -1;
 //     }
 //
@@ -14786,8 +14786,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         // must be exactly one item on list
 //         //
 //
-//         NT_ASSERT(fdoData->Retry.ListHead       != NULL);
-//         NT_ASSERT(fdoData->Retry.ListHead->Next == NULL);
+//         NT_ASSERT(fdoData->Retry.ListHead       != NULL as i32)
+//         NT_ASSERT(fdoData->Retry.ListHead->Next == NULL as i32)
 //
 //         //
 //         // if currentDelta is zero, always fire a DPC
@@ -14813,8 +14813,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         // must be at least two items on list
 //         //
 //
-//         NT_ASSERT(fdoData->Retry.ListHead       != NULL);
-//         NT_ASSERT(fdoData->Retry.ListHead->Next != NULL);
+//         NT_ASSERT(fdoData->Retry.ListHead       != NULL as i32)
+//         NT_ASSERT(fdoData->Retry.ListHead->Next != NULL as i32)
 //
 //         fdoData->Retry.Tick.QuadPart  -= fdoData->Retry.Delta.QuadPart;
 //         fdoData->Retry.Tick.QuadPart  += delta.QuadPart;
@@ -14849,8 +14849,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 // {
 //     LARGE_INTEGER fire;
 //
-//     NT_ASSERT(FdoData->Retry.Tick.QuadPart != (LONGLONG)0);
-//     NT_ASSERT(FdoData->Retry.ListHead      != NULL);  // never fire an empty list
+//     NT_ASSERT(FdoData->Retry.Tick.QuadPart != (LONGLONG)0 as i32)
+//     NT_ASSERT(FdoData->Retry.ListHead      != NULL as i32)  // never fire an empty list
 //
 //     //
 //     // fire == (CurrentTick - now) * (100ns per tick)
@@ -15253,7 +15253,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         PSCSI_REQUEST_BLOCK srbPtr = Srb;
 //
 //         // SAL annotations and ClassInitializeEx() both validate this
-//         NT_ASSERT(fdoData->InterpretSenseInfo->Interpret != NULL);
+//         NT_ASSERT(fdoData->InterpretSenseInfo->Interpret != NULL as i32)
 //
 //         //
 //         // If class driver does not support extended SRB and this is
@@ -15354,7 +15354,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         if (!NT_SUCCESS(status)) {
 //             //
 //             // Should not happen. Revert to legacy SRB.
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //             srb.Length = SCSI_REQUEST_BLOCK_SIZE;
 //             srb.Function = SRB_FUNCTION_EXECUTE_SCSI;
 //             srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&srb;
@@ -15587,7 +15587,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         if (NT_SUCCESS(ClasspGetMaximumTokenListIdentifier(DeviceObject, REG_DISK_CLASS_CONTROL, &maxListIdentifier))) {
 //             if (maxListIdentifier >= MIN_TOKEN_LIST_IDENTIFIERS) {
 //
-//                 NT_ASSERT(maxListIdentifier <= MAX_TOKEN_LIST_IDENTIFIERS);
+//                 NT_ASSERT(maxListIdentifier <= MAX_TOKEN_LIST_IDENTIFIERS as i32)
 //                 MaxTokenOperationListIdentifier = maxListIdentifier;
 //             }
 //         }
@@ -15714,7 +15714,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             //
 //             // Should not occur. Revert to legacy SRB.
 //             //
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //
 //             TracePrint((TRACE_LEVEL_WARNING,
 //                         TRACE_FLAG_PNP,
@@ -15915,7 +15915,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
 //
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         TracePrint((TRACE_LEVEL_ERROR,
 //                     TRACE_FLAG_IOCTL,
 //                     "ClassDeviceProcessOffloadRead (%p): Called at raised IRQL.\n",
@@ -16098,7 +16098,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
 //
-//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
+//         NT_ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL as i32)
 //         TracePrint((TRACE_LEVEL_ERROR,
 //                     TRACE_FLAG_IOCTL,
 //                     "ClassDeviceProcessOffloadWrite (%p): Called at raised IRQL.\n",
@@ -16266,7 +16266,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     offloadReadContext = NULL;
 //
 //     NT_ASSERT(fdoExt->FunctionSupportInfo->ValidInquiryPages.BlockDeviceRODLimits &&
-//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus));
+//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus) as i32)
 //
 //
 //     for (i = 0, entireXferLen = 0; i < dataSetRangesCount; i++) {
@@ -16439,7 +16439,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //
 //     transferSize = (blockDescrIndex * sizeof(BLOCK_DEVICE_RANGE_DESCRIPTOR)) + FIELD_OFFSET(POPULATE_TOKEN_HEADER, BlockDeviceRangeDescriptor);
 //
-//     NT_ASSERT(transferSize <= MAX_TOKEN_OPERATION_PARAMETER_DATA_LENGTH);
+//     NT_ASSERT(transferSize <= MAX_TOKEN_OPERATION_PARAMETER_DATA_LENGTH as i32)
 //
 //     populateTokenDataLength = (USHORT)transferSize - RTL_SIZEOF_THROUGH_FIELD(POPULATE_TOKEN_HEADER, PopulateTokenDataLength);
 //     REVERSE_BYTES_SHORT(((PPOPULATE_TOKEN_HEADER)buffer)->PopulateTokenDataLength, &populateTokenDataLength);
@@ -16517,7 +16517,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     offloadReadContext->TotalSectorsToProcess = totalSectorsToProcess; // so far
 //     offloadReadContext->EntireXferLen = entireXferLen;
 //
-//     NT_ASSERT(status == STATUS_SUCCESS); // so far.
+//     NT_ASSERT(status == STATUS_SUCCESS as i32) // so far.
 //
 //     IoMarkIrpPending(Irp);
 //     SubmitTransferPacket(pkt);
@@ -16531,7 +16531,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 // __ClasspServicePopulateTokenTransferRequest_ErrorExit:
 //
-//     NT_ASSERT(status != STATUS_PENDING);
+//     NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //     if (offloadReadContext != NULL) {
 //         ClasspCleanupOffloadReadContext(offloadReadContext);
@@ -16595,7 +16595,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //
 //     status = pseudoIrp->IoStatus.Status;
-//     NT_ASSERT(status != STATUS_PENDING);
+//     NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //     if (!NT_SUCCESS(status)) {
 //         TracePrint((TRACE_LEVEL_ERROR,
@@ -16628,7 +16628,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 // __ClasspPopulateTokenTransferPacketDone_ErrorExit:
 //
-//     NT_ASSERT(!NT_SUCCESS(status));
+//     NT_ASSERT(!NT_SUCCESS(status) as i32)
 //
 //     //
 //     // ClasspCompleteOffloadRead also cleans up offloadReadContext.
@@ -16747,7 +16747,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     populateTokenMdl = OffloadReadContext->PopulateTokenMdl;
 //
-//     NT_ASSERT(OffloadReadContext != NULL);
+//     NT_ASSERT(OffloadReadContext != NULL as i32)
 //
 //     if (populateTokenMdl) {
 //         ClasspFreeDeviceMdl(populateTokenMdl);
@@ -16877,7 +16877,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 // __ClasspReceivePopulateTokenInformation_ErrorExit:
 //
-//     NT_ASSERT(!NT_SUCCESS(status));
+//     NT_ASSERT(!NT_SUCCESS(status) as i32)
 //
 //     //
 //     // ClasspCompleteOffloadRead also cleans up offloadReadContext.
@@ -16969,7 +16969,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     pseudoIrp = &offloadReadContext->PseudoIrp;
 //
 //     status = pseudoIrp->IoStatus.Status;
-//     NT_ASSERT(status != STATUS_PENDING);
+//     NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //     //
 //     // The buffer we hand allows for the max sizes for all the fields whereas the returned
@@ -16994,23 +16994,23 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     REVERSE_BYTES(&availableData, &tokenInformationResults->AvailableData);
 //
 //     NT_ASSERT(availableData <= FIELD_OFFSET(RECEIVE_TOKEN_INFORMATION_HEADER, SenseData) + MAX_SENSE_BUFFER_SIZE +
-//                                FIELD_OFFSET(RECEIVE_TOKEN_INFORMATION_RESPONSE_HEADER, TokenDescriptor) + BLOCK_DEVICE_TOKEN_SIZE);
+//                                FIELD_OFFSET(RECEIVE_TOKEN_INFORMATION_RESPONSE_HEADER, TokenDescriptor) + BLOCK_DEVICE_TOKEN_SIZE as i32)
 //
-//     NT_ASSERT(tokenInformationResults->ResponseToServiceAction == SERVICE_ACTION_POPULATE_TOKEN);
+//     NT_ASSERT(tokenInformationResults->ResponseToServiceAction == SERVICE_ACTION_POPULATE_TOKEN as i32)
 //
 //     operationStatus = tokenInformationResults->OperationStatus;
 //     operationCompleted = ClasspIsTokenOperationComplete(operationStatus);
-//     NT_ASSERT(operationCompleted);
+//     NT_ASSERT(operationCompleted as i32)
 //
 //     REVERSE_BYTES(&estimatedRetryInterval, &tokenInformationResults->EstimatedStatusUpdateDelay);
 //
 //     completionStatus = tokenInformationResults->CompletionStatus;
 //
-//     NT_ASSERT(tokenInformationResults->TransferCountUnits == TRANSFER_COUNT_UNITS_NUMBER_BLOCKS);
+//     NT_ASSERT(tokenInformationResults->TransferCountUnits == TRANSFER_COUNT_UNITS_NUMBER_BLOCKS as i32)
 //     REVERSE_BYTES_QUAD(&transferBlockCount, &tokenInformationResults->TransferCount);
 //
 //     REVERSE_BYTES_SHORT(&segmentsProcessed, &tokenInformationResults->SegmentsProcessed);
-//     NT_ASSERT(segmentsProcessed == 0);
+//     NT_ASSERT(segmentsProcessed == 0 as i32)
 //
 //     if (operationCompleted) {
 //
@@ -17023,7 +17023,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             // transferred.
 //             //
 //
-//             NT_ASSERT(transferBlockCount <= totalSectorsToProcess);
+//             NT_ASSERT(transferBlockCount <= totalSectorsToProcess as i32)
 //             transferBlockCount = 0;
 //         }
 //
@@ -17035,7 +17035,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             // to claim that any data was written.
 //             //
 //
-//             NT_ASSERT(transferBlockCount == 0);
+//             NT_ASSERT(transferBlockCount == 0 as i32)
 //             transferBlockCount = 0;
 //         }
 //
@@ -17045,7 +17045,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //         senseDataFieldLength = tokenInformationResults->SenseDataFieldLength;
 //         senseDataLength = tokenInformationResults->SenseDataLength;
-//         NT_ASSERT(senseDataFieldLength >= senseDataLength);
+//         NT_ASSERT(senseDataFieldLength >= senseDataLength as i32)
 //
 //         tokenInformationResultsResponse = (PRECEIVE_TOKEN_INFORMATION_RESPONSE_HEADER)((PUCHAR)tokenInformationResults +
 //                                                                                                FIELD_OFFSET(RECEIVE_TOKEN_INFORMATION_HEADER, SenseData) +
@@ -17055,7 +17055,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //         if (tokenDescriptorLength > 0) {
 //
-//             NT_ASSERT(tokenDescriptorLength == sizeof(BLOCK_DEVICE_TOKEN_DESCRIPTOR));
+//             NT_ASSERT(tokenDescriptorLength == sizeof(BLOCK_DEVICE_TOKEN_DESCRIPTOR) as i32)
 //
 //             if (tokenDescriptorLength != sizeof(BLOCK_DEVICE_TOKEN_DESCRIPTOR)) {
 //
@@ -17065,8 +17065,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                             fdo,
 //                             tokenDescriptorLength));
 //
-//                 NT_ASSERT((*totalSectorsProcessed) == 0);
-//                 NT_ASSERT(tokenLength == 0);
+//                 NT_ASSERT((*totalSectorsProcessed) == 0 as i32)
+//                 NT_ASSERT(tokenLength == 0 as i32)
 //
 //             } else {
 //
@@ -17075,7 +17075,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                 tokenDescriptor = (PBLOCK_DEVICE_TOKEN_DESCRIPTOR)tokenInformationResultsResponse->TokenDescriptor;
 //
 //                 REVERSE_BYTES_SHORT(&restrictedId, &tokenDescriptor->TokenIdentifier);
-//                 NT_ASSERT(restrictedId == 0);
+//                 NT_ASSERT(restrictedId == 0 as i32)
 //
 //                 tokenLength = BLOCK_DEVICE_TOKEN_SIZE;
 //                 token = tokenDescriptor->Token;
@@ -17086,7 +17086,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //                     NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_RESIDUAL_DATA ||
 //                               operationStatus == OPERATION_COMPLETED_WITH_ERROR ||
-//                               operationStatus == OPERATION_TERMINATED);
+//                               operationStatus == OPERATION_TERMINATED as i32)
 //
 //                     if (transferBlockCount == 0) {
 //                         //
@@ -17098,8 +17098,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //                 } else {
 //
-//                     NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_SUCCESS);
-//                     NT_ASSERT(transferBlockCount == totalSectorsToProcess);
+//                     NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_SUCCESS as i32)
+//                     NT_ASSERT(transferBlockCount == totalSectorsToProcess as i32)
 //                 }
 //
 //                     //
@@ -17132,7 +17132,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //             *totalSectorsProcessed = 0;
 //
-//             NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_ERROR);
+//             NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_ERROR as i32)
 //         }
 //
 //         //
@@ -17156,7 +17156,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //                 ULONG retryInterval;
 //
-//                 NT_ASSERT(senseDataLength <= sizeof(SENSE_DATA));
+//                 NT_ASSERT(senseDataLength <= sizeof(SENSE_DATA) as i32)
 //
 //                 srb->Function = SRB_FUNCTION_EXECUTE_SCSI;
 //
@@ -17216,7 +17216,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         // Done with the operation.
 //         //
 //
-//         NT_ASSERT(status != STATUS_PENDING);
+//         NT_ASSERT(status != STATUS_PENDING as i32)
 //         goto __ClasspReceivePopulateTokenInformationTransferPacketDone_Exit;
 //
 //     } else {
@@ -17230,7 +17230,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                     listIdentifier,
 //                     status));
 //
-//         NT_ASSERT(*totalSectorsProcessed == 0);
+//         NT_ASSERT(*totalSectorsProcessed == 0 as i32)
 //         goto __ClasspReceivePopulateTokenInformationTransferPacketDone_Exit;
 //     }
 //
@@ -17336,7 +17336,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //
 //     NT_ASSERT(fdoExt->FunctionSupportInfo->ValidInquiryPages.BlockDeviceRODLimits &&
-//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus));
+//               NT_SUCCESS(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.CommandStatus) as i32)
 //
 //     for (i = 0, entireXferLen = 0; i < dataSetRangesCount; i++) {
 //         entireXferLen += dataSetRanges[i].LengthInBytes;
@@ -17423,10 +17423,10 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // sectors is known.
 //     //
 //
-//     NT_ASSERT(offloadWriteContext->TotalSectorsProcessedSuccessfully == 0);
+//     NT_ASSERT(offloadWriteContext->TotalSectorsProcessedSuccessfully == 0 as i32)
 //     offloadWriteContext->TotalRequestSizeSectors = entireXferLen / fdoExt->DiskGeometry.BytesPerSector;
-//     NT_ASSERT(offloadWriteContext->DataSetRangeIndex == 0);
-//     NT_ASSERT(offloadWriteContext->DataSetRangeByteOffset == 0);
+//     NT_ASSERT(offloadWriteContext->DataSetRangeIndex == 0 as i32)
+//     NT_ASSERT(offloadWriteContext->DataSetRangeByteOffset == 0 as i32)
 //     offloadWriteContext->DataSetRangesCount = dataSetRangesCount;
 //
 //     offloadWriteContext->DsmAttributes = dsmAttributes;
@@ -17442,7 +17442,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     if (fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.OptimalTransferCount && fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.MaximumTokenTransferSize) {
 //
-//         NT_ASSERT(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.OptimalTransferCount <= fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.MaximumTokenTransferSize);
+//         NT_ASSERT(fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.OptimalTransferCount <= fdoExt->FunctionSupportInfo->BlockDeviceRODLimitsData.MaximumTokenTransferSize as i32)
 //     }
 //
 //     //
@@ -17526,7 +17526,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // Given the above, we're going with the second approach.
 //     //
 //
-//     NT_ASSERT(status == STATUS_SUCCESS); // so far
+//     NT_ASSERT(status == STATUS_SUCCESS as i32) // so far
 //
 //     //
 //     // Save (into the offloadReadContext) any remaining things that
@@ -17549,7 +17549,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 // __ClasspServiceWriteUsingTokenTransferRequest_ErrorExit:
 //
-//     NT_ASSERT(status != STATUS_PENDING);
+//     NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //     if (offloadWriteContext != NULL) {
 //         ClasspCleanupOffloadWriteContext(offloadWriteContext);
@@ -17699,8 +17699,8 @@ pub unsafe extern "system" fn ClassIoComplete(
 //              (lbaCount == maxLbaCount) ||                      // block LBA count reached
 //              (allDataSetRangeFullyConverted))) {               // all DataSetRanges have been converted
 //
-//         NT_ASSERT(dataSetRangeIndex < dataSetRangesCount);
-//         NT_ASSERT(dataSetRangeByteOffset < dataSetRanges[dataSetRangeIndex].LengthInBytes);
+//         NT_ASSERT(dataSetRangeIndex < dataSetRangesCount as i32)
+//         NT_ASSERT(dataSetRangeByteOffset < dataSetRanges[dataSetRangeIndex].LengthInBytes as i32)
 //
 //         tempDataSetRange.StartingOffset = dataSetRanges[dataSetRangeIndex].StartingOffset + dataSetRangeByteOffset;
 //         tempDataSetRange.LengthInBytes = dataSetRanges[dataSetRangeIndex].LengthInBytes - dataSetRangeByteOffset;
@@ -17723,10 +17723,10 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         if (tempDataSetRangeFullyConverted) {
 //             dataSetRangeIndex += 1;
 //             dataSetRangeByteOffset = 0;
-//             NT_ASSERT(dataSetRangeIndex <= dataSetRangesCount);
+//             NT_ASSERT(dataSetRangeIndex <= dataSetRangesCount as i32)
 //         } else {
 //             dataSetRangeByteOffset += totalSectorCount * fdoExt->DiskGeometry.BytesPerSector;
-//             NT_ASSERT(dataSetRangeByteOffset < dataSetRanges[dataSetRangeIndex].LengthInBytes);
+//             NT_ASSERT(dataSetRangeByteOffset < dataSetRanges[dataSetRangeIndex].LengthInBytes as i32)
 //         }
 //
 //         totalSectorsToProcess += totalSectorCount;
@@ -17746,7 +17746,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     //
 //     transferSize = (blockDescrIndex * sizeof(BLOCK_DEVICE_RANGE_DESCRIPTOR)) + FIELD_OFFSET(WRITE_USING_TOKEN_HEADER, BlockDeviceRangeDescriptor);
 //
-//     NT_ASSERT(transferSize <= MAX_TOKEN_OPERATION_PARAMETER_DATA_LENGTH);
+//     NT_ASSERT(transferSize <= MAX_TOKEN_OPERATION_PARAMETER_DATA_LENGTH as i32)
 //
 //     writeUsingTokenDataLength = (USHORT)transferSize - RTL_SIZEOF_THROUGH_FIELD(WRITE_USING_TOKEN_HEADER, WriteUsingTokenDataLength);
 //     REVERSE_BYTES_SHORT(((PWRITE_USING_TOKEN_HEADER)buffer)->WriteUsingTokenDataLength, &writeUsingTokenDataLength);
@@ -17818,7 +17818,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 // __ClasspContinueOffloadWrite_ErrorExit:
 //
-//     NT_ASSERT(!NT_SUCCESS(status));
+//     NT_ASSERT(!NT_SUCCESS(status) as i32)
 //
 //     //
 //     // ClasspCompleteOffloadWrite also cleans up offloadWriteContext.
@@ -17883,7 +17883,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     bytesToAdvance = SectorsToAdvance * fdoExt->DiskGeometry.BytesPerSector;
 //
 //     (*totalSectorsProcessedSuccessfully) += SectorsToAdvance;
-//     NT_ASSERT((*totalSectorsProcessedSuccessfully) <= OffloadWriteContext->TotalRequestSizeSectors);
+//     NT_ASSERT((*totalSectorsProcessedSuccessfully) <= OffloadWriteContext->TotalRequestSizeSectors as i32)
 //
 //     while (bytesToAdvance != 0) {
 //         bytesToDo = dataSetRanges[*dataSetRangeIndex].LengthInBytes - *dataSetRangeByteOffset;
@@ -17898,7 +17898,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         }
 //     }
 //
-//     NT_ASSERT((*dataSetRangeIndex) <= OffloadWriteContext->DataSetRangesCount);
+//     NT_ASSERT((*dataSetRangeIndex) <= OffloadWriteContext->DataSetRangesCount as i32)
 //
 //     return;
 // }
@@ -17961,7 +17961,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //
 //     status = pseudoIrp->IoStatus.Status;
-//     NT_ASSERT(status != STATUS_PENDING);
+//     NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //     //
 //     // If the request failed with any of the following errors, then it is meaningless to send
@@ -17989,7 +17989,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             *tokenInvalidated = TRUE;
 //         }
 //
-//         NT_ASSERT(status != STATUS_PENDING && !NT_SUCCESS(status));
+//         NT_ASSERT(status != STATUS_PENDING && !NT_SUCCESS(status) as i32)
 //         goto __ClasspWriteUsingTokenTransferPacketDone_Exit;
 //
 //     } else if ((NT_SUCCESS(status)) &&
@@ -18023,7 +18023,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             // WUT command itself, allowing us to optimize by removing the necessaity for
 //             // sending down an RRTI to query the TransferCount.
 //             //
-//             NT_ASSERT(pkt->TransferCount);
+//             NT_ASSERT(pkt->TransferCount as i32)
 //
 //             offloadWriteContext->TotalSectorsProcessed = totalSectorsToProcess = pkt->TransferCount;
 //             TracePrint((TRACE_LEVEL_INFORMATION,
@@ -18037,7 +18037,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //         ClasspAdvanceOffloadWritePosition(offloadWriteContext, totalSectorsToProcess);
 //
-//         NT_ASSERT(status != STATUS_PENDING);
+//         NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //         //
 //         // ClasspReceiveWriteUsingTokenInformationDone() takes care of
@@ -18125,7 +18125,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     NT_ASSERT(
 //         OffloadWriteContext->TotalSectorsProcessedSuccessfully <=
-//         OffloadWriteContext->TotalRequestSizeSectors);
+//         OffloadWriteContext->TotalRequestSizeSectors as i32)
 //
 //
 //     if (OffloadWriteContext->TotalSectorsProcessedSuccessfully == OffloadWriteContext->TotalRequestSizeSectors) {
@@ -18159,7 +18159,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     NT_ASSERT(
 //         OffloadWriteContext->TotalSectorsProcessedSuccessfully <
-//         OffloadWriteContext->TotalRequestSizeSectors);
+//         OffloadWriteContext->TotalRequestSizeSectors as i32)
 //
 //     //
 //     // Keep going with the next sub-request.
@@ -18388,7 +18388,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     // indicates the operation is complete.
 //     //
 //
-//     NT_ASSERT(OffloadWriteContext->TotalSectorsProcessed == 0);
+//     NT_ASSERT(OffloadWriteContext->TotalSectorsProcessed == 0 as i32)
 //
 //     pkt = DequeueFreeTransferPacket(fdo, TRUE);
 //
@@ -18444,7 +18444,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 // __ClasspReceiveWriteUsingTokenInformation_ErrorExit:
 //
-//     NT_ASSERT(!NT_SUCCESS(status));
+//     NT_ASSERT(!NT_SUCCESS(status) as i32)
 //
 //     //
 //     // ClasspCompleteOffloadWrite also cleans up OffloadWriteContext.
@@ -18529,13 +18529,13 @@ pub unsafe extern "system" fn ClassIoComplete(
 //     tokenInformationResponsePadding = NULL;
 //     tokenDescriptorLength = 0;
 //
-//     NT_ASSERT((*totalSectorsProcessed) == 0);
+//     NT_ASSERT((*totalSectorsProcessed) == 0 as i32)
 //
 //     OffloadWriteContext->Pkt = NULL;
 //
 //
 //     status = pseudoIrp->IoStatus.Status;
-//     NT_ASSERT(status != STATUS_PENDING);
+//     NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //     //
 //     // The buffer we hand allows for the max sizes for all the fields whereas the returned
@@ -18556,20 +18556,20 @@ pub unsafe extern "system" fn ClassIoComplete(
 //                     listIdentifier,
 //                     totalSectorsToProcess * fdoExt->DiskGeometry.BytesPerSector));
 //
-//         NT_ASSERT((*totalSectorsProcessed) == 0);
+//         NT_ASSERT((*totalSectorsProcessed) == 0 as i32)
 //
 //         goto __ClasspReceiveWriteUsingTokenInformationTransferPacketDone_ErrorExit;
 //     }
 //
 //     REVERSE_BYTES(&availableData, &tokenInformationResults->AvailableData);
 //
-//     NT_ASSERT(availableData <= FIELD_OFFSET(RECEIVE_TOKEN_INFORMATION_HEADER, SenseData) + MAX_SENSE_BUFFER_SIZE);
+//     NT_ASSERT(availableData <= FIELD_OFFSET(RECEIVE_TOKEN_INFORMATION_HEADER, SenseData) + MAX_SENSE_BUFFER_SIZE as i32)
 //
-//     NT_ASSERT(tokenInformationResults->ResponseToServiceAction == SERVICE_ACTION_WRITE_USING_TOKEN);
+//     NT_ASSERT(tokenInformationResults->ResponseToServiceAction == SERVICE_ACTION_WRITE_USING_TOKEN as i32)
 //
 //     operationStatus = tokenInformationResults->OperationStatus;
 //     operationCompleted = ClasspIsTokenOperationComplete(operationStatus);
-//     NT_ASSERT(operationCompleted);
+//     NT_ASSERT(operationCompleted as i32)
 //
 //     REVERSE_BYTES(&estimatedRetryInterval, &tokenInformationResults->EstimatedStatusUpdateDelay);
 //
@@ -18577,20 +18577,20 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //     senseDataFieldLength = tokenInformationResults->SenseDataFieldLength;
 //     senseDataLength = tokenInformationResults->SenseDataLength;
-//     NT_ASSERT(senseDataFieldLength >= senseDataLength);
+//     NT_ASSERT(senseDataFieldLength >= senseDataLength as i32)
 //
 //     tokenInformationResponsePadding = (PRECEIVE_TOKEN_INFORMATION_RESPONSE_HEADER)((PUCHAR)tokenInformationResults +
 //                                                                                            FIELD_OFFSET(RECEIVE_TOKEN_INFORMATION_HEADER, SenseData) +
 //                                                                                            tokenInformationResults->SenseDataFieldLength);
 //
 //     REVERSE_BYTES(&tokenDescriptorLength, &tokenInformationResponsePadding->TokenDescriptorsLength);
-//     NT_ASSERT(tokenDescriptorLength == 0);
+//     NT_ASSERT(tokenDescriptorLength == 0 as i32)
 //
-//     NT_ASSERT(tokenInformationResults->TransferCountUnits == TRANSFER_COUNT_UNITS_NUMBER_BLOCKS);
+//     NT_ASSERT(tokenInformationResults->TransferCountUnits == TRANSFER_COUNT_UNITS_NUMBER_BLOCKS as i32)
 //     REVERSE_BYTES_QUAD(&transferBlockCount, &tokenInformationResults->TransferCount);
 //
 //     REVERSE_BYTES_SHORT(&segmentsProcessed, &tokenInformationResults->SegmentsProcessed);
-//     NT_ASSERT(segmentsProcessed == 0);
+//     NT_ASSERT(segmentsProcessed == 0 as i32)
 //
 //     if (operationCompleted) {
 //
@@ -18603,7 +18603,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             // transferred.
 //             //
 //
-//             NT_ASSERT(transferBlockCount <= totalSectorsToProcess);
+//             NT_ASSERT(transferBlockCount <= totalSectorsToProcess as i32)
 //             transferBlockCount = 0;
 //         }
 //
@@ -18615,7 +18615,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             // to claim that any data was written.
 //             //
 //
-//             NT_ASSERT(transferBlockCount == 0);
+//             NT_ASSERT(transferBlockCount == 0 as i32)
 //             transferBlockCount = 0;
 //         }
 //
@@ -18624,7 +18624,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //         // ReceiveTokenInformation command returns.
 //         //
 //
-//         NT_ASSERT((*totalSectorsProcessed) == 0);
+//         NT_ASSERT((*totalSectorsProcessed) == 0 as i32)
 //         *totalSectorsProcessed = transferBlockCount;
 //         ClasspAdvanceOffloadWritePosition(OffloadWriteContext, transferBlockCount);
 //
@@ -18632,11 +18632,11 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //             NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_RESIDUAL_DATA ||
 //                       operationStatus == OPERATION_COMPLETED_WITH_ERROR ||
-//                       operationStatus == OPERATION_TERMINATED);
+//                       operationStatus == OPERATION_TERMINATED as i32)
 //
 //         } else {
 //
-//             NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_SUCCESS);
+//             NT_ASSERT(operationStatus == OPERATION_COMPLETED_WITH_SUCCESS as i32)
 //         }
 //
 //         TracePrint((transferBlockCount == totalSectorsToProcess ? TRACE_LEVEL_INFORMATION : TRACE_LEVEL_WARNING,
@@ -18668,7 +18668,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 //                 ULONG retryInterval;
 //
-//                 NT_ASSERT(senseDataLength <= sizeof(SENSE_DATA));
+//                 NT_ASSERT(senseDataLength <= sizeof(SENSE_DATA) as i32)
 //
 //                 srb->Function = SRB_FUNCTION_EXECUTE_SCSI;
 //
@@ -18734,7 +18734,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //             }
 //         }
 //
-//         NT_ASSERT(status != STATUS_PENDING);
+//         NT_ASSERT(status != STATUS_PENDING as i32)
 //
 //         if (!NT_SUCCESS(status)) {
 //             goto __ClasspReceiveWriteUsingTokenInformationTransferPacketDone_ErrorExit;
@@ -18757,7 +18757,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 //
 // __ClasspReceiveWriteUsingTokenInformationTransferPacketDone_ErrorExit:
 //
-//     NT_ASSERT(!NT_SUCCESS(status));
+//     NT_ASSERT(!NT_SUCCESS(status) as i32)
 //
 //     ClasspCompleteOffloadWrite(OffloadWriteContext, status);
 //

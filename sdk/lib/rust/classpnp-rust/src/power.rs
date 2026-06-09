@@ -23,7 +23,7 @@ extern "C" {
     fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: i32);
     fn ClasspDisableTimer(fdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION);
     fn InitializeStorageRequestBlock( srb: *mut STORAGE_REQUEST_BLOCK, addressType: u32, dataBufferSize: u32, flags: u32 ) -> NTSTATUS;
-    fn NT_ASSERT(cond: i32);
+    fn NT_ASSERT(cond: i32)
     fn SrbGetSrbFlags(srb: *mut STORAGE_REQUEST_BLOCK_HEADER) -> u32;
     fn SrbSetOriginalRequest(srb: *mut STORAGE_REQUEST_BLOCK_HEADER, irp: *mut IRP);
     fn SrbSetSrbFlags(srb: *mut STORAGE_REQUEST_BLOCK_HEADER, flags: u32);
@@ -783,7 +783,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //     UNREFERENCED_PARAMETER(DeviceObject);
 //
 //     if (PowerContext == NULL) {
-//         NT_ASSERT(PowerContext != NULL);
+//         NT_ASSERT(PowerContext != NULL as i32)
 //         return STATUS_INVALID_PARAMETER;
 //     }
 //
@@ -814,10 +814,10 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //     }
 //
 //     srbFlags = SrbGetSrbFlags(srbHeader);
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER));
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE));
-//     NT_ASSERT(PowerContext->Options.PowerDown == FALSE);
-//     NT_ASSERT(PowerContext->Options.HandleSpinUp);
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE) as i32)
+//     NT_ASSERT(PowerContext->Options.PowerDown == FALSE as i32)
+//     NT_ASSERT(PowerContext->Options.HandleSpinUp as i32)
 //
 //     if ((Irp == OriginalIrp) && (Irp->PendingReturned)) {
 //         // only for original power irp
@@ -937,7 +937,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                     } else {
 //                         // issue the command with minimum timeout value and do not retry on it.
 //                         // case of (secondsRemaining < DEFAULT_IO_TIMEOUT_VALUE) is ignored as it should not happen.
-//                         NT_ASSERT(secondsRemaining >= DEFAULT_IO_TIMEOUT_VALUE);
+//                         NT_ASSERT(secondsRemaining >= DEFAULT_IO_TIMEOUT_VALUE as i32)
 //
 //                         fdoExtension->PrivateFdoData->MaxPowerOperationRetryCount = 0;
 //                         timeoutValue = MINIMUM_START_UNIT_TIMEOUT_VALUE; // use the minimum value for this corner case.
@@ -977,7 +977,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                         //
 //                         // Should not happen. Revert to legacy SRB.
 //                         //
-//                         NT_ASSERT(FALSE);
+//                         NT_ASSERT(FALSE as i32)
 //                         srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&(PowerContext->Srb);
 //                         RtlZeroMemory(srbHeader, sizeof(SCSI_REQUEST_BLOCK));
 //                         srbHeader->Length = sizeof(SCSI_REQUEST_BLOCK);
@@ -1061,9 +1061,9 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                             srbHeader,
 //                             srbHeader->SrbStatus));
 //
-//                 NT_ASSERT(!(TEST_FLAG(srbHeader->SrbStatus, SRB_STATUS_QUEUE_FROZEN)));
+//                 NT_ASSERT(!(TEST_FLAG(srbHeader->SrbStatus, SRB_STATUS_QUEUE_FROZEN)) as i32)
 //                 NT_ASSERT((srbHeader->Function == SRB_FUNCTION_EXECUTE_SCSI) ||
-//                           (((PSTORAGE_REQUEST_BLOCK)srbHeader)->SrbFunction == SRB_FUNCTION_EXECUTE_SCSI));
+//                           (((PSTORAGE_REQUEST_BLOCK)srbHeader)->SrbFunction == SRB_FUNCTION_EXECUTE_SCSI) as i32)
 //
 //                 PowerContext->RetryInterval = 0;
 //                 retry = InterpretSenseInfoWithoutHistory(
@@ -1154,7 +1154,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                     } else {
 //                         //
 //                         // Should not occur. Revert to legacy SRB.
-//                         NT_ASSERT(FALSE);
+//                         NT_ASSERT(FALSE as i32)
 //                         srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&(PowerContext->Srb);
 //                         RtlZeroMemory(srbHeader, sizeof(SCSI_REQUEST_BLOCK));
 //                         srbHeader->Length = sizeof(SCSI_REQUEST_BLOCK);
@@ -1209,7 +1209,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                    (Irp->IoStatus.Status != STATUS_DEVICE_DOES_NOT_EXIST)) {
 //
 //
-//                     NT_ASSERT(FALSE);
+//                     NT_ASSERT(FALSE as i32)
 //                 }
 //
 //             } else {
@@ -1385,10 +1385,10 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //     }
 //
 //     srbFlags = SrbGetSrbFlags(srbHeader);
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER));
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE));
-//     NT_ASSERT(PowerContext->Options.PowerDown == TRUE);
-//     NT_ASSERT(PowerContext->Options.HandleSpinDown);
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE) as i32)
+//     NT_ASSERT(PowerContext->Options.PowerDown == TRUE as i32)
+//     NT_ASSERT(PowerContext->Options.HandleSpinDown as i32)
 //
 //     if ((Irp == OriginalIrp) && (Irp->PendingReturned)) {
 //         // only for original power irp
@@ -1484,7 +1484,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                         //
 //                         // Should not happen. Revert to legacy SRB.
 //                         //
-//                         NT_ASSERT(FALSE);
+//                         NT_ASSERT(FALSE as i32)
 //                         srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&(PowerContext->Srb);
 //                         srbHeader->Length = sizeof(SCSI_REQUEST_BLOCK);
 //                         srbHeader->Function = SRB_FUNCTION_QUIESCE_DEVICE;
@@ -1563,7 +1563,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                     } else {
 //                         //
 //                         // Should not occur. Revert to legacy SRB.
-//                         NT_ASSERT(FALSE);
+//                         NT_ASSERT(FALSE as i32)
 //                         srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&(PowerContext->Srb);
 //                         RtlZeroMemory(srbHeader, sizeof(SCSI_REQUEST_BLOCK));
 //                         srbHeader->Length = sizeof(SCSI_REQUEST_BLOCK);
@@ -1647,9 +1647,9 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                             srbHeader,
 //                             srbHeader->SrbStatus));
 //
-//                 NT_ASSERT(!(TEST_FLAG(srbHeader->SrbStatus, SRB_STATUS_QUEUE_FROZEN)));
+//                 NT_ASSERT(!(TEST_FLAG(srbHeader->SrbStatus, SRB_STATUS_QUEUE_FROZEN)) as i32)
 //                 NT_ASSERT((srbHeader->Function == SRB_FUNCTION_EXECUTE_SCSI) ||
-//                           (((PSTORAGE_REQUEST_BLOCK)srbHeader)->SrbFunction == SRB_FUNCTION_EXECUTE_SCSI));
+//                           (((PSTORAGE_REQUEST_BLOCK)srbHeader)->SrbFunction == SRB_FUNCTION_EXECUTE_SCSI) as i32)
 //
 //                 PowerContext->RetryInterval = 0;
 //                 retry = InterpretSenseInfoWithoutHistory(
@@ -1789,7 +1789,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                         //
 //                         // Should not occur. Revert to legacy SRB.
 //                         //
-//                         NT_ASSERT(FALSE);
+//                         NT_ASSERT(FALSE as i32)
 //                         srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&(PowerContext->Srb);
 //                         RtlZeroMemory(srbHeader, sizeof(SCSI_REQUEST_BLOCK));
 //                         srbHeader->Length = sizeof(SCSI_REQUEST_BLOCK);
@@ -1861,9 +1861,9 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                             srbHeader,
 //                             srbHeader->SrbStatus));
 //
-//                 NT_ASSERT(!(TEST_FLAG(srbHeader->SrbStatus, SRB_STATUS_QUEUE_FROZEN)));
+//                 NT_ASSERT(!(TEST_FLAG(srbHeader->SrbStatus, SRB_STATUS_QUEUE_FROZEN)) as i32)
 //                 NT_ASSERT((srbHeader->Function == SRB_FUNCTION_EXECUTE_SCSI) ||
-//                           (((PSTORAGE_REQUEST_BLOCK)srbHeader)->SrbFunction == SRB_FUNCTION_EXECUTE_SCSI));
+//                           (((PSTORAGE_REQUEST_BLOCK)srbHeader)->SrbFunction == SRB_FUNCTION_EXECUTE_SCSI) as i32)
 //
 //                 PowerContext->RetryInterval = 0;
 //                 retry = InterpretSenseInfoWithoutHistory(
@@ -2011,7 +2011,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                         //
 //                         // Should not occur. Revert to legacy SRB.
 //                         //
-//                         NT_ASSERT(FALSE);
+//                         NT_ASSERT(FALSE as i32)
 //                         srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&(PowerContext->Srb);
 //                         RtlZeroMemory(srbHeader, sizeof(SCSI_REQUEST_BLOCK));
 //                         srbHeader->Length = sizeof(SCSI_REQUEST_BLOCK);
@@ -2057,8 +2057,8 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, "(%p)\tFall through (queue not locked)\n", OriginalIrp));
 //             } else {
 //                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, "(%p)\tPreviously unlocked queue\n", OriginalIrp));
-//                 NT_ASSERT(NT_SUCCESS(Irp->IoStatus.Status));
-//                 NT_ASSERT(srbHeader->SrbStatus == SRB_STATUS_SUCCESS);
+//                 NT_ASSERT(NT_SUCCESS(Irp->IoStatus.Status) as i32)
+//                 NT_ASSERT(srbHeader->SrbStatus == SRB_STATUS_SUCCESS as i32)
 //
 //                 if (NT_SUCCESS(Irp->IoStatus.Status)) {
 //                     PowerContext->QueueLocked = FALSE;
@@ -2161,7 +2161,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //
 //         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_POWER, "ClasspPowerHandler: Called for PDO %p???\n",
 //                     DeviceObject));
-//         NT_ASSERT(!"PDO using ClasspPowerHandler");
+//         NT_ASSERT(!"PDO using ClasspPowerHandler" as i32)
 //
 //         ClassReleaseRemoveLock(DeviceObject, Irp);
 //         Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
@@ -2307,7 +2307,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //
 //     context = &(fdoExtension->PowerContext);
 //
-//     NT_ASSERT(context->InUse == FALSE);
+//     NT_ASSERT(context->InUse == FALSE as i32)
 //
 //     RtlZeroMemory(context, sizeof(CLASS_POWER_CONTEXT));
 //     context->InUse = TRUE;
@@ -2328,7 +2328,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //             //
 //             // Should not happen. Revert to legacy SRB.
 //             //
-//             NT_ASSERT(FALSE);
+//             NT_ASSERT(FALSE as i32)
 //             srbHeader = (PSTORAGE_REQUEST_BLOCK_HEADER)&(context->Srb);
 //             srbHeader->Length = sizeof(SCSI_REQUEST_BLOCK);
 //             srbHeader->Function = SRB_FUNCTION_LOCK_QUEUE;
@@ -2355,7 +2355,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //
 //     if (irpStack->Parameters.Power.State.DeviceState == PowerDeviceD0) {
 //
-//         NT_ASSERT(Options.HandleSpinUp);
+//         NT_ASSERT(Options.HandleSpinUp as i32)
 //
 //         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, "(%p)\tpower up - locking queue\n", Irp));
 //
@@ -2371,7 +2371,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //
 //     } else {
 //
-//         NT_ASSERT(Options.HandleSpinDown);
+//         NT_ASSERT(Options.HandleSpinDown as i32)
 //
 //         fdoExtension->PowerDownInProgress = TRUE;
 //
@@ -2399,8 +2399,8 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //     //
 //
 //     srbFlags = SrbGetSrbFlags(srbHeader);
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER));
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE));
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE) as i32)
 //
 //     //
 //     // Mark the original power irp pending.
@@ -2689,7 +2689,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //
 //     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, "(%p)\tDelaying retry by queueing DPC\n", Irp));
 //
-//     //NT_ASSERT(Context->Irp == Irp);
+//     //NT_ASSERT(Context->Irp == Irp as i32)
 //     if (fdoExtension->AdapterDescriptor->SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
 //         srb = (PSTORAGE_REQUEST_BLOCK_HEADER)&(fdoExtension->PrivateFdoData->PowerSrb.SrbEx);
 //
@@ -2707,10 +2707,10 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //         srbFunction = srb->Function;
 //     }
 //
-//     NT_ASSERT(Context->DeviceObject == DeviceObject);
+//     NT_ASSERT(Context->DeviceObject == DeviceObject as i32)
 //     srbFlags = SrbGetSrbFlags(srb);
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER));
-//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE));
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_FREE_SENSE_BUFFER) as i32)
+//     NT_ASSERT(!TEST_FLAG(srbFlags, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE) as i32)
 //
 //     if (Context->RetryInterval == 0) {
 //
@@ -3158,7 +3158,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
 //     //
 //     // This function should only be called once.
 //     //
-//     NT_ASSERT(fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled == FALSE);
+//     NT_ASSERT(fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled == FALSE as i32)
 //
 //     ClassGetDeviceParameter(fdoExtension,
 //                         CLASSP_REG_SUBKEY_NAME,

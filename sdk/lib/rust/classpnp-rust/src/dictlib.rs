@@ -9,7 +9,7 @@ use core::ffi::c_void;
 
 extern "system" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
-    fn NT_ASSERT(expr: i32);
+    fn NT_ASSERT(expr: i32)
 }
 
 // ---- file-scope preamble (translated) ----
@@ -336,7 +336,7 @@ pub unsafe extern "C" fn FreeDictionaryEntry(
 //     // so NT_ASSERT() that we never try to Free something not in the list
 //     //
 //
-//     NT_ASSERT(found);
+//     NT_ASSERT(found as i32)
 //     if (found) {
 //         FREE_POOL(header);
 //     }
