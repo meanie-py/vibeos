@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
@@ -72,42 +71,6 @@ pub const DEFAULT_IO_TIMEOUT_VALUE: u32 = 10;
 pub const MINIMUM_STOP_UNIT_TIMEOUT_VALUE: u32 = 2;
 pub const MINIMAL_START_UNIT_TIMEOUT_VALUE: u32 = 60;
 pub const MINIMUM_START_UNIT_TIMEOUT_VALUE: u32 = 30;
-#[no_mangle]
-pub unsafe extern "system" fn ClasspPowerDownCompletion(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS;
-#[no_mangle]
-pub unsafe extern "system" fn ClasspPowerUpCompletion(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS;
-#[no_mangle]
-pub unsafe extern "system" fn ClasspStartNextPowerIrpCompletion(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS;
-#[no_mangle]
-pub unsafe extern "system" fn ClasspDeviceLockFailurePowerIrpCompletion(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS;
-#[no_mangle]
-pub unsafe extern "C" fn ClasspPowerHandler(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Options: CLASS_POWER_OPTIONS,
-) -> NTSTATUS;
-#[no_mangle]
-pub unsafe extern "C" fn RetryPowerRequest(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PCLASS_POWER_CONTEXT,
-) ;
 
 const TRACE_LEVEL_INFORMATION: u32 = 4;     // typical information level
 const TRACE_FLAG_POWER: u32 = 0x200;        // power trace flag

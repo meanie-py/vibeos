@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
@@ -2180,7 +2179,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     const IO_WARNING_DISK_FIRMWARE_UPDATED: ULONG = 0x80040000 + 0x00000065; // guessed
     const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016i32;
     const STATUS_SUCCESS: NTSTATUS = 0;
-    const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003AL;
+    const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003A;
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185i32;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0xC0000192i32;
     const MAXIMUM_RETRIES: u32 = 5; // typical

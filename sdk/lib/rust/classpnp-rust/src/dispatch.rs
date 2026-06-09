@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 

@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;

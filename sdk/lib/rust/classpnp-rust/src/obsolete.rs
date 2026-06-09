@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExDeleteNPagedLookasideList, ExInitializeNPagedLookasideList, IRP, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoSetCompletionRoutine, IoSetHardErrorOrVerifyDevice, IoStartNextPacket, LARGE_INTEGER, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};

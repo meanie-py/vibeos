@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation};
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
@@ -95,13 +94,10 @@ const SRB_FLAGS_DISABLE_DISCONNECT: u32 = 0;   // TODO: define actual mask
 const TRACE_LEVEL_ERROR: u32 = 0;              // TODO: define actual trace level
 const TRACE_FLAG_GENERAL: u32 = 0;             // TODO: define actual trace flag
 
-const 0i32: u32 = 0;
 const IoReadAccess: u32 = 0x20000;
 const IoWriteAccess: u32 = 0x20001;
 
 const StorageDeviceIdProperty: u32 = 2;
-
-unsafe extern "system" fn REVERSE_BYTES(dest: *mut u32, src: *const u32);
 
 // Constants with placeholder values (caller should replace)
 const VPD_MAX_BUFFER_SIZE: u32 = 0; // VPD_MAX_BUFFER_SIZE

@@ -2,12 +2,12 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, IoWMIDeviceObjectToProviderId, IoWMIWriteEvent, KeQueryTimeIncrement, LARGE_INTEGER, LPGUID, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlInitUnicodeString, RtlTimeToTimeFields, TIME_FIELDS};
 use core::ffi::c_void;
 use core::ptr;
+use core::ptr::{addr_of, addr_of_mut};
 
 extern "C" {
     fn PAGED_CODE();

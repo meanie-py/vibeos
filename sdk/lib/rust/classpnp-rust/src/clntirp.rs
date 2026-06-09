@@ -5,6 +5,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{IRP, IoMarkIrpPending, KeInitializeDpc, KeInitializeSpinLock, KeInitializeTimer, KeSetTimerEx, LARGE_INTEGER, LOGICAL, PDEVICE_OBJECT, PIRP};
 use core::ffi::c_void;
+use core::ptr::{addr_of, addr_of_mut};
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
@@ -20,17 +21,6 @@ extern "C" {
     fn RtlULongLongSub(Minuend: u64, Subtrahend: u64, Result: *mut u64) -> NTSTATUS;
     fn ClasspTimeDiffToMs(time: u64) -> u64;
 }
-
-// ---- file-scope preamble (translated) ----
-#[no_mangle]
-pub unsafe extern "C" fn ClasspStartIdleTimer(FdoData: *mut CLASS_PRIVATE_FDO_DATA) ;
-#[no_mangle]
-pub unsafe extern "C" fn ClasspStopIdleTimer(FdoData: *mut CLASS_PRIVATE_FDO_DATA) ;
-static mut ClasspIdleTimerDpc: KDEFERRED_ROUTINE;
-#[no_mangle]
-pub unsafe extern "C" fn ClasspServiceIdleRequest(FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION, PostToDpc: BOOLEAN) ;
-#[no_mangle]
-pub unsafe extern "C" fn ClasspDequeueIdleRequest(FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION) -> *mut IRP;
 
 // Unknown constants – real values must be filled in by the caller
 const TRACE_LEVEL_INFORMATION: u32 = 0; // FIXME

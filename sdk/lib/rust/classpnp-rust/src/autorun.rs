@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
@@ -166,8 +165,7 @@ unsafe extern "system" {
         attributes: u32,
     ) -> *mut EX_TIMER;
     fn NT_ASSERT(condition: i32);
-    #[no_mangle]
-    pub unsafe extern "C" fn ClasspTimerTickEx(timer: *mut EX_TIMER, context: *mut c_void) ;
+    fn ClasspTimerTickEx(timer: *mut EX_TIMER, context: *mut c_void);
 }
 
 type EX_TIMER = c_void;

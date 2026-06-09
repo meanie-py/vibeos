@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{CLONG, File, GenericEqual, GenericGreaterThan, GenericLessThan, KeInitializeSpinLock, PCSTR, PDEVICE_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIRP, PRTL_GENERIC_TABLE, RTL_GENERIC_TABLE, RtlInitializeGenericTable, RtlLookupElementGenericTable, RtlNumberGenericTableElements};

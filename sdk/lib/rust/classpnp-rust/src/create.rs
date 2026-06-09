@@ -2,7 +2,6 @@ use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
@@ -40,9 +39,6 @@ pub static LockTypeStrings: [*const i8; 3] = [
     b"Secure\0".as_ptr() as *const i8,
     b"Internal\0".as_ptr() as *const i8,
 ];
-#[no_mangle]
-pub unsafe extern "C" fn ClasspCleanupDisableMcn(FsContext: PFILE_OBJECT_EXTENSION) ;
-
 // Forward declarations for symbols not in the import list
 
 // Constant definitions
