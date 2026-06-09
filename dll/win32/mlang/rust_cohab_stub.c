@@ -2,10 +2,88 @@
  *
  * mlang.c is translated to Rust (sdk/lib/rust/mlang-rust, linked as
  * libmlang_rust.a). mlang.c is removed from the add_library SOURCES and kept on
- * disk per the never-delete rule. The mlang.spec exports plus DllMain and the
- * COM entry points (DllGetClassObject / DllCanUnloadNow / DllRegisterServer /
- * DllUnregisterServer) come from the linked Rust staticlib; cmake keeps the
- * win32dll MODULE link (spec2def .def + mlang_stubs.c for the `stub`-only spec
- * entries + importlibs). Mirrors the wmilib-rust / bootvid-rust cohabitation.
+ * disk per the never-delete rule. The mlang.spec exports + DllMain + COM entry
+ * points come from the linked Rust staticlib; cmake keeps the win32dll MODULE
+ * link. Mirrors the wmilib-rust / cabinet-rust cohabitation.
+ *
+ * Below: the wine debug-channel + helper shims. TRACE/WARN/FIXME and
+ * IsEqualGUID / debugstr_* / __wine_*_resources are MACROS / inline helpers in
+ * C, never real symbols. The mechanical Rust transliteration lowered the macro
+ * USES into function calls, so it references undefined symbols. Provide them
+ * here with the decoration each Rust decl expects (cdecl for the variadic
+ * TRACE/WARN/FIXME; __stdcall for the rest, matching the _name@N referenced).
  */
 typedef int mlang_rust_cohab_placeholder;
+
+void TRACE(const char *f, ...) { (void)f; }
+void WARN(const char *f, ...)  { (void)f; }
+void FIXME(const char *f, ...) { (void)f; }
+
+const char *__stdcall debugstr_a(const char *s) { return s; }
+const char *__stdcall debugstr_an(const char *s, int n) { (void)n; return s; }
+const char *__stdcall debugstr_w(const unsigned short *s) { (void)s; return ""; }
+const char *__stdcall debugstr_wn(const unsigned short *s, int n) { (void)s; (void)n; return ""; }
+const char *__stdcall debugstr_guid(const void *g) { (void)g; return ""; }
+const char *__stdcall wine_dbgstr_w(const unsigned short *s) { (void)s; return ""; }
+
+/* IsEqualGUID / IsEqualIID: 16-byte compare (inline in guiddef.h). */
+int __stdcall IsEqualGUID(const void *a, const void *b)
+{
+    const unsigned char *pa = (const unsigned char *)a;
+    const unsigned char *pb = (const unsigned char *)b;
+    int i;
+    for (i = 0; i < 16; i++)
+        if (pa[i] != pb[i]) return 0;
+    return 1;
+}
+int __stdcall IsEqualIID(const void *a, const void *b) { return IsEqualGUID(a, b); }
+
+int __stdcall min(int a, int b) { return a < b ? a : b; }
+
+/* wine/list.h intrusive doubly-linked-list helpers. */
+struct cohab_list { struct cohab_list *next; struct cohab_list *prev; };
+void __stdcall list_remove(struct cohab_list *e)
+{
+    e->next->prev = e->prev;
+    e->prev->next = e->next;
+}
+void __stdcall list_add_tail(struct cohab_list *l, struct cohab_list *e)
+{
+    e->prev = l->prev;
+    e->next = l;
+    l->prev->next = e;
+    l->prev = e;
+}
+
+/* mlang.rc resource registration (DllRegisterServer) — no-op stub, S_OK.
+ * Resource registration is not exercised at the QEMU desktop boot. */
+long __stdcall __wine_register_resources(void *hinst) { (void)hinst; return 0; }
+long __stdcall __wine_unregister_resources(void *hinst) { (void)hinst; return 0; }
+
+/* IStream_* are wine ICOM_CALL helpers (IStream is opaque in ntdll-sys bindgen,
+ * so the Rust side can't dispatch by field). Call through the COM vtable by
+ * fixed index: IStream vtable = IUnknown(0..2) + Read(3) Write(4) Seek(5)
+ * SetSize(6) CopyTo(7) Commit(8) Revert(9) LockRegion(10) UnlockRegion(11)
+ * Stat(12) Clone(13). COM methods are __stdcall. */
+typedef long (__stdcall *IStreamRead_t)(void *, void *, unsigned long, unsigned long *);
+typedef long (__stdcall *IStreamWrite_t)(void *, const void *, unsigned long, unsigned long *);
+typedef long (__stdcall *IStreamStat_t)(void *, void *, unsigned long);
+
+long __stdcall IStream_Read(void *self, void *pv, unsigned long cb, unsigned long *pcbRead)
+{
+    void ***vtbl = (void ***)self;       /* self->lpVtbl */
+    IStreamRead_t fn = (IStreamRead_t)(*vtbl)[3];
+    return fn(self, pv, cb, pcbRead);
+}
+long __stdcall IStream_Write(void *self, const void *pv, unsigned long cb, unsigned long *pcbWritten)
+{
+    void ***vtbl = (void ***)self;
+    IStreamWrite_t fn = (IStreamWrite_t)(*vtbl)[4];
+    return fn(self, pv, cb, pcbWritten);
+}
+long __stdcall IStream_Stat(void *self, void *pstatstg, unsigned long grfStatFlag)
+{
+    void ***vtbl = (void ***)self;
+    IStreamStat_t fn = (IStreamStat_t)(*vtbl)[12];
+    return fn(self, pstatstg, grfStatFlag);
+}

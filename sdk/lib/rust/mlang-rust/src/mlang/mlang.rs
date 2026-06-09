@@ -1,6 +1,13 @@
 use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 
+extern "C" {  // CRT (cdecl) — were wrongly declared stdcall (_name@N undefined)
+    fn wcsicmp(s1: *const u16, s2: *const u16) -> i32;
+    fn strlen(s: *const i8) -> usize;
+    fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32;
+    fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
+}
+
 // ---- MIMECONTF constants (from mlang.h tagMIMECONTF enum) ----
 pub type MIMECONTF = u32;
 const MIMECONTF_MAILNEWS: MIMECONTF = 0x00000001;
@@ -1776,8 +1783,6 @@ extern "system" {
     fn LCMapStringA(locale: u32, dwmapflags: u32, lpsrc: *const i8, cchsrc: i32, lpdest: *mut i8, cchdest: i32) -> i32;
     fn GetLocaleInfoW(locale: u32, lctype: u32, lplcdata: *mut u16, cchdata: i32) -> i32;
     fn LCMapStringW(locale: u32, dwmapflags: u32, lpsrcstr: *const u16, cchsrc: i32, lpdeststr: *mut u16, cchdest: i32) -> i32;
-    fn IEnumRfc1766_Next(iface: *mut IEnumRfc1766, celt: u32, rgelt: *mut RFC1766INFO, pceltFetched: *mut u32) -> i32;
-    fn wcsicmp(s1: *const u16, s2: *const u16) -> i32;
     fn lstrlenW(s: *const u16) -> i32;
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
     fn EnterCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
@@ -1796,16 +1801,12 @@ extern "system" {
     fn IsEqualGUID(rguid1: *const GUID, rguid2: *const GUID) -> BOOL;
     fn InterlockedIncrement(Addend: *mut i32) -> i32;
     fn InterlockedDecrement(Addend: *mut i32) -> i32;
-    fn strlen(s: *const i8) -> usize;
     fn __wine_unregister_resources(hInstance: HINSTANCE) -> HRESULT;
-    fn IClassFactory_AddRef(iface: *mut IClassFactory) -> u32;
     fn debugstr_guid(guid: *const GUID) -> *const core::ffi::c_char;
     fn MultiByteToWideChar( CodePage: u32, dwFlags: u32, lpMultiByteStr: *const i8, cbMultiByte: i32, lpWideCharStr: *mut u16, cchWideChar: i32, ) -> i32;
     fn TlsSetValue(dwTlsIndex: u32, lpTlsValue: *mut core::ffi::c_void) -> i32;
-    fn IMultiLanguage3_IsConvertible(iface: *mut IMultiLanguage3, src_enc: u32, dst_enc: u32) -> HRESULT;
     fn IsValidCodePage(codePage: u32) -> BOOL;
     fn EnumSystemLocalesW(lpLocaleEnumProc: Option<unsafe extern "C" fn(*const u16) -> i32>, dwFlags: u32) -> i32;
-    fn IMultiLanguage3_ValidateCodePageEx( iface: *mut IMultiLanguage3, uiCodePage: u32, hwnd: isize, dwFlags: u32, ) -> i32;
     fn GetFontUnicodeRanges(hdc: HDC, lpgs: *mut GLYPHSET) -> u32;
     fn debugstr_an(s: *const i8, n: i32) -> *const i8;
     fn RegCreateKeyW(hKey: HKEY, lpSubKey: *const u16, phkResult: *mut HKEY) -> LSTATUS;
@@ -1814,34 +1815,11 @@ extern "system" {
     fn RegCloseKey(hKey: HKEY) -> LSTATUS;
     fn TlsGetValue(dwTlsIndex: u32) -> *mut core::ffi::c_void;
     fn debugstr_w(s: *const u16) -> *const i8;
-    fn wcstol(s: *const u16, endptr: *mut *mut u16, base: i32) -> i32;
     fn wine_dbgstr_w(s: *const u16) -> *const i8;
     fn HeapReAlloc(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void, dwBytes: usize) -> *mut core::ffi::c_void;
     fn SysAllocString(psz: *const u16) -> *mut u16;
-    fn IMultiLanguage3_EnumRfc1766(iface: *mut IMultiLanguage3, langid: u16, ppEnum: *mut *mut IEnumRfc1766) -> i32;
-    fn IEnumRfc1766_Release(This: *mut IEnumRfc1766) -> u32;
     fn GetCurrentObject(hdc: *mut c_void, uObjectType: u32) -> *mut c_void;
-    fn IUnknown_QueryInterface(punk: *mut IUnknown, riid: *const GUID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
-    fn IUnknown_Release(punk: *mut IUnknown) -> u32;
-    fn IEnumCodePage_AddRef(iface: *mut IEnumCodePage);
 
-    fn IEnumScript_AddRef(iface: *mut IEnumScript) -> u32;
-    fn IMultiLanguage3_QueryInterface( iface: *mut IMultiLanguage3, riid: *const IID, ppvObject: *mut *mut core::ffi::c_void, ) -> HRESULT;
-    fn IMultiLanguage3_AddRef(iface: *mut IMultiLanguage3) -> u32;
-    fn IMultiLanguage3_Release(iface: *mut IMultiLanguage3) -> u32;
-    fn IMLangFontLink2_GetCharCodePages(iface: *mut IMLangFontLink2, ch_src: u16, codepages: *mut u32) -> i32;
-    fn IMLangFontLink2_GetStrCodePages( iface: *mut IMLangFontLink2, src: *const u16, src_len: i32, priority_cp: u32, codepages: *mut u32, ret_len: *mut i32, ) -> HRESULT;
-    fn IMLangFontLink2_CodePageToCodePages( iface: *mut IMLangFontLink2, codepage: u32, codepages: *mut u32, ) -> HRESULT;
-    fn IMLangFontLink2_CodePagesToCodePage( iface: *mut IMLangFontLink2, codepages: u32, def_codepage: u32, codepage: *mut u32, ) -> i32;
-    fn IMLangFontLink2_GetFontCodePages( iface: *mut IMLangFontLink2, hdc: HDC, hfont: HFONT, codepages: *mut u32, ) -> i32;
-    fn IMultiLanguage3_ConvertString( iface: *mut IMultiLanguage3, mode: *mut u32, src_enc: u32, dst_enc: u32, src: *mut u8, src_size: *mut u32, dest: *mut u8, dest_size: *mut u32, ) -> HRESULT;
-    fn IMultiLanguage3_ConvertStringToUnicode(iface: *mut IMultiLanguage3, mode: *mut DWORD, src_enc: DWORD, src: *mut CHAR, src_size: *mut UINT, dest: *mut WCHAR, dest_size: *mut UINT) -> HRESULT;
-    fn IMultiLanguage3_ConvertStringFromUnicode( iface: *mut IMultiLanguage3, mode: *mut DWORD, encoding: DWORD, src: *mut WCHAR, src_size: *mut UINT, dest: *mut CHAR, dest_size: *mut UINT, ) -> HRESULT;
-    fn IMultiLanguage3_ConvertStringReset(iface: *mut IMultiLanguage3) -> HRESULT;
-    fn IMultiLanguage3_GetRfc1766FromLcid( iface: *mut IMultiLanguage3, lcid: LCID, pbstrRfc1766: *mut BSTR, ) -> HRESULT;
-    fn IMultiLanguage3_GetLcidFromRfc1766( pIMultiLanguage3: *mut IMultiLanguage3, locale: *mut LCID, rfc1766: BSTR, ) -> HRESULT;
-    fn IMultiLanguage3_CreateConvertCharset(iface: *mut IMultiLanguage3, src_cp: u32, dst_cp: u32, prop: u32, convert_charset: *mut *mut IMLangConvertCharset) -> i32;
-    fn IEnumRfc1766_AddRef(iface: *mut IEnumRfc1766) -> u32;
     fn lstrcmpiW(lpString1: *const u16, lpString2: *const u16) -> i32;
     fn lstrcpyW(lpString1: *mut u16, lpString2: *const u16) -> *mut u16;
     fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut i8, cbMultiByte: i32, lpDefaultChar: *const i8, lpUsedDefaultChar: *mut i32, ) -> i32;
@@ -1849,15 +1827,12 @@ extern "system" {
     fn min(a: LONG, b: LONG) -> LONG;
     fn GetTextCharsetInfo(hdc: HDC, lpFontSig: *mut FONTSIGNATURE, dwFlags: u32) -> u32;
     fn IsEqualIID(guid1: *const IID, guid2: *const IID) -> i32;
-    fn IMLangConvertCharset_AddRef(iface: *mut IMLangConvertCharset) -> u32;
     fn __wine_register_resources(hinstance: HINSTANCE) -> HRESULT;
-    fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn IStream_Stat( this: *mut IStream, pstatstg: *mut STATSTG, grfStatFlag: u32, ) -> i32;
     fn IStream_Read( this: *mut IStream, pv: *mut core::ffi::c_void, cb: u32, pcbRead: *mut u32, ) -> i32;
     fn IStream_Write( this: *mut IStream, pv: *const core::ffi::c_void, cb: u32, pcbWritten: *mut u32, ) -> i32;
     fn debugstr_a(s: *const i8) -> *const i8;
     fn lstrlenA(lpString: *const i8) -> i32;
-    fn IMultiLanguage3_GetCharsetInfo( iface: *mut IMultiLanguage3, Charset: *mut u16, pCharsetInfo: *mut MIMECSETINFO, ) -> i32;
 }
 
 extern "C" {
@@ -4093,7 +4068,6 @@ unsafe extern "C" fn fnIMultiLanguage_GetNumberOfCodePageInfo(
     cp: *mut UINT,
 ) -> HRESULT {
     unsafe extern "system" {
-        fn IMultiLanguage3_GetNumberOfCodePageInfo(iface: *mut IMultiLanguage3, pc: *mut UINT) -> HRESULT;
     }
     unsafe extern "C" {
         fn TRACE(format: *const i8, ...);
@@ -4114,11 +4088,6 @@ unsafe extern "C" fn fnIMultiLanguage_GetFamilyCodePage(
     let this = impl_from_IMultiLanguage(iface);
     let iface_ptr = &(*this).IMultiLanguage3_iface as *const IMultiLanguage3 as *mut IMultiLanguage3;
     extern "system" {
-        fn IMultiLanguage3_GetFamilyCodePage(
-            iface: *mut IMultiLanguage3,
-            cp: u32,
-            family_cp: *mut u32,
-        ) -> HRESULT;
     }
     IMultiLanguage3_GetFamilyCodePage(iface_ptr, cp, family_cp)
 }
@@ -5373,14 +5342,11 @@ unsafe extern "C" fn fnIMultiLanguage3_CreateConvertCharset(
     prop: u32,
     convert_charset: *mut *mut IMLangConvertCharset,
 ) -> HRESULT {
-    extern "system" {
-        fn MLangConvertCharset_create(outer: *const IUnknown, obj: *mut *mut core::ffi::c_void) -> HRESULT;
-    }
     let hr: HRESULT;
 
     TRACE(b"(%u %u 0x%08x %p)\n\0".as_ptr() as *const i8, src_cp, dst_cp, prop, convert_charset);
 
-    hr = MLangConvertCharset_create(core::ptr::null_mut() as *const IUnknown, convert_charset as *mut *mut core::ffi::c_void);
+    hr = MLangConvertCharset_create(core::ptr::null_mut() as *mut IUnknown, convert_charset as *mut *mut core::ffi::c_void);
     // FAILED(hr) equivalent: check if HRESULT is negative
     if hr < 0 { return hr; }
 
@@ -5677,6 +5643,7 @@ unsafe extern "C" fn MLangConvertCharset_DoConversionToUnicode(
     }
 }
 
+#[no_mangle]
 pub unsafe extern "system" fn ConvertINetString(
     pdwMode: *mut u32,
     dwSrcEncoding: u32,
@@ -6115,3 +6082,127 @@ unsafe extern "C" fn fnIMultiLanguage_GetCharsetInfo(
     );
 }
 
+
+
+// ==== COM vtable-dispatch wrappers (wine ICOM_CALL macros the translation left undefined) ====
+#[no_mangle]
+pub unsafe extern "system" fn IEnumRfc1766_Next(iface: *mut IEnumRfc1766, celt: u32, rgelt: *mut RFC1766INFO, pceltFetched: *mut u32) -> i32 {
+    ((*(*iface).lpVtbl).Next)(iface, celt, rgelt, pceltFetched)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IClassFactory_AddRef(iface: *mut IClassFactory) -> u32 {
+    ((*(*iface).lpVtbl).AddRef)(iface)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_IsConvertible(iface: *mut IMultiLanguage3, src_enc: u32, dst_enc: u32) -> HRESULT {
+    ((*(*iface).lpVtbl).IsConvertible)(iface, src_enc, dst_enc)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_ValidateCodePageEx( iface: *mut IMultiLanguage3, uiCodePage: u32, hwnd: isize, dwFlags: u32, ) -> i32 {
+    ((*(*iface).lpVtbl).ValidateCodePageEx)(iface, uiCodePage, hwnd as HWND, dwFlags)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_EnumRfc1766(iface: *mut IMultiLanguage3, langid: u16, ppEnum: *mut *mut IEnumRfc1766) -> i32 {
+    ((*(*iface).lpVtbl).EnumRfc1766)(iface, langid, ppEnum)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IEnumRfc1766_Release(This: *mut IEnumRfc1766) -> u32 {
+    ((*(*This).lpVtbl).Release)(This)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IUnknown_QueryInterface(punk: *mut IUnknown, riid: *const GUID, ppv: *mut *mut core::ffi::c_void) -> HRESULT {
+    ((*(*punk).lpVtbl).QueryInterface)(punk, riid, ppv)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IUnknown_Release(punk: *mut IUnknown) -> u32 {
+    ((*(*punk).lpVtbl).Release)(punk)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IEnumScript_AddRef(iface: *mut IEnumScript) -> u32 {
+    ((*(*iface).lpVtbl).AddRef)(iface)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_QueryInterface( iface: *mut IMultiLanguage3, riid: *const IID, ppvObject: *mut *mut core::ffi::c_void, ) -> HRESULT {
+    ((*(*iface).lpVtbl).QueryInterface)(iface, riid, ppvObject)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_AddRef(iface: *mut IMultiLanguage3) -> u32 {
+    ((*(*iface).lpVtbl).AddRef)(iface)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_Release(iface: *mut IMultiLanguage3) -> u32 {
+    ((*(*iface).lpVtbl).Release)(iface)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMLangFontLink2_GetCharCodePages(iface: *mut IMLangFontLink2, ch_src: u16, codepages: *mut u32) -> i32 {
+    ((*(*iface).lpVtbl).GetCharCodePages)(iface, ch_src, codepages)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMLangFontLink2_GetStrCodePages( iface: *mut IMLangFontLink2, src: *const u16, src_len: i32, priority_cp: u32, codepages: *mut u32, ret_len: *mut i32, ) -> HRESULT {
+    ((*(*iface).lpVtbl).GetStrCodePages)(iface, src, src_len, priority_cp, codepages, ret_len)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMLangFontLink2_CodePageToCodePages( iface: *mut IMLangFontLink2, codepage: u32, codepages: *mut u32, ) -> HRESULT {
+    ((*(*iface).lpVtbl).CodePageToCodePages)(iface, codepage, codepages)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMLangFontLink2_CodePagesToCodePage( iface: *mut IMLangFontLink2, codepages: u32, def_codepage: u32, codepage: *mut u32, ) -> i32 {
+    ((*(*iface).lpVtbl).CodePagesToCodePage)(iface, codepages, def_codepage, codepage)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMLangFontLink2_GetFontCodePages( iface: *mut IMLangFontLink2, hdc: HDC, hfont: HFONT, codepages: *mut u32, ) -> i32 {
+    ((*(*iface).lpVtbl).GetFontCodePages)(iface, hdc, hfont, codepages)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_ConvertString( iface: *mut IMultiLanguage3, mode: *mut u32, src_enc: u32, dst_enc: u32, src: *mut u8, src_size: *mut u32, dest: *mut u8, dest_size: *mut u32, ) -> HRESULT {
+    ((*(*iface).lpVtbl).ConvertString)(iface, mode, src_enc, dst_enc, src, src_size, dest, dest_size)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_ConvertStringToUnicode(iface: *mut IMultiLanguage3, mode: *mut DWORD, src_enc: DWORD, src: *mut CHAR, src_size: *mut UINT, dest: *mut WCHAR, dest_size: *mut UINT) -> HRESULT {
+    ((*(*iface).lpVtbl).ConvertStringToUnicode)(iface, mode, src_enc, src, src_size, dest, dest_size)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_ConvertStringFromUnicode( iface: *mut IMultiLanguage3, mode: *mut DWORD, encoding: DWORD, src: *mut WCHAR, src_size: *mut UINT, dest: *mut CHAR, dest_size: *mut UINT, ) -> HRESULT {
+    ((*(*iface).lpVtbl).ConvertStringFromUnicode)(iface, mode, encoding, src, src_size, dest, dest_size)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_ConvertStringReset(iface: *mut IMultiLanguage3) -> HRESULT {
+    ((*(*iface).lpVtbl).ConvertStringReset)(iface)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_GetRfc1766FromLcid( iface: *mut IMultiLanguage3, lcid: LCID, pbstrRfc1766: *mut BSTR, ) -> HRESULT {
+    ((*(*iface).lpVtbl).GetRfc1766FromLcid)(iface, lcid, pbstrRfc1766)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_GetLcidFromRfc1766( pIMultiLanguage3: *mut IMultiLanguage3, locale: *mut LCID, rfc1766: BSTR, ) -> HRESULT {
+    ((*(*pIMultiLanguage3).lpVtbl).GetLcidFromRfc1766)(pIMultiLanguage3, locale, rfc1766)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_CreateConvertCharset(iface: *mut IMultiLanguage3, src_cp: u32, dst_cp: u32, prop: u32, convert_charset: *mut *mut IMLangConvertCharset) -> i32 {
+    ((*(*iface).lpVtbl).CreateConvertCharset)(iface, src_cp, dst_cp, prop, convert_charset)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IEnumRfc1766_AddRef(iface: *mut IEnumRfc1766) -> u32 {
+    ((*(*iface).lpVtbl).AddRef)(iface)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMLangConvertCharset_AddRef(iface: *mut IMLangConvertCharset) -> u32 {
+    ((*(*iface).lpVtbl).AddRef)(iface)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_GetCharsetInfo( iface: *mut IMultiLanguage3, Charset: *mut u16, pCharsetInfo: *mut MIMECSETINFO, ) -> i32 {
+    ((*(*iface).lpVtbl).GetCharsetInfo)(iface, Charset, pCharsetInfo)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_GetNumberOfCodePageInfo(iface: *mut IMultiLanguage3, pc: *mut UINT) -> HRESULT {
+    ((*(*iface).lpVtbl).GetNumberOfCodePageInfo)(iface, pc)
+}
+#[no_mangle]
+pub unsafe extern "system" fn IEnumCodePage_AddRef(iface: *mut IEnumCodePage) -> u32 {
+    ((*(*iface).lpVtbl).AddRef)(iface)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IMultiLanguage3_GetFamilyCodePage(iface: *mut IMultiLanguage3, cp: u32, family_cp: *mut u32) -> HRESULT {
+    ((*(*iface).lpVtbl).GetFamilyCodePage)(iface, cp, family_cp)
+}
