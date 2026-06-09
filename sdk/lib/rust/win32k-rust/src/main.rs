@@ -125,7 +125,12 @@ unsafe fn RtlZeroMemory(dst: *mut core::ffi::c_void, n: usize) {
 #[inline(always)]
 fn IS_IMM_MODE() -> bool { false }
 
-extern "C" { fn EngGetTickCount() -> ULONGLONG; }
+// EngGetTickCount is DEFINED extern "stdcall" (engmisc.rs, i386) — a flat
+// `extern "C"` decl is a calling-convention mismatch. With 0 args it doesn't
+// ud2 (stack stays balanced) so scan_ud2 misses it, but LLVM still treats the
+// ABI mismatch as UB: the statement `pcti->timeLastRead = EngGetTickCount32()`
+// became provable-UB → the whole InitThreadCallback success path was DCE'd.
+extern "system" { fn EngGetTickCount() -> ULONGLONG; }
 
 // tags.h pool tags (C multichar 'ipsU' etc. → LE DWORD = reversed bytes).
 const USERTAG_PROCESSINFO: u32 = u32::from_le_bytes(*b"Uspi");
@@ -188,7 +193,8 @@ pub unsafe extern "system" fn AllocW32Process(
     PsSetProcessWin32Process(Process as _, ppiCurrent as *mut _, core::ptr::null_mut());
     IntReferenceProcessInfo(ppiCurrent);
 
-    *W32Process = ppiCurrent;
+    // captures(none) output pointer — volatile store so it survives DCE (see AllocW32Thread).
+    core::ptr::write_volatile(W32Process, ppiCurrent);
     STATUS_SUCCESS
 }
 
@@ -408,7 +414,9 @@ unsafe fn AllocW32Thread(Thread: PETHREAD, W32Thread: *mut PTHREADINFO) -> NTSTA
     ObReferenceObject(Thread as _);
     IntReferenceThreadInfo(ptiCurrent);
 
-    *W32Thread = ptiCurrent;
+    // captures(none) output pointer (lint_kernel.py-flagged): volatile store so
+    // LLVM can't DCE the write and leave the caller's local NULL.
+    core::ptr::write_volatile(W32Thread, ptiCurrent);
     STATUS_SUCCESS
 }
 
@@ -466,6 +474,7 @@ pub unsafe extern "system" fn InitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
     pTeb = NtCurrentTeb() as _;
 
     ProcessParams = (*(*pTeb).ProcessEnvironmentBlock).ProcessParameters;
+
 
     /* Allocate a new Win32 thread info */
     Status = AllocW32Thread(Thread, &mut ptiCurrent);
@@ -642,6 +651,7 @@ pub unsafe extern "system" fn InitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
             return Status;
         }
     }
+
 
     /* Mark the thread as fully initialized */
     (*ptiCurrent).TIF_flags |= TIF_GUITHREADINITIALIZED;
