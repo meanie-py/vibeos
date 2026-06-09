@@ -31,6 +31,8 @@ use crate::types::{ClassMaxInterleavePerCriticalIo};
 use crate::types::{_SCSI_REQUEST_BLOCK};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::srblib::{SrbGetDataBuffer, SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbSetQueueSortKey, SrbSetScsiStatus};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{max};
 
 extern "C" {
     fn KeGetCurrentIrql() -> KIRQL;

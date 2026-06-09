@@ -143,3 +143,8 @@ pub const CLASS_TAG_SENSE2: u32 = 0x32536353;  // '2ScS'
 pub const CLASS_TAG_WORKING_SET: u32 = 0x73576353;  // 'sWcS'
 pub const DISK_SPINUP_BACKTRACE_LENGTH: u32 = 0x18;
 pub const NUMBER_OF_DISK_SPINUP_TRACES: u32 = 0x10;
+
+// C min()/max() macros — generic; same-type args resolve here, mixed-type calls still
+// surface as E0308 (a real translation cast the LLM owes), but the name resolves.
+#[inline] pub fn min<T: PartialOrd>(a: T, b: T) -> T { if a < b { a } else { b } }
+#[inline] pub fn max<T: PartialOrd>(a: T, b: T) -> T { if a > b { a } else { b } }

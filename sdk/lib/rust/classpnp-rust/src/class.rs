@@ -33,6 +33,8 @@ use crate::guid::{GUID_CONSOLE_DISPLAY_STATE};
 use crate::types::{AllFdosList, ClassBadItems, ClassGuidQueryRegInfoEx, ClassGuidSenseInfo2, ClassGuidSrbSupport, ClassGuidWorkingSet};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_SCSI_REQUEST_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{min};
 
 extern "C" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
