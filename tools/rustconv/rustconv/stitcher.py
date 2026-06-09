@@ -228,12 +228,21 @@ def _extract_decl_name(decl: str) -> str | None:
     return None
 
 
-def _merge_extern_blocks(blocks: list[str]) -> list[str]:
+def _merge_extern_blocks(blocks: list[str], defined_fns: set[str] | None = None) -> list[str]:
     """Merge extern blocks with the same linkage into one block each.
 
     Deduplicates by symbol name — if multiple functions declared the same extern
-    with different parameter names, keep only the first.
+    with different parameter names, keep only the first. Additionally:
+      * DROP a forward-decl whose symbol is a function the file itself defines
+        (``defined_fns``). Per-function caches forward-declare file-local callees;
+        emitting those alongside the real definition yields duplicate-definition
+        errors and, when the decl is malformed (DeepSeek sometimes writes a
+        ``#[no_mangle] pub unsafe extern "system" fn NAME(...);`` definition-shaped
+        line), a hard parse error.
+      * DROP anything that isn't a clean foreign decl (`fn NAME(...);` /
+        `static NAME: T;`, no body braces) — robust against brace-counting slips.
     """
+    defined_fns = defined_fns or set()
     by_linkage: dict[str, list[str]] = {}
     seen_names: dict[str, set[str]] = {}  # linkage → set of declared symbol names
 
@@ -271,11 +280,19 @@ def _merge_extern_blocks(blocks: list[str]) -> list[str]:
                 joined_decls.append(current)
 
             for decl in joined_decls:
+                # Only clean foreign decls survive: must terminate with ';' and
+                # carry no body braces (a stray '}' or a leaked definition is junk).
+                if '{' in decl or '}' in decl or not decl.rstrip().endswith(';'):
+                    continue
                 name = _extract_decl_name(decl)
                 if name:
+                    if name in defined_fns:
+                        continue  # the file defines this — don't forward-declare it
                     if name in seen_names[linkage]:
                         continue  # Skip duplicate
                     seen_names[linkage].add(name)
+                else:
+                    continue  # un-named ⇒ not a recognizable decl; drop
                 by_linkage[linkage].append(decl)
 
     result = []
@@ -380,11 +397,8 @@ def stitch_file(
         all_externs.extend(p_externs)
         preamble_body = p_no_externs.strip()
 
-    for dep in deps:
-        if dep.name not in functions:
-            continue
-
-        code = functions[dep.name]
+    def _emit(name: str, line_start: int) -> None:
+        code = functions[name]
 
         # Extract use statements
         uses, code_no_uses = _extract_use_statements(code)
@@ -412,7 +426,28 @@ def stitch_file(
                 standalone_items.append(fn_preamble)
             code_no_externs = "\n".join(fn_lines[fn_start_idx:])
 
-        function_bodies.append((dep.line_start, dep.name, code_no_externs.strip()))
+        function_bodies.append((line_start, name, code_no_externs.strip()))
+
+    emitted: set[str] = set()
+    for dep in deps:
+        if dep.name not in functions:
+            continue
+        _emit(dep.name, dep.line_start)
+        emitted.add(dep.name)
+
+    # Safety net: NEVER drop a translated function. Any name present in
+    # `functions` (paid LLM output) but absent from the topological `deps`
+    # list — e.g. vtable-only methods or indirectly-called helpers the
+    # call-graph resolver failed to enumerate — would otherwise be silently
+    # discarded (the loop above only emits names that appear in `deps`).
+    # On large files this dropped ~16% of functions (mlang: 27/169). Emit any
+    # leftover translated bodies after the source-ordered ones (a large
+    # line_start sorts them to the end; order is compile-irrelevant).
+    for name in functions:
+        if name in emitted:
+            continue
+        _emit(name, 10**9)
+        emitted.add(name)
 
     # Sort function bodies by original C source line order
     function_bodies.sort(key=lambda x: x[0])
@@ -440,8 +475,9 @@ def stitch_file(
             parts.append(stmt)
         parts.append("")
 
-    # 2. Merged extern blocks
-    merged_externs = _merge_extern_blocks(all_externs)
+    # 2. Merged extern blocks — drop forward-decls of functions the file defines
+    defined_fn_names = {name for (_, name, _) in function_bodies}
+    merged_externs = _merge_extern_blocks(all_externs, defined_fns=defined_fn_names)
     if merged_externs:
         for line in merged_externs:
             parts.append(line)

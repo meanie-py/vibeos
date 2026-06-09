@@ -574,6 +574,7 @@ endfunction()
 ##   add_cargo_module(<target> <crate> <output>
 ##                    [KIND kerneldll|efi|native]      (default kerneldll)
 ##                    [BODY_CRATE <rust-staticlib-crate>]
+##                    [BODY_CRATES <rust-crate> ...]
 ##                    [EXTRA_DEPENDS <targets/files…>]  (e.g. the OBJECT lib
 ##                                                       whose .obj the link
 ##                                                       reuses)
@@ -604,7 +605,7 @@ endfunction()
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
 function(add_cargo_module _target _crate _output)
-    cmake_parse_arguments(_acm "NO_CD" "KIND;DESTINATION;NAME_ON_CD;BODY_CRATE" "EXTRA_DEPENDS" ${ARGN})
+    cmake_parse_arguments(_acm "NO_CD" "KIND;DESTINATION;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS" ${ARGN})
     if(NOT _acm_KIND)
         set(_acm_KIND kerneldll)
     endif()
@@ -633,10 +634,13 @@ function(add_cargo_module _target _crate _output)
         ${_ws}/${_crate}/*.rs ${_ws}/${_crate}/*.json ${_ws}/${_crate}/Cargo.toml
         ${_ws}/reactos-link/src/*.rs)
     if(_acm_BODY_CRATE)
-        file(GLOB_RECURSE _bsrcs CONFIGURE_DEPENDS
-            ${_ws}/${_acm_BODY_CRATE}/*.rs ${_ws}/${_acm_BODY_CRATE}/Cargo.toml)
-        list(APPEND _srcs ${_bsrcs})
+        list(APPEND _acm_BODY_CRATES ${_acm_BODY_CRATE})
     endif()
+    foreach(_body_crate IN LISTS _acm_BODY_CRATES)
+        file(GLOB_RECURSE _bsrcs CONFIGURE_DEPENDS
+            ${_ws}/${_body_crate}/*.rs ${_ws}/${_body_crate}/Cargo.toml)
+        list(APPEND _srcs ${_bsrcs})
+    endforeach()
 
     # Kind-specific post-link (cmake passes these as the target's POST_BUILD).
     set(_postlink)
@@ -654,6 +658,15 @@ function(add_cargo_module _target _crate _output)
         # applies NO native-pefixup (that's gated to KERNEL_MODULE_TYPES). The
         # ONLY post-link a win32dll gets is the i386 lld forwarder-underscore
         # fix, which set_module_type applies to every PE module on i386/llvm-mingw.
+        if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+            set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+        endif()
+    elseif(_acm_KIND STREQUAL "win32exe")
+        # User-mode win32 exe (lsass.exe): like win32dll, NOT a KERNEL_MODULE_TYPE
+        # so NO native-pefixup; the only post-link set_module_type applies on
+        # i386/llvm-mingw is the lld forwarder-underscore fix (a no-op for an
+        # export-less exe, kept for parity with every PE module).
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
@@ -1114,4 +1127,3 @@ target_compile_definitions(libstdc++ INTERFACE "$<$<COMPILE_LANGUAGE:CXX>:PAL_ST
 
 # Create our alias libraries
 add_library(cppstl ALIAS libstdc++)
-

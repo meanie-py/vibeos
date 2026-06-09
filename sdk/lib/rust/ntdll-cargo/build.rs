@@ -12,27 +12,35 @@
 //! Out-of-band input still checked in:
 //!   - `tools/gen_ntdll_res.py`  → data/ntdll-<arch>.rc.res
 
-use std::env;
 use reactos_link::{AsmDefineSet, Linker, ModuleKind};
+use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     // Per-arch: (target json, res basename, image base, entry).
     // ntdll.dll is console:5.01 on all arches; AddressOfEntryPoint 0 via the
     // lld __ImageBase symbol (i386 decorates it ___ImageBase).
-    let (target_json, res, image_base, entry): (&str, &str, u64, &str) =
-        match arch.as_str() {
-            "x86" => (
-                "i686-kernel.json", "ntdll-i386.rc.res", 0x7c92_0000, "___ImageBase",
-            ),
-            "x86_64" => (
-                "x86_64-kernel.json", "ntdll-amd64.rc.res", 0x7ff_b700_0000, "__ImageBase",
-            ),
-            "aarch64" => (
-                "aarch64-kernel.json", "ntdll-arm64.rc.res", 0x7ff_b700_0000, "__ImageBase",
-            ),
-            o => panic!("ntdll-cargo: unsupported arch {o}"),
-        };
+    let (target_json, res, image_base, entry): (&str, &str, u64, &str) = match arch.as_str() {
+        "x86" => (
+            "i686-kernel.json",
+            "ntdll-i386.rc.res",
+            0x7c92_0000,
+            "___ImageBase",
+        ),
+        "x86_64" => (
+            "x86_64-kernel.json",
+            "ntdll-amd64.rc.res",
+            0x7ff_b700_0000,
+            "__ImageBase",
+        ),
+        "aarch64" => (
+            "aarch64-kernel.json",
+            "ntdll-arm64.rc.res",
+            0x7ff_b700_0000,
+            "__ImageBase",
+        ),
+        o => panic!("ntdll-cargo: unsupported arch {o}"),
+    };
     // cnt-rust-lib `float` feature, mirroring libcntpr.cmake EXACTLY: amd64 +
     // arm64 build the Rust format_float/format_floatw that streamout/wstreamout
     // call (without it the arm64 link fails `undefined symbol: format_float`).
@@ -87,10 +95,16 @@ fn main() {
         .resource(&format!("data/{res}"))
         .spec2def("dll/ntdll/def/ntdll.spec", "ntdll.dll")
         .spec_stubs() // 48 Etw* -stub bodies
+        // Tier-C deep-C compiled IN-cargo via compile_commands.json replay
+        // (flag-exact; drops the `ninja rtl_vista` prerequisite). First mover of
+        // the residue migration — librtl / libcntpr follow. Needs cmake
+        // configured with -DCMAKE_EXPORT_COMPILE_COMMANDS=ON.
+        // rtl_vista is now 100% Rust (condvar/srw/runonce/locale → rtl-sync, via
+        // .rust_lib("rtl-rust")); no rtl_vista C files remain to compile in-cargo.
         .static_libs(&[
             // Tier-C deep-C (deferred — follows rtl-priv / libcntpr-crt flips):
             "sdk/lib/rtl/librtl.a",
-            "sdk/lib/rtl/librtl_vista.a",
+            // librtl_vista.a — now compiled in-cargo (.c_from_compile_db above)
             "sdk/lib/crt/liblibcntpr.a",
             // NOTE: libntdllsys.a dropped — the Nt*/Zw* syscall stubs are now
             // assembled from the SOURCE ntoskrnl/ntdll.S (asm_archive above; the

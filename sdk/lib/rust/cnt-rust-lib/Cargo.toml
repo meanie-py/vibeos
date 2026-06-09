@@ -17,9 +17,12 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [features]
-# amd64/arm64 enable this (cnt-rust float surface: floatcvt/scanf +
-# their cabi shims). i386 OMITS it — the kernel builds Rust no-SSE
-# (CR4.OSFXSR unset in Phase 0) so by-value f64 ABI won't compile.
+# amd64/arm64 enable this (the core_rs forbid-unsafe float surface:
+# floatcvt/scanf + their cabi shims). i386 OMITS it — those live in
+# core_rs (#[forbid(unsafe_code)]) so their no-SSE-illegal by-value f64
+# returns can't use the fb64/fb32 transmute escape and stay C on i386.
+# The math surface (cabi::math) is no-SSE-safe and compiled
+# unconditionally regardless of this feature — see cnt-rust/Cargo.toml.
 float = ["cnt-rust/float"]
 
 [dependencies]

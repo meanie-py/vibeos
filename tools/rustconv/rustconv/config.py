@@ -1,11 +1,23 @@
 """Shared paths, model config, token budgets."""
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # Root paths
 REACTOS_ROOT = Path(__file__).resolve().parents[3]  # reactos/
+
+# Load API keys from the repo-root .env (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY).
+# rustconv historically relied on these being exported in the shell; load them
+# here so `python -m rustconv ...` Just Works from a clean shell. Existing
+# environment values win (override=False) so an explicit export still takes
+# precedence.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(REACTOS_ROOT / ".env", override=False)
+except Exception:
+    pass
 NTOSKRNL_DIR = REACTOS_ROOT / "ntoskrnl"
 HAL_DIR = REACTOS_ROOT / "hal"
 # On the llvm-mingw (non-MSVC) build, _WINKD_=FALSE+KDBG=TRUE makes
@@ -13,6 +25,19 @@ HAL_DIR = REACTOS_ROOT / "hal"
 # NOT kdcom/. The Target points here so it validates on the unchanged
 # green smoke baseline. See memory feedback_kdcom_is_kdrosdbg.
 KDCOM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdrosdbg"
+# kdgdb: the GDB-stub KD transport (also builds kdcom.dll, but only under
+# _WINKD_=TRUE + GDB=TRUE — never on the default llvm-mingw build, which
+# forces _WINKD_=FALSE). Translated for completeness; the kdgdb-rust
+# staticlib validates standalone via `cargo build -p kdgdb-rust` (i386+amd64;
+# kdgdb has no arm64 path). i386_sup.c/amd64_sup.c are arch-gated.
+KDGDB_DIR = REACTOS_ROOT / "drivers" / "base" / "kdgdb"
+# Serial kdcom: the classic NS16550 serial KD transport (drivers/base/kdcom,
+# distinct from the default kdrosdbg-as-kdcom.dll above). _WINKD_-only, never
+# built on llvm-mingw. Uses cportlib (= cport-rust). → kdcom-serial-rust.
+KDCOM_SERIAL_DIR = REACTOS_ROOT / "drivers" / "base" / "kdcom"
+# kdvm: the VirtualBox KD transport (builds kdvbox.dll, not kdcom.dll).
+# _WINKD_-only. Has a tiny KdVmExchange asm (VBox backdoor port I/O). → kdvm-rust.
+KDVM_DIR = REACTOS_ROOT / "drivers" / "base" / "kdvm"
 BOOTVID_DIR = REACTOS_ROOT / "drivers" / "base" / "bootvid"
 FREELDR_DIR = REACTOS_ROOT / "boot" / "freeldr" / "freeldr"
 ARM64INPUT_DIR = REACTOS_ROOT / "drivers" / "input" / "arm64input"
@@ -24,6 +49,15 @@ RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
 TEMPLATES_DIR = TOOLS_DIR / "templates"
 DATA_DIR = TOOLS_DIR / "data"
+
+# Durable archive for EVERY paid API response. Output is streamed here as it
+# arrives (see sink.py) so killing a translate mid-run never discards work you
+# already paid for. NEVER /tmp — this lives in-repo (gitignored) so the copy
+# survives reboots, tmp-reaping, and process kills. RUSTCONV_RESPONSES_DIR can
+# be overridden via env for tests.
+RUSTCONV_RESPONSES_DIR = Path(
+    os.environ.get("RUSTCONV_RESPONSES_DIR", str(TOOLS_DIR / ".responses"))
+)
 
 # ntkrnl-sys source files
 BINDGEN_FILES = {
@@ -217,6 +251,54 @@ TARGETS = {
         cmake_deps_file=None,
         cmake_source_files=[],
         arches=("i386",),
+    ),
+    # kdgdb — the GDB-stub KD transport (sibling of kdcom). Kernel-mode
+    # driver: walks EPROCESS/ETHREAD lists, reads CONTEXT/KTRAP_FRAME, speaks
+    # the windbgkd packet protocol — all kernel types from BINDGEN_FILES, so
+    # the kernel/freeldr prompt + ntkrnl_sys substrate (same as kdcom). Same
+    # 8-export kddll ABI. i386+amd64 only (i386_sup.c/amd64_sup.c; no arm64).
+    "kdgdb": Target(
+        name="kdgdb",
+        source_dir=KDGDB_DIR,
+        output_crate=RUST_DIR / "kdgdb-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KDGDB_DIR / "kdgdb.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64"),
+    ),
+    # serial kdcom — classic NS16550 serial KD transport (sibling of kdgdb).
+    # Same 8-export kddll spec, cportlib serial substrate (= cport-rust).
+    "kdcom-serial": Target(
+        name="kdcom-serial",
+        source_dir=KDCOM_SERIAL_DIR,
+        output_crate=RUST_DIR / "kdcom-serial-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KDCOM_SERIAL_DIR / "kdcom.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64"),
+    ),
+    # kdvm — VirtualBox KD transport (builds kdvbox.dll). KdVmExchange asm
+    # handled in-crate as global_asm!.
+    "kdvm": Target(
+        name="kdvm",
+        source_dir=KDVM_DIR,
+        output_crate=RUST_DIR / "kdvm-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=KDVM_DIR / "kdvm.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt_freeldr.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64"),
     ),
     "bootvid": Target(
         name="bootvid",
@@ -466,6 +548,12 @@ def detect_target(c_path: Path) -> Target:
     posix = p.as_posix()
     if "/drivers/base/kdrosdbg" in posix:
         return TARGETS["kdcom"]
+    if "/drivers/base/kdgdb" in posix:
+        return TARGETS["kdgdb"]
+    if "/drivers/base/kdvm" in posix:
+        return TARGETS["kdvm"]
+    if "/drivers/base/kdcom" in posix:
+        return TARGETS["kdcom-serial"]
     if "/drivers/base/bootvid" in posix:
         return TARGETS["bootvid"]
     if "/boot/freeldr/" in posix:
@@ -507,7 +595,64 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["win32k"]
     if "/hal/halx86" in posix or posix.endswith("/hal") or "/hal/" in posix:
         return TARGETS["hal"]
-    return TARGETS["ntoskrnl"]
+    # ntoskrnl was previously the silent catch-all; make it an EXPLICIT match so
+    # the fallback below can be a hard error instead of misrouting to ntoskrnl.
+    if "/ntoskrnl/" in posix or posix.endswith("/ntoskrnl"):
+        return TARGETS["ntoskrnl"]
+    # Standalone user-mode DLLs (dll/win32/<name>/, dll/<name>/) → <name>-rust,
+    # auto-derived from the path. (ntdll is matched earlier.) This is what keeps
+    # e.g. dll/win32/mscms from silently landing in ntoskrnl-rust.
+    dll = _dll_crate_from_path(posix)
+    if dll:
+        return make_user_dll_target(*dll)
+    # No more silent ntoskrnl fallback: an unrecognized path is an ERROR — pass
+    # --target <known> or place the file under a known root. (Misrouting paid
+    # translations into the wrong crate is the bug this prevents.)
+    raise ValueError(
+        f"rustconv: cannot auto-detect a target for {p}. Pass --target <name> "
+        f"(known: {', '.join(sorted(TARGETS))}) or move the file under a known root."
+    )
+
+
+def _dll_crate_from_path(posix: str):
+    """For a path under dll/, return (crate_name, source_dir) using the convention
+    dll/win32/<name>/ → <name>-rust (or dll/<name>/ → <name>-rust). Else None."""
+    parts = posix.split("/")
+    if "dll" not in parts:
+        return None
+    rest = parts[parts.index("dll") + 1:]
+    if not rest:
+        return None
+    if rest[0] == "win32" and len(rest) >= 2:
+        name, sub = rest[1], ("dll", "win32", rest[1])
+    else:
+        name, sub = rest[0], ("dll", rest[0])
+    if not re.fullmatch(r"[A-Za-z0-9_]+", name):
+        return None
+    return name, REACTOS_ROOT.joinpath(*sub)
+
+
+def make_user_dll_target(name: str, source_dir: Path) -> "Target":
+    """A self-contained user-mode-DLL target (modeled on userinit/winlogon):
+    output to sdk/lib/rust/<name>-rust, ntdll_sys substrate (provides the NT/Rtl
+    types Wine code uses via winternl; Win32 APIs get forward-declared by the
+    mechanical prompt). Used for standalone dll/win32/* DLLs not in TARGETS."""
+    return Target(
+        name=name,
+        source_dir=source_dir,
+        output_crate=RUST_DIR / f"{name}-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    )
 
 
 def hal_cmake_for_c(c_path: Path) -> Path | None:
@@ -564,11 +709,72 @@ GEMINI_CMD = "gemini"
 GEMINI_MODEL = "gemini-2.5-pro"
 GEMINI_MAX_TOKENS = 65536
 
+# DeepSeek (OpenAI-compatible API). deepseek-chat = V3, deepseek-reasoner = R1.
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODEL_CHAT = "deepseek-chat"
+DEEPSEEK_MODEL_REASONER = "deepseek-reasoner"
+# Output-token budget. v4 models are REASONING models: reasoning tokens are
+# drawn from this same budget before any code `content` is emitted. At 8192 a
+# large unit (e.g. a file-scope type preamble with many structs/COM vtables)
+# could have its entire budget consumed by reasoning, yielding EMPTY content —
+# which silently wiped the mlang/cabinet_main preambles. A large type preamble
+# (mlang's is ~30K C chars of structs/COM vtables) needs reasoning + a big code
+# body in one call; 16384 still truncated it. 32768 fits both (DeepSeek reasoner
+# allows up to 64K output). The empty/truncation guards in batch_runner turn any
+# remaining overflow into a loud, retriable failure (never a silent drop).
+DEEPSEEK_MAX_TOKENS = 32768
+
 # Default model per backend
 DEFAULT_MODELS = {
     "claude": CLAUDE_MODEL_SONNET,
     "gemini": GEMINI_MODEL,
 }
+
+# FULL (synchronous) list price per 1M tokens, USD: (input, output).
+# rustconv's `translate` / `submit` / `probe-migrate` are SYNCHRONOUS calls and
+# pay THESE prices — NOT the 50%-off batch price. The old estimator quoted only
+# batch Sonnet ($1.50/$7.50); when you run `translate -m opus` you actually pay
+# the Opus row below, per call, once per function. That mismatch is why a "$1"
+# estimate turned into $15. Keep these current via the claude-api skill.
+# Verified 2026-06-06 against the claude-api skill model table.
+MODEL_PRICING = {
+    "claude-opus-4-8":             (5.00, 25.00),
+    "claude-opus-4-7":             (5.00, 25.00),
+    "claude-opus-4-6":             (5.00, 25.00),
+    "claude-opus-4-5-20251101":    (5.00, 25.00),
+    "claude-sonnet-4-6":           (3.00, 15.00),
+    "claude-sonnet-4-5-20250929":  (3.00, 15.00),
+    "claude-haiku-4-5-20251001":   (1.00,  5.00),
+    "gemini-2.5-pro":              (1.25, 10.00),
+    "gemini-2.5-flash":            (0.30,  2.50),
+    # DeepSeek list prices (USD/1M, cache-miss). Server-side context caching
+    # makes repeated prefixes far cheaper (cache-hit input ~$0.07/1M), so these
+    # are a ceiling for the per-function re-send cost, not the typical bill.
+    "deepseek-chat":               (0.27,  1.10),
+    "deepseek-reasoner":           (0.55,  2.19),
+    # v4 tier (cache-miss list prices; server-side caching makes the real bill far
+    # lower on agentic re-sends — ~99% cache hit). Approximate; dashboard is truth.
+    "deepseek-v4-pro":             (0.28,  1.10),
+    "deepseek-v4-flash":           (0.14,  0.55),
+}
+# Anthropic Message Batches API runs at 50% of the list prices above. The
+# synchronous `translate`/`submit` path does NOT get this discount.
+BATCH_DISCOUNT = 0.5
+
+
+def model_pricing(model: str) -> tuple[float, float]:
+    """(input, output) $/1M for a model id. Falls back to Opus (the most
+    expensive tier) when unknown — so an unrecognized model OVER-estimates
+    rather than lulling you with a lowball."""
+    return MODEL_PRICING.get(model, MODEL_PRICING["claude-opus-4-8"])
+
+
+def cost_usd(model: str, input_tokens: int, output_tokens: int,
+             batch: bool = False) -> float:
+    """USD cost for a single call. batch=True applies the 50% batch discount."""
+    pin, pout = model_pricing(model)
+    cost = input_tokens * pin / 1_000_000 + output_tokens * pout / 1_000_000
+    return cost * (BATCH_DISCOUNT if batch else 1.0)
 
 # Arch mappings
 ARCH_MAP = {

@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 // CsrPortHeap is the csrlib file-scope global, *defined* in connect.c
 // (`HANDLE CsrPortHeap;`). connect.rs owns the definition.
@@ -8,11 +7,7 @@ extern "system" {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrProbeForRead(
-    Address: PVOID,
-    Length: ULONG,
-    Alignment: ULONG,
-) {
+pub unsafe extern "system" fn CsrProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG) {
     let mut Pointer: *mut u8;
     let mut Data: u8;
 
@@ -33,11 +28,7 @@ pub unsafe extern "system" fn CsrProbeForRead(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrProbeForWrite(
-    Address: PVOID,
-    Length: ULONG,
-    Alignment: ULONG,
-) {
+pub unsafe extern "system" fn CsrProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG) {
     let mut Pointer: *mut u8;
 
     if Length == 0 {
@@ -71,29 +62,31 @@ pub unsafe extern "system" fn CsrAllocateCaptureBuffer(
 
     OffsetsArraySize = ArgumentCount * core::mem::size_of::<ULONG_PTR>() as ULONG;
 
-    MaximumSize = ((MAXLONG as ULONG) & !3) - 
-        (core::mem::offset_of!(_CSR_CAPTURE_BUFFER, PointerOffsetsArray) as ULONG);
-    
+    MaximumSize = ((MAXLONG as ULONG) & !3)
+        - (core::mem::offset_of!(_CSR_CAPTURE_BUFFER, PointerOffsetsArray) as ULONG);
+
     if OffsetsArraySize >= MaximumSize {
         return core::ptr::null_mut();
     }
     MaximumSize -= OffsetsArraySize;
-    
+
     if BufferSize >= MaximumSize {
         return core::ptr::null_mut();
     }
     MaximumSize -= BufferSize;
-    
+
     if (ArgumentCount * 3) + 3 >= MaximumSize {
         return core::ptr::null_mut();
     }
 
-    total_size = core::mem::offset_of!(_CSR_CAPTURE_BUFFER, PointerOffsetsArray) as ULONG +
-                 OffsetsArraySize + BufferSize;
+    total_size = core::mem::offset_of!(_CSR_CAPTURE_BUFFER, PointerOffsetsArray) as ULONG
+        + OffsetsArraySize
+        + BufferSize;
     total_size += ArgumentCount * 3;
     total_size = (total_size + 3) & !3;
 
-    CaptureBuffer = RtlAllocateHeap(CsrPortHeap, HEAP_ZERO_MEMORY, total_size as SIZE_T) as PCSR_CAPTURE_BUFFER;
+    CaptureBuffer =
+        RtlAllocateHeap(CsrPortHeap, HEAP_ZERO_MEMORY, total_size as SIZE_T) as PCSR_CAPTURE_BUFFER;
     if CaptureBuffer.is_null() {
         return core::ptr::null_mut();
     }
@@ -107,9 +100,9 @@ pub unsafe extern "system" fn CsrAllocateCaptureBuffer(
         OffsetsArraySize as usize,
     );
 
-    (*CaptureBuffer).BufferEnd = 
-        (core::ptr::addr_of_mut!((*CaptureBuffer).PointerOffsetsArray) as ULONG_PTR + 
-         OffsetsArraySize as ULONG_PTR) as PVOID;
+    (*CaptureBuffer).BufferEnd = (core::ptr::addr_of_mut!((*CaptureBuffer).PointerOffsetsArray)
+        as ULONG_PTR
+        + OffsetsArraySize as ULONG_PTR) as PVOID;
 
     CaptureBuffer
 }
@@ -125,7 +118,7 @@ pub unsafe extern "system" fn CsrAllocateMessagePointer(
     if MessageLength == 0 {
         *CapturedData = core::ptr::null_mut();
         let CapturedData = core::ptr::null_mut::<PVOID>();
-        (*CaptureBuffer).PointerOffsetsArray[(*CaptureBuffer).PointerCount as usize] = 
+        (*CaptureBuffer).PointerOffsetsArray[(*CaptureBuffer).PointerCount as usize] =
             CapturedData as ULONG_PTR;
         (*CaptureBuffer).PointerCount += 1;
         return 0;
@@ -138,11 +131,11 @@ pub unsafe extern "system" fn CsrAllocateMessagePointer(
 
         aligned_length = (MessageLength + 3) & !3;
 
-        (*CaptureBuffer).BufferEnd = 
+        (*CaptureBuffer).BufferEnd =
             ((*CaptureBuffer).BufferEnd as ULONG_PTR + aligned_length as ULONG_PTR) as PVOID;
     }
 
-    (*CaptureBuffer).PointerOffsetsArray[(*CaptureBuffer).PointerCount as usize] = 
+    (*CaptureBuffer).PointerOffsetsArray[(*CaptureBuffer).PointerCount as usize] =
         CapturedData as ULONG_PTR;
     (*CaptureBuffer).PointerCount += 1;
 
@@ -166,9 +159,7 @@ pub unsafe extern "system" fn CsrCaptureMessageBuffer(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrFreeCaptureBuffer(
-    CaptureBuffer: PCSR_CAPTURE_BUFFER,
-) {
+pub unsafe extern "system" fn CsrFreeCaptureBuffer(CaptureBuffer: PCSR_CAPTURE_BUFFER) {
     RtlFreeHeap(CsrPortHeap, 0, CaptureBuffer as PVOID);
 }
 
@@ -216,7 +207,9 @@ pub unsafe extern "system" fn CsrCaptureMessageString(
     }
 
     if ((*CapturedString).Length as ULONG) < (*CapturedString).MaximumLength as ULONG {
-        *((*CapturedString).Buffer.add((*CapturedString).Length as usize)) = 0i8;
+        *((*CapturedString)
+            .Buffer
+            .add((*CapturedString).Length as usize)) = 0i8;
     }
 }
 
@@ -233,8 +226,13 @@ pub unsafe extern "system" fn CsrCaptureMessageUnicodeStringInPlace(
         String as PSTRING,
     );
 
-    if ((*String).Length as ULONG) + core::mem::size_of::<WCHAR>() as ULONG <= (*String).MaximumLength as ULONG {
-        *((*String).Buffer.add(((*String).Length as ULONG / core::mem::size_of::<WCHAR>() as ULONG) as usize)) = 0u16;
+    if ((*String).Length as ULONG) + core::mem::size_of::<WCHAR>() as ULONG
+        <= (*String).MaximumLength as ULONG
+    {
+        *((*String)
+            .Buffer
+            .add(((*String).Length as ULONG / core::mem::size_of::<WCHAR>() as ULONG) as usize)) =
+            0u16;
     }
 }
 
@@ -254,7 +252,7 @@ pub unsafe extern "system" fn CsrCaptureMessageMultiUnicodeStringsInPlace(
     if (*CaptureBuffer).is_null() {
         Size = 0;
         Count = 0;
-        
+
         while Count < StringsCount {
             let str_ptr = *MessageStrings.add(Count as usize);
             if !str_ptr.is_null() {
@@ -293,7 +291,6 @@ pub unsafe extern "system" fn CsrCaptureTimeout(
     (*Timeout).QuadPart = (Milliseconds as i64) * -10000i64;
     Timeout
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

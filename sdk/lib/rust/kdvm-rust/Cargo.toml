@@ -1,0 +1,16 @@
+# kdvm-rust — Rust translation of the VirtualBox KD transport
+# (drivers/base/kdvm: kdvm.c + kdvbox.c, builds kdvbox.dll). Same 8-symbol
+# kddll spec. The tiny KdVmExchange asm (VBox backdoor port I/O) is rendered
+# in-crate as global_asm!. _WINKD_-only, never built on the default llvm-mingw
+# build; validated standalone via `cargo build -p kdvm-rust`. i386 + amd64.
+
+[package]
+name = "kdvm-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

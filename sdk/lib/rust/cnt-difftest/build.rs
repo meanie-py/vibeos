@@ -54,6 +54,21 @@ fn main() {
             "#define _strtoi64 ru_si\n#define _strtoi64_l ru_si_l\n{}#undef ULONG_MAX\n#define ULONG_MAX 0xFFFFFFFFLL\n#define strtoul ru_strtoul_real\n#define _strtoul_l ru_strtoul_l_real\n{}unsigned int ref_strtoul(const char*n,char**e,int b){{return (unsigned int)ru_strtoul_real(n,e,b);}}\n",
             inc(s("string/strtoi64.c")), inc(s("string/strtoul.c")))),
         ("strstr", format!("#define strstr ref_strstr\n{}", inc(s("string/strstr.c")))),
+        // Wave WCS — the kernel (_LIBCNT_) slice of string/wcs.c: 8 pure
+        // wide leaves. Transcribed VERBATIM from wcs.c with the _LIBCNT_
+        // macro reductions (CHECK_PMT→cond, INVALID_PMT→no-op, no errno)
+        // and wchar_t→unsigned short (host wchar is 32-bit). Faithful to
+        // the genuine bodies; EINVAL/ERANGE/STRUNCATE/_TRUNCATE inlined.
+        ("wcs", "#include <string.h>\ntypedef unsigned short WCH;\n\
+            static unsigned long wl(const WCH*s){unsigned long n=0;while(s[n])n++;return n;}\n\
+            WCH* ref__wcsnset(WCH*str,WCH c,unsigned long n){WCH*ret=str;while((n-->0)&&*str)*str++=c;return ret;}\n\
+            WCH* ref__wcsrev(WCH*str){WCH*ret=str;WCH*end=str+wl(str)-1;while(end>str){WCH t=*end;*end--=*str;*str++=t;}return ret;}\n\
+            int ref_wcscoll(const WCH*a,const WCH*b){while(*a&&(*a==*b)){a++;b++;}return (int)*a-(int)*b;}\n\
+            WCH* ref_wcspbrk(const WCH*str,const WCH*acc){const WCH*p;while(*str){for(p=acc;*p;p++)if(*p==*str)return (WCH*)str;str++;}return 0;}\n\
+            int ref_wcscpy_s(WCH*d,unsigned long num,const WCH*sr){unsigned long sz;if(!d||!num)return 22;d[0]=0;if(!sr)return 22;sz=wl(sr)+1;if(sz>num)return 34;memcpy(d,sr,sz*sizeof(WCH));return 0;}\n\
+            int ref_wcsncpy_s(WCH*d,unsigned long num,const WCH*sr,unsigned long cnt){unsigned long sz;if(!d||!num)return 22;d[0]=0;if(!sr)return 22;sz=wl(sr)<cnt?wl(sr):cnt;if(sz>=num)return 34;memcpy(d,sr,sz*sizeof(WCH));d[sz]=0;return 0;}\n\
+            int ref_wcscat_s(WCH*d,unsigned long elem,const WCH*sr){WCH*ptr=d;if(!d||elem==0)return 22;if(!sr){d[0]=0;return 22;}while(ptr<d+elem&&*ptr)ptr++;while(ptr<d+elem){if((*ptr++=*sr++)==0)return 0;}d[0]=0;return 34;}\n\
+            int ref_wcsncat_s(WCH*d,unsigned long elem,const WCH*sr,unsigned long cnt){unsigned long srclen,dststart;int ret=0;if(!(d!=0)||!(elem>0))return 22;if(!(sr!=0||cnt==0))return 22;if(cnt==0)return 0;for(dststart=0;dststart<elem;dststart++){if(d[dststart]==0)break;}if(dststart==elem)return 22;if(cnt==(unsigned long)-1){srclen=wl(sr);if(srclen>=(elem-dststart)){srclen=elem-dststart-1;ret=80;}}else srclen=wl(sr)<cnt?wl(sr):cnt;if(srclen<(elem-dststart)){memcpy(&d[dststart],sr,srclen*sizeof(WCH));d[dststart+srclen]=0;return ret;}d[0]=0;return 34;}\n".to_string()),
         ("atoi64", format!("#define _atoi64 ref_atoi64\n{}", inc(s("string/atoi64.c")))),
         ("memcpy", format!("#define __cdecl\n#define memcpy ref_memcpy\n{}", inc(s("mem/memcpy.c")))),
         ("memchr", format!("#define __cdecl\n#define memchr ref_memchr\n{}", inc(s("mem/memchr.c")))),
@@ -93,6 +108,16 @@ fn main() {
             "#define __cdecl\n#include <stdint.h>\n\
              #define qsort ref_qsort\n{}",
             inc(s("stdlib/qsort.c")))),
+        // Wave SEARCH — bsearch.c + lfind.c. Both pull <stdlib.h>; lfind
+        // additionally pulls <search.h>. Rename the public symbol so the
+        // host decl, the definition, and any internal call all become
+        // ref_<name> in this TU.
+        ("bsearch", format!(
+            "#define __cdecl\n#define bsearch ref_bsearch\n{}",
+            inc(s("search/bsearch.c")))),
+        ("lfind", format!(
+            "#define __cdecl\n#define _lfind ref_lfind\n{}",
+            inc(s("search/lfind.c")))),
         // atol = (long)_atoi64; skip atol.c's _atoldbl (needs _LDOUBLE).
         // Rename the helper so it doesn't collide with cnt-rust's own
         // #[no_mangle] `_atoi64` shim linked into this test binary.
@@ -610,6 +635,43 @@ fn main() {
         ("floor", "double ref_floor(double x){return __builtin_floor(x);}".to_string()),
         ("ceilf", "float ref_ceilf(float x){return __builtin_ceilf(x);}".to_string()),
         ("floorf", "float ref_floorf(float x){return __builtin_floorf(x);}".to_string()),
+        // Wave MATH-TIERC sub-wave 5: ldexp = the portable arm64/ldexp.c
+        // (== scalbn stepping); _logb/_logbf = the genuine arm64/logb.c (both
+        // MSVC-name funcs in one TU). Renamed to ref_*; bit-exact.
+        ("ldexp", format!("#include <math.h>\n#define ldexp ref_ldexp\n{}", inc(s("math/arm64/ldexp.c")))),
+        ("logb", format!("#include <math.h>\n#include <float.h>\n#define _logb ref__logb\n#define _logbf ref__logbf\n{}", inc(s("math/arm64/logb.c")))),
+        // Wave MATH-TIERC sub-wave 6: fabs/fabsf = the genuine portable
+        // math/fabs.c + math/fabsf.c (the same C arm64 ships and that amd64's
+        // asm mirrors). math.h FIRST so the rename hits only the definition;
+        // the host is x86-64 SysV so `_M_IX86` is undefined → fabs.c's i386
+        // error-bit branch is dead, matching the amd64/arm64 NaN-unchanged
+        // path. fabsf.c sets the quiet bit unconditionally. Renamed → ref_*.
+        ("fabs", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabs ref_fabs\n{}", inc(s("math/fabs.c")))),
+        ("fabsf", format!("#include <math.h>\n#define _Check_return_\n#define _In_\n#define __cdecl\n#define fabsf ref_fabsf\n{}", inc(s("math/fabsf.c")))),
+        // Wave MATH-TIERC sub-wave 7: modf = an exact integer/fraction split
+        // (no FP rounding). Self-contained C faithful to math/libm_sse2/modf.c
+        // (the GET/PUT_BITS_DP64 union-based bit moves inlined) so it needs
+        // none of the AMD libm.h headers. Exact ⇒ bit-exact vs the Rust.
+        ("modf", "double ref_modf(double x, double *iptr){\
+            union {double d; unsigned long long i;} u; long long xexp;\
+            unsigned long long ux, ax, mask;\
+            u.d = x; ux = u.i; ax = ux & 0x7fffffffffffffffULL;\
+            if (ax >= 0x4340000000000000ULL){\
+                if (ax > 0x7ff0000000000000ULL){ *iptr = x; return x + x; }\
+                *iptr = x; u.i = ux & 0x8000000000000000ULL; return u.d;\
+            } else if (ax < 0x3ff0000000000000ULL){\
+                u.i = ux & 0x8000000000000000ULL; *iptr = u.d; return x;\
+            }\
+            xexp = ((ux & 0x7ff0000000000000ULL) >> 52) - 1023;\
+            mask = 1; mask = (mask << (52 - xexp)) - 1;\
+            u.i = ux & ~mask; *iptr = u.d; return x - u.d;\
+        }".to_string()),
+        // Wave MATH-TIERC sub-wave 7: atan/atan2 = the genuine portable
+        // fdlibm math/arm64/{atan,atan2}.c (the algorithm flipped uniformly).
+        // Both compiled in ONE TU (atan.c first so ref_atan is defined before
+        // atan2.c's call). fabs stays host (bit-exact, only hit on the finite
+        // domain). Renamed → ref_atan / ref_atan2; bit-exact vs the Rust.
+        ("atan", format!("#include <math.h>\n#define atan ref_atan\n#define atan2 ref_atan2\n{}\n{}", inc(s("math/arm64/atan.c")), inc(s("math/arm64/atan2.c")))),
         // float-cvt Phase 2 — _ecvt has its own dedicated cc::Build
         // (`ecvt_build`, like scanf) because format_float casts to
         // `long double`: the SysV host default is 80-bit x87 which
@@ -767,6 +829,81 @@ fn main() {
     for obj in build.compile_intermediates() {
         redef(&obj);
     }
+
+    // Wave MATH-TIERC (sub-waves 8+): the amd64-only AMD-libm transcendentals
+    // (exp2/sinh/cosh/tanh/acos/asin/hypot) are compiled from their GENUINE
+    // math/libm_sse2/*.c against their own headers (real splitexp/scaleDouble
+    // + tables) — a non-circular reference for the Rust ports. Each renames
+    // its public symbol to ref_<name> (`#define <name> ref_<name>`, which the
+    // header's `FN_PROTOTYPE(name)→name` then re-expands). A tiny stubs.c
+    // supplies the value-only behavior of the externs the kernel no-ops:
+    // _handle_error returns from_bits(value); _invoke_matherr / _set_statfp
+    // are side-effect-free here. Built with -ffp-contract=off to match
+    // rustc's non-contracting codegen bit-for-bit.
+    let libm_dir = crt.join("math/libm_sse2");
+    let libm_units: Vec<(&str, String)> = vec![
+        // sub-wave 8. <math.h> FIRST so the rename hits only exp2.c's
+        // definition, not glibc's __MATHCALL_VEC(exp2,...) declaration.
+        ("exp2", format!("#include <math.h>\n#define exp2 ref_exp2\n{}", inc(libm_dir.join("exp2.c")))),
+        ("tanh", format!("#include <math.h>\n#define tanh ref_tanh\n{}", inc(libm_dir.join("tanh.c")))),
+        // sub-wave 9
+        ("sinh", format!("#include <math.h>\n#define sinh ref_sinh\n{}", inc(libm_dir.join("sinh.c")))),
+        ("cosh", format!("#include <math.h>\n#define cosh ref_cosh\n{}", inc(libm_dir.join("cosh.c")))),
+        // sub-wave 10
+        ("asin", format!("#include <math.h>\n#define asin ref_asin\n{}", inc(libm_dir.join("asin.c")))),
+        ("acos", format!("#include <math.h>\n#define acos ref_acos\n{}", inc(libm_dir.join("acos.c")))),
+        // sub-wave 11 (symbol is _hypot, the MS CRT name)
+        ("_hypot", format!("#include <math.h>\n#define _hypot ref__hypot\n{}", inc(libm_dir.join("hypot.c")))),
+        // sub-wave 12 (f32 twins; sincos checked directly vs ref_sin/ref_cos)
+        ("modff", format!("#include <math.h>\n#define modff ref_modff\n{}", inc(libm_dir.join("modff.c")))),
+        ("_hypotf", format!("#include <math.h>\n#define _hypotf ref__hypotf\n{}", inc(libm_dir.join("hypotf.c")))),
+        // sub-wave 13 (the f32 transcendental twins). Each pulls libm_inlines.h
+        // (real splitexpf/scaleFloat_2/__remainder_piby2f_inline + the f32 +
+        // atan(j/256) tables) via its own USE_* set — a non-circular reference.
+        ("acosf", format!("#include <math.h>\n#define acosf ref_acosf\n{}", inc(libm_dir.join("acosf.c")))),
+        ("asinf", format!("#include <math.h>\n#define asinf ref_asinf\n{}", inc(libm_dir.join("asinf.c")))),
+        ("atanf", format!("#include <math.h>\n#define atanf ref_atanf\n{}", inc(libm_dir.join("atanf.c")))),
+        ("sinhf", format!("#include <math.h>\n#define sinhf ref_sinhf\n{}", inc(libm_dir.join("sinhf.c")))),
+        ("coshf", format!("#include <math.h>\n#define coshf ref_coshf\n{}", inc(libm_dir.join("coshf.c")))),
+        ("tanhf", format!("#include <math.h>\n#define tanhf ref_tanhf\n{}", inc(libm_dir.join("tanhf.c")))),
+        ("tanf", format!("#include <math.h>\n#define tanf ref_tanf\n{}", inc(libm_dir.join("tanf.c")))),
+        ("atan2f", format!("#include <math.h>\n#define atan2f ref_atan2f\n{}", inc(libm_dir.join("atan2f.c")))),
+    ];
+    let libm_stubs = out.join("ref_libm_stubs.c");
+    fs::write(
+        &libm_stubs,
+        "double _handle_error(char*f,int o,unsigned long long v,int t,int fl,\
+           int e,double a,double b,int n){union{double d;unsigned long long u;}x;\
+           x.u=v;return x.d;}\n\
+         float _handle_errorf(char*f,int o,unsigned long long v,int t,int fl,\
+           int e,float a,float b,int n){union{float f;unsigned int u;}x;\
+           x.u=(unsigned int)v;return x.f;}\n\
+         int _invoke_matherr(int t,char*nm,double a,double b,double r){return 0;}\n\
+         void _set_statfp(unsigned int f){(void)f;}\n",
+    )
+    .unwrap();
+    let refstub_libm = manifest.join("refstub_libm");
+    println!("cargo:rerun-if-changed={}", refstub_libm.display());
+    let mut libm_build = cc::Build::new();
+    libm_build
+        .include(&refstub_libm)
+        .include(&libm_dir)
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-ffp-contract=off")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&libm_stubs);
+    for (sym, body) in &libm_units {
+        let w = out.join(format!("ref_{sym}.c"));
+        fs::write(&w, body).unwrap();
+        libm_build.file(&w);
+    }
+    for obj in libm_build.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+
     // Wave MATH-TIERB: ref_round/ref_roundf (genuine ReactOS round.c)
     // and cnt-rust's own `round`/`roundf` both call host `ceil`/`floor`/
     // `ceilf`/`floorf` — link libm so they resolve in the test binary.
@@ -850,6 +987,30 @@ fn main() {
         .cargo_metadata(false)
         .file(&ecvt_c);
     for obj in ecvt_build.compile_intermediates() {
+        redef(&obj);
+    }
+    // Wave STRTOD — strtod.c accumulates r/d in `long double` (80-bit
+    // x87 on the SysV host) → built `-mlong-double-64` so the reference
+    // uses 64-bit long double == the Windows ABI (amd64/arm64) == the
+    // cnt-rust f64 core. That pins the f64 SEMANTICS bit-exact; the
+    // documented i386 f80→f64 deviation is precisely the gap between
+    // this 64-bit reference and the OLD i386 f80 C (see strtod.rs).
+    // strtod.c pulls <precomp.h> via refstub; rename strtod→ref_strtod.
+    let strtod_body = format!(
+        "#define strtod ref_strtod\n#include <stddef.h>\n{}",
+        inc(s("string/strtod.c")));
+    let strtod_c = out.join("ref_strtod.c");
+    fs::write(&strtod_c, &strtod_body).unwrap();
+    let mut strtod_build = cc::Build::new();
+    strtod_build
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&strtod_c);
+    for obj in strtod_build.compile_intermediates() {
         redef(&obj);
     }
     // float-cvt Phase 3 — _gcvt/_gcvt_s. Pure `sprintf("%.*g")` →

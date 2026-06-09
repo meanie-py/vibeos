@@ -45,7 +45,8 @@ const OriginalApcEnvironment: u8 = 0;
 pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTSTATUS {
     let CurrentThread: PKTHREAD = KiGetCurrentThread();
 
-    let InitialStack: ULONG_PTR = ALIGN_DOWN_BY(CalloutFrame as ULONG_PTR, 16);
+    let TrapFrameSize = core::mem::size_of::<KTRAP_FRAME>() as ULONG_PTR;
+    let InitialStack: ULONG_PTR = ALIGN_DOWN_BY(CalloutFrame as ULONG_PTR, 16) - TrapFrameSize;
 
     if (InitialStack - KERNEL_STACK_SIZE) < (*CurrentThread).StackLimit as ULONG_PTR {
         let Status = MmGrowKernelStack(InitialStack as PVOID);
@@ -63,7 +64,7 @@ pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTS
     (*CurrentThread).CallbackStack = CalloutFrame as PVOID;
     (*CurrentThread).InitialStack = InitialStack as PVOID;
 
-    let CallbackTrapFrame: PKTRAP_FRAME = (InitialStack - core::mem::size_of::<KTRAP_FRAME>()) as PKTRAP_FRAME;
+    let CallbackTrapFrame: PKTRAP_FRAME = (InitialStack - TrapFrameSize) as PKTRAP_FRAME;
 
     // Snapshot the trap frame into the callback frame. A typed struct
     // assignment (`*dst = *src`) of this union-bearing KTRAP_FRAME was
@@ -84,7 +85,12 @@ pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTS
 
     (*CallbackTrapFrame).Pc = KeUserCallbackDispatcher as u64;
 
-    (*CallbackTrapFrame).Spsr &= !0xFu32;
+    (*CallbackTrapFrame).Spsr = 0;
+
+    (*CallbackTrapFrame).__bindgen_anon_3.X[0] = (*TrapFrame).__bindgen_anon_3.X[0];
+    (*CallbackTrapFrame).__bindgen_anon_3.X[1] = (*TrapFrame).__bindgen_anon_3.X[1];
+    (*CallbackTrapFrame).__bindgen_anon_3.X[2] = (*TrapFrame).__bindgen_anon_3.X[2];
+    (*CallbackTrapFrame).Sp = (*TrapFrame).Sp;
 
     (*CallbackTrapFrame).ExceptionActive = 1u8;
 
@@ -134,6 +140,7 @@ pub unsafe extern "system" fn KeUserModeCallback(
         (*TrapFrame).__bindgen_anon_3.X[0] = RoutineIndex as u64;
         (*TrapFrame).__bindgen_anon_3.X[1] = ArgBase as u64;
         (*TrapFrame).__bindgen_anon_3.X[2] = ArgumentLength as u64;
+        (*TrapFrame).Sp = ArgBase as u64;
     }
 
     *UserStackPointer = ArgBase;

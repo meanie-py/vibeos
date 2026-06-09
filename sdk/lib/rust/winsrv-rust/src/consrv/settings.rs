@@ -17,15 +17,20 @@ extern "C" {
 }
 
 extern "system" {
+    // NTSTATUS NTAPI — stdcall (`_ConDrvChangeScreenBufferAttributes@16` on i386).
     pub fn ConDrvChangeScreenBufferAttributes( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, NewScreenAttrib: u16, NewPopupAttrib: u16, ) -> i32;
-    pub fn HistoryReshapeAllBuffers( Console: PCONSRV_CONSOLE, HistoryBufferSize: u32, NumberOfHistoryBuffers: u32, HistoryNoDup: u32, );
 }
 // condrv flip: cdecl — Term* are term.rs vtbl wrappers; ConioResizeBuffer is
 // C plain-cdecl (NTSTATUS, no NTAPI). Match the extern "C" definitions.
+// HistoryReshapeAllBuffers is plain `VOID` in C (no NTAPI) → cdecl; its
+// definition in history.rs is `#[no_mangle] extern "C"` (`_HistoryReshapeAllBuffers`).
+// It was previously declared `extern "system"` here (`_..@16`), an ABI/decoration
+// mismatch that only linked via lld stdcall-fixup — now declared correctly.
 extern "C" {
     pub fn TermSetCodePage( Console: PCONSRV_CONSOLE, CodePage: u32, ) -> u8;
     pub fn TermResizeTerminal(Console: PCONSRV_CONSOLE);
     pub fn ConioResizeBuffer( Console: PCONSOLE, Buffer: PTEXTMODE_SCREEN_BUFFER, Size: COORD, ) -> i32;
+    pub fn HistoryReshapeAllBuffers( Console: PCONSRV_CONSOLE, HistoryBufferSize: u32, NumberOfHistoryBuffers: u32, HistoryNoDup: u32, );
 }
 
 #[no_mangle]

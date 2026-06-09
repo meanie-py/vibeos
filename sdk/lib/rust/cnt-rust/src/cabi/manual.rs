@@ -63,24 +63,24 @@ pub unsafe extern "C" fn _set_invalid_parameter_handler(handler: usize) -> usize
 // ABI slot is uniform) at the EXACT per-directive point the genuine
 // scanf.h does its `va_arg`. This mirrors genuine scanf.c, which is
 // itself a 4-line `va_start; vsscanf_l(); va_end` shell over the
-// engine. Phase 1: cnt_vsscanf/cnt_vswscanf (Phase 3 adds the _sn).
+// engine. All 4 (cnt_vsscanf/cnt_vswscanf/cnt_vsnscanf/cnt_vsnwscanf)
+// are present; the trampoline provides the matching sscanf/swscanf/
+// _snscanf/_snwscanf.
 // ===================================================================
 
-// The scanf cabi half rides the `float` feature: core_rs::scanf is
-// float-gated (it carries the f64 store_float path) so this whole
-// block is absent in a no-float (i386 kernel) build. The libcntpr
-// swap keeps C scanf.c anyway (PARTIAL — variadic), so nothing here
-// is needed by the kernel link.
-#[cfg(feature = "float")]
+// No longer `float`-gated: the engine + this cabi half are no-SSE-safe
+// (the float synth in store_float is pure f64 arithmetic + a memory
+// store — no by-value f64 register return), so scanf is the Rust
+// provider on ALL 3 arches (i386 included). libcntpr.cmake compiles
+// scanf_trampoline.c and REMOVE_ITEMs the C scanf.c — Rust owns
+// sscanf/swscanf/_snscanf/_snwscanf in the kernel.
 use crate::core_rs::scanf::{scanf_engine, IntWidth, Sink, TargetKind};
 
-#[cfg(feature = "float")]
 extern "C" {
     /// `void *cnt_va_next_ptr(va_list *ap)` — one `va_arg(*ap, void*)`.
     fn cnt_va_next_ptr(ap: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
 }
 
-#[cfg(feature = "float")]
 struct VaSink {
     ap: *mut core::ffi::c_void,
     tgt: *mut u8,
@@ -88,7 +88,6 @@ struct VaSink {
     wide: bool,
 }
 
-#[cfg(feature = "float")]
 impl Sink for VaSink {
     fn store_int(&mut self, w: IntWidth, value: u64) {
         let p = unsafe { cnt_va_next_ptr(self.ap) };
@@ -102,9 +101,12 @@ impl Sink for VaSink {
     }
     fn store_float(&mut self, negative: bool, exp: i32, d: u64, is_double: bool) {
         // Faithful to winesup.c::_internal_handle_float. Genuine uses
-        // x87 `long double`; Rust has only f64 — Phase 1 does NOT fuzz
-        // float (the long-double-vs-f64 parity question is owed,
-        // tracked for Phase 2; this path is wired but unexercised).
+        // x87 `long double`; this synth is f64 (no f80 in Rust) — pinned
+        // by cnt-difftest `diff_scanf_float` against the genuine logic
+        // built `-mlong-double-64` (long double == double == f64), so
+        // bit-exact on amd64/arm64 + the documented i386 f80 deviation
+        // (same "all-3 f64" call as strtod). No-SSE-safe: pure f64
+        // arithmetic + a memory store, no by-value f64 register return.
         let mut curv: f64 = 1.0;
         let mut expcnt: f64 = 10.0;
         let mut e = exp;
@@ -167,7 +169,6 @@ impl Sink for VaSink {
 
 /// `int sscanf(const char*, const char*, ...)` engine half — called by
 /// the C trampoline with the live `va_list*`. NUL-bounded input.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vsscanf(
     file: *const u8,
@@ -181,7 +182,6 @@ pub unsafe extern "C" fn cnt_vsscanf(
 }
 
 /// `int swscanf(const wchar_t*, const wchar_t*, ...)` engine half.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vswscanf(
     file: *const u16,
@@ -198,7 +198,6 @@ pub unsafe extern "C" fn cnt_vswscanf(
 /// Input is exactly `length` bytes (NOT NUL-bounded — `_snscanf` can
 /// read embedded NULs up to `length`); the engine's `has_len_limit`
 /// yields the genuine `consumed==length ? '\0'` (no advance) quirk.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vsnscanf(
     file: *const u8,
@@ -217,7 +216,6 @@ pub unsafe extern "C" fn cnt_vsnscanf(
 }
 
 /// `int _snwscanf(const wchar_t*, size_t, const wchar_t*, ...)` half.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn cnt_vsnwscanf(
     file: *const u16,
@@ -594,14 +592,13 @@ pub unsafe extern "C" fn __p___winitenv() -> *mut *mut *mut u16 {
 // precedent). The decimal arithmetic is core_rs::floatcvt.
 // ===================================================================
 
-// Float-cvt cabi (_fcvt/_ecvt/_gcvt/_gcvt_s) rides the `float`
-// feature: core_rs::floatcvt is float-gated and these signatures take
-// by-value `f64` (uncompilable on the no-SSE i386 kernel). Wrapped in
-// a feature-gated module — the inner `#[no_mangle]` symbols still
-// export normally; `pub use` re-exports for cabi/mod.rs `pub use
-// manual::*`. The libcntpr swap keeps C ecvt/fcvt/gcvt anyway (CRT-
-// only, no libcntpr .c), so the kernel link needs none of these.
-#[cfg(feature = "float")]
+// Float-cvt cabi (_fcvt/_ecvt/_gcvt/_gcvt_s). These take a by-value
+// `f64` ARG (fine no-SSE — it arrives on the stack) and RETURN a
+// `char*`, so they compile on the i386 no-SSE kernel now that
+// core_rs::floatcvt is unconditional (no `float` gate). `pub use`
+// re-exports for cabi/mod.rs `pub use manual::*`. _ecvt/_fcvt/_gcvt are
+// CRT-only (no libcntpr .c), so the kernel link doesn't pull them —
+// they ride along harmlessly + stay difftest-pinned on every config.
 mod floatcvt_cabi {
 use crate::core_rs::floatcvt as fcvt;
 
@@ -777,5 +774,4 @@ pub unsafe extern "C" fn _gcvt_s(
 }
 } // mod floatcvt_cabi
 
-#[cfg(feature = "float")]
 pub use floatcvt_cabi::*;

@@ -1,0 +1,259 @@
+use crate::shim::*;
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::driver_ddk::*;
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ddk::{CONTEXT, EXCEPTION_RECORD, PCONTEXT, PCSTR, PEXCEPTION_POINTERS, PEXCEPTION_RECORD, PRTLP_UNHANDLED_EXCEPTION_FILTER, PSZ, RtlCaptureContext, RtlDispatchException, RtlWalkFrameChain, ZwContinue, ZwRaiseException, _EXCEPTION_POINTERS};
+use core::ffi::c_void;
+
+extern "system" {
+    fn RtlEncodePointer(Ptr: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+}
+
+// ---- file-scope preamble (translated) ----
+pub static mut RtlpUnhandledExceptionFilter: PRTLP_UNHANDLED_EXCEPTION_FILTER = None;
+
+// exception.c guards this `#if !defined(_M_IX86) && !defined(_M_AMD64)`:
+// i386 + amd64 provide RtlRaiseException in arch asm/except.c; Rust = arm64.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "system" fn RtlRaiseException(ExceptionRecord: PEXCEPTION_RECORD) {
+    let mut Context: CONTEXT = core::mem::zeroed();
+    let Status: NTSTATUS;
+
+    RtlCaptureContext(&mut Context);
+
+    (*ExceptionRecord).ExceptionAddress = core::ptr::null_mut(); // _ReturnAddress() N/A in stable Rust (matches ntoskrnl-rust)
+
+    Context.ContextFlags = CONTEXT_FULL;
+
+    if RtlpCheckForActiveDebugger() != 0 {
+        Status = ZwRaiseException(ExceptionRecord, &mut Context, 1u8);
+    } else {
+        if RtlDispatchException(ExceptionRecord, &mut Context) == 0 {
+            Status = ZwRaiseException(ExceptionRecord, &mut Context, 0u8);
+        } else {
+            Status = ZwContinue(&mut Context, 0u8);
+        }
+    }
+
+    RtlRaiseStatus(Status);
+}
+
+// exception.c guards this `#if !defined(_M_IX86)`: i386 provides RtlRaiseStatus
+// in i386/except.c. Rust = amd64 + arm64.
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
+    let mut ExceptionRecord: EXCEPTION_RECORD = core::mem::zeroed();
+    let mut Context: CONTEXT = core::mem::zeroed();
+
+    RtlCaptureContext(&mut Context);
+
+    ExceptionRecord.ExceptionAddress = core::ptr::null_mut(); // _ReturnAddress() N/A in stable Rust
+    ExceptionRecord.ExceptionCode = Status;
+    ExceptionRecord.ExceptionRecord = core::ptr::null_mut();
+    ExceptionRecord.NumberParameters = 0;
+    ExceptionRecord.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
+
+    Context.ContextFlags = CONTEXT_FULL;
+
+    if RtlpCheckForActiveDebugger() != 0 {
+        ZwRaiseException(&mut ExceptionRecord, &mut Context, 1u8);
+    } else {
+        RtlDispatchException(&mut ExceptionRecord, &mut Context);
+
+        Status = ZwRaiseException(&mut ExceptionRecord, &mut Context, 0u8);
+    }
+
+    RtlRaiseStatus(Status);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlCaptureStackBackTrace(
+    mut FramesToSkip: u32,
+    FramesToCapture: u32,
+    BackTrace: *mut *mut core::ffi::c_void,
+    BackTraceHash: *mut u32,
+) -> u16 {
+    let mut Frames: [*mut core::ffi::c_void; 2 * 64] = [core::ptr::null_mut(); 2 * 64];
+    let FrameCount: u32;
+    let mut Hash: u32 = 0;
+    let mut i: u32;
+
+    /* Skip a frame for the caller */
+    FramesToSkip += 1;
+
+    /* Don't go past the limit */
+    if (FramesToCapture + FramesToSkip) >= 128 {
+        return 0;
+    }
+
+    /* Do the back trace */
+    FrameCount = RtlWalkFrameChain(Frames.as_mut_ptr(), FramesToCapture + FramesToSkip, 0);
+
+    /* Make sure we're not skipping all of them */
+    if FrameCount <= FramesToSkip {
+        return 0;
+    }
+
+    /* Loop all the frames */
+    i = 0;
+    while i < FramesToCapture {
+        /* Don't go past the limit */
+        if (FramesToSkip + i) >= FrameCount {
+            break;
+        }
+
+        /* Save this entry and hash it */
+        *BackTrace.offset(i as isize) = Frames[(FramesToSkip + i) as usize];
+        Hash += PtrToUlong(*BackTrace.offset(i as isize));
+
+        i += 1;
+    }
+
+    /* Write the hash */
+    if !BackTraceHash.is_null() {
+        core::ptr::write_volatile(BackTraceHash, Hash);
+    }
+
+    /* Clear the other entries and return count */
+    RtlFillMemoryUlong(Frames.as_mut_ptr() as *mut core::ffi::c_void, 128, 0);
+    i as u16
+}
+
+unsafe fn _module_name_from_addr(addr: *const core::ffi::c_void, module_start_addr: *mut *mut core::ffi::c_void, psz: *mut core::ffi::c_char, nChars: usize) -> *const core::ffi::c_char {
+    *psz.offset(0) = 0;
+    *module_start_addr = core::ptr::null_mut();
+    psz
+}
+
+unsafe fn _dump_context(pc: PCONTEXT) {
+    #[cfg(target_arch = "x86")]
+    {
+        DbgPrint(b"CS:EIP %x:%x\n\0".as_ptr() as PCSTR, ((*pc).SegCs & 0xffff) as u32, (*pc).Eip);
+        DbgPrint(b"DS %x ES %x FS %x GS %x\n\0".as_ptr() as PCSTR, ((*pc).SegDs & 0xffff) as u32, ((*pc).SegEs & 0xffff) as u32, ((*pc).SegFs & 0xffff) as u32, ((*pc).SegGs & 0xfff) as u32);
+        DbgPrint(b"EAX: %.8x   EBX: %.8x   ECX: %.8x\n\0".as_ptr() as PCSTR, (*pc).Eax, (*pc).Ebx, (*pc).Ecx);
+        DbgPrint(b"EDX: %.8x   EBP: %.8x   ESI: %.8x   ESP: %.8x\n\0".as_ptr() as PCSTR, (*pc).Edx, (*pc).Ebp, (*pc).Esi, (*pc).Esp);
+        DbgPrint(b"EDI: %.8x   EFLAGS: %.8x\n\0".as_ptr() as PCSTR, (*pc).Edi, (*pc).EFlags);
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        DbgPrint(b"CS:RIP %x:%I64x\n\0".as_ptr() as PCSTR, ((*pc).SegCs & 0xffff) as u32, (*pc).Rip);
+        DbgPrint(b"DS %x ES %x FS %x GS %x\n\0".as_ptr() as PCSTR, ((*pc).SegDs & 0xffff) as u32, ((*pc).SegEs & 0xffff) as u32, ((*pc).SegFs & 0xffff) as u32, ((*pc).SegGs & 0xfff) as u32);
+        DbgPrint(b"RAX: %I64x   RBX: %I64x   RCX: %I64x RDI: %I64x\n\0".as_ptr() as PCSTR, (*pc).Rax, (*pc).Rbx, (*pc).Rcx, (*pc).Rdi);
+        DbgPrint(b"RDX: %I64x   RBP: %I64x   RSI: %I64x   RSP: %I64x\n\0".as_ptr() as PCSTR, (*pc).Rdx, (*pc).Rbp, (*pc).Rsi, (*pc).Rsp);
+        DbgPrint(b"R8: %I64x   R9: %I64x   R10: %I64x   R11: %I64x\n\0".as_ptr() as PCSTR, (*pc).R8, (*pc).R9, (*pc).R10, (*pc).R11);
+        DbgPrint(b"R12: %I64x   R13: %I64x   R14: %I64x   R15: %I64x\n\0".as_ptr() as PCSTR, (*pc).R12, (*pc).R13, (*pc).R14, (*pc).R15);
+        DbgPrint(b"EFLAGS: %.8x\n\0".as_ptr() as PCSTR, (*pc).EFlags);
+    }
+}
+
+unsafe fn PrintStackTrace(ExceptionInfo: *mut _EXCEPTION_POINTERS) {
+    let mut StartAddr: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut szMod: [core::ffi::c_char; 128] = [0; 128];
+    let ExceptionRecord: PEXCEPTION_RECORD = (*ExceptionInfo).ExceptionRecord;
+    let ContextRecord: PCONTEXT = (*ExceptionInfo).ContextRecord;
+
+    DbgPrint(b"Unhandled exception\n\0".as_ptr() as PCSTR);
+    DbgPrint(b"ExceptionCode:    %8x\n\0".as_ptr() as PCSTR, (*ExceptionRecord).ExceptionCode);
+
+    if (*ExceptionRecord).ExceptionCode as i32 == STATUS_ACCESS_VIOLATION &&
+        (*ExceptionRecord).NumberParameters == 2
+    {
+        DbgPrint(b"Faulting Address: %8x\n\0".as_ptr() as PCSTR, (*ExceptionRecord).ExceptionInformation[1]);
+    }
+
+    if (*ExceptionRecord).ExceptionCode == 0x80000100u32 as i32 &&
+        (*ExceptionRecord).NumberParameters == 2
+    {
+        DbgPrint(
+            b"Missing function: %s!%s\n\0".as_ptr() as PCSTR,
+            (*ExceptionRecord).ExceptionInformation[0] as PSZ,
+            (*ExceptionRecord).ExceptionInformation[1] as PSZ,
+        );
+    }
+
+    _dump_context(ContextRecord);
+    _module_name_from_addr(
+        (*ExceptionRecord).ExceptionAddress,
+        core::ptr::addr_of_mut!(StartAddr),
+        szMod.as_mut_ptr(),
+        core::mem::size_of::<[core::ffi::c_char; 128]>(),
+    );
+    DbgPrint(
+        b"Address:\n   %8x+%-8x   %s\n\0".as_ptr() as PCSTR,
+        StartAddr,
+        ((*ExceptionRecord).ExceptionAddress as usize) - (StartAddr as usize),
+        szMod.as_ptr(),
+    );
+
+    #[cfg(target_arch = "x86")]
+    {
+        DbgPrint(b"Frames:\n\0".as_ptr() as PCSTR);
+
+        let mut i: u32 = 0;
+        let mut Frame: *mut u32 = (*ContextRecord).Ebp as *mut u32;
+
+        while *Frame.offset(1) != 0 && *Frame.offset(1) != 0xdeadbeef && i < 128 {
+            if *Frame.offset(1) == 0 {
+                DbgPrint(
+                    b"   %8x%9s   %s\n\0".as_ptr() as PCSTR,
+                    *Frame.offset(1),
+                    b"<invalid address>\0".as_ptr() as PCSTR,
+                    b" \0".as_ptr() as PCSTR,
+                );
+            } else {
+                _module_name_from_addr(
+                    *Frame.offset(1) as *const core::ffi::c_void,
+                    core::ptr::addr_of_mut!(StartAddr),
+                    szMod.as_mut_ptr(),
+                    core::mem::size_of::<[core::ffi::c_char; 128]>(),
+                );
+                DbgPrint(
+                    b"   %8x+%-8x   %s\n\0".as_ptr() as PCSTR,
+                    StartAddr,
+                    (*Frame.offset(1) as usize) - (StartAddr as usize),
+                    szMod.as_ptr(),
+                );
+            }
+
+            if *Frame.offset(0) == 0 {
+                break;
+            }
+
+            Frame = *Frame.offset(0) as *mut u32;
+            i += 1;
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnhandledExceptionFilter(
+    ExceptionInfo: PEXCEPTION_POINTERS,
+) -> LONG {
+    RtlUnhandledExceptionFilter2(ExceptionInfo, b"\0".as_ptr() as PCSTR)
+}
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnhandledExceptionFilter2(
+    ExceptionInfo: PEXCEPTION_POINTERS,
+    Function: PCSTR,
+) -> LONG {
+    PrintStackTrace(ExceptionInfo);
+
+    if (*(*ExceptionInfo).ExceptionRecord).ExceptionCode == STATUS_POSSIBLE_DEADLOCK {
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    EXCEPTION_CONTINUE_SEARCH
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlSetUnhandledExceptionFilter(
+    TopLevelExceptionFilter: PRTLP_UNHANDLED_EXCEPTION_FILTER,
+) {
+
+    RtlpUnhandledExceptionFilter = core::mem::transmute(RtlEncodePointer(
+        core::mem::transmute::<_, *mut core::ffi::c_void>(TopLevelExceptionFilter),
+    ));
+}

@@ -1,9 +1,8 @@
-
-use ntdll_sys::nt::*;
 use super::srv_inlines::*;
 use core::ffi::c_void;
+use ntdll_sys::nt::*;
 #[no_mangle]
-pub static mut CsrLoadedServerDll: [PCSR_SERVER_DLL; CSR_SERVER_DLL_MAX as usize] = 
+pub static mut CsrLoadedServerDll: [PCSR_SERVER_DLL; CSR_SERVER_DLL_MAX as usize] =
     [core::ptr::null_mut(); CSR_SERVER_DLL_MAX as usize];
 #[no_mangle]
 pub static mut CsrSrvSharedSectionHeap: PVOID = core::ptr::null_mut();
@@ -24,13 +23,15 @@ static mut CsrSrvSharedSection: HANDLE = core::ptr::null_mut();
 // directly (system-ABI fn-ptr -> stdcall-ABI Option<fn-ptr>; same
 // size + ABI on i386, const-safe — no ptr->int cast).
 type SrvFn = unsafe extern "system" fn(PCSR_API_MESSAGE, *mut CSR_REPLY_CODE) -> NTSTATUS;
-static CsrServerApiDispatchTable: [PCSR_API_ROUTINE; 5] = unsafe { [
-    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvClientConnect),
-    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvUnusedFunction),
-    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvUnusedFunction),
-    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvIdentifyAlertableThread),
-    core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvSetPriorityClass),
-] };
+static CsrServerApiDispatchTable: [PCSR_API_ROUTINE; 5] = unsafe {
+    [
+        core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvClientConnect),
+        core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvUnusedFunction),
+        core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvUnusedFunction),
+        core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvIdentifyAlertableThread),
+        core::mem::transmute::<SrvFn, PCSR_API_ROUTINE>(CsrSrvSetPriorityClass),
+    ]
+};
 
 static CsrServerApiServerValidTable: [BOOLEAN; 5] = [1, 0, 0, 1, 1];
 
@@ -95,13 +96,32 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     }
 
     if ServerId != CSRSRV_SERVERDLL_INDEX {
-        Status = LdrLoadDll(core::ptr::null_mut(), core::ptr::null_mut(), &mut TempString, &mut hServerDll);
+        Status = LdrLoadDll(
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            &mut TempString,
+            &mut hServerDll,
+        );
         if Status < 0 {
             static ERROR_PATH: [u16; 18] = [
-                b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16,
-                b'l' as u16, b't' as u16, b' ' as u16, b'L' as u16, b'o' as u16,
-                b'a' as u16, b'd' as u16, b' ' as u16, b'P' as u16, b'a' as u16,
-                b't' as u16, b'h' as u16, 0,
+                b'D' as u16,
+                b'e' as u16,
+                b'f' as u16,
+                b'a' as u16,
+                b'u' as u16,
+                b'l' as u16,
+                b't' as u16,
+                b' ' as u16,
+                b'L' as u16,
+                b'o' as u16,
+                b'a' as u16,
+                b'd' as u16,
+                b' ' as u16,
+                b'P' as u16,
+                b'a' as u16,
+                b't' as u16,
+                b'h' as u16,
+                0,
             ];
 
             Parameters[0] = &TempString as *const _ as ULONG_PTR;
@@ -127,7 +147,11 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     }
 
     Size = core::mem::size_of::<CSR_SERVER_DLL>() as ULONG + DllName.MaximumLength as ULONG;
-    ServerDll = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Size as usize).try_into().unwrap()) as PCSR_SERVER_DLL;
+    ServerDll = RtlAllocateHeap(
+        CsrHeap,
+        HEAP_ZERO_MEMORY,
+        (Size as usize).try_into().unwrap(),
+    ) as PCSR_SERVER_DLL;
     if ServerDll.is_null() {
         if !hServerDll.is_null() {
             LdrUnloadDll(hServerDll);
@@ -140,7 +164,8 @@ pub unsafe extern "system" fn CsrLoadServerDll(
     (*ServerDll).SharedSection = CsrSrvSharedSectionHeap;
     (*ServerDll).Name.Length = DllName.Length;
     (*ServerDll).Name.MaximumLength = DllName.MaximumLength;
-    (*ServerDll).Name.Buffer = (ServerDll as usize + core::mem::size_of::<CSR_SERVER_DLL>()) as *mut i8;
+    (*ServerDll).Name.Buffer =
+        (ServerDll as usize + core::mem::size_of::<CSR_SERVER_DLL>()) as *mut i8;
     if DllName.Length != 0 {
         core::ptr::copy_nonoverlapping(
             DllName.Buffer as *const u8,
@@ -195,7 +220,8 @@ pub unsafe extern "system" fn CsrLoadServerDll(
             CsrLoadedServerDll[(*ServerDll).ServerId as usize] = ServerDll;
 
             if (*ServerDll).SharedSection != CsrSrvSharedSectionHeap {
-                *CsrSrvSharedStaticServerData.add((*ServerDll).ServerId as usize) = (*ServerDll).SharedSection;
+                *CsrSrvSharedStaticServerData.add((*ServerDll).ServerId as usize) =
+                    (*ServerDll).SharedSection;
             }
         }
     }
@@ -215,19 +241,30 @@ pub unsafe extern "system" fn CsrSrvClientConnect(
     ApiMessage: PCSR_API_MESSAGE,
     ReplyCode: *mut CSR_REPLY_CODE,
 ) -> NTSTATUS {
-    let ClientConnect = &mut (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data.CsrClientConnect;
+    let ClientConnect = &mut (*ApiMessage)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .Data
+        .CsrClientConnect;
     let ServerDll: PCSR_SERVER_DLL;
     let CurrentProcess: PCSR_PROCESS = (*CsrGetClientThread()).Process;
 
     *ReplyCode = CsrReplyImmediately;
 
-    DbgPrint(b"[CSRSRV] CliCon: ServerId=%lu InfoSize=%lu\n\0".as_ptr() as *const i8, ClientConnect.ServerId, ClientConnect.ConnectionInfoSize);
+    crate::dbg_print!(
+        b"[CSRSRV] CliCon: ServerId=%lu InfoSize=%lu\n\0",
+        ClientConnect.ServerId,
+        ClientConnect.ConnectionInfoSize
+    );
 
     if ClientConnect.ServerId >= CSR_SERVER_DLL_MAX {
-        DbgPrint(b"[CSRSRV] CliCon: ServerId>=MAX rejecting\n\0".as_ptr() as *const i8);
+        crate::dbg_print!(b"[CSRSRV] CliCon: ServerId>=MAX rejecting\n\0");
         return STATUS_TOO_MANY_NAMES;
     } else if CsrLoadedServerDll[ClientConnect.ServerId as usize].is_null() {
-        DbgPrint(b"[CSRSRV] CliCon: ServerDll[%lu] NULL\n\0".as_ptr() as *const i8, ClientConnect.ServerId);
+        crate::dbg_print!(
+            b"[CSRSRV] CliCon: ServerDll[%lu] NULL\n\0",
+            ClientConnect.ServerId
+        );
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -257,9 +294,7 @@ pub unsafe extern "system" fn CsrSrvClientConnect(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrSrvCreateSharedSection(
-    ParameterValue: *mut i8,
-) -> NTSTATUS {
+pub unsafe extern "system" fn CsrSrvCreateSharedSection(ParameterValue: *mut i8) -> NTSTATUS {
     let mut SizeValue = ParameterValue;
     let mut Size: ULONG = 0;
     let mut Status: NTSTATUS;
@@ -292,7 +327,8 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(
         return Status;
     }
 
-    CsrSrvSharedSectionSize = ((Size * 1024 + CsrNtSysInfo.PageSize - 1) / CsrNtSysInfo.PageSize) * CsrNtSysInfo.PageSize;
+    CsrSrvSharedSectionSize =
+        ((Size * 1024 + CsrNtSysInfo.PageSize - 1) / CsrNtSysInfo.PageSize) * CsrNtSysInfo.PageSize;
 
     SectionSize.QuadPart = CsrSrvSharedSectionSize as i64;
     Status = NtCreateSection(
@@ -345,7 +381,9 @@ pub unsafe extern "system" fn CsrSrvCreateSharedSection(
     CsrSrvSharedStaticServerData = RtlAllocateHeap(
         CsrSrvSharedSectionHeap,
         HEAP_ZERO_MEMORY,
-        (CSR_SERVER_DLL_MAX as usize * core::mem::size_of::<PVOID>()).try_into().unwrap(),
+        (CSR_SERVER_DLL_MAX as usize * core::mem::size_of::<PVOID>())
+            .try_into()
+            .unwrap(),
     ) as *mut PVOID;
     if CsrSrvSharedStaticServerData.is_null() {
         return STATUS_NO_MEMORY;
@@ -422,8 +460,7 @@ pub unsafe extern "system" fn CsrSrvUnusedFunction(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CsrSetCallingSpooler(_Reserved: ULONG) {
-}
+pub unsafe extern "system" fn CsrSetCallingSpooler(_Reserved: ULONG) {}
 
 #[no_mangle]
 pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
@@ -458,16 +495,32 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
             if Status < 0 {
                 NtTerminateProcess(
                     NtCurrentProcess(),
-                    (*(*ExceptionInfo).ExceptionRecord).ExceptionCode.try_into().unwrap(),
+                    (*(*ExceptionInfo).ExceptionRecord)
+                        .ExceptionCode
+                        .try_into()
+                        .unwrap(),
                 );
                 return Result;
             }
 
             static WINDOWS_SUBSYSTEM: [u16; 17] = [
-                b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16,
-                b'w' as u16, b's' as u16, b' ' as u16, b'S' as u16, b'u' as u16,
-                b'b' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16,
-                b'e' as u16, b'm' as u16,
+                b'W' as u16,
+                b'i' as u16,
+                b'n' as u16,
+                b'd' as u16,
+                b'o' as u16,
+                b'w' as u16,
+                b's' as u16,
+                b' ' as u16,
+                b'S' as u16,
+                b'u' as u16,
+                b'b' as u16,
+                b'S' as u16,
+                b'y' as u16,
+                b's' as u16,
+                b't' as u16,
+                b'e' as u16,
+                b'm' as u16,
             ];
             ErrorSource.Length = 34;
             ErrorSource.MaximumLength = 34;
@@ -490,13 +543,15 @@ pub unsafe extern "system" fn CsrUnhandledExceptionFilter(
 
         NtTerminateProcess(
             NtCurrentProcess(),
-            (*(*ExceptionInfo).ExceptionRecord).ExceptionCode.try_into().unwrap(),
+            (*(*ExceptionInfo).ExceptionRecord)
+                .ExceptionCode
+                .try_into()
+                .unwrap(),
         );
     }
 
     Result
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

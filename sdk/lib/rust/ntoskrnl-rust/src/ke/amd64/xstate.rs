@@ -177,9 +177,11 @@ unsafe fn KiGetXStateConfiguration(XStateConfig: PXSTATE_CONFIGURATION) {
     (*XStateConfig).Features[XSTATE_LEGACY_SSE as usize].Offset =
         core::mem::offset_of!(XSAVE_FORMAT, XmmRegisters) as u32;
     (*XStateConfig).Features[XSTATE_LEGACY_SSE as usize].Size =
-        core::mem::size_of_val(&(*core::ptr::null::<XSAVE_FORMAT>()).XmmRegisters) as u32;
+        (core::mem::offset_of!(XSAVE_FORMAT, Reserved4)
+            - core::mem::offset_of!(XSAVE_FORMAT, XmmRegisters)) as u32;
     (*XStateConfig).AllFeatures[XSTATE_LEGACY_SSE as usize] =
-        core::mem::size_of_val(&(*core::ptr::null::<XSAVE_FORMAT>()).XmmRegisters) as u32;
+        (core::mem::offset_of!(XSAVE_FORMAT, Reserved4)
+            - core::mem::offset_of!(XSAVE_FORMAT, XmmRegisters)) as u32;
 
     NextUserOffset = core::mem::size_of::<XSAVE_AREA>() as ULONG;
     NextSupervisorOffset = core::mem::size_of::<XSAVE_AREA>() as ULONG;

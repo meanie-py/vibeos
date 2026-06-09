@@ -1,0 +1,16 @@
+# null-rust — Rust translation of drivers/base/null/null.c, the Null Device
+# Driver (\Device\Null). Compiles to a staticlib whose DriverEntry becomes the
+# null.sys PE entry point; the final link is driven by null-cargo
+# (reactos-link ModuleKind::KernelDll, entry=DriverEntry, no exports).
+# Arch-generic body — builds for all 3 arches like the C.
+
+[package]
+name = "null-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

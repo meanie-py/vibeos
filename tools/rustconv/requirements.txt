@@ -1,0 +1,17 @@
+# rustconv runtime dependencies.
+# Install:  pip install -r requirements.txt   (into the repo .venv)
+
+# C parsing (Stage 1 scanner / call-graph)
+tree-sitter>=0.24
+tree-sitter-c>=0.24
+
+# LLM backends
+anthropic>=0.97          # Claude (Anthropic) backend
+openai>=2.0              # DeepSeek backend (OpenAI-compatible API) + any OpenAI-compatible endpoint
+
+# .env loading (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY)
+python-dotenv>=1.0
+
+# Optional: Gemini backend (only needed for -m gemini-pro / gemini-flash).
+# Uncomment if you use the Google GenAI path.
+# google-genai>=0.3

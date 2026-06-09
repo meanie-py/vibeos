@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 // NtCurrentPeb comes from ntdll_sys::nt (FORCEINLINE, NOT an ntdll
 // export — a local extern would fail to link). RtlMoveMemory /
@@ -16,8 +15,14 @@ unsafe fn RtlGetProcessHeap() -> HANDLE {
 // C: #define CSR_PORT_NAME L"ApiPort" — bindgen mangled the wide
 // literal to a narrow `&[u8;8]`; the real type is PCWSTR.
 static CSR_PORT_NAME_W: [u16; 8] = [
-    b'A' as u16, b'p' as u16, b'i' as u16, b'P' as u16,
-    b'o' as u16, b'r' as u16, b't' as u16, 0,
+    b'A' as u16,
+    b'p' as u16,
+    b'i' as u16,
+    b'P' as u16,
+    b'o' as u16,
+    b'r' as u16,
+    b't' as u16,
+    0,
 ];
 
 // `CsrApiPort` is a per-binary CSR API port handle: C declares it once in
@@ -51,10 +56,9 @@ pub static mut CsrPortMemoryDelta: ULONG_PTR = 0;
 #[no_mangle]
 pub static mut InsideCsrProcess: BOOLEAN = 0u8;
 
-type PCSR_SERVER_API_ROUTINE = Option<unsafe extern "system" fn(
-    Request: PCSR_API_MESSAGE,
-    Reply: PCSR_API_MESSAGE,
-) -> NTSTATUS>;
+type PCSR_SERVER_API_ROUTINE = Option<
+    unsafe extern "system" fn(Request: PCSR_API_MESSAGE, Reply: PCSR_API_MESSAGE) -> NTSTATUS,
+>;
 
 static mut CsrServerApiRoutine: PCSR_SERVER_API_ROUTINE = None;
 
@@ -90,8 +94,8 @@ unsafe fn CsrpConnectToServer(ObjectDirectory: PCWSTR) -> NTSTATUS {
     // size_of_val(CSR_PORT_NAME) under-counts by 8 → buffer too short →
     // RtlAppendUnicodeToString can't fit "ApiPort" → STATUS_OBJECT_NAME_INVALID
     // at connect → critical client dies → 0xc000021a. Use the wide [u16;8].
-    PortNameLength = ((dir_len + 1) * core::mem::size_of::<u16>()) +
-                     core::mem::size_of_val(&CSR_PORT_NAME_W);
+    PortNameLength =
+        ((dir_len + 1) * core::mem::size_of::<u16>()) + core::mem::size_of_val(&CSR_PORT_NAME_W);
     if PortNameLength > UNICODE_STRING_MAX_BYTES {
         return STATUS_NAME_TOO_LONG;
     }
@@ -184,8 +188,7 @@ unsafe fn CsrpConnectToServer(ObjectDirectory: PCWSTR) -> NTSTATUS {
         return Status;
     }
 
-    CsrPortMemoryDelta = LpcWrite.ViewRemoteBase as ULONG_PTR -
-                         LpcWrite.ViewBase as ULONG_PTR;
+    CsrPortMemoryDelta = LpcWrite.ViewRemoteBase as ULONG_PTR - LpcWrite.ViewBase as ULONG_PTR;
 
     CsrProcessId = ConnectionInfo.ServerProcessId;
 
@@ -251,8 +254,13 @@ pub unsafe extern "system" fn CsrClientConnectToServer(
         let mut CsrServerRoutineName: ANSI_STRING = core::mem::zeroed();
 
         static CSRSRV: [u16; 7] = [
-            b'c' as u16, b's' as u16, b'r' as u16, b's' as u16,
-            b'r' as u16, b'v' as u16, 0,
+            b'c' as u16,
+            b's' as u16,
+            b'r' as u16,
+            b's' as u16,
+            b'r' as u16,
+            b'v' as u16,
+            0,
         ];
         RtlInitUnicodeString(&mut CsrSrvName, CSRSRV.as_ptr());
         Status = LdrGetDllHandle(
@@ -288,8 +296,11 @@ pub unsafe extern "system" fn CsrClientConnectToServer(
     // ClientConnect:
     if !ConnectionInfo.is_null() {
         let mut ApiMessage: CSR_API_MESSAGE = core::mem::zeroed();
-        let ClientConnect: PCSR_CLIENT_CONNECT =
-            &mut ApiMessage.__bindgen_anon_1.__bindgen_anon_1.Data.CsrClientConnect as *mut _;
+        let ClientConnect: PCSR_CLIENT_CONNECT = &mut ApiMessage
+            .__bindgen_anon_1
+            .__bindgen_anon_1
+            .Data
+            .CsrClientConnect as *mut _;
         let CaptureBuffer: PCSR_CAPTURE_BUFFER;
 
         InsideCsrProcess = 0u8;
@@ -358,26 +369,30 @@ pub unsafe extern "system" fn CsrClientCallServer(
 
     (*ApiMessage).Header.u2.ZeroInit = 0;
     // DataLength/TotalLength are CSHORT (i16) in PORT_MESSAGE.
-    (*ApiMessage).Header.u1.s1.DataLength = ((DataLength as u16)
-        .wrapping_add(
-            core::mem::offset_of!(CSR_API_MESSAGE, __bindgen_anon_1.__bindgen_anon_1.Data) as u16 -
-            core::mem::size_of_val(&(*ApiMessage).Header) as u16
-        )) as i16;
-    (*ApiMessage).Header.u1.s1.TotalLength = ((DataLength as u16)
-        .wrapping_add(
-            core::mem::size_of::<CSR_API_MESSAGE>() as u16 -
-            core::mem::size_of_val(&(*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data) as u16
-        )) as i16;
+    (*ApiMessage).Header.u1.s1.DataLength = ((DataLength as u16).wrapping_add(
+        core::mem::offset_of!(CSR_API_MESSAGE, __bindgen_anon_1.__bindgen_anon_1.Data) as u16
+            - core::mem::size_of_val(&(*ApiMessage).Header) as u16,
+    )) as i16;
+    (*ApiMessage).Header.u1.s1.TotalLength = ((DataLength as u16).wrapping_add(
+        core::mem::size_of::<CSR_API_MESSAGE>() as u16
+            - core::mem::size_of_val(&(*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.Data) as u16,
+    )) as i16;
 
     (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.ApiNumber = ApiNumber;
-    (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData = core::ptr::null_mut();
+    (*ApiMessage)
+        .__bindgen_anon_1
+        .__bindgen_anon_1
+        .CsrCaptureData = core::ptr::null_mut();
 
     if InsideCsrProcess == 0 {
         let mut PointerCount: ULONG;
         let mut OffsetPointer: *mut ULONG_PTR;
 
         if !CaptureBuffer.is_null() {
-            (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData =
+            (*ApiMessage)
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .CsrCaptureData =
                 (CaptureBuffer as ULONG_PTR + CsrPortMemoryDelta) as PCSR_CAPTURE_BUFFER;
 
             (*CaptureBuffer).BufferEnd = core::ptr::null_mut();
@@ -402,8 +417,14 @@ pub unsafe extern "system" fn CsrClientCallServer(
         );
 
         if !CaptureBuffer.is_null() {
-            (*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData =
-                (((*ApiMessage).__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData as ULONG_PTR).wrapping_sub(CsrPortMemoryDelta))
+            (*ApiMessage)
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .CsrCaptureData = (((*ApiMessage)
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .CsrCaptureData as ULONG_PTR)
+                .wrapping_sub(CsrPortMemoryDelta))
                 as PCSR_CAPTURE_BUFFER;
 
             PointerCount = (*CaptureBuffer).PointerCount;
@@ -439,7 +460,6 @@ pub unsafe extern "system" fn CsrClientCallServer(
 pub unsafe extern "system" fn CsrGetProcessId() -> HANDLE {
     CsrProcessId
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

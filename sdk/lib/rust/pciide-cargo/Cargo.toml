@@ -1,0 +1,19 @@
+# Cargo-driven `pciide.sys` link (i386 + amd64 + arm64). The PCI IDE bus
+# mini-driver. Sibling of `beep-cargo`: build.rs is a manifest for the shared
+# `reactos-link` engine. The Rust body is the `pciide-rust` staticlib; its
+# `DriverEntry` is the PE entry point (kernelmodedriver = kerneldll link with
+# entry=DriverEntry, no exports).
+
+[package]
+name = "pciide-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "pciide"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

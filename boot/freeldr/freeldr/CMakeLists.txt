@@ -183,6 +183,46 @@ file(GLOB_RECURSE FREELDR_CNT_RUST_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs)
+# blcmlib (CM hive boot lib) is now compiled in-cargo by the loaders'
+# reactos-link c_from_compile_db (compile_commands.json replay), not reused as
+# libblcmlib.a. file-track its C sources so an edit re-invokes the cargo link.
+file(GLOB FREELDR_BLCMLIB_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/sdk/lib/cmlib/*.c)
+# blrtl (boot-loader RTL leaf) is likewise compiled in-cargo: its C via
+# reactos-link c_from_compile_db("blrtl", …) + its per-arch asm via
+# .asm_archive("blrtl_asm", …) — no reused libblrtl.a. The exact source set is
+# boot/rtl/blrtl.cmake (NOT a glob — the rtl dir holds far more than blrtl
+# compiles). All files are listed regardless of arch (the build.rs selects the
+# right ones per arch); file-tracking the unused-on-this-arch ones is harmless.
+set(FREELDR_BLRTL_SOURCES
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/bitmap.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/compress.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/crc32.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/image.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/largeint.c
+    ${CMAKE_SOURCE_DIR}/boot/rtl/nlsboot.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/random.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/unicode.c
+    # amd64-only C (blrtl.cmake amd64 branch):
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/bitmap64.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/byteswap.c
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/mem.c
+    # per-arch asm (.asm_archive): i386 debug_asm/rtlmem/rtlswap, amd64 debug_asm.
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/debug_asm.S
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/rtlmem.s
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/rtlswap.S
+    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/amd64/debug_asm.S)
+# cport-rust (NS16550 serial, sdk/lib/cportlib/CMakeLists.txt) + hal-rust's
+# minihal variant (hal/halx86/CMakeLists.txt, i386-only) are now DIRECT cargo
+# siblings of the loader link (reactos-link .rust_lib()), not reused from the
+# cmake-built libcport_rust.a / libhal_rust_mini.a. Glob their crate sources so
+# a `.rs` edit re-invokes the (opaque) cargo link. (The cmake `cportlib` /
+# `mini_hal` targets stay deps for the C/asm leftovers — the cport cohab stub
+# and mini_hal's systimer.S asm — which the loaders still reuse.)
+file(GLOB_RECURSE FREELDR_CPORT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/cport-rust/src/*.rs)
+file(GLOB_RECURSE FREELDR_HAL_MINI_SOURCES CONFIGURE_DEPENDS
+    ${FREELDR_RUST_WORKSPACE_DIR}/hal-rust/src/*.rs)
 
 # BIOS prune: the legacy PC-AT BIOS loader (freeldr.sys = frldr16 + freeldr_pe,
 # built by pcat.cmake) is gone — x86 boots UEFI-only via uefildr.efi. rosload

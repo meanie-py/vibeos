@@ -86,32 +86,11 @@ extern "C" {
     fn wctomb(mbchar: *mut u8, wchar: u16) -> i32;
 }
 
-// The float-formatting half — a C residual (`printf/format_float.c`) on
-// i386 (the `float` feature is OFF there: no by-value f64 ABI), so it's
-// an extern symbol the engine calls. On amd64/arm64 (`float` ON) the
-// Rust `format_float`/`format_floatw` below provide these names instead,
-// so the extern decl would be a duplicate — hence cfg'd out there.
-// `va_list *argptr` is `char**`; the engine passes a pointer to its own
-// cursor so the impl advances it in lockstep.
-#[cfg(not(feature = "float"))]
-extern "C" {
-    fn format_float(
-        chr: u8,
-        flags: u32,
-        precision: i32,
-        string: *mut *mut u8,
-        prefix: *mut *const u8,
-        argptr: *mut *mut u8,
-    );
-    fn format_floatw(
-        chr: u16,
-        flags: u32,
-        precision: i32,
-        string: *mut *mut u16,
-        prefix: *mut *const u16,
-        argptr: *mut *mut u8,
-    );
-}
+// The Rust `format_float`/`format_floatw` below now provide these names
+// on ALL three arches — including the i386 no-SSE kernel, since the float
+// engine (`mod ff` + core_rs::floatcvt) is no-SSE-safe via `extern "C"`
+// x87 returns + the fb64/fb32 transmute shims. (Previously i386 used a
+// C residual `printf/format_float.c`, now REMOVE_ITEM'd in libcntpr.cmake.)
 
 // ── va_arg over a flat pointer cursor ────────────────────────────────
 #[cfg(target_pointer_width = "32")]
@@ -910,7 +889,10 @@ pub unsafe extern "C" fn wstreamout(stream: *mut File, format: *const u16, argpt
 // reference, which models the SAME three primitives on both sides (the
 // floatcvt ecvt/gcvt discipline). `long double == double == f64` on the
 // Windows ABI, so `va_arg_ffp` is a single 8-byte read.
-#[cfg(feature = "float")]
+//
+// No longer `float`-gated: the engine is no-SSE-safe (extern "C" x87
+// returns + va_ffp's transmute read + core_rs::floatcvt's fb64 shims),
+// so it owns format_float on i386 too.
 mod ff {
     use super::{slot_of, Unit, FLAG_FORCE_SIGN, FLAG_FORCE_SIGNSP, FLAG_SPECIAL};
     use crate::core_rs::floatcvt::{fl, is_finite, is_nan};
@@ -947,9 +929,14 @@ mod ff {
 
     /// `va_arg_ffp` — read a `double`/`long double` (both f64 on
     /// Windows) at the cursor, advance by the rounded slot.
+    ///
+    /// `extern "C"` (x87 ST(0) return, not xmm) + read the bits via
+    /// `*const u64` then `transmute` — both the Rust-ABI `-> f64` return
+    /// AND `read_unaligned::<f64>` would otherwise need SSE and hard-error
+    /// on the no-SSE i386 kernel. Pure bit read; value-identical.
     #[inline]
-    unsafe fn va_ffp(cursor: *mut *mut u8, _flags: u32) -> f64 {
-        let v = core::ptr::read_unaligned(*cursor as *const f64);
+    unsafe extern "C" fn va_ffp(cursor: *mut *mut u8, _flags: u32) -> f64 {
+        let v: f64 = core::mem::transmute(core::ptr::read_unaligned(*cursor as *const u64));
         *cursor = (*cursor).add(slot_of(core::mem::size_of::<f64>()));
         v
     }
@@ -1105,8 +1092,7 @@ mod ff {
 }
 
 /// `void format_float(char, unsigned, int, char**, const char**,
-/// va_list*)` — amd64/arm64 (i386 uses the C residual).
-#[cfg(feature = "float")]
+/// va_list*)` — all 3 arches (Rust, no-SSE-safe on i386).
 #[no_mangle]
 pub unsafe extern "C" fn format_float(
     chr: u8,
@@ -1120,7 +1106,6 @@ pub unsafe extern "C" fn format_float(
 }
 
 /// Wide twin `format_floatw`.
-#[cfg(feature = "float")]
 #[no_mangle]
 pub unsafe extern "C" fn format_floatw(
     chr: u16,

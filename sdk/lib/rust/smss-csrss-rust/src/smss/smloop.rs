@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 
 const PROCESS_ALL_ACCESS: ACCESS_MASK = 0x001F0FFF;
@@ -159,7 +158,10 @@ unsafe extern "system" fn SmpLoadDeferedSubsystem(
     let mut RegEntry: PSMP_REGISTRY_VALUE;
 
     if (*SmLoadDefered).Length <= 0
-        || (*SmLoadDefered).Length > (core::mem::size_of_val(&(*SmLoadDefered).Buffer) as LONG).try_into().unwrap()
+        || (*SmLoadDefered).Length
+            > (core::mem::size_of_val(&(*SmLoadDefered).Buffer) as LONG)
+                .try_into()
+                .unwrap()
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -303,9 +305,14 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
         SmpGetProcessMuSessionId(ProcessHandle, &mut SessionIdLocal);
     }
 
-    CidSubsystem = SmpLocateKnownSubSysByCid(core::ptr::addr_of_mut!((*SbApiMsg).h.__bindgen_anon_1.ClientId));
+    CidSubsystem = SmpLocateKnownSubSysByCid(core::ptr::addr_of_mut!(
+        (*SbApiMsg).h.__bindgen_anon_1.ClientId
+    ));
     if !CidSubsystem.is_null() && Accept != 0 {
-        TypeSubsystem = SmpLocateKnownSubSysByType(SessionIdLocal, (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SubsystemType);
+        TypeSubsystem = SmpLocateKnownSubSysByType(
+            SessionIdLocal,
+            (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SubsystemType,
+        );
         if TypeSubsystem == CidSubsystem {
             Accept = 0u8;
         } else {
@@ -321,7 +328,9 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
         ClientContext = RtlAllocateHeap(
             SmpHeap,
             0,
-            core::mem::size_of::<SMP_CLIENT_CONTEXT>().try_into().unwrap(),
+            core::mem::size_of::<SMP_CLIENT_CONTEXT>()
+                .try_into()
+                .unwrap(),
         ) as PSMP_CLIENT_CONTEXT;
         if !ClientContext.is_null() {
             (*ClientContext).ProcessHandle = ProcessHandle;
@@ -369,7 +378,11 @@ unsafe extern "system" fn SmpHandleConnectionRequest(
         (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SbApiPortName[119] = 0u16;
         RtlCreateUnicodeString(
             &mut SubsystemPort,
-            (*SbApiMsg).__bindgen_anon_1.ConnectionInfo.SbApiPortName.as_ptr(),
+            (*SbApiMsg)
+                .__bindgen_anon_1
+                .ConnectionInfo
+                .SbApiPortName
+                .as_ptr(),
         );
         Status = NtConnectPort(
             &mut (*CidSubsystem).SbApiPort,
@@ -446,7 +459,7 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
             _ => {
                 if ClientContext.is_null() {
                     ReplyMsg = core::ptr::null_mut();
-                    break;
+                    continue;
                 }
 
                 RequestMsg.ReturnValue = STATUS_PENDING;
@@ -472,7 +485,6 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
     }
     0
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

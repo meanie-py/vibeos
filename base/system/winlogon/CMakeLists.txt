@@ -1,83 +1,72 @@
-
 include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl
     ${CMAKE_CURRENT_BINARY_DIR})
 
 add_rpc_files(server ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/winreg.idl)
 
-# PARTIAL Rust flip: GINA-independent leaf files move to Rust one at a
-# time (winlogon-rust). The GINA core (wlx.c), SAS state machine (sas.c),
-# main (winlogon.c) and RPC (rpcserver.c) stay C. Flipped .c stay on disk
-# (never delete the C — translation philosophy), commented out here.
-list(APPEND SOURCE
-    # environment.c — replaced by Rust (winlogon-rust/src/environment.rs)
-    # notify.c — replaced by Rust (winlogon-rust/src/notify.rs)
-    rpcserver.c
-    sas.c
-    # screensaver.c — replaced by Rust (winlogon-rust/src/screensaver.rs)
-    # security.c — replaced by Rust (winlogon-rust/src/security.rs)
-    # setup.c    — replaced by Rust (winlogon-rust/src/setup.rs)
+# CARGO-DRIVEN LINK + PARTIAL Rust flip. winlogon.exe's link is now driven by
+# cargo (winlogon-cargo → reactos-link ModuleKind::Win32Exe) instead of cmake
+# add_executable — the third of OUR translated spine binaries moved cmake→cargo
+# (after lsass + userinit). Unlike those two (100%-Rust bodies), winlogon is a
+# PARTIAL flip: the GINA-independent leaf files are Rust (winlogon-rust), but
+# the GINA core (wlx.c), SAS state machine (sas.c), main (winlogon.c), RPC
+# server (rpcserver.c) and the generated winreg_s.c RPC stub stay C. So this is
+# the first cargo-drive whose C residue is compiled IN-cargo via the engine's
+# c_from_compile_db (compile_commands.json replay) rather than a static_libs
+# reuse. Flipped .c stay on disk (never delete the C — translation philosophy).
+#
+# c_from_compile_db needs the residue's flag-exact compile entries in
+# compile_commands.json (and the PCH generated), so cmake still COMPILES the
+# residue via an OBJECT library `winlogon_c`. Its objects are not linked
+# directly (cargo recompiles from the replayed command) — the library exists
+# purely to (a) populate compile_commands.json under CMakeFiles/winlogon_c.dir
+# and (b) generate cmake_pch.h. winlogon-cargo's build.rs points
+# c_from_compile_db("winlogon_c", …) at it.
+# ALL 4 GINA/SAS/RPC cores (rpcserver/winlogon/wlx/sas) flipped → winlogon-rust/
+# src/*.rs; winlogon.exe is now a FULL Rust flip (zero C in the cargo link). The
+# winlogon_c OBJECT lib survives only to compile the remaining vestigial sources
+# (winlogon_rust_stub.c + the generated winreg_s.c) into compile_commands.json
+# for the winreg-stub crate's decoration probe. The C stays on disk.
+list(APPEND WINLOGON_C_RESIDUE
     winlogon_rust_stub.c
-    # shutdown.c — replaced by Rust (winlogon-rust/src/shutdown.rs)
-    winlogon.c
-    wlx.c
-    winlogon.h
     ${CMAKE_CURRENT_BINARY_DIR}/winreg_s.c)
+add_library(winlogon_c OBJECT ${WINLOGON_C_RESIDUE} winlogon.h)
+add_pch(winlogon_c winlogon.h "")
+# The Rust-cohab stub is self-contained — keep the PCH out of it (as the old
+# add_executable did).
+set_source_files_properties(winlogon_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
+# winlogon.rc is LOAD-BEARING (the winlogon.ico application icon), so it cannot
+# be omitted. Keep cmake compiling it via a resource-only OBJECT library; the
+# cargo link reuses the .res through reactos-link .resource_built() (the same
+# .res pattern userinit uses). winlogon is set_module_type win32gui WITHOUT
+# UNICODE, so — unlike userinit_res — no UNICODE define here (matches the old
+# winlogon.exe rc compile byte-for-byte).
+add_rc_deps(winlogon.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/winlogon.ico)
+add_library(winlogon_res OBJECT winlogon.rc)
+target_include_directories(winlogon_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # --- Rust cohabitation (winlogon-rust) ------------------------------------
-# Builds libwinlogon_rust.a and links it into winlogon.exe. The flipped
-# leaf functions (GetSetupType/RunSetup) come from the archive; the still-C
-# core calls them and owns the shared WLSession global the leaves read.
-# FFI substrate is the self-contained winlogon-sys (Win32 + GINA + ndk +
-# the WLSESSION/GINA layout, size-asserted x3). Mirrors userinit.exe.
-set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
-if(ARCH STREQUAL "i386")
-    set(RUST_TARGET "i686-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
-elseif(ARCH STREQUAL "amd64")
-    set(RUST_TARGET "x86_64-pc-windows-gnu")
-    set(RUST_EXTRA_ENV "")
-elseif(ARCH STREQUAL "arm64")
-    set(RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(RUST_EXTRA_ENV "")
-endif()
-set(WINLOGON_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwinlogon_rust.a")
-add_custom_command(
-    OUTPUT ${WINLOGON_RUST_LIB}
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${RUST_TARGET_DIR} ${RUST_EXTRA_ENV}
-        cargo build --release --target ${RUST_TARGET}
-            -p winlogon-rust
-            --manifest-path ${RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${RUST_TARGET_DIR}/${RUST_TARGET}/release/libwinlogon_rust.a
-        ${WINLOGON_RUST_LIB}
-    DEPENDS
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/lib.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/preamble.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/setup.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/environment.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/shutdown.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/screensaver.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/security.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/src/notify.rs
-        ${RUST_WORKSPACE_DIR}/winlogon-rust/Cargo.toml
-        ${RUST_WORKSPACE_DIR}/winlogon-sys/src/lib.rs
-    COMMENT "Building winlogon-rust (${RUST_TARGET}) for winlogon.exe"
-    VERBATIM)
-add_custom_target(winlogon_rust_lib DEPENDS ${WINLOGON_RUST_LIB})
+# The Rust leaf functions (GetSetupType/RunSetup/environment/shutdown/
+# screensaver/security/notify) come from libwinlogon_rust.a, now built by cargo
+# (winlogon-cargo .rust_staticlib) — the cmake add_custom_command that used to
+# build it is retired. FFI substrate is the self-contained winlogon-sys.
 # --------------------------------------------------------------------------
 
-add_rc_deps(winlogon.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/winlogon.ico)
-add_executable(winlogon ${SOURCE} winlogon.rc)
-target_link_libraries(winlogon wine ${PSEH_LIB} ${WINLOGON_RUST_LIB})
-add_dependencies(winlogon winlogon_rust_lib)
-# Rust .a pulls libcore/compiler-builtins objects; allow intrinsic overlap.
-target_link_options(winlogon PRIVATE "-Wl,--allow-multiple-definition")
-set_module_type(winlogon win32gui)
-add_importlibs(winlogon gdi32 user32 advapi32 userenv secur32 rpcrt4 mpr msvcrt kernel32 ntdll)
-add_pch(winlogon winlogon.h SOURCE)
-# The Rust-cohab stub is self-contained — keep the PCH out of it.
-set_source_files_properties(winlogon_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
-add_cd_file(TARGET winlogon DESTINATION reactos/system32 FOR all)
+# The CRT/libwine/libpseh statics + oldnames the cargo link reuses live in
+# sdk/lib + 3rdparty (configured after base/), so DEPENDS on their .a FILE
+# paths for parallel-build ordering. The 10 import libs are generated in-cargo
+# from .spec. The residue (winlogon_c) + the .res (winlogon_res) are in-scope
+# target names.
+set(WINLOGON_REUSED
+    ${CMAKE_BINARY_DIR}/sdk/lib/3rdparty/libwine/libwine.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a
+    ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
+
+add_cargo_module(winlogon winlogon-cargo winlogon.exe
+    KIND win32exe
+    BODY_CRATE winlogon-rust
+    DESTINATION reactos/system32
+    EXTRA_DEPENDS winlogon_c winlogon_res ${WINLOGON_REUSED})

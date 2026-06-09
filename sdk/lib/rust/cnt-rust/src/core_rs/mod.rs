@@ -7,16 +7,26 @@
 
 pub mod casemap;
 pub mod env;
-#[cfg(feature = "float")]
+// fb64/fb32 bit→float shims — the one audited unsafe carve-out, used by
+// floatcvt to compile no-SSE on i386 (see floatbits.rs).
+pub mod floatbits;
+// floatcvt is no-SSE-safe (extern "C" returns + floatbits shims) → built
+// unconditionally on all 3 arches, no longer behind `float`.
 pub mod floatcvt;
 pub mod mbcp;
 pub mod mem;
 pub mod path;
 pub mod radix;
 pub mod rng;
-#[cfg(feature = "float")]
+// scanf engine — no-SSE-safe (passes floats DECOMPOSED via
+// store_float(exp, d:u64); no by-value f64), no_std, no unsafe → built
+// unconditionally on all 3 arches (no longer behind `float`). The float
+// SYNTHESIS (cabi VaSink) is also no-SSE-safe (pure f64 arithmetic).
 pub mod scanf;
 pub mod string;
 pub mod strmut;
+// strtod/atof — pure f64 parser, no-SSE-safe (returns (f64,usize) via
+// tuple sret, no by-value f64 register return), no unsafe.
+pub mod strtod;
 pub mod strtok;
 pub mod wstring;

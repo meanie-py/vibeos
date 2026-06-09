@@ -1,0 +1,30 @@
+# Cargo-driven `basesrv.dll` link (i386 + amd64 + arm64). The LAST csrss-spine
+# server to move its link cmake→cargo — and the one that was still on the
+# pre-Axis-A pattern (`add_library(basesrv MODULE)` + a standalone
+# `add_custom_command` cargo build the link reused), not `add_cargo_module`.
+#
+# basesrv.dll (base subsystem CSR server) is already a FULL Rust flip: all 7 .c
+# → Rust (smss-csrss-rust/src/basesrv, `basesrv_dll_only` feature; dosdev.rs +
+# vdm.rs by Opus 4.8). This moves only the LINK to cargo via reactos-link
+# ModuleKind::Win32Dll (subsystem console:5.01, entry _DllMain@12), self-hosting
+# the csrsrv/ntdll import libs and compiling the basesrv_rust_stub.c residue +
+# basesrv.rc IN-cargo (c_from_compile_db + resource_from_rc). Retires the legacy
+# custom-command cargo build.
+#
+# Success criterion: cargo's basesrv.dll boots the livecd to `shell ready` —
+# csrss.exe loads basesrv.dll (smss → csrss → basesrv); basesrv is the base API
+# server (process creation notify, DOS devices, NLS, VDM), process-critical.
+
+[package]
+name = "basesrv-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "basesrv"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

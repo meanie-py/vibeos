@@ -4,7 +4,23 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import NTOSKRNL_DIR, get_backend, DEFAULT_MODELS, detect_target, TARGETS
+from .config import (NTOSKRNL_DIR, REACTOS_ROOT, get_backend, DEFAULT_MODELS,
+                     detect_target, make_user_dll_target, TARGETS)
+
+
+def resolve_target(args, path):
+    """Pick the rustconv Target: an explicit --target wins (a known TARGETS key, or a
+    standalone dll/win32/<name> crate name), else auto-detect from the path. Auto-detect
+    now RAISES for unrecognized paths instead of silently using ntoskrnl."""
+    name = getattr(args, "target", None)
+    if name:
+        if name in TARGETS:
+            return TARGETS[name]
+        src = REACTOS_ROOT / "dll" / "win32" / name
+        if not src.exists():
+            src = REACTOS_ROOT / "dll" / name
+        return make_user_dll_target(name, src)
+    return detect_target(path)
 
 # Model shortcuts for CLI convenience
 MODEL_ALIASES = {
@@ -14,6 +30,15 @@ MODEL_ALIASES = {
     "opus-4-7": "claude-opus-4-7",
     "gemini-pro": "gemini-2.5-pro",
     "gemini-flash": "gemini-2.5-flash",
+    # The provisioned key serves the v4 tier (deepseek-v4-pro / deepseek-v4-flash).
+    "deepseek": "deepseek-v4-pro",        # default to pro for translation quality
+    "deepseek-pro": "deepseek-v4-pro",
+    "deepseek-flash": "deepseek-v4-flash",
+    "deepseek-v4-pro": "deepseek-v4-pro",
+    "deepseek-v4-flash": "deepseek-v4-flash",
+    "deepseek-chat": "deepseek-chat",     # legacy aliases (route server-side)
+    "deepseek-r1": "deepseek-reasoner",
+    "deepseek-reasoner": "deepseek-reasoner",
 }
 
 
@@ -64,7 +89,7 @@ def cmd_resolve(args):
     from .resolver import resolve, print_resolve_result
 
     path = resolve_c_path(args.file)
-    target = detect_target(path)
+    target = resolve_target(args,path)
 
     print(f"Building catalog... (target={target.name})", file=sys.stderr)
     catalog = build_catalog(arch=args.arch, target=target)
@@ -87,7 +112,7 @@ def cmd_prompt(args):
     from .prompt_builder import build_full_prompt, build_file_prompt, load_system_prompt, estimate_tokens
 
     path = resolve_c_path(args.file)
-    target = detect_target(path)
+    target = resolve_target(args,path)
     catalog = build_catalog(arch=args.arch, target=target)
     spec = (parse_spec(target.spec_file)
             if target.spec_file and target.spec_file.exists()
@@ -113,9 +138,13 @@ def cmd_submit(args):
     from .batch_runner import submit_single
     from .assembler import assemble_file
     from .postprocess import postprocess
+    from .sink import (RunArchive, ResponseSink, install_kill_guard,
+                       paid_invocation_banner, warn_if_tmp_output)
+    from .prompt_builder import estimate_tokens
+    from .config import cost_usd
 
     path = resolve_c_path(args.file)
-    target = detect_target(path)
+    target = resolve_target(args,path)
     catalog = build_catalog(arch=args.arch, target=target)
     spec = (parse_spec(target.spec_file)
             if target.spec_file and target.spec_file.exists()
@@ -134,9 +163,27 @@ def cmd_submit(args):
         system_prompt = ""
         file_prompt = build_full_prompt(scan, res)
 
+    # Durable archive + cost banner + kill guard for this one paid call.
+    warn_if_tmp_output(getattr(args, "output", None))
+    archive = RunArchive(label=path.name, model=model, target=target.name)
+    install_kill_guard(archive)
+    paid_invocation_banner(model, 1,
+                           estimate_tokens(file_prompt) + estimate_tokens(system_prompt),
+                           archive)
+    sink = ResponseSink(archive.stream_path(0, path.stem))
+
     print(f"Submitting to {model}...", file=sys.stderr)
-    result = submit_single(file_prompt, model=model, system_prompt=system_prompt)
+    try:
+        result = submit_single(file_prompt, model=model,
+                               system_prompt=system_prompt, sink=sink)
+    finally:
+        sink.close()
     result.source_file = path.name
+    if result.success:
+        archive.commit(0, path.stem, result.rust_code,
+                       result.input_tokens, result.output_tokens)
+        print(f"Cost: ${cost_usd(model, result.input_tokens, result.output_tokens):.2f}  "
+              f"| archived: {archive.dir}", file=sys.stderr)
 
     if not result.success:
         print(f"Error: {result.error}", file=sys.stderr)
@@ -761,17 +808,15 @@ def cmd_translate(args):
     from .callgraph import extract_call_graph, topological_sort, print_call_graph
     from .function_resolver import resolve_function
     from .function_prompt import build_function_prompt, build_file_context, build_preamble_prompt, load_function_system_prompt
+    from .response_cache import ResponseCache, PREAMBLE_KEY
     from .stitcher import stitch_file
-    from .batch_runner import submit_single, TranslationResult, estimate_cost
+    from .batch_runner import submit_single, TranslationResult
     from .assembler import assemble_file, generate_mod_rs, generate_lib_rs
     from .postprocess import postprocess
     from .prompt_builder import estimate_tokens
-    from .response_cache import ResponseCache, PREAMBLE_KEY
-
-    # Hard safety cap: abort a file (and the whole run) once cumulative spend
-    # crosses this. Prevents the rtl-style runaway. None = no cap.
-    cost_cap = getattr(args, "cost_cap", None)
-    run_cost = 0.0  # accumulates across all files in this invocation
+    from .sink import (RunArchive, ResponseSink, install_kill_guard,
+                       paid_invocation_banner, warn_if_tmp_output)
+    from .config import cost_usd
 
     # Resolve target: single file or directory
     target_path = Path(args.path)
@@ -786,7 +831,7 @@ def cmd_translate(args):
         target_path = next((c for c in candidates if c.exists()), candidates[0])
 
     # Detect target (ntoskrnl vs hal) from the path
-    rustconv_target = detect_target(target_path)
+    rustconv_target = resolve_target(args,target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
 
     if target_path.is_file():
@@ -819,8 +864,37 @@ def cmd_translate(args):
     catalog_fn_names = set(catalog.functions.keys())
 
     model = resolve_model(args.model)
-    use_claude = model.startswith("claude-")
-    system_prompt = load_function_system_prompt(rustconv_target) if use_claude else ""
+    mode = getattr(args, "mode", "idiomatic")
+    # `use_claude` here means "this backend takes a separate system prompt"
+    # (Claude cached block / DeepSeek system message). Gemini gets the rules
+    # prepended inline (unchanged path).
+    use_claude = model.startswith("claude-") or model.startswith("deepseek-")
+    system_prompt = load_function_system_prompt(rustconv_target, mode=mode) if use_claude else ""
+
+    # Concurrency: fan out per-function calls. ONLY for mechanical mode on DeepSeek —
+    # mechanical functions are independent (each forward-declares its callees), and
+    # DeepSeek is cheap enough that a bounded fan-out won't black-hole the budget the
+    # way Claude could. Claude/Gemini/idiomatic stay strictly sequential by policy.
+    conc = max(1, getattr(args, "concurrency", 1) or 1)
+    if conc > 1 and not (mode == "mechanical" and model.startswith("deepseek-")):
+        print(f"  (--concurrency {conc} ignored: only for --mode mechanical on DeepSeek)",
+              file=sys.stderr)
+        conc = 1
+
+    # Durable archive + kill guard for this paid invocation. Every streamed
+    # response lands here as it generates, and a Ctrl-C points back at the
+    # preserved work instead of feeling like it threw away what you paid for.
+    archive = None
+    running_cost = 0.0
+    # Hard safety brake: stop before the next paid call once cumulative spend
+    # crosses this. None = no cap. Prevents a runaway bill.
+    cost_cap = getattr(args, "cost_cap", None)
+    no_resume = getattr(args, "no_resume", False)
+    if not args.dry_run:
+        warn_if_tmp_output(getattr(args, "output", None))
+        archive = RunArchive(label=target_path.name, model=model,
+                             target=rustconv_target.name)
+        install_kill_guard(archive)
 
     total_files = len(c_files)
     for file_idx, c_file in enumerate(c_files, 1):
@@ -828,18 +902,10 @@ def cmd_translate(args):
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
         print(f"{'='*60}", file=sys.stderr)
 
+        capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
         file_res = file_resolve(scan, catalog, spec)
         subsystem = c_file.parent.name
-
-        # Durable per-function cache → resume a previously interrupted run for
-        # free (skip every function whose C body is unchanged). --no-resume
-        # forces a fresh translation that ignores (but still refreshes) it.
-        no_resume = getattr(args, "no_resume", False)
-        cache = ResponseCache(f"{subsystem}__{c_file.stem}")
-        if cache.count() and not no_resume:
-            print(f"  Resume cache: {cache.count()} prior unit(s) on disk "
-                  f"(unchanged → $0)", file=sys.stderr)
 
         # Extract call graph and topologically sort
         deps = extract_call_graph(scan, spec_exports=file_res.exports)
@@ -855,6 +921,14 @@ def cmd_translate(args):
                 continue
 
         print(f"  Functions: {len(sorted_deps)} (topo-sorted)", file=sys.stderr)
+
+        # c2rust behavior anchors (best-effort): a compiler-exact transpilation per
+        # function, handed to the model so it can't silently stub/drop logic. Built
+        # once per file; empty map when --c2rust is off or c2rust/db is unavailable.
+        c2rust_anchors: dict[str, str] = {}
+        if getattr(args, "c2rust", False):
+            from .c2rust_anchor import build_anchor_map
+            c2rust_anchors = build_anchor_map(c_file)
 
         if args.dry_run:
             # Just show the plan
@@ -886,7 +960,7 @@ def cmd_translate(args):
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
                     sorted_deps[0], func_res, {}, all_deps, scan, catalog_fn_names, file_res.exports,
-                    target=rustconv_target,
+                    target=rustconv_target, c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -895,29 +969,108 @@ def cmd_translate(args):
 
         # Translate function by function
         all_deps_for_context = extract_call_graph(scan, spec_exports=file_res.exports)
+        translated: dict[str, str] = {}
+        total_in = 0
+        total_out = 0
 
         # Per-file SHARED context (import superset + gap fns + globals), built
-        # ONCE and sent as a cached system block on every function call. This is
-        # byte-identical across the file's N functions, so functions 2..N read
-        # it from cache (~0.1x) instead of re-sending it uncached every call.
+        # ONCE and sent as a second cached system block on every function call.
+        # It's byte-identical across the file's N functions, so functions 2..N
+        # read it from cache (~0.1x) instead of re-sending it uncached each call.
         file_context = build_file_context(file_res, scan, subsystem, target=rustconv_target)
 
-        translated: dict[str, str] = {}
-        total_in = 0          # uncached input (full price)
-        total_out = 0
-        total_cache_read = 0  # cache hits (~0.1x)
-        total_cache_write = 0 # cache writes (~1.25x)
-        failed_in = 0         # tokens burned on FAILED calls (off-the-books until now)
-        failed_out = 0
-        capped = False
+        # Durable per-function resume cache → re-run the same command to resume a
+        # killed/capped run for $0 (skip functions whose C body is unchanged).
+        # Coexists with the sink archive (which is per-run, kill-safe streaming);
+        # this one is the stable, cross-run skip layer. --no-resume forces fresh.
+        cache = ResponseCache(f"{subsystem}__{c_file.stem}")
+        resumed = 0
+        if cache.count() and not no_resume:
+            print(f"  Resume cache: {cache.count()} prior unit(s) on disk "
+                  f"(unchanged → $0)", file=sys.stderr)
 
-        resumed = 0  # functions skipped this run (loaded from cache, $0)
+        # One paid banner per file: n calls = functions + preamble. Rough input
+        # estimate = first-function prompt × function count (each call re-sends
+        # context, so this is a floor, not a ceiling).
+        if archive is not None and sorted_deps:
+            _fr0 = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
+            _p0 = build_function_prompt(sorted_deps[0], _fr0, {}, all_deps_for_context,
+                                        scan, catalog_fn_names, file_res.exports,
+                                        target=rustconv_target)
+            _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(sorted_deps)
+            paid_invocation_banner(model, len(sorted_deps) + 1, _est_in, archive)
+
+        # PARALLEL translate (mechanical + DeepSeek): fan out the paid per-function
+        # calls. Workers do ONLY the submit (pure — they read shared state, write only
+        # their own durable sink); ALL bookkeeping runs serially on the main thread as
+        # futures complete, so no shared-state locking is needed. Resume-cached fns are
+        # collected first (free). Cost-cap sets a stop Event that blocks new submits
+        # (in-flight calls — at most `conc` — may still land).
+        if conc > 1:
+            import threading
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            todo = []
+            for func_idx, dep in enumerate(sorted_deps, 1):
+                if not no_resume:
+                    hit = cache.get(dep.name, dep.body_text)
+                    if hit is not None:
+                        translated[dep.name] = hit
+                        resumed += 1
+                        continue
+                todo.append((func_idx, dep))
+            ctx = dict(translated)   # static callee context (mechanical fns are independent)
+            stop = threading.Event()
+
+            def _work(item):
+                fi, dp = item
+                if stop.is_set():
+                    return (fi, dp, None)
+                fres = resolve_function(dp, catalog, file_res.exports, scan.defines)
+                up = build_function_prompt(dp, fres, ctx, all_deps_for_context, scan,
+                                           catalog_fn_names, file_res.exports,
+                                           target=rustconv_target, include_shared=False,
+                                           c2rust_anchor=c2rust_anchors.get(dp.name))
+                sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
+                try:
+                    r = submit_single(up, model=model, system_prompt=system_prompt,
+                                      file_context=file_context, sink=sk)
+                finally:
+                    if sk is not None:
+                        sk.close()
+                return (fi, dp, r)
+
+            print(f"  ⚡ parallel: {len(todo)} fn(s) @ concurrency={conc} "
+                  f"({resumed} cached)", file=sys.stderr)
+            with ThreadPoolExecutor(max_workers=conc) as ex:
+                for fut in as_completed([ex.submit(_work, it) for it in todo]):
+                    fi, dp, r = fut.result()
+                    if r is None:
+                        continue   # skipped after cost cap
+                    if r.success:
+                        translated[dp.name] = r.rust_code
+                        cache.put(dp.name, dp.body_text, r.rust_code)
+                        total_in += r.input_tokens
+                        total_out += r.output_tokens
+                        if archive is not None:
+                            archive.commit(fi, dp.name, r.rust_code, r.input_tokens, r.output_tokens)
+                            running_cost += cost_usd(model, r.input_tokens, r.output_tokens)
+                        print(f"  [{fi}] {dp.name} OK ({r.input_tokens}/{r.output_tokens})"
+                              f"  [running ${running_cost:.2f}]", file=sys.stderr)
+                        if cost_cap is not None and running_cost >= cost_cap:
+                            stop.set()
+                            capped = True
+                            print(f"  ⛔ COST CAP ${running_cost:.2f} ≥ ${cost_cap:.2f} "
+                                  f"— halting new calls", file=sys.stderr)
+                    else:
+                        print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
 
         for func_idx, dep in enumerate(sorted_deps, 1):
+            if conc > 1:
+                break   # already handled by the parallel path above
             print(f"  [{func_idx}/{len(sorted_deps)}] {dep.name}...", file=sys.stderr, end=" ", flush=True)
 
-            # Resume: if this exact C body was already translated, reuse it for
-            # free. It still feeds `translated` (callee context for later fns).
+            # Resume: reuse a prior unchanged-body translation for free. It still
+            # feeds `translated` (callee context for later functions).
             if not no_resume:
                 hit = cache.get(dep.name, dep.body_text)
                 if hit is not None:
@@ -937,44 +1090,46 @@ def cmd_translate(args):
                 dep, func_res, translated, all_deps_for_context,
                 scan, catalog_fn_names, file_res.exports,
                 target=rustconv_target, include_shared=False,
+                c2rust_anchor=c2rust_anchors.get(dep.name),
             )
 
-            # submit_single handles both backends: Claude gets system_prompt +
-            # file_context as two cached system blocks; Gemini gets them
-            # prepended inline (no caching there).
-            result = submit_single(user_prompt, model=model,
-                                   system_prompt=system_prompt, file_context=file_context)
-
-            # Account for EVERY call's tokens — success or failure.
-            call_cost = estimate_cost(model, result.input_tokens, result.output_tokens,
-                                      result.cache_read_tokens, result.cache_write_tokens) or 0.0
-            run_cost += call_cost
+            # Stream this function's output straight to the durable archive.
+            sink = None
+            if archive is not None:
+                sink = ResponseSink(archive.stream_path(func_idx, dep.name))
+            try:
+                if use_claude:
+                    result = submit_single(user_prompt, model=model,
+                                           system_prompt=system_prompt,
+                                           file_context=file_context, sink=sink)
+                else:
+                    prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
+                    full_prompt = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
+                    result = submit_single(full_prompt, model=model, sink=sink)
+            finally:
+                if sink is not None:
+                    sink.close()
 
             if result.success:
                 translated[dep.name] = result.rust_code
-                # Persist immediately so a later kill/credit-stop doesn't lose
-                # this function — the next run resumes past it for free.
+                # Persist for cross-run resume the instant it returns.
                 cache.put(dep.name, dep.body_text, result.rust_code)
                 total_in += result.input_tokens
                 total_out += result.output_tokens
-                total_cache_read += result.cache_read_tokens
-                total_cache_write += result.cache_write_tokens
-                cr = f" / {result.cache_read_tokens} cache-rd" if result.cache_read_tokens else ""
-                cw = f" / {result.cache_write_tokens} cache-wr" if result.cache_write_tokens else ""
-                print(f"OK ({result.input_tokens} in / {result.output_tokens} out{cr}{cw})", file=sys.stderr)
+                if archive is not None:
+                    archive.commit(func_idx, dep.name, result.rust_code,
+                                   result.input_tokens, result.output_tokens)
+                    running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
+                    print(f"OK ({result.input_tokens} in / {result.output_tokens} out)"
+                          f"  [running ${running_cost:.2f}]", file=sys.stderr)
+                else:
+                    print(f"OK ({result.input_tokens} in / {result.output_tokens} out)", file=sys.stderr)
             else:
-                failed_in += result.input_tokens
-                failed_out += result.output_tokens
-                total_cache_read += result.cache_read_tokens
-                total_cache_write += result.cache_write_tokens
-                burned = ""
-                if result.input_tokens or result.output_tokens:
-                    burned = f" [burned {result.input_tokens} in / {result.output_tokens} out]"
-                print(f"FAIL: {result.error}{burned}", file=sys.stderr)
+                print(f"FAIL: {result.error}", file=sys.stderr)
 
             # Hard cost cap — stop before the next (paid) call if we've crossed it.
-            if cost_cap is not None and run_cost >= cost_cap:
-                print(f"  ⛔ COST CAP HIT: ${run_cost:.2f} ≥ ${cost_cap:.2f} after "
+            if cost_cap is not None and running_cost >= cost_cap:
+                print(f"  ⛔ COST CAP HIT: ${running_cost:.2f} ≥ ${cost_cap:.2f} after "
                       f"{func_idx}/{len(sorted_deps)} functions — stopping.", file=sys.stderr)
                 capped = True
                 break
@@ -989,71 +1144,68 @@ def cmd_translate(args):
         # non-trivial preamble (most drivers) would not compile.
         preamble_rust = ""
         preamble_src = (scan.preamble_text or scan.globals_text or "").strip()
-        if preamble_src and not capped:
-            pre_hit = None if no_resume else cache.get(PREAMBLE_KEY, preamble_src)
-            if pre_hit is not None:
-                preamble_rust = pre_hit
-                resumed += 1
-                print(f"  [preamble] CACHED ($0)", file=sys.stderr)
-            else:
-                print(f"  [preamble] {len(preamble_src)} C chars...",
-                      file=sys.stderr, end=" ", flush=True)
-                pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
+        pre_hit = None if (no_resume or not preamble_src) else cache.get(PREAMBLE_KEY, preamble_src)
+        if pre_hit is not None:
+            preamble_rust = pre_hit
+            resumed += 1
+            print(f"  [preamble] CACHED ($0)", file=sys.stderr)
+        elif preamble_src and not capped:
+            print(f"  [preamble] {len(preamble_src)} C chars...",
+                  file=sys.stderr, end=" ", flush=True)
+            pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
+            pre_sink = None
+            if archive is not None:
+                pre_sink = ResponseSink(archive.stream_path(0, "preamble"))
+            try:
                 if use_claude:
                     pre_res = submit_single(pre_prompt, model=model,
-                                            system_prompt=system_prompt)
+                                            system_prompt=system_prompt, sink=pre_sink)
                 else:
                     pre_full = (system_prompt + "\n\n---\n\n" + pre_prompt) if system_prompt else pre_prompt
-                    pre_res = submit_single(pre_full, model=model)
-                run_cost += estimate_cost(model, pre_res.input_tokens, pre_res.output_tokens,
-                                          pre_res.cache_read_tokens, pre_res.cache_write_tokens) or 0.0
-                if pre_res.success:
-                    preamble_rust = pre_res.rust_code
-                    cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
-                    total_in += pre_res.input_tokens
-                    total_out += pre_res.output_tokens
-                    total_cache_read += pre_res.cache_read_tokens
-                    total_cache_write += pre_res.cache_write_tokens
-                    print(f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)",
-                          file=sys.stderr)
-                else:
-                    failed_in += pre_res.input_tokens
-                    failed_out += pre_res.output_tokens
-                    print(f"FAIL: {pre_res.error} (stitching without preamble)",
-                          file=sys.stderr)
+                    pre_res = submit_single(pre_full, model=model, sink=pre_sink)
+            finally:
+                if pre_sink is not None:
+                    pre_sink.close()
+            if pre_res.success:
+                preamble_rust = pre_res.rust_code
+                cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
+                total_in += pre_res.input_tokens
+                total_out += pre_res.output_tokens
+                if archive is not None:
+                    archive.commit(0, "preamble", pre_res.rust_code,
+                                   pre_res.input_tokens, pre_res.output_tokens)
+                    running_cost += cost_usd(model, pre_res.input_tokens, pre_res.output_tokens)
+                print(f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)",
+                      file=sys.stderr)
+            else:
+                print(f"FAIL: {pre_res.error} (stitching without preamble)",
+                      file=sys.stderr)
 
-        # ── Per-file usage + cost breakdown (the real billed split) ──
-        file_cost = estimate_cost(model, total_in + failed_in, total_out + failed_out,
-                                  total_cache_read, total_cache_write)
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         if resumed:
             print(f"  Resumed {resumed} unit(s) from cache this run (re-translation skipped, $0)",
                   file=sys.stderr)
-        print(f"  Tokens  uncached-in={total_in:,}  out={total_out:,}  "
-              f"cache-read={total_cache_read:,}  cache-write={total_cache_write:,}",
-              file=sys.stderr)
-        if failed_in or failed_out:
-            print(f"  WASTED on failed calls: {failed_in:,} in / {failed_out:,} out",
-                  file=sys.stderr)
-        if file_cost is not None:
-            # Show what caching saved vs. a hypothetical no-cache run (cache reads
-            # would have been full-price uncached input).
-            rates = None
-            try:
-                from .batch_runner import PRICING
-                rates = PRICING.get(model) or next((v for k, v in PRICING.items() if model.startswith(k)), None)
-            except Exception:
-                pass
-            saved = (total_cache_read * (rates[0] - rates[2]) / 1_000_000) if rates else 0.0
-            if total_cache_read:
-                cache_note = f"  (caching saved ~${saved:.2f})"
-            elif total_in == 0 and resumed:
-                # Every unit came from the resume cache — no API call was made,
-                # so cache_read is legitimately 0. Not a caching failure.
-                cache_note = "  (all units resumed from disk — no API calls)"
-            else:
-                cache_note = "  (NO cache hits — caching not working!)"
-            print(f"  Cost ≈ ${file_cost:.3f}{cache_note}   run total ≈ ${run_cost:.2f}",
+        print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
+
+        # COMPLETENESS GATE — a partial run must NOT bank silently. Surface every
+        # function that failed/never landed and a failed preamble loudly, so the
+        # assembled file is never mistaken for a complete translation (this is the
+        # diagnostic that was missing when the mlang/cabinet_main preambles +
+        # map_font vanished without a trace). Re-run to fill the gaps.
+        missing_fns = [d.name for d in sorted_deps if d.name not in translated]
+        preamble_failed = bool(preamble_src) and not preamble_rust.strip()
+        if missing_fns or preamble_failed:
+            print(f"\n  ⚠️  INCOMPLETE TRANSLATION for {c_file.name} — the assembled "
+                  f"file is PARTIAL:", file=sys.stderr)
+            if preamble_failed:
+                print(f"       • type/struct PREAMBLE failed (empty) — file-scope "
+                      f"structs/typedefs are MISSING", file=sys.stderr)
+            if missing_fns:
+                preview = ", ".join(missing_fns[:12]) + (" …" if len(missing_fns) > 12 else "")
+                print(f"       • {len(missing_fns)}/{len(sorted_deps)} function(s) "
+                      f"missing: {preview}", file=sys.stderr)
+            print(f"       Re-run `python -m rustconv translate {c_file} ...` to fill "
+                  f"the gaps (cached units stay $0; only the failures re-translate).",
                   file=sys.stderr)
 
         # Stitch functions into a single file
@@ -1088,7 +1240,7 @@ def cmd_translate(args):
         # Respect the cost cap across files too, not just within one file.
         if capped:
             print(f"\n⛔ Stopping run: cost cap ${cost_cap:.2f} reached "
-                  f"(run total ≈ ${run_cost:.2f}). Remaining files NOT translated.",
+                  f"(run total ≈ ${running_cost:.2f}). Remaining files NOT translated.",
                   file=sys.stderr)
             break
 
@@ -1100,6 +1252,11 @@ def cmd_translate(args):
         generate_mod_rs(subsystem, module_names)
         generate_lib_rs([subsystem])
         print(f"\nUpdated mod.rs and lib.rs for {subsystem}/", file=sys.stderr)
+
+    if archive is not None:
+        print(f"\n  Total spent this run: ${running_cost:.2f}  "
+              f"({len(archive.committed)} unit(s) archived)", file=sys.stderr)
+        print(f"  Durable archive: {archive.dir}", file=sys.stderr)
 
     if not args.dry_run:
         print(f"\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
@@ -1130,7 +1287,7 @@ def cmd_estimate(args):
         print(f"Error: not found: {target}", file=sys.stderr)
         sys.exit(1)
 
-    rustconv_target = detect_target(target)
+    rustconv_target = resolve_target(args,target)
     catalog = build_catalog(arch=args.arch, target=rustconv_target)
     spec = parse_spec(rustconv_target.spec_file) if rustconv_target.spec_file else {}
 
@@ -1146,22 +1303,33 @@ def cmd_estimate(args):
         total_lines += lines
         print(f"  {cf.name}: {lines} lines, ~{tokens:,} tokens")
 
-    total_output = int(total_input * 0.35)
+    # Output runs ~0.6x of input for C→Rust (Rust expands the source).
+    total_output = int(total_input * 0.6)
 
     print(f"\nTotal: {len(c_files)} files, {total_lines:,} lines")
-    print(f"Estimated tokens: ~{total_input:,} input, ~{total_output:,} output")
+    print(f"Estimated tokens (single full-file prompt): "
+          f"~{total_input:,} input, ~{total_output:,} output")
+    print("\n  ⚠️  NOTE: `submit`/`batch` send ONE prompt per file. But `translate`")
+    print("     (the path used for big files) sends one paid call PER FUNCTION,")
+    print("     each RE-SENDING the system prompt + growing context — real input")
+    print("     is commonly 2–5× the figure above. These estimates are a FLOOR.")
 
-    # Show costs for multiple models
-    costs = [
-        ("Claude Sonnet (batch)", 1.50, 7.50),
-        ("Claude Haiku (batch)", 0.40, 2.00),
-        ("Gemini 2.5 Pro", 1.25, 10.00),
-        ("Gemini 2.5 Flash", 0.15, 0.60),
+    from .config import MODEL_PRICING, BATCH_DISCOUNT
+    rows = [
+        ("Opus   (claude-opus-4-8)",   "claude-opus-4-8"),
+        ("Sonnet (claude-sonnet-4-5)", "claude-sonnet-4-5-20250929"),
+        ("Haiku  (claude-haiku-4-5)",  "claude-haiku-4-5-20251001"),
+        ("Gemini 2.5 Pro",             "gemini-2.5-pro"),
+        ("Gemini 2.5 Flash",           "gemini-2.5-flash"),
     ]
-    print("\nEstimated costs:")
-    for name, in_price, out_price in costs:
-        cost = total_input * in_price / 1_000_000 + total_output * out_price / 1_000_000
-        print(f"  {name}: ${cost:.2f}")
+    print("\nEstimated cost (sync = translate/submit; batch = `batch` cmd, 50% off):")
+    print(f"  {'model':<28} {'sync':>10}  {'batch':>10}   sync @5x")
+    for label, mid in rows:
+        pin, pout = MODEL_PRICING[mid]
+        sync = total_input * pin / 1_000_000 + total_output * pout / 1_000_000
+        batch = sync * BATCH_DISCOUNT
+        print(f"  {label:<28} {'$' + format(sync, '.2f'):>10}  "
+              f"{'$' + format(batch, '.2f'):>10}   ${sync * 5:.2f}")
 
 
 def cmd_objdiff(args):
@@ -1291,6 +1459,7 @@ def main():
     p.add_argument("file", help="C source file")
     p.add_argument("-o", "--output", help="Write Rust output to file")
     p.add_argument("--assemble", action="store_true", help="Assemble into crate structure")
+    p.add_argument("--target", help="Override target: a known target name or a dll/win32/<name> crate name")
     p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
 
     # batch
@@ -1451,7 +1620,13 @@ def main():
     # translate (function-by-function)
     p = sub.add_parser("translate", help="Function-by-function translation (improved pipeline)")
     p.add_argument("path", help="C file or directory (relative to ntoskrnl/ or absolute)")
-    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, or full ID")
+    p.add_argument("--target", help="Override target: a known target name or a dll/win32/<name> crate name")
+    p.add_argument("-m", "--model", help="Model: sonnet, haiku, opus, gemini-pro, gemini-flash, deepseek, deepseek-r1, or full ID")
+    p.add_argument("--mode", default="idiomatic", choices=["idiomatic", "mechanical"],
+                   help="idiomatic (default): translate + idiomize in one pass. "
+                        "mechanical: faithful transliteration only — compiles, "
+                        "preserves C control flow/pointers, no idiom, no stubs "
+                        "(pass 1 of a two-pass cheap-model pipeline).")
     p.add_argument("-o", "--output", help="Write Rust output to file (single file only)")
     p.add_argument("--fn", dest="fn", help="Translate only this function")
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
@@ -1460,11 +1635,21 @@ def main():
                    help="File stems to skip (batch mode)")
     p.add_argument("--cost-cap", dest="cost_cap", type=float, default=None,
                    help="Hard USD spend cap for this invocation; stops before the next "
-                        "call once cumulative estimated cost reaches it (safety brake).")
+                        "call once cumulative cost reaches it (safety brake).")
+    p.add_argument("--concurrency", type=int, default=1,
+                   help="Fan out per-function calls N-at-a-time (DeepSeek + --mode "
+                        "mechanical ONLY; ignored otherwise). Default 1 (sequential). "
+                        "Try 5; pair with --cost-cap as the runaway brake.")
     p.add_argument("--no-resume", dest="no_resume", action="store_true",
                    help="Ignore the .responses/ resume cache and re-translate every "
-                        "function fresh (the cache is still refreshed). Default resumes: "
-                        "functions whose C body is unchanged are reused for $0.")
+                        "function fresh (cache still refreshed). Default resumes "
+                        "unchanged-body functions for $0.")
+    p.add_argument("--c2rust", action="store_true",
+                   help="Anchor each function on its c2rust transpilation (compiler-exact, "
+                        "behavior-preserving) so the model can't silently stub/drop logic. "
+                        "Best-effort: needs the c2rust binary + a build-*/compile_commands.json; "
+                        "falls back to anchor-less translation if unavailable. Pairs with "
+                        "--mode mechanical.")
 
     # probe-migrate
     p = sub.add_parser("probe-migrate", help="Migrate Rust files from ProbeForRead/Write to probe::*")
@@ -1531,7 +1716,13 @@ def main():
         "trace-catalog": cmd_trace_catalog,
     }
 
-    commands[args.command](args)
+    try:
+        commands[args.command](args)
+    except ValueError as e:
+        # target auto-detect failure (unrecognized path) surfaces here as a clean
+        # message instead of a traceback — tells the user to pass --target.
+        print(str(e), file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

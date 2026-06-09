@@ -27,6 +27,20 @@ extern crate slist;
 extern crate splaytree;
 extern crate uniprefix;
 extern crate rtl_strings;
+extern crate rtl_actctx;
+extern crate rtl_diag;
+extern crate rtl_misc;
+extern crate rtl_heap;
+extern crate rtl_threadpool;
+extern crate rtl_sync;
+extern crate rtl_version;
+extern crate rtl_ppb;
+extern crate rtl_propvar;
+extern crate rtl_bootdata;
+extern crate rtl_rangelist;
+extern crate rtl_sysvol;
+extern crate rtl_rxact;
+extern crate rtl_error;
 extern crate time;
 
 // Single shared #[panic_handler] for the umbrella. Each sub-crate previously

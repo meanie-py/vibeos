@@ -1,0 +1,17 @@
+[package]
+name = "rtl-error"
+version = "0.1.0"
+edition = "2021"
+
+# Rust translation of sdk/lib/rtl/error.c — the NTSTATUS->DOS Win32 error
+# mapping (RtlNtStatusToDosError[NoTeb]) + last-error/last-status TEB
+# accessors + thread error-mode. The giant status->code tables reference
+# ~665 winerror.h ERROR_*/SEC_*/RPC_* constants; those are extracted
+# deterministically into src/winerr.rs by tools/gen_winerror_consts.py
+# (NOT by the LLM). Shared kernel+user via librtl_rust.a.
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

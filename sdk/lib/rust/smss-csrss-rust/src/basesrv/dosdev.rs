@@ -1,6 +1,8 @@
-use ntdll_sys::nt::*;
+use super::vdm_types::{
+    wcslen, wcsncpy, HandleToUlong, _snwprintf, _wcsicmp, _wcsnicmp, NT_SUCCESS,
+};
 use core::ffi::c_void;
-use super::vdm_types::{NT_SUCCESS, HandleToUlong, wcslen, wcsncpy, _wcsicmp, _wcsnicmp, _snwprintf};
+use ntdll_sys::nt::*;
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -114,7 +116,8 @@ unsafe fn IsGlobalSymbolicLink(LinkHandle: HANDLE, IsGlobal: PBOOLEAN) -> NTSTAT
         /* Only failure we tolerate is length mismatch */
         if NT_SUCCESS(Status) || Status == STATUS_INFO_LENGTH_MISMATCH {
             /* Allocate big enough buffer */
-            PNameInfo = RtlAllocateHeap(BaseSrvHeap, 0, ReturnLength as _) as *mut OBJECT_NAME_INFORMATION;
+            PNameInfo =
+                RtlAllocateHeap(BaseSrvHeap, 0, ReturnLength as _) as *mut OBJECT_NAME_INFORMATION;
             if PNameInfo.is_null() {
                 Status = STATUS_NO_MEMORY;
                 break 'block;
@@ -132,12 +135,8 @@ unsafe fn IsGlobalSymbolicLink(LinkHandle: HANDLE, IsGlobal: PBOOLEAN) -> NTSTAT
             if NT_SUCCESS(Status) {
                 // \GLOBAL?? — [u16] static (no `alloc` in this no_std crate; the
                 // collect::<Vec>() the translation emitted also dangled).
-                static GLOBAL_QQ: [u16; 10] =
-                    [92, 71, 76, 79, 66, 65, 76, 63, 63, 0];
-                RtlInitUnicodeString(
-                    &mut GlobalString,
-                    GLOBAL_QQ.as_ptr(),
-                );
+                static GLOBAL_QQ: [u16; 10] = [92, 71, 76, 79, 66, 65, 76, 63, 63, 0];
+                RtlInitUnicodeString(&mut GlobalString, GLOBAL_QQ.as_ptr());
                 *IsGlobal = RtlPrefixUnicodeString(
                     &GlobalString,
                     core::ptr::addr_of_mut!((*PNameInfo).Name),
@@ -185,9 +184,11 @@ unsafe fn CheckForGlobalDriveLetter(DriveLetter: SHORT) -> BOOLEAN {
     }
 
     /* Open our drive letter */
-    Status = NtOpenSymbolicLinkObject(&mut SymbolicLinkHandle,
-                                      SYMBOLIC_LINK_QUERY,
-                                      &mut ObjectAttributes);
+    Status = NtOpenSymbolicLinkObject(
+        &mut SymbolicLinkHandle,
+        SYMBOLIC_LINK_QUERY,
+        &mut ObjectAttributes,
+    );
 
     CsrRevertToSelf();
 
@@ -245,7 +246,10 @@ unsafe fn BroadcastDriveLetterChange(
         hUser32 = core::ptr::null_mut();
         RtlInitUnicodeString(
             &mut User32U,
-            ['u' as u16, 's' as u16, 'e' as u16, 'r' as u16, '3' as u16, '2' as u16, 0].as_ptr(),
+            [
+                'u' as u16, 's' as u16, 'e' as u16, 'r' as u16, '3' as u16, '2' as u16, 0,
+            ]
+            .as_ptr(),
         );
         Status = LdrGetDllHandle(
             core::ptr::null_mut(),
@@ -428,18 +432,13 @@ unsafe fn AddBSMRequest(
     }
 
     /* System cannot create LUID mapped drives - thus broadcast makes no sense */
-    if !(CallerLuid.LowPart == SystemLuid.LowPart
-        && CallerLuid.HighPart == SystemLuid.HighPart)
-    {
+    if !(CallerLuid.LowPart == SystemLuid.LowPart && CallerLuid.HighPart == SystemLuid.HighPart) {
         return STATUS_ACCESS_DENIED;
     }
 
     /* Allocate our request */
-    Request = RtlAllocateHeap(
-        BaseSrvHeap,
-        0,
-        core::mem::size_of::<_BSM_REQUEST>() as _,
-    ) as *mut _BSM_REQUEST;
+    Request = RtlAllocateHeap(BaseSrvHeap, 0, core::mem::size_of::<_BSM_REQUEST>() as _)
+        as *mut _BSM_REQUEST;
     if Request.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -447,7 +446,10 @@ unsafe fn AddBSMRequest(
     /* Initialize it */
     (*Request).DriveLetter = DriveLetter;
     (*Request).RemoveDefinition = RemoveDefinition as LONG;
-    RtlCopyLuid(core::ptr::addr_of_mut!((*Request).BroadcastLuid), BroadcastLuid);
+    RtlCopyLuid(
+        core::ptr::addr_of_mut!((*Request).BroadcastLuid),
+        BroadcastLuid,
+    );
     (*Request).Next = core::ptr::null_mut();
 
     /* And queue it */
@@ -482,8 +484,11 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
     _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let DefineDosDeviceRequest: PBASE_DEFINE_DOS_DEVICE =
-        core::ptr::addr_of_mut!((*(ApiMessage as PBASE_API_MESSAGE)).Data.DefineDosDeviceRequest);
+    let DefineDosDeviceRequest: PBASE_DEFINE_DOS_DEVICE = core::ptr::addr_of_mut!(
+        (*(ApiMessage as PBASE_API_MESSAGE))
+            .Data
+            .DefineDosDeviceRequest
+    );
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut LinkHandle: HANDLE = core::ptr::null_mut();
     let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
@@ -534,14 +539,16 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
 
     if CsrValidateMessageBuffer(
         ApiMessage,
-        core::ptr::addr_of_mut!((*DefineDosDeviceRequest).DeviceName.Buffer) as *mut *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!((*DefineDosDeviceRequest).DeviceName.Buffer)
+            as *mut *mut core::ffi::c_void,
         (*DefineDosDeviceRequest).DeviceName.Length as ULONG,
         core::mem::size_of::<u8>() as ULONG,
     ) == 0
         || ((*DefineDosDeviceRequest).DeviceName.Length & 1) != 0
         || CsrValidateMessageBuffer(
             ApiMessage,
-            core::ptr::addr_of_mut!((*DefineDosDeviceRequest).TargetPath.Buffer) as *mut *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*DefineDosDeviceRequest).TargetPath.Buffer)
+                as *mut *mut core::ffi::c_void,
             ((*DefineDosDeviceRequest).TargetPath.Length as ULONG)
                 + (if (*DefineDosDeviceRequest).TargetPath.Length != 0 {
                     core::mem::size_of::<u16>() as ULONG
@@ -579,7 +586,8 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
             && ((*DefineDosDeviceRequest).Flags & DDD_NO_BROADCAST_SYSTEM) == 0
         {
             if !(*DefineDosDeviceRequest).DeviceName.Buffer.is_null()
-                && (*DefineDosDeviceRequest).DeviceName.Length == (2 * core::mem::size_of::<WCHAR>()) as u16
+                && (*DefineDosDeviceRequest).DeviceName.Length
+                    == (2 * core::mem::size_of::<WCHAR>()) as u16
                 && *(*DefineDosDeviceRequest).DeviceName.Buffer.add(1) == 0x3A
             {
                 Letter = *(*DefineDosDeviceRequest).DeviceName.Buffer;
@@ -688,16 +696,17 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
 
                     DeviceName.Length = (CchLength * core::mem::size_of::<WCHAR>() as ULONG) as u16;
                     DeviceName.MaximumLength = (CchLength * core::mem::size_of::<WCHAR>() as ULONG
-                        + core::mem::size_of::<u16>() as ULONG) as u16;
+                        + core::mem::size_of::<u16>() as ULONG)
+                        as u16;
                 }
             }
         }
 
         if (*DefineDosDeviceRequest).TargetPath.Length != 0 {
-            *(*DefineDosDeviceRequest)
-                .TargetPath
-                .Buffer
-                .add(((*DefineDosDeviceRequest).TargetPath.Length as usize) / core::mem::size_of::<WCHAR>()) = 0;
+            *(*DefineDosDeviceRequest).TargetPath.Buffer.add(
+                ((*DefineDosDeviceRequest).TargetPath.Length as usize)
+                    / core::mem::size_of::<WCHAR>(),
+            ) = 0;
 
             TargetLength = wcslen((*DefineDosDeviceRequest).TargetPath.Buffer) as ULONG;
 
@@ -722,7 +731,8 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
 
         if HandleTarget != 0 {
             LinkTarget.Length = 0;
-            LinkTarget.MaximumLength = (CchLengthLeft * core::mem::size_of::<WCHAR>() as ULONG) as u16;
+            LinkTarget.MaximumLength =
+                (CchLengthLeft * core::mem::size_of::<WCHAR>() as ULONG) as u16;
             LinkTarget.Buffer = CurrentBuffer;
 
             Status = NtQuerySymbolicLinkObject(
@@ -793,11 +803,7 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
                                 && _wcsnicmp(OrigPtr, TargetBuffer, TargetLength as usize) != 0)))
                 {
                     if InterPtr != OrigPtr {
-                        core::ptr::copy(
-                            OrigPtr,
-                            InterPtr,
-                            (CchLength as usize) + 1,
-                        );
+                        core::ptr::copy(OrigPtr, InterPtr, (CchLength as usize) + 1);
                     }
 
                     InterPtr = InterPtr.add((CchLength + 1) as usize);
@@ -809,20 +815,21 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
             *InterPtr = 0;
             InterPtr = InterPtr.add(1);
 
-            TargetLength = (wcslen(LinkTarget.Buffer) as ULONG) * core::mem::size_of::<WCHAR>() as ULONG;
+            TargetLength =
+                (wcslen(LinkTarget.Buffer) as ULONG) * core::mem::size_of::<WCHAR>() as ULONG;
             if TargetLength == 0 {
                 break 'seh;
             }
 
             LinkTarget.Length = TargetLength as u16;
-            LinkTarget.MaximumLength =
-                ((InterPtr as usize) - (LinkTarget.Buffer as usize)) as u16;
+            LinkTarget.MaximumLength = ((InterPtr as usize) - (LinkTarget.Buffer as usize)) as u16;
         } else if HandleTarget != 0 {
             LinkTarget.Buffer = LinkTarget.Buffer.offset(-((TargetLength + 1) as isize));
             LinkTarget.Length = (TargetLength * core::mem::size_of::<WCHAR>() as ULONG) as u16;
-            LinkTarget.MaximumLength = LinkTarget.MaximumLength
-                .wrapping_add((TargetLength * core::mem::size_of::<WCHAR>() as ULONG
-                    + core::mem::size_of::<u16>() as ULONG) as u16);
+            LinkTarget.MaximumLength = LinkTarget.MaximumLength.wrapping_add(
+                (TargetLength * core::mem::size_of::<WCHAR>() as ULONG
+                    + core::mem::size_of::<u16>() as ULONG) as u16,
+            );
             TargetLength *= core::mem::size_of::<WCHAR>() as ULONG;
         } else {
             TargetLength = LinkTarget.Length as ULONG;
@@ -967,10 +974,15 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
             );
         }
 
-        AddBSMRequest(AbsLetter as LONG, RemoveDefinition, core::ptr::addr_of_mut!(CallerLuid));
+        AddBSMRequest(
+            AbsLetter as LONG,
+            RemoveDefinition,
+            core::ptr::addr_of_mut!(CallerLuid),
+        );
 
         if RemoveDefinition != 0
-            && !(CallerLuid.LowPart == SystemLuid.LowPart && CallerLuid.HighPart == SystemLuid.HighPart)
+            && !(CallerLuid.LowPart == SystemLuid.LowPart
+                && CallerLuid.HighPart == SystemLuid.HighPart)
         {
             if CheckForGlobalDriveLetter(AbsLetter) != 0 {
                 AddBSMRequest(AbsLetter as LONG, 0u8, core::ptr::addr_of_mut!(CallerLuid));
@@ -982,7 +994,6 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

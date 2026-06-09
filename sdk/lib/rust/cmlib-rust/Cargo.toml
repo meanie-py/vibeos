@@ -1,0 +1,23 @@
+# cmlib-rust — staticlib umbrella over the Rust translation of the kernel
+# Configuration Manager hive library (sdk/lib/cmlib). Cohabitation vehicle for
+# the cmlib cohab swap: the kernel `cmlib` cmake target REMOVE_ITEMs each
+# flipped `.c` from its SOURCE and links this `.a` (libcmlib_rust.a) so the
+# Rust `#[no_mangle] extern "C"` (CMAPI = cdecl) symbols take over. The
+# bootloader (blcmlib) and host (cmlibhost) cmlib variants keep the C for now.
+#
+# Mirrors cnt-rust-lib / rtl-rust: one #[panic_handler] + rust_eh_personality
+# stub live here; the actual per-file translations are modules under src/.
+
+[package]
+name = "cmlib-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+# Hive/cell/key types (HHIVE, HCELL_INDEX, HBIN, CELL_DATA, CM_KEY_NODE,
+# HBASE_BLOCK, …) come from the bindgen DDK layer — already present per
+# cmlib's headers, so the FFI surface needs no new hand-written types.
+ntkrnl-sys = { path = "../ntkrnl-sys" }

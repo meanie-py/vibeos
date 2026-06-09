@@ -1,0 +1,25 @@
+# rtl-actctx — Rust translation of ReactOS `sdk/lib/rtl/actctx.c`
+# (the SxS activation-context manifest parser/lookup: Rtl{Create,Query,
+# Find}*ActivationContext* and the Wine-derived XML manifest parser +
+# section-data builders).
+#
+# librtl is shared by ntoskrnl AND ntdll, so this feeds both. The
+# on-disk section-data structs (strsection_header / string_index /
+# guidsection_header / *redirect_data — src/types.rs) are byte-exact
+# with actctx.c, so the size assertions in types.rs are load-bearing.
+[package]
+name = "rtl-actctx"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The #[no_mangle] extern "system" NTAPI shim layer (the actctx symbols).
+cabi = []
+# Kernel-link parity flag (kept for symmetry with rtl-strings / rtl-heap).
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

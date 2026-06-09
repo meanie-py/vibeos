@@ -10,6 +10,7 @@ from typing import Optional
 from .config import (
     get_backend, DEFAULT_MODELS,
     CLAUDE_MAX_TOKENS, GEMINI_MAX_TOKENS,
+    DEEPSEEK_BASE_URL, DEEPSEEK_MAX_TOKENS,
 )
 
 
@@ -53,7 +54,7 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int,
 
 
 def _submit_claude(prompt: str, model: str, system_prompt: str = "",
-                   file_context: str = "") -> TranslationResult:
+                   file_context: str = "", sink=None) -> TranslationResult:
     """Submit via Anthropic Python SDK.
 
     Two cached system blocks form the stable prefix:
@@ -64,6 +65,10 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
                             file, so functions 2..N read it from cache (~0.1x)
                             instead of re-sending it uncached (1x).
     Only the function-specific `prompt` (the user turn) is full price each call.
+
+    sink: optional ResponseSink. When given, every streamed delta is written to
+    disk and flushed AS IT ARRIVES, so a process kill mid-stream never discards
+    output you were already billed for.
     """
     import anthropic
 
@@ -76,9 +81,12 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
             "messages": [{"role": "user", "content": prompt}],
         }
 
-        # Build cached system blocks. Each gets its own cache_control breakpoint
-        # (max 4 allowed); the prefix system_prompt → file_context is what the
-        # cache matches on.
+        # Up to TWO cached system blocks form the stable prefix:
+        #   1. system_prompt — file-independent translation rules
+        #   2. file_context  — per-file shared context (import superset, gap fns,
+        #      globals); byte-identical across all functions of one file, so
+        #      functions 2..N read it from cache (~0.1x) instead of re-sending it
+        #      uncached (1x). Only the per-function `prompt` is full price.
         system_blocks = []
         if system_prompt:
             system_blocks.append({
@@ -110,6 +118,8 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
                         if event.type == 'content_block_delta' and hasattr(event, 'delta'):
                             if hasattr(event.delta, 'text'):
                                 response_text += event.delta.text
+                                if sink is not None:
+                                    sink.write(event.delta.text)  # flush to disk now
                         elif event.type == 'message_delta' and hasattr(event, 'usage'):
                             output_tokens = event.usage.output_tokens
                             stop_reason = event.delta.stop_reason if hasattr(event, 'delta') else None
@@ -131,8 +141,23 @@ def _submit_claude(prompt: str, model: str, system_prompt: str = "",
 
         rust_code = _extract_rust_code(response_text)
 
+        # Empty/truncated output is a FAILURE, not a cacheable success — see the
+        # detailed note in _submit_deepseek. Same hazard applies to any backend.
+        if not rust_code.strip():
+            return TranslationResult(
+                source_file="", rust_code="", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=f"empty output (stop_reason={stop_reason}, {output_tokens} output tokens)",
+            )
         if stop_reason == "max_tokens":
-            print(f"  WARNING: output truncated at {output_tokens} tokens (stop_reason=max_tokens)", file=sys.stderr)
+            return TranslationResult(
+                source_file="", rust_code=rust_code, model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=(f"truncated output at {output_tokens} tokens "
+                       f"(stop_reason=max_tokens) — incomplete, not cached. Raise CLAUDE_MAX_TOKENS."),
+            )
 
         return TranslationResult(
             source_file="",
@@ -211,6 +236,122 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
         input_tokens = usage.prompt_token_count if usage else 0
         output_tokens = usage.candidates_token_count if usage else 0
 
+        # Empty output is a FAILURE, not a cacheable success — see the detailed
+        # note in _submit_deepseek.
+        if not rust_code.strip():
+            return TranslationResult(
+                source_file="", rust_code="", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=f"empty output ({output_tokens} output tokens)",
+            )
+
+        return TranslationResult(
+            source_file="",
+            rust_code=rust_code,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            success=True,
+        )
+
+    except Exception as e:
+        return TranslationResult(
+            source_file="",
+            rust_code="",
+            model=model,
+            input_tokens=0,
+            output_tokens=0,
+            success=False,
+            error=str(e),
+        )
+
+
+def _submit_deepseek(prompt: str, model: str, system_prompt: str = "",
+                     file_context: str = "", sink=None) -> TranslationResult:
+    """Submit via the DeepSeek API (OpenAI-compatible).
+
+    deepseek-chat = V3, deepseek-reasoner = R1. Uses the openai SDK pointed at
+    DeepSeek's base URL. system_prompt + file_context become system messages
+    (DeepSeek does automatic server-side prefix caching, so re-sending the
+    stable prefix per function is cheap — no explicit cache_control needed).
+    Streams deltas to `sink` so a kill mid-stream never discards paid output.
+    """
+    from openai import OpenAI
+
+    try:
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise RuntimeError("DEEPSEEK_API_KEY not set (add it to .env)")
+
+        client = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if file_context:
+            messages.append({"role": "system", "content": file_context})
+        messages.append({"role": "user", "content": prompt})
+
+        response_text = ""
+        input_tokens = 0
+        output_tokens = 0
+        finish_reason = None
+
+        stream = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=DEEPSEEK_MAX_TOKENS,
+            temperature=0.0,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        for chunk in stream:
+            if chunk.choices:
+                choice = chunk.choices[0]
+                delta = choice.delta
+                if delta is not None and getattr(delta, "content", None):
+                    response_text += delta.content
+                    if sink is not None:
+                        sink.write(delta.content)  # flush to disk now
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+            # Usage arrives on the final chunk (choices empty) with include_usage.
+            if getattr(chunk, "usage", None):
+                input_tokens = chunk.usage.prompt_tokens
+                output_tokens = chunk.usage.completion_tokens
+
+        rust_code = _extract_rust_code(response_text)
+
+        # An EMPTY or TRUNCATED translation is a FAILURE, never a cacheable
+        # result. DeepSeek v4 reasoning models can spend the entire max_tokens
+        # budget on reasoning (which streams as `reasoning_content`, not the
+        # `content` we capture) and emit NO code at all — or get cut off
+        # mid-output. Returning success here caches the empty/partial string as
+        # a valid $0 entry and SILENTLY drops the unit forever (this is exactly
+        # what wiped the mlang/cabinet_main type preambles + map_font). Make it
+        # loud and retriable instead.
+        if not rust_code.strip():
+            return TranslationResult(
+                source_file="", rust_code="", model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=(f"empty output (finish_reason={finish_reason}, "
+                       f"{output_tokens} output tokens). For a reasoning model this "
+                       f"usually means reasoning consumed the {DEEPSEEK_MAX_TOKENS}-token "
+                       f"budget before any code was emitted — raise DEEPSEEK_MAX_TOKENS "
+                       f"or split the unit."),
+            )
+        if finish_reason == "length":
+            return TranslationResult(
+                source_file="", rust_code=rust_code, model=model,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                success=False,
+                error=(f"truncated output at {output_tokens} tokens "
+                       f"(finish_reason=length) — incomplete; raise DEEPSEEK_MAX_TOKENS "
+                       f"or split the unit. Not cached."),
+            )
+
         return TranslationResult(
             source_file="",
             rust_code=rust_code,
@@ -233,12 +374,16 @@ def _submit_gemini(prompt: str, model: str) -> TranslationResult:
 
 
 def submit_single(prompt: str, model: str = "", system_prompt: str = "",
-                  file_context: str = "") -> TranslationResult:
+                  file_context: str = "", sink=None) -> TranslationResult:
     """Submit a single translation request.
 
     Auto-detects backend from model name or ANTHROPIC_API_KEY env var.
-    ``file_context`` is the per-file shared context; on Claude it becomes a
-    second cached system block, on Gemini (no caching) it's prepended inline.
+
+    file_context: optional per-file shared context; on Claude it becomes a
+        second cached system block (read at ~0.1x across a file's functions),
+        on DeepSeek it's a second system message (server-side prefix caching),
+        on Gemini (no caching) it's prepended inline.
+    sink: optional ResponseSink for durable stream-to-disk (Claude/DeepSeek).
     """
     backend = get_backend()
 
@@ -248,17 +393,25 @@ def submit_single(prompt: str, model: str = "", system_prompt: str = "",
     # Override backend based on model name
     if model.startswith("claude-"):
         backend = "claude"
+    elif model.startswith("deepseek-"):
+        backend = "deepseek"
     elif model.startswith("gemini-"):
         backend = "gemini"
 
     if backend == "claude":
-        return _submit_claude(prompt, model, system_prompt, file_context)
+        return _submit_claude(prompt, model, system_prompt, file_context, sink=sink)
+    elif backend == "deepseek":
+        return _submit_deepseek(prompt, model, system_prompt, file_context, sink=sink)
     else:
-        # Gemini doesn't support separate system prompt / caching via this path,
-        # so we prepend both the rules and the file context to the prompt.
+        # Gemini has no separate system prompt / caching here, so prepend both
+        # the rules and the per-file context to the prompt.
         prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
         full_prompt = (prefix + "\n\n---\n\n" + prompt) if prefix else prompt
-        return _submit_gemini(full_prompt, model)
+        result = _submit_gemini(full_prompt, model)
+        # Gemini isn't streamed here, but still persist the result durably.
+        if sink is not None and result.rust_code:
+            sink.write(result.rust_code)
+        return result
 
 
 def submit_batch(prompts: dict[str, str], model: str = "", system_prompt: str = "") -> dict[str, TranslationResult]:

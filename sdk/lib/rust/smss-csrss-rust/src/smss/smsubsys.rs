@@ -1,4 +1,3 @@
-
 use ntdll_sys::nt::*;
 
 // User-mode constants the rustconv translation referenced as if extern;
@@ -10,7 +9,10 @@ const STATUS_WAIT_0: NTSTATUS = 0x00000000;
 const STATUS_WAIT_1: NTSTATUS = 0x00000001;
 const STATUS_NO_SUCH_PACKAGE: NTSTATUS = 0xC00000FEu32 as NTSTATUS;
 
-#[inline] unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
+#[inline]
+unsafe fn NT_SUCCESS(s: NTSTATUS) -> bool {
+    s >= 0
+}
 
 // RtlCopyMemory is a memmove macro, not an export.
 #[inline]
@@ -37,23 +39,37 @@ extern "C" {
 #[inline(always)]
 unsafe fn RtlStringCbCatW(dst: *mut u16, cb_dst: usize, src: *const u16) -> NTSTATUS {
     let max_chars = cb_dst / 2;
-    if max_chars == 0 { return 0xC0000023u32 as NTSTATUS; } // STATUS_BUFFER_TOO_SMALL
+    if max_chars == 0 {
+        return 0xC0000023u32 as NTSTATUS;
+    } // STATUS_BUFFER_TOO_SMALL
     let mut dst_len = 0usize;
-    while dst_len < max_chars && *dst.add(dst_len) != 0 { dst_len += 1; }
-    if dst_len >= max_chars { return 0xC0000023u32 as NTSTATUS; }
+    while dst_len < max_chars && *dst.add(dst_len) != 0 {
+        dst_len += 1;
+    }
+    if dst_len >= max_chars {
+        return 0xC0000023u32 as NTSTATUS;
+    }
     let mut i = 0usize;
     while *src.add(i) != 0 && dst_len + i + 1 < max_chars {
         *dst.add(dst_len + i) = *src.add(i);
         i += 1;
     }
     *dst.add(dst_len + i) = 0;
-    if *src.add(i) != 0 { 0xC0000023u32 as NTSTATUS } else { 0 }
+    if *src.add(i) != 0 {
+        0xC0000023u32 as NTSTATUS
+    } else {
+        0
+    }
 }
 
 // CONTAINING_RECORD is a C macro (`(type*)((char*)ptr - offsetof(type, field))`).
 // Call sites pass `core::mem::offset_of!(T, Field)` as the third arg.
 #[inline(always)]
-unsafe fn CONTAINING_RECORD(ptr: PLIST_ENTRY, _ty: usize, field_offset: usize) -> *mut core::ffi::c_void {
+unsafe fn CONTAINING_RECORD(
+    ptr: PLIST_ENTRY,
+    _ty: usize,
+    field_offset: usize,
+) -> *mut core::ffi::c_void {
     (ptr as *mut u8).wrapping_sub(field_offset) as *mut core::ffi::c_void
 }
 
@@ -62,7 +78,10 @@ unsafe fn CONTAINING_RECORD(ptr: PLIST_ENTRY, _ty: usize, field_offset: usize) -
 #[no_mangle]
 pub static mut SmpKnownSubSysLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 #[no_mangle]
-pub static mut SmpKnownSubSysHead: LIST_ENTRY = LIST_ENTRY { Flink: core::ptr::null_mut(), Blink: core::ptr::null_mut() };
+pub static mut SmpKnownSubSysHead: LIST_ENTRY = LIST_ENTRY {
+    Flink: core::ptr::null_mut(),
+    Blink: core::ptr::null_mut(),
+};
 #[no_mangle]
 pub static mut SmpWindowsSubSysProcess: HANDLE = core::ptr::null_mut();
 #[no_mangle]
@@ -122,12 +141,9 @@ pub unsafe extern "system" fn SmpLocateKnownSubSysByCid(ClientId: PCLIENT_ID) ->
 
     NextEntry = SmpKnownSubSysHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!(SmpKnownSubSysHead) {
-        Subsystem = CONTAINING_RECORD(
-            NextEntry,
-            0,
-            core::mem::offset_of!(SMP_SUBSYSTEM, Entry),
-        ) as PSMP_SUBSYSTEM;
-        
+        Subsystem = CONTAINING_RECORD(NextEntry, 0, core::mem::offset_of!(SMP_SUBSYSTEM, Entry))
+            as PSMP_SUBSYSTEM;
+
         if *(core::ptr::addr_of!((*Subsystem).ClientId) as PULONGLONG) == *(ClientId as PULONGLONG)
             && (*Subsystem).Terminating == 0
         {
@@ -155,12 +171,9 @@ pub unsafe extern "system" fn SmpLocateKnownSubSysByType(
 
     NextEntry = SmpKnownSubSysHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!(SmpKnownSubSysHead) {
-        Subsystem = CONTAINING_RECORD(
-            NextEntry,
-            0,
-            core::mem::offset_of!(SMP_SUBSYSTEM, Entry),
-        ) as PSMP_SUBSYSTEM;
-        
+        Subsystem = CONTAINING_RECORD(NextEntry, 0, core::mem::offset_of!(SMP_SUBSYSTEM, Entry))
+            as PSMP_SUBSYSTEM;
+
         if (*Subsystem).ImageType == ImageType
             && (*Subsystem).Terminating == 0
             && (*Subsystem).MuSessionId == MuSessionId
@@ -232,7 +245,11 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         return STATUS_SUCCESS;
     }
 
-    NewSubsystem = RtlAllocateHeap(SmpHeap, SmBaseTag as ULONG, core::mem::size_of::<SMP_SUBSYSTEM>().try_into().unwrap()) as PSMP_SUBSYSTEM;
+    NewSubsystem = RtlAllocateHeap(
+        SmpHeap,
+        SmBaseTag as ULONG,
+        core::mem::size_of::<SMP_SUBSYSTEM>().try_into().unwrap(),
+    ) as PSMP_SUBSYSTEM;
     if NewSubsystem.is_null() {
         RtlLeaveCriticalSection(core::ptr::addr_of_mut!(SmpKnownSubSysLock));
         return STATUS_NO_MEMORY;
@@ -288,7 +305,8 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
             }
         }
 
-        let CreateProcess = core::ptr::addr_of_mut!(SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.u.CreateProcess);
+        let CreateProcess =
+            core::ptr::addr_of_mut!(SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.u.CreateProcess);
         (*CreateProcess).__bindgen_anon_1.In.ImageName = FileName;
         (*CreateProcess).__bindgen_anon_1.In.CurrentDirectory = Directory;
         (*CreateProcess).__bindgen_anon_1.In.CommandLine = CommandLine;
@@ -326,7 +344,8 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         ProcessInformation.ProcessHandle = (*CreateProcess).__bindgen_anon_1.Out.ProcessHandle;
         ProcessInformation.ThreadHandle = (*CreateProcess).__bindgen_anon_1.Out.ThreadHandle;
         ProcessInformation.ClientId = (*CreateProcess).__bindgen_anon_1.Out.ClientId;
-        ProcessInformation.ImageInformation.SubSystemType = (*CreateProcess).__bindgen_anon_1.Out.SubsystemType;
+        ProcessInformation.ImageInformation.SubSystemType =
+            (*CreateProcess).__bindgen_anon_1.Out.SubsystemType;
     } else {
         Status = SmpExecuteImage(
             FileName,
@@ -370,7 +389,8 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
             SmpWindowsSubSysProcess = ProcessInformation.ProcessHandle;
         }
     } else {
-        let CreateSession = core::ptr::addr_of_mut!(SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.u.CreateSession);
+        let CreateSession =
+            core::ptr::addr_of_mut!(SbApiMsg.__bindgen_anon_1.__bindgen_anon_1.u.CreateSession);
         (*CreateSession).ProcessInfo = ProcessInformation;
         (*CreateSession).DbgSessionId = 0;
         *(core::ptr::addr_of_mut!((*CreateSession).DbgUiClientId) as PULONGLONG) = 0;
@@ -382,9 +402,13 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         if Subsystem.is_null() {
             Status = STATUS_NO_SUCH_PACKAGE;
             'Quickie: {
-                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0) {
+                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0)
+                {
                 } else {
-                    Status = SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
+                    Status = SmpAcquirePrivilege(
+                        SE_LOAD_DRIVER_PRIVILEGE,
+                        core::ptr::addr_of_mut!(State),
+                    );
                     if Status >= 0 {
                         Status = NtSetSystemInformation(
                             SystemSessionDetach,
@@ -429,9 +453,13 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         );
         if Status < 0 {
             'Quickie: {
-                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0) {
+                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0)
+                {
                 } else {
-                    Status = SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
+                    Status = SmpAcquirePrivilege(
+                        SE_LOAD_DRIVER_PRIVILEGE,
+                        core::ptr::addr_of_mut!(State),
+                    );
                     if Status >= 0 {
                         Status = NtSetSystemInformation(
                             SystemSessionDetach,
@@ -476,9 +504,13 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         );
         if Status < 0 {
             'Quickie: {
-                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0) {
+                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0)
+                {
                 } else {
-                    Status = SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
+                    Status = SmpAcquirePrivilege(
+                        SE_LOAD_DRIVER_PRIVILEGE,
+                        core::ptr::addr_of_mut!(State),
+                    );
                     if Status >= 0 {
                         Status = NtSetSystemInformation(
                             SystemSessionDetach,
@@ -530,9 +562,13 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         if Status < 0 {
             SmpDeleteSession((*CreateSession).SessionId);
             'Quickie: {
-                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0) {
+                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0)
+                {
                 } else {
-                    Status = SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
+                    Status = SmpAcquirePrivilege(
+                        SE_LOAD_DRIVER_PRIVILEGE,
+                        core::ptr::addr_of_mut!(State),
+                    );
                     if Status >= 0 {
                         Status = NtSetSystemInformation(
                             SystemSessionDetach,
@@ -572,7 +608,8 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
         'Quickie: {
             if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0) {
             } else {
-                Status = SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
+                Status =
+                    SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
                 if Status >= 0 {
                     Status = NtSetSystemInformation(
                         SystemSessionDetach,
@@ -608,7 +645,8 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
 
     if MuSessionId != 0 {
         Timeout.QuadPart = -600000000;
-        Status = NtWaitForSingleObject((*NewSubsystem).Event, 0u8, core::ptr::addr_of_mut!(Timeout));
+        Status =
+            NtWaitForSingleObject((*NewSubsystem).Event, 0u8, core::ptr::addr_of_mut!(Timeout));
 
         if SmpCheckDuplicateMuSessionId(MuSessionId) == 0 {
             return STATUS_DELETE_PENDING;
@@ -616,9 +654,13 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
 
         if Status != STATUS_WAIT_0 {
             'Quickie: {
-                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0) {
+                if AttachedSessionId == 0xFFFFFFFF || (Flags & (SMP_POSIX_FLAG | SMP_OS2_FLAG) != 0)
+                {
                 } else {
-                    Status = SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
+                    Status = SmpAcquirePrivilege(
+                        SE_LOAD_DRIVER_PRIVILEGE,
+                        core::ptr::addr_of_mut!(State),
+                    );
                     if Status >= 0 {
                         Status = NtSetSystemInformation(
                             SystemSessionDetach,
@@ -714,8 +756,15 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
             0,
             core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry),
         ) as PSMP_REGISTRY_VALUE;
-        
-        static KMODE: [u16; 6] = [b'K' as u16, b'm' as u16, b'o' as u16, b'd' as u16, b'e' as u16, 0];
+
+        static KMODE: [u16; 6] = [
+            b'K' as u16,
+            b'm' as u16,
+            b'o' as u16,
+            b'd' as u16,
+            b'e' as u16,
+            0,
+        ];
         if _wcsicmp((*RegEntry).Name.Buffer, KMODE.as_ptr()) == 0 {
             if RtlDosPathNameToNtPathName_U(
                 (*RegEntry).Value.Buffer,
@@ -726,7 +775,8 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
             {
                 Status = STATUS_OBJECT_PATH_SYNTAX_BAD;
             } else {
-                Status = SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
+                Status =
+                    SmpAcquirePrivilege(SE_LOAD_DRIVER_PRIVILEGE, core::ptr::addr_of_mut!(State));
                 if Status >= 0 {
                     Status = NtSetSystemInformation(
                         SystemSessionCreate,
@@ -741,12 +791,38 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
                     AttachedSessionId = *MuSessionId;
 
                     static WIN32K_PATH: [u16; 32] = [
-                        b'\\' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16,
-                        b'm' as u16, b'R' as u16, b'o' as u16, b'o' as u16, b't' as u16, b'\\' as u16,
-                        b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
-                        b'3' as u16, b'2' as u16, b'\\' as u16, b'w' as u16, b'i' as u16, b'n' as u16,
-                        b'3' as u16, b'2' as u16, b'k' as u16, b'.' as u16, b's' as u16, b'y' as u16,
-                        b's' as u16, 0,
+                        b'\\' as u16,
+                        b'S' as u16,
+                        b'y' as u16,
+                        b's' as u16,
+                        b't' as u16,
+                        b'e' as u16,
+                        b'm' as u16,
+                        b'R' as u16,
+                        b'o' as u16,
+                        b'o' as u16,
+                        b't' as u16,
+                        b'\\' as u16,
+                        b'S' as u16,
+                        b'y' as u16,
+                        b's' as u16,
+                        b't' as u16,
+                        b'e' as u16,
+                        b'm' as u16,
+                        b'3' as u16,
+                        b'2' as u16,
+                        b'\\' as u16,
+                        b'w' as u16,
+                        b'i' as u16,
+                        b'n' as u16,
+                        b'3' as u16,
+                        b'2' as u16,
+                        b'k' as u16,
+                        b'.' as u16,
+                        b's' as u16,
+                        b'y' as u16,
+                        b's' as u16,
+                        0,
                     ];
                     RtlInitUnicodeString(
                         core::ptr::addr_of_mut!(DestinationString),
@@ -777,7 +853,14 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
             core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry),
         ) as PSMP_REGISTRY_VALUE;
 
-        static DEBUG: [u16; 6] = [b'D' as u16, b'e' as u16, b'b' as u16, b'u' as u16, b'g' as u16, 0];
+        static DEBUG: [u16; 6] = [
+            b'D' as u16,
+            b'e' as u16,
+            b'b' as u16,
+            b'u' as u16,
+            b'g' as u16,
+            0,
+        ];
         if _wcsicmp((*RegEntry).Name.Buffer, DEBUG.as_ptr()) == 0 {
             Status = SmpExecuteCommand(
                 core::ptr::addr_of_mut!((*RegEntry).Value),
@@ -813,15 +896,33 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
         NtDelayExecution(0u8, core::ptr::addr_of_mut!(Timeout));
     } else {
         static WINLOGON: [u16; 13] = [
-            b'w' as u16, b'i' as u16, b'n' as u16, b'l' as u16, b'o' as u16, b'g' as u16,
-            b'o' as u16, b'n' as u16, b'.' as u16, b'e' as u16, b'x' as u16, b'e' as u16, 0,
+            b'w' as u16,
+            b'i' as u16,
+            b'n' as u16,
+            b'l' as u16,
+            b'o' as u16,
+            b'g' as u16,
+            b'o' as u16,
+            b'n' as u16,
+            b'.' as u16,
+            b'e' as u16,
+            b'x' as u16,
+            b'e' as u16,
+            0,
         ];
         RtlInitUnicodeString(InitialCommand, WINLOGON.as_ptr());
         InitialCommandBuffer[0] = 0;
 
         static DEBUGGER: [u16; 9] = [
-            b'D' as u16, b'e' as u16, b'b' as u16, b'u' as u16, b'g' as u16, b'g' as u16,
-            b'e' as u16, b'r' as u16, 0,
+            b'D' as u16,
+            b'e' as u16,
+            b'b' as u16,
+            b'u' as u16,
+            b'g' as u16,
+            b'g' as u16,
+            b'e' as u16,
+            b'r' as u16,
+            0,
         ];
         Status2 = LdrQueryImageFileExecutionOptions(
             InitialCommand,
@@ -864,7 +965,6 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
 
     Status
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

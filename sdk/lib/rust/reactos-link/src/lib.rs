@@ -41,7 +41,11 @@ pub enum ModuleKind {
     /// for ntdll.dll (the win32dll set_subsystem hack); `None` lets lld
     /// default (GUI 6.0) — matches ntdll_vista.dll, which passes no
     /// `--subsystem`.
-    Win32Dll { entry: String, image_base: u64, subsystem: Option<String> },
+    Win32Dll {
+        entry: String,
+        image_base: u64,
+        subsystem: Option<String>,
+    },
     /// `efi_application` — a UEFI app (uefildr.efi). Mirrors the cmake
     /// `uefildr.efi` link (set_subsystem 10 / `set_entrypoint EfiEntry`):
     /// `--subsystem,efi_application:5.01`, `--gc-sections` + no `-shared`
@@ -59,7 +63,11 @@ pub enum ModuleKind {
     ///   i386 cmake auto-resolves to the exe default 0x00400000 (passed
     ///   explicitly as `Some(0x400000)` — identical header); arm64 cmake
     ///   passes no `--image-base`, so `None` to match its auto-hash base.
-    EfiApplication { entry: String, image_base: Option<u64>, alignment: u64 },
+    EfiApplication {
+        entry: String,
+        image_base: Option<u64>,
+        alignment: u64,
+    },
     /// `nativeexe` WITH exports — the rosload.exe 2nd-stage loader. Mirrors
     /// the cmake `rosload.exe` link (`set_subsystem native` /
     /// `set_entrypoint RunLoader` / `set_image_base 0x10000`,
@@ -78,6 +86,17 @@ pub enum ModuleKind {
     /// dispatch tables in as a source object; as archive members they'd be
     /// GC'd) are supplied via `.force_undefined(...)` on the builder.
     NativeExe { entry: String, image_base: u64 },
+    /// `win32gui`/`win32cui` — a user-mode Win32 exe (e.g. lsass.exe). Mirrors
+    /// the cmake `set_module_type(<m> win32gui)` link: explicit `--subsystem`
+    /// (`windows:5.01` for GUI, `console:5.01` for CUI), `--gc-sections`, NOT
+    /// `-shared` (it's an exe), NO `--exclude-all-symbols` (nothing to export),
+    /// and NO explicit `--image-base` (the common `--enable-auto-image-base`
+    /// resolves it, exactly as cmake's win32 exe link does). `entry` is the CRT
+    /// startup the C runtime provides — `_wWinMainCRTStartup` (GUI) /
+    /// `_mainCRTStartup` (CUI), force-pulled from `libmsvcrtex.a`, which calls
+    /// the Rust `wWinMain`/`main`. All the version/auto-base/allow-multiple-def/
+    /// disable-stdcall-fixup flags come from the common block.
+    Win32Exe { entry: String, subsystem: String },
 }
 
 /// Which `-D` set the cc-rs asm/C compiles get. Mirrors cmake's
@@ -121,35 +140,62 @@ struct ArchCfg {
     is_i386: bool,
 }
 
-const I386_ARCH_DEFINES: &[(&str, Option<&str>)] =
-    &[("_M_IX86", None), ("_X86_", None), ("__i386__", None), ("i386", None)];
-const AMD64_ARCH_DEFINES: &[(&str, Option<&str>)] =
-    &[("_M_AMD64", None), ("_AMD64_", None), ("_WIN64", None), ("__x86_64__", None)];
-const ARM64_ARCH_DEFINES: &[(&str, Option<&str>)] =
-    &[("_M_ARM64", None), ("_ARM64_", None), ("_WIN64", None), ("__aarch64__", None)];
+const I386_ARCH_DEFINES: &[(&str, Option<&str>)] = &[
+    ("_M_IX86", None),
+    ("_X86_", None),
+    ("__i386__", None),
+    ("i386", None),
+];
+const AMD64_ARCH_DEFINES: &[(&str, Option<&str>)] = &[
+    ("_M_AMD64", None),
+    ("_AMD64_", None),
+    ("_WIN64", None),
+    ("__x86_64__", None),
+];
+const ARM64_ARCH_DEFINES: &[(&str, Option<&str>)] = &[
+    ("_M_ARM64", None),
+    ("_ARM64_", None),
+    ("_WIN64", None),
+    ("__aarch64__", None),
+];
 
 fn arch_cfg(target_arch: &str) -> ArchCfg {
     match target_arch {
         "x86" => ArchCfg {
-            name: "i386", triple: "i686-w64-mingw32",
-            rust_user_target: "i686-pc-windows-gnu", spec2def: "i386",
-            dlltool_machine: "i386", clang_rt: "i386",
-            arch_defines: I386_ARCH_DEFINES, is_x86: true, is_i386: true,
+            name: "i386",
+            triple: "i686-w64-mingw32",
+            rust_user_target: "i686-pc-windows-gnu",
+            spec2def: "i386",
+            dlltool_machine: "i386",
+            clang_rt: "i386",
+            arch_defines: I386_ARCH_DEFINES,
+            is_x86: true,
+            is_i386: true,
         },
         "x86_64" => ArchCfg {
             // spec2def's arch token is `x86_64`, NOT `amd64` (an unknown
             // token silently falls back to i386 → @N stdcall decoration on
             // a 64-bit .def → undefined-symbol link errors).
-            name: "amd64", triple: "x86_64-w64-mingw32",
-            rust_user_target: "x86_64-pc-windows-gnu", spec2def: "x86_64",
-            dlltool_machine: "i386:x86-64", clang_rt: "x86_64",
-            arch_defines: AMD64_ARCH_DEFINES, is_x86: true, is_i386: false,
+            name: "amd64",
+            triple: "x86_64-w64-mingw32",
+            rust_user_target: "x86_64-pc-windows-gnu",
+            spec2def: "x86_64",
+            dlltool_machine: "i386:x86-64",
+            clang_rt: "x86_64",
+            arch_defines: AMD64_ARCH_DEFINES,
+            is_x86: true,
+            is_i386: false,
         },
         "aarch64" => ArchCfg {
-            name: "arm64", triple: "aarch64-w64-mingw32",
-            rust_user_target: "aarch64-pc-windows-gnullvm", spec2def: "arm64",
-            dlltool_machine: "arm64", clang_rt: "aarch64",
-            arch_defines: ARM64_ARCH_DEFINES, is_x86: false, is_i386: false,
+            name: "arm64",
+            triple: "aarch64-w64-mingw32",
+            rust_user_target: "aarch64-pc-windows-gnullvm",
+            spec2def: "arm64",
+            dlltool_machine: "arm64",
+            clang_rt: "aarch64",
+            arch_defines: ARM64_ARCH_DEFINES,
+            is_x86: false,
+            is_i386: false,
         },
         other => panic!("reactos-link: unsupported target arch {other}"),
     }
@@ -223,13 +269,50 @@ fn defines(set: AsmDefineSet, arch: &ArchCfg) -> Vec<(&'static str, Option<&'sta
     v
 }
 
+#[derive(Clone)]
+enum RustTarget {
+    Json(PathBuf),
+    Builtin(String),
+}
+
+impl RustTarget {
+    fn new(manifest_dir: &Path, target_spec: &str) -> Self {
+        if target_spec.ends_with(".json") {
+            Self::Json(manifest_dir.join(target_spec))
+        } else {
+            Self::Builtin(target_spec.to_string())
+        }
+    }
+
+    fn arg(&self) -> String {
+        match self {
+            Self::Json(path) => path.display().to_string(),
+            Self::Builtin(triple) => triple.clone(),
+        }
+    }
+
+    fn stem(&self) -> &str {
+        match self {
+            Self::Json(path) => path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("target json stem"),
+            Self::Builtin(triple) => triple.as_str(),
+        }
+    }
+
+    fn is_json(&self) -> bool {
+        matches!(self, Self::Json(_))
+    }
+}
+
 /// Builder for one cargo-driven module link.
 pub struct Linker {
     repo_root: PathBuf,
     manifest_dir: PathBuf,
     build_dir: PathBuf,
     pkg_name: String,
-    target_json: PathBuf,
+    target: RustTarget,
     arch: ArchCfg,
     rust_crate: Option<String>,
     rust_features: Vec<String>,
@@ -275,6 +358,15 @@ pub struct Linker {
     /// for pre-expanded-`.s` consumers (hal).
     asm_include_dirs: Vec<String>,
     resource: Option<String>,
+    /// Like `resource`, but the `.res` is a cmake-BUILT artifact (build-dir
+    /// relative) rather than a checked-in consumer-crate file. Used by the
+    /// spine binaries whose `.rc` is compiled by cmake (e.g. lsass.rc.res).
+    resource_built: Option<String>,
+    /// Compile the `.rc` IN-cargo by replaying cmake's flag-exact `windres`
+    /// invocation from `compile_commands.json` (vs `resource_built`, which
+    /// reuses a cmake-built `.res`). (rc-rel-path, cmake `_res` target name).
+    /// Drops the `ninja <m>_res` prereq — see `resource_from_rc`.
+    resource_from_rc: Option<(String, String)>,
     spec: Option<(String, String)>,
     link_stubs: bool,
     static_libs: Vec<String>,
@@ -285,15 +377,31 @@ pub struct Linker {
     /// object relocates the image enough to surface a latent layout-sensitive
     /// miscompile — keeping it an in-group archive preserves the cmake layout.
     asm_archives: Vec<(String, Vec<String>)>,
+    /// Deep-C residue compiled IN-cargo by replaying cmake's own clang
+    /// invocation from `build-<arch>/compile_commands.json` (flag-exact),
+    /// archived into an in-group `.a` in the C-archive position. Replaces
+    /// reuse of a cmake-built `.a` via `static_libs` (e.g. ntdll's Tier-C
+    /// librtl / librtl_vista / libcntpr, or the loaders' deep-C blcmlib /
+    /// cportlib) — drops the `ninja <lib>` prerequisite.
+    /// (archive-basename, source rel-paths). See `c_from_compile_db`.
+    c_db_libs: Vec<(String, Vec<String>)>,
     import_libs: Vec<(String, String, String)>,
     force_undefined: Vec<String>,
+    allow_stdcall_fixup: bool,
+    /// `Some(n)` emits `-Wl,--stack,<n>` (reserve, in bytes). For native exes
+    /// with deep recursive import chains — e.g. arm64 csrss.exe, where
+    /// llvm-dlltool converts delay-imports to regular ones so every dependency
+    /// loads at once and LdrpLoadDll recursion overflows the default 1MB stack.
+    stack_reserve: Option<u64>,
 }
 
 impl Linker {
-    /// `target_json_rel` is relative to the consumer crate dir
-    /// (e.g. `"i686-kernel.json"`). Arch is taken from
+    /// `target_spec` is either a target json path relative to the consumer crate
+    /// dir (e.g. `"i686-kernel.json"`) or a builtin Rust target triple (e.g.
+    /// `"aarch64-pc-windows-gnullvm"`). Json kernel targets use nightly
+    /// build-std; builtin targets use stable/precompiled std. Arch is taken from
     /// `CARGO_CFG_TARGET_ARCH` (x86 / x86_64 / aarch64).
-    pub fn new(target_json_rel: &str) -> Linker {
+    pub fn new(target_spec: &str) -> Linker {
         let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
         let arch = arch_cfg(&target_arch);
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -311,15 +419,17 @@ impl Linker {
             );
         }
         let pkg_name = env::var("CARGO_PKG_NAME").expect("CARGO_PKG_NAME");
-        let target_json = manifest_dir.join(target_json_rel);
+        let target = RustTarget::new(&manifest_dir, target_spec);
         println!("cargo:rerun-if-changed=build.rs");
-        println!("cargo:rerun-if-changed={}", target_json.display());
+        if let RustTarget::Json(path) = &target {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
         Linker {
             repo_root,
             manifest_dir,
             build_dir,
             pkg_name,
-            target_json,
+            target,
             arch,
             rust_crate: None,
             rust_features: Vec::new(),
@@ -333,13 +443,39 @@ impl Linker {
             asm_set: AsmDefineSet::Kernel,
             asm_include_dirs: Vec::new(),
             resource: None,
+            resource_built: None,
+            resource_from_rc: None,
             spec: None,
             link_stubs: false,
             static_libs: Vec::new(),
             asm_archives: Vec::new(),
+            c_db_libs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
+            allow_stdcall_fixup: false,
+            stack_reserve: None,
         }
+    }
+
+    /// Suppress the default `--disable-stdcall-fixup`, letting lld resolve a
+    /// decorated `_Sym@N` reference against an undecorated `_Sym` definition
+    /// (its default fixup-with-warning behavior). winsrv.dll needs this: its
+    /// cmake link relies on the fixup to paper over winsrv-rust's cross-module
+    /// extern "C"-def / extern "system"-call ABI mismatches (a pre-existing
+    /// translation-quality issue). Reproduces cmake's link exactly. Do NOT use
+    /// to hide a fresh ABI bug — fix the source instead.
+    pub fn allow_stdcall_fixup(mut self) -> Self {
+        self.allow_stdcall_fixup = true;
+        self
+    }
+
+    /// Reserve `bytes` of stack (`-Wl,--stack,<bytes>`) instead of the default
+    /// 1MB. Needed where a native exe's import graph forces a deep recursive
+    /// LdrpLoadDll chain (arm64 csrss.exe — delay-imports collapse to regular
+    /// on llvm-dlltool, loading every dependency at once). Chainable.
+    pub fn stack_reserve(mut self, bytes: u64) -> Self {
+        self.stack_reserve = Some(bytes);
+        self
     }
 
     /// Workspace crate (`crate-type = ["staticlib"]`) that is the module
@@ -448,8 +584,10 @@ impl Linker {
     /// the in-group archive preserves the cmake link layout. Uses the same
     /// `asm_set` define list as `asm()`.
     pub fn asm_archive(mut self, name: &str, rels: &[&str]) -> Self {
-        self.asm_archives
-            .push((name.to_string(), rels.iter().map(|s| s.to_string()).collect()));
+        self.asm_archives.push((
+            name.to_string(),
+            rels.iter().map(|s| s.to_string()).collect(),
+        ));
         self
     }
 
@@ -457,6 +595,30 @@ impl Linker {
     /// out-of-band (`tools/gen_*_res.py`).
     pub fn resource(mut self, manifest_rel: &str) -> Self {
         self.resource = Some(manifest_rel.to_string());
+        self
+    }
+
+    /// A cmake-BUILT `.res` (build-`<arch>`-relative), e.g.
+    /// `base/system/lsass/CMakeFiles/lsass.dir/lsass.rc.res`. For spine
+    /// binaries whose `.rc` cmake already compiles; reuses it rather than
+    /// re-hosting the resource compile in build.rs. Needs `ninja <module>`
+    /// (or a configure+rc build) to have produced it.
+    pub fn resource_built(mut self, build_rel: &str) -> Self {
+        self.resource_built = Some(build_rel.to_string());
+        self
+    }
+
+    /// Compile the `.rc` IN-cargo by replaying cmake's exact `windres`
+    /// invocation from `build-<arch>/compile_commands.json` (flag-exact: the
+    /// full RC_INVOKED / LANGUAGE_* / per-arch define set + `-I` chain), instead
+    /// of reusing a cmake-built `.res` (`resource_built`). Drops the
+    /// `ninja <m>_res` prereq. `rc_rel` is the repo-relative `.rc`; `res_target`
+    /// is the cmake `_res` OBJECT-lib target name (its `CMakeFiles/<res_target>.dir`
+    /// is the disambiguating marker, like `c_from_compile_db`). The `_res` cmake
+    /// target must still exist (to populate compile_commands.json) but its `.res`
+    /// is no longer linked. Mutually exclusive with `resource`/`resource_built`.
+    pub fn resource_from_rc(mut self, rc_rel: &str, res_target: &str) -> Self {
+        self.resource_from_rc = Some((rc_rel.to_string(), res_target.to_string()));
         self
     }
 
@@ -517,6 +679,31 @@ impl Linker {
         self
     }
 
+    /// Compile a set of C sources IN-cargo by replaying cmake's own clang
+    /// invocation for each (looked up in `build-<arch>/compile_commands.json`),
+    /// archiving the objects into `lib<name>.a` linked as an in-group archive
+    /// in the C-archive position (before the Rust archives). This replaces a
+    /// `static_libs("…/lib<name>.a")` reuse of a cmake-built archive with a
+    /// flag-exact cargo-driven compile — dropping the `ninja <name>`
+    /// prerequisite for that deep-C residue (e.g. the loaders' blcmlib /
+    /// cportlib C bodies).
+    ///
+    /// `sources` are repo-relative `.c` paths; each MUST appear in
+    /// `compile_commands.json`, so the cmake build must be configured with
+    /// `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` (a configure-time flag — no build
+    /// needed). The replay strips the ninja-built `.pch` but keeps cmake's
+    /// configure-time `cmake_pch.h` force-include, so it is self-contained.
+    /// `name` IS the cmake target name (disambiguates a source compiled into
+    /// multiple targets via its `CMakeFiles/<name>.dir` object dir). Chainable —
+    /// call once per archive, in C-first link order.
+    pub fn c_from_compile_db(mut self, name: &str, sources: &[&str]) -> Self {
+        self.c_db_libs.push((
+            name.to_string(),
+            sources.iter().map(|s| s.to_string()).collect(),
+        ));
+        self
+    }
+
     /// Add the kernel asm `#include` search chain to a cc-rs asm build: asm.inc
     /// (source tree), the generated per-arch `ks*.inc` (build dir), and
     /// ntoskrnl/include (sysfuncs.h / asmmacro.S / syscalls.inc deps). With it a
@@ -534,18 +721,16 @@ impl Linker {
     pub fn link(self, kind: ModuleKind) {
         let llvm_mingw = self.repo_root.join(".build-tools/llvm-mingw");
         let clang = llvm_mingw.join(format!("bin/{}-clang", self.arch.triple));
-        // Output dir stem = the target json's file stem (e.g. i686-kernel /
-        // x86_64-kernel / aarch64-kernel) — keyed by cargo's target name.
-        let target_stem = self
-            .target_json
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .expect("target json stem")
-            .to_string();
+        // Output dir stem = cargo's target-name subdir: json file stem for a
+        // custom target, or the full triple for a builtin target.
+        let target_stem = self.target.stem().to_string();
 
         // Extra watched dirs (body-crate path-deps in other workspace crates).
         for dir in &self.rust_watch_dirs {
-            println!("cargo:rerun-if-changed={}", self.repo_root.join(dir).display());
+            println!(
+                "cargo:rerun-if-changed={}",
+                self.repo_root.join(dir).display()
+            );
         }
 
         // ---- Rust staticlib(s) (per-crate target dir) ----------------
@@ -555,12 +740,16 @@ impl Linker {
         // (`ntdll-rust` builds `i686-pc-windows-gnu`, NOT the kernel json).
         // Building a user-mode crate against the `x86-softfloat` kernel json
         // corrupts the by-value f64 ABI and crashes boot. Kernel modules
-        // (ntoskrnl/HAL/uefildr) build the custom kernel json with `-Z
-        // build-std` on nightly. The main crate goes first, then siblings.
+        // (ntoskrnl/HAL/uefildr) normally build the custom kernel json with `-Z
+        // build-std` on nightly. A kernel-ish module may also opt into a builtin
+        // target triple; that path uses stable/precompiled std like cmake. The
+        // main crate goes first, then siblings.
         // `.rust_user_target()` (the freeldr loaders) forces the user-target
         // path even for an EfiApplication/NativeExe — freeldr-rust is built
         // standard-target + `-sse,-sse2` exactly as cmake's custom_command did.
-        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. }) && !self.rust_user_target;
+        // Win32Dll/Win32Exe (ntdll, lsass, userinit, …) are user-mode too.
+        let kernel_rust = !matches!(kind, ModuleKind::Win32Dll { .. } | ModuleKind::Win32Exe { .. })
+            && !self.rust_user_target;
         let rust_a = self.rust_crate.as_ref().map(|crate_name| {
             let feats: Vec<&str> = self.rust_features.iter().map(|s| s.as_str()).collect();
             self.build_rust_crate(
@@ -577,7 +766,14 @@ impl Linker {
             .iter()
             .map(|(crate_name, feats, default_features)| {
                 let f: Vec<&str> = feats.iter().map(|s| s.as_str()).collect();
-                self.build_rust_crate(crate_name, &f, *default_features, &target_stem, kernel_rust, None)
+                self.build_rust_crate(
+                    crate_name,
+                    &f,
+                    *default_features,
+                    &target_stem,
+                    kernel_rust,
+                    None,
+                )
             })
             .collect();
 
@@ -619,7 +815,8 @@ impl Linker {
             // Caller-configured repo-relative `-I` dirs for RAW `.S` files
             // (asm.inc, pcbios.h, …; a pre-expanded `.s` sets none of these).
             for dir in &self.asm_include_dirs {
-                b.flag("-I").flag(self.repo_root.join(dir).to_str().unwrap());
+                b.flag("-I")
+                    .flag(self.repo_root.join(dir).to_str().unwrap());
             }
             // + the fixed kernel asm `#include` chain (asm.inc + the generated
             // build-dir ks*.inc + ntoskrnl/include) used by modules that
@@ -632,12 +829,59 @@ impl Linker {
             println!("cargo:rerun-if-changed={}", abs.display());
         }
 
-        // ---- Resource (.res) -----------------------------------------
-        if let Some(res_rel) = &self.resource {
-            let src = self.manifest_dir.join(res_rel);
+        // ---- Resource (.res) compiled IN-cargo from the .rc -----------
+        // Replay cmake's flag-exact `windres` command (positional in/out, no
+        // `-o`) with the output redirected into OUT_DIR, then link the COFF
+        // `.res` object. Drops the `ninja <m>_res` prereq.
+        if let Some((rc_rel, res_target)) = &self.resource_from_rc {
+            let db_path = self.build_dir.join("compile_commands.json");
+            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
+                panic!(
+                    "resource_from_rc needs {} — configure cmake with \
+                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
+                    db_path.display()
+                )
+            });
+            let entries = parse_ccdb(&db_text);
+            let abs = self.repo_root.join(rc_rel);
+            let marker = format!("CMakeFiles/{res_target}.dir");
+            let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
+                panic!(
+                    "no compile_commands.json windres entry for {} in target {res_target} \
+                     (marker {marker}) — is {res_target} a cmake OBJECT lib over that .rc?",
+                    abs.display()
+                )
+            });
+            let dst = self.obj_dir().join("module.rc.res");
+            // windres: `... <input.rc> <output.res>` — the output is the LAST
+            // positional token; replace it with our OUT_DIR path, keep all else.
+            let mut args: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
+            *args.last_mut().expect("empty windres command") =
+                dst.to_str().expect("utf8 res path").to_string();
+            let status = Command::new(&args[0])
+                .args(&args[1..])
+                .current_dir(&dir)
+                .status()
+                .unwrap_or_else(|e| panic!("replay windres for {rc_rel}: {e}"));
+            if !status.success() {
+                panic!("resource_from_rc: windres failed for {rc_rel} (target {res_target})");
+            }
+            println!("cargo:rustc-link-arg={}", dst.display());
+            println!("cargo:rerun-if-changed={}", abs.display());
+            println!("cargo:rerun-if-changed={}", db_path.display());
+        }
+
+        // ---- Resource (.res) — checked-in or cmake-built -------------
+        let res_src: Option<PathBuf> = self
+            .resource
+            .as_ref()
+            .map(|r| self.manifest_dir.join(r))
+            .or_else(|| self.resource_built.as_ref().map(|r| self.build_dir.join(r)));
+        if let Some(src) = res_src {
             if !src.exists() {
                 panic!(
-                    "missing {} — regenerate via the matching tools/gen_*_res.py",
+                    "missing {} — regenerate via tools/gen_*_res.py (checked-in) \
+                     or `ninja` the module (cmake-built .res)",
                     src.display()
                 );
             }
@@ -657,11 +901,16 @@ impl Linker {
             );
             println!(
                 "cargo:rerun-if-changed={}",
-                self.repo_root.join("sdk/tools/spec2def/spec2def.c").display()
+                self.repo_root
+                    .join("sdk/tools/spec2def/spec2def.c")
+                    .display()
             );
             if self.link_stubs {
                 if !stubs.exists() {
-                    panic!("spec_stubs() set but spec2def produced no stubs at {}", stubs.display());
+                    panic!(
+                        "spec_stubs() set but spec2def produced no stubs at {}",
+                        stubs.display()
+                    );
                 }
                 let mut b = cc::Build::new();
                 apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
@@ -701,10 +950,84 @@ impl Linker {
             // kept booting a pre-fix _strnicmp despite the .a being rebuilt.
             println!("cargo:rerun-if-changed={}", full.display());
         }
+        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
+        // ---- Deep-C residue compiled in-cargo (compile_commands.json replay).
+        // In the same C-archive region as static_libs (before the Rust
+        // archives). Flag-exact: replay cmake's own clang command per source,
+        // strip the ninja-built .pch (keep the configure-time cmake_pch.h
+        // force-include), redirect -o into OUT_DIR. Drops `ninja <lib>` for the
+        // residue that static_libs() used to reuse.
+        if !self.c_db_libs.is_empty() {
+            let db_path = self.build_dir.join("compile_commands.json");
+            let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
+                panic!(
+                    "c_from_compile_db needs {} — configure cmake with \
+                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON: {e}",
+                    db_path.display()
+                )
+            });
+            let entries = parse_ccdb(&db_text);
+            println!("cargo:rerun-if-changed={}", db_path.display());
+            for (name, sources) in &self.c_db_libs {
+                // Disambiguate sources compiled into multiple cmake targets by
+                // the target's object dir. `name` IS the cmake target name.
+                let marker = format!("CMakeFiles/{name}.dir");
+                let out_sub = self.obj_dir().join(format!("ccdb-{name}"));
+                std::fs::create_dir_all(&out_sub).ok();
+                let mut objs = Vec::new();
+                for rel in sources {
+                    // Normal sources are repo-relative; GENERATED sources (e.g.
+                    // the RPC `*_s.c` server stub from add_rpc_files) live under
+                    // build-<arch>/ — pass them build-dir-relative and fall back
+                    // to build_dir when the repo path doesn't exist. Keeps the
+                    // API arch-agnostic (no `build-i386/` hardcoded in rel).
+                    let repo_abs = self.repo_root.join(rel);
+                    let abs = if repo_abs.exists() {
+                        repo_abs
+                    } else {
+                        self.build_dir.join(rel)
+                    };
+                    let (dir, cmd) = lookup_cc(&entries, &abs, &marker).unwrap_or_else(|| {
+                        panic!(
+                            "no compile_commands.json entry for {} in target {name} \
+                             (marker {marker}) — is it a source of that cmake target?",
+                            abs.display()
+                        )
+                    });
+                    let stem = abs
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
+                    let obj = out_sub.join(format!("{stem}.o"));
+                    let args = transform_cc(&cmd, obj.to_str().expect("utf8 obj path"));
+                    let status = Command::new(&args[0])
+                        .args(&args[1..])
+                        .current_dir(&dir)
+                        .status()
+                        .unwrap_or_else(|e| panic!("replay clang for {rel} (lib {name}): {e}"));
+                    if !status.success() {
+                        panic!("c_from_compile_db: compile failed for {rel} (lib {name})");
+                    }
+                    objs.push(obj);
+                    println!("cargo:rerun-if-changed={}", abs.display());
+                }
+                let lib_a = self.obj_dir().join(format!("lib{name}.a"));
+                let _ = std::fs::remove_file(&lib_a); // ar rcs appends; start fresh
+                let status = Command::new(&ar)
+                    .arg("rcs")
+                    .arg(&lib_a)
+                    .args(&objs)
+                    .status()
+                    .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
+                if !status.success() {
+                    panic!("ar failed for c_from_compile_db {name}");
+                }
+                println!("cargo:rustc-link-arg={}", lib_a.display());
+            }
+        }
         // Pre-expanded asm assembled into on-demand archives, IN the group
         // alongside the cmake C archives (same archive semantics + layout
         // region as the cmake equivalent — see asm_archive()).
-        let ar = llvm_mingw.join(format!("bin/{}-ar", self.arch.triple));
         for (name, rels) in &self.asm_archives {
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, self.asm_set, &self.arch);
@@ -776,9 +1099,24 @@ impl Linker {
             "-Wl,--major-os-version,5",
             "-Wl,--minor-os-version,01",
             "-Wl,--allow-multiple-definition",
-            "-Wl,--disable-stdcall-fixup",
         ] {
             println!("cargo:rustc-link-arg={f}");
+        }
+        // By default disable lld's stdcall-fixup (a decorated-vs-undecorated
+        // symbol mismatch is a real ABI bug, not something to paper over). But
+        // winsrv.dll's cmake link relies on the fixup to resolve winsrv-rust's
+        // cross-module extern "C"-def vs extern "system"-call mismatches
+        // (e.g. HistoryReshapeAllBuffers) — those are a pre-existing
+        // translation-quality issue; allow_stdcall_fixup() reproduces cmake's
+        // behavior (which passes neither flag → lld default = fixup-with-warning)
+        // so the cargo link is byte-equivalent to the working cmake one.
+        if !self.allow_stdcall_fixup {
+            println!("cargo:rustc-link-arg=-Wl,--disable-stdcall-fixup");
+        }
+        // Custom stack reserve (default 1MB otherwise) — e.g. arm64 csrss.exe's
+        // deep LdrpLoadDll chain.
+        if let Some(bytes) = self.stack_reserve {
+            println!("cargo:rustc-link-arg=-Wl,--stack,{bytes}");
         }
         // ---- kind-specific subsystem / alignment / sections ----------
         let (entry, image_base): (&String, Option<u64>) = match &kind {
@@ -797,7 +1135,11 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-shared");
                 (entry, Some(*image_base))
             }
-            ModuleKind::Win32Dll { entry, image_base, subsystem } => {
+            ModuleKind::Win32Dll {
+                entry,
+                image_base,
+                subsystem,
+            } => {
                 // user-mode PE DLL: exports come from the .def so NO
                 // --exclude-all-symbols, default PE alignment (file 0x200),
                 // -shared, keep all sections. Subsystem is explicit for
@@ -818,7 +1160,11 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-Wl,--no-gc-sections");
                 (entry, Some(*image_base))
             }
-            ModuleKind::EfiApplication { entry, image_base, alignment } => {
+            ModuleKind::EfiApplication {
+                entry,
+                image_base,
+                alignment,
+            } => {
                 // UEFI app (uefildr.efi): efi_application subsystem,
                 // per-arch file/section alignment (x86 0x200, arm64 0x1000),
                 // --gc-sections, no -shared (exe), --exclude-all-symbols
@@ -846,6 +1192,16 @@ impl Linker {
                 println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
                 println!("cargo:rustc-link-arg=-Wl,--gc-sections");
                 (entry, Some(*image_base))
+            }
+            ModuleKind::Win32Exe { entry, subsystem } => {
+                // user-mode win32 exe (lsass.exe, set_module_type win32gui):
+                // explicit subsystem, --gc-sections, no -shared, no
+                // --exclude-all-symbols (nothing exported), no explicit
+                // --image-base (common --enable-auto-image-base resolves it,
+                // matching cmake). Entry = the CRT startup in libmsvcrtex.a.
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,{subsystem}");
+                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                (entry, None)
             }
         };
         // Force-undefined pulls (-u SYM) — keep GC'd-but-needed archive members.
@@ -895,18 +1251,21 @@ impl Linker {
         // libcntpr.cmake staleness class). rerun-if-changed on a dir recurses.
         let crate_dir = workspace.join(crate_name);
         println!("cargo:rerun-if-changed={}", crate_dir.join("src").display());
-        println!("cargo:rerun-if-changed={}", crate_dir.join("Cargo.toml").display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            crate_dir.join("Cargo.toml").display()
+        );
         let tgt_dir = workspace.join(format!(
             "target/{}-{}-rustlib",
             self.pkg_name,
             crate_name.replace('-', "_")
         ));
-        // Kernel: the env CARGO (nightly, set by the outer `cargo +nightly`)
-        // drives build-std. User-mode siblings: that nightly binary lacks the
-        // standard target's precompiled std (E0463), so invoke the rustup
-        // DEFAULT (stable) cargo via `rustup run stable cargo` — exactly the
-        // toolchain cmake uses for these crates.
-        let mut cmd = if kernel {
+        // Kernel json targets: the env CARGO (nightly, set by the outer
+        // `cargo +nightly`) drives build-std. Builtin kernel targets and
+        // user-mode siblings use `rustup run stable cargo`, matching cmake's
+        // precompiled-std path.
+        let kernel_build_std = kernel && self.target.is_json();
+        let mut cmd = if kernel_build_std {
             Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
         } else {
             let mut c = Command::new("rustup");
@@ -914,14 +1273,15 @@ impl Linker {
             c
         };
         cmd.arg("build").arg("--release").arg("--target");
-        // out_stem = the subdir cargo writes under (json file stem for a custom
-        // target path; the triple for a builtin target name).
+        // out_stem = the subdir cargo writes under.
         let out_stem: String = if kernel {
-            cmd.arg(&self.target_json)
-                .arg("-Z")
-                .arg("build-std=core,alloc,compiler_builtins")
-                .arg("-Z")
-                .arg("build-std-features=compiler-builtins-mem");
+            cmd.arg(self.target.arg());
+            if kernel_build_std {
+                cmd.arg("-Z")
+                    .arg("build-std=core,alloc,compiler_builtins")
+                    .arg("-Z")
+                    .arg("build-std-features=compiler-builtins-mem");
+            }
             target_stem.to_string()
         } else {
             cmd.arg(self.arch.rust_user_target);
@@ -938,8 +1298,31 @@ impl Linker {
             .arg(workspace.join("Cargo.toml"))
             .env("CARGO_TARGET_DIR", &tgt_dir);
         if kernel {
-            // build-std needs nightly.
-            cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+            if kernel_build_std {
+                // build-std needs nightly.
+                cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+            } else {
+                // The outer cargo may still be nightly/build-std. Scrub its env
+                // so the stable builtin-target cargo behaves like cmake's fresh
+                // cargo process.
+                for v in [
+                    "RUSTC",
+                    "RUSTC_WRAPPER",
+                    "RUSTC_WORKSPACE_WRAPPER",
+                    "RUSTDOC",
+                    "RUSTUP_TOOLCHAIN",
+                    "CARGO",
+                    "RUSTFLAGS",
+                    "CARGO_ENCODED_RUSTFLAGS",
+                    "CARGO_BUILD_TARGET",
+                    "CARGO_BUILD_RUSTFLAGS",
+                    "CARGO_BUILD_RUSTC",
+                    "CARGO_UNSTABLE_BUILD_STD",
+                    "CARGO_UNSTABLE_BUILD_STD_FEATURES",
+                ] {
+                    cmd.env_remove(v);
+                }
+            }
             // The CRT-class kernel siblings (rtl-rust + cnt-rust-lib) need the
             // EXACT per-crate RUSTFLAGS cmake gives them, or LLVM's default
             // pre-pass pipeline miscompiles them (the captures(none)/DCE class
@@ -959,17 +1342,52 @@ impl Linker {
             // encoded flags first so this RUSTFLAGS wins. Only these CRT-class
             // children are affected — the main kernel-rust build (which booted
             // fine without it) keeps the config-supplied flags.
-            let crt_rustflags: Option<&str> = match (crate_name, self.arch.name) {
-                ("rtl-rust", "i386") | ("cnt-rust-lib", "i386") => {
-                    Some("-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
-                }
-                ("cnt-rust-lib", _) => Some("-C no-prepopulate-passes"),
-                _ => None,
+            // env RUSTFLAGS OVERRIDES `.cargo/config.toml`'s `[target.i686-kernel]`
+            // copy of `-sse,-sse2`, so every kernel crate built here must
+            // RE-STATE the i386 no-SSE baseline (i386 kernel runs no-SSE — Phase
+            // 0 leaves CR4.OSFXSR unset). amd64/arm64 kernel targets carry no
+            // config rustflags, so there's nothing to preserve there.
+            let sse = if self.arch.name == "i386" {
+                "-C target-feature=-sse,-sse2 "
+            } else {
+                ""
             };
-            if let Some(rf) = crt_rustflags {
-                cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
-                cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
-                cmd.env("RUSTFLAGS", rf);
+            // The CRT-class crates additionally need `-C no-prepopulate-passes`
+            // or LLVM's default pre-passes miscompile them (captures(none)/DCE —
+            // e.g. memset DCE'd to a spin; rtl-rust over-optimized 1.3MB-vs-6.1MB
+            // and hung the kernel after ACPI). Mirrors sdk/lib/rtl/CMakeLists.txt
+            // + sdk/lib/crt/libcntpr.cmake: rtl-rust on i386 only; cnt-rust-lib
+            // on every arch.
+            let no_prepop = match (crate_name, self.arch.name) {
+                ("rtl-rust", "i386") | ("cnt-rust-lib", _) => "-C no-prepopulate-passes ",
+                _ => "",
+            };
+            // Match cmake's lint POSTURE: cmake builds the kernel rust on STABLE
+            // (standard target, no build-std), where the kernel translation's
+            // lints are warn-level and ship fine. The cargo-drive REQUIRES nightly
+            // (for the softfloat kernel json's build-std) and the current nightly
+            // ESCALATES several lints to deny on ntoskrnl-rust's (mostly amd64)
+            // code — pre-existing translation-cleanup items, NOT cargo-drive
+            // regressions (the code is exactly what cmake ships). Allow them so
+            // the nightly build keeps cmake parity; real compile errors (type/ABI
+            // mismatches) still fail. NOTE: `--cap-lints allow` is NOT usable here
+            // — it makes rustc's `--print=file-names` build-std target probe emit
+            // nothing ("output of --print=file-names missing"). Per-lint `-A` is
+            // probe-safe, so allow them individually. (A whole-kernel lint cleanup
+            // would let these be dropped.)
+            //   - clashing_extern_declarations: ABI-compatible extern fns
+            //     re-declared with divergent pointee types (DefaultQueryInfoBufferCheck).
+            //   - static_mut_refs: `&mut STATIC` (Rust 2024 deny) in WMI/driver glue.
+            let allow = if kernel_build_std {
+                "-A clashing_extern_declarations -A static_mut_refs"
+            } else {
+                ""
+            };
+            let rustflags = format!("{sse}{no_prepop}{allow}");
+            cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
+            cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
+            if !rustflags.is_empty() {
+                cmd.env("RUSTFLAGS", rustflags);
             }
         } else {
             // User-mode siblings build on the rustup DEFAULT (stable) via the
@@ -980,10 +1398,19 @@ impl Linker {
             // toolchain and reintroduce the missing-std E0463. Scrub them so
             // the child cargo starts clean, exactly like cmake's fresh process.
             for v in [
-                "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "RUSTDOC",
-                "RUSTUP_TOOLCHAIN", "CARGO", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS",
-                "CARGO_BUILD_TARGET", "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_RUSTC",
-                "CARGO_UNSTABLE_BUILD_STD", "CARGO_UNSTABLE_BUILD_STD_FEATURES",
+                "RUSTC",
+                "RUSTC_WRAPPER",
+                "RUSTC_WORKSPACE_WRAPPER",
+                "RUSTDOC",
+                "RUSTUP_TOOLCHAIN",
+                "CARGO",
+                "RUSTFLAGS",
+                "CARGO_ENCODED_RUSTFLAGS",
+                "CARGO_BUILD_TARGET",
+                "CARGO_BUILD_RUSTFLAGS",
+                "CARGO_BUILD_RUSTC",
+                "CARGO_UNSTABLE_BUILD_STD",
+                "CARGO_UNSTABLE_BUILD_STD_FEATURES",
             ] {
                 cmd.env_remove(v);
             }
@@ -1017,6 +1444,17 @@ impl Linker {
                     "-C no-prepopulate-passes"
                 };
                 cmd.env("RUSTFLAGS", rf);
+            } else if matches!(crate_name, "cport-rust" | "hal-rust") && self.arch.name == "i386" {
+                // cport-rust (sdk/lib/cportlib/CMakeLists.txt) + hal-rust's
+                // minihal variant (hal/halx86/CMakeLists.txt, i386-only) both
+                // run pre-boot before CR4.OSFXSR, so i386 needs SSE OFF. cmake
+                // gets it from the workspace .cargo/config.toml [i686] (cport)
+                // / an explicit RUSTFLAGS=-sse,-sse2 (hal mini) — the former
+                // isn't discovered from build_dir cwd, so re-state it here.
+                // NEITHER is CRT-class (cmake passes no -C no-prepopulate-passes
+                // for them), and amd64/arm64 cport keeps SSE (config.toml only
+                // disables it on i686) → key i386 only, no no-prepopulate.
+                cmd.env("RUSTFLAGS", "-C target-feature=-sse,-sse2");
             }
         }
         let status = cmd
@@ -1097,9 +1535,10 @@ impl Linker {
         if !status.success() {
             panic!("spec2def --implib failed for {spec_rel}");
         }
-        let dlltool = self
-            .repo_root
-            .join(format!(".build-tools/llvm-mingw/bin/{}-dlltool", self.arch.triple));
+        let dlltool = self.repo_root.join(format!(
+            ".build-tools/llvm-mingw/bin/{}-dlltool",
+            self.arch.triple
+        ));
         let lib_a = out.join(format!("lib{basename}.a"));
         let status = Command::new(&dlltool)
             .arg("-m")
@@ -1199,4 +1638,330 @@ fn emit_objs(build: &cc::Build, source: &Path) {
     for obj in objs {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+}
+
+// ---- compile_commands.json replay (c_from_compile_db) --------------------
+// Minimal, dependency-free reader + command transform. cmake/Ninja emits a
+// flat JSON array of `{directory, command, file[, output]}` objects whose
+// values are all strings — we don't need a general JSON parser, only the three
+// string fields per object.
+
+/// Decode one JSON string starting at the opening quote `b[start] == '"'`.
+/// Returns (decoded, index-after-closing-quote). Handles the escapes cmake
+/// actually emits (`\"`, `\\`, `\/`, `\n`, `\t`, `\r`); paths/commands here are
+/// ASCII so bytes pass through directly.
+fn read_json_string(b: &[u8], start: usize) -> (String, usize) {
+    let mut i = start + 1;
+    let mut s = String::new();
+    while i < b.len() {
+        match b[i] {
+            b'\\' if i + 1 < b.len() => {
+                let c = match b[i + 1] {
+                    b'"' => '"',
+                    b'\\' => '\\',
+                    b'/' => '/',
+                    b'n' => '\n',
+                    b't' => '\t',
+                    b'r' => '\r',
+                    other => other as char,
+                };
+                s.push(c);
+                i += 2;
+            }
+            b'"' => return (s, i + 1),
+            c => {
+                s.push(c as char);
+                i += 1;
+            }
+        }
+    }
+    (s, i)
+}
+
+/// Generate a Rust RPC **server** stub for `idl_rel` and return the path to the
+/// emitted `.rs` (for a stub crate's `build.rs` to hand to `include!`). This is
+/// the Rust-output counterpart of the `rpc_server_stub` link method: instead of
+/// compiling widl's generated C and linking it, we transliterate it to Rust
+/// (via `tools/widl_to_rust.py`, against the `midl-rt` crate) so the stub is
+/// pure Rust with no C in the tree.
+///
+/// Steps (all in `OUT_DIR/rpc-<name>/`):
+///   1. Replay cmake's recorded `widl` command (from `build.ninja`) → `<name>.c`
+///      + `<name>.h`.
+///   2. Compile `<name>.c` → `<name>.o` (compile_commands.json replay) PURELY to
+///      read the exact per-arch external symbol decorations (i386 stdcall `@N`,
+///      incl. by-value struct params) — the `.o` is never linked.
+///   3. Run `widl_to_rust.py` (`--symobj <name>.o --arch <a> --nm <llvm-nm>`)
+///      → `<name>.rs`.
+///
+/// `name` is the stub base (e.g. `svcctl_s`); `c_marker` the cmake target whose
+/// compile_commands entry compiles `<name>.c` (e.g. `services_c`). Designed to
+/// be called from a `build.rs`; reads `CARGO_CFG_TARGET_ARCH` / `CARGO_MANIFEST_DIR`
+/// / `OUT_DIR` from the environment exactly like `Linker::new`.
+pub fn generate_rpc_stub_rust(idl_rel: &str, name: &str, c_marker: &str) -> PathBuf {
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+    let arch = arch_cfg(&target_arch);
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let repo_root = manifest_dir.ancestors().nth(4).expect("repo root").to_path_buf();
+    let build_dir = repo_root.join(format!("build-{}", arch.name));
+    let out_sub = PathBuf::from(env::var("OUT_DIR").unwrap()).join(format!("rpc-{name}"));
+    std::fs::create_dir_all(&out_sub).ok();
+
+    let widl = build_dir.join("host-tools/bin/widl");
+    if !widl.exists() {
+        panic!(
+            "generate_rpc_stub_rust needs {} — run a cmake build first (host-tools widl)",
+            widl.display()
+        );
+    }
+    let ninja_path = build_dir.join("build.ninja");
+    let ninja = std::fs::read_to_string(&ninja_path)
+        .unwrap_or_else(|e| panic!("need {}: {e}", ninja_path.display()));
+    let db_path = build_dir.join("compile_commands.json");
+    let db_text = std::fs::read_to_string(&db_path)
+        .unwrap_or_else(|e| panic!("need {} (CMAKE_EXPORT_COMPILE_COMMANDS): {e}", db_path.display()));
+    let entries = parse_ccdb(&db_text);
+
+    let gen_c = out_sub.join(format!("{name}.c"));
+    let gen_h = out_sub.join(format!("{name}.h"));
+    let gen_o = out_sub.join(format!("{name}.o"));
+    let gen_rs = out_sub.join(format!("{name}.rs"));
+
+    // 1. widl replay → .c + .h
+    let raw = widl_command_from_ninja(&ninja, name)
+        .unwrap_or_else(|| panic!("no widl CUSTOM_COMMAND for {name}.c in build.ninja"));
+    let cmd = rewrite_widl_outputs(
+        &raw, name, gen_c.to_str().unwrap(), gen_h.to_str().unwrap(),
+    );
+    let st = Command::new("sh").arg("-c").arg(&cmd).status()
+        .unwrap_or_else(|e| panic!("run widl for {name}: {e}"));
+    assert!(st.success(), "widl codegen failed for {name}");
+
+    // 2. compile .c → .o for symbol decorations (replay; never linked)
+    let marker = format!("CMakeFiles/{c_marker}.dir");
+    let suffix = format!("/{name}.c");
+    let (dir, ccmd, cmake_file) = lookup_cc_suffix(&entries, &suffix, &marker)
+        .unwrap_or_else(|| panic!("no compile_commands entry for *{suffix} in {c_marker}"));
+    let mut args = transform_cc(&ccmd, gen_o.to_str().unwrap());
+    for a in args.iter_mut() {
+        if *a == cmake_file {
+            *a = gen_c.to_str().unwrap().to_string();
+        }
+    }
+    let st = Command::new(&args[0]).args(&args[1..]).current_dir(&dir).status()
+        .unwrap_or_else(|e| panic!("compile {name}.c for decorations: {e}"));
+    assert!(st.success(), "decoration compile failed for {name}");
+
+    // 3. transliterate to Rust
+    let nm = repo_root.join(".build-tools/llvm-mingw/bin/llvm-nm");
+    let script = repo_root.join("tools/widl_to_rust.py");
+    let st = Command::new("python3")
+        .arg(&script)
+        .arg(&gen_c)
+        .arg("--symobj").arg(&gen_o)
+        .arg("--arch").arg(arch.name)
+        .arg("--nm").arg(&nm)
+        .arg("-o").arg(&gen_rs)
+        .status()
+        .unwrap_or_else(|e| panic!("run widl_to_rust.py for {name}: {e}"));
+    assert!(st.success(), "widl_to_rust.py failed for {name}");
+
+    println!("cargo:rerun-if-changed={}", repo_root.join(idl_rel).display());
+    println!("cargo:rerun-if-changed={}", script.display());
+    println!("cargo:rerun-if-changed={}", ninja_path.display());
+    gen_rs
+}
+
+/// Parse compile_commands.json into one `(key, value)` list per object. All
+/// values are strings; alternating string tokens inside an object are
+/// key/value (cmake never nests objects or uses non-string values here).
+fn parse_ccdb(text: &str) -> Vec<Vec<(String, String)>> {
+    let b = text.as_bytes();
+    let mut i = 0;
+    let mut objects = Vec::new();
+    let mut cur: Vec<(String, String)> = Vec::new();
+    let mut pending_key: Option<String> = None;
+    let mut in_object = false;
+    while i < b.len() {
+        match b[i] {
+            b'{' => {
+                in_object = true;
+                cur = Vec::new();
+                pending_key = None;
+                i += 1;
+            }
+            b'}' => {
+                if in_object {
+                    objects.push(std::mem::take(&mut cur));
+                    in_object = false;
+                }
+                i += 1;
+            }
+            b'"' if in_object => {
+                let (s, ni) = read_json_string(b, i);
+                i = ni;
+                match pending_key.take() {
+                    None => pending_key = Some(s),
+                    Some(k) => cur.push((k, s)),
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    objects
+}
+
+/// Find the `(directory, command)` for the entry whose `file` is `abs` AND
+/// whose command targets `marker` (the `CMakeFiles/<target>.dir` object dir).
+/// The marker disambiguates a source compiled into multiple targets with
+/// different flags (e.g. `locale.c` in both `rtl` and `rtl_vista`). Matches the
+/// raw cmake-written path first, then a canonicalized fallback (symlinks /
+/// `..`), so a repo_root that differs cosmetically from cmake's still resolves.
+fn lookup_cc(
+    entries: &[Vec<(String, String)>],
+    abs: &Path,
+    marker: &str,
+) -> Option<(String, String)> {
+    let field = |o: &[(String, String)], key: &str| -> Option<String> {
+        o.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    };
+    let abs_s = abs.to_str();
+    let abs_canon = std::fs::canonicalize(abs).ok();
+    for o in entries {
+        let file = match field(o, "file") {
+            Some(f) => f,
+            None => continue,
+        };
+        let file_hit = Some(file.as_str()) == abs_s
+            || abs_canon
+                .as_ref()
+                .zip(std::fs::canonicalize(&file).ok())
+                .is_some_and(|(a, b)| *a == b);
+        if !file_hit {
+            continue;
+        }
+        let cmd = file_command(o);
+        if cmd.contains(marker) {
+            return Some((field(o, "directory").unwrap_or_default(), cmd));
+        }
+    }
+    None
+}
+
+fn file_command(o: &[(String, String)]) -> String {
+    o.iter()
+        .find(|(k, _)| k == "command")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+}
+
+/// Like `lookup_cc` but matches the compile_commands entry by file-path SUFFIX
+/// (for generated sources whose abs path the caller doesn't reconstruct).
+/// Returns (directory, command, matched-file-path).
+fn lookup_cc_suffix(
+    entries: &[Vec<(String, String)>],
+    suffix: &str,
+    marker: &str,
+) -> Option<(String, String, String)> {
+    let field = |o: &[(String, String)], key: &str| -> Option<String> {
+        o.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    };
+    for o in entries {
+        let file = match field(o, "file") {
+            Some(f) => f,
+            None => continue,
+        };
+        if !file.ends_with(suffix) {
+            continue;
+        }
+        let cmd = file_command(o);
+        if cmd.contains(marker) {
+            return Some((field(o, "directory").unwrap_or_default(), cmd, file));
+        }
+    }
+    None
+}
+
+/// Extract cmake's recorded `widl` CUSTOM_COMMAND for `<name>.c` from build.ninja
+/// (the `build … <name>.c <name>.h … : CUSTOM_COMMAND` statement's `COMMAND =`).
+/// Returns the raw shell command (`cd <dir> && widl … && widl …`).
+fn widl_command_from_ninja(ninja: &str, name: &str) -> Option<String> {
+    let out_c = format!("/{name}.c ");
+    let lines: Vec<&str> = ninja.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let l = lines[i];
+        if l.starts_with("build ") && l.contains(": CUSTOM_COMMAND") && l.contains(&out_c) {
+            let mut j = i + 1;
+            while j < lines.len() && !lines[j].starts_with("build ") {
+                if let Some(cmd) = lines[j].trim_start().strip_prefix("COMMAND = ") {
+                    return Some(cmd.to_string());
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Rewrite the two `-o <path>.{c,h}` outputs of a replayed `widl` command to our
+/// OUT_DIR paths (leaving the `-H <name>.h` include-name hint + all `-I`/`-D`/
+/// flags untouched). Whitespace-split is safe: ReactOS build paths have no spaces.
+fn rewrite_widl_outputs(cmd: &str, name: &str, gen_c: &str, gen_h: &str) -> String {
+    let dot_c = format!("/{name}.c");
+    let dot_h = format!("/{name}.h");
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    let mut out: Vec<String> = Vec::with_capacity(parts.len());
+    let mut i = 0;
+    while i < parts.len() {
+        if parts[i] == "-o" && i + 1 < parts.len() {
+            let t = parts[i + 1];
+            out.push("-o".to_string());
+            if t.ends_with(&dot_c) {
+                out.push(gen_c.to_string());
+            } else if t.ends_with(&dot_h) {
+                out.push(gen_h.to_string());
+            } else {
+                out.push(t.to_string());
+            }
+            i += 2;
+            continue;
+        }
+        out.push(parts[i].to_string());
+        i += 1;
+    }
+    out.join(" ")
+}
+
+/// Transform a replayed clang command: drop the ninja-built `.pch` (the
+/// `-Winvalid-pch` and the `-Xclang -include-pch -Xclang <pch>` quad) while
+/// keeping the configure-time `-Xclang -include -Xclang <cmake_pch.h>`
+/// force-include, and redirect `-o <obj>` to our output. Whitespace-split is
+/// safe: ReactOS build paths contain no spaces.
+fn transform_cc(cmd: &str, obj: &str) -> Vec<String> {
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    let mut out: Vec<String> = Vec::with_capacity(parts.len());
+    let mut j = 0;
+    while j < parts.len() {
+        let p = parts[j];
+        if p == "-Winvalid-pch" {
+            j += 1;
+            continue;
+        }
+        // -Xclang -include-pch -Xclang <pch>  (4 tokens) → drop
+        if p == "-Xclang" && j + 1 < parts.len() && parts[j + 1] == "-include-pch" {
+            j += 4;
+            continue;
+        }
+        if p == "-o" && j + 1 < parts.len() {
+            out.push("-o".to_string());
+            out.push(obj.to_string());
+            j += 2;
+            continue;
+        }
+        out.push(p.to_string());
+        j += 1;
+    }
+    out
 }

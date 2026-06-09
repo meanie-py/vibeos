@@ -17,10 +17,14 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code)]
 
-// Win32 predefined consts, macros, and the extern `WLSession` global the
-// per-file translation can't resolve (not in winlogon-sys: they're macros
-// / a C-core-owned global). Shared by the flipped leaf modules.
+// Win32 predefined consts, macros, and the WLSession/hAppInstance globals
+// (owned by winlogon.rs, re-exported here) the leaf modules share.
 pub mod preamble;
+
+// winlogon.c — the main: WinMain bootstrap (winsta/desktop, services+lsass
+// spawn, GINA init, explorer spawn) + the WLSession/hAppInstance globals +
+// WlStrDup/DisplayStatusMessage/RemoveStatusMessage. Second GINA/SAS/RPC core.
+pub mod winlogon;
 
 // setup.c — GetSetupType / RunSetup (setup-mode shell launch). The spike.
 pub mod setup;
@@ -46,6 +50,21 @@ pub mod security;
 // (CallNotificationDlls). On the boot/logon path. Owns the (now-Rust)
 // CallNotificationDlls that the other leaves call via the preamble.
 pub mod notify;
+
+// rpcserver.c — the winreg RPC server (StartRpcServer + 36 BaseReg*/Open*
+// manager stubs + MIDL allocator glue + 2 shutdown forwarders). First of the
+// 4 GINA/SAS/RPC cores flipped; the stub handlers feed the winreg-stub crate's
+// SERVER_ROUTINES dispatch table.
+pub mod rpcserver;
+
+// wlx.c — the GINA interface: the WLX_DISPATCH_VERSION_1_4 function table given
+// to msgina.dll, the GINA loader (GinaInit/LoadGina), the dialog tracking list,
+// and CreateWindowStationAndDesktops. Third GINA/SAS/RPC core.
+pub mod wlx;
+
+// sas.c — the Secure Attention Sequence state machine (logon/logoff/shutdown,
+// the SAS window proc, hotkeys, sound). Fourth/last GINA/SAS/RPC core.
+pub mod sas;
 
 // USER-MODE no_std staticlib → needs its own panic handler + eh_personality
 // (same role as userinit-rust / smss-csrss-rust). Must NOT use privileged

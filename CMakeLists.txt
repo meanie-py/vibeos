@@ -14,7 +14,19 @@ message(WARNING "Setting policy CMP0091 to OLD behaviour")
 cmake_policy(SET CMP0091 OLD)
 endif()
 
+# Emit build-<arch>/compile_commands.json. Required by the cargo-drive's
+# in-cargo C-residue compile (reactos-link c_from_compile_db replays cmake's
+# exact clang invocation per source — e.g. the loaders' blcmlib/cportlib C).
+# Configure-time only; harmless otherwise.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 project(REACTOS)
+
+# Emit build-<arch>/compile_commands.json. Required by the cargo-drive's
+# in-cargo C-residue compile (reactos-link c_from_compile_db replays cmake's
+# exact clang invocation per source — e.g. ntdll's rtl_vista). Configure-time
+# only; harmless otherwise.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_INCLUDE_DIRECTORIES_PROJECT_BEFORE ON)
@@ -376,18 +388,10 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/symbols")
     endif()
 
-    # libhal_rust_mini.a (FreeLDR's loader-time Rust mini-HAL) is consumed
-    # by boot/freeldr/freeldr/{uefi,pcat,rosload}.cmake, but its path was
-    # set with a directory-scoped plain set() in hal/halx86/CMakeLists.txt
-    # — and hal/ is processed AFTER boot/ (below). The variable therefore
-    # expanded EMPTY in the FreeLDR scope, so FreeLDR silently never
-    # linked the Rust mini-HAL. Incremental builds only survived on a
-    # stale pre-Rust-takeover libmini_hal.a; clean builds broke
-    # (undefined _KeGetCurrentIrql@0 &c). Define it here as the single
-    # source of truth, visible to every consumer regardless of order.
-    if(ARCH STREQUAL "i386")
-        set(HAL_RUST_MINI_LIB "${CMAKE_BINARY_DIR}/hal/halx86/libhal_rust_mini.a")
-    endif()
+    # (HAL_RUST_MINI_LIB removed: FreeLDR's loader-time Rust mini-HAL is now
+    # built by the loaders' own cargo links (.rust_lib("hal-rust", ["minihal"])),
+    # not reused from a cmake-built libhal_rust_mini.a — so the cmake
+    # rust_hal_mini custom_command and this shared-path var are both retired.)
 
     #begin with boot so reactos_cab target is defined before all other modules
     add_subdirectory(boot)

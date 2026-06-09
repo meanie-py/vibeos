@@ -1,6 +1,5 @@
-
-use ntdll_sys::nt::*;
 use super::srv_inlines::*;
+use ntdll_sys::nt::*;
 #[no_mangle]
 pub static mut CsrWaitListsLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 
@@ -21,7 +20,11 @@ pub unsafe extern "system" fn CsrInitializeWait(
         - core::mem::size_of::<_CSR_API_MESSAGE>() as ULONG
         + (*WaitApiMessage).Header.u1.s1.TotalLength as ULONG;
 
-    WaitBlock = RtlAllocateHeap(CsrHeap, HEAP_ZERO_MEMORY, (Size as usize).try_into().unwrap()) as PCSR_WAIT_BLOCK;
+    WaitBlock = RtlAllocateHeap(
+        CsrHeap,
+        HEAP_ZERO_MEMORY,
+        (Size as usize).try_into().unwrap(),
+    ) as PCSR_WAIT_BLOCK;
     if WaitBlock.is_null() {
         (*WaitApiMessage).__bindgen_anon_1.__bindgen_anon_1.Status = STATUS_NO_MEMORY;
         return 0u8;
@@ -66,7 +69,13 @@ pub unsafe extern "system" fn CsrNotifyWaitBlock(
     {
         (*(*WaitBlock).WaitThread).WaitBlock = core::ptr::null_mut();
 
-        if !(*WaitBlock).WaitApiMessage.__bindgen_anon_1.__bindgen_anon_1.CsrCaptureData.is_null() {
+        if !(*WaitBlock)
+            .WaitApiMessage
+            .__bindgen_anon_1
+            .__bindgen_anon_1
+            .CsrCaptureData
+            .is_null()
+        {
             CsrReleaseCapturedArguments(core::ptr::addr_of_mut!((*WaitBlock).WaitApiMessage));
         }
 
@@ -124,7 +133,10 @@ pub unsafe extern "system" fn CsrCreateWait(
 
     (*CsrWaitThread).WaitBlock = WaitBlock;
 
-    InsertTailList(WaitList, core::ptr::addr_of_mut!((*WaitBlock).WaitList) as PLIST_ENTRY);
+    InsertTailList(
+        WaitList,
+        core::ptr::addr_of_mut!((*WaitBlock).WaitList) as PLIST_ENTRY,
+    );
 
     CsrReleaseWaitLock();
     1u8
@@ -141,8 +153,8 @@ pub unsafe extern "system" fn CsrDereferenceWait(WaitList: PLIST_ENTRY) {
     NextEntry = (*WaitList).Flink;
 
     while NextEntry != WaitList {
-        WaitBlock = ((NextEntry as usize)
-            - core::mem::offset_of!(CSR_WAIT_BLOCK, WaitList)) as PCSR_WAIT_BLOCK;
+        WaitBlock = ((NextEntry as usize) - core::mem::offset_of!(CSR_WAIT_BLOCK, WaitList))
+            as PCSR_WAIT_BLOCK;
 
         NextEntry = (*NextEntry).Flink;
 
@@ -174,8 +186,8 @@ pub unsafe extern "system" fn CsrMoveSatisfiedWait(
     NextEntry = (*WaitList).Flink;
 
     while NextEntry != WaitList {
-        WaitBlock = ((NextEntry as usize)
-            - core::mem::offset_of!(CSR_WAIT_BLOCK, WaitList)) as PCSR_WAIT_BLOCK;
+        WaitBlock = ((NextEntry as usize) - core::mem::offset_of!(CSR_WAIT_BLOCK, WaitList))
+            as PCSR_WAIT_BLOCK;
 
         NextEntry = (*NextEntry).Flink;
 
@@ -208,20 +220,14 @@ pub unsafe extern "system" fn CsrNotifyWait(
     NextEntry = (*WaitList).Flink;
 
     while NextEntry != WaitList {
-        WaitBlock = ((NextEntry as usize)
-            - core::mem::offset_of!(CSR_WAIT_BLOCK, WaitList)) as PCSR_WAIT_BLOCK;
+        WaitBlock = ((NextEntry as usize) - core::mem::offset_of!(CSR_WAIT_BLOCK, WaitList))
+            as PCSR_WAIT_BLOCK;
 
         NextEntry = (*NextEntry).Flink;
 
         if (*WaitBlock).WaitFunction.is_some() {
-            NotifySuccess |= CsrNotifyWaitBlock(
-                WaitBlock,
-                WaitList,
-                WaitArgument1,
-                WaitArgument2,
-                0,
-                0u8,
-            );
+            NotifySuccess |=
+                CsrNotifyWaitBlock(WaitBlock, WaitList, WaitArgument1, WaitArgument2, 0, 0u8);
 
             if NotifyAll == 0 {
                 break;
@@ -232,7 +238,6 @@ pub unsafe extern "system" fn CsrNotifyWait(
     CsrReleaseWaitLock();
     NotifySuccess
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE
