@@ -187,23 +187,26 @@ add_dependencies(acpica bugcodes xdk)
 list(APPEND ACPI_SOURCE
     # busmgr/bus.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/bus.rs, Phase 3a:
     #   the acpi_bus_* bus-manager API). Symbols from libacpi_rust.a; C kept on disk.
-    busmgr/button.c
-    busmgr/power.c
-    busmgr/utils.c
-    busmgr/system.c
+    # Phase 3b — the remaining ReactOS ACPI driver glue is now Rust. Each .c below is
+    #   replaced by its acpi-rust module (#[no_mangle] symbols win at link); C kept on disk.
+    # busmgr/button.c  -> button.rs
+    # busmgr/power.c   -> busmgr_power.rs
+    # busmgr/utils.c   -> utils.rs
+    # busmgr/system.c  -> system.rs
     # osl.c — replaced by Rust (sdk/lib/rust/acpi-rust/, ACPICA FFI-to-blob
     #   Phase 2: the 45 AcpiOs* OSL callbacks). Symbols come from libacpi_rust.a
     #   (linked below); the C is kept on disk per the never-delete rule. Only the
     #   C-variadic AcpiOsPrintf stays C (acpi_printf_shim.c → Rust AcpiOsVprintf).
     acpi_printf_shim.c
-    acpienum.c
-    eval.c
-    interface.c
-    pnp.c
-    power.c
+    # acpienum.c   -> acpienum.rs   (Phase 3b)
+    # eval.c       -> eval.rs       (Phase 3b)
+    # interface.c  -> interface.rs  (Phase 3b)
+    # pnp.c        -> pnp.rs        (Phase 3b)
+    # power.c      -> power.rs      (Phase 3b)
     # buspdo.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/buspdo.rs, Phase 3a:
     #   the Bus_PDO_* PnP/resource dispatch). Symbols from libacpi_rust.a; C kept on disk.
-    main.c)
+    # main.c       -> driver_main.rs (Phase 3b)
+    )
 
 # ============================================================================
 # acpi-rust — OSL (osl.c) Rust cohabitation flip. Mirrors processr/pl011: a
@@ -243,6 +246,16 @@ add_custom_command(
             ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/types.rs
             ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/bus.rs
             ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/buspdo.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/interface.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/power.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/acpienum.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/button.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/system.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/pnp.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/utils.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/busmgr_power.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/eval.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/driver_main.rs
     WORKING_DIRECTORY ${ACPI_RUST_WORKSPACE_DIR}
     COMMENT "Building acpi-rust (${ACPI_RUST_TARGET})"
     VERBATIM)

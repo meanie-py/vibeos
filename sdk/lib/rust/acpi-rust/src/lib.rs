@@ -21,6 +21,18 @@ pub mod shared;
 pub mod osl;
 pub mod bus;
 pub mod buspdo;
+// Phase 3b glue leaves (hand-translated): the remaining ReactOS ACPI driver
+// glue. #[no_mangle] symbols replace the cohab-flipped C files in acpi.sys.
+pub mod interface;
+pub mod power;
+pub mod acpienum;
+pub mod button;
+pub mod system;
+pub mod pnp;
+pub mod utils;
+pub mod busmgr_power;
+pub mod eval;
+pub mod driver_main;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
