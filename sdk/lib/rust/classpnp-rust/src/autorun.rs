@@ -7,6 +7,8 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, IO_STACK_LOCATION, _UNICODE_STRING};
+use crate::types::{_CDB as CDB, _STORAGE_REQUEST_BLOCK_HEADER as STORAGE_REQUEST_BLOCK_HEADER};
 use ntkrnl_sys::ddk::{ANSI_STRING, BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, DelayedWorkQueue, EVENT_DESCRIPTOR, Enabled, _KWAIT_REASON_Executive, GUID, IO_COMPLETION_ROUTINE, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IO_WORKITEM_ROUTINE, IoAllocateErrorLogEntry, IoAllocateIrp, IoBuildDeviceIoControlRequest, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDriverObjectExtension, IoOpenDeviceRegistryKey, IoReportTargetDeviceChangeAsynchronous, IoReuseIrp, IoSetNextIrpStackLocation, IoWriteErrorLogEntry, KEVENT, KeCancelTimer, KeEnterCriticalRegion, KeInitializeDpc, KeInitializeMutex, KeInitializeTimer, KeLeaveCriticalRegion, KeQueryTimeIncrement, KeReleaseMutex, LARGE_INTEGER, LPGUID, _OBJECT_ATTRIBUTES, PCSZ, PDEVICE_OBJECT, PFILE_OBJECT, PFILE_OBJECT_EXTENSION, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PPREVENT_MEDIA_REMOVAL, PSECURITY_DESCRIPTOR, PSTORAGE_DEVICE_DESCRIPTOR, PTARGET_DEVICE_CUSTOM_NOTIFICATION, PUNICODE_STRING, PowerDeviceD0, RTL_QUERY_REGISTRY_ROUTINE, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, STORAGE_PREDICT_FAILURE, _EVENT_TYPE_SynchronizationEvent, TARGET_DEVICE_CUSTOM_NOTIFICATION, _KWAIT_REASON_UserRequest};
 use core::ffi::c_void;
 
@@ -141,13 +143,10 @@ const SCSIOP_GET_EVENT_STATUS: u8 = 0x4A;
 
 // Guessed type aliases for pointer types used in the function.
 // The caller collects the actual definitions.
-type PIRP = *mut IRP;
 type PFUNCTIONAL_DEVICE_EXTENSION = *mut FUNCTIONAL_DEVICE_EXTENSION;
 type PMEDIA_CHANGE_DETECTION_INFO = *mut MEDIA_CHANGE_DETECTION_INFO;
 type PSCSI_REQUEST_BLOCK = *mut SCSI_REQUEST_BLOCK;
 type PSTORAGE_REQUEST_BLOCK = *mut STORAGE_REQUEST_BLOCK;
-type PIO_STACK_LOCATION = *mut IO_STACK_LOCATION;
-type PCDB = *mut CDB;
 
 const NonPagedPoolNx: u32 = 2; // assumed value
 const CLASS_TAG_AUTORUN_DISABLE: u32 = 0x5244414C; // arbitrary tag, keep consistent with allocation
