@@ -926,9 +926,13 @@ def cmd_translate(args):
         # function, handed to the model so it can't silently stub/drop logic. Built
         # once per file; empty map when --c2rust is off or c2rust/db is unavailable.
         c2rust_anchors: dict[str, str] = {}
+        c2rust_preamble = ""
         if getattr(args, "c2rust", False):
-            from .c2rust_anchor import build_anchor_map
+            from .c2rust_anchor import build_anchor_map, build_preamble
             c2rust_anchors = build_anchor_map(c_file)
+            # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended to
+            # the preamble so the LLM never has to (mis)transcribe a lookup table.
+            c2rust_preamble = build_preamble(c_file)
 
         if args.dry_run:
             # Just show the plan
@@ -1180,6 +1184,32 @@ def cmd_translate(args):
             else:
                 print(f"FAIL: {pre_res.error} (stitching without preamble)",
                       file=sys.stderr)
+
+        # c2rust DATA preamble wins over the LLM's: prepend the compiler-exact
+        # static/const tables, and strip any LLM-emitted item with the same name
+        # (the LLM copy is the fabrication-prone one). Deterministic, $0.
+        if c2rust_preamble.strip():
+            import re
+            names = set(re.findall(r"\b(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:",
+                                   c2rust_preamble))
+            if names and preamble_rust.strip():
+                kept, drop_depth, dropping = [], 0, False
+                for ln in preamble_rust.splitlines():
+                    if not dropping:
+                        m = re.match(r"\s*(?:pub\s+)?(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:", ln)
+                        if m and m.group(1) in names:
+                            dropping, drop_depth = True, 0
+                        else:
+                            kept.append(ln)
+                    if dropping:
+                        drop_depth += ln.count("[") - ln.count("]") + ln.count("{") - ln.count("}")
+                        if drop_depth <= 0 and ln.rstrip().endswith(";"):
+                            dropping = False
+                preamble_rust = "\n".join(kept)
+            preamble_rust = ("// @c2rust file-scope data (compiler-exact tables/statics)\n"
+                             + c2rust_preamble + "\n\n" + preamble_rust)
+            print(f"  [c2rust] prepended {len(names)} exact static/const item(s) to preamble",
+                  file=sys.stderr)
 
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         if resumed:
