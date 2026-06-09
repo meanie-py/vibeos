@@ -81,7 +81,7 @@ pub unsafe extern "C" fn ClassCreateClose(
         status = ClasspCreateClose(device_object, irp);
         if status >= 0 {
             let fn_ptr = (*(*common_extension).DevInfo).ClassCreateClose;
-            if !fn_ptr.is_null() {
+            if !fn_ptr.is_none() {
                 return fn_ptr(device_object, irp);
             }
         }
@@ -367,13 +367,13 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(
             }
 
             // Set up SCSI medium removal command
-            (*cdb).MEDIA_REMOVAL.OperationCode = SCSIOP_MEDIUM_REMOVAL;
+            (*cdb).MEDIA_REMOVAL.as_ref().OperationCode = SCSIOP_MEDIUM_REMOVAL;
             // FALSE – allow media removal
-            (*cdb).MEDIA_REMOVAL.Prevent = 0;
+            (*cdb).MEDIA_REMOVAL.as_ref().Prevent = 0;
 
             // Send SRB synchronously
             status = ClassSendSrbSynchronous(
-                (*fdoExtension).DeviceObject,
+                (*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
                 srbPtr,
                 core::ptr::null_mut(),
                 0,
@@ -532,12 +532,12 @@ pub unsafe extern "C" fn ClasspEjectionControl(
             NT_ASSERT(!cdb.is_null() as i32)
 
             (*cdb).MEDIA_REMOVAL.OperationCode = SCSIOP_MEDIUM_REMOVAL as u8;
-            (*cdb).MEDIA_REMOVAL.Prevent = Lock;
+            (*cdb).MEDIA_REMOVAL.as_ref().Prevent = Lock;
 
             SrbSetTimeOutValue(srb, (*FdoExtension).TimeOutValue);
 
             status = ClassSendSrbSynchronous(
-                (*FdoExtension).DeviceObject,
+                (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
                 srb,
                 core::ptr::null_mut(),
                 0,

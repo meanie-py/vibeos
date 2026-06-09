@@ -35,8 +35,8 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut TRANSFER_PACKET) {
         let fdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION = (*(*Pkt).Fdo).DeviceExtension;
         let fdoData: *mut CLASS_PRIVATE_FDO_DATA = (*fdoExtension).PrivateFdoData;
         NT_ASSERT((!(*fdoData).InterpretSenseInfo.is_null()) as i32);
-        NT_ASSERT((!((*(*fdoData).InterpretSenseInfo).Compress).is_null()) as i32);
-        ((*(*fdoData).InterpretSenseInfo).Compress)((*fdoExtension).DeviceObject, history);
+        NT_ASSERT((!((*(*fdoData).InterpretSenseInfo).Compress).is_none()) as i32);
+        ((*(*fdoData).InterpretSenseInfo).Compress)((*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject, history);
         NT_ASSERT(((*history).UsedHistoryCount < (*history).TotalHistoryCount) as i32);
     }
 

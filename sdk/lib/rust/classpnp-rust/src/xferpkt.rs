@@ -238,7 +238,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: *mut DEVICE_OBJECT) -> i
     NT_ASSERT(NT_SUCCESS(status) != 0 as i32);
 
     propertyId = StorageDeviceIoCapabilityProperty;
-    status = ClassGetDescriptor((*(*fdoExt).CommonExtension).LowerDeviceObject,
+    status = ClassGetDescriptor((*(*fdoExt).__bindgen_anon_1.CommonExtension).LowerDeviceObject,
                                 &raw const propertyId,
                                 &raw mut devIoCapabilityDesc as *mut *mut core::ffi::c_void);
 
@@ -805,7 +805,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     logicalBlockAddr.QuadPart = Int64ShrlMod32(DiskLocation.QuadPart, (*fdoExt).SectorShift.into());
     numTransferBlocks = Len >> (*fdoExt).SectorShift;
 
-    (*(*Pkt).DriverUsesStartIO) = if (*(*commonExtension).DriverExtension).InitData.ClassStartIo.is_null() { 0 } else { 1 };
+    (*(*Pkt).DriverUsesStartIO) = if (*(*commonExtension).DriverExtension).InitData.ClassStartIo.is_none() { 0 } else { 1 };
 
     if *(*((*fdoExt).AdapterDescriptor)).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK  {
         srbLength = (*((*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK)).SrbLength;
@@ -827,20 +827,20 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     pCdb = SrbGetCdb((*Pkt).Srb);
     if !pCdb.is_null() {
         if ((*fdoExt).DeviceFlags & DEV_USE_16BYTE_CDB) != 0 {
-            REVERSE_BYTES_QUAD(core::ptr::addr_of_mut!((*pCdb).CDB16.LogicalBlock) as *mut u64, core::ptr::addr_of!(logicalBlockAddr) as *const i64);
-            REVERSE_BYTES(core::ptr::addr_of_mut!((*pCdb).CDB16.TransferLength) as *mut u32, core::ptr::addr_of!(numTransferBlocks) as *const u32);
-            (*pCdb).CDB16.OperationCode = if majorFunc == IRP_MJ_READ { SCSIOP_READ16 } else { SCSIOP_WRITE16 };
+            REVERSE_BYTES_QUAD(core::ptr::addr_of_mut!((*pCdb).CDB16.as_ref().LogicalBlock) as *mut u64, core::ptr::addr_of!(logicalBlockAddr) as *const i64);
+            REVERSE_BYTES(core::ptr::addr_of_mut!((*pCdb).CDB16.as_ref().TransferLength) as *mut u32, core::ptr::addr_of!(numTransferBlocks) as *const u32);
+            (*pCdb).CDB16.as_ref().OperationCode = if majorFunc == IRP_MJ_READ { SCSIOP_READ16 } else { SCSIOP_WRITE16 };
             SrbSetCdbLength((*Pkt).Srb, 16);
         } else {
             let low_part_ptr = core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const u8;
-            (*pCdb).CDB10.LogicalBlockByte0 = *low_part_ptr.add(3);
-            (*pCdb).CDB10.LogicalBlockByte1 = *low_part_ptr.add(2);
-            (*pCdb).CDB10.LogicalBlockByte2 = *low_part_ptr.add(1);
-            (*pCdb).CDB10.LogicalBlockByte3 = *low_part_ptr.add(0);
+            (*pCdb).CDB10.as_ref().LogicalBlockByte0 = *low_part_ptr.add(3);
+            (*pCdb).CDB10.as_ref().LogicalBlockByte1 = *low_part_ptr.add(2);
+            (*pCdb).CDB10.as_ref().LogicalBlockByte2 = *low_part_ptr.add(1);
+            (*pCdb).CDB10.as_ref().LogicalBlockByte3 = *low_part_ptr.add(0);
             let num_blocks_ptr = core::ptr::addr_of!(numTransferBlocks) as *const u8;
-            (*pCdb).CDB10.TransferBlocksMsb = *num_blocks_ptr.add(1);
-            (*pCdb).CDB10.TransferBlocksLsb = *num_blocks_ptr.add(0);
-            (*pCdb).CDB10.OperationCode = if majorFunc == IRP_MJ_READ { SCSIOP_READ } else { SCSIOP_WRITE };
+            (*pCdb).CDB10.as_ref().TransferBlocksMsb = *num_blocks_ptr.add(1);
+            (*pCdb).CDB10.as_ref().TransferBlocksLsb = *num_blocks_ptr.add(0);
+            (*pCdb).CDB10.as_ref().OperationCode = if majorFunc == IRP_MJ_READ { SCSIOP_READ } else { SCSIOP_WRITE };
         }
     }
 
@@ -851,7 +851,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     SrbSetSrbFlags((*Pkt).Srb, if majorFunc == IRP_MJ_READ { SRB_FLAGS_DATA_IN } else { SRB_FLAGS_DATA_OUT });
 
     if (majorFunc == IRP_MJ_WRITE) && ((*(*origCurSp).Flags & SL_WRITE_THROUGH) != 0) && !pCdb.is_null() {
-        (*pCdb).CDB10.ForceUnitAccess = (*fdoExt).CdbForceUnitAccess;
+        (*pCdb).CDB10.as_ref().ForceUnitAccess = (*fdoExt).CdbForceUnitAccess;
     } else {
         SrbSetSrbFlags((*Pkt).Srb, SRB_FLAGS_ADAPTER_CACHE_ENABLE);
     }
@@ -868,7 +868,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     (*Pkt).NumThinProvisioningRetries = 0;
 
     if !pCdb.is_null() {
-        DBGLOGFLUSHINFO(fdoData, 1, (*pCdb).CDB10.ForceUnitAccess, 0);
+        DBGLOGFLUSHINFO(fdoData, 1, (*pCdb).CDB10.as_ref().ForceUnitAccess, 0);
     } else {
         DBGLOGFLUSHINFO(fdoData, 1, 0, 0);
     }
@@ -1152,7 +1152,7 @@ pub unsafe extern "system" fn TransferPktComplete(
                     ClasspCompleteIdleRequest(fdoExt);
                 }
 
-                if (*fdoExt).CommonExtension.DriverExtension.InitData.ClassStartIo as ULONG_PTR
+                if (*fdoExt).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension.InitData.ClassStartIo as ULONG_PTR
                     != 0
                 {
                     if TEST_FLAG(
@@ -1180,7 +1180,7 @@ pub unsafe extern "system" fn TransferPktComplete(
             (*pkt).SyncEventPtr = core::ptr::null_mut();
         }
 
-        if !(*pkt).ContinuationRoutine.is_null() {
+        if !(*pkt).ContinuationRoutine.is_none() {
             let cont = (*pkt).ContinuationRoutine;
             cont((*pkt).ContinuationContext);
             (*pkt).ContinuationRoutine = core::ptr::null_mut();
@@ -1248,8 +1248,8 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
 
     pCdb = SrbGetCdb(((*Pkt).Srb) as *mut core::ffi::c_void);
     if !pCdb.is_null() {
-        (*pCdb).MEDIA_REMOVAL.OperationCode = SCSIOP_MEDIUM_REMOVAL;
-        (*pCdb).MEDIA_REMOVAL.Prevent = PreventMediaRemoval;
+        (*pCdb).MEDIA_REMOVAL.as_ref().OperationCode = SCSIOP_MEDIUM_REMOVAL;
+        (*pCdb).MEDIA_REMOVAL.as_ref().Prevent = PreventMediaRemoval;
     }
 
     (*Pkt).BufPtrCopy = core::ptr::null_mut();
@@ -1307,11 +1307,11 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
 
     pCdb = SrbGetCdb((*Pkt).Srb);
     if !pCdb.is_null() {
-        (*pCdb).MODE_SENSE.OperationCode = SCSIOP_MODE_SENSE;
-        (*pCdb).MODE_SENSE.PageCode = PageMode;
-        (*pCdb).MODE_SENSE.SubPageCode = SubPage;
-        (*pCdb).MODE_SENSE.Pc = PageControl;
-        (*pCdb).MODE_SENSE.AllocationLength = ModeSenseBufferLen;
+        (*pCdb).MODE_SENSE.as_ref().OperationCode = SCSIOP_MODE_SENSE;
+        (*pCdb).MODE_SENSE.as_ref().PageCode = PageMode;
+        (*pCdb).MODE_SENSE.as_ref().SubPageCode = SubPage;
+        (*pCdb).MODE_SENSE.as_ref().Pc = PageControl;
+        (*pCdb).MODE_SENSE.as_ref().AllocationLength = ModeSenseBufferLen;
     }
 
     (*Pkt).BufPtrCopy = ModeSenseBuffer;
@@ -1376,10 +1376,10 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
 
     let pCdb = SrbGetCdb((*Pkt).Srb);
     if !pCdb.is_null() {
-        (*pCdb).MODE_SELECT.OperationCode = SCSIOP_MODE_SELECT;
-        (*pCdb).MODE_SELECT.SPBit = SavePages;
-        (*pCdb).MODE_SELECT.PFBit = 1;
-        (*pCdb).MODE_SELECT.ParameterListLength = ModeSelectBufferLen;
+        (*pCdb).MODE_SELECT.as_ref().OperationCode = SCSIOP_MODE_SELECT;
+        (*pCdb).MODE_SELECT.as_ref().SPBit = SavePages;
+        (*pCdb).MODE_SELECT.as_ref().PFBit = 1;
+        (*pCdb).MODE_SELECT.as_ref().ParameterListLength = ModeSelectBufferLen;
     }
 
     (*Pkt).BufPtrCopy = ModeSelectBuffer;
@@ -1453,7 +1453,7 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
             // Write OperationCode at offset 0 of CDB16
             *((*p_cdb).CDB16 as *mut u8) = SCSIOP_READ_CAPACITY16;
             REVERSE_BYTES(
-                core::ptr::addr_of_mut!((*p_cdb).CDB16.TransferLength) as *mut core::ffi::c_void,
+                core::ptr::addr_of_mut!((*p_cdb).CDB16.as_ref().TransferLength) as *mut core::ffi::c_void,
                 core::ptr::addr_of!(ReadCapacityBufferLen) as *const core::ffi::c_void,
             );
             // AsByte[1] = 0x10

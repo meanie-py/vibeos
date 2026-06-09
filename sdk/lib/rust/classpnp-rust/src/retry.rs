@@ -112,7 +112,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
             0x00000001,  // TRACE_LEVEL_ERROR
             0x00000001,  // TRACE_FLAG_GENERAL
             b"Unhandled SRB Function %xh in error path for packet %p (did miniport change Srb.Cdb.OperationCode ?)\0".as_ptr() as *const i8,
-            (*pCdb).CDB10.OperationCode as u32,
+            (*pCdb).CDB10.as_ref().OperationCode as u32,
             Pkt,
         );
     }
@@ -124,7 +124,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
         NT_ASSERT(!((*(*(*fdoData).InterpretSenseInfo)).Interpret).is_null() as i32);
 
         if (u32::from((*(*Pkt).Srb).Function) == SRB_FUNCTION_STORAGE_REQUEST_BLOCK)
-            && ((*(*(*fdoExtension).CommonExtension.DriverExtension)).SrbSupport & CLASS_SRB_STORAGE_REQUEST_BLOCK) == 0
+            && ((*(*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension)).SrbSupport & CLASS_SRB_STORAGE_REQUEST_BLOCK) == 0
         {
             ClasspConvertToScsiRequestBlock(
                 &raw mut tempSrb as *mut SCSI_REQUEST_BLOCK,
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
             core::ptr::addr_of_mut!(additionalSenseQual),
         ) as u8;
 
-        if (*pCdb).MEDIA_REMOVAL.OperationCode == SCSIOP_MEDIUM_REMOVAL {
+        if (*pCdb).MEDIA_REMOVAL.as_ref().OperationCode == SCSIOP_MEDIUM_REMOVAL {
             let mut retryIntervalSeconds: u32 = 0;
 
             shouldRetry = ClassInterpretSenseInfo(
@@ -200,8 +200,8 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
                 (*Pkt).RetryIn100nsUnits = retryIntervalSeconds;
                 (*Pkt).RetryIn100nsUnits *= 1000 * 1000 * 10;
             }
-        } else if (*pCdb).MODE_SENSE.OperationCode == SCSIOP_MODE_SENSE
-            || (*pCdb).MODE_SENSE.OperationCode == SCSIOP_MODE_SENSE10
+        } else if (*pCdb).MODE_SENSE.as_ref().OperationCode == SCSIOP_MODE_SENSE
+            || (*pCdb).MODE_SENSE.as_ref().OperationCode == SCSIOP_MODE_SENSE10
         {
             let mut retryIntervalSeconds: u32 = 0;
 
@@ -246,8 +246,8 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
                 (*Pkt).RetryIn100nsUnits = retryIntervalSeconds;
                 (*Pkt).RetryIn100nsUnits *= 1000 * 1000 * 10;
             }
-        } else if (*pCdb).CDB10.OperationCode == SCSIOP_READ_CAPACITY
-            || (*pCdb).CDB16.OperationCode == SCSIOP_READ_CAPACITY16
+        } else if (*pCdb).CDB10.as_ref().OperationCode == SCSIOP_READ_CAPACITY
+            || (*pCdb).CDB16.as_ref().OperationCode == SCSIOP_READ_CAPACITY16
         {
             let mut retryIntervalSeconds: u32 = 0;
 
@@ -281,7 +281,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
                 (*Pkt).RetryIn100nsUnits = retryIntervalSeconds;
                 (*Pkt).RetryIn100nsUnits *= 1000 * 1000 * 10;
             }
-        } else if IS_SCSIOP_READWRITE((*pCdb).CDB10.OperationCode) != 0 {
+        } else if IS_SCSIOP_READWRITE((*pCdb).CDB10.as_ref().OperationCode) != 0 {
             let origCurrentSp = IoGetCurrentIrpStackLocation((*Pkt).OriginalIrp);
             let mut retryIntervalSeconds: u32 = 0;
 
@@ -409,7 +409,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
                 0x00000001,
                 0x00000001,
                 b"Unhandled SRB Function %xh in error path for packet %p (did miniport change Srb.Cdb.OperationCode ?)\0".as_ptr() as *const i8,
-                (*pCdb).CDB10.OperationCode as u32,
+                (*pCdb).CDB10.as_ref().OperationCode as u32,
                 Pkt,
             );
         }
@@ -487,7 +487,7 @@ pub unsafe extern "C" fn RetryTransferPacket(Pkt: *mut TRANSFER_PACKET) -> i32 {
             let mut isReadWrite: i32 = 0;
 
             if !pCdb.is_null() {
-                cdbOpcode = (*pCdb).CDB10.OperationCode;
+                cdbOpcode = (*pCdb).CDB10.as_ref().OperationCode;
                 isReadWrite = IS_SCSIOP_READWRITE(cdbOpcode);
             }
 

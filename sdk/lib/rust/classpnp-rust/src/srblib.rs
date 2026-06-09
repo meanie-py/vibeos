@@ -236,7 +236,7 @@ pub unsafe extern "C" fn classpnp_CreateStorageRequestBlockWorker(
     }
 
     if status == STATUS_SUCCESS {
-        if !AllocateRoutine.is_null() {
+        if !AllocateRoutine.is_none() {
             *Srb = AllocateRoutine(sizeNeeded);
             if (*Srb).is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;

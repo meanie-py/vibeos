@@ -275,7 +275,7 @@ pub unsafe extern "system" fn ClassSystemControl(
             let classWmiInfo_classquerywmireginfo = (*classWmiInfo).ClassQueryWmiRegInfo;
 
             if !classWmiInfo_guidreginfo.is_null()
-                && !classWmiInfo_classquerywmireginfo.is_null()
+                && !classWmiInfo_classquerywmireginfo.is_none()
                 && ClassQueryWmiRegInfoEx.is_null()
             // Actually the condition is (ClassQueryWmiRegInfoEx == NULL)
             {
@@ -289,7 +289,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     0x0072, 0x0063, 0x0065, 0x004E, 0x0061, 0x006D, 0x0065, 0x0000,
                 ];
                 RtlInitUnicodeString(&mut mofName, mof_resource_name.as_ptr());
-            } else if !classWmiInfo_guidreginfo.is_null() && !(*ClassQueryWmiRegInfoEx).is_null() {
+            } else if !classWmiInfo_guidreginfo.is_none() && !(*ClassQueryWmiRegInfoEx).is_none() {
                 status = (*ClassQueryWmiRegInfoEx)(
                     DeviceObject,
                     &mut nameFlags,

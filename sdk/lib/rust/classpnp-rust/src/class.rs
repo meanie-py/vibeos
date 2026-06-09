@@ -301,31 +301,31 @@ pub unsafe extern "system" fn ClassInitialize(
     }
 
     // Check required FDO entry points.
-    if (*InitializationData).FdoData.ClassDeviceControl.is_null()
-        || ((*InitializationData).FdoData.ClassReadWriteVerification.is_null()
-            && (*InitializationData).ClassStartIo.is_null())
-        || (*InitializationData).ClassAddDevice.is_null()
-        || (*InitializationData).FdoData.ClassStartDevice.is_null()
+    if (*InitializationData).FdoData.ClassDeviceControl.is_none()
+        || ((*InitializationData).FdoData.ClassReadWriteVerification.is_none()
+            && (*InitializationData).ClassStartIo.is_none())
+        || (*InitializationData).ClassAddDevice.is_none()
+        || (*InitializationData).FdoData.ClassStartDevice.is_none()
     {
         // TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, "ClassInitialize: Class device-specific driver missing required FDO entry\n"));
         return STATUS_REVISION_MISMATCH as u32;
     }
 
     // Check required PDO entry points if ClassEnumerateDevice supplied.
-    if !(*InitializationData).ClassEnumerateDevice.is_null()
-        && ((*InitializationData).PdoData.ClassDeviceControl.is_null()
-            || (*InitializationData).PdoData.ClassStartDevice.is_null()
-            || ((*InitializationData).PdoData.ClassReadWriteVerification.is_null()
-                && (*InitializationData).ClassStartIo.is_null()))
+    if !(*InitializationData).ClassEnumerateDevice.is_none()
+        && ((*InitializationData).PdoData.ClassDeviceControl.is_none()
+            || (*InitializationData).PdoData.ClassStartDevice.is_none()
+            || ((*InitializationData).PdoData.ClassReadWriteVerification.is_none()
+                && (*InitializationData).ClassStartIo.is_none()))
     {
         // TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, "ClassInitialize: Class device-specific missing required PDO entry\n"));
         return STATUS_REVISION_MISMATCH as u32;
     }
 
     // Verify ClassStopDevice is present where required.
-    if (*InitializationData).FdoData.ClassStopDevice.is_null()
-        || (!(*InitializationData).ClassEnumerateDevice.is_null()
-            && (*InitializationData).PdoData.ClassStopDevice.is_null())
+    if (*InitializationData).FdoData.ClassStopDevice.is_none()
+        || (!(*InitializationData).ClassEnumerateDevice.is_none()
+            && (*InitializationData).PdoData.ClassStopDevice.is_none())
     {
         // TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, "ClassInitialize: Class device-specific missing required PDO entry\n"));
         NT_ASSERT(0 as i32);
@@ -333,17 +333,17 @@ pub unsafe extern "system" fn ClassInitialize(
     }
 
     // Setup default power handlers if not provided.
-    if (*InitializationData).FdoData.ClassPowerDevice.is_null() {
+    if (*InitializationData).FdoData.ClassPowerDevice.is_none() {
         (*InitializationData).FdoData.ClassPowerDevice = ClassMinimalPowerHandler;
     }
-    if !(*InitializationData).ClassEnumerateDevice.is_null()
-        && (*InitializationData).PdoData.ClassPowerDevice.is_null()
+    if !(*InitializationData).ClassEnumerateDevice.is_none()
+        && (*InitializationData).PdoData.ClassPowerDevice.is_none()
     {
         (*InitializationData).PdoData.ClassPowerDevice = ClassMinimalPowerHandler;
     }
 
     // Warn if unload is not supported.
-    if (*InitializationData).ClassUnload.is_null() {
+    if (*InitializationData).ClassUnload.is_none() {
         // TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT, "ClassInitialize: driver does not support unload %wZ\n", RegistryPath));
     }
 
@@ -414,11 +414,11 @@ pub unsafe extern "system" fn ClassInitialize(
     (*(DriverObject)).MajorFunction[IRP_MJ_POWER as usize] = Some(core::mem::transmute(ClassGlobalDispatch as *const ()));
     (*(DriverObject)).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] = Some(core::mem::transmute(ClassGlobalDispatch as *const ()));
 
-    if !(*InitializationData).ClassStartIo.is_null() {
+    if !(*InitializationData).ClassStartIo.is_none() {
         (*(DriverObject)).DriverStartIo = Some(core::mem::transmute(ClasspStartIo as *const ()));
     }
 
-    if !(*InitializationData).ClassUnload.is_null() && ClassPnpAllowUnload as i32 == 1 {
+    if !(*InitializationData).ClassUnload.is_none() && ClassPnpAllowUnload as i32 == 1 {
         (*(DriverObject)).DriverUnload = Some(core::mem::transmute(ClassUnload as *const ()));
     } else {
         (*(DriverObject)).DriverUnload = None;
@@ -555,11 +555,11 @@ pub unsafe extern "system" fn ClassInitializeEx(
                 status = STATUS_INVALID_PARAMETER;
             } else if (*info).HistoryCount > CLASS_INTERPRET_SENSE_INFO2_MAXIMUM_HISTORY_COUNT {
                 status = STATUS_INVALID_PARAMETER;
-            } else if (*info).Compress.is_null() {
+            } else if (*info).Compress.is_none() {
                 status = STATUS_INVALID_PARAMETER;
             } else if (*info).HistoryCount == 0 {
                 status = STATUS_INVALID_PARAMETER;
-            } else if (*info).Interpret.is_null() {
+            } else if (*info).Interpret.is_none() {
                 status = STATUS_INVALID_PARAMETER;
             } else if (*driverExtension).InitData.FdoData.DeviceType != FILE_DEVICE_CD_ROM {
                 status = STATUS_INVALID_DEVICE_REQUEST;
@@ -614,7 +614,7 @@ pub unsafe extern "system" fn ClassUnload(
     }
 
     NT_ASSERT(if !(*driverExtension).RegistryPath.Buffer.is_null() { 1 } else { 0 } as i32);
-    NT_ASSERT(if !(*driverExtension).InitData.ClassUnload.is_null() { 1 } else { 0 } as i32);
+    NT_ASSERT(if !(*driverExtension).InitData.ClassUnload.is_none() { 1 } else { 0 } as i32);
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -759,7 +759,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                         if (*commonExtension).IsInitialized == 0 {
                             NT_ASSERT(0 as i32)
                         }
-                        if (*initData).ClassEnumerateDevice.is_null() {
+                        if (*initData).ClassEnumerateDevice.is_none() {
                             // Just send down; fall through to IoCallDriver
                         } else {
                             status = ClassPnpQueryFdoRelations(DeviceObject, Irp);
@@ -777,7 +777,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     {
                         let mut _fwd = false;
                         if type_ == BusRelations {
-                            if (*initData).ClassEnumerateDevice.is_null() {
+                            if (*initData).ClassEnumerateDevice.is_none() {
                                 _fwd = true;
                             } else if status >= 0 {
                                 _fwd = true;
@@ -1015,7 +1015,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                     propertyId = StorageMiniportProperty;
 
                     status = ClassGetDescriptor(
-                        (*fdoExtension).CommonExtension.LowerDeviceObject,
+                        (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject,
                         &mut propertyId,
                         &mut (*fdoExtension).MiniportDescriptor as *mut _ as *mut *mut c_void,
                     );
@@ -1068,7 +1068,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                         (*(*fdoExtension).PrivateFdoData).Perf.ReEnableThreshhold = t;
                     }
 
-                    if (*(*fdoExtension).DeviceObject).DeviceType != FILE_DEVICE_DISK {
+                    if (*(*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject).DeviceType != FILE_DEVICE_DISK {
                         (*(*fdoExtension).PrivateFdoData).HackFlags |= FDO_HACK_NO_SYNC_CACHE;
                     }
 
@@ -1103,7 +1103,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                     propertyId = StorageDevicePowerProperty;
 
                     status = ClassGetDescriptor(
-                        (*fdoExtension).CommonExtension.LowerDeviceObject,
+                        (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject,
                         &mut propertyId,
                         &mut powerDescriptor as *mut _ as *mut *mut c_void,
                     );
@@ -1219,7 +1219,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
         }
 
         if isFdo != 0
-            && ((*initData).ClassTick.is_null() == false
+            && ((*initData).ClassTick.is_none() == false
                 || ((*fdoExtension).MediaChangeDetectionInfo.is_null() == false
                     && (*fdoExtension).FunctionSupportInfo.is_null() == false
                     && (*(*fdoExtension).FunctionSupportInfo).AsynchronousNotificationSupported == 0)
@@ -1244,7 +1244,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
         if NT_SUCCESS(status) != 0 {
             (*commonExtension).CurrentState = IRP_MN_START_DEVICE;
 
-            if isFdo != 0 && (*initData).ClassEnumerateDevice.is_null() == false {
+            if isFdo != 0 && (*initData).ClassEnumerateDevice.is_none() == false {
                 isMountedDevice = 0;
             }
 
@@ -1330,7 +1330,7 @@ pub unsafe extern "system" fn ClassReadWrite(
             (*currentIrpStack).MinorFunction = CLASSP_VOLUME_VERIFY_CHECKED;
 
             let devInfo = (*commonExtension).DevInfo;
-            NT_ASSERT((!(*devInfo).ClassReadWriteVerification.is_null()) as i32);
+            NT_ASSERT((!(*devInfo).ClassReadWriteVerification.is_none()) as i32);
 
             status = (*devInfo).ClassReadWriteVerification(DeviceObject, Irp);
             if status < 0 {
@@ -1349,7 +1349,7 @@ pub unsafe extern "system" fn ClassReadWrite(
                     break 'out;
                 } else {
                     let driverExt = (*commonExtension).DriverExtension;
-                    if !(*driverExt).InitData.ClassStartIo.is_null() {
+                    if !(*driverExt).InitData.ClassStartIo.is_none() {
                         IoMarkIrpPending(Irp);
                         IoStartPacket(DeviceObject, Irp, core::ptr::null_mut(), core::ptr::null_mut());
                         status = STATUS_PENDING;
@@ -1480,7 +1480,7 @@ pub unsafe extern "C" fn InterpretCapacityData(
      *  Calculate media capacity in bytes.
      *  For this purpose we treat the entire LUN as is if it is one partition.  Disk will deal with actual partitioning.
      */
-    (*fdoExt).CommonExtension.PartitionLength.QuadPart =
+    (*fdoExt).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart =
         (lastSector.QuadPart + 1) << (*fdoExt).SectorShift as i64 ;
 
     /*
@@ -1678,7 +1678,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: *mut DEVICE_OBJECT) ->
             );
             (*fdoExt).DiskGeometry.BytesPerSector = 512;
             (*fdoExt).SectorShift = 9;
-            (*fdoExt).CommonExtension.PartitionLength.QuadPart = 0i64;
+            (*fdoExt).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart = 0i64;
 
             if ((*Fdo).Characteristics & FILE_REMOVABLE_MEDIA) != 0 {
                 (*fdoExt).DiskGeometry.MediaType = RemovableMedia;
@@ -1789,10 +1789,10 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut DEVICE_OBJECT) {
     SrbSetCdbLength(srb, 6);
     cdb = SrbGetCdb(srb);
 
-    (*cdb).START_STOP.OperationCode = SCSIOP_START_STOP_UNIT;
-    (*cdb).START_STOP.Start = 1;
-    (*cdb).START_STOP.Immediate = 0;
-    (*cdb).START_STOP.LogicalUnitNumber = (*srb).Lun;
+    (*cdb).START_STOP.as_ref().OperationCode = SCSIOP_START_STOP_UNIT;
+    (*cdb).START_STOP.as_ref().Start = 1;
+    (*cdb).START_STOP.as_ref().Immediate = 0;
+    (*cdb).START_STOP.as_ref().LogicalUnitNumber = (*srb).Lun;
 
     irp = IoAllocateIrp((*Fdo).StackSize as i8, 0);
     if irp.is_null() {
@@ -1816,7 +1816,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut DEVICE_OBJECT) {
 
     (*irpStack).Parameters.Scsi.Srb = srb;
 
-    IoCallDriver((*fdoExtension).CommonExtension.LowerDeviceObject, irp);
+    IoCallDriver((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject, irp);
 }
 
 #[no_mangle]
@@ -2209,7 +2209,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     let srbFlags: ULONG;
     let srbFunction: ULONG;
 
-    debug_assert!((*fdoExtension).CommonExtension.IsFdo != 0);
+    debug_assert!((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0);
 
     if (*srb).Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
         srbFlags = (*(srb as *mut STORAGE_REQUEST_BLOCK)).SrbFlags;
@@ -2326,7 +2326,7 @@ pub unsafe extern "system" fn ClassIoComplete(
             FREE_PORT_ALLOCATED_SENSE_BUFFER(fdoExtension, srb);
         }
 
-        if (*fdoExtension).CommonExtension.IsSrbLookasideListInitialized != 0 {
+        if (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsSrbLookasideListInitialized != 0 {
             ClassFreeOrReuseSrb(fdoExtension, srb);
         } else {
             TracePrint(4, 0x00000001, b"ClassIoComplete is freeing an SRB (possibly) on behalf of another driver.\0" as *const u8 as *const i8);
@@ -2368,8 +2368,8 @@ pub unsafe extern "system" fn ClassIoComplete(
         IoMarkIrpPending(Irp);
     }
 
-    if !(*fdoExtension).CommonExtension.DriverExtension.is_null()
-        && !(*(*fdoExtension).CommonExtension.DriverExtension).InitData.ClassStartIo.is_null()
+    if !(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension.is_null()
+        && !(*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension).InitData.ClassStartIo.is_null()
     {
         if callStartNextPacket != 0 {
             let mut oldIrql: KIRQL = 0;

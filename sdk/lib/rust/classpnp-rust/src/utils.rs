@@ -606,7 +606,7 @@ pub unsafe extern "system" fn ClassScanForSpecial(
         4, /* TRACE_LEVEL_INFORMATION */
         1, /* TRACE_FLAG_INIT */
         b"ClasspScanForSpecialByInquiry: no match found for %p\n\0".as_ptr() as *const i8,
-        (*FdoExtension).DeviceObject as *const core::ffi::c_void,
+        (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject as *const core::ffi::c_void,
     );
 
     return;
@@ -1402,7 +1402,7 @@ pub unsafe extern "C" fn InterpretReadCapacity16Data(
 
     (*((*FdoExtension).FunctionSupportInfo)).ReadCapacity16Data.BytesPerLogicalSector =
         ClasspCalculateLogicalSectorSize(
-            (*FdoExtension).DeviceObject,
+            (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
             (*ReadCapacity16Data).BytesPerBlock as u32,
         );
 
@@ -1538,7 +1538,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
         (*cdb).READ_CAPACITY16.AllocationLength[3] = bufferLength;
 
         status = ClassSendSrbSynchronous(
-            (*FdoExtension).DeviceObject,
+            (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
             Srb,
             dataBuffer as *mut core::ffi::c_void,
             allocationBufferLength,
@@ -1887,7 +1887,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(
         (*cdb).CDB6INQUIRY3.AllocationLength = bufferLength;
 
         status = ClassSendSrbSynchronous(
-            (*fdoExtension).CommonExtension.DeviceObject,
+            (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject,
             Srb,
             dataBuffer as *mut u8,
             allocationBufferLength,
@@ -2229,7 +2229,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
             (*(*cdb).CDB6INQUIRY3).AllocationLength = bufferLength;
 
             status = ClassSendSrbSynchronous(
-                (*FdoExtension).DeviceObject as *mut core::ffi::c_void,
+                (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject as *mut core::ffi::c_void,
                 Srb,
                 dataBuffer,
                 allocationBufferLength,
@@ -2310,7 +2310,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
                 \n\t\t\tUGAValid: %u \
                 \n\t\t\tUnmapGranularityAlignment: %u\n\0"
                     .as_ptr() as *const i8,
-                (*FdoExtension).DeviceObject as *mut core::ffi::c_void,
+                (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject as *mut core::ffi::c_void,
                 ((*(*FdoExtension).DeviceDescriptor as *const u8)
                     .offset((*(*FdoExtension).DeviceDescriptor).VendorIdOffset as isize))
                     as *const i8,
@@ -2570,7 +2570,7 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
         (*lbpDescr).ThinProvisioningEnabled = ClasspIsThinProvisioned((*fdoExtension).FunctionSupportInfo);
 
         if (*fdoExtension).DiskGeometry.BytesPerSector == 0 {
-            status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
+            status = ClassReadDriveCapacity((*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject);
             if status < 0 || (*fdoExtension).DiskGeometry.BytesPerSector == 0 {
                 status = STATUS_INVALID_DEVICE_REQUEST;
                 information = 0;
@@ -2750,7 +2750,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             c"DeviceProcessDsmTrimRequest (%p): Max Block Descriptor count is Zero\n".as_ptr() as *const i8,
-            (*FdoExtension).DeviceObject,
+            (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
         );
         NT_ASSERT((maxBlockDescrCount != 0) as i32);
         status = STATUS_DATA_ERROR;
@@ -2764,7 +2764,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             c"DeviceProcessDsmTrimRequest (%p): Max LBA count is Zero\n".as_ptr() as *const i8,
-            (*FdoExtension).DeviceObject,
+            (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
         );
         NT_ASSERT((maxLbaCount != 0) as i32);
         status = STATUS_DATA_ERROR;
@@ -2908,7 +2908,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
             (*cdb).UNMAP.AllocationLength[1] = transferSize as u8;
 
             status = ClassSendSrbSynchronous(
-                (*FdoExtension).DeviceObject,
+                (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
                 Srb,
                 buffer as *mut c_void,
                 transferSize.into(),
@@ -2920,7 +2920,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
                 TRACE_FLAG_IOCTL,
                 c"DeviceProcessDsmTrimRequest (%p): UNMAP command issued. Returned NTSTATUS: %!STATUS!.\n"
                     .as_ptr() as *const i8,
-                (*FdoExtension).DeviceObject,
+                (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
                 status,
             );
 
@@ -3016,7 +3016,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                     {
                         if ClasspSupportsUnmap((*fdoExtension).FunctionSupportInfo) != 0 {
                             if *(*fdoExtension).DiskGeometry.BytesPerSector == 0  {
-                                status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
+                                status = ClassReadDriveCapacity((*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject);
                                 if !NT_SUCCESS(status) || (*(*fdoExtension).DiskGeometry.BytesPerSector == 0) {
                                     status = STATUS_INVALID_DEVICE_REQUEST;
                                     break 'exit;
@@ -3065,7 +3065,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
                             if flags & DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE != 0 {
                                 entireDataSetRange.StartingOffset = granularityAlignmentInBytes as i64;
-                                entireDataSetRange.LengthInBytes = (*(*fdoExtension).CommonExtension).PartitionLength.QuadPart as u64 - granularityAlignmentInBytes;
+                                entireDataSetRange.LengthInBytes = (*(*fdoExtension).__bindgen_anon_1.CommonExtension).PartitionLength.QuadPart as u64 - granularityAlignmentInBytes;
                                 dataSetRanges = &mut entireDataSetRange as *mut DEVICE_DATA_SET_RANGE;
                                 dataSetRangesCount = 1;
                             } else {
@@ -3079,7 +3079,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                                         || (range.StartingOffset < granularityAlignmentInBytes as i64)
                                         || (range.LengthInBytes == 0)
                                         || ((range.StartingOffset as u64).wrapping_add(range.LengthInBytes)
-                                            > (*(*fdoExtension).CommonExtension).PartitionLength.QuadPart as u64)
+                                            > (*(*fdoExtension).__bindgen_anon_1.CommonExtension).PartitionLength.QuadPart as u64)
                                     {
                                         TracePrint(
                                             TRACE_LEVEL_ERROR,
@@ -3137,7 +3137,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                 NotSupported => {
                     if ClasspSupportsUnmap((*fdoExtension).FunctionSupportInfo) != 0 {
                         if *(*fdoExtension).DiskGeometry.BytesPerSector == 0  {
-                            status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
+                            status = ClassReadDriveCapacity((*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject);
                             if !NT_SUCCESS(status) || (*(*fdoExtension).DiskGeometry.BytesPerSector == 0) {
                                 status = STATUS_INVALID_DEVICE_REQUEST;
                                 break 'exit;
@@ -3186,7 +3186,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
                         if flags & DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE != 0 {
                             entireDataSetRange.StartingOffset = granularityAlignmentInBytes as i64;
-                            entireDataSetRange.LengthInBytes = (*(*fdoExtension).CommonExtension).PartitionLength.QuadPart as u64 - granularityAlignmentInBytes;
+                            entireDataSetRange.LengthInBytes = (*(*fdoExtension).__bindgen_anon_1.CommonExtension).PartitionLength.QuadPart as u64 - granularityAlignmentInBytes;
                             dataSetRanges = &mut entireDataSetRange as *mut DEVICE_DATA_SET_RANGE;
                             dataSetRangesCount = 1;
                         } else {
@@ -3200,7 +3200,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                                     || (range.StartingOffset < granularityAlignmentInBytes as i64)
                                     || (range.LengthInBytes == 0)
                                     || ((range.StartingOffset as u64).wrapping_add(range.LengthInBytes)
-                                        > (*(*fdoExtension).CommonExtension).PartitionLength.QuadPart as u64)
+                                        > (*(*fdoExtension).__bindgen_anon_1.CommonExtension).PartitionLength.QuadPart as u64)
                                 {
                                     TracePrint(
                                         TRACE_LEVEL_ERROR,
@@ -3306,14 +3306,14 @@ pub unsafe extern "C" fn GetLBAStatus(
         TRACE_FLAG_IOCTL,
         b"GetLBAStatus (%p): sending command with StartingLBA = 0x%I64x, AllocationLength = 0x%I64x, ConsolidateableBlocksOnly = %u\n\0"
             .as_ptr() as *const i8,
-        (*FdoExtension).DeviceObject as *const core::ffi::c_void,
+        (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject as *const core::ffi::c_void,
         StartingLBA,
         LBAStatusSize as u64,
         ConsolidateableBlocksOnly as u32,
     );
 
     status = ClassSendSrbSynchronous(
-        (*FdoExtension).DeviceObject,
+        (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject,
         Srb,
         LBAStatusHeader as *mut core::ffi::c_void,
         LBAStatusSize,
@@ -3330,7 +3330,7 @@ pub unsafe extern "C" fn GetLBAStatus(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_IOCTL,
         b"GetLBAStatus (%p): command returned NT Status: %!STATUS!\n\0".as_ptr() as *const i8,
-        (*FdoExtension).DeviceObject as *const core::ffi::c_void,
+        (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject as *const core::ffi::c_void,
         status,
     );
 
@@ -3394,7 +3394,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatus(
                 unmapGranularityAlignment = (*fdoExtension).FunctionSupportInfo.BlockLimitsData.UnmapGranularityAlignment;
             }
             startingOffset = unmapGranularityAlignment as i64;
-            lengthInBytes = (*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64 - startingOffset as u64;
+            lengthInBytes = (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart as u64 - startingOffset as u64;
         } else {
             if (*dsmAttributes).DataSetRangesOffset == 0 ||
                 (*dsmAttributes).DataSetRangesLength == 0 {
@@ -3569,7 +3569,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
         }
 
         if (*fdoExtension).DiskGeometry.BytesPerSector == 0 {
-            status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
+            status = ClassReadDriveCapacity((*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject);
             if !NT_SUCCESS(status) || (*fdoExtension).DiskGeometry.BytesPerSector == 0 {
                 status = STATUS_INVALID_DEVICE_REQUEST;
                 break 'exit_loop;
@@ -3585,7 +3585,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
         if LengthInBytes == 0
             || StartingOffset < alignmentInBytes
             || StartingOffset + LengthInBytes
-                > ((*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64)
+                > ((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart as u64)
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,
@@ -3596,7 +3596,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                 LengthInBytes,
                 StartingOffset,
                 alignmentInBytes,
-                (*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64 ,
+                (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart as u64 ,
             );
             status = STATUS_INVALID_PARAMETER;
             break 'exit_loop;
@@ -5472,7 +5472,7 @@ unsafe extern "C" fn ClasspValidateOffloadInputParameters(
 
         // Some third party disk class drivers do not query the geometry at initialization time...
         if (*fdoExtension).DiskGeometry.BytesPerSector == 0 {
-            status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
+            status = ClassReadDriveCapacity((*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject);
             if !NT_SUCCESS(status) || ((*fdoExtension).DiskGeometry.BytesPerSector == 0) {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
@@ -5511,7 +5511,7 @@ unsafe extern "C" fn ClasspValidateOffloadInputParameters(
             }
 
             if (range.StartingOffset as u64 + range.LengthInBytes)
-                > (*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64 
+                > (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart as u64 
             {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
@@ -5521,7 +5521,7 @@ unsafe extern "C" fn ClasspValidateOffloadInputParameters(
                     i,
                     range.StartingOffset,
                     range.LengthInBytes,
-                    (*fdoExtension).CommonExtension.PartitionLength.QuadPart,
+                    (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart,
                 );
                 status = STATUS_NONEXISTENT_SECTOR;
                 break 'exit;
@@ -5812,7 +5812,7 @@ pub unsafe extern "system" fn ClasspConvertDataSetRangeToBlockDescr(
             *CurrentBlockDescrIndex - 1,
             startingSector,
             sectorCount * bytes_per_sector,
-            (*fdoExtension).CommonExtension.PartitionLength.QuadPart,
+            (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart,
         );
     }
 
@@ -5989,7 +5989,7 @@ pub unsafe extern "C" fn ClasspStorageEventNotification(
         }
 
         if ((*storage_events).Events & STORAGE_EVENT_MEDIA_STATUS) != 0 {
-            if ((*fdo_extension).CommonExtension.IsFdo != 0)
+            if ((*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0)
                 && (*(*fdo_extension).FunctionSupportInfo).AsynchronousNotificationSupported != 0
             {
                 ClassCheckMediaState(fdo_extension);
@@ -6140,7 +6140,7 @@ pub unsafe extern "C" fn ClasspPowerActivateDevice(
     let fdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION =
         (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
 
-    NT_ASSERT((*fdoExtension).CommonExtension.IsFdo as i32);
+    NT_ASSERT((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo as i32);
     NT_ASSERT(
         (*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled as i32,
     );
@@ -6188,7 +6188,7 @@ pub unsafe extern "C" fn ClasspPowerIdleDevice(
     let fdoExtension = (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
 
     // NT_ASSERT(fdoExtension->CommonExtension.IsFdo)
-    NT_ASSERT((*fdoExtension).CommonExtension.IsFdo as i32);
+    NT_ASSERT((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo as i32);
 
     // NT_ASSERT(fdoExtension->FunctionSupportInfo->IdlePower.IdlePowerEnabled)
     NT_ASSERT(

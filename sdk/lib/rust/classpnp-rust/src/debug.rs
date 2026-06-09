@@ -108,7 +108,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     NT_ASSERT((SrbGetOriginalRequest((*Pkt).Srb) == (*Pkt).Irp) as i32);
     NT_ASSERT((SrbGetDataBuffer((*Pkt).Srb) == (*Pkt).BufPtrCopy) as i32);
     NT_ASSERT((SrbGetDataTransferLength((*Pkt).Srb) <= (*Pkt).BufLenCopy) as i32);
-    NT_ASSERT(((*((*Pkt).Irp)).CancelRoutine.is_null()) as i32);
+    NT_ASSERT(((*((*Pkt).Irp)).CancelRoutine.is_none()) as i32);
 
     let srb_status_masked = ((*((*Pkt).Srb)).SrbStatus & 0x3F) as u32;
 
@@ -197,7 +197,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         NT_ASSERT((SrbGetSystemStatus((*Pkt).Srb) == STATUS_INSUFFICIENT_RESOURCES) as i32);
     }
 
-    let op_code = (*pCdb).CDB10.OperationCode;
+    let op_code = (*pCdb).CDB10.as_ref().OperationCode;
     match op_code {
         SCSIOP_MEDIUM_REMOVAL | SCSIOP_MODE_SENSE | SCSIOP_READ_CAPACITY | SCSIOP_READ | SCSIOP_WRITE
         | SCSIOP_START_STOP_UNIT | SCSIOP_READ_CAPACITY16 | SCSIOP_READ16 | SCSIOP_WRITE16 => {}

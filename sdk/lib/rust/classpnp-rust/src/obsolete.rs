@@ -184,7 +184,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
     if irp_count == 0 {
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: All partial IRPs complete %p\n\0".as_ptr() as *const i8, original_irp as usize);
 
-        let driver_ext = (*fdo_extension).CommonExtension.DriverExtension;
+        let driver_ext = (*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension;
         if (*driver_ext).InitData.ClassStartIo != 0 {
             let mut unique_address: u8 = 0;
             ClassAcquireRemoveLock(Fdo, &mut unique_address as *mut u8 as *mut IRP);

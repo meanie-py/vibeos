@@ -322,7 +322,7 @@ pub unsafe extern "C" fn ClasspSendEnableIdlePowerIoctl(
         let mut idlePower: STORAGE_IDLE_POWER = core::mem::zeroed();
         let mut ioStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
         let fdoExtension = (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
-        let commonExtension = core::ptr::addr_of_mut!((*fdoExtension).CommonExtension);
+        let commonExtension = core::ptr::addr_of_mut!((*fdoExtension).__bindgen_anon_1.CommonExtension);
 
         idlePower.Version = 1;
         idlePower.Size = core::mem::size_of::<STORAGE_IDLE_POWER>() as u32;
@@ -334,7 +334,7 @@ pub unsafe extern "C" fn ClasspSendEnableIdlePowerIoctl(
 
         ClassSendDeviceIoControlSynchronous(
             IOCTL_STORAGE_ENABLE_IDLE_POWER,
-            (*commonExtension).LowerDeviceObject,
+            (*commonExtension).as_ref().LowerDeviceObject,
             &idlePower as *const STORAGE_IDLE_POWER as *const core::ffi::c_void,
             core::mem::size_of::<STORAGE_IDLE_POWER>() as u32,
             core::ptr::null_mut(),
