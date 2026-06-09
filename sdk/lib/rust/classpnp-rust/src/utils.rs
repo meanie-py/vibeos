@@ -256,7 +256,7 @@ pub struct WRITE_BUFFER_CDB {
 
 #[repr(C)]
 pub union CDB {
-    pub WRITE_BUFFER: WRITE_BUFFER_CDB,
+    pub WRITE_BUFFER: std::mem::ManuallyDrop<WRITE_BUFFER_CDB>,
 }
 
 #[repr(C)]
@@ -747,7 +747,7 @@ pub unsafe extern "C" fn ClasspBuildDeviceMdl(
         let result = catch_unwind(AssertUnwindSafe(|| {
             MmProbeAndLockPages(
                 mdl,
-                0i32,
+                0u32,
                 if WriteToDevice != 0 { IoReadAccess } else { IoWriteAccess },
             );
         }));
@@ -775,7 +775,7 @@ pub unsafe extern "C" fn ClasspBuildDeviceMdl(
 }
 #[no_mangle]
 pub unsafe extern "C" fn BuildDeviceInputMdl(Buffer: *mut core::ffi::c_void, BufferLen: u32) -> *mut MDL {
-    ClasspBuildDeviceMdl(Buffer, BufferLen, 0u8)
+    ClasspBuildDeviceMdl(Buffer, BufferLen, 0i32)
 }
 #[no_mangle]
 pub unsafe extern "C" fn ClasspFreeDeviceMdl(Mdl: *mut MDL) {
@@ -1088,7 +1088,7 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
 
     status
 }
@@ -1158,8 +1158,8 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
         // Check for flush cache support by sending a sync cache command to the device.
 
         SrbSetTimeOutValue(Srb, (*fdoExtension).TimeOutValue * 4);
-        SrbSetRequestTag(Srb, SP_UNTAGGED);
-        SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST);
+        SrbSetRequestTag(Srb, SP_UNTAGGED.into());
+        SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST.into());
         SrbAssignSrbFlags(Srb, (*fdoExtension).SrbFlags);
 
         SrbSetCdbLength(Srb, 10);
@@ -1388,7 +1388,7 @@ pub unsafe extern "C" fn InterpretReadCapacity16Data(
     const TRACE_LEVEL_INFORMATION: u32 = 4;         // typical
     const TRACE_FLAG_INIT: u32 = 0x00000001;        // typical
 
-    let status: i32 = ntkrnl_sys::constants::STATUS_SUCCESS;
+    let status: i32 = ntkrnl_sys::base::STATUS_SUCCESS;
     let mut lowestAlignedBlock: u16;
     let mut logicalBlocksPerPhysicalBlock: u16;
     let cached_data: *mut CLASS_READ_CAPACITY16_DATA =
@@ -1420,7 +1420,7 @@ pub unsafe extern "C" fn InterpretReadCapacity16Data(
             % logicalBlocksPerPhysicalBlock;
     }
 
-    if (ntkrnl_sys::base::NT_SUCCESS(status) != 0) {
+    if ntkrnl_sys::base::NT_SUCCESS(status) != 0  {
         (*cached_data).BytesPerPhysicalSector =
             (*cached_data).BytesPerLogicalSector * (logicalBlocksPerPhysicalBlock as u32);
         (*cached_data).BytesOffsetForSectorAlignment =
@@ -1478,7 +1478,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
     {
         dataBuffer = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            bufferLength as u32,
+            (bufferLength as u32).try_into().unwrap(),
             POOL_TAG_4CcS,
         ) as *mut READ_CAPACITY16_DATA;
     }
@@ -1496,7 +1496,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
         status = InitializeStorageRequestBlock(
             Srb as *mut STORAGE_REQUEST_BLOCK,
             STORAGE_ADDRESS_TYPE_BTL8,
-            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE,
+            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE.try_into().unwrap(),
             1,
             SrbExDataTypeScsiCdb16,
         );
@@ -1506,7 +1506,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
             //
             // Should not occur.
             //
-            NT_ASSERT(FALSE);
+            NT_ASSERT(FALSE.into());
         }
     } else {
         core::ptr::write_bytes(
@@ -1521,8 +1521,8 @@ pub unsafe extern "C" fn ClassReadCapacity16(
     // prepare the Srb
     if status >= 0 {
         SrbSetTimeOutValue(Srb, (*FdoExtension).TimeOutValue);
-        SrbSetRequestTag(Srb, SP_UNTAGGED);
-        SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST);
+        SrbSetRequestTag(Srb, SP_UNTAGGED.into());
+        SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST.into());
         SrbAssignSrbFlags(Srb, (*FdoExtension).SrbFlags);
         SrbSetCdbLength(Srb, 16);
 
@@ -1536,7 +1536,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
             Srb,
             dataBuffer as *mut core::ffi::c_void,
             allocationBufferLength,
-            0u8,
+            0i32,
         );
 
         dataTransferLength = SrbGetDataTransferLength(Srb);
@@ -1590,9 +1590,13 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     let mut information: u32 = 0;
     let mut accessAlignment: *mut STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR;
 
+    // C `goto Exit;` (forward jump to the cleanup tail) lowered to a labeled block:
+    // the body runs in `'cleanup`, each goto becomes `break 'cleanup`, and the original
+    // `Exit:` cleanup section runs after the block.
+    'cleanup: {
     if (*fdoExtension).FunctionSupportInfo.RegAccessAlignmentQueryNotSupported != 0 {
         status = STATUS_NOT_SUPPORTED;
-        goto Exit;
+        break 'cleanup;
     }
 
     if ((*DeviceObject).DeviceType != FILE_DEVICE_DISK) ||
@@ -1627,7 +1631,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
         } else {
             status = STATUS_BUFFER_TOO_SMALL;
         }
-        goto Exit;
+        break 'cleanup;
     }
 
     'Exit: loop {
@@ -1642,7 +1646,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
                     }
                     (*fdoExtension).FunctionSupportInfo.LowerLayerSupport.AccessAlignmentProperty = NotSupported;
                     if NT_SUCCESS(status) {
-                        RtlZeroMemory(accessAlignment as *mut core::ffi::c_void, length as usize);
+                        RtlZeroMemory(accessAlignment as *mut core::ffi::c_void, (length as usize).try_into().unwrap());
                         (*accessAlignment).Version = core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as u32;
                         (*accessAlignment).Size = core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as u32;
                         (*accessAlignment).BytesPerLogicalSector = (*fdoExtension).FunctionSupportInfo.ReadCapacity16Data.BytesPerLogicalSector;
@@ -1661,7 +1665,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
             NotSupported => {
                 status = ClassReadCapacity16(fdoExtension, Srb);
                 if NT_SUCCESS(status) {
-                    RtlZeroMemory(accessAlignment as *mut core::ffi::c_void, length as usize);
+                    RtlZeroMemory(accessAlignment as *mut core::ffi::c_void, (length as usize).try_into().unwrap());
                     (*accessAlignment).Version = core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as u32;
                     (*accessAlignment).Size = core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as u32;
                     (*accessAlignment).BytesPerLogicalSector = (*fdoExtension).FunctionSupportInfo.ReadCapacity16Data.BytesPerLogicalSector;
@@ -1681,12 +1685,12 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
         }
         break 'Exit;
     }
+    } // 'cleanup (Exit:)
 
-Exit:
     (*Irp).IoStatus.Information = information as usize;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     return status;
 }
 
@@ -1748,7 +1752,7 @@ pub unsafe extern "C" fn ClasspDeviceMediaTypeProperty(
         // Validate the request.
         // InputBufferLength and IsFdo have already been validated.
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            NT_ASSERT((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
+            NT_ASSERT(((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8).into());
             TracePrint(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
@@ -1814,7 +1818,7 @@ pub unsafe extern "C" fn ClasspDeviceMediaTypeProperty(
     (*Irp).IoStatus.__bindgen_anon_1.Status = result_status;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
 
     TracePrint(
         TRACE_LEVEL_VERBOSE,
@@ -1851,7 +1855,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(
         {
             dataBuffer = ExAllocatePoolWithTag(
                 0x200, /* NonPagedPoolNx */
-                bufferLength as u64,
+                (bufferLength as u64).try_into().unwrap(),
                 u32::from_ne_bytes([b'5', b'C', b'c', b'S']),
             ) as *mut VPD_BLOCK_DEVICE_CHARACTERISTICS_PAGE;
         }
@@ -1861,7 +1865,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(
             break 'exit;
         }
 
-        RtlZeroMemory(dataBuffer as *mut u8, allocationBufferLength as usize);
+        RtlZeroMemory(dataBuffer as *mut u8, (allocationBufferLength as usize).try_into().unwrap());
 
         // prepare the Srb
         SrbSetTimeOutValue(Srb, (*fdoExtension).TimeOutValue);
@@ -2043,7 +2047,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
     (*Irp).IoStatus.Information = information;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     status
 }
 #[no_mangle]
@@ -2091,7 +2095,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
         {
             dataBuffer = ExAllocatePoolWithTag(
                 NonPagedPoolNx,
-                bufferLength as u32,
+                (bufferLength as u32).try_into().unwrap(),
                 0x53634330u32, // '0CcS'
             );
         }
@@ -2128,7 +2132,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
     let mut dataBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-    let bufferLength: u8 = VPD_MAX_BUFFER_SIZE;
+    let bufferLength: u8 = VPD_MAX_BUFFER_SIZE.try_into().unwrap();
     let mut allocationBufferLength: u32 = bufferLength as u32;
     let mut cdb: *mut CDB;
     let mut blockLimits: *mut VPD_BLOCK_LIMITS_PAGE;
@@ -2166,7 +2170,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
         {
             dataBuffer = ExAllocatePoolWithTag(
                 NonPagedPoolNx,
-                bufferLength as u32,
+                (bufferLength as u32).try_into().unwrap(),
                 0x53634330u32, // '0CcS'
             );
         }
@@ -2188,7 +2192,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
             status = InitializeStorageRequestBlock(
                 Srb as *mut STORAGE_REQUEST_BLOCK,
                 STORAGE_ADDRESS_TYPE_BTL8,
-                SrbSize,
+                SrbSize.try_into().unwrap(),
                 1,
                 SrbExDataTypeScsiCdb16,
             );
@@ -2206,8 +2210,8 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
 
         if NT_SUCCESS(status) {
             SrbSetTimeOutValue(Srb, (*FdoExtension).TimeOutValue);
-            SrbSetRequestTag(Srb, SP_UNTAGGED);
-            SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST);
+            SrbSetRequestTag(Srb, SP_UNTAGGED.into());
+            SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST.into());
             SrbAssignSrbFlags(Srb, (*FdoExtension).SrbFlags);
 
             SrbSetCdbLength(Srb, 6);
@@ -2310,7 +2314,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
                 ((*(*FdoExtension).DeviceDescriptor as *const u8)
                     .offset((*(*FdoExtension).DeviceDescriptor).ProductRevisionOffset as isize))
                     as *const i8,
-                (*BlockLimitsData).OptimalTransferLengthGranularity,
+                (*BlockLimitsData).OptimalTransferLengthGranularity as c_uint,
                 (*BlockLimitsData).MaximumTransferLength,
                 (*BlockLimitsData).OptimalTransferLength,
                 (*BlockLimitsData).MaxUnmapLbaCount,
@@ -2425,7 +2429,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
                     (*fdo_extension).FunctionSupportInfo.LowerLayerSupport.TrimProperty = NotSupported;
 
                     if status >= 0 {
-                        RtlZeroMemory(trim_descr as *mut u8, length as usize);
+                        RtlZeroMemory(trim_descr as *mut u8, (length as usize).try_into().unwrap());
                         (*trim_descr).Version = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as u32;
                         (*trim_descr).Size = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as u32;
                         (*trim_descr).TrimEnabled =
@@ -2453,7 +2457,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
                     );
                 }
                 if status >= 0 {
-                    RtlZeroMemory(trim_descr as *mut u8, length as usize);
+                    RtlZeroMemory(trim_descr as *mut u8, (length as usize).try_into().unwrap());
                     (*trim_descr).Version = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as u32;
                     (*trim_descr).Size = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as u32;
                     (*trim_descr).TrimEnabled =
@@ -2482,7 +2486,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
     (*Irp).IoStatus.Information = information;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
 
     status
 }
@@ -2689,6 +2693,10 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
     let mut maxLbaCount: u64;
     let mut maxParameterListLength: u64;
 
+    // C `goto exit;` lowered to a labeled block: body runs in `'cleanup`, each goto
+    // becomes `break 'cleanup`, and the original `exit:` tail (FREE_POOL + return) runs
+    // after. status (STATUS_SUCCESS) and buffer (null) are initialized above.
+    'cleanup: {
     // 1.1 Calculate needed Block Descriptors
     neededBlockDescrCount = 0;
     i = 0;
@@ -2740,7 +2748,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
         );
         NT_ASSERT((maxBlockDescrCount != 0) as i32);
         status = STATUS_DATA_ERROR;
-        goto exit;
+        break 'cleanup;
     }
 
     // Maximum LBA Count
@@ -2754,7 +2762,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
         );
         NT_ASSERT((maxLbaCount != 0) as i32);
         status = STATUS_DATA_ERROR;
-        goto exit;
+        break 'cleanup;
     }
 
     // Allocate buffer
@@ -2773,17 +2781,17 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
     {
         buffer = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            bufferLength,
+            bufferLength.try_into().unwrap(),
             CLASS_TAG_LB_PROVISIONING,
         ) as *mut UNMAP_LIST_HEADER;
     }
 
     if buffer.is_null() {
         status = STATUS_INSUFFICIENT_RESOURCES;
-        goto exit;
+        break 'cleanup;
     }
 
-    RtlZeroMemory(buffer as *mut c_void, bufferLength as usize);
+    RtlZeroMemory(buffer as *mut c_void, (bufferLength as usize).try_into().unwrap());
 
     blockDescrPointer = &mut (*buffer).Descriptors[0] as *mut UNMAP_BLOCK_DESCRIPTOR;
 
@@ -2793,7 +2801,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
     dataSetRangeIndex = 0;
     RtlZeroMemory(
         &mut tempDataSetRange as *mut _ as *mut c_void,
-        core::mem::size_of::<DEVICE_DATA_SET_RANGE>(),
+        core::mem::size_of::<DEVICE_DATA_SET_RANGE>().try_into().unwrap(),
     );
     blockDescrIndex = 0;
     lbaCount = 0;
@@ -2855,7 +2863,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
                 status = InitializeStorageRequestBlock(
                     Srb as PSTORAGE_REQUEST_BLOCK,
                     STORAGE_ADDRESS_TYPE_BTL8,
-                    CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE,
+                    CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE.try_into().unwrap(),
                     1,
                     SrbExDataTypeScsiCdb16,
                 );
@@ -2868,7 +2876,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
             } else {
                 RtlZeroMemory(
                     Srb as *mut c_void,
-                    core::mem::size_of::<SCSI_REQUEST_BLOCK>(),
+                    core::mem::size_of::<SCSI_REQUEST_BLOCK>().try_into().unwrap(),
                 );
                 (*Srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u8;
                 (*Srb).Function = SRB_FUNCTION_EXECUTE_SCSI;
@@ -2876,8 +2884,8 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
 
             // Prepare Srb
             SrbSetTimeOutValue(Srb, (*FdoExtension).TimeOutValue);
-            SrbSetRequestTag(Srb, SP_UNTAGGED);
-            SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST);
+            SrbSetRequestTag(Srb, SP_UNTAGGED.into());
+            SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST.into());
 
             SrbAssignSrbFlags(Srb, (*FdoExtension).SrbFlags);
             SrbClearSrbFlags(Srb, SRB_FLAGS_DATA_IN);
@@ -2897,7 +2905,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
                 (*FdoExtension).DeviceObject,
                 Srb,
                 buffer as *mut c_void,
-                transferSize,
+                transferSize.into(),
                 1, // TRUE
             );
 
@@ -2912,11 +2920,11 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
 
             blockDescrIndex = 0;
             lbaCount = 0;
-            RtlZeroMemory(buffer as *mut c_void, bufferLength as usize);
+            RtlZeroMemory(buffer as *mut c_void, (bufferLength as usize).try_into().unwrap());
         }
     }
 
-exit:
+    } // 'cleanup (exit:)
     FREE_POOL(buffer as *mut c_void);
 
     return status;
@@ -3001,7 +3009,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
                     {
                         if ClasspSupportsUnmap((*fdoExtension).FunctionSupportInfo) != 0 {
-                            if (*(*fdoExtension).DiskGeometry.BytesPerSector == 0) {
+                            if *(*fdoExtension).DiskGeometry.BytesPerSector == 0  {
                                 status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
                                 if !NT_SUCCESS(status) || (*(*fdoExtension).DiskGeometry.BytesPerSector == 0) {
                                     status = STATUS_INVALID_DEVICE_REQUEST;
@@ -3013,7 +3021,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                             let mut generationCount: u32 = 0;
                             ClasspBlockLimitsDataSnapshot(
                                 fdoExtension,
-                                0u8,
+                                0i32,
                                 &mut blockLimitsData as *mut CLASS_VPD_B0_DATA,
                                 &mut generationCount as *mut u32,
                             );
@@ -3122,7 +3130,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
                 NotSupported => {
                     if ClasspSupportsUnmap((*fdoExtension).FunctionSupportInfo) != 0 {
-                        if (*(*fdoExtension).DiskGeometry.BytesPerSector == 0) {
+                        if *(*fdoExtension).DiskGeometry.BytesPerSector == 0  {
                             status = ClassReadDriveCapacity((*fdoExtension).DeviceObject);
                             if !NT_SUCCESS(status) || (*(*fdoExtension).DiskGeometry.BytesPerSector == 0) {
                                 status = STATUS_INVALID_DEVICE_REQUEST;
@@ -3134,7 +3142,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
                         let mut generationCount: u32 = 0;
                         ClasspBlockLimitsDataSnapshot(
                             fdoExtension,
-                            0u8,
+                            0i32,
                             &mut blockLimitsData as *mut CLASS_VPD_B0_DATA,
                             &mut generationCount as *mut u32,
                         );
@@ -3245,7 +3253,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
         (*Irp).IoStatus.Information = 0;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
         status
     }
 }
@@ -3267,8 +3275,8 @@ pub unsafe extern "C" fn GetLBAStatus(
 
     // Build and send down the Get LBA Status command.
     SrbSetTimeOutValue(Srb, (*FdoExtension).TimeOutValue);
-    SrbSetRequestTag(Srb, SP_UNTAGGED);
-    SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestTag(Srb, SP_UNTAGGED.into());
+    SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST.into());
     SrbAssignSrbFlags(Srb, (*FdoExtension).SrbFlags);
     SrbSetCdbLength(
         Srb,
@@ -3445,7 +3453,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatus(
             getLBAWorkerStatus = ClasspDeviceGetLBAStatusWorker(
                 DeviceObject,
                 &mut blockLimitsData,
-                startingOffset,
+                startingOffset.try_into().unwrap(),
                 lengthInBytes,
                 dsmOutput,
                 &mut dsmOutputLength,
@@ -3496,7 +3504,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatus(
     (*Irp).IoStatus.Information = information;
     (*Irp).IoStatus.__bindgen_anon_1.Status = finalStatus;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     finalStatus
 }
 #[no_mangle]
@@ -3582,7 +3590,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                 LengthInBytes,
                 StartingOffset,
                 alignmentInBytes,
-                ((*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64),
+                (*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64 ,
             );
             status = STATUS_INVALID_PARAMETER;
             break 'exit_loop;
@@ -3628,7 +3636,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
             break 'exit_loop;
         }
 
-        requestedSlabs = min(requestedSlabs, MAXULONG as u64);
+        requestedSlabs = min(requestedSlabs.try_into().unwrap(), (MAXULONG as u64).try_into().unwrap());
 
         // Required output length (version dependent)
         if is_winblue_or_later && OutputVersion == DEVICE_DATA_SET_LB_PROVISIONING_STATE_VERSION_V2 {
@@ -3668,7 +3676,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
         );
         maxSlabs = (maxBufferSize as usize - core::mem::size_of::<LBA_STATUS_LIST_HEADER>()) as u32
             / core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32;
-        slabsPerCommand = min(requestedSlabs, maxSlabs as u64);
+        slabsPerCommand = min(requestedSlabs.try_into().unwrap(), (maxSlabs as u64).try_into().unwrap());
 
         lbaStatusSize = (core::mem::size_of::<LBA_STATUS_LIST_HEADER>()
             + (slabsPerCommand as usize) * core::mem::size_of::<LBA_STATUS_DESCRIPTOR>()) as u32;
@@ -3678,14 +3686,14 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
             lbaStatusListHeader =
                 ExAllocatePoolWithTag(
                     NonPagedPoolNxCacheAligned,
-                    lbaStatusSize,
+                    lbaStatusSize.try_into().unwrap(),
                     CLASS_TAG_LB_PROVISIONING,
                 ) as *mut LBA_STATUS_LIST_HEADER;
         } else {
             lbaStatusListHeader =
                 ExAllocatePoolWithTag(
                     NonPagedPoolNx,
-                    lbaStatusSize,
+                    lbaStatusSize.try_into().unwrap(),
                     CLASS_TAG_LB_PROVISIONING,
                 ) as *mut LBA_STATUS_LIST_HEADER;
         }
@@ -3851,13 +3859,13 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                                         let lbpStateV2 = lbpState
                                             as *mut DEVICE_DATA_SET_LB_PROVISIONING_STATE_V2;
                                         (*lbpStateV2).SlabAllocationBitMap[bitMapIndex] |=
-                                            (mapped << bitPos);
+                                            mapped << bitPos ;
                                     } else {
                                         let lbpStateLbp =
                                             lbpState
                                                 as *mut DEVICE_DATA_SET_LB_PROVISIONING_STATE;
                                         (*lbpStateLbp).SlabAllocationBitMap[bitMapIndex] |=
-                                            (mapped << bitPos);
+                                            mapped << bitPos ;
                                     }
 
                                     descrSlabs -= 1;
@@ -4007,7 +4015,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningLogPage(
         status = InitializeStorageRequestBlock(
             Srb as *mut STORAGE_REQUEST_BLOCK,
             STORAGE_ADDRESS_TYPE_BTL8,
-            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE,
+            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE.try_into().unwrap(),
             1,
             SrbExDataTypeScsiCdb16,
         );
@@ -4023,8 +4031,8 @@ pub unsafe extern "C" fn ClassGetLBProvisioningLogPage(
     }
 
     SrbSetTimeOutValue(Srb, (*(fdoExtension)).TimeOutValue);
-    SrbSetRequestTag(Srb, SP_UNTAGGED);
-    SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST);
+    SrbSetRequestTag(Srb, SP_UNTAGGED.into());
+    SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST.into());
     SrbAssignSrbFlags(Srb, (*(fdoExtension)).SrbFlags);
     SrbSetCdbLength(Srb, CDB_LOGSENSE_SIZE);
 
@@ -4118,7 +4126,7 @@ pub unsafe extern "C" fn ClassInterpretLBProvisioningLogPage(
 
     RtlZeroMemory(
         Resources as *mut core::ffi::c_void,
-        core::mem::size_of::<STORAGE_LB_PROVISIONING_MAP_RESOURCES>(),
+        core::mem::size_of::<STORAGE_LB_PROVISIONING_MAP_RESOURCES>().try_into().unwrap(),
     );
     (*Resources).Size =
         core::mem::size_of::<STORAGE_LB_PROVISIONING_MAP_RESOURCES>() as u32;
@@ -4228,7 +4236,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningResources(
         return STATUS_NOT_SUPPORTED;
     }
 
-    if Resources.is_null() || ResourcesSize < core::mem::size_of::<STORAGE_LB_PROVISIONING_MAP_RESOURCES>() {
+    if Resources.is_null() || ResourcesSize < core::mem::size_of::<STORAGE_LB_PROVISIONING_MAP_RESOURCES>().try_into().unwrap() {
         TracePrint(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
@@ -4257,7 +4265,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningResources(
     {
         logPage = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            logPageSize,
+            logPageSize.try_into().unwrap(),
             CLASS_TAG_LB_PROVISIONING,
         ) as *mut LOG_PAGE_LOGICAL_BLOCK_PROVISIONING;
     }
@@ -4308,7 +4316,7 @@ pub unsafe extern "C" fn ClassDeviceGetLBProvisioningResources(
     }
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     return status;
 }
 #[no_mangle]
@@ -4319,7 +4327,7 @@ pub unsafe extern "C" fn ClasspLogSystemEventWithDeviceNumber(
     let mut status: i32 = STATUS_INSUFFICIENT_RESOURCES;
     let fdo_extension = (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
     let packet_size = core::mem::size_of::<IO_ERROR_LOG_PACKET>();
-    let mut log_entry_size: u32 = packet_size + 11 * core::mem::size_of::<u16>(); // 11 * sizeof(WCHAR)
+    let mut log_entry_size: u32 = (packet_size + 11 * core::mem::size_of::<u16>()).try_into().unwrap(); // 11 * sizeof(WCHAR)
     // min(logEntrySize, ERROR_LOG_MAXIMUM_SIZE)
     log_entry_size = if log_entry_size < ERROR_LOG_MAXIMUM_SIZE {
         log_entry_size
@@ -4393,8 +4401,8 @@ pub unsafe extern "C" fn ClassQueueThresholdEventWorker(DeviceObject: *mut DEVIC
         }
     }
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn ClassQueueResourceExhaustionEventWorker(DeviceObject: *mut DEVICE_OBJECT) {
+#[no_mangle] 
+ pub unsafe extern "C" fn ClassQueueResourceExhaustionEventWorker(DeviceObject: *mut DEVICE_OBJECT) {
     let commonExtension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
     let mut workItem: *mut IO_WORKITEM = core::ptr::null_mut();
 
@@ -4524,7 +4532,7 @@ pub unsafe extern "system" fn ClasspLogIOEventWithContext(
 
     workItem = (*ioLogMessageContextHeader).WorkItem;
 
-    senseBufferSize = ALIGN_UP_BY((*ioLogMessageContextHeader).SenseDataSize as usize, core::mem::size_of::<u32>());
+    senseBufferSize = ALIGN_UP_BY(((*ioLogMessageContextHeader).SenseDataSize as usize).try_into().unwrap(), core::mem::size_of::<u32>().try_into().unwrap());
 
     logEntrySize = core::mem::offset_of!(IO_ERROR_LOG_PACKET, DumpData) + core::mem::size_of::<u32>() + senseBufferSize;
 
@@ -4532,7 +4540,7 @@ pub unsafe extern "system" fn ClasspLogIOEventWithContext(
 
     if logEntrySize > ERROR_LOG_MAXIMUM_SIZE as usize {
         if senseBufferSize > 0 {
-            if logEntrySize - ERROR_LOG_MAXIMUM_SIZE as usize < senseBufferSize {
+            if logEntrySize - (ERROR_LOG_MAXIMUM_SIZE as usize) < senseBufferSize {
                 senseBufferSize -= logEntrySize - ERROR_LOG_MAXIMUM_SIZE as usize;
                 senseBufferSize = ALIGN_DOWN_BY(senseBufferSize, core::mem::size_of::<u32>());
             } else {
@@ -4696,7 +4704,7 @@ pub unsafe extern "C" fn ClasspQueueLogIOEventWithContextWorker(
         if SenseBufferSize != 0 {
             senseData = ExAllocatePoolWithTag(
                 NonPagedPoolNx,
-                SenseBufferSize,
+                SenseBufferSize.try_into().unwrap(),
                 CLASSPNP_POOL_TAG_LOG_MESSAGE,
             );
             if !senseData.is_null() {
@@ -4718,7 +4726,7 @@ pub unsafe extern "C" fn ClasspQueueLogIOEventWithContextWorker(
             IO_ERROR_IO_HARDWARE_ERROR | IO_WARNING_IO_OPERATION_RETRIED => {
                 let ioLogMessageContext = ExAllocatePoolWithTag(
                     NonPagedPoolNx,
-                    core::mem::size_of::<IO_RETRIED_LOG_MESSAGE_CONTEXT>() as u32,
+                    (core::mem::size_of::<IO_RETRIED_LOG_MESSAGE_CONTEXT>() as u32).try_into().unwrap(),
                     CLASSPNP_POOL_TAG_LOG_MESSAGE,
                 ) as *mut IO_RETRIED_LOG_MESSAGE_CONTEXT;
 
@@ -4745,7 +4753,7 @@ pub unsafe extern "C" fn ClasspQueueLogIOEventWithContextWorker(
         );
 
         if !senseData.is_null() {
-            RtlCopyMemory(senseData, SenseData, SenseBufferSize);
+            RtlCopyMemory(senseData, SenseData, SenseBufferSize.try_into().unwrap());
         }
 
         (*ioLogMessageContextHeader).WorkItem = workItem;
@@ -4849,15 +4857,15 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         let writeToDevice: u8;
 
         // Check common input buffer parameters.
-        if (*irpStack).Parameters.DeviceIoControl.InputBufferLength as usize
+        if ((*irpStack).Parameters.DeviceIoControl.InputBufferLength as usize)
             < core::mem::size_of::<PERSISTENT_RESERVE_COMMAND>()
-            || (*prCommand).Size as usize < core::mem::size_of::<PERSISTENT_RESERVE_COMMAND>() {
+            || ((*prCommand).Size as usize) < core::mem::size_of::<PERSISTENT_RESERVE_COMMAND>() {
             status = STATUS_INFO_LENGTH_MISMATCH;
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             (*Irp).IoStatus.Information = 0;
             FREE_POOL(Srb as *mut core::ffi::c_void);
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
             break 'ClasspPersistentReserve_Exit status;
         }
 
@@ -4869,7 +4877,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
             (*Irp).IoStatus.Information = 0;
             FREE_POOL(Srb as *mut core::ffi::c_void);
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
             break 'ClasspPersistentReserve_Exit status;
         }
 
@@ -4881,20 +4889,20 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
 
         if controlCode == IOCTL_STORAGE_PERSISTENT_RESERVE_IN {
             // Check output buffer for PR In.
-            if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength as usize
+            if ((*irpStack).Parameters.DeviceIoControl.OutputBufferLength as usize)
                 < (*prCommand).PR_IN.AllocationLength as usize {
                 status = STATUS_INVALID_PARAMETER;
             }
 
             match (*prCommand).PR_IN.ServiceAction {
                 RESERVATION_ACTION_READ_KEYS => {
-                    if (*prCommand).PR_IN.AllocationLength as usize
+                    if ((*prCommand).PR_IN.AllocationLength as usize)
                         < core::mem::size_of::<PRI_REGISTRATION_LIST>() {
                         status = STATUS_INVALID_PARAMETER;
                     }
                 }
                 RESERVATION_ACTION_READ_RESERVATIONS => {
-                    if (*prCommand).PR_IN.AllocationLength as usize
+                    if ((*prCommand).PR_IN.AllocationLength as usize)
                         < core::mem::size_of::<PRI_RESERVATION_LIST>() {
                         status = STATUS_INVALID_PARAMETER;
                     }
@@ -4909,7 +4917,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
                 (*Irp).IoStatus.Information = 0;
                 FREE_POOL(Srb as *mut core::ffi::c_void);
                 ClassReleaseRemoveLock(DeviceObject, Irp);
-                ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+                ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
                 break 'ClasspPersistentReserve_Exit status;
             }
 
@@ -4948,10 +4956,10 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
 
             // Check input buffer for PR Out.
             if NT_SUCCESS(status) {
-                if (*irpStack).Parameters.DeviceIoControl.InputBufferLength as usize
+                if ((*irpStack).Parameters.DeviceIoControl.InputBufferLength as usize)
                     < (core::mem::size_of::<PERSISTENT_RESERVE_COMMAND>()
                         + core::mem::size_of::<PRO_PARAMETER_LIST>())
-                    || (*prCommand).Size as usize
+                    || ((*prCommand).Size as usize)
                         < (*irpStack).Parameters.DeviceIoControl.InputBufferLength as usize {
                     status = STATUS_INVALID_PARAMETER;
                 }
@@ -4962,7 +4970,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
                 (*Irp).IoStatus.Information = 0;
                 FREE_POOL(Srb as *mut core::ffi::c_void);
                 ClassReleaseRemoveLock(DeviceObject, Irp);
-                ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+                ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
                 break 'ClasspPersistentReserve_Exit status;
             }
 
@@ -5037,7 +5045,7 @@ pub unsafe extern "C" fn ClasspPriorityHint(
 
         RtlZeroMemory(
             pri_support as *mut core::ffi::c_void,
-            core::mem::size_of::<STORAGE_PRIORITY_HINT_SUPPORT>(),
+            core::mem::size_of::<STORAGE_PRIORITY_HINT_SUPPORT>().try_into().unwrap(),
         );
 
         status = ClassForwardIrpSynchronous(common_extension, Irp);
@@ -5076,7 +5084,7 @@ pub unsafe extern "C" fn ClasspPriorityHint(
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as i8);
+    ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT as i8).into());
     return status;
 }
 
@@ -5249,7 +5257,7 @@ pub unsafe extern "C" fn ClasspGetMaximumTokenListIdentifier(
     //
     RtlZeroMemory(
         queryTable.as_mut_ptr() as *mut core::ffi::c_void,
-        core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 2]>(),
+        core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 2]>().try_into().unwrap(),
     );
 
     //
@@ -5329,7 +5337,7 @@ pub unsafe extern "C" fn ClasspGetCopyOffloadMaxDuration(
     // Zero the table entries
     RtlZeroMemory(
         queryTable.as_mut_ptr() as *mut core::ffi::c_void,
-        core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 2]>()
+        core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 2]>().try_into().unwrap()
     );
 
     queryTable[0].Flags = RTL_QUERY_REGISTRY_DIRECT | 0x100; // RTL_QUERY_REGISTRY_TYPECHECK (0x100)
@@ -5496,8 +5504,8 @@ unsafe extern "C" fn ClasspValidateOffloadInputParameters(
                 break 'exit;
             }
 
-            if ((range.StartingOffset as u64 + range.LengthInBytes)
-                > (*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64)
+            if (range.StartingOffset as u64 + range.LengthInBytes)
+                > (*fdoExtension).CommonExtension.PartitionLength.QuadPart as u64 
             {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
@@ -5724,7 +5732,7 @@ pub unsafe extern "system" fn ClasspConvertDataSetRangeToBlockDescr(
     );
 
     if optimalLbaPerDescr != 0 && maxLbaPerDescr != 0 {
-        NT_ASSERT(if (optimalLbaPerDescr <= maxLbaPerDescr) { 1 } else { 0 });
+        NT_ASSERT(if optimalLbaPerDescr <= maxLbaPerDescr  { 1 } else { 0 });
     }
 
     while (*DataSetRange).LengthInBytes > 0
@@ -5997,7 +6005,7 @@ pub unsafe extern "C" fn ClasspStorageEventNotification(
     (*Irp).IoStatus.Information = 0;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
 
     status
 }
@@ -6025,7 +6033,7 @@ pub unsafe extern "C" fn ClasspZeroQERR(DeviceObject: *mut DEVICE_OBJECT) {
 
         RtlZeroMemory(
             modeData as *mut core::ffi::c_void,
-            MODE_PAGE_DATA_SIZE as usize,
+            (MODE_PAGE_DATA_SIZE as usize).try_into().unwrap(),
         );
 
         size = ClassModeSense(
@@ -6151,7 +6159,7 @@ pub unsafe extern "C" fn ClasspPowerActivateDevice(
             KeWaitForSingleObject(
                 &mut event,
                 _KWAIT_REASON_Executive,
-                0i32,
+                0i8,
                 0,
                 core::ptr::null_mut(),
             );
@@ -6207,7 +6215,7 @@ pub unsafe extern "C" fn ClasspPowerIdleDevice(
             KeWaitForSingleObject(
                 core::ptr::addr_of_mut!(event),
                 _KWAIT_REASON_Executive,
-                0i32,
+                0i8,
                 0, // FALSE
                 core::ptr::null_mut(),
             );
@@ -6269,7 +6277,7 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        RtlZeroMemory(firmwareInfo as *mut core::ffi::c_void, dataLength as usize);
+        RtlZeroMemory(firmwareInfo as *mut core::ffi::c_void, (dataLength as usize).try_into().unwrap());
 
         query = firmwareInfo as *mut STORAGE_HW_FIRMWARE_INFO_QUERY;
 
@@ -6291,8 +6299,8 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
             if ClasspLowerLayerNotSupport(ioStatus.__bindgen_anon_1.Status) != 0 {
                 oldState = interlocked_cmpxchg(
                     &mut (*(*fdoExtension).FunctionSupportInfo).HwFirmwareGetInfoSupport as *mut i32,
-                    NotSupported,
-                    SupportUnknown,
+                    NotSupported.try_into().unwrap(),
+                    SupportUnknown.try_into().unwrap(),
                 );
             }
 
@@ -6315,8 +6323,8 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
         {
             oldState = interlocked_cmpxchg(
                 &mut (*(*fdoExtension).FunctionSupportInfo).HwFirmwareGetInfoSupport as *mut i32,
-                NotSupported,
-                SupportUnknown,
+                NotSupported.try_into().unwrap(),
+                SupportUnknown.try_into().unwrap(),
             );
 
             TracePrint(
@@ -6360,13 +6368,13 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
 
     oldState = interlocked_cmpxchg(
         &mut (*(*fdoExtension).FunctionSupportInfo).HwFirmwareGetInfoSupport as *mut i32,
-        Supported,
-        SupportUnknown,
+        Supported.try_into().unwrap(),
+        SupportUnknown.try_into().unwrap(),
     );
 
-    if oldState == SupportUnknown {
+    if oldState == SupportUnknown.try_into().unwrap() {
         (*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo = firmwareInfo;
-    } else if oldState == Supported {
+    } else if oldState == Supported.try_into().unwrap() {
         let cachedInfo = (*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo;
         (*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo = firmwareInfo;
         ExFreePool(cachedInfo as *mut core::ffi::c_void);
@@ -6473,7 +6481,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareGetInfoProcess(
 
     // Common cleanup
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     status
 }
 
@@ -6743,7 +6751,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     ExFreePool(Srb as *mut c_void);
 
     status
@@ -6935,7 +6943,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
 
     // Common cleanup for the #else branch (and only reached there)
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     FREE_POOL(Srb as *mut core::ffi::c_void);
     status
 }

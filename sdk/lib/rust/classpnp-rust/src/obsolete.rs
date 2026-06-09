@@ -74,7 +74,7 @@ pub unsafe extern "system" fn ClassSplitRequest(Fdo: PDEVICE_OBJECT, Irp: PIRP, 
               than required\0"
                 .as_ptr() as *const i8,
         );
-        (*fdoData).HwMaxXferLen = if MaximumBytes > PAGE_SIZE { MaximumBytes } else { PAGE_SIZE };
+        (*fdoData).HwMaxXferLen = if MaximumBytes > PAGE_SIZE.try_into().unwrap() { MaximumBytes } else { PAGE_SIZE.try_into().unwrap() };
     }
 
     ServiceTransferRequest(Fdo, Irp, 0); // FALSE
@@ -186,7 +186,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
             let mut unique_address: u8 = 0;
             ClassAcquireRemoveLock(Fdo, &mut unique_address as *mut u8 as *mut IRP);
             ClassReleaseRemoveLock(Fdo, original_irp);
-            ClassCompleteRequest(Fdo, original_irp, IO_DISK_INCREMENT);
+            ClassCompleteRequest(Fdo, original_irp, IO_DISK_INCREMENT.into());
 
             let mut old_irql: u8 = 0;
             KeRaiseIrql(DISPATCH_LEVEL, &mut old_irql);
@@ -196,7 +196,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
             ClassReleaseRemoveLock(Fdo, &mut unique_address as *mut u8 as *mut IRP);
         } else {
             ClassReleaseRemoveLock(Fdo, original_irp);
-            ClassCompleteRequest(Fdo, original_irp, IO_DISK_INCREMENT);
+            ClassCompleteRequest(Fdo, original_irp, IO_DISK_INCREMENT.into());
         }
     }
 

@@ -256,8 +256,8 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: *mut DEVICE_OBJECT) -> i
 
     status = STATUS_SUCCESS;
 
-    if (osVersionInfo.wProductType != VER_NT_DOMAIN_CONTROLLER) &&
-        (osVersionInfo.wProductType != VER_NT_SERVER) {
+    if (u16::from(osVersionInfo.wProductType) != VER_NT_DOMAIN_CONTROLLER) &&
+        (u16::from(osVersionInfo.wProductType) != VER_NT_SERVER) {
         // Client SKU
         minWorkingSetTransferPackets = MIN_WORKINGSET_TRANSFER_PACKETS_Client;
         maxWorkingSetTransferPackets = core::cmp::max(MAX_WORKINGSET_TRANSFER_PACKETS_Client,
@@ -397,7 +397,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
                 pkt = DequeueFreeTransferPacketEx(Fdo, 0, index);
             }
 
-            NT_ASSERT(if ((*fdoData).FreeTransferPacketsLists[index].NumTotalTransferPackets == 0) { 1 } else { 0 });
+            NT_ASSERT(if (*fdoData).FreeTransferPacketsLists[index].NumTotalTransferPackets == 0  { 1 } else { 0 });
 
             index += 1;
         }
@@ -623,8 +623,8 @@ pub unsafe extern "C" fn DestroyTransferPacket(Pkt: *mut TRANSFER_PACKET) {
     FREE_POOL((*Pkt).Srb as *mut core::ffi::c_void);
     FREE_POOL(Pkt as *mut core::ffi::c_void);
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTRANSFER_PACKET) {
+#[no_mangle] 
+ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTRANSFER_PACKET) {
     let fdoExt: PFUNCTIONAL_DEVICE_EXTENSION = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdoData: PCLASS_PRIVATE_FDO_DATA = (*fdoExt).PrivateFdoData;
     let mut oldIrql: KIRQL = 0;
@@ -797,14 +797,14 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     let srbLength: u32;
     let timeoutValue: u32 = (*fdoExt).TimeOutValue;
 
-    logicalBlockAddr.QuadPart = Int64ShrlMod32(DiskLocation.QuadPart, (*fdoExt).SectorShift);
+    logicalBlockAddr.QuadPart = Int64ShrlMod32(DiskLocation.QuadPart, (*fdoExt).SectorShift.into());
     numTransferBlocks = Len >> (*fdoExt).SectorShift;
 
     (*(*Pkt).DriverUsesStartIO) = if (*(*commonExtension).DriverExtension).InitData.ClassStartIo.is_null() { 0 } else { 1 };
 
-    if (*(*((*fdoExt).AdapterDescriptor)).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK) {
+    if *(*((*fdoExt).AdapterDescriptor)).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK  {
         srbLength = (*((*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK)).SrbLength;
-        NT_ASSERT(((*((*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) as u8);
+        NT_ASSERT((((*((*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) as u8).into());
     } else {
         srbLength = (*(*fdoData).SrbTemplate).Length;
     }
@@ -812,7 +812,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     SrbSetDataBuffer((*Pkt).Srb, Buf);
     SrbSetDataTransferLength((*Pkt).Srb, Len);
     SrbSetQueueSortKey((*Pkt).Srb, logicalBlockAddr.__bindgen_anon_1.LowPart);
-    if logicalBlockAddr.QuadPart > 0xFFFFFFFFu64 {
+    if logicalBlockAddr.QuadPart > 0xFFFFFFFFi64 {
         SrbSetQueueSortKey((*Pkt).Srb, 0xFFFFFFFF);
     }
     SrbSetOriginalRequest((*Pkt).Srb, (*Pkt).Irp);
@@ -879,7 +879,7 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: *mut TRANSFER_PACKET) -> NTST
 
     let irp = (*Pkt).Irp;
     let cond = ((*irp).CurrentLocation as u32 == (*irp).StackCount as u32 + 1) as u8;
-    NT_ASSERT(cond);
+    NT_ASSERT(cond.into());
 
     IoReuseIrp(irp, STATUS_NOT_SUPPORTED);
 
@@ -1051,7 +1051,7 @@ pub unsafe extern "system" fn TransferPktComplete(
             TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_RW, b"Freeing port-allocated sense buffer for pkt %ph.\0".as_ptr() as *const i8, pkt);
             FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdoExt, (*pkt).Srb);
             SrbSetSenseInfoBuffer((*pkt).Srb, &raw mut (*pkt).SrbErrorSenseData as *mut UCHAR);
-            SrbSetSenseInfoBufferLength((*pkt).Srb, core::mem::size_of_val(&(*pkt).SrbErrorSenseData) as ULONG);
+            SrbSetSenseInfoBufferLength((*pkt).Srb, (core::mem::size_of_val(&(*pkt).SrbErrorSenseData) as ULONG).try_into().unwrap());
         } else {
             NT_ASSERT((SrbGetSenseInfoBuffer((*pkt).Srb) == &raw mut (*pkt).SrbErrorSenseData as *mut UCHAR) as i32);
             NT_ASSERT((SrbGetSenseInfoBufferLength((*pkt).Srb) <= core::mem::size_of_val(&(*pkt).SrbErrorSenseData) as ULONG) as i32);
@@ -1111,7 +1111,7 @@ pub unsafe extern "system" fn TransferPktComplete(
                     IoMarkIrpPending((*pkt).OriginalIrp);
                 }
 
-                ClassCompleteRequest(Fdo, (*pkt).OriginalIrp, IO_DISK_INCREMENT);
+                ClassCompleteRequest(Fdo, (*pkt).OriginalIrp, IO_DISK_INCREMENT.into());
 
                 if priority == IoPagingPriorityHigh {
                     KeAcquireSpinLock(&mut (*fdoData).SpinLock, &mut oldIrql);
@@ -1232,7 +1232,7 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
     );
     SrbSetSenseInfoBufferLength(
         ((*Pkt).Srb) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32,
+        (core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32).try_into().unwrap(),
     );
     SrbSetTimeOutValue(((*Pkt).Srb) as *mut core::ffi::c_void, (*fdoExt).TimeOutValue);
 
@@ -1289,10 +1289,10 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
     );
 
     SrbSetRequestAttribute((*Pkt).Srb, SRB_SIMPLE_TAG_REQUEST);
-    SrbSetCdbLength((*Pkt).Srb, 6u8);
+    SrbSetCdbLength((*Pkt).Srb, 6u32);
     SrbSetOriginalRequest((*Pkt).Srb, (*Pkt).Irp);
     SrbSetSenseInfoBuffer((*Pkt).Srb, core::ptr::addr_of_mut!((*Pkt).SrbErrorSenseData) as _);
-    SrbSetSenseInfoBufferLength((*Pkt).Srb, core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32);
+    SrbSetSenseInfoBufferLength((*Pkt).Srb, (core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32).try_into().unwrap());
     SrbSetTimeOutValue((*Pkt).Srb, (*fdoExt).TimeOutValue);
     SrbSetDataBuffer((*Pkt).Srb, ModeSenseBuffer);
     SrbSetDataTransferLength((*Pkt).Srb, ModeSenseBufferLen as u32);
@@ -1359,7 +1359,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
     SrbSetCdbLength((*Pkt).Srb, 6);
     SrbSetOriginalRequest((*Pkt).Srb, (*Pkt).Irp);
     SrbSetSenseInfoBuffer((*Pkt).Srb, core::ptr::addr_of_mut!((*Pkt).SrbErrorSenseData).cast::<u8>());
-    SrbSetSenseInfoBufferLength((*Pkt).Srb, core::mem::size_of_val(&raw const (*Pkt).SrbErrorSenseData) as u32);
+    SrbSetSenseInfoBufferLength((*Pkt).Srb, (core::mem::size_of_val(&&raw const (*Pkt).SrbErrorSenseData) as u32).try_into().unwrap());
     SrbSetTimeOutValue((*Pkt).Srb, (*fdoExt).TimeOutValue);
     SrbSetDataBuffer((*Pkt).Srb, ModeSelectBuffer);
     SrbSetDataTransferLength((*Pkt).Srb, ModeSelectBufferLen as u32);
@@ -1428,7 +1428,7 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
     );
     SrbSetSenseInfoBufferLength(
         (*Pkt).Srb as *mut core::ffi::c_void,
-        core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32,
+        (core::mem::size_of_val(&(*Pkt).SrbErrorSenseData) as u32).try_into().unwrap(),
     );
 
     SrbSetTimeOutValue((*Pkt).Srb as *mut core::ffi::c_void, timeout_value);
@@ -1483,7 +1483,7 @@ pub unsafe extern "system" fn CleanupTransferPacketToWorkingSetSizeWorker(
 
     PAGED_CODE();
 
-    CleanupTransferPacketToWorkingSetSize(Fdo as *mut DEVICE_OBJECT, 0u8, node);
+    CleanupTransferPacketToWorkingSetSize(Fdo as *mut DEVICE_OBJECT, 0i32, node);
 
     //
     // Release the remove lock acquired in EnqueueFreeTransferPacket
@@ -1621,7 +1621,7 @@ pub unsafe extern "system" fn ClasspSetupReceiveWriteUsingTokenInformationTransf
     );
     SrbSetSenseInfoBufferLength(
         (*pkt).Srb,
-        core::mem::size_of_val(&(*(*pkt)).SrbErrorSenseData) as u32,
+        (core::mem::size_of_val(&(*(*pkt)).SrbErrorSenseData) as u32).try_into().unwrap(),
     );
     SrbSetTimeOutValue((*pkt).Srb, (*fdo_ext).TimeOutValue);
     SrbSetDataBuffer((*pkt).Srb, receive_write_using_token_information_buffer as *mut core::ffi::c_void);

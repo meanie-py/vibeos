@@ -37,7 +37,7 @@ pub unsafe extern "C" fn InitializeDictionary(Dictionary: *mut DICTIONARY) {
 #[no_mangle]
 pub unsafe extern "C" fn TestDictionarySignature(Dictionary: PDICTIONARY) -> BOOLEAN {
     unsafe {
-        ((*Dictionary).Signature == DICTIONARY_SIGNATURE) as BOOLEAN
+        ((*Dictionary).Signature == DICTIONARY_SIGNATURE.into()) as BOOLEAN
     }
 }
 #[no_mangle]

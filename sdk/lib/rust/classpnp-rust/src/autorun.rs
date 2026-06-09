@@ -452,7 +452,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                                     SrbSetCdbLength(srbEx, 6);
                                     (*srbEx).SrbStatus = (SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_ERROR) as u8;
                                     SrbSetSenseInfoBuffer(srbEx, &mut sense);
-                                    SrbSetSenseInfoBufferLength(srbEx, core::mem::size_of::<SENSE_DATA>() as u32);
+                                    SrbSetSenseInfoBufferLength(srbEx, (core::mem::size_of::<SENSE_DATA>() as u32).try_into().unwrap());
                                     srbPtr = srbEx as *mut SCSI_REQUEST_BLOCK;
                                 } else {
                                     assert!(false); // NT_ASSERT(FALSE)
@@ -877,7 +877,7 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
     if retryImmediately != 0 {
         (*info).MediaChangeRetryCount += 1;
 
-        if (*info).MediaChangeRetryCount > MAXIMUM_IMMEDIATE_MCN_RETRIES {
+        if (*info).MediaChangeRetryCount > MAXIMUM_IMMEDIATE_MCN_RETRIES.try_into().unwrap() {
             let workItem: *mut IO_WORKITEM;
             TracePrint(TRACE_LEVEL_INFORMATION,
                        TRACE_FLAG_MCN,
@@ -1330,7 +1330,7 @@ pub unsafe extern "system" fn ClassResetMediaChangeTimer(
     if !info.is_null() {
         let countdown_ptr = core::ptr::addr_of_mut!((*info).MediaChangeCountDown)
             as *mut core::sync::atomic::AtomicI32;
-        (*countdown_ptr).swap(MEDIA_CHANGE_DEFAULT_TIME, core::sync::atomic::Ordering::SeqCst);
+        (*countdown_ptr).swap(MEDIA_CHANGE_DEFAULT_TIME.try_into().unwrap(), core::sync::atomic::Ordering::SeqCst);
     }
 }
 #[no_mangle]
@@ -1370,7 +1370,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
 
         if !irp.is_null() {
             let buffer = ExAllocatePoolWithTag(
-                NonPagedPoolNxCacheAligned,
+                NonPagedPoolNxCacheAligned.try_into().unwrap(),
                 SENSE_BUFFER_SIZE_EX,
                 CLASS_TAG_MEDIA_CHANGE_DETECTION,
             );
@@ -1420,7 +1420,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                             (*FdoExtension).DeviceObject as *const core::ffi::c_void,
                         );
 
-                        NT_ASSERT((*info).Gesn.Supported);
+                        NT_ASSERT((*info).Gesn.Supported.into());
                         NT_ASSERT(((*info).Gesn.Buffer).is_null() == false);
                         NT_ASSERT((*info).Gesn.BufferSize != 0);
                         NT_ASSERT((*info).Gesn.EventMask != 0);
@@ -1670,10 +1670,10 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
             status = STATUS_SUCCESS;
         }
 
-        if (status == STATUS_INVALID_DEVICE_REQUEST
+        if status == STATUS_INVALID_DEVICE_REQUEST
             || status == STATUS_TIMEOUT
             || status == STATUS_IO_DEVICE_ERROR
-            || status == STATUS_IO_TIMEOUT)
+            || status == STATUS_IO_TIMEOUT 
         {
             ClassSetDeviceParameter(
                 FdoExtension,
@@ -2187,8 +2187,8 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
         deviceString.Buffer = core::ptr::null_mut();
         deviceUnicodeString.Buffer = core::ptr::null_mut();
 
-        if (deviceDescriptor.as_ref().unwrap().VendorIdOffset == 0
-            && deviceDescriptor.as_ref().unwrap().ProductIdOffset == 0)
+        if deviceDescriptor.as_ref().unwrap().VendorIdOffset == 0
+            && deviceDescriptor.as_ref().unwrap().ProductIdOffset == 0 
         {
             break 'try_block;
         }
@@ -2229,7 +2229,7 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
         deviceString.MaximumLength = deviceString.Length + 1;
         deviceString.Buffer = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            deviceString.MaximumLength as usize,
+            (deviceString.MaximumLength as usize).try_into().unwrap(),
             CLASS_TAG_AUTORUN_DISABLE,
         ) as *mut i8;
 
@@ -2476,7 +2476,7 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(FdoExtension: *mut
 
     KeWaitForMutexObject(
         &raw mut (*info).MediaChangeMutex as *mut core::ffi::c_void,
-        _KWAIT_REASON_UserRequest,
+        _KWAIT_REASON_UserRequest.try_into().unwrap(),
         0i32,
         FALSE,
         core::ptr::null_mut(),
@@ -2495,7 +2495,7 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(FdoExtension: *mut
     );
 
     if oldCount == 0 {
-        ClasspInternalSetMediaChangeState(FdoExtension, MediaUnknown, FALSE);
+        ClasspInternalSetMediaChangeState(FdoExtension, MediaUnknown, FALSE.try_into().unwrap());
         ClassResetMediaChangeTimer(FdoExtension);
         TracePrint(
             TRACE_LEVEL_INFORMATION,
@@ -2510,7 +2510,7 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(FdoExtension: *mut
         );
     }
 
-    KeReleaseMutex(&raw mut (*info).MediaChangeMutex, FALSE);
+    KeReleaseMutex(&raw mut (*info).MediaChangeMutex, FALSE.try_into().unwrap());
 }
 
 #[no_mangle]
@@ -2576,7 +2576,7 @@ pub unsafe extern "C" fn ClasspMcnControl(
     let request = (*Irp).AssociatedIrp.SystemBuffer as *mut PREVENT_MEDIA_REMOVAL;
     let fileObject = (*irpStack).FileObject;
     let mut fsContext: *mut FILE_OBJECT_EXTENSION = core::ptr::null_mut();
-    let mut status: i32 = ntkrnl_sys::constants::STATUS_SUCCESS as i32;
+    let mut status: i32 = ntkrnl_sys::base::STATUS_SUCCESS as i32;
 
     // try block emulation
     'tryblk: loop {
@@ -2958,7 +2958,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
 
     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_WMI, b"ClasspFailurePredict: Polling for failure\n\0".as_ptr() as *const i8);
 
-    let _ = InterlockedExchange(core::ptr::addr_of_mut!((*Info).CountDown), (*Info).Period);
+    let _ = InterlockedExchange(core::ptr::addr_of_mut!((*Info).CountDown), (*Info).Period.try_into().unwrap());
     workItem = InterlockedExchangePointer(
         core::ptr::addr_of_mut!((*Info).WorkQueueItem),
         core::ptr::null_mut(),
@@ -2973,7 +2973,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
             activateStatus = ClasspPowerActivateDevice(DeviceObject);
         }
 
-        KeInitializeEvent(&mut event, _EVENT_TYPE_SynchronizationEvent, 0);
+        KeInitializeEvent(&mut event, _EVENT_TYPE_SynchronizationEvent.try_into().unwrap(), 0);
 
         let topOfStack: *mut DEVICE_OBJECT = IoGetAttachedDeviceReference(DeviceObject);
 
@@ -2992,7 +2992,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
         if irp != core::ptr::null_mut() {
             status = IoCallDriver(topOfStack, irp);
             if status == STATUS_PENDING {
-                KeWaitForSingleObject(&event, _KWAIT_REASON_Executive, 0i32, 0, core::ptr::null());
+                KeWaitForSingleObject(&event, _KWAIT_REASON_Executive.try_into().unwrap(), 0i32, 0, core::ptr::null());
                 status = ioStatus.__bindgen_anon_1.Status;
             }
         } else {
@@ -3002,11 +3002,11 @@ pub unsafe extern "system" fn ClasspFailurePredict(
         if NT_SUCCESS(status) != 0 && checkFailure.PredictFailure != 0 {
             checkFailure.PredictFailure = 512;
 
-            KeInitializeEvent(&mut event, _EVENT_TYPE_SynchronizationEvent, 0);
+            KeInitializeEvent(&mut event, _EVENT_TYPE_SynchronizationEvent.try_into().unwrap(), 0);
 
             RtlZeroMemory(
                 &mut scsiAddress as *mut SCSI_ADDRESS as *mut core::ffi::c_void,
-                core::mem::size_of::<SCSI_ADDRESS>() as u32,
+                (core::mem::size_of::<SCSI_ADDRESS>() as u32).try_into().unwrap(),
             );
             irp = IoBuildDeviceIoControlRequest(
                 IOCTL_SCSI_GET_ADDRESS,
@@ -3023,7 +3023,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
             if irp != core::ptr::null_mut() {
                 status = IoCallDriver(topOfStack, irp);
                 if status == STATUS_PENDING {
-                    KeWaitForSingleObject(&event, _KWAIT_REASON_Executive, 0i32, 0, core::ptr::null());
+                    KeWaitForSingleObject(&event, _KWAIT_REASON_Executive.try_into().unwrap(), 0i32, 0, core::ptr::null());
                 }
             }
 
@@ -3031,7 +3031,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
                 fdoExtension,
                 &checkFailure as *const STORAGE_PREDICT_FAILURE as *mut u8,
                 core::mem::size_of::<STORAGE_PREDICT_FAILURE>() as u32,
-                ((*fdoExtension).FailurePredicted == 0) as i32,
+                (((*fdoExtension).FailurePredicted == 0) as i32).try_into().unwrap(),
                 2,
                 scsiAddress.PathId,
                 scsiAddress.TargetId,
@@ -3088,7 +3088,7 @@ pub unsafe extern "system" fn ClassNotifyFailurePredicted(
     if LogError != 0 {
         logEntry = IoAllocateErrorLogEntry(
             (*FdoExtension).DeviceObject,
-            core::mem::size_of::<IO_ERROR_LOG_PACKET>() + 3 * core::mem::size_of::<u32>(),
+            (core::mem::size_of::<IO_ERROR_LOG_PACKET>() + 3 * core::mem::size_of::<u32>()).try_into().unwrap(),
         );
 
         if !logEntry.is_null() {
@@ -3198,7 +3198,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 
     InterlockedExchange(
         core::ptr::addr_of_mut!((*info).CountDown) as *mut i32,
-        (*info).Period,
+        (*info).Period.try_into().unwrap(),
     );
 
     (*info).Method = FailurePredictionMethod;
@@ -3224,7 +3224,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 
     KeSetEvent(
         core::ptr::addr_of_mut!((*info).Event) as *mut KEVENT,
-        IO_NO_INCREMENT,
+        IO_NO_INCREMENT.into(),
         0, // FALSE
     );
 
@@ -3232,8 +3232,8 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 
     status
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION) -> i32 {
+#[no_mangle] 
+ pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION) -> i32 {
     let mut currentTime: LARGE_INTEGER = core::mem::zeroed();
     let mut timeDifference: LARGE_INTEGER = core::mem::zeroed();
     let mut missedPeriod: i32 = 0;
@@ -3244,7 +3244,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 
     KeQuerySystemTime(&mut currentTime);
     timeDifference.QuadPart = currentTime.QuadPart - (*(*FdoExtension).FailurePredictionInfo).LastFailurePredictionQueryTime.QuadPart;
-    timeDifference.QuadPart /= (10i64 * 1000i64 * 1000i64);
+    timeDifference.QuadPart /= 10i64 * 1000i64 * 1000i64 ;
     if timeDifference.QuadPart >= (*(*FdoExtension).FailurePredictionInfo).Period as i64 {
         missedPeriod = 1;
     }

@@ -121,7 +121,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
 
         NT_ASSERT(!((*(*(*fdoData).InterpretSenseInfo)).Interpret).is_null());
 
-        if ((*(*Pkt).Srb).Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK)
+        if (u32::from((*(*Pkt).Srb).Function) == SRB_FUNCTION_STORAGE_REQUEST_BLOCK)
             && ((*(*(*fdoExtension).CommonExtension.DriverExtension)).SrbSupport & CLASS_SRB_STORAGE_REQUEST_BLOCK) == 0
         {
             ClasspConvertToScsiRequestBlock(
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
             shouldRetry = ClassInterpretSenseInfo(
                 (*Pkt).Fdo,
                 (*Pkt).Srb as *mut SCSI_REQUEST_BLOCK,
-                (*origCurrentSp).MajorFunction,
+                (*origCurrentSp).MajorFunction.into(),
                 0,
                 timesAlreadyRetried,
                 core::ptr::addr_of_mut!((*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status),
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: *mut TRANSFER_PACKET)
 
             if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status == STATUS_INSUFFICIENT_RESOURCES {
                 shouldRetry = 1;
-            } else if TEST_FLAG((*origCurrentSp).Flags, SL_OVERRIDE_VERIFY_VOLUME) != 0
+            } else if TEST_FLAG((*origCurrentSp).Flags.into(), SL_OVERRIDE_VERIFY_VOLUME) != 0
                 && (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status == STATUS_VERIFY_REQUIRED
             {
                 (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status = STATUS_IO_DEVICE_ERROR;
@@ -581,7 +581,7 @@ pub unsafe extern "system" fn TransferPacketRetryTimerDpc(
         SrbSetSenseInfoBufferLength(srb, core::mem::size_of_val(&(*pkt).SrbErrorSenseData) as u32);
     } else {
         NT_ASSERT((SrbGetSenseInfoBuffer(srb) as *const _ == core::ptr::addr_of!((*pkt).SrbErrorSenseData) as *const _) as i32);
-        NT_ASSERT((SrbGetSenseInfoBufferLength(srb) <= core::mem::size_of_val(&(*pkt).SrbErrorSenseData) as u32) as i32);
+        NT_ASSERT((u32::from(SrbGetSenseInfoBufferLength(srb)) <= core::mem::size_of_val(&(*pkt).SrbErrorSenseData) as u32) as i32);
     }
 
     ntkrnl_sys::rtl::RtlZeroMemory(
@@ -609,8 +609,8 @@ pub unsafe extern "C" fn InitLowMemRetry(
     (*Pkt).LowMemRetry_remainingBufLen = Len;
     (*Pkt).LowMemRetry_nextChunkTargetLocation = TargetLocation;
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn StepLowMemRetry(Pkt: *mut TRANSFER_PACKET) -> i32 {
+#[no_mangle] 
+ pub unsafe extern "C" fn StepLowMemRetry(Pkt: *mut TRANSFER_PACKET) -> i32 {
     let packetDone: i32;
     if (*Pkt).LowMemRetry_remainingBufLen == 0 {
         packetDone = 1;

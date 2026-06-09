@@ -31,8 +31,8 @@ pub static mut MaxLockedMinutes: CLONG = 5;
 #[no_mangle]
 pub unsafe extern "C" fn ClasspInitializeRemoveTracking(DeviceObject: PDEVICE_OBJECT) {
     let commonExtension = (*DeviceObject).DeviceExtension;
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn ClassCompleteRequest(
+#[no_mangle] 
+ pub unsafe extern "system" fn ClassCompleteRequest(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     PriorityBoost: CCHAR,
@@ -158,8 +158,8 @@ pub unsafe extern "system" fn RemoveTrackingFreeRoutine(
         (*commonExtension).RemoveTrackingList = core::ptr::null_mut();
     }
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn ClasspUninitializeRemoveTracking(DeviceObject: *mut DEVICE_OBJECT) {
+#[no_mangle] 
+ pub unsafe extern "C" fn ClasspUninitializeRemoveTracking(DeviceObject: *mut DEVICE_OBJECT) {
     if cfg!(debug_assertions) {
         let commonExtension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
         let removeTrackingList = (*commonExtension).RemoveTrackingList;

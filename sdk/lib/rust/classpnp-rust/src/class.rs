@@ -728,7 +728,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
 
                             deviceRelations = ntkrnl_sys::ex::ExAllocatePoolWithTag(
                                 ntkrnl_sys::mm::PagedPool,
-                                core::mem::size_of::<ntkrnl_sys::ddk::DEVICE_RELATIONS>() as u64,
+                                (core::mem::size_of::<ntkrnl_sys::ddk::DEVICE_RELATIONS>() as u64).try_into().unwrap(),
                                 u32::from_le_bytes([b'2', b'C', b'c', b'S']),
                             ) as *mut ntkrnl_sys::ddk::DEVICE_RELATIONS;
 
@@ -795,7 +795,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             if lockReleased == 0 {
                 ClassReleaseRemoveLock(DeviceObject, Irp);
             }
-            ClassCompleteRequest(DeviceObject, Irp, ntkrnl_sys::constants::IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, ntkrnl_sys::constants::IO_NO_INCREMENT.into());
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_PNP,
@@ -853,7 +853,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                 if (*fdoExtension).PrivateFdoData.is_null() {
                     (*fdoExtension).PrivateFdoData = ExAllocatePoolWithTag(
                         NON_PAGED_POOL_NX,
-                        core::mem::size_of::<CLASS_PRIVATE_FDO_DATA>() as u32,
+                        (core::mem::size_of::<CLASS_PRIVATE_FDO_DATA>() as u32).try_into().unwrap(),
                         CLASS_TAG_PRIVATE_DATA,
                     ) as *mut CLASS_PRIVATE_FDO_DATA;
                 }
@@ -876,7 +876,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                 if (*fdoExtension).AdditionalFdoData.is_null() {
                     (*fdoExtension).AdditionalFdoData = ExAllocatePoolWithTag(
                         NON_PAGED_POOL_NX,
-                        core::mem::size_of::<ADDITIONAL_FDO_DATA>() as u32,
+                        (core::mem::size_of::<ADDITIONAL_FDO_DATA>() as u32).try_into().unwrap(),
                         CLASSPNP_POOL_TAG_ADDITIONAL_DATA,
                     ) as *mut ADDITIONAL_FDO_DATA;
                 }
@@ -910,7 +910,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
                 if (*fdoExtension).FunctionSupportInfo.is_null() {
                     (*fdoExtension).FunctionSupportInfo = ExAllocatePoolWithTag(
                         NON_PAGED_POOL_NX,
-                        core::mem::size_of::<CLASS_FUNCTION_SUPPORT_INFO>() as u32,
+                        (core::mem::size_of::<CLASS_FUNCTION_SUPPORT_INFO>() as u32).try_into().unwrap(),
                         CLASS_TAG_3BCS,
                     ) as *mut CLASS_FUNCTION_SUPPORT_INFO;
                 }
@@ -1253,12 +1253,12 @@ pub unsafe extern "C" fn ClassPnpStartDevice(DeviceObject: *mut DEVICE_OBJECT) -
             if (*commonExtension).IsFdo != 0 {
                 IoWMIRegistrationControl(DeviceObject, WMIREG_ACTION_REGISTER);
 
-                if ((*fdoExtension).FunctionSupportInfo.is_null() == false
+                if (*fdoExtension).FunctionSupportInfo.is_null() == false
                     && (*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled == 0
                     && (*fdoExtension).MiniportDescriptor.is_null() == false
                     && ((*(*fdoExtension).MiniportDescriptor).Portdriver == StoragePortCodeSetStorport
                         || (*(*fdoExtension).MiniportDescriptor).Portdriver == StoragePortCodeSetSDport
-                        || (*(*fdoExtension).MiniportDescriptor).Portdriver == StoragePortCodeSetUSBport))
+                        || (*(*fdoExtension).MiniportDescriptor).Portdriver == StoragePortCodeSetUSBport) 
                 {
                     let mut disableIdlePower: u32 = 0;
                     ClassGetDeviceParameter(
@@ -1298,7 +1298,7 @@ pub unsafe extern "system" fn ClassReadWrite(
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
             (*Irp).IoStatus.Information = 0;
             ClassReleaseRemoveLock(DeviceObject, Irp);
-            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+            ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
             status = STATUS_DEVICE_DOES_NOT_EXIST;
             break 'out;
         } else if ((*DeviceObject).Flags & DO_VERIFY_VOLUME) != 0 &&
@@ -1324,7 +1324,7 @@ pub unsafe extern "system" fn ClassReadWrite(
             if status < 0 {
                 (*Irp).IoStatus.Information = 0;
                 ClassReleaseRemoveLock(DeviceObject, Irp);
-                ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+                ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
                 break 'out;
             } else if status == STATUS_PENDING {
             } else {
@@ -1332,7 +1332,7 @@ pub unsafe extern "system" fn ClassReadWrite(
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                     (*Irp).IoStatus.Information = 0;
                     ClassReleaseRemoveLock(DeviceObject, Irp);
-                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
                     status = STATUS_SUCCESS;
                     break 'out;
                 } else {
@@ -1354,11 +1354,11 @@ pub unsafe extern "system" fn ClassReadWrite(
                             if ((*fdoExtension).DeviceFlags & DEV_USE_16BYTE_CDB) == 0 {
                                 let mut startingLba: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
                                 startingLba.QuadPart = (*currentIrpStack).Parameters.Read.ByteOffset.QuadPart >> (*fdoExtension).SectorShift;
-                                if startingLba.QuadPart > MAXULONG {
+                                if startingLba.QuadPart > MAXULONG.into() {
                                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
                                     (*Irp).IoStatus.Information = 0;
                                     ClassReleaseRemoveLock(DeviceObject, Irp);
-                                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+                                    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
                                     status = STATUS_INVALID_PARAMETER;
                                     break 'out;
                                 }
@@ -1469,7 +1469,7 @@ pub unsafe extern "C" fn InterpretCapacityData(
      *  For this purpose we treat the entire LUN as is if it is one partition.  Disk will deal with actual partitioning.
      */
     (*fdoExt).CommonExtension.PartitionLength.QuadPart =
-        ((lastSector.QuadPart + 1) << (*fdoExt).SectorShift as i64);
+        (lastSector.QuadPart + 1) << (*fdoExt).SectorShift as i64 ;
 
     /*
      *  Is this removable or fixed media
@@ -1543,7 +1543,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: *mut DEVICE_OBJECT) ->
             use16ByteCdb,
         );
         SubmitTransferPacket(pkt);
-        let _ = KeWaitForSingleObject(&mut event, _KWAIT_REASON_Executive, 0i32, 0, core::ptr::null_mut());
+        let _ = KeWaitForSingleObject(&mut event, _KWAIT_REASON_Executive, 0i8, 0, core::ptr::null_mut());
 
         status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
 
@@ -1575,7 +1575,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: *mut DEVICE_OBJECT) ->
                     use16ByteCdb,
                 );
                 SubmitTransferPacket(pkt);
-                let _ = KeWaitForSingleObject(&mut event, _KWAIT_REASON_Executive, 0i32, 0, core::ptr::null_mut());
+                let _ = KeWaitForSingleObject(&mut event, _KWAIT_REASON_Executive, 0i8, 0, core::ptr::null_mut());
                 status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
                 if (pseudoIrp.IoStatus.Information as usize) < readCapacityDataSize {
                     status = STATUS_DEVICE_BUSY;
@@ -1682,7 +1682,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: *mut DEVICE_OBJECT) ->
     'SafeExit: {
         // In case DEV_USE_16BYTE_CDB flag is not set ...
         if ((*fdoExt).DeviceFlags & DEV_USE_16BYTE_CDB) == 0 {
-            let cdb10MaxBlocks: u32 = ((u16::MAX as u32) << (*fdoExt).SectorShift);
+            let cdb10MaxBlocks: u32 = (u16::MAX as u32) << (*fdoExt).SectorShift ;
             // Use inline min() expansion
             (*fdoData).HwMaxXferLen = if cdb10MaxBlocks < (*fdoData).HwMaxXferLen {
                 cdb10MaxBlocks
@@ -1730,7 +1730,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut DEVICE_OBJECT) {
 
     context = ExAllocatePoolWithTag(
         NonPagedPoolNx,
-        core::mem::size_of::<COMPLETION_CONTEXT>() as u32,
+        (core::mem::size_of::<COMPLETION_CONTEXT>() as u32).try_into().unwrap(),
         0x53634336u32, // '6CcS'
     ) as *mut COMPLETION_CONTEXT;
 
@@ -1845,7 +1845,7 @@ pub unsafe extern "system" fn ClassAsynchronousCompletion(
     // If this is an execute srb, then check the return status and make sure.
     // the queue is not frozen.
     //
-    if srbFunction == SRB_FUNCTION_EXECUTE_SCSI {
+    if srbFunction == SRB_FUNCTION_EXECUTE_SCSI.into() {
         //
         // Check for a frozen queue.
         //
@@ -2254,7 +2254,7 @@ pub unsafe extern "system" fn ClassIoComplete(
         }
 
         // If override verify volume flag set and status is VERIFY_REQUIRED, retry
-        if TEST_FLAG((*irpStack).Flags, SL_OVERRIDE_VERIFY_VOLUME) != 0
+        if TEST_FLAG((*irpStack).Flags.into(), SL_OVERRIDE_VERIFY_VOLUME) != 0
             && status == STATUS_VERIFY_REQUIRED
         {
             status = STATUS_IO_DEVICE_ERROR;

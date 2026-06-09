@@ -238,7 +238,7 @@ pub unsafe extern "system" fn ClassMinimalPowerHandler(
         status = PoCallDriver((*commonExtension).LowerDeviceObject, Irp);
     } else {
         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
+        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT.into());
     }
 
     status
@@ -528,7 +528,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(
         //
         fdoEntry = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            core::mem::size_of::<IDLE_POWER_FDO_LIST_ENTRY>() as u32,
+            (core::mem::size_of::<IDLE_POWER_FDO_LIST_ENTRY>() as u32).try_into().unwrap(),
             CLASS_TAG_POWER,
         ) as *mut IDLE_POWER_FDO_LIST_ENTRY;
 

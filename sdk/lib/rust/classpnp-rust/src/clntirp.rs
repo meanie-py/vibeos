@@ -226,7 +226,7 @@ pub unsafe extern "C" fn ClasspIdleDurationSufficient(
         **CurrentTimeIn = CurrentTime;
     }
 
-    if idleInterval >= (*FdoData).IdleInterval {
+    if idleInterval >= (*FdoData).IdleInterval.into() {
         return 1;
     }
 
@@ -252,14 +252,14 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
     let _ = SystemArgument2;
 
     if fdoExtension.is_null() {
-        NT_ASSERT((!fdoExtension.is_null()) as LOGICAL);
+        NT_ASSERT(((!fdoExtension.is_null()) as LOGICAL).try_into().unwrap());
         return;
     }
 
     fdoData = (*fdoExtension).PrivateFdoData;
 
     if (*fdoData).ActiveIoCount <= 0 {
-        if (*fdoData).ActiveIdleIoCount >= (*fdoData).IdleActiveIoMax {
+        if (*fdoData).ActiveIdleIoCount >= (*fdoData).IdleActiveIoMax.into() {
             return;
         }
 
@@ -267,7 +267,7 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
         let ppCurrentTime: *mut *mut LARGE_INTEGER = &mut pCurrentTime;
         let ret = ClasspIdleDurationSufficient(fdoData, ppCurrentTime);
         if ret != 0 {
-            NT_ASSERT((!pCurrentTime.is_null()) as LOGICAL);
+            NT_ASSERT(((!pCurrentTime.is_null()) as LOGICAL).try_into().unwrap());
             (*fdoData).AntiStarvationStartTime = *pCurrentTime;
             ClasspServiceIdleRequest(fdoExtension, 0u8);
         }
@@ -283,7 +283,7 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
         idleTime = (*fdoData).StarvationDuration;
     }
 
-    if idleTime >= (*fdoData).StarvationDuration {
+    if idleTime >= (*fdoData).StarvationDuration.into() {
         (*fdoData).AntiStarvationStartTime = currentTime;
         TracePrint(4, 0x02, b"ClasspIdleTimerDpc: Starvation timer. Send one idle request\n\0".as_ptr() as *const i8);
         ClasspServiceIdleRequest(fdoExtension, 0u8);
@@ -369,7 +369,7 @@ pub unsafe extern "C" fn ClasspCompleteIdleRequest(
     // non-idle request.
     //
     if ((*fdoData).IdleIoCount > 0)
-        && ((*fdoData).ActiveIdleIoCount < (*fdoData).IdleActiveIoMax)
+        && ((*fdoData).ActiveIdleIoCount < (*fdoData).IdleActiveIoMax.into())
         && ((*fdoData).ActiveIoCount <= 0)
         && (ClasspIdleDurationSufficient(fdoData, core::ptr::null_mut()) != 0)
     {

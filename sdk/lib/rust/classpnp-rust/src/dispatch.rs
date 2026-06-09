@@ -64,7 +64,7 @@ pub unsafe extern "C" fn ClassDispatchUnimplemented(
 ) -> NTSTATUS {
     let _ = DeviceObject;
 
-    if (*IoGetCurrentIrpStackLocation(Irp)).MajorFunction == IRP_MJ_POWER {
+    if u32::from((*IoGetCurrentIrpStackLocation(Irp)).MajorFunction) == IRP_MJ_POWER {
         PoStartNextPowerIrp(Irp);
     }
 

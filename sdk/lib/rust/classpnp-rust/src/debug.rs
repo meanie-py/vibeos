@@ -111,8 +111,8 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
 
     if srb_status_masked == SRB_STATUS_PENDING as u32 {
         TracePrint(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_RW,
+            TRACE_LEVEL_ERROR.try_into().unwrap(),
+            TRACE_FLAG_RW.try_into().unwrap(),
             b"SRB completed with status PENDING in packet %ph: (op=%s srbstat=%s(%xh), irpstat=%xh)\0".as_ptr() as *const i8,
             Pkt as *const core::ffi::c_void,
             DBGGETSCSIOPSTR((*Pkt).Srb),
@@ -123,8 +123,8 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     } else if srb_status_masked == SRB_STATUS_SUCCESS as u32 {
         if ((*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status as i32) < 0 {
             TracePrint(
-                TRACE_LEVEL_WARNING,
-                TRACE_FLAG_RW,
+                TRACE_LEVEL_WARNING.try_into().unwrap(),
+                TRACE_FLAG_RW.try_into().unwrap(),
                 b"SRB and IRP status don't match in packet %ph: (op=%s srbstat=%s(%xh), irpstat=%xh)\0".as_ptr() as *const i8,
                 Pkt as *const core::ffi::c_void,
                 DBGGETSCSIOPSTR((*Pkt).Srb),
@@ -134,10 +134,10 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             );
         }
 
-        if (*(*Pkt).Irp).IoStatus.Information != SrbGetDataTransferLength((*Pkt).Srb) as usize {
+        if (*(*Pkt).Irp).IoStatus.Information != (SrbGetDataTransferLength((*Pkt).Srb) as usize).try_into().unwrap() {
             TracePrint(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_RW,
+                TRACE_LEVEL_ERROR.try_into().unwrap(),
+                TRACE_FLAG_RW.try_into().unwrap(),
                 b"SRB and IRP result transfer lengths don't match in succeeded packet %ph: (op=%s, SrbStatus=%s, Srb.DataTransferLength=%xh, Irp->IoStatus.Information=%Ixh).\0".as_ptr() as *const i8,
                 Pkt as *const core::ffi::c_void,
                 DBGGETSCSIOPSTR((*Pkt).Srb),
@@ -149,8 +149,8 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     } else {
         if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status as i32 >= 0 {
             TracePrint(
-                TRACE_LEVEL_WARNING,
-                TRACE_FLAG_RW,
+                TRACE_LEVEL_WARNING.try_into().unwrap(),
+                TRACE_FLAG_RW.try_into().unwrap(),
                 b"SRB and IRP status don't match in packet %ph: (op=%s srbstat=%s(%xh), irpstat=%xh)\0".as_ptr() as *const i8,
                 Pkt as *const core::ffi::c_void,
                 DBGGETSCSIOPSTR((*Pkt).Srb),
@@ -160,8 +160,8 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             );
         }
         TracePrint(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_RW,
+            TRACE_LEVEL_WARNING.try_into().unwrap(),
+            TRACE_FLAG_RW.try_into().unwrap(),
             b"Packet %ph failed (op=%s srbstat=%s(%xh), irpstat=%xh, sense=%s/%s/%s)\0".as_ptr() as *const i8,
             Pkt as *const core::ffi::c_void,
             DBGGETSCSIOPSTR((*Pkt).Srb),
@@ -174,11 +174,11 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         );
 
         if srb_status_masked == SRB_STATUS_DATA_OVERRUN as u32
-            && (*(*Pkt).Irp).IoStatus.Information != SrbGetDataTransferLength((*Pkt).Srb) as usize
+            && (*(*Pkt).Irp).IoStatus.Information != (SrbGetDataTransferLength((*Pkt).Srb) as usize).try_into().unwrap()
         {
             TracePrint(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_RW,
+                TRACE_LEVEL_ERROR.try_into().unwrap(),
+                TRACE_FLAG_RW.try_into().unwrap(),
                 b"SRB and IRP result transfer lengths don't match in failed packet %ph: (op=%s, SrbStatus=%s, Srb.DataTransferLength=%xh, Irp->IoStatus.Information=%Ixh).\0".as_ptr() as *const i8,
                 Pkt as *const core::ffi::c_void,
                 DBGGETSCSIOPSTR((*Pkt).Srb),
@@ -200,8 +200,8 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         | SCSIOP_START_STOP_UNIT | SCSIOP_READ_CAPACITY16 | SCSIOP_READ16 | SCSIOP_WRITE16 => {}
         _ => {
             TracePrint(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_RW,
+                TRACE_LEVEL_ERROR.try_into().unwrap(),
+                TRACE_FLAG_RW.try_into().unwrap(),
                 b"Miniport illegally changed Srb.Cdb.OperationCode in packet %ph failed (op=%s srbstat=%s(%xh), irpstat=%xh, sense=%s/%s/%s)\0".as_ptr() as *const i8,
                 Pkt as *const core::ffi::c_void,
                 DBGGETSCSIOPSTR((*Pkt).Srb),
@@ -332,7 +332,7 @@ pub unsafe extern "C" fn DbgLogFlushInfo(
 #[no_mangle]
 pub unsafe extern "C" fn SnapDiskStartup() {
     let disk_spinup_index_ptr: *const core::sync::atomic::AtomicI32 = core::ptr::addr_of!(DiskSpinupIndex) as *const _;
-    let mut Index: u32 = (*disk_spinup_index_ptr).fetch_add(1, core::sync::atomic::Ordering::Relaxed).wrapping_add(1);
+    let mut Index: u32 = (*disk_spinup_index_ptr).fetch_add(1, core::sync::atomic::Ordering::Relaxed).wrapping_add(1).try_into().unwrap();
     Index = Index & (NUMBER_OF_DISK_SPINUP_TRACES - 1);
     let Entry: *mut DISK_SPINUP_TRACES = core::ptr::addr_of_mut!(DiskSpinupTraces[Index as usize]);
 

@@ -199,7 +199,7 @@ pub unsafe extern "system" fn ClassSystemControl(
             TRACE_FLAG_WMI,
             b"WMI Find Guid = %x, isInternalGuid = %x\0".as_ptr() as *const i8,
             status,
-            isInternalGuid,
+            isInternalGuid as c_uint,
         );
 
         if status >= 0
@@ -782,7 +782,7 @@ pub unsafe extern "C" fn ClassQueryInternalDataBlock(
         } else {
             status = STATUS_BUFFER_TOO_SMALL;
         }
-    } else if GuidIndex > 0 && GuidIndex < NUM_CLASS_WMI_GUIDS {
+    } else if GuidIndex > 0 && GuidIndex < NUM_CLASS_WMI_GUIDS.try_into().unwrap() {
         status = STATUS_WMI_INSTANCE_NOT_FOUND;
     } else {
         status = STATUS_WMI_GUID_NOT_FOUND;

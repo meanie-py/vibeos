@@ -84,7 +84,7 @@ pub unsafe extern "C" fn ClassCreateClose(
     }
     (*irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(device_object, irp);
-    ClassCompleteRequest(device_object, irp, IO_NO_INCREMENT);
+    ClassCompleteRequest(device_object, irp, IO_NO_INCREMENT.into());
     return status;
 }
 #[no_mangle]
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn ClasspCreateClose(
             ntkrnl_sys::ddk::KeWaitForSingleObject(
                 &mut event as *mut ntkrnl_sys::ddk::KEVENT,
                 ntkrnl_sys::ddk::_KWAIT_REASON_Executive,
-                ntkrnl_sys::ddk::_KWAIT_REASON_Executive as i32,
+                (ntkrnl_sys::ddk::_KWAIT_REASON_Executive as i32).try_into().unwrap(),
                 0,
                 core::ptr::null(),
             );
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(
     ntkrnl_sys::ddk::KeWaitForSingleObject(
         core::ptr::addr_of_mut!((*fdoExtension).EjectSynchronizationEvent),
         _KWAIT_REASON_UserRequest, // UserRequest is available from ntkrnl_sys::ddk
-        0i32,  // KernelMode is available from ntkrnl_sys::constants
+        0i8,  // KernelMode is available from ntkrnl_sys::constants
         0,           // FALSE
         core::ptr::null_mut(),
     );
@@ -387,7 +387,7 @@ pub unsafe extern "C" fn ClasspCleanupProtectedLocks(
     // Signal synchronization event and leave critical region
     ntkrnl_sys::ke::KeSetEvent(
         core::ptr::addr_of_mut!((*fdoExtension).EjectSynchronizationEvent),
-        IO_NO_INCREMENT, // from imports: IO_NO_INCREMENT
+        IO_NO_INCREMENT.into(), // from imports: IO_NO_INCREMENT
         0,               // FALSE
     );
     ntkrnl_sys::ddk::KeLeaveCriticalRegion();
@@ -416,7 +416,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
     status = KeWaitForSingleObject(
         &mut (*FdoExtension).EjectSynchronizationEvent,
         _KWAIT_REASON_UserRequest,
-        0i32,
+        0i8,
         0u8, // FALSE
         core::ptr::null_mut(),
     );
@@ -509,7 +509,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
                 status = InitializeStorageRequestBlock(
                     srb as *mut STORAGE_REQUEST_BLOCK,
                     STORAGE_ADDRESS_TYPE_BTL8,
-                    CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE,
+                    CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE.try_into().unwrap(),
                     1,
                     SrbExDataTypeScsiCdb16,
                 );
@@ -601,7 +601,7 @@ pub unsafe extern "C" fn ClasspEjectionControl(
 
         KeSetEvent(
             &mut (*FdoExtension).EjectSynchronizationEvent,
-            IO_NO_INCREMENT,
+            IO_NO_INCREMENT.into(),
             0u8,
         );
         KeLeaveCriticalRegion();
