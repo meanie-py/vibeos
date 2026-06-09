@@ -48,6 +48,8 @@ members = [
     "usbd-rust",
     "hid-sys",
     "hidparser-rust",
+    "pl011-rust",
+    "processr-rust",
     "cmboot-rust",
     "cmlib-rust",
     "rossym-rust",
