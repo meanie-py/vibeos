@@ -310,21 +310,19 @@ add_dependencies(rtl rust_rtl)
 target_link_libraries(rtl PRIVATE ${RUST_RTL_RUST_LIB})
 
     # utf8.c — replaced by Rust (utf8 crate, linked below).
-    # condvar.c / runonce.c / srw.c / locale.c — the REAL flip is at main SOURCE
-    #   (above) + ntdll-cargo c_from_compile_db, so ntoskrnl + ntdll-main use the
-    #   Rust rtl-sync. These C files are kept HERE (and ONLY here) because the
-    #   standalone ntdll_vista.dll forwarder links librtl_vista.a alone — never
-    #   alongside librtl_rust.a — and its .spec exports RtlInitializeConditionVariable
-    #   / RtlInitializeSRWLock / RtlRunOnce* as REAL symbols, plus its DllMain pulls
-    #   RtlpInitializeKeyedEvent / RtlpCloseKeyedEvent (both from condvar.c).
-    #   Dropping them broke the COLD ntdll_vista link (warm builds masked it via a
-    #   stale librtl_vista.a). No duplicate-symbol risk: rtl_vista is consumed solely
-    #   by ntdll_vista. TODO: make rtl_vista Rust-only (INTERFACE over rtl-sync).
+    # condvar.c / runonce.c / srw.c / locale.c — replaced by Rust implementation
+    #   (sdk/lib/rust/rtl-sync/, Wave SYNC + the `vista` feature). The standalone
+    #   ntdll_vista.dll forwarder now links the rtl-sync `vista` archive directly
+    #   via reactos-link `.rust_lib("rtl-sync", ["vista"])` (see
+    #   dll/ntdll/nt_0600/ntdll_vista-cargo/build.rs) — it no longer links
+    #   librtl_vista.a. The only other consumer, rtl_unittest, resolves
+    #   RtlInitializeConditionVariable / RtlInitializeSRWLock / RtlRunOnce* /
+    #   RtlLcidToLocaleName from the main `rtl` library (rtl-rust → rtl-sync
+    #   `cabi`), which precedes rtl_vista on its link line. rtl_vista therefore
+    #   compiles no C synchronization code — just the placeholder TU below — so
+    #   the COLD ntdll_vista link the C files used to back is now 100% Rust.
 list(APPEND SOURCE_VISTA
-    condvar.c
-    runonce.c
-    srw.c
-    locale.c
+    rtl_vista_stub.c
     )
 
 add_library(rtl_vista ${SOURCE_VISTA})

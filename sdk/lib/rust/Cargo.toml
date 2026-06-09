@@ -108,6 +108,7 @@ members = [
     "rtl-misc",
     "rtl-threadpool",
     "rtl-sync",
+    "rtl-vista-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
