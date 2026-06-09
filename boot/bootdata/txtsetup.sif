@@ -123,7 +123,6 @@ pci.sys      = 1,,,,,,x,4,,,,1,4
 scsiport.sys = 1,,,,,,,4,,,,1,4
 storport.sys = 1,,,,,,,4,,,,1,4
 fastfat.sys  = 1,,,,,,x,4,,,,1,4
-btrfs.sys    = 1,,,,,,x,4,,,,1,4
 ramdisk.sys  = 1,,,,,,x,4,,,,1,4
 pciide.sys   = 1,,,,,,,4,,,,1,4
 pciidex.sys  = 1,,,,,,,4,,,,1,4
