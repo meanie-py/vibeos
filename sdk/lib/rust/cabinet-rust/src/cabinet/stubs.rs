@@ -12,6 +12,7 @@ pub unsafe extern "system" fn DeleteExtractedFiles(
     // UNIMPLEMENTED;
 }
 
+#[no_mangle]
 pub unsafe extern "system" fn GetDllVersion() -> LPCSTR {
     /* This is what it returns on Windows XP SP3 */
     return b"5.1.2600.5512\0".as_ptr() as *const i8;
