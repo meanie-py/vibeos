@@ -1,0 +1,15 @@
+# lsass-sys — focused LSA LPC-message FFI substrate for the lsalib (ntlsalib)
+# translation. bindgen-generated (generate_bindings.sh) from subsys/lsass/lsass.h
+# in NDK context: LSA_API_MSG + LSA_CONNECTION_INFO + the LSA_API_NUMBER request
+# enum + the per-request message structs — absent from ntkrnl-sys (ntoskrnl.h
+# only). Per-arch (PORT_MESSAGE / pointer widths differ). no_std.
+
+[package]
+name = "lsass-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

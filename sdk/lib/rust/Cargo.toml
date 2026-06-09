@@ -52,6 +52,8 @@ members = [
     "processr-rust",
     "csq-rust",
     "arbiter-rust",
+    "lsass-sys",
+    "lsalib-rust",
     "cmboot-rust",
     "cmlib-rust",
     "rossym-rust",

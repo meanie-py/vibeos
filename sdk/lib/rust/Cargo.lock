@@ -469,6 +469,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsalib-rust"
+version = "0.1.0"
+dependencies = [
+ "lsass-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "lsass-cargo"
 version = "0.1.0"
 dependencies = [
@@ -481,6 +489,10 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
 ]
+
+[[package]]
+name = "lsass-sys"
+version = "0.1.0"
 
 [[package]]
 name = "luid"
