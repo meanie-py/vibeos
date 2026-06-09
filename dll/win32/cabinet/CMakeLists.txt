@@ -7,6 +7,14 @@ include_directories(
 
 spec2def(cabinet.dll cabinet.spec ADD_IMPORTLIB)
 
+# NOTE: cabinet_main.c / fci.c / fdi.c / stubs.c have a Rust translation in
+# sdk/lib/rust/cabinet-rust (kept on disk per the never-delete rule), but it is
+# NOT yet link-complete (the LZX/QTM/MSZIP decompression engine + FDICopy are
+# still being hand-ported). Until cabinet-rust links, cabinet.dll is built from
+# C so the livecd/smoke is not blocked. Re-wire to the Rust staticlib cohab
+# (see git history of this file + dll/win32/cabinet/rust_cohab_stub.c) once the
+# decomp engine port is finished.
+
 list(APPEND SOURCE
     cabinet_main.c
     fci.c
