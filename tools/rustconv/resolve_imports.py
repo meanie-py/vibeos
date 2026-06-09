@@ -29,6 +29,7 @@ arch = {"i686-pc-windows-gnu": "i386", "x86_64-pc-windows-gnu": "amd64",
         "aarch64-pc-windows-gnu": "arm64"}[TARGET]
 
 SOURCES = [("crate::types", os.path.join(CRATE_SRC, f"types_{arch}.rs")),
+           ("crate::glue", os.path.join(CRATE_SRC, "glue.rs")),
            ("ntkrnl_sys::ddk", os.path.join(NTK, f"bindgen_{arch}.rs"))]
 for m in ("base", "ke", "ex", "rtl", "constants", "globals", "driver_ddk",
           "interlocked", "ob", "mm", "ps"):
