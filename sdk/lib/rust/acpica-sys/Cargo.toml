@@ -1,0 +1,19 @@
+# acpica-sys — focused FFI substrate for Intel's ACPICA reference impl, for the
+# ReactOS `acpi` driver glue translation (FFI-to-blob — ACPICA itself stays C).
+# bindgen-generated (generate_bindings.sh) from acpica/include/acpi.h with
+# ACPI_USE_LOCAL_CACHE / ACPI_USE_SYSTEM_INTTYPES, allowlisted to the
+# (ACPI_.*|Acpi.*) surface: the public ACPICA types (ACPI_STATUS, ACPI_HANDLE,
+# ACPI_OBJECT, ACPI_TABLE_*, ACPI_BUFFER, ACPI_DEVICE_INFO, ACPI_RESOURCE, …),
+# the 57 outbound Acpi* API fns, and the AcpiOs* OSL callback typedefs (so the
+# Rust #[no_mangle] OSL impls in acpi-rust match). Per-arch. no_std.
+# See docs/engineering/acpica-ffi-plan.md.
+
+[package]
+name = "acpica-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

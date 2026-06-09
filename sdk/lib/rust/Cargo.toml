@@ -109,6 +109,7 @@ members = [
     "rtl-threadpool",
     "rtl-sync",
     "rtl-vista-rust",
+    "acpica-sys",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
