@@ -128,7 +128,6 @@ extern "C" {
     fn MENU_IsMenuActive() -> PWND;
     fn MENU_EndMenu(Wnd: PWND);
     fn co_UserDestroyWindow(Window: PWND) -> BOOL;
-    fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> INT;
     fn NC_HandleNCCalcSize(Wnd: PWND, wparam: WPARAM, Rect: *mut RECTL, Suppress: BOOL) -> LRESULT;
     fn NC_HandleNCActivate(Wnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn NC_DoNCPaint(pWnd: PWND, hDC: HDC, Flags: INT);
@@ -159,7 +158,6 @@ unsafe fn IntIsSnapAllowedForWindow(Wnd: PWND) -> BOOLEAN {
     (thickframe && (style & WS_CHILD) == 0 && !istb) as BOOLEAN
 }
 extern "system" {
-    fn DefWndSetHotKey(Wnd: PWND, wParam: WPARAM) -> LRESULT;
     // SafeProbeForRead — safe_user_io.h NTAPI (stdcall `_SafeProbeForRead@12`).
     fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: ULONG, Alignment: ULONG) -> NTSTATUS;
     // co_HOOK_CallHooks — APIENTRY (stdcall `_co_HOOK_CallHooks@16`).
@@ -1676,4 +1674,19 @@ unsafe extern "fastcall" fn IntDefWindowProc(
         _ => {}
     }
     lResult
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> INT;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn DefWndSetHotKey(Wnd: PWND, wParam: WPARAM) -> LRESULT;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn DefWndSetHotKey(Wnd: PWND, wParam: WPARAM) -> LRESULT;
 }

@@ -151,21 +151,10 @@ unsafe fn RECTL_vSetRect(rect: *mut RECT, left: LONG, top: LONG, right: LONG, bo
     (*rect).left = left; (*rect).top = top; (*rect).right = right; (*rect).bottom = bottom;
 }
 extern "C" {
-    fn DrawTextW(hdc: HDC, str: LPCWSTR, count: INT, rect: LPRECT, flags: UINT) -> INT;
-    fn DrawEdge(hdc: HDC, qrc: *mut RECT, edge: UINT, grfFlags: UINT) -> BOOL;
     // _MmCopyToCaller / _MmCopyFromCaller — C macros forward to these cdecl fns
     // (mmcopy.h); provided by copy.rs. Wrapped below.
     fn _MmCopyToCaller(Target: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Bytes: UINT) -> NTSTATUS;
     fn _MmCopyFromCaller(Target: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Bytes: UINT) -> NTSTATUS;
-    fn SetLastNtError(Status: NTSTATUS) -> u32;
-    fn FrameRect(hdc: HDC, lprc: *const RECT, hbr: HBRUSH) -> core::ffi::c_int;
-    fn RECTL_vInflateRect(rect: *mut RECT, dx: core::ffi::c_int, dy: core::ffi::c_int);
-    fn MsqSetStateWindow(pti: PTHREADINFO, Type: UINT, hWnd: HWND) -> HWND;
-    fn co_UserHideCaret(Wnd: HWND) -> u8;
-    fn co_UserSetCapture(hWnd: HWND) -> HWND;
-    fn DrawFrameControl(dc: HDC, r: LPRECT, uType: UINT, uState: UINT) -> BOOL;
-    fn NC_IconForWindow(Wnd: PWND) -> PCURICON_OBJECT;
-    fn FillRect(hDC: HDC, lprc: LPRECT, hbr: HBRUSH) -> i32;
 }
 // RECTL_vOffsetRect (rect.h inline).
 #[inline(always)]
@@ -592,11 +581,13 @@ unsafe extern "C" fn UserDestroyMenuObject(Object: *mut core::ffi::c_void) -> u8
 }
 
 #[cfg(target_arch = "x86")]
+#[no_mangle]
 unsafe extern "fastcall" fn IntDestroyMenuObject(Menu: PMENU, bRecurse: BOOL) -> BOOL {
     IntDestroyMenuObject_impl(Menu, bRecurse)
 }
 
 #[cfg(not(target_arch = "x86"))]
+#[no_mangle]
 unsafe extern "C" fn IntDestroyMenuObject(Menu: PMENU, bRecurse: BOOL) -> BOOL {
     IntDestroyMenuObject_impl(Menu, bRecurse)
 }
@@ -8658,4 +8649,33 @@ pub unsafe extern "C" fn NtUserTrackPopupMenuEx(
     }
 
     Ret
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn DrawTextW(hdc: HDC, str: LPCWSTR, count: INT, rect: LPRECT, flags: UINT) -> INT;
+    fn DrawEdge(hdc: HDC, qrc: *mut RECT, edge: UINT, grfFlags: UINT) -> BOOL;
+    fn FrameRect(hdc: HDC, lprc: *const RECT, hbr: HBRUSH) -> core::ffi::c_int;
+    fn DrawFrameControl(dc: HDC, r: LPRECT, uType: UINT, uState: UINT) -> BOOL;
+    fn FillRect(hDC: HDC, lprc: LPRECT, hbr: HBRUSH) -> i32;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn SetLastNtError(Status: NTSTATUS) -> u32;
+    fn RECTL_vInflateRect(rect: *mut RECT, dx: core::ffi::c_int, dy: core::ffi::c_int);
+    fn MsqSetStateWindow(pti: PTHREADINFO, Type: UINT, hWnd: HWND) -> HWND;
+    fn co_UserHideCaret(Wnd: HWND) -> u8;
+    fn co_UserSetCapture(hWnd: HWND) -> HWND;
+    fn NC_IconForWindow(Wnd: PWND) -> PCURICON_OBJECT;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn SetLastNtError(Status: NTSTATUS) -> u32;
+    fn RECTL_vInflateRect(rect: *mut RECT, dx: core::ffi::c_int, dy: core::ffi::c_int);
+    fn MsqSetStateWindow(pti: PTHREADINFO, Type: UINT, hWnd: HWND) -> HWND;
+    fn co_UserHideCaret(Wnd: HWND) -> u8;
+    fn co_UserSetCapture(hWnd: HWND) -> HWND;
+    fn NC_IconForWindow(Wnd: PWND) -> PCURICON_OBJECT;
 }

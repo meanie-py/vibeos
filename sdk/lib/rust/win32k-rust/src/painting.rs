@@ -61,8 +61,6 @@ unsafe fn gpsi_per_user() -> *mut _PERUSERSERVERINFO {
 }
 
 extern "C" {
-    fn RECTL_bIntersectRect(dst: *mut RECTL, src1: *mut RECTL, src2: *mut RECTL) -> u8;
-    fn SetLastNtError(Status: i32);
     fn GetW32ThreadInfo() -> PTHREADINFO;
     // _MmCopyToCaller — mmcopy.h macro forwards here (copy.rs, cdecl).
     fn _MmCopyToCaller(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: UINT) -> NTSTATUS;
@@ -215,10 +213,6 @@ unsafe fn RECTL_vOffsetRect(prcl: LPRECT, cx: i32, cy: i32) {
     (*prcl).bottom += cy;
 }
 
-extern "C" {
-    fn TextIntCreateFontIndirect(lf: LPLOGFONTW, NewFont: *mut HFONT) -> NTSTATUS;
-    fn GetControlColor(pwndParent: PWND, pwnd: PWND, hdc: HDC, CtlMsg: UINT) -> HBRUSH;
-}
 
 #[cfg(target_arch = "x86")]
 #[allow(non_snake_case)]
@@ -522,11 +516,13 @@ unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HR
 }
 
 #[cfg(target_pointer_width = "32")]
+#[no_mangle]
 unsafe extern "fastcall" fn IntSendNCPaint(pWnd: PWND, hRgn: HRGN) {
     IntSendNCPaintImpl(pWnd, hRgn)
 }
 
 #[cfg(not(target_pointer_width = "32"))]
+#[no_mangle]
 unsafe extern "C" fn IntSendNCPaint(pWnd: PWND, hRgn: HRGN) {
     IntSendNCPaintImpl(pWnd, hRgn)
 }
@@ -573,6 +569,7 @@ unsafe extern "fastcall" fn IntSendChildNCPaint(mut pWnd: PWND) {
 }
 
 #[cfg(target_arch = "x86")]
+#[no_mangle]
 unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recurse: i32) {
     let hDC: HDC;
     let hWnd: HWND = UserHMGetHandle(Wnd as _) as HWND;
@@ -3334,4 +3331,22 @@ pub unsafe extern "C" fn NtUserValidateRect(
         lpRect = core::ptr::null_mut();
     }
     NtUserRedrawWindow(hWnd, lpRect, core::ptr::null_mut(), flags)
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn RECTL_bIntersectRect(dst: *mut RECTL, src1: *mut RECTL, src2: *mut RECTL) -> u8;
+    fn SetLastNtError(Status: i32);
+    fn TextIntCreateFontIndirect(lf: LPLOGFONTW, NewFont: *mut HFONT) -> NTSTATUS;
+    fn GetControlColor(pwndParent: PWND, pwnd: PWND, hdc: HDC, CtlMsg: UINT) -> HBRUSH;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn RECTL_bIntersectRect(dst: *mut RECTL, src1: *mut RECTL, src2: *mut RECTL) -> u8;
+    fn SetLastNtError(Status: i32);
+    fn TextIntCreateFontIndirect(lf: LPLOGFONTW, NewFont: *mut HFONT) -> NTSTATUS;
+    fn GetControlColor(pwndParent: PWND, pwnd: PWND, hdc: HDC, CtlMsg: UINT) -> HBRUSH;
 }

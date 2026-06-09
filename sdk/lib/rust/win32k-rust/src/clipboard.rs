@@ -40,8 +40,6 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn DIB_BitmapInfoSize(info: *const BITMAPINFO, coloruse: WORD) -> INT;
-    fn DIB_ConvertBitmapInfo(bmi: *const BITMAPINFO, Usage: DWORD) -> *mut BITMAPINFO;
     fn DIB_FreeConvertedBitmapInfo(converted: *mut BITMAPINFO, orig: *mut BITMAPINFO, Usage: DWORD);
     // nm: `@co_IntSendMessage@16` / `@co_IntSendMessageNoWait@16` (message.c)
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> isize;
@@ -2321,4 +2319,12 @@ pub unsafe extern "C" fn NtUserCreateLocalMemHandle(
     UserLeave();
 
     Status
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "C" {
+    fn DIB_BitmapInfoSize(info: *const BITMAPINFO, coloruse: WORD) -> INT;
+    fn DIB_ConvertBitmapInfo(bmi: *const BITMAPINFO, Usage: DWORD) -> *mut BITMAPINFO;
 }

@@ -104,9 +104,6 @@ extern "C" {
     fn wcscpy(dst: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
     fn wcsncmp(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> i32;
     fn _wcsicmp(s1: *const WCHAR, s2: *const WCHAR) -> i32;
-    fn co_EVENT_CallEvents(message: u32, hwnd: HWND, wParam: WPARAM, ExtraInfo: LONG_PTR) -> LRESULT;
-    fn SetLastNtError(Status: NTSTATUS);
-    fn MsqPostMessage( pti: PTHREADINFO, Msg: PMSG, HardwareMessage: BOOLEAN, QS_Flags: DWORD, dwQEvent: DWORD, ExtraInfo: LPARAM, );
     fn GetW32ThreadInfo() -> PTHREADINFO;
     // _MmCopyToCaller / _MmCopyFromCaller — mmcopy.h macros forward here (copy.rs, cdecl).
     fn _MmCopyToCaller(Dest: PVOID, Src: PVOID, Size: UINT) -> NTSTATUS;
@@ -4902,4 +4899,21 @@ pub unsafe extern "C" fn NtUserWaitForInputIdle(
     ObDereferenceObject(Process as *mut core::ffi::c_void);
     UserLeave();
     Status as DWORD
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn co_EVENT_CallEvents(message: u32, hwnd: HWND, wParam: WPARAM, ExtraInfo: LONG_PTR) -> LRESULT;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn SetLastNtError(Status: NTSTATUS);
+    fn MsqPostMessage( pti: PTHREADINFO, Msg: PMSG, HardwareMessage: BOOLEAN, QS_Flags: DWORD, dwQEvent: DWORD, ExtraInfo: LPARAM, );
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn SetLastNtError(Status: NTSTATUS);
+    fn MsqPostMessage( pti: PTHREADINFO, Msg: PMSG, HardwareMessage: BOOLEAN, QS_Flags: DWORD, dwQEvent: DWORD, ExtraInfo: LPARAM, );
 }

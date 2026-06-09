@@ -77,13 +77,10 @@ unsafe fn RECTL_bIsEmptyRect(prcl: *const RECTL) -> BOOL {
 
 // cdecl (`_Name`) win32k/user internal exports referenced by sysparams.
 extern "C" {
-    fn RegWriteUserSetting( pwszKey: PCWSTR, pwszValue: PCWSTR, Type: u32, pData: *const core::ffi::c_void, cbData: u32, );
     fn wcslen(str: *const u16) -> usize;
     fn _wtoi(s: *const u16) -> i32;
     fn _itow(value: i32, str: *mut u16, radix: i32) -> *mut u16;
     fn GetW32ProcessInfo() -> PPROCESSINFO;
-    fn W32kDosPathNameToNtPathName(pwszPath: PCWSTR, pustrNt: *mut _UNICODE_STRING) -> BOOL;
-    fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
 }
 
 // NTAPI (`_Name@N` stdcall on i386) win32k/ntoskrnl exports.
@@ -2655,4 +2652,20 @@ pub unsafe extern "C" fn NtUserSystemParametersInfo(
     UserLeave();
 
     bResult
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn RegWriteUserSetting( pwszKey: PCWSTR, pwszValue: PCWSTR, Type: u32, pData: *const core::ffi::c_void, cbData: u32, );
+    fn W32kDosPathNameToNtPathName(pwszPath: PCWSTR, pustrNt: *mut _UNICODE_STRING) -> BOOL;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
 }

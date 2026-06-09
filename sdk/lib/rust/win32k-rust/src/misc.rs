@@ -14,7 +14,6 @@ macro_rules! WARN  { ($($t:tt)*) => {{}}; }
 macro_rules! FIXME { ($($t:tt)*) => {{}}; }
 
 extern "C" {
-    fn SetLastNtError(Status: NTSTATUS);
     // _MmCopyFromCaller / _MmCopyToCaller — the C `MmCopy{From,To}Caller(x,y,z)`
     // macros forward to these (mmcopy.h). cdecl; provided by copy.rs as
     // `__MmCopyFromCaller` / `__MmCopyToCaller`, so reference via the `_`-prefixed
@@ -2407,3 +2406,15 @@ pub unsafe extern "C" fn GetProcessLuid(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn SetLastNtError(Status: NTSTATUS);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn SetLastNtError(Status: NTSTATUS);
+}

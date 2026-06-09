@@ -1,6 +1,8 @@
 #![allow(non_snake_case, non_upper_case_globals)]
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, ExInitializeFastMutex, ExInitializeResourceLite, KeAddSystemServiceTable, KeBugCheck, KeInitializeEvent, KeSetEvent, KeSetKernelStackSwapEnable, MmPageEntireDriver, ObCloseHandle, ObReferenceObjectByHandle, PopEntryList, PsEstablishWin32Callouts, RtlAllocateHeap, PsGetProcessExitStatus, PsGetProcessId, PsGetProcessWin32Process, PsGetThreadWin32Thread, PsSetProcessWin32Process, PsSetThreadWin32Thread, RtlInitUnicodeString, ZwClose, ZwCreateEvent};
+use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, ExInitializeResourceLite, KeAddSystemServiceTable, KeBugCheck, KeInitializeEvent, KeSetEvent, KeSetKernelStackSwapEnable, MmPageEntireDriver, ObCloseHandle, ObReferenceObjectByHandle, PsEstablishWin32Callouts, RtlAllocateHeap, PsGetProcessExitStatus, PsGetProcessId, PsGetProcessWin32Process, PsGetThreadWin32Thread, PsSetProcessWin32Process, PsSetThreadWin32Thread, RtlInitUnicodeString, ZwClose, ZwCreateEvent};
+use ntkrnl_sys::inline::common::PopEntryList;
+use ntkrnl_sys::inline::ex::ExInitializeFastMutex;
 // NtCurrentTeb is a FORCEINLINE per-arch TIB read (no kernel symbol) — use the intrinsic.
 use ntkrnl_sys::inline::ke::NtCurrentTeb;
 use ntkrnl_sys::ob::{ObReferenceObject, ObDereferenceObject};
@@ -30,34 +32,11 @@ extern "C" {
     static Win32kSSDT: [usize; 0];
     static Win32kSSPT: [u8; 0];
     static Win32kNumberOfSysCalls: ULONG;
-    fn InitGdiHandleTable() -> NTSTATUS;
-    fn InitPaletteImpl() -> NTSTATUS;
-    fn CreateStockObjects();
-    fn CreateSysColorObjects();
-    fn InitBrushImpl() -> NTSTATUS;
-    fn InitPDEVImpl() -> NTSTATUS;
-    fn InitLDEVImpl() -> NTSTATUS;
-    fn InitDeviceImpl() -> NTSTATUS;
-    fn InitDcImpl() -> NTSTATUS;
-    fn InitUserImpl() -> NTSTATUS;
-    fn InitWindowStationImpl() -> NTSTATUS;
-    fn InitDesktopImpl() -> NTSTATUS;
-    fn InitInputImpl() -> NTSTATUS;
-    fn InitKeyboardImpl() -> NTSTATUS;
-    fn MsqInitializeImpl() -> NTSTATUS;
-    fn InitTimerImpl() -> NTSTATUS;
-    fn InitDCEImpl() -> NTSTATUS;
 }
 // FreeFontSupport is FASTCALL (text.h: VOID FASTCALL FreeFontSupport(VOID)) —
 // the freetype.rs export is `@FreeFontSupport@0`, so declare it fastcall.
 extern "fastcall" {
     fn FreeFontSupport();
-}
-extern "system" {
-    fn ResetCsrApiPort();
-    fn ResetCsrProcess();
-    fn MapGlobalUserHeap( Process: PEPROCESS, KernelMapping: *mut *mut core::ffi::c_void, UserMapping: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn GdiProcessCreate(Process: PEPROCESS) -> NTSTATUS;
 }
 
 // UserHeapAlloc — usrheap.h static __inline (no kernel symbol):
@@ -75,39 +54,12 @@ fn MAKELPARAM(low: u32, high: u32) -> LPARAM { MAKELONG(low, high) as LPARAM }
 
 // win32k-internal (cdecl `_Name`) exports referenced by main.
 extern "C" {
-    fn IntFreeImeHotKeys();
     fn UserDestroyObjectsForOwner(HandleTable: *mut core::ffi::c_void, Owner: *mut core::ffi::c_void) -> BOOL;
-    fn co_IntGraphicsCheck(Create: BOOLEAN);
-    fn UserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL;
-    fn IntCleanupCurIconCache(ppi: PPROCESSINFO);
     fn GdiProcessDestroy(Process: PEPROCESS) -> NTSTATUS;
-    fn UserGetMouseButtonsState() -> WORD;
     fn W32kGetDefaultKeyLayout() -> PKL;
-    fn UserAssignmentLock(ppvObj: *mut *mut core::ffi::c_void, pvNew: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn UserAssignmentUnlock(ppvObj: *mut *mut core::ffi::c_void) -> *mut core::ffi::c_void;
-    fn IntResolveDesktop(Process: PEPROCESS, DesktopPath: *mut _UNICODE_STRING, bInherit: BOOLEAN, phWinSta: *mut HWINSTA, phDesktop: *mut HDESK) -> NTSTATUS;
-    fn IntSafeCopyUnicodeStringTerminateNULL(Dest: *mut _UNICODE_STRING, Source: *mut _UNICODE_STRING) -> NTSTATUS;
-    fn IntValidateDesktopHandle(hDesktop: HDESK, AccessMode: i8, DesiredAccess: u32, ppdesk: *mut PDESKTOP) -> NTSTATUS;
     fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOOLEAN) -> BOOL;
-    fn UserCreateInputContext(dwClientImcData: usize) -> *mut core::ffi::c_void;
-    fn co_IntClientThreadSetup() -> NTSTATUS;
     fn RtlGetExpWinVer(BaseAddress: *mut core::ffi::c_void) -> u32;
-    fn UserGetMonitorObject(hMonitor: HMONITOR) -> *mut core::ffi::c_void;
-    fn MsqCreateMessageQueue(pti: PTHREADINFO) -> *mut _USER_MESSAGE_QUEUE;
-    fn IsRemoveAttachThread(pti: PTHREADINFO);
-    fn IntFreeHwndList(pwl: PWINDOWLIST);
-    fn UserCloseClipboard() -> BOOL;
-    fn UserUnregisterUserApiHook();
-    fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
-    fn DceFreeThreadDCE(pti: PTHREADINFO);
-    fn DestroyTimersForThread(pti: PTHREADINFO) -> BOOL;
-    fn UnregisterThreadHotKeys(pti: PTHREADINFO);
-    fn DestroyProcessClasses(ppi: PPROCESSINFO);
-    fn IntBlockInput(pti: PTHREADINFO, BlockIt: BOOLEAN) -> BOOL;
-    fn IntCleanupThreadCallbacks(pti: PTHREADINFO);
-    fn UserDereferenceObject(obj: *mut core::ffi::c_void);
     fn UserDisplayNotifyShutdown(ppiCurrent: PPROCESSINFO);
-    fn IntWin32PowerManagementCleanup();
     fn UserCreateHeap(SectionObject: *mut *mut core::ffi::c_void, SystemBase: *mut PVOID, HeapSize: usize) -> *mut core::ffi::c_void;
 }
 
@@ -985,4 +937,91 @@ pub unsafe extern "system" fn DriverEntry(
     if !NT_SUCCESS(Status) { return Status; }
 
     STATUS_SUCCESS
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn InitGdiHandleTable() -> NTSTATUS;
+    fn InitPaletteImpl() -> NTSTATUS;
+    fn InitBrushImpl() -> NTSTATUS;
+    fn InitPDEVImpl() -> NTSTATUS;
+    fn InitLDEVImpl() -> NTSTATUS;
+    fn InitDeviceImpl() -> NTSTATUS;
+    fn InitDcImpl() -> NTSTATUS;
+    fn InitUserImpl() -> NTSTATUS;
+    fn InitWindowStationImpl() -> NTSTATUS;
+    fn InitDesktopImpl() -> NTSTATUS;
+    fn InitInputImpl() -> NTSTATUS;
+    fn InitKeyboardImpl() -> NTSTATUS;
+    fn MsqInitializeImpl() -> NTSTATUS;
+    fn InitTimerImpl() -> NTSTATUS;
+    fn InitDCEImpl() -> NTSTATUS;
+    fn co_IntClientThreadSetup() -> NTSTATUS;
+    fn UserGetMonitorObject(hMonitor: HMONITOR) -> *mut core::ffi::c_void;
+    fn UserCloseClipboard() -> BOOL;
+    fn IntWin32PowerManagementCleanup();
+}
+extern "C" {
+    fn ResetCsrApiPort();
+    fn ResetCsrProcess();
+    fn MapGlobalUserHeap( Process: PEPROCESS, KernelMapping: *mut *mut core::ffi::c_void, UserMapping: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
+    fn GdiProcessCreate(Process: PEPROCESS) -> NTSTATUS;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn CreateStockObjects();
+    fn CreateSysColorObjects();
+    fn IntFreeImeHotKeys();
+    fn co_IntGraphicsCheck(Create: BOOLEAN);
+    fn UserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL;
+    fn IntCleanupCurIconCache(ppi: PPROCESSINFO);
+    fn UserGetMouseButtonsState() -> WORD;
+    fn UserAssignmentLock(ppvObj: *mut *mut core::ffi::c_void, pvNew: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+    fn UserAssignmentUnlock(ppvObj: *mut *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+    fn IntResolveDesktop(Process: PEPROCESS, DesktopPath: *mut _UNICODE_STRING, bInherit: BOOLEAN, phWinSta: *mut HWINSTA, phDesktop: *mut HDESK) -> NTSTATUS;
+    fn IntSafeCopyUnicodeStringTerminateNULL(Dest: *mut _UNICODE_STRING, Source: *mut _UNICODE_STRING) -> NTSTATUS;
+    fn IntValidateDesktopHandle(hDesktop: HDESK, AccessMode: i8, DesiredAccess: u32, ppdesk: *mut PDESKTOP) -> NTSTATUS;
+    fn UserCreateInputContext(dwClientImcData: usize) -> *mut core::ffi::c_void;
+    fn MsqCreateMessageQueue(pti: PTHREADINFO) -> *mut _USER_MESSAGE_QUEUE;
+    fn IsRemoveAttachThread(pti: PTHREADINFO);
+    fn IntFreeHwndList(pwl: PWINDOWLIST);
+    fn UserUnregisterUserApiHook();
+    fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
+    fn DceFreeThreadDCE(pti: PTHREADINFO);
+    fn DestroyTimersForThread(pti: PTHREADINFO) -> BOOL;
+    fn UnregisterThreadHotKeys(pti: PTHREADINFO);
+    fn DestroyProcessClasses(ppi: PPROCESSINFO);
+    fn IntBlockInput(pti: PTHREADINFO, BlockIt: BOOLEAN) -> BOOL;
+    fn IntCleanupThreadCallbacks(pti: PTHREADINFO);
+    fn UserDereferenceObject(obj: *mut core::ffi::c_void);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn CreateStockObjects();
+    fn CreateSysColorObjects();
+    fn IntFreeImeHotKeys();
+    fn co_IntGraphicsCheck(Create: BOOLEAN);
+    fn UserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL;
+    fn IntCleanupCurIconCache(ppi: PPROCESSINFO);
+    fn UserGetMouseButtonsState() -> WORD;
+    fn UserAssignmentLock(ppvObj: *mut *mut core::ffi::c_void, pvNew: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+    fn UserAssignmentUnlock(ppvObj: *mut *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+    fn IntResolveDesktop(Process: PEPROCESS, DesktopPath: *mut _UNICODE_STRING, bInherit: BOOLEAN, phWinSta: *mut HWINSTA, phDesktop: *mut HDESK) -> NTSTATUS;
+    fn IntSafeCopyUnicodeStringTerminateNULL(Dest: *mut _UNICODE_STRING, Source: *mut _UNICODE_STRING) -> NTSTATUS;
+    fn IntValidateDesktopHandle(hDesktop: HDESK, AccessMode: i8, DesiredAccess: u32, ppdesk: *mut PDESKTOP) -> NTSTATUS;
+    fn UserCreateInputContext(dwClientImcData: usize) -> *mut core::ffi::c_void;
+    fn MsqCreateMessageQueue(pti: PTHREADINFO) -> *mut _USER_MESSAGE_QUEUE;
+    fn IsRemoveAttachThread(pti: PTHREADINFO);
+    fn IntFreeHwndList(pwl: PWINDOWLIST);
+    fn UserUnregisterUserApiHook();
+    fn UserPostMessage(Wnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
+    fn DceFreeThreadDCE(pti: PTHREADINFO);
+    fn DestroyTimersForThread(pti: PTHREADINFO) -> BOOL;
+    fn UnregisterThreadHotKeys(pti: PTHREADINFO);
+    fn DestroyProcessClasses(ppi: PPROCESSINFO);
+    fn IntBlockInput(pti: PTHREADINFO, BlockIt: BOOLEAN) -> BOOL;
+    fn IntCleanupThreadCallbacks(pti: PTHREADINFO);
+    fn UserDereferenceObject(obj: *mut core::ffi::c_void);
 }

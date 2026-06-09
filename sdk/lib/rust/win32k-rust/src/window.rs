@@ -1,5 +1,6 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, KeAttachProcess, KeDetachProcess, ObReferenceObjectByPointer, RtlAllocateHeap, RtlFreeHeap, NtCurrentTeb};
+use ntkrnl_sys::inline::ke::NtCurrentTeb;
+use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, KeAttachProcess, KeDetachProcess, ObReferenceObjectByPointer, RtlAllocateHeap, RtlFreeHeap};
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NO_MEMORY, STATUS_INSUFFICIENT_RESOURCES};
 
@@ -227,12 +228,26 @@ unsafe fn UserDerefObjectCo(obj: PVOID) {
 extern "C" {
     fn UserGetObject(ht: PUSER_HANDLE_TABLE, handle: HANDLE, type_: HANDLE_TYPE) -> PVOID;
     fn GetW32ThreadInfo() -> PTHREADINFO;
-    fn DesktopHeapAddressToUser(lpMem: PVOID) -> PVOID;
-    fn IntRemoveTrackMouseEvent(pDesk: PDESKTOP);
-    fn MsqRemoveWindowMessagesFromQueue(Window: PWND);
-    fn RtlLargeStringToUnicodeString(dst: PUNICODE_STRING, src: PLARGE_STRING) -> NTSTATUS;
     fn CreateCallProc(pdesk: PDESKTOP, WndProc: WNDPROC, Unicode: BOOL, ppi: PPROCESSINFO) -> PCALLPROCDATA;
     fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32;
+}
+
+// DesktopHeapAddressToUser (desktop.h static __inline — no exported symbol).
+#[inline(always)]
+unsafe fn DesktopHeapAddressToUser(lpMem: PVOID) -> PVOID {
+    let W32Process: PPROCESSINFO = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
+    let mut Mapping: PW32HEAP_USER_MAPPING = (*W32Process).HeapMappings.Next;
+    while !Mapping.is_null() {
+        if (lpMem as ULONG_PTR) >= ((*Mapping).KernelMapping as ULONG_PTR)
+            && (lpMem as ULONG_PTR)
+                < ((*Mapping).KernelMapping as ULONG_PTR) + (*Mapping).Limit
+        {
+            return (((lpMem as ULONG_PTR) - ((*Mapping).KernelMapping as ULONG_PTR))
+                + ((*Mapping).UserMapping as ULONG_PTR)) as PVOID;
+        }
+        Mapping = (*Mapping).Next;
+    }
+    core::ptr::null_mut()
 }
 // NTAPI (`_Name@N` stdcall on i386) real exports.
 extern "system" {
@@ -398,7 +413,9 @@ unsafe fn RECTL_vOffsetRect(prcl: *mut RECTL, cx: INT, cy: INT) {
 
 // ---- file-scope preamble (translated) ----
 pub static mut gNestedWindowLimit: INT = 50;
+#[no_mangle]
 pub static mut gpwlList: PWINDOWLIST = core::ptr::null_mut();
+#[no_mangle]
 pub static mut gpwlCache: PWINDOWLIST = core::ptr::null_mut();
 
 #[repr(C)]
@@ -6719,4 +6736,20 @@ pub unsafe extern "C" fn IntShowOwnedPopups(OwnerWnd: PWND, fShow: BOOL) -> BOOL
 
     ExFreePoolWithTag(win_array as *mut core::ffi::c_void, USERTAG_WINDOWLIST);
     1
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn MsqRemoveWindowMessagesFromQueue(Window: PWND);
+    fn RtlLargeStringToUnicodeString(dst: PUNICODE_STRING, src: PLARGE_STRING) -> NTSTATUS;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn IntRemoveTrackMouseEvent(pDesk: PDESKTOP);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn IntRemoveTrackMouseEvent(pDesk: PDESKTOP);
 }

@@ -1,6 +1,7 @@
 use ntkrnl_sys::driver_ddk::*;
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{KeAttachProcess, KeDetachProcess, KeInitializeEvent, MmMapViewOfSection, MmUnmapViewOfSection, NtCurrentTeb, ObCloseHandle, ObCreateObject, ObFindHandleForObject, ObOpenObjectByName, ObOpenObjectByPointer, ObReferenceObjectByHandle, PsGetCurrentProcessId, PsGetCurrentProcessSessionId, PsGetCurrentProcessWin32Process, PsGetCurrentThreadId, PsGetCurrentThreadWin32Thread, PsGetProcessWin32Process, RtlAllocateHeap, RtlEqualUnicodeString, RtlGetVersion, RtlInitUnicodeString, RtlQueryRegistryValues, ZwAllocateVirtualMemory, ZwDuplicateObject, ZwFreeVirtualMemory};
+use ntkrnl_sys::inline::ke::NtCurrentTeb;
+use ntkrnl_sys::ddk::{KeAttachProcess, KeDetachProcess, KeInitializeEvent, MmMapViewOfSection, MmUnmapViewOfSection, ObCloseHandle, ObCreateObject, ObFindHandleForObject, ObOpenObjectByName, ObOpenObjectByPointer, ObReferenceObjectByHandle, PsGetCurrentProcessId, PsGetCurrentProcessSessionId, PsGetCurrentProcessWin32Process, PsGetCurrentThreadId, PsGetCurrentThreadWin32Thread, PsGetProcessWin32Process, RtlAllocateHeap, RtlEqualUnicodeString, RtlGetVersion, RtlInitUnicodeString, RtlQueryRegistryValues, ZwAllocateVirtualMemory, ZwDuplicateObject, ZwFreeVirtualMemory};
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, KeSetEvent, RtlFreeHeap};
 use ntkrnl_sys::ob::{ObDereferenceObject, ObReferenceObject};
 use ntkrnl_sys::ps::PsGetCurrentProcess;

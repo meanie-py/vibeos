@@ -11,7 +11,6 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn DIB_ConvertBitmapInfo(bmi: LPBITMAPINFO, Usage: DWORD) -> LPBITMAPINFO;
     fn DIB_FreeConvertedBitmapInfo(converted: LPBITMAPINFO, orig: LPBITMAPINFO, Usage: DWORD);
 }
 #[cfg(not(target_arch = "x86"))]
@@ -252,4 +251,11 @@ pub unsafe extern "system" fn UserLoadImage(pwszName: PCWSTR) -> HBITMAP {
     ZwUnmapViewOfSection(NtCurrentProcess(), pbmfh as PVOID);
 
     hbmp
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "C" {
+    fn DIB_ConvertBitmapInfo(bmi: LPBITMAPINFO, Usage: DWORD) -> LPBITMAPINFO;
 }

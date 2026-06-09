@@ -63,10 +63,6 @@ extern "C" {
     fn VerifyWnd(pWnd: PWND) -> PWND;
     fn VIS_ComputeVisibleRegion(Window: PWND, ClientArea: BOOLEAN, ClipChildren: BOOLEAN, ClipSiblings: BOOLEAN) -> PREGION;
 }
-extern "C" {
-    fn UpdateShellHook(Window: PWND);
-    fn DceResetActiveDCEs(Window: PWND);
-}
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn RECTL_vInflateRect(rect: *mut RECTL, dx: core::ffi::c_int, dy: core::ffi::c_int);
@@ -146,7 +142,6 @@ unsafe fn IntIsWindowSnapped(Wnd: PWND) -> BOOLEAN {
 }
 
 extern "C" {
-    fn co_IntSendMessageNoWait(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     // _MmCopyFromCaller / _MmCopyToCaller — mmcopy.h macros forward to these cdecl fns (copy.rs).
     fn _MmCopyFromCaller(Dest: *mut core::ffi::c_void, Src: *const core::ffi::c_void, Size: UINT) -> NTSTATUS;
     fn _MmCopyToCaller(Dest: *mut core::ffi::c_void, Src: *const core::ffi::c_void, Size: UINT) -> NTSTATUS;
@@ -166,7 +161,6 @@ extern "C" {
 }
 extern "system" {
     fn SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
-    fn SetLastNtError(Status: i32);
 }
 
 // ── header-inline / macro helpers (no exported symbol; reimplemented locally) ──
@@ -5101,4 +5095,22 @@ unsafe extern "C" fn IntSetSnapInfo(Wnd: PWND, Edge: UINT, mut pos2: *const RECT
     if !pos2.is_null() {
         (*Wnd).InternalPos.NormalRect = core::mem::transmute(*pos2);
     }
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn UpdateShellHook(Window: PWND);
+    fn DceResetActiveDCEs(Window: PWND);
+    fn co_IntSendMessageNoWait(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    fn SetLastNtError(Status: i32);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn UpdateShellHook(Window: PWND);
+    fn DceResetActiveDCEs(Window: PWND);
+    fn co_IntSendMessageNoWait(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    fn SetLastNtError(Status: i32);
 }

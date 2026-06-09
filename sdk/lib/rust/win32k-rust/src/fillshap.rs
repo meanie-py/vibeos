@@ -23,7 +23,6 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn SetLastNtError(status: NTSTATUS);
-    fn PEN_ShareLockPen(hpen: HPEN) -> PBRUSH;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
@@ -3471,3 +3470,10 @@ pub unsafe extern "C" fn NtGdiExtFloodFill(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "C" {
+    fn PEN_ShareLockPen(hpen: HPEN) -> PBRUSH;
+}

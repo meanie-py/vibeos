@@ -31,8 +31,6 @@ const INVALID_HANDLE_VALUE: HANDLE = !0usize as HANDLE;
 
 // RegOpenKey / RegQueryValue — win32k registry helpers (reg.c exports).
 extern "C" {
-    fn RegOpenKey(pwszKeyName: *const u16, phkResult: *mut HKEY) -> NTSTATUS;
-    fn RegQueryValue(hkey: HKEY, pwszValueName: *const u16, ulType: u32, pvData: *mut core::ffi::c_void, pcbValue: *mut u32) -> NTSTATUS;
     // W32kGetDefaultKeyLayout — same file (defined below); forward ref not needed but
     // declared inline. (Defined in this module at fn W32kGetDefaultKeyLayout.)
 }
@@ -111,9 +109,6 @@ unsafe fn RtlInitEmptyUnicodeString(UnicodeString: PUNICODE_STRING, Buffer: PWST
     (*UnicodeString).Buffer = Buffer;
 }
 
-extern "C" {
-    fn co_ClientImmLoadLayout(hKL: HKL, piiex: PIMEINFOEX) -> u8;
-}
 // IS_IME_HKL(hKL) = ((ULONG_PTR)hKL & 0xF0000000) == IME_MASK (ime.h macro).
 #[inline(always)]
 unsafe fn IS_IME_HKL(hKL: HKL) -> u8 {
@@ -131,8 +126,6 @@ fn HandleToUlong(h: *mut core::ffi::c_void) -> u32 {
 }
 extern "system" {
     fn SafeProbeForWrite( Address: *mut core::ffi::c_void, Length: usize, Alignment: ULONG, ) -> NTSTATUS;
-    fn SetLastNtError(Status: NTSTATUS);
-    fn co_IntShellHookNotify(Message: WPARAM, wParam: WPARAM, lParam: LPARAM);
 }
 // co_IntSendMessage — real FASTCALL export (message.rs). i386 fastcall, cdecl else.
 #[cfg(target_arch = "x86")]
@@ -1652,4 +1645,24 @@ pub unsafe extern "C" fn NtUserUnloadKeyboardLayout(hKl: HKL) -> BOOL {
 
     UserLeave();
     ret
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn RegOpenKey(pwszKeyName: *const u16, phkResult: *mut HKEY) -> NTSTATUS;
+    fn RegQueryValue(hkey: HKEY, pwszValueName: *const u16, ulType: u32, pvData: *mut core::ffi::c_void, pcbValue: *mut u32) -> NTSTATUS;
+    fn co_ClientImmLoadLayout(hKL: HKL, piiex: PIMEINFOEX) -> u8;
+}
+extern "C" {
+    fn co_IntShellHookNotify(Message: WPARAM, wParam: WPARAM, lParam: LPARAM);
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn SetLastNtError(Status: NTSTATUS);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn SetLastNtError(Status: NTSTATUS);
 }

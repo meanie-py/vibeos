@@ -25,7 +25,6 @@ extern "C" {
     // _wcsnicmp — CRT.
     fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
     // RtlInitLargeUnicodeString — same crate (rtlstr.rs) exported symbol.
-    fn RtlInitLargeUnicodeString(dst: PLARGE_UNICODE_STRING, src: *const u16, max: ULONG);
 }
 
 // RtlAllocateHeap / RtlFreeHeap — ntdll/rtl exports, NTAPI stdcall (`@12`).
@@ -3809,4 +3808,11 @@ unsafe fn IntCheckImeShowStatusInThreadImpl(pImeWnd: PWND) {
     if IS_IMM_MODE() != 0 && ((*pImeWnd).state2 & WNDS2_INDESTROY) == 0 {
         IntCheckImeShowStatus(pImeWnd, head_pti(pImeWnd));
     }
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn RtlInitLargeUnicodeString(dst: PLARGE_UNICODE_STRING, src: *const u16, max: ULONG);
 }

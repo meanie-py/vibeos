@@ -80,7 +80,6 @@ extern "system" {
     fn EBRUSHOBJ_vInit(pebo: *mut EBRUSHOBJ, pbrush: PBRUSH, psurf: *mut c_void, crFore: COLORREF, crBack: COLORREF, ppal: *mut c_void);
     fn EBRUSHOBJ_vCleanup(pebo: *mut EBRUSHOBJ);
     fn GreSetBitmapOwner(hbmp: HBITMAP, ulOwner: ULONG) -> BOOL;
-    fn _MmCopyToCaller(Target: *mut c_void, Source: *mut c_void, Bytes: UINT) -> NTSTATUS;
 }
 
 // MmCopyToCaller(x,y,z) macro → _MmCopyToCaller (mmcopy.h).
@@ -3123,4 +3122,11 @@ pub unsafe extern "C" fn NtUserSetSystemCursor(hcur: HCURSOR, id: DWORD) -> BOOL
 
     UserLeave();
     Ret
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "C" {
+    fn _MmCopyToCaller(Target: *mut c_void, Source: *mut c_void, Bytes: UINT) -> NTSTATUS;
 }

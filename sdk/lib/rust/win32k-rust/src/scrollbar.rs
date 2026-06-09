@@ -161,10 +161,6 @@ unsafe fn RtlZeroMemory(dst: *mut c_void, len: usize) {
 
 // SetLastNtError / co_IntSetCaretPos are cdecl win32k exports.
 // DrawEdge / DrawFrameControl are NTAPI (extern "system") win32k exports.
-extern "C" {
-    fn SetLastNtError(Status: u32);
-    fn co_IntSetCaretPos(X: INT, Y: INT) -> BOOL;
-}
 extern "system" {
     fn DrawEdge(hdc: HDC, qrc: *mut RECT, edge: UINT, grfFlags: UINT) -> BOOL;
     fn DrawFrameControl(hDC: HDC, rc: *mut RECT, uType: UINT, uState: UINT) -> BOOL;
@@ -2085,4 +2081,18 @@ pub unsafe extern "C" fn NtUserSetScrollBarInfo(
 
     UserLeave();
     Ret
+}
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn SetLastNtError(Status: u32);
+    fn co_IntSetCaretPos(X: INT, Y: INT) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn SetLastNtError(Status: u32);
+    fn co_IntSetCaretPos(X: INT, Y: INT) -> BOOL;
 }
