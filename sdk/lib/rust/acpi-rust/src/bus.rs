@@ -4,8 +4,190 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExInitializeFastMutex, _KWAIT_REASON_Executive, FAST_MUTEX, KEVENT, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeInsertQueueDpc, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, UINT16, UINT32, UINT8};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{ExAcquireFastMutex, ExReleaseFastMutex, _KWAIT_REASON_Executive, FAST_MUTEX, KEVENT, KDPC, KeInitializeDpc, KeInitializeEvent, KeInsertQueueDpc, KeWaitForSingleObject, KPRIORITY, _EVENT_TYPE_NotificationEvent, UINT16, UINT32, UINT8};
+// KeInitializeSpinLock + ExInitializeFastMutex are FORCEINLINE in the DDK (no
+// exported symbol) — use the ntkrnl-sys inline impls, not a ddk extern, or the
+// cohab link fails with undefined _KeInitializeSpinLock/_ExInitializeFastMutex.
+use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
+use ntkrnl_sys::inline::ex::ExInitializeFastMutex;
+use core::ffi::{c_char, c_int, c_ulonglong, c_void};
+use core::ptr::addr_of_mut;
+// Driver-private + ACPICA types from the bindgen substrate (acpi_device, the
+// acpi_device_* bitfield structs, ACPI_HANDLE/ACPI_STATUS, AE_* codes, list_head,
+// LIST_HEAD, ACPI_BUS_COMPONENT, ACPI_ROOT_OBJECT). Replaces the LLM preamble whose
+// `acpi_device` was truncated ("// other fields omitted for brevity").
+use crate::shared::*;
+
+// ---- ACPICA API functions + globals (imported by name; NO glob, which would
+// collide with the ddk glob on shared primitives like BOOLEAN/UINT8 → E0659) ----
+use acpica_sys::{
+    AcpiAttachData, AcpiEnableSubsystem, AcpiEvaluateObject, AcpiGetData, AcpiGetHandle,
+    AcpiGetName, AcpiGetNextObject, AcpiGetObjectInfo, AcpiGetParent, AcpiGetType,
+    AcpiInitializeObjects, AcpiInstallNotifyHandler, AcpiOsFree, AcpiRemoveNotifyHandler,
+    AcpiTerminate, AcpiWriteBitRegister,
+};
+// ACPICA constants that bindgen *does* emit (acpica-sys).
+use acpica_sys::{
+    ACPI_BITREG_POWER_BUTTON_ENABLE, ACPI_BITREG_SLEEP_BUTTON_ENABLE, ACPI_FADT_POWER_BUTTON,
+    ACPI_FADT_SLEEP_BUTTON, ACPI_FULL_INITIALIZATION, ACPI_SINGLE_NAME,
+    ACPI_STA_DEVICE_ENABLED, ACPI_STA_DEVICE_FUNCTIONING, ACPI_STA_DEVICE_PRESENT,
+    ACPI_STA_DEVICE_UI, ACPI_SYSTEM_NOTIFY, ACPI_TYPE_ANY, ACPI_TYPE_LOCAL_SCOPE,
+    ACPI_VALID_ADR, ACPI_VALID_CID, ACPI_VALID_HID, ACPI_VALID_UID,
+};
+// ACPICA types used by signatures/casts in this file.
+use acpica_sys::{
+    ACPI_BUFFER, ACPI_DEVICE_INFO, ACPI_OBJECT_TYPE, ACPI_PNP_DEVICE_ID_LIST, ACPI_SIZE,
+    ACPI_STRING, ACPI_TABLE_FADT,
+};
+
+// ---- ACPICA #defines / cast-macros bindgen can't emit. Values verified against
+//      drivers/bus/acpi/acpica/include/actypes.h. ----
+pub const ACPI_STATE_D0: u32 = 0; // (UINT8) 0   actypes.h:633
+pub const ACPI_STATE_D1: u32 = 1; // (UINT8) 1   actypes.h:634
+pub const ACPI_STATE_D2: u32 = 2; // (UINT8) 2   actypes.h:635
+pub const ACPI_STATE_D3: u32 = 3; // (UINT8) 3   actypes.h:636
+pub const ACPI_STATE_UNKNOWN: u32 = 0xFF; // (UINT8) 0xFF  actypes.h:622
+
+pub const ACPI_NOTIFY_BUS_CHECK: u32 = 0x00; // actypes.h:656
+pub const ACPI_NOTIFY_DEVICE_CHECK: u32 = 0x01;
+pub const ACPI_NOTIFY_DEVICE_WAKE: u32 = 0x02;
+pub const ACPI_NOTIFY_EJECT_REQUEST: u32 = 0x03;
+pub const ACPI_NOTIFY_DEVICE_CHECK_LIGHT: u32 = 0x04;
+pub const ACPI_NOTIFY_FREQUENCY_MISMATCH: u32 = 0x05;
+pub const ACPI_NOTIFY_BUS_MODE_MISMATCH: u32 = 0x06;
+pub const ACPI_NOTIFY_POWER_FAULT: u32 = 0x07;
+
+// enum acpi_bus_device_type (acpi_bus.h:70) — sequential from 0.
+pub const ACPI_BUS_TYPE_DEVICE: u32 = 0;
+pub const ACPI_BUS_TYPE_POWER: u32 = 1;
+pub const ACPI_BUS_TYPE_PROCESSOR: u32 = 2;
+pub const ACPI_BUS_TYPE_THERMAL: u32 = 3;
+pub const ACPI_BUS_TYPE_SYSTEM: u32 = 4;
+pub const ACPI_BUS_TYPE_POWER_BUTTON: u32 = 5;
+pub const ACPI_BUS_TYPE_SLEEP_BUTTON: u32 = 6;
+pub const ACPI_BUS_TYPE_POWER_BUTTONF: u32 = 7;
+pub const ACPI_BUS_TYPE_SLEEP_BUTTONF: u32 = 8;
+
+// enum acpi_bus_removal_type (acpi_bus.h:63) — NORMAL = 0.
+pub const ACPI_BUS_REMOVAL_NORMAL: u32 = 0;
+
+// acpi_bus.h:119
+pub const ACPI_DRIVER_ALL_NOTIFY_EVENTS: u32 = 0x1;
+
+// ---- ACPICA result macros (acexcep.h:94-95): SUCCESS(a)=!(a), FAILURE(a)=(a).
+//      AE_OK == 0, so these are exact. ----
+#[inline]
+fn ACPI_SUCCESS(s: ACPI_STATUS) -> bool {
+    s == AE_OK
+}
+#[inline]
+fn ACPI_FAILURE(s: ACPI_STATUS) -> bool {
+    s != AE_OK
+}
+
+// ---- ACPICA debug macros — no-ops under the driver's NDEBUG build. ----
+macro_rules! ACPI_DEBUG_PRINT {
+    ($($t:tt)*) => {};
+}
+pub const ACPI_DB_INFO: u32 = 0;
+pub const ACPI_DB_ERROR: u32 = 0;
+
+// ACPI_FREE(a) = AcpiOsFree(a)  (actypes.h:386, NDEBUG build).
+#[inline]
+unsafe fn ACPI_FREE(a: *mut c_void) {
+    AcpiOsFree(a);
+}
+
+// ---- ACPICA exported global (linked from libacpica.a). ----
+extern "C" {
+    static AcpiGbl_FADT: ACPI_TABLE_FADT;
+}
+
+// ---- Linux list.h helpers (drivers/bus/acpi/include/list.h), faithful. ----
+#[inline]
+unsafe fn INIT_LIST_HEAD(ptr: *mut list_head) {
+    (*ptr).next = ptr;
+    (*ptr).prev = ptr;
+}
+#[inline]
+unsafe fn __list_add(new: *mut list_head, prev: *mut list_head, next: *mut list_head) {
+    (*next).prev = new;
+    (*new).next = next;
+    (*new).prev = prev;
+    (*prev).next = new;
+}
+#[inline]
+unsafe fn list_add_tail(new: *mut list_head, head: *mut list_head) {
+    __list_add(new, (*head).prev, head);
+}
+#[inline]
+unsafe fn __list_del(prev: *mut list_head, next: *mut list_head) {
+    (*next).prev = prev;
+    (*prev).next = next;
+}
+#[inline]
+unsafe fn list_del(entry: *mut list_head) {
+    __list_del((*entry).prev, (*entry).next);
+    (*entry).next = core::ptr::null_mut();
+    (*entry).prev = core::ptr::null_mut();
+}
+#[inline]
+unsafe fn list_empty(head: *mut list_head) -> c_int {
+    ((*head).next == head) as c_int
+}
+// list_entry(ptr, type, member) = (type*)((char*)ptr - offsetof(type, member))
+macro_rules! list_entry {
+    ($ptr:expr, $ty:ty, $member:ident) => {
+        ($ptr as *mut u8).wrapping_sub(core::mem::offset_of!($ty, $member)) as *mut $ty
+    };
+}
+
+// ---- Driver macros (acpi_bus.h). ----
+// STRUCT_TO_INT(s) = (*((int*)&s)) — reinterpret first 4 bytes of a bitfield
+// struct as int. Takes a *mut to the struct (matches the translated call sites).
+#[inline]
+unsafe fn STRUCT_TO_INT<T>(s: *mut T) -> i32 {
+    *(s as *mut i32)
+}
+// HAS_CHILDREN(d) = ((d)->children.next != &((d)->children))
+#[inline]
+unsafe fn HAS_CHILDREN(d: *mut acpi_device) -> bool {
+    (*d).children.next != core::ptr::addr_of_mut!((*d).children)
+}
+// HAS_SIBLINGS(d) = ((d)->parent && ((d)->node.next != &(d)->parent->children))
+#[inline]
+unsafe fn HAS_SIBLINGS(d: *mut acpi_device) -> bool {
+    !(*d).parent.is_null()
+        && (*d).node.next != core::ptr::addr_of_mut!((*(*d).parent).children)
+}
+// NODE_TO_DEVICE(n) = list_entry(n, struct acpi_device, node)
+#[inline]
+unsafe fn NODE_TO_DEVICE(n: *mut list_head) -> *mut acpi_device {
+    (n as *mut u8).wrapping_sub(core::mem::offset_of!(acpi_device, node)) as *mut acpi_device
+}
+
+// ---- C string routines (link against CRT/ntoskrnl). ----
+extern "C" {
+    fn _snprintf(buf: *mut c_char, size: usize, fmt: *const c_char, ...) -> c_int;
+    fn sprintf(buf: *mut c_char, fmt: *const c_char, ...) -> c_int;
+    fn strstr(haystack: *const c_char, needle: *const c_char) -> *mut c_char;
+    fn strlen(s: *const c_char) -> usize;
+}
+
+// ---- Sibling acpi_* glue (power.c / eval.c / scan.c / drivers stay C in
+//      acpi.sys; declare, never stub). Prototypes from acpi_bus.h / acpi_drivers.h.
+//      NOTE: acpi_evaluate_integer / acpi_evaluate_reference are already declared
+//      in crate::types and reach this file via `use crate::shared::*`. ----
+extern "C" {
+    fn acpi_power_get_inferred_state(device: *mut acpi_device) -> c_int;
+    fn acpi_power_transition(device: *mut acpi_device, state: c_int) -> c_int;
+    fn acpi_power_init() -> c_int;
+    fn acpi_system_init() -> c_int;
+    fn acpi_button_init() -> c_int;
+    // acpi_pci_root_exit/acpi_pci_link_exit/acpi_ec_exit omitted — CONFIG_ACPI_PCI/EC
+    // are undefined, so the C never calls or defines them (see acpi_bus_exit).
+    fn acpi_system_exit();
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -44,6 +226,9 @@ pub const ACPI_THERMAL_HID: [::core::ffi::c_char; 12] =
 
 pub static mut event_is_open: ::core::ffi::c_int = 0;
 
+// #[no_mangle]: acpienum.c (still C) reads `acpi_root` as an extern global, so the
+// cohab archive must export the unmangled symbol.
+#[no_mangle]
 pub static mut acpi_root: *mut acpi_device = ::core::ptr::null::<acpi_device>() as *mut acpi_device;
 
 pub static mut acpi_bus_event_lock: KSPIN_LOCK = 0;
@@ -55,46 +240,15 @@ pub static mut acpi_bus_event_list: list_head = unsafe {
     }
 };
 
-pub static mut AcpiEventQueue: KEVENT = KEVENT {
-    Header: DISPATCHER_HEADER {
-        c2rust_unnamed: C2RustUnnamed_1 {
-            c2rust_unnamed: C2RustUnnamed_2 {
-                Type: 0,
-                c2rust_unnamed: C2RustUnnamed_9 {
-                    c2rust_unnamed: C2RustUnnamed_10 {
-                        TimerControlFlags: 0,
-                    },
-                },
-                c2rust_unnamed_0: C2RustUnnamed_6 {
-                    c2rust_unnamed: C2RustUnnamed_7 {
-                        ThreadControlFlags: 0,
-                    },
-                },
-                c2rust_unnamed_1: C2RustUnnamed_3 { Inserted: 0 },
-            },
-        },
-        SignalState: 0,
-        WaitListHead: LIST_ENTRY {
-            Flink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
-            Blink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
-        },
-    },
-};
+// Zero-init kernel objects (initialized at runtime by KeInitializeEvent/Dpc). The
+// c2rust output spelled out DISPATCHER_HEADER's anonymous unions with undefined
+// C2RustUnnamed_* names; a zeroed transmute is the exact same all-zero value and
+// sidesteps the bindgen anon field paths entirely.
+pub static mut AcpiEventQueue: KEVENT =
+    unsafe { core::mem::transmute([0u8; core::mem::size_of::<KEVENT>()]) };
 
-pub static mut event_dpc: KDPC = KDPC {
-    Type: 0,
-    Importance: 0,
-    Number: 0,
-    DpcListEntry: LIST_ENTRY {
-        Flink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
-        Blink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
-    },
-    DeferredRoutine: None,
-    DeferredContext: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-    SystemArgument1: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-    SystemArgument2: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-    DpcData: ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void,
-};
+pub static mut event_dpc: KDPC =
+    unsafe { core::mem::transmute([0u8; core::mem::size_of::<KDPC>()]) };
 
 pub static mut PowerDeviceCount: ::core::ffi::c_int = 0;
 
@@ -117,52 +271,17 @@ static mut acpi_bus_drivers: list_head = unsafe {
     }
 };
 
-static mut acpi_bus_drivers_lock: FAST_MUTEX = FAST_MUTEX {
-    Count: 0,
-    Owner: ::core::ptr::null::<_KTHREAD>() as *mut _KTHREAD,
-    Contention: 0,
-    Event: KEVENT {
-        Header: DISPATCHER_HEADER {
-            c2rust_unnamed: C2RustUnnamed_1 {
-                c2rust_unnamed: C2RustUnnamed_2 {
-                    Type: 0,
-                    c2rust_unnamed: C2RustUnnamed_9 {
-                        c2rust_unnamed: C2RustUnnamed_10 {
-                            TimerControlFlags: 0,
-                        },
-                    },
-                    c2rust_unnamed_0: C2RustUnnamed_6 {
-                        c2rust_unnamed: C2RustUnnamed_7 {
-                            ThreadControlFlags: 0,
-                        },
-                    },
-                    c2rust_unnamed_1: C2RustUnnamed_3 { Inserted: 0 },
-                },
-            },
-            SignalState: 0,
-            WaitListHead: LIST_ENTRY {
-                Flink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
-                Blink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
-            },
-        },
-    },
-    OldIrql: 0,
-};
+static mut acpi_bus_drivers_lock: FAST_MUTEX =
+    unsafe { core::mem::transmute([0u8; core::mem::size_of::<FAST_MUTEX>()]) };
 
 pub const NDEBUG: u32 = 0;
 pub const _COMPONENT: u32 = ACPI_BUS_COMPONENT;
-pub const WALK_UP: u32 = 0;
-pub const WALK_DOWN: u32 = 1;
+pub const WALK_UP: i32 = 0;
+pub const WALK_DOWN: i32 = 1;
 
 pub type acpi_bus_walk_callback = Option<unsafe extern "C" fn(*mut acpi_device, i32, *mut core::ffi::c_void) -> i32>;
-
-#[repr(C)]
-pub struct acpi_device {
-    pub node: LIST_HEAD,
-    pub children: LIST_HEAD,
-    pub parent: *mut acpi_device,
-    // other fields omitted for brevity
-}
+// NOTE: `acpi_device` comes from crate::types (full acpisys.h/acpi_bus.h layout) via
+// `use crate::shared::*` — the LLM's local struct here was truncated and is removed.
 
 unsafe fn acpi_device_register(
     device: *mut acpi_device,
@@ -204,7 +323,7 @@ pub unsafe extern "C" fn acpi_bus_get_device(
 
     status = AcpiGetData(
         handle,
-        Some(acpi_bus_data_handler as unsafe extern "C" fn(ACPI_HANDLE, *mut c_void) -> ()),
+        Some(acpi_bus_data_handler),
         device as *mut *mut c_void,
     );
 
@@ -221,7 +340,7 @@ pub unsafe extern "C" fn acpi_bus_get_status_handle(
 ) -> ACPI_STATUS {
     let status = acpi_evaluate_integer(
         handle,
-        b"_STA\0".as_ptr() as *const i8 as ACPI_STRING,
+        b"_STA\0".as_ptr() as ACPI_STRING as ACPI_STRING,
         core::ptr::null_mut(),
         sta,
     );
@@ -229,10 +348,10 @@ pub unsafe extern "C" fn acpi_bus_get_status_handle(
         return AE_OK;
     }
     if status == AE_NOT_FOUND {
-        *sta = (ACPI_STA_DEVICE_PRESENT
+        core::ptr::write_volatile(sta, (ACPI_STA_DEVICE_PRESENT
             | ACPI_STA_DEVICE_ENABLED
             | ACPI_STA_DEVICE_UI
-            | ACPI_STA_DEVICE_FUNCTIONING) as u64;
+            | ACPI_STA_DEVICE_FUNCTIONING) as u64);
         return AE_OK;
     }
     status
@@ -250,20 +369,20 @@ pub unsafe extern "C" fn acpi_bus_get_status(device: *mut acpi_device) -> i32 {
     *(&mut (*device).status as *mut _ as *mut i32) = sta as i32;
 
     if (*device).status.functional() != 0 && (*device).status.present() == 0 {
-        ACPI_DEBUG_PRINT((
+        ACPI_DEBUG_PRINT!(
             ACPI_DB_INFO,
             b"Device [%s] status [%08x]: functional but not present;\n\0".as_ptr() as *const u8,
             (*device).pnp.bus_id.as_ptr(),
             *(&mut (*device).status as *mut _ as *mut u32),
-        ));
+        );
     }
 
-    ACPI_DEBUG_PRINT((
+    ACPI_DEBUG_PRINT!(
         ACPI_DB_INFO,
         b"Device [%s] status [%08x]\n\0".as_ptr() as *const u8,
         (*device).pnp.bus_id.as_ptr(),
         *(&mut (*device).status as *mut _ as *mut u32),
-    ));
+    );
 
     0
 }
@@ -287,7 +406,7 @@ pub unsafe extern "C" fn acpi_bus_get_private_data(
 
     status = AcpiGetData(
         handle,
-        Some(acpi_bus_private_data_handler as unsafe extern "system" fn(ACPI_HANDLE, *mut core::ffi::c_void) -> ()),
+        Some(acpi_bus_private_data_handler),
         data,
     );
 
@@ -313,13 +432,13 @@ pub unsafe extern "C" fn acpi_bus_get_power(
         return result;
     }
 
-    *state = ACPI_STATE_UNKNOWN as c_int;
+    core::ptr::write_volatile(state, ACPI_STATE_UNKNOWN as c_int);
 
     if (*device).flags.power_manageable() == 0 {
         if !(*device).parent.is_null() {
-            *state = (*(*device).parent).power.state;
+            core::ptr::write_volatile(state, (*(*device).parent).power.state);
         } else {
-            *state = ACPI_STATE_D0 as c_int;
+            core::ptr::write_volatile(state, ACPI_STATE_D0 as c_int);
         }
     } else {
         if (*device).power.flags.explicit_get() != 0 {
@@ -340,7 +459,7 @@ pub unsafe extern "C" fn acpi_bus_get_power(
             }
         }
 
-        *state = (*device).power.state;
+        core::ptr::write_volatile(state, (*device).power.state);
     }
 
     0
@@ -496,7 +615,7 @@ unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
         &mut handle,
     );
     if status == 0 {
-        (*device).power.flags.explicit_get = 1;
+        (*device).power.flags.set_explicit_get(1);
     }
 
     status = AcpiGetHandle(
@@ -505,7 +624,7 @@ unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
         &mut handle,
     );
     if status == 0 {
-        (*device).power.flags.inrush_current = 1;
+        (*device).power.flags.set_inrush_current(1);
     }
 
     status = AcpiGetHandle(
@@ -514,7 +633,7 @@ unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
         &mut handle,
     );
     if status == 0 {
-        (*device).flags.wake_capable = 1;
+        (*device).flags.set_wake_capable(1);
     }
 
     i = ACPI_STATE_D0 as UINT32;
@@ -535,8 +654,8 @@ unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
             &mut (*ps).resources,
         );
         if status == 0 && (*ps).resources.count != 0 {
-            (*device).power.flags.power_resources = 1;
-            (*ps).flags.valid = 1;
+            (*device).power.flags.set_power_resources(1);
+            (*ps).flags.set_valid(1);
         }
 
         object_name[2] = 'S' as i8;
@@ -546,12 +665,12 @@ unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
             &mut handle,
         );
         if status == 0 {
-            (*ps).flags.explicit_set = 1;
-            (*ps).flags.valid = 1;
+            (*ps).flags.set_explicit_set(1);
+            (*ps).flags.set_valid(1);
         }
 
-        if (*ps).resources.count != 0 || (*ps).flags.explicit_set != 0 {
-            (*ps).flags.valid = 1;
+        if (*ps).resources.count != 0 || (*ps).flags.explicit_set() != 0 {
+            (*ps).flags.set_valid(1);
         }
 
         (*ps).power = -1;
@@ -560,9 +679,9 @@ unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
         i += 1;
     }
 
-    (*device).power.states[ACPI_STATE_D0 as usize].flags.valid = 1;
+    (*device).power.states[ACPI_STATE_D0 as usize].flags.set_valid(1);
     (*device).power.states[ACPI_STATE_D0 as usize].power = 100;
-    (*device).power.states[ACPI_STATE_D3 as usize].flags.valid = 1;
+    (*device).power.states[ACPI_STATE_D3 as usize].flags.set_valid(1);
     (*device).power.states[ACPI_STATE_D3 as usize].power = 0;
 
     (*device).power.state = ACPI_STATE_UNKNOWN as i32;
@@ -572,29 +691,59 @@ unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
 
 unsafe fn acpi_bus_get_perf_flags(device: *mut acpi_device) -> i32 {
     if device.is_null() {
-        return AE_NOT_FOUND;
+        return AE_NOT_FOUND as i32;
     }
 
-    (*device).performance.state = ACPI_STATE_UNKNOWN;
+    (*device).performance.state = ACPI_STATE_UNKNOWN as i32;
 
     0
 }
 
+// NTAPI DPC routine. The bindgen PKDEFERRED_ROUTINE type uses `extern "stdcall"`
+// on i386 and `extern "C"` on amd64/arm64; declare the matching ABI per arch so
+// `Some(acpi_bus_generate_event_dpc)` unifies with KeInitializeDpc's parameter
+// without a transmute (the ABIs are identical to "system", only the nominal type
+// differs).
+// Use the ddk `_KDPC` (the type KeInitializeDpc's PKDEFERRED_ROUTINE expects);
+// `use ntkrnl_sys::ke::*` also pulls an opaque ke::KDPC whose PKDPC would not
+// unify with the ddk binding.
+#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "system" fn acpi_bus_generate_event_dpc(
-    Dpc: PKDPC,
+pub unsafe extern "stdcall" fn acpi_bus_generate_event_dpc(
+    Dpc: *mut ntkrnl_sys::ddk::_KDPC,
+    DeferredContext: PVOID,
+    SystemArgument1: PVOID,
+    SystemArgument2: PVOID,
+) {
+    acpi_bus_generate_event_dpc_impl(Dpc, DeferredContext, SystemArgument1, SystemArgument2)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn acpi_bus_generate_event_dpc(
+    Dpc: *mut ntkrnl_sys::ddk::_KDPC,
+    DeferredContext: PVOID,
+    SystemArgument1: PVOID,
+    SystemArgument2: PVOID,
+) {
+    acpi_bus_generate_event_dpc_impl(Dpc, DeferredContext, SystemArgument1, SystemArgument2)
+}
+
+#[inline(always)]
+unsafe fn acpi_bus_generate_event_dpc_impl(
+    Dpc: *mut ntkrnl_sys::ddk::_KDPC,
     DeferredContext: PVOID,
     SystemArgument1: PVOID,
     SystemArgument2: PVOID,
 ) {
     let device = SystemArgument1 as *mut acpi_device;
     let TypeData = SystemArgument2 as ULONG_PTR;
-    let mut OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
 
     let event = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<acpi_bus_event>(),
-        'epcA' as u32,
+        0x65706341u32 /* 'epcA' */,
     ) as *mut acpi_bus_event;
 
     if event.is_null() {
@@ -611,14 +760,14 @@ pub unsafe extern "system" fn acpi_bus_generate_event_dpc(
         b"%s\0".as_ptr() as *const i8,
         (*device).pnp.bus_id.as_mut_ptr(),
     );
-    (*event).type_0 = ((TypeData & 0xFF000000) >> 24) as UINT32;
+    (*event).type_ = ((TypeData & 0xFF000000) >> 24) as UINT32;
     (*event).data = (TypeData & 0x00FFFFFF) as UINT32;
 
     KeAcquireSpinLock(&mut acpi_bus_event_lock, &mut OldIrql);
     list_add_tail(&mut (*event).node, &mut acpi_bus_event_list);
     KeReleaseSpinLock(&mut acpi_bus_event_lock, OldIrql);
 
-    KeSetEvent(&mut AcpiEventQueue, IO_NO_INCREMENT as KPRIORITY, FALSE as BOOLEAN);
+    KeSetEvent(&mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void, IO_NO_INCREMENT as i32, FALSE as BOOLEAN);
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_bus_generate_event(
@@ -658,23 +807,19 @@ pub unsafe extern "C" fn acpi_bus_receive_event(
     KeWaitForSingleObject(
         &mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void,
         _KWAIT_REASON_Executive,
-        0i32 as i32,
+        0i8,
         0u8,
         core::ptr::null_mut(),
     );
     event_is_open -= 1;
-    KeClearEvent(&mut AcpiEventQueue);
+    KeClearEvent(&mut AcpiEventQueue as *mut _ as *mut core::ffi::c_void);
 
     if list_empty(&mut acpi_bus_event_list) != 0 {
         return AE_NOT_FOUND as i32;
     }
 
     KeAcquireSpinLock(&mut acpi_bus_event_lock, &mut old_irql);
-    entry = list_entry(
-        acpi_bus_event_list.next,
-        acpi_bus_event,
-        node,
-    );
+    entry = list_entry!(acpi_bus_event_list.next, acpi_bus_event, node);
     if !entry.is_null() {
         list_del(&mut (*entry).node);
     }
@@ -690,7 +835,7 @@ pub unsafe extern "C" fn acpi_bus_receive_event(
         core::mem::size_of::<acpi_bus_event>(),
     );
 
-    ExFreePoolWithTag(entry as *mut core::ffi::c_void, 'epcA' as u32);
+    ExFreePoolWithTag(entry as *mut core::ffi::c_void, 0x65706341u32 /* 'epcA' */);
     0
 }
 
@@ -766,10 +911,13 @@ unsafe fn acpi_bus_check_device(handle: ACPI_HANDLE) {
         return;
     }
 
-    old_status = (*device).status;
+    old_status = core::ptr::read(addr_of_mut!((*device).status));
 
-    if !(*device).parent.is_null() && (*(*device).parent).status.present == 0 {
-        (*device).status = (*(*device).parent).status;
+    if !(*device).parent.is_null() && (*(*device).parent).status.present() == 0 {
+        core::ptr::write(
+            addr_of_mut!((*device).status),
+            core::ptr::read(addr_of_mut!((*(*device).parent).status)),
+        );
         return;
     }
 
@@ -778,14 +926,14 @@ unsafe fn acpi_bus_check_device(handle: ACPI_HANDLE) {
         return;
     }
 
-    if STRUCT_TO_INT(old_status) == STRUCT_TO_INT((*device).status) {
+    if STRUCT_TO_INT(addr_of_mut!(old_status)) == STRUCT_TO_INT(addr_of_mut!((*device).status)) {
         return;
     }
 
-    if (*device).status.present != 0 && old_status.present == 0 {
+    if (*device).status.present() != 0 && old_status.present() == 0 {
         // DPRINT("Device insertion detected\n");
         /* TBD: Handle device insertion */
-    } else if (*device).status.present == 0 && old_status.present != 0 {
+    } else if (*device).status.present() == 0 && old_status.present() != 0 {
         // DPRINT("Device removal detected\n");
         /* TBD: Handle device removal */
     }
@@ -795,7 +943,7 @@ unsafe fn acpi_bus_check_scope(handle: ACPI_HANDLE) {
     acpi_bus_check_device(handle);
 }
 
-unsafe fn acpi_bus_notify(
+unsafe extern "C" fn acpi_bus_notify(
     handle: ACPI_HANDLE,
     type_: UINT32,
     data: *mut core::ffi::c_void,
@@ -874,7 +1022,7 @@ unsafe fn acpi_bus_match(
         while (i as u32) < (*cid_list).Count {
             if !strstr(
                 (*driver).ids,
-                (*(*cid_list).Ids.as_mut_ptr().offset(i as isize)).String_0,
+                (*(*cid_list).Ids.as_mut_ptr().offset(i as isize)).String,
             )
             .is_null()
             {
@@ -928,7 +1076,7 @@ unsafe fn acpi_bus_driver_init(
     0
 }
 
-unsafe fn acpi_bus_attach(
+unsafe extern "C" fn acpi_bus_attach(
     device: *mut acpi_device,
     level: c_int,
     data: *mut c_void,
@@ -967,7 +1115,7 @@ unsafe fn acpi_bus_attach(
     return 0;
 }
 
-unsafe fn acpi_bus_unattach(
+unsafe extern "C" fn acpi_bus_unattach(
     device: *mut acpi_device,
     level: i32,
     data: *mut core::ffi::c_void,
@@ -1018,7 +1166,7 @@ unsafe fn acpi_bus_find_driver(device: *mut acpi_device) -> c_int {
 
     entry = acpi_bus_drivers.next;
     while entry != &raw mut acpi_bus_drivers {
-        driver = list_entry(entry, *mut acpi_driver, node);
+        driver = list_entry!(entry, acpi_driver, node);
 
         if acpi_bus_match(device, driver) != 0 {
             entry = (*entry).next;
@@ -1066,7 +1214,7 @@ pub unsafe extern "C" fn acpi_bus_unregister_driver(
 
     acpi_bus_walk(
         acpi_root,
-        Some(acpi_bus_unattach as acpi_bus_walk_callback),
+        Some(acpi_bus_unattach),
         WALK_UP,
         driver as *mut core::ffi::c_void,
     );
@@ -1086,72 +1234,72 @@ unsafe fn acpi_bus_get_flags(device: *mut acpi_device) -> i32 {
 
     status = AcpiGetHandle(
         (*device).handle,
-        b"_STA\0".as_ptr() as *const i8,
+        b"_STA\0".as_ptr() as ACPI_STRING,
         &mut temp,
     );
     if ACPI_SUCCESS(status) {
-        (*device).flags.dynamic_status = 1;
+        (*device).flags.set_dynamic_status(1);
     }
 
     status = AcpiGetHandle(
         (*device).handle,
-        b"_CID\0".as_ptr() as *const i8,
+        b"_CID\0".as_ptr() as ACPI_STRING,
         &mut temp,
     );
     if ACPI_SUCCESS(status) {
-        (*device).flags.compatible_ids = 1;
+        (*device).flags.set_compatible_ids(1);
     }
 
     status = AcpiGetHandle(
         (*device).handle,
-        b"_RMV\0".as_ptr() as *const i8,
+        b"_RMV\0".as_ptr() as ACPI_STRING,
         &mut temp,
     );
     if ACPI_SUCCESS(status) {
-        (*device).flags.removable = 1;
+        (*device).flags.set_removable(1);
     }
 
     status = AcpiGetHandle(
         (*device).handle,
-        b"_EJD\0".as_ptr() as *const i8,
+        b"_EJD\0".as_ptr() as ACPI_STRING,
         &mut temp,
     );
     if ACPI_SUCCESS(status) {
-        (*device).flags.ejectable = 1;
+        (*device).flags.set_ejectable(1);
     } else {
         status = AcpiGetHandle(
             (*device).handle,
-            b"_EJ0\0".as_ptr() as *const i8,
+            b"_EJ0\0".as_ptr() as ACPI_STRING,
             &mut temp,
         );
         if ACPI_SUCCESS(status) {
-            (*device).flags.ejectable = 1;
+            (*device).flags.set_ejectable(1);
         }
     }
 
     status = AcpiGetHandle(
         (*device).handle,
-        b"_LCK\0".as_ptr() as *const i8,
+        b"_LCK\0".as_ptr() as ACPI_STRING,
         &mut temp,
     );
     if ACPI_SUCCESS(status) {
-        (*device).flags.lockable = 1;
+        (*device).flags.set_lockable(1);
     }
 
     status = AcpiGetHandle(
         (*device).handle,
-        b"_PS0\0".as_ptr() as *const i8,
+        b"_PS0\0".as_ptr() as ACPI_STRING,
         &mut temp,
     );
     if ACPI_FAILURE(status) {
         status = AcpiGetHandle(
             (*device).handle,
-            b"_PR0\0".as_ptr() as *const i8,
+            b"_PR0\0".as_ptr() as ACPI_STRING,
             &mut temp,
         );
     }
     if ACPI_SUCCESS(status) {
-        (*device).flags.power_manageable = 1;
+        (*device).flags.set_power_manageable(1);
     }
 
     0
@@ -1185,7 +1333,7 @@ pub unsafe extern "C" fn acpi_bus_add(
     device = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<acpi_device>(),
-        'DpcA' as ULONG,
+        (0x44706341u32 as ULONG) /* 'DpcA' */,
     ) as *mut acpi_device;
 
     if device.is_null() {
@@ -1200,7 +1348,7 @@ pub unsafe extern "C" fn acpi_bus_add(
 
     match type_ {
         4 => {
-            snprintf(
+            _snprintf(
                 (*device).pnp.bus_id.as_mut_ptr(),
                 core::mem::size_of::<acpi_bus_id>(),
                 b"%s\0".as_ptr() as PCHAR,
@@ -1208,7 +1356,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             );
         }
         7 | 5 => {
-            snprintf(
+            _snprintf(
                 (*device).pnp.bus_id.as_mut_ptr(),
                 core::mem::size_of::<acpi_bus_id>(),
                 b"%s\0".as_ptr() as PCHAR,
@@ -1216,7 +1364,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             );
         }
         8 | 6 => {
-            snprintf(
+            _snprintf(
                 (*device).pnp.bus_id.as_mut_ptr(),
                 core::mem::size_of::<acpi_bus_id>(),
                 b"%s\0".as_ptr() as PCHAR,
@@ -1237,7 +1385,7 @@ pub unsafe extern "C" fn acpi_bus_add(
                 i -= 1;
             }
 
-            snprintf(
+            _snprintf(
                 (*device).pnp.bus_id.as_mut_ptr(),
                 core::mem::size_of::<acpi_bus_id>(),
                 b"%s\0".as_ptr() as PCHAR,
@@ -1247,54 +1395,58 @@ pub unsafe extern "C" fn acpi_bus_add(
         }
     }
 
+    // C `goto end` cleanup chain → labeled block; each `goto end` becomes
+    // `break 'end`. The cleanup that followed `end:` runs after the block.
+    'end: {
     result = acpi_bus_get_flags(device);
     if result != 0 {
-        goto end;
+        break 'end;
     }
 
     match type_ {
         0 => {
             result = acpi_bus_get_status(device);
             if result != 0 {
-                goto end;
+                break 'end;
             }
         }
         _ => {
-            STRUCT_TO_INT(addr_of_mut!((*device).status)) = 0x0F;
+            // STRUCT_TO_INT(device->status) = 0x0F  (write first int of bitfield)
+            *(addr_of_mut!((*device).status) as *mut i32) = 0x0F;
         }
     }
 
     if (*device).status.present() == 0 {
         result = -2;
-        goto end;
+        break 'end;
     }
 
     match type_ {
         0 => {
             status = AcpiGetObjectInfo(handle, &mut info);
             if ACPI_FAILURE(status) {
-                ACPI_DEBUG_PRINT((ACPI_DB_ERROR, b"Error reading device info\n\0".as_ptr() as PCHAR));
+                ACPI_DEBUG_PRINT!(ACPI_DB_ERROR, b"Error reading device info\n\0".as_ptr() as PCHAR);
                 result = AE_NOT_FOUND as c_int;
                 info = core::ptr::null_mut();
-                goto end;
+                break 'end;
             }
 
-            if (*info).Valid as c_int & ACPI_VALID_HID != 0 {
-                hid = (*info).HardwareId.String_0;
+            if (*info).Valid as c_int & ACPI_VALID_HID as c_int != 0 {
+                hid = (*info).HardwareId.String;
             }
-            if (*info).Valid as c_int & ACPI_VALID_UID != 0 {
-                uid = (*info).UniqueId.String_0;
+            if (*info).Valid as c_int & ACPI_VALID_UID as c_int != 0 {
+                uid = (*info).UniqueId.String;
             }
-            if (*info).Valid as c_int & ACPI_VALID_CID != 0 {
+            if (*info).Valid as c_int & ACPI_VALID_CID as c_int != 0 {
                 cid_list = addr_of_mut!((*info).CompatibleIdList);
                 (*device).pnp.cid_list = ExAllocatePoolWithTag(
                     NonPagedPool,
                     (*cid_list).ListSize as SIZE_T,
-                    'DpcA' as ULONG,
+                    (0x44706341u32 as ULONG) /* 'DpcA' */,
                 ) as *mut ACPI_PNP_DEVICE_ID_LIST;
 
                 if !(*device).pnp.cid_list.is_null() {
-                    let mut p: *mut c_char = addr_of_mut!((*(*device).pnp.cid_list).Ids)
+                    let mut p: *mut c_char = (*(*device).pnp.cid_list).Ids.as_mut_ptr()
                         .offset((*cid_list).Count as isize) as *mut c_char;
 
                     (*(*device).pnp.cid_list).Count = (*cid_list).Count;
@@ -1302,19 +1454,19 @@ pub unsafe extern "C" fn acpi_bus_add(
 
                     i = 0;
                     while (i as UINT32) < (*cid_list).Count {
-                        (*(addr_of_mut!((*(*device).pnp.cid_list).Ids).offset(i as isize))).Length =
-                            (*(addr_of_mut!((*cid_list).Ids).offset(i as isize))).Length;
+                        (*((*(*device).pnp.cid_list).Ids.as_mut_ptr().offset(i as isize))).Length =
+                            (*((*cid_list).Ids.as_mut_ptr().offset(i as isize))).Length;
 
-                        (*(addr_of_mut!((*(*device).pnp.cid_list).Ids).offset(i as isize))).String_0 = p;
+                        (*((*(*device).pnp.cid_list).Ids.as_mut_ptr().offset(i as isize))).String = p;
 
                         core::ptr::copy_nonoverlapping(
-                            (*(addr_of_mut!((*cid_list).Ids).offset(i as isize))).String_0,
-                            (*(addr_of_mut!((*(*device).pnp.cid_list).Ids).offset(i as isize))).String_0,
-                            (*(addr_of_mut!((*cid_list).Ids).offset(i as isize))).Length as usize,
+                            (*((*cid_list).Ids.as_mut_ptr().offset(i as isize))).String,
+                            (*((*(*device).pnp.cid_list).Ids.as_mut_ptr().offset(i as isize))).String,
+                            (*((*cid_list).Ids.as_mut_ptr().offset(i as isize))).Length as usize,
                         );
 
                         p = p.offset(
-                            (*(addr_of_mut!((*cid_list).Ids).offset(i as isize))).Length as isize,
+                            (*((*cid_list).Ids.as_mut_ptr().offset(i as isize))).Length as isize,
                         );
                         i += 1;
                     }
@@ -1323,7 +1475,7 @@ pub unsafe extern "C" fn acpi_bus_add(
                 }
             }
 
-            if (*info).Valid as c_int & ACPI_VALID_ADR != 0 {
+            if (*info).Valid as c_int & ACPI_VALID_ADR as c_int != 0 {
                 (*device).pnp.bus_address = (*info).Address as acpi_bus_address;
                 (*device).flags.set_bus_address(1);
             }
@@ -1333,7 +1485,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             uid = static_uid_buffer.as_mut_ptr();
             let fresh = PowerDeviceCount;
             PowerDeviceCount += 1;
-            snprintf(
+            _snprintf(
                 uid,
                 core::mem::size_of::<acpi_unique_id>(),
                 b"%d\0".as_ptr() as PCHAR,
@@ -1345,7 +1497,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             uid = static_uid_buffer.as_mut_ptr();
             let fresh = ProcessorCount;
             ProcessorCount += 1;
-            snprintf(
+            _snprintf(
                 uid,
                 core::mem::size_of::<acpi_unique_id>(),
                 b"_%d\0".as_ptr() as PCHAR,
@@ -1360,7 +1512,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             uid = static_uid_buffer.as_mut_ptr();
             let fresh = ThermalZoneCount;
             ThermalZoneCount += 1;
-            snprintf(
+            _snprintf(
                 uid,
                 core::mem::size_of::<acpi_unique_id>(),
                 b"%d\0".as_ptr() as PCHAR,
@@ -1372,7 +1524,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             uid = static_uid_buffer.as_mut_ptr();
             let fresh = PowerButtonCount;
             PowerButtonCount += 1;
-            snprintf(
+            _snprintf(
                 uid,
                 core::mem::size_of::<acpi_unique_id>(),
                 b"%d\0".as_ptr() as PCHAR,
@@ -1384,7 +1536,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             uid = static_uid_buffer.as_mut_ptr();
             let fresh = FixedPowerButtonCount;
             FixedPowerButtonCount += 1;
-            snprintf(
+            _snprintf(
                 uid,
                 core::mem::size_of::<acpi_unique_id>(),
                 b"%d\0".as_ptr() as PCHAR,
@@ -1396,7 +1548,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             uid = static_uid_buffer.as_mut_ptr();
             let fresh = SleepButtonCount;
             SleepButtonCount += 1;
-            snprintf(
+            _snprintf(
                 uid,
                 core::mem::size_of::<acpi_unique_id>(),
                 b"%d\0".as_ptr() as PCHAR,
@@ -1408,7 +1560,7 @@ pub unsafe extern "C" fn acpi_bus_add(
             uid = static_uid_buffer.as_mut_ptr();
             let fresh = FixedSleepButtonCount;
             FixedSleepButtonCount += 1;
-            snprintf(
+            _snprintf(
                 uid,
                 core::mem::size_of::<acpi_unique_id>(),
                 b"%d\0".as_ptr() as PCHAR,
@@ -1420,13 +1572,13 @@ pub unsafe extern "C" fn acpi_bus_add(
 
     if parent as ACPI_HANDLE == ACPI_ROOT_OBJECT && type_ == 0 {
         hid = ACPI_BUS_HID.as_ptr() as *mut c_char;
-        snprintf(
+        _snprintf(
             (*device).pnp.device_name.as_mut_ptr(),
             core::mem::size_of::<acpi_device_name>(),
             b"%s\0".as_ptr() as PCHAR,
             ACPI_BUS_DEVICE_NAME.as_ptr(),
         );
-        snprintf(
+        _snprintf(
             (*device).pnp.device_class.as_mut_ptr(),
             core::mem::size_of::<acpi_device_class>(),
             b"%s\0".as_ptr() as PCHAR,
@@ -1438,11 +1590,11 @@ pub unsafe extern "C" fn acpi_bus_add(
         (*device).pnp.hardware_id = ExAllocatePoolWithTag(
             NonPagedPool,
             (strlen(hid) + 1) as SIZE_T,
-            'DpcA' as ULONG,
+            (0x44706341u32 as ULONG) /* 'DpcA' */,
         ) as acpi_hardware_id;
 
         if !(*device).pnp.hardware_id.is_null() {
-            snprintf(
+            _snprintf(
                 (*device).pnp.hardware_id as *mut c_char,
                 strlen(hid) + 1,
                 b"%s\0".as_ptr() as PCHAR,
@@ -1453,7 +1605,7 @@ pub unsafe extern "C" fn acpi_bus_add(
     }
 
     if !uid.is_null() {
-        snprintf(
+        _snprintf(
             (*device).pnp.unique_id.as_mut_ptr(),
             core::mem::size_of::<acpi_unique_id>(),
             b"%s\0".as_ptr() as PCHAR,
@@ -1465,14 +1617,14 @@ pub unsafe extern "C" fn acpi_bus_add(
     if (*device).flags.power_manageable() != 0 {
         result = acpi_bus_get_power_flags(device);
         if result != 0 {
-            goto end;
+            break 'end;
         }
     }
 
     if (*device).flags.performance_manageable() != 0 {
         result = acpi_bus_get_perf_flags(device);
         if result != 0 {
-            goto end;
+            break 'end;
         }
     }
 
@@ -1481,16 +1633,16 @@ pub unsafe extern "C" fn acpi_bus_add(
         _ => {
             status = AcpiAttachData(
                 (*device).handle,
-                Some(acpi_bus_data_handler as unsafe extern "system" fn(ACPI_HANDLE, *mut c_void)),
+                Some(acpi_bus_data_handler),
                 device as *mut c_void,
             );
         }
     }
 
     if ACPI_FAILURE(status) {
-        ACPI_DEBUG_PRINT((ACPI_DB_ERROR, b"Error attaching device data\n\0".as_ptr() as PCHAR));
+        ACPI_DEBUG_PRINT!(ACPI_DB_ERROR, b"Error attaching device data\n\0".as_ptr() as PCHAR);
         result = AE_NOT_FOUND as c_int;
-        goto end;
+        break 'end;
     }
 
     INIT_LIST_HEAD(addr_of_mut!((*device).children));
@@ -1511,24 +1663,24 @@ pub unsafe extern "C" fn acpi_bus_add(
     if (*device).flags.hardware_id() != 0 || (*device).flags.compatible_ids() != 0 {
         acpi_bus_find_driver(device);
     }
+    } // 'end
 
-end:
     if !info.is_null() {
         ACPI_FREE(info as *mut c_void);
     }
 
     if result != 0 {
         if !(*device).pnp.cid_list.is_null() {
-            ExFreePoolWithTag((*device).pnp.cid_list as PVOID, 'DpcA' as ULONG);
+            ExFreePoolWithTag((*device).pnp.cid_list as PVOID, (0x44706341u32 as ULONG) /* 'DpcA' */);
         }
         if !(*device).pnp.hardware_id.is_null() {
-            ExFreePoolWithTag((*device).pnp.hardware_id as PVOID, 'DpcA' as ULONG);
+            ExFreePoolWithTag((*device).pnp.hardware_id as PVOID, (0x44706341u32 as ULONG) /* 'DpcA' */);
         }
-        ExFreePoolWithTag(device as PVOID, 'DpcA' as ULONG);
+        ExFreePoolWithTag(device as PVOID, (0x44706341u32 as ULONG) /* 'DpcA' */);
         return result;
     }
 
-    *child = device;
+    core::ptr::write_volatile(child, device);
     0
 }
 
@@ -1543,15 +1695,15 @@ unsafe fn acpi_bus_remove(
     acpi_device_unregister(device);
 
     if !(*device).pnp.cid_list.is_null() {
-        ExFreePoolWithTag((*device).pnp.cid_list as *mut core::ffi::c_void, 'DpcA' as u32);
+        ExFreePoolWithTag((*device).pnp.cid_list as *mut core::ffi::c_void, 0x44706341u32 /* 'DpcA' */);
     }
 
     if !(*device).pnp.hardware_id.is_null() {
-        ExFreePoolWithTag((*device).pnp.hardware_id as *mut core::ffi::c_void, 'DpcA' as u32);
+        ExFreePoolWithTag((*device).pnp.hardware_id as *mut core::ffi::c_void, 0x44706341u32 /* 'DpcA' */);
     }
 
     if !device.is_null() {
-        ExFreePoolWithTag(device as *mut core::ffi::c_void, 'DpcA' as u32);
+        ExFreePoolWithTag(device as *mut core::ffi::c_void, 0x44706341u32 /* 'DpcA' */);
     }
 
     0
@@ -1640,7 +1792,7 @@ unsafe fn acpi_bus_scan_fixed(root: *mut acpi_device) -> c_int {
     let mut device: *mut acpi_device = core::ptr::null_mut();
 
     if root.is_null() {
-        return AE_NOT_FOUND;
+        return AE_NOT_FOUND as c_int;
     }
 
     if AcpiGbl_FADT.Flags as u32 & ACPI_FADT_POWER_BUTTON as u32 != 0 {
@@ -1718,15 +1870,16 @@ unsafe fn acpi_bus_exit() {
     status = AcpiRemoveNotifyHandler(
         ACPI_ROOT_OBJECT,
         ACPI_SYSTEM_NOTIFY,
-        Some(acpi_bus_notify as unsafe extern "system" fn(ACPI_HANDLE, UINT32, *mut core::ffi::c_void) -> ()),
+        Some(acpi_bus_notify),
     );
     if ACPI_FAILURE(status) {
         // DPRINT removed
     }
 
-    acpi_pci_root_exit();
-    acpi_pci_link_exit();
-    acpi_ec_exit();
+    // acpi_pci_root_exit()/acpi_pci_link_exit()/acpi_ec_exit() are guarded by
+    // #ifdef CONFIG_ACPI_PCI / CONFIG_ACPI_EC in bus.c — undefined in this build, so
+    // the C omits them (and the functions are never defined). The LLM translated the
+    // disabled code as live calls; removed to match the compiled C.
     acpi_system_exit();
 
     acpi_bus_remove(acpi_root, ACPI_BUS_REMOVAL_NORMAL as i32);
@@ -1742,7 +1895,9 @@ unsafe fn acpi_bus_exit() {
 pub unsafe extern "C" fn acpi_init() -> c_int {
     let mut result: c_int = 0;
 
-    KeInitializeSpinLock(&mut acpi_bus_event_lock);
+    // ke::KSPIN_LOCK (usize) vs ddk::KeInitializeSpinLock's ULONG_PTR pointer —
+    // same width per arch, distinct nominal type → cast the pointer.
+    KeInitializeSpinLock(&mut acpi_bus_event_lock as *mut _ as *mut _);
     KeInitializeEvent(&mut AcpiEventQueue, _EVENT_TYPE_NotificationEvent, 0u8);
     ExInitializeFastMutex(&mut acpi_bus_drivers_lock);
 

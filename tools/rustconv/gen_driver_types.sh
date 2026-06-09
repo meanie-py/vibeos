@@ -30,7 +30,25 @@ NTKRNL_SYS="${SRC}/sdk/lib/rust/ntkrnl-sys/src"
 # DRIVER_INC  : extra -I for the driver's own dir
 # VER_DEFS    : version macros matching the driver's CMakeLists.txt
 EXTRA_INC=()
+# SYS_CRATES: extra sibling -sys crates whose bindgen types must ALSO be blocklisted
+# (kept a single identity) and re-exported. Format: "crate_name:src_subdir". Only ACPI
+# bridges two -sys crates (ntkrnl-sys + acpica-sys), so it's the only user today.
+SYS_CRATES=()
 case "$DRIVER" in
+  acpi)
+    # ACPI bus driver glue (buspdo.c/bus.c). Private structs live in acpisys.h
+    # (device extensions, DEVICE_PNP_STATE) + acpi_bus.h (Linux-style acpi_device*
+    # with :1 bitfields). Both pull in ACPICA's acpi.h — those ACPI_* types are
+    # blocklisted here and resolved via acpica-sys to keep one identity.
+    DRIVER_DIR="${SRC}/drivers/bus/acpi/include"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <acpi.h>\n#include "acpisys.h"\n#include "acpi_bus.h"'
+    ALLOW_FILES=( --allowlist-file '.*acpisys\.h' --allowlist-file '.*acpi_bus\.h'
+                  --allowlist-file '.*acpi_drivers\.h' --allowlist-file '.*[/\\]list\.h' )
+    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
+               -DACPI_USE_LOCAL_CACHE -DACPI_USE_SYSTEM_INTTYPES )
+    EXTRA_INC=( -I"${SRC}/drivers/bus/acpi/acpica/include" )
+    SYS_CRATES=( "acpica-sys:acpica-sys/src" )
+    ;;
   classpnp)
     DRIVER_DIR="${SRC}/drivers/storage/class/classpnp"
     WRAPPER_INC='#include <classp.h>'
@@ -93,6 +111,26 @@ run_arch() {
     local KEEP="/tmp/${DRIVER}_unblock_${ARCH}.txt"; printf '%s\n' $UNBLOCK > "$KEEP"
     grep -vxF -f "$KEEP" "$TYPELIST" > "${TYPELIST}.f" && mv "${TYPELIST}.f" "$TYPELIST"
   fi
+  # Extra sibling -sys crates (e.g. acpica-sys): blocklist their types too so the
+  # ACPI_* names acpi_bus.h references resolve to that crate, not get re-emitted here.
+  # Re-export must be EXPLICIT (only names UNIQUE to the sys crate) — a `pub use
+  # acpica_sys::*` glob collides with the `use ntkrnl_sys::ddk::*` glob on every shared
+  # C primitive (BOOLEAN, UINT8, __BindgenBitfieldUnit, ...) → E0659 ambiguity. Shared
+  # names resolve via the ddk glob; only acpica-unique names (ACPI_*, acpi_*, AE_*) are
+  # re-exported by name.
+  local SYS_USE=()
+  for spec in "${SYS_CRATES[@]:-}"; do
+    [ -z "$spec" ] && continue
+    local crate="${spec%%:*}" subdir="${spec##*:}"
+    local SYSBG="${SRC}/sdk/lib/rust/${subdir}/bindgen_${ARCH}.rs"
+    local SYSNAMES="/tmp/${DRIVER}_${crate}_names_${ARCH}.txt"
+    grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$SYSBG" | awk '{print $3}' | sort -u > "$SYSNAMES"
+    # Unique = in sys crate but NOT already an ntkrnl-sys type (TYPELIST still ntkrnl-only here).
+    local UNIQUE; UNIQUE="$(comm -23 "$SYSNAMES" "$TYPELIST" | paste -sd, -)"
+    SYS_USE+=( --raw-line "pub use ${crate//-/_}::{${UNIQUE}};" )
+    cat "$SYSNAMES" >> "$TYPELIST"   # blocklist ALL sys types (none re-emitted locally)
+  done
+  sort -u "$TYPELIST" -o "$TYPELIST"
   local BL=()
   while IFS= read -r t; do BL+=( --blocklist-type "$t" ); done < "$TYPELIST"
 
@@ -105,6 +143,7 @@ run_arch() {
     --raw-line '// kernel field types resolved via private ddk glob (NOT re-exported: modules get' \
     --raw-line '// common kernel types from driver_ddk, private structs from this crate::types).' \
     --raw-line 'use ntkrnl_sys::ddk::*;' \
+    "${SYS_USE[@]}" \
     -o "$RAW" \
     -- -ferror-limit=0 -Wno-everything \
     -fms-extensions \
@@ -130,7 +169,7 @@ run_arch() {
 import sys, re
 raw, final = sys.argv[1], sys.argv[2]
 s = open(raw).read()
-local = set(re.findall(r"^pub (?:struct|enum|union) (_[A-Za-z0-9_]+)", s, re.M))
+local = set(re.findall(r"^pub (?:struct|enum|union|type) (_[A-Za-z0-9_]+)", s, re.M))
 out = [ln for ln in s.splitlines(keepends=True)
        if not (re.match(r"^pub use self::(_[A-Za-z0-9_]+) as [A-Za-z0-9_]+;", ln)
                and re.match(r"^pub use self::(_[A-Za-z0-9_]+) as", ln).group(1) not in local)]

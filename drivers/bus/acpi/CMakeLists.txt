@@ -185,7 +185,8 @@ set_target_properties(acpica PROPERTIES COMPILE_DEFINITIONS "ACPI_USE_LOCAL_CACH
 add_dependencies(acpica bugcodes xdk)
 
 list(APPEND ACPI_SOURCE
-    busmgr/bus.c
+    # busmgr/bus.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/bus.rs, Phase 3a:
+    #   the acpi_bus_* bus-manager API). Symbols from libacpi_rust.a; C kept on disk.
     busmgr/button.c
     busmgr/power.c
     busmgr/utils.c
@@ -200,7 +201,8 @@ list(APPEND ACPI_SOURCE
     interface.c
     pnp.c
     power.c
-    buspdo.c
+    # buspdo.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/buspdo.rs, Phase 3a:
+    #   the Bus_PDO_* PnP/resource dispatch). Symbols from libacpi_rust.a; C kept on disk.
     main.c)
 
 # ============================================================================
@@ -237,6 +239,10 @@ add_custom_command(
     DEPENDS ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/Cargo.toml
             ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/lib.rs
             ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/osl.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/shared.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/types.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/bus.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/buspdo.rs
     WORKING_DIRECTORY ${ACPI_RUST_WORKSPACE_DIR}
     COMMENT "Building acpi-rust (${ACPI_RUST_TARGET})"
     VERBATIM)

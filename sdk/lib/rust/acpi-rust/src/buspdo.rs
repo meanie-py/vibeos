@@ -6,8 +6,75 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusNumber, BusQueryCompatibleIDs, BusQueryDeviceID, BusQueryHardwareIDs, BusQueryInstanceID, BusRelations, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, CmResourceShareDeviceExclusive, CmResourceShareDriverExclusive, CmResourceShareShared, DEVICE_CAPABILITIES, DEVICE_RELATIONS, DevicePowerState, DeviceTextDescription, EjectionRelations, _KWAIT_REASON_Executive, IO_RESOURCE_DESCRIPTOR, IO_RESOURCE_REQUIREMENTS_LIST, IO_STACK_LOCATION, _IO_STATUS_BLOCK, Internal, InternalPowerBus, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, KAFFINITY, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_RESOURCE_DESCRIPTOR, PIO_RESOURCE_REQUIREMENTS_LIST, PIO_STACK_LOCATION, PIRP, PNP_BUS_INFORMATION, POWER_STATE, PPNP_BUS_INFORMATION, PowerDeviceD0, PowerDeviceD1, PowerDeviceD2, PowerDeviceD3, PowerSystemSleeping1, PowerSystemSleeping2, PowerSystemSleeping3, PowerSystemWorking, RemovalRelations, TargetDeviceRelation};
+use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, DEVICE_CAPABILITIES, DEVICE_RELATIONS, _KWAIT_REASON_Executive, IO_RESOURCE_DESCRIPTOR, IO_RESOURCE_REQUIREMENTS_LIST, IO_STACK_LOCATION, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, KAFFINITY, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_RESOURCE_DESCRIPTOR, PIO_RESOURCE_REQUIREMENTS_LIST, PIO_STACK_LOCATION, PIRP, PNP_BUS_INFORMATION, PPNP_BUS_INFORMATION};
+// IoGet{Current,Next}IrpStackLocation are FORCEINLINE in the DDK (no exported
+// symbol) — use the ntkrnl-sys inline impls or the cohab link fails.
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation};
 use core::ffi::c_void;
+
+// ---- Enum-variant constants: bindgen prefixes them (`_<ENUM>_<Name>`), so the
+// unprefixed spellings the C glue uses don't resolve from ddk. Re-alias here
+// (values are bindgen's, verified against the ddk enums; this file only). ----
+use ntkrnl_sys::ddk::{
+    _INTERFACE_TYPE_Internal as Internal,
+    _INTERFACE_TYPE_InternalPowerBus as InternalPowerBus,
+    _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0,
+    _DEVICE_POWER_STATE_PowerDeviceD1 as PowerDeviceD1,
+    _DEVICE_POWER_STATE_PowerDeviceD2 as PowerDeviceD2,
+    _DEVICE_POWER_STATE_PowerDeviceD3 as PowerDeviceD3,
+    _SYSTEM_POWER_STATE_PowerSystemWorking as PowerSystemWorking,
+    _SYSTEM_POWER_STATE_PowerSystemSleeping1 as PowerSystemSleeping1,
+    _SYSTEM_POWER_STATE_PowerSystemSleeping2 as PowerSystemSleeping2,
+    _SYSTEM_POWER_STATE_PowerSystemSleeping3 as PowerSystemSleeping3,
+    _CM_SHARE_DISPOSITION_CmResourceShareDeviceExclusive as CmResourceShareDeviceExclusive,
+    _CM_SHARE_DISPOSITION_CmResourceShareDriverExclusive as CmResourceShareDriverExclusive,
+    _CM_SHARE_DISPOSITION_CmResourceShareShared as CmResourceShareShared,
+    _BUS_QUERY_ID_TYPE_BusQueryDeviceID as BusQueryDeviceID,
+    _BUS_QUERY_ID_TYPE_BusQueryInstanceID as BusQueryInstanceID,
+    _BUS_QUERY_ID_TYPE_BusQueryHardwareIDs as BusQueryHardwareIDs,
+    _BUS_QUERY_ID_TYPE_BusQueryCompatibleIDs as BusQueryCompatibleIDs,
+};
+
+// ---- ACPICA API (acpica-sys; imported by name — NEVER glob, which collides
+// with the ddk glob on shared primitives like BOOLEAN/UINT8). ----
+use acpica_sys::{AcpiGetCurrentResources, AcpiGetPossibleResources};
+
+// ---- Cross-module glue: real translations live in bus.rs (acpi.sys). ----
+use crate::bus::{acpi_bus_get_device, acpi_bus_power_manageable, acpi_bus_set_power};
+
+// ---- PoSetPowerState: kernel export, NTAPI (stdcall on i386, cdecl on
+// amd64/arm64 — `extern "system"` resolves per arch). Returns POWER_STATE by
+// value (the C glue ignores it). Signature: pofuncs.h. ----
+extern "system" {
+    fn PoSetPowerState(
+        DeviceObject: PDEVICE_OBJECT,
+        Type: ULONG,
+        State: POWER_STATE,
+    ) -> POWER_STATE;
+}
+
+// ---- Debug print macros: no-ops under the driver's NDEBUG build. ----
+macro_rules! DPRINT1 {
+    ($($t:tt)*) => {};
+}
+macro_rules! DPRINT {
+    ($($t:tt)*) => {};
+}
+// NT_ASSERT maps to the no-op ASSERT helper (kept from the substrate).
+macro_rules! NT_ASSERT {
+    ($($t:tt)*) => {};
+}
+
+// ---- CRT string helpers (real libc, declared — never the empty-body stubs,
+// which silently break ID matching). swprintf is C-variadic. ----
+extern "C" {
+    fn strstr(s1: *const i8, s2: *const i8) -> *mut i8;
+    fn strcmp(s1: *const i8, s2: *const i8) -> i32;
+    fn wcsstr(s1: *const u16, s2: *const u16) -> *mut u16;
+    fn wcslen(s: *const u16) -> usize;
+    fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
+    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -23,7 +90,7 @@ pub const ACPI_PROCESSOR_HID: [::core::ffi::c_char; 10] =
 pub const ACPI_THERMAL_HID: [::core::ffi::c_char; 12] =
     unsafe { ::core::mem::transmute::<[u8; 12], [::core::ffi::c_char; 12]>(*b"ThermalZone\0") };
 
-pub static mut GUID_DEVICE_BATTERY: GUID = _GUID {
+pub static mut GUID_DEVICE_BATTERY: GUID = GUID {
     Data1: 0x72631e54 as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0x78a4 as ::core::ffi::c_ushort,
     Data3: 0x11d0 as ::core::ffi::c_ushort,
@@ -39,7 +106,7 @@ pub static mut GUID_DEVICE_BATTERY: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_STATUS_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_STATUS_WMI_GUID: GUID = GUID {
     Data1: 0xfc4670d1 as ::core::ffi::c_uint,
     Data2: 0xebbf as ::core::ffi::c_ushort,
     Data3: 0x416e as ::core::ffi::c_ushort,
@@ -55,7 +122,7 @@ pub static mut BATTERY_STATUS_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_RUNTIME_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_RUNTIME_WMI_GUID: GUID = GUID {
     Data1: 0x535a3767 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0x1ac2 as ::core::ffi::c_ushort,
     Data3: 0x49bc as ::core::ffi::c_ushort,
@@ -71,7 +138,7 @@ pub static mut BATTERY_RUNTIME_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_TEMPERATURE_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_TEMPERATURE_WMI_GUID: GUID = GUID {
     Data1: 0x1a52a14d as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0xadce as ::core::ffi::c_ushort,
     Data3: 0x4a44 as ::core::ffi::c_ushort,
@@ -87,7 +154,7 @@ pub static mut BATTERY_TEMPERATURE_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_FULL_CHARGED_CAPACITY_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_FULL_CHARGED_CAPACITY_WMI_GUID: GUID = GUID {
     Data1: 0x40b40565 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0x96f7 as ::core::ffi::c_ushort,
     Data3: 0x4435 as ::core::ffi::c_ushort,
@@ -103,7 +170,7 @@ pub static mut BATTERY_FULL_CHARGED_CAPACITY_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_CYCLE_COUNT_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_CYCLE_COUNT_WMI_GUID: GUID = GUID {
     Data1: 0xef98db24 as ::core::ffi::c_uint,
     Data2: 0x14 as ::core::ffi::c_ushort,
     Data3: 0x4c25 as ::core::ffi::c_ushort,
@@ -119,7 +186,7 @@ pub static mut BATTERY_CYCLE_COUNT_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_STATIC_DATA_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_STATIC_DATA_WMI_GUID: GUID = GUID {
     Data1: 0x5e1e463 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0xe4e2 as ::core::ffi::c_ushort,
     Data3: 0x4ea9 as ::core::ffi::c_ushort,
@@ -135,7 +202,7 @@ pub static mut BATTERY_STATIC_DATA_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_STATUS_CHANGE_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_STATUS_CHANGE_WMI_GUID: GUID = GUID {
     Data1: 0xcddfa0c3 as ::core::ffi::c_uint,
     Data2: 0x7c5b as ::core::ffi::c_ushort,
     Data3: 0x4e43 as ::core::ffi::c_ushort,
@@ -151,7 +218,7 @@ pub static mut BATTERY_STATUS_CHANGE_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut BATTERY_TAG_CHANGE_WMI_GUID: GUID = _GUID {
+pub static mut BATTERY_TAG_CHANGE_WMI_GUID: GUID = GUID {
     Data1: 0x5e1f6e19 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0x8786 as ::core::ffi::c_ushort,
     Data3: 0x4d23 as ::core::ffi::c_ushort,
@@ -167,7 +234,7 @@ pub static mut BATTERY_TAG_CHANGE_WMI_GUID: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_CLASS_INPUT: GUID = _GUID {
+pub static mut GUID_CLASS_INPUT: GUID = GUID {
     Data1: 0x4d1e55b2 as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0xf16f as ::core::ffi::c_ushort,
     Data3: 0x11cf as ::core::ffi::c_ushort,
@@ -183,7 +250,7 @@ pub static mut GUID_CLASS_INPUT: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_DEVICE_LID: GUID = _GUID {
+pub static mut GUID_DEVICE_LID: GUID = GUID {
     Data1: 0x4afa3d52 as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0x74a7 as ::core::ffi::c_ushort,
     Data3: 0x11d0 as ::core::ffi::c_ushort,
@@ -199,7 +266,7 @@ pub static mut GUID_DEVICE_LID: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_DEVICE_MEMORY: GUID = _GUID {
+pub static mut GUID_DEVICE_MEMORY: GUID = GUID {
     Data1: 0x3fd0f03d as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0x92e0 as ::core::ffi::c_ushort,
     Data3: 0x45fb as ::core::ffi::c_ushort,
@@ -215,7 +282,7 @@ pub static mut GUID_DEVICE_MEMORY: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_DEVICE_MESSAGE_INDICATOR: GUID = _GUID {
+pub static mut GUID_DEVICE_MESSAGE_INDICATOR: GUID = GUID {
     Data1: 0xcd48a365 as ::core::ffi::c_ulong as ::core::ffi::c_uint,
     Data2: 0xfa94 as ::core::ffi::c_ushort,
     Data3: 0x4ce2 as ::core::ffi::c_ushort,
@@ -231,7 +298,7 @@ pub static mut GUID_DEVICE_MESSAGE_INDICATOR: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_DEVICE_PROCESSOR: GUID = _GUID {
+pub static mut GUID_DEVICE_PROCESSOR: GUID = GUID {
     Data1: 0x97fadb10 as ::core::ffi::c_ulong as ::core::ffi::c_uint,
     Data2: 0x4e33 as ::core::ffi::c_ushort,
     Data3: 0x40ae as ::core::ffi::c_ushort,
@@ -247,7 +314,7 @@ pub static mut GUID_DEVICE_PROCESSOR: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_DEVICE_SYS_BUTTON: GUID = _GUID {
+pub static mut GUID_DEVICE_SYS_BUTTON: GUID = GUID {
     Data1: 0x4afa3d53 as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0x74a7 as ::core::ffi::c_ushort,
     Data3: 0x11d0 as ::core::ffi::c_ushort,
@@ -263,7 +330,7 @@ pub static mut GUID_DEVICE_SYS_BUTTON: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_DEVICE_THERMAL_ZONE: GUID = _GUID {
+pub static mut GUID_DEVICE_THERMAL_ZONE: GUID = GUID {
     Data1: 0x4afa3d51 as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0x74a7 as ::core::ffi::c_ushort,
     Data3: 0x11d0 as ::core::ffi::c_ushort,
@@ -279,7 +346,7 @@ pub static mut GUID_DEVICE_THERMAL_ZONE: GUID = _GUID {
     ],
 };
 
-pub static mut GUID_DEVICE_FAN: GUID = _GUID {
+pub static mut GUID_DEVICE_FAN: GUID = GUID {
     Data1: 0x5ecd13d as ::core::ffi::c_long as ::core::ffi::c_uint,
     Data2: 0x81da as ::core::ffi::c_ushort,
     Data3: 0x4a2a as ::core::ffi::c_ushort,
@@ -295,45 +362,12 @@ pub static mut GUID_DEVICE_FAN: GUID = _GUID {
     ],
 };
 
-#[repr(C)]
-pub struct _PDO_DEVICE_DATA {
-    pub Common: _COMMON_DEVICE_DATA,
-    pub HardwareIDs: PWCHAR,
-    pub AcpiHandle: ACPI_HANDLE,
-    pub InterfaceName: _UNICODE_STRING,
-    pub DockDevice: BOOLEAN,
-}
-
-pub type PPDO_DEVICE_DATA = *mut _PDO_DEVICE_DATA;
-
-#[repr(C)]
-pub struct _COMMON_DEVICE_DATA {
-    pub Self: PDEVICE_OBJECT,
-    pub DevicePnPState: DEVICE_PNP_STATE,
-    pub DevicePowerState: DEVICE_POWER_STATE,
-    pub PreviousDevicePnPState: DEVICE_PNP_STATE,
-}
-
-pub type PCOMMON_DEVICE_DATA = *mut _COMMON_DEVICE_DATA;
-
-pub type DEVICE_PNP_STATE = ULONG;
-pub type DEVICE_POWER_STATE = ULONG;
-
-pub const NotStarted: DEVICE_PNP_STATE = 0;
-pub const Started: DEVICE_PNP_STATE = 1;
-pub const StopPending: DEVICE_PNP_STATE = 2;
-pub const Stopped: DEVICE_PNP_STATE = 3;
-pub const RemovalPending: DEVICE_PNP_STATE = 4;
-
-pub const PowerDeviceD0: DEVICE_POWER_STATE = 0;
-pub const PowerDeviceD1: DEVICE_POWER_STATE = 1;
-pub const PowerDeviceD2: DEVICE_POWER_STATE = 2;
-pub const PowerDeviceD3: DEVICE_POWER_STATE = 3;
-
-pub const PowerSystemWorking: ULONG = 0;
-pub const PowerSystemSleeping1: ULONG = 1;
-pub const PowerSystemSleeping2: ULONG = 2;
-pub const PowerSystemSleeping3: ULONG = 3;
+// Device-extension types come from the hand-verified shared substrate (exact
+// acpisys.h layouts). The LLM type-preamble that c2rust emitted here dropped
+// fields and used the reserved keyword `Self`; shared.rs replaces it.
+// DEVICE_PNP_STATE + NotStarted..UnKnown come from shared::*; the Power*
+// states (PowerDeviceD0.., PowerSystemWorking..) come from the ddk imports.
+use crate::shared::*;
 
 pub const ACPI_D_STATE_COUNT: ULONG = 4;
 pub const ACPI_STATE_D0: ULONG = 0;
@@ -341,14 +375,14 @@ pub const ACPI_STATE_D1: ULONG = 1;
 pub const ACPI_STATE_D2: ULONG = 2;
 pub const ACPI_STATE_D3: ULONG = 3;
 
-pub const ACPI_PRODUCER: ULONG = 0;
+pub const ACPI_PRODUCER: u8 = 0;
 pub const ACPI_CONSUMER: ULONG = 1;
-pub const ACPI_SHARED: ULONG = 1;
-pub const ACPI_LEVEL_SENSITIVE: ULONG = 1;
-pub const ACPI_BUS_MASTER: ULONG = 1;
-pub const ACPI_DECODE_16: ULONG = 1;
-pub const ACPI_POS_DECODE: ULONG = 1;
-pub const ACPI_READ_ONLY_MEMORY: ULONG = 1;
+pub const ACPI_SHARED: u8 = 1;
+pub const ACPI_LEVEL_SENSITIVE: u8 = 1;
+pub const ACPI_BUS_MASTER: u8 = 1;
+pub const ACPI_DECODE_16: u8 = 1;
+pub const ACPI_POS_DECODE: u8 = 1;
+pub const ACPI_READ_ONLY_MEMORY: u8 = 1;
 pub const ACPI_CACHABLE_MEMORY: ULONG = 1;
 pub const ACPI_WRITE_COMBINING_MEMORY: ULONG = 2;
 pub const ACPI_PREFETCHABLE_MEMORY: ULONG = 3;
@@ -377,8 +411,8 @@ pub const ACPI_RESOURCE_TYPE_EXTENDED_ADDRESS64: ULONG = 14;
 pub const ACPI_RESOURCE_TYPE_EXTENDED_IRQ: ULONG = 15;
 pub const ACPI_RESOURCE_TYPE_GENERIC_REGISTER: ULONG = 16;
 
-pub const ACPI_BUS_NUMBER_RANGE: ULONG = 0;
-pub const ACPI_IO_RANGE: ULONG = 1;
+pub const ACPI_BUS_NUMBER_RANGE: u8 = 0;
+pub const ACPI_IO_RANGE: u8 = 1;
 pub const ACPI_MEMORY_RANGE: ULONG = 2;
 
 pub const CmResourceTypeInterrupt: ULONG = 0;
@@ -423,249 +457,27 @@ pub const GUID_ACPI_INTERFACE_STANDARD: GUID = GUID {
 
 pub const UNICODE_NULL: WCHAR = 0;
 
-pub type ACPI_HANDLE = *mut core::ffi::c_void;
-pub type ACPI_STATUS = ULONG;
-pub type ACPI_RESOURCE_TYPE = ULONG;
+// IO_RESOURCE_* option flags + IRP_MN_QUERY_CAPABILITIES — values from
+// sdk/include/xdk/iotypes.h (not emitted by the kernel bindgen).
+pub const IO_RESOURCE_PREFERRED: ULONG = 0x01;
+pub const IO_RESOURCE_DEFAULT: ULONG = 0x02;
+pub const IO_RESOURCE_ALTERNATIVE: ULONG = 0x08;
+pub const IRP_MN_QUERY_CAPABILITIES: u8 = 0x09;
+// The remaining IRP_MN_QUERY_* minor codes the driver_ddk subset omits — without
+// these, the `match` arms would silently become catch-all bindings (footgun).
+pub const IRP_MN_QUERY_INTERFACE: u8 = 0x08;
+pub const IRP_MN_QUERY_RESOURCES: u8 = 0x0A;
+pub const IRP_MN_QUERY_RESOURCE_REQUIREMENTS: u8 = 0x0B;
+pub const IRP_MN_QUERY_DEVICE_TEXT: u8 = 0x0C;
+pub const IRP_MN_QUERY_ID: u8 = 0x13;
+pub const IRP_MN_QUERY_BUS_INFORMATION: u8 = 0x15;
 
-pub const AE_OK: ACPI_STATUS = 0;
-pub const AE_BUFFER_OVERFLOW: ACPI_STATUS = 0x3001;
-
+// ACPI_HANDLE/ACPI_STATUS, the ACPI_RESOURCE* structs, ACPI_BUFFER, and the
+// acpi_device* structs come from the bindgen substrate via `use crate::shared::*`
+// (acpica-sys layouts + acpi_bus.h). AE_* codes also come from shared (the local
+// AE_BUFFER_OVERFLOW here was 0x3001 — WRONG; correct is 0x000B in shared).
 pub fn ACPI_SUCCESS(status: ACPI_STATUS) -> bool {
     status == AE_OK
-}
-
-#[repr(C)]
-pub struct ACPI_BUFFER {
-    pub Length: ULONG,
-    pub Pointer: *mut core::ffi::c_void,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE {
-    pub Type: ACPI_RESOURCE_TYPE,
-    pub Length: ULONG,
-    pub Data: ACPI_RESOURCE_DATA,
-}
-
-#[repr(C)]
-pub union ACPI_RESOURCE_DATA {
-    pub Irq: ACPI_RESOURCE_IRQ,
-    pub Dma: ACPI_RESOURCE_DMA,
-    pub Io: ACPI_RESOURCE_IO,
-    pub FixedIo: ACPI_RESOURCE_FIXED_IO,
-    pub Vendor: ACPI_RESOURCE_VENDOR,
-    pub Memory24: ACPI_RESOURCE_MEMORY24,
-    pub Memory32: ACPI_RESOURCE_MEMORY32,
-    pub FixedMemory32: ACPI_RESOURCE_FIXED_MEMORY32,
-    pub Address16: ACPI_RESOURCE_ADDRESS16,
-    pub Address32: ACPI_RESOURCE_ADDRESS32,
-    pub Address64: ACPI_RESOURCE_ADDRESS64,
-    pub ExtendedAddress64: ACPI_RESOURCE_EXTENDED_ADDRESS64,
-    pub ExtendedIrq: ACPI_RESOURCE_EXTENDED_IRQ,
-    pub GenericReg: ACPI_RESOURCE_GENERIC_REGISTER,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_IRQ {
-    pub DescriptorLength: u8,
-    pub Triggering: u8,
-    u1: u8,
-    pub Shareable: u8,
-    pub InterruptCount: u8,
-    pub Interrupts: [ULONG; 1],
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_DMA {
-    pub DescriptorLength: u8,
-    pub Type: u8,
-    pub BusMaster: u8,
-    pub Transfer: u8,
-    pub ChannelCount: u8,
-    pub Channels: [ULONG; 1],
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_IO {
-    pub DescriptorLength: u8,
-    pub IoDecode: u8,
-    pub Minimum: u16,
-    pub Maximum: u16,
-    pub Alignment: u8,
-    pub AddressLength: u8,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_FIXED_IO {
-    pub DescriptorLength: u8,
-    pub Address: u16,
-    pub AddressLength: u8,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_VENDOR {
-    pub DescriptorLength: u8,
-    pub VendorData: [u8; 1],
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_MEMORY24 {
-    pub DescriptorLength: u8,
-    pub WriteProtect: u8,
-    pub Minimum: u16,
-    pub Maximum: u16,
-    pub Alignment: u16,
-    pub AddressLength: u16,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_MEMORY32 {
-    pub DescriptorLength: u8,
-    pub WriteProtect: u8,
-    pub Minimum: u32,
-    pub Maximum: u32,
-    pub Alignment: u32,
-    pub AddressLength: u32,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_FIXED_MEMORY32 {
-    pub DescriptorLength: u8,
-    pub WriteProtect: u8,
-    pub Address: u32,
-    pub AddressLength: u32,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_ADDRESS {
-    pub ResourceType: u8,
-    pub ProducerConsumer: u8,
-    pub Decode: u8,
-    pub MinAddressFixed: u8,
-    pub MaxAddressFixed: u8,
-    pub Info: ACPI_RESOURCE_ADDRESS_INFO,
-    pub Granularity: u64,
-    pub Minimum: u64,
-    pub Maximum: u64,
-    pub TranslationOffset: u64,
-    pub AddressLength: u64,
-    pub ResourceSource: ACPI_RESOURCE_SOURCE,
-}
-
-#[repr(C)]
-pub union ACPI_RESOURCE_ADDRESS_INFO {
-    pub Mem: ACPI_RESOURCE_ADDRESS_MEM_INFO,
-    pub Io: ACPI_RESOURCE_ADDRESS_IO_INFO,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_ADDRESS_MEM_INFO {
-    pub WriteProtect: u8,
-    pub Caching: u8,
-    pub RangeType: u8,
-    pub TranslationType: u8,
-    pub TranslationDensity: u8,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_ADDRESS_IO_INFO {
-    pub RangeType: u8,
-    pub TranslationType: u8,
-    pub TranslationDensity: u8,
-    pub _reserved: u8,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_SOURCE {
-    pub Index: u8,
-    pub StringLength: u16,
-    pub StringPtr: *mut u8,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_ADDRESS16 {
-    pub ResourceType: u8,
-    pub ProducerConsumer: u8,
-    pub Decode: u8,
-    pub MinAddressFixed: u8,
-    pub MaxAddressFixed: u8,
-    pub Info: ACPI_RESOURCE_ADDRESS_INFO,
-    pub Granularity: u16,
-    pub Minimum: u16,
-    pub Maximum: u16,
-    pub TranslationOffset: u16,
-    pub AddressLength: u16,
-    pub ResourceSource: ACPI_RESOURCE_SOURCE,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_ADDRESS32 {
-    pub ResourceType: u8,
-    pub ProducerConsumer: u8,
-    pub Decode: u8,
-    pub MinAddressFixed: u8,
-    pub MaxAddressFixed: u8,
-    pub Info: ACPI_RESOURCE_ADDRESS_INFO,
-    pub Granularity: u32,
-    pub Minimum: u32,
-    pub Maximum: u32,
-    pub TranslationOffset: u32,
-    pub AddressLength: u32,
-    pub ResourceSource: ACPI_RESOURCE_SOURCE,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_ADDRESS64 {
-    pub ResourceType: u8,
-    pub ProducerConsumer: u8,
-    pub Decode: u8,
-    pub MinAddressFixed: u8,
-    pub MaxAddressFixed: u8,
-    pub Info: ACPI_RESOURCE_ADDRESS_INFO,
-    pub Granularity: u64,
-    pub Minimum: u64,
-    pub Maximum: u64,
-    pub TranslationOffset: u64,
-    pub AddressLength: u64,
-    pub ResourceSource: ACPI_RESOURCE_SOURCE,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_EXTENDED_ADDRESS64 {
-    pub ResourceType: u8,
-    pub ProducerConsumer: u8,
-    pub Decode: u8,
-    pub MinAddressFixed: u8,
-    pub MaxAddressFixed: u8,
-    pub Info: ACPI_RESOURCE_ADDRESS_INFO,
-    pub Granularity: u64,
-    pub Minimum: u64,
-    pub Maximum: u64,
-    pub TranslationOffset: u64,
-    pub AddressLength: u64,
-    pub TypeSpecific: u64,
-    pub ResourceSource: ACPI_RESOURCE_SOURCE,
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_EXTENDED_IRQ {
-    pub DescriptorLength: u8,
-    pub Triggering: u8,
-    pub Polarity: u8,
-    pub Shareable: u8,
-    pub ProducerConsumer: u8,
-    pub InterruptCount: u8,
-    pub Interrupts: [ULONG; 1],
-}
-
-#[repr(C)]
-pub struct ACPI_RESOURCE_GENERIC_REGISTER {
-    pub DescriptorLength: u8,
-    pub SpaceId: u8,
-    pub BitWidth: u8,
-    pub BitOffset: u8,
-    pub AccessSize: u8,
-    pub Address: u64,
 }
 
 pub fn ACPI_NEXT_RESOURCE(res: *const ACPI_RESOURCE) -> *const ACPI_RESOURCE {
@@ -676,145 +488,20 @@ pub fn ACPI_NEXT_RESOURCE(res: *const ACPI_RESOURCE) -> *const ACPI_RESOURCE {
     }
 }
 
-#[repr(C)]
-pub struct acpi_device {
-    pub handle: ACPI_HANDLE,
-    pub flags: acpi_device_flags,
-    pub status: acpi_device_status,
-    pub power: acpi_device_power,
-    pub pnp: acpi_device_pnp,
+
+// Faithful to the acpisys.h macros: they mutate through the struct lvalue.
+// SET saves the current state into PreviousPnPState, then sets the new one.
+pub unsafe fn SET_NEW_PNP_STATE(data: *mut COMMON_DEVICE_DATA, state: DEVICE_PNP_STATE) {
+    (*data).PreviousPnPState = (*data).DevicePnPState;
+    (*data).DevicePnPState = state;
 }
 
-#[repr(C)]
-pub struct acpi_device_flags {
-    pub hardware_id: u32,
-    pub compatible_ids: u32,
-    pub bus_address: u32,
-    pub unique_id: u32,
-    pub removable: u32,
-    pub ejectable: u32,
-    pub lockable: u32,
-    pub surprise_removal_ok: u32,
-    pub power_manageable: u32,
-    pub performance_manageable: u32,
-    pub dynamic_status: u32,
-    pub _reserved: u32,
-}
-
-#[repr(C)]
-pub struct acpi_device_status {
-    pub present: u32,
-    pub enabled: u32,
-    pub show_in_ui: u32,
-    pub functional: u32,
-    pub battery: u32,
-    pub _reserved: u32,
-}
-
-#[repr(C)]
-pub struct acpi_device_power {
-    pub states: [acpi_device_power_state; ACPI_D_STATE_COUNT as usize],
-}
-
-#[repr(C)]
-pub struct acpi_device_power_state {
-    pub flags: acpi_device_power_state_flags,
-    pub latency: u32,
-    pub power: u32,
-}
-
-#[repr(C)]
-pub struct acpi_device_power_state_flags {
-    pub valid: u32,
-    pub explicit_set: u32,
-    pub _reserved: u32,
-}
-
-#[repr(C)]
-pub struct acpi_device_pnp {
-    pub device_name: *mut u8,
-    pub hardware_id: *mut u8,
-    pub unique_id: *mut u8,
-    pub bus_address: ULONG,
-    pub cid_list: *mut acpi_device_cid_list,
-}
-
-#[repr(C)]
-pub struct acpi_device_cid_list {
-    pub Count: ULONG,
-    pub Ids: [acpi_device_cid; 1],
-}
-
-#[repr(C)]
-pub struct acpi_device_cid {
-    pub String: *mut u8,
-}
-
-pub type ACPI_HANDLE = *mut core::ffi::c_void;
-
-pub fn acpi_bus_get_device(handle: ACPI_HANDLE, device: *mut *mut acpi_device) -> ACPI_STATUS {
-    AE_OK
-}
-
-pub fn acpi_bus_power_manageable(handle: ACPI_HANDLE) -> u32 {
-    1
-}
-
-pub fn acpi_bus_set_power(handle: ACPI_HANDLE, state: ULONG) -> ACPI_STATUS {
-    AE_OK
-}
-
-pub fn acpi_evaluate_integer(handle: ACPI_HANDLE, name: *const u8, args: *mut core::ffi::c_void, value: *mut ULONGLONG) -> ACPI_STATUS {
-    AE_OK
-}
-
-pub fn AcpiGetCurrentResources(handle: ACPI_HANDLE, buffer: *mut ACPI_BUFFER) -> ACPI_STATUS {
-    AE_OK
-}
-
-pub fn PoSetPowerState(device: PDEVICE_OBJECT, type_: ULONG, state: POWER_STATE) {
-}
-
-pub fn SET_NEW_PNP_STATE(data: COMMON_DEVICE_DATA, state: DEVICE_PNP_STATE) {
-    data.DevicePnPState = state;
-}
-
-pub fn RESTORE_PREVIOUS_PNP_STATE(data: COMMON_DEVICE_DATA) {
-    data.DevicePnPState = data.PreviousDevicePnPState;
+pub unsafe fn RESTORE_PREVIOUS_PNP_STATE(data: *mut COMMON_DEVICE_DATA) {
+    (*data).DevicePnPState = (*data).PreviousPnPState;
 }
 
 pub fn DbgDeviceRelationString(type_: ULONG) -> *const u8 {
     b"Unknown\0".as_ptr()
-}
-
-pub fn strstr(s1: *const u8, s2: *const u8) -> *const u8 {
-    core::ptr::null()
-}
-
-pub fn strcmp(s1: *const u8, s2: *const u8) -> i32 {
-    0
-}
-
-pub fn wcsstr(s1: *const u16, s2: *const u16) -> *const u16 {
-    core::ptr::null()
-}
-
-pub fn wcslen(s: *const u16) -> usize {
-    0
-}
-
-pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16 {
-    dest
-}
-
-pub fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32 {
-    0
-}
-
-pub fn DPRINT1(format: *const u8, ...) {
-}
-
-pub fn DPRINT(format: *const u8, ...) {
 }
 
 pub fn ASSERTMSG(msg: *const u8, expr: bool) {
@@ -832,41 +519,39 @@ pub type ULONG = u32;
 pub type ULONGLONG = u64;
 pub type BOOLEAN = u8;
 pub type PCHAR = *mut u8;
-pub type KAFFINITY = ULONG_PTR;
-pub type ULONG_PTR = usize;
+// ULONG_PTR is the kernel's pointer-width unsigned (c_ulong i386 / c_ulonglong
+// 64-bit) — must match the IoStatus.Information field type, not `usize`.
+pub use ntkrnl_sys::ddk::ULONG_PTR;
 pub type PVOID = *mut core::ffi::c_void;
+// DEVICE_POWER_STATE is `_DEVICE_POWER_STATE` (c_uint) in the kernel; KAFFINITY
+// comes from the ddk import above (don't redefine).
+pub type DEVICE_POWER_STATE = core::ffi::c_uint;
 
-#[repr(C)]
-pub struct GUID {
-    pub Data1: ULONG,
-    pub Data2: u16,
-    pub Data3: u16,
-    pub Data4: [u8; 8],
-}
+// GUID is the kernel _GUID (used by IoRegisterDeviceInterface / PNP_BUS_INFORMATION).
+pub use ntkrnl_sys::ddk::GUID;
 
+// POWER_STATE is a C union of {SystemState, DeviceState}; only DeviceState is
+// used here. Layout-compatible (single c_uint) with the kernel POWER_STATE for
+// the PoSetPowerState call.
 #[repr(C)]
 pub struct POWER_STATE {
     pub DeviceState: DEVICE_POWER_STATE,
 }
 
-pub const DevicePowerState: ULONG = 0;
+// _POWER_STATE_TYPE_DevicePowerState == 1 (the c2rust preamble had 0 — WRONG).
+pub const DevicePowerState: ULONG = 1;
 
-pub const ProcessorIdString: *const u16 = b"Processor\0" as *const u16 as *const u16;
-
-pub const ProcessorHardwareIds: _UNICODE_STRING = _UNICODE_STRING {
-    Length: 0,
-    MaximumLength: 0,
-    Buffer: core::ptr::null_mut(),
-};
-
-pub const ProcessorNameString: *const u16 = core::ptr::null();
-
-#[repr(C)]
-pub struct _UNICODE_STRING {
-    pub Length: u16,
-    pub MaximumLength: u16,
-    pub Buffer: PWCHAR,
+// ProcessorIdString / ProcessorNameString / ProcessorHardwareIds are mutable C
+// globals defined+populated in main.c (which stays C). The c2rust preamble
+// fabricated local consts (and a broken byte-string→*const u16 cast). Declare
+// the real externs instead; types from acpisys.h (LPWSTR / UNICODE_STRING).
+extern "C" {
+    static mut ProcessorIdString: PWCHAR;
+    static mut ProcessorNameString: PWCHAR;
+    static mut ProcessorHardwareIds: _UNICODE_STRING;
 }
+
+use ntkrnl_sys::base::UNICODE_STRING as _UNICODE_STRING;
 #[no_mangle]
 pub unsafe extern "C" fn Bus_PDO_PnP(
     DeviceObject: PDEVICE_OBJECT,
@@ -882,11 +567,11 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
         acpi_bus_get_device((*DeviceData).AcpiHandle, &mut device);
     }
 
-    match (*IrpStack).MinorFunction as i32 {
+    match (*IrpStack).MinorFunction as u8 {
         IRP_MN_START_DEVICE => {
             if !(*DeviceData).AcpiHandle.is_null()
                 && acpi_bus_power_manageable((*DeviceData).AcpiHandle) != 0
-                && ACPI_SUCCESS(acpi_bus_set_power((*DeviceData).AcpiHandle, 0)) == 0
+                && !ACPI_SUCCESS(acpi_bus_set_power((*DeviceData).AcpiHandle, 0) as ACPI_STATUS)
             {
                 status = STATUS_UNSUCCESSFUL;
             } else {
@@ -895,59 +580,59 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
 
                 if device.is_null() {
                     status = IoRegisterDeviceInterface(
-                        (*DeviceData).Common.Self,
+                        (*DeviceData).Common.Self_,
                         &GUID_DEVICE_SYS_BUTTON,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
-                } else if (*device).flags.hardware_id != 0
+                } else if (*device).flags.hardware_id() != 0
                     && !strstr(
-                        (*device).pnp.hardware_id.as_ptr(),
+                        (*device).pnp.hardware_id as *const i8,
                         ACPI_THERMAL_HID.as_ptr(),
                     )
                     .is_null()
                 {
                     status = IoRegisterDeviceInterface(
-                        (*DeviceData).Common.Self,
+                        (*DeviceData).Common.Self_,
                         &GUID_DEVICE_THERMAL_ZONE,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
-                } else if (*device).flags.hardware_id != 0
+                } else if (*device).flags.hardware_id() != 0
                     && !strstr(
-                        (*device).pnp.hardware_id.as_ptr(),
+                        (*device).pnp.hardware_id as *const i8,
                         ACPI_FAN_HID.as_ptr(),
                     )
                     .is_null()
                 {
                     status = IoRegisterDeviceInterface(
-                        (*DeviceData).Common.Self,
+                        (*DeviceData).Common.Self_,
                         &GUID_DEVICE_FAN,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
-                } else if (*device).flags.hardware_id != 0
+                } else if (*device).flags.hardware_id() != 0
                     && !strstr(
-                        (*device).pnp.hardware_id.as_ptr(),
+                        (*device).pnp.hardware_id as *const i8,
                         ACPI_BUTTON_HID_LID.as_ptr(),
                     )
                     .is_null()
                 {
                     status = IoRegisterDeviceInterface(
-                        (*DeviceData).Common.Self,
+                        (*DeviceData).Common.Self_,
                         &GUID_DEVICE_LID,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
-                } else if (*device).flags.hardware_id != 0
+                } else if (*device).flags.hardware_id() != 0
                     && !strstr(
-                        (*device).pnp.hardware_id.as_ptr(),
+                        (*device).pnp.hardware_id as *const i8,
                         ACPI_PROCESSOR_HID.as_ptr(),
                     )
                     .is_null()
                 {
                     status = IoRegisterDeviceInterface(
-                        (*DeviceData).Common.Self,
+                        (*DeviceData).Common.Self_,
                         &GUID_DEVICE_PROCESSOR,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
@@ -959,9 +644,9 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 }
 
                 state.DeviceState = PowerDeviceD0;
-                PoSetPowerState((*DeviceData).Common.Self, DevicePowerState, state);
+                PoSetPowerState((*DeviceData).Common.Self_, DevicePowerState, state);
                 (*DeviceData).Common.DevicePowerState = PowerDeviceD0;
-                SET_NEW_PNP_STATE((*DeviceData).Common, Started);
+                SET_NEW_PNP_STATE(&mut (*DeviceData).Common, Started);
                 status = STATUS_SUCCESS;
             }
         }
@@ -973,26 +658,26 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
 
             if !(*DeviceData).AcpiHandle.is_null()
                 && acpi_bus_power_manageable((*DeviceData).AcpiHandle) != 0
-                && ACPI_SUCCESS(acpi_bus_set_power((*DeviceData).AcpiHandle, 3)) == 0
+                && !ACPI_SUCCESS(acpi_bus_set_power((*DeviceData).AcpiHandle, 3) as ACPI_STATUS)
             {
                 status = STATUS_UNSUCCESSFUL;
             } else {
                 state.DeviceState = PowerDeviceD3;
-                PoSetPowerState((*DeviceData).Common.Self, DevicePowerState, state);
+                PoSetPowerState((*DeviceData).Common.Self_, DevicePowerState, state);
                 (*DeviceData).Common.DevicePowerState = PowerDeviceD3;
-                SET_NEW_PNP_STATE((*DeviceData).Common, Stopped);
+                SET_NEW_PNP_STATE(&mut (*DeviceData).Common, Stopped);
                 status = STATUS_SUCCESS;
             }
         }
 
         IRP_MN_QUERY_STOP_DEVICE => {
-            SET_NEW_PNP_STATE((*DeviceData).Common, StopPending);
+            SET_NEW_PNP_STATE(&mut (*DeviceData).Common, StopPending);
             status = STATUS_SUCCESS;
         }
 
         IRP_MN_CANCEL_STOP_DEVICE => {
             if StopPending == (*DeviceData).Common.DevicePnPState {
-                RESTORE_PREVIOUS_PNP_STATE((*DeviceData).Common);
+                RESTORE_PREVIOUS_PNP_STATE(&mut (*DeviceData).Common);
             }
             status = STATUS_SUCCESS;
         }
@@ -1004,25 +689,25 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
 
             if !(*DeviceData).AcpiHandle.is_null()
                 && acpi_bus_power_manageable((*DeviceData).AcpiHandle) != 0
-                && ACPI_SUCCESS(acpi_bus_set_power((*DeviceData).AcpiHandle, 3)) == 0
+                && !ACPI_SUCCESS(acpi_bus_set_power((*DeviceData).AcpiHandle, 3) as ACPI_STATUS)
             {
                 state.DeviceState = PowerDeviceD3;
-                PoSetPowerState((*DeviceData).Common.Self, DevicePowerState, state);
+                PoSetPowerState((*DeviceData).Common.Self_, DevicePowerState, state);
                 (*DeviceData).Common.DevicePowerState = PowerDeviceD3;
             }
 
-            SET_NEW_PNP_STATE((*DeviceData).Common, Stopped);
+            SET_NEW_PNP_STATE(&mut (*DeviceData).Common, Stopped);
             status = STATUS_SUCCESS;
         }
 
         IRP_MN_QUERY_REMOVE_DEVICE => {
-            SET_NEW_PNP_STATE((*DeviceData).Common, RemovalPending);
+            SET_NEW_PNP_STATE(&mut (*DeviceData).Common, RemovalPending);
             status = STATUS_SUCCESS;
         }
 
         IRP_MN_CANCEL_REMOVE_DEVICE => {
             if RemovalPending == (*DeviceData).Common.DevicePnPState {
-                RESTORE_PREVIOUS_PNP_STATE((*DeviceData).Common);
+                RESTORE_PREVIOUS_PNP_STATE(&mut (*DeviceData).Common);
             }
             status = STATUS_SUCCESS;
         }
@@ -1083,7 +768,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceCaps(
     let stack = IoGetCurrentIrpStackLocation(Irp);
     let deviceCapabilities = (*stack).Parameters.DeviceCapabilities.Capabilities;
 
-    if (*deviceCapabilities).Version != 1 || (*deviceCapabilities).Size < core::mem::size_of::<DEVICE_CAPABILITIES>() as ULONG {
+    if (*deviceCapabilities).Version != 1 || ((*deviceCapabilities).Size as ULONG) < core::mem::size_of::<DEVICE_CAPABILITIES>() as ULONG {
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -1123,27 +808,27 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceCaps(
 
     (*deviceCapabilities).DeviceWake = PowerDeviceD1;
 
-    (*deviceCapabilities).DeviceD1 = if (*deviceCapabilities).DeviceState[PowerSystemSleeping1 as usize] == PowerDeviceD1 { 1u8 } else { 0u8 };
-    (*deviceCapabilities).DeviceD2 = if (*deviceCapabilities).DeviceState[PowerSystemSleeping2 as usize] == PowerDeviceD2 { 1u8 } else { 0u8 };
+    (*deviceCapabilities).set_DeviceD1(if (*deviceCapabilities).DeviceState[PowerSystemSleeping1 as usize] == PowerDeviceD1 { 1 } else { 0 });
+    (*deviceCapabilities).set_DeviceD2(if (*deviceCapabilities).DeviceState[PowerSystemSleeping2 as usize] == PowerDeviceD2 { 1 } else { 0 });
 
-    (*deviceCapabilities).WakeFromD0 = 0u8;
-    (*deviceCapabilities).WakeFromD1 = 1u8;
-    (*deviceCapabilities).WakeFromD2 = 0u8;
-    (*deviceCapabilities).WakeFromD3 = 0u8;
+    (*deviceCapabilities).set_WakeFromD0(0);
+    (*deviceCapabilities).set_WakeFromD1(1);
+    (*deviceCapabilities).set_WakeFromD2(0);
+    (*deviceCapabilities).set_WakeFromD3(0);
 
     if !device.is_null() {
-        (*deviceCapabilities).LockSupported = (*device).flags.lockable() as u8;
-        (*deviceCapabilities).EjectSupported = (*device).flags.ejectable() as u8;
-        (*deviceCapabilities).HardwareDisabled = if (*device).status.enabled() == 0 && (*device).status.functional() == 0 { 1u8 } else { 0u8 };
-        (*deviceCapabilities).Removable = (*device).flags.removable() as u8;
-        (*deviceCapabilities).SurpriseRemovalOK = (*device).flags.surprise_removal_ok() as u8;
-        (*deviceCapabilities).UniqueID = (*device).flags.unique_id() as u8;
-        (*deviceCapabilities).NoDisplayInUI = if (*device).status.show_in_ui() == 0 { 1u8 } else { 0u8 };
+        (*deviceCapabilities).set_LockSupported((*device).flags.lockable() as ULONG);
+        (*deviceCapabilities).set_EjectSupported((*device).flags.ejectable() as ULONG);
+        (*deviceCapabilities).set_HardwareDisabled(if (*device).status.enabled() == 0 && (*device).status.functional() == 0 { 1 } else { 0 });
+        (*deviceCapabilities).set_Removable((*device).flags.removable() as ULONG);
+        (*deviceCapabilities).set_SurpriseRemovalOK((*device).flags.surprise_removal_ok() as ULONG);
+        (*deviceCapabilities).set_UniqueID((*device).flags.unique_id() as ULONG);
+        (*deviceCapabilities).set_NoDisplayInUI(if (*device).status.show_in_ui() == 0 { 1 } else { 0 });
         (*deviceCapabilities).Address = (*device).pnp.bus_address as ULONG;
     }
 
     if (*DeviceData).DockDevice != 0 {
-        (*deviceCapabilities).DockDevice = 1u8;
+        (*deviceCapabilities).set_DockDevice(1);
     }
 
     if device.is_null() ||
@@ -1152,10 +837,10 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceCaps(
           !strstr((*device).pnp.hardware_id as *const i8, ACPI_THERMAL_HID.as_ptr()).is_null() ||
           !strstr((*device).pnp.hardware_id as *const i8, ACPI_PROCESSOR_HID.as_ptr()).is_null()))
     {
-        (*deviceCapabilities).RawDeviceOK = 1u8;
+        (*deviceCapabilities).set_RawDeviceOK(1);
     }
 
-    (*deviceCapabilities).SilentInstall = 0u8;
+    (*deviceCapabilities).set_SilentInstall(0);
     (*deviceCapabilities).UINumber = !0u32;
 
     STATUS_SUCCESS
@@ -1176,6 +861,9 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
 
     stack = IoGetCurrentIrpStackLocation(Irp);
 
+    // The C `switch` uses `break` to bail to the trailing `return status`; model
+    // that with a labeled block (`break 'query` == the C switch-break).
+    'query: {
     match (*stack).Parameters.QueryId.IdType as u32 {
         BusQueryDeviceID => {
             if !(*DeviceData).AcpiHandle.is_null() {
@@ -1184,22 +872,22 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
                     length = wcslen(ProcessorIdString) as ULONG;
                     wcscpy(temp.as_mut_ptr(), ProcessorIdString);
                 } else {
-                    length = swprintf(temp.as_mut_ptr(), b"ACPI\\%hs\0".as_ptr() as *const u16, (*Device).pnp.hardware_id) as ULONG;
+                    length = swprintf(temp.as_mut_ptr(), ntkrnl_sys::w!("ACPI\\%hs").as_ptr(), (*Device).pnp.hardware_id) as ULONG;
                 }
             } else {
-                length = swprintf(temp.as_mut_ptr(), b"ACPI\\FixedButton\0".as_ptr() as *const u16) as ULONG;
+                length = swprintf(temp.as_mut_ptr(), ntkrnl_sys::w!("ACPI\\FixedButton").as_ptr()) as ULONG;
             }
 
             let idx = length as usize;
             length = length.wrapping_add(1);
             temp[idx] = UNICODE_NULL;
 
-            NT_ASSERT((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
+            NT_ASSERT!((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
 
-            buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), 'IpcA' as ULONG) as PWCHAR;
+            buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), u32::from_be_bytes(*b"IpcA") as ULONG) as PWCHAR;
             if buffer.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
-                break;
+                break 'query;
             }
 
             core::ptr::copy_nonoverlapping(temp.as_ptr(), buffer, length as usize);
@@ -1209,25 +897,29 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
         BusQueryInstanceID => {
             if !(*DeviceData).AcpiHandle.is_null() {
                 acpi_bus_get_device((*DeviceData).AcpiHandle, &mut Device);
-                if (*Device).flags.unique_id != 0 {
-                    length = swprintf(temp.as_mut_ptr(), b"%hs\0".as_ptr() as *const u16, (*Device).pnp.unique_id) as ULONG;
+                if (*Device).flags.unique_id() != 0 {
+                    // unique_id is a fixed [c_char; 9] array. In C it decays to char*
+                    // when passed to the variadic %hs; Rust does NOT decay — passing it
+                    // by value misaligns the varargs so %hs reads a stack slot as the
+                    // string pointer → strnlen walks off the stack. Pass .as_ptr().
+                    length = swprintf(temp.as_mut_ptr(), ntkrnl_sys::w!("%hs").as_ptr(), (*Device).pnp.unique_id.as_ptr()) as ULONG;
                 } else {
-                    length = swprintf(temp.as_mut_ptr(), b"%ls\0".as_ptr() as *const u16, b"0\0".as_ptr() as *const u16) as ULONG;
+                    length = swprintf(temp.as_mut_ptr(), ntkrnl_sys::w!("%ls").as_ptr(), ntkrnl_sys::w!("0").as_ptr()) as ULONG;
                 }
             } else {
-                length = swprintf(temp.as_mut_ptr(), b"%ls\0".as_ptr() as *const u16, b"0\0".as_ptr() as *const u16) as ULONG;
+                length = swprintf(temp.as_mut_ptr(), ntkrnl_sys::w!("%ls").as_ptr(), ntkrnl_sys::w!("0").as_ptr()) as ULONG;
             }
 
             let idx = length as usize;
             length = length.wrapping_add(1);
             temp[idx] = UNICODE_NULL;
 
-            NT_ASSERT((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
+            NT_ASSERT!((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
 
-            buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), 'IpcA' as ULONG) as PWCHAR;
+            buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), u32::from_be_bytes(*b"IpcA") as ULONG) as PWCHAR;
             if buffer.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
-                break;
+                break 'query;
             }
 
             core::ptr::copy_nonoverlapping(temp.as_ptr(), buffer, length as usize);
@@ -1240,20 +932,20 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
 
             if !(*DeviceData).AcpiHandle.is_null() {
                 acpi_bus_get_device((*DeviceData).AcpiHandle, &mut Device);
-                if (*Device).flags.hardware_id == 0 {
-                    break;
+                if (*Device).flags.hardware_id() == 0 {
+                    break 'query;
                 }
 
                 if strcmp((*Device).pnp.hardware_id as *const i8, b"Processor\0".as_ptr() as *const i8) == 0 {
                     length = (ProcessorHardwareIds.Length as usize).wrapping_div(core::mem::size_of::<WCHAR>()) as ULONG;
                     src = ProcessorHardwareIds.Buffer as PWCHAR;
                 } else {
-                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"ACPI\\%hs\0".as_ptr() as *const u16, (*Device).pnp.hardware_id) as ULONG);
+                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("ACPI\\%hs").as_ptr(), (*Device).pnp.hardware_id) as ULONG);
                     let idx = length as usize;
                     length = length.wrapping_add(1);
                     temp[idx] = UNICODE_NULL;
 
-                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"*%hs\0".as_ptr() as *const u16, (*Device).pnp.hardware_id) as ULONG);
+                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("*%hs").as_ptr(), (*Device).pnp.hardware_id) as ULONG);
                     let idx = length as usize;
                     length = length.wrapping_add(1);
                     temp[idx] = UNICODE_NULL;
@@ -1264,12 +956,12 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
                     src = temp.as_mut_ptr();
                 }
             } else {
-                length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"ACPI\\FixedButton\0".as_ptr() as *const u16) as ULONG);
+                length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("ACPI\\FixedButton").as_ptr()) as ULONG);
                 let idx = length as usize;
                 length = length.wrapping_add(1);
                 temp[idx] = UNICODE_NULL;
 
-                length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"*FixedButton\0".as_ptr() as *const u16) as ULONG);
+                length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("*FixedButton").as_ptr()) as ULONG);
                 let idx = length as usize;
                 length = length.wrapping_add(1);
                 temp[idx] = UNICODE_NULL;
@@ -1280,12 +972,12 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
                 src = temp.as_mut_ptr();
             }
 
-            NT_ASSERT((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
+            NT_ASSERT!((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
 
-            buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), 'IpcA' as ULONG) as PWCHAR;
+            buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), u32::from_be_bytes(*b"IpcA") as ULONG) as PWCHAR;
             if buffer.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
-                break;
+                break 'query;
             }
 
             core::ptr::copy_nonoverlapping(src, buffer, length as usize);
@@ -1299,17 +991,17 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
 
             if !(*DeviceData).AcpiHandle.is_null() {
                 acpi_bus_get_device((*DeviceData).AcpiHandle, &mut Device);
-                if (*Device).flags.hardware_id == 0 {
-                    break;
+                if (*Device).flags.hardware_id() == 0 {
+                    break 'query;
                 }
 
                 if strcmp((*Device).pnp.hardware_id as *const i8, b"Processor\0".as_ptr() as *const i8) == 0 {
-                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"ACPI\\%hs\0".as_ptr() as *const u16, (*Device).pnp.hardware_id) as ULONG);
+                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("ACPI\\%hs").as_ptr(), (*Device).pnp.hardware_id) as ULONG);
                     let idx = length as usize;
                     length = length.wrapping_add(1);
                     temp[idx] = UNICODE_NULL;
 
-                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"*%hs\0".as_ptr() as *const u16, (*Device).pnp.hardware_id) as ULONG);
+                    length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("*%hs").as_ptr(), (*Device).pnp.hardware_id) as ULONG);
                     let idx = length as usize;
                     length = length.wrapping_add(1);
                     temp[idx] = UNICODE_NULL;
@@ -1317,15 +1009,15 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
                     let idx = length as usize;
                     length = length.wrapping_add(1);
                     temp[idx] = UNICODE_NULL;
-                } else if (*Device).flags.compatible_ids != 0 {
+                } else if (*Device).flags.compatible_ids() != 0 {
                     i = 0;
                     while i < (*(*Device).pnp.cid_list).Count {
-                        length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"ACPI\\%hs\0".as_ptr() as *const u16, (*(*Device).pnp.cid_list).Ids[i as usize].String) as ULONG);
+                        length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("ACPI\\%hs").as_ptr(), (*(*(*Device).pnp.cid_list).Ids.as_ptr().add(i as usize)).String) as ULONG);
                         let idx = length as usize;
                         length = length.wrapping_add(1);
                         temp[idx] = UNICODE_NULL;
 
-                        length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), b"*%hs\0".as_ptr() as *const u16, (*(*Device).pnp.cid_list).Ids[i as usize].String) as ULONG);
+                        length = length.wrapping_add(swprintf(temp.as_mut_ptr().offset(length as isize), ntkrnl_sys::w!("*%hs").as_ptr(), (*(*(*Device).pnp.cid_list).Ids.as_ptr().add(i as usize)).String) as ULONG);
                         let idx = length as usize;
                         length = length.wrapping_add(1);
                         temp[idx] = UNICODE_NULL;
@@ -1337,15 +1029,15 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
                     length = length.wrapping_add(1);
                     temp[idx] = UNICODE_NULL;
                 } else {
-                    break;
+                    break 'query;
                 }
 
-                NT_ASSERT((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
+                NT_ASSERT!((length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) <= core::mem::size_of::<[WCHAR; 256]>());
 
-                buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), 'IpcA' as ULONG) as PWCHAR;
+                buffer = ExAllocatePoolWithTag(PagedPool, (length as usize).wrapping_mul(core::mem::size_of::<WCHAR>()), u32::from_be_bytes(*b"IpcA") as ULONG) as PWCHAR;
                 if buffer.is_null() {
                     status = STATUS_INSUFFICIENT_RESOURCES;
-                    break;
+                    break 'query;
                 }
 
                 core::ptr::copy_nonoverlapping(temp.as_ptr(), buffer, length as usize);
@@ -1358,6 +1050,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceId(
             status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         }
     }
+    } // 'query
 
     return status;
 }
@@ -1376,80 +1069,80 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceText(
     match (*stack).Parameters.QueryDeviceText.DeviceTextType as u32 {
         0 => {
             if (*Irp).IoStatus.Information == 0 {
-                if !wcsstr((*DeviceData).HardwareIDs, b"PNP000\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Programmable interrupt controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP010\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"System timer\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP020\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"DMA controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP03\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Keyboard\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP040\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Parallel port\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP05\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Serial port\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP06\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Disk controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP07\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Disk controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP09\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Display adapter\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0A0\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Bus controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0E0\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"PCMCIA controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0F\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Mouse device\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP8\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Network adapter\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNPA0\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"SCSI controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNPB0\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Multimedia device\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNPC00\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Modem\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0C0C\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Power Button\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0C0E\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Sleep Button\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0C0D\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Lid Switch\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0C09\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"ACPI Embedded Controller\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0C0B\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"ACPI Fan\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0A03\0".as_ptr() as *const u16).is_null()
-                    || !wcsstr((*DeviceData).HardwareIDs, b"PNP0A08\0".as_ptr() as *const u16).is_null()
+                if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP000").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Programmable interrupt controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP010").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("System timer").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP020").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("DMA controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP03").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Keyboard").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP040").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Parallel port").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP05").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Serial port").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP06").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Disk controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP07").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Disk controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP09").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Display adapter").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0A0").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Bus controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0E0").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("PCMCIA controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0F").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Mouse device").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP8").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Network adapter").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNPA0").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("SCSI controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNPB0").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Multimedia device").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNPC00").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Modem").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0C0C").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Power Button").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0C0E").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Sleep Button").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0C0D").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Lid Switch").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0C09").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("ACPI Embedded Controller").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0C0B").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("ACPI Fan").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0A03").as_ptr()).is_null()
+                    || !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0A08").as_ptr()).is_null()
                 {
-                    Temp = b"PCI Root Bridge\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0C0A\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"ACPI Battery\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"PNP0C0F\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"PCI Interrupt Link\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"ACPI_PWR\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"ACPI Power Resource\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"Processor\0".as_ptr() as *const u16).is_null() {
+                    Temp = ntkrnl_sys::w!("PCI Root Bridge").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0C0A").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("ACPI Battery").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("PNP0C0F").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("PCI Interrupt Link").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("ACPI_PWR").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("ACPI Power Resource").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("Processor").as_ptr()).is_null() {
                     if !ProcessorNameString.is_null() {
-                        Temp = ProcessorNameString;
+                        Temp = ProcessorNameString as PWCHAR;
                     } else {
-                        Temp = b"Processor\0".as_ptr() as PWCHAR;
+                        Temp = ntkrnl_sys::w!("Processor").as_ptr() as PWCHAR;
                     }
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"ThermalZone\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"ACPI Thermal Zone\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"ACPI0002\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"Smart Battery\0".as_ptr() as PWCHAR;
-                } else if !wcsstr((*DeviceData).HardwareIDs, b"ACPI0003\0".as_ptr() as *const u16).is_null() {
-                    Temp = b"AC Adapter\0".as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("ThermalZone").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("ACPI Thermal Zone").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("ACPI0002").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("Smart Battery").as_ptr() as PWCHAR;
+                } else if !wcsstr((*DeviceData).HardwareIDs, ntkrnl_sys::w!("ACPI0003").as_ptr()).is_null() {
+                    Temp = ntkrnl_sys::w!("AC Adapter").as_ptr() as PWCHAR;
                 } else if (*DeviceData).AcpiHandle.is_null() {
-                    Temp = b"ACPI Fixed Feature Button\0".as_ptr() as PWCHAR;
+                    Temp = ntkrnl_sys::w!("ACPI Fixed Feature Button").as_ptr() as PWCHAR;
                 } else {
-                    Temp = b"Other ACPI device\0".as_ptr() as PWCHAR;
+                    Temp = ntkrnl_sys::w!("Other ACPI device").as_ptr() as PWCHAR;
                 }
 
                 Buffer = ExAllocatePoolWithTag(
                     PagedPool,
                     (wcslen(Temp) + 1) * core::mem::size_of::<u16>(),
-                    'IpcA' as u32,
+                    u32::from_be_bytes(*b"IpcA") as u32,
                 ) as PWCHAR;
 
                 if Buffer.is_null() {
@@ -1495,12 +1188,12 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
 
     if !wcsstr(
         (*DeviceData).HardwareIDs,
-        b"PNP0A03\0".as_ptr() as *const u16,
+        ntkrnl_sys::w!("PNP0A03").as_ptr(),
     )
     .is_null()
         || !wcsstr(
             (*DeviceData).HardwareIDs,
-            b"PNP0A08\0".as_ptr() as *const u16,
+            ntkrnl_sys::w!("PNP0A08").as_ptr(),
         )
         .is_null()
     {
@@ -1508,7 +1201,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
 
         AcpiStatus = acpi_evaluate_integer(
             (*DeviceData).AcpiHandle,
-            b"_BBN\0".as_ptr() as *const i8,
+            b"_BBN\0".as_ptr() as *mut i8,
             core::ptr::null_mut(),
             &mut BusNumber,
         );
@@ -1519,7 +1212,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
         ResourceListSize = core::mem::size_of::<CM_RESOURCE_LIST>() as ULONG;
         ResourceList = ExAllocatePoolWithTag(
             PagedPool,
-            ResourceListSize,
+            ResourceListSize as usize,
             0x41637052,
         ) as PCM_RESOURCE_LIST;
         if ResourceList.is_null() {
@@ -1550,7 +1243,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
         return (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
 
-    Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length, 0x41637042) as *mut core::ffi::c_void;
+    Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length as usize, 0x41637042) as *mut core::ffi::c_void;
     if Buffer.Pointer.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -1566,16 +1259,16 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
             15 => {
                 let irq_data = &mut (*resource).Data as *mut _ as *mut ACPI_RESOURCE_EXTENDED_IRQ;
                 if (*irq_data).ProducerConsumer != ACPI_PRODUCER {
-                    NumberOfResources = NumberOfResources.wrapping_add((*irq_data).InterruptCount);
+                    NumberOfResources = NumberOfResources.wrapping_add((*irq_data).InterruptCount as u32);
                 }
             }
             0 => {
                 let irq_data = &mut (*resource).Data as *mut _ as *mut ACPI_RESOURCE_IRQ;
-                NumberOfResources = NumberOfResources.wrapping_add((*irq_data).InterruptCount);
+                NumberOfResources = NumberOfResources.wrapping_add((*irq_data).InterruptCount as u32);
             }
             1 => {
                 let dma_data = &mut (*resource).Data as *mut _ as *mut ACPI_RESOURCE_DMA;
-                NumberOfResources = NumberOfResources.wrapping_add((*dma_data).ChannelCount);
+                NumberOfResources = NumberOfResources.wrapping_add((*dma_data).ChannelCount as u32);
             }
             11 | 12 | 13 | 14 => {
                 let addr_res = &mut (*resource).Data as *mut _ as *mut ACPI_RESOURCE_ADDRESS;
@@ -1596,7 +1289,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
             (core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() as usize)
                 .wrapping_mul((NumberOfResources.wrapping_sub(1)) as usize),
         ) as ULONG;
-    ResourceList = ExAllocatePoolWithTag(PagedPool, ResourceListSize, 0x41637052) as PCM_RESOURCE_LIST;
+    ResourceList = ExAllocatePoolWithTag(PagedPool, ResourceListSize as usize, 0x41637052) as PCM_RESOURCE_LIST;
     if ResourceList.is_null() {
         ExFreePoolWithTag(Buffer.Pointer, 0x41637042);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1618,7 +1311,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
                 let irq_data = &mut (*resource).Data as *mut _ as *mut ACPI_RESOURCE_EXTENDED_IRQ;
                 if (*irq_data).ProducerConsumer != ACPI_PRODUCER {
                     i = 0;
-                    while i < (*irq_data).InterruptCount {
+                    while i < (*irq_data).InterruptCount as u32 {
                         (*ResourceDescriptor).Type = CmResourceTypeInterrupt as u8;
                         (*ResourceDescriptor).ShareDisposition = if (*irq_data).Shareable == ACPI_SHARED {
                             CmResourceShareShared as u8
@@ -1630,8 +1323,8 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
                         } else {
                             CM_RESOURCE_INTERRUPT_LATCHED
                         } as u16;
-                        (*ResourceDescriptor).u.Interrupt.Level = (*irq_data).Interrupts[i as usize];
-                        (*ResourceDescriptor).u.Interrupt.Vector = (*irq_data).Interrupts[i as usize];
+                        (*ResourceDescriptor).u.Interrupt.Level = core::ptr::read_unaligned((core::ptr::addr_of!((*irq_data).Interrupts) as *const u32).add(i as usize));
+                        (*ResourceDescriptor).u.Interrupt.Vector = core::ptr::read_unaligned((core::ptr::addr_of!((*irq_data).Interrupts) as *const u32).add(i as usize));
                         (*ResourceDescriptor).u.Interrupt.Affinity = !0 as KAFFINITY;
                         ResourceDescriptor = ResourceDescriptor.offset(1);
                         i = i.wrapping_add(1);
@@ -1641,7 +1334,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
             0 => {
                 let irq_data = &mut (*resource).Data as *mut _ as *mut ACPI_RESOURCE_IRQ;
                 i = 0;
-                while i < (*irq_data).InterruptCount {
+                while i < (*irq_data).InterruptCount as u32 {
                     (*ResourceDescriptor).Type = CmResourceTypeInterrupt as u8;
                     (*ResourceDescriptor).ShareDisposition = if (*irq_data).Shareable == ACPI_SHARED {
                         CmResourceShareShared as u8
@@ -1653,8 +1346,8 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
                     } else {
                         CM_RESOURCE_INTERRUPT_LATCHED
                     } as u16;
-                    (*ResourceDescriptor).u.Interrupt.Level = (*irq_data).Interrupts[i as usize] as ULONG;
-                    (*ResourceDescriptor).u.Interrupt.Vector = (*irq_data).Interrupts[i as usize] as ULONG;
+                    (*ResourceDescriptor).u.Interrupt.Level = core::ptr::read_unaligned((core::ptr::addr_of!((*irq_data).Interrupts) as *const u8).add(i as usize)) as ULONG;
+                    (*ResourceDescriptor).u.Interrupt.Vector = core::ptr::read_unaligned((core::ptr::addr_of!((*irq_data).Interrupts) as *const u8).add(i as usize)) as ULONG;
                     (*ResourceDescriptor).u.Interrupt.Affinity = !0 as KAFFINITY;
                     ResourceDescriptor = ResourceDescriptor.offset(1);
                     i = i.wrapping_add(1);
@@ -1663,7 +1356,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
             1 => {
                 let dma_data = &mut (*resource).Data as *mut _ as *mut ACPI_RESOURCE_DMA;
                 i = 0;
-                while i < (*dma_data).ChannelCount {
+                while i < (*dma_data).ChannelCount as u32 {
                     (*ResourceDescriptor).Type = CmResourceTypeDma as u8;
                     (*ResourceDescriptor).Flags = 0;
                     match (*dma_data).Type {
@@ -1681,7 +1374,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
                         1 => (*ResourceDescriptor).Flags |= CM_RESOURCE_DMA_8_AND_16 as u16,
                         _ => {}
                     }
-                    (*ResourceDescriptor).u.Dma.Channel = (*dma_data).Channels[i as usize] as ULONG;
+                    (*ResourceDescriptor).u.Dma.Channel = *(*dma_data).Channels.as_ptr().add(i as usize) as ULONG;
                     ResourceDescriptor = ResourceDescriptor.offset(1);
                     i = i.wrapping_add(1);
                 }
@@ -1941,10 +1634,10 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
 
     if !wcsstr(
         (*DeviceData).HardwareIDs,
-        b"PNP0A03\0".as_ptr() as *const u16,
+        ntkrnl_sys::w!("PNP0A03").as_ptr(),
     ).is_null() || !wcsstr(
         (*DeviceData).HardwareIDs,
-        b"PNP0A08\0".as_ptr() as *const u16,
+        ntkrnl_sys::w!("PNP0A08").as_ptr(),
     ).is_null() {
         return (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
@@ -1966,7 +1659,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
         }
     }
 
-    Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length, 'BpcA' as ULONG) as *mut core::ffi::c_void;
+    Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length as usize, u32::from_be_bytes(*b"BpcA") as ULONG) as *mut core::ffi::c_void;
     if Buffer.Pointer.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -1991,21 +1684,21 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
         }
         match (*resource).Type {
             15 => {
-                let irq_data = &mut (*(*resource).__bindgen_anon_1.ExtendedIrq);
+                let irq_data = &mut (*resource).Data.ExtendedIrq;
                 if irq_data.ProducerConsumer != ACPI_PRODUCER {
-                    NumberOfResources = NumberOfResources.wrapping_add(irq_data.InterruptCount);
+                    NumberOfResources = NumberOfResources.wrapping_add(irq_data.InterruptCount as u32);
                 }
             }
             0 => {
-                let irq_data = &mut (*(*resource).__bindgen_anon_1.Irq);
-                NumberOfResources = NumberOfResources.wrapping_add(irq_data.InterruptCount);
+                let irq_data = &mut (*resource).Data.Irq;
+                NumberOfResources = NumberOfResources.wrapping_add(irq_data.InterruptCount as u32);
             }
             1 => {
-                let dma_data = &mut (*(*resource).__bindgen_anon_1.Dma);
-                NumberOfResources = NumberOfResources.wrapping_add(dma_data.ChannelCount);
+                let dma_data = &mut (*resource).Data.Dma;
+                NumberOfResources = NumberOfResources.wrapping_add(dma_data.ChannelCount as u32);
             }
             11 | 12 | 13 | 14 => {
-                let res_addr = &mut (*(*resource).__bindgen_anon_1.Address);
+                let res_addr = &mut (*resource).Data.Address;
                 if res_addr.ProducerConsumer != ACPI_PRODUCER {
                     NumberOfResources = NumberOfResources.wrapping_add(1);
                 }
@@ -2020,10 +1713,10 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
 
     RequirementsListSize = (core::mem::size_of::<IO_RESOURCE_REQUIREMENTS_LIST>() as usize)
         .wrapping_add((core::mem::size_of::<IO_RESOURCE_DESCRIPTOR>() as usize).wrapping_mul((NumberOfResources.wrapping_sub(1)) as usize)) as ULONG;
-    RequirementsList = ExAllocatePoolWithTag(PagedPool, RequirementsListSize as usize, 'RpcA' as ULONG) as PIO_RESOURCE_REQUIREMENTS_LIST;
+    RequirementsList = ExAllocatePoolWithTag(PagedPool, RequirementsListSize as usize, u32::from_be_bytes(*b"RpcA") as ULONG) as PIO_RESOURCE_REQUIREMENTS_LIST;
 
     if RequirementsList.is_null() {
-        ExFreePoolWithTag(Buffer.Pointer, 'BpcA' as ULONG);
+        ExFreePoolWithTag(Buffer.Pointer, u32::from_be_bytes(*b"BpcA") as ULONG);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -2048,39 +1741,39 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
         }
         match (*resource).Type {
             15 => {
-                let irq_data = &mut (*(*resource).__bindgen_anon_1.ExtendedIrq);
+                let irq_data = &mut (*resource).Data.ExtendedIrq;
                 if irq_data.ProducerConsumer != ACPI_PRODUCER {
                     i = 0;
-                    while i < irq_data.InterruptCount {
+                    while i < irq_data.InterruptCount as u32 {
                         (*RequirementDescriptor).Option = if i == 0 { IO_RESOURCE_PREFERRED } else { IO_RESOURCE_ALTERNATIVE } as u8;
                         (*RequirementDescriptor).Type = CmResourceTypeInterrupt as u8;
                         (*RequirementDescriptor).ShareDisposition = if irq_data.Shareable == ACPI_SHARED { CmResourceShareShared } else { CmResourceShareDeviceExclusive } as u8;
                         (*RequirementDescriptor).Flags = if irq_data.Triggering == ACPI_LEVEL_SENSITIVE { CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE } else { CM_RESOURCE_INTERRUPT_LATCHED } as u16;
-                        (*RequirementDescriptor).u.Interrupt.MinimumVector = irq_data.Interrupts[i as usize];
-                        (*RequirementDescriptor).u.Interrupt.MaximumVector = irq_data.Interrupts[i as usize];
+                        (*RequirementDescriptor).u.Interrupt.MinimumVector = core::ptr::read_unaligned((core::ptr::addr_of!(irq_data.Interrupts) as *const u32).add(i as usize));
+                        (*RequirementDescriptor).u.Interrupt.MaximumVector = core::ptr::read_unaligned((core::ptr::addr_of!(irq_data.Interrupts) as *const u32).add(i as usize));
                         RequirementDescriptor = RequirementDescriptor.offset(1);
                         i = i.wrapping_add(1);
                     }
                 }
             }
             0 => {
-                let irq_data = &mut (*(*resource).__bindgen_anon_1.Irq);
+                let irq_data = &mut (*resource).Data.Irq;
                 i = 0;
-                while i < irq_data.InterruptCount {
+                while i < irq_data.InterruptCount as u32 {
                     (*RequirementDescriptor).Option = if i == 0 { IO_RESOURCE_PREFERRED } else { IO_RESOURCE_ALTERNATIVE } as u8;
                     (*RequirementDescriptor).Type = CmResourceTypeInterrupt as u8;
                     (*RequirementDescriptor).ShareDisposition = if irq_data.Shareable == ACPI_SHARED { CmResourceShareShared } else { CmResourceShareDeviceExclusive } as u8;
                     (*RequirementDescriptor).Flags = if irq_data.Triggering == ACPI_LEVEL_SENSITIVE { CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE } else { CM_RESOURCE_INTERRUPT_LATCHED } as u16;
-                    (*RequirementDescriptor).u.Interrupt.MinimumVector = irq_data.Interrupts[i as usize] as ULONG;
-                    (*RequirementDescriptor).u.Interrupt.MaximumVector = irq_data.Interrupts[i as usize] as ULONG;
+                    (*RequirementDescriptor).u.Interrupt.MinimumVector = core::ptr::read_unaligned((core::ptr::addr_of!(irq_data.Interrupts) as *const u8).add(i as usize)) as ULONG;
+                    (*RequirementDescriptor).u.Interrupt.MaximumVector = core::ptr::read_unaligned((core::ptr::addr_of!(irq_data.Interrupts) as *const u8).add(i as usize)) as ULONG;
                     RequirementDescriptor = RequirementDescriptor.offset(1);
                     i = i.wrapping_add(1);
                 }
             }
             1 => {
-                let dma_data = &mut (*(*resource).__bindgen_anon_1.Dma);
+                let dma_data = &mut (*resource).Data.Dma;
                 i = 0;
-                while i < dma_data.ChannelCount {
+                while i < dma_data.ChannelCount as u32 {
                     (*RequirementDescriptor).Type = CmResourceTypeDma as u8;
                     (*RequirementDescriptor).Flags = 0;
                     match dma_data.Type {
@@ -2100,14 +1793,14 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                     }
                     (*RequirementDescriptor).Option = if i == 0 { IO_RESOURCE_PREFERRED } else { IO_RESOURCE_ALTERNATIVE } as u8;
                     (*RequirementDescriptor).ShareDisposition = CmResourceShareDriverExclusive as u8;
-                    (*RequirementDescriptor).u.Dma.MinimumChannel = dma_data.Channels[i as usize] as ULONG;
-                    (*RequirementDescriptor).u.Dma.MaximumChannel = dma_data.Channels[i as usize] as ULONG;
+                    (*RequirementDescriptor).u.Dma.MinimumChannel = *dma_data.Channels.as_ptr().add(i as usize) as ULONG;
+                    (*RequirementDescriptor).u.Dma.MaximumChannel = *dma_data.Channels.as_ptr().add(i as usize) as ULONG;
                     RequirementDescriptor = RequirementDescriptor.offset(1);
                     i = i.wrapping_add(1);
                 }
             }
             4 => {
-                let io_data = &mut (*(*resource).__bindgen_anon_1.Io);
+                let io_data = &mut (*resource).Data.Io;
                 (*RequirementDescriptor).Flags = CM_RESOURCE_PORT_IO as u16;
                 if io_data.IoDecode == ACPI_DECODE_16 {
                     (*RequirementDescriptor).Flags |= CM_RESOURCE_PORT_16_BIT_DECODE as u16;
@@ -2124,7 +1817,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 RequirementDescriptor = RequirementDescriptor.offset(1);
             }
             5 => {
-                let io_data = &mut (*(*resource).__bindgen_anon_1.FixedIo);
+                let io_data = &mut (*resource).Data.FixedIo;
                 (*RequirementDescriptor).Flags = CM_RESOURCE_PORT_IO as u16;
                 (*RequirementDescriptor).u.Port.Length = io_data.AddressLength as ULONG;
                 (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
@@ -2136,7 +1829,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 RequirementDescriptor = RequirementDescriptor.offset(1);
             }
             11 => {
-                let addr16_data = &mut (*(*resource).__bindgen_anon_1.Address16);
+                let addr16_data = &mut (*resource).Data.Address16;
                 if addr16_data.ProducerConsumer != ACPI_PRODUCER {
                     (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
                     if addr16_data.ResourceType == ACPI_BUS_NUMBER_RANGE {
@@ -2179,7 +1872,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 }
             }
             12 => {
-                let addr32_data = &mut (*(*resource).__bindgen_anon_1.Address32);
+                let addr32_data = &mut (*resource).Data.Address32;
                 if addr32_data.ProducerConsumer != ACPI_PRODUCER {
                     (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
                     if addr32_data.ResourceType == ACPI_BUS_NUMBER_RANGE {
@@ -2222,7 +1915,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 }
             }
             13 => {
-                let addr64_data = &mut (*(*resource).__bindgen_anon_1.Address64);
+                let addr64_data = &mut (*resource).Data.Address64;
                 if addr64_data.ProducerConsumer != ACPI_PRODUCER {
                     (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
                     if addr64_data.ResourceType == ACPI_BUS_NUMBER_RANGE {
@@ -2265,7 +1958,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 }
             }
             14 => {
-                let addr64_data = &mut (*(*resource).__bindgen_anon_1.ExtAddress64);
+                let addr64_data = &mut (*resource).Data.ExtAddress64;
                 if addr64_data.ProducerConsumer != ACPI_PRODUCER {
                     (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
                     if addr64_data.ResourceType == ACPI_BUS_NUMBER_RANGE {
@@ -2308,7 +2001,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 }
             }
             8 => {
-                let mem24_data = &mut (*(*resource).__bindgen_anon_1.Memory24);
+                let mem24_data = &mut (*resource).Data.Memory24;
                 (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
                 (*RequirementDescriptor).Type = CmResourceTypeMemory as u8;
                 (*RequirementDescriptor).ShareDisposition = CmResourceShareDeviceExclusive as u8;
@@ -2324,7 +2017,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 RequirementDescriptor = RequirementDescriptor.offset(1);
             }
             9 => {
-                let mem32_data = &mut (*(*resource).__bindgen_anon_1.Memory32);
+                let mem32_data = &mut (*resource).Data.Memory32;
                 (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
                 (*RequirementDescriptor).Type = CmResourceTypeMemory as u8;
                 (*RequirementDescriptor).ShareDisposition = CmResourceShareDeviceExclusive as u8;
@@ -2340,7 +2033,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
                 RequirementDescriptor = RequirementDescriptor.offset(1);
             }
             10 => {
-                let fixedmem32_data = &mut (*(*resource).__bindgen_anon_1.FixedMemory32);
+                let fixedmem32_data = &mut (*resource).Data.FixedMemory32;
                 (*RequirementDescriptor).Option = if CurrentRes != 0 { 0 } else { IO_RESOURCE_PREFERRED } as u8;
                 (*RequirementDescriptor).Type = CmResourceTypeMemory as u8;
                 (*RequirementDescriptor).ShareDisposition = CmResourceShareDeviceExclusive as u8;
@@ -2360,8 +2053,8 @@ pub unsafe extern "C" fn Bus_PDO_QueryResourceRequirements(
         resource = (resource as *mut u8).offset((*resource).Length as isize) as *mut ACPI_RESOURCE;
     }
 
-    ExFreePoolWithTag(Buffer.Pointer, 'BpcA' as ULONG);
-    (*Irp).IoStatus.__bindgen_anon_1.Information = RequirementsList as ULONG_PTR;
+    ExFreePoolWithTag(Buffer.Pointer, u32::from_be_bytes(*b"BpcA") as ULONG);
+    (*Irp).IoStatus.Information = RequirementsList as ULONG_PTR;
     STATUS_SUCCESS
 }
 #[no_mangle]
@@ -2388,15 +2081,15 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceRelations(
             let deviceRelations = ExAllocatePoolWithTag(
                 PagedPool,
                 core::mem::size_of::<DEVICE_RELATIONS>(),
-                'IpcA' as ULONG,
+                u32::from_be_bytes(*b"IpcA") as ULONG,
             ) as PDEVICE_RELATIONS;
 
             if deviceRelations.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
             } else {
                 (*deviceRelations).Count = 1;
-                (*deviceRelations).Objects[0] = (*DeviceData).Common.Self;
-                ObReferenceObject((*DeviceData).Common.Self);
+                (*deviceRelations).Objects[0] = (*DeviceData).Common.Self_;
+                ObReferenceObject((*DeviceData).Common.Self_ as *mut core::ffi::c_void);
                 status = STATUS_SUCCESS;
                 (*Irp).IoStatus.Information = deviceRelations as ULONG_PTR;
             }
@@ -2416,7 +2109,7 @@ pub unsafe extern "C" fn Bus_PDO_QueryBusInformation(
     let busInfo = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<PNP_BUS_INFORMATION>(),
-        'IpcA' as ULONG,
+        u32::from_be_bytes(*b"IpcA") as ULONG,
     ) as PPNP_BUS_INFORMATION;
 
     if busInfo.is_null() {
@@ -2454,7 +2147,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
     targetObject = IoGetAttachedDeviceReference(DeviceObject);
 
     pnpIrp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_PNP,
+        IRP_MJ_PNP as u32,
         targetObject,
         core::ptr::null_mut(),
         0,
@@ -2480,7 +2173,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
             KeWaitForSingleObject(
                 &mut pnpEvent as *mut _ as *mut core::ffi::c_void,
                 _KWAIT_REASON_Executive,
-                0i32 as u8,
+                0i8,
                 0u8,
                 core::ptr::null_mut(),
             );
@@ -2990,9 +2683,9 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //
 //         temp[length++] = UNICODE_NULL;
 //
-//         NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
+//         NT_ASSERT!(length * sizeof(WCHAR) <= sizeof(temp));
 //
-//         buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), 'IpcA');
+//         buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), u32::from_be_bytes(*b"IpcA"));
 //
 //         if (!buffer) {
 //            status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3029,9 +2722,9 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //
 //         temp[length++] = UNICODE_NULL;
 //
-//         NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
+//         NT_ASSERT!(length * sizeof(WCHAR) <= sizeof(temp));
 //
-//         buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), 'IpcA');
+//         buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), u32::from_be_bytes(*b"IpcA"));
 //         if (!buffer) {
 //            status = STATUS_INSUFFICIENT_RESOURCES;
 //            break;
@@ -3095,9 +2788,9 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //             src = temp;
 //         }
 //
-//         NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
+//         NT_ASSERT!(length * sizeof(WCHAR) <= sizeof(temp));
 //
-//         buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), 'IpcA');
+//         buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), u32::from_be_bytes(*b"IpcA"));
 //
 //         if (!buffer) {
 //            status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3166,9 +2859,9 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //                 break;
 //             }
 //
-//             NT_ASSERT(length * sizeof(WCHAR) <= sizeof(temp));
+//             NT_ASSERT!(length * sizeof(WCHAR) <= sizeof(temp));
 //
-//             buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), 'IpcA');
+//             buffer = ExAllocatePoolWithTag(PagedPool, length * sizeof(WCHAR), u32::from_be_bytes(*b"IpcA"));
 //             if (!buffer)
 //             {
 //                 status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3277,7 +2970,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //             else
 //                 Temp = L"Other ACPI device";
 //
-//             Buffer = ExAllocatePoolWithTag(PagedPool, (wcslen(Temp) + 1) * sizeof(WCHAR), 'IpcA');
+//             Buffer = ExAllocatePoolWithTag(PagedPool, (wcslen(Temp) + 1) * sizeof(WCHAR), u32::from_be_bytes(*b"IpcA"));
 //
 //             if (!Buffer) {
 //                 status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3346,7 +3039,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //         DPRINT("Found PCI root hub: %d\n", BusNumber);
 //
 //         ResourceListSize = sizeof(CM_RESOURCE_LIST);
-//         ResourceList = ExAllocatePoolWithTag(PagedPool, ResourceListSize, 'RpcA');
+//         ResourceList = ExAllocatePoolWithTag(PagedPool, ResourceListSize as usize, u32::from_be_bytes(*b"RpcA"));
 //         if (!ResourceList)
 //             return STATUS_INSUFFICIENT_RESOURCES;
 //
@@ -3376,7 +3069,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //       return Irp->IoStatus.Status;
 //     }
 //
-//     Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length, 'BpcA');
+//     Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length as usize, u32::from_be_bytes(*b"BpcA"));
 //     if (!Buffer.Pointer)
 //       return STATUS_INSUFFICIENT_RESOURCES;
 //
@@ -3445,11 +3138,11 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //
 //     /* Allocate memory */
 //     ResourceListSize = sizeof(CM_RESOURCE_LIST) + sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR) * (NumberOfResources - 1);
-//     ResourceList = ExAllocatePoolWithTag(PagedPool, ResourceListSize, 'RpcA');
+//     ResourceList = ExAllocatePoolWithTag(PagedPool, ResourceListSize as usize, u32::from_be_bytes(*b"RpcA"));
 //
 //     if (!ResourceList)
 //     {
-//         ExFreePoolWithTag(Buffer.Pointer, 'BpcA');
+//         ExFreePoolWithTag(Buffer.Pointer, u32::from_be_bytes(*b"BpcA"));
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //     }
 //     ResourceList->Count = 1;
@@ -3795,7 +3488,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //         resource = ACPI_NEXT_RESOURCE(resource);
 //     }
 //
-//     ExFreePoolWithTag(Buffer.Pointer, 'BpcA');
+//     ExFreePoolWithTag(Buffer.Pointer, u32::from_be_bytes(*b"BpcA"));
 //     Irp->IoStatus.Information = (ULONG_PTR)ResourceList;
 //     return STATUS_SUCCESS;
 // }
@@ -3850,7 +3543,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //             break;
 //     }
 //
-//     Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length, 'BpcA');
+//     Buffer.Pointer = ExAllocatePoolWithTag(PagedPool, Buffer.Length as usize, u32::from_be_bytes(*b"BpcA"));
 //     if (!Buffer.Pointer)
 //       return STATUS_INSUFFICIENT_RESOURCES;
 //
@@ -3929,11 +3622,11 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //     }
 //
 //     RequirementsListSize = sizeof(IO_RESOURCE_REQUIREMENTS_LIST) + sizeof(IO_RESOURCE_DESCRIPTOR) * (NumberOfResources - 1);
-//     RequirementsList = ExAllocatePoolWithTag(PagedPool, RequirementsListSize, 'RpcA');
+//     RequirementsList = ExAllocatePoolWithTag(PagedPool, RequirementsListSize, u32::from_be_bytes(*b"RpcA"));
 //
 //     if (!RequirementsList)
 //     {
-//         ExFreePoolWithTag(Buffer.Pointer, 'BpcA');
+//         ExFreePoolWithTag(Buffer.Pointer, u32::from_be_bytes(*b"BpcA"));
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //     }
 //     RequirementsList->ListSize = RequirementsListSize;
@@ -4314,7 +4007,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //         }
 //         resource = ACPI_NEXT_RESOURCE(resource);
 //     }
-//     ExFreePoolWithTag(Buffer.Pointer, 'BpcA');
+//     ExFreePoolWithTag(Buffer.Pointer, u32::from_be_bytes(*b"BpcA"));
 //
 //     Irp->IoStatus.Information = (ULONG_PTR)RequirementsList;
 //
@@ -4382,7 +4075,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //
 //         deviceRelations = ExAllocatePoolWithTag(PagedPool,
 //                                                 sizeof(DEVICE_RELATIONS),
-//                                                 'IpcA');
+//                                                 u32::from_be_bytes(*b"IpcA"));
 //         if (!deviceRelations) {
 //                 status = STATUS_INSUFFICIENT_RESOURCES;
 //                 break;
@@ -4443,7 +4136,7 @@ pub unsafe extern "C" fn Bus_GetDeviceCapabilities(
 //
 //     busInfo = ExAllocatePoolWithTag(PagedPool,
 //                                     sizeof(PNP_BUS_INFORMATION),
-//                                     'IpcA');
+//                                     u32::from_be_bytes(*b"IpcA"));
 //
 //     if (busInfo == NULL) {
 //       return STATUS_INSUFFICIENT_RESOURCES;
