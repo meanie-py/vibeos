@@ -101,3 +101,17 @@ rule. Otherwise drive `error_count` → 0 and report the final count + any resid
   (they may be assoc consts on the enum type, e.g. `_STORAGE_PROPERTY_ID_StorageDeviceProperty`).
 - No `glue.rs` exists yet. If a constant/enum/static (TRACE_LEVEL_ERROR, ClassGlobalDispatch ...) is
   genuinely missing from ntkrnl_sys, STOP and report it (rule 3) — the engineer adds it.
+
+## CRITICAL IMPORT RULES (learned from turns 1-2 — violating these REGRESSES the build)
+1. **NEVER add a `use ...::*` glob import** (e.g. `use ntkrnl_sys::driver_ddk::*;`). The modules
+   already glob several overlapping ntkrnl_sys submodules; ADDING another glob creates E0659
+   "ambiguous" cascades (turn 2 added driver_ddk globs → +700 errors). To bring a missing symbol,
+   add an **explicit named** import: `use ntkrnl_sys::ddk::{TheName};`. Explicit wins over globs → no
+   ambiguity.
+2. **Driver-private structs are in `crate::types`, NOT `ntkrnl_sys::ddk`.** For
+   `cannot find type FUNCTIONAL_DEVICE_EXTENSION / CLASS_* / TRANSFER_PACKET / CDB(if private) / ...`,
+   or `... in module ntkrnl_sys::ddk` for such a type, fix the path to `crate::types::TheName`
+   (or rely on the module's existing `use crate::types::*`). NEVER define the struct locally.
+3. **Kernel types** (DEVICE_OBJECT, IRP, KEVENT, MDL, IO_WORKITEM, STORAGE_*, WNODE_*) come from
+   `ntkrnl_sys::ddk` — import them explicitly: `use ntkrnl_sys::ddk::{DEVICE_OBJECT, ...};`.
+4. The generated `types_*.rs` are CORRECT (E0365 strip done). Never edit them; never re-stub structs.

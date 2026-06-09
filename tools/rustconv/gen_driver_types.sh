@@ -73,12 +73,14 @@ run_arch() {
   # — matching how they were written — WITHOUT pulling ddk functions/consts (those
   # stay on the modules own explicit `use ntkrnl_sys::ddk::{fn}` lists; re-exporting
   # them here would create glob-vs-explicit ambiguity).
+  # Blocklist = every type name the shared ntkrnl-sys bindgen exports, so kernel types
+  # keep a single identity and only driver-PRIVATE structs become local here. The
+  # translated modules then get private structs from `crate::types` and kernel types
+  # from `ntkrnl_sys::{ddk,driver_ddk,...}`.
   local TYPELIST="/tmp/${DRIVER}_ntktypes_${ARCH}.txt"
   grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$NTK" | awk '{print $3}' | sort -u > "$TYPELIST"
   local BL=()
   while IFS= read -r t; do BL+=( --blocklist-type "$t" ); done < "$TYPELIST"
-  local REEXPORT="/tmp/${DRIVER}_reexport_${ARCH}.txt"
-  { echo "pub use ntkrnl_sys::ddk::{"; paste -sd, "$TYPELIST"; echo "};"; } > "$REEXPORT"
 
   bindgen "$WRAPPER" \
     --use-core --no-layout-tests --no-doc-comments \
@@ -104,8 +106,22 @@ run_arch() {
     -isystem "${SRC}/sdk/include/crt" -isystem "${TOOLCHAIN}/lib/clang/19/include" \
     --target="${TARGET}"
 
+  # Strip bindgen's `pub use self::_X as Y;` re-exports of BLOCKLISTED enum typedefs:
+  # _X comes from the private `use ntkrnl_sys::ddk::*` glob, so re-exporting it is E0365
+  # ("re-export of private item") which poisons the whole module → every private struct
+  # becomes unreachable. Y (DEVICE_POWER_STATE, POOL_TYPE, ...) is a kernel type the
+  # modules import from ddk/driver_ddk anyway, so dropping the alias here is safe.
   local FINAL="${OUT_CRATE}/types_${ARCH}.rs"
-  cp "$RAW" "$FINAL"
+  python3 -c '
+import sys, re
+raw, final = sys.argv[1], sys.argv[2]
+s = open(raw).read()
+local = set(re.findall(r"^pub (?:struct|enum|union) (_[A-Za-z0-9_]+)", s, re.M))
+out = [ln for ln in s.splitlines(keepends=True)
+       if not (re.match(r"^pub use self::(_[A-Za-z0-9_]+) as [A-Za-z0-9_]+;", ln)
+               and re.match(r"^pub use self::(_[A-Za-z0-9_]+) as", ln).group(1) not in local)]
+open(final, "w").write("".join(out))
+' "$RAW" "$FINAL"
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
 }
 
