@@ -7,12 +7,12 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, DelayedWorkQueue, EVENT_DESCRIPTOR, Enabled, _KWAIT_REASON_Executive, GUID, IO_COMPLETION_ROUTINE, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IO_WORKITEM_ROUTINE, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildDeviceIoControlRequest, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetCurrentIrpStackLocation, IoGetDriverObjectExtension, IoGetNextIrpStackLocation, IoOpenDeviceRegistryKey, IoQueueWorkItem, IoReportTargetDeviceChangeAsynchronous, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoWriteErrorLogEntry, KEVENT, KeCancelTimer, KeEnterCriticalRegion, KeInitializeDpc, KeInitializeEvent, KeInitializeMutex, KeInitializeTimer, KeLeaveCriticalRegion, KeQueryTimeIncrement, KeReleaseMutex, KeWaitForSingleObject, LARGE_INTEGER, LPGUID, MmBuildMdlForNonPagedPool, _OBJECT_ATTRIBUTES, PCSZ, PDEVICE_OBJECT, PFILE_OBJECT, PFILE_OBJECT_EXTENSION, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PPREVENT_MEDIA_REMOVAL, PSECURITY_DESCRIPTOR, PSTORAGE_DEVICE_DESCRIPTOR, PTARGET_DEVICE_CUSTOM_NOTIFICATION, PUNICODE_STRING, PowerDeviceD0, RTL_QUERY_REGISTRY_ROUTINE, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, RtlInitUnicodeString, RtlQueryRegistryValues, STORAGE_PREDICT_FAILURE, _EVENT_TYPE_SynchronizationEvent, TARGET_DEVICE_CUSTOM_NOTIFICATION, _KWAIT_REASON_UserRequest, ZwClose, ZwCreateKey, ZwOpenKey};
+use ntkrnl_sys::ddk::{ANSI_STRING, _STORAGE_BUS_TYPE_BusTypeAtapi as BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, _WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue, EVENT_DESCRIPTOR, _KWAIT_REASON_Executive, GUID, PIO_COMPLETION_ROUTINE as IO_COMPLETION_ROUTINE, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, PIO_WORKITEM_ROUTINE as IO_WORKITEM_ROUTINE, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildDeviceIoControlRequest, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetCurrentIrpStackLocation, IoGetDriverObjectExtension, IoGetNextIrpStackLocation, IoOpenDeviceRegistryKey, IoQueueWorkItem, IoReportTargetDeviceChangeAsynchronous, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoWriteErrorLogEntry, KEVENT, KeCancelTimer, KeEnterCriticalRegion, KeInitializeDpc, KeInitializeEvent, KeInitializeMutex, KeInitializeTimer, KeLeaveCriticalRegion, KeQueryTimeIncrement, KeReleaseMutex, KeWaitForSingleObject, LARGE_INTEGER, LPGUID, MmBuildMdlForNonPagedPool, _OBJECT_ATTRIBUTES, PCSZ, PDEVICE_OBJECT, PFILE_OBJECT, PFILE_OBJECT_EXTENSION, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PPREVENT_MEDIA_REMOVAL, PSECURITY_DESCRIPTOR, PSTORAGE_DEVICE_DESCRIPTOR, PTARGET_DEVICE_CUSTOM_NOTIFICATION, PUNICODE_STRING, _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0, PRTL_QUERY_REGISTRY_ROUTINE as RTL_QUERY_REGISTRY_ROUTINE, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, RtlInitUnicodeString, RtlQueryRegistryValues, STORAGE_PREDICT_FAILURE, _EVENT_TYPE_SynchronizationEvent, TARGET_DEVICE_CUSTOM_NOTIFICATION, _KWAIT_REASON_UserRequest, ZwClose, ZwCreateKey, ZwOpenKey};
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicI32, Ordering};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FILE_DEVICE_DISK, IO_WRN_FAILURE_PREDICTED, IRP_MJ_SCSI, KEY_ALL_ACCESS, PLUGPLAY_REGKEY_DEVICE, RTL_QUERY_REGISTRY_TYPECHECK, SL_OVERRIDE_VERIFY_VOLUME, STATUS_DEVICE_PROTOCOL_ERROR, STATUS_INVALID_DEVICE_STATE, STATUS_IO_DEVICE_ERROR, STATUS_IO_TIMEOUT, STATUS_MEDIA_CHANGED, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING, VPB_MOUNTED};
-use crate::types::{CLASS_SRB_STORAGE_REQUEST_BLOCK, ClassInitialize, ClassSignalCompletion, ClasspPowerSettingCallback, ClasspUpdateDiskProperties, DEFAULT_FAILURE_PREDICTION_PERIOD, FAILURE_PREDICTION_INFO, FAILURE_PREDICTION_METHOD, IOCTL_SCSI_EXECUTE_IN, IOCTL_SCSI_EXECUTE_NONE, MEDIA_CHANGE_DEFAULT_TIME, MEDIA_CHANGE_DETECTION_INFO, MEDIA_CHANGE_TIMEOUT_TIME, MediaPresent, NOTIFICATION_DEVICE_BUSY_CLASS_MASK, NOTIFICATION_EXTERNAL_EVENT_BUTTON_DOWN, NOTIFICATION_EXTERNAL_REQUEST_CLASS_MASK, NOTIFICATION_MEDIA_EVENT_EJECT_REQUEST, NOTIFICATION_MEDIA_EVENT_MEDIA_CHANGE, NOTIFICATION_MEDIA_EVENT_MEDIA_REMOVAL, NOTIFICATION_MEDIA_EVENT_NEW_MEDIA, NOTIFICATION_MEDIA_STATUS_CLASS_MASK, NOTIFICATION_NO_CLASS_EVENTS, NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK, NOTIFICATION_OPERATIONAL_EVENT_CHANGE_REQUESTED, NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_ADDED, NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_CHANGE, PCDB, PCLASS_DRIVER_EXTENSION, PCLASS_PRIVATE_FDO_DATA, PCOMMON_DEVICE_EXTENSION, PFAILURE_PREDICTION_INFO, PFUNCTIONAL_DEVICE_EXTENSION, PMEDIA_CHANGE_DETECTION_INFO, PNOTIFICATION_BUSY_STATUS, PNOTIFICATION_EVENT_STATUS_HEADER, PNOTIFICATION_EXTERNAL_STATUS, PNOTIFICATION_MEDIA_STATUS, PNOTIFICATION_OPERATIONAL_STATUS, PSCSI_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, REMOVE_COMPLETE, SCSIOP_GET_EVENT_STATUS, SCSIOP_TEST_UNIT_READY, SCSI_ADDRESS, SCSI_ADSENSE_LUN_NOT_READY, SCSI_ADSENSE_MEDIUM_CHANGED, SCSI_REQUEST_BLOCK, SCSI_SENSE_ERRORCODE_FIXED_CURRENT, SCSI_SENSE_NOT_READY, SCSI_SENSE_UNIT_ATTENTION, SENSE_DATA, SRB_FLAGS_DATA_IN, SRB_FLAGS_NO_DATA_TRANSFER, SRB_FLAGS_NO_KEEP_AWAKE, SRB_FUNCTION_EXECUTE_SCSI, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_SIMPLE_TAG_REQUEST, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_BUS_RESET, SRB_STATUS_ERROR, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SUCCESS, SRB_TYPE_STORAGE_REQUEST_BLOCK, STORAGE_ADDRESS_TYPE_BTL8, _CLASS_DETECTION_STATE as CLASS_DETECTION_STATE, _CLASS_DETECTION_STATE_ClassDetectionSupported as ClassDetectionSupported, _CLASS_DETECTION_STATE_ClassDetectionUnknown as ClassDetectionUnknown, _CLASS_DETECTION_STATE_ClassDetectionUnsupported as ClassDetectionUnsupported, _CLASS_PRIVATE_FDO_DATA, _FAILURE_PREDICTION_INFO, _FUNCTIONAL_DEVICE_EXTENSION, _MEDIA_CHANGE_DETECTION_INFO, _MEDIA_CHANGE_DETECTION_STATE as MEDIA_CHANGE_DETECTION_STATE, _MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent as MediaNotPresent, _MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable as MediaUnavailable, _MEDIA_CHANGE_DETECTION_STATE_MediaUnknown as MediaUnknown, _NOTIFICATION_EVENT_STATUS_HEADER, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16};
+use crate::types::{CLASS_SRB_STORAGE_REQUEST_BLOCK, ClassInitialize, ClassSignalCompletion, ClasspPowerSettingCallback, ClasspUpdateDiskProperties, DEFAULT_FAILURE_PREDICTION_PERIOD, FAILURE_PREDICTION_INFO, FAILURE_PREDICTION_METHOD, IOCTL_SCSI_EXECUTE_IN, IOCTL_SCSI_EXECUTE_NONE, MEDIA_CHANGE_DEFAULT_TIME, MEDIA_CHANGE_DETECTION_INFO, MEDIA_CHANGE_TIMEOUT_TIME, _MEDIA_CHANGE_DETECTION_STATE_MediaPresent as MediaPresent, NOTIFICATION_DEVICE_BUSY_CLASS_MASK, NOTIFICATION_EXTERNAL_EVENT_BUTTON_DOWN, NOTIFICATION_EXTERNAL_REQUEST_CLASS_MASK, NOTIFICATION_MEDIA_EVENT_EJECT_REQUEST, NOTIFICATION_MEDIA_EVENT_MEDIA_CHANGE, NOTIFICATION_MEDIA_EVENT_MEDIA_REMOVAL, NOTIFICATION_MEDIA_EVENT_NEW_MEDIA, NOTIFICATION_MEDIA_STATUS_CLASS_MASK, NOTIFICATION_NO_CLASS_EVENTS, NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK, NOTIFICATION_OPERATIONAL_EVENT_CHANGE_REQUESTED, NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_ADDED, NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_CHANGE, PCDB, PCLASS_DRIVER_EXTENSION, PCLASS_PRIVATE_FDO_DATA, PCOMMON_DEVICE_EXTENSION, PFAILURE_PREDICTION_INFO, PFUNCTIONAL_DEVICE_EXTENSION, PMEDIA_CHANGE_DETECTION_INFO, PNOTIFICATION_BUSY_STATUS, PNOTIFICATION_EVENT_STATUS_HEADER, PNOTIFICATION_EXTERNAL_STATUS, PNOTIFICATION_MEDIA_STATUS, PNOTIFICATION_OPERATIONAL_STATUS, PSCSI_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, REMOVE_COMPLETE, SCSIOP_GET_EVENT_STATUS, SCSIOP_TEST_UNIT_READY, SCSI_ADDRESS, SCSI_ADSENSE_LUN_NOT_READY, SCSI_ADSENSE_MEDIUM_CHANGED, SCSI_REQUEST_BLOCK, SCSI_SENSE_ERRORCODE_FIXED_CURRENT, SCSI_SENSE_NOT_READY, SCSI_SENSE_UNIT_ATTENTION, SENSE_DATA, SRB_FLAGS_DATA_IN, SRB_FLAGS_NO_DATA_TRANSFER, SRB_FLAGS_NO_KEEP_AWAKE, SRB_FUNCTION_EXECUTE_SCSI, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_SIMPLE_TAG_REQUEST, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_BUS_RESET, SRB_STATUS_ERROR, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SUCCESS, SRB_TYPE_STORAGE_REQUEST_BLOCK, STORAGE_ADDRESS_TYPE_BTL8, _CLASS_DETECTION_STATE as CLASS_DETECTION_STATE, _CLASS_DETECTION_STATE_ClassDetectionSupported as ClassDetectionSupported, _CLASS_DETECTION_STATE_ClassDetectionUnknown as ClassDetectionUnknown, _CLASS_DETECTION_STATE_ClassDetectionUnsupported as ClassDetectionUnsupported, _CLASS_PRIVATE_FDO_DATA, _FAILURE_PREDICTION_INFO, _FUNCTIONAL_DEVICE_EXTENSION, _MEDIA_CHANGE_DETECTION_INFO, _MEDIA_CHANGE_DETECTION_STATE as MEDIA_CHANGE_DETECTION_STATE, _MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent as MediaNotPresent, _MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable as MediaUnavailable, _MEDIA_CHANGE_DETECTION_STATE_MediaUnknown as MediaUnknown, _NOTIFICATION_EVENT_STATUS_HEADER, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16};
 use ntkrnl_sys::ddk::{ACCESS_MASK, CCHAR, DEVICE_OBJECT, FILE_OBJECT, HANDLE, KPROCESSOR_MODE, KTIMER, KWAIT_REASON, LPCGUID, PCCHAR, PCEVENT_DESCRIPTOR, PCSTR, PDRIVER_OBJECT, PRTL_QUERY_REGISTRY_TABLE, UINT, ULONG64, _FILE_OBJECT, _IO_WORKITEM, _IRP, _LARGE_INTEGER, _RTL_QUERY_REGISTRY_TABLE, _STORAGE_DEVICE_DESCRIPTOR, _TARGET_DEVICE_CUSTOM_NOTIFICATION, _UNICODE_STRING};
 use ntkrnl_sys::mm::{NonPagedPool, NonPagedPoolCacheAligned};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -35,6 +35,8 @@ use crate::guid::{GUID_CONSOLE_DISPLAY_STATE, GUID_IO_DEVICE_BECOMING_READY, GUI
 use crate::types::{ScreenStateNotificationHandle};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbSetScsiStatus};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{_PREDICT_FAILURE_METHOD_FailurePredictionNone};
 
 extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
@@ -42,7 +44,114 @@ extern "C" {
 extern "C" {
     fn KeSetCoalescableTimer( Timer: *mut KTIMER, DueTime: LARGE_INTEGER, Period: ULONG, TolerableDelay: ULONG, Dpc: PKDPC, );
     fn TracePrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
+    fn StorDebugPrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
+    fn ScsiGetSenseKeyAndCodes(
+        SenseInfoBuffer: PVOID,
+        SenseInfoBufferLength: u8,
+        Options: ULONG,
+        SenseKey: *mut u8,
+        AdditionalSenseCode: *mut u8,
+        AdditionalSenseCodeQualifier: *mut u8,
+    ) -> BOOLEAN;
+    fn CountOfSetBitsUChar(val: UCHAR) -> UCHAR;
+    fn RtlULongAdd(augend: ULONG, addend: ULONG, result: *mut ULONG) -> NTSTATUS;
+    fn strlen(s: *const i8) -> usize;
+    fn PoRegisterPowerSettingCallback(
+        DeviceObject: PDEVICE_OBJECT,
+        SettingGuid: *const GUID,
+        Callback: ::core::option::Option<unsafe extern "system" fn(
+            SettingGuid: *const GUID,
+            Value: PVOID,
+            ValueLength: ULONG,
+            Context: PVOID,
+        ) -> NTSTATUS>,
+        Context: PVOID,
+        Handle: *mut PVOID,
+    ) -> NTSTATUS;
+    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+    fn InterlockedDecrement(Addend: *mut LONG) -> LONG;
+    // ExTimer APIs
+    fn ExSetTimer(Timer: PVOID, DueTime: i64, Period: i64, Parameters: PVOID) -> BOOLEAN;
+    fn ExDeleteTimer(Timer: PVOID, Cancel: BOOLEAN, Wait: BOOLEAN, Parameters: PVOID) -> BOOLEAN;
+    fn ExInitializeSetTimerParameters(Parameters: PVOID);
+    fn ExInitializeDeleteTimerParameters(Parameters: PVOID);
+    fn ExAllocateTimer(Callback: PVOID, CallbackContext: PVOID, Attributes: ULONG) -> PVOID;
+    // Etw APIs
+    fn EventDescCreate(EventDescriptor: PVOID, Id: u16, Version: u8, Channel: u8, Level: u8, Task: u16, Opcode: u8, Keyword: u64);
+    fn EtwWrite(RegHandle: u64, EventDescriptor: PCEVENT_DESCRIPTOR, ActivityId: *const GUID, UserDataCount: ULONG, UserData: PVOID);
+    // Debug string functions (debug-only no-ops in practice)
+    fn DBGGETSRBSTATUSSTR(Srb: PVOID) -> PCCHAR;
+    fn DBGGETSENSECODESTR(Srb: PVOID) -> PCCHAR;
+    fn DBGGETADSENSECODESTR(Srb: PVOID) -> PCCHAR;
+    fn DBGGETADSENSEQUALIFIERSTR(Srb: PVOID) -> PCCHAR;
+    // ClasspMediaChangeRegistryCallBack
+    #[link_name = "ClassAcquireRemoveLock"]
+    fn ClassAcquireRemoveLockR(DeviceObject: PDEVICE_OBJECT, Tag: PIRP) -> ULONG;
+    fn ClasspMediaChangeRegistryCallBack(
+        ValueName: PUNICODE_STRING,
+        ValueType: ULONG,
+        ValueData: PVOID,
+        ValueLength: ULONG,
+        Context: PVOID,
+        EntryContext: PVOID,
+    ) -> NTSTATUS;
+    fn PORT_ALLOCATED_SENSE_EX(
+        fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+        Srb: PSTORAGE_REQUEST_BLOCK_HEADER,
+    ) -> BOOLEAN;
+    fn FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(
+        fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+        Srb: PSTORAGE_REQUEST_BLOCK_HEADER,
+    );
 }
+
+// classpnp.h FILE_OBJECT_EXTENSION (different from ntkrnl-sys version)
+#[repr(C)]
+struct _FILE_OBJECT_EXTENSION {
+    pub FileObject: PFILE_OBJECT,
+    pub DeviceObject: PDEVICE_OBJECT,
+    pub LockCount: ULONG,
+    pub McnDisableCount: ULONG,
+}
+
+// ioevent.h structs not in ntkrnl-sys
+#[repr(C)]
+struct DEVICE_EVENT_BECOMING_READY {
+    pub Version: ULONG,
+    pub Reason: ULONG,
+    pub Estimated100msToReady: ULONG,
+}
+#[repr(C)]
+struct DEVICE_EVENT_EXTERNAL_REQUEST {
+    pub Version: ULONG,
+    pub DeviceClass: ULONG,
+    pub ButtonStatus: USHORT,
+    pub Request: USHORT,
+    pub SystemTime: LARGE_INTEGER,
+}
+
+// EX_TIMER types (NTDDI_WINBLUE+, not in ntkrnl-sys bindgen)
+type PEX_TIMER = PVOID;
+const EX_TIMER_UNLIMITED_TOLERANCE: i64 = -1i64;
+const EX_TIMER_NO_WAKE: ULONG = 0x00000008;
+#[repr(C)]
+struct EXT_SET_PARAMETERS {
+    pub Version: ULONG,
+    pub Reserved: ULONG,
+    pub NoWakeTolerance: i64,
+}
+#[repr(C)]
+struct EXT_DELETE_PARAMETERS {
+    pub Version: ULONG,
+    pub Reserved: ULONG,
+    pub DeleteCallback: PVOID,
+    pub DeleteContext: PVOID,
+}
+// Workaround: CurrentNoWakeTolerance is missing from types_i386 (generated without NTDDI_WINBLUE).
+// NEEDS SHARED SUBSTRATE: regenerate types_i386.rs with NTDDI_VERSION >= NTDDI_WINBLUE so
+// _CLASS_PRIVATE_FDO_DATA has PEX_TIMER TickTimer + LONGLONG CurrentNoWakeTolerance.
+// Also: TickTimer: KTIMER in current types should be PEX_TIMER — reinterpret via raw ptr below.
+static mut LOCAL_CURRENT_NO_WAKE_TOLERANCE: i64 = i64::MAX;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -136,7 +245,7 @@ pub unsafe extern "system" fn ClassSendNotification(
         TracePrint(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
-            b"Error sending event: size too large! (%x)\n\0".as_ptr() as *const i8,
+            b"Error sending event: size too large! (%x)\n\0".as_ptr() as PCCHAR,
             required_size,
         );
         return;
@@ -191,12 +300,12 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
     }
 
     if (*info).Gesn.HackEventMask != 0u8 {
-        let thisEvent: UCHAR = ((*Header).ClassEventData[0] as i32 & 0xf) as UCHAR;
+        let thisEvent: UCHAR = (*(*Header).ClassEventData.as_ptr() as i32 & 0xf) as UCHAR;
         let thisEventBit: UCHAR = ((1u32) << (*Header).NotificationClass()) as UCHAR;
         if ((*info).Gesn.EventMask as i32 & thisEventBit as i32) == 0 {
             return STATUS_DEVICE_PROTOCOL_ERROR;
         }
-        let lowestSetBit: UCHAR = (*info).Gesn.EventMask;
+        let mut lowestSetBit: UCHAR = (*info).Gesn.EventMask;
         lowestSetBit = (lowestSetBit as i32 & ((*info).Gesn.EventMask as i32 - 1)) as UCHAR;
         lowestSetBit = (lowestSetBit as i32 ^ (*info).Gesn.EventMask as i32) as UCHAR;
         if (thisEventBit as i32) != (lowestSetBit as i32) {
@@ -247,7 +356,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
         );
     }
     debug_assert!(dataLength == 4, "dataLength == 4");
-    if ((*Header).ClassEventData[0] as i32 & 0xf) == 0 {
+    if (*(*Header).ClassEventData.as_ptr() as i32 & 0xf) == 0 {
         return status;
     }
     *ResendImmediately = 1u8;
@@ -258,7 +367,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 &raw mut (*Header).ClassEventData as *mut UCHAR as PNOTIFICATION_OPERATIONAL_STATUS;
             if (*opChangeInfo).OperationalEvent() != (NOTIFICATION_OPERATIONAL_EVENT_CHANGE_REQUESTED) as u8 {
                 let event: ULONG =
-                    (((((*opChangeInfo).Operation[0] as i32) << 8) | (((*opChangeInfo).Operation[1] as i32) as ULON) as u32G) as i32) as u32;
+                    (((((*opChangeInfo).Operation[0] as i32) << 8) | (((*opChangeInfo).Operation[1] as i32) & 0xff)) as u32);
                 if (*info).MediaChangeRetryCount >= 4 {
                     const OP_CHANGE_MASK: UCHAR = 0x02u8;
                     TracePrint(
@@ -410,8 +519,8 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 externalData.DeviceClass = 0;
                 externalData.ButtonStatus = (*externalInfo).ExternalEvent() as USHORT;
                 externalData.Request =
-                    (((*externalInfo).Request[0] as i32) << 8)
-                        | (((*externalInfo).Request[1] as i32 & 0xff) as USHORT) as i32;
+                    ((((*externalInfo).Request[0] as i32) << 8)
+                        | (((*externalInfo).Request[1] as i32) & 0xff)) as USHORT;
                 // KeQuerySystemTime expanded: assign SharedSystemTime
                 (*(&raw mut externalData.SystemTime as *mut ULONG64)) =
                     (*(&raw const SharedSystemTime as *const LARGE_INTEGER as *const ULONG64));
@@ -426,7 +535,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                     FdoExtension,
                     &GUID_IO_DEVICE_EXTERNAL_REQUEST,
                     core::mem::size_of::<DEVICE_EVENT_EXTERNAL_REQUEST>() as ULONG,
-                    &raw mut externalData as P::core::ffi::c_void,
+                    &raw mut externalData as *mut core::ffi::c_void,
                 );
                 return status;
             }
@@ -439,7 +548,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 TRACE_FLAG_MCN,
                 b"Classpnp => GESN::MEDIA: Event: %x Status %x\n\0".as_ptr() as PCHAR,
                 (*mediaInfo).MediaEvent() as i32,
-                (*mediaInfo).__bindgen_anon_1.MediaStatus as i32,
+                *(*mediaInfo).__bindgen_anon_1.MediaStatus.as_ref() as i32,
             );
             if (*mediaInfo).MediaEvent() as i32 == (NOTIFICATION_MEDIA_EVENT_NEW_MEDIA) as i32
                 || (*mediaInfo).MediaEvent() as i32 == (NOTIFICATION_MEDIA_EVENT_MEDIA_CHANGE) as i32
@@ -458,7 +567,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                     (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject).Flags |=
                         0x2u32;
                 }
-                _InterlockedIncrement(
+                InterlockedIncrement(
                     &raw mut (*FdoExtension).MediaChangeCount as *mut ::core::ffi::c_long,
                 );
                 ClasspSetMediaChangeStateEx(
@@ -492,8 +601,8 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
             busyData.Version = 1;
             busyData.Reason = (*busyInfo).DeviceBusyStatus as ULONG;
             busyData.Estimated100msToReady =
-                (((*busyInfo).Time[0] as i32) << 8)
-                    | (((*busyInfo).Time[1] as i32 & 0xff) as ULONG) as i32;
+                ((((*busyInfo).Time[0] as i32) << 8)
+                    | (((*busyInfo).Time[1] as i32) & 0xff)) as ULONG;
             TracePrint(
                 (4i32) as u32,
                 TRACE_FLAG_MCN,
@@ -516,7 +625,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                     FdoExtension,
                     &GUID_IO_DEVICE_BECOMING_READY,
                     core::mem::size_of::<DEVICE_EVENT_BECOMING_READY>() as ULONG,
-                    &raw mut busyData as P::core::ffi::c_void,
+                    &raw mut busyData as *mut core::ffi::c_void,
                 );
             }
         }
@@ -532,10 +641,10 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
 ) {
 
     let states: [PCSZ; 4] = [
-        b"Unknown\0".as_ptr() as PCSZ,
-        b"Present\0".as_ptr() as PCSZ,
-        b"Not Present\0".as_ptr() as PCSZ,
-        b"Unavailable\0".as_ptr() as PCSZ,
+        b"Unknown\0".as_ptr() as PCCHAR,
+        b"Present\0".as_ptr() as PCCHAR,
+        b"Not Present\0".as_ptr() as PCCHAR,
+        b"Unavailable\0".as_ptr() as PCCHAR,
     ];
 
     if !(NewState >= MediaUnknown && NewState <= MediaUnavailable) {
@@ -551,7 +660,7 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
     let oldMediaState = state_atomic.swap(NewState as i32, Ordering::SeqCst) as MEDIA_CHANGE_DETECTION_STATE;
 
     if oldMediaState == MediaUnknown && KnownStateChange == 0 {
-        TracePrint(4, TRACE_FLAG_MCN, b"ClassSetMediaChangeState: State was unknown - this may not be a change\n\0".as_ptr() as PCSZ);
+        TracePrint(4, TRACE_FLAG_MCN, b"ClassSetMediaChangeState: State was unknown - this may not be a change\n\0".as_ptr() as PCCHAR);
         return;
     } else if oldMediaState == NewState {
         return;
@@ -563,7 +672,7 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
         ) as *mut AtomicI32);
         let previous = work_item_active.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire);
         if previous.is_ok() && previous.unwrap() == 0 {
-            let workItem = IoAllocateWorkItem((*FdoExtension).DeviceObject);
+            let workItem = IoAllocateWorkItem((*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject);
             if !workItem.is_null() {
                 IoQueueWorkItem(
                     workItem,
@@ -579,14 +688,14 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
 
     if (*info).MediaChangeDetectionDisableCount != 0 {
         TracePrint(4, TRACE_FLAG_MCN,
-            b"ClassSetMediaChangeState: MCN not enabled, state changed from %s to %s\n\0".as_ptr() as PCSZ,
+            b"ClassSetMediaChangeState: MCN not enabled, state changed from %s to %s\n\0".as_ptr() as PCCHAR,
             states[oldMediaState as usize],
             states[NewState as usize]);
         return;
     }
 
     TracePrint(4, TRACE_FLAG_MCN,
-        b"ClassSetMediaChangeState: State change from %s to %s\n\0".as_ptr() as PCSZ,
+        b"ClassSetMediaChangeState: State change from %s to %s\n\0".as_ptr() as PCCHAR,
         states[oldMediaState as usize],
         states[NewState as usize]);
 
@@ -596,7 +705,7 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
     };
 
     if NewState == MediaPresent {
-        TracePrint(4, TRACE_FLAG_MCN, b"ClasspInternalSetMediaChangeState: media ARRIVAL\0".as_ptr() as PCSZ);
+        TracePrint(4, TRACE_FLAG_MCN, b"ClasspInternalSetMediaChangeState: media ARRIVAL\0".as_ptr() as PCCHAR);
         ClassSendNotification(
             FdoExtension,
             &GUID_IO_MEDIA_ARRIVAL as *const GUID,
@@ -604,7 +713,7 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
             &raw mut mcnContext as PVOID,
         );
     } else if NewState == MediaNotPresent || NewState == MediaUnavailable {
-        TracePrint(4, TRACE_FLAG_MCN, b"ClasspInternalSetMediaChangeState: media REMOVAL\0".as_ptr() as PCSZ);
+        TracePrint(4, TRACE_FLAG_MCN, b"ClasspInternalSetMediaChangeState: media REMOVAL\0".as_ptr() as PCCHAR);
         ClassSendNotification(
             FdoExtension,
             &GUID_IO_MEDIA_REMOVAL as *const GUID,
@@ -612,6 +721,47 @@ pub unsafe extern "C" fn ClasspInternalSetMediaChangeState(
             &raw mut mcnContext as PVOID,
         );
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ClasspSetMediaChangeStateEx(
+    FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+    NewState: MEDIA_CHANGE_DETECTION_STATE,
+    Wait: BOOLEAN,
+    KnownStateChange: BOOLEAN,
+) {
+    let info: PMEDIA_CHANGE_DETECTION_INFO = (*FdoExtension).MediaChangeDetectionInfo;
+    let mut zero: LARGE_INTEGER = core::mem::zeroed();
+    zero.QuadPart = 0;
+
+    if NewState == MediaNotPresent {
+        (*FdoExtension).FailurePredicted = FALSE as BOOLEAN;
+        (*FdoExtension).FailureReason = 0;
+    }
+
+    if info.is_null() {
+        return;
+    }
+
+    let status = KeWaitForSingleObject(
+        &raw mut (*info).MediaChangeMutex as PVOID,
+        _KWAIT_REASON_UserRequest,
+        0i32 as KPROCESSOR_MODE,
+        0u8,
+        if Wait != 0 { core::ptr::null_mut() } else { &raw mut zero },
+    );
+
+    if status == STATUS_TIMEOUT {
+        TracePrint(
+            TRACE_LEVEL_WARNING,
+            TRACE_FLAG_MCN,
+            b"ClasspSetMediaChangeStateEx - timed out waiting for mutex\0".as_ptr() as PCCHAR,
+        );
+        return;
+    }
+
+    ClasspInternalSetMediaChangeState(FdoExtension, NewState, KnownStateChange);
+    KeReleaseMutex(&raw mut (*info).MediaChangeMutex, 0u8);
 }
 
 #[no_mangle]
@@ -639,8 +789,8 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
     let info: PMEDIA_CHANGE_DETECTION_INFO = (*fdoExtension).MediaChangeDetectionInfo;
 
     // Assertions
-    NT_ASSERT(!(*info).MediaChangeIrp.is_null());
-    NT_ASSERT(((*Srb).SrbStatus as u8 & (SRB_STATUS_QUEUE_FROZEN) as u8) == 0);
+    NT_ASSERT(!(*info).MediaChangeIrp.is_null() as u8);
+    NT_ASSERT((((*Srb).SrbStatus as u8 & (SRB_STATUS_QUEUE_FROZEN) as u8) == 0) as u8);
 
     TracePrint(
         5, // TRACE_LEVEL_VERBOSE
@@ -686,10 +836,10 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
             TRACE_FLAG_MCN,
             b"ClasspMediaChangeDetectionCompletion - failed - srb status=%s, sense=%s/%s/%s.\0"
                 .as_ptr() as PCCHAR,
-            DBGGETSRBSTATUSSTR(Srb),
-            DBGGETSENSECODESTR(Srb),
-            DBGGETADSENSECODESTR(Srb),
-            DBGGETADSENSEQUALIFIERSTR(Srb),
+            DBGGETSRBSTATUSSTR(Srb as PVOID),
+            DBGGETSENSECODESTR(Srb as PVOID),
+            DBGGETADSENSECODESTR(Srb as PVOID),
+            DBGGETADSENSEQUALIFIERSTR(Srb as PVOID),
         );
         InterpretSenseInfoWithoutHistory(
             DeviceObject,
@@ -759,9 +909,9 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
     }
 
     // Remember the IRP and SRB for next time
-    NT_ASSERT(!IoGetNextIrpStackLocation(Irp).is_null());
+    NT_ASSERT(!IoGetNextIrpStackLocation(Irp).is_null() as u8);
     let nextStack = IoGetNextIrpStackLocation(Irp);
-    (*nextStack).Parameters.Scsi.Srb = Srb as PSCSI_REQUEST_BLOCK;
+    (*nextStack).Parameters.Scsi.Srb = Srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
 
     // Reset the MCN timer
     ClassResetMediaChangeTimer(fdoExtension);
@@ -786,7 +936,7 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
             if !workItem.is_null() {
                 IoQueueWorkItem(
                     workItem,
-                    Some(ClasspDisableGesn),
+                    Some(core::mem::transmute::<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, PVOID), unsafe extern "stdcall" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, PVOID)>(ClasspDisableGesn)),
                     DelayedWorkQueue,
                     workItem as PVOID,
                 );
@@ -820,7 +970,7 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
             Ok(v) => v,
             Err(v) => v,
         };
-        NT_ASSERT(irpWasInUse == 1);
+        NT_ASSERT((irpWasInUse == 1) as u8);
 
         if retryImmediately != 0 {
             ClasspSendMediaStateIrp(fdoExtension, info, 0);
@@ -854,7 +1004,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
     let mut srbEx: PSTORAGE_REQUEST_BLOCK = core::ptr::null_mut();
     let irpStack: PIO_STACK_LOCATION;
     let nextIrpStack: PIO_STACK_LOCATION;
-    let status: NTSTATUS;
+    let mut status: NTSTATUS = 0;
     let mut cdb: PCDB = core::ptr::null_mut();
     let buffer: PVOID;
     let bufferLength: UCHAR;
@@ -880,10 +1030,10 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         return core::ptr::null_mut();
     }
 
-    status = ClassAcquireRemoveLock(
-        (*FdoExtension).DeviceObject,
+    status = ClassAcquireRemoveLockR(
+        (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         irp,
-    );
+    ) as NTSTATUS;
 
     const REMOVE_COMPLETE: NTSTATUS = 2;
     const REMOVE_PENDING: NTSTATUS = 1;
@@ -903,7 +1053,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         return core::ptr::null_mut();
     } else if status == REMOVE_PENDING {
         ClassReleaseRemoveLock(
-            (*FdoExtension).DeviceObject,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
             irp,
         );
         return core::ptr::null_mut();
@@ -924,12 +1074,12 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
     IoSetNextIrpStackLocation(irp);
 
     irpStack = IoGetCurrentIrpStackLocation(irp);
-    (*irpStack).DeviceObject = (*FdoExtension).DeviceObject;
+    (*irpStack).DeviceObject = (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject;
     (*irpStack).Flags = ((*irpStack).Flags as i32 | (SL_OVERRIDE_VERIFY_VOLUME) as i32) as UCHAR;
 
     nextIrpStack = IoGetNextIrpStackLocation(irp);
     (*nextIrpStack).MajorFunction = IRP_MJ_INTERNAL_DEVICE_CONTROL as UCHAR;
-    (*nextIrpStack).Parameters.Scsi.Srb = core::ptr::addr_of_mut!((*Info).MediaChangeSrb.Srb);
+    (*nextIrpStack).Parameters.Scsi.Srb = core::ptr::addr_of_mut!((*Info).MediaChangeSrb.Srb) as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
 
     buffer = (*Info).SenseBuffer as PVOID;
     bufferLength = (*Info).SenseBufferLength;
@@ -954,18 +1104,18 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
     if timeOutValue == 0 {
         if (*FdoExtension).TimeOutValue == 0 {
             TracePrint(
-                3i32,
+                3u32,
                 TRACE_FLAG_MCN,
                 b"ClassSendTestUnitIrp: FdoExtension->TimeOutValue is set to zero?! -- resetting to 10\n\0"
-                    as *const u8 as *const i8,
+                    .as_ptr() as PCCHAR,
             );
             timeOutValue = 10 * 2;
         } else {
             TracePrint(
-                3i32,
+                3u32,
                 TRACE_FLAG_MCN,
                 b"ClassSendTestUnitIrp: Someone set srb->TimeOutValue to zero?! -- resetting to %x\n\0"
-                    as *const u8 as *const i8,
+                    .as_ptr() as PCCHAR,
                 (*FdoExtension).TimeOutValue.wrapping_mul(2),
             );
             timeOutValue = (*FdoExtension).TimeOutValue.wrapping_mul(2);
@@ -976,7 +1126,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         (*nextIrpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_NONE as ULONG;
         (*irp).MdlAddress = core::ptr::null_mut();
         srbFlags |= SRB_FLAGS_NO_DATA_TRANSFER;
-        if (*(*FdoExtension).DeviceObject).DeviceType != FILE_DEVICE_CD_ROM as ULONG
+        if (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject).DeviceType != FILE_DEVICE_CD_ROM as ULONG
             && ClasspScreenOff == TRUE
         {
             srbFlags |= SRB_FLAGS_NO_KEEP_AWAKE;
@@ -1004,14 +1154,14 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
         timeOutValue = GESN_TIMEOUT_VALUE as ULONG;
     }
 
-    srb = (*nextIrpStack).Parameters.Scsi.Srb;
-    if (*(*FdoExtension).AdapterDescriptor).SrbType as i32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+    srb = (*nextIrpStack).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
+    if (*((*FdoExtension).AdapterDescriptor as *const crate::types::_STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
         srbEx = (*nextIrpStack).Parameters.Scsi.Srb as PSTORAGE_REQUEST_BLOCK;
         status = InitializeStorageRequestBlock(
             srbEx,
-            STORAGE_ADDRESS_TYPE_BTL8,
-            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE,
-            1,
+            STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
+            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE as ULONG,
+            1u32,
             SrbExDataTypeScsiCdb16,
         );
         if !(status >= 0) {
@@ -1064,21 +1214,21 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
 
     if !cdb.is_null() {
         if UseGesn == 0 {
-            (*cdb).CDB6GENERIC.as_ref().OperationCode = SCSIOP_TEST_UNIT_READY as UCHAR;
+            (*cdb).CDB6GENERIC.as_mut().OperationCode = SCSIOP_TEST_UNIT_READY as UCHAR;
         } else {
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().OperationCode = SCSIOP_GET_EVENT_STATUS as UCHAR;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().set_Immediate(1);
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().EventListLength[0] =
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().OperationCode = SCSIOP_GET_EVENT_STATUS as UCHAR;
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().set_Immediate(1);
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().EventListLength[0] =
                 ((*Info).Gesn.BufferSize >> 8) as UCHAR;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().EventListLength[1] =
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().EventListLength[1] =
                 ((*Info).Gesn.BufferSize & 0xff) as UCHAR;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_ref().NotificationClassRequest = (*Info).Gesn.EventMask;
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().NotificationClassRequest = (*Info).Gesn.EventMask;
         }
     }
 
     IoSetCompletionRoutine(
         irp,
-        Some(ClasspMediaChangeDetectionCompletion as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS),
+        Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(ClasspMediaChangeDetectionCompletion)),
         srb as PVOID,
         TRUE as BOOLEAN,
         TRUE as BOOLEAN,
@@ -1100,7 +1250,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
     TracePrint(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_MCN,
-        b"> ClasspSendMediaStateIrp\0".as_ptr() as PCSZ,
+        b"> ClasspSendMediaStateIrp\0".as_ptr() as PCCHAR,
     );
 
     if ((*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().CurrentState != IRP_MN_START_DEVICE
@@ -1121,7 +1271,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_MCN,
             b"ClasspSendMediaStateIrp: irp in use for %x seconds when synchronizing for MCD\n\0"
-                .as_ptr() as PCSZ,
+                .as_ptr() as PCCHAR,
             timeInUse,
         );
         if (*Info).MediaChangeIrpLost == 0u8 {
@@ -1130,7 +1280,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_MCN,
                     b"CdRom%d: Media Change Notification has lost it's irp and doesn't know where to find it.  Leave it alone and it'll come home dragging it's stack behind it.\n\0"
-                        .as_ptr() as PCSZ,
+                        .as_ptr() as PCCHAR,
                     (*FdoExtension).DeviceNumber,
                 );
                 (*Info).MediaChangeIrpLost = 1u8;
@@ -1139,7 +1289,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
         TracePrint(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_MCN,
-            b"< ClasspSendMediaStateIrp - irpInUse\0".as_ptr() as PCSZ,
+            b"< ClasspSendMediaStateIrp - irpInUse\0".as_ptr() as PCCHAR,
         );
         return;
     }
@@ -1150,8 +1300,8 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
-            b"ClassCheckMediaState: device %p has  detection disabled \n\0".as_ptr() as PCSZ,
-            (*FdoExtension).DeviceObject,
+            b"ClassCheckMediaState: device %p has  detection disabled \n\0".as_ptr() as PCCHAR,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         );
         leave = 1u8;
     }
@@ -1161,8 +1311,8 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"ClassCheckMediaState: device %p needs to powerup to handle this io (may take a few extra seconds).\n\0"
-                .as_ptr() as PCSZ,
-            (*FdoExtension).DeviceObject,
+                .as_ptr() as PCCHAR,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         );
     }
 
@@ -1175,7 +1325,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
-                    b"ClassCheckMediaState: detection disabled\n\0".as_ptr() as PCSZ,
+                    b"ClassCheckMediaState: detection disabled\n\0".as_ptr() as PCCHAR,
                 );
                 leave = 1u8;
             }
@@ -1185,8 +1335,8 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
                 TracePrint(
                     TRACE_LEVEL_VERBOSE,
                     TRACE_FLAG_MCN,
-                    b"ClasspSendMediaStateIrp: Device %p getting TUR  irp %p\n\0".as_ptr() as PCSZ,
-                    (*FdoExtension).DeviceObject,
+                    b"ClasspSendMediaStateIrp: Device %p getting TUR  irp %p\n\0".as_ptr() as PCCHAR,
+                    (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                     irp,
                 );
                 if irp.is_null() {
@@ -1196,7 +1346,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
                     TracePrint(
                         TRACE_LEVEL_VERBOSE,
                         TRACE_FLAG_MCN,
-                        b"  ClasspSendMediaStateIrp - calling IoCallDriver.\0".as_ptr() as PCSZ,
+                        b"  ClasspSendMediaStateIrp - calling IoCallDriver.\0".as_ptr() as PCCHAR,
                     );
                     IoCallDriver(
                         (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject,
@@ -1222,7 +1372,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
     TracePrint(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_MCN,
-        b"< ClasspSendMediaStateIrp\0".as_ptr() as PCSZ,
+        b"< ClasspSendMediaStateIrp\0".as_ptr() as PCCHAR,
     );
 }
 #[no_mangle]
@@ -1292,12 +1442,16 @@ pub unsafe extern "C" fn ClasspInitializePolling(
         core::mem::size_of::<MEDIA_CHANGE_DETECTION_INFO>(),
     );
 
-    (*FdoExtension).KernelModeMcnContext.FileObject = (-1isize) as *mut FILE_OBJECT;
-    (*FdoExtension).KernelModeMcnContext.DeviceObject = (-1isize) as *mut DEVICE_OBJECT;
-    (*FdoExtension).KernelModeMcnContext.LockCount = 0u32;
-    (*FdoExtension).KernelModeMcnContext.McnDisableCount = 0u32;
+    {
+        let mcn = core::ptr::addr_of_mut!((*FdoExtension).KernelModeMcnContext)
+            as *mut _FILE_OBJECT_EXTENSION;
+        (*mcn).FileObject = (-1isize) as *mut FILE_OBJECT;
+        (*mcn).DeviceObject = (-1isize) as *mut DEVICE_OBJECT;
+        (*mcn).LockCount = 0u32;
+        (*mcn).McnDisableCount = 0u32;
+    }
 
-    let fdo = (*FdoExtension).DeviceObject;
+    let fdo = (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject;
     let irp = IoAllocateIrp(
         ((*fdo).StackSize as i32 + 1) as CCHAR,
         0u8,
@@ -1344,7 +1498,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
 
     let mut GesnSupported: u8 = 0u8;
 
-    if (*(*FdoExtension).DeviceObject).DeviceType == FILE_DEVICE_CD_ROM as u32 {
+    if (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject).DeviceType == FILE_DEVICE_CD_ROM as u32 {
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
@@ -1356,7 +1510,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"ClasspInitializePolling: GESN available for %p\n\0".as_ptr() as PCCHAR,
-                (*FdoExtension).DeviceObject as *mut c_void,
+                (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject as *mut c_void,
             );
             if (*info).Gesn.Supported == 0 {
                 core::panic!("assert: info->Gesn.Supported");
@@ -1376,7 +1530,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"ClasspInitializePolling: GESN *NOT* available for %p\n\0".as_ptr() as PCCHAR,
-                (*FdoExtension).DeviceObject as *mut c_void,
+                (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject as *mut c_void,
             );
         }
     }
@@ -1402,7 +1556,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
             fdo,
             &GUID_CONSOLE_DISPLAY_STATE,
             Some(
-                ClasspPowerSettingCallback as unsafe extern "C" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS,
+                core::mem::transmute::<unsafe extern "stdcall" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS, unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS>(ClasspPowerSettingCallback),
             ),
             core::ptr::null_mut(),
             &raw mut ScreenStateNotificationHandle,
@@ -1536,7 +1690,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                         IoSetCompletionRoutine(
                             irp,
                             Some(ClassSignalCompletion),
-                            &mut event as PVOID,
+                            core::ptr::addr_of_mut!(event) as PVOID,
                             1u8,
                             1u8,
                             1u8,
@@ -1549,7 +1703,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
 
                         if status == STATUS_PENDING {
                             status = KeWaitForSingleObject(
-                                &mut event as PVOID,
+                                core::ptr::addr_of_mut!(event) as PVOID,
                                 _KWAIT_REASON_Executive,
                                 (0i32) as i8,
                                 0u8,
@@ -1568,16 +1722,16 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                             }
                         }
 
-                        ClassReleaseRemoveLock((*FdoExtension).DeviceObject, irp);
+                        ClassReleaseRemoveLock((*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject, irp);
 
                         // SRB_STATUS macro
                         let srbStatus = (*Info).MediaChangeSrb.Srb.as_ref().SrbStatus as i32;
                         if (srbStatus & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as i32) != (SRB_STATUS_SUCCESS) as i32 {
-                            ((((InterpretSenseInfoWithoutHistory)))).cast()(
-                                (*FdoExtension).DeviceObject,
+                            InterpretSenseInfoWithoutHistory(
+                                (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                                 irp,
-                                &raw mut (*Info).MediaChangeSrb.Srb,
-                                IRP_MJ_SCSI,
+                                core::ptr::addr_of_mut!((*Info).MediaChangeSrb.Srb) as PSCSI_REQUEST_BLOCK,
+                                IRP_MJ_SCSI as u8,
                                 0,
                                 0,
                                 &mut status,
@@ -1615,7 +1769,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                                 TRACE_FLAG_MCN,
                                 b"Classpnp => GESN test failed %x for fdo %p\n\0".as_ptr() as PCCHAR,
                                 status,
-                                (*FdoExtension).DeviceObject,
+                                (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                             );
                             break;
                         }
@@ -1626,7 +1780,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                                 TRACE_FLAG_MCN,
                                 b"Classpnp => GESN test failed %x for fdo %p\n\0".as_ptr() as PCCHAR,
                                 status,
-                                (*FdoExtension).DeviceObject,
+                                (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                             );
                             break;
                         }
@@ -1637,7 +1791,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                                 TRACE_LEVEL_INFORMATION,
                                 TRACE_FLAG_MCN,
                                 b"Classpnp => Fdo %p supports event mask %x\n\0".as_ptr() as PCCHAR,
-                                (*FdoExtension).DeviceObject,
+                                (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                                 (*header).SupportedEventClasses as i32,
                             );
 
@@ -1688,7 +1842,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                                     b"Classpnp => GESN supported, but not mask we care about (%x) for FDO %p\n\0"
                                         .as_ptr() as PCCHAR,
                                     (*header).SupportedEventClasses as i32,
-                                    (*FdoExtension).DeviceObject,
+                                    (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                                 );
                                 break;
                             } else if CountOfSetBitsUChar((*Info).Gesn.EventMask) == 1 {
@@ -1696,14 +1850,14 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                                     TRACE_LEVEL_INFORMATION,
                                     TRACE_FLAG_MCN,
                                     b"Classpnp => GESN hack not required for FDO %p\n\0".as_ptr() as PCCHAR,
-                                    (*FdoExtension).DeviceObject,
+                                    (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                                 );
                             } else {
                                 TracePrint(
                                     TRACE_LEVEL_INFORMATION,
                                     TRACE_FLAG_MCN,
                                     b"Classpnp => GESN hack enabled for FDO %p\n\0".as_ptr() as PCCHAR,
-                                    (*FdoExtension).DeviceObject,
+                                    (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                                 );
                                 (*Info).Gesn.HackEventMask = 1u8;
                             }
@@ -1734,7 +1888,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                                 TRACE_LEVEL_INFORMATION,
                                 TRACE_FLAG_MCN,
                                 b"Classpnp => Enabling GESN support for fdo %p\n\0".as_ptr() as PCCHAR,
-                                (*FdoExtension).DeviceObject,
+                                (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                             );
                             (*Info).Gesn.Supported = 1u8;
                             ClassSetDeviceParameter(
@@ -1749,7 +1903,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
                             TRACE_LEVEL_INFORMATION,
                             TRACE_FLAG_MCN,
                             b"Classpnp => GESN available but not enabled for fdo %p\n\0".as_ptr() as PCCHAR,
-                            (*FdoExtension).DeviceObject,
+                            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                         );
                     }
                 }
@@ -1762,7 +1916,7 @@ pub unsafe extern "C" fn ClasspInitializeGesn(
         TRACE_LEVEL_WARNING,
         TRACE_FLAG_MCN,
         b"Classpnp => GESN support detection failed  for fdo %p with status %08x\n\0".as_ptr() as PCCHAR,
-        (*FdoExtension).DeviceObject,
+        (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         status,
     );
 
@@ -1798,7 +1952,7 @@ pub unsafe extern "system" fn ClasspDisableGesn(
                 2381i32,
                 b"0\0".as_ptr() as *const i8,
             );
-            core::intrinsics::abort();
+            loop { core::hint::spin_loop(); }
         }
     }
 
@@ -1828,7 +1982,7 @@ pub unsafe extern "system" fn ClassInitializeMediaChangeDetection(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
     EventPrefix: PUCHAR,
 ) {
-    let fdo: PDEVICE_OBJECT = (*FdoExtension).DeviceObject;
+    let fdo: PDEVICE_OBJECT = (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject;
     let driverExtension: PCLASS_DRIVER_EXTENSION =
         ClassGetDriverExtension((*fdo).DriverObject);
     let disabledForBadHardware: BOOLEAN;
@@ -1862,7 +2016,7 @@ pub unsafe extern "system" fn ClassInitializeMediaChangeDetection(
     );
     if disabledForBadHardware != 0 {
         StorDebugPrint(
-            4i32,
+            4u32,
             TRACE_FLAG_MCN,
             b"ClassInitializeMCN: Disabled due to hardwarelimitations for this device\0"
                 .as_ptr() as PCCHAR,
@@ -1875,7 +2029,7 @@ pub unsafe extern "system" fn ClassInitializeMediaChangeDetection(
         core::ptr::addr_of_mut!((*driverExtension).RegistryPath),
     );
     StorDebugPrint(
-        4i32,
+        4u32,
         TRACE_FLAG_MCN,
         b"ClassInitializeMCN: Class    MCN is %s\n\0".as_ptr() as PCCHAR,
         if disabled != 0 {
@@ -1889,13 +2043,13 @@ pub unsafe extern "system" fn ClassInitializeMediaChangeDetection(
         ClasspMediaChangeDeviceInstanceOverride(FdoExtension, &raw mut instanceOverride);
     if !(status >= 0) {
         StorDebugPrint(
-            4i32,
+            4u32,
             TRACE_FLAG_MCN,
             b"ClassInitializeMCN: Instance using default\n\0".as_ptr() as PCCHAR,
         );
     } else {
         StorDebugPrint(
-            4i32,
+            4u32,
             TRACE_FLAG_MCN,
             b"ClassInitializeMCN: Instance override: %s MCN\n\0".as_ptr() as PCCHAR,
             if instanceOverride != 0 {
@@ -1908,7 +2062,7 @@ pub unsafe extern "system" fn ClassInitializeMediaChangeDetection(
     }
 
     StorDebugPrint(
-        4i32,
+        4u32,
         TRACE_FLAG_MCN,
         b"ClassInitializeMCN: Instance MCN is %s\n\0".as_ptr() as PCCHAR,
         if disabled != 0 {
@@ -2040,9 +2194,9 @@ pub unsafe extern "C" fn ClasspMediaChangeDeviceInstanceOverride(
                 RtlQueryRegistryValues(
                     RTL_REGISTRY_HANDLE,
                     driverParameterHandle as PWSTR,
-                    core::ptr::addr_of_mut!(queryTable),
-                    core::ptr::null(),
-                    core::ptr::null(),
+                    queryTable.as_mut_ptr(),
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
                 );
                 i += 1;
             }
@@ -2192,7 +2346,7 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
             TracePrint(
                 4u32,
                 TRACE_FLAG_MCN,
-                b"ClassMediaChangeDisabledForHardware: Unable to alloc string buffer\n\0".as_ptr() as *const i8,
+                b"ClassMediaChangeDisabledForHardware: Unable to alloc string buffer\n\0".as_ptr() as PCCHAR,
             );
             break;
         }
@@ -2237,7 +2391,7 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
             TracePrint(
                 4u32,
                 TRACE_FLAG_MCN,
-                b"ClassMediaChangeDisabledForHardware: cannot convert to unicode %lx\n\0".as_ptr() as *const i8,
+                b"ClassMediaChangeDisabledForHardware: cannot convert to unicode %lx\n\0".as_ptr() as PCCHAR,
                 status,
             );
             break;
@@ -2250,7 +2404,10 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
         let nullMultiSz: PWSTR = [0u16, 0u16].as_ptr() as PWSTR;
 
         let mut parameters: [_RTL_QUERY_REGISTRY_TABLE; 2] = core::mem::zeroed();
-        parameters[0].QueryRoutine = Some(ClasspMediaChangeRegistryCallBack);
+        parameters[0].QueryRoutine = Some(core::mem::transmute::<
+            unsafe extern "C" fn(PUNICODE_STRING, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
+            unsafe extern "stdcall" fn(*mut u16, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
+        >(ClasspMediaChangeRegistryCallBack));
         parameters[0].Flags = RTL_QUERY_REGISTRY_REQUIRED;
         parameters[0].Name = AUTORUN_DISABLE_NAME.as_ptr() as PCWSTR;
         parameters[0].EntryContext = &raw mut mediaChangeNotificationDisabled as *mut core::ffi::c_void;
@@ -2283,7 +2440,7 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
         TracePrint(
             4u32,
             TRACE_FLAG_MCN,
-            b"ClassMediaChangeDisabledForHardware: Device is on disable list\n\0".as_ptr() as *const i8,
+            b"ClassMediaChangeDisabledForHardware: Device is on disable list\n\0".as_ptr() as PCCHAR,
         );
         return 1u8;
     }
@@ -2447,22 +2604,22 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(
     // PAGED_CODE() expansion as in c2rust anchor
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSZ,
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCCHAR,
             (KeGetCurrentIrql()) as i32,
         );
         // NT_ASSERT(FALSE)
         DbgPrint(
-            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSZ,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCSZ,
+            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCCHAR,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCCHAR,
             3109i32,
-            b"0\0".as_ptr() as PCSZ,
+            b"0\0".as_ptr() as PCCHAR,
         );
         __int2c();
     }
 
     if info.is_null() {
         StorDebugPrint(
-            4i32,
+            4u32,
             TRACE_FLAG_MCN,
             b"ClassEnableMediaChangeDetection: not initialized\n\0".as_ptr() as PCCHAR,
         );
@@ -2483,16 +2640,16 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(
     // NT_ASSERT(oldCount >= 0)
     if oldCount < 0 {
         DbgPrint(
-            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSZ,
-            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCSZ,
+            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCCHAR,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/autorun.c\0".as_ptr() as PCCHAR,
             3125i32,
-            b"oldCount >= 0\0".as_ptr() as PCSZ,
+            b"oldCount >= 0\0".as_ptr() as PCCHAR,
         );
         __int2c();
     }
 
     StorDebugPrint(
-        4i32,
+        4u32,
         TRACE_FLAG_MCN,
         b"ClassEnableMediaChangeDetection: Disable count reduced to %d - \0".as_ptr() as PCCHAR,
         (*info).MediaChangeDetectionDisableCount,
@@ -2502,13 +2659,13 @@ pub unsafe extern "system" fn ClassEnableMediaChangeDetection(
         ClasspInternalSetMediaChangeState(FdoExtension, MediaUnknown, 0u8);
         ClassResetMediaChangeTimer(FdoExtension);
         StorDebugPrint(
-            4i32,
+            4u32,
             TRACE_FLAG_MCN,
             b"MCD is enabled\n\0".as_ptr() as PCCHAR,
         );
     } else {
         StorDebugPrint(
-            4i32,
+            4u32,
             TRACE_FLAG_MCN,
             b"MCD still disabled\n\0".as_ptr() as PCCHAR,
         );
@@ -2558,7 +2715,7 @@ pub unsafe extern "system" fn ClassDisableMediaChangeDetection(
     TracePrint(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_MCN,
-        b"ClassDisableMediaChangeDetection: disable count is %d\n\0".as_ptr() as *const u8 as *const i8,
+        b"ClassDisableMediaChangeDetection: disable count is %d\n\0".as_ptr() as PCCHAR,
         (*info).MediaChangeDetectionDisableCount,
     );
 
@@ -2648,14 +2805,17 @@ pub unsafe extern "C" fn ClasspMcnControl(
 
     if fsContext.is_null() {
         status = STATUS_INVALID_PARAMETER;
-    } else if (*request).PreventMediaRemoval != 0 {
-        ClassDisableMediaChangeDetection(FdoExtension);
-        InterlockedIncrement(&raw mut (*fsContext).McnDisableCount as *mut i32);
-    } else if (*fsContext).McnDisableCount == 0u32 {
-        status = STATUS_INVALID_DEVICE_STATE;
     } else {
-        InterlockedDecrement(&raw mut (*fsContext).McnDisableCount as *mut i32);
-        ClassEnableMediaChangeDetection(FdoExtension);
+        let fsCtxClasspnp = fsContext as *mut _FILE_OBJECT_EXTENSION;
+        if (*request).PreventMediaRemoval != 0 {
+            ClassDisableMediaChangeDetection(FdoExtension);
+            InterlockedIncrement(&raw mut (*fsCtxClasspnp).McnDisableCount as *mut i32);
+        } else if (*fsCtxClasspnp).McnDisableCount == 0u32 {
+            status = STATUS_INVALID_DEVICE_STATE;
+        } else {
+            InterlockedDecrement(&raw mut (*fsCtxClasspnp).McnDisableCount as *mut i32);
+            ClassEnableMediaChangeDetection(FdoExtension);
+        }
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
@@ -2663,9 +2823,9 @@ pub unsafe extern "C" fn ClasspMcnControl(
     ExFreePool(Srb as *mut core::ffi::c_void);
     let _ = Srb; // Srb is set to null in cleanup; we just dealloc
 
-    ClassReleaseRemoveLock((*FdoExtension).DeviceObject, Irp);
+    ClassReleaseRemoveLock((*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject, Irp);
     ClassCompleteRequest(
-        (*FdoExtension).DeviceObject,
+        (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         Irp,
         IO_NO_INCREMENT,
     );
@@ -2697,10 +2857,10 @@ pub unsafe extern "system" fn ClasspTimerTick(
     assert!(!fdo_extension.is_null());
 
     let common_extension = core::ptr::addr_of_mut!((*fdo_extension).__bindgen_anon_1.CommonExtension);
-    let device_object = (*fdo_extension).DeviceObject;
-    assert!((*common_extension).as_ref().IsFdo != 0u8);
+    let device_object = (*fdo_extension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject;
+    assert!((*common_extension).as_ref().__bindgen_anon_1.IsFdo() != 0u8);
 
-    let is_removed = ClassAcquireRemoveLock(device_object, ClasspTimerTick as *mut core::ffi::c_void as PIRP);
+    let is_removed = ClassAcquireRemoveLockR(device_object, ClasspTimerTick as *mut core::ffi::c_void as PIRP);
 
     assert!(is_removed != REMOVE_COMPLETE);
 
@@ -2716,21 +2876,21 @@ pub unsafe extern "system" fn ClasspTimerTick(
         if !info.is_null() {
             if (*info).Method != FailurePredictionNone {
                 if ClasspCanSendPollingIrp(fdo_extension) != 0 {
-                    let count_down = (*info).CountDown.fetch_sub(1, core::sync::atomic::Ordering::SeqCst).wrapping_sub(1);
+                    let count_down = InterlockedDecrement(core::ptr::addr_of_mut!((*info).CountDown) as *mut LONG) as ULONG;
                     if count_down == 0 {
                         if (*info).WorkQueueItem.is_null() {
-                            let work_item = IoAllocateWorkItem((*fdo_extension).DeviceObject);
+                            let work_item = IoAllocateWorkItem((*fdo_extension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject);
                             (*info).WorkQueueItem = work_item;
                             if work_item.is_null() {
-                                (*info).CountDown.swap(60, core::sync::atomic::Ordering::SeqCst);
+                                InterlockedExchange(core::ptr::addr_of_mut!((*info).CountDown) as *mut LONG, 60);
                             } else {
                                 ClassAcquireRemoveLock(
-                                    (*fdo_extension).DeviceObject,
+                                    (*fdo_extension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
                                     work_item as *mut core::ffi::c_void as PIRP,
                                 );
                                 IoQueueWorkItem(
                                     work_item,
-                                    ClasspFailurePredict,
+                                    Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PVOID), unsafe extern "stdcall" fn(PDEVICE_OBJECT, PVOID)>(ClasspFailurePredict)),
                                     DelayedWorkQueue,
                                     info as PVOID,
                                 );
@@ -2743,9 +2903,9 @@ pub unsafe extern "system" fn ClasspTimerTick(
 
         let driver_ext = (*common_extension).as_ref().DriverExtension;
         if !driver_ext.is_null() {
-            let class_tick = (*(*driver_ext).InitData).ClassTick;
-            if !class_tick.is_null() {
-                class_tick(device_object);
+            let class_tick = (*driver_ext).InitData.ClassTick;
+            if let Some(tick_fn) = class_tick {
+                tick_fn(device_object);
             }
         }
     }
@@ -2758,12 +2918,14 @@ pub unsafe extern "C" fn ClasspUpdateTimerNoWakeTolerance(
 ) -> u8 {
     let mut fdoData: *mut _CLASS_PRIVATE_FDO_DATA = core::ptr::null_mut();
 
-    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0 {
+    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0 {
         fdoData = (*FdoExtension).PrivateFdoData;
     }
 
+    // NEEDS SHARED SUBSTRATE: TickTimer is KTIMER in types_i386 but should be PEX_TIMER (pointer).
+    // Reinterpret first 4 bytes of TickTimer field as a PVOID.
     if !fdoData.is_null()
-        && !(*fdoData).TickTimer.is_null()
+        && !(*(core::ptr::addr_of!((*fdoData).TickTimer) as *const PVOID)).is_null()
         && (*fdoData).TimerInitialized != 0
         && (*fdoData).TickTimerEnabled != 0
     {
@@ -2771,26 +2933,27 @@ pub unsafe extern "C" fn ClasspUpdateTimerNoWakeTolerance(
 
         let class_tick = (*(*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension).InitData.ClassTick;
         if ClasspScreenOff != 0u8
-            && class_tick as *const core::ffi::c_void == core::ptr::null()
-            && (*(*FdoExtension).DeviceObject).DeviceType == FILE_DEVICE_DISK
+            && class_tick.is_none()
+            && (*(*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject).DeviceType == FILE_DEVICE_DISK
         {
             noWakeTolerance = EX_TIMER_UNLIMITED_TOLERANCE;
         }
 
-        if (*fdoData).CurrentNoWakeTolerance != noWakeTolerance {
+        // NEEDS SHARED SUBSTRATE: CurrentNoWakeTolerance field missing from types_i386._CLASS_PRIVATE_FDO_DATA
+        if LOCAL_CURRENT_NO_WAKE_TOLERANCE != noWakeTolerance {
             let mut parameters: EXT_SET_PARAMETERS = core::mem::zeroed();
             let period: i64 = TICK_TIMER_PERIOD_IN_MSEC as i64 * (10 * 1000i64);
             let dueTime: i64 = period * -1;
 
-            ExInitializeSetTimerParameters(&mut parameters);
+            ExInitializeSetTimerParameters(&mut parameters as *mut EXT_SET_PARAMETERS as PVOID);
             parameters.NoWakeTolerance = noWakeTolerance;
-            (*fdoData).CurrentNoWakeTolerance = noWakeTolerance;
+            LOCAL_CURRENT_NO_WAKE_TOLERANCE = noWakeTolerance;
 
             ExSetTimer(
-                (*fdoData).TickTimer,
+                *(core::ptr::addr_of!((*fdoData).TickTimer) as *const PVOID),
                 dueTime,
                 period,
-                &mut parameters,
+                &mut parameters as *mut EXT_SET_PARAMETERS as PVOID,
             );
 
             return 1u8;
@@ -2805,7 +2968,7 @@ pub unsafe extern "C" fn ClasspInitializeTimer(
 ) -> NTSTATUS {
     let mut fdoData: PCLASS_PRIVATE_FDO_DATA = core::ptr::null_mut();
 
-    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0 {
+    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0 {
         fdoData = (*FdoExtension).PrivateFdoData;
     }
 
@@ -2816,7 +2979,7 @@ pub unsafe extern "C" fn ClasspInitializeTimer(
     if (*fdoData).TimerInitialized == 0u8 {
         KeInitializeDpc(
             core::ptr::addr_of_mut!((*fdoData).TickTimerDpc),
-            ClasspTimerTick,
+            Some(core::mem::transmute::<unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, PVOID, PVOID, PVOID), unsafe extern "stdcall" fn(*mut ntkrnl_sys::ddk::_KDPC, PVOID, PVOID, PVOID)>(ClasspTimerTick)),
             FdoExtension as PVOID,
         );
         KeInitializeTimer(core::ptr::addr_of_mut!((*fdoData).TickTimer));
@@ -2828,19 +2991,21 @@ pub unsafe extern "C" fn ClasspInitializeTimer(
 #[no_mangle]
 pub unsafe extern "C" fn ClasspDeleteTimer(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) {
     let mut fdoData: PCLASS_PRIVATE_FDO_DATA = core::ptr::null_mut();
-    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo() != 0u8 {
+    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0u8 {
         fdoData = (*FdoExtension).PrivateFdoData;
         if !fdoData.is_null() {
-            if (*fdoData).TickTimer != core::ptr::null_mut() {
+            // NEEDS SHARED SUBSTRATE: TickTimer is KTIMER but should be PEX_TIMER
+            let tick_ptr = *(core::ptr::addr_of!((*fdoData).TickTimer) as *const PVOID);
+            if !tick_ptr.is_null() {
                 let mut parameters: EXT_DELETE_PARAMETERS = core::mem::zeroed();
-                ExInitializeDeleteTimerParameters(&mut parameters);
+                ExInitializeDeleteTimerParameters(&mut parameters as *mut EXT_DELETE_PARAMETERS as PVOID);
                 ExDeleteTimer(
-                    (*fdoData).TickTimer,
+                    tick_ptr,
                     1u8,  // TRUE
                     0u8,  // FALSE
-                    &parameters,
+                    &mut parameters as *mut EXT_DELETE_PARAMETERS as PVOID,
                 );
-                (*fdoData).TickTimer = core::ptr::null_mut();
+                *(core::ptr::addr_of_mut!((*fdoData).TickTimer) as *mut PVOID) = core::ptr::null_mut();
             }
             (*fdoData).TimerInitialized = 0u8;
             (*fdoData).TickTimerEnabled = 0u8;
@@ -2852,7 +3017,7 @@ pub unsafe extern "C" fn ClasspEnableTimer(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
 ) {
     let mut fdoData: PCLASS_PRIVATE_FDO_DATA = core::ptr::null_mut();
-    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0 {
+    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0 {
         fdoData = (*FdoExtension).PrivateFdoData;
     }
     if !fdoData.is_null() {
@@ -2877,16 +3042,15 @@ pub unsafe extern "C" fn ClasspEnableTimer(
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
-            b"ClasspEnableTimer: Periodic tick timer enabled for device %p\n\0".as_ptr()
-                as *const i8,
-            (*FdoExtension).DeviceObject as isize,
+            b"ClasspEnableTimer: Periodic tick timer enabled for device %p\n\0".as_ptr() as PCCHAR,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject as isize,
         );
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn ClasspDisableTimer(FdoExtension: *mut _FUNCTIONAL_DEVICE_EXTENSION) {
     let mut fdoData: *mut _CLASS_PRIVATE_FDO_DATA = core::ptr::null_mut();
-    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0u8 {
+    if (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0u8 {
         fdoData = (*FdoExtension).PrivateFdoData;
     }
     if !fdoData.is_null() && (*fdoData).TimerInitialized == 1u8 {
@@ -2894,15 +3058,15 @@ pub unsafe extern "C" fn ClasspDisableTimer(FdoExtension: *mut _FUNCTIONAL_DEVIC
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
-            b"ClasspDisableTimer: Periodic tick timer disabled for device %p\n\0".as_ptr() as *const core::ffi::c_char,
-            (*FdoExtension).DeviceObject,
+            b"ClasspDisableTimer: Periodic tick timer disabled for device %p\n\0".as_ptr() as PCCHAR,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         );
         (*fdoData).TickTimerEnabled = 0u8;
     } else {
         TracePrint(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
-            b"ClasspDisableTimer: Timer never initialized\n\0".as_ptr() as *const core::ffi::c_char,
+            b"ClasspDisableTimer: Timer never initialized\n\0".as_ptr() as PCCHAR,
         );
     }
 }
@@ -2915,7 +3079,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
     let Info = Context as PFAILURE_PREDICTION_INFO;
 
     if Info.is_null() {
-        NT_ASSERT(!Info.is_null());
+        NT_ASSERT(!Info.is_null() as u8);
         return;
     }
 
@@ -2930,11 +3094,11 @@ pub unsafe extern "system" fn ClasspFailurePredict(
         (core::mem::size_of::<SCSI_ADDRESS>() as ULONG) as usize,
     );
 
-    TracePrint((
+    TracePrint(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_WMI,
         b"ClasspFailurePredict: Polling for failure\n\0".as_ptr() as PCCHAR,
-    ));
+    );
 
     InterlockedExchange(
         core::ptr::addr_of_mut!((*Info).CountDown) as *mut LONG,
@@ -2968,10 +3132,10 @@ pub unsafe extern "system" fn ClasspFailurePredict(
             topOfStack,
             core::ptr::null_mut(),
             0,
-            &mut checkFailure as PVOID,
+            core::ptr::addr_of_mut!(checkFailure) as PVOID,
             core::mem::size_of::<STORAGE_PREDICT_FAILURE>() as ULONG,
             FALSE,
-            &mut event,
+            core::ptr::addr_of_mut!(event),
             &mut ioStatus,
         );
 
@@ -2979,7 +3143,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
             status = IoCallDriver(topOfStack, irp);
             if status == STATUS_PENDING {
                 KeWaitForSingleObject(
-                    &mut event as PVOID,
+                    core::ptr::addr_of_mut!(event) as PVOID,
                     _KWAIT_REASON_Executive,
                     (0i32) as i8,
                     FALSE,
@@ -2991,7 +3155,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
             status = STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        if NT_SUCCESS(status) != 0 && checkFailure.PredictFailure != 0 {
+        if NT_SUCCESS(status) && checkFailure.PredictFailure != 0 {
             checkFailure.PredictFailure = 512;
 
             KeInitializeEvent(&mut event, _EVENT_TYPE_SynchronizationEvent, FALSE);
@@ -3005,10 +3169,10 @@ pub unsafe extern "system" fn ClasspFailurePredict(
                 topOfStack,
                 core::ptr::null_mut(),
                 0,
-                &mut scsiAddress as PVOID,
+                core::ptr::addr_of_mut!(scsiAddress) as PVOID,
                 core::mem::size_of::<SCSI_ADDRESS>() as ULONG,
                 FALSE,
-                &mut event,
+                core::ptr::addr_of_mut!(event),
                 &mut ioStatus,
             );
 
@@ -3016,7 +3180,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
                 status = IoCallDriver(topOfStack, irp);
                 if status == STATUS_PENDING {
                     KeWaitForSingleObject(
-                        &mut event as PVOID,
+                        core::ptr::addr_of_mut!(event) as PVOID,
                         _KWAIT_REASON_Executive,
                         (0i32) as i8,
                         FALSE,
@@ -3027,7 +3191,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
 
             ClassNotifyFailurePredicted(
                 fdoExtension,
-                &mut checkFailure as PUCHAR,
+                core::ptr::addr_of_mut!(checkFailure) as PUCHAR,
                 core::mem::size_of::<STORAGE_PREDICT_FAILURE>() as ULONG,
                 ((*fdoExtension).FailurePredicted == FALSE) as BOOLEAN,
                 2,
@@ -3043,7 +3207,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
 
         (*Info).LastFailurePredictionQueryTime = SharedSystemTime;
 
-        if NT_SUCCESS(activateStatus) != 0 {
+        if NT_SUCCESS(activateStatus) {
             ClasspPowerIdleDevice(DeviceObject);
         }
     }
@@ -3127,7 +3291,7 @@ pub unsafe extern "system" fn ClassNotifyFailurePredicted(
 
         if !driverExtension.is_null() && (*driverExtension).EtwHandle != 0u64 {
             EventDescCreate(
-                &raw mut eventDescriptor,
+                &raw mut eventDescriptor as PVOID,
                 1u16,
                 0u8,
                 0u8,
@@ -3190,7 +3354,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
             (*info).WorkQueueItem = core::ptr::null_mut::<_IO_WORKITEM>();
             (*info).Period = DEFAULT_FAILURE_PREDICTION_PERIOD;
             (*(core::ptr::addr_of_mut!((*info).LastFailurePredictionQueryTime) as *mut u64)) =
-                (*(SharedSystemTime as *mut u64));
+                *(core::ptr::addr_of!(SharedSystemTime) as *const u64);
         } else {
             return STATUS_SUCCESS;
         }
@@ -3222,24 +3386,24 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_WMI,
-            b"ClassEnableFailurePredictPoll: Enabled for device %p\n\0" as *const u8 as *const i8,
-            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_2.DeviceObject as *mut c_void,
+            b"ClassEnableFailurePredictPoll: Enabled for device %p\n\0".as_ptr() as PCCHAR,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         );
     } else {
         ClasspDisableTimer(FdoExtension);
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_WMI,
-            b"ClassEnableFailurePredictPoll: Disabled for device %p\n\0" as *const u8 as *const i8,
-            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_2.DeviceObject as *mut c_void,
+            b"ClassEnableFailurePredictPoll: Disabled for device %p\n\0".as_ptr() as PCCHAR,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
         );
     }
 
     status = STATUS_SUCCESS;
 
-    ((((KeSetEvent)))).cast()(
-        core::ptr::addr_of_mut!((*info).Event),
-        IO_NO_INCREMENT,
+    KeSetEvent(
+        core::ptr::addr_of_mut!((*info).Event) as PVOID,
+        IO_NO_INCREMENT as i32,
         0u8,
     );
     KeLeaveCriticalRegion();
@@ -3250,8 +3414,8 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
 pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
 ) -> BOOLEAN {
-    let mut currentTime: LARGE_INTEGER;
-    let mut timeDifference: LARGE_INTEGER;
+    let mut currentTime: LARGE_INTEGER = core::mem::zeroed();
+    let mut timeDifference: LARGE_INTEGER = core::mem::zeroed();
     let mut missedPeriod: BOOLEAN = 0u8;
 
     // NT_ASSERT

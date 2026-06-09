@@ -4,7 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, IoWMIDeviceObjectToProviderId, IoWMIWriteEvent, KeQueryTimeIncrement, LARGE_INTEGER, LPGUID, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlInitUnicodeString, RtlTimeToTimeFields, TIME_FIELDS};
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, IoWMIWriteEvent, KeQueryTimeIncrement, LARGE_INTEGER, LPGUID, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, RtlInitUnicodeString, RtlTimeToTimeFields, TIME_FIELDS};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{STATUS_DEVICE_DOES_NOT_EXIST, TRACE_LEVEL_WARNING};
@@ -21,16 +21,20 @@ use crate::glue::{NonPagedPoolNx};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_GUID};
 use crate::shims::*;
+use crate::types::{CLASSENABLEDISABLEFUNCTION_EventGeneration as EventGeneration, CLASSENABLEDISABLEFUNCTION_DataBlockCollection as DataBlockCollection};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{ExFreePool, KeGetCurrentIrql, KeQuerySystemTime};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{PWMIREGINFO, PWMIREGINFOW, PWNODE_ALL_DATA, PWNODE_HEADER, PWNODE_METHOD_ITEM, PWNODE_SINGLE_INSTANCE, PWNODE_SINGLE_ITEM, WMIREGGUIDW, WMIREGINFO, WNODE_ALL_DATA, WNODE_METHOD_ITEM, WNODE_SINGLE_INSTANCE, WNODE_TOO_SMALL};
+use crate::types::{__BindgenUnionField, PWMIREGINFO, PWMIREGINFOW, PWNODE_ALL_DATA, PWNODE_HEADER, PWNODE_METHOD_ITEM, PWNODE_SINGLE_INSTANCE, PWNODE_SINGLE_ITEM, WMIREGGUIDW, WMIREGGUIDW__bindgen_ty_1, WMIREGINFO, WNODE_ALL_DATA, WNODE_METHOD_ITEM, WNODE_SINGLE_INSTANCE, WNODE_TOO_SMALL};
 
 extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
 }
 extern "C" {
     fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ... ) -> NTSTATUS;
+    fn IoWMIDeviceObjectToProviderId(DeviceObject: PDEVICE_OBJECT) -> ULONG;
+    fn IsEqualGUID(Guid1: *const _GUID, Guid2: *const _GUID) -> bool;
+    fn KeQueryTickCount(TickCount: *mut i64);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -130,7 +134,7 @@ pub unsafe extern "C" fn ClassFindInternalGuid(Guid: *const ::core::ffi::c_void,
 
     while i < wmiClassGuids.len() {
         if IsEqualGUID(
-            Guid,
+            Guid as *const _GUID,
             &(*(wmiClassGuids.as_mut_ptr().add(i))).Guid as *const _,
         ) {
             *GuidIndex = i as u32;
@@ -165,7 +169,11 @@ pub unsafe extern "system" fn ClassSystemControl(
         __int2c();
     }
 
-    let isRemoved = ClassAcquireRemoveLock(DeviceObject, Irp);
+    let isRemoved = crate::types::ClassAcquireRemoveLockEx(
+        DeviceObject, Irp as PVOID,
+        b"classwmi.c\0".as_ptr() as *const i8,
+        238,
+    );
     if isRemoved != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
         ClassReleaseRemoveLock(DeviceObject, Irp);
@@ -202,7 +210,7 @@ pub unsafe extern "system" fn ClassSystemControl(
             isInternalGuid = 0u8;
             status = STATUS_SUCCESS;
         } else if ClassFindInternalGuid(
-            (*irpStack).Parameters.WMI.DataPath as LPGUID,
+            (*irpStack).Parameters.WMI.DataPath as *const core::ffi::c_void,
             &mut guidIndex,
         ) != 0
         {
@@ -246,14 +254,14 @@ pub unsafe extern "system" fn ClassSystemControl(
     }
 
     let driverExtension = (*commonExtension).DriverExtension;
-    let classWmiInfo = if (*commonExtension).IsFdo != 0 {
+    let classWmiInfo = if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
         &mut (*driverExtension).InitData.FdoData.ClassWmiInfo as *mut _CLASS_WMI_INFO as PCLASS_WMI_INFO
     } else {
         &mut (*driverExtension).InitData.PdoData.ClassWmiInfo as *mut _CLASS_WMI_INFO as PCLASS_WMI_INFO
     };
 
     match minorFunction as i32 {
-        (IRP_MN_REGINFO) as i32 => {
+        x if x == IRP_MN_REGINFO as i32 => {
             let mut name = _UNICODE_STRING {
                 Length: 0,
                 MaximumLength: 0,
@@ -266,7 +274,7 @@ pub unsafe extern "system" fn ClassSystemControl(
             };
             let mut nameFlags: ULONG = 0;
 
-            let ClassQueryWmiRegInfoEx = if (*commonExtension).IsFdo != 0 {
+            let ClassQueryWmiRegInfoEx = if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
                 (*driverExtension).ClassFdoQueryWmiRegInfoEx
             } else {
                 (*driverExtension).ClassPdoQueryWmiRegInfoEx
@@ -315,7 +323,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                 let nameInfo: ULONG_PTR;
                 if nameFlags & WMIREG_FLAG_INSTANCE_PDO as ULONG != 0 {
                     nameSize = 0;
-                    nameInfo = if (*commonExtension).IsFdo != 0 {
+                    nameInfo = if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
                         (*(commonExtension as PFUNCTIONAL_DEVICE_EXTENSION)).LowerPdo as ULONG_PTR
                     } else {
                         DeviceObject as ULONG_PTR
@@ -347,11 +355,17 @@ pub unsafe extern "system" fn ClassSystemControl(
                     // Fill class-specific guids
                     let mut i = 0u32;
                     while i < (*classWmiInfo).GuidCount {
-                        let wmiRegGuid = &mut (*wmiRegInfo).WmiRegGuid as *mut WMIREGGUIDW;
+                        let wmiRegGuid = (*wmiRegInfo).WmiRegGuid.as_mut_ptr();
                         wmiRegGuid.offset(i as isize).write(WMIREGGUIDW {
                             Guid: (*guidList.offset(i as isize)).Guid,
                             Flags: (*guidList.offset(i as isize)).Flags | nameFlags,
-                            __bindgen_anon_1: bindgen_anon_WMIREGGUIDW { InstanceInfo: nameInfo },
+                            __bindgen_anon_1: WMIREGGUIDW__bindgen_ty_1 {
+                                InstanceNameList: __BindgenUnionField::new(),
+                                BaseNameOffset: __BindgenUnionField::new(),
+                                Pdo: __BindgenUnionField::new(),
+                                InstanceInfo: __BindgenUnionField::new(),
+                                bindgen_union_field: nameInfo as u32,
+                            },
                             InstanceCount: 1,
                         });
                         i += 1;
@@ -359,11 +373,17 @@ pub unsafe extern "system" fn ClassSystemControl(
                     // Fill internal class guids
                     i = 0;
                     while i < wmiClassGuids.len() as u32 {
-                        let wmiRegGuid = &mut (*wmiRegInfo).WmiRegGuid as *mut WMIREGGUIDW;
+                        let wmiRegGuid = (*wmiRegInfo).WmiRegGuid.as_mut_ptr();
                         wmiRegGuid.offset((i + (*classWmiInfo).GuidCount) as isize).write(WMIREGGUIDW {
                             Guid: wmiClassGuids[i as usize].Guid,
                             Flags: wmiClassGuids[i as usize].Flags | nameFlags,
-                            __bindgen_anon_1: bindgen_anon_WMIREGGUIDW { InstanceInfo: nameInfo },
+                            __bindgen_anon_1: WMIREGGUIDW__bindgen_ty_1 {
+                                InstanceNameList: __BindgenUnionField::new(),
+                                BaseNameOffset: __BindgenUnionField::new(),
+                                Pdo: __BindgenUnionField::new(),
+                                InstanceInfo: __BindgenUnionField::new(),
+                                bindgen_union_field: nameInfo as u32,
+                            },
                             InstanceCount: 1,
                         });
                         i += 1;
@@ -479,7 +499,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                 );
             }
         }
-        (IRP_MN_QUERY_SINGLE_INSTANCE) as i32 => {
+        x if x == IRP_MN_QUERY_SINGLE_INSTANCE as i32 => {
             let wnode = buffer as PWNODE_SINGLE_INSTANCE;
             let dataBlockOffset = (*wnode).DataBlockOffset;
             if isInternalGuid != 0 {
@@ -500,7 +520,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                 );
             }
         }
-        (IRP_MN_CHANGE_SINGLE_INSTANCE) as i32 => {
+        x if x == IRP_MN_CHANGE_SINGLE_INSTANCE as i32 => {
             let wnode = buffer as PWNODE_SINGLE_INSTANCE;
             if isInternalGuid != 0 {
                 status = ClassWmiCompleteRequest(
@@ -520,7 +540,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                 );
             }
         }
-        (IRP_MN_CHANGE_SINGLE_ITEM) as i32 => {
+        x if x == IRP_MN_CHANGE_SINGLE_ITEM as i32 => {
             let wnode = buffer as PWNODE_SINGLE_ITEM;
             if isInternalGuid != 0 {
                 status = ClassWmiCompleteRequest(
@@ -541,7 +561,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                 );
             }
         }
-        (IRP_MN_EXECUTE_METHOD) as i32 => {
+        x if x == IRP_MN_EXECUTE_METHOD as i32 => {
             let wnode = buffer as PWNODE_METHOD_ITEM;
             if isInternalGuid != 0 {
                 status = ClassWmiCompleteRequest(
@@ -673,7 +693,7 @@ pub unsafe extern "C" fn ConvertTickToDateTime(
 ) -> PWCHAR {
     let mut nowTick: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
     let mut nowTime: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
-    let mut time: LARGE_INTEGER;
+    let mut time: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
     let mut maxInc: u32 = 0;
     let mut timeFields: TIME_FIELDS = core::mem::zeroed();
     let mut outDateTime: [u16; 26] = [0u16; 26];
@@ -744,7 +764,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
                 (*wnode).WnodeHeader.BufferSize = bufferNeeded;
                 KeQuerySystemTime((&raw mut (*wnode).WnodeHeader.__bindgen_anon_2.TimeStamp).cast());
                 (*wnode).WnodeHeader.Flags |= WNODE_FLAG_FIXED_INSTANCE_SIZE as ULONG;
-                (*wnode).__bindgen_anon_1.FixedInstanceSize = BufferUsed;
+                (*wnode).__bindgen_anon_1.bindgen_union_field = BufferUsed;
                 (*wnode).InstanceCount = 1;
             } else if Status == STATUS_BUFFER_TOO_SMALL {
                 let wnodeTooSmall = wnode as *mut WNODE_TOO_SMALL;
@@ -759,7 +779,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
                 retSize = 0;
             }
         }
-        (IRP_MN_QUERY_SINGLE_INSTANCE) as i32 => {
+        x if x == IRP_MN_QUERY_SINGLE_INSTANCE as i32 => {
             let wnode = buffer as *mut WNODE_SINGLE_INSTANCE;
             let bufferNeeded = (*wnode).DataBlockOffset + BufferUsed;
 
@@ -780,7 +800,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
                 retSize = 0;
             }
         }
-        (IRP_MN_EXECUTE_METHOD) as i32 => {
+        x if x == IRP_MN_EXECUTE_METHOD as i32 => {
             let wnode = buffer as *mut WNODE_METHOD_ITEM;
             let bufferNeeded = (*wnode).DataBlockOffset + BufferUsed;
 
@@ -846,7 +866,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
             | WNODE_FLAG_STATIC_INSTANCE_NAMES) as u32;
 
         // Expand KeQuerySystemTime: directly copy the shared system time
-        (*event).WnodeHeader.__bindgen_anon_1.TimeStamp = SharedSystemTime;
+        (*event).WnodeHeader.__bindgen_anon_2.bindgen_union_field = SharedSystemTime.QuadPart as u64;
 
         (*event).InstanceIndex = InstanceIndex;
         (*event).SizeDataBlock = data_size;

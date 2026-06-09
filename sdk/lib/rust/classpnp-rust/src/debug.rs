@@ -5,7 +5,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DPFLTR_CLASSPNP_ID, KeInitializeSpinLock, KeQueryTimeIncrement, LARGE_INTEGER, NTSTRSAFE_PSTR, PCCHAR, RtlCaptureStackBackTrace, va_list};
+use ntkrnl_sys::ddk::{KeInitializeSpinLock, KeQueryTimeIncrement, LARGE_INTEGER, NTSTRSAFE_PSTR, PCCHAR, RtlCaptureStackBackTrace, va_list};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING};
@@ -25,6 +25,49 @@ use ntkrnl_sys::driver_ddk::{DbgPrint};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::srblib::{SrbGetDataBuffer, SrbGetDataTransferLength, SrbGetOriginalRequest, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSystemStatus};
 
+// ---- local struct definitions (from debug.h, not in generated types) ----
+#[repr(C)]
+pub struct CLASSPNP_GLOBALS {
+    pub BreakOnLostIrps: ULONG,
+    pub SecondsToWaitForIrps: ULONG,
+    pub UseBufferedDebugPrint: ULONG,
+    pub UseDelayedRetry: ULONG,
+    pub Index: ULONG,
+    pub SpinLock: KSPIN_LOCK,
+    pub Buffer: *mut UCHAR,
+    pub NumberOfBuffers: ULONG,
+    pub EachBufferSize: SIZE_T,
+    pub Initializing: LONG,
+    pub Initialized: LONG,
+}
+unsafe impl Sync for CLASSPNP_GLOBALS {}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct DISK_SPINUP_TRACES {
+    pub TimeStamp: LARGE_INTEGER,
+    pub StackTrace: [PVOID; 24],
+}
+unsafe impl Sync for DISK_SPINUP_TRACES {}
+pub type _DISK_SPINUP_TRACES = DISK_SPINUP_TRACES;
+
+extern "C" {
+    pub fn ClasspTransferPacketGetCdb(Pkt: *mut TRANSFER_PACKET) -> PCDB;
+    pub fn DbgGetSrbStatusStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
+    pub fn KeQueryTickCount(TickCount: *mut i64);
+    pub fn DbgGetSenseCodeStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
+    pub fn DbgGetAdditionalSenseCodeStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
+    pub fn RtlULongAdd(Augend: ULONG, Addend: ULONG, pResult: *mut ULONG) -> NTSTATUS;
+    pub fn ScsiGetSenseKeyAndCodes(
+        SenseBuffer: PVOID,
+        SenseBufferLength: UCHAR,
+        Options: ULONG,
+        SenseKey: *mut UCHAR,
+        AdditionalSenseCode: *mut UCHAR,
+        AdditionalSenseCodeQualifier: *mut UCHAR,
+    ) -> BOOLEAN;
+}
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 pub static mut ClasspnpGlobals: CLASSPNP_GLOBALS = CLASSPNP_GLOBALS {
@@ -34,7 +77,7 @@ pub static mut ClasspnpGlobals: CLASSPNP_GLOBALS = CLASSPNP_GLOBALS {
     UseDelayedRetry: 0,
     Index: 0,
     SpinLock: 0,
-    Buffer: ::core::ptr::null::<::core::ffi::c_uchar>() as *mut ::core::ffi::c_uchar,
+    Buffer: core::ptr::null_mut(),
     NumberOfBuffers: 0,
     EachBufferSize: 0,
     Initializing: 0,
@@ -48,13 +91,8 @@ pub static mut DebugTrapOnWarn: BOOLEAN = FALSE as BOOLEAN;
 pub static mut DiskSpinupIndex: ULONG = 0 as ULONG;
 
 pub static mut DiskSpinupTraces: [DISK_SPINUP_TRACES; 16] = [DISK_SPINUP_TRACES {
-    TimeStamp: _LARGE_INTEGER {
-        __bindgen_anon_1: C2RustUnnamed_0 {
-            LowPart: 0,
-            HighPart: 0,
-        },
-    },
-    StackTrace: [::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void; 24],
+    TimeStamp: LARGE_INTEGER { QuadPart: 0 },
+    StackTrace: [core::ptr::null_mut(); 24],
 }; 16];
 
 pub const CLASS_GLOBAL_BREAK_ON_LOST_IRPS: u32 = 0;
@@ -77,8 +115,8 @@ pub unsafe extern "C" fn ClasspInitializeDebugGlobals() {
     );
 
     if cmp_result == 0 {
-        KeInitializeSpinLock(core::ptr::addr_of_mut!(ClasspnpGlobals.SpinLock));
-        KeAcquireSpinLock(core::ptr::addr_of_mut!(ClasspnpGlobals.SpinLock), &mut irql);
+        KeInitializeSpinLock(core::ptr::addr_of_mut!(ClasspnpGlobals.SpinLock).cast());
+        KeAcquireSpinLock(core::ptr::addr_of_mut!(ClasspnpGlobals.SpinLock).cast(), &mut irql);
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, b"CLASSPNP.SYS => Initializing ClasspnpGlobals...\n\0".as_ptr() as *const i8);
         ClasspnpGlobals.Buffer = core::ptr::null_mut::<u8>();
         ClasspnpGlobals.Index = !0u32; // (ULONG)-1
@@ -162,11 +200,11 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             DbgGetScsiOpStr(((*Pkt).Srb).cast()),
             DbgGetSrbStatusStr((*Pkt).Srb),
             (*(*Pkt).Srb).SrbStatus as ULONG,
-            (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status,
+            (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
         );
     } else if srb_status == (SRB_STATUS_SUCCESS) as i32 {
         // Make sure SRB and IRP status match
-        if !((*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status >= 0) {
+        if !((*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status >= 0) {
             TracePrint(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_RW,
@@ -176,7 +214,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
                 DbgGetScsiOpStr(((*Pkt).Srb).cast()),
                 DbgGetSrbStatusStr((*Pkt).Srb),
                 (*(*Pkt).Srb).SrbStatus as ULONG,
-                (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status,
+                (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
             );
         }
         if (*(*Pkt).Irp).IoStatus.Information
@@ -195,7 +233,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             );
         }
     } else {
-        if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status >= 0 {
+        if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status >= 0 {
             TracePrint(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_RW,
@@ -205,7 +243,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
                 DbgGetScsiOpStr(((*Pkt).Srb).cast()),
                 DbgGetSrbStatusStr((*Pkt).Srb),
                 (*(*Pkt).Srb).SrbStatus as ULONG,
-                (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status,
+                (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
             );
         }
         TracePrint(
@@ -217,7 +255,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             DbgGetScsiOpStr(((*Pkt).Srb).cast()),
             DbgGetSrbStatusStr((*Pkt).Srb),
             (*(*Pkt).Srb).SrbStatus as ULONG,
-            (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status,
+            (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
             DbgGetSenseCodeStr((*Pkt).Srb),
             DbgGetAdditionalSenseCodeStr((*Pkt).Srb),
             DbgGetAdditionalSenseCodeQualifierStr((*Pkt).Srb),
@@ -243,7 +281,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     }
 
     // Check STATUS_INSUFFICIENT_RESOURCES correlation
-    if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status as i32 == STATUS_INSUFFICIENT_RESOURCES as i32 {
+    if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status as i32 == STATUS_INSUFFICIENT_RESOURCES as i32 {
         if !(srb_status == (SRB_STATUS_INTERNAL_ERROR) as i32) {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
@@ -271,7 +309,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
     }
 
     // Check miniport did not change SCSI operation code
-    match (*pCdb).CDB10.OperationCode as i32 {
+    match (*pCdb).CDB10.as_ref().OperationCode as u32 {
         SCSIOP_MEDIUM_REMOVAL
         | SCSIOP_MODE_SENSE
         | SCSIOP_READ_CAPACITY
@@ -291,7 +329,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
                 DbgGetScsiOpStr(((*Pkt).Srb).cast()),
                 DbgGetSrbStatusStr((*Pkt).Srb),
                 (*(*Pkt).Srb).SrbStatus as ULONG,
-                (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.__bindgen_anon_1.Status,
+                (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
                 DbgGetSenseCodeStr((*Pkt).Srb),
                 DbgGetAdditionalSenseCodeStr((*Pkt).Srb),
                 DbgGetAdditionalSenseCodeQualifierStr((*Pkt).Srb),
@@ -316,7 +354,8 @@ pub unsafe extern "C" fn DbgLogSendPacket(Pkt: *mut TRANSFER_PACKET) {
     (*Pkt).DbgTimeReturned.QuadPart = 0;
 
     KeAcquireSpinLock((&raw mut (*fdoData).SpinLock).cast(), &raw mut oldIrql);
-    (*fdoData).DbgPacketLogs[(*fdoData).DbgPacketLogNextIndex as usize] = (*Pkt);
+    let idx = (*fdoData).DbgPacketLogNextIndex as usize;
+    core::ptr::copy_nonoverlapping(Pkt, &mut (*fdoData).DbgPacketLogs[idx], 1);
     (*fdoData).DbgPacketLogNextIndex = (*fdoData).DbgPacketLogNextIndex.wrapping_add(1);
     (*fdoData).DbgPacketLogNextIndex = (*fdoData).DbgPacketLogNextIndex.wrapping_rem(DBG_NUM_PACKET_LOG_ENTRIES);
     KeReleaseSpinLock((&raw mut (*fdoData).SpinLock).cast(), oldIrql);
@@ -330,7 +369,8 @@ pub unsafe extern "C" fn DbgLogReturnPacket(Pkt: *mut TRANSFER_PACKET) {
     KeQueryTickCount(core::ptr::addr_of_mut!((*Pkt).DbgTimeReturned.QuadPart));
 
     KeAcquireSpinLock((core::ptr::addr_of_mut!((*fdoData).SpinLock)).cast(), core::ptr::addr_of_mut!(oldIrql));
-    (*fdoData).DbgPacketLogs[(*fdoData).DbgPacketLogNextIndex as usize] = *Pkt;
+    let idx = (*fdoData).DbgPacketLogNextIndex as usize;
+    core::ptr::copy_nonoverlapping(Pkt, &mut (*fdoData).DbgPacketLogs[idx], 1);
     (*fdoData).DbgPacketLogNextIndex = (*fdoData).DbgPacketLogNextIndex.wrapping_add(1);
     (*fdoData).DbgPacketLogNextIndex = ((*fdoData).DbgPacketLogNextIndex as usize)
         .wrapping_rem((DBG_NUM_PACKET_LOG_ENTRIES) as usize) as ULONG;
@@ -433,14 +473,12 @@ pub unsafe extern "C" fn SnapDiskStartup() {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ClassDebugPrint(
-    mut DebugPrintLevel: CLASS_DEBUG_LEVEL,
-    mut DebugMessage: PCCHAR,
-    mut args: ...
+    _DebugPrintLevel: CLASS_DEBUG_LEVEL,
+    _DebugMessage: PCCHAR,
+    // NOTE: stable Rust cannot define C-variadic fns; this retail stub ignores all args.
+    // cdecl caller cleans up any extra args so the ABI is safe.
 ) {
-    // Retail version: does nothing. 
-    let _ = &mut DebugPrintLevel;
-    let _ = &mut DebugMessage;
-    let _ = &mut args;
+    // Retail version: does nothing.
 }
 
 pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR {

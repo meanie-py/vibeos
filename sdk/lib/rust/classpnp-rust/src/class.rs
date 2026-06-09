@@ -8,7 +8,53 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusRelations, BusType1394, BusTypeFibre, BusTypeFileBackedVirtual, BusTypeRAID, BusTypeUsb, BusTypeiScsi, DEVICE_DATA_SET_RANGE, DEVICE_DSM_OFFLOAD_READ_PARAMETERS, DEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, DEVICE_MANAGE_DATA_SET_ATTRIBUTES, DEVICE_RELATIONS, DISK_GEOMETRY, DPFLTR_CLASSPNP_ID, DelayedWorkQueue, DeviceNumber, DevicePropertyRemovalPolicy, DeviceUsageTypeBoot, DeviceUsageTypeDumpFile, DeviceUsageTypePaging, ExFreePool, ExInitializeRundownProtectionCacheAware, ExReInitializeRundownProtectionCacheAware, ExSizeOfRundownProtectionCacheAware, ExWaitForRundownProtectionReleaseCacheAware, _KWAIT_REASON_Executive, FixedMedia, GUID, IO_COMPLETION_ROUTINE, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IRP, IoAllocateDriverObjectExtension, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildDeviceIoControlRequest, IoCopyCurrentIrpStackLocationToNext, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDeviceProperty, IoGetDriverObjectExtension, IoGetNextIrpStackLocation, IoGetPagingIoPriority, IoInitializeIrp, IoInvalidateDeviceRelations, IoIs32bitProcess, IoOpenDeviceRegistryKey, IoPagingPriorityHigh, IoPagingPriorityInvalid, IoQueueWorkItem, IoReadAccess, IoRegisterDeviceInterface, IoSetCompletionRoutine, IoSetDeviceInterfaceState, IoSetNextIrpStackLocation, IoSetStartIoAttributes, IoStartPacket, IoWMIRegistrationControl, IoWriteAccess, IoWriteErrorLogEntry, KEVENT, KLOCK_QUEUE_HANDLE, KeAcquireInStackQueuedSpinLock, KeBugCheck, KeDelayExecutionThread, KeEnterCriticalRegion, KeGetRecommendedSharedDataAlignment, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeInitializeTimer, KeLeaveCriticalRegion, KeQueryTimeIncrement, KeReleaseInStackQueuedSpinLock, KeSetTimerEx, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, LPGUID, MOUNTDEV_NAME, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, NTSTRSAFE_PSTR, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, ObReferenceObjectByPointer, PCCHAR, PCSZ, PDEVICE_CAPABILITIES, PDEVICE_DATA_SET_RANGE, PDEVICE_DSM_OFFLOAD_READ_PARAMETERS, PDEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES, PDEVICE_OBJECT, PDEVICE_POWER_DESCRIPTOR, PDEVICE_RELATIONS, PDRIVER_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIO_COMPLETION_ROUTINE, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIO_WORKITEM, PIRP, PKEVENT, PMDL, PMOUNTDEV_NAME, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, PRTL_QUERY_REGISTRY_TABLE, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_NUMBER, PSTORAGE_HOTPLUG_INFO, PSTORAGE_OFFLOAD_READ_OUTPUT, PSTORAGE_OFFLOAD_WRITE_OUTPUT, PSTORAGE_PROPERTY_ID, PSTORAGE_PROPERTY_QUERY, PSTORAGE_READ_CAPACITY, PULONGLONG, PUNICODE_STRING, PVPB, PowerDeviceD0, PowerDeviceD3, PropertyStandardQuery, PsGetCurrentThread, RTL_QUERY_REGISTRY_TABLE, RemovableMedia, RemovalPolicyExpectOrderlyRemoval, RemovalPolicyExpectSurpriseRemoval, RtlAnsiStringToUnicodeString, RtlCopyUnicodeString, RtlDeleteRegistryValue, RtlFreeUnicodeString, RtlInitString, RtlInitUnicodeString, RtlQueryRegistryValues, STORAGE_DEVICE_NUMBER, STORAGE_HOTPLUG_INFO, STORAGE_OFFLOAD_READ_OUTPUT, STORAGE_OFFLOAD_WRITE_OUTPUT, STORAGE_PROPERTY_QUERY, STORAGE_READ_CAPACITY, STRING, StorageAccessAlignmentProperty, StorageAdapterProperty, StorageDeviceCopyOffloadProperty, StorageDeviceLBProvisioningProperty, StorageDeviceMediumProductType, StorageDevicePowerProperty, StorageDeviceProperty, StorageDeviceSeekPenaltyProperty, StorageDeviceTrimProperty, StorageDeviceUniqueIdProperty, StorageDeviceWriteCacheProperty, StorageMiniportProperty, StoragePortCodeSetSDport, StoragePortCodeSetStorport, StoragePortCodeSetUSBport, _EVENT_TYPE_SynchronizationEvent, TargetDeviceRelation, UINT32, _KWAIT_REASON_UserRequest, ZwClose, ZwOpenKey, ZwSetValueKey};
+use ntkrnl_sys::ddk::{DEVICE_DATA_SET_RANGE, DEVICE_DSM_OFFLOAD_READ_PARAMETERS, DEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, DEVICE_MANAGE_DATA_SET_ATTRIBUTES, DEVICE_RELATIONS, DISK_GEOMETRY, ExFreePool, ExInitializeRundownProtectionCacheAware, ExReInitializeRundownProtectionCacheAware, ExSizeOfRundownProtectionCacheAware, ExWaitForRundownProtectionReleaseCacheAware, _KWAIT_REASON_Executive, GUID, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IRP, IoAllocateDriverObjectExtension, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildDeviceIoControlRequest, IoCopyCurrentIrpStackLocationToNext, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDeviceProperty, IoGetDriverObjectExtension, IoGetNextIrpStackLocation, IoGetPagingIoPriority, IoInitializeIrp, IoInvalidateDeviceRelations, IoOpenDeviceRegistryKey, IoQueueWorkItem, IoRegisterDeviceInterface, IoSetCompletionRoutine, IoSetDeviceInterfaceState, IoSetNextIrpStackLocation, IoSetStartIoAttributes, IoStartPacket, IoWMIRegistrationControl, IoWriteErrorLogEntry, KEVENT, KLOCK_QUEUE_HANDLE, KeAcquireInStackQueuedSpinLock, KeBugCheck, KeDelayExecutionThread, KeEnterCriticalRegion, KeGetRecommendedSharedDataAlignment, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeInitializeTimer, KeLeaveCriticalRegion, KeQueryTimeIncrement, KeReleaseInStackQueuedSpinLock, KeSetTimerEx, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, LPGUID, MOUNTDEV_NAME, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, NTSTRSAFE_PSTR, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, ObReferenceObjectByPointer, PCCHAR, PCSZ, PDEVICE_CAPABILITIES, PDEVICE_DATA_SET_RANGE, PDEVICE_DSM_OFFLOAD_READ_PARAMETERS, PDEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES, PDEVICE_OBJECT, PDEVICE_POWER_DESCRIPTOR, PDEVICE_RELATIONS, PDRIVER_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIO_COMPLETION_ROUTINE, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIO_WORKITEM, PIRP, PKEVENT, PMDL, PMOUNTDEV_NAME, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, PRTL_QUERY_REGISTRY_TABLE, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_NUMBER, PSTORAGE_HOTPLUG_INFO, PSTORAGE_OFFLOAD_READ_OUTPUT, PSTORAGE_OFFLOAD_WRITE_OUTPUT, PSTORAGE_PROPERTY_ID, PSTORAGE_PROPERTY_QUERY, PSTORAGE_READ_CAPACITY, PULONGLONG, PUNICODE_STRING, PVPB, PsGetCurrentThread, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCopyUnicodeString, RtlDeleteRegistryValue, RtlFreeUnicodeString, RtlInitString, RtlInitUnicodeString, RtlQueryRegistryValues, STORAGE_DEVICE_NUMBER, STORAGE_HOTPLUG_INFO, STORAGE_OFFLOAD_READ_OUTPUT, STORAGE_OFFLOAD_WRITE_OUTPUT, STORAGE_PROPERTY_QUERY, STORAGE_READ_CAPACITY, STRING, UINT32, _KWAIT_REASON_UserRequest, ZwClose, ZwOpenKey, ZwSetValueKey};
+// Local aliases for enum variants not exported by ntkrnl_sys::ddk under short names
+use ntkrnl_sys::ddk::{
+    _DEVICE_RELATION_TYPE_BusRelations as BusRelations,
+    _DEVICE_RELATION_TYPE_TargetDeviceRelation as TargetDeviceRelation,
+    _WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue,
+    _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0,
+    _DEVICE_POWER_STATE_PowerDeviceD3 as PowerDeviceD3,
+    _MEDIA_TYPE_RemovableMedia as RemovableMedia,
+    _MEDIA_TYPE_FixedMedia as FixedMedia,
+    _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectOrderlyRemoval as RemovalPolicyExpectOrderlyRemoval,
+    _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectSurpriseRemoval as RemovalPolicyExpectSurpriseRemoval,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypePaging as DeviceUsageTypePaging,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeDumpFile as DeviceUsageTypeDumpFile,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeBoot as DeviceUsageTypeBoot,
+    _IO_PAGING_PRIORITY_IoPagingPriorityHigh as IoPagingPriorityHigh,
+    _IO_PAGING_PRIORITY_IoPagingPriorityInvalid as IoPagingPriorityInvalid,
+    _LOCK_OPERATION_IoReadAccess as IoReadAccess,
+    _LOCK_OPERATION_IoWriteAccess as IoWriteAccess,
+    _STORAGE_QUERY_TYPE_PropertyStandardQuery as PropertyStandardQuery,
+    _STORAGE_PROPERTY_ID_StorageAdapterProperty as StorageAdapterProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceUniqueIdProperty as StorageDeviceUniqueIdProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceWriteCacheProperty as StorageDeviceWriteCacheProperty,
+    _STORAGE_PROPERTY_ID_StorageMiniportProperty as StorageMiniportProperty,
+    _STORAGE_PROPERTY_ID_StorageAccessAlignmentProperty as StorageAccessAlignmentProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceSeekPenaltyProperty as StorageDeviceSeekPenaltyProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceTrimProperty as StorageDeviceTrimProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceLBProvisioningProperty as StorageDeviceLBProvisioningProperty,
+    _STORAGE_PROPERTY_ID_StorageDevicePowerProperty as StorageDevicePowerProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceCopyOffloadProperty as StorageDeviceCopyOffloadProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceMediumProductType as StorageDeviceMediumProductType,
+    _STORAGE_PORT_CODE_SET_StoragePortCodeSetStorport as StoragePortCodeSetStorport,
+    _STORAGE_PORT_CODE_SET_StoragePortCodeSetSDport as StoragePortCodeSetSDport,
+    _STORAGE_PORT_CODE_SET_StoragePortCodeSetUSBport as StoragePortCodeSetUSBport,
+    _STORAGE_BUS_TYPE_BusType1394 as BusType1394,
+    _STORAGE_BUS_TYPE_BusTypeFibre as BusTypeFibre,
+    _STORAGE_BUS_TYPE_BusTypeUsb as BusTypeUsb,
+    _STORAGE_BUS_TYPE_BusTypeRAID as BusTypeRAID,
+    _STORAGE_BUS_TYPE_BusTypeiScsi as BusTypeiScsi,
+    _STORAGE_BUS_TYPE_BusTypeFileBackedVirtual as BusTypeFileBackedVirtual,
+    DEVICE_REGISTRY_PROPERTY_DevicePropertyRemovalPolicy as DevicePropertyRemovalPolicy,
+    _DPFLTR_TYPE_DPFLTR_CLASSPNP_ID as DPFLTR_CLASSPNP_ID,
+    _EVENT_TYPE_SynchronizationEvent,
+};
+// IO_COMPLETION_ROUTINE is a type alias for PIO_COMPLETION_ROUTINE in ntkrnl_sys::ddk
+use ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE as IO_COMPLETION_ROUTINE;
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DO_VERIFY_VOLUME, FILE_DEVICE_DISK, FILE_PORTABLE_DEVICE, IRP_MJ_SCSI, SL_OVERRIDE_VERIFY_VOLUME, SL_WRITE_THROUGH, STATUS_DEVICE_BUSY, STATUS_DEVICE_DOES_NOT_EXIST, STATUS_VERIFY_REQUIRED, TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING};
@@ -30,9 +76,9 @@ use crate::types::{BuildDeviceInputMdl, ClassDetermineTokenOperationCommandSuppo
 use ntkrnl_sys::ddk::{KeQuerySystemTime};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::guid::{GUID_CONSOLE_DISPLAY_STATE};
-use crate::types::{AllFdosList, ClassBadItems, ClassGuidQueryRegInfoEx, ClassGuidSenseInfo2, ClassGuidSrbSupport, ClassGuidWorkingSet};
+use crate::types::{AllFdosList, ClassBadItems, ClassGuidQueryRegInfoEx, ClassGuidSenseInfo2, ClassGuidSrbSupport, ClassGuidWorkingSet, MEDIA_LOCK_TYPE_InternalMediaLock};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{_SCSI_REQUEST_BLOCK};
+use crate::types::{_SCSI_REQUEST_BLOCK, _CDB__START_STOP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{min};
 
@@ -57,8 +103,46 @@ extern "C" {
     fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
     fn KeLowerIrql(OldIrql: KIRQL);
     fn ClassReleaseRemoveLock(Fdo: PDEVICE_OBJECT, Irp: PIRP);
-    fn NT_SUCCESS(Status: NTSTATUS) -> BOOLEAN;
-    fn TEST_FLAG(Flags: ULONG, Flag: ULONG) -> BOOLEAN;
+    fn ClassAcquireRemoveLock(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> ULONG;
+}
+
+// CLASS_DRIVER_EXTENSION_KEY is #define CLASS_DRIVER_EXTENSION_KEY ((PVOID)ClassInitialize)
+// Use a file-local static address as the unique key — matches the C pattern.
+static CLASS_DRIVER_EXTENSION_KEY_STORAGE: u8 = 0;
+#[inline(always)]
+fn CLASS_DRIVER_EXTENSION_KEY() -> *mut core::ffi::c_void {
+    unsafe { &CLASS_DRIVER_EXTENSION_KEY_STORAGE as *const u8 as *mut core::ffi::c_void }
+}
+
+extern "C" {
+    fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: *const i8, ...);
+    fn PoUnregisterPowerSettingCallback(Handle: PVOID);
+    fn EtwRegister(ProviderId: *const GUID, EnableCallback: *mut c_void, CallbackContext: *mut c_void, RegHandle: *mut u64) -> NTSTATUS;
+    fn EtwUnregister(RegHandle: u64) -> NTSTATUS;
+    fn WPP_INIT_TRACING(DriverObject: PDRIVER_OBJECT, RegistryPath: *mut _UNICODE_STRING);
+    fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
+    fn IsEqualGUID(Guid1: *const GUID, Guid2: *const GUID) -> BOOLEAN;
+    fn IoAdjustPagingPathCount(Count: *mut i32, Increment: BOOLEAN);
+    fn PoRegisterPowerSettingCallback(DeviceObject: PDEVICE_OBJECT, SettingGuid: *const GUID, Callback: unsafe extern "stdcall" fn(*const GUID, PVOID, ULONG, PVOID) -> NTSTATUS, Context: PVOID, Handle: *mut PVOID) -> NTSTATUS;
+    fn SET_FLAG(Flags: *mut ULONG, Flag: ULONG);
+    fn InterlockedCompareExchange(Destination: *mut LONG, ExChange: LONG, Comparand: LONG) -> LONG;
+    fn InterlockedExchange(Destination: *mut LONG, Value: LONG) -> LONG;
+    fn LongToPtr(l: LONG) -> PVOID;
+    fn RtlEqualMemory(Source1: *const c_void, Source2: *const c_void, Length: usize) -> BOOLEAN;
+    fn MmGetMdlVirtualAddress(Mdl: PMDL) -> PVOID;
+    fn SimpleInitSlistHdr(Hdr: *mut SINGLE_LIST_ENTRY);
+    fn SimplePushSlist(Hdr: *mut SINGLE_LIST_ENTRY, Entry: *mut SINGLE_LIST_ENTRY);
+    fn SimplePopSlist(Hdr: *mut SINGLE_LIST_ENTRY) -> *mut SINGLE_LIST_ENTRY;
+    fn SimpleIsSlistEmpty(Hdr: *mut SINGLE_LIST_ENTRY) -> BOOLEAN;
+    fn IsKeyReadCopyNumber(Key: ULONG) -> BOOLEAN;
+    fn ClasspIsObsoletePortDriver(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> BOOLEAN;
+    fn ClasspIsThinProvisioned(FunctionSupportInfo: *mut _CLASS_FUNCTION_SUPPORT_INFO) -> BOOLEAN;
+    fn ClasspIsIdleRequestSupported(FdoData: *mut _CLASS_PRIVATE_FDO_DATA, Irp: PIRP) -> BOOLEAN;
+    fn ClasspMarkIrpAsIdle(Irp: PIRP, IsIdle: BOOLEAN);
+    fn ClasspGetCurrentTime() -> LARGE_INTEGER;
+    fn KeQueryTickCount(CurrentCount: *mut i64);
+    fn DBGLOGFLUSHINFO(FdoData: *mut _CLASS_PRIVATE_FDO_DATA, IsFlush: BOOLEAN, IsSync: BOOLEAN, IsComplete: BOOLEAN);
+    fn NT_ASSERTMSG(Msg: *const i8, Expr: BOOLEAN);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -73,7 +157,14 @@ pub const Magic10000: LARGE_INTEGER = LARGE_INTEGER {
         HighPart: 0xd1b71758,
     }
 };
-pub static mut StoragePredictFailureDPSGuid: GUID = WDI_STORAGE_PREDICT_FAILURE_DPS_GUID;
+// WDI_STORAGE_PREDICT_FAILURE_DPS_GUID — defined in C header, not in ddk; zero-init until substrate provides it.
+// GUID: {C55095C8-0FBA-4035-9A5E-A5A75C0C4C0D}
+pub static mut StoragePredictFailureDPSGuid: GUID = GUID {
+    Data1: 0xC55095C8u32,
+    Data2: 0x0FBAu16,
+    Data3: 0x4035u16,
+    Data4: [0x9A, 0x5E, 0xA5, 0xA7, 0x5C, 0x0C, 0x4C, 0x0D],
+};
 pub const FirstDriveLetter: u8 = b'C';
 pub const LastDriveLetter: u8 = b'Z';
 pub static mut UseQPCTime: BOOLEAN = 0u8;
@@ -84,7 +175,7 @@ pub static mut IdlePowerFDOList: LIST_ENTRY = LIST_ENTRY {
     Flink: core::ptr::null_mut(),
     Blink: core::ptr::null_mut(),
 };
-pub static mut IdlePowerFDOListMutex: KGUARDED_MUTEX = KGUARDED_MUTEX(0);
+pub static mut IdlePowerFDOListMutex: KGUARDED_MUTEX = unsafe { core::mem::zeroed() };
 pub static mut PowerSettingNotificationHandle: PVOID = core::ptr::null_mut();
 pub static mut ScreenStateNotificationHandle: PVOID = core::ptr::null_mut();
 pub static mut DiskIdleTimeoutInMS: ULONG = 0xFFFFFFFFu32;
@@ -171,21 +262,14 @@ pub unsafe extern "system" fn ClassInitialize(
         return STATUS_REVISION_MISMATCH;
     }
 
-    if (*((*InitializationData).FdoData.ClassPowerDevice as *const *const core::ffi::c_void).cast::<*const core::ffi::c_void>().is_null()) {
-        // Hmm, class field is a function pointer; we need to set it if null.
-        // Actually C code: if(InitializationData->FdoData.ClassPowerDevice == NULL) { InitializationData->FdoData.ClassPowerDevice = ClassMinimalPowerHandler; }
-        // In Rust we'll need to write through the pointer.
-        if (*((*InitializationData).FdoData.ClassPowerDevice as *const *const core::ffi::c_void).is_null()) {
-            (*InitializationData).FdoData.ClassPowerDevice = ClassMinimalPowerHandler as _;
-        }
-    } else {
-        // Already not null, do nothing
+    if (*InitializationData).FdoData.ClassPowerDevice.is_none() {
+        (*InitializationData).FdoData.ClassPowerDevice = Some(ClassMinimalPowerHandler);
     }
 
-    if !(*InitializationData).ClassEnumerateDevice.is_none() &&
-       ((*InitializationData).PdoData.ClassPowerDevice as *const *const core::ffi::c_void).is_null()
+    if (*InitializationData).ClassEnumerateDevice.is_some() &&
+       (*InitializationData).PdoData.ClassPowerDevice.is_none()
     {
-        (*InitializationData).PdoData.ClassPowerDevice = ClassMinimalPowerHandler as _;
+        (*InitializationData).PdoData.ClassPowerDevice = Some(ClassMinimalPowerHandler);
     }
 
     if (*InitializationData).ClassUnload.is_none() {
@@ -197,7 +281,7 @@ pub unsafe extern "system" fn ClassInitialize(
     let mut driverExtension_ptr: *mut core::ffi::c_void = core::ptr::null_mut();
     status = IoAllocateDriverObjectExtension(
         DriverObject,
-        CLASS_DRIVER_EXTENSION_KEY,
+        CLASS_DRIVER_EXTENSION_KEY(),
         core::mem::size_of::<CLASS_DRIVER_EXTENSION>() as u32,
         &mut driverExtension_ptr as *mut *mut core::ffi::c_void,
     );
@@ -234,7 +318,7 @@ pub unsafe extern "system" fn ClassInitialize(
 
         ClassInitializeDispatchTables(driverExtension);
     } else if status == STATUS_OBJECT_NAME_COLLISION {
-        driverExtension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY) as *mut CLASS_DRIVER_EXTENSION;
+        driverExtension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY()) as *mut CLASS_DRIVER_EXTENSION;
         // NT_ASSERT(driverExtension != NULL);
     } else {
         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
@@ -260,12 +344,18 @@ pub unsafe extern "system" fn ClassInitialize(
     }
 
     if !(*InitializationData).ClassUnload.is_none() && ClassPnpAllowUnload == (1u8) as u32 {
-        (*DriverObject).DriverUnload = Some(ClassUnload);
+        (*DriverObject).DriverUnload = Some(core::mem::transmute::<
+            unsafe extern "system" fn(*mut _DRIVER_OBJECT),
+            unsafe extern "stdcall" fn(*mut _DRIVER_OBJECT),
+        >(ClassUnload));
     } else {
         (*DriverObject).DriverUnload = None;
     }
 
-    (*(*DriverObject).DriverExtension).AddDevice = Some(ClassAddDevice);
+    (*(*DriverObject).DriverExtension).AddDevice = Some(core::mem::transmute::<
+        unsafe extern "system" fn(*mut _DRIVER_OBJECT, *mut _DEVICE_OBJECT) -> NTSTATUS,
+        unsafe extern "stdcall" fn(*mut _DRIVER_OBJECT, *mut _DEVICE_OBJECT) -> NTSTATUS,
+    >(ClassAddDevice));
 
     if (*driverExtension).EtwHandle == 0 {
         status = EtwRegister(
@@ -280,7 +370,7 @@ pub unsafe extern "system" fn ClassInitialize(
         WPP_INIT_TRACING(DriverObject, RegistryPath);
     }
 
-    if (*IdlePowerFDOList.Flink).is_null() {
+    if IdlePowerFDOList.Flink.is_null() {
         InitializeListHead(&raw mut IdlePowerFDOList);
         KeInitializeGuardedMutex(&raw mut IdlePowerFDOListMutex);
     }
@@ -298,17 +388,17 @@ pub unsafe extern "system" fn ClassInitializeEx(
 
     let driverExtension = IoGetDriverObjectExtension(
         DriverObject,
-        core::ptr::addr_of!(CLASS_DRIVER_EXTENSION_KEY),
-    );
+        CLASS_DRIVER_EXTENSION_KEY(),
+    ) as *mut CLASS_DRIVER_EXTENSION;
 
     if driverExtension.is_null() {
-        NT_ASSERT(false);
+        NT_ASSERT(0u8);
         return STATUS_UNSUCCESSFUL;
     }
 
-    let status;
+    let mut status;
 
-    if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidQueryRegInfoEx)) {
+    if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidQueryRegInfoEx)) != 0 {
         let List = Data as *mut CLASS_QUERY_WMI_REGINFO_EX_LIST;
         if (*List).Size == core::mem::size_of::<CLASS_QUERY_WMI_REGINFO_EX_LIST>() as u32 {
             (*driverExtension).ClassFdoQueryWmiRegInfoEx = (*List).ClassFdoQueryWmiRegInfoEx;
@@ -317,7 +407,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
         } else {
             status = STATUS_INVALID_PARAMETER;
         }
-    } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidWorkingSet)) {
+    } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidWorkingSet)) != 0 {
         let infoOriginal = Data as *mut CLASS_WORKING_SET;
         let mut info: *mut CLASS_WORKING_SET = core::ptr::null_mut();
 
@@ -352,7 +442,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else if !(*driverExtension).WorkingSet.is_null() {
                 status = STATUS_INVALID_PARAMETER;
-                NT_ASSERT(false);
+                NT_ASSERT(0u8);
             }
         }
 
@@ -362,7 +452,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
         } else {
             FREE_POOL(info as *mut core::ffi::c_void);
         }
-    } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidSenseInfo2)) {
+    } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidSenseInfo2)) != 0 {
         let infoOriginal = Data as *mut CLASS_INTERPRET_SENSE_INFO2;
         let mut info: *mut CLASS_INTERPRET_SENSE_INFO2 = core::ptr::null_mut();
 
@@ -401,7 +491,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else if !(*driverExtension).InterpretSenseInfo.is_null() {
                 status = STATUS_INVALID_PARAMETER;
-                NT_ASSERT(false);
+                NT_ASSERT(0u8);
             }
         }
 
@@ -411,13 +501,13 @@ pub unsafe extern "system" fn ClassInitializeEx(
         } else {
             FREE_POOL(info as *mut core::ffi::c_void);
         }
-    } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidSrbSupport)) {
+    } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidSrbSupport)) != 0 {
         let srbSupport = *(Data as *const ULONG);
         if (srbSupport & (CLASS_SRB_SCSI_REQUEST_BLOCK | CLASS_SRB_STORAGE_REQUEST_BLOCK)) != 0 {
             (*driverExtension).SrbSupport = srbSupport;
             status = STATUS_SUCCESS;
             if ((*driverExtension).SrbSupport & CLASS_SRB_SCSI_REQUEST_BLOCK) == 0 {
-                NT_ASSERT(false);
+                NT_ASSERT(0u8);
             }
         } else {
             status = STATUS_INVALID_PARAMETER;
@@ -432,7 +522,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
 pub unsafe extern "system" fn ClassUnload(DriverObject: PDRIVER_OBJECT) {
     PAGED_CODE();
     NT_ASSERT(((*DriverObject).DeviceObject.is_null() as i32) as u8);
-    let driverExtension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY) as *mut CLASS_DRIVER_EXTENSION;
+    let driverExtension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY()) as *mut CLASS_DRIVER_EXTENSION;
     if driverExtension.is_null() {
         NT_ASSERT((0i32) as u8);
         return;
@@ -469,7 +559,7 @@ pub unsafe extern "system" fn ClassAddDevice(
         KeBugCheckEx(0x35u32, 0, 0, 0, 0);
     }
     let driver_extension = IoGetDriverObjectExtension(DriverObject, 1 as *mut core::ffi::c_void) as *mut _CLASS_DRIVER_EXTENSION;
-    let status = ((*driver_extension).InitData.ClassAddDevice)(DriverObject, PhysicalDeviceObject);
+    let status = (*driver_extension).InitData.ClassAddDevice.expect("ClassAddDevice")(DriverObject, PhysicalDeviceObject);
     status
 }
 #[no_mangle]
@@ -478,7 +568,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
     Irp: *mut IRP,
 ) -> NTSTATUS {
     let common_extension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
-    let is_fdo = (*common_extension).IsFdo;
+    let is_fdo = (*common_extension).__bindgen_anon_1.IsFdo();
     let mut status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     let mut complete_request = 1u8;
     let mut lock_released = 0u8;
@@ -486,7 +576,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
 
     let driver_extension = IoGetDriverObjectExtension(
         (*DeviceObject).DriverObject,
-        CLASS_DRIVER_EXTENSION_KEY as *mut _UNICODE_STRING,
+        CLASS_DRIVER_EXTENSION_KEY(),
     ) as *mut CLASS_DRIVER_EXTENSION;
 
     if !driver_extension.is_null() {
@@ -559,7 +649,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
                     }
                 } else if type_ == BusRelations {
-                    NT_ASSERT((*common_extension).IsInitialized != 0);
+                    NT_ASSERT(((*common_extension).__bindgen_anon_1.IsInitialized() != 0) as u8);
 
                     if !(*init_data).ClassEnumerateDevice.is_none() {
                         status = ClassPnpQueryFdoRelations(DeviceObject, Irp);
@@ -625,13 +715,13 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     status = STATUS_DEVICE_BUSY;
                 } else {
                     if (*irp_stack).MinorFunction == IRP_MN_QUERY_STOP_DEVICE {
-                        status = (*dev_info).ClassStopDevice(DeviceObject, (*irp_stack).MinorFunction);
+                        status = (*dev_info).ClassStopDevice.expect("ClassStopDevice")(DeviceObject, (*irp_stack).MinorFunction);
                     } else {
-                        status = (*dev_info).ClassRemoveDevice(DeviceObject, (*irp_stack).MinorFunction);
+                        status = (*dev_info).ClassRemoveDevice.expect("ClassRemoveDevice")(DeviceObject, (*irp_stack).MinorFunction);
                     }
 
                     if NT_SUCCESS(status) {
-                        NT_ASSERT((*common_extension).CurrentState != (*irp_stack).MinorFunction);
+                        NT_ASSERT(((*common_extension).CurrentState != (*irp_stack).MinorFunction) as u8);
                         (*common_extension).PreviousState = (*common_extension).CurrentState;
                         (*common_extension).CurrentState = (*irp_stack).MinorFunction;
 
@@ -665,16 +755,16 @@ pub unsafe extern "system" fn ClassDispatchPnp(
 
             IRP_MN_CANCEL_STOP_DEVICE | IRP_MN_CANCEL_REMOVE_DEVICE => {
                 if (*irp_stack).MinorFunction == IRP_MN_CANCEL_STOP_DEVICE {
-                    status = (*dev_info).ClassStopDevice(DeviceObject, (*irp_stack).MinorFunction);
+                    status = (*dev_info).ClassStopDevice.expect("ClassStopDevice")(DeviceObject, (*irp_stack).MinorFunction);
                     NT_ASSERTMSG(
                         b"ClassDispatchPnp !! CANCEL_STOP_DEVICE should never be failed\n\0".as_ptr() as *const i8,
-                        NT_SUCCESS(status) != 0,
+                        NT_SUCCESS(status) as BOOLEAN,
                     );
                 } else {
-                    status = (*dev_info).ClassRemoveDevice(DeviceObject, (*irp_stack).MinorFunction);
+                    status = (*dev_info).ClassRemoveDevice.expect("ClassRemoveDevice")(DeviceObject, (*irp_stack).MinorFunction);
                     NT_ASSERTMSG(
                         b"ClassDispatchPnp !! CANCEL_REMOVE_DEVICE should never be failed\n\0".as_ptr() as *const i8,
-                        NT_SUCCESS(status) != 0,
+                        NT_SUCCESS(status) as BOOLEAN,
                     );
                 }
 
@@ -709,14 +799,14 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     if is_fdo != 0 { b"fdo\0".as_ptr() } else { b"pdo\0".as_ptr() },
                 );
 
-                NT_ASSERT((*common_extension).PagingPathCount == 0);
+                NT_ASSERT(((*common_extension).PagingPathCount == 0) as u8);
 
                 ClasspDisableTimer(common_extension as *mut FUNCTIONAL_DEVICE_EXTENSION);
 
-                status = (*dev_info).ClassStopDevice(DeviceObject, IRP_MN_STOP_DEVICE);
+                status = (*dev_info).ClassStopDevice.expect("ClassStopDevice")(DeviceObject, IRP_MN_STOP_DEVICE);
                 NT_ASSERTMSG(
                     b"ClassDispatchPnp !! STOP_DEVICE should never be failed\n\0".as_ptr() as *const i8,
-                    NT_SUCCESS(status) != 0,
+                    NT_SUCCESS(status) as BOOLEAN,
                 );
 
                 if is_fdo != 0 {
@@ -771,7 +861,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                 if is_fdo != 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
                     status = IoCallDriver((*common_extension).LowerDeviceObject, Irp);
-                    NT_ASSERT(NT_SUCCESS(status) != 0);
+                    NT_ASSERT(NT_SUCCESS(status) as u8);
                     complete_request = 0u8;
                 } else {
                     status = STATUS_SUCCESS;
@@ -792,7 +882,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                         {
                             status = STATUS_DEVICE_NOT_READY;
                         } else {
-                            NT_ASSERT((*common_extension).IsInitialized != 0);
+                            NT_ASSERT(((*common_extension).__bindgen_anon_1.IsInitialized() != 0) as u8);
                             KeEnterCriticalRegion();
                             KeWaitForSingleObject(
                                 core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as *mut core::ffi::c_void,
@@ -803,19 +893,19 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                             );
                             status = STATUS_SUCCESS;
 
-                            if (*common_extension).IsFdo != 0 {
+                            if (*common_extension).__bindgen_anon_1.IsFdo() != 0 {
                                 status = ClasspEjectionControl(
                                     DeviceObject,
                                     Irp,
-                                    InternalMediaLock,
+                                    MEDIA_LOCK_TYPE_InternalMediaLock,
                                     (*irp_stack).Parameters.UsageNotification.InPath as u8,
                                 );
                             }
 
                             if !NT_SUCCESS(status) {
-                                ((((KeSetEvent)))).cast()(
-                                    core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as *mut KEVENT,
-                                    IO_NO_INCREMENT,
+                                KeSetEvent(
+                                    core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as PVOID,
+                                    IO_NO_INCREMENT as i32,
                                     0u8,
                                 );
                                 KeLeaveCriticalRegion();
@@ -878,19 +968,19 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                                         );
                                         (*DeviceObject).Flags &= !DO_POWER_PAGABLE;
                                     }
-                                    if (*common_extension).IsFdo != 0 {
+                                    if (*common_extension).__bindgen_anon_1.IsFdo() != 0 {
                                         ClasspEjectionControl(
                                             DeviceObject,
                                             Irp,
-                                            InternalMediaLock,
+                                            MEDIA_LOCK_TYPE_InternalMediaLock,
                                             (1 - (*irp_stack).Parameters.UsageNotification.InPath) as u8,
                                         );
                                     }
                                 }
 
-                                ((((KeSetEvent)))).cast()(
-                                    core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as *mut KEVENT,
-                                    IO_NO_INCREMENT,
+                                KeSetEvent(
+                                    core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as PVOID,
+                                    IO_NO_INCREMENT as i32,
                                     0u8,
                                 );
                                 KeLeaveCriticalRegion();
@@ -1028,8 +1118,8 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                                 (*fdo_data).HotplugInfo.MediaRemovable = 0u8;
                                 ClassSetDeviceParameter(
                                     DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION,
-                                    CLASSP_REG_SUBKEY_NAME,
-                                    CLASSP_REG_REMOVAL_POLICY_VALUE_NAME,
+                                    CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                                    CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as PWSTR,
                                     RemovalPolicyExpectOrderlyRemoval,
                                 );
                             }
@@ -1090,7 +1180,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             }
         }
     } else {
-        NT_ASSERT(!driver_extension.is_null());
+        NT_ASSERT((!driver_extension.is_null()) as u8);
         status = STATUS_INTERNAL_ERROR;
     }
 
@@ -1125,7 +1215,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
 pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT) -> NTSTATUS {
     let common_extension = (*device_object).DeviceExtension as *mut _COMMON_DEVICE_EXTENSION;
     let fdo_extension = (*device_object).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
-    let is_fdo: BOOLEAN = (*common_extension).IsFdo;
+    let is_fdo: BOOLEAN = (*common_extension).__bindgen_anon_1.IsFdo();
     let mut is_mounted_device: BOOLEAN = 1u8;
     let mut is_portable: BOOLEAN = 0u8;
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -1135,7 +1225,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
 
     let driver_extension = IoGetDriverObjectExtension(
         (*device_object).DriverObject,
-        CLASS_DRIVER_EXTENSION_KEY,
+        CLASS_DRIVER_EXTENSION_KEY(),
     ) as *mut _CLASS_DRIVER_EXTENSION;
     let init_data: *mut _CLASS_INIT_DATA = &raw mut (*driver_extension).InitData;
     let dev_info: *mut _CLASS_DEV_INFO;
@@ -1146,10 +1236,10 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
         dev_info = &raw mut (*init_data).PdoData;
     }
 
-    NT_ASSERT((*dev_info).ClassInitDevice != core::ptr::null_mut());
-    NT_ASSERT((*dev_info).ClassStartDevice != core::ptr::null_mut());
+    NT_ASSERT((*dev_info).ClassInitDevice.is_some() as u8);
+    NT_ASSERT((*dev_info).ClassStartDevice.is_some() as u8);
 
-    if (*common_extension).IsInitialized == 0 {
+    if (*common_extension).__bindgen_anon_1.IsInitialized() == 0 {
         if is_fdo != 0 {
             let mut property_id: STORAGE_PROPERTY_ID;
 
@@ -1191,7 +1281,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             }
 
             status = ClasspInitializeTimer(fdo_extension);
-            if NT_SUCCESS(status) == 0 {
+            if !NT_SUCCESS(status) {
                 FREE_POOL((*fdo_extension).PrivateFdoData as *mut c_void);
                 #[cfg(feature = "winthreshold")]
                 FREE_POOL((*fdo_extension).AdditionalFdoData as *mut c_void);
@@ -1229,10 +1319,10 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             (*(*fdo_extension).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus = -1;
 
             KeInitializeTimer(&raw mut (*(*fdo_extension).PrivateFdoData).Retry.Timer);
-            ((((KeInitializeDpc)))).cast()(
+            KeInitializeDpc(
                 &raw mut (*(*fdo_extension).PrivateFdoData).Retry.Dpc,
-                ClasspRetryRequestDpc,
-                device_object,
+                Some(ClasspRetryRequestDpc),
+                device_object as PVOID,
             );
             KeInitializeSpinLock(&raw mut (*(*fdo_extension).PrivateFdoData).Retry.Lock);
             (*(*fdo_extension).PrivateFdoData).Retry.Granularity = KeQueryTimeIncrement();
@@ -1243,21 +1333,21 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             (*(*fdo_extension).PrivateFdoData).InterpretSenseInfo = (*driver_extension).InterpretSenseInfo;
             (*(*fdo_extension).PrivateFdoData).MaxNumberOfIoRetries = (NUM_IO_RETRIES) as u8;
 
-            status = ((((InitializeStorageRequestBlock)))).cast()(
-                &raw mut (*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.SrbEx,
-                STORAGE_ADDRESS_TYPE_BTL8,
+            status = InitializeStorageRequestBlock(
+                (*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.SrbEx.as_mut() as *mut _,
+                STORAGE_ADDRESS_TYPE_BTL8 as u16,
                 size_of_val(&(*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.ReleaseQueueSrbBuffer) as u32,
                 0,
             );
             if !NT_SUCCESS(status) {
-                NT_ASSERT(FALSE);
+                NT_ASSERT(0u8);
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,
                     b"ClassPnpStartDevice: fail to initialize release queue extended SRB 0x%x\n\0".as_ptr() as PCHAR, status);
                 return status;
             }
 
             InsertTailList(
-                &AllFdosList,
+                &raw mut AllFdosList,
                 &raw mut (*(*fdo_extension).PrivateFdoData).AllFdosListEntry,
             );
 
@@ -1279,7 +1369,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 property_id = StorageMiniportProperty;
                 status = ClassGetDescriptor(
                     (*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject,
-                    &raw const property_id,
+                    &raw mut property_id,
                     &raw mut (*fdo_extension).MiniportDescriptor as *mut PVOID,
                 );
 
@@ -1287,14 +1377,14 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                     ((*(*fdo_extension).MiniportDescriptor).Portdriver != StoragePortCodeSetStorport &&
                      (*(*fdo_extension).MiniportDescriptor).Portdriver != StoragePortCodeSetUSBport)
                 {
-                    (*(*fdo_extension).MiniportDescriptor).IoTimeoutValue = 0;
+                    // IoTimeoutValue field not present in this bindgen layout; skip
                 }
             }
 
             property_id = StorageAdapterProperty;
             status = ClassGetDescriptor(
                 (*common_extension).LowerDeviceObject,
-                &raw const property_id,
+                &raw mut property_id,
                 &raw mut (*fdo_extension).AdapterDescriptor as *mut PVOID,
             );
             if !NT_SUCCESS(status) {
@@ -1305,26 +1395,26 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             property_id = StorageDeviceProperty;
             status = ClassGetDescriptor(
                 (*common_extension).LowerDeviceObject,
-                &raw const property_id,
+                &raw mut property_id,
                 &raw mut (*fdo_extension).DeviceDescriptor as *mut PVOID,
             );
             if NT_SUCCESS(status) {
                 ClasspScanForSpecialInRegistry(fdo_extension);
-                ClassScanForSpecial(fdo_extension, ClassBadItems, ClasspScanForClassHacks);
+                ClassScanForSpecial(fdo_extension, ClassBadItems.as_mut_ptr(), Some(ClasspScanForClassHacks));
 
                 let mut t: ULONG = CLASS_PERF_RESTORE_MINIMUM;
                 ClassGetDeviceParameter(
                     fdo_extension,
-                    CLASSP_REG_SUBKEY_NAME,
-                    CLASSP_REG_PERF_RESTORE_VALUE_NAME,
+                    CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                    CLASSP_REG_PERF_RESTORE_VALUE_NAME.as_ptr() as PWSTR,
                     &raw mut t,
                 );
                 if t >= CLASS_PERF_RESTORE_MINIMUM {
                     (*(*fdo_extension).PrivateFdoData).Perf.ReEnableThreshhold = t;
                 }
 
-                if (*fdo_extension).DeviceObject.as_ref().unwrap().DeviceType != FILE_DEVICE_DISK {
-                    SET_FLAG((*(*fdo_extension).PrivateFdoData).HackFlags, FDO_HACK_NO_SYNC_CACHE);
+                if (*(*(*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref()).DeviceObject).DeviceType != FILE_DEVICE_DISK {
+                    SET_FLAG(&raw mut (*(*fdo_extension).PrivateFdoData).HackFlags, FDO_HACK_NO_SYNC_CACHE);
                 }
 
                 status = ClasspIsPortable(fdo_extension, &mut is_portable);
@@ -1347,7 +1437,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 property_id = StorageDevicePowerProperty;
                 status = ClassGetDescriptor(
                     (*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject,
-                    &raw const property_id,
+                    &raw mut property_id,
                     &raw mut power_descriptor as *mut PVOID,
                 );
                 if NT_SUCCESS(status) && !power_descriptor.is_null() {
@@ -1363,10 +1453,10 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
         }
 
         if NT_SUCCESS(status) {
-            status = (*dev_info).ClassInitDevice(device_object);
+            status = (*dev_info).ClassInitDevice.expect("ClassInitDevice")(device_object);
         }
 
-        if (*common_extension).IsFdo != 0 {
+        if (*common_extension).__bindgen_anon_1.IsFdo() != 0 {
             (*(*fdo_extension).PrivateFdoData).Perf.OriginalSrbFlags = (*fdo_extension).SrbFlags;
 
             if (*device_object).DeviceType == FILE_DEVICE_DISK &&
@@ -1388,7 +1478,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                         ClassDetermineTokenOperationCommandSupport(device_object);
                     }
 
-                    ClassGetDeviceParameter(fdo_extension, CLASSP_REG_SUBKEY_NAME, CLASSP_REG_QERR_OVERRIDE_MODE, &raw mut qerr_override_mode);
+                    ClassGetDeviceParameter(fdo_extension, CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR, CLASSP_REG_QERR_OVERRIDE_MODE.as_ptr() as PWSTR, &raw mut qerr_override_mode);
 
                     if qerr_override_mode == QERR_SET_ZERO_ALWAYS ||
                         (qerr_override_mode == QERR_SET_ZERO_ODX_OR_TP_ONLY &&
@@ -1403,7 +1493,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                     (*(*fdo_extension).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus = STATUS_UNSUCCESSFUL;
                 }
 
-                ClassGetDeviceParameter(fdo_extension, CLASSP_REG_SUBKEY_NAME, CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED, &raw mut access_alignment_not_supported);
+                ClassGetDeviceParameter(fdo_extension, CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR, CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED.as_ptr() as PWSTR, &raw mut access_alignment_not_supported);
                 if access_alignment_not_supported > 0 {
                     (*(*fdo_extension).FunctionSupportInfo).RegAccessAlignmentQueryNotSupported = TRUE;
                 }
@@ -1419,7 +1509,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
 
                 ClasspGetCopyOffloadMaxDuration(
                     device_object,
-                    REG_DISK_CLASS_CONTROL,
+                    REG_DISK_CLASS_CONTROL.as_ptr() as *const u16 as *mut u16,
                     &raw mut (*(*fdo_extension).PrivateFdoData).CopyOffloadMaxTargetDuration,
                 );
             }
@@ -1429,11 +1519,11 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
     if !NT_SUCCESS(status) {
         return status;
     } else {
-        (*common_extension).IsInitialized = TRUE;
+        (*common_extension).__bindgen_anon_1.set_IsInitialized(TRUE);
     }
 
     if is_fdo != 0 &&
-        ((*init_data).ClassTick != core::ptr::null_mut() ||
+        ((*init_data).ClassTick.is_some() ||
          ((*fdo_extension).MediaChangeDetectionInfo != core::ptr::null_mut() &&
           (*fdo_extension).FunctionSupportInfo != core::ptr::null_mut() &&
           (*(*fdo_extension).FunctionSupportInfo).AsynchronousNotificationSupported == FALSE) ||
@@ -1452,11 +1542,11 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
         }
     }
 
-    status = (*dev_info).ClassStartDevice(device_object);
+    status = (*dev_info).ClassStartDevice.expect("ClassStartDevice")(device_object);
     if NT_SUCCESS(status) {
         (*common_extension).CurrentState = IRP_MN_START_DEVICE;
 
-        if is_fdo != 0 && (*init_data).ClassEnumerateDevice != core::ptr::null_mut() {
+        if is_fdo != 0 && (*init_data).ClassEnumerateDevice.is_some() {
             is_mounted_device = FALSE;
         }
 
@@ -1474,7 +1564,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             ClasspRegisterMountedDeviceInterface(device_object);
         }
 
-        if (*common_extension).IsFdo != 0 {
+        if (*common_extension).__bindgen_anon_1.IsFdo() != 0 {
             IoWMIRegistrationControl(device_object, WMIREG_ACTION_REGISTER);
             if (*fdo_extension).FunctionSupportInfo != core::ptr::null_mut() &&
                 (*(*fdo_extension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() == (FALSE) as u32 &&
@@ -1486,8 +1576,8 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 let mut disable_idle_power: ULONG = 0;
                 ClassGetDeviceParameter(
                     fdo_extension,
-                    CLASSP_REG_SUBKEY_NAME,
-                    CLASSP_REG_DISBALE_IDLE_POWER_NAME,
+                    CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                    CLASSP_REG_DISBALE_IDLE_POWER_NAME.as_ptr() as PWSTR,
                     &raw mut disable_idle_power,
                 );
                 if disable_idle_power == 0 {
@@ -1532,11 +1622,11 @@ pub unsafe extern "system" fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, 
         status = STATUS_VERIFY_REQUIRED;
     } else {
         (*currentIrpStack).MinorFunction = (CLASSP_VOLUME_VERIFY_CHECKED) as u8;
-        NT_ASSERT!((*(*commonExtension).DevInfo).ClassReadWriteVerification != core::ptr::null_mut());
-        status = (*(*commonExtension).DevInfo).ClassReadWriteVerification(DeviceObject, Irp);
+        NT_ASSERT((*(*commonExtension).DevInfo).ClassReadWriteVerification.is_some() as u8);
+        status = (*(*commonExtension).DevInfo).ClassReadWriteVerification.expect("ClassReadWriteVerification")(DeviceObject, Irp);
 
         if !NT_SUCCESS(status) {
-            NT_ASSERT!((*Irp).IoStatus.__bindgen_anon_1.Status == status);
+            NT_ASSERT(((*Irp).IoStatus.__bindgen_anon_1.Status == status) as u8);
             (*Irp).IoStatus.Information = 0;
             ClassReleaseRemoveLock(DeviceObject, (Irp as *mut c_void).cast());
             ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -1554,16 +1644,16 @@ pub unsafe extern "system" fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, 
                     break 'exit;
                 }
 
-                if (*(*commonExtension).DriverExtension).InitData.ClassStartIo != core::ptr::null_mut() {
+                if (*(*commonExtension).DriverExtension).InitData.ClassStartIo.is_some() {
                     IoMarkIrpPending(Irp);
-                    IoStartPacket(DeviceObject, Irp, core::ptr::null_mut(), core::ptr::null_mut());
+                    IoStartPacket(DeviceObject, Irp, core::ptr::null_mut(), None);
                     status = STATUS_PENDING;
                     break 'exit;
                 }
 
                 (*currentIrpStack).Parameters.Read.ByteOffset.QuadPart += (*commonExtension).StartingOffset.QuadPart;
 
-                if (*commonExtension).IsFdo != 0 {
+                if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
                     let fdoExtension = (*DeviceObject).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
                     let fdoData = (*fdoExtension).PrivateFdoData;
 
@@ -1669,12 +1759,12 @@ pub unsafe extern "C" fn InterpretCapacityData(Fdo: PDEVICE_OBJECT, ReadCapacity
         (*fdoExt).DiskGeometry.Cylinders.QuadPart = lastSector.QuadPart + 1;
     }
 
-    (*fdoExt).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart = (lastSector.QuadPart + 1) << (*fdoExt).SectorShift as i64;
+    (*fdoExt).__bindgen_anon_1.CommonExtension.as_mut().PartitionLength.QuadPart = (lastSector.QuadPart + 1) << (*fdoExt).SectorShift as i64;
 
     if (*Fdo).Characteristics & FILE_REMOVABLE_MEDIA != 0 {
-        (*fdoExt).DiskGeometry.MediaType = RemovableMedia as i32;
+        (*fdoExt).DiskGeometry.MediaType = RemovableMedia;
     } else {
-        (*fdoExt).DiskGeometry.MediaType = FixedMedia as i32;
+        (*fdoExt).DiskGeometry.MediaType = FixedMedia;
     }
 }
 
@@ -1721,50 +1811,50 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                 break 'cleanup;
             }
 
-            (*pseudoIrp).Tail.__bindgen_anon_1.Overlay.DriverContext[0] = LongToPtr(1);
-            (*pseudoIrp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-            (*pseudoIrp).IoStatus.Information = 0;
-            (*pseudoIrp).MdlAddress = driveCapMdl;
+            pseudoIrp.Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] = LongToPtr(1);
+            pseudoIrp.IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            pseudoIrp.IoStatus.Information = 0;
+            pseudoIrp.MdlAddress = driveCapMdl;
 
             KeInitializeEvent(&mut event, _EVENT_TYPE_SynchronizationEvent, 0u8);
             SetupDriveCapacityTransferPacket(
                 pkt,
-                &mut readCapacityData,
+                &mut readCapacityData as *mut _ as *mut c_void,
                 readCapacityDataSize,
                 &mut event,
                 &mut pseudoIrp,
                 use16ByteCdb,
             );
             SubmitTransferPacket(pkt);
-            _ = KeWaitForSingleObject(&mut event, _KWAIT_REASON_Executive, 0i32, 0u8, core::ptr::null_mut());
-            status = (*pseudoIrp).IoStatus.__bindgen_anon_1.Status;
+            _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
+            status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
 
-            if NT_SUCCESS(status) != 0 && (*pseudoIrp).IoStatus.Information < readCapacityDataSize {
+            if NT_SUCCESS(status) && pseudoIrp.IoStatus.Information < readCapacityDataSize {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_INIT,
                     b"ClassReadDriveCapacity: read len (%xh) < %xh, retrying ...\0".as_ptr() as PCHAR,
-                    (*pseudoIrp).IoStatus.Information as ULONG,
+                    pseudoIrp.IoStatus.Information as ULONG,
                     readCapacityDataSize,
                 );
                 pkt = DequeueFreeTransferPacket(Fdo, 1u8);
                 if !pkt.is_null() {
-                    (*pseudoIrp).Tail.__bindgen_anon_1.Overlay.DriverContext[0] = LongToPtr(1);
-                    (*pseudoIrp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                    (*pseudoIrp).IoStatus.Information = 0;
+                    pseudoIrp.Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] = LongToPtr(1);
+                    pseudoIrp.IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+                    pseudoIrp.IoStatus.Information = 0;
                     KeInitializeEvent(&mut event, _EVENT_TYPE_SynchronizationEvent, 0u8);
                     SetupDriveCapacityTransferPacket(
                         pkt,
-                        &mut readCapacityData,
+                        &mut readCapacityData as *mut _ as *mut c_void,
                         readCapacityDataSize,
                         &mut event,
                         &mut pseudoIrp,
                         use16ByteCdb,
                     );
                     SubmitTransferPacket(pkt);
-                    _ = KeWaitForSingleObject(&mut event, _KWAIT_REASON_Executive, 0i32, 0u8, core::ptr::null_mut());
-                    status = (*pseudoIrp).IoStatus.__bindgen_anon_1.Status;
-                    if (*pseudoIrp).IoStatus.Information < readCapacityDataSize {
+                    _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
+                    status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
+                    if pseudoIrp.IoStatus.Information < readCapacityDataSize {
                         status = STATUS_DEVICE_BUSY;
                     }
                 } else {
@@ -1775,7 +1865,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
             break 'retry;
         }
 
-        if NT_SUCCESS(status) != 0 {
+        if NT_SUCCESS(status) {
             if use16ByteCdb == 0 {
                 let readCapacity = &mut *((&mut readCapacityData) as *mut READ_CAPACITY_DATA_EX as *mut READ_CAPACITY_DATA);
                 if (*readCapacity).LogicalBlockAddress == 0xFFFFFFFF {
@@ -1783,7 +1873,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                     continue 'cleanup;
                 } else {
                     core::ptr::copy_nonoverlapping(
-                        readCapacity as *const u8,
+                        readCapacity as *mut _ as *const u8,
                         (core::ptr::addr_of_mut!(readCapacityData) as *mut u8)
                             .add(core::mem::size_of::<ULONG>()),
                         core::mem::size_of::<READ_CAPACITY_DATA>(),
@@ -1795,7 +1885,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                     );
                 }
             } else {
-                SET_FLAG((*fdoExt).DeviceFlags, DEV_USE_16BYTE_CDB);
+                (*fdoExt).DeviceFlags |= DEV_USE_16BYTE_CDB as u16;
             }
 
             InterpretCapacityData(Fdo, &mut readCapacityData);
@@ -1824,7 +1914,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                         if !workItem.is_null() {
                             IoQueueWorkItem(
                                 workItem,
-                                ClasspUpdateDiskProperties,
+                                Some(ClasspUpdateDiskProperties),
                                 DelayedWorkQueue,
                                 workItem as *mut core::ffi::c_void,
                             );
@@ -1853,7 +1943,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
             );
             (*fdoExt).DiskGeometry.BytesPerSector = 512;
             (*fdoExt).SectorShift = 9;
-            (*fdoExt).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength.QuadPart = 0;
+            (*fdoExt).__bindgen_anon_1.CommonExtension.as_mut().PartitionLength.QuadPart = 0;
 
             if TEST_FLAG((*Fdo).Characteristics, FILE_REMOVABLE_MEDIA) != 0 {
                 (*fdoExt).DiskGeometry.MediaType = RemovableMedia;
@@ -1865,7 +1955,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
         break 'cleanup;
     }
 
-    if !TEST_FLAG(((*fdoExt).DeviceFlags) as u32, DEV_USE_16BYTE_CDB) {
+    if TEST_FLAG(((*fdoExt).DeviceFlags) as u32, DEV_USE_16BYTE_CDB) == 0 {
         let cdb10MaxBlocks = (u16::MAX as ULONG) << (*fdoExt).SectorShift;
         (*fdoData).HwMaxXferLen = min(cdb10MaxBlocks, (*fdoData).HwMaxXferLen);
     }
@@ -1874,7 +1964,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
         FreeDeviceInputMdl(driveCapMdl);
     }
 
-    if NT_SUCCESS(status) == 0 && (*fdoExt).DiskGeometry.MediaType == RemovableMedia {
+    if !NT_SUCCESS(status) && (*fdoExt).DiskGeometry.MediaType == RemovableMedia {
         (*fdoData).IsCachedDriveCapDataValid = 0;
     }
 
@@ -1887,7 +1977,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
             TRACE_FLAG_INIT,
             b"ClassReadDriveCapacity: defaulting to cached DriveCapacity data\0".as_ptr() as PCHAR,
         );
-        InterpretCapacityData(Fdo, &(*fdoData).LastKnownDriveCapacityData);
+        InterpretCapacityData(Fdo, &raw mut (*fdoData).LastKnownDriveCapacityData);
         status = STATUS_SUCCESS;
     }
 
@@ -1909,15 +1999,15 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
 
         (*context).DeviceObject = Fdo;
 
-        let srb: *mut SCSI_REQUEST_BLOCK = core::ptr::addr_of_mut!((*context).Srb.Srb);
+        let srb: *mut SCSI_REQUEST_BLOCK = (*context).Srb.Srb.as_mut() as *mut _;
 
-        if (*(*fdo_extension).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
-            let srbEx = core::ptr::addr_of_mut!((*context).Srb.SrbEx);
-            let srbExBufSize = core::mem::size_of_val(&(*context).Srb.SrbExBuffer);
+        if (*((*fdo_extension).AdapterDescriptor as *mut crate::types::_STORAGE_ADAPTER_DESCRIPTOR)).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK as u8 {
+            let srbEx: *mut STORAGE_REQUEST_BLOCK = (*context).Srb.SrbEx.as_mut() as *mut _;
+            let srbExBufSize = core::mem::size_of_val(&(*context).Srb.SrbExBuffer) as u32;
 
-            let status = ((((InitializeStorageRequestBlock)))).cast()(
+            let status = InitializeStorageRequestBlock(
                 srbEx,
-                STORAGE_ADDRESS_TYPE_BTL8,
+                STORAGE_ADDRESS_TYPE_BTL8 as u16,
                 srbExBufSize,
                 1,
                 SrbExDataTypeScsiCdb16,
@@ -1929,7 +2019,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
                 return;
             }
 
-            (*srbEx).as_ref().SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
+            (*srbEx).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
         } else {
             core::ptr::write_bytes(srb, 0u8, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
             (*srb).Length = (core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u8) as u16;
@@ -1946,10 +2036,13 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
         SrbSetCdbLength((srb).cast(), 6);
         let cdb = SrbGetCdb((srb).cast());
 
-        (*cdb).__bindgen_anon_1.START_STOP.OperationCode = SCSIOP_START_STOP_UNIT;
-        (*cdb).__bindgen_anon_1.START_STOP.Start = 1;
-        (*cdb).__bindgen_anon_1.START_STOP.Immediate = 0;
-        (*cdb).__bindgen_anon_1.START_STOP.LogicalUnitNumber = (*srb).Lun;
+        {
+            let ss = cdb as *mut _CDB__START_STOP;
+            (*ss).OperationCode = SCSIOP_START_STOP_UNIT as u8;
+            _CDB__START_STOP::set_Start_raw(ss, 1);
+            _CDB__START_STOP::set_Immediate_raw(ss, 0);
+            _CDB__START_STOP::set_LogicalUnitNumber_raw(ss, (*srb).Lun);
+        }
 
         let irp = IoAllocateIrp((*Fdo).StackSize as i8, 0u8);
         if irp.is_null() {
@@ -1960,7 +2053,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
 
         IoSetCompletionRoutine(
             irp,
-            Some(ClassAsynchronousCompletion),
+            Some(core::mem::transmute::<unsafe extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP, *mut c_void) -> i32, unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP, *mut c_void) -> i32>(ClassAsynchronousCompletion)),
             context as *mut c_void,
             1u8,
             1u8,
@@ -1970,7 +2063,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
         let irpStack = IoGetNextIrpStackLocation(irp);
         (*irpStack).MajorFunction = (IRP_MJ_SCSI) as u8;
         SrbSetOriginalRequest((srb).cast(), irp);
-        (*irpStack).Parameters.Scsi.Srb = srb;
+        (*irpStack).Parameters.Scsi.Srb = srb as *mut _;
 
         IoCallDriver((*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject, irp);
     }
@@ -1991,7 +2084,7 @@ pub unsafe extern "system" fn ClassAsynchronousCompletion(
         DeviceObject = (*context).DeviceObject;
     }
 
-    let srb: *mut _SCSI_REQUEST_BLOCK = core::ptr::addr_of_mut!((*context).Srb.Srb);
+    let srb: *mut _SCSI_REQUEST_BLOCK = (*context).Srb.Srb.as_mut() as *mut _;
     let srbFunction: u32;
     let srbFlags: u32;
 
@@ -2012,7 +2105,7 @@ pub unsafe extern "system" fn ClassAsynchronousCompletion(
 
     {
         let commonExtension = (*DeviceObject).DeviceExtension as *mut _COMMON_DEVICE_EXTENSION;
-        if (*commonExtension).IsFdo != 0 {
+        if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
             let fdoExtension = (*DeviceObject).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
             if PORT_ALLOCATED_SENSE(fdoExtension, srb) != 0 {
                 FREE_PORT_ALLOCATED_SENSE_BUFFER(fdoExtension, srb);
@@ -2046,7 +2139,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
         _IO_PAGING_PRIORITY_IoPagingPriorityInvalid
     };
     let mut deferClientIrp: u8 = 0;
-    let driverUsesStartIO = (*(*commonExtension).DriverExtension).InitData.ClassStartIo != core::ptr::null_mut();
+    let driverUsesStartIO = (*(*commonExtension).DriverExtension).InitData.ClassStartIo.is_some();
     let mut oldIrql: KIRQL = 0;
     let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
     let currentIrpStack = IoGetCurrentIrpStackLocation(Irp);
@@ -2088,8 +2181,8 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
         let mut bufPtr = MmGetMdlVirtualAddress((*Irp).MdlAddress) as *mut u8;
         let mut targetLocation = (*currentSp).Parameters.Read.ByteOffset;
         let mut pkt: *mut TRANSFER_PACKET;
-        let mut pktList: SINGLE_LIST_ENTRY;
-        let hwMaxXferLen: u32;
+        let mut pktList: SINGLE_LIST_ENTRY = core::mem::zeroed();
+        let mut hwMaxXferLen: u32;
         let mut numPackets: u32;
         let mut i: u32;
 
@@ -2117,8 +2210,8 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
             pkt = DequeueFreeTransferPacket(Fdo, 1u8);
             if !pkt.is_null() {
                 SimplePushSlist(
-                    core::ptr::addr_of_mut!(pktList),
-                    core::ptr::addr_of_mut!((*pkt).SlistEntry),
+                    core::ptr::addr_of_mut!(pktList) as *mut _,
+                    core::ptr::addr_of_mut!((*pkt).SlistEntry) as *mut _,
                 );
                 i = 1;
             } else {
@@ -2130,8 +2223,8 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
                 pkt = DequeueFreeTransferPacket(Fdo, 1u8);
                 if !pkt.is_null() {
                     SimplePushSlist(
-                        core::ptr::addr_of_mut!(pktList),
-                        core::ptr::addr_of_mut!((*pkt).SlistEntry),
+                        core::ptr::addr_of_mut!(pktList) as *mut _,
+                        core::ptr::addr_of_mut!((*pkt).SlistEntry) as *mut _,
                     );
                 } else {
                     break;
@@ -2142,7 +2235,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
 
         if i == numPackets && !driverUsesStartIO {
             (*Irp).IoStatus.Information = 0;
-            (*Irp).Tail.Overlay.DriverContext[0] = numPackets as *mut core::ffi::c_void;
+            (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] = numPackets as *mut core::ffi::c_void;
 
             if numPackets > 1 {
                 IoMarkIrpPending(Irp);
@@ -2164,7 +2257,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
                     -(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize),
                 ) as *mut TRANSFER_PACKET;
 
-                SetupReadWriteTransferPacket(pkt, bufPtr, thisPieceLen, targetLocation, Irp);
+                SetupReadWriteTransferPacket(pkt, bufPtr as *mut c_void, thisPieceLen, targetLocation, Irp);
 
                 if numPackets > 1 {
                     (*pkt).UsePartialMdl = 1u8;
@@ -2214,11 +2307,11 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
             }
 
             (*Irp).IoStatus.Information = 0;
-            (*Irp).Tail.Overlay.DriverContext[0] = 1usize as *mut core::ffi::c_void;
+            (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] = 1usize as *mut core::ffi::c_void;
             IoMarkIrpPending(Irp);
 
-            SetupReadWriteTransferPacket(pkt, bufPtr, entireXferLen, targetLocation, Irp);
-            InitLowMemRetry(pkt, bufPtr, entireXferLen, targetLocation);
+            SetupReadWriteTransferPacket(pkt, bufPtr as *mut c_void, entireXferLen, targetLocation, Irp);
+            InitLowMemRetry(pkt, bufPtr as *mut c_void, entireXferLen, targetLocation);
             StepLowMemRetry(pkt);
             status = STATUS_PENDING;
         } else {
@@ -2240,7 +2333,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
                 (*fdoData).NumHighPriorityPagingIo -= 1;
                 if (*fdoData).NumHighPriorityPagingIo == 0 {
                     KeQuerySystemTime(core::ptr::addr_of_mut!((*fdoData).ThrottleStopTime));
-                    let mut period: LARGE_INTEGER;
+                    let mut period: LARGE_INTEGER = core::mem::zeroed();
                     period.QuadPart =
                         (*fdoData).ThrottleStopTime.QuadPart - (*fdoData).ThrottleStartTime.QuadPart;
                     (*fdoData).LongestThrottlePeriod.QuadPart = core::cmp::max(
@@ -2285,7 +2378,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     const IO_WARNING_DISK_FIRMWARE_UPDATED: ULONG = 0x80040000 + 0x00000065; // guessed
     const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016i32;
     const STATUS_SUCCESS: NTSTATUS = 0;
-    const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003AL;
+    const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003Ai32;
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185i32;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0xC0000192i32;
     const MAXIMUM_RETRIES: u32 = 5; // typical
@@ -2297,13 +2390,13 @@ pub unsafe extern "system" fn ClassIoComplete(
     let srb = Context as PSCSI_REQUEST_BLOCK;
     let fdoExtension = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdoData = (*fdoExtension).PrivateFdoData;
-    let mut status: NTSTATUS;
+    let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut retry: BOOLEAN;
     let mut callStartNextPacket: BOOLEAN;
     let srbFlags: ULONG;
     let srbFunction: ULONG;
 
-    debug_assert!((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0);
+    debug_assert!((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0);
 
     if (*srb).Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
         srbFlags = (*(srb as *mut STORAGE_REQUEST_BLOCK)).SrbFlags;
@@ -2323,7 +2416,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 
     // Check SRB status for success
     if ((*srb).SrbStatus & 0x0F) != SRB_STATUS_SUCCESS {
-        let mut retryInterval: LONGLONG;
+        let mut retryInterval: LONGLONG = 0;
         TracePrint(4, 0x00000001, b"ClassIoComplete: IRP %p, SRB %p\n\0" as *const u8 as *const i8, Irp, srb);
 
         if (*srb).SrbStatus & SRB_STATUS_QUEUE_FROZEN != 0 {
@@ -2392,7 +2485,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     }
 
     // Paging I/O sanity checks
-    if NT_SUCCESS(status) != 0 && TEST_FLAG((*Irp).Flags, IRP_PAGING_IO) != 0 {
+    if NT_SUCCESS(status) && TEST_FLAG((*Irp).Flags, IRP_PAGING_IO) != 0 {
         debug_assert!((*Irp).IoStatus.Information != 0);
         debug_assert!((*irpStack).Parameters.Read.Length == (*Irp).IoStatus.Information);
     }
@@ -2420,7 +2513,7 @@ pub unsafe extern "system" fn ClassIoComplete(
             FREE_PORT_ALLOCATED_SENSE_BUFFER(fdoExtension, srb);
         }
 
-        if (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsSrbLookasideListInitialized != 0 {
+        if (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsSrbLookasideListInitialized() != 0 {
             ClassFreeOrReuseSrb(fdoExtension, srb);
         } else {
             TracePrint(4, 0x00000001, b"ClassIoComplete is freeing an SRB (possibly) on behalf of another driver.\0" as *const u8 as *const i8);
@@ -2441,7 +2534,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
     // Set hard error if necessary
-    if NT_SUCCESS(status) == 0
+    if !NT_SUCCESS(status)
         && IoIsErrorUserInduced(status) != 0
         && !(*Irp).Tail.Overlay.Thread.is_null()
     {
@@ -2450,7 +2543,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     }
 
     // Log firmware update success
-    if NT_SUCCESS(status) != 0
+    if NT_SUCCESS(status)
         && (*irpStack).MajorFunction == IRP_MJ_DEVICE_CONTROL
         && (*irpStack).Parameters.DeviceIoControl.IoControlCode == IOCTL_STORAGE_FIRMWARE_ACTIVATE
     {

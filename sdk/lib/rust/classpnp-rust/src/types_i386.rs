@@ -5,8 +5,6 @@
 // kernel field types resolved via private ddk glob (NOT re-exported: modules get
 // common kernel types from driver_ddk, private structs from this crate::types).
 use ntkrnl_sys::ddk::*;
-// resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{_CLASS_DEBUG_LEVEL as CLASS_DEBUG_LEVEL, _MEDIA_CHANGE_DETECTION_STATE as MEDIA_CHANGE_DETECTION_STATE, _SCSI_ADAPTER_CONTROL_STATUS as SCSI_ADAPTER_CONTROL_STATUS, _SCSI_ADAPTER_CONTROL_TYPE as SCSI_ADAPTER_CONTROL_TYPE, _SCSI_NOTIFICATION_TYPE as SCSI_NOTIFICATION_TYPE, _SRBEXDATATYPE as SRBEXDATATYPE, _STOR_DEVICE_POWER_STATE as STOR_DEVICE_POWER_STATE, _STOR_PNP_ACTION as STOR_PNP_ACTION, _STOR_POWER_ACTION as STOR_POWER_ACTION};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1275,6 +1273,9 @@ pub const DEFAULT_FAILURE_PREDICTION_PERIOD: u32 = 3600;
 pub const MAXIMUM_RETRY_FOR_SINGLE_IO_IN_100NS_UNITS: u32 = 1000000000;
 pub const CLASS_SRB_SCSI_REQUEST_BLOCK: u32 = 1;
 pub const CLASS_SRB_STORAGE_REQUEST_BLOCK: u32 = 2;
+pub const DUID_VERSION_1: u32 = 1;
+pub const DUID_HARDWARE_IDS_ONLY: u32 = 0;
+pub const DUID_INCLUDE_SOFTWARE_IDS: u32 = 1;
 pub const MdlMappingNoExecute: u32 = 0;
 pub const CLASSP_REG_SUBKEY_NAME: &[u8; 9] = b"Classpnp\0";
 pub const CLASSP_REG_HACK_VALUE_NAME: &[u8; 9] = b"HackMask\0";
@@ -2033,11 +2034,13 @@ pub const _SCSI_ADAPTER_CONTROL_TYPE_ScsiAdapterControlMax: _SCSI_ADAPTER_CONTRO
 pub const _SCSI_ADAPTER_CONTROL_TYPE_MakeAdapterControlTypeSizeOfUlong: _SCSI_ADAPTER_CONTROL_TYPE =
     4294967295;
 pub type _SCSI_ADAPTER_CONTROL_TYPE = ::core::ffi::c_uint;
+pub use self::_SCSI_ADAPTER_CONTROL_TYPE as SCSI_ADAPTER_CONTROL_TYPE;
 pub type PSCSI_ADAPTER_CONTROL_TYPE = *mut _SCSI_ADAPTER_CONTROL_TYPE;
 pub const _SCSI_ADAPTER_CONTROL_STATUS_ScsiAdapterControlSuccess: _SCSI_ADAPTER_CONTROL_STATUS = 0;
 pub const _SCSI_ADAPTER_CONTROL_STATUS_ScsiAdapterControlUnsuccessful:
     _SCSI_ADAPTER_CONTROL_STATUS = 1;
 pub type _SCSI_ADAPTER_CONTROL_STATUS = ::core::ffi::c_uint;
+pub use self::_SCSI_ADAPTER_CONTROL_STATUS as SCSI_ADAPTER_CONTROL_STATUS;
 pub type PSCSI_ADAPTER_CONTROL_STATUS = *mut _SCSI_ADAPTER_CONTROL_STATUS;
 #[repr(C)]
 pub struct _SCSI_SUPPORTED_CONTROL_TYPE_LIST {
@@ -2111,6 +2114,7 @@ pub const _STOR_DEVICE_POWER_STATE_StorPowerDeviceD2: _STOR_DEVICE_POWER_STATE =
 pub const _STOR_DEVICE_POWER_STATE_StorPowerDeviceD3: _STOR_DEVICE_POWER_STATE = 4;
 pub const _STOR_DEVICE_POWER_STATE_StorPowerDeviceMaximum: _STOR_DEVICE_POWER_STATE = 5;
 pub type _STOR_DEVICE_POWER_STATE = ::core::ffi::c_uint;
+pub use self::_STOR_DEVICE_POWER_STATE as STOR_DEVICE_POWER_STATE;
 pub type PSTOR_DEVICE_POWER_STATE = *mut _STOR_DEVICE_POWER_STATE;
 pub const _STOR_POWER_ACTION_StorPowerActionNone: _STOR_POWER_ACTION = 0;
 pub const _STOR_POWER_ACTION_StorPowerActionReserved: _STOR_POWER_ACTION = 1;
@@ -2121,6 +2125,7 @@ pub const _STOR_POWER_ACTION_StorPowerActionShutdownReset: _STOR_POWER_ACTION = 
 pub const _STOR_POWER_ACTION_StorPowerActionShutdownOff: _STOR_POWER_ACTION = 6;
 pub const _STOR_POWER_ACTION_StorPowerActionWarmEject: _STOR_POWER_ACTION = 7;
 pub type _STOR_POWER_ACTION = ::core::ffi::c_uint;
+pub use self::_STOR_POWER_ACTION as STOR_POWER_ACTION;
 pub type PSTOR_POWER_ACTION = *mut _STOR_POWER_ACTION;
 #[repr(C)]
 pub struct _SCSI_POWER_REQUEST_BLOCK {
@@ -2153,6 +2158,7 @@ pub const _STOR_PNP_ACTION_StorQueryResourceRequirements: _STOR_PNP_ACTION = 11;
 pub const _STOR_PNP_ACTION_StorFilterResourceRequirements: _STOR_PNP_ACTION = 13;
 pub const _STOR_PNP_ACTION_StorSurpriseRemoval: _STOR_PNP_ACTION = 23;
 pub type _STOR_PNP_ACTION = ::core::ffi::c_uint;
+pub use self::_STOR_PNP_ACTION as STOR_PNP_ACTION;
 pub type PSTOR_PNP_ACTION = *mut _STOR_PNP_ACTION;
 #[repr(C)]
 pub struct _STOR_DEVICE_CAPABILITIES {
@@ -2586,6 +2592,7 @@ pub const _SRBEXDATATYPE_SrbExDataTypeIoInfo: _SRBEXDATATYPE = 128;
 pub const _SRBEXDATATYPE_SrbExDataTypeMSReservedStart: _SRBEXDATATYPE = 4026531840;
 pub const _SRBEXDATATYPE_SrbExDataTypeReserved: _SRBEXDATATYPE = 4294967295;
 pub type _SRBEXDATATYPE = ::core::ffi::c_uint;
+pub use self::_SRBEXDATATYPE as SRBEXDATATYPE;
 pub type PSRBEXDATATYPE = *mut _SRBEXDATATYPE;
 #[repr(C)]
 pub struct _SRBEX_DATA {
@@ -2789,6 +2796,7 @@ pub const _SCSI_NOTIFICATION_TYPE_QueryTickCount: _SCSI_NOTIFICATION_TYPE = 12;
 pub const _SCSI_NOTIFICATION_TYPE_BufferOverrunDetected: _SCSI_NOTIFICATION_TYPE = 13;
 pub const _SCSI_NOTIFICATION_TYPE_TraceNotification: _SCSI_NOTIFICATION_TYPE = 14;
 pub type _SCSI_NOTIFICATION_TYPE = ::core::ffi::c_uint;
+pub use self::_SCSI_NOTIFICATION_TYPE as SCSI_NOTIFICATION_TYPE;
 pub type PSCSI_NOTIFICATION_TYPE = *mut _SCSI_NOTIFICATION_TYPE;
 #[repr(C)]
 pub struct _HW_INITIALIZATION_DATA {
@@ -24841,6 +24849,7 @@ pub const _VPD_CODE_SET_VpdCodeSetBinary: _VPD_CODE_SET = 1;
 pub const _VPD_CODE_SET_VpdCodeSetAscii: _VPD_CODE_SET = 2;
 pub const _VPD_CODE_SET_VpdCodeSetUTF8: _VPD_CODE_SET = 3;
 pub type _VPD_CODE_SET = ::core::ffi::c_uint;
+pub use self::_VPD_CODE_SET as VPD_CODE_SET;
 pub type PVPD_CODE_SET = *mut _VPD_CODE_SET;
 pub const _VPD_ASSOCIATION_VpdAssocDevice: _VPD_ASSOCIATION = 0;
 pub const _VPD_ASSOCIATION_VpdAssocPort: _VPD_ASSOCIATION = 1;
@@ -24848,6 +24857,7 @@ pub const _VPD_ASSOCIATION_VpdAssocTarget: _VPD_ASSOCIATION = 2;
 pub const _VPD_ASSOCIATION_VpdAssocReserved1: _VPD_ASSOCIATION = 3;
 pub const _VPD_ASSOCIATION_VpdAssocReserved2: _VPD_ASSOCIATION = 4;
 pub type _VPD_ASSOCIATION = ::core::ffi::c_uint;
+pub use self::_VPD_ASSOCIATION as VPD_ASSOCIATION;
 pub type PVPD_ASSOCIATION = *mut _VPD_ASSOCIATION;
 pub const _VPD_IDENTIFIER_TYPE_VpdIdentifierTypeVendorSpecific: _VPD_IDENTIFIER_TYPE = 0;
 pub const _VPD_IDENTIFIER_TYPE_VpdIdentifierTypeVendorId: _VPD_IDENTIFIER_TYPE = 1;
@@ -24859,6 +24869,7 @@ pub const _VPD_IDENTIFIER_TYPE_VpdIdentifierTypeLogicalUnitGroup: _VPD_IDENTIFIE
 pub const _VPD_IDENTIFIER_TYPE_VpdIdentifierTypeMD5LogicalUnitId: _VPD_IDENTIFIER_TYPE = 7;
 pub const _VPD_IDENTIFIER_TYPE_VpdIdentifierTypeSCSINameString: _VPD_IDENTIFIER_TYPE = 8;
 pub type _VPD_IDENTIFIER_TYPE = ::core::ffi::c_uint;
+pub use self::_VPD_IDENTIFIER_TYPE as VPD_IDENTIFIER_TYPE;
 pub type PVPD_IDENTIFIER_TYPE = *mut _VPD_IDENTIFIER_TYPE;
 #[repr(C)]
 pub struct _VPD_IDENTIFICATION_DESCRIPTOR {
@@ -38994,6 +39005,7 @@ pub const _OPERATION_STATUS_OPERATION_IN_PROGRESS_IN_FOREGROUND: _OPERATION_STAT
 pub const _OPERATION_STATUS_OPERATION_IN_PROGRESS_IN_BACKGROUND: _OPERATION_STATUS = 18;
 pub const _OPERATION_STATUS_OPERATION_TERMINATED: _OPERATION_STATUS = 96;
 pub type _OPERATION_STATUS = ::core::ffi::c_uint;
+pub use self::_OPERATION_STATUS as OPERATION_STATUS;
 pub type POPERATION_STATUS = *mut _OPERATION_STATUS;
 pub const _TRANSFER_COUNT_UNITS_TRANSFER_COUNT_UNITS_BYTES: _TRANSFER_COUNT_UNITS = 0;
 pub const _TRANSFER_COUNT_UNITS_TRANSFER_COUNT_UNITS_KIBIBYTES: _TRANSFER_COUNT_UNITS = 1;
@@ -39004,6 +39016,7 @@ pub const _TRANSFER_COUNT_UNITS_TRANSFER_COUNT_UNITS_PEBIBYTES: _TRANSFER_COUNT_
 pub const _TRANSFER_COUNT_UNITS_TRANSFER_COUNT_UNITS_EXBIBYTES: _TRANSFER_COUNT_UNITS = 6;
 pub const _TRANSFER_COUNT_UNITS_TRANSFER_COUNT_UNITS_NUMBER_BLOCKS: _TRANSFER_COUNT_UNITS = 241;
 pub type _TRANSFER_COUNT_UNITS = ::core::ffi::c_uint;
+pub use self::_TRANSFER_COUNT_UNITS as TRANSFER_COUNT_UNITS;
 pub type PTRANSFER_COUNT_UNITS = *mut _TRANSFER_COUNT_UNITS;
 pub type SCSI_SENSE_OPTIONS = ULONG;
 unsafe extern "C" {
@@ -39279,6 +39292,7 @@ pub const _MEDIA_CHANGE_DETECTION_STATE_MediaPresent: _MEDIA_CHANGE_DETECTION_ST
 pub const _MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent: _MEDIA_CHANGE_DETECTION_STATE = 2;
 pub const _MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable: _MEDIA_CHANGE_DETECTION_STATE = 3;
 pub type _MEDIA_CHANGE_DETECTION_STATE = ::core::ffi::c_uint;
+pub use self::_MEDIA_CHANGE_DETECTION_STATE as MEDIA_CHANGE_DETECTION_STATE;
 pub type PMEDIA_CHANGE_DETECTION_STATE = *mut _MEDIA_CHANGE_DETECTION_STATE;
 pub const _CLASS_DEBUG_LEVEL_ClassDebugError: _CLASS_DEBUG_LEVEL = 0;
 pub const _CLASS_DEBUG_LEVEL_ClassDebugWarning: _CLASS_DEBUG_LEVEL = 1;
@@ -39294,6 +39308,7 @@ pub const _CLASS_DEBUG_LEVEL_ClassDebugExternal3: _CLASS_DEBUG_LEVEL = 14;
 pub const _CLASS_DEBUG_LEVEL_ClassDebugExternal2: _CLASS_DEBUG_LEVEL = 15;
 pub const _CLASS_DEBUG_LEVEL_ClassDebugExternal1: _CLASS_DEBUG_LEVEL = 16;
 pub type _CLASS_DEBUG_LEVEL = ::core::ffi::c_uint;
+pub use self::_CLASS_DEBUG_LEVEL as CLASS_DEBUG_LEVEL;
 pub type PCLASS_DEBUG_LEVEL = *mut _CLASS_DEBUG_LEVEL;
 pub const CLASSENABLEDISABLEFUNCTION_EventGeneration: CLASSENABLEDISABLEFUNCTION = 0;
 pub const CLASSENABLEDISABLEFUNCTION_DataBlockCollection: CLASSENABLEDISABLEFUNCTION = 1;
@@ -41420,6 +41435,45 @@ unsafe extern "stdcall" {
         Function: PCLASS_SCAN_FOR_SPECIAL_HANDLER,
     );
 }
+pub const _DUID_MATCH_STATUS_DuidExactMatch: _DUID_MATCH_STATUS = 0;
+pub const _DUID_MATCH_STATUS_DuidSubIdMatch: _DUID_MATCH_STATUS = 1;
+pub const _DUID_MATCH_STATUS_DuidNoMatch: _DUID_MATCH_STATUS = 2;
+pub const _DUID_MATCH_STATUS_DuidErrorGeneral: _DUID_MATCH_STATUS = 100;
+pub const _DUID_MATCH_STATUS_DuidErrorMissingDuid: _DUID_MATCH_STATUS = 101;
+pub const _DUID_MATCH_STATUS_DuidErrorVersionMismatch: _DUID_MATCH_STATUS = 102;
+pub const _DUID_MATCH_STATUS_DuidErrorInvalidDuid: _DUID_MATCH_STATUS = 103;
+pub const _DUID_MATCH_STATUS_DuidErrorInvalidDeviceIdDescSize: _DUID_MATCH_STATUS = 104;
+pub const _DUID_MATCH_STATUS_DuidErrorInvalidDeviceDescSize: _DUID_MATCH_STATUS = 105;
+pub const _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigSize: _DUID_MATCH_STATUS = 106;
+pub const _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigVersion: _DUID_MATCH_STATUS = 107;
+pub const _DUID_MATCH_STATUS_DuidErrorMaximum: _DUID_MATCH_STATUS = 108;
+pub type _DUID_MATCH_STATUS = ::core::ffi::c_uint;
+pub use self::_DUID_MATCH_STATUS as DUID_MATCH_STATUS;
+#[repr(C)]
+pub struct _STORAGE_DEVICE_UNIQUE_IDENTIFIER {
+    pub Version: ULONG,
+    pub Size: ULONG,
+    pub StorageDeviceIdOffset: ULONG,
+    pub StorageDeviceOffset: ULONG,
+    pub DriveLayoutSignatureOffset: ULONG,
+}
+pub type STORAGE_DEVICE_UNIQUE_IDENTIFIER = _STORAGE_DEVICE_UNIQUE_IDENTIFIER;
+pub type PSTORAGE_DEVICE_UNIQUE_IDENTIFIER = *mut _STORAGE_DEVICE_UNIQUE_IDENTIFIER;
+#[repr(C)]
+pub struct _STORAGE_DEVICE_LAYOUT_SIGNATURE {
+    pub Version: ULONG,
+    pub Size: ULONG,
+    pub Mbr: BOOLEAN,
+    pub DeviceSpecific: _STORAGE_DEVICE_LAYOUT_SIGNATURE__bindgen_ty_1,
+}
+#[repr(C)]
+pub struct _STORAGE_DEVICE_LAYOUT_SIGNATURE__bindgen_ty_1 {
+    pub MbrSignature: __BindgenUnionField<ULONG>,
+    pub GptDiskId: __BindgenUnionField<GUID>,
+    pub bindgen_union_field: [u32; 4usize],
+}
+pub type STORAGE_DEVICE_LAYOUT_SIGNATURE = _STORAGE_DEVICE_LAYOUT_SIGNATURE;
+pub type PSTORAGE_DEVICE_LAYOUT_SIGNATURE = *mut _STORAGE_DEVICE_LAYOUT_SIGNATURE;
 unsafe extern "C" {
     pub static mut ClassBadItems: [CLASSPNP_SCAN_FOR_SPECIAL_INFO; 0usize];
 }
@@ -41534,6 +41588,7 @@ pub const _CLASS_DETECTION_STATE_ClassDetectionUnknown: _CLASS_DETECTION_STATE =
 pub const _CLASS_DETECTION_STATE_ClassDetectionUnsupported: _CLASS_DETECTION_STATE = 1;
 pub const _CLASS_DETECTION_STATE_ClassDetectionSupported: _CLASS_DETECTION_STATE = 2;
 pub type _CLASS_DETECTION_STATE = ::core::ffi::c_uint;
+pub use self::_CLASS_DETECTION_STATE as CLASS_DETECTION_STATE;
 pub type PCLASS_DETECTION_STATE = *mut _CLASS_DETECTION_STATE;
 #[repr(C)]
 pub struct _CLASS_ERROR_LOG_DATA {

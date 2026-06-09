@@ -6,7 +6,32 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DelayedWorkQueue, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildPartialMdl, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoGetPagingIoPriority, IoMarkIrpPending, IoPagingPriorityHigh, IoPagingPriorityInvalid, IoReuseIrp, IoSetCompletionRoutine, IoSetHardErrorOrVerifyDevice, IoStartNextPacket, LARGE_INTEGER, MDL, OSVERSIONINFOEXW, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEVENT, POSVERSIONINFOW, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DEVICE_IO_CAPABILITY_DESCRIPTOR, RtlGetVersion, STORAGE_MINIPORT_DESCRIPTOR, StorageDeviceIoCapabilityProperty};
+use ntkrnl_sys::ddk::{IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildPartialMdl, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoGetPagingIoPriority, IoMarkIrpPending, IoReuseIrp, IoSetCompletionRoutine, IoSetHardErrorOrVerifyDevice, IoStartNextPacket, LARGE_INTEGER, MDL, OSVERSIONINFOEXW, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEVENT, POSVERSIONINFOW, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DEVICE_IO_CAPABILITY_DESCRIPTOR, RtlGetVersion, STORAGE_MINIPORT_DESCRIPTOR};
+// DelayedWorkQueue, IoPagingPriorityHigh, IoPagingPriorityInvalid, STORAGE_DEVICE_IO_CAPABILITY_PROPERTY as STORAGE_PROPERTY_ID
+// are not exported from ntkrnl_sys::ddk — use local constants defined below.
+// Helper to access SrbType/AddressType from _STORAGE_ADAPTER_DESCRIPTOR (extended SDK fields).
+#[allow(non_snake_case, non_camel_case_types, dead_code)]
+#[repr(C)]
+struct LocalStorageAdapterDescriptor {
+    Version: u32,
+    Size: u32,
+    MaximumTransferLength: u32,
+    MaximumPhysicalPages: u32,
+    AlignmentMask: u32,
+    AdapterUsesPio: u8,
+    AdapterScansDown: u8,
+    CommandQueueing: u8,
+    AcceleratedTransfer: u8,
+    BusType: u8,
+    BusMajorVersion: u16,
+    BusMinorVersion: u16,
+    SrbType: u8,
+    AddressType: u8,
+}
+#[inline(always)]
+unsafe fn adapter_desc_ext(p: *mut core::ffi::c_void) -> *mut LocalStorageAdapterDescriptor {
+    p as *mut LocalStorageAdapterDescriptor
+}
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{IRP_MJ_SCSI, SL_WRITE_THROUGH, TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING};
@@ -62,6 +87,40 @@ const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x0100;
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x0400;
 const SCSIOP_MODE_SENSE: u8 = 0x1A;
 const NUM_MODESENSE_RETRIES: u32 = 3;
+
+// Constants not exported from ntkrnl_sys::ddk
+const DELAYED_WORK_QUEUE: u32 = 1; // _WORK_QUEUE_TYPE_DelayedWorkQueue
+const IO_PAGING_PRIORITY_INVALID: u32 = 0; // _IO_PAGING_PRIORITY_IoPagingPriorityInvalid
+const IO_PAGING_PRIORITY_HIGH: u32 = 2;    // _IO_PAGING_PRIORITY_IoPagingPriorityHigh
+const STORAGE_DEVICE_IO_CAPABILITY_PROPERTY: u32 = 48; // _STORAGE_PROPERTY_ID_STORAGE_DEVICE_IO_CAPABILITY_PROPERTY as STORAGE_PROPERTY_ID
+
+// SRB_FLAGS_PORT_DRIVER_ALLOCSENSE / SRB_FLAGS_FREE_SENSE_BUFFER
+const SRB_FLAGS_PORT_DRIVER_ALLOCSENSE: u32 = 0x00000020;
+const SRB_FLAGS_FREE_SENSE_BUFFER: u32 = 0x00200000;
+
+extern "C" {
+    fn KeQueryHighestNodeNumber() -> u32;
+    fn KeGetCurrentNodeNumber() -> u32;
+    fn RtlULongAdd(augend: u32, addend: u32, result: *mut u32) -> NTSTATUS;
+    fn StorDebugPrint(debug_print_level: i32, debug_print_flags: u32, debug_message: PCCHAR, ...);
+    fn IoQueueWorkItemEx(io_work_item: PIO_WORKITEM, worker_routine: *const c_void, queue_type: u32, context: PVOID);
+    fn Int64ShrlMod32(value: u64, shift: u32) -> u64;
+    fn ClasspSrbSetOriginalIrp(srb: PSTORAGE_REQUEST_BLOCK_HEADER, irp: PIRP);
+    fn ClasspIsIdleRequest(irp: PIRP) -> BOOLEAN;
+    fn DbgLogReturnPacket(pkt: *mut TRANSFER_PACKET);
+    fn DbgCheckReturnedPkt(pkt: *mut TRANSFER_PACKET);
+    fn HistoryLogReturnedPacket(pkt: *mut TRANSFER_PACKET);
+    fn MmPrepareMdlForReuse(mdl: PMDL);
+    fn IoSetMasterIrpStatus(irp: PIRP, status: NTSTATUS);
+    fn ClasspGetCurrentTime() -> LARGE_INTEGER;
+    fn PORT_ALLOCATED_SENSE_EX(fdo_extension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> BOOLEAN;
+    fn FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdo_extension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PSTORAGE_REQUEST_BLOCK_HEADER);
+    fn SimpleInitSlistHdr(header: *mut SINGLE_LIST_ENTRY);
+    fn SimplePushSlist(header: *mut SINGLE_LIST_ENTRY, entry: PSINGLE_LIST_ENTRY);
+    fn SimplePopSlist(header: *mut SINGLE_LIST_ENTRY) -> PSINGLE_LIST_ENTRY;
+    fn ClassAcquireRemoveLockEx(DeviceObject: PDEVICE_OBJECT, Tag: PVOID, File: *const u8, Line: ULONG) -> ULONG;
+    static SharedSystemTime: LARGE_INTEGER;
+}
 #[no_mangle]
 pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
     let commonExt: PCOMMON_DEVICE_EXTENSION = (*Fdo).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
@@ -174,7 +233,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
     }
 
     // Retrieve IO capability descriptor
-    propertyId = StorageDeviceIoCapabilityProperty;
+    propertyId = STORAGE_DEVICE_IO_CAPABILITY_PROPERTY as STORAGE_PROPERTY_ID;
     status = ClassGetDescriptor(
         (*fdoExt).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject,
         &raw mut propertyId,
@@ -269,11 +328,11 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
 
     // Pre-initialize SRB template
     if NT_SUCCESS(status) {
-        if (*(*fdoExt).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+        if (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
             let mut ByteSize: ULONG = 0;
             status = CreateStorageRequestBlock(
                 &raw mut (*fdoData).SrbTemplate as *mut PSTORAGE_REQUEST_BLOCK,
-                (*(*fdoExt).AdapterDescriptor).AddressType as USHORT,
+                (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).AddressType as USHORT,
                 Some(DefaultStorageRequestBlockAllocateRoutine),
                 &raw mut ByteSize,
                 1,
@@ -349,7 +408,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
     }
 
     if !(*fdoData).FreeTransferPacketsLists.is_null() {
-        if IsListEmpty(&raw mut (*fdoData).DeferredClientIrpList) == 0 {
+        if !IsListEmpty(&raw mut (*fdoData).DeferredClientIrpList) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8).cast(),
                 b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr() as *const i8,
@@ -430,10 +489,10 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
             core::ptr::write_bytes(newPkt as *mut u8, 0, core::mem::size_of::<TRANSFER_PACKET>());
             (*newPkt).AllocateNode = KeGetCurrentNodeNumber() as ULONG;
 
-            if (*(*fdoExt).AdapterDescriptor).SrbType as i32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+            if (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                 status = CreateStorageRequestBlock(
-                    &mut (*newPkt).Srb as *mut PSTORAGE_REQUEST_BLOCK,
-                    (*(*fdoExt).AdapterDescriptor).AddressType as u16,
+                    &mut (*newPkt).Srb as *mut _ as *mut PSTORAGE_REQUEST_BLOCK,
+                    (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).AddressType as u16,
                     Some(DefaultStorageRequestBlockAllocateRoutine as unsafe extern "C" fn(CLONG) -> PVOID),
                     core::ptr::null_mut::<ULONG>(),
                     1u32,
@@ -565,12 +624,12 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
         (*newPkt).Fdo = Fdo;
         (*newPkt).DbgPktId = InterlockedIncrement(&raw mut (*fdoData).DbgMaxPktId as *mut i32) as ULONG;
 
-        KeAcquireSpinLock(&mut (*fdoData).SpinLock, &mut oldIrql);
+        KeAcquireSpinLock(&mut (*fdoData).SpinLock as *mut _ as *mut usize, &mut oldIrql);
         InsertTailList(
             &raw mut (*fdoData).AllTransferPacketsList,
             &raw mut (*newPkt).AllPktsListEntry,
         );
-        KeReleaseSpinLock(&mut (*fdoData).SpinLock, oldIrql);
+        KeReleaseSpinLock(&mut (*fdoData).SpinLock as *mut _ as *mut usize, oldIrql);
     } else {
         // free all resources in reverse order
         if !newPkt.is_null() {
@@ -604,8 +663,8 @@ pub unsafe extern "C" fn DestroyTransferPacket(pkt: PTRANSFER_PACKET) {
         core::ptr::addr_of_mut!(old_irql),
     );
 
-    debug_assert!(IsListEmpty(core::ptr::addr_of!((*pkt).AllPktsListEntry)) == 0);
-    debug_assert!(IsListEmpty(core::ptr::addr_of!((*fdo_data).AllTransferPacketsList)) == 0);
+    debug_assert!(!IsListEmpty(core::ptr::addr_of!((*pkt).AllPktsListEntry)));
+    debug_assert!(!IsListEmpty(core::ptr::addr_of!((*fdo_data).AllTransferPacketsList)));
 
     RemoveEntryList(core::ptr::addr_of_mut!((*pkt).AllPktsListEntry));
     InitializeListHead(core::ptr::addr_of_mut!((*pkt).AllPktsListEntry));
@@ -632,7 +691,7 @@ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTR
     let fdoExt: PFUNCTIONAL_DEVICE_EXTENSION = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdoData: PCLASS_PRIVATE_FDO_DATA = (*fdoExt).PrivateFdoData;
     let allocateNode: ULONG;
-    let oldIrql: KIRQL;
+    let mut oldIrql: KIRQL = 0;
 
     // NT_ASSERT(!Pkt->SlistEntry.Next)
     if !(*Pkt).SlistEntry.Next.is_null() {
@@ -645,25 +704,25 @@ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTR
     allocateNode = (*Pkt).AllocateNode;
 
     InterlockedPushEntrySList(
-        core::ptr::addr_of_mut!((*fdoData).FreeTransferPacketsLists[allocateNode as usize].SListHeader),
+        core::ptr::addr_of_mut!((*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).SListHeader).cast(),
         (core::ptr::addr_of_mut!((*Pkt).SlistEntry)).cast(),
     );
     InterlockedIncrement(
-        core::ptr::addr_of_mut!((*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumFreeTransferPackets)
+        core::ptr::addr_of_mut!((*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumFreeTransferPackets)
             as *mut LONG,
     );
 
-    if (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumFreeTransferPackets
-        >= (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets
+    if (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumFreeTransferPackets
+        >= (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets
     {
         // 1. Immediate snap down to UPPER threshold
-        if (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets
+        if (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets
             > (*fdoData).LocalMaxWorkingSetTransferPackets
         {
             let isRemoved: ULONG;
             let workItem: PIO_WORKITEM = IoAllocateWorkItem(Fdo);
 
-            isRemoved = ClassAcquireRemoveLock(Fdo, workItem as PIRP);
+            isRemoved = ClassAcquireRemoveLockEx(Fdo, workItem as PVOID, b"\0".as_ptr(), 0);
 
             if !workItem.is_null() && isRemoved == 0 {
                 TracePrint(
@@ -676,8 +735,8 @@ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTR
 
                 IoQueueWorkItemEx(
                     workItem,
-                    CleanupTransferPacketToWorkingSetSizeWorker,
-                    DelayedWorkQueue,
+                    CleanupTransferPacketToWorkingSetSizeWorker as unsafe extern "system" fn(PVOID, PVOID, PIO_WORKITEM) as *const c_void,
+                    DELAYED_WORK_QUEUE,
                     allocateNode as ULONG_PTR as PVOID,
                 );
             } else {
@@ -701,7 +760,7 @@ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTR
         }
 
         // 2. Lazily work down to LOWER threshold
-        if (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets
+        if (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets
             > (*fdoData).LocalMinWorkingSetTransferPackets
         {
             let mut pktToDelete: PTRANSFER_PACKET = core::ptr::null_mut();
@@ -710,26 +769,26 @@ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTR
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_RW,
                 b"Exiting stress, lazily freeing one of %d/%d packets from node %d.\0".as_ptr() as PCHAR,
-                (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets,
+                (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets,
                 (*fdoData).LocalMinWorkingSetTransferPackets,
                 allocateNode,
             );
 
             KeAcquireSpinLock(
-                (core::ptr::addr_of_mut!((*fdoData).SpinLock)).cast(),
+                core::ptr::addr_of_mut!((*fdoData).SpinLock) as *mut _ as *mut usize,
                 core::ptr::addr_of_mut!(oldIrql),
             );
 
-            if (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumFreeTransferPackets
-                >= (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets
-                && (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets
+            if (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumFreeTransferPackets
+                >= (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets
+                && (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets
                     > (*fdoData).LocalMinWorkingSetTransferPackets
             {
                 pktToDelete = DequeueFreeTransferPacketEx(Fdo, 0u8, allocateNode);
                 if !pktToDelete.is_null() {
                     InterlockedDecrement(
                         core::ptr::addr_of_mut!(
-                            (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets
+                            (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets
                         ) as *mut LONG,
                     );
                 } else {
@@ -740,14 +799,14 @@ pub unsafe extern "C" fn EnqueueFreeTransferPacket(Fdo: PDEVICE_OBJECT, Pkt: PTR
                             .as_ptr() as PCHAR,
                         (*fdoData).LocalMinWorkingSetTransferPackets,
                         Fdo,
-                        (*fdoData).FreeTransferPacketsLists[allocateNode as usize].NumTotalTransferPackets,
+                        (*(*fdoData).FreeTransferPacketsLists.offset((allocateNode) as isize)).NumTotalTransferPackets,
                         allocateNode,
                     );
                 }
             }
 
             KeReleaseSpinLock(
-                (core::ptr::addr_of_mut!((*fdoData).SpinLock)).cast(),
+                core::ptr::addr_of_mut!((*fdoData).SpinLock) as *mut _ as *mut usize,
                 oldIrql,
             );
 
@@ -842,7 +901,7 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
         DiskLocation.QuadPart as u64,
         (*fdoExt).SectorShift as u32,
     ) as i64;
-    let numTransferBlocks = Len >> (*fdoExt).SectorShift;
+    let mut numTransferBlocks = Len >> (*fdoExt).SectorShift;
 
     (*Pkt).DriverUsesStartIO = if (*(*commonExtension).DriverExtension)
         .InitData
@@ -855,10 +914,9 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     };
 
     let srbLength: ULONG;
-    if (*(*fdoExt).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
-        srbLength = (*(*(*fdoData).SrbTemplate as PSTORAGE_REQUEST_BLOCK)).0
-            .SrbLength;
-        if !((*(*(*Pkt).Srb as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
+    if (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+        srbLength = (*((*fdoData).SrbTemplate as PVOID as PSTORAGE_REQUEST_BLOCK)).SrbLength;
+        if !((*((*Pkt).Srb as PVOID as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8).cast(),
                 b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
@@ -897,25 +955,25 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
     let pCdb = SrbGetCdb((*Pkt).Srb as PVOID);
     if !pCdb.is_null() {
         if TEST_FLAG(((*fdoExt).DeviceFlags) as u32, DEV_USE_16BYTE_CDB) != 0u8 {
-            let val1 = &raw mut (*pCdb).CDB16.as_ref().LogicalBlock as PEIGHT_BYTE;
+            let val1 = &raw mut (*pCdb).CDB16.as_mut().LogicalBlock as PEIGHT_BYTE;
             let val2 = &raw mut logicalBlockAddr as PEIGHT_BYTE;
-            (*val1).__bindgen_anon_1.as_ref().Byte7 = (*val2).__bindgen_anon_1.as_ref().Byte0;
-            (*val1).__bindgen_anon_1.as_ref().Byte6 = (*val2).__bindgen_anon_1.as_ref().Byte1;
-            (*val1).__bindgen_anon_1.as_ref().Byte5 = (*val2).__bindgen_anon_1.as_ref().Byte2;
-            (*val1).__bindgen_anon_1.as_ref().Byte4 = (*val2).__bindgen_anon_1.as_ref().Byte3;
-            (*val1).__bindgen_anon_1.as_ref().Byte3 = (*val2).__bindgen_anon_1.as_ref().Byte4;
-            (*val1).__bindgen_anon_1.as_ref().Byte2 = (*val2).__bindgen_anon_1.as_ref().Byte5;
-            (*val1).__bindgen_anon_1.as_ref().Byte1 = (*val2).__bindgen_anon_1.as_ref().Byte6;
-            (*val1).__bindgen_anon_1.as_ref().Byte0 = (*val2).__bindgen_anon_1.as_ref().Byte7;
+            (*val1).__bindgen_anon_1.as_mut().Byte7 = (*val2).__bindgen_anon_1.as_ref().Byte0;
+            (*val1).__bindgen_anon_1.as_mut().Byte6 = (*val2).__bindgen_anon_1.as_ref().Byte1;
+            (*val1).__bindgen_anon_1.as_mut().Byte5 = (*val2).__bindgen_anon_1.as_ref().Byte2;
+            (*val1).__bindgen_anon_1.as_mut().Byte4 = (*val2).__bindgen_anon_1.as_ref().Byte3;
+            (*val1).__bindgen_anon_1.as_mut().Byte3 = (*val2).__bindgen_anon_1.as_ref().Byte4;
+            (*val1).__bindgen_anon_1.as_mut().Byte2 = (*val2).__bindgen_anon_1.as_ref().Byte5;
+            (*val1).__bindgen_anon_1.as_mut().Byte1 = (*val2).__bindgen_anon_1.as_ref().Byte6;
+            (*val1).__bindgen_anon_1.as_mut().Byte0 = (*val2).__bindgen_anon_1.as_ref().Byte7;
 
-            let val1_0 = &raw mut (*pCdb).CDB16.as_ref().TransferLength as PFOUR_BYTE;
+            let val1_0 = &raw mut (*pCdb).CDB16.as_mut().TransferLength as PFOUR_BYTE;
             let val2_0 = &raw mut numTransferBlocks as PFOUR_BYTE;
-            (*val1_0).__bindgen_anon_1.as_ref().Byte3 = (*val2_0).__bindgen_anon_1.as_ref().Byte0;
-            (*val1_0).__bindgen_anon_1.as_ref().Byte2 = (*val2_0).__bindgen_anon_1.as_ref().Byte1;
-            (*val1_0).__bindgen_anon_1.as_ref().Byte1 = (*val2_0).__bindgen_anon_1.as_ref().Byte2;
-            (*val1_0).__bindgen_anon_1.as_ref().Byte0 = (*val2_0).__bindgen_anon_1.as_ref().Byte3;
+            (*val1_0).__bindgen_anon_1.as_mut().Byte3 = (*val2_0).__bindgen_anon_1.as_ref().Byte0;
+            (*val1_0).__bindgen_anon_1.as_mut().Byte2 = (*val2_0).__bindgen_anon_1.as_ref().Byte1;
+            (*val1_0).__bindgen_anon_1.as_mut().Byte1 = (*val2_0).__bindgen_anon_1.as_ref().Byte2;
+            (*val1_0).__bindgen_anon_1.as_mut().Byte0 = (*val2_0).__bindgen_anon_1.as_ref().Byte3;
 
-            (*pCdb).CDB16.as_ref().OperationCode = if majorFunc as i32 == (IRP_MJ_READ) as i32 {
+            (*pCdb).CDB16.as_mut().OperationCode = if majorFunc as i32 == (IRP_MJ_READ) as i32 {
                 SCSIOP_READ16 as UCHAR
             } else {
                 SCSIOP_WRITE16 as UCHAR
@@ -924,14 +982,14 @@ pub unsafe extern "C" fn SetupReadWriteTransferPacket(
         } else {
             let p_lo =
                 &raw const logicalBlockAddr.__bindgen_anon_1.LowPart as *const FOUR_BYTE;
-            (*pCdb).CDB10.as_ref().LogicalBlockByte0 = (*p_lo).__bindgen_anon_1.as_ref().Byte3;
-            (*pCdb).CDB10.as_ref().LogicalBlockByte1 = (*p_lo).__bindgen_anon_1.as_ref().Byte2;
-            (*pCdb).CDB10.as_ref().LogicalBlockByte2 = (*p_lo).__bindgen_anon_1.as_ref().Byte1;
-            (*pCdb).CDB10.as_ref().LogicalBlockByte3 = (*p_lo).__bindgen_anon_1.as_ref().Byte0;
+            (*pCdb).CDB10.as_mut().LogicalBlockByte0 = (*p_lo).__bindgen_anon_1.as_ref().Byte3;
+            (*pCdb).CDB10.as_mut().LogicalBlockByte1 = (*p_lo).__bindgen_anon_1.as_ref().Byte2;
+            (*pCdb).CDB10.as_mut().LogicalBlockByte2 = (*p_lo).__bindgen_anon_1.as_ref().Byte1;
+            (*pCdb).CDB10.as_mut().LogicalBlockByte3 = (*p_lo).__bindgen_anon_1.as_ref().Byte0;
             let p_nb = &raw const numTransferBlocks as *const FOUR_BYTE;
-            (*pCdb).CDB10.as_ref().TransferBlocksMsb = (*p_nb).__bindgen_anon_1.as_ref().Byte1;
-            (*pCdb).CDB10.as_ref().TransferBlocksLsb = (*p_nb).__bindgen_anon_1.as_ref().Byte0;
-            (*pCdb).CDB10.as_ref().OperationCode = if majorFunc as i32 == (IRP_MJ_READ) as i32 {
+            (*pCdb).CDB10.as_mut().TransferBlocksMsb = (*p_nb).__bindgen_anon_1.as_ref().Byte1;
+            (*pCdb).CDB10.as_mut().TransferBlocksLsb = (*p_nb).__bindgen_anon_1.as_ref().Byte0;
+            (*pCdb).CDB10.as_mut().OperationCode = if majorFunc as i32 == (IRP_MJ_READ) as i32 {
                 SCSIOP_READ as UCHAR
             } else {
                 SCSIOP_WRITE as UCHAR
@@ -1019,7 +1077,7 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: PTRANSFER_PACKET) -> NTSTATUS
 
     let nextSp = IoGetNextIrpStackLocation((*Pkt).Irp);
     (*nextSp).MajorFunction = IRP_MJ_SCSI as u8;
-    (*nextSp).Parameters.Scsi.Srb = (*Pkt).Srb as PSCSI_REQUEST_BLOCK as *mut _SCSI_REQUEST_BLOCK;
+    (*nextSp).Parameters.Scsi.Srb = (*Pkt).Srb as PVOID as *mut _;
 
     SrbSetScsiStatus((*Pkt).Srb as PVOID, 0u8);
     (*(*Pkt).Srb).SrbStatus = 0u8;
@@ -1060,8 +1118,10 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: PTRANSFER_PACKET) -> NTSTATUS
 
     IoSetCompletionRoutine(
         (*Pkt).Irp,
-        Some(TransferPktComplete
-            as unsafe extern "C" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS),
+        Some(core::mem::transmute::<
+            unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
+            unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
+        >(TransferPktComplete)),
         Pkt as PVOID,
         1u8,
         1u8,
@@ -1089,10 +1149,10 @@ pub unsafe extern "system" fn TransferPktComplete(
     };
     let mut lastIoCompletionTime: ULONGLONG;
 
-    DBGLOGRETURNPACKET(pkt);
-    DBGCHECKRETURNEDPKT(pkt);
+    DbgLogReturnPacket(pkt);
+    DbgCheckReturnedPkt(pkt);
     if !(*pkt).RetryHistory.is_null() {
-        HISTORYLOGRETURNPACKET(pkt);
+        HistoryLogReturnedPacket(pkt);
     }
 
     completionTime = ClasspGetCurrentTime();
@@ -1235,7 +1295,7 @@ pub unsafe extern "system" fn TransferPktComplete(
         }
 
         numPacketsRemaining = InterlockedDecrement(
-            &raw mut (*(*pkt).OriginalIrp).Tail.Overlay.DriverContext[0] as *mut PVOID as *mut LONG,
+            &raw mut (*(*pkt).OriginalIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] as *mut PVOID as *mut LONG,
         ) as LONG;
 
         if numPacketsRemaining > 0 {
@@ -1246,7 +1306,7 @@ pub unsafe extern "system" fn TransferPktComplete(
                 let priority: IO_PAGING_PRIORITY = if (*(*pkt).OriginalIrp).Flags & IRP_PAGING_IO as ULONG != 0 {
                     IoGetPagingIoPriority((*pkt).OriginalIrp)
                 } else {
-                    IoPagingPriorityInvalid
+                    IO_PAGING_PRIORITY_INVALID as IO_PAGING_PRIORITY
                 };
                 let mut oldIrql: KIRQL = 0;
 
@@ -1269,7 +1329,7 @@ pub unsafe extern "system" fn TransferPktComplete(
 
                 ClassCompleteRequest(fdo, (*pkt).OriginalIrp, IO_DISK_INCREMENT as CCHAR);
 
-                if priority == IoPagingPriorityHigh {
+                if priority == IO_PAGING_PRIORITY_HIGH as IO_PAGING_PRIORITY {
                     KeAcquireSpinLock((&raw mut (*fdoData).SpinLock).cast(), &raw mut oldIrql);
 
                     if (*fdoData).MaxInterleavedNormalIo < ClassMaxInterleavePerCriticalIo {
@@ -1284,7 +1344,7 @@ pub unsafe extern "system" fn TransferPktComplete(
                         // Inline KeQuerySystemTime
                         (*fdoData).ThrottleStopTime.QuadPart =
                             core::ptr::read_volatile(
-                                &SharedSystemTime.QuadPart as *const i64,
+                                core::ptr::addr_of!(SharedSystemTime.QuadPart),
                             );
                         let period_quad = (*fdoData).ThrottleStopTime.QuadPart
                             - (*fdoData).ThrottleStartTime.QuadPart;
@@ -1382,13 +1442,11 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
         } else {
         };
     }
-    if (*(*fdoExt).AdapterDescriptor).SrbType as ::core::ffi::c_int
+    if (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).SrbType as u32
         == SRB_TYPE_STORAGE_REQUEST_BLOCK
     {
-        srbLength = (*((*fdoData).SrbTemplate as PSTORAGE_REQUEST_BLOCK))
-            .0
-            .SrbLength;
-        if !((*((*Pkt).Srb as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
+        srbLength = (*((*fdoData).SrbTemplate as PVOID as PSTORAGE_REQUEST_BLOCK)).SrbLength;
+        if !((*((*Pkt).Srb as PVOID as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
                 (b"Assertion failed at %s(%d): %s\n\0" as *const u8 as PCSTR).cast(),
                 b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
@@ -1428,7 +1486,7 @@ pub unsafe extern "C" fn SetupEjectionTransferPacket(
     );
     pCdb = SrbGetCdb((*Pkt).Srb as PVOID);
     if !pCdb.is_null() {
-        (*pCdb).MEDIA_REMOVAL.as_ref().OperationCode = SCSIOP_MEDIUM_REMOVAL as UCHAR;
+        (*pCdb).MEDIA_REMOVAL.as_mut().OperationCode = SCSIOP_MEDIUM_REMOVAL as UCHAR;
         (*pCdb)
             .MEDIA_REMOVAL
             .as_mut().set_Prevent(PreventMediaRemoval as UCHAR as UCHAR);
@@ -1458,7 +1516,7 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
     let pCdb: *mut CDB;
     let srbLength: u32;
 
-    if (*(*fdoExt).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+    if (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
         let srb_template_cast = (*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK;
         srbLength = (*srb_template_cast).SrbLength;
         let srb_cast = (*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK;
@@ -1487,11 +1545,11 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
 
     pCdb = SrbGetCdb(((*Pkt).Srb).cast());
     if !pCdb.is_null() {
-        (*pCdb).MODE_SENSE.as_ref().OperationCode = SCSIOP_MODE_SENSE;
-        (*pCdb).MODE_SENSE.as_ref().set_PageCode(PageMode);
-        (*pCdb).MODE_SENSE.as_ref().SubPageCode = SubPage;
-        (*pCdb).MODE_SENSE.as_ref().set_Pc(PageControl);
-        (*pCdb).MODE_SENSE.as_ref().AllocationLength = ModeSenseBufferLen;
+        (*pCdb).MODE_SENSE.as_mut().OperationCode = SCSIOP_MODE_SENSE;
+        (*pCdb).MODE_SENSE.as_mut().set_PageCode(PageMode);
+        (*pCdb).MODE_SENSE.as_mut().SubPageCode = SubPage;
+        (*pCdb).MODE_SENSE.as_mut().set_Pc(PageControl);
+        (*pCdb).MODE_SENSE.as_mut().AllocationLength = ModeSenseBufferLen;
     }
 
     (*Pkt).BufPtrCopy = (ModeSenseBuffer).cast();
@@ -1514,7 +1572,7 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
     let fdoData: PCLASS_PRIVATE_FDO_DATA = (*fdoExt).PrivateFdoData;
     let mut pCdb: PCDB = ::core::ptr::null_mut::<_CDB>();
     let srbLength: u32;
-    if (*(*fdoExt).AdapterDescriptor).SrbType as i32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+    if (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
         srbLength = (*((*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK)).SrbLength;
         if !((*((*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
@@ -1556,10 +1614,10 @@ pub unsafe extern "C" fn SetupModeSelectTransferPacket(
     );
     pCdb = SrbGetCdb((*Pkt).Srb as PVOID);
     if !pCdb.is_null() {
-        (*pCdb).MODE_SELECT.as_ref().OperationCode = SCSIOP_MODE_SELECT as u8;
+        (*pCdb).MODE_SELECT.as_mut().OperationCode = SCSIOP_MODE_SELECT as u8;
         (*pCdb).MODE_SELECT.as_mut().set_SPBit(SavePages as u8);
         (*pCdb).MODE_SELECT.as_mut().set_PFBit(1u8);
-        (*pCdb).MODE_SELECT.as_ref().ParameterListLength = ModeSelectBufferLen;
+        (*pCdb).MODE_SELECT.as_mut().ParameterListLength = ModeSelectBufferLen;
     }
     (*Pkt).BufPtrCopy = ModeSelectBuffer as PUCHAR;
     (*Pkt).BufLenCopy = ModeSelectBufferLen as u32;
@@ -1582,16 +1640,15 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
     let timeoutValue = (*fdoExt).TimeOutValue;
     let srbLength: ULONG;
 
-    if (*(*fdoExt).AdapterDescriptor).SrbType as i32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+    if (*adapter_desc_ext((*fdoExt).AdapterDescriptor as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
         srbLength = (*((*fdoData).SrbTemplate as PSTORAGE_REQUEST_BLOCK)).SrbLength;
         if !((*((*Pkt).Srb as PSTORAGE_REQUEST_BLOCK)).SrbLength >= srbLength) {
             DbgPrint(
-                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCHAR,
+                b"Assertion failed at %s(%d): %s\n\0".as_ptr(),
                 b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
-                    .as_ptr() as PCHAR,
+                    .as_ptr(),
                 1495i32,
-                b"((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength\0".as_ptr()
-                    as PCHAR,
+                b"((PSTORAGE_REQUEST_BLOCK) Pkt->Srb)->SrbLength >= srbLength\0".as_ptr(),
             );
             __int2c();
         }
@@ -1631,29 +1688,28 @@ pub unsafe extern "C" fn SetupDriveCapacityTransferPacket(
         if Use16ByteCdb == 1u8 {
             if !(ReadCapacityBufferLen as usize >= core::mem::size_of::<READ_CAPACITY_DATA_EX>()) {
                 DbgPrint(
-                    b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCHAR,
-                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0"
-                        .as_ptr() as PCHAR,
+                    b"Assertion failed at %s(%d): %s\n\0".as_ptr(),
+                    b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/xferpkt.c\0".as_ptr(),
                     1516i32,
-                    b"ReadCapacityBufferLen >= sizeof(READ_CAPACITY_DATA_EX)\0".as_ptr() as PCHAR,
+                    b"ReadCapacityBufferLen >= sizeof(READ_CAPACITY_DATA_EX)\0".as_ptr(),
                 );
                 __int2c();
             }
             SrbSetCdbLength((*Pkt).Srb as PVOID, 16u8);
-            (*pCdb).CDB16.as_ref().OperationCode = SCSIOP_READ_CAPACITY16 as UCHAR;
+            (*pCdb).CDB16.as_mut().OperationCode = SCSIOP_READ_CAPACITY16 as UCHAR;
 
             // REVERSE_BYTES expansion
-            let target = core::ptr::addr_of_mut!((*pCdb).CDB16.as_ref().TransferLength) as *mut u8;
+            let target = core::ptr::addr_of_mut!((*pCdb).CDB16.as_mut().TransferLength) as *mut u8;
             let source = &ReadCapacityBufferLen as *const ULONG as *const u8;
             core::ptr::write(target.add(3), core::ptr::read(source.add(0)));
             core::ptr::write(target.add(2), core::ptr::read(source.add(1)));
             core::ptr::write(target.add(1), core::ptr::read(source.add(2)));
             core::ptr::write(target.add(0), core::ptr::read(source.add(3)));
 
-            (*pCdb).AsByte[1] = 0x10u8;
+            (*pCdb).AsByte.as_mut()[1] = 0x10u8;
         } else {
             SrbSetCdbLength((*Pkt).Srb as PVOID, 10u8);
-            (*pCdb).CDB10.as_ref().OperationCode = SCSIOP_READ_CAPACITY as UCHAR;
+            (*pCdb).CDB10.as_mut().OperationCode = SCSIOP_READ_CAPACITY as UCHAR;
         }
     }
 
@@ -1708,7 +1764,7 @@ pub unsafe extern "C" fn CleanupTransferPacketToWorkingSetSize(
     };
     let mut slistEntry: PSINGLE_LIST_ENTRY = core::ptr::null_mut::<SINGLE_LIST_ENTRY>();
     let mut pktToDelete: PTRANSFER_PACKET = core::ptr::null_mut::<TRANSFER_PACKET>();
-    let list = &(*fdoData).FreeTransferPacketsLists[Node as usize];
+    let list = &(*(*fdoData).FreeTransferPacketsLists.offset((Node) as isize));
     let mut requiredNumPktToDelete = list.NumTotalTransferPackets.wrapping_sub((*fdoData).LocalMaxWorkingSetTransferPackets);
     if LimitNumPktToDelete != 0 {
         if requiredNumPktToDelete > 8192 {
@@ -1725,9 +1781,9 @@ pub unsafe extern "C" fn CleanupTransferPacketToWorkingSetSize(
     );
     SimpleInitSlistHdr(&raw mut pktList);
     KeAcquireSpinLock((&raw mut (*fdoData).SpinLock).cast(), &raw mut oldIrql);
-    while (*fdoData).FreeTransferPacketsLists[Node as usize].NumFreeTransferPackets
-        >= (*fdoData).FreeTransferPacketsLists[Node as usize].NumTotalTransferPackets
-        && (*fdoData).FreeTransferPacketsLists[Node as usize].NumTotalTransferPackets
+    while (*(*fdoData).FreeTransferPacketsLists.offset((Node) as isize)).NumFreeTransferPackets
+        >= (*(*fdoData).FreeTransferPacketsLists.offset((Node) as isize)).NumTotalTransferPackets
+        && (*(*fdoData).FreeTransferPacketsLists.offset((Node) as isize)).NumTotalTransferPackets
             > (*fdoData).LocalMaxWorkingSetTransferPackets
         && {
             let non_zero = requiredNumPktToDelete != 0;
@@ -1742,7 +1798,7 @@ pub unsafe extern "C" fn CleanupTransferPacketToWorkingSetSize(
                 &raw mut (*pktToDelete).SlistEntry as PSINGLE_LIST_ENTRY,
             );
             InterlockedDecrement(
-                &raw mut (*fdoData).FreeTransferPacketsLists[Node as usize]
+                &raw mut (*(*fdoData).FreeTransferPacketsLists.offset((Node) as isize))
                     .NumTotalTransferPackets as *mut LONG,
             );
         } else {
@@ -1753,7 +1809,7 @@ pub unsafe extern "C" fn CleanupTransferPacketToWorkingSetSize(
                     .as_ptr() as PCHAR,
                 (*fdoData).LocalMaxWorkingSetTransferPackets as core::ffi::c_ulong,
                 Fdo as *const core::ffi::c_void,
-                (*fdoData).FreeTransferPacketsLists[Node as usize].NumTotalTransferPackets as core::ffi::c_ulong,
+                (*(*fdoData).FreeTransferPacketsLists.offset((Node) as isize)).NumTotalTransferPackets as core::ffi::c_ulong,
                 Node as core::ffi::c_ulong,
             );
             break;
@@ -1792,10 +1848,10 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     let adapter_desc = (*fdoExt).AdapterDescriptor;
     let srb_length: u32;
 
-    if (*adapter_desc).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
-        srb_length = (*(*(*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK)).SrbLength;
+    if (*adapter_desc_ext(adapter_desc as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+        srb_length = (*((*fdoData).SrbTemplate as PVOID as *mut STORAGE_REQUEST_BLOCK)).SrbLength;
         NT_ASSERT(
-            (*(*(*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srb_length,
+            (*((*Pkt).Srb as PVOID as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srb_length,
         );
     } else {
         srb_length = ((*(*fdoData).SrbTemplate).Length) as u32;
@@ -1810,9 +1866,9 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     SrbSetRequestAttribute(((*Pkt).Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
     SrbSetCdbLength(((*Pkt).Srb).cast(), 16);
     SrbSetOriginalRequest(((*Pkt).Srb).cast(), (*Pkt).Irp);
-    ((((SrbSetSenseInfoBuffer)))).cast()(
-        (*Pkt).Srb,
-        core::ptr::addr_of_mut!((*Pkt).SrbErrorSenseData) as *mut u8,
+    SrbSetSenseInfoBuffer(
+        ((*Pkt).Srb).cast(),
+        core::ptr::addr_of_mut!((*Pkt).SrbErrorSenseData) as *mut core::ffi::c_void,
     );
     SrbSetSenseInfoBufferLength(
         ((*Pkt).Srb).cast(),
@@ -1833,16 +1889,16 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
         let mut length = Length;
         let mut list_identifier = ListIdentifier;
 
-        (*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().OperationCode = (SCSIOP_RECEIVE_ROD_TOKEN_INFORMATION) as u8;
-        (*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().set_ServiceAction((SERVICE_ACTION_RECEIVE_TOKEN_INFORMATION) as u8);
+        (*pCdb).RECEIVE_TOKEN_INFORMATION.as_mut().OperationCode = (SCSIOP_RECEIVE_ROD_TOKEN_INFORMATION) as u8;
+        (*pCdb).RECEIVE_TOKEN_INFORMATION.as_mut().set_ServiceAction((SERVICE_ACTION_RECEIVE_TOKEN_INFORMATION) as u8);
 
         REVERSE_BYTES(
-            core::ptr::addr_of_mut!((*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().AllocationLength) as *mut core::ffi::c_void,
-            &mut length as *mut u32 as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*pCdb).RECEIVE_TOKEN_INFORMATION.as_mut().AllocationLength) as *mut u32,
+            &length as *const u32,
         );
         REVERSE_BYTES(
-            core::ptr::addr_of_mut!((*pCdb).RECEIVE_TOKEN_INFORMATION.as_ref().ListIdentifier) as *mut core::ffi::c_void,
-            &mut list_identifier as *mut u32 as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!((*pCdb).RECEIVE_TOKEN_INFORMATION.as_mut().ListIdentifier) as *mut u32,
+            &list_identifier as *const u32,
         );
     }
 
@@ -1852,7 +1908,7 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     (*Pkt).NumRetries = NUM_WRITE_USING_TOKEN_RETRIES;
     (*Pkt).CompleteOriginalIrpWhenLastPacketCompletes = 0u8;
 
-    (*Pkt).ContinuationRoutine = Some(ClasspReceiveWriteUsingTokenInformationTransferPacketDone);
+    (*Pkt).ContinuationRoutine = Some(core::mem::transmute(ClasspReceiveWriteUsingTokenInformationTransferPacketDone as unsafe extern "C" fn(*mut _)));
 
     (*Pkt).ContinuationContext = OffloadWriteContext;
 

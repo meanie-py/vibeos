@@ -7,7 +7,7 @@ use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, KeInitializeDpc, KeInitializ
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{IRP_MJ_SCSI, SL_OVERRIDE_VERIFY_VOLUME, STATUS_IO_DEVICE_ERROR, STATUS_VERIFY_REQUIRED, TRACE_LEVEL_INFORMATION};
-use crate::types::{CLASS_SRB_STORAGE_REQUEST_BLOCK, PCDB, PCLASS_PRIVATE_FDO_DATA, PCOMMON_DEVICE_EXTENSION, PFIXED_SENSE_DATA, PFUNCTIONAL_DEVICE_EXTENSION, PSCSI_REQUEST_BLOCK, PSCSI_SENSE_DESCRIPTOR_INFORMATION, PSTORAGE_REQUEST_BLOCK, PTRANSFER_PACKET, SCSIOP_MEDIUM_REMOVAL, SCSIOP_MODE_SENSE, SCSIOP_MODE_SENSE10, SCSIOP_READ, SCSIOP_READ12, SCSIOP_READ16, SCSIOP_READ6, SCSIOP_READ_CAPACITY, SCSIOP_READ_CAPACITY16, SCSIOP_WRITE, SCSIOP_WRITE12, SCSIOP_WRITE16, SCSIOP_WRITE6, SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR, SCSI_ADSENSE_LUN_NOT_READY, SCSI_SENSEQ_DATA_UNDERRUN, SCSI_SENSE_ABORTED_COMMAND, SCSI_SENSE_COPY_ABORTED, SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION, SENSE_DATA_EX, SRB_FLAGS_DISABLE_DISCONNECT, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_HISTORY, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SELECTION_TIMEOUT, _CLASS_PRIVATE_FDO_DATA, _FUNCTIONAL_DEVICE_EXTENSION, _TRANSFER_PACKET};
+use crate::types::{CLASS_SRB_STORAGE_REQUEST_BLOCK, PCDB, PCLASS_PRIVATE_FDO_DATA, PCOMMON_DEVICE_EXTENSION, PFIXED_SENSE_DATA, PFUNCTIONAL_DEVICE_EXTENSION, PSCSI_REQUEST_BLOCK, PSCSI_SENSE_DESCRIPTOR_INFORMATION, PSTORAGE_REQUEST_BLOCK, PTRANSFER_PACKET, SCSIOP_MEDIUM_REMOVAL, SCSIOP_MODE_SENSE, SCSIOP_MODE_SENSE10, SCSIOP_READ, SCSIOP_READ12, SCSIOP_READ16, SCSIOP_READ6, SCSIOP_READ_CAPACITY, SCSIOP_READ_CAPACITY16, SCSIOP_WRITE, SCSIOP_WRITE12, SCSIOP_WRITE16, SCSIOP_WRITE6, SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR, SCSI_ADSENSE_LUN_NOT_READY, SCSI_SENSEQ_DATA_UNDERRUN, SCSI_SENSE_ABORTED_COMMAND, SCSI_SENSE_COPY_ABORTED, SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION, SENSE_DATA_EX, SRB_FLAGS_DISABLE_DISCONNECT, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_FREE_SENSE_BUFFER, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_HISTORY, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SELECTION_TIMEOUT, _CLASS_PRIVATE_FDO_DATA, _FUNCTIONAL_DEVICE_EXTENSION, _TRANSFER_PACKET};
 use ntkrnl_sys::ddk::{PCCHAR, PCSTR};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED, STATUS_DEVICE_NOT_READY};
@@ -27,7 +27,6 @@ extern "C" {
     fn NT_ASSERT(cond: u8);
     fn DbgPrint(format: PCSTR, ...);
     fn __int2c() -> !;
-    fn TracePrint(level: i32, flags: i32, format: PCCHAR, ...);
     fn SrbGetCdb(srb: PVOID) -> PCDB;
     fn SrbSetSrbFlags(srb: PVOID, flags: ULONG);
     fn SrbClearSrbFlags(srb: PVOID, flags: ULONG);
@@ -36,6 +35,84 @@ extern "C" {
     fn SrbSetDataBuffer(srb: PVOID, buf: PVOID);
     fn SrbSetDataTransferLength(srb: PVOID, len: ULONG);
     fn DbgGetScsiOpStr(srb: PVOID) -> PCCHAR;
+    fn SrbGetSrbFlags(srb: PVOID) -> ULONG;
+    fn SrbGetSenseInfoBuffer_raw(srb: PVOID) -> PVOID;
+    fn ExFreePool(p: PVOID);
+    fn SrbSetSenseInfoBuffer(srb: PVOID, buf: PVOID);
+    fn SrbSetSenseInfoBufferLength(srb: PVOID, len: u32);
+    // Complex classp.h inline functions (FORCEINLINE) - need C shim wrappers at link time.
+    fn ClasspTransferPacketGetNumberOfRetriesDone(pkt: PTRANSFER_PACKET, cdb: PCDB, retries_done: *mut ULONG) -> BOOLEAN;
+    fn ScsiGetSenseKeyAndCodes(buf: PVOID, buf_len: UCHAR, opts: u32, key: *mut UCHAR, asc: *mut UCHAR, ascq: *mut UCHAR) -> BOOLEAN;
+    fn ClasspIsOffloadDataTransferCommand(cdb: PCDB) -> BOOLEAN;
+    fn ClasspIsTokenOperation(cdb: PCDB) -> BOOLEAN;
+    fn IsDescriptorSenseDataFormat(buf: PVOID) -> BOOLEAN;
+    fn ScsiGetSenseDescriptor(buf: PVOID, buf_len: UCHAR, desc_buf: *mut PVOID, desc_len: *mut UCHAR) -> BOOLEAN;
+    fn ScsiGetNextSenseDescriptorByType(start: PVOID, start_len: UCHAR, types: *mut UCHAR, type_count: ULONG, out_type: *mut UCHAR, out_buf: *mut PVOID, out_len: *mut UCHAR) -> BOOLEAN;
+    fn ScsiValidateInformationSenseDescriptor(buf: PVOID, buf_len: UCHAR) -> BOOLEAN;
+}
+
+// Inline helpers replacing C FORCEINLINE/macro functions.
+
+/// ClasspTransferPacketGetCdb(Pkt) = SrbGetCdb(Pkt->Srb)
+#[inline(always)]
+unsafe fn classp_get_cdb(pkt: PTRANSFER_PACKET) -> PCDB {
+    SrbGetCdb((*pkt).Srb as PVOID)
+}
+
+/// ClasspTransferPacketGetSenseInfoBuffer(Pkt) = SrbGetSenseInfoBuffer(Pkt->Srb)
+#[inline(always)]
+unsafe fn classp_get_sense_buf(pkt: PTRANSFER_PACKET) -> PVOID {
+    crate::srblib::SrbGetSenseInfoBuffer((*pkt).Srb as PVOID)
+}
+
+/// ClasspTransferPacketGetSenseInfoBufferLength(Pkt) = SrbGetSenseInfoBufferLength(Pkt->Srb)
+#[inline(always)]
+unsafe fn classp_get_sense_buf_len(pkt: PTRANSFER_PACKET) -> UCHAR {
+    crate::srblib::SrbGetSenseInfoBufferLength((*pkt).Srb as PVOID)
+}
+
+/// PORT_ALLOCATED_SENSE_EX(FdoExtension, Srb):
+/// TEST_FLAG(SrbGetSrbFlags(Srb), SRB_FLAGS_PORT_DRIVER_ALLOCSENSE)
+///   && TEST_FLAG(SrbGetSrbFlags(Srb), SRB_FLAGS_FREE_SENSE_BUFFER)
+///   && SrbGetSenseInfoBuffer(Srb) != FdoExtension->SenseData
+#[inline(always)]
+unsafe fn port_allocated_sense_ex(fdo_extension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID) -> bool {
+    let flags = SrbGetSrbFlags(srb);
+    (flags & SRB_FLAGS_PORT_DRIVER_ALLOCSENSE) != 0
+        && (flags & SRB_FLAGS_FREE_SENSE_BUFFER) != 0
+        && crate::srblib::SrbGetSenseInfoBuffer(srb) != (*fdo_extension).SenseData as PVOID
+}
+
+/// FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(FdoExtension, Srb):
+/// ExFreePool(SrbGetSenseInfoBuffer(Srb));
+/// SrbSetSenseInfoBuffer(Srb, FdoExtension->SenseData);
+/// SrbSetSenseInfoBufferLength(Srb, GET_FDO_EXTENSION_SENSE_DATA_LENGTH(FdoExtension));
+/// SrbClearSrbFlags(Srb, SRB_FLAGS_FREE_SENSE_BUFFER);
+#[inline(always)]
+unsafe fn free_port_allocated_sense_buffer_ex(fdo_extension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID) {
+    ExFreePool(crate::srblib::SrbGetSenseInfoBuffer(srb));
+    SrbSetSenseInfoBuffer(srb, (*fdo_extension).SenseData as PVOID);
+    // GET_FDO_EXTENSON_SENSE_DATA_LENGTH: use SenseDataLength if non-zero, else SENSE_BUFFER_SIZE
+    let sense_len: ULONG = if (*fdo_extension).SenseDataLength > 0 {
+        (*fdo_extension).SenseDataLength as ULONG
+    } else {
+        18u32 // SENSE_BUFFER_SIZE
+    };
+    SrbSetSenseInfoBufferLength(srb, sense_len);
+    SrbClearSrbFlags(srb, SRB_FLAGS_FREE_SENSE_BUFFER);
+}
+
+/// REVERSE_BYTES_QUAD: byte-swap 8 bytes from src into dst.
+#[inline(always)]
+unsafe fn reverse_bytes_quad(dst: *mut u8, src: *const u8) {
+    *dst.add(7) = *src.add(0);
+    *dst.add(6) = *src.add(1);
+    *dst.add(5) = *src.add(2);
+    *dst.add(4) = *src.add(3);
+    *dst.add(3) = *src.add(4);
+    *dst.add(2) = *src.add(5);
+    *dst.add(1) = *src.add(6);
+    *dst.add(0) = *src.add(7);
 }
 #[no_mangle]
 pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
@@ -43,23 +120,23 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
     let fdoData = (*fdoExtension).PrivateFdoData;
     let mut timesAlreadyRetried: u32 = 0;
     let mut shouldRetry: u8 = 0;
-    let pCdb = ClasspTransferPacketGetCdb(Pkt);
+    let pCdb = classp_get_cdb(Pkt);
     (*Pkt).RetryIn100nsUnits = 0 as i64;
     if ClasspTransferPacketGetNumberOfRetriesDone(Pkt, pCdb, &mut timesAlreadyRetried) == 0 {
         TracePrint(
-            2,
-            (TRACE_FLAG_GENERAL) as i32,
+            2u32,
+            TRACE_FLAG_GENERAL,
             b"Unhandled SRB Function %xh in error path for packet %p (did miniport change Srb.Cdb.OperationCode ?)\0"
                 .as_ptr() as PCCHAR,
-            (*pCdb).CDB10.OperationCode as u32,
+            (*pCdb).CDB10.as_ref().OperationCode as u32,
             Pkt,
         );
     }
     if !(*fdoData).InterpretSenseInfo.is_null() {
         let mut tempSrb: _SCSI_REQUEST_BLOCK = ::core::mem::zeroed();
-        let mut srbPtr: PSCSI_REQUEST_BLOCK = (*Pkt).Srb as PSCSI_REQUEST_BLOCK;
+        let mut srbPtr: PSCSI_REQUEST_BLOCK = (*Pkt).Srb as PVOID as PSCSI_REQUEST_BLOCK;
         debug_assert!(!(*(*fdoData).InterpretSenseInfo).Interpret.is_none());
-        if (*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).Function as i32 == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as i32
+        if (*((*Pkt).Srb as PVOID as PSCSI_REQUEST_BLOCK)).Function as i32 == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as i32
             && ((*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension).SrbSupport
                 & CLASS_SRB_STORAGE_REQUEST_BLOCK as u32)
                 == 0
@@ -79,8 +156,8 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
             &mut (*Pkt).RetryIn100nsUnits,
         );
     } else {
-        let senseInfoBuffer = ClasspTransferPacketGetSenseInfoBuffer(Pkt);
-        let senseInfoBufferLength = ClasspTransferPacketGetSenseInfoBufferLength(Pkt);
+        let senseInfoBuffer = classp_get_sense_buf(Pkt);
+        let senseInfoBufferLength = classp_get_sense_buf_len(Pkt);
         let mut validSense: u8 = 0;
         let mut senseKey: u8 = 0;
         let mut additionalSenseCode: u8 = 0;
@@ -94,7 +171,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
             &mut additionalSenseCode,
             &mut additionalSenseQual,
         );
-        if (*pCdb).MEDIA_REMOVAL.OperationCode as i32 == SCSIOP_MEDIUM_REMOVAL {
+        if (*pCdb).MEDIA_REMOVAL.as_ref().OperationCode as u32 == SCSIOP_MEDIUM_REMOVAL {
             let mut retryIntervalSeconds: u32 = 0;
             shouldRetry = ClassInterpretSenseInfo(
                 (*Pkt).Fdo,
@@ -115,7 +192,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                     }
                 }
                 if setRetryIntervalSeconds == 0
-                    && ((*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).SrbStatus
+                    && ((*((*Pkt).Srb as PVOID as PSCSI_REQUEST_BLOCK)).SrbStatus
                         & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8)
                         == (SRB_STATUS_SELECTION_TIMEOUT) as u8
                 {
@@ -129,8 +206,8 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                 (*Pkt).RetryIn100nsUnits = retryIntervalSeconds as i64;
                 (*Pkt).RetryIn100nsUnits *= (1000 * 1000 * 10) as i64;
             }
-        } else if (*pCdb).MODE_SENSE.OperationCode as i32 == SCSIOP_MODE_SENSE
-            || (*pCdb).MODE_SENSE.OperationCode as i32 == SCSIOP_MODE_SENSE10
+        } else if (*pCdb).MODE_SENSE.as_ref().OperationCode as u32 == SCSIOP_MODE_SENSE
+            || (*pCdb).MODE_SENSE.as_ref().OperationCode as u32 == SCSIOP_MODE_SENSE10
         {
             let mut retryIntervalSeconds_0: u32 = 0;
             shouldRetry = ClassInterpretSenseInfo(
@@ -152,7 +229,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                     }
                 }
                 if setRetryIntervalSeconds_0 == 0
-                    && ((*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).SrbStatus
+                    && ((*((*Pkt).Srb as PVOID as PSCSI_REQUEST_BLOCK)).SrbStatus
                         & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8)
                         == (SRB_STATUS_SELECTION_TIMEOUT) as u8
                 {
@@ -164,7 +241,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
             }
             if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status == STATUS_VERIFY_REQUIRED {
                 shouldRetry = 1;
-            } else if ((*(*(*Pkt).Srb as PSCSI_REQUEST_BLOCK)).SrbStatus
+            } else if ((*((*Pkt).Srb as PVOID as PSCSI_REQUEST_BLOCK)).SrbStatus
                 & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8)
                 == (SRB_STATUS_DATA_OVERRUN) as u8
             {
@@ -175,8 +252,8 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                 (*Pkt).RetryIn100nsUnits = retryIntervalSeconds_0 as i64;
                 (*Pkt).RetryIn100nsUnits *= (1000 * 1000 * 10) as i64;
             }
-        } else if (*pCdb).CDB10.OperationCode as i32 == SCSIOP_READ_CAPACITY
-            || (*pCdb).CDB16.OperationCode as i32 == SCSIOP_READ_CAPACITY16
+        } else if (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_READ_CAPACITY
+            || (*pCdb).CDB16.as_ref().OperationCode as u32 == SCSIOP_READ_CAPACITY16
         {
             let mut retryIntervalSeconds_1: u32 = 0;
             shouldRetry = ClassInterpretSenseInfo(
@@ -195,14 +272,14 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                 (*Pkt).RetryIn100nsUnits = retryIntervalSeconds_1 as i64;
                 (*Pkt).RetryIn100nsUnits *= (1000 * 1000 * 10) as i64;
             }
-        } else if (*pCdb).CDB10.OperationCode as i32 == SCSIOP_READ6
-            || (*pCdb).CDB10.OperationCode as i32 == SCSIOP_READ
-            || (*pCdb).CDB10.OperationCode as i32 == SCSIOP_READ12
-            || (*pCdb).CDB10.OperationCode as i32 == SCSIOP_READ16
-            || (*pCdb).CDB10.OperationCode as i32 == SCSIOP_WRITE6
-            || (*pCdb).CDB10.OperationCode as i32 == SCSIOP_WRITE
-            || (*pCdb).CDB10.OperationCode as i32 == SCSIOP_WRITE12
-            || (*pCdb).CDB10.OperationCode as i32 == SCSIOP_WRITE16
+        } else if (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_READ6
+            || (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_READ
+            || (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_READ12
+            || (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_READ16
+            || (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_WRITE6
+            || (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_WRITE
+            || (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_WRITE12
+            || (*pCdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_WRITE16
         {
             let mut retryIntervalSeconds_2: u32 = 0;
             let origCurrentSp = IoGetCurrentIrpStackLocation((*Pkt).OriginalIrp);
@@ -217,7 +294,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
             );
             if (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status == STATUS_INSUFFICIENT_RESOURCES {
                 shouldRetry = 1;
-            } else if TEST_FLAG(((*origCurrentSp).Flags) as u32, SL_OVERRIDE_VERIFY_VOLUME)
+            } else if TEST_FLAG(((*origCurrentSp).Flags) as u32, SL_OVERRIDE_VERIFY_VOLUME) != 0
                 && (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status == STATUS_VERIFY_REQUIRED
             {
                 (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status = STATUS_IO_DEVICE_ERROR;
@@ -251,7 +328,7 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                         && (additionalSenseCode as i32 == (SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR) as i32
                             && additionalSenseQual as i32 == (SCSI_SENSEQ_DATA_UNDERRUN) as i32)
                     {
-                        if IsDescriptorSenseDataFormat(senseInfoBuffer) {
+                        if IsDescriptorSenseDataFormat(senseInfoBuffer) != 0 {
                             let mut startBuffer: PVOID = core::ptr::null_mut();
                             let mut startBufferLength: u8 = 0;
                             if ScsiGetSenseDescriptor(
@@ -282,11 +359,10 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                                             outBufferLength,
                                         ) != 0
                                         {
-                                            REVERSE_BYTES_QUAD(
-                                                &mut information,
-                                                &(*(outBuffer
-                                                    as PSCSI_SENSE_DESCRIPTOR_INFORMATION))
-                                                    .Information,
+                                            reverse_bytes_quad(
+                                                &mut information as *mut u64 as *mut u8,
+                                                (*(outBuffer as PSCSI_SENSE_DESCRIPTOR_INFORMATION))
+                                                    .Information.as_ptr(),
                                             );
                                             isInformationValid = 1;
                                         }
@@ -297,8 +373,8 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
                             }
                         } else {
                             REVERSE_BYTES(
-                                &mut information,
-                                &(*(senseInfoBuffer as PFIXED_SENSE_DATA)).Information,
+                                &mut information as *mut u64 as *mut u32,
+                                (*(senseInfoBuffer as PFIXED_SENSE_DATA)).Information.as_ptr() as *const u32,
                             );
                             isInformationValid = 1;
                         }
@@ -311,10 +387,10 @@ pub unsafe extern "C" fn InterpretTransferPacketError(Pkt: PTRANSFER_PACKET) -> 
         } else {
             TracePrint(
                 2,
-                (TRACE_FLAG_GENERAL) as i32,
+                TRACE_FLAG_GENERAL,
                 b"Unhandled SRB Function %xh in error path for packet %p (did miniport change Srb.Cdb.OperationCode ?)\0"
                     .as_ptr() as PCCHAR,
-                (*pCdb).CDB10.OperationCode as u32,
+                (*pCdb).CDB10.as_ref().OperationCode as u32,
                 Pkt,
             );
         }
@@ -415,7 +491,7 @@ pub unsafe extern "C" fn RetryTransferPacket(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
 pub unsafe extern "C" fn TransferPacketQueueRetryDpc(Pkt: PTRANSFER_PACKET) {
     KeInitializeDpc(
         core::ptr::addr_of_mut!((*Pkt).RetryTimerDPC),
-        TransferPacketRetryTimerDpc as unsafe extern "C" fn(PKDPC, PVOID, PVOID, PVOID),
+        Some(core::mem::transmute::<unsafe extern "system" fn(PKDPC, PVOID, PVOID, PVOID), unsafe extern "stdcall" fn(*mut ntkrnl_sys::ddk::_KDPC, PVOID, PVOID, PVOID)>(TransferPacketRetryTimerDpc)),
         Pkt as PVOID,
     );
     if (*Pkt).RetryIn100nsUnits == 0i64 {
@@ -456,14 +532,14 @@ pub unsafe extern "system" fn TransferPacketRetryTimerDpc(
     let fdo: PDEVICE_OBJECT = (*pkt).Fdo;
     let fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION = (*fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
 
-    if PORT_ALLOCATED_SENSE_EX(fdoExtension, (*pkt).Srb) != 0 {
+    if port_allocated_sense_ex(fdoExtension, (*pkt).Srb as PVOID) {
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_RW,
             b"Freeing port-allocated sense buffer for pkt %ph.\0".as_ptr() as PCHAR,
             pkt,
         );
-        FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdoExtension, (*pkt).Srb);
+        free_port_allocated_sense_buffer_ex(fdoExtension, (*pkt).Srb as PVOID);
         SrbSetSenseInfoBuffer(
             (*pkt).Srb as PVOID,
             core::ptr::addr_of_mut!((*pkt).SrbErrorSenseData) as PVOID,
@@ -474,12 +550,12 @@ pub unsafe extern "system" fn TransferPacketRetryTimerDpc(
         );
     } else {
         NT_ASSERT(
-            SrbGetSenseInfoBuffer((*pkt).Srb as PVOID) as *mut core::ffi::c_void
-                == core::ptr::addr_of_mut!((*pkt).SrbErrorSenseData) as *mut core::ffi::c_void,
+            (SrbGetSenseInfoBuffer((*pkt).Srb as PVOID) as *mut core::ffi::c_void
+                == core::ptr::addr_of_mut!((*pkt).SrbErrorSenseData) as *mut core::ffi::c_void) as u8,
         );
         NT_ASSERT(
-            SrbGetSenseInfoBufferLength((*pkt).Srb as PVOID) as usize
-                <= core::mem::size_of::<SENSE_DATA_EX>(),
+            (SrbGetSenseInfoBufferLength((*pkt).Srb as PVOID) as usize
+                <= core::mem::size_of::<SENSE_DATA_EX>()) as u8,
         );
     }
 

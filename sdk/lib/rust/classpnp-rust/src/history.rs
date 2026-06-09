@@ -1,11 +1,23 @@
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
+
+extern "C" {
+    fn KeQueryTickCount(CurrentCount: *mut i64);
+}
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PSRB_HISTORY, PSRB_HISTORY_ITEM, SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT, SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED, SENSE_DATA, SRB_HISTORY, SRB_HISTORY_ITEM, _CLASS_PRIVATE_FDO_DATA, _FUNCTIONAL_DEVICE_EXTENSION, _SENSE_DATA, _SRB_HISTORY, _SRB_HISTORY_ITEM, _TRANSFER_PACKET};
 use ntkrnl_sys::ddk::{BOOLEAN, PCSTR, PVOID, UCHAR, ULONG};
 use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::driver_ddk::{DbgPrint};
+
+extern "C" {
+    fn ClasspTransferPacketGetSenseInfoBuffer(Pkt: *mut _TRANSFER_PACKET) -> PVOID;
+    fn ClasspTransferPacketGetSenseInfoBufferLength(Pkt: *mut _TRANSFER_PACKET) -> UCHAR;
+    fn ScsiConvertToFixedSenseFormat(DescriptorSenseData: PVOID, DescriptorSenseDataLength: UCHAR, FixedSenseData: PVOID, FixedSenseDataLength: UCHAR) -> BOOLEAN;
+    fn ScsiGetTotalSenseByteCountIndicated(SenseInfoBuffer: PVOID, SenseInfoBufferLength: UCHAR, ByteCount: *mut UCHAR) -> BOOLEAN;
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn HistoryInitializeRetryLogs(History: PSRB_HISTORY, HistoryCount: ULONG) {
     let tmp_size: ULONG = (HistoryCount as usize)
@@ -66,7 +78,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
         }
         let compress_fn = (*(*fdoData).InterpretSenseInfo).Compress
             .expect("non-null function pointer");
-        compress_fn((*fdoExtension).DeviceObject, history);
+        compress_fn((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject, history);
 
         // assert UsedHistoryCount < TotalHistoryCount after compression
         if !((*history).UsedHistoryCount < (*history).TotalHistoryCount) {
@@ -106,7 +118,7 @@ pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
     );
 
     // store tick count
-    KeQueryTickCount(&raw mut (*item).TickCountSent as *mut i64);
+    KeQueryTickCount(&raw mut (*item).TickCountSent.QuadPart);
 }
 #[no_mangle]
 pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
@@ -135,7 +147,7 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
     let item: PSRB_HISTORY_ITEM = ((*history).History.as_mut_ptr())
         .add((*history).UsedHistoryCount as usize - 1);
 
-    KeQueryTickCount(&mut (*item).TickCountCompleted);
+    KeQueryTickCount(&raw mut (*item).TickCountCompleted.QuadPart);
     (*item).SrbStatus = (*(*Pkt).Srb).SrbStatus;
 
     let mut senseInfoBuffer: PVOID = ClasspTransferPacketGetSenseInfoBuffer(Pkt);
@@ -146,8 +158,8 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
 
     // Inline IsDescriptorSenseDataFormat check
     let byte = *(senseInfoBuffer as *const u8);
-    if (byte & 0x7F) as i32 == SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT
-        || (byte & 0x7F) as i32 == SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED
+    if (byte & 0x7F) as u32 == SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT
+        || (byte & 0x7F) as u32 == SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED
     {
         validSense = ScsiConvertToFixedSenseFormat(
             senseInfoBuffer,
@@ -168,7 +180,7 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
     );
 
     if validSense != 0 {
-        let mut senseSize: UCHAR;
+        let mut senseSize: UCHAR = 0;
         if ScsiGetTotalSenseByteCountIndicated(
             senseInfoBuffer,
             senseInfoBufferLength,

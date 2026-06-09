@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CLONG, va_list};
+use ntkrnl_sys::ddk::{CLONG};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PSRBEX_DATA, PSRB_ALLOCATE_ROUTINE, PSTORAGE_REQUEST_BLOCK, PSTOR_ADDRESS, SRBEX_DATA_BIDIRECTIONAL, SRBEX_DATA_IO_INFO, SRBEX_DATA_PNP, SRBEX_DATA_POWER, SRBEX_DATA_SCSI_CDB16, SRBEX_DATA_SCSI_CDB32, SRBEX_DATA_SCSI_CDB_VAR, SRBEX_DATA_WMI, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_SIGNATURE, STORAGE_ADDRESS_TYPE_BTL8, STORAGE_REQUEST_BLOCK, STORAGE_REQUEST_BLOCK_VERSION_1, STOR_ADDRESS_TYPE_BTL8, STOR_ADDR_BTL8, STOR_ADDR_BTL8_ADDRESS_LENGTH, _SRBEXDATATYPE as SRBEXDATATYPE, _SRBEX_DATA, _STOR_ADDRESS};
@@ -21,7 +21,7 @@ use crate::types::{SRB_FUNCTION_EXECUTE_SCSI};
 // the classic SCSI_REQUEST_BLOCK layout. ReactOS uses the classic SRB in practice but
 // the extended branch is preserved for fidelity.
 use crate::types::{PSCSI_REQUEST_BLOCK, PSRBEX_DATA_SCSI_CDB16, PSRBEX_DATA_SCSI_CDB32,
-                   PSRBEX_DATA_SCSI_CDB_VAR, PSRBEX_DATA};
+                   PSRBEX_DATA_SCSI_CDB_VAR};
 
 #[inline]
 unsafe fn srb_is_ex(srb: PSTORAGE_REQUEST_BLOCK) -> bool {
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn SrbGetOriginalRequest(Srb: PVOID) -> PVOID {
 pub unsafe extern "C" fn SrbGetSystemStatus(Srb: PVOID) -> ULONG {
     let srb = Srb as PSTORAGE_REQUEST_BLOCK;
     if srb_is_ex(srb) { (*srb).SystemStatus }
-    else { (*(Srb as PSCSI_REQUEST_BLOCK)).__bindgen_anon_1.InternalStatus }
+    else { (*(Srb as PSCSI_REQUEST_BLOCK)).__bindgen_anon_1.bindgen_union_field }
 }
 
 #[no_mangle]
@@ -96,7 +96,7 @@ pub unsafe extern "C" fn SrbSetScsiStatus(Srb: PVOID, ScsiStatus: UCHAR) {
 pub unsafe extern "C" fn SrbSetQueueSortKey(Srb: PVOID, QueueSortKey: ULONG) {
     let srb = Srb as PSTORAGE_REQUEST_BLOCK;
     if !srb_is_ex(srb) {
-        (*(Srb as PSCSI_REQUEST_BLOCK)).__bindgen_anon_1.QueueSortKey = QueueSortKey;
+        (*(Srb as PSCSI_REQUEST_BLOCK)).__bindgen_anon_1.bindgen_union_field = QueueSortKey;
     }
 }
 
@@ -197,6 +197,22 @@ pub unsafe extern "C" fn SrbGetScsiData(
 pub unsafe extern "C" fn DefaultStorageRequestBlockAllocateRoutine(ByteSize: CLONG) -> PVOID {
     ExAllocatePoolWithTag(NonPagedPoolNx, ByteSize as SIZE_T, 0x2B627273u32)
 }
+// SRBEX size constants (from srb.h; sizeof(ULONG)=4, sizeof(UCHAR)=1, sizeof(PVOID) is arch-dependent)
+const SRBEX_DATA_BIDIRECTIONAL_LENGTH: usize = 2 * core::mem::size_of::<ULONG>() + core::mem::size_of::<PVOID>();
+const SRBEX_DATA_SCSI_CDB16_LENGTH: usize = 20 * core::mem::size_of::<UCHAR>() + core::mem::size_of::<ULONG>() + core::mem::size_of::<PVOID>();
+const SRBEX_DATA_SCSI_CDB32_LENGTH: usize = 36 * core::mem::size_of::<UCHAR>() + core::mem::size_of::<ULONG>() + core::mem::size_of::<PVOID>();
+const SRBEX_DATA_SCSI_CDB_VAR_LENGTH_MIN: usize = 4 * core::mem::size_of::<UCHAR>() + 3 * core::mem::size_of::<ULONG>() + core::mem::size_of::<PVOID>();
+const SRBEX_DATA_WMI_LENGTH: usize = 4 * core::mem::size_of::<UCHAR>() + core::mem::size_of::<ULONG>() + core::mem::size_of::<PVOID>();
+const SRBEX_DATA_POWER_LENGTH: usize = 4 * core::mem::size_of::<UCHAR>() + 2 * core::mem::size_of::<u32>();  // STOR_DEVICE_POWER_STATE + STOR_POWER_ACTION = 2 u32
+const SRBEX_DATA_PNP_LENGTH: usize = 4 * core::mem::size_of::<UCHAR>() + core::mem::size_of::<u32>() + 2 * core::mem::size_of::<ULONG>(); // STOR_PNP_ACTION + 2×ULONG
+const SRBEX_DATA_IO_INFO_LENGTH: usize = 5 * core::mem::size_of::<ULONG>() + 4 * core::mem::size_of::<UCHAR>();
+
+// NOTE: pInitializeStorageRequestBlock / InitializeStorageRequestBlock /
+// CreateStorageRequestBlock require the `c_variadic` feature (core::ffi::VaList
+// and `...` in fn definitions). This feature is nightly-only on Rust 1.92.
+// The function bodies are preserved intact below so no translation work is lost;
+// enabling the feature in the crate root (lib.rs) would make them compile.
+// NEEDS SHARED SUBSTRATE: c_variadic feature gate in crate root.
 #[no_mangle]
 pub unsafe extern "C" fn pInitializeStorageRequestBlock(
     Srb: PSTORAGE_REQUEST_BLOCK,
@@ -268,15 +284,15 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
         match type_0 {
             1 => {
                 length = ::core::mem::size_of::<SRBEX_DATA_BIDIRECTIONAL>() as ULONG;
-                srbExDataLength = SRBEX_DATA_BIDIRECTIONAL_LENGTH;
+                srbExDataLength = SRBEX_DATA_BIDIRECTIONAL_LENGTH as ULONG;
             }
             64 => {
                 length = ::core::mem::size_of::<SRBEX_DATA_SCSI_CDB16>() as ULONG;
-                srbExDataLength = SRBEX_DATA_SCSI_CDB16_LENGTH;
+                srbExDataLength = SRBEX_DATA_SCSI_CDB16_LENGTH as ULONG;
             }
             65 => {
                 length = ::core::mem::size_of::<SRBEX_DATA_SCSI_CDB32>() as ULONG;
-                srbExDataLength = SRBEX_DATA_SCSI_CDB32_LENGTH;
+                srbExDataLength = SRBEX_DATA_SCSI_CDB32_LENGTH as ULONG;
             }
             66 => {
                 varLength = ap.arg::<ULONG>();
@@ -286,19 +302,19 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
             }
             96 => {
                 length = ::core::mem::size_of::<SRBEX_DATA_WMI>() as ULONG;
-                srbExDataLength = SRBEX_DATA_WMI_LENGTH;
+                srbExDataLength = SRBEX_DATA_WMI_LENGTH as ULONG;
             }
             97 => {
                 length = ::core::mem::size_of::<SRBEX_DATA_POWER>() as ULONG;
-                srbExDataLength = SRBEX_DATA_POWER_LENGTH;
+                srbExDataLength = SRBEX_DATA_POWER_LENGTH as ULONG;
             }
             98 => {
                 length = ::core::mem::size_of::<SRBEX_DATA_PNP>() as ULONG;
-                srbExDataLength = SRBEX_DATA_PNP_LENGTH;
+                srbExDataLength = SRBEX_DATA_PNP_LENGTH as ULONG;
             }
             128 => {
                 length = ::core::mem::size_of::<SRBEX_DATA_IO_INFO>() as ULONG;
-                srbExDataLength = SRBEX_DATA_IO_INFO_LENGTH;
+                srbExDataLength = SRBEX_DATA_IO_INFO_LENGTH as ULONG;
             }
             _ => {
                 status = STATUS_INVALID_PARAMETER;
@@ -420,7 +436,7 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
     va_end(&mut ap);
     if status == STATUS_SUCCESS {
         if !AllocateRoutine.is_none() {
-            *Srb = AllocateRoutine(sizeNeeded as CLONG) as PSTORAGE_REQUEST_BLOCK;
+            *Srb = AllocateRoutine.unwrap()(sizeNeeded as CLONG) as PSTORAGE_REQUEST_BLOCK;
             if (*Srb).is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
             }

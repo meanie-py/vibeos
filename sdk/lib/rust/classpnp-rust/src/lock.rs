@@ -4,7 +4,8 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CLONG, File, GenericEqual, GenericGreaterThan, GenericLessThan, KeInitializeSpinLock, PCSTR, PDEVICE_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIRP, PRTL_GENERIC_TABLE, RTL_GENERIC_TABLE, RtlInitializeGenericTable, RtlLookupElementGenericTable, RtlNumberGenericTableElements};
+use ntkrnl_sys::ddk::{CLONG, KeInitializeSpinLock, PCSTR, PDEVICE_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIRP, PRTL_GENERIC_TABLE, RTL_GENERIC_TABLE, RtlInitializeGenericTable, RtlLookupElementGenericTable, RtlNumberGenericTableElements, POOL_TYPE};
+use ntkrnl_sys::ddk::{_RTL_GENERIC_COMPARE_RESULTS_GenericLessThan as GenericLessThan, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan as GenericGreaterThan, _RTL_GENERIC_COMPARE_RESULTS_GenericEqual as GenericEqual};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{TRACE_LEVEL_ERROR};
@@ -17,7 +18,6 @@ use crate::glue::{TRACE_FLAG_LOCK};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{NonPagedPoolNx};
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::ddk::{_LARGE_INTEGER__bindgen_ty_1};
 use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{ExFreePool, RtlAssert};
@@ -37,6 +37,7 @@ pub struct _REMOVE_TRACKING_BLOCK {
     pub File: PCSTR,
     pub Line: ULONG,
 }
+pub type REMOVE_TRACKING_BLOCK = _REMOVE_TRACKING_BLOCK;
 pub type PREMOVE_TRACKING_BLOCK = *mut _REMOVE_TRACKING_BLOCK;
 #[no_mangle]
 pub unsafe extern "system" fn ClassCompleteRequest(
@@ -48,9 +49,7 @@ pub unsafe extern "system" fn ClassCompleteRequest(
     let mut removeTrackingList: PRTL_GENERIC_TABLE = core::ptr::null_mut();
     let mut searchDataBlock: REMOVE_TRACKING_BLOCK = REMOVE_TRACKING_BLOCK {
         Tag: core::ptr::null_mut(),
-        TimeLocked: LARGE_INTEGER {
-            __bindgen_anon_1: _LARGE_INTEGER__bindgen_ty_1 { LowPart: 0, HighPart: 0 },
-        },
+        TimeLocked: LARGE_INTEGER { QuadPart: 0 },
         File: core::ptr::null(),
         Line: 0,
     };
@@ -96,7 +95,7 @@ pub unsafe extern "system" fn ClassCompleteRequest(
     IoCompleteRequest(Irp, PriorityBoost);
 }
 #[no_mangle]
-pub unsafe extern "system" fn RemoveTrackingCompareRoutine(
+pub unsafe extern "stdcall" fn RemoveTrackingCompareRoutine(
     Table: PRTL_GENERIC_TABLE,
     FirstStruct: PVOID,
     SecondStruct: PVOID,
@@ -111,22 +110,22 @@ pub unsafe extern "system" fn RemoveTrackingCompareRoutine(
     GenericEqual
 }
 #[no_mangle]
-pub unsafe extern "system" fn RemoveTrackingAllocateRoutine(
+pub unsafe extern "stdcall" fn RemoveTrackingAllocateRoutine(
     Table: PRTL_GENERIC_TABLE,
     ByteSize: CLONG,
 ) -> PVOID {
     ExAllocatePoolWithTag(
-        POOL_TYPE::NonPagedPoolNx,
+        NonPagedPoolNx as POOL_TYPE,
         ByteSize as usize,
         CLASS_TAG_LOCK_TRACKING,
     )
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn RemoveTrackingFreeRoutine(Table: PRTL_GENERIC_TABLE, Buffer: *mut core::ffi::c_void) {
+#[no_mangle]
+pub unsafe extern "stdcall" fn RemoveTrackingFreeRoutine(Table: PRTL_GENERIC_TABLE, Buffer: *mut core::ffi::c_void) {
     let _ = Table;
     if !Buffer.is_null() {
         ExFreePool(Buffer);
-        Buffer = core::ptr::null_mut();
+        // C source zeros the local pointer here (no-op after free)
     }
 }
 #[no_mangle]

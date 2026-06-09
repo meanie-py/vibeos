@@ -18,6 +18,13 @@ use crate::shims::*;
 use crate::types::{ClassGetDeviceParameter, ServiceTransferRequest};
 use ntkrnl_sys::driver_ddk::{DbgPrint};
 
+extern "C" {
+    pub fn ClasspGetCurrentTime() -> LARGE_INTEGER;
+    pub fn ClasspTimeDiffToMs(time: u64) -> u64;
+    pub fn RtlULongLongSub(Minuend: u64, Subtrahend: u64, Result: *mut u64) -> NTSTATUS;
+    pub fn StorDebugPrint(DebugPrintLevel: i32, Flag: u32, Format: *const i8, ...);
+}
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 pub const CLASSP_REG_SUBKEY_NAME: [::core::ffi::c_ushort; 9] = unsafe {
@@ -49,7 +56,7 @@ pub unsafe extern "C" fn EnqueueDeferredClientIrp(Fdo: PDEVICE_OBJECT, Irp: PIRP
     KeAcquireSpinLock((core::ptr::addr_of_mut!((*fdoData).SpinLock)).cast(), core::ptr::addr_of_mut!(oldIrql));
     InsertTailList(
         core::ptr::addr_of_mut!((*fdoData).DeferredClientIrpList),
-        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_1.ListEntry),
+        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry),
     );
     KeReleaseSpinLock((core::ptr::addr_of_mut!((*fdoData).SpinLock)).cast(), oldIrql);
 }
@@ -58,13 +65,13 @@ pub unsafe extern "C" fn DequeueDeferredClientIrp(Fdo: PDEVICE_OBJECT) -> PIRP {
     let fdoExtension = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdoData = (*fdoExtension).PrivateFdoData;
     let irp: PIRP;
-    if IsListEmpty(&raw mut (*fdoData).DeferredClientIrpList) != 0 {
+    if IsListEmpty(&raw mut (*fdoData).DeferredClientIrpList) {
         irp = core::ptr::null_mut();
     } else {
         let listEntry: PLIST_ENTRY;
         let mut oldIrql: KIRQL = 0;
         KeAcquireSpinLock((&raw mut (*fdoData).SpinLock).cast(), &mut oldIrql);
-        if IsListEmpty(&raw mut (*fdoData).DeferredClientIrpList) != 0 {
+        if IsListEmpty(&raw mut (*fdoData).DeferredClientIrpList) {
             listEntry = core::ptr::null_mut();
         } else {
             listEntry = RemoveHeadList(&raw mut (*fdoData).DeferredClientIrpList);
@@ -73,10 +80,10 @@ pub unsafe extern "C" fn DequeueDeferredClientIrp(Fdo: PDEVICE_OBJECT) -> PIRP {
         if listEntry.is_null() {
             irp = core::ptr::null_mut();
         } else {
-            let offset = (&raw mut (*core::ptr::null_mut::<IRP>()).Tail.Overlay.ListEntry) as *const u8 as usize;
+            let offset = (&raw mut (*core::ptr::null_mut::<IRP>()).Tail.Overlay.__bindgen_anon_2.ListEntry) as *const u8 as usize;
             irp = (listEntry as *const u8).offset(-(offset as isize)) as PIRP;
             debug_assert!((*irp).Type == 6);
-            InitializeListHead(&raw mut (*irp).Tail.Overlay.ListEntry);
+            InitializeListHead(&raw mut (*irp).Tail.Overlay.__bindgen_anon_2.ListEntry);
         }
     }
     irp
@@ -124,7 +131,10 @@ pub unsafe extern "C" fn ClasspInitializeIdleTimer(FdoExtension: PFUNCTIONAL_DEV
     KeInitializeTimer(&raw mut (*fdoData).IdleTimer);
     KeInitializeDpc(
         &raw mut (*fdoData).IdleDpc,
-        Some(ClasspIdleTimerDpc as unsafe extern "C" fn(PKDPC, PVOID, PVOID, PVOID) -> ()),
+        {
+            let fp: unsafe extern "system" fn(PKDPC, PVOID, PVOID, PVOID) = ClasspIdleTimerDpc;
+            Some(core::mem::transmute(fp))
+        },
         FdoExtension as PVOID,
     );
     InitializeListHead(&raw mut (*fdoData).IdleIrpList);
@@ -182,13 +192,13 @@ pub unsafe extern "C" fn ClasspStopIdleTimer(FdoData: PCLASS_PRIVATE_FDO_DATA) {
         b"ClasspStopIdleTimer: Stop idle timer\n\0".as_ptr() as PCCHAR,
     );
 
-    let timerStarted = core::intrinsics::atomic_cxchg(
-        core::ptr::addr_of_mut!((*FdoData).IdleTimerStarted),
-        1i32,
-        0i32,
-    );
+    // InterlockedCompareExchange(&IdleTimerStarted, 0, 1) — swap 1→0, return old value
+    let was_started = {
+        let atomic_ref = &*(core::ptr::addr_of!((*FdoData).IdleTimerStarted) as *const AtomicI32);
+        atomic_ref.compare_exchange(1, 0, Ordering::AcqRel, Ordering::Relaxed).is_ok()
+    };
 
-    if timerStarted != 0 {
+    if was_started {
         KeCancelTimer(core::ptr::addr_of_mut!((*FdoData).IdleTimer));
     }
 }
@@ -246,7 +256,7 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
 ) {
     let fdoExtension = Context as PFUNCTIONAL_DEVICE_EXTENSION;
     let mut fdoData: PCLASS_PRIVATE_FDO_DATA;
-    let mut idleTime: ULONGLONG;
+    let mut idleTime: ULONGLONG = 0;
     let mut status: NTSTATUS;
     let mut currentTime: LARGE_INTEGER = core::mem::zeroed();
     let mut pCurrentTime: *mut LARGE_INTEGER = core::ptr::null_mut();
@@ -254,7 +264,7 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
     let _ = (Dpc, SystemArgument1, SystemArgument2);
 
     if fdoExtension.is_null() {
-        NT_ASSERT(!fdoExtension.is_null());
+        NT_ASSERT((!fdoExtension.is_null()) as u8);
         return;
     }
 
@@ -267,7 +277,7 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
 
         pCurrentTime = core::ptr::addr_of_mut!(currentTime);
         if ClasspIdleDurationSufficient(fdoData, &raw mut pCurrentTime) != 0 {
-            NT_ASSERT(!pCurrentTime.is_null());
+            NT_ASSERT((!pCurrentTime.is_null()) as u8);
             (*fdoData).AntiStarvationStartTime = *pCurrentTime;
             ClasspServiceIdleRequest(fdoExtension, 0u8);
         }
@@ -337,7 +347,7 @@ pub unsafe extern "C" fn ClasspEnqueueIdleRequest(
         &mut oldIrql,
     );
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*fdoData).IdleIrpList)) != 0 {
+    if IsListEmpty(core::ptr::addr_of_mut!((*fdoData).IdleIrpList)) {
         if (*fdoData).IdleIoCount != 0 {
             DbgPrint(
                 b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
@@ -352,7 +362,7 @@ pub unsafe extern "C" fn ClasspEnqueueIdleRequest(
 
     InsertTailList(
         core::ptr::addr_of_mut!((*fdoData).IdleIrpList),
-        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.ListEntry),
+        core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry),
     );
 
     (*fdoData).IdleIoCount += 1;
@@ -392,16 +402,16 @@ pub unsafe extern "C" fn ClasspDequeueIdleRequest(
 
     if (*fdoData).IdleIoCount > 0 {
         listEntry = RemoveHeadList(core::ptr::addr_of_mut!((*fdoData).IdleIrpList));
-        NT_ASSERT(listEntry != core::ptr::addr_of_mut!((*fdoData).IdleIrpList));
+        NT_ASSERT((listEntry != core::ptr::addr_of_mut!((*fdoData).IdleIrpList)) as u8);
         (*fdoData).IdleIoCount -= 1;
         if (*fdoData).IdleIoCount == 0 {
             ClasspStopIdleTimer(fdoData);
         }
         irp = ((listEntry as *const u8 as usize)
-            .wrapping_sub(core::mem::offset_of!(IRP, Tail.Overlay.ListEntry)))
+            .wrapping_sub(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)))
             as *mut IRP;
-        NT_ASSERT((*irp).Type == (IO_TYPE_IRP) as i16);
-        InitializeListHead(core::ptr::addr_of_mut!((*irp).Tail.Overlay.ListEntry));
+        NT_ASSERT(((*irp).Type == (IO_TYPE_IRP) as i16) as u8);
+        InitializeListHead(core::ptr::addr_of_mut!((*irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
     }
 
     KeReleaseSpinLock(
@@ -438,7 +448,7 @@ pub unsafe extern "C" fn ClasspServiceIdleRequest(
     let irp: PIRP = ClasspDequeueIdleRequest(FdoExtension);
     if !irp.is_null() {
         ServiceTransferRequest(
-            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_2.DeviceObject,
+            (*FdoExtension).__bindgen_anon_1.__bindgen_anon_1.as_ref().DeviceObject,
             irp,
             PostToDpc,
         );

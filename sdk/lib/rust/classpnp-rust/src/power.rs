@@ -6,11 +6,20 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DevicePowerState, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoSkipCurrentIrpStackLocation, LPCGUID, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, POWER_SETTING_CALLBACK, PowerActionHibernate, PowerActionNone, PowerActionSleep, PowerDeviceD0, PowerDeviceD3, PowerMonitorOff, STORAGE_IDLE_POWER, SystemPowerState};
+use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoSkipCurrentIrpStackLocation, LPCGUID, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, STORAGE_IDLE_POWER,
+    POWER_ACTION_PowerActionHibernate as PowerActionHibernate,
+    POWER_ACTION_PowerActionNone as PowerActionNone,
+    POWER_ACTION_PowerActionSleep as PowerActionSleep,
+    _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0,
+    _DEVICE_POWER_STATE_PowerDeviceD3 as PowerDeviceD3,
+    _MONITOR_DISPLAY_STATE_PowerMonitorOff as PowerMonitorOff,
+    _POWER_STATE_TYPE_SystemPowerState as SystemPowerState,
+    _POWER_STATE_TYPE_DevicePowerState as DevicePowerState,
+};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DO_VERIFY_VOLUME, IRP_MJ_SCSI, STATUS_DEVICE_BUSY, STATUS_DEVICE_DOES_NOT_EXIST, TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING, VPB_MOUNTED};
-use crate::types::{CDB, CLASS_POWER_CONTEXT, CLASS_POWER_OPTIONS, FDO_HACK_NO_SYNC_CACHE, IDLE_POWER_FDO_LIST_ENTRY, MAXIMUM_RETRIES, PCDB, PCLASS_POWER_CONTEXT, PCOMMON_DEVICE_EXTENSION, PFUNCTIONAL_DEVICE_EXTENSION, PIDLE_POWER_FDO_LIST_ENTRY, PSCSI_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, SCSIOP_START_STOP_UNIT, SCSIOP_SYNCHRONIZE_CACHE, SCSI_ADSENSE_LUN_NOT_READY, SCSI_REQUEST_BLOCK, SCSI_SENSEQ_FORMAT_IN_PROGRESS, SCSI_SENSE_NOT_READY, SRB_FLAGS_BYPASS_LOCKED_QUEUE, SRB_FLAGS_D3_PROCESSING, SRB_FLAGS_DISABLE_AUTOSENSE, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_FREE_SENSE_BUFFER, SRB_FLAGS_NO_DATA_TRANSFER, SRB_FLAGS_NO_QUEUE_FREEZE, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE, SRB_FUNCTION_EXECUTE_SCSI, SRB_FUNCTION_LOCK_QUEUE, SRB_FUNCTION_QUIESCE_DEVICE, SRB_FUNCTION_UNLOCK_QUEUE, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_SUCCESS, SRB_TYPE_STORAGE_REQUEST_BLOCK, START_UNIT_TIMEOUT, STORAGE_ADDRESS_TYPE_BTL8, STORAGE_REQUEST_BLOCK_HEADER, _CDB, _CLASS_POWER_CONTEXT, _COMMON_DEVICE_EXTENSION, _FUNCTIONAL_DEVICE_EXTENSION, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16, _STORAGE_REQUEST_BLOCK, _STORAGE_REQUEST_BLOCK_HEADER};
+use crate::types::{CDB, CLASS_POWER_CONTEXT, CLASS_POWER_OPTIONS, CLASS_POWER_DOWN_STATE3_PowerDownDeviceInitial3, CLASS_POWER_UP_STATE_PowerUpDeviceInitial, CLASS_POWER_UP_STATE_PowerUpDeviceLocked, CLASS_POWER_UP_STATE_PowerUpDeviceOn, CLASS_POWER_UP_STATE_PowerUpDeviceStarted, CLASS_POWER_UP_STATE_PowerUpDeviceUnlocked, FDO_HACK_NO_SYNC_CACHE, IDLE_POWER_FDO_LIST_ENTRY, MAXIMUM_RETRIES, PCDB, PCLASS_POWER_CONTEXT, PCOMMON_DEVICE_EXTENSION, PFUNCTIONAL_DEVICE_EXTENSION, PIDLE_POWER_FDO_LIST_ENTRY, PSCSI_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, SCSIOP_START_STOP_UNIT, SCSIOP_SYNCHRONIZE_CACHE, SCSI_ADSENSE_LUN_NOT_READY, SCSI_REQUEST_BLOCK, SCSI_SENSEQ_FORMAT_IN_PROGRESS, SCSI_SENSE_NOT_READY, SRB_FLAGS_BYPASS_LOCKED_QUEUE, SRB_FLAGS_D3_PROCESSING, SRB_FLAGS_DISABLE_AUTOSENSE, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_FREE_SENSE_BUFFER, SRB_FLAGS_NO_DATA_TRANSFER, SRB_FLAGS_NO_QUEUE_FREEZE, SRB_FLAGS_PORT_DRIVER_ALLOCSENSE, SRB_FUNCTION_EXECUTE_SCSI, SRB_FUNCTION_LOCK_QUEUE, SRB_FUNCTION_QUIESCE_DEVICE, SRB_FUNCTION_UNLOCK_QUEUE, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_SUCCESS, SRB_TYPE_STORAGE_REQUEST_BLOCK, START_UNIT_TIMEOUT, STORAGE_ADDRESS_TYPE_BTL8, STORAGE_REQUEST_BLOCK_HEADER, _CDB, _CLASS_POWER_CONTEXT, _COMMON_DEVICE_EXTENSION, _FUNCTIONAL_DEVICE_EXTENSION, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16, _STORAGE_REQUEST_BLOCK, _STORAGE_REQUEST_BLOCK_HEADER};
 use ntkrnl_sys::ddk::{DEVICE_POWER_STATE, PCCHAR, PCSTR};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED, STATUS_MORE_PROCESSING_REQUIRED};
@@ -21,6 +30,45 @@ use crate::glue::{NonPagedPoolNx};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE, CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE, FailurePredictionNone, IOCTL_STORAGE_ENABLE_IDLE_POWER};
 use crate::shims::*;
+// Local override for ClassAcquireRemoveLock which returns LONG (shim has no return type)
+unsafe extern "C" {
+    #[allow(improper_ctypes)]
+    fn ClassAcquireRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP) -> LONG;
+}
+// NEEDS SHARED SUBSTRATE: Po* and sense APIs not yet in ntkrnl-sys or driver_ddk
+unsafe extern "stdcall" {
+    fn PoSetPowerState(
+        DeviceObject: PDEVICE_OBJECT,
+        Type: ntkrnl_sys::ddk::POWER_STATE_TYPE,
+        State: ntkrnl_sys::ddk::POWER_STATE,
+    ) -> ntkrnl_sys::ddk::POWER_STATE;
+    fn PoQueryWatchdogTime(Pdo: PDEVICE_OBJECT, SecondsRemaining: *mut ULONG) -> BOOLEAN;
+    fn PoRegisterPowerSettingCallback(
+        DeviceObject: PDEVICE_OBJECT,
+        SettingGuid: LPCGUID,
+        Callback: ntkrnl_sys::ddk::PPOWER_SETTING_CALLBACK,
+        Context: PVOID,
+        Handle: *mut PVOID,
+    ) -> NTSTATUS;
+    fn ScsiGetSenseKeyAndCodes(
+        SenseInfoBuffer: PVOID,
+        SenseInfoBufferLength: UCHAR,
+        Options: ULONG,
+        SenseKey: *mut UCHAR,
+        AdditionalSenseCode: *mut UCHAR,
+        AdditionalSenseCodeQualifier: *mut UCHAR,
+    ) -> BOOLEAN;
+    fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> UCHAR;
+}
+// IsEqualGUID is a macro (memcmp on GUID bytes)
+#[allow(non_snake_case)]
+#[inline(always)]
+unsafe fn IsEqualGUID(guid1: LPCGUID, guid2: *const ntkrnl_sys::ddk::GUID) -> bool {
+    core::mem::transmute::<ntkrnl_sys::ddk::GUID, u128>(*guid1) ==
+    core::mem::transmute::<ntkrnl_sys::ddk::GUID, u128>(*guid2)
+}
+// StorDebugPrint is TracePrint alias in this context
+// SET_FLAG is |= inline expansion — handled at each call site
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::autorun::{ClasspUpdateTimerNoWakeTolerance};
 use crate::types::{ClassCheckMediaState, ClassGetDeviceParameter, ClassGetVpb, ClassRetryRequest, ClassSendDeviceIoControlSynchronous, ClasspDisableTimer, ClasspEnableTimer, ClasspFailurePredictionPeriodMissed, InitializeStorageRequestBlock};
@@ -29,6 +77,11 @@ use crate::guid::{GUID_CONSOLE_DISPLAY_STATE, GUID_DISK_IDLE_TIMEOUT};
 use crate::types::{ClasspScreenOff, DiskIdleTimeoutInMS, IdlePowerFDOList, IdlePowerFDOListMutex, PowerSettingNotificationHandle};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_SCSI_REQUEST_BLOCK};
+// Disambiguate _STORAGE_ADAPTER_DESCRIPTOR — the local types_arch definition has SrbType,
+// the ntkrnl_sys::ddk one (older header) does not. Explicit import wins over glob.
+use crate::types::_STORAGE_ADAPTER_DESCRIPTOR;
+// Disambiguate _SCSI_REQUEST_BLOCK — use the ntkrnl_sys one for IO stack Scsi.Srb assignment
+use ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK as DdkSrb;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbSetScsiStatus};
 
@@ -64,9 +117,9 @@ pub unsafe extern "system" fn ClassDispatchPower(
     Irp: PIRP,
 ) -> NTSTATUS {
     let commonExtension = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
-    let isRemoved: ULONG;
+    let isRemoved: LONG;
 
-    if (*commonExtension).IsInitialized == 0 {
+    if (*commonExtension).__bindgen_anon_1.IsInitialized() == 0 {
         PoStartNextPowerIrp(Irp);
         IoSkipCurrentIrpStackLocation(Irp);
         return PoCallDriver((*commonExtension).LowerDeviceObject, Irp);
@@ -86,7 +139,7 @@ pub unsafe extern "system" fn ClassDispatchPower(
         .expect("non-null function pointer")(DeviceObject, Irp)
 }
 #[no_mangle]
-pub unsafe extern "system" fn ClasspPowerUpCompletion(
+pub unsafe extern "stdcall" fn ClasspPowerUpCompletion(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -117,7 +170,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
     );
 
     // Determine SRB header
-    let mut srbHeader = if (*(*fdoExtension).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+    let mut srbHeader = if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
         let srb = core::ptr::addr_of_mut!((*(*fdoExtension).PrivateFdoData).PowerSrb.SrbEx) as *mut _STORAGE_REQUEST_BLOCK_HEADER;
         if (*PowerContext).Srb.Length as usize == core::mem::size_of::<SCSI_REQUEST_BLOCK>() {
             core::ptr::addr_of_mut!((*PowerContext).Srb) as *mut _STORAGE_REQUEST_BLOCK_HEADER
@@ -154,10 +207,10 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
     // Increment state counter and start the state machine loop
     (*PowerContext).PowerChangeState.PowerUp += 1;
 
-    // State machine
+    // State machine (PowerUpDeviceLocked=1, PowerUpDeviceOn=2, PowerUpDeviceStarted=3, PowerUpDeviceUnlocked=4)
     loop {
         match (*PowerContext).PowerChangeState.PowerUp {
-            PowerUpDeviceLocked => {
+            1 /* PowerUpDeviceLocked */ => {
                 TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tPreviously sent power lock\n\0".as_ptr() as PCCHAR, Irp);
                 IoCopyCurrentIrpStackLocationToNext(OriginalIrp);
                 if (*PowerContext).Options.LockQueue() == (TRUE) as u32 && !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
@@ -177,7 +230,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     (*PowerContext).QueueLocked = ((*PowerContext).Options.LockQueue()) as u8;
                 }
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_SUPPORTED;
-                (*PowerContext).PowerChangeState.PowerUp = PowerUpDeviceLocked;
+                (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceLocked;
                 IoSetCompletionRoutine(
                     OriginalIrp,
                     Some(ClasspPowerUpCompletion as _),
@@ -191,7 +244,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                 break; // return STATUS_MORE_PROCESSING_REQUIRED below
             }
 
-            PowerUpDeviceOn => {
+            2 /* PowerUpDeviceOn */ => {
                 if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
                     let mut cdb: *mut _CDB;
                     let mut secondsRemaining: ULONG = 0;
@@ -232,7 +285,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tSending start unit to device\n\0".as_ptr() as PCCHAR, Irp);
                     (*PowerContext).RetryCount = (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount;
 
-                    if (*(*fdoExtension).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+                    if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                         let status = InitializeStorageRequestBlock(
                             srbHeader as *mut _STORAGE_REQUEST_BLOCK,
                             STORAGE_ADDRESS_TYPE_BTL8 as u16,
@@ -261,7 +314,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     SrbSetOriginalRequest(srbHeader as PVOID, ((*(*fdoExtension).PrivateFdoData).PowerProcessIrp as PVOID).cast());
                     SrbSetSenseInfoBuffer(srbHeader as PVOID, (*(*commonExtension).PartitionZeroExtension).SenseData as PVOID);
                     SrbSetSenseInfoBufferLength(srbHeader as PVOID,
-                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION));
+                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION) as u32);
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(srbHeader as PVOID,
                         (SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_AUTOSENSE | SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE));
@@ -271,10 +324,10 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     SrbSetCdbLength(srbHeader as PVOID, 6);
                     cdb = SrbGetCdb(srbHeader as PVOID);
                     core::ptr::write_bytes(cdb as *mut u8, 0, core::mem::size_of::<_CDB>());
-                    (*cdb).START_STOP.as_ref().OperationCode = SCSIOP_START_STOP_UNIT as u8;
-                    (*cdb).START_STOP.as_ref().set_Start(1);
+                    (*cdb).START_STOP.as_mut().OperationCode = SCSIOP_START_STOP_UNIT as u8;
+                    (*cdb).START_STOP.as_mut().set_Start(1);
 
-                    (*PowerContext).PowerChangeState.PowerUp = PowerUpDeviceOn;
+                    (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceOn;
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         Some(ClasspPowerUpCompletion as _),
@@ -283,7 +336,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                         TRUE,
                         TRUE,
                     );
-                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut _SCSI_REQUEST_BLOCK;
+                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut DdkSrb;
                     (*nextStack).MajorFunction = IRP_MJ_SCSI as u8;
                     let status = IoCallDriver((*commonExtension).LowerDeviceObject, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tIoCallDriver returned %lx\n\0".as_ptr() as PCCHAR,
@@ -302,12 +355,12 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     // We'll include that in PowerUpDeviceStarted's initial path (before error check).
                     // We'll adjust the match to have the print at the start of PowerUpDeviceStarted.
                     // So we'll force state to PowerUpDeviceStarted and loop.
-                    (*PowerContext).PowerChangeState.PowerUp = PowerUpDeviceStarted;
+                    (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceStarted;
                     continue;
                 }
             }
 
-            PowerUpDeviceStarted => {
+            3 /* PowerUpDeviceStarted */ => {
                 // At this point we've either just entered or came from failure path.
                 // The "Previously spun device up" print is done at the start of this case
                 // in the original C, after the label. So we'll do it here.
@@ -333,7 +386,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                 if (*PowerContext).QueueLocked != 0 {
                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tUnlocking queue\n\0".as_ptr() as PCCHAR, Irp);
 
-                    if (*(*fdoExtension).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+                    if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                         let status = InitializeStorageRequestBlock(
                             srbHeader as *mut _STORAGE_REQUEST_BLOCK,
                             STORAGE_ADDRESS_TYPE_BTL8 as u16,
@@ -358,9 +411,9 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     }
                     SrbAssignSrbFlags(srbHeader as PVOID, SRB_FLAGS_BYPASS_LOCKED_QUEUE);
                     SrbSetOriginalRequest(srbHeader as PVOID, ((*(*fdoExtension).PrivateFdoData).PowerProcessIrp as PVOID).cast());
-                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut _SCSI_REQUEST_BLOCK;
+                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut DdkSrb;
                     (*nextStack).MajorFunction = IRP_MJ_SCSI as u8;
-                    (*PowerContext).PowerChangeState.PowerUp = PowerUpDeviceStarted;
+                    (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceStarted;
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         Some(ClasspPowerUpCompletion as _),
@@ -375,11 +428,11 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     break; // return
                 }
                 // If not QueueLocked, fall through to PowerUpDeviceUnlocked
-                (*PowerContext).PowerChangeState.PowerUp = PowerUpDeviceUnlocked;
+                (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceUnlocked;
                 continue;
             }
 
-            PowerUpDeviceUnlocked => {
+            4 /* PowerUpDeviceUnlocked */ => {
                 // Final completion
                 TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tFall-through (queue not locked)\n\0".as_ptr() as PCCHAR, OriginalIrp);
                 TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tFreeing srb and completing\n\0".as_ptr() as PCCHAR, OriginalIrp);
@@ -434,7 +487,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
     STATUS_MORE_PROCESSING_REQUIRED
 }
 #[no_mangle]
-pub unsafe extern "system" fn ClasspPowerDownCompletion(
+pub unsafe extern "stdcall" fn ClasspPowerDownCompletion(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -445,7 +498,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
     let OriginalIrp = (*PowerContext).Irp;
 
     let currentStack = IoGetCurrentIrpStackLocation(OriginalIrp);
-    let nextStack = IoGetNextIrpStackLocation((*fdoExtension.PrivateFdoData).PowerProcessIrp);
+    let nextStack = IoGetNextIrpStackLocation((*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
     let mut status: NTSTATUS = STATUS_MORE_PROCESSING_REQUIRED;
 
     // UNREFERENCED_PARAMETER
@@ -461,8 +514,8 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
     );
 
     let mut srbHeader: PSTORAGE_REQUEST_BLOCK_HEADER;
-    if (*fdoExtension.AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
-        srbHeader = core::ptr::addr_of_mut!((*fdoExtension.PrivateFdoData).PowerSrb.SrbEx)
+    if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+        srbHeader = core::ptr::addr_of_mut!((*(*fdoExtension).PrivateFdoData).PowerSrb.SrbEx)
             as PSTORAGE_REQUEST_BLOCK_HEADER;
         if (*PowerContext).Srb.Length as usize == core::mem::size_of::<SCSI_REQUEST_BLOCK>() {
             srbHeader = core::ptr::addr_of_mut!((*PowerContext).Srb) as PSTORAGE_REQUEST_BLOCK_HEADER;
@@ -516,7 +569,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         (*srbHeader).SrbStatus as i32,
                     );
 
-                    fdoExtension.DevicePowerState = (*currentStack).Parameters.Power.State.DeviceState;
+                    (*fdoExtension).DevicePowerState =(*currentStack).Parameters.Power.State.DeviceState;
 
                     IoCopyCurrentIrpStackLocationToNext(OriginalIrp);
                     IoSetCompletionRoutine(
@@ -532,23 +585,23 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         (*currentStack).Parameters.Power.Type,
                         (*currentStack).Parameters.Power.State,
                     );
-                    fdoExtension.PowerDownInProgress = FALSE;
-                    ClassReleaseRemoveLock(commonExtension.DeviceObject, OriginalIrp);
-                    PoCallDriver(commonExtension.LowerDeviceObject, OriginalIrp);
+                    (*fdoExtension).PowerDownInProgress =FALSE;
+                    ClassReleaseRemoveLock((*commonExtension).DeviceObject, OriginalIrp);
+                    PoCallDriver((*commonExtension).LowerDeviceObject, OriginalIrp);
                     return STATUS_MORE_PROCESSING_REQUIRED;
                 } else {
                     (*PowerContext).QueueLocked = (*PowerContext).Options.LockQueue() as BOOLEAN;
-                    fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = 0;
+                    (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = 0;
                     (*PowerContext).RetryCount = 0;
 
-                    if (*fdoExtension.AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+                    if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                         srbHeader = core::ptr::addr_of_mut!(
-                            (*fdoExtension.PrivateFdoData).PowerSrb.SrbEx
+                            (*(*fdoExtension).PrivateFdoData).PowerSrb.SrbEx
                         ) as PSTORAGE_REQUEST_BLOCK_HEADER;
                         status = InitializeStorageRequestBlock(
                             srbHeader as PSTORAGE_REQUEST_BLOCK,
-                            STORAGE_ADDRESS_TYPE_BTL8,
-                            CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE,
+                            STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
+                            CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE as ULONG,
                             0,
                         );
                         if NT_SUCCESS(status) {
@@ -565,8 +618,8 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         (*srbHeader).Function = (SRB_FUNCTION_QUIESCE_DEVICE) as u8;
                     }
 
-                    SrbSetOriginalRequest(srbHeader as PVOID, fdoExtension.PrivateFdoData.PowerProcessIrp as PVOID);
-                    SrbSetTimeOutValue(srbHeader as PVOID, fdoExtension.TimeOutValue);
+                    SrbSetOriginalRequest(srbHeader as PVOID, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp as PIRP);
+                    SrbSetTimeOutValue(srbHeader as PVOID, (*fdoExtension).TimeOutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
                         (SRB_FLAGS_NO_DATA_TRANSFER
@@ -578,23 +631,23 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     );
 
                     IoSetCompletionRoutine(
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
                         TRUE,
                     );
-                    (*nextStack).Parameters.Scsi.Srb = srbHeader as PSCSI_REQUEST_BLOCK;
+                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut DdkSrb;
                     (*nextStack).MajorFunction = (IRP_MJ_SCSI) as u8;
 
-                    status = IoCallDriver(commonExtension.LowerDeviceObject, fdoExtension.PrivateFdoData.PowerProcessIrp);
+                    status = IoCallDriver((*commonExtension).LowerDeviceObject, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
 
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"(%p)\tIoCallDriver returned %lx\n\0".as_ptr() as *const i8,
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         status,
                     );
 
@@ -610,18 +663,18 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     Irp,
                 );
 
-                if !TEST_FLAG(
-                    fdoExtension.PrivateFdoData.HackFlags,
+                if TEST_FLAG(
+                    (*(*fdoExtension).PrivateFdoData).HackFlags,
                     FDO_HACK_NO_SYNC_CACHE,
-                ) {
-                    fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
+                ) == 0 {
+                    (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
                     (*PowerContext).RetryCount = MAXIMUM_RETRIES;
 
-                    if (*fdoExtension.AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+                    if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                         status = InitializeStorageRequestBlock(
                             srbHeader as PSTORAGE_REQUEST_BLOCK,
-                            STORAGE_ADDRESS_TYPE_BTL8,
-                            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE,
+                            STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
+                            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE as ULONG,
                             1,
                             SrbExDataTypeScsiCdb16,
                         );
@@ -641,13 +694,13 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         (*srbHeader).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
                     }
 
-                    SrbSetOriginalRequest(srbHeader as PVOID, fdoExtension.PrivateFdoData.PowerProcessIrp as PVOID);
-                    SrbSetSenseInfoBuffer(srbHeader as PVOID, (*commonExtension.PartitionZeroExtension).SenseData as PVOID);
+                    SrbSetOriginalRequest(srbHeader as PVOID, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp as PIRP);
+                    SrbSetSenseInfoBuffer(srbHeader as PVOID, (*(*commonExtension).PartitionZeroExtension).SenseData as PVOID);
                     SrbSetSenseInfoBufferLength(
                         srbHeader as PVOID,
-                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH(commonExtension.PartitionZeroExtension),
+                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension) as u32,
                     );
-                    SrbSetTimeOutValue(srbHeader as PVOID, fdoExtension.TimeOutValue);
+                    SrbSetTimeOutValue(srbHeader as PVOID, (*fdoExtension).TimeOutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
                         (SRB_FLAGS_NO_DATA_TRANSFER
@@ -661,26 +714,26 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
 
                     let cdb: PCDB = SrbGetCdb(srbHeader as PVOID);
                     core::ptr::write_bytes(cdb as *mut u8, 0, core::mem::size_of::<CDB>());
-                    (*cdb).SYNCHRONIZE_CACHE10.as_ref().OperationCode = (SCSIOP_SYNCHRONIZE_CACHE) as u8;
+                    (*cdb).SYNCHRONIZE_CACHE10.as_mut().OperationCode = (SCSIOP_SYNCHRONIZE_CACHE) as u8;
 
                     IoSetCompletionRoutine(
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
                         TRUE,
                     );
-                    (*nextStack).Parameters.Scsi.Srb = srbHeader as PSCSI_REQUEST_BLOCK;
+                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut DdkSrb;
                     (*nextStack).MajorFunction = (IRP_MJ_SCSI) as u8;
 
-                    status = IoCallDriver(commonExtension.LowerDeviceObject, fdoExtension.PrivateFdoData.PowerProcessIrp);
+                    status = IoCallDriver((*commonExtension).LowerDeviceObject, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
 
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"(%p)\tIoCallDriver returned %lx\n\0".as_ptr() as *const i8,
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         status,
                     );
 
@@ -712,12 +765,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     let mut delta100nsUnits: LONGLONG = 0;
                     (*PowerContext).RetryInterval = 0;
                     let retry = InterpretSenseInfoWithoutHistory(
-                        fdoExtension.DeviceObject,
+                        (*commonExtension).DeviceObject,
                         Irp,
                         srbHeader as PSCSI_REQUEST_BLOCK,
-                        IRP_MJ_SCSI,
-                        IRP_MJ_POWER,
-                        fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount - (*PowerContext).RetryCount,
+                        IRP_MJ_SCSI as u8,
+                        IRP_MJ_POWER as u32,
+                        (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount - (*PowerContext).RetryCount,
                         &mut status,
                         &mut delta100nsUnits,
                     );
@@ -737,7 +790,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                             );
                             (*PowerContext).PowerChangeState.PowerDown3 -= 1;
                             state -= 1;
-                            RetryPowerRequest(commonExtension.DeviceObject, Irp, PowerContext);
+                            RetryPowerRequest((*commonExtension).DeviceObject, Irp, PowerContext);
                             return STATUS_MORE_PROCESSING_REQUIRED;
                         }
                     }
@@ -747,7 +800,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         b"(%p)\tSYNCHRONIZE_CACHE not retried\n\0".as_ptr() as *const i8,
                         Irp,
                     );
-                    fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
+                    (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
                     (*PowerContext).RetryCount = MAXIMUM_RETRIES;
                 }
 
@@ -777,21 +830,21 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
 
                     let mut secondsRemaining: ULONG = 0;
                     let timeoutValue: ULONG;
-                    if PoQueryWatchdogTime(fdoExtension.LowerPdo, &mut secondsRemaining) != 0 {
+                    if PoQueryWatchdogTime((*fdoExtension).LowerPdo, &mut secondsRemaining) != 0 {
                         if secondsRemaining >= (TIME_LEFT_FOR_LOWER_DRIVERS + DEFAULT_IO_TIMEOUT_VALUE) {
-                            fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount =
+                            (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount =
                                 (secondsRemaining - TIME_LEFT_FOR_LOWER_DRIVERS) / DEFAULT_IO_TIMEOUT_VALUE;
-                            fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount -= 1;
-                            if fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount > 0 {
+                            (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount -= 1;
+                            if (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount > 0 {
                                 timeoutValue = DEFAULT_IO_TIMEOUT_VALUE;
                             } else {
                                 timeoutValue = secondsRemaining - TIME_LEFT_FOR_LOWER_DRIVERS;
                             }
-                            if fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount > MAXIMUM_RETRIES {
-                                fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
+                            if (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount > MAXIMUM_RETRIES {
+                                (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
                             }
                         } else {
-                            fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = 0;
+                            (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = 0;
                             if secondsRemaining > 2 * MINIMUM_STOP_UNIT_TIMEOUT_VALUE {
                                 timeoutValue = secondsRemaining - MINIMUM_STOP_UNIT_TIMEOUT_VALUE;
                             } else {
@@ -799,16 +852,16 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                             }
                         }
                     } else {
-                        fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
+                        (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
                         timeoutValue = DEFAULT_IO_TIMEOUT_VALUE;
                     }
-                    (*PowerContext).RetryCount = fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount;
+                    (*PowerContext).RetryCount = (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount;
 
-                    if (*fdoExtension.AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+                    if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                         status = InitializeStorageRequestBlock(
                             srbHeader as PSTORAGE_REQUEST_BLOCK,
-                            STORAGE_ADDRESS_TYPE_BTL8,
-                            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE,
+                            STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
+                            CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE as ULONG,
                             1,
                             SrbExDataTypeScsiCdb16,
                         );
@@ -828,11 +881,11 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         (*srbHeader).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
                     }
 
-                    SrbSetOriginalRequest(srbHeader as PVOID, fdoExtension.PrivateFdoData.PowerProcessIrp as PVOID);
-                    SrbSetSenseInfoBuffer(srbHeader as PVOID, (*commonExtension.PartitionZeroExtension).SenseData as PVOID);
+                    SrbSetOriginalRequest(srbHeader as PVOID, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp as PIRP);
+                    SrbSetSenseInfoBuffer(srbHeader as PVOID, (*(*commonExtension).PartitionZeroExtension).SenseData as PVOID);
                     SrbSetSenseInfoBufferLength(
                         srbHeader as PVOID,
-                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH(commonExtension.PartitionZeroExtension),
+                        GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension) as u32,
                     );
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(
@@ -848,28 +901,28 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
 
                     let cdb: PCDB = SrbGetCdb(srbHeader as PVOID);
                     core::ptr::write_bytes(cdb as *mut u8, 0, core::mem::size_of::<CDB>());
-                    (*cdb).START_STOP.as_ref().OperationCode = (SCSIOP_START_STOP_UNIT) as u8;
-                    (*cdb).START_STOP.as_ref().set_Start(0);
-                    (*cdb).START_STOP.as_ref().set_Immediate(1);
+                    (*cdb).START_STOP.as_mut().OperationCode = (SCSIOP_START_STOP_UNIT) as u8;
+                    (*cdb).START_STOP.as_mut().set_Start(0);
+                    (*cdb).START_STOP.as_mut().set_Immediate(1);
 
                     IoSetCompletionRoutine(
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
                         TRUE,
                     );
-                    (*nextStack).Parameters.Scsi.Srb = srbHeader as PSCSI_REQUEST_BLOCK;
+                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut DdkSrb;
                     (*nextStack).MajorFunction = (IRP_MJ_SCSI) as u8;
 
-                    status = IoCallDriver(commonExtension.LowerDeviceObject, fdoExtension.PrivateFdoData.PowerProcessIrp);
+                    status = IoCallDriver((*commonExtension).LowerDeviceObject, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
 
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"(%p)\tIoCallDriver returned %lx\n\0".as_ptr() as *const i8,
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         status,
                     );
 
@@ -884,12 +937,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     let mut delta100nsUnits: LONGLONG = 0;
                     (*PowerContext).RetryInterval = 0;
                     let retry = InterpretSenseInfoWithoutHistory(
-                        fdoExtension.DeviceObject,
+                        (*commonExtension).DeviceObject,
                         Irp,
                         srbHeader as PSCSI_REQUEST_BLOCK,
-                        IRP_MJ_SCSI,
-                        IRP_MJ_POWER,
-                        fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount - (*PowerContext).RetryCount,
+                        IRP_MJ_SCSI as u8,
+                        IRP_MJ_POWER as u32,
+                        (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount - (*PowerContext).RetryCount,
                         &mut status,
                         &mut delta100nsUnits,
                     );
@@ -910,7 +963,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                             (*PowerContext).PowerChangeState.PowerDown3 -= 1;
                             state -= 1;
                             SrbSetTimeOutValue(srbHeader as PVOID, DEFAULT_IO_TIMEOUT_VALUE);
-                            RetryPowerRequest(commonExtension.DeviceObject, Irp, PowerContext);
+                            RetryPowerRequest((*commonExtension).DeviceObject, Irp, PowerContext);
                             return STATUS_MORE_PROCESSING_REQUIRED;
                         }
                     }
@@ -920,7 +973,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         b"(%p)\tSTOP_UNIT not retried\n\0".as_ptr() as *const i8,
                         Irp,
                     );
-                    fdoExtension.PrivateFdoData.MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
+                    (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = MAXIMUM_RETRIES;
                     (*PowerContext).RetryCount = MAXIMUM_RETRIES;
                 }
 
@@ -970,7 +1023,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         TRUE,
                         TRUE,
                     );
-                    status = PoCallDriver(commonExtension.LowerDeviceObject, OriginalIrp);
+                    status = PoCallDriver((*commonExtension).LowerDeviceObject, OriginalIrp);
 
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
@@ -1005,11 +1058,11 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         OriginalIrp,
                     );
 
-                    if (*fdoExtension.AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+                    if (*((*fdoExtension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                         status = InitializeStorageRequestBlock(
                             srbHeader as PSTORAGE_REQUEST_BLOCK,
-                            STORAGE_ADDRESS_TYPE_BTL8,
-                            CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE,
+                            STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
+                            CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE as ULONG,
                             0,
                         );
                         if NT_SUCCESS(status) {
@@ -1028,14 +1081,14 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         (*srbHeader).Function = (SRB_FUNCTION_UNLOCK_QUEUE) as u8;
                     }
 
-                    SrbSetOriginalRequest(srbHeader as PVOID, fdoExtension.PrivateFdoData.PowerProcessIrp as PVOID);
+                    SrbSetOriginalRequest(srbHeader as PVOID, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp as PIRP);
                     SrbAssignSrbFlags(srbHeader as PVOID, SRB_FLAGS_BYPASS_LOCKED_QUEUE | SRB_FLAGS_D3_PROCESSING);
 
-                    (*nextStack).Parameters.Scsi.Srb = srbHeader as PSCSI_REQUEST_BLOCK;
+                    (*nextStack).Parameters.Scsi.Srb = srbHeader as *mut DdkSrb;
                     (*nextStack).MajorFunction = (IRP_MJ_SCSI) as u8;
 
                     IoSetCompletionRoutine(
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
@@ -1043,13 +1096,13 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                         TRUE,
                     );
 
-                    status = IoCallDriver(commonExtension.LowerDeviceObject, fdoExtension.PrivateFdoData.PowerProcessIrp);
+                    status = IoCallDriver((*commonExtension).LowerDeviceObject, (*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
 
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"(%p)\tIoCallDriver returned %lx\n\0".as_ptr() as *const i8,
-                        fdoExtension.PrivateFdoData.PowerProcessIrp,
+                        (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
                         status,
                     );
 
@@ -1095,7 +1148,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                 (*OriginalIrp).IoStatus.Information = 0;
 
                 if NT_SUCCESS(status) {
-                    fdoExtension.DevicePowerState = (*currentStack).Parameters.Power.State.DeviceState;
+                    (*fdoExtension).DevicePowerState =(*currentStack).Parameters.Power.State.DeviceState;
                 }
 
                 TracePrint(
@@ -1108,10 +1161,10 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                 ClassReleaseRemoveLock((*PowerContext).DeviceObject, OriginalIrp);
                 (*PowerContext).InUse = FALSE;
                 PoStartNextPowerIrp(OriginalIrp);
-                fdoExtension.PowerDownInProgress = FALSE;
+                (*fdoExtension).PowerDownInProgress =FALSE;
 
-                if Irp == fdoExtension.PrivateFdoData.PowerProcessIrp {
-                    ClassCompleteRequest(commonExtension.DeviceObject, OriginalIrp, IO_NO_INCREMENT);
+                if Irp == (*(*fdoExtension).PrivateFdoData).PowerProcessIrp {
+                    ClassCompleteRequest((*commonExtension).DeviceObject, OriginalIrp, IO_NO_INCREMENT);
                     return STATUS_MORE_PROCESSING_REQUIRED;
                 }
 
@@ -1144,7 +1197,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         TRACE_FLAG_POWER,
         b"ClasspPowerHandler: Power irp %p to %s %p\n\0".as_ptr() as *const i8,
         Irp,
-        if (*common_extension).IsFdo() != 0 {
+        if (*common_extension).__bindgen_anon_1.IsFdo() != 0 {
             b"fdo\0".as_ptr() as *const i8
         } else {
             b"pdo\0".as_ptr() as *const i8
@@ -1152,7 +1205,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         DeviceObject,
     );
 
-    if (*common_extension).IsFdo() == 0 {
+    if (*common_extension).__bindgen_anon_1.IsFdo() == 0 {
         TracePrint(
             2,
             TRACE_FLAG_POWER,
@@ -1338,13 +1391,13 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         );
         (*context).InUse = 1u8;
 
-        if (*(*fdo_extension).AdapterDescriptor).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK
+        if (*((*fdo_extension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK
         {
             srb_header = &raw mut (*fdo_data).PowerSrb.SrbEx as *mut _STORAGE_REQUEST_BLOCK_HEADER;
             status = InitializeStorageRequestBlock(
                 srb_header as PSTORAGE_REQUEST_BLOCK,
-                STORAGE_ADDRESS_TYPE_BTL8,
-                CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE,
+                STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
+                CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE as ULONG,
                 0,
             );
             if NT_SUCCESS(status) {
@@ -1370,7 +1423,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
             (*srb_header).Function = SRB_FUNCTION_LOCK_QUEUE as UCHAR;
         }
 
-        (*next_irp_stack).Parameters.Scsi.Srb = srb_header as PSCSI_REQUEST_BLOCK;
+        (*next_irp_stack).Parameters.Scsi.Srb = srb_header as *mut DdkSrb;
         (*next_irp_stack).MajorFunction = IRP_MJ_SCSI as UCHAR;
 
         (*context).FinalStatus = STATUS_SUCCESS;
@@ -1390,7 +1443,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
 
         if (*irp_stack).Parameters.Power.State.DeviceState as u32 == PowerDeviceD0 as u32 {
             // NT_ASSERT(Options.HandleSpinUp)
-            if Options.HandleSpinUp() == 0 {
+            if (*context).Options.HandleSpinUp() == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
                     b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
@@ -1407,14 +1460,14 @@ pub unsafe extern "C" fn ClasspPowerHandler(
                 Irp,
             );
             (*context).Options.set_PowerDown(0u32);
-            (*context).PowerChangeState.PowerUp = PowerUpDeviceInitial;
+            (*context).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceInitial;
             (*context).CompletionRoutine = Some(
                 ClasspPowerUpCompletion
-                    as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
+                    as unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
             );
         } else {
             // NT_ASSERT(Options.HandleSpinDown)
-            if Options.HandleSpinDown() == 0 {
+            if (*context).Options.HandleSpinDown() == 0 {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
                     b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/power.c\0"
@@ -1432,7 +1485,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
                 b"(%p)\tPowering down - locking queue\n\0".as_ptr() as *const i8,
                 Irp,
             );
-            if (*(*fdo_data).TickTimerEnabled) != 0 {
+            if (*fdo_data).TickTimerEnabled != 0 {
                 ClasspDisableTimer(fdo_extension);
             }
             PoSetPowerState(
@@ -1441,10 +1494,10 @@ pub unsafe extern "C" fn ClasspPowerHandler(
                 (*irp_stack).Parameters.Power.State,
             );
             (*context).Options.set_PowerDown(1u32);
-            (*context).PowerChangeState.PowerDown3 = PowerDownDeviceInitial3;
+            (*context).PowerChangeState.PowerDown3 = CLASS_POWER_DOWN_STATE3_PowerDownDeviceInitial3;
             (*context).CompletionRoutine = Some(
                 ClasspPowerDownCompletion
-                    as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
+                    as unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
             );
         }
 
@@ -1474,7 +1527,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
 
         IoMarkIrpPending(Irp);
 
-        if Options.LockQueue() != 0 {
+        if (*context).Options.LockQueue() != 0 {
             IoSetCompletionRoutine(
                 power_process_irp,
                 (*context).CompletionRoutine,
@@ -1510,7 +1563,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
         Irp,
         Some(
             ClasspStartNextPowerIrpCompletion
-                as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
+                as unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
         ),
         core::ptr::null_mut::<c_void>(),
         1u8,
@@ -1532,32 +1585,27 @@ pub unsafe extern "system" fn ClassMinimalPowerHandler(
     ClassReleaseRemoveLock(DeviceObject, Irp);
     PoStartNextPowerIrp(Irp);
 
-    match (*irpStack).MinorFunction as u32 {
-        (IRP_MN_SET_POWER) as u32 => {
-            match (*irpStack).Parameters.Power.ShutdownType {
-                PowerActionNone | PowerActionSleep | PowerActionHibernate => {
-                    if TEST_FLAG((*DeviceObject).Characteristics, FILE_REMOVABLE_MEDIA) {
-                        let vpb = ClassGetVpb(DeviceObject);
-                        if !vpb.is_null() && ((*vpb).Flags & (VPB_MOUNTED) as u16) != 0 {
-                            SET_FLAG((*DeviceObject).Flags, DO_VERIFY_VOLUME);
-                        }
-                    }
+    let minor = (*irpStack).MinorFunction as u32;
+    if minor == IRP_MN_SET_POWER as u32 {
+        let shutdown_type = (*irpStack).Parameters.Power.ShutdownType;
+        if shutdown_type == PowerActionNone || shutdown_type == PowerActionSleep || shutdown_type == PowerActionHibernate {
+            if TEST_FLAG((*DeviceObject).Characteristics, FILE_REMOVABLE_MEDIA) != 0 {
+                let vpb = ClassGetVpb(DeviceObject);
+                if !vpb.is_null() && ((*vpb).Flags & (VPB_MOUNTED) as u16) != 0 {
+                    (*DeviceObject).Flags |= DO_VERIFY_VOLUME as u32;
                 }
-                _ => {}
-            }
-            // Fall through to IRP_MN_QUERY_POWER handling
-            if (*commonExtension).__bindgen_anon_1.IsFdo() == 0 {
-                (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = 0;
             }
         }
-        (IRP_MN_QUERY_POWER) as u32 => {
-            if (*commonExtension).__bindgen_anon_1.IsFdo() == 0 {
-                (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = 0;
-            }
+        // Fall through to IRP_MN_QUERY_POWER handling
+        if (*commonExtension).__bindgen_anon_1.IsFdo() == 0 {
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            (*Irp).IoStatus.Information = 0;
         }
-        _ => {}
+    } else if minor == IRP_MN_QUERY_POWER as u32 {
+        if (*commonExtension).__bindgen_anon_1.IsFdo() == 0 {
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            (*Irp).IoStatus.Information = 0;
+        }
     }
 
     if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
@@ -1657,7 +1705,7 @@ pub unsafe extern "C" fn RetryPowerRequest(
         Irp,
     );
 
-    if (*(*fdo_extension).AdapterDescriptor).SrbType as i32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+    if (*((*fdo_extension).AdapterDescriptor as *mut _STORAGE_ADAPTER_DESCRIPTOR)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
         srb = &raw mut (*(*fdo_extension).PrivateFdoData).PowerSrb.SrbEx
             as PSTORAGE_REQUEST_BLOCK_HEADER;
         if (*Context).Srb.Length as usize == core::mem::size_of::<SCSI_REQUEST_BLOCK>() {
@@ -1733,7 +1781,7 @@ pub unsafe extern "C" fn RetryPowerRequest(
     }
 
     (*next_irp_stack).MajorFunction = IRP_MJ_SCSI as u8;
-    (*next_irp_stack).Parameters.Scsi.Srb = srb as PSCSI_REQUEST_BLOCK;
+    (*next_irp_stack).Parameters.Scsi.Srb = srb as *mut DdkSrb;
 
     IoSetCompletionRoutine(
         Irp,
@@ -1747,7 +1795,7 @@ pub unsafe extern "C" fn RetryPowerRequest(
     ClassRetryRequest(DeviceObject, Irp, due_time);
 }
 #[no_mangle]
-pub unsafe extern "system" fn ClasspStartNextPowerIrpCompletion(
+pub unsafe extern "stdcall" fn ClasspStartNextPowerIrpCompletion(
     _device_object: PDEVICE_OBJECT,
     irp: PIRP,
     context: PVOID,
@@ -1767,7 +1815,7 @@ pub unsafe extern "system" fn ClasspStartNextPowerIrpCompletion(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ClasspDeviceLockFailurePowerIrpCompletion(
+pub unsafe extern "stdcall" fn ClasspDeviceLockFailurePowerIrpCompletion(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -1843,7 +1891,7 @@ pub unsafe extern "C" fn ClasspSendEnableIdlePowerIoctl(DeviceObject: PDEVICE_OB
 
     let status = ioStatus.__bindgen_anon_1.Status;
 
-    StorDebugPrint(
+    TracePrint(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_POWER,
         b"ClasspSendEnableIdlePowerIoctl: Port driver returned status (%x) for FDO (%p)\n\tWakeCapableHint: %u\n\tD3ColdSupported: %u\n\tD3IdleTimeout: %u (ms)\0".as_ptr() as PCCHAR,
@@ -1857,7 +1905,7 @@ pub unsafe extern "C" fn ClasspSendEnableIdlePowerIoctl(DeviceObject: PDEVICE_OB
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn ClasspPowerSettingCallback(
+pub unsafe extern "stdcall" fn ClasspPowerSettingCallback(
     SettingGuid: LPCGUID,
     Value: PVOID,
     ValueLength: ULONG,
@@ -2033,7 +2081,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(DeviceObject: PDEVICE_OBJECT) -> 
                     &raw const GUID_DISK_IDLE_TIMEOUT as LPCGUID,
                     Some(
                         ClasspPowerSettingCallback
-                            as unsafe extern "C" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS,
+                            as unsafe extern "stdcall" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS,
                     ),
                     core::ptr::null_mut(),
                     &raw mut PowerSettingNotificationHandle,
