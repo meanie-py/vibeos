@@ -1,0 +1,15 @@
+# usb-sys — focused USB DDK FFI substrate (URB + USB descriptors + USBD info
+# structs), bindgen-generated from usbdi.h/usb.h/usb100.h/usbdlib.h via
+# generate_bindings.sh. These types are absent from ntkrnl-sys (built from
+# ntoskrnl.h only, no USB headers); usbd-rust (the usbd.sys translation) needs
+# them. Per-arch bindgen (URB/pointer widths differ). rlib, no_std.
+
+[package]
+name = "usb-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

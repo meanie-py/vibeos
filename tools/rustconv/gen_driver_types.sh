@@ -29,18 +29,28 @@ NTKRNL_SYS="${SRC}/sdk/lib/rust/ntkrnl-sys/src"
 # ALLOW_FILES : --allowlist-file regexes (types DEFINED here become local)
 # DRIVER_INC  : extra -I for the driver's own dir
 # VER_DEFS    : version macros matching the driver's CMakeLists.txt
+EXTRA_INC=()
 case "$DRIVER" in
   classpnp)
     DRIVER_DIR="${SRC}/drivers/storage/class/classpnp"
     WRAPPER_INC='#include <classp.h>'
-    ALLOW_FILES=( --allowlist-file '.*classp\.h' --allowlist-file '.*classpnp\.h' )
+    # classp.h pulls scsi.h/srb.h/ntddstor.h — the storage structs (SRBEX_DATA, STOR_ADDRESS,
+    # UNMAP_LIST_HEADER, WNODE_*, MODE_PARAMETER_HEADER, READ_CAPACITY_DATA, ...) the modules
+    # use are defined there and are NOT in the ntkrnl-sys kernel bindgen, so allowlist them too.
+    ALLOW_FILES=( --allowlist-file '.*classp\.h' --allowlist-file '.*classpnp\.h'
+                  --allowlist-file '.*scsi\.h' --allowlist-file '.*srb\.h'
+                  --allowlist-file '.*srbhelper\.h' --allowlist-file '.*ntddstor\.h'
+                  --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*wmistr\.h' )
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
   cdrom)
+    # KMDF driver (set_module_type cdrom kmdfdriver) — needs the WDF 1.17 headers.
     DRIVER_DIR="${SRC}/drivers/storage/class/cdrom"
-    WRAPPER_INC=$'#include <ntddk.h>\n#include <classpnp.h>\n#include "cdrom.h"\n#include "cdromp.h"'
+    WRAPPER_INC=$'#include <ntddk.h>\n#include "cdrom.h"'
     ALLOW_FILES=( --allowlist-file '.*cdrom\.h' --allowlist-file '.*cdromp\.h' --allowlist-file '.*ioctl\.h' --allowlist-file '.*mmc\.h' --allowlist-file '.*scratch\.h' )
-    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000 )
+    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
+               -DWDF_DEVICE_NO_WDMSEC_H -DDEBUG_USE_KDPRINT -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
+    EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
     ;;
   cdfs)
     DRIVER_DIR="${SRC}/drivers/filesystems/cdfs"
@@ -69,12 +79,14 @@ run_arch() {
   # — matching how they were written — WITHOUT pulling ddk functions/consts (those
   # stay on the modules own explicit `use ntkrnl_sys::ddk::{fn}` lists; re-exporting
   # them here would create glob-vs-explicit ambiguity).
+  # Blocklist = every type name the shared ntkrnl-sys bindgen exports, so kernel types
+  # keep a single identity and only driver-PRIVATE structs become local here. The
+  # translated modules then get private structs from `crate::types` and kernel types
+  # from `ntkrnl_sys::{ddk,driver_ddk,...}`.
   local TYPELIST="/tmp/${DRIVER}_ntktypes_${ARCH}.txt"
   grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$NTK" | awk '{print $3}' | sort -u > "$TYPELIST"
   local BL=()
   while IFS= read -r t; do BL+=( --blocklist-type "$t" ); done < "$TYPELIST"
-  local REEXPORT="/tmp/${DRIVER}_reexport_${ARCH}.txt"
-  { echo "pub use ntkrnl_sys::ddk::{"; paste -sd, "$TYPELIST"; echo "};"; } > "$REEXPORT"
 
   bindgen "$WRAPPER" \
     --use-core --no-layout-tests --no-doc-comments \
@@ -87,8 +99,9 @@ run_arch() {
     --raw-line 'use ntkrnl_sys::ddk::*;' \
     -o "$RAW" \
     -- -ferror-limit=0 -Wno-everything \
+    -fms-extensions \
     $ARCHDEF -D__REACTOS__ -D_USE_DUMMY_PSEH=1 -DDBG=1 "${VER_DEFS[@]}" \
-    -I"${DRIVER_DIR}" \
+    -I"${DRIVER_DIR}" "${EXTRA_INC[@]}" \
     -I"${SRC}/sdk/include" -I"${SRC}/sdk/include/ddk" -I"${SRC}/sdk/include/ndk" \
     -I"${SRC}/sdk/include/psdk" -I"${SRC}/sdk/include/xdk" -I"${SRC}/sdk/include/reactos" \
     -I"${SRC}/sdk/include/reactos/libs" -I"${SRC}/sdk/include/reactos/drivers" \
@@ -99,8 +112,22 @@ run_arch() {
     -isystem "${SRC}/sdk/include/crt" -isystem "${TOOLCHAIN}/lib/clang/19/include" \
     --target="${TARGET}"
 
+  # Strip bindgen's `pub use self::_X as Y;` re-exports of BLOCKLISTED enum typedefs:
+  # _X comes from the private `use ntkrnl_sys::ddk::*` glob, so re-exporting it is E0365
+  # ("re-export of private item") which poisons the whole module → every private struct
+  # becomes unreachable. Y (DEVICE_POWER_STATE, POOL_TYPE, ...) is a kernel type the
+  # modules import from ddk/driver_ddk anyway, so dropping the alias here is safe.
   local FINAL="${OUT_CRATE}/types_${ARCH}.rs"
-  cp "$RAW" "$FINAL"
+  python3 -c '
+import sys, re
+raw, final = sys.argv[1], sys.argv[2]
+s = open(raw).read()
+local = set(re.findall(r"^pub (?:struct|enum|union) (_[A-Za-z0-9_]+)", s, re.M))
+out = [ln for ln in s.splitlines(keepends=True)
+       if not (re.match(r"^pub use self::(_[A-Za-z0-9_]+) as [A-Za-z0-9_]+;", ln)
+               and re.match(r"^pub use self::(_[A-Za-z0-9_]+) as", ln).group(1) not in local)]
+open(final, "w").write("".join(out))
+' "$RAW" "$FINAL"
   echo "  -> ${FINAL}  ($(grep -cE 'pub struct' "$FINAL") structs, $(wc -l <"$FINAL") lines)"
 }
 

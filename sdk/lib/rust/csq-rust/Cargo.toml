@@ -1,0 +1,16 @@
+# csq-rust — Rust translation of sdk/lib/drivers/csq/csq.c (the Cancel-Safe IRP
+# Queue library, 6 IoCsq* exports). crate-type=staticlib → libcsq_rust.a, linked
+# into ntoskrnl in place of the C `csq` static lib (usbdex-style cohab). On the
+# ntkrnl-sys substrate (IO_CSQ types are in the ddk bindgen). Built for all 3
+# arches. DeepSeek+c2rust translation (Batch 4 kernel-lib residue). C kept on disk.
+
+[package]
+name = "csq-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
