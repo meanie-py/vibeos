@@ -34,7 +34,13 @@ case "$DRIVER" in
   classpnp)
     DRIVER_DIR="${SRC}/drivers/storage/class/classpnp"
     WRAPPER_INC='#include <classp.h>'
-    ALLOW_FILES=( --allowlist-file '.*classp\.h' --allowlist-file '.*classpnp\.h' )
+    # classp.h pulls scsi.h/srb.h/ntddstor.h — the storage structs (SRBEX_DATA, STOR_ADDRESS,
+    # UNMAP_LIST_HEADER, WNODE_*, MODE_PARAMETER_HEADER, READ_CAPACITY_DATA, ...) the modules
+    # use are defined there and are NOT in the ntkrnl-sys kernel bindgen, so allowlist them too.
+    ALLOW_FILES=( --allowlist-file '.*classp\.h' --allowlist-file '.*classpnp\.h'
+                  --allowlist-file '.*scsi\.h' --allowlist-file '.*srb\.h'
+                  --allowlist-file '.*srbhelper\.h' --allowlist-file '.*ntddstor\.h'
+                  --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*wmistr\.h' )
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
   cdrom)
