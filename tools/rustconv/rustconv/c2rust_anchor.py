@@ -117,20 +117,33 @@ def _parse_functions(rs_text: str) -> dict[str, str]:
     return out
 
 
-def build_anchor_map(c_file: Path, timeout: int = 180,
-                     verbose: bool = True) -> dict[str, str]:
-    """Transpile c_file with c2rust and return {fn_name: rust_body}. Best-effort:
-    returns {} on any failure (anchor is optional context, never a hard dep)."""
+# Transpile is the slow step (~seconds); a file's anchors AND preamble both need it.
+# Cache the raw .rs text per (path, mtime) so the second consumer is free.
+_TRANSPILE_CACHE: dict[tuple[str, float], str | None] = {}
+
+
+def _transpile_text(c_file: Path, timeout: int = 180, verbose: bool = True) -> str | None:
+    """Run c2rust on c_file and return the raw transpiled .rs text (None on any failure).
+    Best-effort + cached: anchors and preamble extraction share one transpile."""
+    try:
+        key = (str(c_file.resolve()), c_file.stat().st_mtime)
+    except OSError:
+        return None
+    if key in _TRANSPILE_CACHE:
+        return _TRANSPILE_CACHE[key]
+    result: str | None = None
     if shutil.which("c2rust") is None:
         if verbose:
-            print("  [c2rust] binary not on PATH — skipping anchors", file=sys.stderr)
-        return {}
+            print("  [c2rust] binary not on PATH — skipping", file=sys.stderr)
+        _TRANSPILE_CACHE[key] = None
+        return None
     found = _find_db_entry(c_file)
     if found is None:
         if verbose:
-            print(f"  [c2rust] no compile_commands entry for {c_file.name} — "
-                  f"skipping anchors", file=sys.stderr)
-        return {}
+            print(f"  [c2rust] no compile_commands entry for {c_file.name} — skipping",
+                  file=sys.stderr)
+        _TRANSPILE_CACHE[key] = None
+        return None
     entry, build_dir = found
     flags = _extract_clang_flags(entry)
     out_dir = Path(tempfile.mkdtemp(prefix="c2rust_anchor_"))
@@ -143,23 +156,83 @@ def build_anchor_map(c_file: Path, timeout: int = 180,
         except subprocess.TimeoutExpired:
             if verbose:
                 print(f"  [c2rust] timeout on {c_file.name}", file=sys.stderr)
-            return {}
-        # c2rust panics on some kernel ASTs; we don't care about exit code, only
-        # whether it produced output for our file.
+            _TRANSPILE_CACHE[key] = None
+            return None
+        # c2rust panics on some kernel ASTs (e.g. the `Could not find CDeclId` TU-abort);
+        # we don't care about exit code, only whether it produced output for our file.
         rs = out_dir / "src" / f"{c_file.stem}.rs"
         if not rs.exists():
-            # some layouts drop it at the top level
-            alt = out_dir / f"{c_file.stem}.rs"
+            alt = out_dir / f"{c_file.stem}.rs"   # some layouts drop it at the top level
             rs = alt if alt.exists() else rs
-        if not rs.exists():
-            if verbose:
-                print(f"  [c2rust] no .rs produced for {c_file.name} (AST "
-                      f"unsupported) — skipping anchors", file=sys.stderr)
-            return {}
-        fns = _parse_functions(rs.read_text(errors="replace"))
-        if verbose:
-            print(f"  [c2rust] anchors: {len(fns)} fn(s) from {c_file.name}",
+        if rs.exists():
+            result = rs.read_text(errors="replace")
+        elif verbose:
+            print(f"  [c2rust] no .rs produced for {c_file.name} (AST unsupported)",
                   file=sys.stderr)
-        return fns
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
+    _TRANSPILE_CACHE[key] = result
+    return result
+
+
+def build_anchor_map(c_file: Path, timeout: int = 180,
+                     verbose: bool = True) -> dict[str, str]:
+    """Transpile c_file with c2rust and return {fn_name: rust_body}. Best-effort:
+    returns {} on any failure (anchor is optional context, never a hard dep)."""
+    text = _transpile_text(c_file, timeout=timeout, verbose=verbose)
+    if text is None:
+        return {}
+    fns = _parse_functions(text)
+    if verbose:
+        print(f"  [c2rust] anchors: {len(fns)} fn(s) from {c_file.name}", file=sys.stderr)
+    return fns
+
+
+# File-scope DATA tables c2rust transcribes compiler-exact: the lookup tables / S-boxes /
+# dispatch tables / quirk lists the LLM preamble pass FABRICATES or truncates. We take ONLY
+# `static [mut]` items and `const` items with an AGGREGATE initializer (`[`/`{`) — i.e. real
+# data. We deliberately EXCLUDE scalar `const NAME: _ENUM = 5;` items: c2rust floods those from
+# every header enum it touched (PCIBus/PowerAction…, hundreds per file), they are NOT the file's
+# own data, and they COLLIDE with the enums bindgen/ntkrnl_sys already define. Struct/type/union
+# defs are likewise excluded — drivers get those exact from bindgen `types_*.rs`; only DATA is
+# fabrication-prone. Scalar #define consts stay the harvest_consts/LLM-preamble job (low risk).
+_DATA_SIG = re.compile(r"^(?:pub\s+)?(static(?:\s+mut)?|const)\s+[A-Za-z_]\w*\s*:", re.M)
+
+
+def build_preamble(c_file: Path, timeout: int = 180, verbose: bool = True) -> str:
+    """Return c2rust's file-scope DATA tables (`static [mut]` + aggregate `const`) as exact
+    Rust text, to prepend deterministically instead of LLM-translating the preamble (which
+    fabricates table values). Excludes header enum-variant scalar consts. Best-effort: '' on
+    failure."""
+    text = _transpile_text(c_file, timeout=timeout, verbose=verbose)
+    if text is None:
+        return ""
+    lines = text.splitlines()
+    out: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        m = _DATA_SIG.match(lines[i])
+        if m:
+            start = i
+            # an item runs until brackets balance and the line ends in `;` (handles both
+            # one-line scalars and multi-line array/struct initialisers).
+            depth = 0
+            j = i
+            while j < n:
+                depth += lines[j].count("[") - lines[j].count("]")
+                depth += lines[j].count("{") - lines[j].count("}")
+                if depth <= 0 and lines[j].rstrip().endswith(";"):
+                    break
+                j += 1
+            block = "\n".join(lines[start:j + 1])
+            # keep `static*` always; keep `const` ONLY if it carries an aggregate (table/struct),
+            # never a bare scalar enum-variant const.
+            if m.group(1).startswith("static") or ("[" in block or "{" in block):
+                out.append(block)
+            i = j + 1
+            continue
+        i += 1
+    if verbose:
+        print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}",
+              file=sys.stderr)
+    return "\n\n".join(out)
