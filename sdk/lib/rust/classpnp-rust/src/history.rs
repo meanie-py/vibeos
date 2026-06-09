@@ -1,109 +1,174 @@
-use crate::types::*;
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
-
-extern "system" {
-    fn NT_ASSERT(condition: i32);
-    fn ClasspTransferPacketGetSenseInfoBuffer(Pkt: *mut TRANSFER_PACKET) -> *mut core::ffi::c_void;
-    fn ClasspTransferPacketGetSenseInfoBufferLength(Pkt: *mut TRANSFER_PACKET) -> u8;
-    fn IsDescriptorSenseDataFormat(buffer: *mut core::ffi::c_void) -> u8;
-    fn ScsiConvertToFixedSenseFormat( senseInfoBuffer: *mut core::ffi::c_void, senseInfoBufferLength: u8, convertedSenseBuffer: *mut core::ffi::c_void, size: u32, ) -> u8;
-    fn ScsiGetTotalSenseByteCountIndicated( senseInfoBuffer: *mut core::ffi::c_void, senseInfoBufferLength: u8, senseSize: *mut u8, ) -> u8;
-    fn min(a: u8, b: u8) -> u8;
-}
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PSRB_HISTORY, PSRB_HISTORY_ITEM, SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT, SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED, SENSE_DATA, SRB_HISTORY, SRB_HISTORY_ITEM, _CLASS_PRIVATE_FDO_DATA, _FUNCTIONAL_DEVICE_EXTENSION, _SENSE_DATA, _SRB_HISTORY, _SRB_HISTORY_ITEM, _TRANSFER_PACKET};
+use ntkrnl_sys::ddk::{BOOLEAN, PCSTR, PVOID, UCHAR, ULONG};
+use crate::shims::*;
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::driver_ddk::{DbgPrint};
 #[no_mangle]
-pub unsafe extern "C" fn HistoryInitializeRetryLogs(
-    History: *mut SRB_HISTORY,
-    HistoryCount: u32,
-) {
-    let mut tmpSize: u32 = (HistoryCount as usize * core::mem::size_of::<SRB_HISTORY_ITEM>()) as u32;
-    tmpSize += (core::mem::size_of::<SRB_HISTORY>() - core::mem::size_of::<SRB_HISTORY_ITEM>()) as u32;
-    core::ptr::write_bytes(History, 0u8, tmpSize as usize);
+pub unsafe extern "C" fn HistoryInitializeRetryLogs(History: PSRB_HISTORY, HistoryCount: ULONG) {
+    let tmp_size: ULONG = (HistoryCount as usize)
+        .wrapping_mul(core::mem::size_of::<SRB_HISTORY_ITEM>())
+        .wrapping_add(
+            core::mem::size_of::<SRB_HISTORY>().wrapping_sub(core::mem::size_of::<SRB_HISTORY_ITEM>()),
+        ) as ULONG;
+    core::ptr::write_bytes(History as *mut u8, 0u8, tmp_size as usize);
     (*History).TotalHistoryCount = HistoryCount;
 }
 #[no_mangle]
-pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut TRANSFER_PACKET) {
-    let history: *mut SRB_HISTORY;
-    let item: *mut SRB_HISTORY_ITEM;
-
-    NT_ASSERT((!(*Pkt).RetryHistory.is_null()) as i32);
-    history = (*Pkt).RetryHistory;
-    // sending a packet implies a new history unit is to be used.
-    NT_ASSERT(((*history).UsedHistoryCount <= (*history).TotalHistoryCount) as i32);
-
-    if (*history).UsedHistoryCount == (*history).TotalHistoryCount {
-        let fdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION = (*(*Pkt).Fdo).DeviceExtension;
-        let fdoData: *mut CLASS_PRIVATE_FDO_DATA = (*fdoExtension).PrivateFdoData;
-        NT_ASSERT((!(*fdoData).InterpretSenseInfo.is_null()) as i32);
-        NT_ASSERT((!((*(*fdoData).InterpretSenseInfo).Compress).is_none()) as i32);
-        ((*(*fdoData).InterpretSenseInfo).Compress)((*(*fdoExtension).__bindgen_anon_1.__bindgen_anon_1).DeviceObject, history);
-        NT_ASSERT(((*history).UsedHistoryCount < (*history).TotalHistoryCount) as i32);
+pub unsafe extern "C" fn HistoryLogSendPacket(Pkt: *mut _TRANSFER_PACKET) {
+    // assert Pkt->RetryHistory != NULL
+    if (*Pkt).RetryHistory.is_null() {
+        DbgPrint(
+            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+            b"history.c\0".as_ptr() as *const core::ffi::c_char,
+            50i32,
+            b"Pkt->RetryHistory != NULL\0".as_ptr() as *const core::ffi::c_char,
+        );
+        __int2c();
     }
 
-    // thus, since we are about to increment the count, it must now be less...
-    NT_ASSERT(((*history).UsedHistoryCount < (*history).TotalHistoryCount) as i32);
+    let history: *mut _SRB_HISTORY = (*Pkt).RetryHistory;
 
-    // increment the number of history units in use
-    (*history).UsedHistoryCount += 1;
-
-    // determine index to use
-    let base: *mut SRB_HISTORY_ITEM =
-        core::ptr::addr_of_mut!((*history).History) as *mut SRB_HISTORY_ITEM;
-    item = base.offset(((*history).UsedHistoryCount - 1) as isize);
-
-    // zero out the history item
-    RtlZeroMemory(
-        item as *mut core::ffi::c_void,
-        core::mem::size_of::<SRB_HISTORY_ITEM>(),
-    );
-
-    // Query the tick count and store in the history
-    KeQueryTickCount(core::ptr::addr_of_mut!((*item).TickCountSent));
-    return;
-}
-#[no_mangle]
-pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut TRANSFER_PACKET) {
-    NT_ASSERT((!(*Pkt).RetryHistory.is_null()) as i32);
-
-    let history = (*Pkt).RetryHistory;
-
-    NT_ASSERT(((*history).UsedHistoryCount <= (*history).TotalHistoryCount) as i32);
-
-    let index = ((*history).UsedHistoryCount as usize).wrapping_sub(1);
-    let item_base_ptr = (history as *mut u8).add(core::mem::offset_of!(SRB_HISTORY, History));
-    let item = &mut *((item_base_ptr as *mut SRB_HISTORY_ITEM).add(index));
-
-    KeQueryTickCount(&mut item.TickCountCompleted as *mut i64);
-
-    item.SrbStatus = (*(*Pkt).Srb).SrbStatus;
-
-    let mut senseInfoBuffer = ClasspTransferPacketGetSenseInfoBuffer(Pkt);
-    let mut senseInfoBufferLength = ClasspTransferPacketGetSenseInfoBufferLength(Pkt);
-
-    let mut convertedSenseBuffer: SENSE_DATA = core::mem::zeroed();
-    let mut validSense: u8 = 1;
-
-    if IsDescriptorSenseDataFormat(senseInfoBuffer) != 0 {
-        validSense = ScsiConvertToFixedSenseFormat(
-            senseInfoBuffer,
-            senseInfoBufferLength,
-            &mut convertedSenseBuffer as *mut SENSE_DATA as *mut core::ffi::c_void,
-            core::mem::size_of::<SENSE_DATA>() as u32,
+    // assert UsedHistoryCount <= TotalHistoryCount
+    if !((*history).UsedHistoryCount <= (*history).TotalHistoryCount) {
+        DbgPrint(
+            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+            b"history.c\0".as_ptr() as *const core::ffi::c_char,
+            53i32,
+            b"history->UsedHistoryCount <= history->TotalHistoryCount\0".as_ptr() as *const core::ffi::c_char,
         );
+        __int2c();
+    }
 
-        if validSense != 0 {
-            senseInfoBuffer = &mut convertedSenseBuffer as *mut SENSE_DATA as *mut core::ffi::c_void;
-            senseInfoBufferLength = core::mem::size_of::<SENSE_DATA>() as u8;
+    // if full, request class driver to compress history
+    if (*history).UsedHistoryCount == (*history).TotalHistoryCount {
+        let fdoExtension = (*(*Pkt).Fdo).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
+        let fdoData = (*fdoExtension).PrivateFdoData as *mut _CLASS_PRIVATE_FDO_DATA;
+        if (*fdoData).InterpretSenseInfo.is_null() {
+            DbgPrint(
+                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                b"history.c\0".as_ptr() as *const core::ffi::c_char,
+                60i32,
+                b"fdoData->InterpretSenseInfo != NULL\0".as_ptr() as *const core::ffi::c_char,
+            );
+            __int2c();
+        }
+        if (*(*fdoData).InterpretSenseInfo).Compress.is_none() {
+            DbgPrint(
+                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                b"history.c\0".as_ptr() as *const core::ffi::c_char,
+                61i32,
+                b"fdoData->InterpretSenseInfo->Compress != NULL\0".as_ptr() as *const core::ffi::c_char,
+            );
+            __int2c();
+        }
+        let compress_fn = (*(*fdoData).InterpretSenseInfo).Compress
+            .expect("non-null function pointer");
+        compress_fn((*fdoExtension).DeviceObject, history);
+
+        // assert UsedHistoryCount < TotalHistoryCount after compression
+        if !((*history).UsedHistoryCount < (*history).TotalHistoryCount) {
+            DbgPrint(
+                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                b"history.c\0".as_ptr() as *const core::ffi::c_char,
+                63i32,
+                b"history->UsedHistoryCount < history->TotalHistoryCount\0".as_ptr() as *const core::ffi::c_char,
+            );
+            __int2c();
         }
     }
 
-    RtlZeroMemory(
-        core::ptr::addr_of_mut!(item.NormalizedSenseData) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&item.NormalizedSenseData),
+    // final ensure room
+    if !((*history).UsedHistoryCount < (*history).TotalHistoryCount) {
+        DbgPrint(
+            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+            b"history.c\0".as_ptr() as *const core::ffi::c_char,
+            67i32,
+            b"history->UsedHistoryCount < history->TotalHistoryCount\0".as_ptr() as *const core::ffi::c_char,
+        );
+        __int2c();
+    }
+
+    (*history).UsedHistoryCount = (*history).UsedHistoryCount.wrapping_add(1);
+
+    let item = &raw mut (*history).History as *mut _SRB_HISTORY_ITEM;
+    let item = item.offset(
+        (((*history).UsedHistoryCount as usize).wrapping_sub(1)) as isize
+    );
+
+    // zero the history item
+    core::ptr::write_bytes(
+        item as *mut u8,
+        0,
+        core::mem::size_of::<_SRB_HISTORY_ITEM>(),
+    );
+
+    // store tick count
+    KeQueryTickCount(&raw mut (*item).TickCountSent as *mut i64);
+}
+#[no_mangle]
+pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
+    if (*Pkt).RetryHistory.is_null() {
+        DbgPrint(
+            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/history.c\0".as_ptr() as PCSTR,
+            93i32,
+            b"Pkt->RetryHistory != NULL\0".as_ptr() as PCSTR,
+        );
+        __int2c();
+    }
+
+    let history: PSRB_HISTORY = (*Pkt).RetryHistory;
+
+    if !((*history).UsedHistoryCount <= (*history).TotalHistoryCount) {
+        DbgPrint(
+            b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/history.c\0".as_ptr() as PCSTR,
+            95i32,
+            b"history->UsedHistoryCount <= history->TotalHistoryCount\0".as_ptr() as PCSTR,
+        );
+        __int2c();
+    }
+
+    let item: PSRB_HISTORY_ITEM = ((*history).History.as_mut_ptr())
+        .add((*history).UsedHistoryCount as usize - 1);
+
+    KeQueryTickCount(&mut (*item).TickCountCompleted);
+    (*item).SrbStatus = (*(*Pkt).Srb).SrbStatus;
+
+    let mut senseInfoBuffer: PVOID = ClasspTransferPacketGetSenseInfoBuffer(Pkt);
+    let mut senseInfoBufferLength: UCHAR = ClasspTransferPacketGetSenseInfoBufferLength(Pkt);
+
+    let mut convertedSenseBuffer: SENSE_DATA = core::mem::zeroed();
+    let mut validSense: BOOLEAN = 1u8;
+
+    // Inline IsDescriptorSenseDataFormat check
+    let byte = *(senseInfoBuffer as *const u8);
+    if (byte & 0x7F) as i32 == SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT
+        || (byte & 0x7F) as i32 == SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED
+    {
+        validSense = ScsiConvertToFixedSenseFormat(
+            senseInfoBuffer,
+            senseInfoBufferLength,
+            &mut convertedSenseBuffer as *mut _SENSE_DATA as PVOID,
+            core::mem::size_of::<SENSE_DATA>() as UCHAR,
+        );
+        if validSense != 0 {
+            senseInfoBuffer = &mut convertedSenseBuffer as *mut _SENSE_DATA as PVOID;
+            senseInfoBufferLength = core::mem::size_of::<SENSE_DATA>() as UCHAR;
+        }
+    }
+
+    core::ptr::write_bytes(
+        &mut (*item).NormalizedSenseData as *mut _SENSE_DATA as *mut u8,
+        0u8,
+        core::mem::size_of::<SENSE_DATA>(),
     );
 
     if validSense != 0 {
-        let mut senseSize: u8 = 0;
+        let mut senseSize: UCHAR;
         if ScsiGetTotalSenseByteCountIndicated(
             senseInfoBuffer,
             senseInfoBufferLength,
@@ -113,171 +178,16 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut TRANSFER_PACKET) {
             senseSize = senseInfoBufferLength;
         }
 
-        senseSize = min(
-            senseSize,
-            core::mem::size_of_val(&item.NormalizedSenseData) as u8,
-        );
+        senseSize = if (senseSize as usize) < core::mem::size_of::<SENSE_DATA>() {
+            senseSize
+        } else {
+            core::mem::size_of::<SENSE_DATA>() as UCHAR
+        };
 
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(item.NormalizedSenseData) as *mut core::ffi::c_void,
-            senseInfoBuffer,
+        core::ptr::copy_nonoverlapping(
+            senseInfoBuffer as *const u8,
+            &mut (*item).NormalizedSenseData as *mut _SENSE_DATA as *mut u8,
             senseSize as usize,
         );
     }
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*++
-//
-//
-// Copyright (C) Microsoft Corporation, 1991 - 1999
-//
-// Module Name:
-//
-//     history.c
-//
-// Abstract:
-//
-//     Packet history routines for CLASSPNP
-//
-// Environment:
-//
-//     kernel mode only
-//
-// Notes:
-//
-//
-// Revision History:
-//
-// --*/
-//
-// #include "classp.h"
-// #include "debug.h"
-//
-// #ifdef DEBUG_USE_WPP
-// #include "history.tmh"
-// #endif
-//
-// //#ifdef ALLOC_PRAGMA
-// //    #pragma alloc_text(PAGE, InitializeTransferPackets)
-// //#endif
-//
-// VOID HistoryInitializeRetryLogs( PSRB_HISTORY History, ULONG HistoryCount) {
-//     ULONG tmpSize = HistoryCount * sizeof(SRB_HISTORY_ITEM);
-//     tmpSize += sizeof(SRB_HISTORY) - sizeof(SRB_HISTORY_ITEM);
-//     RtlZeroMemory(History, tmpSize);
-//     History->TotalHistoryCount = HistoryCount;
-//     return;
-// }
-//
-//
-// VOID HistoryLogSendPacket(TRANSFER_PACKET * Pkt) {
-//
-//     PSRB_HISTORY history;
-//     PSRB_HISTORY_ITEM item;
-//
-//     NT_ASSERT( Pkt->RetryHistory != NULL  as i32)
-//     history = Pkt->RetryHistory;
-//     // sending a packet implies a new history unit is to be used.
-//     NT_ASSERT( history->UsedHistoryCount <= history->TotalHistoryCount  as i32)
-//
-//     // if already all used up, request class driver to remove at least one history unit
-//     if (history->UsedHistoryCount == history->TotalHistoryCount )
-//     {
-//         PFUNCTIONAL_DEVICE_EXTENSION fdoExtension = Pkt->Fdo->DeviceExtension;
-//         PCLASS_PRIVATE_FDO_DATA fdoData = fdoExtension->PrivateFdoData;
-//         NT_ASSERT( fdoData->InterpretSenseInfo != NULL  as i32)
-//         NT_ASSERT( fdoData->InterpretSenseInfo->Compress != NULL  as i32)
-//         fdoData->InterpretSenseInfo->Compress( fdoExtension->DeviceObject, history );
-//         NT_ASSERT( history->UsedHistoryCount < history->TotalHistoryCount  as i32)
-//     }
-//
-//     // thus, since we are about to increment the count, it must now be less...
-//     NT_ASSERT( history->UsedHistoryCount < history->TotalHistoryCount  as i32)
-//
-//     // increment the number of history units in use
-//     history->UsedHistoryCount++;
-//
-//     // determine index to use
-//     item = &( history->History[ history->UsedHistoryCount-1 ] );
-//
-//     // zero out the history item
-//     RtlZeroMemory(item, sizeof(SRB_HISTORY_ITEM));
-//
-//     // Query the tick count and store in the history
-//     KeQueryTickCount(&item->TickCountSent);
-//     return;
-// }
-//
-// VOID HistoryLogReturnedPacket(TRANSFER_PACKET *Pkt) {
-//
-//     PSRB_HISTORY history;
-//     PSRB_HISTORY_ITEM item;
-//     UCHAR senseSize;
-//     PVOID senseInfoBuffer;
-//     UCHAR senseInfoBufferLength;
-//     SENSE_DATA convertedSenseBuffer = {0};
-//     BOOLEAN validSense = TRUE;
-//
-//     NT_ASSERT( Pkt->RetryHistory != NULL  as i32)
-//     history = Pkt->RetryHistory;
-//     NT_ASSERT( history->UsedHistoryCount <= history->TotalHistoryCount  as i32)
-//     item = &( history->History[ history->UsedHistoryCount-1 ] );
-//
-//     // Query the tick count and store in the history
-//     KeQueryTickCount(&item->TickCountCompleted);
-//
-//     // Copy the SRB Status...
-//     item->SrbStatus = Pkt->Srb->SrbStatus;
-//
-//     //
-//     // Process sense data
-//     //
-//
-//     senseInfoBuffer = ClasspTransferPacketGetSenseInfoBuffer(Pkt);
-//     senseInfoBufferLength = ClasspTransferPacketGetSenseInfoBufferLength(Pkt);
-//
-//     if (IsDescriptorSenseDataFormat(senseInfoBuffer)) {
-//
-//         validSense = ScsiConvertToFixedSenseFormat(senseInfoBuffer,
-//                                                    senseInfoBufferLength,
-//                                                    (PVOID)&convertedSenseBuffer,
-//                                                    sizeof(convertedSenseBuffer));
-//
-//         if (validSense) {
-//             senseInfoBuffer = (PVOID)&convertedSenseBuffer;
-//             senseInfoBufferLength = sizeof(convertedSenseBuffer);
-//         }
-//     }
-//
-//     RtlZeroMemory(&(item->NormalizedSenseData), sizeof(item->NormalizedSenseData));
-//
-//     if (validSense) {
-//
-//         // Determine the amount of valid sense data
-//
-//         if (!ScsiGetTotalSenseByteCountIndicated(senseInfoBuffer,
-//                                                  senseInfoBufferLength,
-//                                                  &senseSize)) {
-//             senseSize = senseInfoBufferLength;
-//         }
-//
-//         // Normalize the sense data copy in the history
-//         senseSize = min(senseSize, sizeof(item->NormalizedSenseData));
-//         RtlCopyMemory(&(item->NormalizedSenseData),
-//                       senseInfoBuffer,
-//                       senseSize
-//                       );
-//     }
-//
-//     return;
-// }
-//
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================

@@ -1,63 +1,79 @@
-use crate::types::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::driver_ddk::{IRP_MJ_DEVICE_CONTROL, IRP_MJ_PNP, IRP_MJ_SHUTDOWN, IRP_MJ_SYSTEM_CONTROL};
-
-extern "system" {
-    fn ClassCreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-    fn ClassReadWrite(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-    fn ClassDeviceControlDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-    fn ClassInternalIoControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-    fn ClassShutdownFlush(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-    fn ClassDispatchPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-    fn ClassDispatchPower(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-    fn ClassSystemControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> i32;
-}
+use crate::glue::{IRP_MJ_SCSI};
+use crate::types::{ClassCreateClose, ClassDeviceControlDispatch, ClassDispatchPnp, ClassDispatchPower, ClassInternalIoControl, ClassReadWrite, ClassShutdownFlush, ClassSystemControl, PCOMMON_DEVICE_EXTENSION, _CLASS_DRIVER_EXTENSION};
+use ntkrnl_sys::ddk::{PCSTR, _DEVICE_OBJECT, _IRP};
+use crate::shims::*;
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{KeGetCurrentIrql};
 
 // ---- file-scope preamble (translated) ----
-pub static mut ClassDispatchUnimplemented: DRIVER_DISPATCH = core::ptr::null_mut::<core::ffi::c_void>() as DRIVER_DISPATCH;
-
-const IRP_MJ_SCSI: u32 = 0x0B;
-
-const IRP_MJ_POWER: u32 = 0x17;
+pub static mut ClassDispatchUnimplemented: DRIVER_DISPATCH = None;
 #[no_mangle]
-pub unsafe extern "C" fn ClassInitializeDispatchTables(
-    DriverExtension: *mut CLASS_DRIVER_EXTENSION,
-) {
-    // PAGED_CODE();
-    for idx in 0..=IRP_MJ_MAXIMUM_FUNCTION as u32 {
-        (*DriverExtension).DeviceMajorFunctionTable[idx as usize] = ClassDispatchUnimplemented;
+pub unsafe extern "C" fn ClassInitializeDispatchTables(DriverExtension: *mut _CLASS_DRIVER_EXTENSION) {
+    if KeGetCurrentIrql() as i32 > APC_LEVEL {
+        DbgPrint(
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
+            KeGetCurrentIrql() as i32,
+        );
+        if 0 == 0 {
+            DbgPrint(
+                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/dispatch.c\0"
+                    .as_ptr() as *const i8,
+                44i32,
+                b"0\0".as_ptr() as *const i8,
+            );
+            __int2c();
+        }
     }
 
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_CREATE as usize] = ClassCreateClose;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_CLOSE as usize] = ClassCreateClose;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_READ as usize] = ClassReadWrite;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_WRITE as usize] = ClassReadWrite;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_DEVICE_CONTROL as usize] = ClassDeviceControlDispatch;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_SCSI as usize] = ClassInternalIoControl;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_SHUTDOWN as usize] = ClassShutdownFlush;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_FLUSH_BUFFERS as usize] = ClassShutdownFlush;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_PNP as usize] = ClassDispatchPnp;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_POWER as usize] = ClassDispatchPower;
-    (*DriverExtension).DeviceMajorFunctionTable[IRP_MJ_SYSTEM_CONTROL as usize] = ClassSystemControl;
-}
+    let table = &mut (*DriverExtension).DeviceMajorFunctionTable;
 
+    let mut idx: u32 = 0;
+    while idx <= IRP_MJ_MAXIMUM_FUNCTION as u32 {
+        table[idx as usize] =
+            Some(ClassDispatchUnimplemented as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        idx = idx.wrapping_add(1);
+    }
+
+    table[IRP_MJ_CREATE as usize] =
+        Some(ClassCreateClose as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_CLOSE as usize] =
+        Some(ClassCreateClose as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_READ as usize] =
+        Some(ClassReadWrite as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_WRITE as usize] =
+        Some(ClassReadWrite as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_DEVICE_CONTROL as usize] =
+        Some(ClassDeviceControlDispatch as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_SCSI as usize] =
+        Some(ClassInternalIoControl as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_SHUTDOWN as usize] =
+        Some(ClassShutdownFlush as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_FLUSH_BUFFERS as usize] =
+        Some(ClassShutdownFlush as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_PNP as usize] =
+        Some(ClassDispatchPnp as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_POWER as usize] =
+        Some(ClassDispatchPower as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+    table[IRP_MJ_SYSTEM_CONTROL as usize] =
+        Some(ClassSystemControl as extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+}
 #[no_mangle]
 pub unsafe extern "system" fn ClassGlobalDispatch(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    unsafe {
-        let commonExtension: PCOMMON_DEVICE_EXTENSION = (*DeviceObject).DeviceExtension;
-        let irpStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-        // Code Analysis cannot analyze the code paths specific to clients.
-        // _Analysis_assume_(FALSE);
-        return ((*commonExtension).DispatchTable[(*irpStack).MajorFunction as usize])(DeviceObject, Irp);
-    }
+    let common_extension = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
+    let irp_stack = IoGetCurrentIrpStackLocation(Irp);
+    let dispatch_fn = *(*common_extension).DispatchTable.offset((*irp_stack).MajorFunction as isize);
+    dispatch_fn(DeviceObject, Irp)
 }
 #[no_mangle]
 pub unsafe extern "C" fn ClassDispatchUnimplemented(
@@ -65,156 +81,10 @@ pub unsafe extern "C" fn ClassDispatchUnimplemented(
     Irp: PIRP,
 ) -> NTSTATUS {
     let _ = DeviceObject;
-
-    if u32::from((*IoGetCurrentIrpStackLocation(Irp)).MajorFunction) == IRP_MJ_POWER {
+    if (*IoGetCurrentIrpStackLocation(Irp)).MajorFunction as i32 == IRP_MJ_POWER as i32 {
         PoStartNextPowerIrp(Irp);
     }
-
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_DEVICE_REQUEST;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
+    IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
     STATUS_INVALID_DEVICE_REQUEST
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*++
-//
-// Copyright (C) Microsoft Corporation, 1991 - 2005
-//
-// Module Name:
-//
-//     dispatch.c
-//
-// Abstract:
-//
-//     Code to support multiple dispatch tables.
-//
-// Environment:
-//
-//     kernel mode only
-//
-// Notes:
-//
-//
-// Revision History:
-//
-// --*/
-//
-// #include "classp.h"
-//
-// #ifdef ALLOC_PRAGMA
-// #pragma alloc_text(PAGE, ClassInitializeDispatchTables)
-// #endif
-//
-// DRIVER_DISPATCH ClassDispatchUnimplemented;
-//
-// //
-// // Routines start
-// //
-//
-//
-// VOID
-// ClassInitializeDispatchTables(
-//     PCLASS_DRIVER_EXTENSION DriverExtension
-//     )
-// {
-//     ULONG idx;
-//
-//     PAGED_CODE();
-//
-//     //
-//     // Initialize the standard device dispatch table
-//     //
-//
-//     for (idx = 0; idx <= IRP_MJ_MAXIMUM_FUNCTION; idx++) {
-//         DriverExtension->DeviceMajorFunctionTable[idx] = ClassDispatchUnimplemented;
-//     }
-//
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_CREATE]         = ClassCreateClose;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_CLOSE]          = ClassCreateClose;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_READ]           = ClassReadWrite;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_WRITE]          = ClassReadWrite;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_DEVICE_CONTROL] = ClassDeviceControlDispatch;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_SCSI]           = ClassInternalIoControl;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_SHUTDOWN]       = ClassShutdownFlush;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_FLUSH_BUFFERS]  = ClassShutdownFlush;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_PNP]            = ClassDispatchPnp;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_POWER]          = ClassDispatchPower;
-//     DriverExtension->DeviceMajorFunctionTable[IRP_MJ_SYSTEM_CONTROL] = ClassSystemControl;
-//
-//
-//     return;
-// }
-//
-//
-// NTSTATUS
-// NTAPI /* ReactOS Change: GCC Does not support STDCALL by default */
-// ClassGlobalDispatch(
-//     IN PDEVICE_OBJECT DeviceObject,
-//     IN PIRP Irp
-//     )
-//
-// {
-//     PCOMMON_DEVICE_EXTENSION commonExtension = DeviceObject->DeviceExtension;
-//     PIO_STACK_LOCATION irpStack = IoGetCurrentIrpStackLocation(Irp);
-//     // Code Analysis cannot analyze the code paths specific to clients.
-//     _Analysis_assume_(FALSE);
-//     return (commonExtension->DispatchTable[irpStack->MajorFunction])(DeviceObject, Irp);
-//
-// }
-//
-// NTSTATUS
-// NTAPI /* ReactOS Change: GCC Does not support STDCALL by default */
-// ClassDispatchUnimplemented(
-//     IN PDEVICE_OBJECT DeviceObject,
-//     IN PIRP Irp
-//     )
-// /*++
-//
-// Routine Description:
-//
-//     This function is the default dispatch routine.  Its
-//     responsibility is simply to set the status in the packet to indicate
-//     that the operation requested is invalid for this device type, and then
-//     complete the packet.
-//
-// Arguments:
-//
-//     DeviceObject - Specifies the device object for which this request is
-//         bound.  Ignored by this routine.
-//
-//     Irp - Specifies the address of the I/O Request Packet (IRP) for this
-//         request.
-//
-// Return Value:
-//
-//     The final status is always STATUS_INVALID_DEVICE_REQUEST.
-//
-//
-// --*/
-//
-// {
-//     UNREFERENCED_PARAMETER( DeviceObject );
-//
-//     //
-//     // Simply store the appropriate status, complete the request, and return
-//     // the same status stored in the packet.
-//     //
-//
-//     if ((IoGetCurrentIrpStackLocation(Irp))->MajorFunction == IRP_MJ_POWER) {
-//         PoStartNextPowerIrp(Irp);
-//     }
-//     Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
-//     IoCompleteRequest( Irp, IO_NO_INCREMENT );
-//     return STATUS_INVALID_DEVICE_REQUEST;
-// }
-//
-//
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================

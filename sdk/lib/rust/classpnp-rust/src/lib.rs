@@ -5,6 +5,10 @@
 
 pub mod types;
 pub mod glue;
+pub mod shims;
+pub mod data;
+pub mod guid;
+pub mod globals;
 
 pub mod autorun;
 pub mod class;
