@@ -491,7 +491,7 @@ pub unsafe extern "C" fn RetryTransferPacket(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
 pub unsafe extern "C" fn TransferPacketQueueRetryDpc(Pkt: PTRANSFER_PACKET) {
     KeInitializeDpc(
         core::ptr::addr_of_mut!((*Pkt).RetryTimerDPC),
-        Some(core::mem::transmute::<unsafe extern "system" fn(PKDPC, _>(TransferPacketRetryTimerDpc)),
+        Some(core::mem::transmute::<unsafe extern "system" fn(PKDPC, PVOID, PVOID, PVOID), _>(TransferPacketRetryTimerDpc)),
         Pkt as PVOID,
     );
     if (*Pkt).RetryIn100nsUnits == 0i64 {

@@ -8,37 +8,95 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusRelations, BusTypeFibre, BusTypeRAID, BusTypeiScsi, DEVICE_DATA_SET_RANGE, DEVICE_DSM_OFFLOAD_READ_PARAMETERS, DEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, DEVICE_MANAGE_DATA_SET_ATTRIBUTES, DEVICE_RELATIONS, DPFLTR_CLASSPNP_ID, DeviceNumber, DevicePropertyRemovalPolicy, ExFreePool, ExInitializeRundownProtectionCacheAware, ExReInitializeRundownProtectionCacheAware, ExSizeOfRundownProtectionCacheAware, ExWaitForRundownProtectionReleaseCacheAware, _KWAIT_REASON_Executive, GUID, IO_COMPLETION_ROUTINE, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IRP, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoBuildDeviceIoControlRequest, IoCopyCurrentIrpStackLocationToNext, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetCurrentIrpStackLocation, IoGetDeviceProperty, IoGetDriverObjectExtension, IoGetNextIrpStackLocation, IoInitializeIrp, IoInvalidateDeviceRelations, IoIs32bitProcess, IoMarkIrpPending, IoOpenDeviceRegistryKey, IoReadAccess, IoRegisterDeviceInterface, IoSetCompletionRoutine, IoSetDeviceInterfaceState, IoSetNextIrpStackLocation, IoSetStartIoAttributes, IoStartNextPacket, IoWMIRegistrationControl, IoWriteAccess, IoWriteErrorLogEntry, KEVENT, KLOCK_QUEUE_HANDLE, KeAcquireInStackQueuedSpinLock, KeDelayExecutionThread, KeEnterCriticalRegion, KeGetRecommendedSharedDataAlignment, KeInitializeEvent, KeInitializeSpinLock, KeLeaveCriticalRegion, KeReleaseInStackQueuedSpinLock, KeSetTimerEx, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, MOUNTDEV_NAME, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, NTSTRSAFE_PSTR, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, ObReferenceObjectByPointer, PCCHAR, PCSZ, PDEVICE_CAPABILITIES, PDEVICE_DATA_SET_RANGE, PDEVICE_DSM_OFFLOAD_READ_PARAMETERS, PDEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDRIVER_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIO_WORKITEM, PIRP, PKEVENT, PMDL, PMOUNTDEV_NAME, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, PRTL_QUERY_REGISTRY_TABLE, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_NUMBER, PSTORAGE_HOTPLUG_INFO, PSTORAGE_OFFLOAD_READ_OUTPUT, PSTORAGE_OFFLOAD_WRITE_OUTPUT, PSTORAGE_PROPERTY_ID, PSTORAGE_PROPERTY_QUERY, PSTORAGE_READ_CAPACITY, PULONGLONG, PUNICODE_STRING, PVPB, PowerDeviceD0, PropertyStandardQuery, PsGetCurrentThread, RTL_QUERY_REGISTRY_TABLE, RemovalPolicyExpectOrderlyRemoval, RemovalPolicyExpectSurpriseRemoval, RtlAnsiStringToUnicodeString, RtlDeleteRegistryValue, RtlFreeUnicodeString, RtlInitString, RtlInitUnicodeString, RtlQueryRegistryValues, STORAGE_DEVICE_NUMBER, STORAGE_HOTPLUG_INFO, STORAGE_OFFLOAD_READ_OUTPUT, STORAGE_OFFLOAD_WRITE_OUTPUT, STORAGE_PROPERTY_QUERY, STORAGE_READ_CAPACITY, STRING, StorageAccessAlignmentProperty, StorageDeviceCopyOffloadProperty, StorageDeviceLBProvisioningProperty, StorageDeviceMediumProductType, StorageDeviceSeekPenaltyProperty, StorageDeviceTrimProperty, StorageDeviceUniqueIdProperty, StorageDeviceWriteCacheProperty, _EVENT_TYPE_SynchronizationEvent, UINT32, _KWAIT_REASON_UserRequest, ZwClose, ZwOpenKey, ZwSetValueKey};
+use ntkrnl_sys::ddk::{DEVICE_DATA_SET_RANGE, DEVICE_DSM_OFFLOAD_READ_PARAMETERS, DEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, DEVICE_MANAGE_DATA_SET_ATTRIBUTES, DEVICE_RELATIONS, DISK_GEOMETRY, ExFreePool, ExInitializeRundownProtectionCacheAware, ExReInitializeRundownProtectionCacheAware, ExSizeOfRundownProtectionCacheAware, ExWaitForRundownProtectionReleaseCacheAware, _KWAIT_REASON_Executive, GUID, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IRP, IoAllocateDriverObjectExtension, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildDeviceIoControlRequest, IoCopyCurrentIrpStackLocationToNext, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoGetDeviceProperty, IoGetDriverObjectExtension, IoGetNextIrpStackLocation, IoGetPagingIoPriority, IoInitializeIrp, IoInvalidateDeviceRelations, IoOpenDeviceRegistryKey, IoQueueWorkItem, IoRegisterDeviceInterface, IoSetCompletionRoutine, IoSetDeviceInterfaceState, IoSetNextIrpStackLocation, IoSetStartIoAttributes, IoStartPacket, IoWMIRegistrationControl, IoWriteErrorLogEntry, KEVENT, KLOCK_QUEUE_HANDLE, KeAcquireInStackQueuedSpinLock, KeBugCheck, KeDelayExecutionThread, KeEnterCriticalRegion, KeGetRecommendedSharedDataAlignment, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeInitializeTimer, KeLeaveCriticalRegion, KeQueryTimeIncrement, KeReleaseInStackQueuedSpinLock, KeSetTimerEx, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, LPGUID, MOUNTDEV_NAME, MmBuildMdlForNonPagedPool, MmProbeAndLockPages, MmUnlockPages, NTSTRSAFE_PSTR, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, ObReferenceObjectByPointer, PCCHAR, PCSZ, PDEVICE_CAPABILITIES, PDEVICE_DATA_SET_RANGE, PDEVICE_DSM_OFFLOAD_READ_PARAMETERS, PDEVICE_DSM_OFFLOAD_WRITE_PARAMETERS, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES, PDEVICE_OBJECT, PDEVICE_POWER_DESCRIPTOR, PDEVICE_RELATIONS, PDRIVER_OBJECT, PEX_RUNDOWN_REF_CACHE_AWARE, PIO_COMPLETION_ROUTINE, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIO_WORKITEM, PIRP, PKEVENT, PMDL, PMOUNTDEV_NAME, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, PRTL_QUERY_REGISTRY_TABLE, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_NUMBER, PSTORAGE_HOTPLUG_INFO, PSTORAGE_OFFLOAD_READ_OUTPUT, PSTORAGE_OFFLOAD_WRITE_OUTPUT, PSTORAGE_PROPERTY_ID, PSTORAGE_PROPERTY_QUERY, PSTORAGE_READ_CAPACITY, PULONGLONG, PUNICODE_STRING, PVPB, PsGetCurrentThread, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCopyUnicodeString, RtlDeleteRegistryValue, RtlFreeUnicodeString, RtlInitString, RtlInitUnicodeString, RtlQueryRegistryValues, STORAGE_DEVICE_NUMBER, STORAGE_HOTPLUG_INFO, STORAGE_OFFLOAD_READ_OUTPUT, STORAGE_OFFLOAD_WRITE_OUTPUT, STORAGE_PROPERTY_QUERY, STORAGE_READ_CAPACITY, STRING, UINT32, _KWAIT_REASON_UserRequest, ZwClose, ZwOpenKey, ZwSetValueKey};
+// Local aliases for enum variants not exported by ntkrnl_sys::ddk under short names
+use ntkrnl_sys::ddk::{
+    _DEVICE_RELATION_TYPE_BusRelations as BusRelations,
+    _DEVICE_RELATION_TYPE_TargetDeviceRelation as TargetDeviceRelation,
+    _WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue,
+    _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0,
+    _DEVICE_POWER_STATE_PowerDeviceD3 as PowerDeviceD3,
+    _MEDIA_TYPE_RemovableMedia as RemovableMedia,
+    _MEDIA_TYPE_FixedMedia as FixedMedia,
+    _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectOrderlyRemoval as RemovalPolicyExpectOrderlyRemoval,
+    _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectSurpriseRemoval as RemovalPolicyExpectSurpriseRemoval,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypePaging as DeviceUsageTypePaging,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeDumpFile as DeviceUsageTypeDumpFile,
+    _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeBoot as DeviceUsageTypeBoot,
+    _IO_PAGING_PRIORITY_IoPagingPriorityHigh as IoPagingPriorityHigh,
+    _IO_PAGING_PRIORITY_IoPagingPriorityInvalid as IoPagingPriorityInvalid,
+    _LOCK_OPERATION_IoReadAccess as IoReadAccess,
+    _LOCK_OPERATION_IoWriteAccess as IoWriteAccess,
+    _STORAGE_QUERY_TYPE_PropertyStandardQuery as PropertyStandardQuery,
+    _STORAGE_PROPERTY_ID_StorageAdapterProperty as StorageAdapterProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceUniqueIdProperty as StorageDeviceUniqueIdProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceWriteCacheProperty as StorageDeviceWriteCacheProperty,
+    _STORAGE_PROPERTY_ID_StorageMiniportProperty as StorageMiniportProperty,
+    _STORAGE_PROPERTY_ID_StorageAccessAlignmentProperty as StorageAccessAlignmentProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceSeekPenaltyProperty as StorageDeviceSeekPenaltyProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceTrimProperty as StorageDeviceTrimProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceLBProvisioningProperty as StorageDeviceLBProvisioningProperty,
+    _STORAGE_PROPERTY_ID_StorageDevicePowerProperty as StorageDevicePowerProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceCopyOffloadProperty as StorageDeviceCopyOffloadProperty,
+    _STORAGE_PROPERTY_ID_StorageDeviceMediumProductType as StorageDeviceMediumProductType,
+    _STORAGE_PORT_CODE_SET_StoragePortCodeSetStorport as StoragePortCodeSetStorport,
+    _STORAGE_PORT_CODE_SET_StoragePortCodeSetSDport as StoragePortCodeSetSDport,
+    _STORAGE_PORT_CODE_SET_StoragePortCodeSetUSBport as StoragePortCodeSetUSBport,
+    _STORAGE_BUS_TYPE_BusType1394 as BusType1394,
+    _STORAGE_BUS_TYPE_BusTypeFibre as BusTypeFibre,
+    _STORAGE_BUS_TYPE_BusTypeUsb as BusTypeUsb,
+    _STORAGE_BUS_TYPE_BusTypeRAID as BusTypeRAID,
+    _STORAGE_BUS_TYPE_BusTypeiScsi as BusTypeiScsi,
+    _STORAGE_BUS_TYPE_BusTypeFileBackedVirtual as BusTypeFileBackedVirtual,
+    DEVICE_REGISTRY_PROPERTY_DevicePropertyRemovalPolicy as DevicePropertyRemovalPolicy,
+    _DPFLTR_TYPE_DPFLTR_CLASSPNP_ID as DPFLTR_CLASSPNP_ID,
+    _EVENT_TYPE_SynchronizationEvent,
+};
+// IO_COMPLETION_ROUTINE is a type alias for PIO_COMPLETION_ROUTINE in ntkrnl_sys::ddk
+use ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE as IO_COMPLETION_ROUTINE;
 use core::ffi::c_void;
-
-
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DO_VERIFY_VOLUME, FILE_DEVICE_DISK, FILE_PORTABLE_DEVICE, IRP_MJ_SCSI, SL_OVERRIDE_VERIFY_VOLUME, SL_WRITE_THROUGH, STATUS_DEVICE_BUSY, STATUS_DEVICE_DOES_NOT_EXIST, STATUS_VERIFY_REQUIRED, TRACE_LEVEL_ERROR, TRACE_LEVEL_INFORMATION, TRACE_LEVEL_WARNING};
+use crate::types::{CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED, CLASSP_REG_DISBALE_IDLE_POWER_NAME, CLASSP_REG_PERF_RESTORE_VALUE_NAME, CLASSP_REG_QERR_OVERRIDE_MODE, CLASSP_REG_REMOVAL_POLICY_VALUE_NAME, CLASSP_REG_SUBKEY_NAME, CLASSP_VOLUME_VERIFY_CHECKED, CLASS_DRIVER_EXTENSION, CLASS_INIT_DATA, CLASS_INTERPRET_SENSE_INFO2, CLASS_INTERPRET_SENSE_INFO2_MAXIMUM_HISTORY_COUNT, CLASS_MAX_INTERLEAVE_PER_CRITICAL_IO, CLASS_PERF_RESTORE_MINIMUM, CLASS_QUERY_WMI_REGINFO_EX_LIST, CLASS_SRB_SCSI_REQUEST_BLOCK, CLASS_SRB_STORAGE_REQUEST_BLOCK, CLASS_WORKING_SET, CLASS_WORKING_SET_MAXIMUM, COMMON_DEVICE_EXTENSION, COMPLETION_CONTEXT, ClassGlobalDispatch, ClassMinimalPowerHandler, ClasspPowerSettingCallback, ClasspRetryRequestDpc, ClasspScanForClassHacks, ClasspStartIo, ClasspUpdateDiskProperties, DEV_USE_16BYTE_CDB, FDO_HACK_NO_SYNC_CACHE, FUNCTIONAL_DEVICE_EXTENSION, MAX_TOKEN_LIST_IDENTIFIERS, NUM_IO_RETRIES, PCOMMON_DEVICE_EXTENSION, PFUNCTIONAL_DEVICE_EXTENSION, PREAD_CAPACITY_DATA_EX, PSCSI_REQUEST_BLOCK, PTRANSFER_PACKET, QERR_SET_ZERO_ALWAYS, QERR_SET_ZERO_ODX_OR_TP_ONLY, READ_CAPACITY_DATA, READ_CAPACITY_DATA_EX, REG_DISK_CLASS_CONTROL, REMOVE_PENDING, SCSIOP_START_STOP_UNIT, SCSI_REQUEST_BLOCK, SRB_FLAGS_DISABLE_AUTOSENSE, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FLAGS_FREE_SENSE_BUFFER, SRB_FLAGS_NO_DATA_TRANSFER, SRB_FUNCTION_EXECUTE_SCSI, SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_STATUS_QUEUE_FROZEN, SRB_TYPE_STORAGE_REQUEST_BLOCK, START_UNIT_TIMEOUT, STORAGE_ADDRESS_TYPE_BTL8, STORAGE_REQUEST_BLOCK, TRANSFER_PACKET, _CLASS_DEV_INFO, _CLASS_DRIVER_EXTENSION, _CLASS_FUNCTION_SUPPORT_INFO, _CLASS_INIT_DATA, _CLASS_PRIVATE_FDO_DATA, _COMMON_DEVICE_EXTENSION, _COMPLETION_CONTEXT, _FUNCTIONAL_DEVICE_EXTENSION, _SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16, _STORAGE_REQUEST_BLOCK};
+use ntkrnl_sys::ddk::{DRIVER_OBJECT, STORAGE_PROPERTY_ID, _DEVICE_OBJECT, _DEVICE_POWER_DESCRIPTOR, _DRIVER_OBJECT, _IO_PAGING_PRIORITY, _IO_PAGING_PRIORITY_IoPagingPriorityHigh, _IO_PAGING_PRIORITY_IoPagingPriorityInvalid, _IRP, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DPFLTR_INFO_LEVEL, FILE_DEVICE_CD_ROM, FILE_FLOPPY_DISKETTE, IO_WARNING_DISK_SURPRISE_REMOVED, IRP_PAGING_IO, SL_KEY_SPECIFIED, STATUS_DEVICE_NOT_READY, STATUS_FT_READ_FROM_COPY, STATUS_INTERNAL_ERROR, STATUS_MORE_PROCESSING_REQUIRED, WMIREG_ACTION_REGISTER};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{TRACE_FLAG_INIT, TRACE_FLAG_PNP, TRACE_FLAG_RW};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{NonPagedPoolNx};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CLASS_TAG_PRIVATE_DATA, CLASS_TAG_SENSE2, CLASS_TAG_WORKING_SET, FailurePredictionNone, IOCTL_STORAGE_PERSISTENT_RESERVE_IN, IOCTL_STORAGE_PERSISTENT_RESERVE_OUT, SCSI_DISK_DRIVER_INTERNAL};
+use ntkrnl_sys::ddk::{_LARGE_INTEGER__bindgen_ty_1 as LARGE_INTEGER__bindgen_ty_1};
+use crate::shims::*;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::debug::{ClasspInitializeDebugGlobals, SnapDiskStartup};
+use crate::types::{BuildDeviceInputMdl, ClassDetermineTokenOperationCommandSupport, ClassForwardIrpSynchronous, ClassGetDescriptor, ClassGetDeviceParameter, ClassGetPdoId, ClassInitializeDispatchTables, ClassPnpQueryFdoRelations, ClassQueryPnpCapabilities, ClassRemoveDevice, ClassScanForSpecial, ClassSetDeviceParameter, ClasspAllocatePowerProcessIrp, ClasspAllocateReleaseQueueIrp, ClasspCalculateLogicalSectorSize, ClasspDeleteTimer, ClasspDisableTimer, ClasspEjectionControl, ClasspEnableIdlePower, ClasspEnableTimer, ClasspEnqueueIdleRequest, ClasspGetCopyOffloadMaxDuration, ClasspGetInquiryVpdSupportInfo, ClasspGetLBProvisioningInfo, ClasspInitializeHotplugInfo, ClasspInitializeIdleTimer, ClasspInitializeTimer, ClasspIsPortable, ClasspRegisterMountedDeviceInterface, ClasspScanForSpecialInRegistry, ClasspValidateOffloadSupported, ClasspZeroQERR, DequeueFreeTransferPacket, EnqueueDeferredClientIrp, EnqueueFreeTransferPacket, FreeDeviceInputMdl, InitLowMemRetry, InitializeStorageRequestBlock, InitializeTransferPackets, SetupDriveCapacityTransferPacket, SetupReadWriteTransferPacket, StepLowMemRetry, SubmitTransferPacket, TransferPacketQueueRetryDpc};
+use ntkrnl_sys::ddk::{KeQuerySystemTime};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::guid::{GUID_CONSOLE_DISPLAY_STATE};
+use crate::types::{AllFdosList, ClassBadItems, ClassGuidQueryRegInfoEx, ClassGuidSenseInfo2, ClassGuidSrbSupport, ClassGuidWorkingSet, MEDIA_LOCK_TYPE_InternalMediaLock};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_SCSI_REQUEST_BLOCK, _CDB__START_STOP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{min};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE, IOCTL_SCSI_GET_ADDRESS, IO_WRN_FAILURE_PREDICTED, KEY_WRITE, NonPagedPoolNxCacheAligned, RTL_QUERY_REGISTRY_TYPECHECK, RTL_QUERY_REGISTRY_TYPECHECK_SHIFT, SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED, SCSI_SENSE_OPTIONS_NONE, SENSE_BUFFER_SIZE_EX, STATUS_IO_DEVICE_ERROR, STATUS_IO_TIMEOUT, STATUS_NONEXISTENT_SECTOR, TRACE_FLAG_GENERAL, TRACE_FLAG_IOCTL, TRACE_FLAG_MCN, TRACE_FLAG_WMI, TRACE_LEVEL_VERBOSE, VPB_MOUNTED, _MEDIA_LOCK_TYPE_SecureMediaLock as SecureMediaLock, max};
+use crate::guid::{GUID_IO_DEVICE_BECOMING_READY};
+use crate::srblib::{SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbGetSystemStatus, SrbSetScsiStatus};
+use crate::types::{CLASSP_REG_WRITE_CACHE_VALUE_NAME, CLASS_ERROR_LOG_DATA, CLASS_PRIVATE_COMMON_DATA, CLASS_SPECIAL_CAUSE_NOT_REPORTABLE_HACK, ClassAddChild, ClassCheckVerifyComplete, ClassCleanupMediaChangeDetection, ClassDeviceGetLBProvisioningResources, ClassDeviceProcessOffloadRead, ClassDeviceProcessOffloadWrite, ClassIoComplete, ClassNotifyFailurePredicted, ClassQueueCapacityChangedEventWorker, ClassQueueProvisioningTypeChangedEventWorker, ClassQueueResourceExhaustionEventWorker, ClassQueueThresholdEventWorker, ClassReadDriveCapacity, ClassRemoveChild, ClassSendEjectionNotification, ClassSendNotification, ClassSendStartUnit, ClassSetMediaChangeState, ClasspAccessAlignmentProperty, ClasspAllocateReleaseRequest, ClasspConvertToScsiRequestBlock, ClasspDeviceCopyOffloadProperty, ClasspDeviceGetLBAStatus, ClasspDeviceLBProvisioningProperty, ClasspDeviceMediaTypeProperty, ClasspDeviceSeekPenaltyProperty, ClasspDeviceTrimProcess, ClasspDeviceTrimProperty, ClasspDuidQueryProperty, ClasspFreeReleaseRequest, ClasspInitializeRemoveTracking, ClasspMcnControl, ClasspModeSense, ClasspPerfIncrementErrorCount, ClasspPersistentReserve, ClasspPriorityHint, ClasspQueueLogIOEventWithContextWorker, ClasspReleaseQueue, ClasspStorageEventNotification, ClasspUninitializeRemoveTracking, ClasspWriteCacheProperty, DEV_SAFE_START_UNIT, DestroyAllTransferPackets, FDO_HACK_NO_RESERVE6, IOCTL_SCSI_EXECUTE_NONE, IOCTL_STORAGE_BASE, IdlePowerFDOList, IdlePowerFDOListMutex, InitializeDictionary, MAXIMUM_RETRIES, MODE_DISCONNECT_PAGE, MODE_PARAMETER_HEADER, MODE_PARAMETER_HEADER10, MODE_SENSE_CURRENT_VALUES, MediaPresent, NOT_READY_RETRY_INTERVAL, NO_REMOVE, NUM_ERROR_LOG_ENTRIES, PCDB, PCLASS_DEV_INFO, PCLASS_DRIVER_EXTENSION, PCLASS_ERROR_LOG_DATA, PCLASS_PRIVATE_COMMON_DATA, PFIXED_SENSE_DATA, PHYSICAL_DEVICE_EXTENSION, PIDLE_POWER_FDO_LIST_ENTRY, PINQUIRYDATA, PMODE_DISCONNECT_PAGE, PMODE_PARAMETER_HEADER, PMODE_PARAMETER_HEADER10, PPHYSICAL_DEVICE_EXTENSION, PSCSI_SENSE_DESCRIPTOR_BLOCK_COMMAND, PSCSI_SENSE_DESCRIPTOR_INFORMATION, PSTORAGE_REQUEST_BLOCK, PSTORAGE_REQUEST_BLOCK_HEADER, SCSIOP_INQUIRY, SCSIOP_MODE_SENSE, SCSIOP_MODE_SENSE10, SCSIOP_READ, SCSIOP_READ12, SCSIOP_READ16, SCSIOP_READ6, SCSIOP_RELEASE_UNIT, SCSIOP_RELEASE_UNIT10, SCSIOP_RESERVE_UNIT, SCSIOP_RESERVE_UNIT10, SCSIOP_TEST_UNIT_READY, SCSIOP_VERIFY, SCSIOP_VERIFY16, SCSIOP_WRITE, SCSIOP_WRITE12, SCSIOP_WRITE16, SCSIOP_WRITE6, SCSISTAT_BUSY, SCSISTAT_GOOD, SCSISTAT_RESERVATION_CONFLICT, SCSI_ADDRESS, SCSI_ADSENSE_DATA_TRANSFER_ERROR, SCSI_ADSENSE_INVALID_MEDIA, SCSI_ADSENSE_LOGICAL_UNIT_ERROR, SCSI_ADSENSE_LUN_COMMUNICATION, SCSI_ADSENSE_LUN_NOT_READY, SCSI_ADSENSE_REC_DATA_ECC, SCSI_ADSENSE_REC_DATA_NOECC, SCSI_ADSENSE_SEEK_ERROR, SCSI_ADSENSE_TRACK_ERROR, SCSI_ADSENSE_WRITE_PROTECT, SCSI_PASS_THROUGH, SCSI_SENSEQ_CAPACITY_DATA_CHANGED, SCSI_SENSEQ_INITIATOR_RESPONSE_TIMEOUT, SCSI_SENSEQ_INIT_COMMAND_REQUIRED, SCSI_SENSEQ_INQUIRY_DATA_CHANGED, SCSI_SENSEQ_MICROCODE_CHANGED, SCSI_SENSEQ_OPERATING_DEFINITION_CHANGED, SCSI_SENSEQ_TIMEOUT_ON_LOGICAL_UNIT, SCSI_SENSE_DESCRIPTOR_TYPE_BLOCK_COMMAND, SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION, SCSI_SESNEQ_COMM_CRC_ERROR, SENSE_DATA, SRB_CLASS_FLAGS_FREE_MDL, SRB_CLASS_FLAGS_LOW_PRIORITY, SRB_CLASS_FLAGS_PAGING, SRB_FLAGS_CLASS_DRIVER_RESERVED, SRB_FLAGS_DATA_IN, SRB_FLAGS_DATA_OUT, SRB_FLAGS_DONT_START_NEXT_PACKET, SRB_FLAGS_NO_QUEUE_FREEZE, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_FUNCTION_CLAIM_DEVICE, SRB_FUNCTION_RELEASE_DEVICE, SRB_HEAD_OF_QUEUE_TAG_REQUEST, SRB_ORDERED_QUEUE_TAG_REQUEST, SRB_SIMPLE_TAG_REQUEST, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_COMMAND_TIMEOUT, SRB_STATUS_INTERNAL_ERROR, SRB_STATUS_INVALID_LUN, SRB_STATUS_INVALID_PATH_ID, SRB_STATUS_INVALID_TARGET_ID, SRB_STATUS_NO_DEVICE, SRB_STATUS_NO_HBA, SRB_STATUS_PARITY_ERROR, SRB_STATUS_SELECTION_TIMEOUT, SRB_STATUS_SUCCESS, SRB_STATUS_TIMEOUT, SRB_STATUS_UNEXPECTED_BUS_FREE, SRB_TYPE_SCSI_REQUEST_BLOCK, _MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent as MediaNotPresent, _MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable as MediaUnavailable};
+use ntkrnl_sys::ddk::{CCHAR, DEVICE_OBJECT, IO_STATUS_BLOCK, KPRIORITY, KPROCESSOR_MODE, OBJECT_ATTRIBUTES, PCSTR, PETHREAD, _EVENT_TYPE_NotificationEvent as NotificationEvent, _EVENT_TYPE_SynchronizationEvent as SynchronizationEvent, _KWAIT_REASON_Executive as Executive};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{DEVICE_EVENT_BECOMING_READY, MOUNTDEV_SUGGESTED_LINK_NAME, MOUNTDEV_UNIQUE_ID, PMOUNTDEV_SUGGESTED_LINK_NAME, PMOUNTDEV_UNIQUE_ID};
 
 // ==== class.c missing functions (rustconv translate, class_split_b) ====
-
-// preamble statics (deduped)
-pub const CLASS_INIT_GUID: u32 = 1;
-pub const DEBUG_MAIN_SOURCE: u32 = 1;
-pub static mut ClassPnpAllowUnload: ULONG = 1;
-pub static Magic10000: LARGE_INTEGER = LARGE_INTEGER {
-    QuadPart: 0xd1b71758e219652c,
-};
-pub static mut StoragePredictFailureDPSGuid: GUID = GUID {
-    Data1: 0,
-    Data2: 0,
-    Data3: 0,
-    Data4: [0;
-pub const FirstDriveLetter: u8 = b'C';
-pub const LastDriveLetter: u8 = b'Z';
-pub static mut UseQPCTime: BOOLEAN = 0;
-pub static mut InitSecurityCookie: BOOLEAN = 0;
-pub static mut MaxTokenOperationListIdentifier: ULONG = MAX_TOKEN_LIST_IDENTIFIERS;
-pub static mut TokenOperationListIdentifier: ULONG = 0xFFFFFFFF;
 
 #[no_mangle]
 pub unsafe extern "system" fn ClassAcquireChildLock(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION
 ) {
-    if (*FdoExtension).ChildLockOwner != KeGetCurrentThread() {
+    if (*FdoExtension).ChildLockOwner != (KeGetCurrentThread()).cast() {
         KeWaitForSingleObject(
             core::ptr::addr_of_mut!((*FdoExtension).ChildLock) as *mut core::ffi::c_void,
             Executive,
@@ -50,7 +108,7 @@ pub unsafe extern "system" fn ClassAcquireChildLock(
         NT_ASSERT((*FdoExtension).ChildLockOwner == core::ptr::null_mut());
         NT_ASSERT((*FdoExtension).ChildLockAcquisitionCount == 0);
 
-        (*FdoExtension).ChildLockOwner = KeGetCurrentThread();
+        (*FdoExtension).ChildLockOwner = (KeGetCurrentThread()).cast();
     } else {
         NT_ASSERT((*FdoExtension).ChildLockAcquisitionCount != 0);
     }
@@ -73,12 +131,12 @@ pub unsafe extern "system" fn ClassClaimDevice(
     srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
 
     srb.Function = if Release != 0 {
-        SRB_FUNCTION_RELEASE_DEVICE
+        (SRB_FUNCTION_RELEASE_DEVICE) as u8
     } else {
-        SRB_FUNCTION_CLAIM_DEVICE
+        (SRB_FUNCTION_CLAIM_DEVICE) as u8
     };
 
-    KeInitializeEvent(&mut event, SynchronizationEvent as i32, 0);
+    KeInitializeEvent(&mut event, (SynchronizationEvent as i32) as u32, 0);
 
     irp = IoBuildDeviceIoControlRequest(
         IOCTL_SCSI_EXECUTE_NONE,
@@ -106,7 +164,7 @@ pub unsafe extern "system" fn ClassClaimDevice(
     if status == STATUS_PENDING {
         KeWaitForSingleObject(
             &mut event as *mut _ as PVOID,
-            Executive as i32,
+            (Executive as i32) as u32,
             KernelMode as i8,
             0,
             core::ptr::null_mut()
@@ -139,7 +197,7 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
     let mut status: NTSTATUS;
     let mut deviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut characteristics: ULONG;
-    let rundownSize: SIZE_T = ExSizeOfRundownProtectionCacheAware();
+    let rundownSize: SIZE_T = (ExSizeOfRundownProtectionCacheAware()) as usize;
     let mut rundownAddr: PCHAR = core::ptr::null_mut();
     let mut devExtSize: ULONG;
 
@@ -153,11 +211,11 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
     *DeviceObject = core::ptr::null_mut();
     RtlInitUnicodeString(&mut ntUnicodeString, core::ptr::null());
 
-    TracePrint((
+    TracePrint(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_INIT,
         b"ClassCreateFdo: Create device object\n\0".as_ptr() as PCHAR,
-    ));
+    );
 
     NT_ASSERT(!LowerDevice.is_null());
 
@@ -178,34 +236,34 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
     characteristics = (*devInfo).DeviceCharacteristics;
 
     if ARGUMENT_PRESENT(ObjectNameBuffer as PVOID) != 0 {
-        TracePrint((
+        TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_INIT,
             b"ClassCreateFdo: Name is %s\n\0".as_ptr() as PCHAR,
             ObjectNameBuffer,
-        ));
+        );
 
         RtlInitString(&mut ntNameString, ObjectNameBuffer);
 
         status = RtlAnsiStringToUnicodeString(&mut ntUnicodeString, &ntNameString, 1);
 
         if !NT_SUCCESS(status) {
-            TracePrint((
+            TracePrint(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"ClassCreateFdo: Cannot convert string %s\n\0".as_ptr() as PCHAR,
                 ObjectNameBuffer,
-            ));
+            );
 
             ntUnicodeString.Buffer = core::ptr::null_mut();
             return status;
         }
     } else {
-        TracePrint((
+        TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_INIT,
             b"ClassCreateFdo: Object will be unnamed\n\0".as_ptr() as PCHAR,
-        ));
+        );
 
         if IsFdo == 0 {
             SET_FLAG(characteristics, FILE_AUTOGENERATED_DEVICE_NAME);
@@ -229,20 +287,20 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
     );
 
     if !NT_SUCCESS(status) {
-        TracePrint((
+        TracePrint(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_INIT,
             b"ClassCreateFdo: Can not create device object %lx\n\0".as_ptr() as PCHAR,
             status,
-        ));
+        );
         NT_ASSERT(deviceObject.is_null());
 
         if !ntUnicodeString.Buffer.is_null() {
-            TracePrint((
+            TracePrint(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"ClassCreateFdo: Freeing unicode name buffer\n\0".as_ptr() as PCHAR,
-            ));
+            );
             FREE_POOL(ntUnicodeString.Buffer as PVOID);
             RtlInitUnicodeString(&mut ntUnicodeString, core::ptr::null());
         }
@@ -274,7 +332,7 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
 
         ExInitializeRundownProtectionCacheAware(
             rundownAddr as PEX_RUNDOWN_REF_CACHE_AWARE,
-            rundownSize,
+            (rundownSize) as u32,
         );
 
         (*(*commonExtension).PrivateCommonData).RemoveLockFailAcquire = 0;
@@ -294,7 +352,7 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
         if IsFdo != 0 {
             let fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION = commonExtension as PFUNCTIONAL_DEVICE_EXTENSION;
 
-            (*commonExtension).PartitionZeroExtension = (*deviceObject).DeviceExtension;
+            (*commonExtension).PartitionZeroExtension = ((*deviceObject).DeviceExtension).cast();
 
             SET_FLAG((*deviceObject).Flags, DO_POWER_PAGABLE);
 
@@ -331,11 +389,11 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
                 *DeviceObject = core::ptr::null_mut();
 
                 if !ntUnicodeString.Buffer.is_null() {
-                    TracePrint((
+                    TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_INIT,
                         b"ClassCreateFdo: Freeing unicode name buffer\n\0".as_ptr() as PCHAR,
-                    ));
+                    );
                     FREE_POOL(ntUnicodeString.Buffer as PVOID);
                     RtlInitUnicodeString(&mut ntUnicodeString, core::ptr::null());
                 }
@@ -351,7 +409,7 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
 
             SET_FLAG((*deviceObject).Flags, DO_POWER_PAGABLE);
 
-            (*commonExtension).PartitionZeroExtension = p0Extension as PVOID;
+            (*commonExtension).PartitionZeroExtension = (p0Extension as PVOID).cast();
 
             ClassAddChild(p0Extension, pdoExtension, 1);
 
@@ -453,7 +511,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     (*Irp).IoStatus.Information = 0;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_PARAMETER;
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
 
                     status = STATUS_INVALID_PARAMETER;
@@ -467,7 +525,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
         nextStack = IoGetNextIrpStackLocation(Irp);
         (*nextStack).MinorFunction = 1;
 
-        ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+        ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
 
         status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
         return status;
@@ -486,7 +544,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     core::mem::size_of::<MOUNTDEV_UNIQUE_ID>() as u32 {
                     status = STATUS_BUFFER_TOO_SMALL;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<MOUNTDEV_UNIQUE_ID>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<MOUNTDEV_UNIQUE_ID>() as ULONG_PTR) as u32;
                     break;
                 }
 
@@ -497,7 +555,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     core::mem::size_of::<USHORT>() as u32 + (*uniqueId).UniqueIdLength as u32 {
                     status = STATUS_BUFFER_OVERFLOW;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<MOUNTDEV_UNIQUE_ID>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<MOUNTDEV_UNIQUE_ID>() as ULONG_PTR) as u32;
                     break;
                 }
 
@@ -508,7 +566,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 );
 
                 status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = (core::mem::size_of::<USHORT>() + (*uniqueId).UniqueIdLength as usize) as ULONG_PTR;
+                (*Irp).IoStatus.Information = ((core::mem::size_of::<USHORT>() + (*uniqueId).UniqueIdLength as usize) as ULONG_PTR) as u32;
             }
 
             IOCTL_MOUNTDEV_QUERY_DEVICE_NAME => {
@@ -517,7 +575,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     core::mem::size_of::<MOUNTDEV_NAME>() as u32 {
                     status = STATUS_BUFFER_TOO_SMALL;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<MOUNTDEV_NAME>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<MOUNTDEV_NAME>() as ULONG_PTR) as u32;
                     break;
                 }
 
@@ -528,7 +586,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     core::mem::size_of::<USHORT>() as u32 + (*name).NameLength as u32 {
                     status = STATUS_BUFFER_OVERFLOW;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<MOUNTDEV_NAME>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<MOUNTDEV_NAME>() as ULONG_PTR) as u32;
                     break;
                 }
 
@@ -539,20 +597,20 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 );
 
                 status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = (core::mem::size_of::<USHORT>() + (*name).NameLength as usize) as ULONG_PTR;
+                (*Irp).IoStatus.Information = ((core::mem::size_of::<USHORT>() + (*name).NameLength as usize) as ULONG_PTR) as u32;
             }
 
             IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME => {
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     core::mem::size_of::<MOUNTDEV_SUGGESTED_LINK_NAME>() as u32 {
                     status = STATUS_BUFFER_TOO_SMALL;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<MOUNTDEV_SUGGESTED_LINK_NAME>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<MOUNTDEV_SUGGESTED_LINK_NAME>() as ULONG_PTR) as u32;
                     break;
                 }
 
                 let valueName = ExAllocatePoolWithTag(
                     PagedPool,
-                    ((*commonExtension).DeviceName.Length as usize + core::mem::size_of::<WCHAR>()) as u64,
+                    (((*commonExtension).DeviceName.Length as usize + core::mem::size_of::<WCHAR>()) as u64) as usize,
                     0x38436353
                 );
 
@@ -618,7 +676,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     (*Irp).IoStatus.Information as u32 {
-                    (*Irp).IoStatus.Information = core::mem::size_of::<MOUNTDEV_SUGGESTED_LINK_NAME>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<MOUNTDEV_SUGGESTED_LINK_NAME>() as ULONG_PTR) as u32;
                     status = STATUS_BUFFER_OVERFLOW;
                     FREE_POOL!(valueName);
                     break;
@@ -651,7 +709,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
     }
 
     if status != STATUS_PENDING {
-        ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+        ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
         IoCompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
@@ -671,13 +729,13 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
         srb = ExAllocatePoolWithTag(
             NonPagedPoolNx,
-            (sizeNeeded + (core::mem::size_of::<ULONG_PTR>() * 2)) as u64,
+            ((sizeNeeded + (core::mem::size_of::<ULONG_PTR>() * 2)) as u64) as usize,
             0x39436353
         ) as PSCSI_REQUEST_BLOCK;
 
         if srb.is_null() {
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
-            ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+            ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
             ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
             status = STATUS_INSUFFICIENT_RESOURCES;
             return status;
@@ -689,7 +747,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
            (*(*fdoExtension).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK {
             status = InitializeStorageRequestBlock(
                 srb as PSTORAGE_REQUEST_BLOCK,
-                STORAGE_ADDRESS_TYPE_BTL8,
+                (STORAGE_ADDRESS_TYPE_BTL8) as u16,
                 CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE as ULONG,
                 1,
                 SrbExDataTypeScsiCdb16
@@ -731,14 +789,14 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32 {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as ULONG_PTR) as u32;
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     status = STATUS_BUFFER_TOO_SMALL;
                 } else if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                 } else {
                     let fdoExtension = commonExtension as PFUNCTIONAL_DEVICE_EXTENSION;
@@ -746,8 +804,8 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                     *info = (*(*fdoExtension).PrivateFdoData).HotplugInfo;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as ULONG_PTR;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as ULONG_PTR) as u32;
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     status = STATUS_SUCCESS;
                 }
@@ -759,7 +817,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.InputBufferLength <
                     core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32 {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INFO_LENGTH_MISMATCH;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     break 'switch;
@@ -767,7 +825,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                 } else {
                     let fdoExtension = commonExtension as PFUNCTIONAL_DEVICE_EXTENSION;
@@ -810,7 +868,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     }
 
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                 }
             }
@@ -826,11 +884,11 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, "DeviceIoControl: media count buffer too small\n"));
 
                         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
-                        (*Irp).IoStatus.Information = core::mem::size_of::<ULONG>() as ULONG_PTR;
+                        (*Irp).IoStatus.Information = (core::mem::size_of::<ULONG>() as ULONG_PTR) as u32;
 
                         FREE_POOL!(srb);
 
-                        ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                        ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
 
                         status = STATUS_BUFFER_TOO_SMALL;
@@ -841,7 +899,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*commonExtension).IsFdo == 0 {
                     NT_ASSERT!(srb.is_null());
                     IoCopyCurrentIrpStackLocationToNext(Irp);
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     break 'switch;
                 }
@@ -857,13 +915,13 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
                         (*Irp).IoStatus.Information = 0;
                         FREE_POOL!(srb);
-                        ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                        ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                         status = STATUS_INSUFFICIENT_RESOURCES;
                         break 'switch;
                     }
 
-                    ClassAcquireRemoveLock(DeviceObject, irp2 as *mut core::ffi::c_void);
+                    ClassAcquireRemoveLock(DeviceObject, (irp2 as *mut core::ffi::c_void).cast());
 
                     (*irp2).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.Thread = (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.Thread;
                     IoSetNextIrpStackLocation(irp2);
@@ -893,14 +951,14 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     Irp = irp2;
                 }
 
-                SrbSetCdbLength(srb, 6);
-                cdb = SrbGetCdb(srb);
-                (*cdb).CDB6GENERIC.OperationCode = SCSIOP_TEST_UNIT_READY as u8;
+                SrbSetCdbLength((srb).cast(), 6);
+                cdb = SrbGetCdb((srb).cast());
+                (*cdb).CDB6GENERIC.as_ref().OperationCode = SCSIOP_TEST_UNIT_READY as u8;
 
-                SrbSetTimeOutValue(srb, (*fdoExtension).TimeOutValue);
+                SrbSetTimeOutValue((srb).cast(), (*fdoExtension).TimeOutValue);
 
                 if controlCode == IOCTL_STORAGE_CHECK_VERIFY2 {
-                    SrbSetSrbFlags(srb, SRB_CLASS_FLAGS_LOW_PRIORITY);
+                    SrbSetSrbFlags((srb).cast(), SRB_CLASS_FLAGS_LOW_PRIORITY);
                 }
 
                 status = ClassSendSrbAsynchronous(
@@ -923,7 +981,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.InputBufferLength <
                     core::mem::size_of::<PREVENT_MEDIA_REMOVAL>() as u32 {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INFO_LENGTH_MISMATCH;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     break 'switch;
@@ -931,7 +989,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                 } else {
                     status = ClasspEjectionControl(
@@ -942,7 +1000,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     );
 
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                 }
             }
@@ -957,7 +1015,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                     FREE_POOL!(srb);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     break 'switch;
@@ -968,7 +1026,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                 } else {
                     status = ClasspMcnControl(
@@ -983,7 +1041,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
             IOCTL_STORAGE_RESERVE | IOCTL_STORAGE_RELEASE => {
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     break 'switch;
                 }
@@ -991,28 +1049,28 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 let fdoExtension = (*DeviceObject).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
 
                 if TEST_FLAG!((*(*fdoExtension).PrivateFdoData).HackFlags, FDO_HACK_NO_RESERVE6) {
-                    SrbSetCdbLength(srb, 10);
-                    cdb = SrbGetCdb(srb);
-                    (*cdb).CDB10.OperationCode = if modifiedIoControlCode == IOCTL_STORAGE_RESERVE {
+                    SrbSetCdbLength((srb).cast(), 10);
+                    cdb = SrbGetCdb((srb).cast());
+                    (*cdb).CDB10.as_ref().OperationCode = if modifiedIoControlCode == IOCTL_STORAGE_RESERVE {
                         SCSIOP_RESERVE_UNIT10 as u8
                     } else {
                         SCSIOP_RELEASE_UNIT10 as u8
                     };
                 } else {
-                    SrbSetCdbLength(srb, 6);
-                    cdb = SrbGetCdb(srb);
-                    (*cdb).CDB6GENERIC.OperationCode = if modifiedIoControlCode == IOCTL_STORAGE_RESERVE {
+                    SrbSetCdbLength((srb).cast(), 6);
+                    cdb = SrbGetCdb((srb).cast());
+                    (*cdb).CDB6GENERIC.as_ref().OperationCode = if modifiedIoControlCode == IOCTL_STORAGE_RESERVE {
                         SCSIOP_RESERVE_UNIT as u8
                     } else {
                         SCSIOP_RELEASE_UNIT as u8
                     };
                 }
 
-                SrbSetTimeOutValue(srb, (*fdoExtension).TimeOutValue);
+                SrbSetTimeOutValue((srb).cast(), (*fdoExtension).TimeOutValue);
 
                 if IOCTL_STORAGE_RESERVE == modifiedIoControlCode {
-                    SrbSetSrbFlags(srb, SRB_FLAGS_QUEUE_ACTION_ENABLE);
-                    SrbSetRequestAttribute(srb, SRB_SIMPLE_TAG_REQUEST as u8);
+                    SrbSetSrbFlags((srb).cast(), SRB_FLAGS_QUEUE_ACTION_ENABLE);
+                    (((((((((SrbSetRequestAttribute))))))))).cast()(srb, SRB_SIMPLE_TAG_REQUEST as u8);
                 }
 
                 status = ClassSendSrbAsynchronous(
@@ -1028,7 +1086,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
             IOCTL_STORAGE_PERSISTENT_RESERVE_IN | IOCTL_STORAGE_PERSISTENT_RESERVE_OUT => {
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     break 'switch;
                 }
@@ -1039,7 +1097,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
             IOCTL_STORAGE_EJECT_MEDIA | IOCTL_STORAGE_LOAD_MEDIA | IOCTL_STORAGE_LOAD_MEDIA2 => {
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     break 'switch;
                 }
@@ -1055,7 +1113,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                     FREE_POOL!(srb);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     break 'switch;
                 }
@@ -1078,11 +1136,11 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                     FREE_POOL!(srb);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
 
                     KeSetEvent(
-                        core::ptr::addr_of_mut!((*fdoExtension).EjectSynchronizationEvent) as PKEVENT,
+                        (core::ptr::addr_of_mut!((*fdoExtension).EjectSynchronizationEvent) as PKEVENT).cast(),
                         IO_NO_INCREMENT as KPRIORITY,
                         0u8
                     );
@@ -1091,19 +1149,19 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     break 'switch;
                 }
 
-                SrbSetCdbLength(srb, 6);
-                cdb = SrbGetCdb(srb);
+                SrbSetCdbLength((srb).cast(), 6);
+                cdb = SrbGetCdb((srb).cast());
 
-                (*cdb).START_STOP.OperationCode = SCSIOP_START_STOP_UNIT as u8;
-                (*cdb).START_STOP.LoadEject = 1;
+                (*cdb).START_STOP.as_ref().OperationCode = SCSIOP_START_STOP_UNIT as u8;
+                (*cdb).START_STOP.as_ref().set_LoadEject(1);
 
                 if modifiedIoControlCode == IOCTL_STORAGE_EJECT_MEDIA {
-                    (*cdb).START_STOP.Start = 0;
+                    (*cdb).START_STOP.as_ref().set_Start(0);
                 } else {
-                    (*cdb).START_STOP.Start = 1;
+                    (*cdb).START_STOP.as_ref().set_Start(1);
                 }
 
-                SrbSetTimeOutValue(srb, (*fdoExtension).TimeOutValue);
+                SrbSetTimeOutValue((srb).cast(), (*fdoExtension).TimeOutValue);
                 status = ClassSendSrbAsynchronous(
                     DeviceObject,
                     srb,
@@ -1113,7 +1171,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     0u8
                 );
 
-                KeSetEvent(core::ptr::addr_of_mut!((*fdoExtension).EjectSynchronizationEvent) as PKEVENT, IO_NO_INCREMENT as KPRIORITY, 0u8);
+                KeSetEvent((core::ptr::addr_of_mut!((*fdoExtension).EjectSynchronizationEvent) as PKEVENT).cast(), IO_NO_INCREMENT as KPRIORITY, 0u8);
                 KeLeaveCriticalRegion();
             }
 
@@ -1129,12 +1187,12 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     status = STATUS_SUCCESS;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                 } else {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                 }
             }
@@ -1147,19 +1205,19 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     let deviceNumber = (*Irp).__bindgen_anon_1.AssociatedIrp.SystemBuffer as PSTORAGE_DEVICE_NUMBER;
                     let fdoExtension = (*commonExtension).PartitionZeroExtension;
 
-                    (*deviceNumber).DeviceType = (*(*fdoExtension).CommonExtension.DeviceObject).DeviceType;
+                    (*deviceNumber).DeviceType = (*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject).DeviceType;
                     (*deviceNumber).DeviceNumber = (*fdoExtension).DeviceNumber;
                     (*deviceNumber).PartitionNumber = (*commonExtension).PartitionNumber;
 
                     status = STATUS_SUCCESS;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as ULONG_PTR) as u32;
                 } else {
                     status = STATUS_BUFFER_TOO_SMALL;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_DEVICE_NUMBER>() as ULONG_PTR) as u32;
                 }
 
                 (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-                ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                 ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
             }
 
@@ -1169,9 +1227,9 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.OutputBufferLength <
                     core::mem::size_of::<STORAGE_READ_CAPACITY>() as u32 {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
-                    (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_READ_CAPACITY>() as ULONG_PTR;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_READ_CAPACITY>() as ULONG_PTR) as u32;
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     status = STATUS_BUFFER_TOO_SMALL;
                     break;
@@ -1180,7 +1238,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                 } else {
                     let fdoExt = (*DeviceObject).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
@@ -1202,17 +1260,17 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         );
                         (*readCapacity).NumberOfBlocks.QuadPart += 1;
 
-                        (*readCapacity).DiskLength = (*fdoExt).CommonExtension.PartitionLength;
+                        (*readCapacity).DiskLength = (*fdoExt).__bindgen_anon_1.CommonExtension.as_ref().PartitionLength;
 
                         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-                        (*Irp).IoStatus.Information = core::mem::size_of::<STORAGE_READ_CAPACITY>() as ULONG_PTR;
+                        (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_READ_CAPACITY>() as ULONG_PTR) as u32;
                     } else {
                         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, "ClassDeviceControl: ClassReadDriveCapacity failed: 0x%X IsCachedDriveCapDataValid: %d\n",
                                        status, (*fdoData).IsCachedDriveCapDataValid));
                         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
                         (*Irp).IoStatus.Information = 0;
                     }
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                 }
             }
@@ -1223,7 +1281,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.InputBufferLength < core::mem::size_of::<STORAGE_PROPERTY_QUERY>() as u32 {
                     status = STATUS_INFO_LENGTH_MISMATCH;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     FREE_POOL!(srb);
                     break;
@@ -1232,7 +1290,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     FREE_POOL!(srb);
                     break;
@@ -1266,7 +1324,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     _ => {
                         IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                        ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                        ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                         status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     }
                 }
@@ -1280,7 +1338,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     break;
                 }
@@ -1294,7 +1352,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*irpStack).Parameters.DeviceIoControl.InputBufferLength < core::mem::size_of::<DEVICE_MANAGE_DATA_SET_ATTRIBUTES>() as u32 {
                     status = STATUS_INVALID_PARAMETER;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     FREE_POOL!(srb);
                     break;
@@ -1304,7 +1362,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     (core::mem::size_of::<DEVICE_MANAGE_DATA_SET_ATTRIBUTES>() as u32 + (*dsmAttributes).ParameterBlockLength + (*dsmAttributes).DataSetRangesLength) {
                     status = STATUS_INVALID_PARAMETER;
                     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
                     FREE_POOL!(srb);
                     break;
@@ -1313,7 +1371,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 if (*commonExtension).IsFdo == 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     FREE_POOL!(srb);
                     break;
@@ -1335,7 +1393,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     _ => {
                         IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                        ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                        ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                         status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                     }
                 }
@@ -1349,7 +1407,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                 } else {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                    ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                    ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                     status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
                 }
 
@@ -1403,7 +1461,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 IoCopyCurrentIrpStackLocationToNext(Irp);
 
-                ClassReleaseRemoveLock(DeviceObject, Irp as *mut core::ffi::c_void);
+                ClassReleaseRemoveLock(DeviceObject, (Irp as *mut core::ffi::c_void).cast());
                 status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
             }
         }
@@ -1449,7 +1507,7 @@ pub unsafe extern "system" fn ClassFindModePage(
         while ModeSenseBuffer.offset(
             (core::mem::offset_of!(MODE_DISCONNECT_PAGE, PageLength) + core::mem::size_of::<u8>()) as isize
         ) < limit as PCHAR {
-            if (*(ModeSenseBuffer as PMODE_DISCONNECT_PAGE)).PageCode == PageMode {
+            if (*(ModeSenseBuffer as PMODE_DISCONNECT_PAGE)).PageCode() == PageMode {
                 if ModeSenseBuffer.offset((*(ModeSenseBuffer as PMODE_DISCONNECT_PAGE)).PageLength as isize) > limit as PCHAR {
                     result = core::ptr::null_mut();
                 } else {
@@ -1506,9 +1564,9 @@ pub unsafe extern "system" fn ClassGetDescriptor(
     );
 
     if !NT_SUCCESS(ioStatus.Status) {
-        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, 
+        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT, 
                    b"ClassGetDescriptor: error %lx trying to query properties #1\0".as_ptr() as PCHAR,
-                   ioStatus.Status));
+                   ioStatus.Status);
         return ioStatus.Status;
     }
 
@@ -1531,9 +1589,9 @@ pub unsafe extern "system" fn ClassGetDescriptor(
     ) as PSTORAGE_DESCRIPTOR_HEADER;
 
     if descriptor.is_null() {
-        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
                    b"ClassGetDescriptor: unable to memory for descriptor (%d bytes)\0".as_ptr() as PCHAR,
-                   length));
+                   length);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1560,9 +1618,9 @@ pub unsafe extern "system" fn ClassGetDescriptor(
     );
 
     if !NT_SUCCESS(ioStatus.Status) {
-        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
                    b"ClassGetDescriptor: error %lx trying to query properties #1\0".as_ptr() as PCHAR,
-                   ioStatus.Status));
+                   ioStatus.Status);
         FREE_POOL(descriptor as PVOID);
         return ioStatus.Status;
     }
@@ -1599,12 +1657,12 @@ pub unsafe extern "system" fn ClassInternalIoControl(
 
     let srb: PSCSI_REQUEST_BLOCK;
 
-    isRemoved = ClassAcquireRemoveLock(DeviceObject, Irp as PVOID);
+    isRemoved = ClassAcquireRemoveLock(DeviceObject, (Irp as PVOID).cast());
     _Analysis_assume_(isRemoved);
     if isRemoved != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
 
-        ClassReleaseRemoveLock(DeviceObject, Irp as PVOID);
+        ClassReleaseRemoveLock(DeviceObject, (Irp as PVOID).cast());
 
         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
 
@@ -1615,13 +1673,13 @@ pub unsafe extern "system" fn ClassInternalIoControl(
 
     if (*commonExtension).IsFdo != 0 {
         (*nextStack).Parameters.Scsi.Srb = srb;
-        (*nextStack).MajorFunction = IRP_MJ_SCSI;
+        (*nextStack).MajorFunction = (IRP_MJ_SCSI) as u8;
         (*nextStack).MinorFunction = IRP_MN_SCSI_CLASS;
     } else {
         IoCopyCurrentIrpStackLocationToNext(Irp);
     }
 
-    ClassReleaseRemoveLock(DeviceObject, Irp as PVOID);
+    ClassReleaseRemoveLock(DeviceObject, (Irp as PVOID).cast());
 
     IoCallDriver((*commonExtension).LowerDeviceObject, Irp)
 }
@@ -1639,7 +1697,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
     let fdoExtension = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdoData = (*fdoExtension).PrivateFdoData;
     let Srb = _Srb as PSTORAGE_REQUEST_BLOCK_HEADER;
-    let senseBuffer = SrbGetSenseInfoBuffer(Srb);
+    let senseBuffer = SrbGetSenseInfoBuffer((Srb).cast());
     let mut retry = 1u8;
     let mut logError = 0u8;
     let mut unhandledError = 0u8;
@@ -1653,35 +1711,35 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
     let mut index: ULONG;
     let mut retryInterval: ULONG = 0;
     let mut oldIrql: KIRQL = 0;
-    let cdb = SrbGetCdb(Srb);
+    let cdb = SrbGetCdb((Srb).cast());
     let mut cdbOpcode: UCHAR = 0;
     let cdbLength = SrbGetCdbLength(Srb);
 
     if !cdb.is_null() {
-        cdbOpcode = (*cdb).CDB6GENERIC.OperationCode;
+        cdbOpcode = (*cdb).CDB6GENERIC.as_ref().OperationCode;
     }
 
     *Status = STATUS_IO_DEVICE_ERROR;
     logStatus = 0xFFFFFFFFu32 as NTSTATUS;
 
-    if TEST_FLAG(SrbGetSrbFlags(Srb), SRB_CLASS_FLAGS_PAGING) != 0 {
+    if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_CLASS_FLAGS_PAGING) != 0 {
         logError = 1;
         uniqueId = 301;
         logStatus = IO_WARNING_PAGING_FAILURE;
     }
 
-    NT_ASSERT((*fdoExtension).CommonExtension.IsFdo != 0);
+    NT_ASSERT((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().IsFdo != 0);
 
-    if SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_INTERNAL_ERROR {
-        TracePrint((
+    if SRB_STATUS((*Srb).SrbStatus) == (SRB_STATUS_INTERNAL_ERROR) as u8 {
+        TracePrint(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
             b"ClassInterpretSenseInfo: Internal Error code is %x\n\0".as_ptr() as PCHAR,
-            SrbGetSystemStatus(Srb),
-        ));
+            SrbGetSystemStatus((Srb).cast()),
+        );
 
         retry = 0;
-        *Status = SrbGetSystemStatus(Srb);
+        *Status = (SrbGetSystemStatus((Srb).cast())) as i32;
     } else if SrbGetScsiStatus(Srb) == SCSISTAT_RESERVATION_CONFLICT {
         *Status = STATUS_DEVICE_BUSY;
         retry = 0;
@@ -1689,7 +1747,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
     } else {
         let mut validSense = 0u8;
 
-        if ((*Srb).SrbStatus & SRB_STATUS_AUTOSENSE_VALID != 0) && !senseBuffer.is_null() {
+        if ((*Srb).SrbStatus & (SRB_STATUS_AUTOSENSE_VALID) as u8 != 0) && !senseBuffer.is_null() {
             let mut errorCode: UCHAR = 0;
             let mut senseKey: UCHAR = 0;
             let mut addlSenseCode: UCHAR = 0;
@@ -1701,7 +1759,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
             validSense = ScsiGetSenseKeyAndCodes(
                 senseBuffer,
-                SrbGetSenseInfoBufferLength(Srb),
+                SrbGetSenseInfoBufferLength((Srb).cast()),
                 SCSI_SENSE_OPTIONS_NONE,
                 &mut senseKey,
                 &mut addlSenseCode,
@@ -1713,7 +1771,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                 validSense = ScsiGetFixedSenseKeyAndCodes(
                     senseBuffer,
-                    SrbGetSenseInfoBufferLength(Srb),
+                    SrbGetSenseInfoBufferLength((Srb).cast()),
                     &mut senseKey,
                     &mut addlSenseCode,
                     &mut addlSenseCodeQual,
@@ -1725,10 +1783,10 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
             } else {
                 errorCode = ScsiGetSenseErrorCode(senseBuffer);
 
-                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Error code is %x\n\0".as_ptr() as PCHAR, errorCode));
-                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Sense key is %x\n\0".as_ptr() as PCHAR, senseKey));
-                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Additional sense code is %x\n\0".as_ptr() as PCHAR, addlSenseCode));
-                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Additional sense code qualifier is %x\n\0".as_ptr() as PCHAR, addlSenseCodeQual));
+                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Error code is %x\n\0".as_ptr() as PCHAR, (errorCode) as i32);
+                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Sense key is %x\n\0".as_ptr() as PCHAR, (senseKey) as i32);
+                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Additional sense code is %x\n\0".as_ptr() as PCHAR, (addlSenseCode) as i32);
+                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Additional sense code qualifier is %x\n\0".as_ptr() as PCHAR, (addlSenseCodeQual) as i32);
 
                 if IsDescriptorSenseDataFormat(senseBuffer) != 0 {
                     let mut startBuffer: PVOID = core::ptr::null_mut();
@@ -1736,7 +1794,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                     if ScsiGetSenseDescriptor(
                         senseBuffer,
-                        SrbGetSenseInfoBufferLength(Srb),
+                        SrbGetSenseInfoBufferLength((Srb).cast()),
                         &mut startBuffer,
                         &mut startBufferLength,
                     ) != 0
@@ -1749,8 +1807,8 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         let mut descriptorLength: UCHAR = 0;
 
                         let typeList: [UCHAR; 2] = [
-                            SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION,
-                            SCSI_SENSE_DESCRIPTOR_TYPE_BLOCK_COMMAND,
+                            (SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION) as u8,
+                            (SCSI_SENSE_DESCRIPTOR_TYPE_BLOCK_COMMAND) as u8,
                         ];
 
                         while (foundBlockCommandType == 0 || foundInformationType == 0)
@@ -1770,7 +1828,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 break;
                             }
 
-                            if outType == SCSI_SENSE_DESCRIPTOR_TYPE_BLOCK_COMMAND {
+                            if outType == (SCSI_SENSE_DESCRIPTOR_TYPE_BLOCK_COMMAND) as u8 {
                                 if foundBlockCommandType == 0 {
                                     foundBlockCommandType = 1;
 
@@ -1781,13 +1839,13 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                     {
                                         incorrectLength =
                                             (*(outBuffer as PSCSI_SENSE_DESCRIPTOR_BLOCK_COMMAND))
-                                                .IncorrectLength;
+                                                .IncorrectLength();
                                         isIncorrectLengthValid = 1;
                                     }
                                 } else {
                                     NT_ASSERT(0u8);
                                 }
-                            } else if outType == SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION {
+                            } else if outType == (SCSI_SENSE_DESCRIPTOR_TYPE_INFORMATION) as u8 {
                                 if foundInformationType == 0 {
                                     foundInformationType = 1;
 
@@ -1820,8 +1878,8 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         }
                     }
                 } else {
-                    incorrectLength = (*(senseBuffer as PFIXED_SENSE_DATA)).IncorrectLength;
-                    REVERSE_BYTES(
+                    incorrectLength = (*(senseBuffer as PFIXED_SENSE_DATA)).IncorrectLength();
+                    (((((((((REVERSE_BYTES))))))))).cast()(
                         &mut information,
                         core::ptr::addr_of!((*(senseBuffer as PFIXED_SENSE_DATA)).Information),
                     );
@@ -1832,29 +1890,29 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                 match senseKey {
                     SCSI_SENSE_NO_SENSE => {
                         if isIncorrectLengthValid != 0 && incorrectLength != 0 {
-                            TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Incorrect length detected.\n\0".as_ptr() as PCHAR));
+                            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Incorrect length detected.\n\0".as_ptr() as PCHAR);
                             *Status = STATUS_INVALID_BLOCK_LENGTH;
                             retry = 0;
                         } else {
-                            TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: No specific sense key\n\0".as_ptr() as PCHAR));
+                            TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: No specific sense key\n\0".as_ptr() as PCHAR);
                             *Status = STATUS_IO_DEVICE_ERROR;
                             retry = 1;
                         }
                     }
 
                     SCSI_SENSE_RECOVERED_ERROR => {
-                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Recovered error\n\0".as_ptr() as PCHAR));
+                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Recovered error\n\0".as_ptr() as PCHAR);
                         *Status = STATUS_SUCCESS;
                         retry = 0;
                         logError = 1;
                         uniqueId = 258;
 
                         match addlSenseCode {
-                            SCSI_ADSENSE_TRACK_ERROR | SCSI_ADSENSE_SEEK_ERROR => {
+                            (SCSI_ADSENSE_TRACK_ERROR) as u8 | (SCSI_ADSENSE_SEEK_ERROR) as u8 => {
                                 logStatus = IO_ERR_SEEK_ERROR;
                             }
 
-                            SCSI_ADSENSE_REC_DATA_NOECC | SCSI_ADSENSE_REC_DATA_ECC => {
+                            (SCSI_ADSENSE_REC_DATA_NOECC) as u8 | (SCSI_ADSENSE_REC_DATA_ECC) as u8 => {
                                 logStatus = IO_RECOVERED_VIA_ECC;
                             }
 
@@ -1868,7 +1926,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 if (*fdoExtension).FailurePredicted == 0 {
                                     logError = 1;
                                 }
-                                (*fdoExtension).FailureReason = addlSenseCodeQual;
+                                (*fdoExtension).FailureReason = (addlSenseCodeQual) as u32;
                                 logStatus = IO_WRN_FAILURE_PREDICTED;
 
                                 ClassNotifyFailurePredicted(
@@ -1891,18 +1949,18 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         }
 
                         if isIncorrectLengthValid != 0 && incorrectLength != 0 {
-                            TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Incorrect length detected.\n\0".as_ptr() as PCHAR));
+                            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Incorrect length detected.\n\0".as_ptr() as PCHAR);
                             *Status = STATUS_INVALID_BLOCK_LENGTH;
                         }
                     }
 
                     SCSI_SENSE_NOT_READY => {
-                        TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device not ready\n\0".as_ptr() as PCHAR));
+                        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device not ready\n\0".as_ptr() as PCHAR);
                         *Status = STATUS_DEVICE_NOT_READY;
 
                         match addlSenseCode {
-                            SCSI_ADSENSE_LUN_NOT_READY => {
-                                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Lun not ready\n\0".as_ptr() as PCHAR));
+                            (SCSI_ADSENSE_LUN_NOT_READY) as u8 => {
+                                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Lun not ready\n\0".as_ptr() as PCHAR);
 
                                 retryInterval = NOT_READY_RETRY_INTERVAL;
 
@@ -1911,7 +1969,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                         let mut notReady: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
 
                                         logRetryableError = 0;
-                                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: In process of becoming ready\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: In process of becoming ready\n\0".as_ptr() as PCHAR);
 
                                         notReady.Version = 1;
                                         notReady.Reason = 1;
@@ -1925,13 +1983,13 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                     }
 
                                     SCSI_SENSEQ_MANUAL_INTERVENTION_REQUIRED => {
-                                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Manual intervention required\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Manual intervention required\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_NO_MEDIA_IN_DEVICE;
                                         retry = 0;
                                     }
 
                                     SCSI_SENSEQ_FORMAT_IN_PROGRESS => {
-                                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Format in progress\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Format in progress\n\0".as_ptr() as PCHAR);
                                         retry = 0;
                                     }
 
@@ -1939,7 +1997,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                         let mut notReady: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
 
                                         logRetryableError = 0;
-                                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Operation In Progress\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Operation In Progress\n\0".as_ptr() as PCHAR);
 
                                         notReady.Version = 1;
                                         notReady.Reason = 2;
@@ -1953,14 +2011,14 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                     }
 
                                     SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS => {
-                                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Long write in progress\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Long write in progress\n\0".as_ptr() as PCHAR);
                                         retry = 0;
                                         retryInterval = 1;
                                     }
 
                                     SCSI_SENSEQ_SPACE_ALLOC_IN_PROGRESS => {
                                         logRetryableError = 0;
-                                        TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: The device (%p) is busy allocating space.\n\0".as_ptr() as PCHAR, Fdo));
+                                        TracePrint(TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: The device (%p) is busy allocating space.\n\0".as_ptr() as PCHAR, Fdo);
 
                                         *Status = STATUS_RETRY;
                                         retry = 1;
@@ -1972,29 +2030,29 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                             CLASS_SPECIAL_CAUSE_NOT_REPORTABLE_HACK,
                                         ) == 0
                                         {
-                                            TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: not ready, cause unknown\n\0".as_ptr() as PCHAR));
+                                            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: not ready, cause unknown\n\0".as_ptr() as PCHAR);
                                             retry = 0;
                                         } else {
                                             // Fall through to INIT_COMMAND_REQUIRED
-                                            TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Initializing command required\n\0".as_ptr() as PCHAR));
+                                            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Initializing command required\n\0".as_ptr() as PCHAR);
                                             retryInterval = 0;
                                             logRetryableError = 0;
 
-                                            if TEST_FLAG((*fdoExtension).DeviceFlags, DEV_SAFE_START_UNIT) != 0
-                                                && TEST_FLAG(SrbGetSrbFlags(Srb), SRB_CLASS_FLAGS_LOW_PRIORITY) == 0
+                                            if TEST_FLAG(((*fdoExtension).DeviceFlags) as u32, DEV_SAFE_START_UNIT) != 0
+                                                && TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_CLASS_FLAGS_LOW_PRIORITY) == 0
                                             {
                                                 ClassSendStartUnit(Fdo);
                                             }
                                         }
                                     }
 
-                                    SCSI_SENSEQ_INIT_COMMAND_REQUIRED | _ => {
-                                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Initializing command required\n\0".as_ptr() as PCHAR));
+                                    (SCSI_SENSEQ_INIT_COMMAND_REQUIRED) as u8 | _ => {
+                                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Initializing command required\n\0".as_ptr() as PCHAR);
                                         retryInterval = 0;
                                         logRetryableError = 0;
 
-                                        if TEST_FLAG((*fdoExtension).DeviceFlags, DEV_SAFE_START_UNIT) != 0
-                                            && TEST_FLAG(SrbGetSrbFlags(Srb), SRB_CLASS_FLAGS_LOW_PRIORITY) == 0
+                                        if TEST_FLAG(((*fdoExtension).DeviceFlags) as u32, DEV_SAFE_START_UNIT) != 0
+                                            && TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_CLASS_FLAGS_LOW_PRIORITY) == 0
                                         {
                                             ClassSendStartUnit(Fdo);
                                         }
@@ -2003,12 +2061,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
 
                             SCSI_ADSENSE_NO_MEDIA_IN_DEVICE => {
-                                TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: No Media in device.\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: No Media in device.\n\0".as_ptr() as PCHAR);
                                 *Status = STATUS_NO_MEDIA_IN_DEVICE;
                                 retry = 0;
 
                                 if TEST_FLAG((*Fdo).Characteristics, FILE_REMOVABLE_MEDIA) == 0 {
-                                    TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: No Media in a non-removable device %p\n\0".as_ptr() as PCHAR, Fdo));
+                                    TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: No Media in a non-removable device %p\n\0".as_ptr() as PCHAR, Fdo);
                                 }
 
                                 if addlSenseCodeQual == 0xCC {
@@ -2023,7 +2081,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     }
 
                     SCSI_SENSE_MEDIUM_ERROR => {
-                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Medium Error (bad block)\n\0".as_ptr() as PCHAR));
+                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Medium Error (bad block)\n\0".as_ptr() as PCHAR);
                         *Status = STATUS_DEVICE_DATA_ERROR;
 
                         retry = 0;
@@ -2031,12 +2089,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         uniqueId = 256;
                         logStatus = IO_ERR_BAD_BLOCK;
 
-                        if addlSenseCode == SCSI_ADSENSE_INVALID_MEDIA {
+                        if addlSenseCode == (SCSI_ADSENSE_INVALID_MEDIA) as u8 {
                             match addlSenseCodeQual {
                                 SCSI_SENSEQ_UNKNOWN_FORMAT => {
                                     *Status = STATUS_UNRECOGNIZED_MEDIA;
 
-                                    if TEST_FLAG(SrbGetSrbFlags(Srb), SRB_CLASS_FLAGS_PAGING) == 0 {
+                                    if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_CLASS_FLAGS_PAGING) == 0 {
                                         logError = 0;
                                     }
                                 }
@@ -2054,7 +2112,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     SCSI_SENSE_HARDWARE_ERROR => {
                         let mut logHardwareError = 1u8;
 
-                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Hardware error\n\0".as_ptr() as PCHAR));
+                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Hardware error\n\0".as_ptr() as PCHAR);
 
                         if (*fdoData).LegacyErrorHandling == 0 {
                             retry = 0;
@@ -2068,10 +2126,10 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             logStatus = IO_ERR_CONTROLLER_ERROR;
                             logHardwareError = 0;
 
-                            if (addlSenseCode == SCSI_ADSENSE_LOGICAL_UNIT_ERROR
-                                && addlSenseCodeQual == SCSI_SENSEQ_TIMEOUT_ON_LOGICAL_UNIT)
-                                || (addlSenseCode == SCSI_ADSENSE_DATA_TRANSFER_ERROR
-                                    && addlSenseCodeQual == SCSI_SENSEQ_INITIATOR_RESPONSE_TIMEOUT)
+                            if (addlSenseCode == (SCSI_ADSENSE_LOGICAL_UNIT_ERROR) as u8
+                                && addlSenseCodeQual == (SCSI_SENSEQ_TIMEOUT_ON_LOGICAL_UNIT) as u8)
+                                || (addlSenseCode == (SCSI_ADSENSE_DATA_TRANSFER_ERROR) as u8
+                                    && addlSenseCodeQual == (SCSI_SENSEQ_INITIATOR_RESPONSE_TIMEOUT) as u8)
                             {
                                 retry = 0;
                                 logHardwareError = 1;
@@ -2079,8 +2137,8 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
                         }
 
-                        if addlSenseCode == SCSI_ADSENSE_LUN_COMMUNICATION
-                            && addlSenseCodeQual == SCSI_SESNEQ_COMM_CRC_ERROR
+                        if addlSenseCode == (SCSI_ADSENSE_LUN_COMMUNICATION) as u8
+                            && addlSenseCodeQual == (SCSI_SESNEQ_COMM_CRC_ERROR) as u8
                         {
                             retry = 1;
                             retryInterval = 1;
@@ -2089,7 +2147,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         }
 
                         if logHardwareError != 0 {
-                            let senseInfoBufferLength = SrbGetSenseInfoBufferLength(Srb);
+                            let senseInfoBufferLength = SrbGetSenseInfoBufferLength((Srb).cast());
                             let mut senseBufferSize: UCHAR = 0;
 
                             if ScsiGetTotalSenseByteCountIndicated(
@@ -2103,7 +2161,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 senseBufferSize = senseInfoBufferLength;
                             }
 
-                            ClasspQueueLogIOEventWithContextWorker(
+                            (((((((((ClasspQueueLogIOEventWithContextWorker))))))))).cast()(
                                 Fdo,
                                 senseBufferSize,
                                 senseBuffer,
@@ -2118,7 +2176,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     }
 
                     SCSI_SENSE_ILLEGAL_REQUEST => {
-                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Illegal SCSI request\n\0".as_ptr() as PCHAR));
+                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Illegal SCSI request\n\0".as_ptr() as PCHAR);
                         *Status = STATUS_INVALID_DEVICE_REQUEST;
                         retry = 0;
 
@@ -2126,7 +2184,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             SCSI_ADSENSE_NO_SENSE => match addlSenseCodeQual {
                                 SCSI_SENSEQ_OPERATION_IS_IN_PROGRESS => {
                                     if ClasspIsOffloadDataTransferCommand(cdb) != 0 {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Duplicate List Identifier (command %x, parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode, information));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Duplicate List Identifier (command %x, parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32, information);
 
                                         NT_ASSERTMSG(
                                             b"Duplicate list identifier specified\0".as_ptr()
@@ -2140,9 +2198,9 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 _ => {}
                             },
 
-                            SCSI_ADSENSE_LUN_COMMUNICATION => match addlSenseCodeQual {
+                            (SCSI_ADSENSE_LUN_COMMUNICATION) as u8 => match addlSenseCodeQual {
                                 SCSI_SENSEQ_UNREACHABLE_TARGET => {
-                                    TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Source-Destination LUNs can't communicate (command %x)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode));
+                                    TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Source-Destination LUNs can't communicate (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
                                     *Status = STATUS_DEVICE_UNREACHABLE;
                                 }
@@ -2151,7 +2209,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                             SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual {
                                 SCSI_SENSEQ_DATA_UNDERRUN => {
-                                    TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Host specified a transfer length greater than what is represented by the token (considering the offset) [command %x]\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode));
+                                    TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Host specified a transfer length greater than what is represented by the token (considering the offset) [command %x]\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
                                     NT_ASSERTMSG(
                                         b"Host specified blocks to write beyond what is represented by the token\0"
@@ -2165,7 +2223,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             },
 
                             SCSI_ADSENSE_PARAMETER_LIST_LENGTH => {
-                                TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target truncated the block device range descriptors in the parameter list (command %x)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode));
+                                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target truncated the block device range descriptors in the parameter list (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
                                 NT_ASSERTMSG(b"Parameter data truncation\0".as_ptr() as PCHAR, 0u8);
 
@@ -2173,7 +2231,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
 
                             SCSI_ADSENSE_ILLEGAL_COMMAND => {
-                                TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Illegal command\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Illegal command\n\0".as_ptr() as PCHAR);
                             }
 
                             SCSI_ADSENSE_ILLEGAL_BLOCK => {
@@ -2183,31 +2241,31 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                                 logicalBlockAddr.QuadPart = 0;
 
-                                TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Illegal block address\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Illegal block address\n\0".as_ptr() as PCHAR);
 
                                 *Status = STATUS_NONEXISTENT_SECTOR;
 
                                 if (*Fdo).DeviceType == FILE_DEVICE_DISK {
                                     if IS_SCSIOP_READWRITE(cdbOpcode) != 0 && !cdb.is_null() {
-                                        if TEST_FLAG((*fdoExtension).DeviceFlags, DEV_USE_16BYTE_CDB) != 0 {
+                                        if TEST_FLAG(((*fdoExtension).DeviceFlags) as u32, DEV_USE_16BYTE_CDB) != 0 {
                                             REVERSE_BYTES_QUAD(
                                                 &mut logicalBlockAddr,
-                                                core::ptr::addr_of!((*cdb).CDB16.LogicalBlock),
+                                                core::ptr::addr_of!((*cdb).CDB16.as_ref().LogicalBlock),
                                             );
                                             REVERSE_BYTES(
                                                 &mut numTransferBlocks,
-                                                core::ptr::addr_of!((*cdb).CDB16.TransferLength),
+                                                (core::ptr::addr_of!((*cdb).CDB16.as_ref().TransferLength)).cast(),
                                             );
                                         } else {
                                             REVERSE_BYTES(
                                                 &mut logicalBlockAddr.LowPart,
-                                                core::ptr::addr_of!(
-                                                    (*cdb).CDB10.LogicalBlockByte0
-                                                ),
+                                                (core::ptr::addr_of!(
+                                                    (*cdb).CDB10.as_ref().LogicalBlockByte0
+                                                )).cast(),
                                             );
                                             REVERSE_BYTES_SHORT(
                                                 &mut numTransferBlocks as *mut _ as PUSHORT,
-                                                core::ptr::addr_of!((*cdb).CDB10.TransferBlocksMsb),
+                                                core::ptr::addr_of!((*cdb).CDB10.as_ref().TransferBlocksMsb),
                                             );
                                         }
 
@@ -2226,13 +2284,13 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                                 - 1)
                                                 > lastLBA.QuadPart)
                                         {
-                                            TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Request beyond boundary. Last LBA: 0x%I64X Read LBA: 0x%I64X Length: 0x%X\n\0".as_ptr() as PCHAR, lastLBA.QuadPart, logicalBlockAddr.QuadPart, numTransferBlocks));
+                                            TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Request beyond boundary. Last LBA: 0x%I64X Read LBA: 0x%I64X Length: 0x%X\n\0".as_ptr() as PCHAR, lastLBA.QuadPart, logicalBlockAddr.QuadPart, numTransferBlocks);
                                         } else {
                                             retry = 1;
                                             retryInterval = 5;
                                         }
                                     } else if ClasspIsOffloadDataTransferCommand(cdb) != 0 {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): LBA out of range (command %x, parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode, information));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): LBA out of range (command %x, parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32, information);
 
                                         NT_ASSERTMSG(
                                             b"Number of blocks specified exceeds LUN capacity\0"
@@ -2244,32 +2302,32 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
 
                             SCSI_ADSENSE_INVALID_TOKEN => {
-                                TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Invalid/Expired/Modified token specified (command %x, parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode, information));
+                                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Invalid/Expired/Modified token specified (command %x, parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32, information);
 
                                 *Status = STATUS_INVALID_TOKEN;
                             }
 
                             SCSI_ADSENSE_INVALID_CDB => {
                                 if ClasspIsOffloadDataTransferCommand(cdb) != 0 {
-                                    TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Incorrect I_T nexus likely used (command %x)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode));
+                                    TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Incorrect I_T nexus likely used (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
                                     *Status = STATUS_INVALID_INITIATOR_TARGET_PATH;
                                 } else {
-                                    TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Invalid CDB\n\0".as_ptr() as PCHAR));
+                                    TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Invalid CDB\n\0".as_ptr() as PCHAR);
 
                                     retryInterval = 3;
                                 }
                             }
 
                             SCSI_ADSENSE_INVALID_LUN => {
-                                TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Invalid LUN\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Invalid LUN\n\0".as_ptr() as PCHAR);
                                 *Status = STATUS_NO_SUCH_DEVICE;
                             }
 
                             SCSI_ADSENSE_INVALID_FIELD_PARAMETER_LIST => {
                                 match addlSenseCodeQual {
                                     SCSI_SENSEQ_INVALID_RELEASE_OF_PERSISTENT_RESERVATION => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Alignment violation for command %x.\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Alignment violation for command %x.\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
                                         NT_ASSERTMSG(
                                             b"Specified offset is not aligned to LUN's granularity\0"
@@ -2281,7 +2339,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                     }
 
                                     SCSI_SENSEQ_TOO_MANY_SEGMENT_DESCRIPTORS => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Too many descriptors in parameter list for command %x (parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode, information));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Too many descriptors in parameter list for command %x (parameter field offset 0x%016llx)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32, information);
 
                                         NT_ASSERTMSG(
                                             b"Too many descriptors specified\0".as_ptr() as PCHAR,
@@ -2293,7 +2351,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                                     _ => {
                                         if ClasspIsOffloadDataTransferCommand(cdb) != 0 {
-                                            TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Illegal field in parameter list for command %x (parameter field offset 0x%016llx) [AddSense %x, AddSenseQ %x]\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode, information, addlSenseCode, addlSenseCodeQual));
+                                            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Illegal field in parameter list for command %x (parameter field offset 0x%016llx) [AddSense %x, AddSenseQ %x]\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32, information, (addlSenseCode) as i32, (addlSenseCodeQual) as i32);
 
                                             NT_ASSERTMSG(
                                                 b"Invalid field in parameter list\0".as_ptr()
@@ -2308,33 +2366,33 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
 
                             SCSI_ADSENSE_COPY_PROTECTION_FAILURE => {
-                                TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Copy protection failure\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Copy protection failure\n\0".as_ptr() as PCHAR);
 
                                 *Status = STATUS_COPY_PROTECTION_FAILURE;
 
                                 match addlSenseCodeQual {
                                     SCSI_SENSEQ_AUTHENTICATION_FAILURE => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Authentication failure\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Authentication failure\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_CSS_AUTHENTICATION_FAILURE;
                                     }
                                     SCSI_SENSEQ_KEY_NOT_PRESENT => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Key not present\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Key not present\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_CSS_KEY_NOT_PRESENT;
                                     }
                                     SCSI_SENSEQ_KEY_NOT_ESTABLISHED => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Key not established\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Key not established\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_CSS_KEY_NOT_ESTABLISHED;
                                     }
                                     SCSI_SENSEQ_READ_OF_SCRAMBLED_SECTOR_WITHOUT_AUTHENTICATION => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Read of scrambled sector w/o authentication\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Read of scrambled sector w/o authentication\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_CSS_SCRAMBLED_SECTOR;
                                     }
                                     SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Media region does not logical unit region\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Media region does not logical unit region\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_CSS_REGION_MISMATCH;
                                     }
                                     SCSI_SENSEQ_LOGICAL_UNIT_RESET_COUNT_ERROR => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Region set error -- region may be permanent\n\0".as_ptr() as PCHAR));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Region set error -- region may be permanent\n\0".as_ptr() as PCHAR);
                                         *Status = STATUS_CSS_RESETS_EXHAUSTED;
                                     }
                                     _ => {}
@@ -2342,15 +2400,15 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
 
                             SCSI_ADSENSE_MUSIC_AREA => {
-                                TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Music area\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Music area\n\0".as_ptr() as PCHAR);
                             }
 
                             SCSI_ADSENSE_DATA_AREA => {
-                                TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Data area\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Data area\n\0".as_ptr() as PCHAR);
                             }
 
                             SCSI_ADSENSE_VOLUME_OVERFLOW => {
-                                TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Volume overflow\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Volume overflow\n\0".as_ptr() as PCHAR);
                             }
 
                             _ => {}
@@ -2362,27 +2420,27 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             core::ptr::addr_of_mut!((*fdoExtension).MediaChangeCount)
                                 as *mut i32,
                         );
-                        TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media change count for device %d incremented to %#lx\n\0".as_ptr() as PCHAR, (*fdoExtension).DeviceNumber, count));
+                        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media change count for device %d incremented to %#lx\n\0".as_ptr() as PCHAR, (*fdoExtension).DeviceNumber, count);
 
                         match addlSenseCode {
                             SCSI_ADSENSE_MEDIUM_CHANGED => {
                                 logRetryableError = 0;
-                                TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media changed\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media changed\n\0".as_ptr() as PCHAR);
 
                                 if TEST_FLAG((*Fdo).Characteristics, FILE_REMOVABLE_MEDIA) == 0 {
-                                    TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media Changed on non-removable device %p\n\0".as_ptr() as PCHAR, Fdo));
+                                    TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_MCN, b"ClassInterpretSenseInfo: Media Changed on non-removable device %p\n\0".as_ptr() as PCHAR, Fdo);
                                 }
                                 ClassSetMediaChangeState(fdoExtension, MediaPresent, 0);
                             }
 
                             SCSI_ADSENSE_BUS_RESET => {
-                                TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Bus reset\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Bus reset\n\0".as_ptr() as PCHAR);
                             }
 
                             SCSI_ADSENSE_PARAMETERS_CHANGED => {
                                 logRetryableError = 0;
-                                if addlSenseCodeQual == SCSI_SENSEQ_CAPACITY_DATA_CHANGED {
-                                    TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device capacity changed (e.g. thinly provisioned LUN). Retry the request.\n\0".as_ptr() as PCHAR));
+                                if addlSenseCodeQual == (SCSI_SENSEQ_CAPACITY_DATA_CHANGED) as u8 {
+                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device capacity changed (e.g. thinly provisioned LUN). Retry the request.\n\0".as_ptr() as PCHAR);
 
                                     ClassQueueCapacityChangedEventWorker(Fdo);
 
@@ -2394,7 +2452,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             SCSI_ADSENSE_LB_PROVISIONING => match addlSenseCodeQual {
                                 SCSI_SENSEQ_SOFT_THRESHOLD_REACHED => {
                                     logRetryableError = 0;
-                                    TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device (%p) has hit a soft threshold.\n\0".as_ptr() as PCHAR, Fdo));
+                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device (%p) has hit a soft threshold.\n\0".as_ptr() as PCHAR, Fdo);
 
                                     ClassQueueThresholdEventWorker(Fdo);
                                 }
@@ -2404,23 +2462,23 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             },
 
                             SCSI_ADSENSE_OPERATING_CONDITIONS_CHANGED => {
-                                if addlSenseCodeQual == SCSI_SENSEQ_MICROCODE_CHANGED {
+                                if addlSenseCodeQual == (SCSI_SENSEQ_MICROCODE_CHANGED) as u8 {
                                     logRetryableError = 1;
-                                    TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device firmware has been changed.\n\0".as_ptr() as PCHAR));
+                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device firmware has been changed.\n\0".as_ptr() as PCHAR);
 
                                     retryInterval = 1;
                                     retry = 1;
                                 } else {
                                     logRetryableError = 0;
-                                    TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device information changed. Invalidate the bus\n\0".as_ptr() as PCHAR));
+                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device information changed. Invalidate the bus\n\0".as_ptr() as PCHAR);
 
-                                    if addlSenseCodeQual == SCSI_SENSEQ_INQUIRY_DATA_CHANGED {
+                                    if addlSenseCodeQual == (SCSI_SENSEQ_INQUIRY_DATA_CHANGED) as u8 {
                                         ClassQueueProvisioningTypeChangedEventWorker(Fdo);
                                     }
 
-                                    if addlSenseCodeQual == SCSI_SENSEQ_INQUIRY_DATA_CHANGED
+                                    if addlSenseCodeQual == (SCSI_SENSEQ_INQUIRY_DATA_CHANGED) as u8
                                         || addlSenseCodeQual
-                                            == SCSI_SENSEQ_OPERATING_DEFINITION_CHANGED
+                                            == (SCSI_SENSEQ_OPERATING_DEFINITION_CHANGED) as u8
                                     {
                                         InterlockedIncrement(
                                             core::ptr::addr_of_mut!(
@@ -2440,16 +2498,16 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                             SCSI_ADSENSE_OPERATOR_REQUEST => match addlSenseCodeQual {
                                 SCSI_SENSEQ_MEDIUM_REMOVAL => {
-                                    TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Ejection request received!\n\0".as_ptr() as PCHAR));
+                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Ejection request received!\n\0".as_ptr() as PCHAR);
                                     ClassSendEjectionNotification(fdoExtension);
                                 }
 
                                 SCSI_SENSEQ_WRITE_PROTECT_ENABLE => {
-                                    TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Operator selected write permit?! (unsupported!)\n\0".as_ptr() as PCHAR));
+                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Operator selected write permit?! (unsupported!)\n\0".as_ptr() as PCHAR);
                                 }
 
                                 SCSI_SENSEQ_WRITE_PROTECT_DISABLE => {
-                                    TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Operator selected write protect?! (unsupported!)\n\0".as_ptr() as PCHAR));
+                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Operator selected write protect?! (unsupported!)\n\0".as_ptr() as PCHAR);
                                 }
 
                                 _ => {}
@@ -2465,7 +2523,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 if (*fdoExtension).FailurePredicted == 0 {
                                     logError = 1;
                                 }
-                                (*fdoExtension).FailureReason = addlSenseCodeQual;
+                                (*fdoExtension).FailureReason = (addlSenseCodeQual) as u32;
                                 logStatus = IO_WRN_FAILURE_PREDICTED;
 
                                 ClassNotifyFailurePredicted(
@@ -2485,13 +2543,13 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
 
                             _ => {
-                                TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Unit attention\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Unit attention\n\0".as_ptr() as PCHAR);
                             }
                         }
 
                         if TEST_FLAG((*Fdo).Characteristics, FILE_REMOVABLE_MEDIA) != 0 {
                             if !ClassGetVpb(Fdo).is_null()
-                                && ((*ClassGetVpb(Fdo)).Flags & VPB_MOUNTED != 0)
+                                && ((*ClassGetVpb(Fdo)).Flags & (VPB_MOUNTED) as u16 != 0)
                             {
                                 SET_FLAG((*Fdo).Flags, DO_VERIFY_VOLUME);
 
@@ -2508,10 +2566,10 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     SCSI_SENSE_DATA_PROTECT => {
                         retry = 0;
 
-                        if addlSenseCode == SCSI_ADSENSE_WRITE_PROTECT {
+                        if addlSenseCode == (SCSI_ADSENSE_WRITE_PROTECT) as u8 {
                             match addlSenseCodeQual {
                                 SCSI_SENSEQ_SPACE_ALLOC_FAILED_WRITE_PROTECT => {
-                                    TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device's (%p) resources are exhausted.\n\0".as_ptr() as PCHAR, Fdo));
+                                    TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Device's (%p) resources are exhausted.\n\0".as_ptr() as PCHAR, Fdo);
 
                                     ClassQueueResourceExhaustionEventWorker(Fdo);
 
@@ -2521,17 +2579,17 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             }
                         } else {
                             if IS_SCSIOP_WRITE(cdbOpcode) != 0 {
-                                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Media write protected\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Media write protected\n\0".as_ptr() as PCHAR);
                                 *Status = STATUS_MEDIA_WRITE_PROTECTED;
                             } else {
-                                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Access denied\n\0".as_ptr() as PCHAR));
+                                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Access denied\n\0".as_ptr() as PCHAR);
                                 *Status = STATUS_ACCESS_DENIED;
                             }
                         }
                     }
 
                     SCSI_SENSE_BLANK_CHECK => {
-                        TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Media blank check\n\0".as_ptr() as PCHAR));
+                        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Media blank check\n\0".as_ptr() as PCHAR);
                         retry = 0;
                         *Status = STATUS_NO_DATA_DETECTED;
                     }
@@ -2539,7 +2597,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     SCSI_SENSE_COPY_ABORTED => match addlSenseCode {
                         SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual {
                             SCSI_SENSEQ_DATA_UNDERRUN => {
-                                TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Data transfer was truncated (command %x)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode));
+                                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Data transfer was truncated (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
                                 *Status = STATUS_SUCCESS;
                                 retry = 0;
@@ -2554,7 +2612,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             match addlSenseCode {
                                 SCSI_ADSENSE_COPY_TARGET_DEVICE_ERROR => match addlSenseCodeQual {
                                     SCSI_SENSEQ_DATA_UNDERRUN => {
-                                        TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target has truncated the data transfer (command %x)\n\0".as_ptr() as PCHAR, Fdo, cdbOpcode));
+                                        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target has truncated the data transfer (command %x)\n\0".as_ptr() as PCHAR, Fdo, (cdbOpcode) as i32);
 
                                         *Status = STATUS_SUCCESS;
                                         retry = 0;
@@ -2564,7 +2622,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
                                 SCSI_ADSENSE_RESOURCE_FAILURE => match addlSenseCodeQual {
                                     SCSI_SENSEQ_INSUFFICIENT_RESOURCES => {
-                                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target has insufficient resources (command %x)\n\0".as_ptr() as PCHAR, Fdo, (*cdb).CDB6GENERIC.OperationCode));
+                                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"ClassInterpretSenseInfo (%p): Target has insufficient resources (command %x)\n\0".as_ptr() as PCHAR, Fdo, ((*cdb).CDB6GENERIC.as_ref().OperationCode) as i32);
 
                                         *Status = STATUS_INSUFFICIENT_RESOURCES;
                                         retry = 0;
@@ -2575,30 +2633,30 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 _ => {}
                             }
                         } else {
-                            TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Command aborted\n\0".as_ptr() as PCHAR));
+                            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Command aborted\n\0".as_ptr() as PCHAR);
                             *Status = STATUS_IO_DEVICE_ERROR;
                             retryInterval = 1;
                         }
                     }
 
                     _ => {
-                        TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Unrecognized sense code\n\0".as_ptr() as PCHAR));
+                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Unrecognized sense code\n\0".as_ptr() as PCHAR);
                         *Status = STATUS_IO_DEVICE_ERROR;
                     }
                 }
 
                 if ((IS_SCSIOP_READWRITE(cdbOpcode) != 0)
-                    || (cdbOpcode == SCSIOP_VERIFY)
-                    || (cdbOpcode == SCSIOP_VERIFY16))
+                    || (cdbOpcode == (SCSIOP_VERIFY) as u8)
+                    || (cdbOpcode == (SCSIOP_VERIFY16) as u8))
                     && !cdb.is_null()
                 {
                     if isInformationValid != 0 {
                         readSector = 0;
                         badSector = information;
 
-                        if cdbOpcode == SCSIOP_READ16
-                            || cdbOpcode == SCSIOP_WRITE16
-                            || cdbOpcode == SCSIOP_VERIFY16
+                        if cdbOpcode == (SCSIOP_READ16) as u8
+                            || cdbOpcode == (SCSIOP_WRITE16) as u8
+                            || cdbOpcode == (SCSIOP_VERIFY16) as u8
                         {
                             REVERSE_BYTES_QUAD(
                                 &mut readSector,
@@ -2611,25 +2669,25 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             );
                         }
 
-                        if cdbOpcode == SCSIOP_READ
-                            || cdbOpcode == SCSIOP_WRITE
-                            || cdbOpcode == SCSIOP_VERIFY
+                        if cdbOpcode == (SCSIOP_READ) as u8
+                            || cdbOpcode == (SCSIOP_WRITE) as u8
+                            || cdbOpcode == (SCSIOP_VERIFY) as u8
                         {
                             REVERSE_BYTES_SHORT(
                                 &mut index as *mut _ as PUSHORT,
-                                core::ptr::addr_of!((*cdb).CDB10.TransferBlocksMsb),
+                                core::ptr::addr_of!((*cdb).CDB10.as_ref().TransferBlocksMsb),
                             );
-                        } else if cdbOpcode == SCSIOP_READ6 || cdbOpcode == SCSIOP_WRITE6 {
-                            index = (*cdb).CDB6READWRITE.TransferBlocks as ULONG;
-                        } else if cdbOpcode == SCSIOP_READ12 || cdbOpcode == SCSIOP_WRITE12 {
+                        } else if cdbOpcode == (SCSIOP_READ6) as u8 || cdbOpcode == (SCSIOP_WRITE6) as u8 {
+                            index = (*cdb).CDB6READWRITE.as_ref().TransferBlocks as ULONG;
+                        } else if cdbOpcode == (SCSIOP_READ12) as u8 || cdbOpcode == (SCSIOP_WRITE12) as u8 {
                             REVERSE_BYTES(
                                 &mut index,
-                                core::ptr::addr_of!((*cdb).CDB12.TransferLength),
+                                (core::ptr::addr_of!((*cdb).CDB12.as_ref().TransferLength)).cast(),
                             );
                         } else {
                             REVERSE_BYTES(
                                 &mut index,
-                                core::ptr::addr_of!((*cdb).CDB16.TransferLength),
+                                (core::ptr::addr_of!((*cdb).CDB16.as_ref().TransferLength)).cast(),
                             );
                         }
 
@@ -2642,7 +2700,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         }
 
         if validSense == 0 {
-            TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Request sense info not valid. SrbStatus %2x\n\0".as_ptr() as PCHAR, SRB_STATUS((*Srb).SrbStatus)));
+            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassInterpretSenseInfo: Request sense info not valid. SrbStatus %2x\n\0".as_ptr() as PCHAR, (SRB_STATUS((*Srb).SrbStatus)) as i32);
             retry = 1;
 
             match SRB_STATUS((*Srb).SrbStatus) {
@@ -2668,16 +2726,16 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     retry = 0;
                 }
 
-                SRB_STATUS_INVALID_PATH_ID
-                | SRB_STATUS_NO_DEVICE
-                | SRB_STATUS_NO_HBA
-                | SRB_STATUS_INVALID_LUN
-                | SRB_STATUS_INVALID_TARGET_ID => {
+                (SRB_STATUS_INVALID_PATH_ID) as u8
+                | (SRB_STATUS_NO_DEVICE) as u8
+                | (SRB_STATUS_NO_HBA) as u8
+                | (SRB_STATUS_INVALID_LUN) as u8
+                | (SRB_STATUS_INVALID_TARGET_ID) as u8 => {
                     *Status = STATUS_NO_SUCH_DEVICE;
                     retry = 0;
                 }
 
-                SRB_STATUS_SELECTION_TIMEOUT => {
+                (SRB_STATUS_SELECTION_TIMEOUT) as u8 => {
                     logError = 1;
                     logStatus = IO_ERR_NOT_READY;
                     uniqueId = 260;
@@ -2685,12 +2743,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     retry = 0;
                 }
 
-                SRB_STATUS_TIMEOUT | SRB_STATUS_COMMAND_TIMEOUT => {
+                (SRB_STATUS_TIMEOUT) as u8 | (SRB_STATUS_COMMAND_TIMEOUT) as u8 => {
                     incrementErrorCount = 1;
                     *Status = STATUS_IO_TIMEOUT;
                 }
 
-                SRB_STATUS_PARITY_ERROR | SRB_STATUS_UNEXPECTED_BUS_FREE => {
+                (SRB_STATUS_PARITY_ERROR) as u8 | (SRB_STATUS_UNEXPECTED_BUS_FREE) as u8 => {
                     incrementErrorCount = 1;
                     *Status = STATUS_IO_DEVICE_ERROR;
                     logRetryableError = 0;
@@ -2705,23 +2763,23 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     *Status = STATUS_DATA_OVERRUN;
                     retry = 0;
 
-                    if (cdbOpcode == SCSIOP_MODE_SENSE
-                        && SrbGetDataTransferLength(Srb)
-                            <= (*cdb).MODE_SENSE.AllocationLength as u32)
-                        || (cdbOpcode == SCSIOP_INQUIRY
-                            && SrbGetDataTransferLength(Srb)
-                                <= (*cdb).CDB6INQUIRY.AllocationLength as u32)
+                    if (cdbOpcode == (SCSIOP_MODE_SENSE) as u8
+                        && SrbGetDataTransferLength((Srb).cast())
+                            <= (*cdb).MODE_SENSE.as_ref().AllocationLength as u32)
+                        || (cdbOpcode == (SCSIOP_INQUIRY) as u8
+                            && SrbGetDataTransferLength((Srb).cast())
+                                <= (*cdb).CDB6INQUIRY.as_ref().AllocationLength as u32)
                     {
                         *Status = STATUS_SUCCESS;
                         logErrorInternal = 0;
                         logError = 0;
-                    } else if cdbOpcode == SCSIOP_MODE_SENSE10 {
+                    } else if cdbOpcode == (SCSIOP_MODE_SENSE10) as u8 {
                         let mut allocationLength: USHORT = 0;
                         REVERSE_BYTES_SHORT(
-                            core::ptr::addr_of!((*cdb).MODE_SENSE10.AllocationLength),
+                            core::ptr::addr_of!((*cdb).MODE_SENSE10.as_ref().AllocationLength),
                             &mut allocationLength,
                         );
-                        if SrbGetDataTransferLength(Srb) <= allocationLength as u32 {
+                        if SrbGetDataTransferLength((Srb).cast()) <= allocationLength as u32 {
                             *Status = STATUS_SUCCESS;
                             logErrorInternal = 0;
                             logError = 0;
@@ -2729,10 +2787,10 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     } else if ClasspIsReceiveTokenInformation(cdb) != 0 {
                         let mut allocationLength: ULONG = 0;
                         REVERSE_BYTES(
-                            core::ptr::addr_of!((*cdb).RECEIVE_TOKEN_INFORMATION.AllocationLength),
+                            core::ptr::addr_of!((*cdb).RECEIVE_TOKEN_INFORMATION.as_ref().AllocationLength),
                             &mut allocationLength,
                         );
-                        if SrbGetDataTransferLength(Srb) <= allocationLength {
+                        if SrbGetDataTransferLength((Srb).cast()) <= allocationLength {
                             *Status = STATUS_SUCCESS;
                             logErrorInternal = 0;
                             logError = 0;
@@ -2778,12 +2836,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         ClasspPerfIncrementErrorCount(fdoExtension);
     }
 
-    if !(*fdoExtension).CommonExtension.DevInfo.ClassError.is_null() {
+    if !(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DevInfo.ClassError.is_null() {
         let mut tempSrb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
         let mut srbPtr = Srb as PSCSI_REQUEST_BLOCK;
 
-        if ((*Srb).Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK)
-            && (((*(*fdoExtension).CommonExtension.DriverExtension).SrbSupport
+        if ((*Srb).Function == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8)
+            && (((*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension).SrbSupport
                 & CLASS_SRB_STORAGE_REQUEST_BLOCK)
                 == 0)
         {
@@ -2791,7 +2849,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
             srbPtr = &mut tempSrb;
         }
 
-        ((*(*fdoExtension).CommonExtension.DevInfo).ClassError)(
+        ((*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DevInfo).ClassError)(
             Fdo,
             srbPtr,
             Status,
@@ -2803,20 +2861,20 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         *RetryInterval = retryInterval;
     }
 
-    let cdb = SrbGetCdb(Srb);
+    let cdb = SrbGetCdb((Srb).cast());
     if !cdb.is_null() {
-        cdbOpcode = (*cdb).CDB6GENERIC.OperationCode;
+        cdbOpcode = (*cdb).CDB6GENERIC.as_ref().OperationCode;
     }
 
-    if (cdbOpcode == SCSIOP_RESERVE_UNIT || cdbOpcode == SCSIOP_RELEASE_UNIT) && !cdb.is_null() {
+    if (cdbOpcode == (SCSIOP_RESERVE_UNIT) as u8 || cdbOpcode == (SCSIOP_RELEASE_UNIT) as u8) && !cdb.is_null() {
         if *Status == STATUS_INVALID_DEVICE_REQUEST {
-            SrbSetCdbLength(Srb, 10);
-            (*cdb).CDB10.OperationCode = if (*cdb).CDB6GENERIC.OperationCode
-                == SCSIOP_RESERVE_UNIT
+            SrbSetCdbLength((Srb).cast(), 10);
+            (*cdb).CDB10.as_ref().OperationCode = if (*cdb).CDB6GENERIC.as_ref().OperationCode
+                == (SCSIOP_RESERVE_UNIT) as u8
             {
-                SCSIOP_RESERVE_UNIT10
+                (SCSIOP_RESERVE_UNIT10) as u8
             } else {
-                SCSIOP_RELEASE_UNIT10
+                (SCSIOP_RELEASE_UNIT10) as u8
             };
 
             SET_FLAG(
@@ -2839,12 +2897,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         totalSize = core::mem::size_of::<IO_ERROR_LOG_PACKET>() as ULONG
             + core::mem::size_of::<CLASS_ERROR_LOG_DATA>() as ULONG;
 
-        if (TEST_FLAG((*Srb).SrbStatus, SRB_STATUS_AUTOSENSE_VALID) != 0) && !senseBuffer.is_null()
+        if (TEST_FLAG(((*Srb).SrbStatus) as u32, SRB_STATUS_AUTOSENSE_VALID) != 0) && !senseBuffer.is_null()
         {
             let mut validSenseBytes: UCHAR = 0;
             let mut senseInfoBufferLength: UCHAR = 0;
 
-            senseInfoBufferLength = SrbGetSenseInfoBufferLength(Srb);
+            senseInfoBufferLength = SrbGetSenseInfoBufferLength((Srb).cast());
 
             if IsDescriptorSenseDataFormat(senseBuffer) != 0 {
                 convertedSenseBufferLength = core::mem::size_of::<SENSE_DATA>() as UCHAR;
@@ -2884,7 +2942,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
 
         if retry != 0 {
             staticErrLogEntry.FinalStatus = STATUS_SUCCESS;
-            staticErrLogData.ErrorRetried = 1;
+            staticErrLogData.set_ErrorRetried(1);
         } else {
             staticErrLogEntry.FinalStatus = *Status;
         }
@@ -2893,11 +2951,11 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
             logError = 0;
         }
 
-        if TEST_FLAG(SrbGetSrbFlags(Srb), SRB_CLASS_FLAGS_PAGING) != 0 {
-            staticErrLogData.ErrorPaging = 1;
+        if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_CLASS_FLAGS_PAGING) != 0 {
+            staticErrLogData.set_ErrorPaging(1);
         }
         if unhandledError != 0 {
-            staticErrLogData.ErrorUnhandled = 1;
+            staticErrLogData.set_ErrorUnhandled(1);
         }
 
         staticErrLogEntry.DeviceOffset.QuadPart = badSector as i64;
@@ -2921,7 +2979,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         KeQueryTickCount(&mut staticErrLogData.TickCount);
         staticErrLogData.PortNumber = 0xFFFFFFFFu32;
 
-        if (*Srb).Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
+        if (*Srb).Function == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8 {
             ClasspConvertToScsiRequestBlock(
                 &mut staticErrLogData.Srb,
                 Srb as PSTORAGE_REQUEST_BLOCK,
@@ -2955,11 +3013,11 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         }
 
         if logErrorInternal != 0 {
-            KeAcquireSpinLock(core::ptr::addr_of_mut!((*fdoData).SpinLock), &mut oldIrql);
+            KeAcquireSpinLock((core::ptr::addr_of_mut!((*fdoData).SpinLock)).cast(), &mut oldIrql);
             (*fdoData).ErrorLogs[(*fdoData).ErrorLogNextIndex as usize] = staticErrLogData;
             (*fdoData).ErrorLogNextIndex = (*fdoData).ErrorLogNextIndex + 1;
             (*fdoData).ErrorLogNextIndex = (*fdoData).ErrorLogNextIndex % NUM_ERROR_LOG_ENTRIES;
-            KeReleaseSpinLock(core::ptr::addr_of_mut!((*fdoData).SpinLock), oldIrql);
+            KeReleaseSpinLock((core::ptr::addr_of_mut!((*fdoData).SpinLock)).cast(), oldIrql);
         }
 
         if IS_SCSIOP_READWRITE(cdbOpcode) == 0 || retry == 0 || (RetryCount != 0) {
@@ -2971,10 +3029,10 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
         }
 
         if logError != 0 {
-            let cdb = SrbGetCdb(Srb);
+            let cdb = SrbGetCdb((Srb).cast());
             if !cdb.is_null() {
-                match (*cdb).CDB10.OperationCode {
-                    SCSIOP_TEST_UNIT_READY => {
+                match (*cdb).CDB10.as_ref().OperationCode {
+                    (SCSIOP_TEST_UNIT_READY) as u8 => {
                         if (*fdoData).LoggedTURFailureSinceLastIO != 0 {
                             logError = 0;
                         } else {
@@ -2999,7 +3057,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
             if logRetryableError != 0 {
                 NT_ASSERT(IS_SCSIOP_READWRITE(cdbOpcode) != 0);
 
-                ClasspQueueLogIOEventWithContextWorker(
+                (((((((((ClasspQueueLogIOEventWithContextWorker))))))))).cast()(
                     Fdo,
                     senseBufferSize as UCHAR,
                     senseBuffer,
@@ -3012,7 +3070,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                 );
             } else {
                 let errorLogEntry =
-                    IoAllocateErrorLogEntry(Fdo, totalSize as UCHAR) as PIO_ERROR_LOG_PACKET;
+                    IoAllocateErrorLogEntry((Fdo).cast(), totalSize as UCHAR) as PIO_ERROR_LOG_PACKET;
                 if !errorLogEntry.is_null() {
                     let errlogData = (*errorLogEntry).DumpData.as_mut_ptr() as PCLASS_ERROR_LOG_DATA;
 
@@ -3023,7 +3081,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         RtlCopyMemory(
                             core::ptr::addr_of_mut!((*errlogData).SenseData) as PVOID,
                             senseBuffer,
-                            senseBufferSize,
+                            (senseBufferSize) as usize,
                         );
                     }
 
@@ -3078,7 +3136,7 @@ pub unsafe extern "system" fn ClassMarkChildMissing(
     (*Child).IsMissing = 1u8;
 
     ClassRemoveChild(
-        (*(*Child).CommonExtension).PartitionZeroExtension,
+        (*(*Child).__bindgen_anon_1.CommonExtension).PartitionZeroExtension,
         Child,
         AcquireChildLock
     );
@@ -3096,14 +3154,14 @@ pub unsafe extern "system" fn ClassMarkChildMissing(
 pub unsafe extern "system" fn ClassMarkChildrenMissing(
     Fdo: PFUNCTIONAL_DEVICE_EXTENSION
 ) {
-    let commonExtension = core::ptr::addr_of_mut!((*Fdo).CommonExtension);
-    let mut nextChild = (*commonExtension).ChildList;
+    let commonExtension = core::ptr::addr_of_mut!((*Fdo).__bindgen_anon_1.CommonExtension);
+    let mut nextChild = (*commonExtension).as_ref().ChildList;
 
     ClassAcquireChildLock(Fdo);
 
     while !nextChild.is_null() {
         let tmpChild = nextChild;
-        nextChild = (*(*tmpChild).CommonExtension).ChildList;
+        nextChild = (*(*tmpChild).__bindgen_anon_1.CommonExtension).ChildList;
         ClassMarkChildMissing(tmpChild, 0u8);
     }
     ClassReleaseChildLock(Fdo);
@@ -3142,7 +3200,7 @@ pub unsafe extern "system" fn ClassModeSense(
         ModeSenseBuffer,
         Length,
         PageMode,
-        MODE_SENSE_CURRENT_VALUES
+        (MODE_SENSE_CURRENT_VALUES) as u8
     )
 }
 
@@ -3188,7 +3246,7 @@ pub unsafe extern "system" fn ClassQueryTimeOutRegistryValue(
 
     parameters = ExAllocatePoolWithTag(
         NonPagedPoolNx,
-        (core::mem::size_of::<RTL_QUERY_REGISTRY_TABLE>() * 2) as u64,
+        ((core::mem::size_of::<RTL_QUERY_REGISTRY_TABLE>() * 2) as u64) as usize,
         u32::from_be_bytes(*b"1BcS"),
     ) as PRTL_QUERY_REGISTRY_TABLE;
 
@@ -3199,7 +3257,7 @@ pub unsafe extern "system" fn ClassQueryTimeOutRegistryValue(
     size = (*registryPath).MaximumLength as ULONG + core::mem::size_of::<WCHAR>() as ULONG;
     path = ExAllocatePoolWithTag(
         NonPagedPoolNx,
-        size as u64,
+        (size as u64) as usize,
         u32::from_be_bytes(*b"2BcS"),
     ) as PWSTR;
 
@@ -3242,12 +3300,12 @@ pub unsafe extern "system" fn ClassQueryTimeOutRegistryValue(
     FREE_POOL(parameters as PVOID);
     FREE_POOL(path as PVOID);
 
-    TracePrint((
+    TracePrint(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_INIT,
         b"ClassQueryTimeOutRegistryValue: Timeout value %d\n\0".as_ptr() as PCHAR,
         timeOut,
-    ));
+    );
 
     return timeOut as ULONG;
 }
@@ -3260,14 +3318,14 @@ pub unsafe extern "system" fn ClassReleaseChildLock(
         fn NT_ASSERT(condition: u32);
     }
 
-    NT_ASSERT(((*FdoExtension).ChildLockOwner == KeGetCurrentThread()) as u32);
+    NT_ASSERT(((*FdoExtension).ChildLockOwner == (KeGetCurrentThread()).cast()) as u32);
     NT_ASSERT(((*FdoExtension).ChildLockAcquisitionCount != 0) as u32);
 
     (*FdoExtension).ChildLockAcquisitionCount -= 1;
 
     if (*FdoExtension).ChildLockAcquisitionCount == 0 {
         (*FdoExtension).ChildLockOwner = core::ptr::null_mut();
-        KeSetEvent(
+        (((((((((KeSetEvent))))))))).cast()(
             core::ptr::addr_of_mut!((*FdoExtension).ChildLock),
             IO_NO_INCREMENT as i8,
             0u8
@@ -3300,13 +3358,13 @@ pub unsafe extern "system" fn ClassRemoveDevice(
     if (*commonExtension).IsFdo != 0 || 
        !(*(*driverExtension).InitData.PdoData.ClassWmiInfo.GuidRegInfo).is_null() {
         status = IoWMIRegistrationControl(DeviceObject, WMIREG_ACTION_DEREGISTER);
-        TracePrint((
+        TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_WMI,
             b"ClassRemoveDevice: IoWMIRegistrationControl(%p, WMI_ACTION_DEREGISTER) --> %lx\0".as_ptr() as PCHAR,
             DeviceObject,
             status,
-        ));
+        );
     }
 
     if !(*commonExtension).MountedDeviceInterfaceName.Buffer.is_null() {
@@ -3324,54 +3382,54 @@ pub unsafe extern "system" fn ClassRemoveDevice(
     if RemoveType == IRP_MN_REMOVE_DEVICE {
         ClassReleaseRemoveLock(DeviceObject, DeviceObject as PIRP);
 
-        TracePrint((
+        TracePrint(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_PNP,
             b"ClasspRemoveDevice - Reference count is now %d\n\0".as_ptr() as PCHAR,
             (*commonExtension).RemoveLock,
-        ));
+        );
 
         removeLockRundown = ((*commonExtension).PrivateCommonData as *mut u8)
             .add(core::mem::size_of::<CLASS_PRIVATE_COMMON_DATA>()) as PEX_RUNDOWN_REF_CACHE_AWARE;
         ExWaitForRundownProtectionReleaseCacheAware(removeLockRundown);
 
-        KeSetEvent(
+        (((((((((KeSetEvent))))))))).cast()(
             core::ptr::addr_of_mut!((*commonExtension).RemoveEvent),
             IO_NO_INCREMENT as i8,
             0u8,
         );
 
-        TracePrint((
+        TracePrint(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_PNP,
             b"ClasspRemoveDevice - removing device %p\n\0".as_ptr() as PCHAR,
             DeviceObject,
-        ));
+        );
 
         if (*commonExtension).IsFdo != 0 {
-            TracePrint((
+            TracePrint(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_PNP,
                 b"ClasspRemoveDevice - FDO %p has received a remove request.\n\0".as_ptr() as PCHAR,
                 DeviceObject,
-            ));
+            );
         } else {
             let pdoExtension = (*DeviceObject).DeviceExtension as PPHYSICAL_DEVICE_EXTENSION;
 
             if (*pdoExtension).IsMissing != 0 {
-                TracePrint((
+                TracePrint(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_PNP,
                     b"ClasspRemoveDevice - PDO %p is missing and will be removed\0".as_ptr() as PCHAR,
                     DeviceObject,
-                ));
+                );
             } else {
-                TracePrint((
+                TracePrint(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_PNP,
                     b"ClasspRemoveDevice - PDO %p still exists and will be removed when it disappears\0".as_ptr() as PCHAR,
                     DeviceObject,
-                ));
+                );
 
                 ExReInitializeRundownProtectionCacheAware(removeLockRundown);
 
@@ -3405,10 +3463,10 @@ pub unsafe extern "system" fn ClassRemoveDevice(
                 let mut child: PPHYSICAL_DEVICE_EXTENSION;
 
                 if !(*fdoExtension).FunctionSupportInfo.is_null() &&
-                   (*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled != 0 {
+                   (*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0 {
                     let mut fdoEntry: PIDLE_POWER_FDO_LIST_ENTRY;
 
-                    KeAcquireGuardedMutex(core::ptr::addr_of_mut!(IdlePowerFDOListMutex));
+                    KeAcquireGuardedMutex((core::ptr::addr_of_mut!(IdlePowerFDOListMutex)).cast());
                     fdoEntry = (*IdlePowerFDOList.Flink) as PIDLE_POWER_FDO_LIST_ENTRY;
                     while (fdoEntry as PLIST_ENTRY) != core::ptr::addr_of_mut!(IdlePowerFDOList) {
                         let nextEntry = (*(*fdoEntry).ListEntry.Flink) as PIDLE_POWER_FDO_LIST_ENTRY;
@@ -3419,12 +3477,12 @@ pub unsafe extern "system" fn ClassRemoveDevice(
                         }
                         fdoEntry = nextEntry;
                     }
-                    KeReleaseGuardedMutex(core::ptr::addr_of_mut!(IdlePowerFDOListMutex));
+                    KeReleaseGuardedMutex((core::ptr::addr_of_mut!(IdlePowerFDOListMutex)).cast());
                 }
 
                 ClassCleanupMediaChangeDetection(fdoExtension);
 
-                FREE_POOL((*fdoExtension).FailurePredictionInfo);
+                FREE_POOL(((*fdoExtension).FailurePredictionInfo).cast());
 
                 ClassAcquireChildLock(fdoExtension);
                 child = ClassRemoveChild(fdoExtension, core::ptr::null_mut(), 0u8);
@@ -3455,15 +3513,15 @@ pub unsafe extern "system" fn ClassRemoveDevice(
 
                     ClasspDeleteTimer(fdoExtension);
 
-                    FREE_POOL((*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
-                    FREE_POOL((*(*fdoExtension).PrivateFdoData).FreeTransferPacketsLists);
-                    FREE_POOL((*fdoExtension).PrivateFdoData);
+                    FREE_POOL(((*(*fdoExtension).PrivateFdoData).PowerProcessIrp).cast());
+                    FREE_POOL(((*(*fdoExtension).PrivateFdoData).FreeTransferPacketsLists).cast());
+                    FREE_POOL(((*fdoExtension).PrivateFdoData).cast());
                 }
 
                 FREE_POOL((*fdoExtension).AdditionalFdoData);
 
                 if !(*commonExtension).DeviceName.Buffer.is_null() {
-                    FREE_POOL((*commonExtension).DeviceName.Buffer);
+                    FREE_POOL(((*commonExtension).DeviceName.Buffer).cast());
                     RtlInitUnicodeString(
                         core::ptr::addr_of_mut!((*commonExtension).DeviceName),
                         core::ptr::null_mut(),
@@ -3473,13 +3531,13 @@ pub unsafe extern "system" fn ClassRemoveDevice(
                 if !(*fdoExtension).FunctionSupportInfo.is_null() {
                     FREE_POOL((*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo);
                 }
-                FREE_POOL((*fdoExtension).FunctionSupportInfo);
+                FREE_POOL(((*fdoExtension).FunctionSupportInfo).cast());
 
-                FREE_POOL((*fdoExtension).MiniportDescriptor);
+                FREE_POOL(((*fdoExtension).MiniportDescriptor).cast());
 
-                FREE_POOL((*fdoExtension).AdapterDescriptor);
+                FREE_POOL(((*fdoExtension).AdapterDescriptor).cast());
 
-                FREE_POOL((*fdoExtension).DeviceDescriptor);
+                FREE_POOL(((*fdoExtension).DeviceDescriptor).cast());
 
                 IoDetachDevice(lowerDeviceObject);
             }
@@ -3746,28 +3804,28 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
     let Srb = _Srb as PSTORAGE_REQUEST_BLOCK_HEADER;
     let mut savedFlags: ULONG;
 
-    if (*Srb).Function != SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
-        (*Srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as ULONG;
-        (*Srb).Function = SRB_FUNCTION_EXECUTE_SCSI;
+    if (*Srb).Function != (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8 {
+        (*Srb).Length = (core::mem::size_of::<SCSI_REQUEST_BLOCK>() as ULONG) as u16;
+        (*Srb).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
     }
 
-    SrbSetSenseInfoBuffer(Srb, (*fdoExtension).SenseData);
-    SrbSetSenseInfoBufferLength(Srb, GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension));
+    (((((((((SrbSetSenseInfoBuffer))))))))).cast()(Srb, (*fdoExtension).SenseData);
+    SrbSetSenseInfoBufferLength((Srb).cast(), GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension));
 
-    SrbSetDataBuffer(Srb, BufferAddress);
-    SrbSetDataTransferLength(Srb, BufferLength);
+    SrbSetDataBuffer((Srb).cast(), BufferAddress);
+    SrbSetDataTransferLength((Srb).cast(), BufferLength);
 
-    savedFlags = SrbGetSrbFlags(Srb) & SRB_FLAGS_CLASS_DRIVER_RESERVED;
+    savedFlags = SrbGetSrbFlags((Srb).cast()) & SRB_FLAGS_CLASS_DRIVER_RESERVED;
 
-    SET_FLAG(&mut savedFlags, SrbGetSrbFlags(Srb) & SRB_FLAGS_DONT_START_NEXT_PACKET);
+    SET_FLAG(&mut savedFlags, SrbGetSrbFlags((Srb).cast()) & SRB_FLAGS_DONT_START_NEXT_PACKET);
 
-    if TEST_FLAG(SrbGetSrbFlags(Srb), SRB_FLAGS_QUEUE_ACTION_ENABLE) != 0
+    if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_FLAGS_QUEUE_ACTION_ENABLE) != 0
         && (SrbGetRequestAttribute(Srb) == SRB_SIMPLE_TAG_REQUEST
             || SrbGetRequestAttribute(Srb) == SRB_HEAD_OF_QUEUE_TAG_REQUEST
             || SrbGetRequestAttribute(Srb) == SRB_ORDERED_QUEUE_TAG_REQUEST)
     {
         SET_FLAG(&mut savedFlags, SRB_FLAGS_QUEUE_ACTION_ENABLE);
-        if TEST_FLAG(SrbGetSrbFlags(Srb), SRB_FLAGS_NO_QUEUE_FREEZE) != 0 {
+        if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_FLAGS_NO_QUEUE_FREEZE) != 0 {
             SET_FLAG(&mut savedFlags, SRB_FLAGS_NO_QUEUE_FREEZE);
         }
     }
@@ -3789,8 +3847,8 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
                     FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdoExtension, Srb);
                 }
                 ClassFreeOrReuseSrb(fdoExtension, _Srb);
-                ClassReleaseRemoveLock(Fdo, Irp as PVOID);
-                ClassCompleteRequest(Fdo, Irp, IO_NO_INCREMENT as u8);
+                ClassReleaseRemoveLock(Fdo, (Irp as PVOID).cast());
+                ClassCompleteRequest(Fdo, Irp, (IO_NO_INCREMENT as u8) as i8);
 
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -3803,7 +3861,7 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
         }
 
         SrbAssignSrbFlags(
-            Srb,
+            (Srb).cast(),
             if WriteToDevice != 0 {
                 SRB_FLAGS_DATA_OUT
             } else {
@@ -3811,13 +3869,13 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
             },
         );
     } else {
-        SrbAssignSrbFlags(Srb, SRB_FLAGS_NO_DATA_TRANSFER);
+        SrbAssignSrbFlags((Srb).cast(), SRB_FLAGS_NO_DATA_TRANSFER);
     }
 
-    SrbSetSrbFlags(Srb, savedFlags);
-    SrbSetSrbFlags(Srb, SRB_FLAGS_DISABLE_SYNCH_TRANSFER);
+    SrbSetSrbFlags((Srb).cast(), savedFlags);
+    SrbSetSrbFlags((Srb).cast(), SRB_FLAGS_DISABLE_SYNCH_TRANSFER);
 
-    SrbSetScsiStatus(Srb, 0);
+    SrbSetScsiStatus((Srb).cast(), 0);
     (*Srb).SrbStatus = 0;
 
     SrbSetNextSrb(Srb, core::ptr::null_mut());
@@ -3828,14 +3886,14 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
     IoSetCompletionRoutine(Irp, Some(ClassIoComplete), Srb as PVOID, 1u8, 1u8, 1u8);
 
     irpStack = IoGetNextIrpStackLocation(Irp);
-    (*irpStack).MajorFunction = IRP_MJ_SCSI;
+    (*irpStack).MajorFunction = (IRP_MJ_SCSI) as u8;
     (*irpStack).Parameters.Scsi.Srb = _Srb;
 
     SrbSetOriginalRequest(Srb, Irp as PVOID);
 
     IoMarkIrpPending(Irp);
 
-    IoCallDriver((*(*fdoExtension).CommonExtension.LowerDeviceObject), Irp);
+    IoCallDriver((*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().LowerDeviceObject), Irp);
 
     STATUS_PENDING
 }
@@ -3855,7 +3913,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
     let irpStack: PIO_STACK_LOCATION;
     let mut event: KEVENT = core::mem::zeroed();
     let mut senseInfoBuffer: PVOID = core::ptr::null_mut();
-    let mut senseInfoBufferLength: ULONG = SENSE_BUFFER_SIZE_EX;
+    let mut senseInfoBufferLength: ULONG = (SENSE_BUFFER_SIZE_EX) as u32;
     let mut retryCount: ULONG = MAXIMUM_RETRIES;
     let mut status: NTSTATUS;
     let mut retry: BOOLEAN;
@@ -3910,26 +3968,26 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
         ) -> NTSTATUS;
     }
 
-    NT_ASSERT((KeGetCurrentIrql() as u32) < DISPATCH_LEVEL);
-    NT_ASSERT((*(*fdoExtension).CommonExtension).IsFdo);
+    NT_ASSERT((KeGetCurrentIrql() as u32) < (DISPATCH_LEVEL) as u32);
+    NT_ASSERT((*(*fdoExtension).__bindgen_anon_1.CommonExtension).IsFdo);
 
-    if (*Srb).Function != SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
+    if (*Srb).Function != (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8 {
         (*Srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as USHORT;
-        (*Srb).Function = SRB_FUNCTION_EXECUTE_SCSI;
+        (*Srb).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
     }
 
     NT_ASSERT(
         (((*(*fdoExtension).AdapterDescriptor).SrbType == SRB_TYPE_SCSI_REQUEST_BLOCK)
-            && ((*Srb).Function == SRB_FUNCTION_EXECUTE_SCSI))
+            && ((*Srb).Function == (SRB_FUNCTION_EXECUTE_SCSI) as u8))
             || (((*(*fdoExtension).AdapterDescriptor).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK)
-                && ((*Srb).Function == SRB_FUNCTION_STORAGE_REQUEST_BLOCK))
+                && ((*Srb).Function == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8))
     );
 
-    senseInfoBufferLength = ALIGN_UP_BY(senseInfoBufferLength, KeGetRecommendedSharedDataAlignment());
+    senseInfoBufferLength = (ALIGN_UP_BY(senseInfoBufferLength, KeGetRecommendedSharedDataAlignment())) as u32;
 
     senseInfoBuffer = ExAllocatePoolWithTag(
         NonPagedPoolNxCacheAligned,
-        senseInfoBufferLength as u64,
+        (senseInfoBufferLength as u64) as usize,
         u32::from_be_bytes(*b"7CcS"),
     );
 
@@ -3957,13 +4015,13 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
             }
         }
 
-        SrbSetRequestAttribute(Srb, SRB_SIMPLE_TAG_REQUEST);
+        SrbSetRequestAttribute(Srb, (SRB_SIMPLE_TAG_REQUEST) as u8);
         SrbSetSrbFlags(Srb, SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE);
 
         KeInitializeEvent(&mut event, NotificationEvent, 0u8);
 
         irp = IoAllocateIrp(
-            ((*(*fdoExtension).CommonExtension).LowerDeviceObject as *mut _DEVICE_OBJECT)
+            ((*(*fdoExtension).__bindgen_anon_1.CommonExtension).LowerDeviceObject as *mut _DEVICE_OBJECT)
                 .as_ref()
                 .unwrap()
                 .StackSize as i8
@@ -3990,7 +4048,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
         IoSetCompletionRoutine(irp, Some(ClasspSendSynchronousCompletion), Srb as PVOID, 1u8, 1u8, 1u8);
 
         (*irp).UserIosb = &mut ioStatus;
-        (*irp).UserEvent = &mut event as *mut _ as PVOID;
+        (*irp).UserEvent = (&mut event as *mut _ as PVOID).cast();
 
         if !BufferAddress.is_null() {
             (*irp).MdlAddress = IoAllocateMdl(BufferAddress, BufferLength, 0u8, 0u8, irp);
@@ -4020,7 +4078,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
         SrbSetNextSrb(Srb, core::ptr::null_mut());
         SrbSetOriginalRequest(Srb, irp as PVOID);
 
-        status = IoCallDriver((*(*fdoExtension).CommonExtension).LowerDeviceObject, irp);
+        status = IoCallDriver((*(*fdoExtension).__bindgen_anon_1.CommonExtension).LowerDeviceObject, irp);
 
         if status == STATUS_PENDING {
             KeWaitForSingleObject(
@@ -4038,7 +4096,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
 
         SrbSetOriginalRequest(Srb, core::ptr::null_mut());
 
-        if SRB_STATUS((*Srb).SrbStatus) != SRB_STATUS_SUCCESS {
+        if SRB_STATUS((*Srb).SrbStatus) != (SRB_STATUS_SUCCESS) as u8 {
             let mut retryInterval: LONGLONG = 0;
 
             TracePrint(
@@ -4084,8 +4142,8 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
                     );
                 }
 
-                if (validSense != 0 && additionalSenseCode == SCSI_ADSENSE_LUN_NOT_READY)
-                    || (SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_SELECTION_TIMEOUT)
+                if (validSense != 0 && additionalSenseCode == (SCSI_ADSENSE_LUN_NOT_READY) as u8)
+                    || (SRB_STATUS((*Srb).SrbStatus) == (SRB_STATUS_SELECTION_TIMEOUT) as u8)
                 {
                     let mut delay: LARGE_INTEGER = core::mem::zeroed();
 
@@ -4138,7 +4196,7 @@ pub unsafe extern "system" fn ClassSignalCompletion(
         return STATUS_INVALID_PARAMETER;
     }
 
-    KeSetEvent(Event, IO_NO_INCREMENT as i8, 0u8);
+    KeSetEvent(Event, (IO_NO_INCREMENT as i8) as i32, 0u8);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
@@ -4176,16 +4234,16 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
 
     if !NT_SUCCESS(ioStatus.Status) {
         status = ioStatus.Status;
-        TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
                     b"UpdateInformationInRegistry: Get Address failed %lx\n\0".as_ptr() as PCHAR,
-                    status));
+                    status);
     } else {
-        TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
                     b"GetAddress: Port %x, Path %x, Target %x, Lun %x\n\0".as_ptr() as PCHAR,
-                    scsiAddress.PortNumber,
-                    scsiAddress.PathId,
-                    scsiAddress.TargetId,
-                    scsiAddress.Lun));
+                    (scsiAddress.PortNumber) as i32,
+                    (scsiAddress.PathId) as i32,
+                    (scsiAddress.TargetId) as i32,
+                    (scsiAddress.Lun) as i32);
 
         status = RtlStringCchPrintfA(
             buffer.as_mut_ptr() as NTSTRSAFE_PSTR,
@@ -4223,7 +4281,7 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
 
                 if NT_SUCCESS(status) {
                     RtlInitUnicodeString(
-                        core::ptr::addr_of_mut!(unicodeName),
+                        (core::ptr::addr_of_mut!(unicodeName)).cast(),
                         b"D\0e\0v\0i\0c\0e\0N\0a\0m\0e\0\0\0".as_ptr() as PWSTR
                     );
 
@@ -4246,7 +4304,7 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
                         if NT_SUCCESS(status) {
                             status = ZwSetValueKey(
                                 targetKey,
-                                core::ptr::addr_of_mut!(unicodeName),
+                                (core::ptr::addr_of_mut!(unicodeName)).cast(),
                                 0,
                                 REG_SZ,
                                 unicodeData.Buffer as PVOID,
@@ -4258,12 +4316,12 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
                             NT_ASSERT(!InquiryData.is_null());
 
                             RtlInitUnicodeString(
-                                core::ptr::addr_of_mut!(unicodeName),
+                                (core::ptr::addr_of_mut!(unicodeName)).cast(),
                                 b"I\0n\0q\0u\0i\0r\0y\0D\0a\0t\0a\0\0\0".as_ptr() as PWSTR
                             );
                             status = ZwSetValueKey(
                                 targetKey,
-                                core::ptr::addr_of_mut!(unicodeName),
+                                (core::ptr::addr_of_mut!(unicodeName)).cast(),
                                 0,
                                 REG_BINARY,
                                 InquiryData as PVOID,
@@ -4277,16 +4335,16 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
     }
 
     if !NT_SUCCESS(status) {
-        TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
                     b"Failure to update information in registry: %08x\n\0".as_ptr() as PCHAR,
-                    status));
+                    status);
     }
 
     if !unicodeData.Buffer.is_null() {
-        RtlFreeUnicodeString(core::ptr::addr_of_mut!(unicodeData));
+        RtlFreeUnicodeString((core::ptr::addr_of_mut!(unicodeData)).cast());
     }
     if !unicodeRegistryPath.Buffer.is_null() {
-        RtlFreeUnicodeString(core::ptr::addr_of_mut!(unicodeRegistryPath));
+        RtlFreeUnicodeString((core::ptr::addr_of_mut!(unicodeRegistryPath)).cast());
     }
     if !targetKey.is_null() {
         ZwClose(targetKey);

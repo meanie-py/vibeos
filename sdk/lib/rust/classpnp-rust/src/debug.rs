@@ -218,7 +218,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             );
         }
         if (*(*Pkt).Irp).IoStatus.Information
-            != ((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64
+            != (((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64) as u32
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,
@@ -264,7 +264,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         // If SRB failed with underrun/overrun, check transferred length
         if srb_status == (SRB_STATUS_DATA_OVERRUN) as i32
             && (*(*Pkt).Irp).IoStatus.Information
-                != ((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64
+                != (((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64) as u32
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,

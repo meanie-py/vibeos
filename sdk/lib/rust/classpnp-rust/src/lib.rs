@@ -3,6 +3,9 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 #![allow(unused_imports, unused_variables, unused_assignments, unused_mut)]
 
+#[macro_use]
+mod macros;
+
 pub mod types;
 pub mod glue;
 pub mod shims;

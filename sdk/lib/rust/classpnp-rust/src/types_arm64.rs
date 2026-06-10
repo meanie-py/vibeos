@@ -1276,6 +1276,7 @@ pub const CLASS_SRB_STORAGE_REQUEST_BLOCK: u32 = 2;
 pub const DUID_VERSION_1: u32 = 1;
 pub const DUID_HARDWARE_IDS_ONLY: u32 = 0;
 pub const DUID_INCLUDE_SOFTWARE_IDS: u32 = 1;
+pub const EXPECTED_ACCESS: u32 = 3;
 pub const MdlMappingNoExecute: u32 = 0;
 pub const CLASSP_REG_SUBKEY_NAME: &[u8; 9] = b"Classpnp\0";
 pub const CLASSP_REG_HACK_VALUE_NAME: &[u8; 9] = b"HackMask\0";
@@ -41600,6 +41601,159 @@ pub struct _STORAGE_DEVICE_LAYOUT_SIGNATURE__bindgen_ty_1 {
 }
 pub type STORAGE_DEVICE_LAYOUT_SIGNATURE = _STORAGE_DEVICE_LAYOUT_SIGNATURE;
 pub type PSTORAGE_DEVICE_LAYOUT_SIGNATURE = *mut _STORAGE_DEVICE_LAYOUT_SIGNATURE;
+#[repr(C)]
+pub struct _MOUNTDEV_UNIQUE_ID {
+    pub UniqueIdLength: USHORT,
+    pub UniqueId: [UCHAR; 1usize],
+}
+pub type MOUNTDEV_UNIQUE_ID = _MOUNTDEV_UNIQUE_ID;
+pub type PMOUNTDEV_UNIQUE_ID = *mut _MOUNTDEV_UNIQUE_ID;
+#[repr(C)]
+pub struct _MOUNTDEV_SUGGESTED_LINK_NAME {
+    pub UseOnlyIfThereAreNoOtherLinks: BOOLEAN,
+    pub NameLength: USHORT,
+    pub Name: [WCHAR; 1usize],
+}
+pub type MOUNTDEV_SUGGESTED_LINK_NAME = _MOUNTDEV_SUGGESTED_LINK_NAME;
+pub type PMOUNTDEV_SUGGESTED_LINK_NAME = *mut _MOUNTDEV_SUGGESTED_LINK_NAME;
+#[repr(C)]
+pub struct _MOUNTDEV_STABLE_GUID {
+    pub StableGuid: GUID,
+}
+pub type MOUNTDEV_STABLE_GUID = _MOUNTDEV_STABLE_GUID;
+pub type PMOUNTDEV_STABLE_GUID = *mut _MOUNTDEV_STABLE_GUID;
+#[repr(C)]
+pub struct _MOUNTDEV_UNIQUE_ID_CHANGE_NOTIFY_OUTPUT {
+    pub Size: ULONG,
+    pub OldUniqueIdOffset: USHORT,
+    pub OldUniqueIdLength: USHORT,
+    pub NewUniqueIdOffset: USHORT,
+    pub NewUniqueIdLength: USHORT,
+}
+pub type MOUNTDEV_UNIQUE_ID_CHANGE_NOTIFY_OUTPUT = _MOUNTDEV_UNIQUE_ID_CHANGE_NOTIFY_OUTPUT;
+pub type PMOUNTDEV_UNIQUE_ID_CHANGE_NOTIFY_OUTPUT = *mut _MOUNTDEV_UNIQUE_ID_CHANGE_NOTIFY_OUTPUT;
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_CHANGE: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_DISMOUNT: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_DISMOUNT_FAILED: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_MOUNT: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_LOCK: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_LOCK_FAILED: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_UNLOCK: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_NAME_CHANGE: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_PREPARING_EJECT: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_PHYSICAL_CONFIGURATION_CHANGE: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_FVE_STATUS_CHANGE: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_DEVICE_INTERFACE: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_VOLUME_CHANGE_SIZE: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_MEDIA_ARRIVAL: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_MEDIA_REMOVAL: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_CDROM_EXCLUSIVE_LOCK: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_CDROM_EXCLUSIVE_UNLOCK: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_DEVICE_BECOMING_READY: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_DEVICE_EXTERNAL_REQUEST: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_DRIVE_REQUIRES_CLEANING: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_TAPE_ERASE: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_DISK_CLONE_ARRIVAL: GUID;
+}
+unsafe extern "C" {
+    pub static GUID_IO_DISK_LAYOUT_CHANGE: GUID;
+}
+#[repr(C)]
+pub struct _DEVICE_EVENT_MOUNT {
+    pub Version: ULONG,
+    pub Flags: ULONG,
+    pub FileSystemNameLength: ULONG,
+    pub FileSystemNameOffset: ULONG,
+}
+pub type DEVICE_EVENT_MOUNT = _DEVICE_EVENT_MOUNT;
+pub type PDEVICE_EVENT_MOUNT = *mut _DEVICE_EVENT_MOUNT;
+#[repr(C)]
+pub struct _DEVICE_EVENT_BECOMING_READY {
+    pub Version: ULONG,
+    pub Reason: ULONG,
+    pub Estimated100msToReady: ULONG,
+}
+pub type DEVICE_EVENT_BECOMING_READY = _DEVICE_EVENT_BECOMING_READY;
+pub type PDEVICE_EVENT_BECOMING_READY = *mut _DEVICE_EVENT_BECOMING_READY;
+#[repr(C)]
+pub struct _DEVICE_EVENT_EXTERNAL_REQUEST {
+    pub Version: ULONG,
+    pub DeviceClass: ULONG,
+    pub ButtonStatus: USHORT,
+    pub Request: USHORT,
+    pub SystemTime: LARGE_INTEGER,
+}
+pub type DEVICE_EVENT_EXTERNAL_REQUEST = _DEVICE_EVENT_EXTERNAL_REQUEST;
+pub type PDEVICE_EVENT_EXTERNAL_REQUEST = *mut _DEVICE_EVENT_EXTERNAL_REQUEST;
+#[repr(C)]
+pub struct _DEVICE_EVENT_GENERIC_DATA {
+    pub EventNumber: ULONG,
+}
+pub type DEVICE_EVENT_GENERIC_DATA = _DEVICE_EVENT_GENERIC_DATA;
+pub type PDEVICE_EVENT_GENERIC_DATA = *mut _DEVICE_EVENT_GENERIC_DATA;
+#[repr(C)]
+pub struct _DEVICE_EVENT_RBC_DATA {
+    pub EventNumber: ULONG,
+    pub SenseQualifier: UCHAR,
+    pub SenseCode: UCHAR,
+    pub SenseKey: UCHAR,
+    pub Reserved: UCHAR,
+    pub Information: ULONG,
+}
+pub type DEVICE_EVENT_RBC_DATA = _DEVICE_EVENT_RBC_DATA;
+pub type PDEVICE_EVENT_RBC_DATA = *mut _DEVICE_EVENT_RBC_DATA;
+#[repr(C)]
+pub struct _GUID_IO_DISK_CLONE_ARRIVAL_INFORMATION {
+    pub DiskNumber: ULONG,
+}
+pub type GUID_IO_DISK_CLONE_ARRIVAL_INFORMATION = _GUID_IO_DISK_CLONE_ARRIVAL_INFORMATION;
+pub type PGUID_IO_DISK_CLONE_ARRIVAL_INFORMATION = *mut _GUID_IO_DISK_CLONE_ARRIVAL_INFORMATION;
 unsafe extern "C" {
     pub static mut ClassBadItems: [CLASSPNP_SCAN_FOR_SPECIAL_INFO; 0usize];
 }

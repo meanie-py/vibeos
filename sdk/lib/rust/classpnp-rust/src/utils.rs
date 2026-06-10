@@ -981,7 +981,7 @@ pub unsafe extern "C" fn ClasspDuidGetDeviceIdProperty(
     (*descHeader).Size += (*deviceIdDescriptor).Size;
 
     if queryLength < (*descHeader).Size {
-        (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as ULONG) as u64;
+        (*Irp).IoStatus.Information = ((core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as ULONG) as u64) as u32;
         ExFreePool(deviceIdDescriptor as PVOID);
         return STATUS_BUFFER_OVERFLOW;
     }
@@ -993,7 +993,7 @@ pub unsafe extern "C" fn ClasspDuidGetDeviceIdProperty(
         dest,
         (*deviceIdDescriptor).Size as usize,
     );
-    (*Irp).IoStatus.Information = ((*storageDuid).Size) as u64;
+    (*Irp).IoStatus.Information = (((*storageDuid).Size) as u64) as u32;
 
     ExFreePool(deviceIdDescriptor as PVOID);
     STATUS_SUCCESS
@@ -1023,7 +1023,7 @@ pub unsafe extern "C" fn ClasspDuidGetDeviceProperty(
         (*descHeader).Size += (*deviceDescriptor).Size;
 
         if queryLength < (*descHeader).Size {
-            (*Irp).IoStatus.Information = ((core::mem::size_of::<_STORAGE_DESCRIPTOR_HEADER>() as usize) as u32) as u64;
+            (*Irp).IoStatus.Information = (((core::mem::size_of::<_STORAGE_DESCRIPTOR_HEADER>() as usize) as u32) as u64) as u32;
             break STATUS_BUFFER_OVERFLOW;
         }
 
@@ -1036,7 +1036,7 @@ pub unsafe extern "C" fn ClasspDuidGetDeviceProperty(
             (*deviceDescriptor).Size as usize,
         );
 
-        (*Irp).IoStatus.Information = ((*storageDuid).Size as u32) as u64;
+        (*Irp).IoStatus.Information = (((*storageDuid).Size as u32) as u64) as u32;
         break STATUS_SUCCESS;
     };
 
@@ -1077,7 +1077,7 @@ pub unsafe extern "C" fn ClasspDuidGetDriveLayout(
         (*descHeader).Size = (*descHeader).Size + core::mem::size_of::<STORAGE_DEVICE_LAYOUT_SIGNATURE>() as u32;
 
         if queryLength < (*descHeader).Size {
-            (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as u32) as u64;
+            (*Irp).IoStatus.Information = ((core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as u32) as u64) as u32;
             status = STATUS_BUFFER_OVERFLOW;
             break 'exit;
         }
@@ -1104,7 +1104,7 @@ pub unsafe extern "C" fn ClasspDuidGetDriveLayout(
         }
 
         (*storageDuid).DriveLayoutSignatureOffset = offset;
-        (*Irp).IoStatus.Information = ((*storageDuid).Size) as u64;
+        (*Irp).IoStatus.Information = (((*storageDuid).Size) as u64) as u32;
         status = STATUS_SUCCESS;
         break 'exit;
     }
@@ -1199,7 +1199,7 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
         if overflow != 0u8 {
             if out_length == core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as u32 {
                 status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as u32) as u64;
+                (*Irp).IoStatus.Information = ((core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as u32) as u64) as u32;
             } else {
                 status = STATUS_BUFFER_OVERFLOW;
             }
@@ -1416,7 +1416,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
     }
 
     FREE_POOL((modeData).cast());
-    (*Irp).IoStatus.Information = (information) as u64;
+    (*Irp).IoStatus.Information = ((information) as u64) as u32;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -1620,7 +1620,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     if (*(*fdoExtension).FunctionSupportInfo).RegAccessAlignmentQueryNotSupported != 0 {
         status = STATUS_NOT_SUPPORTED;
         // goto Exit
-        (*Irp).IoStatus.Information = (information) as u64;
+        (*Irp).IoStatus.Information = ((information) as u64) as u32;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -1644,14 +1644,14 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     let query_type = (*query).QueryType;
     if query_type == _STORAGE_PROPERTY_ID_PropertyExistsQuery {
         status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = (information) as u64;
+        (*Irp).IoStatus.Information = ((information) as u64) as u32;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
         return status;
     } else if query_type != _STORAGE_PROPERTY_ID_PropertyStandardQuery {
         status = STATUS_NOT_SUPPORTED;
-        (*Irp).IoStatus.Information = (information) as u64;
+        (*Irp).IoStatus.Information = ((information) as u64) as u32;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -1662,7 +1662,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
         NT_ASSERT(((KeGetCurrentIrql() < DISPATCH_LEVEL) as i32) as u8);
         status = STATUS_INVALID_LEVEL;
-        (*Irp).IoStatus.Information = (information) as u64;
+        (*Irp).IoStatus.Information = ((information) as u64) as u32;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -1678,14 +1678,14 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
             (*accessAlignment).Version = core::mem::size_of::<_STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as u32;
             (*accessAlignment).Size = core::mem::size_of::<_STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as u32;
             status = STATUS_SUCCESS;
-            (*Irp).IoStatus.Information = (information) as u64;
+            (*Irp).IoStatus.Information = ((information) as u64) as u32;
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             ClassReleaseRemoveLock(DeviceObject, Irp);
             ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
             return status;
         }
         status = STATUS_BUFFER_TOO_SMALL;
-        (*Irp).IoStatus.Information = (information) as u64;
+        (*Irp).IoStatus.Information = ((information) as u64) as u32;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         ClassReleaseRemoveLock(DeviceObject, Irp);
         ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -1752,7 +1752,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
         }
     }
     // Exit label (after loop)
-    (*Irp).IoStatus.Information = (information) as u64;
+    (*Irp).IoStatus.Information = ((information) as u64) as u32;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -1866,7 +1866,7 @@ pub unsafe extern "C" fn ClasspDeviceMediaTypeProperty(
         break 'exit;
     }
 
-    (*Irp).IoStatus.Information = ((information as ULONG_PTR) as u32) as u64;
+    (*Irp).IoStatus.Information = (((information as ULONG_PTR) as u32) as u64) as u32;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
@@ -2065,7 +2065,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
         }
     };
 
-    (*Irp).IoStatus.Information = ((information) as u32) as u64;
+    (*Irp).IoStatus.Information = (((information) as u32) as u64) as u32;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -2564,7 +2564,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProperty(
         }
     } // 'trim_exit
 
-    (*Irp).IoStatus.Information = ((information as ULONG_PTR) as u32) as u64;
+    (*Irp).IoStatus.Information = (((information as ULONG_PTR) as u32) as u64) as u32;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -2673,7 +2673,7 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
     };
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-    (*Irp).IoStatus.Information = ((information as usize) as u32) as u64;
+    (*Irp).IoStatus.Information = (((information as usize) as u32) as u64) as u32;
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -3403,7 +3403,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatus(
         break 'main;
     }
 
-    (*Irp).IoStatus.Information = ((information) as u32) as u64;
+    (*Irp).IoStatus.Information = (((information) as u32) as u64) as u32;
     (*Irp).IoStatus.__bindgen_anon_1.Status = final_status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
@@ -4121,7 +4121,7 @@ pub unsafe extern "C" fn ClassDeviceGetLBProvisioningResources(
         mapResources,
     );
     if NT_SUCCESS(status) {
-        (*Irp).IoStatus.Information = (((*mapResources).Size as usize) as u32) as u64;
+        (*Irp).IoStatus.Information = ((((*mapResources).Size as usize) as u32) as u64) as u32;
     } else {
         (*Irp).IoStatus.Information = 0;
     }
@@ -4852,7 +4852,7 @@ pub unsafe extern "C" fn ClasspPriorityHint(DeviceObject: PDEVICE_OBJECT, Irp: P
         );
 
         (*Irp).IoStatus.Information =
-            (core::mem::size_of::<STORAGE_PRIORITY_HINT_SUPPORT>() as u32) as u64;
+            ((core::mem::size_of::<STORAGE_PRIORITY_HINT_SUPPORT>() as u32) as u64) as u32;
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
