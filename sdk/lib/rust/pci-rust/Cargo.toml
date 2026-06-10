@@ -1,0 +1,21 @@
+# pci-rust — Rust translation of the ReactOS PCI bus driver (drivers/bus/pci).
+# pci.c (DriverEntry + device-ID string builders) + fdo.c (FDO PnP/power, bus
+# enumeration) + pdo.c (PDO PnP/power, BUS_INTERFACE_STANDARD callbacks). The
+# whole driver becomes Rust, so the driver-private device extensions (pci.h) have
+# no C cohabitant and live in `shared.rs`; the kernel/PnP/PCI types all resolve to
+# the single ntkrnl-sys ddk identity (the substrate already has PCI_COMMON_CONFIG,
+# BUS_INTERFACE_STANDARD, DEVICE_RELATIONS, ...). crate-type=staticlib →
+# libpci_rust.a, linked into the cmake-built pci.sys with the .c files commented
+# out (processr/pl011-style cohabitation). C kept on disk per the never-delete
+# rule. Built for all 3 arches.
+
+[package]
+name = "pci-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

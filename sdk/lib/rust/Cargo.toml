@@ -111,6 +111,7 @@ members = [
     "rtl-vista-rust",
     "acpica-sys",
     "acpi-rust",
+    "pci-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
