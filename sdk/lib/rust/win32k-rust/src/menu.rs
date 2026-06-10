@@ -508,6 +508,7 @@ unsafe extern "fastcall" fn IntIsMenu(Menu: HMENU) -> u8 {
 }
 
 #[cfg(not(target_arch = "x86"))]
+#[no_mangle]
 unsafe extern "C" fn IntIsMenu(Menu: HMENU) -> u8 {
     if !UserGetMenuObject(Menu).is_null() {
         return 1u8;
@@ -998,7 +999,7 @@ unsafe extern "C" fn MENU_InsertItem(mut menu: PMENU, mut pos: UINT, flags: UINT
     newItems.offset(pos as isize)
 }
 
-#[cfg(target_arch = "x86")]
+#[no_mangle]
 unsafe extern "fastcall" fn IntInsertMenuItem(
     MenuObject: PMENU,
     mut uItem: UINT,
@@ -1165,7 +1166,7 @@ unsafe fn IntCloneMenuItems_impl(Destination: PMENU, Source: PMENU) -> i32 {
     1
 }
 
-#[cfg(target_arch = "x86")]
+#[no_mangle]
 pub unsafe extern "fastcall" fn IntCloneMenu(Source: PMENU) -> PMENU {
     let mut hMenu: HANDLE = core::ptr::null_mut();
     let Menu: PMENU;
@@ -5985,7 +5986,6 @@ unsafe fn IntGetSubMenu_impl(hMenu: HMENU, mut nPos: core::ffi::c_int) -> HMENU 
     core::ptr::null_mut()
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn IntFindSubMenu(hMenu: *mut HMENU, hSubTarget: HMENU) -> UINT {
     let mut menu: PMENU;

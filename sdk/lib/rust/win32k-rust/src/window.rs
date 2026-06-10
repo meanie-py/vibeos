@@ -107,21 +107,20 @@ unsafe fn ReadUnalignedU32(p: PVOID) -> ULONG { core::ptr::read_unaligned(p as *
 #[inline(always)]
 unsafe fn WriteUnalignedU32(p: PVOID, val: ULONG) { core::ptr::write_unaligned(p as *mut ULONG, val); }
 
-// ---- HEAD->pti accessor. bindgen collapsed _THRDESKHEAD's {h, cLockObj, pti}
-//      to __bindgen_padding_0:[u32;3]; pti is the 3rd u32 (offset 8). ----
+// bindgen flattens THRDESKHEAD differently per pointer width. The native layout is
+// HANDLE, DWORD, padding, then pti, so pti sits at 2 * sizeof(usize).
 #[inline(always)]
 unsafe fn HEAD_pti(head: *const THRDESKHEAD) -> PTHREADINFO {
-    *((head as *const u8).add(8) as *const PTHREADINFO)
+    *((head as *const u8).add(2 * core::mem::size_of::<usize>()) as *const PTHREADINFO)
 }
 #[allow(dead_code)]
 #[inline(always)]
 unsafe fn HEAD_set_pti(head: *mut THRDESKHEAD, v: PTHREADINFO) {
-    *((head as *mut u8).add(8) as *mut PTHREADINFO) = v;
+    *((head as *mut u8).add(2 * core::mem::size_of::<usize>()) as *mut PTHREADINFO) = v;
 }
-// cLockObj is the 2nd u32 (offset 4) of the collapsed _HEAD.
 #[inline(always)]
 unsafe fn HEAD_cLockObj_mut(head: *mut THRDESKHEAD) -> *mut DWORD {
-    (head as *mut u8).add(4) as *mut DWORD
+    (head as *mut u8).add(core::mem::size_of::<usize>()) as *mut DWORD
 }
 // SERVERINFO embeds PERUSERSERVERINFO at the tail (bindgen __bindgen_padding_0).
 // ptCursor sits 748 bytes into PERUSERSERVERINFO (aiSysMet[93]+argb*3[31]+hbrGray).
@@ -2124,7 +2123,6 @@ unsafe fn IntUnlinkWindow_impl(Wnd: PWND) {
     WndSetNext(Wnd, core::ptr::null_mut());
 }
 
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
     let pwlOld: PWINDOWLIST;
     let pwlNew: PWINDOWLIST;
@@ -2152,7 +2150,6 @@ unsafe extern "fastcall" fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
     1
 }
 
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: PWND, dwFlags: DWORD) -> PWINDOWLIST {
     while !pwnd.is_null() {
         if (*pwl).pti.is_null() || (*pwl).pti == HEAD_pti(core::ptr::addr_of!((*pwnd).head)) {
@@ -2181,7 +2178,6 @@ unsafe extern "fastcall" fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: 
     pwl
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PTHREADINFO) -> PWINDOWLIST {
     let mut pwl: PWINDOWLIST;
@@ -2192,7 +2188,7 @@ unsafe extern "fastcall" fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PT
         gpwlCache = core::ptr::null_mut();
     } else {
         cbWL = (core::mem::size_of::<WINDOWLIST>() + (32 - 1) * core::mem::size_of::<HWND>()) as DWORD;
-        pwl = ExAllocatePoolWithTag(PagedPool, cbWL as u32, USERTAG_WINDOWLIST) as PWINDOWLIST;
+        pwl = ExAllocatePoolWithTag(PagedPool, cbWL as SIZE_T, USERTAG_WINDOWLIST) as PWINDOWLIST;
         if pwl.is_null() {
             return core::ptr::null_mut();
         }
@@ -2670,7 +2666,6 @@ unsafe fn IntFixWindowCoordinates_impl(
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn IntCreateWindow(
     Cs: *mut CREATESTRUCTW,
@@ -4831,7 +4826,6 @@ pub unsafe extern "C" fn NtUserFindWindowEx(
     Ret
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
     let mut WndAncestor: PWND;
@@ -6337,8 +6331,8 @@ pub unsafe extern "stdcall" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_S
                     .Buffer
                     .add(UnicodeString.Length as usize / core::mem::size_of::<u16>()) = 0;
                 core::ptr::copy_nonoverlapping(
-                    UnicodeString.Buffer,
-                    (*Wnd).strName.Buffer,
+                    UnicodeString.Buffer as *const u8,
+                    (*Wnd).strName.Buffer as *mut u8,
                     UnicodeString.Length as usize,
                 );
             } else {
@@ -6361,8 +6355,8 @@ pub unsafe extern "stdcall" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_S
                         .Buffer
                         .add(UnicodeString.Length as usize / core::mem::size_of::<u16>()) = 0;
                     core::ptr::copy_nonoverlapping(
-                        UnicodeString.Buffer,
-                        (*Wnd).strName.Buffer,
+                        UnicodeString.Buffer as *const u8,
+                        (*Wnd).strName.Buffer as *mut u8,
                         UnicodeString.Length as usize,
                     );
                     (*Wnd).strName.set_MaximumLength(UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32);
@@ -6441,8 +6435,8 @@ pub unsafe extern "C" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING)
                     .Buffer
                     .add(UnicodeString.Length as usize / core::mem::size_of::<u16>()) = 0;
                 core::ptr::copy_nonoverlapping(
-                    UnicodeString.Buffer,
-                    (*Wnd).strName.Buffer,
+                    UnicodeString.Buffer as *const u8,
+                    (*Wnd).strName.Buffer as *mut u8,
                     UnicodeString.Length as usize,
                 );
             } else {
@@ -6465,8 +6459,8 @@ pub unsafe extern "C" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING)
                         .Buffer
                         .add(UnicodeString.Length as usize / core::mem::size_of::<u16>()) = 0;
                     core::ptr::copy_nonoverlapping(
-                        UnicodeString.Buffer,
-                        (*Wnd).strName.Buffer,
+                        UnicodeString.Buffer as *const u8,
+                        (*Wnd).strName.Buffer as *mut u8,
                         UnicodeString.Length as usize,
                     );
                     (*Wnd).strName.set_MaximumLength(UnicodeString.Length as u32 + core::mem::size_of::<u16>() as u32);

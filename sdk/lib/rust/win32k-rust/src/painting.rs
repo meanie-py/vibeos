@@ -255,7 +255,6 @@ unsafe fn IntIntersectWithParents_impl(Child: PWND, WindowRect: *mut RECTL) -> u
     1u8
 }
 
-#[cfg(target_arch = "x86")]
 #[allow(non_snake_case)]
 unsafe extern "fastcall" fn IntValidateParents(Child: PWND, mut Recurse: i32) -> i32 {
     let mut ParentRect: RECTL = core::mem::zeroed();
@@ -447,7 +446,6 @@ unsafe fn IntCalcWindowRgn_impl(Wnd: PWND, Client: i32) -> HRGN {
     hRgnWindow
 }
 
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HRGN {
     let hRgnNonClient: HRGN;
     let hRgnWindow: HRGN;
@@ -548,7 +546,6 @@ unsafe fn IntSendNCPaintImpl(pWnd: PWND, mut hRgn: HRGN) {
     }
 }
 
-#[cfg(target_pointer_width = "32")]
 unsafe extern "fastcall" fn IntSendChildNCPaint(mut pWnd: PWND) {
     pWnd = (*pWnd).spwndChild;
     while !pWnd.is_null() {
@@ -568,7 +565,6 @@ unsafe extern "fastcall" fn IntSendChildNCPaint(mut pWnd: PWND) {
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recurse: i32) {
     let hDC: HDC;
@@ -662,7 +658,6 @@ unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recu
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "fastcall" fn co_IntUpdateWindows(Wnd: PWND, mut Flags: ULONG, Recurse: i32) {
@@ -817,7 +812,6 @@ pub unsafe extern "C" fn UserSyncAndPaintWindows(pWnd: PWND, Flags: ULONG) {
     co_IntPaintWindows(pWnd, Flags, 0);
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Flags: ULONG) {
     let mut RgnType: INT = NULLREGION as INT;
@@ -1271,7 +1265,6 @@ unsafe extern "C" fn UpdateTheadChildren(mut pWnd: PWND, hRgn: HRGN) {
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[allow(non_snake_case)]
 #[no_mangle]
 unsafe extern "fastcall" fn UpdateThreadWindows(pWnd: PWND, pti: PTHREADINFO, hRgn: HRGN) {
@@ -1307,7 +1300,6 @@ unsafe extern "C" fn IntIsWindowDirty(Wnd: PWND) -> BOOL {
             || ((*Wnd).state & WNDS_INTERNALPAINT) != 0)) as BOOL
 }
 
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntFindWindowToRepaint(mut Window: PWND, Thread: PTHREADINFO) -> PWND {
     let mut hChild: PWND;
     let mut TempWindow: PWND;
@@ -1356,7 +1348,6 @@ unsafe extern "C" fn IntPaintWindow(Window: PWND) {
     co_IntPaintWindows(Window, RDW_NOCHILDREN, 0);
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn IntGetPaintMessage(
     mut Window: PWND,
@@ -1613,7 +1604,6 @@ unsafe extern "fastcall" fn IntFlashWindowEx(pWnd: PWND, pfwi: PFLASHWINFO) -> B
     Ret
 }
 
-#[cfg(target_pointer_width = "32")]
 #[no_mangle]
 unsafe extern "fastcall" fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
     let mut Rect: RECT = core::mem::zeroed();
@@ -2154,7 +2144,7 @@ pub unsafe extern "C" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
     Ret
 }
 
-#[cfg(target_arch = "x86")]
+#[no_mangle]
 unsafe extern "fastcall" fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase: i32) -> i32 {
     let RegionType: i32;
     let Type: u8;
@@ -2219,8 +2209,8 @@ unsafe extern "fastcall" fn co_UserGetUpdateRgn(Window: PWND, hRgn: HRGN, bErase
     RegionType
 }
 
-#[cfg(target_arch = "x86")]
 #[allow(non_snake_case)]
+#[no_mangle]
 unsafe extern "fastcall" fn co_UserGetUpdateRect(Window: PWND, pRect: PRECT, bErase: i32) -> i32 {
     let RegionType: INT;
     let mut Ret: i32 = 1;

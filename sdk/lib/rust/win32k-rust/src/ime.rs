@@ -3285,9 +3285,14 @@ unsafe fn co_IntCreateDefaultImeWindow_impl(pwndTarget: PWND, hInst: HINSTANCE) 
         return core::ptr::null_mut();
     }
 
+    // The "Default IME" name must outlive co_UserCreateWindowEx below, which
+    // reads WindowName.Buffer. Binding to a local (not a temporary) keeps the
+    // backing storage alive for the rest of the function; passing
+    // `widestring_default_ime().as_ptr()` directly would dangle after this stmt.
+    let ime_name = widestring_default_ime();
     RtlInitLargeUnicodeString(
         core::ptr::addr_of_mut!(WindowName),
-        widestring_default_ime().as_ptr(),
+        ime_name.as_ptr(),
         0,
     );
 

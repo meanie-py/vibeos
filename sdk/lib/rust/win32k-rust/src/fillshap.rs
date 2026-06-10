@@ -3474,6 +3474,7 @@ pub unsafe extern "C" fn NtGdiExtFloodFill(
 
 // ABI-corrected extern decls — i386 calling-convention must match the
 // definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
-extern "C" {
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
     fn PEN_ShareLockPen(hpen: HPEN) -> PBRUSH;
 }

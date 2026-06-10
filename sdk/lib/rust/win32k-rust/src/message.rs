@@ -1065,7 +1065,6 @@ unsafe fn IntMsgCreateStructW_impl(
     1
 }
 
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntCallWndProc(
     Window: PWND,
     hWnd: HWND,
@@ -1124,7 +1123,6 @@ unsafe extern "fastcall" fn IntCallWndProc(
     }
 }
 
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntCallWndProcRet(
     Window: PWND,
     hWnd: HWND,
@@ -1542,7 +1540,6 @@ pub unsafe extern "system" fn co_IntPeekMessage(
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn co_IntWaitMessage(
     Window: PWND,
@@ -1881,7 +1878,6 @@ unsafe fn IntSendToImpl(Window: PWND, ptiCur: PTHREADINFO, _Msg: u32) -> PTHREAD
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn UserPostMessage(
     Wnd: HWND,
@@ -2023,7 +2019,6 @@ unsafe extern "C" fn co_IntSendMessage(
     0
 }
 
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn co_IntSendMessageTimeoutSingle(
     hWnd: HWND,
     Msg: UINT,
@@ -2209,7 +2204,6 @@ unsafe extern "fastcall" fn co_IntSendMessageTimeoutSingle(
     Ret
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn co_IntSendMessageTimeout(
     hWnd: HWND,
@@ -2320,7 +2314,7 @@ unsafe extern "C" fn co_IntSendMessageNoWait(
     )
 }
 
-#[cfg(target_arch = "x86")]
+#[no_mangle]
 unsafe extern "fastcall" fn co_IntSendMessageWithCallBack(
     hWnd: HWND,
     Msg: UINT,
@@ -2566,7 +2560,6 @@ unsafe extern "fastcall" fn co_IntDoSendMessage(
     Result as LRESULT
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn UserSendNotifyMessage(
     hWnd: HWND,
@@ -2679,6 +2672,7 @@ unsafe extern "fastcall" fn IntCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
 }
 
 #[cfg(not(target_arch = "x86"))]
+#[no_mangle]
 unsafe extern "C" fn IntCallMsgFilter(lpmsg: LPMSG, code: INT) -> BOOL {
     let mut Ret: BOOL;
 
