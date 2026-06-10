@@ -392,6 +392,7 @@ pub unsafe extern "stdcall" fn ClasspPowerUpCompletion(
                             STORAGE_ADDRESS_TYPE_BTL8 as u16,
                             CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE as ULONG,
                             0,
+                            0, // SrbExType unused (NumSrbExData=0)
                         );
                         if NT_SUCCESS(status) {
                             (*(srbHeader as *mut _STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_UNLOCK_QUEUE as ULONG;
@@ -603,6 +604,7 @@ pub unsafe extern "stdcall" fn ClasspPowerDownCompletion(
                             STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
                             CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE as ULONG,
                             0,
+                            0, // SrbExType unused (NumSrbExData=0)
                         );
                         if NT_SUCCESS(status) {
                             (*(srbHeader as PSTORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_QUIESCE_DEVICE;
@@ -1064,6 +1066,7 @@ pub unsafe extern "stdcall" fn ClasspPowerDownCompletion(
                             STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
                             CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE as ULONG,
                             0,
+                            0, // SrbExType unused (NumSrbExData=0)
                         );
                         if NT_SUCCESS(status) {
                             (*(srbHeader as PSTORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_UNLOCK_QUEUE;
@@ -1399,6 +1402,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
                 STORAGE_ADDRESS_TYPE_BTL8 as USHORT,
                 CLASS_SRBEX_NO_SRBEX_DATA_BUFFER_SIZE as ULONG,
                 0,
+                0, // SrbExType unused (NumSrbExData=0)
             );
             if NT_SUCCESS(status) {
                 (*(srb_header as PSTORAGE_REQUEST_BLOCK)).SrbFunction =

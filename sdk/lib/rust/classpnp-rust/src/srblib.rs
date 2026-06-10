@@ -219,7 +219,9 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
     AddressType: USHORT,
     ByteSize: ULONG,
     NumSrbExData: ULONG,
-    mut ap: ::core::ffi::VaList,
+    // De-variadicized: classpnp only ever builds 0 or 1 SrbExData entry (NumSrbExData in {0,1},
+    // always SrbExDataTypeScsiCdb16, never ScsiCdbVar) — so the single tag replaces the C va_list.
+    SrbExType: SRBEXDATATYPE,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut address: PSTOR_ADDRESS = core::ptr::null_mut::<_STOR_ADDRESS>();
@@ -279,7 +281,7 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
         srbExData = (Srb as *mut u8).offset(offset as isize) as PSRBEX_DATA;
         *(&raw mut (*Srb).SrbExDataOffset as *mut ULONG).offset(i as isize) = offset;
 
-        type_0 = ap.arg::<SRBEXDATATYPE>();
+        type_0 = SrbExType;
 
         match type_0 {
             1 => {
@@ -295,7 +297,7 @@ pub unsafe extern "C" fn pInitializeStorageRequestBlock(
                 srbExDataLength = SRBEX_DATA_SCSI_CDB32_LENGTH as ULONG;
             }
             66 => {
-                varLength = ap.arg::<ULONG>();
+                varLength = 0; // ScsiCdbVar (var-length CDB) is never used by classpnp
                 length = (::core::mem::size_of::<SRBEX_DATA_SCSI_CDB_VAR>() as usize)
                     .wrapping_add(varLength as usize) as ULONG;
                 srbExDataLength = SRBEX_DATA_SCSI_CDB_VAR_LENGTH_MIN.wrapping_add(varLength as usize) as ULONG;
@@ -363,10 +365,9 @@ pub unsafe extern "C" fn InitializeStorageRequestBlock(
     AddressType: USHORT,
     ByteSize: ULONG,
     NumSrbExData: ULONG,
-    args: ...,
+    SrbExType: SRBEXDATATYPE,
 ) -> NTSTATUS {
-    let mut ap: core::ffi::VaListImpl = args.clone();
-    pInitializeStorageRequestBlock(Srb, AddressType, ByteSize, NumSrbExData, ap.as_va_list())
+    pInitializeStorageRequestBlock(Srb, AddressType, ByteSize, NumSrbExData, SrbExType)
 }
 #[no_mangle]
 pub unsafe extern "C" fn CreateStorageRequestBlock(
@@ -375,7 +376,7 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
     AllocateRoutine: PSRB_ALLOCATE_ROUTINE,
     ByteSize: *mut ULONG,
     NumSrbExData: ULONG,
-    mut args: ...
+    SrbExType: SRBEXDATATYPE,
 ) -> NTSTATUS {
     let mut sizeNeeded: ULONG = core::mem::size_of::<STORAGE_REQUEST_BLOCK>() as ULONG;
     if NumSrbExData > 0 {
@@ -393,13 +394,11 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
     } else {
         status = STATUS_INVALID_PARAMETER;
     }
-    // first variadic pass: sizing. Rust C-variadics expose the `...` as a VaListImpl (`args`);
-    // clone it per traversal. SrbExData type tags match pInitializeStorageRequestBlock's literals.
-    let mut ap = args.clone();
+    // De-variadicized sizing pass: classpnp passes NumSrbExData in {0,1} with a single SrbExType
+    // tag (always ScsiCdb16, never ScsiCdbVar). The loop adds the one entry's size when present.
     let mut i: ULONG = 0;
     while i < NumSrbExData && status == STATUS_SUCCESS {
-        let srbex_type: SRBEXDATATYPE = ap.arg::<SRBEXDATATYPE>();
-        match srbex_type {
+        match SrbExType {
             1 => { // SrbExDataTypeBidirectional
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_BIDIRECTIONAL>() as ULONG);
             }
@@ -409,11 +408,8 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
             65 => { // SrbExDataTypeScsiCdb32
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_SCSI_CDB32>() as ULONG);
             }
-            66 => { // SrbExDataTypeScsiCdbVar
-                let extra: ULONG = ap.arg::<ULONG>();
-                sizeNeeded = sizeNeeded.wrapping_add(
-                    core::mem::size_of::<SRBEX_DATA_SCSI_CDB_VAR>() as ULONG + extra,
-                );
+            66 => { // SrbExDataTypeScsiCdbVar (var length unused by classpnp)
+                sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_SCSI_CDB_VAR>() as ULONG);
             }
             96 => { // SrbExDataTypeWmi
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_WMI>() as ULONG);
@@ -444,8 +440,7 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
             *ByteSize = sizeNeeded;
         }
         if !(*Srb).is_null() {
-            let mut ap2 = args.clone();
-            status = pInitializeStorageRequestBlock(*Srb, AddressType, sizeNeeded, NumSrbExData, ap2.as_va_list());
+            status = pInitializeStorageRequestBlock(*Srb, AddressType, sizeNeeded, NumSrbExData, SrbExType);
         }
     }
     status
