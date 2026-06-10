@@ -13,6 +13,7 @@ pub mod globals;
 pub mod autorun;
 pub mod class;
 pub mod class_part_b;
+pub mod residual_part_b;
 pub mod classwmi;
 pub mod clntirp;
 pub mod create;
