@@ -62,7 +62,8 @@ case "$DRIVER" in
     ALLOW_FILES=( --allowlist-file '.*classp\.h' --allowlist-file '.*classpnp\.h'
                   --allowlist-file '.*scsi\.h' --allowlist-file '.*srb\.h'
                   --allowlist-file '.*srbhelper\.h' --allowlist-file '.*ntddstor\.h'
-                  --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*wmistr\.h' )
+                  --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*wmistr\.h'
+                  --allowlist-file '.*storduid\.h' )
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
   cdrom)

@@ -1,5 +1,15 @@
 # ACPICA: FFI-to-blob plan (keep Intel's lib as C, translate the glue to Rust)
 
+> **STATUS: COMPLETE (2026-06-09).** All four phases done. The entire ReactOS
+> ACPI driver glue (~9.9K LOC) is now Rust in `sdk/lib/rust/acpi-rust/`; Intel's
+> ACPICA (`libacpica.a`, 88.8K LOC) is untouched C. The only remaining glue C is
+> `acpi_printf_shim.c` — the **designed** C-variadic trampoline for `AcpiOsPrintf`
+> (Rust cannot *define* a variadic `extern "C"` fn; it forwards to the Rust
+> `AcpiOsVprintf`). Validated green ×3 (i386/amd64/arm64): cargo check + cohab
+> link clean, `scan_ud2` 0 unexpected, `lint_kernel` clean, smoke boots to
+> desktop. Commits: Phase 1 `f0cf39403e7`, Phase 2 `e312291b198`, Phase 3a
+> `44696affc54`+`32cd8e730f1`, Phase 3b `20b051f7ee6`.
+
 **Decision (user, 2026-06-09):** Do **not** translate Intel's ACPICA reference
 implementation. Keep it as a C static library and FFI into it from Rust as
 needed. Only the ReactOS-specific ACPI driver glue becomes Rust. (This is the L3
