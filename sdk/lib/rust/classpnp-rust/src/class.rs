@@ -154,7 +154,7 @@ pub static mut ClassMaxInterleavePerCriticalIo: ULONG = CLASS_MAX_INTERLEAVE_PER
 pub const Magic10000: LARGE_INTEGER = LARGE_INTEGER {
     __bindgen_anon_1: LARGE_INTEGER__bindgen_ty_1 {
         LowPart: 0xe219652c,
-        HighPart: 0xd1b71758,
+        HighPart: 0xd1b71758u32 as i32,
     }
 };
 // WDI_STORAGE_PREDICT_FAILURE_DPS_GUID — defined in C header, not in ddk; zero-init until substrate provides it.
@@ -637,7 +637,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                                 device_relations as *mut core::ffi::c_void,
                                 (core::mem::size_of::<DEVICE_RELATIONS>() as u32) as usize,
                             );
-                            (*Irp).IoStatus.Information = (((device_relations as ULONG_PTR) as u32) as u64) as u32;
+                            (*Irp).IoStatus.Information = ((((device_relations as ULONG_PTR) as u32) as u64) as u32) as ULONG_PTR;
                             (*device_relations).Count = 1;
                             (*device_relations).Objects[0] = DeviceObject;
                             ObReferenceObject((DeviceObject).cast());
@@ -681,7 +681,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     if status == STATUS_NOT_IMPLEMENTED {
                         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
                     } else if NT_SUCCESS(status) {
-                        (*Irp).IoStatus.Information = (((unicode_string.Buffer as ULONG_PTR) as u32) as u64) as u32;
+                        (*Irp).IoStatus.Information = ((((unicode_string.Buffer as ULONG_PTR) as u32) as u64) as u32) as ULONG_PTR;
                     } else {
                         (*Irp).IoStatus.Information = 0;
                     }
@@ -1324,7 +1324,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             );
             KeInitializeSpinLock(&raw mut (*(*fdo_extension).PrivateFdoData).Retry.Lock);
             (*(*fdo_extension).PrivateFdoData).Retry.Granularity = KeQueryTimeIncrement();
-            (*common_extension).Reserved4 = (((u32::from_be_bytes([b' ', b'G', b'P', b'H']) as usize as ULONG_PTR) as u32) as u64) as u32; // debug aid
+            (*common_extension).Reserved4 = ((((u32::from_be_bytes([b' ', b'G', b'P', b'H']) as usize as ULONG_PTR) as u32) as u64) as u32) as ULONG_PTR; // debug aid
             InitializeListHead(&raw mut (*(*fdo_extension).PrivateFdoData).DeferredClientIrpList);
             KeInitializeSpinLock(&raw mut (*(*fdo_extension).PrivateFdoData).SpinLock);
 
@@ -1827,7 +1827,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
             _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
             status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
 
-            if NT_SUCCESS(status) && pseudoIrp.IoStatus.Information < ((readCapacityDataSize) as u64) as u32 {
+            if NT_SUCCESS(status) && pseudoIrp.IoStatus.Information < (((readCapacityDataSize) as u64) as u32) as ULONG_PTR {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_INIT,
@@ -1852,7 +1852,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                     SubmitTransferPacket(pkt);
                     _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
                     status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
-                    if pseudoIrp.IoStatus.Information < ((readCapacityDataSize) as u64) as u32 {
+                    if pseudoIrp.IoStatus.Information < (((readCapacityDataSize) as u64) as u32) as ULONG_PTR {
                         status = STATUS_DEVICE_BUSY;
                     }
                 } else {
@@ -2374,11 +2374,11 @@ pub unsafe extern "system" fn ClassIoComplete(
     const IRP_PAGING_IO: ULONG = 0x00000002; // guessed
     const IOCTL_STORAGE_FIRMWARE_ACTIVATE: ULONG = 0x002D5040; // typical
     const IO_WARNING_DISK_FIRMWARE_UPDATED: ULONG = 0x80040000 + 0x00000065; // guessed
-    const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016i32;
+    const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016u32 as i32;
     const STATUS_SUCCESS: NTSTATUS = 0;
-    const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003Ai32;
-    const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185i32;
-    const STATUS_VERIFY_REQUIRED: NTSTATUS = 0xC0000192i32;
+    const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003Au32 as i32;
+    const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32;
+    const STATUS_VERIFY_REQUIRED: NTSTATUS = 0xC0000192u32 as i32;
     const MAXIMUM_RETRIES: u32 = 5; // typical
     const FALSE: BOOLEAN = 0;
     const TRUE: BOOLEAN = 1;

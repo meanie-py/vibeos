@@ -17,14 +17,15 @@ macro_rules! FIELD_OFFSET { ($t:ty, $f:tt) => { ::core::mem::offset_of!($t, $f) 
 
 /// TEST_FLAG(Flags, Bit) — nonzero test, like C's TEST_FLAG.
 #[macro_export]
-macro_rules! TEST_FLAG { ($f:expr, $b:expr) => { (($f) & ($b)) != 0 } }
+macro_rules! TEST_FLAG { ($f:expr, $b:expr) => { (($f) & (($b) as _)) != 0 } }
 
 /// REVERSE_BYTES(Dest, Src) — reverse a 4-byte (ULONG) big/little-endian field in place.
+/// Accepts either a raw pointer or an `&mut`/`&` (deref + re-addr normalizes both to *u8).
 #[macro_export]
 macro_rules! REVERSE_BYTES {
     ($d:expr, $s:expr) => {{
-        let d = ($d) as *mut u8;
-        let s = ($s) as *const u8;
+        let d = ::core::ptr::addr_of_mut!(*($d)) as *mut u8;
+        let s = ::core::ptr::addr_of!(*($s)) as *const u8;
         *d.add(0) = *s.add(3);
         *d.add(1) = *s.add(2);
         *d.add(2) = *s.add(1);
@@ -36,8 +37,8 @@ macro_rules! REVERSE_BYTES {
 #[macro_export]
 macro_rules! REVERSE_BYTES_QUAD {
     ($d:expr, $s:expr) => {{
-        let d = ($d) as *mut u8;
-        let s = ($s) as *const u8;
+        let d = ::core::ptr::addr_of_mut!(*($d)) as *mut u8;
+        let s = ::core::ptr::addr_of!(*($s)) as *const u8;
         let mut i = 0usize;
         while i < 8 { *d.add(i) = *s.add(7 - i); i += 1; }
     }}
@@ -45,9 +46,9 @@ macro_rules! REVERSE_BYTES_QUAD {
 
 /// SET_FLAG(Flags, Bit) / CLEAR_FLAG — in-place flag mutation, like the C macros.
 #[macro_export]
-macro_rules! SET_FLAG { ($f:expr, $b:expr) => { $f |= ($b) } }
+macro_rules! SET_FLAG { ($f:expr, $b:expr) => { $f |= ($b) as _ } }
 #[macro_export]
-macro_rules! CLEAR_FLAG { ($f:expr, $b:expr) => { $f &= !($b) } }
+macro_rules! CLEAR_FLAG { ($f:expr, $b:expr) => { $f &= !(($b) as _) } }
 
 /// NT_ASSERTMSG(Msg, Expr) — debug assertion with message; no-op in the translation.
 #[macro_export]
@@ -57,8 +58,8 @@ macro_rules! NT_ASSERTMSG { ($($t:tt)*) => {{}} }
 #[macro_export]
 macro_rules! REVERSE_BYTES_SHORT {
     ($d:expr, $s:expr) => {{
-        let d = ($d) as *mut u8;
-        let s = ($s) as *const u8;
+        let d = ::core::ptr::addr_of_mut!(*($d)) as *mut u8;
+        let s = ::core::ptr::addr_of!(*($s)) as *const u8;
         *d.add(0) = *s.add(1);
         *d.add(1) = *s.add(0);
     }}

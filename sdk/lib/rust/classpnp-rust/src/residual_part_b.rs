@@ -73,7 +73,7 @@ use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::debug::{ClasspInitializeDebugGlobals, SnapDiskStartup};
 use crate::types::{BuildDeviceInputMdl, ClassDetermineTokenOperationCommandSupport, ClassForwardIrpSynchronous, ClassGetDescriptor, ClassGetDeviceParameter, ClassGetPdoId, ClassInitializeDispatchTables, ClassPnpQueryFdoRelations, ClassQueryPnpCapabilities, ClassRemoveDevice, ClassScanForSpecial, ClassSetDeviceParameter, ClasspAllocatePowerProcessIrp, ClasspAllocateReleaseQueueIrp, ClasspCalculateLogicalSectorSize, ClasspDeleteTimer, ClasspDisableTimer, ClasspEjectionControl, ClasspEnableIdlePower, ClasspEnableTimer, ClasspEnqueueIdleRequest, ClasspGetCopyOffloadMaxDuration, ClasspGetInquiryVpdSupportInfo, ClasspGetLBProvisioningInfo, ClasspInitializeHotplugInfo, ClasspInitializeIdleTimer, ClasspInitializeTimer, ClasspIsPortable, ClasspRegisterMountedDeviceInterface, ClasspScanForSpecialInRegistry, ClasspValidateOffloadSupported, ClasspZeroQERR, DequeueFreeTransferPacket, EnqueueDeferredClientIrp, EnqueueFreeTransferPacket, FreeDeviceInputMdl, InitLowMemRetry, InitializeStorageRequestBlock, InitializeTransferPackets, SetupDriveCapacityTransferPacket, SetupReadWriteTransferPacket, StepLowMemRetry, SubmitTransferPacket, TransferPacketQueueRetryDpc};
-use ntkrnl_sys::ddk::{KeQuerySystemTime};
+// KeQuerySystemTime: only in ntkrnl_sys::ddk on i386; not used in this file
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::guid::{GUID_CONSOLE_DISPLAY_STATE};
 use crate::types::{AllFdosList, ClassBadItems, ClassGuidQueryRegInfoEx, ClassGuidSenseInfo2, ClassGuidSrbSupport, ClassGuidWorkingSet, MEDIA_LOCK_TYPE_InternalMediaLock};
@@ -85,6 +85,13 @@ use crate::glue::{min};
 use crate::glue::{TRACE_FLAG_LOCK, TRACE_LEVEL_VERBOSE};
 use crate::types::{CLASS_PRIVATE_COMMON_DATA, ClasspBuildRequestEx, REMOVE_COMPLETE};
 use ntkrnl_sys::ddk::{ExAcquireRundownProtectionCacheAware, ExDeleteNPagedLookasideList, ExInitializeNPagedLookasideList, ExReleaseRundownProtectionCacheAware, PCSTR, PRTL_GENERIC_TABLE, RtlDeleteElementGenericTable, RtlInsertElementGenericTable};
+use crate::lock::{LockHighWatermark, REMOVE_TRACKING_BLOCK, PREMOVE_TRACKING_BLOCK};
+use crate::dictlib::POOL_NX_ALLOCATION;
+use ntkrnl_sys::inline::common::InterlockedCompareExchange;
+
+extern "C" {
+    fn KeQueryTickCount(TickCount: *mut i64);
+}
 
 // ==== lock.c + obsolete.c residual exports ====
 
@@ -109,10 +116,10 @@ pub unsafe extern "system" fn ClassAcquireRemoveLockEx(
                     b"ClassAcquireRemoveLock: Acquired for Object %p & irp %p - count is %d\n\0".as_ptr() as PCSTR,
                     DeviceObject, Tag, lockValue);
 
-        NT_ASSERTMSG(b"ClassAcquireRemoveLock - lock value was negative : \0".as_ptr() as PCSTR,
+        NT_ASSERTMSG!(b"ClassAcquireRemoveLock - lock value was negative : \0".as_ptr() as PCSTR,
                      (lockValue > 0));
 
-        NT_ASSERTMSG(b"RemoveLock increased to meet LockHighWatermark\0".as_ptr() as PCSTR,
+        NT_ASSERTMSG!(b"RemoveLock increased to meet LockHighWatermark\0".as_ptr() as PCSTR,
                      ((LockHighWatermark == 0) || (lockValue != LockHighWatermark)));
 
         if (*commonExtension).IsRemoved != REMOVE_COMPLETE {
@@ -127,9 +134,9 @@ pub unsafe extern "system" fn ClassAcquireRemoveLockEx(
             trackingBlock.File = File;
             trackingBlock.Line = Line;
 
-            KeQueryTickCount(&mut trackingBlock.TimeLocked);
+            KeQueryTickCount(&mut trackingBlock.TimeLocked.QuadPart);
 
-            KeAcquireSpinLock(&mut (*commonExtension).RemoveTrackingSpinlock, &mut oldIrql);
+            KeAcquireSpinLock((&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(), &mut oldIrql);
 
             removeTrackingList = ((*commonExtension).RemoveTrackingList).cast();
 
@@ -159,7 +166,7 @@ pub unsafe extern "system" fn ClassAcquireRemoveLockEx(
                             Tag, (*commonExtension).RemoveTrackingUntrackedCount);
             }
 
-            KeReleaseSpinLock(&mut (*commonExtension).RemoveTrackingSpinlock, oldIrql);
+            KeReleaseSpinLock((&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(), oldIrql);
         }
     }
 
@@ -211,7 +218,7 @@ pub unsafe extern "system" fn ClassReleaseRemoveLock(
             return;
         }
 
-        KeAcquireSpinLock(&mut (*commonExtension).RemoveTrackingSpinlock,
+        KeAcquireSpinLock((&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(),
                           &mut oldIrql);
 
         removeTrackingList = ((*commonExtension).RemoveTrackingList).cast();
@@ -228,7 +235,7 @@ pub unsafe extern "system" fn ClassReleaseRemoveLock(
             }
         }
 
-        KeReleaseSpinLock(&mut (*commonExtension).RemoveTrackingSpinlock,
+        KeReleaseSpinLock((&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(),
                           oldIrql);
 
         lockValue = InterlockedDecrement(&mut (*commonExtension).RemoveLock);
@@ -244,20 +251,11 @@ pub unsafe extern "system" fn ClassReleaseRemoveLock(
     oldValue = 1;
     lockValue = (*(*commonExtension).PrivateCommonData).RemoveLockFailAcquire;
     while lockValue != 0 {
-        oldValue = {
-            let destination = &mut (*(*commonExtension).PrivateCommonData).RemoveLockFailAcquire as *mut LONG;
-            let exchange = lockValue - 1;
-            let comparand = lockValue;
-            let result: LONG;
-            core::arch::asm!(
-                "lock cmpxchg dword ptr [{0}], {2}",
-                in(reg) destination,
-                inout("eax") comparand => result,
-                in(reg) exchange,
-                options(nostack)
-            );
-            result
-        };
+        oldValue = InterlockedCompareExchange(
+            &mut (*(*commonExtension).PrivateCommonData).RemoveLockFailAcquire as *mut LONG as *mut i32,
+            lockValue - 1,
+            lockValue,
+        ) as LONG;
 
         if oldValue == lockValue {
             break;
@@ -278,8 +276,8 @@ pub unsafe extern "system" fn ClassReleaseRemoveLock(
 #[no_mangle]
 pub unsafe extern "system" fn ClassDeleteSrbLookasideList(CommonExtension: PCOMMON_DEVICE_EXTENSION) {
     // obsolete, still called by some code
-    if (*CommonExtension).IsSrbLookasideListInitialized != 0 {
-        (*CommonExtension).IsSrbLookasideListInitialized = 0;
+    if (*CommonExtension).__bindgen_anon_1.IsSrbLookasideListInitialized() != 0 {
+        (*CommonExtension).__bindgen_anon_1.set_IsSrbLookasideListInitialized(0);
         ExDeleteNPagedLookasideList(&raw mut (*CommonExtension).SrbLookasideList);
     }
 }
@@ -291,10 +289,11 @@ pub unsafe extern "system" fn ClassInitializeSrbLookasideList(
 ) {
     let mut sizeNeeded: usize;
     // obsolete, still called by DISK.SYS
-    if (*CommonExtension).IsSrbLookasideListInitialized == 0 {
-        if (*CommonExtension).IsFdo != 0 {
+    if (*CommonExtension).__bindgen_anon_1.IsSrbLookasideListInitialized() == 0 {
+        if (*CommonExtension).__bindgen_anon_1.IsFdo() != 0 {
             let fdo = CommonExtension as PFUNCTIONAL_DEVICE_EXTENSION;
-            if (*(*fdo).AdapterDescriptor).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
+            let adapter_desc = (*fdo).AdapterDescriptor as *mut crate::types::_STORAGE_ADAPTER_DESCRIPTOR;
+            if (*adapter_desc).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
                 sizeNeeded = crate::glue::CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE;
             } else {
                 sizeNeeded = core::mem::size_of::<SCSI_REQUEST_BLOCK>();
@@ -310,11 +309,11 @@ pub unsafe extern "system" fn ClassInitializeSrbLookasideList(
             None,
             None,
             POOL_NX_ALLOCATION,
-            (sizeNeeded) as u32,
+            sizeNeeded as ntkrnl_sys::ddk::SIZE_T,
             u32::from_ne_bytes(*b"$scS"),
             NumberElements as USHORT,
         );
-        (*CommonExtension).IsSrbLookasideListInitialized = 1;
+        (*CommonExtension).__bindgen_anon_1.set_IsSrbLookasideListInitialized(1);
     }
 }
 
@@ -322,7 +321,11 @@ pub unsafe extern "system" fn ClassInitializeSrbLookasideList(
 pub unsafe extern "system" fn ClassBuildRequest(Fdo: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     let fdoExtension = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     // obsolete, still called by CDROM.SYS
-    let srb = ClasspAllocateSrb(fdoExtension);
+    // ClasspAllocateSrb macro expansion: ExAllocateFromNPagedLookasideList(&ext->CommonExtension.SrbLookasideList)
+    // CommonExtension is the first field of FUNCTIONAL_DEVICE_EXTENSION (at offset 0 via __bindgen_anon_1)
+    let srb = ntkrnl_sys::inline::ex::ExAllocateFromNPagedLookasideList(
+        &raw mut (*(fdoExtension as PCOMMON_DEVICE_EXTENSION)).SrbLookasideList,
+    ) as PSCSI_REQUEST_BLOCK;
     if srb.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }

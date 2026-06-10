@@ -1552,12 +1552,23 @@ pub unsafe extern "C" fn ClasspInitializePolling(
     }
 
     if ScreenStateNotificationHandle.is_null() {
+        // ClasspPowerSettingCallback is extern "stdcall" on i386, extern "C" on amd64/arm64.
+        // PoRegisterPowerSettingCallback (declared locally) expects extern "system" (same ABI).
+        // Use cfg to get the correct fn-pointer SRC type for transmute.
+        #[cfg(target_arch = "x86")]
+        let _cb: unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS = unsafe {
+            core::mem::transmute::<unsafe extern "stdcall" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS,
+                                   unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS>(ClasspPowerSettingCallback)
+        };
+        #[cfg(not(target_arch = "x86"))]
+        let _cb: unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS = unsafe {
+            core::mem::transmute::<unsafe extern "C" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS,
+                                   unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS>(ClasspPowerSettingCallback)
+        };
         PoRegisterPowerSettingCallback(
             fdo,
             &GUID_CONSOLE_DISPLAY_STATE,
-            Some(
-                core::mem::transmute::<unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS, _>(ClasspPowerSettingCallback),
-            ),
+            Some(_cb),
             core::ptr::null_mut(),
             &raw mut ScreenStateNotificationHandle,
         );
@@ -2404,8 +2415,7 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
         let nullMultiSz: PWSTR = [0u16, 0u16].as_ptr() as PWSTR;
 
         let mut parameters: [_RTL_QUERY_REGISTRY_TABLE; 2] = core::mem::zeroed();
-        parameters[0].QueryRoutine = Some(core::mem::transmute::<
-            unsafe extern "C" fn(PUNICODE_STRING, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
+        parameters[0].QueryRoutine = Some(core::mem::transmute::<unsafe extern "C" fn(PUNICODE_STRING, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
             _,
         >(ClasspMediaChangeRegistryCallBack));
         parameters[0].Flags = RTL_QUERY_REGISTRY_REQUIRED;
