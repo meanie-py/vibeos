@@ -8,5 +8,6 @@ edition = "2021"
 [lib]
 name = "classpnp_rust"
 path = "src/lib.rs"
+crate-type = ["staticlib"]
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
