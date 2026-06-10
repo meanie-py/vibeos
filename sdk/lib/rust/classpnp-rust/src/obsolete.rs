@@ -98,13 +98,13 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
     let srb: *mut SCSI_REQUEST_BLOCK = Context as *mut SCSI_REQUEST_BLOCK;
     let original_irp: *mut IRP = (*Irp).AssociatedIrp.MasterIrp;
     let mut irp_count: i32;
-    let mut status: i32;
-    let retry: u8;
+    let mut status: i32 = 0;
+    let mut retry: u8 = 0;
 
     TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated is OBSOLETE !\0".as_ptr() as *const i8);
 
     if SRB_STATUS((*srb).SrbStatus) != SRB_STATUS_SUCCESS {
-        let mut retry_interval: i64;
+        let mut retry_interval: i64 = 0;
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: IRP %p, SRB %p\0".as_ptr() as *const i8, Irp as usize, srb as usize);
 
         if ((*srb).SrbStatus & SRB_STATUS_QUEUE_FROZEN) != 0 {
@@ -189,7 +189,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: All partial IRPs complete %p\n\0".as_ptr() as *const i8, original_irp as usize);
 
         let driver_ext = (*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension;
-        if (*driver_ext).InitData.ClassStartIo != 0 {
+        if (*driver_ext).InitData.ClassStartIo.is_some() {
             let mut unique_address: u8 = 0;
             ClassAcquireRemoveLock(Fdo, &mut unique_address as *mut u8 as *mut IRP);
             ClassReleaseRemoveLock(Fdo, original_irp);

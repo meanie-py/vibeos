@@ -375,7 +375,7 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
     AllocateRoutine: PSRB_ALLOCATE_ROUTINE,
     ByteSize: *mut ULONG,
     NumSrbExData: ULONG,
-    ...
+    mut args: ...
 ) -> NTSTATUS {
     let mut sizeNeeded: ULONG = core::mem::size_of::<STORAGE_REQUEST_BLOCK>() as ULONG;
     if NumSrbExData > 0 {
@@ -393,38 +393,38 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
     } else {
         status = STATUS_INVALID_PARAMETER;
     }
-    // first variadic pass: sizing
-    let mut ap: core::ffi::VaList;
-    va_start(&mut ap, NumSrbExData);
+    // first variadic pass: sizing. Rust C-variadics expose the `...` as a VaListImpl (`args`);
+    // clone it per traversal. SrbExData type tags match pInitializeStorageRequestBlock's literals.
+    let mut ap = args.clone();
     let mut i: ULONG = 0;
     while i < NumSrbExData && status == STATUS_SUCCESS {
-        let srbex_type: SRBEXDATATYPE = va_arg(&mut ap);
+        let srbex_type: SRBEXDATATYPE = ap.arg::<SRBEXDATATYPE>();
         match srbex_type {
-            SrbExDataTypeBidirectional => {
+            1 => { // SrbExDataTypeBidirectional
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_BIDIRECTIONAL>() as ULONG);
             }
-            SrbExDataTypeScsiCdb16 => {
+            64 => { // SrbExDataTypeScsiCdb16
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_SCSI_CDB16>() as ULONG);
             }
-            SrbExDataTypeScsiCdb32 => {
+            65 => { // SrbExDataTypeScsiCdb32
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_SCSI_CDB32>() as ULONG);
             }
-            SrbExDataTypeScsiCdbVar => {
-                let extra: ULONG = va_arg(&mut ap);
+            66 => { // SrbExDataTypeScsiCdbVar
+                let extra: ULONG = ap.arg::<ULONG>();
                 sizeNeeded = sizeNeeded.wrapping_add(
                     core::mem::size_of::<SRBEX_DATA_SCSI_CDB_VAR>() as ULONG + extra,
                 );
             }
-            SrbExDataTypeWmi => {
+            96 => { // SrbExDataTypeWmi
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_WMI>() as ULONG);
             }
-            SrbExDataTypePower => {
+            97 => { // SrbExDataTypePower
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_POWER>() as ULONG);
             }
-            SrbExDataTypePnP => {
+            98 => { // SrbExDataTypePnP
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_PNP>() as ULONG);
             }
-            SrbExDataTypeIoInfo => {
+            128 => { // SrbExDataTypeIoInfo
                 sizeNeeded = sizeNeeded.wrapping_add(core::mem::size_of::<SRBEX_DATA_IO_INFO>() as ULONG);
             }
             _ => {
@@ -433,7 +433,6 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
         }
         i = i.wrapping_add(1);
     }
-    va_end(&mut ap);
     if status == STATUS_SUCCESS {
         if !AllocateRoutine.is_none() {
             *Srb = AllocateRoutine.unwrap()(sizeNeeded as CLONG) as PSTORAGE_REQUEST_BLOCK;
@@ -445,10 +444,8 @@ pub unsafe extern "C" fn CreateStorageRequestBlock(
             *ByteSize = sizeNeeded;
         }
         if !(*Srb).is_null() {
-            let mut ap2: core::ffi::VaList;
-            va_start(&mut ap2, NumSrbExData);
-            status = pInitializeStorageRequestBlock(*Srb, AddressType, sizeNeeded, NumSrbExData, ap2);
-            va_end(&mut ap2);
+            let mut ap2 = args.clone();
+            status = pInitializeStorageRequestBlock(*Srb, AddressType, sizeNeeded, NumSrbExData, ap2.as_va_list());
         }
     }
     status

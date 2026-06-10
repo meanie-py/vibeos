@@ -13,7 +13,8 @@ use ntkrnl_sys::ddk::{_LOCK_OPERATION_IoReadAccess as IoReadAccess, _LOCK_OPERAT
 use ntkrnl_sys::ddk::{_IO_PRIORITY_HINT_IoPriorityVeryLow as IoPriorityVeryLow, _IO_PRIORITY_HINT_IoPriorityLow as IoPriorityLow, _IO_PRIORITY_HINT_IoPriorityNormal as IoPriorityNormal};
 use ntkrnl_sys::ddk::{_PARTITION_STYLE_PARTITION_STYLE_GPT as PARTITION_STYLE_GPT, _PARTITION_STYLE_PARTITION_STYLE_MBR as PARTITION_STYLE_MBR};
 use ntkrnl_sys::ddk::{_STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty};
-use ntkrnl_sys::ddk::{_STORAGE_PORT_CODE_SET_StoragePortCodeSetStorport as StoragePortCodeSetStorport, _STORAGE_PORT_CODE_SET_StoragePortCodeSetSpaceport as StoragePortCodeSetSpaceport, _STORAGE_PORT_CODE_SET_StoragePortCodeSetSDport as StoragePortCodeSetSDport};
+use ntkrnl_sys::ddk::{_STORAGE_PORT_CODE_SET_StoragePortCodeSetStorport as StoragePortCodeSetStorport, _STORAGE_PORT_CODE_SET_StoragePortCodeSetSpaceport as StoragePortCodeSetSpaceport, _STORAGE_PORT_CODE_SET_StoragePortCodeSetSDport as StoragePortCodeSetSDport, _STORAGE_PORT_CODE_SET_StoragePortCodeSetSCSIport as StoragePortCodeSetSCSIport};
+use ntkrnl_sys::ddk::{PSTORAGE_IDENTIFIER, DEVICE_REGISTRY_PROPERTY_DevicePropertyPhysicalDeviceObjectName as DevicePropertyPhysicalDeviceObjectName};
 use ntkrnl_sys::ddk::{_WRITE_CACHE_ENABLE_WriteCacheEnableUnknown as WriteCacheEnableUnknown, _WRITE_CACHE_ENABLE_WriteCacheEnabled as WriteCacheEnabled, _WRITE_CACHE_ENABLE_WriteCacheDisabled as WriteCacheDisabled};
 use ntkrnl_sys::ddk::{_WRITE_CACHE_CHANGE_WriteCacheChangeUnknown as WriteCacheChangeUnknown, _WRITE_CACHE_CHANGE_WriteCacheChangeable as WriteCacheChangeable, _WRITE_CACHE_CHANGE_WriteCacheNotChangeable as WriteCacheNotChangeable};
 use ntkrnl_sys::ddk::{_WRITE_CACHE_TYPE_WriteCacheTypeUnknown as WriteCacheTypeUnknown, _WRITE_CACHE_TYPE_WriteCacheTypeWriteBack as WriteCacheTypeWriteBack};
@@ -53,7 +54,8 @@ use crate::srblib::{SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSense
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{_CLASS_FUNCTION_SUPPORT_STATE_NotSupported, _CLASS_FUNCTION_SUPPORT_STATE_Supported, _SRBEX_DATA_TYPE_SrbExDataTypePnP, _SRBEX_DATA_TYPE_SrbExDataTypePower, _SRBEX_DATA_TYPE_SrbExDataTypeScsiCdb16, _SRBEX_DATA_TYPE_SrbExDataTypeScsiCdb32, _SRBEX_DATA_TYPE_SrbExDataTypeScsiCdbVar, _SRBEX_DATA_TYPE_SrbExDataTypeWmi, _STORAGE_PROPERTY_ID_PropertyExistsQuery, _STORAGE_PROPERTY_ID_PropertyStandardQuery};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{STORAGE_DEVICE_LAYOUT_SIGNATURE, STORAGE_DEVICE_UNIQUE_IDENTIFIER, _DUID_MATCH_STATUS_DuidExactMatch as DuidExactMatch, _STORAGE_DEVICE_UNIQUE_IDENTIFIER};
+use crate::types::{STORAGE_DEVICE_LAYOUT_SIGNATURE, STORAGE_DEVICE_UNIQUE_IDENTIFIER, _DUID_MATCH_STATUS_DuidExactMatch as DuidExactMatch, _STORAGE_DEVICE_UNIQUE_IDENTIFIER, _DUID_MATCH_STATUS_DuidSubIdMatch as DuidSubIdMatch, _DUID_MATCH_STATUS_DuidNoMatch as DuidNoMatch, _DUID_MATCH_STATUS_DuidErrorGeneral as DuidErrorGeneral, _DUID_MATCH_STATUS_DuidErrorMissingDuid as DuidErrorMissingDuid, _DUID_MATCH_STATUS_DuidErrorVersionMismatch as DuidErrorVersionMismatch, _DUID_MATCH_STATUS_DuidErrorInvalidDuid as DuidErrorInvalidDuid, _DUID_MATCH_STATUS_DuidErrorInvalidDeviceIdDescSize as DuidErrorInvalidDeviceIdDescSize, _DUID_MATCH_STATUS_DuidErrorInvalidDeviceDescSize as DuidErrorInvalidDeviceDescSize, _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigSize as DuidErrorInvalidLayoutSigSize, _DUID_MATCH_STATUS_DuidErrorInvalidLayoutSigVersion as DuidErrorInvalidLayoutSigVersion, DUID_MATCH_STATUS, PFIXED_SENSE_DATA, PDESCRIPTOR_SENSE_DATA, _CDB__GET_LBA_STATUS};
+use ntkrnl_sys::ddk::{_STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetBinary as StorageIdCodeSetBinary, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetAscii as StorageIdCodeSetAscii, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetUtf8 as StorageIdCodeSetUtf8, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeScsiNameString as StorageIdTypeScsiNameString, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeFCPHName as StorageIdTypeFCPHName, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeEUI64 as StorageIdTypeEUI64, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeVendorId as StorageIdTypeVendorId, _STORAGE_ASSOCIATION_TYPE_StorageIdAssocPort as StorageIdAssocPort};
 
 extern "C" {
     fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
@@ -119,7 +121,384 @@ unsafe extern "C" {
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn strlen(s: *const core::ffi::c_char) -> usize;
     fn strncmp(s1: *const core::ffi::c_char, s2: *const core::ffi::c_char, n: usize) -> i32;
+    fn strcmp(s1: *const core::ffi::c_char, s2: *const core::ffi::c_char) -> i32;
+    fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
     fn wcslen(s: *const u16) -> usize;
+}
+
+// ntiologc.h: disk event log codes used for ClassLogCapacityChangedProcess / ClassLogProvisioningTypeChangedEvent
+const IO_WARNING_DISK_CAPACITY_CHANGED: ULONG = 0x80040097u32;
+const IO_WARNING_DISK_PROVISIONING_TYPE_CHANGED: ULONG = 0x80040098u32;
+
+// ---- FORCEINLINE helpers from classp.h / storduid.h / scsi.h ----
+// These are inline in C so they must be defined as local fns, not extern declarations.
+
+/// classp.h FORCEINLINE ClasspIsObsoletePortDriver
+#[no_mangle]
+pub unsafe extern "C" fn ClasspIsObsoletePortDriver(
+    FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+) -> BOOLEAN {
+    if !(*FdoExtension).MiniportDescriptor.is_null()
+        && (*(*FdoExtension).MiniportDescriptor).Portdriver == StoragePortCodeSetSCSIport
+    {
+        return 1u8;
+    }
+    0u8
+}
+
+/// classp.h FORCEINLINE ClasspIsThinProvisioned
+#[no_mangle]
+pub unsafe extern "C" fn ClasspIsThinProvisioned(
+    FunctionSupportInfo: *mut crate::types::_CLASS_FUNCTION_SUPPORT_INFO,
+) -> BOOLEAN {
+    if (*FunctionSupportInfo).LBProvisioningData.ProvisioningType() == PROVISIONING_TYPE_UNKNOWN as u8 {
+        return 0u8;
+    }
+    if (*FunctionSupportInfo).LBProvisioningData.ProvisioningType() == 2u8 /* PROVISIONING_TYPE_THIN */
+        && (*FunctionSupportInfo).LBProvisioningData.LBPU() != 0
+    {
+        return 1u8;
+    }
+    0u8
+}
+
+/// classp.h FORCEINLINE ClasspSupportsUnmap
+#[inline]
+pub unsafe fn ClasspSupportsUnmap(
+    SupportInfo: *mut crate::types::_CLASS_FUNCTION_SUPPORT_INFO,
+) -> bool {
+    (*SupportInfo).LBProvisioningData.LBPU() != 0
+}
+
+/// classp.h FORCEINLINE ClasspLowerLayerNotSupport
+#[inline]
+pub unsafe fn ClasspLowerLayerNotSupport(Status: NTSTATUS) -> bool {
+    (Status == STATUS_NOT_SUPPORTED)
+        || (Status == STATUS_NOT_IMPLEMENTED)
+        || (Status == STATUS_INVALID_DEVICE_REQUEST)
+        || (Status == STATUS_INVALID_PARAMETER_1)
+}
+
+// scsi.h FORCEINLINE helpers for sense data parsing
+#[inline]
+unsafe fn ScsiGetSenseErrorCode(buf: *const core::ffi::c_void) -> u8 {
+    (*(buf as *const u8)) & 0x7f
+}
+const SCSI_SENSE_ERRORCODE_FIXED_CURRENT: u8     = 0x70;
+const SCSI_SENSE_ERRORCODE_FIXED_DEFERRED: u8    = 0x71;
+const SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT: u8  = 0x72;
+const SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED: u8 = 0x73;
+
+#[inline]
+unsafe fn IsFixedSenseDataFormat(buf: *const core::ffi::c_void) -> bool {
+    let ec = ScsiGetSenseErrorCode(buf);
+    ec == SCSI_SENSE_ERRORCODE_FIXED_CURRENT || ec == SCSI_SENSE_ERRORCODE_FIXED_DEFERRED
+}
+#[inline]
+unsafe fn IsDescriptorSenseDataFormat(buf: *const core::ffi::c_void) -> bool {
+    let ec = ScsiGetSenseErrorCode(buf);
+    ec == SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT || ec == SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED
+}
+
+/// scsi.h FORCEINLINE ScsiGetFixedSenseKeyAndCodes
+#[inline]
+unsafe fn ScsiGetFixedSenseKeyAndCodes(
+    SenseInfoBuffer: *mut core::ffi::c_void,
+    SenseInfoBufferLength: UCHAR,
+    SenseKey: *mut UCHAR,
+    AdditionalSenseCode: *mut UCHAR,
+    AdditionalSenseCodeQualifier: *mut UCHAR,
+) -> BOOLEAN {
+    if SenseInfoBuffer.is_null() || SenseInfoBufferLength == 0 {
+        return 0u8;
+    }
+    let fixed = SenseInfoBuffer as PFIXED_SENSE_DATA;
+    // RTL_CONTAINS_FIELD: check that AdditionalSenseLength field is within SenseInfoBufferLength bytes
+    let additional_sense_length_offset =
+        core::mem::offset_of!(crate::types::_SENSE_DATA, AdditionalSenseLength);
+    let field_end = additional_sense_length_offset + core::mem::size_of::<UCHAR>();
+    if field_end > SenseInfoBufferLength as usize {
+        return 0u8;
+    }
+    let data_length = ((*fixed).AdditionalSenseLength as usize)
+        + core::mem::offset_of!(crate::types::_SENSE_DATA, AdditionalSenseLength)
+        + core::mem::size_of::<UCHAR>();
+    let data_length = if data_length > SenseInfoBufferLength as usize {
+        SenseInfoBufferLength as usize
+    } else {
+        data_length
+    };
+    if !SenseKey.is_null() {
+        *SenseKey = (*fixed).SenseKey();
+    }
+    if !AdditionalSenseCode.is_null() {
+        let asc_offset = core::mem::offset_of!(crate::types::_SENSE_DATA, AdditionalSenseCode);
+        *AdditionalSenseCode = if asc_offset + 1 <= data_length {
+            (*fixed).AdditionalSenseCode
+        } else { 0 };
+    }
+    if !AdditionalSenseCodeQualifier.is_null() {
+        let ascq_offset = core::mem::offset_of!(crate::types::_SENSE_DATA, AdditionalSenseCodeQualifier);
+        *AdditionalSenseCodeQualifier = if ascq_offset + 1 <= data_length {
+            (*fixed).AdditionalSenseCodeQualifier
+        } else { 0 };
+    }
+    1u8
+}
+
+/// scsi.h FORCEINLINE ScsiGetDescriptorSenseKeyAndCodes
+#[inline]
+unsafe fn ScsiGetDescriptorSenseKeyAndCodes(
+    SenseInfoBuffer: *mut core::ffi::c_void,
+    SenseInfoBufferLength: UCHAR,
+    SenseKey: *mut UCHAR,
+    AdditionalSenseCode: *mut UCHAR,
+    AdditionalSenseCodeQualifier: *mut UCHAR,
+) -> BOOLEAN {
+    if SenseInfoBuffer.is_null() || SenseInfoBufferLength == 0 {
+        return 0u8;
+    }
+    let desc = SenseInfoBuffer as PDESCRIPTOR_SENSE_DATA;
+    // RTL_CONTAINS_FIELD check for AdditionalSenseLength
+    let al_offset = core::mem::offset_of!(crate::types::_DESCRIPTOR_SENSE_DATA, AdditionalSenseLength);
+    if al_offset + core::mem::size_of::<UCHAR>() > SenseInfoBufferLength as usize {
+        return 0u8;
+    }
+    if !SenseKey.is_null() {
+        *SenseKey = (*desc).SenseKey();
+    }
+    if !AdditionalSenseCode.is_null() {
+        *AdditionalSenseCode = (*desc).AdditionalSenseCode;
+    }
+    if !AdditionalSenseCodeQualifier.is_null() {
+        *AdditionalSenseCodeQualifier = (*desc).AdditionalSenseCodeQualifier;
+    }
+    1u8
+}
+
+/// scsi.h FORCEINLINE ScsiGetSenseKeyAndCodes
+#[inline]
+unsafe fn ScsiGetSenseKeyAndCodes(
+    SenseInfoBuffer: *mut core::ffi::c_void,
+    SenseInfoBufferLength: UCHAR,
+    Options: u32, // SCSI_SENSE_OPTIONS
+    SenseKey: *mut UCHAR,
+    AdditionalSenseCode: *mut UCHAR,
+    AdditionalSenseCodeQualifier: *mut UCHAR,
+) -> BOOLEAN {
+    if SenseInfoBuffer.is_null() || SenseInfoBufferLength == 0 {
+        return 0u8;
+    }
+    if IsDescriptorSenseDataFormat(SenseInfoBuffer) {
+        return ScsiGetDescriptorSenseKeyAndCodes(
+            SenseInfoBuffer, SenseInfoBufferLength, SenseKey,
+            AdditionalSenseCode, AdditionalSenseCodeQualifier,
+        );
+    }
+    const FIXED_FORMAT_IF_UNKNOWN: u32 = 0x00000001; // SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED
+    if (Options & FIXED_FORMAT_IF_UNKNOWN) != 0 || IsFixedSenseDataFormat(SenseInfoBuffer) {
+        return ScsiGetFixedSenseKeyAndCodes(
+            SenseInfoBuffer, SenseInfoBufferLength, SenseKey,
+            AdditionalSenseCode, AdditionalSenseCodeQualifier,
+        );
+    }
+    0u8
+}
+
+/// storduid.h FORCEINLINE CompareStorageDuids
+#[inline]
+unsafe fn CompareStorageDuids(
+    Duid1: *mut _STORAGE_DEVICE_UNIQUE_IDENTIFIER,
+    Duid2: *mut _STORAGE_DEVICE_UNIQUE_IDENTIFIER,
+) -> DUID_MATCH_STATUS {
+    if Duid1.is_null() || Duid2.is_null() {
+        return DuidErrorMissingDuid;
+    }
+    if ((*Duid1).Size as usize) < core::mem::size_of::<STORAGE_DEVICE_UNIQUE_IDENTIFIER>()
+        || ((*Duid2).Size as usize) < core::mem::size_of::<STORAGE_DEVICE_UNIQUE_IDENTIFIER>()
+    {
+        return DuidErrorGeneral;
+    }
+    if (*Duid1).Version != DUID_VERSION_1 || (*Duid2).Version != DUID_VERSION_1 {
+        return DuidErrorVersionMismatch;
+    }
+    if (*Duid1).StorageDeviceIdOffset == 0
+        && (*Duid1).StorageDeviceOffset == 0
+        && (*Duid1).DriveLayoutSignatureOffset == 0
+    {
+        return DuidErrorInvalidDuid;
+    }
+    if (*Duid2).StorageDeviceIdOffset == 0
+        && (*Duid2).StorageDeviceOffset == 0
+        && (*Duid2).DriveLayoutSignatureOffset == 0
+    {
+        return DuidErrorInvalidDuid;
+    }
+    if (*Duid1).Size == (*Duid2).Size
+        && memcmp(Duid1 as *const core::ffi::c_void, Duid2 as *const core::ffi::c_void, (*Duid1).Size as usize) == 0
+    {
+        return DuidExactMatch;
+    }
+    if (*Duid1).StorageDeviceIdOffset != 0 && (*Duid2).StorageDeviceIdOffset != 0 {
+        let idDesc1 = (Duid1 as *mut u8).add((*Duid1).StorageDeviceIdOffset as usize)
+            as PSTORAGE_DEVICE_ID_DESCRIPTOR;
+        let idDesc2 = (Duid2 as *mut u8).add((*Duid2).StorageDeviceIdOffset as usize)
+            as PSTORAGE_DEVICE_ID_DESCRIPTOR;
+        if ((*idDesc1).Size as usize) < core::mem::size_of::<ntkrnl_sys::ddk::STORAGE_DEVICE_ID_DESCRIPTOR>()
+            || ((*idDesc2).Size as usize) < core::mem::size_of::<ntkrnl_sys::ddk::STORAGE_DEVICE_ID_DESCRIPTOR>()
+        {
+            return DuidErrorInvalidDeviceIdDescSize;
+        }
+        if (*idDesc1).Size == (*idDesc2).Size
+            && memcmp(idDesc1 as *const core::ffi::c_void, idDesc2 as *const core::ffi::c_void, (*idDesc1).Size as usize) == 0
+        {
+            return DuidSubIdMatch;
+        }
+        let mut ident1 = (*idDesc1).Identifiers.as_ptr() as PSTORAGE_IDENTIFIER;
+        let mut idx1: u32 = 0;
+        while idx1 < (*idDesc1).NumberOfIdentifiers {
+            if ((*ident1).Type == StorageIdTypeScsiNameString
+                || (*ident1).Type == StorageIdTypeFCPHName
+                || (*ident1).Type == StorageIdTypeEUI64
+                || (*ident1).Type == StorageIdTypeVendorId)
+                && (*ident1).Association == StorageIdAssocPort
+                && ((*ident1).CodeSet == StorageIdCodeSetUtf8
+                    || (*ident1).CodeSet == StorageIdCodeSetAscii
+                    || (*ident1).CodeSet == StorageIdCodeSetBinary)
+            {
+                let mut ident2 = (*idDesc2).Identifiers.as_ptr() as PSTORAGE_IDENTIFIER;
+                let mut idx2: u32 = 0;
+                while idx2 < (*idDesc2).NumberOfIdentifiers {
+                    if (*ident1).Type == (*ident2).Type
+                        && (*ident1).Association == (*ident2).Association
+                        && (*ident1).CodeSet == (*ident2).CodeSet
+                        && (*ident1).IdentifierSize == (*ident2).IdentifierSize
+                        && memcmp(
+                            (*ident1).Identifier.as_ptr() as *const core::ffi::c_void,
+                            (*ident2).Identifier.as_ptr() as *const core::ffi::c_void,
+                            (*ident1).IdentifierSize as usize,
+                        ) == 0
+                    {
+                        return DuidSubIdMatch;
+                    }
+                    ident2 = (ident2 as *mut u8).add((*ident2).NextOffset as usize) as PSTORAGE_IDENTIFIER;
+                    idx2 += 1;
+                }
+            }
+            ident1 = (ident1 as *mut u8).add((*ident1).NextOffset as usize) as PSTORAGE_IDENTIFIER;
+            idx1 += 1;
+        }
+    }
+    if (*Duid1).StorageDeviceOffset != 0 && (*Duid2).StorageDeviceOffset != 0 {
+        let desc1 = (Duid1 as *mut u8).add((*Duid1).StorageDeviceOffset as usize)
+            as PSTORAGE_DEVICE_DESCRIPTOR;
+        let desc2 = (Duid2 as *mut u8).add((*Duid2).StorageDeviceOffset as usize)
+            as PSTORAGE_DEVICE_DESCRIPTOR;
+        if ((*desc1).Size as usize) < core::mem::size_of::<ntkrnl_sys::ddk::STORAGE_DEVICE_DESCRIPTOR>()
+            || ((*desc2).Size as usize) < core::mem::size_of::<ntkrnl_sys::ddk::STORAGE_DEVICE_DESCRIPTOR>()
+        {
+            return DuidErrorInvalidDeviceDescSize;
+        }
+        if (*desc1).Size == (*desc2).Size
+            && memcmp(desc1 as *const core::ffi::c_void, desc2 as *const core::ffi::c_void, (*desc1).Size as usize) == 0
+        {
+            return DuidSubIdMatch;
+        }
+        if (*desc1).SerialNumberOffset != 0 && (*desc2).SerialNumberOffset != 0 {
+            let string1 = (desc1 as *const u8).add((*desc1).SerialNumberOffset as usize) as *const core::ffi::c_char;
+            let string2 = (desc2 as *const u8).add((*desc2).SerialNumberOffset as usize) as *const core::ffi::c_char;
+            if strcmp(string1, string2) == 0 {
+                if (*desc1).VendorIdOffset != 0 && (*desc2).VendorIdOffset != 0 {
+                    let s1 = (desc1 as *const u8).add((*desc1).VendorIdOffset as usize) as *const core::ffi::c_char;
+                    let s2 = (desc2 as *const u8).add((*desc2).VendorIdOffset as usize) as *const core::ffi::c_char;
+                    if strcmp(s1, s2) != 0 { return DuidNoMatch; }
+                }
+                if (*desc1).ProductIdOffset != 0 && (*desc2).ProductIdOffset != 0 {
+                    let s1 = (desc1 as *const u8).add((*desc1).ProductIdOffset as usize) as *const core::ffi::c_char;
+                    let s2 = (desc2 as *const u8).add((*desc2).ProductIdOffset as usize) as *const core::ffi::c_char;
+                    if strcmp(s1, s2) != 0 { return DuidNoMatch; }
+                }
+                return DuidSubIdMatch;
+            }
+        }
+    }
+    if (*Duid1).DriveLayoutSignatureOffset != 0 && (*Duid2).DriveLayoutSignatureOffset != 0 {
+        let sig1 = (Duid1 as *mut u8).add((*Duid1).DriveLayoutSignatureOffset as usize)
+            as *mut STORAGE_DEVICE_LAYOUT_SIGNATURE;
+        let sig2 = (Duid2 as *mut u8).add((*Duid2).DriveLayoutSignatureOffset as usize)
+            as *mut STORAGE_DEVICE_LAYOUT_SIGNATURE;
+        if (*sig1).Version != DUID_VERSION_1 && (*sig2).Version != DUID_VERSION_1 {
+            return DuidErrorInvalidLayoutSigVersion;
+        }
+        if ((*sig1).Size as usize) < core::mem::size_of::<STORAGE_DEVICE_LAYOUT_SIGNATURE>()
+            || ((*sig2).Size as usize) < core::mem::size_of::<STORAGE_DEVICE_LAYOUT_SIGNATURE>()
+        {
+            return DuidErrorInvalidLayoutSigSize;
+        }
+        if memcmp(sig1 as *const core::ffi::c_void, sig2 as *const core::ffi::c_void,
+                  core::mem::size_of::<STORAGE_DEVICE_LAYOUT_SIGNATURE>()) == 0
+        {
+            return DuidSubIdMatch;
+        }
+    }
+    DuidNoMatch
+}
+
+/// utils.c: ClassLogCapacityChangedProcess (IO_WORKITEM_ROUTINE — NTAPI = stdcall on i386)
+#[no_mangle]
+pub unsafe extern "stdcall" fn ClassLogCapacityChangedProcess(
+    DeviceObject: PDEVICE_OBJECT,
+    Context: PVOID,
+) {
+    let work_item = Context as PIO_WORKITEM;
+    let status = ClasspLogSystemEventWithDeviceNumber(DeviceObject, IO_WARNING_DISK_CAPACITY_CHANGED as NTSTATUS);
+    if NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_INFORMATION,
+            TRACE_FLAG_GENERAL,
+            b"ClassLogCapacityChangedEvent: DO (%p), Capacity changed logged.\n\0".as_ptr() as *const i8,
+            DeviceObject,
+        );
+    } else {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_GENERAL,
+            b"ClassLogCapacityChangedEvent: DO (%p), Failed to allocate memory for error log entry.\n\0".as_ptr() as *const i8,
+            DeviceObject,
+        );
+    }
+    let _cap_status = ClassReadDriveCapacity(DeviceObject);
+    ClassReleaseRemoveLock(DeviceObject, work_item as *mut _IRP);
+    if !work_item.is_null() {
+        IoFreeWorkItem(work_item);
+    }
+}
+
+/// utils.c: ClassLogProvisioningTypeChangedEvent (IO_WORKITEM_ROUTINE — NTAPI = stdcall on i386)
+#[no_mangle]
+pub unsafe extern "stdcall" fn ClassLogProvisioningTypeChangedEvent(
+    DeviceObject: PDEVICE_OBJECT,
+    Context: PVOID,
+) {
+    let work_item = Context as PIO_WORKITEM;
+    let status = ClasspLogSystemEventWithDeviceNumber(DeviceObject, IO_WARNING_DISK_PROVISIONING_TYPE_CHANGED as NTSTATUS);
+    if NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_INFORMATION,
+            TRACE_FLAG_GENERAL,
+            b"ClassLogProvisioningTypeChangedEvent: DO (%p), LB Provisioning Type changed logged.\n\0".as_ptr() as *const i8,
+            DeviceObject,
+        );
+    } else {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_GENERAL,
+            b"ClassLogProvisioningTypeChangedEvent: DO (%p), Failed to allocate memory for error log entry.\n\0".as_ptr() as *const i8,
+            DeviceObject,
+        );
+    }
+    ClassReleaseRemoveLock(DeviceObject, work_item as *mut _IRP);
+    IoFreeWorkItem(work_item);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ClasspMyStringMatches(StringToMatch: *mut i8, TargetString: *mut i8) -> u8 {
@@ -657,7 +1036,7 @@ pub unsafe extern "C" fn ClasspDuidGetDeviceProperty(
             (*deviceDescriptor).Size as usize,
         );
 
-        (*Irp).IoStatus.Information = (*storageDuid).Size as usize;
+        (*Irp).IoStatus.Information = (*storageDuid).Size as u32;
         break STATUS_SUCCESS;
     };
 
@@ -827,8 +1206,8 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
         } else if info_found != 0u8 {
             status = STATUS_SUCCESS;
             NT_ASSERT((DuidExactMatch == CompareStorageDuids(
-                (*Irp).AssociatedIrp.SystemBuffer,
-                (*Irp).AssociatedIrp.SystemBuffer)) as u8);
+                (*Irp).AssociatedIrp.SystemBuffer as *mut _STORAGE_DEVICE_UNIQUE_IDENTIFIER,
+                (*Irp).AssociatedIrp.SystemBuffer as *mut _STORAGE_DEVICE_UNIQUE_IDENTIFIER)) as u8);
         } else {
             status = STATUS_NOT_FOUND;
         }
@@ -1191,9 +1570,9 @@ pub unsafe extern "C" fn ClassReadCapacity16(
         SrbAssignSrbFlags((Srb).cast(), (*FdoExtension).SrbFlags);
         SrbSetCdbLength((Srb).cast(), 16);
         let cdb: PCDB = SrbGetCdb((Srb).cast());
-        (*(cdb)).READ_CAPACITY16.as_ref().OperationCode = SCSIOP_READ_CAPACITY16 as u8;
-        (*(cdb)).READ_CAPACITY16.as_ref().set_ServiceAction(SERVICE_ACTION_READ_CAPACITY16 as u8);
-        (*(cdb)).READ_CAPACITY16.as_ref().AllocationLength[3] = buffer_length;
+        (*(cdb)).READ_CAPACITY16.as_mut().OperationCode = SCSIOP_READ_CAPACITY16 as u8;
+        (*(cdb)).READ_CAPACITY16.as_mut().set_ServiceAction(SERVICE_ACTION_READ_CAPACITY16 as u8);
+        (*(cdb)).READ_CAPACITY16.as_mut().AllocationLength[3] = buffer_length;
 
         status = ClassSendSrbSynchronous(
             (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject,
@@ -1317,7 +1696,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
         match (*(*fdoExtension).FunctionSupportInfo).LowerLayerSupport.AccessAlignmentProperty {
             _CLASS_FUNCTION_SUPPORT_STATE_SupportUnknown => {
                 status = ClassForwardIrpSynchronous(commonExtension, Irp);
-                if ClasspLowerLayerNotSupport(status) != 0 {
+                if ClasspLowerLayerNotSupport(status) {
                     if ClasspIsObsoletePortDriver(fdoExtension) == 0 {
                         status = ClassReadCapacity16(fdoExtension, Srb);
                     } else {
@@ -1637,7 +2016,7 @@ pub unsafe extern "C" fn ClasspDeviceSeekPenaltyProperty(
             }
             SupportUnknown => {
                 let mut status = ClassForwardIrpSynchronous(commonExtension, Irp);
-                if ClasspLowerLayerNotSupport(status) != 0 {
+                if ClasspLowerLayerNotSupport(status) {
                     if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockDeviceCharacteristics() == 1 {
                         status = ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(fdoExtension, Srb);
                     } else {
@@ -2281,6 +2660,8 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
             (*lbpDescr).OptimalUnmapGranularity = (blockLimitsData.OptimalUnmapGranularity as u64) * ((*fdoExtension).DiskGeometry.BytesPerSector as u64);
             (*lbpDescr).UnmapGranularityAlignment = (blockLimitsData.UnmapGranularityAlignment as u64) * ((*fdoExtension).DiskGeometry.BytesPerSector as u64);
 
+            // dead: C is #if (NTDDI_VERSION >= NTDDI_WINBLUE), classpnp builds at WIN8
+            #[cfg(any())]
             if length >= core::mem::size_of::<DEVICE_LB_PROVISIONING_DESCRIPTOR>() as u32 {
                 (*lbpDescr).MaxUnmapLbaCount = blockLimitsData.MaxUnmapLbaCount;
                 (*lbpDescr).MaxUnmapBlockDescriptorCount = blockLimitsData.MaxUnmapBlockDescrCount;
@@ -2829,17 +3210,17 @@ pub unsafe extern "C" fn GetLBAStatus(
     SrbSetRequestTag((Srb).cast(), SP_UNTAGGED);
     SrbSetRequestAttribute((Srb).cast(), SRB_SIMPLE_TAG_REQUEST);
     SrbAssignSrbFlags((Srb).cast(), (*FdoExtension).SrbFlags);
-    SrbSetCdbLength((Srb).cast(), core::mem::size_of::<CDB_GET_LBA_STATUS>() as u8);
+    SrbSetCdbLength((Srb).cast(), core::mem::size_of::<_CDB__GET_LBA_STATUS>() as u8);
 
     let cdb = SrbGetCdb((Srb).cast());
-    (*cdb).GET_LBA_STATUS.as_ref().OperationCode = (SCSIOP_GET_LBA_STATUS) as u8;
-    (*cdb).GET_LBA_STATUS.as_ref().set_ServiceAction((SERVICE_ACTION_GET_LBA_STATUS) as u8);
+    (*cdb).GET_LBA_STATUS.as_mut().OperationCode = (SCSIOP_GET_LBA_STATUS) as u8;
+    (*cdb).GET_LBA_STATUS.as_mut().set_ServiceAction((SERVICE_ACTION_GET_LBA_STATUS) as u8);
 
     // REVERSE_BYTES_QUAD(&(cdb->GET_LBA_STATUS.StartingLBA), &StartingLBA);
     let start_be = StartingLBA.to_be_bytes();
     core::ptr::copy_nonoverlapping(
         start_be.as_ptr(),
-        core::ptr::addr_of_mut!((*cdb).GET_LBA_STATUS.as_ref().StartingLBA) as *mut u8,
+        core::ptr::addr_of_mut!((*cdb).GET_LBA_STATUS.as_mut().StartingLBA) as *mut u8,
         8,
     );
 
@@ -2847,7 +3228,7 @@ pub unsafe extern "C" fn GetLBAStatus(
     let alloc_be = LBAStatusSize.to_be_bytes();
     core::ptr::copy_nonoverlapping(
         alloc_be.as_ptr(),
-        core::ptr::addr_of_mut!((*cdb).GET_LBA_STATUS.as_ref().AllocationLength) as *mut u8,
+        core::ptr::addr_of_mut!((*cdb).GET_LBA_STATUS.as_mut().AllocationLength) as *mut u8,
         4,
     );
 
@@ -3902,7 +4283,7 @@ pub unsafe extern "C" fn ClassQueueCapacityChangedEventWorker(DeviceObject: PDEV
 
             IoQueueWorkItem(
                 work_item,
-                ClassLogCapacityChangedProcess,
+                Some(ClassLogCapacityChangedProcess),
                 DelayedWorkQueue,
                 (work_item).cast(),
             );
@@ -3932,7 +4313,7 @@ pub unsafe extern "C" fn ClassQueueProvisioningTypeChangedEventWorker(DeviceObje
             ClassAcquireRemoveLock(DeviceObject, workItem as *mut _IRP);
             IoQueueWorkItem(
                 workItem,
-                ClassLogProvisioningTypeChangedEvent,
+                Some(ClassLogProvisioningTypeChangedEvent),
                 DelayedWorkQueue,
                 workItem as *mut core::ffi::c_void,
             );
@@ -5398,6 +5779,8 @@ pub unsafe extern "C" fn ClasspPowerIdleDevice(DeviceObject: PDEVICE_OBJECT) -> 
 
     status
 }
+// dead: C is #if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD), classpnp builds at WIN8
+#[cfg(any())]
 #[no_mangle]
 pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
     DeviceObject: *mut _DEVICE_OBJECT,
@@ -5537,6 +5920,8 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
 
     ioStatus.__bindgen_anon_1.Status
 }
+// dead: C is #if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD), classpnp builds at WIN8
+#[cfg(any())]
 #[no_mangle]
 pub unsafe extern "C" fn ClassDeviceHwFirmwareIsPortDriverSupported(DeviceObject: *mut DEVICE_OBJECT) -> BOOLEAN {
     let common_extension = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
@@ -5550,6 +5935,8 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareIsPortDriverSupported(DeviceObject
     }
     is_supported
 }
+// dead: C is #if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD), classpnp builds at WIN8
+#[cfg(any())]
 #[no_mangle]
 pub unsafe extern "C" fn ClassDeviceHwFirmwareGetInfoProcess(
     DeviceObject: *mut DEVICE_OBJECT,
@@ -5652,6 +6039,8 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareGetInfoProcess(
     status
 }
 
+// dead: C is #if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD), classpnp builds at WIN8
+#[cfg(any())]
 unsafe extern "stdcall" fn ClassHwFirmwareDownloadComplete(
     fdo: PDEVICE_OBJECT,
     irp: PIRP,
@@ -5669,6 +6058,8 @@ unsafe extern "stdcall" fn ClassHwFirmwareDownloadComplete(
     IoFreeIrp(irp);
     STATUS_MORE_PROCESSING_REQUIRED
 }
+// dead: C is #if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD), classpnp builds at WIN8
+#[cfg(any())]
 #[no_mangle]
 pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
     DeviceObject: *mut _DEVICE_OBJECT,
@@ -5924,6 +6315,8 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
     FREE_POOL((Srb).cast());
     result
 }
+// dead: C is #if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD), classpnp builds at WIN8
+#[cfg(any())]
 #[no_mangle]
 pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
     DeviceObject: *mut _DEVICE_OBJECT,

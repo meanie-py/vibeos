@@ -60,7 +60,7 @@ pub unsafe extern "C" fn GetDictionaryEntry(
     entry = ((*Dictionary).List).cast();
     while !entry.is_null() {
         if (*entry).Key == Key {
-            data = core::ptr::addr_of!((*entry).Data).cast::<core::ffi::c_void>();
+            data = core::ptr::addr_of_mut!((*entry).Data).cast::<core::ffi::c_void>();
             break;
         } else {
             entry = (*entry).Next;
