@@ -31,7 +31,14 @@ set(CMLIB_RUST_FLIPPED
     cminit.c
     hivebin.c
     cmkeydel.c
-    cmname.c)
+    cmname.c
+    cmcheck.c
+    cmheal.c
+    cmindex.c
+    cmvalue.c
+    hivecell.c
+    hiveinit.c
+    hivewrt.c)
 
 if(CMAKE_CROSSCOMPILING)
     # CMLIB for NT bootloader (still 100% C)
@@ -43,6 +50,13 @@ if(CMAKE_CROSSCOMPILING)
     # CMLIB for NT kernel — drop the Rust-flipped .c, link libcmlib_rust.a.
     set(CMLIB_KERNEL_SOURCE ${SOURCE})
     list(REMOVE_ITEM CMLIB_KERNEL_SOURCE ${CMLIB_RUST_FLIPPED})
+    # All 13 cmlib .c are now Rust (libcmlib_rust.a) → CMLIB_KERNEL_SOURCE has no
+    # .c left, so cmake can't determine the cmlib target's linker language.
+    # Add a placeholder TU (mirrors the HAL lib_hal_*_empty.c pattern); the real
+    # Hv*/Cm* symbols come from libcmlib_rust.a linked below.
+    set(CMLIB_KERNEL_STUB ${CMAKE_CURRENT_BINARY_DIR}/cmlib_rust_placeholder.c)
+    file(WRITE ${CMLIB_KERNEL_STUB} "/* placeholder: kernel cmlib sources are in cmlib-rust (libcmlib_rust.a) */\n")
+    list(APPEND CMLIB_KERNEL_SOURCE ${CMLIB_KERNEL_STUB})
     add_library(cmlib ${CMLIB_KERNEL_SOURCE})
     add_dependencies(cmlib bugcodes xdk)
     add_pch(cmlib cmlib.h CMLIB_KERNEL_SOURCE)
