@@ -664,7 +664,7 @@ pub unsafe extern "stdcall" fn ClasspPowerDownCompletion(
                 );
 
                 if TEST_FLAG(
-                    (*(*fdoExtension).PrivateFdoData).HackFlags,
+                    ((*(*fdoExtension).PrivateFdoData).HackFlags) as u32,
                     FDO_HACK_NO_SYNC_CACHE,
                 ) == 0 {
                     (*(*fdoExtension).PrivateFdoData).MaxPowerOperationRetryCount = MAXIMUM_RETRIES;

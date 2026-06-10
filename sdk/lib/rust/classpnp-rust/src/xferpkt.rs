@@ -1119,7 +1119,7 @@ pub unsafe extern "C" fn SubmitTransferPacket(Pkt: PTRANSFER_PACKET) -> NTSTATUS
     IoSetCompletionRoutine(
         (*Pkt).Irp,
         Some(core::mem::transmute::<
-            unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
+            unsafe extern "system" fn(PDEVICE_OBJECT, _> NTSTATUS,
             unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS,
         >(TransferPktComplete)),
         Pkt as PVOID,

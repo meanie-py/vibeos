@@ -345,15 +345,13 @@ pub unsafe extern "system" fn ClassInitialize(
 
     if !(*InitializationData).ClassUnload.is_none() && ClassPnpAllowUnload == (1u8) as u32 {
         (*DriverObject).DriverUnload = Some(core::mem::transmute::<
-            unsafe extern "system" fn(*mut _DRIVER_OBJECT),
-            unsafe extern "stdcall" fn(*mut _DRIVER_OBJECT),
-        >(ClassUnload));
+            unsafe extern "system" fn(*mut _DRIVER_OBJECT), _>(ClassUnload));
     } else {
         (*DriverObject).DriverUnload = None;
     }
 
     (*(*DriverObject).DriverExtension).AddDevice = Some(core::mem::transmute::<
-        unsafe extern "system" fn(*mut _DRIVER_OBJECT, *mut _DEVICE_OBJECT) -> NTSTATUS,
+        unsafe extern "system" fn(*mut _DRIVER_OBJECT, _> NTSTATUS,
         unsafe extern "stdcall" fn(*mut _DRIVER_OBJECT, *mut _DEVICE_OBJECT) -> NTSTATUS,
     >(ClassAddDevice));
 
@@ -639,7 +637,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                                 device_relations as *mut core::ffi::c_void,
                                 (core::mem::size_of::<DEVICE_RELATIONS>() as u32) as usize,
                             );
-                            (*Irp).IoStatus.Information = (device_relations as ULONG_PTR) as u32;
+                            (*Irp).IoStatus.Information = ((device_relations as ULONG_PTR) as u32) as u64;
                             (*device_relations).Count = 1;
                             (*device_relations).Objects[0] = DeviceObject;
                             ObReferenceObject((DeviceObject).cast());
@@ -683,7 +681,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     if status == STATUS_NOT_IMPLEMENTED {
                         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
                     } else if NT_SUCCESS(status) {
-                        (*Irp).IoStatus.Information = (unicode_string.Buffer as ULONG_PTR) as u32;
+                        (*Irp).IoStatus.Information = ((unicode_string.Buffer as ULONG_PTR) as u32) as u64;
                     } else {
                         (*Irp).IoStatus.Information = 0;
                     }
@@ -1326,7 +1324,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             );
             KeInitializeSpinLock(&raw mut (*(*fdo_extension).PrivateFdoData).Retry.Lock);
             (*(*fdo_extension).PrivateFdoData).Retry.Granularity = KeQueryTimeIncrement();
-            (*common_extension).Reserved4 = (u32::from_be_bytes([b' ', b'G', b'P', b'H']) as usize as ULONG_PTR) as u32; // debug aid
+            (*common_extension).Reserved4 = ((u32::from_be_bytes([b' ', b'G', b'P', b'H']) as usize as ULONG_PTR) as u32) as u64; // debug aid
             InitializeListHead(&raw mut (*(*fdo_extension).PrivateFdoData).DeferredClientIrpList);
             KeInitializeSpinLock(&raw mut (*(*fdo_extension).PrivateFdoData).SpinLock);
 
@@ -1414,7 +1412,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 }
 
                 if (*(*(*fdo_extension).__bindgen_anon_1.CommonExtension.as_ref()).DeviceObject).DeviceType != FILE_DEVICE_DISK {
-                    SET_FLAG(&raw mut (*(*fdo_extension).PrivateFdoData).HackFlags, FDO_HACK_NO_SYNC_CACHE);
+                    SET_FLAG((&raw mut (*(*fdo_extension).PrivateFdoData).HackFlags).cast(), FDO_HACK_NO_SYNC_CACHE);
                 }
 
                 status = ClasspIsPortable(fdo_extension, &mut is_portable);
@@ -1829,7 +1827,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
             _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
             status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
 
-            if NT_SUCCESS(status) && pseudoIrp.IoStatus.Information < readCapacityDataSize {
+            if NT_SUCCESS(status) && pseudoIrp.IoStatus.Information < (readCapacityDataSize) as u64 {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_INIT,
@@ -1854,7 +1852,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                     SubmitTransferPacket(pkt);
                     _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
                     status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
-                    if pseudoIrp.IoStatus.Information < readCapacityDataSize {
+                    if pseudoIrp.IoStatus.Information < (readCapacityDataSize) as u64 {
                         status = STATUS_DEVICE_BUSY;
                     }
                 } else {
@@ -2053,7 +2051,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
 
         IoSetCompletionRoutine(
             irp,
-            Some(core::mem::transmute::<unsafe extern "system" fn(*mut _DEVICE_OBJECT, *mut _IRP, *mut c_void) -> i32, unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP, *mut c_void) -> i32>(ClassAsynchronousCompletion)),
+            Some(core::mem::transmute::<unsafe extern "system" fn(*mut _DEVICE_OBJECT, _> i32, _>(ClassAsynchronousCompletion)),
             context as *mut c_void,
             1u8,
             1u8,
@@ -2487,7 +2485,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     // Paging I/O sanity checks
     if NT_SUCCESS(status) && TEST_FLAG((*Irp).Flags, IRP_PAGING_IO) != 0 {
         debug_assert!((*Irp).IoStatus.Information != 0);
-        debug_assert!((*irpStack).Parameters.Read.Length == (*Irp).IoStatus.Information);
+        debug_assert!((*irpStack).Parameters.Read.Length == ((*Irp).IoStatus.Information) as u32);
     }
 
     // Determine whether to call IoStartNextPacket

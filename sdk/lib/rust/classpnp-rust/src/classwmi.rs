@@ -184,7 +184,7 @@ pub unsafe extern "system" fn ClassSystemControl(
     let minorFunction = (*irpStack).MinorFunction;
 
     if (minorFunction as i32 > (IRP_MN_EXECUTE_METHOD) as i32)
-        || ((*irpStack).Parameters.WMI.ProviderId != (DeviceObject as ULONG_PTR) as u32)
+        || ((*irpStack).Parameters.WMI.ProviderId != ((DeviceObject as ULONG_PTR) as u32) as u64)
         || (minorFunction as i32 != (IRP_MN_REGINFO) as i32 && (*commonExtension).GuidCount == 0)
     {
         IoSkipCurrentIrpStackLocation(Irp);
@@ -364,7 +364,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                                 BaseNameOffset: __BindgenUnionField::new(),
                                 Pdo: __BindgenUnionField::new(),
                                 InstanceInfo: __BindgenUnionField::new(),
-                                bindgen_union_field: nameInfo as u32,
+                                bindgen_union_field: (nameInfo as u32) as u64,
                             },
                             InstanceCount: 1,
                         });
@@ -382,7 +382,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                                 BaseNameOffset: __BindgenUnionField::new(),
                                 Pdo: __BindgenUnionField::new(),
                                 InstanceInfo: __BindgenUnionField::new(),
-                                bindgen_union_field: nameInfo as u32,
+                                bindgen_union_field: (nameInfo as u32) as u64,
                             },
                             InstanceCount: 1,
                         });
@@ -472,7 +472,7 @@ pub unsafe extern "system" fn ClassSystemControl(
             }
 
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-            (*Irp).IoStatus.Information = (retSize as ULONG_PTR) as u32;
+            (*Irp).IoStatus.Information = ((retSize as ULONG_PTR) as u32) as u64;
             ClassReleaseRemoveLock(DeviceObject, Irp);
             ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
             return status;
@@ -827,7 +827,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = (retSize as ULONG_PTR) as u32;
+    (*Irp).IoStatus.Information = ((retSize as ULONG_PTR) as u32) as u64;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, PriorityBoost);
     Status

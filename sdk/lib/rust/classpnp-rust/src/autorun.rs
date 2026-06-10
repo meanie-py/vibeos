@@ -936,7 +936,7 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
             if !workItem.is_null() {
                 IoQueueWorkItem(
                     workItem,
-                    Some(core::mem::transmute::<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, PVOID), unsafe extern "stdcall" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, PVOID)>(ClasspDisableGesn)),
+                    Some(core::mem::transmute::<unsafe extern "system" fn(*mut ntkrnl_sys::ddk::_DEVICE_OBJECT, _>(ClasspDisableGesn)),
                     DelayedWorkQueue,
                     workItem as PVOID,
                 );
@@ -1228,7 +1228,7 @@ pub unsafe extern "C" fn ClasspPrepareMcnIrp(
 
     IoSetCompletionRoutine(
         irp,
-        Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(ClasspMediaChangeDetectionCompletion)),
+        Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, _> NTSTATUS, unsafe extern "stdcall" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>(ClasspMediaChangeDetectionCompletion)),
         srb as PVOID,
         TRUE as BOOLEAN,
         TRUE as BOOLEAN,
@@ -1556,7 +1556,7 @@ pub unsafe extern "C" fn ClasspInitializePolling(
             fdo,
             &GUID_CONSOLE_DISPLAY_STATE,
             Some(
-                core::mem::transmute::<unsafe extern "stdcall" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS, unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS>(ClasspPowerSettingCallback),
+                core::mem::transmute::<unsafe extern "stdcall" fn(LPCGUID, _> NTSTATUS, unsafe extern "system" fn(LPCGUID, PVOID, ULONG, PVOID) -> NTSTATUS>(ClasspPowerSettingCallback),
             ),
             core::ptr::null_mut(),
             &raw mut ScreenStateNotificationHandle,
@@ -2405,7 +2405,7 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
 
         let mut parameters: [_RTL_QUERY_REGISTRY_TABLE; 2] = core::mem::zeroed();
         parameters[0].QueryRoutine = Some(core::mem::transmute::<
-            unsafe extern "C" fn(PUNICODE_STRING, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
+            unsafe extern "C" fn(PUNICODE_STRING, _> NTSTATUS,
             unsafe extern "stdcall" fn(*mut u16, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
         >(ClasspMediaChangeRegistryCallBack));
         parameters[0].Flags = RTL_QUERY_REGISTRY_REQUIRED;
@@ -2890,7 +2890,7 @@ pub unsafe extern "system" fn ClasspTimerTick(
                                 );
                                 IoQueueWorkItem(
                                     work_item,
-                                    Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, PVOID), unsafe extern "stdcall" fn(PDEVICE_OBJECT, PVOID)>(ClasspFailurePredict)),
+                                    Some(core::mem::transmute::<unsafe extern "system" fn(PDEVICE_OBJECT, _>(ClasspFailurePredict)),
                                     DelayedWorkQueue,
                                     info as PVOID,
                                 );
@@ -2979,7 +2979,7 @@ pub unsafe extern "C" fn ClasspInitializeTimer(
     if (*fdoData).TimerInitialized == 0u8 {
         KeInitializeDpc(
             core::ptr::addr_of_mut!((*fdoData).TickTimerDpc),
-            Some(core::mem::transmute::<unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, PVOID, PVOID, PVOID), unsafe extern "stdcall" fn(*mut ntkrnl_sys::ddk::_KDPC, PVOID, PVOID, PVOID)>(ClasspTimerTick)),
+            Some(core::mem::transmute::<unsafe extern "system" fn(*mut ntkrnl_sys::ke::KDPC, _>(ClasspTimerTick)),
             FdoExtension as PVOID,
         );
         KeInitializeTimer(core::ptr::addr_of_mut!((*fdoData).TickTimer));
