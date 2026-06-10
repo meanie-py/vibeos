@@ -1,3 +1,5 @@
+> **HISTORICAL — config/ Rust-port debug log (2026-04-30); all bugs resolved, config is fully Rust, i386 boots to desktop. The 'uncommitted diagnostic traces' list below was long since cleaned up.**
+
 # config/ Rust port debug status (2026-04-30 — session 3 final)
 
 ## Where we are

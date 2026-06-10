@@ -100,6 +100,8 @@ tracked in `static-libs-translation-audit.md`.)
 
 ### Still C in sdk/lib/rtl
 
+> **SUPERSEDED 2026-06-09 — rtl is ~fully Rust now: registry.c (fc4563c30ba), image.c (rtl-diag), heap.c+heapdbg (rtl-heap), heappage/heapuser translated; only heappage/heapuser/arch-asm remain active C in CMakeLists.**
+
 | File | LOC | Why still C |
 |---|---|---|
 | **registry.c** | 1351 | RtlQueryRegistryValues etc. Translate-only candidate. **Calls the Rust RtlExpandEnvironmentStrings_U — see §4 bug #3.** |
@@ -108,6 +110,8 @@ tracked in `static-libs-translation-audit.md`.)
 | misc remainder | — | bootdata, generic small files. |
 
 ### Boot state (amd64, with the PATH flip + this session's 3 fixes)
+
+> **Point-in-time snapshot (2026-06-01); the services.exe-hang described below is a state of that session, not current HEAD.**
 
 `./vibeos-cli smoke --arch amd64` reaches **`[WIN32K] shell ready`** — the
 full kernel → smss → csrss → win32k chain boots with path.c live. Winlogon
