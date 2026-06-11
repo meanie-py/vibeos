@@ -234,6 +234,11 @@ fn main() {
         // see reactos-link build_rust_crate). cnt-rust-lib `float` is per-arch.
         .rust_lib("rtl-rust", &[], true)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
+        // cmlib hive library: flipped C→Rust (kernel cmlib is 100% Rust). The
+        // cmake `libcmlib.a` in static_libs is now just the cohab placeholder —
+        // the real Hv*/Cmp*/Cm* symbols live in cmlib-rust (DEFAULT features, the
+        // full kernel variant; NOT `bldr`, which is the loader's read-only build).
+        .rust_lib("cmlib-rust", &[], true)
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
