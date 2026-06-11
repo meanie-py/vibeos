@@ -198,6 +198,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "conutils-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+]
+
+[[package]]
 name = "cport-rust"
 version = "0.1.0"
 
