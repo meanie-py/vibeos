@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -18,7 +20,6 @@ extern "C" {
     fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
     static CLASSP_REG_SUBKEY_NAME: u16;
     static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: u16;
-    fn WdfRequestWdmGetIrp(request: WDFREQUEST) -> *mut IRP;
     fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG, );
     fn RequestGetContext(request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
     fn ScratchBuffer_BeginUse(device_extension: *mut CDROM_DEVICE_EXTENSION);
@@ -36,17 +37,10 @@ extern "C" {
 }
 extern "system" {
     fn RequestSend( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, ioTarget: WDFIOTARGET, sendOptionsFlags: ULONG, requestSent: *mut BOOLEAN, ) -> NTSTATUS;
-    fn WdfRequestFormatRequestUsingCurrentType(Request: WDFREQUEST);
-    fn WdfRequestGetInformation(Request: WDFREQUEST) -> ULONG;
-    fn WdfRequestSetCompletionRoutine( Request: WDFREQUEST, CompletionRoutine: Option<unsafe extern "system" fn(WDFREQUEST, WDFIOTARGET, *mut WDF_REQUEST_COMPLETION_PARAMS, WDFCONTEXT)>, CompletionContext: *mut core::ffi::c_void, );
     fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
-    fn WdfRequestRetrieveOutputBuffer( Request: WDFREQUEST, OutputBufferLength: usize, OutputBuffer: *mut *mut core::ffi::c_void, LengthReturned: *mut usize, ) -> NTSTATUS;
     fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataTransferLength: u32, AutoSense: u8, Request: WDFREQUEST, ) -> i32;
     fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> u8;
     fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
-    fn WdfRequestGetFileObject(Request: WDFREQUEST) -> *mut core::ffi::c_void;
-    fn WdfRequestRetrieveInputBuffer( Request: WDFREQUEST, InputBufferLength: usize, InputBuffer: *mut *mut c_void, BufferLength: *mut usize, ) -> NTSTATUS;
-    fn WdfRequestIsFrom32BitProcess(Request: WDFREQUEST) -> BOOLEAN;
     fn DeviceSendNotification(deviceExtension: PCDROM_DEVICE_EXTENSION, guid: *const GUID, param1: u32, param2: *mut core::ffi::c_void) -> NTSTATUS;
     fn ValidChar(c: u8) -> i32;
     fn IsVolumeMounted(DeviceObject: *mut core::ffi::c_void) -> i32;
@@ -54,7 +48,6 @@ extern "system" {
     fn IoAllocateErrorLogEntry(IoObject: *mut core::ffi::c_void, EntrySize: u32) -> *mut IO_ERROR_LOG_PACKET;
     fn DeviceUnlockExclusive( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, NoMediaNotifications: i32, ) -> NTSTATUS;
     fn WDF_REQUEST_PARAMETERS_INIT(Parameters: *mut WDF_REQUEST_PARAMETERS);
-    fn WdfRequestGetParameters(Request: WDFREQUEST, Parameters: *mut WDF_REQUEST_PARAMETERS);
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn RequestDuidGetDeviceIdProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
     fn RequestDuidGetDeviceProperty( deviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, requestParameters: WDF_REQUEST_PARAMETERS, outLength: *mut usize, ) -> i32;
@@ -78,10 +71,6 @@ extern "system" {
     fn RequestPostWorkMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> i32;
     fn DeviceSendDelayedMediaChangeNotifications( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, );
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> u8;
-    fn WdfWaitLockAcquire(Lock: WDFWAITLOCK, Timeout: *const LARGE_INTEGER) -> NTSTATUS;
-    fn WdfWaitLockRelease(Lock: WDFWAITLOCK);
-    fn WdfRequestForwardToIoQueue(Request: WDFREQUEST, Queue: WDFQUEUE) -> NTSTATUS;
-    fn WdfIoQueueRetrieveNextRequest( queue: *mut core::ffi::c_void, request: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
     fn RequestSenseInfoInterpretForScratchBuffer( device_extension: *mut CDROM_DEVICE_EXTENSION, times_already_retried: u32, status: *mut i32, retry_in_100ns_units: *mut i64, ) -> i32;
     fn ScratchBuffer_SetupSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, transfer_byte_count: u32, use_scratch: i32, ) -> i32;
     fn ScratchBuffer_SendSrb( device_extension: *mut CDROM_DEVICE_EXTENSION, wait: i32, unused: *mut core::ffi::c_void, ) -> i32;
@@ -151,12 +140,6 @@ const STATUS_INVALID_BUFFER_SIZE: i32 = 0xC0000206u32 as i32;
 const MAX_COPY_PROTECT_AGID: u32 = 3; // assuming as per AACS spec
 
 unsafe extern "system" {
-    fn WdfRequestRetrieveInputBuffer(
-        Request: WDFREQUEST,
-        InputBufferLength: usize,
-        Buffer: *mut *mut DVD_SESSION_ID,
-        Length: *mut usize,
-    ) -> NTSTATUS;
 }
 
 const STATUS_INVALID_BUFFER_SIZE: NTSTATUS = 0xC000_0206u32 as i32;
@@ -432,12 +415,6 @@ unsafe extern "C" {
 }
 
 unsafe extern "system" {
-    fn WdfRequestRetrieveInputBuffer(
-        Request: WDFREQUEST,
-        MinimumRequiredLength: usize,
-        Buffer: *mut *mut core::ffi::c_void,
-        LengthReturned: *mut usize,
-    ) -> i32;
 }
 
 const SCSIOP_SEEK: u8 = 0x2B;
@@ -496,7 +473,6 @@ unsafe extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, TransferLength: u32, IsRead: u8, Cdb: *mut CDB, CdbLength: u8) -> i32;
-    fn WdfRequestRetrieveInputBuffer(Request: WDFREQUEST, MinimumRequiredCb: usize, Buffer: *mut *mut core::ffi::c_void, Length: *mut usize) -> i32;
     fn PAGED_CODE();
 }
 
@@ -1390,7 +1366,7 @@ pub unsafe extern "C" fn RequestValidateDvdSendKey(
     );
 
     if ntkrnl_sys::base::NT_SUCCESS(status) {
-        if (RequestParameters.Parameters.DeviceIoControl.InputBufferLength as usize
+        if ((RequestParameters.Parameters.DeviceIoControl.InputBufferLength as usize)
             < core::mem::size_of::<DVD_COPY_PROTECT_KEY>())
             || (RequestParameters.Parameters.DeviceIoControl.InputBufferLength as usize
                 != (*key).KeyLength)
@@ -6412,18 +6388,6 @@ unsafe extern "system" {
         PageCode: u8,
         ModeSense10: u8,
     ) -> *mut AUDIO_OUTPUT;
-    fn WdfRequestRetrieveInputBuffer(
-        Request: WDFREQUEST,
-        MinimumRequiredLength: usize,
-        Buffer: *mut *mut core::ffi::c_void,
-        Length: *mut usize,
-    ) -> NTSTATUS;
-    fn WdfRequestRetrieveOutputBuffer(
-        Request: WDFREQUEST,
-        MinimumRequiredLength: usize,
-        Buffer: *mut *mut core::ffi::c_void,
-        Length: *mut usize,
-    ) -> NTSTATUS;
     fn PAGED_CODE();
 }
 #[no_mangle]

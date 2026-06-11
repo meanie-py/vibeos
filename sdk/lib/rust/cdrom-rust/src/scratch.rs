@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -11,30 +13,20 @@ extern "C" {
     fn NT_ASSERT(condition: i32);
     fn RequestGetContext(scratch_request: *mut core::ffi::c_void) -> *mut CDROM_REQUEST_CONTEXT;
     fn RequestSend( device_ext: *mut CDROM_DEVICE_EXTENSION, request: *mut core::ffi::c_void, iotarget: *mut core::ffi::c_void, options: u32, timeout: *mut core::ffi::c_void, ) -> i32;
-    fn WdfRequestIsCanceled(request: *mut core::ffi::c_void) -> u8;
     fn PAGED_CODE();
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
 }
 extern "C" {
-    fn WdfRequestWdmGetIrp(Request: *mut core::ffi::c_void) -> PIRP;
-    fn WdfObjectDelete(Object: *mut core::ffi::c_void);
     fn WDF_REQUEST_REUSE_PARAMS_INIT( params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS, );
-    fn WdfRequestReuse(request: WDFREQUEST, params: *const WDF_REQUEST_REUSE_PARAMS) -> NTSTATUS;
-    fn WdfRequestSetCompletionRoutine( request: WDFREQUEST, routine: *mut c_void, context: *mut c_void, );
-    fn WdfIoTargetFormatRequestForInternalIoctlOthers( iotarget: WDFIOTARGET, request: WDFREQUEST, ioctl_code: u32, input_memory: *mut c_void, output_memory: *mut c_void, input_locked_memory: *mut c_void, output_locked_memory: *mut c_void, input_offsets: *mut c_void, output_offsets: *mut c_void, ) -> NTSTATUS;
     fn TracePrint(level: u32, flag: u32, format: *const u8, status: NTSTATUS);
-    fn WdfObjectDereference(Object: WDFREQUEST);
     fn RequestCompletion(DeviceExtension: PCDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Status: i32, TransferedBytes: u32);
     fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION);
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn min(a: u32, b: u32) -> u32;
     fn DbgPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...) -> u32;
-    fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsRead: u8) -> u8; // BOOLEAN fn MmPrepareMdlForReuse(Mdl: *mut MDL);
-    fn WdfRequestUnmarkCancelable(Request: *mut core::ffi::c_void) -> NTSTATUS;
-    fn WdfRequestGetStatus(Request: WDFREQUEST) -> i32;
-    fn WdfRequestMarkCancelableEx(Request: WDFREQUEST, Cancel: *mut core::ffi::c_void) -> i32;
-    fn WdfObjectReference(Object: *mut core::ffi::c_void);
+    fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsRead: u8) -> u8; // BOOLEAN
+    fn MmPrepareMdlForReuse(Mdl: *mut MDL);
     fn SRB_STATUS(srb_status: u8) -> u32;
 }
 
@@ -142,11 +134,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             attributes: *mut WDF_OBJECT_ATTRIBUTES,
             context_type: *const core::ffi::c_void,
         ) -> ();
-        fn WdfRequestCreate(
-            attributes: *mut WDF_OBJECT_ATTRIBUTES,
-            iotarget: WDFIOTARGET,
-            request: *mut WDFREQUEST,
-        ) -> NTSTATUS;
+    }
 
     // validate max transfer already determined
     debug_assert!(

@@ -75,6 +75,11 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
                -DWDF_DEVICE_NO_WDMSEC_H -DDEBUG_USE_KDPRINT -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
     EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
+    # WDF types (WDFDEVICE/WDFREQUEST/WDF_REQUEST_PARAMETERS/...) get a SINGLE identity on
+    # the kmdf-sys substrate — blocklist them here + re-export from kmdf_sys, so cdrom's
+    # private structs (CDROM_DEVICE_EXTENSION.Device: WDFDEVICE) and kmdf-sys's dispatch
+    # fns agree on the type. kmdf-sys is itself a gen_driver_types output → stem "types".
+    SYS_CRATES=( "kmdf-sys:kmdf-sys/src:types" )
     ;;
   cdfs)
     DRIVER_DIR="${SRC}/drivers/filesystems/cdfs"
@@ -174,8 +179,12 @@ run_arch() {
   local SYS_USE=()
   for spec in "${SYS_CRATES[@]:-}"; do
     [ -z "$spec" ] && continue
-    local crate="${spec%%:*}" subdir="${spec##*:}"
-    local SYSBG="${SRC}/sdk/lib/rust/${subdir}/bindgen_${ARCH}.rs"
+    # spec = crate:subdir[:stem]  (stem defaults to "bindgen"; kmdf-sys uses "types"
+    # because it's itself a gen_driver_types output, not an acpica-style bindgen crate).
+    local crate subdir stem
+    IFS=: read -r crate subdir stem <<< "$spec"
+    stem="${stem:-bindgen}"
+    local SYSBG="${SRC}/sdk/lib/rust/${subdir}/${stem}_${ARCH}.rs"
     local SYSNAMES="/tmp/${DRIVER}_${crate}_names_${ARCH}.txt"
     grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$SYSBG" | awk '{print $3}' | sort -u > "$SYSNAMES"
     # Unique = in sys crate but NOT already an ntkrnl-sys type (TYPELIST still ntkrnl-only here).

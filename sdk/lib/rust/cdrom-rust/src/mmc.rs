@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -11,7 +13,6 @@ extern "C" {
 }
 extern "C" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
-    fn WdfObjectDelete(Object: WDFREQUEST);
     fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
     static CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32;
@@ -26,8 +27,8 @@ extern "C" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, unknown: *mut core::ffi::c_void, transferSize: u32, flag: i32, cdb: *const CDB, cdbLength: u32, ) -> NTSTATUS;
-    fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Param1: *mut core::ffi::c_void, TransferSize: u32, Flag: u8,        // BOOLEAN TRUE -> 1 Cdb: *const CDB, CdbLength: u32, Timeout: u32, ) -> i32; // NTSTATUS fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(sectorsPerSecond: u32) -> i64;
-    fn WdfRequestCreateFromIrp( Attributes: *mut WDF_OBJECT_ATTRIBUTES, Irp: *mut IRP, RequestOwnsIrp: BOOLEAN, Request: *mut *mut WDFREQUEST, ) -> NTSTATUS;
+    fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Param1: *mut core::ffi::c_void, TransferSize: u32, Flag: u8, /* BOOLEAN TRUE -> 1 */ Cdb: *const CDB, CdbLength: u32, Timeout: u32, ) -> i32; // NTSTATUS
+    fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(sectorsPerSecond: u32) -> i64;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *const core::ffi::c_void, );
     fn DeviceFindFeaturePage( Buffer: *mut GET_CONFIGURATION_HEADER, Length: u32, Feature: FEATURE_NUMBER, ) -> *mut FEATURE_HEADER;
     fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comperand: i32, ) -> i32;
@@ -791,8 +792,7 @@ pub unsafe extern "C" fn MmcDataFindFeaturePage(
                 TracePrint(
                     0x00000002, // TRACE_LEVEL_WARNING
                     0x00000010, // TRACE_FLAG_GENERAL
-                    b"Feature %x exists, but not safe to access all its "
-                        b"data.  returning NULL\n"
+                    b"Feature %x exists, but not safe to access all its data.  returning NULL\n"
                         .as_ptr() as *const i8,
                     Feature as u32,
                 );

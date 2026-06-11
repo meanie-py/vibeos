@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -23,7 +25,6 @@ extern "C" {
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Guid: *const GUID, DataSize: u32, Data: *const core::ffi::c_void, ) -> NTSTATUS;
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
-    fn WdfRequestIsCanceled(Request: WDFREQUEST) -> u8;
 }
 extern "C" {
     fn DeviceSendStartUnit(device: *mut DEVICE_OBJECT);
@@ -61,12 +62,6 @@ unsafe extern "system" {
         config: *mut WDF_WORKITEM_CONFIG,
         func: Option<unsafe extern "system" fn(WDFWORKITEM)>,
     );
-    fn WdfWorkItemCreate(
-        config: *const WDF_WORKITEM_CONFIG,
-        attributes: *const WDF_OBJECT_ATTRIBUTES,
-        work_item: *mut WDFWORKITEM,
-    ) -> NTSTATUS;
-    fn WdfWorkItemEnqueue(work_item: WDFWORKITEM);
 }
 
 // Assumed callback prototype

@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -12,10 +14,6 @@ extern "C" {
     static CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *mut WDF_OBJECT_CONTEXT_TYPE_INFO);
-    fn WdfRequestCreate(attributes: *mut WDF_OBJECT_ATTRIBUTES, target: WDFIOTARGET, request: *mut WDFREQUEST) -> i32; // NTSTATUS = i32 fn WdfMemoryCreatePreallocated(attributes: *mut WDF_OBJECT_ATTRIBUTES, memory: *mut WDFMEMORY, buffer: *mut core::ffi::c_void, buffer_size: usize, memory_out: *mut WDFMEMORY) -> i32;
-    fn WdfIoTargetFormatRequestForInternalIoctlOthers(target: WDFIOTARGET, request: WDFREQUEST, ioctl_code: u32, input_memory: WDFMEMORY, output_memory: WDFMEMORY, input_buffer: *mut core::ffi::c_void, input_buffer_length: usize, output_buffer: *mut core::ffi::c_void, output_buffer_length: usize) -> i32;
-    fn WdfRequestSetCompletionRoutine(request: WDFREQUEST, completion_routine: unsafe extern "C" fn(WDFREQUEST, WDFIOTARGET, WDFCONTEXT), context: WDFCONTEXT) -> i32;
-    fn WdfSpinLockCreate(attributes: *mut WDF_OBJECT_ATTRIBUTES, spin_lock: *mut WDFSPINLOCK) -> i32;
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn DeviceReleaseQueueCompletion(request: WDFREQUEST, target: WDFIOTARGET, context: WDFCONTEXT);
     static CLASSP_REG_SUBKEY_NAME: u8;
@@ -35,29 +33,18 @@ extern "C" {
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn WdfRequestWdmGetIrp( request: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
     fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
-    fn WdfIoTargetSendInternalIoctlOthersSynchronously( iotarget: *mut core::ffi::c_void, request: *mut core::ffi::c_void, ioctl_code: u32, input_descriptor: *const WDF_MEMORY_DESCRIPTOR, output_descriptor: *const core::ffi::c_void, output_descriptor2: *const core::ffi::c_void, request_options: *const core::ffi::c_void, status: *mut i32, ) -> i32;
-    fn WdfObjectDelete( object: *mut core::ffi::c_void, );
     fn NT_ASSERT( condition: i32, );
     static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
-    fn WdfDeviceCreateSymbolicLink( Device: *mut core::ffi::c_void, LinkName: *const _UNICODE_STRING, ) -> i32;
-    fn WdfIoTargetSendIoctlSynchronously( IoTarget: WDFIOTARGET, Request: *mut core::ffi::c_void, IoctlControlCode: u32, InputBuffer: *mut WDF_MEMORY_DESCRIPTOR, OutputBuffer: *mut WDF_MEMORY_DESCRIPTOR, RequestOptions: *mut core::ffi::c_void, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
-    fn WdfDeviceOpenRegistryKey( Device: *mut core::ffi::c_void, KeyName: *const _UNICODE_STRING, DesiredAccess: u32, ObjectAttributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void, ) -> i32;
-    fn WdfRegistryOpenKey( ParentKey: *mut core::ffi::c_void, KeyName: *const _UNICODE_STRING, DesiredAccess: u32, ObjectAttributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void, ) -> i32;
-    fn WdfRegistryQueryULong( Key: *mut core::ffi::c_void, ValueName: *const _UNICODE_STRING, Value: *mut u32, ) -> i32;
-    fn WdfRegistryClose(Key: *mut core::ffi::c_void);
     fn StringsAreMatched(a: *const i8, b: *const i8) -> i32;
     fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> ();
     fn TEST_FLAG(Flags: u32, Flag: u32) -> u32;
-    fn WdfDeviceQueryProperty( Device: *mut core::ffi::c_void, PropertyData: *const core::ffi::c_void, BufferLength: u32, PropertyBuffer: *mut core::ffi::c_void, ResultLength: *mut u32, ) -> NTSTATUS;
-    fn WdfDriverOpenParametersRegistryKey(Driver: *mut core::ffi::c_void, DesiredAccess: u32, KeyAttributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void) -> i32;
-    fn WdfGetDriver() -> *mut core::ffi::c_void;
     fn FREE_POOL(Ptr: *mut core::ffi::c_void);
     fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32, );
-    fn DeviceGetConfiguration( Device: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: u32, Usable: *mut u32, Feature: u32, RequestType: u32, ) -> i32; // NTSTATUS fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+    fn DeviceGetConfiguration( Device: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: u32, Usable: *mut u32, Feature: u32, RequestType: u32, ) -> i32; // NTSTATUS
+    fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
     fn REVERSE_BYTES(dest: *mut u32, src: *const u8);
     fn DeviceFindFeaturePage(buffer: *mut u8, size: u32, feature: u32) -> *mut FEATURE_DATA_CD_READ;
     fn DevicePickDvdRegion(Device: WDFDEVICE);
@@ -67,8 +54,6 @@ extern "C" {
     fn DevicePrintAllFeaturePages(buffer: *const u8, size: u32);
     fn DeviceUpdateMmcWriteCapability(buffer: *const u8, size: u32, check: i32, is_writer: *mut u8, validation_schema: *mut u32, blocking_factor: *mut u32);
     fn SET_FLAG(flags: *mut u32, flag: u32);
-    fn WdfDeviceGetCharacteristics(Device: WDFDEVICE) -> u32;
-    fn WdfDeviceSetCharacteristics(Device: WDFDEVICE, characteristics: u32);
     fn DeviceErrorHandlerForMmc();
     fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn DeviceInitializeMediaChangeDetection(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
@@ -1421,38 +1406,6 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
     }
 
     status
-}
-" then after that block, the function hasn't returned; it just ends with "return status;"? Actually the C code: after the last if block, there is no explicit return; the function ends with "return status;"? No, the code inside the function is: first block with GET_CONFIGURATION_HEADER, then *IsMmcDevice = TRUE; then second block with configBuffer... then after the outer second block, there is no further code; the function ends. In C, a non-void function that reaches the end without return is undefined behavior. But reading the original code, there is a "return status;" at the very end? I must check: the C code ends after the last if(previouslyFailed) block; I need to see if there's a return. The provided C snippet ends with "}" that closes the function, and before that the last line is "}" after the if(previouslyFailed) block, and no return statement. That seems like a bug unless there's a return earlier. But the earlier early returns were all "return STATUS_SUCCESS;" except for the case where configBuffer allocation fails, returning STATUS_INSUFFICIENT_RESOURCES. The success path after the second block doesn't return; it will fall off the end. The original code likely has a "return status;" at the end. Maybe it's missing in the snippet? Let's re-read: after the second block, there's "}" and then "return status;"? I see in the provided C: after the block for TYPE ONE, there's a closing brace (matching the one that starts the block), then there's no more code; the function ends. But the last local variable 'status' is set. The function's return type is NTSTATUS. I think there is an implicit "return status;" that was maybe omitted but in C that is UB. I suspect the actual source has "return status;" but the snippet might have omitted it. Let's check the snippet again: The function body has:
-...
-    {
-        ULONG   featureSize ...
-        ...
-        FREE_POOL(configBuffer);
-
-        if (previouslyFailed == TRUE)
-        {
-            DeviceSetParameter( DeviceExtension,
-                                CDROM_SUBKEY_NAME,
-                                CDROM_TYPE_ONE_GET_CONFIG_NAME,
-                                previouslyFailed);
-
-            SET_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG);
-        }
-    }
-
-    return status;
-}
-But in the provided text, after the closing brace of that block, there is no "return status;", just the final brace of the function. Actually I see: at the end of the provided code: ... 
-        }
-    }
-
-    return status;
-}
-Yes, I see a "return status;" after the block (on the same indentation as the block). So the function ends with "return status;" — I missed it. I need to include that return.
-
-I'll add a return status at the end, using the variable `status` which was last set by the call to DeviceGetConfiguration inside the second block. That's correct.
-
-Thus, final line: `return status;`
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceSetRawReadInfo(

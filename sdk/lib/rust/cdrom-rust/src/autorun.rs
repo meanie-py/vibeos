@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -19,40 +21,21 @@ extern "C" {
 extern "C" {
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, guid: *const GUID, size: u32, context: *const core::ffi::c_void, );
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
-    fn WdfRequestWdmGetIrp(request: *mut core::ffi::c_void) -> *mut IRP;
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
-    fn WdfRequestReuse(request: *mut core::ffi::c_void, reuse_params: *mut WDF_REQUEST_REUSE_PARAMS) -> NTSTATUS;
-    fn WdfIoTargetFormatRequestForInternalIoctlOthers( iotarget: *mut core::ffi::c_void, request: *mut core::ffi::c_void, ioctl_code: u32, input_memory: *mut core::ffi::c_void, input_memory_offset: *mut core::ffi::c_void, output_memory: *mut core::ffi::c_void, output_memory_offset: *mut core::ffi::c_void, callback: *mut core::ffi::c_void, context: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn RequestClearSendTime(request: *mut core::ffi::c_void);
-    fn WdfWorkItemGetParentObject(WorkItem: WDFWORKITEM) -> WDFDEVICE;
     fn DeviceGetExtension(device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
     fn DeviceSetParameter( deviceExtension: PCDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32, );
-    fn WdfObjectDelete(Object: WDFWORKITEM);
     fn RequestSend( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Target: *mut core::ffi::c_void, Options: u32, RequestSent: *mut u8, ) -> i32;
     fn PAGED_CODE();
-    fn WdfDeviceOpenRegistryKey( device: WDFDEVICE, keyType: u32, access: u32, attributes: *mut core::ffi::c_void, key: *mut WDFKEY, ) -> NTSTATUS;
-    fn WdfRegistryOpenKey( key: WDFKEY, subKeyName: *mut _UNICODE_STRING, access: u32, attributes: *mut core::ffi::c_void, subKey: *mut WDFKEY, ) -> NTSTATUS;
-    fn WdfRegistryQueryULong( key: WDFKEY, valueName: *mut _UNICODE_STRING, value: *mut u32, ) -> NTSTATUS;
-    fn WdfRegistryClose(key: WDFKEY);
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn UNREFERENCED_PARAMETER(param: NTSTATUS);
-    fn WdfDriverOpenParametersRegistryKey( driver: *mut core::ffi::c_void, desired_access: u32, object_attrs: *mut core::ffi::c_void, key: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn WdfGetDriver() -> *mut core::ffi::c_void;
-    fn WdfRegistryWdmGetHandle(key: *mut core::ffi::c_void) -> HANDLE;
     fn strlen(s: *const u8) -> usize;
     fn RtlInitUnicodeString( DestinationString: *mut ntkrnl_sys::ddk::_UNICODE_STRING, SourceString: *const u16 );
     fn KeWaitForMutexObject( Mutex: *mut core::ffi::c_void, WaitReason: i32, WaitMode: i32, Alertable: i32, Timeout: *const core::ffi::c_void, ) -> i32;
     fn KeGetCurrentIrql() -> KIRQL;
     fn PoUnregisterPowerSettingCallback(Handle: *mut core::ffi::c_void) -> NTSTATUS;
-    fn WdfTimerGetParentObject(Timer: WDFTIMER) -> WDFOBJECT;
-    fn WdfObjectGetTypedContext(Object: WDFOBJECT, Type: *const core::ffi::c_void) -> *mut core::ffi::c_void;
     fn RequestHandleEventNotification( DeviceExtension: PCDROM_DEVICE_EXTENSION, Param2: *mut core::ffi::c_void, Param3: *mut core::ffi::c_void, DataLength: *mut usize, ) -> i32;
-    fn WdfTimerCreate( config: *mut WDF_TIMER_CONFIG, attributes: *mut WDF_OBJECT_ATTRIBUTES, timer: *mut WDFTIMER, ) -> i32;
-    fn WdfTimerStart(timer: WDFTIMER, due_time: i64) -> i32;
-    fn WdfRequestRetrieveInputBuffer( Request: WDFREQUEST, MinimumRequiredSize: usize, Buffer: *mut *mut ntkrnl_sys::ddk::PREVENT_MEDIA_REMOVAL, Length: *mut usize, ) -> NTSTATUS;
-    fn WdfRequestGetFileObject( Request: WDFREQUEST, ) -> WDFFILEOBJECT;
     fn FileObjectGetContext( FileObject: WDFFILEOBJECT, ) -> *mut FILE_OBJECT_CONTEXT;
-    fn WdfRequestGetRequestorMode( Request: WDFREQUEST, ) -> u8;
     fn CountOfSetBitsUChar(byte: u8) -> u8;
     fn DeviceMarkActive(Extension: *mut CDROM_DEVICE_EXTENSION, Active: BOOLEAN, b: BOOLEAN);
     fn DeviceZPODDIsInHomePosition(Extension: *mut CDROM_DEVICE_EXTENSION) -> BOOLEAN;
@@ -62,12 +45,11 @@ extern "C" {
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
-    fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const i8, ValueName: *const i8, Data: *mut u32,               // PULONG );
+    fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const i8, ValueName: *const i8, Data: *mut u32, ); // PULONG
     fn DeviceSendRequestSynchronously( Device: WDFDEVICE, Request: WDFREQUEST, WaitForCompletion: BOOLEAN, ) -> NTSTATUS;
     fn DeviceReleaseQueue(Device: WDFDEVICE);
-    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Srb: *mut SRB, Flags: u32, Status: *mut NTSTATUS, SenseData: *mut c_void,       // NULL becomes null_mut() );
+    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Srb: *mut SRB, Flags: u32, Status: *mut NTSTATUS, SenseData: *mut c_void, ); // NULL becomes null_mut()
     fn IoFreeMdl(Mdl: PMDL);
-    fn WdfRequestCreate(attributes: *mut WDF_OBJECT_ATTRIBUTES, iotarget: *mut core::ffi::c_void, request: *mut *mut core::ffi::c_void) -> NTSTATUS;
     fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
     fn DevicePowerSettingCallback( Setting: *mut core::ffi::c_void, Value: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
@@ -129,7 +111,6 @@ const CDROM_HACK_MSFT_VIRTUAL_ODD: u32 = 0x00000001; // placeholder – caller s
 const WdfExecutionLevelInheritFromParent: u32 = 1;
 
 unsafe extern "system" {
-    fn WdfTimerStop(timer: *mut core::ffi::c_void, wait: i32);
     // original TracePrint was variadic; we take one fixed pointer argument to enable compilation.
     fn TracePrint(level: u32, flag: u32, fmt: *const i8, arg: *const core::ffi::c_void);
 }
@@ -2274,7 +2255,7 @@ pub unsafe extern "C" fn DeviceDisableMediaChangeDetection(
     let _ = KeWaitForMutexObject(
         core::ptr::addr_of_mut!((*info).MediaChangeMutex) as *mut core::ffi::c_void,
         ntkrnl_sys::ddk::_KWAIT_REASON_UserRequest,
-        ntkrnl_sys::constants::0i32,
+        0i32,
         0, // FALSE
         core::ptr::null(),
     );
@@ -2558,7 +2539,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
         }
 
         if file_object_context.is_null()
-            && WdfRequestGetRequestorMode(Request) == ntkrnl_sys::ddk::0i32
+            && WdfRequestGetRequestorMode(Request) == 0i32
         {
             file_object_context = core::ptr::addr_of_mut!(
                 (*DeviceExtension).KernelModeMcnContext

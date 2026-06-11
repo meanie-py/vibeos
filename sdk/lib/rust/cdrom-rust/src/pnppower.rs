@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -20,22 +22,12 @@ extern "C" {
     fn DeviceSendPowerDownProcessRequest( extension: *mut CDROM_DEVICE_EXTENSION, callback: unsafe extern "system" fn(*mut core::ffi::c_void, *mut core::ffi::c_void), irp: PIRP, );
 }
 extern "C" {
-    fn WdfDeviceWdmDispatchPreprocessedIrp(Device: WDFDEVICE, Irp: PIRP) -> NTSTATUS;
     fn ScratchBuffer_SetupSrb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut core::ffi::c_void, TransferSize: u32, Direct: i32, );
     fn ScratchBuffer_SendSrb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Synchronous: i32, CompletionRoutine: *mut core::ffi::c_void, );
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, TimesRetried: u32, Status: *mut NTSTATUS, RetryIn100nsUnits: *mut i64, ) -> i32;
-    fn WdfRequestGetStatus(Request: *mut core::ffi::c_void) -> NTSTATUS;
-    fn WdfRequestWdmGetIrp(request: WDFREQUEST) -> PIRP;
-    fn WdfRequestReuse(request: WDFREQUEST, params: *mut WDF_REQUEST_REUSE_PARAMS) -> NTSTATUS;
-    fn WdfIoTargetFormatRequestForInternalIoctlOthers( target: WDFIOTARGET, request: WDFREQUEST, ioctl_code: u32, input_buffer: *mut core::ffi::c_void, output_buffer: *mut core::ffi::c_void, input_buffer_length: *mut u32, output_buffer_length: *mut u32, event: *mut core::ffi::c_void, completion_routine: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn DeviceMarkActive(dev_ext: *mut CDROM_DEVICE_EXTENSION, active: u8, something: u8);
-    fn WdfWaitLockAcquire(lock: WDFWAITLOCK, timeout: *mut core::ffi::c_void) -> NTSTATUS;
-    fn WdfWaitLockRelease(lock: WDFWAITLOCK);
-    fn WdfIoQueueStopSynchronously(queue: WDFQUEUE);
-    fn WdfIoQueueStart(queue: WDFQUEUE);
-    fn WdfIoTargetGetDevice(Target: WDFIOTARGET) -> WDFDEVICE;
 }
 
 const SCSIOP_MEDIUM_REMOVAL: u8 = 0x1E;

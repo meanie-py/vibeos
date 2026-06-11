@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -18,13 +20,9 @@ extern "C" {
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> NTSTATUS;
     fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn TracePrint(Level: ULONG, Flags: ULONG, fmt: *const i8, ...);
-    fn WdfRequestSetCompletionRoutine( Request: *mut core::ffi::c_void, CompletionRoutine: *const core::ffi::c_void, Context: *mut core::ffi::c_void, );
 }
 extern "system" {
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
-    fn WdfDeviceOpenRegistryKey( Device: WDFDEVICE, DeviceInstanceKeyType: usize, DesiredAccess: u32, ObjectAttributes: *mut core::ffi::c_void, // PWDF_OBJECT_ATTRIBUTES Key: *mut WDFKEY, ) -> i32; // NTSTATUS fn WdfRegistryOpenKey( Key: WDFKEY, SubkeyName: *const _UNICODE_STRING, DesiredAccess: u32, ObjectAttributes: *mut core::ffi::c_void, SubKey: *mut WDFKEY, ) -> i32;
-    fn WdfRegistryAssignULong( Key: WDFKEY, ValueName: *const _UNICODE_STRING, Value: u32, ) -> i32;
-    fn WdfRegistryClose(Key: WDFKEY);
     fn RtlULongAdd(ul1: u32, ul2: u32, pulRes: *mut u32) -> NTSTATUS;
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn InterlockedIncrement(p: *mut i32) -> i32;
@@ -33,33 +31,17 @@ extern "system" {
     fn DvdSendKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, KeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, param3: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, InKeyLength: usize, OutCopyProtectKey: *mut DVD_COPY_PROTECT_KEY, OutKeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn ReadDvdStructure( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, ReadStructure: *mut DVD_READ_STRUCTURE, ReadLength: usize, ReadStructureOut: *mut DVD_READ_STRUCTURE, DescriptorLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
-    fn WdfDriverOpenParametersRegistryKey( Driver: *mut core::ffi::c_void, DesiredAccess: u32, KeyAttributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn WdfGetDriver() -> *mut core::ffi::c_void;
-    fn WdfRegistryQueryULong( Key: *mut core::ffi::c_void, ValueName: *const ntkrnl_sys::base::_UNICODE_STRING, Value: *mut u32, ) -> NTSTATUS;
-    fn WdfDeviceCreateDeviceInterface(Device: *mut core::ffi::c_void, InterfaceGuid: *const GUID, ReferenceString: *const u16) -> i32;
-    fn WdfDeviceRetrieveDeviceInterfaceString(Device: *mut core::ffi::c_void, InterfaceGuid: *const GUID, ReferenceString: *const u16, String: isize) -> i32;
-    fn WdfStringCreate(Attributes: isize, StringAttributes: *mut u32, String: *mut isize) -> i32;
-    fn WdfStringGetUnicodeString(String: isize, UnicodeString: *mut _UNICODE_STRING);
-    fn WdfObjectDelete(Object: isize);
     fn KeGetCurrentIrql() -> KIRQL;
     static GUID_DEVINTERFACE_CDROM: GUID;
     static MOUNTDEV_MOUNTED_DEVICE_GUID: GUID;
     fn DeviceRetrieveDescriptor( Device: PDEVICE_OBJECT, PropertyId: *mut STORAGE_PROPERTY_ID, Descriptor: *mut *mut STORAGE_DESCRIPTOR_HEADER, ) -> NTSTATUS;
-    fn WdfRequestRetrieveOutputBuffer( Request: WDFREQUEST, MinimumRequiredLength: usize, Buffer: *mut *mut core::ffi::c_void, Length: *mut usize, ) -> NTSTATUS;
     fn min(a: u32, b: u32) -> u32;
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
-    fn WdfRequestGetParameters(Request: WDFREQUEST, params: *mut WDF_REQUEST_PARAMETERS);
-    fn WdfRequestWdmGetIrp(Request: WDFREQUEST) -> *mut IRP;
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
-    fn WdfRequestCompleteWithInformation(Request: WDFREQUEST, Status: NTSTATUS, Information: usize);
-    fn WdfRequestGetStatus(Request: WDFREQUEST) -> NTSTATUS;
-    fn WdfRequestGetInformation(Request: WDFREQUEST) -> usize;
     fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32);
-    fn WdfRequestSend(Request: WDFREQUEST, Target: WDFIOTARGET, Options: *mut WDF_REQUEST_SEND_OPTIONS) -> BOOLEAN;
     fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
-    fn WdfRegistryOpenKey( Key: *mut core::ffi::c_void, SubkeyName: *const _UNICODE_STRING, DesiredAccess: u32, ObjectAttributes: *mut core::ffi::c_void, Subkey: *mut *mut core::ffi::c_void, ) -> u32;
     fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;
     fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> i32;
     fn DeviceSetMediaChangeStateEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, newState: i32, previousState: *mut i32);
@@ -67,27 +49,15 @@ extern "system" {
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
     fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     static GUID_IO_CDROM_EXCLUSIVE_UNLOCK: GUID;
-    fn WdfRequestFormatRequestUsingCurrentType(Request: WDFREQUEST);
-    fn WdfRequestIsCanceled(Request: WDFREQUEST) -> BOOLEAN;
-    fn WdfMemoryCreatePreallocated( Attributes: *mut WDF_OBJECT_ATTRIBUTES, Buffer: *mut core::ffi::c_void, Length: usize, Memory: *mut WDFMEMORY, ) -> NTSTATUS;
-    fn WdfRequestCreate( Attributes: *mut WDF_OBJECT_ATTRIBUTES, IoTarget: WDFIOTARGET, Request: *mut WDFREQUEST, ) -> NTSTATUS;
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn WdfSpinLockAcquire(SpinLock: WDFSPINLOCK);
-    fn WdfSpinLockRelease(SpinLock: WDFSPINLOCK);
     fn DeviceMarkActive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, arg1: u8, arg2: u8);
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
     fn PORT_ALLOCATED_SENSE(deviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> u8;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void);
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: i32);
-    fn WdfIoTargetFormatRequestForInternalIoctlOthers( iotarget: WDFIOTARGET, request: WDFREQUEST, ioctlCode: u32, arg4: *mut core::ffi::c_void, arg5: *mut core::ffi::c_void, arg6: *mut core::ffi::c_void, arg7: *mut core::ffi::c_void, arg8: *mut core::ffi::c_void, arg9: *mut core::ffi::c_void, ) -> i32;
-    fn WdfRequestReuse(request: WDFREQUEST, params: *mut WDF_REQUEST_REUSE_PARAMS) -> i32;
     fn PagedCode();
     fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32;
-    fn WdfWorkItemGetParentObject(WorkItem: WDFWORKITEM) -> WDFDEVICE;
     fn REVERSE_BYTES_SHORT(dest: *mut u16, src: *const u32);
-    fn WdfWaitLockAcquire(Lock: *mut core::ffi::c_void, Timeout: *mut core::ffi::c_void) -> NTSTATUS;
-    fn WdfWaitLockRelease(Lock: *mut core::ffi::c_void);
-    fn WdfRequestGetFileObject(Request: WDFREQUEST) -> WDFFILEOBJECT;
     fn FileObjectGetContext(FileObject: WDFFILEOBJECT) -> *mut FILE_OBJECT_CONTEXT;
 }
 
@@ -562,7 +532,6 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
     const TRACE_LEVEL_INFORMATION: u32 = 4;
     const TRACE_FLAG_POWER: u32 = 0x00000010;
     const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
-    const 0i32: u32 = 0;
     const IoReadAccess: u32 = 0;
     const IoWriteAccess: u32 = 1;
 

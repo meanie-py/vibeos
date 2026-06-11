@@ -1,3 +1,5 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::base::NT_SUCCESS;
@@ -17,10 +19,6 @@ extern "C" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn WdfGetDriver() -> *mut core::ffi::c_void;
-    fn WdfDriverOpenParametersRegistryKey( Driver: *mut core::ffi::c_void, DesiredAccess: u32, Attributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void, ) -> i32;
-    fn WdfRegistryQueryULong( Key: *mut core::ffi::c_void, ValueName: *const _UNICODE_STRING, Value: *mut u32, ) -> i32;
-    fn WdfRegistryClose(Key: *mut core::ffi::c_void);
     fn PAGED_CODE();
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
     fn DeviceSendSrbSynchronously(device: PDEVICE_OBJECT, srb: *mut SCSI_REQUEST_BLOCK, buffer: *mut core::ffi::c_void, length: u32, request_sense: u8, sense_info: *mut u8) -> NTSTATUS;

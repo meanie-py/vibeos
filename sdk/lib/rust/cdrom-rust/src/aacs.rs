@@ -1,11 +1,11 @@
+use crate::types::*;
+use kmdf_sys::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn WdfRequestRetrieveInputBuffer( Request: WDFREQUEST, MinimumRequiredLength: u32, Buffer: *mut *mut core::ffi::c_void, Length: *mut usize, ) -> i32;
-    fn WdfRequestRetrieveOutputBuffer( Request: WDFREQUEST, MinimumRequiredLength: u32, Buffer: *mut *mut core::ffi::c_void, Length: *mut usize, ) -> i32;
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, TransferSize: u32, Retry: u8, Cdb: *const core::ffi::c_void, CdbLength: u32, ) -> i32;
