@@ -4,6 +4,7 @@ members = [
     "dnslib-rust",
     "skiplist-rust",
     "rtl-data",
+    "rtl-heappage",
     "access",
     "avltable",
     "bitmap",
