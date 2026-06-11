@@ -83,9 +83,12 @@ unsafe fn RosGetProcessCompatVersion() -> DWORD {
     0
 }
 
-/// `RtlInitEmptyUnicodeString` — FORCEINLINE in rtlfuncs.h (no symbol).
-#[inline(always)]
-unsafe fn RtlInitEmptyUnicodeString(s: *mut UNICODE_STRING, buffer: PWSTR, buffer_size: USHORT) {
+/// `RtlInitEmptyUnicodeString` — FORCEINLINE in rtlfuncs.h. On amd64/arm64 the workspace firewall
+/// (lto=false, cgu=256) can prevent the cross-cgu `#[inline(always)]` from firing, leaving an
+/// out-of-line reference to the unmangled symbol. `#[no_mangle]` emits it so the link resolves
+/// (i386 inlines fine; the symbol is dead-stripped there).
+#[no_mangle]
+pub unsafe extern "C" fn RtlInitEmptyUnicodeString(s: *mut UNICODE_STRING, buffer: PWSTR, buffer_size: USHORT) {
     (*s).Length = 0;
     (*s).MaximumLength = buffer_size;
     (*s).Buffer = buffer;
