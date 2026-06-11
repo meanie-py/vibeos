@@ -3,6 +3,7 @@ members = [
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",
+    "rtl-data",
     "access",
     "avltable",
     "bitmap",
