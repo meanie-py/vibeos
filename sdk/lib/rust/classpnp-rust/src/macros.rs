@@ -17,7 +17,7 @@ macro_rules! FIELD_OFFSET { ($t:ty, $f:tt) => { ::core::mem::offset_of!($t, $f) 
 
 /// TEST_FLAG(Flags, Bit) — nonzero test, like C's TEST_FLAG.
 #[macro_export]
-macro_rules! TEST_FLAG { ($f:expr, $b:expr) => { (($f) & (($b) as _)) != 0 } }
+macro_rules! TEST_FLAG { ($f:expr, $b:expr) => { (($f as u64) & (($b) as u64)) != 0 } }
 
 /// REVERSE_BYTES(Dest, Src) — reverse a 4-byte (ULONG) big/little-endian field in place.
 /// Accepts either a raw pointer or an `&mut`/`&` (deref + re-addr normalizes both to *u8).
@@ -46,9 +46,19 @@ macro_rules! REVERSE_BYTES_QUAD {
 
 /// SET_FLAG(Flags, Bit) / CLEAR_FLAG — in-place flag mutation, like the C macros.
 #[macro_export]
-macro_rules! SET_FLAG { ($f:expr, $b:expr) => { $f |= ($b) as _ } }
+macro_rules! SET_FLAG { ($f:expr, $b:expr) => { $f = (($f as u64) | (($b) as u64)) as _; } }
 #[macro_export]
-macro_rules! CLEAR_FLAG { ($f:expr, $b:expr) => { $f &= !(($b) as _) } }
+macro_rules! CLEAR_FLAG { ($f:expr, $b:expr) => { $f = (($f as u64) & !(($b) as u64)) as _; } }
+
+/// abi_cast! — coerce a classpnp callback fn-item (defined `extern "system"`/`"stdcall"`)
+/// into a bindgen DDK fn-pointer field type. On i386 DDK callbacks are `extern "stdcall"`,
+/// on amd64/arm64 `extern "C"`; Rust treats these as distinct nominal types even though the
+/// machine code is identical. The `$func as usize` → `transmute` round-trip bridges them.
+/// Mirrors `ntoskrnl-rust`'s `abi_cast!`.
+#[macro_export]
+macro_rules! abi_cast {
+    ($func:expr) => { unsafe { ::core::mem::transmute($func as usize) } };
+}
 
 /// NT_ASSERTMSG(Msg, Expr) — debug assertion with message; no-op in the translation.
 #[macro_export]

@@ -106,13 +106,29 @@ pub unsafe extern "C" fn ClasspInitializeDebugGlobals() {
     let initializing_ptr = core::ptr::addr_of_mut!(ClasspnpGlobals.Initializing);
     let cmp_result: i32;
 
-    core::arch::asm!(
-        "lock cmpxchg [{dest}], {src}",
-        dest = in(reg) initializing_ptr,
-        src = in(reg) 1i32,
-        inout("eax") 0i32 => cmp_result,
-        options(nostack, preserves_flags)
-    );
+    // InterlockedCompareExchange(Initializing, 1, 0) — one-time init guard.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        core::arch::asm!(
+            "lock cmpxchg [{dest}], {src}",
+            dest = in(reg) initializing_ptr,
+            src = in(reg) 1i32,
+            inout("eax") 0i32 => cmp_result,
+            options(nostack, preserves_flags)
+        );
+    }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        let atomic = &*(initializing_ptr as *const core::sync::atomic::AtomicI32);
+        cmp_result = match atomic.compare_exchange(
+            0, 1,
+            core::sync::atomic::Ordering::SeqCst,
+            core::sync::atomic::Ordering::SeqCst,
+        ) {
+            Ok(v) => v,
+            Err(v) => v,
+        };
+    }
 
     if cmp_result == 0 {
         KeInitializeSpinLock(core::ptr::addr_of_mut!(ClasspnpGlobals.SpinLock).cast());
@@ -218,7 +234,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
             );
         }
         if (*(*Pkt).Irp).IoStatus.Information
-            != (((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64) as u32
+            != (((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64) as _
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,
@@ -264,7 +280,7 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
         // If SRB failed with underrun/overrun, check transferred length
         if srb_status == (SRB_STATUS_DATA_OVERRUN) as i32
             && (*(*Pkt).Irp).IoStatus.Information
-                != (((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64) as u32
+                != (((SrbGetDataTransferLength((*Pkt).Srb as *mut core::ffi::c_void) as u64) as u32) as u64) as _
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,

@@ -14,7 +14,7 @@ use ntkrnl_sys::ddk::{KeGetCurrentIrql};
 
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
-pub unsafe extern "stdcall" fn ClassInitializeDispatchTables(DriverExtension: *mut _CLASS_DRIVER_EXTENSION) {
+pub unsafe extern "system" fn ClassInitializeDispatchTables(DriverExtension: *mut _CLASS_DRIVER_EXTENSION) {
     if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
@@ -37,32 +37,32 @@ pub unsafe extern "stdcall" fn ClassInitializeDispatchTables(DriverExtension: *m
     let mut idx: u32 = 0;
     while idx <= IRP_MJ_MAXIMUM_FUNCTION as u32 {
         table[idx as usize] =
-            Some(ClassDispatchUnimplemented as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+            Some(abi_cast!(ClassDispatchUnimplemented));
         idx = idx.wrapping_add(1);
     }
 
     table[IRP_MJ_CREATE as usize] =
-        Some(ClassCreateClose as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassCreateClose);
     table[IRP_MJ_CLOSE as usize] =
-        Some(ClassCreateClose as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassCreateClose);
     table[IRP_MJ_READ as usize] =
-        Some(ClassReadWrite as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassReadWrite);
     table[IRP_MJ_WRITE as usize] =
-        Some(ClassReadWrite as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassReadWrite);
     table[IRP_MJ_DEVICE_CONTROL as usize] =
-        Some(ClassDeviceControlDispatch as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassDeviceControlDispatch);
     table[IRP_MJ_SCSI as usize] =
-        Some(ClassInternalIoControl as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassInternalIoControl);
     table[IRP_MJ_SHUTDOWN as usize] =
-        Some(ClassShutdownFlush as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassShutdownFlush);
     table[IRP_MJ_FLUSH_BUFFERS as usize] =
-        Some(ClassShutdownFlush as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassShutdownFlush);
     table[IRP_MJ_PNP as usize] =
-        Some(ClassDispatchPnp as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassDispatchPnp);
     table[IRP_MJ_POWER as usize] =
-        Some(ClassDispatchPower as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassDispatchPower);
     table[IRP_MJ_SYSTEM_CONTROL as usize] =
-        Some(ClassSystemControl as unsafe extern "stdcall" fn(*mut _DEVICE_OBJECT, *mut _IRP) -> NTSTATUS);
+        Some(ClassSystemControl);
 }
 #[no_mangle]
 pub unsafe extern "system" fn ClassGlobalDispatch(
@@ -75,7 +75,7 @@ pub unsafe extern "system" fn ClassGlobalDispatch(
     dispatch_fn.expect("non-null function pointer")(DeviceObject, Irp)
 }
 #[no_mangle]
-pub unsafe extern "stdcall" fn ClassDispatchUnimplemented(
+pub unsafe extern "system" fn ClassDispatchUnimplemented(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {

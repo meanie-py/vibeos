@@ -23,7 +23,11 @@ use ntkrnl_sys::ddk::{_GUID};
 use crate::shims::*;
 use crate::types::{CLASSENABLEDISABLEFUNCTION_EventGeneration as EventGeneration, CLASSENABLEDISABLEFUNCTION_DataBlockCollection as DataBlockCollection};
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::ddk::{ExFreePool, KeGetCurrentIrql, KeQuerySystemTime};
+use ntkrnl_sys::ddk::{ExFreePool, KeGetCurrentIrql};
+#[cfg(target_arch = "x86")]
+use ntkrnl_sys::ddk::KeQuerySystemTime;
+#[cfg(not(target_arch = "x86"))]
+use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{__BindgenUnionField, PWMIREGINFO, PWMIREGINFOW, PWNODE_ALL_DATA, PWNODE_HEADER, PWNODE_METHOD_ITEM, PWNODE_SINGLE_INSTANCE, PWNODE_SINGLE_ITEM, WMIREGGUIDW, WMIREGGUIDW__bindgen_ty_1, WMIREGINFO, WNODE_ALL_DATA, WNODE_METHOD_ITEM, WNODE_SINGLE_INSTANCE, WNODE_TOO_SMALL};
 
@@ -184,7 +188,7 @@ pub unsafe extern "system" fn ClassSystemControl(
     let minorFunction = (*irpStack).MinorFunction;
 
     if (minorFunction as i32 > (IRP_MN_EXECUTE_METHOD) as i32)
-        || ((*irpStack).Parameters.WMI.ProviderId != (((DeviceObject as ULONG_PTR) as u32) as u64) as u32)
+        || ((*irpStack).Parameters.WMI.ProviderId != (((DeviceObject as ULONG_PTR) as u32) as u64) as _)
         || (minorFunction as i32 != (IRP_MN_REGINFO) as i32 && (*commonExtension).GuidCount == 0)
     {
         IoSkipCurrentIrpStackLocation(Irp);
@@ -364,7 +368,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                                 BaseNameOffset: __BindgenUnionField::new(),
                                 Pdo: __BindgenUnionField::new(),
                                 InstanceInfo: __BindgenUnionField::new(),
-                                bindgen_union_field: ((nameInfo as u32) as u64) as u32,
+                                bindgen_union_field: ((nameInfo as u32) as u64) as _,
                             },
                             InstanceCount: 1,
                         });
@@ -382,7 +386,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                                 BaseNameOffset: __BindgenUnionField::new(),
                                 Pdo: __BindgenUnionField::new(),
                                 InstanceInfo: __BindgenUnionField::new(),
-                                bindgen_union_field: ((nameInfo as u32) as u64) as u32,
+                                bindgen_union_field: ((nameInfo as u32) as u64) as _,
                             },
                             InstanceCount: 1,
                         });
@@ -472,7 +476,7 @@ pub unsafe extern "system" fn ClassSystemControl(
             }
 
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
-            (*Irp).IoStatus.Information = (((retSize as ULONG_PTR) as u32) as u64) as u32;
+            (*Irp).IoStatus.Information = (((retSize as ULONG_PTR) as u32) as u64) as _;
             ClassReleaseRemoveLock(DeviceObject, Irp);
             ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
             return status;
@@ -827,7 +831,7 @@ pub unsafe extern "system" fn ClassWmiCompleteRequest(
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    (*Irp).IoStatus.Information = (((retSize as ULONG_PTR) as u32) as u64) as u32;
+    (*Irp).IoStatus.Information = (((retSize as ULONG_PTR) as u32) as u64) as _;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, PriorityBoost);
     Status

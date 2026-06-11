@@ -137,7 +137,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
             retry = 1u8;
         }
 
-        let arg4_as_u32 = &mut (*irp_stack).Parameters.Others.Argument4 as *mut _ as *mut u32;
+        let arg4_as_u32 = core::ptr::addr_of_mut!((*irp_stack).Parameters.Others.Argument4) as *mut _ as *mut u32;
         if retry != 0 && *arg4_as_u32 != 0 {
             *arg4_as_u32 -= 1;
 
@@ -178,7 +178,7 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
     }
 
     irp_count = InterlockedDecrement(
-        &(*irp_stack).Parameters.Others.Argument1 as *const _ as *mut i32
+        core::ptr::addr_of!((*irp_stack).Parameters.Others.Argument1) as *const _ as *mut i32
     );
 
     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL, b"ClassIoCompleteAssociated: Partial IRPs left %d\n\0".as_ptr() as *const i8, irp_count as i32);

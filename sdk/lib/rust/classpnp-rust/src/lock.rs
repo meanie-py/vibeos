@@ -142,9 +142,9 @@ pub unsafe extern "C" fn ClasspInitializeRemoveTracking(DeviceObject: PDEVICE_OB
         if !(*commonExtension).RemoveTrackingList.is_null() {
             RtlInitializeGenericTable(
                 ((*commonExtension).RemoveTrackingList).cast(),
-                Some(RemoveTrackingCompareRoutine),
-                Some(RemoveTrackingAllocateRoutine),
-                Some(RemoveTrackingFreeRoutine),
+                Some(abi_cast!(RemoveTrackingCompareRoutine)),
+                Some(abi_cast!(RemoveTrackingAllocateRoutine)),
+                Some(abi_cast!(RemoveTrackingFreeRoutine)),
                 core::ptr::null_mut(),
             );
         }

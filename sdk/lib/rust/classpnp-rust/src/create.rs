@@ -81,7 +81,7 @@ static LockTypeStrings: SyncPcszArr = SyncPcszArr([
     b"Internal\0".as_ptr() as PCSZ,
 ]);
 #[no_mangle]
-pub unsafe extern "C" fn ClassCreateClose(
+pub unsafe extern "system" fn ClassCreateClose(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {

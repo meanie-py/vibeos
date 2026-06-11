@@ -73,7 +73,10 @@ use crate::shims::*;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::debug::{ClasspInitializeDebugGlobals, SnapDiskStartup};
 use crate::types::{BuildDeviceInputMdl, ClassDetermineTokenOperationCommandSupport, ClassForwardIrpSynchronous, ClassGetDescriptor, ClassGetDeviceParameter, ClassGetPdoId, ClassInitializeDispatchTables, ClassPnpQueryFdoRelations, ClassQueryPnpCapabilities, ClassRemoveDevice, ClassScanForSpecial, ClassSetDeviceParameter, ClasspAllocatePowerProcessIrp, ClasspAllocateReleaseQueueIrp, ClasspCalculateLogicalSectorSize, ClasspDeleteTimer, ClasspDisableTimer, ClasspEjectionControl, ClasspEnableIdlePower, ClasspEnableTimer, ClasspEnqueueIdleRequest, ClasspGetCopyOffloadMaxDuration, ClasspGetInquiryVpdSupportInfo, ClasspGetLBProvisioningInfo, ClasspInitializeHotplugInfo, ClasspInitializeIdleTimer, ClasspInitializeTimer, ClasspIsPortable, ClasspRegisterMountedDeviceInterface, ClasspScanForSpecialInRegistry, ClasspValidateOffloadSupported, ClasspZeroQERR, DequeueFreeTransferPacket, EnqueueDeferredClientIrp, EnqueueFreeTransferPacket, FreeDeviceInputMdl, InitLowMemRetry, InitializeStorageRequestBlock, InitializeTransferPackets, SetupDriveCapacityTransferPacket, SetupReadWriteTransferPacket, StepLowMemRetry, SubmitTransferPacket, TransferPacketQueueRetryDpc};
+#[cfg(target_arch = "x86")]
 use ntkrnl_sys::ddk::{KeQuerySystemTime};
+#[cfg(not(target_arch = "x86"))]
+use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::guid::{GUID_CONSOLE_DISPLAY_STATE};
 use crate::types::{AllFdosList, ClassBadItems, ClassGuidQueryRegInfoEx, ClassGuidSenseInfo2, ClassGuidSrbSupport, ClassGuidWorkingSet, MEDIA_LOCK_TYPE_InternalMediaLock};
@@ -637,7 +640,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                                 device_relations as *mut core::ffi::c_void,
                                 (core::mem::size_of::<DEVICE_RELATIONS>() as u32) as usize,
                             );
-                            (*Irp).IoStatus.Information = ((((device_relations as ULONG_PTR) as u32) as u64) as u32) as ULONG_PTR;
+                            (*Irp).IoStatus.Information = ((((device_relations as ULONG_PTR) as u32) as u64) as u32) as _;
                             (*device_relations).Count = 1;
                             (*device_relations).Objects[0] = DeviceObject;
                             ObReferenceObject((DeviceObject).cast());
@@ -681,7 +684,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     if status == STATUS_NOT_IMPLEMENTED {
                         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
                     } else if NT_SUCCESS(status) {
-                        (*Irp).IoStatus.Information = ((((unicode_string.Buffer as ULONG_PTR) as u32) as u64) as u32) as ULONG_PTR;
+                        (*Irp).IoStatus.Information = ((((unicode_string.Buffer as ULONG_PTR) as u32) as u64) as u32) as _;
                     } else {
                         (*Irp).IoStatus.Information = 0;
                     }
@@ -1324,7 +1327,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             );
             KeInitializeSpinLock(&raw mut (*(*fdo_extension).PrivateFdoData).Retry.Lock);
             (*(*fdo_extension).PrivateFdoData).Retry.Granularity = KeQueryTimeIncrement();
-            (*common_extension).Reserved4 = ((((u32::from_be_bytes([b' ', b'G', b'P', b'H']) as usize as ULONG_PTR) as u32) as u64) as u32) as ULONG_PTR; // debug aid
+            (*common_extension).Reserved4 = ((((u32::from_be_bytes([b' ', b'G', b'P', b'H']) as usize as ULONG_PTR) as u32) as u64) as u32) as _; // debug aid
             InitializeListHead(&raw mut (*(*fdo_extension).PrivateFdoData).DeferredClientIrpList);
             KeInitializeSpinLock(&raw mut (*(*fdo_extension).PrivateFdoData).SpinLock);
 
@@ -1533,7 +1536,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             PoRegisterPowerSettingCallback(
                 device_object,
                 &GUID_CONSOLE_DISPLAY_STATE,
-                ClasspPowerSettingCallback,
+                abi_cast!(ClasspPowerSettingCallback),
                 core::ptr::null_mut(),
                 &raw mut ScreenStateNotificationHandle,
             );
@@ -1827,7 +1830,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
             _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
             status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
 
-            if NT_SUCCESS(status) && pseudoIrp.IoStatus.Information < (((readCapacityDataSize) as u64) as u32) as ULONG_PTR {
+            if NT_SUCCESS(status) && pseudoIrp.IoStatus.Information < (((readCapacityDataSize) as u64) as u32) as _ {
                 TracePrint(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_INIT,
@@ -1852,7 +1855,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                     SubmitTransferPacket(pkt);
                     _ = KeWaitForSingleObject(&mut event as *mut _ as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
                     status = pseudoIrp.IoStatus.__bindgen_anon_1.Status;
-                    if pseudoIrp.IoStatus.Information < (((readCapacityDataSize) as u64) as u32) as ULONG_PTR {
+                    if pseudoIrp.IoStatus.Information < (((readCapacityDataSize) as u64) as u32) as _ {
                         status = STATUS_DEVICE_BUSY;
                     }
                 } else {
@@ -2460,7 +2463,7 @@ pub unsafe extern "system" fn ClassIoComplete(
 
         // Retry logic
         if retry != 0 {
-            let arg4_ptr = &mut (*irpStack).Parameters.Others.Argument4;
+            let arg4_ptr = core::ptr::addr_of_mut!((*irpStack).Parameters.Others.Argument4);
             let count = *arg4_ptr as usize as u32;
             if count > 0 {
                 *arg4_ptr = (count - 1) as PVOID;
