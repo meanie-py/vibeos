@@ -8,6 +8,7 @@ edition = "2021"
 [lib]
 name = "dnslib_rust"
 path = "src/lib.rs"
+crate-type = ["staticlib"]
 
 [dependencies]
 ntdll-sys = { path = "../ntdll-sys" }

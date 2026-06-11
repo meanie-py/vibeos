@@ -14,3 +14,14 @@ pub mod dnslib {
     pub mod straddr;
     pub mod string;
 }
+
+// staticlib (lib<name>_rust.a) needs its own panic_handler/eh_personality;
+// absorbed by --allow-multiple-definition at the consumer link (cohab pattern,
+// mirrors lsalib-rust). Gated on not(test) so host unit tests stay std.
+#[cfg(not(test))]
+#[panic_handler]
+fn rust_cohab_panic(_info: &core::panic::PanicInfo) -> ! { loop {} }
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
