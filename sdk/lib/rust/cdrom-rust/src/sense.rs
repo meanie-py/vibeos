@@ -8,12 +8,14 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusRelations, IO_ERROR_LOG_PACKET, IoAllocateErrorLogEntry, IoGetCurrentIrpStackLocation, IoInvalidateDeviceRelations, IoWriteErrorLogEntry, KeQueryTimeIncrement, LARGE_INTEGER, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIRP, PNTSTATUS};
+use ntkrnl_sys::ddk::{IO_ERROR_LOG_PACKET, IoAllocateErrorLogEntry, IoGetCurrentIrpStackLocation, IoInvalidateDeviceRelations, IoWriteErrorLogEntry, KeQueryTimeIncrement, LARGE_INTEGER, PIO_ERROR_LOG_PACKET, PNTSTATUS};
+use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_BusRelations as BusRelations;
 use core::ffi::c_void;
 use core::ptr;
 
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+    fn KeQueryTickCount(CurrentCount: *mut i64);
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
     fn IS_SCSIOP_READWRITE(opCode: u8) -> i32;
@@ -24,6 +26,7 @@ extern "C" {
     fn PAGED_CODE();
     fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
+    static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Guid: *const GUID, DataSize: u32, Data: *const core::ffi::c_void, ) -> NTSTATUS;
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
 }
@@ -55,72 +58,61 @@ pub struct ERROR_LOG_CONTEXT {
 }
 pub type PERROR_LOG_CONTEXT = *mut ERROR_LOG_CONTEXT;
 
-// Forward declarations for external symbols used in this function
-unsafe extern "system" {
-    fn TracePrint(Level: i32, Flags: i32, Format: *const i8, ...);
+// Forward declarations for external symbols used in this file.
+extern "C" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
     fn WDF_WORKITEM_CONFIG_INIT(
         config: *mut WDF_WORKITEM_CONFIG,
-        func: Option<unsafe extern "system" fn(WDFWORKITEM)>,
+        func: Option<unsafe extern "C" fn(WDFWORKITEM)>,
     );
-}
-
-// Assumed callback prototype
-unsafe extern "system" {
     fn DeviceRestoreDefaultSpeed(work_item: WDFWORKITEM);
 }
 
-// Constants used in the body (values typical; adjust if needed) -----------------------------------
-const TRACE_LEVEL_INFORMATION: i32 = 4;
-const TRACE_LEVEL_WARNING: i32 = 2;
-const TRACE_FLAG_GENERAL: i32 = 1;
-const SRB_STATUS_AUTOSENSE_VALID: u8 = 0x01;
-const CdromMmcUpdateRequired: u32 = 1;
-const SCSI_SENSE_NOT_READY: u8 = 0x02;
-const SCSI_ADSENSE_NO_MEDIA_IN_DEVICE: u8 = 0x3A;
-const SCSI_ADSENSE_LUN_NOT_READY: u8 = 0x04;
-const SCSI_SENSEQ_BECOMING_READY: u8 = 0x01;
-const SCSI_SENSEQ_OPERATION_IN_PROGRESS: u8 = 0x00;  // real value unknown, keep as comment anchor
-const SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS: u8 = 0x08;
-const SCSIOP_READ: u8 = 0x28;
-const SCSIOP_READ6: u8 = 0x08;
-const SCSIOP_READ_CAPACITY: u8 = 0x25;
-const SCSIOP_READ_CD: u8 = 0xBE;
-const SCSIOP_READ_CD_MSF: u8 = 0xB9;
-const SCSIOP_READ_TOC: u8 = 0x43;
-const SCSIOP_WRITE: u8 = 0x2A;
-const SCSIOP_WRITE6: u8 = 0x0A;
-const SCSIOP_READ_TRACK_INFORMATION: u8 = 0x52;
-const SCSIOP_READ_DISK_INFORMATION: u8 = 0x51;
-const SCSI_SENSE_UNIT_ATTENTION: u8 = 0x06;
-const SCSI_ADSENSE_MEDIUM_CHANGED: u8 = 0x28;
-const SCSI_ADSENSE_BUS_RESET: u8 = 0x29;
-const SCSI_ADSENSE_OPERATOR_REQUEST: u8 = 0x5A;
-const SCSI_SENSEQ_MEDIUM_REMOVAL: u8 = 0x01;
-const SCSI_SENSEQ_WRITE_PROTECT_DISABLE: u8 = 0x03;
-const SCSI_SENSEQ_WRITE_PROTECT_ENABLE: u8 = 0x04;
-const SCSI_SENSE_ILLEGAL_REQUEST: u8 = 0x05;
-const SCSI_ADSENSE_WRITE_PROTECT: u8 = 0x27;
-const SCSIOP_SEND_KEY: u8 = 0xA4;  // approximate, check SCSI
-const DvdSetRpcKey: u8 = 0x01;
-const SCSI_ADSENSE_COPY_PROTECTION_FAILURE: u8 = 0x0C;
-const SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT: u8 = 0x02;
-const SCSI_ADSENSE_INVALID_MEDIA: u8 = 0x06;
-const SCSI_SENSEQ_INCOMPATIBLE_FORMAT: u8 = 0x02;
-const STATUS_DEVICE_BUSY: NTSTATUS = 0xC000009E as i32;
-const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = 0xC0000013 as i32;
-const STATUS_CSS_REGION_MISMATCH: NTSTATUS = 0xC0000409 as i32;  // guessed
+// -------- Constants used in the bodies (single definitions) --------
+// Trace levels/flags (TracePrint takes u32 args).
+const TRACE_LEVEL_ERROR: u32 = 1;
+const TRACE_LEVEL_WARNING: u32 = 2;
+const TRACE_LEVEL_INFORMATION: u32 = 4;
+const TRACE_LEVEL_VERBOSE: u32 = 5;
+const TRACE_FLAG_GENERAL: u32 = 0x1;
+const TRACE_FLAG_MCN: u32 = 0x2;
 
-// ------------------------------------------------------------------------------------------------
+// CdromMmcUpdateState enum value (UpdateState field is LONG/i32).
+const CdromMmcUpdateRequired: i32 = 1;
 
-const SRB_STATUS_AUTOSENSE_VALID: u32 = 0x10;
-const SCSI_SENSE_HARDWARE_ERROR: u8 = 0x04;
-const TRACE_LEVEL_ERROR: u32 = 0;
-const TRACE_FLAG_GENERAL: u32 = 0;
-const STATUS_DEVICE_NOT_READY: i32 = 0xC0000184;
+// MEDIA_CHANGE_DETECTION_STATE enum (classpnp.h)
+const MediaPresent: u32 = 1;
+const MediaNotPresent: u32 = 2;
+const MediaUnavailable: u32 = 3;
 
-const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00000002;
+// SRB status flag bits and codes (scsi.h). SrbStatus is UCHAR.
+const SRB_STATUS_SUCCESS: u32 = 0x01;
+const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
+const SRB_STATUS_AUTOSENSE_VALID: u8 = 0x80;
+const SRB_STATUS_MASK: u8 = 0x3F;
+const SRB_STATUS_INTERNAL_ERROR: u8 = 0x30;
+const SRB_STATUS_ABORTED: u32 = 0x02;
+const SRB_STATUS_ERROR: u32 = 0x04;
+const SRB_STATUS_INVALID_REQUEST: u32 = 0x06;
+const SRB_STATUS_INVALID_PATH_ID: u32 = 0x07;
+const SRB_STATUS_NO_DEVICE: u32 = 0x08;
+const SRB_STATUS_TIMEOUT: u32 = 0x09;
+const SRB_STATUS_SELECTION_TIMEOUT: u32 = 0x0A;
+const SRB_STATUS_COMMAND_TIMEOUT: u32 = 0x0B;
+const SRB_STATUS_BUS_RESET: u32 = 0x0E;
+const SRB_STATUS_PARITY_ERROR: u32 = 0x0F;
+const SRB_STATUS_NO_HBA: u32 = 0x11;
+const SRB_STATUS_DATA_OVERRUN: u32 = 0x12;
+const SRB_STATUS_UNEXPECTED_BUS_FREE: u32 = 0x13;
+const SRB_STATUS_PHASE_SEQUENCE_FAILURE: u32 = 0x14;
+const SRB_STATUS_REQUEST_FLUSHED: u32 = 0x16;
+const SRB_STATUS_INVALID_LUN: u32 = 0x20;
+const SRB_STATUS_INVALID_TARGET_ID: u32 = 0x21;
 
+const SRB_CLASS_FLAGS_PAGING: u32 = 0x40000000;
+const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x10000000;
+
+// SCSI sense keys (scsi.h). Compared against UCHAR fields -> u8.
 const SCSI_SENSE_NO_SENSE: u8 = 0x00;
 const SCSI_SENSE_RECOVERED_ERROR: u8 = 0x01;
 const SCSI_SENSE_NOT_READY: u8 = 0x02;
@@ -132,41 +124,124 @@ const SCSI_SENSE_DATA_PROTECT: u8 = 0x07;
 const SCSI_SENSE_BLANK_CHECK: u8 = 0x08;
 const SCSI_SENSE_ABORTED_COMMAND: u8 = 0x0B;
 
-const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0x1;
-const STATUS_DEVICE_NOT_READY: NTSTATUS = 0x2;
-const STATUS_MEDIA_WRITE_PROTECTED: NTSTATUS = 0x3;
-const STATUS_DEVICE_DATA_ERROR: NTSTATUS = 0x4;
-const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0x5;
-const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x6;
-const STATUS_NO_DATA_DETECTED: NTSTATUS = 0x7;
-const STATUS_SUCCESS: NTSTATUS = 0x0;
-const STATUS_INVALID_BLOCK_LENGTH: NTSTATUS = 0x8;
+// SCSI additional sense codes / qualifiers (scsi.h).
+const SCSI_ADSENSE_NO_MEDIA_IN_DEVICE: u8 = 0x3A;
+const SCSI_ADSENSE_LUN_NOT_READY: u8 = 0x04;
+const SCSI_ADSENSE_MEDIUM_CHANGED: u8 = 0x28;
+const SCSI_ADSENSE_BUS_RESET: u8 = 0x29;
+const SCSI_ADSENSE_OPERATOR_REQUEST: u8 = 0x5A;
+const SCSI_ADSENSE_WRITE_PROTECT: u8 = 0x27;
+const SCSI_ADSENSE_COPY_PROTECTION_FAILURE: u8 = 0x6F;
+const SCSI_ADSENSE_INVALID_MEDIA: u8 = 0x30;
+const SCSI_ADSENSE_ILLEGAL_BLOCK: u8 = 0x21;
+const SCSI_SENSEQ_BECOMING_READY: u8 = 0x01;
+const SCSI_SENSEQ_OPERATION_IN_PROGRESS: u8 = 0x07;
+const SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS: u8 = 0x08;
+const SCSI_SENSEQ_MEDIUM_REMOVAL: u8 = 0x01;
+const SCSI_SENSEQ_WRITE_PROTECT_ENABLE: u8 = 0x02;
+const SCSI_SENSEQ_WRITE_PROTECT_DISABLE: u8 = 0x03;
+const SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT: u8 = 0x04;
+const SCSI_SENSEQ_INCOMPATIBLE_FORMAT: u8 = 0x02;
+// Additional sense codes/quals used as u8 match arms (shadow substrate u32 consts).
+const SCSI_ADSENSE_NO_SEEK_COMPLETE: u8 = 0x02;
+const SCSI_ADSENSE_LUN_COMMUNICATION: u8 = 0x08;
+const SCSI_ADSENSE_REC_DATA_NOECC: u8 = 0x17;
+const SCSI_ADSENSE_REC_DATA_ECC: u8 = 0x18;
+const SCSI_ADSENSE_INVALID_CDB: u8 = 0x24;
+const SCSI_ADSENSE_INVALID_LUN: u8 = 0x25;
+const SCSI_ADSENSE_INSUFFICIENT_TIME_FOR_OPERATION: u8 = 0x2E;
+const SCSI_ADSENSE_OPERATING_CONDITIONS_CHANGED: u8 = 0x3F;
+const SCSI_ADSENSE_FAILURE_PREDICTION_THRESHOLD_EXCEEDED: u8 = 0x5D;
+const SCSI_SENSEQ_CAUSE_NOT_REPORTABLE: u8 = 0x00;
+const SCSI_SENSEQ_INIT_COMMAND_REQUIRED: u8 = 0x02;
+const SCSI_SENSEQ_MANUAL_INTERVENTION_REQUIRED: u8 = 0x03;
+const SCSI_SENSEQ_FORMAT_IN_PROGRESS: u8 = 0x04;
+const SCSI_SESNEQ_COMM_CRC_ERROR: u8 = 0x03;
+const SCSI_SENSEQ_UNKNOWN_FORMAT: u8 = 0x01;
+const SCSI_SENSEQ_CLEANING_CARTRIDGE_INSTALLED: u8 = 0x03;
+const SCSI_SENSEQ_AUTHENTICATION_FAILURE: u8 = 0x00;
+const SCSI_SENSEQ_KEY_NOT_PRESENT: u8 = 0x01;
+const SCSI_SENSEQ_KEY_NOT_ESTABLISHED: u8 = 0x02;
+const SCSI_SENSEQ_READ_OF_SCRAMBLED_SECTOR_WITHOUT_AUTHENTICATION: u8 = 0x03;
+const SCSI_SENSEQ_LOGICAL_UNIT_RESET_COUNT_ERROR: u8 = 0x05;
 
-const IO_ERR_BAD_BLOCK: u32 = 0x1;
-const IO_ERR_CONTROLLER_ERROR: u32 = 0x2;
-
-const TRACE_LEVEL_ERROR: u32 = 0x2;
-const TRACE_LEVEL_WARNING: u32 = 0x3;
-const TRACE_LEVEL_INFORMATION: u32 = 0x4;
-const TRACE_FLAG_GENERAL: u32 = 0x1;
-
-const DO_VERIFY_VOLUME: u32 = 0x00000002;
-
-// Placeholder constants - will be replaced by actual values from the driver
-const ERROR_LOG_MAXIMUM_SIZE: u32 = 500;
-const SRB_STATUS_AUTOSENSE_VALID: u32 = 0x40;
-const MAX_ADDITIONAL_SENSE_BYTES: u32 = 0x10000;
-const IO_WARNING_PAGING_FAILURE: i32 = 0x0B;
+// SCSI op codes (scsi.h). Cdb bytes are UCHAR -> u8.
+const SCSIOP_READ: u8 = 0x28;
+const SCSIOP_READ6: u8 = 0x08;
+const SCSIOP_READ_CAPACITY: u8 = 0x25;
+const SCSIOP_READ_CD: u8 = 0xBE;
+const SCSIOP_READ_CD_MSF: u8 = 0xB9;
+const SCSIOP_READ_TOC: u8 = 0x43;
+const SCSIOP_WRITE: u8 = 0x2A;
+const SCSIOP_WRITE6: u8 = 0x0A;
+const SCSIOP_READ_TRACK_INFORMATION: u8 = 0x52;
+const SCSIOP_READ_DISK_INFORMATION: u8 = 0x51;
+const SCSIOP_SEND_KEY: u8 = 0xA3;
 const SCSIOP_TEST_UNIT_READY: u8 = 0x00;
 const SCSIOP_SYNCHRONIZE_CACHE: u8 = 0x35;
-const SCSI_SENSE_ILLEGAL_REQUEST: u8 = 0x05;
-const SCSI_ADSENSE_ILLEGAL_BLOCK: u8 = 0x21;
-const SRB_CLASS_FLAGS_PAGING: u32 = 0x04;
-const NUM_ERROR_LOG_ENTRIES: u32 = 16;
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185;
+const SCSIOP_VERIFY: u8 = 0x2F;
+const SCSIOP_VERIFY16: u8 = 0x8F;
+const SCSIOP_MEDIUM_REMOVAL: u8 = 0x1E;
+const SCSIOP_MODE_SENSE: u8 = 0x1A;
+const SCSIOP_MODE_SENSE10: u8 = 0x5A;
+const SCSIOP_READ_CAPACITY16: u8 = 0x9E;
+const SCSIOP_RESERVE_UNIT: u8 = 0x16;
+const SCSIOP_RELEASE_UNIT: u8 = 0x17;
+const SCSIOP_RESERVE_UNIT10: u8 = 0x56;
+const SCSIOP_RELEASE_UNIT10: u8 = 0x57;
+const SCSIOP_READ12: u8 = 0xA8;
+const SCSIOP_WRITE12: u8 = 0xAA;
+const SCSIOP_GET_PERFORMANCE: u8 = 0xAC;
 
-const SRB_STATUS_SUCCESS: u8 = 0x01;
-const SRB_STATUS_QUEUE_FROZEN: u8 = 0x10;
+// DVD key format (ntddcdvd.h DVD_KEY_FORMAT enum).
+const DvdSetRpcKey: u8 = 0x6;
+
+// NT status codes (ntstatus.h).
+const STATUS_SUCCESS: NTSTATUS = 0x0;
+const STATUS_DEVICE_BUSY: NTSTATUS = 0x80000011u32 as i32;
+const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
+const STATUS_NO_DATA_DETECTED: NTSTATUS = 0x80000022u32 as i32;
+const STATUS_CLEANER_CARTRIDGE_INSTALLED: NTSTATUS = 0x80000027u32 as i32;
+const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000000Eu32 as i32;
+const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC0000010u32 as i32;
+const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = 0xC0000013u32 as i32;
+const STATUS_UNRECOGNIZED_MEDIA: NTSTATUS = 0xC0000014u32 as i32;
+const STATUS_NONEXISTENT_SECTOR: NTSTATUS = 0xC0000015u32 as i32;
+const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003Cu32 as i32;
+const STATUS_DEVICE_DATA_ERROR: NTSTATUS = 0xC000009Cu32 as i32;
+const STATUS_DEVICE_NOT_CONNECTED: NTSTATUS = 0xC000009Du32 as i32;
+const STATUS_MEDIA_WRITE_PROTECTED: NTSTATUS = 0xC00000A2u32 as i32;
+const STATUS_DEVICE_NOT_READY: NTSTATUS = 0xC00000A3u32 as i32;
+const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5u32 as i32;
+const STATUS_CANCELLED: NTSTATUS = 0xC0000120u32 as i32;
+const STATUS_INVALID_BLOCK_LENGTH: NTSTATUS = 0xC0000173u32 as i32;
+const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32;
+const STATUS_COPY_PROTECTION_FAILURE: NTSTATUS = 0xC0000305u32 as i32;
+const STATUS_CSS_AUTHENTICATION_FAILURE: NTSTATUS = 0xC0000306u32 as i32;
+const STATUS_CSS_KEY_NOT_PRESENT: NTSTATUS = 0xC0000307u32 as i32;
+const STATUS_CSS_KEY_NOT_ESTABLISHED: NTSTATUS = 0xC0000308u32 as i32;
+const STATUS_CSS_SCRAMBLED_SECTOR: NTSTATUS = 0xC0000309u32 as i32;
+const STATUS_CSS_REGION_MISMATCH: NTSTATUS = 0xC000030Au32 as i32;
+const STATUS_CSS_RESETS_EXHAUSTED: NTSTATUS = 0xC000030Bu32 as i32;
+
+// IO error log codes (ntiologc.h).
+const IO_ERR_BAD_BLOCK: NTSTATUS = 0xC0040007u32 as i32;
+const IO_ERR_CONTROLLER_ERROR: NTSTATUS = 0xC004000Bu32 as i32;
+const IO_ERR_NOT_READY: NTSTATUS = 0xC004000Fu32 as i32;
+const IO_RECOVERED_VIA_ECC: NTSTATUS = 0x80040021u32 as i32;
+const IO_WARNING_PAGING_FAILURE: NTSTATUS = 0x80040033u32 as i32;
+const IO_WRN_FAILURE_PREDICTED: NTSTATUS = 0x80040034u32 as i32;
+
+// Misc flags / sizes.
+const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
+const DO_VERIFY_VOLUME: u32 = 0x02;
+const DEV_SAFE_START_UNIT: u32 = 0x04;
+const SCSISTAT_BUSY: u8 = 0x08;
+const SCSISTAT_RESERVATION_CONFLICT: u8 = 0x18;
+const ERROR_LOG_MAXIMUM_SIZE: u32 = 500;
+const MAX_ADDITIONAL_SENSE_BYTES: u32 = 0x10000;
+const NUM_ERROR_LOG_ENTRIES: u32 = 16;
+const UNIT_100NS_PER_SECOND: i64 = 10_000_000;
 #[no_mangle]
 pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
@@ -175,15 +250,15 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
     Retry: *mut u8,  // PBOOLEAN -> *mut u8 (BOOLEAN is u8)
 ) -> NTSTATUS {
     let mut mediaChange: u8 = 0; // BOOLEAN
-    let cdb: *mut CDB = (*Srb).Cdb as *mut CDB;
+    let cdb: *mut CDB = (*Srb).Cdb.as_mut_ptr() as *mut CDB;
 
     // Check autosense validity
     if ((*Srb).SrbStatus & SRB_STATUS_AUTOSENSE_VALID) != 0 {
-        let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer;
+        let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
 
         // Outer switch on SenseKey
         'sense_switch: loop {
-            match ((*senseBuffer).SenseKey & 0xF) as u32 {
+            match ((*senseBuffer).SenseKey() & 0xF) as u32 {
                 code if code == SCSI_SENSE_NOT_READY as u32 => {
                     // SCSI_SENSE_NOT_READY
                     if (*senseBuffer).AdditionalSenseCode == SCSI_ADSENSE_NO_MEDIA_IN_DEVICE {
@@ -200,16 +275,16 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                         } else if ((*senseBuffer).AdditionalSenseCodeQualifier == SCSI_SENSEQ_OPERATION_IN_PROGRESS
                                    || (*senseBuffer).AdditionalSenseCodeQualifier == SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS)
                                   && (
-                                      *((*Srb).Cdb) == SCSIOP_READ
-                                      || *((*Srb).Cdb) == SCSIOP_READ6
-                                      || *((*Srb).Cdb) == SCSIOP_READ_CAPACITY
-                                      || *((*Srb).Cdb) == SCSIOP_READ_CD
-                                      || *((*Srb).Cdb) == SCSIOP_READ_CD_MSF
-                                      || *((*Srb).Cdb) == SCSIOP_READ_TOC
-                                      || *((*Srb).Cdb) == SCSIOP_WRITE
-                                      || *((*Srb).Cdb) == SCSIOP_WRITE6
-                                      || *((*Srb).Cdb) == SCSIOP_READ_TRACK_INFORMATION
-                                      || *((*Srb).Cdb) == SCSIOP_READ_DISK_INFORMATION
+                                      (*Srb).Cdb[0] == SCSIOP_READ
+                                      || (*Srb).Cdb[0] == SCSIOP_READ6
+                                      || (*Srb).Cdb[0] == SCSIOP_READ_CAPACITY
+                                      || (*Srb).Cdb[0] == SCSIOP_READ_CD
+                                      || (*Srb).Cdb[0] == SCSIOP_READ_CD_MSF
+                                      || (*Srb).Cdb[0] == SCSIOP_READ_TOC
+                                      || (*Srb).Cdb[0] == SCSIOP_WRITE
+                                      || (*Srb).Cdb[0] == SCSIOP_WRITE6
+                                      || (*Srb).Cdb[0] == SCSIOP_READ_TRACK_INFORMATION
+                                      || (*Srb).Cdb[0] == SCSIOP_READ_DISK_INFORMATION
                                   ) {
                             TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
                                        b"DeviceErrorHandlerForMmc: LONG_WRITE or OP_IN_PROGRESS for limited subset of cmds -- setting retry to TRUE\n\0".as_ptr() as *const i8);
@@ -281,8 +356,8 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                             _ => {
                                 TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
                                            b"DeviceErrorHandlerForMmc: Unit attention %02x/%02x\n\0".as_ptr() as *const i8,
-                                           (*senseBuffer).AdditionalSenseCode,
-                                           (*senseBuffer).AdditionalSenseCodeQualifier);
+                                           (*senseBuffer).AdditionalSenseCode as core::ffi::c_uint,
+                                           (*senseBuffer).AdditionalSenseCodeQualifier as core::ffi::c_uint);
                                 break 'unit_attention_inner;
                             }
                         }
@@ -305,20 +380,20 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
         } // end sense_switch
 
         // DVD region key handling (after switch)
-        if ((*cdb).CDB16.OperationCode == SCSIOP_SEND_KEY)
-            && ((*cdb).SEND_KEY.KeyFormat == DvdSetRpcKey)
+        if ((*cdb).CDB16.as_ref().OperationCode == SCSIOP_SEND_KEY)
+            && ((*cdb).SEND_KEY.as_ref().KeyFormat() == DvdSetRpcKey)
         {
             let sb = senseBuffer; // local alias
             if (*sb).AdditionalSenseCode == SCSI_ADSENSE_NO_MEDIA_IN_DEVICE {
                 *Status = STATUS_NO_MEDIA_IN_DEVICE;
                 *Retry = 0;
-            } else if (*sb).SenseKey == SCSI_SENSE_ILLEGAL_REQUEST
+            } else if (*sb).SenseKey() == SCSI_SENSE_ILLEGAL_REQUEST
                 && (*sb).AdditionalSenseCode == SCSI_ADSENSE_COPY_PROTECTION_FAILURE
                 && (*sb).AdditionalSenseCodeQualifier == SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT
             {
                 *Status = STATUS_CSS_REGION_MISMATCH;
                 *Retry = 0;
-            } else if (*sb).SenseKey == SCSI_SENSE_ILLEGAL_REQUEST
+            } else if (*sb).SenseKey() == SCSI_SENSE_ILLEGAL_REQUEST
                 && (*sb).AdditionalSenseCode == SCSI_ADSENSE_INVALID_MEDIA
                 && (*sb).AdditionalSenseCodeQualifier == SCSI_SENSEQ_INCOMPATIBLE_FORMAT
             {
@@ -337,11 +412,11 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
             let mut workItem: WDFWORKITEM = core::mem::zeroed();
 
             WDF_OBJECT_ATTRIBUTES_INIT(&mut attributes);
-            attributes.ParentObject = (*DeviceExtension).Device;
+            attributes.ParentObject = (*DeviceExtension).Device as WDFOBJECT;
 
             WDF_WORKITEM_CONFIG_INIT(&mut workitemConfig, Some(DeviceRestoreDefaultSpeed));
 
-            status = WdfWorkItemCreate(&workitemConfig, &attributes, &mut workItem);
+            status = WdfWorkItemCreate(&mut workitemConfig, &mut attributes, &mut workItem);
             if status & 0xC0000000 != 0 { // NT_SUCCESS is (Status >= 0) NOT ((status & 0xC0000000) == 0)
                 return STATUS_SUCCESS;
             }
@@ -365,11 +440,11 @@ pub unsafe extern "C" fn DeviceErrorHandlerForHitachiGD2000(
 ) -> i32 {
     let senseBuffer = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
 
-    if TEST_FLAG((*Srb).SrbStatus as u32, SRB_STATUS_AUTOSENSE_VALID) == 0 {
+    if TEST_FLAG((*Srb).SrbStatus as u32, SRB_STATUS_AUTOSENSE_VALID as u32) == 0 {
         return STATUS_SUCCESS; // nobody cares about this return value yet.
     }
 
-    if (((*senseBuffer).SenseKey & 0xf) as u8 == SCSI_SENSE_HARDWARE_ERROR)
+    if (((*senseBuffer).SenseKey() & 0xf) as u8 == SCSI_SENSE_HARDWARE_ERROR)
         && ((*senseBuffer).AdditionalSenseCode == 0x44u8)
     {
         TracePrint(
@@ -389,7 +464,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForHitachiGD2000(
         //       mechanism, but the completion routine on this will NOT
         //       call StartNextPacket(), so it's a temporary disruption
         //       of the serialization only.
-        DeviceSendStartUnit((*DeviceExtension).Device);
+        DeviceSendStartUnit((*DeviceExtension).Device as *mut DEVICE_OBJECT);
     }
 
     return STATUS_SUCCESS;
@@ -426,7 +501,7 @@ pub unsafe extern "C" fn SenseInfoRequestGetInformation(
                 }
 
                 // Inlined TEST_FLAG macro
-                *override_verify_volume = (((*original_irp_stack).Flags & SL_OVERRIDE_VERIFY_VOLUME) != 0) as i32;
+                *override_verify_volume = (((*original_irp_stack).Flags as u32 & SL_OVERRIDE_VERIFY_VOLUME) != 0) as i32;
             }
         }
 
@@ -581,10 +656,10 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *retry = 1;
                     *retry_interval_in_seconds = 0;
 
-                    if TEST_FLAG((*device_extension).DeviceFlags, DEV_SAFE_START_UNIT) != 0
+                    if TEST_FLAG((*device_extension).DeviceFlags as u32, DEV_SAFE_START_UNIT) != 0
                         && TEST_FLAG((*srb).SrbFlags, SRB_CLASS_FLAGS_LOW_PRIORITY) == 0
                     {
-                        DeviceSendStartUnit((*device_extension).Device);
+                        DeviceSendStartUnit((*device_extension).Device as *mut DEVICE_OBJECT);
                     }
                 }
             }
@@ -626,7 +701,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *retry = 0;
 
                     (*log_context).LogError =
-                        TEST_FLAG((*srb).SrbFlags, SRB_CLASS_FLAGS_PAGING) as i32;
+                        (TEST_FLAG((*srb).SrbFlags, SRB_CLASS_FLAGS_PAGING) != 0) as u8;
                     (*log_context).UniqueErrorValue = 256;
                     (*log_context).ErrorCode = IO_ERR_BAD_BLOCK as i32;
                 }
@@ -805,7 +880,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
 
             if IsVolumeMounted((*device_extension).DeviceObject) != 0 {
                 SET_FLAG(
-                    &mut (*(*(*device_extension).DeviceObject)).Flags,
+                    &mut (*(*device_extension).DeviceObject).Flags,
                     DO_VERIFY_VOLUME,
                 );
                 *status = STATUS_VERIFY_REQUIRED as i32;
@@ -826,7 +901,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
 
                     let _ = InterlockedIncrement(core::ptr::addr_of_mut!(
                         (*device_extension).MediaChangeCount
-                    ));
+                    ) as *mut i32);
 
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
@@ -844,7 +919,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
 
                     if IsVolumeMounted((*device_extension).DeviceObject) != 0 {
                         SET_FLAG(
-                            &mut (*(*(*device_extension).DeviceObject)).Flags,
+                            &mut (*(*device_extension).DeviceObject).Flags,
                             DO_VERIFY_VOLUME,
                         );
                         *status = STATUS_VERIFY_REQUIRED as i32;
@@ -865,7 +940,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
 
             let _ = InterlockedIncrement(core::ptr::addr_of_mut!(
                 (*device_extension).MediaChangeCount
-            ));
+            ) as *mut i32);
 
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
@@ -878,7 +953,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
 
             if IsVolumeMounted((*device_extension).DeviceObject) != 0 {
                 SET_FLAG(
-                    &mut (*(*(*device_extension).DeviceObject)).Flags,
+                    &mut (*(*device_extension).DeviceObject).Flags,
                     DO_VERIFY_VOLUME,
                 );
                 *status = STATUS_VERIFY_REQUIRED as i32;
@@ -897,7 +972,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             (*log_context).UniqueErrorValue = 258;
             (*log_context).ErrorCode = IO_RECOVERED_VIA_ECC as i32;
 
-            if (*sense_buffer).IncorrectLength != 0 {
+            if (*sense_buffer).IncorrectLength() != 0 {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
@@ -922,7 +997,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             (*log_context).LogError = 1;
             (*log_context).ErrorCode = IO_WRN_FAILURE_PREDICTED as i32;
 
-            if (*sense_buffer).IncorrectLength != 0 {
+            if (*sense_buffer).IncorrectLength() != 0 {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
@@ -1088,7 +1163,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
             (*LogContext).UniqueErrorValue = 258;
             (*LogContext).ErrorCode = IO_ERR_CONTROLLER_ERROR;
 
-            if (*SenseData).IncorrectLength != 0 {
+            if (*SenseData).IncorrectLength() != 0 {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
@@ -1101,7 +1176,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
 
         SCSI_SENSE_NO_SENSE => {
             // Check other indicators.
-            if (*SenseData).IncorrectLength != 0 {
+            if (*SenseData).IncorrectLength() != 0 {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
@@ -1134,35 +1209,6 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
     }
 }
 
-// Forward declarations for unknown functions
-
-// Unknown constants with placeholder values
-const SRB_STATUS_INVALID_LUN: u32 = 0x01;
-const SRB_STATUS_INVALID_TARGET_ID: u32 = 0x02;
-const SRB_STATUS_NO_DEVICE: u32 = 0x03;
-const SRB_STATUS_NO_HBA: u32 = 0x04;
-const SRB_STATUS_INVALID_PATH_ID: u32 = 0x05;
-const SRB_STATUS_COMMAND_TIMEOUT: u32 = 0x06;
-const SRB_STATUS_TIMEOUT: u32 = 0x07;
-const SRB_STATUS_ABORTED: u32 = 0x08;
-const SRB_STATUS_SELECTION_TIMEOUT: u32 = 0x09;
-const SRB_STATUS_DATA_OVERRUN: u32 = 0x0A;
-const SRB_STATUS_PHASE_SEQUENCE_FAILURE: u32 = 0x0B;
-const SRB_STATUS_REQUEST_FLUSHED: u32 = 0x0C;
-const SRB_STATUS_INVALID_REQUEST: u32 = 0x0D;
-const SRB_STATUS_UNEXPECTED_BUS_FREE: u32 = 0x0E;
-const SRB_STATUS_PARITY_ERROR: u32 = 0x0F;
-const SRB_STATUS_BUS_RESET: u32 = 0x10;
-const SRB_STATUS_ERROR: u32 = 0x11;
-const DO_VERIFY_VOLUME: u32 = 0x00000008;
-const SCSISTAT_BUSY: u8 = 0x08;
-const IO_ERR_NOT_READY: u32 = 0x00000018;
-const IO_ERR_CONTROLLER_ERROR: u32 = 0x0000001C;
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185;
-const STATUS_NO_SUCH_DEVICE: i32 = 0xC000000E;
-const STATUS_IO_TIMEOUT: i32 = 0xC00000B5;
-const STATUS_VERIFY_REQUIRED: i32 = 0xC00000A8;
-const STATUS_DEVICE_NOT_READY: i32 = 0xC00000A3;
 #[no_mangle]
 pub unsafe extern "C" fn SenseInfoInterpretBySrbStatus(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
@@ -1180,7 +1226,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySrbStatus(
     *Retry = 1; // TRUE
     *RetryIntervalInSeconds = 0;
 
-    let srb_status = SRB_STATUS((*Srb).SrbStatus);
+    let srb_status = SRB_STATUS((*Srb).SrbStatus as u32);
     match srb_status {
         SRB_STATUS_INVALID_LUN
         | SRB_STATUS_INVALID_TARGET_ID
@@ -1330,7 +1376,7 @@ pub unsafe extern "C" fn SenseInfoLogError(
 
     if (*Retry) != 0 {
         staticErrLogEntry.FinalStatus = STATUS_SUCCESS;
-        staticErrLogData.ErrorRetried = 1;
+        staticErrLogData.set_ErrorRetried(1);
     } else {
         staticErrLogEntry.FinalStatus = *Status;
     }
@@ -1342,10 +1388,10 @@ pub unsafe extern "C" fn SenseInfoLogError(
     }
 
     if ((*Srb).SrbFlags & SRB_CLASS_FLAGS_PAGING) != 0 {
-        staticErrLogData.ErrorPaging = 1;
+        staticErrLogData.set_ErrorPaging(1);
     }
 
-    staticErrLogData.ErrorUnhandled = (*LogContext).ErrorUnhandled;
+    staticErrLogData.set_ErrorUnhandled((*LogContext).ErrorUnhandled);
 
     staticErrLogEntry.DeviceOffset.QuadPart = (*LogContext).BadSector as i64;
     staticErrLogEntry.DeviceOffset.QuadPart *=
@@ -1383,23 +1429,23 @@ pub unsafe extern "C" fn SenseInfoLogError(
     }
 
     {
-        let oldIrql: *mut KIRQL = core::ptr::null_mut(); // placeholder, original uses stack variable
+        let mut oldIrql: KIRQL = 0;
         KeAcquireSpinLock(
-            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock as *mut core::ffi::c_void,
-            oldIrql,
+            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock,
+            &mut oldIrql,
         );
         let idx = (* (*DeviceExtension).PrivateFdoData).ErrorLogNextIndex as usize;
-        *((* (*DeviceExtension).PrivateFdoData).ErrorLogs).add(idx) = staticErrLogData;
+        (* (*DeviceExtension).PrivateFdoData).ErrorLogs[idx] = staticErrLogData;
         (* (*DeviceExtension).PrivateFdoData).ErrorLogNextIndex += 1;
         (* (*DeviceExtension).PrivateFdoData).ErrorLogNextIndex %= NUM_ERROR_LOG_ENTRIES;
         KeReleaseSpinLock(
-            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock as *mut core::ffi::c_void,
-            *oldIrql,
+            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock,
+            oldIrql,
         );
     }
 
     if (*LogContext).LogError != 0 {
-        let operation_code: u8 = (*(*Srb).Cdb as *mut CDB).CDB10.OperationCode;
+        let operation_code: u8 = (*((*Srb).Cdb.as_ptr() as *mut CDB)).CDB10.as_ref().OperationCode;
         match operation_code {
             SCSIOP_TEST_UNIT_READY => {
                 if (* (*DeviceExtension).PrivateFdoData).LoggedTURFailureSinceLastIO != 0 {
@@ -1421,7 +1467,7 @@ pub unsafe extern "C" fn SenseInfoLogError(
         if senseBufferSize as usize
             > (core::mem::offset_of!(SENSE_DATA, AdditionalSenseCodeQualifier)
                 + core::mem::size_of::<u8>())
-            && (*senseBuffer).SenseKey == SCSI_SENSE_ILLEGAL_REQUEST
+            && (*senseBuffer).SenseKey() == SCSI_SENSE_ILLEGAL_REQUEST
             && (*senseBuffer).AdditionalSenseCode == SCSI_ADSENSE_ILLEGAL_BLOCK
             && (*senseBuffer).AdditionalSenseCodeQualifier == 0
             && IS_SCSIOP_READ(operation_code) != 0
@@ -1432,12 +1478,12 @@ pub unsafe extern "C" fn SenseInfoLogError(
 
     if (*LogContext).LogError != 0 {
         let errorLogEntry: *mut IO_ERROR_LOG_PACKET = IoAllocateErrorLogEntry(
-            (*DeviceExtension).DeviceObject,
+            (*DeviceExtension).DeviceObject as *mut core::ffi::c_void,
             totalSize as u8,
-        );
+        ) as *mut IO_ERROR_LOG_PACKET;
         if !errorLogEntry.is_null() {
             let errlogData: *mut CDROM_ERROR_LOG_DATA =
-                (*errorLogEntry).DumpData as *mut CDROM_ERROR_LOG_DATA;
+                (*errorLogEntry).DumpData.as_mut_ptr() as *mut CDROM_ERROR_LOG_DATA;
 
             core::ptr::write(errorLogEntry, staticErrLogEntry);
             core::ptr::write(errlogData, staticErrLogData);
@@ -1450,7 +1496,7 @@ pub unsafe extern "C" fn SenseInfoLogError(
                 );
             }
 
-            IoWriteErrorLogEntry(errorLogEntry);
+            IoWriteErrorLogEntry(errorLogEntry as *mut core::ffi::c_void);
         }
     }
 }
@@ -1470,12 +1516,12 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
     let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
 
     if opCode == SCSIOP_MEDIUM_REMOVAL {
-        if (*cdb).AsByte[1] == 0
-            && (*cdb).AsByte[2] == 0
-            && (*cdb).AsByte[3] == 0
-            && ((*cdb).AsByte[4] & 0xFC) == 0
+        if (*cdb).AsByte.as_ref()[1] == 0
+            && (*cdb).AsByte.as_ref()[2] == 0
+            && (*cdb).AsByte.as_ref()[3] == 0
+            && ((*cdb).AsByte.as_ref()[4] & 0xFC) == 0
         {
-            if ((*cdb).AsByte[4] & 0x01) == 0 {
+            if ((*cdb).AsByte.as_ref()[4] & 0x01) == 0 {
                 if RetriedCount < TOTAL_COUNT_RETRY_DEFAULT {
                     *Retry = 1; // TRUE
                 }
@@ -1491,7 +1537,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
         {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
-        } else if SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_SELECTION_TIMEOUT {
+        } else if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SELECTION_TIMEOUT {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
         }
@@ -1501,14 +1547,14 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
         {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
-        } else if SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_SELECTION_TIMEOUT {
+        } else if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SELECTION_TIMEOUT {
             *RetryIntervalIn100ns =
                 max(*RetryIntervalIn100ns, SECONDS_TO_100NS_UNITS(2));
         }
 
         if *Status == STATUS_VERIFY_REQUIRED {
             *Retry = 1; // TRUE
-        } else if SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_DATA_OVERRUN {
+        } else if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_DATA_OVERRUN {
             *Status = STATUS_SUCCESS;
             *Retry = 0; // FALSE
         }
@@ -1529,15 +1575,15 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
             let tempCdb: *mut CDB = (*Srb).Cdb.as_mut_ptr() as *mut CDB;
 
             (*Srb).CdbLength = 10;
-            (*tempCdb).CDB10.OperationCode =
-                if (*tempCdb).CDB6GENERIC.OperationCode == SCSIOP_RESERVE_UNIT {
+            (*tempCdb).CDB10.as_mut().OperationCode =
+                if (*tempCdb).CDB6GENERIC.as_ref().OperationCode == SCSIOP_RESERVE_UNIT {
                     SCSIOP_RESERVE_UNIT10
                 } else {
                     SCSIOP_RELEASE_UNIT10
                 };
 
             SET_FLAG(
-                &raw mut (*DeviceExtension).PrivateFdoData.HackFlags,
+                &raw mut (*(*DeviceExtension).PrivateFdoData).HackFlags as *mut u32,
                 FDO_HACK_NO_RESERVE6,
             );
             *Retry = 1; // TRUE
@@ -1548,25 +1594,25 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
             *Retry = 1; // TRUE
         }
 
-        if (opCode == SCSIOP_READ12 && (*cdb).READ12.Streaming == 1)
-            || (opCode == SCSIOP_WRITE12 && (*cdb).WRITE12.Streaming == 1)
+        if (opCode == SCSIOP_READ12 && (*cdb).READ12.as_ref().Streaming() == 1)
+            || (opCode == SCSIOP_WRITE12 && (*cdb).WRITE12.as_ref().Streaming() == 1)
         {
             let mut disableStreaming: i32 = 0; // FALSE
 
-            if SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_TIMEOUT
-                || SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_COMMAND_TIMEOUT
-                || SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_SELECTION_TIMEOUT
-                || SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_BUS_RESET
+            if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_TIMEOUT
+                || SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_COMMAND_TIMEOUT
+                || SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SELECTION_TIMEOUT
+                || SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_BUS_RESET
             {
                 disableStreaming = 1; // TRUE
-            } else if ((*senseBuffer).SenseKey & 0xf) == SCSI_SENSE_UNIT_ATTENTION {
+            } else if ((*senseBuffer).SenseKey() & 0xf) == SCSI_SENSE_UNIT_ATTENTION {
                 if (*senseBuffer).AdditionalSenseCode == SCSI_ADSENSE_BUS_RESET
                     || (*senseBuffer).AdditionalSenseCode
                         == SCSI_ADSENSE_INSUFFICIENT_TIME_FOR_OPERATION
                 {
                     disableStreaming = 1; // TRUE
                 }
-            } else if ((*senseBuffer).SenseKey & 0xf) == SCSI_SENSE_ILLEGAL_REQUEST {
+            } else if ((*senseBuffer).SenseKey() & 0xf) == SCSI_SENSE_ILLEGAL_REQUEST {
                 if (*senseBuffer).AdditionalSenseCode != SCSI_ADSENSE_ILLEGAL_BLOCK {
                     disableStreaming = 1; // TRUE
                 }
@@ -1574,7 +1620,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
 
             if disableStreaming != 0 {
                 SET_FLAG(
-                    &raw mut (*DeviceExtension).PrivateFdoData.HackFlags,
+                    &raw mut (*(*DeviceExtension).PrivateFdoData).HackFlags as *mut u32,
                     FDO_HACK_NO_STREAMING,
                 );
                 *Retry = 1; // TRUE
@@ -1586,7 +1632,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
 
         if *Retry != 0 {
             if Total100nsSinceFirstSend < 0
-                || ((*senseBuffer).SenseKey & 0xf) == SCSI_SENSE_HARDWARE_ERROR
+                || ((*senseBuffer).SenseKey() & 0xf) == SCSI_SENSE_HARDWARE_ERROR
                     && (*senseBuffer).AdditionalSenseCode == 0x09
             {
                 *Retry = if RetriedCount <= TOTAL_COUNT_RETRY_DEFAULT { 1 } else { 0 };
@@ -1600,19 +1646,19 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
                 (*DeviceExtension).DeviceAdditionalData.ReadWriteRetryDelay100nsUnits;
         }
     } else if opCode == SCSIOP_GET_PERFORMANCE {
-        if SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_DATA_OVERRUN {
+        if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_DATA_OVERRUN {
             *Status = STATUS_SUCCESS;
             *Retry = 0; // FALSE
         }
 
-        if (*Srb).SenseInfoBufferLength
+        if (*Srb).SenseInfoBufferLength as usize
             < RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier()
-            || TEST_FLAG((*Srb).SrbStatus, SRB_STATUS_AUTOSENSE_VALID) == 0
+            || TEST_FLAG((*Srb).SrbStatus as u32, SRB_STATUS_AUTOSENSE_VALID as u32) == 0
         {
             let tempCdb2: *const CDB = (*Srb).Cdb.as_ptr() as *const CDB;
-            if SRB_STATUS((*Srb).SrbStatus) != SRB_STATUS_SUCCESS
-                && SRB_STATUS((*Srb).SrbStatus) != SRB_STATUS_DATA_OVERRUN
-                && (*tempCdb2).GET_CONFIGURATION.RequestType
+            if SRB_STATUS((*Srb).SrbStatus as u32) != SRB_STATUS_SUCCESS
+                && SRB_STATUS((*Srb).SrbStatus as u32) != SRB_STATUS_DATA_OVERRUN
+                && (*tempCdb2).GET_CONFIGURATION.as_ref().RequestType() as u32
                     == SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE
             {
                 TracePrint(
@@ -1622,7 +1668,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
                         .as_ptr() as *const i8,
                 );
                 SET_FLAG(
-                    &raw mut (*DeviceExtension).DeviceAdditionalData.HackFlags,
+                    &raw mut (*DeviceExtension).DeviceAdditionalData.HackFlags as *mut u32,
                     CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG,
                 );
                 *Retry = 1; // TRUE
@@ -1677,7 +1723,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByIoControl(
     }
 
     if IoControlCode == IOCTL_CDROM_READ_Q_CHANNEL {
-        (*DeviceExtension).PlayActive = 0;
+        (*DeviceExtension).DeviceAdditionalData.PlayActive = 0;
     }
 
     if OverrideVerifyVolume != 0 && *Status == STATUS_VERIFY_REQUIRED {
@@ -1699,24 +1745,6 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByIoControl(
     }
 }
 
-const TRACE_LEVEL_ERROR: u32 = 3;
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_GENERAL: u32 = 0x00000001;
-const TRACE_FLAG_MCN: u32 = 0x00000002;
-const SRB_STATUS_MASK: u32 = 0x0F;
-const SRB_STATUS_INTERNAL_ERROR: u32 = 0x0E;
-const SRB_STATUS_AUTOSENSE_VALID: u32 = 0x01;
-const SRB_CLASS_FLAGS_PAGING: u32 = 0x10;
-const SCSISTAT_RESERVATION_CONFLICT: u8 = 0x18;
-const SCSI_SENSE_UNIT_ATTENTION: u8 = 6;
-const SCSIOP_TEST_UNIT_READY: u8 = 0x00;
-const SCSIOP_VERIFY: u8 = 0x2F;
-const SCSIOP_VERIFY16: u8 = 0x8F;
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185;
-const STATUS_DEVICE_BUSY: i32 = 0x80000011;
-const IO_WARNING_PAGING_FAILURE: i32 = 0x00030010;
-const UNIT_100NS_PER_SECOND: i64 = 10_000_000;
 #[no_mangle]
 pub unsafe extern "C" fn SenseInfoInterpret(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
@@ -1728,7 +1756,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
 ) -> u8 {
     let mut retryIntervalInSeconds: u32 = 0;
     let mut retry: u8 = 1; // TRUE
-    let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer;
+    let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
     let mut readSector: u32 = 0;
     let mut logContext: ERROR_LOG_CONTEXT = core::mem::zeroed();
 
@@ -1767,11 +1795,11 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
             b"SenseInfoInterpret: Internal Error code is %x\n\0".as_ptr() as *const i8,
-            (*Srb).InternalStatus,
+            *(*Srb).__bindgen_anon_1.InternalStatus.as_ref(),
         );
 
         retry = 0;
-        *Status = (*Srb).InternalStatus;
+        *Status = *(*Srb).__bindgen_anon_1.InternalStatus.as_ref() as i32;
     } else if (*Srb).ScsiStatus == SCSISTAT_RESERVATION_CONFLICT {
         retry = 0;
         *Status = STATUS_DEVICE_BUSY;
@@ -1780,14 +1808,14 @@ pub unsafe extern "C" fn SenseInfoInterpret(
                (*Srb).SenseInfoBufferLength as usize >=
                    (core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength) + 1))
     {
-        let senseKey: u8 = (*senseBuffer).SenseKey & 0x0f;
+        let senseKey: u8 = (*senseBuffer).SenseKey() & 0x0f;
         let additionalSenseCode: u8;
         let additionalSenseCodeQual: u8;
 
         readSector = (*senseBuffer).AdditionalSenseLength as u32 +
                      core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength) as u32;
-        if readSector > (*Srb).SenseInfoBufferLength {
-            readSector = (*Srb).SenseInfoBufferLength;
+        if readSector > (*Srb).SenseInfoBufferLength as u32 {
+            readSector = (*Srb).SenseInfoBufferLength as u32;
         }
 
         additionalSenseCode = if readSector as usize >=
@@ -1829,7 +1857,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             (*Srb).Cdb[13] as u32,
             (*Srb).Cdb[14] as u32,
             (*Srb).Cdb[15] as u32,
-            srb_status,
+            srb_status as core::ffi::c_uint,
             senseKey as u32,
             additionalSenseCode as u32,
             additionalSenseCodeQual as u32,
@@ -1840,7 +1868,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             let mediaChangeCount: u32;
             mediaChangeCount = InterlockedIncrement(
                 ptr::addr_of_mut!((*DeviceExtension).MediaChangeCount) as *mut i32,
-            );
+            ) as u32;
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
@@ -1853,7 +1881,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
 
         if !zpoddInfo.is_null() {
             let cdb_ptr = (*Srb).Cdb.as_ptr() as *const CDB;
-            if (*cdb_ptr).CDB6GENERIC.OperationCode == SCSIOP_TEST_UNIT_READY {
+            if (*cdb_ptr).CDB6GENERIC.as_ref().OperationCode == SCSIOP_TEST_UNIT_READY {
                 (*zpoddInfo).SenseKey = senseKey;
                 (*zpoddInfo).AdditionalSenseCode = additionalSenseCode;
                 (*zpoddInfo).AdditionalSenseCodeQualifier = additionalSenseCodeQual;
@@ -1864,16 +1892,18 @@ pub unsafe extern "C" fn SenseInfoInterpret(
         // If the error is not handled, interpret using sense key
         {
             let notHandled: u8;
+            let mut retry_i32: i32 = retry as i32;
             notHandled = SenseInfoInterpretByAdditionalSenseCode(
                 DeviceExtension,
                 Srb,
                 additionalSenseCode,
                 additionalSenseCodeQual,
                 Status,
-                ptr::addr_of_mut!(retry),
+                ptr::addr_of_mut!(retry_i32),
                 ptr::addr_of_mut!(retryIntervalInSeconds),
                 ptr::addr_of_mut!(logContext),
-            );
+            ) as u8;
+            retry = retry_i32 as u8;
 
             if notHandled != 0 {
                 SenseInfoInterpretBySenseKey(
@@ -1890,7 +1920,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
 
         // Try to determine the bad sector from the inquiry data.
         let cdb_ptr = (*Srb).Cdb.as_ptr() as *const CDB;
-        let opcode = (*cdb_ptr).CDB10.OperationCode;
+        let opcode = (*cdb_ptr).CDB10.as_ref().OperationCode;
         if IS_SCSIOP_READWRITE(opcode) != 0 ||
            opcode == SCSIOP_VERIFY ||
            opcode == SCSIOP_VERIFY16
@@ -1907,8 +1937,8 @@ pub unsafe extern "C" fn SenseInfoInterpret(
                 readSector = (readSector << 8) | (*Srb).Cdb[(index + 2) as usize] as u32;
             }
 
-            index = ((*cdb_ptr).CDB10.TransferBlocksMsb as u32) << 8 |
-                    ((*cdb_ptr).CDB10.TransferBlocksLsb as u32);
+            index = ((*cdb_ptr).CDB10.as_ref().TransferBlocksMsb as u32) << 8 |
+                    ((*cdb_ptr).CDB10.as_ref().TransferBlocksLsb as u32);
 
             // Make sure the bad sector is within the read sectors.
             if !(logContext.BadSector >= readSector &&
@@ -1941,7 +1971,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             (*Srb).Cdb[13] as u32,
             (*Srb).Cdb[14] as u32,
             (*Srb).Cdb[15] as u32,
-            srb_status,
+            srb_status as core::ffi::c_uint,
             RetriedCount as i32,
         );
 
@@ -1961,8 +1991,8 @@ pub unsafe extern "C" fn SenseInfoInterpret(
 
     // call the device specific error handler if it has one.
     let errorHandler = (*DeviceExtension).DeviceAdditionalData.ErrorHandler;
-    if !errorHandler.is_null() {
-        (errorHandler)(
+    if let Some(errorHandler) = errorHandler {
+        errorHandler(
             DeviceExtension,
             Srb,
             Status,
@@ -1971,16 +2001,18 @@ pub unsafe extern "C" fn SenseInfoInterpret(
     }
 
     // Refine retry based on SCSI command
+    let mut retry_i32: i32 = retry as i32;
     SenseInfoInterpretRefineByScsiCommand(
         DeviceExtension,
         Srb,
         RetriedCount,
         total100nsSinceFirstSend as i64,
-        overrideVerifyVolume,
-        ptr::addr_of_mut!(retry),
+        overrideVerifyVolume as i32,
+        ptr::addr_of_mut!(retry_i32),
         Status,
         RetryIntervalIn100ns,
     );
+    retry = retry_i32 as u8;
 
     // Refine retry based on IOCTL code.
     if majorFunctionCode == IRP_MJ_DEVICE_CONTROL {
@@ -2044,7 +2076,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             TRACE_FLAG_GENERAL,
             b"Will not retry; Sense/ASC/ASCQ of %02x/%02x/%02x\n\0"
                 .as_ptr() as *const i8,
-            (*senseBuffer).SenseKey as u32,
+            (*senseBuffer).SenseKey() as u32,
             (*senseBuffer).AdditionalSenseCode as u32,
             (*senseBuffer).AdditionalSenseCodeQualifier as u32,
         );
@@ -2053,17 +2085,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
     retry
 }
 
-const SCSI_SENSE_NOT_READY: u8 = 0x02;
-const SCSI_ADSENSE_LUN_NOT_READY: u8 = 0x04;
-const SCSI_SENSEQ_BECOMING_READY: u8 = 0x01;
-const SRB_STATUS_AUTOSENSE_VALID: u8 = 0x80;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_GENERAL: u32 = 0x00000001;
-const TRACE_LEVEL_WARNING: u32 = 3;
-const UNIT_100NS_PER_SECOND: i64 = 10_000_000;
 const BECOMING_READY_RETRY_INTERNVAL_IN_100NS: i64 = 8_000_000;
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
-const STATUS_DEVICE_NOT_READY: i32 = 0xC00000A3u32 as i32;
 #[no_mangle]
 pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
@@ -2072,7 +2094,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
     RetryIntervalIn100ns: *mut i64,
 ) -> i32 {
     let mut retry: i32 = 0;
-    let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer;
+    let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
     let mut readSector: u32 = 0;
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
@@ -2083,18 +2105,18 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
         (*zpoddInfo).RetryFirstCommand = 0;
         retry = 1;
     } else if ((*Srb).SrbStatus & SRB_STATUS_AUTOSENSE_VALID) != 0
-        && (*Srb).SenseInfoBufferLength
+        && (*Srb).SenseInfoBufferLength as u32
             >= (core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength)
                 + core::mem::size_of::<u8>()) as u32
     {
-        let senseKey: u8 = ((*senseBuffer).SenseKey & 0x0f) as u8;
+        let senseKey: u8 = ((*senseBuffer).SenseKey() & 0x0f) as u8;
         let mut additionalSenseCode: u8 = 0;
         let mut additionalSenseCodeQual: u8 = 0;
 
         readSector = (*senseBuffer).AdditionalSenseLength as u32
             + core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength) as u32;
-        if readSector > (*Srb).SenseInfoBufferLength {
-            readSector = (*Srb).SenseInfoBufferLength;
+        if readSector > (*Srb).SenseInfoBufferLength as u32 {
+            readSector = (*Srb).SenseInfoBufferLength as u32;
         }
 
         let threshold_asc = (core::mem::offset_of!(SENSE_DATA, AdditionalSenseCode)
@@ -2161,7 +2183,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_GENERAL,
             b"Will not retry; Sense/ASC/ASCQ of %02x/%02x/%02x\n\0".as_ptr() as *const i8,
-            (*senseBuffer).SenseKey as u32,
+            (*senseBuffer).SenseKey() as u32,
             (*senseBuffer).AdditionalSenseCode as u32,
             (*senseBuffer).AdditionalSenseCodeQualifier as u32,
         );
@@ -2182,7 +2204,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpret(
     let mut retryIntervalIn100ns: i64 = 0;
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
-    if SRB_STATUS((*Srb).SrbStatus) == SRB_STATUS_SUCCESS {
+    if SRB_STATUS((*Srb).SrbStatus as u32) == SRB_STATUS_SUCCESS {
         if !zpoddInfo.is_null() && ((*zpoddInfo).BecomingReadyRetryCount > 0) {
             (*zpoddInfo).BecomingReadyRetryCount = 0;
         }
@@ -2190,7 +2212,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpret(
         retry = 0;
     } else {
         if ((*Srb).SrbStatus & SRB_STATUS_QUEUE_FROZEN) != 0 {
-            DeviceReleaseQueue((*DeviceExtension).Device);
+            DeviceReleaseQueue((*DeviceExtension).Device as *mut core::ffi::c_void);
         }
 
         if !zpoddInfo.is_null() && (((*zpoddInfo).RetryFirstCommand != 0) || ((*zpoddInfo).BecomingReadyRetryCount > 0)) {
@@ -2208,12 +2230,12 @@ pub unsafe extern "C" fn RequestSenseInfoInterpret(
             }
             retry = SenseInfoInterpret(
                 DeviceExtension,
-                Request,
+                Request as WDFREQUEST,
                 Srb,
                 RetriedCount,
                 Status,
                 core::ptr::addr_of_mut!(retryIntervalIn100ns),
-            );
+            ) as i32;
         }
     }
 
@@ -2230,10 +2252,10 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
     Status: *mut i32,
     RetryIntervalIn100ns: *mut i64,
 ) -> i32 {
-    NT_ASSERT(((*DeviceExtension).ScratchContext.ScratchInUse != 0) as i32);
+    NT_ASSERT((!(*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
     RequestSenseInfoInterpret(
         DeviceExtension,
-        (*DeviceExtension).ScratchContext.ScratchRequest,
+        (*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void,
         (*DeviceExtension).ScratchContext.ScratchSrb,
         RetriedCount,
         Status,

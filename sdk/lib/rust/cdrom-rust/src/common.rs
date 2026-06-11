@@ -10,8 +10,85 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{GUID, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoFreeMdl, IoGetNextIrpStackLocation, IoReadAccess, IoReportTargetDeviceChangeAsynchronous, IoSetCompletionRoutine, IoSetHardErrorOrVerifyDevice, IoWriteAccess, KEVENT, KeDelayExecutionThread, LARGE_INTEGER, LPCSTR, LPGUID, MmProbeAndLockPages, MmUnlockPages, PCSTR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PMDL, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_ID_DESCRIPTOR, PTARGET_DEVICE_CUSTOM_NOTIFICATION, PUNICODE_STRING, RemovableMedia, StorageDeviceIdProperty, TARGET_DEVICE_CUSTOM_NOTIFICATION};
+use ntkrnl_sys::ddk::{IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoFreeMdl, IoGetNextIrpStackLocation, IoReportTargetDeviceChangeAsynchronous, IoSetCompletionRoutine, IoSetHardErrorOrVerifyDevice, KEVENT, KeDelayExecutionThread, LARGE_INTEGER, LPCSTR, MmProbeAndLockPages, MmUnlockPages, PCSTR, PKEVENT, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_ID_DESCRIPTOR, PTARGET_DEVICE_CUSTOM_NOTIFICATION, PUNICODE_STRING, TARGET_DEVICE_CUSTOM_NOTIFICATION, STORAGE_DESCRIPTOR_HEADER, STORAGE_DEVICE_DESCRIPTOR, UNICODE_STRING};
+use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID as STORAGE_PROPERTY_ID;
+use ntkrnl_sys::ddk::ULONG_PTR;
+use ntkrnl_sys::ddk::_MEDIA_TYPE_RemovableMedia as RemovableMedia;
+use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty;
+use ntkrnl_sys::ddk::KeLowerIrql;
+use ntkrnl_sys::inline::tier1::KeRaiseIrql;
 use core::ffi::c_void;
+use crate::types::_FEATURE_NUMBER_FeatureAACS as FeatureAACS;
+use crate::types::_FEATURE_NUMBER_FeatureCDAudioAnalogPlay as FeatureCDAudioAnalogPlay;
+use crate::types::_FEATURE_NUMBER_FeatureCdMastering as FeatureCdMastering;
+use crate::types::_FEATURE_NUMBER_FeatureCdRead as FeatureCdRead;
+use crate::types::_FEATURE_NUMBER_FeatureCdTrackAtOnce as FeatureCdTrackAtOnce;
+use crate::types::_FEATURE_NUMBER_FeatureCdrwCAVWrite as FeatureCdrwCAVWrite;
+use crate::types::_FEATURE_NUMBER_FeatureCore as FeatureCore;
+use crate::types::_FEATURE_NUMBER_FeatureDDCDRWWrite as FeatureDDCDRWWrite;
+use crate::types::_FEATURE_NUMBER_FeatureDDCDRWrite as FeatureDDCDRWrite;
+use crate::types::_FEATURE_NUMBER_FeatureDDCDRead as FeatureDDCDRead;
+use crate::types::_FEATURE_NUMBER_FeatureDefectManagement as FeatureDefectManagement;
+use crate::types::_FEATURE_NUMBER_FeatureDiscControlBlocks as FeatureDiscControlBlocks;
+use crate::types::_FEATURE_NUMBER_FeatureDvdCPRM as FeatureDvdCPRM;
+use crate::types::_FEATURE_NUMBER_FeatureDvdCSS as FeatureDvdCSS;
+use crate::types::_FEATURE_NUMBER_FeatureDvdPlusRW as FeatureDvdPlusRW;
+use crate::types::_FEATURE_NUMBER_FeatureDvdRead as FeatureDvdRead;
+use crate::types::_FEATURE_NUMBER_FeatureDvdRecordableWrite as FeatureDvdRecordableWrite;
+use crate::types::_FEATURE_NUMBER_FeatureEmbeddedChanger as FeatureEmbeddedChanger;
+use crate::types::_FEATURE_NUMBER_FeatureEnhancedDefectReporting as FeatureEnhancedDefectReporting;
+use crate::types::_FEATURE_NUMBER_FeatureFirmwareDate as FeatureFirmwareDate;
+use crate::types::_FEATURE_NUMBER_FeatureFormattable as FeatureFormattable;
+use crate::types::_FEATURE_NUMBER_FeatureHDDVDRead as FeatureHDDVDRead;
+use crate::types::_FEATURE_NUMBER_FeatureHDDVDWrite as FeatureHDDVDWrite;
+use crate::types::_FEATURE_NUMBER_FeatureIncrementalStreamingWritable as FeatureIncrementalStreamingWritable;
+use crate::types::_FEATURE_NUMBER_FeatureLayerJumpRecording as FeatureLayerJumpRecording;
+use crate::types::_FEATURE_NUMBER_FeatureLogicalUnitSerialNumber as FeatureLogicalUnitSerialNumber;
+use crate::types::_FEATURE_NUMBER_FeatureMicrocodeUpgrade as FeatureMicrocodeUpgrade;
+use crate::types::_FEATURE_NUMBER_FeatureMorphing as FeatureMorphing;
+use crate::types::_FEATURE_NUMBER_FeatureMrw as FeatureMrw;
+use crate::types::_FEATURE_NUMBER_FeatureMultiRead as FeatureMultiRead;
+use crate::types::_FEATURE_NUMBER_FeaturePowerManagement as FeaturePowerManagement;
+use crate::types::_FEATURE_NUMBER_FeatureProfileList as FeatureProfileList;
+use crate::types::_FEATURE_NUMBER_FeatureRandomReadable as FeatureRandomReadable;
+use crate::types::_FEATURE_NUMBER_FeatureRandomWritable as FeatureRandomWritable;
+use crate::types::_FEATURE_NUMBER_FeatureRealTimeStreaming as FeatureRealTimeStreaming;
+use crate::types::_FEATURE_NUMBER_FeatureRemovableMedium as FeatureRemovableMedium;
+use crate::types::_FEATURE_NUMBER_FeatureRestrictedOverwrite as FeatureRestrictedOverwrite;
+use crate::types::_FEATURE_NUMBER_FeatureRigidRestrictedOverwrite as FeatureRigidRestrictedOverwrite;
+use crate::types::_FEATURE_NUMBER_FeatureSMART as FeatureSMART;
+use crate::types::_FEATURE_NUMBER_FeatureSectorErasable as FeatureSectorErasable;
+use crate::types::_FEATURE_NUMBER_FeatureTimeout as FeatureTimeout;
+use crate::types::_FEATURE_NUMBER_FeatureWriteOnce as FeatureWriteOnce;
+use crate::types::_FEATURE_NUMBER_FeatureWriteProtect as FeatureWriteProtect;
+
+use crate::types::MEDIA_LOCK_TYPE_SimpleMediaLock as SimpleMediaLock;
+use crate::types::MEDIA_LOCK_TYPE_SecureMediaLock as SecureMediaLock;
+use crate::types::MEDIA_LOCK_TYPE_InternalMediaLock as InternalMediaLock;
+use crate::types::CDROM_POWER_DOWN_STATE_PowerDownDeviceInitial as PowerDownDeviceInitial;
+use crate::types::CDROM_POWER_DOWN_STATE_PowerDownDeviceLocked as PowerDownDeviceLocked;
+use crate::types::CDROM_POWER_DOWN_STATE_PowerDownDeviceQuiesced as PowerDownDeviceQuiesced;
+use crate::types::CDROM_POWER_DOWN_STATE_PowerDownDeviceFlushed as PowerDownDeviceFlushed;
+use crate::types::CDROM_POWER_DOWN_STATE_PowerDownDeviceStopped as PowerDownDeviceStopped;
+use crate::types::DVD_STRUCTURE_FORMAT_DvdCopyrightDescriptor as DvdCopyrightDescriptor;
+use crate::types::_DVD_KEY_TYPE_DvdGetRpcKey as DvdGetRpcKey;
+use crate::types::_DVD_KEY_TYPE_DvdSetRpcKey as DvdSetRpcKey;
+
+// NTSTATUS codes not present in the kernel constants crate (NTSTATUS = i32).
+const STATUS_INVALID_DEVICE_STATE: i32 = 0xC0000184u32 as i32;
+const STATUS_DEVICE_DOES_NOT_EXIST: i32 = 0xC00000C0u32 as i32;
+// KMDF WDF_REQUEST_REUSE_FLAGS::WDF_REQUEST_REUSE_NO_FLAGS == 0
+const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
+// WPP trace flag (gates tracing only; any distinct nonzero value is fine).
+const TRACE_FLAG_POWER: u32 = 0x00000010;
+
+// SRB_STATUS(x) macro: mask out the status-modifier bits.
+// Returns u32 so it compares directly against SRB_STATUS_SUCCESS/_PENDING (u32).
+#[inline]
+fn SRB_STATUS(status: u8) -> u32 {
+    (status as u32) & SRB_STATUS_STATUS_MASK
+}
+const SRB_STATUS_STATUS_MASK: u32 = 0x3f;
 
 extern "C" {
     fn PAGED_CODE();
@@ -21,6 +98,8 @@ extern "C" {
     fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> NTSTATUS;
     fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn TracePrint(Level: ULONG, Flags: ULONG, fmt: *const i8, ...);
+    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
+    fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, TransferSize: u32, Retry: u8, Cdb: *mut CDB, CdbLength: u8, ) -> NTSTATUS;
 }
 extern "system" {
     fn RequestGetContext(Request: WDFREQUEST) -> *mut CDROM_REQUEST_CONTEXT;
@@ -28,21 +107,21 @@ extern "system" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn InterlockedIncrement(p: *mut i32) -> i32;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
-    fn WHICH_BIT(bps: u32, shift: *mut u32);
+    fn WHICH_BIT(bps: u32, shift: *mut u8);
     fn DvdSendKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, KeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, param3: *mut core::ffi::c_void, CopyProtectKey: *mut DVD_COPY_PROTECT_KEY, InKeyLength: usize, OutCopyProtectKey: *mut DVD_COPY_PROTECT_KEY, OutKeyLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn ReadDvdStructure( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, ReadStructure: *mut DVD_READ_STRUCTURE, ReadLength: usize, ReadStructureOut: *mut DVD_READ_STRUCTURE, DescriptorLength: usize, BytesReturned: *mut usize, ) -> NTSTATUS;
     fn KeGetCurrentIrql() -> KIRQL;
     static GUID_DEVINTERFACE_CDROM: GUID;
     static MOUNTDEV_MOUNTED_DEVICE_GUID: GUID;
-    fn DeviceRetrieveDescriptor( Device: PDEVICE_OBJECT, PropertyId: *mut STORAGE_PROPERTY_ID, Descriptor: *mut *mut STORAGE_DESCRIPTOR_HEADER, ) -> NTSTATUS;
+    fn DeviceRetrieveDescriptor( Device: WDFDEVICE, PropertyId: *mut STORAGE_PROPERTY_ID, Descriptor: *mut PSTORAGE_DESCRIPTOR_HEADER, ) -> NTSTATUS;
     fn min(a: u32, b: u32) -> u32;
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32);
-    fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
+    fn RtlInitUnicodeString(DestinationString: *mut UNICODE_STRING, SourceString: *const u16);
     fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;
     fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> i32;
     fn DeviceSetMediaChangeStateEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, newState: i32, previousState: *mut i32);
@@ -63,11 +142,15 @@ extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub static LockTypeStrings: [*const i8; 3] = [
+// Wrapper so the static of raw C-string pointers can be `Sync` (raw pointers
+// are not Sync by default). The pointers are to 'static read-only literals.
+struct SyncStrTable([*const i8; 3]);
+unsafe impl Sync for SyncStrTable {}
+pub static LockTypeStrings: SyncStrTable = SyncStrTable([
     b"Simple\0".as_ptr() as *const i8,
     b"Secure\0".as_ptr() as *const i8,
     b"Internal\0".as_ptr() as *const i8,
-];
+]);
 
 const KEY_READ: u32 = 0x20019;
 const KEY_WRITE: u32 = 0x20006;
@@ -90,12 +173,6 @@ const MountedDeviceInterface: i32 = 1;
 
 // Forward declaration: opaque structs used by this function (caller provides definitions)
 
-unsafe extern "C" {
-    fn PAGED_CODE();
-}
-unsafe extern "C" {
-    fn NT_ASSERT(condition: i32);
-}
 unsafe extern "C" {
     fn strlen(s: *const i8) -> usize;
     fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
@@ -123,8 +200,6 @@ type ULONG = u32;
 
 
 const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x01;
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_FLAG_GENERAL: u32 = 0x01;
 
 /// Routine Description:
 ///     retrieve device parameter from registry.
@@ -143,19 +218,13 @@ const DO_VERIFY_VOLUME: u32 = 0x00000004;
 const CdromMmcUpdateRequired: i32 = 1;
 const TRACE_LEVEL_ERROR: u32 = 1;
 const TRACE_FLAG_IOCTL: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 4;
 
 // Forward declarations for unknown external functions
 
 // Constants for trace flags – typical kernel values
-const TRACE_LEVEL_VERBOSE: u32 = 4;
-const TRACE_FLAG_INIT: u32 = 0x00000002;      // DPFLTR_IHVDRIVER_ID
-const TRACE_FLAG_GENERAL: u32 = 0x00000008;   // DPFLTR_IHVDRIVER_ID
 
 // Helper to compute RTL_SIZEOF_THROUGH_FIELD – same as Windows kernel macro.
 // This is inlined as a constant expression using offset_of! and size_of.
-
-const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x00000001;
 
 /// _IRQL_requires_max_(APC_LEVEL)
 
@@ -173,8 +242,6 @@ const SCSIOP_START_STOP_UNIT: u8 = 0x1B;
 const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x0004D004;
 
 // Tracing constants (typical WPP values)
-const TRACE_LEVEL_ERROR: u32 = 2;
-const TRACE_FLAG_GENERAL: u32 = 1;
 
 // NTSTATUS
 const STATUS_INTERNAL_ERROR: i32 = 0xC00000E5i32;
@@ -189,15 +256,13 @@ const WDF_REQUEST_SEND_OPTION_IGNORE_TARGET_STATE: u32 = 0x00000001;
 const CDROM_READ_CAPACITY_TIMEOUT: u32 = 10; // typical value, if incorrect caller should override
 const SCSIOP_READ_CAPACITY: u8 = 0x25;
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_IOCTL: u32 = 0x400;
 const CDROM_TAG_STREAM: u32 = 0x6D727453;
 const NonPagedPoolNxCacheAligned: u32 = 0x20000100;
 const SCSIOP_SET_STREAMING: u8 = 0xB6;
 #[no_mangle]
 pub unsafe extern "C" fn RequestSetReceivedTime(Request: WDFREQUEST) {
     let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(Request);
-    let mut temp: LARGE_INTEGER = 0;
+    let mut temp: LARGE_INTEGER = core::mem::zeroed();
     KeQueryTickCount(&mut temp);
     (*requestContext).TimeReceived = temp;
     return;
@@ -207,7 +272,7 @@ pub unsafe extern "C" fn RequestSetSentTime(Request: WDFREQUEST) {
     let requestContext = RequestGetContext(Request);
     let mut temp: LARGE_INTEGER = core::mem::zeroed();
 
-    KeQueryTickCount(&mut temp as *mut LARGE_INTEGER as *mut i64);
+    KeQueryTickCount(&mut temp as *mut LARGE_INTEGER);
 
     if (*requestContext).TimeSentDownFirstTime.QuadPart == 0 {
         (*requestContext).TimeSentDownFirstTime = temp;
@@ -242,14 +307,14 @@ pub unsafe extern "C" fn DeviceGetParameter(
 
     const PLUGPLAY_REGKEY_DEVICE: u32 = 1;
     const PLUGPLAY_REGKEY_DRIVER: u32 = 2;
-    const WDF_NO_OBJECT_ATTRIBUTES: *mut core::ffi::c_void = core::ptr::null_mut();
+    const WDF_NO_OBJECT_ATTRIBUTES: PWDF_OBJECT_ATTRIBUTES = core::ptr::null_mut();
 
     // PAGED_CODE();
-    let mut status: u32;
-    let mut rootKey: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut subKey: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut registrySubKeyName: _UNICODE_STRING = core::mem::zeroed();
-    let mut registryValueName: _UNICODE_STRING = core::mem::zeroed();
+    let mut status: NTSTATUS;
+    let mut rootKey: WDFKEY = core::ptr::null_mut();
+    let mut subKey: WDFKEY = core::ptr::null_mut();
+    let mut registrySubKeyName: UNICODE_STRING = core::mem::zeroed();
+    let mut registryValueName: UNICODE_STRING = core::mem::zeroed();
     let mut defaultParameterValue: u32;
 
     RtlInitUnicodeString(&raw mut registryValueName, ParameterName as *const u16);
@@ -260,7 +325,7 @@ pub unsafe extern "C" fn DeviceGetParameter(
 
     // open the hardware key
     status = WdfDeviceOpenRegistryKey(
-        (*DeviceExtension).Device as *mut core::ffi::c_void,
+        (*DeviceExtension).Device,
         PLUGPLAY_REGKEY_DEVICE,
         KEY_READ,
         WDF_NO_OBJECT_ATTRIBUTES,
@@ -271,7 +336,7 @@ pub unsafe extern "C" fn DeviceGetParameter(
     if NT_SUCCESS(status) && !SubkeyName.is_null() {
         status = WdfRegistryOpenKey(
             rootKey,
-            &registrySubKeyName as *const _UNICODE_STRING,
+            &registrySubKeyName as *const UNICODE_STRING,
             KEY_READ,
             WDF_NO_OBJECT_ATTRIBUTES,
             &raw mut subKey,
@@ -288,7 +353,7 @@ pub unsafe extern "C" fn DeviceGetParameter(
 
         status = WdfRegistryQueryULong(
             if !subKey.is_null() { subKey } else { rootKey },
-            &registryValueName as *const _UNICODE_STRING,
+            &registryValueName as *const UNICODE_STRING,
             ParameterValue,
         );
 
@@ -322,7 +387,7 @@ pub unsafe extern "C" fn DeviceGetParameter(
         if NT_SUCCESS(status) && !SubkeyName.is_null() {
             status = WdfRegistryOpenKey(
                 rootKey,
-                &registrySubKeyName as *const _UNICODE_STRING,
+                &registrySubKeyName as *const UNICODE_STRING,
                 KEY_READ,
                 WDF_NO_OBJECT_ATTRIBUTES,
                 &raw mut subKey,
@@ -339,7 +404,7 @@ pub unsafe extern "C" fn DeviceGetParameter(
 
             status = WdfRegistryQueryULong(
                 if !subKey.is_null() { subKey } else { rootKey },
-                &registryValueName as *const _UNICODE_STRING,
+                &registryValueName as *const UNICODE_STRING,
                 ParameterValue,
             );
 
@@ -374,8 +439,8 @@ pub unsafe extern "C" fn DeviceSetParameter(
     let mut status: i32;
     let mut root_key: WDFKEY = core::ptr::null_mut();
     let mut sub_key: WDFKEY = core::ptr::null_mut();
-    let mut registry_subkey_name: _UNICODE_STRING = core::mem::zeroed();
-    let mut registry_value_name: _UNICODE_STRING = core::mem::zeroed();
+    let mut registry_subkey_name: UNICODE_STRING = core::mem::zeroed();
+    let mut registry_value_name: UNICODE_STRING = core::mem::zeroed();
 
     PAGED_CODE();
 
@@ -530,12 +595,12 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
 
     let cleanup = 'flow: {
         // 1. allocate SenseBuffer and initiate Srb common fields
-        (*Srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32;
-        (*Srb).Function = SRB_FUNCTION_EXECUTE_SCSI;
-        (*Srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE;
+        (*Srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
+        (*Srb).Function = SRB_FUNCTION_EXECUTE_SCSI as u8;
+        (*Srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE as u8;
 
         senseInfoBuffer = ExAllocatePoolWithTag(NonPagedPoolNxCacheAligned,
-                                                SENSE_BUFFER_SIZE,
+                                                SENSE_BUFFER_SIZE as usize,
                                                 CDROM_TAG_SENSE_INFO) as *mut u8;
         if senseInfoBuffer.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
@@ -543,7 +608,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
                        b"DeviceSendSrbSynchronously: Can't allocate MDL\n\0".as_ptr() as *const i8);
             break 'flow;
         }
-        (*Srb).SenseInfoBuffer = senseInfoBuffer;
+        (*Srb).SenseInfoBuffer = senseInfoBuffer as *mut core::ffi::c_void;
         (*Srb).DataBuffer = BufferAddress;
 
         if (*Srb).TimeOutValue == 0 {
@@ -553,7 +618,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
         // 2. Create Request object
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&mut attributes,
                                                 core::ptr::null_mut() as *const core::ffi::c_void); // placeholder: CDROM_REQUEST_CONTEXT
-        status = WdfRequestCreate(&attributes,
+        status = WdfRequestCreate(&mut attributes,
                                   (*deviceExtension).IoTarget,
                                   &mut request);
         if status < 0 {
@@ -579,7 +644,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
 
             // SEH2 replacement: external wrapper that catches exceptions
             status = __SEH2_ProbeAndLockPages(mdlAddress,
-                                              0i32,
+                                              0u32,
                                               if WriteToDevice != 0 { IoReadAccess } else { IoWriteAccess });
             if status != 0 {
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
@@ -606,7 +671,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
                 WDF_REQUEST_REUSE_PARAMS_INIT(&mut params,
                                               WDF_REQUEST_REUSE_NO_FLAGS,
                                               STATUS_SUCCESS);
-                status = WdfRequestReuse(request, &params);
+                status = WdfRequestReuse(request, &mut params);
                 if status < 0 {
                     TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
                                b"DeviceSendSrbSynchronously: WdfRequestReuse failed, %!STATUS!\n\0".as_ptr() as *const i8,
@@ -635,7 +700,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
             // 4.2 Format Srb and Irp
             {
                 (*Srb).OriginalRequest = irp as *mut _;
-                (*Srb).QueueAction = SRB_SIMPLE_TAG_REQUEST;
+                (*Srb).QueueAction = SRB_SIMPLE_TAG_REQUEST as u8;
                 (*Srb).DataTransferLength = BufferLength;
                 (*Srb).SrbFlags = (*deviceExtension).SrbFlags;
 
@@ -685,15 +750,15 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
                     let mut retryIntervalIn100ns: i64 = 0;
 
                     retry = RequestSenseInfoInterpret(deviceExtension,
-                                                      request,
+                                                      request as *mut core::ffi::c_void,
                                                       Srb,
                                                       retryCount,
                                                       &mut status,
-                                                      &mut retryIntervalIn100ns);
+                                                      &mut retryIntervalIn100ns as *mut i64 as *mut ntkrnl_sys::ddk::LARGE_INTEGER);
                     if retry != 0 {
-                        let t = LARGE_INTEGER { QuadPart: -retryIntervalIn100ns };
+                        let mut t = LARGE_INTEGER { QuadPart: -retryIntervalIn100ns };
                         retryCount += 1;
-                        KeDelayExecutionThread(0i32, 0, &t);
+                        KeDelayExecutionThread(0i8, 0, &mut t as *mut _ as *mut ntkrnl_sys::ddk::LARGE_INTEGER);
                     }
                 } else {
                     // Request succeeded
@@ -739,7 +804,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
     }
 
     if !request.is_null() {
-        WdfObjectDelete(request);
+        WdfObjectDelete(request as WDFOBJECT);
     }
 
     status
@@ -826,7 +891,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
 
     deviceExtension = DeviceGetExtension(Device);
 
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         context = ExAllocatePoolWithTag(
             NonPagedPoolNx,
             core::mem::size_of::<COMPLETION_CONTEXT>(),
@@ -836,31 +901,31 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
             TracePrint(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
-                b"DeviceSendStartUnit: Failed to allocate completion context\n\0".as_ptr() as *const u8,
+                b"DeviceSendStartUnit: Failed to allocate completion context\n\0".as_ptr() as *const i8,
             );
             status = STATUS_INTERNAL_ERROR;
         }
     }
 
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         (*context).Device = Device;
         srb = &mut (*context).Srb; // Srb field is inside COMPLETION_CONTEXT (by value)
 
         // Zero out srb
         core::ptr::write_bytes(srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
 
-        (*srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32;
-        (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI;
+        (*srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
+        (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI as u8;
         (*srb).TimeOutValue = START_UNIT_TIMEOUT;
         (*srb).SrbFlags = SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_SYNCH_TRANSFER;
 
         (*srb).CdbLength = 6;
         cdb = &mut (*srb).Cdb as *mut _ as *mut CDB;
 
-        (*cdb).START_STOP.OperationCode = SCSIOP_START_STOP_UNIT;
-        (*cdb).START_STOP.Start = 1;
-        (*cdb).START_STOP.Immediate = 0;
-        (*cdb).START_STOP.LogicalUnitNumber = (*srb).Lun;
+        (*cdb).START_STOP.as_mut().OperationCode = SCSIOP_START_STOP_UNIT;
+        (*cdb).START_STOP.as_mut().set_Start(1);
+        (*cdb).START_STOP.as_mut().set_Immediate(0);
+        (*cdb).START_STOP.as_mut().set_LogicalUnitNumber((*srb).Lun);
 
         // WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, CDROM_REQUEST_CONTEXT);
         // Expand macro: initialize attributes as zeroed, then set ContextTypeInfo
@@ -872,7 +937,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
         attributes.ContextTypeInfo = &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const _ as *const WDF_OBJECT_CONTEXT_TYPE_INFO;
 
-        attributes.ParentObject = (*deviceExtension).IoTarget;
+        attributes.ParentObject = (*deviceExtension).IoTarget as WDFOBJECT;
 
         status = WdfRequestCreate(
             core::ptr::addr_of_mut!(attributes),
@@ -881,9 +946,9 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
         );
     }
 
-    if NT_SUCCESS(status) != 0 {
-        (*srb).OriginalRequest = WdfRequestWdmGetIrp(startUnitRequest);
-        NT_ASSERT(!(*srb).OriginalRequest.is_null() as i32);
+    if NT_SUCCESS(status) {
+        (*srb).OriginalRequest = WdfRequestWdmGetIrp(startUnitRequest) as *mut core::ffi::c_void;
+        NT_ASSERT((!(*srb).OriginalRequest.is_null()) as BOOLEAN);
 
         // WDF_OBJECT_ATTRIBUTES_INIT(&attributes) – expand: zero + set size
         core::ptr::write_bytes(
@@ -892,7 +957,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
             core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>(),
         );
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
-        attributes.ParentObject = startUnitRequest;
+        attributes.ParentObject = startUnitRequest as WDFOBJECT;
 
         status = WdfMemoryCreatePreallocated(
             core::ptr::addr_of_mut!(attributes),
@@ -902,7 +967,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
         );
     }
 
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         status = WdfIoTargetFormatRequestForInternalIoctlOthers(
             (*deviceExtension).IoTarget,
             startUnitRequest,
@@ -916,11 +981,11 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
         );
     }
 
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         WdfRequestSetCompletionRoutine(
             startUnitRequest,
-            DeviceAsynchronousCompletion,
-            context,
+            Some(DeviceAsynchronousCompletion),
+            context as WDFCONTEXT,
         );
 
         status = RequestSend(
@@ -932,10 +997,10 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
         );
     }
 
-    if NT_SUCCESS(status) == 0 {
+    if !NT_SUCCESS(status) {
         FREE_POOL(context as *mut core::ffi::c_void);
         if !startUnitRequest.is_null() {
-            WdfObjectDelete(startUnitRequest);
+            WdfObjectDelete(startUnitRequest as WDFOBJECT);
         }
     }
 }
@@ -948,7 +1013,7 @@ pub unsafe extern "C" fn DeviceSendIoctlAsynchronously(
     let mut irp: *mut IRP = core::ptr::null_mut();
     let mut nextIrpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
 
-    irp = IoAllocateIrp((*DeviceExtension).DeviceObject.StackSize as i8, 0u8);
+    irp = IoAllocateIrp((*(*DeviceExtension).DeviceObject).StackSize as i8, 0u8);
 
     if !irp.is_null() {
         nextIrpStack = IoGetNextIrpStackLocation(irp);
@@ -973,7 +1038,7 @@ pub unsafe extern "C" fn DeviceSendIoctlAsynchronously(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RequestAsynchronousIrpCompletion(
+pub unsafe extern "C" fn RequestAsynchronousIrpCompletion(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -987,7 +1052,7 @@ pub unsafe extern "system" fn RequestAsynchronousIrpCompletion(
 pub unsafe extern "C" fn DeviceAsynchronousCompletion(
     Request: WDFREQUEST,
     Target: WDFIOTARGET,
-    Params: *mut wdf_request_completion_params,
+    Params: *mut WDF_REQUEST_COMPLETION_PARAMS,
     Context: WDFCONTEXT,
 ) {
     // Extern declarations for symbols not in the provided import list.
@@ -1003,7 +1068,7 @@ pub unsafe extern "C" fn DeviceAsynchronousCompletion(
     let deviceExtension = DeviceGetExtension((*context).Device);
 
     // Suppress unused parameter warnings (mechanical preservation of C code).
-    UNREFERENCED_PARAMETER(&Target as *const _ as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER(&Target as *const _ as usize);
     UNREFERENCED_PARAMETER(&Params as *const _ as *const core::ffi::c_void);
 
     // If this is an execute SRB, check for a frozen queue.
@@ -1020,10 +1085,10 @@ pub unsafe extern "C" fn DeviceAsynchronousCompletion(
     }
 
     // Release the context memory.
-    FREE_POOL(context);
+    FREE_POOL(context as *mut core::ffi::c_void);
 
     // Delete the WDF request object.
-    WdfObjectDelete(Request);
+    WdfObjectDelete(Request as WDFOBJECT);
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceReleaseQueue(Device: WDFDEVICE) {
@@ -1048,13 +1113,13 @@ pub unsafe extern "C" fn DeviceReleaseQueue(Device: WDFDEVICE) {
 
     srb = core::ptr::addr_of_mut!((*deviceExtension).ReleaseQueueSrb);
 
-    (*srb).Function = SRB_FUNCTION_FLUSH_QUEUE;
+    (*srb).Function = SRB_FUNCTION_FLUSH_QUEUE as u8;
 
     (*srb).OriginalRequest = WdfRequestWdmGetIrp((*deviceExtension).ReleaseQueueRequest) as *mut core::ffi::c_void;
 
     WdfRequestSetCompletionRoutine(
         (*deviceExtension).ReleaseQueueRequest,
-        DeviceReleaseQueueCompletion,
+        Some(DeviceReleaseQueueCompletion),
         Device as WDFCONTEXT,
     );
 
@@ -1080,7 +1145,7 @@ pub unsafe extern "C" fn DeviceReleaseQueueCompletion(
         let _ = Params;
 
         let mut status: NTSTATUS;
-        let device: WDFDEVICE = Context;
+        let device: WDFDEVICE = Context as WDFDEVICE;
         let deviceExtension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
         let mut releaseQueueNeeded: BOOLEAN = 0;
         let mut params: WDF_REQUEST_REUSE_PARAMS = core::mem::zeroed();
@@ -1140,14 +1205,14 @@ pub unsafe extern "C" fn DevicePerfIncrementErrorCount(
     let fdoData = (*DeviceExtension).PrivateFdoData;
     let mut oldIrql: ntkrnl_sys::base::KIRQL = 0;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*fdoData).SpinLock), &mut oldIrql);
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*fdoData).SpinLock) as *mut usize, &mut oldIrql);
 
     (*fdoData).Perf.SuccessfulIO = 0; // implicit interlock
     let errors = InterlockedIncrement(
         core::ptr::addr_of_mut!((*DeviceExtension).ErrorCount) as *mut i32,
     );
 
-    if errors >= CLASS_ERROR_LEVEL_1 {
+    if errors >= CLASS_ERROR_LEVEL_1 as i32 {
         // If the error count has exceeded the error limit, then disable
         // any tagged queuing, multiple requests per lu queueing
         // and sychronous data transfers.
@@ -1167,7 +1232,7 @@ pub unsafe extern "C" fn DevicePerfIncrementErrorCount(
         );
     }
 
-    if errors >= CLASS_ERROR_LEVEL_2 {
+    if errors >= CLASS_ERROR_LEVEL_2 as i32 {
         // If a second threshold is reached, disable disconnects.
         (*DeviceExtension).SrbFlags |= SRB_FLAGS_DISABLE_DISCONNECT;
         TracePrint(
@@ -1178,17 +1243,21 @@ pub unsafe extern "C" fn DevicePerfIncrementErrorCount(
         );
     }
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*fdoData).SpinLock), oldIrql);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*fdoData).SpinLock) as *mut usize, oldIrql);
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceFindFeaturePage(
     FeatureBuffer: *mut GET_CONFIGURATION_HEADER,
     Length: u32,
     Feature: FEATURE_NUMBER,
-) -> *mut core::ffi::c_void {
+) -> *mut FEATURE_HEADER {
 
-    let data_len: u16 = (*FeatureBuffer).DataLength;
-    let swapped: u16 = (data_len >> 8) | (data_len << 8);
+    // DataLength is a 4-byte big-endian field; the meaningful length is in the
+    // low two bytes. Read them and byte-swap to host order (matches the C
+    // RtlUshortByteSwap of the 16-bit DataLength view).
+    let data_len: u16 = (((*FeatureBuffer).DataLength[2] as u16) << 8)
+        | ((*FeatureBuffer).DataLength[3] as u16);
+    let swapped: u16 = data_len;
     let validLength: u32 = (swapped as u32) + (core::mem::offset_of!(GET_CONFIGURATION_HEADER, DataLength) + core::mem::size_of::<u16>()) as u32;
 
     if (Length as usize) < (core::mem::size_of::<GET_CONFIGURATION_HEADER>() + core::mem::size_of::<FEATURE_HEADER>()) {
@@ -1207,7 +1276,7 @@ pub unsafe extern "C" fn DeviceFindFeaturePage(
         let header: *mut FEATURE_HEADER = buffer as *mut FEATURE_HEADER;
         let thisFeature: u16 = (((*header).FeatureCode[0] as u16) << 8) | ((*header).FeatureCode[1] as u16);
 
-        if thisFeature == Feature {
+        if thisFeature as u32 == Feature {
             let mut temp: *mut u8 = buffer;
             temp = temp.add(core::mem::size_of::<FEATURE_HEADER>());
             temp = temp.add((*header).AdditionalLength as usize);
@@ -1221,7 +1290,7 @@ pub unsafe extern "C" fn DeviceFindFeaturePage(
                 );
                 return core::ptr::null_mut();
             } else {
-                return buffer as *mut core::ffi::c_void;
+                return buffer as *mut FEATURE_HEADER;
             }
         }
 
@@ -1268,7 +1337,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1283,7 +1352,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1298,7 +1367,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1313,7 +1382,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1328,7 +1397,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1343,7 +1412,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1358,7 +1427,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1373,7 +1442,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1393,7 +1462,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1449,7 +1518,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_GENERAL,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1464,7 +1533,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1479,7 +1548,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1494,7 +1563,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1509,7 +1578,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1524,7 +1593,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1539,7 +1608,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1554,7 +1623,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1569,7 +1638,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1584,7 +1653,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1599,7 +1668,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1614,7 +1683,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1629,7 +1698,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1644,7 +1713,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1659,7 +1728,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1674,7 +1743,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1689,7 +1758,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1704,7 +1773,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1719,7 +1788,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1734,7 +1803,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1749,7 +1818,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1764,7 +1833,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1779,7 +1848,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1794,7 +1863,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1809,7 +1878,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1824,7 +1893,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1839,7 +1908,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1854,7 +1923,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1869,7 +1938,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1884,7 +1953,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1899,7 +1968,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1914,7 +1983,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1929,7 +1998,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
-            if (*header).Current != 0 {
+            if (*header).Current() != 0 {
                 b"Currently supports\0".as_ptr() as *const i8
             } else {
                 b"Is able to support\0".as_ptr() as *const i8
@@ -1941,7 +2010,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32 {
+pub unsafe extern "C" fn MediaReadCapacity(Device: WDFDEVICE) -> i32 {
     // PAGED_CODE() // debug check omitted
     let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
     let mut capacityData: READ_CAPACITY_DATA = core::mem::zeroed();
@@ -1958,7 +2027,7 @@ pub unsafe extern "C" fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i3
 
     srb.CdbLength = 10;
     srb.TimeOutValue = CDROM_READ_CAPACITY_TIMEOUT;
-    (*cdb).CDB10.OperationCode = SCSIOP_READ_CAPACITY;
+    (*cdb).CDB10.as_mut().OperationCode = SCSIOP_READ_CAPACITY;
 
     let status = DeviceSendSrbSynchronously(
         Device,
@@ -1978,9 +2047,6 @@ pub unsafe extern "C" fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i3
     status
 }
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_GENERAL: u32 = 1;
-const TRACE_LEVEL_VERBOSE: u32 = 5;
 #[no_mangle]
 pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
     Device: WDFDEVICE,
@@ -2101,8 +2167,8 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         0x44, 0x65, 0x66, 0x61, 0x75, 0x6c, 0x74, 0x44, 0x76, 0x64,
         0x52, 0x65, 0x67, 0x69, 0x6f, 0x6e, 0x0, 0x0
     ];
-    let mut registry_value_name = core::mem::zeroed::<ntkrnl_sys::base::_UNICODE_STRING>();
-    ntkrnl_sys::rtl::RtlInitUnicodeString(
+    let mut registry_value_name = core::mem::zeroed::<UNICODE_STRING>();
+    RtlInitUnicodeString(
         &mut registry_value_name,
         dvd_default_region_wstr.as_ptr(),
     );
@@ -2204,7 +2270,7 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
 
     // get the device region
     ntkrnl_sys::rtl::RtlZeroMemory(copy_protect_key as *mut core::ffi::c_void, buffer_len);
-    (*copy_protect_key).KeyLength = DVD_RPC_KEY_LENGTH as u16;
+    (*copy_protect_key).KeyLength = DVD_RPC_KEY_LENGTH as u32;
     (*copy_protect_key).KeyType = DvdGetRpcKey;
 
     TracePrint(
@@ -2260,7 +2326,7 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         }
     }
 
-    if (*rpc_key).UserResetsAvailable <= 1 {
+    if (*rpc_key).UserResetsAvailable() <= 1 {
         TracePrint(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
@@ -2275,7 +2341,7 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
 
     // OOBE sets this key based upon the system locale
     let driver = WdfGetDriver();
-    let mut registry_key: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut registry_key: WDFKEY = core::ptr::null_mut();
     let mut status = WdfDriverOpenParametersRegistryKey(
         driver,
         ntkrnl_sys::constants::KEY_READ,
@@ -2360,7 +2426,7 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
 
     // Now set the region
     ntkrnl_sys::rtl::RtlZeroMemory(copy_protect_key as *mut core::ffi::c_void, buffer_len);
-    (*copy_protect_key).KeyLength = DVD_SET_RPC_KEY_LENGTH as u16;
+    (*copy_protect_key).KeyLength = DVD_SET_RPC_KEY_LENGTH as u32;
     (*copy_protect_key).KeyType = DvdSetRpcKey;
 
     let dvd_rpc_key =
@@ -2419,11 +2485,11 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
     InterfaceType: i32,
 ) -> i32 {
     let mut status: i32;
-    let mut string: isize = 0;
+    let mut string: WDFSTRING = core::ptr::null_mut();
     let mut interfaceGuid: *mut GUID = core::ptr::null_mut();
-    let mut savingString: *mut _UNICODE_STRING = core::ptr::null_mut();
+    let mut savingString: *mut UNICODE_STRING = core::ptr::null_mut();
     let mut setRestricted: bool = false;
-    let mut localString: _UNICODE_STRING = core::mem::zeroed();
+    let mut localString: UNICODE_STRING = core::mem::zeroed();
 
     // PAGED_CODE expansion: ensure IRQL <= APC_LEVEL (assert-like)
     if KeGetCurrentIrql() > APC_LEVEL {
@@ -2471,11 +2537,11 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
     if NT_SUCCESS(status) {
         let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
-        attributes.ParentObject = (*DeviceExtension).Device;
+        attributes.ParentObject = (*DeviceExtension).Device as WDFOBJECT;
 
         status = WdfStringCreate(
-            WDF_NO_OBJECT_ATTRIBUTES,
-            core::ptr::null_mut(),
+            core::ptr::null(),
+            &mut attributes,
             &mut string,
         );
     }
@@ -2492,7 +2558,7 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
     if NT_SUCCESS(status) {
         WdfStringGetUnicodeString(string, savingString);
         if setRestricted {
-            WdfObjectDelete(string);
+            WdfObjectDelete(string as WDFOBJECT);
         }
     }
 
@@ -2501,7 +2567,7 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
 #[no_mangle]
 pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
     let mut status: i32 = 0;
-    let device: WDFDEVICE = WdfWorkItemGetParentObject(WorkItem);
+    let device: WDFDEVICE = WdfWorkItemGetParentObject(WorkItem) as WDFDEVICE;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
     let transferLength: u32 = core::mem::size_of::<PERFORMANCE_DESCRIPTOR>() as u32;
     let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
@@ -2509,7 +2575,7 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
 
     // PAGED_CODE()
     if KeGetCurrentIrql() > APC_LEVEL {
-        core::intrinsics::breakpoint();
+        DbgBreakPoint();
     }
 
     TracePrint(
@@ -2521,21 +2587,21 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
 
     let perfDescriptor: *mut PERFORMANCE_DESCRIPTOR = ExAllocatePoolWithTag(
         NonPagedPoolNxCacheAligned,
-        transferLength,
+        transferLength as usize,
         CDROM_TAG_STREAM,
     ) as *mut PERFORMANCE_DESCRIPTOR;
     if perfDescriptor.is_null() {
         return;
     }
 
-    RtlZeroMemory(perfDescriptor as *mut core::ffi::c_void, transferLength);
-    (*perfDescriptor).RestoreDefaults = 1; // TRUE
+    RtlZeroMemory(perfDescriptor as *mut core::ffi::c_void, transferLength as usize);
+    (*perfDescriptor).set_RestoreDefaults(1); // TRUE
 
-    (*srb).TimeOutValue = (*deviceExtension).TimeOutValue;
-    (*srb).CdbLength = 12;
-    (*cdb).SET_STREAMING.OperationCode = SCSIOP_SET_STREAMING;
+    srb.TimeOutValue = (*deviceExtension).TimeOutValue;
+    srb.CdbLength = 12;
+    (*cdb).SET_STREAMING.as_mut().OperationCode = SCSIOP_SET_STREAMING;
     REVERSE_BYTES_SHORT(
-        core::ptr::addr_of_mut!((*cdb).SET_STREAMING.ParameterListLength) as *mut u16,
+        core::ptr::addr_of_mut!((*cdb).SET_STREAMING.as_mut().ParameterListLength) as *mut u16,
         core::ptr::addr_of!(transferLength) as *const u32,
     );
 
@@ -2555,13 +2621,13 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
     );
 
     FREE_POOL(perfDescriptor as *mut core::ffi::c_void);
-    WdfObjectDelete(WorkItem);
+    WdfObjectDelete(WorkItem as WDFOBJECT);
 }
 #[no_mangle]
 pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *mut i8, TargetString: *mut i8) -> i32 {
     let length: usize;
     PAGED_CODE();
-    NT_ASSERT(!TargetString.is_null() as i32);
+    NT_ASSERT((!TargetString.is_null()) as BOOLEAN);
     if StringToMatch.is_null() {
         return 1;
     }
@@ -2582,7 +2648,7 @@ pub unsafe extern "C" fn RequestSetContextFields(
 
     syncEvent = ExAllocatePoolWithTag(
         0x200u32, // NonPagedPoolNx
-        core::mem::size_of::<KEVENT>() as u64,
+        core::mem::size_of::<KEVENT>(),
         0x74764553u32, // CDROM_TAG_SYNC_EVENT
     ) as *mut KEVENT;
 
@@ -2627,7 +2693,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceIdProperty(
     if NT_SUCCESS(status) {
         status = WdfRequestRetrieveOutputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.OutputBufferLength as usize,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize,
             core::ptr::addr_of_mut!(descHeader) as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -2636,7 +2702,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceIdProperty(
     if NT_SUCCESS(status) {
         let offset: ULONG = (*descHeader).Size;
         let dest: *mut u8 = (descHeader as *mut u8).add(offset as usize);
-        let outputBufferSize: usize = RequestParameters.Parameters.DeviceIoControl.OutputBufferLength as usize;
+        let outputBufferSize: usize = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize;
 
         status = RtlULongAdd(
             (*descHeader).Size,
@@ -2688,7 +2754,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceProperty(
         if NT_SUCCESS(status) {
             status = WdfRequestRetrieveOutputBuffer(
                 Request,
-                RequestParameters.Parameters.DeviceIoControl.OutputBufferLength as usize,
+                RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize,
                 core::ptr::addr_of_mut!(descHeader),
                 core::ptr::null_mut(),
             );
@@ -2702,7 +2768,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceProperty(
         if NT_SUCCESS(status) {
             let offset: ULONG = (*descHeader).Size;
             let outputBufferSize: usize =
-                RequestParameters.Parameters.DeviceIoControl.OutputBufferLength as usize;
+                RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize;
 
             // Adjust required size and potential destination location.
             dest = (descHeader as *mut u8).add(offset as usize);
@@ -2765,10 +2831,10 @@ pub unsafe extern "C" fn DeviceRetrieveModeSenseUsingScratch(
         core::mem::size_of::<CDB>(),
     );
 
-    cdb.MODE_SENSE.OperationCode = SCSIOP_MODE_SENSE;
-    cdb.MODE_SENSE.PageCode = PageCode;
-    cdb.MODE_SENSE.Pc = PageControl;
-    cdb.MODE_SENSE.AllocationLength = transferSize as u8;
+    cdb.MODE_SENSE.as_mut().OperationCode = SCSIOP_MODE_SENSE;
+    cdb.MODE_SENSE.as_mut().set_PageCode(PageCode);
+    cdb.MODE_SENSE.as_mut().set_Pc(PageControl);
+    cdb.MODE_SENSE.as_mut().AllocationLength = transferSize as u8;
 
     status = ScratchBuffer_ExecuteCdb(
         DeviceExtension,
@@ -2779,7 +2845,7 @@ pub unsafe extern "C" fn DeviceRetrieveModeSenseUsingScratch(
         6u8,
     );
 
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         transferSize = min(
             Length,
             (*(*DeviceExtension)
@@ -2820,7 +2886,7 @@ pub unsafe extern "C" fn ModeSenseFindSpecificPage(
         let blockDescriptorLength: u32;
         if Use6BytesCdb != 0 {
             blockDescriptorLength =
-                (*(ModeSenseBuffer as *const MODE_PARAMETER_HEADER)).BlockDescriptorLength;
+                (*(ModeSenseBuffer as *const MODE_PARAMETER_HEADER)).BlockDescriptorLength as u32;
         } else {
             let modeParam10 = ModeSenseBuffer as *const MODE_PARAMETER_HEADER10;
             blockDescriptorLength = (*modeParam10).BlockDescriptorLength[1] as u32;
@@ -2831,7 +2897,7 @@ pub unsafe extern "C" fn ModeSenseFindSpecificPage(
             + core::mem::size_of::<u8>();
 
         while (ModeSenseBuffer as usize) + size_through_page_length < limit {
-            let page_code = (*(ModeSenseBuffer as *const MODE_DISCONNECT_PAGE)).PageCode;
+            let page_code = (*(ModeSenseBuffer as *const MODE_DISCONNECT_PAGE)).PageCode();
             let page_len = (*(ModeSenseBuffer as *const MODE_DISCONNECT_PAGE)).PageLength as usize;
 
             if page_code == PageMode {
@@ -2873,7 +2939,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
         PAGED_CODE();
 
         status = WdfWaitLockAcquire((*DeviceExtension).EjectSynchronizationLock, core::ptr::null_mut());
-        if NT_SUCCESS(status) == 0 {
+        if !NT_SUCCESS(status) {
             NT_ASSERT(0);
         }
 
@@ -2881,7 +2947,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"PerformEjectionControl: Received request for %s lock type\n\0".as_ptr() as *const i8,
-            LockTypeStrings[LockType as usize],
+            LockTypeStrings.0[LockType as usize],
         );
 
         loop {
@@ -2897,18 +2963,18 @@ pub unsafe extern "C" fn PerformEjectionControl(
                     break;
                 }
                 fileObjectContext = FileObjectGetContext(fileObject);
-                NT_ASSERT((!fileObjectContext.is_null()) as i32);
+                NT_ASSERT(((!fileObjectContext.is_null())) as BOOLEAN);
             }
 
-            NT_ASSERT(((*DeviceExtension).LockCount >= 0) as i32);
-            NT_ASSERT(((*DeviceExtension).ProtectedLockCount >= 0) as i32);
-            NT_ASSERT(((*DeviceExtension).InternalLockCount >= 0) as i32);
+            NT_ASSERT((((*DeviceExtension).LockCount >= 0)) as BOOLEAN);
+            NT_ASSERT((((*DeviceExtension).ProtectedLockCount >= 0)) as BOOLEAN);
+            NT_ASSERT((((*DeviceExtension).InternalLockCount >= 0)) as BOOLEAN);
 
             newLockCount = (*DeviceExtension).LockCount;
             newProtectedLockCount = (*DeviceExtension).ProtectedLockCount;
             newInternalLockCount = (*DeviceExtension).InternalLockCount;
             if !fileObjectContext.is_null() {
-                newFileLockCount = (*fileObjectContext).LockCount;
+                newFileLockCount = (*fileObjectContext).LockCount as i32;
             }
 
             if Lock != 0 && LockType == SimpleMediaLock {
@@ -2935,7 +3001,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
                 newProtectedLockCount -= 1;
                 countChanged = 1;
             } else if Lock == 0 && LockType == InternalMediaLock {
-                NT_ASSERT((newInternalLockCount != 0) as i32);
+                NT_ASSERT(((newInternalLockCount != 0)) as BOOLEAN);
                 newInternalLockCount -= 1;
                 countChanged = 1;
             }
@@ -2955,12 +3021,12 @@ pub unsafe extern "C" fn PerformEjectionControl(
                 (*srb_ptr).CdbLength = 6;
                 (*srb_ptr).TimeOutValue = (*DeviceExtension).TimeOutValue;
                 cdb = core::ptr::addr_of_mut!((*srb_ptr).Cdb) as *mut CDB;
-                (*cdb).MEDIA_REMOVAL.OperationCode = SCSIOP_MEDIUM_REMOVAL;
-                (*cdb).MEDIA_REMOVAL.Prevent = Lock;
+                (*cdb).MEDIA_REMOVAL.as_mut().OperationCode = SCSIOP_MEDIUM_REMOVAL;
+                (*cdb).MEDIA_REMOVAL.as_mut().set_Prevent(Lock);
                 status = DeviceSendSrbSynchronously(
                     (*DeviceExtension).Device,
                     srb_ptr,
-                    core::ptr::null(),
+                    core::ptr::null_mut(),
                     0,
                     0,
                     Request,
@@ -2970,12 +3036,12 @@ pub unsafe extern "C" fn PerformEjectionControl(
         }
 
         // Exit label
-        if countChanged != 0 && NT_SUCCESS(status) != 0 {
+        if countChanged != 0 && NT_SUCCESS(status) {
             (*DeviceExtension).LockCount = newLockCount;
             (*DeviceExtension).ProtectedLockCount = newProtectedLockCount;
             (*DeviceExtension).InternalLockCount = newInternalLockCount;
             if !fileObjectContext.is_null() {
-                (*fileObjectContext).LockCount = newFileLockCount;
+                (*fileObjectContext).LockCount = newFileLockCount as u32;
             }
         }
 
@@ -3061,7 +3127,7 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
         );
 
         if !info.is_null() && (*info).AsynchronousNotificationSupported != 0 {
-            ANPending = (*info).ANSignalPendingDueToExclusiveLock;
+            ANPending = (*info).ANSignalPendingDueToExclusiveLock as i32;
             (*info).ANSignalPendingDueToExclusiveLock = 0;
 
             if ANPending != 0 && (*info).MediaChangeDetectionDisableCount == 0 {
@@ -3101,9 +3167,9 @@ pub unsafe extern "C" fn RequestCompletion(
         WdfRequestGetParameters(Request, &mut requestParameters);
 
         if requestParameters.Type == WdfRequestTypeDeviceControl {
-            ioctlCode = requestParameters.Parameters.DeviceIoControl.IoControlCode;
+            ioctlCode = requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode;
 
-            if requestParameters.Parameters.DeviceIoControl.IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL {
+            if requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
@@ -3127,8 +3193,8 @@ pub unsafe extern "C" fn RequestCompletion(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_GENERAL,
                 b"Request complete - READ - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n\0".as_ptr() as *const i8,
-                requestParameters.Parameters.Read.DeviceOffset as u32,
-                requestParameters.Parameters.Read.Length as u32,
+                requestParameters.Parameters.Read.as_ref().DeviceOffset as u32,
+                requestParameters.Parameters.Read.as_ref().Length as u32,
                 Information as u32,
                 Status,
             );
@@ -3137,8 +3203,8 @@ pub unsafe extern "C" fn RequestCompletion(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_GENERAL,
                 b"Request complete - WRITE - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n\0".as_ptr() as *const i8,
-                requestParameters.Parameters.Write.DeviceOffset as u32,
-                requestParameters.Parameters.Write.Length as u32,
+                requestParameters.Parameters.Write.as_ref().DeviceOffset as u32,
+                requestParameters.Parameters.Write.as_ref().Length as u32,
                 Information as u32,
                 Status,
             );
@@ -3159,7 +3225,7 @@ pub unsafe extern "C" fn RequestCompletion(
         Status = STATUS_DEVICE_DOES_NOT_EXIST;
     }
 
-    WdfRequestCompleteWithInformation(Request, Status, Information);
+    WdfRequestCompleteWithInformation(Request, Status, Information as ULONG_PTR);
 
     return;
 }
@@ -3190,7 +3256,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
     let mut status: NTSTATUS = 0;
     let mut requestSent: BOOLEAN = 0;
     let mut shouldRetry: BOOLEAN = 1;
-    let cdb: *mut CDB = (*DeviceExtension).PowerContext.Srb.Cdb as *mut CDB;
+    let cdb: *mut CDB = core::ptr::addr_of_mut!((*DeviceExtension).PowerContext.Srb.Cdb) as *mut CDB;
     let mut timeoutValue: ULONG = (*DeviceExtension).TimeOutValue;
     let mut retryCount: ULONG = 1;
 
@@ -3210,7 +3276,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
         }
         PowerDownDeviceFlushed => {
             let mut secondsRemaining: ULONG = 0;
-            PoQueryWatchdogTime((*DeviceExtension).LowerPdo, &mut secondsRemaining);
+            PoQueryWatchdogTime((*DeviceExtension).LowerPdo as *mut core::ffi::c_void, &mut secondsRemaining);
             if secondsRemaining == 0 {
                 retryCount = MAXIMUM_RETRIES;
                 timeoutValue = SCSI_CDROM_TIMEOUT;
@@ -3246,29 +3312,29 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
             | SRB_FLAGS_BYPASS_LOCKED_QUEUE
             | SRB_FLAGS_D3_PROCESSING;
 
-        (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_EXECUTE_SCSI;
+        (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_EXECUTE_SCSI as u8;
         (*DeviceExtension).PowerContext.Srb.TimeOutValue = timeoutValue;
 
         if (*DeviceExtension).PowerContext.PowerChangeState.PowerDown == PowerDownDeviceInitial {
-            (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_LOCK_QUEUE;
+            (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_LOCK_QUEUE as u8;
         } else if (*DeviceExtension).PowerContext.PowerChangeState.PowerDown == PowerDownDeviceLocked {
-            (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_QUIESCE_DEVICE;
+            (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_QUIESCE_DEVICE as u8;
         } else if (*DeviceExtension).PowerContext.PowerChangeState.PowerDown == PowerDownDeviceQuiesced {
             (*DeviceExtension).PowerContext.Srb.CdbLength = 10;
-            (*cdb).SYNCHRONIZE_CACHE10.OperationCode = SCSIOP_SYNCHRONIZE_CACHE;
+            (*cdb).SYNCHRONIZE_CACHE10.as_mut().OperationCode = SCSIOP_SYNCHRONIZE_CACHE;
         } else if (*DeviceExtension).PowerContext.PowerChangeState.PowerDown == PowerDownDeviceFlushed {
             (*DeviceExtension).PowerContext.Srb.CdbLength = 6;
-            (*cdb).START_STOP.OperationCode = SCSIOP_START_STOP_UNIT;
-            (*cdb).START_STOP.Start = 0;
-            (*cdb).START_STOP.Immediate = 1;
+            (*cdb).START_STOP.as_mut().OperationCode = SCSIOP_START_STOP_UNIT;
+            (*cdb).START_STOP.as_mut().set_Start(0);
+            (*cdb).START_STOP.as_mut().set_Immediate(1);
         } else if (*DeviceExtension).PowerContext.PowerChangeState.PowerDown == PowerDownDeviceStopped {
-            (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_UNLOCK_QUEUE;
+            (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_UNLOCK_QUEUE as u8;
         }
 
         if !CompletionRoutine.is_null() {
             WdfRequestSetCompletionRoutine(
                 (*DeviceExtension).PowerContext.PowerRequest,
-                CompletionRoutine,
+                core::mem::transmute::<*const core::ffi::c_void, PFN_WDF_REQUEST_COMPLETION_ROUTINE>(CompletionRoutine),
                 Context,
             );
         }
@@ -3301,22 +3367,22 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
                     (*DeviceExtension).PowerContext.PowerRequest,
                     command_name,
                     &raw const (*DeviceExtension).PowerContext.Srb as *const core::ffi::c_void,
-                    (*DeviceExtension).PowerContext.Srb.SrbStatus,
+                    (*DeviceExtension).PowerContext.Srb.SrbStatus as u32,
                 );
 
                 NT_ASSERT(
-                    (((*DeviceExtension).PowerContext.Srb.SrbStatus) & SRB_STATUS_QUEUE_FROZEN)
-                        == 0,
+                    ((((*DeviceExtension).PowerContext.Srb.SrbStatus as u32) & SRB_STATUS_QUEUE_FROZEN)
+                        == 0) as BOOLEAN,
                 );
 
                 let retry_remaining = retryCount - (*DeviceExtension).PowerContext.RetryCount;
                 shouldRetry = RequestSenseInfoInterpret(
                     DeviceExtension,
-                    (*DeviceExtension).PowerContext.PowerRequest,
+                    (*DeviceExtension).PowerContext.PowerRequest as *mut core::ffi::c_void,
                     &raw mut (*DeviceExtension).PowerContext.Srb,
                     retry_remaining,
                     &mut status,
-                    &raw mut (*DeviceExtension).PowerContext.RetryIntervalIn100ns,
+                    &raw mut (*DeviceExtension).PowerContext.RetryIntervalIn100ns as *mut LARGE_INTEGER,
                 );
 
                 if shouldRetry != 0 {
@@ -3336,7 +3402,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
         if shouldRetry != 0 {
             let mut interval: LARGE_INTEGER = core::mem::zeroed();
             interval.QuadPart = -((*DeviceExtension).PowerContext.RetryIntervalIn100ns);
-            KeDelayExecutionThread(0i32, 0, &interval);
+            KeDelayExecutionThread(0i8, 0, &mut interval);
 
             status = PowerContextReuseRequest(DeviceExtension);
             if !NT_SUCCESS(status) {
@@ -4200,7 +4266,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     if (request)
 //     {
-//         WdfObjectDelete(request);
+//         WdfObjectDelete(request as WDFOBJECT);
 //     }
 //
 //     return status;
@@ -4389,7 +4455,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //         //Prepare the request
 //         WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-//         attributes.ParentObject = startUnitRequest;
+//         attributes.ParentObject = startUnitRequest as WDFOBJECT;
 //
 //         status = WdfMemoryCreatePreallocated(&attributes,
 //                                              (PVOID)srb,
@@ -4430,7 +4496,7 @@ pub unsafe extern "C" fn RequestSend(
 //         FREE_POOL(context);
 //         if (startUnitRequest != NULL)
 //         {
-//             WdfObjectDelete(startUnitRequest);
+//             WdfObjectDelete(startUnitRequest as WDFOBJECT);
 //         }
 //     }
 //
@@ -4582,7 +4648,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     FREE_POOL(context);
 //
-//     WdfObjectDelete(Request);
+//     WdfObjectDelete(Request as WDFOBJECT);
 //
 // } // end DeviceAsynchronousCompletion()
 //
@@ -6030,7 +6096,7 @@ pub unsafe extern "C" fn RequestSend(
 //         if (setRestricted) {
 //
 //
-//             WdfObjectDelete(string);
+//             WdfObjectDelete(string as WDFOBJECT);
 //         }
 //     }
 //
@@ -6101,7 +6167,7 @@ pub unsafe extern "C" fn RequestSend(
 //                "DeviceRestoreDefaultSpeed: Set Streaming command completed with status: 0x%X\n", status));
 //
 //     FREE_POOL(perfDescriptor);
-//     WdfObjectDelete(WorkItem);
+//     WdfObjectDelete(WorkItem as WDFOBJECT);
 //
 //     return;
 // }
@@ -6251,7 +6317,7 @@ pub unsafe extern "C" fn RequestSend(
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 &descHeader,
 //                                                 NULL);
 //     }
@@ -6263,7 +6329,7 @@ pub unsafe extern "C" fn RequestSend(
 //         PUCHAR                              dest = (PUCHAR)descHeader + offset;
 //         size_t                              outputBufferSize;
 //
-//         outputBufferSize = RequestParameters.Parameters.DeviceIoControl.OutputBufferLength;
+//         outputBufferSize = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
 //
 //         // Adjust required size and potential destination location.
 //         status = RtlULongAdd(descHeader->Size, deviceIdDescriptor->Size, &descHeader->Size);
@@ -6336,7 +6402,7 @@ pub unsafe extern "C" fn RequestSend(
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 &descHeader,
 //                                                 NULL);
 //     }
@@ -6351,7 +6417,7 @@ pub unsafe extern "C" fn RequestSend(
 //     if (NT_SUCCESS(status))
 //     {
 //         ULONG offset = descHeader->Size;
-//         size_t outputBufferSize = RequestParameters.Parameters.DeviceIoControl.OutputBufferLength;
+//         size_t outputBufferSize = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
 //
 //         // Adjust required size and potential destination location.
 //         dest = (PUCHAR)descHeader + offset;
@@ -6865,9 +6931,9 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     if (requestParameters.Type == WdfRequestTypeDeviceControl)
 //     {
-//         ioctlCode = requestParameters.Parameters.DeviceIoControl.IoControlCode;
+//         ioctlCode = requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode;
 //
-//         if (requestParameters.Parameters.DeviceIoControl.IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL)
+//         if (requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL)
 //         {
 //             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                        "Request complete - IOCTL - code: %X; Status: %X; Information: %X\n",
@@ -6888,8 +6954,8 @@ pub unsafe extern "C" fn RequestSend(
 //     {
 //         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                    "Request complete - READ - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n",
-//                    (ULONG)requestParameters.Parameters.Read.DeviceOffset,
-//                    (ULONG)requestParameters.Parameters.Read.Length,
+//                    (ULONG)requestParameters.Parameters.Read.as_ref().DeviceOffset,
+//                    (ULONG)requestParameters.Parameters.Read.as_ref().Length,
 //                    (ULONG)Information,
 //                    Status));
 //     }
@@ -6897,8 +6963,8 @@ pub unsafe extern "C" fn RequestSend(
 //     {
 //         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                    "Request complete - WRITE - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n",
-//                    (ULONG)requestParameters.Parameters.Write.DeviceOffset,
-//                    (ULONG)requestParameters.Parameters.Write.Length,
+//                    (ULONG)requestParameters.Parameters.Write.as_ref().DeviceOffset,
+//                    (ULONG)requestParameters.Parameters.Write.as_ref().Length,
 //                    (ULONG)Information,
 //                    Status));
 //     }

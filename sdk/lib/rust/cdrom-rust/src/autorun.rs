@@ -1,6 +1,6 @@
 use crate::types::*;
 use kmdf_sys::*;
-use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL, _UNICODE_STRING, HANDLE};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -8,7 +8,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, Enabled, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KeInitializeMutex, KeQueryTimeIncrement, KeReleaseMutex, LARGE_INTEGER, LPCSTR, MmBuildMdlForNonPagedPool, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, POWER_PLATFORM_INFORMATION, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, PSTORAGE_DEVICE_DESCRIPTOR, PUNICODE_STRING, PlatformInformation, RTL_QUERY_REGISTRY_ROUTINE, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, RtlQueryRegistryValues, _KWAIT_REASON_UserRequest, ZwPowerInformation};
+use ntkrnl_sys::ddk::{ANSI_STRING, _STORAGE_BUS_TYPE_BusTypeAtapi as BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KeInitializeMutex, KeQueryTimeIncrement, KeReleaseMutex, LARGE_INTEGER, LPCSTR, MmBuildMdlForNonPagedPool, POWER_PLATFORM_INFORMATION, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, STORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_DESCRIPTOR, PUNICODE_STRING, _POWER_INFORMATION_LEVEL_PlatformInformation as PlatformInformation, RTL_QUERY_REGISTRY_ROUTINE, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, RtlQueryRegistryValues, _KWAIT_REASON_UserRequest, ZwPowerInformation};
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::{copy_nonoverlapping, write_bytes, null_mut};
@@ -16,8 +16,15 @@ use core::ptr::{copy_nonoverlapping, write_bytes, null_mut};
 extern "C" {
     static GUID_IO_MEDIA_ARRIVAL: GUID;
     static GUID_IO_MEDIA_REMOVAL: GUID;
+    static CDROM_DEVICE_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn NT_ASSERT(condition: i32);
     fn SET_FLAG(flags: *mut u32, flag: u32);
+    fn SRB_STATUS(srb_status: u8) -> u32;
+    fn TEST_FLAG(flags: u32, flag: u32) -> i32;
+    fn PORT_ALLOCATED_SENSE(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK) -> i32;
+    fn FREE_PORT_ALLOCATED_SENSE_BUFFER(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Srb: *mut SCSI_REQUEST_BLOCK);
+    fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
+    fn WDF_WORKITEM_CONFIG_INIT(config: *mut WDF_WORKITEM_CONFIG, routine: unsafe extern "C" fn(WDFWORKITEM));
 }
 extern "C" {
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, guid: *const GUID, size: u32, context: *const core::ffi::c_void, );
@@ -25,7 +32,7 @@ extern "C" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
     fn RequestClearSendTime(request: *mut core::ffi::c_void);
     fn DeviceGetExtension(device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
-    fn DeviceSetParameter( deviceExtension: PCDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32, );
+    fn DeviceSetParameter( deviceExtension: PCDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Value: u32, ) -> i32;
     fn RequestSend( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Target: *mut core::ffi::c_void, Options: u32, RequestSent: *mut u8, ) -> i32;
     fn PAGED_CODE();
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
@@ -46,10 +53,10 @@ extern "C" {
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
-    fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const i8, ValueName: *const i8, Data: *mut u32, ); // PULONG
+    fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Data: *mut u32, ); // PULONG
     fn DeviceSendRequestSynchronously( Device: WDFDEVICE, Request: WDFREQUEST, WaitForCompletion: BOOLEAN, ) -> NTSTATUS;
     fn DeviceReleaseQueue(Device: WDFDEVICE);
-    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: WDFREQUEST, Srb: *mut SRB, Flags: u32, Status: *mut NTSTATUS, SenseData: *mut c_void, ); // NULL becomes null_mut()
+    fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, Flags: u32, Status: *mut NTSTATUS, SenseData: *mut i64, ) -> i32;
     fn IoFreeMdl(Mdl: PMDL);
     fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
     fn DevicePowerSettingCallback( Setting: *mut core::ffi::c_void, Value: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
@@ -74,27 +81,27 @@ pub static MCN_REG_AUTORUN_ENABLE_INSTANCE_NAME: [u16; 16] = [
     0x006C, 0x0065, 0x004D, 0x0043, 0x004E, 0x0000,
 ];
 
-// TRACE_LEVEL_INFORMATION and TRACE_FLAG_MCN are assumed to be u32 constants;
-// if they are defined elsewhere, replace these with their actual values.
-const TRACE_LEVEL_INFORMATION: u32 = 0xFFFFFFFF; // placeholder
-const TRACE_FLAG_MCN: u32 = 0xFFFFFFFF;          // placeholder
+// Trace levels/flags (WPP tracing gates; only used to gate DbgPrint-style output)
+const TRACE_LEVEL_ERROR: u32 = 1;
+const TRACE_LEVEL_WARNING: u32 = 2;
+const TRACE_LEVEL_INFORMATION: u32 = 3;
+const TRACE_LEVEL_VERBOSE: u32 = 5;
+const TRACE_FLAG_MCN: u32 = 0x00000010;
+const TRACE_FLAG_POWER: u32 = 0x00000020;
+
+// MEDIA_CHANGE_DETECTION_STATE enum values (bindgen-prefixed)
+use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaUnknown as MediaUnknown;
+use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaPresent as MediaPresent;
+use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaNotPresent as MediaNotPresent;
+use crate::types::_MEDIA_CHANGE_DETECTION_STATE_MediaUnavailable as MediaUnavailable;
 
 const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x01; // typical value
 
-// Constants needed by this function
+// Constants needed by this module
 const KEY_ALL_ACCESS: u32 = 0xF003F;
 const CDROM_TAG_AUTORUN_DISABLE: u32 = 0x44434154; // 'DCAT'
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_MCN: u32 = 0x1000;
-const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC0000593;
-const NonPagedPoolNx: u32 = 0; // pool type placeholder
-
-// Forward declarations for unknown external symbols
-
-const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_LEVEL_VERBOSE: u32 = 5;
-const TRACE_FLAG_MCN: u32 = 0x00000010;
-const KEY_ALL_ACCESS: u32 = 0xF003F;
+const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC0000593u32 as i32;
+const NonPagedPoolNx: u32 = 0x200; // NonPagedPoolNx
 
 const PARAMETER_KEY_NAME: [u16; 11] = [
     0x0050, 0x0061, 0x0072, 0x0061, 0x006D, 0x0065, 0x0074, 0x0065, 0x0072, 0x0073, 0
@@ -106,27 +113,30 @@ const AUTORUN_VALUE_NAME: [u16; 8] = [
 const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00000001;
 const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0x00000001; // unknown IOCTL code – placeholder
 
-const TRACE_LEVEL_INFORMATION: u32 = 4;       // placeholder – caller supplies real value
-const TRACE_FLAG_MCN: u32 = 0x00000010;      // placeholder – caller supplies real value
-const CDROM_HACK_MSFT_VIRTUAL_ODD: u32 = 0x00000001; // placeholder – caller supplies real value
+const CDROM_HACK_MSFT_VIRTUAL_ODD: u32 = 0x00000001;
 const WdfExecutionLevelInheritFromParent: u32 = 1;
-
-unsafe extern "system" {
-    // original TracePrint was variadic; we take one fixed pointer argument to enable compilation.
-    fn TracePrint(level: u32, flag: u32, fmt: *const i8, arg: *const core::ffi::c_void);
-}
+const DO_VERIFY_VOLUME: u32 = 0x00000002;
+const STATUS_MEDIA_CHANGED: NTSTATUS = 0x8000001Cu32 as i32; // STATUS_MEDIA_CHANGED
+const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32;
+const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5u32 as i32;
+const STATUS_DEVICE_PROTOCOL_ERROR: NTSTATUS = 0xC0000186u32 as i32;
 
 // STATUS_INVALID_DEVICE_STATE (0xC0000184)
 const STATUS_INVALID_DEVICE_STATE: NTSTATUS = (0xC0000184u32 as i32) as NTSTATUS;
 
 // Constants
-const GESN_BUFFER_SIZE: usize = 0x8;
+const GESN_BUFFER_SIZE: u32 = 0x8;
 const CDROM_TAG_GESN: u32 = 0x4E534547; // 'GESN' tag (little-endian)
 const NonPagedPoolNxCacheAligned: u32 = 0x300; // NonPagedPoolNx (0x200) | CacheAligned (0x100)
 
-// Registry key/value name strings (we use the likely real strings)
-const CLASSP_REG_SUBKEY_NAME: *const i8 = b"Class\0".as_ptr() as *const i8;
-const CLASSP_REG_MMC_DETECTION_VALUE_NAME: *const i8 = b"MmcDetection\0".as_ptr() as *const i8;
+// Registry key/value name strings (wide strings, matching DeviceGetParameter/DeviceSetParameter PWSTR args)
+static CLASSP_REG_SUBKEY_NAME_W: [u16; 6] = [b'C' as u16, b'l' as u16, b'a' as u16, b's' as u16, b's' as u16, 0];
+static CLASSP_REG_MMC_DETECTION_VALUE_NAME_W: [u16; 13] = [
+    b'M' as u16, b'm' as u16, b'c' as u16, b'D' as u16, b'e' as u16, b't' as u16,
+    b'e' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+];
+const CLASSP_REG_SUBKEY_NAME: *mut u16 = CLASSP_REG_SUBKEY_NAME_W.as_ptr() as *mut u16;
+const CLASSP_REG_MMC_DETECTION_VALUE_NAME: *mut u16 = CLASSP_REG_MMC_DETECTION_VALUE_NAME_W.as_ptr() as *mut u16;
 
 // Flag constants
 const FDO_HACK_GESN_IS_BAD: u32 = 0x00000001;               // assume typical bit
@@ -137,44 +147,20 @@ const NOTIFICATION_EXTERNAL_REQUEST_CLASS_MASK: u32 = 0x00000008;
 const FDO_HACK_GESN_IGNORE_OPCHANGE: u32 = 0x00000010;
 
 // SRB flags/status
-const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x00000001;
-const SRB_STATUS_MASK: u32 = 0xFF;
-const SRB_STATUS_SUCCESS: u32 = 0;
-const SRB_STATUS_BUS_RESET: u32 = 0x06;
-const SRB_STATUS_QUEUE_FROZEN: u32 = 0x40;
+const SRB_STATUS_MASK: u8 = 0xFF;
+const SRB_STATUS_SUCCESS: u8 = 0;
+const SRB_STATUS_BUS_RESET: u8 = 0x06;
+const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
 
 // Detection state values
 const CdromDetectionUnknown: u32 = 0;
 const CdromDetectionUnsupported: u32 = 1;
 const CdromDetectionSupported: u32 = 2;
 
-// Trace levels/flags
-const TRACE_LEVEL_WARNING: u32 = 2;
-const TRACE_LEVEL_INFORMATION: u32 = 3;
-const TRACE_FLAG_MCN: u32 = 0x00000001; // example flag
-
-// Extern function declarations
-
-// Type aliases used within the function
-type NTSTATUS = i32;
-type BOOLEAN = i32;          // BOOL is i32 in Windows
-type ULONG = u32;
-type PIRP = *mut IRP;
-type PMDL = *mut MDL;
-type PVOID = *mut c_void;
-type PULONG = *mut u32;
-type PSTORAGE_DEVICE_DESCRIPTOR = *mut STORAGE_DEVICE_DESCRIPTOR;
-
-// The translated function
-
-// Forward declarations for unknown functions and constants
-
-// Dummy constants (caller expected to provide correct values)
-const NonPagedPoolNx: u32 = 0x200; // NonPagedPoolNx
-const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNxCacheAligned
+// Pool / SRB constants (caller expected to provide correct values)
 const CDROM_TAG_MEDIA_CHANGE_DETECTION: u32 = 0x4D434D43; // 'CMCM'
 const SENSE_BUFFER_SIZE: usize = 18; // Example; actual value unknown
-const FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION: u32 = 0x20000; // Example; unknown
+const FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION: u64 = 0x20000; // matches HackFlags (ULONG_PTR)
 const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x100; // Unknown
 const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x200; // Unknown
 const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x400; // Unknown
@@ -194,17 +180,17 @@ pub unsafe extern "C" fn GesnDataInterpret(
 
     *ResendImmediately = FALSE as BOOLEAN;
 
-    if (*Header).NEA != 0 {
+    if (*Header).NEA() != 0 {
         return status;
     }
-    if (*Header).NotificationClass == NOTIFICATION_NO_CLASS_EVENTS {
+    if (*Header).NotificationClass() as u32 == NOTIFICATION_NO_CLASS_EVENTS {
         return status;
     }
 
     if (*info).Gesn.HackEventMask != 0 {
-        let thisEvent: u8 = (*Header).ClassEventData[0] & 0xf;
-        let thisEventBit: u8 = 1u8.wrapping_shl((*Header).NotificationClass as u32);
-        let lowestSetBit: u8;
+        let thisEvent: u8 = *(*Header).ClassEventData.as_ptr().add(0) & 0xf;
+        let thisEventBit: u8 = 1u8.wrapping_shl((*Header).NotificationClass() as u32);
+        let mut lowestSetBit: u8;
 
         if ((*info).Gesn.EventMask & thisEventBit) == 0 {
             return STATUS_DEVICE_PROTOCOL_ERROR;
@@ -264,19 +250,19 @@ pub unsafe extern "C" fn GesnDataInterpret(
         );
     }
 
-    if ((*Header).ClassEventData[0] & 0xf) == 0 {
+    if (*(*Header).ClassEventData.as_ptr().add(0) & 0xf) == 0 {
         return status;
     }
 
     *ResendImmediately = TRUE as BOOLEAN;
 
-    match (*Header).NotificationClass {
+    match (*Header).NotificationClass() as u32 {
         NOTIFICATION_OPERATIONAL_CHANGE_CLASS_EVENTS => {
             let opChangeInfo: *mut NOTIFICATION_OPERATIONAL_STATUS =
                 (*Header).ClassEventData.as_mut_ptr() as *mut NOTIFICATION_OPERATIONAL_STATUS;
             let event: ULONG;
 
-            if (*opChangeInfo).OperationalEvent == NOTIFICATION_OPERATIONAL_EVENT_CHANGE_REQUESTED {
+            if (*opChangeInfo).OperationalEvent() as u32 == NOTIFICATION_OPERATIONAL_EVENT_CHANGE_REQUESTED {
                 // break;
             } else {
                 event = (((*opChangeInfo).Operation[0] as ULONG) << 8)
@@ -331,29 +317,26 @@ pub unsafe extern "C" fn GesnDataInterpret(
                         retry = FALSE as BOOLEAN;
 
                         srb.CdbLength = 6;
-                        srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u8;
-                        srb.SrbStatus = SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_ERROR;
+                        srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
+                        srb.SrbStatus = (SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_ERROR) as u8;
                         srb.SenseInfoBuffer = &mut sense as *mut SENSE_DATA as *mut core::ffi::c_void;
-                        srb.SenseInfoBufferLength = core::mem::size_of::<SENSE_DATA>() as u32;
+                        srb.SenseInfoBufferLength = core::mem::size_of::<SENSE_DATA>() as u8;
 
                         let rtl_size = core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength)
                             + core::mem::size_of::<u8>();
                         sense.AdditionalSenseLength =
                             (core::mem::size_of::<SENSE_DATA>() - rtl_size) as u8;
 
-                        sense.SenseKey = SCSI_SENSE_UNIT_ATTENTION;
-                        sense.AdditionalSenseCode = SCSI_ADSENSE_MEDIUM_CHANGED;
+                        sense.set_SenseKey(SCSI_SENSE_UNIT_ATTENTION as u8);
+                        sense.AdditionalSenseCode = SCSI_ADSENSE_MEDIUM_CHANGED as u8;
 
-                        if !(*DeviceExtension).DeviceAdditionalData.ErrorHandler.is_null() {
-                            let handler = (*DeviceExtension).DeviceAdditionalData.ErrorHandler;
-                            (unsafe {
-                                handler(
-                                    DeviceExtension,
-                                    &mut srb,
-                                    &mut tempStatus,
-                                    &mut retry,
-                                )
-                            });
+                        if let Some(handler) = (*DeviceExtension).DeviceAdditionalData.ErrorHandler {
+                            handler(
+                                DeviceExtension,
+                                &mut srb,
+                                &mut tempStatus,
+                                &mut retry,
+                            );
                         }
                     }
                 }
@@ -365,23 +348,23 @@ pub unsafe extern "C" fn GesnDataInterpret(
                 (*Header).ClassEventData.as_mut_ptr() as *mut NOTIFICATION_EXTERNAL_STATUS;
             let mut externalData: DEVICE_EVENT_EXTERNAL_REQUEST = core::mem::zeroed();
 
-            if (*externalInfo).ExternalEvent != NOTIFICATION_EXTERNAL_EVENT_BUTTON_DOWN {
+            if (*externalInfo).ExternalEvent() as u32 != NOTIFICATION_EXTERNAL_EVENT_BUTTON_DOWN {
                 // break;
             } else {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::EXTERNAL: Event: %x Status %x Req %x\n\0".as_ptr() as *const i8,
-                    (*externalInfo).ExternalEvent as u32,
-                    (*externalInfo).ExternalStatus as u32,
+                    (*externalInfo).ExternalEvent() as u32,
+                    (*externalInfo).ExternalStatus() as u32,
                     (((*externalInfo).Request[0] as u32) << 8) | ((*externalInfo).Request[1] as u32),
                 );
 
                 externalData.Version = 1;
                 externalData.DeviceClass = 0;
-                externalData.ButtonStatus = (*externalInfo).ExternalEvent;
-                externalData.Request = (((*externalInfo).Request[0] as u32) << 8)
-                    | ((*externalInfo).Request[1] as u32);
+                externalData.ButtonStatus = (*externalInfo).ExternalEvent() as u16;
+                externalData.Request = ((((*externalInfo).Request[0] as u32) << 8)
+                    | ((*externalInfo).Request[1] as u32)) as u16;
                 KeQuerySystemTime(&mut externalData.SystemTime);
                 externalData.SystemTime.QuadPart *= KeQueryTimeIncrement() as LONGLONG;
 
@@ -400,14 +383,14 @@ pub unsafe extern "C" fn GesnDataInterpret(
             let mediaInfo: *mut NOTIFICATION_MEDIA_STATUS =
                 (*Header).ClassEventData.as_mut_ptr() as *mut NOTIFICATION_MEDIA_STATUS;
 
-            if ((*mediaInfo).MediaEvent == NOTIFICATION_MEDIA_EVENT_NEW_MEDIA)
-                || ((*mediaInfo).MediaEvent == NOTIFICATION_MEDIA_EVENT_MEDIA_CHANGE)
+            if ((*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_NEW_MEDIA)
+                || ((*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_MEDIA_CHANGE)
             {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::MEDIA ARRIVAL, Status %x\n\0".as_ptr() as *const i8,
-                    (*mediaInfo).MediaStatus as u32,
+                    *(*mediaInfo).__bindgen_anon_1.MediaStatus.as_ref() as u32,
                 );
 
                 if IsVolumeMounted((*DeviceExtension).DeviceObject) != 0 {
@@ -416,7 +399,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                 DeviceSetMediaChangeStateEx(DeviceExtension, MediaPresent, core::ptr::null_mut());
 
                 if ((!(*DeviceExtension).ZeroPowerODDInfo.is_null())
-                    && ((*(*DeviceExtension).ZeroPowerODDInfo).LoadingMechanism
+                    && ((*(*DeviceExtension).ZeroPowerODDInfo).LoadingMechanism as u32
                         == LOADING_MECHANISM_CADDY)
                     && ((*(*DeviceExtension).ZeroPowerODDInfo).Load == 0))
                 {
@@ -428,18 +411,18 @@ pub unsafe extern "C" fn GesnDataInterpret(
 
                     DeviceMarkActive(DeviceExtension, TRUE as BOOLEAN, FALSE as BOOLEAN);
                 }
-            } else if (*mediaInfo).MediaEvent == NOTIFICATION_MEDIA_EVENT_MEDIA_REMOVAL {
+            } else if (*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_MEDIA_REMOVAL {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::MEDIA REMOVAL, Status %x\n\0".as_ptr() as *const i8,
-                    (*mediaInfo).MediaStatus as u32,
+                    *(*mediaInfo).__bindgen_anon_1.MediaStatus.as_ref() as u32,
                 );
 
                 DeviceSetMediaChangeStateEx(DeviceExtension, MediaNotPresent, core::ptr::null_mut());
 
                 if ((!(*DeviceExtension).ZeroPowerODDInfo.is_null())
-                    && ((*(*DeviceExtension).ZeroPowerODDInfo).LoadingMechanism
+                    && ((*(*DeviceExtension).ZeroPowerODDInfo).LoadingMechanism as u32
                         == LOADING_MECHANISM_CADDY)
                     && ((*(*DeviceExtension).ZeroPowerODDInfo).Load == 0))
                 {
@@ -451,12 +434,12 @@ pub unsafe extern "C" fn GesnDataInterpret(
 
                     DeviceMarkActive(DeviceExtension, FALSE as BOOLEAN, FALSE as BOOLEAN);
                 }
-            } else if (*mediaInfo).MediaEvent == NOTIFICATION_MEDIA_EVENT_EJECT_REQUEST {
+            } else if (*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_EJECT_REQUEST {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::MEDIA EJECTION, Status %x\n\0".as_ptr() as *const i8,
-                    (*mediaInfo).MediaStatus as u32,
+                    *(*mediaInfo).__bindgen_anon_1.MediaStatus.as_ref() as u32,
                 );
 
                 DeviceSendNotification(
@@ -474,7 +457,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
             let mut busyData: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
 
             busyData.Version = 1;
-            busyData.Reason = (*busyInfo).DeviceBusyStatus;
+            busyData.Reason = (*busyInfo).DeviceBusyStatus as u32;
             busyData.Estimated100msToReady = (((*busyInfo).Time[0] as u32) << 8)
                 | ((*busyInfo).Time[1] as u32) & 0xff;
 
@@ -482,7 +465,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"GESN::BUSY: Event: %x Status %x Time %x\n\0".as_ptr() as *const i8,
-                (*busyInfo).DeviceBusyEvent as u32,
+                (*busyInfo).DeviceBusyEvent() as u32,
                 (*busyInfo).DeviceBusyStatus as u32,
                 busyData.Estimated100msToReady,
             );
@@ -503,11 +486,11 @@ pub unsafe extern "C" fn GesnDataInterpret(
             }
 
             if ((!(*DeviceExtension).ZeroPowerODDInfo.is_null())
-                && ((*(*DeviceExtension).ZeroPowerODDInfo).LoadingMechanism
+                && ((*(*DeviceExtension).ZeroPowerODDInfo).LoadingMechanism as u32
                     == LOADING_MECHANISM_TRAY)
                 && ((*(*DeviceExtension).ZeroPowerODDInfo).Load == 0)
-                && ((*busyInfo).DeviceBusyEvent == NOTIFICATION_BUSY_EVENT_LO_CHANGE)
-                && ((*busyInfo).DeviceBusyStatus == NOTIFICATION_BUSY_STATUS_NO_EVENT))
+                && ((*busyInfo).DeviceBusyEvent() as u32 == NOTIFICATION_BUSY_EVENT_LO_CHANGE)
+                && ((*busyInfo).DeviceBusyStatus as u32 == NOTIFICATION_BUSY_STATUS_NO_EVENT))
             {
                 inHomePosition = DeviceZPODDIsInHomePosition(DeviceExtension);
 
@@ -665,11 +648,11 @@ pub unsafe extern "C" fn DeviceSetMediaChangeStateEx(
 
     let mut zero = LARGE_INTEGER { QuadPart: 0 };
     let status = KeWaitForMutexObject(
-        core::ptr::addr_of_mut!((*info).MediaChangeMutex),
-        _KWAIT_REASON_Executive,
+        core::ptr::addr_of_mut!((*info).MediaChangeMutex) as *mut core::ffi::c_void,
+        _KWAIT_REASON_Executive as i32,
         0i32,
         0,
-        &zero as *const _,
+        &zero as *const _ as *const core::ffi::c_void,
     );
     if status == STATUS_TIMEOUT {
         return;
@@ -693,11 +676,11 @@ pub unsafe extern "C" fn DeviceSendDelayedMediaChangeNotifications(
     }
 
     let status = KeWaitForMutexObject(
-        core::ptr::addr_of_mut!((*info).MediaChangeMutex),
-        _KWAIT_REASON_Executive,
+        core::ptr::addr_of_mut!((*info).MediaChangeMutex) as *mut core::ffi::c_void,
+        _KWAIT_REASON_Executive as i32,
         0i32,
         0,
-        core::ptr::addr_of_mut!(zero),
+        core::ptr::addr_of_mut!(zero) as *const core::ffi::c_void,
     );
 
     if status == STATUS_TIMEOUT {
@@ -736,7 +719,7 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
     let mut params: WDF_REQUEST_REUSE_PARAMS = core::mem::zeroed();
     let info = (*DeviceExtension).MediaChangeDetectionInfo;
 
-    irp = WdfRequestWdmGetIrp((*info).MediaChangeRequest as *mut core::ffi::c_void);
+    irp = WdfRequestWdmGetIrp((*info).MediaChangeRequest);
     NT_ASSERT(!irp.is_null() as i32);
 
     if !(*irp).MdlAddress.is_null() {
@@ -749,13 +732,13 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
             0, // WDF_REQUEST_REUSE_NO_FLAGS
             STATUS_NOT_SUPPORTED,
         );
-        status = WdfRequestReuse((*info).MediaChangeRequest as *mut core::ffi::c_void, &raw mut params);
+        status = WdfRequestReuse((*info).MediaChangeRequest, &raw mut params);
     }
 
     if NT_SUCCESS(status) {
         status = WdfIoTargetFormatRequestForInternalIoctlOthers(
-            (*DeviceExtension).IoTarget as *mut core::ffi::c_void,
-            (*info).MediaChangeRequest as *mut core::ffi::c_void,
+            (*DeviceExtension).IoTarget,
+            (*info).MediaChangeRequest,
             0x4D014, // IOCTL_SCSI_EXECUTE_IN
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -770,7 +753,7 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
                 0, // TRACE_FLAG_GENERAL
                 b"RequestSetupMcnRequest: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n\0"
                     .as_ptr()
-                    as *const u8,
+                    as *const i8,
                 status,
             );
         }
@@ -783,9 +766,9 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
 
         (*nextIrpStack).Flags = 0x01; // SL_OVERRIDE_VERIFY_VOLUME
         (*nextIrpStack).MajorFunction = IRP_MJ_INTERNAL_DEVICE_CONTROL;
-        (*nextIrpStack).Parameters.Scsi.Srb = &raw mut (*info).MediaChangeSrb;
+        (*nextIrpStack).Parameters.Scsi.Srb = &raw mut (*info).MediaChangeSrb as *mut _;
 
-        srb = (*nextIrpStack).Parameters.Scsi.Srb;
+        srb = (*nextIrpStack).Parameters.Scsi.Srb as *mut SCSI_REQUEST_BLOCK;
         buffer = (*info).SenseBuffer as *mut core::ffi::c_void;
 
         RtlZeroMemory(srb as *mut core::ffi::c_void, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
@@ -793,12 +776,12 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
 
         (*srb).QueueTag = 0; // SP_UNTAGGED
         (*srb).QueueAction = 0; // SRB_SIMPLE_TAG_REQUEST
-        (*srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32;
+        (*srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
         (*srb).Function = 0x00; // SRB_FUNCTION_EXECUTE_SCSI
         (*srb).SenseInfoBuffer = buffer as *mut u8;
         (*srb).SrbStatus = 0;
         (*srb).ScsiStatus = 0;
-        (*srb).OriginalRequest = irp;
+        (*srb).OriginalRequest = irp as *mut core::ffi::c_void;
         (*srb).SenseInfoBufferLength = 32; // SENSE_BUFFER_SIZE
 
         (*srb).SrbFlags = (*DeviceExtension).SrbFlags;
@@ -815,7 +798,7 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
             (*irp).MdlAddress = core::ptr::null_mut();
 
             cdb = &raw mut (*srb).Cdb[0] as *mut CDB;
-            (*cdb).CDB6GENERIC.OperationCode = 0x00; // SCSIOP_TEST_UNIT_READY
+            (*cdb).CDB6GENERIC.as_mut().OperationCode = 0x00; // SCSIOP_TEST_UNIT_READY
         } else {
             NT_ASSERT(!(*info).Gesn.Buffer.is_null() as i32);
             (*srb).TimeOutValue = 0x4; // GESN_TIMEOUT_VALUE
@@ -824,14 +807,14 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
             (*nextIrpStack).Parameters.DeviceIoControl.IoControlCode = 0x4D014; // IOCTL_SCSI_EXECUTE_IN
             (*srb).DataBuffer = (*info).Gesn.Buffer as *mut core::ffi::c_void;
             (*srb).DataTransferLength = (*info).Gesn.BufferSize;
-            (*irp).MdlAddress = (*info).Gesn.Mdl;
+            (*irp).MdlAddress = (*info).Gesn.Mdl as *mut _;
 
             cdb = &raw mut (*srb).Cdb[0] as *mut CDB;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.OperationCode = 0x1A; // SCSIOP_GET_EVENT_STATUS
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.Immediate = 1;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.EventListLength[0] = ((*info).Gesn.BufferSize >> 8) as u8;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.EventListLength[1] = ((*info).Gesn.BufferSize & 0xff) as u8;
-            (*cdb).GET_EVENT_STATUS_NOTIFICATION.NotificationClassRequest = (*info).Gesn.EventMask;
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().OperationCode = 0x1A; // SCSIOP_GET_EVENT_STATUS
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().set_Immediate(1);
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().EventListLength[0] = ((*info).Gesn.BufferSize >> 8) as u8;
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().EventListLength[1] = ((*info).Gesn.BufferSize & 0xff) as u8;
+            (*cdb).GET_EVENT_STATUS_NOTIFICATION.as_mut().NotificationClassRequest = (*info).Gesn.EventMask as u8;
         }
     }
 
@@ -839,7 +822,7 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceDisableGesn(WorkItem: WDFWORKITEM) {
-    let device = WdfWorkItemGetParentObject(WorkItem);
+    let device = WdfWorkItemGetParentObject(WorkItem) as WDFDEVICE;
     let deviceExtension = DeviceGetExtension(device);
 
     // PAGED_CODE(); // macro omitted
@@ -851,7 +834,7 @@ pub unsafe extern "C" fn DeviceDisableGesn(WorkItem: WDFWORKITEM) {
         CdromDetectionUnsupported,
     );
 
-    WdfObjectDelete(WorkItem);
+    WdfObjectDelete(WorkItem as WDFOBJECT);
 }
 #[no_mangle]
 pub unsafe extern "C" fn RequestPostWorkMcnRequest(
@@ -865,25 +848,26 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
     let irp: *mut IRP;
     let mut retryImmediately: u8 = 0; // FALSE
 
-    PAGED_CODE!();
+    PAGED_CODE();
 
-    NT_ASSERT!(!(*info).MediaChangeRequest.is_null());
+    NT_ASSERT(!(*info).MediaChangeRequest.is_null() as i32);
     irp = WdfRequestWdmGetIrp((*info).MediaChangeRequest);
 
-    NT_ASSERT!(!TEST_FLAG!((*info).MediaChangeSrb.SrbStatus, SRB_STATUS_QUEUE_FROZEN));
+    NT_ASSERT((TEST_FLAG((*info).MediaChangeSrb.SrbStatus as u32, SRB_STATUS_QUEUE_FROZEN as u32) == 0) as i32);
 
     // use InterpretSenseInfo routine to check for media state, and also
     // to call ClassError() with correct parameters.
-    if SRB_STATUS!((*info).MediaChangeSrb.SrbStatus) != 0 { // SRB_STATUS_SUCCESS is 0
-        TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
-            b"MCN request - failed - srb status=%x, sense=%x/%x/%x.\n\0".as_ptr(),
-            (*info).MediaChangeSrb.SrbStatus,
-            (*(*info).MediaChangeSrb.SenseInfoBuffer as *const SENSE_DATA).SenseKey,
-            (*(*info).MediaChangeSrb.SenseInfoBuffer as *const SENSE_DATA).AdditionalSenseCode,
-            (*(*info).MediaChangeSrb.SenseInfoBuffer as *const SENSE_DATA).AdditionalSenseCodeQualifier,
+    if SRB_STATUS((*info).MediaChangeSrb.SrbStatus) != 0 { // SRB_STATUS_SUCCESS is 0
+        let sense_buf = (*info).MediaChangeSrb.SenseInfoBuffer as *const SENSE_DATA;
+        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+            b"MCN request - failed - srb status=%x, sense=%x/%x/%x.\n\0".as_ptr() as *const i8,
+            (*info).MediaChangeSrb.SrbStatus as u32,
+            (*sense_buf).SenseKey() as u32,
+            (*sense_buf).AdditionalSenseCode as u32,
+            (*sense_buf).AdditionalSenseCodeQualifier as u32,
         );
 
-        if SRB_STATUS!((*info).MediaChangeSrb.SrbStatus) != 0x0010 { // SRB_STATUS_NOT_POWERED
+        if SRB_STATUS((*info).MediaChangeSrb.SrbStatus) != 0x0010 { // SRB_STATUS_NOT_POWERED
             // Release the queue if it is frozen.
             if ((*info).MediaChangeSrb.SrbStatus & SRB_STATUS_QUEUE_FROZEN) != 0 {
                 DeviceReleaseQueue((*DeviceExtension).Device);
@@ -891,7 +875,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
 
             RequestSenseInfoInterpret(
                 DeviceExtension,
-                (*info).MediaChangeRequest,
+                (*info).MediaChangeRequest as *mut core::ffi::c_void,
                 &mut (*info).MediaChangeSrb,
                 0,
                 &mut status,
@@ -902,8 +886,8 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
         (*(*DeviceExtension).PrivateFdoData).LoggedTURFailureSinceLastIO = 0; // FALSE
 
         if (*info).Gesn.Supported == 0 {
-            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
-                b"MCN request - succeeded (GESN NOT supported, setting MediaPresent).\n\0".as_ptr(),
+            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+                b"MCN request - succeeded (GESN NOT supported, setting MediaPresent).\n\0".as_ptr() as *const i8,
             );
 
             // success != media for GESN case
@@ -913,23 +897,23 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
                 core::ptr::null_mut(),
             );
         } else {
-            TracePrint!(TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
-                b"MCN request - succeeded (GESN supported).\n\0".as_ptr(),
+            TracePrint(TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+                b"MCN request - succeeded (GESN supported).\n\0".as_ptr() as *const i8,
             );
         }
     }
 
     if (*info).Gesn.Supported != 0 {
         if status == ntkrnl_sys::constants::STATUS_DATA_OVERRUN {
-            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
-                b"MCN Request - Data Overrun\n\0".as_ptr(),
+            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+                b"MCN Request - Data Overrun\n\0".as_ptr() as *const i8,
             );
             status = 0; // STATUS_SUCCESS
         }
 
         if !(status >= 0) { // NT_SUCCESS
-            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
-                b"MCN Request: GESN failed with status %x\n\0".as_ptr(),
+            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+                b"MCN Request: GESN failed with status %x\n\0".as_ptr() as *const i8,
                 status,
             );
         } else {
@@ -938,7 +922,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
             if (*irp).IoStatus.Information == 8 {
                 GesnDataInterpret(
                     DeviceExtension,
-                    (*info).Gesn.Buffer as *mut core::ffi::c_void,
+                    (*info).Gesn.Buffer as *mut NOTIFICATION_EVENT_STATUS_HEADER,
                     &mut retryImmediately,
                 );
             }
@@ -946,12 +930,12 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
     }
 
     // free port-allocated sense buffer, if any.
-    if PORT_ALLOCATED_SENSE!(DeviceExtension, &mut (*info).MediaChangeSrb) {
-        FREE_PORT_ALLOCATED_SENSE_BUFFER!(DeviceExtension, &mut (*info).MediaChangeSrb);
+    if PORT_ALLOCATED_SENSE(DeviceExtension, &mut (*info).MediaChangeSrb) != 0 {
+        FREE_PORT_ALLOCATED_SENSE_BUFFER(DeviceExtension, &mut (*info).MediaChangeSrb);
     }
 
     // Remember the IRP and SRB for use the next time.
-    NT_ASSERT!(!IoGetNextIrpStackLocation(irp).is_null());
+    NT_ASSERT(!IoGetNextIrpStackLocation(irp).is_null() as i32);
     (*IoGetNextIrpStackLocation(irp)).Parameters.Scsi.Srb = &mut (*info).MediaChangeSrb;
 
     // run a sanity check to make sure we're not recursing continuously
@@ -965,10 +949,10 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
             let mut workitemConfig: WDF_WORKITEM_CONFIG = core::mem::zeroed();
             let mut workItem: WDFWORKITEM = core::ptr::null_mut();
 
-            WDF_OBJECT_ATTRIBUTES_INIT!(&mut attributes);
-            attributes.ParentObject = (*DeviceExtension).Device;
+            WDF_OBJECT_ATTRIBUTES_INIT(&mut attributes);
+            attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
 
-            WDF_WORKITEM_CONFIG_INIT!(&mut workitemConfig, DeviceDisableGesn);
+            WDF_WORKITEM_CONFIG_INIT(&mut workitemConfig, DeviceDisableGesn);
             workitemConfig.AutomaticSerialization = 0; // FALSE
 
             status = WdfWorkItemCreate(
@@ -977,8 +961,8 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
                 &mut workItem,
             );
 
-            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
-                b"MCN Request: Disabling GESN for WDFDEVICE %p\n\0".as_ptr(),
+            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+                b"MCN Request: Disabling GESN for WDFDEVICE %p\n\0".as_ptr() as *const i8,
                 (*DeviceExtension).Device,
             );
 
@@ -1010,8 +994,8 @@ pub unsafe extern "C" fn RequestSendMcnRequest(
 
     RequestSend(
         DeviceExtension,
-        (*info).MediaChangeRequest,
-        (*DeviceExtension).IoTarget,
+        (*info).MediaChangeRequest as *mut core::ffi::c_void,
+        (*DeviceExtension).IoTarget as *mut core::ffi::c_void,
         WDF_REQUEST_SEND_OPTION_SYNCHRONOUS,
         core::ptr::addr_of_mut!(request_sent),
     );
@@ -1036,8 +1020,8 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
         return STATUS_SUCCESS;
     }
 
-    (*DeviceExtension).KernelModeMcnContext.FileObject = (-1isize) as *mut core::ffi::c_void;
-    (*DeviceExtension).KernelModeMcnContext.DeviceObject = (-1isize) as *mut core::ffi::c_void;
+    (*DeviceExtension).KernelModeMcnContext.FileObject = (-1isize) as *mut _;
+    (*DeviceExtension).KernelModeMcnContext.DeviceObject = (-1isize) as *mut _;
     (*DeviceExtension).KernelModeMcnContext.LockCount = 0;
     (*DeviceExtension).KernelModeMcnContext.McnDisableCount = 0;
 
@@ -1045,7 +1029,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
         NonPagedPoolNx,
         size_of::<MEDIA_CHANGE_DETECTION_INFO>(),
         CDROM_TAG_MEDIA_CHANGE_DETECTION,
-    );
+    ) as *mut MEDIA_CHANGE_DETECTION_INFO;
 
     if mediaChangeInfo.is_null() {
         status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1077,7 +1061,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
             // CDROM_REQUEST_CONTEXT is a type identifier; we pass a dummy pointer as sentinel
             1 as *const core::ffi::c_void,
         );
-        attributes.ParentObject = (*DeviceExtension).Device;
+        attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
         status = WdfRequestCreate(
             &mut attributes,
             (*DeviceExtension).IoTarget,
@@ -1113,7 +1097,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
 
     if status >= 0 {
         (*mediaChangeInfo).MediaChangeSyncIrp = irp;
-        (*mediaChangeInfo).SenseBuffer = senseBuffer;
+        (*mediaChangeInfo).SenseBuffer = senseBuffer as *mut u8;
 
         // Set default values for the media change notification configuration
         (*mediaChangeInfo).MediaChangeDetectionDisableCount = 0;
@@ -1151,18 +1135,18 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
                 // TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 //             "DeviceInitializeMcn: GESN available for %p\n",
                 //             DeviceExtension->DeviceObject));
-                NT_ASSERT((*mediaChangeInfo).Gesn.Supported != 0);
-                NT_ASSERT(!(*mediaChangeInfo).Gesn.Buffer.is_null());
-                NT_ASSERT((*mediaChangeInfo).Gesn.BufferSize != 0);
-                NT_ASSERT((*mediaChangeInfo).Gesn.EventMask != 0);
+                NT_ASSERT(((*mediaChangeInfo).Gesn.Supported != 0) as i32);
+                NT_ASSERT((!(*mediaChangeInfo).Gesn.Buffer.is_null()) as i32);
+                NT_ASSERT(((*mediaChangeInfo).Gesn.BufferSize != 0) as i32);
+                NT_ASSERT(((*mediaChangeInfo).Gesn.EventMask != 0) as i32);
             } else {
                 // TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 //             "DeviceInitializeMcn: GESN *NOT* available for %p\n",
                 //             DeviceExtension->DeviceObject));
-                NT_ASSERT((*mediaChangeInfo).Gesn.Supported == 0);
-                NT_ASSERT((*mediaChangeInfo).Gesn.Buffer.is_null());
-                NT_ASSERT((*mediaChangeInfo).Gesn.BufferSize == 0);
-                NT_ASSERT((*mediaChangeInfo).Gesn.EventMask == 0);
+                NT_ASSERT(((*mediaChangeInfo).Gesn.Supported == 0) as i32);
+                NT_ASSERT(((*mediaChangeInfo).Gesn.Buffer.is_null()) as i32);
+                NT_ASSERT(((*mediaChangeInfo).Gesn.BufferSize == 0) as i32);
+                NT_ASSERT(((*mediaChangeInfo).Gesn.EventMask == 0) as i32);
                 (*mediaChangeInfo).Gesn.Supported = 0; // just in case....
             }
         }
@@ -1235,7 +1219,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
     }
 
     // Check if the device has a hack flag saying never to try this.
-    if NT_SUCCESS(status) && ((*DeviceExtension).PrivateFdoData.HackFlags & FDO_HACK_GESN_IS_BAD) != 0 {
+    if NT_SUCCESS(status) && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_GESN_IS_BAD as u64) != 0 {
         DeviceSetParameter(
             DeviceExtension,
             CLASSP_REG_SUBKEY_NAME,
@@ -1251,9 +1235,9 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
         if (*info).Gesn.Buffer.is_null() {
             (*info).Gesn.Buffer = ExAllocatePoolWithTag(
                 NonPagedPoolNxCacheAligned,
-                GESN_BUFFER_SIZE,
+                GESN_BUFFER_SIZE as usize,
                 CDROM_TAG_GESN,
-            );
+            ) as *mut u8;
         }
 
         if (*info).Gesn.Buffer.is_null() {
@@ -1263,23 +1247,23 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
 
     if NT_SUCCESS(status) {
         if !(*info).Gesn.Mdl.is_null() {
-            IoFreeMdl((*info).Gesn.Mdl);
+            IoFreeMdl((*info).Gesn.Mdl as *mut _);
         }
 
         (*info).Gesn.Mdl = IoAllocateMdl(
-            (*info).Gesn.Buffer,
+            (*info).Gesn.Buffer as *mut core::ffi::c_void,
             GESN_BUFFER_SIZE,
             0, // FALSE
             0,  // FALSE
             core::ptr::null_mut(),
-        );
+        ) as *mut _;
         if ((*info).Gesn.Mdl).is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
         }
     }
 
     if NT_SUCCESS(status) {
-        MmBuildMdlForNonPagedPool((*info).Gesn.Mdl);
+        MmBuildMdlForNonPagedPool((*info).Gesn.Mdl as *mut _);
         (*info).Gesn.BufferSize = GESN_BUFFER_SIZE;
         (*info).Gesn.EventMask = 0;
 
@@ -1321,7 +1305,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
 
                 RequestSenseInfoInterpret(
                     DeviceExtension,
-                    (*info).MediaChangeRequest,
+                    (*info).MediaChangeRequest as *mut core::ffi::c_void,
                     core::ptr::addr_of_mut!((*info).MediaChangeSrb),
                     0,
                     core::ptr::addr_of_mut!(status),
@@ -1399,28 +1383,28 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                     (*header).SupportedEventClasses,
                 );
 
-                if ((*header).SupportedEventClasses & NOTIFICATION_MEDIA_STATUS_CLASS_MASK) != 0 {
+                if ((*header).SupportedEventClasses as u32 & NOTIFICATION_MEDIA_STATUS_CLASS_MASK) != 0 {
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN supports MCN\n\0".as_ptr() as *const i8,
                     );
                 }
-                if ((*header).SupportedEventClasses & NOTIFICATION_DEVICE_BUSY_CLASS_MASK) != 0 {
+                if ((*header).SupportedEventClasses as u32 & NOTIFICATION_DEVICE_BUSY_CLASS_MASK) != 0 {
                     TracePrint(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN supports DeviceBusy\n\0".as_ptr() as *const i8,
                     );
                 }
-                if ((*header).SupportedEventClasses & NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK) != 0 {
-                    if ((*DeviceExtension).PrivateFdoData.HackFlags & FDO_HACK_GESN_IGNORE_OPCHANGE) != 0 {
+                if ((*header).SupportedEventClasses as u32 & NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK) != 0 {
+                    if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_GESN_IGNORE_OPCHANGE as u64) != 0 {
                         TracePrint(
                             TRACE_LEVEL_INFORMATION,
                             TRACE_FLAG_MCN,
                             b"GESN supports OpChange, but must ignore these events for compatibility\n\0".as_ptr() as *const i8,
                         );
-                        (*header).SupportedEventClasses &= !NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK;
+                        (*header).SupportedEventClasses &= !NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK as u8;
                     } else {
                         TracePrint(
                             TRACE_LEVEL_INFORMATION,
@@ -1439,10 +1423,10 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 // Therefore, we should not bother querying for the other,
                 // unknown events. Clear all but the above flags.
                 //
-                (*info).Gesn.EventMask &= NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK
+                (*info).Gesn.EventMask &= (NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK
                     | NOTIFICATION_EXTERNAL_REQUEST_CLASS_MASK
                     | NOTIFICATION_MEDIA_STATUS_CLASS_MASK
-                    | NOTIFICATION_DEVICE_BUSY_CLASS_MASK;
+                    | NOTIFICATION_DEVICE_BUSY_CLASS_MASK) as u8;
 
                 //
                 // HACKHACK - REF #0001
@@ -1487,7 +1471,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 // i > 0; not the first time looping through, so interpret the results.
                 status = GesnDataInterpret(
                     DeviceExtension,
-                    (*info).Gesn.Buffer as *mut c_void,
+                    (*info).Gesn.Buffer as *mut NOTIFICATION_EVENT_STATUS_HEADER,
                     core::ptr::addr_of_mut!(retryImmediately),
                 );
 
@@ -1521,7 +1505,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
         // without DEVICE_BUSY in Windows Vista.
         //
 
-        if ((*info).Gesn.EventMask & NOTIFICATION_MEDIA_STATUS_CLASS_MASK) != 0 {
+        if ((*info).Gesn.EventMask as u32 & NOTIFICATION_MEDIA_STATUS_CLASS_MASK) != 0 {
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
@@ -1557,12 +1541,12 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
 
         if !(*info).Gesn.Mdl.is_null() {
             let irp: *mut IRP = WdfRequestWdmGetIrp((*info).MediaChangeRequest);
-            IoFreeMdl((*info).Gesn.Mdl);
+            IoFreeMdl((*info).Gesn.Mdl as *mut _);
             (*info).Gesn.Mdl = core::ptr::null_mut();
             (*irp).MdlAddress = core::ptr::null_mut();
         }
 
-        FREE_POOL((*info).Gesn.Buffer);
+        FREE_POOL((*info).Gesn.Buffer as *mut core::ffi::c_void);
         (*info).Gesn.Supported = 0;   // FALSE
         (*info).Gesn.EventMask = 0;
         (*info).Gesn.BufferSize = 0;
@@ -1576,7 +1560,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
 ) -> i32 {
     let mut status: i32 = 0; // STATUS_SUCCESS
     let mut disabled: i32 = 0; // FALSE
-    let mut instanceOverride: i32 = 0; // initialised to avoid uninitialized use
+    let mut instanceOverride: u8 = 0; // initialised to avoid uninitialized use
 
     ; // PAGED_CODE()
 
@@ -1815,7 +1799,7 @@ pub unsafe extern "C" fn DeviceMediaChangeRegistryCallBack(
         return ntkrnl_sys::base::STATUS_SUCCESS;
     }
 
-    let device_string: *mut ntkrnl_sys::base::_UNICODE_STRING = Context as *mut ntkrnl_sys::base::_UNICODE_STRING;
+    let device_string: *mut _UNICODE_STRING = Context as *mut _UNICODE_STRING;
     let key_value: *mut u16 = ValueData as *mut u16;
     let mut value_length = ValueLength;
     value_length -= core::mem::size_of::<u16>() as u32; // ignore the null character
@@ -1829,7 +1813,7 @@ pub unsafe extern "C" fn DeviceMediaChangeRegistryCallBack(
     }
 
     // if the strings match, disable autorun
-    if ntkrnl_sys::rtl::RtlCompareMemory(
+    if RtlCompareMemory(
         (*device_string).Buffer as *const core::ffi::c_void,
         key_value as *const core::ffi::c_void,
         value_length as usize,
@@ -1866,7 +1850,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
 
     let mut status: NTSTATUS;
     let device_descriptor: PSTORAGE_DEVICE_DESCRIPTOR = (*DeviceExtension).DeviceDescriptor;
-    let mut wdf_key: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut wdf_key: WDFKEY = core::ptr::null_mut();
     let mut service_key: HANDLE = core::ptr::null_mut();
     let mut parameters: [RTL_QUERY_REGISTRY_TABLE; 2] = unsafe { core::mem::zeroed() };
     let mut device_unicode_string: _UNICODE_STRING = unsafe { core::mem::zeroed() };
@@ -1880,19 +1864,20 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
         core::ptr::addr_of_mut!(wdf_key),
     );
 
-    if NT_SUCCESS(status) == 0 {
+    if !NT_SUCCESS(status) {
         // always take the safe path
         return 1; // TRUE
     }
 
-    if NT_SUCCESS(status) != 0 {
-        let null_multi_sz: *const u16 = &[0u16; 1].as_ptr();
-        let auto_run_always_disable: *const u16 = &[
+    if NT_SUCCESS(status) {
+        let null_multi_sz_buf: [u16; 1] = [0u16; 1];
+        let null_multi_sz: *const u16 = null_multi_sz_buf.as_ptr();
+        let auto_run_always_disable_buf: [u16; 21] = [
             'A' as u16, 'u' as u16, 't' as u16, 'o' as u16, 'R' as u16, 'u' as u16, 'n' as u16,
             'A' as u16, 'l' as u16, 'w' as u16, 'a' as u16, 'y' as u16, 's' as u16, 'D' as u16,
             'i' as u16, 's' as u16, 'a' as u16, 'b' as u16, 'l' as u16, 'e' as u16, 0u16,
-        ]
-        .as_ptr();
+        ];
+        let auto_run_always_disable: *const u16 = auto_run_always_disable_buf.as_ptr();
 
         let mut vendor_id: *const u8 = core::ptr::null();
         let mut product_id: *const u8 = core::ptr::null();
@@ -1911,7 +1896,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
         }
 
         // build deviceString using VendorId, Model and Revision
-        if NT_SUCCESS(status) != 0 {
+        if NT_SUCCESS(status) {
             length = 0;
 
             if (*device_descriptor).VendorIdOffset == 0 {
@@ -1951,14 +1936,14 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
-                    b"DeviceIsMediaChangeDisabledDueToHardwareLimitation: Unable to alloc string buffer\n\0".as_ptr() as *const u8,
+                    b"DeviceIsMediaChangeDisabledDueToHardwareLimitation: Unable to alloc string buffer\n\0".as_ptr() as *const i8,
                     0,
                 );
                 status = STATUS_INTERNAL_ERROR;
             }
         }
 
-        if NT_SUCCESS(status) != 0 {
+        if NT_SUCCESS(status) {
             offset = 0;
 
             if !vendor_id.is_null() {
@@ -1996,24 +1981,24 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
             // convert to unicode as registry deals with unicode strings
             status = RtlAnsiStringToUnicodeString(
                 &raw mut device_unicode_string as *mut _,
-                &raw const device_string as *const _,
+                &raw mut device_string as *mut _,
                 1,
             );
 
-            if NT_SUCCESS(status) == 0 {
+            if !NT_SUCCESS(status) {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"DeviceIsMediaChangeDisabledDueToHardwareLimitation: cannot convert to unicode %lx\n\0"
-                        .as_ptr() as *const u8,
+                        .as_ptr() as *const i8,
                     status,
                 );
             }
         }
 
-        if NT_SUCCESS(status) != 0 {
+        if NT_SUCCESS(status) {
             // query the value, setting valueFound to true if found
-            parameters[0].QueryRoutine = DeviceMediaChangeRegistryCallBack;
+            parameters[0].QueryRoutine = Some(DeviceMediaChangeRegistryCallBack);
             parameters[0].Flags = RTL_QUERY_REGISTRY_REQUIRED;
             parameters[0].Name = auto_run_always_disable;
             parameters[0].EntryContext =
@@ -2024,10 +2009,10 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
 
             status = RtlQueryRegistryValues(
                 RTL_REGISTRY_HANDLE,
-                service_key,
+                service_key as *const u16,
                 parameters.as_mut_ptr(),
-                &raw const device_unicode_string as *const _,
-                core::ptr::null(),
+                &raw const device_unicode_string as *mut core::ffi::c_void,
+                core::ptr::null_mut(),
             );
             UNREFERENCED_PARAMETER(status);
         }
@@ -2047,7 +2032,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"DeviceIsMediaChangeDisabledDueToHardwareLimitation: Device is on MCN disable list\n\0"
-                .as_ptr() as *const u8,
+                .as_ptr() as *const i8,
             0,
         );
     }
@@ -2059,8 +2044,8 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledForClass(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION
 ) -> i32 {
     let mut status: i32;
-    let mut serviceKey: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut parametersKey: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut serviceKey: WDFKEY = core::ptr::null_mut();
+    let mut parametersKey: WDFKEY = core::ptr::null_mut();
     let mut parameterKeyName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
     let mut valueName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
     let mut mcnRegistryValue: u32 = 1;
@@ -2172,7 +2157,7 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
 
         // if (FileObjectContext)
         if !FileObjectContext.is_null() {
-            InterlockedDecrement(core::ptr::addr_of_mut!((*FileObjectContext).McnDisableCount));
+            InterlockedDecrement(core::ptr::addr_of_mut!((*FileObjectContext).McnDisableCount) as *mut i32);
         }
 
         let info = (*DeviceExtension).MediaChangeDetectionInfo;
@@ -2187,7 +2172,7 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
         // (VOID) KeWaitForMutexObject(...)
         let _ = KeWaitForMutexObject(
             &raw mut (*info).MediaChangeMutex as *mut core::ffi::c_void,
-            _KWAIT_REASON_UserRequest,
+            _KWAIT_REASON_UserRequest as i32,
             0i32,
             0, // FALSE
             core::ptr::null(), // NULL
@@ -2221,7 +2206,7 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
         }
 
         // KeReleaseMutex(&info->MediaChangeMutex, FALSE);
-        KeReleaseMutex(&raw mut (*info).MediaChangeMutex as *mut core::ffi::c_void, 0);
+        KeReleaseMutex(&raw mut (*info).MediaChangeMutex, 0);
 
         return;
     }
@@ -2229,8 +2214,8 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
 
 #[no_mangle]
 pub unsafe extern "C" fn DeviceDisableMediaChangeDetection(
-    DeviceExtension: *mut PCDROM_DEVICE_EXTENSION,
-    FileObjectContext: *mut PFILE_OBJECT_CONTEXT,
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    FileObjectContext: *mut FILE_OBJECT_CONTEXT,
 ) {
     // PMEDIA_CHANGE_DETECTION_INFO info = DeviceExtension->MediaChangeDetectionInfo;
     let info = (*DeviceExtension).MediaChangeDetectionInfo;
@@ -2251,7 +2236,7 @@ pub unsafe extern "C" fn DeviceDisableMediaChangeDetection(
     // (VOID) KeWaitForMutexObject(&info->MediaChangeMutex, UserRequest, KernelMode, FALSE, NULL);
     let _ = KeWaitForMutexObject(
         core::ptr::addr_of_mut!((*info).MediaChangeMutex) as *mut core::ffi::c_void,
-        ntkrnl_sys::ddk::_KWAIT_REASON_UserRequest,
+        ntkrnl_sys::ddk::_KWAIT_REASON_UserRequest as i32,
         0i32,
         0, // FALSE
         core::ptr::null(),
@@ -2270,15 +2255,11 @@ pub unsafe extern "C" fn DeviceDisableMediaChangeDetection(
 
     // KeReleaseMutex(&info->MediaChangeMutex, FALSE);
     let _ = ntkrnl_sys::ddk::KeReleaseMutex(
-        core::ptr::addr_of_mut!((*info).MediaChangeMutex) as *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!((*info).MediaChangeMutex),
         0,
     );
 }
 
-unsafe extern "C" {
-    fn FREE_POOL(Ptr: *mut core::ffi::c_void);
-}
-type KIRQL = u8;
 const APC_LEVEL: KIRQL = 1;
 #[no_mangle]
 pub unsafe extern "C" fn DeviceReleaseMcnResources(
@@ -2369,7 +2350,7 @@ pub unsafe extern "C" fn RequestSetupMcnSyncIrp(
     (*irpStack).DeviceObject = (*DeviceExtension).DeviceObject;
 
     nextIrpStack = IoGetNextIrpStackLocation(irp);
-    SET_FLAG(&raw mut (*nextIrpStack).Flags, SL_OVERRIDE_VERIFY_VOLUME);
+    (*nextIrpStack).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
     (*nextIrpStack).MajorFunction = IRP_MJ_DEVICE_CONTROL;
     (*nextIrpStack).Parameters.Others.Argument1 =
         RequestSetupMcnSyncIrp as *const () as *mut core::ffi::c_void;
@@ -2381,7 +2362,10 @@ pub unsafe extern "C" fn RequestSetupMcnSyncIrp(
 
     IoSetCompletionRoutine(
         irp,
-        RequestMcnSyncIrpCompletion,
+        core::mem::transmute::<_, ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE>(
+            RequestMcnSyncIrpCompletion
+                as unsafe extern "system" fn(ntkrnl_sys::ddk::PDEVICE_OBJECT, *mut ntkrnl_sys::ddk::IRP, *mut core::ffi::c_void) -> i32,
+        ),
         DeviceExtension as *mut core::ffi::c_void,
         1,
         1,
@@ -2396,7 +2380,7 @@ pub unsafe extern "C" fn DeviceMainTimerTickHandler(Timer: WDFTIMER) {
 
     deviceExtension = WdfObjectGetTypedContext(
         WdfTimerGetParentObject(Timer),
-        CDROM_DEVICE_EXTENSION as *const _ as *const core::ffi::c_void,
+        &CDROM_DEVICE_EXTENSION_TYPE_INFO,
     ) as PCDROM_DEVICE_EXTENSION;
 
     RequestHandleEventNotification(
@@ -2422,10 +2406,10 @@ pub unsafe extern "C" fn DeviceEnableMainTimer(
 
     if (*DeviceExtension).MainTimer.is_null() {
         let mut timer_config: WDF_TIMER_CONFIG = core::mem::zeroed();
-        timer_config.Size = core::mem::size_of::<WDF_TIMER_CONFIG>();
+        timer_config.Size = core::mem::size_of::<WDF_TIMER_CONFIG>() as u32;
         timer_config.EvtTimerFunc = Some(DeviceMainTimerTickHandler);
 
-        if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_MSFT_VIRTUAL_ODD) != 0 {
+        if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_MSFT_VIRTUAL_ODD as u64) != 0 {
             timer_config.Period = 2000;
         } else {
             timer_config.Period = 1000;
@@ -2435,8 +2419,8 @@ pub unsafe extern "C" fn DeviceEnableMainTimer(
         timer_config.AutomaticSerialization = 0; // FALSE
 
         let mut timer_attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
-        timer_attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>();
-        timer_attributes.ParentObject = (*DeviceExtension).Device;
+        timer_attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
+        timer_attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
         timer_attributes.ExecutionLevel = WdfExecutionLevelInheritFromParent;
 
         status = WdfTimerCreate(
@@ -2455,13 +2439,13 @@ pub unsafe extern "C" fn DeviceEnableMainTimer(
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
-            b"DeviceEnableMainTimer: Once a second timer enabled  for WDFDEVICE %p\n\0".as_ptr(),
+            b"DeviceEnableMainTimer: Once a second timer enabled  for WDFDEVICE %p\n\0".as_ptr() as *const i8,
         );
     } else {
         TracePrint(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
-            b"DeviceEnableMainTimer: WDFDEVICE %p, Status %lx  initializing timer\n\0".as_ptr(),
+            b"DeviceEnableMainTimer: WDFDEVICE %p, Status %lx  initializing timer\n\0".as_ptr() as *const i8,
         );
     }
 
@@ -2524,7 +2508,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
     status = WdfRequestRetrieveInputBuffer(
         Request,
         core::mem::size_of::<ntkrnl_sys::ddk::PREVENT_MEDIA_REMOVAL>(),
-        &mut media_removal,
+        &mut media_removal as *mut *mut ntkrnl_sys::ddk::PREVENT_MEDIA_REMOVAL as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
 
@@ -2536,7 +2520,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
         }
 
         if file_object_context.is_null()
-            && WdfRequestGetRequestorMode(Request) == 0i32
+            && WdfRequestGetRequestorMode(Request) == 0i8
         {
             file_object_context = core::ptr::addr_of_mut!(
                 (*DeviceExtension).KernelModeMcnContext

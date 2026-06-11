@@ -10,8 +10,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::PDEVICE_OBJECT;
-use ntkrnl_sys::ddk::{D3COLD_SUPPORT_INTERFACE, DeviceWakeDepthD3cold, DeviceWakeDepthNotWakeable, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoGetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LPGUID, _EVENT_TYPE_NotificationEvent, PD3COLD_SUPPORT_INTERFACE, PDEVICE_OBJECT, PINTERFACE, PIO_STACK_LOCATION, PIRP, PSTORAGE_IDLE_POWERUP_REASON, PowerSystemWorking, STORAGE_IDLE_POWER, STORAGE_IDLE_POWERUP_REASON};
+use ntkrnl_sys::ddk::{D3COLD_SUPPORT_INTERFACE, DEVICE_WAKE_DEPTH, _DEVICE_WAKE_DEPTH_DeviceWakeDepthD3cold as DeviceWakeDepthD3cold, _DEVICE_WAKE_DEPTH_DeviceWakeDepthNotWakeable as DeviceWakeDepthNotWakeable, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, IoGetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PD3COLD_SUPPORT_INTERFACE, PINTERFACE, PSTORAGE_IDLE_POWERUP_REASON, STORAGE_IDLE_POWER, STORAGE_IDLE_POWERUP_REASON};
 use core::ffi::c_void;
 
 extern "C" {
@@ -41,9 +40,13 @@ const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
 const TRACE_LEVEL_INFORMATION: u32 = 4;
 const TRACE_FLAG_POWER: u32 = 0x10;
 const PowerSystemWorking: u32 = 1;
+// CTL_CODE(IOCTL_STORAGE_BASE=0x2d, code, METHOD_BUFFERED=0, FILE_ANY_ACCESS=0)
+const IOCTL_STORAGE_GET_IDLE_POWERUP_REASON: u32 = 0x002D1C84;
+const IOCTL_STORAGE_POWER_ACTIVE: u32 = 0x002D1C88;
+const IOCTL_STORAGE_POWER_IDLE: u32 = 0x002D1C8C;
 #[no_mangle]
 pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS {
-    PAGED_CODE!();
+    PAGED_CODE();
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut tempStatus: NTSTATUS = STATUS_SUCCESS;
@@ -53,9 +56,10 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
     let mut deepestWakeableDstate: DEVICE_WAKE_DEPTH = DeviceWakeDepthNotWakeable;
     let mut inHomePosition: i32 = 0;
 
+    'cleanup: {
     if !(*DeviceExtension).ZeroPowerODDInfo.is_null() {
         // Already initialized.
-        goto cleanup;
+        break 'cleanup;
     }
 
     ZPODDEnabledInRegistry = DeviceGetZPODDEnabledFromRegistry();
@@ -64,18 +68,18 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         status = STATUS_NOT_SUPPORTED;
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to registry settings.\n\0".as_ptr() as *const i8);
-        goto cleanup;
+        break 'cleanup;
     }
 
     zpoddInfo = ExAllocatePoolWithTag(
         NonPagedPoolNx,
-        core::mem::size_of::<ZERO_POWER_ODD_INFO>() as u64,
+        core::mem::size_of::<ZERO_POWER_ODD_INFO>(),
         CDROM_TAG_ZERO_POWER_ODD,
     ) as *mut ZERO_POWER_ODD_INFO;
 
     if zpoddInfo.is_null() {
         status = STATUS_INSUFFICIENT_RESOURCES;
-        goto cleanup;
+        break 'cleanup;
     }
 
     core::ptr::write_bytes(zpoddInfo, 0, core::mem::size_of::<ZERO_POWER_ODD_INFO>());
@@ -88,34 +92,34 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         status = STATUS_NOT_SUPPORTED;
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to SATA features not present.\n\0".as_ptr() as *const i8);
-        goto cleanup;
+        break 'cleanup;
     }
 
     // Check for LoChange / MediaRemoval
-    let capabilities_buffer: *mut u8 = (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer;
+    let capabilities_buffer: *mut u8 = (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8;
     let capabilities_buffer_size: u32 = (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize;
     removableMediumHeader = DeviceFindFeaturePage(capabilities_buffer, capabilities_buffer_size, FeatureRemovableMedium);
 
     if removableMediumHeader.is_null()
         || !(
-            ((*removableMediumHeader).LoadingMechanism == LOADING_MECHANISM_TRAY)
-                && ((*removableMediumHeader).Load == 0)
-                && ((*removableMediumHeader).DBML != 0)
+            ((*removableMediumHeader).LoadingMechanism() as u32 == LOADING_MECHANISM_TRAY)
+                && ((*removableMediumHeader).Load() == 0)
+                && ((*removableMediumHeader).DBML() != 0)
         )
         && !(
-            ((*removableMediumHeader).LoadingMechanism == LOADING_MECHANISM_CADDY)
-                && ((*removableMediumHeader).Load == 0)
+            ((*removableMediumHeader).LoadingMechanism() as u32 == LOADING_MECHANISM_CADDY)
+                && ((*removableMediumHeader).Load() == 0)
                 && ((*(*DeviceExtension).MediaChangeDetectionInfo).Gesn.Supported != 0)
         )
     {
         status = STATUS_NOT_SUPPORTED;
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to ODD features not present.\n\0".as_ptr() as *const i8);
-        goto cleanup;
+        break 'cleanup;
     }
 
-    (*zpoddInfo).LoadingMechanism = (*removableMediumHeader).LoadingMechanism;
-    (*zpoddInfo).Load = (*removableMediumHeader).Load;
+    (*zpoddInfo).LoadingMechanism = (*removableMediumHeader).LoadingMechanism();
+    (*zpoddInfo).Load = (*removableMediumHeader).Load();
 
     // Check for ACPI
     status = DeviceQueryD3ColdInterface(
@@ -126,7 +130,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
     if status < 0 {
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: Query D3Cold support interface failed.\n\0".as_ptr() as *const i8);
-        goto cleanup;
+        break 'cleanup;
     }
 
     let d3ColdInterface: *mut D3COLD_SUPPORT_INTERFACE = &raw mut (*zpoddInfo).D3ColdInterface;
@@ -136,7 +140,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
     status = get_idle_wake_info(d3cold_if.Context, PowerSystemWorking, &raw mut deepestWakeableDstate);
 
     if status < 0 {
-        goto cleanup;
+        break 'cleanup;
     }
 
     if deepestWakeableDstate != DeviceWakeDepthD3cold
@@ -145,21 +149,21 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         status = STATUS_NOT_SUPPORTED;
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to ACPI support not present.\n\0".as_ptr() as *const i8);
-        goto cleanup;
+        break 'cleanup;
     }
 
     status = DeviceSendEnableIdlePowerIoctl(DeviceExtension, 1, 1, DELAY_TIME_TO_ENTER_ZERO_POWER_IN_MS);
     if status < 0 {
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to runtime power framework.\n\0".as_ptr() as *const i8);
-        goto cleanup;
+        break 'cleanup;
     }
 
     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                b"DeviceInitializeZPODD: ZPODD is enabled.\n\0".as_ptr() as *const i8);
     (*DeviceExtension).ZeroPowerODDInfo = zpoddInfo;
 
-    inHomePosition = DeviceZPODDIsInHomePosition(DeviceExtension);
+    inHomePosition = DeviceZPODDIsInHomePosition(DeviceExtension) as i32;
     if inHomePosition == 0 {
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: not ready to power off, device marked as active\n\0".as_ptr() as *const i8);
@@ -167,8 +171,8 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
     } else {
         if (*zpoddInfo).GetConfigurationBuffer.is_null() {
             tempStatus = DeviceGetConfigurationWithAlloc(
-                (*DeviceExtension).Device,
-                &raw mut (*zpoddInfo).GetConfigurationBuffer,
+                (*DeviceExtension).Device as PDEVICE_OBJECT,
+                &raw mut (*zpoddInfo).GetConfigurationBuffer as *mut *mut c_void,
                 &raw mut (*zpoddInfo).GetConfigurationBufferSize,
                 FeatureProfileList,
                 SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL,
@@ -176,8 +180,8 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
             let _ = tempStatus; // UNREFERENCED_PARAMETER
         }
     }
+    } // 'cleanup
 
-    cleanup:
     if status < 0 {
         tempStatus = DeviceSendEnableIdlePowerIoctl(DeviceExtension, 0, 0, DELAY_TIME_TO_ENTER_ZERO_POWER_IN_MS);
         if tempStatus >= 0 {
@@ -197,18 +201,11 @@ pub unsafe extern "C" fn DeviceGetZPODDEnabledFromRegistry() -> u32 {
         90, 101, 114, 111, 80, 111, 119, 101, 114, 79, 68, 68, 69, 110, 97, 98, 108, 101, 100, 0,
     ];
 
-    #[repr(C)]
-    struct _UNICODE_STRING {
-        Length: u16,
-        MaximumLength: u16,
-        Buffer: *mut u16,
-    }
-
     let mut status: i32 = 0; // STATUS_SUCCESS
-    let mut registryKey: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut registryKey: WDFKEY = core::ptr::null_mut();
     let mut ZPODDEnabled: u32 = 0;
 
-    let registryValueName = _UNICODE_STRING {
+    let registryValueName = ntkrnl_sys::ddk::UNICODE_STRING {
         Length: 38,
         MaximumLength: 38,
         Buffer: &WSTR[0] as *const u16 as *mut u16,
@@ -220,13 +217,13 @@ pub unsafe extern "C" fn DeviceGetZPODDEnabledFromRegistry() -> u32 {
         WdfGetDriver(),
         0x10019, // KEY_READ
         core::ptr::null_mut(),
-        &mut registryKey,
+        &mut registryKey as *mut WDFKEY,
     );
 
     if status >= 0 {
         status = WdfRegistryQueryULong(
             registryKey,
-            &registryValueName,
+            &raw const registryValueName,
             &mut ZPODDEnabled,
         );
         WdfRegistryClose(registryKey);
@@ -258,11 +255,11 @@ pub unsafe extern "C" fn DeviceQueryD3ColdInterface(
     targetDevice = IoGetAttachedDeviceReference((*DeviceExtension).DeviceObject);
 
     irp = IoBuildSynchronousFsdRequest(
-        IRP_MJ_PNP,
+        IRP_MJ_PNP as u32,
         targetDevice,
         core::ptr::null_mut(),
         0,
-        0,
+        core::ptr::null_mut(),
         &raw mut event,
         &raw mut ioStatus,
     );
@@ -289,7 +286,7 @@ pub unsafe extern "C" fn DeviceQueryD3ColdInterface(
         status = IoCallDriver(targetDevice, irp);
 
         if status == STATUS_PENDING {
-            KeWaitForSingleObject(&raw mut event, _KWAIT_REASON_Executive, 0i32, 0, core::ptr::null_mut());
+            KeWaitForSingleObject(&raw mut event as *mut c_void, _KWAIT_REASON_Executive, 0i8, 0, core::ptr::null_mut());
             status = ioStatus.__bindgen_anon_1.Status;
         }
 
@@ -298,18 +295,18 @@ pub unsafe extern "C" fn DeviceQueryD3ColdInterface(
         }
 
         // NT_ASSERT equivalent
-        if (*D3ColdInterface).SetD3ColdSupport.is_null() {
+        if (*D3ColdInterface).SetD3ColdSupport.is_none() {
             core::panic!("NT_ASSERT failed");
         }
-        if (*D3ColdInterface).GetIdleWakeInfo.is_null() {
+        if (*D3ColdInterface).GetIdleWakeInfo.is_none() {
             core::panic!("NT_ASSERT failed");
         }
-        if (*D3ColdInterface).GetD3ColdCapability.is_null() {
+        if (*D3ColdInterface).GetD3ColdCapability.is_none() {
             core::panic!("NT_ASSERT failed");
         }
     }
 
-    ObDereferenceObject(targetDevice);
+    ObDereferenceObject(targetDevice as *mut c_void);
 
     return status;
 }
@@ -330,8 +327,8 @@ pub unsafe extern "C" fn DeviceSendEnableIdlePowerIoctl(
 
     idlePower.Version = 1;
     idlePower.Size = core::mem::size_of::<STORAGE_IDLE_POWER>() as u32;
-    idlePower.WakeCapableHint = WakeCapable;
-    idlePower.D3ColdSupported = Enable;
+    idlePower.set_WakeCapableHint(WakeCapable as u32);
+    idlePower.set_D3ColdSupported(Enable as u32);
     idlePower.D3IdleTimeout = D3IdleTimeout;
 
     KeInitializeEvent(&raw mut event, _EVENT_TYPE_NotificationEvent, 0);
@@ -355,9 +352,9 @@ pub unsafe extern "C" fn DeviceSendEnableIdlePowerIoctl(
 
         if status == STATUS_PENDING {
             KeWaitForSingleObject(
-                &raw mut event as *mut KEVENT,
+                &raw mut event as *mut c_void,
                 _KWAIT_REASON_Executive,
-                0i32,
+                0i8,
                 0,
                 core::ptr::null_mut(),
             );
@@ -411,12 +408,12 @@ pub unsafe extern "C" fn DeviceZPODDGetPowerupReason(
     (*PowerupReason).Size = core::mem::size_of::<STORAGE_IDLE_POWERUP_REASON>() as u32;
     (*PowerupReason).Version = STORAGE_IDLE_POWERUP_REASON_VERSION_V1 as u32;
 
-    KeInitializeEvent(&mut event, _EVENT_TYPE_NotificationEvent as i32, 0);
+    KeInitializeEvent(&mut event, _EVENT_TYPE_NotificationEvent, 0);
 
     irp = IoBuildDeviceIoControlRequest(
         IOCTL_STORAGE_GET_IDLE_POWERUP_REASON as u32,
         (*DeviceExtension).LowerPdo,
-        PowerupReason as *const c_void,
+        PowerupReason as *mut c_void,
         core::mem::size_of::<STORAGE_IDLE_POWERUP_REASON>() as u32,
         PowerupReason as *mut c_void,
         core::mem::size_of::<STORAGE_IDLE_POWERUP_REASON>() as u32,
@@ -432,9 +429,9 @@ pub unsafe extern "C" fn DeviceZPODDGetPowerupReason(
 
         if status == STATUS_PENDING as i32 {
             KeWaitForSingleObject(
-                &mut event,
-                _KWAIT_REASON_Executive as i32,
-                0i32 as i32,
+                &mut event as *mut _ as *mut c_void,
+                _KWAIT_REASON_Executive,
+                0i8,
                 0, // Alertable = FALSE
                 core::ptr::null_mut(), // Timeout = NULL
             );
@@ -461,12 +458,12 @@ pub unsafe extern "C" fn DeviceZPODDIsInHomePosition(DeviceExtension: *mut CDROM
         core::ptr::write_bytes(core::ptr::addr_of_mut!(srb) as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
 
         srb.CdbLength = 6;
-        (*cdb).CDB6GENERIC.OperationCode = SCSIOP_TEST_UNIT_READY;
+        (*cdb).CDB6GENERIC.as_mut().OperationCode = SCSIOP_TEST_UNIT_READY;
         srb.TimeOutValue = CDROM_TEST_UNIT_READY_TIMEOUT;
 
         let device = (*DeviceExtension).Device;
         status = DeviceSendSrbSynchronously(
-            device,
+            device as PDEVICE_OBJECT,
             core::ptr::addr_of_mut!(srb),
             core::ptr::null_mut(),
             0,
@@ -484,15 +481,15 @@ pub unsafe extern "C" fn DeviceZPODDIsInHomePosition(DeviceExtension: *mut CDROM
         let asc = (*zpoddInfo).AdditionalSenseCode;
         let ascq = (*zpoddInfo).AdditionalSenseCodeQualifier;
 
-        let condition_tray = (loading_mech == LOADING_MECHANISM_TRAY)
+        let condition_tray = (u32::from(loading_mech) == LOADING_MECHANISM_TRAY)
             && (load == 0)
-            && (sense_key == SCSI_SENSE_NOT_READY)
-            && (asc == SCSI_ADSENSE_NO_MEDIA_IN_DEVICE)
+            && (u32::from(sense_key) == SCSI_SENSE_NOT_READY)
+            && (u32::from(asc) == SCSI_ADSENSE_NO_MEDIA_IN_DEVICE)
             && (ascq == 0x01);
-        let condition_caddy = (loading_mech == LOADING_MECHANISM_CADDY)
+        let condition_caddy = (u32::from(loading_mech) == LOADING_MECHANISM_CADDY)
             && (load == 0)
-            && (sense_key == SCSI_SENSE_NOT_READY)
-            && (asc == SCSI_ADSENSE_NO_MEDIA_IN_DEVICE);
+            && (u32::from(sense_key) == SCSI_SENSE_NOT_READY)
+            && (u32::from(asc) == SCSI_ADSENSE_NO_MEDIA_IN_DEVICE);
 
         if condition_tray || condition_caddy {
             inHomePosition = 1;
@@ -516,8 +513,8 @@ pub unsafe extern "C" fn DeviceMarkActive(
         if IsActive == FALSE && !zpoddInfo.is_null() {
             if (*zpoddInfo).GetConfigurationBuffer.is_null() {
                 let _ = DeviceGetConfigurationWithAlloc(
-                    (*DeviceExtension).Device,
-                    core::ptr::addr_of_mut!((*zpoddInfo).GetConfigurationBuffer),
+                    (*DeviceExtension).Device as PDEVICE_OBJECT,
+                    core::ptr::addr_of_mut!((*zpoddInfo).GetConfigurationBuffer) as *mut *mut c_void,
                     core::ptr::addr_of_mut!((*zpoddInfo).GetConfigurationBufferSize),
                     FeatureProfileList,
                     SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL,

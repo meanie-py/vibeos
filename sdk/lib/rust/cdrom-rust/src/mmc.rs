@@ -6,7 +6,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ExFreePool, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoFreeMdl, Reserved2, Writable};
+use ntkrnl_sys::ddk::{ExFreePool, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoFreeMdl};
 use core::ffi::c_void;
 
 extern "C" {
@@ -16,8 +16,6 @@ extern "C" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
-    static CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32;
-    static TRACE_LEVEL_INFORMATION: u32;
     static TRACE_FLAG_IOCTL: u32;
     static TRACE_LEVEL_ERROR: u32;
     static CDROM_GET_CONFIGURATION_TIMEOUT: u32;
@@ -29,7 +27,6 @@ extern "C" {
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, unknown: *mut core::ffi::c_void, transferSize: u32, flag: i32, cdb: *const CDB, cdbLength: u32, ) -> NTSTATUS;
     fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Param1: *mut core::ffi::c_void, TransferSize: u32, Flag: u8, /* BOOLEAN TRUE -> 1 */ Cdb: *const CDB, CdbLength: u32, Timeout: u32, ) -> i32; // NTSTATUS
-    fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(sectorsPerSecond: u32) -> i64;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *const core::ffi::c_void, );
     fn DeviceFindFeaturePage( Buffer: *mut GET_CONFIGURATION_HEADER, Length: u32, Feature: FEATURE_NUMBER, ) -> *mut FEATURE_HEADER;
     fn InterlockedCompareExchange( Destination: *mut i32, Exchange: i32, Comperand: i32, ) -> i32;
@@ -56,19 +53,16 @@ const ProfileDvdRecordable: FEATURE_PROFILE_TYPE = 0x0012;
 const ProfileCdRecordable: FEATURE_PROFILE_TYPE = 0x0009;
 
 const TRACE_LEVEL_INFORMATION: u32 = 4;
-const TRACE_FLAG_INIT: u32 = 0x100;
 
 // Forward declarations for unknown functions
 
 const CdromMmcUpdateStarted: i32 = 0;
 const CdromMmcUpdateRequired: i32 = 1;
 const CdromMmcUpdateComplete: i32 = 2;
-const FeatureProfileList: u16 = 0;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_CURRENT: u32 = 2;
-const FeatureRealTimeStreaming: u16 = 0x0107;
-const FeatureDvdCSS: u16 = 0x0106;
+const FeatureRealTimeStreaming: FEATURE_NUMBER = 0x0107;
+const FeatureDvdCSS: FEATURE_NUMBER = 0x0106;
 const MAXLONGLONG: i64 = i64::MAX;
-const WRITE_RETRY_DELAY_CD_4x: i64 = 5_000_000; // approximate
 #[no_mangle]
 pub unsafe extern "C" fn DeviceDeallocateMmcResources(Device: WDFDEVICE) {
     // _IRQL_requires_max_(APC_LEVEL)
@@ -91,7 +85,7 @@ pub unsafe extern "C" fn DeviceDeallocateMmcResources(Device: WDFDEVICE) {
         (*mmc_data).CapabilitiesBuffer = core::ptr::null_mut();
     }
     if !(*mmc_data).CapabilitiesRequest.is_null() {
-        WdfObjectDelete((*mmc_data).CapabilitiesRequest);
+        WdfObjectDelete((*mmc_data).CapabilitiesRequest as *mut core::ffi::c_void);
         (*mmc_data).CapabilitiesRequest = core::ptr::null_mut();
     }
     (*mmc_data).CapabilitiesBufferSize = 0;
@@ -129,7 +123,7 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
     NT_ASSERT(((*mmcData).CapabilitiesBufferSize != 0) as i32);
 
     (*mmcData).CapabilitiesMdl = IoAllocateMdl(
-        (*mmcData).CapabilitiesBuffer,
+        (*mmcData).CapabilitiesBuffer as *mut core::ffi::c_void,
         (*mmcData).CapabilitiesBufferSize,
         0, // FALSE
         0, // FALSE
@@ -137,7 +131,7 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
     );
 
     if (*mmcData).CapabilitiesMdl.is_null() {
-        ExFreePool((*mmcData).CapabilitiesBuffer);
+        ExFreePool((*mmcData).CapabilitiesBuffer as *mut core::ffi::c_void);
         (*mmcData).CapabilitiesBuffer = core::ptr::null_mut();
         (*mmcData).CapabilitiesBufferSize = 0;
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -150,7 +144,7 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
     if (*mmcData).CapabilitiesIrp.is_null() {
         IoFreeMdl((*mmcData).CapabilitiesMdl);
         (*mmcData).CapabilitiesMdl = core::ptr::null_mut();
-        ExFreePool((*mmcData).CapabilitiesBuffer);
+        ExFreePool((*mmcData).CapabilitiesBuffer as *mut core::ffi::c_void);
         (*mmcData).CapabilitiesBuffer = core::ptr::null_mut();
         (*mmcData).CapabilitiesBufferSize = 0;
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -159,14 +153,14 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
     // Init WDF object attributes for the request context
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
         &raw mut attributes,
-        &raw const CDROM_REQUEST_CONTEXT_CONTEXT_TYPE_INFO as *const core::ffi::c_void,
+        &raw const _WDF_CDROM_REQUEST_CONTEXT_TYPE_INFO as *const core::ffi::c_void,
     );
 
     status = WdfRequestCreateFromIrp(
         &raw mut attributes,
         (*mmcData).CapabilitiesIrp,
         0, // FALSE
-        &raw mut (*mmcData).CapabilitiesRequest as *mut *mut WDFREQUEST,
+        &raw mut (*mmcData).CapabilitiesRequest,
     );
 
     if !NT_SUCCESS(status) {
@@ -210,7 +204,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcCapabilities(
 
     if status >= 0 && ((*mmcData).CapabilitiesBufferSize >= returnedBytes) {
         {
-            let mut writeAllowed: i32 = 0;
+            let mut writeAllowed: u8 = 0;
             let mut validationSchema: FEATURE_NUMBER = 0;
             let mut blockingFactor: u32 = 1;
 
@@ -237,17 +231,17 @@ pub unsafe extern "C" fn DeviceUpdateMmcCapabilities(
             header = MmcDataFindFeaturePage(
                 (*mmcData).CapabilitiesBuffer,
                 returnedBytes,
-                FeatureRealTimeStreaming as u16,
+                FeatureRealTimeStreaming,
             );
 
             if header != core::ptr::null_mut()
-                && (*header).Current != 0
+                && (*header).Current() != 0
                 && (*header).AdditionalLength as u32 >= minAdditionalLength
             {
                 let feature: *mut FEATURE_DATA_REAL_TIME_STREAMING =
                     header as *mut FEATURE_DATA_REAL_TIME_STREAMING;
                 (*mmcData).StreamingReadSupported = 1; // TRUE
-                (*mmcData).StreamingWriteSupported = if (*feature).StreamRecording == 1 { 1 } else { 0 };
+                (*mmcData).StreamingWriteSupported = if (*feature).StreamRecording() == 1 { 1 } else { 0 };
             }
         }
 
@@ -256,15 +250,15 @@ pub unsafe extern "C" fn DeviceUpdateMmcCapabilities(
             header = DeviceFindFeaturePage(
                 (*mmcData).CapabilitiesBuffer,
                 returnedBytes,
-                FeatureDvdCSS as u16,
+                FeatureDvdCSS,
             );
-            (*mmcData).IsCssDvd = (header != core::ptr::null_mut() && (*header).Current != 0) as i32;
+            (*mmcData).IsCssDvd = (header != core::ptr::null_mut() && (*header).Current() != 0) as u8;
         }
 
         {
             let profile: FEATURE_PROFILE_TYPE =
-                (((*((*mmcData).CapabilitiesBuffer)).CurrentProfile[0] as u16) << 8) |
-                (((*((*mmcData).CapabilitiesBuffer)).CurrentProfile[1] as u16) << 0);
+                ((((*((*mmcData).CapabilitiesBuffer)).CurrentProfile[0] as u16) << 8) |
+                (((*((*mmcData).CapabilitiesBuffer)).CurrentProfile[1] as u16) << 0)) as FEATURE_PROFILE_TYPE;
             let mut t1: i64 = -1;
             let mut t2: i64 = -1;
             let mut t3: i64 = -1;
@@ -340,7 +334,7 @@ pub unsafe extern "C" fn DeviceGetConfigurationWithAlloc(
             &mut header,
             core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32,
             &mut returned,
-            StartingFeature,
+            StartingFeature as u16,
             RequestedType,
         );
 
@@ -373,7 +367,7 @@ pub unsafe extern "C" fn DeviceGetConfigurationWithAlloc(
                     // allocate the memory
                     buffer = ExAllocatePoolWithTag(
                         NonPagedPoolNxCacheAligned,
-                        size as u64,
+                        size as usize,
                         CDROM_TAG_FEATURE,
                     ) as *mut GET_CONFIGURATION_HEADER;
 
@@ -389,7 +383,7 @@ pub unsafe extern "C" fn DeviceGetConfigurationWithAlloc(
                         buffer,
                         size,
                         &mut returned,
-                        StartingFeature,
+                        StartingFeature as u16,
                         RequestedType,
                     );
 
@@ -463,7 +457,7 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
     let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
     core::ptr::write_bytes(Buffer as *mut u8, 0, BufferSize as usize);
 
-    if ((*deviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_BAD_GET_CONFIG_SUPPORT) != 0 {
+    if ((*deviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_BAD_GET_CONFIG_SUPPORT as u64) != 0 {
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -475,12 +469,12 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
     srb.CdbLength = 10;
 
     let cdb = &raw mut srb.Cdb as *mut CDB;
-    (*cdb).GET_CONFIGURATION.OperationCode = SCSIOP_GET_CONFIGURATION;
-    (*cdb).GET_CONFIGURATION.RequestType = RequestedType as u8;
-    (*cdb).GET_CONFIGURATION.StartingFeature[0] = (StartingFeature >> 8) as u8;
-    (*cdb).GET_CONFIGURATION.StartingFeature[1] = (StartingFeature & 0xff) as u8;
-    (*cdb).GET_CONFIGURATION.AllocationLength[0] = (BufferSize >> 8) as u8;
-    (*cdb).GET_CONFIGURATION.AllocationLength[1] = (BufferSize & 0xff) as u8;
+    (*cdb).GET_CONFIGURATION.as_mut().OperationCode = SCSIOP_GET_CONFIGURATION;
+    (*cdb).GET_CONFIGURATION.as_mut().set_RequestType(RequestedType as u8);
+    (*cdb).GET_CONFIGURATION.as_mut().StartingFeature[0] = (StartingFeature >> 8) as u8;
+    (*cdb).GET_CONFIGURATION.as_mut().StartingFeature[1] = (StartingFeature & 0xff) as u8;
+    (*cdb).GET_CONFIGURATION.as_mut().AllocationLength[0] = (BufferSize >> 8) as u8;
+    (*cdb).GET_CONFIGURATION.as_mut().AllocationLength[1] = (BufferSize & 0xff) as u8;
 
     let mut status = DeviceSendSrbSynchronously(
         Device,
@@ -552,8 +546,8 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
         let defect_header: *mut FEATURE_HEADER;
         let writable_header: *mut FEATURE_HEADER;
 
-        defect_header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureDefectManagement);
-        writable_header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureRandomWritable);
+        defect_header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureDefectManagement) as *mut FEATURE_HEADER;
+        writable_header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureRandomWritable) as *mut FEATURE_HEADER;
 
         if defect_header.is_null() || writable_header.is_null() {
             /* cannot write this way */
@@ -565,7 +559,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
             );
             *Writable = 1u8;
             return;
-        } else if (*defect_header).Current != 0 && (*writable_header).Current != 0 {
+        } else if (*defect_header).Current() != 0 && (*writable_header).Current() != 0 {
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
@@ -582,12 +576,12 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
         let header: *mut FEATURE_HEADER;
         let additional_length: u32;
 
-        additional_length = (core::mem::offset_of!(FEATURE_DATA_RANDOM_READABLE, Blocking) + core::mem::size_of::<[u8; 2]>()) - core::mem::size_of::<FEATURE_HEADER>();
+        additional_length = ((core::mem::offset_of!(FEATURE_DATA_RANDOM_READABLE, Blocking) + core::mem::size_of::<[u8; 2]>()) - core::mem::size_of::<FEATURE_HEADER>()) as u32;
 
-        header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureRandomReadable);
+        header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureRandomReadable) as *mut FEATURE_HEADER;
 
         if !header.is_null()
-            && (*header).Current != 0
+            && (*header).Current() != 0
             && (*header).AdditionalLength as u32 >= additional_length
         {
             let feature = header as *mut FEATURE_DATA_RANDOM_READABLE;
@@ -607,7 +601,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
         let mut count: usize;
         for count in 0..FeaturesToAllowWritesWith.len() {
             let (feature_to_find, validation_schema) = FeaturesToAllowWritesWith[count];
-            let header = MmcDataFindFeaturePage(Buffer, BufferSize, feature_to_find);
+            let header = MmcDataFindFeaturePage(Buffer, BufferSize, feature_to_find) as *mut FEATURE_HEADER;
             if header.is_null() {
                 /* cannot write using this method */
             } else if CurrentOnly == 0u8 {
@@ -619,7 +613,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
                 );
                 *Writable = 1u8;
                 return;
-            } else if (*header).Current != 0 {
+            } else if (*header).Current() != 0 {
                 TracePrint(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_INIT,
@@ -640,7 +634,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
 
         header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureDvdPlusR) as *mut FEATURE_DATA_DVD_PLUS_R;
 
-        if header.is_null() || ((*header).Header.AdditionalLength as usize) < additional_length || (*header).Write == 0 {
+        if header.is_null() || ((*header).Header.AdditionalLength as usize) < additional_length || (*header).Write() == 0 {
             /* cannot write this way */
         } else if CurrentOnly == 0u8 {
             TracePrint(
@@ -651,7 +645,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
             );
             *Writable = 1u8;
             return;
-        } else if (*header).Header.Current != 0 {
+        } else if (*header).Header.Current() != 0 {
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
@@ -671,7 +665,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
 
         header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureDvdPlusRDualLayer) as *mut FEATURE_DATA_DVD_PLUS_R_DUAL_LAYER;
 
-        if header.is_null() || ((*header).Header.AdditionalLength as usize) < additional_length || (*header).Write == 0 {
+        if header.is_null() || ((*header).Header.AdditionalLength as usize) < additional_length || (*header).Write() == 0 {
             /* cannot write this way */
         } else if CurrentOnly == 0u8 {
             TracePrint(
@@ -682,7 +676,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
             );
             *Writable = 1u8;
             return;
-        } else if (*header).Header.Current != 0 {
+        } else if (*header).Header.Current() != 0 {
             TracePrint(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
@@ -698,9 +692,9 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
     /* use profiles also */
     {
         let header: *mut FEATURE_HEADER;
-        header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureProfileList);
+        header = MmcDataFindFeaturePage(Buffer, BufferSize, FeatureProfileList) as *mut FEATURE_HEADER;
 
-        if !header.is_null() && (*header).Current != 0 {
+        if !header.is_null() && (*header).Current() != 0 {
             let buffer_end = (Buffer as *mut u8).add(BufferSize as usize);
             let header_end = (header as *mut u8).add((*header).AdditionalLength as usize + core::mem::size_of::<FEATURE_HEADER>());
 
@@ -763,7 +757,10 @@ pub unsafe extern "C" fn MmcDataFindFeaturePage(
     }
 
     // REVERSE_BYTES(&valid_length, FeatureBuffer->DataLength)
-    valid_length = ((*FeatureBuffer).DataLength).swap_bytes();
+    valid_length = {
+        let dl = &(*FeatureBuffer).DataLength;
+        ((dl[0] as u32) << 24) | ((dl[1] as u32) << 16) | ((dl[2] as u32) << 8) | (dl[3] as u32)
+    };
 
     // RTL_SIZEOF_THROUGH_FIELD(GET_CONFIGURATION_HEADER, DataLength)
     valid_length = valid_length.wrapping_add(
@@ -836,24 +833,24 @@ pub unsafe extern "C" fn MmcDataFindProfileInProfiles(
             2 /* TRACE_LEVEL_WARNING */,
             0x40 /* TRACE_FLAG_GENERAL */,
             b"Profile total length %x is not integral multiple of 4\n\0".as_ptr() as *const i8,
-            (*ProfileHeader).Header.AdditionalLength,
+            (*ProfileHeader).Header.AdditionalLength as core::ffi::c_uint,
         );
         debug_assert!(false); // NT_ASSERT(FALSE)
         return;
     }
 
     // calculate number of profiles
-    numberOfProfiles = (*ProfileHeader).Header.AdditionalLength / 4;
+    numberOfProfiles = (*ProfileHeader).Header.AdditionalLength as u32 / 4;
     profile = core::ptr::addr_of!((*ProfileHeader).Profiles) as *const FEATURE_DATA_PROFILE_LIST_EX; // zero-sized array
 
     // loop through profiles
     for i in 0..numberOfProfiles {
         let currentProfile: FEATURE_PROFILE_TYPE;
 
-        currentProfile = (((*profile).ProfileNumber[0] as u16) << 8) | ((*profile).ProfileNumber[1] as u16 & 0xff);
+        currentProfile = ((((*profile).ProfileNumber[0] as u16) << 8) | ((*profile).ProfileNumber[1] as u16 & 0xff)) as FEATURE_PROFILE_TYPE;
 
         if currentProfile == ProfileToFind {
-            if (*profile).Current != 0 || CurrentOnly == 0 {
+            if (*profile).Current() != 0 || CurrentOnly == 0 {
                 *Found = 1; // TRUE
             }
         }
@@ -908,15 +905,15 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
     PAGED_CODE();
     ScratchBuffer_BeginUse(DeviceExtension);
     RtlZeroMemory(
-        &mut cdb as *mut CDB as *mut u8,
-        core::mem::size_of::<CDB>() as u32,
+        &mut cdb as *mut CDB as *mut core::ffi::c_void,
+        core::mem::size_of::<CDB>(),
     );
     let cdb_ptr: *mut CDB = &mut cdb;
-    (*cdb_ptr).MODE_SENSE10.OperationCode = SCSIOP_MODE_SENSE10;
-    (*cdb_ptr).MODE_SENSE10.Dbd = 1;
-    (*cdb_ptr).MODE_SENSE10.PageCode = MODE_PAGE_CAPABILITIES;
-    (*cdb_ptr).MODE_SENSE10.AllocationLength[0] = (transferSize >> 8) as u8;
-    (*cdb_ptr).MODE_SENSE10.AllocationLength[1] = (transferSize & 0xFF) as u8;
+    (*cdb_ptr).MODE_SENSE10.as_mut().OperationCode = SCSIOP_MODE_SENSE10;
+    (*cdb_ptr).MODE_SENSE10.as_mut().set_Dbd(1);
+    (*cdb_ptr).MODE_SENSE10.as_mut().set_PageCode(MODE_PAGE_CAPABILITIES);
+    (*cdb_ptr).MODE_SENSE10.as_mut().AllocationLength[0] = (transferSize >> 8) as u8;
+    (*cdb_ptr).MODE_SENSE10.as_mut().AllocationLength[1] = (transferSize & 0xFF) as u8;
     let status = ScratchBuffer_ExecuteCdb(
         DeviceExtension,
         core::ptr::null_mut(),
@@ -925,7 +922,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
         &cdb,
         10u32,
     );
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         let header = (*DeviceExtension).ScratchContext.ScratchBuffer as *const MODE_PARAMETER_HEADER10;
         let mut dataLength: u32 =
             ((*header).ModeDataLength[0] as u32) << 8 | ((*header).ModeDataLength[1] as u32);
@@ -959,7 +956,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
         }
         if !page.is_null()
             && dataLength
-                < (core::mem::offset_of!(CDVD_CAPABILITIES_PAGE, WriteSpeedMaximum) as u32) + 2
+                < (core::mem::offset_of!(CDVD_CAPABILITIES_PAGE, __bindgen_anon_3) as u32) + 2
         {
             TracePrint(
                 TRACE_LEVEL_WARNING,
@@ -967,23 +964,23 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
                 b"ModePage 2Ah was requested, but drive reported only %x bytes (%x needed). Ignoring.\n\0"
                     .as_ptr() as *const i8,
                 dataLength,
-                (core::mem::offset_of!(CDVD_CAPABILITIES_PAGE, WriteSpeedMaximum) as u32) + 2,
+                (core::mem::offset_of!(CDVD_CAPABILITIES_PAGE, __bindgen_anon_3) as u32) + 2,
             );
             page = core::ptr::null();
         }
-        if !page.is_null() && ((*page).PageCode != MODE_PAGE_CAPABILITIES) {
+        if !page.is_null() && ((*page).PageCode() != MODE_PAGE_CAPABILITIES) {
             TracePrint(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"ModePage 2Ah was requested, but drive reported page %x\n\0"
                     .as_ptr() as *const i8,
-                (*page).PageCode,
+                (*page).PageCode() as core::ffi::c_uint,
             );
             page = core::ptr::null();
         }
         if !page.is_null() {
             let mut temp: u32 =
-                ((*page).WriteSpeedMaximum[0] as u32) << 8 | ((*page).WriteSpeedMaximum[1] as u32);
+                ((*page).__bindgen_anon_3.WriteSpeedMaximum.as_ref()[0] as u32) << 8 | ((*page).__bindgen_anon_3.WriteSpeedMaximum.as_ref()[1] as u32);
             temp *= 1000;
             temp /= 2048;
             if temp != 0 {
@@ -1092,17 +1089,17 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
     // Set up the CDB
     unsafe {
         if UseLegacyNominalPerformance != 0 {
-            cdb.GET_PERFORMANCE.OperationCode = SCSIOP_GET_PERFORMANCE;
+            cdb.GET_PERFORMANCE.as_mut().OperationCode = SCSIOP_GET_PERFORMANCE;
             // Except = 0, Write = 1, Reserved0 = 0 -> byte = 0b00000010
-            cdb.GET_PERFORMANCE._bitfield_byte = 1 << 1;
-            cdb.GET_PERFORMANCE.Tolerance = 2;
-            cdb.GET_PERFORMANCE.MaximumNumberOfDescriptors[1] = maxDescriptors as u8;
-            cdb.GET_PERFORMANCE.Type = 0;
+            cdb.GET_PERFORMANCE.as_mut().set_Write(1);
+            cdb.GET_PERFORMANCE.as_mut().set_Tolerance(2);
+            cdb.GET_PERFORMANCE.as_mut().MaximumNumberOfDescriptors[1] = maxDescriptors as u8;
+            cdb.GET_PERFORMANCE.as_mut().Type = 0;
         } else {
-            cdb.GET_PERFORMANCE.OperationCode = SCSIOP_GET_PERFORMANCE;
+            cdb.GET_PERFORMANCE.as_mut().OperationCode = SCSIOP_GET_PERFORMANCE;
             // Except/Write not set; they stay zero from RtlZeroMemory
-            cdb.GET_PERFORMANCE.MaximumNumberOfDescriptors[1] = maxDescriptors as u8;
-            cdb.GET_PERFORMANCE.Type = 3;
+            cdb.GET_PERFORMANCE.as_mut().MaximumNumberOfDescriptors[1] = maxDescriptors as u8;
+            cdb.GET_PERFORMANCE.as_mut().Type = 3;
         }
     }
 

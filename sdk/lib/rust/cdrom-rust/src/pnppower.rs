@@ -1,16 +1,19 @@
 use crate::types::*;
 use kmdf_sys::*;
-use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL, PIO_COMPLETION_ROUTINE};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DevicePowerState, IO_COMPLETION_ROUTINE, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, LPCGUID, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, POWER_SETTING_CALLBACK, PowerDeviceD0, PowerMonitorOff};
+use ntkrnl_sys::ddk::{IO_COMPLETION_ROUTINE, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, POWER_SETTING_CALLBACK};
+use ntkrnl_sys::ddk::_POWER_STATE_TYPE_DevicePowerState as DevicePowerState;
+use ntkrnl_sys::ddk::_DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0;
+use ntkrnl_sys::ddk::_MONITOR_DISPLAY_STATE_PowerMonitorOff as PowerMonitorOff;
 use core::ffi::c_void;
 
 extern "C" {
-    static mut RequestProcessPowerIrpCompletion: IO_COMPLETION_ROUTINE;
+    fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdbEx( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, buffer: *mut core::ffi::c_void, transferSize: u32, isRequest: i32, cdb: *mut CDB, cdbLength: u8, timeout: u32, ) -> i32;
@@ -20,7 +23,8 @@ extern "C" {
     fn RequestClearSendTime(PowerRequest: *mut core::ffi::c_void);
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn _Analysis_assume_(cond: i32);
-    fn DeviceSendPowerDownProcessRequest( extension: *mut CDROM_DEVICE_EXTENSION, callback: unsafe extern "system" fn(*mut core::ffi::c_void, *mut core::ffi::c_void), irp: PIRP, );
+    // DeviceSendPowerDownProcessRequest resolves from crate::types (canonical
+    // signature: (PCDROM_DEVICE_EXTENSION, PFN_WDF_REQUEST_COMPLETION_ROUTINE, WDFCONTEXT) -> NTSTATUS).
 }
 extern "C" {
     fn ScratchBuffer_SetupSrb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Buffer: *mut core::ffi::c_void, TransferSize: u32, Direct: i32, );
@@ -33,10 +37,9 @@ extern "C" {
 
 const SCSIOP_MEDIUM_REMOVAL: u8 = 0x1E;
 
-const SP_UNTAGGED: u32 = 0;         // TODO: correct value
-const SRB_SIMPLE_TAG_REQUEST: u32 = 0; // TODO: correct value
-const SRB_FUNCTION_SHUTDOWN: u32 = 0; // TODO: correct value
-const SRB_FUNCTION_FLUSH: u32 = 0;    // TODO: correct value
+const SP_UNTAGGED: u8 = 0xFF;        // (UCHAR)~0 per srb.h
+// SRB_SIMPLE_TAG_REQUEST / SRB_FUNCTION_SHUTDOWN / SRB_FUNCTION_FLUSH resolve
+// from crate::types (correct bindgen values).
 
 const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
 const IOCTL_SCSI_EXECUTE_IN: u32 = 0; // unknown
@@ -86,7 +89,17 @@ pub unsafe extern "C" fn RequestProcessSetPower(
         && (*currentStack).Parameters.Power.State.DeviceState != PowerDeviceD0
     {
         IoCopyCurrentIrpStackLocationToNext(Irp);
-        IoSetCompletionRoutine(Irp, Some(RequestProcessPowerIrpCompletion), deviceExtension, 1, 1, 1);
+        IoSetCompletionRoutine(
+            Irp,
+            core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(
+                RequestProcessPowerIrpCompletion
+                    as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, *mut core::ffi::c_void) -> NTSTATUS,
+            ),
+            deviceExtension as *mut core::ffi::c_void,
+            1,
+            1,
+            1,
+        );
         IoMarkIrpPending(Irp);
         IrpMarkedPending = 1;
     } else {
@@ -118,7 +131,7 @@ pub unsafe extern "C" fn DeviceScratchSyncCache(
     // srb->QueueTag = SP_UNTAGGED;
     // srb->QueueAction = SRB_SIMPLE_TAG_REQUEST;
     unsafe {
-        cdb.SYNCHRONIZE_CACHE10.OperationCode = 0x35; // SCSIOP_SYNCHRONIZE_CACHE
+        cdb.SYNCHRONIZE_CACHE10.as_mut().OperationCode = 0x35; // SCSIOP_SYNCHRONIZE_CACHE
     }
 
     status = ScratchBuffer_ExecuteCdbEx(
@@ -150,8 +163,8 @@ pub unsafe extern "C" fn DeviceScratchPreventMediaRemoval(
 
     // Set up the CDB
     let cdb_ptr: *mut CDB = core::ptr::addr_of_mut!(cdb);
-    (*cdb_ptr).MEDIA_REMOVAL.OperationCode = SCSIOP_MEDIUM_REMOVAL;
-    (*cdb_ptr).MEDIA_REMOVAL.Prevent = Prevent;
+    (*cdb_ptr).MEDIA_REMOVAL.as_mut().OperationCode = SCSIOP_MEDIUM_REMOVAL;
+    (*cdb_ptr).MEDIA_REMOVAL.as_mut().set_Prevent(Prevent);
 
     status = ScratchBuffer_ExecuteCdb(
         DeviceExtension,
@@ -188,7 +201,7 @@ pub unsafe extern "C" fn RequestIssueShutdownFlush(
         ScratchBuffer_SetupSrb(DeviceExtension, core::ptr::null_mut(), transferSize, 0);
 
         (*srb).QueueTag = SP_UNTAGGED;
-        (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST;
+        (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST as u8;
         (*srb).TimeOutValue = TimeOutValueGetCapValue(
             (*DeviceExtension).TimeOutValue,
             4,
@@ -196,9 +209,9 @@ pub unsafe extern "C" fn RequestIssueShutdownFlush(
         (*srb).CdbLength = 0;
 
         if (*currentStack).MajorFunction == IRP_MJ_SHUTDOWN {
-            (*srb).Function = SRB_FUNCTION_SHUTDOWN;
+            (*srb).Function = SRB_FUNCTION_SHUTDOWN as u8;
         } else {
-            (*srb).Function = SRB_FUNCTION_FLUSH;
+            (*srb).Function = SRB_FUNCTION_FLUSH as u8;
         }
 
         ScratchBuffer_SendSrb(DeviceExtension, 1, core::ptr::null_mut());
@@ -241,7 +254,7 @@ pub unsafe extern "system" fn RequestUnlockQueueCompletion(
     let _ = &params;
 
     // deviceExtension->PowerContext.Options.LockQueue = FALSE;
-    (*device_extension).PowerContext.Options.LockQueue = 0; // FALSE
+    (*device_extension).PowerContext.Options.set_LockQueue(0); // FALSE
 
     // PowerContextEndUse(deviceExtension);
     PowerContextEndUse(device_extension);
@@ -261,7 +274,7 @@ pub unsafe extern "system" fn RequestProcessPowerIrpCompletion(
 ) -> NTSTATUS {
     // Forward declarations for unknown externals
 
-    const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016;
+    const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016u32 as NTSTATUS;
     const STATUS_CONTINUE_COMPLETION: NTSTATUS = 0x00000000;
 
     let _ = DeviceObject;
@@ -284,11 +297,14 @@ pub unsafe extern "system" fn RequestProcessPowerIrpCompletion(
 
     (*deviceExtension).PowerContext.PowerChangeState.PowerDown += 1;
 
-    if (*deviceExtension).PowerContext.Options.LockQueue != 0 {
+    if (*deviceExtension).PowerContext.Options.LockQueue() != 0 {
         DeviceSendPowerDownProcessRequest(
             deviceExtension,
-            RequestUnlockQueueCompletion,
-            Irp,
+            core::mem::transmute::<_, PFN_WDF_REQUEST_COMPLETION_ROUTINE>(
+                RequestUnlockQueueCompletion
+                    as unsafe extern "system" fn(WDFREQUEST, WDFIOTARGET, PWDF_REQUEST_COMPLETION_PARAMS, WDFCONTEXT),
+            ),
+            Irp as WDFCONTEXT,
         );
         return STATUS_MORE_PROCESSING_REQUIRED;
     }
@@ -356,10 +372,10 @@ pub unsafe extern "C" fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DE
         let nextStack: *mut IO_STACK_LOCATION;
         nextStack = IoGetNextIrpStackLocation(irp);
         (*(nextStack)).MajorFunction = IRP_MJ_SCSI;
-        (*(nextStack)).Parameters.Scsi.Srb = core::ptr::addr_of_mut!((*DeviceExtension).PowerContext.Srb);
-        (*DeviceExtension).PowerContext.Srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u8;
-        (*DeviceExtension).PowerContext.Srb.OriginalRequest = irp;
-        (*DeviceExtension).PowerContext.Srb.SenseInfoBuffer = core::ptr::addr_of_mut!((*DeviceExtension).PowerContext.SenseData) as *mut u8;
+        (*(nextStack)).Parameters.Scsi.Srb = core::ptr::addr_of_mut!((*DeviceExtension).PowerContext.Srb) as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
+        (*DeviceExtension).PowerContext.Srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
+        (*DeviceExtension).PowerContext.Srb.OriginalRequest = irp as *mut core::ffi::c_void;
+        (*DeviceExtension).PowerContext.Srb.SenseInfoBuffer = core::ptr::addr_of_mut!((*DeviceExtension).PowerContext.SenseData) as *mut core::ffi::c_void;
         (*DeviceExtension).PowerContext.Srb.SenseInfoBufferLength = SENSE_BUFFER_SIZE as u8;
     }
 
@@ -373,7 +389,7 @@ pub unsafe extern "C" fn PowerContextBeginUse(DeviceExtension: *mut CDROM_DEVICE
 
     (*DeviceExtension).PowerContext.InUse = 1; // TRUE
     (*DeviceExtension).PowerContext.RetryCount = 3; /* MAXIMUM_RETRIES */
-    (*DeviceExtension).PowerContext.RetryIntervalIn100ns = 0u32; // ULONG assumed
+    (*DeviceExtension).PowerContext.RetryIntervalIn100ns = 0i64; // LONGLONG
 
     KeQueryTickCount(core::ptr::addr_of_mut!((*DeviceExtension).PowerContext.StartTime));
 
@@ -420,7 +436,16 @@ pub unsafe extern "C" fn DevicePowerSettingCallback(
     };
     const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x40;
 
-    if IsEqualGUID(SettingGuid, &guid_console_display_state as *const GUID) {
+    // IsEqualGUID(a, b): RtlEqualMemory(a, b, sizeof(GUID)) per the DDK macro.
+    let is_equal_guid = |a: *const GUID, b: *const GUID| -> bool {
+        !a.is_null()
+            && !b.is_null()
+            && (*a).Data1 == (*b).Data1
+            && (*a).Data2 == (*b).Data2
+            && (*a).Data3 == (*b).Data3
+            && (*a).Data4 == (*b).Data4
+    };
+    if is_equal_guid(SettingGuid, &guid_console_display_state as *const GUID) {
         if (ValueLength == core::mem::size_of::<u32>() as u32) && (!Value.is_null()) {
             let DisplayState = *(Value as *const u32);
             // _Analysis_assume_(DeviceExtension != NULL); // SAL annotation – skipped

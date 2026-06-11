@@ -28,38 +28,16 @@ const TRACE_FLAG_INIT: i32 = 0;
 // CDROM_DEVICE_EXTENSION is assumed defined elsewhere
 // CDB, READ_DVD_STRUCTURES_HEADER, DVD_DESCRIPTOR_HEADER are assumed defined elsewhere
 
-const SCSIOP_REPORT_KEY: u8 = 0; // TODO: actual value
-
-// Forward declarations for unknown external functions
-
 // Unknown constants from the C code; approximated values
 const DVD_END_ALL_SESSIONS: u8 = 0xFF;
 const MAX_COPY_PROTECT_AGID: u8 = 4;
-const SCSIOP_SEND_KEY: u8 = 0x2A;
 const DVD_INVALIDATE_AGID: u8 = 0x3F;
 
-const SCSIOP_SEND_KEY: u8 = 0x23;
-
-// Forward declarations for external symbols not in imports
-
-// Unknown constants required by the function
+// SCSI opcodes (REPORT KEY / SEND KEY) per SPC/MMC
 const SCSIOP_REPORT_KEY: u8 = 0xA4; // typical SCSI REPORT KEY opcode
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185; // NTSTATUS code
-
-const SCSIOP_REPORT_KEY: u8 = 0x00; // placeholder – correct SCSI opcode required
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32; // typical NTSTATUS
-
-const SCSIOP_SEND_KEY: u8 = 0x2A;
-
-// Constants needed for the translation
-const SCSIOP_READ_DVD_STRUCTURE: u8 = 0xAD;
-const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as NTSTATUS;
+const SCSIOP_SEND_KEY: u8 = 0xA3;
+const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32; // NTSTATUS code
 const TRUE: i32 = 1;
-
-const SCSIOP_READ_DVD_STRUCTURE: u8 = 0xAD; // typical value
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
-
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC000_0185u32 as i32;
 #[no_mangle]
 pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
@@ -78,7 +56,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
         &raw mut layerNumber as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
@@ -86,14 +64,14 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
     if status >= 0 {
         status = WdfRequestRetrieveOutputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
             &raw mut outputBuffer as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
     }
 
     if status >= 0 {
-        if RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK {
+        if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK {
             transferSize += AACS_MKB_PACK_SIZE;
         }
 
@@ -111,14 +89,14 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
         ScratchBuffer_BeginUse(DeviceExtension);
 
         RtlZeroMemory(&raw mut cdb as *mut core::ffi::c_void, core::mem::size_of::<CDB>());
-        cdb.READ_DVD_STRUCTURE.OperationCode = SCSIOP_READ_DVD_STRUCTURE;
-        cdb.READ_DVD_STRUCTURE.LayerNumber = *layerNumber;
-        cdb.READ_DVD_STRUCTURE.Format = 0x83;
-        cdb.READ_DVD_STRUCTURE.AllocationLength[0] = ((transferSize as u32) >> 8) as u8;
-        cdb.READ_DVD_STRUCTURE.AllocationLength[1] = (transferSize as u32) as u8;
+        cdb.READ_DVD_STRUCTURE.as_mut().OperationCode = SCSIOP_READ_DVD_STRUCTURE;
+        cdb.READ_DVD_STRUCTURE.as_mut().LayerNumber = *layerNumber;
+        cdb.READ_DVD_STRUCTURE.as_mut().Format = 0x83;
+        cdb.READ_DVD_STRUCTURE.as_mut().AllocationLength[0] = ((transferSize as u32) >> 8) as u8;
+        cdb.READ_DVD_STRUCTURE.as_mut().AllocationLength[1] = (transferSize as u32) as u8;
 
         while sendChangedCommand {
-            cdb.READ_DVD_STRUCTURE.RMDBlockNumber[3] = rmdBlockNumber;
+            cdb.READ_DVD_STRUCTURE.as_mut().RMDBlockNumber[3] = rmdBlockNumber;
 
             if shouldRetry {
                 status = ScratchBuffer_ExecuteCdb(
@@ -133,7 +111,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
 
             #[cfg(feature = "ENABLE_AACS_TESTING")]
             {
-                if RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE {
+                if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE {
                     const RESULTS: [u8; 4] = [0x80, 0x02, 0x00, 0x02];
                     RtlCopyMemory(
                         (*(DeviceExtension)).ScratchContext.ScratchBuffer as *mut core::ffi::c_void,
@@ -141,7 +119,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                         RESULTS.len(),
                     );
                     status = 0; // STATUS_SUCCESS
-                } else if RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK {
+                } else if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK {
                     const RESULTS: [u8; 4] = [0x80, 0x02, 0x00, 0x02];
                     const DEFAULT_FILL: u8 = 0x30;
                     core::ptr::write_bytes(
@@ -161,7 +139,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
             if status >= 0 {
                 let header: *mut DVD_DESCRIPTOR_HEADER =
                     (*(DeviceExtension)).ScratchContext.ScratchBuffer as *mut DVD_DESCRIPTOR_HEADER;
-                let thisPackNumber: u8 = cdb.READ_DVD_STRUCTURE.RMDBlockNumber[3];
+                let thisPackNumber: u8 = cdb.READ_DVD_STRUCTURE.as_ref().RMDBlockNumber[3];
                 let mut otherPacks: u8 = (*header).Reserved[1];
 
                 if otherPacks == 0 {
@@ -175,7 +153,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                 } else {
                     otherPacks -= 1;
 
-                    if RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE {
+                    if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE {
                         if otherPacks != thisPackNumber {
                             RtlZeroMemory(
                                 (*(DeviceExtension)).ScratchContext.ScratchBuffer as *mut core::ffi::c_void,
@@ -210,7 +188,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                             sendChangedCommand = false;
                             shouldRetry = false;
                         }
-                    } else if RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK {
+                    } else if RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK {
                         REVERSE_SHORT(&raw mut (*header).Length as *mut u16);
                         if (*header).Length
                             < (core::mem::size_of::<DVD_DESCRIPTOR_HEADER>() as u16)
@@ -230,9 +208,9 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                             );
 
                             let originalBufferSize: u32 =
-                                RequestParameters.Parameters.DeviceIoControl.OutputBufferLength;
+                                RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as u32;
                             if originalBufferSize < totalSize + (AACS_MKB_PACK_SIZE * (thisPackNumber as u32)) {
-                                *DataLength = ((otherPacks as u32) + 1) * AACS_MKB_PACK_SIZE as usize;
+                                *DataLength = (((otherPacks as u32) + 1) * AACS_MKB_PACK_SIZE) as usize;
                                 status = -1073741789; // STATUS_BUFFER_TOO_SMALL
                             } else {
                                 let whereToCopy = (outputBuffer as *mut u8)
@@ -253,8 +231,8 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                                     );
 
                                     // Preserve exact C side-effect: post-increment, assign old value to rmdBlockNumber
-                                    let old_val = cdb.READ_DVD_STRUCTURE.RMDBlockNumber[3];
-                                    cdb.READ_DVD_STRUCTURE.RMDBlockNumber[3] += 1;
+                                    let old_val = cdb.READ_DVD_STRUCTURE.as_ref().RMDBlockNumber[3];
+                                    cdb.READ_DVD_STRUCTURE.as_mut().RMDBlockNumber[3] += 1;
                                     rmdBlockNumber = old_val;
 
                                     transferSize =
@@ -296,7 +274,7 @@ pub unsafe extern "C" fn DeviceHandleAacsStartSession(
 
     status = WdfRequestRetrieveOutputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
         core::ptr::addr_of_mut!(sessionId) as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
@@ -309,13 +287,13 @@ pub unsafe extern "C" fn DeviceHandleAacsStartSession(
 
         RtlZeroMemory(core::ptr::addr_of_mut!(cdb) as *mut core::ffi::c_void, core::mem::size_of::<CDB>() as usize);
 
-        cdb.REPORT_KEY.OperationCode = SCSIOP_REPORT_KEY;
-        cdb.AsByte[7] = 0x02; // AACS key class
-        cdb.REPORT_KEY.AllocationLength[0] = (dataTransferLength >> 8) as u8;
-        cdb.REPORT_KEY.AllocationLength[1] = (dataTransferLength & 0xff) as u8;
-        cdb.REPORT_KEY.KeyFormat = 0x00; // DVD_REPORT_AGID?
+        cdb.REPORT_KEY.as_mut().OperationCode = SCSIOP_REPORT_KEY;
+        cdb.AsByte.as_mut()[7] = 0x02; // AACS key class
+        cdb.REPORT_KEY.as_mut().AllocationLength[0] = (dataTransferLength >> 8) as u8;
+        cdb.REPORT_KEY.as_mut().AllocationLength[1] = (dataTransferLength & 0xff) as u8;
+        cdb.REPORT_KEY.as_mut().set_KeyFormat(0x00); // DVD_REPORT_AGID?
 
-        status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, dataTransferLength, 1, core::ptr::addr_of_mut!(cdb), 12);
+        status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, dataTransferLength, 1, core::ptr::addr_of_mut!(cdb) as *const core::ffi::c_void, 12);
 
         #[cfg(feature = "enable_aacs_testing")]
         {
@@ -326,8 +304,8 @@ pub unsafe extern "C" fn DeviceHandleAacsStartSession(
 
         if NT_SUCCESS(status) {
             let keyHeader: *mut CDVD_KEY_HEADER = (*DeviceExtension).ScratchContext.ScratchBuffer as *mut CDVD_KEY_HEADER;
-            let keyData: *mut CDVD_REPORT_AGID_DATA = (*keyHeader).Data as *mut CDVD_REPORT_AGID_DATA;
-            *sessionId = (*keyData).AGID as DVD_SESSION_ID;
+            let keyData: *mut CDVD_REPORT_AGID_DATA = (*keyHeader).Data.as_ptr() as *mut CDVD_REPORT_AGID_DATA;
+            *sessionId = (*keyData).AGID() as DVD_SESSION_ID;
             *DataLength = core::mem::size_of::<DVD_SESSION_ID>();
         }
 
@@ -350,12 +328,12 @@ pub unsafe extern "C" fn DeviceHandleAacsEndSession(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.InputBufferLength as usize,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
         &mut sessionId as *mut *mut u8 as *mut *mut core::ffi::c_void,
         core::ptr::null_mut::<usize>(),
     );
 
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         let mut transferSize: u32 = 0;
         let mut cdb: CDB = core::mem::zeroed();
         let mut currentSession: u8 = 0;
@@ -377,23 +355,23 @@ pub unsafe extern "C" fn DeviceHandleAacsEndSession(
                 core::mem::size_of::<CDB>(),
             );
             // Set up the CDB
-            cdb.SEND_KEY.OperationCode = SCSIOP_SEND_KEY;
-            cdb.AsByte[7] = 0x02; // AACS key class
-            cdb.SEND_KEY.AGID = currentSession;
-            cdb.SEND_KEY.KeyFormat = DVD_INVALIDATE_AGID;
+            cdb.SEND_KEY.as_mut().OperationCode = SCSIOP_SEND_KEY;
+            cdb.AsByte.as_mut()[7] = 0x02; // AACS key class
+            cdb.SEND_KEY.as_mut().set_AGID((currentSession) as u8);
+            cdb.SEND_KEY.as_mut().set_KeyFormat((DVD_INVALIDATE_AGID) as u8);
 
             status = ScratchBuffer_ExecuteCdb(
                 DeviceExtension,
                 Request,
                 transferSize,
                 0, // FALSE
-                &cdb as *const CDB,
+                &cdb as *const CDB as *const core::ffi::c_void,
                 12,
             );
 
             currentSession += 1;
 
-            if !(currentSession <= limitSession && NT_SUCCESS(status) != 0) {
+            if !(currentSession <= limitSession && NT_SUCCESS(status)) {
                 break;
             }
         }
@@ -424,7 +402,7 @@ pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        (*RequestParameters).Parameters.DeviceIoControl.InputBufferLength as usize,
+        (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
         core::ptr::addr_of_mut!(input) as *mut *mut core::ffi::c_void,
         core::ptr::null_mut::<usize>(),
     );
@@ -464,19 +442,19 @@ pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
         );
 
         // Set up the CDB
-        cdb.SEND_KEY.OperationCode = SCSIOP_SEND_KEY;
-        cdb.AsByte[7] = 0x02; // AACS key class
-        cdb.SEND_KEY.ParameterListLength[0] = (data_transfer_length >> 8) as u8;
-        cdb.SEND_KEY.ParameterListLength[1] = data_transfer_length as u8;
-        cdb.SEND_KEY.AGID = (*input).SessionId as u8;
-        cdb.SEND_KEY.KeyFormat = 0x01; // Send Host Challenge Certificate
+        cdb.SEND_KEY.as_mut().OperationCode = SCSIOP_SEND_KEY;
+        cdb.AsByte.as_mut()[7] = 0x02; // AACS key class
+        cdb.SEND_KEY.as_mut().ParameterListLength[0] = (data_transfer_length >> 8) as u8;
+        cdb.SEND_KEY.as_mut().ParameterListLength[1] = data_transfer_length as u8;
+        cdb.SEND_KEY.as_mut().set_AGID((*input).SessionId as u8);
+        cdb.SEND_KEY.as_mut().set_KeyFormat(0x01); // Send Host Challenge Certificate
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
             Request,
             data_transfer_length,
             0u8, // FALSE
-            core::ptr::addr_of_mut!(cdb),
+            core::ptr::addr_of_mut!(cdb) as *const core::ffi::c_void,
             12u32,
         );
 
@@ -509,7 +487,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.InputBufferLength as u64,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
         &mut input as *mut *mut DVD_SESSION_ID as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
@@ -517,7 +495,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
     if NT_SUCCESS(status) {
         status = WdfRequestRetrieveOutputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.OutputBufferLength as u64,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize,
             &mut outputBuffer as *mut *mut core::ffi::c_void as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -537,19 +515,19 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
 
         ScratchBuffer_BeginUse(DeviceExtension);
 
-        cdb.REPORT_KEY.OperationCode = SCSIOP_REPORT_KEY;
-        cdb.AsByte[7] = 0x02u8;
-        cdb.REPORT_KEY.AllocationLength[0] = (data_transfer_length >> 8) as u8;
-        cdb.REPORT_KEY.AllocationLength[1] = (data_transfer_length & 0xFF) as u8;
-        cdb.REPORT_KEY.AGID = (*input) as u8;
-        cdb.REPORT_KEY.KeyFormat = 0x01u8;
+        cdb.REPORT_KEY.as_mut().OperationCode = SCSIOP_REPORT_KEY;
+        cdb.AsByte.as_mut()[7] = 0x02u8;
+        cdb.REPORT_KEY.as_mut().AllocationLength[0] = (data_transfer_length >> 8) as u8;
+        cdb.REPORT_KEY.as_mut().AllocationLength[1] = (data_transfer_length & 0xFF) as u8;
+        cdb.REPORT_KEY.as_mut().set_AGID((*input) as u8);
+        cdb.REPORT_KEY.as_mut().set_KeyFormat((0x01u8) as u8);
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
             Request,
             data_transfer_length,
             1, // TRUE
-            &cdb,
+            &cdb as *const CDB as *const core::ffi::c_void,
             12,
         );
 
@@ -600,7 +578,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
 
             if NT_SUCCESS(status) {
                 core::ptr::copy_nonoverlapping(
-                    &(*header).Data as *const u8,
+                    (*header).Data.as_ptr() as *const u8,
                     outputBuffer as *mut u8,
                     data_length_to_copy as usize,
                 );
@@ -632,7 +610,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
         &mut input as *mut _ as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
@@ -640,7 +618,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
     if status >= 0 {
         status = WdfRequestRetrieveOutputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
             &mut outputBuffer as *mut _ as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -648,8 +626,8 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
 
     if status >= 0 {
         let mut dataTransferLength: u32 =
-            core::mem::size_of::<CDVD_KEY_HEADER>() + core::mem::size_of::<AACS_CHALLENGE_KEY>();
-        let mut cdb: CDB;
+            (core::mem::size_of::<CDVD_KEY_HEADER>() + core::mem::size_of::<AACS_CHALLENGE_KEY>()) as u32;
+        let mut cdb: CDB = core::mem::zeroed();
 
         ScratchBuffer_BeginUse(DeviceExtension);
 
@@ -660,20 +638,19 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
         );
 
         // Set up the CDB
-        let rep_key = &mut *core::ptr::addr_of_mut!(cdb.REPORT_KEY);
-        rep_key.OperationCode = SCSIOP_REPORT_KEY;
-        core::ptr::addr_of_mut!(cdb.AsByte).add(7).write(0x02);
-        rep_key.AllocationLength[0] = (dataTransferLength >> 8) as u8;
-        rep_key.AllocationLength[1] = dataTransferLength as u8;
-        rep_key.AGID = *input as u8;
-        rep_key.KeyFormat = 0x02;
+        cdb.REPORT_KEY.as_mut().OperationCode = SCSIOP_REPORT_KEY;
+        cdb.AsByte.as_mut()[7] = 0x02;
+        cdb.REPORT_KEY.as_mut().AllocationLength[0] = (dataTransferLength >> 8) as u8;
+        cdb.REPORT_KEY.as_mut().AllocationLength[1] = dataTransferLength as u8;
+        cdb.REPORT_KEY.as_mut().set_AGID(*input as u8);
+        cdb.REPORT_KEY.as_mut().set_KeyFormat(0x02);
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
             Request,
             dataTransferLength,
             1, // TRUE
-            &mut cdb,
+            &mut cdb as *mut CDB as *const core::ffi::c_void,
             12,
         );
 
@@ -697,7 +674,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
 
         if status >= 0 {
             let header = (*DeviceExtension).ScratchContext.ScratchBuffer as *mut DVD_DESCRIPTOR_HEADER;
-            let mut dataLengthToCopy: u32 = core::mem::size_of::<AACS_CHALLENGE_KEY>();
+            let mut dataLengthToCopy: u32 = core::mem::size_of::<AACS_CHALLENGE_KEY>() as u32;
 
             REVERSE_SHORT(&mut (*header).Length as *mut u16);
 
@@ -751,7 +728,7 @@ pub unsafe extern "C" fn DeviceHandleSendChallengeKey(
 
     *DataLength = 0;
 
-    let in_len = (*RequestParameters).Parameters.DeviceIoControl.InputBufferLength as usize;
+    let in_len = (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize;
     status = WdfRequestRetrieveInputBuffer(
         Request,
         in_len,
@@ -759,7 +736,7 @@ pub unsafe extern "C" fn DeviceHandleSendChallengeKey(
         core::ptr::null_mut(),
     );
 
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         let dataTransferLength: u32 = core::mem::size_of::<CDVD_KEY_HEADER>() as u32
             + core::mem::size_of::<AACS_CHALLENGE_KEY>() as u32;
         let mut cdb: CDB = core::mem::zeroed();
@@ -788,20 +765,20 @@ pub unsafe extern "C" fn DeviceHandleSendChallengeKey(
         );
 
         // Set up the CDB
-        (cdb.SEND_KEY).OperationCode = SCSIOP_SEND_KEY;
-        cdb.AsByte[7] = 0x02;
-        (cdb.SEND_KEY).ParameterListLength[0] = (dataTransferLength >> 8) as u8;
-        (cdb.SEND_KEY).ParameterListLength[1] = (dataTransferLength >> 0) as u8;
-        (cdb.SEND_KEY).AGID = ((*input).SessionId) as u8;
-        (cdb.SEND_KEY).KeyFormat = 0x02; // Send Host Challenge Certificate
+        cdb.SEND_KEY.as_mut().OperationCode = SCSIOP_SEND_KEY;
+        cdb.AsByte.as_mut()[7] = 0x02;
+        cdb.SEND_KEY.as_mut().ParameterListLength[0] = (dataTransferLength >> 8) as u8;
+        cdb.SEND_KEY.as_mut().ParameterListLength[1] = (dataTransferLength >> 0) as u8;
+        cdb.SEND_KEY.as_mut().set_AGID(((*input).SessionId) as u8);
+        cdb.SEND_KEY.as_mut().set_KeyFormat(0x02); // Send Host Challenge Certificate
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
             Request,
             dataTransferLength,
             0, // FALSE
-            &cdb,
-            12u8,
+            &cdb as *const CDB as *const core::ffi::c_void,
+            12u32,
         );
 
         // #ifdef ENABLE_AACS_TESTING
@@ -810,7 +787,7 @@ pub unsafe extern "C" fn DeviceHandleSendChallengeKey(
             status = STATUS_SUCCESS;
         }
 
-        if NT_SUCCESS(status) != 0 {
+        if NT_SUCCESS(status) {
             *DataLength = 0;
         }
 
@@ -837,7 +814,7 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.InputBufferLength as usize,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
         &mut input as *mut *mut u8 as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
@@ -845,7 +822,7 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
     if status >= 0 {
         status = WdfRequestRetrieveOutputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.OutputBufferLength as usize,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize,
             &mut output_buffer as *mut *mut core::ffi::c_void as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -872,8 +849,8 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
             DeviceExtension,
             Request,
             data_transfer_length,
-            TRUE,
-            cdb.as_mut_ptr(),
+            TRUE as u8,
+            cdb.as_mut_ptr() as *const core::ffi::c_void,
             12,
         );
 
@@ -955,8 +932,8 @@ pub unsafe extern "C" fn DeviceHandleAacsReadSerialNumber(
         *DataLength = 0;
 
         status = WdfRequestRetrieveInputBuffer(
-            Request,
-            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+            Request as WDFREQUEST,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
             &raw mut input as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -964,8 +941,8 @@ pub unsafe extern "C" fn DeviceHandleAacsReadSerialNumber(
         // NT_SUCCESS is `status >= 0`
         if status >= 0 {
             status = WdfRequestRetrieveOutputBuffer(
-                Request,
-                RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+                Request as WDFREQUEST,
+                RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
                 &raw mut outputBuffer as *mut *mut core::ffi::c_void,
                 core::ptr::null_mut(),
             );
@@ -987,18 +964,18 @@ pub unsafe extern "C" fn DeviceHandleAacsReadSerialNumber(
             );
 
             // Set up the CDB
-            cdb.READ_DVD_STRUCTURE.OperationCode = SCSIOP_READ_DVD_STRUCTURE;
-            cdb.READ_DVD_STRUCTURE.Format = 0x81;
-            cdb.READ_DVD_STRUCTURE.AllocationLength[0] = (dataTransferLength >> 8) as u8;
-            cdb.READ_DVD_STRUCTURE.AllocationLength[1] = (dataTransferLength >> 0) as u8;
-            cdb.READ_DVD_STRUCTURE.AGID = *input;
+            cdb.READ_DVD_STRUCTURE.as_mut().OperationCode = SCSIOP_READ_DVD_STRUCTURE;
+            cdb.READ_DVD_STRUCTURE.as_mut().Format = 0x81;
+            cdb.READ_DVD_STRUCTURE.as_mut().AllocationLength[0] = (dataTransferLength >> 8) as u8;
+            cdb.READ_DVD_STRUCTURE.as_mut().AllocationLength[1] = (dataTransferLength >> 0) as u8;
+            cdb.READ_DVD_STRUCTURE.as_mut().set_AGID((*input) as u8);
 
             status = ScratchBuffer_ExecuteCdb(
                 DeviceExtension,
-                Request,
+                Request as WDFREQUEST,
                 dataTransferLength,
                 1, // TRUE
-                &cdb,
+                &cdb as *const CDB as *const core::ffi::c_void,
                 12,
             );
 
@@ -1076,7 +1053,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaId(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
         core::ptr::addr_of_mut!(input) as *mut *mut core::ffi::c_void,
         core::ptr::null_mut(),
     );
@@ -1084,7 +1061,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaId(
     if NT_SUCCESS(status) {
         status = WdfRequestRetrieveOutputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
             core::ptr::addr_of_mut!(outputBuffer) as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -1097,19 +1074,19 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaId(
 
         ScratchBuffer_BeginUse(DeviceExtension);
 
-        cdb.READ_DVD_STRUCTURE.OperationCode = SCSIOP_READ_DVD_STRUCTURE;
-        cdb.READ_DVD_STRUCTURE.Format = 0x82u8;
-        cdb.READ_DVD_STRUCTURE.AllocationLength[0] = (dataTransferLength >> 8) as u8;
-        cdb.READ_DVD_STRUCTURE.AllocationLength[1] = (dataTransferLength >> 0) as u8;
-        cdb.READ_DVD_STRUCTURE.AGID = *input as u8;
+        cdb.READ_DVD_STRUCTURE.as_mut().OperationCode = SCSIOP_READ_DVD_STRUCTURE;
+        cdb.READ_DVD_STRUCTURE.as_mut().Format = 0x82u8;
+        cdb.READ_DVD_STRUCTURE.as_mut().AllocationLength[0] = (dataTransferLength >> 8) as u8;
+        cdb.READ_DVD_STRUCTURE.as_mut().AllocationLength[1] = (dataTransferLength >> 0) as u8;
+        cdb.READ_DVD_STRUCTURE.as_mut().set_AGID(*input as u8);
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
             Request,
             dataTransferLength,
-            1i32,
-            &mut cdb,
-            12u8,
+            1u8,
+            &mut cdb as *mut CDB as *const core::ffi::c_void,
+            12u32,
         );
 
         #[cfg(feature = "ENABLE_AACS_TESTING")]
@@ -1173,7 +1150,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
     RequestParameters: WDF_REQUEST_PARAMETERS,
-    DataLength: *mut size_t,
+    DataLength: *mut SIZE_T,
 ) -> NTSTATUS {
     // AacsReadBindingNonce
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -1186,7 +1163,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
 
     status = WdfRequestRetrieveInputBuffer(
         Request,
-        RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+        RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
         core::ptr::addr_of_mut!(input) as *mut *mut c_void,
         core::ptr::null_mut(),
     );
@@ -1194,7 +1171,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
     if NT_SUCCESS(status) {
         status = WdfRequestRetrieveOutputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
             core::ptr::addr_of_mut!(outputBuffer) as *mut *mut c_void,
             core::ptr::null_mut(),
         );
@@ -1213,25 +1190,25 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
         );
 
         // Set up the CDB
-        cdb.REPORT_KEY.OperationCode = 0x40; // SCSIOP_REPORT_KEY
+        cdb.REPORT_KEY.as_mut().OperationCode = 0x40; // SCSIOP_REPORT_KEY
         let start_lba = (*input).StartLba;
-        cdb.REPORT_KEY.LogicalBlockAddress[0] = (start_lba >> (3 * 8)) as u8;
-        cdb.REPORT_KEY.LogicalBlockAddress[1] = (start_lba >> (2 * 8)) as u8;
-        cdb.REPORT_KEY.LogicalBlockAddress[2] = (start_lba >> (1 * 8)) as u8;
-        cdb.REPORT_KEY.LogicalBlockAddress[3] = (start_lba >> (0 * 8)) as u8;
-        cdb.AsByte[6] = (*input).NumberOfSectors as u8;
-        cdb.AsByte[7] = 0x02; // AACS key class
-        cdb.REPORT_KEY.AllocationLength[0] = (dataTransferLength >> (8 * 1)) as u8;
-        cdb.REPORT_KEY.AllocationLength[1] = (dataTransferLength >> (8 * 0)) as u8;
-        cdb.REPORT_KEY.AGID = (*input).SessionId as u8;
-        cdb.REPORT_KEY.KeyFormat = 0x21; // Return an existing binding nonce
+        cdb.REPORT_KEY.as_mut().LogicalBlockAddress[0] = (start_lba >> (3 * 8)) as u8;
+        cdb.REPORT_KEY.as_mut().LogicalBlockAddress[1] = (start_lba >> (2 * 8)) as u8;
+        cdb.REPORT_KEY.as_mut().LogicalBlockAddress[2] = (start_lba >> (1 * 8)) as u8;
+        cdb.REPORT_KEY.as_mut().LogicalBlockAddress[3] = (start_lba >> (0 * 8)) as u8;
+        cdb.AsByte.as_mut()[6] = (*input).NumberOfSectors as u8;
+        cdb.AsByte.as_mut()[7] = 0x02; // AACS key class
+        cdb.REPORT_KEY.as_mut().AllocationLength[0] = (dataTransferLength >> (8 * 1)) as u8;
+        cdb.REPORT_KEY.as_mut().AllocationLength[1] = (dataTransferLength >> (8 * 0)) as u8;
+        cdb.REPORT_KEY.as_mut().set_AGID((*input).SessionId as u8);
+        cdb.REPORT_KEY.as_mut().set_KeyFormat(0x21); // Return an existing binding nonce
 
         status = ScratchBuffer_ExecuteCdb(
             DeviceExtension,
             Request,
             dataTransferLength,
             1, // TRUE
-            core::ptr::addr_of!(cdb) as *const CDB,
+            core::ptr::addr_of!(cdb) as *const CDB as *const core::ffi::c_void,
             12,
         );
 
@@ -1287,7 +1264,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
                 // else copy the data to the user's buffer
                 RtlCopyMemory(
                     outputBuffer,
-                    (*header).Data as *const c_void,
+                    (*header).Data.as_ptr() as *const c_void,
                     dataLengthToCopy as usize,
                 );
                 *DataLength = dataLengthToCopy as usize;
@@ -1318,7 +1295,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
 
         status = WdfRequestRetrieveInputBuffer(
             Request,
-            RequestParameters.Parameters.DeviceIoControl.InputBufferLength as usize,
+            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize,
             &mut input as *mut *mut AACS_READ_BINDING_NONCE as *mut *mut core::ffi::c_void,
             core::ptr::null_mut(),
         );
@@ -1326,7 +1303,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
         if NT_SUCCESS(status) {
             status = WdfRequestRetrieveOutputBuffer(
                 Request,
-                RequestParameters.Parameters.DeviceIoControl.OutputBufferLength as usize,
+                RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize,
                 &mut outputBuffer,
                 core::ptr::null_mut(),
             );
@@ -1344,7 +1321,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
                 Request,
                 dataTransferLength,
                 1, // TRUE
-                &mut cdb,
+                &mut cdb as *mut CDB as *const core::ffi::c_void,
                 12,
             );
 
@@ -1411,9 +1388,6 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
 }
 
 // Declarations for missing constants and functions
-
-const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
-
 
 // ============================================================================
 // ORIGINAL C SOURCE
@@ -1510,21 +1484,21 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&layerNumber,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }
 //
 //     if (NT_SUCCESS(status))
 //     {
-//         if (RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK)
+//         if (RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK)
 //         {
 //             // maximum size for this transfer is one pack + header
 //             transferSize += AACS_MKB_PACK_SIZE;
@@ -1568,13 +1542,13 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //             }
 //
 //     #ifdef ENABLE_AACS_TESTING
-//             if (RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE)
+//             if (RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE)
 //             {
 //                 static const UCHAR results[] = { 0x80, 0x02, 0x00, 0x02 };
 //                 RtlCopyMemory(DeviceExtension->ScratchContext.ScratchBuffer, results, SIZEOF_ARRAY(results));
 //                 status = STATUS_SUCCESS;
 //             }
-//             else if (RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK)
+//             else if (RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK)
 //             {
 //                 static const UCHAR results[] = { 0x80, 0x02, 0x00, 0x02 };
 //                 static const UCHAR defaultFill = 0x30; // '0'
@@ -1603,7 +1577,7 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //                 {
 //                     otherPacks--;
 //
-//                     if (RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE)
+//                     if (RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE)
 //                     {
 //                         // if not already requested last pack, do so now
 //                         if (otherPacks != thisPackNumber)
@@ -1656,7 +1630,7 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //                             shouldRetry = FALSE;
 //                         }
 //                     }
-//                     else if (RequestParameters.Parameters.DeviceIoControl.IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK)
+//                     else if (RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_AACS_READ_MEDIA_KEY_BLOCK)
 //                     {
 //                         // make length field native byte ordering
 //                         REVERSE_SHORT(&header->Length);
@@ -1681,7 +1655,7 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //                             NT_ASSERT( (totalSize == AACS_MKB_PACK_SIZE) || (thisPackNumber == otherPacks) );
 //
 //                             // validate the user's buffer is large enough to accept the full data
-//                             originalBufferSize = RequestParameters.Parameters.DeviceIoControl.OutputBufferLength;
+//                             originalBufferSize = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
 //
 //                             if (originalBufferSize < (totalSize + (AACS_MKB_PACK_SIZE*thisPackNumber)))
 //                             {
@@ -1790,7 +1764,7 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveOutputBuffer(Request,
-//                                             RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                             RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                             (PVOID*)&sessionId,
 //                                             NULL);
 //
@@ -1868,7 +1842,7 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&sessionId,
 //                                            NULL);
 //
@@ -1953,7 +1927,7 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
@@ -2039,14 +2013,14 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }
@@ -2156,14 +2130,14 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }
@@ -2272,7 +2246,7 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
@@ -2357,14 +2331,14 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }
@@ -2473,14 +2447,14 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }
@@ -2589,14 +2563,14 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }
@@ -2705,14 +2679,14 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }
@@ -2827,14 +2801,14 @@ const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
 //     *DataLength = 0;
 //
 //     status = WdfRequestRetrieveInputBuffer(Request,
-//                                            RequestParameters.Parameters.DeviceIoControl.InputBufferLength,
+//                                            RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
 //                                            (PVOID*)&input,
 //                                            NULL);
 //
 //     if (NT_SUCCESS(status))
 //     {
 //         status = WdfRequestRetrieveOutputBuffer(Request,
-//                                                 RequestParameters.Parameters.DeviceIoControl.OutputBufferLength,
+//                                                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength,
 //                                                 (PVOID*)&outputBuffer,
 //                                                 NULL);
 //     }

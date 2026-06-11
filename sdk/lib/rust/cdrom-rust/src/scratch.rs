@@ -7,7 +7,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DPFLTR_CDROM_ID, ExFreePool, IoAllocateMdl, IoBuildPartialMdl, IoFreeMdl, IoGetNextIrpStackLocation, KeCancelTimer, KeInitializeDpc, KeInitializeSpinLock, KeInitializeTimer, KeSetTimer, LARGE_INTEGER, MDL, MmBuildMdlForNonPagedPool, PIO_STACK_LOCATION, PIRP, TransferSize, _KDPC};
+use ntkrnl_sys::ddk::{ExFreePool, IoAllocateMdl, IoBuildPartialMdl, IoFreeMdl, IoGetNextIrpStackLocation, KeCancelTimer, KeInitializeDpc, KeInitializeSpinLock, KeInitializeTimer, KeSetTimer, LARGE_INTEGER, MmBuildMdlForNonPagedPool, _KDPC};
 use core::ffi::c_void;
 
 extern "C" {
@@ -17,7 +17,12 @@ extern "C" {
     fn PAGED_CODE();
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
+    fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
 }
+
+const TRACE_LEVEL_FATAL: u32 = 1;
+const STATUS_INTERNAL_ERROR: i32 = 0xC00000E5u32 as i32;
+const STATUS_INTEGER_OVERFLOW: i32 = 0xC0000095u32 as i32;
 extern "C" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT( params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS, );
     fn TracePrint(level: u32, flag: u32, format: *const u8, status: NTSTATUS);
@@ -32,11 +37,11 @@ extern "C" {
 }
 
 const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
-const IOCTL_SCSI_EXECUTE_IN: u32 = 0x4D004; // placeholder value
 const TRACE_LEVEL_ERROR: u32 = 2;
 const TRACE_FLAG_GENERAL: u32 = 1;
 
 const DPFLTR_ERROR_LEVEL: u32 = 0;
+const DPFLTR_CDROM_ID: u32 = 0x52; // DPFLTR component id for cdrom
 
 const IRP_MJ_SCSI: u32 = 4;
 const IOCTL_SCSI_EXECUTE_IN: u32 = 0x0001D004;
@@ -63,12 +68,9 @@ const FDO_HACK_NO_STREAMING: u32 = 0x00000001; // placeholder
 const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x0001;
 const SRB_STATUS_ABORTED: u8 = 0x02;
 
-const SRB_STATUS_ABORTED: u8 = 0x05; // adjust if needed
-
 const TRACE_LEVEL_WARNING: u32 = 3;  // assumed value
 const TRACE_FLAG_INIT: u32 = 0;       // unknown; placeholder
 const SRB_STATUS_SUCCESS: u32 = 0;
-const SRB_STATUS_ABORTED: u8 = 2;
 const STATUS_SUCCESS: i32 = 0;
 const TRUE: i32 = 1;
 const FALSE: i32 = 0;
@@ -77,7 +79,7 @@ pub unsafe extern "C" fn ScratchBuffer_Deallocate(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) {
     // PAGED_CODE();
-    NT_ASSERT(((*DeviceExtension).ScratchContext.ScratchInUse == 0) as i32);
+    NT_ASSERT(((*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
     if !(*DeviceExtension).ScratchContext.ScratchHistory.is_null() {
         ExFreePool((*DeviceExtension).ScratchContext.ScratchHistory as *mut core::ffi::c_void);
         (*DeviceExtension).ScratchContext.ScratchHistory = core::ptr::null_mut();
@@ -106,7 +108,7 @@ pub unsafe extern "C" fn ScratchBuffer_Deallocate(
         (*DeviceExtension).ScratchContext.PartialMdl = core::ptr::null_mut();
     }
     if !(*DeviceExtension).ScratchContext.ScratchRequest.is_null() {
-        let irp: PIRP = WdfRequestWdmGetIrp((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
+        let irp: PIRP = WdfRequestWdmGetIrp((*DeviceExtension).ScratchContext.ScratchRequest);
         if !(*irp).MdlAddress.is_null() {
             (*irp).MdlAddress = core::ptr::null_mut();
         }
@@ -129,12 +131,17 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     // Forward declarations for unknown symbols
     unsafe extern "system" {
         fn KeGetCurrentIrql() -> KIRQL;
-        fn TracePrint(Level: u32, Flags: u32, format: *const i8, ...) -> ();
         fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS;
         fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
             attributes: *mut WDF_OBJECT_ATTRIBUTES,
             context_type: *const core::ffi::c_void,
         ) -> ();
+    }
+
+    // WPP tracing macro (compiles to a no-op); accepts the variadic call shapes
+    // used below without requiring an unstable C-variadic "system" fn.
+    macro_rules! TracePrint {
+        ($($arg:expr),* $(,)?) => {{ $( let _ = &$arg; )* }};
     }
 
     // validate max transfer already determined
@@ -163,8 +170,10 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     };
     (*DeviceExtension).ScratchContext.ScratchBufferSize = scratch_size;
 
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+
     // allocate the buffer
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         (*DeviceExtension).ScratchContext.ScratchBuffer =
             ExAllocatePoolWithTag(
                 NonPagedPoolNx,
@@ -173,7 +182,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             ) as *mut core::ffi::c_void;
         if (*DeviceExtension).ScratchContext.ScratchBuffer.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Failed to allocate scratch buffer of %x bytes\n\0".as_ptr() as *const i8,
@@ -184,7 +193,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             != 0
         {
             status = STATUS_INTERNAL_ERROR;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_FATAL,
                 TRACE_FLAG_INIT,
                 b"Allocation of %x bytes non-paged pool was not allocated on page boundary?  STATUS_INTERNAL_ERROR\n\0"
@@ -195,7 +204,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // allocate the MDL
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         (*DeviceExtension).ScratchContext.ScratchBufferMdl = IoAllocateMdl(
             (*DeviceExtension).ScratchContext.ScratchBuffer,
             scratch_size,
@@ -205,7 +214,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
         );
         if (*DeviceExtension).ScratchContext.ScratchBufferMdl.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Failed to allocate MDL for %x byte buffer\n\0".as_ptr() as *const i8,
@@ -217,7 +226,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // create the request
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
             &mut attributes,
@@ -228,11 +237,11 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             (*DeviceExtension).IoTarget,
             &mut (*DeviceExtension).ScratchContext.ScratchRequest,
         );
-        if NT_SUCCESS(status) == 0
+        if !NT_SUCCESS(status)
             || (*DeviceExtension).ScratchContext.ScratchRequest.is_null()
         {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Failed to allocate scratch MDL \n\0".as_ptr() as *const i8,
@@ -241,7 +250,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // allocate the srb
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         (*DeviceExtension).ScratchContext.ScratchSrb =
             ExAllocatePoolWithTag(
                 NonPagedPoolNx,
@@ -250,7 +259,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             ) as *mut SCSI_REQUEST_BLOCK;
         if (*DeviceExtension).ScratchContext.ScratchSrb.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Failed to allocate scratch SRB\n\0".as_ptr() as *const i8,
@@ -259,7 +268,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // allocate the sense buffer
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         (*DeviceExtension).ScratchContext.ScratchSense =
             ExAllocatePoolWithTag(
                 NonPagedPoolNx,
@@ -268,7 +277,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             ) as *mut SENSE_DATA;
         if (*DeviceExtension).ScratchContext.ScratchSense.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Failed to allocate scratch sense data\n\0".as_ptr() as *const i8,
@@ -277,7 +286,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // allocate the SRB history data
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         let allocation_size: usize = core::mem::size_of::<SRB_HISTORY>()
             - core::mem::size_of::<SRB_HISTORY_ITEM>()
             + 20 * core::mem::size_of::<SRB_HISTORY_ITEM>();
@@ -289,7 +298,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
             ) as *mut SRB_HISTORY;
         if (*DeviceExtension).ScratchContext.ScratchHistory.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Failed to allocate scratch history buffer\n\0".as_ptr() as *const i8,
@@ -306,16 +315,16 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // allocate the MDL (PartialMdl)
-    if NT_SUCCESS(status) != 0 {
+    if NT_SUCCESS(status) {
         let mut transfer_length: u32 = 0;
         status = RtlULongAdd(
             (*DeviceExtension)
                 .DeviceAdditionalData
                 .MaxPageAlignedTransferBytes,
-            PAGE_SIZE,
+            PAGE_SIZE as u32,
             &mut transfer_length,
         );
-        if NT_SUCCESS(status) != 0 {
+        if NT_SUCCESS(status) {
             (*DeviceExtension).ScratchContext.PartialMdlIsBuilt = 0;
             (*DeviceExtension).ScratchContext.PartialMdl =
                 IoAllocateMdl(
@@ -327,7 +336,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
                 );
             if (*DeviceExtension).ScratchContext.PartialMdl.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_INIT,
                     b"Failed to allocate MDL for %x byte buffer\n\0".as_ptr()
@@ -341,7 +350,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
                             + (BYTES_TO_PAGES(
                                 (*DeviceExtension)
                                     .DeviceAdditionalData
-                                    .MaxPageAlignedTransferBytes,
+                                    .MaxPageAlignedTransferBytes as usize,
                             ) as usize)
                                 * core::mem::size_of::<PFN_NUMBER>())
                             as i32
@@ -353,19 +362,19 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     }
 
     // cleanup on failure
-    if NT_SUCCESS(status) == 0 {
+    if !NT_SUCCESS(status) {
         ScratchBuffer_Deallocate(DeviceExtension);
     }
 
-    (NT_SUCCESS(status) != 0) as u8
+    (NT_SUCCESS(status)) as u8
 }
 #[no_mangle]
 pub unsafe extern "C" fn ScratchBuffer_ResetItems(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     ResetRequestHistory: u8,
 ) {
-    let status: NTSTATUS;
-    let reuseParams: WDF_REQUEST_REUSE_PARAMS = core::mem::zeroed();
+    let mut status: NTSTATUS;
+    let mut reuseParams: WDF_REQUEST_REUSE_PARAMS = core::mem::zeroed();
     let irp: PIRP;
 
     status = ntkrnl_sys::base::STATUS_SUCCESS;
@@ -379,14 +388,14 @@ pub unsafe extern "C" fn ScratchBuffer_ResetItems(
     NT_ASSERT(if scratch.ScratchBufferSize != 0 { 1 } else { 0 });
     NT_ASSERT(if scratch.ScratchBuffer.is_null() { 0 } else { 1 });
     NT_ASSERT(if scratch.ScratchBufferMdl.is_null() { 0 } else { 1 });
-    NT_ASSERT(if scratch.ScratchInUse != 0 { 1 } else { 0 });
+    NT_ASSERT(if !scratch.ScratchInUse.is_null() { 1 } else { 0 });
 
     irp = WdfRequestWdmGetIrp(scratch.ScratchRequest);
 
     if ResetRequestHistory != 0 {
-        let history: *mut SCDROM_SCRATCH_HISTORY = scratch.ScratchHistory as *mut _;
+        let history: *mut SRB_HISTORY = scratch.ScratchHistory as *mut _;
         ntkrnl_sys::rtl::RtlZeroMemory(
-            (*history).History as *mut _,
+            (*history).History.as_mut_ptr() as *mut _,
             core::mem::size_of::<SRB_HISTORY_ITEM>() * (*history).TotalHistoryCount as usize,
         );
         *((*history).ClassDriverUse.as_mut_ptr().offset(0)) = 0;
@@ -406,11 +415,11 @@ pub unsafe extern "C" fn ScratchBuffer_ResetItems(
         WDF_REQUEST_REUSE_NO_FLAGS,
         ntkrnl_sys::constants::STATUS_NOT_SUPPORTED,
     );
-    status = WdfRequestReuse(scratch.ScratchRequest, &reuseParams);
+    status = WdfRequestReuse(scratch.ScratchRequest, &mut reuseParams);
     if status >= 0 {
         WdfRequestSetCompletionRoutine(
             scratch.ScratchRequest,
-            core::ptr::null_mut(),
+            None,
             core::ptr::null_mut(),
         );
         status = WdfIoTargetFormatRequestForInternalIoctlOthers(
@@ -448,7 +457,7 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
     unsafe {
         let readWriteContext =
             core::ptr::addr_of_mut!((*DeviceExtension).ScratchContext.ScratchReadWriteContext);
-        let requestContext = RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest);
+        let requestContext = RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
         let originalRequest = (*requestContext).OriginalRequest;
         let mut status: i32 = 0; // STATUS_SUCCESS
 
@@ -477,13 +486,13 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
             (*readWriteContext).StartingOffset,
             transferSize,
             (*readWriteContext).DataBuffer,
-            (*readWriteContext).IsRead as i32,
+            (*readWriteContext).IsRead as u8,
             usePartialMdl,
         );
 
         WdfRequestSetCompletionRoutine(
             (*DeviceExtension).ScratchContext.ScratchRequest,
-            ScratchBuffer_ReadWriteCompletionRoutine as *mut core::ffi::c_void,
+            Some(ScratchBuffer_ReadWriteCompletionRoutine),
             DeviceExtension as *mut core::ffi::c_void,
         );
 
@@ -524,27 +533,27 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteTimerRoutine(
     originalRequest = DeferredContext;
     requestContext = RequestGetContext(originalRequest);
 
-    KeAcquireSpinLock(&raw mut (*requestContext).ReadWriteCancelSpinLock, &raw mut oldIrql);
+    KeAcquireSpinLock(&raw mut (*requestContext).ReadWriteCancelSpinLock as *mut usize, &raw mut oldIrql);
 
     if (*requestContext).ReadWriteIsCompleted == 0 {
-        status = WdfRequestUnmarkCancelable(originalRequest);
+        status = WdfRequestUnmarkCancelable(originalRequest as WDFREQUEST);
     } else {
         status = STATUS_CANCELLED;
     }
 
-    KeReleaseSpinLock(&raw mut (*requestContext).ReadWriteCancelSpinLock, oldIrql);
+    KeReleaseSpinLock(&raw mut (*requestContext).ReadWriteCancelSpinLock as *mut usize, oldIrql);
 
     if status != STATUS_CANCELLED {
         deviceExtension = (*requestContext).DeviceExtension;
         readWriteContext = &raw mut (*deviceExtension).ScratchContext.ScratchReadWriteContext;
 
-        status = ScratchBuffer_PerformNextReadWrite(deviceExtension, 0u8);
+        status = ScratchBuffer_PerformNextReadWrite(deviceExtension, 0i32);
 
         if !NT_SUCCESS(status) {
             ScratchBuffer_EndUse(deviceExtension);
             RequestCompletion(
                 deviceExtension,
-                originalRequest,
+                originalRequest as WDFREQUEST,
                 status,
                 (*readWriteContext).TransferedBytes,
             );
@@ -555,15 +564,15 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteTimerRoutine(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ScratchBuffer_ReadWriteEvtRequestCancel(Request: WDFREQUEST) {
-    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext(Request);
+    let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
     let deviceExtension: PCDROM_DEVICE_EXTENSION = (*requestContext).DeviceExtension;
     let readWriteContext: PCDROM_SCRATCH_READ_WRITE_CONTEXT = core::ptr::addr_of_mut!((*deviceExtension).ScratchContext.ScratchReadWriteContext);
     let mut oldIrql: ntkrnl_sys::base::KIRQL = 0;
 
-    KeAcquireSpinLock(core::ptr::addr_of_mut!((*requestContext).ReadWriteCancelSpinLock), core::ptr::addr_of_mut!(oldIrql));
+    KeAcquireSpinLock(core::ptr::addr_of_mut!((*requestContext).ReadWriteCancelSpinLock) as *mut usize, core::ptr::addr_of_mut!(oldIrql));
 
     if KeCancelTimer(core::ptr::addr_of_mut!((*requestContext).ReadWriteTimer)) != 0 {
-        WdfObjectDereference(Request);
+        WdfObjectDereference(Request as *mut core::ffi::c_void);
     } else {
         // Timer will run and drop the reference but it won't complete the request
         // because we set IsCompleted to TRUE
@@ -571,7 +580,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteEvtRequestCancel(Request: WDFREQ
 
     (*requestContext).ReadWriteIsCompleted = 1; // TRUE
 
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*requestContext).ReadWriteCancelSpinLock), oldIrql);
+    KeReleaseSpinLock(core::ptr::addr_of_mut!((*requestContext).ReadWriteCancelSpinLock) as *mut usize, oldIrql);
 
     ScratchBuffer_EndUse(deviceExtension);
 
@@ -591,14 +600,14 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
         core::ptr::addr_of_mut!((*device_extension).ScratchContext.ScratchReadWriteContext);
     let mut status: i32 = STATUS_SUCCESS;
     let request_context: *mut CDROM_REQUEST_CONTEXT =
-        RequestGetContext((*device_extension).ScratchContext.ScratchRequest);
+        RequestGetContext((*device_extension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
     let original_request: WDFREQUEST = (*request_context).OriginalRequest;
 
     if !NT_SUCCESS(WdfRequestGetStatus(Request)) {
         TracePrint(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_INIT,
-            b"WdfRequestSend: %lx\n\0".as_ptr() as *const i8,
+            b"WdfRequestSend: %lx\n\0".as_ptr() as *const u8,
             WdfRequestGetStatus(Request),
         );
     }
@@ -607,11 +616,11 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
     let _ = Params;
     let _ = Target;
 
-    if (*device_extension).ScratchContext.ScratchSrb.SrbStatus == SRB_STATUS_ABORTED
-        && (*device_extension).ScratchContext.ScratchSrb.InternalStatus == STATUS_CANCELLED
+    if (*(*device_extension).ScratchContext.ScratchSrb).SrbStatus == SRB_STATUS_ABORTED
+        && *(*(*device_extension).ScratchContext.ScratchSrb).__bindgen_anon_1.InternalStatus.as_ref() == STATUS_CANCELLED as u32
     {
         // The request has been cancelled, just need to complete it
-    } else if SRB_STATUS((*device_extension).ScratchContext.ScratchSrb.SrbStatus) != SRB_STATUS_SUCCESS {
+    } else if SRB_STATUS((*(*device_extension).ScratchContext.ScratchSrb).SrbStatus) != SRB_STATUS_SUCCESS {
         // The SCSI command that we sent down has failed, retry it if necessary
         let mut should_retry: i32 = TRUE;
         let mut retry_in_100ns_units: i64 = 0;
@@ -621,7 +630,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
             (*device_extension).ScratchContext.NumRetries,
             &mut status,
             &mut retry_in_100ns_units,
-        );
+        ) as i32;
 
         if should_retry != 0 {
             (*device_extension).ScratchContext.NumRetries += 1;
@@ -637,7 +646,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 }
             } else {
                 let original_request_context: *mut CDROM_REQUEST_CONTEXT =
-                    RequestGetContext(original_request);
+                    RequestGetContext(original_request as *mut core::ffi::c_void);
                 let mut old_irql: KIRQL = 0;
 
                 //
@@ -646,26 +655,20 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 if (*original_request_context).ReadWriteRetryInitialized == 0 {
                     KeInitializeSpinLock(core::ptr::addr_of_mut!(
                         (*original_request_context).ReadWriteCancelSpinLock
-                    ));
+                    ) as *mut usize);
                     KeInitializeTimer(core::ptr::addr_of_mut!(
                         (*original_request_context).ReadWriteTimer
                     ));
                     KeInitializeDpc(
                         core::ptr::addr_of_mut!((*original_request_context).ReadWriteDpc),
-                        Some(ScratchBuffer_ReadWriteTimerRoutine
-                            as extern "system" fn(
-                                *mut KDPC,
-                                *mut core::ffi::c_void,
-                                *mut core::ffi::c_void,
-                                *mut core::ffi::c_void,
-                            )),
+                        Some(ScratchBuffer_ReadWriteTimerRoutine),
                         original_request as *mut core::ffi::c_void,
                     );
-                    (*original_request_context).ReadWriteRetryInitialized = TRUE;
+                    (*original_request_context).ReadWriteRetryInitialized = TRUE as u8;
                 }
 
                 KeAcquireSpinLock(
-                    core::ptr::addr_of_mut!((*request_context).ReadWriteCancelSpinLock),
+                    core::ptr::addr_of_mut!((*request_context).ReadWriteCancelSpinLock) as *mut usize,
                     &mut old_irql,
                 );
 
@@ -673,18 +676,19 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 // cancellation callbacks.
                 status = WdfRequestMarkCancelableEx(
                     original_request,
-                    ScratchBuffer_ReadWriteEvtRequestCancel as *mut core::ffi::c_void,
+                    Some(ScratchBuffer_ReadWriteEvtRequestCancel),
                 );
 
                 if status == STATUS_CANCELLED {
-                    (*request_context).ReadWriteIsCompleted = TRUE;
+                    (*request_context).ReadWriteIsCompleted = TRUE as u8;
 
                     KeReleaseSpinLock(
-                        core::ptr::addr_of_mut!((*request_context).ReadWriteCancelSpinLock),
+                        core::ptr::addr_of_mut!((*request_context).ReadWriteCancelSpinLock) as *mut usize,
                         old_irql,
                     );
                 } else {
-                    let t: i64 = -retry_in_100ns_units; // LARGE_INTEGER
+                    let mut t: LARGE_INTEGER = core::mem::zeroed();
+                    t.QuadPart = -retry_in_100ns_units;
 
                     WdfObjectReference(original_request as *mut core::ffi::c_void);
 
@@ -696,7 +700,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                     );
 
                     KeReleaseSpinLock(
-                        core::ptr::addr_of_mut!((*request_context).ReadWriteCancelSpinLock),
+                        core::ptr::addr_of_mut!((*request_context).ReadWriteCancelSpinLock) as *mut usize,
                         old_irql,
                     );
 
@@ -707,7 +711,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
     } else {
         // The SCSI command has succeeded
         let data_transfer_length =
-            (*device_extension).ScratchContext.ScratchSrb.DataTransferLength;
+            (*(*device_extension).ScratchContext.ScratchSrb).DataTransferLength;
         (*read_write_context).DataBuffer =
             (*read_write_context).DataBuffer.add(data_transfer_length as usize);
         (*read_write_context).StartingOffset.QuadPart += data_transfer_length as i64;
@@ -725,18 +729,18 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
 
             // Copy the SRB Status...
             (*(*read_write_context).SrbHistoryItem).SrbStatus =
-                (*device_extension).ScratchContext.ScratchSrb.SrbStatus;
+                (*(*device_extension).ScratchContext.ScratchSrb).SrbStatus;
 
             // Determine the amount of valid sense data
             let sense_info_buffer_length =
-                (*device_extension).ScratchContext.ScratchSrb.SenseInfoBufferLength;
+                (*(*device_extension).ScratchContext.ScratchSrb).SenseInfoBufferLength as u32;
 
             if sense_info_buffer_length
                 >= (core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength)
                     + core::mem::size_of::<u8>()) as u32
             {
                 let sense: *const SENSE_DATA =
-                    (*device_extension).ScratchContext.ScratchSrb.SenseInfoBuffer
+                    (*(*device_extension).ScratchContext.ScratchSrb).SenseInfoBuffer
                         as *const SENSE_DATA;
                 sense_size = (core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength)
                     + core::mem::size_of::<u8>()
@@ -755,7 +759,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 core::mem::size_of::<SENSE_DATA>(),
             );
             core::ptr::copy_nonoverlapping(
-                (*device_extension).ScratchContext.ScratchSrb.SenseInfoBuffer as *const u8,
+                (*(*device_extension).ScratchContext.ScratchSrb).SenseInfoBuffer as *const u8,
                 core::ptr::addr_of_mut!(
                     (*(*read_write_context).SrbHistoryItem).NormalizedSenseData
                 ) as *mut u8,
@@ -800,7 +804,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     irp = WdfRequestWdmGetIrp(request);
     srb = (*DeviceExtension).ScratchContext.ScratchSrb;
     irpStack = IoGetNextIrpStackLocation(irp);
-    requestContext = RequestGetContext(request);
+    requestContext = RequestGetContext(request as *mut core::ffi::c_void);
 
     PAGED_CODE();
 
@@ -808,7 +812,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
 
     // set to use the full scratch buffer via the scratch SRB
     irpStack = IoGetNextIrpStackLocation(irp);
-    (*irpStack).MajorFunction = IRP_MJ_SCSI;
+    (*irpStack).MajorFunction = IRP_MJ_SCSI as u8;
     if MaximumTransferLength == 0 {
         (*irpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_NONE;
     } else if GetDataFromDevice != 0 {
@@ -816,7 +820,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     } else {
         (*irpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_OUT;
     }
-    (*irpStack).Parameters.Scsi.Srb = srb;
+    (*irpStack).Parameters.Scsi.Srb = srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
 
     if MaximumTransferLength > 0 {
         // the Irp must show the MDL's address for the transfer
@@ -825,15 +829,15 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     }
 
     // prepare the SRB with default values
-    (*srb).Length = SCSI_REQUEST_BLOCK_SIZE;
-    (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI;
-    (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST;
+    (*srb).Length = SCSI_REQUEST_BLOCK_SIZE as u16;
+    (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI as u8;
+    (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST as u8;
     (*srb).SrbStatus = 0;
     (*srb).ScsiStatus = 0;
     (*srb).NextSrb = core::ptr::null_mut();
-    (*srb).OriginalRequest = irp;
-    (*srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE;
-    (*srb).SenseInfoBuffer = (*DeviceExtension).ScratchContext.ScratchSense;
+    (*srb).OriginalRequest = irp as *mut core::ffi::c_void;
+    (*srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE as u8;
+    (*srb).SenseInfoBuffer = (*DeviceExtension).ScratchContext.ScratchSense as *mut core::ffi::c_void;
     (*srb).CdbLength = 16; // to cause failures if not set correctly -- CD devices limited to 12 bytes for now...
     (*srb).DataTransferLength = min((*DeviceExtension).ScratchContext.ScratchBufferSize, MaximumTransferLength);
     (*srb).TimeOutValue = (*DeviceExtension).TimeOutValue;
@@ -861,7 +865,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
     let mut item: *mut SRB_HISTORY_ITEM = core::ptr::null_mut();
     let mut request_cancelled: u8 = 0;
 
-    (*srb).InternalStatus = 0;
+    *(*srb).__bindgen_anon_1.InternalStatus.as_mut() = 0;
     (*srb).SrbStatus = 0;
 
     if SynchronousSrb != 0 || !SrbHistoryItem.is_null() {
@@ -889,7 +893,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
             core::mem::size_of::<SRB_HISTORY_ITEM>(),
         );
 
-        let tick_ptr: *mut i64 = &raw mut (*item).TickCountSent as *mut i64;
+        let tick_ptr: *mut LARGE_INTEGER = &raw mut (*item).TickCountSent;
         KeQueryTickCount(tick_ptr);
     }
 
@@ -897,7 +901,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
         RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
     if !(*request_context).OriginalRequest.is_null() {
         request_cancelled =
-            WdfRequestIsCanceled((*request_context).OriginalRequest as *mut core::ffi::c_void);
+            WdfRequestIsCanceled((*request_context).OriginalRequest as WDFREQUEST);
     }
 
     if request_cancelled == 0 {
@@ -917,7 +921,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
         if SynchronousSrb != 0 {
             let sense_size: usize;
 
-            let tick_ptr2: *mut i64 = &raw mut (*item).TickCountCompleted as *mut i64;
+            let tick_ptr2: *mut LARGE_INTEGER = &raw mut (*item).TickCountCompleted;
             KeQueryTickCount(tick_ptr2);
 
             (*item).SrbStatus = (*srb).SrbStatus;
@@ -946,7 +950,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
         }
     } else {
         (*(*DeviceExtension).ScratchContext.ScratchSrb).SrbStatus = SRB_STATUS_ABORTED;
-        (*(*DeviceExtension).ScratchContext.ScratchSrb).InternalStatus = STATUS_CANCELLED as u32;
+        *(*(*DeviceExtension).ScratchContext.ScratchSrb).__bindgen_anon_1.InternalStatus.as_mut() = STATUS_CANCELLED as u32;
         status = STATUS_CANCELLED;
     }
 
@@ -956,14 +960,14 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
 #[no_mangle]
 pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY) {
     let mut i: u32;
-    NT_ASSERT((*RequestHistory).UsedHistoryCount == (*RequestHistory).TotalHistoryCount);
+    NT_ASSERT(((*RequestHistory).UsedHistoryCount == (*RequestHistory).TotalHistoryCount) as i32);
     ValidateSrbHistoryDataPresumptions(RequestHistory as *const SRB_HISTORY);
 
     i = 0;
     while i < (*RequestHistory).UsedHistoryCount {
         let toMatch: *mut SRB_HISTORY_ITEM = core::ptr::addr_of_mut!((*RequestHistory).History[i as usize]);
         let srbStatus: u8 = (*toMatch).SrbStatus;
-        let sense: u8 = (*toMatch).NormalizedSenseData.SenseKey;
+        let sense: u8 = (*toMatch).NormalizedSenseData.SenseKey();
         let asc: u8 = (*toMatch).NormalizedSenseData.AdditionalSenseCode;
         let ascq: u8 = (*toMatch).NormalizedSenseData.AdditionalSenseCodeQualifier;
         let mut j: u32;
@@ -972,7 +976,7 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
         while ((*toMatch).ClassDriverUse != 0xFF) && j < (*RequestHistory).UsedHistoryCount {
             let found: *mut SRB_HISTORY_ITEM = core::ptr::addr_of_mut!((*RequestHistory).History[j as usize]);
             if (srbStatus == (*found).SrbStatus) &&
-                (sense == (*found).NormalizedSenseData.SenseKey) &&
+                (sense == (*found).NormalizedSenseData.SenseKey()) &&
                 (asc == (*found).NormalizedSenseData.AdditionalSenseCode) &&
                 (ascq == (*found).NormalizedSenseData.AdditionalSenseCodeQualifier)
             {
@@ -981,7 +985,7 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
                 } else {
                     (*toMatch).MillisecondsDelayOnRetry = ((*toMatch).MillisecondsDelayOnRetry).wrapping_add((*found).MillisecondsDelayOnRetry);
                 }
-                NT_ASSERT((*found).ClassDriverUse == 0);
+                NT_ASSERT(((*found).ClassDriverUse == 0) as i32);
                 (*toMatch).ClassDriverUse += 1;
 
                 if j != (*RequestHistory).UsedHistoryCount - 1 {
@@ -1000,11 +1004,11 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
 
     if (*RequestHistory).UsedHistoryCount == (*RequestHistory).TotalHistoryCount {
         let item: *mut SRB_HISTORY_ITEM = core::ptr::addr_of_mut!((*RequestHistory).History[((*RequestHistory).TotalHistoryCount as usize) - 1]);
-        (*RequestHistory).ClassDriverUse[0] = ((*RequestHistory).ClassDriverUse[0]).wrapping_add((*item).ClassDriverUse);
+        (*RequestHistory).ClassDriverUse[0] = ((*RequestHistory).ClassDriverUse[0]).wrapping_add((*item).ClassDriverUse as _);
         (*RequestHistory).UsedHistoryCount -= 1;
     }
 
-    NT_ASSERT((*RequestHistory).UsedHistoryCount != (*RequestHistory).TotalHistoryCount);
+    NT_ASSERT(((*RequestHistory).UsedHistoryCount != (*RequestHistory).TotalHistoryCount) as i32);
     {
         let mut bytesToZero: usize;
         bytesToZero = ((*RequestHistory).TotalHistoryCount as usize).wrapping_sub((*RequestHistory).UsedHistoryCount as usize);
@@ -1026,7 +1030,7 @@ pub unsafe extern "C" fn ValidateSrbHistoryDataPresumptions(
         for i in 0..used_count {
             let to_match = history_base.add(i);
             let srb_status = (*to_match).SrbStatus;
-            let sense = (*to_match).NormalizedSenseData.SenseKey;
+            let sense = (*to_match).NormalizedSenseData.SenseKey();
             let asc = (*to_match).NormalizedSenseData.AdditionalSenseCode;
             let ascq = (*to_match).NormalizedSenseData.AdditionalSenseCodeQualifier;
 
@@ -1037,7 +1041,7 @@ pub unsafe extern "C" fn ValidateSrbHistoryDataPresumptions(
             for j in (i + 1)..used_count {
                 let found = history_base.add(j);
                 if (srb_status == (*found).SrbStatus)
-                    && (sense == (*found).NormalizedSenseData.SenseKey)
+                    && (sense == (*found).NormalizedSenseData.SenseKey())
                     && (asc == (*found).NormalizedSenseData.AdditionalSenseCode)
                     && (ascq == (*found).NormalizedSenseData.AdditionalSenseCodeQualifier)
                 {
@@ -1097,15 +1101,15 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     IsReadRequest: u8,
     UsePartialMdl: u8,
 ) {
-    let srb: *mut SCSI_REQUEST_BLOCK = (*(*DeviceExtension).ScratchContext).ScratchSrb;
-    let cdb: *mut CDB = (*srb).Cdb as *mut CDB;
+    let srb: *mut SCSI_REQUEST_BLOCK = (*DeviceExtension).ScratchContext.ScratchSrb;
+    let cdb: *mut CDB = (*srb).Cdb.as_mut_ptr() as *mut CDB;
     let mut logicalBlockAddr: LARGE_INTEGER = core::mem::zeroed();
     let numTransferBlocks: u32;
 
     let originalIrp: PIRP = WdfRequestWdmGetIrp(OriginalRequest);
-    let irp: PIRP = WdfRequestWdmGetIrp((*(*DeviceExtension).ScratchContext).ScratchRequest);
+    let irp: PIRP = WdfRequestWdmGetIrp((*DeviceExtension).ScratchContext.ScratchRequest);
     let mut irpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
-    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext((*(*DeviceExtension).ScratchContext).ScratchRequest);
+    let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
 
     (*requestContext).OriginalRequest = OriginalRequest;
 
@@ -1114,36 +1118,36 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     numTransferBlocks = RequiredLength >> (*DeviceExtension).SectorShift;
 
     irpStack = IoGetNextIrpStackLocation(irp);
-    (*irpStack).MajorFunction = IRP_MJ_SCSI;
+    (*irpStack).MajorFunction = IRP_MJ_SCSI as u8;
     if IsReadRequest != 0 {
         (*irpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_IN;
     } else {
         (*irpStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_SCSI_EXECUTE_OUT;
     }
-    (*irpStack).Parameters.Scsi.Srb = srb;
+    (*irpStack).Parameters.Scsi.Srb = srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
 
-    (*srb).Length = SCSI_REQUEST_BLOCK_SIZE;
-    (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI;
-    (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST;
+    (*srb).Length = SCSI_REQUEST_BLOCK_SIZE as u16;
+    (*srb).Function = SRB_FUNCTION_EXECUTE_SCSI as u8;
+    (*srb).QueueAction = SRB_SIMPLE_TAG_REQUEST as u8;
     (*srb).SrbStatus = 0;
     (*srb).ScsiStatus = 0;
     (*srb).NextSrb = core::ptr::null_mut();
-    (*srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE;
-    (*srb).SenseInfoBuffer = (*(*DeviceExtension).ScratchContext).ScratchSense;
+    (*srb).SenseInfoBufferLength = SENSE_BUFFER_SIZE as u8;
+    (*srb).SenseInfoBuffer = (*DeviceExtension).ScratchContext.ScratchSense as *mut core::ffi::c_void;
 
-    (*srb).DataBuffer = DataBuffer;
+    (*srb).DataBuffer = DataBuffer as *mut core::ffi::c_void;
     (*srb).DataTransferLength = RequiredLength;
 
-    (*srb).QueueSortKey = logicalBlockAddr.__bindgen_anon_1.LowPart as u32;
+    *(*srb).__bindgen_anon_1.QueueSortKey.as_mut() = logicalBlockAddr.__bindgen_anon_1.LowPart as u32;
     if logicalBlockAddr.QuadPart > 0xFFFFFFFF_u64 as i64 {
-        (*srb).QueueSortKey = 0xFFFFFFFF;
+        *(*srb).__bindgen_anon_1.QueueSortKey.as_mut() = 0xFFFFFFFF;
     }
 
-    (*srb).OriginalRequest = irp;
+    (*srb).OriginalRequest = irp as *mut core::ffi::c_void;
     (*srb).TimeOutValue = (*DeviceExtension).TimeOutValue;
 
     if RequestIsRealtimeStreaming(OriginalRequest, IsReadRequest) != 0
-        && ((*(*(*DeviceExtension).PrivateFdoData)).HackFlags & FDO_HACK_NO_STREAMING) == 0
+        && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_STREAMING as usize) == 0
     {
         if IsReadRequest != 0 {
             RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).READ12) as *mut core::ffi::c_void, SIZEOF_CDB_READ12);
@@ -1168,13 +1172,13 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     } else {
         RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).CDB10) as *mut core::ffi::c_void, SIZEOF_CDB_CDB10);
         let fp: *const FOUR_BYTE = core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const FOUR_BYTE;
-        (*cdb).CDB10.LogicalBlockByte0 = (*fp).Byte3;
-        (*cdb).CDB10.LogicalBlockByte1 = (*fp).Byte2;
-        (*cdb).CDB10.LogicalBlockByte2 = (*fp).Byte1;
-        (*cdb).CDB10.LogicalBlockByte3 = (*fp).Byte0;
+        (*cdb).CDB10.LogicalBlockByte0 = (*fp).__bindgen_anon_1.as_ref().Byte3;
+        (*cdb).CDB10.LogicalBlockByte1 = (*fp).__bindgen_anon_1.as_ref().Byte2;
+        (*cdb).CDB10.LogicalBlockByte2 = (*fp).__bindgen_anon_1.as_ref().Byte1;
+        (*cdb).CDB10.LogicalBlockByte3 = (*fp).__bindgen_anon_1.as_ref().Byte0;
         let fp_num: *const FOUR_BYTE = core::ptr::addr_of!(numTransferBlocks) as *const FOUR_BYTE;
-        (*cdb).CDB10.TransferBlocksMsb = (*fp_num).Byte1;
-        (*cdb).CDB10.TransferBlocksLsb = (*fp_num).Byte0;
+        (*cdb).CDB10.TransferBlocksMsb = (*fp_num).__bindgen_anon_1.as_ref().Byte1;
+        (*cdb).CDB10.TransferBlocksLsb = (*fp_num).__bindgen_anon_1.as_ref().Byte0;
         (*cdb).CDB10.OperationCode = if IsReadRequest != 0 { SCSIOP_READ } else { SCSIOP_WRITE };
         (*srb).CdbLength = SIZEOF_CDB_CDB10 as u8;
     }
@@ -1190,17 +1194,17 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     if UsePartialMdl == 0 {
         (*irp).MdlAddress = (*originalIrp).MdlAddress;
     } else {
-        if (*(*DeviceExtension).ScratchContext).PartialMdlIsBuilt != 0 {
-            MmPrepareMdlForReuse((*(*DeviceExtension).ScratchContext).PartialMdl);
+        if (*DeviceExtension).ScratchContext.PartialMdlIsBuilt != 0 {
+            MmPrepareMdlForReuse((*DeviceExtension).ScratchContext.PartialMdl);
         }
         IoBuildPartialMdl(
             (*originalIrp).MdlAddress,
-            (*(*DeviceExtension).ScratchContext).PartialMdl,
+            (*DeviceExtension).ScratchContext.PartialMdl,
             (*srb).DataBuffer,
             (*srb).DataTransferLength,
         );
-        (*(*DeviceExtension).ScratchContext).PartialMdlIsBuilt = 1;
-        (*irp).MdlAddress = (*(*DeviceExtension).ScratchContext).PartialMdl;
+        (*DeviceExtension).ScratchContext.PartialMdlIsBuilt = 1;
+        (*irp).MdlAddress = (*DeviceExtension).ScratchContext.PartialMdl;
     }
 
     (*srb).SrbExtension = originalIrp as *mut core::ffi::c_void;
@@ -1218,7 +1222,7 @@ pub unsafe extern "C" fn ScratchBuffer_ExecuteCdbEx(
 ) -> i32 {
     let mut status: i32 = STATUS_SUCCESS;
     let srb: *mut SCSI_REQUEST_BLOCK = (*DeviceExtension).ScratchContext.ScratchSrb;
-    let cdb: *mut CDB = (*srb).Cdb as *mut CDB;
+    let cdb: *mut CDB = (*srb).Cdb.as_mut_ptr() as *mut CDB;
 
     let mut shouldRetry: u8 = 1;
     let mut timesAlreadyRetried: u32 = 0;
@@ -1227,7 +1231,7 @@ pub unsafe extern "C" fn ScratchBuffer_ExecuteCdbEx(
     PAGED_CODE();
 
     while shouldRetry != 0 {
-        ScratchBuffer_SetupSrb(DeviceExtension, OriginalRequest, TransferSize, GetDataFromDevice);
+        ScratchBuffer_SetupSrb(DeviceExtension, OriginalRequest as WDFREQUEST, TransferSize, GetDataFromDevice);
 
         core::ptr::copy_nonoverlapping(Cdb as *const CDB, cdb, 1usize);
 
@@ -1239,7 +1243,7 @@ pub unsafe extern "C" fn ScratchBuffer_ExecuteCdbEx(
 
         ScratchBuffer_SendSrb(DeviceExtension, 1u8, core::ptr::null_mut());
 
-        if (*srb).SrbStatus == SRB_STATUS_ABORTED && (*srb).InternalStatus == STATUS_CANCELLED {
+        if (*srb).SrbStatus == SRB_STATUS_ABORTED && *(*srb).__bindgen_anon_1.InternalStatus.as_ref() == STATUS_CANCELLED as u32 {
             shouldRetry = 0u8;
             status = STATUS_CANCELLED;
         } else {
@@ -1253,7 +1257,7 @@ pub unsafe extern "C" fn ScratchBuffer_ExecuteCdbEx(
                 let mut t: LARGE_INTEGER = core::mem::zeroed();
                 t.QuadPart = -retryIn100nsUnits;
                 timesAlreadyRetried += 1;
-                KeDelayExecutionThread(0i32, 0u8, core::ptr::addr_of!(t));
+                KeDelayExecutionThread(0i32, 0u8, core::ptr::addr_of_mut!(t));
                 ScratchBuffer_ResetItems(DeviceExtension, 0u8);
             }
         }
