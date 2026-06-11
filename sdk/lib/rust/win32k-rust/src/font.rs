@@ -471,13 +471,20 @@ pub unsafe extern "C" fn RealizeFontInit(hFont: HFONT) -> PTEXTOBJ {
 }
 
 unsafe fn RealizeFontInit_impl(hFont: HFONT) -> PTEXTOBJ {
+    extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; } // DBG-IPD
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
 
     let pTextObj: PTEXTOBJ = w32r_TEXTOBJ_LockText(hFont);
 
+    if pTextObj.is_null() {
+        // DBG-IPD
+        DbgPrint(b"[RFI] LockText NULL hFont=%p\n\0".as_ptr(), hFont);
+    }
     if !pTextObj.is_null() && ((*pTextObj).fl & TEXTOBJECT_INIT) == 0 {
         Status = TextIntRealizeFont(hFont, pTextObj);
         if !NT_SUCCESS(Status) {
+            // DBG-IPD
+            DbgPrint(b"[RFI] Realize FAIL hFont=%p st=%x\n\0".as_ptr(), hFont, Status);
             w32r_TEXTOBJ_UnlockText(pTextObj);
             return core::ptr::null_mut();
         }

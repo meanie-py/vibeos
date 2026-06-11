@@ -4851,7 +4851,11 @@ unsafe fn IntRequestFontSize(dc: PDC, FontGDI: PFONTGDI, mut lfWidth: LONG, mut 
     req.height = (EmHeight << 6) as _;
     req.horiResolution = 0;
     req.vertResolution = 0;
-    FT_Request_Size(face, &mut req)
+    let _frs = FT_Request_Size(face, &mut req);
+    // DBG-IPD
+    DbgPrint(b"[IRFS] lfH=%d lfW=%d EmH=%d reqH=%d reqW=%d unitsEM=%d frs=%d\n\0".as_ptr() as *const i8,
+        lfHeight, lfWidth, EmHeight, req.height as i32, req.width as i32, (*face).units_per_EM as i32, _frs);
+    _frs
 }
 
 #[cfg(target_arch = "x86")]
@@ -6630,6 +6634,11 @@ unsafe fn IntRealizeFont(mut pLogFont: *const LOGFONTW, TextObj: PTEXTOBJ) -> PS
     }
 
     if pFontObj.is_null() {
+        // DBG-IPD
+        let _gle = (g_FontListHead.Flink == core::ptr::addr_of_mut!(g_FontListHead) as *mut _) as i32;
+        DbgPrint(b"[IRF] NOMATCH face=[%ws] subst=[%ws] cs=%d wt=%d h=%d gListEmpty=%d lookup=%p\n\0".as_ptr() as *const i8,
+            (*pLogFont).lfFaceName.as_ptr(), SubstitutedLogFont.lfFaceName.as_ptr(),
+            (*pLogFont).lfCharSet as i32, (*pLogFont).lfWeight, (*pLogFont).lfHeight, _gle, pLookUp);
         static mut s_NoFontWarned: LONG = 0;
         let _ = InterlockedCompareExchange(core::ptr::addr_of_mut!(s_NoFontWarned), 1, 0);
         return core::ptr::null_mut();
@@ -7706,6 +7715,9 @@ pub unsafe extern "system" fn IntExtTextOutW(
         }
 
         TextObj = RealizeFontInit(((*pdcattr).hlfntNew as _));
+        // DBG-IPD
+        DbgPrint(b"[ETO] RealizeFontInit hlfnt=%p TextObj=%p\n\0".as_ptr() as *const i8,
+            (*pdcattr).hlfntNew, TextObj);
         if TextObj.is_null() {
             bResult = 0;
             break 'cleanup;
@@ -7730,7 +7742,11 @@ pub unsafe extern "system" fn IntExtTextOutW(
             Cache.Hashed.__bindgen_anon_1.Aspect.RenderMode = (FT_RENDER_MODE_MONO as BYTE as _);
         }
 
-        if TextIntUpdateSize(dc, TextObj, FontGDI, 0) == 0 {
+        let _tius = TextIntUpdateSize(dc, TextObj, FontGDI, 0);
+        // DBG-IPD
+        DbgPrint(b"[ETO] TextIntUpdateSize=%d tmHeight=%d tmAscent=%d\n\0".as_ptr() as *const i8,
+            _tius, (*FontGDI).tmHeight, (*FontGDI).tmAscent);
+        if _tius == 0 {
             IntUnLockFreeType();
             bResult = 0;
             break 'cleanup;

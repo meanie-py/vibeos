@@ -642,6 +642,9 @@ pub unsafe extern "system" fn RtlImageNtHeaderEx(
     return Status;
 }
 #[no_mangle]
+pub static mut FE_PROGRESS: u32 = 0;  /* DBG-TB find_entry progress sentinel */
+
+#[no_mangle]
 pub unsafe extern "C" fn find_entry(
     BaseAddress: PVOID,
     info: *mut LDR_RESOURCE_INFO,
@@ -658,12 +661,18 @@ pub unsafe extern "C" fn find_entry(
     let mut user_lcid: LCID = 0;
     let mut system_lcid: LCID = 0;
 
+    let dbg = (*info).Type == 6 && (*info).Name == 38;  /* DBG-TB explorer IDS_START */
+    if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 1); }
+    if dbg { DbgPrint(b"[FE] start RIDETD\n\0".as_ptr() as *const i8); }
+
     root = RtlImageDirectoryEntryToData(
         BaseAddress,
         1u8,
         IMAGE_DIRECTORY_ENTRY_RESOURCE as USHORT,
         &mut size,
     );
+    if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 2); }
+    if dbg { DbgPrint(b"[FE] RIDETD ret, find type\n\0".as_ptr() as *const i8); }
     if root.is_null() {
         return STATUS_RESOURCE_DATA_NOT_FOUND;
     }
@@ -692,6 +701,8 @@ pub unsafe extern "C" fn find_entry(
         return STATUS_SUCCESS;
     }
 
+    if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 3); }
+    if dbg { DbgPrint(b"[FE] type found, find name\n\0".as_ptr() as *const i8); }
     resdirptr = *ret as *mut IMAGE_RESOURCE_DIRECTORY;
     *ret = find_entry_by_name(
         resdirptr,
@@ -699,6 +710,8 @@ pub unsafe extern "C" fn find_entry(
         root,
         if want_dir != 0 || level != 0 { 1 } else { 0 },
     ) as *mut core::ffi::c_void;
+    if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 4); }
+    if dbg { DbgPrint(b"[FE] name found, locales\n\0".as_ptr() as *const i8); }
     if (*ret).is_null() {
         return STATUS_RESOURCE_NAME_NOT_FOUND;
     }
@@ -732,6 +745,8 @@ pub unsafe extern "C" fn find_entry(
                 LANGIDFROMLCID((*NtCurrentTeb()).CurrentLocale) as WORD,
             );
 
+            if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 5); }
+            if dbg { DbgPrint(b"[FE] NtQueryDefaultLocale user\n\0".as_ptr() as *const i8); }
             if NT_SUCCESS(NtQueryDefaultLocale(1u8, &mut user_lcid)) {
                 pos = push_language(list.as_mut_ptr(), pos as ULONG, LANGIDFROMLCID(user_lcid) as WORD);
 
@@ -743,7 +758,10 @@ pub unsafe extern "C" fn find_entry(
             }
         }
 
+        if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 6); }
+        if dbg { DbgPrint(b"[FE] NtQueryDefaultLocale system\n\0".as_ptr() as *const i8); }
         if NT_SUCCESS(NtQueryDefaultLocale(0u8, &mut system_lcid)) {
+            if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 7); }
             pos = push_language(
                 list.as_mut_ptr(),
                 pos as ULONG,
@@ -764,11 +782,15 @@ pub unsafe extern "C" fn find_entry(
         );
     }
 
+    if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 8); }
+    if dbg { DbgPrint(b"[FE] locales done, find_entry_by_id loop\n\0".as_ptr() as *const i8); }
     resdirptr = *ret as *mut IMAGE_RESOURCE_DIRECTORY;
     i = 0;
     while i < pos {
         *ret = find_entry_by_id(resdirptr, list[i as usize], root, want_dir) as *mut core::ffi::c_void;
         if !(*ret).is_null() {
+            if dbg { core::ptr::write_volatile(core::ptr::addr_of_mut!(FE_PROGRESS), 9); }
+            if dbg { DbgPrint(b"[FE] done OK\n\0".as_ptr() as *const i8); }
             return STATUS_SUCCESS;
         }
         i += 1;

@@ -2662,6 +2662,10 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
         NtGdiSelectBrush(hDC, PreviousBrush);
     }
 
+    // DBG-IPD
+    DbgPrint(b"[IPD] flags safemode=%d always=%d paintver=%d clip(%d,%d,%d,%d)\n\0".as_ptr() as *const i8,
+        InSafeMode as i32, g_AlwaysDisplayVersion, g_PaintDesktopVersion,
+        Rect.left, Rect.top, Rect.right, Rect.bottom);
     if InSafeMode != 0 || g_AlwaysDisplayVersion != 0 || g_PaintDesktopVersion != 0 {
         let mut Status: i32;
         static mut wszzVersion: [u16; 1024] = [0; 1024];
@@ -2689,6 +2693,8 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
 
         hFont1 = GreCreateFontIndirectW(&gspv.ncm.lfCaptionFont);
         hFont2 = GreCreateFontIndirectW(&gspv.ncm.lfMenuFont);
+        // DBG-IPD
+        DbgPrint(b"[IPD] hFont1=%p hFont2=%p\n\0".as_ptr() as *const i8, hFont1, hFont2);
 
         if !hFont1.is_null() {
             hOldFont = NtGdiSelectFont(hDC, hFont1);
@@ -2739,6 +2745,9 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
             Status = STATUS_SUCCESS;
         }
 
+        // DBG-IPD
+        DbgPrint(b"[IPD] status=%x wszz0=%x vs0.n=%d vs0.lpstr=%p safemode=%d\n\0".as_ptr() as *const i8,
+            Status, wszzVersion[0] as i32, VerStrs[0].n as i32, VerStrs[0].lpstr, InSafeMode as i32);
         if NT_SUCCESS(Status) && wszzVersion[0] != 0 {
             if InSafeMode == 0 {
                 let mut Size: SIZE = SIZE { cx: 0, cy: 0 };
@@ -2784,7 +2793,7 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                     }
 
                     TotalHeight -= VerStrs[i as usize].y;
-                    GreExtTextOutW(
+                    let _etout_r = GreExtTextOutW(
                         hDC,
                         Rect.right - 5,
                         Rect.bottom - TotalHeight - 5,
@@ -2795,6 +2804,9 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
                         core::ptr::null_mut(),
                         0,
                     );
+                    // DBG-IPD
+                    DbgPrint(b"[IPD] etout i=%d n=%d cy=%d ret=%d\n\0".as_ptr() as *const i8,
+                        i, VerStrs[i as usize].n as i32, VerStrs[i as usize].y, _etout_r as i32);
 
                     if !hFont2.is_null() {
                         NtGdiSelectFont(hDC, hFont2);
