@@ -50,7 +50,9 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, FILE_STANDARD_INFORMATION, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _IO_STATUS_BLOCK, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE, _FILE_INFORMATION_CLASS, ZwQueryInformationFile, _FILE_INFORMATION_CLASS_FileStandardInformation};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE};
+#[cfg(not(feature = "bldr"))]
+use ntkrnl_sys::ddk::{FILE_STANDARD_INFORMATION, ZwQueryInformationFile, _FILE_INFORMATION_CLASS_FileStandardInformation, _IO_STATUS_BLOCK};
 use crate::glue::*;
 use crate::hivewrt::HvSyncHiveFromRecover;
 use core::ffi::c_void;
@@ -559,6 +561,8 @@ pub unsafe extern "system" fn HvpRecoverDataFromLog(
 #[cfg(not(target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "system" fn HvpQueryHiveSize(Hive: PHHIVE) -> u32 {
+    #[cfg(not(feature = "bldr"))]
+    {
     let mut FileStandard: FILE_STANDARD_INFORMATION = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut HiveSize: u32 = 0;
@@ -581,6 +585,12 @@ pub unsafe extern "system" fn HvpQueryHiveSize(Hive: PHHIVE) -> u32 {
     /* Now compute the hive size */
     HiveSize = FileStandard.EndOfFile.u.LowPart - HBLOCK_SIZE;
     HiveSize
+    }
+    #[cfg(feature = "bldr")]
+    {
+        let _ = Hive;
+        0
+    }
 }
 
 /// Recovers the base block header by obtaining it from a log file associated with

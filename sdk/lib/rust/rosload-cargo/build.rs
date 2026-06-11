@@ -76,27 +76,6 @@ fn main() {
         // the cmake-copied libcntpr_rust.a.
     ]);
 
-    // blcmlib's 13 C sources compiled in-cargo (compile_commands.json replay).
-    // Loader keeps the reduced `_BLDR_` C variant; the kernel cmlib cohab is
-    // fully Rust, but the loader's full-crate swap is deferred (cmlib-rust's
-    // CmCheckRegistry validation path hangs the bootloader; needs a `bldr`
-    // feature gating it out first). See uefildr-cargo/build.rs note.
-    const BLCMLIB_C: &[&str] = &[
-        "sdk/lib/cmlib/cmcheck.c",
-        "sdk/lib/cmlib/cminit.c",
-        "sdk/lib/cmlib/cmheal.c",
-        "sdk/lib/cmlib/cmindex.c",
-        "sdk/lib/cmlib/cmkeydel.c",
-        "sdk/lib/cmlib/cmname.c",
-        "sdk/lib/cmlib/cmse.c",
-        "sdk/lib/cmlib/cmvalue.c",
-        "sdk/lib/cmlib/hivebin.c",
-        "sdk/lib/cmlib/hivecell.c",
-        "sdk/lib/cmlib/hiveinit.c",
-        "sdk/lib/cmlib/hivesum.c",
-        "sdk/lib/cmlib/hivewrt.c",
-    ];
-
     // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
     // via compile_commands.json replay (target `blrtl` disambiguates the shared
     // sdk/lib/rtl/*.c sources), per-arch asm via .asm_archive() below. The
@@ -149,9 +128,9 @@ fn main() {
         // cmboot-rust (freeldr-rust dep) + cnt-rust/cnt-ctype (cnt-rust-lib
         // path-deps) — watch so an edit re-runs build.rs.
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
-        // blcmlib C compiled in-cargo (compile_commands.json replay) — loader
-        // keeps the reduced _BLDR_ C variant (loader swap deferred, see above).
-        .c_from_compile_db("blcmlib", BLCMLIB_C)
+        // Bootloader cmlib: Rust crate built with the `bldr` feature, matching
+        // the old C blcmlib's -D_BLDR_ reduced hive surface.
+        .rust_lib("cmlib-rust", &["bldr"], true)
         // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
         .c_from_compile_db("blrtl", &blrtl_c)
@@ -161,7 +140,10 @@ fn main() {
         // strsafe_shim.c compiled directly (self-contained leaf). rosload is
         // i386/amd64 only — both x86 — so -mno-sse always applies (freeldr
         // pre-boot has SSE disabled; an emitted movaps would #UD).
-        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"])
+        .c_shims(&[
+            "boot/freeldr/freeldr/lib/strsafe_shim.c",
+            "boot/freeldr/freeldr/lib/cmlib_loader_stubs.c",
+        ])
         .c_shim_flags(&["-mno-sse"])
         // rosload exports RtlAssert via rosload.def (ENABLE_EXPORTS TRUE).
         .spec2def("boot/freeldr/freeldr/rosload.spec", "rosload.exe")

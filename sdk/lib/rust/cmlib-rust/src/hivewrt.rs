@@ -52,15 +52,17 @@
 //!
 //! Unverified: `ROUND_UP` macro semantics (Rust `round_up` inline differs from glue.rs
 //! usage; BitmapSize calc uses `SizeOfBitMap` directly in bits, matching the C — OK).
-//! The `#[cfg(not(bldr))]` vs `#[cfg(not(_BLDR_))]` inconsistency (lines 224/250) may
-//! silently misgate the KeQuerySystemTime call for bootloader builds but is not kernel-path.
+//! The bootloader `bldr` feature mirrors the C `_BLDR_` build by gating the
+//! kernel-only hard-error and timestamp calls.
 
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, HBASE_BLOCK, HBIN, HCELL, HCELL_INDEX, HHIVE, IoSetThreadHardErrorMode, PCELL_DATA, PHBASE_BLOCK, PHBIN, PHHIVE, RtlFindSetBits, HSTORAGE_TYPE_Stable as Stable, UINT32, _HHIVE, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, HBASE_BLOCK, HBIN, HCELL, HCELL_INDEX, HHIVE, PCELL_DATA, PHBASE_BLOCK, PHBIN, PHHIVE, RtlFindSetBits, HSTORAGE_TYPE_Stable as Stable, UINT32, _HHIVE, _UNICODE_STRING};
+#[cfg(not(feature = "bldr"))]
+use ntkrnl_sys::ddk::IoSetThreadHardErrorMode;
 use crate::glue::{HCELL_NIL, HBLOCK_SIZE, TAG_CM, HV_HHIVE_SIGNATURE, HFILE_TYPE_ALTERNATE, HFILE_TYPE_LOG, HFILE_TYPE_PRIMARY, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, STATUS_REGISTRY_IO_FAILED, STATUS_NOT_REGISTRY_FILE, STATUS_REGISTRY_RECOVERED, HIVE_VOLATILE};
 use core::ffi::c_void;
 use core::ptr::addr_of_mut;
@@ -379,6 +381,7 @@ unsafe fn HvpWriteLog(RegistryHive: PHHIVE) -> u8 {
 
 #[no_mangle]
 pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
+    #[cfg(not(feature = "bldr"))]
     let HardErrors: u8;
 
     assert!((*RegistryHive).ReadOnly == 0);
@@ -399,8 +402,12 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
         return 1u8;
     }
 
-    HardErrors = IoSetThreadHardErrorMode(0u8);
+    #[cfg(not(feature = "bldr"))]
+    {
+        HardErrors = IoSetThreadHardErrorMode(0u8);
+    }
 
+    #[cfg(not(feature = "bldr"))]
     { let _ts = core::ptr::addr_of_mut!((*(*RegistryHive).BaseBlock).TimeStamp); KeQuerySystemTime(_ts as *mut _) };
 
     if (*RegistryHive).Log != 0 {
@@ -408,6 +415,7 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
             DbgPrint(
                 b"Failed to write a log whilst syncing the hive\n\0".as_ptr() as *const i8,
             );
+            #[cfg(not(feature = "bldr"))]
             IoSetThreadHardErrorMode(HardErrors);
             return 0u8;
         }
@@ -417,6 +425,7 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
         DbgPrint(
             b"Failed to write the primary hive\n\0".as_ptr() as *const i8,
         );
+        #[cfg(not(feature = "bldr"))]
         IoSetThreadHardErrorMode(HardErrors);
         return 0u8;
     }
@@ -426,6 +435,7 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
             DbgPrint(
                 b"Failed to write the alternate hive\n\0".as_ptr() as *const i8,
             );
+            #[cfg(not(feature = "bldr"))]
             IoSetThreadHardErrorMode(HardErrors);
             return 0u8;
         }
@@ -434,6 +444,7 @@ pub unsafe extern "system" fn HvSyncHive(RegistryHive: *mut HHIVE) -> u8 {
     RtlClearAllBits(core::ptr::addr_of_mut!((*RegistryHive).DirtyVector) as *mut RTL_BITMAP);
     (*RegistryHive).DirtyCount = 0;
 
+    #[cfg(not(feature = "bldr"))]
     IoSetThreadHardErrorMode(HardErrors);
     return 1u8;
 }
@@ -446,14 +457,12 @@ pub unsafe extern "system" fn HvHiveWillShrink(
     return 0;
 }
 
-#[cfg(not(bldr))]
-
 #[no_mangle]
 pub unsafe extern "system" fn HvWriteHive(RegistryHive: *mut HHIVE) -> i32 {
     debug_assert!((*RegistryHive).ReadOnly == 0);
     debug_assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
 
-    #[cfg(not(bldr))]
+    #[cfg(not(feature = "bldr"))]
     {
         // Update hive header modification time
         KeQuerySystemTime({ let _ts = addr_of_mut!((*(*RegistryHive).BaseBlock).TimeStamp); _ts as *mut _ });
@@ -472,7 +481,7 @@ pub unsafe extern "system" fn HvWriteAlternateHive(RegistryHive: *mut HHIVE) -> 
     core::assert!((*RegistryHive).ReadOnly == 0);
     core::assert!((*RegistryHive).Signature == HV_HHIVE_SIGNATURE);
     core::assert!((*RegistryHive).Alternate != 0);
-    #[cfg(not(_BLDR_))]
+    #[cfg(not(feature = "bldr"))]
     {
         { let _ts = core::ptr::addr_of_mut!((*(*RegistryHive).BaseBlock).TimeStamp); KeQuerySystemTime(_ts as *mut _) };
     }

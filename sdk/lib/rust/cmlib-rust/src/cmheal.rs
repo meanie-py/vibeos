@@ -38,7 +38,9 @@ unsafe extern "C" {
     fn ASSERT(cond: i32);
     // Consumer-provided globals (ntoskrnl in the kernel; loader supplies a
     // zero stub). Gated behind !CMLIB_HOST && !_BLDR_ in C.
+    #[cfg(not(feature = "bldr"))]
     static mut CmpSelfHeal: u8; // BOOLEAN
+    #[cfg(not(feature = "bldr"))]
     static mut CmpBootType: u32; // ULONG
 }
 
@@ -52,8 +54,11 @@ pub unsafe extern "system" fn CmIsSelfHealEnabled(FixHive: u8) -> u8 {
         return 1;
     }
 
-    if CmpSelfHeal != 0 || (CmpBootType & HBOOT_TYPE_SELF_HEAL) != 0 {
-        return 1;
+    #[cfg(not(feature = "bldr"))]
+    {
+        if CmpSelfHeal != 0 || (CmpBootType & HBOOT_TYPE_SELF_HEAL) != 0 {
+            return 1;
+        }
     }
 
     0

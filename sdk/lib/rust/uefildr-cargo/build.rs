@@ -106,31 +106,6 @@ fn main() {
         // sibling (.rust_lib() below), not the cmake-copied libcntpr_rust.a.
     ]);
 
-    // blcmlib's 13 C sources (sdk/lib/cmlib/CMakeLists.txt) compiled in-cargo by
-    // replaying cmake's clang cmd (flag-exact incl. _BLDR_ + the cmlib.h PCH).
-    // NOTE: the loader still uses the reduced `_BLDR_` C variant, NOT cmlib-rust.
-    // The kernel cmlib cohab is fully Rust (libcmlib_rust.a), but the loader's
-    // full-crate swap is deferred: cmlib-rust compiles the FULL (non-_BLDR_)
-    // variant, whose CmCheckRegistry validation path the bootloader exercises
-    // (HINIT_FLAT + VALIDATE_HIVE) and which hangs at boot — that needs a `bldr`
-    // feature gating the validation/write paths out (matching the C _BLDR_ build)
-    // before the loader swap is safe. See docs/engineering/... cmlib loader swap.
-    const BLCMLIB_C: &[&str] = &[
-        "sdk/lib/cmlib/cmcheck.c",
-        "sdk/lib/cmlib/cminit.c",
-        "sdk/lib/cmlib/cmheal.c",
-        "sdk/lib/cmlib/cmindex.c",
-        "sdk/lib/cmlib/cmkeydel.c",
-        "sdk/lib/cmlib/cmname.c",
-        "sdk/lib/cmlib/cmse.c",
-        "sdk/lib/cmlib/cmvalue.c",
-        "sdk/lib/cmlib/hivebin.c",
-        "sdk/lib/cmlib/hivecell.c",
-        "sdk/lib/cmlib/hiveinit.c",
-        "sdk/lib/cmlib/hivesum.c",
-        "sdk/lib/cmlib/hivewrt.c",
-    ];
-
     // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
     // via compile_commands.json replay (target `blrtl` disambiguates the shared
     // sdk/lib/rtl/*.c sources), per-arch asm via .asm_archive() below. The
@@ -187,10 +162,9 @@ fn main() {
         // path-deps) — watch so an edit re-runs build.rs (each crate's OWN src
         // is auto-tracked by build_rust_crate; these are the path-deps).
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
-        // blcmlib C compiled in-cargo (compile_commands.json replay) — the loader
-        // keeps the reduced _BLDR_ C variant (kernel cmlib is fully Rust; loader
-        // swap deferred, see note above). C-archive position (before rust libs).
-        .c_from_compile_db("blcmlib", BLCMLIB_C)
+        // Bootloader cmlib: Rust crate built with the `bldr` feature, matching
+        // the old C blcmlib's -D_BLDR_ reduced hive surface.
+        .rust_lib("cmlib-rust", &["bldr"], true)
         // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
         .c_from_compile_db("blrtl", &blrtl_c)
@@ -201,7 +175,10 @@ fn main() {
         // the i386 -sse,-sse2 (cmake got it from .cargo/config.toml).
         .rust_lib("cport-rust", &[], true)
         .static_libs(&libs)
-        .c_shims(&["boot/freeldr/freeldr/lib/strsafe_shim.c"]);
+        .c_shims(&[
+            "boot/freeldr/freeldr/lib/strsafe_shim.c",
+            "boot/freeldr/freeldr/lib/cmlib_loader_stubs.c",
+        ]);
     // i386 freeldr runs in protected mode before CR4.OSFXSR — no SSE. Build
     // freeldr-rust with -sse,-sse2 (the retired custom_command's i386 RUSTFLAGS;
     // amd64/arm64 ran with empty RUSTFLAGS → SSE on, as in long mode).

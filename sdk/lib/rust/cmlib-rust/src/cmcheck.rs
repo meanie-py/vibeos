@@ -43,7 +43,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_CHECK_REGISTRY_STATUS, CM_KEY_FAST_INDEX, CM_KEY_NODE, CM_KEY_VALUE, CmpAllocate, CmpFindSubKeyByNumber, CmpFree, CmpRepairClassOfNodeKey, CmpRepairKeyNodeSignature, CmpRepairParentKey, CmpRepairParentNode, CmpRepairSubKeyCounts, CmpRepairSubKeyList, CmpRepairValueList, CmpRepairValueListCount, HBIN, HCELL, HCELL_INDEX, HHIVE, PCELL_DATA, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCMHIVE, CMHIVE, PHBIN, PHCELL, PHHIVE, RtlCompareUnicodeString, SIZE_T, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, CmpIsKeyValueSmall, HCELL_NIL, HBLOCK_SIZE, TAG_CM, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, INVALID_INDEX, HV_HHIVE_SIGNATURE, HV_HBIN_SIGNATURE};
+use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, CmpIsKeyValueSmall, HCELL_NIL, HBLOCK_SIZE, TAG_CM, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, CM_KEY_NODE_SIGNATURE, HBOOT_TYPE_SELF_HEAL, STATUS_REGISTRY_CORRUPT, INVALID_INDEX, HV_HHIVE_SIGNATURE, HV_HBIN_SIGNATURE};
 use core::ffi::c_void;
 
 unsafe extern "C" {
@@ -57,8 +57,8 @@ unsafe extern "C" {
     fn HvIsCellAllocated(Hive: *mut HHIVE, Cell: u32) -> i32;
     fn HvGetCellSize(Hive: *mut _HHIVE, Cell: *mut c_void) -> u32;
     fn ASSERT(condition: BOOLEAN);
-    fn HvGetCellType(cell: HCELL_INDEX) -> u32;
     fn DPRINT(format: *const u8, ...);
+    #[cfg(not(feature = "bldr"))]
     static mut CmiVolatileHive: *mut CMHIVE;
 }
 
@@ -725,6 +725,7 @@ unsafe fn CmpPurgeVolatiles(
          * just do a cleanup. (The C `#if !defined(_BLDR_)` kernel build always
          * marks the cell dirty.)
          */
+        #[cfg(not(feature = "bldr"))]
         HvMarkCellDirty(Hive, CurrentCell, 0);
 
         let new_list: HCELL_INDEX = if (Flags & CM_CHECK_REGISTRY_BOOTLOADER_PURGE_VOLATILES) != 0
@@ -1151,9 +1152,12 @@ pub unsafe extern "system" fn CmCheckRegistry(
         return CM_CHECK_REGISTRY_INVALID_PARAMETER as i32;
     }
 
-    if RegistryHive == CmiVolatileHive {
-        // DPRINT removed
-        return CM_CHECK_REGISTRY_GOOD as i32;
+    #[cfg(not(feature = "bldr"))]
+    {
+        if RegistryHive == CmiVolatileHive {
+            // DPRINT removed
+            return CM_CHECK_REGISTRY_GOOD as i32;
+        }
     }
 
     if Flags & !(CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES |
