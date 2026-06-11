@@ -142,13 +142,22 @@ pub unsafe extern "C" fn ClasspInitializeDebugGlobals() {
         ClasspnpGlobals.UseBufferedDebugPrint = 0u32;
         KeReleaseSpinLock(core::ptr::addr_of_mut!(ClasspnpGlobals.SpinLock), irql);
 
+        // InterlockedExchange(Initialized, 1)
         let initialized_ptr = core::ptr::addr_of_mut!(ClasspnpGlobals.Initialized);
-        core::arch::asm!(
-            "lock xchg [{dest}], {src}",
-            dest = in(reg) initialized_ptr,
-            src = inout(reg) 1i32 => _,
-            options(nostack, preserves_flags)
-        );
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            core::arch::asm!(
+                "lock xchg [{dest}], {src}",
+                dest = in(reg) initialized_ptr,
+                src = inout(reg) 1i32 => _,
+                options(nostack, preserves_flags)
+            );
+        }
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            (&*(initialized_ptr as *const core::sync::atomic::AtomicI32))
+                .swap(1, core::sync::atomic::Ordering::SeqCst);
+        }
     }
 }
 #[no_mangle]

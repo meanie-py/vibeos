@@ -3,7 +3,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{FILE_OBJECT_EXTENSION, KeInitializeSpinLock};
+use ntkrnl_sys::ddk::{FILE_OBJECT_EXTENSION, KeInitializeSpinLock, ExAllocatePoolWithTag};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{DICTIONARY, PDICTIONARY};
@@ -72,6 +72,75 @@ pub unsafe extern "C" fn GetDictionaryEntry(
     );
     data
 }
+// AllocateDictionaryEntry — hand-translated (uses ReactOS PSEH TRY/LEAVE/FINALLY, which the
+// tree-sitter cataloger truncates on). Under DUMMY_PSEH the TRY block is linear; LEAVE → break,
+// FINALLY → fallthrough cleanup. Mirrors dictlib.c:77.
+#[no_mangle]
+pub unsafe extern "C" fn AllocateDictionaryEntry(
+    Dictionary: PDICTIONARY,
+    Key: ULONGLONG,
+    Size: ULONG,
+    Tag: ULONG,
+    Entry: *mut PVOID,
+) -> NTSTATUS {
+    let mut header: PDICTIONARY_HEADER;
+    let mut oldIrql: KIRQL = 0;
+    let mut entry: *mut PDICTIONARY_HEADER;
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+
+    *Entry = core::ptr::null_mut();
+
+    header = ExAllocatePoolWithTag(
+        NonPagedPoolNx,
+        (Size as usize + core::mem::size_of::<DICTIONARY_HEADER>()) as _,
+        Tag,
+    ) as PDICTIONARY_HEADER;
+    if header.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    core::ptr::write_bytes(
+        header as *mut u8,
+        0,
+        core::mem::size_of::<DICTIONARY_HEADER>() + Size as usize,
+    );
+    (*header).Key = Key;
+
+    KeAcquireSpinLock(
+        core::ptr::addr_of_mut!((*Dictionary).SpinLock).cast(),
+        core::ptr::addr_of_mut!(oldIrql),
+    );
+
+    // TRY { ... LEAVE ... }
+    'try_block: {
+        entry = core::ptr::addr_of_mut!((*Dictionary).List) as *mut PDICTIONARY_HEADER;
+        while !(*entry).is_null() {
+            if (**entry).Key == Key {
+                // Dictionary must have unique keys.
+                status = STATUS_OBJECT_NAME_COLLISION;
+                break 'try_block;
+            } else if (**entry).Key < Key {
+                break;
+            } else {
+                entry = core::ptr::addr_of_mut!((**entry).Next) as *mut PDICTIONARY_HEADER;
+            }
+        }
+        (*header).Next = *entry;
+        *entry = header;
+    }
+    // FINALLY
+    KeReleaseSpinLock(
+        core::ptr::addr_of_mut!((*Dictionary).SpinLock).cast(),
+        oldIrql,
+    );
+    if status < 0 {
+        FREE_POOL(header as PVOID);
+    } else {
+        *Entry = core::ptr::addr_of_mut!((*header).Data) as PVOID;
+    }
+    status
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn FreeDictionaryEntry(Dictionary: *mut DICTIONARY, Entry: *mut core::ffi::c_void) {
     let mut header: *mut DICTIONARY_HEADER = core::ptr::null_mut();

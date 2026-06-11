@@ -146,3 +146,49 @@ now has **45 undefined** (was 166):
    ClasspRefreshFunctionSupportInfo) → translate (gap-TU technique) or shim the small accessors.
 
 Iterate: fix → `ninja rust_classpnp && ninja classpnp` → recount → boot media → smoke ×3.
+
+## UPDATE 2026-06-11: LINK COMPLETE (166→0) + runtime BUGCHECK surfaced
+
+**The cohab link is DONE: classpnp.sys links with 0 undefined symbols on i386.**
+classpnp-rust compiles COLD-CLEAN on all 3 arches (i386/amd64/arm64). All 18 C
+sources are now Rust. `ninja classpnp` → classpnp.sys (720KB).
+
+How the final 45→0 was closed (this session, no reverts):
+- **Substrate shims (ddk_shims.rs)**: 8 classp.h FORCEINLINE helpers
+  (ClasspTransferPacketGet{Cdb,SenseInfoBuffer,SenseInfoBufferLength}, ClasspGetCurrentTime,
+  ClasspTimeDiffToMs, ClasspMarkIrpAsIdle, ClasspIsIdleRequest{,Supported}, ClasspSrbSetOriginalIrp),
+  IsKeyReadCopyNumber, ClassAcquireRemoveLock(macro→Ex); Interlocked{CompareExchange,Decrement,
+  Exchange}+KeInitializeSpinLock (i386 intrinsics, AtomicI32/`*lock=0`); cdecl wrappers over the
+  real stdcall exports ExFreePool/IoFreeMdl/IoStartNextPacket/IoSetHardErrorOrVerifyDevice/
+  KeGetCurrentIrql/KeRaiseIrql/KeLowerIrql/KeQueryTickCount (IRQL via tier1 inline; KeQueryTickCount
+  private extern; IoWMIDeviceObjectToProviderId stubbed on i386 — not exported there).
+- **C cohab stub**: `_Analysis_assume_` (i386 no_mangle underscore for a leading-`_` name is
+  unreliable; C gives the exact per-arch symbol). Joins the REVERSE_BYTES* family.
+- **Data symbols**: `#[no_mangle]` added to data.rs ClassGuid{QueryRegInfoEx,SenseInfo2,SrbSupport,
+  WorkingSet} + class.rs MaxTokenOperationListIdentifier (were defined but mangled).
+- **11 untranslated fns** (gap-TU, $0.25 Sonnet): RetryRequest, InterpretSenseInfoWithoutHistory,
+  ClassFreeOrReuseSrb, ClasspValidateOffloadSupported, ClassRetrieveDeviceRelations,
+  ClasspGetBlockDeviceTokenLimitsInfo, ClasspRefreshFunctionSupportInfo,
+  ClasspMediaChangeRegistryCallBack, ClassLog{ResourceExhaustion,Threshold}Event → class_part_d.rs;
+  AllocateDictionaryEntry hand-translated into dictlib.rs (PSEH TRY/LEAVE).
+  - **Gap-TU extractor lessons** (tools/rustconv, /tmp/gapextract.py + /tmp/salstrip.py): tree-sitter
+    truncates on (a) the ReactOS doc-comment `Fn()` line inside `/*++ --*/` — must be comment-aware,
+    (b) inline `/* */` on the `NTAPI /*…*/` line breaking the return-type walk-back — pre-strip
+    single-line comments, (c) inline SAL tokens `_In_`/`_In_z_`/`_IRQL_requires_max_(...)`/
+    `_Function_class_(...)` in signatures, (d) call-site false matches (reject `=`/`return`).
+  - Integration: reuse class_part_c's import head; TracePrint→no-op macro; NT_ASSERT→`!`-macro;
+    fix-tools (fix_bitfield_methods/type_casts/arg_casts) auto-cleared 52 cast errors via plain
+    `cargo check` (default toolchain finds i686-pc-windows-gnu std; `+nightly` does NOT). Portable
+    casts must be `as _` not `as u32`/`as SIZE_T` (SIZE_T alias ≠ the bindgen param's concrete int).
+
+### ⚠️ NEXT PHASE — runtime BUGCHECK 0x1E in ClassInitialize (open)
+i386 smoke boots kernel→`IopInitializeBuiltinDriver: disk.sys`→ (disk.sys DriverEntry calls
+classpnp `ClassInitialize`) → **BUGCHECK 0x1E (0xc000001d ILLEGAL_INSTRUCTION)** at a **`ud2`**.
+Faulting site pinpointed: classpnp.sys `_ClassInitialize@12` +0x113ba (PC&0xFFF=0x3ba; load base
+≈0x84c0a000). The ud2 sits at the **tail of the `IoAllocateDriverObjectExtension` success branch**,
+right after `call RtlCopyUnicodeString` — LLVM eliminated the branch continuation (RtlCopyMemory +
+ClassInitializeDispatchTables) as UB-unreachable. `ClassInitialize` is in **class.rs** (a PRE-EXISTING
+translation that never linked/booted until now). `lint_kernel.py class.rs` = clean (not a simple
+unprotected-output-write). Next: GDB-step ClassInitialize / bisect the success-branch tail (likely a
+captures(none) or type-layout/size_of mismatch around `(*driverExtension).InitData` RtlCopyMemory or
+ClassInitializeDispatchTables). This is the correct integrated-but-failing state per AGENTS.md.

@@ -164,6 +164,7 @@ pub const FirstDriveLetter: u8 = b'C';
 pub const LastDriveLetter: u8 = b'Z';
 pub static mut UseQPCTime: BOOLEAN = 0u8;
 pub static mut InitSecurityCookie: BOOLEAN = 0u8;
+#[no_mangle]
 pub static mut MaxTokenOperationListIdentifier: ULONG = MAX_TOKEN_LIST_IDENTIFIERS;
 pub static mut TokenOperationListIdentifier: ULONG = 0xFFFFFFFFu32;
 pub static mut IdlePowerFDOList: LIST_ENTRY = LIST_ENTRY {

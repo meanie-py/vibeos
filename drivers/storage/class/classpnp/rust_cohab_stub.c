@@ -36,3 +36,9 @@ void REVERSE_BYTES_SHORT(void *Dest, const void *Src)
     const unsigned char *s = (const unsigned char *)Src;
     d[0] = s[1]; d[1] = s[0];
 }
+
+/* _Analysis_assume_ — SAL annotation (a no-op at runtime). The Rust translation emits a
+ * call to it; rustc's i386 no_mangle decoration for a leading-underscore name is unreliable,
+ * so C provides the exact per-arch symbol (i386 `__Analysis_assume_`, amd64/arm64
+ * `_Analysis_assume_`). */
+void _Analysis_assume_(int Expr) { (void)Expr; }

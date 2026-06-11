@@ -167,7 +167,6 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "system" fn NT_ASSERT(_cond: u8) {}
 #[no_mangle] pub unsafe extern "system" fn PAGED_CODE() {}
 #[no_mangle] pub unsafe extern "system" fn ASSERT_PDO(_pdo: PVOID) {}
-#[no_mangle] pub unsafe extern "C" fn Analysis_assume_(_e: u8) {}
 #[no_mangle] pub unsafe extern "C" fn SRB_STATUS(st: u8) -> u8 { st & 0x3f }
 #[no_mangle] pub unsafe extern "C" fn Int64ShrlMod32(v: u64, sh: u32) -> u64 { v >> sh }
 #[no_mangle] pub unsafe extern "C" fn LongToPtr(v: i32) -> PVOID { v as isize as usize as PVOID }
@@ -178,7 +177,8 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "C" fn IsEqualGUID(a: *const GUID, b: *const GUID) -> u8 {
     (core::slice::from_raw_parts(a as *const u8, 16) == core::slice::from_raw_parts(b as *const u8, 16)) as u8
 }
-#[no_mangle] pub unsafe extern "C" fn _Analysis_assume_(_e: u8) {}
+// _Analysis_assume_ (→ i386 `__Analysis_assume_`) lives in rust_cohab_stub.c — the i386
+// no_mangle underscore decoration for a leading-underscore name is unreliable; C is exact.
 #[no_mangle] pub unsafe extern "C" fn PORT_ALLOCATED_SENSE(fdo: PVOID, srb: PVOID) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn PORT_ALLOCATED_SENSE_EX(fdo: PVOID, srb: PVOID) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn FREE_PORT_ALLOCATED_SENSE_BUFFER(fdo: PVOID, srb: PVOID) {}
@@ -246,6 +246,105 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn KeGetCurrentNodeNumber() -> u16 { 0 }
 #[no_mangle] pub unsafe extern "C" fn KeQueryHighestNodeNumber() -> u32 { 0 }
 #[no_mangle] pub unsafe extern "C" fn KeSetCoalescableTimer(t: PVOID, due: LARGE_INTEGER, period: u32, tol: u32, dpc: PVOID) -> u8 { 0 }
+
+// ============================ classp.h FORCEINLINE helpers ============================
+// These are header inlines the C calls as functions; cohab needs the crate to provide
+// them. Referenced cdecl (`extern "C"`) by the translated callers.
+use crate::types::{PTRANSFER_PACKET, PCLASS_PRIVATE_FDO_DATA};
+
+#[no_mangle] pub unsafe extern "C" fn ClasspTransferPacketGetCdb(Pkt: PTRANSFER_PACKET) -> PCDB {
+    SrbGetCdb((*Pkt).Srb as PVOID)
+}
+#[no_mangle] pub unsafe extern "C" fn ClasspTransferPacketGetSenseInfoBuffer(Pkt: PTRANSFER_PACKET) -> PVOID {
+    crate::srblib::SrbGetSenseInfoBuffer((*Pkt).Srb as PVOID)
+}
+#[no_mangle] pub unsafe extern "C" fn ClasspTransferPacketGetSenseInfoBufferLength(Pkt: PTRANSFER_PACKET) -> u8 {
+    crate::srblib::SrbGetSenseInfoBufferLength((*Pkt).Srb as PVOID)
+}
+// currentTime = KeQueryPerformanceCounter(NULL)  (ReactOS path)
+#[no_mangle] pub unsafe extern "C" fn ClasspGetCurrentTime() -> LARGE_INTEGER {
+    KeQueryPerformanceCounter(core::ptr::null_mut())
+}
+// TimeDiff /= (10 * 1000)  — 100ns units → ms
+#[no_mangle] pub unsafe extern "C" fn ClasspTimeDiffToMs(TimeDiff: u64) -> u64 { TimeDiff / 10_000 }
+// Irp->Tail.Overlay.DriverContext[1] = Idle  (ULONG_PTR slot)
+#[no_mangle] pub unsafe extern "C" fn ClasspMarkIrpAsIdle(Irp: PIRP, Idle: u8) {
+    (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1] = Idle as usize as PVOID;
+}
+#[no_mangle] pub unsafe extern "C" fn ClasspIsIdleRequest(Irp: PIRP) -> u8 {
+    ((*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[1] as usize & 0xff) as u8
+}
+#[no_mangle] pub unsafe extern "C" fn ClasspIsIdleRequestSupported(FdoData: PCLASS_PRIVATE_FDO_DATA, _Irp: PIRP) -> u8 {
+    (*FdoData).IdlePrioritySupported
+}
+// if ex: ((PSTORAGE_REQUEST_BLOCK)Srb)->MiniportContext = Irp; else ((PSCSI_REQUEST_BLOCK)Srb)->SrbExtension = Irp
+#[no_mangle] pub unsafe extern "C" fn ClasspSrbSetOriginalIrp(Srb: PVOID, Irp: PVOID) {
+    let srb = Srb as PSTORAGE_REQUEST_BLOCK;
+    if srb_is_ex(srb) { (*srb).MiniportContext = Irp; }
+    else { (*(Srb as *mut crate::types::_SCSI_REQUEST_BLOCK)).SrbExtension = Irp; }
+}
+// (((_k) & 0xFFFFFE00) == READ_COPY_NUMBER_KEY(0x52434e00))
+#[no_mangle] pub unsafe extern "C" fn IsKeyReadCopyNumber(Key: u32) -> u8 {
+    ((Key & 0xFFFFFE00) == 0x52434e00) as u8
+}
+// ClassAcquireRemoveLock(devobj, tag) => ClassAcquireRemoveLockEx(devobj, tag, __FILE__, __LINE__)
+#[no_mangle] pub unsafe extern "C" fn ClassAcquireRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PVOID) -> u32 {
+    crate::residual_part_b::ClassAcquireRemoveLockEx(DeviceObject, Tag, b"classpnp\0".as_ptr() as *const i8, 0)
+}
+
+// ============================ Interlocked intrinsics (i386 has no kernel export) ============================
+use core::sync::atomic::{AtomicI32, Ordering};
+#[no_mangle] pub unsafe extern "C" fn InterlockedCompareExchange(Dest: *mut i32, Exch: i32, Comp: i32) -> i32 {
+    let a = &*(Dest as *const AtomicI32);
+    match a.compare_exchange(Comp, Exch, Ordering::SeqCst, Ordering::SeqCst) { Ok(v) => v, Err(v) => v }
+}
+#[no_mangle] pub unsafe extern "C" fn InterlockedDecrement(Addend: *mut i32) -> i32 {
+    (&*(Addend as *const AtomicI32)).fetch_sub(1, Ordering::SeqCst) - 1
+}
+#[no_mangle] pub unsafe extern "C" fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
+    (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
+}
+// KeInitializeSpinLock(lock) => *lock = 0
+#[no_mangle] pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+
+// ============================ real-export cdecl wrappers ============================
+// The translated callers declare these `extern "C"` (cdecl `_X`), but the kernel exports
+// them stdcall (`_X@N`). Provide cdecl shims that forward to the real stdcall export
+// (resolved via the ntoskrnl/hal importlibs on the cohab link line).
+#[no_mangle] pub unsafe extern "C" fn ExFreePool(P: PVOID) { ntkrnl_sys::ddk::ExFreePool(P); }
+#[no_mangle] pub unsafe extern "C" fn IoFreeMdl(Mdl: PMDL) { ntkrnl_sys::ddk::IoFreeMdl(Mdl); }
+#[no_mangle] pub unsafe extern "C" fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancelable: u8) {
+    ntkrnl_sys::ddk::IoStartNextPacket(Fdo, Cancelable);
+}
+#[no_mangle] pub unsafe extern "C" fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Dev: PDEVICE_OBJECT) {
+    ntkrnl_sys::ddk::IoSetHardErrorOrVerifyDevice(Irp, Dev);
+}
+#[no_mangle] pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 { ntkrnl_sys::ddk::KeGetCurrentIrql() }
+// KeRaiseIrql/KeLowerIrql are inline on i386 (no kernel export — it's KfRaiseIrql fastcall);
+// the ntkrnl_sys tier1 inlines do the correct per-arch thing.
+#[no_mangle] pub unsafe extern "C" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
+    #[cfg(target_arch = "x86")]
+    { ntkrnl_sys::inline::tier1::KeRaiseIrql(NewIrql, OldIrql); }
+    #[cfg(not(target_arch = "x86"))]
+    { extern "system" { fn KeRaiseIrql(n: u8, o: *mut u8); } KeRaiseIrql(NewIrql, OldIrql); }
+}
+#[no_mangle] pub unsafe extern "C" fn KeLowerIrql(NewIrql: u8) {
+    #[cfg(target_arch = "x86")]
+    { ntkrnl_sys::inline::tier1::KeLowerIrql(NewIrql); }
+    #[cfg(not(target_arch = "x86"))]
+    { extern "system" { fn KeLowerIrql(n: u8); } KeLowerIrql(NewIrql); }
+}
+// KeQueryTickCount: stdcall export on i386/arm; not in i386 bindgen, declare privately.
+#[no_mangle] pub unsafe extern "C" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {
+    extern "system" { fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER); }
+    KeQueryTickCount(Count);
+}
+// IoWMIDeviceObjectToProviderId: exported only on amd64/arm64 (WMI provider id). Not boot-
+// critical on i386 (telemetry path) — stub to 0 there; forward to the real export elsewhere.
+#[no_mangle] pub unsafe extern "C" fn IoWMIDeviceObjectToProviderId(Dev: PDEVICE_OBJECT) -> u32 {
+    #[cfg(target_arch = "x86")] { let _ = Dev; 0 }
+    #[cfg(not(target_arch = "x86"))] { ntkrnl_sys::ddk::IoWMIDeviceObjectToProviderId(Dev) }
+}
 
 // ============================ data symbols ============================
 #[no_mangle] pub static mut SharedSystemTime: LARGE_INTEGER = unsafe { core::mem::zeroed() };

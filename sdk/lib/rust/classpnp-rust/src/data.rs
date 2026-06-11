@@ -933,6 +933,7 @@ pub static mut ClassBadItems: [CLASSPNP_SCAN_FOR_SPECIAL_INFO; 142] = [
     },
 ];
 
+#[no_mangle]
 pub static mut ClassGuidQueryRegInfoEx: GUID = _GUID {
     Data1: 0xe34b11 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0x2444 as ::core::ffi::c_ushort,
@@ -949,6 +950,7 @@ pub static mut ClassGuidQueryRegInfoEx: GUID = _GUID {
     ],
 };
 
+#[no_mangle]
 pub static mut ClassGuidSenseInfo2: GUID = _GUID {
     Data1: 0x509a8c5f as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0x71d7 as ::core::ffi::c_ushort,
@@ -965,6 +967,7 @@ pub static mut ClassGuidSenseInfo2: GUID = _GUID {
     ],
 };
 
+#[no_mangle]
 pub static mut ClassGuidWorkingSet: GUID = _GUID {
     Data1: 0x105701b0 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0x9e9b as ::core::ffi::c_ushort,
@@ -981,6 +984,7 @@ pub static mut ClassGuidWorkingSet: GUID = _GUID {
     ],
 };
 
+#[no_mangle]
 pub static mut ClassGuidSrbSupport: GUID = _GUID {
     Data1: 0xa483941 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0xbdfd as ::core::ffi::c_ushort,

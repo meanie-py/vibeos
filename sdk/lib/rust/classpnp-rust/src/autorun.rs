@@ -85,14 +85,8 @@ extern "C" {
     // ClasspMediaChangeRegistryCallBack
     #[link_name = "ClassAcquireRemoveLock"]
     fn ClassAcquireRemoveLockR(DeviceObject: PDEVICE_OBJECT, Tag: PIRP) -> ULONG;
-    fn ClasspMediaChangeRegistryCallBack(
-        ValueName: PUNICODE_STRING,
-        ValueType: ULONG,
-        ValueData: PVOID,
-        ValueLength: ULONG,
-        Context: PVOID,
-        EntryContext: PVOID,
-    ) -> NTSTATUS;
+    // ClasspMediaChangeRegistryCallBack is NTAPI (stdcall) — declared in a separate
+    // extern "system" block below so the reference matches class_part_d's stdcall definition.
     fn PORT_ALLOCATED_SENSE_EX(
         fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         Srb: PSTORAGE_REQUEST_BLOCK_HEADER,
@@ -2412,8 +2406,15 @@ pub unsafe extern "C" fn ClasspIsMediaChangeDisabledDueToHardwareLimitation(
         ];
         let nullMultiSz: PWSTR = [0u16, 0u16].as_ptr() as PWSTR;
 
+        // NTAPI (stdcall) callback — reference the stdcall symbol that class_part_d defines.
+        extern "system" {
+            fn ClasspMediaChangeRegistryCallBack(
+                ValueName: PUNICODE_STRING, ValueType: ULONG, ValueData: PVOID,
+                ValueLength: ULONG, Context: PVOID, EntryContext: PVOID,
+            ) -> NTSTATUS;
+        }
         let mut parameters: [_RTL_QUERY_REGISTRY_TABLE; 2] = core::mem::zeroed();
-        parameters[0].QueryRoutine = Some(core::mem::transmute::<unsafe extern "C" fn(PUNICODE_STRING, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
+        parameters[0].QueryRoutine = Some(core::mem::transmute::<unsafe extern "system" fn(PUNICODE_STRING, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS,
             _,
         >(ClasspMediaChangeRegistryCallBack));
         parameters[0].Flags = RTL_QUERY_REGISTRY_REQUIRED;
