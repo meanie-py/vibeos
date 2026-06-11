@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "conutils-rust",
+    "dnslib-rust",
     "access",
     "avltable",
     "bitmap",
