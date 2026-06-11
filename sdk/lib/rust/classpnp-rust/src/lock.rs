@@ -151,8 +151,8 @@ pub unsafe extern "C" fn ClasspInitializeRemoveTracking(DeviceObject: PDEVICE_OB
     }
     #[cfg(not(debug_assertions))]
     {
-        UNREFERENCED_PARAMETER(DeviceObject);
-        (*commonExtension).RemoveTrackingSpinlock = core::mem::transmute::<usize, KSPIN_LOCK>(!0);
+        let _ = DeviceObject;
+        (*commonExtension).RemoveTrackingSpinlock = !0 as _;
         (*commonExtension).RemoveTrackingList = core::ptr::null_mut();
     }
 }
