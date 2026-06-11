@@ -1362,14 +1362,14 @@ pub unsafe extern "system" fn CmpAddToLeaf(
         if i != (*Leaf).Count as u32 {
             if !FastLeaf.is_null() {
                 core::ptr::copy(
-                    core::ptr::addr_of!((*FastLeaf).List[i as usize]),
-                    core::ptr::addr_of_mut!((*FastLeaf).List[(i + 1) as usize]),
+                    fast_list_ptr(FastLeaf, i),
+                    fast_list_ptr(FastLeaf, i + 1),
                     ((*FastLeaf).Count as u32 - i) as usize,
                 );
             } else {
                 core::ptr::copy(
-                    core::ptr::addr_of!((*Leaf).List[i as usize]),
-                    core::ptr::addr_of_mut!((*Leaf).List[(i + 1) as usize]),
+                    index_list_ptr(Leaf, i),
+                    index_list_ptr(Leaf, i + 1),
                     ((*Leaf).Count as u32 - i) as usize,
                 );
             }
@@ -1378,15 +1378,16 @@ pub unsafe extern "system" fn CmpAddToLeaf(
 
     /* Check if this is a new-style leaf */
     if !FastLeaf.is_null() {
-        (*FastLeaf).List[i as usize].Cell = NewKey;
+        let Entry = fast_list_ptr(FastLeaf, i);
+        (*Entry).Cell = NewKey;
 
         if (*FastLeaf).Signature == CM_KEY_HASH_LEAF as u16 {
-            (*FastLeaf).List[i as usize].__bindgen_anon_1.HashKey = CmpComputeHashKey(0, Name, 0u8);
+            (*Entry).__bindgen_anon_1.HashKey = CmpComputeHashKey(0, Name, 0u8);
         } else {
-            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[0] = 0;
-            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[1] = 0;
-            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[2] = 0;
-            (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[3] = 0;
+            (*Entry).__bindgen_anon_1.NameHint[0] = 0;
+            (*Entry).__bindgen_anon_1.NameHint[1] = 0;
+            (*Entry).__bindgen_anon_1.NameHint[2] = 0;
+            (*Entry).__bindgen_anon_1.NameHint[3] = 0;
 
             if ((*Name).Length as usize / core::mem::size_of::<u16>()) < 4 {
                 j = (*Name).Length as u32 / core::mem::size_of::<u16>() as u32;
@@ -1399,7 +1400,7 @@ pub unsafe extern "system" fn CmpAddToLeaf(
                     break;
                 }
 
-                (*FastLeaf).List[i as usize].__bindgen_anon_1.NameHint[(j - 1) as usize] =
+                (*Entry).__bindgen_anon_1.NameHint[(j - 1) as usize] =
                     *(*Name).Buffer.offset((j - 1) as isize) as u8;
 
                 j -= 1;
@@ -1409,7 +1410,7 @@ pub unsafe extern "system" fn CmpAddToLeaf(
             }
         }
     } else {
-        (*Leaf).List[i as usize] = NewKey;
+        core::ptr::write(index_list_ptr(Leaf, i), NewKey);
     }
 
     /* Update the leaf count and return the new cell */

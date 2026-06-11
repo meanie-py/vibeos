@@ -272,7 +272,6 @@ pub unsafe extern "system" fn HvpInitializeMemoryHive(
         ChunkBase as *const c_void,
         core::mem::size_of::<HBASE_BLOCK>(),
     );
-
     /* Setup hive data */
     (*Hive).Version = (*ChunkBase).Minor;
 
@@ -355,7 +354,6 @@ pub unsafe extern "system" fn HvpInitializeMemoryHive(
         free((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
         return STATUS_NO_MEMORY;
     }
-
     // BitmapSize = ROUND_UP(Length, sizeof(ULONG)*8) / 8;
     let BitmapSize: u32 =
         round_up((*Hive).Storage[Stable as usize].Length, core::mem::size_of::<u32>() as u32 * 8)
@@ -373,7 +371,6 @@ pub unsafe extern "system" fn HvpInitializeMemoryHive(
         BitmapSize * 8,
     );
     RtlClearAllBits(core::ptr::addr_of_mut!((*Hive).DirtyVector) as *mut RTL_BITMAP);
-
     /*
      * Mark the entire hive as dirty if we charged up the alternate variant of
      * the primary hive (e.g. SYSTEM.ALT).
@@ -855,8 +852,8 @@ pub unsafe extern "system" fn HvInitialize(
     const NTDDI_VERSION: u32 = 0x05010000; // assumed XP
     let Hive: *mut HHIVE = RegistryHive;
     let mut Status: NTSTATUS;
-    // RtlZeroMemory(Hive, sizeof(HHIVE));
-    core::ptr::write_bytes(Hive, 0, core::mem::size_of::<HHIVE>());
+    // RtlZeroMemory(Hive, sizeof(HHIVE)).
+    core::ptr::write_bytes(Hive as *mut u8, 0, core::mem::size_of::<HHIVE>());
     (*Hive).Signature = HV_HHIVE_SIGNATURE;
     (*Hive).Allocate = Allocate;
     (*Hive).Free = Free;

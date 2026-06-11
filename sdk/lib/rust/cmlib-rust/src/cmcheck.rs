@@ -129,14 +129,13 @@ const CM_CHECK_REGISTRY_CORRUPT_KEY_INDEX_SIGNATURE: CM_CHECK_REGISTRY_STATUS = 
 // hivedata.h:71 — HSYS_WHISTLER_BETA1.
 const HSYS_WHISTLER_BETA1: u32 = 4;
 
-// FIXME: The constants below require correct values from cmcheck.h
-const CM_CHECK_REGISTRY_KEY_CELL_NOT_ALLOCATED: CM_CHECK_REGISTRY_STATUS = 1;
-const CM_CHECK_REGISTRY_CELL_DATA_NOT_FOUND: CM_CHECK_REGISTRY_STATUS = 2;
-const CM_CHECK_REGISTRY_CELL_SIZE_NOT_SANE: CM_CHECK_REGISTRY_STATUS = 3;
-const CM_CHECK_REGISTRY_KEY_NAME_LENGTH_ZERO: CM_CHECK_REGISTRY_STATUS = 4;
-const CM_CHECK_REGISTRY_KEY_TOO_BIG_THAN_CELL: CM_CHECK_REGISTRY_STATUS = 5;
-const CM_CHECK_REGISTRY_BAD_KEY_NODE_PARENT: CM_CHECK_REGISTRY_STATUS = 6;
-const CM_CHECK_REGISTRY_BAD_KEY_NODE_SIGNATURE: CM_CHECK_REGISTRY_STATUS = 7;
+const CM_CHECK_REGISTRY_KEY_CELL_NOT_ALLOCATED: CM_CHECK_REGISTRY_STATUS = 14;
+const CM_CHECK_REGISTRY_CELL_DATA_NOT_FOUND: CM_CHECK_REGISTRY_STATUS = 15;
+const CM_CHECK_REGISTRY_CELL_SIZE_NOT_SANE: CM_CHECK_REGISTRY_STATUS = 16;
+const CM_CHECK_REGISTRY_KEY_NAME_LENGTH_ZERO: CM_CHECK_REGISTRY_STATUS = 17;
+const CM_CHECK_REGISTRY_KEY_TOO_BIG_THAN_CELL: CM_CHECK_REGISTRY_STATUS = 18;
+const CM_CHECK_REGISTRY_BAD_KEY_NODE_PARENT: CM_CHECK_REGISTRY_STATUS = 19;
+const CM_CHECK_REGISTRY_BAD_KEY_NODE_SIGNATURE: CM_CHECK_REGISTRY_STATUS = 20;
 
 const CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES: u32 = 0x00000000; // BUG3 FIXED: was 0x1, C=0x0
 const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000002;
@@ -158,6 +157,7 @@ const CM_CHECK_REGISTRY_TREE_TOO_MANY_LEVELS: CM_CHECK_REGISTRY_STATUS = 13;
 // cmlib.h:216 — TAG_REGISTRY_STACK = 'sRMC' (little-endian DWORD)
 const TAG_REGISTRY_STACK: u32 = u32::from_le_bytes([b'C', b'M', b'R', b's']);
 
+#[inline(never)]
 unsafe fn CmpValidateLexicalOrder(
     Hive: *mut _HHIVE,
     Child: HCELL_INDEX,
@@ -699,6 +699,7 @@ unsafe fn CmpValidateSubKeyList(
 
 /// C `static CmpPurgeVolatiles` — purges the volatile storage of a hive during
 /// boot when the caller requests it via Flags.
+#[inline(never)]
 unsafe fn CmpPurgeVolatiles(
     Hive: *mut HHIVE,
     CurrentCell: HCELL_INDEX,
@@ -744,6 +745,7 @@ unsafe fn CmpPurgeVolatiles(
     }
 }
 
+#[inline(never)]
 unsafe fn CmpValidateKey(
     Hive: *mut HHIVE,
     SecurityDefaulted: u8,
@@ -761,7 +763,7 @@ unsafe fn CmpValidateKey(
 
     PAGED_CODE();
 
-    assert!(CurrentCell != HCELL_NIL, "ASSERT: CurrentCell != HCELL_NIL");
+    ASSERT((CurrentCell != HCELL_NIL) as BOOLEAN);
 
     UNREFERENCED_PARAMETER(SecurityDefaulted);
 
@@ -874,6 +876,7 @@ pub unsafe extern "system" fn HvValidateBin(Hive: *mut HHIVE, Bin: *mut HBIN) ->
 
 /// C `static CmpValidateRegistryInternal` — deep registry tree walk using a
 /// stack-based pool buffer. Private to this module.
+#[inline(never)]
 unsafe fn CmpValidateRegistryInternal(
     Hive: *mut HHIVE,
     Flags: u32,
@@ -907,7 +910,7 @@ unsafe fn CmpValidateRegistryInternal(
         return CM_CHECK_REGISTRY_ALLOCATE_MEM_STACK_FAIL;
     }
 
-    /* Obtain the root cell of the hive (BaseBlock->RootCell) */
+    /* Obtain the root cell of the hive. */
     RootCell = (*(*Hive).BaseBlock).RootCell;
     if RootCell == HCELL_NIL {
         // DPRINT removed
