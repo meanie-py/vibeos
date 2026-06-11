@@ -156,7 +156,7 @@ pub unsafe extern "C" fn DeviceScratchPreventMediaRemoval(
     let mut status: i32 = STATUS_SUCCESS;
     let mut transferSize: u32 = 0;
 
-    let mut cdb: CDB;
+    let mut cdb: CDB = core::mem::zeroed();
     core::ptr::write_bytes(core::ptr::addr_of_mut!(cdb), 0, core::mem::size_of::<CDB>());
 
     ScratchBuffer_BeginUse(DeviceExtension);

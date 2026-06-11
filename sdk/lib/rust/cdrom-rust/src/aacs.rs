@@ -728,7 +728,7 @@ pub unsafe extern "C" fn DeviceHandleSendChallengeKey(
 
     *DataLength = 0;
 
-    let in_len = (*RequestParameters).Parameters.DeviceIoControl.as_ref().InputBufferLength as usize;
+    let in_len = RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize;
     status = WdfRequestRetrieveInputBuffer(
         Request,
         in_len,
@@ -1181,7 +1181,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
         let dataTransferLength: u32 =
             (core::mem::size_of::<CDVD_KEY_HEADER>() + core::mem::size_of::<AACS_BINDING_NONCE>())
                 as u32;
-        let mut cdb: CDB;
+        let mut cdb: CDB = core::mem::zeroed();
         ScratchBuffer_BeginUse(DeviceExtension);
 
         RtlZeroMemory(

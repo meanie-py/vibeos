@@ -458,7 +458,7 @@ pub unsafe extern "C" fn DeviceZPODDIsInHomePosition(DeviceExtension: *mut CDROM
         core::ptr::write_bytes(core::ptr::addr_of_mut!(srb) as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
 
         srb.CdbLength = 6;
-        (*cdb).CDB6GENERIC.as_mut().OperationCode = SCSIOP_TEST_UNIT_READY;
+        (*cdb).CDB6GENERIC.as_mut().OperationCode = SCSIOP_TEST_UNIT_READY as u8;
         srb.TimeOutValue = CDROM_TEST_UNIT_READY_TIMEOUT;
 
         let device = (*DeviceExtension).Device;

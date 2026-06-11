@@ -245,7 +245,7 @@ const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x0004D004;
 // Tracing constants (typical WPP values)
 
 // NTSTATUS
-const STATUS_INTERNAL_ERROR: i32 = 0xC00000E5i32;
+const STATUS_INTERNAL_ERROR: i32 = (0xC00000E5u32 as i32);
 
 // Extern functions / data
 
@@ -563,8 +563,8 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
     const SRB_STATUS_QUEUE_FROZEN: u8 = 0x01;
     const SRB_STATUS_SUCCESS: u8 = 0x01;
     const STATUS_SUCCESS: i32 = 0;
-    const STATUS_INSUFFICIENT_RESOURCES: i32 = 0xC000009A;
-    const STATUS_CANCELLED: i32 = 0xC0000120;
+    const STATUS_INSUFFICIENT_RESOURCES: i32 = (0xC000009Au32 as i32);
+    const STATUS_CANCELLED: i32 = (0xC0000120u32 as i32);
     const STATUS_PENDING: i32 = 0x103;
     const TRACE_LEVEL_ERROR: u32 = 2;
     const TRACE_FLAG_GENERAL: u32 = 0x00000001;
@@ -734,7 +734,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
 
                 // union access: Scsi part
                 let params_scsi = &mut (*nextStack).Parameters.Scsi;
-                params_scsi.Srb = Srb;
+                params_scsi.Srb = Srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
             }
 
             // 4.3 send Request to lower driver

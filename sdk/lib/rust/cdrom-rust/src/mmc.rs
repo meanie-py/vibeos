@@ -232,7 +232,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcCapabilities(
                 (*mmcData).CapabilitiesBuffer,
                 returnedBytes,
                 FeatureRealTimeStreaming,
-            );
+            ) as *mut FEATURE_HEADER;
 
             if header != core::ptr::null_mut()
                 && (*header).Current() != 0
@@ -310,7 +310,7 @@ pub unsafe extern "C" fn DeviceGetConfigurationWithAlloc(
     RequestedType: u32,
 ) -> i32 {
     // Forward declarations for external symbols not in imports
-    const STATUS_INTERNAL_ERROR: i32 = 0xC000000F;
+    const STATUS_INTERNAL_ERROR: i32 = (0xC000000Fu32 as i32);
     const CDROM_TAG_FEATURE: u32 = 0x52444443; // 'CDDR' little-endian? typical tag
     const NonPagedPoolNxCacheAligned: u32 = 0x200; // typical value
     const TRACE_LEVEL_ERROR: u32 = 1;

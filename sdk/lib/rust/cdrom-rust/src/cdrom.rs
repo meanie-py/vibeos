@@ -447,7 +447,7 @@ pub unsafe extern "C" fn DriverEvtCleanup(Driver: WDFOBJECT) {
 #[no_mangle]
 pub unsafe extern "C" fn DriverEvtDeviceAdd(
     Driver: WDFDRIVER,
-    DeviceInit: *mut WDFDEVICE_INIT,
+    mut DeviceInit: *mut WDFDEVICE_INIT,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
     let mut driverExtension: *mut CDROM_DRIVER_EXTENSION = core::ptr::null_mut();
@@ -607,7 +607,7 @@ pub unsafe extern "C" fn DriverEvtDeviceAdd(
                 CDROM_TAG_STRINGS,
             ) as *mut u16;
             if wideDeviceName.is_null() {
-                status = 0xC000009A; // STATUS_INSUFFICIENT_RESOURCES
+                status = (0xC000009Au32 as i32); // STATUS_INSUFFICIENT_RESOURCES
                 break 'Exit;
             }
 
@@ -644,7 +644,7 @@ pub unsafe extern "C" fn DriverEvtDeviceAdd(
                     &mut device,
                 );
                 deviceNumber += 1;
-                if status != 0xC0000035 /* STATUS_OBJECT_NAME_COLLISION */ {
+                if status != (0xC0000035u32 as i32) /* STATUS_OBJECT_NAME_COLLISION */ {
                     break;
                 }
             }
@@ -1556,8 +1556,8 @@ pub unsafe extern "C" fn RequestDispatchProcessDirectly(
     const IOCTL_STORAGE_SET_HOTPLUG_INFO: u32 = 0x00000008;
     const IOCTL_STORAGE_EVENT_NOTIFICATION: u32 = 0x00000009;
     const IOCTL_VOLUME_ONLINE: u32 = 0x0000000A;          // was NTDDI_WIN8
-    const STATUS_VERIFY_REQUIRED: NTSTATUS = 0xC0000185i32; // typical value
-    const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185i32; // typical
+    const STATUS_VERIFY_REQUIRED: NTSTATUS = (0xC0000185u32 as i32); // typical value
+    const STATUS_IO_DEVICE_ERROR: NTSTATUS = (0xC0000185u32 as i32); // typical
     const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x01;
 
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
@@ -1657,7 +1657,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateRawRead(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -1702,7 +1702,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateReadTocEx(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             if inZeroPowerState != 0 {
@@ -1711,7 +1711,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_READ_TOC => {
-            status = RequestValidateReadToc(deviceExtension, RequestParameters, &mut dataLength);
+            status = RequestValidateReadToc(deviceExtension, core::ptr::read(&RequestParameters), &mut dataLength);
             if inZeroPowerState != 0 {
                 status = STATUS_NO_MEDIA_IN_DEVICE;
             }
@@ -1720,7 +1720,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
         IOCTL_CDROM_GET_LAST_SESSION => {
             status = RequestValidateGetLastSession(
                 deviceExtension,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -1774,7 +1774,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_READ_Q_CHANNEL => {
-            status = RequestValidateReadQChannel(Request, RequestParameters, &mut dataLength);
+            status = RequestValidateReadQChannel(Request, core::ptr::read(&RequestParameters), &mut dataLength);
             processed = 1;
         }
         IOCTL_CDROM_GET_VOLUME => {
@@ -1851,7 +1851,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             );
             status = RequestValidateDvdReadStructure(
                 deviceExtension,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -1867,7 +1867,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateDvdReadKey(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -1882,7 +1882,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             );
             status = RequestValidateDvdStartSession(
                 deviceExtension,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -1898,7 +1898,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateDvdSendKey(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2036,7 +2036,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateGetConfiguration(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2049,7 +2049,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
                     as *const i8,
                 // extra argument Request omitted
             );
-            status = RequestValidateSetSpeed(deviceExtension, Request, RequestParameters, &mut dataLength);
+            status = RequestValidateSetSpeed(deviceExtension, Request, core::ptr::read(&RequestParameters), &mut dataLength);
             processed = 1;
         }
         IOCTL_DVD_END_SESSION => {
@@ -2063,7 +2063,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateDvdEndSession(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2079,7 +2079,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsEndSession(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2094,7 +2094,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsReadMediaKeyBlock(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2107,7 +2107,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             );
             status = RequestValidateAacsStartSession(
                 deviceExtension,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2121,7 +2121,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsSendCertificate(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2135,7 +2135,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsGetCertificate(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2149,7 +2149,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsGetChallengeKey(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2163,7 +2163,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsSendChallengeKey(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2177,7 +2177,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsReadVolumeId(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2191,7 +2191,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsReadSerialNumber(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2205,7 +2205,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsReadMediaId(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2227,7 +2227,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidateAacsBindingNonce(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2240,7 +2240,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
                     .as_ptr() as *const i8,
                 // extra argument Request omitted
             );
-            status = RequestValidateEnableStreaming(Request, RequestParameters, &mut dataLength);
+            status = RequestValidateEnableStreaming(Request, core::ptr::read(&RequestParameters), &mut dataLength);
             processed = 1;
         }
         IOCTL_CDROM_SEND_OPC_INFORMATION => {
@@ -2251,7 +2251,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
                     .as_ptr() as *const i8,
                 // extra argument Request omitted
             );
-            status = RequestValidateSendOpcInformation(Request, RequestParameters, &mut dataLength);
+            status = RequestValidateSendOpcInformation(Request, core::ptr::read(&RequestParameters), &mut dataLength);
             processed = 1;
         }
         IOCTL_CDROM_GET_PERFORMANCE => {
@@ -2262,7 +2262,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
                     .as_ptr() as *const i8,
                 // extra argument Request omitted
             );
-            status = RequestValidateGetPerformance(Request, RequestParameters, &mut dataLength);
+            status = RequestValidateGetPerformance(Request, core::ptr::read(&RequestParameters), &mut dataLength);
             processed = 1;
         }
         IOCTL_STORAGE_MEDIA_REMOVAL | IOCTL_STORAGE_EJECTION_CONTROL => {
@@ -2293,7 +2293,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             status = RequestValidatePersistentReserve(
                 deviceExtension,
                 Request,
-                RequestParameters,
+                core::ptr::read(&RequestParameters),
                 &mut dataLength,
             );
             processed = 1;
@@ -2819,7 +2819,7 @@ pub unsafe extern "C" fn SequentialQueueEvtIoReadWrite(
             WdfWorkItemEnqueue((*deviceExtension).ReadWriteWorkItem);
             status = STATUS_SUCCESS;
         } else {
-            status = RequestValidateReadWrite(deviceExtension, Request, requestParameters);
+            status = RequestValidateReadWrite(deviceExtension, Request, core::ptr::read(&requestParameters));
             if status >= 0 {
                 // NT_SUCCESS
                 status = RequestHandleReadWrite(deviceExtension, Request, requestParameters);

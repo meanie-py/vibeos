@@ -417,7 +417,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
             WDF_WORKITEM_CONFIG_INIT(&mut workitemConfig, Some(DeviceRestoreDefaultSpeed));
 
             status = WdfWorkItemCreate(&mut workitemConfig, &mut attributes, &mut workItem);
-            if status & 0xC0000000 != 0 { // NT_SUCCESS is (Status >= 0) NOT ((status & 0xC0000000) == 0)
+            if (status as u32 & 0xC0000000u32) != 0 { // NT_SUCCESS is (Status >= 0) NOT ((status & 0xC0000000) == 0)
                 return STATUS_SUCCESS;
             }
 
@@ -474,7 +474,7 @@ pub unsafe extern "C" fn SenseInfoRequestGetInformation(
     request: WDFREQUEST,
     major_function_code: *mut u8,
     io_control_code: *mut u32,
-    override_verify_volume: *mut i32,
+    override_verify_volume: *mut u8,
     total_100ns_since_first_send: *mut u64,
 ) {
     unsafe {
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn SenseInfoRequestGetInformation(
                 }
 
                 // Inlined TEST_FLAG macro
-                *override_verify_volume = (((*original_irp_stack).Flags as u32 & SL_OVERRIDE_VERIFY_VOLUME) != 0) as i32;
+                *override_verify_volume = (((*original_irp_stack).Flags as u32 & SL_OVERRIDE_VERIFY_VOLUME) != 0) as u8;
             }
         }
 
@@ -1431,15 +1431,15 @@ pub unsafe extern "C" fn SenseInfoLogError(
     {
         let mut oldIrql: KIRQL = 0;
         KeAcquireSpinLock(
-            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock,
+            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock as *mut usize,
             &mut oldIrql,
         );
         let idx = (* (*DeviceExtension).PrivateFdoData).ErrorLogNextIndex as usize;
-        (* (*DeviceExtension).PrivateFdoData).ErrorLogs[idx] = staticErrLogData;
+        (* (*DeviceExtension).PrivateFdoData).ErrorLogs[idx] = core::ptr::read(&staticErrLogData);
         (* (*DeviceExtension).PrivateFdoData).ErrorLogNextIndex += 1;
         (* (*DeviceExtension).PrivateFdoData).ErrorLogNextIndex %= NUM_ERROR_LOG_ENTRIES;
         KeReleaseSpinLock(
-            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock,
+            &raw mut (* (*DeviceExtension).PrivateFdoData).SpinLock as *mut usize,
             oldIrql,
         );
     }
@@ -1637,7 +1637,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
             {
                 *Retry = if RetriedCount <= TOTAL_COUNT_RETRY_DEFAULT { 1 } else { 0 };
             } else if Total100nsSinceFirstSend
-                > SECONDS_TO_100NS_UNITS(TOTAL_SECONDS_RETRY_TIME_WRITE)
+                > SECONDS_TO_100NS_UNITS(TOTAL_SECONDS_RETRY_TIME_WRITE as i32)
             {
                 *Retry = 0; // FALSE
             }
@@ -1651,7 +1651,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
             *Retry = 0; // FALSE
         }
 
-        if (*Srb).SenseInfoBufferLength as usize
+        if ((*Srb).SenseInfoBufferLength as usize)
             < RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier()
             || TEST_FLAG((*Srb).SrbStatus as u32, SRB_STATUS_AUTOSENSE_VALID as u32) == 0
         {

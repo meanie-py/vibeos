@@ -709,7 +709,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
 
     savedName = ExAllocatePoolWithTag(
         PagedPool,
-        unicodeLinkName.MaximumLength as usize,
+        unicodeLinkName.MaximumLength as u32,
         CDROM_TAG_STRINGS,
     ) as *mut u16;
 
@@ -1001,9 +1001,9 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
             }
             TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
                        b"DeviceScanForSpecial: completed callback\n\0".as_ptr() as *const i8,
-                       core::ptr::null(),
-                       core::ptr::null(),
-                       core::ptr::null());
+                       core::ptr::null::<i8>(),
+                       core::ptr::null::<i8>(),
+                       core::ptr::null::<i8>());
             return;
         }
         current_list = current_list.add(1);
@@ -1012,8 +1012,8 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
                b"DeviceScanForSpecial: no match found for %p\n\0".as_ptr() as *const i8,
                (*DeviceExtension).DeviceObject as *const i8,
-               core::ptr::null(),
-               core::ptr::null());
+               core::ptr::null::<core::ffi::c_void>(),
+               core::ptr::null::<core::ffi::c_void>());
     return;
 }
 #[no_mangle]
@@ -1588,7 +1588,7 @@ pub unsafe extern "C" fn DeviceInitializeDvd(Device: WDFDEVICE) -> NTSTATUS {
     let mut copyProtectKey: *mut DVD_COPY_PROTECT_KEY = core::ptr::null_mut();
     let rpcKey: *mut DVD_RPC_KEY;
     let bufferLen: u32;
-    let mut bytesReturned: usize;
+    let mut bytesReturned: usize = 0;
 
     deviceExtension = DeviceGetExtension(Device);
 

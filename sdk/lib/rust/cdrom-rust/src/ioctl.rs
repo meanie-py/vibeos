@@ -701,7 +701,7 @@ const TRACE_FLAG_POWER: u32 = 0x00000008; // typical
 
 // Forward declarations of extern functions not in available imports
 
-const STATUS_INVALID_USER_BUFFER: i32 = 0xC0000146; // typical value
+const STATUS_INVALID_USER_BUFFER: i32 = (0xC0000146u32 as i32); // typical value
 const RESERVATION_ACTION_READ_KEYS: u8 = 0;
 const RESERVATION_ACTION_READ_RESERVATIONS: u8 = 1;
 const RESERVATION_ACTION_REGISTER: u8 = 0;
@@ -723,8 +723,8 @@ const IOCTL_DVD_READ_KEY: u32 = 0x34008;          // approximate
 const IOCTL_DVD_START_SESSION: u32 = 0x34004;     // approximate
 const DvdDiskKeyDescriptor: u8 = 0x10;
 const DVD_DISK_KEY_LENGTH: u32 = 2048;
-const STATUS_INTERNAL_ERROR: i32 = 0xC00000E0;   // NTSTATUS
-const STATUS_INSUFFICIENT_RESOURCES: i32 = 0xC000009A;
+const STATUS_INTERNAL_ERROR: i32 = (0xC00000E0u32 as i32);   // NTSTATUS
+const STATUS_INSUFFICIENT_RESOURCES: i32 = (0xC000009Au32 as i32);
 const STATUS_SUCCESS: i32 = 0;
 const SCSIOP_REPORT_KEY: u8 = 0xA4;
 const DVD_REPORT_AGID: u8 = 0xFE;
@@ -878,10 +878,10 @@ pub unsafe extern "C" fn RequestHandleGetInquiryData(
     } else {
         let mut output_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
-        *data_length = if (*cdData).CachedInquiryDataByteCount as usize < request_parameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength {
+        *data_length = if ((*cdData).CachedInquiryDataByteCount as usize) < request_parameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize {
             (*cdData).CachedInquiryDataByteCount as usize
         } else {
-            request_parameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength
+            request_parameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize
         };
 
         status = WdfRequestRetrieveOutputBuffer(
@@ -1039,7 +1039,7 @@ pub unsafe extern "C" fn RequestHandleGetDvdRegion(
     let mut key_length: u32 = 0;
     let mut dvd_header: *mut DVD_DESCRIPTOR_HEADER;
     let mut copy_right_descriptor: *mut DVD_COPYRIGHT_DESCRIPTOR;
-    let mut dvd_region: *mut DVD_REGION;
+    let mut dvd_region: *mut DVD_REGION = core::ptr::null_mut();
     let mut read_structure: *mut DVD_READ_STRUCTURE = core::ptr::null_mut();
     let mut rpc_key: *mut DVD_RPC_KEY;
 
@@ -1559,7 +1559,7 @@ pub unsafe extern "C" fn RequestValidateDvdSendKey(
         if ((RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize)
             < core::mem::size_of::<DVD_COPY_PROTECT_KEY>())
             || (RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize
-                != (*key).KeyLength)
+                != (*key).KeyLength as usize)
         {
             TracePrint(
                 TRACE_LEVEL_ERROR,
@@ -2656,7 +2656,7 @@ pub unsafe extern "C" fn RequestHandleQueryPropertyDeviceUniqueId(
     let mut inputBuffer: *mut STORAGE_PROPERTY_QUERY = core::ptr::null_mut();
     let mut descHeader: *mut STORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
     let mut outLength: usize = 0;
-    let mut requestParameters: WDF_REQUEST_PARAMETERS;
+    let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
 
     WDF_REQUEST_PARAMETERS_INIT(&mut requestParameters);
     WdfRequestGetParameters(Request, &mut requestParameters);
@@ -2717,7 +2717,7 @@ pub unsafe extern "C" fn RequestHandleQueryPropertyDeviceUniqueId(
             status = RequestDuidGetDeviceIdProperty(
                 deviceExtension,
                 Request,
-                requestParameters,
+                core::ptr::read(&requestParameters),
                 &mut outLength,
             );
 
@@ -2806,12 +2806,12 @@ pub unsafe extern "C" fn RequestHandleQueryPropertyWriteCache(
     if status >= 0 {
         if KeGetCurrentIrql() >= 2u8 /* DISPATCH_LEVEL */ {
             NT_ASSERT(0i32);
-            status = 0xC0000054; // STATUS_INVALID_LEVEL
+            status = (0xC0000054u32 as i32); // STATUS_INVALID_LEVEL
         } else if (*query).QueryType == 0 /* PropertyExistsQuery */ {
             information = 0;
             status = 0; // STATUS_SUCCESS
         } else if (*query).QueryType != 1 /* PropertyStandardQuery */ {
-            status = 0xC0000000; // STATUS_NOT_SUPPORTED
+            status = (0xC0000000u32 as i32); // STATUS_NOT_SUPPORTED
         }
     }
 
@@ -2819,7 +2819,7 @@ pub unsafe extern "C" fn RequestHandleQueryPropertyWriteCache(
         length = requestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize;
 
         if length < core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() {
-            status = 0xC0000004; // STATUS_INFO_LENGTH_MISMATCH
+            status = (0xC0000004u32 as i32); // STATUS_INFO_LENGTH_MISMATCH
         }
     }
 
@@ -2946,7 +2946,7 @@ pub unsafe extern "C" fn RequestHandleQueryPropertyWriteCache(
                     TRACE_FLAG_IOCTL,
                     b"RequestHandleQueryPropertyWriteCache: Mode Sense failed\n\0".as_ptr() as *const i8,
                 );
-                status = 0xC0000185; // STATUS_IO_DEVICE_ERROR
+                status = (0xC0000185u32 as i32); // STATUS_IO_DEVICE_ERROR
             }
         }
     }
@@ -4209,14 +4209,14 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
             cdb.GET_CONFIGURATION.as_mut().AllocationLength[1] = (transferByteCount & 0xFF) as u8;
             cdb.GET_CONFIGURATION.as_mut().StartingFeature[0] = ((*inputBuffer).Feature >> 8) as u8;
             cdb.GET_CONFIGURATION.as_mut().StartingFeature[1] = ((*inputBuffer).Feature & 0xFF) as u8;
-            cdb.GET_CONFIGURATION.as_mut().RequestType = (*inputBuffer).RequestType as u8;
+            cdb.GET_CONFIGURATION.as_mut().set_RequestType((*inputBuffer).RequestType as u8);
 
             if is_type_one && hack_flag_set {
                 const TRACE_LEVEL_WARNING: u32 = 3;
                 const TRACE_FLAG_IOCTL: u32 = 4;
                 TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: Changing TYPE_ONE Get Config to TYPE_ALL\n\0".as_ptr() as *const i8);
                 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u8 = 0;
-                cdb.GET_CONFIGURATION.as_mut().RequestType = SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL;
+                cdb.GET_CONFIGURATION.as_mut().set_RequestType(SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL);
             }
 
             status = ScratchBuffer_ExecuteCdb(DeviceExtension, Request, transferByteCount as u32, 1, core::ptr::addr_of_mut!(cdb), 12);
@@ -4282,7 +4282,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut outputBuffer: *mut core::ffi::c_void;
+    let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
     debug_assert!(KeGetCurrentIrql() <= APC_LEVEL);
@@ -4958,7 +4958,7 @@ pub unsafe extern "C" fn RequestHandleSendOpcInformation(
     );
 
     if ::ntkrnl_sys::base::NT_SUCCESS(status) {
-        let mut cdb: CDB;
+        let mut cdb: CDB = core::mem::zeroed();
         ScratchBuffer_BeginUse(DeviceExtension);
 
         core::ptr::write_bytes(core::ptr::addr_of_mut!(cdb), 0, core::mem::size_of::<CDB>());
@@ -5075,7 +5075,7 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
                 - core::mem::size_of::<CDROM_PERFORMANCE_HEADER>()) as u16;
             descriptorCount /= descriptorSize;
         } else {
-            status = 0xC000000D /* STATUS_INVALID_PARAMETER */;
+            status = (0xC000000Du32 as i32) /* STATUS_INVALID_PARAMETER */;
         }
 
         REVERSE_BYTES_SHORT(
@@ -5106,7 +5106,7 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
                 < core::mem::size_of::<CDROM_PERFORMANCE_HEADER>() as u32
             {
                 *DataLength = 0;
-                status = 0xC000000D /* STATUS_INVALID_DEVICE_REQUEST */;
+                status = (0xC000000Du32 as i32) /* STATUS_INVALID_DEVICE_REQUEST */;
             } else {
                 let srb_len = (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength as size_t;
                 let out_len = RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength;
@@ -5424,7 +5424,7 @@ pub unsafe extern "C" fn RequestHandleReadWrite(
     if NT_SUCCESS(status) != 0 {
         let entireXferLen: u32 = (*currentStack).Parameters.Read.Length;
         let mut maxLength: u32 = 0;
-        let packetsCount: u32;
+        let mut packetsCount: u32;
 
         let readWriteContext: *mut CDROM_SCRATCH_READ_WRITE_CONTEXT;
         let requestContext: *mut CDROM_REQUEST_CONTEXT;
@@ -5579,7 +5579,7 @@ pub unsafe extern "C" fn RequestHandleReserveRelease(
         core::ptr::write_bytes(srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
 
         // TEST_FLAG expanded inline
-        if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_RESERVE6) != 0 {
+        if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_RESERVE6 as u64) != 0 {
             (*srb).CdbLength = 10;
             (*cdb).CDB10.as_mut().OperationCode = if ioctl_code == IOCTL_STORAGE_RESERVE {
                 SCSIOP_RESERVE_UNIT10
@@ -5609,7 +5609,7 @@ pub unsafe extern "C" fn RequestHandleReserveRelease(
             core::ptr::null_mut(),
             0,
             0,
-            Request,
+            Request as WDFREQUEST,
         );
         *DataLength = 0;
 
@@ -6024,7 +6024,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
 
     if status >= 0 {
         let srb = (*DeviceExtension).ScratchContext.ScratchSrb;
-        let cdb = (*srb).Cdb as *mut CDB;
+        let cdb = (*srb).Cdb.as_mut_ptr() as *mut CDB;
         let mut transferByteCount: usize = 0;
         let mut shouldRetry: i32 = 1;
         let mut timesAlreadyRetried: u32 = 0;
@@ -6038,49 +6038,49 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
             match rawReadInfo.TrackMode {
                 CDDA => {
                     transferByteCount = rawReadInfo.SectorCount as usize * RAW_SECTOR_SIZE as usize;
-                    (*cdb).READ_CD.ExpectedSectorType = CD_DA_SECTOR;
-                    (*cdb).READ_CD.IncludeUserData = 1;
-                    (*cdb).READ_CD.HeaderCode = 3;
-                    (*cdb).READ_CD.IncludeSyncData = 1;
+                    (*cdb).READ_CD.as_mut().set_ExpectedSectorType(CD_DA_SECTOR as u8);
+                    (*cdb).READ_CD.as_mut().set_IncludeUserData(1);
+                    (*cdb).READ_CD.as_mut().set_HeaderCode(3);
+                    (*cdb).READ_CD.as_mut().set_IncludeSyncData(1);
                 }
                 YellowMode2 => {
                     transferByteCount = rawReadInfo.SectorCount as usize * RAW_SECTOR_SIZE as usize;
-                    (*cdb).READ_CD.ExpectedSectorType = YELLOW_MODE2_SECTOR;
-                    (*cdb).READ_CD.IncludeUserData = 1;
-                    (*cdb).READ_CD.HeaderCode = 1;
-                    (*cdb).READ_CD.IncludeSyncData = 1;
+                    (*cdb).READ_CD.as_mut().set_ExpectedSectorType(YELLOW_MODE2_SECTOR as u8);
+                    (*cdb).READ_CD.as_mut().set_IncludeUserData(1);
+                    (*cdb).READ_CD.as_mut().set_HeaderCode(1);
+                    (*cdb).READ_CD.as_mut().set_IncludeSyncData(1);
                 }
                 XAForm2 => {
                     transferByteCount = rawReadInfo.SectorCount as usize * RAW_SECTOR_SIZE as usize;
-                    (*cdb).READ_CD.ExpectedSectorType = FORM2_MODE2_SECTOR;
-                    (*cdb).READ_CD.IncludeUserData = 1;
-                    (*cdb).READ_CD.HeaderCode = 3;
-                    (*cdb).READ_CD.IncludeSyncData = 1;
+                    (*cdb).READ_CD.as_mut().set_ExpectedSectorType(FORM2_MODE2_SECTOR as u8);
+                    (*cdb).READ_CD.as_mut().set_IncludeUserData(1);
+                    (*cdb).READ_CD.as_mut().set_HeaderCode(3);
+                    (*cdb).READ_CD.as_mut().set_IncludeSyncData(1);
                 }
                 RawWithC2AndSubCode => {
                     transferByteCount = rawReadInfo.SectorCount as usize * CD_RAW_SECTOR_WITH_C2_AND_SUBCODE_SIZE as usize;
-                    (*cdb).READ_CD.ExpectedSectorType = 0;
-                    (*cdb).READ_CD.IncludeUserData = 1;
-                    (*cdb).READ_CD.HeaderCode = 3;
-                    (*cdb).READ_CD.IncludeSyncData = 1;
-                    (*cdb).READ_CD.ErrorFlags = 2;
-                    (*cdb).READ_CD.SubChannelSelection = 1;
+                    (*cdb).READ_CD.as_mut().set_ExpectedSectorType(0);
+                    (*cdb).READ_CD.as_mut().set_IncludeUserData(1);
+                    (*cdb).READ_CD.as_mut().set_HeaderCode(3);
+                    (*cdb).READ_CD.as_mut().set_IncludeSyncData(1);
+                    (*cdb).READ_CD.as_mut().set_ErrorFlags(2);
+                    (*cdb).READ_CD.as_mut().set_SubChannelSelection(1);
                 }
                 RawWithC2 => {
                     transferByteCount = rawReadInfo.SectorCount as usize * CD_RAW_SECTOR_WITH_C2_SIZE as usize;
-                    (*cdb).READ_CD.ExpectedSectorType = 0;
-                    (*cdb).READ_CD.IncludeUserData = 1;
-                    (*cdb).READ_CD.HeaderCode = 3;
-                    (*cdb).READ_CD.IncludeSyncData = 1;
-                    (*cdb).READ_CD.ErrorFlags = 2;
+                    (*cdb).READ_CD.as_mut().set_ExpectedSectorType(0);
+                    (*cdb).READ_CD.as_mut().set_IncludeUserData(1);
+                    (*cdb).READ_CD.as_mut().set_HeaderCode(3);
+                    (*cdb).READ_CD.as_mut().set_IncludeSyncData(1);
+                    (*cdb).READ_CD.as_mut().set_ErrorFlags(2);
                 }
                 RawWithSubCode => {
                     transferByteCount = rawReadInfo.SectorCount as usize * CD_RAW_SECTOR_WITH_SUBCODE_SIZE as usize;
-                    (*cdb).READ_CD.ExpectedSectorType = 0;
-                    (*cdb).READ_CD.IncludeUserData = 1;
-                    (*cdb).READ_CD.HeaderCode = 3;
-                    (*cdb).READ_CD.IncludeSyncData = 1;
-                    (*cdb).READ_CD.SubChannelSelection = 1;
+                    (*cdb).READ_CD.as_mut().set_ExpectedSectorType(0);
+                    (*cdb).READ_CD.as_mut().set_IncludeUserData(1);
+                    (*cdb).READ_CD.as_mut().set_HeaderCode(3);
+                    (*cdb).READ_CD.as_mut().set_IncludeSyncData(1);
+                    (*cdb).READ_CD.as_mut().set_SubChannelSelection(1);
                 }
                 _ => {
                     debug_assert!(false);
@@ -6099,19 +6099,19 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
 
             (*srb).CdbLength = 12;
 
-            (*cdb).READ_CD.OperationCode = SCSIOP_READ_CD;
-            (*cdb).READ_CD.TransferBlocks[2] = (rawReadInfo.SectorCount & 0xFF) as u8;
-            (*cdb).READ_CD.TransferBlocks[1] = ((rawReadInfo.SectorCount >> 8) & 0xFF) as u8;
-            (*cdb).READ_CD.TransferBlocks[0] = ((rawReadInfo.SectorCount >> 16) & 0xFF) as u8;
+            (*cdb).READ_CD.as_mut().OperationCode = SCSIOP_READ_CD as u8;
+            (*cdb).READ_CD.as_mut().TransferBlocks[2] = (rawReadInfo.SectorCount & 0xFF) as u8;
+            (*cdb).READ_CD.as_mut().TransferBlocks[1] = ((rawReadInfo.SectorCount >> 8) & 0xFF) as u8;
+            (*cdb).READ_CD.as_mut().TransferBlocks[0] = ((rawReadInfo.SectorCount >> 16) & 0xFF) as u8;
 
-            (*cdb).READ_CD.StartingLBA[3] = (startingSector & 0xFF) as u8;
-            (*cdb).READ_CD.StartingLBA[2] = ((startingSector >> 8) & 0xFF) as u8;
-            (*cdb).READ_CD.StartingLBA[1] = ((startingSector >> 16) & 0xFF) as u8;
-            (*cdb).READ_CD.StartingLBA[0] = ((startingSector >> 24) & 0xFF) as u8;
+            (*cdb).READ_CD.as_mut().StartingLBA[3] = (startingSector & 0xFF) as u8;
+            (*cdb).READ_CD.as_mut().StartingLBA[2] = ((startingSector >> 8) & 0xFF) as u8;
+            (*cdb).READ_CD.as_mut().StartingLBA[1] = ((startingSector >> 16) & 0xFF) as u8;
+            (*cdb).READ_CD.as_mut().StartingLBA[0] = ((startingSector >> 24) & 0xFF) as u8;
 
             ScratchBuffer_SendSrb(DeviceExtension, 1, core::ptr::null_mut());
 
-            if (*srb).SrbStatus as u32 == SRB_STATUS_ABORTED && (*srb).__bindgen_anon_1.InternalStatus == STATUS_CANCELLED as u32 {
+            if (*srb).SrbStatus as u32 == SRB_STATUS_ABORTED && *(*srb).__bindgen_anon_1.InternalStatus.as_ref() == STATUS_CANCELLED as u32 {
                 shouldRetry = 0;
                 status = STATUS_CANCELLED;
             } else {
@@ -6303,7 +6303,7 @@ pub unsafe extern "C" fn DeviceHandleResumeAudio(
     *DataLength = 0;
     if ntkrnl_sys::base::NT_SUCCESS(status) {
         let mut transferSize: u32 = 0;
-        let mut cdb: CDB;
+        let mut cdb: CDB = core::mem::zeroed();
         ScratchBuffer_BeginUse(DeviceExtension);
         ntkrnl_sys::rtl::RtlZeroMemory(
             &mut cdb as *mut CDB as *mut core::ffi::c_void,
@@ -6450,7 +6450,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
 
     if NT_SUCCESS(status) != 0 {
         let transferSize: u32 = MODE_DATA_SIZE;
-        let mut cdb: CDB;
+        let mut cdb: CDB = core::mem::zeroed();
         core::ptr::write_bytes(core::ptr::addr_of_mut!(cdb) as *mut u8, 0, core::mem::size_of::<CDB>());
         cdb.MODE_SENSE10.as_mut().OperationCode = SCSIOP_MODE_SENSE10 as u8;
         cdb.MODE_SENSE10.as_mut().set_PageCode(CDROM_AUDIO_CONTROL_PAGE as u8);
@@ -6635,7 +6635,7 @@ pub unsafe extern "C" fn DeviceHandleDvdEndSession(
 
     if NT_SUCCESS(status) != 0 {
         let mut transferSize: u32 = 0;
-        let mut cdb: CDB;
+        let mut cdb: CDB = core::mem::zeroed();
         let mut currentSession: DVD_SESSION_ID;
         let mut limitSession: DVD_SESSION_ID;
 
@@ -6736,7 +6736,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
     let mut status: i32 = STATUS_SUCCESS;
     let mut keyLength: u32 = 0;
     let mut result: u32 = 0;
-    let allocationLength: u32; // declared later, used only for scratch; unused in C
+    let allocationLength: u32 = 0; // declared later, used only for scratch; unused in C
     let mut fourByte: *mut FOUR_BYTE;
     let keyParameters: *mut DVD_COPY_PROTECT_KEY = InputBuffer as *mut DVD_COPY_PROTECT_KEY;
 
@@ -6983,7 +6983,7 @@ pub unsafe extern "C" fn DeviceHandleDvdSendKey(
 }
 
 const SCSIOP_SEND_KEY: u8 = 0xA3;
-const STATUS_INVALID_PARAMETER: i32 = 0xC000000D;
+const STATUS_INVALID_PARAMETER: i32 = (0xC000000Du32 as i32);
 #[no_mangle]
 pub unsafe extern "C" fn DvdSendKey(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
