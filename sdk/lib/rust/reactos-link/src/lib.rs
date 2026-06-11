@@ -1444,16 +1444,21 @@ impl Linker {
                     "-C no-prepopulate-passes"
                 };
                 cmd.env("RUSTFLAGS", rf);
-            } else if matches!(crate_name, "cport-rust" | "hal-rust") && self.arch.name == "i386" {
+            } else if matches!(crate_name, "cport-rust" | "hal-rust" | "cmlib-rust")
+                && self.arch.name == "i386"
+            {
                 // cport-rust (sdk/lib/cportlib/CMakeLists.txt) + hal-rust's
-                // minihal variant (hal/halx86/CMakeLists.txt, i386-only) both
-                // run pre-boot before CR4.OSFXSR, so i386 needs SSE OFF. cmake
-                // gets it from the workspace .cargo/config.toml [i686] (cport)
-                // / an explicit RUSTFLAGS=-sse,-sse2 (hal mini) — the former
-                // isn't discovered from build_dir cwd, so re-state it here.
-                // NEITHER is CRT-class (cmake passes no -C no-prepopulate-passes
-                // for them), and amd64/arm64 cport keeps SSE (config.toml only
-                // disables it on i686) → key i386 only, no no-prepopulate.
+                // minihal variant (hal/halx86/CMakeLists.txt, i386-only) +
+                // cmlib-rust (the CM hive lib, used by the loaders' blcmlib
+                // swap) all run pre-boot before CR4.OSFXSR, so i386 needs SSE
+                // OFF. cmake gets it from the workspace .cargo/config.toml
+                // [i686] (cport) / an explicit RUSTFLAGS=-sse,-sse2 (hal mini,
+                // and the kernel cmlib cohab hook) — the former isn't
+                // discovered from build_dir cwd, so re-state it here. NONE is
+                // CRT-class (cmake passes no -C no-prepopulate-passes for them;
+                // the kernel cmlib cohab deliberately drops it too), and
+                // amd64/arm64 keep SSE (config.toml only disables it on i686)
+                // → key i386 only, no no-prepopulate.
                 cmd.env("RUSTFLAGS", "-C target-feature=-sse,-sse2");
             }
         }

@@ -25,7 +25,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PCELL_DATA, PHBIN, PHCELL, PHCELL_INDEX, PHHIVE, PHV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, HV_TRACK_CELL_REF, RtlSetBits, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBLOCK_SIZE};
+use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HvGetCellBlock, PAGED_CODE, HCELL_NIL, HBLOCK_SIZE};
 use core::ffi::c_void;
 
 // Pointer-width integer matching ULONG_PTR/SIZE_T on all arches
@@ -34,26 +34,192 @@ type PtrInt = u32;
 #[cfg(target_pointer_width = "64")]
 type PtrInt = u64;
 
-unsafe extern "C" {
-    fn CMLTRACE(level: u32, format: *const i8, ...);
-    fn HvGetCellBlock(cell: HCELL_INDEX) -> u32;
-    fn HvGetCellType(cell: HCELL_INDEX) -> u32;
-    unsafe fn HvpComputeFreeListIndex(Size: u32) -> u32;
+unsafe extern "system" {
+    // CMAPI/NTAPI (stdcall on i386). HvpAddBin lives in this crate's hivebin.rs
+    // (`_HvpAddBin@12`).
     fn HvpAddBin(RegistryHive: *mut HHIVE, Size: u32, Storage: HSTORAGE_TYPE) -> *mut HBIN;
-    unsafe fn HvpFindFree(RegistryHive: *mut HHIVE, Size: u32, Storage: HSTORAGE_TYPE) -> u32;
-    fn HvFreeCell(RegistryHive: *mut _HHIVE, CellIndex: u32);
-    fn HvGetCellSize(RegistryHive: *mut _HHIVE, Address: *mut core::ffi::c_void) -> i32;
 }
 unsafe extern "C" {
-    fn RtlCheckBit(BitMapHeader: *mut core::ffi::c_void, BitNumber: u32) -> i32;
-    fn PAGED_CODE();
     fn DbgPrint(format: *const u8, ...);
-    fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> *mut HCELL;
-    fn HvMarkCellDirty(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX, HoldingLock: i32) -> i32;
-    fn HvpAddFree(RegistryHive: *mut HHIVE, FreeBlock: *mut HCELL, FreeIndex: HCELL_INDEX) -> i32;
 }
 
+// RtlCheckBit is a FORCEINLINE in the SDK headers (no exported symbol), so we
+// inline the bit test rather than calling it: test BitNumber in an RTL_BITMAP.
+#[inline]
+unsafe fn rtl_check_bit(bitmap: *const ntkrnl_sys::ddk::RTL_BITMAP, bit_number: u32) -> bool {
+    let word = *(*bitmap).Buffer.add((bit_number >> 5) as usize);
+    (word >> (bit_number & 0x1f)) & 1 != 0
+}
+
+// hivedata.h cell-index field masks.
+const HCELL_OFFSET_MASK: u32 = 0x0000_0fff;
+
 const CMLIB_HCELL_DEBUG: u32 = 0;
+
+// ── HvpGetCellHeader (static __inline) — resolve an HCELL_INDEX to its PHCELL ──
+unsafe fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> *mut HCELL {
+    debug_assert!(CellIndex != HCELL_NIL);
+    if (*RegistryHive).Flat == 0 {
+        let CellType = HvGetCellType(CellIndex);
+        let CellBlock = HvGetCellBlock(CellIndex);
+        let CellOffset = CellIndex & HCELL_OFFSET_MASK; // HCELL_OFFSET_SHIFT = 0
+        let entry = (*RegistryHive).Storage[CellType as usize]
+            .BlockList
+            .add(CellBlock as usize);
+        let Block = (*entry).BlockAddress;
+        (Block as usize + CellOffset as usize) as *mut HCELL
+    } else {
+        ((*RegistryHive).BaseBlock as usize + HBLOCK_SIZE as usize + CellIndex as usize)
+            as *mut HCELL
+    }
+}
+
+// PCELL_DATA = (PHCELL)(HvpGetCellHeader(...) + 1) — header + 1 HCELL.
+#[no_mangle]
+pub unsafe extern "system" fn HvpGetCellData(
+    Hive: *mut HHIVE,
+    CellIndex: HCELL_INDEX,
+) -> *mut c_void {
+    HvpGetCellHeader(Hive, CellIndex).add(1) as *mut c_void
+}
+
+// static __inline LONG HvpGetCellFullSize — ((PHCELL)Cell - 1)->Size.
+unsafe fn HvpGetCellFullSize(_RegistryHive: *mut HHIVE, Cell: *mut c_void) -> i32 {
+    (*(Cell as *mut HCELL).offset(-1)).Size
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn HvGetCellSize(_Hive: *mut HHIVE, Address: *mut c_void) -> i32 {
+    let CellHeader = (Address as *mut HCELL).offset(-1);
+    let mut Size = (*CellHeader).Size * -1;
+    Size -= core::mem::size_of::<HCELL>() as i32;
+    Size
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn HvIsCellAllocated(
+    RegistryHive: *mut HHIVE,
+    CellIndex: HCELL_INDEX,
+) -> u8 {
+    if (*RegistryHive).Flat != 0 {
+        return 1;
+    }
+    let Type = HvGetCellType(CellIndex);
+    let Block = HvGetCellBlock(CellIndex);
+    if Block >= (*RegistryHive).Storage[Type as usize].Length {
+        return 0;
+    }
+    let entry = (*RegistryHive).Storage[Type as usize].BlockList.add(Block as usize);
+    if (*entry).BlockAddress != 0 {
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn HvMarkCellDirty(
+    RegistryHive: *mut HHIVE,
+    CellIndex: HCELL_INDEX,
+    _HoldingLock: u8,
+) -> u8 {
+    debug_assert!((*RegistryHive).ReadOnly == 0);
+
+    if HvGetCellType(CellIndex) != Stable {
+        return 1;
+    }
+
+    let CellBlock = HvGetCellBlock(CellIndex);
+    let CellLastBlock = HvGetCellBlock(CellIndex + HBLOCK_SIZE - 1);
+
+    RtlSetBits(
+        core::ptr::addr_of_mut!((*RegistryHive).DirtyVector),
+        CellBlock,
+        CellLastBlock - CellBlock,
+    );
+    (*RegistryHive).DirtyCount += 1;
+
+    // CmpLazyFlush() is gated behind !CMLIB_HOST && !_BLDR_ in C; we omit it here
+    // (it is a consumer-provided lazy-flush trigger, not part of the hive
+    // mutation itself, and is absent in the bootloader/host environments).
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn HvIsCellDirty(Hive: *mut HHIVE, Cell: HCELL_INDEX) -> u8 {
+    debug_assert!((*Hive).ReadOnly == 0);
+    if HvGetCellType(Cell) == Volatile {
+        return 1;
+    }
+    if rtl_check_bit(
+        core::ptr::addr_of!((*Hive).DirtyVector),
+        Cell / HBLOCK_SIZE,
+    ) {
+        1
+    } else {
+        0
+    }
+}
+
+// static __inline ULONG HvpComputeFreeListIndex(Size).
+unsafe fn HvpComputeFreeListIndex(Size: u32) -> u32 {
+    const FIND_FIRST_SET: [u8; 128] = [
+        0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+        5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+        6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+        6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+        6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+        6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    ];
+    debug_assert!(Size >= (1 << 3));
+    let mut Index = (Size >> 3) - 1;
+    if Index >= 16 {
+        if Index > 127 {
+            Index = 23;
+        } else {
+            Index = FIND_FIRST_SET[Index as usize] as u32 + 16;
+        }
+    }
+    Index
+}
+
+// static NTSTATUS HvpAddFree — push a free block onto its free-list bucket.
+unsafe fn HvpAddFree(
+    RegistryHive: *mut HHIVE,
+    FreeBlock: *mut HCELL,
+    FreeIndex: HCELL_INDEX,
+) -> i32 {
+    let Storage = HvGetCellType(FreeIndex);
+    let Index = HvpComputeFreeListIndex((*FreeBlock).Size as u32);
+
+    let FreeBlockData = FreeBlock.add(1) as *mut HCELL_INDEX;
+    *FreeBlockData = (*RegistryHive).Storage[Storage as usize].FreeDisplay[Index as usize];
+    (*RegistryHive).Storage[Storage as usize].FreeDisplay[Index as usize] = FreeIndex;
+
+    0 // STATUS_SUCCESS
+}
+
+// static HCELL_INDEX HvpFindFree — first-fit search of the free-list buckets.
+unsafe fn HvpFindFree(RegistryHive: *mut HHIVE, Size: u32, Storage: HSTORAGE_TYPE) -> u32 {
+    let mut Index = HvpComputeFreeListIndex(Size);
+    while Index < 24 {
+        let mut pFreeCellOffset =
+            core::ptr::addr_of_mut!((*RegistryHive).Storage[Storage as usize].FreeDisplay[Index as usize]);
+        while *pFreeCellOffset != HCELL_NIL {
+            let FreeCellData = HvGetCell(RegistryHive, *pFreeCellOffset) as *mut HCELL_INDEX;
+            if (HvpGetCellFullSize(RegistryHive, FreeCellData as *mut c_void) as u32) >= Size {
+                let FreeCellOffset = *pFreeCellOffset;
+                *pFreeCellOffset = *FreeCellData;
+                return FreeCellOffset;
+            }
+            pFreeCellOffset = FreeCellData;
+        }
+        Index += 1;
+    }
+    HCELL_NIL
+}
 
 unsafe extern "C" fn HvpRemoveFree(
     RegistryHive: *mut HHIVE,
@@ -64,7 +230,6 @@ unsafe extern "C" fn HvpRemoveFree(
     let mut pFreeCellOffset: *mut u32;
     let Storage: u32;
     let Index: u32;
-    let mut FreeListIndex: u32;
 
     assert!((*RegistryHive).ReadOnly == 0);
 
@@ -82,22 +247,9 @@ unsafe extern "C" fn HvpRemoveFree(
         pFreeCellOffset = FreeCellData;
     }
 
-    CMLTRACE(CMLIB_HCELL_DEBUG, b"-- beginning of HvpRemoveFree trace --\n\0".as_ptr() as *const i8);
-    CMLTRACE(CMLIB_HCELL_DEBUG, b"block we are about to free: %08x\n\0".as_ptr() as *const i8, CellIndex);
-    CMLTRACE(CMLIB_HCELL_DEBUG, b"chosen free list index: %u\n\0".as_ptr() as *const i8, Index);
-
-    for FreeListIndex in 0..24u32 {
-        CMLTRACE(CMLIB_HCELL_DEBUG, b"free list [%u]: \0".as_ptr() as *const i8, FreeListIndex);
-        pFreeCellOffset = core::ptr::addr_of_mut!((*RegistryHive).Storage[Storage as usize].FreeDisplay[FreeListIndex as usize]);
-        while *pFreeCellOffset != HCELL_NIL {
-            CMLTRACE(CMLIB_HCELL_DEBUG, b"%08x \0".as_ptr() as *const i8, *pFreeCellOffset);
-            FreeCellData = HvGetCell(RegistryHive, *pFreeCellOffset) as *mut u32;
-            pFreeCellOffset = FreeCellData;
-        }
-        CMLTRACE(CMLIB_HCELL_DEBUG, b"\n\0".as_ptr() as *const i8);
-    }
-    CMLTRACE(CMLIB_HCELL_DEBUG, b"-- end of HvpRemoveFree trace --\n\0".as_ptr() as *const i8);
-
+    // Something bad happened (the block to free was not on its free list).
+    // C dumps the free lists via CMLTRACE then ASSERT(FALSE); the trace is
+    // NDEBUG-disabled, so we just assert.
     assert!(false);
 }
 #[no_mangle]
@@ -107,10 +259,11 @@ pub unsafe extern "system" fn HvAllocateCell(
     Storage: u32,
     Vicinity: u32,
 ) -> u32 {
-    const HCELL_NIL: u32 = 0;
+    // NOTE: HCELL_NIL comes from the glue import (0xFFFFFFFF). The earlier
+    // translation shadowed it with a local `const HCELL_NIL: u32 = 0;`, which
+    // broke the "no free cell found" test against HvpFindFree's real return.
     const HCELL_TYPE_SHIFT: u32 = 31;
-    const CMLIB_HCELL_DEBUG: u32 = 1;
-    static __FUNCTION__: &[u8] = b"HvAllocateCell\0";
+    let _ = Vicinity;
 
     let mut FreeCell: *mut HCELL;
     let mut FreeCellOffset: u32;
@@ -119,22 +272,6 @@ pub unsafe extern "system" fn HvAllocateCell(
 
     // ASSERT(RegistryHive->ReadOnly == FALSE);
     core::assert_eq!((*RegistryHive).ReadOnly, 0);
-
-    // CMLTRACE(CMLIB_HCELL_DEBUG, "%s - Hive 0x%p, Size 0x%x, %s, Vicinity 0x%x\n",
-    //          __FUNCTION__, RegistryHive, Size, (Storage == 0) ? "Stable" : "Volatile", Vicinity);
-    CMLTRACE(
-        CMLIB_HCELL_DEBUG,
-        b"%s - Hive 0x%p, Size 0x%x, %s, Vicinity 0x%x\n\0".as_ptr() as *const i8,
-        __FUNCTION__.as_ptr() as *const i8,
-        RegistryHive,
-        Size,
-        if Storage == Stable {
-            b"Stable\0".as_ptr() as *const i8
-        } else {
-            b"Volatile\0".as_ptr() as *const i8
-        },
-        Vicinity,
-    );
 
     // Size = ROUND_UP(Size + sizeof(HCELL), 16);
     Size = ROUND_UP(Size as usize + core::mem::size_of::<HCELL>(), 16) as u32;
@@ -179,14 +316,6 @@ pub unsafe extern "system" fn HvAllocateCell(
         (Size - core::mem::size_of::<HCELL>() as u32) as usize,
     );
 
-    // CMLTRACE(CMLIB_HCELL_DEBUG, "%s - CellIndex 0x%x\n", __FUNCTION__, FreeCellOffset);
-    CMLTRACE(
-        CMLIB_HCELL_DEBUG,
-        b"%s - CellIndex 0x%x\n\0".as_ptr() as *const i8,
-        __FUNCTION__.as_ptr() as *const i8,
-        FreeCellOffset,
-    );
-
     FreeCellOffset
 }
 
@@ -199,15 +328,6 @@ pub unsafe extern "system" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIn
     let Storage: u32;
 
     debug_assert!(CellIndex != HCELL_NIL);
-
-    CMLTRACE(
-        CMLIB_HCELL_DEBUG,
-        b"%s - Hive 0x%p, CellIndex 0x%x, Size 0x%x\n\0".as_ptr() as *const i8,
-        b"HvReallocateCell\0".as_ptr() as *const i8,
-        RegistryHive as *const core::ffi::c_void,
-        CellIndex,
-        Size,
-    );
 
     Storage = HvGetCellType(CellIndex);
 
@@ -231,6 +351,110 @@ pub unsafe extern "system" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIn
 
     return CellIndex;
 }
+
+#[no_mangle]
+pub unsafe extern "system" fn HvFreeCell(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) {
+    const HCELL_TYPE_MASK: u32 = 0x8000_0000;
+
+    assert!((*RegistryHive).ReadOnly == 0);
+
+    let Free: *mut HCELL = HvpGetCellHeader(RegistryHive, CellIndex);
+    assert!((*Free).Size < 0);
+    (*Free).Size = -((*Free).Size);
+
+    let CellType = HvGetCellType(CellIndex);
+    let CellBlock = HvGetCellBlock(CellIndex);
+
+    // FIXME (as in C): Merge free blocks
+    let entry = (*RegistryHive).Storage[CellType as usize].BlockList.add(CellBlock as usize);
+    let Bin: *mut HBIN = (*entry).BinAddress as *mut HBIN;
+
+    let mut Neighbor: *mut HCELL;
+
+    if (CellIndex & !HCELL_TYPE_MASK) + ((*Free).Size as u32) < (*Bin).FileOffset + (*Bin).Size {
+        Neighbor = (Free as usize + (*Free).Size as usize) as *mut HCELL;
+        if (*Neighbor).Size > 0 {
+            let nci = ((Neighbor as usize - Bin as usize) as u32 + (*Bin).FileOffset)
+                | (CellIndex & HCELL_TYPE_MASK);
+            HvpRemoveFree(RegistryHive, Neighbor as *mut CELL_DATA, nci);
+            (*Free).Size += (*Neighbor).Size;
+        }
+    }
+
+    Neighbor = Bin.add(1) as *mut HCELL; // (PHCELL)(Bin + 1)
+    while Neighbor < Free {
+        if (*Neighbor).Size > 0 {
+            if (Neighbor as usize + (*Neighbor).Size as usize) == Free as usize {
+                let NeighborCellIndex = ((Neighbor as usize - Bin as usize) as u32
+                    + (*Bin).FileOffset)
+                    | (CellIndex & HCELL_TYPE_MASK);
+
+                if HvpComputeFreeListIndex((*Neighbor).Size as u32)
+                    != HvpComputeFreeListIndex(((*Neighbor).Size + (*Free).Size) as u32)
+                {
+                    HvpRemoveFree(RegistryHive, Neighbor as *mut CELL_DATA, NeighborCellIndex);
+                    (*Neighbor).Size += (*Free).Size;
+                    HvpAddFree(RegistryHive, Neighbor, NeighborCellIndex);
+                } else {
+                    (*Neighbor).Size += (*Free).Size;
+                }
+
+                if CellType == Stable {
+                    HvMarkCellDirty(RegistryHive, NeighborCellIndex, 0);
+                }
+                return;
+            }
+            Neighbor = (Neighbor as usize + (*Neighbor).Size as usize) as *mut HCELL;
+        } else {
+            // Size < 0: step by its absolute value.
+            Neighbor = (Neighbor as usize).wrapping_add((-(*Neighbor).Size) as usize) as *mut HCELL;
+        }
+    }
+
+    // Add block to the list of free blocks
+    HvpAddFree(RegistryHive, Free, CellIndex);
+    if CellType == Stable {
+        HvMarkCellDirty(RegistryHive, CellIndex, 0);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn HvpCreateHiveFreeCellList(Hive: *mut HHIVE) -> i32 {
+    // Initialize the free cell list (24 buckets × 2 storage types).
+    let mut Index: u32 = 0;
+    while Index < 24 {
+        (*Hive).Storage[Stable as usize].FreeDisplay[Index as usize] = HCELL_NIL;
+        (*Hive).Storage[Volatile as usize].FreeDisplay[Index as usize] = HCELL_NIL;
+        Index += 1;
+    }
+
+    let mut BlockIndex: u32 = 0;
+    while BlockIndex < (*Hive).Storage[Stable as usize].Length {
+        let entry = (*Hive).Storage[Stable as usize].BlockList.add(BlockIndex as usize);
+        let Bin: *mut HBIN = (*entry).BinAddress as *mut HBIN;
+
+        // Search free blocks and add to list
+        let mut FreeOffset: u32 = core::mem::size_of::<HBIN>() as u32;
+        while FreeOffset < (*Bin).Size {
+            let FreeBlock = (Bin as usize + FreeOffset as usize) as *mut HCELL;
+            if (*FreeBlock).Size > 0 {
+                let Status = HvpAddFree(Hive, FreeBlock, (*Bin).FileOffset + FreeOffset);
+                if Status < 0 {
+                    return Status;
+                }
+                FreeOffset += (*FreeBlock).Size as u32;
+            } else {
+                // C: FreeOffset -= FreeBlock->Size (Size < 0 → advance forward).
+                FreeOffset = FreeOffset.wrapping_sub((*FreeBlock).Size as u32);
+            }
+        }
+
+        BlockIndex += (*Bin).Size / HBLOCK_SIZE;
+    }
+
+    0 // STATUS_SUCCESS
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn HvTrackCellRef(
     CellRef: *mut HV_TRACK_CELL_REF,

@@ -66,12 +66,14 @@ use core::ffi::c_void;
 use core::ptr::addr_of_mut;
 
 extern "system" {
-    fn HvpValidateBaseHeader(RegistryHive: *mut HHIVE);
     fn HvpHiveHeaderChecksum(BaseBlock: PHBASE_BLOCK) -> u32;
-    fn HvpWriteHive(RegistryHive: *mut HHIVE, OnlyDirty: u8, FileType: u32) -> u8;
 }
 unsafe extern "C" {
     fn DbgPrint(format: *const i8, ...);
+}
+unsafe extern "system" {
+    // KeQuerySystemTime is NTAPI (stdcall on i386 → _KeQuerySystemTime@4).
+    // Provided by ntoskrnl in the kernel; by the loader stub in uefildr/rosload.
     fn KeQuerySystemTime(SystemTime: *mut i64);
 }
 
@@ -87,6 +89,152 @@ const HSECTOR_SIZE: u32 = 512;
 const HV_LOG_DIRTY_SIGNATURE: u32 = 0x54524944;
 const HV_LOG_DIRTY_BLOCK: u32 = 0xFF;
 const HV_CLEAN_BLOCK: u32 = 0;
+
+/// Validates the base block header of a primary hive for consistency.
+/// C: `static VOID HvpValidateBaseHeader(...)` — the three checks are ASSERTs,
+/// which are no-ops in the NDEBUG cmlib build.
+unsafe fn HvpValidateBaseHeader(RegistryHive: *mut HHIVE) {
+    let BaseBlock = (*RegistryHive).BaseBlock;
+    debug_assert!((*BaseBlock).Signature == HV_HBLOCK_SIGNATURE);
+    debug_assert!((*BaseBlock).Format == HBASE_FORMAT_MEMORY);
+    debug_assert!((*BaseBlock).Major == HSYS_MAJOR);
+}
+
+/// Writes data (dirty or non) to a primary hive during syncing operation.
+/// C: `static BOOLEAN CMAPI HvpWriteHive(...)`.
+unsafe fn HvpWriteHive(RegistryHive: *mut HHIVE, OnlyDirty: u8, FileType: u32) -> u8 {
+    let mut Success: u8;
+    let mut FileOffset: u32;
+    let mut BlockIndex: u32;
+    let mut LastIndex: u32;
+    let mut Block: *mut c_void;
+
+    debug_assert!((*RegistryHive).ReadOnly == 0);
+    debug_assert!(
+        (*(*RegistryHive).BaseBlock).Length
+            == (*RegistryHive).Storage[Stable as usize].Length * HBLOCK_SIZE
+    );
+    debug_assert!((*(*RegistryHive).BaseBlock).RootCell != HCELL_NIL);
+
+    /* Validate the base header before we go further */
+    HvpValidateBaseHeader(RegistryHive);
+
+    /*
+     * The sequences can diverge during a forced system shutdown. In such
+     * cases the hive needs a repair.
+     */
+    if (*(*RegistryHive).BaseBlock).Sequence1 != (*(*RegistryHive).BaseBlock).Sequence2 {
+        return 0u8;
+    }
+
+    /*
+     * Update the primary sequence number and write the base block to hive.
+     */
+    (*(*RegistryHive).BaseBlock).Type = HFILE_TYPE_PRIMARY;
+    (*(*RegistryHive).BaseBlock).Sequence1 += 1;
+    (*(*RegistryHive).BaseBlock).CheckSum = HvpHiveHeaderChecksum((*RegistryHive).BaseBlock);
+
+    /* Write hive block */
+    FileOffset = 0;
+    Success = (*RegistryHive).FileWrite.unwrap()(
+        RegistryHive,
+        FileType,
+        &mut FileOffset,
+        (*RegistryHive).BaseBlock as *mut c_void,
+        core::mem::size_of::<HBASE_BLOCK>() as _,
+    );
+    if Success == 0 {
+        return 0u8;
+    }
+
+    /* Write the whole primary hive, block by block */
+    BlockIndex = 0;
+    while BlockIndex < (*RegistryHive).Storage[Stable as usize].Length {
+        /*
+         * If we have to synchronize the registry hive we want to look for
+         * dirty blocks. Otherwise just write all the blocks.
+         */
+        if OnlyDirty != 0 {
+            LastIndex = BlockIndex;
+            BlockIndex = RtlFindSetBits(
+                core::ptr::addr_of_mut!((*RegistryHive).DirtyVector),
+                1,
+                BlockIndex,
+            );
+            if BlockIndex == !HV_CLEAN_BLOCK || BlockIndex < LastIndex {
+                break;
+            }
+        }
+
+        /* Get the block and offset position */
+        Block = (*(*RegistryHive).Storage[Stable as usize]
+            .BlockList
+            .add(BlockIndex as usize))
+        .BlockAddress as *mut c_void;
+        FileOffset = (BlockIndex + 1) * HBLOCK_SIZE;
+
+        /* Now write this block to primary hive file */
+        Success = (*RegistryHive).FileWrite.unwrap()(
+            RegistryHive,
+            FileType,
+            &mut FileOffset,
+            Block,
+            HBLOCK_SIZE as _,
+        );
+        if Success == 0 {
+            return 0u8;
+        }
+
+        /* Go to the next block */
+        BlockIndex += 1;
+    }
+
+    /*
+     * We wrote all the hive contents to the file, we must flush the changes
+     * to disk now.
+     */
+    Success = (*RegistryHive).FileFlush.unwrap()(
+        RegistryHive,
+        FileType,
+        core::ptr::null_mut(),
+        0,
+    );
+    if Success == 0 {
+        return 0u8;
+    }
+
+    /*
+     * Increment the secondary sequence number and update the checksum.
+     */
+    (*(*RegistryHive).BaseBlock).Sequence2 += 1;
+    (*(*RegistryHive).BaseBlock).CheckSum = HvpHiveHeaderChecksum((*RegistryHive).BaseBlock);
+
+    /* Write hive block */
+    FileOffset = 0;
+    Success = (*RegistryHive).FileWrite.unwrap()(
+        RegistryHive,
+        FileType,
+        &mut FileOffset,
+        (*RegistryHive).BaseBlock as *mut c_void,
+        core::mem::size_of::<HBASE_BLOCK>() as _,
+    );
+    if Success == 0 {
+        return 0u8;
+    }
+
+    /* Flush the hive immediately */
+    Success = (*RegistryHive).FileFlush.unwrap()(
+        RegistryHive,
+        FileType,
+        core::ptr::null_mut(),
+        0,
+    );
+    if Success == 0 {
+        return 0u8;
+    }
+
+    1u8
+}
 
 unsafe fn HvpWriteLog(RegistryHive: PHHIVE) -> u8 {
     let mut Success: u8;

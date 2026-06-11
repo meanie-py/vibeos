@@ -8,7 +8,10 @@
 //!      hivedata.h: Stable=0, Volatile=1. SubKeyCounts[1] repaired the volatile count, not the stable count. Fixed.
 //!   5. `#[no_mangle] #[no_mangle] #[no_mangle]` triple-attr artifact on CmpRepairClassOfNodeKey. Fixed.
 //!   6. ABI: CMAPI=NTAPI=__stdcall on i386; all exported fns use `extern "C"` (cdecl). Changed to `extern "system"`.
-//! Unverified: CmpRemoveSubKeyInLeaf/CmpRemoveSubkeyInRoot are declared as extern (not translated here, static in C).
+//! [2026-06-09] Translated the previously-stubbed static helpers in place:
+//!   CmpRemoveValueFromValueList, CmpRemoveSubKeyInLeaf, CmpRemoveSubkeyInRoot,
+//!   plus the two leaf-cell removers (CmpRemoveFastIndexKeyCell/CmpRemoveIndexKeyCell)
+//!   they depend on — all `static` in C, so private `unsafe fn` here.
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -18,19 +21,42 @@ use core::ffi::c_void;
 
 unsafe extern "C" {
     // conditionally compiled in original (#if !defined(CMLIB_HOST) && !defined(_BLDR_)) pub static mut CmpSelfHeal: u8;   // BOOLEAN pub static mut CmpBootType: u32;  // ULONG
-    unsafe fn CmpRemoveFastIndexKeyCell(FastIndex: *mut CM_KEY_FAST_INDEX, Index: u32, UpdateCount: u8) ;
-    unsafe fn CmpRemoveIndexKeyCell(KeyIndex: *mut CM_KEY_INDEX, Index: u32) ;
     fn PAGED_CODE();
     fn HvMarkCellDirty(hive: PHHIVE, cell: HCELL_INDEX, dirty: i32);
-    fn DPRINT1(format: *const i8, ...);
-    unsafe fn CmpRemoveValueFromValueList(value_list_node: *mut CM_KEY_NODE, value_list_data: *mut CELL_DATA, index: u32) ;
 }
+
+// DPRINT1 is a ReactOS debug-print macro — a no-op in non-DBG builds and NOT a
+// real linkable symbol. Translating it to an `extern fn DPRINT1` leaves an
+// undefined symbol that lld only tolerates on arches where the referencing fn is
+// dead-code-eliminated (i386 GC'd CmpRepairParentKey; amd64 keeps it → LINK_FAIL
+// on `DPRINT1`). Provide a crate-local no-op so every arch resolves it the same
+// way the C NDEBUG build does. All call sites here pass a single format arg.
+#[inline(always)]
+unsafe fn DPRINT1(_format: *const i8) {}
 unsafe extern "C" {
-    fn CmIsSelfHealEnabled(FixHive: u8) -> u8;
     fn DbgPrint(format: *const i8, ...);
-    unsafe fn CmpRemoveSubKeyInLeaf( Hive: PHHIVE, KeyNode: PCM_KEY_NODE, Leaf: PCM_KEY_INDEX, TargetKey: HCELL_INDEX, ) -> BOOLEAN;
-    unsafe fn CmpRemoveSubkeyInRoot( Hive: PHHIVE, RootIndex: PCM_KEY_INDEX, TargetKey: HCELL_INDEX, ) -> BOOLEAN;
     fn ASSERT(cond: i32);
+    // Consumer-provided globals (ntoskrnl in the kernel; loader supplies a
+    // zero stub). Gated behind !CMLIB_HOST && !_BLDR_ in C.
+    static mut CmpSelfHeal: u8; // BOOLEAN
+    static mut CmpBootType: u32; // ULONG
+}
+
+// CmIsSelfHealEnabled (cmheal.c:369) — full kernel variant. Returns whether
+// self-healing is possible for this hive.
+#[no_mangle]
+pub unsafe extern "system" fn CmIsSelfHealEnabled(FixHive: u8) -> u8 {
+    PAGED_CODE();
+
+    if FixHive != 0 {
+        return 1;
+    }
+
+    if CmpSelfHeal != 0 || (CmpBootType & HBOOT_TYPE_SELF_HEAL) != 0 {
+        return 1;
+    }
+
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn CmpRepairParentKey(
@@ -268,4 +294,226 @@ pub unsafe extern "system" fn CmpRepairSubKeyList(
     let base_block = (*Hive).BaseBlock;
     (*base_block).BootType |= HBOOT_TYPE_SELF_HEAL;
     return 1;
+}
+
+/// Removes a cell from a fast key index (C `static VOID CmpRemoveFastIndexKeyCell`).
+unsafe fn CmpRemoveFastIndexKeyCell(
+    FastIndex: *mut CM_KEY_FAST_INDEX,
+    Index: u32,
+    UpdateCount: u8,
+) {
+    ASSERT((Index < (*FastIndex).Count as u32) as i32);
+
+    /* Calculate the number of trailing cells */
+    let MoveCount = (*FastIndex).Count as u32 - Index - 1;
+    if MoveCount != 0 {
+        /* Remove the cell now by moving one location ahead.
+         * List is a flexible array of CM_INDEX. */
+        let list = core::ptr::addr_of_mut!((*FastIndex).List) as *mut CM_INDEX;
+        core::ptr::copy(
+            list.add((Index + 1) as usize),
+            list.add(Index as usize),
+            MoveCount as usize,
+        );
+    }
+
+    /* Update the fast index count if asked */
+    if UpdateCount != 0 {
+        (*FastIndex).Count -= 1;
+    }
+}
+
+/// Removes a cell from a normal key index (C `static VOID CmpRemoveIndexKeyCell`).
+unsafe fn CmpRemoveIndexKeyCell(KeyIndex: *mut CM_KEY_INDEX, Index: u32) {
+    ASSERT((Index < (*KeyIndex).Count as u32) as i32);
+
+    /* Calculate the number of trailing cells */
+    let MoveCount = (*KeyIndex).Count as u32 - Index - 1;
+    if MoveCount != 0 {
+        /* Remove the cell now by moving one location ahead.
+         * List is a flexible array of HCELL_INDEX. */
+        let list = core::ptr::addr_of_mut!((*KeyIndex).List) as *mut HCELL_INDEX;
+        core::ptr::copy(
+            list.add((Index + 1) as usize),
+            list.add(Index as usize),
+            MoveCount as usize,
+        );
+    }
+
+    /* Update the key index count */
+    (*KeyIndex).Count -= 1;
+}
+
+/// Removes a cell from a key value list node (C `static VOID CmpRemoveValueFromValueList`).
+unsafe fn CmpRemoveValueFromValueList(
+    ValueListNode: *mut CM_KEY_NODE,
+    ValueListData: *mut CELL_DATA,
+    Index: u32,
+) {
+    let count_ptr =
+        core::ptr::addr_of_mut!((*ValueListNode).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count);
+    let count = core::ptr::read_unaligned(count_ptr);
+    ASSERT((Index < count) as i32);
+
+    /* Calculate the number of trailing values */
+    let MoveCount = count - Index - 1;
+    if MoveCount != 0 {
+        /* Remove the value now by moving one location ahead.
+         * KeyList is a flexible array of HCELL_INDEX. */
+        let list = core::ptr::addr_of_mut!((*ValueListData).u.KeyList) as *mut HCELL_INDEX;
+        core::ptr::copy(
+            list.add((Index + 1) as usize),
+            list.add(Index as usize),
+            MoveCount as usize,
+        );
+    }
+
+    /* Update the value list count */
+    core::ptr::write_unaligned(count_ptr, count - 1);
+}
+
+/// Removes the offending subkey from a root index (C `static BOOLEAN CmpRemoveSubkeyInRoot`).
+unsafe fn CmpRemoveSubkeyInRoot(
+    Hive: PHHIVE,
+    RootIndex: PCM_KEY_INDEX,
+    TargetKey: HCELL_INDEX,
+) -> BOOLEAN {
+    let mut Leaf: PCM_KEY_INDEX = core::ptr::null_mut();
+    let mut LeafCell: HCELL_INDEX = HCELL_NIL;
+
+    PAGED_CODE();
+
+    ASSERT((!RootIndex.is_null()) as i32);
+
+    let root_list = core::ptr::addr_of!((*RootIndex).List) as *const HCELL_INDEX;
+
+    /* Loop the root index */
+    let mut RootCountIndex: u32 = 0;
+    while RootCountIndex < (*RootIndex).Count as u32 {
+        /*
+         * Release the leaf cell from previous iteration
+         * of the loop. Make sure what we're releasing is
+         * valid to begin with.
+         */
+        if RootCountIndex != 0 {
+            ASSERT((!Leaf.is_null()) as i32);
+            ASSERT((LeafCell == *root_list.add((RootCountIndex - 1) as usize)) as i32);
+            HvReleaseCell(Hive, LeafCell);
+        }
+
+        /* Get the leaf cell and the leaf for this index */
+        LeafCell = *root_list.add(RootCountIndex as usize);
+        Leaf = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
+        if Leaf.is_null() {
+            return 0;
+        }
+
+        /* Start looping the leaf */
+        let mut LeafCountIndex: u32 = 0;
+        while LeafCountIndex < (*Leaf).Count as u32 {
+            /* Is the leaf a fast leaf or a hash one? */
+            if ((*Leaf).Signature == CM_KEY_FAST_LEAF) || ((*Leaf).Signature == CM_KEY_HASH_LEAF) {
+                /* It is one of the two, get the fast index */
+                let FastIndex = Leaf as PCM_KEY_FAST_INDEX;
+
+                /*
+                 * Is the subkey cell from the fast index the
+                 * one we're actually searching?
+                 */
+                let fi_list = core::ptr::addr_of!((*FastIndex).List) as *const CM_INDEX;
+                if (*fi_list.add(LeafCountIndex as usize)).Cell == TargetKey {
+                    HvReleaseCell(Hive, LeafCell);
+                    HvMarkCellDirty(Hive, LeafCell, 0);
+                    CmpRemoveFastIndexKeyCell(FastIndex, LeafCountIndex, 1);
+                    return 1;
+                }
+            } else {
+                /*
+                 * The leaf is neither of the two. Check if the
+                 * target offending cell is inside the leaf itself.
+                 */
+                let leaf_list = core::ptr::addr_of!((*Leaf).List) as *const HCELL_INDEX;
+                if *leaf_list.add(LeafCountIndex as usize) == TargetKey {
+                    HvReleaseCell(Hive, LeafCell);
+                    HvMarkCellDirty(Hive, LeafCell, 0);
+                    CmpRemoveIndexKeyCell(Leaf, LeafCountIndex);
+                    return 1;
+                }
+            }
+
+            LeafCountIndex += 1;
+        }
+
+        RootCountIndex += 1;
+    }
+
+    /*
+     * We have searched everywhere but we couldn't
+     * hunt the offending target key cell.
+     */
+    0
+}
+
+/// Removes the offending subkey from a leaf index (C `static BOOLEAN CmpRemoveSubKeyInLeaf`).
+unsafe fn CmpRemoveSubKeyInLeaf(
+    Hive: PHHIVE,
+    KeyNode: PCM_KEY_NODE,
+    Leaf: PCM_KEY_INDEX,
+    TargetKey: HCELL_INDEX,
+) -> BOOLEAN {
+    /* Loop the leaf index */
+    let mut LeafIndex: u32 = 0;
+    while LeafIndex < (*Leaf).Count as u32 {
+        /*
+         * Check if the main leaf is a fast leaf or a hash one.
+         */
+        if ((*Leaf).Signature == CM_KEY_FAST_LEAF) || ((*Leaf).Signature == CM_KEY_HASH_LEAF) {
+            /* It is one of the two, get the fast index */
+            let FastIndex = Leaf as PCM_KEY_FAST_INDEX;
+
+            /*
+             * Is the subkey cell from the fast index the one
+             * we're actually searching?
+             */
+            let fi_list = core::ptr::addr_of!((*FastIndex).List) as *const CM_INDEX;
+            if (*fi_list.add(LeafIndex as usize)).Cell == TargetKey {
+                let subkey_list = core::ptr::read_unaligned(core::ptr::addr_of!(
+                    (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable as usize]
+                ));
+                HvMarkCellDirty(Hive, subkey_list, 0);
+                CmpRemoveFastIndexKeyCell(FastIndex, LeafIndex, 0);
+
+                /*
+                 * Since this fast index actually came from the
+                 * actual leaf index itself, just update its count
+                 * rather than that of the fast index.
+                 */
+                (*Leaf).Count -= 1;
+                return 1;
+            }
+        } else {
+            /*
+             * The leaf is neither of the two. The offending
+             * cell must come directly from the normal leaf
+             * at this point.
+             */
+            let leaf_list = core::ptr::addr_of!((*Leaf).List) as *const HCELL_INDEX;
+            if *leaf_list.add(LeafIndex as usize) == TargetKey {
+                let subkey_list = core::ptr::read_unaligned(core::ptr::addr_of!(
+                    (*KeyNode).__bindgen_anon_1.__bindgen_anon_1.SubKeyLists[Stable as usize]
+                ));
+                HvMarkCellDirty(Hive, subkey_list, 0);
+                CmpRemoveIndexKeyCell(Leaf, LeafIndex);
+                return 1;
+            }
+        }
+
+        LeafIndex += 1;
+    }
+
+    /*
+     * We have searched everywhere but we couldn't
+     * hunt the offending target key cell.
+     */
+    0
 }

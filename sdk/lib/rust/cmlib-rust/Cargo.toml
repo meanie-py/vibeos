@@ -20,4 +20,15 @@ crate-type = ["staticlib", "rlib"]
 # Hive/cell/key types (HHIVE, HCELL_INDEX, HBIN, CELL_DATA, CM_KEY_NODE,
 # HBASE_BLOCK, …) come from the bindgen DDK layer — already present per
 # cmlib's headers, so the FFI surface needs no new hand-written types.
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+#
+# default-features = false drops the `hal_bindgen` feature. cmlib-rust does NOT
+# use hal_ddk, and the hal_bindgen modules carry `#[link(name="ntoskrnl.exe",
+# kind="raw-dylib")]` extern blocks for kernel-mode statics (MmSystemRangeStart,
+# KeServiceDescriptorTable, HalDispatchTable, KeLoaderBlock, …). When cmlib-rust
+# is linked *into* ntoskrnl.exe (kernel cohab), those raw-dylib import thunks
+# (`T Sym` + `I __imp_Sym`) collide with the kernel's own real definitions under
+# --allow-multiple-definition; lld first-match can pick the bogus zero-thunk, so
+# MM reads garbage for MmSystemRangeStart → MiAllocatePoolPages returns an
+# invalid page → BUGCHECK 0x0A in MmArmInitSystem Phase 0. freeldr-rust dodges
+# the same trap the same way. (See [[project_cmlib_rust_track]].)
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }

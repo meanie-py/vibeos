@@ -76,9 +76,11 @@ fn main() {
         // the cmake-copied libcntpr_rust.a.
     ]);
 
-    // blcmlib's 13 C sources compiled in-cargo (compile_commands.json replay,
-    // flag-exact incl. _BLDR_ + cmlib.h PCH) — symbol-identical libblcmlib.a
-    // without `ninja blcmlib`. See sdk/lib/cmlib/CMakeLists.txt.
+    // blcmlib's 13 C sources compiled in-cargo (compile_commands.json replay).
+    // Loader keeps the reduced `_BLDR_` C variant; the kernel cmlib cohab is
+    // fully Rust, but the loader's full-crate swap is deferred (cmlib-rust's
+    // CmCheckRegistry validation path hangs the bootloader; needs a `bldr`
+    // feature gating it out first). See uefildr-cargo/build.rs note.
     const BLCMLIB_C: &[&str] = &[
         "sdk/lib/cmlib/cmcheck.c",
         "sdk/lib/cmlib/cminit.c",
@@ -147,8 +149,8 @@ fn main() {
         // cmboot-rust (freeldr-rust dep) + cnt-rust/cnt-ctype (cnt-rust-lib
         // path-deps) — watch so an edit re-runs build.rs.
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
-        // blcmlib C compiled in-cargo (compile_commands.json replay) — drops the
-        // cmake libblcmlib.a reuse. C-archive position (before rust libs).
+        // blcmlib C compiled in-cargo (compile_commands.json replay) — loader
+        // keeps the reduced _BLDR_ C variant (loader swap deferred, see above).
         .c_from_compile_db("blcmlib", BLCMLIB_C)
         // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.

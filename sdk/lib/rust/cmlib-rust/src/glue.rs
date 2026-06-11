@@ -69,14 +69,73 @@ pub fn round_up(a: u32, b: u32) -> u32 {
     ((a + b - 1) / b) * b
 }
 
-extern "C" {
-    // cdecl (no @N decoration on i386)
-    pub fn HvGetCell(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
-    pub fn HvReleaseCell(Hive: PHHIVE, Cell: HCELL_INDEX);
+// ── cmlib.h MACROS, as crate-local inlines ────────────────────────────────
+// `HvGetCell`/`HvReleaseCell` are the cmlib.h macros
+// `(Hive)->GetCellRoutine(Hive, Cell)` / `(Hive)->ReleaseCellRoutine(...)` —
+// NOT real exported symbols. In the kernel ntoskrnl/config/inlines.rs exports a
+// real one; the loader's blcmlib has none (the C loader inlined the macro). We
+// provide crate-local inlines (NOT #[no_mangle]) so every cmlib-rust call site
+// inlines the function-pointer dispatch and needs NO external symbol on either
+// the kernel OR the loader link — identical to cmboot-rust's local copy.
+// Modules MUST `use crate::glue::{HvGetCell, HvReleaseCell, ...}` and must NOT
+// re-declare these as `extern` (that would reference a non-existent symbol).
+#[inline]
+pub(crate) unsafe fn HvGetCell(hive: PHHIVE, cell: HCELL_INDEX) -> *mut core::ffi::c_void {
+    if let Some(get) = (*hive).GetCellRoutine {
+        get(hive, cell) as *mut core::ffi::c_void
+    } else {
+        core::ptr::null_mut()
+    }
 }
 
+#[inline]
+pub(crate) unsafe fn HvReleaseCell(hive: PHHIVE, cell: HCELL_INDEX) {
+    if let Some(release) = (*hive).ReleaseCellRoutine {
+        release(hive, cell);
+    }
+}
+
+// HvGetCellType / HvGetCellBlock — hivedata.h bitfield macros over HCELL_INDEX.
+#[inline]
+pub(crate) fn HvGetCellType(cell: HCELL_INDEX) -> u32 {
+    (cell & 0x8000_0000) >> 31
+}
+#[inline]
+pub(crate) fn HvGetCellBlock(cell: HCELL_INDEX) -> u32 {
+    (cell & 0x7fff_f000) >> 12
+}
+
+// IsFreeCell(Cell) — hivedata.h:360 `((Cell)->Size >= 0)`.
+#[inline]
+pub(crate) unsafe fn IsFreeCell(cell: *const HCELL) -> bool {
+    (*cell).Size >= 0
+}
+
+// CmpIsKeyValueSmall — cmlib.h:393 static inline. Returns TRUE if the value is
+// "small" (data inlined into the cell) and writes the real length.
+#[inline]
+pub(crate) unsafe fn CmpIsKeyValueSmall(real_length: *mut u32, length: u32) -> bool {
+    const CM_KEY_VALUE_SPECIAL_SIZE: u32 = 0x8000_0000;
+    if length >= CM_KEY_VALUE_SPECIAL_SIZE {
+        *real_length = length - CM_KEY_VALUE_SPECIAL_SIZE;
+        true
+    } else {
+        *real_length = length;
+        false
+    }
+}
+
+// ASSERT / PAGED_CODE — debug macros, no-ops in the NDEBUG cmlib build. Provided
+// as crate-local no-ops so translated bodies that call them need no extern sym.
+#[inline]
+pub(crate) fn ASSERT(_cond: bool) {}
+#[inline]
+pub(crate) fn PAGED_CODE() {}
+
 extern "system" {
-    // stdcall (_Name@N on i386), cdecl on amd64/arm64
+    // Real cmlib functions defined IN this crate (hivecell.rs). stdcall (_Name@N
+    // on i386), cdecl on amd64/arm64. Declared here so other modules call them
+    // with the correct ABI; they resolve intra-crate to the hivecell.rs defs.
     pub fn HvAllocateCell(
         Hive: PHHIVE,
         Size: u32,
@@ -85,4 +144,6 @@ extern "system" {
     ) -> HCELL_INDEX;
     pub fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
     pub fn HvMarkCellDirty(Hive: PHHIVE, Cell: HCELL_INDEX, HoldBufferLock: u8) -> u8;
+    pub fn HvGetCellSize(Hive: PHHIVE, Address: *mut core::ffi::c_void) -> i32;
+    pub fn HvpGetCellData(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
 }

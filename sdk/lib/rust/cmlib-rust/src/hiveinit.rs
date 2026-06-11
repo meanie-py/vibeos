@@ -50,15 +50,18 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, FILE_STANDARD_INFORMATION, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _IO_STATUS_BLOCK, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE, _FILE_INFORMATION_CLASS};
+use ntkrnl_sys::ddk::{CELL_DATA, CM_KEY_NODE, CmIsSelfHealEnabled, FILE_STANDARD_INFORMATION, HBASE_BLOCK, HBIN, HCELL_INDEX, HHIVE, HMAP_ENTRY, PCELL_DATA, PCMHIVE, PCUNICODE_STRING, PFILE_FLUSH_ROUTINE, PFILE_READ_ROUTINE, PFILE_SET_SIZE_ROUTINE, PFILE_WRITE_ROUTINE, PFREE_ROUTINE, PHBASE_BLOCK, PHBIN, PHHIVE, PLARGE_INTEGER, HSTORAGE_TYPE_Stable as Stable, TimeStamp, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _IO_STATUS_BLOCK, _UNICODE_STRING, LARGE_INTEGER, PALLOCATE_ROUTINE, _FILE_INFORMATION_CLASS, ZwQueryInformationFile, _FILE_INFORMATION_CLASS_FileStandardInformation};
 use crate::glue::*;
 use crate::hivewrt::HvSyncHiveFromRecover;
 use core::ffi::c_void;
 
-// Pointer-width integer matching ULONG_PTR/SIZE_T on all arches
+// Pointer-width integer matching ULONG_PTR/SIZE_T on all arches.
+// (Kept for reference; bodies use `usize` directly to match SIZE_T/ULONG_PTR.)
 #[cfg(target_pointer_width = "32")]
+#[allow(dead_code)]
 type PtrInt = u32;
 #[cfg(target_pointer_width = "64")]
+#[allow(dead_code)]
 type PtrInt = u64;
 
 // File-local enum from hiveinit.c:17 (`typedef enum _RESULT`). Variant order is
@@ -91,27 +94,612 @@ enum RESULT {
     SelfHeal,
 }
 
+// ── hivedata.h constants used by the translated bodies below ────────────────
+const HSECTOR_SIZE: u32 = 0x200;
+const HIVE_FILENAME_MAXLEN: usize = 31;
+const HV_LOG_DIRTY_BLOCK: u8 = 0xFF;
+const HV_LOG_DIRTY_SIGNATURE: u32 = 0x5452_4944; // "DIRT"
+const HBOOT_BOOT_RECOVERED_BY_ALTERNATE_HIVE: u32 = 2;
+// HV_LOG_HEADER_SIZE = FIELD_OFFSET(HBASE_BLOCK, Reserved2)
+const HV_LOG_HEADER_SIZE: u32 = core::mem::offset_of!(HBASE_BLOCK, Reserved2) as u32;
+
+// Real cmlib functions defined IN this crate (correct ABI). HvpHiveHeaderChecksum
+// lives in hivesum.rs; HvpCreateHiveFreeCellList lives in its owning module.
+// HvpRecoverHeaderFromLog / HvpQueryHiveSize are defined below in THIS file (the
+// non-amd64 self-heal pair), so they're no longer declared extern here.
+// Declared "system" to match CMAPI=NTAPI=stdcall on i386.
 extern "system" {
-    fn HvpInitializeMemoryHive(Hive: PHHIVE, ChunkBase: PHBASE_BLOCK, FileName: PCUNICODE_STRING) -> NTSTATUS;
-}
-unsafe extern "C" {
-    fn DPRINT1(fmt: *const i8, ...);
-    unsafe fn HvpAllocBaseBlockAligned(Hive: *mut HHIVE, Paged: i32, Tag: u32) -> *mut HBASE_BLOCK;
-    unsafe fn HvpInitFileName(BaseBlock: *mut HBASE_BLOCK, FileName: *const _UNICODE_STRING) ;
-    fn HvpHiveHeaderChecksum(BaseBlock: *mut HBASE_BLOCK) -> u32;
-    fn HvpCreateHiveFreeCellList(Hive: *mut HHIVE) -> i32;
-    fn HvpFreeHiveBins(Hive: *mut HHIVE);
-}
-unsafe extern "C" {
-    fn ZwQueryInformationFile( FileHandle: HANDLE, IoStatusBlock: *mut _IO_STATUS_BLOCK, FileInformation: *mut core::ffi::c_void, Length: u32, FileInformationClass: _FILE_INFORMATION_CLASS, ) -> NTSTATUS;
-    fn HvpVerifyHiveHeader(BaseBlock: *mut HBASE_BLOCK, FileType: u32) -> u8;
+    fn HvpHiveHeaderChecksum(BaseBlock: PHBASE_BLOCK) -> u32;
+    fn HvpCreateHiveFreeCellList(Hive: PHHIVE) -> NTSTATUS;
+    fn HvpGetCellData(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
 }
 
-extern "system" {
-    fn HvpGetCellData(Hive: PHHIVE, Cell: HCELL_INDEX) -> *mut core::ffi::c_void;
-    fn HvpGetHiveHeader(Hive: PHHIVE, BaseBlock: *mut PHBASE_BLOCK, TimeStamp: *mut LARGE_INTEGER) -> RESULT;
-    fn HvpRecoverDataFromLog(Hive: PHHIVE, BaseBlock: PHBASE_BLOCK) -> RESULT;
+/// Validates the base block header of a registry file (hive or log). C: HvpVerifyHiveHeader.
+#[no_mangle]
+pub unsafe extern "system" fn HvpVerifyHiveHeader(
+    BaseBlock: PHBASE_BLOCK,
+    FileType: u32,
+) -> BOOLEAN {
+    if (*BaseBlock).Signature != HV_HBLOCK_SIGNATURE
+        || (*BaseBlock).Major != HSYS_MAJOR
+        || (*BaseBlock).Minor < HSYS_MINOR
+        || (*BaseBlock).Type != FileType
+        || (*BaseBlock).Format != HBASE_FORMAT_MEMORY
+        || (*BaseBlock).Cluster != 1
+        || (*BaseBlock).Sequence1 != (*BaseBlock).Sequence2
+        || HvpHiveHeaderChecksum(BaseBlock) != (*BaseBlock).CheckSum
+    {
+        return 0; // FALSE
+    }
+
+    1 // TRUE
 }
+
+/// Frees all the bins within storage space associated with a hive descriptor.
+/// C: HvpFreeHiveBins.
+#[no_mangle]
+pub unsafe extern "system" fn HvpFreeHiveBins(Hive: PHHIVE) {
+    let free = (*Hive).Free.unwrap();
+
+    let mut Storage: u32 = 0;
+    while Storage < (*Hive).StorageTypeCount {
+        let mut Bin: PHBIN = core::ptr::null_mut();
+        let storage = &mut (*Hive).Storage[Storage as usize];
+        let mut i: u32 = 0;
+        while i < storage.Length {
+            // storage.BlockList is a PHMAP_ENTRY array; index via pointer arith.
+            let entry = storage.BlockList.add(i as usize);
+            if (*entry).BinAddress == 0 {
+                i += 1;
+                continue;
+            }
+            if (*entry).BinAddress != Bin as _ {
+                Bin = (*entry).BinAddress as PHBIN;
+                free((*entry).BinAddress as *mut c_void, 0);
+            }
+            (*entry).BinAddress = 0;
+            (*entry).BlockAddress = 0;
+            i += 1;
+        }
+
+        if storage.Length != 0 {
+            free(storage.BlockList as *mut c_void, 0);
+        }
+        Storage += 1;
+    }
+}
+
+/// Allocates a cluster-aligned hive base header block. C: static __inline
+/// HvpAllocBaseBlockAligned — private here (no #[no_mangle]).
+unsafe fn HvpAllocBaseBlockAligned(
+    Hive: PHHIVE,
+    Paged: BOOLEAN,
+    Tag: u32,
+) -> PHBASE_BLOCK {
+    let allocate = (*Hive).Allocate.unwrap();
+    let free = (*Hive).Free.unwrap();
+
+    // ASSERT(sizeof(HBASE_BLOCK) >= (HSECTOR_SIZE * Hive->Cluster));
+    ASSERT(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
+
+    /* Allocate the buffer */
+    let mut BaseBlock: PHBASE_BLOCK =
+        allocate((*Hive).BaseBlockAlloc as _, Paged, Tag) as PHBASE_BLOCK;
+    if BaseBlock.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    /* Check for, and enforce, alignment */
+    let Alignment: usize = (*Hive).Cluster as usize * HSECTOR_SIZE as usize - 1;
+    if (BaseBlock as usize) & Alignment != 0 {
+        /* Free the old header and reallocate a new one, always paged */
+        free(BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+        BaseBlock = allocate(PAGE_SIZE as _, 1u8 /* TRUE */, Tag) as PHBASE_BLOCK;
+        if BaseBlock.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        (*Hive).BaseBlockAlloc = PAGE_SIZE as u32;
+    }
+
+    BaseBlock
+}
+
+/// Initializes a NULL-terminated Unicode hive file name of a hive header by
+/// copying the last 31 characters of the hive file name. C: static
+/// HvpInitFileName — private here (no #[no_mangle]).
+unsafe fn HvpInitFileName(
+    BaseBlock: PHBASE_BLOCK,
+    FileName: PCUNICODE_STRING,
+) {
+    /* Always NULL-initialize */
+    RtlZeroMemory(
+        core::ptr::addr_of_mut!((*BaseBlock).FileName) as *mut c_void,
+        (HIVE_FILENAME_MAXLEN + 1) * core::mem::size_of::<u16>(),
+    );
+
+    /* Copy the 31 last characters of the hive file name if any */
+    if FileName.is_null() {
+        return;
+    }
+
+    let fn_length = (*FileName).Length as usize; // bytes
+    let Offset: usize;
+    let Length: usize; // bytes
+    if fn_length / core::mem::size_of::<u16>() <= HIVE_FILENAME_MAXLEN {
+        Offset = 0;
+        Length = fn_length;
+    } else {
+        Offset = fn_length / core::mem::size_of::<u16>() - HIVE_FILENAME_MAXLEN;
+        Length = HIVE_FILENAME_MAXLEN * core::mem::size_of::<u16>();
+    }
+
+    RtlCopyMemory(
+        core::ptr::addr_of_mut!((*BaseBlock).FileName) as *mut c_void,
+        (*FileName).Buffer.add(Offset) as *const c_void,
+        Length,
+    );
+}
+
+/// Initializes a hive descriptor from an already loaded registry hive in
+/// memory; data is copied and prepared for read/write access. C:
+/// HvpInitializeMemoryHive.
+#[no_mangle]
+pub unsafe extern "system" fn HvpInitializeMemoryHive(
+    Hive: PHHIVE,
+    ChunkBase: PHBASE_BLOCK,
+    FileName: PCUNICODE_STRING,
+) -> NTSTATUS {
+    let allocate = (*Hive).Allocate.unwrap();
+    let free = (*Hive).Free.unwrap();
+
+    let ChunkSize: usize = (*ChunkBase).Length as usize;
+
+    if ChunkSize < core::mem::size_of::<HBASE_BLOCK>()
+        || HvpVerifyHiveHeader(ChunkBase, HFILE_TYPE_PRIMARY) == 0
+    {
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    /* Allocate the base block */
+    (*Hive).BaseBlock = HvpAllocBaseBlockAligned(Hive, 0 /* FALSE */, TAG_CM);
+    if (*Hive).BaseBlock.is_null() {
+        return STATUS_NO_MEMORY;
+    }
+
+    RtlCopyMemory(
+        (*Hive).BaseBlock as *mut c_void,
+        ChunkBase as *const c_void,
+        core::mem::size_of::<HBASE_BLOCK>(),
+    );
+
+    /* Setup hive data */
+    (*Hive).Version = (*ChunkBase).Minor;
+
+    /*
+     * Build a block list from the in-memory chunk and copy the data as we go.
+     */
+    (*Hive).Storage[Stable as usize].Length = (ChunkSize / HBLOCK_SIZE as usize) as u32;
+    (*Hive).Storage[Stable as usize].BlockList = allocate(
+        ((*Hive).Storage[Stable as usize].Length as usize
+            * core::mem::size_of::<HMAP_ENTRY>()) as _,
+        0, /* FALSE */
+        TAG_CM,
+    ) as *mut HMAP_ENTRY;
+    if (*Hive).Storage[Stable as usize].BlockList.is_null() {
+        free((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+        return STATUS_NO_MEMORY;
+    }
+
+    let block_list = (*Hive).Storage[Stable as usize].BlockList;
+
+    let mut BlockIndex: usize = 0;
+    while BlockIndex < (*Hive).Storage[Stable as usize].Length as usize {
+        let Bin: PHBIN = ((ChunkBase as usize)
+            + (BlockIndex + 1) * HBLOCK_SIZE as usize)
+            as PHBIN;
+        if (*Bin).Signature != HV_HBIN_SIGNATURE
+            || ((*Bin).Size % HBLOCK_SIZE) != 0
+            || ((*Bin).FileOffset / HBLOCK_SIZE) != BlockIndex as u32
+        {
+            /*
+             * Bin is toast but luckily either the signature, size or offset is
+             * out of order. Self-heal it if enabled, otherwise bail.
+             */
+            if CmIsSelfHealEnabled(0 /* FALSE */) == 0 {
+                free((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
+                free((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+                return STATUS_REGISTRY_CORRUPT;
+            }
+
+            /* Fix this bin */
+            (*Bin).Signature = HV_HBIN_SIGNATURE;
+            (*Bin).Size = HBLOCK_SIZE;
+            (*Bin).FileOffset = BlockIndex as u32 * HBLOCK_SIZE;
+            (*ChunkBase).BootType |= HBOOT_TYPE_SELF_HEAL;
+        }
+
+        let NewBin: PHBIN = allocate((*Bin).Size as _, 1 /* TRUE */, TAG_CM) as PHBIN;
+        if NewBin.is_null() {
+            free((*Hive).Storage[Stable as usize].BlockList as *mut c_void, 0);
+            free((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+            return STATUS_NO_MEMORY;
+        }
+
+        let entry0 = block_list.add(BlockIndex);
+        (*entry0).BinAddress = NewBin as _;
+        (*entry0).BlockAddress = NewBin as _;
+
+        RtlCopyMemory(
+            NewBin as *mut c_void,
+            Bin as *const c_void,
+            (*Bin).Size as usize,
+        );
+
+        if (*Bin).Size > HBLOCK_SIZE {
+            let mut i: u32 = 1;
+            while i < (*Bin).Size / HBLOCK_SIZE {
+                let entry = block_list.add(BlockIndex + i as usize);
+                (*entry).BinAddress = NewBin as _;
+                (*entry).BlockAddress =
+                    ((NewBin as usize) + (i as usize * HBLOCK_SIZE as usize)) as _;
+                i += 1;
+            }
+        }
+
+        BlockIndex += ((*Bin).Size / HBLOCK_SIZE) as usize;
+    }
+
+    if HvpCreateHiveFreeCellList(Hive) < 0 {
+        HvpFreeHiveBins(Hive);
+        free((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+        return STATUS_NO_MEMORY;
+    }
+
+    // BitmapSize = ROUND_UP(Length, sizeof(ULONG)*8) / 8;
+    let BitmapSize: u32 =
+        round_up((*Hive).Storage[Stable as usize].Length, core::mem::size_of::<u32>() as u32 * 8)
+            / 8;
+    let BitmapBuffer = allocate(BitmapSize as _, 1 /* TRUE */, TAG_CM) as *mut u32;
+    if BitmapBuffer.is_null() {
+        HvpFreeHiveBins(Hive);
+        free((*Hive).BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+        return STATUS_NO_MEMORY;
+    }
+
+    RtlInitializeBitMap(
+        core::ptr::addr_of_mut!((*Hive).DirtyVector) as *mut RTL_BITMAP,
+        BitmapBuffer,
+        BitmapSize * 8,
+    );
+    RtlClearAllBits(core::ptr::addr_of_mut!((*Hive).DirtyVector) as *mut RTL_BITMAP);
+
+    /*
+     * Mark the entire hive as dirty if we charged up the alternate variant of
+     * the primary hive (e.g. SYSTEM.ALT).
+     */
+    if (*ChunkBase).BootRecover == HBOOT_BOOT_RECOVERED_BY_ALTERNATE_HIVE {
+        RtlSetAllBits(core::ptr::addr_of_mut!((*Hive).DirtyVector) as *mut RTL_BITMAP);
+        (*Hive).DirtyCount = (*Hive).DirtyVector.SizeOfBitMap;
+    }
+
+    HvpInitFileName((*Hive).BaseBlock, FileName);
+
+    STATUS_SUCCESS
+}
+
+/// Retrieves the base block hive header from the primary hive file in backing
+/// storage. C: HvpGetHiveHeader.
+#[no_mangle]
+pub unsafe extern "system" fn HvpGetHiveHeader(
+    Hive: PHHIVE,
+    HiveBaseBlock: *mut PHBASE_BLOCK,
+    TimeStamp: *mut LARGE_INTEGER,
+) -> RESULT {
+    let free = (*Hive).Free.unwrap();
+    let file_read = (*Hive).FileRead.unwrap();
+
+    ASSERT(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
+
+    /* Assume failure and allocate the base block */
+    *HiveBaseBlock = core::ptr::null_mut();
+    let BaseBlock: PHBASE_BLOCK = HvpAllocBaseBlockAligned(Hive, 1 /* TRUE */, TAG_CM);
+    if BaseBlock.is_null() {
+        return RESULT::NoMemory;
+    }
+
+    /* Clear it */
+    RtlZeroMemory(
+        BaseBlock as *mut c_void,
+        core::mem::size_of::<HBASE_BLOCK>(),
+    );
+
+    /* Now read it from disk */
+    let mut FileOffset: u32 = 0;
+    let mut Result = file_read(
+        Hive,
+        HFILE_TYPE_PRIMARY,
+        &mut FileOffset,
+        BaseBlock as *mut c_void,
+        ((*Hive).Cluster * HSECTOR_SIZE) as _,
+    );
+    if Result == 0 {
+        /*
+         * Try to read the first block of the first bin hive so we can somewhat
+         * recover this hive.
+         */
+        FileOffset = HBLOCK_SIZE;
+        Result = file_read(
+            Hive,
+            HFILE_TYPE_PRIMARY,
+            &mut FileOffset,
+            BaseBlock as *mut c_void,
+            ((*Hive).Cluster * HSECTOR_SIZE) as _,
+        );
+        if Result == 0 {
+            free(BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+            return RESULT::NotHive;
+        }
+
+        /*
+         * Deconstruct the casted buffer into a hive bin. The first bin's offset
+         * must be 0 and it must have a sane signature.
+         */
+        let FirstBin: PHBIN = BaseBlock as PHBIN;
+        if (*FirstBin).Signature != HV_HBIN_SIGNATURE || (*FirstBin).FileOffset != 0 {
+            free(BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+            return RESULT::NotHive;
+        }
+
+        /* There's still hope: acknowledge the header needs recovery. */
+        *TimeStamp = (*BaseBlock).TimeStamp;
+        return RESULT::RecoverHeader;
+    }
+
+    /*
+     * The base block isn't maimed but is the header data valid?
+     */
+    if HvpVerifyHiveHeader(BaseBlock, HFILE_TYPE_PRIMARY) == 0 {
+        *TimeStamp = (*BaseBlock).TimeStamp;
+        free(BaseBlock as *mut c_void, (*Hive).BaseBlockAlloc);
+        return RESULT::RecoverHeader;
+    }
+
+    /* Return information */
+    *HiveBaseBlock = BaseBlock;
+    *TimeStamp = (*BaseBlock).TimeStamp;
+    RESULT::HiveSuccess
+}
+
+/// Recovers the registry data by obtaining it from a log associated with the
+/// hive. C: HvpRecoverDataFromLog (only compiled when !defined(_M_AMD64)).
+#[cfg(not(target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "system" fn HvpRecoverDataFromLog(
+    Hive: PHHIVE,
+    BaseBlock: PHBASE_BLOCK,
+) -> RESULT {
+    let file_read = (*Hive).FileRead.unwrap();
+    let file_write = (*Hive).FileWrite.unwrap();
+
+    let mut DirtyVector: [u8; HSECTOR_SIZE as usize] = [0; HSECTOR_SIZE as usize];
+    let mut Buffer: [u8; HBLOCK_SIZE as usize] = [0; HBLOCK_SIZE as usize];
+
+    /* Read the dirty data from the log */
+    let mut FileOffset: u32 = HV_LOG_HEADER_SIZE;
+    let mut Success = file_read(
+        Hive,
+        HFILE_TYPE_LOG,
+        &mut FileOffset,
+        DirtyVector.as_mut_ptr() as *mut c_void,
+        HSECTOR_SIZE as _,
+    );
+    if Success == 0 {
+        if CmIsSelfHealEnabled(0 /* FALSE */) == 0 {
+            return RESULT::Fail;
+        }
+        /* Nothing else to do: trigger self-heal, accept potential data loss. */
+        return RESULT::SelfHeal;
+    }
+
+    /* Check the dirty vector */
+    if *(DirtyVector.as_ptr() as *const u32) != HV_LOG_DIRTY_SIGNATURE {
+        if CmIsSelfHealEnabled(0 /* FALSE */) == 0 {
+            return RESULT::Fail;
+        }
+        return RESULT::SelfHeal;
+    }
+
+    /* Now read each dirty block individually and write it back to hive */
+    let mut LogIndex: u32 = 0;
+    let StorageLength: u32 = (*BaseBlock).Length / HBLOCK_SIZE;
+    let mut BlockIndex: u32 = 0;
+    while BlockIndex < StorageLength {
+        /* Skip this block if it's not dirty */
+        if DirtyVector
+            [(BlockIndex as usize) + core::mem::size_of::<u32>()]
+            != HV_LOG_DIRTY_BLOCK
+        {
+            BlockIndex += 1;
+            continue;
+        }
+
+        FileOffset = HSECTOR_SIZE + HSECTOR_SIZE + LogIndex * HBLOCK_SIZE;
+        Success = file_read(
+            Hive,
+            HFILE_TYPE_LOG,
+            &mut FileOffset,
+            Buffer.as_mut_ptr() as *mut c_void,
+            HBLOCK_SIZE as _,
+        );
+        if Success == 0 {
+            return RESULT::Fail;
+        }
+
+        FileOffset = HBLOCK_SIZE + BlockIndex * HBLOCK_SIZE;
+        Success = file_write(
+            Hive,
+            HFILE_TYPE_PRIMARY,
+            &mut FileOffset,
+            Buffer.as_mut_ptr() as *mut c_void,
+            HBLOCK_SIZE as _,
+        );
+        if Success == 0 {
+            return RESULT::Fail;
+        }
+
+        /* Increment the index in log as we continue further */
+        LogIndex += 1;
+        BlockIndex += 1;
+    }
+
+    RESULT::HiveSuccess
+}
+
+/// Computes the hive space size by querying the file size of the associated hive
+/// file. C: HvpQueryHiveSize (only compiled when !defined(_M_AMD64); kernel build
+/// path, i.e. !CMLIB_HOST && !_BLDR_).
+#[cfg(not(target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "system" fn HvpQueryHiveSize(Hive: PHHIVE) -> u32 {
+    let mut FileStandard: FILE_STANDARD_INFORMATION = core::mem::zeroed();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut HiveSize: u32 = 0;
+
+    /*
+     * Query the file size of the physical hive file. We need that information in
+     * order to ensure how big the hive actually is.
+     */
+    let Status = ZwQueryInformationFile(
+        (*(Hive as PCMHIVE)).FileHandles[HFILE_TYPE_PRIMARY as usize],
+        &mut IoStatusBlock,
+        core::ptr::addr_of_mut!(FileStandard) as *mut c_void,
+        core::mem::size_of::<FILE_STANDARD_INFORMATION>() as u32,
+        _FILE_INFORMATION_CLASS_FileStandardInformation as _,
+    );
+    if Status < 0 {
+        return HiveSize;
+    }
+
+    /* Now compute the hive size */
+    HiveSize = FileStandard.EndOfFile.u.LowPart - HBLOCK_SIZE;
+    HiveSize
+}
+
+/// Recovers the base block header by obtaining it from a log file associated with
+/// the hive. C: HvpRecoverHeaderFromLog (only compiled when !defined(_M_AMD64)).
+#[cfg(not(target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "system" fn HvpRecoverHeaderFromLog(
+    Hive: PHHIVE,
+    TimeStamp: *mut LARGE_INTEGER,
+    BaseBlock: *mut PHBASE_BLOCK,
+) -> RESULT {
+    let free = (*Hive).Free.unwrap();
+    let file_read = (*Hive).FileRead.unwrap();
+    let file_write = (*Hive).FileWrite.unwrap();
+
+    /*
+     * The cluster must not be greater than what the base block can permit.
+     */
+    ASSERT(core::mem::size_of::<HBASE_BLOCK>() as u32 >= HSECTOR_SIZE * (*Hive).Cluster);
+
+    /* Assume we haven't resuscitated the header */
+    let mut HeaderResuscitated: BOOLEAN = 0;
+
+    /* Allocate an aligned buffer for the log header */
+    let LogHeader: PHBASE_BLOCK = HvpAllocBaseBlockAligned(Hive, 1 /* TRUE */, TAG_CM);
+    if LogHeader.is_null() {
+        return RESULT::NoMemory;
+    }
+
+    /* Zero out our header buffer */
+    RtlZeroMemory(LogHeader as *mut c_void, HSECTOR_SIZE as usize);
+
+    /* Get the base header from the log */
+    let mut FileOffset: u32 = 0;
+    let mut Success = file_read(
+        Hive,
+        HFILE_TYPE_LOG,
+        &mut FileOffset,
+        LogHeader as *mut c_void,
+        ((*Hive).Cluster * HSECTOR_SIZE) as _,
+    );
+    if Success == 0
+        || HvpVerifyHiveHeader(LogHeader, HFILE_TYPE_LOG) == 0
+        || (*TimeStamp).u.HighPart != (*LogHeader).TimeStamp.u.HighPart
+        || (*TimeStamp).u.LowPart != (*LogHeader).TimeStamp.u.LowPart
+    {
+        /*
+         * We failed to read the base block header from the log, or the header
+         * itself or timestamp is invalid. Check if self healing is enabled.
+         */
+        if CmIsSelfHealEnabled(0 /* FALSE */) == 0 {
+            free(LogHeader as *mut c_void, (*Hive).BaseBlockAlloc);
+            return RESULT::Fail;
+        }
+
+        /*
+         * Determine the size of this hive so that we can estabilish the length of
+         * the base block we are trying to resuscitate.
+         */
+        let HiveSize: u32 = HvpQueryHiveSize(Hive);
+        if HiveSize == 0 {
+            free(LogHeader as *mut c_void, (*Hive).BaseBlockAlloc);
+            return RESULT::Fail;
+        }
+
+        /*
+         * We can still resuscitate the base header if we could not grab one from
+         * the log by reconstructing the header internals by hand (this assumes the
+         * root cell is not NIL nor damaged).
+         */
+        (*LogHeader).Signature = HV_HBLOCK_SIGNATURE;
+        (*LogHeader).Sequence1 = 1;
+        (*LogHeader).Sequence2 = 1;
+        (*LogHeader).Cluster = 1;
+        (*LogHeader).Length = HiveSize;
+        (*LogHeader).CheckSum = HvpHiveHeaderChecksum(LogHeader);
+
+        /* Acknowledge that we have resuscitated the header. */
+        HeaderResuscitated = 1;
+    }
+
+    /*
+     * Tag this log header as a primary hive before writing it to the hive.
+     */
+    (*LogHeader).Type = HFILE_TYPE_PRIMARY;
+
+    /*
+     * If we have not made attempts of recovering the header due to log corruption
+     * then we have to compute the checksum. This is already done when the header
+     * has been resuscitated so don't try to do it twice.
+     */
+    if HeaderResuscitated == 0 {
+        (*LogHeader).CheckSum = HvpHiveHeaderChecksum(LogHeader);
+    }
+
+    /* Write the header back to hive now */
+    Success = file_write(
+        Hive,
+        HFILE_TYPE_PRIMARY,
+        &mut FileOffset,
+        LogHeader as *mut c_void,
+        ((*Hive).Cluster * HSECTOR_SIZE) as _,
+    );
+    if Success == 0 {
+        free(LogHeader as *mut c_void, (*Hive).BaseBlockAlloc);
+        return RESULT::Fail;
+    }
+
+    *BaseBlock = LogHeader;
+    if HeaderResuscitated != 0 {
+        RESULT::SelfHeal
+    } else {
+        RESULT::HiveSuccess
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn HvpCreateHive(
     RegistryHive: PHHIVE,
@@ -121,7 +709,7 @@ pub unsafe extern "system" fn HvpCreateHive(
     let mut Index: u32;
 
     /* Allocate the base block */
-    BaseBlock = HvpAllocBaseBlockAligned(RegistryHive, 0i32, TAG_CM);
+    BaseBlock = HvpAllocBaseBlockAligned(RegistryHive, 0 /* FALSE */, TAG_CM);
     if BaseBlock.is_null() {
         return STATUS_NO_MEMORY;
     }
@@ -172,7 +760,9 @@ pub unsafe extern "system" fn HvpInitializeFlatHive(
 ) -> i32 {
     if HvpVerifyHiveHeader(ChunkBase, HFILE_TYPE_PRIMARY) == 0 {
         return STATUS_REGISTRY_CORRUPT;
-    } // Setup hive data (*Hive).BaseBlock = ChunkBase;
+    }
+    // Setup hive data
+    (*Hive).BaseBlock = ChunkBase;
     (*Hive).Version = (*ChunkBase).Minor;
     (*Hive).Flat = 1;
     (*Hive).ReadOnly = 1;
@@ -215,14 +805,14 @@ pub unsafe extern "system" fn HvLoadHive(
     /* Setup hive data */ (*Hive).BaseBlock = BaseBlock;
     (*Hive).Version = (*BaseBlock).Minor;
     /* Allocate a buffer large enough to hold the hive */ FileSize = HBLOCK_SIZE + (*BaseBlock).Length; // == sizeof(HBASE_BLOCK) + BaseBlock->Length;
-    HiveData = ((*Hive).Allocate.unwrap())(FileSize as PtrInt, 1u8, TAG_CM); // TRUE -> 1
+    HiveData = ((*Hive).Allocate.unwrap())(FileSize as _, 1u8, TAG_CM); // TRUE -> 1
     if HiveData.is_null() {
         ((*Hive).Free.unwrap())(BaseBlock as *mut core::ffi::c_void, (*Hive).BaseBlockAlloc);
         // DPRINT removed
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     // HACK: Now read the whole hive
-    Success = ((*Hive).FileRead.unwrap())(Hive, HFILE_TYPE_PRIMARY, &mut Offset, HiveData, FileSize as PtrInt);
+    Success = ((*Hive).FileRead.unwrap())(Hive, HFILE_TYPE_PRIMARY, &mut Offset, HiveData, FileSize as _);
     if Success == 0 {
         // FALSE // DPRINT removed
         ((*Hive).Free.unwrap())(HiveData, FileSize);
