@@ -1,7 +1,16 @@
 # i386 taskbar deadlock — handoff
 
-**Status:** root cause localized to a kernel-wait deadlock inside explorer's
-tray-window creation; exact lock/fault NOT yet pinned. The font/watermark
+> **✅ RESOLVED 2026-06-10 (commit `b8e5c218784`, via Codex).** Not a lock at all:
+> `reactos-link` built i386 **user-mode** Rust from the build dir, missing
+> `sdk/lib/rust/.cargo/config.toml`'s `-C target-feature=-sse,-sse2`, so ntdll-rust
+> emitted SSE (`xorps`/`movups`). In the win32k callback path explorer hit
+> `STATUS_ILLEGAL_INSTRUCTION` → `DbgkForwardException` → `LpcRequestWaitReplyPort`
+> (the "kernel wait" below). Fix restates `-sse,-sse2` for i386 user-mode crates.
+> i386 boots with taskbar + watermark; smoke green. The rest of this doc is the
+> historical hunt that localized it — kept for the technique.
+
+**Status (historical):** root cause localized to a kernel-wait deadlock inside
+explorer's tray-window creation; exact lock/fault NOT yet pinned. The font/watermark
 regression that shared this task is **fixed** (separate commit). This doc hands
 off the *taskbar* deadlock.
 
