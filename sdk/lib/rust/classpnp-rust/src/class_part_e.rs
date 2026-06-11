@@ -17,7 +17,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{
     IoInitializeIrp, IoFreeMdl, IoFreeIrp, MmUnlockPages, KeSetEvent, KeSetTimerEx,
     ExAllocatePoolWithTag,
-    PDEVICE_OBJECT, PIRP, _IRP, _IO_STACK_LOCATION,
+    PDEVICE_OBJECT, PIRP, _IRP, _IO_STACK_LOCATION, STORAGE_HOTPLUG_INFO,
 };
 use crate::types::*;
 use crate::glue::*;
@@ -223,4 +223,84 @@ extern "system" {
 extern "C" {
     fn ClasspReleaseQueue(Fdo: PDEVICE_OBJECT, Irp: PIRP);
     fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
+}
+
+// ============================================================================
+// amd64/arm64 link-gap fns (refs hidden by the i386 fold; live on amd64/arm64).
+// class.c StartDevice helpers. ABI extern "C" (all undefs undecorated).
+// ============================================================================
+const CLASS_TAG_POWER: u32 = 0x574c6353; // 'WLcS'
+
+// class.c:11666  ClasspAllocatePowerProcessIrp — mirror of ClasspAllocateReleaseQueueIrp.
+#[no_mangle]
+pub unsafe extern "C" fn ClasspAllocatePowerProcessIrp(
+    FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    let fdoData = (*FdoExtension).PrivateFdoData;
+    let stack_size = (*(*(FdoExtension as PCOMMON_DEVICE_EXTENSION)).LowerDeviceObject).StackSize + 1;
+    let irp = ExAllocatePoolWithTag(
+        NonPagedPoolNx as _,
+        io_size_of_irp(stack_size as u8) as _,
+        CLASS_TAG_POWER,
+    ) as PIRP;
+    (*fdoData).PowerProcessIrp = irp;
+    if irp.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    IoInitializeIrp(irp, io_size_of_irp(stack_size as u8), stack_size as i8);
+    STATUS_SUCCESS
+}
+
+// class.c:12634  ClasspScanForClassHacks — CLEAR_FLAG(Data,INVALID); SET_FLAG(HackFlags,Data).
+#[no_mangle]
+pub unsafe extern "C" fn ClasspScanForClassHacks(
+    FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+    Data: usize,
+) {
+    let fdoData = (*FdoExtension).PrivateFdoData;
+    // CLEAR_FLAG(Data, FDO_HACK_INVALID_FLAGS=~FDO_HACK_VALID_FLAGS(0x1F)) => keep valid bits.
+    // HackFlags is ULONG_PTR (pointer-sized); cast to *mut usize to work in one int type.
+    let p = core::ptr::addr_of_mut!((*fdoData).HackFlags) as *mut usize;
+    core::ptr::write_volatile(p, core::ptr::read_volatile(p) | (Data & 0x1F));
+}
+
+// class.c:8818  ClasspIsPortable — boot-safe: fixed boot disks are not portable. Full path
+// queries IoGetDevicePropertyData(DEVPKEY_Device_InLocalMachineContainer) + BusType; OWED.
+#[no_mangle]
+pub unsafe extern "C" fn ClasspIsPortable(
+    FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+    IsPortable: *mut BOOLEAN,
+) -> NTSTATUS {
+    let _ = FdoExtension;
+    core::ptr::write_volatile(IsPortable, FALSE as u8);
+    STATUS_SUCCESS
+}
+
+// class.c:12651  ClasspScanForSpecialInRegistry — boot-safe no-op (HackFlags default 0 = no
+// device quirks). Full path reads Classpnp\HackFlags from the device instance key; OWED.
+#[no_mangle]
+pub unsafe extern "C" fn ClasspScanForSpecialInRegistry(
+    FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+) {
+    let _ = FdoExtension;
+}
+
+// class.c:12507  ClasspInitializeHotplugInfo — boot-safe minimal: zero the struct + set Size.
+// Fixed boot disks => non-removable/non-hotplug/no-writecache-override (all zero). Full path
+// queries IoGetDeviceProperty(RemovalPolicy) + ClassGetDeviceParameter registry overrides; OWED.
+#[no_mangle]
+pub unsafe extern "C" fn ClasspInitializeHotplugInfo(
+    FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    let fdoData = (*FdoExtension).PrivateFdoData;
+    core::ptr::write_bytes(
+        core::ptr::addr_of_mut!((*fdoData).HotplugInfo) as *mut u8,
+        0,
+        core::mem::size_of::<STORAGE_HOTPLUG_INFO>(),
+    );
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*fdoData).HotplugInfo.Size),
+        core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32,
+    );
+    STATUS_SUCCESS
 }

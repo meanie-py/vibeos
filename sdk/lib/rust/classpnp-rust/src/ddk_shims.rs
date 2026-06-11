@@ -345,5 +345,49 @@ use core::sync::atomic::{AtomicI32, Ordering};
     ntkrnl_sys::ddk::IoQueueWorkItem(IoWorkItem, core::mem::transmute(WorkerRoutine), QueueType as _, Context);
 }
 
+// SET_FLAG(Flags, Flag) macro: *Flags |= Flag. Genuinely undefined (a C macro) — the i386 fold
+// hid the caller; amd64's live ref surfaced it. write_volatile to keep it captures(none)-safe.
+#[no_mangle] pub unsafe extern "C" fn SET_FLAG(Flags: *mut u32, Flag: u32) {
+    core::ptr::write_volatile(Flags, core::ptr::read_volatile(Flags) | Flag);
+}
+
+// KeGetCurrentIrql / KeQueryTickCount are real exports on i386 (and KeQueryTickCount on arm) but
+// are inlines on amd64 — provide them there. cr8 holds the current IRQL on amd64.
+#[cfg(target_arch = "x86_64")]
+#[no_mangle] pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {
+    let irql: u64;
+    core::arch::asm!("mov {}, cr8", out(reg) irql, options(nomem, nostack, preserves_flags));
+    irql as u8
+}
+// arm64: KeGetCurrentIrql resolves via the ntkrnl_sys inline, which references KeGetCurrentPrcb.
+// That symbol isn't exported on arm64 — forward to the register-reading inline (distinct IR name).
+#[cfg(target_arch = "aarch64")]
+#[no_mangle] pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
+    ntkrnl_sys::inline::ke::KeGetCurrentPrcb()
+}
+// KeQueryTickCount: exported on i386/ARM32 but an inline on amd64/arm64. KI_USER_SHARED_DATA is at
+// the SAME VA (0xFFFFF78000000000) on both; TickCount (KSYSTEM_TIME) at +0x320. Lockless read.
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle] pub unsafe extern "C" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {
+    // (ULONG LowPart @0x320, LONG High1Time @0x324, LONG High2Time @0x328). Lockless read.
+    const LOW: usize = 0xFFFFF78000000000 + 0x320;
+    loop {
+        let high1 = core::ptr::read_volatile((LOW + 4) as *const i32);
+        let low = core::ptr::read_volatile(LOW as *const u32);
+        let high2 = core::ptr::read_volatile((LOW + 8) as *const i32);
+        if high1 == high2 {
+            (*Count).QuadPart = ((high1 as i64) << 32) | (low as i64 & 0xFFFF_FFFF);
+            return;
+        }
+    }
+}
+
 // ============================ data symbols ============================
 #[no_mangle] pub static mut SharedSystemTime: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+
+// SharedUserData — C macro for the fixed-VA KUSER_SHARED_DATA, not a real export. ServiceTransferRequest
+// reads it for timestamps. On i386 the C-macro symbol is provided elsewhere (and the ref was fold-hidden);
+// on amd64 provide the fixed kernel VA (0xFFFFF78000000000). arm64 handled at its own link.
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle] pub static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA =
+    0xFFFFF78000000000usize as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;

@@ -14,6 +14,7 @@ pub static mut AllFdosList: LIST_ENTRY = unsafe {
     }
 };
 
+#[no_mangle]
 pub static mut ClassBadItems: [CLASSPNP_SCAN_FOR_SPECIAL_INFO; 142] = [
     _CLASSPNP_SCAN_FOR_SPECIAL_INFO {
         VendorId: b"\0" as *const u8 as *const ::core::ffi::c_char as PCHAR,
