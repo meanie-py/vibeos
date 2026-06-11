@@ -1,0 +1,11 @@
+[package]
+name = "mlang-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Standalone staticlib → mlang.dll. Provides its own panic_handler + eh_personality.
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }

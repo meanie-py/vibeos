@@ -1,0 +1,16 @@
+# rtl-vista-rust — thin staticlib wrapper exposing the rtl-sync `vista` link
+# surface (srw/condvar/runonce/locale) for the standalone ntdll_vista.dll
+# forwarder. Linked via reactos-link `.rust_lib("rtl-vista-rust")` — see
+# dll/ntdll/nt_0600/ntdll_vista-cargo/build.rs. Replaces the old
+# condvar/runonce/srw/locale.c that compiled into librtl_vista.a.
+[package]
+name = "rtl-vista-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+rtl-sync = { path = "../rtl-sync", default-features = false, features = ["vista"] }

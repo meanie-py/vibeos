@@ -1,0 +1,15 @@
+# skiplist-rust — Rust translation of sdk/lib/skiplist/skiplist.c (the "skiplist16"
+# static lib: a probabilistic ordered list with SKIPLIST_LEVELS=16 fixed levels,
+# consumed by win32ss/printing/.../localspl). DeepSeek-translated, deepdrive-ground.
+[package]
+name = "skiplist-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "skiplist_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }

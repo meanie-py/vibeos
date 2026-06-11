@@ -103,11 +103,11 @@ pub unsafe extern "system" fn CmpInitializeHive(
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
     const TAG_CMHIVE: u32 = 0x4D436D43;
     const STATUS_INVALID_PARAMETER: i32 = -1073741811i32;
-    const STATUS_REGISTRY_IO_FAILED: i32 = -1073740758i32;
-    const STATUS_REGISTRY_CORRUPT: i32 = -1073740774i32;
+    const STATUS_REGISTRY_IO_FAILED: i32 = 0xC000_014Du32 as i32;
+    const STATUS_REGISTRY_CORRUPT: i32 = 0xC000_014Cu32 as i32;
     const FileFsSizeInformation: u32 = 3;
     const Volatile: usize = 1;
-    const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000004;
+    const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000002;
 
     let Hive: PCMHIVE;
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();

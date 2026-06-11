@@ -44,6 +44,7 @@ ARM64INPUT_DIR = REACTOS_ROOT / "drivers" / "input" / "arm64input"
 KBDCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "kbdclass"
 MOUCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "mouclass"
 I8042PRT_DIR = REACTOS_ROOT / "drivers" / "input" / "i8042prt"
+PCIX_DIR = REACTOS_ROOT / "drivers" / "bus" / "pcix"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -393,6 +394,18 @@ TARGETS = {
         cmake_deps_file=None,
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
+    ),
+    # pcix.sys — the full MS-architecture PCI bus driver (drivers/bus/pcix, 11K LOC,
+    # arb/intrface/pci subdirs). NOT loaded at boot (pci.sys is the live PNP0A03
+    # driver), so link-clean ×3 is the integration bar, not smoke boot. Private
+    # structs from gen_driver_types.sh substrate (crate::types); kernel/PnP types
+    # from ntkrnl-sys ddk. Links arbiter (Rust) + pciclass.
+    "pcix": Target(
+        name="pcix", source_dir=PCIX_DIR,
+        output_crate=RUST_DIR / "pcix-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
     ),
     # win32k.sys subsystem. Resolves against BOTH ntkrnl-sys (the
     # ntoskrnl APIs win32k calls) AND win32k-sys (its own internal

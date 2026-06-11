@@ -1,0 +1,16 @@
+# lsalib-rust — Rust translation of sdk/lib/lsalib/lsa.c (kernel LSA client lib).
+# crate-type=staticlib → liblsalib_rust.a, linked into ntoskrnl in place of the C
+# `ntlsalib` (the _NTSYSTEM_ variant). The user-mode `lsalib` C variant (secur32)
+# stays C. On ntkrnl-sys + lsass-sys (the LSA LPC message substrate). All 3 arches.
+
+[package]
+name = "lsalib-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+lsass-sys = { path = "../lsass-sys" }

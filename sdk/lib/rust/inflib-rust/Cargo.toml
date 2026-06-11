@@ -1,0 +1,15 @@
+# inflib-rust — Rust cohabitation crate for sdk/lib/inflib (.inf file parser).
+# Cross-compiled (CMAKE_CROSSCOMPILING) target: infcore + infget + infput + infros*.
+# Host-only files (infhost*) are excluded (they require INFLIB_HOST libc env).
+# Mirrors rossym-rust / cmlib-rust cohab pattern.
+
+[package]
+name = "inflib-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

@@ -257,6 +257,90 @@ pub mod copy;
 pub mod rtlstr;
 // [ntuser wave 9]
 pub mod csr;
+// [ntuser wave 10]
+pub mod file;
+pub mod shutdown;
+pub mod event;
+// [ntuser wave 11]
+pub mod registry;
+pub mod security;
+// [ntuser wave 12 — class spine]
+pub mod class;
+// [ntuser wave 13 — desktop spine]
+pub mod desktop;
+// [ntuser wave 14 — winsta spine]
+pub mod winsta;
+// [ntuser wave 15 — clipboard spine]
+pub mod clipboard;
+// [ntuser wave 16 — layered windows]
+pub mod layered;
+// [ntuser wave 17 — timer]
+pub mod timer;
+// [ntuser wave 18 — hotkey]
+pub mod hotkey;
+// [ntuser wave 19 — scrollex]
+pub mod scrollex;
+// [ntuser wave 20 — monitor]
+pub mod monitor;
+// [ntuser wave 21 — dde]
+pub mod dde;
+// [ntuser wave 22 — ntstubs]
+pub mod ntstubs;
+// [ntuser wave 23 — windc]
+pub mod windc;
+// [ntuser wave 24 — simplecall]
+pub mod simplecall;
+// [ntuser wave 25 — focus]
+pub mod focus;
+// [ntuser wave 26 — misc]
+pub mod misc;
+// [ntuser wave 27 — nonclient]
+pub mod nonclient;
+// [ntuser wave 28 — callback]
+pub mod callback;
+// [ntuser wave 29 — ntuser/mouse]
+pub mod ntmouse;
+// [ntuser wave 30 — input]
+pub mod input;
+// [ntuser wave 31 — display]
+pub mod display;
+// [ntuser wave 32 — draw]
+pub mod draw;
+// [ntuser wave 33 — hook]
+pub mod hook;
+// [ntuser wave 34 — scrollbar]
+pub mod scrollbar;
+// [ntuser wave 35 — cursoricon]
+pub mod cursoricon;
+// [ntuser wave 36 — ime]
+pub mod ime;
+// [ntuser wave 37 — msgqueue]
+pub mod msgqueue;
+// [ntuser wave 38 — keyboard]
+pub mod keyboard;
+// [ntuser frontier — translated 2026-06-06, Phase A crate-compile (NOT yet CMake-flipped)]
+pub mod main;
+pub mod defwnd;
+pub mod kbdlayout;
+pub mod menu;
+pub mod sysparams;
+pub mod window;
+pub mod message;
+pub mod painting;
+pub mod winpos;
+
+// ── DirectDraw / reactx/ntddraw frontier: banked Opus translation ──
+// 9 files from win32ss/reactx/ntddraw/. Wired INERT (no cmake flip yet);
+// being driven to cargo-check green via deepdrive before correctness review.
+pub mod ntddraw_d3d;
+pub mod ntddraw_d3dkmt;
+pub mod ntddraw_dd;
+pub mod ntddraw_ddraw;
+pub mod ntddraw_ddsurf;
+pub mod ntddraw_dvp;
+pub mod ntddraw_dxeng;
+pub mod ntddraw_eng;
+pub mod ntddraw_mocomp;
 
 // ── gdi/eng closeout: parked translations (sit on disk, NOT in build) ──
 //

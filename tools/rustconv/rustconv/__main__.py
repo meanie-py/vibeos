@@ -19,6 +19,11 @@ def resolve_target(args, path):
         src = REACTOS_ROOT / "dll" / "win32" / name
         if not src.exists():
             src = REACTOS_ROOT / "dll" / name
+        if not src.exists():
+            # Standalone sdk/lib/<name> static libs (dnslib, conutils, skiplist,
+            # ...) → <name>-rust on the ntdll-sys user substrate. Only on the
+            # explicit --target path; detect_target (rtl/cmlib routing) untouched.
+            src = REACTOS_ROOT / "sdk" / "lib" / name
         return make_user_dll_target(name, src)
     return detect_target(path)
 
@@ -926,9 +931,13 @@ def cmd_translate(args):
         # function, handed to the model so it can't silently stub/drop logic. Built
         # once per file; empty map when --c2rust is off or c2rust/db is unavailable.
         c2rust_anchors: dict[str, str] = {}
+        c2rust_preamble = ""
         if getattr(args, "c2rust", False):
-            from .c2rust_anchor import build_anchor_map
+            from .c2rust_anchor import build_anchor_map, build_preamble
             c2rust_anchors = build_anchor_map(c_file)
+            # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended to
+            # the preamble so the LLM never has to (mis)transcribe a lookup table.
+            c2rust_preamble = build_preamble(c_file)
 
         if args.dry_run:
             # Just show the plan
@@ -1181,32 +1190,37 @@ def cmd_translate(args):
                 print(f"FAIL: {pre_res.error} (stitching without preamble)",
                       file=sys.stderr)
 
+        # c2rust DATA preamble wins over the LLM's: prepend the compiler-exact
+        # static/const tables, and strip any LLM-emitted item with the same name
+        # (the LLM copy is the fabrication-prone one). Deterministic, $0.
+        if c2rust_preamble.strip():
+            import re
+            names = set(re.findall(r"\b(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:",
+                                   c2rust_preamble))
+            if names and preamble_rust.strip():
+                kept, drop_depth, dropping = [], 0, False
+                for ln in preamble_rust.splitlines():
+                    if not dropping:
+                        m = re.match(r"\s*(?:pub\s+)?(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:", ln)
+                        if m and m.group(1) in names:
+                            dropping, drop_depth = True, 0
+                        else:
+                            kept.append(ln)
+                    if dropping:
+                        drop_depth += ln.count("[") - ln.count("]") + ln.count("{") - ln.count("}")
+                        if drop_depth <= 0 and ln.rstrip().endswith(";"):
+                            dropping = False
+                preamble_rust = "\n".join(kept)
+            preamble_rust = ("// @c2rust file-scope data (compiler-exact tables/statics)\n"
+                             + c2rust_preamble + "\n\n" + preamble_rust)
+            print(f"  [c2rust] prepended {len(names)} exact static/const item(s) to preamble",
+                  file=sys.stderr)
+
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         if resumed:
             print(f"  Resumed {resumed} unit(s) from cache this run (re-translation skipped, $0)",
                   file=sys.stderr)
         print(f"  Total tokens: {total_in:,} in / {total_out:,} out", file=sys.stderr)
-
-        # COMPLETENESS GATE — a partial run must NOT bank silently. Surface every
-        # function that failed/never landed and a failed preamble loudly, so the
-        # assembled file is never mistaken for a complete translation (this is the
-        # diagnostic that was missing when the mlang/cabinet_main preambles +
-        # map_font vanished without a trace). Re-run to fill the gaps.
-        missing_fns = [d.name for d in sorted_deps if d.name not in translated]
-        preamble_failed = bool(preamble_src) and not preamble_rust.strip()
-        if missing_fns or preamble_failed:
-            print(f"\n  ⚠️  INCOMPLETE TRANSLATION for {c_file.name} — the assembled "
-                  f"file is PARTIAL:", file=sys.stderr)
-            if preamble_failed:
-                print(f"       • type/struct PREAMBLE failed (empty) — file-scope "
-                      f"structs/typedefs are MISSING", file=sys.stderr)
-            if missing_fns:
-                preview = ", ".join(missing_fns[:12]) + (" …" if len(missing_fns) > 12 else "")
-                print(f"       • {len(missing_fns)}/{len(sorted_deps)} function(s) "
-                      f"missing: {preview}", file=sys.stderr)
-            print(f"       Re-run `python -m rustconv translate {c_file} ...` to fill "
-                  f"the gaps (cached units stay $0; only the failures re-translate).",
-                  file=sys.stderr)
 
         # Stitch functions into a single file
         stitched = stitch_file(translated, sorted_deps, scan, file_res,

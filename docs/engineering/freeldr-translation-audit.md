@@ -324,3 +324,68 @@ Both use the standalone-`.sys`/`.dll` cohabitation pattern (staticlib +
 - **The cargo-link PoC vs cohabitation tension.** kdcom/bootvid have
   both a `-cargo` link PoC and an (unwired) staticlib. Until one is
   chosen as canonical, "translated" ≠ "shipping."
+
+---
+
+## i386/x86 UEFI boot — operational recipe & fixes (reusable)
+
+The non-obvious operational bits that make an x86 ReactOS kernel boot under UEFI
+(OVMF) instead of legacy BIOS. These are arch-relevant gotchas, not status — they
+recur any time the UEFI boot path is touched.
+
+### i386 UEFI PAE → non-PAE paging transition
+
+UEFI/OVMF hands control to the loader with **paging ON and `CR4.PAE=1`**. The i386
+ReactOS kernel uses classic **non-PAE 2-level paging**. Doing `writecr3(PDE)` while
+`CR4.PAE=1` makes the MMU interpret the non-PAE PDE as a PAE PDPT → instant
+triple-fault (instruction-fetch #PF the moment paging re-reads the next insn).
+
+The paging switch must be ordered so PAE is cleared while paging is off:
+
+1. If `CR0.PG` set → **clear `CR0.PG`** (paging off)
+2. **clear `CR4.PAE`**
+3. **`writecr3`** the non-PAE PDE
+4. **set `CR0.PG`** (paging back on)
+
+Steps run with paging off, so they execute identity-mapped — safe because the
+loader + stack live in identity-mapped low memory. No-op on legacy BIOS (paging is
+already off when control reaches the equivalent point). This bug is **latent in the
+original C too** (the `writecr3`/`writecr0` pair has no PAE handling) — it only
+manifests once you actually boot via UEFI. (Lives in the i386
+`WinLdrSetProcessorContext`.)
+
+### OVMF boot recipe (i440fx + ide-cd)
+
+Boot the LiveCD ISO from OVMF on the **i440fx `-M pc`** machine — *not* q35. Both
+i386 and amd64 use the same shape (no AHCI/SATA needed; uniata serves the IDE CD):
+
+- Firmware: i386 = `qemu/OVMF32_CODE.fd` + `OVMF32_VARS.fd`; amd64 =
+  `/usr/share/OVMF/OVMF_CODE_4M.fd` + `OVMF_VARS_4M.fd`.
+- Boot device: `-device ide-cd,drive=cd0,bootindex=0`. A bare `-cdrom` does **not**
+  auto-boot — OVMF drops to the UEFI shell without an explicit `bootindex=0`.
+- The writable VARS pflash **must be qcow2** (convert the raw OVMF VARS → qcow2)
+  for QMP `savevm`/snapshot to work; a raw VARS pflash blocks snapshotting.
+- The LiveCD ISO is already UEFI-bootable: the EFI El Torito entry loads
+  `EFI/BOOT/boot<plat>.efi` (`EFI_PLATFORM_ID` ia32/x64/aa64), which folds in
+  `uefildr` — re-run `ninja livecd` after `ninja uefildr` or you boot a stale ISO.
+
+### Synthetic ACPI 2.0 RSDP (keyboard / PS/2 enumeration)
+
+Under UEFI the RSDP lives in EFI-reclaim memory, so acpi.sys's legacy BIOS-area
+RSDP scan (`0xE0000`–`0xFFFFF`) finds nothing → `AcpiInitializeTables` fails → no
+ACPI namespace → `PNP0303`/`PNP0F13` (PS/2 keyboard/mouse) are never enumerated →
+i8042prt gets no `AddDevice` → **no keyboard input**.
+
+Fix (in `AcpiOsGetRootPointer`, `drivers/bus/acpi/osl.c`): keep the BIOS-area scan
+first (legacy path byte-for-byte unchanged); on failure, read the RSDT/XSDT
+physical address FreeLDR records in the ARC tree — the `"ACPI BIOS"`
+multifunction-adapter Configuration Data (registry
+`\HARDWARE\DESCRIPTION\System\MultifunctionAdapter\N`,
+`CM_FULL_RESOURCE_DESCRIPTOR` → device-specific descriptor → trailing
+`ACPI_BIOS_DATA.RSDTAddress`, which holds the XSDT address on ACPI 2.0+) — and
+**synthesize a valid ACPI 2.0 RSDP** (correct 1.0 checksum + extended checksum)
+pointing at it. Arch-agnostic: arm64 takes the same fallback safely.
+
+Diagnosis tell: a BIOS boot's serial shows `[[I8K]] AddDevice ... KBD ISR FIRED`;
+a broken UEFI boot has **zero** `[[I8K]]` lines and reports `Tables: [XSDT]` (vs
+BIOS `[RSDT]`) plus `Unable to AcpiInitializeTables`.

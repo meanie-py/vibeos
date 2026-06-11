@@ -1,30 +1,20 @@
 
 spec2def(kdcom.dll kdgdb.spec ADD_IMPORTLIB)
 
-list(APPEND SOURCE
-    gdb_input.c
-    gdb_receive.c
-    gdb_send.c
-    kdcom.c
-    kdpacket.c
-    utils.c
-    kdgdb.h)
-
-# TODO: ARM...
-if(ARCH STREQUAL "i386")
-    list(APPEND SOURCE i386_sup.c)
-elseif(ARCH STREQUAL "amd64")
-    list(APPEND SOURCE amd64_sup.c)
-endif()
-
-add_library(kdcom MODULE
-    ${SOURCE}
-    kdgdb.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/kdcom.def)
-
-set_module_type(kdcom kerneldll ENTRYPOINT 0)
-set_subsystem(kdcom native)
-add_importlibs(kdcom ntoskrnl hal)
-target_link_libraries(kdcom cportlib)
-add_pch(kdcom kdgdb.h SOURCE)
-add_cd_file(TARGET kdcom DESTINATION reactos/system32 NO_CAB FOR all)
+# ============================================================================
+# kdcom.dll (kdgdb GDB-stub KD transport) — cargo-driven final link
+# ============================================================================
+# The kdgdb C sources are translated to Rust (sdk/lib/rust/kdgdb-rust, kept on
+# disk per the never-delete rule). The 8 kdgdb.spec exports come from
+# libkdgdb_rust.a; the final kdcom.dll link is driven by cargo (kdgdb-cargo's
+# build.rs -> reactos-link, ModuleKind::KernelDll), which links kdgdb-rust with
+# cportlib (Cp* serial) + libcntpr (CRT: sprintf/_snprintf/strcmp/strstr/
+# _strupr/atol/strlen) + memcmp + the ntoskrnl/hal import libs. Mirrors the
+# kdrosdbg (kdcom-cargo) cohab. This whole subdir is only added under
+# _WINKD_ && GDB (see drivers/base/CMakeLists.txt). kdgdb is i386 + amd64 only
+# (no arm64: i386_sup.c / amd64_sup.c, "TODO: ARM" in the C).
+#
+#   gdb_input.c gdb_receive.c gdb_send.c kdcom.c kdpacket.c utils.c
+#   i386_sup.c / amd64_sup.c  -- replaced by Rust (kdgdb-rust); kept on disk.
+add_cargo_kernel_dll(kdcom kdgdb-cargo kdcom.dll BODY_CRATE kdgdb-rust
+    EXTRA_DEPENDS cportlib libcntpr memcmp)

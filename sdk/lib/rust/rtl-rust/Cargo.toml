@@ -49,4 +49,6 @@ rtl-rangelist = { path = "../rtl-rangelist" }
 rtl-sysvol   = { path = "../rtl-sysvol" }
 rtl-rxact    = { path = "../rtl-rxact" }
 rtl-error    = { path = "../rtl-error" }
+rtl-heappage = { path = "../rtl-heappage", features = ["cabi"] }
+rtl-heapuser = { path = "../rtl-heapuser", features = ["cabi"] }
 time         = { path = "../time" }

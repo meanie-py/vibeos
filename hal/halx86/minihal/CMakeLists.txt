@@ -18,8 +18,10 @@ list(APPEND MINI_HAL_SOURCE
     # ../generic/timer.c — Rust takeover (minihal feature)
     # ../generic/usage.c — Rust takeover (minihal feature)
     # ../pic/pic.c — only a forward decl of HalpEndSoftwareInterrupt under MINIHAL
-    # halinit.c — replaced by Rust stubs in
-    #   sdk/lib/rust/hal-rust/src/x86/minihal_stubs.rs (feature=minihal)
+    # halinit.c — disabled (kept on disk); the 7 mini-HAL init stubs
+    #   (HalpInitProcessor, HalpInitPhase0/1, HalpSetupAcpiPhase0,
+    #   HalpInitializePICs, HalpGetDmaAdapter, HalpBiosDisplayReset) now live in
+    #   sdk/lib/rust/hal-rust/src/x86/minihal_stubs.rs (cfg feature=minihal).
     ../include/hal.h
     )
 

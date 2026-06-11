@@ -1,21 +1,18 @@
 
 spec2def(kdcom.dll kdcom.spec ADD_IMPORTLIB)
 
-list(APPEND SOURCE
-    kdcom.c
-    kddll.c
-    kdserial.c
-    kddll.h)
-
-add_library(kdcom MODULE
-    ${SOURCE}
-    kdcom.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/kdcom.def)
-
-set_module_type(kdcom kerneldll ENTRYPOINT 0)
-set_subsystem(kdcom native)
-add_importlibs(kdcom ntoskrnl hal)
-target_link_libraries(kdcom cportlib)
-add_dependencies(kdcom psdk bugcodes)
-add_pch(kdcom kddll.h SOURCE)
-add_cd_file(TARGET kdcom DESTINATION reactos/system32 NO_CAB FOR all)
+# ============================================================================
+# kdcom.dll (serial KD transport) — cargo-driven final link
+# ============================================================================
+# kdcom.c / kddll.c / kdserial.c are translated to Rust
+# (sdk/lib/rust/kdcom-serial-rust, kept on disk per the never-delete rule;
+# a distinct crate from kdcom-rust, which is the shipping kdrosdbg stub). The
+# 8 kdcom.spec exports come from libkdcom_serial_rust.a; the kdcom.dll link is
+# driven by cargo (kdcom-serial-cargo's build.rs -> reactos-link) linking it
+# with cportlib + libcntpr (CRT) + memcmp + the ntoskrnl/hal import libs.
+# Mirrors the kdrosdbg cohab. Only added under _WINKD_ && !GDB (see
+# drivers/base/CMakeLists.txt). i386 + amd64.
+#
+#   kdcom.c kddll.c kdserial.c  -- replaced by Rust (kdcom-serial-rust); kept.
+add_cargo_kernel_dll(kdcom kdcom-serial-cargo kdcom.dll BODY_CRATE kdcom-serial-rust
+    EXTRA_DEPENDS cportlib libcntpr memcmp)

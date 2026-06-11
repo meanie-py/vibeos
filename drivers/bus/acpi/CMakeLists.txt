@@ -185,27 +185,90 @@ set_target_properties(acpica PROPERTIES COMPILE_DEFINITIONS "ACPI_USE_LOCAL_CACH
 add_dependencies(acpica bugcodes xdk)
 
 list(APPEND ACPI_SOURCE
-    busmgr/bus.c
-    busmgr/button.c
-    busmgr/power.c
-    busmgr/utils.c
-    busmgr/system.c
-    osl.c
-    acpienum.c
-    eval.c
-    interface.c
-    pnp.c
-    power.c
-    buspdo.c
-    main.c)
+    # busmgr/bus.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/bus.rs, Phase 3a:
+    #   the acpi_bus_* bus-manager API). Symbols from libacpi_rust.a; C kept on disk.
+    # Phase 3b — the remaining ReactOS ACPI driver glue is now Rust. Each .c below is
+    #   replaced by its acpi-rust module (#[no_mangle] symbols win at link); C kept on disk.
+    # busmgr/button.c  -> button.rs
+    # busmgr/power.c   -> busmgr_power.rs
+    # busmgr/utils.c   -> utils.rs
+    # busmgr/system.c  -> system.rs
+    # osl.c — replaced by Rust (sdk/lib/rust/acpi-rust/, ACPICA FFI-to-blob
+    #   Phase 2: the 45 AcpiOs* OSL callbacks). Symbols come from libacpi_rust.a
+    #   (linked below); the C is kept on disk per the never-delete rule. Only the
+    #   C-variadic AcpiOsPrintf stays C (acpi_printf_shim.c → Rust AcpiOsVprintf).
+    acpi_printf_shim.c
+    # acpienum.c   -> acpienum.rs   (Phase 3b)
+    # eval.c       -> eval.rs       (Phase 3b)
+    # interface.c  -> interface.rs  (Phase 3b)
+    # pnp.c        -> pnp.rs        (Phase 3b)
+    # power.c      -> power.rs      (Phase 3b)
+    # buspdo.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/buspdo.rs, Phase 3a:
+    #   the Bus_PDO_* PnP/resource dispatch). Symbols from libacpi_rust.a; C kept on disk.
+    # main.c       -> driver_main.rs (Phase 3b)
+    )
+
+# ============================================================================
+# acpi-rust — OSL (osl.c) Rust cohabitation flip. Mirrors processr/pl011: a
+# crate-type=staticlib → libacpi_rust.a whose #[no_mangle] AcpiOs* symbols take
+# over from the (commented-out) osl.c. ACPICA (libacpica.a) stays C and resolves
+# its OS-services callbacks from the Rust archive. acpi-rust deps ntkrnl-sys +
+# acpica-sys; the custom_command mirrors the swenum/processr cohab.
+# ============================================================================
+set(ACPI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(ACPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-acpi-target")
+set(ACPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libacpi_rust.a")
+if(ARCH STREQUAL "i386")
+    set(ACPI_RUST_TARGET "i686-pc-windows-gnu")
+    set(ACPI_RUST_RUSTFLAGS "-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(ACPI_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(ACPI_RUST_RUSTFLAGS "")
+elseif(ARCH STREQUAL "arm64")
+    set(ACPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(ACPI_RUST_RUSTFLAGS "")
+endif()
+add_custom_command(
+    OUTPUT ${ACPI_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${ACPI_RUST_TARGET_DIR}
+        RUSTFLAGS=${ACPI_RUST_RUSTFLAGS}
+        cargo build --release --target ${ACPI_RUST_TARGET}
+            -p acpi-rust
+            --manifest-path ${ACPI_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${ACPI_RUST_TARGET_DIR}/${ACPI_RUST_TARGET}/release/libacpi_rust.a
+        ${ACPI_RUST_LIB}
+    DEPENDS ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/Cargo.toml
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/lib.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/osl.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/shared.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/types.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/bus.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/buspdo.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/interface.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/power.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/acpienum.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/button.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/system.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/pnp.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/utils.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/busmgr_power.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/eval.rs
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/driver_main.rs
+    WORKING_DIRECTORY ${ACPI_RUST_WORKSPACE_DIR}
+    COMMENT "Building acpi-rust (${ACPI_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_acpi DEPENDS ${ACPI_RUST_LIB})
 
 add_library(acpi MODULE
     ${ACPI_SOURCE}
     acpi.rc)
 
 set_module_type(acpi kernelmodedriver)
-target_link_libraries(acpi wdmguid acpica memcmp strtol ${PSEH_LIB})
+target_link_libraries(acpi wdmguid acpica memcmp strtol ${PSEH_LIB} ${ACPI_RUST_LIB})
 add_importlibs(acpi ntoskrnl hal)
+add_dependencies(acpi rust_acpi)
 add_pch(acpi precomp.h ACPI_SOURCE)
 add_cd_file(TARGET acpi DESTINATION reactos/system32/drivers NO_CAB FOR all)
 add_driver_inf(acpi acpi.inf)

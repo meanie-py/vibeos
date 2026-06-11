@@ -1,5 +1,7 @@
 # SMSS + CSRSS C→Rust Translation Audit
 
+> **UPDATE 2026-06-09 — the deferral gate has CLEARED: `ntdll-rust-port` has merged to `continue-rust-port` (b3252b81c5a, c1cf116f38c) and the spine is now cargo-driven (ba1be3f93ca). The smlib/csrlib cohab-flip described below as "deferred until ntdll-rust-port merges" can proceed — re-verify the flip against current CMakeLists. Beyond the spine: winlogon.exe is now 100% Rust (1443c4a94d8) and services.exe/SCM is 100% Rust (no longer "not started").**
+
 **Last updated 2026-06-01.** Branch `continue-rust-port` (worktree
 `worktree-smss-csrss`, in sync at `a52dce70629`).
 
@@ -757,3 +759,108 @@ symbol is present at the expected i386/amd64 decoration.
 - SEH residual handling: `feedback_llm_c_to_c_seh_lowering`.
 - winsrv ownership counterpart: [win32k-translation-audit.md](win32k-translation-audit.md)
   §"What this audit doesn't measure → User-mode DLLs".
+
+## User-mode .exe rustconv-flip playbook (reusable)
+
+Distilled, non-obvious recipes for flipping a user-mode `.exe`/`.dll` (SCM,
+userinit, winlogon, and any future spine binary) from C to Rust via the
+rustconv pipeline. Status/dates/commits live in git + the topic memories;
+this is the *technique*.
+
+### Integrating rustconv output for a user-mode binary
+
+rustconv defaults to the **kernel** target — it assembles output into
+`ntoskrnl-rust/src/<subsys>/`, imports `ntkrnl_sys::*`, and declares every
+Win32 API as `extern "C"` (the **wrong i386 ABI** — most are stdcall).
+Integration steps:
+
+1. **Move the `.rs` out of `ntoskrnl-rust/`** into your per-binary crate
+   (e.g. `services-rust/`), and `rmdir` the `ntoskrnl-rust/src/<subsys>/`
+   dir rustconv created. (It does not touch ntoskrnl's `lib.rs`, so no
+   un-wiring needed there.)
+2. **Retarget the import preamble** `ntkrnl_sys::*` → `<svc>_sys::{<glob>,
+   consts, nt}` + `crate::{types, wstr}`. The hand-written `consts`/`nt`
+   submodules hold the inline list/critical-section/`RtlZeroMemory`/
+   `STATUS_*`/`INVALID_HANDLE` helpers that are NOT in the bindgen glob —
+   import them explicitly; the glob alone will not resolve them.
+3. **Partition the LLM's `extern` declarations by probing the bindgen
+   glob.** For each declared Win32 fn:
+   - **In-glob** (`Reg*`/`Heap*`/`CreateProcess*`/`LoadString`…): delete
+     the local decl or you get `E0428` duplicate.
+   - **Absent Win32** (`ConnectNamedPipe`/`Lsa*`/`Impersonate*`/
+     `CreateEnvironmentBlock`/`StringCch*`…): add a local
+     `extern "system"` decl (WINAPI = stdcall).
+   - **Cross-file `Scm*` / CRT `wcs*`**: local `extern "C"` (cdecl).
+4. **`MIDL_user_allocate`/`MIDL_user_free` must be UPPERCASE symbols.**
+   `rpc.h` does `#define midl_user_allocate MIDL_user_allocate`, so the
+   real i386 symbol is `_MIDL_user_allocate@4`. rustconv keeps the C
+   source's lowercase name → undefined at cold-link. Rename the defs (and
+   the stub's references) to uppercase.
+5. **RPC `R*` handlers + rundowns + `MIDL_user_*` are `__RPC_USER` =
+   STDCALL → `extern "system"`, not cdecl.** rustconv often emits the lead
+   `R*` handlers as `system` but the trailing stubs and the `__RPC_USER`
+   fns as `extern "C"` — flip them. Cold-link tell: `_R…@N undefined`
+   (e.g. `_RSendTSMessage@4 undefined`) means a handler is still cdecl.
+
+### Recurring per-binary ABI/codegen gotchas
+
+- **Thread/callback routines passed by value need the per-arch ABI split.**
+  A literal `extern "stdcall" fn` is a *distinct Rust fn-item type* from
+  `extern "C" fn`, so `Some(MyRoutine)` fails `E0308` on amd64/arm64 where
+  `LPTHREAD_START_ROUTINE`/`PHANDLER_ROUTINE` is `extern "C"`. Split the
+  body into a plain `unsafe fn impl` + two cfg-gated trampolines
+  (`x86` → stdcall, `not(x86)` → C). Same pattern for
+  `PRTL_QUERY_REGISTRY_ROUTINE` and dialog/locale-enum procs: declare them
+  `extern "system"` and `transmute` the fn-ptr into the bindgen slot
+  (bridges the `system`-vs-`stdcall` type-name mismatch).
+- **`L"..."` → use-after-free.** The LLM emits
+  `"x\0".encode_utf16().collect::<Vec>().as_ptr()` — illegal in `no_std`
+  *and* a use-after-free on the dropped temp. Replace with the static
+  `wstr!("x").as_ptr()` (or `<svc>_sys::w!`).
+- **`BOOL` vs `FALSE`/`TRUE`:** bindgen `BOOL=i32` but `FALSE`/`TRUE=u32`
+  → use typed `0`/`1` literals for `BOOL` statics (`E0308` otherwise).
+- **`Reg*` return `LSTATUS` (i32):** cast `as DWORD` at every call site.
+- **`HeapAlloc` size arg is `SIZE_T`** (u32 on i386): cast `as SIZE_T` /
+  `as usize`. A generic `HeapAlloc<N: TryInto<SIZE_T>>` wrapper that
+  accepts both usize and u32 callers breaks `as _` inference — use a
+  concrete cast.
+- **`__bindgen_anon_1` union paths** (`.Status`, `.Luid.Low/HighPart`)
+  must be flattened to the flat repr(C) mirror in `types.rs`.
+
+### WIDL/MIDL RPC server stub → Rust (`tools/widl_to_rust.py`, midl-rt)
+
+When self-hosting the widl `_s.c` stub as Rust instead of C:
+
+- **Do NOT compute the i386 `@N` decoration from the `.h` prototype.**
+  By-value struct params occupy multiple stack slots, so param-count×4 is
+  wrong (e.g. an 8-byte by-value `SC_RPC_CONFIG_INFOW` makes
+  `RChangeServiceConfig2W@12`, not `@8`). Read the EXACT decoration by
+  `nm`-ing the *compiled C stub object* — that object is ground truth for
+  what rpcrt4/services-rust must define.
+- **i686-pc-windows-gnu prepends `_` to an `extern "C"` `#[link_name]`.**
+  Emit `#[link_name="RChangeServiceConfig2W@12"]` WITHOUT the leading `_`
+  (the toolchain re-adds it). A leading `_` gives a double `__…@12`.
+  amd64/arm64 names are bare → no `link_name` attr at all.
+- **A fn address stored in a `static` = `fn as *const c_void` directly**
+  — NOT `as usize as *const _` (const-eval forbids ptr→int). Any
+  pointer-bearing static type needs a `#[repr(transparent)]` +
+  `unsafe impl Sync` newtype wrapper.
+- Server routines / rundowns / `NdrServerCall2` / `MIDL_user_*` are only
+  address-taken, never called → declare each as 0-arg
+  `extern "C" { #[link_name=..] fn NAME(); }`. `ExprEval` conformance fns
+  stay LOCAL (referenced only via the Rust EXPR_EVAL table path).
+- midl-rt's compile-time `size_of`/`offset_of` asserts are the ABI guard:
+  a wrong offset is a *silent* RPC dispatch corruption / boot hang, not a
+  compile error in the consumer. One repr(C) struct serves both arches via
+  natural alignment — just cfg the assert constants per arch.
+
+### arm64 winlogon bypasses userinit — validation blind spot
+
+**You cannot arm64-validate a `userinit.exe` change.** arm64 winlogon has
+an architecture-specific branch that launches `cmd.exe` directly and never
+spawns `userinit.exe` (`[WINLOGON] ARM64: cmd.exe created … Waiting`).
+Staging the binary into the ramdisk does not help — userinit is simply not
+on the arm64 boot path. Any userinit-track work must be validated on i386 +
+amd64; arm64 green only proves the new workspace member didn't regress the
+cgu layout. To actually exercise userinit on arm64 you must first edit
+winlogon's ARM64 branch to spawn it.

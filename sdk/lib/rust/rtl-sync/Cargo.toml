@@ -20,6 +20,11 @@ path = "src/lib.rs"
 # The #[no_mangle] extern "system" shim layer (the kernel/ntdll link surface).
 cabi = []
 kernel = ["cabi"]
+# vista: the standalone ntdll_vista.dll forwarder link surface — only
+# srw/condvar/runonce/locale (+ shared/atomics). critical/wait are NOT compiled;
+# condvar's RtlEnter/LeaveCriticalSection resolve as ntdll.dll imports (matches
+# the old condvar.c extern behaviour in librtl_vista.a). Replaces the 4 C files.
+vista = []
 
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }

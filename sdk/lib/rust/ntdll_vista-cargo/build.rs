@@ -32,6 +32,12 @@ fn main() {
         // libutf8.a). smss-csrss-rust built smlib_only (--no-default-features).
         .rust_lib("smss-csrss-rust", &["smlib_only", "ntddi_ws03"], false)
         .rust_lib("utf8", &[], true)
+        // rtl_vista is now 100% Rust: srw/condvar/runonce/locale come from the
+        // rtl-vista-rust staticlib (a thin wrapper re-exporting rtl-sync's `vista`
+        // modules — was the Tier-C reuse of librtl_vista.a, which compiled
+        // condvar/runonce/srw/locale.c). condvar's Rtl*CriticalSection calls
+        // resolve as ntdll.dll imports (critical.rs is NOT in `vista`).
+        .rust_lib("rtl-vista-rust", &[], true)
         // Tier-A leaf C, cargo-compiled (was reuse of cmake libpseh.a). DUMMY_PSEH
         // dead code: header-free, two globals (_SEH2_Volatile0 / *ExceptionCode).
         .c_shims(&["sdk/lib/pseh/dummy.c"])
@@ -39,12 +45,10 @@ fn main() {
         .spec2def("dll/ntdll/nt_0600/ntdll_vista.spec", "ntdll_vista.dll")
         // imports Rtl*/Nt*/… from ntdll.dll (add_importlibs(ntdll_vista ntdll))
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
-        .static_libs(&[
-            // Tier-C deep-C (deferred — follows rtl-priv flip track):
-            "sdk/lib/rtl/librtl_vista.a",
-            // NOTE: libchkstk.a dropped — __chkstk/_alloca_probe/___alloca come
-            // from the clang_rt.builtins the engine links (redundant reuse-.a).
-        ])
+        // NOTE: librtl_vista.a dropped — condvar/runonce/srw/locale now come from
+        // .rust_lib("rtl-sync", ["vista"]) above. libchkstk.a likewise dropped —
+        // __chkstk/_alloca_probe/___alloca come from the clang_rt.builtins the
+        // engine links (both were redundant reuse-.a entries).
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,
