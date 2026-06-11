@@ -234,3 +234,68 @@ override to keep the OS LINKABLE at opt-1 (folded but builds). **Next phase = th
 (i) rewrite the `&(*ptr).field` reference patterns to raw-pointer reads crate-wide (kills the UB-check
 fold without opt-0), or (ii) keep opt-0 and close the 38 surfaced undefs. Path (i) is cleaner and
 doesn't regress codegen. The fold list + 38-undef list are in /tmp/undef_opt0.txt.
+
+## UPDATE 2026-06-11 (cont.): SYSTEMIC FOLD ROOT-CAUSED & FIXED (not the reference theory)
+
+The "~46 whole-function folds" were **misattributed** to the `&(*ptr).field`
+reference-UB-check class. Disproof: `ClassCreateClose` is clean raw-pointer code
+(no `&(*ptr).field`) yet folded to `start: unreachable`. LLVM IR archaeology
+(`-print-changed -filter-print-funcs`) showed InstCombine inserting
+`store i1 true, ptr poison` right after a call — i.e. it proved the **call** UB.
+
+**Real root cause: declaration/definition calling-convention mismatch.** On i386,
+`extern "C"` = cdecl (`_F`), `extern "system"` = stdcall (`_F@N`). When a caller
+declares `extern "C" fn F` but the in-crate definition is `extern "system"` (or
+vice-versa), LLVM sees `call ccc @F` against an `x86_stdcallcc` callee in the same
+module → undefined behaviour → it folds the **whole caller** to `unreachable`.
+lld then *fuzzy-matches* the undecorated/decorated symbols so the cohab link still
+succeeds (0 undefs) — which is exactly why the bug was invisible at link time and
+only showed as ud2 at boot.
+
+A def↔decl CC-consistency scan found **76 mismatches** across the crate (every
+dispatch handler calls `ClassReleaseRemoveLock`/`ClassCompleteRequest`/`SrbGet*`
+etc., many declared `extern "C"` in the glob-imported `shims.rs` while defined
+`extern "system"`). Fixing all 76 (decl CC := def CC) un-folded 46 → 0.
+
+Three follow-on classes the un-folding then exposed:
+1. **Self-CC-collision wrappers.** A cdecl `#[no_mangle] fn ExFreePool` that calls
+   `ntkrnl_sys::ddk::ExFreePool` (stdcall, *same IR name*) is calling itself with a
+   mismatched CC → folds. The 6 such wrappers were removed; callers now call the
+   real stdcall export directly. (Lesson: never wrap a kernel export under its own
+   name; the IR symbol collides regardless of `@N` decoration differences.)
+2. **Inlining interaction.** `ClassInitializeDispatchTables` is fold-free standalone
+   but inlining it into `ClassInitialize` let LLVM combine its driverExtension
+   dispatch-table writes with the caller's `RtlCopyMemory(InitData)` dereferenceable
+   facts into a fold (ud2 after `RtlCopyUnicodeString`). Fix: `#[inline(never)]`
+   (+ `extern "C"` to match the cdecl call site). Also made the `EtwHandle` (u64,
+   align-8 on i386) access `read/write_volatile`.
+3. **Newly-live references.** Un-folded bodies referenced 9 previously-dead symbols:
+   6 hand-translated into `class_part_e.rs`, `IoQueueWorkItemEx` shimmed to
+   `IoQueueWorkItem` (ReactOS lacks the Ex export), etc.
+
+**Status: classpnp.sys links 0-undef ×3-clean; boot-critical path fold-free.**
+Remaining: 1 fold in `ClassRemoveDevice` (PnP IRP_MN_REMOVE_DEVICE handler — off the
+boot path; same inlining class, owed). The opt-level=0 escape hatch was NOT used —
+the firewall stays opt-1.
+
+## UPDATE 2026-06-11 (final): 3× SMOKE GREEN — classpnp Rust cohab boots on all arches
+
+All three architectures boot to desktop with the all-Rust classpnp.sys
+(`vibeos-cli smoke --arch <a>` = ✓ boot):
+- **i386 ✓** (the systemic CC-mismatch fold fix was the unlock)
+- **amd64 ✓** (substrate: 5 hand-translated class.c fns, SET_FLAG, cr8 KeGetCurrentIrql,
+  KUSD KeQueryTickCount/SharedUserData; no folds — amd64 never had the i386 CC issue)
+- **arm64 ✓** (KeGetCurrentPrcb inline forward + shared KUSD provisions)
+
+Two *unrelated* stale-base build bugs were fixed along the way to build amd64/arm64
+(the worktree is 178 commits behind continue-rust-port):
+1. ntdll-rust `RtlInitEmptyUnicodeString` — #[inline(always)] didn't fire cross-cgu on
+   amd64/arm64 under the workspace firewall, leaving an undefined out-of-line ref. Fixed
+   by #[no_mangle]-exporting the rtl/libsupp.rs copy.
+2. arm64 `livecd` ninja target has a `boot/freeldr/install/fat.c` self-dependency cycle —
+   sidestepped (arm64 boots via mkramdisk over the staged set, not the ISO; build the
+   media files via `ninja` + the 116 media/nls targets directly, then mkramdisk).
+
+Smokes were warm (--allow-stale) with freshly-rebuilt classpnp.sys each arch. A --clean
+×3 pass is the remaining final-verification step. Eventual merge to main needs a rebase
+onto current continue-rust-port.
