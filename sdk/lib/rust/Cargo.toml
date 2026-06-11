@@ -112,6 +112,7 @@ members = [
     "acpica-sys",
     "acpi-rust",
     "pci-rust",
+    "pcix-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",

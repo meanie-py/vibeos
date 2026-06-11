@@ -82,6 +82,30 @@ case "$DRIVER" in
     ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 )
     ;;
+  pcix)
+    # The full MS-architecture PCI bus driver (drivers/bus/pcix). All driver-PRIVATE
+    # structs (PCI_FDO_EXTENSION, PCI_PDO_EXTENSION, PCI_FUNCTION_RESOURCES,
+    # PCI_CONFIGURATOR*, PCI_INTERFACE, PCI_ARBITER_INSTANCE, ...) live in the driver's
+    # own pci.h — allowlist that ONE header (the shared drivers/pci/pci.h is at a
+    # different path so it is NOT matched, keeping PCI_COMMON_CONFIG/PCI_SLOT_NUMBER on
+    # the single ntkrnl-sys ddk identity). pci.h also pulls arbiter.h (ARBITER_INSTANCE,
+    # ARBITER_*) and cmreslist.h — those are NOT in the kernel bindgen, so allowlist them
+    # too so the bus-resource arbiter structs the modules reference get full local layouts.
+    DRIVER_DIR="${SRC}/drivers/bus/pcix"
+    WRAPPER_INC=$'#include "pci.h"'
+    ALLOW_FILES=( --allowlist-file '.*bus[/\\]pcix[/\\]pci\.h' --allowlist-file '.*arbiter\.h'
+                  --allowlist-file '.*cmreslist\.h' )
+    # pcix CMakeLists sets no version macros → driver builds at the toolchain default
+    # (NT 5.2 / WinXP-era). NTDDI MUST be 0x05020400 (WS03SP1), the value the real build
+    # derives — at exactly 0x05020000 peb_teb.h takes the pre-SP1 path that inlines an
+    # UNDEFINED ACTIVATION_CONTEXT_STACK (→ negative-size array, fatal TU-abort on amd64).
+    # The extra _WIN32_WINDOWS/_WIN32_IE/_SETUPAPI_VER/DLL_EXPORT_VERSION match the real
+    # pcix compile command so the header gates resolve identically.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/arbiter" )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

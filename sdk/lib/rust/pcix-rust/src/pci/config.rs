@@ -1,0 +1,378 @@
+#[allow(unused_imports)] use crate::types::*;
+#[allow(unused_imports)] use crate::ddk_shims::*;
+#[allow(unused_imports)] use crate::glue::*;
+#[allow(unused_imports)] use crate::guids::*;
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::driver_ddk::*;
+use ntkrnl_sys::ex::*;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::ob::*;
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, HalGetBusDataByOffset, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, KEVENT, KeInitializeEvent, KeWaitForSingleObject, PBUS_HANDLER, PCI_BUS_INTERFACE_STANDARD, PCI_COMMON_HEADER, PCI_SLOT_NUMBER, PDEVICE_OBJECT, PINTERFACE, PIO_STACK_LOCATION, PIRP, PPCIBUSDATA, PPCI_BUS_INTERFACE_STANDARD, PciReadWriteConfig, _EVENT_TYPE_SynchronizationEvent};
+use ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation;
+use ntkrnl_sys::ddk::{_BUS_HANDLER, _PCIBUSDATA, _PCI_BUS_INTERFACE_STANDARD, HAL_DISPATCH};
+use ntkrnl_sys::driver_ddk::DbgPrint;
+use ntkrnl_sys::ddk::_INTERFACE_TYPE_PCIBus as PCIBus;
+use ntkrnl_sys::ddk::_BUS_DATA_TYPE_PCIConfiguration as PCIConfiguration;
+use ntkrnl_sys::ke::{KeGetCurrentIrql, DbgBreakPoint};
+use core::ffi::c_void;
+
+type PCSTR = *const i8;
+#[allow(non_camel_case_types)]
+type c_char = i8;
+
+// HalDispatchTable is an ntoskrnl data export (cross-DLL data → raw-dylib).
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+extern "system" {
+    fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PVOID);
+}
+#[link(name = "ntoskrnl", kind = "raw-dylib")]
+extern "C" {
+    pub static mut HalDispatchTable: HAL_DISPATCH;
+}
+// RtlAssert is NTAPI (stdcall on i386, _RtlAssert@16).
+extern "system" {
+}
+
+// ---- file-scope preamble (translated) ----
+// @c2rust file-scope data (compiler-exact tables/statics)
+pub static mut PciAssignBusNumbers: BOOLEAN = 0;
+
+pub const NDEBUG: bool = true;
+#[no_mangle]
+pub unsafe extern "system" fn PciGetAdjustedInterruptLine(
+    PdoExtension: PPCI_PDO_EXTENSION,
+) -> UCHAR {
+    let mut InterruptLine: UCHAR = 0;
+    let mut PciInterruptLine: UCHAR = 0;
+    let mut Length: ULONG = 0;
+
+    if (*PdoExtension).InterruptPin != 0 {
+        Length = HalGetBusDataByOffset(
+            PCIConfiguration,
+            (*(*PdoExtension).ParentFdoExtension).BaseBus as ULONG,
+            (*PdoExtension).Slot.u.AsULONG,
+            core::ptr::addr_of_mut!(PciInterruptLine).cast::<core::ffi::c_void>(),
+            60u32,
+            core::mem::size_of::<UCHAR>() as ULONG,
+        );
+        if Length != 0 {
+            InterruptLine = PciInterruptLine;
+        }
+    }
+
+    if InterruptLine as i32 != 0 {
+        (*PdoExtension).RawInterruptLine
+    } else {
+        InterruptLine
+    }
+}
+#[no_mangle]
+pub unsafe extern "system" fn PciReadWriteConfigSpace(
+    DeviceExtension: PPCI_FDO_EXTENSION,
+    Slot: PCI_SLOT_NUMBER,
+    Buffer: PVOID,
+    Offset: ULONG,
+    Length: ULONG,
+    Read: BOOLEAN,
+) {
+    let mut PciInterface: PPCI_BUS_INTERFACE_STANDARD = core::ptr::null_mut::<_PCI_BUS_INTERFACE_STANDARD>();
+    let mut BusHandler: PBUS_HANDLER = core::ptr::null_mut::<_BUS_HANDLER>();
+    let mut BusData: PPCIBUSDATA = core::ptr::null_mut::<_PCIBUSDATA>();
+    let mut HalFunction: PciReadWriteConfig = None;
+
+    if !((*(*DeviceExtension).BusRootFdoExtension).BusRootFdoExtension
+        == (*DeviceExtension).BusRootFdoExtension)
+    {
+        RtlAssert(
+            b"PCI_IS_ROOT_FDO(DeviceExtension->BusRootFdoExtension)\0" as *const u8 as PVOID,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0" as *const u8
+                as PVOID,
+            62,
+            core::ptr::null_mut::<u8>() as PVOID,
+        );
+    }
+
+    PciInterface = (*(*DeviceExtension).BusRootFdoExtension).PciBusInterface;
+    if !PciInterface.is_null() {
+        DbgPrint(
+            b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
+            b"PciReadWriteConfigSpace\0" as *const u8 as PCSTR,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0" as *const u8
+                as PCSTR,
+            69,
+        );
+        DbgPrint(b"\0" as *const u8 as PCSTR);
+        DbgBreakPoint();
+    } else {
+        if (*DeviceExtension).BusHandler.is_null() {
+            RtlAssert(
+                b"DeviceExtension->BusHandler\0" as *const u8 as PVOID,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0"
+                    as *const u8 as PVOID,
+                74,
+                core::ptr::null_mut::<u8>() as PVOID,
+            );
+        }
+        if PciAssignBusNumbers != 0 {
+            RtlAssert(
+                b"!PciAssignBusNumbers\0" as *const u8 as PVOID,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0"
+                    as *const u8 as PVOID,
+                77,
+                core::ptr::null_mut::<u8>() as PVOID,
+            );
+        }
+
+        BusHandler = (*DeviceExtension).BusHandler;
+        BusData = (*BusHandler).BusData as PPCIBUSDATA;
+
+        HalFunction = if Read as i32 != 0 {
+            (*BusData).ReadConfig
+        } else {
+            (*BusData).WriteConfig
+        };
+        HalFunction.expect("non-null function pointer")(
+            BusHandler as *mut _BUS_HANDLER,
+            Slot,
+            Buffer,
+            Offset,
+            Length,
+        );
+    }
+}
+#[no_mangle]
+pub unsafe extern "system" fn PciWriteDeviceConfig(
+    DeviceExtension: PPCI_PDO_EXTENSION,
+    Buffer: PVOID,
+    Offset: ULONG,
+    Length: ULONG,
+) {
+    PciReadWriteConfigSpace(
+        (*DeviceExtension).ParentFdoExtension,
+        (*DeviceExtension).Slot,
+        Buffer,
+        Offset,
+        Length,
+        0u8,
+    );
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciReadDeviceConfig(
+    DeviceExtension: PPCI_PDO_EXTENSION,
+    Buffer: PVOID,
+    Offset: ULONG,
+    Length: ULONG,
+) {
+    PciReadWriteConfigSpace(
+        (*DeviceExtension).ParentFdoExtension,
+        (*DeviceExtension).Slot,
+        Buffer,
+        Offset,
+        Length,
+        1u8,
+    );
+}
+#[no_mangle]
+pub unsafe extern "system" fn PciReadSlotConfig(
+    DeviceExtension: PPCI_FDO_EXTENSION,
+    Slot: PCI_SLOT_NUMBER,
+    Buffer: PVOID,
+    Offset: ULONG,
+    Length: ULONG,
+) {
+    PciReadWriteConfigSpace(DeviceExtension, Slot, Buffer, Offset, Length, 1u8);
+}
+#[no_mangle]
+pub unsafe extern "system" fn PciQueryForPciBusInterface(
+    FdoExtension: PPCI_FDO_EXTENSION,
+) -> NTSTATUS {
+    let mut AttachedDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Event: KEVENT = core::mem::zeroed();
+    let mut Status: NTSTATUS;
+    let mut Irp: PIRP;
+    let mut IoStackLocation: PIO_STACK_LOCATION;
+    let mut PciInterface: PPCI_BUS_INTERFACE_STANDARD;
+
+    // PAGED_CODE()
+    if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
+        DbgPrint(
+            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
+            KeGetCurrentIrql() as i32,
+        );
+        if 0i32 == 0 {
+            RtlAssert(
+                b"0\0".as_ptr() as PVOID,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr()
+                    as PVOID,
+                144u32,
+                core::ptr::null_mut(),
+            );
+        }
+    }
+
+    // ASSERT(PCI_IS_ROOT_FDO(FdoExtension))
+    if !((*FdoExtension).BusRootFdoExtension == FdoExtension) {
+        RtlAssert(
+            b"PCI_IS_ROOT_FDO(FdoExtension)\0".as_ptr() as PVOID,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr()
+                as PVOID,
+            145u32,
+            core::ptr::null_mut(),
+        );
+    }
+
+    PciInterface = ExAllocatePoolWithTag(
+        NonPagedPool,
+        core::mem::size_of::<PCI_BUS_INTERFACE_STANDARD>() as usize,
+        PCI_POOL_TAG,
+    ) as PPCI_BUS_INTERFACE_STANDARD;
+
+    if PciInterface.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    AttachedDevice = IoGetAttachedDeviceReference((*FdoExtension).PhysicalDeviceObject);
+    KeInitializeEvent(&raw mut Event, _EVENT_TYPE_SynchronizationEvent, 0u8);
+    Irp = IoBuildSynchronousFsdRequest(
+        IRP_MJ_PNP as u32,
+        AttachedDevice,
+        core::ptr::null_mut(),
+        0u32,
+        core::ptr::null_mut(),
+        &raw mut Event,
+        &raw mut IoStatusBlock,
+    );
+
+    if !Irp.is_null() {
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_SUPPORTED;
+        (*Irp).IoStatus.Information = 0;
+        IoStackLocation = IoGetNextIrpStackLocation(Irp);
+
+        if (*IoStackLocation).MajorFunction as i32 != IRP_MJ_PNP as i32 {
+            RtlAssert(
+                b"IoStackLocation->MajorFunction == IRP_MJ_PNP\0".as_ptr() as PVOID,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0"
+                    .as_ptr() as PVOID,
+                173u32,
+                core::ptr::null_mut(),
+            );
+        }
+
+        (*IoStackLocation).MinorFunction = IRP_MN_QUERY_INTERFACE as u8;
+        (*IoStackLocation).Parameters.QueryInterface.InterfaceType =
+            &raw const GUID_PCI_BUS_INTERFACE_STANDARD;
+        (*IoStackLocation).Parameters.QueryInterface.Size =
+            core::mem::size_of::<PCI_BUS_INTERFACE_STANDARD>() as u16;
+        (*IoStackLocation).Parameters.QueryInterface.Version =
+            PCI_BUS_INTERFACE_STANDARD_VERSION as u16;
+        (*IoStackLocation).Parameters.QueryInterface.Interface = PciInterface as PINTERFACE;
+        (*IoStackLocation).Parameters.QueryInterface.InterfaceSpecificData =
+            core::ptr::null_mut::<c_void>();
+
+        Status = IoCallDriver(AttachedDevice, Irp);
+        if Status == STATUS_PENDING {
+            KeWaitForSingleObject(
+                &raw mut Event as PVOID,
+                _KWAIT_REASON_Executive,
+                0i8,
+                0u8,
+                core::ptr::null_mut(),
+            );
+            Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+        }
+
+        if (Status as i32) < 0 {
+            (*FdoExtension).PciBusInterface = core::ptr::null_mut();
+            ExFreePoolWithTag(PciInterface as PVOID, 0u32);
+        } else {
+            (*FdoExtension).PciBusInterface = PciInterface;
+        }
+
+        ObDereferenceObject(AttachedDevice as PVOID);
+    } else {
+        if !AttachedDevice.is_null() {
+            ObDereferenceObject(AttachedDevice as PVOID);
+        }
+        ExFreePoolWithTag(PciInterface as PVOID, 0u32);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status
+}
+#[no_mangle]
+pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENSION) -> NTSTATUS {
+    let mut BusHandler: PBUS_HANDLER = core::ptr::null_mut();
+    let mut Status: NTSTATUS = 0;
+
+    if !((*FdoExtension).BusHandler).is_null() {
+        RtlAssert(
+            b"FdoExtension->BusHandler == NULL\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+            b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+            228u32,
+            core::ptr::null_mut(),
+        );
+    }
+
+    if (*FdoExtension).BusRootFdoExtension == FdoExtension {
+        if !((*FdoExtension).PciBusInterface).is_null() {
+            RtlAssert(
+                b"FdoExtension->PciBusInterface == NULL\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                234u32,
+                core::ptr::null_mut(),
+            );
+        }
+        Status = PciQueryForPciBusInterface(FdoExtension);
+        if Status < 0 {
+            if PciAssignBusNumbers != 0 {
+                RtlAssert(
+                    b"!PciAssignBusNumbers\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                    b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                    239u32,
+                    core::ptr::null_mut(),
+                );
+            }
+        } else {
+            PciAssignBusNumbers = 1u8;
+        }
+    } else {
+        if !((*(*FdoExtension).BusRootFdoExtension).PciBusInterface).is_null() {
+            return STATUS_SUCCESS;
+        }
+        Status = STATUS_NOT_SUPPORTED;
+    }
+
+    if Status < 0 {
+        if Status != STATUS_NOT_SUPPORTED {
+            RtlAssert(
+                b"Status == STATUS_NOT_SUPPORTED\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                264u32,
+                core::ptr::null_mut(),
+            );
+        }
+        if PciAssignBusNumbers != 0 {
+            RtlAssert(
+                b"!PciAssignBusNumbers\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                b"/home/curi/Projects/os-playground/vibeos/drivers/bus/pcix/pci/config.c\0".as_ptr() as *const c_char as *mut core::ffi::c_void,
+                265u32,
+                core::ptr::null_mut(),
+            );
+        }
+        BusHandler = HalDispatchTable
+            .HalReferenceHandlerForBus
+            .expect("non-null function pointer")(
+            PCIBus, (*FdoExtension).BaseBus as ULONG,
+        );
+        (*FdoExtension).BusHandler = BusHandler as PBUS_HANDLER;
+        if BusHandler.is_null() {
+            return STATUS_INVALID_DEVICE_REQUEST;
+        }
+    }
+
+    STATUS_SUCCESS
+}
