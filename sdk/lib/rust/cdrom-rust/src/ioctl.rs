@@ -1,5 +1,6 @@
 use crate::types::*;
 use kmdf_sys::*;
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -246,17 +247,8 @@ struct CDB_SEND_OPC_INFORMATION {
     Exclude1: u8,
 }
 
-#[repr(C)]
-union CDB {
-    SEND_OPC_INFORMATION: CDB_SEND_OPC_INFORMATION,
-}
 
 // Minimal structure for the input buffer
-#[repr(C)]
-struct CDROM_SIMPLE_OPC_INFO {
-    Exclude0: BOOLEAN,
-    Exclude1: BOOLEAN,
-}
 
 /// Handles an IOCTL_CDROM_SEND_OPC_INFORMATION request
 

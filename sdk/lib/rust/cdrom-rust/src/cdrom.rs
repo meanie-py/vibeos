@@ -1,5 +1,6 @@
 use crate::types::*;
 use kmdf_sys::*;
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -224,13 +225,8 @@ unsafe extern "system" {
 }
 
 // Forward declare unknown structs referenced in the body
-struct CDROM_DEVICE_EXTENSION;
-struct CDROM_MMC_EXTENSION;
 struct CONFIGURATION_INFORMATION;
 
-type WDFDEVICE = *mut core::ffi::c_void;
-type WDFREQUEST = *mut core::ffi::c_void;
-type PCDROM_DEVICE_EXTENSION = *mut core::ffi::c_void;
 type NTSTATUS = i32;
 type BOOLEAN = u8;
 type UCHAR = u8;
@@ -244,9 +240,6 @@ const TRACE_FLAG_INIT: u32 = 1;
 const CDROM_FLAG_WINPE_MODE: u32 = 0x00000001;
 
 type NTSTATUS = i32;
-type WDFFILEOBJECT = *mut core::ffi::c_void;
-type WDFDEVICE = *mut core::ffi::c_void;
-type PFILE_OBJECT_CONTEXT = *mut core::ffi::c_void;
 type BOOL = i32;
 
 const TRACE_LEVEL_INFORMATION: u32 = 4;
@@ -447,7 +440,6 @@ extern {
     static WINPE_REG_KEY_NAME: *const u16;
 }
 
-type WDFKEY = *mut core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn DriverEvtCleanup(Driver: WDFOBJECT) {
     let driver: WDFDRIVER = Driver as WDFDRIVER;

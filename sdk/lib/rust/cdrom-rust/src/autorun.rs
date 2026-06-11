@@ -1,5 +1,6 @@
 use crate::types::*;
 use kmdf_sys::*;
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -158,15 +159,11 @@ const TRACE_FLAG_MCN: u32 = 0x00000001; // example flag
 type NTSTATUS = i32;
 type BOOLEAN = i32;          // BOOL is i32 in Windows
 type ULONG = u32;
-type WDFDEVICE = *mut c_void;
-type WDFREQUEST = *mut c_void;
 type PIRP = *mut IRP;
 type PMDL = *mut MDL;
 type PVOID = *mut c_void;
 type PULONG = *mut u32;
 type PSTORAGE_DEVICE_DESCRIPTOR = *mut STORAGE_DEVICE_DESCRIPTOR;
-type PMEDIA_CHANGE_DETECTION_INFO = *mut MEDIA_CHANGE_DETECTION_INFO;
-type PNOTIFICATION_EVENT_STATUS_HEADER = *mut NOTIFICATION_EVENT_STATUS_HEADER;
 
 // The translated function
 

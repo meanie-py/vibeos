@@ -1,5 +1,6 @@
 use crate::types::*;
 use kmdf_sys::*;
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
@@ -23,7 +24,6 @@ const SCSIOP_READ_DVD_STRUCTURE: u8 = 0xAD;
 const TRACE_LEVEL_WARNING: i32 = 0;
 const TRACE_FLAG_INIT: i32 = 0;
 
-type WDFREQUEST = *mut core::ffi::c_void;
 // WDF_REQUEST_PARAMETERS is assumed defined elsewhere with correct layout
 // CDROM_DEVICE_EXTENSION is assumed defined elsewhere
 // CDB, READ_DVD_STRUCTURES_HEADER, DVD_DESCRIPTOR_HEADER are assumed defined elsewhere

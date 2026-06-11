@@ -1,5 +1,6 @@
 use crate::types::*;
 use kmdf_sys::*;
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -88,18 +89,6 @@ const CdRomDeviceInterface: i32 = 0;
 const MountedDeviceInterface: i32 = 1;
 
 // Forward declaration: opaque structs used by this function (caller provides definitions)
-#[repr(C)]
-struct CDROM_DEVICE_EXTENSION {
-    Device: *mut core::ffi::c_void,
-    MountedDeviceInterfaceName: _UNICODE_STRING,
-    // other fields not needed here
-}
-#[repr(C)]
-struct WDF_OBJECT_ATTRIBUTES {
-    Size: u32,
-    ParentObject: *mut core::ffi::c_void,
-    // other fields not needed
-}
 
 unsafe extern "C" {
     fn PAGED_CODE();
@@ -126,28 +115,12 @@ const TRACE_LEVEL_INFORMATION: u32 = 4; // Typical WPP level
 const TRACE_LEVEL_VERBOSE: u32 = 5;
 const TRACE_FLAG_GENERAL: u32 = 0x00000001; // Typical flag
 
-type WDFREQUEST = *mut core::ffi::c_void;
-type WDFIOTARGET = *mut core::ffi::c_void;
 type NTSTATUS = i32;
 type BOOLEAN = u8;
 type ULONG = u32;
 
-#[repr(C)]
-struct WDF_REQUEST_SEND_OPTIONS {
-    Size: u32,
-    Flags: u32,
-    Timeout: i64,
-}
 
-#[repr(C)]
-struct ZERO_POWER_ODD_INFO {
-    InZeroPowerState: u8,
-}
 
-#[repr(C)]
-struct CDROM_DEVICE_EXTENSION {
-    ZeroPowerODDInfo: *mut ZERO_POWER_ODD_INFO,
-}
 
 const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x01;
 const TRACE_LEVEL_WARNING: u32 = 2;

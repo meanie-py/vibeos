@@ -1,5 +1,6 @@
 use crate::types::*;
 use kmdf_sys::*;
+use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -84,20 +85,11 @@ pub unsafe extern "C" fn DeviceIsPortable(DeviceExtension: PCDROM_DEVICE_EXTENSI
 #[allow(non_snake_case)]
 
 // Forward declarations of unknown types and constants
-type WDFREQUEST = *mut core::ffi::c_void;
-type WDFIOTARGET = *mut core::ffi::c_void;
-type WDFCONTEXT = *mut core::ffi::c_void;
-type WDFMEMORY = *mut core::ffi::c_void;
-type WDFSPINLOCK = *mut core::ffi::c_void;
-type WDF_OBJECT_ATTRIBUTES = WDF_OBJECT_ATTRIBUTES_impl; // placeholder struct
 struct WDF_OBJECT_ATTRIBUTES_impl {
     Size: core::ffi::c_ulong,
     ParentObject: *mut core::ffi::c_void,
     _padding: [u8; 40], // ensure size and layout, will be zeroed anyway
 }
-struct WDF_OBJECT_CONTEXT_TYPE_INFO; // opaque
-struct SCSI_REQUEST_BLOCK; // opaque, used for sizeof only
-struct CDROM_DEVICE_EXTENSION; // opaque, used as pointer
 
 // Constants (values approximate, for compilation purpose)
 const TRACE_LEVEL_ERROR: u32 = 2;
@@ -213,8 +205,6 @@ const CdromMmcUpdateRequired: u32 = 1;
 const DEV_SAFE_START_UNIT: u32 = 0x00000001;
 const FILE_READ_ONLY_DEVICE: u32 = 0x00000001;
 
-type WDFDEVICE = *mut core::ffi::c_void;
-type FEATURE_HEADER = core::ffi::c_void; // placeholder for struct
 
 // Constants used by the function
 const TRACE_LEVEL_INFORMATION: u32 = 0x0004;
@@ -1681,7 +1671,6 @@ pub unsafe extern "C" fn DeviceInitializeDvd(Device: WDFDEVICE) -> NTSTATUS {
 }
 
 type NTSTATUS = i32;
-type DEVPROPKEY = core::ffi::c_void;
 
 const DEVPROP_FALSE: i32 = 0;
 const DEVPROP_TRUE: i32 = 1;
