@@ -84,19 +84,8 @@ User-mode PnP manager. Handles device installation, driver loading from user-mod
 
 ## Tier 4: Drivers (Selective)
 
-### fastfat.sys (drivers/filesystems/fastfat) — 34 files, 68.8K lines
-FAT filesystem driver. Used for boot media (LiveCD, ramdisk, USB). Most common filesystem on ReactOS.
-
-**Why translate:** Filesystem drivers are a classic source of kernel bugs (buffer overflows, path traversal). FAT is well-specified and well-understood.
-
-### cdfs.sys (drivers/filesystems/cdfs) — 30 files, 32.4K lines
-CD-ROM filesystem driver. Used for LiveCD boot (i386/amd64 smoke tests boot from CDFS).
-
-### Input drivers (drivers/input) — 30 files, 10.3K lines
-PS/2 keyboard/mouse (i8042prt), class drivers (kbdclass, mouclass). Small, well-defined hardware interface. The ARM64 virtio input driver (`arm64input.sys`) is already custom code.
-
-### mountmgr.sys + partmgr.sys — ~11 files, ~5K lines
-Mount manager (drive letter assignment) and partition manager. Small, boot-critical storage infrastructure.
+→ Moved to **`driver-translation-audit.md`** (the `drivers/` fleet status +
+candidate targets + the cdrom KMDF / storage read-stack sequencing live there).
 
 ## Size Comparison: ntoskrnl vs win32k
 
@@ -177,13 +166,12 @@ RTL is interesting because we've already translated ntoskrnl's RTL subset — tr
 
 | Component | Reason |
 |---|---|
-| **drivers/network/tcpip (lwIP)** | 115K lines of imported lwIP code — upstream C project, not ReactOS-native |
-| **drivers/bus/acpi** | 177 files, mostly ACPICA (imported C library) |
 | **explorer.exe** | 22 files, 14K lines of C++ — uses COM, OLE, Shell APIs. Would need C++ interop, not just C FFI |
 | **subsystems/mvdm (ntvdm)** | DOS/16-bit emulator, 34K lines. Legacy subsystem, low priority |
-| **drivers/filesystems/btrfs** | 54 files — imported from WinBtrfs project |
-| **drivers/filesystems/ext2** | 81 files — imported from Ext2Fsd project |
 | **Wine-derived DLLs** | user32, gdi32, kernel32 client-side — maintained as Wine imports |
+
+(Not-recommended *drivers* — tcpip/lwIP, ACPICA core, btrfs, ext2 — are in
+`driver-translation-audit.md`.)
 
 ## Translation Infrastructure Reuse
 

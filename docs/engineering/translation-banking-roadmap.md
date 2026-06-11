@@ -140,6 +140,7 @@ arm64 boot), `blue` (1.7K), `ksecdd` (1.4K, export), `swenum` (431), `processr` 
 
 **L1b · storage stack (~$50):** `classpnp` (42K, export), `cdrom` (32K), `disk`
 (12.5K), `atapi` (6.5K), `scsiport`+`storport`+`storahci` (~13K, for SATA/AHCI).
+(Live status + the cdrom-KMDF sequencing: `driver-translation-audit.md`.)
 Sequence boot-critical ones, smoke ×3 between.
 
 **L1c · USB stack — KEEP per user (~$30):** `usbport` (17K, framework), `usbhub`

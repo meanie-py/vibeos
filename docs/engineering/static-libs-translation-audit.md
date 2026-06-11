@@ -3,6 +3,11 @@
 Created 2026-05-09. Updated 2026-05-09 (rtl-rust umbrella consolidation).
 Sister doc to `ntoskrnl-translation-audit.md`.
 
+> Scope: kernel-linked **static libs**. The `sdk/lib/drivers/` helper libs
+> (csq, arbiter, ntoskrnl_vista) and boot bits (bootvid, kdcom) live here because
+> they are libraries, not `.sys` drivers. The standalone `drivers/` **driver**
+> fleet (pci, pcix, cdrom, classpnp, input, …) is in `driver-translation-audit.md`.
+
 The cargo PoC's `ntoskrnl.exe` link still consumes a fistful of cmake-built
 `.a` files. After milestone 16 closed the source-tree-kernel-header
 chain, these are **the largest remaining C surface** the cargo PoC
