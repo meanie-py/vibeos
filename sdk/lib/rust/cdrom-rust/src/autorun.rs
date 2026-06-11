@@ -125,7 +125,6 @@ const STATUS_DEVICE_PROTOCOL_ERROR: NTSTATUS = 0xC0000186u32 as i32;
 const STATUS_INVALID_DEVICE_STATE: NTSTATUS = (0xC0000184u32 as i32) as NTSTATUS;
 
 // Constants
-const GESN_BUFFER_SIZE: u32 = 0x8;
 const CDROM_TAG_GESN: u32 = 0x4E534547; // 'GESN' tag (little-endian)
 const NonPagedPoolNxCacheAligned: u32 = 0x300; // NonPagedPoolNx (0x200) | CacheAligned (0x100)
 
@@ -778,7 +777,7 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
         (*srb).QueueAction = 0; // SRB_SIMPLE_TAG_REQUEST
         (*srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
         (*srb).Function = 0x00; // SRB_FUNCTION_EXECUTE_SCSI
-        (*srb).SenseInfoBuffer = buffer as *mut u8;
+        (*srb).SenseInfoBuffer = buffer as *mut core::ffi::c_void;
         (*srb).SrbStatus = 0;
         (*srb).ScsiStatus = 0;
         (*srb).OriginalRequest = irp as *mut core::ffi::c_void;
@@ -936,7 +935,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
 
     // Remember the IRP and SRB for use the next time.
     NT_ASSERT(!IoGetNextIrpStackLocation(irp).is_null() as i32);
-    (*IoGetNextIrpStackLocation(irp)).Parameters.Scsi.Srb = &mut (*info).MediaChangeSrb;
+    (*IoGetNextIrpStackLocation(irp)).Parameters.Scsi.Srb = &raw mut (*info).MediaChangeSrb as *mut _;
 
     // run a sanity check to make sure we're not recursing continuously
     if retryImmediately != 0 {
@@ -1076,9 +1075,9 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
             (*mediaChangeInfo).MediaChangeRequest,
             IOCTL_SCSI_EXECUTE_IN,
             null_mut(),
-            0,
             null_mut(),
-            0,
+            null_mut(),
+            null_mut(),
             null_mut(),
             null_mut(),
         );
@@ -1380,7 +1379,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                     TRACE_FLAG_MCN,
                     b"WDFDEVICE %p supports event mask %x\n\0".as_ptr() as *const i8,
                     (*DeviceExtension).Device,
-                    (*header).SupportedEventClasses,
+                    (*header).SupportedEventClasses as core::ffi::c_uint,
                 );
 
                 if ((*header).SupportedEventClasses as u32 & NOTIFICATION_MEDIA_STATUS_CLASS_MASK) != 0 {
@@ -1446,7 +1445,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN supported, but not mask we care about (%x) for FDO %p\n\0".as_ptr() as *const i8,
-                        (*header).SupportedEventClasses,
+                        (*header).SupportedEventClasses as core::ffi::c_uint,
                         (*DeviceExtension).DeviceObject,
                     );
                     // NOTE: the status is still status_success.
@@ -1816,8 +1815,8 @@ pub unsafe extern "C" fn DeviceMediaChangeRegistryCallBack(
     if RtlCompareMemory(
         (*device_string).Buffer as *const core::ffi::c_void,
         key_value as *const core::ffi::c_void,
-        value_length as usize,
-    ) == value_length as usize
+        value_length as u64,
+    ) == value_length as u64
     {
         TracePrint(
             TRACE_LEVEL_VERBOSE,
@@ -2485,7 +2484,7 @@ pub unsafe extern "C" fn DeviceDisableMainTimer(
             3, // TRACE_LEVEL_WARNING
             1, // TRACE_FLAG_MCN
             b"DeviceDisableMainTimer: Timer never enabled\n\0".as_ptr() as *const i8,
-            core::ptr::null(),
+            core::ptr::null::<core::ffi::c_void>(),
         );
     }
 

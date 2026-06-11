@@ -655,7 +655,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 if (*original_request_context).ReadWriteRetryInitialized == 0 {
                     KeInitializeSpinLock(core::ptr::addr_of_mut!(
                         (*original_request_context).ReadWriteCancelSpinLock
-                    ) as *mut usize);
+                    ) as *mut u64);
                     KeInitializeTimer(core::ptr::addr_of_mut!(
                         (*original_request_context).ReadWriteTimer
                     ));
@@ -919,7 +919,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
         );
 
         if SynchronousSrb != 0 {
-            let sense_size: usize;
+            let mut sense_size: usize;
 
             let tick_ptr2: *mut LARGE_INTEGER = &raw mut (*item).TickCountCompleted;
             KeQueryTickCount(tick_ptr2);
@@ -1147,39 +1147,39 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     (*srb).TimeOutValue = (*DeviceExtension).TimeOutValue;
 
     if RequestIsRealtimeStreaming(OriginalRequest, IsReadRequest) != 0
-        && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_STREAMING as usize) == 0
+        && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_STREAMING as u64) == 0
     {
         if IsReadRequest != 0 {
             RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).READ12) as *mut core::ffi::c_void, SIZEOF_CDB_READ12);
             // REVERSE_BYTES expanded
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).READ12.LogicalBlock) as *mut u32, src_val.swap_bytes());
+            core::ptr::write(core::ptr::addr_of_mut!((*cdb).READ12.as_mut().LogicalBlock) as *mut u32, src_val.swap_bytes());
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(numTransferBlocks) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).READ12.TransferLength) as *mut u32, src_val.swap_bytes());
-            (*cdb).READ12.Streaming = 1;
-            (*cdb).READ12.OperationCode = SCSIOP_READ12;
+            core::ptr::write(core::ptr::addr_of_mut!((*cdb).READ12.as_mut().TransferLength) as *mut u32, src_val.swap_bytes());
+            (*cdb).READ12.as_mut().set_Streaming(1);
+            (*cdb).READ12.as_mut().OperationCode = SCSIOP_READ12;
             (*srb).CdbLength = SIZEOF_CDB_READ12 as u8;
         } else {
             RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).WRITE12) as *mut core::ffi::c_void, SIZEOF_CDB_WRITE12);
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).WRITE12.LogicalBlock) as *mut u32, src_val.swap_bytes());
+            core::ptr::write(core::ptr::addr_of_mut!((*cdb).WRITE12.as_mut().LogicalBlock) as *mut u32, src_val.swap_bytes());
             let src_val: u32 = core::ptr::read(core::ptr::addr_of!(numTransferBlocks) as *const u32);
-            core::ptr::write(core::ptr::addr_of_mut!((*cdb).WRITE12.TransferLength) as *mut u32, src_val.swap_bytes());
-            (*cdb).WRITE12.Streaming = 1;
-            (*cdb).WRITE12.OperationCode = SCSIOP_WRITE12;
+            core::ptr::write(core::ptr::addr_of_mut!((*cdb).WRITE12.as_mut().TransferLength) as *mut u32, src_val.swap_bytes());
+            (*cdb).WRITE12.as_mut().set_Streaming(1);
+            (*cdb).WRITE12.as_mut().OperationCode = SCSIOP_WRITE12;
             (*srb).CdbLength = SIZEOF_CDB_WRITE12 as u8;
         }
     } else {
         RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).CDB10) as *mut core::ffi::c_void, SIZEOF_CDB_CDB10);
         let fp: *const FOUR_BYTE = core::ptr::addr_of!(logicalBlockAddr.__bindgen_anon_1.LowPart) as *const FOUR_BYTE;
-        (*cdb).CDB10.LogicalBlockByte0 = (*fp).__bindgen_anon_1.as_ref().Byte3;
-        (*cdb).CDB10.LogicalBlockByte1 = (*fp).__bindgen_anon_1.as_ref().Byte2;
-        (*cdb).CDB10.LogicalBlockByte2 = (*fp).__bindgen_anon_1.as_ref().Byte1;
-        (*cdb).CDB10.LogicalBlockByte3 = (*fp).__bindgen_anon_1.as_ref().Byte0;
+        (*cdb).CDB10.as_mut().LogicalBlockByte0 = (*fp).__bindgen_anon_1.as_ref().Byte3;
+        (*cdb).CDB10.as_mut().LogicalBlockByte1 = (*fp).__bindgen_anon_1.as_ref().Byte2;
+        (*cdb).CDB10.as_mut().LogicalBlockByte2 = (*fp).__bindgen_anon_1.as_ref().Byte1;
+        (*cdb).CDB10.as_mut().LogicalBlockByte3 = (*fp).__bindgen_anon_1.as_ref().Byte0;
         let fp_num: *const FOUR_BYTE = core::ptr::addr_of!(numTransferBlocks) as *const FOUR_BYTE;
-        (*cdb).CDB10.TransferBlocksMsb = (*fp_num).__bindgen_anon_1.as_ref().Byte1;
-        (*cdb).CDB10.TransferBlocksLsb = (*fp_num).__bindgen_anon_1.as_ref().Byte0;
-        (*cdb).CDB10.OperationCode = if IsReadRequest != 0 { SCSIOP_READ } else { SCSIOP_WRITE };
+        (*cdb).CDB10.as_mut().TransferBlocksMsb = (*fp_num).__bindgen_anon_1.as_ref().Byte1;
+        (*cdb).CDB10.as_mut().TransferBlocksLsb = (*fp_num).__bindgen_anon_1.as_ref().Byte0;
+        (*cdb).CDB10.as_mut().OperationCode = if IsReadRequest != 0 { SCSIOP_READ } else { SCSIOP_WRITE };
         (*srb).CdbLength = SIZEOF_CDB_CDB10 as u8;
     }
 

@@ -16,7 +16,7 @@ use ntkrnl_sys::ddk::ULONG_PTR;
 use ntkrnl_sys::ddk::_MEDIA_TYPE_RemovableMedia as RemovableMedia;
 use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty;
 use ntkrnl_sys::ddk::KeLowerIrql;
-use ntkrnl_sys::inline::tier1::KeRaiseIrql;
+use ntkrnl_sys::inline::tier1::KeRaiseIrqlInternal as KeRaiseIrql;
 use core::ffi::c_void;
 use crate::types::_FEATURE_NUMBER_FeatureAACS as FeatureAACS;
 use crate::types::_FEATURE_NUMBER_FeatureCDAudioAnalogPlay as FeatureCDAudioAnalogPlay;
@@ -154,7 +154,8 @@ pub static LockTypeStrings: SyncStrTable = SyncStrTable([
 
 const KEY_READ: u32 = 0x20019;
 const KEY_WRITE: u32 = 0x20006;
-const PLUGPLAY_REGKEY_DEVICE: usize = !0;
+const PLUGPLAY_REGKEY_DEVICE: u32 = 1;
+const PLUGPLAY_REGKEY_DRIVER: u32 = 2;
 
 const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 
@@ -164,7 +165,7 @@ const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 // Function translation
 // ---------------------------------------------------------------------------
 
-const WDF_NO_OBJECT_ATTRIBUTES: isize = 0; // NULL for object attributes handle
+const WDF_NO_OBJECT_ATTRIBUTES: PWDF_OBJECT_ATTRIBUTES = core::ptr::null_mut(); // NULL for object attributes handle
 const TRACE_LEVEL_WARNING: u32 = 2; // common value, adjust if needed
 const TRACE_FLAG_INIT: u32 = 1; // common value
 
@@ -376,7 +377,7 @@ pub unsafe extern "C" fn DeviceGetParameter(
     if !NT_SUCCESS(status) {
         // open the software key
         status = WdfDeviceOpenRegistryKey(
-            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            (*DeviceExtension).Device,
             PLUGPLAY_REGKEY_DRIVER,
             KEY_READ,
             WDF_NO_OBJECT_ATTRIBUTES,
@@ -455,7 +456,7 @@ pub unsafe extern "C" fn DeviceSetParameter(
         (*DeviceExtension).Device,
         PLUGPLAY_REGKEY_DEVICE,
         KEY_READ | KEY_WRITE,
-        core::ptr::null_mut::<core::ffi::c_void>(), // WDF_NO_OBJECT_ATTRIBUTES
+        core::ptr::null_mut::<_WDF_OBJECT_ATTRIBUTES>(), // WDF_NO_OBJECT_ATTRIBUTES
         &mut root_key,
     );
 
@@ -465,7 +466,7 @@ pub unsafe extern "C" fn DeviceSetParameter(
             root_key,
             &registry_subkey_name,
             KEY_READ | KEY_WRITE,
-            core::ptr::null_mut::<core::ffi::c_void>(),
+            core::ptr::null_mut::<_WDF_OBJECT_ATTRIBUTES>(),
             &mut sub_key,
         );
 
@@ -728,12 +729,12 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
                 (*nextStack).MajorFunction = IRP_MJ_SCSI;
 
                 // union access: DeviceIoControl part
-                let params_ioctl = &mut (*nextStack).Parameters.DeviceIoControl as *mut _;
-                (*params_ioctl).IoControlCode = ioctlCode;
+                let params_ioctl = &mut (*nextStack).Parameters.DeviceIoControl;
+                params_ioctl.IoControlCode = ioctlCode;
 
                 // union access: Scsi part
-                let params_scsi = &mut (*nextStack).Parameters.Scsi as *mut _;
-                (*params_scsi).Srb = Srb;
+                let params_scsi = &mut (*nextStack).Parameters.Scsi;
+                params_scsi.Srb = Srb;
             }
 
             // 4.3 send Request to lower driver
@@ -869,7 +870,7 @@ pub unsafe extern "C" fn DeviceSendNotification(
     IoReportTargetDeviceChangeAsynchronous(
         (*DeviceExtension).LowerPdo,
         notification as *mut core::ffi::c_void,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
     );
 
@@ -1069,7 +1070,7 @@ pub unsafe extern "C" fn DeviceAsynchronousCompletion(
 
     // Suppress unused parameter warnings (mechanical preservation of C code).
     UNREFERENCED_PARAMETER(&Target as *const _ as usize);
-    UNREFERENCED_PARAMETER(&Params as *const _ as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER(&Params as *const _ as usize);
 
     // If this is an execute SRB, check for a frozen queue.
     if (*context).Srb.Function == SRB_FUNCTION_EXECUTE_SCSI {
@@ -2214,7 +2215,7 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
 
     // Get the media region
     ntkrnl_sys::rtl::RtlZeroMemory(dvd_read_structure as *mut core::ffi::c_void, buffer_len);
-    (*dvd_read_structure).Format = DvdCopyrightDescriptor;
+    (*dvd_read_structure).Format = DvdCopyrightDescriptor as u32;
 
     TracePrint(
         TRACE_LEVEL_VERBOSE,
@@ -2271,7 +2272,7 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     // get the device region
     ntkrnl_sys::rtl::RtlZeroMemory(copy_protect_key as *mut core::ffi::c_void, buffer_len);
     (*copy_protect_key).KeyLength = DVD_RPC_KEY_LENGTH as u32;
-    (*copy_protect_key).KeyType = DvdGetRpcKey;
+    (*copy_protect_key).KeyType = DvdGetRpcKey as u32;
 
     TracePrint(
         TRACE_LEVEL_VERBOSE,
@@ -2427,7 +2428,7 @@ pub unsafe extern "C" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     // Now set the region
     ntkrnl_sys::rtl::RtlZeroMemory(copy_protect_key as *mut core::ffi::c_void, buffer_len);
     (*copy_protect_key).KeyLength = DVD_SET_RPC_KEY_LENGTH as u32;
-    (*copy_protect_key).KeyType = DvdSetRpcKey;
+    (*copy_protect_key).KeyType = DvdSetRpcKey as u32;
 
     let dvd_rpc_key =
         (copy_protect_key as *mut u8).add(core::mem::size_of::<DVD_COPY_PROTECT_KEY>())
@@ -2755,7 +2756,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceProperty(
             status = WdfRequestRetrieveOutputBuffer(
                 Request,
                 RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize,
-                core::ptr::addr_of_mut!(descHeader),
+                core::ptr::addr_of_mut!(descHeader) as *mut PVOID,
                 core::ptr::null_mut(),
             );
         }
@@ -3021,7 +3022,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
                 (*srb_ptr).CdbLength = 6;
                 (*srb_ptr).TimeOutValue = (*DeviceExtension).TimeOutValue;
                 cdb = core::ptr::addr_of_mut!((*srb_ptr).Cdb) as *mut CDB;
-                (*cdb).MEDIA_REMOVAL.as_mut().OperationCode = SCSIOP_MEDIUM_REMOVAL;
+                (*cdb).MEDIA_REMOVAL.as_mut().OperationCode = SCSIOP_MEDIUM_REMOVAL as u8;
                 (*cdb).MEDIA_REMOVAL.as_mut().set_Prevent(Lock);
                 status = DeviceSendSrbSynchronously(
                     (*DeviceExtension).Device,
@@ -3154,7 +3155,7 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
 pub unsafe extern "C" fn RequestCompletion(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
-    Status: NTSTATUS,
+    mut Status: NTSTATUS,
     Information: usize,
 ) {
     #[cfg(debug_assertions)]
@@ -3321,7 +3322,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
             (*DeviceExtension).PowerContext.Srb.Function = SRB_FUNCTION_QUIESCE_DEVICE as u8;
         } else if (*DeviceExtension).PowerContext.PowerChangeState.PowerDown == PowerDownDeviceQuiesced {
             (*DeviceExtension).PowerContext.Srb.CdbLength = 10;
-            (*cdb).SYNCHRONIZE_CACHE10.as_mut().OperationCode = SCSIOP_SYNCHRONIZE_CACHE;
+            (*cdb).SYNCHRONIZE_CACHE10.as_mut().OperationCode = SCSIOP_SYNCHRONIZE_CACHE as u8;
         } else if (*DeviceExtension).PowerContext.PowerChangeState.PowerDown == PowerDownDeviceFlushed {
             (*DeviceExtension).PowerContext.Srb.CdbLength = 6;
             (*cdb).START_STOP.as_mut().OperationCode = SCSIOP_START_STOP_UNIT;
