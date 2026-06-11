@@ -26,7 +26,8 @@ use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength};
 extern "C" {
     fn NT_ASSERT(cond: u8);
     fn DbgPrint(format: PCSTR, ...);
-    fn __int2c() -> !;
+    fn __int2c(); // NOT `-> !`: int 0x2c can return (no debugger); a noreturn decl poisons the
+                  // shared symbol and folds whole caller functions to `unreachable` (→ ud2 BUGCHECK).
     fn SrbGetCdb(srb: PVOID) -> PCDB;
     fn SrbSetSrbFlags(srb: PVOID, flags: ULONG);
     fn SrbClearSrbFlags(srb: PVOID, flags: ULONG);

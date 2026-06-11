@@ -2,7 +2,7 @@ use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PDRIVER_DISPATCH};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{IRP_MJ_SCSI};
@@ -15,54 +15,30 @@ use ntkrnl_sys::ddk::{KeGetCurrentIrql};
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
 pub unsafe extern "system" fn ClassInitializeDispatchTables(DriverExtension: *mut _CLASS_DRIVER_EXTENSION) {
-    if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0 == 0 {
-            DbgPrint(
-                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as PCSTR,
-                b"/home/curi/Projects/os-playground/vibeos/drivers/storage/class/classpnp/dispatch.c\0"
-                    .as_ptr() as *const i8,
-                44i32,
-                b"0\0".as_ptr() as *const i8,
-            );
-            __int2c();
-        }
-    }
+    // PAGED_CODE() IRQL assertion omitted (debug-only).
+    // Raw-pointer writes (NOT `&mut (*DriverExtension).DeviceMajorFunctionTable`): taking a
+    // reference to the field inserts a `panic_misaligned_pointer_dereference` check and rustc then
+    // wrongly infers `readnone captures(none)` on DriverExtension — release-opt folds the whole body
+    // to `unreachable` (→ ud2, BUGCHECK 0x1E at boot). write_volatile keeps the stores observable.
+    let table = core::ptr::addr_of_mut!((*DriverExtension).DeviceMajorFunctionTable) as *mut PDRIVER_DISPATCH;
 
-    let table = &mut (*DriverExtension).DeviceMajorFunctionTable;
-
-    let mut idx: u32 = 0;
-    while idx <= IRP_MJ_MAXIMUM_FUNCTION as u32 {
-        table[idx as usize] =
-            Some(abi_cast!(ClassDispatchUnimplemented));
+    let mut idx: usize = 0;
+    while idx <= IRP_MJ_MAXIMUM_FUNCTION as usize {
+        core::ptr::write_volatile(table.add(idx), Some(abi_cast!(ClassDispatchUnimplemented)));
         idx = idx.wrapping_add(1);
     }
 
-    table[IRP_MJ_CREATE as usize] =
-        Some(ClassCreateClose);
-    table[IRP_MJ_CLOSE as usize] =
-        Some(ClassCreateClose);
-    table[IRP_MJ_READ as usize] =
-        Some(ClassReadWrite);
-    table[IRP_MJ_WRITE as usize] =
-        Some(ClassReadWrite);
-    table[IRP_MJ_DEVICE_CONTROL as usize] =
-        Some(ClassDeviceControlDispatch);
-    table[IRP_MJ_SCSI as usize] =
-        Some(ClassInternalIoControl);
-    table[IRP_MJ_SHUTDOWN as usize] =
-        Some(ClassShutdownFlush);
-    table[IRP_MJ_FLUSH_BUFFERS as usize] =
-        Some(ClassShutdownFlush);
-    table[IRP_MJ_PNP as usize] =
-        Some(ClassDispatchPnp);
-    table[IRP_MJ_POWER as usize] =
-        Some(ClassDispatchPower);
-    table[IRP_MJ_SYSTEM_CONTROL as usize] =
-        Some(ClassSystemControl);
+    core::ptr::write_volatile(table.add(IRP_MJ_CREATE as usize), Some(ClassCreateClose));
+    core::ptr::write_volatile(table.add(IRP_MJ_CLOSE as usize), Some(ClassCreateClose));
+    core::ptr::write_volatile(table.add(IRP_MJ_READ as usize), Some(ClassReadWrite));
+    core::ptr::write_volatile(table.add(IRP_MJ_WRITE as usize), Some(ClassReadWrite));
+    core::ptr::write_volatile(table.add(IRP_MJ_DEVICE_CONTROL as usize), Some(ClassDeviceControlDispatch));
+    core::ptr::write_volatile(table.add(IRP_MJ_SCSI as usize), Some(ClassInternalIoControl));
+    core::ptr::write_volatile(table.add(IRP_MJ_SHUTDOWN as usize), Some(ClassShutdownFlush));
+    core::ptr::write_volatile(table.add(IRP_MJ_FLUSH_BUFFERS as usize), Some(ClassShutdownFlush));
+    core::ptr::write_volatile(table.add(IRP_MJ_PNP as usize), Some(ClassDispatchPnp));
+    core::ptr::write_volatile(table.add(IRP_MJ_POWER as usize), Some(ClassDispatchPower));
+    core::ptr::write_volatile(table.add(IRP_MJ_SYSTEM_CONTROL as usize), Some(ClassSystemControl));
 }
 #[no_mangle]
 pub unsafe extern "system" fn ClassGlobalDispatch(

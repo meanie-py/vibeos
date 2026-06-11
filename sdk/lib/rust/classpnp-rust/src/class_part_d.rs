@@ -2048,3 +2048,37 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// ClassShutdownFlush — gap-TU ($0.01); surfaced live once ClassInitializeDispatchTables un-folded.
+#[no_mangle]
+pub unsafe extern "system" fn ClassShutdownFlush(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+) -> NTSTATUS {
+    let commonExtension = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
+
+    let isRemoved: ULONG;
+
+    isRemoved = crate::ddk_shims::ClassAcquireRemoveLock(DeviceObject, Irp as PVOID);
+
+    if isRemoved != 0 {
+        ClassReleaseRemoveLock(DeviceObject, Irp);
+
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_DEVICE_DOES_NOT_EXIST;
+
+        ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+
+        return STATUS_DEVICE_DOES_NOT_EXIST;
+    }
+
+    if (*(*commonExtension).DevInfo).ClassShutdownFlush.is_some() {
+        return (*(*commonExtension).DevInfo).ClassShutdownFlush.unwrap()(DeviceObject, Irp);
+    }
+
+    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INVALID_DEVICE_REQUEST;
+
+    ClassReleaseRemoveLock(DeviceObject, Irp);
+    ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
+
+    return STATUS_INVALID_DEVICE_REQUEST;
+}

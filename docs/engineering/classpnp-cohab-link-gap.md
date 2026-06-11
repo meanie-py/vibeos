@@ -192,3 +192,45 @@ translation that never linked/booted until now). `lint_kernel.py class.rs` = cle
 unprotected-output-write). Next: GDB-step ClassInitialize / bisect the success-branch tail (likely a
 captures(none) or type-layout/size_of mismatch around `(*driverExtension).InitData` RtlCopyMemory or
 ClassInitializeDispatchTables). This is the correct integrated-but-failing state per AGENTS.md.
+
+## UPDATE 2026-06-11 (cont.): ClassInitialize fixed; SYSTEMIC fold discovered
+
+**Root-caused + fixed the boot BUGCHECK 0x1E ud2:** it was in `ClassInitializeDispatchTables`
+(dispatch.rs), which release-opt folded to a whole-function `unreachable` (→ ud2). Mechanism:
+- `&mut (*DriverExtension).DeviceMajorFunctionTable` inserts a `panic_misaligned_pointer_dereference`
+  check, and the PAGED_CODE preamble `if KeGetCurrentIrql()>APC_LEVEL { … __int2c() }` interacts
+  with `__int2c() -> !` (declared **noreturn** in retry.rs:29, a shared `#[no_mangle]` symbol) so
+  the whole function folds; rustc then stamps `readnone captures(none)` on the (actually-written)
+  pointer param.
+- Fixes: (a) dispatch.rs uses raw-pointer `write_volatile` (no `&mut` reference) + dropped the
+  debug-only IRQL/PAGED_CODE preamble; (b) retry.rs `__int2c()` decl changed from `-> !` to `()`
+  (int 0x2c can return; noreturn poisons every caller); (c) translated `ClassShutdownFlush`
+  (gap-TU $0.01) which became a LIVE reference once the dispatch table un-folded.
+- Verified: ClassInitialize + ClassInitializeDispatchTables are now ud2-free; links 0 undefs ×3-clean.
+
+### ⚠️ SYSTEMIC release-opt fold (~46 functions) — the real boot blocker, OPEN
+Disassembly shows **~46 classpnp functions are whole-function `unreachable` (push;mov;ud2)** at the
+shipped `opt-level=1` — including dispatch handlers ClassCreateClose, ClassSystemControl,
+ClassDeviceControlDispatch, ClassAddDevice, ClassMinimalPowerHandler, ClasspMcnControl, the
+property/DSM handlers, transfer-packet helpers, etc. Each crashes when called, so boot dies at the
+first one reached after init. Cause = the same class of miscompile: translated code creates
+`&(*ptr).field` references whose rustc reference-UB-checks (align-8 on i386 + null) combine with the
+wrongly-inferred `readnone captures(none)` param attribute so LLVM folds the whole body. The
+workspace firewall (lto=false, cgu=256) stops the CROSS-function exploit but NOT this intra-function
+fold.
+
+**Proven workaround + the catch:** a per-package `[profile.release.package.classpnp-rust] opt-level=0`
+override un-folds ALL 46 (verified: 0 non-shim whole-fn-ud2). BUT un-folding makes ~**38 previously-
+DEAD references live** → 38 new link undefs (so it no longer links). They split into: (a) ~15 shim
+ABI-decoration mismatches now exposed (e.g. `_InterlockedCompareExchange@12`/`_SrbGetCdb` cdecl-vs-
+stdcall, NT_ASSERT, SET_FLAG, GET_FDO_EXTENSON_SENSE_DATA_LENGTH) — fix the ddk_shims/C-stub
+decoration; (b) ~15 more untranslated helpers (ClassAcquireChildLock, ClasspIsPortable,
+ClasspScanForSpecialInRegistry, ClasspAllocatePowerProcessIrp, ClassReleaseQueue[Completion],
+ClasspRetryDpcTimer, ClasspSendSynchronousCompletion, …) — translate; (c) ~5 data symbols
+(ClassBadItems, CountOfSetBitsUChar, ClasspIsOffload/TokenOperation, DBGGETIOCTLSTR).
+
+So the opt-1 "0 undefs" is partly an artifact of the fold hiding 38 references. Reverted the opt-0
+override to keep the OS LINKABLE at opt-1 (folded but builds). **Next phase = the proper fix:** either
+(i) rewrite the `&(*ptr).field` reference patterns to raw-pointer reads crate-wide (kills the UB-check
+fold without opt-0), or (ii) keep opt-0 and close the 38 surfaced undefs. Path (i) is cleaner and
+doesn't regress codegen. The fold list + 38-undef list are in /tmp/undef_opt0.txt.
