@@ -12040,6 +12040,30 @@ pub struct _SCSI_SUPPORTED_CONTROL_TYPE_LIST {
 pub type SCSI_SUPPORTED_CONTROL_TYPE_LIST = _SCSI_SUPPORTED_CONTROL_TYPE_LIST;
 pub type PSCSI_SUPPORTED_CONTROL_TYPE_LIST = *mut _SCSI_SUPPORTED_CONTROL_TYPE_LIST;
 #[repr(C)]
+pub struct _SCSI_REQUEST_BLOCK {
+    pub Length: USHORT,
+    pub Function: UCHAR,
+    pub SrbStatus: UCHAR,
+    pub ScsiStatus: UCHAR,
+    pub PathId: UCHAR,
+    pub TargetId: UCHAR,
+    pub Lun: UCHAR,
+    pub QueueTag: UCHAR,
+    pub QueueAction: UCHAR,
+    pub CdbLength: UCHAR,
+    pub SenseInfoBufferLength: UCHAR,
+    pub SrbFlags: ULONG,
+    pub DataTransferLength: ULONG,
+    pub TimeOutValue: ULONG,
+    pub DataBuffer: PVOID,
+    pub SenseInfoBuffer: PVOID,
+    pub NextSrb: *mut _SCSI_REQUEST_BLOCK,
+    pub OriginalRequest: PVOID,
+    pub SrbExtension: PVOID,
+    pub __bindgen_anon_1: _SCSI_REQUEST_BLOCK__bindgen_ty_1,
+    pub Cdb: [UCHAR; 16usize],
+}
+#[repr(C)]
 pub struct _SCSI_REQUEST_BLOCK__bindgen_ty_1 {
     pub InternalStatus: __BindgenUnionField<ULONG>,
     pub QueueSortKey: __BindgenUnionField<ULONG>,
