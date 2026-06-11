@@ -8,7 +8,7 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, _STORAGE_BUS_TYPE_BusTypeAtapi as BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KeInitializeMutex, KeQueryTimeIncrement, KeReleaseMutex, LARGE_INTEGER, LPCSTR, MmBuildMdlForNonPagedPool, POWER_PLATFORM_INFORMATION, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, STORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_DESCRIPTOR, PUNICODE_STRING, _POWER_INFORMATION_LEVEL_PlatformInformation as PlatformInformation, RTL_QUERY_REGISTRY_ROUTINE, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, RtlQueryRegistryValues, _KWAIT_REASON_UserRequest, ZwPowerInformation};
+use ntkrnl_sys::ddk::{ANSI_STRING, _STORAGE_BUS_TYPE_BusTypeAtapi as BusTypeAtapi, CLASS_MEDIA_CHANGE_CONTEXT, _KWAIT_REASON_Executive, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoReuseIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, KeInitializeMutex, KeQueryTimeIncrement, KeReleaseMutex, LARGE_INTEGER, LPCSTR, MmBuildMdlForNonPagedPool, POWER_PLATFORM_INFORMATION, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, STORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_DESCRIPTOR, PUNICODE_STRING, _POWER_INFORMATION_LEVEL_PlatformInformation as PlatformInformation, RTL_QUERY_REGISTRY_TABLE, RtlAnsiStringToUnicodeString, RtlCompareMemory, RtlFreeUnicodeString, RtlQueryRegistryValues, _KWAIT_REASON_UserRequest, ZwPowerInformation};
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::{copy_nonoverlapping, write_bytes, null_mut};
@@ -1039,7 +1039,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
     if status >= 0 {
         if !(*DeviceExtension).PowerDescriptor.is_null()
             && (*(*DeviceExtension).PowerDescriptor).AsynchronousNotificationSupported != 0
-            && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION) == 0
+            && ((*(*DeviceExtension).PrivateFdoData).HackFlags & (FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION as ntkrnl_sys::ddk::ULONG_PTR)) == 0
         {
             (*mediaChangeInfo).AsynchronousNotificationSupported = 1;
         }
@@ -1218,7 +1218,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
     }
 
     // Check if the device has a hack flag saying never to try this.
-    if NT_SUCCESS(status) && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_GESN_IS_BAD as u64) != 0 {
+    if NT_SUCCESS(status) && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_GESN_IS_BAD as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
         DeviceSetParameter(
             DeviceExtension,
             CLASSP_REG_SUBKEY_NAME,
@@ -1397,7 +1397,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                     );
                 }
                 if ((*header).SupportedEventClasses as u32 & NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK) != 0 {
-                    if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_GESN_IGNORE_OPCHANGE as u64) != 0 {
+                    if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_GESN_IGNORE_OPCHANGE as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
                         TracePrint(
                             TRACE_LEVEL_INFORMATION,
                             TRACE_FLAG_MCN,
@@ -1748,7 +1748,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
     status
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceMediaChangeRegistryCallBack(
+pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
     ValueName: *mut u16,
     ValueType: u32,
     ValueData: *mut core::ffi::c_void,
@@ -1815,8 +1815,8 @@ pub unsafe extern "C" fn DeviceMediaChangeRegistryCallBack(
     if RtlCompareMemory(
         (*device_string).Buffer as *const core::ffi::c_void,
         key_value as *const core::ffi::c_void,
-        value_length as u64,
-    ) == value_length as u64
+        value_length as ntkrnl_sys::ddk::SIZE_T,
+    ) == value_length as ntkrnl_sys::ddk::SIZE_T
     {
         TracePrint(
             TRACE_LEVEL_VERBOSE,
@@ -1997,7 +1997,12 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
 
         if NT_SUCCESS(status) {
             // query the value, setting valueFound to true if found
-            parameters[0].QueryRoutine = Some(DeviceMediaChangeRegistryCallBack);
+            // The callback is defined `extern "system"` (stdcall ABI on i386,
+            // C ABI on amd64/arm64) — exactly the field's ABI. On i386 rustc
+            // still nominally distinguishes `"system"` from the field's
+            // `"stdcall"` fn-ptr type, so transmute to the inferred field type
+            // (an ABI-identical, zero-cost reinterpretation on every arch).
+            parameters[0].QueryRoutine = Some(core::mem::transmute(DeviceMediaChangeRegistryCallBack as unsafe extern "system" fn(_, _, _, _, _, _) -> _));
             parameters[0].Flags = RTL_QUERY_REGISTRY_REQUIRED;
             parameters[0].Name = auto_run_always_disable;
             parameters[0].EntryContext =
@@ -2372,7 +2377,7 @@ pub unsafe extern "C" fn RequestSetupMcnSyncIrp(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceMainTimerTickHandler(Timer: WDFTIMER) {
+pub unsafe extern "system" fn DeviceMainTimerTickHandler(Timer: WDFTIMER) {
 
     let mut deviceExtension: PCDROM_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut dataLength: usize = 0;
@@ -2406,9 +2411,9 @@ pub unsafe extern "C" fn DeviceEnableMainTimer(
     if (*DeviceExtension).MainTimer.is_null() {
         let mut timer_config: WDF_TIMER_CONFIG = core::mem::zeroed();
         timer_config.Size = core::mem::size_of::<WDF_TIMER_CONFIG>() as u32;
-        timer_config.EvtTimerFunc = Some(DeviceMainTimerTickHandler);
+        timer_config.EvtTimerFunc = Some(core::mem::transmute(DeviceMainTimerTickHandler as unsafe extern "system" fn(_)));
 
-        if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_MSFT_VIRTUAL_ODD as u64) != 0 {
+        if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_MSFT_VIRTUAL_ODD as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
             timer_config.Period = 2000;
         } else {
             timer_config.Period = 1000;

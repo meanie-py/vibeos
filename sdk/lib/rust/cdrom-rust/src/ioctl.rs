@@ -10,7 +10,11 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DEVICE_MEDIA_INFO, DISK_GEOMETRY, DISK_GEOMETRY_EX, DRIVE_LAYOUT_INFORMATION, DRIVE_LAYOUT_INFORMATION_EX, GET_LENGTH_INFORMATION, GET_MEDIA_TYPES, IO_ERROR_LOG_PACKET, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoIs32bitProcess, KeDelayExecutionThread, LARGE_INTEGER, LPCSTR, MOUNTDEV_NAME, PARTITION_INFORMATION, PARTITION_INFORMATION_EX, PDEVICE_MEDIA_INFO, PDISK_GEOMETRY, PDISK_GEOMETRY_EX, PDRIVE_LAYOUT_INFORMATION, PDRIVE_LAYOUT_INFORMATION_EX, PERSISTENT_RESERVE_COMMAND, PGET_LENGTH_INFORMATION, PGET_MEDIA_TYPES, PIO_ERROR_LOG_PACKET, PMOUNTDEV_NAME, PPARTITION_INFORMATION, PPARTITION_INFORMATION_EX, PPERSISTENT_RESERVE_COMMAND, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_NUMBER, PSTORAGE_EVENT_NOTIFICATION, PSTORAGE_HOTPLUG_INFO, PSTORAGE_PROPERTY_QUERY, PSTORAGE_READ_CAPACITY, PSTORAGE_WRITE_CACHE_PROPERTY, PVERIFY_INFORMATION, RTL_QUERY_REGISTRY_TABLE, RtlDeleteRegistryValue, RtlQueryRegistryValues, STORAGE_DESCRIPTOR_HEADER, STORAGE_DEVICE_DESCRIPTOR, STORAGE_DEVICE_NUMBER, STORAGE_EVENT_NOTIFICATION, STORAGE_HOTPLUG_INFO, STORAGE_READ_CAPACITY, STORAGE_WRITE_CACHE_PROPERTY};
+use ntkrnl_sys::ddk::{DEVICE_MEDIA_INFO, DISK_GEOMETRY, DISK_GEOMETRY_EX, DRIVE_LAYOUT_INFORMATION, DRIVE_LAYOUT_INFORMATION_EX, GET_LENGTH_INFORMATION, GET_MEDIA_TYPES, IO_ERROR_LOG_PACKET, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, KeDelayExecutionThread, LARGE_INTEGER, LPCSTR, MOUNTDEV_NAME, PARTITION_INFORMATION, PARTITION_INFORMATION_EX, PDEVICE_MEDIA_INFO, PDISK_GEOMETRY, PDISK_GEOMETRY_EX, PDRIVE_LAYOUT_INFORMATION, PDRIVE_LAYOUT_INFORMATION_EX, PERSISTENT_RESERVE_COMMAND, PGET_LENGTH_INFORMATION, PGET_MEDIA_TYPES, PIO_ERROR_LOG_PACKET, PMOUNTDEV_NAME, PPARTITION_INFORMATION, PPARTITION_INFORMATION_EX, PPERSISTENT_RESERVE_COMMAND, PPREVENT_MEDIA_REMOVAL, PREVENT_MEDIA_REMOVAL, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_NUMBER, PSTORAGE_EVENT_NOTIFICATION, PSTORAGE_HOTPLUG_INFO, PSTORAGE_PROPERTY_QUERY, PSTORAGE_READ_CAPACITY, PSTORAGE_WRITE_CACHE_PROPERTY, PVERIFY_INFORMATION, RTL_QUERY_REGISTRY_TABLE, RtlDeleteRegistryValue, RtlQueryRegistryValues, STORAGE_DESCRIPTOR_HEADER, STORAGE_DEVICE_DESCRIPTOR, STORAGE_DEVICE_NUMBER, STORAGE_EVENT_NOTIFICATION, STORAGE_HOTPLUG_INFO, STORAGE_READ_CAPACITY, STORAGE_WRITE_CACHE_PROPERTY};
+// IoIs32bitProcess is missing from the i386/arm64 ntkrnl-sys bindgen `ddk`
+// module (present only on amd64); declare it locally as the real ntoskrnl
+// export. PIRP/BOOLEAN are in scope via the ddk imports above.
+extern "system" { fn IoIs32bitProcess(Irp: PIRP) -> BOOLEAN; }
 // bindgen enum-variant constants (prefixed in ddk) used as plain names here:
 use ntkrnl_sys::ddk::_STORAGE_MEDIA_TYPE_CD_ROM as CD_ROM;
 use ntkrnl_sys::ddk::_PARTITION_STYLE_PARTITION_STYLE_MBR as PARTITION_STYLE_MBR;
@@ -764,10 +768,13 @@ pub unsafe extern "C" fn RequestHandleUnknownIoctl(
     } else {
         WdfRequestSetCompletionRoutine(
             Request,
-            Some(core::mem::transmute::<
-                unsafe extern "system" fn(WDFREQUEST, WDFIOTARGET, *mut WDF_REQUEST_COMPLETION_PARAMS, WDFCONTEXT),
-                unsafe extern "C" fn(WDFREQUEST, WDFIOTARGET, *mut WDF_REQUEST_COMPLETION_PARAMS, WDFCONTEXT),
-            >(RequestDummyCompletionRoutine)),
+            // RequestDummyCompletionRoutine is declared `extern "system"` (stdcall
+            // ABI on i386, C on amd64/arm64) — the field's ABI on each arch — but
+            // rustc nominally distinguishes it from the field's `"stdcall"`/`"C"`
+            // fn-ptr type on i386. Transmute to the inferred field type (zero-cost).
+            Some(core::mem::transmute(
+                RequestDummyCompletionRoutine as unsafe extern "system" fn(WDFREQUEST, WDFIOTARGET, *mut WDF_REQUEST_COMPLETION_PARAMS, WDFCONTEXT),
+            )),
             core::ptr::null_mut(),
         );
     }
@@ -4190,7 +4197,7 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
             const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x00000001;
 
             let is_type_one = (*inputBuffer).RequestType == SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE;
-            let hack_flag_set = ((*cdData).HackFlags & CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG as u64) != 0;
+            let hack_flag_set = ((*cdData).HackFlags & CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG as ntkrnl_sys::ddk::ULONG_PTR) != 0;
 
             if is_type_one && hack_flag_set {
                 let needed_size = core::mem::size_of::<GET_CONFIGURATION_HEADER>() + core::mem::size_of::<FEATURE_HEADER>();
@@ -5579,7 +5586,7 @@ pub unsafe extern "C" fn RequestHandleReserveRelease(
         core::ptr::write_bytes(srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
 
         // TEST_FLAG expanded inline
-        if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_RESERVE6 as u64) != 0 {
+        if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_RESERVE6 as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
             (*srb).CdbLength = 10;
             (*cdb).CDB10.as_mut().OperationCode = if ioctl_code == IOCTL_STORAGE_RESERVE {
                 SCSIOP_RESERVE_UNIT10

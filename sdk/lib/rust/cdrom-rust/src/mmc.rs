@@ -457,7 +457,7 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
     let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
     core::ptr::write_bytes(Buffer as *mut u8, 0, BufferSize as usize);
 
-    if ((*deviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_BAD_GET_CONFIG_SUPPORT as u64) != 0 {
+    if ((*deviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_BAD_GET_CONFIG_SUPPORT as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 

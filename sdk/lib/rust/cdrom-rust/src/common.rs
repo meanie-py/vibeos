@@ -15,7 +15,10 @@ use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID as STORAGE_PROPERTY_ID;
 use ntkrnl_sys::ddk::ULONG_PTR;
 use ntkrnl_sys::ddk::_MEDIA_TYPE_RemovableMedia as RemovableMedia;
 use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty;
-use ntkrnl_sys::ddk::KeLowerIrql;
+// KeLowerIrql is missing from the i386/arm64 ntkrnl-sys bindgen `ddk` module
+// (present only on amd64); declare it locally as the real HAL/ntoskrnl export.
+// KIRQL is in scope via the ddk imports and is u8 on every arch.
+extern "system" { fn KeLowerIrql(NewIrql: KIRQL); }
 use ntkrnl_sys::inline::tier1::KeRaiseIrqlInternal as KeRaiseIrql;
 use core::ffi::c_void;
 use crate::types::_FEATURE_NUMBER_FeatureAACS as FeatureAACS;
@@ -985,7 +988,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
     if NT_SUCCESS(status) {
         WdfRequestSetCompletionRoutine(
             startUnitRequest,
-            Some(DeviceAsynchronousCompletion),
+            Some(core::mem::transmute(DeviceAsynchronousCompletion as unsafe extern "system" fn(_, _, _, _))),
             context as WDFCONTEXT,
         );
 
@@ -1027,7 +1030,7 @@ pub unsafe extern "C" fn DeviceSendIoctlAsynchronously(
 
         IoSetCompletionRoutine(
             irp,
-            Some(RequestAsynchronousIrpCompletion),
+            Some(core::mem::transmute(RequestAsynchronousIrpCompletion as unsafe extern "system" fn(_, _, _) -> _)),
             DeviceExtension as *mut core::ffi::c_void,
             1u8,
             1u8,
@@ -1039,7 +1042,7 @@ pub unsafe extern "C" fn DeviceSendIoctlAsynchronously(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RequestAsynchronousIrpCompletion(
+pub unsafe extern "system" fn RequestAsynchronousIrpCompletion(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -1050,7 +1053,7 @@ pub unsafe extern "C" fn RequestAsynchronousIrpCompletion(
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceAsynchronousCompletion(
+pub unsafe extern "system" fn DeviceAsynchronousCompletion(
     Request: WDFREQUEST,
     Target: WDFIOTARGET,
     Params: *mut WDF_REQUEST_COMPLETION_PARAMS,
@@ -1120,7 +1123,7 @@ pub unsafe extern "C" fn DeviceReleaseQueue(Device: WDFDEVICE) {
 
     WdfRequestSetCompletionRoutine(
         (*deviceExtension).ReleaseQueueRequest,
-        Some(DeviceReleaseQueueCompletion),
+        Some(core::mem::transmute(DeviceReleaseQueueCompletion as unsafe extern "system" fn(_, _, _, _))),
         Device as WDFCONTEXT,
     );
 
@@ -1135,7 +1138,7 @@ pub unsafe extern "C" fn DeviceReleaseQueue(Device: WDFDEVICE) {
     KeLowerIrql(currentIrql);
 }
 #[no_mangle]
-pub unsafe extern "C" fn DeviceReleaseQueueCompletion(
+pub unsafe extern "system" fn DeviceReleaseQueueCompletion(
     Request: WDFREQUEST,
     Target: WDFIOTARGET,
     Params: PWDF_REQUEST_COMPLETION_PARAMS,

@@ -6,7 +6,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IO_COMPLETION_ROUTINE, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, POWER_SETTING_CALLBACK};
+use ntkrnl_sys::ddk::{IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation};
 use ntkrnl_sys::ddk::_POWER_STATE_TYPE_DevicePowerState as DevicePowerState;
 use ntkrnl_sys::ddk::_DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0;
 use ntkrnl_sys::ddk::_MONITOR_DISPLAY_STATE_PowerMonitorOff as PowerMonitorOff;

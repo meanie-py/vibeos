@@ -1,4 +1,9 @@
 use crate::types::*;
+// On i386 there is no separate 32-bit thunk struct — the native SCSI_PASS_THROUGH
+// *is* the 32-bit form. These aliases (only used in size_of bounds checks) keep the
+// amd64-shared code compiling on i386 where SCSI_PASS_THROUGH32/_EX don't exist.
+#[cfg(target_arch = "x86")]
+use crate::types::{SCSI_PASS_THROUGH as SCSI_PASS_THROUGH32, SCSI_PASS_THROUGH_EX as SCSI_PASS_THROUGH32_EX};
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
 use ntkrnl_sys::globals::*;
@@ -385,7 +390,12 @@ pub unsafe extern "C" fn DriverEntry(
         &raw mut attributes,
         core::ptr::null(),
     );
-    (*core::ptr::addr_of_mut!(attributes)).EvtCleanupCallback = Some(DriverEvtCleanup);
+    // `extern "system"` is stdcall-ABI on i386 / C-ABI on amd64+arm64 — the same
+    // ABI the WDF callback field expects on each arch — but rustc nominally
+    // distinguishes it from the field's `"stdcall"`/`"C"` fn-ptr type on i386.
+    // Transmute to the inferred field type (zero-cost, ABI-identical).
+    (*core::ptr::addr_of_mut!(attributes)).EvtCleanupCallback =
+        Some(core::mem::transmute(DriverEvtCleanup as unsafe extern "system" fn(_)));
 
     WDF_DRIVER_CONFIG_INIT(
         &raw mut config,
@@ -428,7 +438,7 @@ extern {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DriverEvtCleanup(Driver: WDFOBJECT) {
+pub unsafe extern "system" fn DriverEvtCleanup(Driver: WDFOBJECT) {
     let driver: WDFDRIVER = Driver as WDFDRIVER;
 
     debug_assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL);

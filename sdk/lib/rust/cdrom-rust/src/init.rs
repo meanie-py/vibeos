@@ -19,7 +19,6 @@ extern "C" {
     fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *mut WDF_OBJECT_CONTEXT_TYPE_INFO);
     fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
-    fn DeviceReleaseQueueCompletion(request: WDFREQUEST, target: WDFIOTARGET, params: PWDF_REQUEST_COMPLETION_PARAMS, context: WDFCONTEXT);
     static DEVPKEY_Device_InLocalMachineContainer: DEVPROPKEY;
     fn min(a: u32, b: u32) -> u32;
     fn max(a: u32, b: u32) -> u32;
@@ -31,6 +30,12 @@ extern "C" {
     fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
+}
+extern "system" {
+    // WDF completion callback: NTAPI/stdcall on i386, C on amd64/arm64.
+    // Defined in common.rs as `extern "system"`; declare it with a matching ABI
+    // so `Some(DeviceReleaseQueueCompletion)` fits the WDF fn-ptr field on i386.
+    fn DeviceReleaseQueueCompletion(request: WDFREQUEST, target: WDFIOTARGET, params: PWDF_REQUEST_COMPLETION_PARAMS, context: WDFCONTEXT);
 }
 extern "C" {
     fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
@@ -544,7 +549,7 @@ pub unsafe extern "C" fn DeviceInitReleaseQueueContext(DeviceExtension: *mut CDR
     if NT_SUCCESS(status) {
         WdfRequestSetCompletionRoutine(
             (*DeviceExtension).ReleaseQueueRequest,
-            Some(DeviceReleaseQueueCompletion),
+            Some(core::mem::transmute(DeviceReleaseQueueCompletion as unsafe extern "system" fn(_, _, _, _))),
             (*DeviceExtension).Device as WDFCONTEXT,
         );
     }
@@ -925,7 +930,7 @@ pub unsafe extern "C" fn DeviceRetrieveHackFlagsFromRegistry(
                 device_hacks &= !FDO_HACK_INVALID_FLAGS;
                 // SET_FLAG(DeviceExtension->PrivateFdoData->HackFlags, device_hacks)
                 let private_fdo = (*DeviceExtension).PrivateFdoData;
-                (*private_fdo).HackFlags |= device_hacks as u64;
+                (*private_fdo).HackFlags |= device_hacks as ntkrnl_sys::ddk::ULONG_PTR;
             }
             WdfRegistryClose(sub_key);
         }
@@ -1027,7 +1032,7 @@ pub unsafe extern "C" fn DeviceHackFlagsScan(
     // CLEAR_FLAG
     data &= !(FDO_HACK_INVALID_FLAGS as usize);
     // SET_FLAG
-    (*(*DeviceExtension).PrivateFdoData).HackFlags |= data as u64;
+    (*(*DeviceExtension).PrivateFdoData).HackFlags |= data as ntkrnl_sys::ddk::ULONG_PTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
@@ -1179,7 +1184,7 @@ pub unsafe extern "C" fn ScanForSpecialHandler(
     let mut flags = HackFlags;
     flags &= !CDROM_HACK_INVALID_FLAGS;
 
-    (*DeviceExtension).DeviceAdditionalData.HackFlags = flags as u64;
+    (*DeviceExtension).DeviceAdditionalData.HackFlags = flags as ntkrnl_sys::ddk::ULONG_PTR;
 }
 
 #[no_mangle]

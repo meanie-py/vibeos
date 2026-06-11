@@ -492,7 +492,7 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
 
         WdfRequestSetCompletionRoutine(
             (*DeviceExtension).ScratchContext.ScratchRequest,
-            Some(ScratchBuffer_ReadWriteCompletionRoutine),
+            Some(core::mem::transmute(ScratchBuffer_ReadWriteCompletionRoutine as unsafe extern "system" fn(_, _, _, _))),
             DeviceExtension as *mut core::ffi::c_void,
         );
 
@@ -508,7 +508,7 @@ pub unsafe extern "C" fn ScratchBuffer_PerformNextReadWrite(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_ReadWriteTimerRoutine(
+pub unsafe extern "system" fn ScratchBuffer_ReadWriteTimerRoutine(
     Dpc: *mut _KDPC,
     DeferredContext: *mut core::ffi::c_void,
     SystemArgument1: *mut core::ffi::c_void,
@@ -563,7 +563,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteTimerRoutine(
     WdfObjectDereference(originalRequest);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_ReadWriteEvtRequestCancel(Request: WDFREQUEST) {
+pub unsafe extern "system" fn ScratchBuffer_ReadWriteEvtRequestCancel(Request: WDFREQUEST) {
     let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
     let deviceExtension: PCDROM_DEVICE_EXTENSION = (*requestContext).DeviceExtension;
     let readWriteContext: PCDROM_SCRATCH_READ_WRITE_CONTEXT = core::ptr::addr_of_mut!((*deviceExtension).ScratchContext.ScratchReadWriteContext);
@@ -589,7 +589,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteEvtRequestCancel(Request: WDFREQ
     RequestCompletion(deviceExtension, Request, STATUS_CANCELLED, (*readWriteContext).TransferedBytes);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
+pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
     Request: WDFREQUEST,
     Target: WDFIOTARGET,
     Params: *mut WDF_REQUEST_COMPLETION_PARAMS,
@@ -655,13 +655,13 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 if (*original_request_context).ReadWriteRetryInitialized == 0 {
                     KeInitializeSpinLock(core::ptr::addr_of_mut!(
                         (*original_request_context).ReadWriteCancelSpinLock
-                    ) as *mut u64);
+                    ) as ntkrnl_sys::ddk::PKSPIN_LOCK);
                     KeInitializeTimer(core::ptr::addr_of_mut!(
                         (*original_request_context).ReadWriteTimer
                     ));
                     KeInitializeDpc(
                         core::ptr::addr_of_mut!((*original_request_context).ReadWriteDpc),
-                        Some(ScratchBuffer_ReadWriteTimerRoutine),
+                        Some(core::mem::transmute(ScratchBuffer_ReadWriteTimerRoutine as unsafe extern "system" fn(_, _, _, _))),
                         original_request as *mut core::ffi::c_void,
                     );
                     (*original_request_context).ReadWriteRetryInitialized = TRUE as u8;
@@ -676,7 +676,7 @@ pub unsafe extern "C" fn ScratchBuffer_ReadWriteCompletionRoutine(
                 // cancellation callbacks.
                 status = WdfRequestMarkCancelableEx(
                     original_request,
-                    Some(ScratchBuffer_ReadWriteEvtRequestCancel),
+                    Some(core::mem::transmute(ScratchBuffer_ReadWriteEvtRequestCancel as unsafe extern "system" fn(_))),
                 );
 
                 if status == STATUS_CANCELLED {
@@ -1147,7 +1147,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
     (*srb).TimeOutValue = (*DeviceExtension).TimeOutValue;
 
     if RequestIsRealtimeStreaming(OriginalRequest, IsReadRequest) != 0
-        && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_STREAMING as u64) == 0
+        && ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_NO_STREAMING as ntkrnl_sys::ddk::ULONG_PTR) == 0
     {
         if IsReadRequest != 0 {
             RtlZeroMemory(core::ptr::addr_of_mut!((*cdb).READ12) as *mut core::ffi::c_void, SIZEOF_CDB_READ12);
