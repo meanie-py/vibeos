@@ -1,0 +1,4488 @@
+use ntkrnl_sys::globals::*;
+use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::*;
+use ntkrnl_sys::driver_ddk::*;
+use ntkrnl_sys::ex::*;
+use ntkrnl_sys::mm::*;
+use ntkrnl_sys::rtl::*;
+use ntkrnl_sys::ddk::{BusTypeAtapi, BusTypeFibre, BusTypeRAID, BusTypeScsi, BusTypeUnknown, BusTypeiScsi, IoGetConfigurationInformation, LPCSTR, LPSTR, NTSTRSAFE_PWSTR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_PROPERTY_ID, PropertyStandardQuery, RemovalPolicyExpectOrderlyRemoval, RemovalPolicyExpectSurpriseRemoval, RtlInitUnicodeString, STORAGE_HOTPLUG_INFO, STORAGE_PROPERTY_QUERY, StorageAdapterProperty, StorageDevicePowerProperty, StorageDeviceProperty};
+use core::ffi::c_void;
+
+extern "C" {
+    static CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
+    fn WDF_OBJECT_ATTRIBUTES_INIT(attributes: *mut WDF_OBJECT_ATTRIBUTES);
+    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(attributes: *mut WDF_OBJECT_ATTRIBUTES, context_type_info: *mut WDF_OBJECT_CONTEXT_TYPE_INFO);
+    fn WdfRequestCreate(attributes: *mut WDF_OBJECT_ATTRIBUTES, target: WDFIOTARGET, request: *mut WDFREQUEST) -> i32; // NTSTATUS = i32 fn WdfMemoryCreatePreallocated(attributes: *mut WDF_OBJECT_ATTRIBUTES, memory: *mut WDFMEMORY, buffer: *mut core::ffi::c_void, buffer_size: usize, memory_out: *mut WDFMEMORY) -> i32;
+    fn WdfIoTargetFormatRequestForInternalIoctlOthers(target: WDFIOTARGET, request: WDFREQUEST, ioctl_code: u32, input_memory: WDFMEMORY, output_memory: WDFMEMORY, input_buffer: *mut core::ffi::c_void, input_buffer_length: usize, output_buffer: *mut core::ffi::c_void, output_buffer_length: usize) -> i32;
+    fn WdfRequestSetCompletionRoutine(request: WDFREQUEST, completion_routine: unsafe extern "C" fn(WDFREQUEST, WDFIOTARGET, WDFCONTEXT), context: WDFCONTEXT) -> i32;
+    fn WdfSpinLockCreate(attributes: *mut WDF_OBJECT_ATTRIBUTES, spin_lock: *mut WDFSPINLOCK) -> i32;
+    fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
+    fn DeviceReleaseQueueCompletion(request: WDFREQUEST, target: WDFIOTARGET, context: WDFCONTEXT);
+    static CLASSP_REG_SUBKEY_NAME: u8;
+    static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: u8;
+    static CLASSP_REG_WRITE_CACHE_VALUE_NAME: u8;
+    static DevicePropertyRemovalPolicy: u8;
+    static DEVPKEY_Device_InLocalMachineContainer: DEVPROPKEY;
+    fn min(a: u32, b: u32) -> u32;
+    fn max(a: u32, b: u32) -> u32;
+    fn PAGED_CODE();
+    static mut CdromHackItems: CDROM_SCAN_FOR_SPECIAL_INFO;
+    fn DeviceErrorHandlerForHitachiGD2000( device: *mut core::ffi::c_void, srb: *mut core::ffi::c_void, context: *mut core::ffi::c_void, ) -> NTSTATUS;
+    fn DeviceSendSrbSynchronously( Device: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, DataBuffer: *mut core::ffi::c_void, DataBufferLength: u32, Write: u8, SrbStatus: *mut u8, ) -> NTSTATUS;
+    fn NT_SUCCESS(status: NTSTATUS) -> bool;
+    fn RtlZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
+    fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
+    fn ExFreePool(P: *mut core::ffi::c_void);
+}
+extern "C" {
+    fn WdfRequestWdmGetIrp( request: *mut core::ffi::c_void, ) -> *mut core::ffi::c_void;
+    fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
+    fn WdfIoTargetSendInternalIoctlOthersSynchronously( iotarget: *mut core::ffi::c_void, request: *mut core::ffi::c_void, ioctl_code: u32, input_descriptor: *const WDF_MEMORY_DESCRIPTOR, output_descriptor: *const core::ffi::c_void, output_descriptor2: *const core::ffi::c_void, request_options: *const core::ffi::c_void, status: *mut i32, ) -> i32;
+    fn WdfObjectDelete( object: *mut core::ffi::c_void, );
+    fn NT_ASSERT( condition: i32, );
+    static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
+    fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
+    fn WdfDeviceCreateSymbolicLink( Device: *mut core::ffi::c_void, LinkName: *const _UNICODE_STRING, ) -> i32;
+    fn WdfIoTargetSendIoctlSynchronously( IoTarget: WDFIOTARGET, Request: *mut core::ffi::c_void, IoctlControlCode: u32, InputBuffer: *mut WDF_MEMORY_DESCRIPTOR, OutputBuffer: *mut WDF_MEMORY_DESCRIPTOR, RequestOptions: *mut core::ffi::c_void, BytesReturned: *mut usize, ) -> NTSTATUS;
+    fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
+    fn WdfDeviceOpenRegistryKey( Device: *mut core::ffi::c_void, KeyName: *const _UNICODE_STRING, DesiredAccess: u32, ObjectAttributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void, ) -> i32;
+    fn WdfRegistryOpenKey( ParentKey: *mut core::ffi::c_void, KeyName: *const _UNICODE_STRING, DesiredAccess: u32, ObjectAttributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void, ) -> i32;
+    fn WdfRegistryQueryULong( Key: *mut core::ffi::c_void, ValueName: *const _UNICODE_STRING, Value: *mut u32, ) -> i32;
+    fn WdfRegistryClose(Key: *mut core::ffi::c_void);
+    fn StringsAreMatched(a: *const i8, b: *const i8) -> i32;
+    fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *const i8, ValueName: *const i8, Value: *mut u32, ) -> ();
+    fn TEST_FLAG(Flags: u32, Flag: u32) -> u32;
+    fn WdfDeviceQueryProperty( Device: *mut core::ffi::c_void, PropertyData: *const core::ffi::c_void, BufferLength: u32, PropertyBuffer: *mut core::ffi::c_void, ResultLength: *mut u32, ) -> NTSTATUS;
+    fn WdfDriverOpenParametersRegistryKey(Driver: *mut core::ffi::c_void, DesiredAccess: u32, KeyAttributes: *mut core::ffi::c_void, Key: *mut *mut core::ffi::c_void) -> i32;
+    fn WdfGetDriver() -> *mut core::ffi::c_void;
+    fn FREE_POOL(Ptr: *mut core::ffi::c_void);
+    fn DeviceSetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *const u16, ValueName: *const u16, Value: u32, );
+    fn DeviceGetConfiguration( Device: *mut core::ffi::c_void, Buffer: *mut core::ffi::c_void, Size: u32, Usable: *mut u32, Feature: u32, RequestType: u32, ) -> i32; // NTSTATUS fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
+    fn REVERSE_BYTES(dest: *mut u32, src: *const u8);
+    fn DeviceFindFeaturePage(buffer: *mut u8, size: u32, feature: u32) -> *mut FEATURE_DATA_CD_READ;
+    fn DevicePickDvdRegion(Device: WDFDEVICE);
+    fn DvdStartSessionReadKey( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, IoControlCode: u32, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: u32, BytesReturned: *mut usize, ) -> NTSTATUS;
+    fn IoGetDevicePropertyData( DeviceObject: *mut core::ffi::c_void, PropertyKey: *const DEVPROPKEY, Lcid: u32, Flags: u32, Size: u32, Data: *mut core::ffi::c_void, RequiredSize: *mut u32, Type: *mut u32, ) -> NTSTATUS;
+    fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> i32;
+    fn DevicePrintAllFeaturePages(buffer: *const u8, size: u32);
+    fn DeviceUpdateMmcWriteCapability(buffer: *const u8, size: u32, check: i32, is_writer: *mut u8, validation_schema: *mut u32, blocking_factor: *mut u32);
+    fn SET_FLAG(flags: *mut u32, flag: u32);
+    fn WdfDeviceGetCharacteristics(Device: WDFDEVICE) -> u32;
+    fn WdfDeviceSetCharacteristics(Device: WDFDEVICE, characteristics: u32);
+    fn DeviceErrorHandlerForMmc();
+    fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION);
+    fn DeviceInitializeMediaChangeDetection(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+    fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
+    fn DeviceSetMediaChangeStateEx( deviceExtension: *mut CDROM_DEVICE_EXTENSION, new_state: u32, old_state: *mut u32, );
+    fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;
+    fn IoSetDeviceInterfacePropertyData( symbolic_link_name: *const _UNICODE_STRING, property_key: *const DEVPROPKEY, lcid: i32, flags: u32, property_type: u32, property_size: u32, property_data: *const core::ffi::c_void, ) -> NTSTATUS;
+}
+
+// ---- file-scope preamble (translated) ----
+#[no_mangle]
+pub unsafe extern "C" fn DeviceInitAllocateBuffers(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS;
+#[no_mangle]
+pub unsafe extern "C" fn DeviceRetrieveScsiAddress(DeviceExtension: PCDROM_DEVICE_EXTENSION, ScsiAddress: PSCSI_ADDRESS) -> NTSTATUS;
+#[no_mangle]
+pub unsafe extern "C" fn DeviceRetrieveDescriptorsAndTransferLength(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS;
+#[no_mangle]
+pub unsafe extern "C" fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_DEVICE_EXTENSION) ;
+#[no_mangle]
+pub unsafe extern "C" fn DeviceInitMmcContext(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS;
+#[no_mangle]
+pub unsafe extern "C" fn DeviceGetMmcSupportInfo(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsMmcDevice: PBOOLEAN) -> NTSTATUS;
+#[no_mangle]
+pub unsafe extern "C" fn DeviceIsPortable(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsPortable: PBOOLEAN) -> NTSTATUS;
+
+#[allow(non_upper_case_globals)]
+#[allow(non_camel_case_types)]
+#[allow(non_snake_case)]
+
+// Forward declarations of unknown types and constants
+type WDFREQUEST = *mut core::ffi::c_void;
+type WDFIOTARGET = *mut core::ffi::c_void;
+type WDFCONTEXT = *mut core::ffi::c_void;
+type WDFMEMORY = *mut core::ffi::c_void;
+type WDFSPINLOCK = *mut core::ffi::c_void;
+type WDF_OBJECT_ATTRIBUTES = WDF_OBJECT_ATTRIBUTES_impl; // placeholder struct
+struct WDF_OBJECT_ATTRIBUTES_impl {
+    Size: core::ffi::c_ulong,
+    ParentObject: *mut core::ffi::c_void,
+    _padding: [u8; 40], // ensure size and layout, will be zeroed anyway
+}
+struct WDF_OBJECT_CONTEXT_TYPE_INFO; // opaque
+struct SCSI_REQUEST_BLOCK; // opaque, used for sizeof only
+struct CDROM_DEVICE_EXTENSION; // opaque, used as pointer
+
+// Constants (values approximate, for compilation purpose)
+const TRACE_LEVEL_ERROR: u32 = 2;
+const TRACE_FLAG_PNP: u32 = 2;
+const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x4d014;
+const FALSE: u8 = 0;
+
+// External symbols required by the function
+
+const TRACE_LEVEL_WARNING: u32 = 3;
+const TRACE_FLAG_INIT: u32 = 0x200;
+const IOCTL_SCSI_GET_ADDRESS: u32 = 0x41018c;
+
+const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400; // typical value, replace if needed
+const TRACE_LEVEL_ERROR: u32 = 0;
+const TRACE_FLAG_INIT: u32 = 0;
+const CDROM_TAG_DESCRIPTOR: u32 = 0x00000000; // placeholder
+const NonPagedPoolNx: u32 = 0;
+const PropertyStandardQuery: u32 = 0;
+const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
+
+const FDO_HACK_INVALID_FLAGS: u32 = 0xFFFFFF80;
+
+const FDO_HACK_CANNOT_LOCK_MEDIA: u32 = 0x0002; // unknown actual value, placeholder
+const TRACE_LEVEL_ERROR: u32 = 1; // unknown actual value
+const TRACE_FLAG_INIT: u32 = 2; // unknown actual value
+
+type DEVICE_REMOVAL_POLICY = u32;
+
+// Forward declarations for unknown functions
+
+// Forward declarations for unknown constants
+const NonPagedPoolNx: u32 = 0x200; // NonPagedPoolNx
+const CDROM_TAG_INQUIRY: u32 = 0x43717279; // 'C' 'q' 'r' 'y'
+const SCSIOP_INQUIRY: u8 = 0x12;
+const SRB_STATUS_DATA_OVERRUN: u8 = 0x12;
+const MINIMUM_CDROM_INQUIRY_SIZE: u32 = 36;
+const STATUS_DEVICE_PROTOCOL_ERROR: NTSTATUS = -1073740923; // 0xC0000185
+
+// Unknown externs
+
+// Known from ntkrnl_sys::ex
+
+// Constants — assumed provided by the caller’s scope
+const CDROM_SUBKEY_NAME: *const u16 = /* external */ core::ptr::null();
+const CDROM_NON_MMC_DRIVE_NAME: *const u16 = core::ptr::null();
+const CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE: *const u16 = core::ptr::null();
+const CDROM_TYPE_ONE_GET_CONFIG_NAME: *const u16 = core::ptr::null();
+
+const CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32 = 0x0001;
+const CDROM_HACK_BAD_VENDOR_PROFILES: u32 = 0x0002;
+const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x0004;
+
+const FeatureProfileList: u32 = 0x0003; // example value
+const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
+const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 1;
+
+const TRACE_LEVEL_WARNING: u32 = 3;
+const TRACE_FLAG_INIT: u32 = 0x00000001;
+
+const CDROM_TAG_GET_CONFIG: u32 = 0x20207463; // 'CteG' tag
+const NonPagedPoolNx: u32 = 512;
+const MAXUSHORT: u32 = 65535;
+
+// The function
+
+// Declare unknown externals
+
+const SCSIOP_MODE_SENSE10: u8 = 0x5A;
+const SCSIOP_MODE_SENSE: u8 = 0x1A;
+const MODE_PAGE_CAPABILITIES: u8 = 0x2A;
+const Dbd: u8 = 1;
+const CDROM_TAG_MODE_DATA: u32 = 0x20202020; // typical tag
+const NonPagedPoolNx: u32 = 0x200;
+
+// Dummy constants to allow compilation; actual values unknown
+const TRACE_LEVEL_INFORMATION: u32 = 0;
+const TRACE_FLAG_INIT: u32 = 0;
+const TRACE_LEVEL_ERROR: u32 = 0;
+const TRACE_FLAG_PNP: u32 = 0;
+
+// Constants from unknown headers
+const TRACE_LEVEL_INFORMATION: u32 = 4;
+const TRACE_FLAG_INIT: u32 = 0x00000001;
+const TRACE_LEVEL_WARNING: u32 = 2;
+const CDROM_HACK_TOSHIBA_SD_W1101: u32 = 0x0001;
+const CDROM_HACK_HITACHI_GD_2000: u32 = 0x0002;
+const CDROM_HACK_FUJITSU_FMCD_10x: u32 = 0x0004;
+const CDROM_HACK_DEC_RRD: u32 = 0x0010;
+const DEV_SAFE_START_UNIT: u32 = 0x00000001;
+const CDROM_TAG_MODE_DATA: u32 = 0x6D6464; // placeholder
+const SCSIOP_MODE_SELECT: u8 = 0x15;
+const HITACHI_MODE_DATA_SIZE: u32 = 0x10;
+const NonPagedPoolNx: u32 = 32;
+
+// Forward declarations for unknown symbols
+
+// Function pointer type used by ScanForSpecialHandler
+type CDROM_SCAN_FOR_SPECIAL_HANDLER = unsafe extern "C" fn(*mut CDROM_DEVICE_EXTENSION, *mut CDROM_SCAN_FOR_SPECIAL_INFO) -> u8; // BOOLEAN
+
+const FILE_DEVICE_CD_ROM: u32 = 0x00000002;
+const FILE_DEVICE_DVD: u32 = 0x00000003;
+const BusTypeScsi: u32 = 0x00;
+const BusTypeAtapi: u32 = 0x01;
+const BusTypeUnknown: u32 = 0x02;
+const FeatureAACS: u32 = 0x010D;
+const FeatureDvdRead: u32 = 0x0012;
+const FeatureDvdCSS: u32 = 0x0106;
+const TRACE_LEVEL_WARNING: u32 = 3;
+const TRACE_LEVEL_INFORMATION: u32 = 4;
+const TRACE_FLAG_INIT: u32 = 0x00000001;
+const CdromMmcUpdateRequired: u32 = 1;
+const DEV_SAFE_START_UNIT: u32 = 0x00000001;
+const FILE_READ_ONLY_DEVICE: u32 = 0x00000001;
+
+type WDFDEVICE = *mut core::ffi::c_void;
+type FEATURE_HEADER = core::ffi::c_void; // placeholder for struct
+
+// Constants used by the function
+const TRACE_LEVEL_INFORMATION: u32 = 0x0004;
+const TRACE_FLAG_PNP: u32 = 0x0001;
+const TRACE_LEVEL_WARNING: u32 = 0x0002;
+const TRACE_FLAG_INIT: u32 = 0x0002;
+const CLASS_PERF_RESTORE_MINIMUM: u32 = 5; // typical minimum
+const SCSI_CDROM_OPC_TIMEOUT: u32 = 100; // placeholder (actual value ~300 seconds)
+const MediaPresent: u32 = 1;
+const DEVPROP_TRUE: i32 = 1;
+const DEVPROP_FALSE: i32 = 0;
+const DEVPROP_TYPE_BOOLEAN: u32 = 0x00000001; // DEVPROP_TYPE_BOOLEAN
+const FILE_REMOVABLE_MEDIA: u32 = 0x00000020;
+const FILE_PORTABLE_DEVICE: u32 = 0x00000040;
+const DO_SYSTEM_SYSTEM_PARTITION: u32 = 0x00001000;
+const DO_SYSTEM_BOOT_PARTITION: u32 = 0x00002000;
+const DO_SYSTEM_CRITICAL_PARTITION: u32 = 0x00004000;
+
+#[no_mangle]
+pub unsafe extern "C" fn DeviceClaimRelease(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    Release: u8,
+) -> i32 {
+    // PAGED_CODE();
+    let mut status: i32 = 0;
+    let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
+    let mut descriptor: WDF_MEMORY_DESCRIPTOR = core::mem::zeroed();
+    let mut request: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
+
+    // Create a request
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+        core::ptr::addr_of_mut!(attributes),
+        &CDROM_REQUEST_CONTEXT as *const _ as *const CDROM_REQUEST_CONTEXT,
+    );
+
+    status = WdfRequestCreate(
+        core::ptr::addr_of_mut!(attributes) as *const WDF_OBJECT_ATTRIBUTES,
+        (*DeviceExtension).IoTarget,
+        core::ptr::addr_of_mut!(request),
+    );
+
+    if status >= 0 {
+        // fill up srb structure
+        srb.OriginalRequest = WdfRequestWdmGetIrp(request);
+        NT_ASSERT(if !srb.OriginalRequest.is_null() { 1 } else { 0 });
+
+        srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32;
+
+        srb.Function = if Release != 0 {
+            0x10 /* SRB_FUNCTION_RELEASE_DEVICE */
+        } else {
+            0x0F /* SRB_FUNCTION_CLAIM_DEVICE */
+        };
+
+        WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
+            core::ptr::addr_of_mut!(descriptor),
+            core::ptr::addr_of_mut!(srb) as *mut core::ffi::c_void,
+            core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32,
+        );
+
+        status = WdfIoTargetSendInternalIoctlOthersSynchronously(
+            (*DeviceExtension).IoTarget,
+            request,
+            0x001B0000 /* IOCTL_SCSI_EXECUTE_NONE */,
+            core::ptr::addr_of!(descriptor) as *const WDF_MEMORY_DESCRIPTOR,
+            core::ptr::null(),
+            core::ptr::null(),
+            core::ptr::null(),
+            core::ptr::null_mut(),
+        );
+
+        NT_ASSERT(if (srb.SrbFlags & 0x04 /* SRB_FLAGS_FREE_SENSE_BUFFER */) == 0 {
+            1
+        } else {
+            0
+        });
+
+        // The request should be deleted.
+        WdfObjectDelete(request);
+
+        if status < 0 {
+            let format_str = if Release != 0 {
+                b"DeviceClaimRelease: Failed to Release device, status: 0x%X\n\x00"
+            } else {
+                b"DeviceClaimRelease: Failed to Claim device, status: 0x%X\n\x00"
+            };
+            TracePrint(
+                0x03 /* TRACE_LEVEL_FATAL */,
+                0x01 /* TRACE_FLAG_PNP */,
+                format_str.as_ptr() as *const i8,
+                status,
+            );
+        }
+    } else {
+        let format_str = b"DeviceClaimRelease: Failed to create request, status: 0x%X\n\x00";
+        TracePrint(
+            0x03 /* TRACE_LEVEL_FATAL */,
+            0x01 /* TRACE_FLAG_PNP */,
+            format_str.as_ptr() as *const i8,
+            status,
+        );
+    }
+
+    if Release != 0 {
+        // We only release the device when we don't want to manage it.
+        // The failure status does not matter.
+        status = 0; // STATUS_SUCCESS
+    }
+
+    status
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTATUS {
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
+
+    PAGED_CODE();
+
+    TracePrint(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_PNP,
+        b"DeviceEvtSelfManagedIoInit: WDFDEVICE %p is being started.\n\0" as *const u8 as *const i8,
+        Device as usize,
+    );
+
+    deviceExtension = DeviceGetExtension(Device);
+
+    // 1. Set/retrieve basic information, some of the following operations may depend on it
+    if NT_SUCCESS(status) {
+        // We do not care if this function fails, SCSI address is mainly for debugging/tracing purposes.
+        let _ = DeviceRetrieveScsiAddress(deviceExtension, &mut (*deviceExtension).ScsiAddress);
+    }
+
+    if NT_SUCCESS(status) {
+        status = DeviceRetrieveDescriptorsAndTransferLength(deviceExtension);
+    }
+
+    if NT_SUCCESS(status) {
+        // This function should be called after DeviceRetrieveDescriptorsAndTransferLength()
+        // It depends on MaxTransferLenth fields.
+        status = DeviceInitAllocateBuffers(deviceExtension);
+    }
+
+    // 2. The following functions depend on the allocated buffers.
+    // perf re-enable after failing. Q: Is this one used by cdrom.sys?
+    if NT_SUCCESS(status) {
+        // allow perf to be re-enabled after a given number of failed IOs
+        // require this number to be at least CLASS_PERF_RESTORE_MINIMUM
+        let mut t: u32 = CLASS_PERF_RESTORE_MINIMUM;
+
+        DeviceGetParameter(
+            deviceExtension,
+            CLASSP_REG_SUBKEY_NAME.as_ptr(),
+            CLASSP_REG_PERF_RESTORE_VALUE_NAME.as_ptr(),
+            &mut t,
+        );
+        if t >= CLASS_PERF_RESTORE_MINIMUM {
+            (*(*deviceExtension).PrivateFdoData).Perf.ReEnableThreshhold = t;
+        }
+    }
+
+    // 3. Retrieve information about special devices and hack flags.
+    if NT_SUCCESS(status) {
+        DeviceRetrieveHackFlagsFromRegistry(deviceExtension);
+        // scan for bad items.
+        DeviceScanForSpecial(deviceExtension, CdRomBadItems, DeviceHackFlagsScan);
+        // Check to see if it's a special device that needs special error process.
+        DeviceScanSpecialDevices(deviceExtension); // may send command to device
+    }
+
+    // 4. Initialize the hotplug information only after the ScanForSpecial routines,
+    // as it relies upon the hack flags - deviceExtension->PrivateFdoData->HackFlags.
+    if NT_SUCCESS(status) {
+        status = DeviceInitializeHotplugInfo(deviceExtension);
+    }
+
+    if NT_SUCCESS(status) {
+        // cache the device's inquiry data
+        status = DeviceCacheDeviceInquiryData(deviceExtension);
+        if !NT_SUCCESS(status) {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"Failed to cache the device's inquiry data, failing %!STATUS!\n\0" as *const u8 as *const i8,
+                status,
+            );
+        }
+    }
+
+    // 5. Initialize MMC context, media change notification stuff and read media capacity
+    if NT_SUCCESS(status) {
+        status = DeviceInitializeMediaChangeDetection(deviceExtension);
+    }
+    if NT_SUCCESS(status) {
+        status = DeviceInitMmcContext(deviceExtension);
+    }
+    if NT_SUCCESS(status) {
+        status = DeviceInitializeZPODD(deviceExtension);
+    }
+    if NT_SUCCESS(status) {
+        // Do READ CAPACITY. This SCSI command returns the last sector address
+        // on the device and the bytes per sector. These are used to calculate
+        // the drive capacity in bytes.
+        status = MediaReadCapacity(Device);
+
+        // If READ CAPACITY succeeded, we can safely conclude that there is a media present
+        if NT_SUCCESS(status) {
+            DeviceSetMediaChangeStateEx(deviceExtension, MediaPresent, core::ptr::null_mut());
+        }
+
+        // READ CAPACITY is not critical for init, ignore all errors occuring during its execution
+        status = STATUS_SUCCESS;
+    }
+
+    // 6. Perform DVD-specific initialization
+    if NT_SUCCESS(status) {
+        status = DeviceInitializeDvd(Device);
+    }
+
+    // 7. Miscellaneous initialization actions
+    if NT_SUCCESS(status) {
+        if !(*deviceExtension).PrivateFdoData.is_null() {
+            (*(*deviceExtension).PrivateFdoData).Perf.OriginalSrbFlags = (*deviceExtension).SrbFlags;
+        }
+
+        if (*deviceExtension).DeviceAdditionalData.Mmc.IsWriter != 0 {
+            // OPC can really take this long per IMAPIv1 timeout....
+            (*deviceExtension).TimeOutValue = max((*deviceExtension).TimeOutValue, SCSI_CDROM_OPC_TIMEOUT);
+        }
+    }
+
+    // 8. Enable the main timer, create ARC name as needed
+    if NT_SUCCESS(status) {
+        // Device successfully added and initialized, increase CdRomCount.
+        (*IoGetConfigurationInformation()).CdRomCount += 1;
+
+        (*deviceExtension).IsInitialized = 1;
+
+        DeviceEnableMainTimer(deviceExtension);
+    }
+
+    // 9. Set volume interface properties (NTDDI_VERSION >= NTDDI_WIN8)
+    if NT_SUCCESS(status) {
+        let mut isCritical: i32 = 0;
+        let mut isPortable: i32 = 0;
+        let isRemovable: i32 = TEST_FLAG(
+            (*(*deviceExtension).DeviceObject).Characteristics,
+            FILE_REMOVABLE_MEDIA,
+        ) != 0;
+        let mut propCritical: i32 = DEVPROP_FALSE;
+        let mut propPortable: i32 = DEVPROP_FALSE;
+        let mut propRemovable: i32 = DEVPROP_FALSE;
+
+        status = DeviceIsPortable(deviceExtension, &mut isPortable);
+
+        if NT_SUCCESS(status) {
+            if isPortable != 0 {
+                SET_FLAG(
+                    &mut (*(*deviceExtension).DeviceObject).Characteristics,
+                    FILE_PORTABLE_DEVICE,
+                );
+            }
+
+            propPortable = if isPortable != 0 { DEVPROP_TRUE } else { DEVPROP_FALSE };
+
+            status = IoSetDeviceInterfacePropertyData(
+                &(*deviceExtension).MountedDeviceInterfaceName,
+                &DEVPKEY_Storage_Portable,
+                0,
+                0,
+                DEVPROP_TYPE_BOOLEAN,
+                core::mem::size_of::<i32>() as u32,
+                &propPortable as *const i32 as *const core::ffi::c_void,
+            );
+        }
+
+        if NT_SUCCESS(status) {
+            propRemovable = if isRemovable != 0 { DEVPROP_TRUE } else { DEVPROP_FALSE };
+
+            status = IoSetDeviceInterfacePropertyData(
+                &(*deviceExtension).MountedDeviceInterfaceName,
+                &DEVPKEY_Storage_Removable_Media,
+                0,
+                0,
+                DEVPROP_TYPE_BOOLEAN,
+                core::mem::size_of::<i32>() as u32,
+                &propRemovable as *const i32 as *const core::ffi::c_void,
+            );
+        }
+
+        if NT_SUCCESS(status) {
+            isCritical = TEST_FLAG(
+                (*(*deviceExtension).DeviceObject).Flags,
+                DO_SYSTEM_SYSTEM_PARTITION | DO_SYSTEM_BOOT_PARTITION | DO_SYSTEM_CRITICAL_PARTITION,
+            ) != 0;
+
+            propCritical = if isCritical != 0 { DEVPROP_TRUE } else { DEVPROP_FALSE };
+
+            status = IoSetDeviceInterfacePropertyData(
+                &(*deviceExtension).MountedDeviceInterfaceName,
+                &DEVPKEY_Storage_System_Critical,
+                0,
+                0,
+                DEVPROP_TYPE_BOOLEAN,
+                core::mem::size_of::<i32>() as u32,
+                &propCritical as *const i32 as *const core::ffi::c_void,
+            );
+        }
+    }
+
+    status
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceInitReleaseQueueContext(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> i32 {
+    let mut status: i32 = STATUS_SUCCESS; // STATUS_SUCCESS is imported from ntkrnl_sys::base, assumed available
+    let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
+
+    // PAGED_CODE(); // omitted (irrelevant in mechanical transliteration)
+
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+        core::ptr::addr_of_mut!(attributes),
+        core::ptr::addr_of!(CDROM_REQUEST_CONTEXT) as *mut WDF_OBJECT_CONTEXT_TYPE_INFO,
+    );
+
+    attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
+
+    status = WdfRequestCreate(
+        core::ptr::addr_of_mut!(attributes),
+        (*DeviceExtension).IoTarget,
+        core::ptr::addr_of_mut!((*DeviceExtension).ReleaseQueueRequest),
+    );
+
+    if !NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_PNP,
+            b"Cannot create the release queue request\n\0".as_ptr() as *const i8,
+        );
+        return status;
+    }
+
+    // Initialize ReleaseQueueInputMemory, a wrapper around ReleaseQueueSrb
+    WDF_OBJECT_ATTRIBUTES_INIT(core::ptr::addr_of_mut!(attributes));
+    attributes.ParentObject = (*DeviceExtension).ReleaseQueueRequest as *mut core::ffi::c_void;
+
+    status = WdfMemoryCreatePreallocated(
+        core::ptr::addr_of_mut!(attributes),
+        core::ptr::addr_of_mut!((*DeviceExtension).ReleaseQueueSrb) as *mut WDFMEMORY,
+        core::mem::size_of::<SCSI_REQUEST_BLOCK>(),
+        core::ptr::addr_of_mut!((*DeviceExtension).ReleaseQueueInputMemory),
+    );
+
+    if !NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_PNP,
+            b"Failed to allocate ReleaseQueueSrb.\n\0".as_ptr() as *const i8,
+        );
+        return status;
+    }
+
+    // Preformat the release queue request here to ensure that this call will never
+    // fail during an actual release of the queue.
+    if NT_SUCCESS(status) {
+        status = WdfIoTargetFormatRequestForInternalIoctlOthers(
+            (*DeviceExtension).IoTarget,
+            (*DeviceExtension).ReleaseQueueRequest,
+            IOCTL_SCSI_EXECUTE_NONE,
+            (*DeviceExtension).ReleaseQueueInputMemory,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            0,
+            core::ptr::null_mut(),
+            0,
+        );
+    }
+
+    // Set a CompletionRoutine callback function for ReleaseQueueRequest.
+    if NT_SUCCESS(status) {
+        WdfRequestSetCompletionRoutine(
+            (*DeviceExtension).ReleaseQueueRequest,
+            DeviceReleaseQueueCompletion,
+            (*DeviceExtension).Device as WDFCONTEXT,
+        );
+    }
+
+    // Create a spinlock for ReleaseQueueRequest
+    WDF_OBJECT_ATTRIBUTES_INIT(core::ptr::addr_of_mut!(attributes));
+    attributes.ParentObject = (*DeviceExtension).Device as *mut core::ffi::c_void;
+
+    status = WdfSpinLockCreate(
+        core::ptr::addr_of_mut!(attributes),
+        core::ptr::addr_of_mut!((*DeviceExtension).ReleaseQueueSpinLock),
+    );
+
+    if !NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_PNP,
+            b"DeviceInitReleaseQueueContext: Cannot create the release queue spinlock\n\0".as_ptr() as *const i8,
+        );
+        return status;
+    }
+
+    // Initialize miscellaneous ReleaseQueue related fields
+    (*DeviceExtension).ReleaseQueueNeeded = FALSE;
+    (*DeviceExtension).ReleaseQueueInProgress = FALSE;
+    (*DeviceExtension).ReleaseQueueSrb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32;
+
+    return status;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn DeviceInitPowerContext(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    // Unknown extern declarations
+
+    // Local constants
+    const TRACE_LEVEL_ERROR: u32 = 2;
+    const TRACE_FLAG_PNP: u32 = 0x00008000;
+    const IOCTL_SCSI_EXECUTE_IN: u32 = 0x0000001B;
+
+    let mut status: NTSTATUS = 0; // STATUS_SUCCESS
+    let mut attributes = core::mem::MaybeUninit::<WDF_OBJECT_ATTRIBUTES>::uninit();
+
+    // PAGED_CODE();
+
+    // create request object for Power operations
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+        attributes.as_mut_ptr(),
+        &WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT as *const WDF_OBJECT_CONTEXT_TYPE_INFO,
+    );
+    (*(attributes.as_mut_ptr())).ParentObject = (*(DeviceExtension)).Device;
+
+    status = WdfRequestCreate(
+        attributes.as_mut_ptr(),
+        (*(DeviceExtension)).IoTarget,
+        &raw mut (*(DeviceExtension)).PowerContext.PowerRequest,
+    );
+
+    if (status) < 0 {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_PNP,
+            b"Cannot create the power request object.\n\0".as_ptr() as *const i8,
+        );
+
+        return status;
+    }
+
+    // Preformat the power request. With this being done, we never need to worry about
+    // WdfIoTargetFormatRequestForInternalIoctlOthers ever failing later.
+    status = WdfIoTargetFormatRequestForInternalIoctlOthers(
+        (*(DeviceExtension)).IoTarget,
+        (*(DeviceExtension)).PowerContext.PowerRequest,
+        IOCTL_SCSI_EXECUTE_IN,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    return status;
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceCreateWellKnownName(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+) -> i32 {
+    let mut status: i32 = STATUS_SUCCESS;
+    let mut unicodeLinkName = _UNICODE_STRING {
+        Length: 0u16,
+        MaximumLength: 0u16,
+        Buffer: core::ptr::null_mut(),
+    };
+    let mut wideLinkName: [u16; 64] = [0u16; 64];
+    let mut savedName: *mut u16;
+    let mut cdromNumber: i32 = (*DeviceExtension).DeviceNumber;
+
+    // PAGED_CODE();
+
+    if !(*DeviceExtension).DeviceAdditionalData.WellKnownName.Buffer.is_null() {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_INIT,
+            b"DeviceCreateWellKnownName: link already exists %p\n\0".as_ptr() as *const i8,
+            (*DeviceExtension).DeviceAdditionalData.WellKnownName.Buffer,
+        );
+        NT_ASSERT(0);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    loop {
+        status = RtlStringCchPrintfW(
+            wideLinkName.as_mut_ptr(),
+            64,
+            b"\\DosDevices\\CdRom%d\0".as_ptr() as *const u16,
+            cdromNumber,
+        );
+        if status & 0x80000000u32 as i32 != 0 {
+            TracePrint(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_INIT,
+                b"DeviceCreateWellKnownName: Format symbolic link failed with error: 0x%X\n\0".as_ptr() as *const i8,
+                status,
+            );
+            return status;
+        }
+
+        RtlInitUnicodeString(&mut unicodeLinkName, wideLinkName.as_mut_ptr());
+
+        status = WdfDeviceCreateSymbolicLink(
+            (*DeviceExtension).Device,
+            &unicodeLinkName,
+        );
+
+        cdromNumber += 1;
+
+        if !((status == STATUS_OBJECT_NAME_COLLISION) || (status == STATUS_OBJECT_NAME_EXISTS)) {
+            break;
+        }
+    }
+
+    if status & 0x80000000u32 as i32 != 0 {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_INIT,
+            b"DeviceCreateWellKnownName: Error %lx linking %wZ to device %wZ\n\0".as_ptr() as *const i8,
+            status,
+            &unicodeLinkName as *const _UNICODE_STRING,
+            &(*DeviceExtension).DeviceName as *const _UNICODE_STRING,
+        );
+        return status;
+    }
+
+    TracePrint(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_INIT,
+        b"DeviceCreateWellKnownName: successfully linked %wZ to device %wZ\n\0".as_ptr() as *const i8,
+        &unicodeLinkName as *const _UNICODE_STRING,
+        &(*DeviceExtension).DeviceName as *const _UNICODE_STRING,
+    );
+
+    savedName = ExAllocatePoolWithTag(
+        PagedPool,
+        unicodeLinkName.MaximumLength as usize,
+        CDROM_TAG_STRINGS,
+    ) as *mut u16;
+
+    if savedName.is_null() {
+        TracePrint(
+            TRACE_LEVEL_WARNING,
+            TRACE_FLAG_INIT,
+            b"DeviceCreateWellKnownName: unable to allocate memory.\n\0".as_ptr() as *const i8,
+        );
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    core::ptr::write_bytes(savedName, 0u8, unicodeLinkName.MaximumLength as usize);
+    core::ptr::copy_nonoverlapping(
+        unicodeLinkName.Buffer as *const u16,
+        savedName,
+        unicodeLinkName.MaximumLength as usize / core::mem::size_of::<u16>(),
+    );
+
+    RtlInitUnicodeString(
+        &mut (*DeviceExtension).DeviceAdditionalData.WellKnownName,
+        savedName,
+    );
+
+    STATUS_SUCCESS
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceRetrieveDescriptor(
+    Device: WDFDEVICE,
+    PropertyId: *mut STORAGE_PROPERTY_ID,
+    Descriptor: *mut PSTORAGE_DESCRIPTOR_HEADER,
+) -> NTSTATUS {
+    let mut status: NTSTATUS;
+    let mut memory_descriptor: WDF_MEMORY_DESCRIPTOR = core::mem::zeroed();
+    let mut query: STORAGE_PROPERTY_QUERY = core::mem::zeroed();
+    let mut buffer_length: u32 = 0;
+    let mut descriptor: *mut STORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
+    let device_extension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
+
+    PAGED_CODE();
+
+    // Set the passed-in descriptor pointer to NULL as default
+    *Descriptor = core::ptr::null_mut();
+
+    // On the first pass we just want to get the first few
+    // bytes of the descriptor so we can read it's size
+    query.PropertyId = *PropertyId;
+    query.QueryType = PropertyStandardQuery;
+
+    descriptor = (&query as *const STORAGE_PROPERTY_QUERY) as *mut STORAGE_DESCRIPTOR_HEADER;
+
+    NT_ASSERT(
+        (core::mem::size_of::<STORAGE_PROPERTY_QUERY>() >= 2 * core::mem::size_of::<u32>()) as i32,
+    );
+
+    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
+        core::ptr::addr_of_mut!(memory_descriptor),
+        (&query as *const STORAGE_PROPERTY_QUERY) as *mut core::ffi::c_void,
+        core::mem::size_of::<STORAGE_PROPERTY_QUERY>(),
+    );
+
+    status = WdfIoTargetSendIoctlSynchronously(
+        device_extension.IoTarget,
+        core::ptr::null_mut(),
+        IOCTL_STORAGE_QUERY_PROPERTY,
+        core::ptr::addr_of_mut!(memory_descriptor),
+        core::ptr::addr_of_mut!(memory_descriptor),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+
+    if !ntkrnl_sys::base::NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_INIT,
+            b"DeviceRetrieveDescriptor: error %lx trying to \"query properties #1\n\0".as_ptr(),
+            status,
+        );
+        return status;
+    }
+
+    if (*descriptor).Size == 0 {
+        // This DebugPrint is to help third-party driver writers
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_INIT,
+            b"DeviceRetrieveDescriptor: size returned was zero?! (status %x\n\0".as_ptr(),
+            status,
+        );
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    // This time we know how much data there is so we can
+    // allocate a buffer of the correct size
+    buffer_length = (*descriptor).Size;
+    NT_ASSERT(
+        (buffer_length as usize >= core::mem::size_of::<STORAGE_PROPERTY_QUERY>()) as i32,
+    );
+    if (buffer_length as usize) < core::mem::size_of::<STORAGE_PROPERTY_QUERY>() {
+        buffer_length = core::mem::size_of::<STORAGE_PROPERTY_QUERY>() as u32;
+    }
+
+    descriptor = ntkrnl_sys::ex::ExAllocatePoolWithTag(
+        NonPagedPoolNx,
+        buffer_length,
+        CDROM_TAG_DESCRIPTOR,
+    ) as *mut STORAGE_DESCRIPTOR_HEADER;
+
+    if descriptor.is_null() {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_INIT,
+            b"DeviceRetrieveDescriptor: unable to memory for descriptor (%d bytes)\n\0".as_ptr(),
+            buffer_length,
+        );
+        return ntkrnl_sys::base::STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    // setup the query again, as it was overwritten above
+    ntkrnl_sys::rtl::RtlZeroMemory(
+        &mut query as *mut STORAGE_PROPERTY_QUERY as *mut core::ffi::c_void,
+        core::mem::size_of::<STORAGE_PROPERTY_QUERY>(),
+    );
+    query.PropertyId = *PropertyId;
+    query.QueryType = PropertyStandardQuery;
+
+    // copy the input to the new outputbuffer
+    ntkrnl_sys::rtl::RtlCopyMemory(
+        descriptor as *mut core::ffi::c_void,
+        &query as *const STORAGE_PROPERTY_QUERY as *const core::ffi::c_void,
+        core::mem::size_of::<STORAGE_PROPERTY_QUERY>(),
+    );
+
+    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
+        core::ptr::addr_of_mut!(memory_descriptor),
+        descriptor as *mut core::ffi::c_void,
+        buffer_length as usize,
+    );
+
+    status = WdfIoTargetSendIoctlSynchronously(
+        device_extension.IoTarget,
+        core::ptr::null_mut(),
+        IOCTL_STORAGE_QUERY_PROPERTY,
+        core::ptr::addr_of_mut!(memory_descriptor),
+        core::ptr::addr_of_mut!(memory_descriptor),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+
+    if !ntkrnl_sys::base::NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_INIT,
+            b"DeviceRetrieveDescriptor: error %lx trying to \"query properties #1\n\0".as_ptr(),
+            status,
+        );
+        ntkrnl_sys::ddk::ExFreePool(descriptor as *mut core::ffi::c_void);
+
+        return status;
+    }
+
+    // return the memory we've allocated to the caller
+    *Descriptor = descriptor;
+
+    status
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceRetrieveHackFlagsFromRegistry(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+) {
+    let mut status: i32 = STATUS_SUCCESS;
+    let mut hardware_key: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut sub_key: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut device_hacks: u32 = 0;
+
+    // PAGED_CODE(); -- ignored
+
+    status = WdfDeviceOpenRegistryKey(
+        (*DeviceExtension).Device,
+        core::ptr::addr_of!(PLUGPLAY_REGKEY_DEVICE),
+        KEY_READ,
+        core::ptr::null_mut(), // WDF_NO_OBJECT_ATTRIBUTES
+        &raw mut hardware_key,
+    );
+    if NT_SUCCESS(status) {
+        status = WdfRegistryOpenKey(
+            hardware_key,
+            core::ptr::addr_of!(CLASSP_REG_SUBKEY_NAME),
+            KEY_READ,
+            core::ptr::null_mut(),
+            &raw mut sub_key,
+        );
+        if NT_SUCCESS(status) {
+            status = WdfRegistryQueryULong(
+                sub_key,
+                core::ptr::addr_of!(CLASSP_REG_HACK_VALUE_NAME),
+                &raw mut device_hacks,
+            );
+            if NT_SUCCESS(status) {
+                // CLEAR_FLAG(device_hacks, FDO_HACK_INVALID_FLAGS)
+                device_hacks &= !FDO_HACK_INVALID_FLAGS;
+                // SET_FLAG(DeviceExtension->PrivateFdoData->HackFlags, device_hacks)
+                let private_fdo = (*DeviceExtension).PrivateFdoData;
+                (*private_fdo).HackFlags |= device_hacks;
+            }
+            WdfRegistryClose(sub_key);
+        }
+        WdfRegistryClose(hardware_key);
+    }
+
+    // (comments preserved from original)
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceScanForSpecial(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    DeviceList: *mut CDROM_SCAN_FOR_SPECIAL_INFO,
+    Function: Option<unsafe extern "C" fn(*mut CDROM_DEVICE_EXTENSION, usize)>,
+) {
+    // Constants with inline comment
+    const TRACE_LEVEL_INFORMATION: i32 = 0; // TRACE_LEVEL_INFORMATION
+    const TRACE_FLAG_INIT: i32 = 0; // TRACE_FLAG_INIT
+
+    PAGED_CODE();
+
+    // NT_ASSERT(DeviceList)
+    NT_ASSERT((!DeviceList.is_null()) as i32);
+    // NT_ASSERT(Function)
+    NT_ASSERT((Function.is_some()) as i32);
+
+    if DeviceList.is_null() {
+        return;
+    }
+    if Function.is_none() {
+        return;
+    }
+
+    let deviceDescriptor: *mut STORAGE_DEVICE_DESCRIPTOR = (*DeviceExtension).DeviceDescriptor;
+
+    // nullString: an empty string used as fallback
+    let null_string: [u8; 1] = [0];
+
+    let vendorId: *mut u8;
+    if (*deviceDescriptor).VendorIdOffset != 0 && (*deviceDescriptor).VendorIdOffset != u32::MAX {
+        vendorId = (deviceDescriptor as *mut u8).add((*deviceDescriptor).VendorIdOffset as usize);
+    } else {
+        vendorId = null_string.as_ptr() as *mut u8;
+    }
+
+    let productId: *mut u8;
+    if (*deviceDescriptor).ProductIdOffset != 0 && (*deviceDescriptor).ProductIdOffset != u32::MAX {
+        productId = (deviceDescriptor as *mut u8).add((*deviceDescriptor).ProductIdOffset as usize);
+    } else {
+        productId = null_string.as_ptr() as *mut u8;
+    }
+
+    let productRevision: *mut u8;
+    if (*deviceDescriptor).ProductRevisionOffset != 0 && (*deviceDescriptor).ProductRevisionOffset != u32::MAX {
+        productRevision = (deviceDescriptor as *mut u8).add((*deviceDescriptor).ProductRevisionOffset as usize);
+    } else {
+        productRevision = null_string.as_ptr() as *mut u8;
+    }
+
+    // loop while any field is non-null (C for loop: DeviceList->VendorId != NULL || ...)
+    let mut current_list: *mut CDROM_SCAN_FOR_SPECIAL_INFO = DeviceList;
+    while !((*current_list).VendorId.is_null() && (*current_list).ProductId.is_null() && (*current_list).ProductRevision.is_null()) {
+        if StringsAreMatched((*current_list).VendorId as *const i8, vendorId as *const i8) != 0 &&
+            StringsAreMatched((*current_list).ProductId as *const i8, productId as *const i8) != 0 &&
+            StringsAreMatched((*current_list).ProductRevision as *const i8, productRevision as *const i8) != 0
+        {
+            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+                       b"DeviceScanForSpecial: Found matching controller Ven: %s Prod: %s Rev: %s\n\0".as_ptr() as *const i8,
+                       vendorId as *const i8,
+                       productId as *const i8,
+                       productRevision as *const i8);
+            if let Some(func) = Function {
+                func(DeviceExtension, (*current_list).Data);
+            }
+            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+                       b"DeviceScanForSpecial: completed callback\n\0".as_ptr() as *const i8,
+                       core::ptr::null(),
+                       core::ptr::null(),
+                       core::ptr::null());
+            return;
+        }
+        current_list = current_list.add(1);
+    }
+
+    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+               b"DeviceScanForSpecial: no match found for %p\n\0".as_ptr() as *const i8,
+               (*DeviceExtension).DeviceObject as *const i8,
+               core::ptr::null(),
+               core::ptr::null());
+    return;
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceHackFlagsScan(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    Data: usize,
+) {
+    PAGED_CODE();
+
+    let mut data = Data;
+    // CLEAR_FLAG
+    data &= !FDO_HACK_INVALID_FLAGS;
+    // SET_FLAG
+    (*(*DeviceExtension).PrivateFdoData).HackFlags |= data;
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    unsafe {
+        let mut status: NTSTATUS = STATUS_SUCCESS;
+        let fdoData = (*DeviceExtension).PrivateFdoData;
+        let mut deviceRemovalPolicy: DEVICE_REMOVAL_POLICY = 0;
+        let mut resultLength: u32 = 0;
+        let mut writeCacheOverride: u32;
+
+        // RtlZeroMemory(&(fdoData->HotplugInfo), sizeof(STORAGE_HOTPLUG_INFO));
+        core::ptr::write_bytes(
+            core::ptr::addr_of_mut!((*fdoData).HotplugInfo) as *mut u8,
+            0u8,
+            core::mem::size_of::<STORAGE_HOTPLUG_INFO>(),
+        );
+
+        // set the size (aka version)
+        (*fdoData).HotplugInfo.Size = core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32;
+
+        // set if the device has removable media
+        if (*((*DeviceExtension).DeviceDescriptor)).RemovableMedia != 0 {
+            (*fdoData).HotplugInfo.MediaRemovable = 1; // TRUE
+        } else {
+            (*fdoData).HotplugInfo.MediaRemovable = 0; // FALSE
+        }
+
+        if TEST_FLAG(
+            (*(*DeviceExtension).PrivateFdoData).HackFlags,
+            FDO_HACK_CANNOT_LOCK_MEDIA,
+        ) != 0
+        {
+            (*fdoData).HotplugInfo.MediaHotplug = 1; // TRUE
+        } else {
+            (*fdoData).HotplugInfo.MediaHotplug = 0; // FALSE
+        }
+
+        // Query the default removal policy from the kernel
+        status = WdfDeviceQueryProperty(
+            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            &raw const DevicePropertyRemovalPolicy as *const core::ffi::c_void,
+            core::mem::size_of::<DEVICE_REMOVAL_POLICY>() as u32,
+            &raw mut deviceRemovalPolicy as *mut DEVICE_REMOVAL_POLICY as *mut core::ffi::c_void,
+            &raw mut resultLength,
+        );
+        if NT_SUCCESS(status) {
+            if resultLength != core::mem::size_of::<DEVICE_REMOVAL_POLICY>() as u32 {
+                status = STATUS_UNSUCCESSFUL;
+            }
+        }
+
+        if NT_SUCCESS(status) {
+            if (deviceRemovalPolicy == RemovalPolicyExpectOrderlyRemoval)
+                || (deviceRemovalPolicy == RemovalPolicyExpectSurpriseRemoval)
+            {
+                let mut userRemovalPolicy: DEVICE_REMOVAL_POLICY = 0;
+                DeviceGetParameter(
+                    DeviceExtension as *mut core::ffi::c_void,
+                    &raw const CLASSP_REG_SUBKEY_NAME as *const i8,
+                    &raw const CLASSP_REG_REMOVAL_POLICY_VALUE_NAME as *const i8,
+                    &raw mut userRemovalPolicy as *mut DEVICE_REMOVAL_POLICY as *mut u32,
+                );
+
+                if (userRemovalPolicy == RemovalPolicyExpectOrderlyRemoval)
+                    || (userRemovalPolicy == RemovalPolicyExpectSurpriseRemoval)
+                {
+                    deviceRemovalPolicy = userRemovalPolicy;
+                }
+            }
+
+            if deviceRemovalPolicy == RemovalPolicyExpectSurpriseRemoval {
+                (*fdoData).HotplugInfo.DeviceHotplug = 1; // TRUE
+            } else {
+                (*fdoData).HotplugInfo.DeviceHotplug = 0; // FALSE
+            }
+
+            writeCacheOverride = 0; // FALSE
+            DeviceGetParameter(
+                DeviceExtension as *mut core::ffi::c_void,
+                &raw const CLASSP_REG_SUBKEY_NAME as *const i8,
+                &raw const CLASSP_REG_WRITE_CACHE_VALUE_NAME as *const i8,
+                &raw mut writeCacheOverride,
+            );
+
+            if writeCacheOverride != 0 {
+                (*fdoData).HotplugInfo.WriteCacheEnableOverride = 1; // TRUE
+            } else {
+                (*fdoData).HotplugInfo.WriteCacheEnableOverride = 0; // FALSE
+            }
+        }
+
+        if !NT_SUCCESS(status) {
+            TracePrint(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_INIT,
+                b"Could not initialize hotplug information %lx\n\0".as_ptr() as *const i8,
+                status,
+            );
+        }
+
+        status
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceGetTimeOutValueFromRegistry() -> u32 {
+    // PAGED_CODE();
+    let mut status: i32;
+    let mut registryKey: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut timeOutValue: u32 = 0;
+    let buff: [u16; 13] = [0x54, 0x69, 0x6D, 0x65, 0x4F, 0x75, 0x74, 0x56, 0x61, 0x6C, 0x75, 0x65, 0];
+    let mut registryValueName = _UNICODE_STRING {
+        Length: 12 * 2,
+        MaximumLength: 12 * 2,
+        Buffer: core::ptr::addr_of_mut!(buff[0]) as *mut u16,
+    };
+    status = WdfDriverOpenParametersRegistryKey(
+        WdfGetDriver(),
+        KEY_READ,
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!(registryKey),
+    );
+    if NT_SUCCESS(status) != 0 {
+        status = WdfRegistryQueryULong(
+            registryKey,
+            core::ptr::addr_of!(registryValueName),
+            core::ptr::addr_of_mut!(timeOutValue),
+        );
+        WdfRegistryClose(registryKey);
+    }
+    if NT_SUCCESS(status) == 0 {
+        timeOutValue = 0;
+    }
+    return timeOutValue;
+}
+#[no_mangle]
+pub unsafe extern "C" fn ScanForSpecialHandler(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+    HackFlags: usize, // ULONG_PTR
+) {
+    // PAGED_CODE() macro call
+    PAGED_CODE();
+
+    // CLEAR_FLAG(HackFlags, CDROM_HACK_INVALID_FLAGS) – macro expanded to bitwise clear
+    // Because CLEAR_FLAG is a macro and not a callable function, we manually expand it.
+    // CDROM_HACK_INVALID_FLAGS is not supplied; using a placeholder value.
+    const CDROM_HACK_INVALID_FLAGS: usize = 0; // TODO: define real value
+    let mut flags = HackFlags;
+    flags &= !CDROM_HACK_INVALID_FLAGS;
+
+    (*DeviceExtension).DeviceAdditionalData.HackFlags = flags;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
+    let cdb: *mut CDB = core::ptr::addr_of_mut!((srb).Cdb) as *mut CDB;
+    let mut tmpInquiry: *mut INQUIRYDATA = core::ptr::null_mut();
+    let mut requestedInquiryTransferBytes: u32 = MINIMUM_CDROM_INQUIRY_SIZE;
+    let mut needResendCommand: i32 = 1; // TRUE
+    let mut portDriverHack: i32 = 0; // FALSE
+
+    // Compute minInquiryAdditionalLength: MINIMUM_CDROM_INQUIRY_SIZE - RTL_SIZEOF_THROUGH_FIELD(INQUIRYDATA, AdditionalLength)
+    let field_offset = core::mem::offset_of!(INQUIRYDATA, AdditionalLength) + 1; // RTL_SIZEOF_THROUGH_FIELD adds size of field (which is 1)
+    let minInquiryAdditionalLength: u8 = (MINIMUM_CDROM_INQUIRY_SIZE - field_offset as u32) as u8;
+
+    // Skip C_ASSERT and PAGED_CODE
+
+    // Short-circuit if already cached
+    if !(*DeviceExtension).DeviceAdditionalData.CachedInquiryData.is_null() {
+        NT_ASSERT(((*DeviceExtension).DeviceAdditionalData.CachedInquiryDataByteCount != 0) as i32);
+        return STATUS_SUCCESS;
+    }
+
+    // 1. Retrieve inquiry data length
+    tmpInquiry = ExAllocatePoolWithTag(
+        NonPagedPoolNx,
+        requestedInquiryTransferBytes,
+        CDROM_TAG_INQUIRY,
+    ) as *mut INQUIRYDATA;
+    if tmpInquiry.is_null() {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    // 1.2 send INQUIRY command
+    if status >= 0 {
+        srb.CdbLength = 6;
+        (*cdb).AsByte[0] = SCSIOP_INQUIRY;
+        (*cdb).AsByte[3] = (requestedInquiryTransferBytes >> (8 * 1)) as u8;
+        (*cdb).AsByte[4] = (requestedInquiryTransferBytes >> (8 * 0)) as u8;
+
+        status = DeviceSendSrbSynchronously(
+            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!(srb),
+            tmpInquiry as *mut core::ffi::c_void,
+            requestedInquiryTransferBytes,
+            0, // FALSE
+            core::ptr::null_mut(),
+        );
+    }
+
+    // 1.3 get required data length
+    if status >= 0 {
+        let field_size = (core::mem::offset_of!(INQUIRYDATA, AdditionalLength) + 1) as u32;
+        if requestedInquiryTransferBytes == srb.DataTransferLength
+            && requestedInquiryTransferBytes
+                == ((*tmpInquiry).AdditionalLength as u32 + field_size)
+        {
+            needResendCommand = 0; // FALSE
+        } else {
+            if (*tmpInquiry).AdditionalLength == 0 {
+                (*tmpInquiry).AdditionalLength = minInquiryAdditionalLength;
+                portDriverHack = 1; // TRUE
+            }
+            requestedInquiryTransferBytes =
+                (*tmpInquiry).AdditionalLength as u32 + field_size;
+            if requestedInquiryTransferBytes >= MINIMUM_CDROM_INQUIRY_SIZE {
+                needResendCommand = 1;
+            } else {
+                needResendCommand = 0;
+                status = STATUS_DEVICE_PROTOCOL_ERROR;
+            }
+        }
+    }
+
+    // 2. retrieve the inquiry data if still needed
+    if status >= 0 && needResendCommand != 0 {
+        FREE_POOL(tmpInquiry as *mut core::ffi::c_void);
+        core::ptr::write_bytes(
+            core::ptr::addr_of_mut!(srb) as *mut u8,
+            0,
+            core::mem::size_of::<SCSI_REQUEST_BLOCK>(),
+        );
+        tmpInquiry = ExAllocatePoolWithTag(
+            NonPagedPoolNx,
+            requestedInquiryTransferBytes,
+            CDROM_TAG_INQUIRY,
+        ) as *mut INQUIRYDATA;
+        if tmpInquiry.is_null() {
+            status = STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    // 2.2 resend INQUIRY command
+    if status >= 0 && needResendCommand != 0 {
+        srb.CdbLength = 6;
+        (*cdb).AsByte[0] = SCSIOP_INQUIRY;
+        (*cdb).AsByte[3] = (requestedInquiryTransferBytes >> (8 * 1)) as u8;
+        (*cdb).AsByte[4] = (requestedInquiryTransferBytes >> (8 * 0)) as u8;
+
+        status = DeviceSendSrbSynchronously(
+            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!(srb),
+            tmpInquiry as *mut core::ffi::c_void,
+            requestedInquiryTransferBytes,
+            0,
+            core::ptr::null_mut(),
+        );
+
+        if !(status >= 0) {
+            // Workaround for drives that report more data than they have
+            if srb.SrbStatus == SRB_STATUS_DATA_OVERRUN
+                && srb.DataTransferLength < requestedInquiryTransferBytes
+                && srb.DataTransferLength >= MINIMUM_CDROM_INQUIRY_SIZE
+            {
+                requestedInquiryTransferBytes = srb.DataTransferLength;
+                FREE_POOL(tmpInquiry as *mut core::ffi::c_void);
+                core::ptr::write_bytes(
+                    core::ptr::addr_of_mut!(srb) as *mut u8,
+                    0,
+                    core::mem::size_of::<SCSI_REQUEST_BLOCK>(),
+                );
+                tmpInquiry = ExAllocatePoolWithTag(
+                    NonPagedPoolNx,
+                    requestedInquiryTransferBytes,
+                    CDROM_TAG_INQUIRY,
+                ) as *mut INQUIRYDATA;
+                if tmpInquiry.is_null() {
+                    status = STATUS_INSUFFICIENT_RESOURCES;
+                } else {
+                    srb.CdbLength = 6;
+                    (*cdb).AsByte[0] = SCSIOP_INQUIRY;
+                    (*cdb).AsByte[3] = (requestedInquiryTransferBytes >> (8 * 1)) as u8;
+                    (*cdb).AsByte[4] = (requestedInquiryTransferBytes >> (8 * 0)) as u8;
+
+                    status = DeviceSendSrbSynchronously(
+                        (*DeviceExtension).Device as *mut core::ffi::c_void,
+                        core::ptr::addr_of_mut!(srb),
+                        tmpInquiry as *mut core::ffi::c_void,
+                        requestedInquiryTransferBytes,
+                        0,
+                        core::ptr::null_mut(),
+                    );
+                }
+            }
+        }
+
+        // Check transferred data length
+        if status >= 0 {
+            requestedInquiryTransferBytes = srb.DataTransferLength;
+            if requestedInquiryTransferBytes < MINIMUM_CDROM_INQUIRY_SIZE {
+                status = STATUS_DEVICE_PROTOCOL_ERROR;
+            }
+        }
+
+        // Ensure we got non-zero data when port driver hack was applied
+        if status >= 0 && portDriverHack != 0 {
+            let mut tmp: *mut u32 = tmpInquiry as *mut u32;
+            let mut i: u32 = MINIMUM_CDROM_INQUIRY_SIZE / core::mem::size_of::<u32>() as u32;
+            loop {
+                if i == 0 {
+                    break;
+                }
+                if *tmp != 0 {
+                    break;
+                }
+                i -= 1;
+                tmp = tmp.add(1);
+            }
+            if i == 0 {
+                status = STATUS_DEVICE_PROTOCOL_ERROR;
+            }
+        }
+    }
+
+    // Final assignment
+    if status >= 0 {
+        (*DeviceExtension).DeviceAdditionalData.CachedInquiryData = tmpInquiry;
+        (*DeviceExtension).DeviceAdditionalData.CachedInquiryDataByteCount =
+            requestedInquiryTransferBytes;
+    } else {
+        FREE_POOL(tmpInquiry as *mut core::ffi::c_void);
+    }
+
+    status
+}
+" then after that block, the function hasn't returned; it just ends with "return status;"? Actually the C code: after the last if block, there is no explicit return; the function ends with "return status;"? No, the code inside the function is: first block with GET_CONFIGURATION_HEADER, then *IsMmcDevice = TRUE; then second block with configBuffer... then after the outer second block, there is no further code; the function ends. In C, a non-void function that reaches the end without return is undefined behavior. But reading the original code, there is a "return status;" at the very end? I must check: the C code ends after the last if(previouslyFailed) block; I need to see if there's a return. The provided C snippet ends with "}" that closes the function, and before that the last line is "}" after the if(previouslyFailed) block, and no return statement. That seems like a bug unless there's a return earlier. But the earlier early returns were all "return STATUS_SUCCESS;" except for the case where configBuffer allocation fails, returning STATUS_INSUFFICIENT_RESOURCES. The success path after the second block doesn't return; it will fall off the end. The original code likely has a "return status;" at the end. Maybe it's missing in the snippet? Let's re-read: after the second block, there's "}" and then "return status;"? I see in the provided C: after the block for TYPE ONE, there's a closing brace (matching the one that starts the block), then there's no more code; the function ends. But the last local variable 'status' is set. The function's return type is NTSTATUS. I think there is an implicit "return status;" that was maybe omitted but in C that is UB. I suspect the actual source has "return status;" but the snippet might have omitted it. Let's check the snippet again: The function body has:
+...
+    {
+        ULONG   featureSize ...
+        ...
+        FREE_POOL(configBuffer);
+
+        if (previouslyFailed == TRUE)
+        {
+            DeviceSetParameter( DeviceExtension,
+                                CDROM_SUBKEY_NAME,
+                                CDROM_TYPE_ONE_GET_CONFIG_NAME,
+                                previouslyFailed);
+
+            SET_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG);
+        }
+    }
+
+    return status;
+}
+But in the provided text, after the closing brace of that block, there is no "return status;", just the final brace of the function. Actually I see: at the end of the provided code: ... 
+        }
+    }
+
+    return status;
+}
+Yes, I see a "return status;" after the block (on the same indentation as the block). So the function ends with "return status;" — I missed it. I need to include that return.
+
+I'll add a return status at the end, using the variable `status` which was last set by the call to DeviceGetConfiguration inside the second block. That's correct.
+
+Thus, final line: `return status;`
+}
+#[no_mangle]
+pub unsafe extern "C" fn DeviceSetRawReadInfo(
+    DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut buffer: *mut u8 = core::ptr::null_mut();
+    let mut count: u32 = 0;
+
+    // PAGED_CODE();
+    unsafe { PAGED_CODE(); } // keep the macro call
+
+    // Check GET_CONFIGURATION data
+    {
+        let mut cd_read_header: *mut FEATURE_DATA_CD_READ = core::ptr::null_mut();
+        let additional_length: u32 =
+            core::mem::size_of::<FEATURE_DATA_CD_READ>() as u32 - core::mem::size_of::<FEATURE_HEADER>() as u32;
+
+        cd_read_header = DeviceFindFeaturePage(
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer,
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+            FeatureCdRead,
+        );
+
+        if !cd_read_header.is_null()
+            && (*cd_read_header).Header.AdditionalLength >= additional_length
+            && (*cd_read_header).C2ErrorData != 0
+        {
+            TracePrint(
+                1u32, // TRACE_LEVEL_INFORMATION
+                2u32, // TRACE_FLAG_IOCTL
+                b"DeviceSetRawReadInfo: FDO %p GET_CONFIG shows ability to read C2 error bits\n\0".as_ptr()
+                    as *const i8,
+                (*DeviceExtension).DeviceObject,
+            );
+            (*DeviceExtension).DeviceAdditionalData.Mmc.ReadCdC2Pointers = 1; // TRUE
+        }
+    }
+
+    // Loop trying mode sense
+    count = 0;
+    while count < 6 {
+        let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
+        let cdb: *mut CDB = &mut srb.Cdb as *mut _ as *mut CDB;
+        let buffer_length: u32;
+
+        if (count / 3) == 0 {
+            // 10-byte CDB
+            buffer_length = core::mem::size_of::<CDVD_CAPABILITIES_PAGE>() as u32
+                + core::mem::size_of::<MODE_PARAMETER_HEADER10>() as u32
+                + core::mem::size_of::<MODE_PARAMETER_BLOCK>() as u32;
+
+            (*cdb).MODE_SENSE10.OperationCode = SCSIOP_MODE_SENSE10;
+            (*cdb).MODE_SENSE10.Dbd = Dbd;
+            (*cdb).MODE_SENSE10.PageCode = MODE_PAGE_CAPABILITIES;
+            (*cdb).MODE_SENSE10.AllocationLength[0] = (buffer_length >> 8) as u8;
+            (*cdb).MODE_SENSE10.AllocationLength[1] = (buffer_length >> 0) as u8;
+            srb.CdbLength = 10;
+        } else {
+            // 6-byte CDB
+            buffer_length = core::mem::size_of::<CDVD_CAPABILITIES_PAGE>() as u32
+                + core::mem::size_of::<MODE_PARAMETER_HEADER>() as u32
+                + core::mem::size_of::<MODE_PARAMETER_BLOCK>() as u32;
+
+            (*cdb).MODE_SENSE.OperationCode = SCSIOP_MODE_SENSE;
+            (*cdb).MODE_SENSE.Dbd = Dbd;
+            (*cdb).MODE_SENSE.PageCode = MODE_PAGE_CAPABILITIES;
+            (*cdb).MODE_SENSE.AllocationLength = buffer_length as u8;
+            srb.CdbLength = 6;
+        }
+
+        srb.TimeOutValue = (*DeviceExtension).TimeOutValue;
+
+        buffer = ExAllocatePoolWithTag(NonPagedPoolNx, buffer_length as u64, CDROM_TAG_MODE_DATA) as *mut u8;
+
+        if buffer.is_null() {
+            TracePrint(
+                3u32, // TRACE_LEVEL_ERROR
+                2u32, // TRACE_FLAG_IOCTL
+                b"DeviceSetRawReadInfo: cannot allocate buffer, so not setting raw read info for FDO %p\n\0".as_ptr()
+                    as *const i8,
+                (*DeviceExtension).DeviceObject,
+            );
+            status = STATUS_INSUFFICIENT_RESOURCES;
+            // goto FnExit;
+            // We'll handle via break and cleanup at end.
+            // The loop body currently ends with FREE_POOL after warning; we need to go to FnExit.
+            // So we'll exit the loop and let normal cleanup happen.
+            break;
+        }
+
+        core::ptr::write_bytes(buffer, 0, buffer_length as usize);
+
+        status = DeviceSendSrbSynchronously(
+            (*DeviceExtension).Device,
+            &mut srb,
+            buffer,
+            buffer_length,
+            0i32, // FALSE
+            core::ptr::null_mut(),
+        );
+
+        // Check success
+        if status >= 0 || status == STATUS_DATA_OVERRUN || status == STATUS_BUFFER_OVERFLOW {
+            let capabilities: *mut CDVD_CAPABILITIES_PAGE;
+
+            if (count / 3) == 0 {
+                let p: *mut MODE_PARAMETER_HEADER10 = buffer as *mut MODE_PARAMETER_HEADER10;
+                let block_desc_len: u32 =
+                    ((*p).BlockDescriptorLength[0] as u32) * 256u32 + ((*p).BlockDescriptorLength[1] as u32);
+                capabilities = buffer
+                    .add(
+                        core::mem::size_of::<MODE_PARAMETER_HEADER10>()
+                            + block_desc_len as usize,
+                    )
+                    as *mut CDVD_CAPABILITIES_PAGE;
+            } else {
+                let p: *mut MODE_PARAMETER_HEADER = buffer as *mut MODE_PARAMETER_HEADER;
+                capabilities = buffer
+                    .add(
+                        core::mem::size_of::<MODE_PARAMETER_HEADER>()
+                            + (*p).BlockDescriptorLength as usize,
+                    )
+                    as *mut CDVD_CAPABILITIES_PAGE;
+            }
+
+            TracePrint(
+                1u32, // TRACE_LEVEL_INFORMATION
+                2u32, // TRACE_FLAG_IOCTL
+                b"DeviceSetRawReadInfo: FDO %p CDVD Capabilities buffer %p\n\0".as_ptr() as *const i8,
+                (*DeviceExtension).DeviceObject,
+                buffer,
+            );
+
+            if (*capabilities).PageCode == MODE_PAGE_CAPABILITIES {
+                if (*capabilities).C2Pointers != 0 {
+                    TracePrint(
+                        1u32,
+                        2u32,
+                        b"DeviceSetRawReadInfo: FDO %p supports C2 error bits in READ_CD command\n\0".as_ptr()
+                            as *const i8,
+                        (*DeviceExtension).DeviceObject,
+                    );
+                    (*DeviceExtension).DeviceAdditionalData.Mmc.ReadCdC2Pointers = 1;
+                }
+                if (*capabilities).RWSupported != 0 {
+                    TracePrint(
+                        1u32,
+                        2u32,
+                        b"DeviceSetRawReadInfo: FDO %p supports raw subcode in READ_CD command\n\0".as_ptr()
+                            as *const i8,
+                        (*DeviceExtension).DeviceObject,
+                    );
+                    (*DeviceExtension).DeviceAdditionalData.Mmc.ReadCdSubCode = 1;
+                }
+                // Successfully got page; break out of loop.
+                // We must free buffer before breaking? The normal flow after this block would still execute the TracePrint warning and FREE_POOL.
+                // But we break, so we go to end of loop body directly. The buffer is still allocated; we need to free it.
+                // The C code: inside the success branch, after setting flags, it does 'break;' and then the loop ends.
+                // The buffer is freed only if the status wasn't success (i.e., in the part outside the if). So when we break, buffer is not freed.
+                // So we have to free it manually before break, because the loop cleanup won't run.
+                // So we'll free it here.
+                FREE_POOL(buffer as *mut core::ffi::c_void);
+                // Then break out of loop.
+                break;
+            }
+        }
+
+        // After the attempt (regardless of success/fail if we haven't broken),
+        // trace warning and free buffer.
+        TracePrint(
+            4u32, // TRACE_LEVEL_WARNING
+            2u32, // TRACE_FLAG_IOCTL
+            b"DeviceSetRawReadInfo: FDO %p failed %x byte mode sense, status %x\n\0".as_ptr() as *const i8,
+            (*DeviceExtension).DeviceObject,
+            if (count / 3) == 0 { 10u32 } else { 6u32 },
+            status,
+        );
+
+        FREE_POOL(buffer as *mut core::ffi::c_void);
+
+        count += 1;
+    }
+
+    // After loop: if count == 6 (tried all and never broke)
+    // Note: In Rust we are using while loop; after loop, count might be 6 if loop completed without break.
+    // But we might have broken early due to success; count would be the index at the time of break (still <6), but we already set flags and broken.
+    // Actually count increments at end of each iteration, so if we break before increment, count will be less than 6. So check count == 6 after loop.
+    // However, we need to ensure accurate count after break. In our loop, we have `break` before increment, so count remains the value it had at the iteration start.
+    // That's fine.
+    // Now we go to FnExit logic.
+    // FnExit label: if (buffer) FREE_POOL(buffer); return status.
+    // Note: at this point buffer may hold a pointer if we exited due to allocation failure (where we broke after 'buffer = ...; ... break'). In that case buffer is non-null.
+    // Or if we got to FnExit from the success branch break, buffer was freed and set to null? No, we didn't null it. So we need to null it after freeing.
+    // We'll mimic the C behavior: at FnExit, they check `if (buffer) FREE_POOL(buffer);`. So we'll do that, but we must ensure buffer is null after we free. We'll free and then null it.
+    // For clarity, we'll do:
+    // FnExit:
+    if !buffer.is_null() {
+        FREE_POOL(buffer as *mut core::ffi::c_void);
+    }
+
+    if count == 6 {
+        TracePrint(
+            4u32, // TRACE_LEVEL_WARNING
+            2u32, // TRACE_FLAG_IOCTL
+            b"DeviceSetRawReadInfo: FDO %p couldn't get mode sense data\n\0".as_ptr() as *const i8,
+            (*DeviceExtension).DeviceObject,
+        );
+    }
+
+    return status;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn DeviceInitializeDvd(Device: WDFDEVICE) -> NTSTATUS {
+    // PAGED_CODE();
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let deviceExtension: *mut CDROM_DEVICE_EXTENSION;
+    let mut copyProtectKey: *mut DVD_COPY_PROTECT_KEY = core::ptr::null_mut();
+    let rpcKey: *mut DVD_RPC_KEY;
+    let bufferLen: u32;
+    let mut bytesReturned: usize;
+
+    deviceExtension = DeviceGetExtension(Device);
+
+    if (*deviceExtension).DeviceAdditionalData.DriveDeviceType != FILE_DEVICE_DVD {
+        return STATUS_SUCCESS;
+    }
+
+    bufferLen = DVD_RPC_KEY_LENGTH;
+    copyProtectKey = ExAllocatePoolWithTag(PagedPool, bufferLen, DVD_TAG_RPC2_CHECK) as *mut DVD_COPY_PROTECT_KEY;
+
+    if copyProtectKey.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(copyProtectKey as *mut core::ffi::c_void, bufferLen);
+    (*copyProtectKey).KeyLength = DVD_RPC_KEY_LENGTH;
+    (*copyProtectKey).KeyType = DvdGetRpcKey;
+
+    status = DvdStartSessionReadKey(
+        deviceExtension,
+        IOCTL_DVD_READ_KEY,
+        core::ptr::null_mut(),
+        copyProtectKey as *mut core::ffi::c_void,
+        DVD_RPC_KEY_LENGTH,
+        copyProtectKey as *mut core::ffi::c_void,
+        DVD_RPC_KEY_LENGTH,
+        core::ptr::addr_of_mut!(bytesReturned),
+    );
+
+    if NT_SUCCESS(status) {
+        rpcKey = (*copyProtectKey).KeyData as *mut DVD_RPC_KEY;
+
+        if (*rpcKey).TypeCode == 0 {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_PNP,
+                b"DVD Initialize (%p): must choose DVD region\n\0".as_ptr() as *const i8,
+                Device as *mut core::ffi::c_void,
+            );
+            (*deviceExtension).DeviceAdditionalData.PickDvdRegion = 1;
+
+            if (*deviceExtension).DeviceAdditionalData.Mmc.IsCssDvd != 0 {
+                DevicePickDvdRegion(Device);
+            }
+        }
+    }
+
+    ExFreePool(copyProtectKey as *mut core::ffi::c_void);
+
+    STATUS_SUCCESS
+}
+
+type NTSTATUS = i32;
+type DEVPROPKEY = core::ffi::c_void;
+
+const DEVPROP_FALSE: i32 = 0;
+const DEVPROP_TRUE: i32 = 1;
+const DEVPROP_TYPE_EMPTY: u32 = 0;
+const DEVPROP_TYPE_BOOLEAN: u32 = 0; // DEVPROP_TYPE_BOOLEAN is 0
+
+
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//
+// /*--
+//
+// Copyright (C) Microsoft Corporation. All rights reserved.
+//
+// Module Name:
+//
+//     init.c
+//
+// Abstract:
+//
+//     Initialization routines for CDROM
+//
+// Environment:
+//
+//     kernel mode only
+//
+// Notes:
+//
+//
+// Revision History:
+//
+// --*/
+//
+//
+// #include "ntddk.h"
+// #include "ntddstor.h"
+// #include "ntstrsafe.h"
+// #include "devpkey.h"
+//
+// #include "cdrom.h"
+// #include "scratch.h"
+// #include "mmc.h"
+//
+// #ifdef DEBUG_USE_WPP
+// #include "init.tmh"
+// #endif
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// NTSTATUS
+// DeviceInitAllocateBuffers(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     );
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceRetrieveScsiAddress(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension,
+//      PSCSI_ADDRESS           ScsiAddress
+//     );
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceRetrieveDescriptorsAndTransferLength(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     );
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// VOID
+// DeviceScanSpecialDevices(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     );
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceInitMmcContext(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     );
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceGetMmcSupportInfo(
+//       PCDROM_DEVICE_EXTENSION   DeviceExtension,
+//      PBOOLEAN                  IsMmcDevice
+//     );
+//
+// #if (NTDDI_VERSION >= NTDDI_WIN8)
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceIsPortable(
+//       PCDROM_DEVICE_EXTENSION   DeviceExtension,
+//      PBOOLEAN                  IsPortable
+//     );
+// #endif
+//
+//
+// #ifdef ALLOC_PRAGMA
+//
+// #pragma alloc_text(PAGE, DeviceClaimRelease)
+// #pragma alloc_text(PAGE, DeviceEvtSelfManagedIoInit)
+//
+// #pragma alloc_text(PAGE, DeviceInitReleaseQueueContext)
+// #pragma alloc_text(PAGE, DeviceInitAllocateBuffers)
+// #pragma alloc_text(PAGE, DeviceInitPowerContext)
+// #pragma alloc_text(PAGE, DeviceCreateWellKnownName)
+// #pragma alloc_text(PAGE, DeviceRetrieveScsiAddress)
+// #pragma alloc_text(PAGE, DeviceRetrieveDescriptorsAndTransferLength)
+// #pragma alloc_text(PAGE, DeviceInitializeHotplugInfo)
+// #pragma alloc_text(PAGE, DeviceScanSpecialDevices)
+// #pragma alloc_text(PAGE, DeviceGetTimeOutValueFromRegistry)
+// #pragma alloc_text(PAGE, DeviceGetMmcSupportInfo)
+// #pragma alloc_text(PAGE, DeviceRetrieveDescriptor)
+// #pragma alloc_text(PAGE, DeviceRetrieveHackFlagsFromRegistry)
+// #pragma alloc_text(PAGE, DeviceScanForSpecial)
+// #pragma alloc_text(PAGE, DeviceHackFlagsScan)
+// #pragma alloc_text(PAGE, DeviceInitMmcContext)
+// #pragma alloc_text(PAGE, ScanForSpecialHandler)
+// #pragma alloc_text(PAGE, DeviceSetRawReadInfo)
+// #pragma alloc_text(PAGE, DeviceInitializeDvd)
+// #pragma alloc_text(PAGE, DeviceCacheDeviceInquiryData)
+//
+// #if (NTDDI_VERSION >= NTDDI_WIN8)
+// #pragma alloc_text(PAGE, DeviceIsPortable)
+// #endif
+//
+// #endif
+//
+// #pragma warning(push)
+// #pragma warning(disable:4152) // nonstandard extension, function/data pointer conversion in expression
+// #pragma warning(disable:26000) // read overflow reported because of pointer type conversion
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceClaimRelease(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension,
+//      BOOLEAN                 Release
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This function claims a device in the port driver.  The port driver object
+//     is updated with the correct driver object if the device is successfully
+//     claimed.
+//
+// Arguments:
+//
+//     Device - The WDFDEVICE that needs to be claimed or released.
+//
+//     Release - Indicates the logical unit should be released rather than claimed.
+//
+// Return Value:
+//
+//     Returns a status indicating success or failure of the operation.
+//
+// --*/
+// {
+//     NTSTATUS                status;
+//     SCSI_REQUEST_BLOCK      srb = {0};
+//     WDF_MEMORY_DESCRIPTOR   descriptor;
+//     WDFREQUEST              request;
+//     WDF_OBJECT_ATTRIBUTES   attributes;
+//
+//     PAGED_CODE();
+//
+//     //Create a request
+//     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes,
+//                                             CDROM_REQUEST_CONTEXT);
+//
+//     status = WdfRequestCreate(&attributes,
+//                               DeviceExtension->IoTarget,
+//                               &request);
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         //fill up srb structure
+//         srb.OriginalRequest = WdfRequestWdmGetIrp(request);
+//         NT_ASSERT(srb.OriginalRequest != NULL);
+//
+//         srb.Length = sizeof(SCSI_REQUEST_BLOCK);
+//
+//         srb.Function = Release
+//                         ? SRB_FUNCTION_RELEASE_DEVICE
+//                         : SRB_FUNCTION_CLAIM_DEVICE;
+//
+//
+//         WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&descriptor,
+//                                           &srb,
+//                                           sizeof(srb));
+//
+//         status = WdfIoTargetSendInternalIoctlOthersSynchronously(DeviceExtension->IoTarget,
+//                                                                  request,
+//                                                                  IOCTL_SCSI_EXECUTE_NONE,
+//                                                                  &descriptor,
+//                                                                  NULL,
+//                                                                  NULL,
+//                                                                  NULL,
+//                                                                  NULL);
+//
+//         NT_ASSERT(!TEST_FLAG(srb.SrbFlags, SRB_FLAGS_FREE_SENSE_BUFFER));
+//
+//         // The request should be deleted.
+//         WdfObjectDelete(request);
+//
+//         if (!NT_SUCCESS(status))
+//         {
+//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//                         "DeviceClaimRelease: Failed to %s device, status: 0x%X\n",
+//                         Release ? "Release" : "Claim",
+//                         status));
+//         }
+//     }
+//     else
+//     {
+//         TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//                     "DeviceClaimRelease: Failed to create request, status: 0x%X\n",
+//                     status));
+//     }
+//
+//     if (Release)
+//     {
+//         // We only release the device when we don't want to manage it.
+//         // The failure status does not matter.
+//         status = STATUS_SUCCESS;
+//     }
+//
+//     return status;
+// } // end DeviceClaimRelease()
+//
+//
+// NTSTATUS
+// NTAPI /* ReactOS Change: GCC Does not support STDCALL by default */
+// DeviceEvtSelfManagedIoInit(
+//      WDFDEVICE      Device
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This routine is called only once after the device is added in system, so it's used to do
+//     hardware-dependent device initialization work and resource allocation.
+//     If this routine fails, DeviceEvtSelfManagedIoCleanup will be invoked by the framework.
+//
+// Arguments:
+//
+//     Device - Handle to device object
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS                status = STATUS_SUCCESS;
+//     PCDROM_DEVICE_EXTENSION deviceExtension = NULL;
+//
+//     PAGED_CODE();
+//
+//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_PNP,
+//                 "DeviceEvtSelfManagedIoInit: WDFDEVICE %p is being started.\n",
+//                 Device));
+//
+//     deviceExtension = DeviceGetExtension(Device);
+//
+//     // 1. Set/retrieve basic information, some of the following operations may depend on it
+//     if (NT_SUCCESS(status))
+//     {
+//         // We do not care if this function fails, SCSI address is mainly for debugging/tracing purposes.
+//         (VOID) DeviceRetrieveScsiAddress(deviceExtension, &deviceExtension->ScsiAddress);
+//     }
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         status = DeviceRetrieveDescriptorsAndTransferLength(deviceExtension);
+//     }
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         // This function should be called after DeviceRetrieveDescriptorsAndTransferLength()
+//         // It depends on MaxTransferLenth fields.
+//         status = DeviceInitAllocateBuffers(deviceExtension);
+//     }
+//
+//     // 2. The following functions depend on the allocated buffers.
+//
+//     // perf re-enable after failing. Q: Is this one used by cdrom.sys?
+//     if (NT_SUCCESS(status))
+//     {
+//         // allow perf to be re-enabled after a given number of failed IOs
+//         // require this number to be at least CLASS_PERF_RESTORE_MINIMUM
+//         ULONG t = CLASS_PERF_RESTORE_MINIMUM;
+//
+//         DeviceGetParameter(deviceExtension,
+//                            CLASSP_REG_SUBKEY_NAME,
+//                            CLASSP_REG_PERF_RESTORE_VALUE_NAME,
+//                            &t);
+//         if (t >= CLASS_PERF_RESTORE_MINIMUM)
+//         {
+//             deviceExtension->PrivateFdoData->Perf.ReEnableThreshhold = t;
+//         }
+//     }
+//
+//     // 3. Retrieve information about special devices and hack flags.
+//     if (NT_SUCCESS(status))
+//     {
+//         DeviceRetrieveHackFlagsFromRegistry(deviceExtension);
+//         // scan for bad items.
+//         DeviceScanForSpecial(deviceExtension, CdRomBadItems, DeviceHackFlagsScan);
+//         // Check to see if it's a special device that needs special error process.
+//         DeviceScanSpecialDevices(deviceExtension);  // may send command to device
+//     }
+//
+//     // 4. Initialize the hotplug information only after the ScanForSpecial routines,
+//     // as it relies upon the hack flags - deviceExtension->PrivateFdoData->HackFlags.
+//     if (NT_SUCCESS(status))
+//     {
+//         status = DeviceInitializeHotplugInfo(deviceExtension);
+//     }
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         // cache the device's inquiry data
+//         status = DeviceCacheDeviceInquiryData(deviceExtension);
+//         if (!NT_SUCCESS(status))
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                         "Failed to cache the device's inquiry data, failng %!STATUS!\n",
+//                         status
+//                         ));
+//         }
+//     }
+//
+//     // 5. Initialize MMC context, media change notification stuff and read media capacity
+//     if (NT_SUCCESS(status))
+//     {
+//         status = DeviceInitializeMediaChangeDetection(deviceExtension);
+//     }
+//     if (NT_SUCCESS(status))
+//     {
+//         status = DeviceInitMmcContext(deviceExtension);
+//     }
+//     if (NT_SUCCESS(status))
+//     {
+//         status = DeviceInitializeZPODD(deviceExtension);
+//     }
+//     if (NT_SUCCESS(status))
+//     {
+//         // Do READ CAPACITY. This SCSI command returns the last sector address
+//         // on the device and the bytes per sector. These are used to calculate
+//         // the drive capacity in bytes.
+//         status = MediaReadCapacity(Device);
+//
+//         // If READ CAPACITY succeeded, we can safely conclude that there is a media present
+//         if (NT_SUCCESS(status))
+//         {
+//             DeviceSetMediaChangeStateEx(deviceExtension,
+//                                         MediaPresent,
+//                                         NULL);
+//         }
+//
+//         // READ CAPACITY is not critical for init, ignore all errors occuring during its execution
+//         status = STATUS_SUCCESS;
+//     }
+//
+//     // 6. Perform DVD-specific initialization
+//     if (NT_SUCCESS(status))
+//     {
+//         status = DeviceInitializeDvd(Device);
+//     }
+//
+//     // 7. Miscellaneous initialization actions
+//     if (NT_SUCCESS(status))
+//     {
+//         if (deviceExtension->PrivateFdoData != NULL)
+//         {
+//             deviceExtension->PrivateFdoData->Perf.OriginalSrbFlags = deviceExtension->SrbFlags;
+//         }
+//
+//         if (deviceExtension->DeviceAdditionalData.Mmc.IsWriter)
+//         {
+//             // OPC can really take this long per IMAPIv1 timeout....
+//             deviceExtension->TimeOutValue = max(deviceExtension->TimeOutValue, SCSI_CDROM_OPC_TIMEOUT);
+//         }
+//     }
+//
+//     // 8. Enable the main timer, create ARC name as needed
+//     if (NT_SUCCESS(status))
+//     {
+//         // Device successfully added and initialized, increase CdRomCount.
+//         IoGetConfigurationInformation()->CdRomCount++;
+//
+//         deviceExtension->IsInitialized = TRUE;
+//
+//         DeviceEnableMainTimer(deviceExtension);
+//
+//     }
+//
+// #if (NTDDI_VERSION >= NTDDI_WIN8)
+//     // 9. Set volume interface properties
+//     if (NT_SUCCESS(status))
+//     {
+//         BOOLEAN isCritical = FALSE;
+//         BOOLEAN isPortable = FALSE;
+//         BOOLEAN isRemovable = TEST_FLAG(deviceExtension->DeviceObject->Characteristics, FILE_REMOVABLE_MEDIA);
+//         DEVPROP_BOOLEAN propCritical = DEVPROP_FALSE;
+//         DEVPROP_BOOLEAN propPortable = DEVPROP_FALSE;
+//         DEVPROP_BOOLEAN propRemovable = DEVPROP_FALSE;
+//
+//         status = DeviceIsPortable(deviceExtension, &isPortable);
+//
+//         if (NT_SUCCESS(status))
+//         {
+//             if (isPortable) {
+//                 SET_FLAG(deviceExtension->DeviceObject->Characteristics, FILE_PORTABLE_DEVICE);
+//             }
+//
+//             propPortable = isPortable ? DEVPROP_TRUE : DEVPROP_FALSE;
+//
+//             status = IoSetDeviceInterfacePropertyData(&deviceExtension->MountedDeviceInterfaceName,
+//                                                       &DEVPKEY_Storage_Portable,
+//                                                       0,
+//                                                       0,
+//                                                       DEVPROP_TYPE_BOOLEAN,
+//                                                       sizeof(DEVPROP_BOOLEAN),
+//                                                       &propPortable);
+//         }
+//
+//         if (NT_SUCCESS(status))
+//         {
+//             propRemovable = isRemovable ? DEVPROP_TRUE : DEVPROP_FALSE;
+//
+//             status = IoSetDeviceInterfacePropertyData(&deviceExtension->MountedDeviceInterfaceName,
+//                                                       &DEVPKEY_Storage_Removable_Media,
+//                                                       0,
+//                                                       0,
+//                                                       DEVPROP_TYPE_BOOLEAN,
+//                                                       sizeof(DEVPROP_BOOLEAN),
+//                                                       &propRemovable);
+//         }
+//
+//         if (NT_SUCCESS(status))
+//         {
+//             isCritical = TEST_FLAG(deviceExtension->DeviceObject->Flags,
+//                                    (DO_SYSTEM_SYSTEM_PARTITION |
+//                                     DO_SYSTEM_BOOT_PARTITION   |
+//                                     DO_SYSTEM_CRITICAL_PARTITION));
+//
+//             propCritical = isCritical ? DEVPROP_TRUE : DEVPROP_FALSE;
+//
+//             status = IoSetDeviceInterfacePropertyData(&deviceExtension->MountedDeviceInterfaceName,
+//                                                       &DEVPKEY_Storage_System_Critical,
+//                                                       0,
+//                                                       0,
+//                                                       DEVPROP_TYPE_BOOLEAN,
+//                                                       sizeof(DEVPROP_BOOLEAN),
+//                                                       &propCritical);
+//         }
+//
+//     }
+// #endif
+//
+//     return status;
+// }
+//
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// NTSTATUS
+// DeviceInitReleaseQueueContext(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     Part of device initialize routine. Initialize ReleaseQueue related stuff.
+//
+// Arguments:
+//
+//     DeviceExtension - device extension of WDFDEVICE.
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS                status = STATUS_SUCCESS;
+//     WDF_OBJECT_ATTRIBUTES   attributes;
+//
+//     PAGED_CODE();
+//
+//     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes,
+//                                             CDROM_REQUEST_CONTEXT);
+//     attributes.ParentObject = DeviceExtension->Device;
+//
+//     status = WdfRequestCreate(&attributes,
+//                               DeviceExtension->IoTarget,
+//                               &(DeviceExtension->ReleaseQueueRequest));
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Cannot create the release queue request\n"));
+//
+//         return status;
+//     }
+//
+//     // Initialize ReleaseQueueInputMemory, a wrapper around ReleaseQueueSrb
+//     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+//     attributes.ParentObject = DeviceExtension->ReleaseQueueRequest;
+//
+//     status = WdfMemoryCreatePreallocated(&attributes,
+//                                          &DeviceExtension->ReleaseQueueSrb,
+//                                          sizeof(SCSI_REQUEST_BLOCK),
+//                                          &DeviceExtension->ReleaseQueueInputMemory);
+//     if (!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Failed to allocate ReleaseQueueSrb.\n"));
+//
+//         return status;
+//     }
+//
+//     // Preformat the release queue request here to ensure that this call will never
+//     // fail during an actual release of the queue.
+//     if (NT_SUCCESS(status))
+//     {
+//         status = WdfIoTargetFormatRequestForInternalIoctlOthers(DeviceExtension->IoTarget,
+//                                                                 DeviceExtension->ReleaseQueueRequest,
+//                                                                 IOCTL_SCSI_EXECUTE_NONE,
+//                                                                 DeviceExtension->ReleaseQueueInputMemory,
+//                                                                 NULL,
+//                                                                 NULL,
+//                                                                 NULL,
+//                                                                 NULL,
+//                                                                 NULL);
+//     }
+//
+//     // Set a CompletionRoutine callback function for ReleaseQueueRequest.
+//     if (NT_SUCCESS(status))
+//     {
+//         WdfRequestSetCompletionRoutine(DeviceExtension->ReleaseQueueRequest,
+//                                        DeviceReleaseQueueCompletion,
+//                                        DeviceExtension->Device);
+//     }
+//
+//     // Create a spinlock for ReleaseQueueRequest
+//     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+//     attributes.ParentObject = DeviceExtension->Device;
+//
+//     status = WdfSpinLockCreate(&attributes,
+//                                &(DeviceExtension->ReleaseQueueSpinLock));
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,
+//                     "DeviceInitReleaseQueueContext: Cannot create the release queue spinlock\n"));
+//
+//         return status;
+//     }
+//
+//     // Initialize miscellaneous ReleaseQueue related fields
+//     DeviceExtension->ReleaseQueueNeeded = FALSE;
+//     DeviceExtension->ReleaseQueueInProgress = FALSE;
+//     DeviceExtension->ReleaseQueueSrb.Length = sizeof(SCSI_REQUEST_BLOCK);
+//
+//     return status;
+// }
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// NTSTATUS
+// DeviceInitPowerContext(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     Part of device initialize routine. Initialize PowerContext related stuff.
+//
+// Arguments:
+//
+//     DeviceExtension - device extension of WDFDEVICE.
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS                status = STATUS_SUCCESS;
+//     WDF_OBJECT_ATTRIBUTES   attributes;
+//
+//     PAGED_CODE();
+//
+//     // create request object for Power operations
+//
+//     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes,
+//                                             CDROM_REQUEST_CONTEXT);
+//     attributes.ParentObject = DeviceExtension->Device;
+//
+//     status = WdfRequestCreate(&attributes,
+//                               DeviceExtension->IoTarget,
+//                               &(DeviceExtension->PowerContext.PowerRequest) );
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Cannot create the power request object.\n"));
+//
+//         return status;
+//     }
+//
+//     // Preformat the power request. With this being done, we never need to worry about
+//     // WdfIoTargetFormatRequestForInternalIoctlOthers ever failing later.
+//     status = WdfIoTargetFormatRequestForInternalIoctlOthers(DeviceExtension->IoTarget,
+//                                                             DeviceExtension->PowerContext.PowerRequest,
+//                                                             IOCTL_SCSI_EXECUTE_IN,
+//                                                             NULL, NULL,
+//                                                             NULL, NULL,
+//                                                             NULL, NULL);
+//     return status;
+// }
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// NTSTATUS
+// DeviceCreateWellKnownName(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This routine creates a symbolic link to the cdrom device object
+//     under \dosdevices.  The number of the cdrom device does not neccessarily
+//     match between \dosdevices and \device, but usually will be the same.
+//
+//     Saves the buffer
+//
+// Arguments:
+//
+//     DeviceObject -
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS        status = STATUS_SUCCESS;
+//     UNICODE_STRING  unicodeLinkName = {0};
+//     WCHAR           wideLinkName[64] = {0};
+//     PWCHAR          savedName;
+//
+//     LONG            cdromNumber = DeviceExtension->DeviceNumber;
+//
+//     PAGED_CODE();
+//
+//     // if already linked, assert then return
+//     if (DeviceExtension->DeviceAdditionalData.WellKnownName.Buffer != NULL)
+//     {
+//
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+//                     "DeviceCreateWellKnownName: link already exists %p\n",
+//                     DeviceExtension->DeviceAdditionalData.WellKnownName.Buffer));
+//
+//         NT_ASSERT(FALSE);
+//
+//         return STATUS_UNSUCCESSFUL;
+//     }
+//
+//     // find an unused CdRomNN to link to.
+//     // It's doing this way because the same might be used for other device in another driver.
+//     do
+//     {
+//         status = RtlStringCchPrintfW((NTSTRSAFE_PWSTR)wideLinkName,
+//                                      RTL_NUMBER_OF(wideLinkName),
+//                                      L"\\DosDevices\\CdRom%d",
+//                                      cdromNumber);
+//         if (!NT_SUCCESS(status))
+//         {
+//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+//                         "DeviceCreateWellKnownName: Format symbolic link failed with error: 0x%X\n", status));
+//             return status;
+//         }
+//
+//         RtlInitUnicodeString(&unicodeLinkName, wideLinkName);
+//
+//         status = WdfDeviceCreateSymbolicLink(DeviceExtension->Device,
+//                                              &unicodeLinkName);
+//
+//         cdromNumber++;
+//
+//     } while((status == STATUS_OBJECT_NAME_COLLISION) ||
+//             (status == STATUS_OBJECT_NAME_EXISTS));
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+//                     "DeviceCreateWellKnownName: Error %lx linking %wZ to "
+//                     "device %wZ\n",
+//                     status,
+//                     &unicodeLinkName,
+//                     &(DeviceExtension->DeviceName)));
+//         return status;
+//     }
+//
+//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                 "DeviceCreateWellKnownName: successfully linked %wZ "
+//                 "to device %wZ\n",
+//                 &unicodeLinkName,
+//                 &(DeviceExtension->DeviceName)));
+//
+//     // Save away the symbolic link name in the driver data block.  We need
+//     // it so we can delete the link when the device is removed.
+//     savedName = ExAllocatePoolWithTag(PagedPool,
+//                                       unicodeLinkName.MaximumLength,
+//                                       CDROM_TAG_STRINGS);
+//
+//     if (savedName == NULL)
+//     {
+//         // Test Note: test path should excise here to see if the symbolic is deleted by framework.
+//         // IoDeleteSymbolicLink(&unicodeLinkName);
+//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                     "DeviceCreateWellKnownName: unable to allocate memory.\n"));
+//
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//
+//     RtlZeroMemory(savedName, unicodeLinkName.MaximumLength);
+//     RtlCopyMemory(savedName, unicodeLinkName.Buffer, unicodeLinkName.MaximumLength);
+//
+//     RtlInitUnicodeString(&(DeviceExtension->DeviceAdditionalData.WellKnownName), savedName);
+//
+//     // the name was saved and the link created
+//
+//     return STATUS_SUCCESS;
+// }
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceRetrieveScsiAddress(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension,
+//      PSCSI_ADDRESS           ScsiAddress
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     retrieve SCSI address information and put into device extension
+//
+// Arguments:
+//
+//     DeviceExtension - device context.
+//     ScsiAddress - the buffer to put the scsi address info.
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS                status;
+//     WDF_MEMORY_DESCRIPTOR   outputDescriptor;
+//
+//     PAGED_CODE();
+//
+//     if ((DeviceExtension == NULL) ||
+//         (ScsiAddress == NULL))
+//     {
+//         return STATUS_INVALID_PARAMETER;
+//     }
+//
+//     //Get IOTARGET for sending request to port driver.
+//     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor,
+//                                       (PVOID)ScsiAddress,
+//                                       sizeof(SCSI_ADDRESS));
+//
+//     status = WdfIoTargetSendIoctlSynchronously(DeviceExtension->IoTarget,
+//                                                NULL,
+//                                                IOCTL_SCSI_GET_ADDRESS,
+//                                                NULL,
+//                                                &outputDescriptor,
+//                                                NULL,
+//                                                NULL);
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                     "DeviceRetrieveScsiAddress: Get Address failed %lx\n",
+//                     status));
+//     }
+//     else
+//     {
+//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                     "GetAddress: Port %x, Path %x, Target %x, Lun %x\n",
+//                     ScsiAddress->PortNumber,
+//                     ScsiAddress->PathId,
+//                     ScsiAddress->TargetId,
+//                     ScsiAddress->Lun));
+//     }
+//
+//     return status;
+// }
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// NTSTATUS
+// DeviceInitAllocateBuffers(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     Part of device initialize routine.
+//     Allocate all buffers in Device Extension.
+//
+// Arguments:
+//
+//     DeviceExtension - device extension of WDFDEVICE.
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS            status = STATUS_SUCCESS;
+//     PVOID               senseData = NULL;
+//
+//     PAGED_CODE();
+//
+//     // allocate a private extension for class data
+//     if (DeviceExtension->PrivateFdoData == NULL)
+//     {
+//         DeviceExtension->PrivateFdoData = ExAllocatePoolWithTag(NonPagedPoolNx,
+//                                                                 sizeof(CDROM_PRIVATE_FDO_DATA),
+//                                                                 CDROM_TAG_PRIVATE_DATA);
+//     }
+//
+//     if (DeviceExtension->PrivateFdoData == NULL)
+//     {
+//         status = STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//     else
+//     {
+//         // initialize the struct's various fields.
+//         RtlZeroMemory(DeviceExtension->PrivateFdoData, sizeof(CDROM_PRIVATE_FDO_DATA));
+//     }
+//
+//     // Allocate request sense buffer.
+//     senseData = ExAllocatePoolWithTag(NonPagedPoolNxCacheAligned,
+//                                       SENSE_BUFFER_SIZE,
+//                                       CDROM_TAG_SENSE_INFO);
+//
+//     if (senseData == NULL)
+//     {
+//         // The buffer cannot be allocated.
+//         status = STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//     else
+//     {
+//         // Set the sense data pointer in the device extension.
+//         DeviceExtension->SenseData = senseData;
+//     }
+//
+//     // Allocate scratch buffer -- Must occur after determining
+//     // max transfer size, but before other CD specific detection
+//     // (which relies upon this buffer).
+//     if (!ScratchBuffer_Allocate(DeviceExtension))
+//     {
+//         status = STATUS_INSUFFICIENT_RESOURCES;
+//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                     "Failed to allocate scratch buffer, failing  %!STATUS!\n",
+//                     status
+//                     ));
+//     }
+//
+//     return status;
+// }
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceRetrieveDescriptorsAndTransferLength(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     Part of device initialize routine.
+//     Retrieve Device Descriptor and Adaptor Descriptor.
+//
+// Arguments:
+//
+//     DeviceExtension - device extension of WDFDEVICE.
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS            status = STATUS_SUCCESS;
+//     STORAGE_PROPERTY_ID propertyId;
+//
+//     PAGED_CODE();
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         // Call port driver to get adapter capabilities.
+//         propertyId = StorageAdapterProperty;
+//
+//         status = DeviceRetrieveDescriptor(DeviceExtension->Device,
+//                                           &propertyId,
+//                                           (PSTORAGE_DESCRIPTOR_HEADER*)&DeviceExtension->AdapterDescriptor);
+//     }
+//     if (NT_SUCCESS(status))
+//     {
+//         // Call port driver to get device descriptor.
+//         propertyId = StorageDeviceProperty;
+//
+//         status = DeviceRetrieveDescriptor(DeviceExtension->Device,
+//                                           &propertyId,
+//                                           (PSTORAGE_DESCRIPTOR_HEADER*)&DeviceExtension->DeviceDescriptor);
+//     }
+//     if (NT_SUCCESS(status))
+//     {
+//         // Call port driver to get device power property.
+//         // Not all port drivers support this property, and it's not fatal if this query fails.
+//         propertyId = StorageDevicePowerProperty;
+//
+//         (void) DeviceRetrieveDescriptor(DeviceExtension->Device,
+//                                         &propertyId,
+//                                         (PSTORAGE_DESCRIPTOR_HEADER*)&DeviceExtension->PowerDescriptor);
+//     }
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         // Determine the maximum page-aligned and non-page-aligned transfer
+//         // lengths here, so we needn't do this in common READ/WRITE code paths
+//
+//         // start with the number of pages the adapter can support
+//         ULONG maxAlignedTransfer = DeviceExtension->AdapterDescriptor->MaximumPhysicalPages;
+//         ULONG maxUnalignedTransfer = DeviceExtension->AdapterDescriptor->MaximumPhysicalPages;
+//
+//
+//         // Unaligned buffers could cross a page boundary.
+//         if (maxUnalignedTransfer > 1)
+//         {
+//             maxUnalignedTransfer--;
+//         }
+//
+//         // if we'd overflow multiplying by page size, just max out the
+//         // transfer length allowed by the number of pages limit.
+//         if (maxAlignedTransfer >= (((ULONG)-1) / PAGE_SIZE))
+//         {
+//             maxAlignedTransfer = (ULONG)-1;
+//         }
+//         else
+//         {
+//             maxAlignedTransfer *= PAGE_SIZE;
+//         }
+//
+//         if (maxUnalignedTransfer >= (((ULONG)-1) / PAGE_SIZE))
+//         {
+//             maxUnalignedTransfer = (ULONG)-1;
+//         }
+//         else
+//         {
+//             maxUnalignedTransfer *= PAGE_SIZE;
+//         }
+//
+//         // finally, take the smaller of the above and the adapter's
+//         // reported maximum number of bytes per transfer.
+//         maxAlignedTransfer   = min(maxAlignedTransfer,   DeviceExtension->AdapterDescriptor->MaximumTransferLength);
+//         maxUnalignedTransfer = min(maxUnalignedTransfer, DeviceExtension->AdapterDescriptor->MaximumTransferLength);
+//
+//         // Make sure the values are reasonable and not zero.
+//         maxAlignedTransfer   = max(maxAlignedTransfer,   PAGE_SIZE);
+//         maxUnalignedTransfer = max(maxUnalignedTransfer, PAGE_SIZE);
+//
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                   "Device %p Max aligned/unaligned transfer size is %x/%x\n",
+//                   DeviceExtension->Device,
+//                   maxAlignedTransfer,
+//                   maxUnalignedTransfer
+//                   ));
+//         DeviceExtension->DeviceAdditionalData.MaxPageAlignedTransferBytes = maxAlignedTransfer;
+//         DeviceExtension->DeviceAdditionalData.MaxUnalignedTransferBytes = maxUnalignedTransfer;
+//     }
+//     else
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "DeviceRetrieveDescriptorsAndTransferLength failed %lx\n", status));
+//     }
+//
+//     return status;
+// }
+//
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceRetrieveDescriptor(
+//      WDFDEVICE                              Device,
+//      PSTORAGE_PROPERTY_ID                   PropertyId,
+//      PSTORAGE_DESCRIPTOR_HEADER*        Descriptor
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This routine will perform a query for the specified property id and will
+//     allocate a non-paged buffer to store the data in.  It is the responsibility
+//     of the caller to ensure that this buffer is freed.
+//
+//     This routine must be run at IRQL_PASSIVE_LEVEL
+//
+// Arguments:
+//
+//     Device - the device object
+//     PropertyId - type of property to retrieve
+//     Descriptor - buffer allocated in this function to hold the descriptor data
+//
+// Return Value:
+//
+//     status
+//
+// --*/
+// {
+//     NTSTATUS                status;
+//     WDF_MEMORY_DESCRIPTOR   memoryDescriptor;
+//
+//     STORAGE_PROPERTY_QUERY  query = {0};
+//     ULONG                   bufferLength = 0;
+//
+//     PSTORAGE_DESCRIPTOR_HEADER  descriptor = NULL;
+//     PCDROM_DEVICE_EXTENSION     deviceExtension = DeviceGetExtension(Device);
+//
+//     PAGED_CODE();
+//
+//     // Set the passed-in descriptor pointer to NULL as default
+//     *Descriptor = NULL;
+//
+//     // On the first pass we just want to get the first few
+//     // bytes of the descriptor so we can read it's size
+//     query.PropertyId = *PropertyId;
+//     query.QueryType = PropertyStandardQuery;
+//
+//     descriptor = (PVOID)&query;
+//
+//     NT_ASSERT(sizeof(STORAGE_PROPERTY_QUERY) >= (sizeof(ULONG)*2));
+//
+//     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memoryDescriptor,
+//                                       (PVOID)&query,
+//                                       sizeof(STORAGE_PROPERTY_QUERY));
+//
+//     status = WdfIoTargetSendIoctlSynchronously(deviceExtension->IoTarget,
+//                                                NULL,
+//                                                IOCTL_STORAGE_QUERY_PROPERTY,
+//                                                &memoryDescriptor,
+//                                                &memoryDescriptor,
+//                                                NULL,
+//                                                NULL);
+//
+//     if(!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: error %lx trying to "
+//                        "query properties #1\n", status));
+//         return status;
+//     }
+//
+//     if (descriptor->Size == 0)
+//     {
+//         // This DebugPrint is to help third-party driver writers
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: size returned was zero?! (status "
+//                     "%x\n", status));
+//         return STATUS_UNSUCCESSFUL;
+//     }
+//
+//     // This time we know how much data there is so we can
+//     // allocate a buffer of the correct size
+//     bufferLength = descriptor->Size;
+//     NT_ASSERT(bufferLength >= sizeof(STORAGE_PROPERTY_QUERY));
+//     bufferLength = max(bufferLength, sizeof(STORAGE_PROPERTY_QUERY));
+//
+//     descriptor = ExAllocatePoolWithTag(NonPagedPoolNx, bufferLength, CDROM_TAG_DESCRIPTOR);
+//
+//     if(descriptor == NULL)
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: unable to memory for descriptor "
+//                     "(%d bytes)\n", bufferLength));
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//
+//     // setup the query again, as it was overwritten above
+//     RtlZeroMemory(&query, sizeof(STORAGE_PROPERTY_QUERY));
+//     query.PropertyId = *PropertyId;
+//     query.QueryType = PropertyStandardQuery;
+//
+//     // copy the input to the new outputbuffer
+//     RtlCopyMemory(descriptor,
+//                   &query,
+//                   sizeof(STORAGE_PROPERTY_QUERY));
+//
+//     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memoryDescriptor,
+//                                       (PVOID)descriptor,
+//                                       bufferLength);
+//
+//     status = WdfIoTargetSendIoctlSynchronously(deviceExtension->IoTarget,
+//                                                NULL,
+//                                                IOCTL_STORAGE_QUERY_PROPERTY,
+//                                                &memoryDescriptor,
+//                                                &memoryDescriptor,
+//                                                NULL,
+//                                                NULL);
+//
+//     if(!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: error %lx trying to "
+//                        "query properties #1\n", status));
+//         FREE_POOL(descriptor);
+//
+//         return status;
+//     }
+//
+//     // return the memory we've allocated to the caller
+//     *Descriptor = descriptor;
+//
+//     return status;
+// } // end DeviceRetrieveDescriptor()
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// VOID
+// DeviceRetrieveHackFlagsFromRegistry(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     try to retrieve hack flages from registry and put the information in
+//     device extension.
+//
+// Arguments:
+//
+//     DeviceExtension - the device context
+//
+// Return Value:
+//
+//     none
+//
+// --*/
+// {
+//     NTSTATUS        status = STATUS_SUCCESS;
+//     WDFKEY          hardwareKey = NULL;
+//     WDFKEY          subKey = NULL;
+//     ULONG           deviceHacks = 0;
+//
+//     DECLARE_CONST_UNICODE_STRING(subKeyName, CLASSP_REG_SUBKEY_NAME);
+//     DECLARE_CONST_UNICODE_STRING(valueName, CLASSP_REG_HACK_VALUE_NAME);
+//
+//     PAGED_CODE();
+//
+//     status = WdfDeviceOpenRegistryKey(DeviceExtension->Device,
+//                                       PLUGPLAY_REGKEY_DEVICE,
+//                                       KEY_READ,
+//                                       WDF_NO_OBJECT_ATTRIBUTES,
+//                                       &hardwareKey);
+//     if (NT_SUCCESS(status))
+//     {
+//         status = WdfRegistryOpenKey(hardwareKey,
+//                                     &subKeyName,
+//                                     KEY_READ,
+//                                     WDF_NO_OBJECT_ATTRIBUTES,
+//                                     &subKey);
+//
+//         if (NT_SUCCESS(status))
+//         {
+//             status = WdfRegistryQueryULong(subKey,
+//                                            &valueName,
+//                                            &deviceHacks);
+//             if (NT_SUCCESS(status))
+//             {
+//                 // remove unknown values and save...
+//                 CLEAR_FLAG(deviceHacks, FDO_HACK_INVALID_FLAGS);
+//                 SET_FLAG(DeviceExtension->PrivateFdoData->HackFlags, deviceHacks);
+//             }
+//
+//             WdfRegistryClose(subKey);
+//         }
+//
+//         WdfRegistryClose(hardwareKey);
+//     }
+//
+//
+//     //
+//     // we should modify the system hive to include another key for us to grab
+//     // settings from.  in this case:  Classpnp\HackFlags
+//     //
+//     // the use of a DWORD value for the HackFlags allows 32 hacks w/o
+//     // significant use of the registry, and also reduces OEM exposure.
+//     //
+//     // definition of bit flags:
+//     //   0x00000001 -- Device succeeds PREVENT_MEDIUM_REMOVAL, but
+//     //                 cannot actually prevent removal.
+//     //   0x00000002 -- Device hard-hangs or times out for GESN requests.
+//     //   0x00000008 -- Device does not support RESERVE(6) and RELEASE(6).
+//     //   0x00000010 -- Device may incorrecly report operational changes in GESN.
+//     //   0x00000020 -- Device does not support streaming READ(12) / WRITE(12).
+//     //   0x00000040 -- Device does not support asynchronous notification.
+//     //   0xffffff80 -- Currently reserved, may be used later.
+//     //
+//
+//     return;
+// }
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// VOID DeviceScanForSpecial(
+//      PCDROM_DEVICE_EXTENSION          DeviceExtension,
+//      CDROM_SCAN_FOR_SPECIAL_INFO      DeviceList[],
+//      PCDROM_SCAN_FOR_SPECIAL_HANDLER  Function)
+// /*++
+//
+// Routine Description:
+//
+//     scan the list of devices that should be hacked or not supported.
+//
+// Arguments:
+//
+//     DeviceExtension - the device context
+//     DeviceList - the device list
+//     Function - function used to scan from the list.
+//
+// Return Value:
+//
+//     none
+//
+// --*/
+// {
+//     PSTORAGE_DEVICE_DESCRIPTOR  deviceDescriptor;
+//     PUCHAR                      vendorId;
+//     PUCHAR                      productId;
+//     PUCHAR                      productRevision;
+//     UCHAR                       nullString[] = "";
+//
+//     PAGED_CODE();
+//     NT_ASSERT(DeviceList);
+//     NT_ASSERT(Function);
+//
+//     if (DeviceList == NULL)
+//     {
+//         return;
+//     }
+//     if (Function == NULL)
+//     {
+//         return;
+//     }
+//
+//     deviceDescriptor = DeviceExtension->DeviceDescriptor;
+//
+//     // SCSI sets offsets to -1, ATAPI sets to 0.  check for both.
+//     if (deviceDescriptor->VendorIdOffset != 0 &&
+//         deviceDescriptor->VendorIdOffset != -1)
+//     {
+//         vendorId = ((PUCHAR)deviceDescriptor);
+//         vendorId += deviceDescriptor->VendorIdOffset;
+//     }
+//     else
+//     {
+//         vendorId = nullString;
+//     }
+//
+//     if (deviceDescriptor->ProductIdOffset != 0 &&
+//         deviceDescriptor->ProductIdOffset != -1)
+//     {
+//         productId = ((PUCHAR)deviceDescriptor);
+//         productId += deviceDescriptor->ProductIdOffset;
+//     }
+//     else
+//     {
+//         productId = nullString;
+//     }
+//
+//     if (deviceDescriptor->ProductRevisionOffset != 0 &&
+//         deviceDescriptor->ProductRevisionOffset != -1)
+//     {
+//         productRevision = ((PUCHAR)deviceDescriptor);
+//         productRevision += deviceDescriptor->ProductRevisionOffset;
+//     }
+//     else
+//     {
+//         productRevision = nullString;
+//     }
+//
+//     // loop while the device list is valid (not null-filled)
+//     for (;(DeviceList->VendorId        != NULL ||
+//            DeviceList->ProductId       != NULL ||
+//            DeviceList->ProductRevision != NULL); DeviceList++)
+//     {
+//         if (StringsAreMatched(DeviceList->VendorId,        (LPSTR)vendorId) &&
+//             StringsAreMatched(DeviceList->ProductId,       (LPSTR)productId) &&
+//             StringsAreMatched(DeviceList->ProductRevision, (LPSTR)productRevision)
+//             )
+//         {
+//
+//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: Found matching "
+//                         "controller Ven: %s Prod: %s Rev: %s\n",
+//                         (LPCSTR)vendorId, (LPCSTR)productId, (LPCSTR)productRevision));
+//
+//             // pass the context to the call back routine and exit
+//             (Function)(DeviceExtension, DeviceList->Data);
+//
+//             // for CHK builds, try to prevent wierd stacks by having a debug
+//             // print here. it's a hack, but i know of no other way to prevent
+//             // the stack from being wrong.
+//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: "
+//                         "completed callback\n"));
+//             return;
+//
+//         } // else the strings did not match
+//
+//     } // none of the devices matched.
+//
+//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: no match found for %p\n",
+//                 DeviceExtension->DeviceObject));
+//     return;
+//
+// } // end DeviceScanForSpecial()
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// VOID
+// DeviceHackFlagsScan(
+//      PCDROM_DEVICE_EXTENSION  DeviceExtension,
+//      ULONG_PTR                Data
+//     )
+// {
+//     PAGED_CODE();
+//
+//     // remove invalid flags and save
+//     CLEAR_FLAG(Data, FDO_HACK_INVALID_FLAGS);
+//     SET_FLAG(DeviceExtension->PrivateFdoData->HackFlags, Data);
+//
+//     return;
+// }
+//
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceInitializeHotplugInfo(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     Retrieve information into struc STORAGE_HOTPLUG_INFO in DeviceExtension
+//     initialize the hotplug information only after the ScanForSpecial routines,
+//     as it relies upon the hack flags - DeviceExtension->PrivateFdoData->HackFlags.
+//
+// Arguments:
+//
+//     DeviceExtension - the device context
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS                status = STATUS_SUCCESS;
+//     PCDROM_PRIVATE_FDO_DATA fdoData = DeviceExtension->PrivateFdoData;
+//     DEVICE_REMOVAL_POLICY   deviceRemovalPolicy = 0;
+//     ULONG                   resultLength = 0;
+//     ULONG                   writeCacheOverride;
+//
+//     PAGED_CODE();
+//
+//     // start with some default settings
+//     RtlZeroMemory(&(fdoData->HotplugInfo), sizeof(STORAGE_HOTPLUG_INFO));
+//
+//     // set the size (aka version)
+//     fdoData->HotplugInfo.Size = sizeof(STORAGE_HOTPLUG_INFO);
+//
+//     // set if the device has removable media
+//     if (DeviceExtension->DeviceDescriptor->RemovableMedia)
+//     {
+//         fdoData->HotplugInfo.MediaRemovable = TRUE;
+//     }
+//     else
+//     {
+//         fdoData->HotplugInfo.MediaRemovable = FALSE;
+//     }
+//
+//     //
+//     // this refers to devices which, for reasons not yet understood,
+//     // do not fail PREVENT_MEDIA_REMOVAL requests even though they
+//     // have no way to lock the media into the drive.  this allows
+//     // the filesystems to turn off delayed-write caching for these
+//     // devices as well.
+//     //
+//
+//     if (TEST_FLAG(DeviceExtension->PrivateFdoData->HackFlags, FDO_HACK_CANNOT_LOCK_MEDIA))
+//     {
+//         fdoData->HotplugInfo.MediaHotplug = TRUE;
+//     }
+//     else
+//     {
+//         fdoData->HotplugInfo.MediaHotplug = FALSE;
+//     }
+//
+//     // Query the default removal policy from the kernel
+//     status = WdfDeviceQueryProperty(DeviceExtension->Device,
+//                                     DevicePropertyRemovalPolicy,
+//                                     sizeof(DEVICE_REMOVAL_POLICY),
+//                                     (PVOID)&deviceRemovalPolicy,
+//                                     &resultLength);
+//     if (NT_SUCCESS(status))
+//     {
+//         if (resultLength != sizeof(DEVICE_REMOVAL_POLICY))
+//         {
+//             status = STATUS_UNSUCCESSFUL;
+//         }
+//     }
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         // Look into the registry to see if the user has chosen
+//         // to override the default setting for the removal policy.
+//         // User can override only if the default removal policy is
+//         // orderly or suprise removal.
+//
+//         if ((deviceRemovalPolicy == RemovalPolicyExpectOrderlyRemoval) ||
+//             (deviceRemovalPolicy == RemovalPolicyExpectSurpriseRemoval))
+//         {
+//             DEVICE_REMOVAL_POLICY userRemovalPolicy = 0;
+//
+//             DeviceGetParameter(DeviceExtension,
+//                                 CLASSP_REG_SUBKEY_NAME,
+//                                 CLASSP_REG_REMOVAL_POLICY_VALUE_NAME,
+//                                 (PULONG)&userRemovalPolicy);
+//
+//             // Validate the override value and use it only if it is an
+//             // allowed value.
+//             if ((userRemovalPolicy == RemovalPolicyExpectOrderlyRemoval) ||
+//                 (userRemovalPolicy == RemovalPolicyExpectSurpriseRemoval))
+//             {
+//                 deviceRemovalPolicy = userRemovalPolicy;
+//             }
+//         }
+//
+//         // use this info to set the DeviceHotplug setting
+//         // don't rely on DeviceCapabilities, since it can't properly
+//         // determine device relations, etc.  let the kernel figure this
+//         // stuff out instead.
+//         if (deviceRemovalPolicy == RemovalPolicyExpectSurpriseRemoval)
+//         {
+//             fdoData->HotplugInfo.DeviceHotplug = TRUE;
+//         }
+//         else
+//         {
+//             fdoData->HotplugInfo.DeviceHotplug = FALSE;
+//         }
+//
+//         // this refers to the *filesystem* caching, but has to be included
+//         // here since it's a per-device setting.  this may change to be
+//         // stored by the system in the future.
+//         writeCacheOverride = FALSE;
+//         DeviceGetParameter(DeviceExtension,
+//                             CLASSP_REG_SUBKEY_NAME,
+//                             CLASSP_REG_WRITE_CACHE_VALUE_NAME,
+//                             &writeCacheOverride);
+//
+//         if (writeCacheOverride)
+//         {
+//             fdoData->HotplugInfo.WriteCacheEnableOverride = TRUE;
+//         }
+//         else
+//         {
+//             fdoData->HotplugInfo.WriteCacheEnableOverride = FALSE;
+//         }
+//     }
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "Could not initialize hotplug information %lx\n", status));
+//     }
+//
+//     return status;
+// }
+//
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceInitMmcContext(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This routine initializes and populates the internal data structures that are
+//     used to discover various MMC-defined capabilities of the device.
+//
+//     This routine will not clean up allocate resources if it fails - that
+//     is left for device stop/removal routines
+//
+// Arguments:
+//
+//     DeviceExtension - device extension
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS                    status = STATUS_SUCCESS;
+//
+//     PAGED_CODE();
+//
+//     DeviceExtension->DeviceAdditionalData.Mmc.IsMmc = FALSE;
+//     DeviceExtension->DeviceAdditionalData.Mmc.IsAACS = FALSE;
+//     DeviceExtension->DeviceAdditionalData.Mmc.IsWriter = FALSE;
+//     DeviceExtension->DeviceAdditionalData.Mmc.WriteAllowed = FALSE;
+//     DeviceExtension->DeviceAdditionalData.Mmc.IsCssDvd = FALSE;
+//     DeviceExtension->DeviceAdditionalData.DriveDeviceType = FILE_DEVICE_CD_ROM;
+//
+//     // Determine if the drive is MMC-Capable
+//     if (NT_SUCCESS(status))
+//     {
+//         status = DeviceGetMmcSupportInfo(DeviceExtension,
+//                                          &DeviceExtension->DeviceAdditionalData.Mmc.IsMmc);
+//
+//         if (!NT_SUCCESS(status))
+//         {
+//             //Currently, only low resource error comes here.
+//             //That is a success case for unsupporting this command.
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                         "DeviceInitMmcContext: Failed to get the support info for GET CONFIGURATION "
+//                         "command, failng %!STATUS!\n", status
+//                         ));
+//
+//             DeviceExtension->DeviceAdditionalData.Mmc.IsMmc = FALSE;
+//             status = STATUS_SUCCESS;
+//         }
+//     }
+//
+//     if (NT_SUCCESS(status) && DeviceExtension->DeviceAdditionalData.Mmc.IsMmc)
+//     {
+//         // the drive supports at least a subset of MMC commands
+//         // (and therefore supports READ_CD, etc...)
+//
+//         // allocate a buffer for all the capabilities and such
+//         status = DeviceAllocateMmcResources(DeviceExtension->Device);
+//     }
+//
+//     if (NT_SUCCESS(status) && DeviceExtension->DeviceAdditionalData.Mmc.IsMmc)
+//     {
+//         PFEATURE_HEADER header = NULL;
+//         FEATURE_NUMBER  validationSchema;
+//         ULONG           blockingFactor;
+//
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                   "DeviceInitMmcContext: FDO %p GET CONFIGURATION buffer %p\n",
+//                   DeviceExtension->Device,
+//                   DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer
+//                   ));
+//
+//         // Update several properties using the retrieved Configuration Data.
+//
+//         // print all the feature pages (DBG only)
+//         DevicePrintAllFeaturePages(DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer,
+//                                    DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBufferSize);
+//
+//         // if AACS feature exists, enable AACS flag in the driver
+//         header = DeviceFindFeaturePage(DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer,
+//                                        DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+//                                        FeatureAACS);
+//         if (header)
+//         {
+//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                         "DeviceInitMmcContext: Reporting AACS support for device due to "
+//                         "GET CONFIGURATION showing support\n"
+//                         ));
+//             DeviceExtension->DeviceAdditionalData.Mmc.IsAACS = TRUE;
+//         }
+//
+// #ifdef ENABLE_AACS_TESTING
+//         DeviceExtension->DeviceAdditionalData.Mmc.IsAACS = TRUE; // just force it true for testing
+// #endif // ENABLE_AACS_TESTING
+//
+//         // Check if it's a DVD device
+//         header = DeviceFindFeaturePage(DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer,
+//                                        DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+//                                        FeatureDvdRead);
+//         if (header != NULL)
+//         {
+//             DeviceExtension->DeviceAdditionalData.DriveDeviceType = FILE_DEVICE_DVD;
+//         }
+//
+//         // check if drive is writer
+//         DeviceUpdateMmcWriteCapability(DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer,
+//                                        DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+//                                        FALSE,                //Check if the drive has the ability to write.
+//                                        (PBOOLEAN)&(DeviceExtension->DeviceAdditionalData.Mmc.IsWriter),
+//                                        &validationSchema,
+//                                        &blockingFactor);
+//
+//         // check if there is a CSS protected DVD or CPPM-protected DVDAudio media in drive.
+//         header = DeviceFindFeaturePage(DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer,
+//                                        DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+//                                        FeatureDvdCSS);
+//
+//         DeviceExtension->DeviceAdditionalData.Mmc.IsCssDvd = (header != NULL) && (header->Current);
+//
+//         // Flag the StartIo routine to update its state and hook in the error handler
+//         DeviceExtension->DeviceAdditionalData.Mmc.UpdateState = CdromMmcUpdateRequired;
+//         DeviceExtension->DeviceAdditionalData.ErrorHandler = DeviceErrorHandlerForMmc;
+//
+//         SET_FLAG(DeviceExtension->DeviceFlags, DEV_SAFE_START_UNIT);
+//
+//         // Read the CDROM mode sense page to get additional info for raw read requests.
+//         // only valid for MMC devices
+//         DeviceSetRawReadInfo(DeviceExtension);
+//     }
+//
+//     // Set Read-Only device flag for non-MMC device.
+//     if (!(DeviceExtension->DeviceAdditionalData.Mmc.IsMmc))
+//     {
+//         ULONG  deviceCharacteristics = WdfDeviceGetCharacteristics(DeviceExtension->Device);
+//
+//         deviceCharacteristics |= FILE_READ_ONLY_DEVICE;
+//
+//         WdfDeviceSetCharacteristics(DeviceExtension->Device, deviceCharacteristics);
+//
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                    "DeviceInitMmcContext: FDO %p Device is not an MMC compliant device, so setting "
+//                    "to read-only (legacy) mode",
+//                    DeviceExtension->Device
+//                    ));
+//     }
+//
+//     // Set DEV_SAFE_START_UNIT flag for newer devices.
+//     if (DeviceExtension->DeviceAdditionalData.DriveDeviceType == FILE_DEVICE_DVD)
+//     {
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                     "DeviceInitMmcContext: DVD Devices require START UNIT\n"));
+//         SET_FLAG(DeviceExtension->DeviceFlags, DEV_SAFE_START_UNIT);
+//
+//     }
+//     else if ((DeviceExtension->DeviceDescriptor->BusType != BusTypeScsi)  &&
+//              (DeviceExtension->DeviceDescriptor->BusType != BusTypeAtapi) &&
+//              (DeviceExtension->DeviceDescriptor->BusType != BusTypeUnknown)
+//              )
+//     {
+//         // devices on the newer busses require START_UNIT
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                   "DeviceInitMmcContext: Devices for newer buses require START UNIT\n"));
+//         SET_FLAG(DeviceExtension->DeviceFlags, DEV_SAFE_START_UNIT);
+//     }
+//
+//     return status;
+// }
+//
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// ULONG
+// DeviceGetTimeOutValueFromRegistry()
+// /*++
+//
+// Routine Description:
+//
+//     get the device time out value from registry
+//
+// Arguments:
+//
+//     None
+//
+// Return Value:
+//
+//     ULONG - value of timeout
+//
+// --*/
+// {
+//     NTSTATUS    status;
+//     WDFKEY      registryKey = NULL;
+//     ULONG        timeOutValue = 0;
+//
+//     DECLARE_CONST_UNICODE_STRING(registryValueName, L"TimeOutValue");
+//
+//     PAGED_CODE();
+//
+//     // open the service key.
+//     status = WdfDriverOpenParametersRegistryKey(WdfGetDriver(),
+//                                                 KEY_READ,
+//                                                 WDF_NO_OBJECT_ATTRIBUTES,
+//                                                 &registryKey);
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         status = WdfRegistryQueryULong(registryKey,
+//                                        &registryValueName,
+//                                        &timeOutValue);
+//
+//         WdfRegistryClose(registryKey);
+//     }
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         timeOutValue = 0;
+//     }
+//
+//     return timeOutValue;
+//
+// } // end DeviceGetTimeOutValueFromRegistry()
+//
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// VOID
+// DeviceScanSpecialDevices(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This function checks to see if an SCSI logical unit requires an special
+//     initialization or error processing.
+//
+// Arguments:
+//
+//     Device - device object.
+//
+// Return Value:
+//
+//     None.
+//
+// --*/
+// {
+//
+//     PAGED_CODE();
+//
+//     // set our hack flags
+//     DeviceScanForSpecial(DeviceExtension, CdromHackItems, ScanForSpecialHandler);
+//
+//     //
+//     // All CDRom's can ignore the queue lock failure for power operations
+//     // and do not require handling the SpinUp case (unknown result of sending
+//     // a cdrom a START_UNIT command -- may eject disks?)
+//     //
+//     // We send the stop command mostly to stop outstanding asynch operations
+//     // (like audio playback) from running when the system is powered off.
+//     // Because of this and the unlikely chance that a PLAY command will be
+//     // sent in the window between the STOP and the time the machine powers down
+//     // we don't require queue locks.  This is important because without them
+//     // classpnp's power routines will send the START_STOP_UNIT command to the
+//     // device whether or not it supports locking (atapi does not support locking
+//     // and if we requested them we would end up not stopping audio on atapi
+//     // devices).
+// //    SET_FLAG(deviceExtension->ScanForSpecialFlags, CDROM_SPECIAL_DISABLE_SPIN_UP);
+// //    SET_FLAG(deviceExtension->ScanForSpecialFlags, CDROM_SPECIAL_NO_QUEUE_LOCK);
+//
+//     if (TEST_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_TOSHIBA_SD_W1101))
+//     {
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                     "DeviceScanSpecialDevices: Found Toshiba SD-W1101 DVD-RAM "
+//                     "-- This drive will *NOT* support DVD-ROM playback.\n"));
+//     }
+//     else if (TEST_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_HITACHI_GD_2000))
+//     {
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                     "DeviceScanSpecialDevices: Found Hitachi GD-2000\n"));
+//
+//         // Setup an error handler to spin up the drive when it idles out
+//         // since it seems to like to fail to spin itself back up on its
+//         // own for a REPORT_KEY command.  It may also lose the AGIDs that
+//         // it has given, which will result in DVD playback failures.
+//         // This routine will just do what it can...
+//         DeviceExtension->DeviceAdditionalData.ErrorHandler = DeviceErrorHandlerForHitachiGD2000;
+//
+//         // this drive may require START_UNIT commands to spin
+//         // the drive up when it's spun itself down.
+//         SET_FLAG(DeviceExtension->DeviceFlags, DEV_SAFE_START_UNIT);
+//     }
+//     else if (TEST_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_FUJITSU_FMCD_10x))
+//     {
+//         // When Read command is issued to FMCD-101 or FMCD-102 and there is a music
+//         // cd in it. It takes longer time than SCSI_CDROM_TIMEOUT before returning
+//         // error status.
+//         DeviceExtension->TimeOutValue = 20;
+//     }
+//     else if (TEST_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_DEC_RRD))
+//     {
+//         NTSTATUS                   status;
+//         PMODE_PARM_READ_WRITE_DATA modeParameters;
+//         SCSI_REQUEST_BLOCK         srb = {0};
+//         PCDB                       cdb;
+//
+//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                     "DeviceScanSpecialDevices:  Found DEC RRD.\n"));
+//
+//         DeviceExtension->DeviceAdditionalData.IsDecRrd = TRUE;
+//
+//         // Setup an error handler to reinitialize the cd rom after it is reset?
+//         //
+//         //DeviceExtension->DevInfo->ClassError = DecRrdProcessError;
+//
+//         // Found a DEC RRD cd-rom.  These devices do not pass MS HCT
+//         // multi-media tests because the DEC firmware modifieds the block
+//         // from the PC-standard 2K to 512.  Change the block transfer size
+//         // back to the PC-standard 2K by using a mode select command.
+//
+//         modeParameters = ExAllocatePoolWithTag(NonPagedPoolNx,
+//                                                sizeof(MODE_PARM_READ_WRITE_DATA),
+//                                                CDROM_TAG_MODE_DATA);
+//         if (modeParameters == NULL)
+//         {
+//             return;
+//         }
+//
+//         RtlZeroMemory(modeParameters, sizeof(MODE_PARM_READ_WRITE_DATA));
+//         RtlZeroMemory(&srb,           sizeof(SCSI_REQUEST_BLOCK));
+//
+//         // Set the block length to 2K.
+//         modeParameters->ParameterListHeader.BlockDescriptorLength = sizeof(MODE_PARAMETER_BLOCK);
+//
+//         // Set block length to 2K (0x0800) in Parameter Block.
+//         modeParameters->ParameterListBlock.BlockLength[0] = 0x00; //MSB
+//         modeParameters->ParameterListBlock.BlockLength[1] = 0x08;
+//         modeParameters->ParameterListBlock.BlockLength[2] = 0x00; //LSB
+//
+//         // Build the mode select CDB.
+//         srb.CdbLength = 6;
+//         srb.TimeOutValue = DeviceExtension->TimeOutValue;
+//
+//         cdb = (PCDB)srb.Cdb;
+//         cdb->MODE_SELECT.PFBit               = 1;
+//         cdb->MODE_SELECT.OperationCode       = SCSIOP_MODE_SELECT;
+//         cdb->MODE_SELECT.ParameterListLength = HITACHI_MODE_DATA_SIZE;
+//
+//         // Send the request to the device.
+//         status = DeviceSendSrbSynchronously(DeviceExtension->Device,
+//                                             &srb,
+//                                             modeParameters,
+//                                             sizeof(MODE_PARM_READ_WRITE_DATA),
+//                                             TRUE,
+//                                             NULL);
+//
+//         if (!NT_SUCCESS(status))
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                         "DeviceScanSpecialDevices: Setting DEC RRD to 2K block"
+//                         "size failed [%x]\n", status));
+//         }
+//
+//         ExFreePool(modeParameters);
+//     }
+//
+//     return;
+// }
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// VOID
+// ScanForSpecialHandler(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension,
+//      ULONG_PTR               HackFlags
+//     )
+// {
+//     PAGED_CODE();
+//
+//     CLEAR_FLAG(HackFlags, CDROM_HACK_INVALID_FLAGS);
+//
+//     DeviceExtension->DeviceAdditionalData.HackFlags = HackFlags;
+//
+//     return;
+// }
+//
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceCacheDeviceInquiryData(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     get inquiry data from device and cache it into device extension
+//     The first INQUIRY command sent is with 0x24 bytes required data,
+//     as ATAport driver always sends this to enumerate devices and 0x24
+//     bytes is the minimum data device should return by spec.
+//
+// Arguments:
+//
+//     DeviceExtension - device extension.
+//
+// Return Value:
+//
+//     NTSTATUS.
+//
+// --*/
+// {
+//     NTSTATUS            status = STATUS_SUCCESS;
+//     SCSI_REQUEST_BLOCK  srb = {0};
+//     PCDB                cdb = (PCDB)(&srb.Cdb);
+//     PINQUIRYDATA        tmpInquiry = NULL;
+//
+//     // by spec, device should return at least 36 bytes.
+//     ULONG               requestedInquiryTransferBytes = MINIMUM_CDROM_INQUIRY_SIZE;
+//     BOOLEAN             needResendCommand = TRUE;
+//     BOOLEAN             portDriverHack = FALSE;
+//
+//     // this ensures that the strings vendorID, productID, and firmwareRevision
+//     // are all available in the inquiry data.  In addition, MMC spec requires
+//     // all type 5 devices to have minimum 36 bytes of inquiry.
+//     static const UCHAR minInquiryAdditionalLength =
+//                                     MINIMUM_CDROM_INQUIRY_SIZE -
+//                                     RTL_SIZEOF_THROUGH_FIELD(INQUIRYDATA, AdditionalLength);
+//
+//     C_ASSERT( RTL_SIZEOF_THROUGH_FIELD(INQUIRYDATA, AdditionalLength) <= 8 );
+//     C_ASSERT( RTL_SIZEOF_THROUGH_FIELD(INQUIRYDATA, ProductRevisionLevel) == MINIMUM_CDROM_INQUIRY_SIZE );
+//
+//     PAGED_CODE();
+//
+//     // short-circuit here for if already cached for this device
+//     // required to avoid use of scratch buffer after initialization
+//     // of MCN code.
+//     if (DeviceExtension->DeviceAdditionalData.CachedInquiryData != NULL)
+//     {
+//         NT_ASSERT(DeviceExtension->DeviceAdditionalData.CachedInquiryDataByteCount != 0);
+//         return STATUS_SUCCESS;
+//     }
+//
+//     // 1. retrieve the inquiry data length
+//
+//     // 1.1 allocate inquiry data buffer
+//     tmpInquiry = ExAllocatePoolWithTag(NonPagedPoolNx,
+//                                        requestedInquiryTransferBytes,
+//                                        CDROM_TAG_INQUIRY);
+//     if (tmpInquiry == NULL)
+//     {
+//         status = STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//
+//     // 1.2 send INQUIRY command
+//     if (NT_SUCCESS(status))
+//     {
+//         srb.CdbLength = 6;
+//         cdb->AsByte[0] = SCSIOP_INQUIRY;
+//         cdb->AsByte[3] = (UCHAR)( requestedInquiryTransferBytes >> (8*1) );
+//         cdb->AsByte[4] = (UCHAR)( requestedInquiryTransferBytes >> (8*0) );
+//
+//         status = DeviceSendSrbSynchronously(DeviceExtension->Device,
+//                                             &srb,
+//                                             tmpInquiry,
+//                                             requestedInquiryTransferBytes,
+//                                             FALSE,
+//                                             NULL);
+//     }
+//
+//     // 1.3 get required data length
+//     if (NT_SUCCESS(status))
+//     {
+//         if ((requestedInquiryTransferBytes == srb.DataTransferLength) &&
+//             (requestedInquiryTransferBytes == (tmpInquiry->AdditionalLength +
+//                                                RTL_SIZEOF_THROUGH_FIELD(INQUIRYDATA, AdditionalLength))) )
+//         {
+//             // device has only 36 bytes of INQUIRY data. do not need to resend the command.
+//             needResendCommand = FALSE;
+//         }
+//         else
+//         {
+//             // workaround an ATAPI.SYS bug where additional length field is set to zero
+//             if (tmpInquiry->AdditionalLength == 0)
+//             {
+//                 tmpInquiry->AdditionalLength = minInquiryAdditionalLength;
+//                 portDriverHack = TRUE;
+//             }
+//
+//             requestedInquiryTransferBytes =
+//                                 tmpInquiry->AdditionalLength +
+//                                 RTL_SIZEOF_THROUGH_FIELD(INQUIRYDATA, AdditionalLength);
+//
+//             if (requestedInquiryTransferBytes >= MINIMUM_CDROM_INQUIRY_SIZE)
+//             {
+//                 needResendCommand = TRUE;
+//             }
+//             else
+//             {
+//                 needResendCommand = FALSE;
+//                 //Length is small than minimum length, error out.
+//                 status = STATUS_DEVICE_PROTOCOL_ERROR;
+//             }
+//         }
+//     }
+//
+//     // 2. retrieve the inquiry data if still needed.
+//
+//     // 2.1 Clean up.
+//     if (NT_SUCCESS(status) && needResendCommand)
+//     {
+//         FREE_POOL(tmpInquiry);
+//         RtlZeroMemory(&srb, sizeof(SCSI_REQUEST_BLOCK));
+//
+//         tmpInquiry = ExAllocatePoolWithTag(NonPagedPoolNx,
+//                                            requestedInquiryTransferBytes,
+//                                            CDROM_TAG_INQUIRY);
+//         if (tmpInquiry == NULL)
+//         {
+//             status = STATUS_INSUFFICIENT_RESOURCES;
+//         }
+//     }
+//
+//     // 2.2 resend INQUIRY command
+//     if (NT_SUCCESS(status) && needResendCommand)
+//     {
+//         srb.CdbLength = 6;
+//         cdb->AsByte[0] = SCSIOP_INQUIRY;
+//         cdb->AsByte[3] = (UCHAR)( requestedInquiryTransferBytes >> (8*1) );
+//         cdb->AsByte[4] = (UCHAR)( requestedInquiryTransferBytes >> (8*0) );
+//
+//         status = DeviceSendSrbSynchronously( DeviceExtension->Device,
+//                                              &srb,
+//                                              tmpInquiry,
+//                                              requestedInquiryTransferBytes,
+//                                              FALSE,
+//                                              NULL);
+//
+//         if (!NT_SUCCESS(status))
+//         {
+//             // Workaround for drive reports that it has more INQUIRY data than reality.
+//             if ((srb.SrbStatus == SRB_STATUS_DATA_OVERRUN) &&
+//                 (srb.DataTransferLength < requestedInquiryTransferBytes) &&
+//                 (srb.DataTransferLength >= MINIMUM_CDROM_INQUIRY_SIZE))
+//             {
+//                 //Port driver says buffer size mismatch (buffer underrun),
+//                 //retry with the real buffer size it could return.
+//                 requestedInquiryTransferBytes = srb.DataTransferLength;
+//
+//                 FREE_POOL(tmpInquiry);
+//                 RtlZeroMemory(&srb, sizeof(SCSI_REQUEST_BLOCK));
+//
+//                 tmpInquiry = ExAllocatePoolWithTag(NonPagedPoolNx,
+//                                                    requestedInquiryTransferBytes,
+//                                                    CDROM_TAG_INQUIRY);
+//                 if (tmpInquiry == NULL)
+//                 {
+//                     status = STATUS_INSUFFICIENT_RESOURCES;
+//                 }
+//                 else
+//                 {
+//                     srb.CdbLength = 6;
+//                     cdb->AsByte[0] = SCSIOP_INQUIRY;
+//                     cdb->AsByte[3] = (UCHAR)( requestedInquiryTransferBytes >> (8*1) );
+//                     cdb->AsByte[4] = (UCHAR)( requestedInquiryTransferBytes >> (8*0) );
+//
+//                     status = DeviceSendSrbSynchronously(DeviceExtension->Device,
+//                                                         &srb,
+//                                                         tmpInquiry,
+//                                                         requestedInquiryTransferBytes,
+//                                                         FALSE,
+//                                                         NULL);
+//                 }
+//             }
+//         }
+//
+//         //Check the transferred data length for safe.
+//         if (NT_SUCCESS(status))
+//         {
+//             requestedInquiryTransferBytes = srb.DataTransferLength;
+//
+//             if (requestedInquiryTransferBytes < MINIMUM_CDROM_INQUIRY_SIZE)
+//             {
+//                 // should never occur
+//                 status = STATUS_DEVICE_PROTOCOL_ERROR;
+//             }
+//         }
+//
+//         // ensure we got some non-zero data....
+//         // This is done so we don't accidentally work around the
+//         // ATAPI.SYS bug when no data was transferred.
+//         if (NT_SUCCESS(status) && portDriverHack)
+//         {
+//             PULONG  tmp = (PULONG)tmpInquiry;
+//             ULONG   i = MINIMUM_CDROM_INQUIRY_SIZE / sizeof(ULONG);
+//             C_ASSERT( RTL_SIZEOF_THROUGH_FIELD(INQUIRYDATA, ProductRevisionLevel) % sizeof(ULONG) == 0 );
+//
+//             // wouldn't you know it -- there is no RtlIsMemoryZero() function; Make one up.
+//             for ( ; i != 0; i--)
+//             {
+//                 if (*tmp != 0)
+//                 {
+//                     break; // out of this inner FOR loop -- guarantees 'i != 0'
+//                 }
+//                 tmp++;
+//             }
+//
+//             if (i == 0) // all loop'd successfully
+//             {
+//                 // should never occur to successfully get all zero'd data
+//                 status = STATUS_DEVICE_PROTOCOL_ERROR;
+//             }
+//         }
+//     }
+//
+//     // if everything succeeded, then (and only then) modify the device extension
+//     if (NT_SUCCESS(status))
+//     {
+//         DeviceExtension->DeviceAdditionalData.CachedInquiryData = tmpInquiry;
+//         DeviceExtension->DeviceAdditionalData.CachedInquiryDataByteCount = requestedInquiryTransferBytes;
+//     }
+//     else
+//     {
+//         FREE_POOL(tmpInquiry);
+//     }
+//
+//     return status;
+// }
+//
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceGetMmcSupportInfo(
+//       PCDROM_DEVICE_EXTENSION   DeviceExtension,
+//      PBOOLEAN                  IsMmcDevice
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     check if the device is MMC capable.
+//
+// Arguments:
+//
+//     DeviceExtension - device extension.
+//
+// Return Value:
+//
+//     NTSTATUS.
+//     IsMmcDevice - TRUE (MMC capable); FALSE (not MMC device)
+//
+// --*/
+// {
+//     NTSTATUS    status;
+//     ULONG       size;
+//     ULONG       previouslyFailed;
+//
+//     PAGED_CODE();
+//
+//     *IsMmcDevice  = FALSE;
+//
+//     // read the registry in case the drive failed previously,
+//     // and a timeout is occurring.
+//     previouslyFailed = FALSE;
+//     DeviceGetParameter(DeviceExtension,
+//                        CDROM_SUBKEY_NAME,
+//                        CDROM_NON_MMC_DRIVE_NAME,
+//                        &previouslyFailed);
+//
+//     if (previouslyFailed)
+//     {
+//         SET_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_GET_CONFIG_SUPPORT);
+//     }
+//
+//     // read from the registry in case the drive reports bad profile lengths
+//     previouslyFailed = FALSE;
+//     DeviceGetParameter(DeviceExtension,
+//                        CDROM_SUBKEY_NAME,
+//                        CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE,
+//                        &previouslyFailed);
+//
+//     if (previouslyFailed)
+//     {
+//         SET_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_VENDOR_PROFILES);
+//     }
+//
+//     // check for the ProfileList feature to determine if the drive is MMC compliant
+//     // and set the "size" local variable to total GetConfig data size available.
+//     // NOTE: This will exit this function in some error paths.
+//     {
+//         GET_CONFIGURATION_HEADER    localHeader = {0};
+//         ULONG                       usable = 0;
+//
+//         status = DeviceGetConfiguration(DeviceExtension->Device,
+//                                         &localHeader,
+//                                         sizeof(GET_CONFIGURATION_HEADER),
+//                                         &usable,
+//                                         FeatureProfileList,
+//                                         SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL);
+//
+//         if (status == STATUS_INVALID_DEVICE_REQUEST ||
+//             status == STATUS_NO_MEDIA_IN_DEVICE     ||
+//             status == STATUS_IO_DEVICE_ERROR        ||
+//             status == STATUS_IO_TIMEOUT)
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                        "GetConfiguration Failed (%x), device %p not mmc-compliant\n",
+//                        status, DeviceExtension->DeviceObject
+//                        ));
+//
+//             previouslyFailed = TRUE;
+//             DeviceSetParameter( DeviceExtension,
+//                                 CDROM_SUBKEY_NAME,
+//                                 CDROM_NON_MMC_DRIVE_NAME,
+//                                 previouslyFailed);
+//
+//             return STATUS_SUCCESS;
+//         }
+//         else if (!NT_SUCCESS(status))
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                        "GetConfiguration Failed, status %x -- defaulting to -ROM\n",
+//                        status));
+//
+//             return STATUS_SUCCESS;
+//         }
+//         else if (usable < sizeof(GET_CONFIGURATION_HEADER))
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                        "GetConfiguration Failed, returned only %x bytes!\n", usable));
+//             previouslyFailed = TRUE;
+//             DeviceSetParameter( DeviceExtension,
+//                                 CDROM_SUBKEY_NAME,
+//                                 CDROM_NON_MMC_DRIVE_NAME,
+//                                 previouslyFailed);
+//
+//             return STATUS_SUCCESS;
+//         }
+//
+//         size = (localHeader.DataLength[0] << 24) |
+//                (localHeader.DataLength[1] << 16) |
+//                (localHeader.DataLength[2] <<  8) |
+//                (localHeader.DataLength[3] <<  0) ;
+//
+//
+//         if ((size <= 4) || (size + 4 < size))
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                        "GetConfiguration Failed, claims MMC support but doesn't "
+//                        "correctly return config length! (%x)\n",
+//                        size
+//                        ));
+//             previouslyFailed = TRUE;
+//             DeviceSetParameter( DeviceExtension,
+//                                 CDROM_SUBKEY_NAME,
+//                                 CDROM_NON_MMC_DRIVE_NAME,
+//                                 previouslyFailed);
+//
+//             return STATUS_SUCCESS;
+//         }
+//         else if ((size % 4) != 0)
+//         {
+//             if ((size % 2) != 0)
+//             {
+//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                            "GetConfiguration Failed, returned odd number of bytes %x!\n",
+//                            size
+//                            ));
+//                 previouslyFailed = TRUE;
+//                 DeviceSetParameter( DeviceExtension,
+//                                     CDROM_SUBKEY_NAME,
+//                                     CDROM_NON_MMC_DRIVE_NAME,
+//                                     previouslyFailed);
+//
+//                 return STATUS_SUCCESS;
+//             }
+//             else
+//             {
+//                 if (TEST_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_VENDOR_PROFILES))
+//                 {
+//                     // we've already caught this and ASSERT'd once, so don't do it again
+//                 }
+//                 else
+//                 {
+//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                                "GetConfiguration returned a size that is not per spec (%x bytes), this is probably because of a vendor specific data header with a size not divisible by 4.\n",
+//                                size
+//                                ));
+//                     previouslyFailed = TRUE;
+//                     DeviceSetParameter(DeviceExtension,
+//                                        CDROM_SUBKEY_NAME,
+//                                        CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE,
+//                                        previouslyFailed);
+//                 }
+//             }
+//         }
+//
+//         size += 4; // sizeof the datalength fields
+//     }
+//
+//     *IsMmcDevice = TRUE;
+//
+//     // This code doesn't handle total get config size over 64k
+//     NT_ASSERT( size <= MAXUSHORT );
+//
+//     // Check for SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE support in the device.
+//     // NOTE: This will exit this function in some error paths.
+//     {
+//         ULONG   featureSize = sizeof(GET_CONFIGURATION_HEADER)+sizeof(FEATURE_HEADER);
+//         ULONG   usable = 0;
+//
+//         PGET_CONFIGURATION_HEADER configBuffer = ExAllocatePoolWithTag(
+//                                                             NonPagedPoolNx,
+//                                                             featureSize,
+//                                                             CDROM_TAG_GET_CONFIG);
+//
+//         if (configBuffer == NULL)
+//         {
+//             return STATUS_INSUFFICIENT_RESOURCES;
+//         }
+//
+//         // read the registry in case the drive failed previously,
+//         // and a timeout is occurring.
+//         previouslyFailed = FALSE;
+//         DeviceGetParameter( DeviceExtension,
+//                             CDROM_SUBKEY_NAME,
+//                             CDROM_TYPE_ONE_GET_CONFIG_NAME,
+//                             &previouslyFailed);
+//
+//         if (previouslyFailed)
+//         {
+//             SET_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG);
+//             FREE_POOL(configBuffer);
+//             return STATUS_SUCCESS;
+//         }
+//
+//         // Get only the config and feature header
+//         status = DeviceGetConfiguration(DeviceExtension->Device,
+//                                         configBuffer,
+//                                         featureSize,
+//                                         &usable,
+//                                         FeatureProfileList,
+//                                         SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE);
+//
+//         if (!NT_SUCCESS(status) || (usable < featureSize))
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                        "Type One GetConfiguration Failed. Usable buffer size: %d\n", usable));
+//             previouslyFailed = TRUE;
+//         }
+//         else
+//         {
+//             PFEATURE_HEADER featureHeader;
+//             ULONG           totalAvailableBytes = 0;
+//             ULONG           expectedAvailableBytes = 0;
+//
+//             REVERSE_BYTES(&totalAvailableBytes, configBuffer->DataLength);
+//             totalAvailableBytes += RTL_SIZEOF_THROUGH_FIELD(GET_CONFIGURATION_HEADER, DataLength);
+//
+//             featureHeader = (PFEATURE_HEADER) ((PUCHAR)configBuffer + sizeof(GET_CONFIGURATION_HEADER));
+//             expectedAvailableBytes = sizeof(GET_CONFIGURATION_HEADER) +
+//                                      sizeof(FEATURE_HEADER) +
+//                                      featureHeader->AdditionalLength;
+//
+//             if (totalAvailableBytes > expectedAvailableBytes)
+//             {
+//                 // Device is returning more than required size. Most likely the device
+//                 // is returning TYPE ALL data. Set the flag to use TYPE ALL for TYPE ONE
+//                 // requets
+//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                            "Type One GetConfiguration Failed. "
+//                            "Device returned %d bytes instead of %d bytes\n",
+//                            size, featureSize));
+//
+//                 previouslyFailed = TRUE;
+//             }
+//         }
+//
+//         FREE_POOL(configBuffer);
+//
+//         if (previouslyFailed == TRUE)
+//         {
+//             DeviceSetParameter( DeviceExtension,
+//                                 CDROM_SUBKEY_NAME,
+//                                 CDROM_TYPE_ONE_GET_CONFIG_NAME,
+//                                 previouslyFailed);
+//
+//             SET_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG);
+//         }
+//     }
+//
+//     return status;
+// }
+//
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// NTSTATUS
+// DeviceSetRawReadInfo(
+//      PCDROM_DEVICE_EXTENSION DeviceExtension
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This routine reads the CDROM capabilities mode page and save information
+//     in the device extension needed for raw reads.
+//     NOTE: this function is only valid for MMC device
+//
+// Arguments:
+//
+//     DeviceExtension - device context
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+// {
+//     NTSTATUS    status = STATUS_SUCCESS;
+//     PUCHAR      buffer = NULL;
+//     ULONG       count = 0;
+//
+//     PAGED_CODE();
+//
+//     // Check whether the device can return C2 error flag bits and the block
+//     // error byte.  If so, save this info and fill in appropriate flag during
+//     // raw read requests.
+//
+//     // Start by checking the GET_CONFIGURATION data
+//     {
+//         PFEATURE_DATA_CD_READ   cdReadHeader = NULL;
+//         ULONG                   additionalLength = sizeof(FEATURE_DATA_CD_READ) - sizeof(FEATURE_HEADER);
+//
+//         cdReadHeader = DeviceFindFeaturePage(DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer,
+//                                             DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+//                                             FeatureCdRead);
+//
+//         if ((cdReadHeader != NULL) &&
+//             (cdReadHeader->Header.AdditionalLength >= additionalLength) &&
+//             (cdReadHeader->C2ErrorData)
+//             )
+//         {
+//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                       "DeviceSetRawReadInfo: FDO %p GET_CONFIG shows ability to read C2 error bits\n",
+//                       DeviceExtension->DeviceObject
+//                       ));
+//             DeviceExtension->DeviceAdditionalData.Mmc.ReadCdC2Pointers = TRUE;    // Device returns C2 error info.
+//         }
+//     }
+//
+//     // Unfortunately, the only way to check for the ability to read R-W subcode
+//     // information is via MODE_SENSE.  Do so here, and check the C2 bit as well
+//     // in case the drive has a firmware bug where it fails to report this ability
+//     // in GET_CONFIG (which some drives do).
+//     for (count = 0; count < 6; count++)
+//     {
+//         SCSI_REQUEST_BLOCK  srb = {0};
+//         PCDB                cdb = (PCDB)srb.Cdb;
+//         ULONG               bufferLength = 0;
+//
+//         // Build the MODE SENSE CDB.  Try 10-byte CDB first.
+//         if ((count/3) == 0)
+//         {
+//             bufferLength = sizeof(CDVD_CAPABILITIES_PAGE)  +
+//                            sizeof(MODE_PARAMETER_HEADER10) +
+//                            sizeof(MODE_PARAMETER_BLOCK);
+//
+//             cdb->MODE_SENSE10.OperationCode = SCSIOP_MODE_SENSE10;
+//             cdb->MODE_SENSE10.Dbd = 1;
+//             cdb->MODE_SENSE10.PageCode = MODE_PAGE_CAPABILITIES;
+//             cdb->MODE_SENSE10.AllocationLength[0] = (UCHAR)(bufferLength >> 8);
+//             cdb->MODE_SENSE10.AllocationLength[1] = (UCHAR)(bufferLength >> 0);
+//             srb.CdbLength = 10;
+//         }
+//         else
+//         {
+//             bufferLength = sizeof(CDVD_CAPABILITIES_PAGE) +
+//                            sizeof(MODE_PARAMETER_HEADER)  +
+//                            sizeof(MODE_PARAMETER_BLOCK);
+//
+//             cdb->MODE_SENSE.OperationCode = SCSIOP_MODE_SENSE;
+//             cdb->MODE_SENSE.Dbd = 1;
+//             cdb->MODE_SENSE.PageCode = MODE_PAGE_CAPABILITIES;
+//             cdb->MODE_SENSE.AllocationLength = (UCHAR)bufferLength;
+//             srb.CdbLength = 6;
+//         }
+//
+//         // Set timeout value from device extension.
+//         srb.TimeOutValue = DeviceExtension->TimeOutValue;
+//
+//         buffer = ExAllocatePoolWithTag(NonPagedPoolNx, bufferLength, CDROM_TAG_MODE_DATA);
+//
+//         if (buffer == NULL)
+//         {
+//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                       "DeviceSetRawReadInfo: cannot allocate "
+//                       "buffer, so not setting raw read info for FDO %p\n",
+//                       DeviceExtension->DeviceObject
+//                       ));
+//             status = STATUS_INSUFFICIENT_RESOURCES;
+//             goto FnExit;
+//         }
+//
+//         RtlZeroMemory(buffer, bufferLength);
+//
+//         status = DeviceSendSrbSynchronously(DeviceExtension->Device,
+//                                             &srb,
+//                                             buffer,
+//                                             bufferLength,
+//                                             FALSE,
+//                                             NULL);
+//
+//         if (NT_SUCCESS(status) ||
+//             (status == STATUS_DATA_OVERRUN) ||
+//             (status == STATUS_BUFFER_OVERFLOW))
+//         {
+//             PCDVD_CAPABILITIES_PAGE capabilities = NULL;
+//
+//             // determine where the capabilities page really is
+//             if ((count/3) == 0)
+//             {
+//                 PMODE_PARAMETER_HEADER10 p = (PMODE_PARAMETER_HEADER10)buffer;
+//                 capabilities = (PCDVD_CAPABILITIES_PAGE)(buffer +
+//                                                          sizeof(MODE_PARAMETER_HEADER10) +
+//                                                          (p->BlockDescriptorLength[0] * 256) +
+//                                                          p->BlockDescriptorLength[1]);
+//             }
+//             else
+//             {
+//                 PMODE_PARAMETER_HEADER p = (PMODE_PARAMETER_HEADER)buffer;
+//                 capabilities = (PCDVD_CAPABILITIES_PAGE)(buffer +
+//                                                          sizeof(MODE_PARAMETER_HEADER) +
+//                                                          p->BlockDescriptorLength);
+//             }
+//
+//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                       "DeviceSetRawReadInfo: FDO %p CDVD Capabilities buffer %p\n",
+//                       DeviceExtension->DeviceObject,
+//                       buffer
+//                       ));
+//
+//             if (capabilities->PageCode == MODE_PAGE_CAPABILITIES)
+//             {
+//                 if (capabilities->C2Pointers)
+//                 {
+//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                               "DeviceSetRawReadInfo: FDO %p supports C2 error bits in READ_CD command\n",
+//                               DeviceExtension->DeviceObject
+//                               ));
+//                     DeviceExtension->DeviceAdditionalData.Mmc.ReadCdC2Pointers = TRUE;
+//                 }
+//
+//                 if (capabilities->RWSupported)
+//                 {
+//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                               "DeviceSetRawReadInfo: FDO %p supports raw subcode in READ_CD command\n",
+//                               DeviceExtension->DeviceObject
+//                               ));
+//                     DeviceExtension->DeviceAdditionalData.Mmc.ReadCdSubCode = TRUE;
+//                 }
+//
+//                 break;
+//             }
+//         }
+//
+//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                   "DeviceSetRawReadInfo: FDO %p failed %x byte mode sense, status %x\n",
+//                   DeviceExtension->DeviceObject,
+//                   (((count/3) == 0) ? 10 : 6),
+//                   status
+//                   ));
+//
+//         FREE_POOL(buffer);
+//     }
+//
+//     if (count == 6)
+//     {
+//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                   "DeviceSetRawReadInfo: FDO %p couldn't get mode sense data\n",
+//                   DeviceExtension->DeviceObject
+//                   ));
+//     }
+//
+// FnExit:
+//
+//     if (buffer)
+//     {
+//         FREE_POOL(buffer);
+//     }
+//
+//     return status;
+// }
+//
+//
+// _IRQL_requires_max_(APC_LEVEL)
+// NTSTATUS
+// DeviceInitializeDvd(
+//      WDFDEVICE Device
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This routine sets the region of DVD drive
+//     NOTE: this routine uses ScratchBuffer, it must be called after ScratchBuffer allocated.
+//
+// Arguments:
+//
+//     Device - device object
+//
+// Return Value:
+//
+//     NTSTATUS
+//
+// --*/
+//
+// {
+//     NTSTATUS                    status = STATUS_SUCCESS;
+//     PCDROM_DEVICE_EXTENSION     deviceExtension;
+//     PDVD_COPY_PROTECT_KEY       copyProtectKey = NULL;
+//     PDVD_RPC_KEY                rpcKey = NULL;
+//     ULONG                       bufferLen = 0;
+//     size_t                      bytesReturned;
+//
+//     PAGED_CODE();
+//
+//     deviceExtension = DeviceGetExtension(Device);
+//
+//     // check to see if we have a DVD device
+//     if (deviceExtension->DeviceAdditionalData.DriveDeviceType != FILE_DEVICE_DVD)
+//     {
+//         return STATUS_SUCCESS;
+//     }
+//
+//     // we got a DVD drive.
+//     bufferLen = DVD_RPC_KEY_LENGTH;
+//     copyProtectKey = (PDVD_COPY_PROTECT_KEY)ExAllocatePoolWithTag(PagedPool,
+//                                                                   bufferLen,
+//                                                                   DVD_TAG_RPC2_CHECK);
+//
+//     if (copyProtectKey == NULL)
+//     {
+//         return STATUS_INSUFFICIENT_RESOURCES;
+//     }
+//
+//     // get the device region
+//     RtlZeroMemory (copyProtectKey, bufferLen);
+//     copyProtectKey->KeyLength = DVD_RPC_KEY_LENGTH;
+//     copyProtectKey->KeyType = DvdGetRpcKey;
+//
+//     // perform IOCTL_DVD_READ_KEY
+//     status = DvdStartSessionReadKey(deviceExtension,
+//                                     IOCTL_DVD_READ_KEY,
+//                                     NULL,
+//                                     copyProtectKey,
+//                                     DVD_RPC_KEY_LENGTH,
+//                                     copyProtectKey,
+//                                     DVD_RPC_KEY_LENGTH,
+//                                     &bytesReturned);
+//
+//     if (NT_SUCCESS(status))
+//     {
+//         rpcKey = (PDVD_RPC_KEY)copyProtectKey->KeyData;
+//
+//         // TypeCode of zero means that no region has been set.
+//         if (rpcKey->TypeCode == 0)
+//         {
+//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_PNP,
+//                         "DVD Initialize (%p): must choose DVD region\n",
+//                         Device));
+//             deviceExtension->DeviceAdditionalData.PickDvdRegion = 1;
+//
+//             // set the device region code to be the same as region code on media.
+//             if (deviceExtension->DeviceAdditionalData.Mmc.IsCssDvd)
+//             {
+//                 DevicePickDvdRegion(Device);
+//             }
+//         }
+//     }
+//
+//     FREE_POOL(copyProtectKey);
+//
+//     // return status of IOCTL_DVD_READ_KEY will be ignored.
+//     return STATUS_SUCCESS;
+// }
+//
+//
+// #if (NTDDI_VERSION >= NTDDI_WIN8)
+// _IRQL_requires_max_(PASSIVE_LEVEL)
+// NTSTATUS
+// DeviceIsPortable(
+//       PCDROM_DEVICE_EXTENSION   DeviceExtension,
+//      PBOOLEAN                  IsPortable
+//     )
+// /*++
+//
+// Routine Description:
+//
+//     This routine checks if the volume is on a portable storage device.
+//
+// Arguments:
+//
+//     DeviceExtension - device context
+//     IsPortable - device is portable
+//
+// Return Value:
+//
+//     NTSTATUS.
+//
+// --*/
+//
+// {
+//     DEVPROP_BOOLEAN isInternal = DEVPROP_FALSE;
+//     BOOLEAN         isPortable = FALSE;
+//     ULONG           size       = 0;
+//     NTSTATUS        status     = STATUS_SUCCESS;
+//     DEVPROPTYPE     type       = DEVPROP_TYPE_EMPTY;
+//
+//     PAGED_CODE();
+//
+//     *IsPortable = FALSE;
+//
+//     // Check to see if the underlying device object is in local machine container
+//     status = IoGetDevicePropertyData(DeviceExtension->LowerPdo,
+//                                      &DEVPKEY_Device_InLocalMachineContainer,
+//                                      0,
+//                                      0,
+//                                      sizeof(isInternal),
+//                                      &isInternal,
+//                                      &size,
+//                                      &type);
+//
+//     if (!NT_SUCCESS(status))
+//     {
+//         goto Cleanup;
+//     }
+//
+//     NT_ASSERT(size == sizeof(isInternal));
+//     NT_ASSERT(type == DEVPROP_TYPE_BOOLEAN);
+//
+//     // Volume is hot-pluggable if the disk pdo container id differs from that of root device
+//     if (isInternal == DEVPROP_TRUE)
+//     {
+//         goto Cleanup;
+//     }
+//
+//     isPortable = TRUE;
+//
+//     // Examine the bus type to  ensure that this really is a fixed device
+//     if (DeviceExtension->DeviceDescriptor->BusType == BusTypeFibre ||
+//         DeviceExtension->DeviceDescriptor->BusType == BusTypeiScsi ||
+//         DeviceExtension->DeviceDescriptor->BusType == BusTypeRAID)
+//     {
+//         isPortable = FALSE;
+//     }
+//
+//     *IsPortable = isPortable;
+//
+// Cleanup:
+//
+//     return status;
+// }
+// #endif
+//
+//
+// #pragma warning(pop) // un-sets any local warning changes
+//
+//
+// ============================================================================
+// END ORIGINAL C SOURCE
+// ============================================================================
