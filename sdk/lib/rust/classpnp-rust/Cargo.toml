@@ -1,0 +1,13 @@
+# classpnp-rust — Rust translation of drivers/storage/class/classpnp (SCSI/storage
+# class framework .sys). DeepSeek mechanical translate, deepdrive-ground. ntkrnl-sys
+# + driver_ddk kernel substrate.
+[package]
+name = "classpnp-rust"
+version = "0.1.0"
+edition = "2021"
+[lib]
+name = "classpnp_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
