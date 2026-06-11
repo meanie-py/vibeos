@@ -14,6 +14,7 @@
 
 pub mod types;
 pub mod glue;
+pub mod ddk_shims;
 
 pub mod aacs;
 pub mod autorun;
