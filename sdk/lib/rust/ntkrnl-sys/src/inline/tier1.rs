@@ -90,6 +90,22 @@ pub unsafe fn IoSkipCurrentIrpStackLocation(irp: ddk::PIRP) {
     *p = (*p).add(1);
 }
 
+/// IoCopyCurrentIrpStackLocationToNext — copy current stack location to next.
+/// C: copies bytes up to FIELD_OFFSET(IO_STACK_LOCATION, CompletionRoutine),
+/// then zeroes nextIrpSp->Control.
+#[inline]
+pub unsafe fn IoCopyCurrentIrpStackLocationToNext(irp: ddk::PIRP) {
+    let irp_sp = IoGetCurrentIrpStackLocation(irp);
+    let next_irp_sp = IoGetNextIrpStackLocation(irp);
+    let count = core::mem::offset_of!(ddk::IO_STACK_LOCATION, CompletionRoutine);
+    core::ptr::copy_nonoverlapping(
+        irp_sp as *const u8,
+        next_irp_sp as *mut u8,
+        count,
+    );
+    (*next_irp_sp).Control = 0;
+}
+
 /// IoSetCancelRoutine — atomically set IRP cancel routine, return old value.
 /// C: `return InterlockedExchangePointer(&Irp->CancelRoutine, CancelRoutine);`
 #[inline]

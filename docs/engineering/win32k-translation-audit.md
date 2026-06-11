@@ -1,5 +1,7 @@
 # Win32k C→Rust Translation Audit
 
+> **SUPERSEDED 2026-06-09 — ntuser flip advanced to ~wave 38 on continue-rust-port (keyboard 4d084c41ad9, +9-file batch e164dd6a90a); the 3/59 counts below are the 2026-06-04 snapshot.**
+
 Last updated **2026-06-04**. **Status: Phase 1 (handle tables) DONE;
 Phase 2 (GDI half) ✅ DONE — the entire GDI half (ntgdi + eng + dib) is
 Rust and smoke-green ×3; Phase 3 (USER half) 🟡 STARTED (3 of 59 ntuser
@@ -16,8 +18,8 @@ translation phase.
 
 Companion to:
 - [ntoskrnl-translation-audit.md](ntoskrnl-translation-audit.md) — kernel translation, ~99.7% done
-- [hal-translation-audit.md](hal-translation-audit.md) — HAL translation, pre-translation
-- [freeldr-translation-audit.md](freeldr-translation-audit.md) — FreeLDR + boot DLLs, pre-translation
+- [hal-translation-audit.md](hal-translation-audit.md) — HAL translation, COMPLETE
+- [freeldr-translation-audit.md](freeldr-translation-audit.md) — FreeLDR + boot DLLs, COMPLETE
 - [win32k-pretranslation-audit.md](win32k-pretranslation-audit.md) — **the C-side de-risking phase that gates this one — now landed**
 - [pseh-elimination.md](pseh-elimination.md) — overall PSEH strategy
 - `qemu/~temp-chat-consolidated.md` — callout-layer design notes. **⚠ This

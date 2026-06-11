@@ -8,7 +8,16 @@ use ntkrnl_sys::ddk::{LARGE_INTEGER, NtClose, NtCreateKeyedEvent, NtReleaseKeyed
 // call them directly (identical extern "system" ABI, no ddk decl mismatch).
 use crate::atomics::*;
 use crate::shared::EVENT_ALL_ACCESS;
+// critical-section primitives: sibling module under `cabi` (kernel / ntdll-main),
+// but resolved as ntdll.dll IMPORTS under `vista` (critical.c is not in the
+// ntdll_vista.dll link — same extern behaviour the old condvar.c relied on).
+#[cfg(feature = "cabi")]
 use crate::critical::{RtlEnterCriticalSection, RtlLeaveCriticalSection};
+#[cfg(all(feature = "vista", not(feature = "cabi")))]
+extern "system" {
+    fn RtlEnterCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
+    fn RtlLeaveCriticalSection(CriticalSection: PRTL_CRITICAL_SECTION) -> NTSTATUS;
+}
 use crate::srw::{RtlAcquireSRWLockExclusive, RtlAcquireSRWLockShared, RtlReleaseSRWLockExclusive, RtlReleaseSRWLockShared};
 use core::ffi::c_void;
 

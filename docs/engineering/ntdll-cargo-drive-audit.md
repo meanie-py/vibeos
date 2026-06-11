@@ -198,3 +198,102 @@ file. Out of scope until librtl/libcntpr are further flipped.
 4. **Do we keep cmake's ntdll target in parallel** during swap-in (dual build,
    like cohab) so smoke stays green off cmake while the cargo path is validated
    by the `check --strict` gate? Recommended yes.
+
+## Spine binary cmake→cargo LINK playbook (SMSS/CSRSS/winlogon/services/lsass)
+
+The same `reactos-link` engine drives the user-mode spine binaries
+(smss/csrss/csrsrv/winsrv/basesrv + lsass/winlogon/userinit/services/lsass). They
+are already 100% Rust-bodied but historically cmake-LINKED
+(`add_executable`/`add_library` + `target_link_libraries` the Rust `.a` with
+`--allow-multiple-definition`). Moving each LINK to cargo follows the recipe below;
+these are the reusable, non-obvious mechanics.
+
+### Pick the right ModuleKind
+
+- **`Win32Exe { entry, subsystem }`** — a user-mode win32 executable (lsass,
+  userinit, winlogon, services). `--subsystem,windows:5.01` (GUI) or
+  `console:5.01` (CUI), `--gc-sections`, NO `-shared`, NO
+  `--exclude-all-symbols`, auto image base. User-mode ⇒ `kernel_rust=false`
+  (build the *standard* user rust target, not the softfloat kernel json).
+- **`NativeExe`** — a native-subsystem exe (smss, csrss): `native:5.01`,
+  `_NtProcessStartup@4` / `NtProcessStartup` entry, per-arch explicit image base
+  (smss i386 `0x400000`, amd64/arm64 `0x140000000`). Needs
+  `.rust_user_target()` — without it the bin shell builds the kernel json; the
+  body crate is user-hardfloat (no `-sse`). On arm64 add `.stack_reserve(bytes)`
+  (2MB; llvm-dlltool collapses delay-imports so all deps load at once and deep
+  `LdrpLoadDll` overflows the 1MB default).
+- **`Win32Dll { entry, image_base }` with the subsystem field set to
+  `native:5.01` / `console:5.01`** — the spine DLLs (csrsrv native, winsrv/basesrv
+  console). `_DllMain@12` (i386) / `DllMain`, no `--gc-sections`.
+
+The float ABI of the empty cargo bin *shell* is irrelevant — the shell may build
+the softfloat kernel json while the body `.a` builds the user target; only the
+body's float ABI matters.
+
+### EXTRA_DEPENDS must be `.a` FILE PATHS, not cmake target names
+
+In `add_cargo_module(... EXTRA_DEPENDS <...>)`, pass **archive file paths**, not
+cmake target names, whenever the producer lives in a directory configured *after*
+the consumer. `base/` configures before `dll/` (top `CMakeLists.txt`), so a
+`base/`-module can't see `dll/`-importlib *target* names — but a file path edges
+to the producer order-independently. (rosload gets away with target names only
+because its deps live in `boot/`, configured first.) OBJECT-lib residue/resource
+targets that *are* in scope (e.g. `<m>_c`, `<m>_res`) can be passed by target
+name.
+
+### `resource_from_rc` = windres-replay; reuse the `<module>_res` OBJECT lib
+
+Retiring `add_executable` drops the `.rc` compile. For binaries with a
+load-bearing `.res` (MANIFEST / dialogs / bitmaps / STRINGTABLEs — **check the
+`.rc`**; pure version info is omittable), compile it IN-cargo with
+`Linker::resource_from_rc(rc_rel, res_target)`: it replays cmake's flag-exact
+`windres` command from `compile_commands.json` (positional in/out, NO `-o` —
+replace the last token with the OUT_DIR path; `current_dir = build-<arch>`;
+carries the full `RC_INVOKED`/`LANGUAGE_*`/per-arch `-D`+`-I` set), then links the
+COFF `.res`. Output is byte-identical to cmake's `.res` on every arch.
+
+Keep a resource-only OBJECT lib alive so the windres entry stays in
+`compile_commands.json` (and to generate any PCH): `add_library(<m>_res OBJECT
+<m>.rc)` + `target_compile_definitions(<m>_res PRIVATE UNICODE _UNICODE)` +
+`target_include_directories(<m>_res PRIVATE <srcdir>)`. Its objects are no longer
+linked; `lookup_cc` matches the windres entry by the `.rc` abs-path +
+`CMakeFiles/<res_target>.dir` marker. (The same OBJECT-lib trick — `<m>_c` via
+`c_from_compile_db` — keeps any still-C residue compiling: the NAME arg MUST equal
+the OBJECT-lib target since it's the `CMakeFiles/<name>.dir` marker; do NOT
+`set_module_type` on an OBJECT lib.)
+
+### Entry-point decoration varies by the UNICODE keyword
+
+The CRT-startup entry symbol you pin depends on whether the binary's
+`set_module_type` declares `UNICODE`:
+
+- **win32gui + UNICODE** → wide `wWinMain` → entry `_wWinMainCRTStartup` (i386) /
+  undecorated `wWinMainCRTStartup` (amd64/arm64). (lsass, userinit.)
+- **win32gui WITHOUT UNICODE** → ANSI `WinMain` (`_WinMain@16`) → entry
+  `_WinMainCRTStartup` (i386) / `WinMainCRTStartup`. (winlogon.)
+
+Always read the binary's `set_module_type` for the UNICODE keyword — the wrong
+entry surfaces as an undefined `_wWinMain@16` / `_WinMain@16` at link. (The
+"hidden transitive dep" the CRT startup pulls in is just `libmsvcrtex.a`, which
+provides the `*CRTStartup` that calls the Rust `wWinMain`/`WinMain`.)
+
+### The silent-stale-link trap: arch-gated shim + reused C `.a`
+
+A cohab-flip shim gated `#if defined(__i386__)` combined with a **reused C
+archive** makes amd64/arm64 silently link *stale C* — the Rust flip is never
+actually exercised on those arches. Concretely (consrv): `consrv_rust_shim.c`
+provided `CONTAINING_RECORD` / `InitializeObjectAttributes` /
+`_Interlocked{Inc,Dec,Exchange}` only inside `#if defined(__i386__)`, while
+`coninput.rs`/`conoutput.rs` referenced them via a non-cfg-gated `extern "system"`
+block (undecorated on amd64/arm64). The cmake `.a` (built once, all arches) still
+carried 31/32 stale ar members from the pre-flip C, and `ar` never prunes — and
+`vibeos-cli build --clean` is **RUST-only**, so it can never re-archive the C. The
+amd64/arm64 flip was thus never run.
+
+Fix: force-rebuild the C archive to expose it — `ninja -t clean <lib> && ninja
+<lib>` prunes the archive down to the live shim TU(s). Never un-prune (it
+re-hides the staleness). Add the missing `#else` (amd64/arm64) branch to the shim
+with the same providers (undecorated asm labels, pointer-sized
+`CONTAINING_RECORD` offset for Rust `usize`). Once a binary's residue moves to
+`c_from_compile_db`, the staleness is moot — cargo recompiles the shim fresh every
+link. (Related: `feedback_stale_c_archive_after_merge`.)

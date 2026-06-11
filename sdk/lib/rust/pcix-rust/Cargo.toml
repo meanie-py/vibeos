@@ -1,0 +1,20 @@
+# pcix-rust — Rust translation of the full MS-architecture PCI bus driver
+# (drivers/bus/pcix, ~11K LOC across arb/intrface/pci subdirs + top-level files).
+# NOT loaded at boot (pci.sys is the live PNP0A03 driver), so the integration bar
+# is link-clean ×3, not smoke boot. Driver-private structs (PCI_FDO_EXTENSION,
+# PCI_PDO_EXTENSION, PCI_CONFIGURATOR*, the bus-resource arbiter instances, ...)
+# come from the gen_driver_types.sh bindgen substrate (src/types.rs); kernel/PnP
+# types resolve to the single ntkrnl-sys ddk identity. crate-type=staticlib →
+# libpcix_rust.a, linked into the cmake-built pcix.sys with the .c commented out
+# (pci-rust/processr-style cohabitation). Built for all 3 arches.
+
+[package]
+name = "pcix-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

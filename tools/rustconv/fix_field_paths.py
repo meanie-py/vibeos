@@ -42,17 +42,35 @@ def struct_body(tag):
             j += 1
     return None
 
-def anon_member_for(tag, field):
-    """If `field` lives inside an anon member of struct `tag`, return that member name."""
+def field_path(tag, field, want_mut=False, depth=0, seen=None):
+    """Return the member-chain PREFIX to reach `field` from struct `tag` — e.g.
+    '__bindgen_anon_1.__bindgen_anon_2.as_ref().' — by recursive BFS through nested anon
+    members and `__BindgenUnionField<T>` wrappers (insert `.as_ref()`/`.as_mut()` after each
+    union hop). Returns None if absent OR AMBIGUOUS (>1 nested member reaches `field`) — we
+    never guess between same-named sibling fields; those go to review."""
+    if seen is None:
+        seen = set()
     body = struct_body(tag)
-    if not body:
+    if not body or depth > 6:
         return None
-    # members look like:  pub __bindgen_anon_1: <Type>,
-    for am, aty in re.findall(r"pub (__bindgen_anon_\d+)\s*:\s*([A-Za-z0-9_]+)", body):
-        ab = struct_body(aty)
-        if ab and re.search(r"pub " + re.escape(field) + r"\s*:", ab):
-            return am
-    return None
+    if re.search(r"pub " + re.escape(field) + r"\s*:", body):
+        return ""                                   # field is directly in this body
+    results = []
+    for m in re.finditer(r"pub (\w+)\s*:\s*(?:__BindgenUnionField<\s*([A-Za-z0-9_]+)\s*>|([A-Za-z0-9_]+))", body):
+        member, union_inner, plain = m.group(1), m.group(2), m.group(3)
+        is_union = union_inner is not None
+        inner = union_inner or plain
+        if not inner or inner in seen:
+            continue
+        if not (member.startswith("__bindgen_anon") or is_union or inner.startswith("_")):
+            continue                                # only descend into anon/union/bindgen types
+        sub = field_path(inner, field, want_mut, depth + 1, seen | {inner})
+        if sub is not None:
+            hop = member + "."
+            if is_union:
+                hop += "as_mut()." if want_mut else "as_ref()."
+            results.append(hop + sub)
+    return results[0] if len(results) == 1 else None
 
 def rustc_json():
     r = subprocess.run(["cargo", "check", "-p", CRATE, "--target", TARGET,
@@ -86,9 +104,7 @@ def main():
             edits[fname].append((sp["line_start"], sp["column_start"], "union", None))
         elif fm:
             field, tag = fm.group(1), fm.group(2)
-            am = anon_member_for(tag, field)
-            if am:
-                edits[fname].append((sp["line_start"], sp["column_start"], "anon", (field, am)))
+            edits[fname].append((sp["line_start"], sp["column_start"], "path", (field, tag)))
     applied = 0
     for fname, elist in edits.items():
         path = os.path.join(CRATE_SRC, fname)
@@ -98,14 +114,20 @@ def main():
         # apply right-to-left within a line so columns stay valid
         for line, col, kind, payload in sorted(elist, key=lambda e: (-e[0], -e[1])):
             s = lines[line - 1]
-            if kind == "anon":
-                field, am = payload
-                # find the `.field` (or `field` after `.`) at/around col; splice the anon member before it
-                # primary span points at the field token; insert `__bindgen_anon_N.` before it
+            if kind == "path":
+                field, tag = payload
+                # primary span points at the field token; splice the full nested-member chain
+                # (anon hops + union as_ref/as_mut) before it.
                 idx = col - 1
                 if s[idx:idx + len(field)] == field and idx > 0 and s[idx - 1] == ".":
-                    lines[line - 1] = s[:idx] + f"{am}." + s[idx:]
-                    applied += 1
+                    after = s[idx + len(field):].lstrip()
+                    before = s[:idx].rstrip()
+                    want_mut = (after.startswith("=") and not after.startswith("==")) \
+                        or before.endswith(("&raw mut", "addr_of_mut!(", "&mut", "&mut ("))
+                    prefix = field_path(tag, field, want_mut)
+                    if prefix:                       # non-empty -> a real nested path
+                        lines[line - 1] = s[:idx] + prefix + s[idx:]
+                        applied += 1
             elif kind == "union":
                 # span points at the field token after a __BindgenUnionField member access:
                 # ...MEMBER.FIELD...  -> ...MEMBER.as_ref().FIELD...   (read; as_mut handled in a later pass)

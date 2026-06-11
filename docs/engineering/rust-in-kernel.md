@@ -105,3 +105,233 @@ cmake link entirely.
 2. Add to workspace `members` in `sdk/lib/rust/Cargo.toml`
 3. Add `extern crate <name>;` in the appropriate umbrella crate's `lib.rs` (usually `kernel-rust/src/lib.rs`) — without this, cargo compiles the rlib but its `#[no_mangle]` symbols don't end up in `libkernel_rust.a` (memory `feedback_extern_crate_for_staticlib.md`)
 4. Wire up `add_custom_command` + `target_link_libraries` in the appropriate cmake (typically `sdk/lib/rtl/CMakeLists.txt` for rtl-flavor crates, or the consumer module's CMakeLists)
+
+## cmake→cargo cutover & cohab — recipes and traps
+
+This section distills the reusable playbook for "turning off the lights on cmake":
+making the main cmake build drive a PE module's **final link** from cargo (the
+`sdk/lib/rust/<crate>` reactos-link manifest) instead of `add_library`/
+`add_executable`, and for compiling the module's remaining C/asm residue
+in-cargo rather than reusing cmake-built `.a` files. It applies to kernel DLLs
+(kdcom/bootvid), device drivers (`.sys`), the freeldr loaders (uefildr/rosload),
+and the user-mode spine binaries (smss/csrss/services/winlogon/winsrv).
+
+### The `add_cargo_module` helper
+
+`add_cargo_module(<target> <crate> <output> [KIND kerneldll|efi|native]
+[BODY_CRATE <rust-staticlib>] [EXTRA_DEPENDS …] [NO_CD] [DESTINATION]
+[NAME_ON_CD])` lives in `sdk/cmake/gcc.cmake`. `add_cargo_kernel_dll` is a thin
+`KIND=kerneldll` wrapper. It runs `cargo +nightly build --release --target
+<crate>/<stem>.json -Z build-std=core,alloc,compiler_builtins -Z
+build-std-features=compiler-builtins-mem -p <crate> --bin <bin>` (WORKING_DIRECTORY
+`sdk/lib/rust`, output at `sdk/lib/rust/target/<stem>/release/<bin>.exe`), then
+does KIND-specific post-link: **kerneldll** = `native-pefixup --kerneldll` (+ i386
+`fix_lld_forwarding.py`); **efi** = strip `.rossym` + `--strip-all`; **native** =
+none. ARCH→json stem is `i686`/`x86_64`/`aarch64-kernel`; `<bin>` = crate name
+minus the `-cargo` suffix.
+
+Numbered traps a cutover must handle:
+
+1. **Keep `spec2def(<dll> <spec> ADD_IMPORTLIB)` in cmake** for any exporting
+   module. The importlib it produces is `lib<basename>` and is *independent* of
+   the module target — consumers (`add_importlibs(ntoskrnl … kdcom)`) link the
+   importlib, not the module, so removing `add_library` is safe **as long as
+   spec2def stays**. The cargo link makes its own `.def` for the dll's exports
+   internally. (Drivers and uefildr export nothing → no spec2def. rosload's
+   freeldr import lib is instead self-hosted via reactos-link
+   `.import_lib("…/freeldr.spec","freeldr.sys","freeldr")`.)
+2. **`add_cd_file` FILE-form does NOT auto-wire the CD-target dependency** (only
+   the TARGET form does, via `if(_CD_TARGET)`). After an `add_cd_file(FILE …)`,
+   manually `add_dependencies(bootcd/livecd/bootcdregtest <target>)`. Safe
+   because `boot/` is processed before `drivers/` and LIVECD_FILE_LIST
+   consumption is deferred. For a `$<TARGET_FILE:…>` that a `custom_target` lacks
+   (cargo modules are custom_targets, no TARGET_FILE), pass an explicit path +
+   keep `DEPENDS <target>`; `add_cd_file` then needs BOTH `TARGET` (dep) and
+   `FILE` (path).
+3. **`GLOB_RECURSE` the bin crate + reactos-link + BODY_CRATE for DEPENDS.** A
+   cargo link is opaque to cmake; an incomplete DEPENDS lets a stale output mask
+   a source fix — cmake won't re-run the custom_command if the output exists and
+   DEPENDS are unchanged. **EXTRA_DEPENDS must list the .a/.obj FILE PATHS, not
+   just the producing custom-TARGET names**: a custom_command's DEPENDS on a
+   custom-target is *order-only* (no content tracking), so editing a path-dep
+   crate would relink against a stale archive (e.g. `ninja uefildr` said "no work
+   to do" with a newer `libfreeldr_rust.a`). DEPENDS on the OUTPUT file paths
+   (which ninja content-tracks) closes this. Reactos-link layer-2 complements it
+   by emitting `cargo:rerun-if-changed` per static_lib and per watched src dir.
+4. **Per-arch entry + image base.** Entry symbol: `___ImageBase` on i386 (cdecl
+   triple-`_`), `__ImageBase` on amd64/arm64. Image base: `0x10000` on
+   i386/amd64, **`0x7FFB00000000` on arm64**. (For drivers/kerneldll the entry is
+   `DriverEntry@8` — see below.)
+5. **Nightly + build-std is a hard requirement** for these modules (custom kernel
+   json). The legacy stable `i686-pc-windows-gnu` cmake path built without
+   build-std; the cargo path uses nightly build-std like every reactos-link
+   cargo-drive.
+6. **`vibeos-cli build --clean` does NOT cold the cargo link.** It nukes
+   `build-<arch>/rust-*-target`, but the cargo link writes to
+   `sdk/lib/rust/target/` (workspace, outside the build dir). True cold = `rm` the
+   output binary(ies) **and** `rm -rf sdk/lib/rust/target/<stem>`, then ninja —
+   verify "Compiling compiler_builtins/core/alloc" appears.
+
+### Device drivers — kernelmodedriver = KernelDll
+
+A kernelmodedriver `.sys` IS a `ModuleKind::KernelDll`: PE entry `DriverEntry@8`
+(i386 `_DriverEntry@8`, amd64/arm64 undecorated `DriverEntry` — write
+`#[no_mangle] extern "system" fn DriverEntry` and it decorates naturally),
+exports nothing (`--exclude-all-symbols` is already in KernelDll), image base =
+kerneldll base. **No spec2def** (drivers have no exports). Recipe:
+`add_cargo_module(<t> <t>-cargo <t>.sys KIND kerneldll BODY_CRATE <t>-rust
+DESTINATION reactos/system32/drivers [EXTRA_DEPENDS …] [NO_CD])`. The version
+`.rc` is dropped; `add_registry_inf(…)` stays in cmake (independent of the link).
+Softfloat `i686-kernel.json` is correct for kernel drivers (no float crosses the
+ntoskrnl FFI boundary — contrast user-mode DLLs which need the standard target).
+
+Driver FFI playbook (per-arch export resolution is the gauntlet — verify against
+the real binary):
+
+- **Oracle: `llvm-objdump -p <old cmake .sys>`** shows exactly which symbols the C
+  driver imported per-arch — ground truth for "exported here vs FORCEINLINE here".
+- **FORCEINLINE-not-exported, per-arch.** Many DDK "functions" are FORCEINLINE
+  (no symbol) on some arches and real exports on others:
+  - `ExInitializeFastMutex` — FORCEINLINE everywhere → use
+    `ntkrnl_sys::inline::ex::…` (init-only, safe to inline).
+  - `ExAcquireFastMutex`/`ExReleaseFastMutex` — amd64/arm64 export them stdcall
+    (`extern "system"`); i386 exports the **fastcall `Exi*`** variants
+    (`#[cfg(x86)] extern "fastcall" { #[link_name="ExiAcquireFastMutex"] … }`).
+    Do NOT call the kernel-internal `inline::ex::_ExAcquireFastMutex` from a
+    driver — its i386 slow path references `KiAcquireFastMutex@4`, not exported.
+  - **IRQL** — i386/arm64 export stdcall 2-arg `KeRaiseIrql`/`KeLowerIrql` from
+    HAL; amd64 has them FORCEINLINE (IRQL==CR8) so the C imports NO IRQL symbol →
+    inline the CR8 read/write on amd64 (`mov {},cr8` / `mov cr8,{}`). Roll your
+    own per-arch; do not lean on `inline::tier1`/`KeRaiseIrqlInternal` (those
+    extern a kernel-internal `KeRaiseIrql` that's undefined for drivers).
+- **Callback/fn-ptr slots** (MajorFunction PDRIVER_DISPATCH, FastIo, DriverUnload,
+  DRIVER_CANCEL) are per-arch bindgen `Option<extern "stdcall" fn>` (i386) vs
+  `Option<extern "C" fn>` (amd64/arm64). Assign an `extern "system"` fn item via a
+  size-checked `Some(core::mem::transmute(Fn as *const ()))` — ABI-identical per
+  arch, only the Rust *type string* differs (a plain `Some(..)`/`as` is a type
+  error across arches).
+- **`CONTAINING_RECORD`** → pointer math: `(entry as *mut u8).sub(offset_of!(_IRP,
+  Tail))`. Use `core::mem::offset_of!`, and reach `static mut` globals via
+  `addr_of!`/`addr_of_mut!` (nightly build-std denies `static_mut_refs`);
+  `MaybeUninit::zeroed()` for a const-init zero global struct.
+- **Dead-residue trick (skip `c_from_compile_db`).** If the only C left is
+  pure-data (e.g. a `guid.c` of `initguid.h` GUID definitions) and the Rust body
+  self-provides those symbols (e.g. defines the GUID as a `pub static` used via
+  `addr_of!`), the C symbol is unreferenced → DROP the `.c` entirely (no OBJECT
+  lib, no compile_db). Always check whether the Rust body self-provides the
+  residue's symbols first.
+- A "duplicate symbol" line in a driver build log is usually a *warning* from the
+  concurrent ntoskrnl link (`--allow-multiple-definition` is on for all
+  KernelDll). The real driver error is `could not compile <crate>` lower down →
+  build the `-rust` crate directly (`cargo build --target <arch>-kernel.json -Z
+  build-std=… -p <crate>`) to see it cleanly.
+
+### Shared rlib — one C file in N binaries → one Rust rlib
+
+When a single C file is compiled into multiple binaries (e.g.
+`ntoskrnl/config/cmboot.c` → ntoskrnl + uefildr + rosload), do NOT re-translate
+per consumer. Extract the existing translation into a standalone **rlib** (NOT a
+staticlib) that every consumer links via `extern crate`:
+
+- The crate is a plain `rlib`, `#![no_std]`, **no `panic_handler`** (the final
+  artifact's umbrella provides it); dep `ntkrnl-sys default-features=false`.
+- **Decouple from the origin crate's internals.** Route private-macro calls
+  through self-contained equivalents (adapting-for-sharing is allowed, it is not a
+  revert); turn `use crate::…` of context globals into `extern "C"` imports the
+  consumer supplies. **Context-local symbols live in the consumer**, not the
+  shared crate — the kernel supplies them from its own modules, the loaders from a
+  new shims file; the shared crate only *imports* them.
+- Cohab: comment the `.c` out of every consumer's source list; add the crate as a
+  workspace member + a dep in each consumer's Cargo.toml + the umbrella.
+- **Removing a file from a crate repartitions its cgu=256** — an intra-crate call
+  rustc used to inline now goes through a symbol, which can surface a latent ABI
+  decl mismatch (e.g. an `extern "C"` decl of a stdcall `_..@8` export). Fix the
+  decl, don't revert.
+- **`ar` NEVER PRUNES on source removal** — after commenting a `.c` out of a cmake
+  `.a`, the stale `.obj` lingers in the archive, and a force-included `.obj` in a
+  build.rs reused-objects list *shadows* archive members → the link silently keeps
+  running stale C. After a cohab flip you MUST `rm` the stale `.a` and scrub the
+  build.rs reused-objects, then `nm libX.a | grep <flipped-symbol>` to prove it's
+  gone. (This class of false-green is also why loader changes must be hash-verified
+  in the actual boot media, especially under `--allow-stale`.)
+
+### reactos-link engine primitives
+
+Builders on `Linker` (`reactos-link/src/lib.rs`) that the cutovers added/use:
+
+- **`rust_user_target()`** — force the `rust_staticlib` main body onto the
+  STANDARD user target (`i686`/`x86_64-pc-windows-gnu`, `aarch64-gnullvm`, stable,
+  no build-std) even for a kernel-ish module. NEEDED for the freeldr loaders: the
+  *link* uses the kernel json (x86-softfloat ABI) but the body must build
+  standard-target like cmake did, or the float ABI diverges. (Phase-2 user-mode
+  cargo builds must also use the standard target, never the softfloat kernel json.)
+- **`rust_build_rustflags(s)`** — RUSTFLAGS for the main-body build. **i386
+  `-C target-feature=-sse,-sse2` must be stated EXPLICITLY**: `build_rust_crate`'s
+  `kernel=false` path runs from the build dir (cwd ≠ workspace), so the workspace
+  `.cargo/config.toml [target.i686-pc-windows-gnu]` `-sse,-sse2` is NOT discovered.
+  Any standard-target i386 leaf (cnt-rust-lib, cport-rust, hal-mini) must re-state
+  it. (rustflags discipline across agents: kernel-target crates go in
+  ntoskrnl-cargo's `crt_rustflags` match in the `kernel=true` branch; user-target
+  crates in the `rustflags`/cnt else-if of the `kernel=false` branch — different
+  branches auto-merge.)
+- **`rust_watch(&[dirs])`** — emits `rerun-if-changed` for each built crate's src
+  dir + Cargo.toml, including PATH-DEPS in other workspace crates. Closes the
+  stale-`.a` class (cargo would otherwise skip rebuilding the body and link a
+  stale archive).
+- **`c_from_compile_db(cmake_target, &[c_sources])`** — compile a module's deep-C
+  residue IN-cargo by replaying cmake's `compile_commands.json` clang invocation
+  (flag-exact by construction), instead of reusing a cmake-built `.a` via
+  `static_libs()` (which needs `ninja <lib>` first). Requires
+  `CMAKE_EXPORT_COMPILE_COMMANDS ON` (configure-time only, no build). It strips the
+  ninja-built `.pch` quad but keeps the configure-time `cmake_pch.h` force-include;
+  redirects `-o` to OUT_DIR; runs with `cwd = entry.directory`. Disambiguate a
+  `.c` compiled into multiple targets by the `CMakeFiles/<target>.dir` marker, so
+  `cmake_target` must be the real cmake target name. **C-ONLY**: a cmake lib that
+  is C+asm in one archive (`add_asm_files` + `add_library`) splits into TWO
+  in-cargo archives — `c_from_compile_db("name", C)` in the C-archive group
+  position (BEFORE the Rust archives, preserving C-first dup-symbol ordering) +
+  **`asm_archive("name_asm", asm)`** in the post-static_libs position. Safe only if
+  the asm symbols can't shadow an earlier static_lib's. **GUARD empty asm**
+  (e.g. arm64 has none): `if !asm.is_empty()` — an empty `asm_archive` panics
+  "produced no objects". Get the EXACT per-arch source list from
+  `build-<arch>/compile_commands.json` (filter `CMakeFiles/<target>.dir`), not the
+  cmake transcription (skip `cmake_pch.h.c`). asm that has no `#ifdef` doesn't care
+  about the AsmDefineSet; raw `.S`/lowercase `.s` with `#include` works because the
+  asm path forces `-x assembler-with-cpp`. (`c_shim_flags()` and
+  `asm_include_dirs()` are sibling primitives for per-shim codegen flags, e.g.
+  freeldr's `-mno-sse`, and a minimal `-I` set for assembling a raw `.S`.)
+
+### Cargo C-residue shave — what to delete vs flip
+
+Once the link is cargo-driven, eliminate the `c_from_compile_db` C-compile leaks
+(each replays cmake's flag-exact clang with the full `-I` tree = a transitive
+cmake dependency). Two residue classes:
+
+1. **Vestigial cohabitation stubs** (`*_rust_stub.c` — pure-comment, 0-symbol
+   TUs). Their only purpose was the cmake-era `add_executable()` "needs ≥1 TU to
+   force Rust-archive extraction" hack. With `add_cargo_module` the cargo link
+   pulls the Rust body archive directly via the CRT's symbol refs (e.g. libnt's
+   `_NtProcessStartup` → `main`), so the stub is DEAD → just delete it from the
+   cargo `c_from_compile_db` list and relink to prove. (Never delete the `.c`
+   from disk — philosophy. Just stop compiling it.) Correspondingly, an **OBJECT
+   lib that exists ONLY to seed `compile_commands.json`** (`add_library(… OBJECT
+   *_rust_stub.c)`) is removable from cmake **iff no cargo build.rs still names it**
+   in `c_from_compile_db` / `resource_from_rc` — keep ones that still feed a `.rc`
+   resource compile.
+2. **Provider shims** (real intrinsic/macro/COM glue — interlocked,
+   `CONTAINING_RECORD`, `InitializeObjectAttributes`, COM-vtbl dispatchers) → flip
+   to Rust. Reproduce the EXACT per-arch target symbol set by `nm`-ing the
+   cmake-built `*_shim.c.obj` on each arch and matching it 1:1 via natural ABI
+   decoration (i386 `extern "system"` → `_Name@N`, `extern "C"` → `_Name`;
+   amd64/arm64 undecorated). Interlocked via `&*(p as *const AtomicI32)` →
+   `fetch_add/sub` (returns NEW, so `.wrapping_±1`) / `swap` (returns OLD); COM
+   dispatch via `*(*(p as *const *const *const c_void)).add(idx)` then transmute to
+   the method fn-ptr.
+
+**Dup-`#[no_mangle]`-across-ABIs trap:** Rust rejects two `#[no_mangle]` of the
+SAME identifier even across different ABIs / cfg-modules (it dedups on the Rust
+identifier BEFORE platform decoration) → "symbol `_X` is already defined". A C
+shim that defined both a cdecl and a stdcall twin of one name can't become two
+no_mangle fns. FIX: unify on ONE symbol (e.g. the stdcall `_X@N`) and switch the
+lone other-ABI caller's `extern "C"` decl to `extern "system"` (same op; only the
+stack-cleanup convention changes, and caller+callee just must agree).

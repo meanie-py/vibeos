@@ -23,7 +23,11 @@ CRATE_SRC = sys.argv[1]
 names = sys.argv[2:] or [l.strip() for l in sys.stdin if l.strip()]
 SRC = os.path.abspath(os.path.join(CRATE_SRC, "../../../../.."))  # repo root (src->crate->rust->lib->sdk->root)
 HEADER_DIRS = [f"{SRC}/sdk/include/{d}" for d in
-               ("ddk", "psdk", "xdk", "ndk", "reactos", "reactos/drivers", "")]
+               ("ddk", "psdk", "xdk", "ndk", "reactos", "reactos/drivers",
+                "reactos/drivers/pci", "")]
+# driver-PRIVATE headers carry many #defines (pool tags, debug sizes) not in the SDK tree.
+HEADER_DIRS += [f"{SRC}/drivers/storage/class/classpnp",
+                f"{SRC}/drivers/bus/pcix"]
 HEADERS = []
 for d in HEADER_DIRS:
     HEADERS += glob.glob(f"{d}/*.h")
@@ -42,9 +46,16 @@ def find_define(name):
 
 INT = re.compile(r"^(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*$")
 CAST = re.compile(r"^\(\(\s*([A-Za-z_][A-Za-z0-9_ ]*?)\s*\)\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*\s*\)$")
+# C multi-char constant pool tag, e.g. 'ALcS' — packs big-endian (first char = high byte),
+# which is exactly the value a C compiler computes and what the kernel's pool-tag dumps show.
+FOURCC = re.compile(r"^'([\x20-\x7e]{1,4})'$")
 SIGNED = ("NTSTATUS", "LONG", "int", "HRESULT")
 
 def parse(name, v):
+    # strip a single outer paren pair: `(0x18)` -> `0x18` (debug.h size defines wrap their value)
+    vs = v.strip()
+    if vs.startswith("(") and vs.endswith(")") and vs.count("(") == 1 and vs.count(")") == 1:
+        v = vs[1:-1].strip()
     m = INT.match(v)
     if m:
         return f"pub const {name}: u32 = {m.group(1)};"
@@ -54,7 +65,13 @@ def parse(name, v):
         if any(s in ty for s in SIGNED):
             return f"pub const {name}: i32 = {num}u32 as i32;"
         return f"pub const {name}: u32 = {num};"
-    return None  # GUID / expression / string — don't guess
+    m = FOURCC.match(v)
+    if m:
+        val = 0
+        for c in m.group(1):
+            val = (val << 8) | ord(c)
+        return f"pub const {name}: u32 = {hex(val)};  // {v}"
+    return None  # GUID / expression / multi-token — don't guess
 
 def main():
     out, unharvested = [], []

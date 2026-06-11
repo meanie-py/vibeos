@@ -30,17 +30,41 @@ NTKRNL_SYS="${SRC}/sdk/lib/rust/ntkrnl-sys/src"
 # DRIVER_INC  : extra -I for the driver's own dir
 # VER_DEFS    : version macros matching the driver's CMakeLists.txt
 EXTRA_INC=()
+# SYS_CRATES: extra sibling -sys crates whose bindgen types must ALSO be blocklisted
+# (kept a single identity) and re-exported. Format: "crate_name:src_subdir". Only ACPI
+# bridges two -sys crates (ntkrnl-sys + acpica-sys), so it's the only user today.
+SYS_CRATES=()
 case "$DRIVER" in
+  acpi)
+    # ACPI bus driver glue (buspdo.c/bus.c). Private structs live in acpisys.h
+    # (device extensions, DEVICE_PNP_STATE) + acpi_bus.h (Linux-style acpi_device*
+    # with :1 bitfields). Both pull in ACPICA's acpi.h — those ACPI_* types are
+    # blocklisted here and resolved via acpica-sys to keep one identity.
+    DRIVER_DIR="${SRC}/drivers/bus/acpi/include"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <acpi.h>\n#include "acpisys.h"\n#include "acpi_bus.h"'
+    ALLOW_FILES=( --allowlist-file '.*acpisys\.h' --allowlist-file '.*acpi_bus\.h'
+                  --allowlist-file '.*acpi_drivers\.h' --allowlist-file '.*[/\\]list\.h' )
+    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
+               -DACPI_USE_LOCAL_CACHE -DACPI_USE_SYSTEM_INTTYPES )
+    EXTRA_INC=( -I"${SRC}/drivers/bus/acpi/acpica/include" )
+    SYS_CRATES=( "acpica-sys:acpica-sys/src" )
+    ;;
   classpnp)
     DRIVER_DIR="${SRC}/drivers/storage/class/classpnp"
-    WRAPPER_INC='#include <classp.h>'
+    # classp.h does NOT transitively reach wmistr.h / ntddstor.h / ntddscsi.h, so the WNODE_*,
+    # STORAGE_HW_FIRMWARE_*, BLOCK_DEVICE_RANGE_DESCRIPTOR, POPULATE_TOKEN_HEADER, DEVICE_DATA_SET_*
+    # types never get PARSED (allowlist can only filter parsed types, not emit unreached ones).
+    # Pull them explicitly so bindgen emits the full local layouts the modules reference.
+    WRAPPER_INC=$'#include <classp.h>\n#include <wmistr.h>\n#include <ntddstor.h>\n#include <ntddscsi.h>'
     # classp.h pulls scsi.h/srb.h/ntddstor.h — the storage structs (SRBEX_DATA, STOR_ADDRESS,
     # UNMAP_LIST_HEADER, WNODE_*, MODE_PARAMETER_HEADER, READ_CAPACITY_DATA, ...) the modules
     # use are defined there and are NOT in the ntkrnl-sys kernel bindgen, so allowlist them too.
     ALLOW_FILES=( --allowlist-file '.*classp\.h' --allowlist-file '.*classpnp\.h'
                   --allowlist-file '.*scsi\.h' --allowlist-file '.*srb\.h'
                   --allowlist-file '.*srbhelper\.h' --allowlist-file '.*ntddstor\.h'
-                  --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*wmistr\.h' )
+                  --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*wmistr\.h'
+                  --allowlist-file '.*storduid\.h' --allowlist-file '.*mountdev\.h'
+                  --allowlist-file '.*ioevent\.h' )
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
   cdrom)
@@ -57,6 +81,30 @@ case "$DRIVER" in
     WRAPPER_INC='#include "cdprocs.h"'
     ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 )
+    ;;
+  pcix)
+    # The full MS-architecture PCI bus driver (drivers/bus/pcix). All driver-PRIVATE
+    # structs (PCI_FDO_EXTENSION, PCI_PDO_EXTENSION, PCI_FUNCTION_RESOURCES,
+    # PCI_CONFIGURATOR*, PCI_INTERFACE, PCI_ARBITER_INSTANCE, ...) live in the driver's
+    # own pci.h — allowlist that ONE header (the shared drivers/pci/pci.h is at a
+    # different path so it is NOT matched, keeping PCI_COMMON_CONFIG/PCI_SLOT_NUMBER on
+    # the single ntkrnl-sys ddk identity). pci.h also pulls arbiter.h (ARBITER_INSTANCE,
+    # ARBITER_*) and cmreslist.h — those are NOT in the kernel bindgen, so allowlist them
+    # too so the bus-resource arbiter structs the modules reference get full local layouts.
+    DRIVER_DIR="${SRC}/drivers/bus/pcix"
+    WRAPPER_INC=$'#include "pci.h"'
+    ALLOW_FILES=( --allowlist-file '.*bus[/\\]pcix[/\\]pci\.h' --allowlist-file '.*arbiter\.h'
+                  --allowlist-file '.*cmreslist\.h' )
+    # pcix CMakeLists sets no version macros → driver builds at the toolchain default
+    # (NT 5.2 / WinXP-era). NTDDI MUST be 0x05020400 (WS03SP1), the value the real build
+    # derives — at exactly 0x05020000 peb_teb.h takes the pre-SP1 path that inlines an
+    # UNDEFINED ACTIVATION_CONTEXT_STACK (→ negative-size array, fatal TU-abort on amd64).
+    # The extra _WIN32_WINDOWS/_WIN32_IE/_SETUPAPI_VER/DLL_EXPORT_VERSION match the real
+    # pcix compile command so the header gates resolve identically.
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/arbiter" )
     ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
@@ -85,6 +133,34 @@ run_arch() {
   # from `ntkrnl_sys::{ddk,driver_ddk,...}`.
   local TYPELIST="/tmp/${DRIVER}_ntktypes_${ARCH}.txt"
   grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$NTK" | awk '{print $3}' | sort -u > "$TYPELIST"
+  # UNBLOCK: types the shared ntkrnl-sys bindgen leaves OPAQUE (e.g. `_SCSI_REQUEST_BLOCK
+  # { _address: u8 }`) — keeping them blocklisted resolves the driver's field accesses to the
+  # useless opaque version. Re-allow them so THIS driver's bindgen (which includes scsi.h/srb.h)
+  # emits the FULL struct locally; the driver then uses crate::types::<T> with real fields.
+  if [ -n "${UNBLOCK:-}" ]; then
+    local KEEP="/tmp/${DRIVER}_unblock_${ARCH}.txt"; printf '%s\n' $UNBLOCK > "$KEEP"
+    grep -vxF -f "$KEEP" "$TYPELIST" > "${TYPELIST}.f" && mv "${TYPELIST}.f" "$TYPELIST"
+  fi
+  # Extra sibling -sys crates (e.g. acpica-sys): blocklist their types too so the
+  # ACPI_* names acpi_bus.h references resolve to that crate, not get re-emitted here.
+  # Re-export must be EXPLICIT (only names UNIQUE to the sys crate) — a `pub use
+  # acpica_sys::*` glob collides with the `use ntkrnl_sys::ddk::*` glob on every shared
+  # C primitive (BOOLEAN, UINT8, __BindgenBitfieldUnit, ...) → E0659 ambiguity. Shared
+  # names resolve via the ddk glob; only acpica-unique names (ACPI_*, acpi_*, AE_*) are
+  # re-exported by name.
+  local SYS_USE=()
+  for spec in "${SYS_CRATES[@]:-}"; do
+    [ -z "$spec" ] && continue
+    local crate="${spec%%:*}" subdir="${spec##*:}"
+    local SYSBG="${SRC}/sdk/lib/rust/${subdir}/bindgen_${ARCH}.rs"
+    local SYSNAMES="/tmp/${DRIVER}_${crate}_names_${ARCH}.txt"
+    grep -oE "pub (struct|enum|type|union) [A-Za-z0-9_]+" "$SYSBG" | awk '{print $3}' | sort -u > "$SYSNAMES"
+    # Unique = in sys crate but NOT already an ntkrnl-sys type (TYPELIST still ntkrnl-only here).
+    local UNIQUE; UNIQUE="$(comm -23 "$SYSNAMES" "$TYPELIST" | paste -sd, -)"
+    SYS_USE+=( --raw-line "pub use ${crate//-/_}::{${UNIQUE}};" )
+    cat "$SYSNAMES" >> "$TYPELIST"   # blocklist ALL sys types (none re-emitted locally)
+  done
+  sort -u "$TYPELIST" -o "$TYPELIST"
   local BL=()
   while IFS= read -r t; do BL+=( --blocklist-type "$t" ); done < "$TYPELIST"
 
@@ -97,6 +173,7 @@ run_arch() {
     --raw-line '// kernel field types resolved via private ddk glob (NOT re-exported: modules get' \
     --raw-line '// common kernel types from driver_ddk, private structs from this crate::types).' \
     --raw-line 'use ntkrnl_sys::ddk::*;' \
+    "${SYS_USE[@]}" \
     -o "$RAW" \
     -- -ferror-limit=0 -Wno-everything \
     -fms-extensions \
@@ -122,7 +199,7 @@ run_arch() {
 import sys, re
 raw, final = sys.argv[1], sys.argv[2]
 s = open(raw).read()
-local = set(re.findall(r"^pub (?:struct|enum|union) (_[A-Za-z0-9_]+)", s, re.M))
+local = set(re.findall(r"^pub (?:struct|enum|union|type) (_[A-Za-z0-9_]+)", s, re.M))
 out = [ln for ln in s.splitlines(keepends=True)
        if not (re.match(r"^pub use self::(_[A-Za-z0-9_]+) as [A-Za-z0-9_]+;", ln)
                and re.match(r"^pub use self::(_[A-Za-z0-9_]+) as", ln).group(1) not in local)]

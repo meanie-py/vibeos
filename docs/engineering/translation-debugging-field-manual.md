@@ -1,8 +1,8 @@
-# VibeOS Translation Debugging Field Manual
+# VibeOS Translation & Kernel Debugging Field Manual
 
-A symptom-indexed reference for debugging C→Rust translation regressions in the ntoskrnl/win32k/HAL/freeldr port. **When a flip crashes, hangs, links-undefined, or smokes red, find the matching symptom here BEFORE you start instrumenting** — most of these cost a multi-hour debug session the first time and the root cause is rarely where the crash points.
+A symptom-indexed reference for debugging C→Rust translation regressions **and** for hunting live kernel crashes (BUGCHECKs, hangs, heap corruption) in the ntoskrnl/win32k/HAL/freeldr port. **When a flip crashes, hangs, links-undefined, or smokes red, find the matching symptom here BEFORE you start instrumenting** — most of these cost a multi-hour debug session the first time and the root cause is rarely where the crash points.
 
-Each entry is **Symptom → Root cause → Fix**, with the source memory slug (the per-topic memory file holds the full narrative + commit hashes). Sections:
+Each entry is **Symptom → Root cause → Fix**. The `**Source:**` slug names the original per-session debug memory the entry was distilled from; **most of those memories have been consolidated into this manual and removed** — this doc is now the canonical, permanent home for the learning (full commit-by-commit narrative lives in `git log`). Sections 1–8 are translation-bug categories; section 9 is the live-crash-hunting technique layer. Sections:
 
 1. [ABI / FFI / calling-convention / decoration](#abi--ffi--calling-convention--decoration) — the #1 i386 crash class
 2. [LLVM captures(none) / ud2 / codegen-unit miscompiles](#llvm-capturesnone--ud2--codegen-unit-miscompiles)
@@ -12,6 +12,7 @@ Each entry is **Symptom → Root cause → Fix**, with the source memory slug (t
 6. [Cohabitation, cold-link & stale-artifact false failures](#cohabitation-cold-link--stale-artifact-false-failures)
 7. [CRT/cnt runtime, harness flakes & kernel one-offs](#crtcnt-runtime-harness-flakes--kernel-one-offs)
 8. [win32k flip-specific debugging](#win32k-flip-specific-debugging)
+9. [Kernel crash-hunting techniques (live BUGCHECK / hang / heap hunts)](#9-kernel-crash-hunting-techniques-live-bugcheck--hang--heap-hunts)
 
 **Three meta-rules that recur across every section:**
 - **A green i386 does NOT exonerate a flip.** Most amd64/arm64-only deterministic crashes are real bugs i386's narrower pointers / no-SSE / different layout luck-masks. Build and boot all three.
@@ -263,6 +264,12 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** build `sdk/lib/rust/win32k-sys` (ntkrnl-sys recipe clone, master header `win32k.h`/`pch.h`). bindgen flags: `-fms-extensions` YES (anonymous typedef members) but `-fms-compatibility` NO (defines `_MSC_VER` → breaks mingw `__CRT_INLINE`); `--allowlist-var '.+'` required (any allowlist drops unreferenced `#define` consts); register de-prefixed aliases for bindgen's tagged-enum member prefixing (`SimpleCallRoutines_HWNDLOCK_...` → also `HWNDLOCK_...`; `--default-enum-style=consts` is a no-op for tagged enums). Self-derive defines/includes/flags per arch from `build-<arch>/build.ninja`.
 **Source:** `feedback_win32k_sys_bindgen.md`
 
+### A redundant *-sys crate that re-bindgens types the parent master header already pulls → E0659 mass-ambiguity
+**Symptom:** You build a focused `foo-sys` crate (e.g. ft-sys for FreeType) for a lib used by win32k; integrating the flip explodes into hundreds of `E0659` ambiguity errors at every struct-field→foo-call boundary (freetype: 235).
+**Root cause:** The parent master header (`win32k.h`/`ntoskrnl.h`) ALREADY `#include`s that lib, so the parent's own bindgen (`win32k-sys`) embeds the lib's types as struct FIELDS (e.g. `SHARED_FACE.Face: FT_Face`, 131 such fields). A separate `foo-sys` defines the SAME types in a different crate → the field type and the `foo`-fn argument type are now two distinct paths for the "same" type → cross-crate ambiguity everywhere.
+**Fix:** before building a separate FFI crate, check whether the parent master header already pulls the lib. If it does, FOLD the complete lib surface into the existing `-sys` crate instead: add the lib's headers to `wrapper.h` (under any required build defines like `#define FT2_BUILD_LIBRARY`), extend the allowlist (`FT_[A-Za-z0-9_]*|TT_...`), hand-add the fn-like macros bindgen drops (`FT_HAS_*`/`IS_*` → return `c_int`, callers use `!= 0`), regenerate ×3, then delete the redundant crate.
+**Source:** `project_freetype_ftsys_track.md`
+
 ---
 
 ## rustconv translation-output bug catalog
@@ -286,6 +293,24 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Root cause:** Sonnet (and `batch` especially) truncate complex bodies — inline asm + PCR access + bit-twiddling — without hitting max_tokens. `batch` is worst on >1000 LOC; stitcher oracle-injection can also mangle control flow (orphan `} else {`, raw-C fragments, literal `...`).
 **Fix / oracle:** use `translate` not `batch` for >1000 LOC. `grep -cE '^\s+(0u8|1u8)\s*$' file.rs` (high vs fn count = stubbed). Read 2-3 hottest fns against C before integrating; always audit IRQL/DPC/interrupt/scheduler hot paths. Re-translate a single stub via `--fn <name>` (cents). Drop injected SmokeDeliveryOracle DbgPrint — it's instrumentation, not C.
 **Source:** `feedback_rustconv_stubbed_bodies.md`, `feedback_rustconv_translate_gotchas.md`
+
+### DeepSeek/grinder fabrication-audit checklist (compiles-but-wrong at scale)
+**Symptom:** A DeepSeek-`--mode mechanical`/c2rust-anchored grind of a #define/macro-dense driver (HID parser, descriptor parsers) cargo-checks green but is silently wrong: parsing breaks, link fails, or a constant has the wrong facility.
+**Root cause:** Three distinct fabrication classes the grinder hides behind a green check: (1) **bindgen can't eval fn-like macros** (`HIDP_ERROR_CODES(SEV,CODE)=((SEV<<28)|(0x11<<16)|CODE)` → ZERO `HIDP_STATUS_*` in bindgen output → the grinder FABRICATES them with a wrong facility (0x3FFE vs 0x3FEE) and wrong type (`i32`, bit-31 overflow)). (2) **undefined consts used in `match` arms** → each becomes a silent catch-all BINDING (only the first arm runs) → dispatch/parse silently broken, surfaced ONLY as "unreachable pattern" WARNINGS. (3) **dropped function bodies** emitted as `extern` STUBS → undefined symbol at LINK.
+**Fix / oracle:** after integrating any grinder output run all three checks: (1) re-derive every `STATUS_*`/facility const from the real header into the `-sys` crate as the source of truth (`0x....u32 as i32` for bit-31 values), delete local fabrications; cross-check with `verify_constants.py` + a Sonnet-vs-C review tier (earns its keep on constant-dense code). (2) `grep -c "unreachable pattern"` in the cargo build — **must be 0**; define the missing consts matching the scrutinee type (HID item tags are a 4-bit nibble 0x8/0x9/0xa/0xb/0xc — the grinder's 0x80/0x90 were wrong). (3) recover dropped bodies from `tools/rustconv/.responses/` (durable bank) and hand-translate (watch for faithful C quirks like an early-return path that doesn't write outputs). Mechanical mode also declares all externs `extern "C"` → NTAPI imports break i386 link; the ABI sweep (`extern "system"` for NTAPI, inline DDK helpers from `ntkrnl_sys::inline::tier1` not `ddk`) is the engineer's job, forbidden to the grinder.
+**Source:** `project_driver_residue_track.md`, `feedback_undefined_const_in_match_silent_binding.md`
+
+### rustconv drops ALL non-fn header content at scale (structs / const-tables / #defines / FuncTables)
+**Symptom:** A bulk `translate` of a unit compiles per-function but is missing every file-local struct, const lookup table, `#define`, and static FuncTable — E0425/E0412 undefined-name storms, or worse, silent wrong behavior from a missing default table.
+**Root cause:** rustconv translates function bodies only; the scanner's preamble captures the .c's top-of-file but `translate`'s stitcher never emits `scan.globals_text` — file-local typedefs/structs/`#define`-consts/`const DEVVTBL` FuncTables/static arrays are dropped entirely. (FreeLDR fs unit: bootsector/dirent/volume-info structs + const DEVVTBL tables + #defines all gone.)
+**Fix / oracle:** restore the dropped structs/const-tables/#defines into the .rs (or a keystone module) FROM the .c/.h — put only UNIQUE types/consts in a shared keystone (cross-module Arc*/Fs*/Mm*/Ui* there → E0659 ambiguity; use a file-local `extern "C"` block instead). Recurring per-file traps: C `L"..."` is a Rust LEX ERROR → a `wide!()` const macro (align-2 `[u16;N]`); FuncTable fns referenced as `Option<extern "C" fn>` need `extern "C"`, not bare `unsafe fn` (fn-item vs fn-pointer); `((*p).Field)(a)` → `.Field.unwrap()(a)`; bindgen `LARGE_INTEGER` is `.u.LowPart` NOT `.__bindgen_anon_1.LowPart`; verify AI-emitted pool tags / sizes against C (it gets them wrong — `from_be_bytes`/`from_le_bytes` of the byte string).
+**Source:** `project_freeldr_sweep.md`
+
+### Header-only driver (kdgdb-class): rustconv leaves header content unimplemented
+**Symptom:** A non-ntoskrnl/hal driver translated per-.c won't compile (~300 errors from few roots): unresolved cross-module globals, missing FORCEINLINEs, empty-`#define` macros externed as varargs C fns, opaque-vs-full struct mismatches.
+**Root cause:** rustconv translates each .c in ISOLATION and never sees the driver's own .h — header content (the driver's own `extern` globals defined in one .c, `FORCEINLINE` helpers, empty `#define` no-ops, fixed-VA macros) has no .c body to translate.
+**Fix / oracle:** (a) Cross-module globals: make the def `pub` (keep `#[no_mangle]`), `use crate::<mod>::<sym>` in consumers (grep the C for the defining file). (b) Header-only FORCEINLINEs (gdb_tid_to_handle etc.): reconstruct in a hand-written `<name>_h.rs` module. (c) Empty-macro `#define` (KDDBGPRINT no-op): replace the bogus varargs extern with `macro_rules! X { ($($a:tt)*)=>{{}} }` + rewrite calls to `!()`. (d) Fixed-VA macros that are NOT symbols: `SharedUserData = ((KUSER_SHARED_DATA*)KI_USER_SHARED_DATA)` → local `const` (not `static`: `*mut` isn't Sync) per arch (i386 `0xFFDF0000`/64-bit `0xFFFFF78000000000`), `use crate::SharedUserData` in EVERY module (a stray `use ntkrnl_sys::globals::*` re-pulls the unresolvable extern); `RtlEqualMemory` = `!memcmp` macro → local inline. (e) ntoskrnl DATA exports (`KdDebuggerNotPresent`) → `#[link(name="ntoskrnl.exe", kind="raw-dylib", modifiers="+verbatim")] extern { static mut }` (plain extern won't cross-DLL-link on i386). (f) `detect_target` ordering: register the longer-prefix target FIRST (`/kdvm/` before `/kdcom` else `/kdvm/` matches `/kdcom`). bindgen enum variants are bare consts (`KdPacketReceived` not `KDSTATUS::...`); intrinsics (`__writecr3`) → inline asm; CRT/cportlib fns → `extern "C"`/`extern "system"` per the actual ABI, resolve at final link.
+**Source:** `project_kdgdb_translation.md`
 
 ### Dropped function-name → bare tuple no-op
 **Symptom:** `(arg1, arg2, arg3);` where C had `Foo(arg1, arg2, arg3)` — valid Rust, semantically a no-op. Hides in cohabitation (lld picks the C symbol); surfaces as silent register no-op when the C twin is removed, BUGCHECKing far downstream (e.g. `PsLocateSystemDll → 0x6B`). pcibus.rs had 12+ dropped PCI config reads/writes.
@@ -316,6 +341,12 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Root cause:** rustconv emits `null_mut()` for the hard string-literal initializers in a `static`/`const` table instead of the literal.
 **Fix / oracle:** audit any translated `static` table for `null_mut()` fields that were non-NULL string literals in C. Use a `wstr!` const-macro (align-2 `[u16;N]`, preserves embedded `\0` for MULTI_SZ). Watch the byte-literal split: `b"D\0l\0l\0".as_ptr() as *const u16` (pre-widened) is CORRECT; `b"debug\0".as_ptr() as *const u16` (2+ consecutive non-`\` chars = plain ASCII) is a BUG → use `wstr!`.
 **Source:** `feedback_rustconv_drops_table_default_data.md`
+
+### Data-table-heavy file (rtl error.c-class): LLM silently drops table ENTRIES
+**Symptom:** A file that is ~95% data (e.g. error.c = 19 NTSTATUS→DOS tables of 400+ entries + ~696 winerror.h/ntstatus.h constants) translates and compiles, but a table is short by one or more entries (one table had 71 of 72) and array sizes are miscounted → unreliable lookups.
+**Root cause:** The LLM transcribes long numeric/string tables unreliably — it silently drops entries without hitting max_tokens. Compiles fine because nothing asserts the count.
+**Fix / oracle:** for data-table-heavy files, EXTRACT the tables deterministically from the C/headers with a gen script, don't trust the LLM transcription. Two reusable patterns: `gen_winerror_consts.py` (scan referenced `ERROR_*/STATUS_*/...` idents in the table region only, resolve from headers across `plain` / `_HRESULT_TYPEDEF_(0x..)` / `((NTSTATUS)0x..L)` forms) and `gen_error_tables.py` (extract the tables + dispatch array verbatim with a `declared [N] == actual count` assertion). lib.rs then = generated mods + hand-verified dispatch fns.
+**Source:** `project_rtl_misc_leaves.md`
 
 ### Self-referential static initializer → {null, null}
 **Symptom:** a `static X: LIST_ENTRY = LIST_ENTRY { Flink: null_mut(), Blink: null_mut() }` that walkers treat as empty/initialized; head-sentinel walks deref NULL or loop forever. fat::DirectoryBufferListHead → arm64 UEFI fault at FatOpen+0x230 (NULL+0x10).
@@ -352,6 +383,12 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Root cause:** Rust `#[cfg(X)]` knows only cargo/rustc cfg flags, NOT C `#define`s. A C-macro name inside `#[cfg]` is always its unconfigured value → the branch C compiled OUT always compiles IN.
 **Fix / oracle:** grep `#[cfg(` for any NON-cargo token (not `target_arch`/`target_pointer_width`/`feature = `). A C-macro name there is a translation bug. Resolve to the value the project actually builds: `_USE_DUMMY_PSEH` is defined on all arches → delete the `!defined` branch, keep the `#else`.
 **Source:** `feedback_c_ifdef_as_rust_cfg_always_true.md`
+
+### Flip omits a C `#define` redirect/HACK → compiles + serial-greens but renders wrong
+**Symptom:** OS boots to the explorer marker (serial smoke "✓ boot") but the screen renders WRONG — black desktop + a 40×30 px (= 640/16 × 480/16) fragment of desktop color. dclife.c defines `gmxWorldToDeviceDefault` as a 16:1 matrix then immediately `#define gmxWorldToDeviceDefault gmxWorldToPageDefault` (identity); the flip faithfully copied the 16:1 static *definition* but lost the `#define`, so every DC inited `mxWorldToDevice = 16×` → DPtoLP/clip box shrank to screen/16.
+**Root cause:** A C `#define A B` HACK that redirects every *use* of a name to a different value. The translator copies the visible definitions but drops the redirect, so the Rust use-sites read the un-redirected (wrong) value. Links clean, compiles clean, serial-greens — it's a pixels-only defect.
+**Fix / oracle:** mirror the `#define` at every Rust use-site (init the field from the redirect TARGET, e.g. `gmxWorldToPageDefault`). Grep the C for `#define <Ident> <OtherIdent>` near static definitions; verify the flip honors the redirect. **Debugging rule: serial marker ≠ rendered desktop.** When the screen is wrong but boot is green: instrument with raw `DbgPrint` and read `qemu/<arch>_smoke_live.log`, NOT the filtered `full.log` (full.log truncates — cost two false "function not called" conclusions). The screenshot (`qemu/<arch>_smoke.png`) is the check — give it time to settle (taskbar/tray render ~15s after the marker; a 0s-on-marker capture shows a bare desktop).
+**Source:** `project_gdi_desktop_not_rendering.md`
 
 ### Arch-cfg (#ifdef _M_ARM64) branches flattened to the desktop path
 **Symptom:** compiles ×3, boots i386/amd64; only arm64 breaks. ldrpe.rs: flattened "tolerate missing imports" branches always raised → arm64 BUGCHECK 0x4C on csrss import snap. ldrutils.rs: arm64 raised STATUS_DLL_NOT_FOUND → explorer never reached `_tWinMain` (silent HANG, not a bugcheck).
@@ -452,6 +489,12 @@ A green i386 smoke does NOT exonerate a flip. amd64/arm64-specific deterministic
 
 The false-red/false-green class: cohabitation flips, stale archives, and cross-DLL data refs that make cold links lie, warm builds mask regressions, and merges look like fresh bugs.
 
+### Workspace-composition change → warm-incremental FALSE-FAIL of a cohab smoke
+**Symptom:** After adding/moving a crate in `sdk/lib/rust/Cargo.toml`, a sibling cohab smoke (e.g. cmlib) starts FAILING — i386 HANG_TIMEOUT at `cmlib\hivewrt.c:360 "Failed to write the primary hive."` 3 warm runs reproduced the failure, looking deterministic; the crate you added (rossym) seemed to "regress" cmlib.
+**Root cause:** Editing `Cargo.toml` `members` is a declared build-dep of the sibling crate's `add_custom_command` → forces an INCREMENTAL rebuild whose cargo-incremental codegen tips a helper into a bad-codegen hazard (cmlib `Hv*` → precompiled-std-in-kernel hivewrt hang). Clean COLD codegen is correct. A tempting symbol-collision theory (1126 core `T`-syms shared across the two archives) is a RED HERRING — those collisions are byte-identical instantiations, benign under `--allow-multiple-definition` first-match-wins.
+**Fix:** after ANY workspace-composition change, COLD-build before trusting (or debugging!) a cohab smoke — nuke ALL rust target dirs (`find build-<arch> -type d -name '*rust*target*' | xargs rm -rf`; do NOT `find … -prune -exec`, it misfires and leaves them). The cold rebuild boots green with zero hivewrt errors. Don't chase a byte-identical-core-symbol "collision" as the cause.
+**Source:** `project_cmlib_rossym_cohab_smoke.md`
+
 ### Stale C `.obj`/`.a` member survives merge → false cold-LINK_FAIL on a commented-out `.c`
 **Symptom:** Cold link fails `undefined symbol: _Foo@N` `referenced by bar.c.obj` where `bar.c` is already commented out (replaced by Rust) in its CMakeLists; or fresh cold-clean reports `duplicate symbol` from a flipped file. Warm builds are green.
 **Root cause:** `ar` never prunes members; a static archive (e.g. `librtl.a`) still bundles the orphaned `.obj`. ninja won't re-`ar` when the input list only *shrinks*, and regenerates `build.ninja` mid-run using the OLD graph for that same run. `vibeos-cli build --clean` nukes only Rust targets.
@@ -487,6 +530,12 @@ The false-red/false-green class: cohabitation flips, stale archives, and cross-D
 **Root cause:** Before the flip the companion's `extern` resolved via the main DLL's import lib; after, the fn lives in the shared rust staticlib, and archive-def beats import-lib so lld pulls its static def into the companion, dragging the rest of the loader; the companion's link line lacks the C providers.
 **Fix:** `#[cfg(not(feature = "vista"))] pub mod ldr;` in lib.rs — exclude the flipped subsystem from the companion's build so it imports the fn from the main DLL's import lib. Do NOT add `rtl` to the companion (→ `_RtlInitUnicodeString@8 was replaced`). raw-dylib `import_name_type="undecorated"` dodges the pull on i386 ONLY; gating is the real cross-arch fix.
 **Source:** `feedback_cohab_flip_companion_dll_cascade.md`
+
+### Completing a `rtl_vista` C→Rust flip needs a THIRD edit (else reactos-link panics)
+**Symptom:** You enable an `rtl_vista` file's `.rs` (`#[cfg(feature="cabi")] pub mod X;`) and comment its `.c` in `sdk/lib/rtl/CMakeLists.txt` `SOURCE_VISTA`, but the ntdll cargo link confusingly still expects a stale C object — or, if you ALSO removed it from CMakeLists only, `reactos-link` PANICS at `lib.rs:991 "no compile_commands.json entry for X in target rtl_vista"`.
+**Root cause:** the ntdll cargo link compiles the rtl_vista C files IN-CARGO via a hardcoded list in `sdk/lib/rust/ntdll-cargo/build.rs` → `.c_from_compile_db("rtl_vista", &[".../X.c", …])` — a SECOND place (besides `SOURCE_VISTA`) that names the C file. A vista flip therefore takes THREE edits, not two. (Main-SOURCE rtl leaves take only the two CMakeLists edits — NO build.rs touch.)
+**Fix:** per vista file: (1) enable `pub mod X;` in `rtl-sync/src/lib.rs` (+ srcs to rtl/CMakeLists DEPENDS); (2) comment the `.c` in `SOURCE_VISTA`; (3) comment/remove the `.c` from `ntdll-cargo/build.rs` `.c_from_compile_db("rtl_vista", …)`. GOTCHA: `SOURCE_VISTA` can't go empty (`add_library(rtl_vista)` needs ≥1 source) — leave the last `.c` as harmless residue (librtl_vista.a feeds only the standalone ntdll_vista forwarder, never linked alongside librtl_rust.a). ntoskrnl does NOT link rtl_vista; only ntdll.
+**Source:** `project_rtl_sync_integration.md`
 
 ### Middle-layer flip surfaces undefined symbols in WAVES (Rust `.o`s pulled for first time)
 **Symptom:** Flipping a module called from above AND below (e.g. winsrv `condrv/`) is far noisier than a leaf flip; link errors cite `.c.obj` files you already commented out (phantom refs).
@@ -772,4 +821,92 @@ Lessons unique to translating win32k.sys (gdi/eng, gdi/ntgdi, gdi/dib, user/ntus
 
 ---
 
-*Maintenance: this manual is generated from the project's debug memories. When you solve a new translation bug worth remembering, add a `### Symptom → Root cause → Fix` entry to the matching section (and keep the one-line pointer in the memory index). The per-topic memory files hold the full narrative; this is the fast-lookup index.*
+## 9. Kernel crash-hunting techniques (live BUGCHECK / hang / heap hunts)
+
+The *how-to-hunt* layer: techniques for chasing a live kernel crash (BUGCHECK, hang, heap
+corruption, wild write) in the QEMU boot, as opposed to the symptom→cause→fix categories
+above. Companion toolkit *design* lives in `kernel-debugging-infra.md`; use that toolkit,
+these are the techniques on top. **Append new crash-hunting techniques here**, not in
+per-blocker memories (that's how the i386 desktopheap notes got lost).
+
+### 9.1 KVM vs TCG — breakpoints and watchpoints only work under TCG
+
+**KVM does NOT fire gdb breakpoints OR hardware watchpoints.** Under the default
+KVM-accelerated boot, `break`/`hbreak`/`watch` never stop. Switch to TCG:
+```bash
+VIBEOS_NO_KVM=1   # qemu/start.sh honors this — drops -accel kvm, runs -accel tcg
+```
+- `hbreak <addr>` and `watch *(u32*)<addr>` work under TCG. Prefer `hbreak` over `break`
+  on session/user pages not yet mapped.
+- TCG is **slow** and a `watch`+`continue` can flake *across the bugcheck halt*. When a
+  watch won't catch it, fall back to in-kernel instrumentation (§9.3).
+
+### 9.2 Symbolication math (i386) — the Rust-in-ntoskrnl +0x291000 shift
+
+Rust code in `ntoskrnl.exe` is runtime-shifted **+0x291000 vs its file VMA**; C is not.
+- **C funcs:**   `file_VA = runtime - 0x7fe00000`
+- **Rust funcs (heap/rtl/etc):** `file_VA = runtime - 0x7fe00000 - 0x291000` (= `nm` with `-o 0x80091000`).
+- **One-shot:** `qemu/addr2sym.sh i386 --reloc 0x80091000 <runtime_addr>` resolves both Rust + C (ntoskrnl reloc base `0x80091000`, RB `0x80491000`).
+- gdb `info symbol -o 0x7fe00000` only resolves early **C** `.text` — mis-resolves Rust.
+- **win32k.sys is in SESSION space (~`0xf74xxxxx`), not `0x80xxxxxx`** (e.g. base `0xf73ef000`, `.text` `0xf73df000`; **re-derive after any win32k rebuild**). Stack-scan filters that only accept `0x80200000..0x80900000` MISS every win32k frame — also include `0xf7000000..0xf7700000`.
+
+### 9.3 In-kernel free-list / heap validation instrumentation (beats watchpoints for heap desync)
+
+When a heap free-list is corrupted by a stray write and a watch won't catch it, add a
+**capped, scoped, heap-relative** validator that walks the free list per alloc/free:
+- **Capped:** `static mut PRINTED: u32`, bail after ~20 (don't flood serial).
+- **Kernel-heap-only:** gate `heap >= 0x80000000` — a naive `flink < 0x80000000` floods on user-mode heaps `0x130000`/`0x230000` (also in ntdll's *separate* Rust heap copy, §9.6).
+- **Heap-relative sanity:** valid intra-heap link satisfies `flink.wrapping_sub(heap) < 0x4000000`.
+- **Name the culprit:** on desync, stack-scan from ESP for return addresses in `0x80200000..0x80900000` *and* win32k `0xf7000000..0xf7700000` (§9.2).
+
+Place at alloc-ENTRY/EXIT + free-ENTRY/EXIT, labeled (`a110`/`A11E`/`F1EE`/`F1FE`). If
+**only alloc-ENTRY** trips, corruption isn't introduced at any heap exit → external stray
+write to an already-free block, not a heap-impl bug. (This exonerated the Rust heap in the
+i386 desktopheap crash — it's a win32k UAF-write.)
+
+### 9.4 Hardware watchpoint, armed after the page is mapped
+
+A session/desktop-heap address isn't mapped at boot. Sequence it:
+1. `hbreak` a function that runs *after* the page maps but *before* the corruption (e.g. `hbreak <NtUserCreateWindowEx_runtime>`; first hit).
+2. Then `watch *(u32*)0xbc9513a0 if ((*(u32*)0xbc9513a0)>>24)!=0xbc` and `continue` — condition on the **corruption signature** (flink's high byte no longer the heap page, or a known constant the bad write carries, e.g. `(*(u32*)ADDR>>16)==0x0505`), not the address alone.
+
+### 9.5 Trap-frame decode (i386) + Rust-release stack walking
+
+- BUGCHECK **0x1E**: param **P3 = KTRAP_FRAME ptr**. i386 offsets: `Esi@+0x58`, `Edi@+0x54`, `Eip@+0x68`, `Ebp@+0x60`.
+- **Rust release omits frame pointers** → EBP-chain walk fails, don't trust `bt`. **Scan the raw stack upward from fault ESP** for values in the kernel/win32k `.text` ranges (§9.2) — those are the call chain.
+
+### 9.6 Multi-copy staleness — rtl/heap exists in more than one archive
+
+`rtl-heap`/`heap.rs` links into **both** `librtl.a` (ntoskrnl) **and** a separate ntdll
+copy. A source edit that "doesn't take" is a stale archive:
+```bash
+rm build-i386/sdk/lib/rtl/librtl.a                              # ntoskrnl copy
+rm -rf sdk/lib/rust/target/ntdll-cargo-rtl_rust-rustlib         # ntdll copy
+touch sdk/lib/rust/ntdll-cargo/build.rs
+```
+See `feedback_stale_fat_librtl_masks_rust` + §6 (cohab/cold-link) for the general thin-archive trap.
+
+### 9.7 Reliable-repro timing — slow ≠ hung
+
+- A no-gdb KVM boot to a post-`shell ready` BUGCHECK is **~80–150s**. Boots are genuinely slow (CD load); **wait ≥150s** before calling it a hang. A trickle of early serial (e.g. 87/581 bytes) is slow CD load, not a hang.
+- Non-deterministic crash: repeat the TCG hunt. A corruptor that **varies per boot** (different victim each run) is a **cascade** from an earlier first-cause — chase the earliest detectable corruption (e.g. `HEAP_TAIL_CHECKING` to catch the first overflow's victim), not the per-boot symptom.
+
+### 9.8 Standard hunt recipe (toolkit)
+
+From `kernel-debugging-infra.md` — the validated loop:
+```bash
+RUN=$(qemu/start.sh amd64 --gdb)                 # i386 hunts: prepend VIBEOS_NO_KVM=1
+qemu/wait-for.sh $RUN --pattern "ACPI Timer" --timeout 60
+qemu/run-until.sh $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
+```
+`triage-bugcheck` returns stop code, exception code, faulting PC + symbol, full
+KTRAP_FRAME, and `identify-object` on bogus pointers in one call. Run
+`qemu/build-index.sh <arch>` after each kernel build for offline symbol lookup.
+
+---
+
+*Maintenance: this manual is the fast-lookup index distilled from the project's debug
+memories. When you solve a new translation bug, add a `### Symptom → Root cause → Fix`
+entry to sections 1–8; when you discover a new live-crash-hunting technique, add it to
+section 9. Goal: the durable learning lives HERE in the repo, not only in per-session
+agent memory.*
