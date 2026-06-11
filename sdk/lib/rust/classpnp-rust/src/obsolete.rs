@@ -24,7 +24,6 @@ extern "C" {
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
     fn RetryRequest( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, srb: *mut SCSI_REQUEST_BLOCK, associated: u8, time_delta_100ns: i64, );
     fn ClassFreeOrReuseSrb( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
-    fn InterlockedDecrement(addend: *mut i32) -> i32;
     fn NT_ASSERT(condition: i32);
     fn IoIsErrorUserInduced(status: i32) -> u8;
     fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
@@ -209,4 +208,8 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 
     IoFreeIrp(Irp);
     return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+extern "system" {
+    pub fn InterlockedDecrement(addend: *mut i32) -> i32;
 }

@@ -94,17 +94,12 @@ extern "C" {
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Srb: PSCSI_REQUEST_BLOCK, );
     fn RetryRequest( Fdo: PDEVICE_OBJECT, Irp: PIRP, Srb: PSCSI_REQUEST_BLOCK, Flush: BOOLEAN, RetryInterval: LONGLONG, );
     fn SrbClearSrbFlags(Srb: PSCSI_REQUEST_BLOCK, Flags: ULONG);
-    fn IoFreeMdl(Mdl: PMDL);
     fn ClassFreeOrReuseSrb( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Srb: PSCSI_REQUEST_BLOCK, );
     fn FREE_POOL(Ptr: PVOID);
     fn ClasspPerfIncrementSuccessfulIo( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, );
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
-    fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Fdo: PDEVICE_OBJECT);
     fn ClasspLogSystemEventWithDeviceNumber( Fdo: PDEVICE_OBJECT, EventId: ULONG, );
     fn IoMarkIrpPending(Irp: PIRP);
-    fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
-    fn KeLowerIrql(OldIrql: KIRQL);
     fn ClassReleaseRemoveLock(Fdo: PDEVICE_OBJECT, Irp: PIRP);
     fn ClassAcquireRemoveLock(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> ULONG;
 }
@@ -128,8 +123,6 @@ extern "C" {
     fn IoAdjustPagingPathCount(Count: *mut i32, Increment: BOOLEAN);
     fn PoRegisterPowerSettingCallback(DeviceObject: PDEVICE_OBJECT, SettingGuid: *const GUID, Callback: unsafe extern "stdcall" fn(*const GUID, PVOID, ULONG, PVOID) -> NTSTATUS, Context: PVOID, Handle: *mut PVOID) -> NTSTATUS;
     fn SET_FLAG(Flags: *mut ULONG, Flag: ULONG);
-    fn InterlockedCompareExchange(Destination: *mut LONG, ExChange: LONG, Comparand: LONG) -> LONG;
-    fn InterlockedExchange(Destination: *mut LONG, Value: LONG) -> LONG;
     fn LongToPtr(l: LONG) -> PVOID;
     fn RtlEqualMemory(Source1: *const c_void, Source2: *const c_void, Length: usize) -> BOOLEAN;
     fn MmGetMdlVirtualAddress(Mdl: PMDL) -> PVOID;
@@ -143,7 +136,6 @@ extern "C" {
     fn ClasspIsIdleRequestSupported(FdoData: *mut _CLASS_PRIVATE_FDO_DATA, Irp: PIRP) -> BOOLEAN;
     fn ClasspMarkIrpAsIdle(Irp: PIRP, IsIdle: BOOLEAN);
     fn ClasspGetCurrentTime() -> LARGE_INTEGER;
-    fn KeQueryTickCount(CurrentCount: *mut i64);
     fn DBGLOGFLUSHINFO(FdoData: *mut _CLASS_PRIVATE_FDO_DATA, IsFlush: BOOLEAN, IsSync: BOOLEAN, IsComplete: BOOLEAN);
     fn NT_ASSERTMSG(Msg: *const i8, Expr: BOOLEAN);
 }
@@ -2570,4 +2562,15 @@ pub unsafe extern "system" fn ClassIoComplete(
     ClassReleaseRemoveLock(Fdo, Irp);
 
     status
+}
+
+extern "system" {
+    pub fn IoFreeMdl(Mdl: PMDL);
+    pub fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Fdo: PDEVICE_OBJECT);
+    pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+    pub fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
+    pub fn KeLowerIrql(OldIrql: KIRQL);
+    pub fn InterlockedCompareExchange(Destination: *mut LONG, ExChange: LONG, Comparand: LONG) -> LONG;
+    pub fn InterlockedExchange(Destination: *mut LONG, Value: LONG) -> LONG;
+    pub fn KeQueryTickCount(CurrentCount: *mut i64);
 }

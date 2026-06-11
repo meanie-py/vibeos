@@ -9,3 +9,30 @@
  * Mirrors the wmilib-rust / i8042prt-rust cohabitation.
  */
 typedef int classpnp_rust_cohab_placeholder;
+
+/* REVERSE_BYTES family — header macros (storduid.h/classpnp.h) that the Rust
+ * translation calls as functions. Implemented in C because rustc declines to emit a
+ * `#[no_mangle]` body for a name that also has a `#[macro_export]` macro in the crate;
+ * C guarantees the symbol (cdecl `_REVERSE_BYTES` on i386). Byte-reverse a big-endian
+ * SCSI field in place. */
+void REVERSE_BYTES(void *Dest, const void *Src)
+{
+    unsigned char *d = (unsigned char *)Dest;
+    const unsigned char *s = (const unsigned char *)Src;
+    d[0] = s[3]; d[1] = s[2]; d[2] = s[1]; d[3] = s[0];
+}
+
+void REVERSE_BYTES_QUAD(void *Dest, const void *Src)
+{
+    unsigned char *d = (unsigned char *)Dest;
+    const unsigned char *s = (const unsigned char *)Src;
+    int i;
+    for (i = 0; i < 8; i++) d[i] = s[7 - i];
+}
+
+void REVERSE_BYTES_SHORT(void *Dest, const void *Src)
+{
+    unsigned char *d = (unsigned char *)Dest;
+    const unsigned char *s = (const unsigned char *)Src;
+    d[0] = s[1]; d[1] = s[0];
+}

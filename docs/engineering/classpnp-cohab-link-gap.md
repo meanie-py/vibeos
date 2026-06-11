@@ -105,3 +105,44 @@ SrbSupport,WorkingSet}` (data.c/guid.c — GUID structs/arrays).
 
 Build dir: this worktree's `build-i386` (copied+repointed from rtl-tpool, toolchain
 symlinked from main). `ninja rust_classpnp` works.
+
+## UPDATE 2026-06-10 (evening): integration complete, link 166→45
+
+**All 24 missing fns translated ($0.37) + integrated into `class_part_c.rs`;
+DDK substrate built as `ddk_shims.rs` (95 inline/macro/srb/scsi helpers).
+classpnp-rust compiles COLD-CLEAN on all 3 arches.** Cohab link of classpnp.sys
+now has **45 undefined** (was 166):
+
+- `class_part_c.rs` (19 fns) + `ddk_shims.rs` (substrate) integrated; per-fn ABI
+  set from undef decoration; fix-tool suite (fix_field_paths/bitfield/type_casts)
+  + ~60 hand-fixes (CommonExtension offset-0 cast, IoStatus/IRP anon-union paths,
+  LARGE_INTEGER.QuadPart, bitfield setters, IncompleteArrayField indexing, etc).
+- **rustc won't emit a `#[no_mangle]` fn whose name also has a `#[macro_export]`
+  macro** (REVERSE_BYTES) — implemented those 3 in C in `rust_cohab_stub.c`.
+- x86 `lock xchg`/`cmpxchg` in class_part_c → portable AtomicI32 (arm64-safe).
+  NOTE: `debug.rs:146` still has an un-gated `lock xchg` → will fail arm64 BUILD
+  (cargo check passes; codegen doesn't validate mnemonics). Gate it before arm64 smoke.
+
+### Remaining 45 undefs (see /tmp/undef5.txt)
+1. **Kernel intrinsics/exports (~14)**: ExFreePool (→ExFreePoolWithTag macro),
+   Interlocked{CompareExchange,Decrement,Exchange} (i386 intrinsics), KeInitializeSpinLock
+   (inline *lock=0), KeGetCurrentIrql/KeRaiseIrql/KeLowerIrql/KeQueryTickCount,
+   IoFreeMdl/IoStartNextPacket/IoSetHardErrorOrVerifyDevice/IoWMIDeviceObjectToProviderId.
+   ⚠️ i386 ABI quirk: relocating their decls to `extern "system"` did NOT change the
+   reference from cdecl `_X` to stdcall `_X@N` — needs investigation (caller may resolve
+   to a bindgen ntkrnl_sys::ddk decl, or these are genuinely cdecl/intrinsic). Provide as
+   shims (ddk_shims or C stub) matching the EXACT undef decoration.
+2. **Hand-translate (4)**: AllocateDictionaryEntry (dictlib.c, TRY/LEAVE), ClassLogThresholdEvent,
+   ClassLogResourceExhaustionEvent (utils.c), ClasspValidateOffloadSupported (utils.c).
+3. **Data tables (4)**: ClassGuid{QueryRegInfoEx,SenseInfo2,SrbSupport,WorkingSet} + the
+   MaxTokenOperationListIdentifier data symbol — transcribe from data.c/guid.c.
+4. **Intra-ABI / more-missing (~20)**: some DEFINED in-crate but decoration-mismatched
+   (ClasspGetCurrentTime, ClassAcquireRemoveLock, RetryRequest, InterpretSenseInfoWithoutHistory,
+   ClassFreeOrReuseSrb, IsKeyReadCopyNumber, ClasspIsIdleRequestSupported) → set def ABI to
+   match undef decoration; others are MORE untranslated internal helpers not in the original 28
+   (ClasspTransferPacketGetCdb/SenseInfoBuffer/Length, ClasspTimeDiffToMs, ClasspSrbSetOriginalIrp,
+   ClasspMarkIrpAsIdle, ClasspIsIdleRequest, ClassRetrieveDeviceRelations, ClasspRetryDpcTimer,
+   ClasspAllocateReleaseQueueIrp, ClasspGetBlockDeviceTokenLimitsInfo, ClasspMediaChangeRegistryCallBack,
+   ClasspRefreshFunctionSupportInfo) → translate (gap-TU technique) or shim the small accessors.
+
+Iterate: fix → `ninja rust_classpnp && ninja classpnp` → recount → boot media → smoke ×3.

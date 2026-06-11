@@ -90,7 +90,6 @@ use crate::dictlib::POOL_NX_ALLOCATION;
 use ntkrnl_sys::inline::common::InterlockedCompareExchange;
 
 extern "C" {
-    fn KeQueryTickCount(TickCount: *mut i64);
 }
 
 // ==== lock.c + obsolete.c residual exports ====
@@ -331,4 +330,8 @@ pub unsafe extern "system" fn ClassBuildRequest(Fdo: PDEVICE_OBJECT, Irp: PIRP) 
     }
     ClasspBuildRequestEx(fdoExtension, Irp, srb);
     STATUS_SUCCESS
+}
+
+extern "system" {
+    pub fn KeQueryTickCount(TickCount: *mut i64);
 }

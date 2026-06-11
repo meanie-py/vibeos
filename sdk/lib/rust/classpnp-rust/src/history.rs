@@ -2,7 +2,6 @@ use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn KeQueryTickCount(CurrentCount: *mut i64);
 }
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PSRB_HISTORY, PSRB_HISTORY_ITEM, SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT, SCSI_SENSE_ERRORCODE_DESCRIPTOR_DEFERRED, SENSE_DATA, SRB_HISTORY, SRB_HISTORY_ITEM, _CLASS_PRIVATE_FDO_DATA, _FUNCTIONAL_DEVICE_EXTENSION, _SENSE_DATA, _SRB_HISTORY, _SRB_HISTORY_ITEM, _TRANSFER_PACKET};
@@ -202,4 +201,8 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
             senseSize as usize,
         );
     }
+}
+
+extern "system" {
+    pub fn KeQueryTickCount(CurrentCount: *mut i64);
 }

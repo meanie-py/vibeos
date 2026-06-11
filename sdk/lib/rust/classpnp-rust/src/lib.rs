@@ -27,6 +27,8 @@ pub mod globals;
 pub mod autorun;
 pub mod class;
 pub mod class_part_b;
+pub mod class_part_c;
+pub mod ddk_shims;
 pub mod residual_part_b;
 pub mod classwmi;
 pub mod clntirp;

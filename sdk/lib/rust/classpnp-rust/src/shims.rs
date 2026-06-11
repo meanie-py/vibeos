@@ -18,14 +18,9 @@ extern "C" {
     pub fn FREE_POOL(Ptr: PVOID);
     pub fn FREE_PORT_ALLOCATED_SENSE_BUFFER( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
     pub fn InterpretSenseInfoWithoutHistory( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, srb: *mut SCSI_REQUEST_BLOCK, major_function: u8, control_code_or_zero: u32, retry_count: u32, status: *mut i32, retry_interval: *mut i64, ) -> u8;
-    pub fn IoFreeMdl(Mdl: PMDL);
     pub fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
     pub fn IoIsErrorUserInduced(status: i32) -> u8;
     pub fn IoMarkIrpPending(Irp: PIRP);
-    pub fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Fdo: PDEVICE_OBJECT);
-    pub fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
-    pub fn KeLowerIrql(OldIrql: KIRQL);
-    pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     pub fn KeSetCoalescableTimer( Timer: *mut KTIMER, DueTime: LARGE_INTEGER, Period: ULONG, TolerableDelay: ULONG, Dpc: PKDPC, );
     pub fn PORT_ALLOCATED_SENSE( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, ) -> u8;
     pub fn REVERSE_BYTES(dest: *mut u32, src: *const u32);
@@ -58,3 +53,11 @@ extern "system" {
 #[no_mangle] pub unsafe extern "C" fn __int2c() { core::arch::asm!("int 0x2c", options(nomem, nostack)); }
 #[cfg(not(any(target_arch="x86",target_arch="x86_64")))]
 #[no_mangle] pub unsafe extern "C" fn __int2c() { core::arch::asm!("brk #0", options(nomem, nostack)); }
+
+extern "system" {
+    pub fn IoFreeMdl(Mdl: PMDL);
+    pub fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Fdo: PDEVICE_OBJECT);
+    pub fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
+    pub fn KeLowerIrql(OldIrql: KIRQL);
+    pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+}

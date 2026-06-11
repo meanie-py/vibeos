@@ -22,7 +22,7 @@ macro_rules! TEST_FLAG { ($f:expr, $b:expr) => { (($f as u64) & (($b) as u64)) !
 /// REVERSE_BYTES(Dest, Src) — reverse a 4-byte (ULONG) big/little-endian field in place.
 /// Accepts either a raw pointer or an `&mut`/`&` (deref + re-addr normalizes both to *u8).
 #[macro_export]
-macro_rules! REVERSE_BYTES {
+macro_rules! REVERSE_BYTES_M {
     ($d:expr, $s:expr) => {{
         let d = ::core::ptr::addr_of_mut!(*($d)) as *mut u8;
         let s = ::core::ptr::addr_of!(*($s)) as *const u8;
@@ -35,7 +35,7 @@ macro_rules! REVERSE_BYTES {
 
 /// REVERSE_BYTES_QUAD(Dest, Src) — reverse an 8-byte (LARGE_INTEGER) field in place.
 #[macro_export]
-macro_rules! REVERSE_BYTES_QUAD {
+macro_rules! REVERSE_BYTES_QUAD_M {
     ($d:expr, $s:expr) => {{
         let d = ::core::ptr::addr_of_mut!(*($d)) as *mut u8;
         let s = ::core::ptr::addr_of!(*($s)) as *const u8;
@@ -66,7 +66,7 @@ macro_rules! NT_ASSERTMSG { ($($t:tt)*) => {{}} }
 
 /// REVERSE_BYTES_SHORT(Dest, Src) — reverse a 2-byte (USHORT) field in place.
 #[macro_export]
-macro_rules! REVERSE_BYTES_SHORT {
+macro_rules! REVERSE_BYTES_SHORT_M {
     ($d:expr, $s:expr) => {{
         let d = ::core::ptr::addr_of_mut!(*($d)) as *mut u8;
         let s = ::core::ptr::addr_of!(*($s)) as *const u8;

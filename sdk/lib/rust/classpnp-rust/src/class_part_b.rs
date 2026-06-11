@@ -208,7 +208,6 @@ unsafe extern "C" {
     fn PORT_ALLOCATED_SENSE_EX(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID) -> BOOLEAN;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID);
     fn MmGetMdlVirtualAddress(mdl: PVOID) -> PVOID;
-    fn KeQueryTickCount(count: *mut LARGE_INTEGER);
     fn RtlStringCchPrintfA(dest: *mut i8, dest_sz: usize, fmt: *const i8, ...) -> NTSTATUS;
     fn RtlStringCbPrintfA(dest: *mut i8, dest_sz: usize, fmt: *const i8, ...) -> NTSTATUS;
     fn ClasspIsOffloadDataTransferCommand(cdb: PCDB) -> BOOLEAN;
@@ -1457,11 +1456,11 @@ pub unsafe extern "system" fn ClassDeviceControl(
                         (*readCapacity).Version = core::mem::size_of::<STORAGE_READ_CAPACITY>() as ULONG;
                         (*readCapacity).Size = core::mem::size_of::<STORAGE_READ_CAPACITY>() as ULONG;
 
-                        REVERSE_BYTES!(
+                        REVERSE_BYTES_M!(
                             core::ptr::addr_of_mut!((*readCapacity).BlockLength),
                             core::ptr::addr_of!((*fdoData).LastKnownDriveCapacityData.BytesPerBlock)
                         );
-                        REVERSE_BYTES_QUAD!(
+                        REVERSE_BYTES_QUAD_M!(
                             core::ptr::addr_of_mut!((*readCapacity).NumberOfBlocks),
                             core::ptr::addr_of!((*fdoData).LastKnownDriveCapacityData.LogicalBlockAddress)
                         );
@@ -2060,7 +2059,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                         outBufferLength,
                                     ) != 0
                                     {
-                                        REVERSE_BYTES_QUAD!(
+                                        REVERSE_BYTES_QUAD_M!(
                                             &mut information,
                                             core::ptr::addr_of!(
                                                 (*(outBuffer
@@ -2085,7 +2084,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                     }
                 } else {
                     incorrectLength = (*(senseBuffer as PFIXED_SENSE_DATA)).IncorrectLength();
-                    REVERSE_BYTES!(
+                    REVERSE_BYTES_M!(
                         &mut information,
                         core::ptr::addr_of!((*(senseBuffer as PFIXED_SENSE_DATA)).Information)
                     );
@@ -2454,7 +2453,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                 if (*Fdo).DeviceType == FILE_DEVICE_DISK {
                                     if IS_SCSIOP_READWRITE(cdbOpcode) != 0 && !cdb.is_null() {
                                         if TEST_FLAG(((*fdoExtension).DeviceFlags) as u32, DEV_USE_16BYTE_CDB) != 0 {
-                                            REVERSE_BYTES_QUAD!(
+                                            REVERSE_BYTES_QUAD_M!(
                                                 &mut logicalBlockAddr,
                                                 core::ptr::addr_of!((*cdb).CDB16.as_ref().LogicalBlock)
                                             );
@@ -2469,13 +2468,13 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                                                     (*cdb).CDB10.as_ref().LogicalBlockByte0
                                                 )).cast(),
                                             );
-                                            REVERSE_BYTES_SHORT!(
+                                            REVERSE_BYTES_SHORT_M!(
                                                 &mut numTransferBlocks as *mut _ as PUSHORT,
                                                 core::ptr::addr_of!((*cdb).CDB10.as_ref().TransferBlocksMsb)
                                             );
                                         }
 
-                                        REVERSE_BYTES_QUAD!(
+                                        REVERSE_BYTES_QUAD_M!(
                                             &mut lastLBA,
                                             core::ptr::addr_of!(
                                                 (*fdoData)
@@ -2864,12 +2863,12 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             || cdbOpcode == (SCSIOP_WRITE16) as u8
                             || cdbOpcode == (SCSIOP_VERIFY16) as u8
                         {
-                            REVERSE_BYTES_QUAD!(
+                            REVERSE_BYTES_QUAD_M!(
                                 &mut readSector,
                                 (*cdb).AsByte.as_ref().as_ptr().add(2)
                             );
                         } else {
-                            REVERSE_BYTES!(
+                            REVERSE_BYTES_M!(
                                 &mut readSector,
                                 (*cdb).AsByte.as_ref().as_ptr().add(2)
                             );
@@ -2879,7 +2878,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             || cdbOpcode == (SCSIOP_WRITE) as u8
                             || cdbOpcode == (SCSIOP_VERIFY) as u8
                         {
-                            REVERSE_BYTES_SHORT!(
+                            REVERSE_BYTES_SHORT_M!(
                                 &mut index as *mut _ as PUSHORT,
                                 core::ptr::addr_of!((*cdb).CDB10.as_ref().TransferBlocksMsb)
                             );
@@ -2981,7 +2980,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         logError = 0;
                     } else if cdbOpcode == (SCSIOP_MODE_SENSE10) as u8 {
                         let mut allocationLength: USHORT = 0;
-                        REVERSE_BYTES_SHORT!(
+                        REVERSE_BYTES_SHORT_M!(
                             &mut allocationLength,
                             core::ptr::addr_of!((*cdb).MODE_SENSE10.as_ref().AllocationLength)
                         );
@@ -2994,7 +2993,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                         let mut allocationLength: ULONG = 0;
                         {
                             let _rti = core::ptr::addr_of_mut!((*cdb).RECEIVE_TOKEN_INFORMATION) as *mut crate::types::_CDB__RECEIVE_TOKEN_INFORMATION;
-                            REVERSE_BYTES!(
+                            REVERSE_BYTES_M!(
                                 core::ptr::addr_of_mut!((*_rti).AllocationLength) as *mut u32,
                                 &allocationLength as *const u32
                             )
@@ -4574,4 +4573,8 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
     if !targetKey.is_null() {
         ZwClose(targetKey);
     }
+}
+
+extern "system" {
+    pub fn KeQueryTickCount(count: *mut LARGE_INTEGER);
 }

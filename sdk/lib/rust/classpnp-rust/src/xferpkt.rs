@@ -60,7 +60,6 @@ use crate::srblib::{SrbGetDataBuffer, SrbGetDataTransferLength, SrbGetSenseInfoB
 use crate::glue::{max};
 
 extern "C" {
-    fn KeGetCurrentIrql() -> KIRQL;
     fn DbgPrint(format: *const u8, ...);
     fn __int2c();
     fn ClassReleaseRemoveLock(Device: PDEVICE_OBJECT, Irp: PIRP);
@@ -1920,4 +1919,8 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
         (*Pkt).Fdo,
         OriginalIrp,
     );
+}
+
+extern "system" {
+    pub fn KeGetCurrentIrql() -> KIRQL;
 }

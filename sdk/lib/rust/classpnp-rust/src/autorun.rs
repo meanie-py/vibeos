@@ -68,8 +68,6 @@ extern "C" {
         Context: PVOID,
         Handle: *mut PVOID,
     ) -> NTSTATUS;
-    fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
-    fn InterlockedDecrement(Addend: *mut LONG) -> LONG;
     // ExTimer APIs
     fn ExSetTimer(Timer: PVOID, DueTime: i64, Period: i64, Parameters: PVOID) -> BOOLEAN;
     fn ExDeleteTimer(Timer: PVOID, Cancel: BOOLEAN, Wait: BOOLEAN, Parameters: PVOID) -> BOOLEAN;
@@ -3452,4 +3450,9 @@ pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(
     }
 
     missedPeriod
+}
+
+extern "system" {
+    pub fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+    pub fn InterlockedDecrement(Addend: *mut LONG) -> LONG;
 }

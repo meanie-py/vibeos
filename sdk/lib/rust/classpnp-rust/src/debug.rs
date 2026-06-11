@@ -54,7 +54,6 @@ pub type _DISK_SPINUP_TRACES = DISK_SPINUP_TRACES;
 extern "C" {
     pub fn ClasspTransferPacketGetCdb(Pkt: *mut TRANSFER_PACKET) -> PCDB;
     pub fn DbgGetSrbStatusStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
-    pub fn KeQueryTickCount(TickCount: *mut i64);
     pub fn DbgGetSenseCodeStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
     pub fn DbgGetAdditionalSenseCodeStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
     pub fn RtlULongAdd(Augend: ULONG, Addend: ULONG, pResult: *mut ULONG) -> NTSTATUS;
@@ -630,4 +629,8 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
         }
     }
     ad_sense_code_qual_str
+}
+
+extern "system" {
+    pub fn KeQueryTickCount(TickCount: *mut i64);
 }

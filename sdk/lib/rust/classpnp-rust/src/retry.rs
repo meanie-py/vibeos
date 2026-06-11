@@ -37,7 +37,6 @@ extern "C" {
     fn DbgGetScsiOpStr(srb: PVOID) -> PCCHAR;
     fn SrbGetSrbFlags(srb: PVOID) -> ULONG;
     fn SrbGetSenseInfoBuffer_raw(srb: PVOID) -> PVOID;
-    fn ExFreePool(p: PVOID);
     fn SrbSetSenseInfoBuffer(srb: PVOID, buf: PVOID);
     fn SrbSetSenseInfoBufferLength(srb: PVOID, len: u32);
     // Complex classp.h inline functions (FORCEINLINE) - need C shim wrappers at link time.
@@ -673,4 +672,8 @@ pub unsafe extern "C" fn StepLowMemRetry(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
         packetDone = 0u8;
     }
     packetDone
+}
+
+extern "system" {
+    pub fn ExFreePool(p: PVOID);
 }

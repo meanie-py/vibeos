@@ -36,9 +36,7 @@ extern "C" {
 }
 extern "C" {
     fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ... ) -> NTSTATUS;
-    fn IoWMIDeviceObjectToProviderId(DeviceObject: PDEVICE_OBJECT) -> ULONG;
     fn IsEqualGUID(Guid1: *const _GUID, Guid2: *const _GUID) -> bool;
-    fn KeQueryTickCount(TickCount: *mut i64);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -895,4 +893,9 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
     }
 
     status
+}
+
+extern "system" {
+    pub fn IoWMIDeviceObjectToProviderId(DeviceObject: PDEVICE_OBJECT) -> ULONG;
+    pub fn KeQueryTickCount(TickCount: *mut i64);
 }
