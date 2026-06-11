@@ -106,6 +106,26 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/arbiter" )
     ;;
+  kmdf)
+    # The WDF *client-binding* API surface (NOT a driver) → the kmdf-sys substrate.
+    # cdrom is the fleet's only KMDF driver; its 109 Wdf* calls dispatch through the
+    # WdfFunctions[] table (see kmdf-sys/src/lib.rs). Allowlist EVERYTHING under a
+    # .../wdf/... path so bindgen emits the full WDF 1.17 surface: the WDF handle
+    # types (WDFDEVICE/WDFREQUEST/WDFKEY/...), the value structs (WDF_OBJECT_ATTRIBUTES,
+    # WDF_IO_QUEUE_CONFIG, WDF_REQUEST_PARAMETERS, ...), the PFN_WDFXXX dispatch-pointer
+    # typedefs, WDFFUNC, WDF_DRIVER_GLOBALS/WDF_BIND_INFO, and the 444-entry
+    # _WDFFUNCENUM (the WdfXxxTableIndex constants). Kernel types referenced by WDF
+    # structs (PDRIVER_OBJECT, NTSTATUS, UNICODE_STRING, ...) stay blocklisted → the
+    # single ntkrnl-sys ddk identity. Output → kmdf-sys/src (OUT_CRATE_DIR override);
+    # gen_kmdf_dispatch.py then turns the PFN typedefs + indices into src/dispatch.rs.
+    # KMDF 1.17 / NTDDI Win8.1 — matches cdrom's CMakeLists.
+    DRIVER_DIR="${SRC}/sdk/include/wdf/kmdf/1.17"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <wdf.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]wdf[/\\].*' )
+    VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
+               -DWDF_DEVICE_NO_WDMSEC_H -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
+    EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -116,7 +136,10 @@ WRAPPER="/tmp/${DRIVER}_types_wrapper.h"
 printf '%s\n' "$WRAPPER_INC" > "$WRAPPER"
 
 run_arch() {
-  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${SRC}/build-${1}"
+  # BUILD_DIR supplies the configure-time-GENERATED headers (xdk/ddk/mc). A worktree
+  # without its own build dirs can borrow another tree's via BUILD_DIR_BASE (the source
+  # headers under $SRC are identical git content; only build-*/sdk/include is generated).
+  local ARCH="$1" TARGET="$2" ARCHDEF="$3" BUILD_DIR="${BUILD_DIR_BASE:-${SRC}}/build-${1}"
   local NTK="${NTKRNL_SYS}/bindgen_${ARCH}.rs"
   local RAW="/tmp/${DRIVER}_types_${ARCH}.rs"
   echo "=== ${DRIVER} types: ${ARCH} (${TARGET}) ==="

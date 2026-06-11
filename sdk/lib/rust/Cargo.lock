@@ -474,6 +474,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kmdf-sys"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "largeint"
 version = "0.1.0"
 
