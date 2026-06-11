@@ -33,23 +33,17 @@ INT WINAPI LoadStringW( HINSTANCE instance, UINT resource_id,
     if(buffer == NULL)
         return 0;
 
-    BOOL dbg = (resource_id == 595);  /* DBG-TB: explorer IDS_START */
-    if (dbg) OutputDebugStringA("[LSW] enter, FindResourceW\n");
     /* Use loword (incremented by 1) as resourceid */
     hrsrc = FindResourceW( instance, MAKEINTRESOURCEW((LOWORD(resource_id) >> 4) + 1),
                            (LPWSTR)RT_STRING );
-    if (dbg) OutputDebugStringA(hrsrc ? "[LSW] FindResourceW OK, LoadResource\n" : "[LSW] FindResourceW NULL\n");
     if (!hrsrc) return 0;
     hmem = LoadResource( instance, hrsrc );
-    if (dbg) OutputDebugStringA(hmem ? "[LSW] LoadResource OK, LockResource\n" : "[LSW] LoadResource NULL\n");
     if (!hmem) return 0;
 
     p = LockResource(hmem);
-    if (dbg) OutputDebugStringA("[LSW] LockResource done, walk loop\n");
     string_num = resource_id & 0x000f;
     for (i = 0; i < string_num; i++)
 	p += *p + 1;
-    if (dbg) OutputDebugStringA("[LSW] walk loop done\n");
 
     TRACE("strlen = %d\n", (int)*p );
 

@@ -173,9 +173,7 @@ StartWithCommandLine(IN HINSTANCE hInstance)
 static INT
 StartWithDesktop(IN HINSTANCE hInstance)
 {
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD entered, InitializeAtlModule\n");
     InitializeAtlModule(hInstance, TRUE);
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD RegOpenKeyW HKCU Explorer\n");
 
     if (RegOpenKeyW(HKEY_CURRENT_USER,
         L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer",
@@ -192,11 +190,8 @@ StartWithDesktop(IN HINSTANCE hInstance)
 
     g_TaskbarSettings.Load();
 
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD InitCommonControls\n");
     InitCommonControls();
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD OleInitialize\n");
     OleInitialize(NULL);
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD after OleInitialize\n");
 
 #if !WIN7_COMPAT_MODE
     /* Initialize shell dde support */
@@ -204,27 +199,17 @@ StartWithDesktop(IN HINSTANCE hInstance)
 #endif
 
     /* Initialize shell icons */
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD FileIconInit\n");
     FileIconInit(TRUE);
 
     /* Initialize CLSID_ShellWindows class */
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD _WinList_Init\n");
     _WinList_Init();
 
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD InitializeServerAdminUI\n");
     InitializeServerAdminUI();
 
-    /* DBG-TB EXPERIMENT: pre-warm explorer's .rsrc pages OUTSIDE the win32k
-     * WM_CREATE callback (where locks/APCs are normal), to test whether the
-     * Start-button hang is a page-fault-in-callback deadlock. */
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD pre-warm IDS_START\n");
-    { WCHAR _wpre[64]; LoadStringW(hInstance, IDS_START, _wpre, 64); }
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD pre-warm done\n");
-
-    OutputDebugStringA("[EXPLORER] DBG-TB: SWD CreateTrayWindow\n");
+    /* Boot/test marker — taskbar (tray window) creation milestone. */
+    OutputDebugStringA("[EXPLORER] taskbar: creating tray window\n");
     CComPtr<ITrayWindow> Tray;
     CreateTrayWindow(&Tray);
-    OutputDebugStringA(Tray != NULL ? "[EXPLORER] DBG-TB: SWD Tray created OK\n" : "[EXPLORER] DBG-TB: SWD Tray NULL\n");
 
 #if !WIN7_DEBUG_MODE
     /* This not only hides the minimized window captions in the bottom
@@ -253,7 +238,8 @@ StartWithDesktop(IN HINSTANCE hInstance)
 
     if (Tray != NULL)
     {
-        OutputDebugStringA("[EXPLORER] DBG-TB: SWD entering TrayMessageLoop\n");
+        /* Boot/test marker — taskbar up, entering its message loop. */
+        OutputDebugStringA("[EXPLORER] taskbar: entering message loop\n");
         TrayMessageLoop(Tray);
 #if !WIN7_DEBUG_MODE
         HideMinimizedWindows(FALSE);
@@ -291,15 +277,12 @@ _tWinMain(IN HINSTANCE hInstance,
     */
     SetProcessShutdownParameters(2, 0);
 
-    OutputDebugStringA("[EXPLORER] DBG-TB: before InitRSHELL\n");
     InitRSHELL();
-    OutputDebugStringA("[EXPLORER] DBG-TB: after InitRSHELL\n");
 
     TRACE("Explorer starting... Command line: %S\n", lpCmdLine);
 
 #if !WIN7_COMPAT_MODE
     bExplorerIsShell = (GetShellWindow() == NULL) && IsExplorerSystemShell();
-    OutputDebugStringA(bExplorerIsShell ? "[EXPLORER] DBG-TB: isShell=1\n" : "[EXPLORER] DBG-TB: isShell=0\n");
 
     if (!bExplorerIsShell)
     {
@@ -309,6 +292,5 @@ _tWinMain(IN HINSTANCE hInstance,
     bExplorerIsShell = IsExplorerSystemShell();
 #endif
 
-    OutputDebugStringA("[EXPLORER] DBG-TB: calling StartWithDesktop\n");
     return StartWithDesktop(hInstance);
 }

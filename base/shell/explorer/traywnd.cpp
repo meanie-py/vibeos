@@ -240,32 +240,25 @@ public:
     VOID Initialize()
     {
         // HACK & FIXME: CORE-18016
-        OutputDebugStringA("[EXPLORER] DBG-TB: Init SubclassWindow\n");
         HWND hWnd = m_hWnd;
         m_hWnd = NULL;
         SubclassWindow(hWnd);
 
-        OutputDebugStringA("[EXPLORER] DBG-TB: Init SetWindowTheme\n");
         SetWindowTheme(m_hWnd, L"Start", NULL);
 
-        OutputDebugStringA("[EXPLORER] DBG-TB: Init ImageList_LoadImageW\n");
         m_ImageList = ImageList_LoadImageW(hExplorerInstance,
                                            MAKEINTRESOURCEW(IDB_START),
                                            0, 0, 0,
                                            IMAGE_BITMAP,
                                            LR_LOADTRANSPARENT | LR_CREATEDIBSECTION);
 
-        OutputDebugStringA("[EXPLORER] DBG-TB: Init SendMessage BCM_SETIMAGELIST\n");
         BUTTON_IMAGELIST bil = {m_ImageList, {1,1,1,1}, BUTTON_IMAGELIST_ALIGN_LEFT};
         SendMessageW(BCM_SETIMAGELIST, 0, (LPARAM) &bil);
-        OutputDebugStringA("[EXPLORER] DBG-TB: Init UpdateSize\n");
         UpdateSize();
-        OutputDebugStringA("[EXPLORER] DBG-TB: Init done\n");
     }
 
     HWND Create(HWND hwndParent)
     {
-        OutputDebugStringA("[EXPLORER] DBG-TB: StartBtn::Create enter, LoadStringW\n");
         WCHAR szStartCaption[32];
         if (!LoadStringW(hExplorerInstance,
                          IDS_START,
@@ -274,12 +267,10 @@ public:
         {
             wcscpy(szStartCaption, L"Start");
         }
-        OutputDebugStringA("[EXPLORER] DBG-TB: StartBtn::Create after LoadStringW\n");
 
         DWORD dwStyle = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | BS_PUSHBUTTON | BS_LEFT | BS_VCENTER;
 
         // HACK & FIXME: CORE-18016
-        OutputDebugStringA("[EXPLORER] DBG-TB: StartBtn CreateWindowEx WC_BUTTON\n");
         m_hWnd = CreateWindowEx(
             0,
             WC_BUTTON,
@@ -290,12 +281,9 @@ public:
             (HMENU) IDC_STARTBTN,
             hExplorerInstance,
             NULL);
-        OutputDebugStringA(m_hWnd ? "[EXPLORER] DBG-TB: StartBtn CreateWindowEx OK, Initialize\n"
-                                  : "[EXPLORER] DBG-TB: StartBtn CreateWindowEx NULL\n");
 
         if (m_hWnd)
             Initialize();
-        OutputDebugStringA("[EXPLORER] DBG-TB: StartBtn Create done\n");
 
         return m_hWnd;
     }
@@ -2159,18 +2147,14 @@ ChangePos:
         if (m_Position != (DWORD) -1)
             rcWnd = m_TrayRects[m_Position];
 
-        OutputDebugStringA("[EXPLORER] DBG-TB: Open before Create\n");
         if (!Create(NULL, rcWnd, NULL, dwStyle, dwExStyle))
             return E_FAIL;
-        OutputDebugStringA("[EXPLORER] DBG-TB: Open after Create, AlignControls\n");
 
         /* Align all controls on the tray window */
         AlignControls(NULL);
-        OutputDebugStringA("[EXPLORER] DBG-TB: Open after AlignControls, CheckTrayWndPosition\n");
 
         /* Move the tray window to the right position and resize it if necessary */
         CheckTrayWndPosition();
-        OutputDebugStringA("[EXPLORER] DBG-TB: Open done\n");
 
         return S_OK;
     }
@@ -2318,43 +2302,40 @@ ChangePos:
     {
         HRESULT hRet;
 
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate entry\n");
+        /* Boot/test marker — taskbar tray window WM_CREATE begin. */
+        OutputDebugStringA("[EXPLORER] taskbar: OnCreate begin\n");
         ((ITrayWindow*)this)->AddRef();
 
         SetWindowTheme(m_hWnd, L"TaskBar", NULL);
 
         /* Create the Start button */
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate StartButton.Create\n");
         m_StartButton.Create(m_hWnd);
 
         /* Load the saved tray window settings */
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate RegLoadSettings\n");
         RegLoadSettings();
 
         /* Create and initialize the start menu */
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate CreateStartMenu\n");
         HBITMAP hbmBanner = LoadBitmapW(hExplorerInstance, MAKEINTRESOURCEW(IDB_STARTMENU));
         m_StartMenuPopup = CreateStartMenu(this, &m_StartMenuBand, hbmBanner,
                                            g_TaskbarSettings.sr.SmSmallIcons);
 
         /* Create the task band */
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate CTaskBand_CreateInstance\n");
         hRet = CTaskBand_CreateInstance(this, m_StartButton.m_hWnd, IID_PPV_ARG(IDeskBand, &m_TaskBand));
         if (FAILED_UNEXPECTEDLY(hRet))
             return FALSE;
 
         /* Create the rebar band site. This actually creates the rebar and the tasks toolbar. */
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate CTrayBandSite_CreateInstance\n");
         hRet = CTrayBandSite_CreateInstance(this, m_TaskBand, &m_TrayBandSite);
         if (FAILED_UNEXPECTEDLY(hRet))
             return FALSE;
 
         /* Create the tray notification window */
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate CTrayNotifyWnd_CreateInstance\n");
         hRet = CTrayNotifyWnd_CreateInstance(m_hWnd, IID_PPV_ARG(IUnknown, &m_TrayNotifyInstance));
         if (FAILED_UNEXPECTEDLY(hRet))
             return FALSE;
-        OutputDebugStringA("[EXPLORER] DBG-TB: OnCreate child controls done\n");
+
+        /* Boot/test marker — start button + task band + tray notify all created. */
+        OutputDebugStringA("[EXPLORER] taskbar: child controls created\n");
 
         /* Get the hwnd of the rebar */
         hRet = IUnknown_GetWindow(m_TrayBandSite, &m_Rebar);
@@ -3753,11 +3734,8 @@ HRESULT CreateTrayWindow(ITrayWindow ** ppTray)
     if (Tray == NULL)
         return E_OUTOFMEMORY;
 
-    OutputDebugStringA("[EXPLORER] DBG-TB: CTW _Init begin\n");
     Tray->_Init();
-    OutputDebugStringA("[EXPLORER] DBG-TB: CTW _Init done, Open begin\n");
     Tray->Open();
-    OutputDebugStringA("[EXPLORER] DBG-TB: CTW Open done\n");
 
     *ppTray = (ITrayWindow *) Tray;
 

@@ -114,19 +114,15 @@ static HRSRC find_resourceW( HMODULE hModule, LPCWSTR type, LPCWSTR name, WORD l
     IMAGE_RESOURCE_DATA_ENTRY *entry = NULL;
 
     nameW.Buffer = typeW.Buffer = NULL;
-    int dbg = ((ULONG_PTR)name == 38 && (ULONG_PTR)type == 6);  /* DBG-TB explorer IDS_START */
-    if (dbg) OutputDebugStringA("[FRW] enter find_resourceW\n");
 
     __TRY
     {
         if ((status = get_res_nameW( name, &nameW )) != STATUS_SUCCESS) goto done;
         if ((status = get_res_nameW( type, &typeW )) != STATUS_SUCCESS) goto done;
-        if (dbg) OutputDebugStringA("[FRW] names resolved, calling LdrFindResource_U\n");
         info.Type = (ULONG_PTR)typeW.Buffer;
         info.Name = (ULONG_PTR)nameW.Buffer;
         info.Language = lang;
         status = LdrFindResource_U( hModule, &info, 3, &entry );
-        if (dbg) OutputDebugStringA("[FRW] LdrFindResource_U returned\n");
     done:
         if (status != STATUS_SUCCESS) SetLastError( RtlNtStatusToDosError(status) );
     }

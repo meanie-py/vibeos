@@ -713,11 +713,8 @@ NTSTATUS find_entry( PVOID BaseAddress, LDR_RESOURCE_INFO *info,
     USHORT list[9];  /* list of languages to try */
     int i, pos = 0;
     LCID user_lcid, system_lcid;
-    int dbg = ((ULONG_PTR)info->Type == 6 && (ULONG_PTR)info->Name == 38);  /* DBG-TB explorer IDS_START */
-    if (dbg) DbgPrint("[FE] start, RtlImageDirectoryEntryToData\n");
 
     root = RtlImageDirectoryEntryToData( BaseAddress, TRUE, IMAGE_DIRECTORY_ENTRY_RESOURCE, &size );
-    if (dbg) DbgPrint("[FE] RIDETD returned, find type\n");
     if (!root) return STATUS_RESOURCE_DATA_NOT_FOUND;
     if (size < sizeof(*resdirptr)) return STATUS_RESOURCE_DATA_NOT_FOUND;
     resdirptr = root;
@@ -727,13 +724,11 @@ NTSTATUS find_entry( PVOID BaseAddress, LDR_RESOURCE_INFO *info,
         return STATUS_RESOURCE_TYPE_NOT_FOUND;
     if (!level--) return STATUS_SUCCESS;
 
-    if (dbg) DbgPrint("[FE] type found, find name\n");
     resdirptr = *ret;
     if (!(*ret = find_entry_by_name( resdirptr, (LPCWSTR)info->Name, root, want_dir || level )))
         return STATUS_RESOURCE_NAME_NOT_FOUND;
     if (!level--) return STATUS_SUCCESS;
     if (level) return STATUS_INVALID_PARAMETER;  /* level > 3 */
-    if (dbg) DbgPrint("[FE] name found, push_language + NtQueryDefaultLocale\n");
 
     /* 1. specified language */
     pos = push_language( list, pos, info->Language );
@@ -778,10 +773,9 @@ NTSTATUS find_entry( PVOID BaseAddress, LDR_RESOURCE_INFO *info,
         pos = push_language( list, pos, MAKELANGID( LANG_ENGLISH, SUBLANG_DEFAULT ) );
     }
 
-    if (dbg) DbgPrint("[FE] locales queried, find_entry_by_id loop\n");
     resdirptr = *ret;
     for (i = 0; i < pos; i++)
-        if ((*ret = find_entry_by_id( resdirptr, list[i], root, want_dir ))) { if (dbg) DbgPrint("[FE] done OK\n"); return STATUS_SUCCESS; }
+        if ((*ret = find_entry_by_id( resdirptr, list[i], root, want_dir ))) return STATUS_SUCCESS;
 
     /* if no explicitly specified language, return the first entry */
     if (PRIMARYLANGID(info->Language) == LANG_NEUTRAL)
