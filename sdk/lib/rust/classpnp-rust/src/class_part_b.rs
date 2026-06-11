@@ -185,7 +185,7 @@ const SCSIOP_TEST_UNIT_READY_U8: u8     = SCSIOP_TEST_UNIT_READY as u8;
 
 // ==== Local FORCEINLINE / NEEDS-SUBSTRATE helper declarations ====
 unsafe extern "C" {
-    fn ScsiGetSenseKeyAndCodes(buf: PVOID, buf_len: UCHAR, opts: u32, key: *mut UCHAR, asc: *mut UCHAR, ascq: *mut UCHAR) -> BOOLEAN;
+    
     fn ScsiGetSenseErrorCode(buf: PVOID) -> UCHAR;
     fn IsDescriptorSenseDataFormat(buf: PVOID) -> BOOLEAN;
     fn IsSenseDataFormatValueValid(buf: PVOID) -> BOOLEAN;
@@ -203,8 +203,8 @@ unsafe extern "C" {
     fn SrbGetLun(srb: PVOID) -> UCHAR;
     fn SrbGetCdbLength(srb: PVOID) -> UCHAR;
     fn SrbSetNextSrb(srb: PVOID, next: PVOID);
-    fn SrbSetCdbLength(srb: PVOID, len: UCHAR);
-    fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> UCHAR;
+    
+    
     fn PORT_ALLOCATED_SENSE_EX(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID) -> BOOLEAN;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID);
     fn MmGetMdlVirtualAddress(mdl: PVOID) -> PVOID;
@@ -1276,7 +1276,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 if IOCTL_STORAGE_RESERVE == modifiedIoControlCode {
                     SrbSetSrbFlags((srb).cast(), SRB_FLAGS_QUEUE_ACTION_ENABLE);
-                    SrbSetRequestAttribute(srb.cast(), SRB_SIMPLE_TAG_REQUEST as u32);
+                    SrbSetRequestAttribute(srb.cast(), SRB_SIMPLE_TAG_REQUEST as u8);
                 }
 
                 status = ClassSendSrbAsynchronous(
@@ -3930,7 +3930,7 @@ pub unsafe extern "system" fn ClassSendIrpSynchronous(
     let mut status: NTSTATUS;
 
     extern "C" {
-        fn NT_ASSERT(cond: BOOLEAN);
+        
         fn _Analysis_assume_(cond: BOOLEAN);
         fn TracePrint(level: u32, flags: u32, format: PCSTR, ...);
     }
@@ -4024,7 +4024,7 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
     }
 
     SrbSetSenseInfoBuffer((Srb).cast(), (*fdoExtension).SenseData.cast());
-    SrbSetSenseInfoBufferLength((Srb).cast(), GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension) as u32);
+    SrbSetSenseInfoBufferLength((Srb).cast(), GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension) as u8);
 
     SrbSetDataBuffer((Srb).cast(), BufferAddress);
     SrbSetDataTransferLength((Srb).cast(), BufferLength);
@@ -4108,7 +4108,7 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
     (*irpStack).MajorFunction = (IRP_MJ_SCSI) as u8;
     (*irpStack).Parameters.Scsi.Srb = _Srb as *mut _ as *mut _;
 
-    SrbSetOriginalRequest((Srb).cast(), Irp);
+    SrbSetOriginalRequest((Srb).cast(), Irp as PVOID);
 
     IoMarkIrpPending(Irp);
 
@@ -4139,18 +4139,18 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
     let Srb = _Srb as PSTORAGE_REQUEST_BLOCK_HEADER;
 
     extern "C" {
-        fn NT_ASSERT(condition: BOOLEAN);
-        fn SrbAssignSrbFlags(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Flags: ULONG);
+        
+        
         fn SrbSetSrbFlags(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Flags: ULONG);
-        fn SrbSetDataBuffer(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Buffer: PVOID);
-        fn SrbSetRequestAttribute(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Attribute: UCHAR);
-        fn SrbSetSenseInfoBuffer(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Buffer: PVOID);
-        fn SrbSetSenseInfoBufferLength(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Length: UCHAR);
+        
+        
+        
+        
         fn SrbGetSenseInfoBufferLength(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> UCHAR;
-        fn SrbSetDataTransferLength(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Length: ULONG);
+        
         fn SrbSetScsiStatus(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Status: UCHAR);
         fn SrbSetNextSrb(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Next: PVOID);
-        fn SrbSetOriginalRequest(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Request: PVOID);
+        
         fn SRB_STATUS(SrbStatus: UCHAR) -> UCHAR;
         fn TEST_FLAG(Flags: ULONG, Flag: ULONG) -> BOOLEAN;
         fn PORT_ALLOCATED_SENSE_EX(fdoExt: PFUNCTIONAL_DEVICE_EXTENSION, Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> BOOLEAN;
@@ -4162,14 +4162,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
         fn DBGGETADSENSECODESTR(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
         fn DBGGETADSENSEQUALIFIERSTR(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
         fn TracePrint(Level: ULONG, Flags: ULONG, Format: PCHAR, ...);
-        fn ScsiGetSenseKeyAndCodes(
-            SenseInfoBuffer: PVOID,
-            SenseInfoBufferLength: UCHAR,
-            Options: ULONG,
-            SenseKey: *mut UCHAR,
-            AdditionalSenseCode: *mut UCHAR,
-            AdditionalSenseCodeQualifier: *mut UCHAR,
-        ) -> BOOLEAN;
+        
         fn InterpretSenseInfoWithoutHistory(
             Fdo: PDEVICE_OBJECT,
             OriginalRequest: PIRP,
@@ -4575,6 +4568,38 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
     }
 }
 
+extern "system" {
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+}
+extern "system" {
+    fn NT_ASSERT(condition: BOOLEAN);
+    fn SrbAssignSrbFlags(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Flags: ULONG);
+    fn SrbSetDataBuffer(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Buffer: PVOID);
+    fn SrbSetRequestAttribute(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Attribute: UCHAR);
+    fn SrbSetSenseInfoBuffer(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Buffer: PVOID);
+    fn SrbSetSenseInfoBufferLength(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Length: UCHAR);
+    fn SrbSetDataTransferLength(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Length: ULONG);
+    fn SrbSetOriginalRequest(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Request: PVOID);
+    fn ScsiGetSenseKeyAndCodes(
+            SenseInfoBuffer: PVOID,
+            SenseInfoBufferLength: UCHAR,
+            Options: ULONG,
+            SenseKey: *mut UCHAR,
+            AdditionalSenseCode: *mut UCHAR,
+            AdditionalSenseCodeQualifier: *mut UCHAR,
+        ) -> BOOLEAN;
+    fn SrbSetCdbLength(srb: PVOID, len: UCHAR);
+    fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> UCHAR;
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
 extern "system" {
     pub fn KeQueryTickCount(count: *mut LARGE_INTEGER);
 }

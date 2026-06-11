@@ -204,5 +204,17 @@ pub unsafe extern "C" fn HistoryLogReturnedPacket(Pkt: *mut _TRANSFER_PACKET) {
 }
 
 extern "system" {
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
+extern "system" {
     pub fn KeQueryTickCount(CurrentCount: *mut i64);
 }

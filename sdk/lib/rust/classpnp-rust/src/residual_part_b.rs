@@ -333,5 +333,17 @@ pub unsafe extern "system" fn ClassBuildRequest(Fdo: PDEVICE_OBJECT, Irp: PIRP) 
 }
 
 extern "system" {
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
+extern "system" {
     pub fn KeQueryTickCount(TickCount: *mut i64);
 }

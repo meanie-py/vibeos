@@ -64,8 +64,10 @@ unsafe fn adapter_desc_ext(p: *mut core::ffi::c_void) -> *mut LocalStorageAdapte
     p as *mut LocalStorageAdapterDescriptor
 }
 
-extern "C" {
+extern "system" {
     fn ClassAcquireRemoveLockEx(DeviceObject: PDEVICE_OBJECT, Tag: PVOID, File: *const u8, Line: ULONG) -> ULONG;
+}
+extern "C" {
     fn ExAllocateFromNPagedLookasideList(lookaside: *mut core::ffi::c_void) -> PVOID;
 }
 

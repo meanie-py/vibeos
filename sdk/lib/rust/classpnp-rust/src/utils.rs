@@ -58,8 +58,8 @@ use crate::types::{STORAGE_DEVICE_LAYOUT_SIGNATURE, STORAGE_DEVICE_UNIQUE_IDENTI
 use ntkrnl_sys::ddk::{_STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetBinary as StorageIdCodeSetBinary, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetAscii as StorageIdCodeSetAscii, _STORAGE_IDENTIFIER_CODE_SET_StorageIdCodeSetUtf8 as StorageIdCodeSetUtf8, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeScsiNameString as StorageIdTypeScsiNameString, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeFCPHName as StorageIdTypeFCPHName, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeEUI64 as StorageIdTypeEUI64, _STORAGE_IDENTIFIER_TYPE_StorageIdTypeVendorId as StorageIdTypeVendorId, _STORAGE_ASSOCIATION_TYPE_StorageIdAssocPort as StorageIdAssocPort};
 
 extern "C" {
-    fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
-    fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: CCHAR);
+    
+    
 }
 extern "system" {
     fn NT_ASSERT(b: u8);
@@ -6478,4 +6478,11 @@ pub unsafe extern "C" fn ClasspIsThinProvisioningError(Srb: PSCSI_REQUEST_BLOCK)
         }
     }
     0u8
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "system" {
+    fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
+    fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: CCHAR);
 }

@@ -62,7 +62,7 @@ use crate::glue::{max};
 extern "C" {
     fn DbgPrint(format: *const u8, ...);
     fn __int2c();
-    fn ClassReleaseRemoveLock(Device: PDEVICE_OBJECT, Irp: PIRP);
+    
 }
 extern "system" {
     fn PAGED_CODE();
@@ -117,7 +117,7 @@ extern "C" {
     fn SimpleInitSlistHdr(header: *mut SINGLE_LIST_ENTRY);
     fn SimplePushSlist(header: *mut SINGLE_LIST_ENTRY, entry: PSINGLE_LIST_ENTRY);
     fn SimplePopSlist(header: *mut SINGLE_LIST_ENTRY) -> PSINGLE_LIST_ENTRY;
-    fn ClassAcquireRemoveLockEx(DeviceObject: PDEVICE_OBJECT, Tag: PVOID, File: *const u8, Line: ULONG) -> ULONG;
+    
     static SharedSystemTime: LARGE_INTEGER;
 }
 #[no_mangle]
@@ -1921,6 +1921,22 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     );
 }
 
+extern "system" {
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+}
+extern "system" {
+    fn ClassAcquireRemoveLockEx(DeviceObject: PDEVICE_OBJECT, Tag: PVOID, File: *const u8, Line: ULONG) -> ULONG;
+    fn ClassReleaseRemoveLock(Device: PDEVICE_OBJECT, Irp: PIRP);
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
 extern "system" {
     pub fn KeGetCurrentIrql() -> KIRQL;
 }

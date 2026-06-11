@@ -13,8 +13,12 @@ use crate::shims::*;
 use ntkrnl_sys::ddk::{KeGetCurrentIrql};
 
 // ---- file-scope preamble (translated) ----
+// #[inline(never)]: standalone this body is fold-free, but inlining it into ClassInitialize lets
+// LLVM combine the driverExtension dispatch-table writes with the caller's memcpy/dereferenceable
+// facts into a captures(none) UB fold (=> ud2 after RtlCopyUnicodeString). Keep it out-of-line.
+#[inline(never)]
 #[no_mangle]
-pub unsafe extern "system" fn ClassInitializeDispatchTables(DriverExtension: *mut _CLASS_DRIVER_EXTENSION) {
+pub unsafe extern "C" fn ClassInitializeDispatchTables(DriverExtension: *mut _CLASS_DRIVER_EXTENSION) {
     // PAGED_CODE() IRQL assertion omitted (debug-only).
     // Raw-pointer writes (NOT `&mut (*DriverExtension).DeviceMajorFunctionTable`): taking a
     // reference to the field inserts a `panic_misaligned_pointer_dereference` check and rustc then

@@ -57,14 +57,7 @@ extern "C" {
     pub fn DbgGetSenseCodeStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
     pub fn DbgGetAdditionalSenseCodeStr(Srb: PSTORAGE_REQUEST_BLOCK_HEADER) -> PCHAR;
     pub fn RtlULongAdd(Augend: ULONG, Addend: ULONG, pResult: *mut ULONG) -> NTSTATUS;
-    pub fn ScsiGetSenseKeyAndCodes(
-        SenseBuffer: PVOID,
-        SenseBufferLength: UCHAR,
-        Options: ULONG,
-        SenseKey: *mut UCHAR,
-        AdditionalSenseCode: *mut UCHAR,
-        AdditionalSenseCodeQualifier: *mut UCHAR,
-    ) -> BOOLEAN;
+    
 }
 
 // ---- file-scope preamble (translated) ----
@@ -640,6 +633,28 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
     ad_sense_code_qual_str
 }
 
+extern "system" {
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+}
+extern "system" {
+    pub fn ScsiGetSenseKeyAndCodes(
+        SenseBuffer: PVOID,
+        SenseBufferLength: UCHAR,
+        Options: ULONG,
+        SenseKey: *mut UCHAR,
+        AdditionalSenseCode: *mut UCHAR,
+        AdditionalSenseCodeQualifier: *mut UCHAR,
+    ) -> BOOLEAN;
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
 extern "system" {
     pub fn KeQueryTickCount(TickCount: *mut i64);
 }

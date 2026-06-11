@@ -24,25 +24,25 @@ use crate::types::{_SCSI_REQUEST_BLOCK};
 use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength};
 
 extern "C" {
-    fn NT_ASSERT(cond: u8);
+    
     fn DbgPrint(format: PCSTR, ...);
     fn __int2c(); // NOT `-> !`: int 0x2c can return (no debugger); a noreturn decl poisons the
                   // shared symbol and folds whole caller functions to `unreachable` (→ ud2 BUGCHECK).
-    fn SrbGetCdb(srb: PVOID) -> PCDB;
+    
     fn SrbSetSrbFlags(srb: PVOID, flags: ULONG);
     fn SrbClearSrbFlags(srb: PVOID, flags: ULONG);
     fn SrbSetRequestTag(srb: PVOID, tag: ULONG);
     fn ClasspIsThinProvisioningError(srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN;
-    fn SrbSetDataBuffer(srb: PVOID, buf: PVOID);
-    fn SrbSetDataTransferLength(srb: PVOID, len: ULONG);
+    
+    
     fn DbgGetScsiOpStr(srb: PVOID) -> PCCHAR;
     fn SrbGetSrbFlags(srb: PVOID) -> ULONG;
     fn SrbGetSenseInfoBuffer_raw(srb: PVOID) -> PVOID;
-    fn SrbSetSenseInfoBuffer(srb: PVOID, buf: PVOID);
-    fn SrbSetSenseInfoBufferLength(srb: PVOID, len: u32);
+    
+    
     // Complex classp.h inline functions (FORCEINLINE) - need C shim wrappers at link time.
     fn ClasspTransferPacketGetNumberOfRetriesDone(pkt: PTRANSFER_PACKET, cdb: PCDB, retries_done: *mut ULONG) -> BOOLEAN;
-    fn ScsiGetSenseKeyAndCodes(buf: PVOID, buf_len: UCHAR, opts: u32, key: *mut UCHAR, asc: *mut UCHAR, ascq: *mut UCHAR) -> BOOLEAN;
+    
     fn ClasspIsOffloadDataTransferCommand(cdb: PCDB) -> BOOLEAN;
     fn ClasspIsTokenOperation(cdb: PCDB) -> BOOLEAN;
     fn IsDescriptorSenseDataFormat(buf: PVOID) -> BOOLEAN;
@@ -675,6 +675,27 @@ pub unsafe extern "C" fn StepLowMemRetry(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
     packetDone
 }
 
+extern "system" {
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+}
+extern "system" {
+    fn NT_ASSERT(cond: u8);
+    fn SrbGetCdb(srb: PVOID) -> PCDB;
+    fn SrbSetDataBuffer(srb: PVOID, buf: PVOID);
+    fn SrbSetDataTransferLength(srb: PVOID, len: ULONG);
+    fn SrbSetSenseInfoBuffer(srb: PVOID, buf: PVOID);
+    fn SrbSetSenseInfoBufferLength(srb: PVOID, len: u32);
+    fn ScsiGetSenseKeyAndCodes(buf: PVOID, buf_len: UCHAR, opts: u32, key: *mut UCHAR, asc: *mut UCHAR, ascq: *mut UCHAR) -> BOOLEAN;
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
 extern "system" {
     pub fn ExFreePool(p: PVOID);
 }

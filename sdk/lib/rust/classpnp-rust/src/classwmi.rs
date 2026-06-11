@@ -896,6 +896,19 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
 }
 
 extern "system" {
+    
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
     pub fn IoWMIDeviceObjectToProviderId(DeviceObject: PDEVICE_OBJECT) -> ULONG;
+    
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
+extern "system" {
     pub fn KeQueryTickCount(TickCount: *mut i64);
 }

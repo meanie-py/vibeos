@@ -18,17 +18,17 @@ use crate::types::{ServiceTransferRequest};
 extern "C" {
     fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
     fn SRB_STATUS(status: u8) -> u8;
-    fn ClassReleaseQueue(fdo: *mut DEVICE_OBJECT);
+    
     fn InterpretSenseInfoWithoutHistory( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, srb: *mut SCSI_REQUEST_BLOCK, major_function: u8, control_code_or_zero: u32, retry_count: u32, status: *mut i32, retry_interval: *mut i64, ) -> u8;
     fn PORT_ALLOCATED_SENSE( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, ) -> u8;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
     fn RetryRequest( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, srb: *mut SCSI_REQUEST_BLOCK, associated: u8, time_delta_100ns: i64, );
     fn ClassFreeOrReuseSrb( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
-    fn NT_ASSERT(condition: i32);
+    
     fn IoIsErrorUserInduced(status: i32) -> u8;
     fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
-    fn ClassReleaseRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
-    fn ClassCompleteRequest( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, priority_boost: i32, );
+    
+    
 }
 
 // ---- file-scope preamble (translated) ----
@@ -211,5 +211,17 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
 }
 
 extern "system" {
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
     pub fn InterlockedDecrement(addend: *mut i32) -> i32;
+}
+extern "system" {
+    fn ClassReleaseQueue(fdo: *mut DEVICE_OBJECT);
+    fn NT_ASSERT(condition: i32);
+    fn ClassReleaseRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
+    fn ClassCompleteRequest( fdo: *mut DEVICE_OBJECT, irp: *mut IRP, priority_boost: i32, );
 }

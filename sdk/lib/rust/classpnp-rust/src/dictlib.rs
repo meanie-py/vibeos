@@ -179,7 +179,8 @@ pub unsafe extern "C" fn FreeDictionaryEntry(Dictionary: *mut DICTIONARY, Entry:
                 b"found\0".as_ptr() as *const core::ffi::c_char,
             );
         }
-        core::arch::asm!("int 0x2c");
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] core::arch::asm!("int 0x2c");
+        #[cfg(target_arch = "aarch64")] core::arch::asm!("brk #0");
     }
 
     if found != 0 {

@@ -43,22 +43,9 @@ unsafe extern "stdcall" {
         State: ntkrnl_sys::ddk::POWER_STATE,
     ) -> ntkrnl_sys::ddk::POWER_STATE;
     fn PoQueryWatchdogTime(Pdo: PDEVICE_OBJECT, SecondsRemaining: *mut ULONG) -> BOOLEAN;
-    fn PoRegisterPowerSettingCallback(
-        DeviceObject: PDEVICE_OBJECT,
-        SettingGuid: LPCGUID,
-        Callback: ntkrnl_sys::ddk::PPOWER_SETTING_CALLBACK,
-        Context: PVOID,
-        Handle: *mut PVOID,
-    ) -> NTSTATUS;
-    fn ScsiGetSenseKeyAndCodes(
-        SenseInfoBuffer: PVOID,
-        SenseInfoBufferLength: UCHAR,
-        Options: ULONG,
-        SenseKey: *mut UCHAR,
-        AdditionalSenseCode: *mut UCHAR,
-        AdditionalSenseCodeQualifier: *mut UCHAR,
-    ) -> BOOLEAN;
-    fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> UCHAR;
+    
+    
+    
 }
 // IsEqualGUID is a macro (memcmp on GUID bytes)
 #[allow(non_snake_case)]
@@ -2088,4 +2075,27 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(DeviceObject: PDEVICE_OBJECT) -> 
     }
 
     status
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    fn PoRegisterPowerSettingCallback(
+        DeviceObject: PDEVICE_OBJECT,
+        SettingGuid: LPCGUID,
+        Callback: ntkrnl_sys::ddk::PPOWER_SETTING_CALLBACK,
+        Context: PVOID,
+        Handle: *mut PVOID,
+    ) -> NTSTATUS;
+}
+extern "system" {
+    fn ScsiGetSenseKeyAndCodes(
+        SenseInfoBuffer: PVOID,
+        SenseInfoBufferLength: UCHAR,
+        Options: ULONG,
+        SenseKey: *mut UCHAR,
+        AdditionalSenseCode: *mut UCHAR,
+        AdditionalSenseCodeQualifier: *mut UCHAR,
+    ) -> BOOLEAN;
+    fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION) -> UCHAR;
 }

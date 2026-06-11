@@ -113,7 +113,7 @@ use crate::types::{SCSI_PASS_THROUGH32};
 extern "C" {
     fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: PCSTR, ...) -> NTSTATUS;
     fn PoUnregisterPowerSettingCallback(Handle: PVOID) -> NTSTATUS;
-    fn ClassAcquireRemoveLockEx(DeviceObject: PDEVICE_OBJECT, Tag: PVOID, File: *const u8, Line: ULONG) -> ULONG;
+    
 }
 
 // gap-function constants (from classpnp C headers)
@@ -1228,4 +1228,10 @@ pub unsafe fn __cmpxchg(ptr: *mut i32, new: i32, cmp: i32) -> (i32, bool) {
         Ok(v) => (v, true),
         Err(v) => (v, false),
     }
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "system" {
+    fn ClassAcquireRemoveLockEx(DeviceObject: PDEVICE_OBJECT, Tag: PVOID, File: *const u8, Line: ULONG) -> ULONG;
 }

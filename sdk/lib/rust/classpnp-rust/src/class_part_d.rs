@@ -120,8 +120,8 @@ use crate::types::{SCSI_PASS_THROUGH32};
 // C double-paren `TracePrint!((lvl, flag, fmt, args))` form.
 macro_rules! TracePrint { ($($t:tt)*) => {{}} }
 extern "C" {
-    fn ClassAcquireChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
-    fn ClassReleaseChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
+    
+    
     fn _Analysis_assume_(expr: BOOLEAN);
     fn ClasspLogSystemEventWithDeviceNumber(DeviceObject: PDEVICE_OBJECT, ErrorCode: NTSTATUS) -> NTSTATUS;
 }
@@ -2081,4 +2081,11 @@ pub unsafe extern "system" fn ClassShutdownFlush(
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT as CCHAR);
 
     return STATUS_INVALID_DEVICE_REQUEST;
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "system" {
+    fn ClassAcquireChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
+    fn ClassReleaseChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }

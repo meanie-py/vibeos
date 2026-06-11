@@ -7,10 +7,10 @@ use core::ffi::c_void;
 
 extern "C" {
     pub fn ClassAcquireRemoveLock(fdo: *mut DEVICE_OBJECT, irp: *mut IRP);
-    pub fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: CCHAR);
+    
     pub fn ClassFreeOrReuseSrb( fdo_extension: *mut FUNCTIONAL_DEVICE_EXTENSION, srb: *mut SCSI_REQUEST_BLOCK, );
-    pub fn ClassReleaseQueue(fdo: *mut DEVICE_OBJECT);
-    pub fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
+    
+    
     pub fn ClasspIsThinProvisioningError(srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN;
     pub fn ClasspLogSystemEventWithDeviceNumber( Fdo: PDEVICE_OBJECT, EventId: ULONG, );
     pub fn ClasspPerfIncrementSuccessfulIo( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, );
@@ -28,9 +28,9 @@ extern "C" {
     pub fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ... ) -> NTSTATUS;
     pub fn SRB_STATUS(status: u8) -> u8;
     pub fn SrbClearSrbFlags(srb: PVOID, flags: ULONG);
-    pub fn SrbGetCdb(srb: PVOID) -> PCDB;
-    pub fn SrbSetDataBuffer(srb: PVOID, buf: PVOID);
-    pub fn SrbSetDataTransferLength(srb: PVOID, len: ULONG);
+    
+    
+    
     pub fn SrbSetRequestTag(srb: PVOID, tag: ULONG);
     pub fn SrbSetSrbFlags(srb: PVOID, flags: ULONG);
     pub fn TEST_FLAG(Flags: ULONG, Flag: ULONG) -> BOOLEAN;
@@ -55,9 +55,35 @@ extern "system" {
 #[no_mangle] pub unsafe extern "C" fn __int2c() { core::arch::asm!("brk #0", options(nomem, nostack)); }
 
 extern "system" {
+    
+    
+    
+    
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+    
+    
+    pub fn KeLowerIrql(OldIrql: KIRQL);
+    pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
+}
+extern "system" {
+    pub fn ClassCompleteRequest(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, PriorityBoost: CCHAR);
+    pub fn ClassReleaseQueue(fdo: *mut DEVICE_OBJECT);
+    pub fn ClassReleaseRemoveLock(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
+    pub fn SrbGetCdb(srb: PVOID) -> PCDB;
+    pub fn SrbSetDataBuffer(srb: PVOID, buf: PVOID);
+    pub fn SrbSetDataTransferLength(srb: PVOID, len: ULONG);
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
+extern "system" {
     pub fn IoFreeMdl(Mdl: PMDL);
     pub fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Fdo: PDEVICE_OBJECT);
     pub fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
-    pub fn KeLowerIrql(OldIrql: KIRQL);
-    pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
 }

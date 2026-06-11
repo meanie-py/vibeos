@@ -45,14 +45,7 @@ extern "C" {
     fn KeSetCoalescableTimer( Timer: *mut KTIMER, DueTime: LARGE_INTEGER, Period: ULONG, TolerableDelay: ULONG, Dpc: PKDPC, );
     fn TracePrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
     fn StorDebugPrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
-    fn ScsiGetSenseKeyAndCodes(
-        SenseInfoBuffer: PVOID,
-        SenseInfoBufferLength: u8,
-        Options: ULONG,
-        SenseKey: *mut u8,
-        AdditionalSenseCode: *mut u8,
-        AdditionalSenseCodeQualifier: *mut u8,
-    ) -> BOOLEAN;
+    
     fn CountOfSetBitsUChar(val: UCHAR) -> UCHAR;
     fn RtlULongAdd(augend: ULONG, addend: ULONG, result: *mut ULONG) -> NTSTATUS;
     fn strlen(s: *const i8) -> usize;
@@ -2749,7 +2742,8 @@ pub unsafe extern "system" fn ClassCleanupMediaChangeDetection(FdoExtension: PFU
                 3241i32,
                 b"0\0".as_ptr() as *const ::core::ffi::c_char,
             );
-            core::arch::asm!("int 0x2c");
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] core::arch::asm!("int 0x2c");
+            #[cfg(target_arch = "aarch64")] core::arch::asm!("brk #0");
         }
     }
 
@@ -3454,6 +3448,23 @@ pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(
 }
 
 extern "system" {
+    
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
     pub fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
     pub fn InterlockedDecrement(Addend: *mut LONG) -> LONG;
+}
+extern "system" {
+    fn ScsiGetSenseKeyAndCodes(
+        SenseInfoBuffer: PVOID,
+        SenseInfoBufferLength: u8,
+        Options: ULONG,
+        SenseKey: *mut u8,
+        AdditionalSenseCode: *mut u8,
+        AdditionalSenseCodeQualifier: *mut u8,
+    ) -> BOOLEAN;
 }

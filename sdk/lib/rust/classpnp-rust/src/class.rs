@@ -89,7 +89,7 @@ extern "C" {
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
     fn InterpretSenseInfoWithoutHistory( Fdo: PDEVICE_OBJECT, Irp: PIRP, Srb: PSCSI_REQUEST_BLOCK, MajorFunctionCode: UCHAR, IoDeviceCode: ULONG, RetryCount: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LONGLONG, ) -> BOOLEAN;
     fn TracePrint(Args: ...);
-    fn ClassReleaseQueue(Fdo: PDEVICE_OBJECT);
+    
     fn PORT_ALLOCATED_SENSE( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Srb: PSCSI_REQUEST_BLOCK, ) -> BOOLEAN;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER( FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Srb: PSCSI_REQUEST_BLOCK, );
     fn RetryRequest( Fdo: PDEVICE_OBJECT, Irp: PIRP, Srb: PSCSI_REQUEST_BLOCK, Flush: BOOLEAN, RetryInterval: LONGLONG, );
@@ -100,7 +100,7 @@ extern "C" {
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn ClasspLogSystemEventWithDeviceNumber( Fdo: PDEVICE_OBJECT, EventId: ULONG, );
     fn IoMarkIrpPending(Irp: PIRP);
-    fn ClassReleaseRemoveLock(Fdo: PDEVICE_OBJECT, Irp: PIRP);
+    
     fn ClassAcquireRemoveLock(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> ULONG;
 }
 
@@ -351,15 +351,18 @@ pub unsafe extern "system" fn ClassInitialize(
         _,
     >(ClassAddDevice));
 
-    if (*driverExtension).EtwHandle == 0 {
+    // EtwHandle is a REGHANDLE (u64, align-8 on i386). A plain `(*driverExtension).EtwHandle`
+    // read/write creates an align-8 access whose panic_misaligned_pointer_dereference check
+    // drives the captures(none) whole-function fold (=> ud2). Use raw read/write_volatile.
+    if core::ptr::read_volatile(core::ptr::addr_of!((*driverExtension).EtwHandle)) == 0 {
         status = EtwRegister(
             &raw const StoragePredictFailureDPSGuid,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            &raw mut (*driverExtension).EtwHandle,
+            core::ptr::addr_of_mut!((*driverExtension).EtwHandle),
         );
         if !NT_SUCCESS(status) {
-            (*driverExtension).EtwHandle = 0;
+            core::ptr::write_volatile(core::ptr::addr_of_mut!((*driverExtension).EtwHandle), 0);
         }
         WPP_INIT_TRACING(DriverObject, RegistryPath);
     }
@@ -2566,12 +2569,38 @@ pub unsafe extern "system" fn ClassIoComplete(
 }
 
 extern "system" {
-    pub fn IoFreeMdl(Mdl: PMDL);
-    pub fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Fdo: PDEVICE_OBJECT);
+    
+    
+    
+    
+    
+    
+    
+    
+}
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "C" {
+    
+    
     pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
-    pub fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
+    
     pub fn KeLowerIrql(OldIrql: KIRQL);
     pub fn InterlockedCompareExchange(Destination: *mut LONG, ExChange: LONG, Comparand: LONG) -> LONG;
     pub fn InterlockedExchange(Destination: *mut LONG, Value: LONG) -> LONG;
+    
+}
+extern "system" {
+    fn ClassReleaseQueue(Fdo: PDEVICE_OBJECT);
+    fn ClassReleaseRemoveLock(Fdo: PDEVICE_OBJECT, Irp: PIRP);
+}
+
+
+// ---- export decls forced to stdcall (real kernel export CC) ----
+extern "system" {
+    pub fn IoFreeMdl(Mdl: PMDL);
+    pub fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Fdo: PDEVICE_OBJECT);
+    pub fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancellable: BOOLEAN);
     pub fn KeQueryTickCount(CurrentCount: *mut i64);
 }

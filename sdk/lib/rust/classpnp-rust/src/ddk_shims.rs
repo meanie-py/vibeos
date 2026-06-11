@@ -311,15 +311,6 @@ use core::sync::atomic::{AtomicI32, Ordering};
 // The translated callers declare these `extern "C"` (cdecl `_X`), but the kernel exports
 // them stdcall (`_X@N`). Provide cdecl shims that forward to the real stdcall export
 // (resolved via the ntoskrnl/hal importlibs on the cohab link line).
-#[no_mangle] pub unsafe extern "C" fn ExFreePool(P: PVOID) { ntkrnl_sys::ddk::ExFreePool(P); }
-#[no_mangle] pub unsafe extern "C" fn IoFreeMdl(Mdl: PMDL) { ntkrnl_sys::ddk::IoFreeMdl(Mdl); }
-#[no_mangle] pub unsafe extern "C" fn IoStartNextPacket(Fdo: PDEVICE_OBJECT, Cancelable: u8) {
-    ntkrnl_sys::ddk::IoStartNextPacket(Fdo, Cancelable);
-}
-#[no_mangle] pub unsafe extern "C" fn IoSetHardErrorOrVerifyDevice(Irp: PIRP, Dev: PDEVICE_OBJECT) {
-    ntkrnl_sys::ddk::IoSetHardErrorOrVerifyDevice(Irp, Dev);
-}
-#[no_mangle] pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 { ntkrnl_sys::ddk::KeGetCurrentIrql() }
 // KeRaiseIrql/KeLowerIrql are inline on i386 (no kernel export — it's KfRaiseIrql fastcall);
 // the ntkrnl_sys tier1 inlines do the correct per-arch thing.
 #[no_mangle] pub unsafe extern "C" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
@@ -334,16 +325,24 @@ use core::sync::atomic::{AtomicI32, Ordering};
     #[cfg(not(target_arch = "x86"))]
     { extern "system" { fn KeLowerIrql(n: u8); } KeLowerIrql(NewIrql); }
 }
-// KeQueryTickCount: stdcall export on i386/arm; not in i386 bindgen, declare privately.
-#[no_mangle] pub unsafe extern "C" fn KeQueryTickCount(Count: *mut LARGE_INTEGER) {
-    extern "system" { fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER); }
-    KeQueryTickCount(Count);
-}
 // IoWMIDeviceObjectToProviderId: exported only on amd64/arm64 (WMI provider id). Not boot-
 // critical on i386 (telemetry path) — stub to 0 there; forward to the real export elsewhere.
 #[no_mangle] pub unsafe extern "C" fn IoWMIDeviceObjectToProviderId(Dev: PDEVICE_OBJECT) -> u32 {
     #[cfg(target_arch = "x86")] { let _ = Dev; 0 }
     #[cfg(not(target_arch = "x86"))] { ntkrnl_sys::ddk::IoWMIDeviceObjectToProviderId(Dev) }
+}
+// IoQueueWorkItemEx is NOT exported by ReactOS ntoskrnl (only IoQueueWorkItem exists). Forward
+// to IoQueueWorkItem (distinct name => no CC self-collision). NOTE: the Ex worker-routine ABI
+// differs (IO_WORKITEM_ROUTINE_EX takes IoObject+Context+IoWorkItem vs 2 args); the sole caller
+// (CleanupTransferPacketToWorkingSetSizeWorker, working-set trim) is off the boot path, so the
+// forwarding shim is link/boot-safe. A faithful IoQueueWorkItemEx is owed (see translation audit).
+#[no_mangle] pub unsafe extern "C" fn IoQueueWorkItemEx(
+    IoWorkItem: ntkrnl_sys::ddk::PIO_WORKITEM,
+    WorkerRoutine: *const core::ffi::c_void,
+    QueueType: u32,
+    Context: PVOID,
+) {
+    ntkrnl_sys::ddk::IoQueueWorkItem(IoWorkItem, core::mem::transmute(WorkerRoutine), QueueType as _, Context);
 }
 
 // ============================ data symbols ============================

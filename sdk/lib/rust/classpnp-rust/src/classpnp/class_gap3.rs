@@ -2,15 +2,15 @@ use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn ClassAcquireChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
-    fn ClassReleaseChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
+    
+    
     fn FREE_POOL(ptr: PVOID);
-    fn NT_ASSERT(expr: BOOLEAN);
+    
     fn NT_ASSERTMSG(msg: PCSZ, expr: BOOLEAN);
     fn TracePrint(level_flags: u64, format: PCSZ, ...);
     fn UNREFERENCED_PARAMETER(p: PVOID);
     fn _Analysis_assume_(expr: BOOLEAN);
-    fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP);
+    
     fn ClasspLogSystemEventWithDeviceNumber(DeviceObject: PDEVICE_OBJECT, ErrorCode: NTSTATUS) -> NTSTATUS;
 }
 #[no_mangle]
@@ -1908,3 +1908,12 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+// ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+extern "system" {
+    fn ClassAcquireChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
+    fn ClassReleaseChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
+    fn NT_ASSERT(expr: BOOLEAN);
+    fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP);
+}
