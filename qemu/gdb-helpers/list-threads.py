@@ -13,6 +13,9 @@ import gdb
 import os
 
 
+I386_RUST_SYMBOL_SHIFT = 0x291000
+
+
 # KTHREAD.State values (from ntdef.h KTHREAD_STATE enum).
 KTHREAD_STATE = {
     0: "Initialized",
@@ -75,6 +78,13 @@ def _lt_read_handle(addr: int, ptr_size: int) -> int | None:
     ctype = "unsigned long long" if ptr_size == 8 else "unsigned int"
     try:
         return int(gdb.parse_and_eval(f"*({ctype} *)({addr:#x})"))
+    except gdb.error:
+        return None
+
+
+def _lt_parse_u64(expr: str) -> int | None:
+    try:
+        return int(gdb.parse_and_eval(expr)) & 0xFFFFFFFFFFFFFFFF
     except gdb.error:
         return None
 
@@ -174,6 +184,72 @@ def _lt_resolve_field_offset(struct_name: str, field: str) -> int | None:
         return None
 
 
+def _lt_candidate_process_heads(symbol_head: int) -> list[tuple[str, int]]:
+    """Return candidate PsActiveProcessHead runtime addresses.
+
+    Most builds work with the relocated COFF symbol address. Some i386 Rust
+    builds have had split PE/debug address spaces for Rust-owned data symbols,
+    so keep the handoff's known shift as a validated fallback instead of
+    hard-coding it as the only answer.
+    """
+    ptr_size = _lt_ptr_size()
+    candidates: list[tuple[str, int]] = [("symbol", symbol_head)]
+
+    kd_head = _lt_parse_u64(
+        "((struct KDDEBUGGER_DATA64_FULL *)&KdDebuggerDataBlock)->PsActiveProcessHead"
+    )
+    if kd_head:
+        candidates.append(("KdDebuggerDataBlock.PsActiveProcessHead", kd_head))
+
+    shifts: list[int] = []
+    env_shift = os.environ.get("VIBEOS_GDB_SYMBOL_SHIFT")
+    if env_shift:
+        try:
+            shifts.append(int(env_shift, 0))
+        except ValueError:
+            gdb.write(f"list-threads: ignoring bad VIBEOS_GDB_SYMBOL_SHIFT={env_shift!r}\n",
+                      gdb.STDERR)
+    if _lt_arch() == "i386":
+        shifts.append(I386_RUST_SYMBOL_SHIFT)
+
+    for shift in shifts:
+        candidates.append((f"symbol+{shift:#x}", symbol_head + shift))
+        if kd_head:
+            candidates.append((f"KdDebuggerDataBlock.PsActiveProcessHead+{shift:#x}",
+                               kd_head + shift))
+
+    # Preserve order while de-duplicating addresses.
+    out: list[tuple[str, int]] = []
+    seen: set[int] = set()
+    mask = (1 << (ptr_size * 8)) - 1
+    for label, addr in candidates:
+        addr &= mask
+        if addr and addr not in seen:
+            seen.add(addr)
+            out.append((label, addr))
+    return out
+
+
+def _lt_collect_processes(head_addr: int, eproc_links_off: int,
+                          eproc_threadhead_off: int, ethread_listentry_off: int,
+                          ptr_size: int) -> list[tuple[int, str, int, list[int]]]:
+    processes = []
+    for eproc in _lt_list_walk(head_addr, eproc_links_off, ptr_size):
+        name = _lt_read_imagename(eproc)
+        if name == "<unreadable>":
+            continue
+        pid = _lt_read_handle(eproc + _LT_OFFSETS["eproc_pid"], ptr_size) or 0
+        thr_head = eproc + eproc_threadhead_off
+        ethreads = list(_lt_list_walk(thr_head, ethread_listentry_off, ptr_size))
+        processes.append((pid, name, eproc, ethreads))
+        if len(processes) >= 256:
+            break
+    return processes
+
+
+_LT_OFFSETS: dict[str, int] = {}
+
+
 class ListThreadsCmd(gdb.Command):
     """list-threads: dump every process and thread known to the kernel."""
 
@@ -201,6 +277,7 @@ class ListThreadsCmd(gdb.Command):
             gdb.write("list-threads: DWARF struct offsets unavailable; "
                       "did find-kbase run?\n", gdb.STDERR)
             return
+        _LT_OFFSETS["eproc_pid"] = eproc_pid_off
 
         # PsActiveProcessHead is a LIST_ENTRY; we need its address (not its value).
         try:
@@ -210,11 +287,40 @@ class ListThreadsCmd(gdb.Command):
                       gdb.STDERR)
             return
 
+        selected_head = None
+        selected_label = None
+        selected_processes = []
+        for label, candidate in _lt_candidate_process_heads(head_addr):
+            processes = _lt_collect_processes(
+                candidate, eproc_links_off, eproc_threadhead_off,
+                ethread_listentry_off, ptr_size,
+            )
+            thread_total = sum(len(p[3]) for p in processes)
+            has_systemish = any(
+                name in ("System", "smss.exe", "csrss.exe", "winlogon.exe", "explorer.exe")
+                for _, name, _, _ in processes
+            )
+            if processes and thread_total and has_systemish:
+                selected_head = candidate
+                selected_label = label
+                selected_processes = processes
+                break
+            gdb.write(
+                f"list-threads: rejected head {candidate:#018x} ({label}); "
+                f"processes={len(processes)} threads={thread_total}\n"
+            )
+
+        if selected_head is None:
+            gdb.write("list-threads: no candidate PsActiveProcessHead produced "
+                      "a plausible process/thread list\n", gdb.STDERR)
+            return
+        head_addr = selected_head
+
         cur_thread = _lt_current_thread_addr()
         cur_thread_s = f"{cur_thread:#018x}" if cur_thread else "<unknown>"
 
         gdb.write(f"=== process list (head @ {head_addr:#018x}, "
-                  f"current thread {cur_thread_s}) ===\n")
+                  f"source {selected_label}, current thread {cur_thread_s}) ===\n")
         gdb.write(f"{'Pid':>6}  {'Name':<16}  {'#Thr':>4}  EPROCESS\n")
         gdb.write("-" * 64 + "\n")
 
@@ -222,13 +328,8 @@ class ListThreadsCmd(gdb.Command):
         thread_count = 0
         threads_to_print = []  # collected for second pass
 
-        for eproc in _lt_list_walk(head_addr, eproc_links_off, ptr_size):
+        for pid, name, eproc, ethreads in selected_processes:
             process_count += 1
-            pid = _lt_read_handle(eproc + eproc_pid_off, ptr_size) or 0
-            name = _lt_read_imagename(eproc) if eproc_imgname_off is not None else "?"
-            # Walk ThreadListHead (embedded LIST_ENTRY at +eproc_threadhead_off).
-            thr_head = eproc + eproc_threadhead_off
-            ethreads = list(_lt_list_walk(thr_head, ethread_listentry_off, ptr_size))
             n_thr = len(ethreads)
             gdb.write(f"{pid:>6}  {name:<16}  {n_thr:>4}  {eproc:#018x}\n")
             for ethread in ethreads:

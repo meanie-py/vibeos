@@ -6,7 +6,8 @@
 #   i386:   somewhere in 0x80000000 .. 0x90000000
 #   arm64:  somewhere in 0xfffff80000000000 .. 0xfffff80100000000
 #
-# We scan in 0x10000 steps because Windows aligns image bases to 64KB.
+# We scan in page-size steps. The usual PE image alignment is 64KB, but the
+# i386 UEFI path can place ntoskrnl on a 4KB boundary (observed at 0x80491000).
 #
 # IMPORTANT: more than one PE image lives in the kernel scan range. On i386,
 # HAL (hal.dll) loads *below* ntoskrnl (e.g. 0x80090000) and is the FIRST MZ a
@@ -37,84 +38,94 @@ def _u32(b):
     return int.from_bytes(b, "little")
 
 
-def _export_name(inferior, base: str) -> str | None:
+def _pe_info(inferior, base: int) -> tuple[str | None, int | None]:
     """Parse the PE at `base` and return its export-directory Name string,
-    or None if it isn't a well-formed PE32 with an export table.
+    plus SizeOfImage, or (None, None) if it isn't a well-formed PE32 image.
 
     Layout (PE32):
       base+0x3c            -> e_lfanew (u32)
       base+e_lfanew        -> "PE\0\0"
       +4                   -> IMAGE_FILE_HEADER (20 bytes)
-      +24                  -> IMAGE_OPTIONAL_HEADER32; DataDirectory at +0x60
+      +24                  -> IMAGE_OPTIONAL_HEADER32
+      +24+0x38             -> SizeOfImage (u32)
+      +24+0x60             -> DataDirectory[0] export table
       DataDirectory[0]     -> {ExportRVA (u32), Size (u32)}
       base+ExportRVA+0x0C  -> Name RVA (u32)
       base+NameRVA         -> NUL-terminated ASCII module name
     """
     mz = _rd(inferior, base, 2)
     if mz != b"MZ":
-        return None
+        return None, None
     e_lfanew_b = _rd(inferior, base + 0x3C, 4)
     if e_lfanew_b is None:
-        return None
+        return None, None
     e_lfanew = _u32(e_lfanew_b)
     if e_lfanew > 0x1000:  # sane bound; PE header sits in the first page
-        return None
+        return None, None
     sig = _rd(inferior, base + e_lfanew, 4)
     if sig != b"PE\x00\x00":
-        return None
+        return None, None
     opt = base + e_lfanew + 24
+    size_b = _rd(inferior, opt + 0x38, 4)
+    if size_b is None:
+        return None, None
+    size = _u32(size_b)
     exp_rva_b = _rd(inferior, opt + 0x60, 4)
     if exp_rva_b is None:
-        return None
+        return None, size
     exp_rva = _u32(exp_rva_b)
     if exp_rva == 0:
-        return None
+        return None, size
     name_rva_b = _rd(inferior, base + exp_rva + 0x0C, 4)
     if name_rva_b is None:
-        return None
+        return None, size
     name_rva = _u32(name_rva_b)
     if name_rva == 0:
-        return None
+        return None, size
     raw = _rd(inferior, base + name_rva, 32)
     if raw is None:
-        return None
+        return None, size
     nul = raw.find(b"\x00")
     if nul >= 0:
         raw = raw[:nul]
     try:
-        return raw.decode("ascii").lower()
+        return raw.decode("ascii").lower(), size
     except UnicodeDecodeError:
-        return None
+        return None, size
 
 
-def _scan(start: int, end: int, want: str, step: int = 0x10000):
+def _scan(start: int, end: int, want: str, step: int = 0x1000):
     """Scan [start,end) for a PE whose export name matches `want`.
 
     Returns (base, name) of the match, or (None, None). We keep scanning past
     the first MZ — the first image found is usually HAL, not ntoskrnl.
     """
     inferior = gdb.selected_inferior()
-    first_pe = None
+    pe_candidates = []
     for addr in range(start, end, step):
         mz = _rd(inferior, addr, 2)
         if mz != b"MZ":
             continue
-        name = _export_name(inferior, addr)
-        if name is None:
+        name, size = _pe_info(inferior, addr)
+        if size is None:
             continue
-        if first_pe is None:
-            first_pe = (addr, name)
-        if want in name:
+        pe_candidates.append((addr, name, size))
+        if name is not None and want in name:
             return addr, name
-    # No name match (stripped export table?): fall back to the first valid PE,
-    # but make the guess visible so a wrong relocation is debuggable.
-    if first_pe is not None:
+    # No name match (stripped/rewritten export table?): fall back to the
+    # largest valid PE image, not the first MZ. On i386 the first PE is commonly
+    # kdcom/HAL below ntoskrnl, and relocating kernel symbols there makes every
+    # follow-on helper read garbage.
+    if pe_candidates:
+        pe_candidates.sort(key=lambda item: item[2], reverse=True)
+        addr, name, size = pe_candidates[0]
+        name_s = name or "<no-export-name>"
         gdb.write(
             f"[find-kbase] no export name matched '{want}'; "
-            f"falling back to first PE {first_pe[0]:#x} ('{first_pe[1]}')\n",
+            f"falling back to largest PE {addr:#x} ('{name_s}', size={size:#x})\n",
             gdb.STDERR,
         )
-        return first_pe
+        return addr, name_s
     return None, None
 
 
