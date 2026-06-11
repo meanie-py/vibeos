@@ -42,6 +42,14 @@ The #1 i386 crash class: on i386, `extern "C"` is cdecl and `extern "system"` is
 **Fix:** Pick ONE ABI matching the C contract (NTAPI=stdcall=`extern "system"`; `__cdecl`=`extern "C"`); if the C lib owns the symbol, delete the Rust dup and `pub use` from the sys-crate. Always check ABI via `nm` FIRST before chasing captures(none). Closed `0678cf5d` (frldr.rs `RtlZeroMemory`, libsupp.rs `FrLdrHeapFree`).
 **Source:** `feedback_dup_abi_name_collision.md`
 
+### At-scale variant: 76 decl↔def CC mismatches folded ~46 fns (classpnp, 2026-06-11)
+**Symptom:** Whole driver's worth of functions fold to `push;mov;ud2` at opt-1 (BUGCHECK 0x1E at boot), yet the cohab link reports **0 undefined** (lld fuzzy-matches `_F` ↔ `_F@N`). Even clean raw-pointer fns with NO `&(*ptr).field` fold — disproving the reference-UB theory.
+**Diagnostic that cracked it:** `RUSTFLAGS="… -C llvm-args=-print-changed=quiet -C llvm-args=-filter-print-funcs=<fn>"` → read the IR-dump sequence for the pass that inserts `store i1 true, ptr poison` (InstCombine's UB marker), then walk back to the offending instruction. Raw pre-opt IR (`-C no-prepopulate-passes --emit=llvm-ir`) shows rustc emits a NORMAL body — LLVM folds it. Build a def↔decl CC map (regex over `pub … extern "X" fn` defs vs `extern "Y" { fn }` decls); fix every decl CC := def CC. (`shims.rs` glob-imported everywhere with `extern "C"` decls of stdcall-defined fns was the systemic vector.)
+**Two follow-on variants the un-folding exposed:**
+- **Self-CC-collision wrapper:** a cdecl `#[no_mangle] fn ExFreePool` that calls `ntkrnl_sys::ddk::ExFreePool` (stdcall, *same IR name* `@ExFreePool`) calls itself with a mismatched CC → folds on every arch. NEVER wrap a kernel export under its own name; call the real stdcall export directly (`extern "system"`), no wrapper.
+- **Inline-interaction fold:** a fn that's fold-free standalone can fold its *caller* when inlined — LLVM combines the inlinee's writes with the caller's `memcpy`/dereferenceable facts. Fix: `#[inline(never)]` (classpnp `ClassInitializeDispatchTables` inlined into `ClassInitialize` → ud2 after `RtlCopyUnicodeString`).
+**Note:** i386-only — on amd64/arm64 `extern "C"` == `extern "system"` (both cdecl), so these never fold there. Fixed in classpnp `ec2ad2607db`; full writeup `classpnp-cohab-link-gap.md`.
+
 ### extern decl returns `u32` for a `BOOLEAN`(u8) impl → amd64 false-"true"
 **Symptom:** amd64-only: a `return 0` (false) reads as nonzero/true; path-dependent. Real incident: BUGCHECK 0x4C (`0xc000021a`), "Load of WIN32K failed", SMSS `SmpInit` fail.
 **Root cause:** Callee sets only `AL`; a `-> u32` caller reads full `EAX` with garbage upper 24 bits (clean only on `xor eax,eax` paths). `MiResolveImageReferences` declared `RtlEqualUnicodeString(..,u32)->u32` vs real `(..,u8)->u8`; false match made ftfd.dll snap against usbd.sys exports → `STATUS_DRIVER_ENTRYPOINT_NOT_FOUND`.
