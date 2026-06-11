@@ -51,8 +51,8 @@ list(APPEND SOURCE
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
     # heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
     # heapdbg.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/heapdbg.rs)
-    heappage.c
-    heapuser.c
+    # heappage.c — replaced by Rust implementation (sdk/lib/rust/rtl-heappage/)
+    # heapuser.c — replaced by Rust implementation (sdk/lib/rust/rtl-heapuser/)
     # image.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # interlck.c — replaced by Rust implementation (sdk/lib/rust/interlck/)
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
@@ -232,6 +232,12 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-error/src/winerr.rs
             ${RUST_WORKSPACE_DIR}/rtl-error/src/tables.rs
             ${RUST_WORKSPACE_DIR}/rtl-error/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-heappage/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heappage/src/heappage.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heappage/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-heapuser/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heapuser/src/heapuser.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heapuser/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs

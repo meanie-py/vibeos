@@ -886,6 +886,8 @@ dependencies = [
  "rtl-diag",
  "rtl-error",
  "rtl-heap",
+ "rtl-heappage",
+ "rtl-heapuser",
  "rtl-misc",
  "rtl-ppb",
  "rtl-propvar",
