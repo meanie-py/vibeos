@@ -4,16 +4,6 @@ use win32k_sys::win32k::*;
 // real symbols inside win32k.sys though — see win32ss/gdi/eng/clipobj.c).
 // Declare them locally with the in-kernel ABI (NTAPI = stdcall on i386,
 // cdecl elsewhere). Mirrors the lineto.rs precedent.
-extern "C" {
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: PVOID) -> BOOL;
-    fn CLIPOBJ_cEnumStart(
-        pco: *mut CLIPOBJ,
-        bAll: BOOL,
-        iType: ULONG,
-        iDirection: ULONG,
-        cLimit: ULONG,
-    );
-}
 
 // FORCEINLINE in win32ss/gdi/ntgdi/rect.h:55 — inline-expand.
 #[inline(always)]
@@ -568,3 +558,17 @@ pub unsafe extern "C" fn IntEngCopyBits(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+extern "system" {
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: PVOID) -> BOOL;
+    fn CLIPOBJ_cEnumStart(
+    pco: *mut CLIPOBJ,
+    bAll: BOOL,
+    iType: ULONG,
+    iDirection: ULONG,
+    cLimit: ULONG,
+    );
+}

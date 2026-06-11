@@ -1,5 +1,10 @@
 [workspace]
 members = [
+    "conutils-rust",
+    "dnslib-rust",
+    "skiplist-rust",
+    "rtl-heappage",
+    "rtl-heapuser",
     "access",
     "avltable",
     "bitmap",
@@ -112,6 +117,7 @@ members = [
     "acpica-sys",
     "acpi-rust",
     "pci-rust",
+    "pcix-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",

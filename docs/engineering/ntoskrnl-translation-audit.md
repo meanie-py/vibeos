@@ -204,6 +204,8 @@ etc., totalling ~165K LOC of C) — those are tracked separately in
 [`static-libs-translation-audit.md`](static-libs-translation-audit.md).
 That's the next "elimination" axis.
 
+> **Note (2026-06-09):** the ~30 cmake-built static-libs axis has since LARGELY COMPLETED — rtl/libcntpr/hal are ~fully Rust, cmlib in progress.
+
 Counts (verified by `wc -l`):
 
 | Bucket | LOC |
@@ -248,7 +250,7 @@ Smoke status:
 - **amd64: 7/7 PASS** (cmake build).
 - **arm64: 5/5 PASS** (cmake build). One open downstream issue —
   post-boot fastfat BUGCHECK with `STATUS_INSUFFICIENT_RESOURCES` —
-  is tracked separately and does not block smoke.
+  is tracked separately and does not block smoke. *(Possibly SUPERSEDED 2026-06-09: ext2/btrfs/ntfs FS were deleted 14a0563b291 — re-verify whether this BUGCHECK still reproduces.)*
 
 ## Survey of remaining `build-i386/` deps (2026-05-08)
 

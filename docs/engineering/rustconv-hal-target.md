@@ -1,6 +1,6 @@
 # rustconv: HAL-aware target abstraction
 
-**Status:** Design, not yet implemented.
+**Status:** IMPLEMENTED (commit 1cb012104bf); HAL translation since COMPLETE — HISTORICAL.
 **Owner:** TBD.
 **Last updated:** 2026-05-12.
 

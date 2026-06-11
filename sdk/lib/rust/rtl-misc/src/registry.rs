@@ -3,7 +3,10 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ACCESS_MASK, HANDLE, _UNICODE_STRING, _KEY_VALUE_PARTIAL_INFORMATION, KEY_BASIC_INFORMATION, PKEY_VALUE_PARTIAL_INFORMATION, _KEY_INFORMATION_CLASS_KeyBasicInformation, _KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation, _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation, _TOKEN_INFORMATION_CLASS_TokenUser, NtClose, _OBJECT_ATTRIBUTES, PHANDLE, PKEY_BASIC_INFORMATION, PKEY_VALUE_FULL_INFORMATION, PNTSTATUS, POBJECT_ATTRIBUTES, PRTL_QUERY_REGISTRY_TABLE, PSID_AND_ATTRIBUTES, PUNICODE_STRING, RtlAllocateHeap, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlConvertSidToUnicodeString, RtlExpandEnvironmentStrings_U, RtlFreeHeap, RtlFreeUnicodeString, RtlInitEmptyUnicodeString, RtlInitUnicodeString, ZwClose, ZwCreateKey, ZwDeleteKey, ZwDeleteValueKey, ZwEnumerateKey, ZwEnumerateValueKey, ZwOpenKey, ZwOpenProcessTokenEx, ZwOpenThreadTokenEx, ZwQueryInformationToken, ZwQueryValueKey, ZwSetValueKey};
+// RtlInitEmptyUnicodeString is a C FORCEINLINE (no out-of-line symbol); use the
+// ntkrnl-sys inline, not the bindgen extern (which links to a nonexistent symbol).
+use ntkrnl_sys::inline::common::RtlInitEmptyUnicodeString;
+use ntkrnl_sys::ddk::{ACCESS_MASK, HANDLE, _UNICODE_STRING, _KEY_VALUE_PARTIAL_INFORMATION, KEY_BASIC_INFORMATION, PKEY_VALUE_PARTIAL_INFORMATION, _KEY_INFORMATION_CLASS_KeyBasicInformation, _KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation, _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation, _TOKEN_INFORMATION_CLASS_TokenUser, NtClose, _OBJECT_ATTRIBUTES, PHANDLE, PKEY_BASIC_INFORMATION, PKEY_VALUE_FULL_INFORMATION, PNTSTATUS, POBJECT_ATTRIBUTES, PRTL_QUERY_REGISTRY_TABLE, PSID_AND_ATTRIBUTES, PUNICODE_STRING, RtlAllocateHeap, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlConvertSidToUnicodeString, RtlExpandEnvironmentStrings_U, RtlFreeHeap, RtlFreeUnicodeString, RtlInitUnicodeString, ZwClose, ZwCreateKey, ZwDeleteKey, ZwDeleteValueKey, ZwEnumerateKey, ZwEnumerateValueKey, ZwOpenKey, ZwOpenProcessTokenEx, ZwOpenThreadTokenEx, ZwQueryInformationToken, ZwQueryValueKey, ZwSetValueKey};
 
 // ---- local constants ----
 const RTL_REGISTRY_MAXIMUM: ULONG = 0x06;

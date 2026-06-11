@@ -51,8 +51,8 @@ list(APPEND SOURCE
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
     # heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
     # heapdbg.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/heapdbg.rs)
-    heappage.c
-    heapuser.c
+    # heappage.c — replaced by Rust implementation (sdk/lib/rust/rtl-heappage/)
+    # heapuser.c — replaced by Rust implementation (sdk/lib/rust/rtl-heapuser/)
     # image.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # interlck.c — replaced by Rust implementation (sdk/lib/rust/interlck/)
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
@@ -98,8 +98,10 @@ if(ARCH STREQUAL "i386")
         i386/except_asm.s
         # i386/interlck.S — replaced by Rust SList (sdk/lib/rust/slist/)
         i386/rtlmem.s
-        i386/rtlswap.S
-        i386/res_asm.s)
+        i386/rtlswap.S)
+        # i386/res_asm.s — replaced by Rust (sdk/lib/rust/rtl-misc/src/res.rs: LdrAccessResource@16).
+        # The asm stub's _LdrpAccessResource@16 callee lived in res.c.obj (now Rust); keeping
+        # the asm caused an undefined symbol once the stale fat librtl.a was regenerated lean.
     list(APPEND SOURCE
         i386/except.c
         i386/thread.c)
@@ -232,6 +234,12 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-error/src/winerr.rs
             ${RUST_WORKSPACE_DIR}/rtl-error/src/tables.rs
             ${RUST_WORKSPACE_DIR}/rtl-error/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-heappage/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heappage/src/heappage.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heappage/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-heapuser/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heapuser/src/heapuser.rs
+            ${RUST_WORKSPACE_DIR}/rtl-heapuser/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/mod.rs
             ${RUST_WORKSPACE_DIR}/rtl-strings/src/cabi/nls_tables.rs

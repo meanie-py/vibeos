@@ -206,6 +206,8 @@ StartWithDesktop(IN HINSTANCE hInstance)
 
     InitializeServerAdminUI();
 
+    /* Boot/test marker — taskbar (tray window) creation milestone. */
+    OutputDebugStringA("[EXPLORER] taskbar: creating tray window\n");
     CComPtr<ITrayWindow> Tray;
     CreateTrayWindow(&Tray);
 
@@ -236,6 +238,8 @@ StartWithDesktop(IN HINSTANCE hInstance)
 
     if (Tray != NULL)
     {
+        /* Boot/test marker — taskbar up, entering its message loop. */
+        OutputDebugStringA("[EXPLORER] taskbar: entering message loop\n");
         TrayMessageLoop(Tray);
 #if !WIN7_DEBUG_MODE
         HideMinimizedWindows(FALSE);

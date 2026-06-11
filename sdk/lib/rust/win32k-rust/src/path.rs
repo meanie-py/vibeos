@@ -73,7 +73,6 @@ extern "C" {
     fn w32r_RECTL_vSetRect(prcl: *mut RECTL, left: LONG, top: LONG, right: LONG, bottom: LONG);
     fn w32r_DC_pszlViewportExt(pdc: PDC) -> PSIZEL;
     fn w32r_pgef(n: i32) -> *mut FLOATOBJ;
-    fn RECTL_vMakeWellOrdered(prcl: *mut RECTL);
     fn w32r_XFORMOBJ_vInit(pxo: *mut XFORMOBJ, pmx: *mut MATRIX);
     fn w32r_XFORMOBJ_bApplyXform(pxo: *mut XFORMOBJ, iMode: ULONG, cPoints: ULONG, pvOut: PPOINTL, pvIn: PPOINTL) -> BOOL;
     fn w32r_MatrixS2XForm(pxform: *mut XFORML, pmx: *mut MATRIX);
@@ -95,7 +94,6 @@ extern "C" {
     fn w32r_FLOATOBJ_Sub(pf: PFLOATOBJ, pf2: PFLOATOBJ);
     fn w32r_FLOATOBJ_GetFloat(pf: PFLOATOBJ) -> FLOATL;
     fn w32r_SafeProbeForWrite(Address: *mut core::ffi::c_void, Length: u32, Alignment: u32) -> i32;
-    fn SetLastNtError(Status: i32);
     fn w32r_IntLPtoDP(dc: *mut DC, points: *mut POINT, count: INT) -> BOOL;
     fn DbgPrint(fmt: *const i8, ...);
     fn w32r_CoordLPtoDP(dc: PDC, pt: *mut POINT);
@@ -7242,3 +7240,17 @@ pub unsafe extern "C" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn RECTL_vMakeWellOrdered(prcl: *mut RECTL);
+    fn SetLastNtError(Status: i32);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn RECTL_vMakeWellOrdered(prcl: *mut RECTL);
+    fn SetLastNtError(Status: i32);
+}

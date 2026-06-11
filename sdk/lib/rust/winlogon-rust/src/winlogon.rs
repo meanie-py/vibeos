@@ -568,6 +568,20 @@ pub unsafe extern "system" fn WinMain(
     {
         // _USE_DUMMY_PSEH path (x86/amd64). InitKeyboardLayouts stays `#if 0`
         // (NtCreateSection deadlock in Rust MM for SEC_IMAGE) — skipped.
+
+        /* Load system fonts SYNCHRONOUSLY now — right after the window station and
+         * desktops exist (CreateWindowStationAndDesktops above) and BEFORE any text
+         * is rendered: the GINA status message (DisplayStatusMessage), the desktop
+         * watermark, and explorer's taskbar all need g_FontListHead populated. The
+         * kernel defers system-font loading to user space on x86 (IntLoadSystemFonts
+         * is a no-op there), so until winlogon calls AddFontResourceW the global font
+         * list is empty and every GreExtTextOutW hits IntRealizeFont NOMATCH. The old
+         * code did this on a background thread AFTER spawning explorer, which raced
+         * the shell's first paint and lost on i386 -> permanently blank desktop.
+         * Doing it here, before the first text render, makes it deterministic. */
+        DbgPrint(b"[WINLOGON] Loading system fonts (synchronous, pre-shell)...\n\0".as_ptr() as *const i8);
+        FontLoadThreadImpl(null_mut());
+
         DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
         if crate::rpcserver::StartRpcServer() == 0 {
             DbgPrint(b"[WINLOGON] StartRpcServer failed (non-fatal)\n\0".as_ptr() as *const i8);
@@ -711,17 +725,9 @@ pub unsafe extern "system" fn WinMain(
         }
     }
 
-    /* Load system fonts on a background thread to avoid blocking winlogon while
-     * CD I/O completes for each font file. */
-    {
-        let hThread = CreateThread(null_mut(), 0, Some(FontLoadThread), null_mut(), 0, null_mut());
-        if !hThread.is_null() {
-            DbgPrint(b"[WINLOGON] Font loading thread started\n\0".as_ptr() as *const i8);
-            CloseHandle(hThread);
-        } else {
-            DbgPrint(b"[WINLOGON] Failed to create font loading thread\n\0".as_ptr() as *const i8);
-        }
-    }
+    /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the
+     * shell's first paint already has g_FontListHead populated. The old async
+     * CreateThread(FontLoadThread) here raced the shell and lost on i386. */
 
     #[cfg(target_arch = "aarch64")]
     {

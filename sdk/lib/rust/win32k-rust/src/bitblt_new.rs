@@ -7,7 +7,6 @@ extern "system" {
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> BOOL;
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: BOOL, iType: ULONG, iDirection: ULONG, cLimit: ULONG);
     fn NT_ASSERT(expr: BOOL);
-    fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
     fn ROP4_BKGND(rop4: ROP4) -> ULONG;
     fn ROP4_FGND(rop4: ROP4) -> ULONG;
     fn ROP4_USES_DEST(rop4: ROP4) -> BOOL;
@@ -1759,3 +1758,15 @@ pub unsafe extern "C" fn IntEngCopyBits(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+
+// ABI-corrected extern decls — i386 calling-convention must match the
+// definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn RECTL_bIntersectRect(prclDst: *mut RECTL, prcl1: *const RECTL, prcl2: *const RECTL) -> BOOL;
+}

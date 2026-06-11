@@ -85,12 +85,12 @@ clean and smoke to `shell ready` (arm64 reaches `[EXPLORER] _tWinMain`).**
 | `ldr/ldrpe.c` | 1,281 | ✅ Rust (`ldr/ldrpe.rs`) | 9dcab30 |
 | `ldr/ldrutils.c` | 2,799 | ✅ Rust (`ldr/ldrutils.rs`) | cb04507 |
 | `ldr/ldrinit.c` (bootstrap) | 2,735 | ✅ Rust (`ldr/ldrinit.rs`) | 92c31cc |
-| `ldr/ldrapi.c` | 1,666 | ✅ Rust (`ldr/ldrapi.rs`) — **cold-green ×3, UNCOMMITTED** | (this session) |
-| `nt_0600/ldr/ldrnotify.c` | 154 | ✅ Rust (`nt_0600/ldr/ldrnotify.rs`, ungated) — **i386 cold-green, amd64/arm64 green, UNCOMMITTED** | (this session) |
-| `dispatch/dispatch.c` | 89 | ✅ Rust (`dispatch/mod.rs`, `#[cfg(aarch64)]`) — arm64 only (KiRaise/KiUserCallbackDispatcher); **arm64 green, UNCOMMITTED** | (this session) |
+| `ldr/ldrapi.c` | 1,666 | ✅ Rust (`ldr/ldrapi.rs`) — **cold-green ×3, COMMITTED b3252b81c5a** | b3252b81c5a |
+| `nt_0600/ldr/ldrnotify.c` | 154 | ✅ Rust (`nt_0600/ldr/ldrnotify.rs`, ungated) — **COMMITTED b3252b81c5a** | b3252b81c5a |
+| `dispatch/dispatch.c` | 89 | ✅ Rust (`dispatch/mod.rs`, `#[cfg(aarch64)]`) — arm64 only (KiRaise/KiUserCallbackDispatcher); **COMMITTED b3252b81c5a** | b3252b81c5a |
 | `dispatch/{i386,amd64,arm64}/dispatch.S` | 708 | ⏸ **stays asm** (cmake-compiled, untouched) | — |
 
-**~11.2K of ~11.7K translatable LOC flipped (96%); 243 LOC of C remain.**
+**ntdll PE body 100% Rust (committed b3252b81c5a); only the per-arch `dispatch.S` asm remains C by design.**
 
 ### How reality diverged from the plan
 

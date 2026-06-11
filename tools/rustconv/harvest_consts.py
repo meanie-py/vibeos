@@ -23,9 +23,11 @@ CRATE_SRC = sys.argv[1]
 names = sys.argv[2:] or [l.strip() for l in sys.stdin if l.strip()]
 SRC = os.path.abspath(os.path.join(CRATE_SRC, "../../../../.."))  # repo root (src->crate->rust->lib->sdk->root)
 HEADER_DIRS = [f"{SRC}/sdk/include/{d}" for d in
-               ("ddk", "psdk", "xdk", "ndk", "reactos", "reactos/drivers", "")]
+               ("ddk", "psdk", "xdk", "ndk", "reactos", "reactos/drivers",
+                "reactos/drivers/pci", "")]
 # driver-PRIVATE headers carry many #defines (pool tags, debug sizes) not in the SDK tree.
-HEADER_DIRS += [f"{SRC}/drivers/storage/class/classpnp"]
+HEADER_DIRS += [f"{SRC}/drivers/storage/class/classpnp",
+                f"{SRC}/drivers/bus/pcix"]
 HEADERS = []
 for d in HEADER_DIRS:
     HEADERS += glob.glob(f"{d}/*.h")
