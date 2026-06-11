@@ -5,6 +5,7 @@ members = [
     "skiplist-rust",
     "rtl-data",
     "rtl-heappage",
+    "rtl-heapuser",
     "access",
     "avltable",
     "bitmap",
