@@ -791,13 +791,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rtl-data"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
-]
-
-[[package]]
 name = "rtl-diag"
 version = "0.1.0"
 dependencies = [
