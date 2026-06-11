@@ -141,8 +141,15 @@ case "$ARCH" in
         [ -f "$OVMF_CODE" ] || die "missing $OVMF_CODE (i386 UEFI firmware) — copy qemu/OVMF32_{CODE,VARS}.fd from another worktree"
         OVMF_VARS="$RUN_DIR/ovmf32_vars.fd"   # per-run writable copy
         cp "$QEMU_DIR/OVMF32_VARS.fd" "$OVMF_VARS"
+        # GDB software breakpoints DO NOT trigger under -accel kvm on this host
+        # (KVM_SET_GUEST_DEBUG int3 injection is unreliable here), so any
+        # run-until/breakpoint-based debugging silently never stops. Set
+        # VIBEOS_NO_KVM=1 to force the TCG interpreter, where breakpoints work.
         KVM_FLAGS=()
-        if [ -r /dev/kvm ]; then KVM_FLAGS=(-accel kvm -cpu host); else KVM_FLAGS=(-cpu Westmere); fi
+        if [ -n "${VIBEOS_NO_KVM:-}" ]; then
+            KVM_FLAGS=(-accel tcg -cpu max)
+            log_info "VIBEOS_NO_KVM set — using TCG (breakpoints work, slower boot)"
+        elif [ -r /dev/kvm ]; then KVM_FLAGS=(-accel kvm -cpu host); else KVM_FLAGS=(-cpu Westmere); fi
         QEMU_CMD=(
             qemu-system-i386 -M pc "${KVM_FLAGS[@]}" -m 512M
             -drive "if=pflash,format=raw,file=$OVMF_CODE,readonly=on"

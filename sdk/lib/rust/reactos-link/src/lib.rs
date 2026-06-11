@@ -1433,28 +1433,29 @@ impl Linker {
             // See memory feedback_cnt_rust_no_prepopulate_amd64_arm64.
             //
             // An explicit `rustflags` (the main body's .rust_build_rustflags(),
-            // e.g. freeldr-rust i386 `-sse,-sse2`) wins; otherwise fall back to
-            // the cnt-rust-lib keyed default.
+            // e.g. freeldr-rust i386 `-sse,-sse2`) wins; otherwise restate the
+            // i386 no-SSE baseline that `.cargo/config.toml` would have supplied
+            // if this child cargo ran from the workspace. User-mode callbacks
+            // can execute before the i386 SSE state is usable; ntdll-rust hit
+            // STATUS_ILLEGAL_INSTRUCTION on compiler-emitted `xorps`.
             if let Some(rf) = rustflags {
                 cmd.env("RUSTFLAGS", rf);
-            } else if crate_name == "cnt-rust-lib" {
-                let rf = if self.arch.name == "i386" {
-                    "-C target-feature=-sse,-sse2 -C no-prepopulate-passes"
-                } else {
-                    "-C no-prepopulate-passes"
-                };
-                cmd.env("RUSTFLAGS", rf);
-            } else if matches!(crate_name, "cport-rust" | "hal-rust") && self.arch.name == "i386" {
-                // cport-rust (sdk/lib/cportlib/CMakeLists.txt) + hal-rust's
-                // minihal variant (hal/halx86/CMakeLists.txt, i386-only) both
-                // run pre-boot before CR4.OSFXSR, so i386 needs SSE OFF. cmake
-                // gets it from the workspace .cargo/config.toml [i686] (cport)
-                // / an explicit RUSTFLAGS=-sse,-sse2 (hal mini) — the former
-                // isn't discovered from build_dir cwd, so re-state it here.
-                // NEITHER is CRT-class (cmake passes no -C no-prepopulate-passes
-                // for them), and amd64/arm64 cport keeps SSE (config.toml only
-                // disables it on i686) → key i386 only, no no-prepopulate.
-                cmd.env("RUSTFLAGS", "-C target-feature=-sse,-sse2");
+            } else {
+                // c-r-p generalized this: every i386 Rust crate builds no-SSE
+                // (kernel/loader code runs pre-CR4.OSFXSR), and cnt-rust-lib adds
+                // -C no-prepopulate-passes on every arch. This subsumes the old
+                // explicit cport-rust/hal-rust/cmlib-rust i386 match — cmlib-rust
+                // (the CM hive cohab lib) gets -sse,-sse2 via the generic i386 rule.
+                let mut parts: Vec<&str> = Vec::new();
+                if self.arch.name == "i386" {
+                    parts.push("-C target-feature=-sse,-sse2");
+                }
+                if crate_name == "cnt-rust-lib" {
+                    parts.push("-C no-prepopulate-passes");
+                }
+                if !parts.is_empty() {
+                    cmd.env("RUSTFLAGS", parts.join(" "));
+                }
             }
         }
         let status = cmd

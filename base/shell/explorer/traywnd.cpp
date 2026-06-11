@@ -2302,6 +2302,8 @@ ChangePos:
     {
         HRESULT hRet;
 
+        /* Boot/test marker — taskbar tray window WM_CREATE begin. */
+        OutputDebugStringA("[EXPLORER] taskbar: OnCreate begin\n");
         ((ITrayWindow*)this)->AddRef();
 
         SetWindowTheme(m_hWnd, L"TaskBar", NULL);
@@ -2331,6 +2333,9 @@ ChangePos:
         hRet = CTrayNotifyWnd_CreateInstance(m_hWnd, IID_PPV_ARG(IUnknown, &m_TrayNotifyInstance));
         if (FAILED_UNEXPECTEDLY(hRet))
             return FALSE;
+
+        /* Boot/test marker — start button + task band + tray notify all created. */
+        OutputDebugStringA("[EXPLORER] taskbar: child controls created\n");
 
         /* Get the hwnd of the rebar */
         hRet = IUnknown_GetWindow(m_TrayBandSite, &m_Rebar);

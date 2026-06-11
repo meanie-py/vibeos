@@ -1,5 +1,7 @@
 # Win32k Pre-Translation (C-Side Rewrite) Audit
 
+> **HISTORICAL — pre-translation C-side rewrite phase (2026-05-16). The win32k C→Rust translation it enabled has since landed ~38 ntuser waves on continue-rust-port; see win32k-translation-audit + project_win32k_ntuser_directdraw_banked.**
+
 Last updated 2026-05-16. **Status: Pass 0 + Pass 1 landed (worktree
 `worktree-win32k-translation`, uncommitted).** The inventory/classifier
 (Pass 0) and the mechanical probe-lowering rewriter (Pass 1) are built,

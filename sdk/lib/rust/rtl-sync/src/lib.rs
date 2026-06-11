@@ -14,17 +14,29 @@
 
 pub mod shared;
 
-#[cfg(feature = "cabi")]
+// atomics + srw/condvar/runonce/locale are in BOTH the kernel/ntdll-main link
+// surface (`cabi`) and the standalone ntdll_vista.dll forwarder (`vista`).
+#[cfg(any(feature = "cabi", feature = "vista"))]
 pub mod atomics;
+#[cfg(any(feature = "cabi", feature = "vista"))]
+pub mod srw;
+#[cfg(any(feature = "cabi", feature = "vista"))]
+pub mod condvar;
+#[cfg(any(feature = "cabi", feature = "vista"))]
+pub mod runonce;
+#[cfg(any(feature = "cabi", feature = "vista"))]
+pub mod locale;
+
+// critical + wait are NOT exported by ntdll_vista.dll — only the main `rtl`
+// link surface (`cabi`) compiles them. Under `vista`, condvar imports
+// RtlEnter/LeaveCriticalSection from ntdll.dll instead (see condvar.rs).
 #[cfg(feature = "cabi")]
 pub mod critical;
 #[cfg(feature = "cabi")]
 pub mod wait;
-#[cfg(feature = "cabi")]
-pub mod srw;
-#[cfg(feature = "cabi")]
-pub mod condvar;
-#[cfg(feature = "cabi")]
-pub mod runonce;
-#[cfg(feature = "cabi")]
-pub mod locale;
+
+// NOTE: rtl-sync stays rlib-only. The standalone ntdll_vista.dll staticlib +
+// its panic_handler live in the sibling `rtl-vista-rust` crate, which re-exports
+// these `vista`-gated modules. (A staticlib crate-type here would force cargo to
+// build the .a even as rtl-rust's rlib dep, demanding a panic_handler that would
+// duplicate ntoskrnl/ntdll's under `cabi`.)

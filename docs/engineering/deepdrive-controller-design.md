@@ -1,6 +1,6 @@
 # deepdrive — a Python controller for driving DeepCode (DeepSeek) as a sub-agent
 
-**Status:** design (pre-implementation) · **Date:** 2026-06-07 · **Owner:** rust-port
+**Status:** IMPLEMENTED (tools/deepdrive/deepdrive.py); in production use. · **Date:** 2026-06-07 · **Owner:** rust-port
 
 ## 1. Motivation
 

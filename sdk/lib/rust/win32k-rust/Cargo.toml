@@ -2,6 +2,9 @@
 name = "win32k-rust"
 version = "0.1.0"
 edition = "2021"
+# src/main.rs is the ntuser main.c translation (a module), NOT a binary entry
+# point — disable Cargo's auto-bin discovery so it isn't built as a `bin`.
+autobins = false
 
 [lib]
 crate-type = ["rlib"]

@@ -418,10 +418,11 @@ pub const Stable: u32 = 0;
 pub const Volatile: u32 = 1;
 
 // CM_CHECK_REGISTRY_* (config/cm.h)
-pub const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000010;
-pub const CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES: u32 = 0x00000020;
-pub const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000040;
-pub const CM_CHECK_REGISTRY_FIX_HIVE: u32 = 0x00000080;
+pub const CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES: u32 = 0x00000000;
+pub const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000002;
+pub const CM_CHECK_REGISTRY_BOOTLOADER_PURGE_VOLATILES: u32 = 0x00000004;
+pub const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000008;
+pub const CM_CHECK_REGISTRY_FIX_HIVE: u32 = 0x00000010;
 
 // CM Pool tags (from config/cm.h)
 pub const TAG_CM: u32 = u32::from_le_bytes(*b"MmCk");      // 'kCmM'
@@ -1862,11 +1863,11 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
             (*CmpMachineHiveList.as_ptr().add(i as usize)).HHiveFlags,
             &mut CmHive,
             core::ptr::addr_of_mut!((*CmpMachineHiveList.as_mut_ptr().add(i as usize)).Allocate),
-            0x00000010
+            CM_CHECK_REGISTRY_PURGE_VOLATILES
         );
         
         if !NT_SUCCESS(Status) ||
-            (CmpShareSystemHives == 0 && (*CmHive).FileHandles[0].is_null()) {
+            (CmpShareSystemHives == 0 && (*CmHive).FileHandles[HFILE_TYPE_LOG as usize].is_null()) {
             ErrorParameters = core::ptr::addr_of_mut!(FileName) as *mut core::ffi::c_void;
             NtRaiseHardError(
                 0xC0000218u32 as i32,
@@ -1910,8 +1911,8 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
                 KeBugCheckEx(0x74, 9, 0, i as usize, Status as usize);
             }
 
-            (*CmHive).FileHandles[2] = AlternateHandle;
-            (*CmHive).FileHandles[1] = PrimaryHandle;
+            (*CmHive).FileHandles[HFILE_TYPE_ALTERNATE as usize] = AlternateHandle;
+            (*CmHive).FileHandles[HFILE_TYPE_PRIMARY as usize] = PrimaryHandle;
 
             (*CmHive).Hive.HiveFlags &= !0x00000080;
 

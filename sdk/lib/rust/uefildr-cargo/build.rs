@@ -107,9 +107,14 @@ fn main() {
     ]);
 
     // blcmlib's 13 C sources (sdk/lib/cmlib/CMakeLists.txt) compiled in-cargo by
-    // replaying cmake's clang cmd (flag-exact incl. _BLDR_ + the cmlib.h PCH) —
-    // produces a symbol-identical libblcmlib.a without `ninja blcmlib`. C-only,
-    // no asm. cmboot-rust (in freeldr-rust) calls these Hv*/Cm* symbols.
+    // replaying cmake's clang cmd (flag-exact incl. _BLDR_ + the cmlib.h PCH).
+    // NOTE: the loader still uses the reduced `_BLDR_` C variant, NOT cmlib-rust.
+    // The kernel cmlib cohab is fully Rust (libcmlib_rust.a), but the loader's
+    // full-crate swap is deferred: cmlib-rust compiles the FULL (non-_BLDR_)
+    // variant, whose CmCheckRegistry validation path the bootloader exercises
+    // (HINIT_FLAT + VALIDATE_HIVE) and which hangs at boot — that needs a `bldr`
+    // feature gating the validation/write paths out (matching the C _BLDR_ build)
+    // before the loader swap is safe. See docs/engineering/... cmlib loader swap.
     const BLCMLIB_C: &[&str] = &[
         "sdk/lib/cmlib/cmcheck.c",
         "sdk/lib/cmlib/cminit.c",
@@ -182,8 +187,9 @@ fn main() {
         // path-deps) — watch so an edit re-runs build.rs (each crate's OWN src
         // is auto-tracked by build_rust_crate; these are the path-deps).
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
-        // blcmlib C compiled in-cargo (compile_commands.json replay) — drops the
-        // cmake libblcmlib.a reuse. In the C-archive position (before rust libs).
+        // blcmlib C compiled in-cargo (compile_commands.json replay) — the loader
+        // keeps the reduced _BLDR_ C variant (kernel cmlib is fully Rust; loader
+        // swap deferred, see note above). C-archive position (before rust libs).
         .c_from_compile_db("blcmlib", BLCMLIB_C)
         // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.

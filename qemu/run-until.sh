@@ -92,6 +92,10 @@ EX_ARGS=(
     -ex "set architecture $GDB_ARCH"
     -ex "file $KERNEL"
     -ex "target remote 127.0.0.1:$GDB_PORT"
+    # `target remote` to a KVM-accelerated QEMU does not reliably halt the
+    # vCPUs — find-kbase's memory scan then races a moving address space and
+    # `break`/`continue` fail with "target is running". Force a stop up front.
+    -ex "interrupt"
     -ex "source $GDB_HELPERS_DIR/preamble.gdb"
     -ex "source $GDB_HELPERS_DIR/find-kbase.py"
     -ex "source $GDB_HELPERS_DIR/bt-tagged.py"

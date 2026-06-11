@@ -12,5 +12,10 @@ crate-type = ["rlib"]
 # avoid rustc emitting raw-dylib import thunks for ntoskrnl.exe symbols
 # (NlsMb*/NlsOem*) that don't exist at freeldr's link time and conflict
 # with blrtl/nlsboot.c (task #33).
-default = ["hal_bindgen"]
+default = ["hal_bindgen", "inline_exports"]
 hal_bindgen = []
+# Emit real symbols for translated FORCEINLINE/global-asm kernel helpers.
+# Kernel-owned Rust crates use the default feature set. Cohab leaf libraries
+# that only need DDK declarations opt out so their staticlibs cannot perturb
+# early KE symbol selection under --allow-multiple-definition.
+inline_exports = []

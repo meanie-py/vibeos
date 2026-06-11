@@ -1,0 +1,17 @@
+# pl011-rust — Rust translation of drivers/serial/pl011/pl011.c (minimal PL011
+# UART driver for ARM64 QEMU virt, pl011.sys). crate-type=staticlib →
+# libpl011_rust.a, linked into the cmake-built pl011.sys with pl011.c commented
+# out (i8042prt-rust style cohabitation). Standalone kernel-mode driver on the
+# ntkrnl-sys substrate. Built for all 3 arches. DeepSeek+c2rust translation
+# (Batch 3 driver residue). C kept on disk per the never-delete rule.
+
+[package]
+name = "pl011-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

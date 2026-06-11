@@ -96,11 +96,12 @@ list(APPEND SOURCE
     # gdi/eng/transblt.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/engwindow.c     # replaced by Rust (cohabitation, bisect iter 7)
     # gdi/eng/xlateobj.c  # replaced by Rust (xlateobj.rs) — cohabitation [wave 2 sweep]
-    user/ntuser/main.c
-    user/ntuser/misc/file.c
+    # user/ntuser/main.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/main.rs) — cohabitation [ntuser frontier]
+    user/ntuser/main_rust_shims.c  # napi.h syscall dispatch tables (Win32kSSDT/SSPT/NumberOfSysCalls) for main.rs
+    # user/ntuser/misc/file.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/file.rs) — cohabitation [ntuser wave 10]
     # user/ntuser/misc/rtlstr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtlstr.rs) — cohabitation [ntuser wave 8]
     # user/ntuser/misc/copy.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/copy.rs) — cohabitation [ntuser wave 8]
-    user/ntuser/misc/registry.c
+    # user/ntuser/misc/registry.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/registry.rs) — cohabitation [ntuser wave 11]
     reactx/ntddraw/ddraw.c
     reactx/ntddraw/dd.c
     reactx/ntddraw/ddsurf.c
@@ -111,58 +112,58 @@ list(APPEND SOURCE
     reactx/ntddraw/eng.c
     reactx/ntddraw/dxeng.c
     # user/ntuser/accelerator.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/accelerator.rs) — cohabitation [ntuser wave 4]
-    user/ntuser/callback.c
+    # user/ntuser/callback.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callback.rs) — cohabitation [ntuser wave 28]
     # user/ntuser/callproc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/callproc.rs) — cohabitation [ntuser wave 7]
     # user/ntuser/caret.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/caret.rs) — cohabitation [ntuser wave 3]
-    user/ntuser/class.c
-    user/ntuser/clipboard.c
+    # user/ntuser/class.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/class.rs) — cohabitation [ntuser wave 12 spine]
+    # user/ntuser/clipboard.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/clipboard.rs) — cohabitation [ntuser wave 15 spine]
     # user/ntuser/console.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/console.rs) — cohabitation [ntuser wave 7]
     # user/ntuser/csr.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/csr.rs) — cohabitation [ntuser wave 9]
-    user/ntuser/cursoricon.c
-    user/ntuser/dde.c
-    user/ntuser/defwnd.c
-    user/ntuser/desktop.c
-    user/ntuser/display.c
-    user/ntuser/draw.c
-    user/ntuser/event.c
-    user/ntuser/focus.c
+    # user/ntuser/cursoricon.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/cursoricon.rs) — cohabitation [ntuser wave 35]
+    # user/ntuser/dde.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/dde.rs) — cohabitation [ntuser wave 21]
+    # user/ntuser/defwnd.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/defwnd.rs) — cohabitation [ntuser frontier]
+    # user/ntuser/desktop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/desktop.rs) — cohabitation [ntuser wave 13 spine]
+    # user/ntuser/display.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/display.rs) — cohabitation [ntuser wave 31]
+    # user/ntuser/draw.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/draw.rs) — cohabitation [ntuser wave 32]
+    # user/ntuser/event.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/event.rs) — cohabitation [ntuser wave 10]
+    # user/ntuser/focus.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/focus.rs) — cohabitation [ntuser wave 25]
     # user/ntuser/ghost.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ghost.rs) — cohabitation [ntuser wave 5]
     # user/ntuser/guicheck.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/guicheck.rs) — cohabitation [ntuser wave 2]
-    user/ntuser/hook.c
-    user/ntuser/hotkey.c
-    user/ntuser/input.c
-    user/ntuser/ime.c
-    user/ntuser/keyboard.c
-    user/ntuser/kbdlayout.c
-    user/ntuser/layered.c
-    user/ntuser/menu.c
-    user/ntuser/message.c
+    # user/ntuser/hook.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hook.rs) — cohabitation [ntuser wave 33]
+    # user/ntuser/hotkey.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hotkey.rs) — cohabitation [ntuser wave 18]
+    # user/ntuser/input.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/input.rs) — cohabitation [ntuser wave 30]
+    # user/ntuser/ime.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ime.rs) — cohabitation [ntuser wave 36]
+    # user/ntuser/keyboard.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/keyboard.rs) — cohabitation [ntuser wave 38]
+    # user/ntuser/kbdlayout.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/kbdlayout.rs) — cohabitation [ntuser frontier]
+    # user/ntuser/layered.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/layered.rs) — cohabitation [ntuser wave 16]
+    # user/ntuser/menu.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/menu.rs) — cohabitation [ntuser frontier]
+    # user/ntuser/message.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/message.rs) — cohabitation [ntuser frontier]
     # user/ntuser/metric.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/metric.rs) — cohabitation [ntuser wave 2]
-    user/ntuser/misc.c
-    user/ntuser/monitor.c
-    user/ntuser/mouse.c
-    user/ntuser/msgqueue.c
-    user/ntuser/nonclient.c
-    user/ntuser/ntstubs.c
+    # user/ntuser/misc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/misc.rs) — cohabitation [ntuser wave 26]
+    # user/ntuser/monitor.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/monitor.rs) — cohabitation [ntuser wave 20]
+    # user/ntuser/mouse.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntmouse.rs) — cohabitation [ntuser wave 29]
+    # user/ntuser/msgqueue.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/msgqueue.rs) — cohabitation [ntuser wave 37]
+    # user/ntuser/nonclient.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/nonclient.rs) — cohabitation [ntuser wave 27]
+    # user/ntuser/ntstubs.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntstubs.rs) — cohabitation [ntuser wave 22]
     # user/ntuser/ntuser.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntuser.rs) — cohabitation [ntuser wave 7]
-    user/ntuser/painting.c
+    # user/ntuser/painting.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/painting.rs) — cohabitation [ntuser frontier]
     # user/ntuser/power.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/power.rs) — cohabitation [ntuser wave 6]
     # user/ntuser/prop.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/prop.rs) — cohabitation [ntuser wave 2]
-    user/ntuser/scrollbar.c
-    user/ntuser/scrollex.c
-    user/ntuser/security.c
+    # user/ntuser/scrollbar.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/scrollbar.rs) — cohabitation [ntuser wave 34]
+    # user/ntuser/scrollex.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/scrollex.rs) — cohabitation [ntuser wave 19]
+    # user/ntuser/security.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/security.rs) — cohabitation [ntuser wave 11]
     # user/ntuser/session.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/session.rs) — cohabitation [ntuser wave 1]
-    user/ntuser/shutdown.c
-    user/ntuser/simplecall.c
-    user/ntuser/sysparams.c
-    user/ntuser/timer.c
+    # user/ntuser/shutdown.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/shutdown.rs) — cohabitation [ntuser wave 10]
+    # user/ntuser/simplecall.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/simplecall.rs) — cohabitation [ntuser wave 24]
+    # user/ntuser/sysparams.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/sysparams.rs) — cohabitation [ntuser frontier]
+    # user/ntuser/timer.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/timer.rs) — cohabitation [ntuser wave 17]
     # user/ntuser/useratom.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/useratom.rs) — cohabitation [ntuser wave 1]
     # user/ntuser/usrheap.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/usrheap.rs) — cohabitation [ntuser wave 6]
     # user/ntuser/vis.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/vis.rs) — cohabitation [ntuser wave 5]
-    user/ntuser/windc.c
-    user/ntuser/window.c
-    user/ntuser/winpos.c
-    user/ntuser/winsta.c
+    # user/ntuser/windc.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/windc.rs) — cohabitation [ntuser wave 23]
+    # user/ntuser/window.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/window.rs) — cohabitation [ntuser frontier]
+    # user/ntuser/winpos.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winpos.rs) — cohabitation [ntuser frontier]
+    # user/ntuser/winsta.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/winsta.rs) — cohabitation [ntuser wave 14 spine]
     # user/ntuser/object.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/object.rs) — cohabitation [Phase 1b]
     user/rtl/image.c
     user/rtl/text.c
@@ -319,6 +320,47 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/copy.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/rtlstr.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/csr.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/file.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/shutdown.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/event.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/registry.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/security.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/class.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/desktop.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/winsta.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/clipboard.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/layered.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/timer.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/hotkey.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollex.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/monitor.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/dde.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntstubs.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/windc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/simplecall.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/focus.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/misc.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/nonclient.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/callback.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ntmouse.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/input.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/display.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/draw.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/hook.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/scrollbar.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/cursoricon.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/ime.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/msgqueue.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/keyboard.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/main.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/defwnd.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/kbdlayout.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/menu.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/sysparams.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/window.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/message.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/painting.rs
+            ${RUST_WORKSPACE_DIR}/win32k-rust/src/winpos.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/lineto.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mapping.rs
             ${RUST_WORKSPACE_DIR}/win32k-rust/src/mem.rs

@@ -1,0 +1,17 @@
+# cryptlib-rust — Rust cohabitation crate for sdk/lib/cryptlib.
+# 8 .c files → 8 Rust modules (aes, des, md4, md5, mvAesAlg, rc4, sha1, util).
+# cryptlib is a STATICLIB linked by drivers/crypto/ksecdd.
+# ABI: tomcrypt (aes/des/rc4) = cdecl = extern "C";
+#      MD4/MD5/SHA/RC4 public APIs = NTAPI = extern "system" on i386 (stdcall).
+# See NOTES.md for cohab-flip CMakeLists plan.
+
+[package]
+name = "cryptlib-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+# No external dependencies — all types are self-contained in crate::types.

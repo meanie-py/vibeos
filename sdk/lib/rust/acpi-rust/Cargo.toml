@@ -1,0 +1,19 @@
+# acpi-rust — Rust translation of the ReactOS ACPI driver glue (drivers/bus/acpi).
+# Phase 2 of the ACPICA FFI-to-blob plan: Intel's ACPICA reference impl stays a
+# C static lib (libacpica.a); only the OS-services glue becomes Rust. This crate
+# starts with osl.c (the OS Services Layer — the 46 AcpiOs* callbacks ACPICA
+# calls into). crate-type=staticlib → libacpi_rust.a, linked into the cmake-built
+# acpi.sys with osl.c commented out (processr/pl011-style cohabitation). The C
+# kept on disk per the never-delete rule. Built for all 3 arches.
+
+[package]
+name = "acpi-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+acpica-sys = { path = "../acpica-sys" }
