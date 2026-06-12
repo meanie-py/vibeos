@@ -7,11 +7,12 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusNumber, _OBJECT_ATTRIBUTES, PUNICODE_STRING, RtlInitUnicodeString, ZwClose, ZwCreateKey, ZwOpenKey, ZwSetValueKey};
+use ntkrnl_sys::ddk::{_OBJECT_ATTRIBUTES, PUNICODE_STRING, RtlInitUnicodeString, ZwClose, ZwCreateKey, ZwOpenKey, ZwSetValueKey, _UNICODE_STRING, wchar_t};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CONFIGURATION_INFO, INQUIRYDATA, PSCSI_PORT_DEVICE_EXTENSION, PSCSI_PORT_LUN_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION};
-use ntkrnl_sys::ddk::{_UNICODE_STRING, wchar_t};
+use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, INQUIRYDATA, PSCSI_PORT_DEVICE_EXTENSION, PSCSI_PORT_LUN_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::driver_ddk::{UNICODE_NULL};
 
 extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> i32;
@@ -306,7 +307,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
         return Status;
     }
 
-    UlongData = (*(*(*DeviceExtension).PortConfig).AccessRanges.offset(0)).RangeStart.u.__bindgen_anon_1.LowPart;
+    UlongData = (*((*(*DeviceExtension).PortConfig).AccessRanges as *mut ACCESS_RANGE)).RangeStart.u.LowPart;
 
     RtlInitUnicodeString(
         &raw mut ValueName,
@@ -453,9 +454,7 @@ pub unsafe extern "C" fn RegistryInitLunKey(
 
     swprintf(
         &raw mut nameBuffer as *mut wchar_t,
-        &raw const core::mem::transmute::<[u8; 28], [u16; 14]>(
-            *b"T\0a\0r\0g\0e\0t\0 \0I\0d\0 \0%\0l\0u\0\0\0",
-        ) as *const wchar_t,
+        { const W: [u16; 14] = unsafe { core::mem::transmute(*b"T\0a\0r\0g\0e\0t\0 \0I\0d\0 \0%\0l\0u\0\0\0") }; W.as_ptr() } as *const wchar_t,
         (*LunExtension).TargetId as i32,
     );
     RtlInitUnicodeString(
@@ -482,9 +481,7 @@ pub unsafe extern "C" fn RegistryInitLunKey(
     }
     swprintf(
         &raw mut nameBuffer as *mut wchar_t,
-        &raw const core::mem::transmute::<[u8; 40], [u16; 20]>(
-            *b"L\0o\0g\0i\0c\0a\0l\0 \0U\0n\0i\0t\0 \0I\0d\0 \0%\0l\0u\0\0\0",
-        ) as *const wchar_t,
+        { const W: [u16; 20] = unsafe { core::mem::transmute(*b"L\0o\0g\0i\0c\0a\0l\0 \0U\0n\0i\0t\0 \0I\0d\0 \0%\0l\0u\0\0\0") }; W.as_ptr() } as *const wchar_t,
         (*LunExtension).Lun as i32,
     );
     RtlInitUnicodeString(
@@ -509,18 +506,14 @@ pub unsafe extern "C" fn RegistryInitLunKey(
     if NT_SUCCESS(status) {
         swprintf(
             &raw mut nameBuffer as *mut wchar_t,
-            &raw const core::mem::transmute::<[u8; 28], [u16; 14]>(
-                *b"%\0.\08\0S\0%\0.\x001\x006\0S\0%\0.\x004\0S\0\0\0",
-            ) as *const wchar_t,
+            { const W: [u16; 14] = unsafe { core::mem::transmute(*b"%\0.\08\0S\0%\0.\x001\x006\0S\0%\0.\x004\0S\0\0\0") }; W.as_ptr() } as *const wchar_t,
             &raw mut (*LunExtension).InquiryData.VendorId as *mut u8,
             &raw mut (*LunExtension).InquiryData.ProductId as *mut u8,
             &raw mut (*LunExtension).InquiryData.ProductRevisionLevel as *mut u8,
         );
         RtlInitUnicodeString(
             &raw mut valueName,
-            &raw const core::mem::transmute::<[u8; 22], [u16; 11]>(
-                *b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0",
-            ) as PCWSTR,
+            { const W: [u16; 11] = unsafe { core::mem::transmute(*b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0") }; W.as_ptr() } as PCWSTR,
         );
         status = ZwSetValueKey(
             (*LunExtension).RegistryMapKey,
@@ -536,9 +529,7 @@ pub unsafe extern "C" fn RegistryInitLunKey(
             typeName = GetPeripheralTypeW(&raw mut (*LunExtension).InquiryData) as PWCHAR;
             RtlInitUnicodeString(
                 &raw mut valueName,
-                &raw const core::mem::transmute::<[u8; 10], [u16; 5]>(
-                    *b"T\0y\0p\0e\0\0\0",
-                ) as PCWSTR,
+                { const W: [u16; 5] = unsafe { core::mem::transmute(*b"T\0y\0p\0e\0\0\0") }; W.as_ptr() } as PCWSTR,
             );
             status = ZwSetValueKey(
                 (*LunExtension).RegistryMapKey,
@@ -553,9 +544,7 @@ pub unsafe extern "C" fn RegistryInitLunKey(
             if NT_SUCCESS(status) {
                 RtlInitUnicodeString(
                     &raw mut valueName,
-                    &raw const core::mem::transmute::<[u8; 24], [u16; 12]>(
-                        *b"I\0n\0q\0u\0i\0r\0y\0D\0a\0t\0a\0\0\0",
-                    ) as PCWSTR,
+                    { const W: [u16; 12] = unsafe { core::mem::transmute(*b"I\0n\0q\0u\0i\0r\0y\0D\0a\0t\0a\0\0\0") }; W.as_ptr() } as PCWSTR,
                 );
                 status = ZwSetValueKey(
                     (*LunExtension).RegistryMapKey,

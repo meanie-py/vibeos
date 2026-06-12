@@ -9,13 +9,12 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, BusQueryCompatibleIDs, BusQueryDeviceID, BusQueryHardwareIDs, BusQueryInstanceID, DEVICE_RELATIONS, DeviceTextDescription, DeviceTextLocationInformation, DeviceType, IoCreateDevice, IoGetCurrentIrpStackLocation, KeInitializeDeviceQueue, LPCSTR, LPWSTR, PCSZ, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlAnsiStringToUnicodeString, RtlInitAnsiString, TargetDeviceRelation, UINT32};
+use ntkrnl_sys::ddk::{ANSI_STRING, DEVICE_RELATIONS, IoCreateDevice, IoGetCurrentIrpStackLocation, KeInitializeDeviceQueue, LPCSTR, LPWSTR, PCSZ, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlAnsiStringToUnicodeString, RtlInitAnsiString, UINT32, DEVICE_OBJECT, DRIVER_OBJECT, IO_STACK_LOCATION, IRP, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::addr_of_mut;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{INQUIRYDATA, PINQUIRYDATA, PSCSI_BUS_INFO, PSCSI_PORT_DEVICE_EXTENSION, PSCSI_PORT_LUN_EXTENSION, PSCSI_REQUEST_BLOCK_INFO, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_LUN_EXTENSION, _SCSI_REQUEST_BLOCK_INFO};
-use ntkrnl_sys::ddk::{DEVICE_OBJECT, DRIVER_OBJECT, IO_STACK_LOCATION, IRP, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FILE_DEVICE_DISK, IRP_MN_QUERY_CAPABILITIES, SP_UNTAGGED};
 
@@ -241,7 +240,7 @@ unsafe fn PdoHandleQueryDeviceText(
                 &mut AnsiString,
                 0u8,
             );
-            (*Irp).IoStatus.Information = (DeviceDescription.Buffer as usize) as u64;
+            (*Irp).IoStatus.Information = (DeviceDescription.Buffer as usize) as _;
             return STATUS_SUCCESS;
         }
         1 => { // DeviceTextLocationInformation
@@ -274,7 +273,7 @@ unsafe fn PdoHandleQueryDeviceText(
                 &mut AnsiString,
                 0u8,
             );
-            (*Irp).IoStatus.Information = (DeviceDescription.Buffer as usize) as u64;
+            (*Irp).IoStatus.Information = (DeviceDescription.Buffer as usize) as _;
             return STATUS_SUCCESS;
         }
         _ => {
@@ -296,8 +295,8 @@ unsafe fn PdoHandleQueryDeviceId(
     let DeviceType: LPCSTR;
     let mut Offset: ULONG = 0;
     let InquiryData: PINQUIRYDATA;
-    let mut AnsiString: ANSI_STRING;
-    let mut DeviceId: _UNICODE_STRING;
+    let mut AnsiString: ANSI_STRING = core::mem::zeroed();
+    let mut DeviceId: _UNICODE_STRING = core::mem::zeroed();
 
     DeviceExtension = (*DeviceObject).DeviceExtension as PSCSI_PORT_LUN_EXTENSION;
     InquiryData = core::ptr::addr_of_mut!((*DeviceExtension).InquiryData) as PINQUIRYDATA;
@@ -359,7 +358,7 @@ unsafe fn PdoHandleQueryDeviceId(
 
     Status = RtlAnsiStringToUnicodeString(&raw mut DeviceId, &raw mut AnsiString, 1u8);
     if Status >= 0 {
-        (*Irp).IoStatus.Information = (DeviceId.Buffer as ULONG_PTR) as u64;
+        (*Irp).IoStatus.Information = (DeviceId.Buffer as ULONG_PTR) as _;
     }
 
     Status
@@ -470,7 +469,7 @@ unsafe fn PdoHandleQueryHardwareId(
             b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             363,
-            core::ptr::null_mut(),
+            core::ptr::null_mut::<core::ffi::c_void>(),
         );
     } else {
     }
@@ -755,12 +754,12 @@ unsafe fn PdoHandleQueryHardwareId(
             b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/pdo.c\0"
                 .as_ptr() as *const core::ffi::c_char,
             449,
-            core::ptr::null_mut(),
+            core::ptr::null_mut::<core::ffi::c_void>(),
         );
     } else {
     }
 
-    (*Irp).IoStatus.Information = (Buffer as usize) as u64;
+    (*Irp).IoStatus.Information = (Buffer as usize) as _;
     return STATUS_SUCCESS;
 }
 
@@ -798,7 +797,7 @@ unsafe fn PdoHandleQueryCompatibleId(
     ) as LPWSTR;
 
     if InstanceId.is_null() {
-        (*Irp).IoStatus.Information = (0 as usize) as u64;
+        (*Irp).IoStatus.Information = (0 as usize) as _;
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -820,7 +819,7 @@ unsafe fn PdoHandleQueryCompatibleId(
 
     *InstanceId.offset(Offset as isize) = UNICODE_NULL;
 
-    (*Irp).IoStatus.Information = (InstanceId as usize) as u64;
+    (*Irp).IoStatus.Information = (InstanceId as usize) as _;
     return STATUS_SUCCESS;
 }
 
@@ -862,11 +861,11 @@ unsafe fn PdoHandleQueryInstanceId(
         TAG_SCSIPORT as ULONG,
     ) as LPWSTR;
     if InstanceId.is_null() {
-        (*Irp).IoStatus.Information = (0 as ULONG_PTR) as u64;
+        (*Irp).IoStatus.Information = (0 as ULONG_PTR) as _;
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     wcscpy(InstanceId as *mut WCHAR, &raw mut Buffer as *mut WCHAR);
-    (*Irp).IoStatus.Information = (InstanceId as ULONG_PTR) as u64;
+    (*Irp).IoStatus.Information = (InstanceId as ULONG_PTR) as _;
     return STATUS_SUCCESS;
 }
 unsafe fn PdoHandleDeviceRelations(
@@ -894,7 +893,7 @@ unsafe fn PdoHandleDeviceRelations(
     (*deviceRelations).Objects[0] = DeviceObject;
     ObReferenceObject(DeviceObject as *mut core::ffi::c_void);
 
-    (*Irp).IoStatus.Information = (deviceRelations as ULONG_PTR) as u64;
+    (*Irp).IoStatus.Information = (deviceRelations as ULONG_PTR) as _;
     return STATUS_SUCCESS;
 }
 #[no_mangle]

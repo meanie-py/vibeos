@@ -10,14 +10,12 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusQueryCompatibleIDs, BusRelations, DEVICE_RELATIONS, ExAllocatePoolZero, ExFreePool, _KWAIT_REASON_Executive, HalFreeCommonBuffer, HalGetInterruptVector, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoConnectInterrupt, IoCopyCurrentIrpStackLocationToNext, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IoDisconnectInterrupt, IoForwardIrpSynchronously, IoGetConfigurationInformation, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoSkipCurrentIrpStackLocation, IoStartTimer, IoStopTimer, KAFFINITY, KEVENT, KeInitializeEvent, KeSynchronizeExecution, KeWaitForSingleObject, LevelSensitive, MicroChannel, MmUnmapIoSpace, _EVENT_TYPE_NotificationEvent, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, PZZWSTR, RtlFreeUnicodeString, RtlInitUnicodeString, UINT32, UINT8, ZwClose, ZwDeleteKey};
+use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExAllocatePoolZero, ExFreePool, _KWAIT_REASON_Executive, HalFreeCommonBuffer, HalGetInterruptVector, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoConnectInterrupt, IoCopyCurrentIrpStackLocationToNext, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IoDisconnectInterrupt, IoForwardIrpSynchronously, IoGetConfigurationInformation, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoSkipCurrentIrpStackLocation, IoStartTimer, IoStopTimer, KAFFINITY, KEVENT, KeInitializeEvent, KeSynchronizeExecution, KeWaitForSingleObject, MmUnmapIoSpace, _EVENT_TYPE_NotificationEvent, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, PZZWSTR, RtlFreeUnicodeString, RtlInitUnicodeString, UINT32, UINT8, ZwClose, ZwDeleteKey, DEVICE_OBJECT, KINTERRUPT_MODE, MAPPED_ADDRESS, PKSYNCHRONIZE_ROUTINE, _DEVICE_OBJECT, _IRP, _KDPC, _KINTERRUPT, _UNICODE_STRING};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{ACCESS_RANGE, CDB, INQUIRYDATA, INQUIRYDATABUFFERSIZE, IOCTL_SCSI_EXECUTE_IN, LUNEX_FROZEN_QUEUE, PINQUIRYDATA, PSCSI_PORT_DEVICE_EXTENSION, PSENSE_DATA, SCSIOP_INQUIRY, SCSI_BUS_INFO, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DISCONNECT_ALLOWED, SCSI_PORT_LUN_EXTENSION, SCSI_PORT_NOTIFICATION_NEEDED, SCSI_REQUEST_BLOCK, SCSI_SENSE_ILLEGAL_REQUEST, _PORT_CONFIGURATION_INFORMATION as PORT_CONFIGURATION_INFORMATION};
-use ntkrnl_sys::ddk::{DEVICE_OBJECT, KINTERRUPT_MODE, KeLowerIrql, MAPPED_ADDRESS, PKSYNCHRONIZE_ROUTINE, _DEVICE_OBJECT, _IRP, _KDPC, _KINTERRUPT, _UNICODE_STRING};
+use crate::types::{ACCESS_RANGE, CDB, INQUIRYDATA, INQUIRYDATABUFFERSIZE, IOCTL_SCSI_EXECUTE_IN, LUNEX_FROZEN_QUEUE, PINQUIRYDATA, PSCSI_PORT_DEVICE_EXTENSION, PSENSE_DATA, SCSIOP_INQUIRY, SCSI_BUS_INFO, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DISCONNECT_ALLOWED, SCSI_PORT_LUN_EXTENSION, SCSI_PORT_NOTIFICATION_NEEDED, SCSI_REQUEST_BLOCK, SCSI_SENSE_ILLEGAL_REQUEST, _PORT_CONFIGURATION_INFORMATION as PORT_CONFIGURATION_INFORMATION, SRB_FLAGS_DATA_IN, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FUNCTION_EXECUTE_SCSI, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_BAD_FUNCTION, SRB_STATUS_BAD_SRB_BLOCK_LENGTH, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_NO_DEVICE, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SELECTION_TIMEOUT, SRB_STATUS_SUCCESS};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{LPVOID, STATUS_ADAPTER_HARDWARE_ERROR, STATUS_IO_DEVICE_ERROR};
-use crate::types::{SRB_FLAGS_DATA_IN, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FUNCTION_EXECUTE_SCSI, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_BAD_FUNCTION, SRB_STATUS_BAD_SRB_BLOCK_LENGTH, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_NO_DEVICE, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SELECTION_TIMEOUT, SRB_STATUS_SUCCESS};
 
 extern "C" {
     fn wcslen(s: *const u16) -> usize;
@@ -120,12 +118,12 @@ unsafe fn FdoSendInquiry(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
         Srb.DataTransferLength = INQUIRYDATABUFFERSIZE;
 
         IrpStack = IoGetNextIrpStackLocation(Irp);
-        (*IrpStack).Parameters.Scsi.Srb = &raw mut Srb as *mut SCSI_REQUEST_BLOCK;
+        (*IrpStack).Parameters.Scsi.Srb = &raw mut Srb as *mut _ as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
 
         Cdb = &raw mut Srb.Cdb as *mut UCHAR as *mut CDB;
-        (*Cdb).CDB6INQUIRY.as_ref().OperationCode = (SCSIOP_INQUIRY) as u8;
-        (*Cdb).CDB6INQUIRY.as_ref().set_LogicalUnitNumber((*LunExtension).Lun as UCHAR);
-        (*Cdb).CDB6INQUIRY.as_ref().AllocationLength = INQUIRYDATABUFFERSIZE as UCHAR;
+        (*Cdb).CDB6INQUIRY.as_mut().OperationCode = (SCSIOP_INQUIRY) as u8;
+        (*Cdb).CDB6INQUIRY.as_mut().set_LogicalUnitNumber((*LunExtension).Lun as UCHAR);
+        (*Cdb).CDB6INQUIRY.as_mut().AllocationLength = INQUIRYDATABUFFERSIZE as UCHAR;
 
         Status = IoCallDriver(DeviceObject, Irp);
 
@@ -225,7 +223,7 @@ pub unsafe extern "C" fn FdoScanAdapter(
         // But the anchor does not include that call. We must follow anchor. So we omit.
 
         let currentBus: *mut SCSI_BUS_INFO =
-            (*PortExtension).Buses.as_mut_ptr().add(pathId as usize) as *mut SCSI_BUS_INFO;
+            (*PortExtension).Buses.add(pathId as usize);
 
         // Scan all targets
         for targetId in 0..(*(*PortExtension).PortConfig).MaximumNumberOfTargets {
@@ -454,10 +452,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
             Status = IoConnectInterrupt(
                 ((&raw mut (*DeviceExtension).Interrupt) as *mut *mut _KINTERRUPT)
                     .offset(i as isize) as *mut *mut _KINTERRUPT,
-                Some(
-                    ScsiPortIsr
-                        as unsafe extern "C" fn(*mut _KINTERRUPT, PVOID) -> BOOLEAN,
-                ),
+                Some(core::mem::transmute(ScsiPortIsr as *const ())),
                 DeviceExtension as PVOID,
                 &raw mut (*DeviceExtension).IrqLock,
                 MappedIrq[i as usize],
@@ -642,7 +637,7 @@ pub unsafe extern "C" fn FdoRemoveAdapter(
     while !(*DeviceExtension).MappedAddressList.is_null() {
         MmUnmapIoSpace(
             (*(*DeviceExtension).MappedAddressList).MappedAddress,
-            ((*(*DeviceExtension).MappedAddressList).NumberOfBytes as usize) as u64,
+            ((*(*DeviceExtension).MappedAddressList).NumberOfBytes as usize) as _,
         );
         let ptr = (*DeviceExtension).MappedAddressList as *mut core::ffi::c_void;
         (*DeviceExtension).MappedAddressList =
@@ -719,7 +714,7 @@ unsafe fn FdoHandleDeviceRelations(
     let ioStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     if (*ioStack).Parameters.QueryDeviceRelations.Type as u32 == BusRelations as u32 {
         FdoScanAdapter(PortExtension);
-        if !((*Irp).IoStatus.Information == (0 as ULONG_PTR) as u64) {
+        if !((*Irp).IoStatus.Information == (0 as ULONG_PTR) as _) {
             RtlAssert(
                 b"Irp->IoStatus.Information == 0\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
                 b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/fdo.c\0".as_ptr() as *const core::ffi::c_char as *const core::ffi::c_void,
@@ -737,7 +732,7 @@ unsafe fn FdoHandleDeviceRelations(
             TAG_SCSIPORT,
         ) as *mut DEVICE_RELATIONS;
         if deviceRelations.is_null() {
-            (*Irp).IoStatus.Information = (0 as ULONG_PTR) as u64;
+            (*Irp).IoStatus.Information = (0 as ULONG_PTR) as _;
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
             IoCompleteRequest(Irp, IO_NO_INCREMENT);
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -769,7 +764,7 @@ unsafe fn FdoHandleDeviceRelations(
                 core::ptr::null_mut::<i8>(),
             );
         }
-        (*Irp).IoStatus.Information = (deviceRelations as ULONG_PTR) as u64;
+        (*Irp).IoStatus.Information = (deviceRelations as ULONG_PTR) as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     }
     IoSkipCurrentIrpStackLocation(Irp);
@@ -777,7 +772,7 @@ unsafe fn FdoHandleDeviceRelations(
 }
 
 unsafe fn FdoHandleQueryCompatibleId(PwIds: *mut *mut u16) -> NTSTATUS {
-    const GenScsiAdapterId: [u16; 16] = unsafe {
+    static GenScsiAdapterId: [u16; 16] = unsafe {
         core::mem::transmute::<[u8; 32], [u16; 16]>(
             *b"G\0E\0N\0_\0S\0C\0S\0I\0A\0D\0A\0P\0T\0E\0R\0\0\0",
         )
@@ -799,7 +794,7 @@ unsafe fn FdoHandleQueryCompatibleId(PwIds: *mut *mut u16) -> NTSTATUS {
         ((Length as usize)
             .wrapping_mul(core::mem::size_of::<u16>())
             .wrapping_add(core::mem::size_of::<[u16; 16]>())
-            .wrapping_add(core::mem::size_of::<u16>())) as u64,
+            .wrapping_add(core::mem::size_of::<u16>())) as _,
         TAG_SCSIPORT,
     ) as *mut u16;
 
@@ -815,7 +810,7 @@ unsafe fn FdoHandleQueryCompatibleId(PwIds: *mut *mut u16) -> NTSTATUS {
         );
     }
     core::ptr::copy_nonoverlapping(
-        core::ptr::addr_of!(GenScsiAdapterId) as *const u16,
+        GenScsiAdapterId.as_ptr(),
         NewIds.add(Length as usize),
         core::mem::size_of::<[u16; 16]>() / core::mem::size_of::<u16>(),
     );
@@ -862,7 +857,7 @@ pub unsafe extern "C" fn FdoDispatchPnp(
             if (*ioStack).Parameters.QueryId.IdType as u32
                 == BusQueryCompatibleIDs as u32
             {
-                (*Irp).IoStatus.Information = (0usize as ULONG_PTR) as u64;
+                (*Irp).IoStatus.Information = (0usize as ULONG_PTR) as _;
                 IoForwardIrpSynchronously((*portExt).Common.LowerDevice, Irp);
                 status = FdoHandleQueryCompatibleId(
                     &raw mut (*Irp).IoStatus.Information as *mut PZZWSTR,

@@ -48,6 +48,18 @@ pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
     *OldIrql = KfRaiseIrql(NewIrql);
 }
 
+// KeLowerIrql — fastcall KfLowerIrql on i386; a plain export elsewhere (the amd64 ddk
+// bindgen has it, but the i386/arm64 ones don't — provide it here for all arches).
+#[cfg(target_arch = "x86")]
+extern "fastcall" { fn KfLowerIrql(NewIrql: KIRQL); }
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+pub unsafe fn KeLowerIrql(NewIrql: KIRQL) { KfLowerIrql(NewIrql) }
+#[cfg(not(target_arch = "x86"))]
+mod lower_irql { unsafe extern "C" { pub fn KeLowerIrql(NewIrql: super::KIRQL); } }
+#[cfg(not(target_arch = "x86"))]
+pub use lower_irql::KeLowerIrql;
+
 // wdm.h: MmGetMdlVirtualAddress(Mdl) = (PVOID)((PCHAR)Mdl->StartVa + Mdl->ByteOffset).
 #[inline(always)]
 pub unsafe fn MmGetMdlVirtualAddress(Mdl: *mut ntkrnl_sys::ddk::_MDL) -> PVOID {
@@ -76,3 +88,30 @@ pub unsafe fn VerifyIrpInBufferSize(Irp: PIRP, Size: usize) -> u8 {
 
 // SENSE_BUFFER_SIZE = sizeof(SENSE_DATA) — fixed 18 bytes by the SCSI spec.
 pub const SENSE_BUFFER_SIZE: usize = 18;
+
+// mmfuncs.h: MmGetSystemAddressForMdl(Mdl) — MappedSystemVa if already mapped or the
+// source is nonpaged pool, else MmMapLockedPages(Mdl, KernelMode).
+const MDL_MAPPED_TO_SYSTEM_VA: u16 = 0x0001;
+const MDL_SOURCE_IS_NONPAGED_POOL: u16 = 0x0004;
+#[inline(always)]
+pub unsafe fn MmGetSystemAddressForMdl(Mdl: *mut ntkrnl_sys::ddk::_MDL) -> PVOID {
+    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+        (*Mdl).MappedSystemVa
+    } else {
+        ntkrnl_sys::ddk::MmMapLockedPages(Mdl, 0 /* KernelMode */)
+    }
+}
+
+// xdk/iofuncs.h FORCEINLINE IoAllocateAdapterChannel — dispatch through the DMA_ADAPTER
+// operations table (not a kernel export on this SDK surface).
+#[inline(always)]
+pub unsafe fn IoAllocateAdapterChannel(
+    DmaAdapter: ntkrnl_sys::ddk::PDMA_ADAPTER,
+    DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT,
+    NumberOfMapRegisters: ULONG,
+    ExecutionRoutine: ntkrnl_sys::ddk::PDRIVER_CONTROL,
+    Context: PVOID,
+) -> ntkrnl_sys::ddk::NTSTATUS {
+    let alloc = (*(*DmaAdapter).DmaOperations).AllocateAdapterChannel.unwrap();
+    alloc(DmaAdapter, DeviceObject, NumberOfMapRegisters, ExecutionRoutine, Context)
+}

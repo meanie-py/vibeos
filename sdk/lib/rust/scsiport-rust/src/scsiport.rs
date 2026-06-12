@@ -10,14 +10,12 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, BusNumber, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, CM_SCSI_DEVICE_DATA, CmResourceShareDeviceExclusive, CmResourceShareShared, DEVICE_DESCRIPTION, DeallocateObjectKeepRegisters, DeviceNumber, Eisa, ErrorCode, FunctionNumber, HalAllocateCommonBuffer, HalAssignSlotResources, HalGetBusData, HalGetInterruptVector, HalTranslateBusAddress, INT64, Internal, Interrupt, IoGetCurrentIrpStackLocation, IoMapTransfer, IoQueryDeviceDescription, IoRequestDpc, IoStartPacket, Isa, KeSynchronizeExecution, KeepObject, KeyValueFullInformation, Latched, LevelSensitive, MAPPED_ADDRESS, MicroChannel, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCCHAR, PCIBus, PCIConfiguration, PCI_COMMON_CONFIG, PCI_SLOT_NUMBER, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCM_SCSI_DEVICE_DATA, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKAFFINITY, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PKIRQL, PMAPPED_ADDRESS, PPCI_SLOT_NUMBER, PUNICODE_STRING, RtlUnicodeStringToAnsiString, UINT8, Width16Bits, Width32Bits, Width8Bits, ZwEnumerateValueKey, _KDPC, va_list};
+use ntkrnl_sys::ddk::{ANSI_STRING, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, CM_SCSI_DEVICE_DATA, DEVICE_DESCRIPTION, HalAllocateCommonBuffer, HalAssignSlotResources, HalGetBusData, HalGetInterruptVector, HalTranslateBusAddress, INT64, IoGetCurrentIrpStackLocation, IoMapTransfer, IoQueryDeviceDescription, IoRequestDpc, IoStartPacket, KeSynchronizeExecution, MAPPED_ADDRESS, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCCHAR, PCI_COMMON_CONFIG, PCI_SLOT_NUMBER, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCM_SCSI_DEVICE_DATA, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKAFFINITY, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PKIRQL, PMAPPED_ADDRESS, PPCI_SLOT_NUMBER, PUNICODE_STRING, RtlUnicodeStringToAnsiString, UINT8, ZwEnumerateValueKey, _KDPC, va_list, CM_FULL_RESOURCE_DESCRIPTOR, CONFIGURATION_INFORMATION, DEVICE_OBJECT, DRIVER_OBJECT, INTERFACE_TYPE, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, IRP, KEY_VALUE_FULL_INFORMATION, KTIMER, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::{align_of, size_of, offset_of};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, HW_INITIALIZATION_DATA, IO_SCSI_CAPABILITIES, PORT_CONFIGURATION_INFORMATION, RESETBUS_PARAMS, SCSI_BUS_INFO, SCSI_NOTIFICATION_TYPE, SCSI_PHYSICAL_ADDRESS, SCSI_PORT_COMMON_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK, SCSI_REQUEST_BLOCK_INFO, SCSI_SG_ADDRESS, SENSE_DATA};
-use ntkrnl_sys::ddk::{CM_FULL_RESOURCE_DESCRIPTOR, CONFIGURATION_INFORMATION, DEVICE_OBJECT, DRIVER_OBJECT, INTERFACE_TYPE, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, IRP, KEY_VALUE_FULL_INFORMATION, KTIMER, _UNICODE_STRING};
+use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, HW_INITIALIZATION_DATA, IO_SCSI_CAPABILITIES, PORT_CONFIGURATION_INFORMATION, RESETBUS_PARAMS, SCSI_BUS_INFO, SCSI_NOTIFICATION_TYPE, SCSI_PHYSICAL_ADDRESS, SCSI_PORT_COMMON_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK, SCSI_REQUEST_BLOCK_INFO, SCSI_SG_ADDRESS, SENSE_DATA, PSCSI_PORT_DEVICE_EXTENSION};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{PSCSI_PORT_DEVICE_EXTENSION};
 
 extern "C" {
     fn vsprintf( buffer: *mut core::ffi::c_char, format: *const core::ffi::c_char, args: *mut core::ffi::c_char, ) -> i32;
@@ -30,7 +28,7 @@ extern "C" {
     fn HalSetBusDataByOffset( BusDataType: u32, SystemIoBusNumber: u32, SlotNumber: u32, Buffer: *mut core::ffi::c_void, Offset: u32, Length: u32, ) -> u32;
     fn GetLunByPath( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, PathId: u8, TargetId: u8, Lun: u8, ) -> *mut SCSI_PORT_LUN_EXTENSION;
     fn SpiGetSrbData( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, LunExtension: *mut SCSI_PORT_LUN_EXTENSION, QueueTag: u32, ) -> *mut SCSI_REQUEST_BLOCK_INFO;
-    fn ScsiPortStartPacket(Context: PVOID) -> BOOLEAN;
+    
     fn WRITE_PORT_UCHAR(port: *mut u8, value: u8);
     fn ScsiPortDpcForIsr( Context: *mut core::ffi::c_void, DeviceObject: *mut DEVICE_OBJECT, Argument1: *mut core::ffi::c_void, Argument2: *mut core::ffi::c_void, );
     fn HalGetAdapter( NumberOfMapRegisters: *mut DEVICE_DESCRIPTION, MapRegistersCount: *mut u32, ) -> *mut core::ffi::c_void;
@@ -39,14 +37,10 @@ extern "C" {
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn ZwOpenKey( KeyHandle: *mut HANDLE, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> NTSTATUS;
     fn ZwClose(Handle: HANDLE) -> NTSTATUS;
-    fn swprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
+    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn ALIGN_UP(value: u32, alignment: u32) -> u32;
     fn ALIGN_UP_POINTER(ptr: *mut core::ffi::c_void, alignment: u32) -> *mut core::ffi::c_void;
     fn __debugbreak();
-    fn ScsiPortStartIo(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP);
-    fn ScsiPortDeviceControl(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
-    fn ScsiPortDispatchScsi(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
-    fn ScsiPortDispatchPower(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
     fn FdoCallHWInitialize(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
     fn FdoStartAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION) -> NTSTATUS;
     fn FdoScanAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
@@ -71,63 +65,17 @@ extern "C" {
     fn RtlCreateUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16) -> NTSTATUS;
 }
 
-// ---- file-scope preamble (translated) ----
-pub static mut InternalDebugLevel: u32 = 0;
+// ---- file-scope preamble ----
+// The LLM preamble ("values inferred from DDK" — several fabricated: NEXT_REQUEST_READY
+// 0x01 vs real 0x00008, DISABLE_INTERRUPTS 'placeholder' 1 vs 0x04000, a third wrong
+// STATUS_DEVICE_DOES_NOT_EXIST) was deleted; glue.rs + bindgen types are the verified
+// source. InternalDebugLevel lives in glue.rs (single storage location). The dup extern
+// decls for SpiGetSrbData/GetLunByPath (defined in this module) were dropped.
 pub const NDEBUG: bool = true;
-
-
-// Constants for SCSI_NOTIFICATION_TYPE (values inferred from DDK)
-const RequestComplete: u32 = 0;
-const NextRequest: u32 = 1;
-const NextLuRequest: u32 = 2;
-const ResetDetected: u32 = 3;
-const CallDisableInterrupts: u32 = 4;
-const CallEnableInterrupts: u32 = 5;
-const RequestTimerCall: u32 = 6;
-const BusChangeDetected: u32 = 7;
-
-// Interrupt data flags (typical bit assignments)
-const SCSI_PORT_NEXT_REQUEST_READY: u32 = 0x01;
-const SCSI_PORT_RESET_REPORTED: u32 = 0x04;
-const SCSI_PORT_TIMER_NEEDED: u32 = 0x08;
-
-// SRB status/function/SCSI operation constants
-const SRB_STATUS_PENDING: u32 = 0x00;
-const SRB_STATUS_SUCCESS: u32 = 0x01;
-const SRB_STATUS_ERROR: u32 = 0x02; // not used but included for completeness
-const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
-const SRB_FUNCTION_ABORT_COMMAND: u32 = 0x10;
-const SCSISTAT_GOOD: u32 = 0x00;
-const SCSIOP_READ: u8 = 0x28;
-const SCSIOP_WRITE: u8 = 0x2A;
-
-// Forward declarations for functions not in the import list
-unsafe extern "system" {
-    fn SpiGetSrbData(
-        DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION,
-        LunExtension: *mut SCSI_PORT_LUN_EXTENSION,
-        QueueTag: u32,
-    ) -> *mut SCSI_REQUEST_BLOCK_INFO;
-
-    fn GetLunByPath(
-        DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION,
-        PathId: u8,
-        TargetId: u8,
-        Lun: u8,
-    ) -> *mut SCSI_PORT_LUN_EXTENSION;
-}
-
-
-const SCSI_PORT_DISABLE_INTERRUPTS: u32 = 1; // Placeholder; replace with actual value
-
-// Placeholder constants (real values from miniport.h)
-const SCSI_PORT_RESET_REQUEST: u32 = 0x0002;
-
-
-const RequestComplete: u32 = 0x00; // SCSI_NOTIFICATION_TYPE
-
-const STATUS_DEVICE_DOES_NOT_EXIST: i32 = 0xC0000083u32 as i32;
-const SCSI_MAXIMUM_TARGETS: u32 = 8;
+use crate::scsi::{ScsiPortStartPacket, ScsiPortStartIo, ScsiPortDispatchScsi};
+use crate::ioctl::ScsiPortDeviceControl;
+use crate::power::ScsiPortDispatchPower;
+use crate::types::{SCSI_PORT_NEXT_REQUEST_READY, SCSI_PORT_RESET_REPORTED, SCSI_PORT_TIMER_NEEDED};
 
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(DriverObject: *mut DRIVER_OBJECT, RegistryPath: *mut _UNICODE_STRING) -> i32 {
@@ -164,8 +112,8 @@ pub unsafe extern "system" fn ScsiPortAddDevice(
 ) -> NTSTATUS {
     DbgPrint(
         b"AddDevice no-op DriverObj: %p, PDO: %p\n\0".as_ptr() as *const i8,
-        DriverObject as _,
-        PhysicalDeviceObject as _,
+        DriverObject as *mut core::ffi::c_void,
+        PhysicalDeviceObject as *mut core::ffi::c_void,
     );
     return STATUS_SUCCESS;
 }
@@ -174,20 +122,22 @@ pub unsafe extern "system" fn ScsiPortAddDevice(
 pub unsafe extern "C" fn ScsiDebugPrint(
     DebugPrintLevel: u32,
     DebugMessage: *const core::ffi::c_char,
-    ...
+    mut args: ...
 ) {
     if DebugPrintLevel > InternalDebugLevel {
         return;
     }
 
     let mut buffer: [core::ffi::c_char; 256] = [0; 256];
-    let ap = core::ffi::VaList::start(DebugMessage);
-    vsprintf(
-        buffer.as_mut_ptr(),
-        DebugMessage,
-        core::mem::transmute::<core::ffi::VaList, *mut core::ffi::c_char>(ap),
-    );
-    // va_end is implicit by ap going out of scope (no operation on Windows)
+    // ntoskrnl CRT export vsprintf (@ cdecl), called with the Rust c_variadic VaList.
+    unsafe extern "C" {
+        fn vsprintf(
+            buffer: *mut core::ffi::c_char,
+            format: *const core::ffi::c_char,
+            argptr: core::ffi::VaList,
+        ) -> i32;
+    }
+    vsprintf(buffer.as_mut_ptr(), DebugMessage, args.as_va_list());
 
     DbgPrint((buffer.as_ptr() as *const u8).cast());
 }
@@ -231,7 +181,7 @@ pub unsafe extern "system" fn ScsiPortCompleteRequest(
 
     let mut pathId_loop: u8 = 0;
     while pathId_loop < (*device_extension).NumberOfBuses {
-        let bus = core::ptr::addr_of_mut!((*device_extension).Buses[pathId_loop as usize]);
+        let bus = (*device_extension).Buses.add(pathId_loop as usize);
         let mut lun_entry = (*bus).LunsListHead.Flink;
         while lun_entry != core::ptr::addr_of!((*bus).LunsListHead) as *mut _ {
             let lun_extension = (lun_entry as *mut u8)
@@ -291,7 +241,7 @@ pub unsafe extern "system" fn ScsiPortFreeDeviceBase(
     let mut LastMa: *mut MAPPED_ADDRESS = NextMa;
     while !NextMa.is_null() {
         if (*NextMa).MappedAddress == MappedAddress {
-            MmUnmapIoSpace(MappedAddress, ((*NextMa).NumberOfBytes) as u64);
+            MmUnmapIoSpace(MappedAddress, ((*NextMa).NumberOfBytes) as _);
             if NextMa == (*device_extension).MappedAddressList {
                 (*device_extension).MappedAddressList = (*NextMa).NextMappedAddress;
             } else {
@@ -373,7 +323,7 @@ pub unsafe extern "system" fn ScsiPortGetDeviceBase(
     if address_space != 0 {
         return translated_address.QuadPart as *mut core::ffi::c_void;
     }
-    let mapped_address = MmMapIoSpace(translated_address, NumberOfBytes as usize, 0u8);
+    let mapped_address = MmMapIoSpace(translated_address, NumberOfBytes as _, 0u32);
     let device_base = ExAllocatePoolWithTag(
         NonPagedPool,
         (core::mem::size_of::<MAPPED_ADDRESS>()) as u32,
@@ -511,8 +461,8 @@ pub unsafe extern "system" fn ScsiPortGetUncachedExtension(
     // Forward declaration for SpiAllocateCommonBuffer (local static)
 
     let device_extension: *mut SCSI_PORT_DEVICE_EXTENSION;
-    let mut device_description: DEVICE_DESCRIPTION;
-    let mut map_registers_count: u32;
+    let mut device_description: DEVICE_DESCRIPTION = core::mem::zeroed();
+    let mut map_registers_count: u32 = 0;
     let mut status: i32;
 
     // DPRINT call (mapped to DbgPrint)
@@ -563,7 +513,7 @@ pub unsafe extern "system" fn ScsiPortGetUncachedExtension(
         // Get a DMA adapter object
         (*device_extension).AdapterObject =
             (HalGetAdapter(
-                core::ptr::addr_of!(device_description) as *const DEVICE_DESCRIPTION,
+                core::ptr::addr_of_mut!(device_description),
                 core::ptr::addr_of_mut!(map_registers_count),
             )).cast();
 
@@ -678,7 +628,7 @@ unsafe fn SpiAllocateCommonBuffer(
         while CommonBufferLength >= 2 * BufSize {
             let next_ptr = (SrbExtension as *mut u8).add(BufSize as usize) as *mut *mut c_void;
             core::ptr::write(SrbExtension, (next_ptr).cast());
-            SrbExtension = core::ptr::read(SrbExtension);
+            SrbExtension = core::ptr::read(SrbExtension) as *mut *mut c_void;
 
             CommonBufferLength = CommonBufferLength.wrapping_sub(BufSize);
         }
@@ -739,7 +689,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
         let mut Result: u32;
         let mut Status: NTSTATUS;
         let mut SlotNumber: PCI_SLOT_NUMBER = core::mem::zeroed();
-        let mut PortDeviceObject: *mut DEVICE_OBJECT;
+        let mut PortDeviceObject: *mut DEVICE_OBJECT = core::ptr::null_mut();
         let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
         let mut PortCapabilities: *mut IO_SCSI_CAPABILITIES;
         let mut ResourceList: *mut CM_RESOURCE_LIST;
@@ -758,13 +708,13 @@ pub unsafe extern "system" fn ScsiPortInitialize(
         let mut driverExtension: *mut SCSI_PORT_DRIVER_EXTENSION =
             IoGetDriverObjectExtension(
                 DriverObject,
-                (*HwInitializationData).HwInitialize as *mut c_void,
+                core::mem::transmute::<_, *mut c_void>((*HwInitializationData).HwInitialize),
             ) as *mut SCSI_PORT_DRIVER_EXTENSION;
 
         if driverExtension.is_null() {
             Status = IoAllocateDriverObjectExtension(
                 DriverObject,
-                (*HwInitializationData).HwInitialize as *mut c_void,
+                core::mem::transmute::<_, *mut c_void>((*HwInitializationData).HwInitialize),
                 core::mem::size_of::<SCSI_PORT_DRIVER_EXTENSION>() as u32,
                 &mut driverExtension as *mut *mut SCSI_PORT_DRIVER_EXTENSION as *mut *mut c_void,
             );
@@ -780,21 +730,21 @@ pub unsafe extern "system" fn ScsiPortInitialize(
         (*driverExtension).RegistryPath.Buffer = ExAllocatePoolWithTag(
             PagedPool,
             ((*RegistryPath).MaximumLength) as u32,
-            0x706f6373 /* TAG_SCSIPORT */,
+            TAG_SCSIPORT /* TAG_SCSIPORT */,
         ) as *mut u16;
         (*driverExtension).RegistryPath.MaximumLength = (*RegistryPath).MaximumLength;
         RtlCopyUnicodeString(&mut (*driverExtension).RegistryPath, RegistryPath);
         (*driverExtension).DriverObject = DriverObject;
 
-        (*DriverObject).DriverUnload = Some(ScsiPortUnload);
-        (*DriverObject).DriverStartIo = Some(ScsiPortStartIo);
-        (*(*DriverObject).DriverExtension).AddDevice = Some(ScsiPortAddDevice);
-        (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(ScsiPortCreateClose);
-        (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = Some(ScsiPortCreateClose);
-        (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(ScsiPortDeviceControl);
-        (*DriverObject).MajorFunction[IRP_MJ_SCSI as usize] = Some(ScsiPortDispatchScsi);
-        (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = Some(ScsiPortDispatchPnp);
-        (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = Some(ScsiPortDispatchPower);
+        (*DriverObject).DriverUnload = Some(core::mem::transmute(ScsiPortUnload as *const ()));
+        (*DriverObject).DriverStartIo = Some(core::mem::transmute(ScsiPortStartIo as *const ()));
+        (*(*DriverObject).DriverExtension).AddDevice = Some(core::mem::transmute(ScsiPortAddDevice as *const ()));
+        (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(core::mem::transmute(ScsiPortCreateClose as *const ()));
+        (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = Some(core::mem::transmute(ScsiPortCreateClose as *const ()));
+        (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(core::mem::transmute(ScsiPortDeviceControl as *const ()));
+        (*DriverObject).MajorFunction[IRP_MJ_SCSI as usize] = Some(core::mem::transmute(ScsiPortDispatchScsi as *const ()));
+        (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] = Some(core::mem::transmute(ScsiPortDispatchPnp as *const ()));
+        (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] = Some(core::mem::transmute(ScsiPortDispatchPower as *const ()));
 
         core::ptr::write_bytes(
             &mut ConfigInfo as *mut CONFIGURATION_INFO,
@@ -808,7 +758,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 PagedPool,
                 (*HwInitializationData).NumberOfAccessRanges as u32
                     * core::mem::size_of::<ACCESS_RANGE>() as u32,
-                0x706f6373,
+                TAG_SCSIPORT,
             ) as *mut ACCESS_RANGE;
             if ConfigInfo.AccessRanges.is_null() {
                 return (STATUS_INSUFFICIENT_RESOURCES) as u32;
@@ -897,8 +847,8 @@ pub unsafe extern "system" fn ScsiPortInitialize(
             (*DeviceExtension).MaxLunCount = 8; // SCSI_MAXIMUM_LOGICAL_UNITS
             (*DeviceExtension).RequestsNumber = 16;
 
-            KeInitializeSpinLock(&mut (*DeviceExtension).IrqLock);
-            KeInitializeSpinLock(&mut (*DeviceExtension).SpinLock);
+            KeInitializeSpinLock((&raw mut (*DeviceExtension).IrqLock).cast());
+            KeInitializeSpinLock((&raw mut (*DeviceExtension).SpinLock).cast());
 
             IoInitializeDpcRequest(PortDeviceObject, ScsiPortDpcForIsr as *mut c_void);
 
@@ -907,7 +857,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
 
             KeInitializeTimer(&mut (*DeviceExtension).MiniportTimer);
             KeInitializeDpc(
-                &mut (*DeviceExtension).MiniportTimerDpc,
+                (&raw mut (*DeviceExtension).MiniportTimerDpc).cast(),
                 SpiMiniportTimerDpc as *mut c_void,
                 PortDeviceObject as *mut c_void,
             );
@@ -920,7 +870,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 (*DeviceExtension).PortConfig = ExAllocatePoolWithTag(
                     NonPagedPool,
                     PortConfigSize,
-                    0x706f6373,
+                    TAG_SCSIPORT,
                 ) as *mut PORT_CONFIGURATION_INFORMATION;
                 if (*DeviceExtension).PortConfig.is_null() {
                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1003,12 +953,12 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     (*PortConfig).SystemIoBusNumber,
                 );
 
-                Result = ((*HwInitializationData).HwFindAdapter)(
-                    &raw mut (*DeviceExtension).MiniPortDeviceExtension as *mut c_void,
+                Result = ((*HwInitializationData).HwFindAdapter.unwrap())(
+                    (*DeviceExtension).MiniPortDeviceExtension.as_mut_ptr() as *mut c_void,
                     HwContext,
                     core::ptr::null_mut(), // BusInformation
-                    ConfigInfo.Parameter,
-                    PortConfig as *mut c_void,
+                    ConfigInfo.Parameter as *mut i8,
+                    PortConfig,
                     &mut Again,
                 );
 
@@ -1045,7 +995,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     ((*PortConfig).InitiatorBusId[0]) as i32,
                 );
 
-                if (*DeviceExtension).NonCachedExtension == 0
+                if (*DeviceExtension).NonCachedExtension.is_null()
                     && (*PortConfig).SrbExtensionSize != (*DeviceExtension).SrbExtensionSize
                 {
                     (*DeviceExtension).SrbExtensionSize =
@@ -1089,7 +1039,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 (*PortDeviceObject).Flags &= !DO_DEVICE_INITIALIZING;
 
                 if !ResourceList.is_null() {
-                    ExFreePoolWithTag(ResourceList as *mut c_void, 0x706f6373);
+                    ExFreePoolWithTag(ResourceList as *mut c_void, TAG_SCSIPORT);
                 }
 
                 if (*PortConfig).MaximumNumberOfTargets > 8 /* SCSI_MAXIMUM_TARGETS_PER_BUS */ {
@@ -1105,12 +1055,12 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 (*DeviceExtension).MultipleReqsPerLun = (*PortConfig).MultipleRequestPerLu;
 
                 let BusConfigSize =
-                    (*DeviceExtension).NumberOfBuses as usize * core::mem::size_of::<BUS_ENTRY>();
+                    (*DeviceExtension).NumberOfBuses as usize * core::mem::size_of::<SCSI_BUS_INFO>();
                 (*DeviceExtension).Buses = ExAllocatePoolZero(
                     NonPagedPool,
                     BusConfigSize as u32,
-                    0x706f6373,
-                ) as *mut BUS_ENTRY;
+                    TAG_SCSIPORT,
+                ) as *mut SCSI_BUS_INFO;
                 if (*DeviceExtension).Buses.is_null() {
                     DbgPrint((b"Out of resources!\n\0".as_ptr() as *const u8).cast());
                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1118,8 +1068,8 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 }
 
                 for pathId in 0..(*DeviceExtension).NumberOfBuses {
-                    let bus = &raw mut (*DeviceExtension).Buses.add(pathId as usize);
-                    (*bus).BusIdentifier = (*DeviceExtension).PortConfig.InitiatorBusId[pathId as usize];
+                    let bus = (*DeviceExtension).Buses.add(pathId as usize);
+                    (*bus).BusIdentifier = (*(*DeviceExtension).PortConfig).InitiatorBusId[pathId as usize];
                     InitializeListHead(&mut (*bus).LunsListHead);
                 }
 
@@ -1177,7 +1127,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     SrbData = ExAllocatePoolWithTag(
                         NonPagedPool,
                         Count * core::mem::size_of::<SCSI_REQUEST_BLOCK_INFO>() as u32,
-                        0x706f6373,
+                        TAG_SCSIPORT,
                     ) as *mut SCSI_REQUEST_BLOCK_INFO;
                     if SrbData.is_null() {
                         return (STATUS_INSUFFICIENT_RESOURCES) as u32;
@@ -1469,7 +1419,7 @@ pub unsafe extern "C" fn ScsiPortNotification(
             if LunExtension.is_null() {
                 // break from switch
             } else {
-                if (*LunExtension).ReadyLun != 0 || !(*LunExtension).SrbInfo.Srb.is_null() {
+                if !(*LunExtension).ReadyLun.is_null() || !(*LunExtension).SrbInfo.Srb.is_null() {
                     // break
                 } else {
                     (*LunExtension).ReadyLun = (*DeviceExtension).InterruptData.ReadyLun;
@@ -1515,7 +1465,7 @@ pub unsafe extern "C" fn ScsiPortNotification(
             let miniport_timer_value = *(addr as *const u32);
             ap = (addr + size_of::<u32>()) as *const u8;
 
-            (*DeviceExtension).InterruptData.HwScsiTimer = timer_ptr as *mut c_void;
+            (*DeviceExtension).InterruptData.HwScsiTimer = core::mem::transmute(timer_ptr);
             (*DeviceExtension).InterruptData.MiniportTimerValue = miniport_timer_value;
         }
 
@@ -1718,7 +1668,7 @@ unsafe fn SpiConfigToResource(
             (*ResourceDescriptor).Type = CmResourceTypePort;
             (*ResourceDescriptor).Flags = (CM_RESOURCE_PORT_IO) as u16;
         }
-        (*ResourceDescriptor).ShareDisposition = CmResourceShareDeviceExclusive;
+        (*ResourceDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8;
         (*ResourceDescriptor).u.Memory.Start = (*AccessRange).RangeStart;
         (*ResourceDescriptor).u.Memory.Length = (*AccessRange).RangeLength;
         ResourceDescriptor = ResourceDescriptor.offset(1);
@@ -1728,10 +1678,10 @@ unsafe fn SpiConfigToResource(
         (*ResourceDescriptor).Type = CmResourceTypeInterrupt;
         let mode = if Interrupt == 2 { (*PortConfig).InterruptMode2 } else { (*PortConfig).InterruptMode };
         if (*PortConfig).AdapterInterfaceType == MicroChannel || mode == LevelSensitive {
-            (*ResourceDescriptor).ShareDisposition = CmResourceShareShared;
+            (*ResourceDescriptor).ShareDisposition = (CmResourceShareShared) as u8;
             (*ResourceDescriptor).Flags = (CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE) as u16;
         } else {
-            (*ResourceDescriptor).ShareDisposition = CmResourceShareDeviceExclusive;
+            (*ResourceDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8;
             (*ResourceDescriptor).Flags = (CM_RESOURCE_INTERRUPT_LATCHED) as u16;
         }
         (*ResourceDescriptor).u.Interrupt.Level = if Interrupt == 2 { (*PortConfig).BusInterruptLevel2 } else { (*PortConfig).BusInterruptLevel };
@@ -1743,7 +1693,7 @@ unsafe fn SpiConfigToResource(
 
     while Dma != 0 {
         (*ResourceDescriptor).Type = CmResourceTypeDma;
-        (*ResourceDescriptor).ShareDisposition = CmResourceShareDeviceExclusive;
+        (*ResourceDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8;
         (*ResourceDescriptor).u.Dma.Channel = if Dma == 2 { (*PortConfig).DmaChannel2 } else { (*PortConfig).DmaChannel };
         (*ResourceDescriptor).u.Dma.Port = if Dma == 2 { (*PortConfig).DmaPort2 } else { (*PortConfig).DmaPort };
         (*ResourceDescriptor).Flags = 0;
@@ -1784,7 +1734,7 @@ unsafe fn SpiGetPciConfigData(
     const PCI_MAX_FUNCTION: u32 = 8;
     const PCI_INVALID_VENDORID: u16 = 0xFFFF;
 
-    let mut PciConfig: PCI_COMMON_CONFIG = core::mem::zeroed();
+    let mut PciConfig: crate::glue::PCI_COMMON_CONFIG_FIXED = core::mem::zeroed();
     let mut SlotNumber: PCI_SLOT_NUMBER = core::mem::zeroed();
     let mut DataSize: u32;
     let mut DeviceNumber: u32;
@@ -1859,8 +1809,8 @@ unsafe fn SpiGetPciConfigData(
 
             DbgPrint(
                 b"Found device 0x%04hx 0x%04hx at %1lu %2lu %1lu\n\0".as_ptr() as *const i8,
-                PciConfig.VendorID,
-                PciConfig.DeviceID,
+                (PciConfig.VendorID) as i32,
+                (PciConfig.DeviceID) as i32,
                 BusNumber,
                 SlotNumber.u.bits.DeviceNumber(),
                 SlotNumber.u.bits.FunctionNumber(),
@@ -1940,7 +1890,7 @@ pub unsafe extern "system" fn SpiAdapterControl(
 
     let srb: *mut SCSI_REQUEST_BLOCK;
     let mut scatter_gather_list: *mut SCSI_SG_ADDRESS;
-    let mut current_irql: KIRQL;
+    let mut current_irql: KIRQL = 0;
     let irp_stack: *mut IO_STACK_LOCATION;
     let mut total_length: u32 = 0;
     let srb_info: *mut SCSI_REQUEST_BLOCK_INFO;
@@ -1968,7 +1918,7 @@ pub unsafe extern "system" fn SpiAdapterControl(
         // ASSERT(FALSE) removed because NDEBUG is defined
         (*srb).SrbFlags |= SRB_FLAGS_SGLIST_FROM_POOL;
     } else {
-        (*srb_info).ScatterGather = (*srb_info).ScatterGatherList;
+        (*srb_info).ScatterGather = (*srb_info).ScatterGatherList.as_mut_ptr();
     }
 
     // Use chosen SG list source
@@ -2010,7 +1960,7 @@ pub unsafe extern "system" fn SpiAdapterControl(
     KeAcquireSpinLock((core::ptr::addr_of_mut!((*device_extension).SpinLock)).cast(), core::ptr::addr_of_mut!(current_irql));
     KeSynchronizeExecution(
         (*device_extension).Interrupt[0],
-        ScsiPortStartPacket,
+        Some(core::mem::transmute(ScsiPortStartPacket as *const ())),
         DeviceObject as PVOID,
     );
     KeReleaseSpinLock((core::ptr::addr_of_mut!((*device_extension).SpinLock)).cast(), current_irql);
@@ -2038,8 +1988,8 @@ pub unsafe extern "system" fn ScsiPortIsr(
         return 0; // FALSE
     }
 
-    let hw_result = ((*device_extension).HwInterrupt)(
-        &raw mut (*device_extension).MiniPortDeviceExtension,
+    let hw_result = ((*device_extension).HwInterrupt.unwrap())(
+        (*device_extension).MiniPortDeviceExtension.as_mut_ptr() as *mut c_void,
     );
     if hw_result == 0 {
         // false
@@ -2088,7 +2038,7 @@ pub unsafe extern "system" fn SpiProcessTimeout(
         DbgPrint(b"Resetting the bus\n\0".as_ptr() as *const i8);
 
         for Bus in 0..(*DeviceExtension).NumberOfBuses {
-            ((*DeviceExtension).HwResetBus)((*DeviceExtension).MiniPortDeviceExtension, Bus);
+            ((*DeviceExtension).HwResetBus.unwrap())((*DeviceExtension).MiniPortDeviceExtension.as_mut_ptr() as *mut c_void, Bus as u32);
 
             // Reset flags and set reset timeout to 4 seconds
             (*DeviceExtension).InterruptData.Flags |= SCSI_PORT_RESET;
@@ -2116,7 +2066,7 @@ pub unsafe extern "system" fn SpiResetBus(ServiceContext: *mut core::ffi::c_void
     DeviceExtension = (*ResetParams).DeviceExtension as *mut SCSI_PORT_DEVICE_EXTENSION;
     let hw_reset_bus: unsafe extern "system" fn(*mut core::ffi::c_void, u32) =
         core::mem::transmute((*DeviceExtension).HwResetBus);
-    hw_reset_bus((*DeviceExtension).MiniPortDeviceExtension, (*ResetParams).PathId);
+    hw_reset_bus((*DeviceExtension).MiniPortDeviceExtension.as_mut_ptr() as *mut c_void, (*ResetParams).PathId);
 
     (*DeviceExtension).InterruptData.Flags |= SCSI_PORT_RESET;
     (*DeviceExtension).TimerCount = 4;
@@ -2148,7 +2098,7 @@ unsafe fn ScsiPortIoTimer(
             // Timeout, process it
             if KeSynchronizeExecution(
                 (*DeviceExtension).Interrupt[0],
-                SpiProcessTimeout,
+                Some(core::mem::transmute(SpiProcessTimeout as *const ())),
                 (*DeviceExtension).Common.DeviceObject as *mut core::ffi::c_void,
             ) != 0
             {
@@ -2164,10 +2114,10 @@ unsafe fn ScsiPortIoTimer(
 
     // Per-Lun scanning of timeouts is needed...
     for pathId in 0u8..(*DeviceExtension).NumberOfBuses {
-        let bus: *mut SCSI_BUS_INFO = core::ptr::addr_of_mut!((*DeviceExtension).Buses[pathId as usize]);
+        let bus: *mut SCSI_BUS_INFO = (*DeviceExtension).Buses.add(pathId as usize);
 
         let mut lunEntry = (*bus).LunsListHead.Flink;
-        while lunEntry != core::ptr::addr_of!((*bus).LunsListHead) {
+        while lunEntry != core::ptr::addr_of_mut!((*bus).LunsListHead) {
             let LunExtension = (lunEntry as *const u8)
                 .offset(-(core::mem::offset_of!(SCSI_PORT_LUN_EXTENSION, LunEntry) as isize))
                 as *mut SCSI_PORT_LUN_EXTENSION;
@@ -2185,24 +2135,24 @@ unsafe fn ScsiPortIoTimer(
 
                     KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
 
-                    IoStartPacket(DeviceObject, Irp, core::ptr::null_mut::<u32>(), core::ptr::null_mut::<core::ffi::c_void>());
+                    IoStartPacket(DeviceObject, Irp, core::ptr::null_mut::<u32>(), None);
 
                     KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
                 }
             } else if (*LunExtension).RequestTimeout == 0 {
                 let mut ResetParams: RESETBUS_PARAMS = core::mem::zeroed();
 
-                (*LunExtension).RequestTimeout = u32::MAX;
+                (*LunExtension).RequestTimeout = -1i32;
 
                 DbgPrint(b"Request timed out, resetting bus\n\0".as_ptr() as *const i8);
 
                 // Pass params to the bus reset routine
-                ResetParams.PathId = (*LunExtension).PathId;
+                ResetParams.PathId = (*LunExtension).PathId as u32;
                 ResetParams.DeviceExtension = DeviceExtension;
 
                 if KeSynchronizeExecution(
                     (*DeviceExtension).Interrupt[0],
-                    SpiResetBus,
+                    Some(core::mem::transmute(SpiResetBus as *const ())),
                     core::ptr::addr_of_mut!(ResetParams) as *mut core::ffi::c_void,
                 ) == 0
                 {
@@ -2236,13 +2186,13 @@ pub unsafe extern "system" fn SpiMiniportTimerDpc(
     let device_extension: *mut SCSI_PORT_DEVICE_EXTENSION =
         (*device_object).DeviceExtension as *mut SCSI_PORT_DEVICE_EXTENSION;
 
-    KeAcquireSpinLockAtDpcLevel(&mut (*device_extension).SpinLock);
+    KeAcquireSpinLockAtDpcLevel((&raw mut (*device_extension).SpinLock).cast());
 
     if !(*device_extension).HwScsiTimer.is_none() {
-        ((*device_extension).HwScsiTimer)((*device_extension).MiniPortDeviceExtension);
+        ((*device_extension).HwScsiTimer.unwrap())((*device_extension).MiniPortDeviceExtension.as_mut_ptr() as *mut c_void);
     }
 
-    KeReleaseSpinLockFromDpcLevel(&mut (*device_extension).SpinLock);
+    KeReleaseSpinLockFromDpcLevel((&raw mut (*device_extension).SpinLock).cast());
 
     if ((*device_extension).InterruptData.Flags & SCSI_PORT_NOTIFICATION_NEEDED) != 0 {
         ScsiPortDpcForIsr(
@@ -2264,8 +2214,8 @@ unsafe fn SpiCreatePortConfig(
     let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut DdkConfigInformation: *mut CONFIGURATION_INFORMATION;
-    let mut RootKey: HANDLE;
-    let mut Key: HANDLE;
+    let mut RootKey: HANDLE = core::ptr::null_mut();
+    let mut Key: HANDLE = core::ptr::null_mut();
     let mut Found: u8;
     let mut DeviceBuffer: [u16; 16] = [0; 16];
     let mut StrBuffer: [u16; 512] = [0; 512];
@@ -2327,7 +2277,7 @@ unsafe fn SpiCreatePortConfig(
         if (*ConfigInfo).AdapterInterfaceType == Internal {
             ObjectAttributes = core::mem::zeroed::<_OBJECT_ATTRIBUTES>();
             ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
-            ObjectAttributes.ObjectName = ((*(*((*(*DeviceExtension).Common.DeviceObject)).DriverObject)).HardwareDatabase);
+            ObjectAttributes.ObjectName = ((*(*(*DeviceExtension).Common.DeviceObject).DriverObject).HardwareDatabase);
             ObjectAttributes.Attributes = (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE) as u32;
             ObjectAttributes.RootDirectory = core::ptr::null_mut();
             ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
@@ -2346,7 +2296,6 @@ unsafe fn SpiCreatePortConfig(
                 ];
                 swprintf(
                     StrBuffer.as_mut_ptr(),
-                    512,
                     scsi_adapter_fmt.as_ptr(),
                     (*InternalConfigInfo).AdapterNumber,
                 );
@@ -2420,7 +2369,6 @@ unsafe fn SpiCreatePortConfig(
             ];
             swprintf(
                 DeviceBuffer.as_mut_ptr(),
-                16,
                 device_fmt.as_ptr(),
                 (*InternalConfigInfo).AdapterNumber,
             );
@@ -2479,30 +2427,30 @@ unsafe fn SpiCreatePortConfig(
         (*InternalConfigInfo).LastAdapterNumber = (*InternalConfigInfo).AdapterNumber;
 
         Found = 0;
-        Status = (((IoQueryDeviceDescription))).cast()(
+        Status = ((((IoQueryDeviceDescription))))(
             core::ptr::addr_of_mut!((*HwInitData).AdapterInterfaceType),
             core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            SpQueryDeviceCallout,
-            core::ptr::addr_of_mut!(Found) as *mut u8,
+            Some(core::mem::transmute(SpQueryDeviceCallout as *const ())),
+            core::ptr::addr_of_mut!(Found) as *mut c_void,
         );
 
         if Found == 0 {
             let mut InterfaceType: INTERFACE_TYPE = Eisa;
 
-            if (*HwInitData).AdapterInterfaceType == (Isa) as i32 {
-                Status = (((IoQueryDeviceDescription))).cast()(
+            if (*HwInitData).AdapterInterfaceType == (crate::glue::Isa) as i32 {
+                Status = ((((IoQueryDeviceDescription))))(
                     core::ptr::addr_of_mut!(InterfaceType),
                     core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
-                    SpQueryDeviceCallout,
-                    core::ptr::addr_of_mut!(Found) as *mut u8,
+                    Some(core::mem::transmute(SpQueryDeviceCallout as *const ())),
+                    core::ptr::addr_of_mut!(Found) as *mut c_void,
                 );
 
                 if Found != 0 {
@@ -2560,7 +2508,7 @@ unsafe fn SpiParseDeviceInfo(
     let FullResource: *mut CM_FULL_RESOURCE_DESCRIPTOR;
     let PartialDescriptor: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR;
     let ScsiDeviceData: *mut CM_SCSI_DEVICE_DATA;
-    let mut Length: u32;
+    let mut Length: u32 = 0;
     let mut Count: u32;
     let mut Dma: u32 = 0;
     let mut Interrupt: u32 = 0;
@@ -2640,7 +2588,7 @@ pub unsafe extern "system" fn ScsiPortAllocateAdapterChannel(
     (*device_extension).MapRegisterBase = map_register_base;
     KeSynchronizeExecution(
         (*device_extension).Interrupt[0],
-        ScsiPortStartPacket,
+        Some(core::mem::transmute(ScsiPortStartPacket as *const ())),
         device_object as *mut core::ffi::c_void,
     );
     KeReleaseSpinLock((core::ptr::addr_of_mut!((*device_extension).SpinLock)).cast(), irql);
@@ -2652,5 +2600,5 @@ pub unsafe extern "system" fn ScsiPortConvertPhysicalAddressToUlong(Address: SCS
     unsafe {
         DbgPrint(b"ScsiPortConvertPhysicalAddressToUlong()\n\0".as_ptr() as *const i8);
     }
-    Address.u.__bindgen_anon_1.LowPart
+    Address.u.LowPart
 }

@@ -7,15 +7,12 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{BusTypeScsi, IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, LPCSTR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_PROPERTY_QUERY, PropertyExistsQuery, PropertyStandardQuery, STORAGE_DESCRIPTOR_HEADER, STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY, StorageAdapterProperty, StorageDeviceIdProperty, StorageDeviceProperty, UINT32, UINT8};
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, LPCSTR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_PROPERTY_QUERY, STORAGE_DESCRIPTOR_HEADER, STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY, UINT32, UINT8, _STORAGE_BUS_TYPE_BusTypeScsi as BusTypeScsi, _STORAGE_PROPERTY_ID_StorageAdapterProperty as StorageAdapterProperty, _STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty, _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty, _STORAGE_QUERY_TYPE_PropertyExistsQuery as PropertyExistsQuery, _STORAGE_QUERY_TYPE_PropertyStandardQuery as PropertyStandardQuery};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{DUMP_POINTERS, IO_SCSI_CAPABILITIES, PDUMP_POINTERS, PINQUIRYDATA, PSCSI_ADAPTER_BUS_INFO, PSCSI_ADDRESS, PSCSI_BUS_DATA, PSCSI_BUS_INFO, PSCSI_INQUIRY_DATA, PSCSI_PASS_THROUGH, PSCSI_PORT_COMMON_EXTENSION, PSCSI_PORT_DEVICE_EXTENSION, PSCSI_PORT_LUN_EXTENSION, SCSI_ADAPTER_BUS_INFO, SCSI_ADDRESS, SCSI_BUS_DATA, SCSI_INQUIRY_DATA, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_LUN_EXTENSION, STORAGE_ADAPTER_DESCRIPTOR_WIN8, _SCSI_PORT_DEVICE_EXTENSION};
-use ntkrnl_sys::ddk::{_STORAGE_BUS_TYPE_BusTypeScsi as BusTypeScsi, _STORAGE_PROPERTY_ID_StorageAdapterProperty as StorageAdapterProperty, _STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty, _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty, _STORAGE_QUERY_TYPE_PropertyExistsQuery as PropertyExistsQuery, _STORAGE_QUERY_TYPE_PropertyStandardQuery as PropertyStandardQuery};
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::ddk::{};
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::ddk::{};
 
 extern "C" {
     fn VerifyIrpInBufferSize(Irp: PIRP, Size: usize) -> i32;
@@ -61,7 +58,7 @@ unsafe fn SpiGetInquiryData(
         return STATUS_BUFFER_TOO_SMALL;
     }
 
-    (*Irp).IoStatus.Information = (Length as usize) as u64;
+    (*Irp).IoStatus.Information = (Length as usize) as _;
 
     AdapterBusInfo = Buffer as PSCSI_ADAPTER_BUS_INFO;
     (*AdapterBusInfo).NumberOfBuses = BusCount as UCHAR;
@@ -249,7 +246,7 @@ unsafe fn PdoHandleQueryProperty(
                     (*DescriptorHeader).Version = TotalLength;
                     (*DescriptorHeader).Size = TotalLength;
                     (*Irp).IoStatus.Information =
-                        (core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as usize) as u64;
+                        (core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as usize) as _;
                     status = STATUS_SUCCESS;
                 } else {
                     let deviceDescriptor: PSTORAGE_DEVICE_DESCRIPTOR =
@@ -301,7 +298,7 @@ unsafe fn PdoHandleQueryProperty(
                     *Buffer.add(FieldLengthRevision as usize) = b'\0';
                     // Buffer += FieldLengthRevision + 1 not needed further
 
-                    (*Irp).IoStatus.Information = (TotalLength as usize) as u64;
+                    (*Irp).IoStatus.Information = (TotalLength as usize) as _;
                     status = STATUS_SUCCESS;
                 }
             }
@@ -372,7 +369,6 @@ unsafe fn FdoHandleScsiPassthrough(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000_000E;
 
     let mut portExt: PSCSI_PORT_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut lunExt: PSCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
@@ -436,7 +432,7 @@ unsafe fn FdoHandleQueryProperty(
             b"ioStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(STORAGE_PROPERTY_QUERY)\0".as_ptr(),
             b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             351,
-            core::ptr::null_mut(),
+            core::ptr::null_mut::<core::ffi::c_void>(),
         );
     }
     if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
@@ -444,7 +440,7 @@ unsafe fn FdoHandleQueryProperty(
             b"Irp->AssociatedIrp.SystemBuffer\0".as_ptr(),
             b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             352,
-            core::ptr::null_mut(),
+            core::ptr::null_mut::<core::ffi::c_void>(),
         );
     }
     if (*portExt).Common.IsFDO == 0 {
@@ -452,7 +448,7 @@ unsafe fn FdoHandleQueryProperty(
             b"portExt->Common.IsFDO\0".as_ptr(),
             b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
             353,
-            core::ptr::null_mut(),
+            core::ptr::null_mut::<core::ffi::c_void>(),
         );
     }
 
@@ -467,7 +463,7 @@ unsafe fn FdoHandleQueryProperty(
             status = ntkrnl_sys::constants::STATUS_INVALID_PARAMETER_1;
         }
     } else if (*PropertyQuery).QueryType as u32 == crate::glue::PropertyExistsQuery as u32 {
-        status = ntkrnl_sys::constants::STATUS_SUCCESS;
+        status = ntkrnl_sys::base::STATUS_SUCCESS;
     } else if (*PropertyQuery).QueryType as u32 != crate::glue::PropertyStandardQuery as u32 {
         status = ntkrnl_sys::constants::STATUS_INVALID_PARAMETER_2;
     } else if ((*ioStack).Parameters.DeviceIoControl.OutputBufferLength as usize)
@@ -482,7 +478,7 @@ unsafe fn FdoHandleQueryProperty(
                 b"ioStack->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(STORAGE_DESCRIPTOR_HEADER)\0".as_ptr(),
                 b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0".as_ptr(),
                 393,
-                core::ptr::null_mut(),
+                core::ptr::null_mut::<core::ffi::c_void>(),
             );
         }
         (*DescriptorHeader).Version =
@@ -490,8 +486,8 @@ unsafe fn FdoHandleQueryProperty(
         (*DescriptorHeader).Size =
             core::mem::size_of::<STORAGE_ADAPTER_DESCRIPTOR_WIN8>() as u32;
         (*Irp).IoStatus.Information =
-            (core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as usize as usize) as u64; // ULONG_PTR
-        status = ntkrnl_sys::constants::STATUS_SUCCESS;
+            (core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() as usize as usize) as _; // ULONG_PTR
+        status = ntkrnl_sys::base::STATUS_SUCCESS;
     } else {
         adapterDescriptor = (*Irp).AssociatedIrp.SystemBuffer as *mut STORAGE_ADAPTER_DESCRIPTOR_WIN8;
         *adapterDescriptor = STORAGE_ADAPTER_DESCRIPTOR_WIN8 {
@@ -511,8 +507,8 @@ unsafe fn FdoHandleQueryProperty(
             AddressType: 0,
         };
         (*Irp).IoStatus.Information =
-            (core::mem::size_of::<STORAGE_ADAPTER_DESCRIPTOR_WIN8>() as usize as usize) as u64;
-        status = ntkrnl_sys::constants::STATUS_SUCCESS;
+            (core::mem::size_of::<STORAGE_ADAPTER_DESCRIPTOR_WIN8>() as usize as usize) as _;
+        status = ntkrnl_sys::base::STATUS_SUCCESS;
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
@@ -565,7 +561,7 @@ pub unsafe extern "system" fn ScsiPortDeviceControl(
                     (*address).PathId = (*lunExt).PathId;
                     (*address).TargetId = (*lunExt).TargetId;
                     (*address).Lun = (*lunExt).Lun;
-                    (*Irp).IoStatus.Information = (core::mem::size_of::<SCSI_ADDRESS>() as usize) as u64;
+                    (*Irp).IoStatus.Information = (core::mem::size_of::<SCSI_ADDRESS>() as usize) as _;
                     status = STATUS_SUCCESS;
                 }
             }
@@ -581,7 +577,7 @@ pub unsafe extern "system" fn ScsiPortDeviceControl(
             } else {
                 (*dumpPointers).DeviceObject = DeviceObject as *mut core::ffi::c_void;
                 status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = (core::mem::size_of::<DUMP_POINTERS>() as usize) as u64;
+                (*Irp).IoStatus.Information = (core::mem::size_of::<DUMP_POINTERS>() as usize) as _;
             }
         }
         266256 /* IOCTL_SCSI_GET_CAPABILITIES */ => {
@@ -597,7 +593,7 @@ pub unsafe extern "system" fn ScsiPortDeviceControl(
                     core::mem::size_of::<IO_SCSI_CAPABILITIES>() as usize,
                 );
                 status = STATUS_SUCCESS;
-                (*Irp).IoStatus.Information = (core::mem::size_of::<IO_SCSI_CAPABILITIES>() as usize) as u64;
+                (*Irp).IoStatus.Information = (core::mem::size_of::<IO_SCSI_CAPABILITIES>() as usize) as _;
             }
         }
         266252 /* IOCTL_SCSI_GET_INQUIRY_DATA */ => {
