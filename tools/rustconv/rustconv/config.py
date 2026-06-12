@@ -62,6 +62,7 @@ PARTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "partmgr"
 FS_REC_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fs_rec"
 MOUNTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "mountmgr"
 PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
+SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -520,6 +521,24 @@ TARGETS = {
         system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
         cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
     ),
+    # scsiport.sys — the SCSI port driver (drivers/storage/port/scsiport, ~8.4K LOC,
+    # 8 .c: fdo/ioctl/pdo/power/registry/scsi/scsiport/stubs; guid.c stays C = GUID data
+    # TU). WDM kernelmodedriver + big EXPORT driver (scsiport.spec: ~45 ScsiPort* — the
+    # port/register I/O wrappers → HAL intrinsics, ScsiPortInitialize/GetBusData/etc.
+    # stdcall, ScsiPortNotification cdecl varargs + ScsiDebugPrint varargs). BOOT-loaded
+    # (scsiport.sys=1) and on the LiveCD IDE read-stack (uniata/atapi are scsiport
+    # miniports → import ScsiPort*) → smoke-exercised. Private structs (SCSI_PORT_DEVICE_
+    # EXTENSION, _LOGICAL_UNIT_EXTENSION, SCSI_REQUEST_BLOCK_INFO) in scsiport.h →
+    # gen_driver_types.sh substrate (crate::types). Links sptilib + PSEH_LIB. The ~45
+    # exports must survive (spec2def stays in the cohab CMake; Rust provides #[no_mangle]).
+    "scsiport": Target(
+        name="scsiport", source_dir=SCSIPORT_DIR,
+        output_crate=RUST_DIR / "scsiport-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={},
+        spec_file=SCSIPORT_DIR / "scsiport.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -841,6 +860,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["mountmgr"]
     if "/drivers/storage/ide/pciidex" in posix:
         return TARGETS["pciidex"]
+    if "/drivers/storage/port/scsiport" in posix:
+        return TARGETS["scsiport"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

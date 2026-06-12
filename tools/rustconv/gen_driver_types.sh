@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr|fs_rec|pciidex|scsiport>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -176,6 +176,31 @@ case "$DRIVER" in
     DRIVER_DIR="${SRC}/drivers/storage/ide/pciidex"
     WRAPPER_INC=$'#include "pciidex.h"'
     ALLOW_FILES=( --allowlist-file '.*pciidex[/\\]pciidex\.h' --allowlist-file '.*ddk[/\\]ide\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  scsiport)
+    # The SCSI port driver (drivers/storage/port/scsiport). Driver-PRIVATE structs
+    # (SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_PORT_COMMON_EXTENSION,
+    # SCSI_REQUEST_BLOCK_INFO, CONFIGURATION_INFO, SCSI_BUS_INFO, SCSI_PORT_INTERRUPT_DATA,
+    # STORAGE_ADAPTER_DESCRIPTOR_WIN8, ...) live in the driver's own scsiport.h — allowlist
+    # it. Those LUN/SRB-info structs embed SCSI DDK types (SCSI_REQUEST_BLOCK, CDB,
+    # SENSE_DATA, SCSI_PORT_CONFIGURATION_INFORMATION, ACCESS_RANGE) from <scsi.h> +
+    # <ntddscsi.h>, none of which are in the ntkrnl-sys kernel bindgen → allowlist those
+    # two headers too so bindgen emits exact SRB/CDB layouts (the blocklist keeps any
+    # shared ntkrnl-sys ddk types on the single identity). No version macros in the
+    # scsiport CMakeLists → NT 5.2 default; NTDDI 0x05020400 (peb_teb trap).
+    DRIVER_DIR="${SRC}/drivers/storage/port/scsiport"
+    WRAPPER_INC=$'#include "scsiport.h"'
+    ALLOW_FILES=( --allowlist-file '.*scsiport[/\\]scsiport\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]srb\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h' )
+    # _SCSI_REQUEST_BLOCK is OPAQUE in the kernel bindgen ({ _address: u8 }) — unblock it
+    # so this driver's bindgen (which includes scsi.h) emits the FULL SRB (SrbStatus/Cdb/
+    # DataBuffer/SrbFlags/...). Otherwise every Srb.<field> access resolves to the stub.
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
