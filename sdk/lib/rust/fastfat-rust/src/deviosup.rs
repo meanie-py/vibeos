@@ -61,6 +61,7 @@ extern "C" {
     fn DbgPrint(fmt: *const i8, ...);
     static mut FatBreakOnInterestingIoCompletion: i32;
     fn SafeMmProbeAndLockPages( Mdl: *mut MDL, AccessMode: KPROCESSOR_MODE, Operation: LOCK_OPERATION, ) -> i32;
+    fn MmPrepareMdlForReuse(Mdl: PMDL);
     fn CollectDiskIoStats(Vcb: *mut VCB, Function: u32, IsUserIo: u8, Count: u32);
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
 }
@@ -76,56 +77,356 @@ pub struct FAT_SYNC_CONTEXT {
 }
 pub type PFAT_SYNC_CONTEXT = *mut FAT_SYNC_CONTEXT;
 
-unsafe extern "system" fn FatMultiSyncCompletionRoutine(
+// ---- hand-translated (translate-time parser missed the C tail; see deviosup.c:2406+) ----
+
+//  FatDoCompletionZero macro: zero the buffer behind ZeroMdl on success, then free it.
+unsafe fn FatDoCompletionZeroHelper(Irp: PIRP, Context: crate::types::PFAT_IO_CONTEXT) {
+    if !(*Context).ZeroMdl.is_null() {
+        if ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
+            core::ptr::write_bytes(
+                (*(*Context).ZeroMdl).MappedSystemVa as *mut u8,
+                0,
+                (*(*Context).ZeroMdl).ByteCount as usize,
+            );
+        }
+        IoFreeMdl((*Context).ZeroMdl);
+        (*Context).ZeroMdl = core::ptr::null_mut();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FatMultiSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
-) -> NTSTATUS;
+) -> NTSTATUS {
+    let Context = Contxt as crate::types::PFAT_IO_CONTEXT;
+    let MasterIrp = (*Context).MasterIrp;
 
-unsafe extern "system" fn FatMultiAsyncCompletionRoutine(
+    //  If we got an error (or verify required), remember it in the Irp
+    if !ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
+        core::ptr::write(
+            addr_of_mut!((*MasterIrp).IoStatus),
+            core::ptr::read(addr_of!((*Irp).IoStatus)),
+        );
+    }
+
+    //  We must do this here since IoCompleteRequest won't get a chance
+    //  on this associated Irp.
+    IoFreeMdl((*Irp).MdlAddress);
+    IoFreeIrp(Irp);
+
+    if InterlockedDecrement(addr_of_mut!((*Context).IrpCount)) == 0 {
+        FatDoCompletionZeroHelper(MasterIrp, Context);
+        KeSetEvent((*Context).Wait.SyncEvent.as_mut(), 0, 0);
+    }
+
+    let _ = DeviceObject;
+    crate::glue::STATUS_MORE_PROCESSING_REQUIRED
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FatMultiAsyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
-) -> NTSTATUS;
+) -> NTSTATUS {
+    let mut Status: NTSTATUS = 0; // STATUS_SUCCESS
+    let Context = Contxt as crate::types::PFAT_IO_CONTEXT;
+    let MasterIrp = (*Context).MasterIrp;
+    let mut PostRequest = false;
 
-unsafe extern "system" fn FatSpecialSyncCompletionRoutine(
+    //  If we got an error (or verify required), remember it in the Irp
+    if !ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
+        core::ptr::write(
+            addr_of_mut!((*MasterIrp).IoStatus),
+            core::ptr::read(addr_of!((*Irp).IoStatus)),
+        );
+    }
+
+    if InterlockedDecrement(addr_of_mut!((*Context).IrpCount)) == 0 {
+        FatDoCompletionZeroHelper(MasterIrp, Context);
+
+        if ntkrnl_sys::base::NT_SUCCESS((*MasterIrp).IoStatus.__bindgen_anon_1.Status) {
+            (*MasterIrp).IoStatus.Information =
+                (*Context).Wait.Async.as_ref().RequestedByteCount as ULONG_PTR;
+
+            //  Now if this wasn't PagingIo, set either the read or write bit.
+            if (*MasterIrp).Flags & crate::glue::IRP_PAGING_IO == 0 {
+                let FileObject = (*Context).Wait.Async.as_ref().FileObject;
+                let major = (*IoGetCurrentIrpStackLocation(MasterIrp)).MajorFunction;
+                (*FileObject).Flags |= if major == ntkrnl_sys::constants::IRP_MJ_READ {
+                    crate::glue::FO_FILE_FAST_IO_READ
+                } else {
+                    crate::glue::FO_FILE_MODIFIED
+                };
+            }
+        } else {
+            //  Post STATUS_VERIFY_REQUIRED failures. Only post top level IRPs,
+            //  because recursive I/Os cannot process volume verification.
+            if (*Context).IrpContextFlags & crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL == 0
+                && (*MasterIrp).IoStatus.__bindgen_anon_1.Status
+                    == crate::glue::STATUS_VERIFY_REQUIRED
+            {
+                PostRequest = true;
+            }
+        }
+
+        //  If this was a special async write, decrement the count.  Set the
+        //  event if this was the final outstanding I/O for the file.
+        let NonPagedFcb = (*Context).Wait.Async.as_ref().NonPagedFcb;
+        if !NonPagedFcb.is_null()
+            && ExInterlockedAddUlong(
+                addr_of_mut!((*NonPagedFcb).OutstandingAsyncWrites),
+                0xffffffff,
+                addr_of_mut!(FatData.GeneralSpinLock),
+            ) == 1
+        {
+            KeSetEvent((*NonPagedFcb).OutstandingAsyncEvent, 0, 0);
+        }
+
+        //  Now release the resources.
+        let resource = (*Context).Wait.Async.as_ref().Resource;
+        if !resource.is_null() {
+            ExReleaseResourceForThreadLite(
+                resource,
+                (*Context).Wait.Async.as_ref().ResourceThreadId,
+            );
+        }
+        let resource2 = (*Context).Wait.Async.as_ref().Resource2;
+        if !resource2.is_null() {
+            ExReleaseResourceForThreadLite(
+                resource2,
+                (*Context).Wait.Async.as_ref().ResourceThreadId,
+            );
+        }
+
+        //  Mark the master Irp pending
+        IoMarkIrpPending(MasterIrp);
+
+        //  and finally, free the context record.
+        ExFreePool(Context as *mut c_void);
+
+        if PostRequest {
+            // DUMMY_PSEH: _SEH2_EXCEPT handler is dead code — run the try body.
+            let IrpContext =
+                FatCreateIrpContext(Irp, 1) as *mut crate::types::IRP_CONTEXT;
+            (*IrpContext).Flags &= !crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL;
+            FatFsdPostRequest(IrpContext as *mut IRP_CONTEXT, Irp);
+            Status = crate::glue::STATUS_MORE_PROCESSING_REQUIRED;
+        }
+    }
+
+    let _ = DeviceObject;
+    Status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FatSpecialSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
-) -> NTSTATUS;
+) -> NTSTATUS {
+    let SyncContext = Contxt as PFAT_SYNC_CONTEXT;
 
-unsafe extern "system" fn FatSingleSyncCompletionRoutine(
+    core::ptr::write(
+        addr_of_mut!((*SyncContext).Iosb),
+        core::ptr::read(addr_of!((*Irp).IoStatus)),
+    );
+
+    KeSetEvent(addr_of_mut!((*SyncContext).Event), 0, 0);
+
+    let _ = DeviceObject;
+    0 // STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FatSingleSyncCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
-) -> NTSTATUS;
+) -> NTSTATUS {
+    let Context = Contxt as crate::types::PFAT_IO_CONTEXT;
 
-unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
+    FatDoCompletionZeroHelper(Irp, Context);
+
+    KeSetEvent((*Context).Wait.SyncEvent.as_mut(), 0, 0);
+
+    let _ = DeviceObject;
+    crate::glue::STATUS_MORE_PROCESSING_REQUIRED
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn FatPagingFileCompletionRoutineCatch(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Contxt: PVOID,
-) -> NTSTATUS;
+) -> NTSTATUS {
+    let Context = Contxt as PFAT_PAGING_FILE_CONTEXT;
 
-unsafe extern "system" fn FatPagingFileCompletionRoutine(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    MasterIrp: PVOID,
-) -> NTSTATUS;
+    //  Cleanup the existing Mdl, perhaps by returning the reserve.
+    if (*Irp).MdlAddress == FatReserveMdl {
+        MmPrepareMdlForReuse((*Irp).MdlAddress);
+        KeSetEvent(addr_of_mut!(FatReserveEvent), 0, 0);
+    } else {
+        IoFreeMdl((*Irp).MdlAddress);
+    }
 
-unsafe extern "system" fn FatPagingFileCompletionRoutineCatch(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Contxt: PVOID,
-) -> NTSTATUS;
+    //  Restore the original Mdl.
+    (*Irp).MdlAddress = (*Context).RestoreMdl;
+
+    //  If the IRP is succeeding or the failure handler did not post off the
+    //  completion, we're done and should set the event to let the master
+    //  know the IRP is his again.
+    if ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status)
+        || FatPagingFileErrorHandler(Irp, addr_of_mut!((*Context).Event)) == 0
+    {
+        KeSetEvent(addr_of_mut!((*Context).Event), 0, 0);
+    }
+
+    let _ = DeviceObject;
+    crate::glue::STATUS_MORE_PROCESSING_REQUIRED
+}
+// ---- re-stitched from bank: 20260612-152050-deviosup.c/05_FatSingleNonAlignedSync.rs ----
+extern "system" {
+    fn DebugTrace(level: i32, comp: u32, fmt: *const i8, ...);
+    fn FatRaiseStatus(irp_context: *mut IRP_CONTEXT, status: i32);
+    fn PAGED_CODE();
+    fn _SEH2_TRY();
+    fn _SEH2_FINALLY();
+    fn _SEH2_END();
+    fn _SEH2_AbnormalTermination() -> i32;
+    fn FatSingleSyncCompletionRoutine(
+        device_object: PDEVICE_OBJECT,
+        irp: PIRP,
+        context: PVOID,
+    ) -> NTSTATUS;
+    fn SetFlag(flags: *mut u32, flag: u32);
+    fn FlagOn(flags: u32, flag: u32) -> i32;
+    fn FatWaitSync(irp_context: *mut IRP_CONTEXT);
+    fn MmUnlockPages(mdl: PMDL);
+    fn FsRtlUpdateDiskCounters(read: u64, write: u64);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn FatSingleNonAlignedSync(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Buffer: PUCHAR,
-    Lbo: LBO,
-    ByteCount: ULONG,
-    Irp: PIRP,
-) ;
+    irp_context: *mut IRP_CONTEXT,
+    vcb: *mut VCB,
+    buffer: *mut u8,
+    lbo: i64,
+    byte_count: u32,
+    irp: *mut IRP,
+) {
+    let irp_sp: PIO_STACK_LOCATION;
+    let mdl: PMDL;
+    let saved_mdl: PMDL;
+    #[cfg(not(reactos))]
+    let mut is_a_write: bool = false;
+
+    PAGED_CODE();
+
+    DebugTrace(
+        1,
+        Dbg,
+        b"FatSingleNonAlignedAsync\n\0".as_ptr() as *const i8,
+        0,
+    );
+    DebugTrace(
+        0,
+        Dbg,
+        b"MajorFunction = %08lx\n\0".as_ptr() as *const i8,
+        (*irp_context).MajorFunction,
+    );
+    DebugTrace(0, Dbg, b"Vcb           = %p\n\0".as_ptr() as *const i8, vcb);
+    DebugTrace(
+        0,
+        Dbg,
+        b"Buffer        = %p\n\0".as_ptr() as *const i8,
+        buffer,
+    );
+    DebugTrace(0, Dbg, b"Lbo           = %08lx\n\0".as_ptr() as *const i8, lbo);
+    DebugTrace(
+        0,
+        Dbg,
+        b"ByteCount     = %08lx\n\0".as_ptr() as *const i8,
+        byte_count,
+    );
+    DebugTrace(0, Dbg, b"Irp           = %p\n\0".as_ptr() as *const i8, irp);
+
+    saved_mdl = (*irp).MdlAddress;
+    (*irp).MdlAddress = core::ptr::null_mut();
+
+    mdl = IoAllocateMdl(buffer, byte_count, 0, 0, irp);
+
+    if mdl.is_null() {
+        (*irp).MdlAddress = saved_mdl;
+        FatRaiseStatus(irp_context, STATUS_INSUFFICIENT_RESOURCES);
+    }
+
+    _SEH2_TRY();
+    MmProbeAndLockPages(mdl, KernelMode, IoWriteAccess);
+    _SEH2_FINALLY();
+    if _SEH2_AbnormalTermination() != 0 {
+        IoFreeMdl(mdl);
+        (*irp).MdlAddress = saved_mdl;
+    }
+    _SEH2_END();
+
+    IoSetCompletionRoutine(
+        irp,
+        Some(FatSingleSyncCompletionRoutine as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS),
+        &raw const (*irp_context).FatIoContext as *mut c_void,
+        1,
+        1,
+        1,
+    );
+
+    irp_sp = IoGetNextIrpStackLocation(irp);
+    (*irp_sp).MajorFunction = (*irp_context).MajorFunction;
+    (*irp_sp).Parameters.Read.Length = byte_count;
+    (*irp_sp).Parameters.Read.ByteOffset.QuadPart = lbo;
+
+    #[cfg(not(reactos))]
+    {
+        is_a_write = (*irp_sp).MajorFunction == IRP_MJ_WRITE;
+    }
+
+    if (*vcb).VerifyThread == KeGetCurrentThread() {
+        SetFlag(&raw mut (*irp_context).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
+    }
+    if FlagOn((*irp_context).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY) != 0 {
+        SetFlag(&raw mut (*irp_sp).Flags, SL_OVERRIDE_VERIFY_VOLUME);
+    }
+
+    FatIoCallDriverCount += 1;
+
+    _SEH2_TRY();
+    IoCallDriver((*vcb).TargetDeviceObject, irp);
+    FatWaitSync(irp_context);
+    _SEH2_FINALLY();
+    MmUnlockPages(mdl);
+    IoFreeMdl(mdl);
+    (*irp).MdlAddress = saved_mdl;
+    _SEH2_END();
+
+    if FatDiskAccountingEnabled != 0 {
+        #[cfg(ntddi_ge_win8)]
+        {
+            FsRtlUpdateDiskCounters(
+                if is_a_write { 0 } else { byte_count as u64 },
+                if is_a_write { byte_count as u64 } else { 0 },
+            );
+        }
+    }
+
+    DebugTrace(
+        -1,
+        Dbg,
+        b"FatSingleNonAlignedSync -> VOID\n\0".as_ptr() as *const i8,
+        0,
+    );
+    return;
+}
 
 #[repr(C)]
 pub struct FAT_PAGING_FILE_CONTEXT {

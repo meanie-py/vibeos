@@ -56,10 +56,84 @@ extern "C" {
 pub const BugCheckFileId: u32 = FAT_BUG_CHECK_WRITE;
 pub const Dbg: u32 = DEBUG_TRACE_WRITE;
 pub static mut FatNoAsync: u8 = 0;
+// ---- re-stitched from bank: 20260612-151345-write.c/02_FatDeferredFlushDpc.rs ----
 #[no_mangle]
-pub unsafe extern "C" fn FatDeferredFlushDpc(Dpc: PKDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID) ;
+pub unsafe extern "system" fn FatDeferredFlushDpc(
+    Dpc: PKDPC,
+    DeferredContext: *mut core::ffi::c_void,
+    SystemArgument1: *mut core::ffi::c_void,
+    SystemArgument2: *mut core::ffi::c_void,
+) {
+    let _ = SystemArgument1;
+    let _ = SystemArgument2;
+    let _ = Dpc;
+
+    let FlushContext: *mut DEFERRED_FLUSH_CONTEXT = DeferredContext as *mut DEFERRED_FLUSH_CONTEXT;
+
+    ExInitializeWorkItem(
+        core::ptr::addr_of_mut!((*FlushContext).Item),
+        FatDeferredFlush,
+        FlushContext as *mut core::ffi::c_void,
+    );
+
+    ExQueueWorkItem(core::ptr::addr_of_mut!((*FlushContext).Item), CriticalWorkQueue);
+}
+// ---- re-stitched from bank: 20260612-151345-write.c/03_FatDeferredFlush.rs ----
+const FSRTL_FSP_TOP_LEVEL_IRP: PIRP = 1 as PIRP;
+
+extern "system" {
+    fn FatDecodeFileObject(
+        File: PFILE_OBJECT,
+        Vcb: *mut PVCB,
+        FcbOrDcb: *mut PFCB,
+        Ccb: *mut PCCB,
+    );
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn FatDeferredFlush(Parameter: PVOID) ;
+pub unsafe extern "system" fn FatDeferredFlush(Parameter: *mut core::ffi::c_void) {
+    // PAGED_CODE();
+
+    let mut Vcb: PVCB = core::ptr::null_mut();
+    let mut FcbOrDcb: PFCB = core::ptr::null_mut();
+    let mut Ccb: PCCB = core::ptr::null_mut();
+
+    let deferred_ctx = Parameter as *mut DEFERRED_FLUSH_CONTEXT;
+    let File: PFILE_OBJECT = (*deferred_ctx).File;
+
+    FatDecodeFileObject(
+        File,
+        &mut Vcb as *mut PVCB,
+        &mut FcbOrDcb as *mut PFCB,
+        &mut Ccb as *mut PCCB,
+    );
+
+    // NT_ASSERT(FcbOrDcb != NULL)
+    if FcbOrDcb.is_null() {
+        panic!("FcbOrDcb != NULL");
+    }
+
+    IoSetTopLevelIrp(FSRTL_FSP_TOP_LEVEL_IRP);
+
+    ExAcquireResourceExclusiveLite((*FcbOrDcb).Header.Resource, 1);
+    ExAcquireResourceSharedLite((*FcbOrDcb).Header.PagingIoResource, 1);
+
+    CcFlushCache(
+        (*File).SectionObjectPointer,
+        core::ptr::null_mut(),
+        0,
+        core::ptr::null_mut(),
+    );
+
+    ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
+    ExReleaseResourceLite((*FcbOrDcb).Header.Resource);
+
+    IoSetTopLevelIrp(core::ptr::null_mut());
+
+    ObDereferenceObject(File);
+
+    ExFreePool(Parameter);
+}
 
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_TOO_LATE: NTSTATUS = 0xC0000470i32; // approximation

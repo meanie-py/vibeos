@@ -54,56 +54,608 @@ extern "system" {
 
 // ---- file-scope preamble (translated) ----
 pub const Dbg: u32 = DEBUG_TRACE_VOLINFO;
+// ---- re-stitched from bank: 20260612-143211-volinfo.c/01_FatQueryFsVolumeInfo.rs ----
 #[no_mangle]
-pub unsafe extern "C" fn FatQueryFsVolumeInfo(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Buffer: PFILE_FS_VOLUME_INFORMATION,
-    Length: *mut u32
-) -> NTSTATUS;
+pub unsafe extern "system" fn FatQueryFsVolumeInfo(
+    IrpContext: *mut PIRP_CONTEXT,
+    Vcb: *mut PVCB,
+    Buffer: *mut FILE_FS_VOLUME_INFORMATION,
+    Length: *mut u32,
+) -> NTSTATUS {
+    // PAGED_CODE();
+
+    // DebugTrace forward declaration (caller deduplicates)
+    extern "system" {
+        fn DebugTrace(level: u32, component: u32, fmt: *const i8, param: u32);
+    }
+
+    DebugTrace(
+        0,
+        0, // Dbg (DEBUG_TRACE_VOLINFO) – exact value unknown, using placeholder
+        b"FatQueryFsVolumeInfo...\n\0".as_ptr() as *const i8,
+        0,
+    );
+
+    let mut BytesToCopy: u32;
+    let mut Status: NTSTATUS;
+
+    // RtlZeroMemory(Buffer, sizeof(FILE_FS_VOLUME_INFORMATION));
+    core::ptr::write_bytes(
+        Buffer as *mut u8,
+        0,
+        core::mem::size_of::<FILE_FS_VOLUME_INFORMATION>(),
+    );
+
+    // Buffer->VolumeSerialNumber = Vcb->Vpb->SerialNumber;
+    (*Buffer).VolumeSerialNumber = (*(*Vcb).Vpb).SerialNumber;
+
+    // Buffer->SupportsObjects = FALSE;
+    (*Buffer).SupportsObjects = 0; // FALSE
+
+    // *Length -= FIELD_OFFSET(FILE_FS_VOLUME_INFORMATION, VolumeLabel[0]);
+    *Length -= core::mem::offset_of!(FILE_FS_VOLUME_INFORMATION, VolumeLabel) as u32;
+
+    let volume_label_length = (*(*Vcb).Vpb).VolumeLabelLength;
+
+    // Check if the buffer is long enough
+    if (*Length) >= (volume_label_length as u32) {
+        BytesToCopy = volume_label_length as u32;
+        Status = STATUS_SUCCESS;
+    } else {
+        BytesToCopy = *Length;
+        Status = STATUS_BUFFER_OVERFLOW;
+    }
+
+    // Buffer->VolumeLabelLength = Vcb->Vpb->VolumeLabelLength;
+    (*Buffer).VolumeLabelLength = volume_label_length as u32;
+
+    // RtlCopyMemory(&Buffer->VolumeLabel[0], &Vcb->Vpb->VolumeLabel[0], BytesToCopy);
+    let src = core::ptr::addr_of!((*(*Vcb).Vpb).VolumeLabel[0]) as *const u16 as *const u8;
+    let dst = core::ptr::addr_of_mut!((*Buffer).VolumeLabel[0]) as *mut u16 as *mut u8;
+    core::ptr::copy_nonoverlapping(src, dst, BytesToCopy as usize);
+
+    // *Length -= BytesToCopy;
+    *Length -= BytesToCopy;
+
+    // UNREFERENCED_PARAMETER(IrpContext);
+    let _ = IrpContext;
+
+    Status
+}
+// ---- re-stitched from bank: 20260612-143211-volinfo.c/02_FatQueryFsSizeInfo.rs ----
+extern "system" {
+    fn DebugTrace(_: i32, _: i32, _: *const i8, _: i32);
+    fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
+    fn PAGED_CODE();
+}
+
+unsafe extern "C" fn FatQueryFsSizeInfo(
+    IrpContext: *mut PIRP_CONTEXT,
+    Vcb: *mut PVCB,
+    Buffer: *mut FILE_FS_SIZE_INFORMATION,
+    Length: *mut u32,
+) -> NTSTATUS {
+    PAGED_CODE();
+
+    DebugTrace(0, /* Dbg (DEBUG_TRACE_VOLINFO) */ 0, b"FatQueryFsSizeInfo...\n\0".as_ptr() as *const i8, 0);
+
+    core::ptr::write_bytes(Buffer as *mut u8, 0, core::mem::size_of::<FILE_FS_SIZE_INFORMATION>());
+
+    (*Buffer).TotalAllocationUnits.LowPart = (*Vcb).AllocationSupport.NumberOfClusters;
+    (*Buffer).AvailableAllocationUnits.LowPart = (*Vcb).AllocationSupport.NumberOfFreeClusters;
+    (*Buffer).SectorsPerAllocationUnit = (*Vcb).Bpb.SectorsPerCluster;
+    (*Buffer).BytesPerSector = (*Vcb).Bpb.BytesPerSector;
+
+    *Length = (*Length).wrapping_sub(core::mem::size_of::<FILE_FS_SIZE_INFORMATION>() as u32);
+
+    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+
+    STATUS_SUCCESS as i32
+}
+// ---- re-stitched from bank: 20260612-143211-volinfo.c/03_FatQueryFsDeviceInfo.rs ----
+extern "system" {
+    fn DebugTrace(component: i32, level: u32, format: *const i8, arg: i32);
+}
+
+const FILE_DEVICE_DISK: u32 = 0x0000_0007;
+
 #[no_mangle]
-pub unsafe extern "C" fn FatQueryFsSizeInfo(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Buffer: PFILE_FS_SIZE_INFORMATION,
-    Length: *mut u32
-) -> NTSTATUS;
+pub unsafe extern "system" fn FatQueryFsDeviceInfo(
+    IrpContext: *mut IRP_CONTEXT,
+    Vcb: *mut VCB,
+    Buffer: *mut ntkrnl_sys::ddk::FILE_FS_DEVICE_INFORMATION,
+    Length: *mut u32,
+) -> i32 {
+    // PAGED_CODE(); – macro expanded as no‑op
+
+    unsafe {
+        DebugTrace(0, 0 /* Dbg */, b"FatQueryFsDeviceInfo...\n\0".as_ptr() as *const i8, 0);
+        core::ptr::write_bytes(
+            Buffer as *mut u8,
+            0,
+            core::mem::size_of::<ntkrnl_sys::ddk::FILE_FS_DEVICE_INFORMATION>(),
+        );
+
+        (*Buffer).DeviceType = FILE_DEVICE_DISK;
+
+        let target_device_object = (*Vcb).TargetDeviceObject;
+        (*Buffer).Characteristics = (*target_device_object).Characteristics;
+
+        *Length -= core::mem::size_of::<ntkrnl_sys::ddk::FILE_FS_DEVICE_INFORMATION>() as u32;
+
+        let _ = IrpContext;   // UNREFERENCED_PARAMETER(IrpContext)
+
+        ntkrnl_sys::base::STATUS_SUCCESS
+    }
+}
+// ---- re-stitched from bank: 20260612-143211-volinfo.c/04_FatQueryFsAttributeInfo.rs ----
+extern "system" {
+    fn PAGED_CODE();
+    fn DebugTrace(level: u32, component: u32, fmt: *const i8, val: i32);
+    fn FlagOn(flags: u32, flag: u32) -> u32;
+    fn SetFlag(attr: *mut u32, flag: u32);
+    fn FatIsFat32(Vcb: *mut VCB) -> u8;
+}
+
+extern "C" {
+    static mut FatData: FatDataStruct;
+}
+
+#[repr(C)]
+struct FatDataStruct {
+    pub ChicagoMode: u8,
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn FatQueryFsDeviceInfo(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Buffer: PFILE_FS_DEVICE_INFORMATION,
-    Length: *mut u32
-) -> NTSTATUS;
+pub unsafe extern "system" fn FatQueryFsAttributeInfo(
+    IrpContext: *mut IRP_CONTEXT,
+    Vcb: *mut VCB,
+    Buffer: *mut FILE_FS_ATTRIBUTE_INFORMATION,
+    Length: *mut u32,
+) -> NTSTATUS {
+    const DEBUG_TRACE_VOLINFO: u32 = 0; // unknown placeholder
+    const Dbg: u32 = DEBUG_TRACE_VOLINFO;
+    const FILE_CASE_PRESERVED_NAMES: u32 = 0x00000002;
+    const FILE_UNICODE_ON_DISK: u32 = 0x00000004;
+    const FILE_READ_ONLY_VOLUME: u32 = 0x00080000;
+    const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x00000004; // assumed
+    const FAT32_BYTES: [u8; 10] = [0x46, 0x00, 0x41, 0x00, 0x54, 0x00, 0x33, 0x00, 0x32, 0x00];
+    const FAT_BYTES: [u8; 6] = [0x46, 0x00, 0x41, 0x00, 0x54, 0x00];
+
+    let mut BytesToCopy: u32;
+    let Status: NTSTATUS;
+
+    PAGED_CODE();
+
+    DebugTrace(0, Dbg, b"FatQueryFsAttributeInfo...\n\0".as_ptr() as *const i8, 0);
+
+    (*Buffer).FileSystemAttributes = FILE_CASE_PRESERVED_NAMES | FILE_UNICODE_ON_DISK;
+
+    if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
+        SetFlag(&mut (*Buffer).FileSystemAttributes, FILE_READ_ONLY_VOLUME);
+    }
+
+    (*Buffer).MaximumComponentNameLength = if FatData.ChicagoMode != 0 { 255 } else { 12 };
+
+    if FatIsFat32(Vcb) != 0 {
+        let offset_field = core::mem::offset_of!(FILE_FS_ATTRIBUTE_INFORMATION, FileSystemName) as u32;
+        let len_minus_offset = (*Length).wrapping_sub(offset_field);
+        if len_minus_offset >= 10 {
+            BytesToCopy = 10;
+            *Length = (*Length).wrapping_sub(offset_field + 10);
+            Status = STATUS_SUCCESS;
+        } else {
+            BytesToCopy = (*Length) - offset_field;
+            *Length = 0;
+            Status = STATUS_BUFFER_OVERFLOW;
+        }
+        RtlCopyMemory(
+            &mut (*Buffer).FileSystemName[0] as *mut _ as *mut u8,
+            FAT32_BYTES.as_ptr() as *const u8,
+            BytesToCopy as usize,
+        );
+    } else {
+        let offset_field = core::mem::offset_of!(FILE_FS_ATTRIBUTE_INFORMATION, FileSystemName) as u32;
+        let len_minus_offset = (*Length).wrapping_sub(offset_field);
+        if len_minus_offset >= 6 {
+            BytesToCopy = 6;
+            *Length = (*Length).wrapping_sub(offset_field + 6);
+            Status = STATUS_SUCCESS;
+        } else {
+            BytesToCopy = (*Length) - offset_field;
+            *Length = 0;
+            Status = STATUS_BUFFER_OVERFLOW;
+        }
+        RtlCopyMemory(
+            &mut (*Buffer).FileSystemName[0] as *mut _ as *mut u8,
+            FAT_BYTES.as_ptr() as *const u8,
+            BytesToCopy as usize,
+        );
+    }
+
+    (*Buffer).FileSystemNameLength = BytesToCopy;
+
+    let _ = IrpContext;
+    let _ = Vcb;
+
+    Status
+}
+// ---- re-stitched from bank: 20260612-143211-volinfo.c/05_FatQueryFsFullSizeInfo.rs ----
+extern "system" {
+    fn DebugTrace(level: i32, tag: u32, fmt: *const i8, ...);
+}
+
+unsafe extern "C" fn FatQueryFsFullSizeInfo(
+    IrpContext: *mut IRP_CONTEXT,
+    Vcb: *mut Vcb,
+    Buffer: *mut FILE_FS_FULL_SIZE_INFORMATION,
+    Length: *mut u32,
+) -> i32 {
+    // PAGED_CODE();
+
+    let fmt = b"FatQueryFsSizeInfo...\n\0".as_ptr() as *const i8;
+    DebugTrace(0, Dbg, fmt, 0);
+
+    RtlZeroMemory(
+        Buffer as *mut core::ffi::c_void,
+        core::mem::size_of::<FILE_FS_FULL_SIZE_INFORMATION>(),
+    );
+
+    (*Buffer).TotalAllocationUnits.LowPart = (*Vcb).AllocationSupport.NumberOfClusters;
+    (*Buffer).CallerAvailableAllocationUnits.LowPart =
+        (*Vcb).AllocationSupport.NumberOfFreeClusters;
+    (*Buffer).ActualAvailableAllocationUnits.LowPart =
+        (*Buffer).CallerAvailableAllocationUnits.LowPart;
+    (*Buffer).SectorsPerAllocationUnit = (*Vcb).Bpb.SectorsPerCluster;
+    (*Buffer).BytesPerSector = (*Vcb).Bpb.BytesPerSector;
+
+    *Length -= core::mem::size_of::<FILE_FS_FULL_SIZE_INFORMATION>() as u32;
+
+    let _ = IrpContext;
+
+    STATUS_SUCCESS
+}
+// ---- re-stitched from bank: 20260612-143211-volinfo.c/06_FatSetFsLabelInfo.rs ----
 #[no_mangle]
-pub unsafe extern "C" fn FatQueryFsAttributeInfo(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Buffer: PFILE_FS_ATTRIBUTE_INFORMATION,
-    Length: *mut u32
-) -> NTSTATUS;
-#[no_mangle]
-pub unsafe extern "C" fn FatQueryFsFullSizeInfo(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Buffer: PFILE_FS_FULL_SIZE_INFORMATION,
-    Length: *mut u32
-) -> NTSTATUS;
-#[no_mangle]
-pub unsafe extern "C" fn FatSetFsLabelInfo(
-    IrpContext: PIRP_CONTEXT,
-    Vcb: PVCB,
-    Buffer: PFILE_FS_LABEL_INFORMATION
-) -> NTSTATUS;
+pub unsafe extern "system" fn FatSetFsLabelInfo(
+    IrpContext: *mut PIRP_CONTEXT,
+    Vcb: *mut PVCB,
+    Buffer: *mut PFILE_FS_LABEL_INFORMATION,
+) -> NTSTATUS {
+    // Unknown externs
+    extern "system" {
+        fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...);
+        fn DebugUnwind(name: *const i8);
+        fn FatConstructLabelDirent(
+            IrpContext: *mut PIRP_CONTEXT,
+            Dirent: *mut DIRENT,
+            OemLabel: *mut OEM_STRING,
+        );
+        fn FatCreateNewDirent(
+            IrpContext: *mut PIRP_CONTEXT,
+            RootDcb: *mut _DCB, // placeholder
+            flag: i32,
+            flag2: BOOLEAN,
+        ) -> ULONG;
+        fn FatLocateVolumeLabel(
+            IrpContext: *mut PIRP_CONTEXT,
+            Vcb: *mut PVCB,
+            Dirent: *mut *mut DIRENT,
+            DirentBcb: *mut *mut BCB,
+            ByteOffset: *mut ULONG,
+        );
+        fn FatPrepareWriteDirectoryFile(
+            IrpContext: *mut PIRP_CONTEXT,
+            RootDcb: *mut _DCB,
+            ByteOffset: ULONG,
+            size: ULONG,
+            DirentBcb: *mut *mut BCB,
+            Dirent: *mut *mut DIRENT,
+            flag1: BOOLEAN,
+            flag2: BOOLEAN,
+            Status: *mut NTSTATUS,
+        );
+        fn FatSetDirtyBcb(
+            IrpContext: *mut PIRP_CONTEXT,
+            Bcb: *mut BCB,
+            Vcb: *mut PVCB,
+            dirty: BOOLEAN,
+        );
+        fn FatUnpinBcb(
+            IrpContext: *mut PIRP_CONTEXT,
+            Bcb: *mut BCB,
+        );
+        fn FatUnpinRepinnedBcbs(IrpContext: *mut PIRP_CONTEXT);
+        fn FsRtlIsAnsiCharacterLegalFat(
+            ch: UCHAR,
+            second: BOOLEAN,
+        ) -> BOOLEAN;
+        fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
+        fn NT_ASSERT(expr: BOOLEAN);
+        fn SetFlag(flags: *mut ULONG, flag: ULONG);
+    }
+
+    // Unknown constants
+    const DEBUG_TRACE_VOLINFO: u32 = 0; // placeholder
+    const STATUS_INVALID_VOLUME_LABEL: NTSTATUS = 0xC0000016; // approximate
+    const MAXUSHORT: USHORT = 0xFFFF;
+    const FAT_DIRENT_REALLY_0E5: UCHAR = 0x05;
+    const FAT_DIRENT_DELETED: UCHAR = 0xE5;
+    const IRP_CONTEXT_FLAG_WRITE_THROUGH: ULONG = 0x00000001; // placeholder
+
+    // Local variables
+    let mut Status: NTSTATUS;
+    let mut Dirent: *mut DIRENT;
+    let mut DirentBcb: *mut BCB = core::ptr::null_mut();
+    let mut ByteOffset: ULONG;
+    let mut TmpBuffer: [WCHAR; 11] = [0; 11];
+    let mut OemBuffer: [UCHAR; 11] = [0; 11];
+    let mut OemLabel: OEM_STRING;
+    let mut UnicodeString: UNICODE_STRING;
+    let mut UpcasedLabel: UNICODE_STRING;
+
+    // PAGED_CODE(); omitted
+
+    DebugTrace(1, DEBUG_TRACE_VOLINFO, b"FatSetFsLabelInfo...\n\0".as_ptr() as *const i8, 0);
+
+    // Setup local variables
+    let buffer = &mut *Buffer;
+    UnicodeString.Length = buffer.VolumeLabelLength as USHORT;
+    UnicodeString.MaximumLength = UnicodeString.Length;
+    UnicodeString.Buffer = (&mut buffer.VolumeLabel[0]) as *mut WCHAR;
+
+    // Name length check
+    if UnicodeString.Length > 11 * core::mem::size_of::<WCHAR>() as USHORT {
+        return STATUS_INVALID_VOLUME_LABEL;
+    }
+
+    // Upcase and convert to OEM
+    OemLabel.Buffer = OemBuffer.as_mut_ptr() as *mut i8;
+    OemLabel.Length = 0;
+    OemLabel.MaximumLength = 11;
+
+    Status = RtlUpcaseUnicodeStringToCountedOemString(
+        &mut OemLabel,
+        &UnicodeString,
+        FALSE,
+    );
+
+    if !NT_SUCCESS(Status) {
+        DebugTrace(
+            -1,
+            DEBUG_TRACE_VOLINFO,
+            b"FatSetFsLabelInfo:  Label must be too long. %08lx\n\0".as_ptr() as *const i8,
+            Status,
+        );
+        return STATUS_INVALID_VOLUME_LABEL;
+    }
+
+    // Strip spaces
+    if OemLabel.Length > 0 {
+        let mut i: USHORT = 0;
+        let mut LastSpaceIndex: USHORT = MAXUSHORT;
+
+        while (i as u32) < (OemLabel.Length as u32) {
+            let c = *OemLabel.Buffer.add(i as usize) as UCHAR;
+
+            if FsRtlIsLeadDbcsCharacter(c) != 0 {
+                LastSpaceIndex = MAXUSHORT;
+                i += 1;
+                i += 1; // skip next byte (i already incremented separately)
+                continue;
+            }
+
+            if FsRtlIsAnsiCharacterLegalFat(c, FALSE) == 0
+                || c == '.' as UCHAR
+            {
+                return STATUS_INVALID_VOLUME_LABEL;
+            }
+
+            if c == ' ' as UCHAR && LastSpaceIndex == MAXUSHORT {
+                LastSpaceIndex = i;
+            } else {
+                LastSpaceIndex = MAXUSHORT;
+            }
+
+            i += 1;
+        }
+
+        if LastSpaceIndex != MAXUSHORT {
+            OemLabel.Length = LastSpaceIndex;
+        }
+    }
+
+    // Get Unicode upcased string for VPB
+    UpcasedLabel.Length = UnicodeString.Length;
+    UpcasedLabel.MaximumLength = 11 * core::mem::size_of::<WCHAR>() as USHORT;
+    UpcasedLabel.Buffer = TmpBuffer.as_mut_ptr();
+
+    Status = RtlOemStringToCountedUnicodeString(
+        &mut UpcasedLabel,
+        &mut OemLabel,
+        FALSE,
+    );
+
+    if !NT_SUCCESS(Status) {
+        DebugTrace(
+            -1,
+            DEBUG_TRACE_VOLINFO,
+            b"FatSetFsLabelInfo:  Label must be too long. %08lx\n\0".as_ptr() as *const i8,
+            Status,
+        );
+        return STATUS_INVALID_VOLUME_LABEL;
+    }
+
+    DirentBcb = core::ptr::null_mut();
+
+    // Mark write through
+    SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
+
+    // SEH simulation
+    let result_status;
+    'seh_try: {
+        'try_block: {
+            if OemLabel.Length > 0 {
+                // Handle first character 0xe5 -> 0x05
+                if *OemLabel.Buffer as UCHAR == 0xe5 {
+                    *OemLabel.Buffer = FAT_DIRENT_REALLY_0E5;
+                }
+
+                // Locate existing volume label
+                FatLocateVolumeLabel(
+                    IrpContext,
+                    Vcb,
+                    &mut Dirent,
+                    &mut DirentBcb,
+                    &mut ByteOffset as *mut ULONG,
+                );
+
+                if Dirent.is_null() {
+                    ByteOffset = FatCreateNewDirent(
+                        IrpContext,
+                        (*Vcb).RootDcb,
+                        1,
+                        FALSE,
+                    );
+
+                    FatPrepareWriteDirectoryFile(
+                        IrpContext,
+                        (*Vcb).RootDcb,
+                        ByteOffset,
+                        core::mem::size_of::<DIRENT>() as ULONG,
+                        &mut DirentBcb,
+                        &mut Dirent,
+                        FALSE,
+                        TRUE,
+                        &mut Status,
+                    );
+
+                    NT_ASSERT(NT_SUCCESS(Status));
+                } else {
+                    FatSetDirtyBcb(IrpContext, DirentBcb, Vcb, TRUE);
+                }
+
+                // Construct label dirent
+                FatConstructLabelDirent(
+                    IrpContext,
+                    Dirent,
+                    &mut OemLabel,
+                );
+
+                // Unpin to catch IO errors before VPB change
+                FatUnpinBcb(IrpContext, DirentBcb);
+                FatUnpinRepinnedBcbs(IrpContext);
+
+                // Set upcased label in VPB
+                core::ptr::copy_nonoverlapping::<WCHAR>(
+                    UpcasedLabel.Buffer,
+                    (*Vcb).Vpb.VolumeLabel.as_mut_ptr(),
+                    UpcasedLabel.Length as usize / core::mem::size_of::<WCHAR>(),
+                );
+                (*Vcb).Vpb.VolumeLabelLength = UpcasedLabel.Length as ULONG;
+            } else {
+                // Delete label
+                FatLocateVolumeLabel(
+                    IrpContext,
+                    Vcb,
+                    &mut Dirent,
+                    &mut DirentBcb,
+                    &mut ByteOffset as *mut ULONG,
+                );
+
+                if Dirent.is_null() {
+                    Status = STATUS_SUCCESS;
+                    break 'try_block;
+                }
+
+                // Mark directory entry as deleted
+                (*Dirent).FileName[0] = FAT_DIRENT_DELETED;
+
+                // Assert free dirent bitmap state
+                let condition = ((*Vcb).RootDcb.Specific.Dcb.UnusedDirentVbo == 0xffffffff)
+                    || RtlAreBitsSet(
+                        &(*Vcb).RootDcb.Specific.Dcb.FreeDirentBitmap as *const _ as *const UCHAR,
+                        (ByteOffset / core::mem::size_of::<DIRENT>() as ULONG) as u32,
+                        1,
+                    ) != 0;
+
+                NT_ASSERT(condition);
+
+                // Clear bit in free dirent bitmap
+                RtlClearBits(
+                    &mut (*Vcb).RootDcb.Specific.Dcb.FreeDirentBitmap as *mut _ as *mut UCHAR,
+                    (ByteOffset / core::mem::size_of::<DIRENT>() as ULONG) as u32,
+                    1,
+                );
+
+                FatSetDirtyBcb(IrpContext, DirentBcb, Vcb, TRUE);
+
+                // Unpin
+                FatUnpinBcb(IrpContext, DirentBcb);
+                FatUnpinRepinnedBcbs(IrpContext);
+
+                // Clear label in VPB
+                (*Vcb).Vpb.VolumeLabelLength = 0;
+            }
+
+            Status = STATUS_SUCCESS;
+        } // end try_block
+
+        // _SEH2_FINALLY
+        DebugUnwind(b"FatSetFsALabelInfo\0".as_ptr() as *const i8);
+        FatUnpinBcb(IrpContext, DirentBcb);
+        DebugTrace(
+            -1,
+            DEBUG_TRACE_VOLINFO,
+            b"FatSetFsALabelInfo -> STATUS_SUCCESS\n\0".as_ptr() as *const i8,
+            0,
+        );
+
+        result_status = Status;
+    } // end seh_try
+
+    result_status
+}
 
 // #if (NTDDI_VERSION >= NTDDI_WIN8)
+// ---- re-stitched from bank: 20260612-143211-volinfo.c/07_FatQueryFsSectorSizeInfo.rs ----
+extern "system" {
+    fn PAGED_CODE();
+    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+    fn _Analysis_assume_(condition: i32);
+    fn ASSERT(condition: i32);
+    fn FsRtlGetSectorSizeInformation(
+        DeviceObject: *mut core::ffi::c_void,
+        Buffer: *mut FILE_FS_SECTOR_SIZE_INFORMATION,
+    ) -> i32;
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn FatQueryFsSectorSizeInfo(
+pub unsafe extern "system" fn FatQueryFsSectorSizeInfo(
     IrpContext: PIRP_CONTEXT,
     Vcb: PVCB,
-    Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION,
-    Length: *mut u32
-) -> NTSTATUS;
+    Buffer: *mut FILE_FS_SECTOR_SIZE_INFORMATION,
+    Length: *mut u32,
+) -> i32 {
+    let Status: i32;
+
+    PAGED_CODE();
+    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+
+    ASSERT((*Length as usize >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>()) as i32);
+    _Analysis_assume_((*Length as usize >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>()) as i32);
+
+    Status = FsRtlGetSectorSizeInformation(
+        (*(*Vcb).Vpb).RealDevice as *mut core::ffi::c_void,
+        Buffer,
+    );
+
+    if ntkrnl_sys::base::NT_SUCCESS(Status) {
+        *Length -= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>() as u32;
+    }
+
+    return Status;
+}
 // #endif
 
 const FILE_DEVICE_DISK: u32 = 0x0000_0007;
