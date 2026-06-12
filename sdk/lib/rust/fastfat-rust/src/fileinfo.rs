@@ -12,6 +12,12 @@ use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, EXCEPTION_POINTERS
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_FILEINFO, DPFLTR_INFO_LEVEL};
 use crate::types::{_TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::dirsup::{FatCreateNewDirent};
+use crate::glue::{FILE_ATTRIBUTE_ARCHIVE, STATUS_DISK_FULL};
+use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
+use crate::types::{EA_SET_HEADER, PDIRENT, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
+use ntkrnl_sys::ddk::{FILE_ALLOCATION_INFORMATION, FILE_RENAME_INFORMATION, FILE_VALID_DATA_LENGTH_INFORMATION, IO_STATUS_BLOCK};
 
 extern "C" {
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);

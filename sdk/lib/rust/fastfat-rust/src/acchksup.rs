@@ -10,6 +10,8 @@ use ntkrnl_sys::ddk::{SECURITY_SUBJECT_CONTEXT, SE_EXPORTS, _PROCESS_ACCESS_TOKE
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_ACCHKSUP, FILE_DELETE_CHILD};
 use crate::types::{PIRP_CONTEXT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PIRP_CONTEXT};
 
 extern "C" {
     static SeExports: *mut SE_EXPORTS;

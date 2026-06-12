@@ -15,6 +15,8 @@ use crate::types::{CCB, DCB, FAT_BUG_CHECK_CACHESUP, FCB, FatLargeZero, IRP_CONT
 use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, DEVICE_OBJECT, ERESOURCE, FILE_OBJECT, IO_STACK_LOCATION, IRP, _PUBLIC_BCB as BCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 
 extern "C" {
     static mut FatDisableParentCheck: i32;

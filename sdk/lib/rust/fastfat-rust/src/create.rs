@@ -14,6 +14,8 @@ use ntkrnl_sys::ddk::{CC_FILE_SIZES, DEVICE_OBJECT, ERESOURCE, FILE_FULL_EA_INFO
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_CREATE, FILE_ATTRIBUTE_ARCHIVE, STATUS_DISK_FULL};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, KEVENT};
+// resolve_imports.py: explicit kernel/private-type imports
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, KEVENT};
 
 extern "C" {
     fn PAGED_CODE();
