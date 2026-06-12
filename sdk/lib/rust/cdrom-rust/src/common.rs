@@ -659,6 +659,18 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
             memoryLocked = 1;
         }
 
+        // ioctlCode is loop-invariant (depends only on BufferAddress/WriteToDevice) and MUST be set
+        // before WdfIoTargetFormatRequestForInternalIoctlOthers below. The translation originally
+        // assigned it in step 4.2 (AFTER the format call), so every send formatted with ioctlCode=0
+        // → the I/O target never executed the SRB (SrbStatus stayed PENDING, DataTransferLength 0).
+        ioctlCode = if BufferAddress.is_null() {
+            IOCTL_SCSI_EXECUTE_NONE
+        } else if WriteToDevice != 0 {
+            IOCTL_SCSI_EXECUTE_OUT
+        } else {
+            IOCTL_SCSI_EXECUTE_IN
+        };
+
         // 4. Format Srb, Irp; Send request and retry when necessary
         loop {
             retry = 0;

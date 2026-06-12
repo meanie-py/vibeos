@@ -1259,6 +1259,10 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
             0, // FALSE
             core::ptr::null_mut(),
         );
+        { extern "C" { fn DbgPrint(f: *const u8, ...) -> u32; }
+          DbgPrint(b"[INQ] send1 st=%x srbst=%x dtl=%x req=%x addlen=%x\n\0".as_ptr(),
+                   status, srb.SrbStatus as u32, srb.DataTransferLength, requestedInquiryTransferBytes,
+                   (*tmpInquiry).AdditionalLength as u32); }
     }
 
     // 1.3 get required data length
