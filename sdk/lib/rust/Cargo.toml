@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "classpnp-rust",
+    "disk-rust",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",

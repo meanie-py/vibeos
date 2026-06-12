@@ -245,6 +245,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "disk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "dnslib-rust"
 version = "0.1.0"
 dependencies = [
