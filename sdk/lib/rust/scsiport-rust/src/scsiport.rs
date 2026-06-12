@@ -808,7 +808,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 0x706f6373,
             ) as *mut ACCESS_RANGE;
             if ConfigInfo.AccessRanges.is_null() {
-                return STATUS_INSUFFICIENT_RESOURCES;
+                return (STATUS_INSUFFICIENT_RESOURCES) as u32;
             }
         }
 
@@ -1222,7 +1222,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
 
                 if (*PortCapabilities).MaximumPhysicalPages == 0 {
                     (*PortCapabilities).MaximumPhysicalPages =
-                        ((BYTES_TO_PAGES((((*PortCapabilities).MaximumTransferLength) as u32) as usize) as u32) as usize);
+                        (((BYTES_TO_PAGES((((*PortCapabilities).MaximumTransferLength) as u32) as usize) as u32) as usize)) as u32;
                     if (*PortConfig).NumberOfPhysicalBreaks
                         < (*PortCapabilities).MaximumPhysicalPages
                     {
@@ -2066,7 +2066,7 @@ pub unsafe extern "system" fn SpiProcessTimeout(
     ServiceContext: *mut core::ffi::c_void,
 ) -> i32 {
     let DeviceObject = ServiceContext as *mut DEVICE_OBJECT;
-    let DeviceExtension = (*DeviceObject).DeviceExtension;
+    let DeviceExtension = (*DeviceObject).DeviceExtension as PSCSI_PORT_DEVICE_EXTENSION;
 
     DbgPrint(b"SpiProcessTimeout() entered\n\0".as_ptr() as *const i8);
 
@@ -2476,7 +2476,7 @@ unsafe fn SpiCreatePortConfig(
         (*InternalConfigInfo).LastAdapterNumber = (*InternalConfigInfo).AdapterNumber;
 
         Found = 0;
-        Status = ((IoQueryDeviceDescription)).cast()(
+        Status = ((IoQueryDeviceDescription))(
             core::ptr::addr_of_mut!((*HwInitData).AdapterInterfaceType),
             core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
             core::ptr::null_mut(),
@@ -2491,7 +2491,7 @@ unsafe fn SpiCreatePortConfig(
             let mut InterfaceType: INTERFACE_TYPE = Eisa;
 
             if (*HwInitData).AdapterInterfaceType == (Isa) as i32 {
-                Status = ((IoQueryDeviceDescription)).cast()(
+                Status = ((IoQueryDeviceDescription))(
                     core::ptr::addr_of_mut!(InterfaceType),
                     core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
                     core::ptr::null_mut(),

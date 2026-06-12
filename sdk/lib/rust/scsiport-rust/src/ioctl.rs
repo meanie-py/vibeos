@@ -156,7 +156,7 @@ unsafe fn PdoHandleQueryProperty(
     if !((*ioStack).Parameters.DeviceIoControl.InputBufferLength as usize
         >= core::mem::size_of::<STORAGE_PROPERTY_QUERY>())
     {
-        ((RtlAssert)).cast()(
+        ((RtlAssert))(
             b"ioStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(STORAGE_PROPERTY_QUERY)\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
@@ -168,7 +168,7 @@ unsafe fn PdoHandleQueryProperty(
         );
     }
     if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
-        ((RtlAssert)).cast()(
+        ((RtlAssert))(
             b"Irp->AssociatedIrp.SystemBuffer\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
@@ -180,7 +180,7 @@ unsafe fn PdoHandleQueryProperty(
         );
     }
     if (*lunExt).Common.IsFDO != 0 {
-        ((RtlAssert)).cast()(
+        ((RtlAssert))(
             b"!lunExt->Common.IsFDO\0"
                 .as_ptr()
                 .cast::<i8>() as *const core::ffi::c_void,
@@ -235,7 +235,7 @@ unsafe fn PdoHandleQueryProperty(
                     if !((*ioStack).Parameters.DeviceIoControl.OutputBufferLength as usize
                         >= core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>())
                     {
-                        ((RtlAssert)).cast()(
+                        ((RtlAssert))(
                             b"ioStack->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(STORAGE_DESCRIPTOR_HEADER)\0"
                                 .as_ptr()
                                 .cast::<i8>() as *const core::ffi::c_void,
@@ -385,7 +385,7 @@ unsafe fn FdoHandleScsiPassthrough(
     let mut spt: PSCSI_PASS_THROUGH = core::ptr::null_mut();
 
     if !((KeGetCurrentIrql() as i32) < 2i32) {
-        ((RtlAssert)).cast()(
+        ((RtlAssert))(
             b"KeGetCurrentIrql() < DISPATCH_LEVEL\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,
@@ -406,7 +406,7 @@ unsafe fn FdoHandleScsiPassthrough(
     portExt = (*DeviceObject).DeviceExtension as PSCSI_PORT_DEVICE_EXTENSION;
 
     if (*portExt).Common.IsFDO == 0 {
-        ((RtlAssert)).cast()(
+        ((RtlAssert))(
             b"portExt->Common.IsFDO\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
             b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/ioctl.c\0"
                 .as_ptr() as *const i8 as *mut core::ffi::c_void,

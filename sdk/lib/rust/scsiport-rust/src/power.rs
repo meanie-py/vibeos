@@ -21,8 +21,8 @@ pub unsafe extern "system" fn ScsiPortDispatchPower(
         return PoCallDriver((*comExt).LowerDevice, Irp);
     } else {
         let ioStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-        match (*ioStack).MinorFunction as i32 {
-            (IRP_MN_SET_POWER) as i32 | (IRP_MN_QUERY_POWER) as i32 => {
+        match (*ioStack).MinorFunction {
+            IRP_MN_SET_POWER | IRP_MN_QUERY_POWER => {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
             }
             _ => {}

@@ -204,7 +204,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
             DbgPrint(b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8, file, 146i32);
         }
         Status = STATUS_UNSUCCESSFUL;
-        (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = Status;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         (*Irp).IoStatus.Information = 0;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return Status;
@@ -238,7 +238,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
         }
         Status = STATUS_NO_SUCH_DEVICE;
         (*Srb).SrbStatus = SRB_STATUS_NO_DEVICE;
-        (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = Status;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         (*Irp).IoStatus.Information = 0;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return Status;
@@ -250,7 +250,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
         SRB_FUNCTION_SHUTDOWN | SRB_FUNCTION_FLUSH => {
             if (*portExt).CachesData as i32 == FALSE {
                 (*Srb).SrbStatus = SRB_STATUS_SUCCESS;
-                (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = STATUS_SUCCESS;
+                (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 IoCompleteRequest(Irp, IO_NO_INCREMENT);
                 return STATUS_SUCCESS;
             }
@@ -307,13 +307,13 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
                     let offset = &raw const (*core::ptr::null::<IRP>())
                         .Tail
                         .Overlay
-                        .c2rust_unnamed
+                        .__bindgen_anon_1
                         .DeviceQueueEntry as usize;
                     NextIrp = (Entry as usize).wrapping_sub(offset) as PIRP;
                     Stack = IoGetCurrentIrpStackLocation(NextIrp);
                     Srb = (*Stack).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
                     (*Srb).SrbStatus = SRB_STATUS_REQUEST_FLUSHED;
-                    (*NextIrp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = STATUS_UNSUCCESSFUL;
+                    (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_UNSUCCESSFUL;
                     (*NextIrp).Tail.Overlay.c2rust_unnamed_0.ListEntry.Flink =
                         IrpList as PLIST_ENTRY as *mut _LIST_ENTRY;
                     IrpList = NextIrp;
@@ -358,7 +358,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
             KeRaiseIrql(DISPATCH_LEVEL, &mut oldIrql);
             if KeInsertByKeyDeviceQueue(
                 &mut (*lunExt).DeviceQueue,
-                &mut (*Irp).Tail.Overlay.c2rust_unnamed.DeviceQueueEntry,
+                &mut (*Irp).Tail.Overlay.__bindgen_anon_1.DeviceQueueEntry,
                 (*Srb).QueueSortKey,
             ) == 0
             {
@@ -374,7 +374,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
         return STATUS_PENDING;
     }
 
-    (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = Status;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     return Status;
 }

@@ -157,7 +157,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     RtlInitUnicodeString(
         &raw mut KeyName,
         &[
-            b'\\' as u16, 0, (b'R') as u16, 0, (b'e') as u16, 0, b'g', 0, b'i', 0, b's', 0, b't', 0, b'r', 0, b'y', 0,
+            b'\\' as u16, 0, (b'R') as u16, 0, (b'e') as u16, 0, (b'g') as u16, 0, b'i', 0, b's', 0, b't', 0, b'r', 0, b'y', 0,
             b'\\' as u16, 0, b'M', 0, b'a', 0, b'c', 0, b'h', 0, b'i', 0, b'n', 0, b'e', 0,
             b'\\' as u16, 0, b'H', 0, b'a', 0, b'r', 0, b'd', 0, b'w', 0, b'a', 0, b'r', 0, b'e', 0,
             b'\\' as u16, 0, b'D', 0, b'e', 0, b'v', 0, b'i', 0, b'c', 0, b'e', 0, b'M', 0, b'a', 0, b'p', 0,
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     swprintf(
         NameBuffer.as_mut_ptr(),
         &[
-            b'S' as u16, 0, (b'c') as u16, 0, (b's') as u16, 0, b'i', 0, b' ', 0,
+            b'S' as u16, 0, (b'c') as u16, 0, (b's') as u16, 0, (b'i') as u16, 0, b' ', 0,
             b'P', 0, b'o', 0, b'r', 0, b't', 0, b' ', 0,
             b'%', 0, b'l', 0, b'u', 0, 0, 0,
         ] as *const u16,
@@ -225,7 +225,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     RtlInitUnicodeString(
         &raw mut ValueName,
         &[
-            b'D' as u16, 0, (b'M') as u16, 0, (b'A') as u16, 0, b' ', 0,
+            b'D' as u16, 0, (b'M') as u16, 0, (b'A') as u16, 0, (b' ') as u16, 0,
             b'E', 0, b'n', 0, b'a', 0, b'b', 0, b'l', 0, b'e', 0, b'd', 0, 0, 0,
         ] as *const u16,
     );
@@ -265,7 +265,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     RtlInitUnicodeString(
         &raw mut ValueName,
         &[
-            b'D' as u16, 0, (b'r') as u16, 0, (b'i') as u16, 0, b'v', 0, b'e', 0, b'r', 0, 0, 0,
+            b'D' as u16, 0, (b'r') as u16, 0, (b'i') as u16, 0, (b'v') as u16, 0, b'e', 0, b'r', 0, 0, 0,
         ] as *const u16,
     );
 
@@ -288,7 +288,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     RtlInitUnicodeString(
         &raw mut ValueName,
         &[
-            b'I' as u16, 0, (b'n') as u16, 0, (b't') as u16, 0, b'e', 0, b'r', 0, b'r', 0, b'u', 0, b'p', 0, b't', 0, 0, 0,
+            b'I' as u16, 0, (b'n') as u16, 0, (b't') as u16, 0, (b'e') as u16, 0, b'r', 0, b'r', 0, b'u', 0, b'p', 0, b't', 0, 0, 0,
         ] as *const u16,
     );
 
@@ -310,7 +310,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     RtlInitUnicodeString(
         &raw mut ValueName,
         &[
-            b'I' as u16, 0, (b'O') as u16, 0, (b'A') as u16, 0, b'd', 0, b'd', 0, b'r', 0, b'e', 0, b's', 0, b's', 0, 0, 0,
+            b'I' as u16, 0, (b'O') as u16, 0, (b'A') as u16, 0, (b'd') as u16, 0, b'd', 0, b'r', 0, b'e', 0, b's', 0, b's', 0, 0, 0,
         ] as *const u16,
     );
 
@@ -332,7 +332,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
         swprintf(
             NameBuffer.as_mut_ptr(),
             &[
-                b'S' as u16, 0, (b'c') as u16, 0, (b's') as u16, 0, b'i', 0, b' ', 0,
+                b'S' as u16, 0, (b'c') as u16, 0, (b's') as u16, 0, (b'i') as u16, 0, b' ', 0,
                 b'B', 0, b'u', 0, b's', 0, b' ', 0,
                 b'%', 0, b'l', 0, b'u', 0, 0, 0,
             ] as *const u16,
@@ -366,7 +366,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
         swprintf(
             NameBuffer.as_mut_ptr(),
             &[
-                b'I' as u16, 0, (b'n') as u16, 0, (b'i') as u16, 0, b't', 0, b'i', 0, b'a', 0, b't', 0, b'o', 0, b'r', 0, b' ', 0,
+                b'I' as u16, 0, (b'n') as u16, 0, (b'i') as u16, 0, (b't') as u16, 0, b'i', 0, b'a', 0, b't', 0, b'o', 0, b'r', 0, b' ', 0,
                 b'I', 0, b'd', 0, b' ', 0,
                 b'%', 0, b'l', 0, b'u', 0, 0, 0,
             ] as *const u16,

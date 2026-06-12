@@ -497,7 +497,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
             as *mut ACCESS_RANGE)
             .offset(0isize))
         .RangeStart
-        .c2rust_unnamed
+        .__bindgen_anon_1
         .LowPart;
     }
 
@@ -738,7 +738,7 @@ unsafe fn FdoHandleDeviceRelations(
         ) as *mut DEVICE_RELATIONS;
         if deviceRelations.is_null() {
             (*Irp).IoStatus.Information = (0 as ULONG_PTR) as u64;
-            (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
             IoCompleteRequest(Irp, IO_NO_INCREMENT);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -770,7 +770,7 @@ unsafe fn FdoHandleDeviceRelations(
             );
         }
         (*Irp).IoStatus.Information = (deviceRelations as ULONG_PTR) as u64;
-        (*Irp).IoStatus.c2rust_unnamed.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     }
     IoSkipCurrentIrpStackLocation(Irp);
     IoCallDriver((*PortExtension).Common.LowerDevice, Irp)
@@ -850,12 +850,12 @@ pub unsafe extern "C" fn FdoDispatchPnp(
 
     let mut current_block_14: u64;
 
-    match (*ioStack).MinorFunction as i32 {
-        (IRP_MN_START_DEVICE) as i32 => {
+    match (*ioStack).MinorFunction {
+        IRP_MN_START_DEVICE => {
             status = STATUS_SUCCESS;
             current_block_14 = 1054647088692577877;
         }
-        (IRP_MN_QUERY_DEVICE_RELATIONS) as i32 => {
+        IRP_MN_QUERY_DEVICE_RELATIONS => {
             return FdoHandleDeviceRelations(portExt, Irp);
         }
         IRP_MN_QUERY_ID => {

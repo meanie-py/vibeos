@@ -926,8 +926,8 @@ pub unsafe extern "C" fn PdoDispatchPnp(
         );
     }
 
-    match (*ioStack).MinorFunction as i32 {
-        (IRP_MN_START_DEVICE) as i32 => {
+    match (*ioStack).MinorFunction {
+        IRP_MN_START_DEVICE => {
             RegistryInitLunKey(lunExt);
             status = STATUS_SUCCESS;
         }
@@ -938,7 +938,7 @@ pub unsafe extern "C" fn PdoDispatchPnp(
         | (IRP_MN_SURPRISE_REMOVAL) as i32 => {
             status = STATUS_SUCCESS;
         }
-        (IRP_MN_QUERY_DEVICE_RELATIONS) as i32 => {
+        IRP_MN_QUERY_DEVICE_RELATIONS => {
             status = PdoHandleDeviceRelations(DeviceObject, Irp);
         }
         IRP_MN_QUERY_DEVICE_TEXT => {
