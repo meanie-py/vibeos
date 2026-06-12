@@ -87,6 +87,26 @@ case "$DRIVER" in
                   --allowlist-file '.*mountdev\.h' --allowlist-file '.*ioevent\.h' )
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
+  mountmgr)
+    # mountmgr.sys — the mount manager (drivers/storage/mountmgr). Driver-PRIVATE
+    # structs (DEVICE_EXTENSION, DEVICE_INFORMATION, SYMLINK_INFORMATION,
+    # UNIQUE_ID_REPLACE_WORK_ITEM, ASSOCIATED_DEVICE_ENTRY, …) live in the driver's
+    # own mntmgr.h — allowlist it. mntmgr.h pulls mountdev.h / ntddvol.h /
+    # ntdddisk.h; the MOUNTMGR_* ioctl structs (MOUNTMGR_MOUNT_POINT,
+    # MOUNTMGR_CREATE_POINT_INPUT, MOUNTMGR_DRIVE_LETTER_*, …) live in the separate
+    # ddk/mountmgr.h, which the .c files reach only transitively — pull it
+    # explicitly so its layouts get emitted (allowlist can only filter PARSED types).
+    # Version macros mirror partmgr (the sibling storage-infra driver): WS03 0x502,
+    # NTDDI forced to 0x05020400 for the amd64 peb_teb.h ACTIVATION_CONTEXT_STACK reason.
+    DRIVER_DIR="${SRC}/drivers/storage/mountmgr"
+    WRAPPER_INC=$'#include "mntmgr.h"\n#include <mountmgr.h>'
+    ALLOW_FILES=( --allowlist-file '.*mountmgr[/\\]mntmgr\.h' --allowlist-file '.*mountmgr\.h'
+                  --allowlist-file '.*mountdev\.h' --allowlist-file '.*ntddvol\.h'
+                  --allowlist-file '.*ntdddisk\.h' --allowlist-file '.*ioevent\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
   cdrom)
     # KMDF driver (set_module_type cdrom kmdfdriver) — needs the WDF 1.17 headers.
     DRIVER_DIR="${SRC}/drivers/storage/class/cdrom"

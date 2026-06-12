@@ -29,8 +29,10 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **beep / null / condrv / nmidebug / pciide** | drivers/* | ✅ LANDED (crp) | *-rust/*-cargo | Small leaf .sys drivers. |
 | **classpnp.sys** | drivers/storage/class/classpnp | 🟡 IN-FLIGHT | classpnp-rust | WDM. Branch `classpnp-port`, ~landing. Building a storage-class DDK shim substrate (SRB/sense/io-ke-mm inlines + class GUIDs). See `classpnp-cohab-link-gap.md` (branch-local). |
 | **cdfs.sys** | drivers/filesystems/cdfs | 🟡 IN-FLIGHT (idle) | cdfs-rust | WDM CD filesystem. Branch `cdfs-port` (33 files committed + ~10 uncommitted grind). LiveCD read-stack leg. |
-| **cdrom.sys** | drivers/storage/class/cdrom | 🔴 BLOCKED (banked) | cdrom-rust | **KMDF** — see the storage read-stack section below. Banked on `cdrom-port`. |
-| mountmgr / partmgr | drivers/storage/* | ⚪ not started | — | Small boot-critical storage infra (~5K LOC). |
+| **cdrom.sys** | drivers/storage/class/cdrom | 🟡 IN-FLIGHT | cdrom-rust | **KMDF** — `kmdf-sys` WDF-dispatch substrate BUILT on `cdrom-port`; links clean amd64 + loads + enumerates. No longer blocked — active lane. |
+| **disk.sys** | drivers/storage/class/disk | ✅ LANDED (crp) | disk-rust | SCSI disk class driver (12.6K, DeepSeek+c2rust, $0.96). Cohab, boots ×3. Merged f4900f16109. |
+| **mountmgr.sys** | drivers/storage/mountmgr | ✅ DONE (mountmgr-port) | mountmgr-rust | Mount manager (9.4K, DeepSeek+c2rust, $0.87). Boot-start WDM, cohab, boots ×3. 4 runtime bugs fixed (empty RTL_CONSTANT_STRINGs, PWSTR/UNICODE_STRING, AllocatePool width, element-vs-byte overflow). |
+| partmgr.sys | drivers/storage/partmgr | 🟢 IN-FLIGHT | partmgr-rust | Partition manager, boot-loaded WDM (other-agent lane). |
 | fastfat.sys | drivers/filesystems/fastfat | ⚪ not started | — | FAT FS (68.8K LOC). Boot media (USB/ramdisk). |
 
 **Helper libs (in `static-libs-translation-audit.md`):** csq-rust (Cancel-Safe

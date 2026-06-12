@@ -2,6 +2,7 @@
 members = [
     "classpnp-rust",
     "disk-rust",
+    "mountmgr-rust",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",
