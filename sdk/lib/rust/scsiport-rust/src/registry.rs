@@ -18,7 +18,6 @@ extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> i32;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn wcslen(s: *const wchar_t) -> usize;
-    fn GetPeripheralTypeW(inquiry: *mut INQUIRYDATA) -> PWCHAR;
 }
 
 // ---- file-scope preamble (translated) ----

@@ -10,7 +10,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, CM_SCSI_DEVICE_DATA, DEVICE_DESCRIPTION, HalAllocateCommonBuffer, HalAssignSlotResources, HalGetBusData, HalGetInterruptVector, HalTranslateBusAddress, INT64, IoGetCurrentIrpStackLocation, IoMapTransfer, IoQueryDeviceDescription, IoRequestDpc, IoStartPacket, KeSynchronizeExecution, MAPPED_ADDRESS, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCCHAR, PCI_COMMON_CONFIG, PCI_SLOT_NUMBER, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCM_SCSI_DEVICE_DATA, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKAFFINITY, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PKIRQL, PMAPPED_ADDRESS, PPCI_SLOT_NUMBER, PUNICODE_STRING, RtlUnicodeStringToAnsiString, UINT8, ZwEnumerateValueKey, _KDPC, va_list, CM_FULL_RESOURCE_DESCRIPTOR, CONFIGURATION_INFORMATION, DEVICE_OBJECT, DRIVER_OBJECT, INTERFACE_TYPE, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, IRP, KEY_VALUE_FULL_INFORMATION, KTIMER, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{ANSI_STRING, CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, CM_SCSI_DEVICE_DATA, DEVICE_DESCRIPTION, HalAllocateCommonBuffer, HalAssignSlotResources, HalGetBusData, HalGetInterruptVector, HalTranslateBusAddress, INT64, IoMapTransfer, IoQueryDeviceDescription, IoStartPacket, KeSynchronizeExecution, MAPPED_ADDRESS, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCCHAR, PCI_COMMON_CONFIG, PCI_SLOT_NUMBER, PCM_FULL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCM_SCSI_DEVICE_DATA, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKAFFINITY, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PKIRQL, PMAPPED_ADDRESS, PPCI_SLOT_NUMBER, PUNICODE_STRING, RtlUnicodeStringToAnsiString, UINT8, ZwEnumerateValueKey, _KDPC, va_list, CM_FULL_RESOURCE_DESCRIPTOR, CONFIGURATION_INFORMATION, DEVICE_OBJECT, DRIVER_OBJECT, INTERFACE_TYPE, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, IRP, KEY_VALUE_FULL_INFORMATION, KTIMER, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::{align_of, size_of, offset_of};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -25,36 +25,30 @@ extern "C" {
     fn FdoDispatchPnp(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
     fn PdoDispatchPnp(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
     fn DbgPrint(format: *const i8, ...);
-    fn HalSetBusDataByOffset( BusDataType: u32, SystemIoBusNumber: u32, SlotNumber: u32, Buffer: *mut core::ffi::c_void, Offset: u32, Length: u32, ) -> u32;
     fn GetLunByPath( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, PathId: u8, TargetId: u8, Lun: u8, ) -> *mut SCSI_PORT_LUN_EXTENSION;
     fn SpiGetSrbData( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, LunExtension: *mut SCSI_PORT_LUN_EXTENSION, QueueTag: u32, ) -> *mut SCSI_REQUEST_BLOCK_INFO;
-    
-    fn WRITE_PORT_UCHAR(port: *mut u8, value: u8);
-    fn ScsiPortDpcForIsr( Context: *mut core::ffi::c_void, DeviceObject: *mut DEVICE_OBJECT, Argument1: *mut core::ffi::c_void, Argument2: *mut core::ffi::c_void, );
-    fn HalGetAdapter( NumberOfMapRegisters: *mut DEVICE_DESCRIPTION, MapRegistersCount: *mut u32, ) -> *mut core::ffi::c_void;
-    fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
     fn _strnicmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
-    fn ZwOpenKey( KeyHandle: *mut HANDLE, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> NTSTATUS;
-    fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
-    fn ALIGN_UP(value: u32, alignment: u32) -> u32;
-    fn ALIGN_UP_POINTER(ptr: *mut core::ffi::c_void, alignment: u32) -> *mut core::ffi::c_void;
-    fn __debugbreak();
     fn FdoCallHWInitialize(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
     fn FdoStartAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION) -> NTSTATUS;
     fn FdoScanAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
     fn FdoRemoveAdapter(DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION);
     fn SpiInitOpenKeys(ConfigInfo: *mut CONFIGURATION_INFO, DriverExtension: *mut SCSI_PORT_DRIVER_EXTENSION);
+}
+// NTAPI = stdcall on i386 — extern "system" resolves per-arch.
+extern "system" {
+    fn HalSetBusDataByOffset( BusDataType: u32, SystemIoBusNumber: u32, SlotNumber: u32, Buffer: *mut core::ffi::c_void, Offset: u32, Length: u32, ) -> u32;
+    fn HalGetAdapter( NumberOfMapRegisters: *mut DEVICE_DESCRIPTION, MapRegistersCount: *mut u32, ) -> *mut core::ffi::c_void;
+    fn RtlInitUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16);
+    fn ZwOpenKey( KeyHandle: *mut HANDLE, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> NTSTATUS;
+    fn ZwClose(Handle: HANDLE) -> NTSTATUS;
     fn ExAllocatePoolWithTag(PoolType: POOL_TYPE, NumberOfBytes: u32, Tag: u32) -> *mut c_void;
-    fn ExAllocatePoolZero(PoolType: POOL_TYPE, NumberOfBytes: u32, Tag: u32) -> *mut c_void;
     fn ExFreePool(PoolHandle: *mut c_void);
     fn ExFreePoolWithTag(PoolHandle: *mut c_void, Tag: u32);
     fn IoAllocateDriverObjectExtension(DriverObject: *mut DRIVER_OBJECT, ClientIdentificationAddress: *mut c_void, ExtensionSize: u32, Extension: *mut *mut c_void) -> NTSTATUS;
     fn IoGetDriverObjectExtension(DriverObject: *mut DRIVER_OBJECT, ClientIdentificationAddress: *mut c_void) -> *mut c_void;
     fn IoCreateDevice(DriverObject: *mut DRIVER_OBJECT, DeviceExtensionSize: u32, DeviceName: *mut _UNICODE_STRING, DeviceType: u32, DeviceCharacteristics: u32, Exclusive: BOOLEAN, DeviceObject: *mut *mut DEVICE_OBJECT) -> NTSTATUS;
-    fn IoInitializeDpcRequest(DeviceObject: *mut DEVICE_OBJECT, DpcRoutine: PVOID);
-    fn KeInitializeSpinLock(SpinLock: *mut KSPIN_LOCK);
     fn KeInitializeTimer(Timer: *mut KTIMER);
     fn KeInitializeDpc(Dpc: *mut KDPC, DeferredRoutine: PVOID, DeferredContext: PVOID);
     fn IoInitializeTimer(DeviceObject: *mut DEVICE_OBJECT, TimerRoutine: PVOID, Context: *mut c_void);
@@ -72,7 +66,7 @@ extern "C" {
 // source. InternalDebugLevel lives in glue.rs (single storage location). The dup extern
 // decls for SpiGetSrbData/GetLunByPath (defined in this module) were dropped.
 pub const NDEBUG: bool = true;
-use crate::scsi::{ScsiPortStartPacket, ScsiPortStartIo, ScsiPortDispatchScsi};
+use crate::scsi::{ScsiPortStartPacket, ScsiPortStartIo, ScsiPortDispatchScsi, ScsiPortDpcForIsr};
 use crate::ioctl::ScsiPortDeviceControl;
 use crate::power::ScsiPortDispatchPower;
 use crate::types::{SCSI_PORT_NEXT_REQUEST_READY, SCSI_PORT_RESET_REPORTED, SCSI_PORT_TIMER_NEEDED};
@@ -411,7 +405,7 @@ pub unsafe extern "system" fn ScsiPortGetPhysicalAddress(
             (*DeviceExtension).PhysicalAddress.QuadPart + Offset as i64;
     } else if (*DeviceExtension).MapRegisters != 0 {
         let IoStack =
-            ntkrnl_sys::ddk::IoGetCurrentIrpStackLocation(((*Srb).OriginalRequest).cast());
+            IoGetCurrentIrpStackLocation(((*Srb).OriginalRequest).cast());
         let LunExtension =
             (*(*IoStack).DeviceObject).DeviceExtension as *mut SCSI_PORT_LUN_EXTENSION;
 
@@ -850,7 +844,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
             KeInitializeSpinLock((&raw mut (*DeviceExtension).IrqLock).cast());
             KeInitializeSpinLock((&raw mut (*DeviceExtension).SpinLock).cast());
 
-            IoInitializeDpcRequest(PortDeviceObject, ScsiPortDpcForIsr as *mut c_void);
+            IoInitializeDpcRequest(PortDeviceObject, ScsiPortDpcForIsr as *const () as *mut c_void);
 
             (*DeviceExtension).TimerCount = (-1i32 as u32) as i32;
             IoInitializeTimer(PortDeviceObject, ScsiPortIoTimer as *mut c_void, DeviceExtension as *mut c_void);

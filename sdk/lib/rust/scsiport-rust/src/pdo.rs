@@ -9,7 +9,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ANSI_STRING, DEVICE_RELATIONS, IoCreateDevice, IoGetCurrentIrpStackLocation, KeInitializeDeviceQueue, LPCSTR, LPWSTR, PCSZ, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlAnsiStringToUnicodeString, RtlInitAnsiString, UINT32, DEVICE_OBJECT, DRIVER_OBJECT, IO_STACK_LOCATION, IRP, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{ANSI_STRING, DEVICE_RELATIONS, IoCreateDevice, KeInitializeDeviceQueue, LPCSTR, LPWSTR, PCSZ, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlAnsiStringToUnicodeString, RtlInitAnsiString, UINT32, DEVICE_OBJECT, DRIVER_OBJECT, IO_STACK_LOCATION, IRP, _UNICODE_STRING};
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::addr_of_mut;
@@ -21,12 +21,9 @@ use crate::glue::{FILE_DEVICE_DISK, IRP_MN_QUERY_CAPABILITIES, SP_UNTAGGED};
 extern "C" {
     fn sprintf(buffer: *mut i8, format: *const i8, ...) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn GetDeviceType(InquiryData: *mut INQUIRYDATA) -> *const i8;
-    fn GetGenericType(inquiry_data: *mut INQUIRYDATA) -> *const core::ffi::c_char;
 }
 extern "C" {
     fn DbgPrint(format: *const i8, ...) -> i32;
-    fn DPRINT(format: *const i8, ...);
     fn GetIRPMinorFunctionString(minor: u8) -> *const i8;
     fn DbgGetDeviceIDString(IdType: u32) -> *const i8;
     fn RegistryInitLunKey(lunExt: PSCSI_PORT_LUN_EXTENSION);

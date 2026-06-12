@@ -10,9 +10,11 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExAllocatePoolZero, ExFreePool, _KWAIT_REASON_Executive, HalFreeCommonBuffer, HalGetInterruptVector, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoConnectInterrupt, IoCopyCurrentIrpStackLocationToNext, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IoDisconnectInterrupt, IoForwardIrpSynchronously, IoGetConfigurationInformation, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoSkipCurrentIrpStackLocation, IoStartTimer, IoStopTimer, KAFFINITY, KEVENT, KeInitializeEvent, KeSynchronizeExecution, KeWaitForSingleObject, MmUnmapIoSpace, _EVENT_TYPE_NotificationEvent, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, PZZWSTR, RtlFreeUnicodeString, RtlInitUnicodeString, UINT32, UINT8, ZwClose, ZwDeleteKey, DEVICE_OBJECT, KINTERRUPT_MODE, MAPPED_ADDRESS, PKSYNCHRONIZE_ROUTINE, _DEVICE_OBJECT, _IRP, _KDPC, _KINTERRUPT, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExFreePool, _KWAIT_REASON_Executive, HalFreeCommonBuffer, HalGetInterruptVector, _IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest, IoConnectInterrupt, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IoDisconnectInterrupt, IoForwardIrpSynchronously, IoGetConfigurationInformation, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoStartTimer, IoStopTimer, KAFFINITY, KEVENT, KeInitializeEvent, KeSynchronizeExecution, KeWaitForSingleObject, MmUnmapIoSpace, _EVENT_TYPE_NotificationEvent, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, PZZWSTR, RtlFreeUnicodeString, RtlInitUnicodeString, UINT32, UINT8, ZwClose, ZwDeleteKey, DEVICE_OBJECT, KINTERRUPT_MODE, MAPPED_ADDRESS, PKSYNCHRONIZE_ROUTINE, _DEVICE_OBJECT, _IRP, _KDPC, _KINTERRUPT, _UNICODE_STRING};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::scsi::ScsiPortDpcForIsr;
+use crate::scsiport::ScsiPortIsr;
 use crate::types::{ACCESS_RANGE, CDB, INQUIRYDATA, INQUIRYDATABUFFERSIZE, IOCTL_SCSI_EXECUTE_IN, LUNEX_FROZEN_QUEUE, PINQUIRYDATA, PSCSI_PORT_DEVICE_EXTENSION, PSENSE_DATA, SCSIOP_INQUIRY, SCSI_BUS_INFO, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DISCONNECT_ALLOWED, SCSI_PORT_LUN_EXTENSION, SCSI_PORT_NOTIFICATION_NEEDED, SCSI_REQUEST_BLOCK, SCSI_SENSE_ILLEGAL_REQUEST, _PORT_CONFIGURATION_INFORMATION as PORT_CONFIGURATION_INFORMATION, SRB_FLAGS_DATA_IN, SRB_FLAGS_DISABLE_SYNCH_TRANSFER, SRB_FUNCTION_EXECUTE_SCSI, SRB_STATUS_AUTOSENSE_VALID, SRB_STATUS_BAD_FUNCTION, SRB_STATUS_BAD_SRB_BLOCK_LENGTH, SRB_STATUS_DATA_OVERRUN, SRB_STATUS_NO_DEVICE, SRB_STATUS_QUEUE_FROZEN, SRB_STATUS_SELECTION_TIMEOUT, SRB_STATUS_SUCCESS};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{LPVOID, STATUS_ADAPTER_HARDWARE_ERROR, STATUS_IO_DEVICE_ERROR};
@@ -21,12 +23,8 @@ extern "C" {
     fn wcslen(s: *const u16) -> usize;
 }
 extern "C" {
-    fn DPRINT(format: *const i8, ...);
     fn SpiGetNextRequestFromLun( DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION, LunExtension: *mut SCSI_PORT_LUN_EXTENSION, Irql: *mut KIRQL, );
-    fn __debugbreak();
     fn DbgPrint(format: *const u8, ...) -> i32;
-    fn ScsiPortDpcForIsr( DPC: *mut _KDPC, DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP, Context: PVOID, );
-    fn ScsiPortIsr(Interrupt: *mut _KINTERRUPT, ServiceContext: PVOID) -> BOOLEAN;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn RegistryInitAdapterKey(PortExtension: PSCSI_PORT_DEVICE_EXTENSION);
     fn GetLunByPath( PortExtension: *mut SCSI_PORT_DEVICE_EXTENSION, PathId: u8, TargetId: u8, Lun: u8, ) -> *mut SCSI_PORT_LUN_EXTENSION;
@@ -536,7 +534,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
 
     if (*DeviceExtension).InterruptData.Flags as u32 & SCSI_PORT_NOTIFICATION_NEEDED as u32 != 0 {
         ScsiPortDpcForIsr(
-            core::ptr::null_mut::<_KDPC>(),
+            core::ptr::null_mut(),
             (*DeviceExtension).Common.DeviceObject as *mut _DEVICE_OBJECT,
             core::ptr::null_mut::<_IRP>(),
             core::ptr::null_mut::<core::ffi::c_void>(),

@@ -159,32 +159,7 @@ pub use crate::types::{
 
 // Bare wdm enum-variant aliases (kernel bindgen prefixes variants with the enum
 // name; the C source uses them bare). Resolved against ntkrnl_sys bindgen — exact.
-pub use ntkrnl_sys::ddk::{
-    _BUS_QUERY_ID_TYPE_BusQueryCompatibleIDs as BusQueryCompatibleIDs,
-    _BUS_QUERY_ID_TYPE_BusQueryDeviceID as BusQueryDeviceID,
-    _BUS_QUERY_ID_TYPE_BusQueryHardwareIDs as BusQueryHardwareIDs,
-    _BUS_QUERY_ID_TYPE_BusQueryInstanceID as BusQueryInstanceID,
-    _DEVICE_RELATION_TYPE_BusRelations as BusRelations,
-    _DEVICE_RELATION_TYPE_TargetDeviceRelation as TargetDeviceRelation,
-    _DEVICE_TEXT_TYPE_DeviceTextDescription as DeviceTextDescription,
-    _DEVICE_TEXT_TYPE_DeviceTextLocationInformation as DeviceTextLocationInformation,
-    _KINTERRUPT_MODE_LevelSensitive as LevelSensitive,
-    _KINTERRUPT_MODE_Latched as Latched,
-    _INTERFACE_TYPE_MicroChannel as MicroChannel,
-    _INTERFACE_TYPE_Eisa as Eisa,
-    _INTERFACE_TYPE_Isa as Isa,
-    _INTERFACE_TYPE_Internal as Internal,
-    _INTERFACE_TYPE_PCIBus as PCIBus,
-    _BUS_DATA_TYPE_PCIConfiguration as PCIConfiguration,
-    _IO_ALLOCATION_ACTION_KeepObject as KeepObject,
-    _IO_ALLOCATION_ACTION_DeallocateObjectKeepRegisters as DeallocateObjectKeepRegisters,
-    _KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation as KeyValueFullInformation,
-    _CM_SHARE_DISPOSITION_CmResourceShareDeviceExclusive as CmResourceShareDeviceExclusive,
-    _CM_SHARE_DISPOSITION_CmResourceShareShared as CmResourceShareShared,
-    _DMA_WIDTH_Width8Bits as Width8Bits,
-    _DMA_WIDTH_Width16Bits as Width16Bits,
-    _DMA_WIDTH_Width32Bits as Width32Bits,
-};
+pub use ntkrnl_sys::ddk::{_BUS_QUERY_ID_TYPE_BusQueryCompatibleIDs as BusQueryCompatibleIDs, _BUS_QUERY_ID_TYPE_BusQueryDeviceID as BusQueryDeviceID, _BUS_QUERY_ID_TYPE_BusQueryHardwareIDs as BusQueryHardwareIDs, _BUS_QUERY_ID_TYPE_BusQueryInstanceID as BusQueryInstanceID, _DEVICE_RELATION_TYPE_BusRelations as BusRelations, _DEVICE_RELATION_TYPE_TargetDeviceRelation as TargetDeviceRelation, _DEVICE_TEXT_TYPE_DeviceTextDescription as DeviceTextDescription, _DEVICE_TEXT_TYPE_DeviceTextLocationInformation as DeviceTextLocationInformation, _KINTERRUPT_MODE_LevelSensitive as LevelSensitive, _KINTERRUPT_MODE_Latched as Latched, _INTERFACE_TYPE_MicroChannel as MicroChannel, _INTERFACE_TYPE_Eisa as Eisa, _INTERFACE_TYPE_Isa as Isa, _INTERFACE_TYPE_Internal as Internal, _INTERFACE_TYPE_PCIBus as PCIBus, _BUS_DATA_TYPE_PCIConfiguration as PCIConfiguration, _IO_ALLOCATION_ACTION_KeepObject as KeepObject, _IO_ALLOCATION_ACTION_DeallocateObjectKeepRegisters as DeallocateObjectKeepRegisters, _KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation as KeyValueFullInformation, _CM_SHARE_DISPOSITION_CmResourceShareDeviceExclusive as CmResourceShareDeviceExclusive, _CM_SHARE_DISPOSITION_CmResourceShareShared as CmResourceShareShared, _DMA_WIDTH_Width8Bits as Width8Bits, _DMA_WIDTH_Width16Bits as Width16Bits, _DMA_WIDTH_Width32Bits as Width32Bits};
 
 // PCI_COMMON_CONFIG — the kernel bindgen DROPS the macro-spliced header fields (known
 // bug, see feedback_bindgen_drops_macro_spliced_struct_fields / pcix): ddk::_PCI_COMMON_

@@ -10,7 +10,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ExFreePool, IRP, IoBuildAsynchronousFsdRequest, IoFlushAdapterBuffers, IoFreeAdapterChannel, IoFreeIrp, IoFreeMapRegisters, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoRequestDpc, IoSetCompletionRoutine, IoStartNextPacket, IoStartPacket, KeCancelTimer, KeInsertByKeyDeviceQueue, KeRemoveByKeyDeviceQueue, KeRemoveDeviceQueue, KeSetTimer, KeSynchronizeExecution, LARGE_INTEGER, MmUnlockPages, PCCHAR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKDEVICE_QUEUE_ENTRY, PKIRQL, CCHAR, _LIST_ENTRY, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, PDMA_ADAPTER, _IO_STACK_LOCATION, _IRP, _KDEVICE_QUEUE_ENTRY};
+use ntkrnl_sys::ddk::{ExFreePool, IRP, IoBuildAsynchronousFsdRequest, IoFlushAdapterBuffers, IoFreeAdapterChannel, IoFreeIrp, IoFreeMapRegisters, IoFreeMdl, IoStartNextPacket, IoStartPacket, KeCancelTimer, KeInsertByKeyDeviceQueue, KeRemoveByKeyDeviceQueue, KeRemoveDeviceQueue, KeSetTimer, KeSynchronizeExecution, LARGE_INTEGER, MmUnlockPages, PCCHAR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKDEVICE_QUEUE_ENTRY, PKIRQL, CCHAR, _LIST_ENTRY, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, PDMA_ADAPTER, _IO_STACK_LOCATION, _IRP, _KDEVICE_QUEUE_ENTRY};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{LUNEX_REQUEST_PENDING, PCDB, PSCSI_PORT_DEVICE_EXTENSION, PSCSI_PORT_INTERRUPT_DATA, PSCSI_PORT_LUN_EXTENSION, PSCSI_REQUEST_BLOCK, PSCSI_REQUEST_BLOCK_INFO, SCSI_PORT_DEVICE_BUSY, SCSI_PORT_DISABLE_INT_REQUESET, SCSI_PORT_DISCONNECT_ALLOWED, SCSI_PORT_ENABLE_INT_REQUEST, SCSI_PORT_FLUSH_ADAPTERS, SCSI_PORT_INTERRUPT_DATA, SCSI_PORT_LU_ACTIVE, SCSI_PORT_MAP_TRANSFER, SCSI_PORT_NEXT_REQUEST_READY, SCSI_PORT_REQUEST_PENDING, SCSI_PORT_RESET_REPORTED, SCSI_PORT_SAVE_INTERRUPT, SCSI_PORT_TIMER_NEEDED, SCSI_REQUEST_BLOCK, SENSE_DATA, SRB_FLAGS_DISABLE_AUTOSENSE, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_STATUS_REQUEST_FLUSHED, _SCSI_PORT_COMMON_EXTENSION, _SCSI_PORT_DEVICE_EXTENSION, _SCSI_PORT_LUN_EXTENSION, _SCSI_REQUEST_BLOCK, _SCSI_REQUEST_BLOCK_INFO, LUNEX_BUSY, LUNEX_FULL_QUEUE, SCSISTAT_BUSY, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK_INFO, SRB_FLAGS_SGLIST_FROM_POOL, ScsiPortAllocateAdapterChannel, SpiAdapterControl};
@@ -20,9 +20,7 @@ extern "C" {
     fn SpiGetSrbData( DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION, LunExtension: PSCSI_PORT_LUN_EXTENSION, QueueTag: UCHAR, ) -> PSCSI_REQUEST_BLOCK_INFO;
 }
 extern "C" {
-    fn KeAcquireSpinLockRaiseToDpc(SpinLock: *mut KSPIN_LOCK) -> KIRQL;
     fn ScsiPortNotification(NotificationType: u32, HwDeviceExtension: *mut core::ffi::c_void, ...);
-    fn DPRINT(_: *const i8);
     fn DbgPrint(format: *const i8, ...) -> i32;
 }
 

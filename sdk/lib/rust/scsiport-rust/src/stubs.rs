@@ -9,27 +9,10 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{SCSI_PHYSICAL_ADDRESS};
 
-extern "C" {
-    fn READ_PORT_USHORT(port: *const u16) -> u16;
+// NTAPI = stdcall on i386 — extern "system" resolves per-arch.
+extern "system" {
 }
 extern "system" {
-    fn READ_PORT_BUFFER_UCHAR(Port: *mut u8, Buffer: *mut u8, Count: u32);
-    fn READ_PORT_BUFFER_USHORT(Port: *mut u16, Buffer: *mut u16, Count: u32);
-    fn READ_PORT_BUFFER_ULONG(Port: *mut u32, Buffer: *mut u32, Count: u32);
-    fn READ_PORT_UCHAR(Port: *mut u8) -> u8;
-    fn READ_PORT_ULONG(Port: *mut u32) -> u32;
-    fn READ_REGISTER_BUFFER_UCHAR(Register: *mut u8, Buffer: *mut u8, Count: ULONG);
-    fn READ_REGISTER_BUFFER_USHORT(Register: *mut u16, Buffer: *mut u16, Count: u32);
-    fn READ_REGISTER_USHORT(Register: *mut u16) -> u16;
-    fn WRITE_PORT_BUFFER_UCHAR(Port: *mut u8, Buffer: *const u8, Count: u32);
-    fn WRITE_PORT_BUFFER_USHORT(Port: *mut u16, Buffer: *const u16, Count: u32);
-    fn WRITE_PORT_BUFFER_ULONG(Port: PULONG, Buffer: PULONG, Count: ULONG);
-    fn WRITE_PORT_UCHAR(Port: *mut u8, Value: u8);
-    fn WRITE_PORT_USHORT(Port: PUSHORT, Value: USHORT);
-    fn WRITE_PORT_ULONG(Port: *mut u32, Value: u32);
-    fn WRITE_REGISTER_BUFFER_UCHAR(Register: *mut u8, Buffer: *mut u8, Count: u32);
-    fn WRITE_REGISTER_BUFFER_USHORT(Register: *mut u16, Buffer: *mut u16, Count: u32);
-    fn WRITE_REGISTER_UCHAR(Register: *mut u8, Value: u8);
 }
 
 #[no_mangle]

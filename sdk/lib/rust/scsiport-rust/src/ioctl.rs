@@ -7,7 +7,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, LPCSTR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_PROPERTY_QUERY, STORAGE_DESCRIPTOR_HEADER, STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY, UINT32, UINT8, _STORAGE_BUS_TYPE_BusTypeScsi as BusTypeScsi, _STORAGE_PROPERTY_ID_StorageAdapterProperty as StorageAdapterProperty, _STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty, _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty, _STORAGE_QUERY_TYPE_PropertyExistsQuery as PropertyExistsQuery, _STORAGE_QUERY_TYPE_PropertyStandardQuery as PropertyStandardQuery};
+use ntkrnl_sys::ddk::{LPCSTR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_PROPERTY_QUERY, STORAGE_DESCRIPTOR_HEADER, STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY, UINT32, UINT8, _STORAGE_BUS_TYPE_BusTypeScsi as BusTypeScsi, _STORAGE_PROPERTY_ID_StorageAdapterProperty as StorageAdapterProperty, _STORAGE_PROPERTY_ID_StorageDeviceIdProperty as StorageDeviceIdProperty, _STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty, _STORAGE_QUERY_TYPE_PropertyExistsQuery as PropertyExistsQuery, _STORAGE_QUERY_TYPE_PropertyStandardQuery as PropertyStandardQuery};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{DUMP_POINTERS, IO_SCSI_CAPABILITIES, PDUMP_POINTERS, PINQUIRYDATA, PSCSI_ADAPTER_BUS_INFO, PSCSI_ADDRESS, PSCSI_BUS_DATA, PSCSI_BUS_INFO, PSCSI_INQUIRY_DATA, PSCSI_PASS_THROUGH, PSCSI_PORT_COMMON_EXTENSION, PSCSI_PORT_DEVICE_EXTENSION, PSCSI_PORT_LUN_EXTENSION, SCSI_ADAPTER_BUS_INFO, SCSI_ADDRESS, SCSI_BUS_DATA, SCSI_INQUIRY_DATA, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_LUN_EXTENSION, STORAGE_ADAPTER_DESCRIPTOR_WIN8, _SCSI_PORT_DEVICE_EXTENSION};
@@ -15,7 +15,6 @@ use crate::types::{DUMP_POINTERS, IO_SCSI_CAPABILITIES, PDUMP_POINTERS, PINQUIRY
 // resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
-    fn VerifyIrpInBufferSize(Irp: PIRP, Size: usize) -> i32;
     fn GetLunByPath( portExt: PSCSI_PORT_DEVICE_EXTENSION, pathId: u8, targetId: u8, lun: u8, ) -> PSCSI_PORT_LUN_EXTENSION;
     fn DbgPrint(format: *const i8, ...) -> i32;
 }
@@ -421,7 +420,7 @@ unsafe fn FdoHandleQueryProperty(
 ) -> i32 {
     let mut adapterDescriptor: *mut STORAGE_ADAPTER_DESCRIPTOR_WIN8 =
         core::ptr::null_mut();
-    let ioStack = ntkrnl_sys::ddk::IoGetCurrentIrpStackLocation(Irp);
+    let ioStack = IoGetCurrentIrpStackLocation(Irp);
     let portExt = (*DeviceObject).DeviceExtension as *mut SCSI_PORT_DEVICE_EXTENSION;
     let mut status: i32 = 0;
 
