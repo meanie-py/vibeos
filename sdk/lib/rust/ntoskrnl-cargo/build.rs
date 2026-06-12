@@ -188,6 +188,21 @@ fn main() {
             "sdk/lib/crt/printf/_vsnprintf.c",
             "sdk/lib/crt/printf/_vsnwprintf.c",
         ],
+        // arm64: the variadic printf shells only. The original 93d5ba8 drop-test
+        // found arm64 needed NOTHING — but that predated linking cmlib-rust here.
+        // cmlib's hive code pulls sprintf/swprintf/vsprintf/_sn*/_vsn*, which Rust
+        // stable can't define (C variadics), so compile the shells in-cargo. No
+        // SEH/_fltused/_CIxxx/chkstk (cdecl variadic ABI + clang_rt.builtins-aarch64
+        // + cnt-rust libm cover the rest), and no scanf/_vscwprintf (ntdll-only).
+        "aarch64" => vec![
+            "sdk/lib/crt/printf/sprintf.c",
+            "sdk/lib/crt/printf/swprintf.c",
+            "sdk/lib/crt/printf/vsprintf.c",
+            "sdk/lib/crt/printf/_snprintf.c",
+            "sdk/lib/crt/printf/_snwprintf.c",
+            "sdk/lib/crt/printf/_vsnprintf.c",
+            "sdk/lib/crt/printf/_vsnwprintf.c",
+        ],
         _ => Vec::new(),
     };
     // i386 asm floor: the 64-bit integer intrinsics (_alldiv/_allmul/…/_aullshr),
