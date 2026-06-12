@@ -16,6 +16,16 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib", "rlib"]
 
+[features]
+# `bldr` mirrors the C blcmlib build's `-D_BLDR_` (boot/freeldr + sdk/lib/cmlib's
+# blcmlib target). The bootloader links a read-only cmlib: it strips the
+# CmpLazyFlush-on-dirty, self-heal (cmheal), deep CmCheckRegistry validation,
+# log/recovery, and the hive-write path that the kernel build keeps. Each
+# `#if !defined(_BLDR_)` block in sdk/lib/cmlib/*.c maps to a
+# `#[cfg(not(feature = "bldr"))]` here. Default OFF = the full kernel variant.
+default = []
+bldr = []
+
 [dependencies]
 # Hive/cell/key types (HHIVE, HCELL_INDEX, HBIN, CELL_DATA, CM_KEY_NODE,
 # HBASE_BLOCK, …) come from the bindgen DDK layer — already present per

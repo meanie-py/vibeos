@@ -7,7 +7,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::interlocked::InterlockedIncrement;
 use ntkrnl_sys::ddk::{
     CLONG, EXCEPTION_RECORD, HEAP_LOCK, LARGE_INTEGER, LIST_ENTRY,
-    MEMORY_BASIC_INFORMATION, NtCurrentTeb, PHEAP_LOCK, PRTL_AVL_TABLE,
+    MEMORY_BASIC_INFORMATION, PHEAP_LOCK, PRTL_AVL_TABLE,
     PRTL_BALANCED_LINKS, PRTL_HEAP_PARAMETERS, PTEB, RtlCreateHeap,
     RtlDeleteElementGenericTableAvl, RtlDestroyHeap,
     RtlEnumerateGenericTableAvl, RtlFreeHeap,
@@ -224,7 +224,34 @@ pub struct _DPH_HEAP_ROOT {
 }
 pub type PDPH_HEAP_ROOT = *mut _DPH_HEAP_ROOT;
 
+// NtCurrentTeb — ddk declares it out-of-line but no TU defines the symbol (the
+// old C got it from a zombie thread.c.obj in the stale fat librtl.a); use the
+// fs/gs/x18 intrinsic form (same as rtl-sync/src/shared.rs).
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn NtCurrentTeb() -> PTEB {
+    let teb: PTEB;
+    core::arch::asm!("mov {}, fs:[0x18]", out(reg) teb, options(nostack, pure, readonly));
+    teb
+}
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn NtCurrentTeb() -> PTEB {
+    let teb: PTEB;
+    core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb, options(nostack, pure, readonly));
+    teb
+}
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn NtCurrentTeb() -> PTEB {
+    let teb: PTEB;
+    core::arch::asm!("mov {}, x18", out(reg) teb, options(nostack, pure, nomem));
+    teb
+}
+
+#[no_mangle] // cross-crate C name (ntdll ldr, rtl-heap)
 pub static mut RtlpPageHeapEnabled: BOOLEAN = 0u8;
+#[no_mangle] // cross-crate C name (ntdll ldr)
 pub static mut RtlpDphGlobalFlags: ULONG = 0;
 pub static mut RtlpPageHeapSizeRangeStart: ULONG = 0;
 pub static mut RtlpPageHeapSizeRangeEnd: ULONG = 0;

@@ -142,7 +142,14 @@ macro_rules! RTL_SIZEOF_THROUGH_FIELD {
     ($t:ty, $f:ident) => {
         (core::mem::offset_of!($t, $f) + {
             fn sz_of<T>(_: *const T) -> usize { core::mem::size_of::<T>() }
-            sz_of(unsafe { core::ptr::addr_of!((*(core::ptr::null::<$t>())).$f) })
+            // Infer the field's type for size_of via a pointer projection.
+            // Use a non-null *dangling* base (not core::ptr::null()): nightly
+            // -Zbuild-std builds `#[deny(deref_nullptr)]`, and a null base trips
+            // it. `addr_of!` only forms the field address (no read), so an
+            // aligned dangling base is well-defined here.
+            sz_of(unsafe {
+                core::ptr::addr_of!((*(core::ptr::NonNull::<$t>::dangling().as_ptr())).$f)
+            })
         })
     };
 }

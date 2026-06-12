@@ -130,7 +130,10 @@ fn main() {
         "sdk/lib/lsalib/libntlsalib.a",
         "sdk/lib/rtl/librtl.a",
         "sdk/lib/rossym/librossym.a",
-        "sdk/lib/crt/liblibcntpr.a",
+        // liblibcntpr.a (the cmake C CRT) is GONE — cnt-rust-lib provides the
+        // whole translatable surface (string/mem/ctype/search/printf+scanf
+        // engines/full math); the irreducible C/asm floor is compiled in-cargo
+        // (cntpr_residue / cntpr_asm below). See cargo-drive-unification-plan.md.
         "sdk/lib/vcruntime/libsetjmp.a",
         "sdk/lib/wdmguid/libwdmguid.a",
         "sdk/lib/poguid/libpoguid.a",
@@ -143,7 +146,98 @@ fn main() {
         static_libs.push("sdk/lib/crt/libchkstk.a");
     }
 
-    Linker::new(rust_target)
+    // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide
+    // (enumerated by a drop-test against liblibcntpr.a). Compiled in-cargo via
+    // c_from_compile_db (replays compile_commands.json, symbol-identical to the
+    // cmake objects). i386 additionally needs an asm archive — see cntpr_asm.
+    //   - amd64: the variadic printf shells (Rust stable can't define C
+    //     variadics) + the amd64 SEH personality (except/amd64/ehandler.c →
+    //     __C_specific_handler/_local_unwind).
+    //   - i386: the _CIxxx x87 MSVC math intrinsic wrappers (ci*.c — they CALL
+    //     the now-Rust libm, e.g. _CIsqrt→sqrt) + the variadic printf shells +
+    //     _fltused. (No SEH personality — i386 uses DUMMY_PSEH.) The 64-bit
+    //     integer + ftol + chkstk asm go through cntpr_asm below.
+    // Archive members pull lazily, so the per-arch list is a SUPERSET safe for
+    // both ntoskrnl and ntdll (ntoskrnl gets _fltused/chkstk from hal etc., so
+    // those objects simply aren't pulled here). arm64 needs NO residue at all —
+    // its drop-test came back with zero undefined (cnt-rust-lib + kernel-rust
+    // cover the whole surface; clang_rt.builtins-aarch64 covers __chkstk).
+    let cntpr_residue: Vec<&str> = match arch.as_str() {
+        "x86_64" => vec![
+            "sdk/lib/crt/except/amd64/ehandler.c",
+            "sdk/lib/crt/printf/sprintf.c",
+            "sdk/lib/crt/printf/swprintf.c",
+            "sdk/lib/crt/printf/vsprintf.c",
+            "sdk/lib/crt/printf/_snprintf.c",
+            "sdk/lib/crt/printf/_snwprintf.c",
+            "sdk/lib/crt/printf/_vsnprintf.c",
+            "sdk/lib/crt/printf/_vsnwprintf.c",
+        ],
+        "x86" => vec![
+            "sdk/lib/crt/math/i386/cicos.c",
+            "sdk/lib/crt/math/i386/cisin.c",
+            "sdk/lib/crt/math/i386/cisqrt.c",
+            "sdk/lib/crt/math/i386/cilog.c",
+            "sdk/lib/crt/math/i386/cipow.c",
+            "sdk/lib/crt/misc/fltused.c",
+            "sdk/lib/crt/printf/sprintf.c",
+            "sdk/lib/crt/printf/swprintf.c",
+            "sdk/lib/crt/printf/vsprintf.c",
+            "sdk/lib/crt/printf/_snprintf.c",
+            "sdk/lib/crt/printf/_snwprintf.c",
+            "sdk/lib/crt/printf/_vsnprintf.c",
+            "sdk/lib/crt/printf/_vsnwprintf.c",
+        ],
+        // arm64: the variadic printf shells only. The original 93d5ba8 drop-test
+        // found arm64 needed NOTHING — but that predated linking cmlib-rust here.
+        // cmlib's hive code pulls sprintf/swprintf/vsprintf/_sn*/_vsn*, which Rust
+        // stable can't define (C variadics), so compile the shells in-cargo. No
+        // SEH/_fltused/_CIxxx/chkstk (cdecl variadic ABI + clang_rt.builtins-aarch64
+        // + cnt-rust libm cover the rest), and no scanf/_vscwprintf (ntdll-only).
+        "aarch64" => vec![
+            "sdk/lib/crt/printf/sprintf.c",
+            "sdk/lib/crt/printf/swprintf.c",
+            "sdk/lib/crt/printf/vsprintf.c",
+            "sdk/lib/crt/printf/_snprintf.c",
+            "sdk/lib/crt/printf/_snwprintf.c",
+            "sdk/lib/crt/printf/_vsnprintf.c",
+            "sdk/lib/crt/printf/_vsnwprintf.c",
+        ],
+        _ => Vec::new(),
+    };
+    // i386 asm floor: the 64-bit integer intrinsics (_alldiv/_allmul/…/_aullshr),
+    // the float→int conversion (_ftol), and the stack probe (_chkstk /
+    // _alloca_probe / ___alloca). Assembled from SOURCE .s via the engine's
+    // kernel asm -I chain into an ARCHIVE (lazy-pull, layout-safe — the object
+    // form relocates the image and trips the i386 hivewrt miscompile; see
+    // ntdll-cargo's ntdllsys note). cnt-rust owns the libm x87 (sin/cos/sqrt/…),
+    // so only the non-math asm stays.
+    let cntpr_asm: &[&str] = if arch == "x86" {
+        &[
+            "sdk/lib/crt/math/i386/alldiv_asm.s",
+            "sdk/lib/crt/math/i386/alldvrm_asm.s",
+            "sdk/lib/crt/math/i386/allmul_asm.s",
+            "sdk/lib/crt/math/i386/allrem_asm.s",
+            "sdk/lib/crt/math/i386/allshl_asm.s",
+            "sdk/lib/crt/math/i386/allshr_asm.s",
+            "sdk/lib/crt/math/i386/aulldiv_asm.s",
+            "sdk/lib/crt/math/i386/aulldvrm_asm.s",
+            "sdk/lib/crt/math/i386/aullrem_asm.s",
+            "sdk/lib/crt/math/i386/aullshr_asm.s",
+            "sdk/lib/crt/math/i386/ftol_asm.s",
+            "sdk/lib/crt/except/i386/chkstk_asm.s",
+        ]
+    } else {
+        &[]
+    };
+    // liblibcntpr.a is DROPPED on every arch: cnt-rust-lib + the per-arch C/asm
+    // residue above cover the whole surface (drop-test oracle: amd64 needs the
+    // SEH + printf shells, i386 needs _CIxxx + printf shells + integer/chkstk
+    // asm, arm64 needs NOTHING extra — cnt-rust-lib + kernel-rust already provide
+    // it all). Keeping it would only make cnt-rust dead-cohab (C-first wins).
+
+    let mut linker = Linker::new(rust_target);
+    linker = linker
         .rust_staticlib("kernel-rust")
         // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was
         // reuse of the cmake-built librtl_rust.a / libcntpr_rust.a). Built
@@ -155,6 +249,11 @@ fn main() {
         // see reactos-link build_rust_crate). cnt-rust-lib `float` is per-arch.
         .rust_lib("rtl-rust", &[], true)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
+        // cmlib hive library: flipped C→Rust (kernel cmlib is 100% Rust). The
+        // cmake `libcmlib.a` in static_libs is now just the cohab placeholder —
+        // the real Hv*/Cmp*/Cm* symbols live in cmlib-rust (DEFAULT features, the
+        // full kernel variant; NOT `bldr`, which is the loader's read-only build).
+        .rust_lib("cmlib-rust", &[], true)
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
@@ -163,7 +262,18 @@ fn main() {
         // (see the match above).
         .asm(&asm, AsmDefineSet::Kernel)
         .resource(&format!("data/{res}"))
-        .spec2def("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe")
+        .spec2def("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe");
+    // cnt-rust integration: compile the cntpr C floor in-cargo (C-first, before
+    // the static libs, mirroring ntdll-cargo's rtl_vista c_from_compile_db).
+    if !cntpr_residue.is_empty() {
+        // name = the cmake target that compiled these (libcntpr), so the engine
+        // finds their CMakeFiles/libcntpr.dir entries in compile_commands.json.
+        linker = linker.c_from_compile_db("libcntpr", &cntpr_residue);
+    }
+    if !cntpr_asm.is_empty() {
+        linker = linker.asm_archive("cntpr_asm", cntpr_asm);
+    }
+    linker
         .static_libs(&static_libs)
         .link(ModuleKind::KernelExe {
             entry: entry.into(),

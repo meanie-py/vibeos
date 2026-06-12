@@ -645,6 +645,13 @@ name = "ntkrnl-sys"
 version = "0.1.0"
 
 [[package]]
+name = "ntkrnlmp-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "ntoskrnl-cargo"
 version = "0.1.0"
 dependencies = [
@@ -835,6 +842,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-except"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rtl-heap"
 version = "0.1.0"
 dependencies = [
@@ -907,6 +921,7 @@ dependencies = [
  "rtl-bootdata",
  "rtl-diag",
  "rtl-error",
+ "rtl-except",
  "rtl-heap",
  "rtl-heappage",
  "rtl-heapuser",

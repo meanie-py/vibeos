@@ -350,6 +350,14 @@ pub struct Linker {
     c_shim_flags: Vec<String>,
     asm: Vec<String>,
     asm_set: AsmDefineSet,
+    /// Extra `-D` defines applied to the `asm()` compiles ON TOP of the
+    /// `asm_set`'s list. Empty by default → unchanged for every existing
+    /// consumer. Used by ntkrnlmp-cargo to assemble the kernel `.S` with
+    /// `CONFIG_SMP` (the `#ifdef CONFIG_SMP` spinlock/fast-path blocks in the
+    /// generated ks*.inc) — exactly cmake's `target_compile_definitions(
+    /// ntkrnlmp PRIVATE CONFIG_SMP)` for the asm. NOT applied to the cntpr
+    /// c_from_compile_db residue (that replays libcntpr's recorded CRT command).
+    asm_extra_defines: Vec<(String, Option<String>)>,
     /// Extra `-I` dirs (repo-relative) for the asm compiles. Lets `asm()`
     /// assemble RAW `.S` files with `#include`s resolved against a MINIMAL set
     /// of source header dirs (e.g. freeldr's `sdk/include/asm` for asm.inc +
@@ -441,6 +449,7 @@ impl Linker {
             c_shim_flags: Vec::new(),
             asm: Vec::new(),
             asm_set: AsmDefineSet::Kernel,
+            asm_extra_defines: Vec::new(),
             asm_include_dirs: Vec::new(),
             resource: None,
             resource_built: None,
@@ -563,6 +572,16 @@ impl Linker {
     pub fn asm(mut self, rels: &[&str], set: AsmDefineSet) -> Self {
         self.asm = rels.iter().map(|s| s.to_string()).collect();
         self.asm_set = set;
+        self
+    }
+
+    /// Extra `-D` defines layered on top of the `asm()` define set (e.g.
+    /// `CONFIG_SMP` for ntkrnlmp). Empty by default; chainable.
+    pub fn asm_extra_defines(mut self, defs: &[(&str, Option<&str>)]) -> Self {
+        self.asm_extra_defines = defs
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.map(|s| s.to_string())))
+            .collect();
         self
     }
 
@@ -804,6 +823,11 @@ impl Linker {
             }
             let mut b = cc::Build::new();
             apply_base(&mut b, &clang, self.asm_set, &self.arch);
+            // Caller-layered extra defines (e.g. ntkrnlmp's CONFIG_SMP) on top
+            // of the asm_set list. Inert when empty (every non-ntkrnlmp module).
+            for (n, v) in &self.asm_extra_defines {
+                b.define(n, v.as_deref());
+            }
             b.file(&abs)
                 .out_dir(self.obj_dir())
                 .define("__ASM__", None)

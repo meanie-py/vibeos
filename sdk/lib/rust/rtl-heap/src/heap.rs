@@ -23,7 +23,7 @@ use crate::types::*;
 use ntkrnl_sys::macros::{NtCurrentProcess, NtCurrentThread};
 
 extern "C" {
-    // heap.h global, defined in heappage.c (stays C). i386: `_RtlpPageHeapEnabled`.
+    // heap.h global, defined in rtl-heappage (heappage.rs, #[no_mangle]). i386: `_RtlpPageHeapEnabled`.
     static RtlpPageHeapEnabled: BOOLEAN;
 }
 

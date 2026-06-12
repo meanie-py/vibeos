@@ -653,6 +653,16 @@ function(add_cargo_module _target _crate _output)
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
         endif()
+    elseif(_acm_KIND STREQUAL "kernelexe")
+        # Kernel EXE (ntoskrnl.exe / ntkrnlmp.exe): set_module_type(kernel) applies
+        # native-pefixup --kernel (NOT --kerneldll) + the i386 lld forwarder fix.
+        # Exactly the post-link ntoskrnl-cargo/boot-swap-smoke.sh applies (×3 boot).
+        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kernel ${_out})
+        set(_postdep native-pefixup)
+        if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+            list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+        endif()
     elseif(_acm_KIND STREQUAL "win32dll")
         # User-mode DLL (ntdll): NOT a KERNEL_MODULE_TYPE, so set_module_type
         # applies NO native-pefixup (that's gated to KERNEL_MODULE_TYPES). The

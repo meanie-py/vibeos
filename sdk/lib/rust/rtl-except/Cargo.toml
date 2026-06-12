@@ -1,0 +1,26 @@
+# rtl-except — Rust translation of the per-arch rtl exception/unwind tail:
+#   amd64/unwind.c amd64/except.c amd64/stubs.c amd64/dynfntbl.c
+#   i386/except.c i386/thread.c
+#   arm64/except.c
+#
+# This is the last substantive C in sdk/lib/rtl (only dbgprint_variadic.c —
+# deliberate C-variadic glue — and rtl_vista_stub.c remain). librtl is shared
+# by ntoskrnl AND ntdll, so these unwinders run in both kernel and user mode;
+# the asm trampolines (except_asm/unwind-asm/debug_asm) and the per-consumer
+# libsupp helpers (RtlpGetStackLimits/RtlpGetMode/RtlpCheckLogException/
+# RtlpHandleDpcStackException/RtlpAllocateMemory) stay external.
+[package]
+name = "rtl-except"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Symmetry with rtl-diag/rtl-strings; the symbols are always exported.
+cabi = []
+kernel = ["cabi"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

@@ -1,0 +1,36 @@
+# Cargo-driven `ntoskrnl.exe` link PoC.
+#
+# Rather than introducing a parallel implementation, this crate reuses the
+# cmake-produced .obj files (C shims + asm) and per-arch static libs as
+# pre-built inputs, and just drives the final link from cargo.
+#
+# Workflow today:
+#   1. cmake builds everything into build-<arch>/ as usual.
+#   2. cargo build -p ntoskrnl-cargo --target <arch> picks up those build-<arch>/
+#      artifacts via build.rs and produces target/<arch>/release/ntoskrnl.exe.
+#   3. Post-link tooling (pefixup, fix_lld_forwarding.py) is run separately.
+#
+# Eventually this crate replaces the cmake-driven link entirely; for now the
+# success criterion is that cargo's binary boots in QEMU exactly like the
+# cmake-built one.
+
+[package]
+name = "ntkrnlmp-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ntkrnlmp"
+path = "src/main.rs"
+
+[dependencies]
+# kernel-rust is `crate-type = ["staticlib"]`, which cargo can't use as a
+# Rust dep — listing it here would compile it but rustc wouldn't link the
+# .a archive. Instead, build.rs invokes `cargo build -p kernel-rust`
+# manually, then emits the absolute path of the resulting `libkernel_rust.a`
+# as a link arg.
+
+[build-dependencies]
+# Shared cargo-link engine (Rust staticlib build + cc-rs C/asm + spec2def
+# + kernel-mode PE link flags). Mirrors hal-cargo.
+reactos-link = { path = "../reactos-link" }

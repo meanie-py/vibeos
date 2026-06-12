@@ -122,8 +122,10 @@ mod ffi {
         core::ptr::write_bytes(destination, 0, length);
     }
 
-    // RtlFillMemoryUlong — arm64 only (amd64 provides via CRT, i386 via rtlmem.s)
-    #[cfg(target_arch = "aarch64")]
+    // RtlFillMemoryUlong — arm64 + amd64 (rtl/mem.c was its real home on amd64;
+    // the old "CRT provides it" state was a stale-fat-librtl.a zombie object).
+    // i386 stays asm (rtlmem.s: _RtlFillMemoryUlong@12).
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     #[no_mangle]
     pub unsafe extern "system" fn RtlFillMemoryUlong(
         destination: *mut u32,
