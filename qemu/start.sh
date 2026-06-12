@@ -125,6 +125,14 @@ fi
 
 DAEMON_FLAGS=(-display none)
 
+# Opt-in extra QEMU args (e.g. match smoke's virtio-blk scratch + debugcon when a
+# crash only reproduces under that device config). Word-split VIBEOS_QEMU_EXTRA.
+EXTRA_FLAGS=()
+if [ -n "${VIBEOS_QEMU_EXTRA:-}" ]; then
+    # shellcheck disable=SC2206
+    EXTRA_FLAGS=(${VIBEOS_QEMU_EXTRA})
+fi
+
 # --- per-arch QEMU command -------------------------------------------------
 declare -a QEMU_CMD
 
@@ -157,7 +165,7 @@ case "$ARCH" in
             -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
             -device ide-cd,drive=cd0,bootindex=0
             -vga std -no-reboot
-            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
+            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
     amd64)
@@ -182,7 +190,7 @@ case "$ARCH" in
             -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
             -device ide-cd,drive=cd0,bootindex=0
             -vga std -no-reboot
-            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
+            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
     arm64)
@@ -197,7 +205,7 @@ case "$ARCH" in
             -drive "if=pflash,format=raw,file=$EFIVARS"
             -drive "file=$BOOT_IMG,format=raw,if=virtio"
             -device ramfb
-            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}"
+            "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
 esac
