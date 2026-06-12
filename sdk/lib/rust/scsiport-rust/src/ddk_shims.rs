@@ -10,3 +10,7 @@
 #[inline(always)] pub fn ASSERT_PDO<T>(_: T) {}
 #[inline(always)] pub fn ASSERTMSG<A, B>(_: A, _: B) {}
 #[inline(always)] pub fn DBG_UNREFERENCED_LOCAL_VARIABLE<T>(_: T) {}
+// RtlAssert — NDEBUG-dead assertion handler. The modules declared it with conflicting
+// signatures/arg-orders; one generic no-op shim matches release semantics (ASSERT/
+// PAGED_CODE compile out under NDEBUG). REVIEW: assertion-failure path is now silent.
+#[inline(always)] pub unsafe fn RtlAssert<A, B, L, C>(_a: A, _b: B, _line: L, _msg: C) {}

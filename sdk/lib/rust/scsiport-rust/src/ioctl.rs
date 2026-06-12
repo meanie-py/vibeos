@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::inlines::*;
 use ntkrnl_sys::globals::*;
@@ -17,7 +18,6 @@ use ntkrnl_sys::ddk::{};
 use ntkrnl_sys::ddk::{};
 
 extern "C" {
-    fn RtlAssert( Message: *const u8, File: *const u8, Line: u32, Unused: *mut u8, );
     fn VerifyIrpInBufferSize(Irp: PIRP, Size: usize) -> i32;
     fn GetLunByPath( portExt: PSCSI_PORT_DEVICE_EXTENSION, pathId: u8, targetId: u8, lun: u8, ) -> PSCSI_PORT_LUN_EXTENSION;
     fn DbgPrint(format: *const i8, ...) -> i32;
@@ -321,12 +321,6 @@ unsafe fn PdoHandleQueryProperty(
 }
 
 unsafe extern "C" {
-    fn RtlAssert(
-        FailedAssertion: *const u8,
-        FileName: *const u8,
-        LineNumber: u32,
-        Message: *mut u8,
-    );
     fn SptiHandleScsiPassthru(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -464,17 +458,17 @@ unsafe fn FdoHandleQueryProperty(
 
     let PropertyQuery = (*Irp).AssociatedIrp.SystemBuffer as *mut STORAGE_PROPERTY_QUERY;
 
-    if (*PropertyQuery).PropertyId as u32 != ntkrnl_sys::ddk::StorageAdapterProperty as u32 {
-        if (*PropertyQuery).PropertyId as u32 == ntkrnl_sys::ddk::StorageDeviceProperty as u32
-            || (*PropertyQuery).PropertyId as u32 == ntkrnl_sys::ddk::StorageDeviceIdProperty as u32
+    if (*PropertyQuery).PropertyId as u32 != crate::glue::StorageAdapterProperty as u32 {
+        if (*PropertyQuery).PropertyId as u32 == crate::glue::StorageDeviceProperty as u32
+            || (*PropertyQuery).PropertyId as u32 == crate::glue::StorageDeviceIdProperty as u32
         {
             status = ntkrnl_sys::constants::STATUS_INVALID_DEVICE_REQUEST;
         } else {
             status = ntkrnl_sys::constants::STATUS_INVALID_PARAMETER_1;
         }
-    } else if (*PropertyQuery).QueryType as u32 == ntkrnl_sys::ddk::PropertyExistsQuery as u32 {
+    } else if (*PropertyQuery).QueryType as u32 == crate::glue::PropertyExistsQuery as u32 {
         status = ntkrnl_sys::constants::STATUS_SUCCESS;
-    } else if (*PropertyQuery).QueryType as u32 != ntkrnl_sys::ddk::PropertyStandardQuery as u32 {
+    } else if (*PropertyQuery).QueryType as u32 != crate::glue::PropertyStandardQuery as u32 {
         status = ntkrnl_sys::constants::STATUS_INVALID_PARAMETER_2;
     } else if ((*ioStack).Parameters.DeviceIoControl.OutputBufferLength as usize)
         < core::mem::size_of::<STORAGE_ADAPTER_DESCRIPTOR_WIN8>() as usize
@@ -510,7 +504,7 @@ unsafe fn FdoHandleQueryProperty(
             AdapterScansDown: (*portExt).PortCapabilities.AdapterScansDown,
             CommandQueueing: (*portExt).PortCapabilities.TaggedQueuing,
             AcceleratedTransfer: 1, // TRUE
-            BusType: ntkrnl_sys::ddk::BusTypeScsi as u8,
+            BusType: crate::glue::BusTypeScsi as u8,
             BusMajorVersion: 2u16,
             BusMinorVersion: 0u16,
             SrbType: 0,

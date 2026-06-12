@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::inlines::*;
 use ntkrnl_sys::globals::*;
@@ -11,13 +12,15 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExFreePool, IO_COMPLETION_ROUTINE, IRP, IoAllocateAdapterChannel, IoBuildAsynchronousFsdRequest, IoFlushAdapterBuffers, IoFreeAdapterChannel, IoFreeIrp, IoFreeMapRegisters, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMarkIrpPending, IoRequestDpc, IoSetCompletionRoutine, IoStartNextPacket, IoStartPacket, KeCancelTimer, KeInsertByKeyDeviceQueue, KeRemoveByKeyDeviceQueue, KeRemoveDeviceQueue, KeSetTimer, KeSynchronizeExecution, LARGE_INTEGER, MmUnlockPages, PCCHAR, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKDEVICE_QUEUE_ENTRY, PKIRQL};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{LUNEX_REQUEST_PENDING, PCDB, PSCSI_PORT_DEVICE_EXTENSION, PSCSI_PORT_INTERRUPT_DATA, PSCSI_PORT_LUN_EXTENSION, PSCSI_REQUEST_BLOCK, PSCSI_REQUEST_BLOCK_INFO, SCSI_PORT_DEVICE_BUSY, SCSI_PORT_DISABLE_INT_REQUESET, SCSI_PORT_DISCONNECT_ALLOWED, SCSI_PORT_ENABLE_INT_REQUEST, SCSI_PORT_FLUSH_ADAPTERS, SCSI_PORT_INTERRUPT_DATA, SCSI_PORT_LU_ACTIVE, SCSI_PORT_MAP_TRANSFER, SCSI_PORT_NEXT_REQUEST_READY, SCSI_PORT_REQUEST_PENDING, SCSI_PORT_RESET_REPORTED, SCSI_PORT_SAVE_INTERRUPT, SCSI_PORT_TIMER_NEEDED, SCSI_REQUEST_BLOCK, SENSE_DATA, SRB_FLAGS_DISABLE_AUTOSENSE, SRB_FLAGS_QUEUE_ACTION_ENABLE, SRB_FUNCTION_ATTACH_DEVICE, SRB_FUNCTION_CLAIM_DEVICE, SRB_FUNCTION_FLUSH, SRB_FUNCTION_IO_CONTROL, SRB_FUNCTION_RELEASE_DEVICE, SRB_FUNCTION_SHUTDOWN, SRB_STATUS_REQUEST_FLUSHED, _SCSI_PORT_COMMON_EXTENSION, _SCSI_PORT_DEVICE_EXTENSION, _SCSI_PORT_LUN_EXTENSION, _SCSI_REQUEST_BLOCK, _SCSI_REQUEST_BLOCK_INFO};
+use ntkrnl_sys::ddk::{CCHAR, KeLowerIrql, _LIST_ENTRY};
 
 extern "C" {
     fn SpiGetSrbData( DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION, LunExtension: PSCSI_PORT_LUN_EXTENSION, QueueTag: UCHAR, ) -> PSCSI_REQUEST_BLOCK_INFO;
 }
 extern "C" {
     fn KeAcquireSpinLockRaiseToDpc(SpinLock: *mut KSPIN_LOCK) -> KIRQL;
-    fn RtlAssert( FailedAssertion: *const i8, FileName: *const i8, LineNumber: u32, Message: *const i8, );
     fn ScsiPortNotification(NotificationType: i32, HwDeviceExtension: *mut core::ffi::c_void, Srb: *mut _SCSI_REQUEST_BLOCK);
     fn DPRINT(_: *const i8);
     fn DbgPrint(format: *const i8, ...) -> i32;
@@ -87,24 +90,20 @@ pub unsafe extern "C" fn SpiGetNextRequestFromLun(
     OldIrql: ntkrnl_sys::ddk::PKIRQL,
 ) ;
 
-unsafe extern "system" {
-    fn Int32x32To64(a: i32, b: i32) -> i64;
-    #[no_mangle]
-    pub unsafe extern "system" fn SpiSaveInterruptData(Context: PVOID) -> BOOLEAN;
-    fn RtlAssert(msg: PVOID, file: PVOID, line: u32, empty: *mut i8);
-    #[no_mangle]
-    pub unsafe extern "system" fn ScsiPortStartIo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) ;
-    fn SpiGetNextRequestFromLun(
-        DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION,
-        LunExtension: PSCSI_PORT_LUN_EXTENSION,
-        OldIrql: PKIRQL,
-    );
-    unsafe fn SpiProcessCompletedRequest(
+// Int32x32To64 — winnt.h 64-bit signed multiply intrinsic (not a real export).
+#[inline(always)]
+unsafe fn Int32x32To64(a: i32, b: i32) -> i64 { (a as i64) * (b as i64) }
+// Internal scsiport routines defined in sibling modules (cross-module forward decls;
+// SpiGetNextRequestFromLun is defined in this file so it's omitted here).
+extern "C" {
+    fn SpiSaveInterruptData(Context: PVOID) -> BOOLEAN;
+    fn ScsiPortStartIo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
+    fn SpiProcessCompletedRequest(
         DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION,
         SrbInfo: PSCSI_REQUEST_BLOCK_INFO,
         NeedToCallStartIo: PBOOLEAN,
-    ) ;
-}BUSY: NTSTATUS = 0xC0000463; // placeholder
+    );
+}
 const TRUE: BOOLEAN = 1;
 const FALSE: BOOLEAN = 0;
 unsafe fn SpiHandleAttachRelease(
@@ -118,33 +117,33 @@ unsafe fn SpiHandleAttachRelease(
     let mut IrpStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut Srb: PSCSI_REQUEST_BLOCK = (*IrpStack).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
 
-    Irql = KeAcquireSpinLockRaiseToDpc(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+    Irql = KeAcquireSpinLockRaiseToDpc((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
 
-    if (*Srb).Function as i32 == SRB_FUNCTION_RELEASE_DEVICE {
+    if (*Srb).Function as i32 == (SRB_FUNCTION_RELEASE_DEVICE) as i32 {
         (*LunExtension).DeviceClaimed = FALSE;
-        KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock), Irql);
+        KeReleaseSpinLock((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast(), Irql);
         (*Srb).SrbStatus = SRB_STATUS_SUCCESS;
         return STATUS_SUCCESS;
     }
 
     if (*LunExtension).DeviceClaimed != 0 {
-        KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock), Irql);
+        KeReleaseSpinLock((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast(), Irql);
         (*Srb).SrbStatus = SRB_STATUS_BUSY;
         return STATUS_DEVICE_BUSY;
     }
 
     DeviceObject = (*LunExtension).Common.DeviceObject;
 
-    if (*Srb).Function as i32 == SRB_FUNCTION_CLAIM_DEVICE {
+    if (*Srb).Function as i32 == (SRB_FUNCTION_CLAIM_DEVICE) as i32 {
         (*LunExtension).DeviceClaimed = TRUE;
     }
 
-    if (*Srb).Function as i32 == SRB_FUNCTION_ATTACH_DEVICE {
+    if (*Srb).Function as i32 == (SRB_FUNCTION_ATTACH_DEVICE) as i32 {
         (*LunExtension).Common.DeviceObject = (*Srb).DataBuffer as PDEVICE_OBJECT;
     }
 
     (*Srb).DataBuffer = DeviceObject as PVOID;
-    KeReleaseSpinLock(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock), Irql);
+    KeReleaseSpinLock((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast(), Irql);
     (*Srb).SrbStatus = SRB_STATUS_SUCCESS;
 
     return STATUS_SUCCESS;
@@ -247,8 +246,8 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     let mut pending_execute_scsi: bool = false;
 
     match (*Srb).Function as i32 {
-        SRB_FUNCTION_SHUTDOWN | SRB_FUNCTION_FLUSH => {
-            if (*portExt).CachesData as i32 == FALSE {
+        (SRB_FUNCTION_SHUTDOWN) as i32 | (SRB_FUNCTION_FLUSH) as i32 => {
+            if (*portExt).CachesData as i32 == (FALSE) as i32 {
                 (*Srb).SrbStatus = SRB_STATUS_SUCCESS;
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -256,13 +255,13 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
             }
             pending_execute_scsi = true;
         }
-        SRB_FUNCTION_EXECUTE_SCSI | SRB_FUNCTION_IO_CONTROL => {
+        (SRB_FUNCTION_EXECUTE_SCSI) as i32 | (SRB_FUNCTION_IO_CONTROL) as i32 => {
             pending_execute_scsi = true;
         }
-        SRB_FUNCTION_CLAIM_DEVICE | SRB_FUNCTION_ATTACH_DEVICE => {
+        (SRB_FUNCTION_CLAIM_DEVICE) as i32 | (SRB_FUNCTION_ATTACH_DEVICE) as i32 => {
             Status = SpiHandleAttachRelease(lunExt, Irp);
         }
-        SRB_FUNCTION_RELEASE_DEVICE => {
+        (SRB_FUNCTION_RELEASE_DEVICE) as i32 => {
             Status = SpiHandleAttachRelease(lunExt, Irp);
         }
         SRB_FUNCTION_RELEASE_QUEUE => {
@@ -312,7 +311,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
                     NextIrp = (Entry as usize).wrapping_sub(offset) as PIRP;
                     Stack = IoGetCurrentIrpStackLocation(NextIrp);
                     Srb = (*Stack).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
-                    (*Srb).SrbStatus = SRB_STATUS_REQUEST_FLUSHED;
+                    (*Srb).SrbStatus = (SRB_STATUS_REQUEST_FLUSHED) as u8;
                     (*NextIrp).IoStatus.__bindgen_anon_1.Status = STATUS_UNSUCCESSFUL;
                     (*NextIrp).Tail.Overlay.c2rust_unnamed_0.ListEntry.Flink =
                         IrpList as PLIST_ENTRY as *mut _LIST_ENTRY;
@@ -359,7 +358,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
             if KeInsertByKeyDeviceQueue(
                 &mut (*lunExt).DeviceQueue,
                 &mut (*Irp).Tail.Overlay.__bindgen_anon_1.DeviceQueueEntry,
-                (*Srb).QueueSortKey,
+                (*Srb).__bindgen_anon_1.QueueSortKey,
             ) == 0
             {
                 IoStartPacket(
@@ -465,8 +464,8 @@ unsafe fn SpiSendRequestSense(
 
     Srb = ExAllocatePoolWithTag(
         NonPagedPool,
-        (core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32)
-            .wrapping_add(core::mem::size_of::<PVOID>() as u32),
+        ((core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32)
+            .wrapping_add(core::mem::size_of::<PVOID>() as u32)) as usize,
         TAG_SCSIPORT,
     ) as PSCSI_REQUEST_BLOCK;
 
@@ -511,13 +510,13 @@ unsafe fn SpiSendRequestSense(
     (*Srb).CdbLength = 6;
     Cdb = &raw mut (*Srb).Cdb as *mut u8 as PCDB;
 
-    (*Cdb).CDB6INQUIRY.OperationCode = SCSIOP_REQUEST_SENSE;
+    (*Cdb).CDB6INQUIRY.as_ref().OperationCode = SCSIOP_REQUEST_SENSE;
     (*Cdb).CDB6INQUIRY.set_LogicalUnitNumber(0u8);
     (*Cdb).CDB6INQUIRY.set_Reserved1(0u8);
-    (*Cdb).CDB6INQUIRY.PageCode = 0u8;
-    (*Cdb).CDB6INQUIRY.IReserved = 0u8;
-    (*Cdb).CDB6INQUIRY.AllocationLength = (*InitialSrb).SenseInfoBufferLength;
-    (*Cdb).CDB6INQUIRY.Control = 0u8;
+    (*Cdb).CDB6INQUIRY.as_ref().PageCode = 0u8;
+    (*Cdb).CDB6INQUIRY.as_ref().IReserved = 0u8;
+    (*Cdb).CDB6INQUIRY.as_ref().AllocationLength = (*InitialSrb).SenseInfoBufferLength;
+    (*Cdb).CDB6INQUIRY.as_ref().Control = 0u8;
 
     (*Srb).TargetId = (*InitialSrb).TargetId;
     (*Srb).Lun = (*InitialSrb).Lun;
@@ -542,7 +541,7 @@ unsafe fn SpiSendRequestSense(
     }
 
     (*Srb).DataBuffer = (*InitialSrb).SenseInfoBuffer;
-    (*Srb).DataTransferLength = (*InitialSrb).SenseInfoBufferLength;
+    (*Srb).DataTransferLength = ((*InitialSrb).SenseInfoBufferLength) as u32;
 
     (*Srb).SrbStatus = 0;
     (*Srb).ScsiStatus = (*Srb).SrbStatus;
@@ -675,10 +674,10 @@ pub unsafe extern "system" fn ScsiPortStartPacket(Context: *mut core::ffi::c_voi
 
     (*Srb).SrbFlags |= SRB_FLAGS_IS_ACTIVE;
     Result = if let Some(hw_start_io) = (*DeviceExtension).HwStartIo {
-        hw_start_io(
+        (hw_start_io(
             core::ptr::addr_of_mut!((*DeviceExtension).MiniPortDeviceExtension) as *mut core::ffi::c_void,
             Srb,
-        )
+        )) as i32
     } else {
         // Function pointer is NULL; this shouldn't happen
         0
@@ -711,7 +710,7 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
     let mut TimerValue: LARGE_INTEGER = core::mem::zeroed();
 
     // We need to acquire spinlock
-    KeAcquireSpinLockAtDpcLevel(&raw mut (*DeviceExtension).SpinLock);
+    KeAcquireSpinLockAtDpcLevel((&raw mut (*DeviceExtension).SpinLock).cast());
     core::ptr::write_bytes(
         &raw mut InterruptData as *mut u8,
         0,
@@ -730,7 +729,7 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
         ) == 0
         {
             // Nothing - just return (don't forget to release the spinlock)
-            KeReleaseSpinLockFromDpcLevel(&raw mut (*DeviceExtension).SpinLock);
+            KeReleaseSpinLockFromDpcLevel((&raw mut (*DeviceExtension).SpinLock).cast());
             return;
         }
 
@@ -820,19 +819,19 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
                 if InterruptData.ReadyLun.is_null() {
                     break;
                 }
-                KeAcquireSpinLockAtDpcLevel(&raw mut (*DeviceExtension).SpinLock);
+                KeAcquireSpinLockAtDpcLevel((&raw mut (*DeviceExtension).SpinLock).cast());
             }
         } else {
             // Release the spinlock
-            KeReleaseSpinLockFromDpcLevel(&raw mut (*DeviceExtension).SpinLock);
+            KeReleaseSpinLockFromDpcLevel((&raw mut (*DeviceExtension).SpinLock).cast());
         }
 
         // If we ready for next packet, start it
         if (InterruptData.Flags as u32 & SCSI_PORT_NEXT_REQUEST_READY) != 0 {
-            IoStartNextPacket((*DeviceExtension).Common.DeviceObject, 0i32);
+            IoStartNextPacket((*DeviceExtension).Common.DeviceObject, (0i32) as u8);
         }
 
-        NeedToStartIo = 0i32;
+        NeedToStartIo = (0i32) as u8;
 
         // Loop the completed request list
         while !InterruptData.CompletedRequests.is_null() {
@@ -853,7 +852,7 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
             InterruptData.CompletedAbort = (*LunExtension).CompletedAbortRequests;
 
             // Get spinlock since we're going to change flags
-            KeAcquireSpinLockAtDpcLevel(&raw mut (*DeviceExtension).SpinLock);
+            KeAcquireSpinLockAtDpcLevel((&raw mut (*DeviceExtension).SpinLock).cast());
 
             // TODO: Put SrbExtension to the list of free extensions
             RtlAssert(
@@ -881,7 +880,7 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
         // Everything has been done, check
         if (InterruptData.Flags as u32 & SCSI_PORT_ENABLE_INT_REQUEST) != 0 {
             // Synchronize using spinlock
-            KeAcquireSpinLockAtDpcLevel(&raw mut (*DeviceExtension).SpinLock);
+            KeAcquireSpinLockAtDpcLevel((&raw mut (*DeviceExtension).SpinLock).cast());
 
             // Request an interrupt
             (*DeviceExtension)
@@ -919,7 +918,7 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
             }
 
             // Release the spinlock
-            KeReleaseSpinLockFromDpcLevel(&raw mut (*DeviceExtension).SpinLock);
+            KeReleaseSpinLockFromDpcLevel((&raw mut (*DeviceExtension).SpinLock).cast());
             break;
         }
         break;
@@ -932,7 +931,7 @@ unsafe fn SpiAllocateSrbStructures(
 ) -> PSCSI_REQUEST_BLOCK_INFO {
     let mut SrbExtension: PCHAR = core::ptr::null_mut();
     let mut SrbInfo: PSCSI_REQUEST_BLOCK_INFO = core::ptr::null_mut();
-    KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+    KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
     if (*DeviceExtension).NeedSrbDataAlloc != 0 {
         if (*Srb).Function as core::ffi::c_int == SRB_FUNCTION_ABORT_COMMAND {
             SrbInfo = SpiGetSrbData(DeviceExtension, LunExtension, (*Srb).QueueTag);
@@ -954,13 +953,13 @@ unsafe fn SpiAllocateSrbStructures(
                         b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
                             .as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
                         1505 as ULONG,
-                        core::ptr::null_mut::<core::ffi::c_void>(),
+                        (core::ptr::null_mut::<core::ffi::c_void>()).cast(),
                     );
                 }
                 (*LunExtension).PendingRequest = (*Srb).OriginalRequest as PIRP;
                 (*LunExtension).Flags |=
                     (LUNEX_REQUEST_PENDING | SCSI_PORT_LU_ACTIVE) as core::ffi::c_ulong;
-                KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+                KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
                 return core::ptr::null_mut();
             }
             if !(*LunExtension).SrbInfo.Srb.is_null() {
@@ -970,13 +969,13 @@ unsafe fn SpiAllocateSrbStructures(
                     b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
                         .as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
                     1515 as ULONG,
-                    core::ptr::null_mut::<core::ffi::c_void>(),
+                    (core::ptr::null_mut::<core::ffi::c_void>()).cast(),
                 );
             }
             SrbInfo = (*DeviceExtension).FreeSrbInfo;
             if SrbInfo.is_null() {
                 (*DeviceExtension).Flags |= SCSI_PORT_REQUEST_PENDING as core::ffi::c_ulong;
-                KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+                KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
                 return core::ptr::null_mut();
             }
             (*DeviceExtension).FreeSrbInfo = (*SrbInfo).Requests.Flink as PSCSI_REQUEST_BLOCK_INFO;
@@ -999,13 +998,13 @@ unsafe fn SpiAllocateSrbStructures(
                         b"/home/curi/Projects/os-playground/vibeos-wt-scsiport/drivers/storage/port/scsiport/scsi.c\0"
                             .as_ptr() as *const core::ffi::c_char as *mut core::ffi::c_void,
                         1543 as ULONG,
-                        core::ptr::null_mut::<core::ffi::c_void>(),
+                        (core::ptr::null_mut::<core::ffi::c_void>()).cast(),
                     );
                 }
                 (*LunExtension).Flags |=
                     (LUNEX_REQUEST_PENDING | SCSI_PORT_LU_ACTIVE) as core::ffi::c_ulong;
                 (*LunExtension).PendingRequest = (*Srb).OriginalRequest as PIRP;
-                KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+                KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
                 return core::ptr::null_mut();
             }
             (*Srb).QueueTag = SP_UNTAGGED;
@@ -1027,11 +1026,11 @@ unsafe fn SpiAllocateSrbStructures(
                 (*DeviceExtension).FreeSrbInfo = SrbInfo;
             }
             (*DeviceExtension).Flags |= SCSI_PORT_REQUEST_PENDING as core::ffi::c_ulong;
-            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+            KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
             return core::ptr::null_mut();
         }
         (*DeviceExtension).FreeSrbExtensions = *(SrbExtension as *mut PVOID);
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+        KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
         (*Srb).SrbExtension = SrbExtension as PVOID;
         if !(*Srb).SenseInfoBuffer.is_null()
             && (*DeviceExtension).SupportsAutoSense as core::ffi::c_int != 0
@@ -1046,7 +1045,7 @@ unsafe fn SpiAllocateSrbStructures(
         }
     } else {
         (*Srb).SrbExtension = core::ptr::null_mut::<core::ffi::c_void>();
-        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*DeviceExtension).SpinLock));
+        KeReleaseSpinLockFromDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
     }
     return SrbInfo;
 }

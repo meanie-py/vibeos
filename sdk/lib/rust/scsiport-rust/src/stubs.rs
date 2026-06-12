@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::inlines::*;
 use ntkrnl_sys::globals::*;

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::inlines::*;
 use ntkrnl_sys::globals::*;
@@ -15,6 +16,8 @@ use core::mem::{align_of, size_of, offset_of};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{ACCESS_RANGE, CONFIGURATION_INFO, HW_INITIALIZATION_DATA, IO_SCSI_CAPABILITIES, PORT_CONFIGURATION_INFORMATION, RESETBUS_PARAMS, SCSI_BUS_INFO, SCSI_NOTIFICATION_TYPE, SCSI_PHYSICAL_ADDRESS, SCSI_PORT_COMMON_EXTENSION, SCSI_PORT_DEVICE_EXTENSION, SCSI_PORT_DRIVER_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK, SCSI_REQUEST_BLOCK_INFO, SCSI_SG_ADDRESS, SENSE_DATA};
 use ntkrnl_sys::ddk::{CM_FULL_RESOURCE_DESCRIPTOR, CONFIGURATION_INFORMATION, DEVICE_OBJECT, DRIVER_OBJECT, INTERFACE_TYPE, IO_ALLOCATION_ACTION, IO_STACK_LOCATION, IRP, KEY_VALUE_FULL_INFORMATION, KTIMER, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PSCSI_PORT_DEVICE_EXTENSION};
 
 extern "C" {
     fn vsprintf( buffer: *mut core::ffi::c_char, format: *const core::ffi::c_char, args: *mut core::ffi::c_char, ) -> i32;
@@ -453,7 +456,7 @@ pub unsafe extern "system" fn ScsiPortGetPhysicalAddress(
     if Srb.is_null() || (*Srb).SenseInfoBuffer == VirtualAddress {
         let Offset =
             (VirtualAddress as usize) - ((*DeviceExtension).SrbExtensionBuffer as usize);
-        BufferLength = (((*DeviceExtension).CommonBufferLength - (Offse) as usizet) as u32) as usize;
+        BufferLength = (((*DeviceExtension).CommonBufferLength - ((Offset) as usize) as u32) as u32) as usize;
         PhysicalAddress.QuadPart =
             (*DeviceExtension).PhysicalAddress.QuadPart + Offset as i64;
     } else if (*DeviceExtension).MapRegisters != 0 {
@@ -634,9 +637,9 @@ unsafe fn SpiAllocateCommonBuffer(
 
     BufSize = (BufSize.wrapping_add(7)) & !7u32;
 
-    CommonBufferLength = (ROUND_TO_PAGES(
-        (NonCachedSize.wrapping_add(BufSize.wrapping_mul((*DeviceExtension).RequestsNumber))) as ) as u32usize
-    );
+    CommonBufferLength = ROUND_TO_PAGES(
+        (NonCachedSize.wrapping_add(BufSize.wrapping_mul((*DeviceExtension).RequestsNumber))) as usize
+    ) as u32;
 
     if (*DeviceExtension).AdapterObject.is_null() {
         CommonBuffer = ExAllocatePoolWithTag(0 /* NonPagedPool */, CommonBufferLength, 0x50726F53 /* TAG_SCSIPORT */);
@@ -743,11 +746,11 @@ pub unsafe extern "system" fn ScsiPortInitialize(
 
         DbgPrint((b"ScsiPortInitialize() called!\n\0".as_ptr() as *const u8).cast());
 
-        if (*HwInitializationData).HwInitialize.is_null() ||
-            (*HwInitializationData).HwStartIo.is_null() ||
-            (*HwInitializationData).HwInterrupt.is_null() ||
-            (*HwInitializationData).HwFindAdapter.is_null() ||
-            (*HwInitializationData).HwResetBus.is_null()
+        if (*HwInitializationData).HwInitialize.is_none() ||
+            (*HwInitializationData).HwStartIo.is_none() ||
+            (*HwInitializationData).HwInterrupt.is_none() ||
+            (*HwInitializationData).HwFindAdapter.is_none() ||
+            (*HwInitializationData).HwResetBus.is_none()
         {
             return (STATUS_REVISION_MISMATCH) as u32;
         }
@@ -969,7 +972,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                         (*HwInitializationData).DeviceId,
                     );
 
-                    if !SpiGetPciConfigData(
+                    if 0 == SpiGetPciConfigData(
                         DriverObject,
                         PortDeviceObject,
                         HwInitializationData,
@@ -1177,7 +1180,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                         0x706f6373,
                     ) as *mut SCSI_REQUEST_BLOCK_INFO;
                     if SrbData.is_null() {
-                        return STATUS_INSUFFICIENT_RESOURCES;
+                        return (STATUS_INSUFFICIENT_RESOURCES) as u32;
                     }
 
                     core::ptr::write_bytes(
@@ -1386,7 +1389,7 @@ pub unsafe extern "C" fn ScsiPortNotification(
             }
 
             // Check if already completed
-            if !((*Srb).SrbFlags & SRB_FLAGS_IS_ACTIVE) {
+            if ((*Srb).SrbFlags & SRB_FLAGS_IS_ACTIVE) == 0 {
                 // va_end(ap) – nothing to do
                 return;
             }
@@ -1419,7 +1422,7 @@ pub unsafe extern "C" fn ScsiPortNotification(
                 if (*Srb).SrbStatus == (SRB_STATUS_SUCCESS) as u8
                     && ((*Srb).Cdb[0] == SCSIOP_READ || (*Srb).Cdb[0] == SCSIOP_WRITE)
                 {
-                    if !(*Srb).DataTransferLength {
+                    if (*Srb).DataTransferLength == 0 {
                         DbgBreakPoint();
                     }
                 }
@@ -2070,7 +2073,7 @@ pub unsafe extern "system" fn SpiProcessTimeout(
 
     DbgPrint(b"SpiProcessTimeout() entered\n\0".as_ptr() as *const i8);
 
-    (*DeviceExtension).TimerCount = core::u32::MAX; // -1
+    (*DeviceExtension).TimerCount = (core::u32::MAX) as i32; // -1
 
     if ((*DeviceExtension).InterruptData.Flags & SCSI_PORT_RESET) != 0 {
         (*DeviceExtension).InterruptData.Flags &= !SCSI_PORT_RESET;
@@ -2235,7 +2238,7 @@ pub unsafe extern "system" fn SpiMiniportTimerDpc(
 
     KeAcquireSpinLockAtDpcLevel(&mut (*device_extension).SpinLock);
 
-    if !(*device_extension).HwScsiTimer.is_null() {
+    if !(*device_extension).HwScsiTimer.is_none() {
         ((*device_extension).HwScsiTimer)((*device_extension).MiniPortDeviceExtension);
     }
 
@@ -2476,7 +2479,7 @@ unsafe fn SpiCreatePortConfig(
         (*InternalConfigInfo).LastAdapterNumber = (*InternalConfigInfo).AdapterNumber;
 
         Found = 0;
-        Status = ((IoQueryDeviceDescription))(
+        Status = (((IoQueryDeviceDescription))).cast()(
             core::ptr::addr_of_mut!((*HwInitData).AdapterInterfaceType),
             core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
             core::ptr::null_mut(),
@@ -2491,7 +2494,7 @@ unsafe fn SpiCreatePortConfig(
             let mut InterfaceType: INTERFACE_TYPE = Eisa;
 
             if (*HwInitData).AdapterInterfaceType == (Isa) as i32 {
-                Status = ((IoQueryDeviceDescription))(
+                Status = (((IoQueryDeviceDescription))).cast()(
                     core::ptr::addr_of_mut!(InterfaceType),
                     core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
                     core::ptr::null_mut(),

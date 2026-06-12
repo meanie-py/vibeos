@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::inlines::*;
 use ntkrnl_sys::globals::*;
@@ -23,7 +24,6 @@ extern "C" {
     fn strlen(s: *const i8) -> usize;
     fn GetDeviceType(InquiryData: *mut INQUIRYDATA) -> *const i8;
     fn GetGenericType(inquiry_data: *mut INQUIRYDATA) -> *const core::ffi::c_char;
-    fn RtlAssert( failed_assertion: *const core::ffi::c_void, file_name: *const core::ffi::c_char, line_number: u32, message: *mut core::ffi::c_char, );
 }
 extern "C" {
     fn DbgPrint(format: *const i8, ...) -> i32;
@@ -365,14 +365,6 @@ unsafe fn PdoHandleQueryDeviceId(
     Status
 }
 
-unsafe extern "system" {
-    fn RtlAssert(
-        assertion: *mut core::ffi::c_void,
-        source: *mut core::ffi::c_void,
-        line: u32,
-        message: *mut i8,
-    );
-}
 unsafe fn ConvertToUnicodeString(
     Buffer: *mut i8,
     mut ResultBufferLength: u32,
@@ -931,11 +923,11 @@ pub unsafe extern "C" fn PdoDispatchPnp(
             RegistryInitLunKey(lunExt);
             status = STATUS_SUCCESS;
         }
-        (IRP_MN_REMOVE_DEVICE) as i32
-        | (IRP_MN_QUERY_CAPABILITIES) as i32
-        | (IRP_MN_QUERY_REMOVE_DEVICE) as i32
-        | (IRP_MN_QUERY_STOP_DEVICE) as i32
-        | (IRP_MN_SURPRISE_REMOVAL) as i32 => {
+        IRP_MN_REMOVE_DEVICE
+        | IRP_MN_QUERY_CAPABILITIES
+        | IRP_MN_QUERY_REMOVE_DEVICE
+        | IRP_MN_QUERY_STOP_DEVICE
+        | IRP_MN_SURPRISE_REMOVAL => {
             status = STATUS_SUCCESS;
         }
         IRP_MN_QUERY_DEVICE_RELATIONS => {

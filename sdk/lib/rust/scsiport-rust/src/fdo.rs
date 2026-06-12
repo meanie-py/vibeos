@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
 #[allow(unused_imports)] use crate::inlines::*;
 use ntkrnl_sys::globals::*;
@@ -32,7 +33,6 @@ extern "C" {
     fn RegistryInitAdapterKey(PortExtension: PSCSI_PORT_DEVICE_EXTENSION);
     fn GetLunByPath( PortExtension: *mut SCSI_PORT_DEVICE_EXTENSION, PathId: u8, TargetId: u8, Lun: u8, ) -> *mut SCSI_PORT_LUN_EXTENSION;
     fn PdoCreateLunDevice( PortExtension: *mut SCSI_PORT_DEVICE_EXTENSION, ) -> *mut DEVICE_OBJECT;
-    fn RtlAssert(Assertion: *const core::ffi::c_void, FileName: *const core::ffi::c_void, LineNumber: u32, Message: *mut i8);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -367,7 +367,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
     let mut Status: NTSTATUS = 0;
     let mut OldIrql: KIRQL = 0;
 
-    if (*DeviceExtension).HwInterrupt.is_null()
+    if (*DeviceExtension).HwInterrupt.is_none()
         || ((*PortConfig).BusInterruptLevel == 0u32
             && (*PortConfig).BusInterruptVector == 0u32)
     {

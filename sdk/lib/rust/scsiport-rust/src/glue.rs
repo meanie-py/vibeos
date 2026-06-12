@@ -55,3 +55,20 @@ pub const SRB_FLAGS_IS_ACTIVE: u32 = 0x00010000;
 pub const SCSI_MAXIMUM_PHYSICAL_BREAKS: u32 = 255;
 pub const SCSI_MINIMUM_PHYSICAL_BREAKS: u32 = 16;
 pub const UNICODE_NULL: u16 = 0;
+
+// STORAGE_PROPERTY_ID / STORAGE_QUERY_TYPE / STORAGE_BUS_TYPE enum values (ntddstor.h —
+// not in the substrate; verified from the header, NOT guessed).
+pub const StorageDeviceProperty: u32 = 0;
+pub const StorageAdapterProperty: u32 = 1;
+pub const StorageDeviceIdProperty: u32 = 2;
+pub const PropertyStandardQuery: u32 = 0;
+pub const PropertyExistsQuery: u32 = 1;
+pub const BusTypeScsi: u32 = 1;
+
+// GUID_DEVINTERFACE_STORAGEPORT — defined as data in guid.c (the kept C TU, DEFINE_GUID);
+// reference it as an extern (faithful: the Rust + C cohab share the one GUID symbol).
+extern "C" {
+    pub static GUID_DEVINTERFACE_STORAGEPORT: ntkrnl_sys::ddk::GUID;
+}
+pub const SRB_STATUS_BUSY: u8 = 0x05;
+pub const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
