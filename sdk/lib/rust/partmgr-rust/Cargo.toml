@@ -1,0 +1,21 @@
+# partmgr-rust — Rust translation of the partition manager driver
+# (drivers/storage/partmgr, ~2.9K LOC: partition.c / partmgr.c / utils.c). BOOT-loaded
+# storage infra (partition + volume enumeration / drive-letter plumbing), so unlike
+# pcix it IS smoke-exercised. Driver-private device-extension structs (FDO_EXTENSION,
+# PARTITION_EXTENSION, BASIC_VOLUME_UNIQUE_ID, DISK_GEOMETRY_EX_INTERNAL) come from the
+# gen_driver_types.sh bindgen substrate (src/types.rs); kernel/PnP/MOUNTDEV types
+# resolve to the single ntkrnl-sys ddk identity. The GUID data symbols stay in the
+# kept-C guid.c (DEFINE_GUID), declared extern here (guids.rs) — pcix-style. crate-type
+# = staticlib → libpartmgr_rust.a, cohab-linked into the cmake-built partmgr.sys with
+# the translated .c commented out. Built for all 3 arches.
+
+[package]
+name = "partmgr-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

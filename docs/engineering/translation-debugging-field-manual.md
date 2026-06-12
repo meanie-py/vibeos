@@ -105,6 +105,18 @@ Same class as the classpnp at-scale fold; four refinements from the disk.sys por
 **Fix:** Replicate the asm into the consuming crate rather than importing it (the two-line duplicate is identical instructions). Applies to `KeGetCurrentThread`/`KeGetCurrentPrcb`/port-I/O helpers. Caught building cm-inlines, commit `646af953`.
 **Source:** `feedback_cross_crate_inline_asm.md`
 
+### DDK FORCEINLINE exported only on i386 → amd64/arm64 link fails (inverse of the usual)
+**Symptom:** A standalone driver `.sys` links clean on i386 but `undefined symbol: KeGetCurrentIrql` (undecorated) on amd64/arm64 — the *opposite* of most FFI link bugs which fail on i386. cargo-check passes on all arches (the bindgen extern decl satisfies type-check); only the link breaks.
+**Root cause:** `KeGetCurrentIrql` is a real ntoskrnl **export on i386** but a **FORCEINLINE on amd64/arm64** (reads CR8 / the PCR), so the bindgen `ddk` extern resolves on i386 and dangles on 64-bit. Two ways the driver reaches the bad extern: (a) the module imports it from `ntkrnl_sys::ddk`, or (b) — the partmgr trap — the LLM emitted a **local `extern "system" { fn KeGetCurrentIrql() -> u8; }`** phantom decl inside the translated file.
+**Fix:** Import the per-arch inline explicitly: `use ntkrnl_sys::ke::KeGetCurrentIrql;` (a glob re-export through `crate::inlines` does NOT win over a local extern decl — must be explicit, pcix pattern), and **delete any LLM-emitted local `extern` decl of a DDK FORCEINLINE**. Same class as `IoGetCurrentIrpStackLocation`/`IoSkipCurrentIrpStackLocation` (→ `ntkrnl_sys::inline::tier1`) and `ExAllocatePoolZero`/`ExAllocatePoolUninitialized` (exfuncs.h FORCEINLINE wrapping `ExAllocatePoolWithTag` — define inline, use `core::ptr::write_bytes` for the zero). Caught landing partmgr-rust, 2026-06-12.
+**Source:** `project_partmgr_rust_track.md`
+
+### LLM appends `as u64` to every SIZE_T/ULONG_PTR value → i386-only E0308 (32-bit width)
+**Symptom:** A driver crate is cargo-clean on amd64 but ~50 `error[E0308]: expected u32, found u64` on i386, all on `IoStatus.Information = X as u64`, `VerifyIrpOutBufferSize(Irp, X as u64)`, `ExAllocatePool*(_, size as u64, _)`.
+**Root cause:** `SIZE_T`/`ULONG_PTR` are 64-bit on amd64 (so `as u64` matched) but **32-bit on i386**. The mechanical translation hardcodes `as u64` for every length/offset/`Information` value instead of the arch-width type.
+**Fix:** Helpers that take a size take `usize`; assignments to arch-width fields use `as _` (infer the bindgen field type) — never hardcode `as u64` for a SIZE_T/ULONG_PTR/Information context. Note `SIZE_T`/`ULONG_PTR` in module scope often resolve to the hand-written `ntkrnl_sys::base` alias (`usize`), distinct from the bindgen `ddk` u64 — so prefer `as _`/`usize` over naming either. Caught landing partmgr-rust, 2026-06-12.
+**Source:** `project_partmgr_rust_track.md`
+
 ### amd64 cpuid 32-bit `xchg ebx` dance silently truncates a caller's rbx pointer
 **Symptom:** BUGCHECK 0x50 at a truncated address (e.g. `0xFFD03000` from `0xFFFFFFFFFFD03010`) near PsLocateSystemDll; multi-hour forward-search to pin.
 **Root cause:** On amd64 every 32-bit register write zero-extends to 64 bits, so `xchg ebx_save:e, ebx` wipes the upper 32 bits of rbx — which is callee-saved and may hold a caller's 64-bit pointer across the inlined cpuid.

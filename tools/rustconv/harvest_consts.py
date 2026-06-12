@@ -27,7 +27,9 @@ HEADER_DIRS = [f"{SRC}/sdk/include/{d}" for d in
                 "reactos/drivers/pci", "")]
 # driver-PRIVATE headers carry many #defines (pool tags, debug sizes) not in the SDK tree.
 HEADER_DIRS += [f"{SRC}/drivers/storage/class/classpnp",
-                f"{SRC}/drivers/bus/pcix"]
+                f"{SRC}/drivers/bus/pcix",
+                f"{SRC}/drivers/storage/partmgr",
+                f"{SRC}/drivers/storage/mountmgr"]
 HEADERS = []
 for d in HEADER_DIRS:
     HEADERS += glob.glob(f"{d}/*.h")

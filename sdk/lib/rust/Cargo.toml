@@ -122,6 +122,7 @@ members = [
     "acpi-rust",
     "pci-rust",
     "pcix-rust",
+    "partmgr-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",

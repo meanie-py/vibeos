@@ -58,6 +58,7 @@ CSQ_DIR = REACTOS_ROOT / "sdk" / "lib" / "drivers" / "csq"
 ARBITER_DIR = REACTOS_ROOT / "sdk" / "lib" / "drivers" / "arbiter"
 PCIX_DIR = REACTOS_ROOT / "drivers" / "bus" / "pcix"
 DISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "disk"
+PARTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "partmgr"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -456,6 +457,20 @@ TARGETS = {
         system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
         cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
     ),
+    # partmgr.sys — the partition manager (drivers/storage/partmgr, ~2.9K LOC, WDM
+    # kernelmodedriver). BOOT-loaded storage infra (drive-letter/partition enum),
+    # so it IS smoke-exercised (unlike pcix). Private device-extension structs
+    # (FDO_EXTENSION/PARTITION_EXTENSION/BASIC_VOLUME_UNIQUE_ID/DISK_GEOMETRY_EX_
+    # INTERNAL) from gen_driver_types.sh substrate (crate::types); MOUNTDEV_*/
+    # ioevent / disk-geometry / volume types come from the same allowlisted driver
+    # headers; kernel/PnP types from ntkrnl-sys ddk.
+    "partmgr": Target(
+        name="partmgr", source_dir=PARTMGR_DIR,
+        output_crate=RUST_DIR / "partmgr-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -769,6 +784,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["i8042prt"]
     if "/drivers/storage/class/disk" in posix:
         return TARGETS["disk"]
+    if "/drivers/storage/partmgr" in posix:
+        return TARGETS["partmgr"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

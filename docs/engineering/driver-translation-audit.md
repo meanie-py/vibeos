@@ -30,7 +30,8 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **classpnp.sys** | drivers/storage/class/classpnp | 🟡 IN-FLIGHT | classpnp-rust | WDM. Branch `classpnp-port`, ~landing. Building a storage-class DDK shim substrate (SRB/sense/io-ke-mm inlines + class GUIDs). See `classpnp-cohab-link-gap.md` (branch-local). |
 | **cdfs.sys** | drivers/filesystems/cdfs | 🟡 IN-FLIGHT (idle) | cdfs-rust | WDM CD filesystem. Branch `cdfs-port` (33 files committed + ~10 uncommitted grind). LiveCD read-stack leg. |
 | **cdrom.sys** | drivers/storage/class/cdrom | 🔴 BLOCKED (banked) | cdrom-rust | **KMDF** — see the storage read-stack section below. Banked on `cdrom-port`. |
-| mountmgr / partmgr | drivers/storage/* | ⚪ not started | — | Small boot-critical storage infra (~5K LOC). |
+| **partmgr.sys** | drivers/storage/partmgr | 🟢 IN-FLIGHT (smoke-verifying) | partmgr-rust | WDM, boot-loaded. Full C→Rust via DeepSeek+c2rust (~$0.20, 39 fns). Cohab (guid.c stays C). cargo-clean ×3, links ×3, smoke i386+arm64 GREEN, amd64 verifying. Review: 0 CRITICAL/HIGH. Added as a rustconv target + gen_driver_types.sh case. |
+| mountmgr | drivers/storage/mountmgr | ⚪ not started | — | Drive-letter/mount mgr (~9.4K LOC), boot-critical storage infra. |
 | fastfat.sys | drivers/filesystems/fastfat | ⚪ not started | — | FAT FS (68.8K LOC). Boot media (USB/ramdisk). |
 
 **Helper libs (in `static-libs-translation-audit.md`):** csq-rust (Cancel-Safe
@@ -68,8 +69,8 @@ duplicate SRB/sense harvesting.
 
 - **fastfat.sys** (drivers/filesystems/fastfat, 34 files / 68.8K) — FAT FS, boot
   media. Classic kernel-bug surface; well-specified.
-- **mountmgr.sys + partmgr.sys** (~11 files / ~5K) — drive-letter / partition mgmt,
-  boot-critical storage infra.
+- **mountmgr.sys** (drivers/storage/mountmgr, 7 files / ~9.4K) — drive-letter / mount
+  mgmt, boot-critical storage infra. (partmgr.sys is DONE — see fleet table.)
 - **disk.sys** — the other classpnp class driver (sibling to cdrom; WDM).
 
 ## NOT recommended (imported C, keep as-is)

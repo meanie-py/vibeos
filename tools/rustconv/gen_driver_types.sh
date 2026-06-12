@@ -15,10 +15,10 @@
 # (FUNCTIONAL_DEVICE_EXTENSION, TRANSFER_PACKET, CLASS_*, FCB/VCB/CCB, ...) become local.
 #
 # Usage: gen_driver_types.sh <driver-name>
-#   driver-name ∈ { classpnp | cdrom | cdfs }   (config table below)
+#   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <classpnp|cdrom|cdfs|disk|pcix|acpi>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|disk|pcix|partmgr>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -101,6 +101,27 @@ case "$DRIVER" in
     WRAPPER_INC='#include "cdprocs.h"'
     ALLOW_FILES=( --allowlist-file '.*cdstruc\.h' --allowlist-file '.*cdprocs\.h' --allowlist-file '.*cdfs\.h' )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 )
+    ;;
+  partmgr)
+    # The partition manager (drivers/storage/partmgr). Driver-PRIVATE structs
+    # (FDO_EXTENSION, PARTITION_EXTENSION, BASIC_VOLUME_UNIQUE_ID,
+    # DISK_GEOMETRY_EX_INTERNAL) live in the driver's own partmgr.h — allowlist it.
+    # partmgr.h pulls mountdev.h / ntddvol.h / ntdddisk.h / ioevent.h; the
+    # MOUNTDEV_*, VOLUME_*, DISK_GEOMETRY/DRIVE_LAYOUT_INFORMATION_EX/
+    # PARTITION_INFORMATION_EX and DEVICE_EVENT_* types those define are NOT all in
+    # the shared ntkrnl-sys bindgen, so allowlist them too (blocklist keeps any that
+    # ARE shared on the single ddk identity). Version macros match the real partmgr
+    # compile command (WINVER/_WIN32_WINNT 0x502 + _WIN32_IE 0x603); NTDDI is forced
+    # to 0x05020400 (WS03SP1) for the same amd64 peb_teb.h ACTIVATION_CONTEXT_STACK
+    # reason as pcix.
+    DRIVER_DIR="${SRC}/drivers/storage/partmgr"
+    WRAPPER_INC=$'#include "partmgr.h"'
+    ALLOW_FILES=( --allowlist-file '.*partmgr[/\\]partmgr\.h' --allowlist-file '.*mountdev\.h'
+                  --allowlist-file '.*ntddvol\.h' --allowlist-file '.*ntdddisk\.h'
+                  --allowlist-file '.*ioevent\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
     ;;
   pcix)
     # The full MS-architecture PCI bus driver (drivers/bus/pcix). All driver-PRIVATE
