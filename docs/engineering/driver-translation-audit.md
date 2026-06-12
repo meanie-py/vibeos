@@ -33,7 +33,7 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **cdfs.sys** | drivers/filesystems/cdfs | 🟡 IN-FLIGHT (idle) | cdfs-rust | WDM CD filesystem. Branch `cdfs-port` (33 files committed + ~10 uncommitted grind). LiveCD read-stack leg. |
 | **cdrom.sys** | drivers/storage/class/cdrom | 🔴 BLOCKED (banked) | cdrom-rust | **KMDF** — see the storage read-stack section below. Banked on `cdrom-port`. |
 | **mountmgr.sys** | drivers/storage/mountmgr | 🟡 IN-FLIGHT (other agent) | — | Drive-letter/mount mgr (~9.4K LOC), boot-critical storage infra. Branch `mountmgr-port` (worktree active). |
-| **fs_rec.sys** | drivers/filesystems/fs_rec | 🟢 IN-FLIGHT | fs_rec-rust | FS recognizer (~2.8K LOC, 11 modular files), **boot-loaded** (Group "Boot File System", recognizer driver) → smoke-exercised. WDM, imports ntoskrnl+hal only. DeepSeek+c2rust, partmgr-twin recipe. |
+| **fs_rec.sys** | drivers/filesystems/fs_rec | ✅ LANDED (fsrec-port) | fs_rec-rust | FS recognizer (~2.8K LOC, 11 modular files), **boot-loaded** (Group "Boot File System", recognizer driver) → smoke-exercised. WDM, imports ntoskrnl+hal only. DeepSeek+c2rust (~$0.12, 11 files). cargo-clean ×3, links ×3, **smoke i386+amd64+arm64 all ✓ boot (desktop)**. Review: 0 active CRIT/HIGH (all 11 modules FAITHFUL). |
 | fastfat.sys | drivers/filesystems/fastfat | ⚪ not started | — | FAT FS (68.8K LOC). Boot media (USB/ramdisk). |
 
 **Helper libs (in `static-libs-translation-audit.md`):** csq-rust (Cancel-Safe

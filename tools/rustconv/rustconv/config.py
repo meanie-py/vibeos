@@ -59,6 +59,7 @@ ARBITER_DIR = REACTOS_ROOT / "sdk" / "lib" / "drivers" / "arbiter"
 PCIX_DIR = REACTOS_ROOT / "drivers" / "bus" / "pcix"
 DISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "disk"
 PARTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "partmgr"
+FS_REC_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fs_rec"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -471,6 +472,22 @@ TARGETS = {
         system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
         cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
     ),
+    # fs_rec.sys — the filesystem recognizer (drivers/filesystems/fs_rec, ~2.8K LOC,
+    # 11 modular files: one sniffer per FS type + blockdev + fs_rec main). WDM
+    # kernelmodedriver, BOOT-loaded (Group "Boot File System", recognizer driver →
+    # IoRegisterFileSystem), so it IS smoke-exercised (like partmgr). All private
+    # structs (PACKED_BOOT_SECTOR, BIOS_PARAMETER_BLOCK, TAG/EXTENT/AVDP,
+    # FILE_SYSTEM_TYPE, DEVICE_EXTENSION + per-FS on-disk superblocks) live in the
+    # driver's own fs_rec.h + the 6 per-FS headers (btrfs/cdfs/ext/ffs/reiserfs/udfs.h)
+    # → gen_driver_types.sh substrate (crate::types). Kernel/FsRtl/Io types from
+    # ntkrnl-sys ddk. Imports ntoskrnl+hal only.
+    "fs_rec": Target(
+        name="fs_rec", source_dir=FS_REC_DIR,
+        output_crate=RUST_DIR / "fs_rec-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -786,6 +803,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["disk"]
     if "/drivers/storage/partmgr" in posix:
         return TARGETS["partmgr"]
+    if "/drivers/filesystems/fs_rec" in posix:
+        return TARGETS["fs_rec"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

@@ -123,6 +123,7 @@ members = [
     "pci-rust",
     "pcix-rust",
     "partmgr-rust",
+    "fs_rec-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",
