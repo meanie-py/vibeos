@@ -156,9 +156,29 @@ const NON_PAGED_POOL_NX: POOL_TYPE = 0x200; // placeholder NonPagedPoolNx
 const TAG_VCB_STATS: u32 = 0x74756E6B; // placeholder
 const TAG_VPB: u32 = 0x70627661; // placeholder
 
-unsafe extern "C" {
-    #[no_mangle]
-    pub unsafe extern "C" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) ;
+// ==== recovered (stitcher-drop): FatFreeStringBuffer ====
+#[no_mangle]
+pub unsafe extern "C" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) {
+    extern "system" {
+        fn PAGED_CODE();
+    }
+    let mut High: usize = 0;
+    let mut Low: usize = 0;
+    let LocalString: *mut STRING = String as *mut STRING;
+
+    PAGED_CODE();
+
+    if !(*LocalString).Buffer.is_null() {
+        IoGetStackLimits(core::ptr::addr_of_mut!(Low), core::ptr::addr_of_mut!(High));
+        let buffer_addr: usize = (*LocalString).Buffer as usize;
+        if buffer_addr < Low || buffer_addr > High {
+            ExFreePool((*LocalString).Buffer as *mut core::ffi::c_void);
+        }
+        (*LocalString).Buffer = core::ptr::null_mut();
+    }
+
+    (*LocalString).MaximumLength = 0;
+    (*LocalString).Length = 0;
 }
 
 const TAG_DYNAMIC_NAME_BUFFER: u32 = 0x42796e44; // TAG('D','n','y','B')
