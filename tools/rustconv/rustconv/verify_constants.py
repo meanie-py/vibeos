@@ -63,9 +63,43 @@ def parse_ntstatus_cast(s: str) -> int | None:
     return None
 
 
-def build_c_catalog(reactos_root: Path) -> dict[str, int]:
-    """Build name→value mapping from C headers."""
-    catalog = {}
+def _ingest_header(catalog: dict[str, int], conflicts: dict[str, set], text: str):
+    """Parse #define integer constants from one header's text into catalog (first-wins)."""
+    define_re = re.compile(r'^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$')
+    for line in text.splitlines():
+        m = define_re.match(line.strip())
+        if not m:
+            continue
+        name, expr = m.group(1), m.group(2).strip()
+
+        val = parse_c_hex(expr)
+        if val is None:
+            val = parse_c_multichar(expr)
+        if val is None:
+            val = parse_ntstatus_cast(expr)
+        if val is None:
+            continue
+
+        if name in catalog and catalog[name] != val:
+            # Same name, different value across headers (usually arch-conditional).
+            # Keep first-seen but remember the collision so we never auto-fix it.
+            conflicts.setdefault(name, {catalog[name]}).add(val)
+            continue
+        catalog.setdefault(name, val)
+
+
+def build_c_catalog(reactos_root: Path, extra_headers: list[Path] | None = None,
+                    conflicts: dict[str, set] | None = None) -> dict[str, int]:
+    """Build name→value mapping from C headers.
+
+    The curated base list is the authoritative kernel set. `extra_headers` (files
+    or directories, dirs globbed *.h recursively) layer driver-private headers on
+    top — used to give a driver crate's own constants (node types, pool tags,
+    debug levels) real values so the linter can catch fabricated ones.
+    """
+    catalog: dict[str, int] = {}
+    if conflicts is None:
+        conflicts = {}
 
     header_files = [
         reactos_root / 'sdk/include/xdk/iotypes.h',
@@ -78,34 +112,18 @@ def build_c_catalog(reactos_root: Path) -> dict[str, int]:
         reactos_root / 'sdk/include/reactos/drivers/ntddrdsk.h',
     ]
 
-    define_re = re.compile(r'^#define\s+([A-Z_][A-Z0-9_]*)\s+(.+?)(?:\s*//.*)?$')
+    # Expand extra header args (files or directories) into a flat file list.
+    extra_files: list[Path] = []
+    for p in (extra_headers or []):
+        if p.is_dir():
+            extra_files += sorted(p.rglob('*.h'))
+        elif p.exists():
+            extra_files.append(p)
 
-    for hfile in header_files:
+    for hfile in header_files + extra_files:
         if not hfile.exists():
             continue
-        for line in hfile.read_text(errors='replace').splitlines():
-            m = define_re.match(line.strip())
-            if not m:
-                continue
-            name, expr = m.group(1), m.group(2).strip()
-
-            # Try hex/decimal
-            val = parse_c_hex(expr)
-            if val is not None:
-                catalog[name] = val
-                continue
-
-            # Try multi-char literal
-            val = parse_c_multichar(expr)
-            if val is not None:
-                catalog[name] = val
-                continue
-
-            # Try NTSTATUS cast
-            val = parse_ntstatus_cast(expr)
-            if val is not None:
-                catalog[name] = val
-                continue
+        _ingest_header(catalog, conflicts, hfile.read_text(errors='replace'))
 
     return catalog
 
@@ -114,8 +132,8 @@ def build_c_catalog(reactos_root: Path) -> dict[str, int]:
 
 def parse_rust_const(line: str) -> tuple[str, int] | None:
     """Parse a Rust const definition, return (name, value) or None."""
-    # Pattern: const NAME: TYPE = VALUE;
-    m = re.match(r'const\s+([A-Z_][A-Z0-9_]*)\s*:\s*\w+\s*=\s*(.+?)\s*;', line.strip())
+    # Pattern: [pub] const NAME: TYPE = VALUE;  (DeepSeek driver consts are `pub const`)
+    m = re.match(r'(?:pub\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*:\s*\w+\s*=\s*(.+?)\s*;', line.strip())
     if not m:
         return None
     name, expr = m.group(1), m.group(2).strip()
@@ -156,8 +174,10 @@ def parse_rust_const(line: str) -> tuple[str, int] | None:
 
 def fix_const_line(line: str, name: str, c_val: int) -> str:
     """Rewrite a const definition line with the correct C value."""
-    # Match the const pattern and replace the value
-    m = re.match(r'(const\s+' + re.escape(name) + r'\s*:\s*\w+\s*=\s*)(.+?)(;.*)', line.rstrip())
+    # Match the const pattern and replace the value. Leading whitespace must be
+    # part of the prefix — parse_rust_const strips before matching, so fn-local
+    # (indented) consts get reported; without \s* here they'd silently no-op.
+    m = re.match(r'(\s*(?:pub\s+)?const\s+' + re.escape(name) + r'\s*:\s*\w+\s*=\s*)(.+?)(;.*)', line.rstrip())
     if not m:
         return line
     prefix, _old_val, suffix = m.group(1), m.group(2), m.group(3)
@@ -185,15 +205,32 @@ ARCH_DEPENDENT_CONSTANTS = {
 }
 
 
-def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> list[dict]:
-    """Verify constants in a single Rust file. Returns list of mismatches."""
+def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False,
+                conflicts: dict[str, set] | None = None,
+                report_unverifiable: bool = False,
+                skip: set | None = None) -> list[dict]:
+    """Verify constants in a single Rust file. Returns list of mismatches.
+
+    A mismatch dict has kind='mismatch' (value disagrees with the C header) or,
+    when report_unverifiable is set, kind='unverifiable' (an ALL_CAPS const not
+    found in ANY header — a candidate fabrication a human/agent must eyeball).
+    """
     mismatches = []
+    conflicts = conflicts or {}
+    skip = skip or set()
     lines = rs_path.read_text().splitlines()
     modified = False
+    unver_re = re.compile(r'^\s*(?:pub\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*:')
 
     for lineno, line in enumerate(lines, 1):
         parsed = parse_rust_const(line)
         if not parsed:
+            if report_unverifiable:
+                um = unver_re.match(line)
+                if um and um.group(1) not in catalog:
+                    mismatches.append({'kind': 'unverifiable', 'file': str(rs_path),
+                                       'line': lineno, 'name': um.group(1),
+                                       'rust_val': '?', 'c_val': 'not-in-headers'})
             continue
         name, rust_val = parsed
 
@@ -204,15 +241,23 @@ def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> li
             c_val = catalog[name]
             if rust_val != c_val:
                 mismatches.append({
+                    'kind': 'mismatch',
                     'file': str(rs_path),
                     'line': lineno,
                     'name': name,
                     'rust_val': f'0x{rust_val:08X}',
                     'c_val': f'0x{c_val:08X}',
                 })
-                if fix:
+                # Never auto-fix a const with conflicting per-header values (can't
+                # know the right arch variant) or one the caller flagged --skip
+                # (a name-collision with a distinct module-local of the same name).
+                if fix and name not in conflicts and name not in skip:
                     lines[lineno - 1] = fix_const_line(line, name, c_val)
                     modified = True
+        elif report_unverifiable:
+            mismatches.append({'kind': 'unverifiable', 'file': str(rs_path),
+                               'line': lineno, 'name': name,
+                               'rust_val': f'0x{rust_val:08X}', 'c_val': 'not-in-headers'})
 
     if fix and modified:
         rs_path.write_text('\n'.join(lines) + '\n')
@@ -223,39 +268,69 @@ def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> li
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Verify Rust constants against C headers')
-    parser.add_argument('files', nargs='*', help='Rust files to check (default: all)')
-    parser.add_argument('--fix', action='store_true', help='Auto-fix mismatches')
+    parser.add_argument('files', nargs='*', help='Rust files/dirs to check (default: ntoskrnl-rust)')
+    parser.add_argument('--fix', action='store_true', help='Auto-fix value mismatches')
+    parser.add_argument('--extra-headers', nargs='*', default=[], metavar='PATH',
+                        help='Driver-private header files or dirs to add to the catalog '
+                             '(dirs globbed *.h). Use for driver-crate consts.')
+    parser.add_argument('--unverifiable', action='store_true',
+                        help='Also report ALL_CAPS consts not found in ANY header '
+                             '(candidate fabrications to eyeball)')
+    parser.add_argument('--skip', nargs='*', default=[], metavar='NAME',
+                        help='Const names to report but NEVER auto-fix (name-collisions '
+                             'with a distinct module-local of the same name)')
     args = parser.parse_args()
+    skip = set(args.skip)
 
     reactos_root = Path(__file__).parent.parent.parent.parent  # tools/rustconv → reactos/
 
-    catalog = build_c_catalog(reactos_root)
-    print(f"C catalog: {len(catalog)} constants from headers")
+    conflicts: dict[str, set] = {}
+    catalog = build_c_catalog(reactos_root,
+                              extra_headers=[Path(p) for p in args.extra_headers],
+                              conflicts=conflicts)
+    print(f"C catalog: {len(catalog)} constants from headers "
+          f"({len(conflicts)} arch-conflicting, won't auto-fix)"
+          + (f" + extra: {', '.join(args.extra_headers)}" if args.extra_headers else ""))
 
+    # Expand file args; directories are globbed for *.rs.
+    rs_files: list[Path] = []
     if args.files:
-        rs_files = [Path(f) for f in args.files]
+        for f in args.files:
+            p = Path(f)
+            rs_files += sorted(p.rglob('*.rs')) if p.is_dir() else [p]
     else:
-        rs_files = sorted(
-            (reactos_root / 'sdk/lib/rust/ntoskrnl-rust/src').rglob('*.rs')
-        )
+        rs_files = sorted((reactos_root / 'sdk/lib/rust/ntoskrnl-rust/src').rglob('*.rs'))
 
     total_mismatches = 0
+    total_unver = 0
     files_fixed = 0
     for rs_file in rs_files:
-        mismatches = verify_file(rs_file, catalog, fix=args.fix)
-        if mismatches:
-            for m in mismatches:
-                action = "FIXED" if args.fix else "MISMATCH"
-                print(f"  {action}: {m['file']}:{m['line']}: {m['name']}: "
-                      f"Rust={m['rust_val']} → C={m['c_val']}")
-            total_mismatches += len(mismatches)
-            if args.fix:
-                files_fixed += 1
+        results = verify_file(rs_file, catalog, fix=args.fix, conflicts=conflicts,
+                              report_unverifiable=args.unverifiable, skip=skip)
+        fixed_this = False
+        for m in results:
+            if m['kind'] == 'unverifiable':
+                total_unver += 1
+                print(f"  UNVERIFIABLE: {m['file']}:{m['line']}: {m['name']}: "
+                      f"{m['rust_val']} (not in any header)")
+                continue
+            unfixable = m['name'] in conflicts or m['name'] in skip
+            action = "FIXED" if (args.fix and not unfixable) else "MISMATCH"
+            note = ("  [arch-conflict: manual]" if m['name'] in conflicts
+                    else "  [--skip: manual]" if m['name'] in skip else "")
+            print(f"  {action}: {m['file']}:{m['line']}: {m['name']}: "
+                  f"Rust={m['rust_val']} → C={m['c_val']}{note}")
+            total_mismatches += 1
+            fixed_this = fixed_this or (args.fix and not unfixable)
+        if fixed_this:
+            files_fixed += 1
 
     if args.fix:
-        print(f"\nFixed {total_mismatches} constants in {files_fixed} files")
+        print(f"\nFixed {total_mismatches} value mismatches in {files_fixed} files")
     else:
-        print(f"\n{total_mismatches} mismatches found across {len(rs_files)} files")
+        print(f"\n{total_mismatches} value mismatches across {len(rs_files)} files")
+    if args.unverifiable:
+        print(f"{total_unver} unverifiable consts (not found in any header)")
     return 1 if total_mismatches > 0 and not args.fix else 0
 
 

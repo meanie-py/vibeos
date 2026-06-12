@@ -75,9 +75,9 @@ pub static mut DetectInfoUsedCount: LONG = 0;
 
 const APC_LEVEL: u32 = 1;
 
-const SL_OVERRIDE_VERIFY_VOLUME: i32 = 0x01;
+const SL_OVERRIDE_VERIFY_VOLUME: i32 = 0x02;
 const NonPagedPool: i32 = 0;
-const DISK_TAG_UPDATE_GEOM: u32 = 0x00000000; // placeholder
+const DISK_TAG_UPDATE_GEOM: u32 = 0x67446353; // placeholder
 const PARTITION_EXTENDED: u8 = 0x05;
 const PARTITION_XINT13_EXTENDED: u8 = 0x0F;
 const PARTITION_LDM: u8 = 0x42;
@@ -675,8 +675,8 @@ pub unsafe extern "system" fn DiskSaveBusDetectInfo(
 
     const APC_LEVEL: u8 = 1;
     const TRACE_FLAG_GENERAL: i32 = 1;
-    const VALUE_BUFFER_SIZE: usize = 512; // placeholder - adjust if needed
-    const DISK_TAG_UPDATE_GEOM: u32 = 0x706D7544; // example tag
+    const VALUE_BUFFER_SIZE: usize = 0x0800; // placeholder - adjust if needed
+    const DISK_TAG_UPDATE_GEOM: u32 = 0x67446353; // example tag
 
     let mut diskInfo: *mut DISK_DETECT_INFO = core::ptr::null_mut();
     let mut unicodeString: _UNICODE_STRING = _UNICODE_STRING {

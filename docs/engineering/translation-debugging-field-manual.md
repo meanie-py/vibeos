@@ -327,6 +327,35 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Fix / oracle:** after integrating any grinder output run all three checks: (1) re-derive every `STATUS_*`/facility const from the real header into the `-sys` crate as the source of truth (`0x....u32 as i32` for bit-31 values), delete local fabrications; cross-check with `verify_constants.py` + a Sonnet-vs-C review tier (earns its keep on constant-dense code). (2) `grep -c "unreachable pattern"` in the cargo build — **must be 0**; define the missing consts matching the scrutinee type (HID item tags are a 4-bit nibble 0x8/0x9/0xa/0xb/0xc — the grinder's 0x80/0x90 were wrong). (3) recover dropped bodies from `tools/rustconv/.responses/` (durable bank) and hand-translate (watch for faithful C quirks like an early-return path that doesn't write outputs). Mechanical mode also declares all externs `extern "C"` → NTAPI imports break i386 link; the ABI sweep (`extern "system"` for NTAPI, inline DDK helpers from `ntkrnl_sys::inline::tier1` not `ddk`) is the engineer's job, forbidden to the grinder.
 **Source:** `project_driver_residue_track.md`, `feedback_undefined_const_in_match_silent_binding.md`
 
+### Constant linter as a mandatory driver-crate gate (verify_constants.py, now driver-aware)
+**Symptom:** A DeepSeek/c2rust driver grind cargo-checks AND boots green, but carries
+fabricated `#define` values on paths the smoke window never exercises (SCSI passthrough,
+mount-notify, remote-DB, IOCTL tails). c2rust does NOT save you here — the hallucination is
+in the hand-written `pub const` glue, not the transpiled bodies. These ship silently and bite
+later: e.g. `STATUS_MORE_PROCESSING_REQUIRED=0x103` (=PENDING, not `0xC0000016`) wrong-returned
+from a completion routine; `IRP_MJ_SCSI=0x0B` (=FLUSH, not `0x0F`) → SCSI passthrough mis-dispatch;
+`FILE_OPEN_BY_FILE_ID=0x200` not `0x2000`; `VALUE_BUFFER_SIZE=512` not 2048 (undersized buffer).
+**Oracle:** `verify_constants.py` is now driver-crate-aware — run it on EVERY driver crate before
+and after landing, with the driver's own C dir as the extra catalog:
+```
+python3 tools/rustconv/rustconv/verify_constants.py sdk/lib/rust/<drv>-rust/src \
+    --extra-headers drivers/<...>/<drv> [--skip <collision-names>] [--fix]
+```
+It parses `pub const NAME: T = V;` (not just bare `const`), globs `--extra-headers` dirs for the
+driver-private `#define`s (pool tags, node types, IO flags), and is conflict-aware (won't auto-fix
+a name with arch-divergent header values). One run across the 5 landed DeepSeek crates found
+**19 real fabrications in disk + mountmgr** (boot drivers), 0 in the harvest_consts-built crates
+(partmgr/fs_rec/pcix) — proof the gate belongs in the pipeline, not just at first-translate.
+**Two traps learned wiring it:** (a) the `--fix` regex anchored after `rstrip()` only, so it
+silently no-op'd fn-local (INDENTED) consts while printing "FIXED" — fixed to capture leading
+whitespace; always re-run the linter after `--fix` to confirm `0 mismatches`, don't trust the
+FIXED count. (b) Name-collisions are real false positives: mountmgr has a module-local
+`LETTER_POSITION: isize = 4` (a `\??\C:` offset) distinct from the bindgen `LETTER_POSITION = 12`
+(`\DosDevices\C:` offset) — `--fix` would wrongly rewrite it. Use `--skip NAME` to report-not-fix
+those. `--unverifiable` (ALL_CAPS const not in ANY header) is too noisy to gate on (~4k hits);
+opt-in investigative only.
+**Source:** [[feedback_llm_invented_enum_constants]], [[project_disk_rust_track]], [[project_mountmgr_rust_track]]
+
 ### rustconv drops ALL non-fn header content at scale (structs / const-tables / #defines / FuncTables)
 **Symptom:** A bulk `translate` of a unit compiles per-function but is missing every file-local struct, const lookup table, `#define`, and static FuncTable — E0425/E0412 undefined-name storms, or worse, silent wrong behavior from a missing default table.
 **Root cause:** rustconv translates function bodies only; the scanner's preamble captures the .c's top-of-file but `translate`'s stitcher never emits `scan.globals_text` — file-local typedefs/structs/`#define`-consts/`const DEVVTBL` FuncTables/static arrays are dropped entirely. (FreeLDR fs unit: bootsector/dirent/volume-info structs + const DEVVTBL tables + #defines all gone.)

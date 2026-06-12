@@ -75,7 +75,7 @@ const FALSE: u8 = 0;
 
 const EventCategoryTargetDeviceChange: u32 = 2; // assumed from DDK, matches 0x2
 
-const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0x00000103;
+const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016_u32 as i32;
 
 const IO_NO_INCREMENT: i32 = 0;
 #[no_mangle]

@@ -286,7 +286,7 @@ const STOR_ADDRESS_TYPE_BTL8: u16 = 0;
 const STOR_ADDR_BTL8_ADDRESS_LENGTH: u32 = 0xC;
 const SMART_CYL_LOW: u8 = 0x4F;
 const SMART_CYL_HI: u8 = 0xC2;
-const IRP_MJ_SCSI: u32 = 0x0B;
+const IRP_MJ_SCSI: u32 = 0x0F;
 
 const IOCTL_STORAGE_PREDICT_FAILURE: u32 = 0x2D14C0;
 
@@ -1753,7 +1753,7 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     const MAXIMUM_RETRIES: u32 = 3;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = (0xC000018Eu32 as i32);
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = (0xC0000185u32 as i32);
-    const IRP_MJ_SCSI: u8 = 0x0B;
+    const IRP_MJ_SCSI: u8 = 0x0F;
     const MODE_PAGE_FAULT_REPORTING: u8 = 0x1C;
     const TRACE_LEVEL_INFORMATION: u32 = 4;
     const TRACE_LEVEL_WARNING: u32 = 3;

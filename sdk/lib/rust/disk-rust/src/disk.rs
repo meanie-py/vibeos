@@ -585,8 +585,8 @@ const MODE_DSP_WRITE_PROTECT: i32 = 0x80;
 const SCSI_REQUEST_BLOCK_SIZE: ULONG = 0x58;
 
 
-const DISK_TAG_SRB: ULONG = 0x62725344;
-const DISK_TAG_MODE_DATA: ULONG = 0x616D6F44;
+const DISK_TAG_SRB: ULONG = 0x53446353;
+const DISK_TAG_MODE_DATA: ULONG = 0x4D446353;
 
 const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = (0xC0000013u32 as i32);
 
@@ -2239,7 +2239,7 @@ pub unsafe extern "C" fn DiskModeSelect(
     const TRACE_LEVEL_ERROR: u32 = 2;
     const TRACE_FLAG_IOCTL: u32 = 0x80;          // placeholder
     const NON_PAGED_POOL_NX_CACHE_ALIGNED: u32 = 0x20; // NonPagedPoolNxCacheAligned placeholder
-    const DISK_TAG_MODE_DATA: u32 = 0x4D4F4445;         // 'MODE' placeholder
+    const DISK_TAG_MODE_DATA: u32 = 0x4D446353;         // 'MODE' placeholder
     const SRB_TYPE_STORAGE_REQUEST_BLOCK: u32 = 8;     // typical
     const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: u8 = 0xF0; // placeholder
     const SRB_SIGNATURE: u32 = 0x53524254;              // 'SRBT'
@@ -10979,7 +10979,7 @@ pub unsafe extern "C" fn DiskIoctlPredictFailure(
     // Placeholder definitions: these must be overridden by the environment.
     const APC_LEVEL: KIRQL = 1;
     const DISPATCH_LEVEL: KIRQL = 2;
-    const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000008u32 as NTSTATUS;
+    const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148_u32 as i32;
     const FailurePredictionSense: i32 = 1; // placeholder
     const FailurePredictionSmart: i32 = 2; // placeholder
     const TRACE_FLAG_IOCTL: u32 = 0; // placeholder
@@ -12675,7 +12675,7 @@ pub unsafe extern "C" fn DiskIoctlVerify(
         }
     }
 
-    const DISK_TAG_WI_CONTEXT: u32 = 0x49736944; // 'DisI'
+    const DISK_TAG_WI_CONTEXT: u32 = 0x57446353; // 'DisI'
     Context = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<DISK_VERIFY_WORKITEM_CONTEXT>() as SIZE_T,
