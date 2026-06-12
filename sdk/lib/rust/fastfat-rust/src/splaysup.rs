@@ -3,6 +3,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{PRTL_SPLAY_LINKS, PSTRING, RtlCompareMemory, RtlDelete, RtlFreeOemString, RtlFreeUnicodeString, RtlSplay};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FAT_BUG_CHECK_SPLAYSUP, FCB, FILE_NAME_NODE, PDCB, PFCB, PFILE_NAME_NODE, PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS, _RTL_SPLAY_LINKS};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_SPLAYSUP};
 
 extern "C" {
     fn KeGetCurrentIrql() -> u32;

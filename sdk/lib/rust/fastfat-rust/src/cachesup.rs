@@ -10,6 +10,11 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::LARGE_INTEGER;
 use ntkrnl_sys::ddk::{CACHE_UNINITIALIZE_EVENT, CcFlushCache, CcGetFileObjectFromBcb, CcInitializeCacheMap, CcMapData, CcMdlReadComplete, CcMdlWriteComplete, CcPinMappedData, CcPinRead, CcPurgeCacheSection, CcRepinBcb, CcSetAdditionalCacheAttributes, CcSetFileSizes, CcUninitializeCacheMap, CcUnpinRepinnedBcb, CcZeroData, DirectoryFile, ExFreePool, _KWAIT_REASON_Executive, FILE_SEGMENT_ELEMENT, _IO_STATUS_BLOCK, IoCreateStreamFileObject, IoSetHardErrorOrVerifyDevice, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, MM_PREFETCH_FLAGS, MmPrefetchPages, PCACHE_MANAGER_CALLBACKS, PCC_FILE_SIZES, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PNTSTATUS, PREAD_LIST, READ_LIST, _EVENT_TYPE_SynchronizationEvent};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, DCB, FAT_BUG_CHECK_CACHESUP, FCB, FatLargeZero, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_RAISE, PBCB, PDCB, PIRP_CONTEXT, PVCB, VBO, VCB, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
+use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, DEVICE_OBJECT, ERESOURCE, FILE_OBJECT, IO_STACK_LOCATION, IRP, _PUBLIC_BCB as BCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 
 extern "C" {
     static mut FatDisableParentCheck: i32;

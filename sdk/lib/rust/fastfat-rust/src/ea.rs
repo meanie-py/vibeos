@@ -3,6 +3,9 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, _IO_STATUS_BLOCK, IoSetTopLevelIrp, PFILE_GET_EA_INFORMATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, IRP_CONTEXT, PACKED_EA, PIRP_CONTEXT, VOLUME_DEVICE_OBJECT};
+use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, FILE_GET_EA_INFORMATION, IRP};
 
 extern "C" {
     fn PAGED_CODE();

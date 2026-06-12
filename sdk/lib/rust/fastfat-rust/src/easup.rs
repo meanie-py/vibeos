@@ -6,6 +6,11 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcCopyWrite, CcPinRead, CcPurgeCacheSection, CcSetDirtyPinnedData, CcSetFileSizes, CcUnpinData, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExFreePool, ExReleaseResourceLite, _IO_STATUS_BLOCK, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PCC_FILE_SIZES, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, POEM_STRING, RtlCompareString};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{DCB, DIRENT, EA_BCB_ARRAY_SIZE, EA_FILE_HEADER, EA_OFF_TABLE, EA_RANGE, EA_SET_HEADER, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_WAIT, PACKED_EA, PBCB, PDIRENT, PEA_RANGE, PFCB, PIRP_CONTEXT, PVCB, VCB};
+use ntkrnl_sys::ddk::{CC_FILE_SIZES, FILE_FULL_EA_INFORMATION, FILE_OBJECT, _PUBLIC_BCB as BCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{TAG_EA_DATA};
 
 extern "C" {
     fn DebugTrace(severity: i32, component: u32, format: *const i8, ...);

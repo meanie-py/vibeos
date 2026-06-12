@@ -12,6 +12,11 @@ use ntkrnl_sys::ddk::{CriticalWorkQueue, ExFreePool, ExInterlockedAddUlong, ExQu
 use ntkrnl_sys::ddk::{IoAllocateMdl, IoBuildPartialMdl, IoFreeIrp, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoMakeAssociatedIrp, IoSetCompletionRoutine, IoSetNextIrpStackLocation, PIRP, PDEVICE_OBJECT, PIO_STACK_LOCATION, PMDL, PVCB, PIRP_CONTEXT, PIO_RUN, PFAT_IO_CONTEXT};
 use core::ffi::c_void;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CLEAN_AND_DIRTY_VOLUME_PACKET, FAT_BUG_CHECK_DEVIOSUP, FAT_DATA, FAT_RESERVE_MDL_SIZE, FCB, FCB_STATE_PAGING_FILE, FatReserveEvent, FatReserveMdl, IRP_CONTEXT_FLAG_USER_IO, LBO, PFCB, VCB_STATE_FLAG_REMOVAL_PREVENTED, VOLUME_DEVICE_OBJECT};
+use ntkrnl_sys::ddk::{KPROCESSOR_MODE, LOCK_OPERATION};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_DEVIOSUP, STATUS_FILE_CORRUPT_ERROR, STATUS_MORE_PROCESSING_REQUIRED};
 
 extern "C" {
     static mut FatIoCallDriverCount: u32;

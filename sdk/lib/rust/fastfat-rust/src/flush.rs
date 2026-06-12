@@ -5,6 +5,12 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{CcFlushCache, DRIVER_DISPATCH, DirectoryFile, ExAcquireResourceExclusiveLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, DCB, DIRENT, FAT_BUG_CHECK_FLUSH, FCB, FatDiskAccountingEnabled, PDIRENT, VCB, VCB_STATE_FLAG_WRITE_PROTECTED};
+use crate::verfysup::{FatMarkFcbCondition};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP, _ETHREAD, _PUBLIC_BCB as BCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_FLUSH};
 
 extern "C" {
     fn FlagOn(Flags: u32, Mask: u32) -> i32;

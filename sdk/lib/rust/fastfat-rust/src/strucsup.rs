@@ -13,6 +13,11 @@ use core::mem::size_of;
 use core::ptr::{addr_of, addr_of_mut, copy_nonoverlapping, null_mut};
 use core::ptr::{addr_of, addr_of_mut, null_mut, write_bytes};
 use core::ptr;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, CLOSE_CONTEXT, DCB, DIRENT, FAT_BUG_CHECK_STRUCSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, FCB_STATE_HAS_OEM_LONG_NAME, FCB_STATE_HAS_UNICODE_LONG_NAME, FCB_STATE_PAGING_FILE, FCB_STATE_SYSTEM_FILE, FILE_SYSTEM_STATISTICS, FatCloseContextSList, FatEResourceLookasideList, FatIrpContextLookasideList, FatNonPagedFcbLookasideList, IRP_CONTEXT, IRP_CONTEXT_STACK_IO_CONTEXT, NON_PAGED_FCB, PACKED_BOOT_SECTOR, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_CONDITION, VCB_STATE_FLAG_LOCKED, VOLUME_DEVICE_OBJECT};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FAST_MUTEX, FILE_LOCK, FILE_OBJECT, FSRTL_ADVANCED_FCB_HEADER, IO_STACK_LOCATION, IRP, KDPC, LARGE_MCB, NPAGED_LOOKASIDE_LIST, OPLOCK, STRING, _CREATE_FILE_TYPE as FILE_TYPE, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{FSRTL_FLAG2_IS_PAGING_FILE, FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS, TAG_CCB, TAG_FILENAME_BUFFER};
 
 extern "C" {
     fn PAGED_CODE();

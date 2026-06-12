@@ -3,6 +3,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{DirectoryFile, MmFlushForWrite, PFILE_OBJECT, PSECTION_OBJECT_POINTERS};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, FAT_BUG_CHECK_FILOBSUP, FAT_DIRENT_ATTR_VOLUME_ID, FCB, IRP_CONTEXT, VCB, _TYPE_OF_OPEN as TYPE_OF_OPEN};
+use ntkrnl_sys::ddk::{FILE_OBJECT, SECTION_OBJECT_POINTERS};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_FILOBSUP};
 
 extern "C" {
     fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...);

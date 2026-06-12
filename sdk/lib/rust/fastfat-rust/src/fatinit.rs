@@ -9,6 +9,27 @@ use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DRIVER_INITIALIZE, DRIVER_UNLOAD, ERESOURCE, ExDeleteNPagedLookasideList, ExDeleteResourceLite, ExInitializeFastMutex, ExInitializeNPagedLookasideList, ExInitializeResourceLite, FAST_IO_DISPATCH, FS_FILTER_CALLBACKS, IoAllocateWorkItem, IoCreateDevice, IoDeleteDevice, IoFreeWorkItem, IoRegisterFileSystem, KeInitializeEvent, KeInitializeSpinLock, KeyValueFullInformation, MmQuerySystemSize, _OBJECT_ATTRIBUTES, PDRIVER_DISPATCH, PDRIVER_OBJECT, PKEY_VALUE_FULL_INFORMATION, PUNICODE_STRING, RtlInitUnicodeString, _EVENT_TYPE_SynchronizationEvent};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cleanup::{FatFsdCleanup};
+use crate::close::{FatFsdClose};
+use crate::create::{FatFsdCreate};
+use crate::devctrl::{FatFsdDeviceControl};
+use crate::dirctrl::{FatFsdDirectoryControl};
+use crate::ea::{FatFsdSetEa};
+use crate::fatdata::{FatFastIoCheckIfPossible, FatFastQueryBasicInfo, FatFastQueryNetworkOpenInfo, FatFastQueryStdInfo};
+use crate::fileinfo::{FatFsdSetInformation};
+use crate::flush::{FatFsdFlushBuffers};
+use crate::lockctrl::{FatFastLock, FatFastUnlockAll, FatFastUnlockAllByKey, FatFastUnlockSingle, FatFsdLockControl};
+use crate::pnp::{FatFsdPnp};
+use crate::read::{FatFsdRead};
+use crate::resrcsup::{FatAcquireFcbForLazyWrite, FatAcquireFcbForReadAhead, FatAcquireForCcFlush, FatFilterCallbackAcquireForCreateSection, FatNoOpAcquire, FatNoOpRelease, FatReleaseFcbFromLazyWrite, FatReleaseFcbFromReadAhead, FatReleaseForCcFlush};
+use crate::shutdown::{FatFsdShutdown};
+use crate::types::{FAT_DATA, FatCdromFileSystemDeviceObject, FatCloseContextSList, FatCloseQueueMutex, FatData, FatDiskFileSystemDeviceObject, FatEResourceLookasideList, FatFastIoDispatch, FatIrpContextLookasideList, FatMaxDelayedCloseCount, FatNonPagedFcbLookasideList, FatReserveEvent, IRP_CONTEXT, NODE_BYTE_SIZE, NON_PAGED_FCB, PVOLUME_DEVICE_OBJECT};
+use crate::volinfo::{FatFsdSetVolumeInformation};
+use crate::write::{FatFsdWrite};
+use ntkrnl_sys::ddk::{KEY_VALUE_FULL_INFORMATION, PACQUIRE_FOR_LAZY_WRITE, PACQUIRE_FOR_READ_AHEAD, PDEVICE_OBJECT, PFAST_IO_ACQUIRE_FOR_CCFLUSH, PFAST_IO_CHECK_IF_POSSIBLE, PFAST_IO_LOCK, PFAST_IO_MDL_READ, PFAST_IO_MDL_READ_COMPLETE, PFAST_IO_MDL_WRITE_COMPLETE, PFAST_IO_PREPARE_MDL_WRITE, PFAST_IO_QUERY_BASIC_INFO, PFAST_IO_QUERY_NETWORK_OPEN_INFO, PFAST_IO_QUERY_STANDARD_INFO, PFAST_IO_READ, PFAST_IO_RELEASE_FOR_CCFLUSH, PFAST_IO_UNLOCK_ALL, PFAST_IO_UNLOCK_ALL_BY_KEY, PFAST_IO_UNLOCK_SINGLE, PFAST_IO_WRITE, PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PFS_FILTER_CALLBACK, PFS_FILTER_CALLBACK_DATA, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PMDL, PRELEASE_FROM_LAZY_WRITE, PRELEASE_FROM_READ_AHEAD, _DRIVER_OBJECT, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{FAT_MAX_DELAYED_CLOSES, FAT_NTC_DATA_HEADER, IRP_MJ_DIRECTORY_CONTROL, IRP_MJ_QUERY_EA, IRP_MJ_QUERY_VOLUME_INFORMATION, IRP_MJ_SET_EA, IRP_MJ_SET_VOLUME_INFORMATION, TAG_ERESOURCE, TAG_FCB_NONPAGED, TAG_IRP_CONTEXT};
 
 extern "C" {
     fn ExInitializeSListHead(SListHead: *mut SLIST_HEADER);

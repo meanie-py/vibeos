@@ -3,6 +3,9 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{ExLocalTimeToSystemTime, ExSystemTimeToLocalTime, LARGE_INTEGER, PLARGE_INTEGER, RtlTimeFieldsToTime, RtlTimeToTimeFields, TIME_FIELDS};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FAT_DATE, FAT_TIME_STAMP, PFAT_TIME_STAMP, PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{CSHORT, PCSTR};
 
 extern "C" {
     fn KeGetCurrentIrql() -> KIRQL;

@@ -8,6 +8,11 @@ use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcUninitializeCacheMap, CriticalWorkQueue, DRIVER_DISPATCH, DirectoryFile, ExAcquireResourceExclusiveLite, ExFreePool, ExGetExclusiveWaiterCount, ExGetSharedWaiterCount, ExReleaseResourceLite, IO_WORKITEM_ROUTINE, IoGetCurrentIrpStackLocation, IoQueueWorkItem, IoSetTopLevelIrp, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, CLOSE_CONTEXT, FCB, FatCloseQueueMutex, IRP_CONTEXT, IRP_CONTEXT_FLAG_WAIT, PDCB, VCB, VCB_STATE_FLAG_CLOSE_IN_PROGRESS, VCB_STATE_FLAG_CREATE_IN_PROGRESS, VCB_STATE_FLAG_DELETED_FCB, VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _VCB_CONDITION_VcbGood as VcbGood};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FAST_MUTEX, FILE_OBJECT, IO_STACK_LOCATION, IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{FAT_NTC_DCB, FAT_NTC_FCB, FAT_NTC_IRP_CONTEXT, FAT_NTC_ROOT_DCB};
 
 extern "C" {
     fn FatAcquireCloseMutex();

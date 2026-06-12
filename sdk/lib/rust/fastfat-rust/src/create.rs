@@ -8,6 +8,12 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, CcFlushCache, CcIsThereDirtyData, CreateDirectory, DRIVER_DISPATCH, DeleteOnClose, DirectoryFile, _IO_STATUS_BLOCK, IoAllocateMdl, IoCheckShareAccess, IoUpdateShareAccess, KPROCESSOR_MODE, KeCancelTimer, KeRemoveQueueDpc, LARGE_INTEGER, LUID, MmFlushForWrite, MmFlushImageSection, OEM_STRING, OpenDirectory, PACCESS_MASK, PACCESS_STATE, PCC_FILE_SIZES, PDEVICE_OBJECT, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PMDL, POEM_STRING, PSTRING, PUNICODE_STRING, SeSinglePrivilegeCheck, System};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, DCB, DIRENT, FAT_BUG_CHECK_CREATE, FAT_DATA, FAT_DATE, FAT_TIME, FCB, FCB_STATE_DELETE_ON_CLOSE, FCB_STATE_SYSTEM_FILE, IRP_CONTEXT, LFN_DIRENT, PBCB, PCCB, PDCB, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VCB, VOLUME_DEVICE_OBJECT, _FCB_CONDITION_FcbGood as FcbGood, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _VCB_CONDITION_VcbGood as VcbGood};
+use ntkrnl_sys::ddk::{CC_FILE_SIZES, DEVICE_OBJECT, ERESOURCE, FILE_FULL_EA_INFORMATION, FILE_OBJECT, IO_STACK_LOCATION, IRP, KEVENT, OPLOCK, PEXCEPTION_POINTERS, POPLOCK, SECTION_OBJECT_POINTERS, SECURITY_SUBJECT_CONTEXT, SHARE_ACCESS, STRING, _ACCESS_STATE, _PUBLIC_BCB as BCB, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_CREATE, FILE_ATTRIBUTE_ARCHIVE, STATUS_DISK_FULL};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, KEVENT};
 
 extern "C" {
     fn PAGED_CODE();

@@ -3,6 +3,11 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{DirectoryFile, ExAcquireResourceExclusiveLite, ExAcquireSharedWaitForExclusive, ExGetExclusiveWaiterCount, ExGetSharedWaiterCount, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, FAST_IO_ACQUIRE_FOR_CCFLUSH, FS_FILTER_CALLBACK_DATA, IoGetTopLevelIrp, IoSetTopLevelIrp, KeWaitForSingleObject, PDEVICE_OBJECT, PFILE_OBJECT, PFSRTL_COMMON_FCB_HEADER, PFS_FILTER_CALLBACK_DATA, PIRP, PLARGE_INTEGER, PsGetCurrentThread, SyncTypeCreateSection, Type};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, FCB, FatData, IRP_CONTEXT, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, FSRTL_COMMON_FCB_HEADER, IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 
 extern "C" {
     fn PAGED_CODE();

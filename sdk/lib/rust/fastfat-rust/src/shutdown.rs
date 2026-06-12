@@ -6,6 +6,13 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{CcPurgeCacheSection, DRIVER_DISPATCH, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PIRP};
 use core::ffi::c_void;
 use core::mem::offset_of;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::fatdata::{FatExceptionFilter, FatIsIrpTopLevel, FatProcessException};
+use crate::strucsup::{FatCreateIrpContext};
+use crate::types::{FatData, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_WAIT, IRP_CONTEXT_FLAG_WRITE_THROUGH, PVOLUME_DEVICE_OBJECT, VCB, VCB_STATE_FLAG_MOUNTED_DIRTY, VCB_STATE_FLAG_SHUTDOWN, _VCB_CONDITION_VcbGood as VcbGood};
+use ntkrnl_sys::ddk::{IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_SHUTDOWN};
 
 extern "system" {
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);

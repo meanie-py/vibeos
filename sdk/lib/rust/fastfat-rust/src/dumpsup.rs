@@ -1,6 +1,8 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::driver_ddk::*;
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, FAT_DATA, FCB, FatData, VCB};
 
 extern "C" {
     fn NodeType(p: *const core::ffi::c_void) -> u32;

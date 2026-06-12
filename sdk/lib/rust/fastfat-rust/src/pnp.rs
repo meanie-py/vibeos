@@ -5,6 +5,11 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoAcquireVpbSpinLock, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FAT_BUG_CHECK_PNP, IRP_CONTEXT, PIRP_CONTEXT, PVCB, PVOLUME_DEVICE_OBJECT, VCB, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbBad as VcbBad};
+use ntkrnl_sys::ddk::{IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_PNP};
 
 extern "C" {
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);

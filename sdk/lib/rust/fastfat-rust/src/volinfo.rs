@@ -4,6 +4,11 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_FULL_SIZE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, FileFsAttributeInformation, FileFsDeviceInformation, FileFsFullSizeInformation, FileFsLabelInformation, FileFsSizeInformation, FileFsVolumeInformation, IoGetCurrentIrpStackLocation, IoSetTopLevelIrp, OEM_STRING, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_FULL_SIZE_INFORMATION, PFILE_FS_LABEL_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, RtlAreBitsSet, RtlOemStringToCountedUnicodeString, RtlUpcaseUnicodeStringToCountedOemString};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, DIRENT, FCB, PCCB, PDCB, PFCB, PIRP_CONTEXT, PVCB, PVOLUME_DEVICE_OBJECT, VCB, _TYPE_OF_OPEN as TYPE_OF_OPEN};
+use ntkrnl_sys::ddk::{FS_INFORMATION_CLASS, IO_STACK_LOCATION, PFILE_OBJECT, _PUBLIC_BCB as BCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_VOLINFO};
 
 extern "C" {
     static mut FatData: FatDataStruct;

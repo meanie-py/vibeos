@@ -5,6 +5,11 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, IoSetTopLevelIrp, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, FCB, IRP_CONTEXT, VCB, VOLUME_DEVICE_OBJECT};
+use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, FILE_OBJECT, IO_STACK_LOCATION, IRP, WORK_QUEUE_ITEM};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_FSP_DISPATCHER};
 
 extern "C" {
     fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;

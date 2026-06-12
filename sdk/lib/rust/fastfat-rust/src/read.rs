@@ -6,6 +6,13 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcCopyRead, CcFlushCache, CcMdlRead, CcSetReadAheadGranularity, DRIVER_DISPATCH, DirectoryFile, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoFreeMdl, IoGetCurrentIrpStackLocation, IoGetRemainingStackSize, IoMarkIrpPending, IoWriteAccess, KEVENT, KeGetCurrentProcessorNumber, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PERESOURCE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PKTHREAD, PsGetCurrentThread, PsGetThreadProcess};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::cachesup::{FatCompleteMdl};
+use crate::strucsup::{FatCreateIrpContext};
+use crate::types::{CCB, FAT_BUG_CHECK_READ, FCB, IRP_CONTEXT, LBO, PFCB, PIRP_CONTEXT, PVCB, VBO, VCB, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN as TYPE_OF_OPEN};
+use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, ERESOURCE_THREAD, FILE_OBJECT, IRP, OPLOCK, _EPROCESS, _ETHREAD};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_READ};
 
 extern "system" {
     fn DebugTrace(level: i32, flags: u32, message: *const i8);

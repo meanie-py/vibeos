@@ -5,6 +5,12 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExFreePool, GENERATE_NAME_CONTEXT, OEM_STRING, POEM_STRING, PUNICODE_STRING, RtlDowncaseUnicodeString, RtlGenerate8dot3Name, RtlOemStringToCountedUnicodeString, RtlUnicodeStringToCountedOemString, RtlUpcaseUnicodeStringToCountedOemString};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, DCB, DIRENT, FCB, FatData, IRP_CONTEXT, PFCB, PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{_PUBLIC_BCB as BCB, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_NAMESUP, STATUS_UNMAPPABLE_CHARACTER, TAG_FILENAME_BUFFER};
+use ntkrnl_sys::ddk::{_UNICODE_STRING};
 
 extern "C" {
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );

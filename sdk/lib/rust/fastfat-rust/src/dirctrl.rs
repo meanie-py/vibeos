@@ -6,6 +6,9 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CLONG, DRIVER_DISPATCH, ExLocalTimeToSystemTime, FILE_BOTH_DIR_INFORMATION, FILE_DIRECTORY_INFORMATION, FILE_FULL_DIR_INFORMATION, FILE_ID_BOTH_DIR_INFORMATION, FILE_ID_FULL_DIR_INFORMATION, FILE_NAMES_INFORMATION, FileBothDirectoryInformation, FileDirectoryInformation, FileFullDirectoryInformation, FileIdBothDirectoryInformation, FileIdFullDirectoryInformation, FileNamesInformation, IoSetTopLevelIrp, OEM_STRING, PFILE_BOTH_DIR_INFORMATION, PFILE_DIRECTORY_INFORMATION, PFILE_FULL_DIR_INFORMATION, PFILE_ID_BOTH_DIR_INFORMATION, PFILE_ID_FULL_DIR_INFORMATION, PFILE_NAMES_INFORMATION, PIO_STACK_LOCATION, PIRP, PSTRING, PUNICODE_STRING, PWCH, RtlFreeOemString, RtlOemToUnicodeN, RtlUpcaseUnicodeString, RtlUpcaseUnicodeStringToCountedOemString};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CCB, DCB, DIRENT, FAT_DATA, FAT_TIME, IRP_CONTEXT, VCB};
+use ntkrnl_sys::ddk::{IO_STACK_LOCATION, IRP, PFILE_OBJECT, PNOTIFY_SYNC};
 
 extern "C" {
     static mut FatData: FAT_DATA;

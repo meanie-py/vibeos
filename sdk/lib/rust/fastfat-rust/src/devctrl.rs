@@ -5,6 +5,12 @@ use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, _KWAIT_REASON_Executive, IO_COMPLETION_ROUTINE, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoIs32bitProcess, IoSkipCurrentIrpStackLocation, KEVENT, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::fatdata::{FatExceptionFilter};
+use crate::types::{CCB, FCB, IRP_CONTEXT, PIRP_CONTEXT, PVOLUME_DEVICE_OBJECT, VCB};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{STATUS_MORE_PROCESSING_REQUIRED};
 
 extern "C" {
     fn DebugTrace(Level: i32, Flags: u32, Format: *const i8, ...);

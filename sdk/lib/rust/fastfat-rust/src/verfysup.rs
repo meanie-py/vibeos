@@ -8,6 +8,11 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcIsThereDirtyData, CriticalWorkQueue, DPFLTR_FASTFAT_ID, ExQueueWorkItem, _KWAIT_REASON_Executive, FastIoIsNotPossible, IO_COMPLETION_ROUTINE, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetHardErrorOrVerifyDevice, IoVerifyVolume, KEVENT, KeSetTimer, LARGE_INTEGER, LOGICAL, _EVENT_TYPE_NotificationEvent, OEM_STRING, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, RtlEqualString, WORKER_THREAD_ROUTINE};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CLEAN_AND_DIRTY_VOLUME_PACKET, DIRENT, FAT_DATA, FCB, IRP_CONTEXT, PACKED_BIOS_PARAMETER_BLOCK, PACKED_BOOT_SECTOR, PACKED_BOOT_SECTOR_EX, PDIRENT, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_STATE_VPB_NOT_ON_DEVICE, VOLUME_DEVICE_OBJECT};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, EXCEPTION_POINTERS, FILE_OBJECT, IO_STACK_LOCATION, IRP, _IO_STATUS_BLOCK, _PUBLIC_BCB as BCB, _UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{IO_REMOUNT, IRP_MN_MOUNT_VOLUME};
 
 extern "C" {
     fn PAGED_CODE();

@@ -4,6 +4,9 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, ExAcquireResourceSharedLite, ExReleaseResourceLite, FAST_IO_LOCK, FAST_IO_UNLOCK_ALL, FAST_IO_UNLOCK_ALL_BY_KEY, FAST_IO_UNLOCK_SINGLE, IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, OPLOCK, PFILE_LOCK, _IO_STATUS_BLOCK};
 
 extern "C" {
     fn DebugTrace(level: i32, flags: u32, format: *const i8, ...);

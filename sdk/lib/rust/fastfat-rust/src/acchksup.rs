@@ -4,6 +4,12 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, IoGetFileObjectGenericMapping, KPROCESSOR_MODE, PACCESS_MASK, PACCESS_STATE, PACCESS_TOKEN, PDEVICE_OBJECT, PRIVILEGE_SET, RtlConvertLongToLuid, SeAccessCheck, SeFilterToken, SeLockSubjectContext, SePrivilegeCheck, SeUnlockSubjectContext, TOKEN_GROUPS};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PIRP_CONTEXT};
+use ntkrnl_sys::ddk::{SECURITY_SUBJECT_CONTEXT, SE_EXPORTS, _PROCESS_ACCESS_TOKEN as ACCESS_TOKEN};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_ACCHKSUP, FILE_DELETE_CHILD};
+use crate::types::{PIRP_CONTEXT};
 
 extern "C" {
     static SeExports: *mut SE_EXPORTS;

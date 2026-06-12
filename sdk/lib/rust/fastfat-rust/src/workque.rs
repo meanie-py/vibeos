@@ -4,6 +4,9 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{CriticalWorkQueue, ExQueueWorkItem, IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoReadAccess, IoWriteAccess, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{IRP_CONTEXT, PIRP_CONTEXT, VOLUME_DEVICE_OBJECT, _FAT_IO_CONTEXT};
+use ntkrnl_sys::ddk::{IO_STACK_LOCATION, IRP, PWORKER_THREAD_ROUTINE};
 
 extern "C" {
     fn KeGetCurrentIrql() -> u8;

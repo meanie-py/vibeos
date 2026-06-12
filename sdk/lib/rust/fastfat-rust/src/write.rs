@@ -8,6 +8,11 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcCanIWrite, CcFlushCache, CriticalWorkQueue, DRIVER_DISPATCH, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExFreePool, ExQueueWorkItem, ExReleaseResourceLite, File, _IO_STATUS_BLOCK, IoGetCurrentIrpStackLocation, IoGetTopLevelIrp, IoMarkIrpPending, IoReadAccess, IoSetTopLevelIrp, KeGetCurrentProcessorNumber, KeInitializeEvent, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PCC_POST_DEFERRED_WRITE, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PsGetCurrentThread, PsGetThreadProcess, WORKER_THREAD_ROUTINE};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{FAT_BUG_CHECK_WRITE, FatData, PDCB, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _TYPE_OF_OPEN_VirtualVolumeFile as VirtualVolumeFile};
+use crate::workque::{FatFsdPostRequest};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_WRITE, FILE_DEVICE_DISK, SL_FORCE_DIRECT_WRITE};
 
 extern "C" {
     fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32;

@@ -13,6 +13,11 @@ use ntkrnl_sys::rtl::{RtlClearBits, RtlInitializeBitMap, RtlSetBits};
 use ntkrnl_sys::ddk::{CC_FILE_SIZES, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExFreePool, ExReleaseResourceLite, _KWAIT_REASON_Executive, HighPagePriority, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoFreeMdl, IoGetNextIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_MCB, MmUnmapLockedPages, _EVENT_TYPE_NotificationEvent, PCC_FILE_SIZES, PFILE_OBJECT, PIRP, PLARGE_INTEGER, PLARGE_MCB, PMDL, RtlFindClearBits, RtlNumberOfClearBits, RtlSetBits, ULARGE_INTEGER};
 use ntkrnl_sys::ddk::{ExFreePool};
 use core::ffi::c_void;
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{CLUSTER_TYPE, DIRENT, FAT_BUG_CHECK_ALLOCSUP, FAT_WINDOW, FCB, IRP_CONTEXT, PBCB, PDIRENT, PFAT_WINDOW};
+use ntkrnl_sys::ddk::{FILE_OBJECT, _PUBLIC_BCB as BCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{DEBUG_TRACE_ALLOCSUP, MDL_MAPPED_TO_SYSTEM_VA, MDL_SOURCE_IS_NONPAGED_POOL, SL_WRITE_THROUGH, STATUS_DISK_FULL};
 
 extern "C" {
     fn DebugTrace(level: i32, component: u32, format: *const i8, arg: usize);
