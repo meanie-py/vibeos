@@ -18,11 +18,9 @@ extern "C" {
     fn NT_ASSERT(condition: i32);
     static TRACE_FLAG_IOCTL: u32;
     static TRACE_LEVEL_ERROR: u32;
-    static CDROM_GET_CONFIGURATION_TIMEOUT: u32;
-    static SCSIOP_GET_CONFIGURATION: u8;
     fn PAGED_CODE();
     fn min(a: u32, b: u32) -> u32;
-    fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(temp: u32) -> i64;
+    fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(SectorsPerSecond: u32) -> i64;
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, unknown: *mut core::ffi::c_void, transferSize: u32, flag: i32, cdb: *const CDB, cdbLength: u32, ) -> NTSTATUS;
@@ -469,7 +467,7 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
     srb.CdbLength = 10;
 
     let cdb = &raw mut srb.Cdb as *mut CDB;
-    (*cdb).GET_CONFIGURATION.as_mut().OperationCode = SCSIOP_GET_CONFIGURATION;
+    (*cdb).GET_CONFIGURATION.as_mut().OperationCode = SCSIOP_GET_CONFIGURATION as u8;
     (*cdb).GET_CONFIGURATION.as_mut().set_RequestType(RequestedType as u8);
     (*cdb).GET_CONFIGURATION.as_mut().StartingFeature[0] = (StartingFeature >> 8) as u8;
     (*cdb).GET_CONFIGURATION.as_mut().StartingFeature[1] = (StartingFeature & 0xff) as u8;

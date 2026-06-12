@@ -1134,7 +1134,6 @@ pub unsafe extern "C" fn DeviceEvtD0Entry(
     STATUS_SUCCESS
 }
 
-#[cfg(debug_assertions)]
 #[no_mangle]
 pub unsafe extern "C" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WDF_POWER_DEVICE_STATE) -> i32 {
     PagedCode();

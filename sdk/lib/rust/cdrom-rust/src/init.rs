@@ -68,15 +68,17 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-extern "C" {
-    fn DeviceInitAllocateBuffers(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceRetrieveScsiAddress(DeviceExtension: PCDROM_DEVICE_EXTENSION, ScsiAddress: PSCSI_ADDRESS) -> NTSTATUS;
-    fn DeviceRetrieveDescriptorsAndTransferLength(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_DEVICE_EXTENSION);
-    fn DeviceInitMmcContext(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS;
-    fn DeviceGetMmcSupportInfo(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsMmcDevice: PBOOLEAN) -> NTSTATUS;
-    fn DeviceIsPortable(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsPortable: PBOOLEAN) -> NTSTATUS;
+extern "system" {
+    fn ScratchBuffer_Allocate(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> u8;
 }
+
+// ---- value-alias imports for the integrated bodies below ----
+use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID_StorageAdapterProperty as StorageAdapterProperty;
+use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID_StorageDeviceProperty as StorageDeviceProperty;
+use ntkrnl_sys::ddk::_STORAGE_PROPERTY_ID_StorageDevicePowerProperty as StorageDevicePowerProperty;
+use ntkrnl_sys::ddk::_STORAGE_BUS_TYPE_BusTypeFibre as BusTypeFibre;
+use ntkrnl_sys::ddk::_STORAGE_BUS_TYPE_BusTypeiScsi as BusTypeiScsi;
+use ntkrnl_sys::ddk::_STORAGE_BUS_TYPE_BusTypeRAID as BusTypeRAID;
 
 #[allow(non_upper_case_globals)]
 #[allow(non_camel_case_types)]
@@ -4399,3 +4401,773 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// ============================================================================
+// Integrated (banked c2rust) function bodies — DO NOT re-translate.
+// Sources: tools/rustconv/.responses/cdrom__init/*.rs
+// Preambles dropped; mapped to crate-provided types/helpers/consts.
+// ============================================================================
+
+#[no_mangle]
+pub unsafe extern "system" fn DeviceInitAllocateBuffers(
+    DeviceExtension: PCDROM_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut senseData: *mut core::ffi::c_void = core::ptr::null_mut();
+
+    // PAGED_CODE();
+
+    // allocate a private extension for class data
+    if (*DeviceExtension).PrivateFdoData.is_null() {
+        (*DeviceExtension).PrivateFdoData = ExAllocatePoolWithTag(
+            0x200, /* NonPagedPoolNx */
+            core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>() as u32,
+            0x74767250, /* CDROM_TAG_PRIVATE_DATA */
+        ) as *mut CDROM_PRIVATE_FDO_DATA;
+    }
+
+    if (*DeviceExtension).PrivateFdoData.is_null() {
+        status = -1073741670i32; // STATUS_INSUFFICIENT_RESOURCES
+    } else {
+        // initialize the struct's various fields.
+        core::ptr::write_bytes(
+            (*DeviceExtension).PrivateFdoData,
+            0,
+            core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>(),
+        );
+    }
+
+    // Allocate request sense buffer.
+    senseData = ExAllocatePoolWithTag(
+        0x600, /* NonPagedPoolNxCacheAligned */
+        0x12,  /* SENSE_BUFFER_SIZE */
+        0x53656E73, /* CDROM_TAG_SENSE_INFO */
+    ) as *mut core::ffi::c_void;
+
+    if senseData.is_null() {
+        // The buffer cannot be allocated.
+        status = -1073741670i32; // STATUS_INSUFFICIENT_RESOURCES
+    } else {
+        // Set the sense data pointer in the device extension.
+        (*DeviceExtension).SenseData = senseData as _;
+    }
+
+    // Allocate scratch buffer -- Must occur after determining
+    // max transfer size, but before other CD specific detection
+    // (which relies upon this buffer).
+    if ScratchBuffer_Allocate(DeviceExtension) == 0 {
+        status = -1073741670i32; // STATUS_INSUFFICIENT_RESOURCES
+    }
+
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn DeviceRetrieveScsiAddress(
+    DeviceExtension: PCDROM_DEVICE_EXTENSION,
+    ScsiAddress: PSCSI_ADDRESS,
+) -> NTSTATUS {
+    // PAGED_CODE();
+    if DeviceExtension.is_null() || ScsiAddress.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut outputDescriptor: WDF_MEMORY_DESCRIPTOR = core::mem::zeroed();
+    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
+        core::ptr::addr_of_mut!(outputDescriptor),
+        ScsiAddress as *mut core::ffi::c_void,
+        core::mem::size_of::<SCSI_ADDRESS>() as u32,
+    );
+    let status = WdfIoTargetSendIoctlSynchronously(
+        (*DeviceExtension).IoTarget,
+        core::ptr::null_mut(),
+        IOCTL_SCSI_GET_ADDRESS,
+        core::ptr::addr_of_mut!(outputDescriptor),
+        core::ptr::addr_of_mut!(outputDescriptor),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    if !ntkrnl_sys::base::NT_SUCCESS(status) {
+        TracePrint(
+            TRACE_LEVEL_WARNING,
+            TRACE_FLAG_INIT,
+            b"DeviceRetrieveScsiAddress: Get Address failed %lx\n\0".as_ptr() as *const i8,
+            status,
+        );
+    } else {
+        TracePrint(
+            TRACE_LEVEL_WARNING,
+            TRACE_FLAG_INIT,
+            b"GetAddress: Port %x, Path %x, Target %x, Lun %x\n\0".as_ptr() as *const i8,
+            (*ScsiAddress).PortNumber as u32,
+            (*ScsiAddress).PathId as u32,
+            (*ScsiAddress).TargetId as u32,
+            (*ScsiAddress).Lun as u32,
+        );
+    }
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn DeviceRetrieveDescriptorsAndTransferLength(
+    DeviceExtension: PCDROM_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut propertyId: STORAGE_PROPERTY_ID;
+    PAGED_CODE();
+
+    if ntkrnl_sys::base::NT_SUCCESS(status) {
+        propertyId = StorageAdapterProperty;
+        status = DeviceRetrieveDescriptor(
+            (*DeviceExtension).Device,
+            &mut propertyId,
+            core::ptr::addr_of_mut!((*DeviceExtension).AdapterDescriptor)
+                as *mut *mut STORAGE_DESCRIPTOR_HEADER,
+        );
+    }
+    if ntkrnl_sys::base::NT_SUCCESS(status) {
+        propertyId = StorageDeviceProperty;
+        status = DeviceRetrieveDescriptor(
+            (*DeviceExtension).Device,
+            &mut propertyId,
+            core::ptr::addr_of_mut!((*DeviceExtension).DeviceDescriptor)
+                as *mut *mut STORAGE_DESCRIPTOR_HEADER,
+        );
+    }
+    if ntkrnl_sys::base::NT_SUCCESS(status) {
+        propertyId = StorageDevicePowerProperty;
+        let _ = DeviceRetrieveDescriptor(
+            (*DeviceExtension).Device,
+            &mut propertyId,
+            core::ptr::addr_of_mut!((*DeviceExtension).PowerDescriptor)
+                as *mut *mut STORAGE_DESCRIPTOR_HEADER,
+        );
+    }
+
+    if ntkrnl_sys::base::NT_SUCCESS(status) {
+        let mut max_aligned_transfer: u32 =
+            (*(*DeviceExtension).AdapterDescriptor).MaximumPhysicalPages;
+        let mut max_unaligned_transfer: u32 =
+            (*(*DeviceExtension).AdapterDescriptor).MaximumPhysicalPages;
+
+        if max_unaligned_transfer > 1 {
+            max_unaligned_transfer -= 1;
+        }
+
+        if max_aligned_transfer >= (u32::MAX / (PAGE_SIZE as u32)) {
+            max_aligned_transfer = u32::MAX;
+        } else {
+            max_aligned_transfer *= PAGE_SIZE as u32;
+        }
+
+        if max_unaligned_transfer >= (u32::MAX / (PAGE_SIZE as u32)) {
+            max_unaligned_transfer = u32::MAX;
+        } else {
+            max_unaligned_transfer *= PAGE_SIZE as u32;
+        }
+
+        max_aligned_transfer = min(
+            max_aligned_transfer,
+            (*(*DeviceExtension).AdapterDescriptor).MaximumTransferLength,
+        );
+        max_unaligned_transfer = min(
+            max_unaligned_transfer,
+            (*(*DeviceExtension).AdapterDescriptor).MaximumTransferLength,
+        );
+
+        max_aligned_transfer = max(max_aligned_transfer, PAGE_SIZE as u32);
+        max_unaligned_transfer = max(max_unaligned_transfer, PAGE_SIZE as u32);
+
+        TracePrint(
+            TRACE_LEVEL_INFORMATION,
+            TRACE_FLAG_INIT,
+            b"Device %p Max aligned/unaligned transfer size is %x/%x\n\0".as_ptr() as *const i8,
+            (*DeviceExtension).Device as *const core::ffi::c_void,
+            max_aligned_transfer,
+            max_unaligned_transfer,
+        );
+
+        (*DeviceExtension)
+            .DeviceAdditionalData
+            .MaxPageAlignedTransferBytes = max_aligned_transfer;
+        (*DeviceExtension)
+            .DeviceAdditionalData
+            .MaxUnalignedTransferBytes = max_unaligned_transfer;
+    } else {
+        TracePrint(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_PNP,
+            b"DeviceRetrieveDescriptorsAndTransferLength failed %lx\n\0".as_ptr() as *const i8,
+            status,
+        );
+    }
+
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
+    // PAGED_CODE();  (no-op)
+    DeviceScanForSpecial(DeviceExtension, core::ptr::addr_of_mut!(CdromHackItems), Some(ScanForSpecialHandler));
+
+    // Hack flag checks
+    if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_TOSHIBA_SD_W1101 as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
+        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+            b"DeviceScanSpecialDevices: Found Toshiba SD-W1101 DVD-RAM -- This drive will *NOT* support DVD-ROM playback.\n\0"
+                .as_ptr() as *const i8);
+    } else if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_HITACHI_GD_2000 as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
+        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+            b"DeviceScanSpecialDevices: Found Hitachi GD-2000\n\0"
+                .as_ptr() as *const i8);
+
+        (*DeviceExtension).DeviceAdditionalData.ErrorHandler =
+            core::mem::transmute::<*const core::ffi::c_void, PCDROM_ERROR_HANDLER>(
+                DeviceErrorHandlerForHitachiGD2000 as *const core::ffi::c_void,
+            );
+        (*DeviceExtension).DeviceFlags |= DEV_SAFE_START_UNIT as u16;
+    } else if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_FUJITSU_FMCD_10x as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
+        (*DeviceExtension).TimeOutValue = 20;
+    } else if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_DEC_RRD as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
+        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+            b"DeviceScanSpecialDevices:  Found DEC RRD.\n\0"
+                .as_ptr() as *const i8);
+
+        (*DeviceExtension).DeviceAdditionalData.IsDecRrd = 1; // TRUE
+
+        // Allocate mode parameters
+        let mode_parameters = ExAllocatePoolWithTag(
+            NonPagedPoolNx,
+            core::mem::size_of::<MODE_PARM_READ_WRITE_DATA>() as u32,
+            CDROM_TAG_MODE_DATA,
+        ) as *mut MODE_PARM_READ_WRITE_DATA;
+
+        if mode_parameters.is_null() {
+            return;
+        }
+
+        RtlZeroMemory(
+            mode_parameters as *mut core::ffi::c_void,
+            core::mem::size_of::<MODE_PARM_READ_WRITE_DATA>(),
+        );
+
+        // Prepare SCSI request block on the stack (zero-initialised)
+        let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
+
+        // Set block length to 2KB
+        (*mode_parameters).ParameterListHeader.BlockDescriptorLength =
+            core::mem::size_of::<MODE_PARAMETER_BLOCK>() as u8;
+        (*mode_parameters).ParameterListBlock.BlockLength[0] = 0x00; // MSB
+        (*mode_parameters).ParameterListBlock.BlockLength[1] = 0x08;
+        (*mode_parameters).ParameterListBlock.BlockLength[2] = 0x00; // LSB
+
+        // Build the MODE SELECT CDB
+        srb.CdbLength = 6;
+        srb.TimeOutValue = (*DeviceExtension).TimeOutValue;
+
+        let cdb = core::ptr::addr_of_mut!(srb.Cdb) as *mut CDB;
+        (*cdb).MODE_SELECT.as_mut().set_PFBit(1);
+        (*cdb).MODE_SELECT.as_mut().OperationCode = SCSIOP_MODE_SELECT;
+        (*cdb).MODE_SELECT.as_mut().ParameterListLength = HITACHI_MODE_DATA_SIZE as u8;
+
+        // Send synchronous SRB
+        let status = DeviceSendSrbSynchronously(
+            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!(srb),
+            mode_parameters as *mut core::ffi::c_void,
+            core::mem::size_of::<MODE_PARM_READ_WRITE_DATA>() as u32,
+            1, // TRUE
+            core::ptr::null_mut(),
+        );
+
+        if !ntkrnl_sys::base::NT_SUCCESS(status) {
+            TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+                b"DeviceScanSpecialDevices: Setting DEC RRD to 2K blocksize failed [%x]\n\0"
+                    .as_ptr() as *const i8,
+                status as u32);
+        }
+
+        ExFreePool(mode_parameters as *mut core::ffi::c_void);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn DeviceIsPortable(
+    DeviceExtension: PCDROM_DEVICE_EXTENSION,
+    IsPortable: PBOOLEAN,
+) -> NTSTATUS {
+    let mut isInternal: i32 = DEVPROP_FALSE as i32;
+    let mut isPortable: u8 = 0; // FALSE
+    let mut size: u32 = 0;
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut type_: u32 = DEVPROP_TYPE_EMPTY;
+
+    PAGED_CODE();
+
+    'Cleanup: loop {
+        *IsPortable = 0; // FALSE
+
+        status = IoGetDevicePropertyData(
+            (*DeviceExtension).LowerPdo as *mut core::ffi::c_void,
+            core::ptr::addr_of!(DEVPKEY_Device_InLocalMachineContainer),
+            0,
+            0,
+            core::mem::size_of::<i32>() as u32,
+            core::ptr::addr_of_mut!(isInternal) as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!(size),
+            core::ptr::addr_of_mut!(type_),
+        );
+
+        if !ntkrnl_sys::base::NT_SUCCESS(status) {
+            break 'Cleanup;
+        }
+
+        NT_ASSERT((size as usize == core::mem::size_of::<i32>()) as i32);
+        NT_ASSERT((type_ == DEVPROP_TYPE_BOOLEAN) as i32);
+
+        if isInternal == DEVPROP_TRUE as i32 {
+            break 'Cleanup;
+        }
+
+        isPortable = 1; // TRUE
+
+        if (*(*DeviceExtension).DeviceDescriptor).BusType == BusTypeFibre
+            || (*(*DeviceExtension).DeviceDescriptor).BusType == BusTypeiScsi
+            || (*(*DeviceExtension).DeviceDescriptor).BusType == BusTypeRAID
+        {
+            isPortable = 0; // FALSE
+        }
+
+        *IsPortable = isPortable;
+        break 'Cleanup;
+    }
+
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn DeviceInitMmcContext(
+    DeviceExtension: PCDROM_DEVICE_EXTENSION,
+) -> NTSTATUS {
+    PAGED_CODE();
+
+    let mut status: i32 = 0; // STATUS_SUCCESS
+
+    (*DeviceExtension).DeviceAdditionalData.Mmc.IsMmc = 0u8;
+    (*DeviceExtension).DeviceAdditionalData.Mmc.IsAACS = 0u8;
+    (*DeviceExtension).DeviceAdditionalData.Mmc.IsWriter = 0u8;
+    (*DeviceExtension).DeviceAdditionalData.Mmc.WriteAllowed = 0u8;
+    (*DeviceExtension).DeviceAdditionalData.Mmc.IsCssDvd = 0u8;
+    (*DeviceExtension).DeviceAdditionalData.DriveDeviceType = FILE_DEVICE_CD_ROM;
+
+    if status >= 0 {
+        status = DeviceGetMmcSupportInfo(
+            DeviceExtension,
+            core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData.Mmc.IsMmc),
+        );
+        if status < 0 {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"DeviceInitMmcContext: Failed to get the support info for GET CONFIGURATION command, failng %!STATUS!\n\0"
+                    .as_ptr() as *const i8,
+                status,
+            );
+            (*DeviceExtension).DeviceAdditionalData.Mmc.IsMmc = 0u8;
+            status = 0;
+        }
+    }
+
+    if status >= 0 && (*DeviceExtension).DeviceAdditionalData.Mmc.IsMmc != 0 {
+        status = DeviceAllocateMmcResources((*DeviceExtension).Device);
+    }
+
+    if status >= 0 && (*DeviceExtension).DeviceAdditionalData.Mmc.IsMmc != 0 {
+        let mut header: *mut FEATURE_DATA_CD_READ;
+        let mut validationSchema: u32 = 0;
+        let mut blockingFactor: u32 = 0;
+
+        TracePrint(
+            TRACE_LEVEL_INFORMATION,
+            TRACE_FLAG_INIT,
+            b"DeviceInitMmcContext: FDO %p GET CONFIGURATION buffer %p\n\0".as_ptr() as *const i8,
+            (*DeviceExtension).Device as *const core::ffi::c_void,
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *const core::ffi::c_void,
+        );
+
+        DevicePrintAllFeaturePages(
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *const u8,
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+        );
+
+        header = DeviceFindFeaturePage(
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8,
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+            FeatureAACS,
+        );
+        if !header.is_null() {
+            TracePrint(
+                TRACE_LEVEL_INFORMATION,
+                TRACE_FLAG_INIT,
+                b"DeviceInitMmcContext: Reporting AACS support for device due to GET CONFIGURATION showing support\n\0"
+                    .as_ptr() as *const i8,
+            );
+            (*DeviceExtension).DeviceAdditionalData.Mmc.IsAACS = 1u8;
+        }
+
+        #[cfg(feature = "ENABLE_AACS_TESTING")]
+        {
+            (*DeviceExtension).DeviceAdditionalData.Mmc.IsAACS = 1u8;
+        }
+
+        header = DeviceFindFeaturePage(
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8,
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+            FeatureDvdRead,
+        );
+        if !header.is_null() {
+            (*DeviceExtension).DeviceAdditionalData.DriveDeviceType = FILE_DEVICE_DVD;
+        }
+
+        DeviceUpdateMmcWriteCapability(
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *const u8,
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+            0,
+            core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData.Mmc.IsWriter),
+            core::ptr::addr_of_mut!(validationSchema),
+            core::ptr::addr_of_mut!(blockingFactor),
+        );
+
+        header = DeviceFindFeaturePage(
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBuffer as *mut u8,
+            (*DeviceExtension).DeviceAdditionalData.Mmc.CapabilitiesBufferSize,
+            FeatureDvdCSS,
+        );
+
+        (*DeviceExtension).DeviceAdditionalData.Mmc.IsCssDvd =
+            if !header.is_null() && (*(header as *mut FEATURE_HEADER)).Current() != 0 {
+                1u8
+            } else {
+                0u8
+            };
+
+        (*DeviceExtension).DeviceAdditionalData.Mmc.UpdateState = CdromMmcUpdateRequired as i32;
+        (*DeviceExtension).DeviceAdditionalData.ErrorHandler =
+            core::mem::transmute::<*const core::ffi::c_void, PCDROM_ERROR_HANDLER>(
+                DeviceErrorHandlerForMmc as *const core::ffi::c_void,
+            );
+
+        (*DeviceExtension).DeviceFlags |= DEV_SAFE_START_UNIT as u16;
+
+        DeviceSetRawReadInfo(DeviceExtension);
+    }
+
+    if (*DeviceExtension).DeviceAdditionalData.Mmc.IsMmc == 0 {
+        let mut deviceCharacteristics: u32 =
+            WdfDeviceGetCharacteristics((*DeviceExtension).Device);
+        deviceCharacteristics |= FILE_READ_ONLY_DEVICE;
+        WdfDeviceSetCharacteristics((*DeviceExtension).Device, deviceCharacteristics);
+        TracePrint(
+            TRACE_LEVEL_INFORMATION,
+            TRACE_FLAG_INIT,
+            b"DeviceInitMmcContext: FDO %p Device is not an MMC compliant device, so setting to read-only (legacy) mode\0"
+                .as_ptr() as *const i8,
+            (*DeviceExtension).Device as *const core::ffi::c_void,
+        );
+    }
+
+    if (*DeviceExtension).DeviceAdditionalData.DriveDeviceType == FILE_DEVICE_DVD {
+        TracePrint(
+            TRACE_LEVEL_INFORMATION,
+            TRACE_FLAG_INIT,
+            b"DeviceInitMmcContext: DVD Devices require START UNIT\n\0".as_ptr() as *const i8,
+        );
+        (*DeviceExtension).DeviceFlags |= DEV_SAFE_START_UNIT as u16;
+    } else if ((*(*DeviceExtension).DeviceDescriptor).BusType != BusTypeScsi)
+        && ((*(*DeviceExtension).DeviceDescriptor).BusType != BusTypeAtapi)
+        && ((*(*DeviceExtension).DeviceDescriptor).BusType != BusTypeUnknown)
+    {
+        TracePrint(
+            TRACE_LEVEL_INFORMATION,
+            TRACE_FLAG_INIT,
+            b"DeviceInitMmcContext: Devices for newer buses require START UNIT\n\0".as_ptr() as *const i8,
+        );
+        (*DeviceExtension).DeviceFlags |= DEV_SAFE_START_UNIT as u16;
+    }
+
+    status
+}
+
+// ---- integrated banked body: DeviceGetMmcSupportInfo ----
+#[no_mangle]
+pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
+    DeviceExtension: PCDROM_DEVICE_EXTENSION,
+    IsMmcDevice: *mut u8, // PBOOLEAN
+) -> NTSTATUS {
+    let mut status: i32;
+    let mut size: u32;
+    let mut previously_failed: u32;
+
+    // PAGED_CODE() ignored
+
+    *IsMmcDevice = 0; // FALSE
+
+    // read the registry in case the drive failed previously,
+    // and a timeout is occurring.
+    previously_failed = 0; // FALSE
+    DeviceGetParameter(
+        DeviceExtension as *mut core::ffi::c_void,
+        CDROM_SUBKEY_NAME as *const i8,
+        CDROM_NON_MMC_DRIVE_NAME as *const i8,
+        &mut previously_failed,
+    );
+
+    if previously_failed != 0 {
+        (*DeviceExtension).DeviceAdditionalData.HackFlags |=
+            CDROM_HACK_BAD_GET_CONFIG_SUPPORT as ntkrnl_sys::ddk::ULONG_PTR;
+    }
+
+    // read from the registry in case the drive reports bad profile lengths
+    previously_failed = 0;
+    DeviceGetParameter(
+        DeviceExtension as *mut core::ffi::c_void,
+        CDROM_SUBKEY_NAME as *const i8,
+        CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE as *const i8,
+        &mut previously_failed,
+    );
+
+    if previously_failed != 0 {
+        (*DeviceExtension).DeviceAdditionalData.HackFlags |=
+            CDROM_HACK_BAD_VENDOR_PROFILES as ntkrnl_sys::ddk::ULONG_PTR;
+    }
+
+    // check for the ProfileList feature to determine if the drive is MMC compliant
+    // and set the "size" local variable to total GetConfig data size available.
+    {
+        let mut local_header: GET_CONFIGURATION_HEADER = core::mem::zeroed();
+        let mut usable: u32 = 0;
+
+        status = DeviceGetConfiguration(
+            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            &mut local_header as *mut _ as *mut core::ffi::c_void,
+            core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32,
+            &mut usable,
+            FeatureProfileList,
+            SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL,
+        );
+
+        if status == -1073741436      // STATUS_INVALID_DEVICE_REQUEST 0xC0000010
+            || status == -1073741801  // STATUS_NO_MEDIA_IN_DEVICE 0xC0000013
+            || status == -1073741666  // STATUS_IO_DEVICE_ERROR 0xC0000185
+            || status == -1073741766  // STATUS_IO_TIMEOUT 0xC00000B6
+        {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"GetConfiguration Failed (%x), device %p not mmc-compliant\n\0".as_ptr() as *const i8,
+                status,
+                (*DeviceExtension).DeviceObject,
+            );
+
+            previously_failed = 1; // TRUE
+            DeviceSetParameter(
+                DeviceExtension,
+                CDROM_SUBKEY_NAME,
+                CDROM_NON_MMC_DRIVE_NAME,
+                previously_failed,
+            );
+
+            return 0; // STATUS_SUCCESS
+        } else if status < 0 {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"GetConfiguration Failed, status %x -- defaulting to -ROM\n\0".as_ptr() as *const i8,
+                status,
+            );
+            return 0;
+        } else if usable < core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32 {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"GetConfiguration Failed, returned only %x bytes!\n\0".as_ptr() as *const i8,
+                usable,
+            );
+            previously_failed = 1;
+            DeviceSetParameter(
+                DeviceExtension,
+                CDROM_SUBKEY_NAME,
+                CDROM_NON_MMC_DRIVE_NAME,
+                previously_failed,
+            );
+            return 0;
+        }
+
+        // combine DataLength bytes (big-endian) into size
+        size = ((local_header.DataLength[0] as u32) << 24)
+            | ((local_header.DataLength[1] as u32) << 16)
+            | ((local_header.DataLength[2] as u32) << 8)
+            | ((local_header.DataLength[3] as u32) << 0);
+
+        if size <= 4 || size.wrapping_add(4) < size {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"GetConfiguration Failed, claims MMC support but doesn't correctly return config length! (%x)\n\0".as_ptr() as *const i8,
+                size,
+            );
+            previously_failed = 1;
+            DeviceSetParameter(
+                DeviceExtension,
+                CDROM_SUBKEY_NAME,
+                CDROM_NON_MMC_DRIVE_NAME,
+                previously_failed,
+            );
+            return 0;
+        } else if (size % 4) != 0 {
+            if (size % 2) != 0 {
+                TracePrint(
+                    TRACE_LEVEL_WARNING,
+                    TRACE_FLAG_INIT,
+                    b"GetConfiguration Failed, returned odd number of bytes %x!\n\0".as_ptr() as *const i8,
+                    size,
+                );
+                previously_failed = 1;
+                DeviceSetParameter(
+                    DeviceExtension,
+                    CDROM_SUBKEY_NAME,
+                    CDROM_NON_MMC_DRIVE_NAME,
+                    previously_failed,
+                );
+                return 0;
+            } else {
+                let hack_flags = (*DeviceExtension).DeviceAdditionalData.HackFlags;
+                if (hack_flags & CDROM_HACK_BAD_VENDOR_PROFILES as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
+                    // we've already caught this and ASSERT'd once, so don't do it again
+                } else {
+                    TracePrint(
+                        TRACE_LEVEL_WARNING,
+                        TRACE_FLAG_INIT,
+                        b"GetConfiguration returned a size that is not per spec (%x bytes), this is probably because of a vendor specific data header with a size not divisible by 4.\n\0".as_ptr() as *const i8,
+                        size,
+                    );
+                    previously_failed = 1;
+                    DeviceSetParameter(
+                        DeviceExtension,
+                        CDROM_SUBKEY_NAME,
+                        CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE,
+                        previously_failed,
+                    );
+                }
+            }
+        }
+
+        size += 4; // sizeof DataLength fields (4 bytes)
+    }
+
+    *IsMmcDevice = 1; // TRUE
+
+    // This code doesn't handle total get config size over 64k
+    NT_ASSERT((size <= MAXUSHORT) as i32);
+
+    // Check for SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE support in the device.
+    {
+        let feature_size = core::mem::size_of::<GET_CONFIGURATION_HEADER>()
+            + core::mem::size_of::<FEATURE_HEADER>();
+        let mut usable: u32 = 0;
+
+        let config_buffer = ExAllocatePoolWithTag(
+            NonPagedPoolNx,
+            feature_size as u32,
+            CDROM_TAG_GET_CONFIG,
+        ) as *mut GET_CONFIGURATION_HEADER;
+
+        if config_buffer.is_null() {
+            return -1073741670; // STATUS_INSUFFICIENT_RESOURCES
+        }
+
+        // read the registry in case the drive failed previously,
+        // and a timeout is occurring.
+        previously_failed = 0;
+        DeviceGetParameter(
+            DeviceExtension as *mut core::ffi::c_void,
+            CDROM_SUBKEY_NAME as *const i8,
+            CDROM_TYPE_ONE_GET_CONFIG_NAME as *const i8,
+            &mut previously_failed,
+        );
+
+        if previously_failed != 0 {
+            (*DeviceExtension).DeviceAdditionalData.HackFlags |=
+                CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG as ntkrnl_sys::ddk::ULONG_PTR;
+            ExFreePool(config_buffer as *mut core::ffi::c_void);
+            return 0;
+        }
+
+        // Get only the config and feature header
+        status = DeviceGetConfiguration(
+            (*DeviceExtension).Device as *mut core::ffi::c_void,
+            config_buffer as *mut core::ffi::c_void,
+            feature_size as u32,
+            &mut usable,
+            FeatureProfileList,
+            SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE,
+        );
+
+        if status < 0 || (usable as usize) < feature_size {
+            TracePrint(
+                TRACE_LEVEL_WARNING,
+                TRACE_FLAG_INIT,
+                b"Type One GetConfiguration Failed. Usable buffer size: %d\n\0".as_ptr() as *const i8,
+                usable,
+            );
+            previously_failed = 1;
+        } else {
+            let feature_header: *const FEATURE_HEADER;
+            let mut total_available_bytes: u32 = 0;
+            let expected_available_bytes: u32;
+
+            REVERSE_BYTES(
+                &mut total_available_bytes,
+                &(*config_buffer).DataLength as *const _ as *const u8,
+            );
+            total_available_bytes += core::mem::offset_of!(GET_CONFIGURATION_HEADER, DataLength) as u32
+                + core::mem::size_of::<u32>() as u32; // RTL_SIZEOF_THROUGH_FIELD
+
+            feature_header = (config_buffer as *const u8)
+                .add(core::mem::size_of::<GET_CONFIGURATION_HEADER>())
+                as *const FEATURE_HEADER;
+
+            expected_available_bytes = core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32
+                + core::mem::size_of::<FEATURE_HEADER>() as u32
+                + (*feature_header).AdditionalLength as u32;
+
+            if total_available_bytes > expected_available_bytes {
+                // Device is returning more than required size. Most likely the device
+                // is returning TYPE ALL data. Set the flag to use TYPE ALL for TYPE ONE
+                // requests
+                TracePrint(
+                    TRACE_LEVEL_WARNING,
+                    TRACE_FLAG_INIT,
+                    b"Type One GetConfiguration Failed. Device returned %d bytes instead of %d bytes\n\0".as_ptr() as *const i8,
+                    size,
+                    feature_size as u32,
+                );
+                previously_failed = 1;
+            }
+        }
+
+        ExFreePool(config_buffer as *mut core::ffi::c_void);
+
+        if previously_failed != 0 {
+            DeviceSetParameter(
+                DeviceExtension,
+                CDROM_SUBKEY_NAME,
+                CDROM_TYPE_ONE_GET_CONFIG_NAME,
+                previously_failed,
+            );
+
+            (*DeviceExtension).DeviceAdditionalData.HackFlags |=
+                CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG as ntkrnl_sys::ddk::ULONG_PTR;
+        }
+    }
+
+    status
+}

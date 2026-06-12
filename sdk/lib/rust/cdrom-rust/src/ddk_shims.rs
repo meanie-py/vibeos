@@ -174,6 +174,30 @@ pub static CDROM_REQUEST_CONTEXT_TYPE_INFO: CtxTypeInfo = CtxTypeInfo(WDF_OBJECT
     UniqueType: &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const CtxTypeInfo as PCWDF_OBJECT_CONTEXT_TYPE_INFO,
     EvtDriverGetUniqueContextType: None,
 });
+// init.rs (translated from cdrom.c) references the CDROM_REQUEST_CONTEXT type-info under the
+// canonical WDF macro-expanded symbol `WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT` and under
+// the bare `CDROM_REQUEST_CONTEXT` name (WDF_DECLARE_CONTEXT_TYPE_WITH_NAME emits
+// `#define CDROM_REQUEST_CONTEXT &WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT`). Both must be
+// the SAME context identity as the lookup path (RequestGetContext, above) which uses
+// CDROM_REQUEST_CONTEXT_TYPE_INFO. WDF compares the `UniqueType` self-pointer, so we make all
+// three structs carry the *same* UniqueType (the canonical CDROM_REQUEST_CONTEXT_TYPE_INFO
+// address) — that keeps registration (init.rs) and lookup (RequestGetContext) matched.
+#[no_mangle]
+pub static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: CtxTypeInfo = CtxTypeInfo(WDF_OBJECT_CONTEXT_TYPE_INFO {
+    Size: core::mem::size_of::<WDF_OBJECT_CONTEXT_TYPE_INFO>() as u32,
+    ContextName: b"CDROM_REQUEST_CONTEXT\0".as_ptr() as PCHAR,
+    ContextSize: core::mem::size_of::<CDROM_REQUEST_CONTEXT>(),
+    UniqueType: &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const CtxTypeInfo as PCWDF_OBJECT_CONTEXT_TYPE_INFO,
+    EvtDriverGetUniqueContextType: None,
+});
+#[no_mangle]
+pub static CDROM_REQUEST_CONTEXT: CtxTypeInfo = CtxTypeInfo(WDF_OBJECT_CONTEXT_TYPE_INFO {
+    Size: core::mem::size_of::<WDF_OBJECT_CONTEXT_TYPE_INFO>() as u32,
+    ContextName: b"CDROM_REQUEST_CONTEXT\0".as_ptr() as PCHAR,
+    ContextSize: core::mem::size_of::<CDROM_REQUEST_CONTEXT>(),
+    UniqueType: &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const CtxTypeInfo as PCWDF_OBJECT_CONTEXT_TYPE_INFO,
+    EvtDriverGetUniqueContextType: None,
+});
 #[no_mangle]
 pub static FILE_OBJECT_CONTEXT_TYPE_INFO: CtxTypeInfo = CtxTypeInfo(WDF_OBJECT_CONTEXT_TYPE_INFO {
     Size: core::mem::size_of::<WDF_OBJECT_CONTEXT_TYPE_INFO>() as u32,
@@ -475,9 +499,37 @@ extern "C" {
     bt.Length = BufferLength;
 }
 
-// ===== 3 device-init fns the c2rust pass left UNTRANSLATED (init.c). Stubbed for link-clean;
-//       these do real init work (buffer alloc / SCSI-address + descriptor queries) so cdrom will
-//       NOT boot functionally until they are translated. TODO: hand-translate from init.c. =====
-#[no_mangle] pub unsafe extern "C" fn DeviceInitAllocateBuffers(_DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS { 0 }
-#[no_mangle] pub unsafe extern "C" fn DeviceRetrieveScsiAddress(_DeviceExtension: PCDROM_DEVICE_EXTENSION, _ScsiAddress: PSCSI_ADDRESS) -> NTSTATUS { 0 }
-#[no_mangle] pub unsafe extern "C" fn DeviceRetrieveDescriptorsAndTransferLength(_DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS { 0 }
+// ============================ remaining IRP-stack + kernel inlines ============================
+// (cdrom already defines IoGet{Current,Next}IrpStackLocation / IoSetNextIrpStackLocation /
+//  IoSetCompletionRoutine above — these are the rest the cohab link still wants.)
+#[no_mangle] pub unsafe extern "C" fn IoSkipCurrentIrpStackLocation(Irp: PIRP) {
+    let p = &mut (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation;
+    *p = (*p).offset(1);
+    (*Irp).CurrentLocation = ((*Irp).CurrentLocation as i8 + 1) as i8;
+}
+#[no_mangle] pub unsafe extern "C" fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP) {
+    let cur = IoGetCurrentIrpStackLocation(Irp);
+    let next = IoGetNextIrpStackLocation(Irp);
+    // C macro copies FIELD_OFFSET(IO_STACK_LOCATION, CompletionRoutine) bytes — cross-arch
+    // via offset_of (NOT classpnp's i386-only 0x24 hardcode), then clears Control.
+    let n = core::mem::offset_of!(IO_STACK_LOCATION, CompletionRoutine);
+    core::ptr::copy_nonoverlapping(cur as *const u8, next as *mut u8, n);
+    (*next).Control = 0;
+}
+#[no_mangle] pub unsafe extern "C" fn IoMarkIrpPending(Irp: PIRP) {
+    (*IoGetCurrentIrpStackLocation(Irp)).Control |= 0x01; // SL_PENDING_RETURNED
+}
+// KeInitializeSpinLock(lock) => *lock = 0
+#[no_mangle] pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
+
+// c2rust panic/UB paths emit a call to libc `abort`; there is no CRT abort in the
+// kernel. Halt (matches the crate panic_handler).
+#[no_mangle] pub extern "C" fn abort() -> ! { loop {} }
+
+// FORCEINLINE from cdrom.h: 64k-write time in 100ns units. 320,000,000 / SectorsPerSecond
+// (no floats — kernel-safe). SectorsPerSecond is guaranteed >= 1 by the caller (_In_range_).
+// FORCEINLINE (cdecl, not NTAPI) — callers declare it `extern "C"`, so define it
+// `extern "C"` too (matters on i386 where system=stdcall != C=cdecl).
+#[no_mangle] pub unsafe extern "C" fn ConvertSectorsPerSecondTo100nsUnitsFor64kWrite(SectorsPerSecond: u32) -> i64 {
+    320_000_000i64 / SectorsPerSecond as i64
+}
