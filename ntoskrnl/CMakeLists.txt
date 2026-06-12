@@ -297,29 +297,28 @@ add_custom_command(
 )
 add_custom_target(rust_kernel DEPENDS ${RUST_KERNEL_LIB})
 
-add_executable(ntoskrnl
-    ${ntoskrnl_asm}
-    ${NTOSKRNL_SOURCE}
-    ${PCH_SKIP_SOURCE}
-    ntoskrnl.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/ntoskrnl.def)
-set_module_type(ntoskrnl kernel)
-set_target_properties(ntoskrnl PROPERTIES C_STANDARD 23)
-
-source_group(TREE ${REACTOS_SOURCE_DIR}/ntoskrnl PREFIX "Source Files" FILES ${NTOSKRNL_SOURCE})
-
-# Allow multiple definitions: Rust compiler_builtins and libclang_rt both provide __chkstk
-target_link_options(ntoskrnl PRIVATE "LINKER:--allow-multiple-definition")
-target_link_libraries(ntoskrnl ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent ${RUST_KERNEL_LIB})
-
-if(STACK_PROTECTOR)
-    target_link_libraries(ntoskrnl gcc_ssp_nt)
-endif()
-
-add_importlibs(ntoskrnl hal kdcom bootvid)
-add_pch(ntoskrnl ${REACTOS_SOURCE_DIR}/ntoskrnl/include/ntoskrnl.h "${PCH_SKIP_SOURCE}")
-add_dependencies(ntoskrnl psdk asm rust_kernel)
-add_cd_file(TARGET ntoskrnl DESTINATION reactos/system32 NO_CAB FOR all)
+# ntoskrnl.exe: link driven by cargo (graduated from cmake add_executable).
+# ntoskrnl-cargo/build.rs (reactos-link) self-hosts the kernel-rust staticlib +
+# the cmake C-floor static libs (ntoskrnl_vista/cportlib/csq/pseh/arbiter/cmlib/
+# lsalib/rtl/rossym/setjmp/wdmguid/poguid/ioevent/hal/kdcom/bootvid, + cnt-rust
+# replacing libcntpr) + self-assembled asm + spec2def + the .res, replacing
+# add_executable + set_module_type(kernel) + target_link_libraries + add_pch.
+# KIND kernelexe → native-pefixup --kernel + i386 forwarder fix. Proven ×3
+# boot-equivalent via ntoskrnl-cargo/boot-swap-smoke.sh. The spec2def(...
+# ADD_IMPORTLIB) at the top of this file STAYS — the tree imports libntoskrnl.
+# EXTRA_DEPENDS == the OLD ntoskrnl dependency closure (target_link_libraries +
+# add_importlibs + add_dependencies), so a cold build can't race a stale .a /
+# generated header the cargo link reuses by path. (rust_kernel kept as a dep:
+# the cargo build links its OWN kernel-rust, but the cmake target's build is the
+# proven-sufficient source of any generated prerequisites; revisit to drop it.)
+add_cargo_module(ntoskrnl ntoskrnl-cargo ntoskrnl.exe
+    KIND kernelexe
+    BODY_CRATE kernel-rust
+    EXTRA_DEPENDS
+        ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl
+        ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent
+        hal kdcom bootvid
+        psdk asm rust_kernel)
 
 add_subdirectory(ntkrnlmp)
 
