@@ -218,7 +218,7 @@ const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x01;
 
 const MediaUnknown: i32 = 0;
 const MediaUnavailable: i32 = 1;
-const DO_VERIFY_VOLUME: u32 = 0x00000004;
+const DO_VERIFY_VOLUME: u32 = 0x02;
 const CdromMmcUpdateRequired: i32 = 1;
 const TRACE_LEVEL_ERROR: u32 = 1;
 const TRACE_FLAG_IOCTL: u32 = 2;
@@ -236,14 +236,14 @@ const TRACE_FLAG_IOCTL: u32 = 2;
 const NonPagedPoolNx: u32 = 0x200; // POOL_TYPE
 const CDROM_TAG_COMPLETION_CONTEXT: u32 = 0; // placeholder, replace with actual tag
 
-const START_UNIT_TIMEOUT: u32 = 60; // typical timeout in seconds
+const START_UNIT_TIMEOUT: u32 = 0xf0; // typical timeout in seconds  // was 60 (LLM-invented); bindgen-correct
 
 // SCSI constants
 const SRB_FUNCTION_EXECUTE_SCSI: u8 = 0x00;
-const SRB_FLAGS_NO_DATA_TRANSFER: u32 = 0x00000004;
+const SRB_FLAGS_NO_DATA_TRANSFER: u32 = 0x0;  // was 0x00000004 (LLM-invented); bindgen-correct
 const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x00000008;
 const SCSIOP_START_STOP_UNIT: u8 = 0x1B;
-const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x0004D004;
+const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x001B0013;
 
 // Tracing constants (typical WPP values)
 
@@ -254,10 +254,10 @@ const STATUS_INTERNAL_ERROR: i32 = (0xC00000E5u32 as i32);
 
 // Translate function
 
-const SRB_FUNCTION_FLUSH_QUEUE: u8 = 0x02;
+const SRB_FUNCTION_FLUSH_QUEUE: u8 = 0x15;  // was 0x02 (LLM-invented); bindgen-correct
 const WDF_REQUEST_SEND_OPTION_IGNORE_TARGET_STATE: u32 = 0x00000001;
 
-const CDROM_READ_CAPACITY_TIMEOUT: u32 = 10; // typical value, if incorrect caller should override
+const CDROM_READ_CAPACITY_TIMEOUT: u32 = 0x14; // typical value, if incorrect caller should override  // was 10 (LLM-invented); bindgen-correct
 const SCSIOP_READ_CAPACITY: u8 = 0x25;
 
 const CDROM_TAG_STREAM: u32 = 0x6D727453;
@@ -555,15 +555,15 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
     const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x00000008;
-    const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x00000010;
-    const SRB_FLAGS_DATA_OUT: u32 = 0x00000004;
-    const SRB_FLAGS_DATA_IN: u32 = 0x00000008;
-    const IOCTL_SCSI_EXECUTE_OUT: u32 = 0x4D006;
-    const IOCTL_SCSI_EXECUTE_IN: u32 = 0x4D008;
-    const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x4D00A;
-    const IRP_MJ_SCSI: u8 = 0x0B;
+    const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x100;  // was 0x00000010 (LLM-invented); bindgen-correct
+    const SRB_FLAGS_DATA_OUT: u32 = 0x80;  // was 0x00000004 (LLM-invented); bindgen-correct
+    const SRB_FLAGS_DATA_IN: u32 = 0x40;  // was 0x00000008 (LLM-invented); bindgen-correct
+    const IOCTL_SCSI_EXECUTE_OUT: u32 = 0x1b0012;  // was 0x4D006 (LLM-invented); bindgen-correct
+    const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011;  // was 0x4D008 (LLM-invented); bindgen-correct
+    const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x001B0013;
+    const IRP_MJ_SCSI: u8 = 0x0F; // IRP_MJ_SCSI
     const SRB_STATUS_PENDING: u8 = 0x00;
-    const SRB_STATUS_QUEUE_FROZEN: u8 = 0x01;
+    const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;  // was 0x01 (LLM-invented); bindgen-correct
     const SRB_STATUS_SUCCESS: u8 = 0x01;
     const STATUS_SUCCESS: i32 = 0;
     const STATUS_INSUFFICIENT_RESOURCES: i32 = (0xC000009Au32 as i32);
@@ -2809,7 +2809,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceProperty(
     }
 }
 
-const SCSIOP_MODE_SENSE: u8 = 0x5A;
+const SCSIOP_MODE_SENSE: u8 = 0x1a;  // was 0x5A (LLM-invented); bindgen-correct
 #[no_mangle]
 pub unsafe extern "C" fn DeviceRetrieveModeSenseUsingScratch(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,

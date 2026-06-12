@@ -1700,7 +1700,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByIoControl(
     const STATUS_DATA_OVERRUN: i32 = 0xC000003Cu32 as i32;
     const STATUS_SUCCESS: i32 = 0x00000000;
     const IOCTL_CDROM_READ_Q_CHANNEL: u32 = 0x2003C;
-    const STATUS_VERIFY_REQUIRED: i32 = 0xC0000171u32 as i32;
+    const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32;
     const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32;
     const IOCTL_CDROM_CHECK_VERIFY: u32 = 0x20028;
     const IOCTL_STORAGE_CHECK_VERIFY: u32 = 0x2D4800;

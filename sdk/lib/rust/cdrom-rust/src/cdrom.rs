@@ -42,6 +42,7 @@ extern "C" {
     static CDROM_REQUEST_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     static FILE_OBJECT_CONTEXT_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
     static CDROM_DEVICE_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
+    static CDROM_DRIVER_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
 }
 extern "C" {
     fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
@@ -211,26 +212,26 @@ const TRACE_FLAG_INIT: u32 = 0x00000001;
 const TRACE_LEVEL_FATAL: u32 = 1;          // placeholder
 const TRACE_FLAG_PNP: u32 = 0x00000001;     // placeholder
 const CDROM_TAG_STRINGS: u32 = 0x4D524443; // 'CDRM' in LE
-const SCSI_CDROM_TIMEOUT: u32 = 1800;       // seconds, placeholder
+const SCSI_CDROM_TIMEOUT: u32 = 0xa;       // seconds, placeholder  // was 1800 (LLM-invented); bindgen-correct
 const WRITE_RETRY_DELAY_DVD_1x: u64 = 10_000_000; // 100ns units, placeholder
-const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x10; // placeholder
+const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x8; // placeholder  // was 0x10 (LLM-invented); bindgen-correct
 const INVALID_SESSION: u32 = 0xFFFFFFFF;
 const DEVPROP_TYPE_EMPTY: u32 = 0;
 const WDF_REMOVE_LOCK_OPTION_ACQUIRE_FOR_IO: u32 = 1; // placeholder
 const FILE_DEVICE_CD_ROM: u32 = 0x00000002;
-const FILE_REMOVABLE_MEDIA: u32 = 0x00000080;
-const WdfFileObjectWdfCannotUseFsContexts: u32 = 1; // placeholder
+const FILE_REMOVABLE_MEDIA: u32 = 0x01;
+const WdfFileObjectWdfCannotUseFsContexts: u32 = 4; // WDF_FILEOBJECT_CLASS
 const WdfTrue: u32 = 1;
-const WdfSynchronizationScopeNone: u32 = 0;
-const WdfExecutionLevelPassive: u32 = 1;
-const WdfExecutionLevelDispatch: u32 = 2;
-const WdfFileObjectCanBeOptional: u32 = 2;
-const WdfDeviceIoDirect: u32 = 2; // placeholder
+const WdfSynchronizationScopeNone: u32 = 4;   // WDF_SYNCHRONIZATION_SCOPE (0=Invalid,1=Inherit,2=Device,3=Queue,4=None)
+const WdfExecutionLevelPassive: u32 = 2;       // WDF_EXECUTION_LEVEL (0=Invalid,1=Inherit,2=Passive,3=Dispatch)
+const WdfExecutionLevelDispatch: u32 = 3;
+const WdfFileObjectCanBeOptional: u32 = 0x80000000; // WDF_FILEOBJECT_CLASS flag
+const WdfDeviceIoDirect: u32 = 3; // WDF_DEVICE_IO_TYPE (1=Neither,2=Buffered,3=Direct,4=BufferedOrDirect)
 const WdfFalse: u32 = 0;
-const WdfIoQueueDispatchSequential: u32 = 0;
-const WdfIoQueueDispatchParallel: u32 = 1;
-const WdfIoQueueDispatchManual: u32 = 2;
-const WdfRequestTypeCreate: u32 = 1; // placeholder
+const WdfIoQueueDispatchSequential: u32 = 1; // WDF_IO_QUEUE_DISPATCH_TYPE (0=Invalid,1=Seq,2=Parallel,3=Manual)
+const WdfIoQueueDispatchParallel: u32 = 2;
+const WdfIoQueueDispatchManual: u32 = 3;
+const WdfRequestTypeCreate: u32 = 0; // WDF_REQUEST_TYPE
 const CdRomDeviceInterface: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0;8] }; // placeholder
 const MountedDeviceInterface: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0;8] }; // placeholder
 const DEVPKEY_Device_SessionId: DEVPROPKEY = DEVPROPKEY { fmtid: DEVPROPGUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0;8] }, pid: 10 }; // placeholder
@@ -332,17 +333,17 @@ const IO_CD_ROM_INCREMENT: i32 = 1;
 
 // Constants
 const DO_VERIFY_VOLUME: u32 = 0x00000002;           // DO_VERIFY_VOLUME
-const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x01;         // SL_OVERRIDE_VERIFY_VOLUME (Flags field)
-const CDROM_VOLUME_VERIFY_CHECKED: u8 = 0x01;       // CDROM_VOLUME_VERIFY_CHECKED (MinorFunction)
-const WdfRequestTypeRead: u32 = 0;                  // WdfRequestTypeRead
-const WdfRequestTypeWrite: u32 = 1;                 // WdfRequestTypeWrite
+const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02;         // SL_OVERRIDE_VERIFY_VOLUME (Flags field)
+const CDROM_VOLUME_VERIFY_CHECKED: u8 = 0x34;       // CDROM_VOLUME_VERIFY_CHECKED (MinorFunction)  // was 0x01 (LLM-invented); bindgen-correct
+const WdfRequestTypeRead: u32 = 3;                  // WDF_REQUEST_TYPE WdfRequestTypeRead
+const WdfRequestTypeWrite: u32 = 4;                 // WDF_REQUEST_TYPE WdfRequestTypeWrite
 const TRACE_LEVEL_VERBOSE: u32 = 5;                 // TRACE_LEVEL_VERBOSE
 const TRACE_FLAG_GENERAL: u32 = 0x00000001;         // TRACE_FLAG_GENERAL
-const STATUS_VERIFY_REQUIRED: i32 = 0xC0000181u32 as i32; // STATUS_VERIFY_REQUIRED
-const STATUS_DEVICE_BUSY: i32 = 0xC00000BBu32 as i32;     // STATUS_DEVICE_BUSY
+const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32; // STATUS_VERIFY_REQUIRED
+const STATUS_DEVICE_BUSY: i32 = 0x80000011_u32 as i32;     // STATUS_DEVICE_BUSY
 const STATUS_ACCESS_DENIED: i32 = 0xC0000022u32 as i32;   // STATUS_ACCESS_DENIED
 const STATUS_SUCCESS: i32 = 0;                              // STATUS_SUCCESS
-const CdromMmcUpdateRequired: u32 = 2;                      // enum value
+const CdromMmcUpdateRequired: u32 = 0x1;                      // enum value  // was 2 (LLM-invented); bindgen-correct
 
 // External functions
 
@@ -358,14 +359,14 @@ const IOCTL_SCSI_PASS_THROUGH_DIRECT: u32 = 0;
 const IOCTL_SCSI_PASS_THROUGH_EX: u32 = 0;
 const IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: u32 = 0;
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0;
-const STATUS_IO_DEVICE_ERROR: i32 = 0;
+const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32;
 const RequestSetupMcnSyncIrp: usize = 0;
 
 const TRACE_LEVEL_ERROR: u32 = 0; // unknown value
 const TRACE_FLAG_IOCTL: u32 = 0; // unknown value
 const IOCTL_STORAGE_EVENT_NOTIFICATION: u32 = 0; // unknown value
-const WdfRequestTypeDeviceControl: u32 = 0x0; // unknown value
-const WdfRequestTypeDeviceControlInternal: u32 = 0x1; // unknown value
+const WdfRequestTypeDeviceControl: u32 = 14; // WDF_REQUEST_TYPE (0xe)
+const WdfRequestTypeDeviceControlInternal: u32 = 15; // WDF_REQUEST_TYPE (0xf)
 #[no_mangle]
 pub unsafe extern "C" fn DriverEntry(
     DriverObject: ntkrnl_sys::ddk::PDRIVER_OBJECT,
@@ -379,6 +380,8 @@ pub unsafe extern "C" fn DriverEntry(
     PagedCode();
     WPP_INIT_TRACING(DriverObject, RegistryPath);
 
+    extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; }
+
     {
         let level = TRACE_LEVEL_INFORMATION;
         let flags = TRACE_FLAG_INIT;
@@ -388,7 +391,7 @@ pub unsafe extern "C" fn DriverEntry(
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
         &raw mut attributes,
-        core::ptr::null(),
+        &CDROM_DRIVER_EXTENSION_TYPE_INFO,
     );
     // `extern "system"` is stdcall-ABI on i386 / C-ABI on amd64+arm64 — the same
     // ABI the WDF callback field expects on each arch — but rustc nominally
@@ -481,6 +484,8 @@ pub unsafe extern "C" fn DriverEvtDeviceAdd(
 
     PAGED_CODE();
 
+    extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; }
+
     driverExtension = DriverGetExtension(Driver);
 
     RtlInitUnicodeString(&mut unicodeDeviceName as *mut _UNICODE_STRING, core::ptr::null());
@@ -510,7 +515,7 @@ pub unsafe extern "C" fn DriverEvtDeviceAdd(
             status = WdfDeviceInitAssignWdmIrpPreprocessCallback(
                 DeviceInit,
                 core::mem::transmute::<unsafe extern "C" fn(WDFDEVICE, PIRP) -> NTSTATUS, _>(RequestProcessSetPower),
-                0x1B, // IRP_MJ_POWER
+                0x16, // IRP_MJ_POWER
                 minorFunctions.as_mut_ptr(),
                 (core::mem::size_of_val(&minorFunctions) / core::mem::size_of::<u8>()) as u32,
             );
@@ -527,7 +532,7 @@ pub unsafe extern "C" fn DriverEvtDeviceAdd(
             status = WdfDeviceInitAssignWdmIrpPreprocessCallback(
                 DeviceInit,
                 core::mem::transmute::<unsafe extern "C" fn(WDFDEVICE, PIRP) -> NTSTATUS, _>(RequestProcessShutdownFlush),
-                0x1C, // IRP_MJ_FLUSH_BUFFERS
+                0x09, // IRP_MJ_FLUSH_BUFFERS
                 core::ptr::null_mut(),
                 0,
             );
@@ -544,7 +549,7 @@ pub unsafe extern "C" fn DriverEvtDeviceAdd(
             status = WdfDeviceInitAssignWdmIrpPreprocessCallback(
                 DeviceInit,
                 core::mem::transmute::<unsafe extern "C" fn(WDFDEVICE, PIRP) -> NTSTATUS, _>(RequestProcessShutdownFlush),
-                0x1E, // IRP_MJ_SHUTDOWN
+                0x10, // IRP_MJ_SHUTDOWN
                 core::ptr::null_mut(),
                 0,
             );
@@ -1084,6 +1089,7 @@ pub unsafe extern "C" fn DeviceEvtD0Entry(
     PreviousState: WDF_POWER_DEVICE_STATE,
 ) -> NTSTATUS {
     let _ = PreviousState;
+    extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; }
     let deviceExtension = DeviceGetExtension(Device);
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut zpoddInfo: PZERO_POWER_ODD_INFO = core::ptr::null_mut();
@@ -1417,7 +1423,7 @@ pub unsafe extern "C" fn DeviceCleanupDisableMcn(
 }
 #[no_mangle]
 pub unsafe extern "C" fn NormalizeIoctl(requestParameters: *mut WDF_REQUEST_PARAMETERS) {
-    const IOCTL_SCSI_BASE: u32 = 0x00000009;
+    const IOCTL_SCSI_BASE: u32 = 0x4;  // was 0x00000009 (LLM-invented); bindgen-correct
     const IOCTL_DISK_BASE: u32 = 0x00000007;
     const IOCTL_TAPE_BASE: u32 = 0x0000001f;
     const IOCTL_DVD_BASE: u32 = 0x00000033;
@@ -1566,7 +1572,7 @@ pub unsafe extern "C" fn RequestDispatchProcessDirectly(
     const IOCTL_VOLUME_ONLINE: u32 = 0x0000000A;          // was NTDDI_WIN8
     const STATUS_VERIFY_REQUIRED: NTSTATUS = (0xC0000185u32 as i32); // typical value
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = (0xC0000185u32 as i32); // typical
-    const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x01;
+    const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02; // SL_OVERRIDE_VERIFY_VOLUME
 
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
     let mut processed: BOOLEAN = 0; // FALSE
@@ -2698,7 +2704,7 @@ pub unsafe extern "C" fn RequestProcessInternalDeviceControl(
     Request: WDFREQUEST,
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) {
-    const IRP_MJ_SCSI: u8 = 0x0e;
+    const IRP_MJ_SCSI: u8 = 0x0f; // IRP_MJ_SCSI
     const IRP_MN_SCSI_CLASS: u8 = 0x01;
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut irp: *mut IRP = core::ptr::null_mut();

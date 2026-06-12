@@ -100,7 +100,7 @@ const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x01; // typical value
 // Constants needed by this module
 const KEY_ALL_ACCESS: u32 = 0xF003F;
 const CDROM_TAG_AUTORUN_DISABLE: u32 = 0x44434154; // 'DCAT'
-const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC0000593u32 as i32;
+const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5_u32 as i32;
 const NonPagedPoolNx: u32 = 0x200; // NonPagedPoolNx
 
 const PARAMETER_KEY_NAME: [u16; 11] = [
@@ -110,10 +110,10 @@ const AUTORUN_VALUE_NAME: [u16; 8] = [
     0x0041, 0x0075, 0x0074, 0x006F, 0x0072, 0x0075, 0x006E, 0
 ];
 
-const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x00000001;
+const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
 const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0x00000001; // unknown IOCTL code – placeholder
 
-const CDROM_HACK_MSFT_VIRTUAL_ODD: u32 = 0x00000001;
+const CDROM_HACK_MSFT_VIRTUAL_ODD: u32 = 0x2000;  // was 0x00000001 (LLM-invented); bindgen-correct
 const WdfExecutionLevelInheritFromParent: u32 = 1;
 const DO_VERIFY_VOLUME: u32 = 0x00000002;
 const STATUS_MEDIA_CHANGED: NTSTATUS = 0x8000001Cu32 as i32; // STATUS_MEDIA_CHANGED
@@ -138,17 +138,17 @@ const CLASSP_REG_SUBKEY_NAME: *mut u16 = CLASSP_REG_SUBKEY_NAME_W.as_ptr() as *m
 const CLASSP_REG_MMC_DETECTION_VALUE_NAME: *mut u16 = CLASSP_REG_MMC_DETECTION_VALUE_NAME_W.as_ptr() as *mut u16;
 
 // Flag constants
-const FDO_HACK_GESN_IS_BAD: u32 = 0x00000001;               // assume typical bit
-const NOTIFICATION_MEDIA_STATUS_CLASS_MASK: u32 = 0x00000001;
-const NOTIFICATION_DEVICE_BUSY_CLASS_MASK: u32 = 0x00000002;
-const NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK: u32 = 0x00000004;
+const FDO_HACK_GESN_IS_BAD: u32 = 0x2;               // assume typical bit  // was 0x00000001 (LLM-invented); bindgen-correct
+const NOTIFICATION_MEDIA_STATUS_CLASS_MASK: u32 = 0x10;  // was 0x00000001 (LLM-invented); bindgen-correct
+const NOTIFICATION_DEVICE_BUSY_CLASS_MASK: u32 = 0x40;  // was 0x00000002 (LLM-invented); bindgen-correct
+const NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK: u32 = 0x2;  // was 0x00000004 (LLM-invented); bindgen-correct
 const NOTIFICATION_EXTERNAL_REQUEST_CLASS_MASK: u32 = 0x00000008;
 const FDO_HACK_GESN_IGNORE_OPCHANGE: u32 = 0x00000010;
 
 // SRB flags/status
 const SRB_STATUS_MASK: u8 = 0xFF;
-const SRB_STATUS_SUCCESS: u8 = 0;
-const SRB_STATUS_BUS_RESET: u8 = 0x06;
+const SRB_STATUS_SUCCESS: u8 = 0x1;  // was 0 (LLM-invented); bindgen-correct
+const SRB_STATUS_BUS_RESET: u8 = 0xe;  // was 0x06 (LLM-invented); bindgen-correct
 const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
 
 // Detection state values
@@ -159,11 +159,11 @@ const CdromDetectionSupported: u32 = 2;
 // Pool / SRB constants (caller expected to provide correct values)
 const CDROM_TAG_MEDIA_CHANGE_DETECTION: u32 = 0x4D434D43; // 'CMCM'
 const SENSE_BUFFER_SIZE: usize = 18; // Example; actual value unknown
-const FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION: u64 = 0x20000; // matches HackFlags (ULONG_PTR)
-const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x100; // Unknown
-const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x200; // Unknown
-const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x400; // Unknown
-const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x800; // Unknown
+const FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION: u64 = 0x40; // matches HackFlags (ULONG_PTR)  // was 0x20000 (LLM-invented); bindgen-correct
+const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x10000000; // Unknown  // was 0x100 (LLM-invented); bindgen-correct
+const SRB_FLAGS_NO_QUEUE_FREEZE: u32 = 0x100; // Unknown  // was 0x200 (LLM-invented); bindgen-correct
+const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x8; // Unknown  // was 0x400 (LLM-invented); bindgen-correct
+const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x100000; // Unknown  // was 0x800 (LLM-invented); bindgen-correct
 const GUID_CONSOLE_DISPLAY_STATE: *const core::ffi::c_void = 0x1 as *const core::ffi::c_void; // Placeholder
 #[no_mangle]
 pub unsafe extern "C" fn GesnDataInterpret(
@@ -791,7 +791,7 @@ pub unsafe extern "C" fn RequestSetupMcnRequest(
             (*srb).CdbLength = 6;
             (*srb).DataTransferLength = 0;
             (*srb).SrbFlags |= 0x02; // SRB_FLAGS_NO_DATA_TRANSFER
-            (*nextIrpStack).Parameters.DeviceIoControl.IoControlCode = 0x4D00C; // IOCTL_SCSI_EXECUTE_NONE
+            (*nextIrpStack).Parameters.DeviceIoControl.IoControlCode = 0x001B0013; // IOCTL_SCSI_EXECUTE_NONE
             (*srb).DataBuffer = core::ptr::null_mut();
             (*srb).DataTransferLength = 0;
             (*irp).MdlAddress = core::ptr::null_mut();

@@ -149,10 +149,7 @@ pub unsafe extern "C" fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
 // cdrom.c instantiated these via WDF_DECLARE_CONTEXT_TYPE_WITH_NAME; that .c is now Rust, so
 // define them here. Layout: Size, ContextName, ContextSize (the context struct's size),
 // UniqueType (self-pointer — WDF identifies a context type by this address),
-// EvtDriverGetUniqueContextType (NULL). The driver-ext one stays defined elsewhere.
-extern "C" {
-    static _WDF_CDROM_DRIVER_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
-}
+// EvtDriverGetUniqueContextType (NULL).
 // WDF_OBJECT_CONTEXT_TYPE_INFO holds raw pointers (not Sync); a `static` requires Sync. Wrap in a
 // repr(transparent) newtype with a manual Sync impl — the type-info is read-only after image load.
 #[repr(transparent)]
@@ -164,6 +161,18 @@ pub static CDROM_DEVICE_EXTENSION_TYPE_INFO: CtxTypeInfo = CtxTypeInfo(WDF_OBJEC
     ContextName: b"CDROM_DEVICE_EXTENSION\0".as_ptr() as PCHAR,
     ContextSize: core::mem::size_of::<CDROM_DEVICE_EXTENSION>(),
     UniqueType: &CDROM_DEVICE_EXTENSION_TYPE_INFO as *const CtxTypeInfo as PCWDF_OBJECT_CONTEXT_TYPE_INFO,
+    EvtDriverGetUniqueContextType: None,
+});
+// Driver-extension context type-info. cdrom.c declared this via WDF_DECLARE_CONTEXT_TYPE_WITH_NAME
+// (symbol _WDF_CDROM_DRIVER_EXTENSION_TYPE_INFO) — now that cdrom.c is Rust, define it here with the
+// correct ContextSize so WdfDriverCreate allocates the right driver-extension size and
+// DriverGetExtension retrieves it by the same UniqueType identity.
+#[no_mangle]
+pub static CDROM_DRIVER_EXTENSION_TYPE_INFO: CtxTypeInfo = CtxTypeInfo(WDF_OBJECT_CONTEXT_TYPE_INFO {
+    Size: core::mem::size_of::<WDF_OBJECT_CONTEXT_TYPE_INFO>() as u32,
+    ContextName: b"CDROM_DRIVER_EXTENSION\0".as_ptr() as PCHAR,
+    ContextSize: core::mem::size_of::<CDROM_DRIVER_EXTENSION>(),
+    UniqueType: &CDROM_DRIVER_EXTENSION_TYPE_INFO as *const CtxTypeInfo as PCWDF_OBJECT_CONTEXT_TYPE_INFO,
     EvtDriverGetUniqueContextType: None,
 });
 #[no_mangle]
@@ -225,7 +234,7 @@ pub unsafe extern "C" fn FileObjectGetContext(
 }
 #[no_mangle]
 pub unsafe extern "C" fn DriverGetExtension(Driver: WDFDRIVER) -> *mut CDROM_DRIVER_EXTENSION {
-    WdfObjectGetTypedContext(Driver as WDFOBJECT, &_WDF_CDROM_DRIVER_EXTENSION_TYPE_INFO)
+    WdfObjectGetTypedContext(Driver as WDFOBJECT, &CDROM_DRIVER_EXTENSION_TYPE_INFO.0)
         as *mut CDROM_DRIVER_EXTENSION
 }
 
@@ -289,7 +298,7 @@ pub unsafe extern "C" fn WDF_IO_TARGET_OPEN_PARAMS_INIT_EXISTING_DEVICE(
 ) {
     core::ptr::write_bytes(Params as *mut u8, 0, core::mem::size_of::<WDF_IO_TARGET_OPEN_PARAMS>());
     (*Params).Size = core::mem::size_of::<WDF_IO_TARGET_OPEN_PARAMS>() as u32;
-    (*Params).Type = 2; // WdfIoTargetOpenUseExistingDevice
+    (*Params).Type = 1; // WdfIoTargetOpenUseExistingDevice (WDF_IO_TARGET_OPEN_TYPE: 0=Undef,1=UseExisting,2=ByName,3=Reopen)
     (*Params).TargetDeviceObject = DeviceObject;
 }
 

@@ -54,10 +54,10 @@ const TRACE_LEVEL_INFORMATION: u32 = 4;
 
 // Forward declarations for unknown functions
 
-const CdromMmcUpdateStarted: i32 = 0;
+const CdromMmcUpdateStarted: i32 = 0x2;  // was 0 (LLM-invented); bindgen-correct
 const CdromMmcUpdateRequired: i32 = 1;
-const CdromMmcUpdateComplete: i32 = 2;
-const SCSI_GET_CONFIGURATION_REQUEST_TYPE_CURRENT: u32 = 2;
+const CdromMmcUpdateComplete: i32 = 0x0;  // was 2 (LLM-invented); bindgen-correct
+const SCSI_GET_CONFIGURATION_REQUEST_TYPE_CURRENT: u32 = 0x1;  // was 2 (LLM-invented); bindgen-correct
 const FeatureRealTimeStreaming: FEATURE_NUMBER = 0x0107;
 const FeatureDvdCSS: FEATURE_NUMBER = 0x0106;
 const MAXLONGLONG: i64 = i64::MAX;
@@ -998,7 +998,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 
     // ---- constants ----
     const SCSIOP_GET_PERFORMANCE: u8 = 0xAC;
-    const CDROM_GET_PERFORMANCE_TIMEOUT: u32 = 15; // placeholder
+    const CDROM_GET_PERFORMANCE_TIMEOUT: u32 = 0x14; // placeholder  // was 15 (LLM-invented); bindgen-correct
     const MAXIMUM_RETRY_FOR_SINGLE_IO_IN_100NS_UNITS: i64 = i64::MAX; // placeholder
 
     // ---- local struct types (mirror C definitions exactly) ----

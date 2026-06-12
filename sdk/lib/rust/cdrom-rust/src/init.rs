@@ -98,7 +98,7 @@ const TRACE_LEVEL_INFORMATION: u32 = 3;
 const TRACE_FLAG_PNP: u32 = 2;
 const TRACE_FLAG_INIT: u32 = 0x200;
 
-const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x4d014;
+const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x001B0013;
 const FALSE: u8 = 0;
 const IOCTL_SCSI_GET_ADDRESS: u32 = 0x41018c;
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400; // typical value, replace if needed
@@ -108,7 +108,7 @@ const PropertyStandardQuery: u32 = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 
 const FDO_HACK_INVALID_FLAGS: u32 = 0xFFFFFF80;
-const FDO_HACK_CANNOT_LOCK_MEDIA: u32 = 0x0002; // unknown actual value, placeholder
+const FDO_HACK_CANNOT_LOCK_MEDIA: u32 = 0x1; // unknown actual value, placeholder  // was 0x0002 (LLM-invented); bindgen-correct
 
 type DEVICE_REMOVAL_POLICY = u32;
 
@@ -117,7 +117,7 @@ const CDROM_TAG_STRINGS: u32 = 0x4D524443; // 'CDRM'
 const SCSIOP_INQUIRY: u8 = 0x12;
 const SRB_STATUS_DATA_OVERRUN: u8 = 0x12;
 const MINIMUM_CDROM_INQUIRY_SIZE: u32 = 36;
-const STATUS_DEVICE_PROTOCOL_ERROR: NTSTATUS = -1073740923; // 0xC0000185
+const STATUS_DEVICE_PROTOCOL_ERROR: NTSTATUS = 0xC0000186_u32 as i32; // 0xC0000185
 
 const PLUGPLAY_REGKEY_DEVICE: u32 = 1;
 
@@ -127,13 +127,13 @@ const CDROM_NON_MMC_DRIVE_NAME: *const u16 = core::ptr::null();
 const CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE: *const u16 = core::ptr::null();
 const CDROM_TYPE_ONE_GET_CONFIG_NAME: *const u16 = core::ptr::null();
 
-const CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32 = 0x0001;
-const CDROM_HACK_BAD_VENDOR_PROFILES: u32 = 0x0002;
-const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x0004;
+const CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32 = 0x100;  // was 0x0001 (LLM-invented); bindgen-correct
+const CDROM_HACK_BAD_VENDOR_PROFILES: u32 = 0x1000;  // was 0x0002 (LLM-invented); bindgen-correct
+const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x800;  // was 0x0004 (LLM-invented); bindgen-correct
 
 const FeatureProfileList: u32 = 0x0003; // example value
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
-const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 1;
+const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 0x2;  // was 1 (LLM-invented); bindgen-correct
 
 const CDROM_TAG_GET_CONFIG: u32 = 0x20207463; // 'CteG' tag
 const MAXUSHORT: u32 = 65535;
@@ -144,19 +144,19 @@ const MODE_PAGE_CAPABILITIES: u8 = 0x2A;
 const Dbd: u8 = 1;
 const CDROM_TAG_MODE_DATA: u32 = 0x20202020; // typical tag
 
-const CDROM_HACK_TOSHIBA_SD_W1101: u32 = 0x0001;
-const CDROM_HACK_HITACHI_GD_2000: u32 = 0x0002;
-const CDROM_HACK_FUJITSU_FMCD_10x: u32 = 0x0004;
-const CDROM_HACK_DEC_RRD: u32 = 0x0010;
-const DEV_SAFE_START_UNIT: u32 = 0x00000001;
+const CDROM_HACK_TOSHIBA_SD_W1101: u32 = 0x10;  // was 0x0001 (LLM-invented); bindgen-correct
+const CDROM_HACK_HITACHI_GD_2000: u32 = 0x8;  // was 0x0002 (LLM-invented); bindgen-correct
+const CDROM_HACK_FUJITSU_FMCD_10x: u32 = 0x2;  // was 0x0004 (LLM-invented); bindgen-correct
+const CDROM_HACK_DEC_RRD: u32 = 0x1;  // was 0x0010 (LLM-invented); bindgen-correct
+const DEV_SAFE_START_UNIT: u32 = 0x4;  // was 0x00000001 (LLM-invented); bindgen-correct
 const SCSIOP_MODE_SELECT: u8 = 0x15;
-const HITACHI_MODE_DATA_SIZE: u32 = 0x10;
+const HITACHI_MODE_DATA_SIZE: u32 = 0xc;  // was 0x10 (LLM-invented); bindgen-correct
 
 // Function pointer type used by ScanForSpecialHandler
 type CDROM_SCAN_FOR_SPECIAL_HANDLER = unsafe extern "C" fn(*mut CDROM_DEVICE_EXTENSION, *mut CDROM_SCAN_FOR_SPECIAL_INFO) -> u8; // BOOLEAN
 
 const FILE_DEVICE_CD_ROM: u32 = 0x00000002;
-const FILE_DEVICE_DVD: u32 = 0x00000003;
+const FILE_DEVICE_DVD: u32 = 0x33;
 const BusTypeScsi: u32 = 0x00;
 const BusTypeAtapi: u32 = 0x01;
 const BusTypeUnknown: u32 = 0x02;
@@ -165,20 +165,20 @@ const FeatureCdRead: u32 = 0x001E; // _FEATURE_NUMBER_FeatureCdRead = 30
 const FeatureDvdRead: u32 = 0x0012;
 const FeatureDvdCSS: u32 = 0x0106;
 const CdromMmcUpdateRequired: u32 = 1;
-const FILE_READ_ONLY_DEVICE: u32 = 0x00000001;
+const FILE_READ_ONLY_DEVICE: u32 = 0x02;
 
-const CLASS_PERF_RESTORE_MINIMUM: u32 = 5; // typical minimum
-const SCSI_CDROM_OPC_TIMEOUT: u32 = 100; // placeholder (actual value ~300 seconds)
+const CLASS_PERF_RESTORE_MINIMUM: u32 = 0x10; // typical minimum  // was 5 (LLM-invented); bindgen-correct
+const SCSI_CDROM_OPC_TIMEOUT: u32 = 0x104; // placeholder (actual value ~300 seconds)  // was 100 (LLM-invented); bindgen-correct
 const MediaPresent: u32 = 1;
 const DEVPROP_TRUE: i32 = 1;
 const DEVPROP_FALSE: i32 = 0;
 const DEVPROP_TYPE_BOOLEAN: u32 = 0x00000001; // DEVPROP_TYPE_BOOLEAN
 const DevicePropertyRemovalPolicy: u32 = 19; // DEVICE_REGISTRY_PROPERTY
-const FILE_REMOVABLE_MEDIA: u32 = 0x00000020;
-const FILE_PORTABLE_DEVICE: u32 = 0x00000040;
-const DO_SYSTEM_SYSTEM_PARTITION: u32 = 0x00001000;
-const DO_SYSTEM_BOOT_PARTITION: u32 = 0x00002000;
-const DO_SYSTEM_CRITICAL_PARTITION: u32 = 0x00004000;
+const FILE_REMOVABLE_MEDIA: u32 = 0x01;
+const FILE_PORTABLE_DEVICE: u32 = 0x4000;
+const DO_SYSTEM_SYSTEM_PARTITION: u32 = 0x00200000;
+const DO_SYSTEM_BOOT_PARTITION: u32 = 0x0100;
+const DO_SYSTEM_CRITICAL_PARTITION: u32 = 0x00400000;
 
 // DVD copy-protect / RPC constants (init.c -> ntddcdvd.h)
 const IOCTL_DVD_READ_KEY: u32 = 0x2D0014;
@@ -219,9 +219,9 @@ pub unsafe extern "C" fn DeviceClaimRelease(
         srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
 
         srb.Function = if Release != 0 {
-            0x10 /* SRB_FUNCTION_RELEASE_DEVICE */
+            0x06 /* SRB_FUNCTION_RELEASE_DEVICE */
         } else {
-            0x0F /* SRB_FUNCTION_CLAIM_DEVICE */
+            0x01 /* SRB_FUNCTION_CLAIM_DEVICE */
         };
 
         WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
         status = WdfIoTargetSendInternalIoctlOthersSynchronously(
             (*DeviceExtension).IoTarget,
             request as WDFREQUEST,
-            0x001B0000 /* IOCTL_SCSI_EXECUTE_NONE */,
+            0x001B0013 /* IOCTL_SCSI_EXECUTE_NONE = (FILE_DEVICE_SCSI<<16)+0x13 */,
             core::ptr::addr_of_mut!(descriptor),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -287,6 +287,8 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
     let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
 
     PAGED_CODE();
+
+    extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; }
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -591,7 +593,7 @@ pub unsafe extern "C" fn DeviceInitPowerContext(
     // Local constants
     const TRACE_LEVEL_ERROR: u32 = 2;
     const TRACE_FLAG_PNP: u32 = 0x00008000;
-    const IOCTL_SCSI_EXECUTE_IN: u32 = 0x0000001B;
+    const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011;  // was 0x0000001B (LLM-invented); bindgen-correct
 
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
     let mut attributes = core::mem::MaybeUninit::<WDF_OBJECT_ATTRIBUTES>::uninit();

@@ -42,8 +42,8 @@ const SP_UNTAGGED: u8 = 0xFF;        // (UCHAR)~0 per srb.h
 // from crate::types (correct bindgen values).
 
 const WDF_REQUEST_REUSE_NO_FLAGS: u32 = 0;
-const IOCTL_SCSI_EXECUTE_IN: u32 = 0; // unknown
-const IRP_MJ_SCSI: u8 = 0x0b;
+const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011; // unknown  // was 0 (LLM-invented); bindgen-correct
+const IRP_MJ_SCSI: u8 = 0x0F;
 const SENSE_BUFFER_SIZE: u32 = 18;
 const TRACE_LEVEL_ERROR: u32 = 1;
 const TRACE_FLAG_GENERAL: u32 = 2;
@@ -434,7 +434,7 @@ pub unsafe extern "C" fn DevicePowerSettingCallback(
         Data3: 0x47A0,
         Data4: [0x8F, 0x24, 0xC2, 0x8D, 0x93, 0x6F, 0xDA, 0x47],
     };
-    const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x40;
+    const SRB_FLAGS_NO_KEEP_AWAKE: u32 = 0x100000;  // was 0x40 (LLM-invented); bindgen-correct
 
     // IsEqualGUID(a, b): RtlEqualMemory(a, b, sizeof(GUID)) per the DDK macro.
     let is_equal_guid = |a: *const GUID, b: *const GUID| -> bool {

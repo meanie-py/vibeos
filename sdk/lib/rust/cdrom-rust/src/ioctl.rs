@@ -167,11 +167,11 @@ const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: ULONG = 1;
 
 const TRACE_LEVEL_WARNING: u32 = 0x00000003;
 const TRACE_FLAG_IOCTL: u32 = 0x00000001;
-const MAXIMUM_RETRIES: u8 = 5;
+const MAXIMUM_RETRIES: u8 = 0x4;  // was 5 (LLM-invented); bindgen-correct
 const RAW_SECTOR_SIZE: u32 = 2352;
 const CD_RAW_SECTOR_WITH_SUBCODE_SIZE: u32 = 2448;
-const CD_RAW_SECTOR_WITH_C2_SIZE: u32 = 2960;
-const CD_RAW_SECTOR_WITH_C2_AND_SUBCODE_SIZE: u32 = 3056;
+const CD_RAW_SECTOR_WITH_C2_SIZE: u32 = 0xa58;  // was 2960 (LLM-invented); bindgen-correct
+const CD_RAW_SECTOR_WITH_C2_AND_SUBCODE_SIZE: u32 = 0xab8;  // was 3056 (LLM-invented); bindgen-correct
 const COOKED_SECTOR_SIZE: u32 = 2048;
 // TRACK_MODE_TYPE enum values (from crate::types bindgen enum)
 const CDDA: u32 = _TRACK_MODE_TYPE_CDDA as u32;
@@ -181,11 +181,11 @@ const RawWithSubCode: u32 = _TRACK_MODE_TYPE_RawWithSubCode as u32;
 const RawWithC2: u32 = _TRACK_MODE_TYPE_RawWithC2 as u32;
 const RawWithC2AndSubCode: u32 = _TRACK_MODE_TYPE_RawWithC2AndSubCode as u32;
 
-const IOCTL_CDROM_CURRENT_POSITION: u32 = 0x002D5000;
-const IOCTL_CDROM_MEDIA_CATALOG: u32 = 0x002D5008;
-const IOCTL_CDROM_TRACK_ISRC: u32 = 0x002D5010;
+const IOCTL_CDROM_CURRENT_POSITION: u32 = 0x1;  // was 0x002D5000 (LLM-invented); bindgen-correct
+const IOCTL_CDROM_MEDIA_CATALOG: u32 = 0x2;  // was 0x002D5008 (LLM-invented); bindgen-correct
+const IOCTL_CDROM_TRACK_ISRC: u32 = 0x3;  // was 0x002D5010 (LLM-invented); bindgen-correct
 
-const FILE_DEVICE_DVD: u32 = 0x0002;
+const FILE_DEVICE_DVD: u32 = 0x33;
 
 const TRACE_LEVEL_ERROR: u32 = 2;
 const IOCTL_DVD_SEND_KEY: u32 = 0x2D0000;
@@ -212,7 +212,7 @@ unsafe extern "system" {
 // Forward declarations for unknown symbols (caller dedups)
 
 const TRACE_LEVEL_INFORMATION: u32 = 0x4;
-const CDROM_EXCLUSIVE_CALLER_LENGTH: u32 = 256;
+const CDROM_EXCLUSIVE_CALLER_LENGTH: u32 = 0x40;  // was 256 (LLM-invented); bindgen-correct
 const CDROM_LOCK_IGNORE_VOLUME: u32 = 0x1;
 const IO_CDROM_EXCLUSIVE_LOCK: u32 = 0x100;
 const IOCTL_CDROM_EXCLUSIVE_ACCESS: u32 = 0x2D1000;
@@ -257,7 +257,7 @@ const SCSIOP_VERIFY: u8 = 0x2F;
 const STATUS_MEDIA_WRITE_PROTECTED: i32 = 0xC00000A2_u32 as i32;
 
 const SCSIOP_TEST_UNIT_READY: u8 = 0x00;
-const CDROM_TEST_UNIT_READY_TIMEOUT: u32 = 10;
+const CDROM_TEST_UNIT_READY_TIMEOUT: u32 = 0x14;  // was 10 (LLM-invented); bindgen-correct
 const IOCTL_STORAGE_CHECK_VERIFY: u32 = 0x002D4800;
 
 const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1; // unverified
@@ -273,7 +273,7 @@ const SimpleMediaLock: i32 = 1;
 
 const STATUS_INVALID_HANDLE: NTSTATUS = 0xC0000008u32 as i32;
 const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC0000010u32 as i32;
-const FDO_HACK_NO_STREAMING: u32 = 0x00000040;
+const FDO_HACK_NO_STREAMING: u32 = 0x20;  // was 0x00000040 (LLM-invented); bindgen-correct
 const CdromStreamingDisable: u32 = 0;
 const CdromStreamingEnableForReadOnly: u32 = 1;
 const CdromStreamingEnableForWriteOnly: u32 = 2;
@@ -282,7 +282,7 @@ const CdromStreamingEnableForReadWrite: u32 = 3;
 // External declarations for functions not in ntkrnl_sys
 
 // SCSI operation code constant – actual value must be supplied by the caller
-const SCSIOP_SEND_OPC_INFORMATION: u8 = 0x00; // TODO: define actual value
+const SCSIOP_SEND_OPC_INFORMATION: u8 = 0x54; // TODO: define actual value  // was 0x00 (LLM-invented); bindgen-correct
 
 // Minimal structure for CDB union used in this function
 #[repr(C)]
@@ -298,7 +298,7 @@ struct CDB_SEND_OPC_INFORMATION {
 
 /// Handles an IOCTL_CDROM_SEND_OPC_INFORMATION request
 
-const SL_REALTIME_STREAM: u8 = 0x02;
+const SL_REALTIME_STREAM: u8 = 0x20;
 
 const WdfRequestTypeRead: u32 = 2;
 const WdfRequestTypeWrite: u32 = 3;
@@ -306,17 +306,17 @@ const WdfRequestTypeWrite: u32 = 3;
 const SCSIOP_START_STOP_UNIT: u8 = 0x1B;
 const IOCTL_STORAGE_EJECT_MEDIA: u32 = 0x002D4808;
 const LOADING_MECHANISM_TRAY: u32 = 1; // assumed enum value
-const STATUS_DEVICE_BUSY: NTSTATUS = 0xC00000E9u32 as i32;
+const STATUS_DEVICE_BUSY: NTSTATUS = 0x80000011_u32 as i32;
 
 const IOCTL_STORAGE_RESERVE: u32 = 0;          // actual value unknown
 const IOCTL_STORAGE_RELEASE: u32 = 0;          // actual value unknown
-const SCSIOP_RESERVE_UNIT10: u8 = 0;           // actual value unknown
-const SCSIOP_RELEASE_UNIT10: u8 = 0;           // actual value unknown
-const SCSIOP_RESERVE_UNIT: u8 = 0;             // actual value unknown
-const SCSIOP_RELEASE_UNIT: u8 = 0;             // actual value unknown
-const FDO_HACK_NO_RESERVE6: u32 = 0;           // actual value unknown
-const SRB_FLAGS_QUEUE_ACTION_ENABLE: u8 = 0;    // actual value unknown
-const SRB_SIMPLE_TAG_REQUEST: u8 = 0;          // actual value unknown
+const SCSIOP_RESERVE_UNIT10: u8 = 0x56;           // actual value unknown  // was 0 (LLM-invented); bindgen-correct
+const SCSIOP_RELEASE_UNIT10: u8 = 0x57;           // actual value unknown  // was 0 (LLM-invented); bindgen-correct
+const SCSIOP_RESERVE_UNIT: u8 = 0x16;             // actual value unknown  // was 0 (LLM-invented); bindgen-correct
+const SCSIOP_RELEASE_UNIT: u8 = 0x17;             // actual value unknown  // was 0 (LLM-invented); bindgen-correct
+const FDO_HACK_NO_RESERVE6: u32 = 0x8;           // actual value unknown  // was 0 (LLM-invented); bindgen-correct
+const SRB_FLAGS_QUEUE_ACTION_ENABLE: u8 = 0x2;    // actual value unknown  // was 0 (LLM-invented); bindgen-correct
+const SRB_SIMPLE_TAG_REQUEST: u8 = 0x20;          // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const CDROM_TAG_SRB: u32 = 0;                 // actual value unknown
 const NonPagedPoolNx: u32 = 0;                // POOL_TYPE value unknown
 
@@ -329,10 +329,10 @@ const SCSIOP_PERSISTENT_RESERVE_OUT: u8 = 0x5f; // placeholder
 
 const IOCTL_DISK_VOLUMES_ARE_READY: u32 = 0x00074040;
 
-const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x01;
-const CDROM_VOLUME_VERIFY_CHECKED: u32 = 0x01;
-const STATUS_VERIFY_REQUIRED: i32 = 0xC0000494u32 as i32;
-const DO_VERIFY_VOLUME: u32 = 0x00000004;
+const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
+const CDROM_VOLUME_VERIFY_CHECKED: u32 = 0x34;  // was 0x01 (LLM-invented); bindgen-correct
+const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
+const DO_VERIFY_VOLUME: u32 = 0x02;
 // RAW_SECTOR_SIZE / CD_RAW_SECTOR_WITH_* defined above (u32); CDDA family aliased above.
 const SCSIOP_READ_CD: u8 = 0xBE;
 const CD_DA_SECTOR: u8 = 1;
@@ -348,12 +348,12 @@ pub unsafe extern "C" fn ReadQChannel(
     OutputBufferLength: usize,
     DataLength: *mut usize,
 ) -> i32 {
-    const IOCTL_CDROM_CURRENT_POSITION: u32 = 0x2403C;
-    const IOCTL_CDROM_MEDIA_CATALOG: u32 = 0x24024;
-    const IOCTL_CDROM_TRACK_ISRC: u32 = 0x24014;
+    const IOCTL_CDROM_CURRENT_POSITION: u32 = 0x1;  // was 0x2403C (LLM-invented); bindgen-correct
+    const IOCTL_CDROM_MEDIA_CATALOG: u32 = 0x2;  // was 0x24024 (LLM-invented); bindgen-correct
+    const IOCTL_CDROM_TRACK_ISRC: u32 = 0x3;  // was 0x24014 (LLM-invented); bindgen-correct
     const AUDIO_STATUS_IN_PROGRESS: u8 = 0x11;
-    const CDB_USE_MSF: u8 = 0x02;
-    const CDB_SUBCHANNEL_BLOCK: u8 = 0x40;
+    const CDB_USE_MSF: u8 = 0x1;  // was 0x02 (LLM-invented); bindgen-correct
+    const CDB_SUBCHANNEL_BLOCK: u8 = 0x1;  // was 0x40 (LLM-invented); bindgen-correct
     const SCSIOP_READ_SUB_CHANNEL: u8 = 0x42;
     const TRACE_LEVEL_VERBOSE: u32 = 0;
     const TRACE_FLAG_IOCTL: u32 = 0;
@@ -709,12 +709,12 @@ const STATUS_INVALID_USER_BUFFER: i32 = (0xC0000146u32 as i32); // typical value
 const RESERVATION_ACTION_READ_KEYS: u8 = 0;
 const RESERVATION_ACTION_READ_RESERVATIONS: u8 = 1;
 const RESERVATION_ACTION_REGISTER: u8 = 0;
-const RESERVATION_ACTION_REGISTER_IGNORE_EXISTING: u8 = 1;
-const RESERVATION_ACTION_CLEAR: u8 = 4;
-const RESERVATION_ACTION_RESERVE: u8 = 2;
-const RESERVATION_ACTION_RELEASE: u8 = 3;
-const RESERVATION_ACTION_PREEMPT: u8 = 5;
-const RESERVATION_ACTION_PREEMPT_ABORT: u8 = 6;
+const RESERVATION_ACTION_REGISTER_IGNORE_EXISTING: u8 = 0x6;  // was 1 (LLM-invented); bindgen-correct
+const RESERVATION_ACTION_CLEAR: u8 = 0x3;  // was 4 (LLM-invented); bindgen-correct
+const RESERVATION_ACTION_RESERVE: u8 = 0x1;  // was 2 (LLM-invented); bindgen-correct
+const RESERVATION_ACTION_RELEASE: u8 = 0x2;  // was 3 (LLM-invented); bindgen-correct
+const RESERVATION_ACTION_PREEMPT: u8 = 0x4;  // was 5 (LLM-invented); bindgen-correct
+const RESERVATION_ACTION_PREEMPT_ABORT: u8 = 0x5;  // was 6 (LLM-invented); bindgen-correct
 
 const NonPagedPoolNxCacheAligned: u32 = 0x400; // NonPagedPoolNxCacheAligned
 const CDROM_TAG_PLAY_ACTIVE: u32 = 0x0; // CDROM_TAG_PLAY_ACTIVE placeholder
@@ -731,14 +731,14 @@ const STATUS_INTERNAL_ERROR: i32 = (0xC00000E0u32 as i32);   // NTSTATUS
 const STATUS_INSUFFICIENT_RESOURCES: i32 = (0xC000009Au32 as i32);
 const STATUS_SUCCESS: i32 = 0;
 const SCSIOP_REPORT_KEY: u8 = 0xA4;
-const DVD_REPORT_AGID: u8 = 0xFE;
+const DVD_REPORT_AGID: u8 = 0x0;  // was 0xFE (LLM-invented); bindgen-correct
 const DVD_TAG_READ_KEY: u32 = 0x524b4420; // "RBM "?? placeholder
 
 // Function translation
 
 const IOCTL_CDROM_READ_TOC: u32 = 0; // TODO: define correct IOCTL value
 const IOCTL_CDROM_GET_LAST_SESSION: u32 = 0; // TODO: define correct IOCTL value
-const CDROM_READ_TOC_EX_FORMAT_SESSION: u8 = 0; // TODO: define correct value
+const CDROM_READ_TOC_EX_FORMAT_SESSION: u8 = 0x1; // TODO: define correct value  // was 0 (LLM-invented); bindgen-correct
 const SCSIOP_READ_TOC: u8 = 0x43; // READ TOC opcode
 
 // Constants
@@ -919,12 +919,12 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
     Request: WDFREQUEST,
     DataLength: *mut usize,
 ) -> i32 {
-    const STATUS_INVALID_LEVEL: i32 = 0xC0000008u32 as i32;
+    const STATUS_INVALID_LEVEL: i32 = 0xC0000148u32 as i32;
     const MEDIA_READ_ONLY: u32 = 0x0004;
-    const MEDIA_READ_WRITE: u32 = 0x0006;
+    const MEDIA_READ_WRITE: u32 = 0x8;  // was 0x0006 (LLM-invented); bindgen-correct
     const MEDIA_CURRENTLY_MOUNTED: u32 = 0x80000000;
     const SCSIOP_TEST_UNIT_READY: u8 = 0x00;
-    const CDROM_TEST_UNIT_READY_TIMEOUT: u32 = 10;
+    const CDROM_TEST_UNIT_READY_TIMEOUT: u32 = 0x14;  // was 10 (LLM-invented); bindgen-correct
     const TRACE_LEVEL_INFORMATION: u32 = 4;
     const TRACE_FLAG_IOCTL: u32 = 0x80;
 
@@ -1955,7 +1955,7 @@ pub unsafe extern "C" fn RequestValidateAacsSendChallengeKey(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    const MAX_COPY_PROTECT_AGID: u32 = 1;
+    const MAX_COPY_PROTECT_AGID: u32 = 0x4;  // was 1 (LLM-invented); bindgen-correct
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let cdData = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
@@ -4193,8 +4193,8 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
                 (MAXUSHORT - 1) as usize
             };
 
-            const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 1;
-            const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x00000001;
+            const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 0x2;  // was 1 (LLM-invented); bindgen-correct
+            const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x800;  // was 0x00000001 (LLM-invented); bindgen-correct
 
             let is_type_one = (*inputBuffer).RequestType == SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE;
             let hack_flag_set = ((*cdData).HackFlags & CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG as ntkrnl_sys::ddk::ULONG_PTR) != 0;
