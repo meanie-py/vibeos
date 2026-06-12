@@ -204,6 +204,27 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/arbiter" )
     ;;
+  fastfat)
+    # fastfat.sys — the FAT filesystem (drivers/filesystems/fastfat, MS-architecture,
+    # 35 .c / 68.8K LOC). Driver-PRIVATE structs (VCB, FCB, DCB, CCB, IRP_CONTEXT,
+    # FAT_DATA, DIRENT/PACKED_BOOT_SECTOR on-disk layouts, BCB, FAT_ENUMERATION_CONTEXT,
+    # node-type codes, ~30 pool tags) live in the driver's own fatstruc.h / fat.h /
+    # nodetype.h / lfn.h / fatdata.h. fatprocs.h is the PCH that #includes ntifs.h + all
+    # of them in order — pull it so every private struct gets PARSED, then allowlist ONLY
+    # the fastfat-private headers so the embedded kernel/FsRtl types (FSRTL_ADVANCED_FCB_
+    # HEADER, SECTION_OBJECT_POINTERS, ERESOURCE, FILE_LOCK, ...) stay blocklisted on the
+    # single ntkrnl-sys ddk identity. Version macros from the real fastfat compile command
+    # (all 0x502); NTDDI forced to 0x05020400 for the amd64 peb_teb.h ACTIVATION_CONTEXT_
+    # STACK reason as the 0x502 siblings (partmgr/fs_rec/pcix/pciidex).
+    DRIVER_DIR="${SRC}/drivers/filesystems/fastfat"
+    WRAPPER_INC=$'#include "fatprocs.h"'
+    ALLOW_FILES=( --allowlist-file '.*fastfat[/\\]fat\.h' --allowlist-file '.*fastfat[/\\]fatstruc\.h'
+                  --allowlist-file '.*fastfat[/\\]nodetype\.h' --allowlist-file '.*fastfat[/\\]lfn\.h'
+                  --allowlist-file '.*fastfat[/\\]fatdata\.h' )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
