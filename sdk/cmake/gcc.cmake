@@ -601,6 +601,7 @@ endfunction()
 ## KIND selects the post-link (matching what cmake's set_module_type /
 ## per-target POST_BUILD would have applied):
 ##   kerneldll : native-pefixup --kerneldll  (+ i386 forwarder fix)
+##   kernelmodedriver : native-pefixup --kernelmodedriver (+ i386 forwarder fix)  [win32k]
 ##   win32dll  : i386 lld forwarder fix only  (user DLL — no pefixup)  [ntdll]
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
@@ -649,6 +650,16 @@ function(add_cargo_module _target _crate _output)
         set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kerneldll ${_out})
         set(_postdep native-pefixup)
         # i386-only forwarder fix mirrors set_module_type's i386-only POST_BUILD.
+        if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
+            list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
+                ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
+        endif()
+    elseif(_acm_KIND STREQUAL "kernelmodedriver")
+        # Kernel-mode driver .sys (win32k.sys): set_module_type(kernelmodedriver)
+        # applies native-pefixup --kernelmodedriver (same driver_fixup as
+        # --kerneldll but the kernelmodedriver mode flag) + the i386 fwd fix.
+        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kernelmodedriver ${_out})
+        set(_postdep native-pefixup)
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})

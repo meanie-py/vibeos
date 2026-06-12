@@ -1,0 +1,20 @@
+# Cargo-driven `win32k.sys` link (i386 + amd64 + arm64). The Win32 kernel-mode
+# subsystem driver (GDI + NTUSER + DirectDraw) — the largest cargo cutover
+# after ntoskrnl itself. The Rust body is the `win32k-kernel-rust` staticlib
+# umbrella (built with the STANDARD user target + i386 -sse,-sse2, exactly as
+# the cmake custom_command did); the C residue is reused from cmake as
+# `libwin32k_residue.a`.
+
+[package]
+name = "win32k-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "win32k"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

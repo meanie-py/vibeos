@@ -1,0 +1,119 @@
+//! Cargo-driven `win32k.sys` link (i386 / amd64 / arm64). Manifest for the
+//! shared `reactos-link` engine — the Win32 kernel-mode subsystem driver
+//! (GDI + NTUSER + DirectDraw), cmake `set_module_type(win32k
+//! kernelmodedriver)` moved to `add_cargo_module(... KIND kernelmodedriver)`.
+//!
+//! Mirrors the cmake `win32k.sys` link (verified against each
+//! build-<arch>/build.ninja `win32ss/win32k.sys` line):
+//!   subsystem `native:5.01`, `-shared`, `--exclude-all-symbols` + 0x1000
+//!   align (ModuleKind::KernelDll == the kernelmodedriver flag set; the
+//!   init-section.lds ordering script is dropped exactly as in every other
+//!   kernel-mode cargo cut — pefixup makes INIT discardable regardless).
+//!   entry  `DriverEntry@8` — i386 `_DriverEntry@8`; amd64/arm64 `DriverEntry`
+//!          (win32k-rust/src/main.rs).
+//!   base   i386/amd64 `0x00010000`; arm64 `0x7FFB00000000`.
+//!
+//! The Rust body (`win32k-kernel-rust` → libwin32k_kernel_rust.a) builds with
+//! the STANDARD user-mode target via `.rust_user_target()` — i386
+//! `i686-pc-windows-gnu` + `RUSTFLAGS=-C target-feature=-sse,-sse2` — exactly
+//! the cmake custom_command's proven configuration (NOT the softfloat kernel
+//! json; switching targets would change codegen of the entire translated
+//! body). The C residue (DirectDraw, gendib tables, FORCEINLINE shims,
+//! safe_user_io, user/rtl, i386 floatobj + dib asm) stays cmake-compiled as
+//! `libwin32k_residue.a` and is reused FIRST in the static-lib group so the
+//! C-before-Rust cohab first-match precedence matches the old link, where the
+//! residue was force-linked objects ahead of the Rust archive.
+//!
+//! Run `ninja` in build-<arch>/ first (the cargo link reuses cmake's
+//! libwin32k_residue.a / libpseh.a / libdxguid.a / liblibcntpr.a /
+//! libchkstk.a / libcntpr_rust.a / libmemcmp.a). The version resource is the
+//! checked-in per-arch `data/win32k-<arch>.rc.res` (byte-identical to cmake's
+//! win32k.rc.res; regenerate via tools/gen_win32k_res.py when version blocks
+//! change). Post-link pefixup --kernelmodedriver / fix_lld_forwarding.py run
+//! from add_cargo_module.
+
+use reactos_link::{Linker, ModuleKind};
+use std::env;
+
+fn main() {
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // Per-arch facts, verbatim from each build-<arch>/build.ninja:
+    //   - chkstk: cmake links libchkstk.a on i386+arm64 (amd64 takes __chkstk
+    //     from the clang_rt.builtins the engine already links).
+    //   - hal_dir: hal import lib spec dir is shared (hal/hal.spec) but the
+    //     arch matters only for the .a path, which we don't reuse — the engine
+    //     self-hosts the import lib from the spec.
+    let (target_json, res, entry, image_base, chkstk): (&str, &str, &str, u64, bool) =
+        match arch.as_str() {
+            "x86" => (
+                "i686-kernel.json",
+                "win32k-i386.rc.res",
+                "_DriverEntry@8",
+                0x0001_0000,
+                true,
+            ),
+            "x86_64" => (
+                "x86_64-kernel.json",
+                "win32k-amd64.rc.res",
+                "DriverEntry",
+                0x0001_0000,
+                false,
+            ),
+            "aarch64" => (
+                "aarch64-kernel.json",
+                "win32k-arm64.rc.res",
+                "DriverEntry",
+                0x7FFB_0000_0000,
+                true,
+            ),
+            o => panic!("win32k-cargo: unsupported arch {o}"),
+        };
+
+    // cmake C / cohab static libs, in the cmake link-line order. The residue
+    // archive comes FIRST (it was force-linked objects in the cmake link, so
+    // archive-position-first preserves the C-first --allow-multiple-definition
+    // cohab precedence over libwin32k_kernel_rust.a, which the engine emits
+    // after this group via rust_staticlib).
+    let mut static_libs: Vec<&str> = vec![
+        "win32ss/libwin32k_residue.a",
+        "sdk/lib/pseh/libpseh.a",
+        "sdk/lib/dxguid/libdxguid.a",
+        "sdk/lib/crt/liblibcntpr.a",
+    ];
+    if chkstk {
+        static_libs.push("sdk/lib/crt/libchkstk.a");
+    }
+    static_libs.push("sdk/lib/crt/libcntpr_rust.a");
+    static_libs.push("sdk/lib/crt/libmemcmp.a");
+
+    let mut linker = Linker::new(target_json)
+        // The translated body — built with the user hardfloat target exactly
+        // as cmake's custom_command did (see module doc above).
+        .rust_staticlib("win32k-kernel-rust")
+        .rust_user_target()
+        // win32k-kernel-rust is an umbrella; the actual translation lives in
+        // win32k-rust (a path dep) — watch it so edits re-run this build.
+        .rust_watch(&["win32k-rust/src"])
+        .resource(&format!("data/{res}"))
+        // Exports (Eng*/FLOATOBJ_*/XLATEOBJ_*/…) via the spec2def-generated
+        // win32k.def. The cmake-side spec2def(... ADD_IMPORTLIB) stays — the
+        // libwin32k import lib consumers (framebuf etc.) are independent.
+        .spec2def("win32ss/win32k.spec", "win32k.sys");
+    if arch == "x86" {
+        // cmake: RUST_WIN32K_EXTRA_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2"
+        // — kernel-mode code must not touch SSE state on i386.
+        linker = linker.rust_build_rustflags("-C target-feature=-sse,-sse2");
+    }
+    linker
+        .static_libs(&static_libs)
+        // cmake add_importlibs(win32k ntoskrnl hal ftfd), self-hosted from
+        // each .spec (spec2def + dlltool) like every other cargo cut.
+        .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
+        .import_lib("hal/hal.spec", "hal.dll", "hal")
+        .import_lib("win32ss/drivers/font/ftfd/ftfd.spec", "ftfd.dll", "ftfd")
+        .link(ModuleKind::KernelDll {
+            entry: entry.into(),
+            image_base,
+        });
+}
