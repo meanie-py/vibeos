@@ -1135,7 +1135,6 @@ pub unsafe extern "C" fn DeviceEvtD0Entry(
 }
 
 #[cfg(debug_assertions)]
-#[cfg(all())] // Placeholder for conditional compilation based on WINVER >= 0x0601, treated as always present for translation
 #[no_mangle]
 pub unsafe extern "C" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WDF_POWER_DEVICE_STATE) -> i32 {
     PagedCode();

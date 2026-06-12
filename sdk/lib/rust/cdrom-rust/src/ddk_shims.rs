@@ -289,7 +289,195 @@ pub unsafe extern "C" fn RequestGetCurrentStackLocationFlags(_Request: WDFREQUES
 // TODO: real swprintf impl for correct symbolic-link suffixes.
 #[no_mangle]
 pub unsafe extern "C" fn RtlStringCchPrintfW(_Dst: *mut u16, _CchDst: usize, _Format: *const u16) -> NTSTATUS { 0 }
-// ScratchBuffer_EndUse: pairs with ScratchBuffer_BeginUse (releases the scratch in-use flag).
-// TODO: confirm the field; no-op stub unblocks the link — flag for the smoke pass.
+// ===== translated scratch.h FORCEINLINEs the c2rust pass left declared-not-defined =====
+// ScratchBuffer_ExecuteCdb := ExecuteCdbEx(.., TimeoutValue=0) (scratch.h FORCEINLINE).
 #[no_mangle]
-pub unsafe extern "C" fn ScratchBuffer_EndUse(_DeviceExtension: PCDROM_DEVICE_EXTENSION) {}
+pub unsafe extern "C" fn ScratchBuffer_ExecuteCdb(
+    DeviceExtension: PCDROM_DEVICE_EXTENSION,
+    OriginalRequest: WDFREQUEST,
+    TransferSize: u32,
+    GetDataFromDevice: u8,
+    Cdb: PCDB,
+    OprationLength: u8,
+) -> NTSTATUS {
+    crate::scratch::ScratchBuffer_ExecuteCdbEx(
+        DeviceExtension,
+        OriginalRequest as *mut c_void,
+        TransferSize,
+        GetDataFromDevice,
+        Cdb as *mut CDB,
+        OprationLength,
+        0,
+    )
+}
+// ScratchBuffer_BeginUse / EndUse: the scratch-buffer "soft lock" (NOT atomic per the C comment).
+#[no_mangle]
+pub unsafe extern "C" fn ScratchBuffer_BeginUse(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
+    (*DeviceExtension).ScratchContext.ScratchInUse = usize::MAX as PVOID; // mark in-use
+    (*DeviceExtension).ScratchContext.ScratchInUseFileName = core::ptr::null();
+    (*DeviceExtension).ScratchContext.ScratchInUseLineNumber = u32::MAX;
+    crate::scratch::ScratchBuffer_ResetItems(DeviceExtension, 1);
+    crate::common::RequestClearSendTime((*DeviceExtension).ScratchContext.ScratchRequest);
+}
+#[no_mangle]
+pub unsafe extern "C" fn ScratchBuffer_EndUse(DeviceExtension: PCDROM_DEVICE_EXTENSION) {
+    (*DeviceExtension).ScratchContext.ScratchInUseFileName = core::ptr::null();
+    (*DeviceExtension).ScratchContext.ScratchInUseLineNumber = 0;
+    if (*DeviceExtension).ScratchContext.PartialMdlIsBuilt != 0 {
+        MmPrepareMdlForReuse((*DeviceExtension).ScratchContext.PartialMdl);
+        (*DeviceExtension).ScratchContext.PartialMdlIsBuilt = 0;
+    }
+    (*DeviceExtension).ScratchContext.ScratchInUse = core::ptr::null_mut(); // release
+}
+// IsVolumeMounted := (DeviceObject->Vpb->Flags & VPB_MOUNTED)
+#[no_mangle]
+pub unsafe extern "C" fn IsVolumeMounted(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN {
+    let vpb = (*DeviceObject).Vpb;
+    (!vpb.is_null() && ((*vpb).Flags & 0x1 /* VPB_MOUNTED */) != 0) as BOOLEAN
+}
+// CompareStorageDuids: its only caller feeds the result to a no-op NT_ASSERT, so the value is
+// discarded — return DuidExactMatch(0). (Full sub-id comparison is unnecessary for boot.)
+#[no_mangle]
+pub unsafe extern "C" fn CompareStorageDuids(
+    _Duid1: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER,
+    _Duid2: *const STORAGE_DEVICE_UNIQUE_IDENTIFIER,
+) -> i32 {
+    0 // DuidExactMatch
+}
+
+// ============================ mechanical DDK/CRT macro + intrinsic glue ============================
+const STATUS_INTEGER_OVERFLOW_: NTSTATUS = 0xC0000095u32 as NTSTATUS;
+extern "C" {
+    fn MmProbeAndLockPages(MemoryDescriptorList: PMDL, AccessMode: i8, Operation: i32);
+}
+#[no_mangle] pub unsafe extern "C" fn REVERSE_BYTES(dest: *mut u32, src: *const u8) {
+    *dest = u32::from_be_bytes([*src, *src.add(1), *src.add(2), *src.add(3)]);
+}
+#[no_mangle] pub unsafe extern "C" fn REVERSE_BYTES_SHORT(dest: *mut c_void, src: *const c_void) {
+    let s = src as *const u8; let d = dest as *mut u8;
+    *d = *s.add(1); *d.add(1) = *s;
+}
+#[no_mangle] pub unsafe extern "C" fn REVERSE_LONG(p: *mut u32) { *p = (*p).swap_bytes(); }
+#[no_mangle] pub unsafe extern "C" fn REVERSE_SHORT(p: *mut u16) { *p = (*p).swap_bytes(); }
+#[no_mangle] pub unsafe extern "C" fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32 {
+    (m as u32) * 60 * 75 + (s as u32) * 75 + (f as u32) - 150
+}
+#[no_mangle] pub unsafe extern "C" fn TEST_FLAG(flags: u32, flag: u32) -> i32 { ((flags & flag) != 0) as i32 }
+#[no_mangle] pub unsafe extern "C" fn WHICH_BIT(bps: u32, shift: *mut u8) { *shift = bps.trailing_zeros() as u8; }
+#[no_mangle] pub unsafe extern "C" fn CountOfSetBitsUChar(byte: u8) -> u8 { byte.count_ones() as u8 }
+#[no_mangle] pub unsafe extern "C" fn Int64ShrlMod32(value: i64, shift: u32) -> i64 { ((value as u64) >> shift) as i64 }
+#[no_mangle] pub unsafe extern "C" fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32 {
+    let a = &*(Destination as *const core::sync::atomic::AtomicI32);
+    match a.compare_exchange(Comperand, Exchange, core::sync::atomic::Ordering::SeqCst, core::sync::atomic::Ordering::SeqCst) {
+        Ok(v) => v, Err(v) => v,
+    }
+}
+#[no_mangle] pub unsafe extern "C" fn IoSetNextIrpStackLocation(Irp: PIRP) {
+    let p = &mut (*Irp).Tail.Overlay.__bindgen_anon_2.__bindgen_anon_1.CurrentStackLocation;
+    *p = (*p).offset(-1);
+    (*Irp).CurrentLocation = ((*Irp).CurrentLocation as i8 - 1) as i8;
+}
+#[no_mangle] pub unsafe extern "C" fn MmGetMdlByteCount(Mdl: PMDL) -> u32 { (*Mdl).ByteCount }
+#[no_mangle] pub unsafe extern "C" fn MmGetMdlVirtualAddress(Mdl: PMDL) -> *mut c_void {
+    ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as *mut c_void
+}
+#[no_mangle] pub unsafe extern "C" fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS {
+    match ul1.checked_add(ul2) { Some(s) => { *result = s; 0 } None => STATUS_INTEGER_OVERFLOW_ }
+}
+#[no_mangle] pub unsafe extern "C" fn RtlULongSub(a: u32, b: u32, result: *mut u32) -> i32 {
+    match a.checked_sub(b) { Some(s) => { *result = s; 0 } None => STATUS_INTEGER_OVERFLOW_ }
+}
+// ValidChar: c2rust device-name char validation — printable ASCII (approx; TODO confirm macro).
+#[no_mangle] pub unsafe extern "C" fn ValidChar(c: u8) -> i32 { ((c >= 0x20) && (c < 0x7F)) as i32 }
+// PLAY_ACTIVE(dev) := &dev->DeviceAdditionalData.PlayActive (lvalue pointer).
+#[no_mangle] pub unsafe extern "C" fn PLAY_ACTIVE(DeviceExtension: PCDROM_DEVICE_EXTENSION) -> *mut i32 {
+    core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData.PlayActive) as *mut i32
+}
+// TimeOutValueGetCapValue: caps a per-request timeout; no-cap passthrough (TODO confirm cap policy).
+#[no_mangle] pub unsafe extern "C" fn TimeOutValueGetCapValue(_timeOutValue: u32, value: u32) -> u32 { value }
+#[no_mangle] pub static D3COLD_SUPPORT_INTERFACE_VERSION: u16 = 1;
+#[no_mangle] pub unsafe extern "C" fn min(a: u32, b: u32) -> u32 { if a < b { a } else { b } }
+#[no_mangle] pub unsafe extern "C" fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN {
+    matches!(Status as u32, 0xC000009A|0xC0000010|0xC0000013|0xC0000022|0xC000000E|0xC0000056|0xC0000288|0xC000020C) as BOOLEAN
+}
+#[no_mangle] pub unsafe extern "C" fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32 {
+    MmProbeAndLockPages(mdl, mode as i8, access as i32);
+    1 // success (DUMMY_PSEH: no exception frame; faults bugcheck as in C with USE_DUMMY_PSEH)
+}
+// CLASSP_REG_* registry key/value names (wide strings). TODO confirm exact strings vs classpnp.
+#[no_mangle] pub static CLASSP_REG_SUBKEY_NAME: [u16; 6] = [b'C' as u16, b'd' as u16, b'R' as u16, b'o' as u16, b'm' as u16, 0];
+#[no_mangle] pub static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: [u16; 18] =
+    [b'U' as u16,b's' as u16,b'e' as u16,b'r' as u16,b'R' as u16,b'e' as u16,b'm' as u16,b'o' as u16,b'v' as u16,b'a' as u16,b'l' as u16,b'P' as u16,b'o' as u16,b'l' as u16,b'i' as u16,b'c' as u16,b'y' as u16,0];
+
+// ============================ final mechanical glue (whole-archive complete gap) ============================
+#[no_mangle] pub unsafe extern "C" fn SET_FLAG(flags: *mut u32, flag: u32) { *flags |= flag; }
+#[no_mangle] pub unsafe extern "C" fn SRB_STATUS(srb_status: u8) -> u32 { (srb_status & 0x3F) as u32 }
+#[no_mangle] pub unsafe extern "C" fn IS_SCSIOP_READ(opcode: u8) -> u8 {
+    matches!(opcode, 0x08 | 0x28 | 0xA8 | 0x88) as u8 // READ(6/10/12/16)
+}
+#[no_mangle] pub unsafe extern "C" fn IS_SCSIOP_READWRITE(opCode: u8) -> i32 {
+    matches!(opCode, 0x08 | 0x28 | 0xA8 | 0x88 | 0x0A | 0x2A | 0xAA | 0x8A) as i32 // READ/WRITE(6/10/12/16)
+}
+#[no_mangle] pub unsafe extern "C" fn FREE_PORT_ALLOCATED_SENSE_BUFFER(_DeviceExtension: PCDROM_DEVICE_EXTENSION, _Srb: *mut SCSI_REQUEST_BLOCK) {}
+#[no_mangle] pub unsafe extern "C" fn SECONDS_TO_100NS_UNITS(seconds: i32) -> i64 { (seconds as i64) * 10_000_000 }
+#[no_mangle] pub unsafe extern "C" fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize {
+    core::mem::offset_of!(SENSE_DATA, AdditionalSenseCodeQualifier) + 1
+}
+#[no_mangle] pub unsafe extern "C" fn max(x: i64, y: i64) -> i64 { if x > y { x } else { y } }
+#[no_mangle] pub unsafe extern "C" fn InterlockedIncrement(p: *mut i32) -> i32 {
+    (*(p as *const core::sync::atomic::AtomicI32)).fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1
+}
+// MmPrepareMdlForReuse: clear the partial-mapped flag so the MDL can be rebuilt (ntddk.h inline).
+#[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
+    (*Mdl).MdlFlags &= !(0x0008i16); // ~MDL_PARTIAL_HAS_BEEN_MAPPED
+}
+// KeQuerySystemTime: KUSER_SHARED_DATA.SystemTime @ fixed VA +0x14, lockless read (amd64/arm64 inline).
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle] pub unsafe extern "C" fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER) {
+    const ST: usize = 0xFFFFF78000000000 + 0x14;
+    loop {
+        let high1 = core::ptr::read_volatile((ST + 4) as *const i32);
+        let low = core::ptr::read_volatile(ST as *const u32);
+        let high2 = core::ptr::read_volatile((ST + 8) as *const i32);
+        if high1 == high2 { (*CurrentTime).QuadPart = ((high1 as i64) << 32) | (low as i64 & 0xFFFF_FFFF); return; }
+    }
+}
+// KeRaiseIrql/KeLowerIrql: cr8 on amd64 (inlines; not exported). i386 has real exports.
+#[cfg(target_arch = "x86_64")]
+#[no_mangle] pub unsafe extern "C" fn KeRaiseIrql(NewIrql: u8, OldIrql: *mut u8) {
+    let cur: u64;
+    core::arch::asm!("mov {}, cr8", out(reg) cur, options(nomem, nostack, preserves_flags));
+    *OldIrql = cur as u8;
+    core::arch::asm!("mov cr8, {}", in(reg) NewIrql as u64, options(nomem, nostack, preserves_flags));
+}
+#[cfg(target_arch = "x86_64")]
+#[no_mangle] pub unsafe extern "C" fn KeLowerIrql(NewIrql: u8) {
+    core::arch::asm!("mov cr8, {}", in(reg) NewIrql as u64, options(nomem, nostack, preserves_flags));
+}
+
+// ============================ more WDF *_INIT macros ============================
+#[no_mangle] pub unsafe extern "C" fn WDF_REQUEST_REUSE_PARAMS_INIT(Params: *mut WDF_REQUEST_REUSE_PARAMS, Flags: u32, Status: NTSTATUS) {
+    core::ptr::write_bytes(Params as *mut u8, 0, core::mem::size_of::<WDF_REQUEST_REUSE_PARAMS>());
+    (*Params).Size = core::mem::size_of::<WDF_REQUEST_REUSE_PARAMS>() as u32;
+    (*Params).Flags = Flags;
+    (*Params).Status = Status;
+}
+#[no_mangle] pub unsafe extern "C" fn WDF_REQUEST_SEND_OPTIONS_INIT(Options: *mut WDF_REQUEST_SEND_OPTIONS, Flags: u32) {
+    core::ptr::write_bytes(Options as *mut u8, 0, core::mem::size_of::<WDF_REQUEST_SEND_OPTIONS>());
+    (*Options).Size = core::mem::size_of::<WDF_REQUEST_SEND_OPTIONS>() as u32;
+    (*Options).Flags = Flags;
+}
+#[no_mangle] pub unsafe extern "C" fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(Descriptor: *mut WDF_MEMORY_DESCRIPTOR, Buffer: *mut c_void, BufferLength: u32) {
+    core::ptr::write_bytes(Descriptor as *mut u8, 0, core::mem::size_of::<WDF_MEMORY_DESCRIPTOR>());
+    (*Descriptor).Type = 1; // WdfMemoryDescriptorTypeBuffer
+    let bt = (*Descriptor).u.BufferType.as_mut();
+    bt.Buffer = Buffer;
+    bt.Length = BufferLength;
+}
+
+// ===== 3 device-init fns the c2rust pass left UNTRANSLATED (init.c). Stubbed for link-clean;
+//       these do real init work (buffer alloc / SCSI-address + descriptor queries) so cdrom will
+//       NOT boot functionally until they are translated. TODO: hand-translate from init.c. =====
+#[no_mangle] pub unsafe extern "C" fn DeviceInitAllocateBuffers(_DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS { 0 }
+#[no_mangle] pub unsafe extern "C" fn DeviceRetrieveScsiAddress(_DeviceExtension: PCDROM_DEVICE_EXTENSION, _ScsiAddress: PSCSI_ADDRESS) -> NTSTATUS { 0 }
+#[no_mangle] pub unsafe extern "C" fn DeviceRetrieveDescriptorsAndTransferLength(_DeviceExtension: PCDROM_DEVICE_EXTENSION) -> NTSTATUS { 0 }
