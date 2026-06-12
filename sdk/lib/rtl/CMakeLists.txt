@@ -102,9 +102,8 @@ if(ARCH STREQUAL "i386")
         # i386/res_asm.s — replaced by Rust (sdk/lib/rust/rtl-misc/src/res.rs: LdrAccessResource@16).
         # The asm stub's _LdrpAccessResource@16 callee lived in res.c.obj (now Rust); keeping
         # the asm caused an undefined symbol once the stale fat librtl.a was regenerated lean.
-    list(APPEND SOURCE
-        i386/except.c
-        i386/thread.c)
+    # i386/except.c — replaced by Rust implementation (sdk/lib/rust/rtl-except/src/i386/except.rs)
+    # i386/thread.c — replaced by Rust implementation (sdk/lib/rust/rtl-except/src/i386/thread.rs)
 elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE
         amd64/debug_asm.S
@@ -114,10 +113,10 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND SOURCE
         # bitmap64.c — replaced by Rust implementation (sdk/lib/rust/bitmap/ ops64)
         # byteswap.c — replaced by Rust implementation (sdk/lib/rust/byteswap/)
-        amd64/dynfntbl.c
-        amd64/except.c
-        amd64/unwind.c
-        amd64/stubs.c
+        # amd64/dynfntbl.c — replaced by Rust implementation (sdk/lib/rust/rtl-except/src/amd64/dynfntbl.rs)
+        # amd64/except.c — replaced by Rust implementation (sdk/lib/rust/rtl-except/src/amd64/except.rs)
+        # amd64/unwind.c — replaced by Rust implementation (sdk/lib/rust/rtl-except/src/amd64/unwind.rs)
+        # amd64/stubs.c — replaced by Rust implementation (sdk/lib/rust/rtl-except/src/amd64/stubs.rs)
         # mem.c — replaced by Rust implementation (sdk/lib/rust/mem/)
         )
 elseif(ARCH STREQUAL "arm64")
@@ -125,7 +124,7 @@ elseif(ARCH STREQUAL "arm64")
         arm64/debug_asm.S)
     # arm64/slist.S replaced by Rust implementation (sdk/lib/rust/slist/)
     list(APPEND SOURCE
-        arm64/except.c
+        # arm64/except.c — replaced by Rust implementation (sdk/lib/rust/rtl-except/src/arm64/except.rs)
         # byteswap.c — replaced by Rust implementation (sdk/lib/rust/byteswap/)
         # mem.c — replaced by Rust implementation (sdk/lib/rust/mem/)
         )
@@ -281,6 +280,19 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-diag/src/exception.rs
             ${RUST_WORKSPACE_DIR}/rtl-diag/src/vectoreh.rs
             ${RUST_WORKSPACE_DIR}/rtl-diag/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/lib.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/types.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/amd64/mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/amd64/unwind.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/amd64/except.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/amd64/stubs.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/amd64/dynfntbl.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/i386/mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/i386/except.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/i386/thread.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/arm64/mod.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/src/arm64/except.rs
+            ${RUST_WORKSPACE_DIR}/rtl-except/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-misc/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-misc/src/shared.rs
             ${RUST_WORKSPACE_DIR}/rtl-misc/src/res.rs

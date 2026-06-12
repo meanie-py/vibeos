@@ -107,6 +107,7 @@ fn main() {
             "sdk/lib/crt/misc/fltused.c",
             "sdk/lib/crt/printf/sprintf.c",
             "sdk/lib/crt/printf/swprintf.c",
+            "sdk/lib/crt/printf/_swprintf.c",
             "sdk/lib/crt/printf/vsprintf.c",
             "sdk/lib/crt/printf/_snprintf.c",
             "sdk/lib/crt/printf/_snwprintf.c",
@@ -130,6 +131,7 @@ fn main() {
             "sdk/lib/crt/misc/fltused.c",
             "sdk/lib/crt/printf/sprintf.c",
             "sdk/lib/crt/printf/swprintf.c",
+            "sdk/lib/crt/printf/_swprintf.c",
             "sdk/lib/crt/printf/vsprintf.c",
             "sdk/lib/crt/printf/_snprintf.c",
             "sdk/lib/crt/printf/_snwprintf.c",
@@ -149,6 +151,7 @@ fn main() {
         "aarch64" => vec![
             "sdk/lib/crt/printf/sprintf.c",
             "sdk/lib/crt/printf/swprintf.c",
+            "sdk/lib/crt/printf/_swprintf.c",
             "sdk/lib/crt/printf/vsprintf.c",
             "sdk/lib/crt/printf/_snprintf.c",
             "sdk/lib/crt/printf/_snwprintf.c",

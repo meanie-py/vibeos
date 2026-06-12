@@ -101,6 +101,23 @@ tracked in `static-libs-translation-audit.md`.)
 ### Still C in sdk/lib/rtl
 
 > **SUPERSEDED 2026-06-09 — rtl is ~fully Rust now: registry.c (fc4563c30ba), image.c (rtl-diag), heap.c+heapdbg (rtl-heap), heappage/heapuser translated; only heappage/heapuser/arch-asm remain active C in CMakeLists.**
+>
+> **SUPERSEDED AGAIN 2026-06-11 — the per-arch exception/unwind tail is now Rust
+> too** (`sdk/lib/rust/rtl-except/`): `amd64/{unwind,except,stubs,dynfntbl}.c`,
+> `i386/{except,thread}.c`, `arm64/except.c` (7 files, ~3.1K LOC — including the
+> x64 RtlVirtualUnwind/RtlUnwindEx unwinder state machine). Smoke-verified ×3.
+> The only active C left in librtl is `dbgprint_variadic.c` (deliberate
+> C-variadic FFI glue) + the `.s/.S` asm (trampolines/capture-context) +
+> `rtl_vista_stub.c` (placeholder). **NOTE the stale-fat-archive trap found
+> during this flip:** the cmake `ar` rule appends without truncating, so
+> `librtl.a` had been accumulating ZOMBIE objects of every previously-flipped
+> `.c` (heappage.c.obj, thread.c.obj, …) which silently kept satisfying symbols
+> (`RtlpPageHeapEnabled`, `NtCurrentTeb`, `RtlFillMemoryUlong`, `_swprintf`).
+> If a flip "links clean" suspiciously easily, `rm librtl.a && ninja` and check
+> `ar t` for members that should be gone. Fixes landed with this wave:
+> rtl-heappage `#[no_mangle]` on RtlpPageHeapEnabled/RtlpDphGlobalFlags +
+> inline NtCurrentTeb, mem crate RtlFillMemoryUlong enabled on amd64,
+> ntdll-cargo compiles `_swprintf.c`.
 
 | File | LOC | Why still C |
 |---|---|---|

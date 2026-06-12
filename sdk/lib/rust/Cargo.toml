@@ -111,6 +111,7 @@ members = [
     "rtl-strings",
     "rtl-actctx",
     "rtl-diag",
+    "rtl-except",
     "rtl-misc",
     "rtl-threadpool",
     "rtl-sync",
