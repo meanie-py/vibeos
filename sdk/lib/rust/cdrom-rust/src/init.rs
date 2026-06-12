@@ -298,15 +298,20 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
     );
 
     deviceExtension = DeviceGetExtension(Device);
+    DbgPrint(b"[SMIO] enter\n\0".as_ptr());
 
     // 1. Set/retrieve basic information, some of the following operations may depend on it
     if NT_SUCCESS(status) {
         // We do not care if this function fails, SCSI address is mainly for debugging/tracing purposes.
+        DbgPrint(b"[SMIO] 1a-pre-scsiaddr\n\0".as_ptr());
         let _ = DeviceRetrieveScsiAddress(deviceExtension, &mut (*deviceExtension).ScsiAddress);
+        DbgPrint(b"[SMIO] 1a-scsiaddr done\n\0".as_ptr());
     }
 
     if NT_SUCCESS(status) {
+        DbgPrint(b"[SMIO] 1b-pre-descriptors\n\0".as_ptr());
         status = DeviceRetrieveDescriptorsAndTransferLength(deviceExtension);
+        DbgPrint(b"[SMIO] 1b-descriptors done st=%x\n\0".as_ptr(), status);
     }
 
     if NT_SUCCESS(status) {
@@ -315,6 +320,7 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
         status = DeviceInitAllocateBuffers(deviceExtension);
     }
 
+    DbgPrint(b"[SMIO] 1-descriptors+bufs st=%x\n\0".as_ptr(), status);
     // 2. The following functions depend on the allocated buffers.
     // perf re-enable after failing. Q: Is this one used by cdrom.sys?
     if NT_SUCCESS(status) {
@@ -342,14 +348,17 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
         DeviceScanSpecialDevices(deviceExtension); // may send command to device
     }
 
+    DbgPrint(b"[SMIO] 3-scanspecial done\n\0".as_ptr());
     // 4. Initialize the hotplug information only after the ScanForSpecial routines,
     // as it relies upon the hack flags - deviceExtension->PrivateFdoData->HackFlags.
     if NT_SUCCESS(status) {
         status = DeviceInitializeHotplugInfo(deviceExtension);
     }
+    DbgPrint(b"[SMIO] 4-hotplug st=%x\n\0".as_ptr(), status);
 
     if NT_SUCCESS(status) {
         // cache the device's inquiry data
+        DbgPrint(b"[SMIO] 4b-pre-inquiry\n\0".as_ptr());
         status = DeviceCacheDeviceInquiryData(deviceExtension);
         if !NT_SUCCESS(status) {
             TracePrint(
@@ -360,18 +369,23 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
             );
         }
     }
+    DbgPrint(b"[SMIO] 4b-inquiry st=%x\n\0".as_ptr(), status);
 
     // 5. Initialize MMC context, media change notification stuff and read media capacity
     if NT_SUCCESS(status) {
         status = DeviceInitializeMediaChangeDetection(deviceExtension);
     }
+    DbgPrint(b"[SMIO] 5a-mcd st=%x\n\0".as_ptr(), status);
     if NT_SUCCESS(status) {
         status = DeviceInitMmcContext(deviceExtension);
     }
+    DbgPrint(b"[SMIO] 5b-mmc st=%x\n\0".as_ptr(), status);
     if NT_SUCCESS(status) {
         status = DeviceInitializeZPODD(deviceExtension);
     }
+    DbgPrint(b"[SMIO] 5c-zpodd st=%x\n\0".as_ptr(), status);
     if NT_SUCCESS(status) {
+        DbgPrint(b"[SMIO] 5d-pre-readcapacity\n\0".as_ptr());
         // Do READ CAPACITY. This SCSI command returns the last sector address
         // on the device and the bytes per sector. These are used to calculate
         // the drive capacity in bytes.
@@ -406,6 +420,7 @@ pub unsafe extern "C" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTAT
     // 8. Enable the main timer, create ARC name as needed
     if NT_SUCCESS(status) {
         // Device successfully added and initialized, increase CdRomCount.
+        DbgPrint(b"[SMIO] 8-CdRomCount++\n\0".as_ptr());
         (*IoGetConfigurationInformation()).CdRomCount += 1;
 
         (*deviceExtension).IsInitialized = 1;
@@ -1471,7 +1486,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
             break;
         }
 
-        core::ptr::write_bytes(buffer, 0, buffer_length as usize);
+        core::ptr::write_bytes((buffer) as *mut u8, 0, buffer_length as usize);
 
         status = DeviceSendSrbSynchronously(
             (*DeviceExtension).Device as *mut core::ffi::c_void,
@@ -4420,6 +4435,8 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
 ) -> NTSTATUS {
     let mut status: i32 = 0; // STATUS_SUCCESS
     let mut senseData: *mut core::ffi::c_void = core::ptr::null_mut();
+    extern "C" { fn DbgPrint(f: *const u8, ...) -> u32; }
+    DbgPrint(b"[ALOC] enter sz_fdo=%x\n\0".as_ptr(), core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>() as u32);
 
     // PAGED_CODE();
 
@@ -4431,17 +4448,18 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
             0x74767250, /* CDROM_TAG_PRIVATE_DATA */
         ) as *mut CDROM_PRIVATE_FDO_DATA;
     }
+    DbgPrint(b"[ALOC] fdo=%p\n\0".as_ptr(), (*DeviceExtension).PrivateFdoData);
 
     if (*DeviceExtension).PrivateFdoData.is_null() {
         status = -1073741670i32; // STATUS_INSUFFICIENT_RESOURCES
     } else {
         // initialize the struct's various fields.
         core::ptr::write_bytes(
-            (*DeviceExtension).PrivateFdoData,
+            ((*DeviceExtension).PrivateFdoData) as *mut u8,
             0,
-            core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>(),
-        );
+            core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>());
     }
+    DbgPrint(b"[ALOC] fdo zeroed; pre-sense\n\0".as_ptr());
 
     // Allocate request sense buffer.
     senseData = ExAllocatePoolWithTag(
@@ -4461,9 +4479,11 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
     // Allocate scratch buffer -- Must occur after determining
     // max transfer size, but before other CD specific detection
     // (which relies upon this buffer).
+    DbgPrint(b"[ALOC] pre-scratch sense=%p\n\0".as_ptr(), senseData);
     if ScratchBuffer_Allocate(DeviceExtension) == 0 {
         status = -1073741670i32; // STATUS_INSUFFICIENT_RESOURCES
     }
+    DbgPrint(b"[ALOC] done st=%x\n\0".as_ptr(), status);
 
     status
 }

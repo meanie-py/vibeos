@@ -1101,6 +1101,7 @@ pub unsafe extern "C" fn DeviceEvtD0Entry(
 ) -> NTSTATUS {
     let _ = PreviousState;
     extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; }
+    DbgPrint(b"[D0E] enter\n\0".as_ptr());
     let deviceExtension = DeviceGetExtension(Device);
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut zpoddInfo: PZERO_POWER_ODD_INFO = core::ptr::null_mut();

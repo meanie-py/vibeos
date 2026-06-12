@@ -153,7 +153,7 @@ pub unsafe extern "C" fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
 // WDF_OBJECT_CONTEXT_TYPE_INFO holds raw pointers (not Sync); a `static` requires Sync. Wrap in a
 // repr(transparent) newtype with a manual Sync impl — the type-info is read-only after image load.
 #[repr(transparent)]
-struct CtxTypeInfo(WDF_OBJECT_CONTEXT_TYPE_INFO);
+pub struct CtxTypeInfo(pub WDF_OBJECT_CONTEXT_TYPE_INFO);
 unsafe impl Sync for CtxTypeInfo {}
 #[no_mangle]
 pub static CDROM_DEVICE_EXTENSION_TYPE_INFO: CtxTypeInfo = CtxTypeInfo(WDF_OBJECT_CONTEXT_TYPE_INFO {

@@ -621,7 +621,7 @@ pub unsafe extern "C" fn DeviceSendSrbSynchronously(
 
         // 2. Create Request object
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&mut attributes,
-                                                core::ptr::null_mut() as *const core::ffi::c_void); // placeholder: CDROM_REQUEST_CONTEXT
+                                                core::ptr::addr_of!(crate::ddk_shims::CDROM_REQUEST_CONTEXT) as *const core::ffi::c_void); // CDROM_REQUEST_CONTEXT type-info (null → NULL deref 0x1E)
         status = WdfRequestCreate(&mut attributes,
                                   (*deviceExtension).IoTarget,
                                   &mut request);
@@ -934,10 +934,9 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
         // WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, CDROM_REQUEST_CONTEXT);
         // Expand macro: initialize attributes as zeroed, then set ContextTypeInfo
         core::ptr::write_bytes(
-            core::ptr::addr_of_mut!(attributes),
+            (core::ptr::addr_of_mut!(attributes)) as *mut u8,
             0,
-            core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>(),
-        );
+            core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>());
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
         attributes.ContextTypeInfo = &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const _ as *const WDF_OBJECT_CONTEXT_TYPE_INFO;
 
@@ -956,10 +955,9 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
 
         // WDF_OBJECT_ATTRIBUTES_INIT(&attributes) – expand: zero + set size
         core::ptr::write_bytes(
-            core::ptr::addr_of_mut!(attributes),
+            (core::ptr::addr_of_mut!(attributes)) as *mut u8,
             0,
-            core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>(),
-        );
+            core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>());
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
         attributes.ParentObject = startUnitRequest as WDFOBJECT;
 

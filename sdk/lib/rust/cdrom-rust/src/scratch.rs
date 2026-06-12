@@ -230,8 +230,8 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
         let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
             &mut attributes,
-            core::ptr::null(),
-        ); // context type provided by caller
+            core::ptr::addr_of!(crate::ddk_shims::CDROM_REQUEST_CONTEXT) as *const core::ffi::c_void,
+        ); // C passes CDROM_REQUEST_CONTEXT type-info; null here → NULL deref of UniqueType (0x1E)
         status = WdfRequestCreate(
             &mut attributes,
             (*DeviceExtension).IoTarget,
@@ -306,10 +306,9 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
         } else {
             // must be initialized here...
             core::ptr::write_bytes(
-                (*DeviceExtension).ScratchContext.ScratchHistory,
+                ((*DeviceExtension).ScratchContext.ScratchHistory) as *mut u8,
                 0u8,
-                allocation_size,
-            );
+                allocation_size);
             (*(*DeviceExtension).ScratchContext.ScratchHistory).TotalHistoryCount = 20;
         }
     }
@@ -752,12 +751,11 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
 
             // Normalize the sense data copy in the history
             core::ptr::write_bytes(
-                core::ptr::addr_of_mut!(
+                (core::ptr::addr_of_mut!(
                     (*(*read_write_context).SrbHistoryItem).NormalizedSenseData
-                ),
+                )) as *mut u8,
                 0,
-                core::mem::size_of::<SENSE_DATA>(),
-            );
+                core::mem::size_of::<SENSE_DATA>());
             core::ptr::copy_nonoverlapping(
                 (*(*device_extension).ScratchContext.ScratchSrb).SenseInfoBuffer as *const u8,
                 core::ptr::addr_of_mut!(

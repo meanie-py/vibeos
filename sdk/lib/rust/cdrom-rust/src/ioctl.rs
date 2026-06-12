@@ -533,7 +533,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
     ScratchBuffer_BeginUse(DeviceExtension);
 
     // RtlZeroMemory(&cdb, sizeof(CDB));
-    core::ptr::write_bytes(&raw mut cdb, 0u8, core::mem::size_of::<CDB>());
+    core::ptr::write_bytes((&raw mut cdb) as *mut u8, 0u8, core::mem::size_of::<CDB>());
     // Set up the CDB
     (*((&raw mut cdb) as *mut CDB)).READ_DVD_STRUCTURE.as_mut().OperationCode = 0xAD; // SCSIOP_READ_DVD_STRUCTURE
     (*((&raw mut cdb) as *mut CDB)).READ_DVD_STRUCTURE.as_mut().RMDBlockNumber[0] = *fourByte.add(3); // Byte3 (MSB)
@@ -4968,7 +4968,7 @@ pub unsafe extern "C" fn RequestHandleSendOpcInformation(
         let mut cdb: CDB = core::mem::zeroed();
         ScratchBuffer_BeginUse(DeviceExtension);
 
-        core::ptr::write_bytes(core::ptr::addr_of_mut!(cdb), 0, core::mem::size_of::<CDB>());
+        core::ptr::write_bytes((core::ptr::addr_of_mut!(cdb)) as *mut u8, 0, core::mem::size_of::<CDB>());
 
         // we support only the simplest version for now
         cdb.SEND_OPC_INFORMATION.as_mut().OperationCode = SCSIOP_SEND_OPC_INFORMATION;
@@ -6173,7 +6173,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
         let mut transfer_size: u32 = 0;
         let mut cdb: CDB = core::mem::zeroed();
         // RtlZeroMemory(&cdb, sizeof(CDB));
-        core::ptr::write_bytes(core::ptr::addr_of_mut!(cdb), 0u8, core::mem::size_of::<CDB>());
+        core::ptr::write_bytes((core::ptr::addr_of_mut!(cdb)) as *mut u8, 0u8, core::mem::size_of::<CDB>());
 
         // Set up the CDB
         cdb.PLAY_AUDIO_MSF.as_mut().OperationCode = 0xA5u8; // SCSIOP_PLAY_AUDIO_MSF

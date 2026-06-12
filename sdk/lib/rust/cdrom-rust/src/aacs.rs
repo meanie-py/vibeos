@@ -632,10 +632,9 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
         ScratchBuffer_BeginUse(DeviceExtension);
 
         core::ptr::write_bytes(
-            core::ptr::addr_of_mut!(cdb).cast::<u8>(),
+            (core::ptr::addr_of_mut!(cdb).cast::<u8>()) as *mut u8,
             0,
-            core::mem::size_of::<CDB>(),
-        );
+            core::mem::size_of::<CDB>());
 
         // Set up the CDB
         cdb.REPORT_KEY.as_mut().OperationCode = SCSIOP_REPORT_KEY;
@@ -659,10 +658,9 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
             const DEFAULT_FILL: u8 = 0x32;
             // RtlFillMemory inline
             core::ptr::write_bytes(
-                (*DeviceExtension).ScratchContext.ScratchBuffer,
+                ((*DeviceExtension).ScratchContext.ScratchBuffer) as *mut u8,
                 DEFAULT_FILL,
-                0x0054,
-            );
+                0x0054);
             // RtlCopyMemory
             core::ptr::copy_nonoverlapping(
                 RESULTS.as_ptr(),
@@ -836,7 +834,7 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
 
         // RtlZeroMemory(&cdb, sizeof(CDB)) is already done by initialization above,
         // but we preserve the call explicitly for exact transliteration.
-        core::ptr::write_bytes(cdb.as_mut_ptr(), 0, core::mem::size_of::<[u8; 12]>());
+        core::ptr::write_bytes((cdb.as_mut_ptr()) as *mut u8, 0, core::mem::size_of::<[u8; 12]>());
 
         // Set up the CDB
         cdb[0] = SCSIOP_READ_DVD_STRUCTURE;
@@ -984,7 +982,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadSerialNumber(
                 const RESULTS: [u8; 4] = [0x00, 0x22, 0x00, 0x00];
                 const DEFAULT_FILL: u8 = 0x34;
                 let scratch_ptr = (*DeviceExtension).ScratchContext.ScratchBuffer;
-                core::ptr::write_bytes(scratch_ptr, DEFAULT_FILL, 0x0024);
+                core::ptr::write_bytes((scratch_ptr) as *mut u8, DEFAULT_FILL, 0x0024);
                 core::ptr::copy_nonoverlapping(RESULTS.as_ptr(), scratch_ptr, RESULTS.len());
                 status = 0; // STATUS_SUCCESS
             }
@@ -1217,10 +1215,9 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
             static results: [u8; 4] = [0x00, 0x22, 0x00, 0x00];
             static defaultFill: u8 = 0x36; // '6'
             core::ptr::write_bytes(
-                (*DeviceExtension).ScratchContext.ScratchBuffer,
+                ((*DeviceExtension).ScratchContext.ScratchBuffer) as *mut u8,
                 defaultFill,
-                0x0024,
-            );
+                0x0024);
             RtlCopyMemory(
                 (*DeviceExtension).ScratchContext.ScratchBuffer as *mut c_void,
                 results.as_ptr() as *const c_void,

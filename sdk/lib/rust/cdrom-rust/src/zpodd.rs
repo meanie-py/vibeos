@@ -82,7 +82,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         break 'cleanup;
     }
 
-    core::ptr::write_bytes(zpoddInfo, 0, core::mem::size_of::<ZERO_POWER_ODD_INFO>());
+    core::ptr::write_bytes((zpoddInfo) as *mut u8, 0, core::mem::size_of::<ZERO_POWER_ODD_INFO>());
 
     // Check for DA & AN
     if (*DeviceExtension).PowerDescriptor.is_null()
@@ -249,7 +249,7 @@ pub unsafe extern "C" fn DeviceQueryD3ColdInterface(
 
     // PAGED_CODE();
 
-    core::ptr::write_bytes(D3ColdInterface, 0, core::mem::size_of::<D3COLD_SUPPORT_INTERFACE>());
+    core::ptr::write_bytes((D3ColdInterface) as *mut u8, 0, core::mem::size_of::<D3COLD_SUPPORT_INTERFACE>());
     KeInitializeEvent(&raw mut event, _EVENT_TYPE_NotificationEvent, 0);
 
     targetDevice = IoGetAttachedDeviceReference((*DeviceExtension).DeviceObject);
