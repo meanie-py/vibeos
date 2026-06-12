@@ -28,6 +28,56 @@ pub mod scratch;
 pub mod sense;
 pub mod zpodd;
 
+/// Write `<prefix><num>\0` as a UTF-16 string into `dst` (capacity `cch` u16 units).
+///
+/// Replaces the C `RtlStringCchPrintfW(dst, cch, L"...%d", num)` calls used to build
+/// the device name (`\Device\CdRom%d`) and well-known symlink (`\DosDevices\CdRom%d`).
+/// In this cohab build `RtlStringCchPrintfW` is only a no-op stub (ntstrsafe is an
+/// inline header with no exported symbol), so those calls silently produced a
+/// zero-length name — which left the CD-ROM device UNNAMED (ARC `\Device\CdRom0`
+/// lookup → BUGCHECK 0x6B) and made `WdfDeviceCreateSymbolicLink` reject the empty
+/// name with STATUS_INVALID_DEVICE_REQUEST. Formatting directly here avoids both the
+/// broken stub and any C-variadic ABI risk. Returns STATUS_SUCCESS or
+/// STATUS_BUFFER_TOO_SMALL.
+pub(crate) unsafe fn write_wide_cdrom_name(
+    dst: *mut u16,
+    cch: usize,
+    prefix: &[u8],
+    num: i32,
+) -> i32 {
+    let mut digits = [0u8; 12];
+    let mut n: u32 = if num < 0 { 0 } else { num as u32 };
+    let mut dlen = 0usize;
+    if n == 0 {
+        digits[0] = b'0';
+        dlen = 1;
+    } else {
+        while n > 0 {
+            digits[dlen] = b'0' + (n % 10) as u8;
+            n /= 10;
+            dlen += 1;
+        }
+    }
+    // prefix + digits + NUL must fit
+    if prefix.len() + dlen + 1 > cch {
+        return 0xC0000023u32 as i32; // STATUS_BUFFER_TOO_SMALL
+    }
+    let mut i = 0usize;
+    for &b in prefix {
+        *dst.add(i) = b as u16;
+        i += 1;
+    }
+    // digits were accumulated least-significant first
+    let mut j = dlen;
+    while j > 0 {
+        j -= 1;
+        *dst.add(i) = digits[j] as u16;
+        i += 1;
+    }
+    *dst.add(i) = 0;
+    0 // STATUS_SUCCESS
+}
+
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}

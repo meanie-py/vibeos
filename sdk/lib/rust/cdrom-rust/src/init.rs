@@ -100,7 +100,7 @@ const TRACE_FLAG_INIT: u32 = 0x200;
 
 const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x001B0013;
 const FALSE: u8 = 0;
-const IOCTL_SCSI_GET_ADDRESS: u32 = 0x41018c;
+const IOCTL_SCSI_GET_ADDRESS: u32 = 0x41018; // CTL_CODE(IOCTL_SCSI_BASE,0x406,METHOD_BUFFERED,FILE_ANY_ACCESS); was 0x41018c (fabricated extra digit)
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400; // typical value, replace if needed
 const CDROM_TAG_DESCRIPTOR: u32 = 0x00000000; // placeholder
 const NonPagedPoolNx: u32 = 0x200;
@@ -666,10 +666,10 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
     }
 
     loop {
-        status = RtlStringCchPrintfW(
+        status = crate::write_wide_cdrom_name(
             wideLinkName.as_mut_ptr(),
             64,
-            b"\\DosDevices\\CdRom%d\0".as_ptr() as *const u16,
+            b"\\DosDevices\\CdRom",
             cdromNumber,
         );
         if status & 0x80000000u32 as i32 != 0 {
@@ -731,7 +731,11 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::write_bytes(savedName, 0u8, unicodeLinkName.MaximumLength as usize);
+    // NB: write_bytes count is in *elements of T*; savedName is *mut u16, so the count
+    // must be a BYTE count cast through *mut u8 (MaximumLength is bytes). Writing
+    // `write_bytes(savedName, 0, MaximumLength)` would zero MaximumLength*2 bytes and
+    // overflow the pool block (BUGCHECK 0x19 BAD_POOL_HEADER).
+    core::ptr::write_bytes(savedName as *mut u8, 0u8, unicodeLinkName.MaximumLength as usize);
     core::ptr::copy_nonoverlapping(
         unicodeLinkName.Buffer as *const u16,
         savedName,

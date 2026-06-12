@@ -2541,6 +2541,10 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
     if NT_SUCCESS(status) {
         let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
+        // WDF_OBJECT_ATTRIBUTES_INIT sets these to InheritFromParent(1); leaving them 0
+        // (Invalid) makes WdfStringCreate reject with STATUS_WDF_OBJECT_ATTRIBUTES_INVALID.
+        attributes.ExecutionLevel = 1;       // WdfExecutionLevelInheritFromParent
+        attributes.SynchronizationScope = 1; // WdfSynchronizationScopeInheritFromParent
         attributes.ParentObject = (*DeviceExtension).Device as WDFOBJECT;
 
         status = WdfStringCreate(
