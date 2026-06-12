@@ -22,13 +22,10 @@ extern "C" {
 const AlmostTwoSeconds: i64 = 19980000;
 const APC_LEVEL: KIRQL = 1;
 
-const APC_LEVEL: i32 = 1;
 
-const APC_LEVEL: u8 = 1;
 
 // Forward declarations for missing externs
 
-const AlmostTwoSeconds: i64 = 20000000;
 #[no_mangle]
 pub unsafe extern "C" fn FatNtTimeToFatTime(
     IrpContext: PIRP_CONTEXT,
@@ -59,7 +56,7 @@ pub unsafe extern "C" fn FatNtTimeToFatTime(
             b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
                 .as_ptr() as *const i8 as PVOID,
             66 as ULONG,
-            core::ptr::null_mut::<i8>(),
+            (core::ptr::null_mut::<i8>()).cast(),
         );
     }
 
@@ -126,9 +123,9 @@ pub unsafe extern "C" fn FatFatDateToNtTime(
     };
     let mut Time: LARGE_INTEGER = unsafe { core::mem::zeroed() };
 
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8,
+            (b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8).cast(),
             KeGetCurrentIrql() as i32,
         );
         if 0i32 == 0 {
@@ -179,7 +176,7 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
 
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8,
+            (b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8).cast(),
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
@@ -193,18 +190,18 @@ pub unsafe extern "C" fn FatFatTimeToNtTime(
         }
     }
 
-    TimeFields.Year = (FatTime.Date.Year() + 1980) as u16;
-    TimeFields.Month = FatTime.Date.Month() as u16;
-    TimeFields.Day = FatTime.Date.Day() as u16;
-    TimeFields.Hour = FatTime.Time.Hour() as u16;
-    TimeFields.Minute = FatTime.Time.Minute() as u16;
-    TimeFields.Second = (FatTime.Time.DoubleSeconds() * 2) as u16;
+    TimeFields.Year = ((FatTime.Date.Year() + 1980) as u16) as i16;
+    TimeFields.Month = (FatTime.Date.Month() as u16) as i16;
+    TimeFields.Day = (FatTime.Date.Day() as u16) as i16;
+    TimeFields.Hour = (FatTime.Time.Hour() as u16) as i16;
+    TimeFields.Minute = (FatTime.Time.Minute() as u16) as i16;
+    TimeFields.Second = ((FatTime.Time.DoubleSeconds() * 2) as u16) as i16;
 
     if TenMilliSeconds != 0 {
-        TimeFields.Second += (TenMilliSeconds / 100) as u16;
-        TimeFields.Milliseconds = ((TenMilliSeconds % 100) * 10) as u16;
+        TimeFields.Second += ((TenMilliSeconds / 100) as u16) as i16;
+        TimeFields.Milliseconds = (((TenMilliSeconds % 100) * 10) as u16) as i16;
     } else {
-        TimeFields.Milliseconds = 0u16;
+        TimeFields.Milliseconds = (0u16) as i16;
     }
 
     if TimeFields.Second > 59 {
@@ -243,7 +240,7 @@ pub unsafe extern "C" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> FAT_T
             KeGetCurrentIrql() as i32,
         );
         if 0 == 0 {
-            RtlAssert(
+            (RtlAssert).cast()(
                 b"0\0".as_ptr() as *const i8 as *const core::ffi::c_void,
                 b"/home/curi/Projects/os-playground/vibeos-wt-fastfat/drivers/filesystems/fastfat/timesup.c\0"
                     .as_ptr() as *const i8 as *const core::ffi::c_void,

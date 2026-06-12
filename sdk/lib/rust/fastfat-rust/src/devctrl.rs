@@ -93,7 +93,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     // SEH2_EXCEPT filter and handler
     if _SEH2_EXCEPT(FatExceptionFilter(
         IrpContext,
-        _SEH2_GetExceptionInformation(),
+        (_SEH2_GetExceptionInformation()).cast(),
     )) != 0
     {
         Status = FatProcessException(
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
             }
             IOCTL_DISK_COPY_DATA => {
                 if FlagOn((*vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 &&
-                   FlagOn((*irp_sp).Flags, SL_FORCE_DIRECT_WRITE) == 0 &&
+                   FlagOn(((*irp_sp).Flags) as u32, SL_FORCE_DIRECT_WRITE) == 0 &&
                    FlagOn((*ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT) == 0 {
                     FatCompleteRequest(IrpContext, Irp, STATUS_ACCESS_DENIED);
                     DebugTrace(-1, DEBUG_TRACE_DEVCTRL, b"FatCommonDeviceControl -> %08lx\n\0".as_ptr() as *const i8, STATUS_ACCESS_DENIED as u32);
@@ -209,7 +209,7 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
         status = ntkrnl_sys::driver_ddk::IoCallDriver((*vcb).TargetDeviceObject, Irp);
 
         if status == STATUS_PENDING && !completion_context.is_null() {
-            KeWaitForSingleObject(core::ptr::addr_of_mut!(wait_event), _KWAIT_REASON_Executive, 0i32, 0, core::ptr::null_mut());
+            KeWaitForSingleObject(core::ptr::addr_of_mut!(wait_event), _KWAIT_REASON_Executive, (0i32) as u32, 0, core::ptr::null_mut());
             status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         }
 
@@ -227,21 +227,6 @@ pub unsafe extern "C" fn FatCommonDeviceControl(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn FatDeviceControlCompletionRoutine(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Contxt: PVOID,
-) -> i32 {
-    let Event = Contxt as *mut KEVENT;
-    if !Event.is_null() {
-        KeSetEvent(Event, 0, 0);
-        return STATUS_MORE_PROCESSING_REQUIRED;
-    }
-    let _ = DeviceObject;
-    let _ = Irp;
-    STATUS_SUCCESS
-}
 
 
 // ============================================================================

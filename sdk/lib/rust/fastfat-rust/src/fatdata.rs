@@ -158,12 +158,10 @@ const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x00000001; // placeholder value
 
 // Constants (typical values, caller may override)
 const FAT_NTC_IRP_CONTEXT: u32 = 0x680;
-const FAT_NTC_ROOT_DCB: u32 = 0x686;
 const FCB_STATE_PAGING_FILE: u32 = 0x00000004;
 const FCB_STATE_TEMPORARY: u32 = 0x00000800;
 const FcbGood: u32 = 0;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
-const UserFileOpen: u32 = 0;
 const UserDirectoryOpen: u32 = 1;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
@@ -180,7 +178,7 @@ pub unsafe extern "C" fn FatBugCheckExceptionFilter(
     ExceptionPointer: PEXCEPTION_POINTERS,
 ) -> u32 {
     // PAGED_CODE();
-    if KeGetCurrentIrql() > APC_LEVEL {
+    if KeGetCurrentIrql() > (APC_LEVEL) as u8 {
         DbgBreakPoint();
     }
 
@@ -214,7 +212,7 @@ pub unsafe extern "C" fn FatExceptionFilter(
     let mut ExceptionCode: u32;
     // ExceptionCode = ExceptionPointer->ExceptionRecord->ExceptionCode
     let ExceptionRecord = (*ExceptionPointer).ExceptionRecord;
-    ExceptionCode = (*ExceptionRecord).ExceptionCode;
+    ExceptionCode = ((*ExceptionRecord).ExceptionCode) as u32;
 
     DebugTrace(
         0,
@@ -232,7 +230,7 @@ pub unsafe extern "C" fn FatExceptionFilter(
     #[cfg(debug_assertions)]
     {
         if FatBreakOnInterestingExceptionStatus != 0
-            && ExceptionCode == FatBreakOnInterestingExceptionStatus
+            && ExceptionCode == (FatBreakOnInterestingExceptionStatus) as u32
         {
             DbgBreakPoint();
         }
@@ -274,7 +272,7 @@ pub unsafe extern "C" fn FatExceptionFilter(
 
     if (*IrpContext).ExceptionStatus == 0 {
         if FsRtlIsNtstatusExpected(ExceptionCode as i32) != 0 {
-            (*IrpContext).ExceptionStatus = ExceptionCode;
+            (*IrpContext).ExceptionStatus = (ExceptionCode) as i32;
             return EXCEPTION_EXECUTE_HANDLER;
         } else {
             FatBugCheck(
@@ -285,7 +283,7 @@ pub unsafe extern "C" fn FatExceptionFilter(
         }
     } else {
         NT_ASSERT(
-            ((*IrpContext).ExceptionStatus == ExceptionCode) as i32,
+            ((*IrpContext).ExceptionStatus == (ExceptionCode) as i32) as i32,
         );
         NT_ASSERT(
             (FsRtlIsNtstatusExpected(ExceptionCode as i32) != 0) as i32,
@@ -321,7 +319,7 @@ pub unsafe extern "C" fn FatProcessException(
 
     // If this is an Mdl write request, then take care of the Mdl here.
     if ((*IrpContext).MajorFunction as u32 == IRP_MJ_WRITE &&
-        FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE_MDL) == IRP_MN_COMPLETE_MDL &&
+        FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE_MDL) == (IRP_MN_COMPLETE_MDL) as i32 &&
         !(*Irp).MdlAddress.is_null())
     {
         let LocalIrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
@@ -423,7 +421,7 @@ pub unsafe extern "system" fn FatFastIoCheckIfPossible(
         core::ptr::addr_of_mut!(Vcb),
         core::ptr::addr_of_mut!(Fcb),
         core::ptr::addr_of_mut!(Ccb),
-    ) != UserFileOpen {
+    ) != (UserFileOpen) as u32 {
         return 0u8;
     }
 
@@ -483,8 +481,8 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
         &mut irp_context as *mut IRP_CONTEXT as *mut core::ffi::c_void,
         core::mem::size_of::<IRP_CONTEXT>(),
     );
-    irp_context.NodeTypeCode = FAT_NTC_IRP_CONTEXT;
-    irp_context.NodeByteSize = core::mem::size_of::<IRP_CONTEXT>() as u32;
+    irp_context.NodeTypeCode = (FAT_NTC_IRP_CONTEXT) as u16;
+    irp_context.NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>() as u32) as i16;
 
     if wait != 0 {
         SetFlag(&mut irp_context.Flags, IRP_CONTEXT_FLAG_WAIT);
@@ -494,7 +492,7 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
 
     type_of_open = FatDecodeFileObject(file_object, &mut vcb, &mut fcb, &mut ccb);
 
-    if type_of_open != UserFileOpen && type_of_open != UserDirectoryOpen {
+    if type_of_open != (UserFileOpen) as u32 && type_of_open != UserDirectoryOpen {
         return results;
     }
 
@@ -517,12 +515,12 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
 
         (*buffer).FileAttributes = 0;
 
-        if NodeType(fcb) != FAT_NTC_ROOT_DCB {
+        if NodeType((fcb).cast()) != (FAT_NTC_ROOT_DCB) as u32 {
             (*buffer).LastWriteTime = (*fcb).LastWriteTime;
             (*buffer).CreationTime = (*fcb).CreationTime;
             (*buffer).LastAccessTime = (*fcb).LastAccessTime;
             (*buffer).ChangeTime.QuadPart = 0;
-            (*buffer).FileAttributes = (*fcb).DirentFatFlags;
+            (*buffer).FileAttributes = ((*fcb).DirentFatFlags) as u32;
         } else {
             (*buffer).LastWriteTime.QuadPart = 0;
             (*buffer).CreationTime.QuadPart = 0;
@@ -540,7 +538,7 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
         }
 
         (*io_status).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*io_status).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32;
+        (*io_status).Information = (core::mem::size_of::<FILE_BASIC_INFORMATION>() as u32) as u64;
 
         results = 1;
         break;
@@ -568,8 +566,8 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
 
     // Irp context dummy
     let mut IrpContext: IRP_CONTEXT = core::mem::zeroed();
-    IrpContext.NodeTypeCode = FAT_NTC_IRP_CONTEXT;
-    IrpContext.NodeByteSize = core::mem::size_of::<IRP_CONTEXT>() as u16;
+    IrpContext.NodeTypeCode = (FAT_NTC_IRP_CONTEXT) as u16;
+    IrpContext.NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>() as u16) as i16;
 
     if Wait != 0 {
         SetFlag(&mut IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
@@ -582,7 +580,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
     let mut Ccb: *mut CCB = core::ptr::null_mut();
     let TypeOfOpen: u32 = FatDecodeFileObject(FileObject, &mut Vcb, &mut Fcb, &mut Ccb);
 
-    if TypeOfOpen != UserFileOpen && TypeOfOpen != UserDirectoryOpen {
+    if TypeOfOpen != (UserFileOpen) as u32 && TypeOfOpen != UserDirectoryOpen {
         return Results;
     }
 
@@ -590,7 +588,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
 
     let fcb_acquired: u8;
     if FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0 {
-        if ExAcquireResourceSharedLite((*Fcb).Header.Resource, Wait) == 0 {
+        if ExAcquireResourceSharedLite((*Fcb).Header.Resource, (Wait) as i32) == 0 {
             FsRtlExitFileSystem();
             return Results;
         }
@@ -624,7 +622,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
         }
 
         (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*IoStatus).Information = core::mem::size_of::<FILE_STANDARD_INFORMATION>();
+        (*IoStatus).Information = (core::mem::size_of::<FILE_STANDARD_INFORMATION>()) as u64;
         Results = 1;
         break;
     }
@@ -677,8 +675,8 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
         0u8,
         core::mem::size_of::<IRP_CONTEXT>(),
     );
-    IrpContext.NodeTypeCode = FAT_NTC_IRP_CONTEXT;
-    IrpContext.NodeByteSize = core::mem::size_of::<IRP_CONTEXT>();
+    IrpContext.NodeTypeCode = (FAT_NTC_IRP_CONTEXT) as u16;
+    IrpContext.NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>()) as i16;
 
     if Wait != 0 {
         SetFlag(&mut IrpContext.Flags, IRP_CONTEXT_FLAG_WAIT);
@@ -687,7 +685,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
     }
 
     TypeOfOpen = FatDecodeFileObject(FileObject, &mut Vcb, &mut Fcb, &mut Ccb);
-    if (TypeOfOpen != UserFileOpen) && (TypeOfOpen != UserDirectoryOpen) {
+    if (TypeOfOpen != (UserFileOpen) as u32) && (TypeOfOpen != UserDirectoryOpen) {
         return Results;
     }
 
@@ -714,9 +712,9 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
             &mut (*Buffer).ChangeTime as *mut LARGE_INTEGER,
         );
 
-        (*Buffer).FileAttributes = (*Fcb).DirentFatFlags;
+        (*Buffer).FileAttributes = ((*Fcb).DirentFatFlags) as u32;
 
-        if (*Fcb).Header.NodeTypeCode == FAT_NTC_ROOT_DCB {
+        if (*Fcb).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16 {
             (*Buffer).CreationTime = (*Buffer).ChangeTime;
             (*Buffer).LastAccessTime = (*Buffer).ChangeTime;
             (*Buffer).LastWriteTime = (*Buffer).ChangeTime;
@@ -747,7 +745,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
         }
 
         (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*IoStatus).Information = core::mem::size_of::<FILE_NETWORK_OPEN_INFORMATION>();
+        (*IoStatus).Information = (core::mem::size_of::<FILE_NETWORK_OPEN_INFORMATION>()) as u64;
         Results = 1; // TRUE
     }
     // try_exit: (label before finally – no extra code needed)
@@ -769,7 +767,7 @@ pub unsafe extern "C" fn FatPopUpFileCorrupt(
     PAGED_CODE();
 
     // Check if this is the root directory; if so, skip popup
-    if NodeType(Fcb as *const core::ffi::c_void) == FAT_NTC_ROOT_DCB {
+    if NodeType(Fcb as *const core::ffi::c_void) == (FAT_NTC_ROOT_DCB) as u32 {
         return;
     }
 

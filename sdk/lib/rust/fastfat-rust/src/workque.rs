@@ -43,9 +43,7 @@ const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x100;
 
 // External functions not in imports (declare them for this translation unit)
 
-const FSP_PER_DEVICE_THRESHOLD: u32 = 2;
 
-const APC_LEVEL: i32 = 1;
 #[no_mangle]
 pub unsafe extern "C" fn FatOplockComplete(Context: *mut core::ffi::c_void, Irp: PIRP) {
     // --- Extern declarations for calls not in the provided imports ---
@@ -171,7 +169,7 @@ pub unsafe extern "C" fn FatFsdPostRequest(
     mut IrpContext: PIRP_CONTEXT,
     mut Irp: PIRP,
 ) -> NTSTATUS {
-    if (KeGetCurrentIrql() as i32) > APC_LEVEL {
+    if (KeGetCurrentIrql() as i32) > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
             KeGetCurrentIrql() as i32,
@@ -226,9 +224,9 @@ pub unsafe extern "system" fn FatAddToWorkque(
             core::mem::offset_of!(VOLUME_DEVICE_OBJECT, DeviceObject),
         ) as *mut VOLUME_DEVICE_OBJECT;
 
-        SavedIrql = KeAcquireSpinLockRaiseToDpc(&raw mut (*Vdo).OverflowQueueSpinLock);
+        SavedIrql = KeAcquireSpinLockRaiseToDpc((&raw mut (*Vdo).OverflowQueueSpinLock).cast());
 
-        if (*Vdo).PostedRequestCount > FSP_PER_DEVICE_THRESHOLD {
+        if (*Vdo).PostedRequestCount > (FSP_PER_DEVICE_THRESHOLD) as u32 {
             InsertTailList(
                 &raw mut (*Vdo).OverflowQueue,
                 &raw mut (*IrpContext).WorkQueueItem.List,
@@ -238,7 +236,7 @@ pub unsafe extern "system" fn FatAddToWorkque(
                 .wrapping_add(1u32) as u32;
 
             KeReleaseSpinLock(
-                &raw mut (*Vdo).OverflowQueueSpinLock,
+                (&raw mut (*Vdo).OverflowQueueSpinLock).cast(),
                 SavedIrql,
             );
             return;
@@ -247,7 +245,7 @@ pub unsafe extern "system" fn FatAddToWorkque(
                 .wrapping_add(1u32) as u32;
 
             KeReleaseSpinLock(
-                &raw mut (*Vdo).OverflowQueueSpinLock,
+                (&raw mut (*Vdo).OverflowQueueSpinLock).cast(),
                 SavedIrql,
             );
         }

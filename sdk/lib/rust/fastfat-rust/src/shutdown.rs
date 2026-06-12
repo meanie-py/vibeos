@@ -52,7 +52,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
 
     FsRtlEnterFileSystem();
 
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = (FatIsIrpTopLevel(Irp)) as u8;
 
     // Mechanical translation of _SEH2_TRY / _SEH2_EXCEPT / _SEH2_END.
     // The exception filter and handler are preserved even though no actual
@@ -71,7 +71,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
             let info = _SEH2_GetExceptionInformation();
             if FatExceptionFilter(IrpContext, info) != 0 {
                 Status =
-                    FatProcessException(IrpContext, Irp, _SEH2_GetExceptionCode());
+                    FatProcessException(IrpContext, Irp, (_SEH2_GetExceptionCode()) as i32);
             }
         }
     }
@@ -156,7 +156,7 @@ pub unsafe extern "C" fn FatCommonShutdown(
             // Outer _SEH2_TRY (send shutdown IRP)
             let irp_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 new_irp = IoBuildSynchronousFsdRequest(
-                    IRP_MJ_SHUTDOWN,
+                    (IRP_MJ_SHUTDOWN) as u32,
                     (*vcb).TargetDeviceObject,
                     core::ptr::null_mut(),
                     0,

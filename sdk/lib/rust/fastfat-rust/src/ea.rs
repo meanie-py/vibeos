@@ -428,7 +428,7 @@ pub unsafe extern "system" fn FatFsdSetEa(
         let __seh_frame: i32 = _SEH2_TRY();
         if __seh_frame == 0 {
             IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
-            Status = FatCommonSetEa(IrpContext, Irp);
+            Status = FatCommonSetEa(IrpContext, (Irp).cast());
             _SEH2_END();
         } else {
             let exception_info: *mut EXCEPTION_POINTERS = _SEH2_GetExceptionInformation();
@@ -465,7 +465,7 @@ pub unsafe extern "C" fn FatCommonSetEa(
 ) -> NTSTATUS {
     PAGED_CODE();
     let status = ntkrnl_sys::constants::STATUS_INVALID_DEVICE_REQUEST;
-    FatCompleteRequest(IrpContext, Irp, status);
+    FatCompleteRequest(IrpContext, (Irp).cast(), status);
     status
 }
 

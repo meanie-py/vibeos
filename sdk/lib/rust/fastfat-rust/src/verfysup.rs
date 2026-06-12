@@ -85,10 +85,6 @@ pub const BugCheckFileId: u32 = /* FAT_BUG_CHECK_VERFYSUP */ 0;
 pub const Dbg: u32 = /* DEBUG_TRACE_VERFYSUP */ 0;
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/06_FatResetFcb.rs ----
 extern "system" {
-    fn PAGED_CODE();
-    fn FlagOn(Flags: u32, Bit: u32) -> u8;
-    fn NodeType(Fcb: PFCB) -> u32;
-    fn FatIsFat32(Vcb: *mut core::ffi::c_void) -> u8;
 }
 
 const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x08;
@@ -138,8 +134,6 @@ pub unsafe extern "system" fn FatResetFcb(
 }
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/07_FatMatchFileSize.rs ----
 extern "system" {
-    fn UNREFERENCED_PARAMETER(x: *mut core::ffi::c_void);
-    fn NodeType(p: *const core::ffi::c_void) -> u32;
 }
 
 #[no_mangle]
@@ -164,33 +158,12 @@ pub unsafe extern "system" fn FatMatchFileSize(
 }
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/15_FatDetermineAndMarkFcbCondition.rs ----
 extern "system" {
-    fn NodeType(fcb: *mut FCB) -> u32;
-    fn FatGetDirentFromFcbOrDcb(
-        irpctx: *mut IRP_CONTEXT,
-        fcb: *mut FCB,
-        arg2: u8,
-        dirent: *mut *mut DIRENT,
-        direntBcb: *mut *mut BCB,
-    );
-    fn FatUnpinBcb(irpctx: *mut IRP_CONTEXT, bcb: *mut BCB);
-    fn FatIsFat32(vcb: *mut VCB) -> u8;
-    fn Fat8dot3ToString(
-        irpctx: *mut IRP_CONTEXT,
-        dirent: *mut DIRENT,
-        arg3: u8,
-        name: *mut OEM_STRING,
-    );
     fn FatMarkFcbCondition(
         irpctx: *mut IRP_CONTEXT,
         fcb: *mut FCB,
         condition: u32,
         recursive: u8,
     );
-    fn FatMatchFileSize(
-        irpctx: *mut IRP_CONTEXT,
-        dirent: *mut DIRENT,
-        fcb: *mut FCB,
-    ) -> u8;
 }
 
 #[no_mangle]
@@ -262,12 +235,12 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
         //  We need to calculate the first cluster 'cause FAT32 splits
         //  this field across the dirent.
         //
-        FirstClusterOfFile = (*Dirent).FirstClusterOfFile;
+        FirstClusterOfFile = ((*Dirent).FirstClusterOfFile) as u32;
         if FatIsFat32((*Fcb).Vcb) != 0 {
             FirstClusterOfFile += ((*Dirent).FirstClusterOfFileHi as u32) << 16;
         }
 
-        if !RtlEqualString(
+        if !(RtlEqualString).cast()(
             &Name as *const OEM_STRING as *const UNICODE_STRING,
             &(*Fcb).ShortName.Name.Oem as *const OEM_STRING as *const UNICODE_STRING,
             1u8, /* TRUE */
@@ -288,18 +261,9 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
 }
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/11_FatDeferredCleanVolume.rs ----
 extern "system" {
-    fn DebugTrace(trace_level: u32, component: u32, format: *const i8, ...);
-    fn FatAcquireSharedGlobal(irp_context: *mut IRP_CONTEXT);
     fn FatMarkVolume(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, state: u32);
-    fn FatReleaseGlobal(irp_context: *mut IRP_CONTEXT);
-    fn FatToggleMediaEjectDisable(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, enable: i32);
-    fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT);
-    fn IoSetTopLevelIrp(irp: *mut core::ffi::c_void);
-    fn ExFreePool(pool: *mut core::ffi::c_void);
-    static FatData: FAT_DATA;
 }
 
-const Dbg: u32 = 0; // DEBUG_TRACE_VERFYSUP (unknown)
 const FSRTL_FSP_TOP_LEVEL_IRP: *mut core::ffi::c_void = usize::MAX as *mut core::ffi::c_void;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
 const VcbGood: u32 = 0;
@@ -308,7 +272,6 @@ const VolumeDirty: u32 = 1;
 const VCB_STATE_FLAG_SHUTDOWN: u32 = 0x00000001;
 const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x00000002;
 const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x00000004;
-const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x00000008;
 const VCB_STATE_FLAG_BOOT_OR_PAGING_FILE: u32 = 0x00000010;
 
 #[no_mangle]
@@ -323,7 +286,7 @@ pub unsafe extern "system" fn FatDeferredCleanVolume(
     let vcb = (*packet).Vcb;
 
     // Make us appear as a top level FSP request
-    IoSetTopLevelIrp(FSRTL_FSP_TOP_LEVEL_IRP as PIRP);
+    IoSetTopLevelIrp((FSRTL_FSP_TOP_LEVEL_IRP as PIRP).cast());
 
     // Dummy up an Irp Context
     let mut irp_context: IRP_CONTEXT = core::mem::zeroed();
@@ -393,11 +356,8 @@ pub unsafe extern "system" fn FatDeferredCleanVolume(
 }
 
 const NonPagedPoolNx: u32 = 0x200;
-const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 1;
 
 const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x08;
-const VolumeClean: i32 = 0;
-const VolumeDirty: i32 = 1;
 const VolumeDirtyWithSurfaceTest: i32 = 2;
 const FAT_BOOT_SECTOR_DIRTY: u8 = 1;
 const FAT_BOOT_SECTOR_TEST_SURFACE: u8 = 2;
@@ -408,13 +368,9 @@ const FAT_CLEAN_VOLUME: u32 = 0x0FFFFFF8;
 const FSINFO_SECTOR_BEGIN_SIGNATURE: u32 = 0x41615252;
 const FSINFO_SIGNATURE: u32 = 0x61417272;
 const FSINFO_SECTOR_END_SIGNATURE: u32 = 0xAA550000;
-const Dbg: i32 = 0;
 
-const FAT_BOOT_SECTOR_DIRTY: u8 = 1;
 const MAXIMUM_VOLUME_LABEL_LENGTH: u16 = 32;
 const IRP_MN_VERIFY_VOLUME: u8 = 0x0E;
-const VCB_STATE_FLAG_BOOT_OR_PAGING_FILE: u32 = 0x0004;
-const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x0008;
 const DPFLTR_INFO_LEVEL: u32 = 0x0001;
 
 const FO_CLEANUP_COMPLETE: u32 = 0x00000004;
@@ -427,20 +383,13 @@ const IRP_MJ_READ: u8 = 0x03;
 const IRP_MJ_WRITE: u8 = 0x04;
 const IRP_MN_COMPLETE: u8 = 0x04;
 
-const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x08;
-const FCB_STATE_PAGING_FILE: u32 = 0x02;
-const FAT_NTC_ROOT_DCB: u32 = 0x0507;
-const FAT_NTC_DCB: u32 = 0x0506;
-const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 
 const DO_VERIFY_VOLUME: u32 = 0x80;
 const IRP_MJ_SET_EA: u32 = 8;
 const IRP_MJ_SET_VOLUME_INFORMATION: u32 = 11;
 const IRP_MN_USER_FS_REQUEST: u8 = 0x04;
 const FSCTL_MARK_VOLUME_DIRTY: u32 = 0x90078;
-const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x1;
 const VCB_STATE_FLAG_VOLUME_DISMOUNTED: u32 = 0x2;
-const VcbGood: i32 = 0;
 const VcbNotMounted: i32 = 1;
 const VcbBad: i32 = 2;
 const STATUS_VERIFY_REQUIRED: i32 = 0xC0000028;
@@ -448,136 +397,18 @@ const STATUS_WRONG_VOLUME: i32 = 0xC0000012;
 const STATUS_FILE_INVALID: i32 = 0xC0000098;
 const STATUS_VOLUME_DISMOUNTED: i32 = 0xC000026E;
 
-const Dbg: u32 = 0; // DEBUG_TRACE_VERFYSUP (unknown)
-const FSRTL_FSP_TOP_LEVEL_IRP: *mut core::ffi::c_void = usize::MAX as *mut core::ffi::c_void;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
-const VcbGood: u32 = 0;
-const VolumeClean: u32 = 0;
-const VolumeDirty: u32 = 1;
-const VCB_STATE_FLAG_SHUTDOWN: u32 = 0x00000001;
-const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x00000002;
-const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x00000004;
-const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x00000008;
-const VCB_STATE_FLAG_BOOT_OR_PAGING_FILE: u32 = 0x00000010;
 
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
-const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x00000002;
-const VolumeDirtyWithSurfaceTest: u32 = 2; // FAT_VOLUME_STATE value
-const FSRTL_FSP_TOP_LEVEL_IRP: isize = 1;
 const IO_DISK_INCREMENT: i32 = 1;
-const Dbg: u32 = 0x00000001; // DEBUG_TRACE_VERFYSUP
 
 // Forward declarations for unknown functions
 
 // Constants needed by the function
-const Dbg: u32 = /* DEBUG_TRACE_VERFYSUP */ 0;
-const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x00000001; // placeholder
-const FCB_STATE_PAGING_FILE: u32 = 0x00000010; // placeholder
 const FAT_NTC_FCB: u32 = 0x0106; // placeholder
-const FAT_NTC_DCB: u32 = 0x0107; // placeholder
-const FAT_NTC_ROOT_DCB: u32 = 0x0108; // placeholder
 const FcbNeedsToBeVerified: i32 = 0; // placeholder
 const FcbBad: i32 = 1; // placeholder
 const FcbGood: i32 = 2; // placeholder
 
-const Dbg: u32 = 0; // placeholder
-const VCB_STATE_FLAG_VOLUME_DISMOUNTED: u32 = 0x20; // placeholder
-const STATUS_VOLUME_DISMOUNTED: i32 = 0xC000026E;
-const STATUS_FILE_INVALID: i32 = 0xC0000098;
-const FAT_NTC_ROOT_DCB: u32 = 0x5; // placeholder
-const FcbGood: i32 = 0;
-const FcbBad: i32 = 1;
-const FcbNeedsToBeVerified: i32 = 2;
-#[no_mangle]
-pub unsafe extern "C" fn FatMarkFcbCondition(
-    IrpContext: *mut IRP_CONTEXT,
-    mut Fcb: *mut FCB,
-    FcbCondition: i32,
-    Recursive: i32,
-) {
-    // PAGED_CODE();  -- skipped, no equivalent
 
-    DebugTrace(
-        1,
-        Dbg,
-        b"FatMarkFcbCondition, Fcb = %p\n\0".as_ptr() as *const i8,
-        Fcb as usize,
-    );
-
-    // Assert that if we are not verifying, we hold the Vcb exclusive
-    NT_ASSERT(if FcbCondition != FcbNeedsToBeVerified {
-        1
-    } else {
-        FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb)
-    });
-
-    // Paging file special case
-    if FlagOn((*(*Fcb).Vcb).VcbState, VCB_STATE_FLAG_REMOVABLE_MEDIA) == 0
-        && FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) != 0
-    {
-        (*Fcb).FcbCondition = FcbGood;
-        return;
-    }
-
-    (*Fcb).FcbCondition = FcbCondition;
-
-    DebugTrace(
-        0,
-        Dbg,
-        b"MarkFcb: %wZ\n\0".as_ptr() as *const i8,
-        &(*Fcb).FullFileName as *const _UNICODE_STRING as usize,
-    );
-
-    // Update FastIo possibility if this is a regular FCB
-    if (*Fcb).Header.NodeTypeCode == FAT_NTC_FCB {
-        (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);
-    }
-
-    if FcbCondition == FcbNeedsToBeVerified {
-        FatResetFcb(IrpContext, Fcb);
-    }
-
-    // Recursively mark children if needed
-    if ((FcbCondition == FcbNeedsToBeVerified) || (FcbCondition == FcbBad))
-        && Recursive != 0
-        && ((*Fcb).Header.NodeTypeCode == FAT_NTC_DCB
-            || (*Fcb).Header.NodeTypeCode == FAT_NTC_ROOT_DCB)
-    {
-        let OriginalFcb = Fcb;
-
-        loop {
-            Fcb = FatGetNextFcbTopDown(IrpContext, Fcb, OriginalFcb);
-            if Fcb.is_null() {
-                break;
-            }
-
-            DebugTrace(
-                0,
-                Dbg,
-                b"MarkFcb: %wZ\n\0".as_ptr() as *const i8,
-                &(*Fcb).FullFileName as *const _UNICODE_STRING as usize,
-            );
-
-            (*Fcb).FcbCondition = FcbCondition;
-
-            // FastIo is not possible when propagating a parent's bad/verify flag
-            (*Fcb).Header.IsFastIoPossible = FastIoIsNotPossible;
-
-            if FcbCondition == FcbNeedsToBeVerified {
-                FatResetFcb(IrpContext, Fcb);
-            }
-        }
-    }
-
-    DebugTrace(
-        -1,
-        Dbg,
-        b"FatMarkFcbCondition -> VOID\n\0".as_ptr() as *const i8,
-        0usize,
-    );
-}
-
-const DO_VERIFY_VOLUME: u32 = 0x00000002;
 // Note: VCB_STATE_VPB_NOT_ON_DEVICE is assumed to be in scope (defined elsewhere).
 #[no_mangle]
 pub unsafe extern "C" fn FatMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> i32 {
@@ -600,10 +431,6 @@ pub unsafe extern "C" fn FatMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> i32 {
     Marked
 }
 
-const DO_VERIFY_VOLUME: u32 = 0x00000002;
-const STATUS_VERIFY_REQUIRED: i32 = -1073741794; // 0xC000015E
-const VcbNotMounted: i32 = 1;
-const Dbg: u32 = 0; // DEBUG_TRACE_VERFYSUP
 #[no_mangle]
 pub unsafe extern "C" fn FatVerifyVcb(
     IrpContext: *const IRP_CONTEXT,
@@ -627,7 +454,7 @@ pub unsafe extern "C" fn FatVerifyVcb(
         let IrpSp = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp) as *const IO_STACK_LOCATION;
 
         if (*(*IrpSp).FileObject).RelatedFileObject.is_null()
-            && (*Vcb).VcbCondition == VcbNotMounted
+            && (*Vcb).VcbCondition == (VcbNotMounted) as u32
         {
             DevMarkedForVerify = 1;
         }
@@ -661,7 +488,7 @@ pub unsafe extern "C" fn FatVerifyFcb(
 
     // Always refuse operations on dismounted volumes.
     if FlagOn((*(*Fcb).Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DISMOUNTED) {
-        FatRaiseStatus(IrpContext, STATUS_VOLUME_DISMOUNTED);
+        FatRaiseStatus((IrpContext).cast(), STATUS_VOLUME_DISMOUNTED);
     }
 
     // If this is the Fcb of a deleted dirent or our parent is deleted...
@@ -672,25 +499,25 @@ pub unsafe extern "C" fn FatVerifyFcb(
     }
 
     // If we are not in the process of doing a verify...
-    if (*(*Fcb).Vcb).VerifyThread != KeGetCurrentThread() {
-        FatQuickVerifyVcb(IrpContext, (*Fcb).Vcb);
+    if (*(*Fcb).Vcb).VerifyThread != (KeGetCurrentThread()).cast() {
+        FatQuickVerifyVcb((IrpContext).cast(), (*Fcb).Vcb);
     }
 
     // Now based on the condition of the Fcb...
     match (*Fcb).FcbCondition {
-        FcbGood => {
+        (FcbGood) as u32 => {
             DebugTrace(0, Dbg, b"The Fcb is good\n\0".as_ptr() as *const i8);
         }
-        FcbBad => {
-            FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
+        (FcbBad) as u32 => {
+            FatRaiseStatus((IrpContext).cast(), STATUS_FILE_INVALID);
         }
-        FcbNeedsToBeVerified => {
+        (FcbNeedsToBeVerified) as u32 => {
             CurrentFcb = Fcb;
 
-            while (*CurrentFcb).FcbCondition == FcbNeedsToBeVerified {
-                FatDetermineAndMarkFcbCondition(IrpContext, CurrentFcb);
+            while (*CurrentFcb).FcbCondition == (FcbNeedsToBeVerified) as u32 {
+                FatDetermineAndMarkFcbCondition((IrpContext).cast(), CurrentFcb);
 
-                if (*CurrentFcb).FcbCondition != FcbGood ||
+                if (*CurrentFcb).FcbCondition != (FcbGood) as u32 ||
                     NodeType(CurrentFcb as *const c_void) == FAT_NTC_ROOT_DCB {
                     break;
                 }
@@ -698,8 +525,8 @@ pub unsafe extern "C" fn FatVerifyFcb(
                 CurrentFcb = (*CurrentFcb).ParentDcb;
             }
 
-            if (*Fcb).FcbCondition != FcbGood {
-                FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
+            if (*Fcb).FcbCondition != (FcbGood) as u32 {
+                FatRaiseStatus((IrpContext).cast(), STATUS_FILE_INVALID);
             }
         }
         _ => {
@@ -768,191 +595,6 @@ pub unsafe extern "C" fn FatCleanVolumeDpc(
     return;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FatMarkVolume(
-    IrpContext: *mut IrpContext,
-    Vcb: *mut Vcb,
-    VolumeState: i32,
-) {
-    let mut Sector: *mut u8;
-    let mut Bcb: *mut Bcb = core::ptr::null_mut();
-    let mut Event: KEVENT = core::mem::zeroed();
-    let mut Irp: *mut Irp = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
-    let mut FsInfoUpdate: i32 = 0;
-    let mut FsInfoOffset: u32 = 0;
-    let mut Offset: LARGE_INTEGER = 0;
-    let mut abort: i32 = 0;
-
-    DebugTrace(1, Dbg, b"FatMarkVolume, Vcb = %p\n\0".as_ptr() as *const i8, Vcb as *const _);
-
-    if ((*Vcb).VcbState & VCB_STATE_FLAG_WRITE_PROTECTED) != 0 || FatIsFat12(Vcb) != 0 {
-        return;
-    }
-
-    for this_pass in 0u32..2 {
-        if this_pass == 1
-            && (!(FatIsFat32(Vcb) != 0)
-                || VolumeState != VolumeClean
-                || FsInfoUpdate != 0
-                || (*Vcb).Bpb.FsInfoSector == 0)
-        {
-            break;
-        }
-
-        let mut leave_body = false;
-        {
-            let PinLength: u32;
-            let WriteLength: u32;
-            Offset = 0;
-
-            if (*Vcb).AllocationSupport.FatIndexBitSize == 12 {
-                PinLength =
-                    FatReservedBytes(&(*Vcb).Bpb) + FatBytesPerFat(&(*Vcb).Bpb);
-                WriteLength = (*Vcb).Bpb.BytesPerSector;
-            } else {
-                WriteLength = (*Vcb).Bpb.BytesPerSector;
-                PinLength = WriteLength;
-                if FatIsFat32(Vcb) != 0 && VolumeState == VolumeClean {
-                    if (*Vcb).Bpb.FsInfoSector == 1 {
-                        NT_ASSERT((this_pass == 0) as i32);
-                        FsInfoUpdate = 1;
-                        FsInfoOffset = (*Vcb).Bpb.BytesPerSector;
-                        WriteLength = (*Vcb).Bpb.BytesPerSector * 2;
-                        PinLength = WriteLength;
-                    } else if this_pass == 1 {
-                        FsInfoUpdate = 1;
-                        FsInfoOffset = 0;
-                        Offset = ((*Vcb).Bpb.BytesPerSector as u64
-                            * (*Vcb).Bpb.FsInfoSector as u64)
-                            as i64;
-                    }
-                }
-            }
-
-            CcPinRead(
-                (*Vcb).VirtualVolumeFile,
-                &Offset,
-                PinLength,
-                1,
-                &mut Bcb as *mut *mut Bcb as *mut *mut c_void,
-                &mut Sector as *mut *mut u8 as *mut *mut c_void,
-            );
-
-            let pin_count = {
-                (*IrpContext).PinCount += 1;
-                (*IrpContext).PinCount
-            };
-            DbgDoit(pin_count);
-
-            if this_pass == 0 && !leave_body {
-                if FatIsBootSectorFat(Sector as *mut PackedBootSector) == 0 {
-                    abort = 1;
-                    leave_body = true;
-                }
-
-                if !leave_body {
-                    let CurrentHead: *mut u8 = if FatIsFat32(Vcb) != 0 {
-                        core::ptr::addr_of_mut!(
-                            (*(Sector as *mut PackedBootSectorEx)).CurrentHead
-                        ) as *mut u8
-                    } else {
-                        core::ptr::addr_of_mut!(
-                            (*(Sector as *mut PackedBootSector)).CurrentHead
-                        ) as *mut u8
-                    };
-
-                    if VolumeState == VolumeClean {
-                        *CurrentHead &= !FAT_BOOT_SECTOR_DIRTY;
-                    } else {
-                        *CurrentHead |= FAT_BOOT_SECTOR_DIRTY;
-                        if VolumeState == VolumeDirtyWithSurfaceTest {
-                            *CurrentHead |= FAT_BOOT_SECTOR_TEST_SURFACE;
-                        }
-                    }
-                }
-            }
-
-            if !leave_body && FsInfoUpdate != 0 {
-                let FsInfoSector = Sector
-                    .add(FsInfoOffset as usize) as *mut FsInfoSector;
-                (*FsInfoSector).SectorBeginSignature = FSINFO_SECTOR_BEGIN_SIGNATURE;
-                (*FsInfoSector).FsInfoSignature = FSINFO_SIGNATURE;
-                (*FsInfoSector).FreeClusterCount =
-                    (*Vcb).AllocationSupport.NumberOfFreeClusters;
-                (*FsInfoSector).NextFreeCluster = (*Vcb).ClusterHint;
-                (*FsInfoSector).SectorEndSignature = FSINFO_SECTOR_END_SIGNATURE;
-            }
-
-            if !leave_body {
-                KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent as u32, 0);
-
-                Irp = IoBuildAsynchronousFsdRequest(
-                    IRP_MJ_WRITE,
-                    (*Vcb).TargetDeviceObject,
-                    Sector as *mut c_void,
-                    WriteLength,
-                    &Offset,
-                    core::ptr::null_mut(),
-                );
-
-                if Irp.is_null() {
-                    leave_body = true;
-                }
-            }
-
-            if !leave_body {
-                let stack_loc = IoGetNextIrpStackLocation(Irp);
-                *core::ptr::addr_of_mut!((*stack_loc).Flags) |= SL_WRITE_THROUGH;
-
-                IoSetCompletionRoutine(
-                    Irp,
-                    FatMarkVolumeCompletionRoutine,
-                    &Event as *const _ as *mut c_void,
-                    1,
-                    1,
-                    1,
-                );
-
-                Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
-                if Status == STATUS_PENDING {
-                    KeWaitForSingleObject(
-                        &Event as *const _ as *mut c_void,
-                        _KWAIT_REASON_Executive as u32,
-                        0i32 as u32,
-                        0,
-                        core::ptr::null(),
-                    );
-                }
-            }
-        }
-
-        {
-            if !Irp.is_null() {
-                while !(*Irp).MdlAddress.is_null() {
-                    let next_mdl = (*(*Irp).MdlAddress).Next;
-                    MmUnlockPages((*Irp).MdlAddress);
-                    IoFreeMdl((*Irp).MdlAddress);
-                    (*Irp).MdlAddress = next_mdl;
-                }
-                IoFreeIrp(Irp);
-            }
-            if !Bcb.is_null() {
-                FatUnpinBcb(IrpContext, Bcb);
-            }
-        }
-    }
-
-    if abort == 0 {
-        if VolumeState == VolumeDirty {
-            FatSetFatEntry(IrpContext, Vcb, FAT_DIRTY_BIT_INDEX, FAT_DIRTY_VOLUME);
-        } else {
-            FatSetFatEntry(IrpContext, Vcb, FAT_DIRTY_BIT_INDEX, FAT_CLEAN_VOLUME);
-        }
-    }
-
-    DebugTrace(-1, Dbg, b"FatMarkVolume -> VOID\n\0".as_ptr() as *const i8, 0);
-}
-#[no_mangle]
 pub unsafe extern "C" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut core::ffi::c_void) {
     let mut Packet: *mut CLEAN_AND_DIRTY_VOLUME_PACKET = Parameter as *mut CLEAN_AND_DIRTY_VOLUME_PACKET;
     let Vcb: PVCB = (*Packet).Vcb;
@@ -973,7 +615,7 @@ pub unsafe extern "C" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut core::
     IrpContext.Flags |= IRP_CONTEXT_FLAG_WAIT;
     IrpContext.OriginatingIrp = Irp;
 
-    IoSetTopLevelIrp(FSRTL_FSP_TOP_LEVEL_IRP as *mut IRP);
+    IoSetTopLevelIrp((FSRTL_FSP_TOP_LEVEL_IRP as *mut IRP).cast());
 
     let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // SetFlag: VCB_STATE_FLAG_MOUNTED_DIRTY
@@ -981,13 +623,13 @@ pub unsafe extern "C" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut core::
         FatMarkVolume(
             core::ptr::addr_of_mut!(IrpContext),
             Vcb,
-            VolumeDirtyWithSurfaceTest,
+            (VolumeDirtyWithSurfaceTest) as u32,
         );
     }));
 
     if let Err(panic) = panic_result {
         // Simulate filter using null exception pointers (not available from panic)
-        if FatExceptionFilter(core::ptr::addr_of_mut!(IrpContext), core::ptr::null_mut()) != 0 {
+        if FatExceptionFilter((core::ptr::addr_of_mut!(IrpContext)).cast(), core::ptr::null_mut()) != 0 {
             // NOTHING — handler swallows the exception
         } else {
             std::panic::resume_unwind(panic);
@@ -1141,9 +783,9 @@ pub unsafe extern "C" fn FatQuickVerifyVcb(
             let is_modify = write_protected
                 && (major == IRP_MJ_WRITE
                     || major == IRP_MJ_SET_INFORMATION
-                    || major == IRP_MJ_SET_EA
+                    || major == (IRP_MJ_SET_EA) as u8
                     || major == IRP_MJ_FLUSH_BUFFERS
-                    || major == IRP_MJ_SET_VOLUME_INFORMATION
+                    || major == (IRP_MJ_SET_VOLUME_INFORMATION) as u8
                     || (major == IRP_MJ_FILE_SYSTEM_CONTROL
                         && minor == IRP_MN_USER_FS_REQUEST
                         && {
@@ -1157,12 +799,12 @@ pub unsafe extern "C" fn FatQuickVerifyVcb(
                 FatRaiseStatus(IrpContext, STATUS_MEDIA_WRITE_PROTECTED);
             }
         }
-        VcbNotMounted => {
+        (VcbNotMounted) as u32 => {
             DebugTrace(0, Dbg, b"The Vcb is not mounted\n\0".as_ptr() as *const i8, 0);
             IoSetHardErrorOrVerifyDevice((*IrpContext).OriginatingIrp, real_device);
             FatRaiseStatus(IrpContext, STATUS_WRONG_VOLUME);
         }
-        VcbBad => {
+        (VcbBad) as u32 => {
             DebugTrace(0, Dbg, b"The Vcb is bad\n\0".as_ptr() as *const i8, 0);
             if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DISMOUNTED) != 0 {
                 FatRaiseStatus(IrpContext, STATUS_VOLUME_DISMOUNTED);
@@ -1191,7 +833,7 @@ pub unsafe extern "C" fn FatPerformVerify(
     let mut Vcb: *mut PVCB;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: *mut PIO_STACK_LOCATION;
-    let FileObject: *mut PFILE_OBJECT = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
+    let FileObject: *mut PFILE_OBJECT = ((*IoGetCurrentIrpStackLocation((Irp).cast())).F).cast()ileObject;
     let mut AllowRawMount: BOOLEAN = 0;
     let mut VcbDeleted: BOOLEAN = 0;
 
@@ -1209,7 +851,7 @@ pub unsafe extern "C" fn FatPerformVerify(
         Device,
     );
 
-    IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    IrpSp = (IoGetCurrentIrpStackLocation((Irp).cast()).cast());
 
     // Vcb = &CONTAINING_RECORD( IrpSp->DeviceObject, VOLUME_DEVICE_OBJECT, DeviceObject )->Vcb;
     {
@@ -1230,7 +872,7 @@ pub unsafe extern "C" fn FatPerformVerify(
                 AllowRawMount = 1;
             }
 
-            Status = IoVerifyVolume(Device as *mut _ as *mut PDEVICE_OBJECT, AllowRawMount);
+            Status = IoVerifyVolume((Device as *mut _ as *mut PDEVICE_OBJECT).cast(), AllowRawMount);
 
             FatAcquireSharedVcb(IrpContext, Vcb);
 
@@ -1269,7 +911,7 @@ pub unsafe extern "C" fn FatPerformVerify(
 
             if !Irp.is_null() && !NT_SUCCESS(Status) {
                 if IoIsErrorUserInduced(Status) != 0 {
-                    IoSetHardErrorOrVerifyDevice(Irp, Device as *mut PDEVICE_OBJECT);
+                    (IoSetHardErrorOrVerifyDevice).cast()(Irp, Device as *mut PDEVICE_OBJECT);
                 }
 
                 unsafe { NT_ASSERT(STATUS_VERIFY_REQUIRED != Status); }

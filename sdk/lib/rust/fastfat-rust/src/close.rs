@@ -81,7 +81,6 @@ struct FAT_DATA {
 // Forward declare unknown functions
 
 // Constants (known from context)
-const DEBUG_TRACE_CLOSE: u32 = 0; // Dbg, value not critical
 const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = 1 as *mut IRP;
 const FAT_DATA_SHUTDOWN_STARTED_OFFSET: usize = 0; // assume first field
 
@@ -104,8 +103,8 @@ pub unsafe extern "system" fn FatFsdClose(
 
     if FatDeviceIsFatFsdo(VolumeDeviceObject) != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = FILE_OPENED;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+        (*Irp).IoStatus.Information = (FILE_OPENED) as u64;
+        IoCompleteRequest(Irp, (IO_DISK_INCREMENT) as i8);
         return STATUS_SUCCESS;
     }
 
@@ -133,7 +132,7 @@ pub unsafe extern "system" fn FatFsdClose(
             let mut CloseContext: *mut CLOSE_CONTEXT = core::ptr::null_mut();
 
             let Wait = if TopLevel != 0
-                && (*(core::ptr::addr_of!(FatData))).OurProcess != PsGetCurrentProcess()
+                && (*(core::ptr::addr_of!(FatData))).OurProcess != (PsGetCurrentProcess()).cast()
             {
                 1
             } else {
@@ -155,16 +154,16 @@ pub unsafe extern "system" fn FatFsdClose(
                 );
             }
 
-            if TypeOfOpen == VirtualVolumeFile
-                || TypeOfOpen == DirectoryFile
-                || TypeOfOpen == EaFile
+            if TypeOfOpen == (VirtualVolumeFile) as u32
+                || TypeOfOpen == (DirectoryFile) as u32
+                || TypeOfOpen == (EaFile) as u32
             {
                 CloseContext = FatAllocateCloseContext(Vcb);
                 NT_ASSERT((CloseContext.is_null() as i32 == 0) as u8);
                 (*CloseContext).Free = 1;
             }
 
-            let must_delay = if (TypeOfOpen == UserFileOpen || TypeOfOpen == UserDirectoryOpen)
+            let must_delay = if (TypeOfOpen == (UserFileOpen) as u32 || TypeOfOpen == (UserDirectoryOpen) as u32)
                 && FlagOn((*Fcb).FcbState, FCB_STATE_DELAY_CLOSE) != 0
                 && (*(core::ptr::addr_of!(FatData))).ShutdownStarted == 0
             {
@@ -202,9 +201,9 @@ pub unsafe extern "system" fn FatFsdClose(
                     },
                 );
             } else {
-                if TypeOfOpen == VirtualVolumeFile
-                    || TypeOfOpen == DirectoryFile
-                    || TypeOfOpen == EaFile
+                if TypeOfOpen == (VirtualVolumeFile) as u32
+                    || TypeOfOpen == (DirectoryFile) as u32
+                    || TypeOfOpen == (EaFile) as u32
                 {
                     if !CloseContext.is_null() {
                         ExFreePool(CloseContext as *mut core::ffi::c_void);
@@ -257,7 +256,7 @@ pub unsafe extern "C" fn FatCloseWorker(
     PAGED_CODE();
     let _ = DeviceObject;
     FsRtlEnterFileSystem();
-    FatFspClose(Context);
+    FatFspClose((Context).cast());
     FsRtlExitFileSystem();
 }
 #[no_mangle]
@@ -589,8 +588,8 @@ pub unsafe extern "C" fn FatCommonClose(
         0,
         core::mem::size_of::<IRP_CONTEXT>(),
     );
-    IrpContext.NodeTypeCode = FAT_NTC_IRP_CONTEXT;
-    IrpContext.NodeByteSize = core::mem::size_of::<IRP_CONTEXT>();
+    IrpContext.NodeTypeCode = (FAT_NTC_IRP_CONTEXT) as u16;
+    IrpContext.NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>()) as i16;
     IrpContext.MajorFunction = IRP_MJ_CLOSE;
     IrpContext.Vcb = Vcb;
 
@@ -617,7 +616,7 @@ pub unsafe extern "C" fn FatCommonClose(
 
     'try_loop: loop {
         match TypeOfOpen {
-            VirtualVolumeFile => {
+            (VirtualVolumeFile) as u32 => {
                 DebugTrace(0, Dbg, b"Close VirtualVolumeFile\n\0".as_ptr() as *const i8, 0);
                 {
                     let ptr = core::ptr::addr_of_mut!((*Vcb).InternalOpenCount) as *mut i32;
@@ -639,7 +638,7 @@ pub unsafe extern "C" fn FatCommonClose(
                 Status = STATUS_SUCCESS;
                 break 'try_loop;
             }
-            EaFile => {
+            (EaFile) as u32 => {
                 DebugTrace(0, Dbg, b"Close EaFile\n\0".as_ptr() as *const i8, 0);
                 {
                     let ptr = core::ptr::addr_of_mut!((*Vcb).InternalOpenCount) as *mut i32;
@@ -652,7 +651,7 @@ pub unsafe extern "C" fn FatCommonClose(
                 Status = STATUS_SUCCESS;
                 break 'try_loop;
             }
-            DirectoryFile => {
+            (DirectoryFile) as u32 => {
                 DebugTrace(0, Dbg, b"Close DirectoryFile\n\0".as_ptr() as *const i8, 0);
                 {
                     let ptr = core::ptr::addr_of_mut!((*Fcb).Specific.Dcb.DirectoryFileOpenCount) as *mut i32;
@@ -671,7 +670,7 @@ pub unsafe extern "C" fn FatCommonClose(
                     break 'try_loop;
                 }
             }
-            UserDirectoryOpen | UserFileOpen => {
+            (UserDirectoryOpen) as u32 | (UserFileOpen) as u32 => {
                 DebugTrace(0, Dbg, b"Close UserFileOpen/UserDirectoryOpen\n\0".as_ptr() as *const i8, 0);
                 if ((*Fcb).NodeTypeCode == FAT_NTC_DCB) &&
                     IsListEmpty(core::ptr::addr_of!((*Fcb).Specific.Dcb.ParentDcbQueue)) &&

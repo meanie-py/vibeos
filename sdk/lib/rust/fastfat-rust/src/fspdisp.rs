@@ -49,7 +49,6 @@ const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000002;
 const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x00000004;
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x00000010;
 const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = (-1isize) as *mut IRP;
-const Dbg: u32 = 0x00002000;
 #[no_mangle]
 pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     // PAGED_CODE();
@@ -236,20 +235,20 @@ pub unsafe extern "C" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     let mut SavedIrql: ntkrnl_sys::base::KIRQL;
 
     ntkrnl_sys::ke::KeAcquireSpinLock(
-        core::ptr::addr_of_mut!((*VolDo).OverflowQueueSpinLock),
+        (core::ptr::addr_of_mut!((*VolDo).OverflowQueueSpinLock)).cast(),
         core::ptr::addr_of_mut!(SavedIrql),
     );
 
     if (*VolDo).OverflowQueueCount > 0 {
         (*VolDo).OverflowQueueCount -= 1;
-        Entry = ntkrnl_sys::base::RemoveHeadList(core::ptr::addr_of_mut!((*VolDo).OverflowQueue));
+        Entry = (ntkrnl_sys::base::RemoveHeadList(core::ptr::addr_of_mut!((*VolDo).OverflowQueue))).cast();
     } else {
         (*VolDo).PostedRequestCount -= 1;
         Entry = core::ptr::null_mut();
     }
 
     ntkrnl_sys::ke::KeReleaseSpinLock(
-        core::ptr::addr_of_mut!((*VolDo).OverflowQueueSpinLock),
+        (core::ptr::addr_of_mut!((*VolDo).OverflowQueueSpinLock)).cast(),
         SavedIrql,
     );
 

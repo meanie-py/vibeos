@@ -24,38 +24,29 @@ pub const Dbg: u32 = DEBUG_TRACE_SPLAYSUP;
 
 const APC_LEVEL: u32 = 1;
 
-const APC_LEVEL: i32 = 1;
 const IsLessThan: u32 = 0;
 const IsGreaterThan: u32 = 1;
 type COMPARISON = u32;
 
-const APC_LEVEL: i32 = 1;
 
-const IsLessThan: COMPARISON = 0;
-const IsGreaterThan: COMPARISON = 1;
 const IsEqual: COMPARISON = 2;
 
-const APC_LEVEL: u32 = 1;
 const FAT_FILE_SYSTEM: u32 = 0x23;
-const BugCheckFileId: u32 = 0x200; // placeholder
 const FcbGood: u32 = 0; // placeholder
 const FcbBad: u32 = 1;  // placeholder
-const IsLessThan: i32 = 0;
-const IsEqual: i32 = 1;
-const IsGreaterThan: i32 = 2;
 #[no_mangle]
 pub unsafe extern "C" fn FatInsertName(
     IrpContext: PIRP_CONTEXT,
     RootNode: *mut PRTL_SPLAY_LINKS,
     Name: PFILE_NAME_NODE,
 ) {
-    let mut Comparison: i32 = IsLessThan;
+    let mut Comparison: i32 = (IsLessThan) as i32;
     let mut Node: PFILE_NAME_NODE = core::ptr::null_mut();
 
     // PAGED_CODE() expansion
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
         DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
+            (b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8).cast(),
             KeGetCurrentIrql() as i32,
         );
         if 0 as core::ffi::c_int == 0 {
@@ -95,9 +86,9 @@ pub unsafe extern "C" fn FatInsertName(
                 let name_first = *((*Name).Name.Oem.Buffer as *const u8) as core::ffi::c_int;
                 if node_first != name_first {
                     if node_first < name_first {
-                        IsLessThan
+                        (IsLessThan) as i32
                     } else {
-                        IsGreaterThan
+                        (IsGreaterThan) as i32
                     }
                 } else {
                     FatCompareNames(
@@ -213,7 +204,7 @@ pub unsafe extern "C" fn FatFindFcb(
     let mut Links: PRTL_SPLAY_LINKS = core::ptr::null_mut::<RTL_SPLAY_LINKS>();
 
     // PAGED_CODE() expansion
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8,
             KeGetCurrentIrql() as i32,
@@ -275,7 +266,7 @@ pub unsafe extern "C" fn FatCompareNames(
     let mut i: u32;
     let mut min_length: u32;
 
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const u8,
             KeGetCurrentIrql() as i32,
@@ -300,7 +291,7 @@ pub unsafe extern "C" fn FatCompareNames(
     i = ntkrnl_sys::ddk::RtlCompareMemory(
         (*NameA).Buffer as *const core::ffi::c_void,
         (*NameB).Buffer as *const core::ffi::c_void,
-        min_length as usize,
+        (min_length as usize) as u64,
     ) as u32;
 
     if i < min_length {

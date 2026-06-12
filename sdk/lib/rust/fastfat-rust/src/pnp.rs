@@ -191,7 +191,7 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
             IoCopyCurrentIrpStackLocationToNext(Irp);
 
             // Set up the completion routine
-            KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0i32); // FALSE
+            KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, (0i32) as u8); // FALSE
             IoSetCompletionRoutine(
                 Irp,
                 Some(FatPnpCompletionRoutine),
@@ -217,7 +217,7 @@ pub unsafe extern "C" fn FatPnpQueryRemove(
 
             // Now if no one below us failed already, initiate the dismount
             if NT_SUCCESS(Status) {
-                VcbDeleted = FatCheckForDismount(IrpContext, Vcb, 1i32); // TRUE
+                VcbDeleted = (((FatCheckForDismount(IrpContext, Vcb, ((1i32) as i32) as u8) as i32) as u8)) as i32; // TRUE
                 NT_ASSERT(VcbDeleted != 0 || (*Vcb).VcbCondition == VcbBad);
             }
         }
@@ -384,7 +384,7 @@ pub unsafe extern "system" fn FatPnpCompletionRoutine(
     Contxt: PVOID,
 ) -> i32 {
     let Event = Contxt as PKEVENT;
-    KeSetEvent(Event, 0, 0);
+    KeSetEvent((Event).cast(), 0, 0);
     return 0x0000_0103u32 as i32; // STATUS_MORE_PROCESSING_REQUIRED
 
     let _ = DeviceObject;

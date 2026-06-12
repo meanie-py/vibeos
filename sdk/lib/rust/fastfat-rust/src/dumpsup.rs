@@ -30,7 +30,7 @@ pub unsafe extern "C" fn FatDump(Ptr: *mut core::ffi::c_void) {
         }
         // case FAT_NTC_VCB:
         0x0501 => { // FAT_NTC_VCB
-            FatDumpVcb(Ptr);
+            FatDumpVcb((Ptr).cast());
         }
         // case FAT_NTC_FCB: case FAT_NTC_DCB: case FAT_NTC_ROOT_DCB:
         0x0502 | 0x0503 | 0x0504 => { // FAT_NTC_FCB, FAT_NTC_DCB, FAT_NTC_ROOT_DCB
@@ -38,7 +38,7 @@ pub unsafe extern "C" fn FatDump(Ptr: *mut core::ffi::c_void) {
         }
         // case FAT_NTC_CCB:
         0x0505 => { // FAT_NTC_CCB
-            FatDumpCcb(Ptr);
+            FatDumpCcb((Ptr).cast());
         }
         // default:
         _ => {
@@ -1924,7 +1924,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
     }
 
     // if node type is DCB or ROOT_DCB
-    if ((*Ptr).Header.NodeTypeCode == FAT_NTC_DCB) || ((*Ptr).Header.NodeTypeCode == FAT_NTC_ROOT_DCB) {
+    if ((*Ptr).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) || ((*Ptr).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16) {
         // DumpListEntry(Specific.Dcb.ParentDcbQueue)
         {
             if (FatDumpCurrentColumn + 18 + 9 + 9) > 80 {
@@ -2016,7 +2016,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
             DbgPrint(b"         \0".as_ptr() as *const i8);
         }
 
-    } else if (*Ptr).Header.NodeTypeCode == FAT_NTC_FCB {
+    } else if (*Ptr).Header.NodeTypeCode == (FAT_NTC_FCB) as i16 {
         // DumpField(Header.FileSize.LowPart)
         {
             if (FatDumpCurrentColumn + 18 + 9 + 9) > 80 {
@@ -2060,7 +2060,7 @@ pub unsafe extern "C" fn FatDumpFcb(Ptr: *const FCB) {
     }
 
     // for loop over ParentDcbQueue if node type DCB or ROOT_DCB
-    if ((*Ptr).Header.NodeTypeCode == FAT_NTC_DCB) || ((*Ptr).Header.NodeTypeCode == FAT_NTC_ROOT_DCB) {
+    if ((*Ptr).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) || ((*Ptr).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16) {
         let queue_head = core::ptr::addr_of_mut!((*(Ptr as *mut FCB)).Specific.Dcb.ParentDcbQueue);
         Links = (*queue_head).Flink;
         while Links != queue_head {

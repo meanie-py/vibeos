@@ -11,7 +11,7 @@ use ntkrnl_sys::ddk::{CC_FILE_SIZES, CcUninitializeCacheMap, DPFLTR_FASTFAT_ID, 
 use core::ffi::c_void;
 use core::mem::size_of;
 use core::ptr::{addr_of, addr_of_mut, copy_nonoverlapping, null_mut};
-use core::ptr::{addr_of, addr_of_mut, null_mut, write_bytes};
+use core::ptr::{write_bytes};
 use core::ptr;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, CLOSE_CONTEXT, DCB, DIRENT, FAT_BUG_CHECK_STRUCSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, FCB_STATE_HAS_OEM_LONG_NAME, FCB_STATE_HAS_UNICODE_LONG_NAME, FCB_STATE_PAGING_FILE, FCB_STATE_SYSTEM_FILE, FILE_SYSTEM_STATISTICS, FatCloseContextSList, FatEResourceLookasideList, FatIrpContextLookasideList, FatNonPagedFcbLookasideList, IRP_CONTEXT, IRP_CONTEXT_STACK_IO_CONTEXT, NON_PAGED_FCB, PACKED_BOOT_SECTOR, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_CONDITION, VCB_STATE_FLAG_LOCKED, VOLUME_DEVICE_OBJECT};
@@ -86,7 +86,7 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = FAT_BUG_CHECK_STRUCSUP;
 pub const Dbg: u32 = DEBUG_TRACE_STRUCSUP;
-pub const IRP_CONTEXT_HEADER: usize = core::mem::size_of::<IRP_CONTEXT>().wrapping_mul(0x10000).wrapping_add(FAT_NTC_IRP_CONTEXT);
+pub const IRP_CONTEXT_HEADER: usize = core::mem::size_of::<IRP_CONTEXT>().wrapping_mul(0x10000).wrapping_add((FAT_NTC_IRP_CONTEXT) as usize);
 pub const FAT_FILL_FREE: u32 = 0;
 
 #[inline]
@@ -123,13 +123,10 @@ const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x0001;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x0004;
 const IRP_MN_USER_FS_REQUEST: u8 = 0x200;
-const IRP_MN_MOUNT_VOLUME: u8 = 0x2;
 const FSCTL_INVALIDATE_VOLUMES: u32 = 0x0009000C;
 const DEBUG_TRACE_STRUCSUP: u32 = 0x00200000;
-const Dbg: u32 = DEBUG_TRACE_STRUCSUP;
 
 // Constant definitions needed (these would be provided by the assembly step)
-const FAT_NTC_ROOT_DCB: u32 = 0; // Placeholder – correct value from ntfs/fat
 const FcbGood: u32 = 0;          // Placeholder
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const TAG_FCB: u32 = 0x20464354; // 'T' 'A' 'C' 'F'? placeholder
@@ -138,9 +135,7 @@ const NTDDI_VERSION: u32 = 0x0A000000; // assume Windows 10 for compilation
 
 // Forward declarations for external functions not already available
 
-const DEBUG_TRACE_STRUCSUP: u32 = 0x200; // placeholder
 const FAT_NTC_VCB: u16 = 0x7FCB; // placeholder
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x1;
 const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x2D4800;
 const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x2D1080;
 const FILE_FLOPPY_DISKETTE: u32 = 0x10; // placeholder
@@ -169,7 +164,7 @@ pub unsafe extern "C" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) {
     PAGED_CODE();
 
     if !(*LocalString).Buffer.is_null() {
-        IoGetStackLimits(core::ptr::addr_of_mut!(Low), core::ptr::addr_of_mut!(High));
+        (IoGetStackLimits).cast()(core::ptr::addr_of_mut!(Low), core::ptr::addr_of_mut!(High));
         let buffer_addr: usize = (*LocalString).Buffer as usize;
         if buffer_addr < Low || buffer_addr > High {
             ExFreePool((*LocalString).Buffer as *mut core::ffi::c_void);
@@ -185,7 +180,6 @@ const TAG_DYNAMIC_NAME_BUFFER: u32 = 0x42796e44; // TAG('D','n','y','B')
 
 // (inner attr removed — covered by lib.rs crate-level allow)
 
-const Dbg: u32 = 0x00000010; // DEBUG_TRACE_STRUCSUP
 
 // Forward declarations for unknown extern functions
 
@@ -306,8 +300,8 @@ pub unsafe extern "C" fn FatInitializeVcb(
         write_bytes(vcb, 0, core::mem::size_of::<VCB>());
 
         // Set node type code and node byte size
-        (*vcb).VolumeFileHeader.NodeTypeCode = FAT_NTC_VCB;
-        (*vcb).VolumeFileHeader.NodeByteSize = core::mem::size_of::<VCB>() as u16;
+        (*vcb).VolumeFileHeader.NodeTypeCode = (FAT_NTC_VCB) as i16;
+        (*vcb).VolumeFileHeader.NodeByteSize = (core::mem::size_of::<VCB>() as u16) as i16;
 
         // Initialize the tunneling cache
         FsRtlInitializeTunnelCache(&raw mut (*vcb).Tunnel);
@@ -436,15 +430,15 @@ pub unsafe extern "C" fn FatInitializeVcb(
         FsRtlNotifyInitializeSync(addr_of_mut!((*vcb).NotifySync));
 
         // Initialize the Cache Map for the volume file
-        file_sizes.AllocationSize.QuadPart = PACKED_BOOT_SECTOR_SIZE as u64;
-        file_sizes.FileSize.QuadPart = PACKED_BOOT_SECTOR_SIZE as u64;
-        file_sizes.ValidDataLength.QuadPart = FAT_MAX_LARGE_QUADPART;
+        file_sizes.AllocationSize.QuadPart = (PACKED_BOOT_SECTOR_SIZE as u64) as i64;
+        file_sizes.FileSize.QuadPart = (PACKED_BOOT_SECTOR_SIZE as u64) as i64;
+        file_sizes.ValidDataLength.QuadPart = (FAT_MAX_LARGE_QUADPART) as i64;
 
         let _ = FatInitializeCacheMap(
             (*vcb).VirtualVolumeFile,
             addr_of!(file_sizes),
             1,
-            addr_of!(FatData.CacheManagerNoOpCallbacks),
+            (addr_of!(FatData.CacheManagerNoOpCallbacks)).cast(),
             vcb,
         );
         unwind_cache_map = (*vcb).VirtualVolumeFile;
@@ -512,7 +506,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Initialize the Advanced FCB Header
         ExInitializeFastMutex(&raw mut (*vcb).AdvancedFcbHeaderMutex);
-        FsRtlSetupAdvancedHeader(
+        (FsRtlSetupAdvancedHeader).cast()(
             &raw mut (*vcb).VolumeFileHeader as *mut core::ffi::c_void,
             &raw mut (*vcb).AdvancedFcbHeaderMutex as *mut core::ffi::c_void,
         );
@@ -557,7 +551,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
 
         // Cleanup the close context we preallocated above
         if close_context_allocated && (*vcb).VirtualVolumeFile.is_null() {
-            let close_context: *mut CLOSE_CONTEXT = FatAllocateCloseContext(vcb);
+            let close_context: *mut CLOSE_CONTEXT = (FatAllocateCloseContext(vcb)).cast();
             ExFreePool(close_context as *mut core::ffi::c_void);
             close_context_allocated = false;
         }
@@ -705,7 +699,7 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         // --- _SEH2_TRY block ---
 
         if !(*Vcb).RootDcb.is_null() {
-            DebugDump(b"Error trying to create multiple root dcbs\n\0".as_ptr() as *const i8, 0, Vcb);
+            (DebugDump).cast()(b"Error trying to create multiple root dcbs\n\0".as_ptr() as *const i8, 0, Vcb);
             FatBugCheck(0, 0, 0);
         }
 
@@ -732,8 +726,8 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         );
 
         // Set header fields
-        (*Dcb).Header.NodeTypeCode = FAT_NTC_ROOT_DCB;
-        (*Dcb).Header.NodeByteSize = core::mem::size_of::<DCB>() as u16;
+        (*Dcb).Header.NodeTypeCode = (FAT_NTC_ROOT_DCB) as i16;
+        (*Dcb).Header.NodeByteSize = (core::mem::size_of::<DCB>() as u16) as i16;
         (*Dcb).FcbCondition = FcbGood;
 
         // Initialize resources
@@ -764,7 +758,7 @@ pub unsafe extern "C" fn FatCreateRootDcb(
         (*Dcb).ShortName.Name.Oem.Length = 1u16;
         (*Dcb).ShortName.Name.Oem.MaximumLength = 2u16;
 
-        (*Dcb).DirentFatFlags = FILE_ATTRIBUTE_DIRECTORY;
+        (*Dcb).DirentFatFlags = (FILE_ATTRIBUTE_DIRECTORY) as u8;
 
         // Initialize advanced FCB header
         ntkrnl_sys::ddk::ExInitializeFastMutex(
@@ -797,8 +791,8 @@ pub unsafe extern "C" fn FatCreateRootDcb(
             (*Dcb).Header.FileSize.QuadPart = (*Dcb).Header.AllocationSize.QuadPart;
         } else {
             let dir_size = FatRootDirectorySize(core::ptr::addr_of!((*Vcb).Bpb)) as u64;
-            (*Dcb).Header.AllocationSize.QuadPart = dir_size;
-            (*Dcb).Header.FileSize.QuadPart = dir_size;
+            (*Dcb).Header.AllocationSize.QuadPart = (dir_size) as i64;
+            (*Dcb).Header.FileSize.QuadPart = (dir_size) as i64;
         }
 
         (*Dcb).Specific.Dcb.UnusedDirentVbo = 0xFFFFFFFFu32;
@@ -901,7 +895,7 @@ pub unsafe extern "C" fn FatCreateFcb(
         core::ptr::write_bytes(fcb as *mut u8, 0, core::mem::size_of::<FCB>());
 
         // Allocate NonPaged part
-        unwind_storage[1] = FatAllocateNonPagedFcb();
+        unwind_storage[1] = (FatAllocateNonPagedFcb()).cast();
         (*fcb).NonPaged = unwind_storage[1] as *mut NON_PAGED_FCB;
         core::ptr::write_bytes(
             (*fcb).NonPaged as *mut u8,
@@ -910,8 +904,8 @@ pub unsafe extern "C" fn FatCreateFcb(
         );
 
         // Set node type code and byte size
-        (*fcb).Header.NodeTypeCode = FAT_NTC_FCB;
-        (*fcb).Header.NodeByteSize = core::mem::size_of::<FCB>() as u16; // Note: C uses sizeof(FCB) which may be u16
+        (*fcb).Header.NodeTypeCode = (FAT_NTC_FCB) as i16;
+        (*fcb).Header.NodeByteSize = (core::mem::size_of::<FCB>() as u16) as i16; // Note: C uses sizeof(FCB) which may be u16
 
         // Set FcbCondition
         (*fcb).FcbCondition = FcbGood;
@@ -1165,8 +1159,8 @@ pub unsafe extern "C" fn FatCreateDcb(
         core::ptr::write_bytes(non_paged as *mut u8, 0, core::mem::size_of::<NON_PAGED_FCB>());
 
         // initialise header fields
-        (*Dcb).Header.NodeTypeCode = FAT_NTC_DCB;
-        (*Dcb).Header.NodeByteSize = core::mem::size_of::<DCB>() as u16;
+        (*Dcb).Header.NodeTypeCode = (FAT_NTC_DCB) as i16;
+        (*Dcb).Header.NodeByteSize = (core::mem::size_of::<DCB>() as u16) as i16;
         (*Dcb).FcbCondition = FcbGood;
 
         // allocate and set normal resource
@@ -1324,7 +1318,7 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
 
     // PAGED_CODE(); - ignored
 
-    DebugTrace(1, Dbg as i32, b"FatDeleteFcb, Fcb = %p\n\0".as_ptr() as *const _, Fcb);
+    DebugTrace(1, (Dbg as i32) as u32, b"FatDeleteFcb, Fcb = %p\n\0".as_ptr() as *const _, Fcb);
 
     // We can only delete this record if the open count is zero.
     if (*Fcb).OpenCount != 0 {
@@ -1333,14 +1327,14 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     }
 
     // Better be an FCB/DCB.
-    if ((*Fcb).Header.NodeTypeCode != FAT_NTC_DCB) &&
-       ((*Fcb).Header.NodeTypeCode != FAT_NTC_ROOT_DCB) &&
-       ((*Fcb).Header.NodeTypeCode != FAT_NTC_FCB) {
+    if ((*Fcb).Header.NodeTypeCode != (FAT_NTC_DCB) as i16) &&
+       ((*Fcb).Header.NodeTypeCode != (FAT_NTC_ROOT_DCB) as i16) &&
+       ((*Fcb).Header.NodeTypeCode != (FAT_NTC_FCB) as i16) {
         FatBugCheck(0, 0, 0);
     }
 
     // If this is a DCB then remove every Notify record from the two notify queues
-    if ((*Fcb).Header.NodeTypeCode == FAT_NTC_DCB) || ((*Fcb).Header.NodeTypeCode == FAT_NTC_ROOT_DCB) {
+    if ((*Fcb).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) || ((*Fcb).Header.NodeTypeCode == (FAT_NTC_ROOT_DCB) as i16) {
         // If we allocated a free dirent bitmap buffer, free it.
         if ((*Fcb).Specific.Dcb.FreeDirentBitmap.Buffer != core::ptr::null_mut()) &&
            ((*Fcb).Specific.Dcb.FreeDirentBitmap.Buffer !=
@@ -1367,7 +1361,7 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     FsRtlUninitializeLargeMcb(core::ptr::addr_of!((*Fcb).Mcb) as *mut LARGE_MCB);
 
     // If this is not the root dcb then we need to remove ourselves from our parents Dcb queue
-    if (*Fcb).Header.NodeTypeCode != FAT_NTC_ROOT_DCB {
+    if (*Fcb).Header.NodeTypeCode != (FAT_NTC_ROOT_DCB) as i16 {
         RemoveEntryList(core::ptr::addr_of!((*Fcb).ParentDcbLinks) as *mut LIST_ENTRY);
     }
 
@@ -1377,18 +1371,18 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
     }
 
     // Free the file name pool if allocated.
-    if (*Fcb).Header.NodeTypeCode != FAT_NTC_ROOT_DCB {
+    if (*Fcb).Header.NodeTypeCode != (FAT_NTC_ROOT_DCB) as i16 {
         // If we blew up at inconvenient times, the shortname could be null...
         if !(*Fcb).ShortName.Name.Oem.Buffer.is_null() {
             ExFreePool((*Fcb).ShortName.Name.Oem.Buffer);
         }
         if !(*Fcb).FullFileName.Buffer.is_null() {
-            ExFreePool((*Fcb).FullFileName.Buffer);
+            ExFreePool(((*Fcb).FullFileName.Buffer).cast());
         }
     }
 
     if !(*Fcb).ExactCaseLongName.Buffer.is_null() {
-        ExFreePool((*Fcb).ExactCaseLongName.Buffer);
+        ExFreePool(((*Fcb).ExactCaseLongName.Buffer).cast());
     }
 
     // SYSCACHE_COMPILE assumed always active – translate block unconditionally
@@ -1405,18 +1399,18 @@ pub unsafe extern "C" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr: *mut
 
     // If an Event was allocated, get rid of it.
     if !(*Fcb).NonPaged.as_ref().unwrap().OutstandingAsyncEvent.is_null() {
-        ExFreePool((*Fcb).NonPaged.as_ref().unwrap().OutstandingAsyncEvent);
+        ExFreePool(((*Fcb).NonPaged.as_ref().unwrap().OutstandingAsyncEvent).cast());
     }
 
     FatFreeNonPagedFcb((*Fcb).NonPaged);
 
-    (*Fcb).Header.NodeTypeCode = NTC_UNDEFINED;
+    (*Fcb).Header.NodeTypeCode = (NTC_UNDEFINED) as i16;
 
     FatFreeFcb(Fcb);
     *FcbPtr = core::ptr::null_mut();
 
     // and return to our caller
-    DebugTrace(-1, Dbg as i32, b"FatDeleteFcb -> VOID\n\0".as_ptr() as *const _, 0);
+    DebugTrace(-1, (Dbg as i32) as u32, b"FatDeleteFcb -> VOID\n\0".as_ptr() as *const _, 0);
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatCreateCcb(
@@ -1445,7 +1439,7 @@ pub unsafe extern "C" fn FatCreateCcb(
     RtlZeroMemory(Ccb as *mut core::ffi::c_void, core::mem::size_of::<CCB>());
 
     (*Ccb).NodeTypeCode = FAT_NTC_CCB;
-    (*Ccb).NodeByteSize = core::mem::size_of::<CCB>();
+    (*Ccb).NodeByteSize = (core::mem::size_of::<CCB>()) as i16;
 
     DebugTrace(
         -1,
@@ -1527,13 +1521,13 @@ pub unsafe extern "C" fn FatCreateIrpContext(
 
         NT_ASSERT(
             ((*irp_sp).FileObject.is_null() == false)
-                || ((*irp_sp).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL
+                || ((*irp_sp).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8
                     && (*irp_sp).MinorFunction == IRP_MN_USER_FS_REQUEST
                     && (*irp_sp).Parameters.FileSystemControl.FsControlCode == FSCTL_INVALIDATE_VOLUMES)
-                || ((*irp_sp).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL
-                    && (*irp_sp).MinorFunction == IRP_MN_MOUNT_VOLUME)
-                || (*irp_sp).MajorFunction == IRP_MJ_SHUTDOWN
-                as i32,
+                || ((*irp_sp).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8
+                    && (*irp_sp).MinorFunction == (IRP_MN_MOUNT_VOLUME) as u8)
+                || (*irp_sp).MajorFunction == (IRP_MJ_SHUTDOWN
+                as i32) as u8,
         );
     }
 
@@ -1554,8 +1548,8 @@ pub unsafe extern "C" fn FatCreateIrpContext(
     //
     //  Set the proper node type code and node byte size
     //
-    (*irp_context).NodeTypeCode = FAT_NTC_IRP_CONTEXT;
-    (*irp_context).NodeByteSize = core::mem::size_of::<IRP_CONTEXT>() as u16; // or u32? assume field is DWORD
+    (*irp_context).NodeTypeCode = (FAT_NTC_IRP_CONTEXT) as u16;
+    (*irp_context).NodeByteSize = (core::mem::size_of::<IRP_CONTEXT>() as u16) as i16; // or u32? assume field is DWORD
 
     //
     //  Set the originating Irp field
@@ -1587,11 +1581,11 @@ pub unsafe extern "C" fn FatCreateIrpContext(
         if IsFileWriteThrough(file_object, (*irp_context).Vcb) != 0
             || ((*irp_sp).MajorFunction == IRP_MJ_WRITE
                 && BooleanFlagOn((*irp).Flags, IRP_NOCACHE) != 0
-                && BooleanFlagOn((*irp_sp).Flags, SL_WRITE_THROUGH) != 0)
+                && BooleanFlagOn(((*irp_sp).Flags) as u32, SL_WRITE_THROUGH) != 0)
         {
             SetFlag(&mut (*irp_context).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
         }
-    } else if (*irp_context).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL {
+    } else if (*irp_context).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8 {
         (*irp_context).RealDevice = (*(*irp_sp).Parameters.MountVolume.Vpb).RealDevice;
     }
 
@@ -1622,7 +1616,7 @@ pub unsafe extern "C" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONTEXT) 
 
     DebugTrace(1, Dbg, b"FatDeleteIrpContext, IrpContext = %p\n\0".as_ptr() as *const i8, IrpContext);
 
-    NT_ASSERT(((*IrpContext).NodeTypeCode == FAT_NTC_IRP_CONTEXT) as i32,
+    NT_ASSERT(((*IrpContext).NodeTypeCode == (FAT_NTC_IRP_CONTEXT) as u16) as i32,
               file!().as_ptr() as *const u8,
               line!() as u32);
     NT_ASSERT(((*IrpContext).PinCount == 0) as i32,
@@ -1673,7 +1667,7 @@ pub unsafe extern "C" fn FatGetNextFcbBottomUp(
         NextFcb = TerminationFcb;
     }
 
-    while NodeType(NextFcb) != FAT_NTC_FCB && !FatGetFirstChild(NextFcb).is_null() {
+    while NodeType(NextFcb) != (FAT_NTC_FCB) as u32 && !FatGetFirstChild(NextFcb).is_null() {
         NextFcb = FatGetFirstChild(NextFcb);
     }
 
@@ -1697,7 +1691,7 @@ pub unsafe extern "C" fn FatGetNextFcbTopDown(
     };
     NT_ASSERT(valid);
 
-    if (NodeType(Fcb) == FAT_NTC_DCB || NodeType(Fcb) == FAT_NTC_ROOT_DCB)
+    if (NodeType(Fcb) == (FAT_NTC_DCB) as u32 || NodeType(Fcb) == (FAT_NTC_ROOT_DCB) as u32)
         && IsListEmpty(core::ptr::addr_of_mut!((*Fcb).Specific.Dcb.ParentDcbQueue)) == 0
     {
         return FatGetFirstChild(Fcb);
@@ -1751,16 +1745,16 @@ pub unsafe extern "C" fn FatSwapVpb(
 
             let swap_vpb = (*Vcb).SwapVpb;
 
-            (*swap_vpb).Type = IO_TYPE_VPB;
-            (*swap_vpb).Size = core::mem::size_of::<VPB>() as u16;
+            (*swap_vpb).Type = (IO_TYPE_VPB) as i16;
+            (*swap_vpb).Size = (core::mem::size_of::<VPB>() as u16) as i16;
             (*swap_vpb).RealDevice = (*OldVpb).RealDevice;
             (*(*swap_vpb).RealDevice).Vpb = swap_vpb;
-            (*swap_vpb).Flags = FlagOn((*OldVpb).Flags, VPB_REMOVE_PENDING) as u16;
+            (*swap_vpb).Flags = FlagOn(((*OldVpb).Flags) as u32, VPB_REMOVE_PENDING) as u16;
 
             // If we are working on a mount request, we need to make sure we update
             // the VPB in the IRP, since the one it points to may no longer be valid.
-            if (*IrpContext).MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL
-                && (*IrpContext).MinorFunction == IRP_MN_MOUNT_VOLUME
+            if (*IrpContext).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8
+                && (*IrpContext).MinorFunction == (IRP_MN_MOUNT_VOLUME) as u8
             {
                 // Get the IRP stack.
                 IrpSp = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
@@ -1841,10 +1835,10 @@ pub unsafe extern "C" fn FatCheckForDismount(
         IoReleaseVpbSpinLock(SavedIrql);
 
         // Mark dismount in progress.
-        NT_ASSERT((FlagOn(
+        NT_ASSERT(((FlagOn(
             &(*Vcb).VcbState as *const u32,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-        ) == 0) as BOOLEAN);
+        ) == 0) as BOOLEAN) as i32);
         SetFlag(
             &mut (*Vcb).VcbState as *mut u32,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
@@ -1874,10 +1868,10 @@ pub unsafe extern "C" fn FatCheckForDismount(
         } else {
             IoReleaseVpbSpinLock(SavedIrql);
 
-            NT_ASSERT(FlagOn(
+            NT_ASSERT((FlagOn(
                 &(*Vcb).VcbState as *const u32,
                 VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-            ) as BOOLEAN);
+            ) as BOOLEAN) as i32);
             ClearFlag(
                 &mut (*Vcb).VcbState as *mut u32,
                 VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
@@ -1914,18 +1908,18 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
 
     PAGED_CODE();
 
-    NT_ASSERT(((*ShortName).Buffer).is_null() as u8);
+    NT_ASSERT((((*ShortName).Buffer).is_null() as u8) as i32);
 
     let mut abnormal_termination: bool = true;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         'try_finally: loop {
             // Short name case flags
-            if ((*Dirent).NtByte & FAT_DIRENT_NT_BYTE_8_LOWER_CASE) != 0 {
+            if ((*Dirent).NtByte & (FAT_DIRENT_NT_BYTE_8_LOWER_CASE) as u8) != 0 {
                 (*Fcb).FcbState |= FCB_STATE_8_LOWER_CASE;
             } else {
                 (*Fcb).FcbState &= !FCB_STATE_8_LOWER_CASE;
             }
-            if ((*Dirent).NtByte & FAT_DIRENT_NT_BYTE_3_LOWER_CASE) != 0 {
+            if ((*Dirent).NtByte & (FAT_DIRENT_NT_BYTE_3_LOWER_CASE) as u8) != 0 {
                 (*Fcb).FcbState |= FCB_STATE_3_LOWER_CASE;
             } else {
                 (*Fcb).FcbState &= !FCB_STATE_3_LOWER_CASE;
@@ -1939,7 +1933,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
 
             (*Fcb).ShortName.FileNameDos = 1;
 
-            NT_ASSERT(((*Fcb).ExactCaseLongName.Buffer).is_null() as u8);
+            NT_ASSERT((((*Fcb).ExactCaseLongName.Buffer).is_null() as u8) as i32);
 
             if Lfn.is_null() || (*Lfn).Length == 0 {
                 let size = RtlOemStringToCountedUnicodeSize(ShortName) as usize;
@@ -1949,7 +1943,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
                 break 'try_finally;
             }
 
-            NT_ASSERT(((*Fcb).FullFileName.Buffer).is_null() as u8);
+            NT_ASSERT((((*Fcb).FullFileName.Buffer).is_null() as u8) as i32);
 
             (*Fcb).FinalNameLength = (*Lfn).Length;
             (*Fcb).ExactCaseLongName.Length = (*Lfn).Length;
@@ -1992,7 +1986,7 @@ pub unsafe extern "C" fn FatConstructNamesInFcb(
                     } else {
                         c as u8
                     };
-                    *(*LongOemName).Buffer.add(i) = byte;
+                    *(*LongOemName).Buffer.add(i) = (byte) as i8;
                     i += 1;
                 }
 
@@ -2157,7 +2151,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
                     RtlCopyMemory(
                         bitmap_buffer as *mut core::ffi::c_void,
                         old_bitmap_buffer as *const core::ffi::c_void,
-                        bytes_in_old_bitmap_buffer as u32,
+                        (bytes_in_old_bitmap_buffer as u32) as usize,
                     );
 
                     // Free the old buffer if it was dynamically allocated
@@ -2176,7 +2170,7 @@ pub unsafe extern "C" fn FatCheckFreeDirentBitmap(
                 // Zero the tail of the new buffer
                 RtlZeroMemory(
                     (bitmap_buffer as *mut u8).offset(bytes_in_old_bitmap_buffer as isize) as *mut core::ffi::c_void,
-                    (bytes_in_bitmap_buffer - bytes_in_old_bitmap_buffer) as u32,
+                    ((bytes_in_bitmap_buffer - bytes_in_old_bitmap_buffer) as u32) as usize,
                 );
 
                 // Initialize the bitmap header
@@ -2310,7 +2304,7 @@ pub unsafe extern "C" fn FatScanForDataTrack(
 
     RtlZeroMemory(
         CdromToc as *mut core::ffi::c_void,
-        size_of::<CDROM_TOC>() as u32,
+        (size_of::<CDROM_TOC>() as u32) as usize,
     );
 
     loop {

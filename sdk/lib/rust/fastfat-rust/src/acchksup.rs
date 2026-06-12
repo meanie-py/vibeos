@@ -9,9 +9,9 @@ use crate::types::{PIRP_CONTEXT};
 use ntkrnl_sys::ddk::{SECURITY_SUBJECT_CONTEXT, SE_EXPORTS, _PROCESS_ACCESS_TOKEN as ACCESS_TOKEN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_ACCHKSUP, FILE_DELETE_CHILD};
-use crate::types::{PIRP_CONTEXT};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PIRP_CONTEXT};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     static SeExports: *mut SE_EXPORTS;
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn FatExplicitDeviceAccessGranted(
     };
 
     original_access_token = *effective_token;
-    status = FatCreateRestrictEveryoneToken(
+    status = (FatCreateRestrictEveryoneToken).cast()(
         original_access_token,
         core::ptr::addr_of_mut!(restricted_access_token),
     );
@@ -249,7 +249,7 @@ pub unsafe extern "C" fn FatCreateRestrictEveryoneToken(
     SidsToDisable.GroupCount = 1;
     SidsToDisable.Groups[0].Attributes = 0;
     SidsToDisable.Groups[0].Sid = (*SeExports).SeWorldSid;
-    Status = SeFilterToken(
+    Status = (SeFilterToken).cast()(
         Token,
         0,
         core::ptr::addr_of_mut!(SidsToDisable),

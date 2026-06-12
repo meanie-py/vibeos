@@ -4,7 +4,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{DRIVER_DISPATCH, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetTopLevelIrp, LARGE_INTEGER, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PSHARE_ACCESS};
 use core::ffi::c_void;
-use core::ffi::{c_void, CStr};
+use core::ffi::{CStr};
 use core::ptr;
 use core::slice;
 use std::panic::{catch_unwind, AssertUnwindSafe, resume_unwind};
@@ -110,7 +110,7 @@ pub unsafe extern "system" fn FatFsdCleanup(
 
     if FatDeviceIsFatFsdo(VolumeDeviceObject) != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*Irp).IoStatus.Information = FILE_OPENED;
+        (*Irp).IoStatus.Information = (FILE_OPENED) as u64;
         IoCompleteRequest(Irp, IO_DISK_INCREMENT);
         return STATUS_SUCCESS;
     }
@@ -123,7 +123,7 @@ pub unsafe extern "system" fn FatFsdCleanup(
     // DUMMY_PSEH: EXCEPT handler dead → try body only.
     {
         IrpContext = FatCreateIrpContext(Irp, 1);
-        Status = FatCommonCleanup(IrpContext, Irp);
+        Status = FatCommonCleanup((IrpContext).cast(), Irp);
     }
 
     if TopLevel != 0 {
@@ -349,7 +349,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                 if FlagOn((*Ccb).Flags, CCB_FLAG_COMPLETE_DISMOUNT) != 0 {
                     FatCheckForDismount(IrpContext, Vcb, TRUE);
                 } else if (*FileObject).WriteAccess != 0 && FlagOn((*FileObject).Flags, FO_FILE_MODIFIED) != 0 {
-                    FatHijackIrpAndFlushDevice(IrpContext, Irp, (*Vcb).TargetDeviceObject);
+                    FatHijackIrpAndFlushDevice(IrpContext, Irp, ((*Vcb).TargetDeviceObject).cast());
                     SetFlag(&mut (*(*Vcb).Vpb).RealDeviceFlags, DO_VERIFY_VOLUME);
                 }
                 if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0 && (*Vcb).FileObjectWithVcbLocked == FileObject {
@@ -401,9 +401,9 @@ pub unsafe extern "C" fn FatCommonCleanup(
                                 DeleteContext.FileSize = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
                                 DeleteContext.FirstClusterOfFile = (*Fcb).FirstClusterOfFile;
 
-                                ExAcquireResourceExclusiveLite((*Fcb).Header.PagingIoResource, TRUE);
+                                ExAcquireResourceExclusiveLite(((*Fcb).Header.PagingIoResource).cast(), TRUE);
                                 (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart = 0;
-                                ExReleaseResourceLite((*Fcb).Header.PagingIoResource);
+                                ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
 
                                 DebugTrace(0, Dbg, b"Delete File allocation\n\0".as_ptr() as *const i8, 0);
                                 FatTruncateFileAllocation(IrpContext, Fcb, 0);
@@ -496,11 +496,11 @@ pub unsafe extern "C" fn FatCommonCleanup(
 
                             DebugTrace(0, Dbg, b"Delete File allocation\n\0".as_ptr() as *const i8, 0);
 
-                            ExAcquireResourceExclusiveLite((*Fcb).Header.PagingIoResource, TRUE);
+                            ExAcquireResourceExclusiveLite(((*Fcb).Header.PagingIoResource).cast(), TRUE);
                             (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart = 0;
                             (*Fcb).Header.ValidDataLength.__bindgen_anon_1.LowPart = 0;
                             (*Fcb).ValidDataToDisk = 0;
-                            ExReleaseResourceLite((*Fcb).Header.PagingIoResource);
+                            ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
 
                             let seh1 = catch_unwind(AssertUnwindSafe(|| {
                                 FatSetFileSizeInDirent(IrpContext, Fcb, ptr::null());
@@ -564,7 +564,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                                 if (*Vcb).VcbCondition == VcbGood {
                                     FatTruncateFileAllocation(
                                         IrpContext, Fcb,
-                                        (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart,
+                                        ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart) as i32,
                                     );
                                 }
                                 // LocalTruncateSize = FileSize
@@ -633,8 +633,8 @@ pub unsafe extern "C" fn FatCommonCleanup(
                         0,
                         ptr::null_mut(),
                     );
-                    ExAcquireResourceExclusiveLite((*Fcb).Header.PagingIoResource, TRUE);
-                    ExReleaseResourceLite((*Fcb).Header.PagingIoResource);
+                    ExAcquireResourceExclusiveLite(((*Fcb).Header.PagingIoResource).cast(), TRUE);
+                    ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
                     CcPurgeCacheSection(
                         &(*Fcb).NonPaged.SectionObjectPointers as *const c_void as *mut c_void,
                         ptr::null(),
@@ -723,7 +723,7 @@ pub unsafe extern "C" fn FatAutoUnlock(IrpContext: *mut IRP_CONTEXT, Vcb: *mut V
     let _ = IrpContext;
 
     IoAcquireVpbSpinLock(&raw mut SavedIrql);
-    (*(*Vcb).Vpb).Flags &= !(VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED);
+    (*(*Vcb).Vpb).Flags &= (!(VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED)) as u16;
     (*Vcb).VcbState &= !VCB_STATE_FLAG_LOCKED;
     (*Vcb).FileObjectWithVcbLocked = core::ptr::null_mut();
     IoReleaseVpbSpinLock(SavedIrql);

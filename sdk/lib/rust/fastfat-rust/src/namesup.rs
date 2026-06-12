@@ -10,9 +10,9 @@ use crate::types::{CCB, DCB, DIRENT, FCB, FatData, IRP_CONTEXT, PFCB, PIRP_CONTE
 use ntkrnl_sys::ddk::{_PUBLIC_BCB as BCB, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_NAMESUP, STATUS_UNMAPPABLE_CHARACTER, TAG_FILENAME_BUFFER};
-use ntkrnl_sys::ddk::{_UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );
@@ -55,7 +55,6 @@ pub unsafe extern "C" fn FatIsNameInExpression(
 
 const UCHAR_SP: u8 = 0x20;
 const FAT_DIRENT_REALLY_0E5: u8 = 0x05;
-const Dbg: u32 = 0; // DEBUG_TRACE_NAMESUP (unknown value)
 #[no_mangle]
 pub unsafe extern "C" fn FatStringTo8dot3(
     IrpContext: *mut core::ffi::c_void,
@@ -75,8 +74,8 @@ pub unsafe extern "C" fn FatStringTo8dot3(
     // Copy over the first part of the file name.  Stop when we get to
     // the end of the input string or a dot.
     let mut i: u32 = 0;
-    while i < InputString.Length as u32 && *InputString.Buffer.add(i as usize) != b'.' && i < 11 {
-        (*Output8dot3)[i as usize] = *InputString.Buffer.add(i as usize);
+    while i < InputString.Length as u32 && *InputString.Buffer.add(i as usize) != (b'.') as i8 && i < 11 {
+        (*Output8dot3)[i as usize] = (*InputString.Buffer.add(i as usize)) as u8;
         i += 1;
     }
 
@@ -84,7 +83,7 @@ pub unsafe extern "C" fn FatStringTo8dot3(
     if i < InputString.Length as u32 {
         // Make sure we have a dot and then skip over it.
         NT_ASSERT(((InputString.Length as u32) - i <= 4) as i32);
-        NT_ASSERT((*InputString.Buffer.add(i as usize) == b'.') as i32);
+        NT_ASSERT((*InputString.Buffer.add(i as usize) == (b'.') as i8) as i32);
 
         i += 1;
 
@@ -92,7 +91,7 @@ pub unsafe extern "C" fn FatStringTo8dot3(
         // end of the input string.
         let mut j: u32 = 8;
         while i < InputString.Length as u32 {
-            (*Output8dot3)[j as usize] = *InputString.Buffer.add(i as usize);
+            (*Output8dot3)[j as usize] = (*InputString.Buffer.add(i as usize)) as u8;
             j += 1;
             i += 1;
         }
@@ -150,11 +149,11 @@ pub unsafe extern "C" fn Fat8dot3ToString(
         if BaseLength != 0 {
             core::ptr::copy_nonoverlapping(
                 &(*Dirent).FileName as *const u8,
-                (*OutputString).Buffer,
+                ((*OutputString).Buffer).cast(),
                 BaseLength as usize,
             );
 
-            if *(*OutputString).Buffer == FAT_DIRENT_REALLY_0E5 {
+            if *(*OutputString).Buffer == (FAT_DIRENT_REALLY_0E5) as i8 {
                 *(*OutputString).Buffer = 0xe5;
             }
 
@@ -163,12 +162,12 @@ pub unsafe extern "C" fn Fat8dot3ToString(
                 StringIndex = 0;
                 while StringIndex < BaseLength {
                     let p = (*OutputString).Buffer.offset(StringIndex as isize);
-                    if FsRtlIsLeadDbcsCharacter(*p) != 0 {
+                    if FsRtlIsLeadDbcsCharacter((*p) as u8) != 0 {
                         StringIndex += 1;
                         continue;
                     }
-                    if *p >= b'A' && *p <= b'Z' {
-                        *p += b'a' - b'A';
+                    if *p >= (b'A') as i8 && *p <= (b'Z') as i8 {
+                        *p += (b'a' - b'A') as i8;
                     }
                     StringIndex += 1;
                 }
@@ -176,10 +175,10 @@ pub unsafe extern "C" fn Fat8dot3ToString(
         }
 
         if ExtensionLength != 0 {
-            *(*OutputString).Buffer.offset(BaseLength as isize) = b'.';
+            *(*OutputString).Buffer.offset(BaseLength as isize) = (b'.') as i8;
             BaseLength += 1;
 
-            o = (*OutputString).Buffer.offset(BaseLength as isize);
+            o = ((*OutputString).Buffer.offset(BaseLength as isize)).cast();
             d = &(*Dirent).FileName[8] as *const u8;
 
             // replica of fallthrough switch
@@ -204,12 +203,12 @@ pub unsafe extern "C" fn Fat8dot3ToString(
                 StringIndex = BaseLength;
                 while StringIndex < (*OutputString).Length as u32 {
                     let p = (*OutputString).Buffer.offset(StringIndex as isize);
-                    if FsRtlIsLeadDbcsCharacter(*p) != 0 {
+                    if FsRtlIsLeadDbcsCharacter((*p) as u8) != 0 {
                         StringIndex += 1;
                         continue;
                     }
-                    if *p >= b'A' && *p <= b'Z' {
-                        *p += b'a' - b'A';
+                    if *p >= (b'A') as i8 && *p <= (b'Z') as i8 {
+                        *p += (b'a' - b'A') as i8;
                     }
                     StringIndex += 1;
                 }
@@ -243,7 +242,7 @@ pub unsafe extern "C" fn FatGetUnicodeNameFromFcb(
     );
 
     // We'll start by locating the dirent for the name.
-    FatStringTo8dot3(
+    (FatStringTo8dot3).cast()(
         IrpContext,
         (*Fcb).ShortName.Name.Oem,
         &raw mut local_ccb.OemQueryTemplate.Constant,
@@ -490,7 +489,7 @@ pub unsafe extern "C" fn FatSelectNames(
         // _SEH2_TRY
         {
             loop {
-                FatUnpinBcb(IrpContext, Bcb);
+                (FatUnpinBcb).cast()(IrpContext, Bcb);
 
                 if TrySuggestedShortName != 0 {
                     ShortUnicodeName.Length = (*SuggestedShortName).Length;
@@ -513,7 +512,7 @@ pub unsafe extern "C" fn FatSelectNames(
                     0,
                 );
 
-                NT_ASSERT((Status == ntkrnl_sys::base::STATUS_SUCCESS) as u8);
+                NT_ASSERT(((Status == ntkrnl_sys::base::STATUS_SUCCESS) as u8) as i32);
 
                 FatLocateSimpleOemDirent(
                     IrpContext,
@@ -531,7 +530,7 @@ pub unsafe extern "C" fn FatSelectNames(
             }
         }
         // _SEH2_FINALLY
-        FatUnpinBcb(IrpContext, Bcb);
+        (FatUnpinBcb).cast()(IrpContext, Bcb);
         // _SEH2_END
     } else {
         if ShortName != OemName {
@@ -555,7 +554,7 @@ pub unsafe extern "C" fn FatSelectNames(
         *AllLowerExtension = 0;
     } else {
         FatEvaluateNameCase(
-            IrpContext,
+            (IrpContext).cast(),
             UnicodeName,
             AllLowerComponent,
             AllLowerExtension,
@@ -583,7 +582,7 @@ pub unsafe extern "C" fn FatEvaluateNameCase(
     *CreateLfn = 0;
 
     i = 0;
-    while (i as u32) < (*UnicodeName).Length / core::mem::size_of::<u16>() as u32 {
+    while (i as u32) < (((*UnicodeName).Length / (core::mem::size_of::<u16>() as u3) as u322) as u16) as u32 {
         let c: u16;
         c = *((*UnicodeName).Buffer.add(i as usize));
 
@@ -608,7 +607,7 @@ pub unsafe extern "C" fn FatEvaluateNameCase(
     }
 
     *CreateLfn = ((*CreateLfn != 0)
-                  || (i != (*UnicodeName).Length / core::mem::size_of::<u16>() as u32)
+                  || (i != (((*UnicodeName).Length / (core::mem::size_of::<u16>() as u3) as u322) as u16) as u32)
                   || ((Lowers != 0) && (Uppers != 0))) as u8;
 
     if ExtensionPresent != 0 {

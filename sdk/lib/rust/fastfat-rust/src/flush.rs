@@ -83,24 +83,17 @@ const STATUS_MORE_PROCESSING_REQUIRED: ntkrnl_sys::base::NTSTATUS = 0xC0000016u3
 // Constants (placeholder values — real values will be provided by the caller)
 const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0; // TODO
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0; // TODO
-const VCB_STATE_FLAG_DELETED_FCB: u32 = 0; // TODO
 const FCB_STATE_TRUNCATE_ON_CLOSE: u32 = 0; // TODO
 const FAT_NTC_FCB: u32 = 0; // TODO
 const FcbGood: u32 = 0; // TODO
-const Dbg: u32 = 0; // DEBUG_TRACE_FLUSH
 const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
 const EXCEPTION_CONTINUE_SEARCH: u32 = 0;
 
 // Gateway types (the caller collects the full definitions)
 type PIRP_CONTEXT = *mut IRP_CONTEXT;
-type PIRP = *mut IRP;
-type PIO_STACK_LOCATION = *mut IO_STACK_LOCATION;
-type PFILE_OBJECT = *mut FILE_OBJECT;
 type PVCB = *mut VCB;
 type PFCB = *mut FCB;
 type PCCB = *mut CCB;
-type PDEVICE_OBJECT = *mut DEVICE_OBJECT;
-type PETHREAD = *mut _ETHREAD;
 type PIO_COMPLETION_ROUTINE = Option<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS>;
 type PVOID = *mut core::ffi::c_void;
 type BOOLEAN = u8;
@@ -111,19 +104,14 @@ type VOLUME_CONDITION = i32;
 type PBCB = *mut BCB;
 
 // Constants used in this function
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x1; // assumed
-const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = 0x2;
 const FCB_STATE_FLUSH_FAT: u32 = 0x1000;
 const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x2;
 const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x4;
 const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x8;
 const VCB_STATE_FLAG_BOOT_OR_PAGING_FILE: u32 = 0x10;
-const VCB_STATE_FLAG_DELETED_FCB: u32 = 0x400;
 const FO_FILE_SIZE_CHANGED: u32 = 0x1000;
 const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010;
 const STATUS_PENDING: i32 = 0x00000103;
-const Dbg: i32 = 0; // DEBUG_TRACE_FLUSH
-const FcbGood: i32 = 1;
 const Flush: FAT_FLUSH_TYPE = 1;
 const VolumeClean: VOLUME_CONDITION = 2;
 const VirtualVolumeFile: TYPE_OF_OPEN = 0;
@@ -145,7 +133,6 @@ struct EXCEPTION_POINTERS {
     _unused: u8,
 }
 
-const Dbg: u32 = 0; // DEBUG_TRACE_FLUSH
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdFlushBuffers(
@@ -258,7 +245,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                     }
                 }
 
-                Status = FatFlushFile(IrpContext, Fcb, Flush);
+                Status = FatFlushFile(IrpContext, Fcb, (Flush) as u32);
 
                 if NT_SUCCESS(Status) != 0 {
                     SetFlag(core::ptr::addr_of_mut!((*FileObject).Flags), FO_FILE_SIZE_CHANGED);
@@ -280,7 +267,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
 
                         if (*NextFcb).FcbCondition == FcbGood {
                             let LocalStatus: NTSTATUS;
-                            LocalStatus = FatFlushFile(IrpContext, NextFcb, Flush);
+                            LocalStatus = FatFlushFile(IrpContext, NextFcb, (Flush) as u32);
                             if NT_SUCCESS(LocalStatus) == 0 {
                                 Status = LocalStatus;
                             }
@@ -292,7 +279,7 @@ pub unsafe extern "C" fn FatCommonFlushBuffers(
                     }
 
                     if FatFlushRequired != 0 {
-                        Status = FatFlushFat(IrpContext, Vcb);
+                        Status = (FatFlushFat).cast()(IrpContext, Vcb);
                         ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_FLUSH_FAT);
                     }
 
@@ -451,7 +438,7 @@ pub unsafe extern "C" fn FatFlushDirectory(
                         FatTruncateFileAllocation(
                             IrpContext,
                             Fcb,
-                            (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart,
+                            ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart) as i32,
                         );
                     }
 
@@ -471,7 +458,7 @@ pub unsafe extern "C" fn FatFlushDirectory(
 
                     FatUnpinBcb(IrpContext, DirentBcb);
 
-                    Status = FatFlushFile(IrpContext, Fcb, FlushType);
+                    Status = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
 
                     if !NT_SUCCESS(Status) {
                         ReturnStatus = Status;
@@ -497,7 +484,7 @@ pub unsafe extern "C" fn FatFlushDirectory(
             FatVerifyFcb(IrpContext, Fcb);
 
             if (*Fcb).FcbCondition == FcbGood {
-                Status = FatFlushFile(IrpContext, Fcb, FlushType);
+                Status = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
 
                 if !NT_SUCCESS(Status) {
                     ReturnStatus = Status;
@@ -571,7 +558,7 @@ pub unsafe extern "C" fn FatFlushVolume(
     if !NT_SUCCESS(Status) {
         ReturnStatus = Status;
     }
-    Status = FatFlushFat(IrpContext, Vcb);
+    Status = (FatFlushFat).cast()(IrpContext, Vcb);
     if !NT_SUCCESS(Status) {
         ReturnStatus = Status;
     }
@@ -772,7 +759,7 @@ pub unsafe extern "system" fn FatHijackCompletionRoutine(
 ) -> ntkrnl_sys::base::NTSTATUS {
     let _ = DeviceObject;
     let _ = Irp;
-    ntkrnl_sys::ke::KeSetEvent(Contxt as *mut ntkrnl_sys::ddk::KEVENT, 0, 0);
+    ntkrnl_sys::ke::KeSetEvent((Contxt as *mut ntkrnl_sys::ddk::KEVENT).cast(), 0, 0);
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 

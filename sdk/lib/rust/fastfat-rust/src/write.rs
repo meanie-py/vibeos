@@ -13,6 +13,8 @@ use crate::types::{FAT_BUG_CHECK_WRITE, FatData, PDCB, _TYPE_OF_OPEN_DirectoryFi
 use crate::workque::{FatFsdPostRequest};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_WRITE, FILE_DEVICE_DISK, SL_FORCE_DIRECT_WRITE};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{DEFERRED_FLUSH_CONTEXT};
 
 extern "C" {
     fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32;
@@ -82,12 +84,6 @@ pub unsafe extern "system" fn FatDeferredFlushDpc(
 const FSRTL_FSP_TOP_LEVEL_IRP: PIRP = 1 as PIRP;
 
 extern "system" {
-    fn FatDecodeFileObject(
-        File: PFILE_OBJECT,
-        Vcb: *mut PVCB,
-        FcbOrDcb: *mut PFCB,
-        Ccb: *mut PCCB,
-    );
 }
 
 #[no_mangle]
@@ -130,7 +126,7 @@ pub unsafe extern "system" fn FatDeferredFlush(Parameter: *mut core::ffi::c_void
 
     IoSetTopLevelIrp(core::ptr::null_mut());
 
-    ObDereferenceObject(File);
+    ObDereferenceObject((File).cast());
 
     ExFreePool(Parameter);
 }
@@ -182,29 +178,22 @@ const FLUSH: u32 = 1;
 const NonPagedPoolNx: POOL_TYPE = 0; // placeholder
 const PagedPool: POOL_TYPE = 1; // placeholder
 
-const Dbg: u32 = 0; // DEBUG_TRACE_WRITE placeholder
 
 type NTSTATUS = i32;
 type PVOID = *mut c_void;
-type PIRP = *mut IRP;
 type PIRP_CONTEXT = *mut IRP_CONTEXT;
 type PVCB = *mut VCB;
 type PFCB = *mut FCB;
 type PCCB = *mut CCB;
-type PIO_STACK_LOCATION = *mut IO_STACK_LOCATION;
-type PFILE_OBJECT = *mut FILE_OBJECT;
 type VBO = u32;
 type LBO = u64;
 type ULONG = u32;
 type ULONGLONG = u64;
-type LARGE_INTEGER = i64;
 type PLARGE_INTEGER = *mut LARGE_INTEGER;
-type PETHREAD = *mut _ETHREAD;
 type PEPROCESS = *mut _EPROCESS;
 type BOOLEAN = u8;
 type POOL_TYPE = i32;
 type ERESOURCE_THREAD = usize;
-type PCC_POST_DEFERRED_WRITE = extern "system" fn(PVOID, PIRP, PVOID) -> ();
 type SECTION_OBJECT_POINTERS = SECTION_OBJECT_POINTERS; // placeholder
 type PIO_RUN = *mut IO_RUN;
 type LARGE_MCB = LARGE_MCB; // placeholder
@@ -223,7 +212,6 @@ type _EPROCESS = _EPROCESS; // placeholder
 
 type TYPE_OF_OPEN = i32; // placeholder enum
 
-const FSRTL_FSP_TOP_LEVEL_IRP: PIRP = 1 as PIRP;
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdWrite(
@@ -355,39 +343,39 @@ pub unsafe extern "C" fn FatCommonWrite(
 
     StartingByte = (*IrpSp).Parameters.Write.ByteOffset;
     StartingVbo = StartingByte.__bindgen_anon_1.LowPart;
-    WriteToEof = (StartingByte.__bindgen_anon_1.LowPart == FILE_WRITE_TO_END_OF_FILE) && (StartingByte.__bindgen_anon_1.HighPart == -1);
+    WriteToEof = (StartingByte.__bindgen_anon_1.LowPart == (FILE_WRITE_TO_END_OF_FILE) as u32) && (StartingByte.__bindgen_anon_1.HighPart == -1);
 
     TypeOfOpen = FatDecodeFileObject(FileObject, &mut Vcb, &mut FcbOrDcb, &mut Ccb);
 
     debug_assert!(Vcb.is_null() == false);
 
-    if TypeOfOpen == UserVolumeOpen {
+    if TypeOfOpen == (UserVolumeOpen) as i32 {
         NonCachedIo = 1;
     }
 
-    debug_assert!(!(NonCachedIo == 0 && TypeOfOpen == VirtualVolumeFile));
+    debug_assert!(!(NonCachedIo == 0 && TypeOfOpen == (VirtualVolumeFile) as i32));
 
     if PagingIo != 0 {
         // CollectWriteStats(Vcb, TypeOfOpen, ByteCount) expanded inline
         {
             let Stats = &mut (*(*(Vcb.add(KeGetCurrentProcessorNumber() as usize))).Statistics).Common;
-            if TypeOfOpen == UserFileOpen {
+            if TypeOfOpen == (UserFileOpen) as i32 {
                 Stats.UserFileWrites += 1;
                 Stats.UserFileWriteBytes += ByteCount;
-            } else if TypeOfOpen == VirtualVolumeFile || TypeOfOpen == DirectoryFile {
+            } else if TypeOfOpen == (VirtualVolumeFile) as i32 || TypeOfOpen == (DirectoryFile) as i32 {
                 Stats.MetaDataWrites += 1;
                 Stats.MetaDataWriteBytes += ByteCount;
             }
         }
 
-        if TypeOfOpen == UserFileOpen {
+        if TypeOfOpen == (UserFileOpen) as i32 {
             (*IrpContext).Flags |= IRP_CONTEXT_FLAG_USER_IO;
         } else {
             (*IrpContext).Flags &= !IRP_CONTEXT_FLAG_USER_IO;
         }
     }
 
-    if PagingIo == 0 && !WriteToEof && TypeOfOpen != UserVolumeOpen {
+    if PagingIo == 0 && !WriteToEof && TypeOfOpen != (UserVolumeOpen) as i32 {
         if !FatIsIoRangeValid(Vcb, StartingByte, ByteCount) != 0 {
             (*Irp).IoStatus.Information = 0;
             FatCompleteRequest(IrpContext, Irp, STATUS_DISK_FULL);
@@ -429,7 +417,7 @@ pub unsafe extern "C" fn FatCommonWrite(
     }
 
     // Volume file write
-    if TypeOfOpen == VirtualVolumeFile {
+    if TypeOfOpen == (VirtualVolumeFile) as i32 {
         let mut DirtyLbo: LBO;
         let mut CleanLbo: LBO;
         let mut DirtyVbo: VBO;
@@ -527,7 +515,7 @@ pub unsafe extern "C" fn FatCommonWrite(
                 run.ByteCount = WriteLength;
             }
 
-            (*Vcb).Statistics[KeGetCurrentProcessorNumber() as usize % FatData.NumberProcessors].Common.MetaDataDiskWrites += (*Vcb).Bpb.Fats as u32;
+            (*Vcb).Statistics[KeGetCurrentProcessorNumber() as usize % (FatData.NumberProcessors) as usize].Common.MetaDataDiskWrites += (*Vcb).Bpb.Fats as u32;
 
             // _SEH2_TRY / _SEH2_FINALLY
             let mut cleanup_io_runs = false;
@@ -569,7 +557,7 @@ pub unsafe extern "C" fn FatCommonWrite(
     }
 
     // DASD write
-    if TypeOfOpen == UserVolumeOpen {
+    if TypeOfOpen == (UserVolumeOpen) as i32 {
         let mut StartingLbo: LBO;
         let mut VolumeSize: LBO;
 
@@ -581,7 +569,7 @@ pub unsafe extern "C" fn FatCommonWrite(
 
         if (*Vcb).TargetDeviceObject.DeviceType == FILE_DEVICE_DISK
             && ((*Vcb).VcbState & VCB_STATE_FLAG_LOCKED) == 0
-            && ((*IrpSp).Flags & SL_FORCE_DIRECT_WRITE) == 0
+            && ((*IrpSp).Flags & (SL_FORCE_DIRECT_WRITE) as u8) == 0
             && ((*Ccb).Flags & CCB_FLAG_COMPLETE_DISMOUNT) == 0
         {
             if !WriteToEof && StartingLbo < VolumeSize {

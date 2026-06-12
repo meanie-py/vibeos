@@ -96,19 +96,8 @@ pub const FUJITSU_FMR_NAME_W: [::core::ffi::c_ushort; 13] = unsafe {
 
 pub const KEY_WORK_AREA: usize = (core::mem::size_of::<KEY_VALUE_FULL_INFORMATION>() + 4 + 64);
 
-const COMPATIBILITY_MODE_KEY_NAME: [u16; 62] = [
-    '\\' as u16, 'R' as u16, 'e' as u16, 'g' as u16, 'i' as u16, 's' as u16, 't' as u16, 'r' as u16, 'y' as u16, '\\' as u16,
-    'M' as u16, 'a' as u16, 'c' as u16, 'h' as u16, 'i' as u16, 'n' as u16, 'e' as u16, '\\' as u16,
-    'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, '\\' as u16,
-    'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16, 'n' as u16, 't' as u16, 'C' as u16, 'o' as u16, 'n' as u16, 't' as u16, 'r' as u16, 'o' as u16, 'l' as u16, 'S' as u16, 'e' as u16, 't' as u16, '\\' as u16,
-    'C' as u16, 'o' as u16, 'n' as u16, 't' as u16, 'r' as u16, 'o' as u16, 'l' as u16, '\\' as u16,
-    'F' as u16, 'i' as u16, 'l' as u16, 'e' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-    0u16,
-];
 
-const KEY_WORK_AREA: usize = (core::mem::size_of::<KEY_VALUE_FULL_INFORMATION>() + core::mem::size_of::<u32>() + 64);
 
-type PUNICODE_STRING = *mut _UNICODE_STRING;
 type PULONG = *mut u32;
 type PWCH = *mut u16;
 
@@ -458,7 +447,7 @@ pub unsafe extern "C" fn DriverEntry(
         0,
         core::mem::size_of::<FAT_DATA>(),
     );
-    FatData.NodeTypeCode = FAT_NTC_DATA_HEADER;
+    FatData.NodeTypeCode = (FAT_NTC_DATA_HEADER) as u16;
     FatData.NodeByteSize = core::mem::size_of::<FAT_DATA>() as NODE_BYTE_SIZE;
     InitializeListHead(&mut FatData.VcbQueue);
     FatData.DriverObject = DriverObject;
@@ -488,15 +477,15 @@ pub unsafe extern "C" fn DriverEntry(
     match MmQuerySystemSize() as u32 {
         0 => {
             MaxDepth = 4;
-            FatMaxDelayedCloseCount = FAT_MAX_DELAYED_CLOSES;
+            FatMaxDelayedCloseCount = (FAT_MAX_DELAYED_CLOSES) as u32;
         }
         1 => {
             MaxDepth = 8;
-            FatMaxDelayedCloseCount = (4 as ULONG).wrapping_mul(FAT_MAX_DELAYED_CLOSES);
+            FatMaxDelayedCloseCount = (4 as ULONG).wrapping_mul((FAT_MAX_DELAYED_CLOSES) as u32);
         }
         _ => {
             MaxDepth = 16;
-            FatMaxDelayedCloseCount = (16 as ULONG).wrapping_mul(FAT_MAX_DELAYED_CLOSES);
+            FatMaxDelayedCloseCount = (16 as ULONG).wrapping_mul((FAT_MAX_DELAYED_CLOSES) as u32);
         }
     }
 
@@ -526,7 +515,7 @@ pub unsafe extern "C" fn DriverEntry(
         FatNoOpRelease as unsafe extern "C" fn(PVOID) -> (),
     ) as PRELEASE_FROM_READ_AHEAD;
 
-    FatData.OurProcess = PsGetCurrentProcess();
+    FatData.OurProcess = (PsGetCurrentProcess()).cast();
     FatData.NumberProcessors = KeNumberProcessors as ULONG;
 
     // Registry: ChicagoMode
@@ -687,7 +676,7 @@ pub unsafe extern "C" fn FatGetCompatibilityModeValue(
         KeyValueInformation = ExAllocatePoolWithTag(
             PagedPool,
             RequestLength as usize,
-            0x20746146i32,
+            (0x20746146i32) as u32,
         ) as *mut KEY_VALUE_FULL_INFORMATION;
         if KeyValueInformation.is_null() {
             ZwClose(Handle);

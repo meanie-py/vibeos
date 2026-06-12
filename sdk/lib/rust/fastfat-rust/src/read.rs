@@ -73,7 +73,6 @@ pub const OVERFLOW_READ_THRESHHOLD: u32 = 0x1000;
 // Forward declarations for unknown external functions and constants used in this function
 
 // Constants (placeholders/typical values)
-const Dbg: u32 = 0;                          // DEBUG_TRACE_READ
 const NotificationEvent: u32 = 0;            // EVENT_TYPE::NotificationEvent
 const Executive: i32 = 0;                    // KWAIT_REASON::Executive
 const IRP_PAGING_IO: u32 = 0x00000001;      // typical value
@@ -100,12 +99,9 @@ const FCB_STATE_PAGING_FILE: u32 = 0x00000020; // bit 5
 const IRP_MN_COMPLETE: u32 = 0x41;
 const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
 const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8i32; // NTSTATUS
-const Dbg: u32 = 0x00000010; // DEBUG_TRACE_READ
 
 #[cfg(target_arch = "x86")]
 const OVERFLOW_READ_THRESHHOLD: u32 = 0xE00;
-#[cfg(not(target_arch = "x86"))]
-const OVERFLOW_READ_THRESHHOLD: u32 = 0x1000;
 
 #[repr(C)]
 struct PAGING_FILE_OVERFLOW_PACKET {
@@ -139,7 +135,7 @@ pub unsafe extern "system" fn FatFsdRead(
         {
             IoMarkIrpPending(Irp);
 
-            if IoGetRemainingStackSize() < OVERFLOW_READ_THRESHHOLD as usize {
+            if IoGetRemainingStackSize() < (OVERFLOW_READ_THRESHHOLD as usize) as u64 {
                 let mut Event: KEVENT = core::mem::zeroed();
                 let mut Packet: PAGING_FILE_OVERFLOW_PACKET = core::mem::zeroed();
                 Packet.Irp = Irp;
@@ -152,7 +148,7 @@ pub unsafe extern "system" fn FatFsdRead(
                 );
                 KeWaitForSingleObject(
                     &mut Event as *mut _ as *mut core::ffi::c_void,
-                    Executive,
+                    (Executive) as u32,
                     0, // KernelMode
                     0,
                     core::ptr::null_mut(),
@@ -172,12 +168,12 @@ pub unsafe extern "system" fn FatFsdRead(
 
         //  An Mdl complete request must not go through common read.
         if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE) != 0 {
-            Status = FatCompleteMdl(IrpContext as *mut core::ffi::c_void, Irp);
+            Status = FatCompleteMdl((IrpContext as *mut core::ffi::c_void).cast(), Irp);
             break 'try_exit; // try_return
         }
 
         //  Not enough stack → hand off to the stack-overflow thread.
-        if IoGetRemainingStackSize() < OVERFLOW_READ_THRESHHOLD as usize {
+        if IoGetRemainingStackSize() < (OVERFLOW_READ_THRESHHOLD as usize) as u64 {
             Status = FatPostStackOverflowRead(IrpContext as *mut core::ffi::c_void, Irp, Fcb as *mut core::ffi::c_void);
             break 'try_exit; // try_return
         }
@@ -227,7 +223,7 @@ pub unsafe extern "system" fn FatStackOverflowRead(
 
         NT_ASSERT((!(*Vcb).VerifyThread.is_null()) as i32);
         SavedVerifyThread = (*Vcb).VerifyThread;
-        (*Vcb).VerifyThread = KeGetCurrentThread();
+        (*Vcb).VerifyThread = (KeGetCurrentThread()).cast();
     }
 
     // SEH try block emulation
@@ -259,11 +255,11 @@ pub unsafe extern "system" fn FatStackOverflowRead(
     }
 
     if !SavedVerifyThread.is_null() {
-        NT_ASSERT(((*Vcb).VerifyThread == KeGetCurrentThread()) as i32);
+        NT_ASSERT(((*Vcb).VerifyThread == (KeGetCurrentThread()).cast()) as i32);
         (*Vcb).VerifyThread = SavedVerifyThread;
     }
 
-    KeSetEvent(Event, 0, 0);
+    KeSetEvent((Event).cast(), 0, 0);
 }
 #[no_mangle]
 pub unsafe extern "C" fn FatOverflowPagingFileRead(
@@ -271,8 +267,8 @@ pub unsafe extern "C" fn FatOverflowPagingFileRead(
     Event: *mut KEVENT,
 ) {
     let Packet: *mut PAGING_FILE_OVERFLOW_PACKET = Context as *mut PAGING_FILE_OVERFLOW_PACKET;
-    FatPagingFileIo((*Packet).Irp, (*Packet).Fcb);
-    let _ = KeSetEvent(Event, 0i32, 0i32);
+    FatPagingFileIo((*Packet).Irp, ((*Packet).Fcb).cast());
+    let _ = (KeSetEvent).cast()(Event, 0i32, 0i32);
     return;
 }
 
