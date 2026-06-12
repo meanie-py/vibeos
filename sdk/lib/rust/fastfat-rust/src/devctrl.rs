@@ -57,7 +57,6 @@ const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001;
 const SCSIOP_FORMAT_UNIT: u8 = 0x04;
 const NotificationEvent: u32 = 0;
 const Executive: u32 = 0;
-const 0i32: u32 = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdDeviceControl(

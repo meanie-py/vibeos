@@ -193,8 +193,8 @@ const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8;
 // Constants from file level or needed locally
 const Dbg: i32 = 0; // DEBUG_TRACE_DEVIOSUP (placeholder)
 const IoWriteAccess: i32 = 2; // LOCK_OPERATION value (standard)
-const NonPagedPoolNxCacheAligned: u32 = 0x20000000; // placeholder
-const TAG_IO_BUFFER: u32 = 0x5245425f; // placeholder
+const NonPagedPoolNxCacheAligned: u32 = 0x20000000; /* placeholder */
+const TAG_IO_BUFFER: u32 = 0x5245425f; /* placeholder */
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000001; // typical value
 #[no_mangle]
 pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
@@ -342,7 +342,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             ntkrnl_sys::ddk::KeWaitForSingleObject(
                 addr_of!(FatReserveEvent) as *mut core::ffi::c_void,
                 ntkrnl_sys::ddk::_KWAIT_REASON_Executive,
-                ntkrnl_sys::constants::0i32,
+                0 /*KernelMode*/,
                 0,
                 null_mut(),
             );
@@ -379,7 +379,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             while (*Irp).AssociatedIrp.IrpCount != IrpCount {
                 let timeout = LARGE_INTEGER { QuadPart: -300000 };
                 ntkrnl_sys::ddk::KeDelayExecutionThread(
-                    ntkrnl_sys::constants::0i32,
+                    0 /*KernelMode*/,
                     0,
                     addr_of!(timeout) as *const _ as *mut _,
                 );
@@ -452,7 +452,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
             ntkrnl_sys::ddk::KeWaitForSingleObject(
                 addr_of!(Context.Event) as *const _ as *mut core::ffi::c_void,
                 ntkrnl_sys::ddk::_KWAIT_REASON_Executive,
-                ntkrnl_sys::constants::0i32,
+                0 /*KernelMode*/,
                 0,
                 null_mut(),
             );
@@ -503,7 +503,7 @@ pub unsafe extern "C" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         while (*Irp).AssociatedIrp.IrpCount != IrpCount {
             let timeout = LARGE_INTEGER { QuadPart: -300000 };
             ntkrnl_sys::ddk::KeDelayExecutionThread(
-                ntkrnl_sys::constants::0i32,
+                0 /*KernelMode*/,
                 0,
                 addr_of!(timeout) as *const _ as *mut _,
             );
@@ -1043,9 +1043,9 @@ pub unsafe extern "C" fn FatMultipleAsync(
     let mut Irp: PIRP;
     let mut IrpSp: PIO_STACK_LOCATION;
     let mut Mdl: PMDL;
-    let mut Wait: i32;               // BOOLEAN
+    let mut Wait: i32;               /* BOOLEAN */
     let mut Context: PFAT_IO_CONTEXT;
-    let mut IsAWrite: i32 = 0;       // BOOLEAN
+    let mut IsAWrite: i32 = 0;       /* BOOLEAN */
     let mut Length: u32 = 0;
     let mut UnwindRunCount: u32 = 0;
     let mut ExceptionExpected: i32 = 1; // TRUE
@@ -1488,7 +1488,7 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     struct _ASYNC_WAIT {
         RequestedByteCount: ULONG,
         FileObject: *mut FILE_OBJECT,
-        NonPagedFcb: *mut c_void, // placeholder
+        NonPagedFcb: *mut c_void, /* placeholder */
         OutstandingAsyncWrites: ULONG,
         OutstandingAsyncEvent: PKEVENT,
         Resource: *mut c_void,
@@ -1749,11 +1749,11 @@ pub unsafe extern "C" fn FatBufferUserBuffer(
 pub unsafe extern "C" fn FatToggleMediaEjectDisable(
     IrpContext: *mut PIRP_CONTEXT,
     Vcb: *mut VCB,
-    PreventRemoval: u8, // BOOLEAN
-) -> i32 { // NTSTATUS
+    PreventRemoval: u8, /* BOOLEAN */
+) -> i32 { /* NTSTATUS */
     let Irp: *mut IRP; // PIRP
     let mut SavedIrql: KIRQL;
-    let mut Status: i32; // NTSTATUS
+    let mut Status: i32; /* NTSTATUS */
     let mut SyncContext: FAT_SYNC_CONTEXT;
     let mut Prevent: PREVENT_MEDIA_REMOVAL;
 
@@ -1840,7 +1840,6 @@ pub unsafe extern "C" fn FatPerformDevIoCtrl(
 ) -> NTSTATUS {
     const NotificationEvent: u32 = 0;
     const Executive: u32 = 0;
-    const 0i32: u32 = 0;
     const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x04;
 
     let mut Status: NTSTATUS;
@@ -2045,7 +2044,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 // IO_COMPLETION_ROUTINE FatMultiSyncCompletionRoutine;
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatMultiSyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -2055,7 +2054,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 // IO_COMPLETION_ROUTINE FatMultiAsyncCompletionRoutine;
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatMultiAsyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -2065,7 +2064,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 // IO_COMPLETION_ROUTINE FatSpecialSyncCompletionRoutine;
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatSpecialSyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -2075,7 +2074,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 // IO_COMPLETION_ROUTINE FatSingleSyncCompletionRoutine;
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatSingleSyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -2085,7 +2084,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 // IO_COMPLETION_ROUTINE FatSingleAsyncCompletionRoutine;
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatSingleAsyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -2095,7 +2094,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 // IO_COMPLETION_ROUTINE FatPagingFileCompletionRoutine;
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatPagingFileCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -2105,7 +2104,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 // IO_COMPLETION_ROUTINE FatPagingFileCompletionRoutineCatch;
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatPagingFileCompletionRoutineCatch (
 //      PDEVICE_OBJECT DeviceObject,
@@ -2856,7 +2855,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 //
 //
 // _Requires_lock_held_(_Global_critical_region_)
-// NTSTATUS
+/* NTSTATUS */
 // FatNonCachedIo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PIRP Irp,
@@ -4379,7 +4378,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // // Internal Support Routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatMultiSyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -4480,7 +4479,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // // Internal Support Routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatMultiAsyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -4669,7 +4668,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // }
 //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatPagingFileErrorHandler (
 //     IN PIRP Irp,
 //     IN PKEVENT Event OPTIONAL
@@ -4778,7 +4777,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // // Internal Support Routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatPagingFileCompletionRoutineCatch (
 //      PDEVICE_OBJECT DeviceObject,
@@ -4871,7 +4870,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // // Internal Support Routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatPagingFileCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -4940,7 +4939,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // // Internal Support Routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatSpecialSyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -5007,7 +5006,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // // Internal Support Routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatSingleSyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -5079,7 +5078,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // // Internal Support Routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatSingleAsyncCompletionRoutine (
 //      PDEVICE_OBJECT DeviceObject,
@@ -5469,7 +5468,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // }
 //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatToggleMediaEjectDisable (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -5595,7 +5594,7 @@ pub unsafe extern "C" fn FatBuildZeroMdl(
 // }
 //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatPerformDevIoCtrl (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN ULONG IoControlCode,

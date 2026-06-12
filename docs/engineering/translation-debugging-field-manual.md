@@ -356,6 +356,33 @@ those. `--unverifiable` (ALL_CAPS const not in ANY header) is too noisy to gate 
 opt-in investigative only.
 **Source:** [[feedback_llm_invented_enum_constants]], [[project_disk_rust_track]], [[project_mountmgr_rust_track]]
 
+### PSEH (`_SEH2_TRY/_FINALLY/_EXCEPT`) hand-lowering recipe (FS-driver translations)
+**Symptom:** a PSEH-dense driver (fastfat: 276 try-blocks; cdfs/vfatfs similar) translates
+with the SEH macros left as raw tokens in a fraction of functions — `cargo check` shows bare
+`error:` PARSE errors ("found `_SEH2_EXCEPT`", "expected `{`, found `||`"), NOT E-codes, which
+BLOCK the whole crate (resolve_imports can't run until it parses). Most blocks DO get lowered
+(left as `// _SEH2_TRY` comments); only the live residue (fastfat: 19 of 276) needs hand-work,
+concentrated in a few files. Find them: `cargo check 2>&1 | grep -oE "src/[a-z]+\.rs" | sort |
+uniq -c` — the per-file parse-error histogram is the worklist.
+**Lowering rules (DUMMY_PSEH — the whole kernel uses it; EXCEPT handlers are DEAD code, validate
+pointers instead of catching):**
+- `_SEH2_TRY{ body } _SEH2_EXCEPT(filter){ handler } _SEH2_END;` (and the `!`-macro form
+  `_SEH2_TRY!{…}_SEH2_EXCEPT!(…){…}_SEH2_END!;`) → emit the **body only**, drop the handler. It
+  references nonexistent `_SEH2_GetExceptionCode()/_GetExceptionInformation()` intrinsics and is
+  unreachable anyway. This is every `FatFsd*`/dispatch wrapper.
+- `_SEH2_TRY{ body w/ try_return/try_leave } _SEH2_FINALLY{ cleanup } _SEH2_END;` → the FINALLY
+  must ALWAYS run, so: wrap body in a labeled block, run cleanup AFTER it:
+  `'tryblk: { …body…; FINALLY-runs-after } ; { …cleanup… }`. `try_leave(NOTHING)` → `break 'tryblk;`;
+  `try_return(Status = X)` → `{ Status = X; break 'tryblk; }`. NEVER drop the finally — a skipped
+  cleanup (unpin BCB / release FCB / free pool) is a runtime leak or lock-imbalance, not a parse bug.
+- bare `_SEH2_TRY{ body } _SEH2_END;` → `{ body }`.
+- LLM-fabricated `extern { fn _SEH2_TRY()->i32; … }` + a `__seh_frame` if/else (ea.rs) → delete the
+  fake externs; the `if __seh_frame==0 {try} else {handler}` collapses to the try body (handler dead).
+Nested blocks lower inside-out. Validate per-file: `grep -nE "_SEH2_(TRY|FINALLY|EXCEPT|END|LEAVE)"
+<f> | grep -v '//'` must be empty, then re-run cargo check. Did fastfat flush.rs first to validate
+the recipe (3 blocks: 1 dispatch-EXCEPT, 1 triple-nested TRY/FINALLY+try_leave, 1 bare) → file clean.
+**Source:** [[project_fastfat_rust_track]]
+
 ### rustconv drops ALL non-fn header content at scale (structs / const-tables / #defines / FuncTables)
 **Symptom:** A bulk `translate` of a unit compiles per-function but is missing every file-local struct, const lookup table, `#define`, and static FuncTable — E0425/E0412 undefined-name storms, or worse, silent wrong behavior from a missing default table.
 **Root cause:** rustconv translates function bodies only; the scanner's preamble captures the .c's top-of-file but `translate`'s stitcher never emits `scan.globals_text` — file-local typedefs/structs/`#define`-consts/`const DEVVTBL` FuncTables/static arrays are dropped entirely. (FreeLDR fs unit: bootsector/dirent/volume-info structs + const DEVVTBL tables + #defines all gone.)

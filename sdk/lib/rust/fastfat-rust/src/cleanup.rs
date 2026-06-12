@@ -114,12 +114,11 @@ pub unsafe extern "system" fn FatFsdCleanup(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
 
-    _SEH2_TRY {
+    // DUMMY_PSEH: EXCEPT handler dead → try body only.
+    {
         IrpContext = FatCreateIrpContext(Irp, 1);
         Status = FatCommonCleanup(IrpContext, Irp);
-    } _SEH2_EXCEPT( FatExceptionFilter( IrpContext, _SEH2_GetExceptionInformation() ) ) {
-        Status = FatProcessException( IrpContext, Irp, _SEH2_GetExceptionCode() );
-    } _SEH2_END;
+    }
 
     if TopLevel != 0 {
         IoSetTopLevelIrp(core::ptr::null_mut());
@@ -654,9 +653,8 @@ pub unsafe extern "C" fn FatCommonCleanup(
             IoRemoveShareAccess(FileObject, ShareAccess);
         }
 
+        // NTDDI_WIN8+ also tested UserDirectoryOpen; we build at 0x502 so it's excluded.
         if TypeOfOpen == UserFileOpen
-            #[cfg(ntddi_ge_ntddi_win8)]
-            || TypeOfOpen == UserDirectoryOpen
         {
             FsRtlCheckOplock(FatGetFcbOplock(Fcb), Irp, IrpContext as *mut c_void, ptr::null(), ptr::null());
             (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);

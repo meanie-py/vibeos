@@ -160,19 +160,12 @@ pub unsafe extern "system" fn FatFsdFlushBuffers(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
 
-    _SEH2_TRY!{
+    // DUMMY_PSEH: _SEH2_EXCEPT handler is dead code (FatExceptionFilter/FatProcessException
+    // never reached); the try body runs directly. See AGENTS.md "DUMMY_PSEH".
+    {
         IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
         Status = FatCommonFlushBuffers(IrpContext, Irp);
-    } _SEH2_EXCEPT!(FatExceptionFilter(
-        IrpContext,
-        _SEH2_GetExceptionInformation(),
-    )) {
-        Status = FatProcessException(
-            IrpContext,
-            Irp,
-            _SEH2_GetExceptionCode(),
-        );
-    } _SEH2_END!;
+    }
 
     if TopLevel != 0 {
         IoSetTopLevelIrp(core::ptr::null_mut());
@@ -438,22 +431,14 @@ pub unsafe extern "C" fn FatFlushDirectory(
 
             ClearFlag(&mut (*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB);
 
-            _SEH2_TRY {
-                _SEH2_TRY {
-                    _SEH2_TRY {
-                        FatVerifyFcb(IrpContext, Fcb);
-                    } _SEH2_EXCEPT(
-                        if FsRtlIsNtstatusExpected(_SEH2_GetExceptionCode()) {
-                            EXCEPTION_EXECUTE_HANDLER
-                        } else {
-                            EXCEPTION_CONTINUE_SEARCH
-                        },
-                    ) {
-                        FatResetExceptionState(IrpContext);
-                    } _SEH2_END;
+            // DUMMY_PSEH: EXCEPT handlers are dead code (dropped). The TRY/FINALLY
+            // lowers to a labeled block + always-run finally; try_leave → break 'mid.
+            {
+                FatVerifyFcb(IrpContext, Fcb); // inner TRY/EXCEPT body (except dropped)
 
+                'mid: {
                     if (*Fcb).FcbCondition != FcbGood {
-                        try_leave(NOTHING);
+                        break 'mid; // was try_leave(NOTHING)
                     }
 
                     if FlagOn((*Fcb).FcbState, FCB_STATE_TRUNCATE_ON_CLOSE) != 0 {
@@ -485,25 +470,13 @@ pub unsafe extern "C" fn FatFlushDirectory(
                     if !NT_SUCCESS(Status) {
                         ReturnStatus = Status;
                     }
-                } _SEH2_FINALLY {
-                    FatUnpinBcb(IrpContext, DirentBcb);
-                    if !FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB) {
-                        FatReleaseFcb(IrpContext, Fcb);
-                    }
-                } _SEH2_END;
-            } _SEH2_EXCEPT(
-                if FsRtlIsNtstatusExpected({
-                    ReturnStatus = _SEH2_GetExceptionCode();
-                    ReturnStatus
-                }) != 0
-                {
-                    EXCEPTION_EXECUTE_HANDLER
-                } else {
-                    EXCEPTION_CONTINUE_SEARCH
-                },
-            ) {
-                FatResetExceptionState(IrpContext);
-            } _SEH2_END;
+                }
+                // _SEH2_FINALLY (always runs):
+                FatUnpinBcb(IrpContext, DirentBcb);
+                if !FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB) {
+                    FatReleaseFcb(IrpContext, Fcb);
+                }
+            }
         }
 
         Fcb = NextFcb;
@@ -514,17 +487,8 @@ pub unsafe extern "C" fn FatFlushDirectory(
         NextFcb = FatGetNextFcbTopDown(IrpContext, Fcb, Dcb);
 
         if NodeType(Fcb) != FAT_NTC_FCB && IsFileDeleted(IrpContext, Fcb) == 0 {
-            _SEH2_TRY {
-                FatVerifyFcb(IrpContext, Fcb);
-            } _SEH2_EXCEPT(
-                if FsRtlIsNtstatusExpected(_SEH2_GetExceptionCode()) {
-                    EXCEPTION_EXECUTE_HANDLER
-                } else {
-                    EXCEPTION_CONTINUE_SEARCH
-                },
-            ) {
-                FatResetExceptionState(IrpContext);
-            } _SEH2_END;
+            // DUMMY_PSEH: EXCEPT dead → keep try body only.
+            FatVerifyFcb(IrpContext, Fcb);
 
             if (*Fcb).FcbCondition == FcbGood {
                 Status = FatFlushFile(IrpContext, Fcb, FlushType);
@@ -538,9 +502,10 @@ pub unsafe extern "C" fn FatFlushDirectory(
         Fcb = NextFcb;
     }
 
-    _SEH2_TRY {
+    // DUMMY_PSEH: bare TRY → body only.
+    {
         FatUnpinRepinnedBcbs(IrpContext);
-    } _SEH2_END;
+    }
 
     if ClearWriteThroughOnExit != 0 {
         ClearFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);

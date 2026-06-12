@@ -25,14 +25,6 @@ extern "system" {
 pub const Dbg: u32 = DEBUG_TRACE_SHUTDOWN;
 
 // Assumed constants (define as needed by the caller)
-const IRP_CONTEXT_FLAG_DISABLE_POPUPS: u32 = ...; // TODO: define
-const IRP_CONTEXT_FLAG_WRITE_THROUGH: u32 = ...; // TODO: define
-const IRP_CONTEXT_FLAG_WAIT: u32 = ...; // TODO: define
-const VCB_STATE_FLAG_SHUTDOWN: u32 = ...; // TODO: define
-const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = ...; // TODO: define
-const VcbGood: u32 = ...; // TODO: define
-const Flush: u32 = ...; // TODO: define
-const VolumeClean: u32 = ...; // TODO: define
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdShutdown(

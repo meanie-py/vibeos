@@ -194,7 +194,7 @@ const CCB_FLAG_MANAGE_VOLUME_ACCESS: u32 = 0x0004;
 const UserFileOpen: u32 = 0;
 const OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY: u32 = 0;
 
-#![allow(unused_unsafe)]
+// (inner attr removed — covered by lib.rs crate-level allow)
 
 // Constants not available in the imports list
 const FAT_NTC_ROOT_DCB: u32 = 0x00000003;
@@ -2314,7 +2314,8 @@ pub unsafe extern "C" fn FatCreateNewDirectory(
         0,
     );
 
-    _SEH2_TRY! {
+    // DUMMY_PSEH: try body (EXCEPT handler dead — would set Iosb.Status on exception).
+    {
         FatPrepareWriteDirectoryFile(
             IrpContext,
             ParentDcb,
@@ -2502,9 +2503,7 @@ pub unsafe extern "C" fn FatCreateNewDirectory(
         Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
         Iosb.Information = FILE_CREATED;
 
-    } _SEH2_EXCEPT!(FatExceptionFilter(IrpContext, _SEH2_GetExceptionInformation!())) {
-        Iosb.__bindgen_anon_1.Status = (*IrpContext).ExceptionStatus;
-    } _SEH2_END!();
+    }
 
     if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) == 0 {
         if !Ccb.is_null() {
@@ -2571,7 +2570,7 @@ pub unsafe extern "C" fn FatCreateNewDirectory(
             );
 
             if (*Dcb).FirstClusterOfFile != 0 {
-                _SEH2_TRY! {
+                { // DUMMY_PSEH: try body (EXCEPT ignored)
                     (*Dcb).Header.FileSize.__bindgen_anon_1.LowPart = 0;
 
                     CcSetFileSizes(
@@ -2584,9 +2583,7 @@ pub unsafe extern "C" fn FatCreateNewDirectory(
                         Dcb as PFCB,
                         0,
                     );
-                } _SEH2_EXCEPT!(FatExceptionFilter(IrpContext, _SEH2_GetExceptionInformation!())) {
-                    // catch and ignore
-                } _SEH2_END!();
+                }
             }
 
             if !DirectoryFileObject.is_null() {
@@ -2596,7 +2593,7 @@ pub unsafe extern "C" fn FatCreateNewDirectory(
                 );
             }
 
-            _SEH2_TRY! {
+            { // DUMMY_PSEH: try body (EXCEPT ignored)
                 FatDeleteDirent(
                     IrpContext,
                     Dcb,
@@ -2605,9 +2602,7 @@ pub unsafe extern "C" fn FatCreateNewDirectory(
                 );
 
                 FatUnpinRepinnedBcbs(IrpContext);
-            } _SEH2_EXCEPT!(FatExceptionFilter(IrpContext, _SEH2_GetExceptionInformation!())) {
-                // catch and ignore
-            } _SEH2_END!();
+            }
 
             if !DirectoryFileObject.is_null() {
                 (*Dcb).Specific.Dcb.DirectoryFile = core::ptr::null_mut();
@@ -2756,7 +2751,7 @@ pub unsafe extern "C" fn FatCreateNewFile(
         1
     };
     DirentByteOffset = FatCreateNewDirent(IrpContext, ParentDcb, DirentsNeeded, 0);
-    _SEH2_TRY {
+    { // DUMMY_PSEH: TRY/FINALLY → block + always-run finally (no try_return in body)
         FatPrepareWriteDirectoryFile(
             IrpContext,
             ParentDcb,
@@ -2936,7 +2931,7 @@ pub unsafe extern "C" fn FatCreateNewFile(
             }
         }
         // try_exit: NOTHING;
-    } _SEH2_FINALLY {
+    } { // _SEH2_FINALLY (always runs)
         DebugUnwind(b"FatCreateNewFile\0" as *const u8 as *const i8);
         if UniTunneledLongName.Buffer != UniTunneledLongNameBuffer.as_mut_ptr() {
             ExFreePool(UniTunneledLongName.Buffer as *mut c_void);
@@ -2988,20 +2983,20 @@ pub unsafe extern "C" fn FatCreateNewFile(
                 }
             }
         }
-        _SEH2_TRY {
+        { // _SEH2_TRY
             if LocalAbnormalTermination != 0 {
                 if UnwindAllocation != 0 {
                     FatTruncateFileAllocation(IrpContext, Fcb, 0);
                 }
             }
-        } _SEH2_FINALLY {
-            _SEH2_TRY {
+        } { // _SEH2_FINALLY (always runs)
+            { // _SEH2_TRY
                 if LocalAbnormalTermination != 0 {
                     if !UnwindFcb.is_null() {
                         FatDeleteDirent(IrpContext, UnwindFcb, core::ptr::null_mut(), 1);
                     }
                 }
-            } _SEH2_FINALLY {
+            } { // _SEH2_FINALLY (always runs)
                 if LocalAbnormalTermination != 0 {
                     if !UnwindFcb.is_null() {
                         if ARGUMENT_PRESENT(FileObject as *mut c_void) != 0 {
@@ -3018,9 +3013,9 @@ pub unsafe extern "C" fn FatCreateNewFile(
                 if DirentFromPool != 0 {
                     ExFreePool(Dirent as *mut c_void);
                 }
-            } _SEH2_END;
-        } _SEH2_END;
-    } _SEH2_END;
+            }
+        }
+    }
     return Iosb;
 }
 

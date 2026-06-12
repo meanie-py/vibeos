@@ -383,7 +383,7 @@ pub unsafe extern "C" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CCB) {
             i += 1;
 
             if FlagOn((*(FcbOrDcb)).FcbState, FCB_STATE_3_LOWER_CASE) != 0 {
-                if (i as u16) * core::mem::size_of::<u16>() as u16 < ShortNameWithCase.Length {
+                if ((i as u16) * core::mem::size_of::<u16>() as u16) < ShortNameWithCase.Length {
                     DownCaseSeg.Buffer = (ShortNameWithCase.Buffer as *mut u16).add(i as usize);
                     DownCaseSeg.Length =
                         ShortNameWithCase.Length - (i as u16) * core::mem::size_of::<u16>() as u16;

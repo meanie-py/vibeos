@@ -13,7 +13,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::rtl::{RtlZeroMemory};
 use ntkrnl_sys::ddk::IoGetCurrentIrpStackLocation;
 use ntkrnl_sys::ddk::{CC_FILE_SIZES, CLONG, CcCanIWrite, CcIsThereDirtyData, CcWaitForCurrentLazyWriterActivity, DEVICE_OBJECT, DISK_GEOMETRY, DRIVER_DISPATCH, _KWAIT_REASON_Executive, FILESYSTEM_STATISTICS, GUID, _IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoGetNextIrpStackLocation, IoIs32bitProcess, IoReleaseVpbSpinLock, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, LARGE_INTEGER, LARGE_MCB, LUID, LowPagePriority, MARK_HANDLE_INFO, MOVE_FILE_DATA, MOVE_FILE_DATA32, _EVENT_TYPE_NotificationEvent, OEM_STRING, ObReferenceObjectByHandle, PARTITION_INFORMATION_EX, PARTITION_STYLE_MBR, PDEVICE_OBJECT, PFILE_OBJECT, PFSCTL_QUERY_FAT_BPB_BUFFER, PHANDLE, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PLARGE_MCB, PLONGLONG, PMARK_HANDLE_INFO, PMARK_HANDLE_INFO32, PMOVE_FILE_DATA, PMOVE_FILE_DATA32, PRETRIEVAL_POINTERS_BUFFER, PSTARTING_LCN_INPUT_BUFFER, PSTARTING_VCN_INPUT_BUFFER, PUINT32, PVOLUME_BITMAP_BUFFER, PVPB, RETRIEVAL_POINTERS_BUFFER, RtlOemStringToCountedUnicodeString, STARTING_LCN_INPUT_BUFFER, STARTING_VCN_INPUT_BUFFER, SeSinglePrivilegeCheck, UINT32, VOLUME_BITMAP_BUFFER, VPB};
-use ntkrnl_sys::ddk::{IoGetNextIrpStackLocation, KeClearEvent, KeInitializeEvent, KeSetEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _KWAIT_REASON_Executive, 0i32, PIO_STACK_LOCATION};
+use ntkrnl_sys::ddk::{IoGetNextIrpStackLocation, KeClearEvent, KeInitializeEvent, KeSetEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _KWAIT_REASON_Executive, PIO_STACK_LOCATION};
 use core::ffi::c_void;
 use core::ptr::null_mut;
 use core::ptr;
@@ -46,16 +46,16 @@ extern "C" {
     fn FatVerifyFcb(IrpContext: *mut PIRP_CONTEXT, FcbOrDcb: *mut PFCB);
     fn FatReleaseFcb(IrpContext: *mut PIRP_CONTEXT, FcbOrDcb: *mut PFCB);
     fn FatOpenDirectoryFile(IrpContext: *mut PIRP_CONTEXT, FcbOrDcb: *mut PFCB);
-    fn FatAllocateDiskSpace( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, HintCluster: u32, ByteCount: *mut u32, AllocationHint: i32, // BOOLEAN Mcb: *mut LARGE_MCB, );
+    fn FatAllocateDiskSpace( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, HintCluster: u32, ByteCount: *mut u32, AllocationHint: i32, /* BOOLEAN */ Mcb: *mut LARGE_MCB, );
     fn FatGetIndexFromLbo(Vcb: *mut PVCB, Lbo: LBO) -> u32;
     fn FatGetLboFromIndex(Vcb: *mut PVCB, Index: u32) -> u64;
     fn FatFlushFatEntries(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Cluster: u32, Count: u32);
     fn FatSetFatEntry( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, SourceCluster: u32, TargetCluster: FAT_ENTRY, );
-    fn FatDeallocateDiskSpace( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Mcb: *mut LARGE_MCB, Wait: i32, // BOOLEAN );
+    fn FatDeallocateDiskSpace( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Mcb: *mut LARGE_MCB, Wait: i32, /* BOOLEAN */ );
     fn FatUnpinRepinnedBcbs(IrpContext: *mut PIRP_CONTEXT);
     fn FatFlushDirentForFile(IrpContext: *mut PIRP_CONTEXT, FcbOrDcb: *mut PFCB);
-    fn FatSetDirtyBcb(IrpContext: *mut PIRP_CONTEXT, Bcb: *mut PBCB, Vcb: *mut PVCB, Wait: i32); // BOOLEAN fn FatUnpinBcb(IrpContext: *mut PIRP_CONTEXT, Bcb: *mut PBCB);
-    fn FatNormalizeAndRaiseStatus(IrpContext: *mut PIRP_CONTEXT, Status: NTSTATUS); // never returns fn FatRaiseStatus(IrpContext: *mut PIRP_CONTEXT, Status: NTSTATUS); // never returns fn FatGetDirentFromFcbOrDcb( IrpContext: *mut PIRP_CONTEXT, FcbOrDcb: *mut PFCB, Wait: i32, // BOOLEAN Dirent: *mut *mut PDIRENT, DirentBcb: *mut *mut PBCB, );
+    fn FatSetDirtyBcb(IrpContext: *mut PIRP_CONTEXT, Bcb: *mut PBCB, Vcb: *mut PVCB, Wait: i32); /* BOOLEAN */ fn FatUnpinBcb(IrpContext: *mut PIRP_CONTEXT, Bcb: *mut PBCB);
+    fn FatNormalizeAndRaiseStatus(IrpContext: *mut PIRP_CONTEXT, Status: NTSTATUS); /* never returns */ fn FatRaiseStatus(IrpContext: *mut PIRP_CONTEXT, Status: NTSTATUS); /* never returns */ fn FatGetDirentFromFcbOrDcb( IrpContext: *mut PIRP_CONTEXT, FcbOrDcb: *mut PFCB, Wait: i32, /* BOOLEAN */ Dirent: *mut *mut PDIRENT, DirentBcb: *mut *mut PBCB, );
     fn DebugUnwind(Function: *const i8);
     fn ClearFlag(Flags: *mut u32, Mask: u32);
     fn LongToHandle(Value: LONG) -> HANDLE;
@@ -135,7 +135,6 @@ const IOCTL_DISK_IS_WRITABLE: u32 = 0x00074008;
 const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x01;
 const NotificationEvent: u32 = 0;
 const Executive: u32 = 0;
-const 0i32: u32 = 0;
 const STATUS_PENDING: i32 = 0x00000103;
 const STATUS_MEDIA_WRITE_PROTECTED: i32 = -0xc0000080;
 
@@ -1171,7 +1170,7 @@ pub unsafe extern "C" fn FatMoveFile(
     let mut StackEvent: KEVENT;
     let mut Buffer: *mut core::ffi::c_void = null_mut();
     let mut BufferSize: u32;
-    let mut SourceMcbInitialized: i32 = 0; // BOOLEAN
+    let mut SourceMcbInitialized: i32 = 0; /* BOOLEAN */
     let mut TargetMcbInitialized: i32 = 0;
     let mut FcbAcquired: i32 = 0;
     let mut EventArmed: i32 = 0;
@@ -1475,7 +1474,7 @@ pub unsafe extern "C" fn FatMoveFile(
 
                     if IoIrp.is_null() {
                         FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
-                        // never returns, but simulate panic
+                        /* never returns */, but simulate panic
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         break 'try_inner;
                     }
@@ -2242,7 +2241,7 @@ pub unsafe extern "C" fn FatSetPurgeFailureMode(
     // try / finally emulation
     let result_status;
     {
-        let mut fcb_acquired: u8 = 0; // BOOLEAN
+        let mut fcb_acquired: u8 = 0; /* BOOLEAN */
 
         let inner_status = loop {
             FatAcquireExclusiveFcb(IrpContext, fcb);
@@ -2474,7 +2473,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
     let mut FcbOrDcb: *mut FCB = core::ptr::null_mut();
     let mut Ccb: *mut CCB = core::ptr::null_mut();
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-    let mut ReleaseFcb: u8 = 0; // BOOLEAN FALSE
+    let mut ReleaseFcb: u8 = 0; /* BOOLEAN */ FALSE
 
     // PAGED_CODE(); // no-op
 
@@ -2571,7 +2570,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 //     IN PIRP Irp
 //     );
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatIsMediaWriteProtected (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PDEVICE_OBJECT TargetDeviceObject
@@ -2648,7 +2647,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 //     IN PIRP_CONTEXT IrpContext
 //     );
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatPerformVerifyDiskRead (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -2835,7 +2834,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 //
 // #if DBG
 //
-// BOOLEAN FatMoveFileDebug = 0;
+/* BOOLEAN */ FatMoveFileDebug = 0;
 //
 // #endif
 //
@@ -2853,7 +2852,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // #define     MCB_SCALE           (1 << MCB_SCALE_LOG2)
 // #define     MCB_SCALE_MODULO    (MCB_SCALE - 1)
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatNonSparseMcb(
 //      PVCB Vcb,
 //      PLARGE_MCB Mcb,
@@ -2882,7 +2881,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // }
 //
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatAddMcbEntry (
 //     IN PVCB Vcb,
 //     IN PLARGE_MCB Mcb,
@@ -2936,7 +2935,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // }
 //
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatLookupMcbEntry (
 //     IN PVCB Vcb,
 //     IN PLARGE_MCB Mcb,
@@ -3012,7 +3011,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // //  NOTE: Vbo/Lbn undefined if MCB is empty & return code false.
 // //
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatLookupLastMcbEntry (
 //     IN PVCB Vcb,
 //     IN PLARGE_MCB Mcb,
@@ -3059,7 +3058,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // }
 //
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatGetNextMcbEntry (
 //     IN PVCB Vcb,
 //     IN PLARGE_MCB Mcb,
@@ -5047,7 +5046,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // //  Local Support Routine
 // //
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatIsBootSectorFat (
 //     IN PPACKED_BOOT_SECTOR BootSector
 //     )
@@ -5203,7 +5202,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // //  Local Support Routine
 // //
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatIsMediaWriteProtected (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PDEVICE_OBJECT TargetDeviceObject
@@ -7094,7 +7093,7 @@ pub unsafe extern "C" fn FatSetZeroOnDeallocate(
 // //  Local Support routine
 // //
 //
-// BOOLEAN
+/* BOOLEAN */
 // FatPerformVerifyDiskRead (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,

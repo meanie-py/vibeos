@@ -165,37 +165,9 @@ const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const STATUS_SUCCESS: i32 = 0;
 
-// Forward declarations for externally provided types
-struct FILE_BASIC_INFORMATION {
-    CreationTime: LARGE_INTEGER,
-    LastAccessTime: LARGE_INTEGER,
-    LastWriteTime: LARGE_INTEGER,
-    ChangeTime: LARGE_INTEGER,
-    FileAttributes: u32,
-    _dummy: u32,
-}
-struct IRP_CONTEXT {
-    NodeTypeCode: u32,
-    NodeByteSize: u32,
-    Flags: u32,
-}
-struct VCB;
-struct FCB {
-    FcbState: u32,
-    FcbCondition: u32,
-    Header: struct { Resource: *mut ERESOURCE },
-    LastWriteTime: LARGE_INTEGER,
-    CreationTime: LARGE_INTEGER,
-    LastAccessTime: LARGE_INTEGER,
-    DirentFatFlags: u32,
-}
-struct CCB;
-struct ERESOURCE;
-struct _IO_STATUS_BLOCK {
-    Status: i32,
-    Information: u32,
-}
-type TYPE_OF_OPEN = u32;
+// Fabricated forward-decls removed (LLM local-type-mirror anti-pattern). Real
+// VCB/FCB/CCB/IRP_CONTEXT/TYPE_OF_OPEN come from crate::types; ERESOURCE/
+// _IO_STATUS_BLOCK/FILE_BASIC_INFORMATION from ntkrnl_sys::ddk (wired by resolve_imports).
 
 // Unknown external functions (the caller will deduplicate)
 #[no_mangle]

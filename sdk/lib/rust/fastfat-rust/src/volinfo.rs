@@ -17,7 +17,7 @@ extern "system" {
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn DebugUnwind(name: *const i8);
     fn FatConstructLabelDirent( IrpContext: *mut PIRP_CONTEXT, Dirent: *mut DIRENT, OemLabel: *mut OEM_STRING, );
-    fn FatCreateNewDirent( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut _DCB, // placeholder flag: i32, flag2: BOOLEAN, ) -> ULONG;
+    fn FatCreateNewDirent( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut _DCB, /* placeholder */ flag: i32, flag2: BOOLEAN, ) -> ULONG;
     fn FatLocateVolumeLabel( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, ByteOffset: *mut ULONG, );
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut PIRP_CONTEXT, RootDcb: *mut _DCB, ByteOffset: ULONG, size: ULONG, DirentBcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, flag1: BOOLEAN, flag2: BOOLEAN, Status: *mut NTSTATUS, );
     fn FatSetDirtyBcb( IrpContext: *mut PIRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut PVCB, dirty: BOOLEAN, );
@@ -378,7 +378,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //
 // #define Dbg                              (DEBUG_TRACE_VOLINFO)
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsVolumeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -386,7 +386,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //     IN OUT PULONG Length
 //     );
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsSizeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -394,7 +394,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //     IN OUT PULONG Length
 //     );
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsDeviceInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -402,7 +402,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //     IN OUT PULONG Length
 //     );
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsAttributeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -410,7 +410,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //     IN OUT PULONG Length
 //     );
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsFullSizeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -418,7 +418,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //     IN OUT PULONG Length
 //     );
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatSetFsLabelInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -426,7 +426,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //     );
 //
 // #if (NTDDI_VERSION >= NTDDI_WIN8)
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsSectorSizeInfo (
 //      PIRP_CONTEXT IrpContext,
 //      PVCB Vcb,
@@ -454,7 +454,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //
 // _Function_class_(IRP_MJ_QUERY_VOLUME_INFORMATION)
 // _Function_class_(DRIVER_DISPATCH)
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatFsdQueryVolumeInformation (
 //      PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //
 // _Function_class_(IRP_MJ_SET_VOLUME_INFORMATION)
 // _Function_class_(DRIVER_DISPATCH)
-// NTSTATUS
+/* NTSTATUS */
 // NTAPI
 // FatFsdSetVolumeInformation (
 //      PVOLUME_DEVICE_OBJECT VolumeDeviceObject,
@@ -615,7 +615,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //
 //
 // _Requires_lock_held_(_Global_critical_region_)
-// NTSTATUS
+/* NTSTATUS */
 // FatCommonQueryVolumeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PIRP Irp
@@ -792,7 +792,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //
 //
 // _Requires_lock_held_(_Global_critical_region_)
-// NTSTATUS
+/* NTSTATUS */
 // FatCommonSetVolumeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PIRP Irp
@@ -933,7 +933,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 // //  Internal support routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsVolumeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -1027,7 +1027,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 // //  Internal support routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsSizeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -1096,7 +1096,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 // //  Internal support routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsDeviceInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -1161,7 +1161,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 // //  Internal support routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsAttributeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -1284,7 +1284,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 // //  Internal support routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsFullSizeInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -1350,7 +1350,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 // //  Internal support routine
 // //
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatSetFsLabelInfo (
 //     IN PIRP_CONTEXT IrpContext,
 //     IN PVCB Vcb,
@@ -1669,7 +1669,7 @@ pub unsafe extern "C" fn FatCommonSetVolumeInfo(
 //
 // #if (NTDDI_VERSION >= NTDDI_WIN8)
 //
-// NTSTATUS
+/* NTSTATUS */
 // FatQueryFsSectorSizeInfo (
 //      PIRP_CONTEXT IrpContext,
 //      PVCB Vcb,

@@ -158,7 +158,7 @@ unsafe extern "C" {
 
 const TAG_DYNAMIC_NAME_BUFFER: u32 = 0x42796e44; // TAG('D','n','y','B')
 
-#![allow(unused_imports)]
+// (inner attr removed — covered by lib.rs crate-level allow)
 
 const Dbg: u32 = 0x00000010; // DEBUG_TRACE_STRUCSUP
 

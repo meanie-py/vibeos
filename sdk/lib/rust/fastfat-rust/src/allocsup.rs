@@ -132,7 +132,7 @@ const Dbg: u32 = 0xDEAD; // DEBUG_TRACE_ALLOCSUP placeholder
 
 // Opaque types
 type PIRP_CONTEXT = *mut core::ffi::c_void;
-type VCBC = u8; // placeholder
+type VCBC = u8; /* placeholder */
 type VCB = VCBC; // for clarity
 type LARGE_MCB = u8;
 type MDL = u8;
@@ -1996,9 +1996,9 @@ pub unsafe extern "C" fn FatInterpretClusterType(
     // Declare unknown externals
 
     const FAT32_ENTRY_MASK: FAT_ENTRY = 0x0FFFFFFF;
-    const FAT_CLUSTER_AVAILABLE: FAT_ENTRY = 0; // placeholder, use actual value if known
-    const FAT_CLUSTER_RESERVED: FAT_ENTRY = 1;  // placeholder
-    const FAT_CLUSTER_BAD: FAT_ENTRY = 2;       // placeholder
+    const FAT_CLUSTER_AVAILABLE: FAT_ENTRY = 0; /* placeholder */, use actual value if known
+    const FAT_CLUSTER_RESERVED: FAT_ENTRY = 1;  /* placeholder */
+    const FAT_CLUSTER_BAD: FAT_ENTRY = 2;       /* placeholder */
 
     unsafe {
         DebugTrace(1, Dbg, b"InterpretClusterType\n\0".as_ptr() as *const i8, 0);

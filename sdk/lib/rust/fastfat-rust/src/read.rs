@@ -69,7 +69,6 @@ pub const OVERFLOW_READ_THRESHHOLD: u32 = 0x1000;
 const Dbg: u32 = 0;                          // DEBUG_TRACE_READ
 const NotificationEvent: u32 = 0;            // EVENT_TYPE::NotificationEvent
 const Executive: i32 = 0;                    // KWAIT_REASON::Executive
-const 0i32: u32 = 0;                   // KPROCESSOR_MODE::KernelMode
 const IRP_PAGING_IO: u32 = 0x00000001;      // typical value
 const FAT_NTC_VCB: u16 = 0x0500;            // FAT_NTC_VCB
 const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x00001000; // placeholder
@@ -105,29 +104,89 @@ const OVERFLOW_READ_THRESHHOLD: u32 = 0x1000;
 struct PAGING_FILE_OVERFLOW_PACKET {
     Irp: PIRP,
     Fcb: *mut core::ffi::c_void,
-}urn;
-        }
+}
 
-        status = FatCommonRead(irp_context, Irp);
-    }));
+// FatFsdRead — hand-reconstructed from read.c (its DeepSeek translation dropped;
+// the assembled orphan was corrupted). DUMMY_PSEH: TRY/EXCEPT → body only, the
+// EXCEPT handler (FatProcessException) is dead code; try_return → break 'try_exit.
+#[no_mangle]
+pub unsafe extern "system" fn FatFsdRead(
+    VolumeDeviceObject: *mut VOLUME_DEVICE_OBJECT,
+    Irp: PIRP,
+) -> NTSTATUS {
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut IrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
+    let mut TopLevel: BOOLEAN = 0;
 
-    match result {
-        Err(_) => {
-            FatRaiseStatus(irp_context, STATUS_INVALID_USER_BUFFER);
-            loop { core::hint::spin_loop(); }
+    DebugTrace(1, Dbg as u32, b"FatFsdRead\n\0".as_ptr() as *const i8, 0);
+
+    FsRtlEnterFileSystem();
+
+    //  Quick check for paging file IO (fast path — replicate the fsdo check).
+    if FatDeviceIsFatFsdo((*IoGetCurrentIrpStackLocation(Irp)).DeviceObject as *mut core::ffi::c_void) == 0 {
+        Fcb = (*(*IoGetCurrentIrpStackLocation(Irp)).FileObject).FsContext as *mut FCB;
+
+        if NodeType(Fcb) == FAT_NTC_FCB as u32
+            && FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) != 0
+        {
+            IoMarkIrpPending(Irp);
+
+            if IoGetRemainingStackSize() < OVERFLOW_READ_THRESHHOLD as usize {
+                let mut Event: KEVENT = core::mem::zeroed();
+                let mut Packet: PAGING_FILE_OVERFLOW_PACKET = core::mem::zeroed();
+                Packet.Irp = Irp;
+                Packet.Fcb = Fcb as *mut core::ffi::c_void;
+                KeInitializeEvent(&mut Event, NotificationEvent, 0);
+                FsRtlPostPagingFileStackOverflow(
+                    &mut Packet as *mut _ as *mut core::ffi::c_void,
+                    &mut Event,
+                    FatOverflowPagingFileRead,
+                );
+                KeWaitForSingleObject(
+                    &mut Event as *mut _ as *mut core::ffi::c_void,
+                    Executive,
+                    0, // KernelMode
+                    0,
+                    core::ptr::null_mut(),
+                );
+            } else {
+                FatPagingFileIo(Irp, Fcb);
+            }
+
+            FsRtlExitFileSystem();
+            return STATUS_PENDING;
         }
-        Ok(_) => {}
     }
 
-    // try_exit: NOTHING;
-    if top_level != 0 {
+    'try_exit: {
+        TopLevel = FatIsIrpTopLevel(Irp) as BOOLEAN;
+        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp)) as *mut IRP_CONTEXT;
+
+        //  An Mdl complete request must not go through common read.
+        if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE) != 0 {
+            Status = FatCompleteMdl(IrpContext as *mut core::ffi::c_void, Irp);
+            break 'try_exit; // try_return
+        }
+
+        //  Not enough stack → hand off to the stack-overflow thread.
+        if IoGetRemainingStackSize() < OVERFLOW_READ_THRESHHOLD as usize {
+            Status = FatPostStackOverflowRead(IrpContext as *mut core::ffi::c_void, Irp, Fcb as *mut core::ffi::c_void);
+            break 'try_exit; // try_return
+        }
+
+        Status = FatCommonRead(IrpContext as *mut core::ffi::c_void, Irp);
+        // try_exit: NOTHING;
+    }
+
+    if TopLevel != 0 {
         IoSetTopLevelIrp(core::ptr::null_mut());
     }
 
     FsRtlExitFileSystem();
-    DebugTrace(-1, Dbg as u32, b"FatFsdRead -> %08lx\n\0".as_ptr() as *const i8, status as usize);
+    DebugTrace(-1, Dbg as u32, b"FatFsdRead -> %08lx\n\0".as_ptr() as *const i8, Status as usize);
 
-    status
+    Status
 }
 
 #[no_mangle]
