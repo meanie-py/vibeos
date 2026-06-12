@@ -27,11 +27,13 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **kdcom / kdgdb / kdvm** | drivers/base/* | ✅ LANDED (crp) | kdcom-serial-rust | KD transports (non-MSVC kdcom = kdrosdbg). |
 | **wmilib** | drivers/wmi | ✅ LANDED (crp) | (wmilib) | WMI leaf. |
 | **beep / null / condrv / nmidebug / pciide** | drivers/* | ✅ LANDED (crp) | *-rust/*-cargo | Small leaf .sys drivers. |
+| **disk.sys** | drivers/storage/class/disk | ✅ LANDED (crp) | disk-rust | SCSI disk class driver (12.6K LOC), WDM. Full C→Rust via DeepSeek+c2rust. Cohab. Cold smoke ×3. Merged f4900f16109. |
+| **partmgr.sys** | drivers/storage/partmgr | ✅ LANDED (crp) | partmgr-rust | WDM, boot-loaded. Full C→Rust via DeepSeek+c2rust (~$0.20, 39 fns). Cohab (guid.c stays C). cargo-clean ×3, links ×3, **smoke i386+amd64+arm64 all GREEN**. Review: 0 CRITICAL/HIGH. Added as a rustconv target + gen_driver_types.sh case. Cherry-pick a78e0bba00e. |
 | **classpnp.sys** | drivers/storage/class/classpnp | 🟡 IN-FLIGHT | classpnp-rust | WDM. Branch `classpnp-port`, ~landing. Building a storage-class DDK shim substrate (SRB/sense/io-ke-mm inlines + class GUIDs). See `classpnp-cohab-link-gap.md` (branch-local). |
 | **cdfs.sys** | drivers/filesystems/cdfs | 🟡 IN-FLIGHT (idle) | cdfs-rust | WDM CD filesystem. Branch `cdfs-port` (33 files committed + ~10 uncommitted grind). LiveCD read-stack leg. |
 | **cdrom.sys** | drivers/storage/class/cdrom | 🔴 BLOCKED (banked) | cdrom-rust | **KMDF** — see the storage read-stack section below. Banked on `cdrom-port`. |
-| **partmgr.sys** | drivers/storage/partmgr | 🟢 IN-FLIGHT (smoke-verifying) | partmgr-rust | WDM, boot-loaded. Full C→Rust via DeepSeek+c2rust (~$0.20, 39 fns). Cohab (guid.c stays C). cargo-clean ×3, links ×3, smoke i386+arm64 GREEN, amd64 verifying. Review: 0 CRITICAL/HIGH. Added as a rustconv target + gen_driver_types.sh case. |
-| mountmgr | drivers/storage/mountmgr | ⚪ not started | — | Drive-letter/mount mgr (~9.4K LOC), boot-critical storage infra. |
+| **mountmgr.sys** | drivers/storage/mountmgr | 🟡 IN-FLIGHT (other agent) | — | Drive-letter/mount mgr (~9.4K LOC), boot-critical storage infra. Branch `mountmgr-port` (worktree active). |
+| **fs_rec.sys** | drivers/filesystems/fs_rec | 🟢 IN-FLIGHT | fs_rec-rust | FS recognizer (~2.8K LOC, 11 modular files), **boot-loaded** (Group "Boot File System", recognizer driver) → smoke-exercised. WDM, imports ntoskrnl+hal only. DeepSeek+c2rust, partmgr-twin recipe. |
 | fastfat.sys | drivers/filesystems/fastfat | ⚪ not started | — | FAT FS (68.8K LOC). Boot media (USB/ramdisk). |
 
 **Helper libs (in `static-libs-translation-audit.md`):** csq-rust (Cancel-Safe
@@ -67,11 +69,12 @@ duplicate SRB/sense harvesting.
 
 ## Candidate targets (not yet started)
 
+- **ide / atapi** (drivers/storage/ide, 7 files / ~8.6K) — ATA/ATAPI class stack
+  (pciidex/atapi). pciide already Rust; this is the rest. Storage-relevant, WDM.
 - **fastfat.sys** (drivers/filesystems/fastfat, 34 files / 68.8K) — FAT FS, boot
-  media. Classic kernel-bug surface; well-specified.
-- **mountmgr.sys** (drivers/storage/mountmgr, 7 files / ~9.4K) — drive-letter / mount
-  mgmt, boot-critical storage infra. (partmgr.sys is DONE — see fleet table.)
-- **disk.sys** — the other classpnp class driver (sibling to cdrom; WDM).
+  media. Classic kernel-bug surface; well-specified. Multi-session.
+- **mup.sys** (drivers/filesystems/mup, ~2.6K) — Multiple UNC Provider, network
+  redirector mux. Loaded but not desktop-boot-critical (link-clean is the bar).
 
 ## NOT recommended (imported C, keep as-is)
 
