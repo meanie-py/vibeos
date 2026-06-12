@@ -88,6 +88,7 @@ members = [
     "ntdll-rust",
     "smss-csrss-rust",
     "ntoskrnl-cargo",
+    "ntkrnlmp-cargo",
     "uefildr-cargo",
     "rosload-cargo",
     "ntdll-cargo",

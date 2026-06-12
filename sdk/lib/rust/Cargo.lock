@@ -630,6 +630,13 @@ name = "ntkrnl-sys"
 version = "0.1.0"
 
 [[package]]
+name = "ntkrnlmp-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "ntoskrnl-cargo"
 version = "0.1.0"
 dependencies = [

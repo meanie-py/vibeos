@@ -37,25 +37,20 @@ if(KDBG AND NOT ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/kdbg_rust_shims.c)
 endif()
 
-add_executable(ntkrnlmp
-    ${ntkrnlmp_asm}
-    ${NTKRNLMP_SOURCE}
-    ${NTKRNLMP_PCH_SKIP_SOURCE}
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ntoskrnl.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/ntkrnlmp.def)
-set_module_type(ntkrnlmp kernel)
-target_compile_definitions(ntkrnlmp PRIVATE CONFIG_SMP)
-
-# Allow multiple definitions: Rust compiler_builtins and libclang_rt both provide __chkstk
-target_link_options(ntkrnlmp PRIVATE "LINKER:--allow-multiple-definition")
-
-# dynamic analysis switches
-if(STACK_PROTECTOR)
-    target_link_libraries(ntkrnlmp gcc_ssp_nt)
-endif()
-
-target_link_libraries(ntkrnlmp ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent ${RUST_KERNEL_LIB})
-add_importlibs(ntkrnlmp hal kdcom bootvid)
-add_pch(ntkrnlmp ${REACTOS_SOURCE_DIR}/ntoskrnl/include/ntoskrnl.h "${NTKRNLMP_PCH_SKIP_SOURCE}")
-add_dependencies(ntkrnlmp psdk asm rust_kernel)
-add_cd_file(TARGET ntkrnlmp DESTINATION reactos/system32 NO_CAB FOR all)
+# ntkrnlmp.exe (SMP kernel): cargo-driven link via ntkrnlmp-cargo — identical to
+# the ntoskrnl.exe cargo cutover but the kernel .S is assembled with CONFIG_SMP
+# (ntkrnlmp-cargo/build.rs .asm_extra_defines). The Rust body (kernel-rust) is
+# the SAME UP/MP. Replaces add_executable + set_module_type(kernel) +
+# target_compile_definitions(CONFIG_SMP) + target_link_libraries + add_pch.
+# KIND kernelexe → native-pefixup --kernel + i386 fwd fix. spec2def(ntkrnlmp.exe
+# ../ntoskrnl.spec) above STAYS. EXTRA_DEPENDS == the old ntkrnlmp dependency
+# closure (the same C floor + import libs ntoskrnl uses) so a cold build can't
+# race a stale .a the cargo link reuses by path.
+add_cargo_module(ntkrnlmp ntkrnlmp-cargo ntkrnlmp.exe
+    KIND kernelexe
+    BODY_CRATE kernel-rust
+    EXTRA_DEPENDS
+        ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl
+        ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent
+        hal kdcom bootvid
+        psdk asm rust_kernel)
