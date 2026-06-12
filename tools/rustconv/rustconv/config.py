@@ -44,6 +44,18 @@ ARM64INPUT_DIR = REACTOS_ROOT / "drivers" / "input" / "arm64input"
 KBDCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "kbdclass"
 MOUCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "mouclass"
 I8042PRT_DIR = REACTOS_ROOT / "drivers" / "input" / "i8042prt"
+# LiveCD read-stack drivers (boot path: ISO9660 → cdrom → classpnp → cdfs).
+CLASSPNP_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "classpnp"
+CDROM_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "cdrom"
+CDFS_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "cdfs"
+SWENUM_DIR = REACTOS_ROOT / "drivers" / "ksfilter" / "swenum"
+USBD_DIR = REACTOS_ROOT / "drivers" / "usb" / "usbd"
+HIDPARSER_DIR = REACTOS_ROOT / "sdk" / "lib" / "drivers" / "hidparser"
+PL011_DIR = REACTOS_ROOT / "drivers" / "serial" / "pl011"
+PROCESSR_DIR = REACTOS_ROOT / "drivers" / "processor" / "processr"
+ACPI_DIR = REACTOS_ROOT / "drivers" / "bus" / "acpi"
+CSQ_DIR = REACTOS_ROOT / "sdk" / "lib" / "drivers" / "csq"
+ARBITER_DIR = REACTOS_ROOT / "sdk" / "lib" / "drivers" / "arbiter"
 PCIX_DIR = REACTOS_ROOT / "drivers" / "bus" / "pcix"
 DISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "disk"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
@@ -396,6 +408,29 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # LiveCD read-stack drivers (kernel-mode .sys on the ntkrnl-sys/driver_ddk
+    # substrate, same shape as i8042prt): ISO9660 boot path cdrom→classpnp→cdfs.
+    "classpnp": Target(
+        name="classpnp", source_dir=CLASSPNP_DIR,
+        output_crate=RUST_DIR / "classpnp-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
+    "cdrom": Target(
+        name="cdrom", source_dir=CDROM_DIR,
+        output_crate=RUST_DIR / "cdrom-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
+    "cdfs": Target(
+        name="cdfs", source_dir=CDFS_DIR,
+        output_crate=RUST_DIR / "cdfs-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # pcix.sys — the full MS-architecture PCI bus driver (drivers/bus/pcix, 11K LOC,
     # arb/intrface/pci subdirs). NOT loaded at boot (pci.sys is the live PNP0A03
     # driver), so link-clean ×3 is the integration bar, not smoke boot. Private
@@ -420,6 +455,125 @@ TARGETS = {
         bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
         system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
         cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
+    # ── driver residue (Batch 2): standalone kernel-mode drivers on the
+    # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
+    # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
+    # (acpi-rust/osl.rs); this covers the driver glue (buspdo/bus big files via
+    # c2rust). ACPI_* types come from acpica-sys, fixed up at integration.
+    "acpi": Target(
+        name="acpi",
+        source_dir=ACPI_DIR,
+        output_crate=RUST_DIR / "acpi-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    "swenum": Target(
+        name="swenum",
+        source_dir=SWENUM_DIR,
+        output_crate=RUST_DIR / "swenum-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # usbd.sys — export driver (usbd.spec); descriptor parsers + bandwidth.
+    "usbd": Target(
+        name="usbd",
+        source_dir=USBD_DIR,
+        output_crate=RUST_DIR / "usbd-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=USBD_DIR / "usbd.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # hidparser — the HID report-descriptor parser STATIC LIB (libhidparser_km),
+    # 5 files. Flagship c2rust-anchor target (bit-field parsing). Links into
+    # hidparse.sys (whose wrapper is already Rust, Batch 1).
+    "hidparser": Target(
+        name="hidparser",
+        source_dir=HIDPARSER_DIR,
+        output_crate=RUST_DIR / "hidparser-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # pl011.sys — ARM64 PL011 UART serial driver (single file, 254 LOC).
+    # MODULE kerneldriver, imports ntoskrnl + hal.
+    "pl011": Target(
+        name="pl011",
+        source_dir=PL011_DIR,
+        output_crate=RUST_DIR / "pl011-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # processr.sys — processor/CPU driver (processr.c + misc.c + pnp.c, 507 LOC).
+    # MODULE kerneldriver, imports ntoskrnl + hal; PnP add-device path.
+    "processr": Target(
+        name="processr",
+        source_dir=PROCESSR_DIR,
+        output_crate=RUST_DIR / "processr-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # csq — Cancel-Safe IRP Queue static lib (6 IoCsq* exports), kernel-linked.
+    "csq": Target(
+        name="csq",
+        source_dir=CSQ_DIR,
+        output_crate=RUST_DIR / "csq-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # arbiter — PnP resource arbiter static lib (kernel + pcix.sys).
+    "arbiter": Target(
+        name="arbiter",
+        source_dir=ARBITER_DIR,
+        output_crate=RUST_DIR / "arbiter-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
     ),
     # win32k.sys subsystem. Resolves against BOTH ntkrnl-sys (the
     # ntoskrnl APIs win32k calls) AND win32k-sys (its own internal
@@ -617,6 +771,20 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["disk"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
+    if "/drivers/ksfilter/swenum" in posix:
+        return TARGETS["swenum"]
+    if "/drivers/usb/usbd" in posix:
+        return TARGETS["usbd"]
+    if "/sdk/lib/drivers/hidparser" in posix:
+        return TARGETS["hidparser"]
+    if "/drivers/serial/pl011" in posix:
+        return TARGETS["pl011"]
+    if "/drivers/processor/processr" in posix:
+        return TARGETS["processr"]
+    if "/sdk/lib/drivers/csq" in posix:
+        return TARGETS["csq"]
+    if "/sdk/lib/drivers/arbiter" in posix:
+        return TARGETS["arbiter"]
     # winsrv (Phase 5) lives under /win32ss/user/winsrv — keep this
     # branch BEFORE the generic /win32ss/ → win32k fallback so the
     # winsrv-specific substrate + addendum get picked up.
