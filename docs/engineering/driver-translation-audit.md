@@ -29,6 +29,7 @@ not standalone drivers; cross-referenced below where a driver depends on them.
 | **beep / null / condrv / nmidebug / pciide** | drivers/* | ✅ LANDED (crp) | *-rust/*-cargo | Small leaf .sys drivers. |
 | **disk.sys** | drivers/storage/class/disk | ✅ LANDED (crp) | disk-rust | SCSI disk class driver (12.6K LOC), WDM. Full C→Rust via DeepSeek+c2rust. Cohab. Cold smoke ×3. Merged f4900f16109. |
 | **partmgr.sys** | drivers/storage/partmgr | ✅ LANDED (crp) | partmgr-rust | WDM, boot-loaded. Full C→Rust via DeepSeek+c2rust (~$0.20, 39 fns). Cohab (guid.c stays C). cargo-clean ×3, links ×3, **smoke i386+amd64+arm64 all GREEN**. Review: 0 CRITICAL/HIGH. Added as a rustconv target + gen_driver_types.sh case. Cherry-pick a78e0bba00e. |
+| **pciidex.sys** | drivers/storage/ide/pciidex | ✅ LANDED (crp) | pciidex-rust | PCI IDE bus extension, WDM **export driver** (PciIdeXInitialize/GetBusData/SetBusData/DebugPrint). Full C→Rust (fdo/miniport/pciidex/pdo/power.c, ~1.9K) via DeepSeek+c2rust (~$0.22). Cohab (rust_cohab_stub.c, spec2def kept). cargo-clean ×3, links ×3 (4 exports verified), **cold smoke i386+amd64 ✓ boot (desktop, PnP-exercised); arm64 cold-link ✓** (not on arm64 boot path — no PCI IDE). Caught match-on-const binding hazard (7 IRP_MN_*) + OB_OPEN_REASON mistranslation. Link traps: HalGetInterruptTranslator=HALDISPATCH-> macro, vDbgPrintEx=@stdcall, ExAllocatePoolZero/Ke/Ex FORCEINLINEs. |
 | **classpnp.sys** | drivers/storage/class/classpnp | 🟡 IN-FLIGHT | classpnp-rust | WDM. Branch `classpnp-port`, ~landing. Building a storage-class DDK shim substrate (SRB/sense/io-ke-mm inlines + class GUIDs). See `classpnp-cohab-link-gap.md` (branch-local). |
 | **cdfs.sys** | drivers/filesystems/cdfs | 🟡 IN-FLIGHT (idle) | cdfs-rust | WDM CD filesystem. Branch `cdfs-port` (33 files committed + ~10 uncommitted grind). LiveCD read-stack leg. |
 | **cdrom.sys** | drivers/storage/class/cdrom | 🟡 IN-FLIGHT | cdrom-rust | **KMDF** — `kmdf-sys` WDF-dispatch substrate BUILT on `cdrom-port`; links clean amd64 + loads + enumerates. No longer blocked — active lane. |
@@ -69,8 +70,10 @@ duplicate SRB/sense harvesting.
 
 ## Candidate targets (not yet started)
 
-- **ide / atapi** (drivers/storage/ide, 7 files / ~8.6K) — ATA/ATAPI class stack
-  (pciidex/atapi). pciide already Rust; this is the rest. Storage-relevant, WDM.
+- **ide / atapi** (drivers/storage/ide, 7 files / ~8.6K) — ATA/ATAPI class stack.
+  pciide + **pciidex now Rust** (see LANDED table). Remaining: uniata (C++, the live
+  PNP0600 driver — L2 tree-sitter track) and the legacy atapi.c miniport (6.5K, NOT in
+  txtsetup → not boot-exercised). Storage-relevant, WDM.
 - **fastfat.sys** (drivers/filesystems/fastfat, 34 files / 68.8K) — FAT FS, boot
   media. Classic kernel-bug surface; well-specified. Multi-session.
 - **mup.sys** (drivers/filesystems/mup, ~2.6K) — Multiple UNC Provider, network

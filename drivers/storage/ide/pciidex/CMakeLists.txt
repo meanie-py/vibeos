@@ -1,20 +1,63 @@
 
 spec2def(pciidex.sys pciidex.spec ADD_IMPORTLIB)
 
-list(APPEND SOURCE
-    fdo.c
-    miniport.c
-    pciidex.c
-    pdo.c
-    power.c
-    pciidex.h)
+# ============================================================================
+# pciidex.sys — Rust cohabitation flip (fdo/miniport/pciidex/pdo/power.c -> Rust)
+# ============================================================================
+# The PCI IDE bus extension is translated to Rust (pciidex-rust, kept on disk per
+# the never-delete rule). DriverEntry + the pciidex.spec PciIdeX* exports come from
+# libpciidex_rust.a; the IDE/PnP DDK types come from the per-driver bindgen substrate
+# (pciidex-rust/src/types_*.rs). cmake keeps the MODULE link (set_module_type +
+# spec2def .def + add_importlibs(ntoskrnl hal)). pciidex-rust uses the c_variadic
+# feature (PciIdeXDebugPrint varargs -> vDbgPrintEx), so the cargo build runs under
+# RUSTC_BOOTSTRAP=1. Standard per-arch RUST_TARGET, i386 no-SSE RUSTFLAGS.
+set(PCIIDEX_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(PCIIDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pciidex-target")
+set(PCIIDEX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpciidex_rust.a")
+if(ARCH STREQUAL "i386")
+    set(PCIIDEX_RUST_TARGET "i686-pc-windows-gnu")
+    set(PCIIDEX_RUST_RUSTFLAGS "-C target-feature=-sse,-sse2")
+elseif(ARCH STREQUAL "amd64")
+    set(PCIIDEX_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(PCIIDEX_RUST_RUSTFLAGS "")
+elseif(ARCH STREQUAL "arm64")
+    set(PCIIDEX_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(PCIIDEX_RUST_RUSTFLAGS "")
+endif()
+add_custom_command(
+    OUTPUT ${PCIIDEX_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${PCIIDEX_RUST_TARGET_DIR}
+        RUSTC_BOOTSTRAP=1
+        RUSTFLAGS=${PCIIDEX_RUST_RUSTFLAGS}
+        cargo build --release --target ${PCIIDEX_RUST_TARGET}
+            -p pciidex-rust
+            --manifest-path ${PCIIDEX_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${PCIIDEX_RUST_TARGET_DIR}/${PCIIDEX_RUST_TARGET}/release/libpciidex_rust.a
+        ${PCIIDEX_RUST_LIB}
+    DEPENDS ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/Cargo.toml
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/lib.rs
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/fdo.rs
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/miniport.rs
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/pciidex.rs
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/pdo.rs
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/power.rs
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/glue.rs
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/inlines.rs
+    WORKING_DIRECTORY ${PCIIDEX_RUST_WORKSPACE_DIR}
+    COMMENT "Building pciidex-rust (${PCIIDEX_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_pciidex DEPENDS ${PCIIDEX_RUST_LIB})
 
+# C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
 add_library(pciidex MODULE
-    ${SOURCE}
+    rust_cohab_stub.c
     pciidex.rc
     ${CMAKE_CURRENT_BINARY_DIR}/pciidex.def)
 
-add_pch(pciidex pciidex.h SOURCE)
 set_module_type(pciidex kernelmodedriver)
 add_importlibs(pciidex ntoskrnl hal)
+add_dependencies(pciidex rust_pciidex)
+target_link_libraries(pciidex ${PCIIDEX_RUST_LIB})
 add_cd_file(TARGET pciidex DESTINATION reactos/system32/drivers NO_CAB FOR all)

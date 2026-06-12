@@ -746,6 +746,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pciidex-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "pcix-rust"
 version = "0.1.0"
 dependencies = [

@@ -125,6 +125,7 @@ members = [
     "pcix-rust",
     "partmgr-rust",
     "fs_rec-rust",
+    "pciidex-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",

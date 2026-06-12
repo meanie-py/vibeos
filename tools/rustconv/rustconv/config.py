@@ -61,6 +61,7 @@ DISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "disk"
 PARTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "partmgr"
 FS_REC_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fs_rec"
 MOUNTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "mountmgr"
+PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -502,6 +503,23 @@ TARGETS = {
         system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
         cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
     ),
+    # pciidex.sys — the PCI IDE bus extension (drivers/storage/ide/pciidex, ~1.9K LOC,
+    # 5 .c: fdo/pdo/pciidex/miniport/power). WDM kernelmodedriver + EXPORT driver
+    # (pciidex.spec: PciIdeXInitialize/GetBusData/SetBusData stdcall + PciIdeXDebugPrint
+    # varargs). BOOT-loaded (pciidex.sys=1) and exercised at boot — the live uniata.sys
+    # (C++, PNP0600) AND pciide.sys both link PciIdeX* imports → a Rust pciidex is
+    # smoke-exercised. Private extension structs (PCIIDEX_DRIVER_EXTENSION,
+    # COMMON/FDO/PDO_DEVICE_EXTENSION) live in pciidex.h (pulls ide.h) → gen_driver_
+    # types.sh substrate (crate::types). The 4 exports must survive (spec2def stays in
+    # the cohab CMake; Rust provides them #[no_mangle]).
+    "pciidex": Target(
+        name="pciidex", source_dir=PCIIDEX_DIR,
+        output_crate=RUST_DIR / "pciidex-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={},
+        spec_file=PCIIDEX_DIR / "pciidex.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -821,6 +839,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["fs_rec"]
     if "/drivers/storage/mountmgr" in posix:
         return TARGETS["mountmgr"]
+    if "/drivers/storage/ide/pciidex" in posix:
+        return TARGETS["pciidex"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:
