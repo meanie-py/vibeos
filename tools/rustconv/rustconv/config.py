@@ -60,6 +60,7 @@ PCIX_DIR = REACTOS_ROOT / "drivers" / "bus" / "pcix"
 DISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "disk"
 PARTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "partmgr"
 FS_REC_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fs_rec"
+MOUNTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "mountmgr"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -488,6 +489,19 @@ TARGETS = {
         system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
         cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
     ),
+    # mountmgr.sys — the mount manager (drivers/storage/mountmgr, 9.4K LOC, 7
+    # files: database/device/mountmgr/notify/point/symlink/uniqueid). Boot-start
+    # WDM driver (no .spec, DriverEntry-only). Manages drive letters / mount
+    # points / volume symlinks via MOUNTDEV/MOUNTMGR ioctls. Private structs from
+    # mntmgr.h (gen_driver_types substrate, crate::types); MOUNTMGR_*/MOUNTDEV_*
+    # from the mountmgr/mountdev headers. Sibling of partmgr/disk.
+    "mountmgr": Target(
+        name="mountmgr", source_dir=MOUNTMGR_DIR,
+        output_crate=RUST_DIR / "mountmgr-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # ── driver residue (Batch 2): standalone kernel-mode drivers on the
     # ntkrnl-sys/ddk substrate, same shape as i8042prt. ──────────────────
     # acpi.sys — ACPI driver glue (ACPICA FFI-to-blob Phase 3). OSL already Rust
@@ -805,6 +819,8 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["partmgr"]
     if "/drivers/filesystems/fs_rec" in posix:
         return TARGETS["fs_rec"]
+    if "/drivers/storage/mountmgr" in posix:
+        return TARGETS["mountmgr"]
     if "/drivers/bus/pcix" in posix:
         return TARGETS["pcix"]
     if "/drivers/ksfilter/swenum" in posix:

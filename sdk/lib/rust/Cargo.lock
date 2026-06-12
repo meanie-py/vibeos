@@ -597,6 +597,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mountmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "network"
 version = "0.1.0"
 
