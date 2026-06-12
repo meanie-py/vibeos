@@ -45,6 +45,7 @@ KBDCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "kbdclass"
 MOUCLASS_DIR = REACTOS_ROOT / "drivers" / "input" / "mouclass"
 I8042PRT_DIR = REACTOS_ROOT / "drivers" / "input" / "i8042prt"
 PCIX_DIR = REACTOS_ROOT / "drivers" / "bus" / "pcix"
+DISK_DIR = REACTOS_ROOT / "drivers" / "storage" / "class" / "disk"
 NTKRNL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntkrnl-sys" / "src"
 RUST_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust"
 TOOLS_DIR = Path(__file__).resolve().parents[1]  # tools/rustconv/
@@ -407,6 +408,19 @@ TARGETS = {
         system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
         cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
     ),
+    # disk.sys — the SCSI disk class driver (drivers/storage/class/disk, 12.6K
+    # LOC: data/disk/diskwmi/geometry/pnp.c). WDM class driver built on classpnp
+    # (imports ClassInitialize/Class* exports + the storage-DDK/SRB/sense
+    # substrate landed with classpnp-rust). Boot-loaded (GenDisk→disk). Private
+    # structs from gen_driver_types.sh substrate (crate::types); kernel/PnP/SCSI
+    # types from ntkrnl-sys ddk.
+    "disk": Target(
+        name="disk", source_dir=DISK_DIR,
+        output_crate=RUST_DIR / "disk-rust",
+        bindgen_files=BINDGEN_FILES, hal_bindgen_files={}, spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md", src_subdir=Path("src"),
+        cmake_deps_file=None, cmake_source_files=[], arches=("i386", "amd64", "arm64"),
+    ),
     # win32k.sys subsystem. Resolves against BOTH ntkrnl-sys (the
     # ntoskrnl APIs win32k calls) AND win32k-sys (its own internal
     # surface: _WND/_DESKTOP/Int*/Gre*/co_*). win32k-specific translation
@@ -599,6 +613,10 @@ def detect_target(c_path: Path) -> Target:
         return TARGETS["mouclass"]
     if "/drivers/input/i8042prt" in posix:
         return TARGETS["i8042prt"]
+    if "/drivers/storage/class/disk" in posix:
+        return TARGETS["disk"]
+    if "/drivers/bus/pcix" in posix:
+        return TARGETS["pcix"]
     # winsrv (Phase 5) lives under /win32ss/user/winsrv — keep this
     # branch BEFORE the generic /win32ss/ → win32k fallback so the
     # winsrv-specific substrate + addendum get picked up.

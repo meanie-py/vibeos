@@ -18,7 +18,7 @@
 #   driver-name ∈ { classpnp | cdrom | cdfs }   (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <classpnp|cdrom|cdfs>}"
+DRIVER="${1:?usage: gen_driver_types.sh <classpnp|cdrom|cdfs|disk|pcix|acpi>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -65,6 +65,26 @@ case "$DRIVER" in
                   --allowlist-file '.*ntddscsi\.h' --allowlist-file '.*wmistr\.h'
                   --allowlist-file '.*storduid\.h' --allowlist-file '.*mountdev\.h'
                   --allowlist-file '.*ioevent\.h' )
+    VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
+    ;;
+  disk)
+    # disk.sys — the SCSI disk class driver (drivers/storage/class/disk). Built on
+    # classpnp: its FUNCTIONAL_DEVICE_EXTENSION / COMMON_DEVICE_EXTENSION / CLASS_INIT_DATA
+    # come from the PUBLIC classpnp.h, and its OWN private structs (DISK_DATA,
+    # DISK_GEOMETRY_EX_INTERNAL, UPDATE_DISK_GEOMETRY_WORKITEM_CONTEXT, REGISTER_*) live
+    # in disk.h. disk.h does NOT transitively reach wmistr.h/ntddstor.h/ntddscsi.h/
+    # ntdddisk.h/ntddvol.h, so pull them explicitly (allowlist can only filter PARSED
+    # types) for the WNODE_*/DISK_GEOMETRY_EX/VOLUME_* layouts the modules reference.
+    DRIVER_DIR="${SRC}/drivers/storage/class/disk"
+    WRAPPER_INC=$'#include "disk.h"\n#include <wmistr.h>\n#include <ntddstor.h>\n#include <ntddscsi.h>\n#include <ntdddisk.h>\n#include <ntddvol.h>\n#include <ioevent.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]disk[/\\]disk\.h' --allowlist-file '.*classpnp\.h'
+                  --allowlist-file '.*classp\.h' --allowlist-file '.*scsi\.h'
+                  --allowlist-file '.*srb\.h' --allowlist-file '.*srbhelper\.h'
+                  --allowlist-file '.*ntddstor\.h' --allowlist-file '.*ntddscsi\.h'
+                  --allowlist-file '.*ntdddisk\.h' --allowlist-file '.*ntddvol\.h'
+                  --allowlist-file '.*wmidata\.h'
+                  --allowlist-file '.*wmistr\.h' --allowlist-file '.*storduid\.h'
+                  --allowlist-file '.*mountdev\.h' --allowlist-file '.*ioevent\.h' )
     VER_DEFS=( -DWINVER=0x602 -D_WIN32_WINNT=0x602 -DNTDDI_VERSION=0x06020000 )
     ;;
   cdrom)

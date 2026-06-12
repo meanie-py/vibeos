@@ -166,10 +166,21 @@ def callee_sigs(rust_fn, idx):
 
 
 def _calls(src):
-    """Multiset of called function names — `NAME(` occurrences (skips Rust keywords)."""
+    """Multiset of FREE-function / FFI call names — the ones a repair must not silently
+    drop. Skips: Rust keywords; METHOD calls (`.cast()`/`.as_ref()`/`.offset()` are
+    legitimately re-arranged by a path/cast repair, not logic); constructors & builtins
+    (Some/Ok/max/…); and `//`-comment lines (whose prose — `data`, `preamble`, `repr` —
+    otherwise reads as phantom dropped calls and rejects valid repairs)."""
     kw = {"if", "while", "for", "match", "fn", "return", "as", "let", "else", "loop"}
+    skip = {"Some", "None", "Ok", "Err", "max", "min", "cast", "as_ref", "as_mut",
+            "offset", "add", "sub", "abs", "len", "data", "preamble", "repr", "needed",
+            "placeholder", "transmute", "size_of", "align_of", "addr_of", "addr_of_mut"}
     from collections import Counter
-    return Counter(n for n in re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", src) if n not in kw)
+    # strip // line comments so prose isn't scanned for calls
+    code = re.sub(r"//[^\n]*", "", src)
+    # `(?<![.\w])NAME(` — NOT preceded by `.` (method) or a word char (path tail)
+    names = re.findall(r"(?<![.\w])([A-Za-z_][A-Za-z0-9_]*)\s*\(", code)
+    return Counter(n for n in names if n not in kw and n not in skip)
 
 
 def validate_repair(orig, new, name):
