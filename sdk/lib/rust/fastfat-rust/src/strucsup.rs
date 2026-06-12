@@ -18,6 +18,8 @@ use crate::types::{CCB, CLOSE_CONTEXT, DCB, DIRENT, FAT_BUG_CHECK_STRUCSUP, FAT_
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FAST_MUTEX, FILE_LOCK, FILE_OBJECT, FSRTL_ADVANCED_FCB_HEADER, IO_STACK_LOCATION, IRP, KDPC, LARGE_MCB, NPAGED_LOOKASIDE_LIST, OPLOCK, STRING, _CREATE_FILE_TYPE as FILE_TYPE, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FSRTL_FLAG2_IS_PAGING_FILE, FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS, TAG_CCB, TAG_FILENAME_BUFFER};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDeleteTunnelCache, FsRtlInitializeFileLock, FsRtlInitializeLargeMcb, FsRtlInitializeOplock, FsRtlInitializeTunnelCache, FsRtlNotifyInitializeSync, FsRtlNotifyUninitializeSync, FsRtlTeardownPerStreamContexts, FsRtlUninitializeFileLock, FsRtlUninitializeLargeMcb};
 
 extern "C" {
     fn PAGED_CODE();
@@ -486,7 +488,7 @@ pub unsafe extern "C" fn FatInitializeVcb(
                 (*stats.add(i as usize)).Common.FileSystemType = FILESYSTEM_STATISTICS_TYPE_FAT;
                 (*stats.add(i as usize)).Common.Version = 1;
                 (*stats.add(i as usize)).Common.SizeOfCompleteStructure =
-                    core::mem::size_of::<FILE_SYSTEM_STATISTICS>() as u16;
+                    (core::mem::size_of::<FILE_SYSTEM_STATISTICS>() as u16) as u32;
                 i = i + 1;
             }
         }

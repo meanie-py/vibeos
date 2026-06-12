@@ -12,6 +12,8 @@ use crate::glue::{DEBUG_TRACE_ACCHKSUP, FILE_DELETE_CHILD};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PIRP_CONTEXT};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{PIRP_CONTEXT};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     static SeExports: *mut SE_EXPORTS;

@@ -7,6 +7,8 @@ use core::ffi::c_void;
 use crate::types::{CCB, IRP_CONTEXT, PACKED_EA, PIRP_CONTEXT, VOLUME_DEVICE_OBJECT};
 use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, FILE_GET_EA_INFORMATION, IRP};
 use ntkrnl_sys::ddk::{FILE_FULL_EA_INFORMATION, OEM_STRING, ULONG_PTR};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     fn PAGED_CODE();

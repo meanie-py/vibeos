@@ -16,6 +16,9 @@ use crate::glue::{DEBUG_TRACE_CREATE, FILE_ATTRIBUTE_ARCHIVE, STATUS_DISK_FULL};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, KEVENT};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlCheckOplock, FsRtlCurrentBatchOplock, FsRtlEnterFileSystem, FsRtlFindInTunnelCache};
+use ntkrnl_sys::ddk::{DEVICE_OBJECT, IRP, KEVENT};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     fn PAGED_CODE();
@@ -2677,7 +2680,7 @@ pub unsafe extern "C" fn FatCreateNewFile(
         Iosb.__bindgen_anon_1.Status = STATUS_CANNOT_DELETE;
         return Iosb;
     }
-    HaveTunneledInformation = FsRtlFindInTunnelCache(
+    HaveTunneledInformation = (FsRtlFindInTunnelCache(
         &raw mut (*Vcb).Tunnel,
         FatDirectoryKey(ParentDcb),
         UnicodeName,
@@ -2685,7 +2688,7 @@ pub unsafe extern "C" fn FatCreateNewFile(
         &mut UniTunneledLongName,
         &mut TunneledDataSize,
         &mut TunneledCreationTime as *mut LARGE_INTEGER as *mut c_void,
-    );
+    )) as i32;
     NT_ASSERT((TunneledDataSize == core::mem::size_of::<LARGE_INTEGER>() as u32) as i32);
     FatSelectNames(
         IrpContext,
@@ -3311,7 +3314,7 @@ pub unsafe extern "C" fn FatSetFullNameInFcb(
 
     // Special case the root.
     if NodeType((*Fcb).ParentDcb) == FAT_NTC_ROOT_DCB {
-        (*Fcb).FullFileName.Length = ((core::mem::size_of::<u16>() + ((*FinalName).Lengt) as u16h) as usize) as u16;
+        (*Fcb).FullFileName.Length = (core::mem::size_of::<u16>() + (*FinalName).Length as usize) as u16;
         (*Fcb).FullFileName.MaximumLength = (*Fcb).FullFileName.Length;
         (*Fcb).FullFileName.Buffer = FsRtlAllocatePoolWithTag(
             PagedPool,

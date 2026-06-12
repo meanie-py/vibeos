@@ -10,6 +10,8 @@ use crate::types::{CCB, DCB, DELETE_CONTEXT, DIRENT, FAT8DOT3, FAT_BUG_CHECK_DIR
 use ntkrnl_sys::ddk::{FILE_OBJECT, IRP, OPLOCK, _PUBLIC_BCB as BCB, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FAT_NTC_DCB, STATUS_CANNOT_MAKE};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{ARGUMENT_PRESENT, FsRtlAddLargeMcbEntry, FsRtlAddToTunnelCache, FsRtlAllocatePoolWithTag, FsRtlAreNamesEqual, FsRtlDeleteKeyFromTunnelCache, FsRtlGetNextLargeMcbEntry, FsRtlInitializeLargeMcb, FsRtlIsNameInExpression, FsRtlNumberOfRunsInLargeMcb, FsRtlUninitializeLargeMcb};
 
 extern "C" {
     fn FatDeleteEa( IrpContext: *mut PIRP_CONTEXT, Vcb: *mut core::ffi::c_void, ExtendedAttributes: u16, OemName: *const OEM_STRING, );

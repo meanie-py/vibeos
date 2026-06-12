@@ -13,6 +13,8 @@ use crate::types::{CCB, CLOSE_CONTEXT, FCB, FatCloseQueueMutex, IRP_CONTEXT, IRP
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FAST_MUTEX, FILE_OBJECT, IO_STACK_LOCATION, IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{FAT_NTC_DCB, FAT_NTC_FCB, FAT_NTC_IRP_CONTEXT, FAT_NTC_ROOT_DCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     fn FatAcquireCloseMutex();

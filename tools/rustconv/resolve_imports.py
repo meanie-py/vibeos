@@ -35,6 +35,8 @@ SOURCES = [("crate::types", os.path.join(CRATE_SRC, f"types_{arch}.rs")),
            ("crate::data", os.path.join(CRATE_SRC, "data.rs")),
            ("crate::guid", os.path.join(CRATE_SRC, "guid.rs")),
            ("crate::globals", os.path.join(CRATE_SRC, "globals.rs")),
+           # macro/FORCEINLINE + bindgen-missed-export shim module (FsRtl* etc.)
+           ("crate::ddk_shims", os.path.join(CRATE_SRC, "ddk_shims.rs")),
            ("ntkrnl_sys::ddk", os.path.join(NTK, f"bindgen_{arch}.rs"))]
 for m in ("base", "ke", "ex", "rtl", "constants", "globals", "driver_ddk",
           "interlocked", "ob", "mm", "ps"):

@@ -16,6 +16,9 @@ use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, DEVICE_OBJECT, ERE
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
+use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
+// resolve_imports.py: explicit kernel/private-type imports
 // resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
@@ -1123,8 +1126,8 @@ pub unsafe extern "C" fn FatZeroData(
         FileObject,
         core::ptr::addr_of_mut!(zero_start),
         core::ptr::addr_of_mut!(beyond_zero_end),
-        (BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT)) as u) as i328,
-    );
+        BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u8,
+    )) as i32;
 
     finished
 }
@@ -1322,7 +1325,7 @@ pub unsafe extern "C" fn FatPrefetchPages(
         // PrefetchFlags.Flags.PriorityProtection = 1;
         prefetch_flags |= 1u32 << 6;
 
-        (*read_list).List[0].Alignment = ((StartingPage * (PAGE_SIZ) as u64E) as u32) as u64;
+        (*read_list).List[0].Alignment = ((StartingPage * (PAGE_SIZE as u6) as u644) as u32) as u64;
         (*read_list).List[0].Alignment |= (prefetch_flags) as u64;
 
         page_no = 1;

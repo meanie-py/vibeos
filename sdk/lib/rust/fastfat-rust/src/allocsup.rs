@@ -17,6 +17,8 @@ use crate::types::{CLUSTER_TYPE, DIRENT, FAT_BUG_CHECK_ALLOCSUP, FAT_WINDOW, FCB
 use ntkrnl_sys::ddk::{FILE_OBJECT, _PUBLIC_BCB as BCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_ALLOCSUP, MDL_MAPPED_TO_SYSTEM_VA, MDL_SOURCE_IS_NONPAGED_POOL, SL_WRITE_THROUGH, STATUS_DISK_FULL};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlNumberOfRunsInLargeMcb, FsRtlTruncateLargeMcb, FsRtlUninitializeLargeMcb};
 
 extern "C" {
     fn DebugTrace(level: i32, component: u32, format: *const i8, arg: usize);
@@ -1989,14 +1991,14 @@ pub unsafe extern "C" fn FatInterpretClusterType(
     // Declare unknown externals
 
     const FAT32_ENTRY_MASK: FAT_ENTRY = 0x0FFFFFFF;
-    const FAT_CLUSTER_AVAILABLE: FAT_ENTRY = 0; /* placeholder */, use actual value if known
-    const FAT_CLUSTER_RESERVED: FAT_ENTRY = 1;  /* placeholder */
-    const FAT_CLUSTER_BAD: FAT_ENTRY = 2;       /* placeholder */
+    const FAT_CLUSTER_AVAILABLE: FAT_ENTRY = 0x00000000; // fat.h:255
+    const FAT_CLUSTER_RESERVED: FAT_ENTRY = 0x0ffffff0;
+    const FAT_CLUSTER_BAD: FAT_ENTRY = 0x0ffffff7;
 
     unsafe {
         DebugTrace(1, Dbg, b"InterpretClusterType\n\0".as_ptr() as *const i8, 0);
         DebugTrace(0, Dbg, b"  Vcb   = %p\n\0".as_ptr() as *const i8, Vcb as *const i8);
-        DebugTrace(0, Dbg, b"  Entry = %8lx\n\0".as_ptr() as *const i8, Entry);
+        DebugTrace(0, Dbg, b"  Entry = %8lx\n\0".as_ptr() as *const i8, (Entry) as usize);
         PAGED_CODE();
 
         match (*Vcb).AllocationSupport.FatIndexBitSize {
@@ -2004,13 +2006,13 @@ pub unsafe extern "C" fn FatInterpretClusterType(
                 Entry &= FAT32_ENTRY_MASK;
             }
             12 => {
-                NT_ASSERT((Entry <= 0xfff) as u8);
+                NT_ASSERT(((Entry <= 0xfff) as u8) as i32);
                 if Entry >= 0x0ff0 {
                     Entry |= 0x0FFFF000;
                 }
             }
             16 | _ => {
-                NT_ASSERT((Entry <= 0xffff) as u8);
+                NT_ASSERT(((Entry <= 0xffff) as u8) as i32);
                 if Entry >= 0x0fff0 {
                     Entry |= 0x0FFF0000;
                 }
@@ -2823,7 +2825,7 @@ pub unsafe extern "C" fn FatExamineFatEntries(
 
             prefetch_pages = fat_pages - page;
             if prefetch_pages > FAT_PREFETCH_PAGE_COUNT {
-                prefetch_pages = ((ALIGN_UP_BY(page, FAT_PREFETCH_PAGE_COUNT) - (pag) as u32e) as usize) as u32;
+                prefetch_pages = (ALIGN_UP_BY(page, FAT_PREFETCH_PAGE_COUNT) - (page) as usize) as u32;
             }
 
             // NTDDI_VERSION >= NTDDI_WIN8 is assumed true

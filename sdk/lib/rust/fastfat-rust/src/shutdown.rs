@@ -13,6 +13,8 @@ use crate::types::{FatData, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CO
 use ntkrnl_sys::ddk::{IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_SHUTDOWN};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem};
 
 extern "system" {
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);

@@ -17,6 +17,8 @@ use crate::types::{CLEAN_AND_DIRTY_VOLUME_PACKET, FAT_BUG_CHECK_DEVIOSUP, FAT_DA
 use ntkrnl_sys::ddk::{KPROCESSOR_MODE, LOCK_OPERATION};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_DEVIOSUP, STATUS_FILE_CORRUPT_ERROR, STATUS_MORE_PROCESSING_REQUIRED};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithQuotaTag, FsRtlIsNtstatusExpected, IoCallDriver};
 
 extern "C" {
     static mut FatIoCallDriverCount: u32;

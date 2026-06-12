@@ -9,6 +9,8 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DIRENT, FAT_DATA, FAT_TIME, IRP_CONTEXT, VCB};
 use ntkrnl_sys::ddk::{IO_STACK_LOCATION, IRP, PFILE_OBJECT, PNOTIFY_SYNC};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDoesNameContainWildCards, FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     static mut FatData: FAT_DATA;
@@ -284,9 +286,9 @@ pub unsafe extern "C" fn FatQueryDirectory(
 
     UniArgFileName = (*IrpSp).Parameters.QueryDirectory.FileName;
 
-    RestartScan = (BooleanFlagOn(((*IrpSp).Flags) as u32, SL_REST) as u8ART_SCAN);
-    ReturnSingleEntry = (BooleanFlagOn(((*IrpSp).Flags) as u32, SL_RETURN_SING) as u8LE_ENTRY);
-    IndexSpecified = (BooleanFlagOn(((*IrpSp).Flags) as u32, SL_INDEX_S) as u8PECIFIED);
+    RestartScan = BooleanFlagOn(((*IrpSp).Flags) as u32, SL_RESTART_SCAN) as u8;
+    ReturnSingleEntry = BooleanFlagOn(((*IrpSp).Flags) as u32, SL_RETURN_SINGLE_ENTRY) as u8;
+    IndexSpecified = BooleanFlagOn(((*IrpSp).Flags) as u32, SL_INDEX_SPECIFIED) as u8;
 
     if FatDecodeFileObject((*IrpSp).FileObject, &mut Vcb, &mut Dcb, &mut Ccb) != UserDirectoryOpen
         || (UniArgFileName.is_null()
@@ -901,7 +903,7 @@ pub unsafe extern "C" fn FatNotifyChangeDirectory(
     }
 
     CompletionFilter = (*IrpSp).Parameters.NotifyDirectory.CompletionFilter;
-    WatchTree = (BooleanFlagOn(((*IrpSp).Flags) as u32, SL_WA) as u8TCH_TREE);
+    WatchTree = BooleanFlagOn(((*IrpSp).Flags) as u32, SL_WATCH_TREE) as u8;
 
     if FatAcquireExclusiveFcb(IrpContext, Dcb) == 0 {
         DebugTrace(0, Dbg, b"FatNotifyChangeDirectory -> Cannot Acquire Fcb\n\0".as_ptr() as *const i8, 0u32);

@@ -13,6 +13,8 @@ use crate::types::{CLEAN_AND_DIRTY_VOLUME_PACKET, DIRENT, FAT_DATA, FCB, IRP_CON
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, EXCEPTION_POINTERS, FILE_OBJECT, IO_STACK_LOCATION, IRP, _IO_STATUS_BLOCK, _PUBLIC_BCB as BCB, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{IO_REMOUNT, IRP_MN_MOUNT_VOLUME};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlRemoveLargeMcbEntry};
 
 extern "C" {
     fn PAGED_CODE();

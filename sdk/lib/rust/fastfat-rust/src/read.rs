@@ -13,6 +13,8 @@ use crate::types::{CCB, FAT_BUG_CHECK_READ, FCB, IRP_CONTEXT, LBO, PFCB, PIRP_CO
 use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, ERESOURCE_THREAD, FILE_OBJECT, IRP, OPLOCK, _EPROCESS, _ETHREAD};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_READ};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlPostPagingFileStackOverflow};
 
 extern "system" {
     fn DebugTrace(level: i32, flags: u32, message: *const i8);

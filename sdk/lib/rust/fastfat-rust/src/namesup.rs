@@ -13,6 +13,9 @@ use crate::glue::{DEBUG_TRACE_NAMESUP, STATUS_UNMAPPABLE_CHARACTER, TAG_FILENAME
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
+use ntkrnl_sys::ddk::{_UNICODE_STRING};
+// resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );
@@ -337,7 +340,7 @@ pub unsafe extern "C" fn FatSetFullFileNameInFcb(
         Lfn.MaximumLength = (MAX_LFN_CHARACTERS * core::mem::size_of::<u16>()) as u16;
         Lfn.Buffer = FsRtlAllocatePoolWithTag(
             ntkrnl_sys::mm::PagedPool,
-            MAX_LFN_CHARACTERS * core::mem::size_of::<u16>(),
+            (MAX_LFN_CHARACTERS * core::mem::size_of::<u16>()) as u32,
             TAG_FILENAME_BUFFER,
         ) as *mut u16;
 
@@ -582,7 +585,7 @@ pub unsafe extern "C" fn FatEvaluateNameCase(
     *CreateLfn = 0;
 
     i = 0;
-    while (i as u32) < (((*UnicodeName).Length / (core::mem::size_of::<u16>() as u3) as u322) as u16) as u32 {
+    while (i as u32) < (((*UnicodeName).Length / (core::mem::size_of::<u16>() as u16)) as u32) {
         let c: u16;
         c = *((*UnicodeName).Buffer.add(i as usize));
 
@@ -607,7 +610,7 @@ pub unsafe extern "C" fn FatEvaluateNameCase(
     }
 
     *CreateLfn = ((*CreateLfn != 0)
-                  || (i != (((*UnicodeName).Length / (core::mem::size_of::<u16>() as u3) as u322) as u16) as u32)
+                  || ((i as u32) != (((*UnicodeName).Length / (core::mem::size_of::<u16>() as u16)) as u32))
                   || ((Lowers != 0) && (Uppers != 0))) as u8;
 
     if ExtensionPresent != 0 {

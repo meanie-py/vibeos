@@ -12,6 +12,8 @@ use crate::types::{CCB, FAT_BUG_CHECK_FATDATA, FAT_DATA, FAT_TIME_STAMP, FCB, FC
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, ERESOURCE, EXCEPTION_POINTERS, FILE_OBJECT, IO_STACK_LOCATION, IRP, KTHREAD, _IO_STATUS_BLOCK, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_CATCH_EXCEPTIONS, FAT_NTC_FCB};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlFastCheckLockForWrite, FsRtlIsNtstatusExpected};
 
 extern "C" {
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);

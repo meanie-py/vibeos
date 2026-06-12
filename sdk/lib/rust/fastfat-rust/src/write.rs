@@ -15,6 +15,8 @@ use crate::workque::{FatFsdPostRequest};
 use crate::glue::{DEBUG_TRACE_WRITE, FILE_DEVICE_DISK, SL_FORCE_DIRECT_WRITE};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{DEFERRED_FLUSH_CONTEXT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32;
@@ -386,7 +388,7 @@ pub unsafe extern "C" fn FatCommonWrite(
     if NonCachedIo != 0 {
         if (*IrpContext).FatIoContext.is_null() {
             if Wait == 0 {
-                let ctx = FsRtlAllocatePoolWithTag(NonPagedPoolNx, core::mem::size_of::<FAT_IO_CONTEXT>() as u32, TAG_FAT_IO_CONTEXT) as *mut FAT_IO_CONTEXT;
+                let ctx = FsRtlAllocatePoolWithTag((NonPagedPoolNx) as u32, core::mem::size_of::<FAT_IO_CONTEXT>() as u32, TAG_FAT_IO_CONTEXT) as *mut FAT_IO_CONTEXT;
                 (*IrpContext).FatIoContext = ctx;
             } else {
                 (*IrpContext).FatIoContext = &mut StackFatIoContext as *mut _;
@@ -502,7 +504,7 @@ pub unsafe extern "C" fn FatCommonWrite(
             BytesPerFat = FatBytesPerFat(&(*Vcb).Bpb);
 
             if (*Vcb).Bpb.Fats > 2 {
-                IoRuns = FsRtlAllocatePoolWithTag(PagedPool, (*Vcb).Bpb.Fats as u32 * core::mem::size_of::<IO_RUN>() as u32, TAG_IO_RUNS) as *mut IO_RUN;
+                IoRuns = FsRtlAllocatePoolWithTag((PagedPool) as u32, (*Vcb).Bpb.Fats as u32 * core::mem::size_of::<IO_RUN>() as u32, TAG_IO_RUNS) as *mut IO_RUN;
             } else {
                 IoRuns = StackIoRuns.as_mut_ptr();
             }

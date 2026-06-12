@@ -17,6 +17,8 @@ use crate::glue::{FILE_ATTRIBUTE_ARCHIVE, STATUS_DISK_FULL};
 use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
 use crate::types::{EA_SET_HEADER, PDIRENT};
 use ntkrnl_sys::ddk::{FILE_ALLOCATION_INFORMATION, FILE_RENAME_INFORMATION, FILE_VALID_DATA_LENGTH_INFORMATION, IO_STATUS_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlAreNamesEqual, FsRtlCheckOplock, FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFindInTunnelCache, FsRtlNotifyFullChangeDirectory};
 
 extern "C" {
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -2728,7 +2730,7 @@ pub unsafe extern "C" fn FatCommonQueryInformation(
             Status = STATUS_BUFFER_OVERFLOW;
             Length = 0;
         }
-        (*Irp).IoStatus.Information = (((*IrpSp).Parameters.QueryFile.Length - (Lengt) as u64h) as u32) as u64;
+        (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryFile.Length as i64 - Length as i64) as u64;
 
         // try_exit: break out of the loop normally.
         break 'sehtry;

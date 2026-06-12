@@ -11,6 +11,8 @@ use crate::types::{DCB, DIRENT, EA_BCB_ARRAY_SIZE, EA_FILE_HEADER, EA_OFF_TABLE,
 use ntkrnl_sys::ddk::{CC_FILE_SIZES, FILE_FULL_EA_INFORMATION, FILE_OBJECT, _PUBLIC_BCB as BCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{TAG_EA_DATA};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlUninitializeLargeMcb};
 
 extern "C" {
     fn DebugTrace(severity: i32, component: u32, format: *const i8, ...);

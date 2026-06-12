@@ -14,6 +14,8 @@ use crate::types::{CCB_FLAG_COMPLETE_DISMOUNT, CCB_FLAG_DELETE_ON_CLOSE, CCB_FLA
 use ntkrnl_sys::ddk::{IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_CLEANUP, DO_VERIFY_VOLUME, FAT_NTC_DCB, FAT_NTC_ROOT_DCB, FILE_ACTION_REMOVED, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FO_CACHE_SUPPORTED, FO_CLEANUP_COMPLETE, FO_FILE_MODIFIED, FSRTL_VOLUME_UNLOCK, VPB_DIRECT_WRITES_ALLOWED, VPB_LOCKED};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlIsNtstatusExpected};
 
 extern "C" {
     fn FatDeviceIsFatFsdo(VolumeDeviceObject: *mut core::ffi::c_void) -> u8;
@@ -263,7 +265,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                         // can't extract, re-raise
                         resume_unwind(err);
                     };
-                    if FsRtlIsNtstatusExpected(exception_code) == EXCEPTION_EXECUTE_HANDLER {
+                    if FsRtlIsNtstatusExpected(exception_code) == (EXCEPTION_EXECUTE_HANDLER) as u8 {
                         FatResetExceptionState(IrpContext);
                     } else {
                         abnormal_termination = true;
@@ -423,7 +425,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                                 Ok(()) => {},
                                 Err(err) => {
                                     let exception_code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                    if FsRtlIsNtstatusExpected(exception_code) != EXCEPTION_EXECUTE_HANDLER {
+                                    if FsRtlIsNtstatusExpected(exception_code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                         resume_unwind(err);
                                     }
                                     FatResetExceptionState(IrpContext);
@@ -509,7 +511,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                                 Ok(()) => {},
                                 Err(err) => {
                                     let code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                    if FsRtlIsNtstatusExpected(code) != EXCEPTION_EXECUTE_HANDLER {
+                                    if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                         resume_unwind(err);
                                     }
                                     FatResetExceptionState(IrpContext);
@@ -547,7 +549,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                                         Ok(()) => {},
                                         Err(err) => {
                                             let code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                            if FsRtlIsNtstatusExpected(code) != EXCEPTION_EXECUTE_HANDLER {
+                                            if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                                 resume_unwind(err);
                                             }
                                             FatResetExceptionState(IrpContext);
@@ -590,7 +592,7 @@ pub unsafe extern "C" fn FatCommonCleanup(
                             Ok(()) => {},
                             Err(err) => {
                                 let code = *err.downcast_ref::<NTSTATUS>().unwrap_or(&0);
-                                if FsRtlIsNtstatusExpected(code) != EXCEPTION_EXECUTE_HANDLER {
+                                if FsRtlIsNtstatusExpected(code) != (EXCEPTION_EXECUTE_HANDLER) as u8 {
                                     resume_unwind(err);
                                 }
                                 FatResetExceptionState(IrpContext);

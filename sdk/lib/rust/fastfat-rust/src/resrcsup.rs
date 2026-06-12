@@ -9,6 +9,8 @@ use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, FSRTL_COMMON_FCB_HEADER, IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::types::{_TYPE_OF_OPEN_DirectoryFile as DirectoryFile};
+// resolve_imports.py: explicit kernel/private-type imports
 // resolve_imports.py: explicit kernel/private-type imports
 
 extern "C" {

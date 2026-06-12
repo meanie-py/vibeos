@@ -11,6 +11,8 @@ use crate::verfysup::{FatMarkFcbCondition};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP, _ETHREAD, _PUBLIC_BCB as BCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_FLUSH};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     fn FlagOn(Flags: u32, Mask: u32) -> i32;

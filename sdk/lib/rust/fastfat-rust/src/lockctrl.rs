@@ -7,6 +7,8 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, OPLOCK, PFILE_LOCK, _IO_STATUS_BLOCK};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlCheckOplock, FsRtlFastUnlockAll, FsRtlFastUnlockAllByKey, FsRtlFastUnlockSingle, FsRtlOplockIsFastIoPossible, FsRtlProcessFileLock};
 
 extern "C" {
     fn DebugTrace(level: i32, flags: u32, format: *const i8, ...);

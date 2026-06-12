@@ -10,7 +10,6 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-#[cfg(feature = "fastfatdbg")]
 pub static mut FatDumpCurrentColumn: u32 = 0;
 #[no_mangle]
 pub unsafe extern "C" fn FatDump(Ptr: *mut core::ffi::c_void) {

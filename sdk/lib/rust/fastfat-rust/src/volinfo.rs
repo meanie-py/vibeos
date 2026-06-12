@@ -11,6 +11,8 @@ use ntkrnl_sys::ddk::{FS_INFORMATION_CLASS, IO_STACK_LOCATION, PFILE_OBJECT, _PU
 use crate::glue::{DEBUG_TRACE_VOLINFO};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{IRP_CONTEXT};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     static mut FatData: FatDataStruct;

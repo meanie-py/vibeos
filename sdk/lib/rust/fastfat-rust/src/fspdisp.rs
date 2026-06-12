@@ -10,6 +10,8 @@ use crate::types::{CCB, FCB, IRP_CONTEXT, VCB, VOLUME_DEVICE_OBJECT};
 use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, FILE_OBJECT, IO_STACK_LOCATION, IRP, WORK_QUEUE_ITEM};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_FSP_DISPATCHER};
+// resolve_imports.py: explicit kernel/private-type imports
+use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "C" {
     fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
