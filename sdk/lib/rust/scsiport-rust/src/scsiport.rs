@@ -1295,7 +1295,7 @@ pub unsafe extern "system" fn ScsiPortMoveMemory(
 pub unsafe extern "C" fn ScsiPortNotification(
     NotificationType: SCSI_NOTIFICATION_TYPE,
     HwDeviceExtension: *mut c_void,
-    ...
+    mut args: ...
 ) {
 
     // NDEBUG defined → DPRINT is empty; DPRINT1 stays
@@ -1309,22 +1309,13 @@ pub unsafe extern "C" fn ScsiPortNotification(
         ptr
     };
 
-    // Simulate va_start: get a raw pointer to the first variadic argument
-    // (assumes cdecl/stdcall on stack; the pointer is valid for the frame)
-    let mut ap: *const u8 = {
-        let last_param_ptr = &HwDeviceExtension as *const *mut c_void as *const u8;
-        last_param_ptr.add(size_of::<*mut c_void>())
-    };
+    // Real c_variadic VaList — the previous hand-rolled &param stack-walk only worked
+    // on i386 cdecl; on win64 the params live in registers and it read garbage
+    // (PathId=160 from a junk Srb).
 
     match NotificationType {
         RequestComplete => {
-            // va_arg(ap, PSCSI_REQUEST_BLOCK) – read a pointer-sized value
-            let al = align_of::<*mut SCSI_REQUEST_BLOCK>();
-            let mut addr = ap as usize;
-            addr = addr.wrapping_add(al - 1) & !(al - 1);
-            let p = addr as *const *mut SCSI_REQUEST_BLOCK;
-            let Srb = *p;
-            ap = (addr + size_of::<*mut SCSI_REQUEST_BLOCK>()) as *const u8;
+            let Srb: *mut SCSI_REQUEST_BLOCK = args.arg::<*mut SCSI_REQUEST_BLOCK>();
 
             // ASSERT(Srb->SrbStatus != SRB_STATUS_PENDING)
             if !((*Srb).SrbStatus != (SRB_STATUS_PENDING) as u8) {
@@ -1390,27 +1381,10 @@ pub unsafe extern "C" fn ScsiPortNotification(
         }
 
         NextLuRequest => {
-            // va_arg(ap, int) – first int (PathId)
-            let al = align_of::<i32>();
-            let mut addr = ap as usize;
-            addr = addr.wrapping_add(al - 1) & !(al - 1);
-            let PathId_raw = *(addr as *const i32);
-            ap = (addr + size_of::<i32>()) as *const u8;
-            let PathId = PathId_raw as u8;
-
-            // va_arg(ap, int) – second int (TargetId)
-            addr = ap as usize;
-            addr = addr.wrapping_add(align_of::<i32>() - 1) & !(align_of::<i32>() - 1);
-            let TargetId_raw = *(addr as *const i32);
-            ap = (addr + size_of::<i32>()) as *const u8;
-            let TargetId = TargetId_raw as u8;
-
-            // va_arg(ap, int) – third int (Lun)
-            addr = ap as usize;
-            addr = addr.wrapping_add(align_of::<i32>() - 1) & !(align_of::<i32>() - 1);
-            let Lun_raw = *(addr as *const i32);
-            ap = (addr + size_of::<i32>()) as *const u8;
-            let Lun = Lun_raw as u8;
+            // C: (UCHAR)va_arg(ap, int) ×3
+            let PathId = args.arg::<i32>() as u8;
+            let TargetId = args.arg::<i32>() as u8;
+            let Lun = args.arg::<i32>() as u8;
 
             // DPRINT( "Notify: NextLuRequest(PathId %u  TargetId %u  Lun %u)\n", PathId, TargetId, Lun );
 
@@ -1454,18 +1428,9 @@ pub unsafe extern "C" fn ScsiPortNotification(
             // DPRINT("Notify: RequestTimerCall\n");
             (*DeviceExtension).InterruptData.Flags |= SCSI_PORT_TIMER_NEEDED;
 
-            // va_arg(ap, PHW_TIMER) – read a pointer
-            let al = align_of::<*mut c_void>();
-            let mut addr = ap as usize;
-            addr = addr.wrapping_add(al - 1) & !(al - 1);
-            let timer_ptr = *(addr as *const *mut c_void);
-            ap = (addr + size_of::<*mut c_void>()) as *const u8;
-
-            // va_arg(ap, ULONG) – read a u32
-            addr = ap as usize;
-            addr = addr.wrapping_add(align_of::<u32>() - 1) & !(align_of::<u32>() - 1);
-            let miniport_timer_value = *(addr as *const u32);
-            ap = (addr + size_of::<u32>()) as *const u8;
+            // C: va_arg(ap, PHW_TIMER); va_arg(ap, ULONG)
+            let timer_ptr = args.arg::<*mut c_void>();
+            let miniport_timer_value = args.arg::<u32>();
 
             (*DeviceExtension).InterruptData.HwScsiTimer = core::mem::transmute(timer_ptr);
             (*DeviceExtension).InterruptData.MiniportTimerValue = miniport_timer_value;
