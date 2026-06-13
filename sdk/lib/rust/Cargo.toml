@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "classpnp-rust",
+    "disk-rust",
+    "mountmgr-rust",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",
@@ -127,6 +129,10 @@ members = [
     "acpi-rust",
     "pci-rust",
     "pcix-rust",
+    "partmgr-rust",
+    "fs_rec-rust",
+    "pciidex-rust",
+    "scsiport-rust",
     "rtl-heap",
     "rtl-version",
     "rtl-ppb",

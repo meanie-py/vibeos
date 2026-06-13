@@ -1,0 +1,16 @@
+# mountmgr-rust — Rust translation of drivers/storage/mountmgr (the mount
+# manager .sys; drive letters / mount points / volume symlinks). DeepSeek
+# mechanical + c2rust-anchored translate. Boot-start WDM driver, DriverEntry-only.
+# ntkrnl-sys + crate::types (gen_driver_types.sh) kernel substrate.
+[package]
+name = "mountmgr-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mountmgr_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

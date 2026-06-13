@@ -51,6 +51,13 @@ The #1 i386 crash class: on i386, `extern "C"` is cdecl and `extern "system"` is
 - **Inline-interaction fold:** a fn that's fold-free standalone can fold its *caller* when inlined — LLVM combines the inlinee's writes with the caller's `memcpy`/dereferenceable facts. Fix: `#[inline(never)]` (classpnp `ClassInitializeDispatchTables` inlined into `ClassInitialize` → ud2 after `RtlCopyUnicodeString`).
 **Note:** i386-only — on amd64/arm64 `extern "C"` == `extern "system"` (both cdecl), so these never fold there. Fixed in classpnp `ec2ad2607db`; full writeup `classpnp-cohab-link-gap.md`.
 
+### disk-rust variants (2026-06-11): llvm.assume fold, noreturn-decl poison, per-symbol CC authority
+Same class as the classpnp at-scale fold; four refinements from the disk.sys port:
+- **Faster diagnostic than `-print-changed`:** `cargo rustc -p <crate> --target i686… --release -- --emit=llvm-ir`, then read the folded fn in the `.ll`. The smoking gun is `tail call void @llvm.assume(i1 %cond)` where the source had `if cond` — LLVM proved the OTHER branch UB and converted the branch to an assume. Whatever the surviving path calls next is NOT the culprit; the proven-UB call on the dead path is.
+- **noreturn decl poisons a returning def:** one stray `fn __int2c() -> !;` decl (def returns) merges into the same IR name and marks all callers' fall-through unreachable → `ud2` right after the call, plus assert branches folded always-taken. Symptom at boot: spurious `Assertion failed … : 0` prints with a sane printed value (e.g. `IRQL (0)`), then BUGCHECK 0x1E/0xC000001D. Audit every `-> !` extern decl against its def.
+- **The CC authority is per-symbol bindgen, not a blanket rule.** MS-style driver headers declare SOME fns `NTAPI` (the class-driver callbacks → stdcall) and most helpers without (→ cdecl). And ntkrnl-sys bindgen declares FORCEINLINE-derived names (`KeInitializeSpinLock`, `IoMarkIrpPending`, `IoGet*StackLocation`…) **`extern "C"`** even where a sibling real export is stdcall — in-crate shim defs must match the BINDGEN decl, because translated callers import those paths. Reconcile programmatically: regex `types_i386.rs`/`bindgen_i386.rs` block ABIs into a name→CC map, diff every `pub extern "X" fn` def and extern-block decl in the crate against it, fix the minority side (49 defs + 17 decls in disk-rust).
+- **Callback param-type hallucination → kernel AV after the folds are gone:** translation gave `DiskBootDriverReinit` a `PDEVICE_OBJECT` param and deref'd `.DriverObject`; C takes `PDRIVER_OBJECT` directly. Garbage pointer into `IoRegisterDriverReinitialization` → BUGCHECK 0x1E/0xC0000005 inside `IopReinitializeBootDrivers`. When a crash lands INSIDE a kernel registration/iteration routine right after your driver's entry ran, diff the callback signatures against the C first.
+
 ### extern decl returns `u32` for a `BOOLEAN`(u8) impl → amd64 false-"true"
 **Symptom:** amd64-only: a `return 0` (false) reads as nonzero/true; path-dependent. Real incident: BUGCHECK 0x4C (`0xc000021a`), "Load of WIN32K failed", SMSS `SmpInit` fail.
 **Root cause:** Callee sets only `AL`; a `-> u32` caller reads full `EAX` with garbage upper 24 bits (clean only on `xor eax,eax` paths). `MiResolveImageReferences` declared `RtlEqualUnicodeString(..,u32)->u32` vs real `(..,u8)->u8`; false match made ftfd.dll snap against usbd.sys exports → `STATUS_DRIVER_ENTRYPOINT_NOT_FOUND`.
@@ -97,6 +104,18 @@ The #1 i386 crash class: on i386, `extern "C"` is cdecl and `extern "system"` is
 **Root cause:** At `opt-level=1` rustc treats inline-asm bodies as opaque blobs and doesn't reliably fire cross-crate `#[inline(always)]`; it falls back to a call against the unmangled name, but the C-side helper is itself a FORCEINLINE with no exported symbol.
 **Fix:** Replicate the asm into the consuming crate rather than importing it (the two-line duplicate is identical instructions). Applies to `KeGetCurrentThread`/`KeGetCurrentPrcb`/port-I/O helpers. Caught building cm-inlines, commit `646af953`.
 **Source:** `feedback_cross_crate_inline_asm.md`
+
+### DDK FORCEINLINE exported only on i386 → amd64/arm64 link fails (inverse of the usual)
+**Symptom:** A standalone driver `.sys` links clean on i386 but `undefined symbol: KeGetCurrentIrql` (undecorated) on amd64/arm64 — the *opposite* of most FFI link bugs which fail on i386. cargo-check passes on all arches (the bindgen extern decl satisfies type-check); only the link breaks.
+**Root cause:** `KeGetCurrentIrql` is a real ntoskrnl **export on i386** but a **FORCEINLINE on amd64/arm64** (reads CR8 / the PCR), so the bindgen `ddk` extern resolves on i386 and dangles on 64-bit. Two ways the driver reaches the bad extern: (a) the module imports it from `ntkrnl_sys::ddk`, or (b) — the partmgr trap — the LLM emitted a **local `extern "system" { fn KeGetCurrentIrql() -> u8; }`** phantom decl inside the translated file.
+**Fix:** Import the per-arch inline explicitly: `use ntkrnl_sys::ke::KeGetCurrentIrql;` (a glob re-export through `crate::inlines` does NOT win over a local extern decl — must be explicit, pcix pattern), and **delete any LLM-emitted local `extern` decl of a DDK FORCEINLINE**. Same class as `IoGetCurrentIrpStackLocation`/`IoSkipCurrentIrpStackLocation` (→ `ntkrnl_sys::inline::tier1`) and `ExAllocatePoolZero`/`ExAllocatePoolUninitialized` (exfuncs.h FORCEINLINE wrapping `ExAllocatePoolWithTag` — define inline, use `core::ptr::write_bytes` for the zero). Caught landing partmgr-rust, 2026-06-12.
+**Source:** `project_partmgr_rust_track.md`
+
+### LLM appends `as u64` to every SIZE_T/ULONG_PTR value → i386-only E0308 (32-bit width)
+**Symptom:** A driver crate is cargo-clean on amd64 but ~50 `error[E0308]: expected u32, found u64` on i386, all on `IoStatus.Information = X as u64`, `VerifyIrpOutBufferSize(Irp, X as u64)`, `ExAllocatePool*(_, size as u64, _)`.
+**Root cause:** `SIZE_T`/`ULONG_PTR` are 64-bit on amd64 (so `as u64` matched) but **32-bit on i386**. The mechanical translation hardcodes `as u64` for every length/offset/`Information` value instead of the arch-width type.
+**Fix:** Helpers that take a size take `usize`; assignments to arch-width fields use `as _` (infer the bindgen field type) — never hardcode `as u64` for a SIZE_T/ULONG_PTR/Information context. Note `SIZE_T`/`ULONG_PTR` in module scope often resolve to the hand-written `ntkrnl_sys::base` alias (`usize`), distinct from the bindgen `ddk` u64 — so prefer `as _`/`usize` over naming either. Caught landing partmgr-rust, 2026-06-12.
+**Source:** `project_partmgr_rust_track.md`
 
 ### amd64 cpuid 32-bit `xchg ebx` dance silently truncates a caller's rbx pointer
 **Symptom:** BUGCHECK 0x50 at a truncated address (e.g. `0xFFD03000` from `0xFFFFFFFFFFD03010`) near PsLocateSystemDll; multi-hour forward-search to pin.
@@ -308,6 +327,35 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Fix / oracle:** after integrating any grinder output run all three checks: (1) re-derive every `STATUS_*`/facility const from the real header into the `-sys` crate as the source of truth (`0x....u32 as i32` for bit-31 values), delete local fabrications; cross-check with `verify_constants.py` + a Sonnet-vs-C review tier (earns its keep on constant-dense code). (2) `grep -c "unreachable pattern"` in the cargo build — **must be 0**; define the missing consts matching the scrutinee type (HID item tags are a 4-bit nibble 0x8/0x9/0xa/0xb/0xc — the grinder's 0x80/0x90 were wrong). (3) recover dropped bodies from `tools/rustconv/.responses/` (durable bank) and hand-translate (watch for faithful C quirks like an early-return path that doesn't write outputs). Mechanical mode also declares all externs `extern "C"` → NTAPI imports break i386 link; the ABI sweep (`extern "system"` for NTAPI, inline DDK helpers from `ntkrnl_sys::inline::tier1` not `ddk`) is the engineer's job, forbidden to the grinder.
 **Source:** `project_driver_residue_track.md`, `feedback_undefined_const_in_match_silent_binding.md`
 
+### Constant linter as a mandatory driver-crate gate (verify_constants.py, now driver-aware)
+**Symptom:** A DeepSeek/c2rust driver grind cargo-checks AND boots green, but carries
+fabricated `#define` values on paths the smoke window never exercises (SCSI passthrough,
+mount-notify, remote-DB, IOCTL tails). c2rust does NOT save you here — the hallucination is
+in the hand-written `pub const` glue, not the transpiled bodies. These ship silently and bite
+later: e.g. `STATUS_MORE_PROCESSING_REQUIRED=0x103` (=PENDING, not `0xC0000016`) wrong-returned
+from a completion routine; `IRP_MJ_SCSI=0x0B` (=FLUSH, not `0x0F`) → SCSI passthrough mis-dispatch;
+`FILE_OPEN_BY_FILE_ID=0x200` not `0x2000`; `VALUE_BUFFER_SIZE=512` not 2048 (undersized buffer).
+**Oracle:** `verify_constants.py` is now driver-crate-aware — run it on EVERY driver crate before
+and after landing, with the driver's own C dir as the extra catalog:
+```
+python3 tools/rustconv/rustconv/verify_constants.py sdk/lib/rust/<drv>-rust/src \
+    --extra-headers drivers/<...>/<drv> [--skip <collision-names>] [--fix]
+```
+It parses `pub const NAME: T = V;` (not just bare `const`), globs `--extra-headers` dirs for the
+driver-private `#define`s (pool tags, node types, IO flags), and is conflict-aware (won't auto-fix
+a name with arch-divergent header values). One run across the 5 landed DeepSeek crates found
+**19 real fabrications in disk + mountmgr** (boot drivers), 0 in the harvest_consts-built crates
+(partmgr/fs_rec/pcix) — proof the gate belongs in the pipeline, not just at first-translate.
+**Two traps learned wiring it:** (a) the `--fix` regex anchored after `rstrip()` only, so it
+silently no-op'd fn-local (INDENTED) consts while printing "FIXED" — fixed to capture leading
+whitespace; always re-run the linter after `--fix` to confirm `0 mismatches`, don't trust the
+FIXED count. (b) Name-collisions are real false positives: mountmgr has a module-local
+`LETTER_POSITION: isize = 4` (a `\??\C:` offset) distinct from the bindgen `LETTER_POSITION = 12`
+(`\DosDevices\C:` offset) — `--fix` would wrongly rewrite it. Use `--skip NAME` to report-not-fix
+those. `--unverifiable` (ALL_CAPS const not in ANY header) is too noisy to gate on (~4k hits);
+opt-in investigative only.
+**Source:** [[feedback_llm_invented_enum_constants]], [[project_disk_rust_track]], [[project_mountmgr_rust_track]]
+
 ### rustconv drops ALL non-fn header content at scale (structs / const-tables / #defines / FuncTables)
 **Symptom:** A bulk `translate` of a unit compiles per-function but is missing every file-local struct, const lookup table, `#define`, and static FuncTable — E0425/E0412 undefined-name storms, or worse, silent wrong behavior from a missing default table.
 **Root cause:** rustconv translates function bodies only; the scanner's preamble captures the .c's top-of-file but `translate`'s stitcher never emits `scan.globals_text` — file-local typedefs/structs/`#define`-consts/`const DEVVTBL` FuncTables/static arrays are dropped entirely. (FreeLDR fs unit: bootsector/dirent/volume-info structs + const DEVVTBL tables + #defines all gone.)
@@ -356,6 +404,17 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Fix / oracle:** for data-table-heavy files, EXTRACT the tables deterministically from the C/headers with a gen script, don't trust the LLM transcription. Two reusable patterns: `gen_winerror_consts.py` (scan referenced `ERROR_*/STATUS_*/...` idents in the table region only, resolve from headers across `plain` / `_HRESULT_TYPEDEF_(0x..)` / `((NTSTATUS)0x..L)` forms) and `gen_error_tables.py` (extract the tables + dispatch array verbatim with a `declared [N] == actual count` assertion). lib.rs then = generated mods + hand-verified dispatch fns.
 **Source:** `project_rtl_misc_leaves.md`
 
+### RTL_CONSTANT_STRING global UNICODE_STRINGs stubbed to empty (mountmgr, 2026-06-12)
+**Symptom:** A driver with `UNICODE_STRING DeviceMount = RTL_CONSTANT_STRING(L"\\Device\\MountPointManager");` style globals translates to `pub static mut DeviceMount: _UNICODE_STRING = _UNICODE_STRING { Length: 0, MaximumLength: 0, Buffer: null }` — ALL fields zero. At runtime: `OB: Invalid symbolic link target - ` (empty) when the driver creates symlinks from these, then a downstream **BUGCHECK 0x19 BAD_POOL_HEADER (subtype 5)** because string-builder funcs compute `dst.Length = name.Length - DosDevices.Length(0) + DosGlobal.Length(0)` and `copy_nonoverlapping(DosGlobal.Buffer(NULL), …)` off the zeroed globals → wrong sizes / null derefs corrupt the pool.
+**Root cause:** `RTL_CONSTANT_STRING` is a macro (`{ sizeof-2, sizeof, L"..." }`); the LLM can't expand the link-time string literal so it emits an all-zero `UNICODE_STRING` — the string-global analogue of "Static-table complex-literal fields nulled out", but it COMPILES and links clean (nothing asserts non-empty).
+**Fix / oracle:** grep every `static mut <NAME>: _UNICODE_STRING = _UNICODE_STRING {\n Length: 0,` in the crate; for each, recover the C `RTL_CONSTANT_STRING(L"…")` (or its macro, e.g. `MOUNTMGR_DEVICE_NAME`) and emit `static <NAME>_WSTR: [u16; N] = [<utf16…>, 0]; … { Length: (N-1)*2, MaximumLength: N*2, Buffer: &<NAME>_WSTR as *const [u16;N] as *const u16 as *mut u16 }`. One agent-generated script does all of them from the harvested strings. (NB: some get translated correctly — diff against the C, don't blanket-replace.)
+**Diagnostic heuristic that cracked it:** **byte-identical BUGCHECK args across multiple code-change+rebuild cycles ⇒ the bug is in INVARIANT data (a static initializer), not in any code path you're editing.** Three rebuilds with three different code fixes left `0x19 (5, 0x…96e50, 0xca, 0x…96d70)` byte-for-byte identical → stop editing code, audit the statics. (When the string fix finally changed the addresses, it confirmed the static-data root cause.)
+
+### Driver cohab i386 CC-fold: types_*.rs (gen_driver_types) + ddk_shims are the per-symbol authority (mountmgr, 2026-06-12)
+**Symptom:** Driver links clean ×3 but i386 has N `ud2` folds in named fns (amd64/arm64 fold-free). A crate-wide def↔decl CC consistency pass over the MODULE .rs files reports 0 mismatches, yet folds persist. IR shows a clean call (e.g. `call x86_fastcallcc void @ObfDereferenceObject(...)` / a driver-internal fn) immediately followed by `unreachable`.
+**Root cause:** the per-symbol CC authority for a driver's OWN functions is **`types_{arch}.rs`** (gen_driver_types bindgen of the C prototypes in the private header) — NOT the module decls and NOT a blanket "NTAPI=stdcall" rule. Driver-internal helpers with NO `NTAPI` in their C prototype are **cdecl** (`extern "C"`); the translation often guesses `extern "system"` for cross-module decls. A def/decl that disagrees with the bindgen authority is an in-module CC contradiction → fold. The consistency check MUST include `types_*.rs` (authority), `ddk_shims.rs` (the cohab fn DEFINITIONS), and macro-shims (`AllocatePool`/`FreePool` — provided by ddk_shims, declared per-module, NOT in the C-prototype authority so reconcile to the shim's CC). My first sweep flipped DEFS the wrong way (to "system") because I only diffed modules-vs-modules; reconciling to the types_*.rs CC (mostly "C") fixed it.
+**Fix / oracle:** build `auth = {fn → CC}` from `types_i386.rs` extern-block ABIs (stdcall→"system", else "C") PLUS the `ddk_shims.rs` `pub extern "X" fn` defs; reconcile every def and every extern-block decl across all module files to `auth[fn]`; then `objdump | awk '/<.*>:/{fn=$0}/ud2/{print fn}'` to confirm 0 named-fn folds. Also: a macro-shim with an inconsistent PARAM TYPE across decls (`AllocatePool(usize)` def vs `AllocatePool(u32)` decls) is a separate runtime pool-corruptor on amd64 (callee reads 64-bit reg, caller set low 32) — make the param type uniform too. And a cross-module DATA static declared with two TYPES (`DatabasePath: *mut u16` in 3 modules vs `_UNICODE_STRING` in 2) makes `.Buffer`/`.Length` read 8 bytes past the real symbol — grep `static (mut )?\w+:` and group by name to find type disagreements.
+
 ### Self-referential static initializer → {null, null}
 **Symptom:** a `static X: LIST_ENTRY = LIST_ENTRY { Flink: null_mut(), Blink: null_mut() }` that walkers treat as empty/initialized; head-sentinel walks deref NULL or loop forever. fat::DirectoryBufferListHead → arm64 UEFI fault at FatOpen+0x230 (NULL+0x10).
 **Root cause:** C `LIST_ENTRY LH = {&LH, &LH}` is a link-time constant; Rust statics can't reference their own address, so rustconv falls back to `{null, null}`.
@@ -385,6 +444,30 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Root cause:** stable Rust can't *define* a variadic C fn (`c_variadic` unstable on the def side); when the C is a `static __inline` with no out-of-line symbol, rustconv emits a degraded copy stub.
 **Fix / oracle:** grep `pub unsafe extern "C" fn (Rtl|Cm|Db|Hal)\w*Printf[AW]\b` and any one-liner forwarding to a non-variadic helper with no format substitution. Fix with a tiny C shim TU delegating to libcntpr `_vsnprintf` (calling variadics FROM Rust is stable), then remove the Rust stub leaving only a comment so a re-run doesn't re-emit it.
 **Source:** `feedback_degraded_variadic_stubs.md`
+
+### ZST-array pointer `.add()` — bindgen flexible member steps 0 bytes
+**Symptom:** loop over `cfg.AccessRanges.add(i)` always reads element 0; downstream a counted allocation overruns (BUGCHECK 0x19 BAD_POOL_HEADER) or per-element logic misbehaves with no crash at the access itself.
+**Root cause:** bindgen renders C flexible/pointer-to-array members as `*mut [T; 0usize]`; `.add(i)` advances `i * size_of::<[T; 0]>() = 0` bytes. The LLM writes `field.add(i)).cast()` which compiles clean.
+**Fix / oracle:** cast FIRST: `(x.field as *mut T).add(i)`. Sweep: `grep -P 'pub (\w+): \*mut \[\w+; 0usize\]' types_*.rs` for the field names, then grep `.FIELD.add(`/`.FIELD.offset(` in modules. Caught in scsiport SpiConfigToResource (descriptor-per-range overrun of an exactly-sized CM_RESOURCE_LIST), 2026-06-12.
+**Source:** `project_scsiport_rust_track.md`
+
+### Plain Rust-ABI `unsafe fn` address handed to the kernel (timer/dispatch)
+**Symptom:** i386 BUGCHECK 0x1E with PC INSIDE pool data (PC ≈ a DeviceExtension address) shortly after a timer starts or a device opens; works until the kernel first CALLS the pointer.
+**Root cause:** fn defined `unsafe fn Foo(...)` (Rust ABI) but its ADDRESS escapes via `Foo as *mut c_void`/transmute into IoInitializeTimer/MajorFunction/etc. The kernel calls it as NTAPI (stdcall on i386) → callee-pop mismatch → caller's stack walks into its own args/locals and `ret`s into data.
+**Fix / oracle:** every fn whose address escapes must be `extern "system"` (or the exact per-arch ABI). Sweep: list plain `unsafe fn` names, flag any appearing in `as *mut`/`as *const`/`transmute(`. Caught in scsiport (ScsiPortIoTimer = IO_TIMER_ROUTINE, ScsiPortCreateClose = DRIVER_DISPATCH), 2026-06-12.
+**Source:** `project_scsiport_rust_track.md`
+
+### Hand-rolled va_arg (`&last_fixed_param` walk) — amd64-only garbage
+**Symptom:** variadic export works on i386 but reads garbage args on amd64/arm64 (scsiport: "Invalid PathId: 160" then hang — RequestComplete read a junk Srb pointer).
+**Root cause:** the LLM "simulates va_start" by taking the address of the last fixed parameter and walking upward — valid only where all params live contiguously on the stack (i386 cdecl). On win64 fixed params are in registers; `&param` is a local spill slot.
+**Fix / oracle:** real c_variadic: declare `mut args: ...` and read with `args.arg::<T>()` (pointers/i32/u32 are VaArgSafe). Sweep: grep `Simulate va_start|last_param_ptr|& *\w+ as \*const \*mut` inside variadic fns.
+**Source:** `project_scsiport_rust_track.md`
+
+### C `DPRINT` (NDEBUG-dead) translated as live `DbgPrint` — boot slowdown masquerading as a hang
+**Symptom:** smoke HANG_TIMEOUT but the system is alive; EIP sampling lands in DbgPrint plumbing (`so_wstring`, `__DbgPortRead`, memcpy). Per-IO prints throttle boot below the smoke timeout.
+**Root cause:** C's `#define NDEBUG` compiles DPRINT out entirely; the translation renders them as unconditional DbgPrint.
+**Fix / oracle:** route prints whose format string matches a C `DPRINT(` (NOT `DPRINT1`) to a c_variadic no-op sink (`pub unsafe extern "C" fn dprint_noop(_f: *const c_char, mut _a: ...) -> i32 { 0 }`); keep DPRINT1-derived ones (they carry the `(%s:%d)` file/line prefix). Script it: harvest C DPRINT format strings, match Rust byte-literals, rename the callee.
+**Source:** `project_scsiport_rust_track.md`
 
 ### #ifdef MACRO mapped to #[cfg(MACRO)] — always the wrong branch
 **Symptom:** compiles and links clean; pure-runtime bug, often arch-asymmetric. winsta.c: `#if !defined(_USE_DUMMY_PSEH)` → `#[cfg(not(_USE_DUMMY_PSEH))]` (always TRUE) ran KeUserModeCallbacks on the SYSTEM desktop thread → i386-only hang at comctl32 InitializeClasses, flooding "Sending to Suspended Thread Msg 121". amd64/amd64-green did NOT exonerate it.

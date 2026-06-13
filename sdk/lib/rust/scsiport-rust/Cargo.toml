@@ -1,0 +1,24 @@
+# scsiport-rust — Rust translation of the SCSI port driver
+# (drivers/storage/port/scsiport, ~8.4K LOC: fdo/ioctl/pdo/power/registry/scsi/scsiport/
+# stubs.c; guid.c stays C as the GUID data TU). scsiport.sys is a big EXPORT driver
+# (scsiport.spec: ~45 ScsiPort* — port/register I/O wrappers, ScsiPortInitialize/
+# Notification/etc. stdcall + ScsiPortNotification cdecl varargs + ScsiDebugPrint varargs)
+# AND boot-loaded (scsiport.sys=1) — the live uniata.sys/atapi.sys are scsiport miniports
+# that import ScsiPort*, so a Rust scsiport is on the LiveCD IDE read-stack (smoke-
+# exercised). The .spec exports come from the Rust #[no_mangle] symbols; crate-type=
+# staticlib → libscsiport_rust.a, cohab-linked into the cmake scsiport.sys with the 8 .c
+# commented out and spec2def + sptilib link kept. Driver-private structs (SCSI_PORT_
+# DEVICE_EXTENSION, SCSI_PORT_LUN_EXTENSION, SCSI_REQUEST_BLOCK_INFO + the SCSI SRB/CDB
+# DDK layouts) from the gen_driver_types.sh substrate (src/types.rs). Depends on
+# ntkrnl-sys. Built for all 3 arches. DeepSeek+c2rust.
+
+[package]
+name = "scsiport-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
