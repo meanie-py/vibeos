@@ -41,8 +41,6 @@ MARK_ECHO_READY = "[NETSTACK] tcp echo ready"
 MARK_DHCP = "[NETSTACK] dhcp lease 10.0.2."
 MARK_DNS = "[NETSTACK] dns OK"
 
-XFAIL_M2 = pytest.mark.xfail(
-    reason="netstack engine not yet implemented (smoltcp lane M2)", strict=True)
 XFAIL_M3 = pytest.mark.xfail(
     reason="netstack DHCP/DNS not yet implemented (smoltcp lane M3)", strict=True)
 
@@ -89,14 +87,12 @@ def test_m1_raw_frame_roundtrip(vm: QemuVM) -> None:
 # M2 — engine self-test: ICMP + TCP echo (no TDI, driven inside the kernel).
 # --------------------------------------------------------------------------- #
 
-@XFAIL_M2
 def test_selftest_ping_gateway(vm: QemuVM) -> None:
     """Kernel self-test pinged the slirp gateway (10.0.2.2) and got a reply."""
     _require_net_config(vm)
     assert MARK_PING in vm._boot_output
 
 
-@XFAIL_M2
 def test_tcp_echo_roundtrip(vm: QemuVM) -> None:
     """Host connects through the hostfwd to the guest echo port; bytes bounce.
 

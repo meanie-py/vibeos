@@ -7,57 +7,27 @@
 //! device path both directions. The gateway's MAC (52:55:0a:00:02:02 under
 //! slirp) is logged as proof.
 
-use virtio_drivers::device::net::{TxBuffer, VirtIONet};
-use virtio_drivers::transport::pci::{PciTransport, bus::PciRoot};
+use virtio_drivers::device::net::TxBuffer;
 
-use crate::hal::NetHal;
-use crate::pci::{HalPciAccess, enable_bus_master, find_virtio_net};
+use crate::device;
 use crate::serial::nsprint;
 
 extern "system" {
     fn KeStallExecutionProcessor(MicroSeconds: u32);
 }
 
-const QUEUE_SIZE: usize = 16;
-const BUF_LEN: usize = 2048;
-
 /// Our self-assigned bring-up IP (slirp's DHCP pool starts at .15).
 const OUR_IP: [u8; 4] = [10, 0, 2, 15];
 /// The slirp gateway we ARP for.
 const GW_IP: [u8; 4] = [10, 0, 2, 2];
 
-type NetDev = VirtIONet<NetHal, PciTransport, QUEUE_SIZE>;
-
 pub fn run() {
     nsprint!("[NETSTACK] M1 self-test: probing for virtio-net\n");
 
-    let df = match find_virtio_net() {
-        Some(df) => df,
+    let mut vnet = match device::bringup() {
+        Some(v) => v,
         None => {
-            nsprint!("[NETSTACK] FAIL: no virtio-net device on PCI bus 0\n");
-            return;
-        }
-    };
-    nsprint!(
-        "[NETSTACK] virtio-net at {:02x}:{:02x}.{}\n",
-        df.bus, df.device, df.function
-    );
-
-    enable_bus_master(df);
-
-    let mut root = PciRoot::new(HalPciAccess);
-    let transport = match PciTransport::new::<NetHal, _>(&mut root, df) {
-        Ok(t) => t,
-        Err(_) => {
-            nsprint!("[NETSTACK] FAIL: PciTransport init\n");
-            return;
-        }
-    };
-
-    let mut vnet: NetDev = match VirtIONet::new(transport, BUF_LEN) {
-        Ok(v) => v,
-        Err(_) => {
-            nsprint!("[NETSTACK] FAIL: VirtIONet init\n");
+            nsprint!("[NETSTACK] FAIL: virtio-net bringup (find/transport/init)\n");
             return;
         }
     };

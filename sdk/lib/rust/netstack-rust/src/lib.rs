@@ -14,9 +14,12 @@ extern crate alloc;
 
 pub mod kalloc;
 pub mod serial;
+pub mod time;
 pub mod hal;
 pub mod pci;
+pub mod device;
 pub mod selftest;
+pub mod engine;
 
 use ntkrnl_sys::ddk::{DRIVER_OBJECT, NTSTATUS, UNICODE_STRING};
 
@@ -32,7 +35,10 @@ pub unsafe extern "system" fn DriverEntry(
     serial::emit(core::format_args!(
         "[NETSTACK] DriverEntry: netstack.sys loaded\n"
     ));
+    // M1: blocking ARP round-trip self-test (creates + drops its own device).
     selftest::run();
+    // M2: spawn the persistent smoltcp poll-loop engine (ping + TCP echo).
+    engine::start();
     0 // STATUS_SUCCESS
 }
 
